@@ -42,6 +42,7 @@ export type * as uiDocumentZoomApi from "./public/documentZoom";
 export type * as uiExplorerMenuApi from "./public/ExplorerMenu";
 export type * as uiExplorerMenuItemsApi from "./public/explorerMenuItems";
 export type * as uiFileActionErrorApi from "./public/FileActionError";
+export type * as uiFileReferenceApi from "./public/FileReference";
 export type * as uiFilePreviewApi from "./public/FilePreview";
 export type * as uiFileTypeIconApi from "./public/FileTypeIcon";
 export type * as uiHtmlPreviewApi from "./public/HtmlPreview";

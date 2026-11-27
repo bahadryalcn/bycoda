@@ -121,7 +121,7 @@ it("keeps typing inside the draft dialog from re-rendering its owner", async () 
       machines: [],
       todoCapable: [],
       saving: false,
-      error: null,
+      notice: null,
       sprintName: undefined,
       onClose: () => {},
       onSave: saved,

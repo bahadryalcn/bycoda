@@ -3,7 +3,10 @@ import {
   cachedRemoteCapabilities,
   loadRemoteCapabilities,
   subscribeRemoteCapabilities,
+  useRemoteMachines,
 } from "./connections";
+import { isLocalSyncMachine } from "./localSync";
+import { providerSteerCapability } from "./protocol";
 import { subscribeRemoteRecovered } from "./remoteHealth";
 import { parseRemotePath } from "./remoteProjects";
 
@@ -17,6 +20,7 @@ export const GIT_CONFLICTS = "git.conflicts";
 /** Running a `!command` from the composer in a host session (host/execution/shell.ts). */
 export const SESSION_SHELL = "sessions.shell";
 export const SESSION_REWIND = "sessions.rewind";
+export const SESSION_PROVIDER_ACCOUNT = "sessions.configure.providerAccount.v1";
 
 /** Shown where a feature stays off because the machine's host predates it. */
 export const HOST_UPDATE_NOTICE =
@@ -47,15 +51,29 @@ export async function requireRemoteSupport(cwd: string, capability: string): Pro
  * know yet, and again after the machine comes back. */
 export function useRemoteSupports(cwd: string, capability: string): boolean | undefined {
   const environmentId = parseRemotePath(cwd)?.environmentId;
+  const capabilities = useEnvironmentCapabilities(environmentId);
+  return environmentId ? capabilities?.includes(capability) : true;
+}
+
+/** An adopted turn executes on this machine's Host, whose adapters may predate the desktop. */
+export function useAdoptedSteerSupport(provider: string | undefined): boolean | undefined {
+  const { machines } = useRemoteMachines(!!provider);
+  const environmentId = provider ? machines.find(isLocalSyncMachine)?.environmentId : undefined;
+  const capabilities = useEnvironmentCapabilities(environmentId);
+  return provider ? !!capabilities?.includes(providerSteerCapability(provider)) : undefined;
+}
+
+function useEnvironmentCapabilities(environmentId: string | undefined) {
   const read = () => (environmentId ? cachedRemoteCapabilities(environmentId) : undefined);
   const capabilities = useSyncExternalStore(subscribeRemoteCapabilities, read, read);
+  // Effect reason: refresh the serving Host's capability snapshot on attachment or recovery.
   useEffect(() => {
     if (!environmentId) return;
     const ask = () => void loadRemoteCapabilities(environmentId).catch(() => {});
     if (!cachedRemoteCapabilities(environmentId)) ask();
     return subscribeRemoteRecovered(() => {
-      if (!cachedRemoteCapabilities(environmentId)) ask();
+      ask();
     });
   }, [environmentId]);
-  return environmentId ? capabilities?.includes(capability) : true;
+  return capabilities;
 }

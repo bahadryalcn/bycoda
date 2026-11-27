@@ -1,44 +1,56 @@
-import { useTaskModelRouting } from "./TaskModelChoiceField";
-import "./task-form.css";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Text } from "../../../shared/ui/Text";
-import { projectDisplayName } from "../../projects/public/projectNames";
+import { useEffect, useEffectEvent, useId, useState } from "react";
+import { t, useFormat, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Checkbox } from "../../../shared/ui/Checkbox";
-import {
-  AUTOMATIC_SUBAGENTS,
-  CROSS_SUBAGENTS_KEY,
-} from "../../../shared/model/host-contracts/delegation";
-import { FieldGroup } from "../../../shared/ui/FieldGroup";
-import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Disclosure } from "../../../shared/ui/Disclosure";
-import { TextField } from "../../../shared/ui/TextField";
-import { InlineMessage } from "../../../shared/ui/InlineError";
-import { isWorkspaceValid, TaskWorkspacePicker, useWorkspaceChecks } from "./TaskWorkspacePicker";
-import { useTaskTargetMachine } from "./useTaskTargetMachine";
-import { TaskFormAgent } from "./TaskFormAgent";
-import "./task-form.css";
-import { CrewTaskPicker } from "../../crews/ui/CrewTaskPicker";
-import { preflightTaskDraft, TASK_MACHINE_ERROR, type TaskDraft } from "../model/taskClient";
-import { t, useLocale } from "../../../shared/i18n";
-import { useState } from "react";
-import { AccessPicker } from "../../sessions/public/AccessPicker";
+import { FieldGroup } from "../../../shared/ui/FieldGroup";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { ModalActions, ModalFooter } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { SkillPromptField } from "../../skills/ui/SkillPromptField";
-import { TaskWorkflowControls } from "./TaskWorkflowControls";
-import { TaskBudgetControls } from "./TaskBudgetControls";
-import type { TaskPreflightReport } from "../model/taskPreflight";
-import { backgroundMachineFor } from "../../automations/model/hostAutomationClient";
+import { Surface } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
+import { TextField } from "../../../shared/ui/TextField";
+import { crewIncompatibility } from "../../../shared/model/host-contracts/work-executor";
+import { backgroundMachineFor } from "../../automations/public/hostMachines";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import type { RemoteMachine } from "../../connections/public/protocol";
-
+import { useModelRouting } from "../../model-routing/public/choice";
+import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import { looksLikeProject, type RecentProject } from "../../projects/public/recents";
+import { AccessPicker } from "../../sessions/public/AccessPicker";
+import { SkillPromptField } from "../../skills/ui/SkillPromptField";
+import { WorkspacePicker } from "../../workspace/public/WorkspacePicker";
+import { preflightTaskDraft, type TaskDraft } from "../model/taskClient";
+import { taskClientErrors } from "../model/taskClientErrors";
+import { parseTaskPreflightRequirements } from "../model/taskPreflight";
+import { resolveTaskTitle, TASK_TITLE_LIMIT } from "../model/taskTitle";
+import { TaskBudgetControls } from "./TaskBudgetControls";
+import { TaskFormAgent, TaskReviewerFields } from "./TaskFormAgent";
 import {
   ProjectDiscoveryStatus,
   RUN_TIME_LIMIT_OPTIONS,
-  INHERITED_RUN_TIME_LIMIT_OPTION,
   TaskExecutionMode,
+  TaskFormRow,
+  TaskFormSwitch,
 } from "./TaskFormFields";
+import { useTaskModelRouting } from "./TaskModelChoiceField";
+import { TargetChips } from "../../../shared/ui/TargetChips";
+import {
+  TaskResourceFields,
+  TaskTemplateMenu,
+  type PreparationState,
+} from "./TaskWorkflowControls";
+import {
+  isWorkspaceValid,
+  TaskWorkspacePicker,
+  taskWorkspaceScope,
+  useWorkspaceChecks,
+} from "./TaskWorkspacePicker";
+import { useTaskTargetMachine } from "./useTaskTargetMachine";
+import { TaskRunWithRow, useRunWith } from "./TaskRunWith";
+import "./task-form.css";
+
+type SubmitMode = "todo" | "queued" | "save";
 
 export function TaskForm({
   draft: inputDraft,
@@ -46,6 +58,7 @@ export function TaskForm({
   machines,
   machine,
   todoUnsupported,
+  crewPreselected = false,
   saving,
   onChange,
   onCancel,
@@ -54,25 +67,25 @@ export function TaskForm({
   draft: TaskDraft;
   recents: RecentProject[];
   machines: RemoteMachine[];
-  /** The machine whose host would run this draft, when it is connected. */
+  /** The machine whose host would run this draft, when connected. */
   machine?: string;
-  /** Why a to-do item cannot be added on that machine, when it cannot. */
   todoUnsupported?: string;
+  /** The caller chose the crew: its row and the crew's Access stay hidden while the crew resolves. */
+  crewPreselected?: boolean;
   saving: boolean;
   onChange: (draft: TaskDraft) => void;
   onCancel: () => void;
-  /** `todo` and `queued` add a new task; `save` keeps an edited task's status. */
-  onSubmit: (mode: "todo" | "queued" | "save", draft: TaskDraft) => void;
+  onSubmit: (mode: SubmitMode, draft: TaskDraft) => void;
 }) {
   useLocale();
+  const projectLabels = useProjectLabels();
+  const format = useFormat();
+  const formId = useId();
+  const reasonId = useId();
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
-  const [submitMode, setSubmitMode] = useState<"todo" | "queued" | "save">("todo");
   const [workspaceChecks, patchWorkspaceChecks] = useWorkspaceChecks();
-  const [crewValid, setCrewValid] = useState(true);
-  const [preflightResult, setPreflightResult] = useState<{
-    key: string;
-    report: TaskPreflightReport;
-  }>();
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [submitMode, setSubmitMode] = useState<SubmitMode>("queued");
   const {
     targetId,
     target,
@@ -92,380 +105,518 @@ export function TaskForm({
     !inputDraft.id,
     inputDraft.modelChoice,
   );
+  const routing = useModelRouting(targetId || undefined, routingSupported);
   const draft =
     choice === inputDraft.modelChoice ? inputDraft : { ...inputDraft, modelChoice: choice };
-  // Account profiles are local to this computer; other hosts keep their own account choice.
-  const localAccounts = Boolean(target && isLocalSyncMachine(target));
-  const workspaceValid = isWorkspaceValid(draft.workspace, workspaceChecks);
-  const preflightKey = JSON.stringify([
-    draft.cwd,
-    targetId,
-    draft.harness,
-    draft.model,
-    draft.modelChoice,
-    draft.workspace,
-    draft.preflightRequirements,
-  ]);
-  // A to-do item is mostly title and description; the agent comes later.
-  const [agentOpen, setAgentOpen] = useState(false);
-  // Advanced starts closed; a task that already uses any of it opens it.
-  const [advancedOpen, setAdvancedOpen] = useState(
-    () =>
-      Boolean(draft.verifyCommand?.trim()) ||
-      Boolean(draft.budget) ||
-      Boolean(draft.preflightRequirements?.length) ||
-      draft.modelSettings[CROSS_SUBAGENTS_KEY] !== undefined ||
-      Boolean(draft.workflowId),
-  );
   const update = <K extends keyof TaskDraft>(key: K, value: TaskDraft[K]) =>
     onChange({ ...draft, [key]: value });
-  const hasDescription = draft.prompt.trim().length > 0;
-  const ready =
-    (!!draft.crewDefinitionId || (!workspaceBusy && workspaceValid)) &&
-    (!draft.crewDefinitionId || crewValid) &&
-    draft.title.trim().length > 0 &&
+  const isEdit = Boolean(draft.id);
+  const hasCrew = draft.executor?.kind === "crew";
+  const runWith = useRunWith(draft.cwd, targetId, draft.executor);
+  const { crew, valid: crewValid, loading: crewLoading } = runWith;
+  // A preselected crew that fails to resolve brings the picker back so the draft can recover.
+  const showCrewRows = !crewPreselected || (!crewValid && !crewLoading);
+  // The Host refuses these combinations and says which option to change; show it before sending.
+  const executorIssue = hasCrew ? crewIncompatibility(draft)?.reason : undefined;
+  const { preparation, requirementsError } = useTaskPreparation(machines, draft, target, saving);
+  const workspaceValid = isWorkspaceValid(
+    draft.workspace,
+    workspaceChecks,
+    taskWorkspaceScope(target, draft.cwd),
+  );
+  const hasDescription = Boolean(draft.prompt.trim());
+  const titleTooLong = draft.title.trim().length > TASK_TITLE_LIMIT;
+  const titleValid = isEdit
+    ? Boolean(draft.title.trim()) && !titleTooLong
+    : Boolean(resolveTaskTitle(draft.title, draft.prompt));
+  const projectValid =
     looksLikeProject(draft.cwd) &&
+    (isEdit || backgroundMachineFor(machines, draft.cwd)?.id === targetId);
+  const ready =
+    titleValid &&
+    projectValid &&
     draft.model.length > 0 &&
     machine != null &&
-    (draft.id != null || backgroundMachineFor(machines, draft.cwd)?.id === targetId);
+    !workspaceBusy &&
+    (hasCrew ? crewValid && !executorIssue : workspaceValid) &&
+    !requirementsError;
+  const canStart = ready && hasDescription;
   const canTodo = ready && !todoUnsupported;
   const canSave = ready && (draft.status === "todo" || hasDescription);
-  const projectName = projectDisplayName(draft.cwd);
-  // Why a footer action is unavailable, shown as its tooltip.
-  const blockedReason = !draft.title.trim()
-    ? t("Add a title to continue.")
-    : !looksLikeProject(draft.cwd)
-      ? t("Choose a project.")
-      : machine == null
-        ? TASK_MACHINE_ERROR
-        : !draft.crewDefinitionId && (workspaceBusy || !workspaceValid)
-          ? t("Check the working branch under Advanced.")
-          : undefined;
-  const startReason = hasDescription
-    ? blockedReason
-    : t("Add a description to start this with an agent.");
-  const todoReason = blockedReason ?? (todoUnsupported || undefined);
+  const underivedTitle = !titleValid && !titleTooLong && !isEdit && hasDescription;
+  let reason: string | undefined;
+  if (!saving) {
+    if (!machine && (looksLikeProject(draft.cwd) || !target)) {
+      reason = taskClientErrors.machine();
+    } else if (workspaceBusy) {
+      reason = t("Creating the integration worktree…");
+    } else if (executorIssue) {
+      reason = executorIssue;
+    } else if (!hasCrew && !workspaceValid) {
+      reason = t("Check the selected working copy.");
+    } else if (!optionsOpen && requirementsError) {
+      reason = requirementsError;
+    } else if (!optionsOpen && !crewValid) {
+      reason = crewLoading ? t("Loading crews…") : t("Choose an available crew in More options.");
+    } else if (!isEdit && projectValid && machine) {
+      reason = todoUnsupported;
+    }
+  }
+  const submit = (mode: SubmitMode) => {
+    if (saving || !(mode === "save" ? canSave : mode === "queued" ? canStart : canTodo)) return;
+    setSubmitMode(mode);
+    onSubmit(mode, draft);
+  };
+  const limit = draft.maxRunMinutes;
+  const limitLabel =
+    RUN_TIME_LIMIT_OPTIONS.find((option) => option.value === String(limit))?.label ??
+    (limit === undefined ? undefined : format.formatDuration(limit * 60_000));
+  const defaultLimit = routing.state?.defaultMaxRunMinutes;
+  const defaultLimitLabel = routing.state
+    ? `${t("Default")} · ${defaultLimit ? format.formatDuration(defaultLimit * 60_000) : t("No limit")}`
+    : t("Default");
+  const timeLimitOptions = [
+    { value: "inherit", label: defaultLimitLabel },
+    ...RUN_TIME_LIMIT_OPTIONS,
+  ];
+  const requirementCount = draft.preflightRequirements?.length ?? 0;
+  const optionSummary = [
+    limit === 0 ? t("No time limit") : limitLabel,
+    draft.verifyCommand.trim(),
+    !hasCrew && draft.helpers?.mode === "off" ? t("Subagents off") : undefined,
+    draft.budget ? t("Run budget") : undefined,
+    requirementCount
+      ? t("Resources ({p0})", { p0: format.formatNumber(requirementCount) })
+      : undefined,
+    showCrewRows
+      ? draft.executor?.kind === "auto"
+        ? t("Auto")
+        : (crew?.name ?? (hasCrew ? t("Crew") : undefined))
+      : undefined,
+    !hasCrew && draft.review && draft.reviewerConfig ? t("Reviewer profile") : undefined,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const workspaceMode =
+    draft.isolate === undefined
+      ? t("Automatic")
+      : draft.isolate
+        ? t("Separate worktree")
+        : t("Shared checkout");
+  const workspaceLabel = draft.workspace?.baseBranch
+    ? `${workspaceMode} · ${draft.workspace.baseBranch}`
+    : workspaceMode;
   return (
     <form
-      aria-label={draft.id ? t("Edit task") : t("New task")}
+      id={formId}
+      aria-label={isEdit ? t("Edit task") : t("New task")}
       aria-busy={saving}
+      className="task-form"
       onSubmit={(event) => {
         event.preventDefault();
-        if (saving) return;
-        if (draft.id) {
-          if (canSave) {
-            setSubmitMode("save");
-            onSubmit("save", draft);
-          }
-        } else if (canTodo) {
-          setSubmitMode("todo");
-          onSubmit("todo", draft);
-        }
+        submit(isEdit ? "save" : "queued");
       }}
-      className="task-form"
     >
       <div className="task-form-body">
         <FieldGroup variant="bare" disabled={saving} inert={saving}>
-          <div {...surfaceAttributes({ frame: "none" }, "task-form-fields")}>
+          <div className="task-form-fields">
             <TextField
               label={t("Task title")}
+              hideLabel
+              appearance="quiet"
+              textSize="title"
+              weight="medium"
               autoFocus
-              aria-label={t("Task title")}
+              aria-required={isEdit || undefined}
               value={draft.title}
               onChange={(event) => update("title", event.target.value)}
-              placeholder={t("What should get done?")}
+              placeholder={isEdit ? t("What should get done?") : t("Title (optional)")}
+              error={
+                titleTooLong
+                  ? t("The title must be at most 200 characters. Shorten it before saving.")
+                  : underivedTitle
+                    ? t("Add a title to continue.")
+                    : undefined
+              }
             />
-            <div className="task-form-targets">
-              <div className="task-form-targets-row">
-                {!draft.id ? (
-                  <SearchableSelect
-                    label={t("Machine")}
-                    value={targetId}
-                    options={machineOptions}
-                    onChange={(id) => {
+            <SkillPromptField
+              value={draft.prompt}
+              harness={draft.harness}
+              cwd={draft.cwd}
+              onChange={(prompt) => update("prompt", prompt)}
+              label={t("Description")}
+              placeholder={t("Details, acceptance criteria, links…")}
+              surface="raised"
+              frameProps={{ "data-task-prompt": "" }}
+            />
+            <TargetChips
+              disabled={saving}
+              machine={{
+                value: targetId,
+                options: machineOptions,
+                currentLabel: machine,
+                onChange: isEdit
+                  ? undefined
+                  : (machineId) =>
                       onChange({
                         ...draft,
-                        machineId: id,
+                        machineId,
                         modelChoice: undefined,
-                        providerAccountId: defaultAccountFor(draft.harness, id),
-                        crewDefinitionId: undefined,
+                        providerAccountId: defaultAccountFor(draft.harness, machineId),
+                        executor: undefined,
                         workspace: undefined,
-                        cwd: firstProjectOn(recents, id),
-                      });
-                    }}
-                  />
-                ) : null}
-                {draft.id ? (
-                  // A task stays in the project it was created for.
-                  <Text truncate size="inherit" tone="inherit">
-                    {projectName}
-                  </Text>
-                ) : (
-                  <SearchableSelect
-                    label={t("Project")}
-                    placeholder={t("Choose project")}
-                    value={draft.cwd}
-                    options={projectChoices(recents, {
-                      include: draft.cwd,
-                    }).map((entry) => ({
-                      value: entry.path,
-                      label: projectDisplayName(entry.path),
-                      keywords: entry.path,
-                    }))}
-                    onChange={(cwd) =>
+                        cwd: firstProjectOn(recents, machineId),
+                      }),
+              }}
+              project={{
+                value: draft.cwd,
+                currentLabel: looksLikeProject(draft.cwd)
+                  ? projectDisplayNameFrom(draft.cwd, projectLabels)
+                  : undefined,
+                options: projectChoices(recents, { include: draft.cwd }).map((entry) => ({
+                  value: entry.path,
+                  label: projectDisplayNameFrom(entry.path, projectLabels),
+                  keywords: entry.path,
+                })),
+                onChange: isEdit
+                  ? undefined
+                  : (cwd) =>
                       onChange({
                         ...draft,
                         cwd,
-                        modelChoice: draft.id ? draft.modelChoice : undefined,
+                        modelChoice: undefined,
                         workspace: undefined,
-                        crewDefinitionId: undefined,
-                      })
-                    }
+                        executor: undefined,
+                      }),
+              }}
+              model={
+                !hasCrew ? (
+                  <TaskFormAgent
+                    draft={draft}
+                    target={target}
+                    routingSupported={routingSupported}
+                    localAccounts={Boolean(target && isLocalSyncMachine(target))}
+                    defaultAccountFor={defaultAccountFor}
+                    update={update}
+                    onChange={onChange}
                   />
-                )}
-                <ProjectDiscoveryStatus state={projectState} />
-              </div>
-              <Text
-                as="div"
-                size="caption"
-                tone="secondary"
-                leading="inherit"
-                className="task-form-targets-note"
-              >
-                {target && !looksLikeProject(draft.cwd) ? (
-                  <span>{t("Choose project")}</span>
-                ) : machine && draft.id ? (
-                  <Text truncate size="inherit" tone="inherit">
-                    {t("Runs on ")}
-                    {machine}
-                  </Text>
-                ) : !machine ? (
-                  <InlineMessage tone="warning" live="assertive">
-                    {TASK_MACHINE_ERROR}
-                  </InlineMessage>
-                ) : null}
-                {!draft.id && todoUnsupported ? (
-                  <InlineMessage tone="warning">{todoUnsupported}</InlineMessage>
-                ) : null}
-              </Text>
-            </div>
-            <section className="task-form-description">
-              <SectionLabel>{t("Description")}</SectionLabel>
-              <SkillPromptField
-                value={draft.prompt}
-                harness={draft.harness}
-                cwd={draft.cwd}
-                onChange={(prompt) => update("prompt", prompt)}
-                label={t("Description")}
-                placeholder={t("Details, acceptance criteria, links…")}
-                surface="raised"
-                frameProps={{ "data-task-prompt": "" }}
-              />
-            </section>
-            <CrewTaskPicker
-              cwd={draft.cwd}
-              machineId={targetId}
-              value={draft.crewDefinitionId}
-              disabled={saving || draft.workspaceLocked}
-              onChange={(crewDefinitionId) => onChange({ ...draft, crewDefinitionId })}
-              onValidityChange={setCrewValid}
-            />
-            {draft.crewDefinitionId ? (
-              <Text
-                as="div"
-                size="caption"
-                tone="secondary"
-                leading="inherit"
-                className="task-form-context"
-              >
-                <AccessPicker
-                  value={draft.runtimeMode}
-                  onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
-                />
-                <SearchableSelect
-                  hideLabel
-                  variant="pill"
-                  searchable={false}
-                  label={t("Time limit")}
-                  value={
-                    draft.maxRunMinutes === undefined ? "inherit" : String(draft.maxRunMinutes)
-                  }
-                  options={[INHERITED_RUN_TIME_LIMIT_OPTION, ...RUN_TIME_LIMIT_OPTIONS]}
-                  onChange={(value) =>
-                    update("maxRunMinutes", value === "inherit" ? undefined : Number(value))
-                  }
-                />
-              </Text>
-            ) : null}
-            {draft.crewDefinitionId ? null : (
-              <TaskFormAgent
-                draft={draft}
-                target={target}
-                routingSupported={routingSupported}
-                update={update}
-                onChange={onChange}
-                open={agentOpen}
-                onOpenChange={setAgentOpen}
-                localAccounts={localAccounts}
-                defaultAccountFor={defaultAccountFor}
-              />
-            )}
-            <Disclosure
-              variant="row"
-              className="task-form-advanced"
-              bodyDividers="pane"
-              open={advancedOpen}
-              onOpenChange={setAdvancedOpen}
-              summary={t("Advanced")}
-            >
-              <Text
-                as="div"
-                size="caption"
-                tone="inherit"
-                leading="inherit"
-                className="task-form-section"
-              >
-                <TextField
-                  label={t("Check command")}
-                  value={draft.verifyCommand}
-                  onChange={(event) => update("verifyCommand", event.target.value)}
-                  placeholder={"npm test"}
-                  spellCheck={false}
-                  monospace
-                />
-              </Text>
-              {!draft.crewDefinitionId ? (
-                <Checkbox
-                  label={t("Allow subagents")}
-                  checked={draft.modelSettings[CROSS_SUBAGENTS_KEY] !== "[]"}
-                  disabled={saving}
-                  onChange={(event) =>
-                    update("modelSettings", {
-                      ...draft.modelSettings,
-                      [CROSS_SUBAGENTS_KEY]: event.currentTarget.checked
-                        ? AUTOMATIC_SUBAGENTS
-                        : "[]",
-                    })
-                  }
-                />
-              ) : null}
-              {!draft.crewDefinitionId ? (
-                <Disclosure
-                  className="task-advanced-options"
-                  summary={t("Working branch and worktree")}
-                >
-                  <div className="task-form-section-body">
-                    <TaskExecutionMode
-                      isolate={draft.isolate}
-                      disabled={saving || draft.workspaceLocked}
-                      onChange={(isolate) => update("isolate", isolate)}
-                    />
-                    <TaskWorkspacePicker
-                      headingHidden
-                      machine={target}
-                      cwd={draft.cwd}
-                      value={draft.workspace}
-                      onChange={(workspace) => update("workspace", workspace)}
-                      disabled={saving || draft.workspaceLocked}
-                      branchName={draft.isolate === true}
-                      isolate={draft.isolate}
-                      onBusyChange={setWorkspaceBusy}
-                      onChecksChange={patchWorkspaceChecks}
-                    />
-                  </div>
-                </Disclosure>
-              ) : null}
-              <TaskWorkflowControls
-                scope={{ machineId: targetId, projectId: draft.cwd }}
-                draft={{
-                  prompt: draft.prompt,
-                  verifyCommand: draft.verifyCommand,
-                  review: draft.review,
-                  reviewerConfig: draft.reviewerConfig,
-                  modelSettings: draft.modelSettings,
-                  requirements: draft.preflightRequirements,
-                }}
-                busy={saving}
-                preflight={
-                  preflightResult?.key === preflightKey ? preflightResult.report : undefined
-                }
-                onCheck={async () =>
-                  setPreflightResult({
-                    key: preflightKey,
-                    report: await preflightTaskDraft(machines, draft),
-                  })
-                }
-                onApply={(value, profile) =>
-                  onChange({
-                    ...draft,
-                    prompt: value.prompt,
-                    verifyCommand: value.verifyCommand ?? draft.verifyCommand,
-                    review: value.review ?? draft.review,
-                    reviewerConfig: value.reviewerConfig ?? draft.reviewerConfig,
-                    modelSettings: value.modelSettings ?? draft.modelSettings,
-                    preflightRequirements: value.requirements ?? draft.preflightRequirements,
-                    ...(profile
-                      ? {
-                          workflowId: profile.id,
-                          workflowVersion: Math.max(1, profile.updatedAt),
+                ) : null
+              }
+              access={
+                !hasCrew && draft.harness !== "fx" ? (
+                  <AccessPicker
+                    value={draft.runtimeMode}
+                    onChange={(mode) => update("runtimeMode", mode)}
+                  />
+                ) : null
+              }
+              workingCopy={
+                <TaskWorkspacePicker
+                  headingHidden
+                  machine={target}
+                  cwd={draft.cwd}
+                  value={draft.workspace}
+                  onChange={(workspace) => update("workspace", workspace)}
+                  disabled={saving || draft.workspaceLocked || hasCrew}
+                  branchName={draft.isolate === true}
+                  isolate={draft.isolate}
+                  onBusyChange={setWorkspaceBusy}
+                  onChecksChange={patchWorkspaceChecks}
+                  render={(fields) =>
+                    !hasCrew ? (
+                      <WorkspacePicker
+                        presentation="chip"
+                        label={workspaceLabel}
+                        worktree={draft.isolate === true || Boolean(draft.workspace?.checkoutCwd)}
+                        enabled={!saving && Boolean(machine)}
+                        content={
+                          <>
+                            <TaskExecutionMode
+                              isolate={draft.isolate}
+                              disabled={workspaceBusy || draft.workspaceLocked}
+                              onChange={(isolate) => update("isolate", isolate)}
+                            />
+                            {fields}
+                          </>
                         }
-                      : {}),
-                  })
-                }
-              />
-              <TaskBudgetControls
-                budget={draft.budget}
-                onChange={(budget) => update("budget", budget)}
-              />
+                      />
+                    ) : null
+                  }
+                />
+              }
+            />
+            <ProjectDiscoveryStatus state={projectState} />
+            {!hasCrew ? (
+              <Surface
+                frame="pane"
+                radius="row"
+                dividers="pane"
+                padding="sm"
+                className="task-form-rows"
+              >
+                <TaskFormSwitch
+                  label={t("Review with a second agent")}
+                  checked={draft.review}
+                  onChange={(review) => update("review", review)}
+                />
+                <TaskFormSwitch
+                  label={t("Keep fixing until done")}
+                  help={t("Keeps correcting while progress is made; asks for input when needed.")}
+                  checked={draft.continueUntilDone}
+                  onChange={(value) => update("continueUntilDone", value)}
+                />
+              </Surface>
+            ) : null}
+            <Disclosure
+              variant="compact"
+              open={optionsOpen}
+              onOpenChange={setOptionsOpen}
+              summary={
+                <>
+                  {t("More options")}
+                  {!optionsOpen && optionSummary ? (
+                    <Text truncate size="caption" tone="muted" className="task-form-summary-hint">
+                      · {optionSummary}
+                    </Text>
+                  ) : null}
+                </>
+              }
+            >
+              <div className="task-more-options">
+                <Surface
+                  frame="pane"
+                  radius="row"
+                  dividers="pane"
+                  padding="sm"
+                  className="task-form-rows"
+                >
+                  <TaskFormRow label={t("Time limit")}>
+                    <SearchableSelect
+                      label={t("Time limit")}
+                      hideLabel
+                      variant="pill"
+                      align="end"
+                      searchable={false}
+                      value={limit === undefined ? "inherit" : String(limit)}
+                      options={
+                        limit !== undefined &&
+                        !RUN_TIME_LIMIT_OPTIONS.some((option) => option.value === String(limit))
+                          ? [
+                              ...timeLimitOptions,
+                              { value: String(limit), label: limitLabel ?? String(limit) },
+                            ]
+                          : timeLimitOptions
+                      }
+                      onChange={(value) =>
+                        update("maxRunMinutes", value === "inherit" ? undefined : Number(value))
+                      }
+                    />
+                  </TaskFormRow>
+                  <TaskFormRow
+                    label={
+                      <span className="inline-flex items-center gap-1">
+                        {t("Check command")}
+                        <InfoPopover>
+                          {t("Runs after the agent finishes to check the result.")}
+                        </InfoPopover>
+                      </span>
+                    }
+                  >
+                    <TextField
+                      label={t("Check command")}
+                      hideLabel
+                      fieldVariant="compact"
+                      monospace
+                      spellCheck={false}
+                      placeholder="npm test"
+                      value={draft.verifyCommand}
+                      onChange={(event) => update("verifyCommand", event.target.value)}
+                    />
+                  </TaskFormRow>
+                  {!hasCrew ? (
+                    <TaskFormSwitch
+                      label={t("Allow subagents")}
+                      checked={draft.helpers?.mode !== "off"}
+                      onChange={(value) => update("helpers", value ? undefined : { mode: "off" })}
+                    />
+                  ) : null}
+                  <TaskBudgetControls
+                    compact
+                    budget={draft.budget}
+                    onChange={(budget) => update("budget", budget)}
+                  />
+                  <TaskResourceFields
+                    requirements={draft.preflightRequirements ?? []}
+                    onChange={(value) => update("preflightRequirements", value)}
+                    preparation={preparation}
+                  />
+                  {runWith.offered ? (
+                    <TaskRunWithRow
+                      runWith={runWith}
+                      executor={draft.executor}
+                      disabled={draft.workspaceLocked || workspaceBusy}
+                      issue={executorIssue}
+                      choiceHidden={!showCrewRows}
+                      onChange={(executor) => update("executor", executor)}
+                    >
+                      {hasCrew ? (
+                        <TaskFormRow label={t("Access")}>
+                          <AccessPicker
+                            value={draft.runtimeMode}
+                            onChange={(mode) => update("runtimeMode", mode)}
+                          />
+                        </TaskFormRow>
+                      ) : null}
+                    </TaskRunWithRow>
+                  ) : null}
+                </Surface>
+                {!hasCrew && draft.review ? (
+                  <Surface
+                    frame="pane"
+                    radius="row"
+                    dividers="pane"
+                    padding="sm"
+                    className="task-form-rows"
+                  >
+                    <TaskReviewerFields draft={draft} update={update} />
+                  </Surface>
+                ) : null}
+              </div>
             </Disclosure>
           </div>
         </FieldGroup>
       </div>
-      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "task-form-footer")}>
-        <Button variant="ghost" type="button" disabled={saving} onClick={onCancel}>
-          {t("Cancel")}
-        </Button>
-        {draft.id ? (
-          <Button
-            variant="primary"
-            type="submit"
-            loading={saving}
-            disabled={!canSave || saving}
-            disabledReason={
-              canSave || saving ? undefined : (blockedReason ?? t("Add a description to save."))
-            }
-          >
-            {t("Save")}
+      <ModalFooter>
+        <ModalActions
+          start={
+            <TaskTemplateMenu
+              scope={{ machineId: targetId, projectId: draft.cwd }}
+              templateId={draft.workflowId}
+              draft={{
+                prompt: draft.prompt,
+                verifyCommand: draft.verifyCommand,
+                review: draft.review,
+                reviewerConfig: draft.reviewerConfig,
+                modelSettings: draft.modelSettings,
+                requirements: draft.preflightRequirements,
+              }}
+              busy={saving}
+              onApply={(value, profile) =>
+                onChange({
+                  ...draft,
+                  prompt: value.prompt,
+                  verifyCommand: value.verifyCommand ?? draft.verifyCommand,
+                  review: value.review ?? draft.review,
+                  ...(value.reviewerConfig ? { reviewerConfig: value.reviewerConfig } : {}),
+                  modelSettings: value.modelSettings ?? draft.modelSettings,
+                  preflightRequirements: value.requirements ?? draft.preflightRequirements,
+                  workflowId: profile.id,
+                  workflowVersion: Math.max(1, profile.updatedAt),
+                })
+              }
+            />
+          }
+          reason={reason}
+          reasonId={reasonId}
+        >
+          <Button variant="ghost" type="button" disabled={saving} onClick={onCancel}>
+            {t("Cancel")}
           </Button>
-        ) : (
-          <>
+          {!isEdit ? (
             <Button
               variant="secondary"
               type="button"
-              disabled={!ready || !hasDescription || saving}
-              loading={saving && submitMode === "queued"}
-              tooltip={ready && hasDescription ? t("Queues it for an agent now.") : undefined}
-              disabledReason={(ready && hasDescription) || saving ? undefined : startReason}
-              onClick={() => {
-                setSubmitMode("queued");
-                onSubmit("queued", draft);
-              }}
-            >
-              {t(draft.crewDefinitionId ? "Start with crew" : "Add and start")}
-            </Button>
-            <Button
-              variant="primary"
-              type="submit"
-              loading={saving && submitMode === "todo"}
               disabled={!canTodo || saving}
-              tooltip={canTodo ? t("Saves it without running.") : undefined}
-              disabledReason={canTodo || saving ? undefined : todoReason}
+              loading={saving && submitMode === "todo"}
+              aria-describedby={!canTodo && reason ? reasonId : undefined}
+              onClick={() => submit("todo")}
             >
               {t("Add to To do")}
             </Button>
-          </>
-        )}
-      </div>
+          ) : null}
+          <Button
+            variant="primary"
+            type="submit"
+            form={formId}
+            disabled={!(isEdit ? canSave : canStart) || saving}
+            aria-describedby={
+              !(isEdit ? canSave : canStart) && reason && reason !== todoUnsupported
+                ? reasonId
+                : undefined
+            }
+            loading={saving && submitMode !== "todo"}
+          >
+            {isEdit ? t("Save") : t("Start")}
+          </Button>
+        </ModalActions>
+      </ModalFooter>
     </form>
   );
+}
+
+function useTaskPreparation(
+  machines: RemoteMachine[],
+  draft: TaskDraft,
+  target: RemoteMachine | undefined,
+  saving: boolean,
+) {
+  const [revision, retry] = useState(0);
+  const [answer, setAnswer] = useState<{ key: string; result: PreparationState }>();
+  let requirementsError: string | undefined;
+  try {
+    parseTaskPreflightRequirements(draft.preflightRequirements);
+  } catch {
+    requirementsError = t("Check the resource references. Each needs a unique, valid reference.");
+  }
+  const enabled =
+    !requirementsError &&
+    Boolean(target && looksLikeProject(draft.cwd) && draft.preflightRequirements?.length);
+  const key = JSON.stringify([
+    taskWorkspaceScope(target, draft.cwd),
+    draft.harness,
+    draft.providerAccountId,
+    draft.model,
+    draft.modelChoice,
+    draft.modelSettings,
+    draft.isolate,
+    draft.workspace,
+    draft.executor,
+    draft.preflightRequirements,
+    revision,
+  ]);
+  const [currentKey, setCurrentKey] = useState(key);
+  if (currentKey !== key) {
+    setCurrentKey(key);
+    setAnswer(undefined);
+  }
+  const check = useEffectEvent(() => preflightTaskDraft(machines, { ...draft, title: "" }));
+  // Debounce edits and ignore answers from older resource lists or Host targets.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- runs the debounced preparation check timer for the current resource list and drops late Host answers
+  useEffect(() => {
+    if (!enabled || saving) return;
+    let current = true;
+    const timer = setTimeout(() => {
+      void check().then(
+        (report) => {
+          if (current) setAnswer({ key, result: { report } });
+        },
+        (error) => {
+          if (current)
+            setAnswer({ key, result: { error: presentRemoteError(error, { explicit: true }) } });
+        },
+      );
+    }, 350);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [enabled, key, saving]);
+  const preparation: PreparationState = requirementsError
+    ? { error: requirementsError }
+    : !enabled
+      ? {}
+      : answer?.key === key
+        ? { ...answer.result, retry: () => retry((value) => value + 1) }
+        : { pending: true };
+  return { preparation, requirementsError };
 }

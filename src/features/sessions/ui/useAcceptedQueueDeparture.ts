@@ -45,6 +45,9 @@ export function useAcceptedQueueDeparture(messages: QueuedMessage[], delivery?: 
 }
 
 export type MessageQueueProps = {
+  references?: import("./ComposerHighlight").ComposerReferenceContext;
+  /** Scope of the `/` and `@` menus in the queued message editor. */
+  suggestions?: import("./QueuedEditSuggestions").QueuedEditSuggestionScope;
   sessionId?: string;
   parentSessionId?: string;
   messages: QueuedMessage[];
@@ -53,6 +56,8 @@ export type MessageQueueProps = {
   /** The turn runs on another machine: it cannot be steered, and the queue is this app's. */
   remote?: boolean;
   busy?: boolean;
+  /** The turn has ended and the queue waits for the conversation's delegated subagents. */
+  waitingOnSubagents?: boolean;
   /** The running turn's model and settings, for rows that must wait for their own turn. */
   runningTarget?: {
     harness: HarnessId;
@@ -61,6 +66,8 @@ export type MessageQueueProps = {
     runningModelTarget?: ModelTarget;
   };
   steerSupported?: boolean;
+  /** The conversation's provider and current account: a row for that provider runs on it. */
+  account?: { harness: HarnessId; providerAccountId?: string };
   onDelete?: (messageId: string) => QueueRemoval;
   onEdit?: (messageId: string, text: string, attachments: Attachment[]) => void;
   onEditingChange?: (messageId?: string) => void;

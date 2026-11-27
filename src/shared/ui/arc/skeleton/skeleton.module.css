@@ -6,7 +6,7 @@
   align-items: flex-start;
   gap: var(--space-4);
 }
-/* A calm, finite pulse: each block dims a beat after the one above it, then rests after about 20 seconds. */
+/* Placeholder tone: a translucent neutral fill; the finite shimmer below lights it. */
 .shape {
   display: block;
   flex: 0 0 auto;
@@ -39,27 +39,46 @@
   position: relative;
   display: flow-root;
 }
-@keyframes skeleton-pulse {
-  0%,
-  100% {
-    opacity: 1;
+/* One soft band of light sweeps across the window. The band is anchored to the viewport
+   (`background-attachment: fixed`), so every shape on screen is lit by the same sweep and a
+   composed layout reads as one surface instead of many blinking bars. Only background-position
+   animates (a repaint of these few small boxes, no layout), and the sweep rests after about
+   20 seconds like the other loading loops. */
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: -40vw 0;
   }
-  50% {
-    opacity: 0.52;
+  /* Cross the window, then rest a beat before the next sweep. */
+  75%,
+  100% {
+    background-position: 100vw 0;
   }
 }
 /* The shapes stay visible and still under reduced motion or with decorative motion off. */
 @media (prefers-reduced-motion: no-preference) {
   .shape {
-    animation: skeleton-pulse var(--motion-pulse-duration) var(--motion-ease-standard)
-      calc(var(--index, 0) * 90ms) 11 both;
+    background-image: linear-gradient(
+      100deg,
+      transparent 15%,
+      var(--ui-fill-strong) 50%,
+      transparent 85%
+    );
+    background-repeat: no-repeat;
+    background-size: 40vw 100%;
+    background-attachment: fixed;
+    background-position: -40vw 0;
+    animation: skeleton-shimmer var(--motion-pulse-duration) ease-in-out 11 both;
   }
   :global(html[data-decorative-motion="off"]) .shape {
     animation: none;
+    background-image: none;
   }
 }
 
+/* A custom placeholder takes the full box of a Skeleton its parent stretches (a dialog body), so a
+   layout-shaped copy can fill it; otherwise the box is the placeholder's own height. */
 .custom {
+  align-self: stretch;
   inline-size: 100%;
   min-inline-size: 0;
 }

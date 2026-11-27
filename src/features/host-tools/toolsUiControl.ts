@@ -29,6 +29,7 @@ export type ToolsUiInput = {
 };
 export type ToolsUiState = {
   open: boolean;
+  openedPanelId?: string;
   placement: ToolsPlacement;
   visible?: boolean;
   presentation?: "docked" | "detached";
@@ -38,6 +39,7 @@ export type ToolsUiState = {
     machine: string;
     mounted?: boolean;
     presentationKnown?: boolean;
+    presentation?: "docked" | "detached";
     visible?: boolean;
   }[];
 };

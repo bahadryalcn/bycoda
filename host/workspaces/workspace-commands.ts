@@ -2,30 +2,36 @@ import { replaceHostContent } from "./workspace-replace";
 import { joined, alreadyExists } from "./workspace-path-labels";
 import { moveWithRecovery } from "./cross-volume-move";
 import { renameWithRetry } from "../storage/rename-retry";
-import { execFileAsync as exec } from "../../src/shared/lib/processExecution.node";
+import { hostGitExec } from "../git/git-exec-pool";
 import {
   gitMutationScope,
   hostGitRepositoryKey,
   isBranchDeliveryCommand,
   isHostGitMutation,
-  isManagedWorkspaceBranch,
   MANAGED_DELIVERY_REVIEW_REQUIRED,
   withHostGitMutation,
 } from "../git/git-mutations";
+import { isManagedWorkspaceBranch } from "../managed/workspace-branch-naming";
 import type { WorkspaceRpcRequest } from "./workspace-rpc-contracts";
 import type {
   BranchDeliveryService,
   WorkspaceOwnerAuthorization,
   WorkspaceRegistry,
 } from "./workspace-service-contracts";
-import { constants } from "node:fs";
+import { constants, type BigIntStats } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { cp, lstat, mkdir, open, readFile, readdir, realpath, rm, stat } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, relative, resolve } from "node:path";
 import type { FileMtime, FsEntry, GitPr, ProjectFile } from "../../src/platform/tauri/fs";
 import { hostUnmerged, unmergedMessage } from "../git/git-conflicts";
-import { hostWorktrees } from "../git/git-worktrees";
-import { hostGitSubmodules } from "../git/git-submodules";
+import {
+  hostWorktrees,
+  hostWorktreesWithState,
+  isCurrentProjectWorktree,
+} from "../git/git-worktrees";
+import { workspaceCleanupMembershipGeneration } from "../workspace-cleanup";
+import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps.ts";
+import { sharedHostGitSubmodules } from "../git/git-submodules";
 import { GhRuntime } from "../git/gh-runtime";
 import { createHostBranch, hostBranches, switchHostBranch } from "../git/git-branches";
 import {
@@ -44,14 +50,30 @@ import { HostCheckpoints } from "../checkpoints/checkpoints";
 import { fileRevertGeneration } from "../sessions/session-file-revert";
 import { browseHostFolder } from "../browser/browse";
 import { formatWorkspaceText } from "../files/editor-format";
+import { parseTextSliceRequest, readTextSlice, type TextSlice } from "./workspace-text-slice";
 import { listHostClaudeCommands } from "../providers/claude-commands";
 import {
   deleteHostSkill,
   exportHostSkill,
   importHostSkill,
-  listHostSkills,
+  listHostSkillsAsync,
 } from "../skills/skills";
 import { withWorkspaceMutation } from "./workspace-mutations";
+import {
+  fileChangedError,
+  fileVersion,
+  serializeTextSave,
+  statSaveTarget,
+} from "./workspace-text-save";
+import {
+  abortTextUpload,
+  beginTextUpload,
+  commitTextUpload,
+  MAX_EDIT_TEXT_BYTES,
+  stagedTextUploadPath,
+  sweepStaleTextUploads,
+  writeTextUploadChunk,
+} from "./workspace-text-upload";
 import { inspectConversationPath } from "../conversation/conversation-file-mutations";
 import { migrateSkillPolicy, setSkillEnabled } from "../skills/skill-policy";
 import {
@@ -95,7 +117,12 @@ export const WORKSPACE_COMMANDS = [
   "read_folder_entry",
   "read_file_chunk",
   "read_file_preview",
+  "read_text_file_slice",
   "write_text_file",
+  "write_file_begin",
+  "write_file_chunk",
+  "write_file_commit",
+  "write_file_abort",
   "stat_files",
   "create_path",
   "rename_path",
@@ -151,16 +178,43 @@ export type WorkspaceCommand = (typeof WORKSPACE_COMMANDS)[number];
 // Remote RPC has bounded request and response bodies. Keep file operations
 // within those bounds even after JSON escaping or base64 encoding.
 const MAX_TEXT_FILE = 1024 * 1024;
+export const PREVIEW_SCAN_BYTES = 8 * MAX_TEXT_FILE;
 const MAX_PREVIEW_FILE = 10 * 1024 * 1024;
 const MAX_TRANSFER_FILE = 1024 * 1024 * 1024;
 const MAX_TRANSFER_CHUNK = 1024 * 1024;
 const MAX_STAT_FILES = 64;
 const ROOTS_TTL_MS = 5_000;
-// Connections may own different command instances. Windows cannot replace the
-// same destination concurrently, so serialize canonical destinations host-wide.
-const textFileSaves = new Map<string, Promise<void>>();
+/** A known worktree list keeps admitting the paths it names this long; only a path no known
+ * list contains rescans every project. Each rescan runs `git worktree list` per project, and
+ * on Windows each spawn blocks the main thread: a Host with 124 projects stalled for seconds
+ * whenever worktree paths kept arriving after the short TTL. This Host's own worktree changes
+ * call `invalidateRoots`. */
+const ROOTS_ADMIT_MS = 10 * 60_000;
 
-type Located = { root: string; relative: string };
+/** A denial for a path inside a checkout that no registered project or listed worktree
+ * contains is remembered this long, so sibling paths do not each rescan every project. A
+ * worktree created outside this Host becomes visible once the entry expires. */
+const MISS_TTL_MS = 10_000;
+const MAX_MISSES = 256;
+
+/** The nearest folder at or above `path` that has a `.git` file or folder, if any. */
+async function gitCheckoutRoot(path: string): Promise<string | undefined> {
+  for (let current = path; ;) {
+    if (
+      await lstat(resolve(current, ".git")).then(
+        () => true,
+        () => false,
+      )
+    )
+      return current;
+    const parent = dirname(current);
+    if (parent === current) return undefined;
+    current = parent;
+  }
+}
+
+type WorkspaceRoot = { path: string; project?: string };
+type Located = { root: string; project: string; relative: string };
 
 /** Installed by the execution Host, never supplied in workspace.run arguments. */
 export interface WorkspaceCommandDelivery {
@@ -173,12 +227,18 @@ export class WorkspaceCommands {
   private searches = new Map<string, { owner: string; controller: AbortController }>();
   private cancelledSearches = new Map<string, number>();
   private revokedSearchOwners = new Map<string, number>();
-  private roots = new Map<string, { at: number; roots: string[] }>();
+  /** `complete` is false when the listing failed and `roots` is only the project folder. */
+  private roots = new Map<string, { at: number; roots: WorkspaceRoot[]; complete: boolean }>();
   private rootsGeneration = 0;
+  private cleanupGeneration = workspaceCleanupMembershipGeneration();
+  /** Denials only, keyed by physical checkout root; never an admission. */
+  private misses = new Map<string, { at: number; registry: number; generation: number }>();
 
   invalidateRoots(): void {
+    this.cleanupGeneration = workspaceCleanupMembershipGeneration();
     this.rootsGeneration++;
     this.roots.clear();
+    this.misses.clear();
   }
 
   constructor(
@@ -195,8 +255,13 @@ export class WorkspaceCommands {
       },
     ),
     private readonly delivery?: WorkspaceCommandDelivery,
-    private readonly gh = new GhRuntime(dirname(store.attachmentDir)),
-  ) {}
+    readonly gh = new GhRuntime(dirname(store.attachmentDir)),
+  ) {
+    // Uploads staged by an earlier Host process are dead; their temporaries are removed once.
+    sweepStaleTextUploads(dirname(store.attachmentDir)).catch(() => {
+      // The sweep reports nothing; an uncleaned temporary is retried on the next start.
+    });
+  }
 
   async reviewDelivery(request: WorkspaceRpcRequest<"workspaces.delivery.review">) {
     return await this.deliveryService().review(request);
@@ -237,6 +302,8 @@ export class WorkspaceCommands {
       isHostGitMutation(String(command)) ||
       [
         "write_text_file",
+        "write_file_begin",
+        "write_file_commit",
         "replace_project",
         "create_path",
         "rename_path",
@@ -255,7 +322,10 @@ export class WorkspaceCommands {
             ? [input.parent]
             : command === "copy_path" || command === "move_path"
               ? [input.from, input.destParent]
-              : [input.path];
+              : command === "write_file_commit"
+                ? // The staged upload, not the caller's `path`, names what the commit replaces.
+                  [stagedTextUploadPath(owner, input.uploadId)]
+                : [input.path];
     const releases: (() => Promise<void>)[] = [];
     try {
       if (mutating && this.delivery?.startMutation)
@@ -311,17 +381,46 @@ export class WorkspaceCommands {
     return await this.runCommand(command as WorkspaceCommand, input, owner, authorized);
   }
 
+  /**
+   * Managed by marker or by registry: the store's workspace records are the fail-safe when the
+   * Git marker is missing, and an unreadable marker counts as managed.
+   */
+  private async isManagedSource(root: string, reference: string): Promise<boolean> {
+    try {
+      if (await isManagedWorkspaceBranch(root, reference)) return true;
+      const branchRef = reference.startsWith("refs/heads/") ? reference : `refs/heads/${reference}`;
+      const repositoryId = await hostGitRepositoryKey(root);
+      return (await this.store.managedWorkspaces({ repositoryId })).some(
+        (workspace) => workspace.branchRef === branchRef,
+      );
+    } catch {
+      return true;
+    }
+  }
+
   private async assertLegacyDeliveryAllowed(command: string, input: Record<string, unknown>) {
-    if (command === "git_merge" && isManagedWorkspaceBranch(input.reference))
+    if (
+      command === "git_merge" &&
+      typeof input.reference === "string" &&
+      (await this.isManagedSource(await this.gitRoot(input.cwd), input.reference))
+    )
       throw new Error(MANAGED_DELIVERY_REVIEW_REQUIRED);
     if (!this.delivery) return; // Existing unregistered sessions keep legacy source control.
     const cwd = await this.gitRoot(input.cwd);
     const key = await hostGitRepositoryKey(cwd);
     const projects = await this.store.projects();
     const matching = await Promise.all(
-      projects.map(async (project) =>
-        (await hostGitRepositoryKey(project.cwd)) === key ? project : null,
-      ),
+      projects.map(async (project) => {
+        try {
+          return (await hostGitRepositoryKey(project.cwd)) === key ? project : null;
+        } catch (failure) {
+          const error = failure as NodeJS.ErrnoException;
+          // A removed project has no checkout to match. Keep Git metadata and other IO errors fatal.
+          if (error.code === "ENOENT" && error.syscall === "realpath" && error.path === project.cwd)
+            return null;
+          throw failure;
+        }
+      }),
     );
     const owners = matching.filter((project) => project !== null);
     if (!owners.length) throw new Error("Project is unavailable");
@@ -401,7 +500,7 @@ export class WorkspaceCommands {
       case "list_project_files":
         return await this.listProjectFiles(input.cwd);
       case "read_text_file":
-        return await this.readText(input.path);
+        return await this.readText(input.path, input.withVersion);
       case "format_text_file": {
         return this.existing(input.path).then(
           async ({ root, path }) =>
@@ -418,8 +517,27 @@ export class WorkspaceCommands {
         return await this.readFileChunk(input);
       case "read_file_preview":
         return await this.preview(input.path, input.maxLines, input.startLine);
+      case "read_text_file_slice":
+        return await this.readTextSlice(input);
       case "write_text_file":
-        return await this.writeText(input.path, input.content);
+        return await this.writeText(input.path, input.content, input.baseVersion);
+      case "write_file_begin": {
+        const { root, relative: rel } = await this.locate(input.path);
+        return await beginTextUpload({
+          owner,
+          root,
+          path: workspacePath(root, rel),
+          size: input.size,
+          baseVersion: input.baseVersion,
+          stateDir: dirname(this.store.attachmentDir),
+        });
+      }
+      case "write_file_chunk":
+        return await writeTextUploadChunk(owner, input);
+      case "write_file_commit":
+        return await commitTextUpload(owner, input.uploadId);
+      case "write_file_abort":
+        return await abortTextUpload(owner, input.uploadId);
       case "stat_files":
         return await this.statFiles(input.paths);
       case "create_path":
@@ -437,7 +555,7 @@ export class WorkspaceCommands {
       case "git_diff_files":
         return await this.gitIndex(input.cwd, false);
       case "git_diff_stats":
-        return this.gitIndex(input.cwd, false).then((index) => ({
+        return hostGitIndex(await this.gitRoot(input.cwd), false, false).then((index) => ({
           files: index.files.length + (index.conflicts?.length ?? 0),
           additions: index.additions,
           deletions: index.deletions,
@@ -521,7 +639,7 @@ export class WorkspaceCommands {
           input.repository,
         );
       case "git_history":
-        return await this.gitHistory(input.cwd, input.limit, input.all === true);
+        return await this.gitHistory(input.cwd, input.limit, input.all === true, input.skip);
       case "git_commit_files":
         return await this.gitCommitFiles(input.cwd, input.sha);
       case "git_commit_file_diff":
@@ -537,9 +655,16 @@ export class WorkspaceCommands {
       case "git_create_branch":
         return await this.gitCreateBranch(input.cwd, input.name);
       case "git_worktrees":
-        return await this.gitWorktrees(input.cwd);
-      case "git_submodules":
-        return hostGitSubmodules(await this.gitRoot(input.cwd), input.includeRepositories === true);
+        return await this.gitWorktrees(input.cwd, input.background === true, input.light === true);
+      case "git_submodules": {
+        const found = await sharedHostGitSubmodules(
+          await this.gitRoot(input.cwd),
+          input.includeRepositories === true,
+          input.fresh === true,
+        );
+        // Gitlink-only discovery has no size bound to report, so existing clients keep the plain list.
+        return input.includeRepositories === true ? found : found.paths;
+      }
       case "replace_project": {
         const options = input.options as Record<string, unknown> | undefined;
         const root = await this.gitRoot(options?.cwd);
@@ -554,11 +679,16 @@ export class WorkspaceCommands {
       case "cancel_project_search":
         return await this.cancelProjectSearch(input.cwd, input.searchId, owner);
       case "list_skills":
-        return await this.listSkills(input.cwd, input.disabledPaths, input.provider);
+        return await this.listSkills(
+          input.cwd,
+          input.disabledPaths,
+          input.provider,
+          input.withStatus,
+        );
       case "skill_policy_get":
-        return Promise.resolve().then(() => migrateSkillPolicy(input.legacyDisabledPaths));
+        return migrateSkillPolicy(input.legacyDisabledPaths);
       case "skill_policy_set":
-        return Promise.resolve().then(() => setSkillEnabled(input.name, input.enabled));
+        return setSkillEnabled(input.name, input.enabled);
       case "list_claude_commands":
         return this.existing(input.cwd, true).then(
           async ({ path }) => await listHostClaudeCommands(path),
@@ -588,9 +718,16 @@ export class WorkspaceCommands {
   }
 
   /** The project folders and worktrees files may be read and written in. */
-  private async allowedRoots(): Promise<string[]> {
+  private async allowedRoots(): Promise<{
+    roots: WorkspaceRoot[];
+    /** Every project's worktrees were listed successfully. */
+    complete: boolean;
+    /** False when `invalidateRoots` ran during the scan, so the roots may be stale. */
+    current: boolean;
+  }> {
     const generation = this.rootsGeneration;
-    const out: string[] = [];
+    const out: WorkspaceRoot[] = [];
+    let complete = true;
     const projects = await this.store.projects();
     let cursor = 0;
     // hostWorktrees bounds each listing subprocess with a 10 s timeout.
@@ -601,23 +738,51 @@ export class WorkspaceCommands {
           const cached = this.roots.get(project.cwd);
           if (cached && Date.now() - cached.at < ROOTS_TTL_MS) {
             out.push(...cached.roots);
+            if (!cached.complete) complete = false;
             continue;
           }
+          let listed = true;
           const roots = await hostWorktrees(project.cwd)
-            .then((listed) => [
-              project.cwd,
-              ...listed.worktrees
+            .then((result) =>
+              result.worktrees
                 .filter((tree) => !tree.missing && tree.path !== project.cwd)
-                .map((tree) => tree.path),
-            ])
-            .catch(() => [project.cwd]);
+                .map((tree) => ({ path: tree.path, project: project.cwd })),
+            )
+            .catch(() => {
+              listed = false;
+              return [];
+            });
+          if (!listed) complete = false;
           if (generation === this.rootsGeneration)
-            this.roots.set(project.cwd, { at: Date.now(), roots });
+            this.roots.set(project.cwd, { at: Date.now(), roots, complete: listed });
           out.push(...roots);
         }
       }),
     );
-    return out;
+    return { roots: out, complete, current: generation === this.rootsGeneration };
+  }
+
+  private missIsFresh(root: string): boolean {
+    const miss = this.misses.get(root);
+    if (!miss) return false;
+    if (
+      miss.registry === this.store.projectRegistryVersion &&
+      miss.generation === this.rootsGeneration &&
+      elapsedSince(miss.at) < MISS_TTL_MS
+    )
+      return true;
+    this.misses.delete(root);
+    return false;
+  }
+
+  private rememberMiss(root: string, registry: number, generation: number): void {
+    this.misses.delete(root);
+    while (this.misses.size >= MAX_MISSES) {
+      const oldest = this.misses.keys().next();
+      if (oldest.done) break;
+      this.misses.delete(oldest.value);
+    }
+    this.misses.set(root, { at: monotonicNow(), registry, generation });
   }
 
   /** Finds the project root that contains `input`, which may not exist yet. */
@@ -647,13 +812,13 @@ export class WorkspaceCommands {
     // A project nested in another belongs to the innermost one, so its root
     // keeps the root protections instead of passing as the outer's subfolder.
     let found: Located | undefined;
-    const find = async (roots: string[]) => {
+    const find = async (roots: WorkspaceRoot[]) => {
       // Compare physical paths on both sides. Registered folders and worktrees
       // may be junctions/symlinks, while `actual` above is already canonical.
       // Resolve on every admission, so cached worktree names cannot retain a
       // previous link target. Missing/unreadable roots grant no access.
       const physicalRoots = await Promise.all(
-        roots.map((root) => realpath(root).catch(() => undefined)),
+        roots.map((root) => realpath(root.path).catch(() => undefined)),
       );
       for (const [index, physicalRoot] of physicalRoots.entries()) {
         if (!physicalRoot) continue;
@@ -661,15 +826,61 @@ export class WorkspaceCommands {
         if (rel === ".." || /^\.\.[\\/]/.test(rel) || isAbsolute(rel)) continue;
         // Preserve the registered spelling for project ownership and idle gates;
         // existingPath/workspacePath enforce physical containment at I/O.
-        if (!found || rel.length < found.relative.length)
-          found = { root: roots[index], relative: rel };
+        const root = roots[index]!;
+        if (
+          (!found || rel.length < found.relative.length) &&
+          (!root.project || (await isCurrentProjectWorktree(physicalRoot, root.project)))
+        )
+          found = { root: root.path, project: root.project ?? root.path, relative: rel };
       }
     };
-    await find((await this.store.projects()).map((project) => project.cwd));
+    const projects = await this.store.projects();
+    await find(projects.map((project) => ({ path: project.cwd })));
     if (found) return found;
-    await find(await this.allowedRoots());
-    if (found) return found;
-    throw new Error("Path is outside this machine’s projects");
+    if (this.cleanupGeneration !== workspaceCleanupMembershipGeneration()) this.invalidateRoots();
+    const knownGeneration = this.rootsGeneration;
+    await find(
+      projects.flatMap((project) => {
+        const known = this.roots.get(project.cwd);
+        return known && Date.now() - known.at < ROOTS_ADMIT_MS ? known.roots : [];
+      }),
+    );
+    if (
+      found &&
+      knownGeneration === this.rootsGeneration &&
+      this.cleanupGeneration === workspaceCleanupMembershipGeneration()
+    )
+      return found;
+    found = undefined;
+    // Every worktree root holds a `.git` entry; a path with none above it is in no worktree,
+    // so it is refused without listing every project's worktrees.
+    const outside = () => new Error("Path is outside this machine’s projects");
+    const checkout = await gitCheckoutRoot(actual);
+    if (!checkout || this.missIsFresh(checkout)) throw outside();
+    // A scan that raced `invalidateRoots` may hold removed roots: neither admit from it nor
+    // remember its result, and try once more against the current roots.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (this.cleanupGeneration !== workspaceCleanupMembershipGeneration()) this.invalidateRoots();
+      const registry = this.store.projectRegistryVersion;
+      const generation = this.rootsGeneration;
+      const scan = await this.allowedRoots();
+      if (!scan.current || registry !== this.store.projectRegistryVersion) continue;
+      await find(scan.roots);
+      if (
+        generation !== this.rootsGeneration ||
+        this.cleanupGeneration !== workspaceCleanupMembershipGeneration() ||
+        registry !== this.store.projectRegistryVersion
+      ) {
+        found = undefined;
+        continue;
+      }
+      if (found) return found;
+      // Only a full, successful listing proves the denial; a failed one only fell back to the
+      // project folders.
+      if (scan.complete) this.rememberMiss(checkout, registry, generation);
+      break;
+    }
+    throw outside();
   }
 
   private async existing(input: unknown, allowRoot = false) {
@@ -714,14 +925,39 @@ export class WorkspaceCommands {
     return readFile(path);
   }
 
-  private async readText(input: unknown): Promise<string> {
-    const bytes = await this.file(input, MAX_TEXT_FILE, "edit");
-    if (bytes.includes(0)) throw new Error("Binary files cannot be edited.");
-    try {
-      return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    } catch {
-      throw new Error("File is not valid UTF-8.");
+  /** One bounded page of a file too large to edit, for the paged read-only view. */
+  private async readTextSlice(input: Record<string, unknown>): Promise<TextSlice> {
+    const request = parseTextSliceRequest(input.offset, input.expected);
+    const { path } = await this.existing(input.path);
+    return await readTextSlice(path, request.offset, request.expected);
+  }
+
+  private async readText(
+    input: unknown,
+    withVersion?: unknown,
+  ): Promise<string | { text: string; version: string }> {
+    const decode = (bytes: Buffer) => {
+      if (bytes.includes(0)) throw new Error("Binary files cannot be edited.");
+      try {
+        return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      } catch {
+        throw new Error("File is not valid UTF-8.");
+      }
+    };
+    if (withVersion !== true) return decode(await this.file(input, MAX_TEXT_FILE, "edit"));
+    // The stamp must describe these bytes: a file changed mid-read is read again.
+    const { path } = await this.existing(input);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const before = await stat(path, { bigint: true });
+      if (!before.isFile()) throw new Error("Not a file");
+      if (before.size > BigInt(MAX_TEXT_FILE))
+        throw new Error(`File is too large to edit (maximum ${MAX_TEXT_FILE / 1024 / 1024} MB).`);
+      const bytes = await readFile(path);
+      const after = await stat(path, { bigint: true });
+      const version = fileVersion(before);
+      if (version === fileVersion(after)) return { text: decode(bytes), version };
     }
+    throw new Error("The file keeps changing. Try again.");
   }
 
   /** Base64, since host responses are JSON; the client decodes it. */
@@ -831,7 +1067,11 @@ export class WorkspaceCommands {
   private async readFileInfo(input: unknown, root?: unknown, rootIdentity?: unknown) {
     const { file, size, version } = await this.transferFile(input, root, rootIdentity);
     await file.close();
-    return { size, version };
+    // Capability flag: this Host edits text up to the limit by chunked read and save. Older
+    // Hosts omit it and keep the 1 MB single-message limit. Folder-access reads stay unchanged.
+    return root === undefined
+      ? { size, version, textEditLimit: MAX_EDIT_TEXT_BYTES }
+      : { size, version };
   }
 
   private async readFileChunk(input: Record<string, unknown>) {
@@ -863,36 +1103,98 @@ export class WorkspaceCommands {
   }
 
   private async preview(input: unknown, maxLines: unknown, startLine: unknown): Promise<string[]> {
-    const text = (await this.file(input, MAX_TEXT_FILE, "preview")).toString("utf8");
-    if (text.includes("\0")) throw new Error("Binary file");
-    const limit = Math.min(12, Math.max(1, Number(maxLines) || 6));
-    const start = Math.max(1, Number(startLine) || 1);
-    return text
-      .split(/\r?\n/)
-      .slice(start - 1, start - 1 + limit)
-      .map((line) => (line.length > 200 ? `${line.slice(0, 199)}…` : line));
+    const limit = Math.trunc(Math.min(12, Math.max(1, Number(maxLines) || 6)));
+    const start = Math.trunc(Math.max(1, Number(startLine) || 1));
+    const { path } = await this.existing(input);
+    if (!(await stat(path)).isFile()) throw new Error("Not a file");
+    const file = await open(path, "r");
+    const chunk = Buffer.alloc(8192);
+    // Enough UTF-8 bytes to decode over 200 UTF-16 units, even across reads.
+    const prefix = Buffer.alloc(804);
+    const lines: string[] = [];
+    let line = 1;
+    let length = 0;
+    const finish = (newline: boolean) => {
+      if (line >= start) {
+        const text = prefix.subarray(0, length).toString("utf8");
+        const trimmed = newline && text.endsWith("\r") ? text.slice(0, -1) : text;
+        lines.push(trimmed.length > 200 ? `${trimmed.slice(0, 199)}…` : trimmed);
+      }
+      line++;
+      length = 0;
+    };
+    // A preview never scans more than this: a huge file without line breaks, or a start line
+    // far into it, returns what was found instead of reading to the end.
+    let scanned = 0;
+    try {
+      while (lines.length < limit) {
+        const { bytesRead } = await file.read(chunk, 0, chunk.length, null);
+        if (!bytesRead || scanned >= PREVIEW_SCAN_BYTES) {
+          if (length || !bytesRead) finish(false);
+          break;
+        }
+        scanned += bytesRead;
+        const bytes = chunk.subarray(0, bytesRead);
+        let offset = 0;
+        while (offset < bytes.length && lines.length < limit) {
+          const newline = bytes.indexOf(10, offset);
+          const end = newline < 0 ? bytes.length : newline;
+          const segment = bytes.subarray(offset, end);
+          if (segment.includes(0)) throw new Error("Binary file");
+          if (line >= start && length < prefix.length)
+            length += segment.copy(prefix, length, 0, prefix.length - length);
+          if (newline >= 0 || (lines.length === limit - 1 && length === prefix.length))
+            finish(newline >= 0);
+          offset = end + 1;
+        }
+      }
+      return lines;
+    } finally {
+      await file.close();
+    }
   }
 
-  private async writeText(input: unknown, content: unknown): Promise<void> {
+  /**
+   * Atomic text save. With `baseVersion` (the stamp of the read the text came from) the save is
+   * refused with `FILE_CHANGED` when the file differs, checked inside the per-path serialization
+   * right before the rename. Without it the save overwrites, as older clients expect. Writers
+   * outside this Host can still slip in between that check and the rename.
+   */
+  private async writeText(
+    input: unknown,
+    content: unknown,
+    baseVersion?: unknown,
+  ): Promise<{ version: string }> {
     if (typeof content !== "string") throw new Error("Invalid file content");
+    if (baseVersion !== undefined && (typeof baseVersion !== "string" || baseVersion.length > 256))
+      throw new Error("Invalid file version");
     if (Buffer.byteLength(content, "utf8") > MAX_TEXT_FILE)
       throw new Error(`File is too large to save (maximum ${MAX_TEXT_FILE / 1024 / 1024} MB).`);
     const { root, relative: rel } = await this.locate(input);
     const path = workspacePath(root, rel);
-    const key = process.platform === "win32" ? path.toLowerCase() : path;
+    const statTarget = () => statSaveTarget(path);
     const save = async () => {
-      const previous = await stat(path).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== "ENOENT") throw error;
-        return undefined;
-      });
+      const previous = await statTarget();
       if (previous?.isDirectory()) throw new Error("Cannot save text to a directory.");
+      // Refuse early so an obviously stale save does not write anything.
+      if (baseVersion !== undefined && (!previous || fileVersion(previous) !== baseVersion))
+        throw fileChangedError();
+      const mode = previous ? Number(previous.mode) : undefined;
       // Replace atomically, as the local command does.
       const temporary = `${path}.bycoda-${randomUUID()}`;
-      const handle = await open(temporary, "wx", previous?.mode);
+      const handle = await open(temporary, "wx", mode);
+      let written: BigIntStats;
       try {
         await handle.writeFile(content, "utf8");
-        if (previous) await handle.chmod(previous.mode);
+        if (mode !== undefined) await handle.chmod(mode);
+        await handle.sync();
+        written = await handle.stat({ bigint: true });
         await handle.close();
+        // The slow write is done: check again right before the rename, the narrowest window.
+        if (baseVersion !== undefined) {
+          const current = await statTarget();
+          if (!current || fileVersion(current) !== baseVersion) throw fileChangedError();
+        }
         await renameWithRetry(temporary, path);
       } catch (reason) {
         await handle.close().catch(() => {});
@@ -900,17 +1202,20 @@ export class WorkspaceCommands {
         throw reason;
       }
       invalidateHostFilePaths(root);
+      // Only report a version of the file we just renamed into place: an external write after
+      // the rename must not be adopted as ours. Writers outside this Host can still change the
+      // file between the final check and the rename; no portable compare-and-swap rename exists.
+      const after = await statTarget();
+      if (
+        !after ||
+        after.dev !== written.dev ||
+        after.ino !== written.ino ||
+        after.size !== written.size
+      )
+        throw fileChangedError();
+      return { version: fileVersion(after) };
     };
-    const pending = (textFileSaves.get(key) ?? Promise.resolve()).then(
-      async () => await withWorkspaceMutation(root, save),
-      async () => await withWorkspaceMutation(root, save),
-    );
-    textFileSaves.set(key, pending);
-    try {
-      await pending;
-    } finally {
-      if (textFileSaves.get(key) === pending) textFileSaves.delete(key);
-    }
+    return await serializeTextSave(root, path, save);
   }
 
   private async statFiles(input: unknown): Promise<FileMtime[]> {
@@ -1115,9 +1420,16 @@ export class WorkspaceCommands {
 
   /** This machine's skills for a project folder here; the desktop drops
    * the ones it hides, as it does for its own. */
-  private async listSkills(input: unknown, disabled: unknown, provider?: unknown) {
+  private async listSkills(
+    input: unknown,
+    disabled: unknown,
+    provider?: unknown,
+    withStatus?: unknown,
+  ) {
     if (provider !== undefined && (typeof provider !== "string" || provider.length > 64))
       throw new Error("Invalid skill provider.");
+    if (withStatus !== undefined && typeof withStatus !== "boolean")
+      throw new Error("Invalid skill list option.");
     if (
       disabled != null &&
       (!Array.isArray(disabled) ||
@@ -1127,10 +1439,16 @@ export class WorkspaceCommands {
       throw new Error("Invalid disabled skill paths.");
     const disabledPaths = (disabled ?? []) as string[];
     // An empty `cwd` is "no project": this machine's personal skills only.
-    if (input === "")
-      return listHostSkills(null, undefined, disabledPaths, provider as string | undefined);
-    const { path } = await this.existing(input, true);
-    return listHostSkills(path, undefined, disabledPaths, provider as string | undefined);
+    const project = input === "" ? null : (await this.existing(input, true)).path;
+    const listing = await listHostSkillsAsync(
+      project,
+      undefined,
+      disabledPaths,
+      provider as string | undefined,
+    );
+    // Older callers expect a bare array and cannot say the list is incomplete;
+    // only a caller that asks for the status receives the truncation flag.
+    return withStatus ? listing : listing.skills;
   }
 
   /** A listed skill's files. The skill may live in the home folder, outside
@@ -1220,16 +1538,18 @@ export class WorkspaceCommands {
   private async gitCommand(cwd: unknown, args: string[]): Promise<string> {
     const root = await this.gitRoot(cwd);
     return (
-      await exec(
+      await hostGitExec.exec(
         "git",
         [...(args.includes("--") ? ["--literal-pathspecs"] : []), "-c", "core.pager=cat", ...args],
         {
           cwd: root,
           timeout: ["pull", "push", "fetch", "commit"].includes(args[0]) ? 120_000 : 30_000,
+          // Network calls can hold a slot for minutes; their own lane keeps probes moving.
+          lane: ["pull", "push", "fetch", "clone"].includes(args[0]) ? "network" : "default",
           maxBuffer: 4 * 1024 * 1024,
           encoding: "utf8",
           windowsHide: true,
-          env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
+          env: { GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
         },
       )
     ).stdout;
@@ -1324,8 +1644,9 @@ export class WorkspaceCommands {
     return resolved.trim();
   }
 
-  private async gitHistory(cwd: unknown, limit: unknown, all: boolean) {
-    const count = Number.isSafeInteger(limit) ? Math.min(500, Math.max(1, Number(limit))) : 200;
+  private async gitHistory(cwd: unknown, limit: unknown, all: boolean, skip?: unknown) {
+    const count = Number.isSafeInteger(limit) ? Math.min(5000, Math.max(1, Number(limit))) : 200;
+    const offset = Number.isSafeInteger(skip) ? Math.max(0, Number(skip)) : 0;
     const [head, upstream, index, refs] = await Promise.all([
       this.gitCommand(cwd, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
       this.gitCommand(cwd, ["rev-parse", "--abbrev-ref", "@{upstream}"]).catch(() => ""),
@@ -1355,6 +1676,7 @@ export class WorkspaceCommands {
       "log",
       "--topo-order",
       `--max-count=${count}`,
+      ...(offset > 0 ? [`--skip=${offset}`] : []),
       HISTORY_FORMAT,
       ...tips,
     ]);
@@ -1438,14 +1760,14 @@ export class WorkspaceCommands {
 
   private async gitBlob(root: string, spec: string) {
     try {
-      const { stdout } = await exec("git", ["show", spec], {
+      const { stdout } = await hostGitExec.exec("git", ["show", spec], {
         cwd: root,
         timeout: 30_000,
         maxBuffer: MAX_TEXT_FILE + 1024,
         encoding: "buffer",
-        env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+        env: { GIT_TERMINAL_PROMPT: "0" },
       });
-      return { bytes: Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout), tooLarge: false };
+      return { bytes: stdout, tooLarge: false };
     } catch (reason) {
       return { bytes: Buffer.alloc(0), tooLarge: String(reason).includes("maxBuffer") };
     }
@@ -1454,10 +1776,24 @@ export class WorkspaceCommands {
   private async gitStagedContext(cwd: unknown) {
     const [index, summary, patch] = await Promise.all([
       this.gitIndex(cwd),
-      this.gitCommand(cwd, ["diff", "--cached", "--stat"]),
-      this.gitCommand(cwd, ["diff", "--cached", "--no-ext-diff"]),
+      this.gitCommand(cwd, ["diff", "--cached", "--stat", "--"]),
+      this.gitCommand(cwd, ["diff", "--cached", "--no-ext-diff", "--no-textconv", "--"]),
     ]);
-    return { branch: index.branch, summary, patch };
+    if (summary.trim() || patch.trim()) return { branch: index.branch, summary, patch };
+
+    // The desktop already summarizes working changes if the index is empty.
+    // Listing new file names gives the same context without mutating the index.
+    const [workingSummary, workingPatch, untracked] = await Promise.all([
+      this.gitCommand(cwd, ["diff", "--stat", "--"]),
+      this.gitCommand(cwd, ["diff", "--no-ext-diff", "--no-textconv", "--"]),
+      this.gitCommand(cwd, ["ls-files", "--others", "--exclude-standard", "--"]),
+    ]);
+    const names = untracked.trim();
+    const changes = [workingSummary.trim(), names ? `Untracked files:\n${names}` : ""]
+      .filter(Boolean)
+      .join("\n");
+    if (!changes && !workingPatch.trim()) throw new Error("No changes to summarize");
+    return { branch: index.branch, summary: changes, patch: workingPatch };
   }
 
   private async gitRangeContext(cwd: unknown) {
@@ -1508,9 +1844,9 @@ export class WorkspaceCommands {
   }
 
   private async withIdleGitProject<T>(cwd: string, action: () => Promise<T>): Promise<T> {
-    const { root } = await this.locate(cwd);
+    const located = await this.locate(cwd);
     const project = (await this.store.projects()).find(
-      (candidate) => candidate.cwd === root || this.roots.get(candidate.cwd)?.roots.includes(root),
+      (candidate) => candidate.cwd === located.project,
     );
     if (!project) throw new Error("Project is unavailable");
     return await this.withIdleProject(project.id, action);
@@ -1524,16 +1860,17 @@ export class WorkspaceCommands {
       : await run();
   }
 
-  private async gitWorktrees(cwd: unknown) {
-    const listed = await hostWorktrees(await this.gitRoot(cwd));
+  private async gitWorktrees(cwd: unknown, background: boolean, light: boolean) {
+    // Probed state stays unknown (`null`) when Git could not say; clients never read it as clean.
+    const listed = await hostWorktreesWithState(await this.gitRoot(cwd), background, light);
     return {
       defaultRoot: listed.defaultRoot,
       worktrees: listed.worktrees.map((tree) => ({
         ...tree,
         locked: tree.locked,
         prunable: tree.missing,
-        dirty: null,
-        unpushed: null,
+        dirty: tree.dirty ?? null,
+        unpushed: tree.unpushed ?? null,
         sessionIds: [],
       })),
     };

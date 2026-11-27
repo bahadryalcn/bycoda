@@ -2,22 +2,13 @@ import { Text } from "../../../../shared/ui/Text";
 import type { AssistantMessage } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
 import type { MessageTimelineItem } from "../../../../shared/ui/MessageTimeline";
+import { Tooltip } from "../../../../shared/ui/Tooltip";
 import { Button } from "../../../../shared/ui/Button";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
-import { Tooltip } from "../../../../shared/ui/Tooltip";
-import { Trash2 } from "../../../../shared/ui/icons";
+import { Trash2, TriangleAlert } from "../../../../shared/ui/icons";
 import { assistantChatItem } from "./AssistantChat";
 import styles from "./Conversation.module.css";
-
-/** "tasks.get" reads as the verb phrase "Get tasks"; the raw id stays in the tooltip. */
-function recordedActionLabel(action: string): string {
-  const words = action
-    .split(/[._-]+/)
-    .filter(Boolean)
-    .reverse()
-    .join(" ");
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
+import { recordedActionLabel } from "./recordedActionLabels";
 
 /** One room message as a shared timeline item. */
 export function conversationMessageItem({
@@ -56,8 +47,10 @@ export function conversationMessageItem({
     children: (
       <>
         {message.ownerQuestionId && (
-          <Text size="caption" tone="secondary" leading="inherit" className={styles.note}>
-            {t(message.ownerQuestionAction === "snooze" ? "Question postponed" : "Answer recorded")}
+          <Text size="caption" tone="secondary" leading="inherit">
+            {message.ownerQuestionAction === "snooze"
+              ? t("Question postponed")
+              : t("Answer recorded")}
           </Text>
         )}
         {!!message.toolActions?.length && (
@@ -65,10 +58,18 @@ export function conversationMessageItem({
             <ul className={styles.detailsList}>
               {message.toolActions.map((action) => (
                 <li key={action.id}>
-                  <Tooltip label={`${action.family}.${action.action}`} asChild>
-                    <span>{recordedActionLabel(action.action)}</span>
-                  </Tooltip>
-                  {action.status === "completed" ? "" : ` · ${t("Outcome unknown")}`}
+                  <span>{recordedActionLabel(action.action)}</span>
+                  {action.status === "completed" ? null : (
+                    <Tooltip
+                      asChild
+                      label={t("Outcome unknown")}
+                      details={[t("The Host has not confirmed that this action finished.")]}
+                    >
+                      <span role="img" aria-label={t("Outcome unknown")}>
+                        <TriangleAlert className="icon-xs" tone="warning" />
+                      </span>
+                    </Tooltip>
+                  )}
                 </li>
               ))}
             </ul>
@@ -89,14 +90,8 @@ export function conversationMessageItem({
                     {job.title}
                   </Button>
                 ) : (
-                  <Text
-                    size="caption"
-                    tone="secondary"
-                    leading="inherit"
-                    key={id}
-                    className={styles.note}
-                  >
-                    {id}
+                  <Text key={id} size="caption" tone="secondary" leading="inherit">
+                    {t("Job unavailable")}
                   </Text>
                 );
               })}

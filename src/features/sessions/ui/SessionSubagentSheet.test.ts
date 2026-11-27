@@ -1,5 +1,13 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import {
+  act,
+  Children,
+  createElement,
+  isValidElement,
+  type ComponentProps,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Block, Session } from "../model/session";
@@ -9,7 +17,7 @@ import {
   useDelegatedSheet,
   type DelegatedSheetState,
 } from "./SessionSubagentSheet";
-import type { SubagentRelay } from "./SubagentMessageForm";
+import type { SubagentChatComposer, SubagentRelay } from "./SubagentMessageForm";
 import { retryDelegated } from "./delegatedFocus";
 import { registerRemoteSessionActions } from "../../connections/model/remoteSessionActions";
 
@@ -17,7 +25,23 @@ const fake = vi.hoisted(() => ({
   sessions: new Map<string, unknown>(),
   sheetProps: [] as Array<Record<string, unknown>>,
   owners: [] as Array<Record<string, unknown>>,
+  receiptCalls: [] as unknown[][],
+  ownerUnreadable: false,
 }));
+
+vi.mock("../../connections/public/useHostSessionBinding", async (original) => {
+  const actual = await original<typeof import("../../connections/public/useHostSessionBinding")>();
+  return {
+    ...actual,
+    useHostSessionBindingReader() {
+      const read = actual.useHostSessionBindingReader();
+      if (!fake.ownerUnreadable) return read;
+      return () => {
+        throw new Error("Owner unavailable");
+      };
+    },
+  };
+});
 
 // The sheet is captured, not rendered: these tests check what SessionSubagentSheet hands it.
 vi.mock("./SubagentSheet", () => ({
@@ -26,14 +50,24 @@ vi.mock("./SubagentSheet", () => ({
     return null;
   },
 }));
-vi.mock("../model/sessionsStore", () => ({
+vi.mock("../model/sessionsStore", async (original) => ({
+  // Pure selectors (selectSessionById, ...) stay real; only the store reads are faked.
+  ...(await original<object>()),
   useSession: (id: string | undefined) => (id ? fake.sessions.get(id) : undefined),
+  usePaneSession: (id: string | undefined) => (id ? fake.sessions.get(id) : undefined),
   getSessions: () => [...fake.sessions.values()],
+  getShellSessions: () => [...fake.sessions.values()],
   subscribeSessionCommits: () => () => undefined,
   useSessionsSelector: (select: (sessions: unknown[]) => unknown) =>
     select([...fake.sessions.values()]),
+  useShellSessionsSelector: (select: (sessions: unknown[]) => unknown) =>
+    select([...fake.sessions.values()]),
 }));
 vi.mock("../../connections/public/DelegatedSessionRequests", () => ({
+  useDelegatedMessageReceipts: (...args: unknown[]) => {
+    fake.receiptCalls.push(args);
+    return [];
+  },
   DelegatedSessionRequests: (props: Record<string, unknown>) => {
     fake.owners.push(props);
     return null;
@@ -124,6 +158,8 @@ function render(value: Parameters<typeof SessionSubagentSheet>[0]) {
 function lastSheet() {
   return fake.sheetProps[fake.sheetProps.length - 1] as {
     relay: SubagentRelay & { onOpenConversation?: () => void };
+    composer?: ReactElement<ComponentProps<typeof SubagentChatComposer>>;
+    requests?: ReactElement<{ child: Session; composer?: { parentSessionId?: string } }>;
     onStop?: () => Promise<void>;
     onClose: () => void;
   };
@@ -134,6 +170,8 @@ beforeEach(() => {
   fake.sessions.clear();
   fake.sheetProps.length = 0;
   fake.owners.length = 0;
+  fake.receiptCalls.length = 0;
+  fake.ownerUnreadable = false;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -143,6 +181,23 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+});
+
+it("reads current command output while the pane holds a previous block", () => {
+  const command: Block = {
+    id: "t",
+    role: "tool",
+    text: "Run tests",
+    streaming: true,
+    tool: { kind: "execute", callId: "run", status: "in_progress", detail: "started" },
+  };
+  const latest = { ...command, tool: { ...command.tool, detail: "continued" } };
+  fake.sessions.set("parent", child({ id: "parent", blocks: [latest] }));
+  const native = { ...props().native, block: command, liveSessionId: "parent" };
+  render(props({ native }));
+  expect(fake.sheetProps.at(-1)?.block).toBe(latest);
+  render(props({ native: { ...native, liveSessionId: undefined } }));
+  expect(fake.sheetProps.at(-1)?.block).toBe(command);
 });
 
 it("routes a native subagent's message through the main agent relay", () => {
@@ -165,17 +220,34 @@ it("routes a native subagent's message through the main agent relay", () => {
   expect(relay.send).toHaveBeenCalledOnce();
 });
 
-it("sends a delegated child's message straight to that child session", async () => {
+it("sends a delegated child's steer with attachments to that child session", () => {
   fake.sessions.set("child-1", child({ busy: true }));
   const onSubmitToSession = vi.fn(() => true);
   render(props({ onSubmitToSession, delegated: delegatedState("child-1") }));
-  expect(lastSheet().relay.mode).toBe("direct");
-  act(() => lastSheet().relay.setDraft("Use the cached schema"));
-  await act(async () => lastSheet().relay.send());
+  const attachment = {
+    id: "image",
+    name: "diagram.png",
+    kind: "image" as const,
+    mimeType: "image/png",
+    size: 20,
+  };
+  const options = { followUpBehavior: "steer" as const };
+  act(() => {
+    // The composer slot is a fragment: a stop failure line, then the composer.
+    const composer = Children.toArray(
+      (lastSheet().composer as ReactElement<{ children: ReactNode }> | undefined)?.props.children,
+    ).find(
+      (child): child is ReactElement<ComponentProps<typeof SubagentChatComposer>> =>
+        isValidElement(child) && "onSubmit" in (child.props as object),
+    );
+    composer?.props.onSubmit("Use the cached schema", [attachment], options);
+  });
   expect(onSubmitToSession).toHaveBeenCalledWith(
     "child-1",
     "Use the cached schema",
-    expect.objectContaining({ onSendRejected: expect.any(Function) }),
+    options,
+    [attachment],
+    undefined,
   );
 });
 
@@ -193,7 +265,7 @@ it("stops the delegated child, not the parent, and offers Stop only while it run
   expect(lastSheet().onStop).toBeUndefined();
 });
 
-it("routes Host child stop and follow-up to its registered owner, never the parent", async () => {
+it("places the Host composer with its child owner and routes Stop there", async () => {
   fake.sessions.set(
     "child-1",
     child({
@@ -219,22 +291,17 @@ it("routes Host child stop and follow-up to its registered owner, never the pare
   const onSubmitToSession = vi.fn();
   const onStopSession = vi.fn();
   render(props({ onSubmitToSession, onStopSession, delegated: delegatedState("child-1") }));
-  act(() => lastSheet().relay.setDraft("Continue"));
-  act(() => lastSheet().relay.send());
-  expect(submit).toHaveBeenCalledWith(
-    "Continue",
-    [],
-    expect.objectContaining({ onSendRejected: expect.any(Function) }),
-  );
+  expect(lastSheet().composer).toBeUndefined();
+  expect(lastSheet().requests?.key).toBe("child-1");
+  expect(lastSheet().requests?.props).toMatchObject({
+    child: { id: "child-1" },
+    composer: { name: expect.any(String) },
+  });
   await act(async () => lastSheet().onStop?.());
   expect(stop).toHaveBeenCalledOnce();
   expect(onSubmitToSession).not.toHaveBeenCalled();
   expect(onStopSession).not.toHaveBeenCalled();
   release();
-  act(() => lastSheet().relay.setDraft("Keep this"));
-  act(() => lastSheet().relay.send());
-  expect(lastSheet().relay.draft).toBe("Keep this");
-  expect(lastSheet().relay.status).toBe("rejected");
   await expect(lastSheet().onStop?.()).rejects.toThrow("unavailable or inaccessible");
   expect(onStopSession).not.toHaveBeenCalled();
 });
@@ -242,7 +309,7 @@ it("routes Host child stop and follow-up to its registered owner, never the pare
 it("does not offer opening a delegated child as a conversation", () => {
   fake.sessions.set("child-1", child());
   const navigation = render(props({ delegated: delegatedState("child-1") }));
-  expect(lastSheet().relay.onOpenConversation).toBeUndefined();
+  expect(lastSheet().relay).toBeUndefined();
   expect(navigation.open).not.toHaveBeenCalled();
 });
 
@@ -412,4 +479,35 @@ it("retries a failed child by sending it the same task through the pane's send p
   expect(state.connecting).toEqual([]);
   onSubmitToSession.mockReturnValue(false as never);
   await expect(retryDelegated("parent", "child-1")).rejects.toThrow();
+});
+
+const hosted = {
+  environmentId: "env-1",
+  machineId: "machine-1",
+  projectId: "project-1",
+  sessionId: "host-child-1",
+};
+
+it("asks for a child's message receipts only while its panel is open, from its serving Host", () => {
+  fake.sessions.set("child-1", child({ hostBinding: hosted } as Partial<Session>));
+  render(props({ delegated: delegatedState("child-1"), visible: false }));
+  expect(fake.receiptCalls.at(-1)).toEqual([undefined, undefined, undefined]);
+  render(props({ delegated: delegatedState("child-1") }));
+  expect(fake.receiptCalls.at(-1)).toEqual(["env-1", "host-child-1", "machine-1"]);
+  render(props({ delegated: delegatedState("child-1", { isOpen: false }) }));
+  expect(fake.receiptCalls.at(-1)).toEqual([undefined, undefined, undefined]);
+});
+
+it("never borrows another authority for a child without a readable binding", () => {
+  fake.sessions.set("child-1", child());
+  render(props({ delegated: delegatedState("child-1") }));
+  expect(fake.receiptCalls.at(-1)).toEqual([undefined, undefined, undefined]);
+});
+
+it("does not mount a local composer when observing the child owner fails", () => {
+  fake.sessions.set("child-1", child());
+  fake.ownerUnreadable = true;
+  render(props({ delegated: delegatedState("child-1") }));
+  expect(lastSheet().composer).toBeUndefined();
+  expect(lastSheet().requests).toBeUndefined();
 });

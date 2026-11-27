@@ -1,4 +1,8 @@
 import { OwnerApprovalInbox } from "../../features/notifications";
+import { OwnerRequestSource } from "../../features/sessions/ui/OwnerRequestSource";
+import { NotificationProjectIconContext } from "../../features/sessions/ui/NotificationHistoryItem";
+import { Text } from "../../shared/ui/Text";
+import { SessionProjectIcon } from "./useSessionProjectAppearance";
 import {
   ownerApprovalsSnapshot,
   subscribeOwnerApprovals,
@@ -51,7 +55,11 @@ async function revealWindow(): Promise<void> {
  * from the dialog itself) and opens it only after the menu that started the action has closed, so a
  * WebView overlay is no longer lost to a native macOS menu. Mount it once.
  */
-export function AppConfirmHost() {
+export function AppConfirmHost({
+  onOpenSession,
+}: {
+  onOpenSession?: (sessionId: string) => unknown;
+}) {
   const { confirm, dialog } = useConfirm();
   const openedAt = useRef(0);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Subscribe to native approval and session stores while the confirmation host is mounted.
@@ -79,8 +87,9 @@ export function AppConfirmHost() {
         openedAt.current = performance.now();
         const answer = confirm({
           title: request.title,
-          message: <span className="whitespace-pre-line">{request.message}</span>,
+          message: request.message,
           confirmLabel: request.confirmLabel,
+          cancelLabel: request.cancelLabel,
           danger: request.tone === "danger",
           body: request.body,
           onConfirm: request.onConfirm,
@@ -100,7 +109,21 @@ export function AppConfirmHost() {
   return (
     <div className="contents" onKeyDownCapture={guard} onKeyUpCapture={guard}>
       {dialog}
-      <OwnerApprovalInbox />
+      <NotificationProjectIconContext value={SessionProjectIcon}>
+        <OwnerApprovalInbox
+          onOpenSession={onOpenSession}
+          // The dialog names who asked: the project and conversation, or the Assistant Room.
+          source={(request) => (
+            <Text as="div" size="secondary" tone="secondary">
+              <OwnerRequestSource
+                sessionId={request.sessionId}
+                threadId={request.threadId}
+                cwd={request.cwd}
+              />
+            </Text>
+          )}
+        />
+      </NotificationProjectIconContext>
     </div>
   );
 }

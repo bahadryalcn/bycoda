@@ -8,13 +8,9 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/settings/title-settings.html?theme=${theme}`);
-      await page.getByRole("button", { name: "Help", exact: true }).click();
-      await expect(
-        page
-          .getByRole("dialog", { name: "Help" })
-          .getByText("Model set in Work > Assignments.", { exact: true }),
-      ).toBeVisible();
-      await page.keyboard.press("Escape");
+      const helperModels = page.locator('[data-setting-id="helper-models"]');
+      await expect(helperModels.getByRole("img", { name: "Help", exact: true })).toHaveCount(0);
+      await expect(helperModels.getByRole("button", { name: "Help", exact: true })).toHaveCount(0);
       await page.getByRole("button", { name: "Manage models", exact: true }).click();
       await expect
         .poll(() =>
@@ -25,10 +21,16 @@ for (const theme of ["light", "dark"])
           ),
         )
         .toBe("roles");
+      // A helper follows Automatic until its switch is turned off, which reveals the model choice.
+      const automatic = page.getByRole("switch", {
+        name: "Automatic model for Title",
+        exact: true,
+      });
       const choice = page.getByRole("button", { name: /^Model for Title:/ });
-      await expect(choice).toContainText("Automatic");
-      await choice.click();
-      await page.getByRole("option", { name: "Any model, in order", exact: true }).click();
+      await expect(automatic).toBeChecked();
+      await expect(choice).toHaveCount(0);
+      await automatic.uncheck();
+      await expect(choice).toContainText("Any model, in order");
       const read = () =>
         page.evaluate(() =>
           (
@@ -75,8 +77,8 @@ for (const theme of ["light", "dark"])
         path: info.outputPath(`title-host-role-${theme}-${width}.png`),
         animations: "disabled",
       });
-      await choice.click();
-      await page.getByRole("option", { name: "Automatic", exact: true }).click();
+      await automatic.check();
+      await expect(choice).toHaveCount(0);
       await page.getByRole("button", { name: "Save", exact: true }).click();
       await expect.poll(async () => (await read()).roles["text.title"]).toBeUndefined();
       expect(await page.evaluate(() => localStorage.getItem("bycoda.title.default.v1"))).toBeNull();
@@ -90,7 +92,7 @@ test("unsupported Host never reads or mutates routing", async ({ page }) => {
   await page.goto("/settings/title-settings.html?unsupported");
   await page.getByRole("button", { name: "Manage models", exact: true }).click();
   await expect(
-    page.getByText("Model routing is not available on this Host.", {
+    page.getByText("Background work is not available on this Host.", {
       exact: true,
     }),
   ).toBeVisible();
@@ -106,8 +108,7 @@ test("denied Host save preserves the role draft and persisted state", async ({ p
   await page.goto("/settings/title-settings.html?denied");
   await page.getByRole("button", { name: "Manage models", exact: true }).click();
   const choice = page.getByRole("button", { name: /^Model for Title:/ });
-  await choice.click();
-  await page.getByRole("option", { name: "Any model, in order", exact: true }).click();
+  await page.getByRole("switch", { name: "Automatic model for Title", exact: true }).uncheck();
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(
     page.getByText("Model roles could not be saved. Try again.", {

@@ -1,12 +1,16 @@
-import { t } from "../../../shared/i18n/technical";
+import { t, useLocale } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { TextField } from "../../../shared/ui/TextField";
 import type { DeviceInspection, DeviceSummary } from "../types";
+
+/** Nodes drawn at once; a longer filtered list says it is clipped. */
+const MAX_NODES = 500;
 
 /** Accessibility snapshot, node selection and explicit node action. */
 export function DeviceInspector({
@@ -34,6 +38,7 @@ export function DeviceInspector({
   onPressNode: (inspectionId: string, nodeId: string) => void;
   onRefresh: () => void;
 }) {
+  useLocale();
   const node = inspection?.nodes.find((value) => value.id === selectedNode);
   const filteredNodes =
     inspection?.nodes.filter((value) =>
@@ -48,29 +53,32 @@ export function DeviceInspector({
         value={inspectionSearch}
         onChange={(event) => onSearch(event.target.value)}
       />
-      <Text as="p" size="caption" tone="secondary">
-        {platform === "android"
-          ? t(
-              "Native accessibility snapshot · Point at the preview to inspect. Select a node, then press it explicitly.",
-            )
-          : t(
-              "Native accessibility snapshot · Preview bounds unavailable for this coordinate space.",
-            )}
-      </Text>
+      <InfoPopover label={t("Accessibility nodes")}>
+        <Text as="p" size="caption" tone="secondary">
+          {platform === "android"
+            ? t(
+                "Native accessibility snapshot · Point at the preview to inspect. Select a node, then press it explicitly.",
+              )
+            : t(
+                "Native accessibility snapshot · Preview bounds unavailable for this coordinate space.",
+              )}
+        </Text>
+      </InfoPopover>
       {!inspection || inspection.supported === false ? (
-        <p>{t("This device does not provide a structured accessibility tree.")}</p>
+        <Text as="p" size="caption" tone="secondary">
+          {t("This device does not provide a structured accessibility tree.")}
+        </Text>
       ) : (
         <div
           {...surfaceAttributes({ frame: "pane", edge: "block" }, "device-panel-nodes")}
           aria-label={t("Accessibility nodes")}
         >
           {filteredNodes.length ? (
-            filteredNodes.slice(0, 500).map((value, index) => (
+            filteredNodes.slice(0, MAX_NODES).map((value, index) => (
               <Button
                 key={value.id}
                 variant="item"
-                selected={selectedNode === value.id}
-                aria-pressed={selectedNode === value.id}
+                pressed={selectedNode === value.id}
                 onClick={() => onSelect(value.id)}
                 onKeyDown={(event) => {
                   if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
@@ -80,7 +88,7 @@ export function DeviceInspector({
                       Math.max(
                         0,
                         Math.min(
-                          499,
+                          MAX_NODES - 1,
                           filteredNodes.length - 1,
                           index + (event.key === "ArrowDown" ? 1 : -1),
                         ),
@@ -118,6 +126,11 @@ export function DeviceInspector({
           )}
         </div>
       )}
+      {filteredNodes.length > MAX_NODES ? (
+        <Text as="p" size="caption" tone="secondary">
+          {t("Showing the first {p0} nodes", { p0: MAX_NODES })}
+        </Text>
+      ) : null}
       {node && (
         <Text
           as="div"
@@ -136,6 +149,9 @@ export function DeviceInspector({
           </span>
           <Button
             disabled={!controlEnabled || !node.enabled || !node.clickable}
+            disabledReason={t(
+              "Wait for the current device action to finish, or set up the device first.",
+            )}
             onClick={() => {
               onPressNode(inspection!.inspectionId, node.id);
             }}
@@ -148,6 +164,9 @@ export function DeviceInspector({
         variant="ghost"
         loading={loading}
         disabled={!controlEnabled || !canInspect}
+        disabledReason={t(
+          "Wait for the current device action to finish, or set up the device first.",
+        )}
         onClick={onRefresh}
       >
         {t("Refresh inspection")}

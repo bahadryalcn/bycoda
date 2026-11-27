@@ -1,7 +1,16 @@
-import type { ComponentPropsWithRef, ReactNode } from "react";
+import { createContext, useContext, type ComponentPropsWithRef, type ReactNode } from "react";
 import { IS_MAC } from "../../platform/tauri/platform";
 import styles from "./PaneHeader.module.css";
 import { Heading } from "./Heading";
+
+/**
+ * True below a window title bar that spans the window and already holds the macOS window
+ * buttons: headers in that subtree reserve no traffic-light inset.
+ * @group layout
+ * @use Provide `true` once, around everything below a title bar that spans the window.
+ * @avoid Reading it to place window chrome by hand: PaneHeader `chromeInset` and WindowChromeInset already do.
+ */
+export const WindowTitleBarAbove = createContext(false);
 
 export type WindowChromeInsetProps = {
   /** Reserve the space only when this is true (e.g. `!besideRail`). Default true. */
@@ -30,7 +39,8 @@ export function WindowChromeInset({
   size = "traffic-lights",
   className,
 }: WindowChromeInsetProps) {
-  if (!IS_MAC || !active) return null;
+  const titleBarAbove = useContext(WindowTitleBarAbove);
+  if (!IS_MAC || !active || titleBarAbove) return null;
   return (
     <span
       aria-hidden="true"
@@ -54,6 +64,10 @@ export type PaneHeaderProps = Omit<ComponentPropsWithRef<"div">, "title"> & {
   meta?: ReactNode;
   /** Trailing actions: ghost icon Buttons, overflow menu. */
   actions?: ReactNode;
+  /** One short primary action (a labelled or icon Button). It stays visible at every width, before `actions`. */
+  primaryAction?: ReactNode;
+  /** Overflow menu trigger holding the same secondary `actions`. Shown only in a narrow header, where `actions` are hidden. Without it `actions` never hide. */
+  overflow?: ReactNode;
   /** After the actions, flush to the end: window controls on Windows/Linux. */
   trailing?: ReactNode;
   /** Reserve the macOS traffic-light space at the start (no-op elsewhere). */
@@ -65,13 +79,17 @@ export type PaneHeaderProps = Omit<ComponentPropsWithRef<"div">, "title"> & {
   tabs?: ReactNode;
   /** Bottom hairline (`--ui-pane-border`). Default true. */
   bordered?: boolean;
+  /** Let the actions group shrink below its content width (default: fixed), for a header whose actions wrap. */
+  shrinkActions?: boolean;
   /** `div` (default) or `header`. A `header` outside a section reads as a page banner. */
   as?: "div" | "header";
 };
 
 /**
  * Title row of a pane or tool view: slots leading, icon, title, meta, children (tabs/search), actions, trailing.
- * Pane header contract: one 40px row (`--ui-pane-header-height`, density-aware, same as the title bar), caption-role title, at most 4 actions (more go into an overflow menu), optional 24px tab strip (`tabs`, `--ui-pane-tabs-height`) as the only second band.
+ * Pane header contract: one 40px row (`--ui-pane-header-height`, density-aware, same as the title bar), body-size title, at most 4 actions (more go into an overflow menu), optional 24px tab strip (`tabs`, `--ui-pane-tabs-height`) as the only second band.
+ * The title shrinks and truncates first. In a narrow header `primaryAction` stays and `actions` give way to the `overflow` menu.
+ * Only a header with `overflow` measures its own width (a size container); it then needs a width from its parent, not from its content.
  * Owns height (`--ui-pane-header-height`), bottom hairline, and optional window drag region plus macOS traffic-light inset.
  * Heading levels: PaneHeader = pane title row; PanelHeader = dialog/sheet/popover header (a different pattern, not merged); SectionLabel = caption over a group inside either.
  * @group layout
@@ -98,11 +116,14 @@ export function PaneHeader({
   icon,
   meta,
   actions,
+  primaryAction,
+  overflow,
   trailing,
   tabs,
   chromeInset = false,
   dragRegion = false,
   bordered = true,
+  shrinkActions = false,
   as: Root = "div",
   className,
   children,
@@ -110,7 +131,8 @@ export function PaneHeader({
 }: PaneHeaderProps) {
   const drag = dragRegion === true ? "deep" : dragRegion === "self" ? "" : dragRegion || undefined;
   const noDrag = drag !== undefined ? "false" : undefined;
-  const inset = chromeInset !== false && IS_MAC;
+  const titleBarAbove = useContext(WindowTitleBarAbove);
+  const inset = chromeInset !== false && IS_MAC && !titleBarAbove;
   const row = (
     <Root
       {...props}
@@ -118,6 +140,7 @@ export function PaneHeader({
       data-drag-region={drag !== undefined || undefined}
       data-bordered={bordered || undefined}
       data-chrome-inset={inset || undefined}
+      data-pane-header-collapsible={overflow != null || undefined}
       className={[styles.header, className].filter(Boolean).join(" ")}
     >
       {chromeInset !== false ? (
@@ -136,7 +159,7 @@ export function PaneHeader({
             </span>
           ) : null}
           {title != null ? (
-            <Heading as={titleAs} size="item" id={titleId} truncate className={styles.title}>
+            <Heading as={titleAs} size="section" id={titleId} truncate className={styles.title}>
               {title}
             </Heading>
           ) : null}
@@ -148,9 +171,26 @@ export function PaneHeader({
           {children}
         </div>
       ) : null}
-      {actions != null ? (
-        <div className={styles.actions} data-pane-header-actions data-tauri-drag-region={noDrag}>
-          {actions}
+      {actions != null || primaryAction != null || overflow != null ? (
+        <div
+          className={styles.actions}
+          data-pane-header-actions
+          data-shrink={shrinkActions || undefined}
+          data-tauri-drag-region={noDrag}
+        >
+          {primaryAction}
+          {actions != null && overflow != null ? (
+            <div className={styles.secondary} data-pane-header-secondary>
+              {actions}
+            </div>
+          ) : (
+            actions
+          )}
+          {overflow != null ? (
+            <div className={styles.overflow} data-pane-header-overflow>
+              {overflow}
+            </div>
+          ) : null}
         </div>
       ) : null}
       {trailing != null ? (

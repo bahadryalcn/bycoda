@@ -1,7 +1,8 @@
 import type { AssistantKeepAwakeStatus as Status } from "../../../shared/model/host-contracts/assistant";
 import { t } from "../../../shared/i18n";
 import styles from "./AssistantKeepAwakeStatus.module.css";
-import { Text } from "../../../shared/ui/Text";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { LiveText } from "../../../shared/ui/LiveText";
 
 /**
  * One sentence for the keep-awake state. `plan` is the owner's drafted policy: while nothing is
@@ -34,20 +35,33 @@ export function AssistantKeepAwakeStatus({
 }) {
   if (compact && !state?.requested && !state?.active && !state?.error) return null;
   const label = keepAwakeLabel(state);
+  const keepAwake = state?.active
+    ? "active"
+    : state?.requested
+      ? "requested"
+      : state
+        ? "off"
+        : "unknown";
+  // Error and normal copy are separate shared controls: each mounts with its role, so no node swaps role.
+  if (state?.error)
+    return (
+      <InlineError
+        className={styles.muted}
+        data-assistant-keep-awake={keepAwake}
+        details={state.error}
+      >
+        {label}
+      </InlineError>
+    );
   return (
-    <Text
-      as="div"
-      role={state?.error ? "alert" : "status"}
-      size={state?.error ? "caption" : "micro"}
-      tone={state?.error ? "danger" : "secondary"}
-      leading="inherit"
-      className={styles.muted}
-      data-assistant-keep-awake={
-        state?.active ? "active" : state?.requested ? "requested" : state ? "off" : "unknown"
-      }
-    >
-      {label}
-      {state?.error && <> · {state.error}</>}
-    </Text>
+    <div data-assistant-keep-awake={keepAwake}>
+      <LiveText
+        className={styles.muted}
+        size="caption"
+        tone="secondary"
+        leading="inherit"
+        text={label}
+      />
+    </div>
   );
 }

@@ -163,11 +163,11 @@ export async function assertUsageBudgets(session: Session): Promise<void> {
   );
   if (blocked)
     throw new Error(
-      `${t("Usage budget")}: ${blocked.b.label}. ${t(
+      `${t("Usage budget")}: ${blocked.b.label}. ${
         blocked.reading.state === "unknown"
-          ? "Usage could not be verified. Refresh or edit the budget in Usage settings."
-          : "Budget reached. Edit or remove the budget in Usage settings to continue.",
-      )}`,
+          ? t("Usage could not be verified. Refresh or edit the budget in Usage settings.")
+          : t("Budget reached. Edit or remove the budget in Usage settings to continue.")
+      }`,
     );
 }
 

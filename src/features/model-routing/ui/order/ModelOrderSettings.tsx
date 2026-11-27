@@ -1,29 +1,40 @@
+import { useState, useSyncExternalStore } from "react";
 import { useT } from "../../../../shared/i18n";
 import { useQueryClient } from "@tanstack/react-query";
-import { useAnimatedReorder } from "../../../../shared/hooks/useAnimatedReorder";
-import {
-  HOST_MODEL_ROUTING,
-  MODEL_ROUTING_MAX_ENTRIES,
-} from "../../../../shared/model/host-contracts/model-routing";
-import { Button } from "../../../../shared/ui/Button";
-import { EmptyState } from "../../../../shared/ui/EmptyState";
-import { FailureState } from "../../../../shared/ui/FailureState";
+import { HOST_MODEL_ROUTING } from "../../../../shared/model/host-contracts/model-routing";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
-import { Group, SettingsFeedback } from "../../../../shared/ui/settings";
-import { defaultModelSettings } from "../../../sessions/public/models";
-import { useModelSource } from "../../../sessions/public/modelSource";
-import { isRemoteProvider } from "../../../connections/public/protocol";
+import { SettingsFeedback, SettingsSaveBar } from "../../../../shared/ui/settings";
+import { Tab, TabList, TabPanel, Tabs } from "../../../../shared/ui/Tabs";
+import { TabDirtyDot } from "../../../../shared/ui/TabLabel";
+import {
+  providerAccounts,
+  subscribeProviderAccounts,
+} from "../../../providers/public/providerAccounts";
+import { loadUsageLimitFailover } from "../../../settings/public/settings";
+import { setupCandidates } from "../../model/smartSetup";
 import { useModelRoutingStatus } from "../../model/modelRoutingClient";
-import { entrySettings, removeOrderEntry, replaceOrderEntry } from "../../model/modelRoutingDraft";
-import { ModelOrderLimits } from "./ModelOrderLimits";
-import { ModelOrderPools } from "./ModelOrderPools";
-import { OrderSortMenu } from "./OrderSortMenu";
+import { hostProvidersFrom } from "../../model/hostProviders";
+import {
+  groupEntriesByKind,
+  unavailableOrderEntryId,
+  type OrderDraft,
+} from "../../model/modelRoutingDraft";
+import { ModelRolesGroups } from "../roles/ModelRolesGroups";
+import { ModelOrderLimitsTab } from "./ModelOrderLimitsTab";
+import { ModelOrderList, type FocusRequest, type OrderView } from "./ModelOrderList";
 import { SmartSetupAction } from "./SmartSetupAction";
-import { ModelOrderRow } from "./ModelOrderRow";
-import { RoutingSaveBar } from "../RoutingSaveBar";
+import { ModelOrderPools } from "./ModelOrderPools";
+import { orderChanges } from "./orderChanges";
+import { kindOf } from "./orderGrouping";
+import { changedTabs, type OrderTab } from "./orderTabs";
 import { useOrderDraft, useOrderSettings } from "./useOrderDraft";
-import type { MachineLimits } from "../../../tasks/public/hostSettings";
+import { useRetainedTransaction } from "../../model/retainedTransaction";
+import { useModelSource } from "../../../sessions/public/modelSource";
+import type {
+  ModelRoutingEntry,
+  ModelRoutingTarget,
+} from "../../../../shared/model/host-contracts/model-routing";
 
 export type ModelOrderSettingsProps = {
   /** The Host whose routing is edited. */
@@ -32,13 +43,16 @@ export type ModelOrderSettingsProps = {
   supported: boolean;
 };
 
-/** Settings > Models > Background work > All models, bound to one capable Host. */
+/**
+ * Settings > Models > Background work: jobs, the model order, groups and limits in
+ * tabs over one draft with one Save, bound to one capable Host.
+ */
 export function ModelOrderSettings({ machineId, supported }: ModelOrderSettingsProps) {
   const t = useT();
   if (!supported || !machineId)
     return (
       <SettingsFeedback state="error">
-        {t("Model routing is not available on this Host.")}
+        {t("Background work is not available on this Host.")}
       </SettingsFeedback>
     );
   return <OrderSettingsLoader key={machineId} machineId={machineId} />;
@@ -48,33 +62,33 @@ function OrderSettingsLoader({ machineId }: { machineId: string }) {
   const t = useT();
   const client = useQueryClient();
   const settings = useOrderSettings(machineId);
-  if (settings.routing.loading || settings.limits.isPending)
+  if (settings.routing.loading)
     return <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>;
-  if (!settings.routing.state || !settings.limits.data)
+  if (!settings.routing.state)
     return (
       <SettingsFeedback
         state="error"
         action={{
           label: t("Retry"),
           onClick: async () => {
-            await Promise.all([
-              settings.limits.refetch(),
-              client.refetchQueries({ queryKey: [HOST_MODEL_ROUTING, machineId], exact: true }),
-            ]);
+            await client.refetchQueries({ queryKey: [HOST_MODEL_ROUTING, machineId], exact: true });
           },
         }}
       >
-        {t("Models and limits could not be read.")}
+        {t("Models could not be read.")}
       </SettingsFeedback>
     );
   return (
     <OrderSettingsForm
       machineId={machineId}
       settings={settings}
-      initial={{ routing: settings.routing.state, limits: settings.limits.data.state }}
+      initial={{ routing: settings.routing.state, limits: settings.limits.data?.state }}
     />
   );
 }
+
+const accountsSnapshot = () =>
+  JSON.stringify([providerAccounts("claude"), providerAccounts("codex"), providerAccounts("grok")]);
 
 function OrderSettingsForm({
   machineId,
@@ -83,146 +97,168 @@ function OrderSettingsForm({
 }: {
   machineId: string;
   settings: ReturnType<typeof useOrderSettings>;
-  initial: Parameters<typeof useOrderDraft>[1] & { limits: MachineLimits };
+  initial: Parameters<typeof useOrderDraft>[1];
 }) {
   const t = useT();
-  const source = useModelSource();
+  // Account kinds decide which list an entry sits in.
+  useSyncExternalStore(subscribeProviderAccounts, accountsSnapshot, accountsSnapshot);
   const editor = useOrderDraft(settings, initial, machineId);
+  const source = useModelSource();
   const status = useModelRoutingStatus(machineId, true);
-  const { draft, change } = editor;
-  const { entries } = draft.routing;
-  // The first saved model the Host would not skip is where new work starts.
-  const nextEntryId = editor.dirty
-    ? undefined
-    : entries.find((entry) => {
-        const entryStatus = status.entries.find((candidate) => candidate.entryId === entry.id);
-        return entryStatus && !entryStatus.skip;
-      })?.id;
-  const sortable = useAnimatedReorder(
-    entries.map((entry) => entry.id),
-    (ids) =>
-      change({
-        ...draft,
-        routing: {
-          ...draft.routing,
-          entries: ids.map((id) => entries.find((entry) => entry.id === id)!),
-        },
-      }),
-    "y",
+  // The tab and list view survive leaving Settings; a first visit with no models starts at the list.
+  const [tab, setTab] = useRetainedTransaction<OrderTab>(
+    `order:${machineId}:tab`,
+    initial.routing.entries.length ? "jobs" : "models",
   );
-  function addEntry() {
-    const model = source.resolve(entries[entries.length - 1]?.harness ?? "codex", "");
-    if (!isRemoteProvider(model.harness)) return;
-    const id = crypto.randomUUID();
-    change({
-      ...draft,
-      percentages: { ...draft.percentages, [id]: "0" },
-      routing: {
-        ...draft.routing,
-        entries: [
-          ...entries,
-          {
-            id,
-            harness: model.harness,
-            model: model.id,
-            modelSettings: entrySettings(defaultModelSettings(model)),
-            unknownLimit: "use",
-          },
-        ],
-      },
-    });
-  }
+  const [view, setView] = useRetainedTransaction<OrderView>(`order:${machineId}:view`, "priority");
+  const [focusRequest, setFocusRequest] = useState<FocusRequest>();
+  const [setupRevision, setSetupRevision] = useState(0);
+  const [setupPlanner, setSetupPlanner] = useState<ModelRoutingTarget>();
+  const { draft } = editor;
+  const kindFor = (entry: ModelRoutingEntry) => kindOf(entry, source);
+  const change = (next: OrderDraft) => editor.change(groupEntriesByKind(next, kindFor));
+  const edit = (operation: (current: OrderDraft) => OrderDraft) =>
+    editor.edit((current) => groupEntriesByKind(operation(current), kindFor));
+  // The edited Host's remote choices feed setup and the list's Add model.
+  const addChoices = setupCandidates(source, settings.catalog.data);
+  const savedRouting = settings.routing.state ?? initial.routing;
+  const listed = editor.dirty ? orderChanges(editor.base, draft, change) : [];
+  // Anything the list does not name still counts, so Save never hides behind a clean count.
+  const changes =
+    editor.dirty && !listed.length ? [{ id: "other", label: t("Other changes") }] : listed;
+  const dirtyTabs = changedTabs(changes);
+  const message = editor.validation || editor.error;
+  const invalidId = editor.invalidEntryId ?? unavailableOrderEntryId(editor.validation);
+  const invalid =
+    invalidId && draft.routing.entries.some((entry) => entry.id === invalidId)
+      ? { id: invalidId, message }
+      : undefined;
+  const show = invalid
+    ? {
+        label: t("Show"),
+        onClick: () => {
+          setTab("models");
+          setFocusRequest((current) => ({ id: invalid.id, n: (current?.n ?? 0) + 1 }));
+        },
+      }
+    : undefined;
+  const tabs: { id: OrderTab; label: string }[] = [
+    { id: "jobs", label: t("Jobs") },
+    { id: "models", label: t("Models & order") },
+    { id: "groups", label: t("Groups") },
+    { id: "limits", label: t("Limits") },
+  ];
   return (
     <div className="flex flex-col gap-4">
+      {/* Setup rewrites the order, groups and job bindings of the one draft, so it sits above every tab. */}
       <FieldGroup variant="bare" disabled={editor.pending} inert={editor.pending}>
-        {!entries.length ? (
-          <EmptyState
-            context="panel"
-            title={t("Choose the models for unattended work")}
-            description=""
-            action={{ label: t("Add model"), onClick: addEntry }}
-            extra={<SmartSetupAction onEdit={editor.edit} />}
-          />
-        ) : (
-          <Group
-            title={t("All models")}
-            layout="full"
-            info={t(
-              "Tried from the top: new work starts on the first model with quota left. Running work keeps its model.",
-            )}
-            action={
-              <div className="flex items-center gap-2">
-                <OrderSortMenu disabled={entries.length < 2} onEdit={editor.edit} />
-                <SmartSetupAction onEdit={editor.edit} />
-                <Button
-                  size="sm"
-                  disabled={entries.length >= MODEL_ROUTING_MAX_ENTRIES}
-                  disabledReason={
-                    entries.length >= MODEL_ROUTING_MAX_ENTRIES
-                      ? t("The model list is full.")
-                      : undefined
-                  }
-                  onClick={addEntry}
-                >
-                  {t("Add model")}
-                </Button>
-              </div>
-            }
-          >
-            {status.error ? (
-              <FailureState
-                size="inline"
-                title={t("Model limits could not be read.")}
-                description=""
-                error={status.error}
-                onRetry={() => status.refetch()}
-              />
-            ) : null}
-            {entries.map((entry, index) => (
-              <ModelOrderRow
-                key={entry.id}
-                entry={entry}
-                index={index}
-                count={entries.length}
-                next={entry.id === nextEntryId}
-                percent={draft.percentages[entry.id] ?? "0"}
-                status={status.entries.find((candidate) => candidate.entryId === entry.id)}
-                statusLoading={status.loading}
-                statusError={Boolean(status.error && status.entries.length === 0)}
-                sortable={sortable}
-                onChange={(next) => change(replaceOrderEntry(draft, next))}
-                onPercent={(text) =>
-                  change({ ...draft, percentages: { ...draft.percentages, [entry.id]: text } })
-                }
-                onRemove={() => editor.edit((current) => removeOrderEntry(current, entry.id))}
-              />
-            ))}
-          </Group>
-        )}
-        {entries.length ? (
-          <ModelOrderPools draft={draft} onChange={change} onEdit={editor.edit} />
-        ) : null}
-        <ModelOrderLimits
-          draft={draft}
-          usage={settings.limits.data?.state ?? initial.limits}
-          onChange={change}
+        <SmartSetupAction
+          key={setupRevision}
+          variant={draft.routing.entries.length ? "secondary" : "primary"}
+          onEdit={edit}
+          catalogChoices={addChoices}
+          choice={setupPlanner}
+          onChoice={setSetupPlanner}
         />
       </FieldGroup>
-      <RoutingSaveBar
-        dirty={editor.dirty}
+      <Tabs value={tab} onValueChange={setTab} panels="shared">
+        <TabList label={t("Background work")} scrollbar="hidden">
+          {tabs.map((item) => (
+            <Tab key={item.id} value={item.id}>
+              {item.label}
+              {dirtyTabs.has(item.id) ? <TabDirtyDot /> : null}
+            </Tab>
+          ))}
+        </TabList>
+        <TabPanel>
+          <FieldGroup variant="bare" disabled={editor.pending} inert={editor.pending}>
+            {tab === "jobs" ? (
+              <ModelRolesGroups
+                machineId={machineId}
+                draft={draft}
+                savedVersion={savedRouting.version}
+                live={!editor.dirty}
+                disabled={editor.pending}
+                onChange={change}
+              />
+            ) : null}
+            {tab === "models" ? (
+              <ModelOrderList
+                draft={draft}
+                dirty={editor.dirty}
+                change={change}
+                edit={edit}
+                status={status}
+                chatFallback={loadUsageLimitFailover() === "order"}
+                view={view}
+                onView={setView}
+                invalid={invalid}
+                focusRequest={focusRequest}
+                addChoices={addChoices}
+              />
+            ) : null}
+            {tab === "groups" ? (
+              <ModelOrderPools draft={draft} onChange={change} onEdit={edit} />
+            ) : null}
+            {tab === "limits" && settings.limits.data ? (
+              <ModelOrderLimitsTab
+                machineId={machineId}
+                machine={settings.limits.data.machine}
+                draft={draft}
+                usage={{ ...settings.limits.data.state, stale: settings.limits.isError }}
+                hostProviders={hostProvidersFrom(settings.catalog)}
+                onChange={change}
+                onFieldInvalid={editor.fieldInvalid}
+              />
+            ) : null}
+            {tab === "limits" && !settings.limits.data ? (
+              <SettingsFeedback
+                state={settings.limits.isPending ? "loading" : "error"}
+                action={
+                  settings.limits.isPending
+                    ? undefined
+                    : {
+                        label: t("Retry"),
+                        onClick: async () => {
+                          await settings.limits.refetch();
+                        },
+                      }
+                }
+              >
+                {settings.limits.isPending ? t("Loading…") : t("Work limits could not be read.")}
+              </SettingsFeedback>
+            ) : null}
+          </FieldGroup>
+        </TabPanel>
+      </Tabs>
+      <SettingsSaveBar
+        id={`background-work:${machineId}`}
+        title={t("Background work")}
+        changes={changes}
         pending={editor.pending}
         saved={editor.saved}
         canSave={!editor.validation && !editor.conflict}
+        saveLabel={t("Save changes")}
         discardLabel={editor.conflict ? t("Reload") : undefined}
         discardEnabled={editor.dirty || editor.conflict}
         onDiscard={() => {
+          setSetupRevision((current) => current + 1);
           if (editor.conflict) void editor.reload();
           else editor.revert();
         }}
-        onSave={() => void editor.save()}
+        onSave={() => {
+          setSetupRevision((current) => current + 1);
+          return editor.save();
+        }}
       >
-        {editor.validation ? <InlineError>{t(editor.validation)}</InlineError> : null}
-        {editor.error ? <InlineError>{t(editor.error)}</InlineError> : null}
+        {editor.validation ? <InlineError action={show}>{editor.validation}</InlineError> : null}
+        {editor.error ? (
+          <InlineError action={show} details={editor.error}>
+            {editor.error.startsWith("Models saved; work limits were not saved.")
+              ? t("Models saved; work limits were not saved.")
+              : t("Could not save or reload model settings.")}
+          </InlineError>
+        ) : null}
         {editor.conflict ? (
           <InlineMessage tone="warning">
             {t(
@@ -230,7 +266,7 @@ function OrderSettingsForm({
             )}
           </InlineMessage>
         ) : null}
-      </RoutingSaveBar>
+      </SettingsSaveBar>
     </div>
   );
 }

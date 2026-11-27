@@ -1,4 +1,7 @@
 import { asRecord } from "../../../../shared/lib/records";
+import { CLAUDE_WORKSPACE_GLOB } from "../../../../shared/model/sessionApprovalGrant";
+import { EXIT_STDERR_LINES, pushExitStderrTail } from "../../core/exitDiagnostics";
+import { retryAtFromDelay } from "../../core/retryAt";
 import type {
   Attachment,
   RuntimeMode,
@@ -27,6 +30,7 @@ import type { ReportedCommand } from "../../core/reportedCommands";
 import { streamTextDelta } from "../../core/streamText";
 import { claudeDisallowedTools } from "./claudeToolLimits";
 import type { ClaudeSpawnInput } from "./claudeSpawnInput";
+import { normalizeSearchSources, type SearchSource } from "../../../../shared/model/searchSources";
 import type { ApprovalDecision, HarnessEvent } from "../../core/types";
 
 /** Claude Code versions that first ship Opus 5.5 / Opus 5 / Sonnet 5 / Fable 5 / Opus 4.8 / 4.7. */
@@ -63,6 +67,7 @@ export type ClaudeControlRequest = {
   toolName?: string;
   input?: Record<string, unknown>;
   toolUseId?: string;
+  restrictedApproval?: true;
 };
 
 export type ClaudeMappedLine = {
@@ -241,8 +246,11 @@ function normalizeImageMime(mime: string): string {
 
 export function buildClaudeSpawnArgs(input: ClaudeSpawnInput): string[] {
   const args = ["--output-format", "stream-json", "--verbose", "--input-format", "stream-json"];
+  if (input.chrome !== undefined && !input.isolated)
+    args.push(input.chrome ? "--chrome" : "--no-chrome");
   const disallowed = claudeDisallowedTools(input);
   if (disallowed.length) args.push("--disallowedTools", ...disallowed);
+  if (input.allowedTools?.length) args.push("--allowedTools", ...input.allowedTools);
   if (!input.isolated) {
     args.push("--permission-prompt-tool", "stdio");
   }
@@ -273,8 +281,9 @@ export function buildClaudeSpawnArgs(input: ClaudeSpawnInput): string[] {
     ...(Object.keys(env).length ? { env } : {}),
     ...(input.isolated ? { disableAllHooks: true } : {}),
   };
+  if (input.privateDelegateHistory || (input.isolated && !input.persistSession))
+    args.push("--no-session-persistence");
   if (input.isolated) {
-    if (!input.persistSession) args.push("--no-session-persistence");
     args.push("--strict-mcp-config");
     args.push("--mcp-config", JSON.stringify({ mcpServers: {} }));
     args.push("--settings", JSON.stringify(settings));
@@ -396,6 +405,28 @@ export function toClaudePermissionResult(
   };
 }
 
+/** Scope only a confirmed top-level filename search rooted in the original turn's cwd. */
+export function claudeSessionApprovalScope(
+  control: ClaudeControlRequest,
+  confirmedTopLevelTool?: string,
+) {
+  const input = control.input;
+  if (
+    control.subtype !== "can_use_tool" ||
+    control.restrictedApproval ||
+    control.toolName !== "Glob" ||
+    confirmedTopLevelTool !== "Glob" ||
+    typeof input?.pattern !== "string" ||
+    input.pattern.length > 1024 ||
+    input.pattern.trim() !== input.pattern ||
+    (input.path !== undefined && input.path !== ".") ||
+    Object.keys(input).some((key) => key !== "pattern" && key !== "path") ||
+    !input.pattern.split("/").every((part) => /^[A-Za-z0-9_*?][A-Za-z0-9_.*?-]*$/.test(part))
+  )
+    return undefined;
+  return CLAUDE_WORKSPACE_GLOB;
+}
+
 export function parseControlRequest(rec: Record<string, unknown>): ClaudeControlRequest | null {
   const type = stringField(rec, "type");
   if (type !== "control_request" && type !== "sdk_control_request") {
@@ -412,6 +443,17 @@ export function parseControlRequest(rec: Record<string, unknown>): ClaudeControl
     subtype,
     toolName: stringField(nested, "tool_name") ?? stringField(rec, "tool_name"),
     input,
+    ...([rec, nested].some((source) =>
+      [
+        source?.agent_id,
+        source?.agentId,
+        source?.parent_tool_use_id,
+        source?.blocked_path,
+        source?.blockedPath,
+      ].some((value) => value !== undefined && value !== null && value !== ""),
+    )
+      ? { restrictedApproval: true }
+      : {}),
     toolUseId:
       stringField(nested, "tool_use_id") ??
       stringField(nested, "toolUseID") ??
@@ -475,6 +517,22 @@ export function statusTextFromSystem(rec: Record<string, unknown>): string | und
   return compact ? "Compacted context" : undefined;
 }
 
+/** The CLI's `api_retry` system row: attempt counter and the wait before the next request. */
+export function retryFromSystem(
+  rec: Record<string, unknown>,
+  now: number,
+): { text: string; retryAt?: number } | undefined {
+  if (stringField(rec, "type") !== "system" || stringField(rec, "subtype") !== "api_retry")
+    return undefined;
+  const attempt = typeof rec.attempt === "number" ? rec.attempt : undefined;
+  const max = typeof rec.max_retries === "number" ? rec.max_retries : undefined;
+  const retryAt = retryAtFromDelay(rec.retry_delay_ms, now);
+  return {
+    text: attempt && max ? `Retrying (${attempt}/${max})…` : "Retrying…",
+    ...(retryAt ? { retryAt } : {}),
+  };
+}
+
 /** Claude can report an API failure as an assistant row before a success result. */
 export function errorFromAssistant(rec: Record<string, unknown>): string | undefined {
   if (rec.type !== "assistant" || isSubagentMessage(rec)) return undefined;
@@ -534,13 +592,35 @@ export function usageLimitFromRateLimitEvent(
 
 const USAGE_LIMIT_TEXT = /hit your (?:(?:usage|weekly) )?limit|usage limit reached/i;
 
+/** Claude's wording for a refused usage window, in a result or on stderr. */
+export function isUsageLimitText(text: string): boolean {
+  return USAGE_LIMIT_TEXT.test(text);
+}
+
 /** Claude also ends a limited turn with the limit as its error text. */
 export function isUsageLimitResult(rec: Record<string, unknown>): boolean {
   if (rec.is_error !== true) return false;
   const errors = Array.isArray(rec.errors)
     ? rec.errors.filter((item): item is string => typeof item === "string")
     : [];
-  return [stringField(rec, "result") ?? "", ...errors].some((text) => USAGE_LIMIT_TEXT.test(text));
+  return [stringField(rec, "result") ?? "", ...errors].some(isUsageLimitText);
+}
+
+/** Lines of Claude's stderr kept to explain an exit. */
+export const CLAUDE_EXIT_STDERR_LINES = EXIT_STDERR_LINES;
+
+/** Keeps the last few non-empty stderr lines, each redacted and bounded, for the exit message. */
+export function pushClaudeStderrTail(tail: string[], line: string): void {
+  pushExitStderrTail(tail, line);
+}
+
+/** Error text for an exit nobody asked for: the code and what Claude last printed. */
+export function claudeExitMessage(code: number | null | undefined, stderrTail: readonly string[]) {
+  const status = code == null ? "" : ` (exit code ${code})`;
+  const detail = stderrTail.join("\n");
+  return detail
+    ? `Claude Code exited unexpectedly${status}:\n${detail}`
+    : `Claude Code exited unexpectedly${status}.`;
 }
 
 export function streamDeltaFromEvent(
@@ -860,7 +940,13 @@ export function toolResultsFromUserMessage(rec: Record<string, unknown>): Array<
   });
 }
 
-type ToolResultRow = { toolUseId: string; isError: boolean; text: string };
+type ToolResultRow = {
+  toolUseId: string;
+  isError: boolean;
+  text: string;
+  /** Pages a server-side web search returned. */
+  sources?: SearchSource[];
+};
 
 /**
  * Server tools (advisor, web search, ...) run inside the API call: their result
@@ -875,11 +961,13 @@ function serverToolResultFromBlock(block: unknown): ToolResultRow[] {
   if (!toolUseId) return [];
   const content = asRecord(row.content);
   const contentType = stringField(content, "type") ?? "";
+  const sources = type === "web_search_tool_result" ? normalizeSearchSources(row.content) : [];
   return [
     {
       toolUseId,
       isError: row.is_error === true || contentType.endsWith("_error"),
       text: content ? (stringField(content, "text") ?? "") : toolResultText(row.content),
+      ...(sources.length ? { sources } : {}),
     },
   ];
 }
@@ -1271,20 +1359,19 @@ export function contextUsedFromAssistant(rec: Record<string, unknown>): number |
  */
 export function contextFromResult(
   rec: Record<string, unknown>,
+  model?: string,
 ): { used?: number; window?: number } | undefined {
   const usage = asRecord(rec.usage);
   const iterations = Array.isArray(usage?.iterations) ? usage.iterations : [];
   const last = asRecord(iterations[iterations.length - 1]);
   const used = contextUsedFromUsage(last);
 
-  let window: number | undefined;
   const modelUsage = asRecord(rec.modelUsage);
-  for (const entry of Object.values(modelUsage ?? {})) {
-    const contextWindow = numberField(asRecord(entry), "contextWindow");
-    if (contextWindow > 0) {
-      window = Math.max(window ?? 0, contextWindow);
-    }
-  }
+  const entries = model && modelUsage ? [modelUsage[model]] : Object.values(modelUsage ?? {});
+  const windows = entries
+    .map((entry) => numberField(asRecord(entry), "contextWindow"))
+    .filter((window) => Number.isSafeInteger(window) && window > 0);
+  const window = windows.every((value) => value === windows[0]) ? windows[0] : undefined;
 
   if (!used && !window) return undefined;
   return { used: used > 0 ? used : undefined, window };

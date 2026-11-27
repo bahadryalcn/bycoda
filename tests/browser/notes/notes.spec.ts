@@ -47,7 +47,13 @@ test("fills the note workspace and exposes each pane's remaining content", async
   await expect(panes).toHaveCount(1);
   await page.getByRole("tab", { name: "Split", exact: true }).click();
   await expect(panes).toHaveCount(2);
-  await expect(page.getByRole("button", { name: "More below", exact: true })).toHaveCount(2);
+  for (const pane of await panes.all()) {
+    expect(
+      await pane
+        .locator(".note-pane-scroll")
+        .evaluate((node) => node.scrollHeight - node.clientHeight),
+    ).toBeGreaterThan(0);
+  }
   for (const width of [1440, 1024, 768, 390]) {
     await page.setViewportSize({ width, height: 950 });
     const bounds = await page.locator(".note-layout").boundingBox();
@@ -63,10 +69,10 @@ test("fills the note workspace and exposes each pane's remaining content", async
   }
   await page.setViewportSize({ width: 1440, height: 950 });
   const preview = panes.nth(1);
-  await preview.getByRole("button", { name: "More below", exact: true }).click();
-  expect(
-    await preview.locator(".note-pane-scroll").evaluate((node) => node.scrollTop),
-  ).toBeGreaterThan(0);
+  const previewScroll = preview.locator(".note-pane-scroll");
+  await previewScroll.hover();
+  await page.mouse.wheel(0, 480);
+  await expect.poll(() => previewScroll.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
   expect(
     await panes
       .first()
@@ -76,7 +82,6 @@ test("fills the note workspace and exposes each pane's remaining content", async
   await preview.locator(".note-pane-scroll").evaluate((node) => {
     node.scrollTop = node.scrollHeight;
   });
-  await expect(preview.getByRole("button", { name: "More below", exact: true })).toHaveCount(0);
   expect(
     await preview
       .locator(".note-pane-scroll")
@@ -140,6 +145,14 @@ test("session note picker overlays the editor, restores keyboard focus and opens
   await expect(page.locator('[data-note-id="note-1"]')).toHaveCount(0);
 });
 
+test("a note that starts with a heading is named by it and has no separate title field", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/notes/notes.html?heading");
+  await expect(page.getByRole("heading", { name: "Release checklist", level: 1 })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Note title", exact: true })).toHaveCount(0);
+});
+
 test("opening an empty session creates no document and browsing project notes remembers the selection", async ({
   page,
 }) => {
@@ -157,7 +170,7 @@ test("opening an empty session creates no document and browsing project notes re
     .click();
   await expect(await sourceEditor(page)).toContainText("Project notes and ideas for item 3.");
   await page.getByRole("button", { name: "Delete note", exact: true }).click();
-  await expect(page.getByRole("group", { name: "Delete note permanently?" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Delete note permanently?" })).toBeVisible();
   expect(
     await page.evaluate(
       () => (window as unknown as { notesFixture: unknown[] }).notesFixture.length,
@@ -351,7 +364,7 @@ test("quotes selected note text from preview and source through the contextual m
         () => (window as unknown as { selectedQuotes: { text: string }[] }).selectedQuotes[1]?.text,
       ),
     )
-    .toBe("# Release checklist");
+    .toBe("Release checklist");
 });
 
 test("keeps note controls compact and confirms deletion in a focused dialog", async ({
@@ -363,12 +376,15 @@ test("keeps note controls compact and confirms deletion in a focused dialog", as
   await filters.click();
   const options = page.getByRole("dialog", { name: "Filters and options" });
   await expect(options).toBeVisible();
-  await choose(page, "Filter by tag", "#ideas");
-  // The shared FilterTrigger shows how many filters narrow the library.
-  await expect(filters).toContainText("1");
   await page.keyboard.press("Escape");
   await expect(options).toHaveCount(0);
   await expect(filters).toBeFocused();
+  const tags = page.getByRole("group", { name: "Filter by tag", exact: true });
+  const ideas = tags.getByRole("button", { name: "#ideas", exact: true });
+  await ideas.click();
+  await expect(ideas).toHaveAttribute("aria-pressed", "true");
+  // The shared FilterTrigger shows how many filters narrow the library.
+  await expect(filters).toContainText("1");
   await page.getByRole("button", { name: "Reset project and tag filters", exact: true }).click();
   await expect(filters).not.toContainText("1");
   await expect(page.getByLabel("Note title", { exact: true })).toBeVisible();
@@ -486,13 +502,18 @@ test("groups and filters many notes, edits both panes, formats and saves preview
     }
   };
   await capture("project-filter");
-  await choose(page, "Filter by tag", "#ideas");
+  await page.keyboard.press("Escape");
+  await page
+    .getByRole("group", { name: "Filter by tag", exact: true })
+    .getByRole("button", { name: "#ideas", exact: true })
+    .click();
   await expect(cards).toHaveCount(7);
   expect(
     await cards.evaluateAll((nodes) =>
       nodes.map((node) => node.getAttribute("data-note-id")).sort(),
     ),
   ).toEqual(Array.from({ length: 7 }, (_, index) => `note-${index * 6 + 1}`).sort());
+  await page.getByRole("button", { name: "Filters and options", exact: true }).click();
   await choose(page, "Group notes by", "Tags");
   await expect(page.locator(".note-group-heading")).toHaveCount(1);
   await capture("project-tag-filter");
@@ -781,8 +802,23 @@ for (const theme of ["light", "dark"])
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280])
     test(`session notes caller states ${theme} ${width}`, async ({ page }, info) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
       await page.setViewportSize({ width, height: 900 });
+      await page.addInitScript(
+        (panelWidth) => {
+          localStorage.setItem("bycoda.notesPanelWidth", String(panelWidth));
+        },
+        width === 800 ? 260 : 560,
+      );
       await page.goto(`/tests/browser/notes/notes.html?panel&theme=${theme}`);
+      const panel = page.getByRole("complementary", { name: "Session notes" });
+      const noteTitle = panel
+        .getByRole("button", { name: "Note title: Release planning" })
+        .locator("[data-layer]");
+      await expect(noteTitle).toBeVisible();
+      expect(
+        await noteTitle.evaluate((title) => title.scrollWidth - title.clientWidth),
+      ).toBeLessThanOrEqual(1);
       const editor = await sourceEditor(page);
       await expect(editor).toContainText("Release checklist");
       await page.getByRole("button", { name: "Switch note", exact: true }).click();
@@ -793,12 +829,86 @@ for (const theme of ["light", "dark"])
       await page.screenshot({ path: info.outputPath(`notes-picker-${theme}-${width}.png`) });
       await page.keyboard.press("Escape");
       await expect(editor).toBeVisible();
-      await page.screenshot({ path: info.outputPath(`notes-panel-${theme}-${width}.png`) });
+      await expect(panel.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
+      await expect(page.locator(".note-save-status")).toHaveCount(0);
+      await page.screenshot({
+        path: `temp/verification/notes-save-flow/panel-${theme}-${width}.png`,
+      });
+      await page.getByRole("tab", { name: "Document", exact: true }).click();
+      await panel.screenshot({
+        path: `temp/verification/notes-session-writing/document-${theme}-${width}.png`,
+      });
+      await page.goto(`/tests/browser/notes/notes.html?panel&recovery&theme=${theme}`);
+      const recovery = page.locator("[data-note-private-recovery]");
+      await expect(recovery).toContainText("Review changes");
+      await page.screenshot({
+        path: `temp/verification/notes-save-flow/recovery-${theme}-${width}.png`,
+      });
+      await page.goto(`/tests/browser/notes/notes.html?panel&empty&theme=${theme}`);
+      await expect(page.getByText("No notes for this session yet.", { exact: true })).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/notes-save-flow/empty-${theme}-${width}.png`,
+      });
+      await page.getByRole("button", { name: "New note", exact: true }).last().click();
+      const writingArea = page.getByRole("textbox", { name: "Note body", exact: true });
+      await expect(writingArea).toBeFocused();
+      const bounds = await writingArea.boundingBox();
+      expect(bounds?.height).toBeGreaterThan(240);
+      await page.getByRole("textbox", { name: "Add note tag" }).focus();
+      await writingArea.click({ position: { x: 36, y: 220 } });
+      await expect(writingArea).toBeFocused();
+      await expect(
+        panel.getByRole("button", { name: "Delete note", exact: true }),
+      ).toBeInViewport();
+      await expect(panel.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
+      await panel.screenshot({
+        path: `temp/verification/notes-session-writing/blank-${theme}-${width}.png`,
+      });
       await page.goto(`/tests/browser/notes/notes.html?panel&pendingNotes&theme=${theme}`);
       await expect(page.getByText("Loading notes…")).toBeVisible();
       await page.screenshot({ path: info.outputPath(`notes-loading-${theme}-${width}.png`) });
       await page.goto(`/tests/browser/notes/notes.html?panel&failedNotes&theme=${theme}`);
-      await expect(page.getByText(/Fixture notes unavailable/)).toBeVisible();
+      const failure = page
+        .getByRole("alert")
+        .filter({ hasText: "Could not load or update notes." });
+      await expect(failure).toBeVisible();
       await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
       await page.screenshot({ path: info.outputPath(`notes-error-${theme}-${width}.png`) });
+      // The Host's reason sits behind the failure's Details control.
+      await failure.getByRole("button", { name: /^Details/ }).click();
+      await expect(page.getByText(/Fixture notes unavailable/)).toBeVisible();
     });
+
+test("new session note saves explicitly and leaves no false title recovery when closed", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/notes/notes.html?panel&empty");
+  await page.getByRole("button", { name: "New note", exact: true }).last().click();
+  const panel = page.getByRole("complementary", { name: "Session notes" });
+  const editor = panel.getByRole("textbox", { name: "Note body", exact: true });
+  await expect(editor).toBeFocused();
+  await expect(panel.getByRole("button", { name: "Start writing" })).toHaveCount(0);
+  const tags = panel.getByRole("textbox", { name: "Add note tag" });
+  await expect(tags).toBeVisible();
+  await page.keyboard.type("First line becomes title");
+  await editor.press("ControlOrMeta+s");
+  const header = panel.locator("[data-notes-header]");
+  await header
+    .getByRole("button", { name: "Note title: First line becomes title", exact: true })
+    .click();
+  const title = header.getByRole("textbox", { name: "Note title", exact: true });
+  await title.fill("Renamed in the header");
+  await title.press("Enter");
+  await expect(
+    header.getByRole("button", { name: "Note title: Renamed in the header" }),
+  ).toBeVisible();
+  await tags.fill("planning");
+  await tags.press("Enter");
+  await expect(panel.getByRole("button", { name: "Remove #planning" })).toBeVisible();
+  await editor.press("ControlOrMeta+s");
+  await page.getByRole("button", { name: "Open note library", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Note title", exact: true })).toHaveValue(
+    "Renamed in the header",
+  );
+  await expect(page.locator("[data-note-private-recovery]")).toHaveCount(0);
+});

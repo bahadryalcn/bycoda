@@ -11,7 +11,7 @@ import {
   type DecisionRequest,
   type DecisionSource,
 } from "./decision-types";
-import { defaultDecisionConfig } from "./decision-config";
+import { DecisionConfigDamagedError, defaultDecisionConfig } from "./decision-config";
 
 type ClefCase = {
   name: string;
@@ -84,6 +84,8 @@ function build(
     now: () => clock,
     secrets: options.secrets,
     runTextPrompt: options.runTextPrompt,
+    resolveEndpoint: options.resolveEndpoint,
+    touchLocal: options.touchLocal,
   });
   return {
     gateway,
@@ -271,6 +273,58 @@ describe("decide: answering and threshold", () => {
     );
     expect(fetcher).not.toHaveBeenCalled();
   });
+
+  describe("on-demand local start", () => {
+    const stopped: DecisionSource = {
+      ...localClef,
+      id: "local-stopped",
+      endpoint: undefined,
+      status: "stopped",
+      local: { modelPath: "/models/clef.gguf", runtimePath: "/models/llama-server" },
+    };
+
+    it("stops waiting for a cold start at the decision deadline", async () => {
+      // A start that never settles in time: the hash and health polling outlast the deadline.
+      const resolveEndpoint = vi.fn(() => new Promise<string | undefined>(() => undefined));
+      const { gateway, fetcher } = build(config([stopped]), { resolveEndpoint });
+      const started = Date.now();
+      const result = await gateway.decide(request({ timeoutMs: 1_000 }));
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(resolveEndpoint).toHaveBeenCalledTimes(1);
+      expect(fetcher).not.toHaveBeenCalled();
+      expect(result.answers.screen).toEqual({ error: "unavailable" });
+      expect(gateway.recentAudit()[0]).toMatchObject({
+        sourceId: "local-stopped",
+        outcome: "unavailable",
+        errorCode: "timeout",
+      });
+    });
+
+    it("keeps a late start failure handled after the caller stopped waiting", async () => {
+      let fail: (reason: Error) => void = () => undefined;
+      const resolveEndpoint = vi.fn(
+        () =>
+          new Promise<string | undefined>((_resolve, reject) => {
+            fail = reject;
+          }),
+      );
+      const { gateway } = build(config([stopped]), { resolveEndpoint });
+      await gateway.decide(request({ timeoutMs: 1_000 }));
+      // An unhandled rejection here would fail the test run.
+      fail(new Error("start failed after the deadline"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(gateway.recentAudit()[0]?.errorCode).toBe("timeout");
+    });
+
+    it("uses the address of a start that finishes inside the deadline", async () => {
+      const resolveEndpoint = vi.fn(async () => LOCAL);
+      const touchLocal = vi.fn();
+      const { gateway, fetcher } = build(config([stopped]), { resolveEndpoint, touchLocal });
+      await gateway.decide(request({ timeoutMs: 1_000 }));
+      expect(fetcher).toHaveBeenCalled();
+      expect(touchLocal).toHaveBeenCalledWith("local-stopped");
+    });
+  });
 });
 
 describe("decide: personal data, keys and retries", () => {
@@ -383,6 +437,39 @@ describe("decide: personal data, keys and retries", () => {
     const entry = gateway.recentAudit().at(-1);
     expect(entry).toMatchObject({ outcome: "unavailable", errorCode: "auth" });
     expect(JSON.stringify(gateway.recentAudit())).not.toContain("secret detail");
+  });
+});
+
+describe("decide: damaged settings", () => {
+  it("answers every question config_damaged without contacting a source or throwing", async () => {
+    const fetcher = vi.fn();
+    const gateway = createDecisionGateway({
+      loadConfig: async () => {
+        throw new DecisionConfigDamagedError({ reason: "invalid_json", evidenceKept: true });
+      },
+      fetcher: fetcher as unknown as typeof fetch,
+    });
+
+    const result = await gateway.decide(
+      request({ questions: { screen: yesNo, other: yesNo }, personalData: true }),
+    );
+
+    expect(result.answers).toEqual({
+      screen: { error: "config_damaged" },
+      other: { error: "config_damaged" },
+    });
+    expect(result.sourceChain).toEqual([]);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("does not hide other config load failures as an answer", async () => {
+    const gateway = createDecisionGateway({
+      loadConfig: async () => {
+        throw new Error("disk unavailable");
+      },
+    });
+
+    await expect(gateway.decide(request())).rejects.toThrow("disk unavailable");
   });
 });
 

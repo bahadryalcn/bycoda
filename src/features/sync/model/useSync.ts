@@ -1,4 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { startForegroundPolling } from "../../../shared/lib/foregroundPolling";
 import {
   cachedRemoteCapabilities,
   loadRemoteCapabilities,
@@ -9,11 +10,14 @@ import { subscribeLockRecordChanges } from "../../group-lock/model/groupLock";
 import { subscribeProjectPathsChanged } from "../../projects/model/recents";
 import { isLocalSyncMachine } from "../../connections/model/localSync";
 import {
+  boundedDrain,
+  CYCLE_INTERVAL_MS,
   isApplyingRemote,
   recordSyncStatus,
   startSyncLoop,
   SYNC_UNSUPPORTED_MESSAGE,
 } from "./syncClient";
+import { completeNativeSyncCycle } from "./nativeSyncCompletion";
 import { setLocalHostEnvironmentId } from "./syncProjects";
 import { createSyncWindowOwner } from "./syncWindowOwner";
 import { setRemoteOpenTargets } from "./syncRemoteProjects";
@@ -120,20 +124,6 @@ function applyMachineRoles(machines: readonly RemoteMachine[]): void {
   );
 }
 
-async function completeNativeSyncCycle(machineId: string, operationId: string): Promise<void> {
-  for (;;) {
-    try {
-      await invoke<void>("sync_cycle_complete", { machineId, operationId });
-      return;
-    } catch (error) {
-      const message = String(error);
-      if (!message.includes("SYNC_OWNER_HELD") && !message.includes("NATIVE_CONTROL_WINDOW_BUSY"))
-        throw error;
-      await new Promise<void>((resolve) => setTimeout(resolve, 250));
-    }
-  }
-}
-
 const lastCapabilityCheck = new Map<string, number>();
 
 async function syncCapableMachines(machines: readonly RemoteMachine[]): Promise<RemoteMachine[]> {
@@ -170,29 +160,51 @@ export function startAppSync(): () => void {
   let stopped = false;
   let refreshing: Promise<void> | undefined;
   let connecting: Promise<void> | undefined;
-  let auxiliaryUncertain = false;
+  // A machine refresh or local-host link only reads/links; a failure leaves the last known
+  // machines untouched and is not a transport outcome. It blocks releasing the sync lock only
+  // while its latest attempt failed during a native cycle start, and any later success of the
+  // same operation clears it.
+  let cycleStarts = 0;
+  const uncertainAuxiliary = new Set<"machines" | "local-host">();
+  // `attempt` resolves true when it completed, false when it was skipped after shutdown;
+  // only a completed attempt clears the flag, a skipped one proves nothing.
+  const trackAuxiliary = (
+    name: "machines" | "local-host",
+    startedCycles: number,
+    attempt: Promise<boolean>,
+  ): Promise<void> =>
+    attempt.then(
+      (completed) => {
+        if (completed) uncertainAuxiliary.delete(name);
+      },
+      () => {
+        if (cycleStarts !== startedCycles) uncertainAuxiliary.add(name);
+      },
+    );
   const refreshMachines = (): Promise<void> => {
     if (stopped) return Promise.resolve();
     if (refreshing) return refreshing;
-    refreshing = invoke<RemoteMachine[]>("remote_machines")
-      .then((value) => {
-        if (stopped) return [];
-        const all = Array.isArray(value) ? value : [];
-        if (!stopped) applyMachineRoles(all);
-        return syncCapableMachines(all);
-      })
-      .then((value) => {
-        if (!stopped) machines = value;
-      })
-      .catch(() => {
-        auxiliaryUncertain = true;
-      })
-      .finally(() => {
-        refreshing = undefined;
-      });
+    refreshing = trackAuxiliary(
+      "machines",
+      cycleStarts,
+      invoke<RemoteMachine[]>("remote_machines")
+        .then((value) => {
+          if (stopped) return undefined;
+          const all = Array.isArray(value) ? value : [];
+          applyMachineRoles(all);
+          return syncCapableMachines(all);
+        })
+        .then((value) => {
+          if (stopped || !value) return false;
+          machines = value;
+          return true;
+        }),
+    ).finally(() => {
+      refreshing = undefined;
+    });
     return refreshing;
   };
-  const ownership = createSyncWindowOwner(() => wake());
+  const ownership = createSyncWindowOwner(() => onOnline());
   const loop = startSyncLoop(
     () => collectSyncMachineIds(machines),
     (machineId, cycleId) => (method, params) =>
@@ -201,7 +213,10 @@ export function startAppSync(): () => void {
     ownership.isOwner,
     refreshMachines,
     isTauri()
-      ? (machineId, operationId) => invoke<void>("sync_cycle_begin", { machineId, operationId })
+      ? (machineId, operationId) => {
+          cycleStarts += 1;
+          return invoke<void>("sync_cycle_begin", { machineId, operationId });
+        }
       : undefined,
     isTauri() ? completeNativeSyncCycle : undefined,
   );
@@ -210,16 +225,16 @@ export function startAppSync(): () => void {
   const connectLocalHost = (): Promise<void> => {
     if (stopped) return Promise.resolve();
     if (connecting) return connecting;
-    connecting = invoke<unknown>("local_host_connect")
-      .then((machine) => {
+    connecting = trackAuxiliary(
+      "local-host",
+      cycleStarts,
+      invoke<unknown>("local_host_connect").then((machine) => {
         if (machine) localLinked = true;
-      })
-      .catch(() => {
-        auxiliaryUncertain = true;
-      })
-      .finally(() => {
-        connecting = undefined;
-      });
+        return true;
+      }),
+    ).finally(() => {
+      connecting = undefined;
+    });
     return connecting;
   };
   const nudger = createDebouncer(() => loop.nudge(), NUDGE_DEBOUNCE_MS);
@@ -242,11 +257,30 @@ export function startAppSync(): () => void {
     };
   const unsubscribePaths = subscribeProjectPathsChanged(onLocalChange);
   const unsubscribeLock = subscribeLockRecordChanges(onLocalChange);
-  const wake = () => {
+  const wake = (catchUp: boolean) => {
     if (stopped || !ownership.isOwner()) return;
-    void (localLinked ? refreshMachines() : connectLocalHost().then(refreshMachines)).then(() => {
-      if (!stopped) loop.nudge();
+    const before = machines;
+    return (localLinked ? refreshMachines() : connectLocalHost().then(refreshMachines)).then(() => {
+      // The loop already catches up on show. A new peer needs a follow-up round.
+      if (
+        catchUp &&
+        !stopped &&
+        machines.some(
+          (machine) =>
+            !before.some(
+              (prior) => prior.id === machine.id && prior.environmentId === machine.environmentId,
+            ),
+        )
+      )
+        loop.nudge();
     });
+  };
+  const onOnline = () => {
+    void wake(false)
+      ?.then(() => {
+        if (!stopped) loop.nudge();
+      })
+      .catch((error: unknown) => console.warn("Sync inventory refresh failed", error));
   };
   const unsubscribeRecovered = subscribeRemoteRecovered(() => {
     if (!ownership.isOwner()) return;
@@ -258,27 +292,22 @@ export function startAppSync(): () => void {
       }
     });
   });
-  const onVisibility = () => {
-    if (!document.hidden) wake();
-  };
-  window.addEventListener("focus", wake);
-  window.addEventListener("online", wake);
-  document.addEventListener("visibilitychange", onVisibility);
-  const interval = setInterval(() => {
-    if (!ownership.isOwner()) return;
-    if (localLinked) void refreshMachines();
-    else void connectLocalHost().then(refreshMachines);
-  }, 30_000);
+  window.addEventListener("online", onOnline);
+  const inventoryPolling = startForegroundPolling(wake, CYCLE_INTERVAL_MS, { immediate: false });
   return () => {
     started = false;
     stopped = true;
-    const drain = Promise.all([
-      loop.stop(),
-      refreshing ?? Promise.resolve(),
-      connecting ?? Promise.resolve(),
-    ]).then(
-      ([settled]) => settled && !auxiliaryUncertain,
-      () => false,
+    // Bounded: a machine refresh or local-host link that never answers must not hold teardown;
+    // ownership then stays held, as for any other outcome that is not proven.
+    const drain = boundedDrain(
+      Promise.all([
+        loop.stop(),
+        refreshing ?? Promise.resolve(),
+        connecting ?? Promise.resolve(),
+      ]).then(
+        ([settled]) => settled && uncertainAuxiliary.size === 0,
+        () => false,
+      ),
     );
     ownership.stop(drain);
     channel?.close();
@@ -286,9 +315,7 @@ export function startAppSync(): () => void {
     unsubscribePaths();
     unsubscribeLock();
     unsubscribeRecovered();
-    window.removeEventListener("focus", wake);
-    window.removeEventListener("online", wake);
-    document.removeEventListener("visibilitychange", onVisibility);
-    clearInterval(interval);
+    window.removeEventListener("online", onOnline);
+    inventoryPolling.stop();
   };
 }

@@ -1,11 +1,14 @@
 import { hostToolRequest } from "../../connections/model/hostFeatureClient";
 import type { CloudDictationProvider } from "./dictationModels";
+import type { VoiceSettings } from "./voiceSettings";
 export type { CloudDictationProvider } from "./dictationModels";
 
 export type LocalVoiceTranscript = { text: string; language: string; inferenceMs: number };
 /** `turn`: the recognizer can judge from a pause whether the sentence is finished. */
 export type LocalVoiceInfo = { lease: string; model: string; device: string; turn?: boolean };
 export type VoiceRuntimeConfig = {
+  dictationLanguage?: VoiceSettings["dictationLanguage"];
+  dictationSilenceFilter?: boolean;
   idleUnloadMinutes?: number;
   whisperExact?: boolean;
   python?: string;
@@ -112,7 +115,7 @@ export const localVoiceBackend = {
     language?: string,
     model?: string,
   ) =>
-    cloudRequest<{ text: string }>("voice.cloud.transcribe", {
+    cloudRequest<{ text: string; language?: string }>("voice.cloud.transcribe", {
       provider,
       audio,
       ...(language ? { language } : {}),
@@ -126,6 +129,13 @@ export const localVoiceBackend = {
     correctionCue?: string;
     translateToEnglish?: boolean;
   }) => cloudRequest<{ text: string }>("voice.dictation.process", input),
+  suggestDictationSettings: (runId: string, settingsLanguage: string, model: string) =>
+    cloudRequest<{ text: string }>("voice.dictation.process", {
+      runId,
+      text: "",
+      settingsLanguage,
+      model,
+    }),
   cancelDictationCleanup: (runId: string) => cloudRequest("voice.dictation.cancel", { runId }),
   keepAlive: (lease: string) => request<{ ready: boolean }>("voice.local.keepAlive", { lease }),
   release: (lease: string) => request("voice.local.release", { lease }),

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
-import { Heading } from "../../../../shared/ui/Heading";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { CollectionFooter } from "../../../../shared/ui/ContinuousList";
 import type { SocialScreenProps } from "../shell/screens";
@@ -16,6 +15,8 @@ import { SummaryCards } from "./SummaryCards";
 import { useCommandScreen } from "./useCommandScreen";
 import { useCommandTarget } from "./useCommandTarget";
 import { WaitingForYou } from "./WaitingForYou";
+import { SnapchatInsights } from "./SnapchatInsights";
+import { socialQueryScope } from "../../model/socialQuery";
 import "./command.css";
 
 /**
@@ -26,6 +27,7 @@ export function CommandScreen({
   client,
   machineId,
   projectId,
+  shellState,
   active,
   target,
   onNavigate,
@@ -63,8 +65,20 @@ export function CommandScreen({
       {modelRequired ? (
         <AiSetupCard busy={state.busy === "model"} onSave={state.saveModel} />
       ) : null}
-      {state.error && !modelRequired ? <InlineError>{state.error}</InlineError> : null}
-      <SummaryCards summary={state.summary} />
+      {state.error && !modelRequired ? (
+        <InlineError details={state.error}>
+          {t("The request could not be completed. Try again.")}
+        </InlineError>
+      ) : null}
+      {/* Four empty tiles say nothing, so the row appears once there is something to count. */}
+      {state.summary &&
+      state.summary.sentToday +
+        state.summary.pending +
+        state.summary.newPeople +
+        state.summary.replyRate >
+        0 ? (
+        <SummaryCards summary={state.summary} />
+      ) : null}
       <div className="command-layout">
         <div className="command-main">
           {state.plan ? (
@@ -77,7 +91,6 @@ export function CommandScreen({
               onRun={state.runPlan}
             />
           ) : null}
-          <Heading size="section">{t("Activity")}</Heading>
           <ActivityFeed items={state.actions} onUndo={state.undo} />
           <CollectionFooter
             hasMore={!!state.next}
@@ -89,6 +102,13 @@ export function CommandScreen({
             onRetry={() => {
               void (state.moreError ? state.loadMore() : state.refresh()).catch(() => undefined);
             }}
+          />
+          <SnapchatInsights
+            key={`${socialQueryScope(client)[1]}:${projectId ?? ""}`}
+            client={client}
+            projectId={projectId}
+            active={active}
+            disabled={!active || !shellState.hostOnline || shellState.unreachable}
           />
         </div>
         <aside className="command-side">

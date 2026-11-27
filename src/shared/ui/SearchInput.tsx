@@ -26,7 +26,7 @@ type SearchInputProps = ComponentPropsWithoutRef<"input"> & {
   /** Field height: `sm` is the compact toolbar/filter height (default), `md` matches form
    *  controls and `size="md"` Buttons. The native `size` attribute keeps its meaning. */
   fieldSize?: SearchFieldSize;
-  /** Size of the typed text: `secondary` 13px, `body` 14px, ...; unset keeps the field's own size. */
+  /** Size of the typed text: `secondary` 13px, `body` 14px, ...; unset is `secondary` for a framed field (`field`, `quiet`, `standalone`) and the owner's size for `bare`. */
   textSize?: TextRoles["size"];
   /** Line height of the typed text; unset keeps the field's own. */
   leading?: TextRoles["leading"];
@@ -126,7 +126,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
       }}
       ref={input}
       {...optionalTextAttributes(
-        { size: textSize, leading },
+        { size: textSize ?? (insetClear ? "secondary" : undefined), leading },
         [className, styles.input, insetClear && styles.standaloneInput].filter(Boolean).join(" "),
       )}
       data-search-filled={canClear || undefined}

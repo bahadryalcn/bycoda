@@ -41,6 +41,16 @@
     gap: var(--space-3);
   }
 
+  /* page and panel fill the free space of their parent (a flex column or a grid with height) and
+     centre their content both ways; a parent without spare height leaves them content-sized. */
+  .root[data-context="page"],
+  .root[data-context="panel"] {
+    flex: 1 1 auto;
+    align-self: stretch;
+    place-self: stretch;
+    min-block-size: 0;
+  }
+
   /* panel: a compact centred block inside a side panel or card. */
   .root[data-context="panel"] {
     padding: var(--space-6) var(--space-3);

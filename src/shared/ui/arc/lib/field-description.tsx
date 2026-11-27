@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { InfoPopover } from "../../InfoPopover";
+import { InfoPopover, InfoTooltip } from "../../InfoPopover";
 import { FieldMessage } from "./field-message";
 import styles from "./field-description.module.css";
 
@@ -38,7 +38,11 @@ export function FieldInfo({
   visible?: boolean;
 }) {
   if (!description || visible) return null;
-  return <InfoPopover className={styles.info}>{description}</InfoPopover>;
+  return typeof description === "string" ? (
+    <InfoTooltip className={styles.info}>{description}</InfoTooltip>
+  ) : (
+    <InfoPopover className={styles.info}>{description}</InfoPopover>
+  );
 }
 
 /** The label line: the label plus the info affordance when the description is not visible. Without one it is the label alone. */

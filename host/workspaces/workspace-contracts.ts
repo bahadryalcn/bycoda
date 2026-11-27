@@ -86,6 +86,8 @@ export const WORKSPACE_CAPABILITIES = {
   gitRewindUndo: "sessions.git-rewind-undo.v1",
   lifecycle: "workspaces.lifecycle.v1",
   pinning: "workspaces.pinning.v1",
+  /** Host-side multi-repository creation, remote-base start, progress/cancel and branch rename. */
+  creationV2: "workspaces.creation.v2",
   buildIdentity: "build.identity.v1",
 } as const;
 export type WorkspaceCapability =
@@ -95,22 +97,15 @@ export const WORKSPACE_REF_NAMESPACES = {
   rewinds: "refs/bycoda/rewinds/",
 } as const;
 export const WORKSPACE_NAMING = {
-  sessionBranchPrefix: "bycoda/s/",
-  taskBranchPrefix: "bycoda/t/",
   directoryPrefix: "wt-",
   shortIdLength: 12,
 } as const;
 export type TurnRefPhase = "before-head" | "before-index" | "before-worktree" | "after-head";
 export type RewindRefPhase = "rescue-head" | "rescue-index" | "rescue-worktree";
 /** S1 implements naming; S2 implements refs. Validate Git ref components, collisions and full ownership.
- * Session/automation/steward owners use s; task owners use t. turnId is the stable accepted userBlockId.
+ * Branch names live in managed/workspace-branch-naming.ts. turnId is the stable accepted userBlockId.
  */
 export interface WorkspaceNames {
-  branch(
-    owner: WorkspaceOwner,
-    slug: string,
-    workspaceId: string,
-  ): `bycoda/${"s" | "t"}/${string}-${string}`;
   directory(workspaceId: string): `wt-${string}`;
   turnRef(
     workspaceId: string,
@@ -249,7 +244,10 @@ export interface WorkspaceRewindOperation extends WorkspaceOperationBase<
 /** S3. Opaque token is host-stored, short-lived and bound to every review field, including publication text. */
 export type BranchDeliveryPlan = {
   token: string;
+  /** Host wall clock end of the approval; clients use `expiresInMs` on their own clock. */
   expiresAt: number;
+  /** Lifetime of the approval from the Host's reading; never compared with a client clock. */
+  expiresInMs: number;
   workspaceId: string;
   expectedRevision: number;
   sourceBranchRef: string;
@@ -396,6 +394,35 @@ export interface WorkspaceStorageStatus {
   requiredFreeBytes: number | null;
   /** Present-state workspace directories that were not found on disk; they count as 0 bytes. */
   missingPaths: string[];
+}
+
+/** Hard cap on repositories (primary plus extras) one creation may materialize. */
+export const WORKSPACE_CREATION_MAX_REPOSITORIES = 8;
+export type WorkspaceBaseSource = "remote" | "local";
+export type WorkspaceCreationStageId = "fetch" | "checkout" | "submodules" | "setup" | "agent";
+export type WorkspaceCreationStageStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "skipped"
+  | "warning"
+  | "failed";
+export interface WorkspaceCreationStage {
+  id: WorkspaceCreationStageId;
+  status: WorkspaceCreationStageStatus;
+  /** 0-100 when the stage can measure itself (checkout: from `git worktree add --progress`). */
+  percent?: number;
+  /** 1-based repository the checkout stage is working on; the UI formats "repository {p0} of {p1}". */
+  repositoryIndex?: number;
+  /** Repositories in this creation, the primary included. */
+  repositoryCount?: number;
+}
+export type WorkspaceCreationPhase = "running" | "done" | "failed" | "cancelled";
+/** Polled by `workspaces.prepare.status`; in memory on the Host with a TTL. */
+export interface WorkspaceCreationProgress {
+  progressId: string;
+  phase: WorkspaceCreationPhase;
+  stages: WorkspaceCreationStage[];
 }
 
 /** S6. Bootstrap owns workspace dependencies, not a junction to another checkout's node_modules. */

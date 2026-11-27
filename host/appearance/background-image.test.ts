@@ -53,6 +53,48 @@ describe("appearance background image", () => {
     expect(codex).not.toHaveBeenCalled();
   });
 
+  it("keeps concurrent outputs available for separate library copies", async () => {
+    const adapters: SocialImageAdapters = {
+      codex: {
+        capability: async () => available("codex"),
+        generate: async () => ({ bytes: png(), model: "native-default" }),
+      },
+    };
+    const params = { prompt: "trees", provider: "codex" } as const;
+    const [first, second] = await Promise.all([
+      generateAppearanceBackgroundImage(params, adapters),
+      generateAppearanceBackgroundImage(params, adapters),
+    ]);
+    try {
+      expect(first.path).not.toBe(second.path);
+      await expect(readFile(first.path)).resolves.toEqual(Buffer.from(png()));
+      await expect(readFile(second.path)).resolves.toEqual(Buffer.from(png()));
+    } finally {
+      await Promise.all([rm(first.path, { force: true }), rm(second.path, { force: true })]);
+    }
+  });
+
+  it("rejects late provider bytes after cancellation", async () => {
+    const controller = new AbortController();
+    const adapters: SocialImageAdapters = {
+      gemini: {
+        capability: async () => available("gemini"),
+        generate: async ({ signal }) => {
+          controller.abort();
+          expect(signal.aborted).toBe(true);
+          return { bytes: png(), model: "native-default" };
+        },
+      },
+    };
+    await expect(
+      generateAppearanceBackgroundImage(
+        { prompt: "trees", provider: "gemini" },
+        adapters,
+        controller.signal,
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
+
   it("reports why an installed provider is unavailable", async () => {
     const adapters: SocialImageAdapters = {
       codex: {

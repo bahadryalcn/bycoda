@@ -11,6 +11,8 @@ use tauri::{AppHandle, Manager};
 
 const DEFAULT_LIMIT: u32 = 40;
 const HTTP_TIMEOUT: Duration = Duration::from_secs(20);
+const GIT_CONFIG_TIMEOUT: Duration = Duration::from_secs(10);
+const GIT_DIFF_TIMEOUT: Duration = Duration::from_secs(30);
 #[cfg(test)]
 mod comment_tests;
 mod mention_search;
@@ -527,6 +529,12 @@ fn render_iteration_diff(
             }
             Ok(FileDiff::Skipped { too_large }) => {
                 truncated = truncated || too_large;
+            }
+            Ok(FileDiff::GitTimedOut) => {
+                return Err(format!(
+                    "Git timed out while generating the Azure DevOps diff for {}. Retry loading the pull request diff.",
+                    change.path
+                ));
             }
             Err(_) => {
                 // Do not publish zero counts for a file whose content could not
@@ -1071,6 +1079,7 @@ enum FileDiff {
         block: String,
     },
     Unchanged,
+    GitTimedOut,
     Skipped {
         too_large: bool,
     },
@@ -1127,11 +1136,12 @@ fn diff_iteration_file(
     // Sides are already capped at MAX_DIFF_FILE_BYTES by azure_file_content.
     let is_add = base_bytes.is_none();
     let is_delete = target_bytes.is_none();
-    let Some((additions, deletions, hunks)) =
-        git_unified_hunks(base_bytes.as_deref(), target_bytes.as_deref())
-    else {
-        return Ok(FileDiff::Skipped { too_large: false });
-    };
+    let (additions, deletions, hunks) =
+        match git_unified_hunks(base_bytes.as_deref(), target_bytes.as_deref()) {
+            Ok(Some(hunks)) => hunks,
+            Ok(None) => return Ok(FileDiff::Skipped { too_large: false }),
+            Err(_) => return Ok(FileDiff::GitTimedOut),
+        };
     let mut block = format!("diff --git a/{0} b/{0}\n", change.path);
     if is_add {
         block.push_str("new file mode 100644\n");
@@ -1259,10 +1269,15 @@ fn create_secure_tmp_dir() -> Option<PathBuf> {
 
 /// Unified hunks between two file versions via the local `git` binary (the
 /// provider already requires git for remote detection). Returns `None` when
-/// the sides are identical or git is unavailable/fails, so callers degrade to
-/// a hunk-less file entry instead of failing the whole diff.
-fn git_unified_hunks(old: Option<&[u8]>, new: Option<&[u8]>) -> Option<(i64, i64, String)> {
-    let dir = create_secure_tmp_dir()?;
+/// the sides are identical or git is unavailable/fails. A deadline error stops
+/// the diff so the caller can retry without waiting on every remaining file.
+fn git_unified_hunks(
+    old: Option<&[u8]>,
+    new: Option<&[u8]>,
+) -> std::io::Result<Option<(i64, i64, String)>> {
+    let Some(dir) = create_secure_tmp_dir() else {
+        return Ok(None);
+    };
     let cleanup = || {
         let _ = fs::remove_dir_all(&dir);
     };
@@ -1271,13 +1286,13 @@ fn git_unified_hunks(old: Option<&[u8]>, new: Option<&[u8]>) -> Option<(i64, i64
     if let Some(bytes) = old {
         if fs::write(&old_path, bytes).is_err() {
             cleanup();
-            return None;
+            return Ok(None);
         }
     }
     if let Some(bytes) = new {
         if fs::write(&new_path, bytes).is_err() {
             cleanup();
-            return None;
+            return Ok(None);
         }
     }
     // Isolate the subprocess from user configuration: a global
@@ -1287,7 +1302,7 @@ fn git_unified_hunks(old: Option<&[u8]>, new: Option<&[u8]>) -> Option<(i64, i64
     let null_file: &Path = Path::new(null_device);
     let mut cmd = Command::new("git");
     crate::hide_window_console(&mut cmd);
-    let output = cmd
+    let cmd = cmd
         .args([
             "-c",
             "core.autocrlf=false",
@@ -1319,29 +1334,35 @@ fn git_unified_hunks(old: Option<&[u8]>, new: Option<&[u8]>) -> Option<(i64, i64
         })
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", null_device)
-        .current_dir(&dir)
-        .output();
+        .current_dir(&dir);
+    // Bounded so a hung git (credential prompt, locked or network checkout)
+    // cannot block the PR diff loop forever.
+    let output = crate::fs::output_with_timeout(cmd, GIT_DIFF_TIMEOUT);
     cleanup();
-    let output = output.ok()?;
+    let output = match output {
+        Ok(output) => output,
+        Err(error) if error.kind() == std::io::ErrorKind::TimedOut => return Err(error),
+        Err(_) => return Ok(None),
+    };
     // Exit 0 means identical; 1 means differences; anything else is a failure.
     if output
         .status
         .code()
         .is_none_or(|code| code != 0 && code != 1)
     {
-        return None;
+        return Ok(None);
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
     let (additions, deletions, hunks, binary) = parse_git_diff_hunks(&stdout);
     if binary || !hunks.is_empty() {
-        return Some((additions, deletions, hunks));
+        return Ok(Some((additions, deletions, hunks)));
     }
     // Exit 1 without hunks only happens for mode-only changes; surface the
     // file without hunks rather than dropping it.
     if output.status.code() == Some(1) {
-        return Some((0, 0, String::new()));
+        return Ok(Some((0, 0, String::new())));
     }
-    None
+    Ok(None)
 }
 
 /// Split `git diff` output into counts plus the `@@` hunks (or the binary
@@ -1869,11 +1890,16 @@ fn encode_segment(value: &str) -> String {
 fn azure_devops_repo_for(root: &Path, organization_url: &str) -> Result<String, String> {
     let mut cmd = Command::new("git");
     crate::hide_window_console(&mut cmd);
-    let output = cmd
+    let cmd = cmd
         .args(["config", "--get-regexp", r"^remote\..*\.url$"])
-        .current_dir(root)
-        .output()
-        .map_err(|_| "Could not run git".to_string())?;
+        .current_dir(root);
+    let output = crate::fs::output_with_timeout(cmd, GIT_CONFIG_TIMEOUT).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::TimedOut {
+            "Git timed out while reading repository remotes".to_string()
+        } else {
+            "Could not run git".to_string()
+        }
+    })?;
     if !output.status.success() && output.status.code() != Some(1) {
         return Err("Could not read git remotes".into());
     }
@@ -2172,6 +2198,22 @@ mod tests {
     }
 
     #[test]
+    fn git_diff_timeout_surfaces_retry_and_skips_remaining_files() {
+        let changes = parse_iteration_change_list(&json!({ "changeEntries": [
+            { "item": { "path": "/first.ts" }, "changeType": "edit" },
+            { "item": { "path": "/second.ts" }, "changeType": "edit" }
+        ] }));
+        let result = render_iteration_diff(&changes, false, |change| {
+            assert_eq!(change.path, "first.ts");
+            Ok(FileDiff::GitTimedOut)
+        });
+        let error = result.expect_err("a git timeout must be visible");
+        assert!(error.contains("Git timed out"));
+        assert!(error.contains("first.ts"));
+        assert!(error.contains("Retry"));
+    }
+
+    #[test]
     fn successfully_unchanged_file_is_a_complete_zero_diff() {
         let changes = vec![IterationChange {
             path: "same.ts".into(),
@@ -2403,7 +2445,7 @@ mod tests {
     fn builds_unified_hunks_with_git() {
         // git is a hard runtime requirement (remote detection shells out to
         // it), so the test environment is expected to provide it.
-        let Some((additions, deletions, hunks)) =
+        let Ok(Some((additions, deletions, hunks))) =
             git_unified_hunks(Some(b"one\ntwo\n"), Some(b"one\nTWO\nthree\n"))
         else {
             panic!("git diff should be available in the test environment");
@@ -2412,7 +2454,9 @@ mod tests {
         assert!(hunks.contains("@@"));
         assert!(hunks.contains("+TWO"));
         assert!(
-            git_unified_hunks(Some(b"same\n"), Some(b"same\n")).is_none(),
+            git_unified_hunks(Some(b"same\n"), Some(b"same\n"))
+                .unwrap()
+                .is_none(),
             "identical sides produce no hunks"
         );
     }

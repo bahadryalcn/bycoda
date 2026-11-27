@@ -1,10 +1,12 @@
+import { DocumentProblemError } from "./documentViewer";
+
 // Counts both the visible bitmap and its temporary render buffer. CSS and text
 // geometry remain at the requested zoom, independently of raster resolution.
 export const PDF_PAGE_PIXELS = 2_000_000;
 export const PDF_TOTAL_PIXELS = 16_000_000;
 export function pdfRasterSize(width: number, height: number, dpr: number) {
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-    throw new Error("Invalid PDF page dimensions");
+    throw new DocumentProblemError({ reason: "invalidPageSize" });
   }
   const ratio = Math.min(
     Math.max(1, dpr || 1),
@@ -26,7 +28,7 @@ export class PdfRasterBudget {
   }
   reserve(pixels: number, signal: AbortSignal): Promise<(pixels?: number) => void> {
     if (!Number.isSafeInteger(pixels) || pixels > PDF_TOTAL_PIXELS || pixels <= 0)
-      return Promise.reject(new Error("Invalid PDF raster allocation"));
+      return Promise.reject(new DocumentProblemError({ reason: "invalidRasterSize" }));
     return new Promise((resolve, reject) => {
       const abort = () => {
         this.waiting.delete(attempt);
@@ -50,7 +52,7 @@ export class PdfRasterBudget {
           remaining -= released;
           this.used -= released;
           // Wake callbacks mutate the queue; iterate a snapshot to avoid requeue loops.
-          // oxlint-disable-next-line unicorn/no-useless-spread
+          // oxlint-disable-next-line unicorn/no-useless-spread -- iterate a copy because a woken waiter can requeue itself
           for (const wake of [...this.waiting]) wake();
         });
       };

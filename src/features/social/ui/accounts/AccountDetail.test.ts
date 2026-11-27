@@ -13,6 +13,9 @@ vi.mock("./AccountPermissions", () => ({ AccountPermissions: () => null }));
 vi.mock("./AutonomySettings", () => ({ AutonomySettings: () => null }));
 vi.mock("./BrowserSettings", () => ({ BrowserSettings: () => null }));
 vi.mock("./ReplyRules", () => ({ ReplyRules: () => null }));
+vi.mock("./platform/InstagramAccountTools", () => ({
+  InstagramAccountTools: () => null,
+}));
 
 let element: HTMLDivElement, root: Root;
 
@@ -103,8 +106,11 @@ it("hides the Connect action when the capability is available", () => {
   ).toBe(false);
 });
 
-it("disables the account actions and says why while the Host is offline", () => {
-  const client = { browserBegin: vi.fn(), request: vi.fn() } as unknown as SocialClient;
+it("disables the account actions silently while the Host is offline (the shell shows the one notice)", () => {
+  const client = {
+    browserBegin: vi.fn(),
+    request: vi.fn(),
+  } as unknown as SocialClient;
   act(() =>
     root.render(
       createElement(AccountDetail, {
@@ -118,5 +124,11 @@ it("disables the account actions and says why while the Host is offline", () => 
       }),
     ),
   );
-  expect(element.textContent).toContain("Could not reach this computer.");
+  expect(element.textContent).not.toContain("Could not reach this computer.");
+  const check = [...element.querySelectorAll("button")].find(
+    (button) => button.textContent === "Check connection",
+  );
+  expect(check?.hasAttribute("disabled") || check?.getAttribute("aria-disabled") === "true").toBe(
+    true,
+  );
 });

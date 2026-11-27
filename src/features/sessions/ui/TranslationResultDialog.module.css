@@ -1,21 +1,21 @@
 .content {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--ui-space-3);
 }
 
 .modelRow {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 
 .comparison {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
-  gap: 8px;
+  gap: var(--ui-space-2);
 }
 
 .pane {
@@ -28,15 +28,14 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 10px 12px 0;
+  gap: var(--ui-space-2);
+  padding: var(--ui-space-3) var(--ui-space-3) 0;
 }
 
 .text,
-.placeholder,
-.result > .error {
+.placeholder {
   margin: 0;
-  padding: 12px;
+  padding: var(--ui-space-3);
   min-block-size: 80px;
   max-block-size: min(360px, 40dvh);
   overflow: auto;
@@ -51,7 +50,7 @@
 .status {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2);
 }
 
 .elapsed {
@@ -59,26 +58,17 @@
 }
 
 .result > [role="alert"] {
-  margin: 12px;
+  margin: var(--ui-space-3);
 }
 
 .placeholder p {
   margin: 0;
 }
 
-.result > [role="alert"] {
-  margin: 12px;
-}
-
-.error {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
 .skeleton {
   display: grid;
-  gap: 12px;
-  padding-block: 8px;
+  gap: var(--ui-space-3);
+  padding-block: var(--ui-space-2);
 }
 
 .hint {

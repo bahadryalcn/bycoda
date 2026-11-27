@@ -6,6 +6,7 @@ import {
   asClient,
   bodyText,
   buttonByText,
+  isBlocked,
   clientMock,
   flush,
   mountHost,
@@ -42,12 +43,12 @@ describe("SegmentBuilder", () => {
       }),
     );
     await flush();
-    expect(buttonByText("Save segment")?.disabled).toBe(true);
+    expect(isBlocked(buttonByText("Save segment"))).toBe(true);
     expect(bodyText()).toContain("Enter a name for the segment.");
 
     setFieldValue(document.querySelector("input")!, "Turkish buyers");
     await flush();
-    expect(buttonByText("Save segment")?.disabled).toBe(true);
+    expect(isBlocked(buttonByText("Save segment"))).toBe(true);
     expect(bodyText()).toContain("Add at least one condition.");
   });
 

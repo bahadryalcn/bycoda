@@ -44,27 +44,29 @@ export function AccountHeader({
 
   return (
     <header className={styles.header}>
-      <Surface variant="card" padding="md" className={styles.identityCard}>
-        <AccountAvatar user={user} size="lg" />
-        <div className={styles.identity}>
-          <Heading size="page" truncate>
-            {user.displayName || user.email}
-          </Heading>
-          <Text size="caption" tone="secondary" leading="inherit" className={styles.email}>
-            <PrivateEmail email={user.email} />
-          </Text>
-          <Text size="caption" tone="secondary" leading="inherit" className={styles.facts}>
-            <Badge tone="accent">{planLabel(entitlements.planTier)}</Badge>
-          </Text>
+      <Surface variant="card" padding="md">
+        <div className={styles.identityCard}>
+          <AccountAvatar user={user} size="lg" />
+          <div className={styles.identity}>
+            <Heading size="section" truncate>
+              {user.displayName || user.email}
+            </Heading>
+            <Text size="caption" tone="secondary" leading="inherit" className={styles.email}>
+              <PrivateEmail email={user.email} />
+            </Text>
+            <div className={styles.facts}>
+              <Badge tone="accent">{planLabel(entitlements.planTier)}</Badge>
+            </div>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={signingOut}
+            onClick={() => signOut().catch(() => undefined)}
+          >
+            {t("Sign out")}
+          </Button>
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          loading={signingOut}
-          onClick={() => signOut().catch(() => undefined)}
-        >
-          {t("Sign out")}
-        </Button>
       </Surface>
       {stale ? (
         <InlineMessage tone="neutral">
@@ -73,7 +75,7 @@ export function AccountHeader({
           })}
         </InlineMessage>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={error}>{t("Could not sign out.")}</InlineError> : null}
     </header>
   );
 }

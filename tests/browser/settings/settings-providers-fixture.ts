@@ -11,6 +11,8 @@ import { setHarnessModels } from "../../../src/features/sessions/model/models";
 
 const enabled = new URLSearchParams(location.search).has("providersFixture");
 const worstIdentities = new URLSearchParams(location.search).has("providerIdentityStress");
+const quotaStress = new URLSearchParams(location.search).has("providerQuotaFixture");
+const legacyPlanKind = new URLSearchParams(location.search).has("legacyPlanKind");
 const versions: Record<string, string> = {
   claude: "2.1.12",
   codex: "0.94.0",
@@ -87,6 +89,17 @@ export function seedProvidersFixture() {
       name,
     })),
   );
+  if (new URLSearchParams(location.search).has("openCodePricing")) {
+    setHarnessModels("opencode", [
+      { id: "opencode:opencode/big-pickle", harness: "opencode", name: "Big Pickle", free: true },
+      { id: "opencode:opencode/beam-free", harness: "opencode", name: "Beam", free: true },
+      {
+        id: "opencode:opencode/deepseek-v4.1-flash",
+        harness: "opencode",
+        name: "DeepSeek V4.1 Flash",
+      },
+    ]);
+  }
   configureChildBackend({
     invoke: async <T>(command: string, args: Record<string, unknown> = {}) => {
       const value = providersFixtureCommand(command, args);
@@ -96,7 +109,15 @@ export function seedProvidersFixture() {
     },
     listen: async () => () => {},
   });
-  localStorage.setItem("bycoda.providerAccounts.v2", JSON.stringify(accounts));
+  const stored = legacyPlanKind
+    ? {
+        claude: accounts.claude.map((account) =>
+          account.id === "account-work" ? { ...account, kind: undefined } : account,
+        ),
+        codex: accounts.codex.map((account) => ({ ...account, label: "Studio", kind: undefined })),
+      }
+    : accounts;
+  localStorage.setItem("bycoda.providerAccounts.v2", JSON.stringify(stored));
   localStorage.setItem(
     "bycoda.lastModel",
     JSON.stringify({ harness: "codex", model: "codex:gpt-5.3-codex" }),
@@ -119,18 +140,19 @@ export function seedProvidersFixture() {
   }));
 }
 
+const researchProfile = (args: Record<string, unknown>) => ({
+  id: "terminal-research",
+  provider: String(args.provider),
+  label: "International research and development workspace 🧑🏽‍💻",
+  path: "C:\\Users\\Aleksandra.Wisniewska-Kowalczyk\\AppData\\Local\\Northwind Industries Holdings\\research-and-development\\claude-work-profile",
+});
+
 /** Unknown commands still fail closed in the parent fixture. */
 export function providersFixtureCommand(command: string, args: Record<string, unknown>): unknown {
   if (!enabled) return undefined;
-  if (worstIdentities && command === "provider_terminal_profiles")
-    return [
-      {
-        id: "terminal-research",
-        provider: String(args.provider),
-        label: "International research and development workspace 🧑🏽‍💻",
-        path: "C:\\Users\\Aleksandra.Wisniewska-Kowalczyk\\AppData\\Local\\Northwind Industries Holdings\\research-and-development\\claude-work-profile",
-      },
-    ];
+  if (worstIdentities && command === "provider_terminal_profiles") return [researchProfile(args)];
+  if (worstIdentities && command === "provider_terminal_profile_connect")
+    return researchProfile(args);
   if (command === "provider_account_list" || command === "provider_accounts")
     return Object.values(accounts).flat();
   if (command === "provider_account_identity")
@@ -143,7 +165,11 @@ export function providersFixtureCommand(command: string, args: Record<string, un
           name: "Fixture owner",
           organization:
             args.accountId === "account-work" ? "Engineering" : "Fixture owner's Organization",
-          plan: worstIdentities ? "Enterprise Research and Development Workspace" : "Pro",
+          plan: worstIdentities
+            ? "Enterprise Research and Development Workspace"
+            : legacyPlanKind && args.provider === "claude" && args.accountId === "account-work"
+              ? "Team"
+              : "Pro",
         };
   if (command.startsWith("fetch_claude_usage"))
     return args.accountId === "account-old"
@@ -153,8 +179,10 @@ export function providersFixtureCommand(command: string, args: Record<string, un
           body: JSON.stringify({
             five_hour: { utilization: 14, resets_at: new Date(Date.now() + 7200000).toISOString() },
             seven_day: {
-              utilization: 32,
-              resets_at: new Date(Date.now() + 172800000).toISOString(),
+              utilization: quotaStress ? (args.accountId === "account-work" ? 92 : 100) : 32,
+              resets_at: new Date(
+                Date.now() + (quotaStress ? 40_950_000 : 172800000),
+              ).toISOString(),
             },
           }),
         };

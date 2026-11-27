@@ -22,8 +22,6 @@ vi.mock("../../../../shared/ui/settings", async () => {
       ),
     Group: ({ title, info, action, children }: any) =>
       createElement("section", null, createElement("h2", null, title), info, action, children),
-    AdvancedSettings: ({ title, children }: any) =>
-      createElement("div", null, createElement("button", { type: "button" }, title), children),
   };
 });
 vi.mock("../../../../shared/i18n", () => ({
@@ -113,7 +111,8 @@ it("renders the daily token budget and the permission picker as their own parts"
   await act(async () => root!.unmount());
   container.remove();
   await setup({ execution }, "permissions");
-  expect(container.textContent).toContain("Execution permissions");
+  // The picker is icon-only: its label is the accessible name, not visible text.
+  expect(container.querySelector('[aria-label="Execution permissions"]')).toBeTruthy();
   expect(container.textContent).not.toContain("Autonomy");
 });
 

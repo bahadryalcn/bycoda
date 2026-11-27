@@ -29,6 +29,14 @@ vi.mock("../../sessions/model/models", () => ({
 import { AntigravityAccountSettings } from "./AntigravityAccountSettings";
 import { RevealedSetting } from "../../../shared/ui/settings";
 
+/** Opens the info popover and returns the page text, popover content included. */
+function helpText() {
+  act(() =>
+    [...container.querySelectorAll<HTMLButtonElement>('button[aria-label="Help"]')].at(-1)!.click(),
+  );
+  return document.body.textContent ?? "";
+}
+
 let container: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
@@ -47,14 +55,13 @@ afterEach(() => {
   container.remove();
   vi.unstubAllGlobals();
 });
-function render() {
-  act(() => root.render(createElement(AntigravityAccountSettings)));
+/** Mounting checks the CLI on its own, so the page settles after the first probe. */
+async function render() {
+  await act(async () => root.render(createElement(AntigravityAccountSettings)));
 }
 function button() {
   return Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
-    (node) =>
-      node.textContent?.includes("Check installation and models") ||
-      node.textContent?.includes("Checking"),
+    (node) => node.textContent?.trim() === "Retry",
   )!;
 }
 
@@ -69,11 +76,9 @@ it("opens shared-account setup from Accounts without offering unsupported named 
     details.dispatchEvent(new Event("toggle"));
   });
   expect(details.open).toBe(true);
-  const panel = details;
-  expect(panel.textContent).toContain(
-    "bycoda uses the shared Antigravity CLI account on this computer",
-  );
-  expect(panel.textContent).toContain("/logout");
+  const popoverText = helpText();
+  expect(popoverText).toContain("bycoda uses the shared Antigravity CLI account on this computer");
+  expect(popoverText).toContain("/logout");
   expect(container.textContent).not.toContain("Add account");
   act(() => {
     details.open = false;
@@ -82,15 +87,16 @@ it("opens shared-account setup from Accounts without offering unsupported named 
   expect(details.open).toBe(false);
 });
 
-it("shows both native installers and the real agy authentication instructions", () => {
-  render();
+it("shows both native installers and the real agy authentication instructions", async () => {
+  await render();
   expect(container.textContent).toContain("Antigravity CLI account");
   expect(container.textContent).toContain("irm https://antigravity.google/cli/install.ps1 | iex");
   expect(container.textContent).toContain(
     "curl -fsSL https://antigravity.google/cli/install.sh | bash",
   );
-  expect(container.textContent).toContain("GEMINI_API_KEY");
-  expect(container.textContent).toContain("enterprise Gemini Code Assist");
+  const popoverText = helpText();
+  expect(popoverText).toContain("GEMINI_API_KEY");
+  expect(popoverText).toContain("enterprise Gemini Code Assist");
   expect(container.textContent).not.toContain("npm install");
 });
 
@@ -107,11 +113,13 @@ it("expands shared-account instructions when Settings search reveals them", () =
   expect(container.querySelector<HTMLDetailsElement>("details")?.open).toBe(true);
 });
 it("does not discover models or claim sign-in when the CLI is missing", async () => {
-  render();
+  await render();
+  expect(mock.probe).toHaveBeenCalledWith({ force: false });
   await act(async () => button().click());
   expect(mock.probe).toHaveBeenCalledWith({ force: true });
   expect(mock.discover).not.toHaveBeenCalled();
-  expect(container.textContent).toContain("CLI was not found");
+  expect(container.textContent).toContain("install.ps1");
+  expect(container.textContent).not.toContain("Signed in");
 });
 it("rechecks Antigravity and refreshes its model picker without claiming account authentication", async () => {
   const models = [
@@ -128,21 +136,24 @@ it("rechecks Antigravity and refreshes its model picker without claiming account
     mock.listeners.forEach((fn) => fn());
   });
   mock.discover.mockResolvedValue(models);
-  render();
-  await act(async () => button().click());
+  await render();
   expect(mock.setModels).toHaveBeenCalledWith("antigravity", models);
-  expect(container.textContent).toContain("Antigravity models refreshed");
   expect(container.textContent).not.toContain("Signed in");
   expect(container.textContent).not.toContain("install.ps1");
 });
 it("shows discovery errors and allows retry", async () => {
   mock.available = true;
   mock.discover.mockRejectedValueOnce(new Error("Authentication required"));
-  render();
-  await act(async () => button().click());
+  await render();
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not check Antigravity CLI.",
+  );
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label^="Details"]')!;
+  await act(async () => trigger.click());
+  expect([...document.querySelectorAll('[role="dialog"]')].at(-1)?.textContent).toContain(
     "Authentication required",
   );
+  await act(async () => trigger.click());
   expect(button().disabled).toBe(false);
   await act(async () => button().click());
   expect(container.textContent).toContain("No Antigravity models");

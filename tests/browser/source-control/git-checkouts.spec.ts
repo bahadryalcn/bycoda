@@ -3,6 +3,111 @@ import { mkdirSync } from "node:fs";
 
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
+    test(`plain folder offers initialization without requesting Graph ${theme} ${width}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/source-control/git-workspace.html?submodules&plain-folder");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page.getByRole("button", { name: "fixture", exact: true }).click();
+      const initialize = page.getByRole("button", { name: "Initialize Repository" });
+      await expect(initialize).toBeVisible();
+      await expect(initialize).toHaveAttribute("data-button-variant", "primary");
+      const evidence = "temp/verification/git-folder-empty";
+      mkdirSync(evidence, { recursive: true });
+      await page.screenshot({ path: `${evidence}/${theme}-${width}.png`, animations: "disabled" });
+      await expect(page.getByRole("button", { name: "Graph", exact: true })).toHaveCount(0);
+      await page.getByRole("button", { name: "core-pack main", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Graph", exact: true })).toBeVisible();
+      expect(
+        await page.evaluate(() =>
+          Reflect.get(window, "gitFixtureCalls").filter(
+            (call: { command: string; args: { cwd: string } }) =>
+              call.command === "git_history" && call.args.cwd === "/fixture",
+          ),
+        ),
+      ).toEqual([]);
+      await initialize.click();
+      await expect(initialize).toHaveCount(0);
+      await expect(page.getByText("Auto · fixture", { exact: true })).toBeVisible();
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
+    test(`commit shows Push 1 during status refresh in ${theme} at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/source-control/git-workspace.html?commit-transition");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page
+        .getByRole("textbox", { name: "Commit message", exact: true })
+        .fill("Update README");
+      await page.getByRole("button", { name: "Commit", exact: true }).click();
+      const primary = page.locator('[data-split-part="primary"]');
+      await expect(primary).toHaveText(/^Push\s*1$/);
+      await expect(primary).toBeEnabled();
+      const evidence = "temp/verification/git-commit-controls";
+      mkdirSync(evidence, { recursive: true });
+      await page.screenshot({
+        path: `${evidence}/push-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+
+for (const theme of ["light", "dark"])
+  test(`file names share typography and paths stay secondary ${theme}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(
+      "/tests/browser/source-control/git-workspace.html?action-feedback&file-typography",
+    );
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    const rows = page.locator("[data-git-file]");
+    await expect(rows).toHaveCount(4);
+    const toList = page.getByRole("button", { name: "View as List", exact: true }).first();
+    if (await toList.isVisible()) await toList.click();
+    const typography = await rows.evaluateAll((elements) =>
+      elements.map((row) => {
+        const name = row.querySelector("[data-truncate]")!;
+        const style = getComputedStyle(name);
+        const path = name.nextElementSibling?.querySelector('[data-size="caption"]');
+        return {
+          size: style.fontSize,
+          weight: style.fontWeight,
+          color: style.color,
+          pathColor: path ? getComputedStyle(path).color : null,
+          pathWeight: path ? getComputedStyle(path).fontWeight : null,
+        };
+      }),
+    );
+    expect(
+      new Set(typography.map(({ size, weight, color }) => `${size}/${weight}/${color}`)).size,
+    ).toBe(1);
+    for (const row of typography.filter((entry) => entry.pathColor)) {
+      expect(row.pathColor).not.toBe(row.color);
+      expect(row.pathWeight).toBe("400");
+    }
+    await rows.first().click();
+    await expect(rows.first().locator("[data-truncate]")).toHaveCSS(
+      "font-weight",
+      typography[0].weight,
+    );
+    const evidence = "temp/verification/2026-11-17-file-typography";
+    mkdirSync(evidence, { recursive: true });
+    await page.screenshot({ path: `${evidence}/${theme}-1280.png`, animations: "disabled" });
+  });
+
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
     test(`Graph header owns the active repository picker ${theme} ${width}`, async ({ page }) => {
       await page.addInitScript(() => localStorage.setItem("bycoda.language.git", "en"));
       await page.setViewportSize({ width, height: 900 });
@@ -46,7 +151,7 @@ for (const theme of ["light", "dark"] as const)
         document.documentElement.classList.toggle("theme-light", light);
         document.documentElement.style.fontSize = "20px";
       }, theme === "light");
-      const list = page.getByRole("listbox", { name: "Changes", exact: true });
+      const list = page.getByRole("grid", { name: "Changes", exact: true });
       await expect(list.locator("[data-git-file]")).toHaveCount(2);
       const toList = page.getByRole("button", { name: "View as List", exact: true }).first();
       if (await toList.isVisible()) await toList.click();
@@ -56,7 +161,7 @@ for (const theme of ["light", "dark"] as const)
           .first()
           .evaluate(
             (button) =>
-              getComputedStyle(button.closest("li")!.querySelector("[data-action-host]")!)
+              getComputedStyle(button.closest("[role=row]")!.querySelector("[data-action-host]")!)
                 .paddingInlineStart,
           );
       await expect.poll(filePadding).toBe("10px");
@@ -65,7 +170,9 @@ for (const theme of ["light", "dark"] as const)
       await list.screenshot({ path: `${folder}/list-${theme}-${width}.png` });
       await page.getByRole("button", { name: "View as Tree", exact: true }).first().click();
       await expect.poll(filePadding).toBe("20px");
-      const directory = list.locator("li:not([role='option']) > [data-action-host]").first();
+      const directory = list
+        .locator("[role=row]:not(:has([data-git-file])) > [data-action-host]")
+        .first();
       await expect
         .poll(() => directory.evaluate((node) => getComputedStyle(node).paddingInlineStart))
         .toBe("10px");
@@ -95,16 +202,24 @@ for (const theme of ["light", "dark"] as const)
       await page.goto("/tests/browser/source-control/git-workspace.html");
       await page.getByRole("button", { name: "Open full graph", exact: true }).click();
       await applyTheme();
-      const dialog = page.getByRole("dialog", { name: "Commit Graph", exact: true });
+      const dialog = page.getByRole("dialog", { name: "Commit graph", exact: true });
+      const workspace = dialog.locator('[data-surface-variant="workspace-panel"]').first();
       await expect(
         dialog.getByRole("button", { name: "Working tree actions", exact: true }),
       ).toBeVisible();
+      await expect(dialog).toHaveCSS(
+        "background-color",
+        await workspace.evaluate((element) => getComputedStyle(element).backgroundColor),
+      );
       await page.screenshot({ path: `${folder}/graph-working-${theme}-${width}.png` });
       await dialog.getByRole("button").filter({ hasText: "Workspace change 39" }).click();
       await expect(
         dialog.getByRole("searchbox", { name: "Filter commit files", exact: true }),
       ).toBeVisible();
-      await expect(dialog.getByRole("button", { name: "Next file", exact: true })).toBeVisible();
+      // The changed-files list is the file navigation; Previous/Next file belong to blame.
+      await expect(
+        dialog.getByRole("region", { name: "Changed files", exact: true }),
+      ).toBeVisible();
       await page.screenshot({ path: `${folder}/graph-inspector-${theme}-${width}.png` });
       await page.goto("/tests/browser/source-control/git-workspace.html?conflict&visual-conflict");
       await applyTheme();
@@ -136,13 +251,15 @@ test("Git actions show progress in place without losing focus or repeating mutat
   await page.locator("#root > div.border-r").evaluate((node) => {
     node.style.width = "100%";
   });
-  const sync = page.getByRole("button").filter({ hasText: "Sync Changes" });
+  const sync = page.getByRole("button").filter({ hasText: "Sync changes" });
   await sync.focus();
   await sync.press("Enter");
-  await expect(sync).toHaveAttribute("aria-busy", "true");
-  await expect(sync).toBeFocused();
+  // While pending the action carries its own progress label.
+  const syncing = page.getByRole("button", { name: "Syncing…", exact: true });
+  await expect(syncing).toHaveAttribute("aria-busy", "true");
+  await expect(syncing).toBeFocused();
   await expect(page.locator("header").first().getByRole("status")).toHaveCount(0);
-  await sync.press("Enter");
+  await syncing.press("Enter");
   const calls = (command: string) =>
     page.evaluate(
       (name) =>
@@ -174,6 +291,7 @@ test("Git actions show progress in place without losing focus or repeating mutat
       window as unknown as { gitFixtureFinishAction: (command: string) => void }
     ).gitFixtureFinishAction("git_sync"),
   );
+  await expect(syncing).toHaveCount(0);
   await expect(sync).not.toHaveAttribute("aria-busy", "true");
   await page.getByRole("button", { name: /^Stashes/ }).click();
   // The row's more action is named "Actions for …" at rest and its loading label while busy.
@@ -231,13 +349,18 @@ test("hunk targets retain identity and allow keyboard and pointer recovery after
   await expect(hunks.first()).toBeAttached();
   await hunks.first().focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("alert")).toContainText("Fixture index.lock");
+  await expect(page.getByRole("alert")).toContainText("Couldn’t update changes");
   await expect(file).toBeVisible();
   await expect(file.getByRole("group").first().locator("button[aria-expanded]")).toHaveAttribute(
     "aria-expanded",
     "true",
   );
   await expect(hunks.first()).toBeFocused();
+  // The cause opens from the alert's Details action.
+  await page.getByRole("alert").getByRole("button", { name: "Details" }).click();
+  await expect(page.getByText(/Fixture index\.lock/).first()).toBeVisible();
+  await page.keyboard.press("Escape");
+  await hunks.first().focus();
   const calls = () =>
     page.evaluate(() =>
       (
@@ -287,9 +410,9 @@ test("repository overview collapses with keyboard and preserves open panels and 
   const panel = page.locator('[data-git-repository="/fixture/core-pack"]');
   const row = panel.locator("header button[aria-expanded]").first();
   await expect(row).toHaveAttribute("aria-expanded", "false");
-  // Folder and branch share one compact line; the full path remains discoverable.
+  // Name, branch and marker share one compact line; the hint adds only the full path.
   await row.hover();
-  await expect(page.getByRole("tooltip")).toHaveText(/core-pack.*\/fixture\/core-pack/);
+  await expect(page.getByRole("tooltip")).toHaveText("/fixture/core-pack");
   await page.mouse.move(0, 0);
   await expect(page.getByRole("tooltip")).toHaveCount(0);
   expect((await panel.locator("header").boundingBox())!.height).toBeLessThanOrEqual(44);
@@ -422,15 +545,15 @@ test("submodules keep independent drafts, staging, commits and pushes", async ({
   const message = module.getByRole("textbox", { name: "Commit message", exact: true });
   await parentMessage.fill("Parent draft stays here");
   await message.fill("Commit only the submodule");
-  await module.getByRole("button", { name: "Stage All Changes", exact: true }).click();
-  await expect(module.getByRole("button", { name: "Stage All Changes", exact: true })).toHaveCount(
+  await module.getByRole("button", { name: "Stage all changes", exact: true }).click();
+  await expect(module.getByRole("button", { name: "Stage all changes", exact: true })).toHaveCount(
     0,
   );
   // Commit leads; Commit & Push is one menu choice away.
   await module.getByRole("button", { name: "Commit options", exact: true }).click();
   await page.getByRole("menuitem", { name: "Commit & Push", exact: true }).click();
   // The submodule is on its default branch: the push asks first in the in-app dialog.
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Push", exact: true }).click();
   await expect(message).toHaveValue("");
   await expect(parentMessage).toHaveValue("Parent draft stays here");
   const calls = await page.evaluate(
@@ -464,26 +587,36 @@ test("submodules keep independent drafts, staging, commits and pushes", async ({
   await page.screenshot({ path: testInfo.outputPath("submodules.png") });
 });
 
-// A single checkout's choice lives in the panel header's merged trigger: it opens on Branches
-// when a branch is known and holds the Worktrees tab for switching checkouts.
-const checkoutTrigger = (page: Page) =>
-  page.getByRole("button", { name: /^Working copy [^:]/ }).first();
-const pickCheckout = async (page: Page, option: string | RegExp) => {
-  await checkoutTrigger(page).click();
-  await page.getByRole("tab", { name: /^Worktrees/ }).click();
-  await page.getByRole("option", { name: option }).first().click();
+// The sidebar header is the only worktree selector: its first row is "All worktrees" (the
+// default scope), then every worktree. The Changes panel only carries a branch picker.
+const worktreeSwitch = (page: Page) =>
+  page.getByRole("button", { name: "Switch worktree", exact: true });
+const branchTrigger = (page: Page) => page.getByRole("button", { name: /^Branch / }).first();
+// The project folder row has no text marker: it is the row named by its branch, "main".
+const pickWorktree = async (page: Page, option: string) => {
+  await worktreeSwitch(page).click();
+  const list = page.getByRole("dialog", { name: "Worktrees", exact: true });
+  const row =
+    option === "All worktrees"
+      ? list.getByRole("option", { name: /^All worktrees/ })
+      : list
+          .getByRole("option")
+          .filter({ hasText: option === "Project folder" ? /^main/ : option });
+  await row.first().click();
+  await expect(list).toHaveCount(0);
 };
 
 test("new branch from accepts typed references with branch suggestions", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("bycoda.language.git", "en"));
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/source-control/git-workspace.html?checkouts");
-  await checkoutTrigger(page).click();
+  await pickWorktree(page, "Project folder");
+  await branchTrigger(page).click();
   await page.getByRole("button", { name: "New branch from…", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "New branch from…", exact: true });
   const base = dialog.getByLabel("Base branch", { exact: true });
   const name = dialog.getByLabel("Branch name", { exact: true });
-  const create = dialog.getByRole("button", { name: "Create branch", exact: true });
+  const create = dialog.getByRole("button", { name: "Create", exact: true });
   await expect(name).toBeFocused();
   expect(
     await base.evaluate((element) =>
@@ -503,7 +636,7 @@ test("new branch from accepts typed references with branch suggestions", async (
       await base.fill("origin/unlisted");
       await expect(base).toHaveValue("origin/unlisted");
       await base.press("Tab");
-      await expect(name).toBeFocused();
+      await expect(base).not.toBeFocused();
       await expect(create).toBeEnabled();
       expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
         true,
@@ -590,14 +723,15 @@ test("grouped commit forms retain their height and drafts after disclosure and r
   await expect.poll(async () => (await message.boundingBox())!.height).toBeGreaterThan(32);
 });
 
-test("compact checkout header and branch fetch remain usable across widths and themes", async ({
+test("a focused worktree shows one header row with its branch picker and no checkout picker", async ({
   page,
 }, testInfo) => {
   await page.addInitScript(() => localStorage.setItem("bycoda.language.git", "en"));
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/source-control/git-workspace.html?checkouts");
-  const header = page.locator("[data-workspace-source-control] > div").first();
-  const branch = checkoutTrigger(page);
+  await pickWorktree(page, "Project folder");
+  const header = page.locator("[data-workspace-source-control] header").first();
+  const branch = branchTrigger(page);
   for (const width of [390, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 850 });
     for (const light of [false, true]) {
@@ -605,33 +739,28 @@ test("compact checkout header and branch fetch remain usable across widths and t
         (value) => document.documentElement.classList.toggle("theme-light", value),
         light,
       );
-      // One header row: the merged trigger, Manage worktrees and Refresh share a line, and the
-      // removed top "Working copy:" select is gone.
-      await expect(page.getByRole("button", { name: /^Working copy:/ })).toHaveCount(0);
-      await expect(branch).toContainText("fixture · main");
-      const manage = page.getByRole("button", { name: "Manage worktrees…", exact: true }).first();
+      // The sidebar header is the only worktree selector: the panel has no checkout trigger,
+      // no Worktrees tab and no "All checkouts" row.
+      await expect(page.getByRole("button", { name: /^Worktree[: ]/ })).toHaveCount(0);
+      await expect(page.getByText("All checkouts", { exact: true })).toHaveCount(0);
+      await expect(branch).toContainText("main");
       const refresh = page
         .getByRole("button", { name: "Refresh source control", exact: true })
         .first();
-      await expect(manage).toBeVisible();
       await expect(refresh).toBeVisible();
-      const [triggerBox, manageBox, refreshBox] = await Promise.all(
-        [branch, manage, refresh].map((locator) => locator.boundingBox()),
+      const [branchBox, refreshBox] = await Promise.all(
+        [branch, refresh].map((locator) => locator.boundingBox()),
       );
-      expect(Math.abs(triggerBox!.y - manageBox!.y)).toBeLessThan(triggerBox!.height);
-      expect(Math.abs(manageBox!.y - refreshBox!.y)).toBeLessThan(2);
+      expect(Math.abs(branchBox!.y - refreshBox!.y)).toBeLessThan(branchBox!.height);
       expect(await header.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
         true,
       );
-      // The switch hint is the shared tooltip (no native title).
-      await branch.hover();
-      await expect(page.getByRole("tooltip")).toContainText("Working copy");
-      await page.mouse.move(0, 0);
-      await expect(page.getByRole("tooltip")).toHaveCount(0);
       await branch.focus();
       await page.keyboard.press("Enter");
       const picker = page.locator("[data-branch-picker]");
       await expect(picker.getByRole("button", { name: "Fetch", exact: true })).toBeVisible();
+      await expect(page.getByRole("tab", { name: /^Worktrees/ })).toHaveCount(0);
+      await expect(page.getByRole("tab", { name: /^Branches/ })).toHaveCount(0);
       expect(await picker.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
         true,
       );
@@ -655,6 +784,42 @@ test("compact checkout header and branch fetch remain usable across widths and t
     )
     .toBe(1);
   await expect(page.locator("[data-branch-picker]")).toBeVisible();
+});
+
+test("branches held by another worktree are grouped, badged and move the header focus", async ({
+  page,
+}) => {
+  await page.addInitScript(() => localStorage.setItem("bycoda.language.git", "en"));
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/source-control/git-workspace.html?checkouts");
+  await pickWorktree(page, "Project folder");
+  await branchTrigger(page).click();
+  const picker = page.locator("[data-branch-picker]");
+  const audit = "audit/2026-10-14-long-branch-name-for-responsive-review";
+  const held = picker.getByRole("option").filter({ hasText: audit });
+  await expect(picker.getByText("Existing worktrees", { exact: true })).toBeVisible();
+  await expect(held.getByText("worktree", { exact: true })).toBeVisible();
+  // Free branches carry no worktree badge.
+  await expect(
+    picker.getByRole("option").filter({ hasText: "feature/graph" }).getByText("worktree", {
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await held.click();
+  // Selecting it switches the header focus to that worktree; git checkout never runs.
+  await expect(picker).toHaveCount(0);
+  await expect(page.getByRole("status", { name: "Header focus" })).toHaveText(
+    "/trees/audit/very-long-worktree-folder-name",
+  );
+  await expect(worktreeSwitch(page)).toContainText(audit);
+  await expect(page.getByRole("button", { name: `Branch ${audit}`, exact: true })).toBeVisible();
+  const checkouts = await page.evaluate(
+    () =>
+      (window as unknown as { gitFixtureCalls: { command: string }[] }).gitFixtureCalls.filter(
+        (call) => call.command === "git_checkout",
+      ).length,
+  );
+  expect(checkouts).toBe(0);
 });
 
 test("grouped repository files allow wheel scrolling the outer list", async ({ page }) => {
@@ -686,33 +851,55 @@ test("grouped repository files allow wheel scrolling the outer list", async ({ p
     .toBeGreaterThan(diagonalBaseline);
 });
 
-test("checkout panels preserve identity, keyboard expansion and searchable selection", async ({
+test("All worktrees lists only worktrees with changes as same-level sections and follows the header focus", async ({
   page,
 }, testInfo) => {
   await page.addInitScript(() => localStorage.setItem("bycoda.language.git", "en"));
-  await page.goto("/tests/browser/source-control/git-workspace.html?checkouts");
-  // The picker opens on the session checkout; the overview lists every checkout.
-  await pickCheckout(page, "All checkouts");
+  await page.goto("/tests/browser/source-control/git-workspace.html?checkouts&idle");
+  // All worktrees is the default scope of a project with several worktrees.
+  await expect(worktreeSwitch(page)).toContainText("All worktrees");
+  await expect(page.getByRole("status", { name: "Header focus" })).toHaveText("all");
   const list = page.locator("[data-checkout-overview]");
+  const audit = "/trees/audit/very-long-worktree-folder-name";
   const panelFor = (cwd: string) => list.locator(`[data-git-repository="${cwd}"]`);
   const headerFor = (cwd: string) => panelFor(cwd).locator("header button[aria-expanded]").first();
-  const row = headerFor("/trees/audit/very-long-worktree-folder-name");
+  const diffReads = (cwd: string) =>
+    page.evaluate(
+      (path) =>
+        (
+          window as unknown as { gitFixtureCalls: { command: string; args: { cwd?: string } }[] }
+        ).gitFixtureCalls.filter(
+          (call) => call.command === "git_diff_index" && call.args.cwd === path,
+        ).length,
+      cwd,
+    );
+  // Same-level sections for the worktrees that have uncommitted changes; the first is open.
+  // The clean worktree is only in the header picker, and nothing is labelled or grouped.
   await expect(list.locator("[data-git-repository]")).toHaveCount(3);
   await expect(headerFor("/fixture")).toHaveAttribute("aria-expanded", "true");
-  await expect(row).toHaveAttribute("aria-expanded", "false");
-  // The shared tooltip retains exact repository paths without repeating them in rows.
-  for (const path of ["/trees/audit/very-long-worktree-folder-name", "/fixture"]) {
-    await headerFor(path).hover();
+  await expect(headerFor(audit)).toHaveAttribute("aria-expanded", "false");
+  await expect(headerFor("/trees/detached")).toHaveAttribute("aria-expanded", "false");
+  await expect(panelFor("/trees/clean-one")).toHaveCount(0);
+  await expect(list.getByText("Clean", { exact: false })).toHaveCount(0);
+  await expect(list.getByText("This session", { exact: false })).toHaveCount(0);
+  await expect(list.getByText("Project folder", { exact: false })).toHaveCount(0);
+  expect(await diffReads("/trees/clean-one")).toBe(0);
+  // The shared tooltip retains exact paths without repeating them in rows.
+  for (const [path, target] of [
+    [audit, headerFor(audit)],
+    ["/fixture", headerFor("/fixture")],
+  ] as const) {
+    await target.hover();
     await expect(page.getByRole("tooltip")).toHaveCount(1);
     await expect(page.getByRole("tooltip")).toContainText(path);
     await page.mouse.move(0, 0);
     await expect(page.getByRole("tooltip")).toHaveCount(0);
     // Tooltip focus hints follow keyboard modality, not programmatic pointer focus.
     await page.keyboard.press("Tab");
-    await headerFor(path).focus();
+    await target.focus();
     await expect(page.getByRole("tooltip")).toHaveCount(1);
     await expect(page.getByRole("tooltip")).toContainText(path);
-    await headerFor(path).blur();
+    await target.blur();
     await expect(page.getByRole("tooltip")).toHaveCount(0);
   }
   for (const width of [390, 768, 1024, 1440]) {
@@ -722,9 +909,11 @@ test("checkout panels preserve identity, keyboard expansion and searchable selec
         (value) => document.documentElement.classList.toggle("theme-light", value),
         light,
       );
-      await expect(row).toContainText("audit/2026-10-14-long-branch-name-for-responsive-review");
-      await expect(row).toContainText("very-long-worktree-folder-name");
-      // Full repository panels retain the same horizontal containment as the picker.
+      await expect(headerFor(audit)).toContainText(
+        "audit/2026-10-14-long-branch-name-for-responsive-review",
+      );
+      // The hash-like folder is not part of the row; only the tooltip carries the path.
+      await expect(headerFor(audit)).not.toContainText("very-long-worktree-folder-name");
       await expect
         .poll(() =>
           list.evaluate((element) =>
@@ -735,34 +924,34 @@ test("checkout panels preserve identity, keyboard expansion and searchable selec
         )
         .toBe(true);
       await page.screenshot({
-        path: testInfo.outputPath(`checkouts-${width}-${light ? "light" : "dark"}.png`),
+        path: testInfo.outputPath(`worktrees-${width}-${light ? "light" : "dark"}.png`),
       });
     }
   }
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await row.focus();
+  // Expanding a section shows its changes.
+  await headerFor(audit).focus();
   await page.keyboard.press("Enter");
-  await expect(row).toHaveAttribute("aria-expanded", "true");
-  await expect(
-    panelFor("/trees/audit/very-long-worktree-folder-name").getByText("workspace.tsx", {
-      exact: true,
-    }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Working copy: All checkouts", exact: true }).click();
-  await page.getByRole("combobox").fill("audit");
-  await page
-    .getByRole("option")
-    .filter({ hasText: "/trees/audit/very-long-worktree-folder-name" })
-    .click();
+  await expect(headerFor(audit)).toHaveAttribute("aria-expanded", "true");
+  await expect(panelFor(audit).getByText("workspace.tsx", { exact: true })).toBeVisible();
+  await expect.poll(() => diffReads(audit)).toBeGreaterThan(0);
+  expect(await diffReads("/trees/clean-one")).toBe(0);
+  // Selecting a worktree in the header focuses it: only its panel remains, and the expanded
+  // state of the overview sections survives the round trip.
+  await pickWorktree(page, "Detached");
   await expect(list).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: /^Working copy very-long-worktree-folder-name · / }),
-  ).toBeVisible();
+  await expect(page.getByRole("status", { name: "Header focus" })).toHaveText("/trees/detached");
+  await expect(branchTrigger(page)).toBeVisible();
+  await pickWorktree(page, "All worktrees");
+  await expect(page.getByRole("status", { name: "Header focus" })).toHaveText("all");
+  await expect(list).toBeVisible();
+  await expect(headerFor(audit)).toHaveAttribute("aria-expanded", "true");
+  await expect(panelFor(audit).getByText("workspace.tsx", { exact: true })).toBeVisible();
 });
 
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800]) {
-    test(`all checkouts expose independent repository changes and drafts: ${theme} ${width}`, async ({
+    test(`all worktrees expose independent repository changes and drafts: ${theme} ${width}`, async ({
       page,
     }) => {
       await page.addInitScript(() => localStorage.setItem("bycoda.language.git", "en"));
@@ -775,7 +964,6 @@ for (const theme of ["light", "dark"])
         (light) => document.documentElement.classList.toggle("theme-light", light),
         theme === "light",
       );
-      await pickCheckout(page, "All checkouts");
       const overview = page.locator("[data-checkout-overview]");
       const main = overview.locator('[data-git-repository="/fixture"]');
       const worktree = overview.locator('[data-git-repository="/trees/cross-provider"]');
@@ -783,9 +971,17 @@ for (const theme of ["light", "dark"])
       const toggle = (panel: typeof main) => panel.locator("header button[aria-expanded]").first();
       const message = (panel: typeof main) =>
         panel.getByRole("textbox", { name: "Commit message", exact: true });
+      // All worktrees is the default: the project folder, its child repository and the other
+      // worktree with changes are same-level sections; only the first is open.
       await expect(overview.locator("[data-git-repository]")).toHaveCount(3);
-      await expect(toggle(main)).toHaveAttribute("aria-expanded", "true");
       await expect(toggle(worktree)).toHaveAttribute("aria-expanded", "false");
+      await expect(overview.getByText("Separate repository", { exact: false })).toHaveCount(0);
+      const [mainBox, mobileBox, worktreeBox] = await Promise.all(
+        [main, mobile, worktree].map((panel) => panel.boundingBox()),
+      );
+      expect(mobileBox!.x).toBe(mainBox!.x);
+      expect(worktreeBox!.x).toBe(mainBox!.x);
+      await expect(toggle(main)).toHaveAttribute("aria-expanded", "true");
       await expect(toggle(mobile)).toHaveAttribute("aria-expanded", "false");
       await expect(main.getByText("workspace.tsx", { exact: true })).toBeVisible();
       await expect(main.getByText("theme.css", { exact: true })).toBeVisible();
@@ -801,6 +997,7 @@ for (const theme of ["light", "dark"])
       }
       await toggle(worktree).focus();
       await page.keyboard.press("Enter");
+      await expect(toggle(worktree)).toHaveAttribute("aria-expanded", "true");
       await expect(worktree.getByText("parity.ts", { exact: true })).toBeVisible();
       await expect(worktree.getByText("accounts.ts", { exact: true })).toBeVisible();
       await message(worktree).fill("Worktree draft stays here");
@@ -830,15 +1027,15 @@ for (const theme of ["light", "dark"])
           await overview.evaluate((element) => element.scrollWidth <= element.clientWidth),
         ).toBe(true);
       }
-      await mobile.getByRole("button", { name: "Stage All Changes", exact: true }).click();
+      await mobile.getByRole("button", { name: "Stage all changes", exact: true }).click();
       await expect(
-        mobile.getByRole("button", { name: "Stage All Changes", exact: true }),
+        mobile.getByRole("button", { name: "Stage all changes", exact: true }),
       ).toHaveCount(0);
       await expect(
-        main.getByRole("button", { name: "Stage All Changes", exact: true }),
+        main.getByRole("button", { name: "Stage all changes", exact: true }),
       ).toBeAttached();
       await expect(
-        worktree.getByRole("button", { name: "Stage All Changes", exact: true }),
+        worktree.getByRole("button", { name: "Stage all changes", exact: true }),
       ).toBeAttached();
       await expect(message(main)).toHaveValue("Main checkout draft stays here");
       await expect(message(worktree)).toHaveValue("Worktree draft stays here");
@@ -861,13 +1058,14 @@ for (const theme of ["light", "dark"])
             call.args.includeRepositories === true,
         ),
       ).toBe(true);
-      // The overview keeps its own "Working copy:" select; a single checkout uses the header trigger.
-      await page.getByRole("button", { name: /^Working copy:/ }).click();
-      await page.getByRole("option").filter({ hasText: "/fixture/mobile" }).click();
+      // Focusing one worktree in the header shows only its panel, with its draft intact; going
+      // back to All worktrees restores every draft.
+      await pickWorktree(page, "cross-provider");
+      await expect(overview).toHaveCount(0);
       await expect(page.getByRole("textbox", { name: "Commit message", exact: true })).toHaveValue(
-        "Mobile draft stays here",
+        "Worktree draft stays here",
       );
-      await pickCheckout(page, "All checkouts");
+      await pickWorktree(page, "All worktrees");
       await expect(message(main)).toHaveValue("Main checkout draft stays here");
       await expect(message(worktree)).toHaveValue("Worktree draft stays here");
       await expect(message(mobile)).toHaveValue("Mobile draft stays here");

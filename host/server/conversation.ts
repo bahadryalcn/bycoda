@@ -1,8 +1,10 @@
 import { ConversationWorkspaceTools } from "../conversation/conversation-workspace-tools";
 import { AsyncHostNotes } from "../host-notes-async";
-import { hostInbox } from "../notes/host-notes";
+import { hostInbox } from "../notes/host-inbox";
 import { ProviderInboxBridge } from "../providers/provider-inbox";
 import type { ServerBindings } from "./bindings";
+import { sessionFullAccessCoversInbox } from "./management";
+import { isRemoteJiraOperation } from "../../src/features/inbox/model/jiraBoardProtocol";
 export function createConversationRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -13,6 +15,8 @@ export function createConversationRuntime(
     | "goals"
     | "social"
     | "conversationDesktop"
+    | "featureMeta"
+    | "assistant"
   >,
 ) {
   const hostNotes = new AsyncHostNotes();
@@ -41,14 +45,26 @@ export function createConversationRuntime(
         },
         projectId,
       ).items,
-    async (operation, cwd, principal, authorized) =>
-      await dependencies.conversationDesktop.call(
+    async (operation, cwd, principal, authorized) => {
+      // Native skips its prompt only on this answer; the session mode is the Host's own record.
+      const fullAccess = async () =>
+        principal.kind === "session" &&
+        (await dependencies.featureMeta(principal.sessionId)).session.runtimeMode ===
+          "full-access" &&
+        (await sessionFullAccessCoversInbox(operation, () => dependencies.assistant.profile()));
+      // A Jira board change is reviewed by the desktop itself; native is asked only for the
+      // permit that replaces that review.
+      if (isRemoteJiraOperation({ action: String(operation.action) }) && !(await fullAccess()))
+        return { approved: false };
+      return await dependencies.conversationDesktop.call(
         "inbox.write.authorize",
         { operation },
         cwd,
         principal,
         authorized,
-      ),
+        fullAccess,
+      );
+    },
   );
   return { hostNotes, providerInbox, conversationWorkspace };
 }

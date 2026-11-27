@@ -90,8 +90,8 @@ export function ScheduleHours({
   );
   if (rows)
     return (
-      <Row label={name}>
-        <div className={styles.hoursControl} data-hours="">
+      <Row label={name} controlWidth="wide">
+        <div className={styles.hoursControl}>
           {range}
           {toggle}
         </div>

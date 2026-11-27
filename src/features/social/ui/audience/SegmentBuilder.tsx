@@ -5,7 +5,8 @@ import { TextField } from "../../../../shared/ui/TextField";
 import type { AudienceFilter, SocialList } from "../../model/audience";
 import type { SocialClient } from "../../model/socialClient";
 import { isFilterEmpty } from "./audienceModel";
-import { useFormFooter, useTouched } from "./formFooter";
+import { useFormFooter } from "../../../../shared/ui/FormFooter";
+import { useTouched } from "./formFooter";
 import { SegmentFilterFields } from "./SegmentFilterFields";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
 

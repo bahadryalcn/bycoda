@@ -76,6 +76,13 @@ const box = (element: HTMLElement) => [element.style.left, element.style.width];
 /** Runs the animation frame the sash coalesced its pointer moves into. */
 const flushFrame = () => act(() => frames.splice(0).forEach((frame) => frame(0)));
 
+/** The tree is `width` px wide, so a 240 px pane minimum is `240 / width` of the split. */
+function measureTree(width: number) {
+  vi.spyOn(pane("a").parentElement!, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(0, 0, width, 300),
+  );
+}
+
 function startDrag() {
   const sash = sashElement();
   Object.assign(sash, {
@@ -83,10 +90,8 @@ function startDrag() {
     hasPointerCapture: () => true,
     releasePointerCapture: vi.fn(),
   });
-  vi.spyOn(pane("a").parentElement!, "getBoundingClientRect").mockReturnValue(
-    new DOMRect(0, 0, 400, 300),
-  );
-  pointer(sash, "pointerdown", 200);
+  measureTree(1600);
+  pointer(sash, "pointerdown", 800);
   return sash;
 }
 
@@ -98,13 +103,13 @@ describe("pane sash drag", () => {
     const sash = startDrag();
     renders.mockClear();
 
-    pointer(sash, "pointermove", 240);
+    pointer(sash, "pointermove", 960);
     flushFrame();
     expect(box(pane("a"))).toEqual(["0%", "60%"]);
     expect(box(pane("b"))).toEqual(["60%", "40%"]);
     expect(sash.style.left).toBe("60%");
-    pointer(sash, "pointermove", 280);
-    pointer(sash, "pointermove", 300);
+    pointer(sash, "pointermove", 1120);
+    pointer(sash, "pointermove", 1200);
     flushFrame();
     expect(box(pane("a"))).toEqual(["0%", "75%"]);
     expect(pane("b").dataset.paneBackground).toBe(
@@ -113,7 +118,7 @@ describe("pane sash drag", () => {
     expect(renders).not.toHaveBeenCalled();
     expect(onRatio).not.toHaveBeenCalled();
 
-    pointer(sash, "pointerup", 300);
+    pointer(sash, "pointerup", 1200);
     expect(renders).toHaveBeenCalled(); // the counter does see commits, e.g. the sash ending
     expect(onRatio).toHaveBeenCalledExactlyOnceWith(tree.id, 0, 0.75);
     expect(box(pane("a"))).toEqual(["0%", "75%"]);
@@ -123,9 +128,9 @@ describe("pane sash drag", () => {
     const onRatio = vi.fn();
     render(tree, onRatio);
     const sash = startDrag();
-    pointer(sash, "pointermove", 280);
+    pointer(sash, "pointermove", 1120);
     flushFrame();
-    pointer(sash, "pointerup", 280);
+    pointer(sash, "pointerup", 1120);
     const written = [pane("a"), pane("b"), sashElement()].map((element) => element.style.cssText);
     render(setSplitRatio(tree, tree.id, 0, 0.7), onRatio);
     expect([pane("a"), pane("b"), sashElement()].map((element) => element.style.cssText)).toEqual(
@@ -139,7 +144,7 @@ describe("pane sash drag", () => {
     render(tree, onRatio);
     const sash = startDrag();
     const before = [pane("a"), pane("b"), sash].map((element) => element.style.cssText);
-    pointer(sash, "pointermove", 300);
+    pointer(sash, "pointermove", 1200);
     flushFrame();
     expect(box(pane("a"))).toEqual(["0%", "75%"]);
     act(() =>
@@ -161,5 +166,45 @@ describe("pane sash drag", () => {
       ),
     );
     expect(onRatio).toHaveBeenCalledExactlyOnceWith(tree.id, 0, 0.52);
+  });
+
+  it("stops a drag at the pixel minimum instead of leaving a sliver", () => {
+    const onRatio = vi.fn();
+    render(tree, onRatio);
+    const sash = startDrag();
+    pointer(sash, "pointermove", 1590);
+    flushFrame();
+    expect(box(pane("b"))).toEqual(["85%", "15%"]); // 240 of 1600 px
+    pointer(sash, "pointerup", 1590);
+    expect(onRatio).toHaveBeenCalledExactlyOnceWith(tree.id, 0, 0.85);
+  });
+
+  it.each([
+    { width: 1600, minimum: 0.15 },
+    { width: 600, minimum: 0.4 },
+  ])("keeps keyboard resizing inside the pixel minimum at $width px", ({ width, minimum }) => {
+    const onRatio = vi.fn();
+    render(tree, onRatio);
+    measureTree(width);
+    const press = (key: string) =>
+      act(() => sashElement().dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })));
+    press("Home");
+    press("End");
+    press("ArrowRight");
+    expect(onRatio.mock.calls).toEqual([
+      [tree.id, 0, minimum],
+      [tree.id, 0, 1 - minimum],
+      [tree.id, 0, 0.52],
+    ]);
+  });
+
+  it("leaves a narrow tree's sash able to move without crossing a third", () => {
+    const onRatio = vi.fn();
+    render(tree, onRatio);
+    measureTree(400);
+    act(() =>
+      sashElement().dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })),
+    );
+    expect(onRatio.mock.calls[0][2]).toBeCloseTo(2 / 3);
   });
 });

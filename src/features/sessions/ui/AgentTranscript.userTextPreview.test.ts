@@ -66,8 +66,8 @@ it.each(["chat", "focus"] as const)(
   },
 );
 
-it("bounds the chat and focus preview, opens the exact full text, and copies the original", async () => {
-  const text = "Start\n" + "Long content ".repeat(200) + "\nEND OF MESSAGE";
+it("renders the card and dialog as Markdown, skips hover, and copies the original", async () => {
+  const text = "# Start\n\n" + "Long content ".repeat(200) + "\nEND OF MESSAGE";
   act(() =>
     root.render(
       createElement(AgentTranscript, {
@@ -77,24 +77,21 @@ it("bounds the chat and focus preview, opens the exact full text, and copies the
   );
   const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Show full long text"]')!;
   expect(trigger).not.toBeNull();
+  expect(container.querySelector("h1")?.textContent).toBe("Start");
   expect(container.textContent).not.toContain("END OF MESSAGE");
   await act(async () => {
     trigger.dispatchEvent(new Event("pointerover", { bubbles: true }));
     await new Promise((resolve) => setTimeout(resolve, 350));
   });
   act(() => trigger.focus());
-  const preview = document.querySelector<HTMLElement>("[data-hover-card]");
-  expect(preview).not.toBeNull();
-  expect(preview?.textContent).toContain("Long text preview");
-  expect(preview?.textContent).not.toContain("END OF MESSAGE");
-  expect(preview?.querySelector("pre")?.classList.contains("select-text")).toBe(true);
-  await act(async () =>
-    preview!.querySelector<HTMLButtonElement>('[aria-label="Copy message"]')!.click(),
-  );
-  expect(await navigator.clipboard.readText()).toBe(text);
+  expect(document.querySelector("[data-hover-card]")).toBeNull();
   act(() => trigger.click());
-  expect(document.querySelector('[role="dialog"] pre')?.textContent).toBe(text);
-  expect(document.querySelector('[role="dialog"] pre')?.getAttribute("data-size")).toBe("body");
+  expect(container.textContent).toContain("END OF MESSAGE");
+  const expand = container.querySelector<HTMLButtonElement>('[aria-label="Expand"]')!;
+  expect(document.activeElement).toBe(expand);
+  act(() => expand.click());
+  expect(document.querySelector('[role="dialog"] h1')?.textContent).toBe("Start");
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("END OF MESSAGE");
   await navigator.clipboard.writeText("");
   await act(async () =>
     document
@@ -104,7 +101,7 @@ it("bounds the chat and focus preview, opens the exact full text, and copies the
   expect(await navigator.clipboard.readText()).toBe(text);
   act(() => document.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click());
   expect(document.querySelector('[role="dialog"]')).toBeNull();
-  expect(document.activeElement).toBe(trigger);
+  expect(document.activeElement).toBe(expand);
   expect(trigger.getAttribute("aria-describedby")).toBeNull();
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Copy message"]')!.click(),
@@ -125,15 +122,13 @@ it("uses the save-note and edit message actions in the long text dialog", async 
       }),
     ),
   );
-  const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Show full long text"]')!;
-  act(() => trigger.click());
+  act(() => container.querySelector<HTMLButtonElement>('[aria-label="Expand"]')!.click());
   const dialog = document.querySelector('[role="dialog"]')!;
-  const toolbar = dialog.querySelector(".sticky.top-0")!;
-  expect(toolbar).not.toBeNull();
-  expect(toolbar.querySelector('[aria-label="Copy message"]')?.textContent).toBe("Copy message");
-  expect(toolbar.querySelector('[aria-label="Save as note"]')?.textContent).toBe("Save as note");
+  const copy = dialog.querySelector('[aria-label="Copy message"]')!;
+  expect(copy.textContent).toBe("Copy message");
+  expect(dialog.querySelector('[aria-label="Save as note"]')?.textContent).toBe("Save as note");
   expect(
-    toolbar.compareDocumentPosition(dialog.querySelector("pre")!) &
+    dialog.querySelector(".agent-markdown")!.compareDocumentPosition(copy) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   await act(async () =>
@@ -142,9 +137,7 @@ it("uses the save-note and edit message actions in the long text dialog", async 
       .click(),
   );
   expect(onSaveNote).toHaveBeenCalledWith(text);
-  expect(toolbar.querySelector('[aria-label="Saved to Notes"]')?.textContent).toBe(
-    "Saved to Notes",
-  );
+  expect(dialog.querySelector('[aria-label="Saved to Notes"]')?.textContent).toBe("Saved to Notes");
   act(() =>
     document
       .querySelector<HTMLButtonElement>('[role="dialog"] [aria-label="Message actions"]')!
@@ -170,8 +163,44 @@ it("detects JSON in a message while keeping the surrounding instructions visible
   );
   expect(container.textContent).toContain("Review this:");
   expect(container.textContent).toContain("Keep the key.");
-  const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Show full json"]')!;
-  expect(trigger).not.toBeNull();
-  act(() => trigger.click());
-  expect(document.querySelector('[role="dialog"] pre')?.textContent).toBe('```json\n{"a":1}\n```');
+  expect(container.querySelector('[aria-label="Show full JSON"]')).not.toBeNull();
+  act(() => container.querySelector<HTMLButtonElement>('[aria-label="Expand"]')!.click());
+  // The dialog opens the JSON as a tree; Raw shows the exact text without the fence.
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(dialog.querySelector('[role="radiogroup"][aria-label="JSON view"]')).not.toBeNull();
+  act(() => dialog.querySelector<HTMLButtonElement>('[role="radio"][aria-label="Raw"]')!.click());
+  expect(dialog.textContent).toContain('{"a":1}');
+  expect(dialog.textContent).not.toContain("```");
+});
+
+it("renders Markdown and keeps attachment tokens interactive in ordinary messages", () => {
+  act(() =>
+    root.render(
+      createElement(AgentTranscript, {
+        blocks: [
+          {
+            id: "prompt",
+            role: "user",
+            text: "## Details\n- **Photo** [image1]\n- `[image1]`\n- [Docs](https://example.com/docs)",
+            attachments: [
+              {
+                id: "photo",
+                kind: "image",
+                name: "photo.png",
+                mimeType: "image/png",
+                size: 1,
+                path: "/fixture/photo.png",
+              },
+            ],
+          },
+        ],
+      }),
+    ),
+  );
+  const message = container.querySelector('[data-selectable-agent-response="prompt"]')!;
+  expect(message.querySelector("h2")?.textContent).toBe("Details");
+  expect(message.querySelector('li [data-streamdown="strong"]')?.textContent).toBe("Photo");
+  expect(message.querySelector("li button")?.getAttribute("aria-label")).toContain("photo.png");
+  expect(message.querySelector("li code")?.textContent).toBe("[image1]");
+  expect(message.querySelector('a[href="https://example.com/docs"]')?.textContent).toBe("Docs");
 });

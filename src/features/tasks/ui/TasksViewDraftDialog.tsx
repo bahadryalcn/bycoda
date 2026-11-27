@@ -19,7 +19,7 @@ export function TasksViewDraftDialog({
   machines,
   todoCapable,
   saving,
-  error,
+  notice,
   sprintName,
   onClose,
   onSave,
@@ -30,7 +30,8 @@ export function TasksViewDraftDialog({
   machines: RemoteMachine[];
   todoCapable: RemoteMachine[];
   saving: boolean;
-  error: string | null;
+  /** The sentence for the last failed save; already written for the owner. */
+  notice: string | null;
   sprintName: string | undefined;
   onClose: () => void;
   onSave: (mode: "todo" | "queued" | "save", draft: TaskDraft) => void;
@@ -55,9 +56,9 @@ export function TasksViewDraftDialog({
         if (!saving) onClose();
       }}
     >
-      {error ? (
+      {notice ? (
         <Alert tone="danger" className="mx-4 mt-3 shrink-0">
-          {error}
+          {notice}
         </Alert>
       ) : null}
       <HostModelSource
@@ -69,7 +70,7 @@ export function TasksViewDraftDialog({
         values={draft.modelSettings}
       >
         <TaskForm
-          key={draft.id ?? "new"}
+          key={draft.id ?? draft.creation?.id ?? "new"}
           draft={draft}
           recents={recents}
           machines={machines}

@@ -87,6 +87,16 @@ describe("transcriptMutationNeedsRepaint", () => {
 });
 
 describe("transcriptWordRanges", () => {
+  it("finds the selected word past the paint limit without adding it to background ranges", () => {
+    const root = document.createElement("div");
+    root.innerHTML = `<div data-transcript-search-item>${"needle ".repeat(1001)}</div>
+      <section id="tail"><div data-transcript-search-item data-transcript-search-current="true">one <b>nee</b>dle</div></section>`;
+    const ranges = transcriptWordRanges(root, "needle");
+    expect(ranges.matches).toHaveLength(1000);
+    expect(ranges.current?.toString()).toBe("needle");
+    expect(ranges.current?.startContainer.parentElement?.tagName).toBe("B");
+    expect(transcriptWordRanges(root, "needle", root.querySelector("#tail")!).current).toBeNull();
+  });
   it("separates unchanged history ranges from the streaming turn", () => {
     const root = document.createElement("div");
     root.innerHTML = `<section><div data-transcript-search-item>needle history</div></section>

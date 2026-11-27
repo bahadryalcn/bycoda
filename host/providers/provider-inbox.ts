@@ -33,6 +33,11 @@ type JobRow = {
 };
 /** A job as delivered to the desktop; `requestedBy` is the remote device's name. */
 type DeliveredInboxJob = DesktopInboxJob & { requestedBy?: string };
+function operationSignature(operation: RemoteInboxOperation): string {
+  // A native permit is minted per attempt and never identifies the request.
+  const payload = "permit" in operation ? { ...operation, permit: undefined } : operation;
+  return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+}
 /** Durable receipts with short dispatch leases. Credentials never enter this table.
  * A dispatched write is never replayed, even across a host/desktop restart. */
 export class ProviderInboxBridge {
@@ -73,14 +78,18 @@ export class ProviderInboxBridge {
     return this.db.scope(async () => {
       await this.ready;
       await this.prune();
-      return [...this.clients.values()].some((time) => this.now() - time <= CLIENT_STALE_MS)
-        ? { available: true }
-        : {
-            available: false,
-            reason:
-              "Open the updated bycoda desktop app on this computer to manage its connected inbox providers.",
-          };
+      return this.availabilityNow();
     });
+  }
+  /** Client liveness only. Callers prune in their own scope first; `request` relies on that to prune once. */
+  private availabilityNow(): RemoteInboxAvailability {
+    return [...this.clients.values()].some((time) => this.now() - time <= CLIENT_STALE_MS)
+      ? { available: true }
+      : {
+          available: false,
+          reason:
+            "Open the updated bycoda desktop app on this computer to manage its connected inbox providers.",
+        };
   }
   async request(
     ownerHash: string,
@@ -91,13 +100,13 @@ export class ProviderInboxBridge {
     return this.db.scope(async () => {
       await this.ready;
       await this.prune();
-      const receipt = await this.existingRequest(ownerHash, requestId, operation);
+      const receipt = await this.findReceipt(ownerHash, requestId, operation);
       if (receipt) return receipt;
       if (typeof requestId !== "string" || !/^[A-Za-z0-9_-]{1,200}$/.test(requestId))
         throw new Error("Invalid inbox request ID.");
       const encoded = JSON.stringify(operation);
-      const signature = createHash("sha256").update(encoded).digest("hex");
-      const available = await this.availability();
+      const signature = operationSignature(operation);
+      const available = this.availabilityNow();
       if (!available.available) throw new Error(available.reason);
       const count = (await this.db
         .prepare(
@@ -134,6 +143,15 @@ export class ProviderInboxBridge {
           this.now() + (writes ? 24 * 60 * 60000 : 15 * 60000),
           requestedByName(requestedBy) ?? null,
         );
+      // A phone re-asks for its list on every search or filter change and stops waiting for the
+      // previous one. That earlier list, still queued, would otherwise take one of the desktop's
+      // two job slots (and minutes of provider reads) ahead of the request the phone now shows.
+      if (operation.action === "list" && !writes)
+        await this.db
+          .prepare(
+            "UPDATE remote_inbox_jobs SET state='failed',error=? WHERE owner_hash=? AND state='queued' AND writes=0 AND id<>? AND json_extract(operation_json,'$.action')='list'",
+          )
+          .run("A newer inbox list replaced this request.", ownerHash, id);
       return { id, state: "queued" };
     });
   }
@@ -162,16 +180,24 @@ export class ProviderInboxBridge {
     return this.db.scope(async () => {
       await this.ready;
       await this.prune();
-      if (typeof requestId !== "string" || !/^[A-Za-z0-9_-]{1,200}$/.test(requestId))
-        throw new Error("Invalid inbox request ID.");
-      const row = (await this.db
-        .prepare("SELECT * FROM remote_inbox_jobs WHERE owner_hash=? AND request_id=?")
-        .get(ownerHash, requestId)) as JobRow | undefined;
-      if (!row) return null;
-      if (row.signature !== createHash("sha256").update(JSON.stringify(operation)).digest("hex"))
-        throw new Error("This inbox request ID already belongs to another operation.");
-      return this.receipt(row);
+      return this.findReceipt(ownerHash, requestId, operation);
     });
+  }
+  /** Receipt lookup without pruning; callers prune in the same scope first. */
+  private async findReceipt(
+    ownerHash: string,
+    requestId: unknown,
+    operation: RemoteInboxOperation,
+  ): Promise<RemoteInboxReceipt | null> {
+    if (typeof requestId !== "string" || !/^[A-Za-z0-9_-]{1,200}$/.test(requestId))
+      throw new Error("Invalid inbox request ID.");
+    const row = (await this.db
+      .prepare("SELECT * FROM remote_inbox_jobs WHERE owner_hash=? AND request_id=?")
+      .get(ownerHash, requestId)) as JobRow | undefined;
+    if (!row) return null;
+    if (row.signature !== operationSignature(operation))
+      throw new Error("This inbox request ID already belongs to another operation.");
+    return this.receipt(row);
   }
   /** Agent targets must come from a completed, scoped provider discovery receipt. */
   async assertListedTarget(ownerHash: string, item: RemoteInboxTarget, cwd: string): Promise<void> {

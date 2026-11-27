@@ -62,8 +62,18 @@ it("filters categories without changing the persisted selection", () => {
   )!;
   act(() => creative.click());
   expect(choices()).toHaveLength(4);
-  expect(container.textContent).toContain("Security");
+  // There is no separate selected-name block; the selection is only marked on its own tile.
+  expect(container.querySelector('[aria-label="Project icon: Security"]')).toBeNull();
   expect(onPick).not.toHaveBeenCalled();
+  act(() => select.click());
+  act(() =>
+    [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')]
+      .find((option) => option.textContent?.trim() === "All types")!
+      .click(),
+  );
+  expect(
+    container.querySelector('[aria-label="Project icon: Security"]')?.getAttribute("aria-checked"),
+  ).toBe("true");
 });
 it("searches by Turkish alias and provides a clear empty state", () => {
   const input = container.querySelector("input")!;

@@ -1,4 +1,5 @@
 import { mapAsync } from "../async-collections";
+import { buildTaskStop } from "../../src/shared/model/host-contracts/task-stop";
 import { writerWorkspaces } from "../workspaces/writer-workspaces.test-support";
 import type { TaskWorkspaceServices } from "../tasks/task-workspace-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -950,7 +951,7 @@ describe("integrated final goal acceptance", () => {
     );
     const reopened = new HostGoals(f.store, f.engine, f.tasks, () => f.clock.now);
     await reopened.ready;
-    expect((await f.tasks.budgets.read({ goalId: "goal" })).historyComplete).toBe(false);
+    expect((await f.tasks.budgets.read({ goalId: "goal" })).tokensComplete).toBe(false);
     await reopened.replan("goal");
     expect((await f.goal()).status).toBe("blocked");
     expect((await f.goal()).budgetStop).toMatch(/historical/i);
@@ -1076,7 +1077,7 @@ describe("editing goal settings", () => {
     expect(task.providerAccountId).toBe("account-work");
     expect((await f.turnOf(task.sessionId!)).input.providerAccountId).toBe("account-work");
   });
-  it("reuses the task index across goal polls and refreshes it after task writes", async () => {
+  it("lists goals and budget snapshots without reconciling tasks or transcripts", async () => {
     const { store, tasks, goals, input, lead } = await setup();
     await tasks.save({ ...input(), id: "waiting", projectId: lead.id, status: "todo" });
     await store.db.prepare("INSERT INTO goals VALUES (?, ?)").run(
@@ -1089,24 +1090,31 @@ describe("editing goal settings", () => {
         updatedAt: 1,
       }),
     );
+    await store.db.prepare("INSERT INTO goals VALUES (?, ?)").run(
+      "older-work",
+      JSON.stringify({
+        ...input({ id: "older-work" }),
+        status: "done",
+        taskIds: [],
+        createdAt: 2,
+        updatedAt: 2,
+      }),
+    );
+    await tasks.budgets.markUnknownHistory({ goalId: "older-work" });
     const prepare = vi.spyOn(store.db, "prepare");
-    const pointReads = () =>
-      prepare.mock.calls.filter(([sql]) => sql === "SELECT value FROM tasks WHERE id=?").length;
-    expect((await goals.list())[0].status).toBe("running");
-    expect((await goals.list())[0].status).toBe("running");
-    expect(pointReads()).toBe(1);
-    await tasks.save({ ...input(), id: "waiting", projectId: lead.id, title: "Changed" });
-    // save() independently reads current tasks to validate dependency cycles.
-    // Count goal polling itself: one refresh after a write, then shared reads.
-    prepare.mockClear();
-    await goals.list();
-    await goals.list();
-    expect(pointReads()).toBe(1);
     await tasks.delete("waiting");
     prepare.mockClear();
+    expect(await goals.list()).toMatchObject([
+      { status: "running", budgetUsage: { attempts: 0, tokensComplete: true } },
+      { status: "done", budgetUsage: { attempts: 0, tokensComplete: false } },
+    ]);
+    const statements = prepare.mock.calls.map(([sql]) => sql);
+    expect(statements.some((sql) => /\b(?:UPDATE|INSERT|DELETE|FROM tasks)\b/i.test(sql))).toBe(
+      false,
+    );
+    expect(statements.filter((sql) => sql.includes("task_run_budget_ledger"))).toHaveLength(1);
+    await goals.tick();
     expect((await goals.list())[0].status).toBe("blocked");
-    await goals.list();
-    expect(pointReads()).toBe(1);
     prepare.mockRestore();
   });
   async function seeded() {
@@ -1145,7 +1153,13 @@ describe("editing goal settings", () => {
           ...saved,
           status,
           dependsOn: ["reviewed"],
-          awaitingOwnerRestart: status === "blocked",
+          stop:
+            status === "blocked"
+              ? buildTaskStop(
+                  { code: "owner_stopped", message: "Stopped by you.", nextAction: "restart" },
+                  1,
+                )
+              : undefined,
           verification: { review: { verdict: "pass", sessionId: "review-session", note: "" } },
         }),
         id,
@@ -1185,7 +1199,7 @@ describe("editing goal settings", () => {
       expect(task.autoMerge).not.toBe(true);
       expect(task.maxRunMinutes).toBe(id === "active" ? 10 : 30);
     }
-    expect((await tasks.get("stopped"))?.awaitingOwnerRestart).toBe(true);
+    expect((await tasks.get("stopped"))?.stop?.nextAction).toBe("restart");
     expect(await tasks.get("finished")).toEqual(before.find((task) => task.id === "finished"));
     const disabled = await goals.update(
       "goal",
@@ -1236,7 +1250,7 @@ describe("editing goal settings", () => {
     const { goals, tasks } = await seeded();
     await goals.update("goal", { ...settings, continueUntilDone: false, maxRunMinutes: 0 }, 2);
     expect((await tasks.get("waiting"))?.maxRunMinutes).toBe(10);
-    expect((await tasks.get("stopped"))?.awaitingOwnerRestart).toBe(true);
+    expect((await tasks.get("stopped"))?.stop?.nextAction).toBe("restart");
     expect((await tasks.get("waiting"))?.continueUntilDone).toBeUndefined();
     expect((await tasks.get("waiting"))?.autoMerge).not.toBe(true);
   });
@@ -1885,9 +1899,9 @@ describe("goal tasks", () => {
     });
     // Retrying the blocked task takes the goal up again.
     await tasks.move(a.id, "queued");
+    await tasks.tick();
     expect((await goal()).status).toBe("running");
     expect((await goal()).error).toBeUndefined();
-    await tasks.tick();
     await vi.waitFor(() => expect(turns).toHaveLength(3));
     expect((await planned()).a.status).toBe("running");
   });
@@ -1913,23 +1927,33 @@ describe("goal tasks", () => {
           reviewing.id,
         );
       await finish(reviewing.reviewer!.sessionId!, "VERDICT: FAIL - Friday is missing.");
+      const failed = (await tasks.get(reviewing.id))!;
       const legacy = {
-        ...(await tasks.get(reviewing.id))!,
+        ...failed,
         goalId: "goal",
         reviewOnly: undefined,
-        repairStop: undefined,
-        needsInput: undefined,
+        stop: buildTaskStop(
+          {
+            code: "run_failed",
+            phase: "review",
+            message: failed.error ?? "Review failed.",
+            nextAction: "takeover",
+          },
+          1,
+        ),
       };
       if (cancelled) await goals.cancel("goal");
       await store.db
         .prepare("UPDATE tasks SET value=? WHERE id=?")
         .run(JSON.stringify(legacy), legacy.id);
       await tasks.tick();
+      // Takeover starts after goal reconciliation, so the next tick observes it.
+      if (!cancelled) await tasks.tick();
       expect((await goal()).status).toBe(cancelled ? "cancelled" : "running");
       const recovered = (await planned()).a;
       expect(
         recovered.status,
-        JSON.stringify({ error: recovered.error, repairStop: recovered.repairStop }),
+        JSON.stringify({ error: recovered.error, stop: recovered.stop }),
       ).toBe(cancelled ? "blocked" : "running");
       if (!cancelled) expect((await planned()).a.blockedTakeover).toBeDefined();
       expect((await planned()).b.status).toBe(cancelled ? "blocked" : "queued");
@@ -1954,7 +1978,7 @@ describe("goal tasks", () => {
     await advance();
     expect((await goal()).status).toBe("running");
     await approve(b.id);
-    // Listing brings progress up to date without waiting for a tick.
+    await advance();
     expect((await goal()).status).toBe("done");
   });
   it("runs tasks of different projects at once, within the machine's cap", async () => {
@@ -2022,10 +2046,16 @@ describe("goal tasks", () => {
     expect((await tasks.get(running.id))?.status).toBe("verifying");
     const cancelled = await goals.cancel("goal");
     expect(cancelled.status).toBe("cancelled");
-    expect(await tasks.get(running.id)).toMatchObject({
-      status: "blocked",
-      error: "Stopped by you.",
-    });
+    // The verification job stops through the task Stop path, which may land after cancel returns.
+    // Under CI load the Stop can take longer than the default one-second wait.
+    await vi.waitFor(
+      async () =>
+        expect(await tasks.get(running.id)).toMatchObject({
+          status: "blocked",
+          error: "Stopped by you.",
+        }),
+      { timeout: 10_000 },
+    );
     await tasks.idle();
     expect((await tasks.get(running.id))?.status).toBe("blocked");
     expect(turns).toHaveLength(2);

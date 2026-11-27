@@ -1,4 +1,7 @@
-import { normalizeVoiceSearch, voiceSearchClauses } from "./voiceFeatureLexicon";
+import {
+  normalizeVoiceSearch,
+  voiceSearchClauses,
+} from "../../../shared/model/voice-realtime/voiceFeatureLexicon";
 
 /** Metadata only. The owning Host remains responsible for validation and authorization. */
 export type VoiceToolFamily = "conversation" | "social" | "runtime-logs";
@@ -82,6 +85,10 @@ export function voiceToolCategory(tool: VoiceToolDescriptor): string {
 /** Largest page `selectVoiceTools` returns; the realtime tool schema should not advertise more. */
 export const VOICE_TOOL_MAX_LIMIT = 40;
 
+function matchesToolAction(tool: VoiceToolDescriptor, parts: string[], action: string) {
+  return parts.includes(action) || (tool.action === "crews.save" && action === "create");
+}
+
 /** Lower is better: exact action > action word/prefix > family/category > description only. */
 function rankVoiceTool(tool: VoiceToolDescriptor, clauses: ReturnType<typeof voiceSearchClauses>) {
   const action = tool.action.toLowerCase();
@@ -91,7 +98,7 @@ function rankVoiceTool(tool: VoiceToolDescriptor, clauses: ReturnType<typeof voi
   for (const term of clauses) {
     if (action === term.text) score += 0;
     else if (
-      (term.action !== undefined && parts.includes(term.action)) ||
+      (term.action !== undefined && matchesToolAction(tool, parts, term.action)) ||
       parts.includes(term.text) ||
       action.startsWith(term.text) ||
       parts.some((part) => part.startsWith(term.text))
@@ -132,7 +139,8 @@ export function selectVoiceTools(
             (term.feature === "logs" && tool.family === "runtime-logs") ||
             searchable.includes(term.feature))) ||
         (term.action !== undefined &&
-          (parts.includes(term.action) || (term.action === "list" && parts.includes("open")))) ||
+          (matchesToolAction(tool, parts, term.action) ||
+            (term.action === "list" && parts.includes("open")))) ||
         searchable.includes(term.text),
     );
   };

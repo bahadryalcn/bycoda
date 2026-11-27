@@ -3,6 +3,7 @@ import type {
   AssistantProfilePatch,
   AssistantSnapshot,
 } from "../../../../shared/model/host-contracts/assistant";
+import { InlineError } from "../../../../shared/ui/InlineError";
 import { Text } from "../../../../shared/ui/Text";
 import { Row } from "../../../../shared/ui/settings";
 import { keepAwakeLabel } from "../AssistantKeepAwakeStatus";
@@ -28,7 +29,8 @@ export function PresenceStatusRow({
     <Row
       label={t("Right now")}
       descriptionVisible
-      description={state?.error ? `${text} · ${state.error}` : text}
+      description={state?.error ? undefined : text}
+      feedback={state?.error ? <InlineError details={state.error}>{text}</InlineError> : undefined}
     >
       <Text as="span" size="caption" tone="inherit" leading="inherit">
         <AssistantPresenceStatus snapshot={snapshot} details />

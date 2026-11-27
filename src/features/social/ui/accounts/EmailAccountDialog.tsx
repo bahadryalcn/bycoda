@@ -9,8 +9,9 @@ import { PasswordField } from "../../../../shared/ui/PasswordField";
 import { Select } from "../../../../shared/ui/Select";
 import { TextField } from "../../../../shared/ui/TextField";
 import type { EmailAccount } from "../../model/outreach";
+import type { SocialPlatform } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
-import { DisabledReason, gateProps, type ActionGate } from "../common/DisabledReason";
+import { gateReason, type ActionGate } from "../common/DisabledReason";
 import {
   EMAIL_KINDS,
   emailFormError,
@@ -18,6 +19,7 @@ import {
   type EmailDraft,
   type EmailKind,
 } from "./emailAccountForm";
+import { ProviderSelect } from "./ProviderSelect";
 import { useAccountWrite } from "./useAccountWrite";
 import "./accounts.css";
 
@@ -25,6 +27,8 @@ export type EmailAccountDialogProps = {
   client: SocialClient;
   onClose(): void;
   onCreated(accountId: string): void;
+  /** Shows the platform select and returns to the social account form with the chosen platform. Omit when opened on its own. */
+  onSwitchToAccount?(platform: SocialPlatform): void;
 };
 
 function kindText(kind: EmailKind): string {
@@ -53,10 +57,16 @@ const EMPTY: EmailDraft = {
  * Adds a sending email account. The secret goes to the Host's vault and is never shown again; the
  * unsubscribe link is required because every outbound email carries it.
  */
-export function EmailAccountDialog({ client, onClose, onCreated }: EmailAccountDialogProps) {
+export function EmailAccountDialog({
+  client,
+  onClose,
+  onCreated,
+  onSwitchToAccount,
+}: EmailAccountDialogProps) {
   const formId = useId();
+  const reasonId = useId();
   const [draft, setDraft] = useState<EmailDraft>(EMPTY);
-  const { error, is, write } = useAccountWrite(
+  const { failureTitle, details, is, write } = useAccountWrite(
     t("The email account could not be saved. Try again."),
   );
   const update = (patch: Partial<EmailDraft>) => setDraft((current) => ({ ...current, ...patch }));
@@ -79,19 +89,20 @@ export function EmailAccountDialog({ client, onClose, onCreated }: EmailAccountD
       }}
       size="md"
       footer={
-        <ModalActions>
+        <ModalActions reason={gateReason(gate)} reasonId={reasonId}>
           <Button variant="ghost" disabled={is("email")} onClick={onClose}>
             {t("Cancel")}
           </Button>
-          <DisabledReason
+          <Button
             type="submit"
             form={formId}
             variant="primary"
             loading={is("email")}
-            {...gateProps(gate)}
+            disabled={gate.disabled}
+            aria-describedby={gate.disabled ? reasonId : undefined}
           >
             {t("Save email account")}
-          </DisabledReason>
+          </Button>
         </ModalActions>
       }
     >
@@ -103,10 +114,21 @@ export function EmailAccountDialog({ client, onClose, onCreated }: EmailAccountD
           if (!gate.disabled) submit();
         }}
       >
+        {onSwitchToAccount ? (
+          <ProviderSelect
+            value="email"
+            onChange={(next) => {
+              if (next !== "email" && !is("email")) onSwitchToAccount(next);
+            }}
+          />
+        ) : null}
         <Select
           label={t("Email provider")}
           value={draft.kind}
-          options={EMAIL_KINDS.map((kind) => ({ value: kind, label: kindText(kind) }))}
+          options={EMAIL_KINDS.map((kind) => ({
+            value: kind,
+            label: kindText(kind),
+          }))}
           onValueChange={(value) => update({ kind: value as EmailKind, secret: "" })}
         />
         <TextField
@@ -159,7 +181,11 @@ export function EmailAccountDialog({ client, onClose, onCreated }: EmailAccountD
           description={t("Stored on this computer. It is not shown again.")}
           onChange={(event) => update({ secret: event.currentTarget.value })}
         />
-        {error ? <InlineError>{error}</InlineError> : null}
+        {failureTitle ? (
+          <InlineError details={details}>
+            {t("The email account could not be saved. Try again.")}
+          </InlineError>
+        ) : null}
       </form>
     </Modal>
   );

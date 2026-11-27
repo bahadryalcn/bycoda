@@ -87,13 +87,36 @@ it("blocks a second request while a report is being created", () => {
   expect(onLoad).not.toHaveBeenCalled();
 });
 
-it("labels generated period and warns when selection differs", () => {
+it("shows a suggestion failure alongside available report results", () => {
   render({
+    report: {
+      period: "day",
+      data: {
+        done: ["Replied to 3 comments"],
+        results: [],
+        suggestions: [],
+        suggestionsError: "AI generation failed or stopped.",
+      },
+    },
+  });
+  expect(element.querySelector('[data-tone="warning"]')?.textContent).toContain(
+    "Suggestions could not be generated.",
+  );
+  expect(element.textContent).not.toContain("AI generation failed or stopped.");
+  expect(element.textContent).toContain("Replied to 3 comments");
+});
+
+it("refreshes a shown report when another period is picked", () => {
+  const onLoad = render({
     report: { period: "day", data: { done: ["Day results"], results: [], suggestions: [] } },
   });
-  expect(element.textContent).toContain("Day report");
   act(() => period("Week")?.click());
-  expect(element.textContent).toContain("Day report");
-  expect(element.textContent).toContain("Create a new report for the selected period.");
+  expect(onLoad).toHaveBeenCalledWith("week");
   expect(element.textContent).toContain("Day results");
+});
+
+it("does not load when a period is picked before any report exists", () => {
+  const onLoad = render();
+  act(() => period("Week")?.click());
+  expect(onLoad).not.toHaveBeenCalled();
 });

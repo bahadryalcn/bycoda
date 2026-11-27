@@ -3,3 +3,14 @@
 .content [data-markdown-view-pane="preview"] :global(.markdown-preview) > div {
   zoom: var(--markdown-document-zoom, 1);
 }
+
+/* Header slot of a fenced block: right of the language label, left of the copy button. */
+.fenceToggle {
+  position: absolute;
+  z-index: 2;
+  /* ui-drift-ignore: spacing-step -- Sits on the code block header's own geometry. */
+  top: 5px;
+  /* ui-drift-ignore: spacing-step -- Left of the header's copy button. */
+  right: 36px;
+  inline-size: auto;
+}

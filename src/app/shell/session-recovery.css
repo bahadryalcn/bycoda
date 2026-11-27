@@ -1,36 +1,25 @@
-.session-recovery-dialog .modal-panel > div {
-  display: flex;
-  overflow-y: auto;
-}
 .session-recovery,
 .recovery-pane {
   inline-size: 100%;
-  max-block-size: min(640px, calc(100dvh - 110px));
+  max-block-size: 640px;
 }
 /* One recovery layout for conversations, file drafts and earlier reports: the toolbar, the
    counts and the footer keep their place; only the list scrolls. */
 .recovery-pane {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--ui-space-2);
   min-block-size: 0;
-  padding: 0.75rem;
+  padding: var(--ui-space-3);
 }
 .recovery-pane > :not(.recovery-body, .recovery-list) {
-  flex-shrink: 0;
-}
-.recovery-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  padding: 0.5rem 0.75rem 0;
   flex-shrink: 0;
 }
 .recovery-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--ui-space-2);
 }
 .recovery-toolbar-search {
   flex: 1 1 10rem;
@@ -40,8 +29,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  column-gap: 0.75rem;
-  row-gap: 0.125rem;
+  column-gap: var(--ui-space-3);
+  row-gap: calc(var(--ui-space-1) / 2);
 }
 .recovery-body {
   flex: 0 1 auto;
@@ -49,6 +38,37 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+}
+/* An empty state shows its mascot, so it needs more room than the list's minimum. */
+.recovery-body:has(> [data-kind]) {
+  min-block-size: min(14rem, 40dvh);
+}
+.file-recovery-body {
+  min-block-size: min(5rem, 26dvh);
+}
+.file-recovery-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding-block: 0.5rem;
+}
+.file-recovery-detail {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.625rem;
+  flex: 1 1 12rem;
+  min-inline-size: 0;
+}
+.file-recovery-icon {
+  margin-block-start: 0.125rem;
+  color: var(--ui-text-secondary);
+}
+.file-recovery-actions {
+  display: flex;
+  gap: 0.25rem;
+  margin-inline-start: auto;
 }
 /* A short window keeps the footer actions on screen even while a result alert is shown: the list
    gives up its reserved height first. */
@@ -60,14 +80,14 @@
 .recovery-footer {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding-block-start: 0.5rem;
+  gap: var(--ui-space-2);
+  padding-block-start: var(--ui-space-2);
 }
 .recovery-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--ui-space-2);
 }
 .recovery-actions-end {
   margin-inline-start: auto;
@@ -76,95 +96,9 @@
 .recovery-list {
   flex: 0 1 auto;
   min-block-size: 0;
-  scrollbar-gutter: stable;
+  padding-inline-end: var(--ui-scrollbar-size);
 }
 
 .recovery-row > .bycoda-arc {
   flex-shrink: 0;
-}
-
-.recovery-rail-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  flex-shrink: 0;
-  gap: 0.25rem;
-}
-.recovery-rail-error {
-  flex-basis: 100%;
-}
-.recovery-rail-control {
-  position: relative;
-  flex-shrink: 0;
-}
-/* Label-less rails (compact rail, narrow container) show the corner badge; every other rail
-   shows the plain section count. */
-.recovery-rail-count {
-  display: none;
-  flex-shrink: 0;
-  /* The absolute corner badge shrinks to the narrow rail control; "99+" must stay on one line. */
-  white-space: nowrap;
-}
-.recovery-rail-number {
-  flex-shrink: 0;
-}
-/* Recovery and Working share the status inset and header padding. Keep the optional
-   clear action beside the count without reserving a second trailing column. */
-@container rail (inline-size > 140px) {
-  .bycoda-rail-status .recovery-rail-clear {
-    position: absolute;
-    inset-inline-end: calc(2rem + var(--recovery-count-width));
-  }
-  .bycoda-rail-status .recovery-rail-row:has(.recovery-rail-clear) .recovery-rail-label {
-    padding-inline-end: 1.5rem;
-  }
-}
-
-[data-compact-project-rail] .recovery-rail-control {
-  flex: none;
-  justify-content: center;
-}
-[data-compact-project-rail] .recovery-rail-row {
-  padding: 0;
-  margin: 0;
-  justify-content: center;
-}
-[data-compact-project-rail] .recovery-rail-clear {
-  display: none;
-}
-
-[data-compact-project-rail] .recovery-rail-number {
-  display: none;
-}
-[data-compact-project-rail] .recovery-rail-count {
-  display: inline-flex;
-  position: absolute;
-  inset-block-start: -2px;
-  inset-inline-end: -3px;
-  pointer-events: none;
-}
-
-@container rail (inline-size <= 140px) {
-  .recovery-rail-clear {
-    display: none;
-  }
-  .recovery-rail-row {
-    justify-content: center;
-    padding-inline: 0;
-  }
-  .recovery-rail-control {
-    margin-inline: auto;
-    flex: none;
-    justify-content: center;
-  }
-  .recovery-rail-number {
-    display: none;
-  }
-  .recovery-rail-count {
-    display: inline-flex;
-    position: absolute;
-    inset-block-start: -2px;
-    inset-inline-end: -3px;
-    pointer-events: none;
-  }
 }

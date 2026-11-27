@@ -1,15 +1,16 @@
 import { Text } from "../../../../shared/ui/Text";
 import { useMemo } from "react";
 import { formatNumber, t } from "../../../../shared/i18n";
-import { Badge } from "../../../../shared/ui/Badge";
+import { SocialStatusDot } from "../common/SocialStatusDot";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
+import { ListBullet } from "../../../../shared/ui/icons";
 import { Timestamp } from "../../../../shared/ui/Timestamp";
 import { Button } from "../../../../shared/ui/Button";
 import { CollectionFooter } from "../../../../shared/ui/ContinuousList";
 import { SortableDataTable, type DataColumn } from "../../../../shared/ui/SortableDataTable";
-import { Meter } from "../../../../shared/ui/Meter";
 import { OverflowTooltip } from "../../../../shared/ui/Tooltip";
 import type { SocialPerson } from "../../model/audience";
-import { stageLabel, stageTone, visibleTags } from "./audienceModel";
+import { stageLabel, stageTone } from "./audienceModel";
 import { PlatformMarks } from "../common/PlatformIcon";
 import { SocialAvatar } from "../common/SocialAvatar";
 import "./audience.css";
@@ -64,13 +65,7 @@ function PersonCell({ person, onOpen }: { person: SocialPerson; onOpen: (id: str
         </OverflowTooltip>
         {caption ? (
           <OverflowTooltip label={caption}>
-            <Text
-              size="caption"
-              tone="muted"
-              leading="inherit"
-              truncate
-              className="audience-ellipsis"
-            >
+            <Text size="caption" tone="muted" leading="inherit" truncate>
               {caption}
             </Text>
           </OverflowTooltip>
@@ -82,24 +77,13 @@ function PersonCell({ person, onOpen }: { person: SocialPerson; onOpen: (id: str
 
 function AccountsCell({ person }: { person: SocialPerson }) {
   const platforms = [...new Set(person.handles.map((handle) => handle.platform))];
-  return platforms.length ? (
-    <PlatformMarks platforms={platforms} size="xs" />
-  ) : (
-    <Text as="span" tone="muted" leading="inherit">
-      {t("No account")}
-    </Text>
-  );
+  return platforms.length ? <PlatformMarks platforms={platforms} size="xs" /> : "–";
 }
 
+/** The score as a number only; the person panel is where a score is read in detail. */
 function ScoreCell({ person }: { person: SocialPerson }) {
   return person.score ? (
-    <span className="audience-score">
-      <Meter
-        className="audience-score-bar"
-        label={t("Interest score")}
-        value={person.score.value}
-        tone="accent"
-      />
+    <span className="audience-score" aria-label={t("Interest score")}>
       {formatNumber(person.score.value)}
     </span>
   ) : (
@@ -108,28 +92,29 @@ function ScoreCell({ person }: { person: SocialPerson }) {
 }
 
 function TagsCell({ person }: { person: SocialPerson }) {
-  const tags = visibleTags(person.tags);
-  return (
-    <span className="audience-badges">
-      {tags.shown.map((tag) => (
-        <Badge key={tag} size="xs" tone="neutral">
-          {tag}
-        </Badge>
-      ))}
-      {tags.hidden > 0 ? (
-        <Badge size="xs" tone="neutral">
-          {t("+{p0}", { p0: tags.hidden })}
-        </Badge>
-      ) : null}
-    </span>
-  );
+  return person.tags.length ? (
+    <InfoPopover label={t("Tags")} icon={<ListBullet className="icon-sm" aria-hidden />}>
+      <ul>
+        {person.tags.map((tag) => (
+          <li key={tag}>{tag}</li>
+        ))}
+      </ul>
+    </InfoPopover>
+  ) : null;
 }
 
 /**
- * Compact people table. Rows open the person panel; checkboxes select for bulk actions.
- * Name, Status, Score and Updated sort the loaded rows.
+ * Sort key that matches no column: every row compares as empty, so the Host order stays as it is.
+ * Used while more pages remain, because a sort would only reorder the loaded page.
  */
-// shortcut: sorting covers only the loaded page, move it to the Host query when lists grow past one page.
+const HOST_ORDER = { key: "", direction: "asc" } as const;
+
+/**
+ * Compact people table. Rows open the person panel; checkboxes select for bulk actions.
+ * Name, Status, Score and Updated sort once every page is loaded. Until then the headers are
+ * not sortable and the Host order is shown.
+ */
+// shortcut: sorting waits for the last page; move the sort key into the people.list keyset cursor to sort across pages.
 export function PeopleTable({
   people,
   selected,
@@ -158,6 +143,7 @@ export function PeopleTable({
       {
         key: "name",
         sizing: "flex",
+        sortable: !hasMore,
         label: t("Name"),
         render: (_, row) => <PersonCell person={row.person} onOpen={onOpen} />,
       },
@@ -172,16 +158,19 @@ export function PeopleTable({
       {
         key: "stage",
         sizing: "content",
+        sortable: !hasMore,
         label: t("Status"),
         render: (_, row) => (
-          <Badge size="sm" tone={stageTone(row.person.stage)}>
-            {stageLabel(row.person.stage)}
-          </Badge>
+          <SocialStatusDot
+            tone={stageTone(row.person.stage)}
+            label={stageLabel(row.person.stage)}
+          />
         ),
       },
       {
         key: "score",
         sizing: "content",
+        sortable: !hasMore,
         label: t("Score"),
         numeric: true,
         hideBelow: "md",
@@ -198,11 +187,12 @@ export function PeopleTable({
       {
         key: "updatedAt",
         sizing: "content",
+        sortable: !hasMore,
         label: t("Updated"),
         render: (_, row) => <UpdatedDate value={row.person.updatedAt} />,
       },
     ],
-    [onOpen],
+    [onOpen, hasMore],
   );
   // The table reports the whole selection; translate it into the per-person calls the screen uses.
   const onSelectionChange = (keys: string[]) => {
@@ -220,6 +210,7 @@ export function PeopleTable({
       columns={columns}
       rowKey="id"
       caption={t("People")}
+      sortState={hasMore ? HOST_ORDER : undefined}
       scrollKey="social:people"
       selectable
       selectedKeys={[...selected]}

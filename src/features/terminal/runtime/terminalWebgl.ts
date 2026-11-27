@@ -1,4 +1,6 @@
 import type { IDisposable, Terminal } from "@xterm/xterm";
+import { isTauri } from "@tauri-apps/api/core";
+import { IS_MAC } from "../../../platform/tauri/platform";
 
 /**
  * How long a hidden terminal keeps its renderer. Rebuilding one (dynamic import, new context,
@@ -78,6 +80,8 @@ export function createTerminalWebgl(
   const load = async () => {
     cancelDrop();
     if (webgl || loading || disposed) return;
+    // Use the DOM renderer in WKWebView to avoid macOS WebGL rendering failures.
+    if (IS_MAC && isTauri()) return;
     loading = true;
     let created: { dispose(): void } | undefined;
     let before: Set<HTMLCanvasElement> | undefined;

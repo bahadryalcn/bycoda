@@ -12,7 +12,24 @@ import { PersistenceDrainRegistry } from "../../sessions/data/persistenceDrain";
 const native = vi.hoisted(() => ({
   shown: () => {},
   mac: true,
+  turkish: false,
 }));
+vi.mock("../../../shared/i18n", async (original) => ({
+  ...(await original<typeof import("../../../shared/i18n")>()),
+  useLocale: () => (native.turkish ? "tr" : "en"),
+}));
+vi.mock("../../sessions/model/plan", async (original) => {
+  const actual = await original<typeof import("../../sessions/model/plan")>();
+  return {
+    ...actual,
+    PLAN_COMMAND: {
+      ...actual.PLAN_COMMAND,
+      get name() {
+        return native.turkish ? "inspect" : actual.PLAN_COMMAND.name;
+      },
+    },
+  };
+});
 vi.mock("../../../platform/tauri/platform", async (original) => ({
   ...(await original<typeof import("../../../platform/tauri/platform")>()),
   get IS_MAC() {
@@ -133,10 +150,39 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("exposes the active project option on the focused project search", async () => {
+  await key("p", { metaKey: true });
+  const search = container.querySelector<HTMLInputElement>(
+    '[role="combobox"][aria-label="Search projects"]',
+  )!;
+  const list = container.querySelector('[role="listbox"][aria-label="Projects"]')!;
+  const option = list.querySelector('[role="option"]')!;
+  await act(async () => {
+    search.focus();
+    search.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }),
+    );
+  });
+  expect(document.activeElement).toBe(search);
+  expect(search.getAttribute("aria-controls")).toBe(list.id);
+  expect(search.getAttribute("aria-activedescendant")).toBe(option.id);
+  expect(option.getAttribute("aria-selected")).toBe("true");
+});
+
 it("highlights a link after a mode without changing the draft", () => {
   input("/plan Review https://example.com/path");
   expect(prompt.value).toBe("/plan Review https://example.com/path");
   expect(container.querySelector("[data-composer-link-token]")).not.toBeNull();
+});
+
+it("capitalizes a command label using the active locale", () => {
+  native.turkish = true;
+  try {
+    input("/ins");
+    expect(container.querySelector("#quick-command-plan")?.textContent).toContain("İnspect");
+  } finally {
+    native.turkish = false;
+  }
 });
 
 it("uses Control+Enter to start and open a Windows session", async () => {
@@ -216,7 +262,10 @@ it("keeps a failed launch draft and exposes the complete error for recovery", as
   input("Keep this request");
   await key("Enter");
   expect(prompt.value).toBe("Keep this request");
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+  const alert = container.querySelector('[role="alert"]')!;
+  expect(alert.textContent).toContain("Could not start the session.");
+  await act(async () => alert.querySelector("button")!.click());
+  expect(document.body.textContent).toContain(
     "Reconnect the owning computer before retrying this unchanged draft.",
   );
 });
@@ -279,7 +328,7 @@ it("does not suggest Operator inside normal text or paths and filters unknown co
     expect(commands()).toBeNull();
   }
   input("/unknown");
-  expect(commands()?.textContent).toContain("No matching commands");
+  expect(commands()?.textContent).toContain("No matches");
   expect(commands()?.querySelector('[role="option"]')).toBeNull();
 });
 
@@ -302,7 +351,7 @@ it("preserves typed /operator for start-and-open and retains it after a failed l
     }),
   );
   expect(prompt.value).toBe("/operator list my notes");
-  expect(container.textContent).toContain("Could not start session");
+  expect(container.textContent).toContain("Could not start the session.");
   await act(async () => native.shown());
   expect(prompt.value).toBe("/operator list my notes");
   await key("Enter", { metaKey: true });

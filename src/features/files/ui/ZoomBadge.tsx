@@ -10,8 +10,6 @@ export function ZoomBadge({ zoom, onReset }: { zoom: number; onReset: () => void
     <Button
       size="sm"
       variant="ghost"
-      motion="none"
-      type="button"
       tooltip={t("Reset zoom")}
       aria-label={t("Zoom {p0}, reset to 100%", { p0: formatZoomPercent(zoom) })}
       onClick={onReset}

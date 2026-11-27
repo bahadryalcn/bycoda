@@ -6,6 +6,11 @@ import { SocialOAuth, socialOAuthConfigs } from "./social-oauth";
 import { SocialService } from "./social";
 import { SocialTokenConnections } from "./social-token-connections";
 import { SocialHttp } from "../../src/integrations/social/adapter";
+import {
+  YOUTUBE_ANALYTICS_SCOPE,
+  YOUTUBE_MONETARY_SCOPE,
+  YOUTUBE_READ_SCOPE,
+} from "../../src/integrations/social/youtube-analytics";
 import { SOCIAL_ACCOUNT_TYPES } from "../../src/features/social/model/social";
 import { HostStore } from "../store";
 import type { SocialCredential } from "./social-credentials";
@@ -38,6 +43,7 @@ async function fixture(platform: SocialPlatform = "x") {
   });
   const account = (await social.call(owner, "accounts.create", {
     platform,
+    ...(platform === "x" ? { connection: "oauth", xApiProduct: "pay-per-use" } : {}),
     name: "Pending",
     accountType: SOCIAL_ACCOUNT_TYPES[platform][0],
     projectIds: [project.id],
@@ -53,6 +59,49 @@ async function fixture(platform: SocialPlatform = "x") {
   return { social, account, tokens, config };
 }
 describe("Social OAuth trust boundary", () => {
+  it("defaults new X accounts to browser and blocks paid OAuth until owner opt-in", async () => {
+    const s = await fixture();
+    const browser = await s.social.call(owner, "accounts.create", {
+      platform: "x",
+      name: "Free browser account",
+      accountType: "member",
+    });
+    expect(browser).toMatchObject({ connection: "browser" });
+    const disabled = (await s.social.call(owner, "x.api.setProduct", {
+      accountId: s.account.id,
+      product: null,
+    })) as SocialAccount;
+    expect(() => s.social.adapterFor(disabled)).toThrow("unsupported");
+    const fetcher = vi.fn();
+    const oauth = new SocialOAuth(s.social, { x: s.config }, fetcher);
+    await expect(oauth.begin(owner, s.account.id)).rejects.toThrow("owner opt-in");
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("adds YouTube Analytics and monetary scopes only for operations selected by the owner", async () => {
+    const s = await fixture("youtube");
+    const fetcher = vi.fn<typeof fetch>();
+    const oauth = new SocialOAuth(s.social, { youtube: s.config }, fetcher);
+    const scopes = async (operations?: Parameters<SocialOAuth["begin"]>[3]) =>
+      new URL((await oauth.begin(owner, s.account.id, undefined, operations)).url).searchParams
+        .get("scope")!
+        .split(" ");
+    const defaults = await scopes();
+    expect(defaults).toContain(YOUTUBE_READ_SCOPE);
+    expect(defaults).not.toContain(YOUTUBE_ANALYTICS_SCOPE);
+    expect(defaults).not.toContain(YOUTUBE_MONETARY_SCOPE);
+    expect(await scopes(["analytics.report"])).toEqual([
+      YOUTUBE_READ_SCOPE,
+      YOUTUBE_ANALYTICS_SCOPE,
+    ]);
+    expect(await scopes(["monetization.read"])).toEqual([
+      YOUTUBE_READ_SCOPE,
+      YOUTUBE_MONETARY_SCOPE,
+    ]);
+    expect(s.tokens.size).toBe(0);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
   it.each(["tiktok", "snapchat"] as const)(
     "connects %s only after verified identity and explicit selection",
     async (platform) => {

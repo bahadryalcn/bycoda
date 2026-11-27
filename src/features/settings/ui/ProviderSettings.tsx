@@ -1,19 +1,25 @@
 import {
   providerAccounts,
+  providerAccountsStorageRevision,
   subscribeProviderAccounts,
 } from "../../providers/public/providerAccounts";
 import { mergeProviderCliChecks } from "../model/providerCliChecks";
 import type { HarnessVersionCheck } from "../model/providerCliChecks";
 import { Text } from "../../../shared/ui/Text";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import {
   Group,
   RevealedSetting,
   SettingsFeedback,
   settingDomId,
+  usePendingSources,
+  useLeaveGuard,
 } from "../../../shared/ui/settings";
+import { TabDirtyDot } from "../../../shared/ui/TabLabel";
 import { t, useLocale } from "../../../shared/i18n";
 import { ArrowDownCircle, RefreshCw } from "../../../shared/ui/icons";
 import { useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -56,8 +62,11 @@ import {
   ProviderList,
   providerMetaLine,
   type ProviderListEntry,
-} from "../../providers/ui/ProviderList";
-import { ProviderDetailHeader } from "../../providers/public/ProviderStatusGroup";
+} from "../../providers/public/ProviderList";
+import {
+  ProviderDetailHeader,
+  ProviderStatusGroup,
+} from "../../providers/public/ProviderStatusGroup";
 import { providerAuthState } from "../../providers/ui/providerStatus";
 import {
   checkInstalledHarnessVersions,
@@ -73,25 +82,33 @@ import {
 } from "../../providers/public/providerAccounts";
 import { getAllRateLimits, subscribeRateLimits } from "../../providers/public/rateLimitsCache";
 import { GenericAcpSettings } from "../../providers/ui/GenericAcpSettings";
+import { OllamaSettings } from "../../providers/ui/OllamaSettings";
 import type { RecentProject } from "../../projects/public/recents";
 import { loadClaudeHooks, saveClaudeHooks, subscribeClaudeHooks } from "../model/settings";
 import { providersTabForSetting, type ProvidersTab } from "../model/providerSettingsTabs";
 import { ProviderAccountsSettings } from "./ProviderAccountsSettings";
-import { ProviderDecisionModels } from "./ProviderDecisionModels";
 import { storedDefaultProvider } from "./ProviderDefaultsPanel";
 import { ProviderModelsGroup } from "./ProviderModelsGroup";
-import { ProviderCliTab } from "./ProviderCliTab";
 import { ProviderRuntimeGroup } from "./ProviderRuntimeGroup";
 import { ModelsPage as DefaultsPage } from "./models/ModelsPage";
 
-let retainedTab: ProvidersTab = "work";
+let retainedTab: ProvidersTab = "providers";
 
 export function resetRetainedProvidersPage() {
-  retainedTab = "work";
+  retainedTab = "providers";
 }
 
-export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: RecentProject[] }) {
+export function ProvidersPage({
+  cwd,
+  recents,
+  visible = true,
+}: {
+  cwd?: string;
+  recents?: RecentProject[];
+  visible?: boolean;
+}) {
   useLocale();
+  const pendingSources = usePendingSources();
   const modelsVersion = useSyncExternalStore(subscribeModels, getModelSnapshot, getModelSnapshot);
   useSyncExternalStore(
     subscribeHarnessAvailability,
@@ -110,8 +127,10 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
   );
   const rateLimits = useSyncExternalStore(subscribeRateLimits, getAllRateLimits, getAllRateLimits);
   const now = useMinuteNow();
-  useSyncExternalStore(subscribeProviderAccounts, () =>
-    JSON.stringify(PROVIDER_ACCOUNT_PROVIDERS.map((provider) => providerAccounts(provider))),
+  useSyncExternalStore(
+    subscribeProviderAccounts,
+    providerAccountsStorageRevision,
+    providerAccountsStorageRevision,
   );
   const [claudeHooks, setClaudeHooks] = useStoredPreferenceState(
     loadClaudeHooks,
@@ -125,10 +144,14 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
     () => loadLastModelChoice()?.harness ?? null,
   );
   const [tab, setTabState] = useState<ProvidersTab>(retainedTab);
-  const setTab = (next: ProvidersTab) => {
-    retainedTab = next;
-    setTabState(next);
-  };
+  const leave = useLeaveGuard();
+  const setTab = useStableCallback((next: ProvidersTab) => {
+    if (next === tab) return;
+    leave.guard(() => {
+      retainedTab = next;
+      setTabState(next);
+    });
+  });
   const [accountBusy, setAccountBusy] = useState(false);
   const [standaloneSignIn, setStandaloneSignIn] = useState<HarnessId | null>(null);
   // When this window last finished a version check; the snapshot itself carries no time.
@@ -149,7 +172,14 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
   const handledReveal = useRef<string | null>(null);
 
   useEffect(() => {
-    void probeHarnessAvailability();
+    // The first visit checks CLI versions once so each header shows its version unprompted.
+    if (getHarnessUpdateSnapshot().checks) {
+      void probeHarnessAvailability();
+      return;
+    }
+    void checkInstalledHarnessVersions()
+      .then(() => setCheckedAt(Date.now()))
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -192,6 +222,15 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
     selectedProvider && orderedHarnesses.includes(selectedProvider)
       ? selectedProvider
       : (orderedHarnesses[0] ?? null);
+  // A provider's detail mounts when first selected and then stays mounted (hidden) so its path
+  // draft and pending inspection survive switching; providers never opened are not mounted.
+  const [openedProviders, setOpenedProviders] = useState<HarnessId[]>([]);
+  if (activeProvider && !openedProviders.includes(activeProvider)) {
+    setOpenedProviders([...openedProviders, activeProvider]);
+  }
+  const detailProviders = orderedHarnesses.filter(
+    (harness) => harness === activeProvider || openedProviders.includes(harness),
+  );
 
   useEffect(() => {
     if (accountBusy) return;
@@ -226,6 +265,8 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
       setSelectedProvider("antigravity");
     } else if (revealedSetting.startsWith("acp-")) {
       setSelectedProvider("acp");
+    } else if (revealedSetting === "ollama-models" || revealedSetting === "ollama-port") {
+      setSelectedProvider("opencode");
     } else if (
       revealedSetting === "provider-accounts" ||
       revealedSetting === "terminal-account-profiles"
@@ -236,7 +277,7 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
           : PROVIDER_ACCOUNT_PROVIDERS[0],
       );
     }
-  }, [revealedSetting, modelsVersion, activeProvider, accountBusy]);
+  }, [revealedSetting, modelsVersion, activeProvider, accountBusy, setTab]);
 
   const listDefault = storedDefaultProvider({ kind: "global" });
   const probed = hasProbedHarnessAvailability();
@@ -310,53 +351,41 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
               : t("{p0} CLIs need attention", { p0: attention })
             : t("Up to date");
 
-  const setupProvider = (harness: HarnessId) => {
-    setTab("providers");
-    setSelectedProvider(harness);
-    // The Runtime section holds the CLI path and setup for this provider.
-    requestAnimationFrame(() =>
-      document
-        .getElementById(settingDomId(`cli-path-${harness}`))
-        ?.scrollIntoView?.({ block: "center" }),
-    );
-  };
-
+  // A tab holding unsaved changes carries a dot, so switching tabs never hides them.
+  const dirtyTabs = new Set<ProvidersTab>(
+    pendingSources.flatMap((source) =>
+      source.id.startsWith("background-work:")
+        ? ["work"]
+        : source.id === "models-defaults"
+          ? ["defaults"]
+          : [],
+    ),
+  );
   const tabs: { id: ProvidersTab; label: string }[] = [
-    { id: "work", label: t("Background work") },
-    { id: "chat", label: t("Chats") },
-    { id: "delegation", label: t("Subagents") },
     { id: "providers", label: t("Providers") },
+    { id: "work", label: t("Background work") },
+    { id: "defaults", label: t("Defaults") },
   ];
 
   return (
-    <div className="settings-topics grid min-w-0 gap-4">
+    <div className="settings-topics">
       <Tabs
         value={tab}
         onValueChange={(next) => setTab(next as ProvidersTab)}
         panels="shared"
         size="md"
       >
-        <TabList label={t("Models")} className="provider-tabs" scrollbar="hidden">
+        <TabList label={t("Models")} scrollbar="hidden">
           {tabs.map((item) => (
             <Tab key={item.id} value={item.id} disabled={accountBusy && item.id !== tab}>
               {item.label}
+              {dirtyTabs.has(item.id) ? <TabDirtyDot /> : null}
             </Tab>
           ))}
         </TabList>
         <TabPanel className="provider-tab-panel" tabIndex={-1}>
-          {/* One defaults instance keeps its draft while Chats and Subagents switch. */}
-          {tab !== "providers" ? (
-            <DefaultsPage
-              cwd={cwd}
-              recents={recents}
-              view={tab}
-              onOpenOrder={() =>
-                document
-                  .getElementById(settingDomId("models-order"))
-                  ?.scrollIntoView?.({ block: "start" })
-              }
-            />
-          ) : null}
+          {/* One defaults instance keeps its draft while Background work and Defaults switch. */}
+          {tab !== "providers" ? <DefaultsPage cwd={cwd} recents={recents} view={tab} /> : null}
           {listOutcome?.state === "unsaved" ? (
             <SettingsFeedback
               state="error"
@@ -368,6 +397,62 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
             </SettingsFeedback>
           ) : null}
           <div className="provider-cli-container" hidden={tab !== "providers"}>
+            {/* Bulk check and update; each provider's own version state is in its detail header. */}
+            {tab === "providers" ? (
+              <Group
+                id="harness-updates"
+                layout="full"
+                title={t("CLI")}
+                description={updatesSummary}
+                action={
+                  <div className="provider-updates-actions">
+                    {checkedAt != null && !checking ? (
+                      <Text
+                        as="span"
+                        size="caption"
+                        tone="muted"
+                        leading="inherit"
+                        className="provider-status-checked"
+                      >
+                        {t("Checked {p0}", { p0: formatRelativeTime(checkedAt) })}
+                      </Text>
+                    ) : null}
+                    <Button
+                      size="sm"
+                      stableWidth
+                      onClick={runCheck}
+                      disabled={checking}
+                      loading={checking}
+                      startIcon={<RefreshCw className="icon-sm" strokeWidth={1.75} aria-hidden />}
+                    >
+                      {t("Check all")}
+                    </Button>
+                    {pendingUpdates.length ? (
+                      <Button
+                        size="sm"
+                        stableWidth
+                        onClick={() => {
+                          for (const update of pendingUpdates) void runHarnessUpdate(update);
+                        }}
+                        variant="primary"
+                        startIcon={<ArrowDownCircle aria-hidden />}
+                      >
+                        {t("Update all ({p0})", { p0: pendingUpdates.length })}
+                      </Button>
+                    ) : null}
+                  </div>
+                }
+                feedback={
+                  checkError ? (
+                    <SettingsFeedback state="error">
+                      {t("Could not check CLI updates: {p0}", { p0: checkError })}
+                    </SettingsFeedback>
+                  ) : undefined
+                }
+              >
+                {null}
+              </Group>
+            ) : null}
             <div className="provider-cli-workspace">
               <div className="provider-cli-select">
                 <SearchableSelect
@@ -399,39 +484,56 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
                 disabled={accountBusy}
                 onSelect={setSelectedProvider}
                 onPickerVisible={onPickerVisible}
-                onSetup={setupProvider}
               />
               <div
                 {...surfaceAttributes(
                   { frame: "pane", edge: "responsive-start" },
-                  "provider-cli-detail",
+                  "provider-cli-detail settings-topics",
                 )}
               >
                 {/* Overview stays mounted across tabs so CLI path, ACP and sign-in drafts survive. */}
-                <div className="provider-cli-section">
+                <div className="provider-cli-section settings-topics">
                   {activeProvider ? (
-                    <>
+                    <div className="provider-detail-head">
                       <ProviderDetailHeader
                         harness={activeProvider}
                         signInCompleted={standaloneSignIn === activeProvider}
                         available={isHarnessAvailable(activeProvider)}
                       />
-                    </>
+                      {/* Opened providers keep their CLI state mounted so path drafts survive switching. */}
+                      {detailProviders.map((harness) => (
+                        <div key={harness} hidden={activeProvider !== harness}>
+                          <ProviderStatusGroup
+                            id={settingDomId(`cli-path-${harness}`)}
+                            harness={harness}
+                            available={isHarnessAvailable(harness)}
+                            checkedAt={checkedAt}
+                            onRowCheck={(check) =>
+                              setRowChecks((rows) => [
+                                ...rows.filter((row) => row.check.harness !== check.harness),
+                                { source: sharedChecks, check },
+                              ])
+                            }
+                          />
+                        </div>
+                      ))}
+                    </div>
                   ) : null}
                   {accountBusy ? (
-                    <Text role="status" as="p" size="caption" tone="secondary">
+                    <InlineMessage tone="neutral" icon={null} live="polite">
                       {t("Finish or cancel the account operation before switching providers.")}
-                    </Text>
+                    </InlineMessage>
                   ) : null}
                   <ProviderAccountsSettings
                     harness={activeProvider ?? undefined}
+                    visible={visible && tab === "providers"}
                     onBusyChange={setAccountBusy}
                     onStandaloneSignIn={setStandaloneSignIn}
                   />
-                  {orderedHarnesses.map((harness) => (
+                  {detailProviders.map((harness) => (
                     <div
                       key={harness}
-                      className="provider-cli-panel"
+                      className="provider-cli-panel settings-topics"
                       hidden={activeProvider !== harness}
                     >
                       <ProviderRuntimeGroup
@@ -442,6 +544,9 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
                         onPickerVisible={(visible) => onPickerVisible(harness, visible)}
                       />
                       {harness === "acp" ? <GenericAcpSettings cwd={cwd} embedded /> : null}
+                      {harness === "opencode" ? (
+                        <OllamaSettings opencodeAvailable={isHarnessAvailable("opencode")} />
+                      ) : null}
                     </div>
                   ))}
                   {/* The provider's catalog sits under its own account and runtime. */}
@@ -452,83 +557,9 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
               </div>
             </div>
           </div>
-          {/* Every installed CLI in one table, then the local decision models. */}
-          <div className="provider-cli-section" hidden={tab !== "providers"}>
-            {tab === "providers" ? (
-              <Group
-                id="harness-updates"
-                layout="full"
-                title={t("CLI")}
-                description={updatesSummary}
-                action={
-                  <div className="provider-updates-actions">
-                    {checkedAt != null && !checking ? (
-                      <Text
-                        as="span"
-                        size="caption"
-                        tone="muted"
-                        leading="inherit"
-                        className="provider-status-checked"
-                      >
-                        {t("Checked {p0}", { p0: formatRelativeTime(checkedAt) })}
-                      </Text>
-                    ) : null}
-                    <Button
-                      size="sm"
-                      stableWidth
-                      onClick={runCheck}
-                      disabled={checking}
-                      loading={checking}
-                      startIcon={<RefreshCw className="icon-sm" strokeWidth={1.75} aria-hidden />}
-                    >
-                      {t("Check all")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      stableWidth
-                      onClick={() => {
-                        for (const update of pendingUpdates) void runHarnessUpdate(update);
-                      }}
-                      variant={pendingUpdates.length ? "primary" : "secondary"}
-                      tone={pendingUpdates.length ? "accent" : "neutral"}
-                      disabled={pendingUpdates.length === 0}
-                      tooltip={pendingUpdates.length === 0 ? t("Nothing to update") : undefined}
-                      startIcon={<ArrowDownCircle className="icon-sm text-accent" aria-hidden />}
-                    >
-                      {pendingUpdates.length
-                        ? t("Update all ({p0})", { p0: pendingUpdates.length })
-                        : t("Update all")}
-                    </Button>
-                  </div>
-                }
-                feedback={
-                  checkError ? (
-                    <SettingsFeedback state="error">
-                      {t("Could not check CLI updates: {p0}", { p0: checkError })}
-                    </SettingsFeedback>
-                  ) : undefined
-                }
-              >
-                {null}
-              </Group>
-            ) : null}
-            <ProviderCliTab
-              checkedAt={checkedAt}
-              onCheck={runCheck}
-              onRowCheck={(check) =>
-                setRowChecks((rows) => [
-                  ...rows.filter((row) => row.check.harness !== check.harness),
-                  { source: sharedChecks, check },
-                ])
-              }
-            />
-          </div>
-          {/* Decision models keeps its scan and routing drafts while other tabs show. */}
-          <div className="provider-cli-section" hidden={tab !== "providers"}>
-            <ProviderDecisionModels />
-          </div>
         </TabPanel>
       </Tabs>
+      {leave.dialog}
     </div>
   );
 }

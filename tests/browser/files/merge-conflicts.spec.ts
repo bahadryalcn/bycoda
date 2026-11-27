@@ -38,7 +38,7 @@ test("merge editor selects individual source conflicts, preserves manual edits a
   await expect(output).toContainText("name=custom");
   await page.screenshot({ path: info.outputPath("twin-source.png") });
   await page.getByRole("button", { name: "Save and stage", exact: true }).click();
-  await expect(page.getByText("All conflicts resolved", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Staged", exact: true })).toBeDisabled();
   const calls = await page.evaluate(
     () =>
       (window as unknown as { mergeCalls: { command: string; args: { content?: string } }[] })

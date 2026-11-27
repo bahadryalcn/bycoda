@@ -1,0 +1,5 @@
+# Session list contracts
+
+- An open session finds its child sessions with a `sessions.list` read scoped by `parentSessionId` (`session-children-read.ts`), never by polling the whole project list; the default project list omits children. A Host that rejects or ignores the filter falls back to the plain list at a slower cadence, and `childSessions` always keeps only rows whose own `delegationParent` names the open session.
+- Session row swipe and overflow expose the same Archive/Unarchive, Delete and Details actions. A swipe only reveals controls. Retain explicit deletion confirmation, single-flight writes, the reviewed connection epoch, project visibility and displayed session authority/revision checks before and after preflight. Preserve unknown-result holds; metadata/delete RPCs do not inherit command receipt or automatic retry semantics.
+- Project Sessions owns its directory and session-read feedback together. Group only matching transient network/timeout failures for the same computer, with recovery for both reads; preserve distinct auth, identity and uncertain failures and their original actions.

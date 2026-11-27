@@ -17,9 +17,36 @@ vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
 vi.mock("./delegatedRunDiscovery", () => ({ discoverDelegatedRuns: discover }));
 vi.mock("./connections", () => ({ remoteRequest: vi.fn(), loadRemoteSession: vi.fn() }));
 function Probe({ id }: { id: string }) {
-  useDelegatedRunDiscovery(id, true);
-  return null;
+  const discovery = useDelegatedRunDiscovery(id, true);
+  return discovery.error ?? null;
 }
+
+it("waits for a project in a new window before looking for delegated runs", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const parent = { id: "p", cwd: "~", modelSettings: {} } as Session;
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  discover.mockClear();
+  resetSessionsStore([parent]);
+  try {
+    await act(async () => root.render(createElement(Probe, { id: "p" })));
+    expect(discover).not.toHaveBeenCalled();
+
+    discover.mockRejectedValueOnce(new Error("Could not load delegated runs."));
+    await act(async () => setSessions([{ ...parent, cwd: "C:/projects/demo" }]));
+    expect(discover).toHaveBeenCalledOnce();
+    expect(discover.mock.calls[0][0]).toMatchObject({ cwd: "C:/projects/demo" });
+    expect(container.textContent).toBe("Could not load delegated runs.");
+
+    await act(async () => setSessions([parent]));
+    expect(discover).toHaveBeenCalledOnce();
+    expect(container.textContent).toBe("");
+  } finally {
+    await act(async () => root.unmount());
+    resetSessionsStore([]);
+    vi.unstubAllGlobals();
+  }
+});
 
 it("hydrates children and resumes background updates after the live sheet owner closes", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -51,6 +78,40 @@ it("hydrates children and resumes background updates after the live sheet owner 
     await act(async () => root.unmount());
     resetSessionsStore([]);
     vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("clears a stale local busy flag when discovery reports the delegated turn settled", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const parent = { id: "p", cwd: "/p", modelSettings: {} } as Session;
+  const blocks = [{ id: "reply", role: "assistant", text: "Finished" }] as Session["blocks"];
+  const child = {
+    id: "c",
+    cwd: "/p",
+    modelSettings: {},
+    blocks,
+    busy: true,
+    continuingElsewhere: true,
+    adoptedRunId: "host-turn",
+  } as Session;
+  resetSessionsStore([parent, child]);
+  // desktopCopyOf omits the native busy flag. The Host may settle without a transcript update.
+  const { busy: _busy, ...settled } = child;
+  discover.mockResolvedValueOnce([
+    { ...settled, continuingElsewhere: undefined, adoptedRunId: undefined },
+  ]);
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root.render(createElement(Probe, { id: "p" })));
+    const updated = getSessions()[1];
+    expect(updated.busy).toBeFalsy();
+    expect(updated.continuingElsewhere).toBeUndefined();
+    expect(updated.adoptedRunId).toBeUndefined();
+    expect(updated.blocks).toBe(blocks);
+  } finally {
+    await act(async () => root.unmount());
+    resetSessionsStore([]);
     vi.unstubAllGlobals();
   }
 });

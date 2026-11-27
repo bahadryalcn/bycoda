@@ -19,6 +19,20 @@ function cssSize(value: number | string | undefined): string | undefined {
   return /^\d+(?:\.\d+)?$/.test(String(value)) ? `${value}px` : String(value);
 }
 
+// Rendered sizes of images already shown, so an image mounted again reserves the
+// box it took before instead of collapsing to 0x0 until its bytes arrive. Held in
+// memory only and bounded, like GeneratedImage's remembered heights.
+const knownImageSizes = new Map<string, { width: number; height: number }>();
+const KNOWN_SIZE_LIMIT = 200;
+
+function rememberSize(key: string, element: { offsetWidth: number; offsetHeight: number }) {
+  if (element.offsetWidth <= 0 || element.offsetHeight <= 0) return;
+  knownImageSizes.delete(key);
+  knownImageSizes.set(key, { width: element.offsetWidth, height: element.offsetHeight });
+  if (knownImageSizes.size > KNOWN_SIZE_LIMIT)
+    knownImageSizes.delete(knownImageSizes.keys().next().value!);
+}
+
 /**
  * Where a document's image cannot be shown, such as a remote badge or a file
  * that is missing, its alt text stands in, muted so it reads as a placeholder.
@@ -28,14 +42,7 @@ export function ImageAltText({ alt, title }: { alt?: string; title?: string }) {
   if (!text) return null;
   return (
     <Tooltip label={title} asChild>
-      <Text
-        as="em"
-        size="inherit"
-        tone="secondary"
-        data-image-alt=""
-
-        className="text-[0.92em]"
-      >
+      <Text as="em" size="inherit" tone="secondary" data-image-alt="">
         {text}
       </Text>
     </Tooltip>
@@ -124,9 +131,14 @@ function ProjectImage({
 
   // Inline, as in GitHub, so `<p align="center">` centers it and badges sit in
   // a row; the base stylesheet would otherwise make every image a block.
+  // Declared size wins; otherwise the box keeps the size this image last rendered at.
+  const sizeKey = `${root}\0${relative}`;
+  const remembered = knownImageSizes.get(sizeKey);
   const style = {
     "--document-image-width": cssSize(width),
     "--document-image-height": cssSize(height),
+    "--document-image-reserved-width": remembered ? `${remembered.width}px` : undefined,
+    "--document-image-reserved-height": remembered ? `${remembered.height}px` : undefined,
   } as CSSProperties;
   if (!url) {
     return (
@@ -135,7 +147,7 @@ function ProjectImage({
         data-document-image={path}
         role={alt ? "img" : undefined}
         aria-label={alt || undefined}
-        className="inline-block [max-inline-size:100%] align-middle [inline-size:var(--document-image-width,auto)] [block-size:var(--document-image-height,auto)]"
+        className="inline-block [max-inline-size:100%] align-middle [inline-size:var(--document-image-width,var(--document-image-reserved-width,auto))] [block-size:var(--document-image-height,var(--document-image-reserved-height,auto))]"
         style={style}
       />
     );
@@ -145,7 +157,6 @@ function ProjectImage({
       <img
         src={url}
         alt={alt ?? ""}
-
         width={width}
         height={height}
         {...(align ? { align } : {})}
@@ -153,6 +164,7 @@ function ProjectImage({
         draggable={false}
         className="inline [max-inline-size:100%] [inline-size:var(--document-image-width,auto)] [block-size:var(--document-image-height,auto)]"
         style={style}
+        onLoad={(event) => rememberSize(sizeKey, event.currentTarget)}
         onError={() => {
           releaseBlob(blobRef);
           setUrl(null);

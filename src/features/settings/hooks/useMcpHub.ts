@@ -7,11 +7,14 @@ import { isLocalSyncMachine } from "../../connections/public/localSync";
 import type { RemoteMachine } from "../../connections";
 import {
   withDirectServer,
+  type ManagedMcpConfig,
+  type ManagedMcpRequest,
   type McpLoadingPolicy,
   type McpLoadingState,
   type McpOAuthServer,
 } from "../model/mcp";
 import { cacheMcpLoading, getCachedMcpLoading } from "../model/mcpSettingsCache";
+import type { RemoteMcpConfigTarget } from "../model/mcpConfigTarget";
 
 /** The browser sign-in is abandoned by the Host after this long, so polling stops with it. */
 const WAIT_MS = 5 * 60_000;
@@ -26,6 +29,8 @@ export type McpHub = {
   saving: boolean;
   /** Hub name of the server whose browser sign-in is open. */
   waiting: string;
+  /** Hub name of the server with a cancellable sign-in. */
+  signingIn?: string;
   /** Hub name of the server with a sign-in or sign-out request in flight. */
   busy: string;
   dismissError: () => void;
@@ -33,16 +38,33 @@ export type McpHub = {
   setMode: (mode: McpLoadingPolicy["mode"]) => Promise<void>;
   setDirect: (name: string, direct: boolean) => Promise<void>;
   signIn: (name: string) => Promise<void>;
+  cancelSignIn?: () => void;
   signOut: (name: string) => Promise<void>;
+  accountProfile?: (name: string) => Promise<string | undefined>;
+  manageServer?: (
+    scope: "user" | "project",
+    input: ManagedMcpRequest,
+  ) => Promise<{ name: string; revision: string; config: ManagedMcpConfig } | { removed: true }>;
+  projectCredentials?: (
+    operation: "status" | "set" | "clear",
+    name: string,
+    values?: Record<string, string>,
+  ) => Promise<{ configured: boolean; kind: "http" | "stdio" }>;
 };
 
 /**
  * Owner-only Host state for MCP: the loading policy, the secret-free hub inventory and the
  * Host-held sign-ins. A global view reads without a project so only user-wide sources show.
  */
-export function useMcpHub(cwd: string, globalOnly: boolean): McpHub {
+export function useMcpHub(
+  cwd: string,
+  globalOnly: boolean,
+  remote?: RemoteMcpConfigTarget,
+): McpHub {
   const scope = globalOnly ? undefined : cwd;
-  const cacheKey = scope ?? "";
+  const cacheKey = remote
+    ? JSON.stringify([remote.machineId, remote.environmentId, remote.projectId])
+    : (scope ?? "");
   const [loading, setLoading] = useState<McpLoadingState | undefined>(() =>
     getCachedMcpLoading(cacheKey),
   );
@@ -51,28 +73,42 @@ export function useMcpHub(cwd: string, globalOnly: boolean): McpHub {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [waiting, setWaiting] = useState("");
+  const [signingIn, setSigningIn] = useState("");
   const [busy, setBusy] = useState("");
   const machine = useRef<RemoteMachine | undefined>(undefined);
+  const activeSignIn = useRef<AbortController | undefined>(undefined);
   const epoch = useRef(0);
   const inFlight = useRef(false);
-  const params = scope ? { cwd: scope } : {};
+  const params = scope ? (remote ? { projectId: remote.projectId } : { cwd: scope }) : {};
 
-  async function host() {
-    if (machine.current) return machine.current;
+  async function machineId() {
+    if (remote) return remote.machineId;
+    if (machine.current) return machine.current.id;
     const machines = await invoke<RemoteMachine[]>("remote_machines");
     const local = machines?.find(isLocalSyncMachine);
     if (!local) throw new Error("Local host unavailable");
     machine.current = local;
-    return local;
+    return local.id;
   }
 
-  async function load() {
+  function request<T>(
+    target: string,
+    method: string,
+    data: Record<string, unknown>,
+    interactive = false,
+  ): Promise<T> {
+    return remote
+      ? remoteRequest<T>(target, method, data, false, interactive, remote.environmentId)
+      : remoteRequest<T>(target, method, data);
+  }
+
+  async function load(interactive = false) {
     const version = ++epoch.current;
     try {
-      const target = await host();
+      const target = await machineId();
       const [nextLoading, nextOauth] = await Promise.all([
-        remoteRequest<McpLoadingState>(target.id, "mcp.hub.loading.get", params),
-        remoteRequest<{ servers: McpOAuthServer[] }>(target.id, "mcp.oauth.status", params),
+        request<McpLoadingState>(target, "mcp.hub.loading.get", params, interactive),
+        request<{ servers: McpOAuthServer[] }>(target, "mcp.oauth.status", params, interactive),
       ]);
       if (version !== epoch.current) return undefined;
       cacheMcpLoading(cacheKey, nextLoading);
@@ -83,7 +119,7 @@ export function useMcpHub(cwd: string, globalOnly: boolean): McpHub {
     } catch {
       if (version === epoch.current)
         setError(
-          t("bycoda Host status unavailable. Check the local host connection, then refresh."),
+          t("MCP session status is unavailable. Check the computer’s connection and refresh."),
         );
       return undefined;
     } finally {
@@ -99,39 +135,47 @@ export function useMcpHub(cwd: string, globalOnly: boolean): McpHub {
     loadOnMount();
     return () => {
       replies.current++;
+      activeSignIn.current?.abort();
+      activeSignIn.current = undefined;
     };
   }, [cacheKey]);
 
-  const stateOf = useEffectEvent((name: string) => oauth?.find((s) => s.name === name)?.state);
+  const stateOf = useEffectEvent((name: string) => oauth?.find((s) => s.name === name));
   const poll = useEffectEvent(() => load());
+  const finishWaiting = useEffectEvent((attempt: AbortController) => finishSignIn(attempt));
+  const relayedSignIn = !!remote;
   // Reason: the browser redirect completes on the Host, so poll until the state changes or the Host gives up.
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- polls the Host while one sign-in is open; cleared on completion, timeout or unmount
   useEffect(() => {
-    if (!waiting) return;
+    if (!waiting || relayedSignIn) return;
+    const attempt = activeSignIn.current;
+    if (!attempt) return;
     const before = stateOf(waiting);
     const timer = setInterval(() => {
       void poll().then((next) => {
-        const state = next?.find((server) => server.name === waiting)?.state;
-        if (next && state !== before) setWaiting("");
+        const status = next?.find((server) => server.name === waiting);
+        if (next && (status?.state !== before?.state || status?.inherited !== before?.inherited))
+          finishWaiting(attempt);
       });
     }, POLL_MS);
-    const stop = setTimeout(() => setWaiting(""), WAIT_MS);
+    const stop = setTimeout(() => finishWaiting(attempt), WAIT_MS);
     return () => {
       clearInterval(timer);
       clearTimeout(stop);
     };
-  }, [waiting]);
+  }, [waiting, relayedSignIn]);
 
   async function savePolicy(policy: McpLoadingPolicy) {
-    if (inFlight.current || !machine.current) return;
+    if (activeSignIn.current || inFlight.current || (!remote && !machine.current)) return;
     inFlight.current = true;
     setSaving(true);
     setError("");
     try {
-      const result = await remoteRequest<{ policy: McpLoadingPolicy }>(
-        machine.current.id,
+      const result = await request<{ policy: McpLoadingPolicy }>(
+        await machineId(),
         "mcp.hub.loading.set",
         { mode: policy.mode, direct: policy.direct },
+        true,
       );
       setLoading((current) => {
         const next = current && { ...current, policy: result.policy };
@@ -148,31 +192,122 @@ export function useMcpHub(cwd: string, globalOnly: boolean): McpHub {
     }
   }
 
-  async function oauthAction(name: string, method: "mcp.oauth.start" | "mcp.oauth.signOut") {
-    if (inFlight.current || !machine.current) return;
+  function finishSignIn(attempt: AbortController) {
+    if (activeSignIn.current !== attempt) return;
+    activeSignIn.current = undefined;
+    setSigningIn("");
+    setBusy("");
+    setWaiting("");
+  }
+
+  async function signIn(name: string) {
+    if (activeSignIn.current || inFlight.current || (!remote && !machine.current)) return;
+    const attempt = new AbortController();
+    const { signal } = attempt;
+    activeSignIn.current = attempt;
+    setSigningIn(name);
+    setBusy(name);
+    setError("");
+    let closeCallback: (() => Promise<unknown>) | undefined;
+    let cancelHost: (() => Promise<unknown>) | undefined;
+    let keepWaiting = false;
+    const cancel = () => {
+      void closeCallback?.();
+      void cancelHost?.().catch(() => {
+        if (signal.reason === "user" && !activeSignIn.current) setError(t("Sign-in failed"));
+      });
+    };
+    signal.addEventListener("abort", cancel, { once: true });
+    try {
+      const target = await machineId();
+      if (signal.aborted) return;
+      const binding = remote
+        ? await invoke<{ id: string; port: number }>("mcp_oauth_callback_bind")
+        : undefined;
+      if (binding) {
+        let closing: Promise<unknown> | undefined;
+        closeCallback = () =>
+          (closing ??= invoke("mcp_oauth_callback_cancel", { id: binding.id }).catch(
+            () => undefined,
+          ));
+      }
+      if (signal.aborted) return;
+      const { authorizationUrl } = await request<{ authorizationUrl: string }>(
+        target,
+        "mcp.oauth.start",
+        { name, ...params, ...(binding && { callbackPort: binding.port }) },
+        true,
+      );
+      const authorization = new URL(authorizationUrl);
+      const state = authorization.searchParams.get("state");
+      if (!state) throw new Error("MCP sign-in is missing its callback state.");
+      cancelHost = () => request(target, "mcp.oauth.cancel", { name, ...params, state }, true);
+      if (signal.aborted) {
+        cancel();
+        return;
+      }
+      if (
+        binding &&
+        authorization.searchParams.get("redirect_uri") !==
+          `http://127.0.0.1:${binding.port}/callback`
+      ) {
+        await cancelHost().catch(() => undefined);
+        if (!signal.aborted) setError(t("Update needed"));
+        return;
+      }
+      await openExternal(authorizationUrl);
+      if (signal.aborted) return;
+      setWaiting(name);
+      if (!binding) {
+        keepWaiting = true;
+        setBusy("");
+        return;
+      }
+      const result = await invoke<{ state: string; code?: string; error?: string }>(
+        "mcp_oauth_callback_wait",
+        { id: binding.id, state },
+      );
+      if (signal.aborted) return;
+      setSigningIn("");
+      setWaiting("");
+      const { status } = await request<{ status: "success" | "cancelled" | "failure" }>(
+        target,
+        "mcp.oauth.complete",
+        { name, ...params, ...result },
+        true,
+      );
+      if (!signal.aborted) {
+        await load();
+        if (status === "failure" && !signal.aborted) setError(t("Sign-in failed"));
+      }
+    } catch {
+      if (!signal.aborted) {
+        void cancelHost?.().catch(() => undefined);
+        setError(t("Sign-in could not be started. Check the server, then try again."));
+      }
+    } finally {
+      await closeCallback?.();
+      if (!keepWaiting) finishSignIn(attempt);
+    }
+  }
+
+  function cancelSignIn() {
+    const attempt = activeSignIn.current;
+    if (!attempt) return;
+    attempt.abort("user");
+    finishSignIn(attempt);
+  }
+
+  async function signOut(name: string) {
+    if (activeSignIn.current || inFlight.current || (!remote && !machine.current)) return;
     inFlight.current = true;
     setBusy(name);
     setError("");
     try {
-      if (method === "mcp.oauth.start") {
-        const { authorizationUrl } = await remoteRequest<{ authorizationUrl: string }>(
-          machine.current.id,
-          method,
-          { name, ...params },
-        );
-        await openExternal(authorizationUrl);
-        setWaiting(name);
-      } else {
-        await remoteRequest(machine.current.id, method, { name, ...params });
-        setWaiting("");
-        await load();
-      }
+      await request(await machineId(), "mcp.oauth.signOut", { name, ...params }, true);
+      await load();
     } catch {
-      setError(
-        method === "mcp.oauth.start"
-          ? t("Sign-in could not be started. Check the server, then try again.")
-          : t("Sign-out failed. Try again."),
-      );
+      setError(t("Sign-out failed. Try again."));
     } finally {
       inFlight.current = false;
       setBusy("");
@@ -181,14 +316,31 @@ export function useMcpHub(cwd: string, globalOnly: boolean): McpHub {
 
   return {
     loading,
+    manageServer: loading?.managedServers
+      ? async (scope, input) => {
+          if (scope === "project" && !params.cwd && !params.projectId)
+            throw new Error(t("Unavailable"));
+          const result = await request<
+            { name: string; revision: string; config: ManagedMcpConfig } | { removed: true }
+          >(
+            await machineId(),
+            "mcp.hub.servers",
+            { ...(scope === "project" ? params : {}), ...input },
+            true,
+          );
+          if (input.action !== "get") await load(true);
+          return result;
+        }
+      : undefined,
     oauth,
     pending,
     error,
     saving,
     waiting,
+    signingIn,
     busy,
     dismissError: () => setError(""),
-    refresh: async () => void (await load()),
+    refresh: async () => void (await load(true)),
     setMode: async (mode) => {
       if (loading && !loading.corrupt) await savePolicy({ ...loading.policy, mode });
     },
@@ -196,7 +348,52 @@ export function useMcpHub(cwd: string, globalOnly: boolean): McpHub {
       if (loading && !loading.corrupt)
         await savePolicy(withDirectServer(loading.policy, name, direct));
     },
-    signIn: (name) => oauthAction(name, "mcp.oauth.start"),
-    signOut: (name) => oauthAction(name, "mcp.oauth.signOut"),
+    signIn,
+    cancelSignIn,
+    signOut,
+    accountProfile: async (name) => {
+      const result = await request<{ servers: McpOAuthServer[] }>(
+        await machineId(),
+        "mcp.oauth.status",
+        { ...params, profileFor: name },
+      );
+      return result.servers.find((server) => server.name === name)?.profile;
+    },
+    projectCredentials:
+      scope || loading?.managedServers
+        ? async (operation, name, values) => {
+            const result = await request<{ configured: boolean; kind: "http" | "stdio" }>(
+              await machineId(),
+              `mcp.projectCredentials.${operation}`,
+              {
+                ...(!scope
+                  ? { global: true }
+                  : remote
+                    ? { projectId: remote.projectId }
+                    : { cwd: scope }),
+                name,
+                ...(values && { values }),
+              },
+              true,
+            );
+            if (operation !== "status") {
+              setLoading((current) => {
+                if (!current?.inventory) return current;
+                const next = {
+                  ...current,
+                  inventory: current.inventory.map((server) =>
+                    server.name === name
+                      ? { ...server, projectCredentialsConfigured: result.configured }
+                      : server,
+                  ),
+                };
+                cacheMcpLoading(cacheKey, next);
+                return next;
+              });
+              await load();
+            }
+            return result;
+          }
+        : undefined,
   };
 }

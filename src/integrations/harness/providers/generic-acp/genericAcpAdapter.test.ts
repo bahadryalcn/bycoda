@@ -27,6 +27,8 @@ const mock = vi.hoisted(() => ({
   failMode: false,
   nativeModes: true,
   onExit: undefined as ((code: number | null) => void) | undefined,
+  onStderr: undefined as ((line: string) => void) | undefined,
+  close: undefined as import("vitest").Mock | undefined,
   notify: vi.fn(async () => undefined),
 }));
 vi.mock("../../core/acp", () => ({
@@ -53,7 +55,7 @@ vi.mock("../../core/acp", () => ({
     request = mock.request;
     respond = mock.respond;
     respondError = vi.fn();
-    close = vi.fn();
+    close = (mock.close = vi.fn());
     notify = mock.notify;
   },
 }));
@@ -66,8 +68,10 @@ vi.mock("../../core/child", () =>
       _id: string,
       _line: (line: string) => void,
       exit: (code: number | null) => void,
+      stderr?: (line: string) => void,
     ) => {
       mock.onExit = exit;
+      mock.onStderr = stderr;
     },
     killChild: vi.fn(async () => undefined),
     invokeProviderCommand: async () => [],
@@ -80,6 +84,7 @@ import {
   cancelGenericAcpTurn,
 } from "./genericAcpAdapter";
 import { applyHarnessEvent } from "../../core/apply";
+import { ACP_PROMPT_TIMEOUT_MS } from "../../core/acpPromptDeadline";
 import { newSession } from "../../../../features/sessions/model/session";
 import { sanitizeSessionForPersist } from "../../../../features/sessions/data/sessionStore";
 
@@ -385,6 +390,17 @@ it("retires waiting approval ownership on natural child exit", async () => {
   expect(mock.respond).not.toHaveBeenCalled();
 });
 
+it("closes the client with the exit code and a redacted stderr tail on a natural exit", async () => {
+  await sendGenericAcpTurn(input(undefined));
+  expect(mock.onStderr).toBeTypeOf("function");
+  mock.onStderr!("\u001b[31mcannot reach https://user:hunter2@example.com/v1\u001b[0m\r\n");
+  mock.onExit!(9);
+  const closed = mock.close!.mock.calls[0][0] as Error;
+  expect(closed.message).toBe(
+    "ACP agent process exited (exit code 9):\ncannot reach https://…@example.com/v1",
+  );
+});
+
 it("retires an early waiting approval when startup rejects before Live registration", async () => {
   let inspect!: ReturnType<typeof nativeOutputFrame>;
   mock.request.mockImplementation(async (method: string) => {
@@ -518,4 +534,12 @@ it("natural exit keeps an in-flight cancel reply owned until its actual write se
   release();
   await cancelling;
   await vi.waitFor(() => expect(inspect().pendingCausalWork).toBe(0));
+});
+
+it("sends session/prompt under the shared no-deadline ACP prompt policy", async () => {
+  await sendGenericAcpTurn(input("build"));
+  const prompt = mock.request.mock.calls.find(([method]) => method === "session/prompt");
+  expect(prompt).toBeDefined();
+  expect(prompt![2]).toBe(ACP_PROMPT_TIMEOUT_MS);
+  expect(ACP_PROMPT_TIMEOUT_MS).toBe(0);
 });

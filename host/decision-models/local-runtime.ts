@@ -35,12 +35,17 @@ export function allocateLoopbackPort(): Promise<number> {
 }
 
 /**
- * Starts local llama.cpp-style servers on 127.0.0.1 and stops them after 10 idle minutes or on
- * request. Each source has at most one process. Process output is not read or stored.
+ * Starts local llama.cpp-style servers on 127.0.0.1 and stops them after 10 idle minutes, on
+ * request or when the Host closes. Each source has at most one process. Process output is not
+ * read or stored. Only children this class spawned are ever stopped: it never looks processes up
+ * by name or port, so a model server the owner runs themselves is left alone.
  */
 export class LocalRuntime {
   private readonly running = new Map<string, Running>();
   private readonly starting = new Map<string, Promise<{ port: number }>>();
+  /** Terminations in flight, so a caller that finds no entry can still wait for them. */
+  private readonly stopping = new Set<Promise<void>>();
+  private closed = false;
   private timer: ReturnType<typeof setInterval> | undefined;
   private readonly spawnImpl: typeof spawn;
   private readonly fetchImpl: typeof fetch;
@@ -65,6 +70,7 @@ export class LocalRuntime {
     projectorPath?: string;
     model?: string;
   }): Promise<{ port: number }> {
+    if (this.closed) return Promise.reject(new Error("The local decision runtime is closed."));
     const pending = this.starting.get(request.sourceId);
     if (pending) return pending;
     const launch = this.launch(request).finally(() => this.starting.delete(request.sourceId));
@@ -85,6 +91,8 @@ export class LocalRuntime {
       return { port: current.port };
     }
     const port = await this.allocatePort();
+    // A close that arrived while the port was being allocated must not get a late spawn.
+    if (this.closed) throw new Error("The local decision runtime is closed.");
     const child = this.spawnImpl(
       request.executable,
       [
@@ -138,17 +146,42 @@ export class LocalRuntime {
     if (!entry) return;
     this.running.delete(sourceId);
     entry.alive = false;
-    if (entry.child.pid !== undefined && process.platform === "win32") {
-      await runCommand("taskkill", ["/PID", String(entry.child.pid), "/T", "/F"], {
-        timeoutMs: 5_000,
-      });
-    }
-    entry.child.kill();
     if (!this.running.size) this.clearTimer();
+    const termination: Promise<void> = this.terminate(entry).finally(() =>
+      this.stopping.delete(termination),
+    );
+    this.stopping.add(termination);
+    await termination;
   }
 
+  /** Stops every process this runtime started and waits for terminations already in flight. */
   async stopAll(): Promise<void> {
     await Promise.all([...this.running.keys()].map((sourceId) => this.stop(sourceId)));
+    await Promise.all(this.stopping);
+  }
+
+  /**
+   * Host shutdown: refuses new starts, stops every owned process and waits for starts that were
+   * still launching, so none can spawn or finish after the Host has closed. Idempotent.
+   */
+  async close(): Promise<void> {
+    this.closed = true;
+    await this.stopAll();
+    await Promise.allSettled(this.starting.values());
+    await this.stopAll();
+    this.clearTimer();
+  }
+
+  private async terminate(entry: Running): Promise<void> {
+    try {
+      if (entry.child.pid !== undefined && process.platform === "win32") {
+        await runCommand("taskkill", ["/PID", String(entry.child.pid), "/T", "/F"], {
+          timeoutMs: 5_000,
+        });
+      }
+    } finally {
+      entry.child.kill();
+    }
   }
 
   /** Stops processes idle for longer than the limit. The timer calls this; tests call it directly. */

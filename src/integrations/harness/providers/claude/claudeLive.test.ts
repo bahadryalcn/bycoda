@@ -1,11 +1,12 @@
 import { processConstructions } from "../processConstruction.testSupport";
+import { CLAUDE_WORKSPACE_GLOB } from "../../../../shared/model/sessionApprovalGrant";
 import {
   nativeOutputFrame,
   captureNativeOutputEvent,
   getNativeOutputEventOrigin,
 } from "../../core/nativeOutputDelivery.testSupport";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { applyHarnessEvent } from "../../core/apply";
+import { applyHarnessEvent, applyHarnessEvents } from "../../core/apply";
 import { newSession } from "../../../../features/sessions/model/session";
 import {
   foldableWork,
@@ -26,6 +27,9 @@ const writeChild = vi.fn(async (_id: string, line: string) => {
   sent.push(line);
 });
 const readHarnessTaskOutput = vi.fn(async () => ({ text: "live output\n", truncated: false }));
+const invokeProviderCommand = vi.fn(
+  async (): Promise<Array<{ agentId: string; metadata: string; transcript: string }>> => [],
+);
 
 beforeEach(() => processConstructions.reset());
 vi.mock("../../core/child", () =>
@@ -46,6 +50,7 @@ vi.mock("../../core/child", () =>
     },
     writeChild,
     readHarnessTaskOutput,
+    invokeProviderCommand,
   }),
 );
 
@@ -61,9 +66,14 @@ const {
   stopClaudeBackgroundWork,
   stopClaudeSession,
   __claudeTestReset,
+  nextOutputPollDelay,
 } = await import("./claude");
+const { claudeWorkflowReferences, loadClaudeWorkflowArtifacts } =
+  await import("./claudeWorkflowArtifacts");
 // Imports `claude.ts`, so it has to be loaded after the child mock like the rest.
 const { buildImportedSession } =
+  await import("../../../../features/sessions/model/claudeSessionImport");
+const { hydrateImportedClaudeWorkflows } =
   await import("../../../../features/sessions/model/claudeSessionImport");
 import type { HarnessEvent } from "../../core/types";
 import type { RuntimeMode, TurnIntent } from "../../../../features/sessions/model/session";
@@ -92,6 +102,8 @@ async function startTurn(
     providerAccountId?: string;
     modelSettings?: Record<string, string>;
     providerSessionId?: string;
+    privateDelegateHistory?: boolean;
+    privateDelegateReplay?: string;
   } = {},
 ) {
   const events: HarnessEvent[] = [];
@@ -105,6 +117,8 @@ async function startTurn(
     runtimeMode: options.runtimeMode ?? "supervised",
     intent: options.intent,
     providerAccountId: options.providerAccountId,
+    privateDelegateHistory: options.privateDelegateHistory,
+    privateDelegateReplay: options.privateDelegateReplay,
     text: "explore the codebase",
     attachments: [],
     onEvent: (event) => {
@@ -303,6 +317,79 @@ beforeEach(() => {
 afterEach(async () => {
   await stopClaudeSession("s1");
   __claudeTestReset();
+});
+
+describe("Claude private delegated history", () => {
+  it("replays Bycoda context only on the first turn of each fresh private process", async () => {
+    const history = 'User: inspect the cache\nAssistant: found a "stale" entry';
+    bindClaudeSession("s1", "old-provider-session", "/repo");
+    const first = await startTurn("s1", {
+      privateDelegateHistory: true,
+      privateDelegateReplay: history,
+    });
+    expect(spawned[0]).toContain("--no-session-persistence");
+    expect(spawned[0]).not.toContain("--resume");
+    expect(spawned[0]).not.toContain("--strict-mcp-config");
+    expect(spawned[0]).toEqual(expect.arrayContaining(["--permission-mode"]));
+    expect(parse().find((entry) => entry.type === "user")?.message).toMatchObject({
+      content: [
+        { type: "text", text: expect.stringContaining(JSON.stringify(history)) },
+        { type: "text", text: "explore the codebase" },
+      ],
+    });
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await first.turn;
+    expect(first.events.some((event) => event.type === "session.providerBound")).toBe(false);
+
+    const warmTurn = sendClaudeTurn({
+      sessionId: "s1",
+      cwd: "/repo",
+      model: "claude:claude-sonnet-5",
+      modelSettings: {},
+      runtimeMode: "supervised",
+      privateDelegateHistory: true,
+      privateDelegateReplay: history,
+      text: "continue in the same process",
+      attachments: [],
+      onEvent: () => undefined,
+    });
+    await waitFor(() => parse().filter((entry) => entry.type === "user").length === 2, "warm user");
+    expect(spawned).toHaveLength(1);
+    expect(parse().findLast((entry) => entry.type === "user")?.message).toMatchObject({
+      content: [{ type: "text", text: "continue in the same process" }],
+    });
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await warmTurn;
+
+    await stopClaudeSession("s1");
+    const restarted = await startTurn("s1", {
+      providerSessionId: "new-private-session",
+      privateDelegateHistory: true,
+      privateDelegateReplay: history,
+    });
+    expect(spawned[1]).toContain("--no-session-persistence");
+    expect(spawned[1]).not.toContain("--resume");
+    expect(parse().findLast((entry) => entry.type === "user")?.message).toMatchObject({
+      content: [
+        { type: "text", text: expect.stringContaining(JSON.stringify(history)) },
+        { type: "text", text: "explore the codebase" },
+      ],
+    });
+    emit({ type: "result", subtype: "success", session_id: "new-private-session" });
+    await restarted.turn;
+    expect(restarted.events.some((event) => event.type === "session.providerBound")).toBe(false);
+
+    await stopClaudeSession("s1");
+    const persistent = await startTurn("s1", { providerSessionId: "new-persistent-session" });
+    expect(spawned[2]).not.toContain("--no-session-persistence");
+    expect(spawned[2]).not.toContain("--resume");
+    expect(persistent.events).toContainEqual({
+      type: "session.providerBound",
+      providerSessionId: "new-persistent-session",
+    });
+    emit({ type: "result", subtype: "success", session_id: "new-persistent-session" });
+    await persistent.turn;
+  });
 });
 
 describe("claude streamed tool inputs", () => {
@@ -1964,6 +2051,233 @@ describe("claude subagents", () => {
     });
   });
 
+  it("settles a workflow without converting it into an agent", async () => {
+    const { events, turn } = await startTurn("s1");
+    emit({
+      type: "assistant",
+      session_id: "sess_1",
+      message: {
+        content: [{ type: "tool_use", id: "toolu_workflow", name: "Workflow", input: {} }],
+      },
+    });
+    emit({
+      type: "system",
+      subtype: "task_started",
+      task_id: "wf1",
+      task_type: "local_workflow",
+      tool_use_id: "toolu_workflow",
+      description: "Research",
+    });
+    emit({
+      type: "system",
+      subtype: "task_progress",
+      task_id: "wf1",
+      tool_use_id: "toolu_workflow",
+      description: "Research",
+    });
+    emit({
+      type: "system",
+      subtype: "task_notification",
+      task_id: "wf1",
+      tool_use_id: "toolu_workflow",
+      status: "completed",
+      summary: "Done",
+    });
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await turn;
+    const session = applyHarnessEvents(newSession("claude", "/repo"), events);
+    expect(
+      session.blocks.find((block) => block.tool?.callId === "toolu_workflow")?.tool,
+    ).toMatchObject({ status: "completed" });
+    expect(
+      session.blocks.find((block) => block.tool?.callId === "toolu_workflow")?.tool?.kind,
+    ).not.toBe("agent");
+  });
+
+  it("reads workflow agents by provider identity and maps their transcript", async () => {
+    const parent = {
+      type: "user",
+      toolUseResult: {
+        taskType: "local_workflow",
+        taskId: "task",
+        runId: "wf_123",
+        transcriptDir: "ignored",
+      },
+      message: { content: [{ type: "tool_result", tool_use_id: "workflow-call" }] },
+    };
+    const call = {
+      type: "assistant",
+      message: {
+        content: [{ type: "tool_use", id: "workflow-call", name: "Workflow", input: {} }],
+      },
+    };
+    const notice = {
+      type: "user",
+      origin: { kind: "task-notification", producer: "session-task" },
+      message: {
+        content:
+          "<task-notification><task-id>task</task-id><status>completed</status></task-notification>",
+      },
+    };
+    expect(
+      claudeWorkflowReferences(
+        [call, parent, notice].map((record) => JSON.stringify(record)).join("\n"),
+      ),
+    ).toEqual([{ callId: "workflow-call", taskId: "task", runId: "wf_123", status: "completed" }]);
+    expect(
+      claudeWorkflowReferences(
+        [call, parent, { ...notice, origin: {} }]
+          .map((record) => JSON.stringify(record))
+          .join("\n"),
+      ),
+    ).toEqual([{ callId: "workflow-call", taskId: "task", runId: "wf_123" }]);
+    invokeProviderCommand.mockResolvedValueOnce([
+      {
+        agentId: "abc",
+        metadata: JSON.stringify({
+          agentType: "workflow-subagent",
+          inWorkflowRun: true,
+          description: "Research",
+          workflowPhase: "Review",
+          model: "opus",
+        }),
+        transcript: JSON.stringify({
+          type: "assistant",
+          uuid: "one",
+          message: { stop_reason: "end_turn", content: [{ type: "text", text: "Found it" }] },
+        }),
+      },
+    ]);
+    const events: HarnessEvent[] = [];
+    await loadClaudeWorkflowArtifacts({
+      cwd: "/repo",
+      providerSessionId: "session",
+      runId: "wf_123",
+      callId: "workflow-call",
+      status: "completed",
+      onEvent: (event) => events.push(event),
+    });
+    expect(invokeProviderCommand).toHaveBeenCalledWith("harness_claude_workflow_artifacts", {
+      cwd: "/repo",
+      providerAccountId: undefined,
+      providerSessionId: "session",
+      runId: "wf_123",
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "tool.started",
+        callId: "workflow:workflow-call:abc",
+        workflow: { callId: "workflow-call", phase: "Review" },
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "agent.step", text: "Found it" }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "tool.updated", status: "completed" }),
+    );
+  });
+
+  it("loads live workflow artifacts and settles them on notification", async () => {
+    invokeProviderCommand.mockResolvedValue([
+      {
+        agentId: "a",
+        metadata: JSON.stringify({ agentType: "workflow-subagent", inWorkflowRun: true }),
+        transcript: "",
+      },
+    ]);
+    const { events, turn } = await startTurn("s1");
+    emit({
+      type: "assistant",
+      session_id: "sess_1",
+      message: { content: [{ type: "tool_use", id: "w", name: "Workflow", input: {} }] },
+    });
+    emit({
+      type: "system",
+      subtype: "task_started",
+      task_id: "task",
+      task_type: "local_workflow",
+      tool_use_id: "w",
+      description: "Work",
+    });
+    emit({
+      type: "user",
+      toolUseResult: { taskType: "local_workflow", taskId: "task", runId: "wf_1" },
+      message: { content: [{ type: "tool_result", tool_use_id: "w" }] },
+    });
+    await waitFor(
+      () =>
+        events.some((event) => event.type === "tool.started" && event.callId === "workflow:w:a"),
+      "workflow agent",
+    );
+    emit({
+      type: "system",
+      subtype: "task_notification",
+      task_id: "task",
+      tool_use_id: "w",
+      status: "completed",
+    });
+    await waitFor(
+      () =>
+        events.some(
+          (event) =>
+            event.type === "tool.updated" &&
+            event.callId === "workflow:w:a" &&
+            event.status === "interrupted",
+        ),
+      "workflow agent completion",
+    );
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await turn;
+    invokeProviderCommand.mockReset();
+  });
+
+  it("hydrates imported workflow trails without claiming unfinished agents completed", async () => {
+    const transcript = [
+      { type: "user", message: { content: "Start" } },
+      {
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "w", name: "Workflow", input: {} }] },
+      },
+      {
+        type: "user",
+        toolUseResult: { taskType: "local_workflow", taskId: "t", runId: "wf_1" },
+        message: { content: [{ type: "tool_result", tool_use_id: "w" }] },
+      },
+      {
+        type: "user",
+        origin: { kind: "task-notification", producer: "session-task" },
+        message: {
+          content:
+            "<task-notification><task-id>t</task-id><status>completed</status></task-notification>",
+        },
+      },
+    ]
+      .map((record) => JSON.stringify(record))
+      .join("\n");
+    invokeProviderCommand.mockResolvedValueOnce([
+      {
+        agentId: "a",
+        metadata: JSON.stringify({ agentType: "workflow-subagent", inWorkflowRun: true }),
+        transcript: "",
+      },
+    ]);
+    const base = newSession("claude", "/repo");
+    const session = buildImportedSession({ base, transcript, providerSessionId: "sess_1" });
+    const hydrated = await hydrateImportedClaudeWorkflows({
+      session,
+      transcript,
+      cwd: "/repo",
+      providerSessionId: "sess_1",
+    });
+    expect(hydrated.blocks.find((block) => block.tool?.callId === "w")?.tool?.status).toBe(
+      "completed",
+    );
+    expect(
+      hydrated.blocks.find((block) => block.tool?.callId === "workflow:w:a")?.tool?.status,
+    ).toBe("interrupted");
+  });
+
   it("stays busy after a parent result while a background subagent is running", async () => {
     const { events, turn } = await startTurn("s1");
     let settled = false;
@@ -2256,6 +2570,58 @@ describe("claude subagents", () => {
     ]);
   });
 
+  it.each(["before", "after"] as const)(
+    "reports context capacity when the CLI replies %s the first usage",
+    async (order) => {
+      const { turn, events } = await startTurn("s1");
+      const request = parse().find(
+        (msg) => (msg.request as { subtype?: string } | undefined)?.subtype === "get_context_usage",
+      );
+      expect(request).toBeDefined();
+      const firstUsage = {
+        type: "stream_event",
+        event: {
+          type: "message_start",
+          message: { model: "claude-sonnet-5", usage: { cache_read_input_tokens: 426_000 } },
+        },
+      };
+      const capacity = {
+        type: "control_response",
+        response: {
+          subtype: "success",
+          request_id: request!.request_id,
+          response: {
+            model: "claude-sonnet-5",
+            totalTokens: 20_000,
+            maxTokens: 800_000,
+            rawMaxTokens: 1_000_000,
+          },
+        },
+      };
+      if (order === "before") emit(capacity);
+      emit(firstUsage);
+      if (order === "after") emit(capacity);
+      expect(events.filter((event) => event.type === "context")).toEqual(
+        order === "before"
+          ? [{ type: "context", used: 426_000, window: 1_000_000 }]
+          : [
+              { type: "context", used: 426_000 },
+              { type: "context", window: 1_000_000 },
+            ],
+      );
+      emit({
+        type: "result",
+        subtype: "success",
+        modelUsage: {
+          "claude-sonnet-5": { contextWindow: 200_000 },
+          "claude-opus-5-5": { contextWindow: 1_000_000 },
+        },
+      });
+      await turn;
+      expect(events.filter((event) => event.type === "context").at(-1)?.window).toBe(200_000);
+    },
+  );
+
   it("reports subagent context to its parent without touching the main context", async () => {
     const { events, turn } = await startTurn("s1");
     emit({
@@ -2507,12 +2873,59 @@ describe("claude subagents", () => {
     expect(secondEvents).toContainEqual({ type: "session.ended", code: 1 });
     expect(secondEvents).toContainEqual({
       type: "session.error",
-      message: "Claude Code exited",
+      message: "Claude Code exited unexpectedly (exit code 1).",
     });
+  });
+
+  it("reports an exit after a refused usage window as the usage limit", async () => {
+    const { events, turn } = await startTurn("s1");
+    emit({
+      type: "rate_limit_event",
+      rate_limit_info: { status: "rejected", resetsAt: 1_800_000_000 },
+    });
+    onExit!(1);
+    await expect(turn).rejects.toThrow("Usage limit reached");
+    expect(events).toContainEqual({ type: "usage.limited", resetsAt: 1_800_000_000_000 });
+    expect(events).toContainEqual({ type: "session.error", message: "Usage limit reached" });
+  });
+
+  it("reports Claude's stderr limit wording when it exits at the limit", async () => {
+    const { events, turn } = await startTurn("s1");
+    const message = "You've hit your limit · resets 11pm (Europe/Istanbul)";
+    onStderr!(message);
+    onExit!(1);
+    await expect(turn).rejects.toThrow(message);
+    expect(events).toContainEqual({ type: "usage.limited" });
+    expect(events).toContainEqual({ type: "session.error", message });
+  });
+
+  it("explains an unexpected exit with the code and Claude's last stderr lines", async () => {
+    const { events, turn } = await startTurn("s1");
+    onStderr!("first");
+    onStderr!("   ");
+    onStderr!("second");
+    onStderr!("third");
+    onStderr!("fourth");
+    onExit!(2);
+    const message = "Claude Code exited unexpectedly (exit code 2):\nsecond\nthird\nfourth";
+    await expect(turn).rejects.toThrow(message);
+    expect(events.some((event) => event.type === "usage.limited")).toBe(false);
+    expect(events).toContainEqual({ type: "session.error", message });
   });
 });
 
 describe("claude background tasks", () => {
+  it("backs off while output is unchanged and resets on new output", () => {
+    let delay = 1_000;
+    const seen: number[] = [];
+    for (let i = 0; i < 8; i++) {
+      delay = nextOutputPollDelay(delay, false);
+      seen.push(delay);
+    }
+    expect(seen).toEqual([1500, 2250, 3375, 5000, 5000, 5000, 5000, 5000]);
+    expect(nextOutputPollDelay(5_000, true)).toBe(1_000);
+  });
+
   it("reads output reported only by the completion notification", async () => {
     readHarnessTaskOutput.mockClear();
     readHarnessTaskOutput.mockResolvedValue({ text: "completed output\n", truncated: false });
@@ -2952,6 +3365,70 @@ describe("claude stopping background work", () => {
       "failed",
     );
   });
+});
+
+it("only accepts scoped consent for the original top-level Glob and pins the approved path", async () => {
+  const { events, turn } = await startTurn("s1");
+  const sendGlob = (id: string, parent: string | null) => {
+    emit({
+      type: "assistant",
+      parent_tool_use_id: parent,
+      message: { content: [{ type: "tool_use", id, name: "Glob", input: { pattern: "**/*.ts" } }] },
+    });
+    emit({
+      type: "control_request",
+      request_id: id,
+      parent_tool_use_id: parent,
+      request: {
+        subtype: "can_use_tool",
+        tool_name: "Glob",
+        tool_use_id: id,
+        input: { pattern: "**/*.ts" },
+      },
+    });
+  };
+  sendGlob("child-glob", "agent");
+  sendGlob("root-glob", null);
+  const child = events.find(
+    (event) => event.type === "approval.requested" && event.callId === "child-glob",
+  );
+  const root = events.find(
+    (event) => event.type === "approval.requested" && event.callId === "root-glob",
+  );
+  if (child?.type !== "approval.requested" || root?.type !== "approval.requested")
+    throw new Error("Expected both original permission requests");
+  expect(child.sessionApprovalScope).toBeUndefined();
+  expect(root.sessionApprovalScope).toBe(CLAUDE_WORKSPACE_GLOB);
+  expect(
+    respondClaudeApproval(
+      "s1",
+      child.requestId,
+      "allow",
+      child.occurrenceId,
+      CLAUDE_WORKSPACE_GLOB,
+    ),
+  ).toBe(false);
+  respondClaudeApproval("s1", child.requestId, "deny", child.occurrenceId);
+  expect(
+    respondClaudeApproval("s1", root.requestId, "allow", root.occurrenceId, CLAUDE_WORKSPACE_GLOB),
+  ).toBe(true);
+  expect(
+    respondClaudeApproval("s1", root.requestId, "allow", root.occurrenceId, CLAUDE_WORKSPACE_GLOB),
+  ).toBe(false);
+  await waitFor(
+    () => parse().filter((message) => message.type === "control_response").length >= 2,
+    "original child and scoped root approval responses",
+  );
+  expect(parse()).toContainEqual({
+    type: "control_response",
+    response: {
+      subtype: "success",
+      request_id: "root-glob",
+      response: { behavior: "allow", updatedInput: { pattern: "**/*.ts", path: "/repo" } },
+    },
+  });
+  emit({ type: "result", subtype: "success", session_id: "sess_1" });
+  await turn;
 });
 
 describe("claude plan permissions", () => {

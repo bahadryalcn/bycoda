@@ -1,8 +1,107 @@
+import { applyComposerInlineDeletion } from "./composerInlineInput";
+import { attachmentTokens, findTokens, rewriteTokenMatches } from "../model/attachmentTokens";
+import type { Attachment } from "../model/session";
+
+/** Extract the whole chips that intersect the selection and renumber the copied references. */
+export function selectedComposerAttachments(
+  value: string,
+  selectionStart: number,
+  selectionEnd: number,
+  attachments: Attachment[],
+) {
+  if (selectionStart === selectionEnd) return;
+  const matches = findTokens(value, attachments).filter(
+    (token) => token.start < selectionEnd && token.end > selectionStart,
+  );
+  if (!matches.length) return;
+  const start = Math.min(selectionStart, matches[0].start);
+  const end = Math.max(selectionEnd, matches[matches.length - 1].end);
+  const indices = [...new Set(matches.map((match) => match.index))].sort((a, b) => a - b);
+  const selected = indices.map((index) => attachments[index]);
+  const tokens = attachmentTokens(selected);
+  const text = rewriteTokenMatches(
+    value.slice(start, end),
+    matches.map((match) => ({ ...match, start: match.start - start, end: match.end - start })),
+    (match) => tokens[indices.indexOf(match.index)],
+  );
+  return { attachments, selected, text, start, end };
+}
+
 /** Edits the textarea the way typing would, so React and every draft listener see it. */
 export function applyTextareaEdit(el: HTMLTextAreaElement, text: string, caret: number) {
   el.value = text;
   el.setSelectionRange(caret, caret);
   el.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+/** Replace text in one native undo step, or apply the edit for the caller's fallback history. */
+export function applyUndoableTextareaEdit(
+  el: HTMLTextAreaElement,
+  text: string,
+  caret: number,
+  applying: { current: boolean },
+): boolean {
+  if (applyComposerInlineDeletion(el, text, caret)) return true;
+  applying.current = true;
+  try {
+    let native = false;
+    if (el.ownerDocument.activeElement === el) {
+      el.select();
+      native = text
+        ? Boolean(el.ownerDocument.execCommand?.("insertText", false, text))
+        : Boolean(el.ownerDocument.execCommand?.("delete"));
+    }
+    if (!native) applyTextareaEdit(el, text, caret);
+    el.setSelectionRange(caret, caret);
+    return native;
+  } finally {
+    applying.current = false;
+  }
+}
+
+/** Delete only the reference range, preserving native or CodeMirror undo history. */
+export function applyMentionDeletion(
+  field: HTMLTextAreaElement,
+  edit: { text: string; caret: number; end: number },
+) {
+  if (applyComposerInlineDeletion(field, edit.text, edit.caret, "delete")) return true;
+  if (field.ownerDocument.activeElement === field) {
+    field.setSelectionRange(edit.caret, edit.end);
+    if (field.ownerDocument.execCommand?.("delete")) return true;
+  }
+  applyTextareaEdit(field, edit.text, edit.caret);
+  return false;
+}
+
+/** Type directly before an existing skill without joining the invocation to the new word. */
+export function keepSkillBoundary(
+  field: HTMLTextAreaElement,
+  event: InputEvent,
+  isSkillStart: (text: string, position: number) => boolean,
+) {
+  const { value, selectionStart: caret, selectionEnd } = field;
+  const text = event.data;
+  if (
+    event.defaultPrevented ||
+    !event.cancelable ||
+    event.isComposing ||
+    event.inputType !== "insertText" ||
+    !text ||
+    /\s$/.test(text) ||
+    field.readOnly ||
+    caret !== selectionEnd ||
+    !/[/$]/.test(value[caret] ?? "") ||
+    !isSkillStart(value, caret)
+  )
+    return;
+  event.preventDefault();
+  const end = caret + text.length;
+  // The native insertion keeps this keystroke in the textarea's undo history.
+  if (field.ownerDocument.execCommand?.("insertText", false, `${text} `)) {
+    field.setSelectionRange(end, end);
+  } else {
+    applyTextareaEdit(field, `${value.slice(0, caret)}${text} ${value.slice(caret)}`, end);
+  }
 }
 
 /** Inserts spoken or generated text at the caret, separated from neighboring words. */

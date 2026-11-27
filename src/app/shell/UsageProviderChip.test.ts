@@ -4,13 +4,9 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
+import { getLanguagePreference, setLanguagePreference } from "../../shared/i18n";
 import type { ProviderRateLimits } from "../../features/providers/model/rateLimits";
-import { projectKey } from "../../shared/lib/paths";
-import {
-  saveTabGroupCustomColor,
-  saveTabGroupMascot,
-} from "../../features/workspace/model/tabGroups";
-import { needsProviderLogin } from "../../features/providers/model/accountUsage";
+import { providerAccountSignedOut } from "../../features/providers/model/accountUsage";
 import { UsageProviderChip } from "./UsageProviderChip";
 import { saveShowRemainingUsage } from "../../features/settings/model/displayPrefs";
 import { PROVIDER_ACCOUNT_PROVIDERS } from "../../features/providers/model/providerAccounts";
@@ -111,7 +107,38 @@ function button(label: string): HTMLButtonElement {
   return result!;
 }
 
+/** Opens the first "Details" link and returns the raw error text its popover shows. */
+async function openDetails(): Promise<string> {
+  const open = () => document.body.querySelector('[aria-label="Error details"]');
+  if (!open())
+    await act(async () =>
+      [...document.querySelectorAll<HTMLButtonElement>("button")]
+        .find((item) => item.getAttribute("aria-label")?.startsWith("Details"))
+        ?.click(),
+    );
+  return open()?.textContent ?? "";
+}
+
 describe("UsageProviderChip", () => {
+  it("shows a failed quota refresh with the age of the saved reading", async () => {
+    const limits: ProviderRateLimits = {
+      ...codexLimits(),
+      provider: "claude",
+      updatedAt: now - 16 * 60_000,
+      status: "error",
+      error: "temporary quota failure",
+    };
+    act(() => root.render(createElement(UsageProviderChip, { limits, now })));
+
+    await act(async () => button("Claude Code usage details").click());
+
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog?.querySelector('[role="status"]')?.textContent).toBe(
+      "Refresh failed. Updated 16m ago",
+    );
+    expect(dialog?.textContent).toContain("Weekly limit");
+  });
+
   it("keeps the details header to an icon-only refresh without a provider-usage link", async () => {
     const onRefresh = vi.fn(async () => {});
     act(() =>
@@ -148,7 +175,7 @@ describe("UsageProviderChip", () => {
     expect(await tooltipText(trigger)).toBe(limits.error);
     await act(async () => trigger.click());
     const dialog = document.querySelector('[role="dialog"]');
-    expect(dialog?.textContent).toContain(limits.error);
+    expect(await openDetails()).toContain(limits.error);
     expect(dialog?.querySelector('[role="meter"]')).toBeNull();
   });
   it("keeps usage selections independent across providers with the same account ids", async () => {
@@ -329,9 +356,7 @@ describe("UsageProviderChip", () => {
     expect(invoke).toHaveBeenCalledWith("fetch_claude_usage", {
       accountId: "account-work",
     });
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
-      "Claude sign-in expired",
-    );
+    expect(await openDetails()).toContain("Claude sign-in expired");
     expect(document.querySelector('[aria-label="Sign in to Claude Code"]')).toBeNull();
     await act(async () => button("personal").click());
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain("81% used");
@@ -363,6 +388,69 @@ describe("UsageProviderChip", () => {
     expect(onSelectAccount).not.toHaveBeenCalled();
   });
 
+  it("keeps the add-account metadata through a failed sign-in and selects the saved account", async () => {
+    const onSelectAccount = vi.fn();
+    const onAddAccount = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Sign-in failed"))
+      .mockResolvedValueOnce(undefined);
+    act(() =>
+      root.render(
+        createElement(UsageProviderChip, {
+          limits: codexLimits(),
+          now,
+          accountId: "default",
+          accounts: [{ id: "default", provider: "codex", label: "Default account" }],
+          onSelectAccount,
+          onAddAccount,
+        }),
+      ),
+    );
+    await act(async () => button("Codex usage details").click());
+    await act(async () => button("Switch Codex account").click());
+    await act(async () => button("Add account").click());
+    const form = document.querySelector<HTMLFormElement>("[data-modal-placement] form")!;
+    const input = form.querySelector<HTMLInputElement>('input[type="text"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "Office",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      form.querySelector<HTMLInputElement>('input[value="work"]')!.click();
+    });
+    await act(async () =>
+      form.querySelector<HTMLButtonElement>('button[aria-label^="Color for Office:"]')!.click(),
+    );
+    await act(async () => button("Blue").click());
+    const submit = () =>
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await act(async () => {
+      submit();
+    });
+    expect(onAddAccount).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "codex", label: "Office", kind: "work", color: "blue" }),
+      expect.any(AbortSignal),
+    );
+    expect(onSelectAccount).not.toHaveBeenCalled();
+    expect(form.textContent).toContain("Could not save this account.");
+    const language = getLanguagePreference();
+    try {
+      await act(async () => setLanguagePreference("tr"));
+      expect(form.textContent).toContain("Bu hesap kaydedilemedi.");
+      expect(input.value).toBe("Office");
+    } finally {
+      await act(async () => setLanguagePreference(language));
+    }
+    const account = onAddAccount.mock.calls[0][0];
+    await act(async () => {
+      submit();
+    });
+    expect(onAddAccount.mock.calls[1][0]).toEqual(account);
+    expect(onSelectAccount).toHaveBeenCalledWith(account.id);
+    expect(document.querySelector("[data-modal-placement]")).toBeNull();
+  });
+
   it("updates the chip, tooltip and open cards when the usage preference changes", async () => {
     act(() => {
       saveShowRemainingUsage(false);
@@ -389,12 +477,33 @@ describe("UsageProviderChip", () => {
       updatedAt: now,
       error: "Claude sign-in expired",
       status: "error",
+      reason: "signedOut",
     };
     const onReconnect = vi.fn(async () => undefined);
-    act(() => root.render(createElement(UsageProviderChip, { limits, now, onReconnect })));
+    act(() =>
+      root.render(
+        createElement(UsageProviderChip, {
+          limits,
+          now,
+          onReconnect,
+          accountId: "default",
+          accounts: [
+            { id: "default", provider: "claude", label: "Default account", isDefault: true },
+          ],
+          onSelectAccount: vi.fn(),
+          onAddAccount: vi.fn(),
+        }),
+      ),
+    );
 
     await act(async () => button("Claude Code usage details").click());
     expect(document.querySelector(".size-9")).not.toBeNull();
+    const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]')!;
+    const signInClasses = dialog().className;
+    await act(async () => button("Switch account from Default account").click());
+    expect(dialog().textContent).toContain("Claude Code accounts");
+    expect(dialog().className).toBe(signInClasses);
+    await act(async () => button("Back to usage").click());
     await act(async () => button("Sign in to Claude Code").click());
 
     expect(onReconnect).toHaveBeenCalledOnce();
@@ -412,7 +521,7 @@ describe("UsageProviderChip", () => {
       error: "Claude usage is unavailable for this account",
       status: "error",
     };
-    expect(needsProviderLogin(limits)).toBe(false);
+    expect(providerAccountSignedOut(limits)).toBe(false);
   });
 
   it("opens a column of detailed quota meters", async () => {
@@ -519,6 +628,38 @@ describe("UsageProviderChip", () => {
 
     expect(onSelectAccount).toHaveBeenCalledWith("account-work");
     expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("keeps the usage popover width when switching to the accounts view", async () => {
+    act(() =>
+      root.render(
+        createElement(UsageProviderChip, {
+          limits: codexLimits(),
+          now,
+          accountId: "default",
+          accounts: [
+            {
+              id: "default",
+              provider: "codex",
+              label: "Default account",
+              isDefault: true,
+            },
+            { id: "account-work", provider: "codex", label: "Work" },
+          ],
+          onSelectAccount: vi.fn(),
+          onAddAccount: vi.fn(),
+        }),
+      ),
+    );
+
+    await act(async () => button("Codex usage details").click());
+    // The Popover pins its width on the frame around the dialog surface.
+    const frameWidth = () =>
+      document.querySelector<HTMLElement>('[role="dialog"]')!.parentElement!.style.width;
+    expect(frameWidth()).toBe("340px");
+    await act(async () => button("Switch Codex account").click());
+    expect(document.body.textContent).toContain("Codex accounts");
+    expect(frameWidth()).toBe("340px");
   });
 
   it("reveals emails independently of account switching and hides them on reopening", async () => {
@@ -633,7 +774,6 @@ describe("UsageProviderChip", () => {
     // Provider descriptions are not part of the normal view.
     expect(document.body.textContent).not.toContain("One Codex rate-limit reset");
     expect(document.body.textContent).not.toContain("A second Codex rate-limit reset");
-    expect(document.querySelector('[data-reset-mascot-mood="happy"]')).not.toBeNull();
     expect(document.body.textContent).toContain("Referral reward");
     expect(document.body.textContent).toContain("Backup reset");
     expect(document.body.textContent).toContain("Expires in 12d");
@@ -644,6 +784,7 @@ describe("UsageProviderChip", () => {
       (item) => item.textContent === "Use reset",
     );
     expect(useButtons).toHaveLength(2);
+    expect(useButtons[0]?.getAttribute("data-button-variant")).toBe("secondary");
     act(() => useButtons[1]?.click());
     expect(document.body.textContent).toContain("Spend this reset now?");
     await act(async () => button("Confirm").click());
@@ -674,6 +815,8 @@ describe("UsageProviderChip", () => {
 
     await act(async () => button("Claude Code usage details").click());
     const items = [...document.querySelectorAll('[aria-label="Available banked resets"] article')];
+    expect(document.querySelector("[data-quota-reset-icon]")).not.toBeNull();
+    expect(items[0]?.querySelector("h4")?.textContent).toBe("Full limit reset");
     expect(items.map((item) => item.textContent)).toEqual([
       "Full limit resetExpires in 12dUse reset",
       "Fable limit resetExpires in 18dUse reset",
@@ -730,7 +873,7 @@ describe("UsageProviderChip", () => {
     act(() => useButtons()[0]?.click());
     expect(onConsumeReset).not.toHaveBeenCalled();
     await act(async () => button("Confirm").click());
-    expect(document.body.textContent).toContain("Host offline");
+    expect(await openDetails()).toContain("Host offline");
     expect(onConsumeReset).toHaveBeenCalledTimes(1);
     act(() =>
       useButtons()
@@ -742,26 +885,19 @@ describe("UsageProviderChip", () => {
     expect(onConsumeReset).toHaveBeenCalledTimes(2);
   });
 
-  it("uses the project's picked mascot when banked resets are available", async () => {
-    const project = "/repo/mascot-lab";
-    saveTabGroupMascot(projectKey(project), "cat");
+  it("uses the banked reset icon in the Codex panel", async () => {
     act(() =>
       root.render(
         createElement(UsageProviderChip, {
           limits: codexLimits(),
           now,
-          project,
         }),
       ),
     );
 
     await act(async () => button("Codex usage details").click());
-    const mascot = document.querySelector('[data-reset-mascot-mood="happy"]');
-    expect(mascot?.getAttribute("data-mascot-name")).toBe("link");
-    act(() => saveTabGroupCustomColor(projectKey(project), "#123456"));
-    const mascotSvg = mascot?.querySelector("svg");
-    expect(mascotSvg).toBeInstanceOf(SVGElement);
-    expect(mascotSvg!.style.color).toBe("#123456");
+    const icon = document.querySelector("[data-quota-reset-icon]");
+    expect(icon?.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("hides the banked resets card when no resets are available", async () => {
@@ -771,7 +907,7 @@ describe("UsageProviderChip", () => {
 
     await act(async () => button("Codex usage details").click());
     expect(document.body.textContent).not.toContain("Banked resets");
-    expect(document.querySelector(".reset-mascot-scene")).toBeNull();
+    expect(document.querySelector("[data-quota-reset-icon]")).toBeNull();
     expect(document.querySelector('[aria-label="Available banked resets"]')).toBeNull();
   });
 

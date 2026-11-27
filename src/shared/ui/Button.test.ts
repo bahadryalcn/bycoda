@@ -36,7 +36,9 @@ it("swaps confirmed success in place, gives pending priority and resets when edi
     expect(container.querySelector('[role="status"]')?.textContent).toBe("Saved");
     expect(container.querySelector('[role="status"]')?.className).toBe("sr-only");
     await act(async () => root.render(render(true, true)));
-    expect(button.textContent).toBe("Save");
+    // Pending text sits beside the spinner in place of the label, never a bare spinner.
+    expect(button.textContent).toBe("Saving…");
+    expect(button.querySelector("[data-confirm-icon] > [aria-hidden] > span")).not.toBeNull();
     expect(button.getAttribute("aria-label")).toBe("Saving…");
     expect(container.querySelector('[role="status"]')?.textContent).toBe("");
     await act(async () => root.render(render(false)));
@@ -57,6 +59,7 @@ it("keeps hierarchy and tone independent", async () => {
       [{ variant: "primary" }, "primary", "neutral"],
       [{ tone: "danger" }, "secondary", "danger"],
       [{ variant: "ghost", tone: "danger" }, "ghost", "danger"],
+      [{ variant: "caption", tone: "danger" }, "ghost", "danger"],
       [{ variant: "tab", tone: "warning", selected: true }, "tab", "warning"],
     ];
     for (const [props, hierarchy, tone] of cases) {
@@ -68,6 +71,27 @@ it("keeps hierarchy and tone independent", async () => {
       expect(button.dataset.buttonTone).toBe(tone);
       expect(button.hasAttribute("tone")).toBe(false);
     }
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("updates a badge in place, outside the label, with the explicit accessible name", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    const render = (badge?: number) =>
+      act(async () =>
+        root.render(createElement(Button, { badge, label: "Recovery", iconOnly: true })),
+      );
+    await render();
+    const button = container.querySelector("button")!;
+    await render(3);
+    expect(container.querySelector("button")).toBe(button);
+    expect(button.getAttribute("aria-label")).toBe("Recovery");
+    expect(button.querySelector(':scope > [aria-hidden="true"]')?.textContent).toBe("3");
   } finally {
     await act(async () => root.unmount());
     vi.unstubAllGlobals();

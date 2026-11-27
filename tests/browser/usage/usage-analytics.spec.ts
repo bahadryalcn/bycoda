@@ -27,10 +27,12 @@ test("usage surfaces stay compact in both themes and show hour context on hover"
             "html, body, #root, [data-settings-scroller] { block-size: auto !important; max-block-size: none !important; overflow: visible !important; }",
         });
         if (view === "Limits") {
-          await page.locator('.usage-account[aria-label="Grok"]').screenshot({
-            path: `temp/verification/usage-polish-20261110/Grok-row-${theme}-${width}.png`,
-            animations: "disabled",
-          });
+          await page
+            .locator('.usage-account[aria-label="Grok Build · Default account"]')
+            .screenshot({
+              path: `temp/verification/usage-polish-20261110/Grok-row-${theme}-${width}.png`,
+              animations: "disabled",
+            });
         }
         if (view === "Time analysis") {
           const hour = page.locator('.usage-hour-cell:not([data-level="0"])').first();
@@ -76,6 +78,59 @@ async function select(page: Page, label: string, value: string) {
   await page.getByRole("button", { name: new RegExp(`^${label}:`) }).click();
   await page.getByRole("option", { name: value, exact: true }).click();
 }
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`chart tooltips require a fresh hover dwell ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 960 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.clock.install();
+      await page.goto(`/tests/browser/usage/usage-budgets.html?page=1&analytics=1&theme=${theme}`);
+      await expect(page.locator(".usage-analytics")).toHaveAttribute("aria-busy", "false");
+
+      const trend = page.locator('[data-usage-chart="trend"]');
+      const slider = trend.getByRole("slider");
+      await slider.scrollIntoViewIfNeeded();
+      const plot = (await slider.boundingBox())!;
+      const chartCursor = trend.locator("[data-scrubbing]");
+      await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000);
+      await page.mouse.move(plot.x + plot.width * 0.5, plot.y + 10);
+      await page.clock.runFor(300);
+      await page.mouse.move(plot.x + plot.width * 0.01, plot.y + 10);
+      await page.clock.runFor(449);
+      await expect(chartCursor).toHaveCount(0);
+      await page.clock.runFor(1);
+      await expect(chartCursor).toHaveCount(1);
+      await expect(slider).toHaveAttribute("aria-valuenow", "1");
+      await page.clock.resume();
+      await page.screenshot({
+        path: `temp/verification/tooltip-dwell/trend-${theme}-${width}.png`,
+      });
+
+      await page.getByRole("tab", { name: "Time analysis", exact: true }).click();
+      await select(page, "Date range", "90 days");
+      const calendar = page.locator('[data-usage-chart="calendar"]');
+      const cells = calendar.getByRole("gridcell");
+      await cells.first().scrollIntoViewIfNeeded();
+      const first = (await cells.nth(0).boundingBox())!;
+      const second = (await cells.nth(1).boundingBox())!;
+      const bubble = calendar.locator('[class*="_bubble_"]');
+      await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000);
+      await page.mouse.move(first.x + first.width / 2, first.y + first.height / 2);
+      await page.clock.runFor(300);
+      await page.mouse.move(second.x + second.width / 2, second.y + second.height / 2);
+      await page.clock.runFor(449);
+      await expect(bubble).toHaveCSS("opacity", "0");
+      await page.clock.runFor(650);
+      await expect(bubble).toHaveCSS("opacity", "1");
+      await page.clock.resume();
+      await page.screenshot({
+        path: `temp/verification/tooltip-dwell/calendar-${theme}-${width}.png`,
+      });
+    });
+  }
+}
+
 async function openFilters(page: Page) {
   await page.getByRole("button", { name: /^Filters(?: \(\d+\))?$/, exact: true }).click();
 }
@@ -98,7 +153,7 @@ test("keeps primary usage visible before optional detail at narrow widths", asyn
     await expect(page.locator(".usage-analytics")).toHaveAttribute("aria-busy", "false");
     for (const width of [1440, 768, 390]) {
       await page.setViewportSize({ width, height: 900 });
-      await expect(page.locator(".usage-metrics > div")).toHaveCount(3);
+      await expect(page.locator(".usage-metrics > :visible")).toHaveCount(3);
       const trend = page.locator('[data-usage-chart="trend"]');
       // The trend starts within two thirds of a screen below the analytics header, under the KPI
       // stack; the account's Active time card above the analytics is not part of this budget.
@@ -117,7 +172,7 @@ test("keeps primary usage visible before optional detail at narrow widths", asyn
     await usageDetails.locator("summary").focus();
     await page.keyboard.press("Enter");
     await expect(usageDetails).toHaveAttribute("open", "");
-    await expect(page.locator(".usage-metrics > div")).toHaveCount(7);
+    await expect(page.locator(".usage-metrics > :visible")).toHaveCount(7);
     await expect(page.locator(".usage-facts")).toBeVisible();
   }
 });
@@ -141,14 +196,17 @@ for (const [theme, width] of [
       fullPage: true,
       animations: "disabled",
     });
-    await openFilters(page);
+    // The date range lives in the toolbar: choosing Custom opens a popover holding the exact picker.
+    await select(page, "Date range", "Custom date and time");
     await page.getByRole("button", { name: "Date and time range", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Date and time range", exact: true });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole("grid")).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
-    await expect(page.getByRole("dialog", { name: "Filters", exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("dialog", { name: "Custom date and time", exact: true }),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Date and time range", exact: true }).click();
     await expect(dialog).toBeVisible();
     const date = await page.evaluate(() => {
@@ -170,7 +228,7 @@ for (const [theme, width] of [
     await expect(dialog).toBeHidden();
     await select(page, "Resolution", "Hourly");
     await page.keyboard.press("Escape");
-    await expect(page.locator('[data-usage-chart="trend"] details table tbody tr')).toHaveCount(4);
+    await expect(page.locator('[data-usage-chart="trend"] figure table tbody tr')).toHaveCount(4);
     await page.getByRole("tab", { name: "Time analysis", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Day and hour activity" })).toBeVisible();
     await expect(page.locator('[data-usage-chart="trend"]')).toHaveCount(0);
@@ -225,7 +283,8 @@ test("usage analytics and exact date/time controls are localized in Turkish", as
   while (await series.count()) await series.first().click();
   await expect(trend.getByText("Gösterilecek seriyi seçin", { exact: true })).toBeVisible();
   await expect(trend.getByText("Choose a series to show", { exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Filtreler", exact: true }).click();
+  await page.getByRole("button", { name: /^Tarih aralığı:/ }).click();
+  await page.getByRole("option", { name: "Özel tarih ve saat", exact: true }).click();
   await page.getByRole("button", { name: "Tarih ve saat aralığı", exact: true }).click();
   await expect(page.getByLabel("Başlangıç tarihi ve saati", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Bitiş tarihi ve saati", { exact: true })).toBeVisible();
@@ -238,9 +297,9 @@ test("uses the full settings width, distinguishes views and follows configured a
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/usage/usage-budgets.html?page=1&analytics=1");
   await expect(page.locator(".usage-analytics")).toHaveAttribute("aria-busy", "false");
-  // Usage uses the shared 80rem Settings column (1280px including its inline padding).
+  // Usage fills the shared 80rem Settings column (1280px including its inline padding).
   const analyticsWidth = (await page.locator(".usage-analytics").boundingBox())!.width;
-  expect(analyticsWidth).toBeGreaterThan(900);
+  expect(analyticsWidth).toBeGreaterThan(1000);
   expect(analyticsWidth).toBeLessThanOrEqual(1280);
   const colors = () =>
     page
@@ -327,7 +386,8 @@ for (const theme of ["light", "dark"])
       const row = page.locator('[data-setting-id="show-remaining-usage"]');
       const toggle = row.getByRole("switch", { name: "Show remaining usage", exact: true });
       const initial = await toggle.getAttribute("aria-checked");
-      await expect(row).toHaveAttribute("data-press-feedback", "false");
+      // The switch is a plain toolbar label at the end of the section title row, not a settings row.
+      await expect(row).toHaveCSS("background-image", "none");
       await expect(row).toHaveCSS("border-top-left-radius", "0px");
       const accounts = page.locator(".usage-accounts > .usage-account");
       await expect(accounts).toHaveCount(4);
@@ -347,16 +407,18 @@ for (const theme of ["light", "dark"])
         path: `temp/verification/usage-surfaces/limits-${theme}-${width}.png`,
         fullPage: true,
       });
+      // Hover and press add no row highlight; the label text is part of the switch's own hit area.
       await row.locator("span").first().hover();
-      const hover = await row.evaluate((node) => getComputedStyle(node).backgroundImage);
-      expect(hover).toContain("linear-gradient");
+      await expect(row).toHaveCSS("background-image", "none");
       await page.mouse.down();
-      expect(await row.evaluate((node) => getComputedStyle(node).backgroundImage)).toBe(hover);
-      await expect(toggle).toHaveAttribute("aria-checked", initial!);
+      await expect(row).toHaveCSS("background-image", "none");
       await page.screenshot({
         path: `temp/verification/usage-surfaces/inert-press-${theme}-${width}.png`,
       });
       await page.mouse.up();
+      await expect(toggle).toHaveAttribute("aria-checked", initial === "true" ? "false" : "true");
+      await toggle.click();
+      await expect(toggle).toHaveAttribute("aria-checked", initial!);
       await toggle.click();
       await expect(toggle).toHaveAttribute("aria-checked", initial === "true" ? "false" : "true");
       await toggle.focus();
@@ -401,7 +463,8 @@ for (const theme of ["light", "dark"]) {
       await expect(grid.getByRole("gridcell").nth(7)).toBeFocused();
       await page.mouse.move(0, 0);
       await page.screenshot({ path: testInfo.outputPath("time.png"), animations: "disabled" });
-      await grid.getByRole("gridcell").nth(7).click();
+      // An hour without usage would narrow the window to an empty period, so drill into one with data.
+      await grid.locator('.usage-hour-cell:not([data-level="0"])').first().click();
       await expect(page.locator(".usage-hour-cell")).toHaveCount(24);
       expect(
         await grid.evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(" ").length),
@@ -429,7 +492,7 @@ for (const theme of ["light", "dark"]) {
         ),
       ).toBe(true);
       await page.screenshot({ path: testInfo.outputPath("quota.png"), animations: "disabled" });
-      await page.getByRole("button", { name: "Account actions", exact: true }).first().click();
+      await page.getByRole("button", { name: "Account color", exact: true }).first().click();
       await expect(page.getByRole("menu", { name: "Account color", exact: true })).toBeVisible();
       await page.screenshot({
         path: testInfo.outputPath("account-colors.png"),

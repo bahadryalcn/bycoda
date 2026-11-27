@@ -19,14 +19,16 @@ fn main() {
     if args.len() != 2 || args[1] != std::ffi::OsStr::new("--provider-process-guardian") {
         std::process::exit(2);
     }
-    if bycoda_provider_process_guardian::runtime::protect_control_handles().is_err() {
+    if let Err(error) = bycoda_provider_process_guardian::runtime::protect_control_handles() {
+        bycoda_provider_process_guardian::diagnostic::report_failure("handle protection", &error);
         std::process::exit(2);
     }
     let result = bycoda_provider_process_guardian::runtime::run(
         &mut std::io::stdin().lock(),
         std::io::stdout(),
     );
-    if result.is_err() {
+    if let Err(error) = result {
+        bycoda_provider_process_guardian::diagnostic::report_failure("control run", &error);
         std::process::exit(2);
     }
 }

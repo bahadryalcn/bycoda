@@ -1,19 +1,34 @@
-/* Hallmark v2.0.0 | shape: app screen | theme: bycoda, existing DESIGN.md | signature: issue queue and board */
-/* Critique: full-width search and aligned actions preserve density; shared controls own appearance and focus. */
+/* Hallmark v2.0.0 | shape: app screen | theme: bycoda, existing DESIGN.md | signature: separate GitHub queues */
+/* Critique: work item kind stays visible above search and filters; the list keeps its own scroll. */
 .bycoda-inbox {
   container: inbox / inline-size;
 }
 .inbox-collection-search {
-  flex-basis: 12rem;
+  flex-basis: calc(var(--ui-space-12) * 4);
 }
 .inbox-detail-back {
   display: none;
+}
+.inbox-list-detail[data-list-only="true"] {
+  > .inbox-list-panel {
+    width: 100% !important;
+    --surface-frame-visible: 0;
+    flex: 1;
+  }
+  &[data-detail-open="false"] > .inbox-detail-pane,
+  &[data-detail-open="true"] > .inbox-list-panel,
+  .inbox-list-sash {
+    display: none;
+  }
+  .inbox-detail-back {
+    display: block;
+  }
 }
 /* The board remains mounted while narrow detail is open, retaining scroll and
    expanded planning groups. Wide layout retains an independent reading pane. */
 .inbox-jira-layout > .jira-board-detail {
   min-width: 0;
-  width: min(42%, 38rem);
+  width: min(42%, calc(var(--ui-space-12) * 12));
 }
 @container inbox (max-width: 44rem) {
   .inbox-list-detail > .inbox-list-panel {
@@ -46,7 +61,7 @@
   .inbox-discussion-panel {
     position: absolute;
     inset: 0;
-    z-index: 10;
+    z-index: var(--layer-pane-sheet);
     width: auto !important;
   }
   .inbox-discussion-resizer {

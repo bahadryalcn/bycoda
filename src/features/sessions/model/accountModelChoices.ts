@@ -4,23 +4,54 @@ import type { AgentModel } from "./models";
 import { providerAccountSignedOut } from "../../providers/public/accountUsage";
 import type { ProviderRateLimits } from "../../providers/public/accountUsage";
 import {
+  DEFAULT_PROVIDER_ACCOUNT_ID,
   defaultProviderAccountId,
+  PROVIDER_ACCOUNT_COLORS,
   PROVIDER_ACCOUNT_PROVIDERS,
   providerAccountLabel,
   providerAccounts,
   providerAccountColorValue,
   supportsProviderAccounts,
+  type ProviderAccount,
 } from "../../providers/public/providerAccounts";
 
 export type AccountModelChoice = AgentModel & {
   accountId?: string;
   accountColor?: string;
+  accountNumber?: number;
   /** The account's display label, kept apart from `name` so a row can truncate the model first. */
   accountLabel?: string;
 };
+type ModelAccountProfile = Pick<ProviderAccount, "id" | "label" | "isDefault" | "kind"> & {
+  color?: string;
+};
+
 export type ModelAccountCatalog = Partial<
-  Record<"codex" | "claude" | "grok", readonly { id: string; label: string; isDefault?: boolean }[]>
+  Record<"codex" | "claude" | "grok", readonly ModelAccountProfile[]>
 >;
+
+export function modelAccountIdentities(
+  harness: AgentModel["harness"],
+  accounts: readonly ModelAccountProfile[],
+) {
+  return accounts.map((account, index) => ({
+    id: account.id,
+    isDefault: account.isDefault,
+    accountLabel: accountDisplayLabel(accounts, account),
+    accountNumber: accounts.length > 1 ? index + 1 : undefined,
+    ...(accounts.length > 1
+      ? {
+          accountColor: providerAccountColorValue({
+            id: account.id,
+            provider: harness,
+            color: account.color
+              ? PROVIDER_ACCOUNT_COLORS.find((entry) => entry.id === account.color)?.id
+              : undefined,
+          }),
+        }
+      : {}),
+  }));
+}
 
 /**
  * Display label of one account. Accounts may share a label; the stored label stays untouched and
@@ -50,29 +81,27 @@ export function accountModelChoices(
   enabled: boolean,
   catalog?: ModelAccountCatalog,
 ): AccountModelChoice[] {
+  if (!enabled) return models.slice();
+  const identities = new Map<AgentModel["harness"], ReturnType<typeof modelAccountIdentities>>();
   return models.flatMap((model) => {
-    if (!enabled || !supportsProviderAccounts(model.harness)) return [model];
+    if (!supportsProviderAccounts(model.harness)) return [model];
     // A Host that has not reported this provider's accounts leaves the account unknown: the
     // model stays one row and the owning Host picks its account, never this device's profiles.
     if (catalog !== undefined && catalog[model.harness] === undefined) return [model];
-    const accounts: readonly { id: string; label: string; accountColor?: string }[] =
-      catalog === undefined
-        ? providerAccounts(model.harness).map((account) => ({
-            id: account.id,
-            label: account.label,
-            accountColor: providerAccountColorValue(account),
-          }))
-        : (catalog[model.harness] ?? []);
-    return accounts.map((account) => {
-      const accountLabel = accountDisplayLabel(accounts, account);
-      return {
-        ...model,
-        name: `${model.name} ${accountLabel}`,
-        accountLabel,
-        accountId: account.id,
-        ...(account.accountColor ? { accountColor: account.accountColor } : {}),
-      };
-    });
+    let accounts = identities.get(model.harness);
+    if (!accounts) {
+      accounts = modelAccountIdentities(
+        model.harness,
+        catalog === undefined ? providerAccounts(model.harness) : (catalog[model.harness] ?? []),
+      );
+      identities.set(model.harness, accounts);
+    }
+    return accounts.map(({ id, isDefault: _default, ...account }) => ({
+      ...model,
+      ...account,
+      name: `${model.name} ${account.accountLabel}`,
+      accountId: id,
+    }));
   });
 }
 
@@ -87,7 +116,9 @@ export function modelAccountLabel(
 ): string {
   if (catalog !== undefined && supportsProviderAccounts(model.harness)) {
     const accounts = catalog[model.harness] ?? [];
-    const found = accounts.find((account) => account.id === (accountId ?? "default"));
+    const id = accountId ?? DEFAULT_PROVIDER_ACCOUNT_ID;
+    const found = accounts.find((account) => account.id === id);
+    if (!found && id === DEFAULT_PROVIDER_ACCOUNT_ID) return model.name;
     return `${model.name} ${found ? accountDisplayLabel(accounts, found) : t("Unavailable Host account")}`;
   }
   if (!supportsProviderAccounts(model.harness)) return model.name;

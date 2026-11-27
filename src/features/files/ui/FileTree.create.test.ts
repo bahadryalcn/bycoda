@@ -11,22 +11,16 @@ import {
   saveExpanded,
   saveSelected,
 } from "../model/fileTree";
-import type { FsEntry } from "../../../platform/tauri/fs";
+import { setRemoteCommandRunner, type FsEntry } from "../../../platform/tauri/fs";
 import { FileTree } from "./FileTree";
-import { reportRemoteLoad, resetRemoteHealth } from "../../connections/model/remoteHealth";
-
-/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
-async function tooltipText(element: HTMLElement): Promise<string> {
-  await act(async () => {
-    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
-    await new Promise((resolve) => setTimeout(resolve, 520));
-  });
-  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
-  await act(async () => {
-    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
-  });
-  return text;
-}
+import {
+  notifyRemoteRecovered,
+  recordRemoteConnection,
+  reportRemoteLoad,
+  resetRemoteHealth,
+} from "../../connections/model/remoteHealth";
+import { setMachineEnabled } from "../../connections/model/machineEnabled";
+import { adoptRemoteMachineInventory } from "../../connections/model/connections";
 
 const { directories, created, gate } = vi.hoisted(() => ({
   directories: new Map<string, FsEntry[]>(),
@@ -35,6 +29,7 @@ const { directories, created, gate } = vi.hoisted(() => ({
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
+  isTauri: () => false,
   invoke: vi.fn(async (command: string, args: Record<string, string>) => {
     if (command === "list_dir") return directories.get(args.path) ?? [];
     if (command === "clipboard_file_paths") return [];
@@ -78,7 +73,9 @@ const entry = (path: string, isDir = false): FsEntry => ({
 const row = (path: string) =>
   container.querySelector<HTMLButtonElement>(`[role="treeitem"][title="${cwd}/${path}"]`);
 const nameInput = () =>
-  container.querySelector<HTMLInputElement>('input[aria-label^="Type file name"]');
+  container.querySelector<HTMLInputElement>(
+    'input[aria-label="File name"], input[aria-label="Folder name"]',
+  );
 const header = (action: string) =>
   container.querySelector<HTMLButtonElement>(`[data-explorer-action="${action}"]`)!;
 const nameRowDepth = () => {
@@ -200,6 +197,17 @@ describe("Explorer create target", () => {
     expect(created).toEqual([{ parent: cwd, name: "new.ts", isDir: false }]);
   });
 
+  it("names a new folder field Folder name, with the key hint only in its description", async () => {
+    await mount(null);
+    await act(async () => header("new-folder").click());
+    expect(nameInput()?.getAttribute("aria-label")).toBe("Folder name");
+    const described = (nameInput()?.getAttribute("aria-describedby") ?? "")
+      .split(" ")
+      .map((id) => document.getElementById(id)?.textContent ?? "")
+      .join(" ");
+    expect(described).toContain("Press Enter to confirm or Escape to cancel.");
+  });
+
   it("creates beside the selected file, at its depth, from the header", async () => {
     await mount("src/deep.ts", ["src"]);
     await act(async () => header("new-file").click());
@@ -228,7 +236,7 @@ describe("Explorer create target", () => {
   it("context menu on a folder creates inside it even when another row is selected", async () => {
     await mount("first.ts", ["src"]);
     await contextMenu(row("src")!);
-    await pick("New File");
+    await pick("New file");
     expect(container.querySelector("[data-name-caption]")?.textContent).toBe("New file in src");
     type("in-src.ts");
     await enter();
@@ -238,7 +246,7 @@ describe("Explorer create target", () => {
   it("context menu on a nested file creates in that file's parent", async () => {
     await mount(null, ["src", "src/nested"]);
     await contextMenu(row("src/nested/leaf.ts")!);
-    await pick("New Folder");
+    await pick("New folder");
     expect(container.querySelector("[data-name-caption]")?.textContent).toBe(
       "New folder in nested",
     );
@@ -253,13 +261,13 @@ describe("Explorer create target", () => {
     const rootItems = [...document.querySelectorAll('[role="menuitem"]')].map((item) =>
       item.textContent?.trim(),
     );
-    expect(rootItems[0]).toContain("New File");
+    expect(rootItems[0]).toContain("New file");
     expect(rootItems[0]).toContain("In Workspace");
-    await pick("New File");
+    await pick("New file");
     type("r1.ts");
     await enter();
     await contextMenu(container.querySelector('[role="tree"]')!);
-    await pick("New Folder");
+    await pick("New folder");
     type("r2");
     await enter();
     expect(created).toEqual([
@@ -272,9 +280,9 @@ describe("Explorer create target", () => {
     await mount(null, ["src"]);
     await contextMenu(row("src/deep.ts")!);
     const items = [...document.querySelectorAll('[role="menuitem"]')];
-    expect(items[0].textContent).toContain("New File");
+    expect(items[0].textContent).toContain("New file");
     expect(items[0].textContent).toContain("In src");
-    expect(items[1].textContent).toContain("New Folder");
+    expect(items[1].textContent).toContain("New folder");
   });
 });
 
@@ -291,15 +299,15 @@ describe("Explorer inline name editor", () => {
     await enter();
     expect(created).toHaveLength(1);
     expect(nameInput()?.readOnly).toBe(true);
-    expect(header("new-file").disabled).toBe(true);
-    expect(header("new-file").getAttribute("aria-label")).toContain(
+    expect(header("new-file").getAttribute("aria-disabled")).toBe("true");
+    expect(header("new-file").getAttribute("aria-description")).toContain(
       "Wait for the current file operation to finish",
     );
     await act(async () => {
       release();
     });
     expect(nameInput()).toBeNull();
-    expect(header("new-file").disabled).toBe(false);
+    expect(header("new-file").getAttribute("aria-disabled")).toBeNull();
     expect(created).toHaveLength(1);
   });
 
@@ -314,7 +322,7 @@ describe("Explorer inline name editor", () => {
     const alert = container.querySelector("[data-name-row] [role='alert']");
     expect(alert?.textContent).toBe("Permission denied");
     expect(nameInput()?.getAttribute("aria-describedby")).toContain(alert!.id);
-    expect(header("new-file").disabled).toBe(false);
+    expect(header("new-file").getAttribute("aria-disabled")).toBeNull();
     gate.fail = null;
     await enter();
     expect(created.map((item) => item.name)).toEqual(["blocked.ts", "blocked.ts"]);
@@ -365,35 +373,87 @@ describe("Explorer create availability", () => {
   const remoteCwd = () => `remote://machine-1/project-${project}`;
   const mountRemote = async () => {
     const remote = remoteCwd();
+    // The machine is saved here, so only its connection decides what the Explorer shows.
+    adoptRemoteMachineInventory([
+      { id: "m1", name: "Desk", endpoint: "http://desk", environmentId: "machine-1" },
+    ]);
+    // The machine answers its folder reads with an empty folder.
+    setRemoteCommandRunner(async () => []);
     cwd = remote;
     props = { ...props, cwd: remote };
     await act(async () => root.render(createElement(FileTree, props)));
   };
   afterEach(() => resetRemoteHealth());
 
-  it("disables New File and New Folder with the reason while the machine is unreachable", async () => {
+  it("keeps the loaded tree, dimmed with the reconnect notice, while the machine is offline", async () => {
+    const reads = vi.fn(async () => [] as FsEntry[]);
     await mountRemote();
-    await act(async () => {
-      reportRemoteLoad(remoteCwd(), "files", new Error("Machine is unreachable"));
-    });
+    setRemoteCommandRunner(reads);
+    expect(container.querySelector("[data-explorer-root]")).not.toBeNull();
+
+    // Another view's request found the machine down: this one has no failure of its own.
+    await act(async () => recordRemoteConnection("machine-1", new Error("Machine is unreachable")));
+
+    expect(container.querySelector("[data-machine-unavailable]")).toBeNull();
+    expect(container.querySelector("[data-explorer-root]")).not.toBeNull();
+    expect(container.querySelector('[role="tree"]')?.className).toContain("opacity-60");
+    expect(container.textContent).toContain("Can’t reach");
+    expect(reads).not.toHaveBeenCalled();
     for (const action of ["new-file", "new-folder"]) {
-      expect(header(action).disabled).toBe(true);
-      expect(header(action).getAttribute("aria-label")).toContain("This machine is unreachable");
-      expect(header(action).getAttribute("title")).toBeNull();
-      expect(await tooltipText(header(action))).toContain("This machine is unreachable");
+      expect(header(action).getAttribute("aria-disabled")).toBe("true");
+      expect(header(action).getAttribute("aria-description")).toContain(
+        "This machine is unreachable",
+      );
     }
-    await act(async () => header("new-file").click());
-    expect(nameInput()).toBeNull();
-    // The context menu states the same reason instead of a silent dead item.
-    await contextMenu(container.querySelector("[data-explorer-root]")!);
-    const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
-      (button) => button.textContent?.trim().startsWith("New File"),
-    )!;
-    expect(item.getAttribute("aria-disabled") === "true" || item.disabled).toBe(true);
-    expect(item.textContent).toContain("This machine is unreachable");
+
+    // Recovery: the notice goes and creating works again.
+    await act(async () => notifyRemoteRecovered("machine-1"));
+    await act(async () => recordRemoteConnection("machine-1"));
+    expect(container.textContent).not.toContain("Can’t reach");
+    expect(header("new-file").getAttribute("aria-disabled")).toBeNull();
   });
 
-  it("names the pairing and host-update reasons separately", async () => {
+  it("waits before showing the shared notice when an offline tree has no data", async () => {
+    vi.useFakeTimers();
+    try {
+      const reads = vi.fn(async () => [] as FsEntry[]);
+      setRemoteCommandRunner(reads);
+      adoptRemoteMachineInventory([
+        { id: "m1", name: "Desk", endpoint: "http://desk", environmentId: "machine-1" },
+      ]);
+      recordRemoteConnection("machine-1", new Error("Machine is unreachable"));
+      cwd = remoteCwd();
+      props = { ...props, cwd };
+      await act(async () => root.render(createElement(FileTree, props)));
+
+      expect(container.querySelector("[data-explorer-root]")).toBeNull();
+      expect(container.querySelector('[data-machine-unavailable="offline"]')).toBeNull();
+      await act(async () => vi.advanceTimersByTimeAsync(3_000));
+      expect(
+        container.querySelector('[data-machine-unavailable="offline"]')?.textContent,
+      ).toContain("isn’t reachable right now");
+      expect(reads).not.toHaveBeenCalled();
+
+      // The machine answers again: the tree mounts and loads.
+      await act(async () => notifyRemoteRecovered("machine-1"));
+      await act(async () => recordRemoteConnection("machine-1"));
+      expect(container.querySelector("[data-machine-unavailable]")).toBeNull();
+      expect(container.querySelector("[data-explorer-root]")).not.toBeNull();
+      expect(reads).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("still replaces a loaded tree when the machine is turned off", async () => {
+    await mountRemote();
+    await act(async () => setMachineEnabled("machine-1", false));
+    expect(container.querySelector("[data-explorer-root]")).toBeNull();
+    expect(container.querySelector('[data-machine-unavailable="turned-off"]')).not.toBeNull();
+    await act(async () => setMachineEnabled("machine-1", true));
+  });
+
+  it("replaces a loaded tree with the pairing notice, whatever was cached", async () => {
     await mountRemote();
     await act(async () => {
       reportRemoteLoad(
@@ -402,20 +462,23 @@ describe("Explorer create availability", () => {
         new Error("Host identity changed. Add this machine again before continuing."),
       );
     });
-    expect(header("new-folder").getAttribute("aria-label")).toContain(
-      "Pair this machine again to change files",
-    );
+    expect(container.querySelector("[data-explorer-root]")).toBeNull();
+    expect(container.querySelector('[data-machine-unavailable="pairing-refused"]')).not.toBeNull();
+  });
+
+  it("names the host-update reason for creating", async () => {
+    await mountRemote();
     await act(async () => {
       reportRemoteLoad(remoteCwd(), "files", new Error("Unsupported host method"));
     });
-    expect(header("new-folder").getAttribute("aria-label")).toContain(
+    expect(header("new-folder").getAttribute("aria-description")).toContain(
       "Update the host to change files",
     );
   });
 
   it("keeps creating available for a reachable root", async () => {
     await mount(null);
-    expect(header("new-file").disabled).toBe(false);
-    expect(header("new-file").getAttribute("aria-label")).not.toContain("(");
+    expect(header("new-file").getAttribute("aria-disabled")).toBeNull();
+    expect(header("new-file").getAttribute("aria-description")).toBeNull();
   });
 });

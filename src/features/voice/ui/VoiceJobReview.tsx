@@ -17,7 +17,6 @@ import { t } from "../../../shared/i18n";
 import type { VoiceJobDraft, VoiceJobReviewState } from "../model/voiceJobs";
 import styles from "./VoiceJobReview.module.css";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -57,6 +56,7 @@ export function VoiceJobReview({
     <Button
       variant="primary"
       loading={review.busy}
+      disabledReason={t("Complete every job and pick an available project before starting.")}
       disabled={rows.some(
         (row) =>
           !assistantJobDraftReady(row) ||
@@ -70,31 +70,32 @@ export function VoiceJobReview({
       )}
       onClick={() => onStart(rows)}
     >
-      {t(
-        review.error
-          ? "Check and retry"
-          : rows.every((row) => row.kind === "quick" && row.quickAction?.kind === "note")
-            ? "Save notes"
-            : rows.every((row) => row.kind === "quick" && row.quickAction?.kind === "automation")
-              ? "Create automations"
-              : "Start jobs",
-      )}
+      {review.error
+        ? t("Check and retry")
+        : rows.every((row) => row.kind === "quick" && row.quickAction?.kind === "note")
+          ? t("Save notes")
+          : rows.every((row) => row.kind === "quick" && row.quickAction?.kind === "automation")
+            ? t("Create automations")
+            : t("Start jobs")}
     </Button>
   );
   return (
     <Modal
       title={t("Review jobs before starting")}
-      description={t("Say “start” to approve or “cancel” to close.")}
       size="md"
       fitViewport
       onClose={() => {
         if (!review.busy) onCancel();
       }}
-      footerStart={review.error ? <InlineError>{review.error}</InlineError> : undefined}
+      footerStart={
+        review.error ? (
+          <InlineError details={review.error}>{t("The jobs could not be started.")}</InlineError>
+        ) : undefined
+      }
       footer={
         <ModalActions>
           <Button variant="ghost" disabled={review.busy} onClick={onCancel}>
-            {t("Cancel review")}
+            {t("Cancel")}
           </Button>
           {start}
         </ModalActions>
@@ -103,9 +104,10 @@ export function VoiceJobReview({
       <div className={styles.review}>
         {rows.map((row, index) => (
           <FieldGroup
-            {...surfaceAttributes({ variant: "card", frame: "card", radius: "card" }, styles.job)}
+            variant="card"
             key={row.id}
             legend={t("Job {p0}", { p0: index + 1 })}
+            hideLegend={rows.length === 1}
             disabled={locked}
           >
             <Select
@@ -147,7 +149,8 @@ export function VoiceJobReview({
               value={row.request}
               maxLength={16000}
               minRows={2}
-              maxRows={5}
+              maxRows={12}
+              autosize
               onChange={(event) => update(row.id, { request: event.currentTarget.value })}
             />
             {row.kind === "quick" && row.quickAction?.kind === "note" ? (
@@ -184,24 +187,27 @@ export function VoiceJobReview({
                     update(row.id, selectAssistantJobProjects(row.projectId, projectIds))
                   }
                 />
-                <SearchableSelect
-                  label={t("Lead project")}
-                  value={row.projectId}
-                  disabled={locked || !assistantJobProjectIds(row).length}
-                  options={review.projects
-                    .filter((project) => assistantJobProjectIds(row).includes(project.id))
-                    .map((project) => ({
-                      value: project.id,
-                      label: project.name,
-                      description: project.path,
-                    }))}
-                  onChange={(projectId) =>
-                    update(
-                      row.id,
-                      selectAssistantJobProjects(projectId, assistantJobProjectIds(row)),
-                    )
-                  }
-                />
+                {/* With one project it is the lead; the choice only exists among several. */}
+                {assistantJobProjectIds(row).length > 1 ? (
+                  <SearchableSelect
+                    label={t("Lead project")}
+                    value={row.projectId}
+                    disabled={locked}
+                    options={review.projects
+                      .filter((project) => assistantJobProjectIds(row).includes(project.id))
+                      .map((project) => ({
+                        value: project.id,
+                        label: project.name,
+                        description: project.path,
+                      }))}
+                    onChange={(projectId) =>
+                      update(
+                        row.id,
+                        selectAssistantJobProjects(projectId, assistantJobProjectIds(row)),
+                      )
+                    }
+                  />
+                ) : null}
               </>
             )}
           </FieldGroup>

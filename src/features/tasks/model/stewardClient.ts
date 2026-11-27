@@ -29,9 +29,9 @@ import {
   HOST_STEWARDS,
   type HostSteward,
   type HostStewardInput,
-  type StewardRunStatus,
 } from "./hostStewards";
-import { TASK_AGENT_ERROR, TASK_MACHINE_ERROR, type BoardTask } from "./taskClient";
+import type { BoardTask } from "./taskClient";
+import { taskClientErrors } from "./taskClientErrors";
 
 /** A host steward as this desktop shows it: on its machine, for its project. */
 export type BoardSteward = HostSteward & {
@@ -41,11 +41,19 @@ export type BoardSteward = HostSteward & {
   cwd: string;
   /** The machine did not answer; this is what it last reported. */
   stale?: boolean;
+  pendingRefresh?: boolean;
 };
 
 /** What the steward form edits. A draft with an ID edits that steward. */
 export type StewardDraft = {
   id?: string;
+  /** The Host's copy of the steward as this edit opened. Edits only: the Host
+   * refuses the save when the steward changed elsewhere meanwhile. A create
+   * never has one. */
+  expectedConfiguration?: HostSteward;
+  /** Identifies one create intent. A retry of the same draft reuses it, so a save
+   * whose reply was lost updates the steward the Host already kept. */
+  creationId?: string;
   cwd: string;
   focus: string;
   scheduleKind: AutomationScheduleKind;
@@ -66,14 +74,6 @@ export type StewardDraft = {
   enabled: boolean;
 };
 
-export const STEWARD_STATUS_LABELS: Record<StewardRunStatus, string> = {
-  running: "Running",
-  succeeded: "Succeeded",
-  failed: "Failed",
-  skipped: "Skipped",
-  cancelled: "Stopped",
-};
-
 /** Machines whose host runs stewards, this computer's included. */
 export function stewardMachines(fresh = false): Promise<RemoteMachine[]> {
   return backgroundMachines(HOST_STEWARDS, fresh);
@@ -86,6 +86,7 @@ export function newStewardDraft(
   routingSupported = false,
 ): StewardDraft {
   return {
+    creationId: crypto.randomUUID(),
     cwd,
     focus: "",
     scheduleKind: "daily",
@@ -105,9 +106,23 @@ export function newStewardDraft(
   };
 }
 
+/** The Host's own steward, without the board's per-machine fields, which the
+ * Host's strict contract refuses. */
+export function hostStewardSnapshot(steward: BoardSteward): HostSteward {
+  const {
+    machineId: _machineId,
+    machineName: _machineName,
+    cwd: _cwd,
+    stale: _stale,
+    ...host
+  } = steward;
+  return structuredClone(host);
+}
+
 export function draftFromSteward(steward: BoardSteward): StewardDraft {
   return {
     id: steward.id,
+    expectedConfiguration: hostStewardSnapshot(steward),
     cwd: steward.cwd,
     focus: steward.focus,
     scheduleKind: steward.scheduleKind,
@@ -135,7 +150,7 @@ export function hostStewardFromDraft(
   id: string,
   projectId: string,
 ): HostStewardInput {
-  if (!isRemoteProvider(draft.harness)) throw new Error(TASK_AGENT_ERROR);
+  if (!isRemoteProvider(draft.harness)) throw new Error(taskClientErrors.agent());
   return {
     id,
     projectId,
@@ -228,13 +243,23 @@ export async function saveSteward(
   draft: StewardDraft,
 ): Promise<BoardSteward> {
   const machine = backgroundMachineFor(machines, draft.cwd);
-  if (!machine) throw new Error(TASK_MACHINE_ERROR);
+  if (!machine) throw new Error(taskClientErrors.machine());
   const project = await hostProjectFor(machine, draft.cwd);
   const saved = await remoteRequest<HostSteward>(
     machine.id,
     "stewards.save",
     {
-      steward: hostStewardFromDraft(draft, draft.id ?? crypto.randomUUID(), project.id),
+      steward: {
+        ...hostStewardFromDraft(
+          draft,
+          draft.id ?? draft.creationId ?? crypto.randomUUID(),
+          project.id,
+        ),
+        // Only an edit compares against what it opened; a create is keyed by its creation ID.
+        ...(draft.id && draft.expectedConfiguration
+          ? { expectedConfiguration: draft.expectedConfiguration }
+          : {}),
+      },
     },
     false,
     true,
@@ -246,8 +271,8 @@ function stewardRequest<T = unknown>(steward: BoardSteward, method: string): Pro
   return remoteRequest<T>(steward.machineId, method, { stewardId: steward.id }, false, true);
 }
 
-/** Keep desktop bindings while replacing host fields, including optional run
- * metadata or errors that disappeared from the authoritative response. */
+/** Keep desktop bindings while replacing host fields, including optional
+ * errors that disappeared from the authoritative response. */
 function updatedSteward(steward: BoardSteward, updated: HostSteward): BoardSteward {
   return {
     ...updated,
@@ -266,11 +291,16 @@ export async function setStewardEnabled(
     steward.machineId,
     "stewards.save",
     {
-      steward: hostStewardFromDraft(
-        { ...draftFromSteward(steward), enabled },
-        steward.id,
-        steward.projectId,
-      ),
+      steward: {
+        ...hostStewardFromDraft(
+          { ...draftFromSteward(steward), enabled },
+          steward.id,
+          steward.projectId,
+        ),
+        // The toggle rebuilds the whole steward from the board's copy, so the Host
+        // must refuse it when that copy is no longer what it stores.
+        expectedConfiguration: hostStewardSnapshot(steward),
+      },
     },
     false,
     true,

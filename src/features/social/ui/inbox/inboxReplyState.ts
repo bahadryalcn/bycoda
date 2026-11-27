@@ -1,12 +1,20 @@
 import type { SocialClient } from "../../model/socialClient";
+import type { InstagramDirectMediaKind } from "../../../../integrations/social/adapters/instagram-direct-media";
 import type { InboxReplyOperation } from "./inboxReplyOperation";
 
-type ReplyDraft = { text: string; factIds: string[] };
+export type ReplyDraft = {
+  text: string;
+  factIds: string[];
+  instagramPrivateReply?: true;
+  instagramAttachment?: { kind: InstagramDirectMediaKind; url: string; file?: File };
+};
 type ReplyState = {
   draft: ReplyDraft;
   operation?: InboxReplyOperation;
   busy: "" | "suggest" | "send";
   error: string;
+  /** Raw Host text behind `error`, shown under Details rather than inside the sentence. */
+  errorDetail: string;
   queued: boolean;
 };
 
@@ -17,6 +25,7 @@ function createState() {
     draft: { text: "", factIds: [] },
     busy: "",
     error: "",
+    errorDetail: "",
     queued: false,
   };
   const listeners = new Set<() => void>();

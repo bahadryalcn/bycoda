@@ -13,6 +13,8 @@ export type Group = {
   pages: number;
   error?: string;
   stale?: boolean;
+  /** Local time of the last successful read of this group. */
+  verifiedAt?: number;
   autoPaused?: boolean;
   cursors?: string[];
 };

@@ -5,6 +5,13 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Select } from "./Select";
 import { SelectValue } from "./arc/select/select";
 
+it("shows the selected label at full opacity on first mount", async () => {
+  await act(async () => root.render(createElement(SelectValue, { value: "a", label: "Portal" })));
+  const label = container.querySelector<HTMLElement>("span > span");
+  expect(label?.textContent).toBe("Portal");
+  expect(label?.style.opacity).not.toBe("0");
+});
+
 it("replaces the selected label without overlapping outgoing text", async () => {
   await act(async () => root.render(createElement(SelectValue, { value: "a", label: "Portal" })));
   await act(async () => root.render(createElement(SelectValue, { value: "b", label: "Website" })));
@@ -23,8 +30,34 @@ it("explains an empty list without offering a selectable value", async () => {
     ),
   );
   await act(async () => trigger().click());
-  expect(menu()?.querySelector('[role="status"]')?.textContent).toBe("No matching options");
+  expect(menu()?.querySelector('[role="status"]')?.textContent).toBe("No options available");
   expect(menu()?.querySelector('[role="option"]')).toBeNull();
+  await act(async () => key(menu()!, "Enter"));
+  expect(change).not.toHaveBeenCalled();
+});
+
+it("lets the keyboard inspect a disabled option without selecting it", async () => {
+  await act(async () =>
+    root.render(
+      createElement(Select, {
+        label: "Choice",
+        value: "a",
+        options: [
+          ...options,
+          { value: "c", label: "Gamma", disabled: true, disabledReason: "Offline" },
+        ],
+        onValueChange: change,
+      }),
+    ),
+  );
+  await act(async () => trigger().click());
+  await act(async () => key(menu()!, "End"));
+  const activeId = menu()?.getAttribute("aria-activedescendant") ?? "";
+  const active = document.getElementById(activeId);
+  expect(active?.getAttribute("aria-disabled")).toBe("true");
+  expect(document.getElementById(active?.getAttribute("aria-describedby") ?? "")?.textContent).toBe(
+    "Offline",
+  );
   await act(async () => key(menu()!, "Enter"));
   expect(change).not.toHaveBeenCalled();
 });

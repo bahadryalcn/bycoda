@@ -33,6 +33,61 @@ const draft = (): ModelRoutingDraft => ({
   ...structuredClone(EMPTY_MODEL_ROUTING),
   entries: [{ id: "a", harness: "codex", model: "x", modelSettings: {}, unknownLimit: "use" }],
 });
+
+it("persists pool effort and resolves it against the chosen model's supported settings", async () => {
+  const service = createModelRoutingService({
+    store,
+    accounts: async () => ({}),
+    catalog: async () => ({
+      models: {
+        codex: [
+          {
+            id: "x",
+            settings: [
+              {
+                id: "reasoningEffort",
+                label: "Reasoning effort",
+                kind: "select",
+                value: "low",
+                options: ["low", "medium", "xhigh"].map((value) => ({ value, label: value })),
+              },
+            ],
+          },
+        ],
+      },
+    }),
+    signals: async () => ({
+      available: () => true,
+      signedIn: () => true,
+      accountKind: () => undefined,
+      quota: () => ({ unknown: true }),
+    }),
+  });
+  const next = draft();
+  next.entries[0]!.modelSettings = { reasoningEffort: "low", fast: "on" };
+  next.pools = [
+    { id: "outer", name: "Outer", entryIds: [], poolIds: ["inner"], effort: "high" },
+    { id: "inner", name: "Inner", entryIds: ["a"], effort: "low" },
+    { id: "legacy", name: "Legacy", entryIds: ["a"] },
+  ];
+  next.roles["task.worker"] = { kind: "pool", poolId: "outer" };
+  expect((await service.save(0, next)).pools).toEqual(next.pools);
+  await expect(
+    service.resolve({
+      role: "task.worker",
+      eligible: (target) => target.modelSettings.reasoningEffort === "medium",
+    }),
+  ).resolves.toMatchObject({
+    ok: true,
+    source: { kind: "pool", poolId: "outer", entryId: "a" },
+    target: { modelSettings: { reasoningEffort: "medium", fast: "on" } },
+  });
+  for (const choice of [{ kind: "order" }, { kind: "pool", poolId: "legacy" }] as const)
+    await expect(service.resolve({ role: "task.worker", choice })).resolves.toMatchObject({
+      ok: true,
+      target: { modelSettings: { reasoningEffort: "low", fast: "on" } },
+    });
+});
 function setup() {
   const signals = vi.fn(async () => ({
     available: () => true,
@@ -66,8 +121,12 @@ it("serializes competing optimistic saves; exactly one wins", async () => {
   const { service } = setup();
   const results = await Promise.allSettled([service.save(0, draft()), service.save(0, draft())]);
   expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-  expect(results.find((result) => result.status === "rejected")).toMatchObject({
-    reason: new Error("Model routing changed; reload before saving."),
+  const refused = results.find((result) => result.status === "rejected");
+  expect(refused).toMatchObject({
+    reason: {
+      code: "MODEL_ROUTING_CONFLICT",
+      message: "MODEL_ROUTING_CONFLICT: Model routing changed; reload before saving.",
+    },
   });
   expect((await service.get()).version).toBe(1);
 });
@@ -92,7 +151,7 @@ it("does not reinterpret corrupt storage as unconfigured", async () => {
 it("exposes status and typed in-process run-start resolution", async () => {
   const { service } = setup();
   await service.save(0, draft());
-  expect(await service.status()).toEqual([{ entryId: "a" }]);
+  expect(await service.status()).toEqual([{ entryId: "a", limitState: "unavailable" }]);
   expect(await resolveModelChoice(service, { role: "task.worker" })).toMatchObject({
     ok: true,
     source: { kind: "order", entryId: "a" },
@@ -209,4 +268,48 @@ it("persists calendar caps and rejects invalid values without changing the docum
   invalid.workCaps!.total!.daily!.costUsd = Infinity;
   await expect(setup().service.save(1, invalid)).rejects.toThrow();
   expect((await readModelRouting(store)).version).toBe(1);
+});
+
+it("saves unrelated edits over a persisted target on a removed account without rebinding it", async () => {
+  const STALE = "account-gone";
+  const stale = {
+    ...structuredClone(EMPTY_MODEL_ROUTING),
+    version: 4,
+    updatedAt: 1,
+    entries: [
+      {
+        id: "a",
+        harness: "codex",
+        model: "x",
+        providerAccountId: STALE,
+        modelSettings: {},
+        unknownLimit: "use",
+      },
+    ],
+  };
+  await store.db.exec(
+    "CREATE TABLE IF NOT EXISTS host_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+  );
+  await store.db
+    .prepare("INSERT INTO host_settings VALUES (?, ?)")
+    .run("modelRouting", JSON.stringify(stale));
+  const { service } = setup();
+  const { version: _v, updatedAt: _u, ...storedDraft } = stale;
+  const edit = structuredClone(storedDraft) as ModelRoutingDraft;
+  edit.entries[0]!.minRemainingPercent = 15;
+  const saved = await service.save(4, edit);
+  expect(saved.version).toBe(5);
+  expect(saved.entries[0]).toMatchObject({ providerAccountId: STALE, minRemainingPercent: 15 });
+  const { version: _sv, updatedAt: _su, ...savedDraft } = saved;
+  const invalid = structuredClone(savedDraft) as ModelRoutingDraft;
+  invalid.entries.push({
+    id: "b",
+    harness: "codex",
+    model: "x",
+    providerAccountId: "account-new",
+    modelSettings: {},
+    unknownLimit: "use",
+  });
+  await expect(service.save(5, invalid)).rejects.toThrow('Unknown codex account "account-new"');
+  expect((await readModelRouting(store)).version).toBe(5);
 });

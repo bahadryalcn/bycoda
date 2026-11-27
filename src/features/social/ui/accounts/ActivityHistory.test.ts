@@ -34,7 +34,10 @@ const job = (patch: Partial<SocialJob>) =>
 function render(jobs: SocialJob[], actions: unknown[] = []) {
   const client = {
     sectionSnapshot: vi.fn(async () => ({ snapshot: { jobs } })),
-    ai: { actions: vi.fn(async () => ({ items: actions })), undo: vi.fn(async () => ({})) },
+    ai: {
+      actions: vi.fn(async () => ({ items: actions })),
+      undo: vi.fn(async () => ({})),
+    },
   } as unknown as SocialClient;
   act(() => root.render(createElement(ActivityHistory, { client, accounts })));
 }
@@ -85,11 +88,17 @@ it("hides Undo for an AI action without an inverse and shows the reason directly
   await act(async () => undefined);
   expect(element.textContent).toContain("Replied to a comment");
   expect(buttonNamed("Undo")).toBeUndefined();
-  expect(element.textContent).toContain("This action cannot be undone.");
 });
 
 it("keeps a review row with its plain reason", async () => {
   render([job({ status: "review", reviewReason: "awaiting_approval" })]);
   await act(async () => undefined);
   expect(element.textContent).toContain("Waiting for your approval");
+});
+
+it("names a job whose account was removed without a dangling separator", async () => {
+  render([job({ accountId: "removed" })]);
+  await act(async () => undefined);
+  expect(element.textContent).toContain("Publishing · Removed account");
+  expect(element.textContent).not.toContain("Publishing · Studio");
 });

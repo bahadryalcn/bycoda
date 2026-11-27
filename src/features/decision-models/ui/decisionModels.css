@@ -1,14 +1,9 @@
+/* Sections follow the standard settings rhythm; nothing here scrolls inside the page. */
 .decision-models-page {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  gap: var(--space-1);
-  --settings-group-gap: var(--space-1);
-}
-.decision-discovery-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--settings-group-gap, var(--ui-space-6, 1.5rem));
 }
 .decision-routing-row {
   display: grid;
@@ -30,19 +25,7 @@
   .decision-routing-task {
     grid-column: 1 / -1;
   }
-}
-
-@media (max-width: 900px) {
   .decision-source-duplicate {
     max-width: 7rem;
   }
-}
-
-.decision-sources {
-  max-block-size: 18rem;
-  overflow-y: auto;
-}
-.decision-routing-list {
-  max-block-size: 24rem;
-  overflow-y: auto;
 }

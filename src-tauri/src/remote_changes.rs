@@ -3,7 +3,7 @@
 //! crashed window; an empty subscription explicitly releases a healthy window.
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 /// Git cursors a host answers per poll.
@@ -66,17 +66,55 @@ impl Reads {
                 .clone()
                 .unwrap_or_else(|| Err("Shared remote read ended".into()));
         }
+        let mut leader = ReadLeader {
+            owner: self,
+            key,
+            entry,
+            result: None,
+        };
         let result = send();
-        *entry.result.lock().map_err(|_| "Read sharing is locked")? = Some(result.clone());
-        entry.changed.notify_all();
-        let mut entries = self.entries.lock().map_err(|_| "Read sharing is locked")?;
-        if entries
-            .get(&key)
-            .is_some_and(|current| Arc::ptr_eq(current, &entry))
-        {
-            entries.remove(&key);
-        }
+        leader.result = Some(result.clone());
         result
+    }
+}
+
+/// Publishes the leader's outcome and retires its key when the leader returns
+/// or unwinds. A panic in `send` therefore wakes followers with an error
+/// instead of leaving the key to time them out.
+struct ReadLeader<'a> {
+    owner: &'a Reads,
+    key: String,
+    entry: Arc<ReadEntry>,
+    result: Option<Result<Value, String>>,
+}
+impl Drop for ReadLeader<'_> {
+    fn drop(&mut self) {
+        let result = self
+            .result
+            .take()
+            .unwrap_or_else(|| Err("Shared remote read ended".into()));
+        {
+            let mut slot = self
+                .entry
+                .result
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            if slot.is_none() {
+                *slot = Some(result);
+            }
+        }
+        self.entry.changed.notify_all();
+        let mut entries = self
+            .owner
+            .entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if entries
+            .get(&self.key)
+            .is_some_and(|current| Arc::ptr_eq(current, &self.entry))
+        {
+            entries.remove(&self.key);
+        }
     }
 }
 #[derive(Default)]
@@ -205,6 +243,11 @@ impl Changes {
             let instance_generation = state.instance_generation;
             state.refresh_running = true;
             drop(state);
+            let mut leader = RefreshLeader {
+                entry: &entry,
+                demand_generation,
+                done: false,
+            };
             let result =
                 send(request.clone()).and_then(|response| checked_response(&request, response));
             let mut state = entry.state.lock().map_err(|_| "Control lane is locked")?;
@@ -212,6 +255,7 @@ impl Changes {
             state.refresh_running = false;
             state.refresh_generation = Some(demand_generation);
             state.refresh_result = Some(result.clone());
+            leader.done = true;
             entry.changed.notify_all();
             return window_result(
                 result,
@@ -246,6 +290,10 @@ impl Changes {
         let instance_generation = state.instance_generation;
         state.running = true;
         drop(state);
+        let mut leader = PollLeader {
+            entry: &entry,
+            done: false,
+        };
         let result =
             send(request.clone()).and_then(|response| checked_response(&request, response));
         let mut state = entry.state.lock().map_err(|_| "Control lane is locked")?;
@@ -253,12 +301,62 @@ impl Changes {
         state.running = false;
         state.generation += 1;
         state.result = Some(result.clone());
+        leader.done = true;
         entry.changed.notify_all();
         window_result(
             result,
             window_instance.as_deref(),
             state.instance.as_deref(),
         )
+    }
+}
+
+/// Ends a held-poll leader when it returns or unwinds. A panic inside the
+/// caller's `send` otherwise leaves `running` set, so every later request for
+/// the machine would wait out its timeout. Bumping `generation` wakes followers
+/// with an error result, so none of them sends the request again.
+struct PollLeader<'a> {
+    entry: &'a Entry,
+    done: bool,
+}
+impl Drop for PollLeader<'_> {
+    fn drop(&mut self) {
+        if self.done {
+            return;
+        }
+        let mut state = self
+            .entry
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        state.running = false;
+        state.generation += 1;
+        state.result = Some(Err("Remote control request ended".into()));
+        self.entry.changed.notify_all();
+    }
+}
+
+/// Ends a short-refresh leader when it returns or unwinds. Followers that joined
+/// the same demand generation receive the error instead of re-sending.
+struct RefreshLeader<'a> {
+    entry: &'a Entry,
+    demand_generation: u64,
+    done: bool,
+}
+impl Drop for RefreshLeader<'_> {
+    fn drop(&mut self) {
+        if self.done {
+            return;
+        }
+        let mut state = self
+            .entry
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        state.refresh_running = false;
+        state.refresh_generation = Some(self.demand_generation);
+        state.refresh_result = Some(Err("Remote demand refresh ended".into()));
+        self.entry.changed.notify_all();
     }
 }
 
@@ -995,5 +1093,162 @@ mod tests {
                 .unwrap();
         }
         assert_eq!(calls.get(), 2);
+    }
+
+    fn wait_for_window(changes: &Changes, machine: &str, window: &str) {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            let registered = changes
+                .entries
+                .lock()
+                .unwrap()
+                .get(machine)
+                .is_some_and(|entry| entry.state.lock().unwrap().windows.contains_key(window));
+            if registered {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "window {window} never registered"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn leader_panic_releases_the_lane_and_wakes_followers_without_resending() {
+        let changes = Arc::new(Changes::default());
+        let params =
+            json!({"sessions":[{"sessionId":"s","revision":1}],"projects":[],"waitMs":20000});
+        let (entered, wait_entered) = std::sync::mpsc::channel();
+        let (release, wait_release) = std::sync::mpsc::channel::<()>();
+        let leader = changes.clone();
+        let leader_params = params.clone();
+        let leader_thread = std::thread::spawn(move || {
+            leader.request("m", "a", leader_params, |_| {
+                entered.send(()).unwrap();
+                wait_release.recv_timeout(Duration::from_secs(3)).unwrap();
+                panic!("send panicked");
+            })
+        });
+        wait_entered.recv_timeout(Duration::from_secs(3)).unwrap();
+        let follower = changes.clone();
+        let follower_thread = std::thread::spawn(move || {
+            follower.request("m", "b", params, |_| panic!("follower must not send"))
+        });
+        wait_for_window(&changes, "m", "b");
+        release.send(()).unwrap();
+        assert!(leader_thread.join().is_err());
+        assert_eq!(
+            follower_thread.join().unwrap().unwrap_err(),
+            "Remote control request ended"
+        );
+
+        let started = Instant::now();
+        let sends = std::cell::Cell::new(0);
+        changes
+            .request(
+                "m",
+                "c",
+                json!({"sessions":[{"sessionId":"c","revision":1}],"projects":[],"waitMs":20000}),
+                |_| {
+                    sends.set(sends.get() + 1);
+                    Ok(json!({"instanceId":"boot"}))
+                },
+            )
+            .unwrap();
+        assert_eq!(sends.get(), 1);
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn refresh_leader_panic_clears_refresh_and_publishes_an_error() {
+        let changes = Arc::new(Changes::default());
+        let (entered, wait_entered) = std::sync::mpsc::channel();
+        let (release, wait_release) = std::sync::mpsc::channel::<()>();
+        let poll = changes.clone();
+        let poll_thread = std::thread::spawn(move || {
+            poll.request(
+                "m",
+                "a",
+                json!({"sessions":[{"sessionId":"old","revision":1}],"projects":[],"waitMs":20000}),
+                |_| {
+                    entered.send(()).unwrap();
+                    wait_release.recv_timeout(Duration::from_secs(3)).unwrap();
+                    Ok(json!({"instanceId":"boot"}))
+                },
+            )
+        });
+        wait_entered.recv_timeout(Duration::from_secs(3)).unwrap();
+        let refresh = changes.clone();
+        let refresh_thread = std::thread::spawn(move || {
+            refresh.request(
+                "m",
+                "b",
+                json!({"sessions":[{"sessionId":"new","revision":2}],"projects":[],"waitMs":0}),
+                |_| panic!("refresh send panicked"),
+            )
+        });
+        assert!(refresh_thread.join().is_err());
+        {
+            let entries = changes.entries.lock().unwrap();
+            let state = entries["m"].state.lock().unwrap();
+            assert!(!state.refresh_running);
+            assert_eq!(
+                state.refresh_result.clone(),
+                Some(Err("Remote demand refresh ended".to_owned()))
+            );
+            assert!(state.running);
+        }
+        release.send(()).unwrap();
+        poll_thread.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn read_leader_panic_retires_the_key_and_wakes_followers() {
+        let reads = Arc::new(Reads::default());
+        let (entered, wait_entered) = std::sync::mpsc::channel();
+        let (release, wait_release) = std::sync::mpsc::channel::<()>();
+        let leader = reads.clone();
+        let leader_thread = std::thread::spawn(move || {
+            leader.request("same".into(), Duration::from_secs(35), || {
+                entered.send(()).unwrap();
+                wait_release.recv_timeout(Duration::from_secs(3)).unwrap();
+                panic!("read panicked");
+            })
+        });
+        wait_entered.recv_timeout(Duration::from_secs(3)).unwrap();
+        let follower = reads.clone();
+        let follower_thread = std::thread::spawn(move || {
+            follower.request("same".into(), Duration::from_secs(35), || {
+                panic!("follower must not send")
+            })
+        });
+        let deadline = Instant::now() + Duration::from_secs(3);
+        // The leader's map entry plus the leader guard plus the joined follower.
+        while reads
+            .entries
+            .lock()
+            .unwrap()
+            .get("same")
+            .map(Arc::strong_count)
+            != Some(3)
+        {
+            assert!(Instant::now() < deadline, "follower never joined the read");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        release.send(()).unwrap();
+        assert!(leader_thread.join().is_err());
+        assert_eq!(
+            follower_thread.join().unwrap().unwrap_err(),
+            "Shared remote read ended"
+        );
+        assert!(reads.entries.lock().unwrap().is_empty());
+        assert_eq!(
+            reads
+                .request("same".into(), Duration::from_secs(35), || Ok(json!(2)))
+                .unwrap(),
+            json!(2)
+        );
     }
 }

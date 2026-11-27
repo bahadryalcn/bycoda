@@ -1,10 +1,10 @@
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
-import { LiveText } from "../../../shared/ui/LiveText";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { fetchCheckDetails } from "../model/prChecks";
+import { CiRepairStartError, presentCiRepairError } from "../model/ciRepairError";
 import type { CodeHostProvider } from "../model/githubPrChecks";
 import { t, useLocale } from "../../../shared/i18n";
 import {
@@ -95,7 +95,8 @@ export function CheckRepairForm({
     onClose();
     if (restoreFocus && anchor instanceof HTMLElement && anchor.isConnected) anchor.focus();
   }
-  const [error, setError] = useState<string | null>(null);
+  // The thrown value is kept and presented at render so the sentence follows the language.
+  const [error, setError] = useState<{ reason: unknown } | null>(null);
   const [accountChanged, setAccountChanged] = useState(false);
   const starting = useRef(false);
   const mounted = useRef(true);
@@ -110,7 +111,12 @@ export function CheckRepairForm({
     const changed = () => {
       generation.current += 1;
       setAccountChanged(true);
-      setError(t("Account changed; reload checks before repairing."));
+      setError({
+        reason: new CiRepairStartError(
+          "accountChanged",
+          "Account changed; reload checks before repairing.",
+        ),
+      });
     };
     window.addEventListener(event, changed);
     return () => window.removeEventListener(event, changed);
@@ -164,7 +170,7 @@ export function CheckRepairForm({
       );
       if (current()) onClose();
     } catch (reason) {
-      if (current()) setError(reason instanceof Error ? reason.message : String(reason));
+      if (current()) setError({ reason });
     } finally {
       starting.current = false;
       if (mounted.current) setBusy(false);
@@ -177,7 +183,7 @@ export function CheckRepairForm({
       side="bottom"
       align="end"
       gap={6}
-      width={320}
+      size="lg"
       maxHeight={460}
       label={t("Fix checks with AI")}
       onDismiss={() => dismiss()}
@@ -213,7 +219,6 @@ export function CheckRepairForm({
               label={t("Close fix picker")}
               variant="ghost"
               type="button"
-              aria-label={t("Close fix picker")}
               onClick={() => dismiss(true)}
               className="shrink-0"
             >
@@ -224,7 +229,7 @@ export function CheckRepairForm({
             ref={searchRef}
             autoFocus={false}
             label={t("Search project chats")}
-            placeholder={t("Search chats...")}
+            placeholder={t("Search chats…")}
             value={query}
             disabled={busy}
             onValueChange={setQuery}
@@ -234,29 +239,22 @@ export function CheckRepairForm({
       }
       footer={
         <>
-          {error ? <Alert tone="danger">{error}</Alert> : null}
-          {/* Always mounted so the message is announced when the fix becomes blocked. */}
-          <LiveText
-            size="caption"
-            tone="secondary"
-            className="block px-3.5 pb-3 empty:hidden"
-            text={blocked && !busy ? t("Wait for the latest checks before starting a fix.") : ""}
-          />
+          {error ? <Alert tone="danger">{presentCiRepairError(error.reason)}</Alert> : null}
           <PickerFooter align="between" className="gap-3 px-3 py-2.5">
-            <Text as="div" size="micro" tone="inherit" className="min-w-0">
-              <Text as="p" size="inherit" tone="secondary" className="break-words">
-                {selectedTitle}
-              </Text>
-              <Text as="p" size="inherit" tone="secondary">
-                {t("CI details included")}
-              </Text>
+            <Text as="p" size="micro" tone="secondary" className="min-w-0 break-words">
+              {selectedTitle}
             </Text>
             <Button
               variant="ghost"
               type="button"
               disabled={blocked || accountChanged}
+              disabledReason={
+                blocked && !busy
+                  ? t("Wait for the latest checks before starting a fix.")
+                  : undefined
+              }
               loading={busy}
-              loadingLabel={t("Preparing...")}
+              loadingLabel={t("Preparing…")}
               onClick={() => void start()}
               className="shrink-0"
             >

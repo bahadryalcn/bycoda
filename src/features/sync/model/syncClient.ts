@@ -1,4 +1,8 @@
-import { withRoomPrivacyMutation } from "../../group-lock/model/roomPrivacyProjection";
+import {
+  getRoomPrivacyStatus,
+  settleHeldRoomPrivacyProjection,
+  withRoomPrivacyMutation,
+} from "../../group-lock/public/roomPrivacy";
 import { applyRemoteAppearanceRecords, captureLocalAppearanceChanges } from "./syncAppearance";
 import { applyRemoteGroupRecords, captureLocalGroupChanges } from "./syncGroups";
 import { applyRemoteLockRecords, captureLocalLockChanges } from "./syncLock";
@@ -25,7 +29,14 @@ import {
   resetPeerHistory,
   takeOutbox,
 } from "./syncPeerState";
-import { remoteErrorText } from "../../connections/model/remoteFailure";
+import {
+  nativeConnectionFailureCode,
+  remoteErrorText,
+} from "../../connections/model/remoteFailure";
+import { syncOwnerFailureText } from "./nativeSyncCompletion";
+import { ROOM_PRIVACY_NOT_CONFIRMED } from "../../connections/model/syncSummary";
+import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
+import { startForegroundPolling } from "../../../shared/lib/foregroundPolling";
 import { parseSyncRecord, syncPushBatches } from "./syncProtocol";
 import type { SyncPushResult, SyncRecord } from "./syncProtocol";
 
@@ -164,16 +175,110 @@ export async function runSyncCycle(
   request: SyncRequest,
   environmentId?: string,
   current: () => boolean = () => true,
+  enqueuedAt = monotonicNow(),
+  cycleTimeout?: AbortSignal,
 ): Promise<void> {
   requireCurrent(current);
   recordSyncStatus(machineId, { state: "syncing" });
+  // The log names the request that failed, how long it ran and how many preceded it.
+  const cycleStartedAt = monotonicNow();
+  let requests = 0;
+  let last = { method: "none", startedAt: cycleStartedAt };
+  let lastCallId: string | undefined;
+  const logCall = (
+    method: string,
+    callId: string,
+    queuedAt: number,
+    sentAt: number,
+    host: unknown,
+    deadline: string,
+    error?: unknown,
+  ) => {
+    console.warn(
+      `[sync] ${JSON.stringify({
+        machineId,
+        method,
+        callId,
+        ...(error === undefined ? {} : { error: remoteErrorText(error) }),
+        cycleQueueMs: elapsedSince(enqueuedAt, cycleStartedAt),
+        enqueueToSendMs: elapsedSince(queuedAt, sentAt),
+        sendToSettlementMs: elapsedSince(sentAt),
+        totalMs: elapsedSince(queuedAt),
+        transportDefaultDeadlineMs: 30_000,
+        cycleDeadlineMs: SYNC_CYCLE_DEADLINE_MS,
+        effectiveDeadlineMs: deadline === "cycle" ? SYNC_CYCLE_DEADLINE_MS : 30_000,
+        deadline,
+        host,
+      })}`,
+    );
+  };
+  const tracked: SyncRequest = async (method, params) => {
+    requests += 1;
+    const callId = `${SYNC_CALL_PREFIX}-${++syncCallSequence}`;
+    // SyncRequest enters native IPC here. Native admission and wire time are in settlement.
+    const sentAt = monotonicNow();
+    const queuedAt = requests === 1 ? enqueuedAt : sentAt;
+    last = { method, startedAt: sentAt };
+    const logCycleTimeout = () => logCall(method, callId, queuedAt, sentAt, "no response", "cycle");
+    cycleTimeout?.addEventListener("abort", logCycleTimeout, { once: true });
+    try {
+      const result = await request(method, {
+        ...(params as Record<string, unknown>),
+        syncCallId: callId,
+      });
+      // The threshold is the request itself; time spent waiting for the cycle is only a field.
+      if (!cycleTimeout?.aborted && elapsedSince(sentAt) >= 2_000) {
+        const timings =
+          result && typeof result === "object" && "timings" in result ? result.timings : undefined;
+        logCall(method, callId, queuedAt, sentAt, timings ?? "unavailable", "none reached");
+      }
+      return result;
+    } catch (error) {
+      const wsDeadline = nativeConnectionFailureCode(error) === "RPC_WS_DEADLINE";
+      const httpDeadline = /\[RPC_TIMEOUT\]/.test(remoteErrorText(error));
+      if (!cycleTimeout?.aborted && (wsDeadline || httpDeadline || elapsedSince(sentAt) >= 2_000)) {
+        lastCallId = callId;
+        logCall(
+          method,
+          callId,
+          queuedAt,
+          sentAt,
+          "no response",
+          wsDeadline ? "ws" : httpDeadline ? "http" : "unknown",
+          error,
+        );
+      }
+      throw error;
+    } finally {
+      cycleTimeout?.removeEventListener("abort", logCycleTimeout);
+    }
+  };
   try {
     if (environmentId && !adoptPeerEnvironment(machineId, environmentId))
       throw new Error("Library sync progress could not be saved. Free storage and retry.");
-    await runSyncCycleInner(machineId, request, current);
-  } catch (error) {
-    if (!current()) throw error;
-    console.warn("[sync]", machineId, error);
+    // A held privacy failure (say a Host deadline while it restarted) refuses every local
+    // write until an explicit retry. A cycle is that retry, so one stale outage cannot
+    // pause sync until the app restarts.
+    if (getRoomPrivacyStatus().error) {
+      await settleHeldRoomPrivacyProjection();
+      requireCurrent(current);
+    }
+    await runSyncCycleInner(machineId, tracked, current);
+  } catch (caught) {
+    if (!current()) throw caught;
+    const held = getRoomPrivacyStatus().error;
+    // The held privacy text is a Host error of its own; naming it here keeps the
+    // machine row from blaming this machine's connection.
+    const error = held
+      ? new Error(`${ROOM_PRIVACY_NOT_CONFIRMED}: ${remoteErrorText(caught)}`)
+      : caught;
+    if (!lastCallId)
+      console.warn(
+        "[sync]",
+        machineId,
+        `method=${last.method} requestMs=${Math.round(elapsedSince(last.startedAt))} cycleMs=${Math.round(elapsedSince(cycleStartedAt))} requests=${requests} pending=${pendingCount(machineId)}`,
+        error,
+      );
     recordSyncStatus(machineId, {
       state: "error",
       lastError: remoteErrorText(error),
@@ -210,6 +315,8 @@ async function pullAndApply(
 ): Promise<void> {
   let untilRev: number | undefined;
   let initial = !hasPulled(machineId);
+  const previouslySupportedLayout = loadPeerState(machineId).supportsWorkspaceLayout === true;
+  let learnedWorkspaceLayout = false;
   let restarted = false;
   for (;;) {
     const sinceRev = peerRev(machineId);
@@ -222,6 +329,7 @@ async function pullAndApply(
       "sync.pull",
     );
     requireCurrent(current);
+    learnedWorkspaceLayout ||= !previouslySupportedLayout && pullRaw.workspaceLayout === true;
     if (!Number.isSafeInteger(pullRaw.rev))
       throw new Error("sync.pull returned an invalid revision");
     if (Number(pullRaw.rev) < sinceRev) {
@@ -261,6 +369,7 @@ async function pullAndApply(
       !markPulled(machineId, records, {
         rev: Number(pullRaw.rev),
         complete: false,
+        supportsWorkspaceLayout: pullRaw.workspaceLayout === true,
       })
     )
       throw new Error("Library sync progress could not be saved. Free storage and retry.");
@@ -270,17 +379,17 @@ async function pullAndApply(
   // A layout/assignment can arrive before the groups or folders it references.
   // Reapply dependency records from the durable peer cache after all pages,
   // including when an earlier pass stopped between pages.
-  if (initial || untilRev !== undefined) {
+  if (initial || untilRev !== undefined || learnedWorkspaceLayout) {
     const state = loadPeerState(machineId);
     const pending = new Set(state.outbox.map((op) => `${op.table}:${op.id}`));
+    const replayTables =
+      initial || untilRev !== undefined
+        ? new Set(["groupOrder", "railLayout", "assignment", "appearance", "workspaceLayout"])
+        : new Set(["assignment"]);
     const dependencies = Object.entries(state.recordValues).flatMap(([key, json]) => {
       const split = key.indexOf(":");
       const table = key.slice(0, split);
-      if (
-        !["groupOrder", "railLayout", "assignment", "appearance"].includes(table) ||
-        pending.has(key)
-      )
-        return [];
+      if (!replayTables.has(table) || pending.has(key)) return [];
       try {
         const record = parseSyncRecord({
           table,
@@ -307,6 +416,7 @@ async function runSyncCycleInner(
   current: () => boolean,
 ): Promise<void> {
   if (!hasPulled(machineId)) await pullAndApply(machineId, request, current);
+  const supportsWorkspaceLayout = loadPeerState(machineId).supportsWorkspaceLayout === true;
 
   await withRoomPrivacyMutation(() =>
     duringSyncWrite(() =>
@@ -314,14 +424,16 @@ async function runSyncCycleInner(
         requireCurrent(current);
         captureLocalProjectChanges(machineId);
         const projectIds = localProjectIdsByPath();
-        captureLocalGroupChanges(machineId, projectIds);
+        captureLocalGroupChanges(machineId, projectIds, supportsWorkspaceLayout);
         captureLocalAppearanceChanges(machineId, projectIds);
         captureLocalLockChanges(machineId);
       }),
     ),
   );
 
-  const outbox = takeOutbox(machineId);
+  const outbox = takeOutbox(machineId).filter(
+    (op) => supportsWorkspaceLayout || op.table !== "workspaceLayout",
+  );
   const { batches, invalid } = syncPushBatches(outbox);
   let invalidOps = invalid.length;
   for (const batch of batches) {
@@ -349,12 +461,65 @@ async function runSyncCycleInner(
 }
 
 export const CYCLE_INTERVAL_MS = 30_000;
+
 /** Rounds never start closer together than this; requests inside the window collapse into one trailing round. */
 export const MIN_CYCLE_SPACING_MS = 3_000;
 /** At most this many machines sync at once, so one slow host cannot hold the rest back. */
 export const MAX_PARALLEL_SYNCS = 3;
 export const SYNC_BACKOFF_BASE_MS = 60_000;
 export const SYNC_BACKOFF_MAX_MS = 10 * 60_000;
+/** A machine's cycle that has not settled by then is abandoned: it frees its slot and counts as a failure. */
+export const SYNC_CYCLE_DEADLINE_MS = 2 * 60_000;
+/** Correlates one sync call across client and Host logs; unique per app run, never secret. */
+const SYNC_CALL_PREFIX = Date.now().toString(36);
+let syncCallSequence = 0;
+/** Shutdown waits this long for running cycles before giving up and keeping ownership. */
+export const SYNC_STOP_DRAIN_MS = 10_000;
+
+class SyncDeadlineError extends Error {
+  constructor() {
+    super("SYNC_CYCLE_DEADLINE");
+  }
+}
+
+/** Settles like `operation`, or rejects with a deadline error once `ms` passes. The operation
+ * itself is not cancelled; its handlers stay attached, so a late outcome is never unhandled. */
+function withDeadline<T>(operation: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new SyncDeadlineError()), ms);
+    operation.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+/** Resolves with `drain`, or `false` after `ms`: `false` means "not proven settled", so window
+ * ownership stays held. A drain that rejects is also `false`. */
+export function boundedDrain(
+  drain: Promise<boolean>,
+  ms: number = SYNC_STOP_DRAIN_MS,
+): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => resolve(false), ms);
+    drain.then(
+      (settled) => {
+        clearTimeout(timer);
+        resolve(settled);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(false);
+      },
+    );
+  });
+}
 
 /** How long a machine is left out of background rounds after its nth
  * consecutive failed sync: exponential with a cap, +-20% jitter so machines
@@ -376,6 +541,7 @@ export function syncNow(machineId?: string): Promise<void> {
 }
 
 type SyncJob = {
+  enqueuedAt: number;
   promise: Promise<void>;
   resolve: () => void;
   /** A user asked for it: ignores the machine's failure backoff and the spacing. */
@@ -398,7 +564,7 @@ type MachineSlot = {
 function makeJob(explicit: boolean): SyncJob {
   let resolve: () => void = () => undefined;
   const promise = new Promise<void>((done) => (resolve = done));
-  return { promise, resolve, explicit };
+  return { promise, resolve, explicit, enqueuedAt: monotonicNow() };
 }
 
 /**
@@ -415,12 +581,18 @@ export function startSyncLoop(
   shouldRunAutomatically: () => boolean = () => true,
   beforeExplicitSync?: () => Promise<void>,
   beginCycle?: (machineId: string, cycleId: string) => Promise<void>,
-  completeCycle?: (machineId: string, cycleId: string) => Promise<void>,
+  completeCycle?: (machineId: string, cycleId: string, signal: AbortSignal) => Promise<void>,
 ): { stop: () => Promise<boolean>; nudge: () => void; recover: (machineId: string) => void } {
   let stopped = false;
+  // Aborts a completion that is still waiting for the native owner when the loop stops.
+  const stopSignal = new AbortController();
   let uncertain = false;
   let stoppedResult: Promise<boolean> | undefined;
   const running = new Set<Promise<void>>();
+  // Cycles abandoned at their deadline whose request or native begin has not settled yet. Each
+  // may still have taken effect on the host, so shutdown keeps ownership until they settle.
+  const lateCycles = new Set<Promise<void>>();
+  // Spacing and backoff use the monotonic clock: a wall-clock change must not stall rounds.
   let lastRoundAt = Number.NEGATIVE_INFINITY;
   let lastEndedAt = Number.NEGATIVE_INFINITY;
   let trailing: ReturnType<typeof setTimeout> | undefined;
@@ -455,55 +627,94 @@ export function startSyncLoop(
     slot.phase = "running";
     running.add(job.promise);
     active += 1;
-    let cycleId: string | undefined;
-    let began = false;
+    // The widened types keep flow analysis from fixing these at their initial values, because the
+    // attempt below assigns them from inside an async closure.
+    let cycleId = undefined as string | undefined;
+    let began = false as boolean;
     let failed = false;
-    try {
+    // Set at the deadline: a response that arrives later is dropped by the cancellation guards.
+    let abandoned = false;
+    let timedOut = false;
+    const cycleTimeout = new AbortController();
+    const attempt = (async () => {
       cycleId = beginCycle ? crypto.randomUUID() : undefined;
       if (cycleId) {
         await beginCycle!(slot.id, cycleId);
         began = true;
       }
-      if (!stopped)
+      if (!stopped && !abandoned)
         await runSyncCycle(
           slot.id,
           requestFor(slot.id, cycleId),
           environmentFor?.(slot.id),
-          () => !stopped && shouldRunAutomatically(),
+          () => !stopped && !abandoned && shouldRunAutomatically(),
+          job.enqueuedAt,
+          cycleTimeout.signal,
         );
+    })();
+    try {
+      await withDeadline(attempt, SYNC_CYCLE_DEADLINE_MS);
     } catch (error) {
       failed = true;
-      // Cancellation guards run only after awaited work settled. A stopped local
-      // continuation is not an unknown transport outcome and may release Web Lock.
-      if (!cycleId && !(error instanceof Error && error.message === "SYNC_STOPPED"))
-        uncertain = true;
-      if (!began)
+      if (error instanceof SyncDeadlineError) {
+        timedOut = true;
+        abandoned = true;
+        cycleTimeout.abort();
+        // The slot is freed now, but the request may still land. Ownership stays held until it
+        // settles, and a native cycle is completed only then, never while its request is in flight.
+        const late: Promise<void> = attempt
+          .then(
+            () => undefined,
+            () => undefined, // abandoned: neither applied nor shown
+          )
+          .then(async () => {
+            if (!began || !cycleId) return;
+            try {
+              await completeCycle!(slot.id, cycleId, stopSignal.signal);
+            } catch {
+              uncertain = true;
+            }
+          })
+          .finally(() => void lateCycles.delete(late));
+        lateCycles.add(late);
         recordSyncStatus(slot.id, {
           state: "error",
-          lastError: `Sync ownership is unavailable: ${String(error)}`,
+          lastError: "Library sync timed out. It will retry later.",
+          pendingOps: pendingCount(slot.id),
         });
+      } else {
+        // Cancellation guards run only after awaited work settled. A stopped local
+        // continuation is not an unknown transport outcome and may release Web Lock.
+        if (!cycleId && !(error instanceof Error && error.message === "SYNC_STOPPED"))
+          uncertain = true;
+        if (!began)
+          recordSyncStatus(slot.id, {
+            state: "error",
+            lastError: syncOwnerFailureText(error),
+          });
+      }
     }
-    if (began && cycleId) {
+    if (began && cycleId && !timedOut) {
       try {
-        await completeCycle!(slot.id, cycleId);
+        await completeCycle!(slot.id, cycleId, stopSignal.signal);
       } catch (error) {
         uncertain = true;
         failed = true;
         recordSyncStatus(slot.id, {
           state: "error",
-          lastError: `Sync completion is unconfirmed: ${String(error)}`,
+          lastError: syncOwnerFailureText(error, "Sync completion is unconfirmed"),
         });
       }
     }
     if (failed) {
       slot.failures += 1;
-      slot.nextAt = Date.now() + syncBackoffMs(slot.failures);
+      slot.nextAt = monotonicNow() + syncBackoffMs(slot.failures);
     } else {
       slot.failures = 0;
       slot.nextAt = 0;
     }
     active -= 1;
-    slot.endedAt = lastEndedAt = Date.now();
+    slot.endedAt = lastEndedAt = monotonicNow();
     slot.phase = "idle";
     slot.job = undefined;
     job.resolve();
@@ -511,12 +722,12 @@ export function startSyncLoop(
     const next = slot.next;
     slot.next = undefined;
     if (next) {
-      if (stopped || (!next.explicit && Date.now() < slot.nextAt)) {
+      if (stopped || (!next.explicit && monotonicNow() < slot.nextAt)) {
         next.resolve();
       } else {
         const wait = next.explicit
           ? 0
-          : Math.max(0, slot.endedAt + MIN_CYCLE_SPACING_MS - Date.now());
+          : Math.max(0, slot.endedAt + MIN_CYCLE_SPACING_MS - monotonicNow());
         if (wait === 0) enqueue(slot, next);
         else {
           // Queued meanwhile, so a request now joins this follow-up.
@@ -551,14 +762,14 @@ export function startSyncLoop(
       else if (explicit) slot.next.explicit = true;
       return slot.next.promise;
     }
-    if (!explicit && Date.now() < slot.nextAt) return Promise.resolve();
+    if (!explicit && monotonicNow() < slot.nextAt) return Promise.resolve();
     const job = makeJob(explicit);
     enqueue(slot, job);
     return job.promise;
   };
 
   const round = (): void => {
-    lastRoundAt = Date.now();
+    lastRoundAt = monotonicNow();
     if (trailing !== undefined) {
       clearTimeout(trailing);
       trailing = undefined;
@@ -573,7 +784,7 @@ export function startSyncLoop(
     if (stopped || trailing !== undefined) return;
     const wait = Math.max(
       0,
-      Math.max(lastRoundAt, lastEndedAt) + MIN_CYCLE_SPACING_MS - Date.now(),
+      Math.max(lastRoundAt, lastEndedAt) + MIN_CYCLE_SPACING_MS - monotonicNow(),
     );
     trailing = setTimeout(() => {
       trailing = undefined;
@@ -582,7 +793,7 @@ export function startSyncLoop(
   };
   const requestRun = (): void => {
     if (stopped || !shouldRunAutomatically()) return;
-    if (Date.now() - Math.max(lastRoundAt, lastEndedAt) < MIN_CYCLE_SPACING_MS) schedule();
+    if (elapsedSince(Math.max(lastRoundAt, lastEndedAt)) < MIN_CYCLE_SPACING_MS) schedule();
     else round();
   };
   const runNow = async (only?: string): Promise<void> => {
@@ -614,14 +825,15 @@ export function startSyncLoop(
     const targets = only ? eligible.filter((id) => id === only) : eligible;
     return Promise.all(targets.map((id) => request(id, true))).then(() => undefined);
   };
-  const timer = setInterval(requestRun, CYCLE_INTERVAL_MS);
-  requestRun();
+  // Ownership, explicit syncs and local-change nudges are independent of the periodic fallback.
+  const polling = startForegroundPolling(requestRun, CYCLE_INTERVAL_MS);
   activeSyncNow = runNow;
   return {
     stop: () => {
       if (stoppedResult) return stoppedResult;
       stopped = true;
-      clearInterval(timer);
+      stopSignal.abort();
+      polling.stop();
       if (trailing !== undefined) clearTimeout(trailing);
       trailing = undefined;
       if (activeSyncNow === runNow) activeSyncNow = undefined;
@@ -639,7 +851,13 @@ export function startSyncLoop(
           slot.phase = "idle";
         }
       }
-      stoppedResult = Promise.all(running).then(() => !uncertain);
+      // Late cycles join the wait once their running slot has released; the wait is bounded so a
+      // transport that never answers cannot hang teardown, and then ownership stays held.
+      stoppedResult = boundedDrain(
+        Promise.all(running)
+          .then(() => Promise.all(lateCycles))
+          .then(() => !uncertain && lateCycles.size === 0),
+      );
       return stoppedResult;
     },
     nudge: requestRun,

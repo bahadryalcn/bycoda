@@ -5,7 +5,10 @@ import { expect, it, vi } from "vitest";
 import { AdditionalDirsDialog } from "./AdditionalDirsDialog";
 import { loadAdditionalDirs, saveAdditionalDirs } from "../model/additionalDirs";
 
-const folder = "/work/çok-uzun-proje-👩🏽‍💻/مساحة-العمل/" + "long-folder-name".repeat(12);
+const leaf = "long-folder-name".repeat(12);
+const folder = "/work/çok-uzun-proje-👩🏽‍💻/مساحة-العمل/" + leaf;
+// A second folder with the same name is what makes the dialog print full paths.
+const sibling = "/other/" + leaf;
 vi.mock("../model/recents", async (original) => ({
   ...(await original<typeof import("../model/recents")>()),
   useRecents: () => [],
@@ -21,7 +24,7 @@ vi.mock("../../../shared/ui/Modal", () => ({
 it("retains a permission on rejected revocation and exposes the full folder identity", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
-  expect(saveAdditionalDirs("/work/main", [folder])).toBe(true);
+  expect(saveAdditionalDirs("/work/main", [folder, sibling])).toBe(true);
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
@@ -48,7 +51,7 @@ it("retains a permission on rejected revocation and exposes the full folder iden
     });
     await act(async () => input.click());
     expect(input.checked).toBe(true);
-    expect(loadAdditionalDirs("/work/main")).toEqual([folder]);
+    expect(loadAdditionalDirs("/work/main")).toEqual([folder, sibling]);
     expect(host.querySelector('[role="alert"]')?.textContent).toContain(
       "Could not save project changes",
     );

@@ -9,8 +9,16 @@ import type {
 import type { AssistantRoom } from "./assistantRoomContext";
 import { NotesTab } from "./NotesTab";
 
-const state = vi.hoisted(() => ({ room: {} as AssistantRoom, closes: [] as (() => void)[] }));
+const state = vi.hoisted(() => ({
+  room: {} as AssistantRoom,
+  closes: [] as (() => void)[],
+  finishNoteDeletion: vi.fn(),
+}));
 vi.mock("./assistantRoomContext", () => ({ useAssistantRoom: () => state.room }));
+vi.mock("../../model/assistantClient", () => ({
+  assistantRequest: vi.fn(),
+  finishAssistantNoteDeletion: state.finishNoteDeletion,
+}));
 vi.mock("../AssistantNoteEditor", () => ({
   NoteEditor: ({ onClose }: { onClose: () => void }) => {
     state.closes.push(onClose);
@@ -109,6 +117,19 @@ it("keeps checked notes across search and removes only confirmed deletions", asy
     await act(async () => {
       await expect(confirmation!.onConfirm()).rejects.toThrow();
     });
+    expect(state.room.assistantRequest).toHaveBeenNthCalledWith(
+      1,
+      { op: "notes.delete", id: first.id, expectedUpdatedAt: first.updatedAt },
+      "host-one",
+      { deferNoteRefresh: true },
+    );
+    expect(state.room.assistantRequest).toHaveBeenNthCalledWith(
+      2,
+      { op: "notes.delete", id: second.id, expectedUpdatedAt: second.updatedAt },
+      "host-one",
+      { deferNoteRefresh: true },
+    );
+    expect(state.finishNoteDeletion).toHaveBeenCalledExactlyOnceWith("host-one", [first]);
     expect(host.textContent).toContain("1 selected");
     expect(host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')[1]!.checked).toBe(
       true,

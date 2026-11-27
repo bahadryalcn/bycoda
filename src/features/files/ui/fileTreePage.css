@@ -1,0 +1,19 @@
+/* Closed TreeRow siblings follow the shared ListRow density and coarse-pointer minimum. */
+[data-explorer-page] {
+  --explorer-page-height: calc(var(--ui-control-height-sm) * var(--explorer-page-count));
+  height: var(--explorer-page-height);
+  pointer-events: none;
+}
+
+/* Observe the same rectangle while its actual rows occupy the space. */
+[data-explorer-page]:not([data-explorer-page-spacer]) {
+  margin-block-end: calc(-1 * var(--explorer-page-height));
+}
+
+@media (pointer: coarse) {
+  [data-explorer-page] {
+    --explorer-page-height: calc(
+      max(var(--ui-control-height-sm), 44px) * var(--explorer-page-count)
+    );
+  }
+}

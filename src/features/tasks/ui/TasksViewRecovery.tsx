@@ -30,10 +30,20 @@ export function TasksViewRecovery({
           <Text as="span" size="inherit" tone="primary">
             {item.title}
           </Text>
+          {item.reason ? (
+            <Text as="span" size="inherit" tone="secondary" className="min-w-0 break-words">
+              {item.reason}
+            </Text>
+          ) : null}
           <Button
             variant="secondary"
             loading={retrying === item.id}
             disabled={retrying !== null && retrying !== item.id}
+            disabledReason={
+              retrying !== null && retrying !== item.id
+                ? t("Wait for the current operation to finish")
+                : undefined
+            }
             onClick={() => onRetry(item)}
           >
             {t("Retry sprint assignment")}

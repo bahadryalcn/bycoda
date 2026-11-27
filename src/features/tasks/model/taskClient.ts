@@ -1,4 +1,5 @@
 import type { ModelRoutingItemChoice } from "../../../shared/model/host-contracts/model-routing";
+import type { WorkExecutor, WorkHelpers } from "../../../shared/model/host-contracts/work-executor";
 import { defaultModelSettings, resolveModel } from "../../sessions/public/models";
 import { remoteRequest as sendHostRequest } from "../../connections/public/connections";
 import { subscribeRemoteMachineChannel } from "../../connections/public/remoteMachineChannel";
@@ -35,6 +36,7 @@ import { TASK_PREFLIGHT_CAPABILITY, type TaskPreflightRequirement } from "./task
 import { projectKey } from "../../../shared/lib/paths";
 import { t } from "../../../shared/i18n";
 import { taskClientErrors } from "./taskClientErrors";
+import { resolveTaskTitle } from "./taskTitle";
 import {
   HOST_TASKS,
   HOST_TASK_ACCOUNTS,
@@ -47,21 +49,21 @@ import {
   type HostTaskWireInput,
   type TaskColumn,
   type TaskStatus,
+  type WorkOrigin,
 } from "./hostTasks";
-
-export const TASK_MACHINE_ERROR =
-  "This project’s machine isn’t connected, or its bycoda Host needs an update.";
-export const TASK_AGENT_ERROR = "This agent cannot run tasks in the background.";
 
 /** A host task as this desktop shows it: on its machine, in its project. */
 export type BoardTask = HostTask & {
   evaluationSupported?: boolean;
+  /** The Host rejects a reorder when a listed task changed since this board read it. */
+  reorderGuardSupported?: boolean;
   machineId: string;
   machineName: string;
   /** How this desktop addresses the task's project. */
   cwd: string;
   /** The machine did not answer; this is what it last reported. */
   stale?: boolean;
+  pendingRefresh?: boolean;
   reviewRecheckSupported?: boolean;
   finishWithFindingsSupported?: boolean;
   blockedTakeoverSupported?: boolean;
@@ -75,10 +77,21 @@ export type TaskDraft = {
   workflowId?: string;
   workflowVersion?: number;
   reviewerConfig?: HostTaskInput["reviewerConfig"];
-  crewDefinitionId?: string;
+  /** Who runs the task. Absent is one agent. */
+  executor?: WorkExecutor;
+  /** Subagents and advisor. Absent follows Settings > Models. */
+  helpers?: WorkHelpers;
+  /** The owner's words behind `prompt`, kept while the prompt still starts with them. */
+  request?: string;
+  /** The entry point that created this task. A create only. */
+  origin?: WorkOrigin;
   workspaceLocked?: boolean;
   workspace?: TaskWorkspace;
   id?: string;
+  /** The Host's copy of the task as this edit opened. Edits only: the Host
+   * refuses the save when the task changed elsewhere meanwhile. A create never
+   * has one. Retained by form spreads. */
+  expectedConfiguration?: HostTask;
   /** Stable create receipt, separate from edit mode; retained by form spreads. */
   creation?: { id: string; target?: string; attempted?: boolean };
   /** Explicit host selected by the owner; edits retain their original host. */
@@ -159,9 +172,7 @@ export function todoUnsupportedMessage(
 ): string | undefined {
   const machine = backgroundMachineFor(machines, cwd);
   if (!machine || todoCapable.some((entry) => entry.id === machine.id)) return undefined;
-  return `Update bycoda Host on ${
-    isLocalSyncMachine(machine) ? "this computer" : machine.name
-  } to add to-do items`;
+  return taskClientErrors.todoHost(isLocalSyncMachine(machine) ? t("this computer") : machine.name);
 }
 
 export function newTaskDraft(
@@ -194,15 +205,36 @@ export function newTaskDraft(
   };
 }
 
+/** The Host's own task, without the board's per-machine and capability fields,
+ * which the Host's strict contract refuses. */
+export function hostTaskSnapshot(task: BoardTask): HostTask {
+  const {
+    machineId: _machineId,
+    machineName: _machineName,
+    cwd: _cwd,
+    stale: _stale,
+    evaluationSupported: _evaluationSupported,
+    reorderGuardSupported: _reorderGuardSupported,
+    reviewRecheckSupported: _reviewRecheckSupported,
+    finishWithFindingsSupported: _finishWithFindingsSupported,
+    blockedTakeoverSupported: _blockedTakeoverSupported,
+    workspaceControlsSupported: _workspaceControlsSupported,
+    ...host
+  } = task;
+  return structuredClone(host);
+}
+
 export function draftFromTask(task: BoardTask): TaskDraft {
   return {
+    expectedConfiguration: hostTaskSnapshot(task),
     ...(task.budget ? { budget: task.budget } : {}),
     ...(task.preflightRequirements ? { preflightRequirements: task.preflightRequirements } : {}),
     ...(task.workflowId
       ? { workflowId: task.workflowId, workflowVersion: task.workflowVersion }
       : {}),
     ...(task.reviewerConfig ? { reviewerConfig: task.reviewerConfig } : {}),
-    ...(task.crewDefinitionId ? { crewDefinitionId: task.crewDefinitionId } : {}),
+    ...(task.executor ? { executor: task.executor } : {}),
+    ...(task.helpers ? { helpers: task.helpers } : {}),
     id: task.id,
     machineId: task.machineId,
     status: task.status,
@@ -266,7 +298,7 @@ export function hostTaskFromDraft(
   id: string,
   projectId: string,
 ): HostTaskWireInput {
-  if (!isRemoteProvider(draft.harness)) throw new Error(TASK_AGENT_ERROR);
+  if (!isRemoteProvider(draft.harness)) throw new Error(taskClientErrors.agent());
   return {
     id,
     ...("budget" in draft ? { budget: draft.budget ?? {} } : {}),
@@ -279,8 +311,13 @@ export function hostTaskFromDraft(
       : clearsReviewerProfile(draft)
         ? { reviewerConfig: null }
         : {}),
-    ...(draft.crewDefinitionId ? { crewDefinitionId: draft.crewDefinitionId } : {}),
-    title: draft.title,
+    ...(draft.executor && draft.executor.kind !== "agent" ? { executor: draft.executor } : {}),
+    ...(draft.helpers && draft.helpers.mode !== "settings" ? { helpers: draft.helpers } : {}),
+    ...(draft.request !== undefined && draft.prompt.startsWith(draft.request)
+      ? { request: draft.request }
+      : {}),
+    ...(draft.origin ? { origin: draft.origin } : {}),
+    title: draft.id ? draft.title.trim() : resolveTaskTitle(draft.title, draft.prompt),
     prompt: draft.prompt,
     projectId,
     harness: draft.harness,
@@ -292,12 +329,13 @@ export function hostTaskFromDraft(
     modelSettings: draft.modelSettings,
     runtimeMode: draft.runtimeMode,
     ...(draft.maxRunMinutes === undefined ? {} : { maxRunMinutes: draft.maxRunMinutes }),
-    isolate: draft.crewDefinitionId ? false : draft.isolate,
-    ...(!draft.crewDefinitionId && draft.workspace ? { workspace: draft.workspace } : {}),
+    // Sent as the owner set them; the Host names any option a crew cannot honor.
+    isolate: draft.isolate,
+    ...(draft.workspace ? { workspace: draft.workspace } : {}),
     ...(draft.verifyCommand.trim() ? { verifyCommand: draft.verifyCommand.trim() } : {}),
-    review: draft.crewDefinitionId ? false : draft.review,
-    ...(!draft.crewDefinitionId && draft.continueUntilDone ? { continueUntilDone: true } : {}),
-    ...(!draft.crewDefinitionId && draft.autoMerge && draft.isolate ? { autoMerge: true } : {}),
+    review: draft.review,
+    ...(draft.continueUntilDone ? { continueUntilDone: true } : {}),
+    ...(draft.autoMerge && draft.isolate ? { autoMerge: true } : {}),
   };
 }
 
@@ -484,6 +522,7 @@ export async function listBoardTaskResults(
               blockedTakeoverSupported: capabilities.includes("tasks.blocked-takeover"),
               workspaceControlsSupported: capabilities.includes(HOST_TASK_WORKSPACES),
               evaluationSupported: capabilities.includes("tasks.evaluation"),
+              reorderGuardSupported: capabilities.includes("tasks.reorder-guard"),
             }));
           }
           throw new Error(taskClientErrors.boardChanged());
@@ -520,11 +559,15 @@ export async function saveTask(
 ): Promise<BoardTask> {
   const machine = taskMachineFor(machines, draft.cwd, draft.machineId);
   await requireTaskAccount(machine, draft.providerAccountId);
-  if (draft.crewDefinitionId && !(await machineCapabilities(machine)).includes(HOST_CREW_TASKS))
+  if (
+    draft.executor &&
+    draft.executor.kind !== "agent" &&
+    !(await machineCapabilities(machine)).includes(HOST_CREW_TASKS)
+  )
     throw new Error(taskClientErrors.crewHost());
-  await requireTaskContinuation(machine, !draft.crewDefinitionId && draft.continueUntilDone);
+  await requireTaskContinuation(machine, draft.continueUntilDone);
   await requireTaskHarnessCapabilities(machine, draft);
-  await requireTaskWorkspaces(machine, !draft.crewDefinitionId && Boolean(draft.workspace));
+  await requireTaskWorkspaces(machine, Boolean(draft.workspace));
   if (status === "todo" && !draft.id) {
     // An older host would queue the item and start it.
     const advertised = await machineCapabilities(machine);
@@ -573,6 +616,10 @@ export async function saveTask(
         ...hostTaskFromDraft(draft, draft.id ?? creation!.id, project.id),
         // An older host starts every new task queued, and ignores this.
         ...(draft.id ? {} : { status }),
+        // Only an edit compares against what it opened; a create is keyed by its receipt.
+        ...(draft.id && draft.expectedConfiguration
+          ? { expectedConfiguration: draft.expectedConfiguration }
+          : {}),
       },
     },
     false,
@@ -593,7 +640,7 @@ export function taskMachineFor(
 ): RemoteMachine {
   const inferred = backgroundMachineFor(machines, cwd);
   const machine = machineId ? machines.find((entry) => entry.id === machineId) : inferred;
-  if (!machine) throw new Error(TASK_MACHINE_ERROR);
+  if (!machine) throw new Error(taskClientErrors.machine());
   if (!inferred || inferred.id !== machine.id) throw new Error(taskClientErrors.projectOnMachine());
   return machine;
 }
@@ -635,7 +682,7 @@ export async function requireTaskHarnessCapabilities(
   if (!options.budget && !options.preflightRequirements?.length && !clearReviewer) return;
   const capabilities = await machineCapabilities(machine);
   if (clearReviewer && !capabilities.includes(HOST_TASK_REVIEWER_PROFILE))
-    throw new Error(TASK_MACHINE_ERROR);
+    throw new Error(taskClientErrors.machine());
   if (options.budget && !capabilities.includes(TASK_RUN_BUDGET_CAPABILITY))
     throw new Error(taskClientErrors.budgetHost());
   if (options.preflightRequirements?.length && !capabilities.includes(TASK_PREFLIGHT_CAPABILITY))
@@ -696,6 +743,7 @@ function updatedBoardTask(task: BoardTask, updated: HostTask): BoardTask {
     blockedTakeoverSupported: task.blockedTakeoverSupported,
     workspaceControlsSupported: task.workspaceControlsSupported,
     evaluationSupported: task.evaluationSupported,
+    reorderGuardSupported: task.reorderGuardSupported,
   };
 }
 
@@ -749,16 +797,23 @@ export async function reorderTasks(tasks: readonly BoardTask[]): Promise<BoardTa
     "tasks.reorder",
     {
       taskIds: tasks.map((task) => task.id),
+      // The Host places these ids inside its full queue; the revisions reject the
+      // move when another client changed any of them since this board read them.
+      // shortcut: an older Host has no guard and applies the list as sent; it is unguarded until it updates.
+      ...(tasks.every((task) => task.reorderGuardSupported)
+        ? {
+            expectedUpdatedAt: Object.fromEntries(tasks.map((task) => [task.id, task.updatedAt])),
+          }
+        : {}),
     },
     false,
     true,
   );
-  return updated.map((task) =>
-    updatedBoardTask(
-      tasks.find((item) => item.id === task.id)!,
-      task,
-    ),
-  );
+  // The Host also returns hidden tasks whose position it renumbered; the board only holds its own.
+  return updated.flatMap((task) => {
+    const known = tasks.find((item) => item.id === task.id);
+    return known ? [updatedBoardTask(known, task)] : [];
+  });
 }
 
 export async function requireTaskWorkspaces(

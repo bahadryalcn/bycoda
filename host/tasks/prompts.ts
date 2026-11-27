@@ -8,11 +8,14 @@ import {
 import { readTaskInstructions } from "../../src/features/tasks/model/taskInstructions";
 import { acceptanceReviewInstructions } from "../../src/features/tasks/model/taskAcceptance";
 import { openReviewNotesPrompt } from "../../src/features/tasks/model/taskReviewNotes";
+import { truncateGraphemes } from "../../src/shared/lib/text/truncate";
+import { branchWorkRule, readOnlyRule, sharedCheckoutRule, UNATTENDED_RULE } from "./prompt-rules";
 
 /** Total characters of earlier-attempt feedback (review notes plus check and
  * acceptance feedback) one worker prompt may carry. */
 export const FEEDBACK_LIMIT = 12_000;
-const RETRY_SHARE = 4_000;
+/** The previous check's text is a pointer to the task record, not a second copy of it. */
+const RETRY_SUMMARY = 500;
 
 /** The reviewer only needs to re-check what is still open, with the ids it may resolve. */
 function openFindingsForReview(task: HostTask): string {
@@ -35,7 +38,7 @@ export function reviewPrompt(task: HostTask): string {
     readTaskInstructions(task.prompt)?.acceptance ?? [],
   );
   return [
-    "You are reviewing work another agent just finished. Only inspect: do not edit, create or delete files, and do not commit. Review correctness and repository standards yourself in this one agent: no subagents, multi-agent workflow or issue tracker. The task below is the complete spec.",
+    `You are reviewing work another agent just finished. ${readOnlyRule("inspect")} Review correctness and repository standards yourself in this one agent: no subagents, multi-agent workflow or issue tracker. The task below is the complete spec.`,
     "Read the changed files and only the relevant dependencies and guidance. Run focused checks once; repeat only after a change, failure or unresolved concern. Report incomplete acceptance checks explicitly; PASS does not imply release or physical-device approval.",
     "What was asked:\n" + reviewerContract(task, { omitAcceptance: Boolean(acceptance) }),
     `Review ${changes} and judge whether they do what was asked.`,
@@ -59,7 +62,7 @@ export function reviewPrompt(task: HostTask): string {
  * this after the task finishes instead of being interrupted while it runs. */
 function workerGuidance(task: HostTask): string {
   return [
-    "This task runs unattended and the owner is unavailable. Do not stop to ask questions: when something is ambiguous, choose the most reasonable option within the task scope, record the assumption and finish. Stop only when a permission, credential or destructive action you are not authorized to take is required. The host-assigned agent and model satisfy any model requirement in the task text.",
+    UNATTENDED_RULE,
     ...(task.continueUntilDone
       ? [
           "Keep going until the task is complete; try a different approach when one fails. An explicit owner stop and the configured run limit still apply.",
@@ -80,8 +83,7 @@ export function workerPrompt(
 
 /** Where to work and what to leave behind; stated once per prompt. */
 function checkoutRule(task: HostTask, projectCwd: string): string {
-  if (task.isolate === false)
-    return `Work directly in ${task.worktreeCwd ?? projectCwd}, the selected checkout shared with other sessions. Preserve their uncommitted work and change only your assigned scope. Do not create another worktree or switch branches. Leave changes uncommitted for the owner's review; do not stage, commit, merge or push.`;
+  if (task.isolate === false) return sharedCheckoutRule(task.worktreeCwd ?? projectCwd);
   if (!task.worktreeCwd) return "";
   return `You are working in ${task.worktreeCwd}, a separate checkout of the project at ${projectCwd}${task.branch ? ` on the branch ${task.branch}` : ""}. Make every change in this folder. Commit scoped changes on this branch and finish with a clean source tree. Never merge into the integration checkout, push or create PRs. Do not edit, commit in or switch branches in ${projectCwd}: paths under it in the task below mean the same files under this folder.`;
 }
@@ -89,13 +91,19 @@ function checkoutRule(task: HostTask, projectCwd: string): string {
 /** Earlier-attempt feedback, each fact once: structured findings in the review
  * notes, check and acceptance results in the retry feedback. One total cap. */
 function feedbackBlocks(task: HostTask): { notes: string; retry: string } {
-  const retry = [task.retryFeedback, task.retryFeedback ? latestAttemptSummary(task) : ""]
-    .filter(Boolean)
-    .join("\n\n");
-  const notes = openReviewNotesPrompt(
-    task.reviewNotes,
-    FEEDBACK_LIMIT - Math.min(retry.length, RETRY_SHARE),
-  );
+  const full = task.retryFeedback ?? "";
+  const summary = truncateGraphemes(full, RETRY_SUMMARY);
+  const retry = full
+    ? [
+        summary === full
+          ? summary
+          : `${summary}\n(Shortened; the full text is the retryFeedback of task ${task.id}.)`,
+        latestAttemptSummary(task),
+      ]
+        .filter(Boolean)
+        .join("\n\n")
+    : "";
+  const notes = openReviewNotesPrompt(task.reviewNotes, FEEDBACK_LIMIT - retry.length);
   return { notes, retry: retry.slice(0, FEEDBACK_LIMIT - notes.length) };
 }
 
@@ -111,8 +119,7 @@ export function workerInstructions(
   const contract = workerContract(task);
   if (task.blockedTakeover)
     return [
-      checkoutRule(task, projectCwd) ||
-        `Work only in ${projectCwd}. Commit scoped changes and never merge, push or create PRs; the owner approves delivery separately.`,
+      checkoutRule(task, projectCwd) || branchWorkRule(projectCwd),
       "Retain all existing work.",
       contract,
       blockedHandoff(task),

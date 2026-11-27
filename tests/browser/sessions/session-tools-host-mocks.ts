@@ -41,3 +41,6 @@ export async function hostToolRequest<T>(
 ): Promise<T> {
   return shared(method, await baseToolRequest(cwd, capability, method, params, target)) as T;
 }
+export async function openBrowserFrameStream(): Promise<never> {
+  throw new Error("Native media is unavailable in this fixture");
+}

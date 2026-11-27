@@ -1,9 +1,9 @@
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { formatNumber, t } from "../../../../shared/i18n";
-import { Badge } from "../../../../shared/ui/Badge";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { Meter } from "../../../../shared/ui/Meter";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
@@ -15,7 +15,7 @@ import type { PersonDetail } from "../../model/socialActions";
 import { PlatformMark } from "../common/PlatformIcon";
 import { SocialAvatar } from "../common/SocialAvatar";
 import { EmptyHint } from "../common/EmptyHint";
-import { LabeledSelect } from "./LabeledSelect";
+import { Select } from "../../../../shared/ui/Select";
 import {
   ALL_STAGES,
   IYS_STATES,
@@ -25,7 +25,6 @@ import {
   iysLabel,
   sourceLabel,
   stageLabel,
-  stageTone,
   type IysState,
 } from "./audienceModel";
 import {
@@ -118,46 +117,32 @@ export function PersonPanel({
       onClose={onClose}
       title={person?.name ?? t("Person")}
       description={person ? sourceLabel(person.source) : undefined}
-      size="380px"
+      size="sm"
     >
       {loading && !detail ? (
         <LoadingText delay={false} className="audience-muted">
           {t("Loading person…")}
         </LoadingText>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? (
+        <InlineError details={error}>{t("Could not save this change. Try again.")}</InlineError>
+      ) : null}
       {person && detail ? (
         <div className="audience-panel-body">
           <header className="audience-person">
             <SocialAvatar name={person.name} size="lg" />
-            <div className="audience-person-text">
-              <Text
-                size="body"
-                tone="primary"
-                leading="inherit"
-                weight="medium"
-                className="audience-person-name"
-                truncate
-              >
-                {person.name}
-              </Text>
-              <Text size="inherit" tone="inherit" truncate className="audience-row">
-                <Badge size="sm" tone={stageTone(person.stage)}>
-                  {stageLabel(person.stage)}
-                </Badge>
-                {person.score ? (
-                  <span className="audience-score">
-                    <Meter
-                      className="audience-score-bar"
-                      label={t("Interest score")}
-                      value={person.score.value}
-                      tone="accent"
-                    />
-                    {formatNumber(person.score.value)}
-                  </span>
-                ) : null}
-              </Text>
-            </div>
+            {/* The sheet title names the person and the status section shows the stage. */}
+            {person.score ? (
+              <span className="audience-score">
+                <Meter
+                  className="audience-score-bar"
+                  label={t("Interest score")}
+                  value={person.score.value}
+                  tone="accent"
+                />
+                {formatNumber(person.score.value)}
+              </span>
+            ) : null}
           </header>
 
           {detail.suppressed ? (
@@ -187,12 +172,12 @@ export function PersonPanel({
                 </Text>
               ))}
             </Text>
-            <LabeledSelect
+            <Select
               label={t("Change stage")}
               value={person.stage}
               disabled={busy}
               options={ALL_STAGES.map((stage) => ({ value: stage, label: stageLabel(stage) }))}
-              onChange={(value) => {
+              onValueChange={(value) => {
                 const stage = toStage(value);
                 if (stage && stage !== person.stage) void save({ stage }).catch(() => undefined);
               }}
@@ -246,20 +231,22 @@ export function PersonPanel({
             {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "audience-panel-section")}
             aria-labelledby="person-consent-heading"
           >
-            <SectionLabel labelId="person-consent-heading">
-              {t("Commercial messages (Turkey)")}
-            </SectionLabel>
-            <Text as="p" size="caption" tone="muted" leading="inherit" className="audience-muted">
-              {t(
-                "Approval in the Turkish commercial message system (IYS) for messages to people in Turkey.",
-              )}
-            </Text>
-            <LabeledSelect
+            <div className="audience-row">
+              <SectionLabel labelId="person-consent-heading">
+                {t("Commercial messages (Turkey)")}
+              </SectionLabel>
+              <InfoPopover className="shrink-0">
+                {t(
+                  "Approval in the Turkish commercial message system (IYS) for messages to people in Turkey.",
+                )}
+              </InfoPopover>
+            </div>
+            <Select
               label={t("IYS status")}
               value={person.commercialConsent?.iys ?? "unknown"}
               disabled={busy}
               options={IYS_STATES.map((state) => ({ value: state, label: iysLabel(state) }))}
-              onChange={(value) => {
+              onValueChange={(value) => {
                 const iys = toIys(value);
                 if (iys)
                   void save({ commercialConsent: { iys, checkedAt: Date.now() } }).catch(

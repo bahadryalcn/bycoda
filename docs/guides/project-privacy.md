@@ -57,8 +57,8 @@ and any existing password. Only an absent settings record enables first-use setu
 ## System permissions
 
 **Settings > Permissions** reads OS status without requesting access. **Allow**
-explicitly requests OS access. **Review access…** opens the setup guide; its
-**Open Settings** button opens the OS pane. **Check again** only rereads status.
+explicitly requests OS access. **Review access** opens the setup guide; its
+**Open settings** button opens the OS pane. **Check again** only rereads status.
 Unknown or unavailable status never means access is allowed. Policy restrictions
 may need an administrator. App and helper permissions remain separate facts.
 

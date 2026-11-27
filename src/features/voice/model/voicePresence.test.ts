@@ -7,6 +7,7 @@ import {
   deriveCapturePresence,
   markAcceptedVoiceSpeech,
   readNativeVoicePresence,
+  subscribeVoicePresence,
 } from "./voicePresence";
 import {
   resetVoiceActivityForTest,
@@ -41,6 +42,43 @@ it("requires fresh supported native presence for an explicit Away/DND capture ov
   expect(await readNativeVoicePresence(10)).toBe("active");
   expect(await readNativeVoicePresence(10)).toBe("unknown");
   expect(invoke.mock.calls.every(([method]) => method === "get_user_presence")).toBe(true);
+});
+
+it("shares one native poll per threshold and stops it when the last consumer leaves", async () => {
+  vi.useFakeTimers();
+  Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {}, configurable: true });
+  invoke.mockResolvedValue({ idleMs: 0, locked: false, supported: true });
+  const first = vi.fn();
+  const second = vi.fn();
+  const leaveFirst = subscribeVoicePresence(10, first);
+  const leaveSecond = subscribeVoicePresence(10, second);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(invoke).toHaveBeenCalledTimes(1);
+  expect(first).toHaveBeenLastCalledWith("active");
+  expect(second).toHaveBeenLastCalledWith("active");
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(invoke).toHaveBeenCalledTimes(2);
+  leaveFirst();
+  await vi.advanceTimersByTimeAsync(5001);
+  expect(invoke).toHaveBeenCalledTimes(3);
+  leaveSecond();
+  await vi.advanceTimersByTimeAsync(20_000);
+  expect(invoke).toHaveBeenCalledTimes(3);
+});
+
+it("keeps polling native presence while the page is hidden for background wake listening", async () => {
+  vi.useFakeTimers();
+  Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {}, configurable: true });
+  Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+  invoke.mockResolvedValue({ idleMs: 0, locked: true, supported: true });
+  const listener = vi.fn();
+  const leave = subscribeVoicePresence(10, listener);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(listener).toHaveBeenLastCalledWith("away");
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(invoke).toHaveBeenCalledTimes(2);
+  leave();
+  Reflect.deleteProperty(document, "visibilityState");
 });
 
 describe("computer presence admission", () => {

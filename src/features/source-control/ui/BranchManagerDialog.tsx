@@ -4,6 +4,7 @@ import { Text } from "../../../shared/ui/Text";
 import { TextField } from "../../../shared/ui/TextField";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n/git";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 import { useState, type FormEvent } from "react";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { Check, GitBranch, MoreHorizontal, Plus } from "../../../shared/ui/icons";
@@ -94,11 +95,7 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
     const { remote, name } = branch;
     if (!remote) return;
     const confirmed = await confirm({
-      title: t("Delete"),
-      message: t(
-        "Delete branch {p0} on {p1}? This removes it from the remote for everyone who uses it.",
-        { p0: name, p1: remote },
-      ),
+      title: t("Delete {p0} from {p1}?", { p0: name, p1: remote }),
       confirmLabel: t("Delete"),
     });
     if (!confirmed) return;
@@ -128,7 +125,7 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
 
   const renderForm = (label: string, submitLabel: string) => (
     <form
-      className="flex h-8 items-center gap-1.5 px-1"
+      className="flex min-h-(--ui-control-height) items-center gap-1.5 px-1"
       onSubmit={(event) => void submitEditing(event)}
     >
       <TextField
@@ -144,7 +141,7 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
         disabled={busy}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key !== "Escape") return;
+          if (event.key !== "Escape" || isImeComposition(event.nativeEvent)) return;
           event.stopPropagation();
           setEditing(null);
         }}
@@ -186,9 +183,9 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
       );
     }
     return (
-      <li key={reference} className="flex h-8 items-center gap-1 px-1">
+      <li key={reference} className="flex min-h-(--ui-control-height) items-center gap-1 px-1">
         {isCurrent ? (
-          <Check className="icon-sm shrink-0" strokeWidth={1.75} />
+          <Check className="icon-sm shrink-0" />
         ) : (
           <GitBranch className="icon-sm shrink-0" tone="secondary" strokeWidth={1.75} />
         )}
@@ -210,11 +207,6 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
             motion="none"
             type="button"
             disabled={busy}
-            tooltip={
-              branch.remote
-                ? t("Check out {p0} as a local branch", { p0: reference })
-                : t("Switch to {p0}", { p0: reference })
-            }
             onClick={() => void checkout(branch)}
             className={ACTION}
           >
@@ -303,11 +295,6 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
     <Modal
       languageDomain="git"
       title={t("Branches")}
-      description={
-        current
-          ? t("Switch branches, or merge into or rebase {p0}.", { p0: current })
-          : t("Switch, create, rename, and delete branches.")
-      }
       size="md"
       fitViewport
       onClose={() => {
@@ -334,17 +321,16 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
             motion="none"
             type="button"
             disabled={busy}
+            startIcon={<Plus className="icon-sm" strokeWidth={1.75} />}
             onClick={() => startEditing({ kind: "create" })}
-            className="inline-flex shrink-0 items-center gap-1"
           >
-            <Plus className="icon-sm" strokeWidth={1.75} />
-            {t("New Branch…")}
+            {t("New branch")}
           </Button>
         </div>
         {editing?.kind === "create" ? renderForm(t("New branch name"), t("Create")) : null}
         {error ? (
-          <InlineError className="max-h-24 overflow-y-auto whitespace-pre-wrap">
-            {error}
+          <InlineError details={error} className="max-h-24 overflow-y-auto whitespace-pre-wrap">
+            {t("Couldn’t update branches")}
           </InlineError>
         ) : null}
         {listed.length === 0 ? (

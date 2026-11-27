@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AssistantSessionManagement } from "../model/session";
@@ -11,33 +12,21 @@ import { Modal } from "../../../shared/ui/Modal";
 import { Bot } from "../../../shared/ui/icons";
 import { useT } from "../../../shared/i18n";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { SessionLifecycleControl } from "./SessionLifecycleControl";
 
-/** Header controls of a session: close/reopen/task link, and the assistant detach control. */
+/** The assistant detach control of a session the assistant manages on this computer. */
 export function AssistantSessionControl(props: {
   sessionId: string;
   cwd: string;
   management?: AssistantSessionManagement;
   local: boolean;
-  hasMessages: boolean;
 }) {
-  return (
-    <>
-      <SessionLifecycleControl
-        sessionId={props.sessionId}
-        cwd={props.cwd}
-        local={props.local}
-        hasMessages={props.hasMessages}
-      />
-      {props.local && props.management?.assistant && props.management.detachedAt === undefined ? (
-        <LocalControl
-          key={`${props.sessionId}:${props.management.jobId ?? props.management.supervisionId}`}
-          {...props}
-          management={props.management}
-        />
-      ) : null}
-    </>
-  );
+  return props.local && props.management?.assistant && props.management.detachedAt === undefined ? (
+    <LocalControl
+      key={`${props.sessionId}:${props.management.jobId ?? props.management.supervisionId}`}
+      {...props}
+      management={props.management}
+    />
+  ) : null;
 }
 // Reads only environmentId, so heartbeat and profile changes do not re-render each pane.
 const selectEnvironmentId = (state: { environmentId: string | null }) => state.environmentId;
@@ -130,7 +119,7 @@ function LocalControl({
           if (next.detached) setUncertain(false);
         },
         error: (cause) => {
-          if (current()) setError(cause instanceof Error ? cause.message : String(cause));
+          if (current()) setError(errorText(cause));
         },
         done: () => {
           if (current()) setBusy(false);
@@ -168,6 +157,7 @@ function LocalControl({
           iconOnly
           label={t("Take assistant off this session")}
           disabled={!environmentId}
+          disabledReason={t("Assistant status is unavailable.")}
           onClick={() => void inspect()}
         >
           <Bot className="icon-sm" />
@@ -190,13 +180,19 @@ function LocalControl({
                 "Remove assistant follow-ups from this session. Its task and running worker continue.",
               )}
             </p>
-            {error && <InlineError>{error}</InlineError>}
+            {error && (
+              <InlineError details={error}>
+                {t("Could not update assistant supervision.")}
+              </InlineError>
+            )}
             {detached ? (
               <p role="status">{t("Assistant supervision removed")}</p>
             ) : uncertain ? (
               <>
                 <p role="status">
-                  {t("Supervision removal is unconfirmed. Check its status before continuing.")}
+                  {t(
+                    "Supervision removal could not be confirmed. Check its status before continuing.",
+                  )}
                 </p>
                 <Button loading={busy} onClick={() => void inspect()}>
                   {t("Check status")}
@@ -207,7 +203,7 @@ function LocalControl({
                 {t("Check status")}
               </Button>
             ) : (
-              <Button loading={busy} disabled={!prepared} onClick={() => void detach()}>
+              <Button loading={busy || !prepared} onClick={() => void detach()}>
                 {t("Remove supervision")}
               </Button>
             )}

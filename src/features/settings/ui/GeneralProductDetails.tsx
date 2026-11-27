@@ -20,7 +20,7 @@ function ContributeRow() {
         label={t("Star on GitHub")}
         address={repositoryUrl}
         href={repositoryUrl}
-        openLabel={t("View on GitHub")}
+        displayAddress={repositoryUrl.replace(/^https:\/\/github\.com\//, "")}
       />
       <Row
         id="contribute"
@@ -28,8 +28,8 @@ function ContributeRow() {
         description={t("Clone the open-source repository and open it as a project.")}
       >
         <Button
-          className="general-action shrink-0"
           loading={flow.status === "cloning"}
+          loadingLabel={t("Cloning…")}
           onClick={() => startContribution().catch(() => undefined)}
         >
           {t("Clone and open…")}
@@ -43,13 +43,7 @@ export function ProductDetails() {
   return (
     <>
       <Row label={t("Developed by")}>
-        <Text
-          as="span"
-          size="secondary"
-          tone="primary"
-          leading="normal"
-          className="general-about-value"
-        >
+        <Text as="span" size="secondary" tone="primary" leading="normal">
           {PRODUCT_IDENTITY.developerName}
         </Text>
       </Row>
@@ -58,7 +52,6 @@ export function ProductDetails() {
         address={PRODUCT_IDENTITY.websiteUrl}
         href={PRODUCT_IDENTITY.websiteUrl}
         displayAddress={PRODUCT_IDENTITY.websiteUrl.replace("https://", "")}
-        openLabel={t("Open website")}
       />
       <ProductLink
         label={t("Contact")}
@@ -82,14 +75,12 @@ function ProductLink({
   address,
   href,
   displayAddress = address,
-  openLabel,
 }: {
   id?: string;
   label: string;
   address: string;
   href: string;
   displayAddress?: string;
-  openLabel?: string;
 }) {
   const [pending, setPending] = useState<"open" | "retry" | "copy" | null>(null);
   const [failure, setFailure] = useState<"open" | "copy" | null>(null);
@@ -195,6 +186,7 @@ function ProductLink({
         loading={pending === "open"}
         loadingLabel={t("Opening…")}
         disabled={pending !== null}
+        disabledReason={t("Wait for the current operation to finish")}
         tooltip={
           address.replace(/^https?:\/\//, "") === displayAddress.replace(/^https?:\/\//, "")
             ? undefined
@@ -212,6 +204,7 @@ function ProductLink({
           label={`${t("Copy")}: ${address}`}
           tooltip={copied ? t("Copied") : t("Copy")}
           disabled={pending !== null}
+          disabledReason={t("Wait for the current operation to finish")}
           loading={pending === "copy"}
           onClick={() => run("copy").catch(() => undefined)}
         >
@@ -222,17 +215,6 @@ function ProductLink({
           )}
         </Button>
       )}
-      {openLabel ? (
-        <Button
-          size="sm"
-          disabled={pending !== null}
-          loading={pending === "open"}
-          loadingLabel={t("Opening…")}
-          onClick={() => run("open").catch(() => undefined)}
-        >
-          {openLabel}
-        </Button>
-      ) : null}
       <span role="status" className="sr-only">
         {copied ? t("Copied") : ""}
       </span>

@@ -29,7 +29,11 @@ use std::{
     fs::{File, TryLockError},
     io,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 const TURNSTILE: &str = "turnstile.lock";
@@ -152,8 +156,14 @@ struct Directory {
 }
 
 impl Directory {
-    fn open(path: &Path) -> Result<(Self, bool), Error> {
-        let created = os::create_directory(path)?;
+    fn open(path: &Path) -> Result<Self, Error> {
+        os::create_directory(path)?;
+        Self::open_existing(path)
+    }
+
+    /// Never creates the directory: a namespace that vanished is `Io`, not
+    /// silently recreated empty.
+    fn open_existing(path: &Path) -> Result<Self, Error> {
         let file = os::open_directory(path)?;
         let identity = os::file_identity(&file)?.0;
         let path = std::fs::canonicalize(path)
@@ -164,7 +174,7 @@ impl Directory {
             identity,
         };
         directory.verify()?;
-        Ok((directory, created))
+        Ok(directory)
     }
 
     fn verify(&self) -> Result<(), Error> {
@@ -190,10 +200,56 @@ pub struct Registry {
 
 impl Registry {
     pub fn open(protected_root: &Path) -> Result<Self, Error> {
-        let (root, _) = Directory::open(protected_root)?;
+        let root = Directory::open(protected_root)?;
         Ok(Self {
             root: Arc::new(root),
         })
+    }
+
+    /// Make sure the namespace directory exists AND is complete. Sidecars are
+    /// created inside a private staging directory and the whole directory is
+    /// published with one no-replace rename, so a final `physical-v1-*`
+    /// directory is never visible without both sidecars. Concurrent first
+    /// binders race on that single rename and all converge on the winner's
+    /// lock inodes; a crash can only strand an ignored `staging-v1-*` orphan.
+    /// An existing final directory that lacks a sidecar is never repaired: a
+    /// live participant may still hold a lock on the removed inode.
+    fn publish_namespace(&self, path: &Path) -> Result<(), Error> {
+        match std::fs::symlink_metadata(path) {
+            Ok(_) => return Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(Error::io("read physical namespace metadata", error)),
+        }
+        static NEXT_STAGE: AtomicU64 = AtomicU64::new(0);
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_nanos());
+        let stage = self.root.path.join(format!(
+            "staging-v1-{}-{nanos:x}-{}",
+            std::process::id(),
+            NEXT_STAGE.fetch_add(1, Ordering::Relaxed)
+        ));
+        if !os::create_directory(&stage)? {
+            return Err(Error::Changed("physical namespace staging directory"));
+        }
+        let staged = (|| {
+            // Created and closed here; every later participant opens the files
+            // by path, so only inode identity (preserved by the rename) matters.
+            os::safe_file(&stage.join(TURNSTILE), true)?;
+            os::safe_file(&stage.join(WRITERS), true)?;
+            match rename_no_replace(&stage, path) {
+                Ok(()) => Ok(()),
+                // Another binder published first: converge on its namespace.
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Ok(()),
+                Err(error) => Err(Error::io("publish physical namespace", error)),
+            }
+        })();
+        // Best effort and only ever our own uniquely named staging directory.
+        // After a successful publish these simply do not exist any more.
+        let _ = std::fs::remove_file(stage.join(TURNSTILE));
+        let _ = std::fs::remove_file(stage.join(WRITERS));
+        let _ = std::fs::remove_dir(&stage);
+        staged
     }
 
     /// Consume and retain an actual regular file. Hardlinks of this file are
@@ -211,11 +267,12 @@ impl Registry {
             .root
             .path
             .join(format!("physical-v1-{}", identity.namespace));
-        let (directory, created) = Directory::open(&path)?;
+        self.publish_namespace(&path)?;
+        let directory = Directory::open_existing(&path)?;
         // An existing incomplete namespace is not silently repaired. Someone
         // may still hold an old lock inode; a new file would split that cohort.
-        let turnstile = os::safe_file(&directory.path.join(TURNSTILE), created)?;
-        let writers = os::safe_file(&directory.path.join(WRITERS), created)?;
+        let turnstile = os::safe_file(&directory.path.join(TURNSTILE), false)?;
+        let writers = os::safe_file(&directory.path.join(WRITERS), false)?;
         let domain = Arc::new(Domain {
             root: Arc::clone(&self.root),
             directory,
@@ -243,6 +300,13 @@ struct Domain {
 
 impl Domain {
     fn verify(&self) -> Result<(), Error> {
+        self.verify_open().map(drop)
+    }
+
+    /// One complete verification pass. It returns the two lock files it opened
+    /// by pathname and proved identical to the held anchors, so admission locks
+    /// exactly those handles instead of verifying and then reopening them.
+    fn verify_open(&self) -> Result<(File, File), Error> {
         self.root.verify()?;
         self.directory.verify()?;
         if !self
@@ -254,25 +318,20 @@ impl Domain {
         {
             return Err(Error::Changed("held physical file"));
         }
-        self.open_lock(TURNSTILE, &self.turnstile)?;
-        self.open_lock(WRITERS, &self.writers)?;
-        Ok(())
+        let turnstile = self.open_lock(TURNSTILE, &self.turnstile)?;
+        let writers = self.open_lock(WRITERS, &self.writers)?;
+        Ok((turnstile, writers))
     }
 
     fn open_lock(&self, name: &str, anchor: &File) -> Result<File, Error> {
-        os::check_sidecar(anchor)?;
+        // Compare identities first: a replaced sidecar leaves the held anchor with no
+        // links, which is a change of file, not an unsafe one.
         let current = os::safe_file(&self.directory.path.join(name), false)?;
         if os::file_identity(&current)?.0 != os::file_identity(anchor)?.0 {
             return Err(Error::Changed("lock sidecar"));
         }
+        os::check_sidecar(anchor)?;
         Ok(current)
-    }
-
-    fn fresh_locks(&self) -> Result<(File, File), Error> {
-        self.verify()?;
-        let turnstile = self.open_lock(TURNSTILE, &self.turnstile)?;
-        let writers = self.open_lock(WRITERS, &self.writers)?;
-        Ok((turnstile, writers))
     }
 }
 
@@ -290,7 +349,7 @@ impl PhysicalStore {
     /// Try once. An exclusive short turnstile serializes the admission step;
     /// the shared writer handle remains held after the turnstile is dropped.
     pub fn try_writer(&self) -> Result<WriterReservation, Error> {
-        let (turnstile, writers) = self.domain.fresh_locks()?;
+        let (turnstile, writers) = self.domain.verify_open()?;
         try_exclusive(&turnstile, BusyResource::Ingress)?;
         match writers.try_lock_shared() {
             Ok(()) => {}
@@ -307,7 +366,7 @@ impl PhysicalStore {
     /// Close new ingress immediately, independently of existing writer drain.
     /// Returning this fence does NOT mean the existing writers have finished.
     pub fn try_begin_close(&self) -> Result<ClosingFence, Error> {
-        let (turnstile, writers) = self.domain.fresh_locks()?;
+        let (turnstile, writers) = self.domain.verify_open()?;
         try_exclusive(&turnstile, BusyResource::Ingress)?;
         self.domain.verify()?;
         Ok(ClosingFence {

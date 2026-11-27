@@ -80,6 +80,8 @@ export type ChangesActions = {
 type Props = {
   toolbar?: boolean;
   onRevealChanges?: () => void;
+  /** Set on a repository section of several: adds the single-repository toggle to the menu. */
+  repositoryScope?: { only: boolean; onToggle: () => void };
   cwd: string;
   index: GitDiffIndex | null;
   busy: string | null;
@@ -124,7 +126,7 @@ type Dialog =
   | {
       kind: "name";
       title: string;
-      description: string;
+      description?: string;
       label: string;
       placeholder: string;
       submitLabel: string;
@@ -146,6 +148,7 @@ async function orElse<T>(work: () => Promise<T>, fallback: T): Promise<T> {
 export function GitActionsMenu({
   toolbar = false,
   onRevealChanges,
+  repositoryScope,
   cwd,
   index,
   busy,
@@ -193,6 +196,7 @@ export function GitActionsMenu({
   }, [open, actions, cwd]);
 
   const branch = index?.branch ?? null;
+  const onlyRepository = repositoryScope?.only;
   const items = useMemo(() => {
     const files = index?.files ?? [];
     const others = (branches?.branches ?? []).filter((item) => !item.current);
@@ -212,9 +216,21 @@ export function GitActionsMenu({
       otherBranchCount: others.length,
       otherLocalBranchCount: others.filter((item) => !item.remote).length,
       autoFetch,
+      repositoryScope: onlyRepository === undefined ? undefined : { only: onlyRepository },
       ...data,
     });
-  }, [actions, autoFetch, branch, branches, busy, data, generating, index, supported]);
+  }, [
+    actions,
+    autoFetch,
+    branch,
+    branches,
+    busy,
+    data,
+    generating,
+    index,
+    onlyRepository,
+    supported,
+  ]);
 
   const run = async (work: () => Promise<unknown>, status?: string, pending?: string) => {
     if (gitPanelRuntime(cwd).state.busy) return;
@@ -223,19 +239,24 @@ export function GitActionsMenu({
     onPending?.(pending ?? null);
     try {
       await work();
+      // One channel for the outcome: the header status, not a second success row.
       if (status) onStatus(status);
-      if (status)
-        setGitFeedback(cwd, {
-          kind: "success",
-          title: status,
-        });
     } catch (error) {
       setGitFeedback(cwd, {
         kind: "error",
         get title() {
-          return t("Git operation failed");
+          // The progress label names the action ("Pulling…" -> "Pulling failed").
+          return pending
+            ? t("{p0} failed", { p0: pending.replace(/…$/, "") })
+            : t("Git operation failed");
         },
         detail: errorText(error),
+        // Only the repeatable network actions (pull, push, fetch, sync) offer Try again.
+        retry: pending
+          ? async () => {
+              await run(work, status, pending);
+            }
+          : undefined,
       });
     } finally {
       onPending?.(null);
@@ -334,7 +355,7 @@ export function GitActionsMenu({
   };
 
   const stashWith = (mode: GitStashMode) =>
-    run(() => gitStash(cwd, undefined, mode), "Changes stashed");
+    run(() => gitStash(cwd, undefined, mode), t("Changes stashed"));
 
   const undoLastCommit = async () => {
     if (
@@ -349,7 +370,7 @@ export function GitActionsMenu({
     ) {
       return;
     }
-    await run(() => gitUndoLastCommit(cwd), "Last commit undone");
+    await run(() => gitUndoLastCommit(cwd), t("Last commit undone"));
   };
 
   const abortOperation = async () => {
@@ -373,19 +394,21 @@ export function GitActionsMenu({
     const commit = commitMenuOptions(id);
     if (commit) return void changes.current?.commit(commit);
     switch (id) {
+      case "repository-scope":
+        return repositoryScope?.onToggle();
       case "pull":
-        return run(() => gitPull(cwd), undefined, "Pulling…");
+        return run(() => gitPull(cwd), undefined, t("Pulling…"));
       case "pull-rebase":
-        return run(() => gitPull(cwd, true), undefined, "Pulling…");
+        return run(() => gitPull(cwd, true), undefined, t("Pulling…"));
       case "push":
       case "branch-publish":
-        return run(() => gitPush(cwd), undefined, "Pushing…");
+        return run(() => gitPush(cwd), undefined, t("Pushing…"));
       case "sync":
-        return run(() => gitSync(cwd), undefined, "Syncing…");
+        return run(() => gitSync(cwd), undefined, t("Syncing…"));
       case "fetch":
-        return run(() => gitFetch(cwd), undefined, "Fetching…");
+        return run(() => gitFetch(cwd), undefined, t("Fetching…"));
       case "fetch-prune":
-        return run(() => gitFetch(cwd, true), undefined, "Fetching…");
+        return run(() => gitFetch(cwd, true), undefined, t("Fetching…"));
       case "auto-fetch":
         return onToggleAutoFetch();
       case "checkout":
@@ -405,7 +428,7 @@ export function GitActionsMenu({
           get title() {
             return t("Merge Branch");
           },
-          description: branch ? `Merge into ${branch}` : undefined,
+          description: branch ? t("Merge into {p0}", { p0: branch }) : undefined,
           get placeholder() {
             return t("Filter branches");
           },
@@ -422,7 +445,7 @@ export function GitActionsMenu({
           get title() {
             return t("Rebase Branch");
           },
-          description: branch ? `Rebase ${branch} onto` : undefined,
+          description: branch ? t("Rebase {p0} onto", { p0: branch }) : undefined,
           get placeholder() {
             return t("Filter branches");
           },
@@ -438,10 +461,7 @@ export function GitActionsMenu({
         return askName(
           {
             get title() {
-              return t("Create Branch");
-            },
-            get description() {
-              return t("Create a branch at HEAD and switch to it.");
+              return t("New branch");
             },
             get label() {
               return t("Branch name");
@@ -449,14 +469,14 @@ export function GitActionsMenu({
             get placeholder() {
               return t("feature/my-branch");
             },
-            submitLabel: "Create Branch",
+            submitLabel: t("Create"),
           },
           (name) => gitCreateBranch(cwd, name),
         );
       case "branch-create-from":
         return choose(() => branchItems(false, false), {
           get title() {
-            return t("Create Branch From");
+            return t("Create branch from");
           },
           get placeholder() {
             return t("Filter branches");
@@ -468,10 +488,11 @@ export function GitActionsMenu({
             askName(
               {
                 get title() {
-                  return t("Create Branch");
+                  return t("New branch");
                 },
+                // The base ref is the one fact the title and field do not state.
                 get description() {
-                  return t("Create a branch from {p0} and switch to it.", { p0: ref });
+                  return t("From {p0}", { p0: ref });
                 },
                 get label() {
                   return t("Branch name");
@@ -479,7 +500,7 @@ export function GitActionsMenu({
                 get placeholder() {
                   return t("feature/my-branch");
                 },
-                submitLabel: "Create Branch",
+                submitLabel: t("Create"),
               },
               (name) => gitCreateBranchFrom(cwd, name, ref),
             ),
@@ -489,10 +510,7 @@ export function GitActionsMenu({
         return askName(
           {
             get title() {
-              return t("Rename Branch");
-            },
-            get description() {
-              return t("Rename {p0}.", { p0: branch });
+              return t("Rename branch");
             },
             get label() {
               return t("New name");
@@ -500,7 +518,7 @@ export function GitActionsMenu({
             get placeholder() {
               return t("feature/my-branch");
             },
-            submitLabel: "Rename",
+            submitLabel: t("Rename"),
             initialValue: branch,
           },
           (name) => gitRenameBranch(cwd, branch, name),
@@ -527,21 +545,18 @@ export function GitActionsMenu({
             get title() {
               return t("Add Remote");
             },
-            get description() {
-              return t("Add a named remote to this repository.");
-            },
             get label() {
               return t("Remote name");
             },
             get placeholder() {
               return t("origin");
             },
-            submitLabel: "Add Remote",
+            submitLabel: t("Add Remote"),
             extra: {
               get label() {
                 return t("Remote URL");
               },
-              placeholder: "https://github.com/owner/repo.git",
+              placeholder: t("https://github.com/owner/repo.git"),
             },
           },
           (name, url) => gitRemoteAdd(cwd, name, url),
@@ -589,13 +604,13 @@ export function GitActionsMenu({
       case "stash-apply-latest":
         return run(async () => {
           const entry = (await gitStashList(cwd))[0];
-          if (!entry) throw new Error("No stashes");
+          if (!entry) throw new Error(t("No stashes"));
           await gitStashAction(cwd, "apply", entry.index, entry.sha);
         });
       case "stash-pop-latest":
         return run(async () => {
           const entry = (await gitStashList(cwd))[0];
-          if (!entry) throw new Error("No stashes");
+          if (!entry) throw new Error(t("No stashes"));
           await gitStashAction(cwd, "pop", entry.index, entry.sha);
         });
       case "stash-apply":
@@ -643,14 +658,11 @@ export function GitActionsMenu({
             get title() {
               return t("Create Tag");
             },
-            get description() {
-              return t("Tag the commit at HEAD.");
-            },
             get label() {
               return t("Tag name");
             },
-            placeholder: "v1.0.0",
-            submitLabel: "Create Tag",
+            placeholder: t("v1.0.0"),
+            submitLabel: t("Create Tag"),
           },
           (name) => gitCreateTag(cwd, name, head),
         );
@@ -698,9 +710,9 @@ export function GitActionsMenu({
       {toolbar
         ? [
             { id: "fetch", label: t("Fetch"), icon: ArrowDownCircle },
-            { id: "sync", label: t("Sync Changes"), icon: RefreshCw },
+            { id: "sync", label: t("Sync changes"), icon: RefreshCw },
             { id: "push", label: t("Push"), icon: CloudUpload },
-            { id: "stage-all", label: t("Stage All Changes"), icon: Plus },
+            { id: "stage-all", label: t("Stage all changes"), icon: Plus },
             { id: "commit", label: t("Commit"), icon: Check },
           ].map(({ id, label, icon: Icon }) => {
             const item = items
@@ -714,6 +726,11 @@ export function GitActionsMenu({
                 iconOnly
                 label={label}
                 disabled={!item || item.kind !== "item" || !!item.disabled || !!busy}
+                disabledReason={
+                  busy
+                    ? t("Wait for the current operation to finish")
+                    : t("{p0} is not available right now.", { p0: label })
+                }
                 onClick={() => void handle(id)}
               >
                 <Icon className="icon-sm" />
@@ -730,6 +747,7 @@ export function GitActionsMenu({
         aria-label={t("Branch actions")}
         aria-expanded={open}
         disabled={busy !== null}
+        disabledReason={busy !== null ? t("Wait for the current operation to finish") : undefined}
         onClick={(event) => {
           const button = event.currentTarget;
           setAnchor((current) => (current ? null : button));
@@ -745,7 +763,7 @@ export function GitActionsMenu({
         <ExplorerMenu
           anchor={anchor}
           items={items}
-          ariaLabel="Branch actions"
+          ariaLabel={t("Branch actions")}
           width={232}
           onPick={(id) => {
             setAnchor(null);

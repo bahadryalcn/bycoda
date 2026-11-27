@@ -22,9 +22,11 @@ import {
   restoreQueuedMessage,
   runningTargetOf,
 } from "../../../features/sessions/model/messageQueue";
+import { delegatedChildrenRunning } from "../../../features/sessions/model/delegatedAgents";
 import { createQueuedUndoOrder } from "../../../features/sessions/model/queuedUndoOrder";
 import { repairStaleHandoff } from "../../../features/sessions/model/activeSubmits";
 import { isPreparingHandoff } from "../../../features/sessions/model/handoff";
+import { wasTurnInterrupted } from "../../../features/sessions/model/inFlight";
 import { applyQueuedEdit } from "../../../features/sessions/model/queuedMessageEdit";
 import {
   settleSharedSend,
@@ -36,6 +38,8 @@ import {
 import {
   QueueDeferredError,
   QueueNotReadyError,
+  QueueRunLeaseBlockedError,
+  QueueRunLeasePendingError,
 } from "../../../features/connections/model/sharedQueue";
 import {
   nextQueueStatus,
@@ -49,8 +53,10 @@ import {
 import { DeliveryUnknownError } from "../../../shared/lib/deliveryUnknown";
 import type { QueueActionResult } from "../../../features/sessions/model/queueAction";
 import {
+  beginDeliveryProgress,
   clearDeliveryProgress,
   readDeliveryProgress,
+  updateDeliveryProgress,
 } from "../../../features/sessions/model/deliveryProgress";
 import { steerAppliesModelSettings, type HarnessEvent } from "../../../integrations/harness";
 import { type Submit } from "../helpers/types";
@@ -59,6 +65,7 @@ import { takeRequeuedHeadSignal } from "./submit/submitBusySteer";
 import { t } from "../../../shared/i18n";
 
 export interface QueuedMessageActionDeps {
+  ensureSessionHistoryForExecution?: (sessionId: string) => Promise<boolean>;
   sessions: Session[];
   movingWindows: Set<string>;
   windowTransferPending: boolean;
@@ -93,9 +100,17 @@ const HOST_WAIT_NOTICE_MS = 8_000;
  * How the queue may send its head now: as a new turn, as a steer into a turn
  * only background commands keep open, or not yet. A head queued for another
  * model waits for the turn to end, since joining it cannot change the model.
+ * After the turn, the head also waits for the session's delegated subagents:
+ * they report back to it, and a new turn meanwhile would race their work.
+ * The row's own Send stays available to send it earlier.
  */
-function autoSendMode(session: Session): "dispatch" | "steer" | undefined {
-  if (canDispatchQueuedHead(session)) return "dispatch";
+export function autoSendMode(
+  session: Session,
+  sessions: readonly Session[],
+): "dispatch" | "steer" | undefined {
+  if (session.historyLoading || wasTurnInterrupted(session)) return undefined;
+  if (canDispatchQueuedHead(session))
+    return delegatedChildrenRunning(sessions, session.id) ? undefined : "dispatch";
   const head = session.queuedMessages?.[0];
   if (
     head &&
@@ -142,6 +157,26 @@ const stillWaiting = (): QueueActionResult => ({
   kind: "waiting",
   message: t("A send is still waiting for confirmation. Try Resume again in a moment."),
 });
+
+function recordRunLeaseQueueResult(
+  sessionId: string,
+  messageId: string,
+  failure: QueueRunLeasePendingError | QueueRunLeaseBlockedError,
+): void {
+  const stage = failure instanceof QueueRunLeasePendingError ? "waiting" : "rejected";
+  const current = readDeliveryProgress(sessionId, messageId);
+  // Shared queues publish their result as part of settling the claim. A queue
+  // that lives only on this desktop uses the same inline feedback.
+  if (current?.stage === stage && current.queueOnly) return;
+  const progress = beginDeliveryProgress(sessionId, messageId, "preparing");
+  updateDeliveryProgress(sessionId, progress, stage, failure.message, false, true);
+}
+
+function clearRunLeaseQueueResult(sessionId: string, messageId: string): void {
+  const progress = readDeliveryProgress(sessionId, messageId);
+  if (progress?.queueOnly && (progress.stage === "waiting" || progress.stage === "rejected"))
+    clearDeliveryProgress(sessionId, progress);
+}
 
 /** Queued follow-up dispatch and queue edits. Queue ordering and dedup are copied verbatim. */
 export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
@@ -228,11 +263,11 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
       // A handoff no running submit owns would hold the queue forever; the
       // repair changes the sessions, which runs this effect again.
       if (isPreparingHandoff(session) && repairStaleHandoff(session.id)) continue;
-      if (autoSendMode(session) && retiringTurns.current.has(session.id)) {
+      if (autoSendMode(session, sessions) && retiringTurns.current.has(session.id)) {
         waitingForCleanup = true;
         continue;
       }
-      if (autoSendMode(session) && !sharedLocalQueueReady(session.id)) {
+      if (autoSendMode(session, sessions) && !sharedLocalQueueReady(session.id)) {
         // The Host that coordinates this queue is not answering. Sending stays
         // refused (two windows could send the same row), but say why.
         if (!sharedLocalQueueLeaseHeld(session.id) && !lateSettlementPossible(session.id)) {
@@ -263,7 +298,7 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
       }
       hostWaitSince.current.delete(session.id);
       if (
-        !autoSendMode(session) ||
+        !autoSendMode(session, sessions) ||
         !sharedLocalQueueReady(session.id) ||
         retiringTurns.current.has(session.id) ||
         queueDispatchingRef.current.has(session.id) ||
@@ -292,7 +327,7 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
           }
           const latest = sessionsRef.current.find((entry) => entry.id === session.id);
           const head = latest?.queuedMessages?.[0];
-          const mode = latest ? autoSendMode(latest) : undefined;
+          const mode = latest ? autoSendMode(latest, sessionsRef.current) : undefined;
           if (
             !latest ||
             !head ||
@@ -348,10 +383,18 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
                 flushHarnessEvents();
                 return;
               }
+              clearRunLeaseQueueResult(session.id, head.id);
               refusedDrains.current.delete(session.id);
               retryAfter.current.delete(session.id);
             })
             .catch((error) => {
+              if (error instanceof QueueRunLeasePendingError) {
+                const current = sessionsRef.current.find((entry) => entry.id === session.id);
+                if (current?.queuedMessages?.[0]?.id !== head.id) return;
+                recordRunLeaseQueueResult(session.id, head.id, error);
+                scheduleRetry(session.id);
+                return;
+              }
               if (error instanceof QueueNotReadyError) {
                 // Nothing was sent. The queue stays as it is and the head is
                 // offered again once the host or the other computer settles.
@@ -375,14 +418,25 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
               }
               // The provider refused the head, or its delivery is unconfirmed:
               // the queue holds for the owner's decision.
+              const writerBlocked = error instanceof QueueRunLeaseBlockedError;
               const event = error instanceof DeliveryUnknownError ? "unknown" : "reject";
               setSessions((sessions) =>
                 sessions.map((entry) =>
-                  entry.id === session.id
+                  entry.id === session.id &&
+                  (!writerBlocked || entry.queuedMessages?.[0]?.id === head.id)
                     ? { ...entry, queueStatus: nextQueueStatus(entry.queueStatus, event) }
                     : entry,
                 ),
               );
+              if (writerBlocked) {
+                if (
+                  sessionsRef.current
+                    .find((entry) => entry.id === session.id)
+                    ?.queuedMessages?.some((row) => row.id === head.id)
+                )
+                  recordRunLeaseQueueResult(session.id, head.id, error);
+                return;
+              }
               enqueueHarnessEvent(session.id, {
                 type: "status",
                 text: String(error).replace(/^Error: /, ""),
@@ -518,16 +572,32 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
       check();
     });
 
+  function showManualRunLeaseResult(
+    sessionId: string,
+    messageId: string,
+    failure: QueueRunLeasePendingError | QueueRunLeaseBlockedError,
+  ): QueueActionResult {
+    const current = sessionsRef.current.find((entry) => entry.id === sessionId);
+    if (current?.queuedMessages?.some((row) => row.id === messageId)) {
+      recordRunLeaseQueueResult(sessionId, messageId, failure);
+      if (failure instanceof QueueRunLeasePendingError) {
+        if (current.queueStatus === "active") scheduleRetry(sessionId);
+      } else {
+        setSessions((all) =>
+          all.map((entry) =>
+            entry.id === sessionId && entry.queuedMessages?.some((row) => row.id === messageId)
+              ? { ...entry, queueStatus: nextQueueStatus(entry.queueStatus, "reject") }
+              : entry,
+          ),
+        );
+      }
+    }
+    return { kind: "waiting" };
+  }
+
   const onSteerQueuedMessage = useCallback(
     async (sessionId: string, messageId: string): Promise<QueueActionResult> => {
-      if (manualActions.current.has(sessionId)) {
-        enqueueHarnessEvent(sessionId, {
-          type: "status",
-          text: "Another queue action is still running. Try again in a moment.",
-        });
-        flushHarnessEvents();
-        return false;
-      }
+      if (manualActions.current.has(sessionId)) return { kind: "waiting" };
       const session = sessionsRef.current.find((entry) => entry.id === sessionId);
       const message = session ? queuedMessageForSubmit(session, messageId, "steer") : undefined;
       if (!session) return false;
@@ -571,6 +641,7 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
           handoffCard: message.handoffCard,
           intent: message.intent,
         });
+        if (accepted) clearRunLeaseQueueResult(sessionId, message.id);
         // Stop paused the queue; the rows behind this one keep their old status.
         if (restart && accepted && queueStatus !== "paused" && queueStatus !== "resuming")
           setSessions((prev) =>
@@ -582,6 +653,11 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
           );
         return accepted;
       } catch (error) {
+        if (
+          error instanceof QueueRunLeasePendingError ||
+          error instanceof QueueRunLeaseBlockedError
+        )
+          return showManualRunLeaseResult(sessionId, messageId, error);
         if (error instanceof QueueDeferredError) return { kind: "waiting", message: error.message };
         throw error;
       } finally {
@@ -603,20 +679,15 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
 
   const onResumeQueue = useCallback(
     async (sessionId: string): Promise<QueueActionResult> => {
-      if (manualActions.current.has(sessionId)) {
-        enqueueHarnessEvent(sessionId, {
-          type: "status",
-          text: "Another queue action is still running. Try again in a moment.",
-        });
-        flushHarnessEvents();
-        return false;
-      }
-      const session = sessionsRef.current.find((entry) => entry.id === sessionId);
-      if (!session || !session.queuedMessages?.length) {
-        return false;
-      }
+      if (manualActions.current.has(sessionId)) return { kind: "waiting" };
       manualActions.current.add(sessionId);
       try {
+        const original = sessionsRef.current.find((entry) => entry.id === sessionId);
+        if (!original?.queuedMessages?.length) return false;
+        if (original.storedHistory && !(await deps.ensureSessionHistoryForExecution?.(sessionId)))
+          throw new Error(t("Earlier messages could not be loaded."));
+        const session = sessionsRef.current.find((entry) => entry.id === sessionId);
+        if (!session?.queuedMessages?.length) return false;
         // A send still waiting for the provider is answered before anything else
         // is planned; one that never settles is given up and held for review.
         const inFlight = await settleSharedSend(sessionId);
@@ -685,13 +756,24 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
           };
         }
         if (plan.do === "send-head") {
-          return await onSubmit(sessionId, head.text, head.attachments, {
-            followUpBehavior: "steer",
-            queuedMessageId: head.id,
-            noteCard: head.noteCard,
-            handoffCard: head.handoffCard,
-            intent: head.intent,
-          });
+          try {
+            const accepted = await onSubmit(sessionId, head.text, head.attachments, {
+              followUpBehavior: "steer",
+              queuedMessageId: head.id,
+              noteCard: head.noteCard,
+              handoffCard: head.handoffCard,
+              intent: head.intent,
+            });
+            if (accepted) clearRunLeaseQueueResult(sessionId, head.id);
+            return accepted;
+          } catch (error) {
+            if (
+              error instanceof QueueRunLeasePendingError ||
+              error instanceof QueueRunLeaseBlockedError
+            )
+              return showManualRunLeaseResult(sessionId, head.id, error);
+            throw error;
+          }
         }
         return false;
       } catch (error) {

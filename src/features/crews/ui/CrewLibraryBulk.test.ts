@@ -19,11 +19,11 @@ const candidate = {
   modelSettings: { effort: "high" },
 } as unknown as CrewCandidate;
 
-it("targets the selected visible profiles, or every visible one when none is selected", () => {
+it("targets only selected visible profiles", () => {
   const visible = [profile("a"), profile("b"), profile("c")];
   expect(bulkTargets(visible, new Set(["b", "gone"])).map((a) => a.id)).toEqual(["b"]);
-  expect(bulkTargets(visible, new Set(["gone"])).map((a) => a.id)).toEqual(["a", "b", "c"]);
-  expect(bulkTargets(visible, new Set()).map((a) => a.id)).toEqual(["a", "b", "c"]);
+  expect(bulkTargets(visible, new Set(["gone"]))).toEqual([]);
+  expect(bulkTargets(visible, new Set())).toEqual([]);
 });
 
 it("saves each profile with the fixed candidate in order and reports failures", async () => {

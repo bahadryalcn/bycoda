@@ -9,17 +9,15 @@ export function voiceAssistantControlChoice(
   if (names.length !== ids.length || names.some((name) => !name)) return;
   const verb = target.deleteReview
     ? t("Delete job and tasks")
-    : t(
-        (
-          {
-            pause: "Pause",
-            resume: "Resume",
-            stop: "Stop",
-            delete: "Delete job only",
-            keep: "Keep job and tasks",
-          } as const
-        )[target.action],
-      );
+    : (
+        {
+          pause: t("Pause"),
+          resume: t("Resume"),
+          stop: t("Stop"),
+          delete: t("Delete job only"),
+          keep: t("Keep job and tasks"),
+        } as const
+      )[target.action];
   const description = [
     target.deleteReview
       ? t("{p0} tasks. Sessions, branches and working files remain.", {

@@ -1,6 +1,7 @@
 import { isSpace } from "../../../shared/lib/text";
 import { clamp } from "../../../shared/lib/numbers";
-import { loadProjectFiles, rankProjectFiles, type RankedFile } from "./fileIndex";
+import { loadProjectFiles } from "./fileIndex";
+import { rankMentionCandidates, type RankedFile } from "./rankProjectFiles";
 import type { ProjectFile } from "../../../platform/tauri/fs";
 import { isMarkdownBlockquotePosition } from "../../sessions/public/quoteDraft";
 
@@ -18,14 +19,14 @@ export type MentionIndex = {
   labelOf: Map<string, string>;
 };
 
-export type MentionHit = {
+type MentionHit = {
   start: number;
   end: number;
   label: string;
   file: ProjectFile;
 };
 
-export type MentionTextPart = {
+type MentionTextPart = {
   text: string;
   file?: ProjectFile;
 };
@@ -34,7 +35,7 @@ const MENTION_TOKEN_RE = /(^|\s)@(\S+)/g;
 const LINE_LOCATION_RE = /^ \((?:line \d+|lines \d+[-–]\d+)\)/;
 const TRAILING_PUNCTUATION = new Set([".", ",", ";", ":", "!", "?", ")", "]", "}", '"', "'", "/"]);
 const MAX_QUERY = 120;
-const MAX_PICKER = 30;
+const candidatesByListing = new WeakMap<ProjectFile[], ProjectFile[]>();
 
 /** Mention token that contains `cursor`, if the user is typing `@file`. */
 export function mentionTokenAt(text: string, cursor: number): MentionToken | null {
@@ -64,10 +65,19 @@ export function replaceMentionToken(
   return `${text.slice(0, token.start)}@${label}${spacer}${rest}`;
 }
 
-export function buildMentionIndex(files: ProjectFile[]): MentionIndex {
+/** Valid mention targets, including parent directories, for an immutable file listing. */
+export function mentionCandidates(files: ProjectFile[]): ProjectFile[] {
+  const cached = candidatesByListing.get(files);
+  if (cached) return cached;
   const entries = withMentionDirectories(files).filter((file) =>
     isMentionableRelative(file.relative),
   );
+  candidatesByListing.set(files, entries);
+  return entries;
+}
+
+export function buildMentionIndex(files: ProjectFile[]): MentionIndex {
+  const entries = mentionCandidates(files);
   const counts = new Map<string, number>();
   for (const file of entries) {
     counts.set(file.name, (counts.get(file.name) ?? 0) + 1);
@@ -114,39 +124,9 @@ export function rankMentionFiles(
   files: ProjectFile[],
   query: string,
   recents: string[],
-  limit = MAX_PICKER,
+  limit?: number,
 ): RankedFile[] {
-  const usable = withMentionDirectories(files).filter((file) =>
-    isMentionableRelative(file.relative),
-  );
-  const needle = query.replace(/\/+$/, "").trim();
-  if (needle) return rankProjectFiles(usable, needle, recents, limit);
-
-  const byPath = new Map(usable.map((file) => [file.path, file]));
-  const out: RankedFile[] = [];
-  const seen = new Set<string>();
-  for (const path of recents) {
-    const file = byPath.get(path);
-    if (!file || seen.has(path)) continue;
-    seen.add(path);
-    out.push({ ...file, score: 0, positions: [] });
-    if (out.length >= limit) return out;
-  }
-
-  const rest = [...usable].sort((a, b) => {
-    const depth = pathDepth(a.relative) - pathDepth(b.relative);
-    if (depth !== 0) return depth;
-    const dir = Number(Boolean(b.isDir)) - Number(Boolean(a.isDir));
-    if (dir !== 0) return dir;
-    return a.relative.localeCompare(b.relative);
-  });
-  for (const file of rest) {
-    if (seen.has(file.path)) continue;
-    seen.add(file.path);
-    out.push({ ...file, score: 0, positions: [] });
-    if (out.length >= limit) break;
-  }
-  return out;
+  return rankMentionCandidates(mentionCandidates(files), query, recents, limit);
 }
 
 /** Split composer text so known `@file` tokens can be highlighted. */
@@ -284,12 +264,6 @@ function mentionDirPath(file: ProjectFile, relativeDir: string): string {
     return file.path.slice(0, file.path.length - winTrail.length);
   }
   return file.path.slice(0, file.path.length - trail.length);
-}
-
-function pathDepth(relative: string): number {
-  let depth = 0;
-  for (const ch of relative) if (ch === "/") depth += 1;
-  return depth;
 }
 
 /** Workspace-relative only: no absolute paths, `..`, or control / format characters. */

@@ -82,15 +82,15 @@ describe("surfaceTabMenuItems", () => {
     for (const review of [false, true]) {
       const items = surfaceTabMenuItems(t, newFileTab("/repo/src/app.ts", "/repo", review));
       expect(items.flatMap((item) => (item.kind === "item" ? [item.label] : []))).toEqual([
-        "Open in Default App",
-        expect.stringMatching(/Reveal|Containing Folder/),
-        "Copy Path",
-        "Copy Relative Path",
-        "Copy File Name",
+        "Open in default app",
+        expect.stringMatching(/Reveal|containing folder/),
+        "Copy path",
+        "Copy relative path",
+        "Copy file name",
         "Close",
-        "Close Others",
-        "Close Tabs to the Right",
-        "Close Tabs to the Left",
+        "Close others",
+        "Close tabs to the right",
+        "Close tabs to the left",
       ]);
     }
   });
@@ -111,11 +111,11 @@ describe("surfaceTabMenuItems", () => {
         {
           kind: "item",
           id: "close-others",
-          label: "Close Others",
+          label: "Close others",
           disabled: false,
         },
-        { kind: "item", id: "close-right", label: "Close Tabs to the Right", disabled: true },
-        { kind: "item", id: "close-left", label: "Close Tabs to the Left", disabled: true },
+        { kind: "item", id: "close-right", label: "Close tabs to the right", disabled: true },
+        { kind: "item", id: "close-left", label: "Close tabs to the left", disabled: true },
       ]);
     }
   });
@@ -126,12 +126,12 @@ describe("surfaceTabMenuItems", () => {
         .filter((item) => item.kind === "item" && item.id.startsWith("move-"))
         .map((item) => (item.kind === "item" ? [item.id, item.label, item.disabled] : []));
     expect(moves({ left: false, right: true })).toEqual([
-      ["move-left", "Move Left", true],
-      ["move-right", "Move Right", false],
+      ["move-left", "Move left", true],
+      ["move-right", "Move right", false],
     ]);
     expect(moves({ left: true, right: false })).toEqual([
-      ["move-left", "Move Left", false],
-      ["move-right", "Move Right", true],
+      ["move-left", "Move left", false],
+      ["move-right", "Move right", true],
     ]);
     // Tabs without a real file get the same pair; a lone tab is offered none.
     expect(
@@ -153,12 +153,12 @@ describe("surfaceTabMenuItems", () => {
     ).toBe(false);
   });
 
-  it("disables Close Others when there are no sibling tabs", () => {
+  it("disables Close others when there are no sibling tabs", () => {
     const items = surfaceTabMenuItems(t, newFileTab("/repo/src/app.ts", "/repo"), false);
     expect(items.find((item) => item.kind === "item" && item.id === "close-others")).toEqual({
       kind: "item",
       id: "close-others",
-      label: "Close Others",
+      label: "Close others",
       disabled: true,
     });
   });

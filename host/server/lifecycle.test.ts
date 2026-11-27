@@ -1,6 +1,17 @@
 import { EventEmitter } from "node:events";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { armShutdownDeadline, createLifecycleRuntime, shutdownExitCode } from "./lifecycle";
+import * as hostLog from "../diagnostics/logger";
+import { BOOT_OPTIONAL_READY_MS } from "./boot-phases";
+import { StoreDatabase } from "../store-db";
+import {
+  armShutdownDeadline,
+  createLifecycleRuntime,
+  readLifecycleActivity,
+  shutdownExitCode,
+} from "./lifecycle";
 
 vi.mock("../assistant/observations/assistant-observation-producers", () => ({
   installAssistantObservationProducers: async () => undefined,
@@ -51,11 +62,51 @@ describe("host shutdown drains", () => {
     expect(closing.pendingDrains()).toEqual(["tunnels"]);
   });
 
+  it("stops the decision-model servers on shutdown and names a stalled stop", async () => {
+    const stopped = vi.fn(async () => undefined);
+    const runtime = await createLifecycleRuntime(
+      dependenciesWith({ decisionModels: { close: stopped } }) as never,
+      () => undefined,
+    );
+    await runtime.closeResources();
+    expect(stopped).toHaveBeenCalledTimes(1);
+
+    const stalled = await createLifecycleRuntime(
+      dependenciesWith({
+        decisionModels: { close: () => new Promise<void>(() => undefined) },
+      }) as never,
+      () => undefined,
+    );
+    const closing = stalled.closeResources();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(closing.pendingDrains()).toEqual(["decisionModels"]);
+  });
+
   it("settles with no pending drains when everything closes", async () => {
     const runtime = await createLifecycleRuntime(dependenciesWith({}) as never, () => undefined);
     const closing = runtime.closeResources();
     await closing;
     expect(closing.pendingDrains()).toEqual([]);
+  });
+
+  it("waits for Assistant room commands to close on shutdown (#1099)", async () => {
+    let finish!: () => void;
+    const commandsClosed = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const close = vi.fn(() => commandsClosed);
+    const runtime = await createLifecycleRuntime(
+      dependenciesWith({ roomFiles: { folders: { close } } }) as never,
+      () => undefined,
+    );
+    const closing = runtime.closeResources();
+    try {
+      await vi.waitFor(() => expect(closing.pendingDrains()).toEqual(["assistantCommands"]));
+      expect(close).toHaveBeenCalledOnce();
+    } finally {
+      finish();
+      await closing;
+    }
   });
 });
 
@@ -91,9 +142,120 @@ describe("shutdownExitCode", () => {
     expect(shutdownExitCode("lifecycle", true)).toBe(0);
   });
 
+  it("exits non-zero after a database worker failure so the supervisor restarts the Host", () => {
+    expect(shutdownExitCode("database-failed", false)).toBe(1);
+  });
+
   it("reports a failed drain after a signal", () => {
     expect(shutdownExitCode("SIGTERM", true)).toBe(1);
     expect(shutdownExitCode("SIGINT", true)).toBe(1);
     expect(shutdownExitCode("SIGTERM", false)).toBe(0);
+  });
+});
+
+describe("host boot recovery", () => {
+  it("logs bounded background startup failure fields without the raw message (#424)", async () => {
+    const warn = vi.fn();
+    const logger = hostLog.createLogger("host.startup");
+    const logging = vi.spyOn(hostLog, "createLogger").mockReturnValue({ ...logger, warn });
+    const error = Object.assign(new Error("private startup path"), {
+      code: "E".repeat(100),
+      syscall: "open",
+    });
+    const server = new EventEmitter();
+    const runtime = await createLifecycleRuntime(
+      dependenciesWith({
+        server,
+        tunnels: {
+          boot: async () => {
+            throw error;
+          },
+          close: async () => undefined,
+        },
+      }) as never,
+      () => undefined,
+    );
+    try {
+      server.emit("listening");
+      await runtime.startup;
+      expect(warn).toHaveBeenCalledWith('Host background startup step "automatic-tunnel" failed.', {
+        step: "automatic-tunnel",
+        error: "Error",
+        code: "E".repeat(64),
+        syscall: "open",
+        fingerprint: expect.stringMatching(/^[a-f\d]{12}$/),
+      });
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(error.message);
+    } finally {
+      logging.mockRestore();
+      await runtime.closeResources();
+    }
+  });
+
+  it("does not hold start-up behind a wedged optional service", async () => {
+    vi.useFakeTimers();
+    const wedged = new Promise<void>(() => undefined);
+    const runtime = createLifecycleRuntime(
+      dependenciesWith({
+        social: { ready: wedged, dispose: () => undefined, stop: () => undefined },
+        socialPeers: { ready: Promise.resolve() },
+        providerInbox: { ready: wedged },
+      }) as never,
+      () => undefined,
+    );
+    let booted = false;
+    void runtime.then(() => {
+      booted = true;
+    });
+    await vi.advanceTimersByTimeAsync(BOOT_OPTIONAL_READY_MS - 1);
+    expect(booted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(booted).toBe(true);
+  });
+});
+
+describe("lifecycle activity", () => {
+  it("answers while a writer scope holds the database queue", async () => {
+    // The update dialog said "Machine activity could not be checked" while the queue was busy.
+    const directory = mkdtempSync(join(tmpdir(), "bycoda-lifecycle-activity-"));
+    const database = new StoreDatabase(
+      join(directory, "host.db"),
+      new URL("../store-worker.mjs", import.meta.url),
+    );
+    try {
+      await database.scope(async () => {
+        await database.exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000");
+        await database.exec(
+          `CREATE TABLE sessions (id TEXT, status TEXT, shell_running INTEGER, summary TEXT, updated_at INTEGER);
+           CREATE TABLE automation_runs (value TEXT);
+           INSERT INTO sessions VALUES ('s1', 'running', 0, '{"title":"Build"}', 2), ('s2', 'idle', 1, NULL, 1);`,
+        );
+      });
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const writer = database.scope(async () => {
+        entered.resolve();
+        await release.promise;
+      });
+      await entered.promise;
+      const read = await readLifecycleActivity(database, true);
+      expect(read?.activity).toEqual({ sessions: 1, shells: 1, automations: 0 });
+      expect(read?.runningSessions).toEqual([{ id: "s1", title: "Build" }]);
+      release.resolve();
+      await writer;
+    } finally {
+      await database.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("reports an unreadable database as unknown, never idle", async () => {
+    const database = {
+      outsideScope: (work: () => unknown) => work(),
+      readScope: async () => {
+        throw new Error("database unavailable");
+      },
+    };
+    expect(await readLifecycleActivity(database as never, false)).toBeUndefined();
   });
 });

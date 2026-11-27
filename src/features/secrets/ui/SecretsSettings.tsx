@@ -1,12 +1,17 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useT } from "../../../shared/i18n";
 import { formatArchiveDate } from "../../../shared/i18n/format";
 import { Button } from "../../../shared/ui/Button";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
-import { useRemoteMachines } from "../../connections/public/connections";
-import { isLocalSyncMachine } from "../../connections/public/localSync";
+import {
+  SettingsHostFailure,
+  SettingsHostNotice,
+  SettingsHostPicker,
+  useSettingsHostScope,
+  type SettingsHostScope,
+} from "../../connections/public/settingsHosts";
 import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
 import { useOwnerSecrets } from "../hooks/useOwnerSecrets";
 import { secretsClient, type OwnerSecret } from "../model/secretsClient";
@@ -15,26 +20,27 @@ import { groupSecretsByProject } from "../model/secretsGroups";
 /** Settings > Secrets: credentials agents asked for in chat, per project, removable here. */
 export function SecretsSettings() {
   const t = useT();
-  const { machines, loading, refresh } = useRemoteMachines();
-  const hostId = machines.find(isLocalSyncMachine)?.id;
-  if (!hostId)
-    return loading ? (
-      <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
-    ) : (
-      <SettingsFeedback state="error" action={{ label: t("Retry"), onClick: refresh }}>
-        {t("Could not load saved secrets.")}
-      </SettingsFeedback>
-    );
-  return <OwnerSecretsInventory key={hostId} hostId={hostId} />;
+  const scope = useSettingsHostScope();
+  const hostId = scope.selected?.id;
+  return (
+    <div className="flex flex-col gap-4">
+      <SettingsHostPicker scope={scope} />
+      {/* Only a connected machine reaches the inventory; any other state is reported instead. */}
+      {hostId ? (
+        <OwnerSecretsInventory key={hostId} hostId={hostId} scope={scope} />
+      ) : (
+        <SettingsHostNotice scope={scope} lead={t("Could not load saved secrets.")} />
+      )}
+    </div>
+  );
 }
 
 /** Host identity owns both inventory and any open removal confirmation. */
-function OwnerSecretsInventory({ hostId }: { hostId: string }) {
+function OwnerSecretsInventory({ hostId, scope }: { hostId: string; scope: SettingsHostScope }) {
   const t = useT();
   const client = useMemo(() => secretsClient(hostId), [hostId]);
   const { state, reload } = useOwnerSecrets(client);
   const { confirm, dialog } = useConfirm();
-  const [failed, setFailed] = useState(false);
   const groups = useMemo(
     () =>
       state.status === "ready" ? groupSecretsByProject(state.secrets, state.projectNames) : [],
@@ -51,12 +57,10 @@ function OwnerSecretsInventory({ hostId }: { hostId: string }) {
       confirmLabel: t("Remove"),
       pendingLabel: t("Removing…"),
       onConfirm: async () => {
-        setFailed(false);
         try {
           await client.revoke(secret.secretRef);
         } catch {
-          setFailed(true);
-          // Confirmation errors are visible; never render a credential RPC payload.
+          // The dialog stays open and shows this once; never render a credential RPC payload.
           throw new Error(t("Could not remove the secret."));
         }
       },
@@ -68,14 +72,19 @@ function OwnerSecretsInventory({ hostId }: { hostId: string }) {
     return <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>;
   if (state.status === "error")
     return (
-      <SettingsFeedback state="error" action={{ label: t("Retry"), onClick: reload }}>
-        {t("Could not load saved secrets.")}
-      </SettingsFeedback>
+      <SettingsHostFailure
+        scope={scope}
+        message={[t("Could not load saved secrets."), state.reason].filter(Boolean).join(" ")}
+        revoked={state.revoked}
+        onRetry={reload}
+      />
     );
   if (groups.length === 0)
     return (
       <EmptyState
+        context="panel"
         kind="empty"
+        illustration="locked"
         title={t("No saved secrets")}
         description={t(
           "Agents ask for credentials in the chat. Secrets you save there appear here.",
@@ -84,9 +93,6 @@ function OwnerSecretsInventory({ hostId }: { hostId: string }) {
     );
   return (
     <div className="flex flex-col gap-4">
-      {failed ? (
-        <SettingsFeedback state="error">{t("Could not remove the secret.")}</SettingsFeedback>
-      ) : null}
       {groups.map((group) => (
         <Group key={group.projectId} title={group.title}>
           {group.secrets.map((secret) => (
@@ -104,7 +110,7 @@ function OwnerSecretsInventory({ hostId }: { hostId: string }) {
                 .join(" · ")}
             >
               <Text size="caption" tone="muted">
-                {formatArchiveDate(secret.createdAt)}
+                {t("Saved {p0}", { p0: formatArchiveDate(secret.createdAt) })}
               </Text>
               <Button
                 size="sm"

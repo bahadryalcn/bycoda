@@ -1,0 +1,17 @@
+{
+  "printWidth": 100,
+  "tabWidth": 2,
+  "semi": true,
+  "singleQuote": false,
+  "endOfLine": "lf",
+  "sortImports": false,
+  "sortPackageJson": false,
+  "sortTailwindcss": false,
+  "ignorePatterns": [
+    "vendor/**",
+    "scripts/checks/ui-reviewed-baseline.json",
+    "src/styles/palette.css",
+    "docs/reference/ui-components.md",
+    "docs/reference/rules.md"
+  ]
+}

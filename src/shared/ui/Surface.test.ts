@@ -81,7 +81,7 @@ it.each(variants)("paints %s through the existing semantic ground", (variant, to
   expect(block).not.toMatch(/padding|display|height|opacity/);
 });
 
-it.each(["none", "pane", "card", "transparent", "danger", "accent"] as const)(
+it.each(["none", "pane", "card", "transparent", "danger", "warning", "accent"] as const)(
   "supports opt-in frame %s",
   (frame) => {
     expect(surfaceAttributes({ frame })["data-surface-frame"]).toBe(frame);
@@ -95,6 +95,7 @@ it.each(["none", "pane", "card", "transparent", "danger", "accent"] as const)(
 it.each([
   ["transparent", "transparent"],
   ["danger", "var(--ui-tone-danger-border)"],
+  ["warning", "var(--ui-tone-warning-border)"],
   ["accent", "var(--ui-tone-accent-border)"],
 ] as const)("preserves the %s frame colour and reserved geometry", (frame, colour) => {
   const block = css.slice(css.indexOf(`.surface[data-surface-frame="${frame}"]`)).split("}")[0];
@@ -168,9 +169,7 @@ it("keeps theme recipes exact and derives them from existing grounds", () => {
   expect(roles).toContain(
     "color-mix(insrgb,var(--ui-tone-danger-fg)calc(var(--ui-tone-subtle-strength)*0.45),var(--ui-surface))",
   );
-  expect(roles).toContain(
-    "color-mix(insrgb,var(--ui-tone-danger-fg)calc(var(--ui-tone-subtle-strength)*0.45),var(--ui-surface-floating))",
-  );
+  expect(roles).toContain("--ui-surface-danger-floating:var(--ui-surface-floating);");
   expect(roles).toContain("color-mix(inoklab,var(--color-background-base)45%,transparent)");
   expect(roles).not.toMatch(/#[0-9a-f]|rgba?\(/i);
 });
@@ -260,12 +259,11 @@ it("supports the pane divider token", () => {
   );
 });
 
-it("supports opt-in mixed settings rows and nested advanced boundaries", () => {
+it("supports opt-in settings row boundaries", () => {
   expect(surfaceAttributes({ layout: "settings-group" })["data-surface-layout"]).toBe(
     "settings-group",
   );
   expect(css).toContain('[data-surface-layout="settings-group"]');
-  expect(css).toContain('data-settings-part="advanced-content"');
   expect(css).toContain("border-block-start: 1px solid var(--ui-settings-hairline)");
   expect(css).toContain("calc(var(--ui-radius-card) - 0.0625rem)");
 });
@@ -273,7 +271,7 @@ it("supports opt-in mixed settings rows and nested advanced boundaries", () => {
 it("supports a combined logical start corner frame", () => {
   expect(surfaceAttributes({ frame: "pane", edge: "start" })["data-surface-edge"]).toBe("start");
   expect(css).toMatch(
-    /\[data-surface-edge="start"\][^{]*\{[^}]*border-width: 0;[^}]*border-block-start-width: 1px;[^}]*border-inline-start-width: 1px/s,
+    /\[data-surface-edge="start"\][^{]*\{[^}]*border-width: 0;[^}]*border-block-start-width: 1px;[^}]*border-inline-start-width: calc\(var\(--surface-frame-inline-start-visible, 1\) \* 1px\);/,
   );
 });
 
@@ -294,7 +292,7 @@ it("supports the 1.5px base cutout frame", () => {
 it("supports an inset keyboard focus ring on a scrollable surface", () => {
   expect(surfaceAttributes({ focusRing: "inset" })["data-surface-focus-ring"]).toBe("inset");
   expect(css).toMatch(
-    /\[data-surface-focus-ring="inset"\]:focus-visible[^{}]*\{[^}]*outline: 2px solid var\(--ui-focus-ring-color\);[^}]*outline-offset: -2px/s,
+    /\[data-surface-focus-ring="inset"\]:focus-visible[^{}]*\{[^}]*outline: var\(--ui-focus-width\) solid var\(--ui-focus-ring-color\);[^}]*outline-offset: var\(--ui-focus-offset\);/s,
   );
 });
 

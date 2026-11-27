@@ -21,12 +21,34 @@ const mock = vi.hoisted(() => ({
   remember: vi.fn(),
   available: vi.fn(),
   auth: vi.fn(),
+  language: vi.fn(),
+  machines: [] as unknown[],
 }));
+vi.mock("../../../shared/i18n", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../shared/i18n")>()),
+  setLanguagePreference: mock.language,
+}));
+// Replaces only the header language picker with a button that picks Turkish.
+vi.mock("../../../shared/ui/Select", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../shared/ui/Select")>();
+  return {
+    ...actual,
+    Select: (props: Parameters<typeof actual.Select>[0]) =>
+      props.label === "Language"
+        ? createElement(
+            "button",
+            { type: "button", onClick: () => props.onValueChange?.("tr") },
+            "Switch language",
+          )
+        : createElement(actual.Select, props),
+  };
+});
 vi.mock("../../account", () => ({
   useAccountState: () => ({ phase: "unavailable" }),
   useAccount: () => ({}),
   getStatsChoice: () => "off",
   setStatsChoice: () => undefined,
+  statsDisclosure: () => "Shared statistics disclosure",
   subscribeAnonymousStats: () => () => undefined,
 }));
 vi.mock("../../../shared/ui/Modal", () => ({
@@ -40,18 +62,20 @@ vi.mock("../../connections/ui/AddRemoteProjectDialog", () => ({
   AddRemoteProjectDialog: () => null,
 }));
 vi.mock("../../connections/model/connections", () => ({
-  useRemoteMachines: () => ({ machines: [] }),
+  useRemoteMachines: () => ({ machines: mock.machines }),
 }));
 vi.mock("../../sessions/ui/HarnessIcon", () => ({ HarnessIcon: () => null }));
 vi.mock("../../sessions/ui/ProviderSignInDialog", () => ({
   ProviderSignInDialog: ({
     harness,
     accountId,
+    completeDescription,
     onSignedIn,
     onClose,
   }: {
     harness: string;
     accountId?: string;
+    completeDescription?: string;
     onSignedIn: () => void;
     onClose: () => void;
   }) =>
@@ -59,6 +83,7 @@ vi.mock("../../sessions/ui/ProviderSignInDialog", () => ({
       "button",
       {
         "data-provider-account": accountId,
+        "data-complete-description": completeDescription,
         onClick: () => {
           onSignedIn();
           onClose();
@@ -161,6 +186,7 @@ async function projects() {
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   vi.clearAllMocks();
+  mock.machines = [];
   localStorage.clear();
   mock.available.mockReturnValue(false);
   mock.auth.mockResolvedValue("unknown");
@@ -183,6 +209,7 @@ beforeEach(() => {
     truncated: 0,
   });
   mock.pick.mockResolvedValue(["G:/new-project"]);
+  mock.language.mockResolvedValue(undefined);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -215,7 +242,8 @@ describe("onboarding workflow", () => {
   it("allows starting without importing any project", async () => {
     await projects();
     await toggleAllProjects();
-    await click("Finish setup");
+    // With nothing selected the import button stays disabled; Skip import is the exit.
+    await click("Skip import");
     expect(mock.run).not.toHaveBeenCalled();
     expect(onFinish).toHaveBeenCalledOnce();
   });
@@ -233,7 +261,7 @@ describe("onboarding workflow", () => {
     await click("Import 1 projects");
     expect(mock.run).toHaveBeenCalledOnce();
     expect(button("Back").disabled).toBe(true);
-    expect(button("Skip import").disabled).toBe(true);
+    expect(button("Skip import").getAttribute("aria-disabled")).toBe("true");
     const signal = mock.run.mock.calls[0][0].signal as AbortSignal;
     await click("Stop import");
     expect(signal.aborted).toBe(true);
@@ -253,7 +281,9 @@ describe("onboarding workflow", () => {
   it("reports a failed discovery and still allows adding a folder", async () => {
     mock.discover.mockRejectedValue(new Error("Access denied"));
     await projects();
-    expect(container.textContent).toContain("Access denied");
+    // The translated title is visible; the raw error stays behind Details.
+    expect(container.textContent).toContain("Could not read this computer’s conversation history.");
+    expect(container.textContent).not.toContain("Access denied");
     await click("Choose project folders");
     expect(mock.remember).toHaveBeenCalledWith("G:/new-project");
     expect(onImported).toHaveBeenCalledOnce();
@@ -268,7 +298,8 @@ describe("onboarding workflow", () => {
     });
     await projects();
     await click("Import 1 projects");
-    expect(container.textContent).toContain("Transcript unreadable");
+    expect(container.textContent).toContain("Could not import G:/app.");
+    expect(container.textContent).not.toContain("Transcript unreadable");
     expect(onFinish).not.toHaveBeenCalled();
   });
   it("persists workspace choices and reuses them when setup reopens", async () => {
@@ -301,6 +332,13 @@ describe("onboarding workflow", () => {
     );
     expect(loadCrewTheme()).toBe("star-wars");
     expect(loadCrewSceneEnabled()).toBe(true);
+    expect(container.textContent).not.toContain("Obi-Wan leads, Yoda advises");
+    const crewHelp = container.querySelector<HTMLElement>(
+      '.onboarding-section-info[role="img"][aria-label="Agent crew"]',
+    )!;
+    expect(crewHelp.tabIndex).toBe(0);
+    await act(async () => crewHelp.click());
+    expect(document.body.textContent).not.toContain("Obi-Wan leads, Yoda advises");
     await act(async () =>
       container.querySelector<HTMLButtonElement>("#onboarding-crew-lotr")!.click(),
     );
@@ -314,6 +352,30 @@ describe("onboarding workflow", () => {
     expect(loadCrewSceneEnabled()).toBe(false);
     expect(loadCrewTheme()).toBe("star-wars");
   });
+  it("passes the sign-in completion text through translation", async () => {
+    const i18n =
+      await vi.importActual<typeof import("../../../shared/i18n")>("../../../shared/i18n");
+    const original = i18n.getLanguagePreference();
+    await i18n.setLanguagePreference("tr");
+    try {
+      mock.available.mockImplementation((id: string) => id === "codex");
+      await render();
+      await click(i18n.t("Agents"));
+      await act(async () =>
+        container
+          .querySelector<HTMLButtonElement>(
+            `[aria-label="${i18n.t("Sign in to {p0}", { p0: "Codex" })}"]`,
+          )!
+          .click(),
+      );
+      const dialog = container.querySelector("[data-complete-description]");
+      expect(dialog?.getAttribute("data-complete-description")).toBe(
+        "Ajanınız bağlandı. Çalışma alanı kurulumuna devam edebilirsiniz.",
+      );
+    } finally {
+      await i18n.setLanguagePreference(original);
+    }
+  });
   it("shows installed providers without listing missing ones and preserves visibility choices", async () => {
     mock.available.mockImplementation((id: string) => id === "codex");
     await render();
@@ -325,7 +387,7 @@ describe("onboarding workflow", () => {
     expect(isPickerProviderVisible("codex")).toBe(false);
     expect(container.querySelectorAll(".onboarding-agent")).toHaveLength(1);
     expect(container.textContent).not.toContain("Cursor");
-    await click("Machines");
+    await click("Appearance");
     await click("Agents");
     expect(container.textContent).not.toContain("Cursor");
     await act(async () =>
@@ -374,7 +436,7 @@ describe("onboarding workflow", () => {
     await click("Save fixture path");
     expect(container.querySelectorAll(".onboarding-agent")).toHaveLength(1);
     expect(container.textContent).toContain("Cursor");
-    await click("Machines");
+    await click("Appearance");
     await click("Agents");
     expect(container.textContent).toContain("Cursor");
   });
@@ -415,6 +477,9 @@ describe("onboarding workflow", () => {
   });
 
   it("opens the existing connection editor without scanning history", async () => {
+    mock.machines = [
+      { id: "m1", name: "Office", endpoint: "https://office.example", environmentId: "env" },
+    ];
     await render();
     await click("Machines");
     await click("Manage connections");
@@ -432,5 +497,25 @@ describe("onboarding workflow", () => {
       false,
     );
     expect(container.textContent).toContain("1 project folders added");
+  });
+  it("shows a language failure only until the next step and ignores a stale reply", async () => {
+    let rejectFirst!: (reason: unknown) => void;
+    mock.language.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectFirst = reject;
+        }),
+    );
+    await render();
+    await click("Switch language");
+    await click("Switch language");
+    await act(async () => rejectFirst(new Error("Stale save failed")));
+    expect(container.textContent).not.toContain("Stale save failed");
+    mock.language.mockRejectedValueOnce(new Error("Save failed"));
+    await click("Switch language");
+    expect(container.textContent).toContain("Could not change the language.");
+    expect(container.textContent).not.toContain("Save failed");
+    await click("Continue");
+    expect(container.textContent).not.toContain("Could not change the language.");
   });
 });

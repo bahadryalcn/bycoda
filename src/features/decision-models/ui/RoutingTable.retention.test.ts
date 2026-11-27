@@ -64,7 +64,7 @@ it.each(["success", "failure"])(
     await settleDecisionUi();
     if (outcome === "success") expect(bodyText()).toContain("Saved");
     else {
-      expect(bodyText()).toContain("This did not work. Try again.");
+      expect(bodyText()).toContain("Could not save the routing.");
       expect(document.querySelector<HTMLInputElement>('input[inputmode="decimal"]')?.value).toBe(
         "0.74",
       );

@@ -152,6 +152,21 @@ describe("persistableQueue", () => {
     expect(saved?.[0].attachments[1]).not.toHaveProperty("previewUrl");
   });
 
+  it("keeps only a marker for a payload the caller stores elsewhere", () => {
+    const saved = persistableQueue([
+      message({
+        attachments: [
+          file({ id: "x", kind: "image", externalPayload: true }),
+          file({ id: "y", kind: "image", externalPayload: true, missing: true }),
+        ],
+      }),
+    ]);
+    expect(saved?.[0].attachments[0]).toMatchObject({ id: "x", externalPayload: true });
+    expect(saved?.[0].attachments[0]).not.toHaveProperty("missing");
+    expect(saved?.[0].attachments[1]).toMatchObject({ id: "y", missing: true });
+    expect(saved?.[0].attachments[1]).not.toHaveProperty("externalPayload");
+  });
+
   it("marks an attachment that cannot come back instead of dropping it", () => {
     const saved = persistableQueue([
       message({
@@ -250,5 +265,21 @@ describe("withoutMissingAttachments", () => {
     );
     expect(edited.attachments.map((entry) => entry.id)).toEqual(["b"]);
     expect(edited.text).toBe(`compare and ${tok("File", 1, "3 B")}`);
+  });
+});
+
+describe("pasted bytes next to an external-payload marker", () => {
+  it("saves the bytes, not only the marker, for file-backed callers", () => {
+    const rows = [
+      message({ attachments: [file({ kind: "image", data: "AAAA", externalPayload: true })] }),
+    ];
+    const saved = persistableQueue(rows)![0].attachments[0];
+    expect(saved.data).toBe("AAAA");
+    expect(saved).not.toHaveProperty("missing");
+  });
+
+  it("keeps a marker that has no bytes yet", () => {
+    const rows = [message({ attachments: [file({ kind: "image", externalPayload: true })] })];
+    expect(persistableQueue(rows)![0].attachments[0]).toMatchObject({ externalPayload: true });
   });
 });

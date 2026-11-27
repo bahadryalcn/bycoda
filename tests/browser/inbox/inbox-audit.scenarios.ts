@@ -3,6 +3,73 @@ import { expect, test } from "@playwright/test";
 const providers = ["github", "jira", "gitlab", "azuredevops", "linear"];
 
 test.describe("Inbox audit", () => {
+  for (const theme of ["light", "dark"])
+    for (const width of [800, 1280]) {
+      test(`GitHub split lists ${theme} ${width}`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 800 });
+        await page.goto(
+          `/tests/browser/inbox/jira-board.html?auditProvider=github&auditScreen=githubCollection&theme=${theme}`,
+        );
+        const issues = page.getByRole("radio", { name: "Issues", exact: true });
+        const pulls = page.getByRole("radio", { name: "Pull requests", exact: true });
+        const issueRow = page.getByRole("button", { name: /issue #42: Keep payment form drafts/ });
+        const prRow = page.getByRole("button", {
+          name: /pull request #58: Preserve payment drafts/,
+        });
+        const detail = page.locator(".inbox-detail-pane");
+        const output = `temp/verification/github-inbox-layout/${theme}-${width}`;
+
+        await expect(issues).toBeChecked();
+        await expect(issueRow).toBeVisible();
+        await expect(prRow).toHaveCount(0);
+        await expect(detail.getByRole("heading", { name: "Payment validation" })).toBeVisible();
+        await page.screenshot({ path: `${output}-issues.png`, animations: "disabled" });
+
+        await issues.focus();
+        await page.keyboard.press("ArrowRight");
+        await expect(pulls).toBeChecked();
+        await expect(prRow).toBeVisible();
+        await expect(issueRow).toHaveCount(0);
+        const layout = page.getByRole("button", { name: "List view", exact: true });
+        await layout.click();
+        await page.getByRole("menuitemradio", { name: "Comfortable", exact: true }).click();
+        const rowLabel = page
+          .getByRole("list", { name: "Pull requests", exact: true })
+          .getByRole("list", { name: "Labels", exact: true })
+          .first()
+          .getByText("payment-validation", { exact: true });
+        await expect(rowLabel).toBeVisible();
+        await expect(detail.getByRole("tab", { name: "Code", exact: true })).toBeVisible();
+        await page.mouse.move(550, 20);
+        await page.screenshot({ path: `${output}-pull-requests.png`, animations: "disabled" });
+
+        await layout.click();
+        await page.getByRole("menuitemcheckbox", { name: "Side by side", exact: true }).click();
+        await expect(detail).toBeHidden();
+        await expect(prRow).toBeVisible();
+        await page.mouse.move(550, 20);
+        await page.screenshot({ path: `${output}-full-list.png`, animations: "disabled" });
+        const back = page.getByRole("button", { name: "Back", exact: true });
+        await prRow.click();
+        await expect(detail).toBeVisible();
+        await expect(pulls).toBeHidden();
+        await back.click();
+        await expect(prRow).toHaveAttribute("aria-current", "true");
+        await layout.click();
+        await page.getByRole("menuitemcheckbox", { name: "Side by side", exact: true }).click();
+        await expect(detail).toBeVisible();
+
+        if (width === 800) {
+          await page.setViewportSize({ width: 640, height: 800 });
+          await prRow.click();
+          await expect(pulls).toBeHidden();
+          await back.click();
+          await expect(pulls).toBeChecked();
+          await expect(prRow).toHaveAttribute("aria-current", "true");
+        }
+      });
+    }
+
   test("pending provider keeps loading while another provider has items", async ({ page }) => {
     await page.goto("/tests/browser/inbox/jira-board.html?inbox&pendingProvider=gitlab");
     await expect
@@ -63,7 +130,7 @@ test.describe("Inbox audit", () => {
           ),
         ).toEqual(["one", "unavailable-project", "two"]);
         await page.getByRole("textbox", { name: "Search projects" }).fill("Payment");
-        await page.getByRole("button", { name: "Clear shown selection" }).click();
+        await page.getByRole("checkbox", { name: "Select all shown", exact: true }).uncheck();
         expect(
           await page.evaluate(() =>
             (
@@ -77,9 +144,7 @@ test.describe("Inbox audit", () => {
           fullPage: true,
         });
         await page.getByRole("button", { name: "Connect an inbox source", exact: true }).click();
-        await expect(
-          page.getByRole("menuitem", { name: "Connect GitLab", exact: true }),
-        ).toBeVisible();
+        await expect(page.getByRole("menuitem", { name: "GitLab", exact: true })).toBeVisible();
         await page.screenshot({
           path: `temp/verification/inbox-complete-audit/connections-${theme}-${width}.png`,
           fullPage: true,
@@ -151,7 +216,13 @@ test.describe("Inbox audit", () => {
           await source.fill(
             "**Preserve this draft**\n\n- Verify preview\n- Keep the original text",
           );
+          // One writing surface by default; the preview is one toggle away once there is text.
+          const toggle = form.getByRole("button", { name: "Preview", exact: true });
           const preview = form.getByRole("region", { name: "Preview", exact: true });
+          await expect(preview).toHaveCount(0);
+          await expect(toggle).toHaveAttribute("aria-pressed", "false");
+          await toggle.click();
+          await expect(toggle).toHaveAttribute("aria-pressed", "true");
           await expect(preview.getByText("Preserve this draft", { exact: true })).toBeVisible();
           await expect(preview.locator("li")).toHaveCount(2);
           await form.scrollIntoViewIfNeeded();
@@ -159,14 +230,14 @@ test.describe("Inbox audit", () => {
             path: `temp/verification/inbox-complete-audit/${provider}-issue-split-${theme}-${width}.png`,
             fullPage: true,
           });
-          await form.getByRole("tab", { name: "Preview", exact: true }).click();
           await expect(source).toBeHidden();
           if (provider === "github")
             await page.screenshot({
               path: `temp/verification/inbox-complete-audit/github-issue-preview-${theme}-${width}.png`,
               fullPage: true,
             });
-          await form.getByRole("tab", { name: "Source", exact: true }).click();
+          await toggle.click();
+          await expect(preview).toHaveCount(0);
           await expect(source).toBeVisible();
           if (provider === "github")
             await page.screenshot({
@@ -226,12 +297,18 @@ test.describe("Inbox audit", () => {
         `/tests/browser/inbox/jira-board.html?auditProvider=github&auditState=${state}`,
       );
       await expect(page.getByRole("heading", { name: /Keep payment form drafts/ })).toBeVisible();
-      if (state === "error")
+      if (state === "error") {
+        const failure = page.getByRole("alert").filter({ hasText: "Could not load this item." });
+        await expect(failure).toBeVisible();
+        await expect(failure.getByRole("button", { name: "Try again" })).toBeVisible();
+        // The Host's reason sits behind the failure's Details control.
+        await failure.getByRole("button", { name: /^Details/ }).click();
         await expect(
           page
             .getByText("Offline fixture: access temporarily unavailable", { exact: true })
             .first(),
         ).toBeVisible();
+      }
       if (state === "empty")
         await expect(page.getByText("No description", { exact: true })).toBeVisible();
       if (state === "loading") await expect(page.getByRole("status")).toContainText("Loading");
@@ -249,8 +326,10 @@ test.describe("Inbox audit", () => {
       "/tests/browser/inbox/jira-board.html?auditProvider=github&auditScreen=scope&lang=tr",
     );
     await page.getByRole("button", { name: "Connect an inbox source", exact: true }).click();
-    await expect(page.getByRole("menuitem", { name: "GitLab bağla", exact: true })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: "Jira bağla", exact: true })).toBeVisible();
+    // The menu is named by the translated action and lists the providers by name.
+    const menu = page.getByRole("menu", { name: "Gelen kutusu kaynağı bağla", exact: true });
+    await expect(menu.getByRole("menuitem", { name: "GitLab", exact: true })).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: "Jira", exact: true })).toBeVisible();
     await page.screenshot({
       path: "temp/verification/inbox-complete-audit/connections-tr.png",
       fullPage: true,

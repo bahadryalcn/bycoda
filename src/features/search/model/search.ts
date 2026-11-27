@@ -28,6 +28,8 @@ export type ProjectSearchOptions = {
 export type EditorNavigation = {
   line: number;
   column?: number;
+  /** Reveal the location in Source when it is selected, keeping the current Markdown view. */
+  keepMarkdownView?: true;
 };
 
 export type EditorNavigationTarget = EditorNavigation & {
@@ -66,7 +68,7 @@ export function cancelProjectSearch(cwd: string, searchId: string): Promise<void
   return invokeWorkspace<void>("cancel_project_search", { cwd, searchId });
 }
 
-export type ProjectReplaceResult = {
+type ProjectReplaceResult = {
   filesChanged: number;
   replacements: number;
   failures: string[];

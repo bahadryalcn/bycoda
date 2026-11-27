@@ -10,25 +10,6 @@ for (const theme of ["light", "dark"] as const) {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(
-        `/tests/browser/settings/settings.html?section=workspace&theme=${theme}&lang=en`,
-      );
-      const toggle = page.getByRole("switch", { name: "Quick composer", exact: true });
-      await expect(toggle).toBeChecked();
-      await toggle.scrollIntoViewIfNeeded();
-      const row = page.locator('[data-setting-id="quick-composer"]');
-      await expect(row).toContainText("Ctrl+Shift+Space");
-      await expect(row).toContainText("Ctrl+Enter");
-      mkdirSync("temp/verification/windows-quick-composer", { recursive: true });
-      await page.screenshot({
-        path: `temp/verification/windows-quick-composer/workspace-${theme}-${width}.png`,
-      });
-      await toggle.click();
-      await expect(toggle).not.toBeChecked();
-      await page.reload();
-      await expect(toggle).not.toBeChecked();
-      await toggle.click();
-      await expect(toggle).toBeChecked();
-      await page.goto(
         `/tests/browser/settings/settings.html?section=keybindings&theme=${theme}&lang=en`,
       );
       await page
@@ -40,9 +21,23 @@ for (const theme of ["light", "dark"] as const) {
       });
       await expect(recorder).toContainText("Ctrl");
       await expect(recorder).toContainText("Space");
+      mkdirSync("temp/verification/windows-quick-composer", { recursive: true });
       await page.screenshot({
         path: `temp/verification/windows-quick-composer/keybindings-${theme}-${width}.png`,
       });
+      // Delete while recording turns the global shortcut off; it stays off after a reload.
+      await recorder.click();
+      await expect(recorder).toContainText("Record shortcut");
+      await page.keyboard.press("Delete");
+      await expect(page.getByRole("button", { name: "Enable", exact: true })).toBeVisible();
+      await expect(recorder).not.toContainText("Space");
+      await page.reload();
+      await page
+        .getByRole("searchbox", { name: "Filter keybindings", exact: true })
+        .fill("Quick Composer");
+      await expect(recorder).not.toContainText("Space");
+      await page.getByRole("button", { name: "Enable", exact: true }).click();
+      await expect(recorder).toContainText("Space");
     });
   }
 }
@@ -74,9 +69,10 @@ for (const theme of ["light", "dark"]) {
       await page.keyboard.press("Escape");
       await expect(helpDialog).toHaveCount(0);
       await expect(help).toBeFocused();
+      // The page carries no inline explanatory paragraph about scope or saving.
       await expect(
         workspace.getByText("Applies across projects. Changes save automatically."),
-      ).toHaveCount(1);
+      ).toHaveCount(0);
 
       // These switches must remain immediately reachable and independently persisted.
       for (const name of [

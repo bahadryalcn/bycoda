@@ -5,7 +5,6 @@ import { Tooltip } from "../../shared/ui/Tooltip";
 import { useShowRemainingUsage } from "../../features/settings/model/displayPrefs";
 import {
   clampUsedPercent,
-  formatResetDuration,
   formatUsagePercent,
   formatWindowLabel,
   rateLimitWindowTooltipWith,
@@ -18,20 +17,33 @@ export function UsageWindowStat({ window, now }: { window: RateLimitWindow; now:
   const showRemaining = useShowRemainingUsage();
   const pct = clampUsedPercent(window.usedPercent);
   const shown = showRemaining ? 100 - pct : pct;
-  const label = `${formatWindowLabel(window.windowMinutes)} · ${rateLimitWindowTooltipWith(window, now, showRemaining, t, format)}`;
+  const label = formatWindowLabel(window.windowMinutes);
+  const valueText = rateLimitWindowTooltipWith(window, now, showRemaining, t, format);
+  const resetTime =
+    window.resetsAt == null
+      ? undefined
+      : format.formatDate(window.resetsAt, {
+          hour: "numeric",
+          minute: "2-digit",
+        });
   const tone = pct >= 90 ? "danger" : pct >= 80 ? "warning" : "neutral";
   return (
-    <Tooltip label={label}>
+    <Tooltip label={resetTime ? t("Resets at {p0}", { p0: resetTime }) : undefined}>
       <span className="inline-flex items-center gap-1.5 tabular-nums">
-        <Text aria-hidden="true" size="micro" tone="secondary">
-          {formatWindowLabel(window.windowMinutes)} · {formatUsagePercent(shown)}
+        <Text
+          aria-hidden="true"
+          size="micro"
+          tone="secondary"
+          className="@max-[320px]/usage:hidden"
+        >
+          {label} · {formatUsagePercent(shown)}
         </Text>
         <UsageMeter
           compact
           showLegend={false}
           showRemaining={showRemaining}
           label={label}
-          valueText={label}
+          valueText={valueText}
           className="w-11 shrink-0"
           segments={[{ id: "used", label: t("used"), value: pct }]}
           limit={100}
@@ -40,8 +52,13 @@ export function UsageWindowStat({ window, now }: { window: RateLimitWindow; now:
           tone={tone}
         />
         {window.resetsAt != null ? (
-          <Text size="inherit" tone="secondary">
-            {formatResetDuration(window.resetsAt - now)}
+          <Text
+            aria-hidden="true"
+            size="inherit"
+            tone="secondary"
+            className="@max-[320px]/usage:hidden"
+          >
+            {format.formatResetDuration(window.resetsAt - now)}
           </Text>
         ) : null}
       </span>

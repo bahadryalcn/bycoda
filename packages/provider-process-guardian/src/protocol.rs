@@ -90,6 +90,33 @@ pub enum StartFailure {
     Io,
 }
 
+/// Longest `step`/`kind` text accepted on the wire; both come from fixed names.
+pub const MAX_DETAIL_TEXT: usize = 64;
+
+/// Bounded cause of a failed provider start. It never carries a path, argument,
+/// environment value or OS message: `step` names the failing call, `kind` is the
+/// `std::io::ErrorKind` name and `code` the raw OS error (errno / Win32) if any.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StartDetail {
+    pub step: String,
+    pub kind: String,
+    pub code: Option<i32>,
+}
+impl StartDetail {
+    pub fn new(step: &str, kind: &str, code: Option<i32>) -> Self {
+        let bound = |text: &str| text.chars().take(MAX_DETAIL_TEXT).collect::<String>();
+        Self {
+            step: bound(step),
+            kind: bound(kind),
+            code,
+        }
+    }
+    pub fn from_io(step: &str, error: &io::Error) -> Self {
+        Self::new(step, &format!("{:?}", error.kind()), error.raw_os_error())
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Stream {
@@ -155,6 +182,9 @@ pub enum GuardianReply {
         guardian_id: String,
         parent_id: Option<String>,
         reason: StartFailure,
+        /// Present only when an OS call failed; absent for validation refusals.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        detail: Option<StartDetail>,
     },
 }
 
@@ -241,7 +271,21 @@ pub fn read_frame(input: &mut impl BufRead) -> io::Result<Option<Vec<u8>>> {
 
 pub fn read_command(input: &mut impl BufRead) -> io::Result<Option<ParentCommand>> {
     read_frame(input)?
-        .map(|frame| serde_json::from_slice(&frame).map_err(|_| invalid("Invalid control frame")))
+        .map(|frame| {
+            // Category only: serde messages can echo field names or payload fragments.
+            serde_json::from_slice(&frame).map_err(|error| {
+                let category = match error.classify() {
+                    serde_json::error::Category::Io => "io",
+                    serde_json::error::Category::Syntax => "syntax",
+                    serde_json::error::Category::Data => "data",
+                    serde_json::error::Category::Eof => "eof",
+                };
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Invalid control frame ({category})"),
+                )
+            })
+        })
         .transpose()
 }
 

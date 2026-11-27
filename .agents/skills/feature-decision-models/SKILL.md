@@ -16,7 +16,7 @@ Owns the Host side of decision models in `host/decision-models/`: the `decide` g
 - `host/decision-models/catalog.ts` and `catalog.json`: the versioned catalog and its loader.
 - `host/decision-models/evaluation.ts`: the fixed evaluation set and accuracy.
 - `host/decision-models/fixtures/`: recorded Clef responses and contract-assumption fixtures.
-- UI owner entry points: `src/features/settings/ui/ProviderDecisionModels.tsx` hosts `src/features/decision-models/ui/DecisionModelsSettings.tsx`; `SourceRow.tsx`, `AddMenu.tsx` and `RoutingTable.tsx` own connected rows, add paths and the single routing table. Discovery remains collapsed until opened.
+- UI owner entry points: `src/features/settings/ui/ProviderDecisionModels.tsx` (the Settings > Decision models page) hosts `src/features/decision-models/ui/DecisionModelsSettings.tsx` on the Host chosen through `useSettingsHostScope` (this computer by default, a remote only when picked, never an implicit fallback); `SourceRow.tsx`, `AddMenu.tsx` and `RoutingTable.tsx` own connected rows, add paths and the single routing table. Discovery is a plain list; scan ports and folders are edited in the Scan settings dialog (`ScanSettings.tsx`), and the personal-data switch sits in the Task routing group.
 
 ## Workflow
 
@@ -34,8 +34,12 @@ Owns the Host side of decision models in `host/decision-models/`: the `decide` g
 - Endpoints must be HTTPS, or loopback HTTP. Credentials in the URL are refused. Redirects are errors. Response bodies are size-bounded and never logged.
 - Only retryable failures are retried (408, 429, 5xx, network), with fixed backoff inside the request deadline.
 - The answer cache and audit belong to one gateway instance. The audit keeps counts, confidences and error codes, never state, question text or answers.
+- A damaged config file never reads as defaults: `decide` answers `config_damaged` for every question (no source tried), settings reads and saves throw `DecisionConfigDamagedError`. Its diagnostics hold a coarse reason and a schema path only, never file text, values or unknown key names.
 - A below-threshold answer is never returned as a value. The caller sees `below_threshold` and moves on.
 - Decisions, Ollama and custom layouts and the llm-structured prompt are contract assumptions. Their fixtures say so, and their catalog entries stay unverified.
+- A local install stages downloads in `.staging-*` under the models root, never inside a model folder. Concurrent installs of one model share one run, the Host close cancels them, and a failed final move restores replaced files and leaves no model folder without `install.json`. A staging folder carries a `.lease` its writer keeps fresh; the sweep removes only folders whose lease is old and that hold no set-aside files, so another live installer's folder is never deleted. If replaced files cannot be restored, staging is kept.
+- `local.installStart/installProgress/cancelInstall` exist only on a Host advertising `decisionModels.install.v1`; the UI falls back to the awaited `local.install` otherwise. A progress state never carries paths or raw system errors.
+- Opening Settings never rescans an empty machine: `discovery.results` carries `scannedAt` for a finished scan, an empty one expires by TTL or when scan ports/folders change, and only a missing `scannedAt` lets the UI auto-scan. A failed scan caches nothing.
 - Adapter limits are defaults, not per-provider values. A question that does not fit a source's limits is skipped for that source only.
 
 ## Focused checks

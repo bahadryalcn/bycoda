@@ -1,15 +1,46 @@
 // @vitest-environment jsdom
 import { act, createElement, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { usePhoneApprovalRequest } from "./PhoneApprovalRequest";
 vi.mock("../../../shared/ui/Modal", () => ({
-  Modal: ({ children, onClose }: { children: ReactNode; onClose: () => void }) =>
-    createElement("div", null, children, createElement("button", { onClick: onClose }, "Close")),
+  Modal: ({
+    title,
+    children,
+    footer,
+    onClose,
+  }: {
+    title?: ReactNode;
+    children: ReactNode;
+    footer?: ReactNode;
+    onClose: () => void;
+  }) =>
+    createElement(
+      "div",
+      null,
+      createElement("h2", null, title),
+      children,
+      footer,
+      createElement("button", { onClick: onClose }, "Close"),
+    ),
+  ModalActions: ({ children }: { children: ReactNode }) => createElement("div", null, children),
 }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let cleanup: (() => void) | undefined;
-afterEach(() => cleanup?.());
+beforeEach(() => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+});
+afterEach(() => {
+  cleanup?.();
+  vi.unstubAllGlobals();
+});
 function mount() {
   const host = document.createElement("div");
   document.body.append(host);
@@ -57,7 +88,7 @@ it("blocks duplicate approval, denial and close while connecting, then settles",
   const allowButton = host.querySelector<HTMLButtonElement>('[data-button-variant="primary"]')!;
   const denyButton = [...buttons].find((button) => button.textContent === "Deny")!;
   expect(allowButton.getAttribute("aria-busy")).toBe("true");
-  expect(denyButton.disabled).toBe(true);
+  expect(denyButton.getAttribute("aria-disabled")).toBe("true");
   await act(async () => finish());
   await expect(answer).resolves.toBe(true);
 });
@@ -71,7 +102,14 @@ it("shows retry error, resets replacement state and resolves abandoned requests"
   await act(async () =>
     host.querySelector<HTMLButtonElement>('[data-button-variant="primary"]')!.click(),
   );
-  expect(host.textContent).toContain("Host unavailable");
+  expect(host.textContent).toContain("Could not complete this action.");
+  expect(host.textContent).not.toContain("Host unavailable");
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((button) => button.textContent === "Details")!
+      .click(),
+  );
+  expect(document.body.textContent).toContain("Host unavailable");
   expect(
     host
       .querySelector<HTMLButtonElement>('[data-button-variant="primary"]')!

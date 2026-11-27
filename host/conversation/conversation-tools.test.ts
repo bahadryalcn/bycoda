@@ -701,9 +701,14 @@ describe("Conversation Tools boundary", () => {
       "Invalid numeric field tools.describe.maxChars. Expected a safe integer >= 256. Omit maxChars to use the default (10000); follow nextCursor for remaining content.",
     );
     expect(responses[1].result.isError).toBeUndefined();
-    expect(call).toHaveBeenCalledExactlyOnceWith("tools.describe", {
-      ids: ["conversation:crews.schema"],
-    });
+    // The stdio loop passes the per-call cancellation signal as the fifth argument.
+    expect(call).toHaveBeenCalledExactlyOnceWith(
+      "tools.describe",
+      { ids: ["conversation:crews.schema"] },
+      undefined,
+      undefined,
+      expect.any(AbortSignal),
+    );
   });
   it("keeps numeric bounds strict and identifies fields without echoing input", () => {
     for (const maxChars of [200, 255, "12000", null, NaN, Infinity, 256.5]) {

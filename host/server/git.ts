@@ -1,4 +1,4 @@
-import { execFileAsync as exec } from "../../src/shared/lib/processExecution.node";
+import { hostGitExec } from "../git/git-exec-pool";
 import { openDevServerBrowser } from "../dev-servers/dev-server-browser";
 import { createDevServersService } from "../domains/dev-servers/service";
 import { createFileService } from "../domains/files/service";
@@ -15,8 +15,13 @@ import { hostModelRoutingService } from "../model-routing/runtime";
 import { readModelRouting } from "../model-routing/storage";
 import { TEXT_HARNESSES } from "../../src/features/source-control/model/gitGenerationChoice";
 import type { GitStagedContext, GitRangeContext } from "../../src/platform/tauri/fs";
-import { createHostWorktree, hostWorktrees, resolveHostWorktreeAsync } from "../git/git-worktrees";
+import {
+  createHostWorktree,
+  hostWorktreesWithState,
+  resolveHostWorktreeAsync,
+} from "../git/git-worktrees";
 import { HostTasks } from "../tasks/tasks";
+import { taskHelpers } from "../delegation/task-helpers";
 import {
   createHostPath,
   hostFileDiff,
@@ -35,6 +40,7 @@ export function createGitRuntime(
     ServerBindings,
     | "engine"
     | "providers"
+    | "catalogs"
     | "startWorkspaceActivity"
     | "terminals"
     | "touchTerminalWorkspace"
@@ -47,6 +53,8 @@ export function createGitRuntime(
     | "managed"
     | "devServers"
     | "sprints"
+    | "gitWatches"
+    | "conversationDelegation"
   >,
 ) {
   const fileService = createFileService({
@@ -72,27 +80,35 @@ export function createGitRuntime(
     project: (id) => dependencies.engine.store.project(id),
     resolveWorktree: resolveHostWorktreeAsync,
     withIdleProject: (id, work) => dependencies.engine.withIdleProject(id, work),
+    withStableCheckout: (id, work) => dependencies.engine.withStableCheckout(id, work),
     serializeMutation: (cwd, work, scope) => withHostGitMutation(cwd, work, undefined, scope),
     startActivity: (cwd) => dependencies.startWorkspaceActivity(cwd, "mutation", "git.action"),
     invalidateRoots: () => dependencies.workspace.invalidateRoots(),
     diff: async (cwd) =>
       (
-        await exec(
+        await hostGitExec.exec(
           "git",
           ["-c", "core.pager=cat", "diff", "--no-ext-diff", "--no-textconv", "HEAD", "--"],
           { cwd, timeout: 10_000, maxBuffer: 2 * 1024 * 1024 },
         )
       ).stdout,
-    branches: hostBranches,
+    // The picker reuses the list until the checkout's watched refs change.
+    branches: (cwd) => hostBranches(cwd, (path) => dependencies.gitWatches.read(path)),
     switch: switchHostBranch,
     createBranch: createHostBranch,
-    worktrees: hostWorktrees,
+    worktrees: hostWorktreesWithState,
     worktreeCreate: createHostWorktree,
     index: hostGitIndex,
     generateText: async (cwd, params, authorize) => {
       const routing = await readModelRouting(dependencies.engine.store);
       let choice = params.choice;
-      if (routing.roles["text.git"]) {
+      if (params.kind === "commit" && choice) {
+        if (
+          !dependencies.providers.includes(choice.harness) ||
+          !TEXT_HARNESSES.includes(choice.harness)
+        )
+          throw new Error("The selected text generation provider is unavailable on this Host");
+      } else if (routing.roles["text.git"]) {
         const resolution = await hostModelRoutingService(dependencies.engine.store).resolve({
           role: "text.git",
         });
@@ -110,6 +126,7 @@ export function createGitRuntime(
         { ...params, preferred, choice },
         {
           authorize,
+          catalog: async (harness) => (await dependencies.catalogs.read(cwd)).models[harness] ?? [],
           context: async (kind) =>
             (await dependencies.workspace.run(
               kind === "commit" ? "git_staged_context" : "git_range_context",
@@ -129,6 +146,8 @@ export function createGitRuntime(
   const tasksService = createHostTasksService({
     project: (id) => dependencies.engine.store.project(id),
     tasks: dependencies.tasks,
+    helpers: async (taskId, failedOnly) =>
+      taskHelpers(await dependencies.conversationDelegation.store.list(), { taskId, failedOnly }),
     withAuthorization: (authorized, work) =>
       dependencies.engine.store.db.withAuthorization(authorized, work),
     retarget: (id, target, autoMerge, context) => {

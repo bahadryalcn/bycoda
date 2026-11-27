@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
+import { isHostAuthorizationRefusal } from "../../connections/public/remoteFailure";
 import type { OwnerSecret, SecretsClient } from "../model/secretsClient";
+import { secretsLoadReason } from "../model/secretsLoadReason";
 
 export type OwnerSecretsState =
   | { status: "loading" }
-  | { status: "error" }
+  | { status: "error"; reason?: string; revoked?: boolean }
   | { status: "ready"; secrets: OwnerSecret[]; projectNames: Map<string, string> };
 
 /** Loads saved secrets and project names; `reload` re-reads after a removal or a failure. */
@@ -26,8 +28,13 @@ export function useOwnerSecrets(client: SecretsClient | null) {
             secrets: listed.secrets,
             projectNames: new Map(projects.map((project) => [project.id, project.name])),
           });
-      } catch {
-        if (current) setState({ status: "error" });
+      } catch (reason) {
+        if (current)
+          setState({
+            status: "error",
+            reason: secretsLoadReason(reason),
+            revoked: isHostAuthorizationRefusal(reason),
+          });
       }
     })();
     return () => {

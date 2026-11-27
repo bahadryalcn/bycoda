@@ -12,7 +12,7 @@ export type DecisionModelsFirstRunCardProps = {
   client: DecisionModelsClient;
   /** Called on "Not now". The caller persists dismissal on its selected Host. */
   onDismiss: () => void;
-  /** Opens Providers > Decision models, where the user chooses local install or an API provider. */
+  /** Opens Settings > Decision models, where the user chooses local install or an API provider. */
   onOpenSettings: () => void;
 };
 
@@ -50,17 +50,21 @@ export function DecisionModelsFirstRunCard({
     <Surface
       as="section"
       variant="canvas"
-      padding="lg"
+      padding="md"
       aria-label={t("Decision models")}
-      className="flex min-w-0 flex-col gap-3"
+      className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2"
     >
-      <Heading size="item">
-        {offer === "install" ? t("Set up a local decision model?") : t("Set up a decision model?")}
-      </Heading>
-      <Text as="p" size="caption" tone="secondary">
-        {recommendationText(recommendation.tier)}
-      </Text>
-      <div className="flex flex-wrap justify-end gap-2">
+      <div className="flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
+        <Heading size="item">
+          {offer === "install"
+            ? t("Set up a local decision model?")
+            : t("Set up a decision model?")}
+        </Heading>
+        <Text as="p" size="caption" tone="secondary">
+          {recommendationText(recommendation.tier)}
+        </Text>
+      </div>
+      <div className="flex shrink-0 gap-2">
         <Button variant="ghost" size="sm" onClick={onDismiss}>
           {t("Not now")}
         </Button>

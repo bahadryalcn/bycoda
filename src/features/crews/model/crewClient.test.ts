@@ -4,20 +4,51 @@ import { createElement, useState } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
+import { HOST_CREWS } from "./crew";
 const fixture = vi.hoisted(() => ({
   options: undefined as any,
+  poll: undefined as { period: number; urgent?: boolean } | undefined,
   data: undefined as any,
+  error: undefined as Error | undefined,
   request: vi.fn(),
   invalidate: vi.fn(),
+  catalogArgs: undefined as any,
+  catalogRead: {
+    catalog: undefined as any,
+    error: "",
+    stale: false,
+    loading: false,
+    refresh: vi.fn(),
+  },
+}));
+vi.mock("../../connections/model/useRemoteModelCatalog", () => ({
+  useRemoteModelCatalog: (args: unknown) => {
+    fixture.catalogArgs = args;
+    return fixture.catalogRead;
+  },
+}));
+vi.mock("../../../shared/hooks/useQueryVisible", () => ({
+  useQueryVisible: () => true,
+  useForegroundQueryPolling: (
+    _refetch: unknown,
+    period: number,
+    _enabled: boolean,
+    urgent?: boolean,
+  ) => {
+    fixture.poll = { period, urgent };
+  },
 }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (options: unknown) => {
     fixture.options = options;
-    return { data: fixture.data };
+    return { data: fixture.data, error: fixture.error };
   },
   useQueryClient: () => ({ invalidateQueries: fixture.invalidate }),
 }));
-vi.mock("../../automations/model/machineSnapshot", () => ({ machineCapabilities: async () => [] }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: async () => [] }));
+vi.mock("../../automations/model/machineSnapshot", () => ({
+  machineCapabilities: async () => [HOST_CREWS],
+}));
 vi.mock("../../automations/model/hostAutomationClient", () => ({
   backgroundMachines: async () => [],
   backgroundMachineFor: () => ({ id: "local" }),
@@ -35,48 +66,113 @@ function projectCrews(cwd: string) {
   return state;
 }
 
-it("keeps work controls available when only the model catalog fails", async () => {
-  fixture.request.mockImplementation(async (_machine, method) => {
-    if (method === "models.list") throw new Error("Catalog offline");
-    return { definitions: [], runs: [{ id: "running-work" }], agents: [] };
-  });
+const SCOPE_DATA = {
+  machine: { id: "local", environmentId: "env-1" },
+  project: { id: "project" },
+  runs: [{ id: "running-work", tasks: [] }],
+  definitions: [],
+  agents: [],
+};
+function resetCatalog() {
+  fixture.data = undefined;
+  fixture.catalogArgs = undefined;
+  Object.assign(fixture.catalogRead, { catalog: undefined, error: "", stale: false });
+  fixture.catalogRead.refresh.mockClear();
+}
+
+it("polls only crews.list and never requests the model catalog from the run query", async () => {
+  resetCatalog();
+  fixture.request.mockReset();
+  fixture.request.mockImplementation(async () => ({
+    definitions: [],
+    runs: [{ id: "running-work", tasks: [] }],
+    agents: [],
+  }));
   projectCrews("C:/project");
   const data = await fixture.options.queryFn();
-  expect(data.runs).toEqual([{ id: "running-work" }]);
-  expect(data.catalog).toEqual({ models: {}, errors: {} });
-  expect(data.catalogError).toBe("Catalog offline");
+  expect(fixture.request.mock.calls.map((call) => call[1])).toEqual(["crews.list"]);
+  expect(data.runs).toEqual([{ id: "running-work", tasks: [] }]);
+  expect(data).not.toHaveProperty("catalog");
+  // A catalog that is still pending no longer speeds up the run poll.
+  expect(fixture.options.refetchInterval).toBeUndefined();
+  expect(fixture.poll?.period).toBe(15_000);
+  fixture.data = { ...data, runs: [{ status: "active", tasks: [] }] };
+  projectCrews("C:/project");
+  expect(fixture.poll).toEqual({ period: 5_000, urgent: true });
+  fixture.data = { ...data, runs: [{ status: "paused", coordinatorStatus: "running", tasks: [] }] };
+  projectCrews("C:/project");
+  expect(fixture.poll).toEqual({ period: 5_000, urgent: true });
 });
 
-it("loads crew state with a progressive catalog and revisits pending providers", async () => {
-  fixture.request.mockImplementation(async (_machine, method) =>
-    method === "models.list"
-      ? { models: {}, errors: {}, pending: ["claude"] }
-      : { definitions: [], runs: [], agents: [] },
-  );
-  projectCrews("C:/project");
-  const data = await fixture.options.queryFn();
-  expect(fixture.request).toHaveBeenCalledWith("local", "models.list", {
+it("reads the catalog under its own Host, environment and project scope", async () => {
+  resetCatalog();
+  fixture.request.mockReset();
+  fixture.request.mockResolvedValue({ models: {}, errors: {} });
+  fixture.data = SCOPE_DATA;
+  fixture.catalogRead.catalog = { models: { claude: [] }, errors: {}, pending: ["codex"] };
+  const state = projectCrews("C:/project");
+  expect(fixture.catalogArgs.scope).toEqual({
+    machineId: "local",
+    environmentId: "env-1",
     projectId: "project",
-    progressive: true,
   });
-  expect(data.runs).toEqual([]);
-  expect(fixture.options.refetchInterval({ state: { data } })).toBe(1000);
-  expect(
-    fixture.options.refetchInterval({
-      state: { data: { ...data, catalog: { models: {}, errors: {} } } },
-    }),
-  ).toBe(15000);
-  expect(
-    fixture.options.refetchInterval({
-      state: {
-        data: {
-          ...data,
-          catalog: { models: {}, errors: {} },
-          runs: [{ status: "paused", coordinatorStatus: "running", tasks: [] }],
-        },
-      },
-    }),
-  ).toBe(5000);
+  expect(fixture.catalogArgs.enabled).toBe(true);
+  expect(fixture.catalogArgs.hostEnvironmentId).toBe("env-1");
+  await fixture.catalogArgs.request("models.list", { projectId: "project", progressive: true });
+  expect(fixture.request).toHaveBeenCalledWith(
+    "local",
+    "models.list",
+    { projectId: "project", progressive: true },
+    false,
+    false,
+    "env-1",
+  );
+  expect(state.data?.catalog.pending).toEqual(["codex"]);
+  // Explicit retry refreshes the catalog read only, not the crew list.
+  state.refreshCatalog();
+  expect(fixture.catalogRead.refresh).toHaveBeenCalledTimes(1);
+  resetCatalog();
+});
+
+it("does not read a catalog before the crew host is known", () => {
+  resetCatalog();
+  projectCrews("C:/project");
+  expect(fixture.catalogArgs.enabled).toBe(false);
+  expect(fixture.catalogArgs.scope).toEqual({ machineId: "", environmentId: "", projectId: "" });
+});
+
+it("redacts diagnostics and withholds them until the read failure is visible", () => {
+  try {
+    fixture.error = new Error("[RPC_WS_UNAVAILABLE] Host unavailable token=secretABC123");
+    expect(projectCrews("C:/project")).toMatchObject({
+      pendingFailure: true,
+      visibleError: undefined,
+      errorDetails: undefined,
+    });
+
+    fixture.error = new Error("Host rejected request: Permission denied token=secretABC123");
+    const failure = projectCrews("C:/project");
+    expect(failure.visibleError).toContain("Permission denied");
+    expect(failure.errorDetails).toContain("Host rejected request");
+    expect(failure.visibleError).not.toContain("secretABC123");
+    expect(failure.errorDetails).not.toContain("secretABC123");
+  } finally {
+    fixture.error = undefined;
+  }
+});
+
+it("keeps work controls available when only the model catalog fails", () => {
+  resetCatalog();
+  fixture.data = SCOPE_DATA;
+  fixture.catalogRead.catalog = { models: { claude: [] }, errors: {} };
+  fixture.catalogRead.error = "Error: Catalog offline";
+  fixture.catalogRead.stale = true;
+  const data = projectCrews("C:/project").data!;
+  expect(data.runs).toEqual([{ id: "running-work", tasks: [] }]);
+  // A remembered catalog that could not be refreshed is not offered for model choices.
+  expect(data.catalog).toEqual({ models: {}, errors: {} });
+  expect(data.catalogError).toBe("Catalog offline");
+  resetCatalog();
 });
 
 it("refreshes partial Stop results after failure without sending Stop again", async () => {
@@ -95,6 +191,9 @@ it("refreshes partial Stop results after failure without sending Stop again", as
   await expect(state.call("crews.stop", { runId: "run" })).rejects.toThrow("could not be stopped");
   expect(fixture.request).toHaveBeenCalledTimes(1);
   expect(fixture.invalidate).toHaveBeenCalledWith({ queryKey: ["crews.v1", "C:/project"] });
+  expect(fixture.invalidate).toHaveBeenCalledWith({
+    queryKey: ["crews.v1", "managed", "C:/project"],
+  });
   fixture.data = undefined;
 });
 
@@ -102,7 +201,7 @@ it("keeps one crew data object across renders until the fetched result changes",
   // A new object on every render re-ran the sidebar's effects, whose connection report
   // re-rendered the sidebar again: React #185 on the Mac's remote project.
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  fixture.data = { machine: { id: "m" }, project: { id: "p" }, runs: [{ id: "r" }] };
+  fixture.data = { machine: { id: "m" }, project: { id: "p" }, runs: [{ id: "r", tasks: [] }] };
   const seen: unknown[] = [];
   let rerender!: () => void;
   function Fixture() {
@@ -116,9 +215,9 @@ it("keeps one crew data object across renders until the fetched result changes",
   await act(async () => rerender());
   expect(seen.length).toBeGreaterThan(1);
   expect(new Set(seen).size).toBe(1);
-  fixture.data = { ...fixture.data, runs: [{ id: "r2" }] };
+  fixture.data = { ...fixture.data, runs: [{ id: "r2", tasks: [] }] };
   await act(async () => rerender());
-  expect((seen.at(-1) as { runs: unknown[] }).runs).toEqual([{ id: "r2" }]);
+  expect((seen.at(-1) as { runs: unknown[] }).runs).toEqual([{ id: "r2", tasks: [] }]);
   await act(async () => root.unmount());
   fixture.data = undefined;
 });

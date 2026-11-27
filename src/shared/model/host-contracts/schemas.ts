@@ -60,7 +60,9 @@ export const ConnectionHelloResultSchema = z.strictObject({
   schemaVersion: z.literal(HOST_SCHEMA_VERSION),
   connectionId: IdentifierSchema,
   capabilities: z.array(CapabilityNameSchema).max(256),
-  methods: z.array(MethodNameSchema).max(256),
+  // The Host advertised exactly 256 methods before phone voice; clients older than this bound
+  // reject a larger hello and must be updated together with the Host.
+  methods: z.array(MethodNameSchema).max(512),
 });
 export type ConnectionHelloResult = z.infer<typeof ConnectionHelloResultSchema>;
 export const ConnectionProbeParamsSchema = z.strictObject({});
@@ -71,9 +73,20 @@ export const ConnectionProbeResultSchema = z.strictObject({
 
 export const SubscriptionTargetSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("environment") }),
-  z.strictObject({ kind: z.literal("project"), projectId: IdentifierSchema }),
+  z.strictObject({
+    kind: z.literal("deviceVideo"),
+    deviceId: z.string().min(1).max(200),
+    viewerId: IdentifierSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("project"),
+    projectId: IdentifierSchema,
+    /** Hosts advertising `transport.ws.projects.delta.v1`: changed rows against the last list. */
+    delta: z.literal(true).optional(),
+  }),
   /** Model catalog as `models.list` returns it (capability `models.catalog.stream.v1`). */
   z.strictObject({ kind: z.literal("models"), projectId: IdentifierSchema.optional() }),
+  z.strictObject({ kind: z.literal("delegationMessages"), sessionId: IdentifierSchema }),
   z.strictObject({
     kind: z.literal("session"),
     sessionId: IdentifierSchema,
@@ -110,6 +123,8 @@ export const REQUEST_EXPIRED_MESSAGE =
  */
 export const HOST_REFUSAL_ERROR_CODES = [
   "LEASE_HELD",
+  "HOST_WRITER_RETIREMENT_PENDING",
+  "HOST_WRITER_RETIREMENT_FAILED",
   "QUEUE_DRAIN_HELD",
   "QUEUE_LEASE_CHANGED",
   "QUEUE_CHANGED",
@@ -121,6 +136,7 @@ export const HOST_REFUSAL_ERROR_CODES = [
   "CONTEXT_CHANGED",
   "NATIVE_ADMISSION_UNENROLLED",
   "PROJECT_FOLDER_MISSING",
+  "GROUP_LOCK_DESKTOP_UNAVAILABLE",
 ] as const;
 export type HostRefusalErrorCode = (typeof HOST_REFUSAL_ERROR_CODES)[number];
 

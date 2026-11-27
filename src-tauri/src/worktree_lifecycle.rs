@@ -1,16 +1,26 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use crate::worktrees::contains_working_dir;
 
 #[derive(Default)]
 struct Lifecycle {
     reservations: Mutex<Vec<(PathBuf, bool)>>,
+    desktop_leases: Mutex<Vec<DesktopRemovalLease>>,
     recovery_blocks: Mutex<Vec<PathBuf>>,
+}
+
+struct DesktopRemovalLease {
+    client_id: String,
+    lease_id: String,
+    path: PathBuf,
+    expires: Instant,
 }
 
 static LIFECYCLE: Lifecycle = Lifecycle {
     reservations: Mutex::new(Vec::new()),
+    desktop_leases: Mutex::new(Vec::new()),
     recovery_blocks: Mutex::new(Vec::new()),
 };
 
@@ -33,6 +43,17 @@ impl Lifecycle {
             }
         };
         let mut reservations = self.reservations.lock().unwrap_or_else(|e| e.into_inner());
+        let mut leases = self
+            .desktop_leases
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        leases.retain(|lease| lease.expires > Instant::now());
+        if leases.iter().any(|lease| {
+            contains_working_dir(&lease.path, &path)
+                || (removing && contains_working_dir(&path, &lease.path))
+        }) {
+            return Err("This working copy is reserved for Host removal.".into());
+        }
         if !removing
             && self
                 .recovery_blocks
@@ -85,6 +106,55 @@ pub(crate) fn reserve_spawn(path: &Path) -> Result<Reservation<'static>, String>
 
 pub(crate) fn reserve_removal(path: &Path) -> Result<Reservation<'static>, String> {
     LIFECYCLE.reserve(path, true)
+}
+
+pub(crate) fn install_desktop_removal_lease(
+    path: &Path,
+    client_id: String,
+    lease_id: String,
+    ttl: Duration,
+) -> Result<(), String> {
+    let path = canonical_removal_path(path)?;
+    let reservations = LIFECYCLE
+        .reservations
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let mut leases = LIFECYCLE
+        .desktop_leases
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let now = Instant::now();
+    leases.retain(|lease| lease.expires > now);
+    if reservations.iter().any(|(other, removing)| {
+        contains_working_dir(&path, other) || (*removing && contains_working_dir(other, &path))
+    }) || leases.iter().any(|lease| {
+        if lease.lease_id == lease_id {
+            return lease.path != path;
+        }
+        contains_working_dir(&lease.path, &path) || contains_working_dir(&path, &lease.path)
+    }) {
+        return Err("This working copy is starting a process or being deleted.".into());
+    }
+    if !leases
+        .iter()
+        .any(|lease| lease.lease_id == lease_id && lease.client_id == client_id)
+    {
+        leases.push(DesktopRemovalLease {
+            client_id,
+            lease_id,
+            path,
+            expires: now + ttl,
+        });
+    }
+    Ok(())
+}
+
+pub(crate) fn release_desktop_removal_lease(client_id: &str, lease_id: &str) {
+    LIFECYCLE
+        .desktop_leases
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .retain(|lease| lease.client_id != client_id || lease.lease_id != lease_id);
 }
 
 pub(crate) fn block_removal_recovery(path: &Path) {
@@ -206,6 +276,31 @@ pub(crate) fn is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn desktop_removal_lease_blocks_descendants_until_release_or_expiry() {
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("target");
+        let child = target.join("child");
+        std::fs::create_dir_all(&child).unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        let starting = reserve_spawn(&child).unwrap();
+        let install = |client: &str, ttl| {
+            install_desktop_removal_lease(&target, client.into(), id.clone(), ttl)
+        };
+        assert!(install("first", Duration::from_secs(30)).is_err());
+        drop(starting);
+        install("first", Duration::from_secs(30)).unwrap();
+        install("second", Duration::from_secs(30)).unwrap();
+        assert!(reserve_spawn(&child).is_err());
+        assert!(reserve_spawn(root.path()).is_ok());
+        release_desktop_removal_lease("first", &id);
+        assert!(reserve_spawn(&child).is_err());
+        release_desktop_removal_lease("second", &id);
+        assert!(reserve_spawn(&child).is_ok());
+        install("second", Duration::ZERO).unwrap();
+        assert!(reserve_spawn(&child).is_ok());
+    }
 
     #[test]
     fn removal_allows_linked_ancestors_but_rejects_links_inside_the_boundary() {

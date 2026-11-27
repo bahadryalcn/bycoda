@@ -7,7 +7,7 @@ import { editorSurfaceActive, observeEditorSurface } from "./editorSurfaceVisibi
 const RAIL_WIDTH = 18;
 const MIN_THUMB_HEIGHT = 32;
 
-export type ScrollbarMetrics = {
+type ScrollbarMetrics = {
   scrollable: boolean;
   maxScroll: number;
   maxThumbTop: number;
@@ -47,7 +47,7 @@ export function scrollbarMetrics(
   };
 }
 
-export type DiagnosticOverviewTick = {
+type DiagnosticOverviewTick = {
   severity: Diagnostic["severity"];
   top: number;
   pos: number;

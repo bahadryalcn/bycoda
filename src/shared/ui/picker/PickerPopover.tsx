@@ -1,6 +1,11 @@
 import { useEffect, useRef, type RefObject, type ReactNode } from "react";
 import { LAYER } from "../../lib/layers";
-import type { PopoverAlign, PopoverSide } from "../../lib/popover";
+import {
+  popupSizeMinWidth,
+  type PopoverAlign,
+  type PopoverSide,
+  type PopoverSize,
+} from "../../lib/popover";
 import { Popover, type PopoverAnchor, type PopoverDismissReason } from "../Popover";
 import styles from "./picker.module.css";
 
@@ -22,7 +27,9 @@ export type PickerPopoverProps = {
   side?: PopoverSide;
   align?: PopoverAlign;
   gap?: number;
-  /** Minimum width, 288px by default. The popup grows with its longest row up to 800px. */
+  /** Minimum width step, the same `sm | md | lg` rem steps as Popover. Use this instead of `width`. */
+  size?: PopoverSize;
+  /** Exception to `size`: minimum width in px, 288px by default. The popup grows with its longest row up to 800px. */
   width?: number;
   /** Defaults to 360px; the list scrolls inside, header and footer stay. */
   maxHeight?: number;
@@ -68,7 +75,8 @@ export function PickerPopover({
   side = "bottom",
   align = "start",
   gap = 4,
-  width = 288,
+  size,
+  width = size ? popupSizeMinWidth(size) : 288,
   maxHeight = 360,
   minHeight,
   layer,

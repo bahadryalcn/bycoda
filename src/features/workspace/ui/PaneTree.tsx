@@ -2,15 +2,20 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Button } from "../../../shared/ui/Button";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { RecoveryBoundary } from "../../../shared/ui/RecoveryBoundary";
+import { Portal, useMovablePortalHost } from "../../../shared/ui/Portal";
+import { OverlayParent } from "../../../shared/ui/overlay";
 import { useT } from "../../../shared/i18n";
 import {
+  Activity,
   memo,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import {
   clearDropIndicator,
@@ -22,6 +27,7 @@ import {
 } from "../../../shared/lib/drag";
 import { Maximize2, Minimize2 } from "../../../shared/ui/icons";
 import { Sash as ResizeSash } from "../../../shared/ui/Sash";
+import { observeResize } from "../../../shared/lib/observeResize";
 import {
   isPointerOutsideWindow,
   pointerWindowMovePosition,
@@ -45,7 +51,10 @@ import {
   layoutLeaves,
   layoutSashes,
   isFilesystemTab,
-  MIN_PANE_RATIO,
+  MIN_PANE_HEIGHT_PX,
+  MIN_PANE_WIDTH_PX,
+  minPaneRatio,
+  sashBoundaryRange,
   setSplitRatio,
   type EditorPane,
   type LayoutLeaf,
@@ -54,7 +63,12 @@ import {
   type PaneEdge,
   type PaneTabDropPosition,
 } from "../model/layout";
-import { sameProjectPath, type RecentProject } from "../../projects/model/recents";
+import {
+  isRemoteProjectPath,
+  sameProjectPath,
+  type RecentProject,
+} from "../../projects/model/recents";
+import { useHostSessionBindingReader } from "../../connections/public/useHostSessionBinding";
 import type { TerminalMetaPatch } from "../../terminal/model/terminalTab";
 import {
   sessionWorkCwd,
@@ -72,8 +86,18 @@ import {
 import { FilePane } from "../../files/ui/FilePane";
 import { MediaVisibilityContext } from "../../files/model/mediaVisibility";
 import { SessionPane, type SessionPaneProps } from "../../sessions/ui/SessionPane";
-import { paneBackgroundPlacement, syncPaneBackgrounds } from "../../../shared/lib/paneBackground";
-import { paneRectStyle, sashKey, sashStyle, writeLayoutPreview } from "./paneTreePreview";
+import {
+  paneBackgroundPlacement,
+  syncPaneBackground,
+  syncPaneBackgrounds,
+} from "../../../shared/lib/paneBackground";
+import {
+  paneRectStyle,
+  paneSashLabel,
+  sashKey,
+  sashStyle,
+  writeLayoutPreview,
+} from "./paneTreePreview";
 import { useShellSessionsSelector } from "../../sessions/model/sessionsStore";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import type { TranscriptPool } from "../../sessions/ui/TranscriptPool";
@@ -82,6 +106,13 @@ import type { SessionOrganizationResult } from "../../sessions/model/sessionOrga
 import type { Worktree } from "../../source-control/model/worktrees";
 
 type Shared = {
+  previewSessionId?: string;
+  sessionOutlet?: {
+    sessionId: string;
+    projectPath: string;
+    element: HTMLElement;
+    overlay: symbol | null;
+  };
   workspaceSwitchingSessionId?: string;
   visible: boolean;
   /** Sessions to show. Omitted in the workspace: each pane then follows its own
@@ -103,6 +134,9 @@ type Shared = {
   onClose: (sessionId: string) => void;
   onRemoteSnapshot?: SessionPaneProps["onRemoteSnapshot"];
   onRefreshAdoptedSession?: SessionPaneProps["onRefreshAdoptedSession"];
+  onRetrySessionHistory?: SessionPaneProps["onRetrySessionHistory"];
+  onLoadSessionHistory?: SessionPaneProps["onLoadSessionHistory"];
+  onPrepareSessionHistory?: SessionPaneProps["onPrepareSessionHistory"];
   onSelectFile: (paneId: string, fileId: string) => void;
   onCloseFile: (paneId: string, fileId: string) => void;
   onCloseOtherFiles: (paneId: string, fileId: string, direction?: "left" | "right") => void;
@@ -120,10 +154,12 @@ type Shared = {
   onFileErrorCountChange: (fileId: string, count: number) => void;
   onRatio: (splitId: string, index: number, ratio: number) => void;
   onCwdChange: (sessionId: string, cwd: string) => void;
+  onSessionMachineChange?: SessionPaneProps["onSessionMachineChange"];
   onBranchChange: (sessionId: string) => void;
   onWorktreeChange?: (sessionId: string, tree: Worktree) => Promise<void>;
   onWorkspaceModeChange: (sessionId: string, mode: WorkspaceMode, base?: string) => void;
   onWorktreeBaseChange: (sessionId: string, base: string) => void;
+  onWorktreeBaseRemoteChange?: (sessionId: string, remote: boolean) => void;
   onManageWorktrees?: () => void;
   onModelChange: (sessionId: string, harness: HarnessId, model: string, accountId?: string) => void;
   onModelSettingsChange: (sessionId: string, settings: Record<string, string>) => void;
@@ -137,7 +173,7 @@ type Shared = {
   onSaveDraft: (sessionId: string, text: string, attachments: Attachment[]) => boolean | void;
   onRemoveDraft: (sessionId: string, draftBlockId: string) => boolean | void;
   onStop: (sessionId: string) => void;
-  onCompactContext: (sessionId: string) => boolean;
+  onCompactContext: SessionPaneProps["onCompactContext"];
   onRewindMessage?: SessionPaneProps["onRewindMessage"];
   onNewSession?: SessionPaneProps["onNewSession"];
   onPlaceSessionInFolder: (
@@ -185,6 +221,8 @@ type Shared = {
   onBuildPlan: (sessionId: string, blockId: string, target?: PlanBuildTarget) => void;
   onSecondOpinion?: (sessionId: string, target: ModelTarget, turn: Block[]) => void;
   onHandoff?: (sessionId: string, target: ModelTarget, turn: Block[]) => void;
+  onBranchFromReply?: (sessionId: string, turn: Block[]) => void;
+  onOpenBranchSource?: (sessionId: string, blockId: string) => void;
   onBtwSubmit?: (
     sessionId: string,
     turn: Block[],
@@ -215,6 +253,10 @@ type Shared = {
   onNewTerminal: (sessionId: string) => void;
   onRunProjectAction?: (sessionId: string, action: ProjectAction) => void;
   onRunCode?: (sessionId: string, cwd: string, profile: string, terminalId: string) => boolean;
+  onRunRemoteCode?: (
+    sessionId: string,
+    run: import("../../terminal/public/codeExecution").RemoteCodeRun,
+  ) => boolean;
   onTerminalMetaChange?: (fileId: string, patch: TerminalMetaPatch) => void;
   transcriptPool?: TranscriptPool;
 };
@@ -226,6 +268,8 @@ type PaneDrag = PaneDrop;
 const DRAG_THRESHOLD = 5;
 
 function PaneTreeComponent({
+  previewSessionId,
+  sessionOutlet,
   visible,
   layout,
   sessions,
@@ -246,6 +290,9 @@ function PaneTreeComponent({
   onClose,
   onRemoteSnapshot,
   onRefreshAdoptedSession,
+  onRetrySessionHistory,
+  onLoadSessionHistory,
+  onPrepareSessionHistory,
   onSelectFile,
   onCloseFile,
   onCloseOtherFiles,
@@ -257,10 +304,12 @@ function PaneTreeComponent({
   onFileErrorCountChange,
   onRatio,
   onCwdChange,
+  onSessionMachineChange,
   onBranchChange,
   onWorktreeChange,
   onWorkspaceModeChange,
   onWorktreeBaseChange,
+  onWorktreeBaseRemoteChange,
   onManageWorktrees,
   onModelChange,
   onModelSettingsChange,
@@ -307,12 +356,15 @@ function PaneTreeComponent({
   onBtwStop,
   onBtwModelChange,
   onHandoff,
+  onBranchFromReply,
+  onOpenBranchSource,
   onMovePane,
   onDetachPane,
   onPopOutPane,
   onNewTerminal,
   onRunProjectAction,
   onRunCode,
+  onRunRemoteCode,
   onTerminalMetaChange,
   transcriptPool,
 }: Props) {
@@ -403,6 +455,14 @@ function PaneTreeComponent({
     samePaneSessions,
   );
   const sessionById = paneSessions.byId;
+  const preview =
+    visible && renderLeaves.length === 1 && renderLeaves[0].id === previewSessionId
+      ? sessionById.get(previewSessionId)
+      : undefined;
+  const previousPreview = usePreviousLocalPreview(preview);
+  const displayedLeaves = previousPreview
+    ? [...renderLeaves, { ...renderLeaves[0], id: previousPreview.id, hidden: true }]
+    : renderLeaves;
   useLayoutEffect(() => {
     heldSessions.current = paneSessions;
     dragContents.current = {
@@ -554,26 +614,22 @@ function PaneTreeComponent({
           "move",
           ev,
           over.id === fromId
-            ? t(
-                over.edge === "left"
-                  ? "Split left with a new session"
-                  : over.edge === "right"
-                    ? "Split right with a new session"
-                    : over.edge === "top"
-                      ? "Split above with a new session"
-                      : "Split below with a new session",
-              )
+            ? over.edge === "left"
+              ? t("Split left with a new session")
+              : over.edge === "right"
+                ? t("Split right with a new session")
+                : over.edge === "top"
+                  ? t("Split above with a new session")
+                  : t("Split below with a new session")
             : over.edge === "center"
               ? t("Add as pane tab")
-              : t(
-                  over.edge === "left"
-                    ? "Place left"
-                    : over.edge === "right"
-                      ? "Place right"
-                      : over.edge === "top"
-                        ? "Place above"
-                        : "Place below",
-                ),
+              : over.edge === "left"
+                ? t("Place left")
+                : over.edge === "right"
+                  ? t("Place right")
+                  : over.edge === "top"
+                    ? t("Place above")
+                    : t("Place below"),
         );
       };
 
@@ -654,20 +710,38 @@ function PaneTreeComponent({
         className="relative h-full min-h-0 min-w-0"
         data-pane-maximized={maximum?.id}
       >
-        {renderLeaves.map((leaf) => {
+        {displayedLeaves.map((leaf) => {
           const editorPane = editorPanes.find((pane) => pane.id === leaf.id);
-          const session = sessionById.get(leaf.id);
+          const parked = previousPreview?.id === leaf.id;
+          const session = parked ? previousPreview : sessionById.get(leaf.id);
           const dragging = drop?.fromId === leaf.id;
           const groupSelected = leaves.find(
             (pane) => pane.id === leaf.id || pane.tabIds?.includes(leaf.id),
           );
           const hidden = leaf.hidden || Boolean(maximum && groupSelected?.id !== maximum.id);
+          const canMaximize = (inSplit || maximum) && !hidden;
           const rect = maximum ? { x: 0, y: 0, w: 1, h: 1 } : leaf.rect;
           const onPaneDragStart = startPaneDrag;
+          const maximizeButton = canMaximize ? (
+            <Button
+              iconOnly
+              label={maximum ? t("Restore panel layout") : t("Maximize panel")}
+              variant="ghost"
+              motion="none"
+              type="button"
+              aria-pressed={Boolean(maximum)}
+              data-pane-maximize={leaf.id}
+              onClick={() => toggleMaximum(leaf.id)}
+            >
+              {maximum ? <Minimize2 className="icon-sm" /> : <Maximize2 className="icon-sm" />}
+            </Button>
+          ) : null;
           return (
             <div
               key={leaf.id}
-              data-pane-leaf={leaf.id}
+              data-pane-leaf={parked ? undefined : leaf.id}
+              inert={parked || undefined}
+              aria-hidden={parked || undefined}
               data-pane-background={paneBackgroundPlacement(rect)}
               data-pane-id={hidden ? undefined : leaf.id}
               data-pane-active={focusedId === leaf.id ? "true" : undefined}
@@ -686,7 +760,7 @@ function PaneTreeComponent({
                 if (event.key === "Tab" && session) onSessionInteraction?.(session.id);
               }}
               onInputCapture={() => session && onSessionInteraction?.(session.id)}
-              data-pane-can-maximize={(inSplit || maximum) && !hidden ? "true" : undefined}
+              data-pane-can-maximize={canMaximize ? "true" : undefined}
               className={`absolute ${hidden ? "hidden" : "flex"} min-h-0 min-w-0 flex-col overflow-hidden ${dragging ? "opacity-40" : ""}`}
               // The new pane focuses its composer or editor while it is still
               // offscreen, and focus scrolls this clip box to reveal it, which
@@ -700,86 +774,77 @@ function PaneTreeComponent({
               style={paneRectStyle(rect)}
             >
               {leaf.tabIds && leaf.tabIds.length > 1 ? (
-                <Tabs value={leaf.id} onValueChange={onFocus} panels="none">
-                  <TabList
-                    label={t("Pane sessions")}
-                    {...surfaceAttributes(
-                      { frame: "pane", edge: "bottom" },
-                      "flex shrink-0 overflow-x-auto",
-                    )}
-                  >
-                    {leaf.tabIds.map((id) => (
-                      <Tab
-                        key={id}
-                        value={id}
-                        type="button"
-                        data-pane-tab-id={id}
-                        truncate
-                        className={`relative max-w-48 shrink-0 `}
-                        onClick={(event) => {
-                          event.preventDefault();
-                          onFocus(id);
-                        }}
-                        onKeyDown={(event) => {
-                          // Plain arrows, Home and End are the shared tab list's; Alt+Shift moves the pane.
-                          const delta =
-                            event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0;
-                          if (!event.altKey || !event.shiftKey || !delta) return;
-                          const ids = leaf.tabIds!;
-                          event.preventDefault();
-                          event.stopPropagation();
-                          const to = ids[(ids.indexOf(id) + delta + ids.length) % ids.length];
-                          onMovePane(id, to, "center", delta < 0 ? "before" : "after");
-                        }}
-                        onPointerDown={startPaneDrag}
-                        tooltip={
-                          sessionById.get(id)?.title ||
-                          editorPanes
-                            .find((pane) => pane.id === id)
-                            ?.files[0]?.path.split(/[\\/]/)
-                            .pop() ||
-                          t("Session")
-                        }
-                        tooltipWhen="overflow"
-                      >
-                        {sessionById.get(id)?.title ||
-                          editorPanes
-                            .find((pane) => pane.id === id)
-                            ?.files[0]?.path.split(/[\\/]/)
-                            .pop() ||
-                          t("Session")}
-                        {drop?.overId === id && drop.tabPosition ? (
-                          <span
-                            data-pane-tab-drop={drop.tabPosition}
-                            {...surfaceAttributes(
-                              {
-                                radius: "pill",
-                                variant: drop.invalid ? "drop-blocked" : "drop-line",
-                              },
-                              `pointer-events-none absolute inset-y-0 w-(--ui-drop-line-size) ${drop.tabPosition === "before" ? "start-0" : "end-0"}`,
-                            )}
-                          />
-                        ) : null}
-                      </Tab>
-                    ))}
-                  </TabList>
-                </Tabs>
-              ) : null}
-              {(inSplit || maximum) && !hidden ? (
-                <Button
-                  iconOnly
-                  label={t(maximum ? "Restore panel layout" : "Maximize panel")}
-                  variant="ghost"
-                  motion="none"
-                  type="button"
-                  aria-label={t(maximum ? "Restore panel layout" : "Maximize panel")}
-                  aria-pressed={Boolean(maximum)}
-                  data-pane-maximize={leaf.id}
-                  onClick={() => toggleMaximum(leaf.id)}
-                  className="absolute [inset-block-start:0.25rem] end-2 z-1 grid place-items-center"
+                <div
+                  {...surfaceAttributes(
+                    { frame: "pane", edge: "bottom" },
+                    "flex min-w-0 shrink-0 items-center",
+                  )}
                 >
-                  {maximum ? <Minimize2 className="icon-sm" /> : <Maximize2 className="icon-sm" />}
-                </Button>
+                  <div className="min-w-0 flex-1">
+                    <Tabs value={leaf.id} onValueChange={onFocus} panels="none">
+                      <TabList label={t("Pane sessions")} scroll="auto" className="shrink-0">
+                        {leaf.tabIds.map((id) => (
+                          <Tab
+                            key={id}
+                            value={id}
+                            type="button"
+                            data-pane-tab-id={id}
+                            truncate
+                            className="relative max-w-48 shrink-0"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              onFocus(id);
+                            }}
+                            onKeyDown={(event) => {
+                              // Plain arrows, Home and End are the shared tab list's; Alt+Shift moves the pane.
+                              const delta =
+                                event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0;
+                              if (!event.altKey || !event.shiftKey || !delta) return;
+                              const ids = leaf.tabIds!;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              const to = ids[(ids.indexOf(id) + delta + ids.length) % ids.length];
+                              onMovePane(id, to, "center", delta < 0 ? "before" : "after");
+                            }}
+                            onPointerDown={startPaneDrag}
+                            tooltip={
+                              sessionById.get(id)?.title ||
+                              editorPanes
+                                .find((pane) => pane.id === id)
+                                ?.files[0]?.path.split(/[\\/]/)
+                                .pop() ||
+                              t("Session")
+                            }
+                            tooltipWhen="overflow"
+                          >
+                            {sessionById.get(id)?.title ||
+                              editorPanes
+                                .find((pane) => pane.id === id)
+                                ?.files[0]?.path.split(/[\\/]/)
+                                .pop() ||
+                              t("Session")}
+                            {drop?.overId === id && drop.tabPosition ? (
+                              <span
+                                data-pane-tab-drop={drop.tabPosition}
+                                {...surfaceAttributes(
+                                  {
+                                    radius: "pill",
+                                    variant: drop.invalid ? "drop-blocked" : "drop-line",
+                                  },
+                                  `pointer-events-none absolute inset-y-0 w-(--ui-drop-line-size) ${drop.tabPosition === "before" ? "start-0" : "end-0"}`,
+                                )}
+                              />
+                            ) : null}
+                          </Tab>
+                        ))}
+                      </TabList>
+                    </Tabs>
+                  </div>
+                  {maximizeButton ? <span className="shrink-0 px-1">{maximizeButton}</span> : null}
+                </div>
+              ) : maximizeButton ? (
+                // A single-session pane has no header row of its own; the button floats at its end.
+                <span className="absolute top-1 end-2 z-1">{maximizeButton}</span>
               ) : null}
               <div
                 className="flex min-h-0 min-w-0 flex-1 flex-col"
@@ -829,77 +894,94 @@ function PaneTreeComponent({
                       resetKeys={[leaf.id, session.id]}
                       onBack={() => onClose(session.id)}
                     >
-                      <SessionPane
+                      <SessionPanePlacement
                         session={session}
-                        workspaceSwitchingSessionId={workspaceSwitchingSessionId}
-                        reviewUndoLocked={paneSessions.undoLocked.has(session.id)}
-                        visible={visible && !hidden}
-                        focused={focusedId === session.id}
-                        addToChatTarget={addToChatSessionId === session.id}
-                        inSplit={inSplit}
-                        composerFocused={composerFocused}
-                        composerFocusToken={composerFocusToken}
-                        recents={recents}
-                        hideProjectPicker={hideProjectPicker}
-                        onFocus={onFocus}
-                        onClose={onClose}
-                        onRemoteSnapshot={onRemoteSnapshot}
-                        onRefreshAdoptedSession={onRefreshAdoptedSession}
-                        onCwdChange={onCwdChange}
-                        onBranchChange={onBranchChange}
-                        onWorktreeChange={onWorktreeChange}
-                        onWorkspaceModeChange={onWorkspaceModeChange}
-                        onWorktreeBaseChange={onWorktreeBaseChange}
-                        onManageWorktrees={onManageWorktrees}
-                        onModelChange={onModelChange}
-                        onModelSettingsChange={onModelSettingsChange}
-                        onRuntimeModeChange={onRuntimeModeChange}
-                        onSaveDraft={onSaveDraft}
-                        onRemoveDraft={onRemoveDraft}
-                        onSubmit={onSubmit}
-                        onStop={onStop}
-                        onCompactContext={onCompactContext}
-                        onRewindMessage={onRewindMessage}
-                        onNewSession={onNewSession}
-                        onPlaceSessionInFolder={onPlaceSessionInFolder}
-                        onResumeProviderSession={onResumeProviderSession}
-                        onDeleteQueuedMessage={onDeleteQueuedMessage}
-                        onEditQueuedMessage={onEditQueuedMessage}
-                        onQueuedMessageEditingChange={onQueuedMessageEditingChange}
-                        onReorderQueuedMessages={onReorderQueuedMessages}
-                        onSteerQueuedMessage={onSteerQueuedMessage}
-                        onResumeQueue={onResumeQueue}
-                        onUsageLimitResume={onUsageLimitResume}
-                        onUsageLimitResumeAtReset={onUsageLimitResumeAtReset}
-                        onUsageLimitDismiss={onUsageLimitDismiss}
-                        onSelectProviderAccount={onSelectProviderAccount}
-                        onInboxCardDismiss={onInboxCardDismiss}
-                        onLinkedWorkItemUpdateCardDismiss={onLinkedWorkItemUpdateCardDismiss}
-                        onNoteCardDismiss={onNoteCardDismiss}
-                        onHandoffCardDismiss={onHandoffCardDismiss}
-                        onOpenLinkedWorkItem={onOpenLinkedWorkItem}
-                        onArchiveSession={onArchiveSession}
-                        onDeleteSession={onDeleteSession}
-                        onApproval={onApproval}
-                        onQuestionReply={onQuestionReply}
-                        onQuestionInteraction={onQuestionInteraction}
-                        onOpenFile={onOpenFile}
-                        onOpenDiff={onOpenDiff}
-                        onOpenPlan={onOpenPlan}
-                        onBuildPlan={onBuildPlan}
-                        onSecondOpinion={onSecondOpinion}
-                        onHandoff={onHandoff}
-                        onBtwSubmit={onBtwSubmit}
-                        onBtwRetry={onBtwRetry}
-                        onBtwDelete={onBtwDelete}
-                        onBtwStop={onBtwStop}
-                        onBtwModelChange={onBtwModelChange}
-                        onNewTerminal={onNewTerminal}
-                        onRunProjectAction={onRunProjectAction}
-                        onRunCode={onRunCode}
-                        onPaneDragStart={onPaneDragStart}
-                        transcriptPool={transcriptPool}
-                      />
+                        parked={parked}
+                        preview={preview?.id === session.id}
+                        outlet={
+                          visible && !hidden && focusedId === session.id ? sessionOutlet : undefined
+                        }
+                      >
+                        <SessionPane
+                          session={session}
+                          workspaceSwitchingSessionId={workspaceSwitchingSessionId}
+                          reviewUndoLocked={paneSessions.undoLocked.has(session.id)}
+                          visible={visible && !hidden}
+                          focused={focusedId === session.id}
+                          addToChatTarget={addToChatSessionId === session.id}
+                          inSplit={inSplit}
+                          composerFocused={composerFocused}
+                          composerFocusToken={composerFocusToken}
+                          recents={recents}
+                          hideProjectPicker={hideProjectPicker}
+                          onFocus={onFocus}
+                          onClose={onClose}
+                          onRemoteSnapshot={onRemoteSnapshot}
+                          onRefreshAdoptedSession={onRefreshAdoptedSession}
+                          onRetrySessionHistory={onRetrySessionHistory}
+                          onLoadSessionHistory={onLoadSessionHistory}
+                          onPrepareSessionHistory={onPrepareSessionHistory}
+                          onCwdChange={onCwdChange}
+                          onSessionMachineChange={onSessionMachineChange}
+                          onBranchChange={onBranchChange}
+                          onWorktreeChange={onWorktreeChange}
+                          onWorkspaceModeChange={onWorkspaceModeChange}
+                          onWorktreeBaseChange={onWorktreeBaseChange}
+                          onWorktreeBaseRemoteChange={onWorktreeBaseRemoteChange}
+                          onManageWorktrees={onManageWorktrees}
+                          onModelChange={onModelChange}
+                          onModelSettingsChange={onModelSettingsChange}
+                          onRuntimeModeChange={onRuntimeModeChange}
+                          onSaveDraft={onSaveDraft}
+                          onRemoveDraft={onRemoveDraft}
+                          onSubmit={onSubmit}
+                          onStop={onStop}
+                          onCompactContext={onCompactContext}
+                          onRewindMessage={onRewindMessage}
+                          onNewSession={onNewSession}
+                          onPlaceSessionInFolder={onPlaceSessionInFolder}
+                          onResumeProviderSession={onResumeProviderSession}
+                          onDeleteQueuedMessage={onDeleteQueuedMessage}
+                          onEditQueuedMessage={onEditQueuedMessage}
+                          onQueuedMessageEditingChange={onQueuedMessageEditingChange}
+                          onReorderQueuedMessages={onReorderQueuedMessages}
+                          onSteerQueuedMessage={onSteerQueuedMessage}
+                          onResumeQueue={onResumeQueue}
+                          onUsageLimitResume={onUsageLimitResume}
+                          onUsageLimitResumeAtReset={onUsageLimitResumeAtReset}
+                          onUsageLimitDismiss={onUsageLimitDismiss}
+                          onSelectProviderAccount={onSelectProviderAccount}
+                          onInboxCardDismiss={onInboxCardDismiss}
+                          onLinkedWorkItemUpdateCardDismiss={onLinkedWorkItemUpdateCardDismiss}
+                          onNoteCardDismiss={onNoteCardDismiss}
+                          onHandoffCardDismiss={onHandoffCardDismiss}
+                          onOpenLinkedWorkItem={onOpenLinkedWorkItem}
+                          onArchiveSession={onArchiveSession}
+                          onDeleteSession={onDeleteSession}
+                          onApproval={onApproval}
+                          onQuestionReply={onQuestionReply}
+                          onQuestionInteraction={onQuestionInteraction}
+                          onOpenFile={onOpenFile}
+                          onOpenDiff={onOpenDiff}
+                          onOpenPlan={onOpenPlan}
+                          onBuildPlan={onBuildPlan}
+                          onSecondOpinion={onSecondOpinion}
+                          onHandoff={onHandoff}
+                          onBranchFromReply={onBranchFromReply}
+                          onOpenBranchSource={onOpenBranchSource}
+                          onBtwSubmit={onBtwSubmit}
+                          onBtwRetry={onBtwRetry}
+                          onBtwDelete={onBtwDelete}
+                          onBtwStop={onBtwStop}
+                          onBtwModelChange={onBtwModelChange}
+                          onNewTerminal={onNewTerminal}
+                          onRunProjectAction={onRunProjectAction}
+                          onRunCode={onRunCode}
+                          onRunRemoteCode={onRunRemoteCode}
+                          onPaneDragStart={onPaneDragStart}
+                          transcriptPool={transcriptPool}
+                        />
+                      </SessionPanePlacement>
                     </RecoveryBoundary>
                   ) : null}
                 </MediaVisibilityContext.Provider>
@@ -941,6 +1023,86 @@ export function PaneTree(props: Props) {
 function sameProps(a: Props, b: Props): boolean {
   const keys = Object.keys(a) as (keyof Props)[];
   return keys.length === Object.keys(b).length && keys.every((key) => Object.is(a[key], b[key]));
+}
+
+/** The browsing slot can restore one prior local pane's UI after its data leaves the store. */
+function usePreviousLocalPreview(session: Session | undefined) {
+  const binding = useHostSessionBindingReader();
+  let local: Session | undefined;
+  if (session && !session.remoteExecutionEnvironmentId && !isRemoteProjectPath(session.cwd)) {
+    try {
+      if (!binding(session)) local = session;
+    } catch {
+      // The pane's recovery boundary owns an invalid binding; discard its retained UI.
+    }
+  }
+  const [history, setHistory] = useState<{ current?: Session; previous?: Session }>({});
+  if (local !== history.current) {
+    let previous = history.current;
+    if (local && previous && local.id === previous.id) previous = history.previous;
+    if (!local || !previous || !sameProjectPath(local.cwd, previous.cwd)) previous = undefined;
+    setHistory({ current: local, previous });
+    return previous;
+  }
+  return history.previous;
+}
+
+function SessionPanePlacement({
+  session,
+  outlet,
+  parked,
+  preview,
+  children,
+}: {
+  session: Session;
+  parked: boolean;
+  preview: boolean;
+  outlet: Shared["sessionOutlet"];
+  children: ReactNode;
+}) {
+  // Reconnect an unchanged preview. A kept tab or a newer stored revision
+  // must initialize from its current draft, queue and editing permissions.
+  const [retention, setRetention] = useState<{ parked?: Session; generation: number }>({
+    generation: 0,
+  });
+  if (parked && !retention.parked) setRetention({ ...retention, parked: session });
+  if (!parked && retention.parked) {
+    const same = preview && retention.parked.blocks === session.blocks;
+    setRetention({ generation: retention.generation + (same ? 0 : 1) });
+  }
+  const homeOverlay = useContext(OverlayParent);
+  const destination =
+    outlet?.sessionId === session.id && sameProjectPath(outlet.projectPath, session.cwd)
+      ? outlet
+      : undefined;
+  const { attachHome, host } = useMovablePortalHost(destination?.element);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Refreshes the artwork layer after the portal mounts or changes its owning pane.
+  useLayoutEffect(() => {
+    if (host)
+      syncPaneBackground(
+        host.closest<HTMLElement>("[data-pane-leaf]"),
+        host.querySelector<HTMLElement>(".chat-pane-background") ?? undefined,
+      );
+  }, [host, destination?.element]);
+  return (
+    <div className="contents" ref={attachHome}>
+      {host ? (
+        <OverlayParent.Provider value={destination ? destination.overlay : homeOverlay}>
+          <Portal target={host}>
+            <div
+              className="contents"
+              data-workspace-session-id={session.id}
+              data-session-project={session.cwd}
+            >
+              <Activity key={retention.generation} mode={parked ? "hidden" : "visible"}>
+                {children}
+              </Activity>
+            </div>
+          </Portal>
+        </OverlayParent.Provider>
+      ) : null}
+    </div>
+  );
 }
 
 type PaneSessions = {
@@ -1058,36 +1220,61 @@ function PaneSash({
   const boundary = sash.sizes.slice(0, sash.index + 1).reduce((sum, size) => sum + size, 0);
   const before = sash.sizes.slice(0, sash.index).reduce((sum, size) => sum + size, 0);
   const pairSize = sash.sizes[sash.index] + sash.sizes[sash.index + 1];
-  const minimum = Math.min(MIN_PANE_RATIO, pairSize / 2);
   const group = sash.group;
+  const minPx = row ? MIN_PANE_WIDTH_PX : MIN_PANE_HEIGHT_PX;
+  const groupSpan = (rect: DOMRect | undefined) =>
+    rect ? (row ? group.w * rect.width : group.h * rect.height) : 0;
+  // The split's measured length, only to show an honest range to assistive technology; drags and
+  // keys measure fresh when they run.
+  const [measuredSpan, setMeasuredSpan] = useState(0);
+  // Measures the tree while mounted, so the announced range follows window and sidebar resizes.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- observes the pane tree's size while mounted
+  useLayoutEffect(() => {
+    const tree = containerRef.current;
+    if (!tree) return;
+    return observeResize(tree, (entry) =>
+      setMeasuredSpan(row ? group.w * entry.contentRect.width : group.h * entry.contentRect.height),
+    );
+  }, [containerRef, row, group.w, group.h]);
+  const range = sashBoundaryRange(sash.sizes, sash.index, minPaneRatio(measuredSpan, minPx));
   const ratioAt = (delta: number) =>
     gesture.current.start + (gesture.current.span > 0 ? delta / gesture.current.span : 0);
+  // Keeps both neighbours above the pixel minimum, so a drag, a key or a double click never
+  // leaves a sliver. Saved ratios are untouched until the owner moves a sash.
+  const clampBoundary = (next: number) => {
+    const bounds = sashBoundaryRange(
+      sash.sizes,
+      sash.index,
+      minPaneRatio(groupSpan(containerRef.current?.getBoundingClientRect()), minPx),
+    );
+    return Math.min(bounds.max, Math.max(bounds.min, next));
+  };
 
   return (
     <ResizeSash
       orientation={row ? "vertical" : "horizontal"}
-      label={t(row ? "Resize columns" : "Resize rows")}
-      value={Math.round(boundary * 100)}
-      min={Math.round((before + minimum) * 100)}
-      max={Math.round((before + pairSize - minimum) * 100)}
+      label={paneSashLabel(sash, t)}
+      value={Math.round(Math.min(range.max, Math.max(range.min, boundary)) * 100)}
+      min={Math.round(range.min * 100)}
+      max={Math.round(range.max * 100)}
       className="absolute"
       data-pane-sash={sashKey(sash)}
       onResizeStart={() => {
-        const rect = containerRef.current?.getBoundingClientRect();
         gesture.current = {
           start: boundary,
-          span: rect ? (row ? group.w * rect.width : group.h * rect.height) : 0,
+          span: groupSpan(containerRef.current?.getBoundingClientRect()),
         };
       }}
       onResize={(delta) => {
-        if (gesture.current.span > 0) onPreview(ratioAt(delta));
+        if (gesture.current.span > 0) onPreview(clampBoundary(ratioAt(delta)));
       }}
       onResizeEnd={(delta, { cancelled, moved }) => {
         if (cancelled || !moved || gesture.current.span <= 0) onCancel();
         else {
           // The last frame may not have run; commit the box the pointer ended on.
-          onPreview(ratioAt(delta));
-          onCommit(ratioAt(delta));
+          const final = clampBoundary(ratioAt(delta));
+          onPreview(final);
+          onCommit(final);
         }
       }}
       onKeyDown={(event) => {
@@ -1102,7 +1289,7 @@ function PaneSash({
         else return;
         event.preventDefault();
         event.stopPropagation();
-        onCommit(next);
+        onCommit(clampBoundary(next));
       }}
       onDoubleClick={(event) => {
         event.preventDefault();

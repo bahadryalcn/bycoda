@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { useCallback, useRef, type ComponentProps, type ReactNode } from "react";
 import { defaultRangeExtractor } from "@tanstack/react-virtual";
 import {
   COLLECTION_WINDOW_THRESHOLD,
@@ -7,7 +7,8 @@ import {
 import { useRetainedScroll } from "../hooks/useRetainedScroll";
 import { useRetainedState } from "../hooks/useRetainedState";
 import { useT } from "../i18n";
-import { InlineMessage } from "./InlineError";
+import { EmptyState } from "./EmptyState";
+import { InlineError, InlineMessage } from "./InlineError";
 import { Button } from "./Button";
 import { Spinner } from "./Spinner";
 import styles from "./ContinuousList.module.css";
@@ -29,7 +30,7 @@ export type CollectionFooterProps = {
 };
 
 /**
- * Footer for a loaded collection: spinner, error and partial-result messages, Retry, empty text and an explicit "Load more". A failed continuation never hides loaded rows; `standalone` renders only the Load more button.
+ * Footer for a loaded collection. With no rows (`empty`) it shows exactly one initial state: loading, failure with Retry, or the inline empty caption (with Load more when pages remain). With rows it is the continuation state: spinner, error and partial-result messages, Retry and an explicit "Load more"; a failed continuation never hides loaded rows. `standalone` renders only the Load more button.
  * @group data
  * @use Explicit remote continuation state under any list or table.
  * @avoid Page-level load failure: FailureState. Virtualized rows plus continuation: ContinuousList.
@@ -55,19 +56,46 @@ export function CollectionFooter({
       </Button>
     ) : null;
   }
+  // Initial state (no rows): exactly one of loading, failure or absence. Rows exist: the continuation
+  // state below keeps them and only adds its own message, retry and Load more.
+  if (empty) {
+    return (
+      <div className={styles.footer} data-collection-footer data-state="initial">
+        {loading ? (
+          <Spinner label={t("Loading…")} />
+        ) : error ? (
+          <>
+            <InlineError details={error} />
+            {onRetry ? (
+              <Button variant="ghost" size="sm" onClick={onRetry}>
+                {t("Retry")}
+              </Button>
+            ) : null}
+          </>
+        ) : (
+          <EmptyState
+            size="inline"
+            description={partial || (emptyMessage ?? t("No records"))}
+            action={
+              hasMore && onLoadMore ? { label: t("Load more"), onClick: onLoadMore } : undefined
+            }
+          />
+        )}
+      </div>
+    );
+  }
   return (
-    <div className={styles.footer} data-collection-footer>
+    <div className={styles.footer} data-collection-footer data-state="continuation">
       {loading && !(hasMore && onLoadMore) && !(error && onRetry) ? (
         <Spinner label={t("Loading…")} />
       ) : null}
-      {error ? <InlineMessage tone="danger">{error}</InlineMessage> : null}
+      {error ? <InlineError details={error} /> : null}
       {partial ? <InlineMessage tone="warning">{partial}</InlineMessage> : null}
       {error && onRetry ? (
         <Button variant="ghost" size="sm" loading={loading} onClick={onRetry}>
           {t("Retry")}
         </Button>
       ) : null}
-      {empty && !loading && !error ? <span>{emptyMessage ?? t("No records")}</span> : null}
       {hasMore && onLoadMore ? (
         <Button variant="ghost" size="sm" loading={loading} disabled={loading} onClick={onLoadMore}>
           {t("Load more")}
@@ -78,7 +106,7 @@ export function CollectionFooter({
 }
 
 export type ContinuousListProps<T> = CollectionFooterProps & {
-  /** Request one remote page near the scroll end. Errors pause automatic retries. */
+  /** Also request one remote page near the scroll end; the explicit Load more stays for short pages. Errors pause automatic retries. */
   loadOnScroll?: boolean;
   items: readonly T[];
   itemKey: (item: T) => string;
@@ -90,6 +118,8 @@ export type ContinuousListProps<T> = CollectionFooterProps & {
    */
   stateKey: string;
   estimateSize?: number;
+  /** Render a finite window above this many items. Lower it for lists with expensive rows. */
+  windowThreshold?: number;
   /** Reserve scrollbar space without changing the virtualizer's scroll owner. Unset keeps its gutter. */
   gutter?: ScrollAreaProps["gutter"];
   className?: string;
@@ -119,6 +149,7 @@ function ContinuousListWindow<T>({
   renderItem,
   stateKey,
   estimateSize = 64,
+  windowThreshold = COLLECTION_WINDOW_THRESHOLD,
   gutter,
   className,
   rowAppearance,
@@ -133,10 +164,10 @@ function ContinuousListWindow<T>({
     ready: items.length > 0,
   });
   const [position] = useRetainedState(`${stateKey}:scroll`, () => ({ top: 0, left: 0 }), "view");
-  const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  // Focus is read only by rangeExtractor, so it lives in a ref: a focus move must not re-render every row.
+  const focusedKey = useRef<string | null>(null);
   const requiredIndex = items.findIndex((item) => itemKey(item) === requiredKey);
-  const focusedIndex = items.findIndex((item) => itemKey(item) === focusedKey);
-  const virtual = items.length > COLLECTION_WINDOW_THRESHOLD;
+  const virtual = items.length > windowThreshold;
   const virtualizer = useCollectionVirtualizer({
     count: items.length,
     enabled: virtual,
@@ -146,14 +177,18 @@ function ContinuousListWindow<T>({
     initialRect: { width: 640, height: 480 },
     initialOffset: () => position.top,
     overscan: 6,
-    rangeExtractor: (range) =>
-      [
+    rangeExtractor: (range) => {
+      const focused = focusedKey.current;
+      const focusedIndex =
+        focused === null ? -1 : items.findIndex((item) => itemKey(item) === focused);
+      return [
         ...new Set([
           ...defaultRangeExtractor(range),
           ...(requiredIndex >= 0 ? [requiredIndex] : []),
           ...(focusedIndex >= 0 ? [focusedIndex] : []),
         ]),
-      ].sort((a, b) => a - b),
+      ].sort((a, b) => a - b);
+    },
   });
   const ref = useCallback(
     (node: HTMLDivElement | null) => {
@@ -214,10 +249,12 @@ function ContinuousListWindow<T>({
                 .filter(Boolean)
                 .join(" ")}
               style={virtual ? { transform: `translateY(${row.start}px)` } : undefined}
-              onFocusCapture={() => setFocusedKey(key)}
+              onFocusCapture={() => {
+                focusedKey.current = key;
+              }}
               onBlurCapture={(event) => {
                 if (!event.currentTarget.contains(event.relatedTarget as Node | null))
-                  setFocusedKey(null);
+                  focusedKey.current = null;
               }}
             >
               {renderItem(item, row.index)}
@@ -225,11 +262,8 @@ function ContinuousListWindow<T>({
           );
         })}
       </div>
-      <CollectionFooter
-        {...footer}
-        hasMore={loadOnScroll ? false : footer.hasMore}
-        empty={items.length === 0}
-      />
+      {/* A page too short to scroll never fires a scroll request, so the explicit control stays. */}
+      <CollectionFooter {...footer} empty={items.length === 0} />
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { projectName } from "../../../shared/lib/paths";
@@ -8,6 +9,7 @@ import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { shortSha } from "../../../shared/lib/shortSha";
 import type { ManagedWorkspace, WorkspaceCleanupPlan } from "../model/contracts";
 import { runBackgroundRemoval } from "../model/backgroundRemoval";
 import {
@@ -156,12 +158,7 @@ export function WorkspaceDirectoryRemoval({
             {t("Cancel")}
           </Button>
           {!closeFirst && (
-            <Button
-              variant="secondary"
-              loading={pending === "plan"}
-              disabled={!!pending && pending !== "plan"}
-              onClick={() => void preview()}
-            >
+            <Button variant="secondary" loading={pending === "plan"} onClick={() => void preview()}>
               {t("Refresh preview")}
             </Button>
           )}
@@ -169,6 +166,7 @@ export function WorkspaceDirectoryRemoval({
             variant="primary"
             tone="danger"
             disabled={!!plan?.blockers.length}
+            disabledReason={t("Resolve the listed blockers first.")}
             onClick={remove}
           >
             {missingRecord ? t("Remove record") : t("Delete directory")}
@@ -190,12 +188,16 @@ export function WorkspaceDirectoryRemoval({
           {plan?.path ?? workspace.path}
         </Text>
         {pending === "plan" && <LoadingText>{t("Checking directory…")}</LoadingText>}
-        {error && <InlineError className="break-words">{error}</InlineError>}
+        {error && (
+          <InlineError className="break-words" details={error}>
+            {t("Could not check the directory.")}
+          </InlineError>
+        )}
         {plan && (
           <>
             {plan.head && (
               <p className="break-all">
-                {plan.branchRef} · {plan.head.slice(0, 12)}
+                {plan.branchRef} · {shortSha(plan.head)}
               </p>
             )}
             {plan.dirty && (
@@ -204,7 +206,9 @@ export function WorkspaceDirectoryRemoval({
               </InlineMessage>
             )}
             {!!plan.links.length && (
-              <p>{t("Dependency links are detached without deleting their targets.")}</p>
+              <InfoTooltip label={t("Dependency links")}>
+                {t("Dependency links are detached without deleting their targets.")}
+              </InfoTooltip>
             )}
             {plan.blockers.length > 0 && (
               <Alert tone="danger" title={t("Cleanup blocked")}>

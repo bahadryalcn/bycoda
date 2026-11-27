@@ -1,18 +1,22 @@
 import { Sheet } from "../../../shared/ui/Sheet";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Text } from "../../../shared/ui/Text";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { useSshHttpProxyApproval } from "./useSshHttpProxyApproval";
 import type { SshHttpProxyOperation } from "../model/sshHttpProxyApproval";
 import type { SshEndpoint } from "../model/serverInventory";
+import { errorText } from "../../../shared/lib/errors";
+import { sanitizeConnectionError } from "../model/remoteConnection";
 import { useEffect, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { TextField } from "../../../shared/ui/TextField";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Progress } from "../../../shared/ui/Progress";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import {
@@ -20,10 +24,12 @@ import {
   ArrowDown as Download,
   Folder,
   File,
+  Link,
   CloudUpload as Upload,
   RefreshCw,
 } from "../../../shared/ui/icons";
-import { formatNumber, t } from "../../../shared/i18n";
+import { t } from "../../../shared/i18n";
+import { formatBytes } from "../../../shared/i18n/format";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import {
   cancelSftp,
@@ -35,6 +41,7 @@ import {
   type SftpEntry,
   type SftpProgress,
   type SftpRecovery,
+  sftpPhaseLabel,
   subscribeSftpProgress,
   loadSftpRecoveries,
   resumeSftp,
@@ -83,29 +90,9 @@ export function ServerFiles({
     // Native work may not exist yet while a picker or approval is pending.
     cancelledOperation.current = id;
     void cancelSftp(id).catch((reason) => {
-      if (mounted.current) setError(String(reason));
+      if (mounted.current) setError(sanitizeConnectionError(errorText(reason)));
     });
   };
-
-  useEffect(() => {
-    mounted.current = true;
-    void loadSftpRecoveries(connectionId)
-      .then((records) => {
-        if (mounted.current) setRecoveries(records);
-      })
-      .catch((reason) => {
-        if (mounted.current) setError(String(reason));
-      });
-    const listener = subscribeSftpProgress((event) => {
-      if (mounted.current && event.operationId === operation.current) setProgress(event);
-    });
-    void listener.catch(() => undefined);
-    return () => {
-      mounted.current = false;
-      void listener.then((unlisten) => unlisten()).catch(() => undefined);
-      if (operation.current) void cancelSftp(operation.current).catch(() => undefined);
-    };
-  }, [connectionId]);
 
   const act = async (callback: (operationId: string) => Promise<void>) => {
     if (operation.current) return;
@@ -119,7 +106,7 @@ export function ServerFiles({
     try {
       await callback(id);
     } catch (reason) {
-      if (mounted.current) setError(String(reason));
+      if (mounted.current) setError(sanitizeConnectionError(errorText(reason)));
     } finally {
       if (operation.current === id) operation.current = null;
       if (mounted.current) setBusy(false);
@@ -143,20 +130,61 @@ export function ServerFiles({
       setLoaded(true);
       setFileSearch("");
     });
+
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps the SFTP progress listener and the pending native operation in step with this page while mounted; opening the page for a server is also the request to list its home directory once
+  useEffect(() => {
+    mounted.current = true;
+    void loadSftpRecoveries(connectionId)
+      .then((records) => {
+        if (mounted.current) setRecoveries(records);
+      })
+      .catch((reason) => {
+        if (mounted.current) setError(sanitizeConnectionError(errorText(reason)));
+      });
+    const listener = subscribeSftpProgress((event) => {
+      if (mounted.current && event.operationId === operation.current) setProgress(event);
+    });
+    void listener.catch(() => undefined);
+    void load(".");
+    return () => {
+      mounted.current = false;
+      void listener.then((unlisten) => unlisten()).catch(() => undefined);
+      if (operation.current) void cancelSftp(operation.current).catch(() => undefined);
+      // A replayed mount (StrictMode) must be able to start its own listing.
+      operation.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reason: load is recreated each render; only a different server restarts the listing
+  }, [connectionId]);
   const close = () => {
     cancel();
     onClose();
   };
+  // The listing already says whether the chosen remote filename would replace something.
+  const collides = !!upload && entries.some((entry) => entry.name === upload.name);
+  const waitReason = busy
+    ? t("Wait for the current action to finish.")
+    : !loaded
+      ? t("Wait for the file list to load.")
+      : undefined;
 
   return (
     <>
-      <Sheet title={t("SFTP files")} onClose={close} size="56rem">
+      <Sheet title={t("SFTP files")} onClose={close} size="xl">
         <div className="flex min-h-0 flex-col gap-3">
-          {serverName ? (
-            <Text as="p" tone="muted" truncate>
-              {t("Target")}: {serverName}
-            </Text>
-          ) : null}
+          <div className="flex min-w-0 items-center gap-1">
+            {serverName ? (
+              <Text as="p" tone="muted" truncate>
+                {t("Target")}: {serverName}
+              </Text>
+            ) : null}
+            <InfoPopover>
+              <p>
+                {t(
+                  "SFTP uses trusted OpenSSH keys or your agent. Downloads require a new local filename. Uploads require replacement consent. Interrupted transfers keep owned partials for explicit content-verified recovery. Symlink entries are not opened automatically.",
+                )}
+              </p>
+            </InfoPopover>
+          </div>
           <form
             className="flex flex-wrap items-center gap-2"
             onSubmit={(event) => {
@@ -169,6 +197,7 @@ export function ServerFiles({
               size="sm"
               iconOnly
               disabled={busy || !loaded}
+              disabledReason={waitReason}
               label={t("Parent directory")}
               onClick={() => void load(sftpParent(path))}
             >
@@ -182,12 +211,22 @@ export function ServerFiles({
               disabled={busy}
               fieldClassName="min-w-0 flex-1"
             />
-            <Button type="submit" loading={busy}>
-              {loaded ? <RefreshCw className="icon-sm" /> : null}
-              {t(loaded ? "Refresh" : "Open")}
+            <Button
+              type="submit"
+              variant="ghost"
+              size="sm"
+              iconOnly
+              loading={busy}
+              label={query === path ? t("Refresh") : t("Open")}
+            >
+              <RefreshCw className="icon-sm" />
             </Button>
             <Button
               disabled={busy || !loaded || !!upload}
+              disabledReason={
+                waitReason ??
+                (upload ? t("Finish or cancel the upload in progress first.") : undefined)
+              }
               onClick={() => {
                 void open({ multiple: false, directory: false })
                   .then((value) => {
@@ -196,23 +235,18 @@ export function ServerFiles({
                       setUpload({ localPath: value, name: value.split(/[\\/]/).pop() ?? "" });
                     }
                   })
-                  .catch((reason) => setError(String(reason)));
+                  .catch((reason) => setError(sanitizeConnectionError(errorText(reason))));
               }}
             >
               <Upload className="icon-sm" />
               {t("Upload")}
             </Button>
-            {busy ? (
-              <Button variant="ghost" onClick={cancel}>
-                {t("Cancel")}
-              </Button>
-            ) : null}
           </form>
           {busy || progress ? (
             <div className="flex min-w-0 flex-col gap-1" role="status">
               <Progress
                 compact
-                label={progress ? t(progress.phase) : t("Working…")}
+                label={progress ? sftpPhaseLabel(progress.phase) : t("Working…")}
                 value={
                   progress?.totalBytes != null &&
                   (progress.transferredBytes > 0 || progress.state === "completed")
@@ -224,17 +258,27 @@ export function ServerFiles({
                 max={progress?.totalBytes || 1}
                 tone="neutral"
               />
-              <Text tone="muted">
-                {progress
-                  ? `${formatNumber(progress.transferredBytes)}${progress.totalBytes != null ? ` / ${formatNumber(progress.totalBytes)}` : ""} ${t("bytes")}`
-                  : t("Waiting for transfer data…")}
-              </Text>
+              <div className="flex min-w-0 items-center justify-between gap-2">
+                <Text tone="muted">
+                  {progress
+                    ? `${formatBytes(progress.transferredBytes)}${progress.totalBytes != null ? ` / ${formatBytes(progress.totalBytes)}` : ""}`
+                    : t("Waiting for transfer data…")}
+                </Text>
+                {/* Cancel lives in the strip it stops, so the toolbar never changes width. */}
+                {busy ? (
+                  <Button variant="ghost" size="sm" onClick={cancel}>
+                    {t("Cancel")}
+                  </Button>
+                ) : null}
+              </div>
             </div>
           ) : null}
-          {error ? <Alert tone="danger">{error}</Alert> : null}
+          {error ? (
+            <InlineError details={error}>{t("Could not complete the file action.")}</InlineError>
+          ) : null}
           {status ? (
-            <Text role="status" as="p" tone="muted">
-              {status}
+            <Text as="p" tone="muted">
+              <LiveText text={status} />
             </Text>
           ) : null}
           {upload ? (
@@ -250,17 +294,29 @@ export function ServerFiles({
                   setUpload({ ...upload, name: event.target.value });
                 }}
               />
-              <Checkbox
-                checked={overwrite}
-                disabled={busy}
-                onChange={(event) => setOverwrite(event.target.checked)}
-                label={t("I allow replacement if this remote filename already exists.")}
-                size="caption"
-                className="flex items-start gap-2"
-              />
+              {/* Consent is asked only when the name is already in this directory. */}
+              {collides ? (
+                <Checkbox
+                  checked={overwrite}
+                  disabled={busy}
+                  onChange={(event) => setOverwrite(event.target.checked)}
+                  label={t("I allow replacement if this remote filename already exists.")}
+                  size="caption"
+                  className="flex items-start gap-2"
+                />
+              ) : null}
               <div className="flex gap-2">
                 <Button
-                  disabled={!overwrite || busy || !upload.name}
+                  disabled={(collides && !overwrite) || busy || !upload.name}
+                  disabledReason={
+                    busy
+                      ? t("Wait for the current action to finish.")
+                      : !upload.name
+                        ? t("Enter a remote filename first.")
+                        : collides && !overwrite
+                          ? t("Allow replacement first, or choose another remote filename.")
+                          : undefined
+                  }
                   onClick={() =>
                     void act(async (id) => {
                       const remotePath = sftpPath(path, upload.name);
@@ -269,21 +325,21 @@ export function ServerFiles({
                         operationId: id,
                         localPath: upload.localPath,
                         remotePath,
-                        overwriteConfirmed: overwrite,
+                        overwriteConfirmed: collides && overwrite,
                       });
                       if (ticket === null || !canContinue(id)) return;
                       const bytes = await uploadSftp(
                         connectionId,
                         upload.localPath,
                         remotePath,
-                        overwrite,
+                        collides && overwrite,
                         id,
                         ticket,
                       );
                       if (mounted.current) {
                         setUpload(undefined);
                         setOverwrite(false);
-                        setStatus(`${t("Uploaded")}: ${formatNumber(bytes)} ${t("bytes")}`);
+                        setStatus(`${t("Uploaded")}: ${formatBytes(bytes)}`);
                       }
                     })
                   }
@@ -292,6 +348,7 @@ export function ServerFiles({
                 </Button>
                 <Button
                   disabled={busy}
+                  disabledReason={busy ? t("Wait for the current action to finish.") : undefined}
                   variant="ghost"
                   onClick={() => {
                     setUpload(undefined);
@@ -312,14 +369,17 @@ export function ServerFiles({
                 {recoveries.map((item) => (
                   <div key={item.id} className="flex flex-wrap items-center gap-2">
                     <span className="min-w-0 basis-full break-all">
-                      {t(item.direction)} · {item.remotePath}
+                      {item.direction === "upload" ? t("upload") : t("download")} ·{" "}
+                      {item.remotePath}
                       {item.publication ? (
                         <Text size="inherit" tone="muted" className="block">
-                          {t(
-                            item.publication === "completed"
-                              ? "Transfer completed; recovery cleanup remains. Dismissal removes only recovery metadata."
-                              : "Publication outcome unknown. Check the destination before dismissing recovery; a partial file may remain.",
-                          )}
+                          {item.publication === "completed"
+                            ? t(
+                                "Transfer completed; recovery cleanup remains. Dismissal removes only recovery metadata.",
+                              )
+                            : t(
+                                "Publication outcome unknown. Check the destination before dismissing recovery; a partial file may remain.",
+                              )}
                         </Text>
                       ) : null}
                     </span>
@@ -327,6 +387,13 @@ export function ServerFiles({
                       variant="ghost"
                       size="sm"
                       disabled={busy || !!item.publication}
+                      disabledReason={
+                        busy
+                          ? t("Wait for the current action to finish.")
+                          : item.publication
+                            ? t("Review the destination, then dismiss this recovery.")
+                            : undefined
+                      }
                       onClick={() => {
                         setReview(item);
                         setResumeOverwrite(false);
@@ -351,7 +418,7 @@ export function ServerFiles({
                         })
                       }
                     >
-                      {t(item.publication ? "Dismiss recovery" : "Discard partial")}
+                      {item.publication ? t("Dismiss recovery") : t("Discard partial")}
                     </Button>
                   </div>
                 ))}
@@ -369,11 +436,13 @@ export function ServerFiles({
               <p className="break-all">
                 {review.localPath} ↔ {review.remotePath}
               </p>
-              <Text as="p" size="inherit" tone="muted">
-                {t(
-                  "Resume verifies the existing content before continuing. Verification reads remote data again and may transfer the full file. Existing destination files are not silently replaced.",
-                )}
-              </Text>
+              <InfoPopover>
+                <p>
+                  {t(
+                    "Resume verifies the existing content before continuing. Verification reads remote data again and may transfer the full file. Existing destination files are not silently replaced.",
+                  )}
+                </p>
+              </InfoPopover>
               {review.direction === "upload" ? (
                 <Checkbox
                   checked={resumeOverwrite}
@@ -386,6 +455,13 @@ export function ServerFiles({
               <div className="flex gap-2">
                 <Button
                   disabled={busy || (review.direction === "upload" && !resumeOverwrite)}
+                  disabledReason={
+                    busy
+                      ? t("Wait for the current action to finish.")
+                      : review.direction === "upload" && !resumeOverwrite
+                        ? t("Allow replacement first.")
+                        : undefined
+                  }
                   onClick={() =>
                     void act(async (id) => {
                       const ticket = await approve({
@@ -420,9 +496,7 @@ export function ServerFiles({
               value={fileSearch}
               onChange={(event) => setFileSearch(event.target.value)}
             />
-          ) : (
-            <EmptyState size="inline" description={t("Open a directory to browse files.")} />
-          )}
+          ) : null}
           <div className="max-h-[55dvh] min-h-0 overflow-auto" aria-label={t("Remote files")}>
             {visibleEntries.map((entry) => (
               <Text
@@ -448,7 +522,7 @@ export function ServerFiles({
                       try {
                         void load(sftpPath(path, entry.name));
                       } catch (reason) {
-                        setError(String(reason));
+                        setError(sanitizeConnectionError(errorText(reason)));
                       }
                     }}
                   >
@@ -466,9 +540,12 @@ export function ServerFiles({
                   </OverflowTooltip>
                 )}
                 {entry.kind === "symlink" ? (
-                  <Text size="inherit" tone="muted">
-                    {t("Symlink; not followed")}
-                  </Text>
+                  <Link
+                    aria-label={t("Symlink; not followed")}
+                    role="img"
+                    className="icon-sm shrink-0"
+                    tone="muted"
+                  />
                 ) : entry.kind === "file" ? (
                   <Button
                     variant="ghost"
@@ -513,11 +590,6 @@ export function ServerFiles({
               />
             ) : null}
           </div>
-          <Text as="p" tone="muted">
-            {t(
-              "SFTP uses trusted OpenSSH keys or your agent. Downloads require a new local filename. Uploads require replacement consent. Interrupted transfers keep owned partials for explicit content-verified recovery. Symlink entries are not opened automatically.",
-            )}
-          </Text>
         </div>
       </Sheet>
       {proxy.dialog}

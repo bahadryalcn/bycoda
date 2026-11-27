@@ -182,6 +182,39 @@ it("plans an SSH add only from native routes", () => {
   expect(sshAddPlan(both)).toEqual({ target: "me@box", alternate: "me@100.64.0.9", name: "box" });
 });
 
+it("joins an account computer with the SSH entry on its home-network address", () => {
+  const machines = mergeMachineCandidates({
+    account: [
+      candidateFromComputer(
+        computer({
+          name: "bab",
+          environmentId: "env-bab",
+          routes: [{ endpoint: "http://192.168.2.108:61882", lanKey: "a".repeat(64) }],
+        }),
+        NOW,
+      ),
+    ],
+    native: [
+      native({
+        key: "known:192.168.2.108",
+        name: "192.168.2.108",
+        sources: ["known-hosts", "ssh-config"],
+        sshUser: "kraba",
+        routes: [{ address: "192.168.2.108", kind: "lan" }],
+      }),
+    ],
+    saved: [],
+  });
+  expect(machines).toHaveLength(1);
+  expect(machines[0]!.sources).toEqual(["account", "known-hosts", "ssh-config"]);
+  expect(sshAddPlan(machines[0]!)).toEqual({
+    target: "kraba@192.168.2.108",
+    alternate: null,
+    name: "bab",
+    environmentId: "env-bab",
+  });
+});
+
 it("offers account pairing for an account-only computer with a published https route", () => {
   const [machine] = mergeMachineCandidates({
     account: [

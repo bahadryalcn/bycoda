@@ -24,6 +24,9 @@ export type {
  */
 export const HOST_PROTOCOL_VERSION = 1;
 
+/** The Host advertises this for each installed adapter that can steer its own live turn. */
+export const providerSteerCapability = (provider: string) => `sessions.steer.${provider}`;
+
 /**
  * Tells the reader which side to update. `host` is the protocol the Host serves,
  * `client` the one this app speaks. Returns null when they match.
@@ -86,7 +89,11 @@ export type HostDescriptor = {
   /** The Host's home-network and Tailscale IPv4 addresses; desktops learn them as SSH routes. */
   addresses?: string[];
   /** The phone routes the Host serves now; paired phones add them as routes. */
-  mobileRoutes?: { endpoint: string; lanKey?: string }[];
+  mobileRoutes?: { endpoint: string; lanKey?: string; public?: true }[];
+  /** The Host's public tunnel origin for other computers. Phones get public routes only in `mobileRoutes`, when allowed. */
+  tunnelRoute?: string;
+  /** The caller's own credential, never another device's; absent on Hosts without device proofs. */
+  credential?: { kind?: "phone" | "desktop"; localDesktop: boolean; proofBound: boolean };
 };
 /** A missing capability requires an update; callers must never fall back to the project checkout. */
 export function requireWorkspaceCapability(
@@ -139,23 +146,43 @@ export type HostProjectDirectory = {
     sessionLayout?: HostSessionLayout;
     /** Pinned on the desktop rail; `projects` already lists pinned ones first. */
     pinned?: boolean;
+    /** Other registered ids of the same folder (legacy path spellings) folded into this row. */
+    aliasIds?: string[];
   })[];
   groups: HostProjectGroup[];
+  /** Password-locked groups by name; their contents need a grant on this device. */
+  lockedGroups?: Pick<HostProjectGroup, "id" | "name" | "color" | "appearance">[];
+  /** Hidden groups; sent only to a device that passed the hidden-list password. */
+  hiddenGroups?: Pick<HostProjectGroup, "id" | "name" | "color">[];
+};
+/** A project the desktop publishes in a directory. */
+export type DesktopDirectoryProject = {
+  cwd: string;
+  name: string;
+  groupId?: string;
+  sessionLayout?: HostSessionLayout;
+  appearance?: HostProjectAppearance;
+  pinned?: boolean;
+};
+/**
+ * Concealed groups the desktop shares with its own local Host only. The Host
+ * reveals a locked group to a phone that holds a grant and hidden group names to
+ * one that passed the hidden-list password; it never forwards this object.
+ */
+export type DesktopConcealedGroups = {
+  /** Password-locked groups (not hidden). `parentId` is a concealed group that must be open first. */
+  locked: (HostProjectGroup & { parentId?: string; projects: DesktopDirectoryProject[] })[];
+  /** Hidden groups, names only: unhiding them is the only action, it unlocks nothing. */
+  hidden: Pick<HostProjectGroup, "id" | "name" | "color">[];
 };
 /** Sent only by the local desktop heartbeat; protected paths never reach the phone. */
 export type DesktopProjectDirectory = {
   version: 1;
-  projects: {
-    cwd: string;
-    name: string;
-    groupId?: string;
-    sessionLayout?: HostSessionLayout;
-    appearance?: HostProjectAppearance;
-    pinned?: boolean;
-  }[];
+  projects: DesktopDirectoryProject[];
   groups: HostProjectGroup[];
   excludedPaths: string[];
   excludedGroupIds: string[];
+  concealed?: DesktopConcealedGroups;
 };
 export type HostDirectory = {
   home?: string;
@@ -250,6 +277,8 @@ export type HostSessionSummary = Omit<HostSession, "session" | "blockRevisions" 
   delegationParent?:
     | import("../../../shared/model/host-contracts/delegation").DelegationParent
     | null;
+  /** Background work that created the session; lists hide it unless pinned. */
+  backgroundOwner?: import("../../../shared/model/host-contracts/delegation").BackgroundOwner;
   issue?: "retrying" | "failed";
   /** Authenticated local widget details; push transport must never copy question text. */
   widgetContext?: {
@@ -355,6 +384,21 @@ export function applySessionSync(known: HostSession | undefined, sync: SessionSy
       }),
     },
   };
+}
+/**
+ * Runs one partial `sessions.sync` for a windowed transcript. The Host starts its
+ * delta at the first loaded block it still holds, so the first loaded id names the
+ * same window as the full list. A snapshot reply means that block is gone, so the
+ * full list is sent once to get exactly the window the Host resolves from it.
+ */
+export async function requestPartialSync(
+  known: HostSession,
+  send: (loadedBlockIds: string[]) => Promise<SessionSync>,
+): Promise<SessionSync> {
+  const ids = known.session.blocks.map((block) => block.id);
+  const sync = await send(ids.slice(0, 1));
+  if (sync.kind !== "snapshot" || ids.length <= 1) return sync;
+  return send(ids);
 }
 /**
  * Applies a streamed delta. A tail stream's window starts at its own first block,
@@ -559,6 +603,8 @@ type HostCommandBody =
       expectedPlanText?: string;
       /** Context delivered to the provider separately from the visible user prompt. */
       contextReplay?: string;
+      /** Extra folders on the Host (capability `sessions.additionalDirs.v1`); replaces the session's list. */
+      additionalDirs?: string[];
     }
   | {
       type: "draft";
@@ -607,6 +653,7 @@ type HostCommandBody =
       /** Original source-issued request occurrence; never reconstructed by a client. */
       approvalOccurrenceId?: string;
       decision: "allow" | "deny";
+      allowForSession?: true;
     }
   | {
       type: "answer";
@@ -651,6 +698,8 @@ export type SshSetup = {
   done: boolean;
   error?: string | null;
   machine?: RemoteMachine | null;
+  /** Setup registered the machine's login service, so it stays reachable when bycoda is closed. */
+  enabledBackgroundService?: boolean;
 };
 
 export function isRemoteProvider(value: unknown): value is RemoteProvider {

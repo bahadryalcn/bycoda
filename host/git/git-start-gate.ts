@@ -37,4 +37,5 @@ export class GitStartGate {
   }
 }
 
+/** Spaces process creation on the Host thread. The buffered worker pool admits its own calls. */
 export const hostGitStarts = new GitStartGate(process.platform === "win32" ? 100 : 0);

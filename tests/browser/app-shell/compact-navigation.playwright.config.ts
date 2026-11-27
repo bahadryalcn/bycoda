@@ -17,8 +17,8 @@ export default defineConfig({
   webServer: {
     cwd: fileURLToPath(new URL("../../..", import.meta.url)),
     command: process.env.COMPACT_NAVIGATION_PREBUILT
-      ? "pnpm exec vite preview --config tests/browser/app-shell/compact-navigation.vite.config.ts"
-      : "pnpm exec vite build --config tests/browser/app-shell/compact-navigation.vite.config.ts && pnpm exec vite preview --config tests/browser/app-shell/compact-navigation.vite.config.ts",
+      ? "pnpm exec vp preview --config tests/browser/app-shell/compact-navigation.vite.config.ts"
+      : "pnpm exec vp build --config tests/browser/app-shell/compact-navigation.vite.config.ts && pnpm exec vp preview --config tests/browser/app-shell/compact-navigation.vite.config.ts",
     url: "http://127.0.0.1:1472/tests/browser/app-shell/compact-navigation.html",
     reuseExistingServer: false,
     timeout: 120_000,

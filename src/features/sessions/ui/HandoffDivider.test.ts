@@ -24,14 +24,19 @@ it.each(["failed", "cancelled"] as const)(
       id: "switch",
       role: "handoff",
       text: "",
-      handoff: { from: "claude", to: "grok", status },
+      handoff: { from: "claude", to: "grok", status, error: "The connection timed out." },
     };
     const node = document.createElement("div");
     node.innerHTML = renderToStaticMarkup(createElement(HandoffDivider, { block }));
-    const feedback = node.querySelector('[role="status"]');
+    // A failed switch is one failure notice (no divider); a cancelled one stays a quiet status row.
+    const feedback = node.querySelector(status === "failed" ? '[role="alert"]' : '[role="status"]');
     expect(feedback).not.toBeNull();
-    expect(feedback?.textContent).toContain(status === "failed" ? "Failed" : "Cancelled");
-    expect(feedback?.getAttribute("role")).toBe("status");
+    if (status === "failed") {
+      expect(node.querySelector('[role="separator"]')).toBeNull();
+      expect(node.textContent).not.toContain("Failed");
+    } else {
+      expect(feedback?.textContent).toContain("Cancelled");
+    }
     expect(node.innerHTML).not.toContain("Continued with");
     expect(node.innerHTML).not.toContain("Preparing a handoff");
     const source = { from: "claude" as const, fromModel: "claude:sonnet-4.6", fromSettings: {} };
@@ -49,11 +54,12 @@ it.each(["failed", "cancelled"] as const)(
         },
       ],
     };
+    // The retry owner renders nothing of its own; the failure notice carries Retry.
     const retry = renderToStaticMarkup(
       createElement(RetryFailedTurn, { session, onSubmit: () => false }),
     );
-    expect(retry).toContain("Retry");
-    captures.push(`<section data-scenario="${status}">${node.innerHTML}${retry}</section>`);
+    expect(retry).toBe("");
+    captures.push(`<section data-scenario="${status}">${node.innerHTML}</section>`);
   },
 );
 

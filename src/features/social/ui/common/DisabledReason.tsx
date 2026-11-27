@@ -23,6 +23,14 @@ export function gateProps(
 }
 
 /**
+ * The blocked reason of a gate, or undefined while it is open. For a footer that shows the reason
+ * at its start edge (`ModalActions reason`) and passes the same text as the Button's `disabledReason`.
+ */
+export function gateReason(gate: ActionGate): string | undefined {
+  return gate.disabled ? gate.disabledReason : undefined;
+}
+
+/**
  * Shared Button plus the reason as visible text. The reason is linked with aria-describedby,
  * so it is read with the control and never shown only on hover.
  */

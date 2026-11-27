@@ -62,6 +62,11 @@ export function modelDisplayName(id: string, harness?: string): string {
   return /^(Opus|Sonnet|Haiku|Fable) /.test(found.name) ? `Claude ${found.name}` : found.name;
 }
 
+/** A display name beside its own provider icon, which already says `Claude`. */
+export function modelNameBesideIcon(name: string): string {
+  return name.replace(/^Claude (?=(?:Opus|Sonnet|Haiku|Fable) )/, "");
+}
+
 /** Search text of a model: the readable name plus the raw id, so either one finds it. */
 export function modelSearchText(id: string, harness?: string): string {
   return `${modelDisplayName(id, harness)} ${id}`;

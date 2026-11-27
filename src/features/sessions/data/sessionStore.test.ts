@@ -3,7 +3,13 @@ import { describe, expect, it } from "vitest";
 import { mapCodexNotification } from "../../../integrations/harness/providers/codex/codexProtocol";
 import { toolCallLabel } from "../model/transcriptActivity";
 import { conversationReplayPrompt } from "../model/conversationRewind";
-import { newSession, type Block, type BtwThread, type Session } from "../model/session";
+import {
+  newSession,
+  sessionWorkCwd,
+  type Block,
+  type BtwThread,
+  type Session,
+} from "../model/session";
 import { clearConversation } from "../model/clearConversation";
 it("retains failed physical shell retirement through desktop persistence sanitization", () => {
   const session = newSession("codex", "G:/repo", "model");
@@ -47,6 +53,17 @@ it("keeps host-owned transcripts out of local session storage", () => {
   const session = newSession("codex", "remote://env/home/me/repo");
   session.blocks = [{ id: "turn", role: "user", text: "Continue" }];
   expect(shouldPersistSession(session)).toBe(false);
+});
+
+it("persists new projectless chats with distinct scratch directories", () => {
+  const session = newSession("codex", "~");
+  const second = newSession("codex", "~");
+  session.blocks = [{ id: "turn", role: "user", text: "Keep this" }];
+  expect(shouldPersistSession(session)).toBe(true);
+  expect(sanitizeSessionForPersist(session)).toMatchObject({ cwd: "~", workspaceMode: "scratch" });
+  expect(sessionWorkCwd(session)).toBe(`~/.bycoda-host/scratch/session-${session.id}`);
+  expect(sessionWorkCwd(second)).not.toBe(sessionWorkCwd(session));
+  expect(sessionWorkCwd({ ...session, scratchWorkspace: undefined })).toBe("~");
 });
 
 it("persists an empty active transcript when rewound history remains", () => {
@@ -855,6 +872,38 @@ describe("sanitizeSessionForPersist", () => {
     expect(sanitizeSessionForPersist(session).blocks[0]?.btwThreads).toEqual([thread]);
   });
 
+  it("keeps a known BTW error code and drops an unknown one", () => {
+    const session = newSession("codex", "/tmp/project");
+    const failed = (id: string, extra: Partial<BtwThread>): BtwThread => ({
+      id,
+      sourceEndBlockId: "u1",
+      createdAt: 1,
+      updatedAt: 2,
+      status: "error",
+      messages: [{ id: `${id}-m`, role: "user", text: "Why?", createdAt: 1 }],
+      ...extra,
+    });
+    session.blocks = [
+      {
+        id: "u1",
+        role: "user",
+        text: "Explain this",
+        btwThreads: [
+          failed("coded", { errorCode: "workingDirectoryRequired", error: "English text" }),
+          failed("unknown", {
+            errorCode: "notACode" as BtwThread["errorCode"],
+            error: "Provider said no",
+          }),
+        ],
+      },
+    ];
+
+    const [coded, unknown] = sanitizeSessionForPersist(session).blocks[0]?.btwThreads ?? [];
+    expect(coded).toMatchObject({ errorCode: "workingDirectoryRequired", error: "English text" });
+    expect(unknown?.errorCode).toBeUndefined();
+    expect(unknown?.error).toBe("Provider said no");
+  });
+
   it("persists provider metrics recorded on a user turn", () => {
     const session = newSession("claude", "/tmp/project");
     session.blocks = [
@@ -1001,6 +1050,7 @@ describe("sanitizeSessionForPersist", () => {
         role: "system",
         text: "Turn interrupted when Bycoda quit.",
         notice: "interrupt",
+        autoContinueArmed: true,
       },
       {
         id: "info",
@@ -1025,6 +1075,7 @@ describe("sanitizeSessionForPersist", () => {
     const persisted = sanitizeSessionForPersist(session).blocks;
     expect(persisted[0]?.notice).toBe("error");
     expect(persisted[1]?.notice).toBe("interrupt");
+    expect(persisted[1]?.autoContinueArmed).toBe(true);
     expect(persisted[2]?.notice).toBe("info");
     expect(persisted[3]?.notice).toBeUndefined();
     expect(persisted[4]?.notice).toBeUndefined();
@@ -1293,4 +1344,11 @@ it("saves the exact CI context alongside the compact user message", () => {
     text: "Fix 1 failed CI check for acme/web PR #42.",
     ciContext: context,
   });
+});
+
+it("persists a blank conversation whose refused first message waits in the queue", () => {
+  const session = newSession("codex", "/repo");
+  expect(shouldPersistSession(session)).toBe(false);
+  session.queuedMessages = [{ id: "q", text: "Refused send", attachments: [] }];
+  expect(shouldPersistSession(session)).toBe(true);
 });

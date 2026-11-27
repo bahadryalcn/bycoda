@@ -13,7 +13,8 @@ export function NoteQuickTagFilters({
   onSelect: (tag: string | null) => void;
 }) {
   useLocale();
-  if (!tags.length) return null;
+  // A single tag is already reachable from the filter popover; keep the row while a tag is selected so it can be cleared.
+  if (tags.length < 2 && selected === null) return null;
   return (
     <ScrollArea
       axis="x"
@@ -39,8 +40,6 @@ export function NoteQuickTagFilters({
           size="sm"
           shape="pill"
           truncate
-          tooltip={`#${tag}`}
-          tooltipWhen="overflow"
           pressed={selected === tag}
           onClick={() => onSelect(selected === tag ? null : tag)}
         >

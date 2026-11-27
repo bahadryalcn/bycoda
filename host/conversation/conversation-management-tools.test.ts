@@ -17,6 +17,7 @@ const principal = {
   projectId: "project",
   threadId: "thread",
   environmentId: "host",
+  provider: "assistant" as const,
 };
 function fixture() {
   const receipts = new Map<string, ManagementReceipt>();
@@ -36,6 +37,28 @@ function fixture() {
   return { receipts, execute, approve, ports, tools: new ConversationManagementTools(ports) };
 }
 describe("management authority and uncertain delivery", () => {
+  it("records who admitted an operation that skipped the prompt in its receipt", async () => {
+    for (const approvedBy of ["sessionFullAccess", "standingConsent", "forged", undefined]) {
+      const f = fixture();
+      f.approve.mockImplementation(async (operation) => ({
+        approved: true,
+        operationHash: operation.operationHash,
+        ...(approvedBy ? { approvedBy } : {}),
+      }));
+      const result = await f.tools.call(
+        "preferences.patch",
+        { requestId: `by-${approvedBy}`, expectedRevision: "rev", change: {} },
+        principal,
+        async () => true,
+      );
+      const [receipt] = [...f.receipts.values()];
+      const expected = approvedBy === "forged" ? undefined : approvedBy;
+      expect(receipt).toMatchObject({ state: "completed" });
+      expect(receipt?.approvedBy).toBe(expected);
+      expect((result as ManagementReceipt).approvedBy).toBe(expected);
+    }
+  });
+
   it("qualifies the canonical effect only after native review and holds it until settled", async () => {
     const f = fixture();
     const events: string[] = [];

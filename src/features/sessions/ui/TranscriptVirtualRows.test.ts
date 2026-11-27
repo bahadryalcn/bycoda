@@ -132,6 +132,39 @@ function scroll(element: HTMLElement, offset: number) {
 }
 const mounted = () => host.querySelectorAll("[data-transcript-virtual-owner]").length;
 
+it("leaves short lists in normal layout without virtual width reads", () => {
+  const measure = vi.mocked(HTMLElement.prototype.getBoundingClientRect);
+  mount(rows(2));
+  const list = host.querySelector("[data-transcript-virtual-list]")!;
+  expect(measure.mock.contexts).not.toContain(list);
+  expect(mounted()).toBe(2);
+});
+
+it("resolves a short list's nested scroll owner only when an anchor needs it", () => {
+  const styles = vi.spyOn(window, "getComputedStyle");
+  act(() =>
+    root.render(
+      createElement(
+        TranscriptVirtualizationContext.Provider,
+        { value: owner },
+        createElement(
+          "div",
+          { className: "agent-transcript" },
+          createElement(
+            "div",
+            { style: { overflowY: "auto" }, "data-inner-scroll": true },
+            createElement(TranscriptVirtualRows, { rows: rows(2), listId: "nested" }),
+          ),
+        ),
+      ),
+    ),
+  );
+  const inner = host.querySelector<HTMLElement>("[data-inner-scroll]")!;
+  expect(styles.mock.calls.some(([node]) => node === inner)).toBe(false);
+  expect(owner.firstVisibleRow(host.querySelector(".agent-transcript")!)).toBeNull();
+  expect(owner.firstVisibleRow(inner)?.dataset.transcriptVirtualBlockId).toBe("block-0");
+});
+
 it("mounts viewport rows from ten thousand records and synchronously reveals an exact distant block", () => {
   const element = mount(rows(10_000));
   expect(mounted()).toBeLessThan(50);
@@ -530,30 +563,40 @@ it("retains remote-output loading and failure across row culling without retryin
   expect(load).toHaveBeenLastCalledWith("a-0", 7);
 });
 
-it("registers selectionchange tracking only for virtualized lists, keeping copy handling everywhere", () => {
+it("registers selection tracking and copy materialization only for virtualized lists", () => {
   const add = vi.spyOn(document, "addEventListener");
   mount(rows(5));
   const plain = add.mock.calls.map(([type]) => type);
   expect(plain).not.toContain("selectionchange");
-  expect(plain).toContain("copy");
+  expect(plain).not.toContain("copy");
   add.mockClear();
   act(() => root.unmount());
   root = createRoot(host);
   mount(rows(1000));
-  expect(add.mock.calls.map(([type]) => type)).toContain("selectionchange");
+  expect(add.mock.calls.map(([type]) => type)).toEqual(
+    expect.arrayContaining(["selectionchange", "copy"]),
+  );
 });
 
 function resizeHarness() {
-  const callbacks: ResizeObserverCallback[] = [];
+  const observers: Array<{ callback: ResizeObserverCallback; targets: Set<Element> }> = [];
   vi.stubGlobal(
     "ResizeObserver",
     class {
+      entry: { callback: ResizeObserverCallback; targets: Set<Element> };
       constructor(callback: ResizeObserverCallback) {
-        callbacks.push(callback);
+        this.entry = { callback, targets: new Set() };
+        observers.push(this.entry);
       }
-      observe() {}
-      unobserve() {}
-      disconnect() {}
+      observe(target: Element) {
+        this.entry.targets.add(target);
+      }
+      unobserve(target: Element) {
+        this.entry.targets.delete(target);
+      }
+      disconnect() {
+        this.entry.targets.clear();
+      }
     },
   );
   let width = 500;
@@ -562,31 +605,36 @@ function resizeHarness() {
   ) {
     return new DOMRect(0, top(this), width, height(this));
   });
-  return (next: number) => {
+  // The layout watch coalesces observer entries into one microtask, so the report is awaited.
+  return async (next: number) => {
     width = next;
-    act(() => {
-      for (const callback of callbacks) callback([], {} as ResizeObserver);
+    await act(async () => {
+      for (const { callback, targets } of observers)
+        callback(
+          [...targets].map((target) => ({ target }) as unknown as ResizeObserverEntry),
+          {} as ResizeObserver,
+        );
     });
   };
 }
 
-it("re-measures rows once per width change outside a live resize", () => {
+it("re-measures rows once per width change outside a live resize", async () => {
   const setWidth = resizeHarness();
   mount(rows(1000));
   measureCalls.count = 0;
-  setWidth(450);
-  setWidth(400);
+  await setWidth(450);
+  await setWidth(400);
   expect(measureCalls.count).toBe(2);
 });
 
-it("keeps measured row sizes through a live resize and re-measures once at its end", () => {
+it("keeps measured row sizes through a live resize and re-measures once at its end", async () => {
   const setWidth = resizeHarness();
   mount(rows(1000));
   measureCalls.count = 0;
   const end = beginResizeGesture();
-  setWidth(450);
-  setWidth(400);
-  setWidth(350);
+  await setWidth(450);
+  await setWidth(400);
+  await setWidth(350);
   expect(measureCalls.count).toBe(0);
   act(() => end());
   expect(measureCalls.count).toBe(1);

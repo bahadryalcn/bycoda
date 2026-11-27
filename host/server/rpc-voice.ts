@@ -1,4 +1,4 @@
-import { createRealtimeSecret, createVoiceClientSecret } from "../voice/voice";
+import { createRealtimeSecret, createVoiceClientSecret, realtimeCredential } from "../voice/voice";
 import { DictationCleanupRuns } from "../voice/voice-dictation-runs";
 import { processVoiceTranscript } from "../voice/voice-dictation-process";
 import { inspectVoiceRuntime } from "../voice/voice-runtime";
@@ -7,8 +7,6 @@ import { openRouterTranscriptionModels } from "../voice/voice-transcription-cata
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
 const dictationCleanupRuns = new DictationCleanupRuns();
-const isLoopback = (request: OwnerRpcRequest) =>
-  ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(request.request.socket.remoteAddress ?? "");
 export async function handleVoiceRpc(
   dependencies: Pick<ServerBindings, "engine" | "voiceCloud" | "localVoice" | "voiceSetup">,
   request: OwnerRpcRequest,
@@ -36,14 +34,15 @@ export async function handleVoiceRpc(
     case "voice.dictation.process":
     case "voice.cloud.transcribe":
     case "voice.cloud.models":
-      // Sign-ins and keys stay on this computer: no browser or remote caller. Cloud
-      // transcription and status alone also serve a paired owner device (the phone).
+      // Sign-ins and keys stay on this computer. Paired owner devices can use
+      // transcription, status and the public transcription-model catalog.
       if (
         request.request.headers.origin ||
         !(
-          isLoopback(request) ||
+          request.thisComputer ||
           ((request.input.method === "voice.cloud.transcribe" ||
-            request.input.method === "voice.cloud.status") &&
+            request.input.method === "voice.cloud.status" ||
+            request.input.method === "voice.cloud.models") &&
             (await request.domainContext.authorized()))
         )
       )
@@ -82,7 +81,7 @@ export async function handleVoiceRpc(
         request.input.method === "voice.realtime.secret"
           ? await createRealtimeSecret(request.params.provider)
           : request.input.method === "voice.cloud.status"
-            ? await dependencies.voiceCloud.status()
+            ? await transcriptionStatus(dependencies.voiceCloud)
             : await dependencies.voiceCloud.setKey(
                 request.params.provider,
                 request.params.key ?? null,
@@ -92,12 +91,7 @@ export async function handleVoiceRpc(
     case "voice.local.setup":
 
     case "voice.local.setupStatus":
-      if (
-        request.request.headers.origin ||
-        !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(
-          request.request.socket.remoteAddress ?? "",
-        )
-      )
+      if (!request.thisComputer)
         throw new Error("Voice installation is available only on this computer.");
       if (request.input.method === "voice.local.setup") {
         if (voiceModels.status().state === "working")
@@ -105,6 +99,7 @@ export async function handleVoiceRpc(
         if (dependencies.localVoice.isActive)
           throw new Error("Disconnect voice before installing.");
         // Unload a recognizer kept warm after dictation before replacing it.
+        dependencies.localVoice.forgetRuntime();
         dependencies.localVoice.close();
       }
       request.result =
@@ -120,7 +115,7 @@ export async function handleVoiceRpc(
       // The paired owner phone manages the same models from Settings → Voice.
       if (
         request.request.headers.origin ||
-        !(isLoopback(request) || (await request.domainContext.authorized()))
+        !(request.thisComputer || (await request.domainContext.authorized()))
       )
         throw new Error("Voice model management is available only on this computer.");
       if (request.input.method === "voice.local.models") request.result = await voiceModels.list();
@@ -133,6 +128,7 @@ export async function handleVoiceRpc(
           throw new Error("Voice setup is still running.");
         if (dependencies.localVoice.isActive)
           throw new Error("Disconnect voice before managing models.");
+        dependencies.localVoice.forgetRuntime();
         dependencies.localVoice.close();
         request.result = voiceModels.start(
           request.params.action,
@@ -193,4 +189,18 @@ export async function handleVoiceRpc(
       request.result = dependencies.localVoice.release(request.params.lease);
       break;
   }
+}
+
+async function transcriptionStatus(cloud: ServerBindings["voiceCloud"]) {
+  const [status, { openai, xai }] = await Promise.all([cloud.status(), realtimeSignIns()]);
+  return { ...status, openai, xai };
+}
+
+/** Whether this computer has a Grok Build / Codex sign-in (or env key); never the credential. */
+export async function realtimeSignIns() {
+  const [openai, xai] = await Promise.all([
+    realtimeCredential("openai").catch(() => undefined),
+    realtimeCredential("xai").catch(() => undefined),
+  ]);
+  return { openai: Boolean(openai), xai: Boolean(xai) };
 }

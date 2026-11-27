@@ -1,8 +1,8 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import type { ReactNode } from "react";
-import { t } from "../../../shared/i18n/technical";
+import { t, useLocale } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
-import { Text } from "../../../shared/ui/Text";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { kindLabel, platformLabel, platformVersionLabel, stateLabel } from "../model/deviceLabels";
@@ -20,6 +20,7 @@ export function DeviceBar({
   hostLabel,
   disabled,
   loading,
+  discoveryFailed,
   refreshing,
   refreshDisabled,
   onSelect,
@@ -31,12 +32,14 @@ export function DeviceBar({
   hostLabel?: string;
   disabled: boolean;
   loading: boolean;
+  discoveryFailed: boolean;
   refreshing: boolean;
   refreshDisabled: boolean;
   onSelect: (id: string, booted: boolean) => void;
   onRefresh: () => void;
   children?: ReactNode;
 }) {
+  useLocale();
   const device = devices.find((item) => item.id === selected);
   return (
     <div
@@ -49,19 +52,7 @@ export function DeviceBar({
         <div className="device-panel-choice">
           <SearchableSelect
             hideLabel
-            tooltip={
-              device
-                ? [
-                    hostLabel,
-                    platformVersionLabel(device),
-                    kindLabel(device),
-                    stateLabel(device),
-                    device.id,
-                  ]
-                    .filter(Boolean)
-                    .join(", ")
-                : undefined
-            }
+            tooltip={device ? [hostLabel, device.id].filter(Boolean).join(", ") : undefined}
             label={t("Selected device")}
             value={selected}
             disabled={disabled}
@@ -88,16 +79,13 @@ export function DeviceBar({
           />
         </div>
       ) : (
-        <Text
-          as="p"
+        <LiveText
           size="caption"
           tone="secondary"
           leading="relaxed"
           className="device-panel-bar-text"
-          role="status"
-        >
-          {loading ? t("Loading devices…") : t("No devices")}
-        </Text>
+          text={loading ? t("Loading devices…") : discoveryFailed ? t("Unknown") : t("No devices")}
+        />
       )}
       <span className="device-panel-bar-actions">
         <Button
@@ -106,6 +94,9 @@ export function DeviceBar({
           label={t("Refresh devices")}
           loading={refreshing}
           disabled={refreshDisabled}
+          disabledReason={
+            refreshDisabled ? t("Wait for the current device operation to finish") : undefined
+          }
           onClick={onRefresh}
         >
           <RefreshCw className="icon-sm" aria-hidden />

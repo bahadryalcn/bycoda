@@ -1,3 +1,5 @@
+import { errorText } from "../../../shared/lib/errors";
+import type { AttachmentReadCapacity } from "./attachmentReadCapacity";
 import { FOLDER_MIME, normalizeImageMime, isVisionImage } from "./attachmentPrompt";
 export {
   ATTACHMENT_ONLY_PROMPT,
@@ -13,9 +15,35 @@ export {
 import { invoke } from "@tauri-apps/api/core";
 import { basename, pickFiles as pickFilePaths } from "../../../platform/tauri/fs";
 import type { Attachment, AttachmentKind } from "./session";
+import { AttachmentFailureError, selectionExceedsCapacity } from "./attachmentFailure";
 
 export const MAX_ATTACHMENTS = 20;
 export const MAX_EMBED_BYTES = 20 * 1024 * 1024;
+/**
+ * Inline image bytes one draft, one selection or one send may hold across all
+ * files. Past it a file with a saved path stays attached as that path (the
+ * harness reads it from disk) instead of carrying base64 in memory.
+ */
+export const MAX_TOTAL_EMBED_BYTES = 48 * 1024 * 1024;
+/** Reads of `read_file_base64` in flight at once while preparing a send. */
+const PREPARE_READ_CONCURRENCY = 3;
+
+/** Decoded bytes a file currently holds inline. */
+function inlineBytes(file: Attachment): number {
+  return file.data ? file.size : 0;
+}
+
+function withoutInlineData(file: Attachment): Attachment {
+  const { data: _data, ...rest } = file;
+  return rest;
+}
+
+/**
+ * A pasted or dropped blob that was left out: bytes with no disk path can only
+ * travel inline, so one over the embed limit, or one the webview cannot read,
+ * is reported by name while its valid siblings are still attached.
+ */
+export type SkippedAttachment = { name: string; reason: "too-large" | "unreadable" };
 
 type PathInfo = {
   path: string;
@@ -111,6 +139,7 @@ export function persistableAttachment(file: Attachment): Attachment {
     kind: file.kind,
     size: file.size,
     ...(file.path ? { path: file.path } : {}),
+    ...(file.hostEnvironmentId ? { hostEnvironmentId: file.hostEnvironmentId } : {}),
     ...(file.browserAnnotation ? { browserAnnotation: file.browserAnnotation } : {}),
   };
 }
@@ -145,6 +174,7 @@ export function revokeAttachment(file: Attachment) {
 
 export function mergeAttachments(existing: Attachment[], incoming: Attachment[]): Attachment[] {
   const next = [...existing];
+  let embedded = existing.reduce((sum, file) => sum + inlineBytes(file), 0);
   for (const file of incoming) {
     if (next.length >= MAX_ATTACHMENTS) break;
     const duplicate = next.some(
@@ -156,6 +186,17 @@ export function mergeAttachments(existing: Attachment[], incoming: Attachment[])
         item.id === file.id,
     );
     if (duplicate) continue;
+    // shortcut: a file with bytes and no path cannot fall back to a path, so it stays inline
+    // (still under the per-file limit); composer producers always save a path, upgrade if not.
+    if (
+      inlineBytes(file) > 0 &&
+      embedded + inlineBytes(file) > MAX_TOTAL_EMBED_BYTES &&
+      file.path
+    ) {
+      next.push(withoutInlineData(file));
+      continue;
+    }
+    embedded += inlineBytes(file);
     next.push(file);
   }
   return next;
@@ -220,11 +261,11 @@ export function retainAttachmentPickerSelection() {
       if (pending) return pending;
       const actual = pickFilePaths().then((paths) => {
         const selection = paths ?? [];
-        if (
-          selection.length > 4096 ||
-          selection.reduce((bytes, path) => bytes + path.length * 2, 0) > 1024 * 1024
-        ) {
-          failure = new Error("The selected file paths exceed retained attachment capacity.");
+        if (selectionExceedsCapacity(selection)) {
+          failure = new AttachmentFailureError(
+            "selection-too-large",
+            "The selected file paths exceed retained attachment capacity.",
+          );
           throw failure;
         }
         selected = Object.freeze([...selection]);
@@ -246,29 +287,47 @@ export function retainAttachmentPickerSelection() {
 
 export async function pickAttachments(
   selection?: ReturnType<typeof retainAttachmentPickerSelection>,
+  capacity?: AttachmentReadCapacity,
 ): Promise<Attachment[]> {
   const paths = selection ? await selection.read() : await pickFilePaths();
   if (!paths?.length) return [];
-  return attachmentsFromPaths([...paths]);
+  return attachmentsFromPaths([...paths], capacity);
 }
 
-export async function attachmentsFromPaths(paths: string[]): Promise<Attachment[]> {
+export async function attachmentsFromPaths(
+  paths: string[],
+  capacity?: AttachmentReadCapacity,
+): Promise<Attachment[]> {
   const unique = [...new Set(paths.filter((path) => path.trim()))];
   if (unique.length === 0) return [];
   const infos = await invoke<PathInfo[]>("inspect_paths", { paths: unique });
   const out: Attachment[] = [];
+  let embedded = 0;
   for (const info of infos) {
-    const file = await attachmentFromPath(info);
-    if (file) out.push(file);
+    // Sequential, and each read sees what the selection already holds, so a folder of large
+    // screenshots never reads more than the total budget before the draft merge.
+    if (skipName(info.name)) continue;
+    const slot = capacity?.reserve(info.path);
+    if (slot === null) continue;
+    const embed = !capacity || slot !== undefined;
+    const file = await attachmentFromPath(info, embed ? MAX_TOTAL_EMBED_BYTES - embedded : 0);
+    embedded += inlineBytes(file);
+    out.push(file);
   }
   return out;
 }
 
 export async function attachmentsFromFiles(
   files: File[],
-  options?: { persistBlobs?: boolean },
+  options?: {
+    persistBlobs?: boolean;
+    capacity?: AttachmentReadCapacity;
+    /** Called once with the blobs left out; path files are never embedded, so never skipped. */
+    onSkipped?: (skipped: SkippedAttachment[]) => void;
+  },
 ): Promise<Attachment[]> {
   const out: Attachment[] = [];
+  const skipped: SkippedAttachment[] = [];
   const pathFiles: string[] = [];
   const blobs: File[] = [];
   for (const file of files) {
@@ -277,36 +336,69 @@ export async function attachmentsFromFiles(
     else blobs.push(file);
   }
   if (pathFiles.length) {
-    out.push(...(await attachmentsFromPaths(pathFiles)));
+    out.push(...(await attachmentsFromPaths(pathFiles, options?.capacity)));
   }
+  let embedded = out.reduce((sum, file) => sum + inlineBytes(file), 0);
   for (const file of blobs) {
-    const item = await attachmentFromBlob(file, options?.persistBlobs !== false);
-    if (item) out.push(item);
+    if (skipName(file.name) || file.size < 0) continue;
+    // Checked before any preview URL or read, so an oversized blob costs nothing.
+    if (file.size > MAX_EMBED_BYTES) {
+      skipped.push({ name: blobName(file), reason: "too-large" });
+      continue;
+    }
+    // A saved blob past the total budget keeps its path and drops its bytes; one that
+    // cannot be saved (`persistBlobs: false`) has only its bytes, so it stays inline.
+    const slot = options?.capacity?.reserve();
+    if (slot === null) continue;
+    const embed = options?.persistBlobs === false || embedded + file.size <= MAX_TOTAL_EMBED_BYTES;
+    const item = await attachmentFromBlob(file, options?.persistBlobs !== false, embed);
+    if (item === "unreadable") {
+      if (slot !== undefined) options?.capacity?.release(slot);
+      skipped.push({ name: blobName(file), reason: "unreadable" });
+    } else {
+      embedded += inlineBytes(item);
+      out.push(item);
+    }
   }
+  if (skipped.length) options?.onSkipped?.(skipped);
   return out;
 }
 
 export async function prepareAttachments(files: Attachment[]): Promise<Attachment[]> {
-  return Promise.all(
-    files.map(async (file) => {
-      if (file.data || !file.path) return file;
-      if (!isVisionImage(file.mimeType) || file.size > MAX_EMBED_BYTES) {
-        return file;
-      }
+  const prepared = [...files];
+  // Budget is reserved in attachment order before any read starts, so the first files win and
+  // concurrent reads cannot overshoot; the rest stay path references.
+  let embedded = files.reduce((sum, file) => sum + inlineBytes(file), 0);
+  const wanted: number[] = [];
+  files.forEach((file, index) => {
+    if (file.data || !file.path) return;
+    if (!isVisionImage(file.mimeType) || file.size > MAX_EMBED_BYTES) return;
+    if (embedded + file.size > MAX_TOTAL_EMBED_BYTES) return;
+    embedded += file.size;
+    wanted.push(index);
+  });
+  let cursor = 0;
+  const worker = async () => {
+    for (let slot = cursor++; slot < wanted.length; slot = cursor++) {
+      const index = wanted[slot];
       try {
-        const data = await invoke<string>("read_file_base64", {
-          path: file.path,
-        });
-        return { ...file, data };
+        const data = await invoke<string>("read_file_base64", { path: files[index].path });
+        prepared[index] = { ...files[index], data };
       } catch {
-        return file;
+        // Keep the path so the agent can still read the file.
       }
-    }),
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(PREPARE_READ_CONCURRENCY, wanted.length) }, worker),
   );
+  return prepared;
 }
 
-async function attachmentFromPath(info: PathInfo): Promise<Attachment | null> {
-  if (skipName(info.name)) return null;
+async function attachmentFromPath(
+  info: PathInfo,
+  embedRoom = MAX_TOTAL_EMBED_BYTES,
+): Promise<Attachment> {
   // A folder's name says nothing about its contents, and a harness handed a
   // resource_link for a directory has nothing to open.
   const mimeType = info.isDir ? FOLDER_MIME : mimeFromName(info.name);
@@ -319,7 +411,12 @@ async function attachmentFromPath(info: PathInfo): Promise<Attachment | null> {
     size: info.size,
     path: info.path,
   };
-  if (isVisionImage(mimeType) && info.size > 0 && info.size <= MAX_EMBED_BYTES) {
+  if (
+    isVisionImage(mimeType) &&
+    info.size > 0 &&
+    info.size <= MAX_EMBED_BYTES &&
+    info.size <= embedRoom
+  ) {
     try {
       file.data = await invoke<string>("read_file_base64", { path: info.path });
     } catch {
@@ -329,16 +426,23 @@ async function attachmentFromPath(info: PathInfo): Promise<Attachment | null> {
   return file;
 }
 
-async function attachmentFromBlob(file: File, persist = true): Promise<Attachment | null> {
-  if (skipName(file.name) || file.size < 0) return null;
+function blobName(file: File): string {
+  return file.name.trim() || fallbackName(mimeFromFile(file));
+}
+
+async function attachmentFromBlob(
+  file: File,
+  persist = true,
+  embed = true,
+): Promise<Attachment | "unreadable"> {
   const mimeType = mimeFromFile(file);
   const kind = kindFromMime(mimeType);
-  const name = file.name.trim() || fallbackName(mimeType);
+  const name = blobName(file);
   const previewUrl = kind === "image" ? URL.createObjectURL(file) : undefined;
   const data = await readBlobBase64(file);
   if (data === null) {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
-    return null;
+    return "unreadable";
   }
   // Notes owns each temporary write and its partial-success cleanup. Other
   // attachment callers keep the durable saved-path default.
@@ -357,12 +461,12 @@ async function attachmentFromBlob(file: File, persist = true): Promise<Attachmen
       path,
       // Inline bytes feed vision providers; the saved path survives transcript
       // sanitization and reopening after the process and blob URL are gone.
-      ...(visionImage ? { data } : {}),
+      ...(visionImage && embed ? { data } : {}),
       previewUrl,
     };
   } catch (error) {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = errorText(error);
     throw new Error(`Could not attach ${name}: ${reason}. Paste or attach the file again.`);
   }
 }

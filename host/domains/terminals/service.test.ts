@@ -28,6 +28,8 @@ function fixture(locate = async (root: string) => root) {
       chosenId: null,
     }),
     locate,
+    undefined,
+    (profile, cwd, _size, write, onExit) => launch(profile, cwd, write, onExit),
   );
   running.push(terminals);
   const activity = vi.fn(async () => {});
@@ -107,7 +109,7 @@ it("never replays an uncertain write and reserves only terminal stop/close admis
     f.service.write({ projectId: "project", id: terminal.id, data: "run\n" }, f.context),
   ).rejects.toThrow(/unknown/);
   expect(f.child.write).toHaveBeenCalledTimes(1);
-  for (const method of ["terminals.create", "terminals.write"])
+  for (const method of ["terminals.create", "terminals.write", "terminals.resize"])
     expect(getHostRpcMethod(method)).toMatchObject({
       retry: "never",
       cancellation: "wait-only",

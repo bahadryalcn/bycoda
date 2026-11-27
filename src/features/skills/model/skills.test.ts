@@ -322,12 +322,14 @@ describe("rankSkills", () => {
         source: "agents",
         path: `/skills/tool-${index}/SKILL.md`,
       }));
-    const group = (description: string): Skill & { groupId: string } => ({
-      kind: "template",
-      scope: "template",
-      source: "bycoda",
+    const group = (description: string, members: string[] = ["a", "b"]) => ({
+      kind: "template" as const,
+      scope: "template" as const,
+      source: "bycoda" as const,
       templateId: "skill-group:g1",
       groupId: "g1",
+      members,
+      memberCount: members.length,
       name: "Build",
       invocation: "group-build",
       description,
@@ -339,6 +341,24 @@ describe("rankSkills", () => {
       expect(rankSkills(rows, "group-")[0]?.invocation).toBe("group-build");
     });
 
+    it("puts matching groups before skills and shows only groups with a matching member", () => {
+      const skill = {
+        ...fileRows("Design guidance")[0]!,
+        name: "ui-ux-pro-max",
+        invocation: "ui-ux-pro-max",
+      };
+      const related = group("frontend-design, ui-ux-pro-max", ["frontend-design", "ui-ux-pro-max"]);
+      const unrelated = {
+        ...group("frontend-design, unslop"),
+        groupId: "g2",
+        name: "Skills and agent setup",
+        invocation: "group-skills-and-agent-setup",
+        members: ["frontend-design", "unslop"],
+        memberCount: 2,
+      };
+      expect(rankSkills([unrelated, related, skill], "ui-u")).toEqual([related, skill]);
+    });
+
     it("keeps groups past the limit after commands for an empty query", () => {
       const rows = [...fileRows("helper"), group("a, b")];
       const ranked = rankSkills(rows, "");
@@ -347,7 +367,7 @@ describe("rankSkills", () => {
       expect(ranked.slice(0, at).every((skill) => skill.kind !== "template")).toBe(true);
     });
 
-    it("sorts a description-only group after commands and before templates", () => {
+    it("matches a single member name and ignores group descriptions", () => {
       const template: Skill = {
         kind: "template",
         scope: "template",
@@ -359,8 +379,12 @@ describe("rankSkills", () => {
         body: "",
       };
       const command: Skill = { ...fileRows("shipping notes")[0]!, name: "x", invocation: "x" };
-      const ranked = rankSkills([template, group("shipping notes"), command], "shipping");
-      expect(ranked.map((skill) => skill.name)).toEqual(["x", "Build", "Zeta"]);
+      const matchingGroup = group("ship-helper", ["shipping-helper"]);
+      const ranked = rankSkills(
+        [template, group("shipping notes"), command, matchingGroup],
+        "shipping",
+      );
+      expect(ranked).toEqual([matchingGroup, command, template]);
     });
   });
 });

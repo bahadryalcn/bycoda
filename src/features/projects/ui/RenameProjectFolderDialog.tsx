@@ -6,6 +6,8 @@ import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { basename } from "../../../platform/tauri/fs";
 import { folderRenameErrorWith } from "../model/projectFolderRename";
+import { RemoteActionError } from "../../connections/public/RemoteActionError";
+import { describeRemoteError, type RemoteErrorView } from "../../connections/public/remoteFailure";
 
 export function RenameProjectFolderDialog({
   path,
@@ -19,7 +21,7 @@ export function RenameProjectFolderDialog({
   const t = useT();
   const [name, setName] = useState(basename(path));
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<RemoteErrorView | null>(null);
   const invalid = folderRenameErrorWith(name, t);
   const formId = useId();
   return (
@@ -31,6 +33,7 @@ export function RenameProjectFolderDialog({
         if (!busy) onClose();
       }}
       footer={
+        // The invalid-name sentence shows once, on the field; an unchanged name needs no message.
         <ModalActions>
           <Button type="button" disabled={busy} onClick={onClose} variant="ghost">
             {t("Cancel")}
@@ -39,11 +42,18 @@ export function RenameProjectFolderDialog({
             type="submit"
             form={formId}
             disabled={busy || !!invalid || name === basename(path)}
+            disabledReason={
+              busy
+                ? t("Wait for the current operation to finish")
+                : invalid
+                  ? t("Enter a valid folder name.")
+                  : t("Change the name first.")
+            }
             variant="primary"
             loading={busy}
             loadingLabel={t("Renaming…")}
           >
-            {busy ? t("Renaming…") : t("Rename folder")}
+            {t("Rename folder")}
           </Button>
         </ModalActions>
       }
@@ -58,7 +68,7 @@ export function RenameProjectFolderDialog({
           setError(null);
           void onRename(name)
             .then(onClose)
-            .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))
+            .catch((reason: unknown) => setError(describeRemoteError(reason)))
             .finally(() => setBusy(false));
         }}
       >
@@ -70,12 +80,14 @@ export function RenameProjectFolderDialog({
           autoFocus
           value={name}
           disabled={busy}
-          error={invalid ?? error ?? undefined}
+          error={invalid ?? undefined}
           onChange={(event) => {
             setName(event.target.value);
             setError(null);
           }}
         />
+        {/* The typed name stays in the field; the failure sits below it with its raw text behind Details. */}
+        {error ? <RemoteActionError error={error} /> : null}
       </form>
     </Modal>
   );

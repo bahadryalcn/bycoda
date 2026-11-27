@@ -5,7 +5,7 @@ import { useT } from "../../../shared/i18n";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Check, CircleAlert, PenLine } from "../../../shared/ui/icons";
-import type { SessionWait } from "../model/sessionWait";
+import { waitStillWorking, type SessionWait } from "../model/sessionWait";
 import { SessionWorkingStatus } from "./SessionWorkingStatus";
 
 export type SessionRowStatusKind =
@@ -33,7 +33,7 @@ export type SessionRowStatusInput = {
 
 /**
  * One status per row: failed/retrying > interrupted > needs input > working (busy, no
- * wait) > waiting > opening > done > draft > idle.
+ * wait, or the turn's own background work) > waiting > opening > done > draft > idle.
  */
 export function sessionRowStatusKind(input: SessionRowStatusInput): SessionRowStatusKind {
   if (input.issue) return input.issue;
@@ -41,7 +41,8 @@ export function sessionRowStatusKind(input: SessionRowStatusInput): SessionRowSt
     return "interrupted";
   if (input.needsApproval) return "input";
   if (input.busy && !input.wait) return "working";
-  if (input.wait) return "waiting";
+  // Subagents or commands the turn started still run: that is work, not a wait.
+  if (input.wait) return waitStillWorking(input.wait) ? "working" : "waiting";
   if (input.opening) return "opening";
   if (input.done) return "done";
   if (input.draft) return "draft";
@@ -57,7 +58,7 @@ const TONES: Record<SessionRowStatusKind, BadgeTone> = {
   waiting: "neutral",
   opening: "neutral",
   done: "success",
-  draft: "neutral",
+  draft: "warning",
   idle: "neutral",
 };
 
@@ -116,7 +117,7 @@ export function SessionRowStatus({
               "session-row-status-label",
             )}
           >
-            {t(kind === "retrying" ? "Retrying" : "Failed")}
+            {kind === "retrying" ? t("Retrying") : t("Failed")}
           </span>
         </>
       ) : kind === "interrupted" ? (

@@ -41,7 +41,7 @@ billing, provider or deployment-model decision is required for the current scope
 | `packages/`                                          | Private contracts, client runtime, provider and source-control packages with explicit exports. | Shared code already exists under `src/shared/` and `src/integrations/harness/`; the Host imports some source directly. Adopt dependency boundaries, then extract actual multi-consumer packages incrementally. |
 | `evals/`                                             | Real-model tool-choice and title regressions with graders and controls.                        | Unit, Host and browser tests exist; no comparable maintained model-behavior harness was found. Add sanitized cases and deterministic graders first; paid runs remain explicit and budgeted.                    |
 | `oxlint-plugin-<name>/`                              | Project-specific AST rules for permission, testing, React/native and UI conventions.           | Oxlint/Oxfmt and an external React Hooks plugin already exist. Add a bycoda rule only for a concrete recurring invariant, with positive/negative fixtures and a migration baseline.                            |
-| Oxc                                                  | Built-in toolchain/plugin namespace, not a missing reference source directory.                 | Already used through Oxlint/Oxfmt; continue the pinned `tsc-rs` checking contract. Vite+/Effect adoption is not a prerequisite.                                                                                |
+| Oxc                                                  | Built-in toolchain/plugin namespace, not a missing reference source directory.                 | Already used through Oxlint/Oxfmt; continue the pinned `tsrs` checking contract. Vite+/Effect adoption is not a prerequisite.                                                                                  |
 | `packaging/aur/`                                     | Arch recipes for already-built stable/nightly AppImages.                                       | Tauri packaging and local/release scripts already exist. Add distribution adapters only for supported distribution channels; this does not reduce native compilation.                                          |
 | `patches/`                                           | Exact-version package-manager dependency patches.                                              | `vendor/` is not equivalent to a patch registry. Add only reproducible required fixes; record dependency version, reason, test, upstream issue and removal condition.                                          |
 | `infra/relay/`                                       | Account/environment discovery, tunnel allocation, connection bootstrap and notifications.      | Local pairing, SSH/tunnels and Host tools exist. Account/control-plane work is deferred. Retain the infrastructure separation as research only.                                                                |
@@ -98,7 +98,7 @@ workspace slice is `packages/core`: JSON text, bounded concurrency and session
 title helpers used by desktop, Host and mobile through canonical public exports.
 Old source paths are compatibility re-exports. `apps/desktop` owns the main and
 quick-composer entry modules used by the root HTML; implementation remains under
-`src/` while the active Host migration continues. Package/desktop tsc-rs projects,
+`src/` while the active Host migration continues. Package/desktop tsrs projects,
 transitive export checks, workspace lock inputs and source graphs enforce this
 slice. This is an incremental boundary, not a completed relocation of every app.
 
@@ -154,7 +154,7 @@ The additional destinations above are not a request to create empty packages.
 Mobile remains a separate repository until its owner explicitly migrates history,
 dependency installation, native build paths and shared-source contracts. Before
 introducing new roots update `.artifact`, workspace/package manifests, lockfiles,
-tsc-rs/Vite/esbuild/Cargo paths, CI filters/caches, snapshot inputs, licensing,
+tsrs/Vite/esbuild/Cargo paths, CI filters/caches, snapshot inputs, licensing,
 documentation and the feature cards. Each package must have a real consumer,
 explicit exports, a dependency owner and a build/test boundary. Do not maintain
 two competing schema registries under old and new paths.

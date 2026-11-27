@@ -44,6 +44,8 @@ export function TaskConcurrencyField({
     <NumberField
       label={label}
       hideLabel={hideLabel}
+      fieldVariant="compact"
+      fieldClassName="w-24"
       min={1}
       step={1}
       value={text}
@@ -58,7 +60,8 @@ export function TaskConcurrencyField({
       onKeyDown={(event) => {
         if (event.key === "Enter" && !isImeComposition(event.nativeEvent)) {
           event.preventDefault();
-          event.currentTarget.blur();
+          // Save in place so focus stays on the field; validation still gates the save.
+          void save();
         }
       }}
     />

@@ -1,20 +1,14 @@
-import { Text } from "../../../shared/ui/Text";
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { BackgroundSessionTarget } from "../../tasks";
-import { Heading } from "../../../shared/ui/Heading";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Alert } from "../../../shared/ui/Alert";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { FailureState } from "../../../shared/ui/FailureState";
-import { InlineMessage } from "../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { Modal } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { ChevronLeft, Pencil, Plus } from "../../../shared/ui/icons";
-import { lazySurface } from "../../../shared/ui/lazySurface";
-import type { OpenSession } from "./CrewSessions";
+import { ChevronLeft } from "../../../shared/ui/icons";
 import type { useProjectCrews } from "../model/crewClient";
 import { crewRunMatchesQuery } from "../model/crewPresentation";
 import {
@@ -25,25 +19,19 @@ import {
 import { CrewWorkDetail } from "./CrewWorkDetail";
 import { CrewWorkList, type CrewWorkView } from "./CrewWorkList";
 import { useCrewMachineScope } from "./CrewMachineScope";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { FailureAlert } from "./FailureAlert";
 
-const CrewEditDialog = lazySurface(async () => ({
-  default: (await import("./CrewDialogs")).CrewEditDialog,
-}));
-const StartCrewDialog = lazySurface(async () => ({
-  default: (await import("./CrewDialogs")).StartCrewDialog,
-}));
 type CrewState = ReturnType<typeof useProjectCrews>;
 
-/** Where a saved crew can be used; the same wording as the editor. */
-function crewScopeLabel(crew: { projectId?: string }) {
-  return crew.projectId ? t("This project") : t("All projects on this host");
-}
+/** Opens a crew's coordinator or work session; the host supplies it. */
+export type OpenCrewSession = (target: BackgroundSessionTarget) => void | Promise<void>;
+
+/** The work filter earns its place only for a long list, as the roster filter does. */
+const WORK_SEARCH_MIN = 7;
 
 /**
- * One workspace for choosing a crew, selecting its work and opening any related session.
- * The Crew work dialog and the Crews page Work tab both render it; `layout` only changes the
- * frame (modal or page), never behavior.
+ * The Work tab: choose a crew, select its work and open any related session. Starting work,
+ * editing and creating crews belong to the page header and the Teams menu, not to this view.
  */
 export function CrewWorkManager({
   cwd: homeCwd,
@@ -51,18 +39,16 @@ export function CrewWorkManager({
   definitionId,
   initialRunId,
   onOpen,
-  onClose,
-  layout,
+  onCrewChange,
   renderCoordinator,
 }: {
   cwd: string;
   state: CrewState;
   definitionId?: string;
   initialRunId?: string;
-  onOpen?: OpenSession;
-  /** Dialog: closes the modal. Page: called after a session opened; usually omitted. */
-  onClose?: () => void;
-  layout: "dialog" | "page";
+  onOpen?: OpenCrewSession;
+  /** The crew whose work is shown, so the page's "New work" starts work for that crew. */
+  onCrewChange?: (crewId: string | undefined) => void;
   renderCoordinator?: (target: BackgroundSessionTarget) => ReactNode;
 }) {
   useLocale();
@@ -76,10 +62,8 @@ export function CrewWorkManager({
       ? "finished"
       : "ongoing",
   );
-  const [page, setPage] = useState<"work" | "start" | "edit">("work");
   // Narrow windows show the work list or one work at a time; wide ones show both.
   const [pane, setPane] = useState<"list" | "detail">(initialRunId ? "detail" : "list");
-  const [editorReturn, setEditorReturn] = useState<"work" | "start">("work");
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   // Works the owner stopped: the lead's cancel can take a moment to land, and Stop must not
   // stay offered for work that was already told to stop. Resuming clears it.
@@ -92,16 +76,24 @@ export function CrewWorkManager({
       return next;
     });
   const pending = pendingAction !== null;
+  // The presented (translated or classified) read failure; the raw text goes behind Details.
+  const { visibleError: loadNotice } = state;
   const pendingGate = useRef(false);
   const [actionError, setActionError] = useState<CrewActionError>();
-  const error = actionError?.message ?? "";
-  const setError = (message: string) =>
-    setActionError(message ? { message, at: Date.now(), connection: false } : undefined);
   // A failure to reach the machine is retired once the machine answers a read again.
   if (crewActionErrorRecovered(actionError, state.dataUpdatedAt)) setActionError(undefined);
-  // The filter belongs to the dialog, so polling and the edit/start pages never reset it.
+  // The filter belongs to this view, so polling never resets it.
   const [query, setQuery] = useState("");
   const data = state.data;
+  // A run opened by id before the list loaded picks its tab once, when the list first arrives;
+  // after that the tab is only the owner's choice.
+  const [initialViewPending, setInitialViewPending] = useState(!!initialRunId && !state.data);
+  if (initialViewPending && data) {
+    setInitialViewPending(false);
+    if (data.runs.find((run) => run.id === initialRunId)?.status === "finished") {
+      setView("finished");
+    }
+  }
   const refreshShownCentrally = useConnectionErrorShownCentrally(state.error);
   // Another machine has its own crews and work; nothing selected here applies there.
   if (scopedCwd !== cwd) {
@@ -116,25 +108,34 @@ export function CrewWorkManager({
   for (const run of data?.runs ?? []) {
     if (!crews.some((item) => item.id === run.definition.id)) crews.push(run.definition);
   }
-  const crew = crews.find((item) => item.id === crewId) ?? crews[0];
+  // A run opened by id belongs to its own crew even when no crew was named.
+  const pinnedCrewId = data?.runs.find((run) => run.id === selectedId)?.definition.id;
+  const crew = crews.find((item) => item.id === (crewId || pinnedCrewId)) ?? crews[0];
   const savedCrew = !!data?.definitions.some((item) => item.id === crew?.id);
   const all = [...(data?.runs ?? [])]
     .filter((run) => run.definition.id === crew?.id)
     .sort((a, b) => b.updatedAt - a.updatedAt);
-  const pinned = all.find((run) => run.id === selectedId);
-  const selectedView = pinned ? (pinned.status === "finished" ? "finished" : "ongoing") : view;
-  if (selectedView !== view) setView(selectedView);
+  // The tab is the owner's choice: a poll that finishes the open run never switches it.
   const listed = all.filter((run) =>
-    selectedView === "finished" ? run.status === "finished" : run.status !== "finished",
+    view === "finished" ? run.status === "finished" : run.status !== "finished",
   );
-  // Selection resolves from the whole view; the filter only narrows what the list shows.
+  // The filter only narrows what the list shows.
   const visible = listed.filter((run) => crewRunMatchesQuery(run, query));
-  const selected = listed.find((run) => run.id === selectedId) ?? listed[0];
+  // The open run is looked up in the whole crew, not the tab, so a status change keeps it open.
+  // An explicit selection that vanished is reported ("gone"), never replaced by another run.
+  // A selection that belongs to another crew (the crew changed) falls back to this crew's first run.
+  const pinned = selectedId ? all.find((run) => run.id === selectedId) : undefined;
+  const gone = !!data && !!selectedId && !data.runs.some((run) => run.id === selectedId);
+  const selected = pinned ?? (gone ? undefined : listed[0]);
   const resolvedRunId = selected?.id;
   const resolvedCrewId = crew?.id;
-  // Reconcile removed records during render so a poll cannot replace an unpinned selection.
+  // Pin the default (first listed) run once, so later polls cannot swap it under the owner.
   if (resolvedRunId && resolvedRunId !== selectedId) setSelectedId(resolvedRunId);
   if (resolvedCrewId && resolvedCrewId !== crewId) setCrewId(resolvedCrewId);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- The crew is resolved here from polled data, so no handler sees it change; the page's New work action needs it.
+  useEffect(() => {
+    onCrewChange?.(resolvedCrewId);
+  }, [onCrewChange, resolvedCrewId]);
   const act = async (key: string, label: string, operation: () => Promise<unknown>) => {
     if (pendingGate.current) return;
     pendingGate.current = true;
@@ -158,70 +159,23 @@ export function CrewWorkManager({
         projectId: data.project.id,
         sessionId,
       });
-      onClose?.();
-    }).catch((reason: unknown) => setError(presentRemoteError(reason, { explicit: true })));
+    });
   };
-  const subPage =
-    page === "edit" ? (
-      <CrewEditDialog
-        cwd={cwd}
-        crewId={savedCrew ? crew?.id : undefined}
-        createScope={savedCrew ? undefined : "project"}
-        initialPage="team"
-        onStart={(id) => {
-          setCrewId(id);
-          setPage("start");
-        }}
-        onClose={() => setPage(editorReturn)}
-      />
-    ) : page === "start" ? (
-      <StartCrewDialog
-        cwd={cwd}
-        state={state}
-        definitionId={crew?.id}
-        onOpen={
-          onOpen
-            ? async (target) => {
-                await onOpen(target);
-                onClose?.();
-              }
-            : undefined
-        }
-        onEdit={(id) => {
-          setCrewId(id);
-          setEditorReturn("start");
-          setPage("edit");
-        }}
-        onClose={() => setPage("work")}
-      />
-    ) : null;
-  // The dialog swaps its content for the editor; the page keeps its work view behind the modal.
-  if (subPage && layout === "dialog") return subPage;
-  const crewScope = crew && savedCrew ? crewScopeLabel(crew) : undefined;
-  // Without any work the empty state owns the one start action; with work the header does.
   const noWork = all.length === 0;
   // A single piece of work needs no list column; its detail is the whole view.
   const needsList = all.length > 1;
-  const hideListNarrow = needsList && !!selected && pane === "detail";
+  const hasDetail = !!selected || gone;
+  const hideListNarrow = needsList && hasDetail && pane === "detail";
   const hideDetailNarrow = needsList && pane === "list";
-  const content = (
+  // The lead's conversation is rendered inline, so the session list does not repeat it.
+  const coordinatorInline = !!(selected?.coordinatorSessionId && renderCoordinator);
+  return (
     <>
-      <div className="@container/crew-management min-w-0" aria-busy={pending}>
-        {layout === "page" && crew && crews.length <= 1 ? (
-          <div className="flex min-w-0 items-baseline gap-2 px-4 pt-3">
-            <Heading size="item" level={2} truncate className="min-w-0">
-              {crew.name}
-            </Heading>
-            {crewScope ? (
-              <Text tone="muted" className="shrink-0">
-                {crewScope}
-              </Text>
-            ) : null}
-          </div>
-        ) : null}
-        <div className="flex flex-wrap items-end gap-2 px-4 pb-2 pt-2">
+      <div className="@container/crew-management flex min-w-0 flex-1 flex-col" aria-busy={pending}>
+        <div className="flex flex-wrap items-end gap-2 px-4 pb-2 pt-2 empty:hidden">
           {scope.picker(pending)}
-          {scope.projectPicker(pending)}
+          {/* Read-only work view: the project is chosen elsewhere, shown only when scoped away from home. */}
+          {cwd !== homeCwd ? scope.projectPicker(pending, false, false) : null}
           {data && crews.length > 1 ? (
             <div className="min-w-0 flex-1 basis-48">
               <SearchableSelect
@@ -240,54 +194,25 @@ export function CrewWorkManager({
                   setSelectedId("");
                   setView("ongoing");
                   setQuery("");
-                  setError("");
+                  setActionError(undefined);
                 }}
               />
             </div>
           ) : null}
-          {/* Where on the left, what to do on the right; the crew summary sits under the row. */}
-          <div className="ms-auto flex shrink-0 flex-wrap items-center gap-2">
-            <Button
-              variant={savedCrew ? (noWork ? "secondary" : "ghost") : "primary"}
-              disabled={!data || pending}
-              startIcon={savedCrew ? <Pencil className="icon-sm" /> : <Plus className="icon-sm" />}
-              tooltip={
-                savedCrew
-                  ? t("Changes apply to future work. Work already started keeps its own team.")
-                  : undefined
-              }
-              onClick={() => {
-                setEditorReturn("work");
-                setPage("edit");
-              }}
-            >
-              {savedCrew ? t("Edit crew") : t("New crew")}
-            </Button>
-            {savedCrew && !noWork ? (
-              <Button
-                variant="primary"
-                disabled={!crew || pending}
-                startIcon={<Plus className="icon-sm" />}
-                onClick={() => setPage("start")}
-              >
-                {t("New work")}
-              </Button>
-            ) : null}
-          </div>
         </div>
         {crew && !savedCrew ? (
-          <InlineMessage tone="neutral" live="off" className="px-4 pb-2">
+          <InlineMessage tone="neutral" live="off" inset="panel">
             {t("This crew was deleted. Its work and conversations are kept.")}
           </InlineMessage>
         ) : null}
         {!data ? (
-          <div className="p-4">
-            {state.error ? (
+          <div className="flex flex-1 flex-col p-4">
+            {state.visibleError ? (
               <FailureState
                 context="panel"
                 title={t("Could not load crews")}
-                error={state.error}
-                retryLabel={t("Retry")}
+                description={loadNotice}
+                error={state.errorDetails}
                 onRetry={() => state.refetch()}
               />
             ) : (
@@ -295,51 +220,42 @@ export function CrewWorkManager({
             )}
           </div>
         ) : noWork ? (
-          <div className="px-4 pb-4">
-            {data.catalogError || (state.error && !refreshShownCentrally) ? (
+          <div className="flex flex-1 flex-col px-4 pb-4">
+            {data.catalogError || (state.visibleError && !refreshShownCentrally) ? (
               <div className="pb-3">
-                <Alert
-                  tone="warning"
-                  action={{ label: t("Retry"), onClick: () => void state.refetch() }}
-                >
-                  {data.catalogError ?? state.error?.message}
-                </Alert>
+                <InlineError
+                  details={data.catalogError ?? state.visibleError}
+                  retry={{ onRetry: () => void state.refetch(), label: t("Retry") }}
+                />
               </div>
             ) : null}
-            {error ? (
+            {actionError ? (
               <div className="pb-3">
-                <Alert tone="danger">{error}</Alert>
+                <FailureAlert title={actionError.title} detail={actionError.detail} />
               </div>
             ) : null}
             <EmptyState
               context="panel"
               kind="empty"
               title={t("No crew work yet")}
-              action={
-                savedCrew
-                  ? {
-                      label: t("New work"),
-                      disabled: !crew || pending,
-                      onClick: () => setPage("start"),
-                    }
-                  : undefined
-              }
+              description={t("Start work with a crew and its progress appears here.")}
             />
           </div>
         ) : (
           <div
-            className={`grid min-w-0 ${needsList && selected ? "@min-[640px]/crew-management:grid-cols-[264px_minmax(0,1fr)]" : ""}`}
+            className={`grid min-w-0 ${needsList && hasDetail ? "@min-[640px]/crew-management:grid-cols-[264px_minmax(0,1fr)]" : ""}`}
           >
             {needsList ? (
               <div
-                className={`[&>nav]:h-full ${hideListNarrow ? "hidden @min-[640px]/crew-management:block" : ""}`}
+                className={`[&>div]:h-full ${hideListNarrow ? "hidden @min-[640px]/crew-management:block" : ""}`}
               >
                 <CrewWorkList
-                  view={selectedView}
+                  view={view}
                   ongoingCount={all.filter((run) => run.status !== "finished").length}
                   runs={visible}
                   listedCount={listed.length}
                   query={query}
+                  searchable={listed.length >= WORK_SEARCH_MIN || !!query.trim()}
                   selectedId={selected?.id}
                   disabled={pending}
                   hasMoreHistory={state.hasMoreHistory}
@@ -350,22 +266,25 @@ export function CrewWorkManager({
                     if (pendingGate.current) return;
                     setView(next);
                     setSelectedId("");
-                    setError("");
+                    setActionError(undefined);
                   }}
                   onQueryChange={setQuery}
                   onSelect={(id) => {
                     setSelectedId(id);
                     setPane("detail");
-                    setError("");
+                    setActionError(undefined);
                   }}
                 />
               </div>
             ) : null}
-            {selected || data.catalogError || (state.error && !refreshShownCentrally) || error ? (
+            {hasDetail ||
+            data.catalogError ||
+            (state.visibleError && !refreshShownCentrally) ||
+            actionError ? (
               <div
                 className={`min-w-0 p-4 @min-[640px]/crew-management:min-h-64 ${hideDetailNarrow ? "hidden @min-[640px]/crew-management:block" : ""}`}
               >
-                {needsList && selected ? (
+                {needsList && hasDetail ? (
                   <div className="-mt-1 mb-2 @min-[640px]/crew-management:hidden">
                     <Button
                       variant="ghost"
@@ -379,20 +298,16 @@ export function CrewWorkManager({
                   </div>
                 ) : null}
                 {data.catalogError ? (
-                  <Alert
-                    tone="warning"
-                    action={{ label: t("Retry"), onClick: () => void state.refetch() }}
-                  >
-                    {data.catalogError}
-                  </Alert>
+                  <InlineError
+                    details={data.catalogError}
+                    retry={{ onRetry: () => void state.refetch(), label: t("Retry") }}
+                  />
                 ) : null}
-                {state.error && !refreshShownCentrally ? (
-                  <Alert
-                    tone="warning"
-                    action={{ label: t("Retry"), onClick: () => void state.refetch() }}
-                  >
-                    {state.error.message}
-                  </Alert>
+                {state.visibleError && !refreshShownCentrally ? (
+                  <InlineError
+                    details={state.visibleError}
+                    retry={{ onRetry: () => void state.refetch(), label: t("Retry") }}
+                  />
                 ) : null}
                 {selected?.coordinatorSessionId && renderCoordinator ? (
                   <div
@@ -407,6 +322,17 @@ export function CrewWorkManager({
                     })}
                   </div>
                 ) : null}
+                {gone ? (
+                  <InlineMessage
+                    tone="neutral"
+                    action={{
+                      label: t("Choose other work"),
+                      onClick: () => setSelectedId(""),
+                    }}
+                  >
+                    {t("This work no longer exists.")}
+                  </InlineMessage>
+                ) : null}
                 {selected ? (
                   <CrewWorkDetail
                     key={selected.id}
@@ -415,10 +341,11 @@ export function CrewWorkManager({
                     catalog={data.catalog}
                     pending={pending}
                     pendingAction={pendingAction}
-                    error={error}
+                    error={actionError}
                     canOpen={!!onOpen}
                     onOpen={open}
                     canDelete={!!data.runDeleteSupported}
+                    coordinatorInline={coordinatorInline}
                     stopRequested={stoppedRuns.has(selected.id)}
                     ownerTools={{
                       machineId: data.machine.id,
@@ -442,7 +369,9 @@ export function CrewWorkManager({
                     }
                     onStop={() =>
                       void act(`stop:${selected.id}`, t("Stop work"), async () => {
-                        await state.call("crews.stop", { runId: selected.id });
+                        await state.call("crews.stop", {
+                          runId: selected.id,
+                        });
                         markStopped(selected.id, true);
                       })
                     }
@@ -457,29 +386,14 @@ export function CrewWorkManager({
                       })
                     }
                   />
-                ) : error ? (
-                  <Alert tone="danger">{error}</Alert>
+                ) : actionError ? (
+                  <FailureAlert title={actionError.title} detail={actionError.detail} />
                 ) : null}
               </div>
             ) : null}
           </div>
         )}
       </div>
-      {subPage}
     </>
-  );
-  if (layout === "page") return content;
-  return (
-    <Modal
-      padding="none"
-      title={crew?.name ?? t("Crews")}
-      context={crewScope}
-      size="lg"
-      onClose={() => {
-        if (!pending) onClose?.();
-      }}
-    >
-      {content}
-    </Modal>
   );
 }

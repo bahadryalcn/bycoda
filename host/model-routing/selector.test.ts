@@ -85,10 +85,10 @@ describe("model routing selection", () => {
     });
     expect(ModelRoutingResolutionSchema.parse(result)).toEqual(result);
   });
-  it("accepts exact threshold and zero remaining at default threshold", () => {
+  it("accepts the exact threshold and any headroom at the default threshold", () => {
     for (const [minRemainingPercent, leftPercent] of [
       [50, 50],
-      [undefined, 0],
+      [undefined, 1],
     ] as const)
       expect(
         selectModelRouting(
@@ -189,6 +189,49 @@ describe("model routing selection", () => {
     ).toEqual({ entryId: "a", skip: "belowLimit", leftPercent: 20, resetsAt: 100 });
     expect(quota).toHaveBeenCalledTimes(1);
   });
+  it("skips an exhausted account even when no reserve is set", () => {
+    const at = (leftPercent: number) =>
+      modelRoutingEntryStatus(
+        entry("a"),
+        signals({ quota: () => ({ leftPercent, resetsAt: 100 }) }),
+      );
+    expect(at(0)).toEqual({ entryId: "a", skip: "belowLimit", leftPercent: 0, resetsAt: 100 });
+    expect(at(1)).toEqual({ entryId: "a", leftPercent: 1, resetsAt: 100 });
+  });
+  it("applies the provider reserve only to entries without their own", () => {
+    const draft = state([
+      entry("default"),
+      entry("own", { minRemainingPercent: 10 }),
+      entry("other", { harness: "claude" }),
+    ]);
+    draft.workCaps = { reservePercent: { codex: 30 } };
+    const quota = () => ({ leftPercent: 20 });
+    expect(selectModelRouting(draft, input, signals({ quota }))).toMatchObject({
+      ok: true,
+      source: { entryId: "own" },
+      skipped: [{ entryId: "default", reason: "belowLimit" }],
+    });
+    draft.entries.splice(1, 1);
+    expect(selectModelRouting(draft, input, signals({ quota }))).toMatchObject({
+      source: { entryId: "other" },
+    });
+    expect(modelRoutingEntryStatus(entry("default"), signals({ quota }), undefined, 30).skip).toBe(
+      "belowLimit",
+    );
+  });
+  it("says why a limit is unknown", () => {
+    const state = (reason?: string) =>
+      modelRoutingEntryStatus(
+        entry("a"),
+        signals({ quota: () => ({ unknown: true as const, reason }) }),
+      ).limitState;
+    expect([state("noSample"), state("noQuota"), state("stale"), state()]).toEqual([
+      "reading",
+      "noQuota",
+      "unavailable",
+      "unavailable",
+    ]);
+  });
   it("scopes delegation to chosen harness and exact account", () => {
     const draft = state([entry("a", { providerAccountId: "work" })]);
     draft.delegation = {
@@ -244,6 +287,23 @@ describe("nested pools and project scope", () => {
     });
   });
 
+  it("runs a pool model with that pool's own settings, from the pool that lists it", () => {
+    const draft = withPools();
+    draft.pools[0]!.memberSettings = { c: { effort: "low", fast: "true" } };
+    draft.pools[2]!.memberSettings = { d: { effort: "medium" } };
+    // Pool-wide effort from an earlier save yields to per-model settings.
+    draft.pools[0]!.effort = "high";
+    const own = pick(draft, (id) => id === "c");
+    expect(own).toMatchObject({
+      ok: true,
+      target: { modelSettings: { effort: "low", fast: "true" } },
+    });
+    const included = pick(draft, (id) => id === "d");
+    expect(included).toMatchObject({ ok: true, target: { modelSettings: { effort: "medium" } } });
+    const order = selectModelRouting(draft, { ...input, choice: { kind: "order" } }, signals());
+    expect(order).toMatchObject({ ok: true, target: { modelSettings: { effort: "high" } } });
+  });
+
   const scoped = (cwd: string | undefined, kinds: Record<string, "work" | "personal"> = {}) => {
     const draft = state([entry("personal"), entry("shared"), entry("work")]);
     draft.projectKinds = { "c:/proj/app": "work", ...kinds };
@@ -285,5 +345,16 @@ describe("nested pools and project scope", () => {
         only,
       ),
     ).toMatchObject({ ok: true, source: { kind: "fixed" } });
+  });
+});
+
+describe("explicit zero reserve", () => {
+  it("keeps an owner-set 0 even when the provider reserve is higher", () => {
+    const quota = () => ({ leftPercent: 5 });
+    const own = entry("a", { minRemainingPercent: 0 });
+    expect(modelRoutingEntryStatus(own, signals({ quota }), undefined, 30).skip).toBeUndefined();
+    expect(modelRoutingEntryStatus(entry("a"), signals({ quota }), undefined, 30).skip).toBe(
+      "belowLimit",
+    );
   });
 });

@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { setTimeout, clearTimeout } from "node:timers";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { HostEngine } from "./engine";
@@ -11,6 +12,7 @@ import { branchCache } from "./git/git-actions";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
 import type { RemoteProvider } from "../src/features/connections/model/protocol";
 import { applySessionSync, type HostSession } from "../src/features/connections/model/protocol";
+import { elapsedSince, monotonicNow } from "../src/shared/lib/time/timestamps";
 
 // Seeding and first-listing ten thousand sessions take about 14 s on Linux and
 // 20 s on macOS CI; Windows runners exceed the 30 s default. The list work itself
@@ -92,6 +94,7 @@ async function setup() {
     return { status: response.status, value };
   };
   cleanups.push(async () => {
+    finish?.();
     await closeHost(host);
     rmSync(directory, { recursive: true, force: true });
   });
@@ -106,6 +109,154 @@ async function setup() {
     finish: () => finish(),
   };
 }
+
+it("serves a sync pull with an expired positive credential while an unrelated writer is busy", async () => {
+  const s = await setup();
+  await s.call("sync.pull", { sinceRev: 0 });
+  const writerStarted = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const writer = s.store.db.storeScope(async () => {
+    writerStarted.resolve();
+    await release.promise;
+  });
+  await writerStarted.promise;
+  const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 2000);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const pull = s.call("sync.pull", { sinceRev: 0, syncCallId: "held-writer" });
+  try {
+    const response = await Promise.race([
+      pull,
+      new Promise<undefined>((resolve) => {
+        timer = setTimeout(() => resolve(undefined), 2000);
+      }),
+    ]);
+    expect(response?.value.result?.records).toEqual([]);
+  } finally {
+    clearTimeout(timer);
+    clock.mockRestore();
+    release.resolve();
+    await Promise.all([writer, pull]);
+  }
+});
+
+it("reads the queue during three live provider streams and a full conversation catch-up", async () => {
+  const s = await setup();
+  const turns: SendTurnInput[] = [];
+  let finish!: () => void;
+  const finished = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  s.send.mockImplementation(async (input) => {
+    turns.push(input);
+    await finished;
+  });
+  try {
+    const ids: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      const { sessionId } = await s.engine.command({
+        type: "create",
+        workspaceMode: "current",
+        commandId: `catchup-create-${i}`,
+        projectId: s.project.id,
+        harness: "codex",
+        model: "codex:test",
+        runtimeMode: "supervised",
+      });
+      ids.push(sessionId);
+    }
+    const sessionId = ids[0]!;
+    const initial = await s.store.session(sessionId);
+    const blocks = Array.from({ length: 239 }, (_, i) => ({
+      id: `history-${i}`,
+      role: "assistant" as const,
+      text: String(i).padEnd(1950, "."),
+    }));
+    await s.store.transaction(() =>
+      s.store.save(
+        {
+          ...initial,
+          revision: initial.revision + 1,
+          session: { ...initial.session, blocks },
+        },
+        { type: "fixture" },
+      ),
+    );
+    const queueDuration = async () => {
+      const start = monotonicNow();
+      const response = await s.call("sessions.queue.get", {
+        sessionId,
+        clientId: "desktop:catchup",
+      });
+      expect(response.value.result?.messages).toEqual([]);
+      return elapsedSince(start);
+    };
+    const idleMs = await queueDuration();
+    await Promise.all(
+      ids.slice(1).map((id) =>
+        s.engine.command({
+          type: "send",
+          sessionId: id,
+          commandId: `send-${id}`,
+          text: "stream",
+        }),
+      ),
+    );
+    await vi.waitFor(() => expect(turns).toHaveLength(3), { timeout: 10_000 });
+    const writes = vi.spyOn(s.store, "save");
+    for (const turn of turns) {
+      for (let i = 0; i < 48; i++) turn.onEvent({ type: "context", used: i, window: 100_000 });
+    }
+    const [sync, busyMs] = await Promise.all([
+      s.call("sessions.sync", { sessionId }),
+      queueDuration(),
+    ]);
+    expect(sync.value.result?.value.session.blocks).toHaveLength(239);
+    console.info("Queue RPC with 239 blocks and three streams", { idleMs, busyMs });
+    await vi.waitFor(
+      async () => {
+        for (const id of ids.slice(1))
+          expect((await s.store.session(id)).session.context?.used).toBe(47);
+      },
+      { timeout: 10_000 },
+    );
+    const meterWrites = writes.mock.calls.filter(
+      ([value]) => value.session.context?.window === 100_000 && ids.includes(value.session.id),
+    );
+    expect(meterWrites).toHaveLength(3);
+  } finally {
+    finish();
+  }
+});
+
+it("reads Host change cursors without loading the transcript", async () => {
+  const s = await setup();
+  const created = await s.engine.command({
+    type: "create",
+    workspaceMode: "current",
+    commandId: "metadata-only-cursor",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "codex:test",
+    runtimeMode: "supervised",
+  });
+  const readTranscript = vi.spyOn(s.store, "session");
+  try {
+    const { status, value } = await s.call("machine.changes", {
+      sessions: [{ sessionId: created.sessionId, revision: 0 }],
+    });
+    expect(status).toBe(200);
+    expect(value.result.sessions).toEqual([
+      {
+        sessionId: created.sessionId,
+        revision: expect.any(Number),
+        sourceEpoch: expect.any(String),
+      },
+    ]);
+    expect(readTranscript).not.toHaveBeenCalled();
+  } finally {
+    readTranscript.mockRestore();
+  }
+});
 
 it("coalesces unchanged list materialization without invalidating another project's list", async () => {
   const s = await setup();
@@ -543,8 +694,11 @@ it("replays the durable receipt after a lost response or host restart without st
     text: "single execution",
   };
   const accepted = await s.call("commands.dispatch", command);
-  expect(accepted.status).toBe(200);
-  await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(1));
+  expect(accepted).toMatchObject({
+    status: 200,
+    value: { result: { commandId: command.commandId } },
+  });
+  await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(1), { timeout: 10_000 });
   const racingClient = await s.call(
     "commands.dispatch",
     { ...command, commandId: "receipt-racing-send", text: "second client races" },
@@ -559,9 +713,8 @@ it("replays the durable receipt after a lost response or host restart without st
     400,
   );
   s.finish();
-  await vi.waitFor(async () =>
-    expect((await s.store.session(created.sessionId)).status).toBe("idle"),
-  );
+  await s.engine.waitForRun(created.sessionId, accepted.value.result.runId);
+  expect((await s.store.session(created.sessionId)).status).toBe("idle");
   await s.close(s);
   const afterRestart = await openHost(s.directory, vi.fn());
   const response = await fetch(afterRestart.url, {
@@ -584,8 +737,8 @@ it("replays the durable receipt after a lost response or host restart without st
 it("keeps each loopback host authoritative and usable when the other host disconnects", async () => {
   const directoryA = mkdtempSync(join(tmpdir(), "bycoda-owner-a-"));
   const directoryB = mkdtempSync(join(tmpdir(), "bycoda-owner-b-"));
-  let finishA!: () => void;
-  let finishB!: () => void;
+  let finishA: (() => void) | undefined;
+  let finishB: (() => void) | undefined;
   const sendA = vi.fn(
     (_input: SendTurnInput) =>
       new Promise<void>((resolve) => {
@@ -601,6 +754,8 @@ it("keeps each loopback host authoritative and usable when the other host discon
   const hostA = await openHost(directoryA, sendA);
   const hostB = await openHost(directoryB, sendB);
   cleanups.push(async () => {
+    finishA?.();
+    finishB?.();
     await closeHost(hostA);
     await closeHost(hostB);
     rmSync(directoryA, { recursive: true, force: true });
@@ -658,18 +813,23 @@ it("keeps each loopback host authoritative and usable when the other host discon
     sessionId: sessionB.sessionId,
     text: "owner b",
   });
-  expect(sentA.status).toBe(200);
-  expect(sentB.status).toBe(200);
-  await vi.waitFor(() => {
-    expect(sendA).toHaveBeenCalledTimes(1);
-    expect(sendB).toHaveBeenCalledTimes(1);
-  });
-  finishA();
-  finishB();
-  await vi.waitFor(async () => {
-    expect((await hostA.store.session(sessionA.sessionId)).status).toBe("idle");
-    expect((await hostB.store.session(sessionB.sessionId)).status).toBe("idle");
-  });
+  expect(sentA).toMatchObject({ status: 200, value: { result: { commandId: "owner-a-send" } } });
+  expect(sentB).toMatchObject({ status: 200, value: { result: { commandId: "owner-b-send" } } });
+  await vi.waitFor(
+    () => {
+      expect(sendA).toHaveBeenCalledTimes(1);
+      expect(sendB).toHaveBeenCalledTimes(1);
+    },
+    { timeout: 10_000 },
+  );
+  finishA!();
+  finishB!();
+  await Promise.all([
+    hostA.engine.waitForRun(sessionA.sessionId, sentA.value.result.runId),
+    hostB.engine.waitForRun(sessionB.sessionId, sentB.value.result.runId),
+  ]);
+  expect((await hostA.store.session(sessionA.sessionId)).status).toBe("idle");
+  expect((await hostB.store.session(sessionB.sessionId)).status).toBe("idle");
 
   await closeHost(hostA);
   const stillOwnedByB = await rpc(
@@ -683,12 +843,14 @@ it("keeps each loopback host authoritative and usable when the other host discon
     },
     hostB.secondToken,
   );
-  expect(stillOwnedByB.status).toBe(200);
-  await vi.waitFor(() => expect(sendB).toHaveBeenCalledTimes(2));
-  finishB();
-  await vi.waitFor(async () =>
-    expect((await hostB.store.session(sessionB.sessionId)).status).toBe("idle"),
-  );
+  expect(stillOwnedByB).toMatchObject({
+    status: 200,
+    value: { result: { commandId: "owner-b-after-a-close" } },
+  });
+  await vi.waitFor(() => expect(sendB).toHaveBeenCalledTimes(2), { timeout: 10_000 });
+  finishB!();
+  await hostB.engine.waitForRun(sessionB.sessionId, stillOwnedByB.value.result.runId);
+  expect((await hostB.store.session(sessionB.sessionId)).status).toBe("idle");
 });
 
 it("releases a disconnected long poll without blocking the command lane", async () => {
@@ -707,6 +869,7 @@ it("releases a disconnected long poll without blocking the command lane", async 
     projects: [],
   });
   const controller = new AbortController();
+  const waitForChanges = vi.spyOn(s.store.changes, "wait");
   const waiting = s.call(
     "machine.changes",
     {
@@ -718,17 +881,26 @@ it("releases a disconnected long poll without blocking the command lane", async 
     s.token,
     controller.signal,
   );
-  await new Promise((resolve) => setTimeout(resolve, 75));
-  controller.abort();
-  await expect(waiting).rejects.toThrow();
+  try {
+    await vi.waitFor(() => expect(waitForChanges).toHaveBeenCalled(), { timeout: 10_000 });
+    controller.abort();
+    await expect(waiting).rejects.toThrow();
+  } finally {
+    controller.abort();
+    await waiting.catch(() => {});
+    waitForChanges.mockRestore();
+  }
   const sent = await s.call("commands.dispatch", {
     type: "send",
     commandId: "after-cancel-send",
     sessionId: created.sessionId,
     text: "still available",
   });
-  expect(sent.status).toBe(200);
-  await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(1));
+  expect(sent).toMatchObject({
+    status: 200,
+    value: { result: { commandId: "after-cancel-send" } },
+  });
+  await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(1), { timeout: 10_000 });
   s.finish();
 });
 

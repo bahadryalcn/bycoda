@@ -21,18 +21,65 @@ export const loadRecents = useRecents;
 export const useModelCatalog = () => ({
   modelsFor: () => [{ id: "codex:gpt-6.1-sol", nativeId: "gpt-6.1-sol", name: "GPT-6.1 Sol" }],
 });
+type FixtureModel = { installed: boolean; recommended?: boolean; languages?: string[] };
+// Same pure ranking as the real catalog module, which this fixture replaces.
+export const supportsDictationLanguage = (model: FixtureModel, language: string) =>
+  !language || !model.languages || model.languages.includes(language);
+export function rankLocalModels<T extends FixtureModel>(models: T[], language: string) {
+  const score = (model: T) =>
+    Number(supportsDictationLanguage(model, language)) * 4 +
+    Number(model.installed) * 2 +
+    Number(Boolean(model.recommended));
+  return [...models].sort((left, right) => score(right) - score(left));
+}
 export const localDictationModels = {
   list: async () => {
     const state = new URLSearchParams(location.search).get("models");
     if (state === "error") throw new Error("Synthetic local model discovery failure");
     if (state === "loading") return new Promise(() => {});
     return [
-      { id: "small", label: "Whisper Small", path: "/fixture/whisper", installed: true },
+      {
+        id: "small",
+        label: "Whisper Small",
+        path: "/fixture/whisper",
+        installed: true,
+        sizeBytes: 484_000_000,
+      },
       {
         id: "turbo",
         label: "Whisper large-v3-turbo",
         path: "/fixture/whisper-turbo",
         installed: false,
+        sizeBytes: 1_620_000_000,
+      },
+      {
+        id: "nemotron",
+        label: "Nemotron Streaming 3.5",
+        path: "/fixture/nemotron",
+        installed: false,
+        sizeBytes: 751_094_240,
+        format: "gguf",
+        languages: ["en", "tr"],
+        recommended: true,
+      },
+      {
+        id: "qwen3",
+        label: "Qwen3-ASR 0.6B",
+        path: "/fixture/qwen3",
+        installed: false,
+        sizeBytes: 850_000_000,
+        format: "gguf",
+        languages: ["en", "tr", "zh"],
+      },
+      {
+        id: "parakeet",
+        label: "Parakeet Unified English 0.6B",
+        path: "/fixture/parakeet",
+        installed: false,
+        sizeBytes: 730_000_000,
+        format: "gguf",
+        languages: ["en"],
+        recommended: true,
       },
     ];
   },
@@ -63,6 +110,20 @@ export const fixtureDictation = {
 };
 
 export const localVoiceBackend = {
+  suggestDictationSettings: async (_id: string, language: string) => ({
+    text: JSON.stringify(
+      language === "tr"
+        ? {
+            instructions: "Noktalama işaretlerini düzelt, teknik terimleri koru.",
+            correctionCue: "Düzeltiyorum",
+          }
+        : {
+            instructions: "Fix punctuation and preserve technical terms.",
+            correctionCue: "Scratch that",
+          },
+    ),
+  }),
+  cancelDictationCleanup: async () => ({ cancelled: true }),
   inspect: async (config: unknown) => {
     fixtureDictation.inspected.push(config);
     return { ready: true, missing: [], python: "/fixture/python", whisperPath: "/fixture/whisper" };
@@ -72,7 +133,20 @@ export const localVoiceBackend = {
     return { state: "ready", config, requestedConfig: config };
   },
   setupStatus: async () => ({ state: "idle" }),
-  cloudStatus: async () => ({ elevenlabs: false }),
+  // `?cloud-key=saved|status-error` shows the saved and unreachable-status cloud key rows.
+  cloudStatus: async () => {
+    const state = new URLSearchParams(location.search).get("cloud-key");
+    if (state === "status-error") throw new Error("Synthetic key status failure");
+    return { elevenlabs: state === "saved", openrouter: state === "saved" };
+  },
+  setCloudKey: async (provider: string, key: string | null) => {
+    if (new URLSearchParams(location.search).get("cloud-key") === "save-error")
+      throw new Error("The key was rejected by the provider.");
+    return {
+      elevenlabs: provider === "elevenlabs" && key !== null,
+      openrouter: provider === "openrouter" && key !== null,
+    };
+  },
   transcriptionModels: async () => {
     const params = new URLSearchParams(location.search);
     if (params.get("catalog") === "loading")

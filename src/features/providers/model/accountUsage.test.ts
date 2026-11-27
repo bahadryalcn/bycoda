@@ -9,7 +9,7 @@ const fetches = vi.hoisted(() => ({
   codex: vi.fn<(accountId: string) => Promise<ProviderRateLimits>>(),
 }));
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: () => false }));
 vi.mock("./rateLimitsFetch", () => ({
   fetchClaudeRateLimits: fetches.claude,
   fetchCodexRateLimits: fetches.codex,
@@ -18,7 +18,7 @@ vi.mock("./rateLimitsFetch", () => ({
 import {
   accountHeadroom,
   accountStatus,
-  needsProviderLogin,
+  usageRenewalPending,
   providerAccountSignedOut,
   bestAlternativeAccount,
   useProviderAccountUsage,
@@ -78,7 +78,14 @@ describe("accountStatus", () => {
     );
     expect(
       accountStatus(limits(window(10), null, { status: "error", error: "Sign-in expired" }), now),
-    ).toMatchObject({ tone: "unknown", label: "Sign-in expired" });
+    ).toMatchObject({
+      tone: "unknown",
+      label: "Refresh failed. Updated just now",
+      detail: "90% left",
+    });
+    expect(
+      accountStatus(limits(window(10), null, { status: "error", reason: "signedOut" }), now),
+    ).toEqual({ tone: "unknown", label: "Not signed in", detail: null });
     expect(
       bestAlternativeAccount(
         [account("stale")],
@@ -100,6 +107,15 @@ describe("accountStatus", () => {
       tone: "low",
       label: "Running low",
       detail: "16% left",
+      critical: false,
+    });
+  });
+
+  it("marks a low account critical at or below 10% headroom", () => {
+    expect(accountStatus(limits(window(92)), now)).toMatchObject({
+      tone: "low",
+      detail: "8% left",
+      critical: true,
     });
   });
 
@@ -136,46 +152,56 @@ describe("accountStatus", () => {
   });
 });
 
-describe("needsProviderLogin", () => {
+describe("providerAccountSignedOut", () => {
   it("does not mark an idle Claude account signed out while CLI renewal is pending", () => {
     const pending = limits(null, null, {
       status: "error",
       error: "Claude usage will update when this account is used again",
     });
-    expect(needsProviderLogin(pending)).toBe(false);
     expect(providerAccountSignedOut(pending)).toBe(false);
     expect(accountStatus(pending, now).tone).toBe("unknown");
   });
 
-  it("asks for sign-in when the account is expired or signed out", () => {
+  it("follows the structured reason for an expired or signed-out account", () => {
     expect(
-      needsProviderLogin(
+      providerAccountSignedOut(
+        limits(null, null, { status: "error", error: "Sign-in required", reason: "signedOut" }),
+      ),
+    ).toBe(true);
+    expect(
+      providerAccountSignedOut(
+        limits(null, null, { status: "unavailable", error: null, reason: "signedOut" }),
+      ),
+    ).toBe(true);
+  });
+
+  it("never reads the error text for auth, whatever words it contains", () => {
+    for (const error of [
+      "Proxy authentication required",
+      "TLS certificate expired",
+      "Claude sign-in expired",
+      "Account not signed in",
+      "OpenCode Go not connected",
+    ]) {
+      expect(providerAccountSignedOut(limits(null, null, { status: "error", error }))).toBe(false);
+      expect(providerAccountSignedOut(limits(null, null, { status: "unavailable", error }))).toBe(
+        false,
+      );
+    }
+    expect(providerAccountSignedOut(limits(null, null, { status: "unavailable" }))).toBe(false);
+  });
+
+  it("offers no sign-in for a missing CLI or a healthy snapshot", () => {
+    expect(
+      providerAccountSignedOut(
         limits(null, null, {
-          status: "error",
-          error: "Claude sign-in expired",
+          status: "unavailable",
+          error: "Claude CLI not found",
+          reason: "cliMissing",
         }),
       ),
-    ).toBe(true);
-    expect(needsProviderLogin(limits(null, null, { status: "unavailable", error: null }))).toBe(
-      true,
-    );
-    expect(needsProviderLogin(limits(window(40)))).toBe(false);
-  });
-});
-
-describe("providerAccountSignedOut", () => {
-  it("treats expired sessions as signed out but not a missing CLI", () => {
-    expect(
-      providerAccountSignedOut(
-        limits(null, null, { status: "error", error: "Claude sign-in expired" }),
-      ),
-    ).toBe(true);
-    expect(
-      providerAccountSignedOut(
-        limits(null, null, { status: "unavailable", error: "Claude CLI not found" }),
-      ),
     ).toBe(false);
-    expect(providerAccountSignedOut(limits(window(40)))).toBe(false);
+    expect(providerAccountSignedOut(limits(window(40), null, { reason: "signedOut" }))).toBe(false);
   });
 });
 
@@ -295,23 +321,38 @@ describe("useProviderAccountUsage", () => {
     expect(fetches.claude).toHaveBeenCalledTimes(1);
   });
 
-  it("runs an explicit refresh after an in-flight first load", async () => {
+  it("joins an explicit refresh to an in-flight first load", async () => {
     let complete: ((value: ProviderRateLimits) => void) | undefined;
-    fetches.claude
-      .mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            complete = resolve;
-          }),
-      )
-      .mockResolvedValueOnce(limits(window(75)));
+    fetches.claude.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    );
 
     const first = loadRateLimits("claude", "default");
     const refreshed = loadRateLimits("claude", "default", true);
     expect(fetches.claude).toHaveBeenCalledTimes(1);
     complete?.(limits(window(10)));
     await first;
-    expect((await refreshed).session?.usedPercent).toBe(75);
-    expect(fetches.claude).toHaveBeenCalledTimes(2);
+    expect((await refreshed).session?.usedPercent).toBe(10);
+    expect(fetches.claude).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("usageRenewalPending", () => {
+  it("flags only the idle-account renewal message, not real errors", () => {
+    expect(
+      usageRenewalPending(
+        limits(null, null, {
+          status: "error",
+          error: "Claude usage will update when this account is used again",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      usageRenewalPending(limits(null, null, { status: "error", error: "Claude sign-in expired" })),
+    ).toBe(false);
+    expect(usageRenewalPending(undefined)).toBe(false);
   });
 });

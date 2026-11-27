@@ -3,3 +3,5 @@ export type * as publicRemoteInboxApi from "./public/remoteInbox";
 export type * as publicJiraBoardProtocolApi from "./public/jiraBoardProtocol";
 export type * as publicJiraDefaultProjectsApi from "./public/jiraDefaultProjects";
 export type * as publicWorkItemMentionsApi from "./public/workItemMentions";
+export type * as githubStatusApi from "./public/githubStatus";
+export type * as providerConnectionsApi from "./public/providerConnections";

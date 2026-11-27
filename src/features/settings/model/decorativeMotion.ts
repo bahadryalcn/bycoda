@@ -6,7 +6,6 @@ import {
   refreshWindowState,
   subscribeWindowState,
 } from "../../../platform/tauri/windowState";
-import { IS_MAC } from "../../../platform/tauri/platform";
 import { readFlag, writeFlag } from "./storageFlags";
 
 export const DECORATIVE_MOTION_KEY = "bycoda.decorativeMotion.v1";
@@ -36,11 +35,8 @@ const nativeFrame =
     : undefined;
 let media: MediaQueryList | null = null;
 const listeners = createStore();
-let nativeVisible = true;
-/** DOM focus: the only focus signal outside Tauri, and before the first native read. */
-let domFocused = typeof document === "undefined" || document.hasFocus();
 /** What subscribers were last told; unchanged states are not re-announced. */
-let published = "";
+let published: ReturnType<typeof exposedState> | undefined;
 let releaseLifecycle: (() => void) | undefined;
 
 /** The stored choice stays independent of the system's accessibility setting. */
@@ -127,63 +123,58 @@ export function prefersReducedMotion(): boolean {
 }
 
 export function decorativeMotionEnabled(): boolean {
-  return (
-    loadDecorativeMotionEnabled() &&
-    !prefersReducedMotion() &&
-    (typeof document === "undefined" || (!document.hidden && nativeVisible))
-  );
+  return exposedState().decorative;
 }
 
 /** Audio feedback paints at a capped frame rate, so the display's automatic
  * high-refresh fallback does not disable it. Explicit and accessibility choices still win. */
 export function audioFeedbackMotionEnabled(): boolean {
-  return (
-    (unsaved ?? readFlag(DECORATIVE_MOTION_KEY) ?? DECORATIVE_MOTION_DEFAULT) &&
-    !prefersReducedMotion() &&
-    (typeof document === "undefined" || (!document.hidden && nativeVisible))
-  );
+  return exposedState().audio;
 }
 
-/**
- * Whether this window has input focus. Each platform trusts the signal that is
- * right there: on macOS the native window state, because WKWebView keeps
- * document.hasFocus() true after the window drops behind another application;
- * elsewhere the page's own focus, because on Windows the native window reports
- * itself unfocused as soon as its WebView2 child takes keyboard focus (tao tracks
- * WM_KILLFOCUS on the top-level window), which is almost always.
- * The motion setting itself does not change on blur: canvas loops and the
- * `data-window-focus` CSS rules hold decorative motion on its last frame while
- * the window is behind another application.
- */
-export function windowHasFocus(): boolean {
-  return IS_MAC ? (getWindowState()?.focused ?? domFocused) : domFocused;
+/** A visible window can keep animating while input goes to another app. */
+export function motionWindowVisible(): boolean {
+  if (typeof document === "undefined") return true;
+  const state = getWindowState();
+  return !document.hidden && (!state || (state.visible && !state.minimized));
 }
 
-function syncDecorativeMotionAttribute(): void {
+function syncDecorativeMotionAttribute(snapshot?: ReturnType<typeof exposedState>): void {
   if (typeof document === "undefined") return;
+  const state = snapshot ?? exposedState();
   const root = document.documentElement.dataset;
-  root.decorativeMotion = decorativeMotionEnabled() ? "on" : "off";
-  root.windowFocus = windowHasFocus() ? "on" : "off";
+  root.decorativeMotion = state.decorative ? "on" : "off";
+  root.windowVisible = state.visible ? "on" : "off";
 }
 
 /** Everything the hooks and the root attributes expose, as one comparable value. */
-function exposedState(): string {
-  return [
-    loadDecorativeMotionEnabled(),
-    loadFollowSystemMotionEnabled(),
-    prefersReducedMotion(),
-    decorativeMotionEnabled(),
-    audioFeedbackMotionEnabled(),
-    windowHasFocus(),
-  ].join();
+function exposedState() {
+  const saved = unsaved ?? readFlag(DECORATIVE_MOTION_KEY);
+  const preference = saved ?? defaultDecorativeMotion();
+  const followSystem = loadFollowSystemMotionEnabled();
+  const reduced = followSystem && ((media ?? reducedMotionMedia())?.matches ?? false);
+  const visible = motionWindowVisible();
+  return {
+    preference,
+    followSystem,
+    reduced,
+    visible,
+    decorative: preference && !reduced && visible,
+    audio: (saved ?? DECORATIVE_MOTION_DEFAULT) && !reduced && visible,
+  };
 }
 
 /** Resize and focus bursts re-read the window often; only a real change wakes subscribers. */
 function notify(): void {
   const next = exposedState();
-  if (next === published) return;
-  published = next;
-  syncDecorativeMotionAttribute();
+  const previous = published;
+  if (
+    previous &&
+    (Object.keys(next) as (keyof typeof next)[]).every((key) => next[key] === previous[key])
+  )
+    return;
+  published = listeners.size ? next : undefined;
+  syncDecorativeMotionAttribute(next);
   listeners.notify();
 }
 
@@ -203,50 +194,20 @@ function onStorage(event: StorageEvent): void {
  * and visibilitychange covers WebViews that do expose hide/show to the DOM. The
  * native reads come from the shared window state, which owns the native listeners. */
 function installWindowLifecycle(): () => void {
-  let disposed = false;
   const native = isTauri();
-  nativeVisible = true;
   const report = (error: unknown) =>
     console.warn("Decorative motion window lifecycle unavailable", error);
-  const fromNative = () => {
-    const state = getWindowState();
-    if (disposed || !state) return;
-    nativeVisible = state.visible && !state.minimized;
-    notify();
-  };
   const visibility = () => {
     notify();
     if (native) void refreshWindowState().catch(report);
   };
-  const onFocus = () => {
-    domFocused = true;
-    visibility();
-  };
-  const onBlur = () => {
-    domFocused = false;
-    notify();
-    // Focus moving into an iframe (an HTML preview) blurs the window but keeps
-    // the document focused; settle on the document's own answer.
-    window.setTimeout(() => {
-      if (disposed || !document.hasFocus()) return;
-      domFocused = true;
-      notify();
-    }, 0);
-  };
-  domFocused = typeof document === "undefined" || document.hasFocus();
-  window.addEventListener("focus", onFocus);
-  window.addEventListener("blur", onBlur);
   document.addEventListener("visibilitychange", visibility);
-  const release = native ? subscribeWindowState(fromNative) : undefined;
+  const release = native ? subscribeWindowState(notify) : undefined;
   const cancelRefreshSample = displayRefreshHz === null ? detectDisplayRefreshRate() : undefined;
   return () => {
-    disposed = true;
     cancelRefreshSample?.();
-    window.removeEventListener("focus", onFocus);
-    window.removeEventListener("blur", onBlur);
     document.removeEventListener("visibilitychange", visibility);
     release?.();
-    nativeVisible = true;
   };
 }
 
@@ -260,7 +221,7 @@ export function subscribeDecorativeMotion(listener: () => void): () => void {
     media = reducedMotionMedia();
     releaseLifecycle = installWindowLifecycle();
     published = exposedState();
-    syncDecorativeMotionAttribute();
+    syncDecorativeMotionAttribute(published);
     media?.addEventListener("change", notify);
     window.addEventListener(DECORATIVE_MOTION_CHANGE_EVENT, notify);
     window.addEventListener("storage", onStorage);
@@ -271,6 +232,7 @@ export function subscribeDecorativeMotion(listener: () => void): () => void {
     subscribed = false;
     unsubscribe();
     if (listeners.size !== 0) return;
+    published = undefined;
     media?.removeEventListener("change", notify);
     media = null;
     releaseLifecycle?.();
@@ -283,7 +245,7 @@ export function subscribeDecorativeMotion(listener: () => void): () => void {
 export function useDecorativeMotionPreference(): boolean {
   return useSyncExternalStore(
     subscribeDecorativeMotion,
-    loadDecorativeMotionEnabled,
+    () => published?.preference ?? loadDecorativeMotionEnabled(),
     () => DECORATIVE_MOTION_DEFAULT,
   );
 }
@@ -291,13 +253,17 @@ export function useDecorativeMotionPreference(): boolean {
 export function useFollowSystemMotionEnabled(): boolean {
   return useSyncExternalStore(
     subscribeDecorativeMotion,
-    loadFollowSystemMotionEnabled,
+    () => published?.followSystem ?? loadFollowSystemMotionEnabled(),
     () => FOLLOW_SYSTEM_MOTION_DEFAULT,
   );
 }
 
 export function usePrefersReducedMotion(): boolean {
-  return useSyncExternalStore(subscribeDecorativeMotion, prefersReducedMotion, () => false);
+  return useSyncExternalStore(
+    subscribeDecorativeMotion,
+    () => published?.reduced ?? prefersReducedMotion(),
+    () => false,
+  );
 }
 
 /** Untrusted decorative code stops for OS reduced motion even when app motion is overridden. */
@@ -311,17 +277,29 @@ export function useSystemReducedMotion(): boolean {
 
 /** Use for decorative effects only; game availability is a separate setting. */
 export function useDecorativeMotionEnabled(): boolean {
-  return useSyncExternalStore(subscribeDecorativeMotion, decorativeMotionEnabled, () => false);
+  return useSyncExternalStore(
+    subscribeDecorativeMotion,
+    () => published?.decorative ?? decorativeMotionEnabled(),
+    () => false,
+  );
 }
 
 /** Only for audio feedback whose renderer caps its paint rate independently of display Hz. */
 export function useAudioFeedbackMotionEnabled(): boolean {
-  return useSyncExternalStore(subscribeDecorativeMotion, audioFeedbackMotionEnabled, () => false);
+  return useSyncExternalStore(
+    subscribeDecorativeMotion,
+    () => published?.audio ?? audioFeedbackMotionEnabled(),
+    () => false,
+  );
 }
 
-/** Whether the window is in front; decorative canvas loops hold their frame while it is not. */
-export function useWindowHasFocus(): boolean {
-  return useSyncExternalStore(subscribeDecorativeMotion, windowHasFocus, () => true);
+/** Canvas loops can hold their last frame while the window is hidden or minimized. */
+export function useMotionWindowVisible(): boolean {
+  return useSyncExternalStore(
+    subscribeDecorativeMotion,
+    () => published?.visible ?? motionWindowVisible(),
+    () => true,
+  );
 }
 
 // Bootstrap CSS consumers before React subscribes; the shared listener keeps it current.

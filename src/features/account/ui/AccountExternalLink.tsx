@@ -49,6 +49,9 @@ export function AccountExternalLink({ url, label }: { url: string; label: string
         ref={mainControl}
         variant="link"
         disabled={pending !== null}
+        disabledReason={
+          pending !== null ? t("Wait for the current operation to finish") : undefined
+        }
         loading={pending === "open"}
         loadingLabel={t("Opening…")}
         onClick={() => void run("open")}
@@ -65,6 +68,9 @@ export function AccountExternalLink({ url, label }: { url: string; label: string
           <Text wrap="anywhere">{url}</Text>
           <Button
             disabled={pending !== null}
+            disabledReason={
+              pending !== null ? t("Wait for the current operation to finish") : undefined
+            }
             loading={pending === "copy"}
             loadingLabel={t("Copying…")}
             onClick={() => void run("copy")}

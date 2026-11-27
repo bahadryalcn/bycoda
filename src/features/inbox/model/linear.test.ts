@@ -2,9 +2,15 @@
 import { describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  clearLinearCache,
+  disconnectLinear,
+  linearIssueComment,
   linearIssueDetails,
+  linearIssueThread,
   linearTeamIdsForFetch,
   peekLinearIssueDetails,
+  peekLinearIssueThread,
+  saveLinearToken,
   readHiddenLinearTeamIds,
   requireHiddenLinearTeamIds,
   saveHiddenLinearTeamIds,
@@ -27,6 +33,107 @@ describe("linear issue details cache", () => {
     expect(peekLinearIssueDetails("lin-1")).toBeNull();
     expect(peekLinearIssueDetails("lin-2")).not.toBeNull();
     expect(peekLinearIssueDetails("lin-128")).not.toBeNull();
+  });
+});
+
+/** Holds each call of one command until the test settles it, so completions can arrive out of order. */
+function holdCommand(command: string) {
+  const held: ((value: unknown) => void)[] = [];
+  vi.mocked(invoke).mockImplementation(((name: string, args: unknown) => {
+    if (name !== command) return Promise.resolve({ args });
+    return new Promise((resolve) => held.push(resolve));
+  }) as never);
+  return held;
+}
+
+describe("linear thread cache", () => {
+  it("caps at 128 entries, evicting the least recently read", async () => {
+    clearLinearCache();
+    vi.mocked(invoke).mockImplementation(
+      async (_command, args) => ({ comments: [], id: (args as { id: string }).id }) as never,
+    );
+    for (let i = 0; i < 128; i++) await linearIssueThread(`thr-${i}`);
+    expect(peekLinearIssueThread("thr-0")).not.toBeNull();
+    await linearIssueThread("thr-128");
+
+    expect(peekLinearIssueThread("thr-0")).not.toBeNull();
+    expect(peekLinearIssueThread("thr-1")).toBeNull();
+    expect(peekLinearIssueThread("thr-128")).not.toBeNull();
+  });
+
+  it("keeps the forced refresh result when the older request resolves last", async () => {
+    clearLinearCache();
+    const held = holdCommand("linear_issue_thread");
+    const stale = linearIssueThread("lin-a");
+    const fresh = linearIssueThread("lin-a", { force: true });
+    expect(held).toHaveLength(2);
+    held[1]({ comments: ["fresh"] });
+    await fresh;
+    held[0]({ comments: ["stale"] });
+    await stale;
+
+    expect(peekLinearIssueThread("lin-a")).toEqual({ comments: ["fresh"] });
+  });
+
+  it("does not cache a thread that was in flight when a comment was posted", async () => {
+    clearLinearCache();
+    const held = holdCommand("linear_issue_thread");
+    const stale = linearIssueThread("lin-b");
+    await linearIssueComment("lin-b", "hello");
+    held[0]({ comments: ["before comment"] });
+    await stale;
+
+    expect(peekLinearIssueThread("lin-b")).toBeNull();
+  });
+});
+
+describe("linear cache scope", () => {
+  it("clears cached details and threads when the token is saved or removed", async () => {
+    for (const change of [
+      () => saveLinearToken(" lin_api_new "),
+      () => disconnectLinear(),
+    ] as const) {
+      clearLinearCache();
+      vi.mocked(invoke).mockImplementation(
+        async (_command, args) => ({ id: (args as { id?: string }).id, connected: true }) as never,
+      );
+      await linearIssueDetails("lin-c");
+      await linearIssueThread("lin-c");
+      expect(peekLinearIssueDetails("lin-c")).not.toBeNull();
+      expect(peekLinearIssueThread("lin-c")).not.toBeNull();
+
+      await change();
+
+      expect(peekLinearIssueDetails("lin-c")).toBeNull();
+      expect(peekLinearIssueThread("lin-c")).toBeNull();
+    }
+  });
+
+  it("sends the trimmed token to the Host and an empty one on disconnect", async () => {
+    vi.mocked(invoke).mockReset();
+    vi.mocked(invoke).mockResolvedValue({ connected: true } as never);
+    await saveLinearToken(" lin_api_new ");
+    await disconnectLinear();
+
+    expect(invoke).toHaveBeenNthCalledWith(1, "linear_set_token", { token: "lin_api_new" });
+    expect(invoke).toHaveBeenNthCalledWith(2, "linear_set_token", { token: "" });
+  });
+
+  it("does not repopulate details or threads from requests started before a token change", async () => {
+    clearLinearCache();
+    const heldThread = holdCommand("linear_issue_thread");
+    const thread = linearIssueThread("lin-d");
+    await disconnectLinear();
+    heldThread[0]({ comments: ["old account"] });
+    await thread;
+    expect(peekLinearIssueThread("lin-d")).toBeNull();
+
+    const heldDetails = holdCommand("linear_issue_details");
+    const details = linearIssueDetails("lin-d");
+    await saveLinearToken("lin_api_other");
+    heldDetails[0]({ body: "old account" });
+    await details;
+    expect(peekLinearIssueDetails("lin-d")).toBeNull();
   });
 });
 

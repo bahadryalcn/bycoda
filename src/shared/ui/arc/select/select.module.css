@@ -47,6 +47,9 @@
   }
 }
 /* Pressing or opening keeps the field fill: only the frame answers, so the control never changes colour. */
+.trigger[data-select-width="compact"] {
+  inline-size: min(100%, 11.5rem);
+}
 .trigger:active:not([data-disabled]),
 .trigger[data-state="open"] {
   border-color: var(--ui-field-border-hover);

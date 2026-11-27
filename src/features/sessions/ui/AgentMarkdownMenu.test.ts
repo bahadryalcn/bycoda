@@ -5,6 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentMarkdown } from "./AgentMarkdown";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 
+async function rawDetails(scope: ParentNode = document): Promise<string> {
+  const trigger = scope.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+  if (!trigger) return "";
+  await act(async () => trigger.click());
+  return (
+    document.querySelector<HTMLElement>('[role="dialog"][aria-label^="Details"]')?.textContent ?? ""
+  );
+}
+
 const actions = vi.hoisted(() => ({
   copyText: vi.fn(async () => {}),
   openPathWithDefaultApp: vi.fn(async () => {}),
@@ -36,6 +45,11 @@ vi.mock("../../../platform/tauri/fs", async (importOriginal) => ({
   statFiles: actions.statFiles,
 }));
 
+const REVEAL_LABEL = IS_MAC
+  ? "Reveal in Finder"
+  : IS_WIN
+    ? "Reveal in File Explorer"
+    : "Open containing folder";
 let container: HTMLDivElement;
 let root: Root;
 let props: ComponentProps<typeof AgentMarkdown>;
@@ -55,7 +69,7 @@ function openMenu(element: Element) {
   return document.querySelector<HTMLElement>('[role="menu"][aria-label="File link actions"]');
 }
 
-async function pick(label: string, link = container.querySelector("a")!) {
+async function pick(label: string, link: Element = container.querySelector("a")!) {
   const menu = openMenu(link)!;
   const item = Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(
     (button) => button.textContent === label,
@@ -87,32 +101,27 @@ afterEach(() => {
 });
 
 describe("AgentMarkdown file link context menu", () => {
-  it("opens a folder from its visible action without opening an editor", async () => {
+  it("opens a folder from the menu without opening an editor", async () => {
     props = { ...props, text: "`/repo/My Folder`" };
     render();
     actions.isLocalDirectory.mockResolvedValue(true);
     await act(async () => {});
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="Open containing folder"]')!.click(),
-    );
+    await pick(REVEAL_LABEL, container.querySelector("code")!);
     expect(actions.openPathWithDefaultApp).toHaveBeenCalledWith("/repo/My Folder");
     expect(props.onOpenFile).not.toHaveBeenCalled();
   });
 
-  it("reveals a file from its visible action without opening an editor", async () => {
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="Open containing folder"]')!.click(),
-    );
+  it("reveals a file from the menu without opening an editor", async () => {
+    await pick(REVEAL_LABEL);
     expect(actions.revealPath).toHaveBeenCalledWith("/repo/docs/guide.md");
     expect(props.onOpenFile).not.toHaveBeenCalled();
   });
   it("shows a failed open above the transcript instead of inside the message", async () => {
     actions.revealPath.mockRejectedValueOnce(new Error("Explorer is unavailable"));
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="Open containing folder"]')!.click(),
-    );
+    await pick(REVEAL_LABEL);
     const alert = document.body.querySelector<HTMLElement>('[data-toast-region] [role="alert"]');
-    expect(alert?.textContent).toContain("Explorer is unavailable");
+    expect(alert?.textContent).toContain("Couldn’t open the file in its default app");
+    expect(await rawDetails(alert!)).toContain("Explorer is unavailable");
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
@@ -121,33 +130,28 @@ describe("AgentMarkdown file link context menu", () => {
 
     expect(menu).not.toBeNull();
     expect(menu!.textContent).toContain("Open in bycoda");
-    expect(menu!.textContent).toContain("Open in Default App");
+    expect(menu!.textContent).toContain("Open in default app");
     expect(menu!.textContent).toMatch(
-      /Reveal in Finder|Reveal in File Explorer|Open Containing Folder/,
+      /Reveal in Finder|Reveal in File Explorer|Open containing folder/,
     );
-    expect(menu!.textContent).toContain("Copy Path");
-    expect(menu!.textContent).toContain("Copy Relative Path");
+    expect(menu!.textContent).toContain("Copy path");
+    expect(menu!.textContent).toContain("Copy relative path");
   });
 
   it("runs internal-open, external-open, reveal, and copy actions", async () => {
     await pick("Open in bycoda");
     expect(props.onOpenFile).toHaveBeenCalledWith("/repo/docs/guide.md");
 
-    await pick("Open in Default App");
+    await pick("Open in default app");
     expect(actions.openPathWithDefaultApp).toHaveBeenCalledWith("/repo/docs/guide.md");
 
-    const revealLabel = IS_MAC
-      ? "Reveal in Finder"
-      : IS_WIN
-        ? "Reveal in File Explorer"
-        : "Open Containing Folder";
-    await pick(revealLabel);
+    await pick(REVEAL_LABEL);
     expect(actions.revealPath).toHaveBeenCalledWith("/repo/docs/guide.md");
 
-    await pick("Copy Path");
+    await pick("Copy path");
     expect(actions.copyText).toHaveBeenLastCalledWith("/repo/docs/guide.md");
 
-    await pick("Copy Relative Path");
+    await pick("Copy relative path");
     expect(actions.copyText).toHaveBeenLastCalledWith("docs/guide.md");
   });
 
@@ -208,7 +212,7 @@ describe("AgentMarkdown file link context menu", () => {
 
       await pick("Open in bycoda", link);
       expect(props.onOpenFile).toHaveBeenCalledWith("/repo/src/main.ts", navigation);
-      await pick("Copy Path", link);
+      await pick("Copy path", link);
       expect(actions.copyText).toHaveBeenCalledWith("/repo/src/main.ts");
     },
   );
@@ -228,10 +232,10 @@ describe("AgentMarkdown file link context menu", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     actions.openPathWithDefaultApp.mockRejectedValueOnce("No application can open this file");
 
-    await pick("Open in Default App");
+    await pick("Open in default app");
 
-    expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
-      "No application can open this file",
-    );
+    const alert = document.body.querySelector<HTMLElement>('[role="alert"]');
+    expect(alert?.textContent).toContain("Couldn’t open the file in its default app");
+    expect(await rawDetails(alert!)).toContain("No application can open this file");
   });
 });

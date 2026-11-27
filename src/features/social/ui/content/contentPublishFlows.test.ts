@@ -189,6 +189,20 @@ describe("saveRepeatProgram", () => {
     expect(config).not.toHaveProperty("enabled");
   });
 
+  it("retains the reviewed YouTube declarations in the paused program", async () => {
+    const client = host({});
+    const youtube = {
+      title: "Upload",
+      privacy: "unlisted" as const,
+      madeForKids: true,
+      containsSyntheticMedia: true,
+    };
+    await saveRepeatProgram(client as never, { ...base, accountIds: ["youtube"], youtube });
+    expect(client.request).toHaveBeenCalledWith("programs.configure", {
+      config: expect.objectContaining({ youtube }),
+    });
+  });
+
   it("uses existing media when the post has media and no image otherwise", async () => {
     const withMedia = host({});
     await saveRepeatProgram(withMedia as never, {

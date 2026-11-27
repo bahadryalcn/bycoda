@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
+  GitCommitGenerationActions,
   GitGenerationModelControl,
   useGitGenerationChoice,
 } from "../../../src/features/source-control/ui/GitGenerationSettings";
@@ -15,12 +16,19 @@ import { modelsForClaudeVersion } from "../../../src/integrations/harness/provid
 import { registerHarness } from "../../../src/integrations/harness/core/registry";
 import { languageReady } from "../../../src/shared/i18n";
 import { Button } from "../../../src/shared/ui/Button";
+import { TextareaField } from "../../../src/shared/ui/TextareaField";
 import { WandSparkles } from "../../../src/shared/ui/icons";
+import { GitCommitGenerationNotice } from "../../../src/features/source-control/ui/GitFeedback";
+import { saveProviderAccount } from "../../../src/features/providers/model/providerAccounts";
 // Shared tokens (control heights, field roles) so shared Buttons size as in the app.
 import "../../../src/styles/index.css";
 import "./git-generation.css";
 
 setHarnessModels("claude", modelsForClaudeVersion("2.1.300"));
+if (new URLSearchParams(location.search).has("commit")) {
+  saveProviderAccount({ id: "work", provider: "claude", label: "Work" });
+  saveProviderAccount({ id: "personal", provider: "claude", label: "Personal" });
+}
 // Git generation offers only text-capable providers; their models feed the advisor and subagent rows.
 const unavailable = async () => {
   throw new Error("No live provider in git generation fixture");
@@ -101,4 +109,80 @@ function Fixture() {
     </ModelSourceContext.Provider>
   );
 }
-void languageReady.then(() => createRoot(document.getElementById("root")!).render(<Fixture />));
+
+function CommitControlFixture() {
+  const [choice, update] = useGitGenerationChoice("/fixture", "commit");
+  const [draft, setDraft] = useState("Keep this commit draft");
+  return (
+    <ModelSourceContext.Provider value={source}>
+      <aside className="m-3 w-[calc(100%-24px)] max-w-[340px] p-2 text-content">
+        <TextareaField
+          label="Commit message"
+          hideLabel
+          fieldSize="sm"
+          minRows={1}
+          autosize
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          endAdornment={
+            <GitCommitGenerationActions
+              cwd="/fixture"
+              preferred="claude"
+              choice={choice}
+              onChange={update}
+              canGenerate
+              generating={false}
+              generate={() => setDraft("Fixture commit message")}
+              cancel={() => {}}
+            />
+          }
+        />
+      </aside>
+    </ModelSourceContext.Provider>
+  );
+}
+
+function CommitNoticeFixture() {
+  const [notice, setNotice] = useState(true);
+  const [draft, setDraft] = useState("Describe the staged changes");
+  const hasSuggestion = new URLSearchParams(location.search).has("suggestion");
+  return (
+    <aside className="m-3 flex w-[calc(100%-24px)] max-w-[440px] flex-col gap-1.5 p-2">
+      <TextareaField
+        label="Commit message"
+        hideLabel
+        fieldSize="sm"
+        minRows={1}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+      />
+      <Button variant="primary">Commit</Button>
+      {notice && (
+        <GitCommitGenerationNotice
+          result={{
+            changesUpdated: !hasSuggestion,
+            suggestion: hasSuggestion ? "Generated commit message" : undefined,
+          }}
+          onUse={() => {
+            setDraft("Generated commit message");
+            setNotice(false);
+          }}
+          onDismiss={() => setNotice(false)}
+        />
+      )}
+    </aside>
+  );
+}
+
+const mode = new URLSearchParams(location.search);
+void languageReady.then(() =>
+  createRoot(document.getElementById("root")!).render(
+    mode.has("notice") ? (
+      <CommitNoticeFixture />
+    ) : mode.has("commit") ? (
+      <CommitControlFixture />
+    ) : (
+      <Fixture />
+    ),
+  ),
+);

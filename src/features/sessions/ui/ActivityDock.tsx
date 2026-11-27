@@ -1,7 +1,7 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { LiveText } from "../../../shared/ui/LiveText";
-import { Badge } from "../../../shared/ui/Badge";
+import { Divider } from "../../../shared/ui/Divider";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Button } from "../../../shared/ui/Button";
 import { useLocale, useT } from "../../../shared/i18n";
@@ -11,26 +11,34 @@ import { ClampText } from "../../../shared/ui/ClampText";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { useDelegatedRunDiscovery } from "../../connections/public/delegatedRuns";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { AccountColorDot } from "../../providers/public/accountIdentity";
 import {
   providerAccounts,
   subscribeProviderAccounts,
   supportsProviderAccounts,
   type ProviderAccount,
 } from "../../providers/public/providerAccounts";
-import { Check, ChevronRight, CircleAlert, Square, X } from "../../../shared/ui/icons";
-import { useActivityDock, useDockCountLabel, useStopAllControl } from "../model/reactiveReads";
-import { type ActivityDock as ActivityDockModel, type DockAgent } from "../model/activityDock";
+import { Check, ChevronRight, CircleAlert, Square } from "../../../shared/ui/icons";
+import { useActivityDock, useDockCountParts, useStopAllControl } from "../model/reactiveReads";
+import {
+  groupDockAgents,
+  type ActivityDock as ActivityDockModel,
+  type DockAgent,
+} from "../model/activityDock";
 import { canStopAgent } from "../model/backgroundStop";
 import { hasPendingApproval, type Block, type HarnessId } from "../model/session";
 import { executionUserIndex } from "../model/executionTurn";
 import { useTurnClockInTranscript, useTurnClockOrigin } from "../model/turnActivity";
 import { AgentClock } from "./AgentClock";
-import { SubagentMarks, SubagentStatusSummary } from "./SubagentAnatomy";
+import { AgentStatusDot } from "./AgentStatusDot";
+import { DockAgentCard } from "./DockAgentCard";
+import rowStyles from "./SubagentRow.module.css";
+import { HarnessIcon } from "./HarnessIcon";
+import type { TextTone } from "../../../shared/ui/Text";
 import { formatElapsed, useElapsedFrom } from "./useElapsedFrom";
 import { STOP_ALL, useStopRequests } from "./useStopRequests";
 import { PacingUncle } from "./PacingUncle";
 import { DockApprovalActions } from "./ActivityDockApproval";
+import { DockStopAll } from "./ActivityDockStopAll";
 import "./chat-controls.css";
 
 const expandedBySession = new Map<string, boolean>();
@@ -74,6 +82,7 @@ type Props = {
   onStopAll?: () => Promise<void>;
   /** Cross-provider children of this session, already mapped to rows. */
   delegatedAgents?: DockAgent[];
+  goalControl?: React.ReactNode;
 };
 
 /**
@@ -81,6 +90,7 @@ type Props = {
  * agent rows scroll away with the turn they belong to; this reads the same
  * data (one `deriveActivityDock`) from the one place the reader always is.
  */
+// oxlint-disable-next-line bycoda/compiler-owns-memo -- The dock re-renders with every streamed block of its composer; this boundary predates the compiler and stays until its callers are confirmed compiled.
 export const ActivityDock = memo(function ActivityDock({
   sessionId,
   harness,
@@ -99,6 +109,7 @@ export const ActivityDock = memo(function ActivityDock({
   onStopAgent,
   onStopAll,
   delegatedAgents,
+  goalControl,
 }: Props) {
   useLocale();
   const t = useT();
@@ -117,6 +128,7 @@ export const ActivityDock = memo(function ActivityDock({
   const [completedTurn, setCompletedTurn] = useState<string>();
   const previous = useRef({ busy, turnId, sessionId });
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Marks the turn that just finished by comparing with the previous render's busy flag kept in a ref.
   useEffect(() => {
     const prior = previous.current;
     if (busy || (visible && atEnd) || prior.turnId !== turnId || prior.sessionId !== sessionId) {
@@ -127,6 +139,7 @@ export const ActivityDock = memo(function ActivityDock({
     previous.current = { busy, turnId, sessionId };
   }, [busy, turnId, sessionId, visible, atEnd]);
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Listens for focus entering the composer DOM node to acknowledge the finished turn while mounted.
   useEffect(() => {
     const composer = root.current?.closest("[data-composer]");
     if (!composer) return;
@@ -170,12 +183,18 @@ export const ActivityDock = memo(function ActivityDock({
   return (
     <div ref={root}>
       {discovery.error ? (
-        <InlineError retry={{ onRetry: discovery.retry }}>{discovery.error}</InlineError>
+        <InlineError details={discovery.error} retry={{ onRetry: discovery.retry }}>
+          {t("Could not load background work.")}
+        </InlineError>
       ) : null}
       {/* Always mounted, so a state change is announced rather than the dock
           appearing. The ticking clock stays out of it. */}
       <LiveText className="sr-only" text={questionOnlyNotice ? "" : displayLabel} />
-      {dock.state === "idle" || questionOnlyNotice ? null : (
+      {dock.state === "idle" || questionOnlyNotice ? (
+        goalControl ? (
+          <div className="flex justify-end px-3">{goalControl}</div>
+        ) : null
+      ) : (
         <DockBody
           key={dock.state === "done" ? "done" : "live"}
           sessionId={sessionId}
@@ -187,6 +206,7 @@ export const ActivityDock = memo(function ActivityDock({
           clockOrigin={clockOrigin ?? dock.startedAt}
           clockInTranscript={clockInTranscript}
           onOpenAgent={onOpenAgent}
+          goalControl={goalControl}
           stop={{
             ...stops,
             perItem: perItemStop && !!onStopAgent,
@@ -215,6 +235,7 @@ function DockBody({
   clockOrigin,
   clockInTranscript,
   onOpenAgent,
+  goalControl,
   stop,
 }: {
   sessionId: string;
@@ -226,10 +247,12 @@ function DockBody({
   clockOrigin?: number;
   clockInTranscript: boolean;
   onOpenAgent: (agent: DockAgent) => void;
+  goalControl?: React.ReactNode;
   stop: DockStop;
 }) {
   const t = useT();
   const [expanded, setExpandedState] = useState(() => expandedBySession.get(sessionId) ?? false);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Counts this mounted dock in the module-level registry of active sessions until unmount.
   useEffect(() => {
     activeSessions.set(sessionId, (activeSessions.get(sessionId) ?? 0) + 1);
     return () => {
@@ -251,10 +274,95 @@ function DockBody({
   const hasAgents = listed.length > 0;
   const open = expanded && hasAgents;
   const listId = `activity-dock-agents-${sessionId}`;
-  const counts = useDockCountLabel(dock);
+  const counts = useDockCountParts(dock);
   const clock = (dock.state === "working" || dock.state === "waiting") && !clockInTranscript;
   const stopAllWhenWired = useStopAllControl(dock, stop.perItem);
   const stopAll = stop.onAll ? stopAllWhenWired : null;
+
+  const summary = (
+    <span className="activity-dock-summary">
+      <DockMark state={dock.state} />
+      <Text
+        as="span"
+        size="inherit"
+        tone={
+          dock.state === "needs-input" ? "warning" : dock.state === "done" ? "success" : "secondary"
+        }
+        truncate
+      >
+        {label}
+      </Text>
+      {clock ? <DockClock startedAt={clockOrigin} /> : null}
+      {/* Inside the summary so it stays on the label's row. In a narrow dock it takes no
+            width of its own and walks behind the controls. */}
+      {dock.state === "working" || dock.state === "waiting" ? (
+        <span
+          data-pacing-track="reserved"
+          className="pointer-events-none relative ms-auto -me-1 block h-8 w-20 shrink-0 overflow-clip"
+        >
+          <PacingUncle visible={visible} />
+        </span>
+      ) : null}
+    </span>
+  );
+  // The whole header is the trigger: state, clock and counts open the list together.
+  const toggle = (
+    // oxlint-disable-next-line bycoda/transcript-row-trigger -- the dock header is composer chrome, not a transcript row
+    <Button
+      variant="ghost"
+      type="button"
+      aria-expanded={open}
+      controlHeight="auto"
+      padding={{ block: "xs" }}
+      aria-controls={listId}
+      data-dock-toggle=""
+      label={`${label}. ${
+        open
+          ? t("Background work, {p0}. Hide list", {
+              p0: counts.map(({ text }) => text).join(" · "),
+            })
+          : t("Background work, {p0}. Show list", {
+              p0: counts.map(({ text }) => text).join(" · "),
+            })
+      }`}
+      tooltip={open ? t("Hide background work") : t("Show background work")}
+      onClick={() => setExpanded(!open)}
+      className="max-w-full min-w-0 shrink-0"
+    >
+      <span className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-1">
+        {/* The provider marks name who runs the work; the counts say how it stands.
+        "Background work" stays in the accessible label only. */}
+        <span className="flex min-w-0 items-center gap-2">
+          <ProviderStack agents={listed} fallback={harness} />
+          <span className="flex min-w-0 flex-wrap items-center gap-x-1">
+            {counts.map(({ text, tone }, index) => (
+              <Text key={text} size="inherit" tone={tone ?? "inherit"}>
+                {index ? `· ${text}` : text}
+              </Text>
+            ))}
+          </span>
+        </span>
+      </span>
+    </Button>
+  );
+  // The arrow closes the header row, after Stop all, like the arrow ending each list row. The
+  // counts button above is the keyboard trigger; the arrow is the same toggle for the pointer.
+  const chevron = (
+    // oxlint-disable-next-line bycoda/transcript-row-trigger -- the dock header is composer chrome, not a transcript row
+    <Button
+      variant="ghost"
+      iconOnly
+      type="button"
+      expanded={open}
+      opens="up"
+      tabIndex={-1}
+      aria-controls={listId}
+      data-dock-chevron=""
+      label={open ? t("Hide background work") : t("Show background work")}
+      onClick={() => setExpanded(!open)}
+      className="shrink-0"
+    />
+  );
 
   return (
     <Text
@@ -270,88 +378,41 @@ function DockBody({
         }`,
       )}
     >
+      {/* Announces a failed stop; the button itself only reads "Retry stop". */}
+      <LiveText
+        className="sr-only"
+        text={stop.failed.size ? t("Could not stop it. Try again.") : ""}
+      />
       <Text as="div" size="inherit" tone="secondary" className="relative" data-activity-status-row>
         <div className="relative flex min-h-8 min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1">
-          <div className="activity-dock-summary">
-            <DockMark state={dock.state} />
-            <Text
-              as="span"
-              size="inherit"
-              tone={
-                dock.state === "needs-input"
-                  ? "warning"
-                  : dock.state === "done"
-                    ? "success"
-                    : "secondary"
-              }
-              truncate
-            >
-              {label}
-            </Text>
-            {clock ? <DockClock startedAt={clockOrigin} /> : null}
-            {/* Inside the summary: a narrow dock gives the summary a full row, and the
-                walker must stay on it instead of wrapping below the label. */}
-            {dock.state === "working" || dock.state === "waiting" ? (
-              <div
-                data-pacing-track="reserved"
-                className="pointer-events-none relative ms-auto -me-1 h-8 w-20 shrink-0 overflow-clip"
-              >
-                <PacingUncle visible={visible} />
-              </div>
-            ) : null}
-          </div>
+          {summary}
           {dock.state === "needs-input" ? <DockApprovalActions blocks={blocks} /> : null}
+          {/* Right side: counts, then Stop all, then the arrow flush right, the same order as a list row. */}
+          {hasAgents ? toggle : null}
           {stopAll ? (
-            <Button
-              className="shrink-0"
-              variant="ghost"
-              type="button"
-              tooltip={stopAll.title}
-              disabled={stop.stopping.has(STOP_ALL)}
-              onClick={() => stop.request(STOP_ALL, () => stop.onAll!())}
-            >
-              <Square className="icon-xs" strokeWidth={1.75} />
-              {stop.stopping.has(STOP_ALL)
-                ? t("Stopping…")
-                : stop.failed.has(STOP_ALL)
-                  ? t("Could not stop. Retry")
-                  : stopAll.label}
-            </Button>
+            // Keyed so a confirmation armed in one session cannot carry into another.
+            <DockStopAll
+              key={sessionId}
+              control={stopAll}
+              stopping={stop.stopping.has(STOP_ALL)}
+              failed={stop.failed.has(STOP_ALL)}
+              onStop={() => stop.request(STOP_ALL, () => stop.onAll!())}
+            />
           ) : null}
-          {hasAgents ? (
-            <>
-              <Button
-                variant="ghost"
-                type="button"
-                expanded={open}
-                opens="up"
-                aria-controls={listId}
-                data-dock-toggle=""
-                label={t(
-                  open ? "Background work, {p0}. Hide list" : "Background work, {p0}. Show list",
-                  { p0: counts },
-                )}
-                tooltip={open ? t("Hide background work") : t("Show background work")}
-                onClick={() => setExpanded(!open)}
-                className="shrink-0"
-              >
-                <span className="tabular-nums">{counts}</span>
-              </Button>
-            </>
-          ) : null}
+          {hasAgents ? chevron : null}
+          {goalControl}
         </div>
       </Text>
       {open ? (
-        <div
-          id={listId}
-          ref={lockList}
-          className="activity-dock-list flex max-h-60 flex-col gap-0.5 overflow-x-hidden overflow-y-auto overscroll-none px-1 pb-1"
-        >
-          {/* Running rows lead, so their Stop buttons are not buried under
+        <div id={listId}>
+          <Divider inset="md" decorative />
+          <div
+            ref={lockList}
+            className="activity-dock-list flex max-h-[min(26rem,45vh)] flex-col gap-0.5 overflow-x-hidden overflow-y-auto overscroll-none px-1 py-1"
+          >
+            {/* Running rows lead, so their Stop buttons are not buried under
               finished ones. The sort is stable: transcript order otherwise. */}
-          {[...listed]
-            .sort((a, b) => Number(b.status === "running") - Number(a.status === "running"))
-            .map((agent) => (
+            {renderDockAgentGroups(listed, t("Workflow"), (agent) => (
               <DockAgentRow
                 key={agent.blockId}
                 agent={agent}
@@ -360,9 +421,33 @@ function DockBody({
                 stop={stop}
               />
             ))}
+          </div>
         </div>
       ) : null}
     </Text>
+  );
+}
+
+function renderDockAgentGroups(
+  agents: readonly DockAgent[],
+  workflowLabel: string,
+  row: (agent: DockAgent) => React.ReactNode,
+) {
+  const { standalone, phases } = groupDockAgents(
+    [...agents].sort((a, b) => Number(b.status === "running") - Number(a.status === "running")),
+  );
+  return (
+    <>
+      {standalone.map(row)}
+      {phases.map(({ id, phase, agents }) => (
+        <div key={id}>
+          <Text size="caption" tone="muted" className="px-2 py-1">
+            {phase ? `${workflowLabel} · ${phase}` : workflowLabel}
+          </Text>
+          {agents.map(row)}
+        </div>
+      ))}
+    </>
   );
 }
 
@@ -390,10 +475,43 @@ function DockMark({ state }: { state: ActivityDockModel["state"] }) {
   }
   return (
     <StatusDot
-      label={t(state === "working" ? "Working" : "Waiting")}
+      label={state === "working" ? t("Working") : t("Waiting")}
       aria-hidden
       tone={state === "working" ? "accent" : "neutral"}
     />
+  );
+}
+
+const STATUS_TONE = {
+  running: "accent",
+  done: "secondary",
+  failed: "danger",
+  stopped: "warning",
+  interrupted: "warning",
+} as const satisfies Record<DockAgent["status"], TextTone>;
+
+/** Each provider running the listed work, once. */
+function ProviderStack({
+  agents,
+  fallback,
+}: {
+  agents: readonly DockAgent[];
+  fallback?: HarnessId;
+}) {
+  const providers = [
+    ...new Set(
+      agents.flatMap((agent) =>
+        agent.kind === "agent" && (agent.harness ?? fallback) ? [agent.harness ?? fallback!] : [],
+      ),
+    ),
+  ].slice(0, 4);
+  if (!providers.length) return null;
+  return (
+    <span className="flex shrink-0 items-center gap-0.5" aria-hidden="true" data-dock-providers>
+      {providers.map((provider) => (
+        <HarnessIcon key={provider} harness={provider} size="sm" />
+      ))}
+    </span>
   );
 }
 
@@ -436,111 +554,104 @@ function DockAgentRow({
   const stoppable = canStopAgent(agent, stop.perItem) && !!stop.onAgent;
   const stopping = stop.stopping.has(key);
   return (
-    <div className="activity-dock-item flex min-w-0 items-start py-0.5">
+    // One grid row: the row button spans it, Stop and the chevron sit on its end in their own
+    // columns, so every Stop stands just left of its arrow and the whole row still opens the item.
+    <div
+      className={`activity-dock-item grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] py-0.5 ${agent.kind === "agent" ? "items-center" : "items-start"}`}
+    >
       <Button
         variant="item"
         type="button"
-        aria-label={t(agent.kind === "agent" ? "Open {p0}" : "Show {p0}", { p0: summary })}
+        aria-label={
+          agent.kind === "agent" ? t("Open {p0}", { p0: summary }) : t("Show {p0}", { p0: summary })
+        }
         data-dock-agent={agent.blockId}
         data-dock-agent-state={agent.status}
         onClick={() => onOpen(agent)}
-        className="activity-dock-agent min-w-0 flex-1 items-center text-left"
+        className={`activity-dock-agent col-span-full row-start-1 min-w-0 items-center text-start ${agent.kind === "agent" ? rowStyles.row : ""}`}
       >
-        <span className="flex shrink-0" aria-hidden="true">
-          <AgentStatusDot status={agent.status} />
-        </span>
-        <span className="activity-dock-agent-identity flex min-w-0 flex-1 flex-col gap-0.5">
-          <ClampText
-            as="span"
-            lines={2}
-            expandable={false}
-            size="inherit"
-            tone="neutral"
-            weight="medium"
-            className="whitespace-pre-wrap [overflow-wrap:anywhere]"
-          >
-            {agent.name}
-            {agent.crewMember?.handle ? (
-              <Text size="inherit" tone="muted" weight="regular" className="ml-1.5">
-                @{agent.crewMember.handle}
-              </Text>
-            ) : null}
-            {agent.round && agent.round > 1 ? (
-              <Badge size="xs" appearance="subtle" tone="neutral" className="ml-1.5">
-                {t("Round {p0}", { p0: agent.round })}
-              </Badge>
-            ) : null}
-          </ClampText>
-          {agent.kind === "agent" ? (
-            <Text size="micro" tone="muted" className="flex min-w-0 items-center gap-1.5">
-              <SubagentMarks
-                name={agent.name}
-                member={agent.crewMember}
-                harness={provider}
-                active={agent.status === "running"}
-                failed={agent.status === "failed"}
-              />
-              <Text size="inherit" tone="inherit" truncate>
-                {agent.model ?? t("Subagent")}
-              </Text>
-              {account ? <AccountColorDot account={account} /> : null}
-              {accountLabel ? (
-                <Text size="inherit" tone="inherit" truncate>
-                  {accountLabel}
-                </Text>
-              ) : null}
-              {agent.nested ? (
-                <Text size="inherit" tone="inherit" className="shrink-0" data-dock-agent-nested>
-                  {t("Subagents: {p0}", { p0: agent.nested })}
-                </Text>
-              ) : null}
-              {agent.needsInput ? (
-                <Badge size="xs" tone="warning" appearance="subtle" className="shrink-0">
-                  {t("Needs input")}
-                </Badge>
-              ) : null}
-            </Text>
-          ) : null}
-        </span>
-        <Text
-          size="inherit"
-          tone="secondary"
-          className="activity-dock-agent-metrics flex shrink-0 flex-wrap items-center justify-end gap-x-2"
-        >
-          {agent.detail ? (
+        {agent.kind === "agent" ? (
+          <DockAgentCard agent={agent} provider={provider} />
+        ) : (
+          <>
+            {/* A command has no provider and keeps its state mark. */}
+            <span
+              className="flex shrink-0 self-start pt-0.5"
+              aria-hidden="true"
+              data-dock-agent-lead
+            >
+              <AgentStatusDot status={agent.status} size="md" />
+            </span>
+            <span className="activity-dock-agent-identity flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="flex min-w-0 items-start gap-1.5" data-dock-agent-title>
+                <ClampText
+                  as="span"
+                  lines={2}
+                  expandable={false}
+                  size="inherit"
+                  tone="neutral"
+                  weight="medium"
+                  className="whitespace-pre-wrap [overflow-wrap:anywhere]"
+                >
+                  {agent.name}
+                </ClampText>
+              </span>
+            </span>
             <Text
               size="inherit"
-              tone={
-                agent.status === "failed"
-                  ? "danger"
-                  : agent.status === "stopped" || agent.status === "interrupted"
-                    ? "warning"
-                    : "inherit"
-              }
-              className="min-w-0"
+              tone="secondary"
+              className="activity-dock-agent-metrics flex shrink-0 flex-wrap items-center justify-end gap-x-2"
             >
-              {agent.detailParts ? (
-                <SubagentStatusSummary parts={agent.detailParts} />
-              ) : (
-                agent.detail
+              {agent.detail ? (
+                <Text
+                  size="inherit"
+                  tone={
+                    agent.status === "failed"
+                      ? "danger"
+                      : agent.status === "stopped" || agent.status === "interrupted"
+                        ? "warning"
+                        : "inherit"
+                  }
+                  className="min-w-0"
+                >
+                  {agent.detail}
+                </Text>
+              ) : null}
+              {/* A detail that already names the state ("stopped by you") keeps it once. */}
+              {agent.detail?.toLocaleLowerCase().includes(statusWord.toLocaleLowerCase()) ? null : (
+                <Text
+                  size="inherit"
+                  tone={STATUS_TONE[agent.status]}
+                  weight={agent.status === "failed" ? "medium" : undefined}
+                  className="inline-flex shrink-0 items-center gap-1"
+                  data-dock-agent-status
+                >
+                  <AgentStatusDot status={agent.status} />
+                  {statusWord}
+                </Text>
               )}
+              <AgentClock
+                startedAt={agent.startedAt}
+                endedAt={agent.endedAt}
+                live={agent.status === "running"}
+              />
             </Text>
-          ) : null}
-          <AgentClock
-            startedAt={agent.startedAt}
-            endedAt={agent.endedAt}
-            live={agent.status === "running"}
-          />
-        </Text>
-        <ChevronRight className="icon-xs shrink-0" tone="secondary" strokeWidth={1.75} />
+          </>
+        )}
+        {/* Keeps the row's text clear of the Stop and arrow that sit over its end. */}
+        <span aria-hidden="true" className={`shrink-0 ${stoppable ? "w-11" : "w-3"}`} />
       </Button>
       {stoppable ? (
         <Button
-          className="mr-1 shrink-0"
+          className="col-start-2 row-start-1 me-1 shrink-0 self-center"
+          iconOnly
           variant="ghost"
+          tone={stop.failed.has(key) ? "danger" : "neutral"}
           type="button"
-          disabled={stopping}
-          aria-label={t(stopping ? "Stopping {p0}" : "Stop {p0}", { p0: agent.name })}
+          loading={stopping}
+          label={
+            stopping ? t("Stopping {p0}", { p0: agent.name }) : t("Stop {p0}", { p0: agent.name })
+          }
           tooltip={
             stop.failed.has(key)
               ? t("Could not stop it. Try again.")
@@ -552,31 +663,15 @@ function DockAgentRow({
           }
           onClick={() => stop.request(key, () => stop.onAgent!(agent))}
         >
-          <Square className="icon-xs" strokeWidth={1.75} />
-          {stopping
-            ? t("Stopping…")
-            : stop.failed.has(key)
-              ? t("Could not stop. Retry")
-              : t("Stop")}
+          <Square className="icon-xs" strokeWidth={1.75} aria-hidden />
         </Button>
       ) : null}
+      <ChevronRight
+        className="pointer-events-none col-start-3 row-start-1 me-2 icon-xs shrink-0 self-center"
+        tone="secondary"
+        strokeWidth={1.75}
+        aria-hidden
+      />
     </div>
   );
-}
-
-export function AgentStatusDot({ status }: { status: DockAgent["status"] }) {
-  useLocale();
-  if (status === "running") return <WorkingIndicator size="xs" />;
-  if (status === "done")
-    return <Check className="icon-xs shrink-0" tone="success" strokeWidth={2} />;
-  if (status === "failed") {
-    return <X className="icon-xs shrink-0" tone="danger" strokeWidth={2} />;
-  }
-  if (status === "stopped") {
-    return <Square className="icon-xs shrink-0" tone="warning" strokeWidth={2} />;
-  }
-  if (status === "interrupted") {
-    return <CircleAlert className="icon-xs shrink-0" tone="warning" strokeWidth={2} />;
-  }
-  return null;
 }

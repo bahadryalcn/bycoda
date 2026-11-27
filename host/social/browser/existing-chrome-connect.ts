@@ -2,7 +2,7 @@ import type { SocialAccount } from "../../../src/features/social/model/social";
 import { browserOperations } from "../../../src/integrations/social/browserCapabilities";
 import { X_BROWSER_SCOPES } from "../../../src/integrations/social/capabilities";
 import { SocialPlatformError } from "../../../src/integrations/social/adapter";
-import { challengeError, detectChallenge } from "./challenge";
+import { assertRedditBrowserAccess, challengeError, detectChallenge } from "./challenge";
 import type { SocialPrincipal, SocialService } from "../social";
 import type { BrowserRecipe, BrowserIdentity } from "../social-browser-recipe";
 import { xUserId } from "../social-browser-x-page";
@@ -59,6 +59,7 @@ export async function connectExistingChrome(input: {
   try {
     await validate();
     await session.page.goto(destination);
+    if (account.platform === "reddit") await assertRedditBrowserAccess(session.page);
     let identity: BrowserIdentity | undefined;
     for (let attempt = 0; attempt < 60; attempt++) {
       await validate();

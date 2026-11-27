@@ -1,4 +1,3 @@
-import { NATIVE_BUFFER_UPLOAD_METHODS } from "../../src/shared/model/host-contracts/native-buffer-upload";
 import { NATIVE_DELIVERY_METHODS } from "../../src/shared/model/host-contracts/native-delivery";
 import {
   DEVICE_LIFECYCLE_METHODS,
@@ -15,6 +14,7 @@ import { type HostDomainContext } from "../domains/context";
 import { createHostDispatcher } from "../transport/dispatch";
 import type { ServerBindings } from "./bindings";
 import { createHostModelRoutingService } from "../model-routing/runtime";
+import { catalogFactsDomain } from "../model-routing/catalog-facts";
 import { createModelRoutingDomainService } from "../domains/model-routing/service";
 import { readUsageLimits } from "../usage/limits-report";
 import { hostUsageLimitsDeps } from "./usage-limits-deps";
@@ -24,11 +24,20 @@ import { assertDomainAuthority } from "../domains/context";
 import { SIDE_CHAT_RPC } from "../../src/shared/model/host-contracts/side-chat";
 import { askSideQuestion } from "../side-chat/side-question";
 import { reportDraftPresence } from "../drafts/rpc";
+import { createGroupLockService } from "../group-lock/rpc";
 import { SecretInputListParamsSchema } from "../../src/shared/model/host-contracts/secrets-input";
+import { voiceSocketOperations } from "../voice/voice-ws-operations";
+import { sessionApprovalGrantsRpc } from "../approvals/session-approval-grants-rpc";
 export function createRegistryRuntime(
   dependencies: Pick<
     ServerBindings,
     | "engine"
+    | "localVoice"
+    | "voiceCloud"
+    | "voiceSetup"
+    | "voiceCallSettings"
+    | "voiceRelays"
+    | "featureDirectory"
     | "accountPlatform"
     | "models"
     | "environmentService"
@@ -41,7 +50,6 @@ export function createRegistryRuntime(
     | "nativeServiceUploads"
     | "nativeServicesService"
     | "modelsService"
-    | "nativeBufferUploads"
     | "nativeWorkspacesService"
     | "crewOperation"
     | "sessionService"
@@ -59,20 +67,27 @@ export function createRegistryRuntime(
     | "terminalService"
     | "persistenceService"
     | "conversationDesktop"
+    | "desktop"
   >,
 ) {
   const modelRouting = createHostModelRoutingService({
     store: dependencies.engine.store,
     catalog: () => dependencies.models(),
-    readLimits: () => readUsageLimits(hostUsageLimitsDeps(dependencies.engine.store.environmentId)),
+    readLimits: (target) =>
+      readUsageLimits(hostUsageLimitsDeps(dependencies.engine.store.environmentId), target),
     command: async (provider) => (await resolveBinary[provider]()).path,
   });
   const modelRoutingService = createModelRoutingDomainService(modelRouting);
+  const groupLockService = createGroupLockService({
+    groupLock: () => dependencies.desktop.live.groupLock,
+  });
+  const catalogFactsService = catalogFactsDomain(dependencies.featureDirectory);
   const domainDispatcher = createHostDispatcher({
     environmentId: dependencies.engine.store.environmentId,
     environment: dependencies.environmentService,
     projects: dependencies.projectsService,
     operations: {
+      ...voiceSocketOperations(dependencies),
       "assistant.request": assistantDomain(dependencies.assistant, dependencies.engine.store),
       "desktop.request": desktopControlDomain(
         dependencies.desktopControl,
@@ -119,13 +134,7 @@ export function createRegistryRuntime(
       "modelRouting.save": modelRoutingService.save,
       "modelRouting.status": modelRoutingService.status,
       "modelRouting.resolve": modelRoutingService.resolve,
-      ...Object.fromEntries(
-        NATIVE_BUFFER_UPLOAD_METHODS.map((method) => [
-          method,
-          (params: Record<string, unknown>, context: HostDomainContext) =>
-            dependencies.nativeBufferUploads.call(method, params, context),
-        ]),
-      ),
+      "modelRouting.catalogFacts": catalogFactsService.catalogFacts,
       ...Object.fromEntries(
         NATIVE_WORKSPACE_METHODS.map((method) => [
           method,
@@ -143,6 +152,7 @@ export function createRegistryRuntime(
       "crews.deleteRun": dependencies.crewOperation("crews.deleteRun"),
       "crews.agent.save": dependencies.crewOperation("crews.agent.save"),
       "crews.agent.delete": dependencies.crewOperation("crews.agent.delete"),
+      "crews.agent.group.update": dependencies.crewOperation("crews.agent.group.update"),
       "crews.start": dependencies.crewOperation("crews.start"),
       "crews.get": dependencies.crewOperation("crews.get"),
       "crews.assign": dependencies.crewOperation("crews.assign"),
@@ -159,7 +169,12 @@ export function createRegistryRuntime(
       "sessions.page": dependencies.sessionService.page,
       "sessions.sync": dependencies.sessionService.sync,
       "sessions.get": dependencies.sessionService.get,
+      "sessions.approvalGrants.list": (params, context) =>
+        sessionApprovalGrantsRpc(dependencies.engine, params, context),
+      "sessions.approvalGrants.revoke": (params, context) =>
+        sessionApprovalGrantsRpc(dependencies.engine, params, context, true),
       "sessions.block": dependencies.sessionService.block,
+      "sessions.inlineVisual": dependencies.sessionService.inlineVisual,
       "sessions.workedTime": dependencies.sessionService.workedTime,
       "sessions.syncChunk": dependencies.sessionService.syncChunk,
       "commands.status": dependencies.commandService.status,
@@ -190,6 +205,10 @@ export function createRegistryRuntime(
           params,
           context,
         ),
+      "projects.groups.unlock": groupLockService.unlock,
+      "projects.groups.authorizeHidden": groupLockService.authorizeHidden,
+      "projects.groups.lock": groupLockService.lock,
+      "projects.groups.setHidden": groupLockService.setHidden,
       "secrets.input.answer": async (params, context) => {
         await assertDomainAuthority(context);
         return dependencies.conversationDesktop.answerSecretInput(params, context.authorized);
@@ -225,6 +244,7 @@ export function createRegistryRuntime(
       "automations.delete": dependencies.automationsService.delete,
       "automations.runs": dependencies.automationsService.runs,
       "automations.runNow": dependencies.automationsService.runNow,
+      "automations.decide": dependencies.automationsService.decide,
       "devServers.list": dependencies.devServersService.list,
       "devServers.details": dependencies.devServersService.details,
       "devServers.start": dependencies.devServersService.start,
@@ -265,6 +285,7 @@ export function createRegistryRuntime(
       "tasks.notes.resolve": dependencies.tasksService.resolveNote,
       "tasks.delete": dependencies.tasksService.delete,
       "tasks.preflight": dependencies.tasksService.preflight,
+      "tasks.helpers": dependencies.tasksService.helpers,
       "tasks.evaluation.save": dependencies.tasksService.recordEvaluation,
       "projects.directory": dependencies.projectsService.directory,
       "projects.browse": dependencies.projectsService.browse,
@@ -290,6 +311,7 @@ export function createRegistryRuntime(
       "terminals.create": dependencies.terminalService.create,
       "terminals.read": dependencies.terminalService.read,
       "terminals.write": dependencies.terminalService.write,
+      "terminals.resize": dependencies.terminalService.resize,
       "terminals.interrupt": dependencies.terminalService.interrupt,
       "terminals.close": dependencies.terminalService.close,
       "environment.persistence.status": dependencies.persistenceService.status,

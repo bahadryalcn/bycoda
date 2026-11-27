@@ -1,8 +1,9 @@
 import { useMemo, useRef, useState } from "react";
-import { t } from "../../../shared/i18n";
+import { formatDate, t } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Text } from "../../../shared/ui/Text";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -17,11 +18,7 @@ import {
   saveDailyNote,
 } from "../model/todaySummary";
 
-type SummaryState =
-  | { status: "idle" }
-  | { status: "running" }
-  | { status: "done"; text: string; saved: boolean }
-  | { status: "failed" };
+type SummaryState = { status: "idle" } | { status: "running" } | { status: "failed" };
 
 /** Opt-in summary: preview the exact request, see the estimate, then Send and Save. */
 export function SummaryPanel({
@@ -38,6 +35,12 @@ export function SummaryPanel({
   const [open, setOpen] = useState(false);
   const [includeTitles, setIncludeTitles] = useState(false);
   const [state, setState] = useState<SummaryState>({ status: "idle" });
+  const [result, setResult] = useState<{
+    text: string;
+    saved: boolean;
+    period: string;
+    language: string;
+  } | null>(null);
   const [saveFailed, setSaveFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const saveInFlight = useRef(false);
@@ -57,10 +60,20 @@ export function SummaryPanel({
     controller.current?.abort();
     const next = new AbortController();
     controller.current = next;
+    const periodLabel = data.period === "today" ? t("Today") : t("This week");
+    const context = {
+      period: data.window
+        ? `${periodLabel} (${formatDate(data.window.start)} – ${formatDate(data.window.end)})`
+        : periodLabel,
+      language,
+    };
     setState({ status: "running" });
     try {
       const text = await generateSummary(prompt, provider.run, next.signal);
-      if (!next.signal.aborted) setState({ status: "done", text, saved: false });
+      if (!next.signal.aborted) {
+        setResult({ text, saved: false, ...context });
+        setState({ status: "idle" });
+      }
     } catch {
       if (!next.signal.aborted) setState({ status: "failed" });
     }
@@ -72,7 +85,9 @@ export function SummaryPanel({
     setSaveFailed(false);
     try {
       await saveDailyNote(dailyNoteApi, text, new Date());
-      setState({ status: "done", text, saved: true });
+      setResult((current) =>
+        current && current.text === text ? { ...current, saved: true } : current,
+      );
     } catch {
       setSaveFailed(true);
     } finally {
@@ -82,37 +97,47 @@ export function SummaryPanel({
   };
   if (!open)
     return (
-      <Button size="sm" onClick={() => setOpen(true)} disabled={!provider}>
+      <Button
+        size="sm"
+        onClick={() => setOpen(true)}
+        disabled={!provider}
+        disabledReason={t("Connect a provider to summarize")}
+      >
         {t("Summarize")}
       </Button>
     );
   return (
     <div className="grid gap-2">
-      <div className="flex items-center gap-1">
-        <SectionLabel>{t("Summary")}</SectionLabel>
-        <InfoPopover>
-          <Text>
-            {t(
-              "Only the text below is sent to your own provider when you press Send. Nothing else leaves this computer.",
-            )}
-          </Text>
-        </InfoPopover>
-      </div>
+      <SectionLabel>{t("Summary")}</SectionLabel>
       <Checkbox
         label={t("Include session titles")}
         checked={includeTitles}
         onChange={(event) => setIncludeTitles(event.target.checked)}
       />
-      <TextareaField
-        label={t("Request preview")}
-        hideLabel
-        readOnly
-        value={prompt}
-        minRows={6}
-        maxRows={14}
-        monospace
-        fieldSize="sm"
-      />
+      <Disclosure
+        size="sm"
+        summary={t("Request preview")}
+        summaryActions={
+          <InfoPopover>
+            <Text>
+              {t(
+                "Only the text below is sent to your own provider when you press Send. Nothing else leaves this computer.",
+              )}
+            </Text>
+          </InfoPopover>
+        }
+      >
+        <TextareaField
+          label={t("Request preview")}
+          hideLabel
+          readOnly
+          value={prompt}
+          minRows={6}
+          maxRows={14}
+          monospace
+          fieldSize="sm"
+        />
+      </Disclosure>
       <div className="flex items-center gap-2">
         <Button
           variant="primary"
@@ -120,6 +145,7 @@ export function SummaryPanel({
           onClick={() => send().catch(() => undefined)}
           loading={state.status === "running"}
           disabled={!provider || saving}
+          disabledReason={provider ? undefined : t("Connect a provider to summarize")}
         >
           {t("Send")}
         </Button>
@@ -150,25 +176,34 @@ export function SummaryPanel({
       {state.status === "failed" && (
         <Alert tone="danger">{t("The summary could not be written. Nothing was saved.")}</Alert>
       )}
-      {state.status === "done" && (
+      {result && (
         <>
+          <Text size="caption" tone="muted">
+            {t("Summary context: {p0} · {p1}", {
+              p0: result.period,
+              p1: result.language,
+            })}
+          </Text>
           <TextareaField
             label={t("Summary")}
             hideLabel
             readOnly
-            value={state.text}
+            value={result.text}
             minRows={3}
             maxRows={12}
             fieldSize="sm"
           />
           <Button
             size="sm"
-            onClick={() => save(state.text).catch(() => undefined)}
-            disabled={state.saved}
+            onClick={() => save(result.text).catch(() => undefined)}
+            disabled={result.saved || state.status === "running"}
+            disabledReason={
+              state.status === "running" ? t("Wait for the summary to finish.") : undefined
+            }
             loading={saving}
             loadingLabel={t("Saving…")}
           >
-            {state.saved ? t("Saved to today's note") : t("Save to daily note")}
+            {result.saved ? t("Saved to today's note") : t("Save to daily note")}
           </Button>
           {saveFailed && <Alert tone="danger">{t("The note could not be saved.")}</Alert>}
         </>

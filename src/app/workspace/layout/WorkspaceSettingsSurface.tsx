@@ -4,12 +4,12 @@ import type { ComponentProps, Dispatch, SetStateAction } from "react";
 import { QuickDeleteWorktreeDialog } from "../../../features/source-control/ui/QuickDeleteWorktreeDialog";
 import { WorktreesPage } from "../../../features/source-control/ui/WorktreesPage";
 import { Modal } from "../../../shared/ui/Modal";
+import { useLeaveGuard } from "../../../shared/ui/settings";
 import { Button } from "../../../shared/ui/Button";
 import { Eye } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n/git";
 import type { WorktreeManagementRequest } from "../../../features/source-control/model/worktreeManagement";
 import { SettingsView } from "../surfaces/lazySurfaces";
-import "./WorkspaceSettingsSurface.css";
 import { NavigationBoundary } from "../../shell/NavigationBoundary";
 import { RecoveryBoundary } from "../../../shared/ui/RecoveryBoundary";
 import { SettingsLoadingSurface } from "../../../features/settings/ui/SettingsLoadingSurface";
@@ -109,6 +109,9 @@ function WorkspaceSettingsSurfaceComponent({
     document.querySelector<HTMLButtonElement>("[data-appearance-peek]")?.focus();
   }, []);
   const toggleMaximize = useCallback(() => setMaximized((value) => !value), []);
+  // Every way out of Settings asks first while an editor holds unsaved changes.
+  const leave = useLeaveGuard();
+  const closeSettings = () => leave.guard(onCloseSettings);
   const settingsView = (embedded: boolean) => (
     <SettingsView
       section={settingsSection}
@@ -142,7 +145,7 @@ function WorkspaceSettingsSurfaceComponent({
           </Button>
         ) : undefined
       }
-      onClose={onCloseSettings}
+      onClose={closeSettings}
       onSelectSection={onSelectSettingsSection}
       onOpenSession={onOpenArchivedSession}
       onOpenBackgroundSession={onOpenBackgroundSession}
@@ -180,16 +183,14 @@ function WorkspaceSettingsSurfaceComponent({
           size="lg"
           onClose={() => setWorktreeManagementRequest(null)}
         >
-          <div>
-            <WorktreesPage
-              cwd={worktreeManagementRequest.cwd}
-              recents={visibleRecents}
-              liveSessions={sessions}
-              onRemove={onRemoveWorktree}
-              onCheckRemove={onCheckWorktreeRemoval}
-              onDeleteSessions={onDeleteWorktreeSessions}
-            />
-          </div>
+          <WorktreesPage
+            cwd={worktreeManagementRequest.cwd}
+            recents={visibleRecents}
+            liveSessions={sessions}
+            onRemove={onRemoveWorktree}
+            onCheckRemove={onCheckWorktreeRemoval}
+            onDeleteSessions={onDeleteWorktreeSessions}
+          />
         </Modal>
       ) : null}
       {settingsOpen && presentation === "dialog" ? (
@@ -197,19 +198,15 @@ function WorkspaceSettingsSurfaceComponent({
           padding="none"
           title={t("Settings")}
           minimalHeader
-          size="lg"
+          size="settings"
+          maximized={maximized && !peeking}
           scroll="none"
-          className="bycoda-settings-dialog"
           placement={peeking ? "end" : "center"}
-          panelStyle={peeking ? { inlineSize: "min(380px, 100vw)" } : undefined}
           backdrop={!peeking}
           onEscape={peeking ? exitPeek : undefined}
-          onClose={onCloseSettings}
+          onClose={closeSettings}
         >
-          <div
-            className="bycoda-settings-dialog-body"
-            data-settings-dialog-mode={peeking ? "peek" : maximized ? "maximized" : "standard"}
-          >
+          <div className="flex min-h-0 min-w-0 flex-1">
             {/* Loading and failure stay inside the dialog; the window chrome is not repeated and the
                 known section title stays visible while the view loads. */}
             <RecoveryBoundary onBack={onCloseSettings}>
@@ -224,6 +221,7 @@ function WorkspaceSettingsSurfaceComponent({
           {settingsView(false)}
         </NavigationBoundary>
       ) : null}
+      {leave.dialog}
     </>
   );
 }

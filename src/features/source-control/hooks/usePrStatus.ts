@@ -1,5 +1,6 @@
 import { useCallback } from "react";
-import { gitPrStatus } from "../../../platform/tauri/fs";
+import { githubReadScope, gitPrStatus } from "../../../platform/tauri/fs";
+import { releaseGithubReadBlock } from "../../../shared/lib/githubReadGate";
 import { useGitResource } from "./useGitResource";
 import { GITHUB_PR_FRESH_MS } from "../model/gitRefreshPolicy";
 
@@ -19,6 +20,10 @@ export function usePrStatus(cwd: string, branch: string | null | undefined, enab
     pr: resource.data,
     loading: resource.loading,
     error: resource.error,
-    reload: resource.refresh,
+    // An explicit reload may probe a pause GitHub did not time; a stated reset time still holds.
+    reload: () => {
+      releaseGithubReadBlock(githubReadScope(cwd));
+      return resource.refresh();
+    },
   };
 }

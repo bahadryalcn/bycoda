@@ -6,13 +6,15 @@ import {
   cloneProgress,
   cloneRepository,
   runGitClone,
-  type PathExists,
-  type SpawnProcess,
+  type CloneFolderPorts,
 } from "./clone";
 
 export type ProjectsReadOptions = { signal?: AbortSignal };
 export interface ProjectDirectoryPorts {
-  directory(): dto.HostProjectDirectory | Promise<dto.HostProjectDirectory>;
+  /** The caller decides what is concealed: a phone sees locked groups it has unlocked. */
+  directory(
+    context: HostDomainContext,
+  ): dto.HostProjectDirectory | Promise<dto.HostProjectDirectory>;
   browse(path: unknown): Promise<dto.HostDirectory>;
   createDirectory(
     path: unknown,
@@ -28,7 +30,10 @@ export function createProjectsService<Project>(dependencies: {
   list: (options: ProjectsReadOptions) => readonly Project[] | Promise<readonly Project[]>;
   directoryPorts?: ProjectDirectoryPorts;
   /** Process launch and existence check for `git clone`; domains never import platform modules. */
-  clonePorts?: { spawn: SpawnProcess; exists: PathExists };
+  clonePorts?: {
+    exec: Parameters<typeof runGitClone>[2]["exec"];
+    folders: CloneFolderPorts;
+  };
 }) {
   const ports = () => {
     if (!dependencies.directoryPorts) throw new Error("Project directory access is unavailable");
@@ -51,7 +56,7 @@ export function createProjectsService<Project>(dependencies: {
         ? dto.ProjectsEmptyParamsSchema.strip()
         : dto.ProjectsEmptyParamsSchema
       ).parse(raw);
-      const result = await ports().directory();
+      const result = await ports().directory(context);
       await assertDomainAuthority(context);
       return result;
     },
@@ -94,8 +99,17 @@ export function createProjectsService<Project>(dependencies: {
       const result = await cloneRepository(
         params,
         parent.path,
-        (url, dest, options) => runGitClone(url, dest, { ...options, spawn: runtime().spawn }),
-        (path) => runtime().exists(path),
+        (url, dest, options) =>
+          runGitClone(url, dest, {
+            ...options,
+            exec: runtime().exec,
+          }),
+        // Resolved per call so a missing port cannot fail before the URL is validated.
+        {
+          exists: (path) => runtime().folders.exists(path),
+          claim: (path) => runtime().folders.claim(path),
+          remove: (path) => runtime().folders.remove(path),
+        },
       );
       await assertDomainAuthority(context);
       return result;

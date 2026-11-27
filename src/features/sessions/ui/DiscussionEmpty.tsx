@@ -1,4 +1,3 @@
-import { ProjectMascot } from "../../projects/public/ProjectMascot";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 
 /** A quiet empty state for a workspace with no discussion yet. */
@@ -7,7 +6,8 @@ export function DiscussionEmpty({ message }: { message: string }) {
     <EmptyState
       context="panel"
       kind="empty"
-      icon={<ProjectMascot project="workspace" name="union" tone="secondary" className="size-8" />}
+      illustration="chat-empty"
+      className="min-h-full"
       description={message}
     />
   );

@@ -3,7 +3,7 @@ import { connectionMethods, defaultConnectionMethod, hostConnection } from "./co
 
 describe("connection options", () => {
   it("defaults to the official API where the platform has one (owner D7)", () => {
-    expect(defaultConnectionMethod("x")).toBe("api");
+    expect(defaultConnectionMethod("x")).toBe("browser");
     expect(defaultConnectionMethod("youtube")).toBe("api");
   });
 

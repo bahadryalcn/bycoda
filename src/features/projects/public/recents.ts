@@ -2,6 +2,7 @@
 export {
   REMOTE_PROJECT_PREFIX,
   isLocalProject,
+  knownProjectPaths,
   isRemoteProjectPath,
   loadArchivedProjects,
   loadRecents,

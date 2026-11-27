@@ -2,6 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { loadVoiceSettings, saveVoiceSettings } from "../../voice/model/voiceSettings";
 const state = vi.hoisted(() => ({
   environmentId: "host-a" as string | null,
   request: vi.fn(),
@@ -51,8 +52,6 @@ vi.mock("../../../shared/ui/settings", async () => {
       ),
     Group: ({ title, info, action, children }: any) =>
       createElement("section", null, createElement("h2", null, title), info, action, children),
-    AdvancedSettings: ({ title, children }: any) =>
-      createElement("div", null, createElement("button", { type: "button" }, title), children),
   };
 });
 vi.mock("../../sessions/ui/modelSource", () => ({
@@ -79,17 +78,15 @@ vi.mock("../model/assistantClient", () => ({
 vi.mock("./AssistantProfileFields", () => ({
   AssistantProfileFields: ({
     section,
-    workModeUnchosen,
     onChange,
   }: {
     section: string;
-    workModeUnchosen?: boolean;
     onChange: (patch: Record<string, unknown>) => void;
   }) =>
     section === "workmode"
       ? createElement(
           "div",
-          { "data-unchosen": String(workModeUnchosen === true) },
+          null,
           createElement(
             "button",
             {
@@ -157,16 +154,25 @@ const draft = (environmentId?: string) => ({
   },
   rules: "Keep replies concise",
 });
+// #784: the draft is written by a debounced writer; pagehide flushes it so tests read storage now.
+function flushDraft() {
+  window.dispatchEvent(new Event("pagehide"));
+}
 async function render(voice = false) {
   await act(() => root.render(createElement(AssistantSetup, { onClose: state.close, voice })));
+  flushDraft();
 }
 function button(label: string) {
   return [...document.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent?.trim() === label,
   )!;
 }
+// A blocked control with a reason stays focusable, so it is aria-disabled rather than disabled.
+const blocked = (node: HTMLButtonElement) =>
+  node.disabled || node.getAttribute("aria-disabled") === "true";
 async function click(label: string) {
   await act(() => button(label).click());
+  flushDraft();
 }
 async function start() {
   await act(async () => {
@@ -228,10 +234,9 @@ it("binds an unattempted legacy draft to the observed Host and forwards reviewed
     }),
     "host-a",
   );
-  expect(state.close).not.toHaveBeenCalled();
-  expect(document.body.textContent).toContain("Ready for 24/7");
-  await act(async () => button("Done").click());
+  // No second dialog: a successful Start closes setup and clears the draft.
   expect(state.close).toHaveBeenCalledOnce();
+  expect(document.body.textContent).not.toContain("Ready for 24/7");
   expect(localStorage.getItem(key)).toBeNull();
 });
 it("refuses to finish an original Host draft against replacement cloned profile IDs", async () => {
@@ -271,36 +276,31 @@ it("makes no setup write without a verified Host identity", async () => {
   await start();
   expect(state.request).not.toHaveBeenCalled();
 });
-it("groups all setup capabilities into five steps and gates every voice verification without any setup write before Start", async () => {
+it("shows one voice check per step and finishes without preview or microphone verification", async () => {
   localStorage.setItem(key, JSON.stringify({ ...draft("host-a"), step: "identity" }));
   await render(true);
-  const titles = ["Identity", "Voice", "Work mode", "Presence and hours", "Review"];
+  const titles = ["Identity", "Voice provider", "Speaker", "Microphone", "Review"];
   for (let step = 0; step < titles.length; step++) {
     const dialog = document.querySelector('[role="dialog"]')!;
     const heading = document.getElementById(dialog.getAttribute("aria-labelledby")!);
-    expect(heading?.textContent).toBe("Set up");
+    expect(heading?.textContent).toBe("Voice setup");
     expect(dialog.querySelector('[aria-current="step"]')?.textContent).toContain(titles[step]);
     expect(dialog.querySelectorAll("h2")).toHaveLength(1);
     expect(dialog.querySelectorAll('[aria-current="step"]')).toHaveLength(1);
     expect(JSON.parse(localStorage.getItem(key)!).rules).toBe("Keep replies concise");
-    if (titles[step] === "Voice") {
-      for (const check of ["provider", "voice", "microphone"]) {
-        expect(button("Next").disabled).toBe(true);
-        await click(`Verify ${check}`);
-      }
-      expect(button("Next").disabled).toBe(false);
+    if (titles[step] === "Voice provider") {
+      expect(blocked(button("Next"))).toBe(true);
+      expect(document.body.textContent).not.toContain("Verify microphone");
+      await click("Verify provider");
     }
-    if (titles[step] === "Work mode") {
-      expect(button("Next").disabled).toBe(true);
-      await click("Fixture only watch");
+    if (titles[step] === "Speaker" || titles[step] === "Microphone") {
+      expect(blocked(button("Next"))).toBe(false);
+      expect(document.body.textContent).toContain("Optional");
     }
     if (step < titles.length - 1) await click("Next");
   }
   expect(state.request).not.toHaveBeenCalled();
-  expect(button("Start").disabled).toBe(false);
-  await click("Back");
-  expect(document.querySelector("textarea")?.value).toBe("Keep replies concise");
-  await click("Next");
+  expect(blocked(button("Start"))).toBe(false);
   await start();
   expect(state.request).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -310,12 +310,44 @@ it("groups all setup capabilities into five steps and gates every voice verifica
     "host-a",
   );
 });
+it("adds voice to a configured assistant without rewriting the saved profile or its rules", async () => {
+  state.profile.setupComplete = true;
+  localStorage.setItem(key, JSON.stringify({ ...draft("host-a"), step: "voice" }));
+  await render(true);
+  expect(document.querySelector('[aria-current="step"]')?.textContent).toContain("Voice provider");
+  await click("Verify provider");
+  await click("Next");
+  await click("Next");
+  await click("Next");
+  await start();
+  expect(state.request).toHaveBeenCalledExactlyOnceWith(
+    { op: "profile.update", expectedVersion: 3, patch: { voiceSetupComplete: true } },
+    "host-a",
+  );
+});
 it("requires fresh voice verification when reopening a persisted Review draft", async () => {
   localStorage.setItem(key, JSON.stringify(draft("host-a")));
   await render(true);
-  expect(button("Start").disabled).toBe(true);
-  await click("Set up voice");
-  expect(JSON.parse(localStorage.getItem(key)!).step).toBe("voice");
+  expect(blocked(button("Start"))).toBe(true);
+  expect(document.body.textContent).not.toContain("Set up voice");
+  expect(state.request).not.toHaveBeenCalled();
+});
+it("retains the provider check after changing the speaker but invalidates it after changing providers", async () => {
+  saveVoiceSettings({ ...loadVoiceSettings(), mode: "local", natural: true, engine: "supertonic" });
+  localStorage.setItem(key, JSON.stringify({ ...draft("host-a"), step: "voice" }));
+  await render(true);
+  await click("Verify provider");
+  await click("Next");
+  await click("Next");
+  await click("Next");
+  expect(blocked(button("Start"))).toBe(false);
+  const settings = loadVoiceSettings();
+  await act(async () =>
+    saveVoiceSettings({ ...settings, speakers: { ...settings.speakers, supertonic: "F2" } }),
+  );
+  expect(blocked(button("Start"))).toBe(false);
+  await act(async () => saveVoiceSettings({ ...loadVoiceSettings(), mode: "grok" }));
+  expect(blocked(button("Start"))).toBe(true);
   expect(state.request).not.toHaveBeenCalled();
 });
 it("offers a usable fresh budget without writing or changing its authority choices", async () => {
@@ -349,121 +381,43 @@ it("gives a completed profile with a zero budget a usable one, so quick setup ca
   await render();
   expect(JSON.parse(localStorage.getItem(key)!).patch.dailyTokenBudget).toBe(1_000_000);
 });
-it("runs quick setup as identity, work mode and review, without model or rules steps", async () => {
+it("runs core setup as one screen with the name, a preselected work mode and Start", async () => {
   await render();
-  const heading = () => {
-    const dialog = document.querySelector('[role="dialog"]')!;
-    const current = dialog.querySelector('[aria-current="step"]');
-    return ["Identity", "Work mode", "Review"].find((label) =>
-      current?.textContent?.includes(label),
-    );
-  };
-  const progress = () => {
-    const items = [...document.querySelectorAll('[role="group"][aria-label="Set up"] ol > li')];
-    return [
-      String(items.findIndex((item) => item.hasAttribute("aria-current")) + 1),
-      String(items.length),
-    ];
-  };
-  expect(heading()).toBe("Identity");
-  expect(progress()).toEqual(["1", "3"]);
-  await click("Next");
-  expect(heading()).toBe("Work mode");
-  expect(progress()).toEqual(["2", "3"]);
-  expect(document.body.textContent).not.toContain("Worker model");
-  // Nothing is chosen on a first setup, so Next waits for an explicit work mode.
-  expect(document.querySelector("[data-unchosen]")?.getAttribute("data-unchosen")).toBe("true");
-  expect(button("Next").disabled).toBe(true);
-  await click("Fixture only watch");
-  expect(button("Next").disabled).toBe(false);
-  await click("Next");
-  expect(heading()).toBe("Review");
-  expect(progress()).toEqual(["3", "3"]);
-  expect(document.body.textContent).toContain("Work modeOnly watch");
+  expect(document.querySelector('[aria-current="step"]')).toBeNull();
+  expect(document.body.textContent).not.toContain("Next");
+  expect(document.body.textContent).not.toContain("Back");
+  expect(document.body.textContent).not.toContain("Set up with AI");
   expect(document.querySelector("textarea")).toBeNull();
-  expect(button("Start").disabled).toBe(false);
-});
-it("shows Custom for an already set up profile whose job settings match no work mode", async () => {
-  state.profile.setupComplete = true;
-  const retained = draft("host-a");
-  retained.patch.setupComplete = true;
-  retained.patch.autonomy = "jobs" as never;
-  localStorage.setItem(key, JSON.stringify({ ...retained, step: "workmode" }));
-  await render();
-  expect(document.querySelector("[data-unchosen]")?.getAttribute("data-unchosen")).toBe("false");
-  expect(button("Next").disabled).toBe(false);
-  await click("Next");
-  expect(document.body.textContent).toContain("Work modeCustom");
+  // "Only watch" is applied up front, so nothing blocks Start on a first setup.
+  const saved = JSON.parse(localStorage.getItem(key)!).patch;
+  expect(saved).toMatchObject({ autonomy: "report", planApproval: "always", confirmJobs: true });
+  expect(blocked(button("Start"))).toBe(false);
+  await click("Fixture work and ask");
+  expect(JSON.parse(localStorage.getItem(key)!).patch.autonomy).toBe("chief");
 });
 it("keeps reviewed values and rules after a failed save and retries against the same Host", async () => {
   localStorage.setItem(key, JSON.stringify(draft("host-a")));
   state.request.mockRejectedValueOnce(new Error("Fixture save unavailable"));
   await render();
   await start();
+  expect(document.body.textContent).toContain("Could not save assistant setup.");
+  expect(document.body.textContent).not.toContain("Fixture save unavailable");
+  await click("Details");
   expect(document.body.textContent).toContain("Fixture save unavailable");
+  await click("Details");
   expect(JSON.parse(localStorage.getItem(key)!)).toEqual(draft("host-a"));
   expect(state.close).not.toHaveBeenCalled();
   await start();
   expect(state.request.mock.calls.every((call) => call[1] === "host-a")).toBe(true);
-  expect(state.close).not.toHaveBeenCalled();
-  expect(document.body.textContent).toContain("Ready for 24/7");
-  await act(async () => button("Done").click());
   expect(state.close).toHaveBeenCalledOnce();
 });
-it.each(["jobs", "chief"])(
-  "materializes the displayed %s worker default only on explicit autonomy Next",
-  async (autonomy) => {
-    localStorage.setItem(
-      key,
-      JSON.stringify({
-        ...draft("host-a"),
-        step: "workmode",
-        patch: {
-          ...state.profile,
-          autonomy,
-          chiefExecution: null,
-          replyExecution: null,
-          planningExecution: null,
-        },
-      }),
-    );
-    await render();
-    expect(JSON.parse(localStorage.getItem(key)!).patch.execution).toBeNull();
-    expect(state.request).not.toHaveBeenCalled();
-    await click("Next");
-    const reviewed = {
-      harness: "codex",
-      model: models.worker.id,
-      modelSettings: { effort: "medium" },
-      runtimeMode: "supervised",
-      maxRunMinutes: 60,
-    };
-    expect(JSON.parse(localStorage.getItem(key)!).patch.execution).toEqual(reviewed);
-    expect(document.body.textContent).toContain("Worker model");
-    expect(document.body.textContent).toContain(models.worker.name);
-    await start();
-    expect(state.request).toHaveBeenCalledWith(
-      expect.objectContaining({
-        op: "profile.update",
-        patch: expect.objectContaining({
-          execution: reviewed,
-          chiefExecution: null,
-          replyExecution: null,
-          planningExecution: null,
-        }),
-      }),
-      "host-a",
-    );
-  },
-);
-it("materializes a missing worker in a retained unconfigured Review only at Start", async () => {
+it("materializes a missing worker in a retained unconfigured draft only at Start", async () => {
   localStorage.setItem(
     key,
     JSON.stringify({ ...draft("host-a"), patch: { ...state.profile, autonomy: "jobs" } }),
   );
   await render();
   expect(JSON.parse(localStorage.getItem(key)!).patch.execution).toBeNull();
-  expect(document.body.textContent).toContain(models.worker.name);
   await start();
   expect(state.request).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -561,7 +515,12 @@ it("hides confirmed sleep prevention off while retaining unknown, pending, activ
   };
   await render(true);
   expect(document.querySelector("[data-assistant-keep-awake]")?.getAttribute("role")).toBe("alert");
-  expect(document.body.textContent).toContain("Fixture native failure");
+  // The raw native failure sits behind the Details popover, which opens above the dialog.
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+  await act(async () => trigger?.click());
+  expect([...document.querySelectorAll('[role="dialog"]')].at(-1)?.textContent).toContain(
+    "Fixture native failure",
+  );
 });
 
 it.each([
@@ -581,5 +540,5 @@ it.each([
   await render(true);
   expect(JSON.parse(localStorage.getItem(key)!)).toEqual({ ...saved, step });
   expect(state.request).not.toHaveBeenCalled();
-  if (step === "voice") expect(button("Next").disabled).toBe(true);
+  if (step === "voice") expect(blocked(button("Next"))).toBe(true);
 });

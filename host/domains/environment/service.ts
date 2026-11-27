@@ -1,5 +1,8 @@
 export type EnvironmentReadOptions = { signal?: AbortSignal };
 
+/** Who is asking; the snapshot may describe the caller's own credential and no one else's. */
+export type EnvironmentCaller = { principalId?: string };
+
 /** The legacy HTTP adapter deliberately retains its existing provider negotiation. */
 export type EnvironmentDescribeParams = { supportedProviders?: unknown };
 
@@ -9,14 +12,17 @@ export type EnvironmentDescribeParams = { supportedProviders?: unknown };
  */
 export function createEnvironmentService<
   Snapshot extends { providers: readonly string[] },
->(dependencies: { snapshot: (options: EnvironmentReadOptions) => Snapshot | Promise<Snapshot> }) {
+>(dependencies: {
+  snapshot: (options: EnvironmentReadOptions & EnvironmentCaller) => Snapshot | Promise<Snapshot>;
+}) {
   return {
     async describe(
       params: EnvironmentDescribeParams = {},
       options: EnvironmentReadOptions = {},
+      caller: EnvironmentCaller = {},
     ): Promise<Omit<Snapshot, "providers"> & { providers: string[] }> {
       options.signal?.throwIfAborted();
-      const snapshot = await dependencies.snapshot(options);
+      const snapshot = await dependencies.snapshot({ ...options, ...caller });
       options.signal?.throwIfAborted();
       const supported = Array.isArray(params.supportedProviders)
         ? new Set<unknown>(params.supportedProviders)

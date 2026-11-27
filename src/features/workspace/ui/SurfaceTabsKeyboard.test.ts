@@ -2,6 +2,7 @@
 import { act, createElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { getLanguagePreference, setLanguagePreference } from "../../../shared/i18n";
 import { SurfaceTabs } from "./SurfaceTabs";
 import type { FilePaneTab } from "../model/layout";
 
@@ -57,6 +58,21 @@ afterEach(async () => {
   container.remove();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+it("names the file tab list in the selected language", async () => {
+  const previousLanguage = getLanguagePreference();
+  try {
+    await act(async () => {
+      await setLanguagePreference("tr");
+      root.render(createElement(Harness));
+    });
+    expect(container.querySelector('[role="tablist"]')?.getAttribute("aria-label")).toBe(
+      "Açık dosyalar",
+    );
+  } finally {
+    await act(async () => setLanguagePreference(previousLanguage));
+  }
 });
 
 it("roves one tab stop with arrows, wraparound, Home and End while matching selection", async () => {

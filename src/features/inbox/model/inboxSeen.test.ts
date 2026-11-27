@@ -43,11 +43,15 @@ function entry(key: string, updatedAt: string): { key: string; updatedAt: string
 
 describe("inbox seen items", () => {
   beforeEach(() => {
+    // Fixture dates are fixed; pin the clock so the 90-day retention never ages them out.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-08-28T00:00:00Z"));
     mockLocalStorage();
     clearKnownInboxItems();
   });
   afterEach(() => {
     localStorage.removeItem(KEY);
+    vi.useRealTimers();
   });
 
   it("parses one shared snapshot and observes changed or corrupt storage", () => {
@@ -67,6 +71,36 @@ describe("inbox seen items", () => {
     expect(inboxSeenIsSeeded()).toBe(false);
     expect(parse).toHaveBeenCalledTimes(4);
     parse.mockRestore();
+  });
+
+  it("keeps readable records when one stored value is malformed", () => {
+    const at = (value: number) => new Date(value).toISOString();
+    const now = Date.now();
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({ seeded: true, items: { good: now, bad: "oops", missing: null } }),
+    );
+    expect(inboxSeenIsSeeded()).toBe(true);
+    expect(isInboxEntryUnseen(entry("good", at(now)))).toBe(false);
+    expect(isInboxEntryUnseen(entry("good", at(now + 1000)))).toBe(true);
+    expect(markInboxItemSeen(entry("other", at(now)))).toBe(true);
+    const saved = JSON.parse(localStorage.getItem(KEY)!);
+    expect(saved).toEqual({ seeded: true, items: { good: now, other: now } });
+
+    // The older plain-map shape drops only the malformed value too.
+    localStorage.setItem(KEY, JSON.stringify({ good: now, bad: "oops" }));
+    expect(inboxSeenIsSeeded()).toBe(true);
+    expect(isInboxEntryUnseen(entry("good", at(now)))).toBe(false);
+
+    // An unreadable seeded flag keeps the items but asks for a fresh seed.
+    localStorage.setItem(KEY, JSON.stringify({ seeded: "yes", items: { good: now } }));
+    expect(inboxSeenIsSeeded()).toBe(false);
+    seedInboxSeenIfNeeded([entry("fresh", at(now))]);
+    expect(JSON.parse(localStorage.getItem(KEY)!).items).toEqual({ good: now, fresh: now });
+
+    // A wrapper whose items are not a map is still treated as unusable, not as a plain map.
+    localStorage.setItem(KEY, JSON.stringify({ seeded: true, items: [1] }));
+    expect(inboxSeenIsSeeded()).toBe(false);
   });
 
   it("bounds new seen identities without evicting existing or blocking updates", () => {
@@ -217,4 +251,24 @@ describe("inbox seen items", () => {
       ]),
     ).toBe(false);
   });
+});
+
+it("does not parse retained timestamps again when an unrelated feed advances", () => {
+  clearKnownInboxItems();
+  const updatedAt = new Date().toISOString();
+  rememberInboxItems(
+    Array.from({ length: 320 }, (_, i) => ({
+      key: String(i),
+      updatedAt,
+      projectPath: "/in-scope",
+    })),
+  );
+  const parse = vi.spyOn(Date, "parse");
+  try {
+    rememberInboxItems([{ key: "outside", updatedAt, projectPath: "/outside" }]);
+    expect(parse.mock.calls.length).toBeLessThan(4);
+  } finally {
+    parse.mockRestore();
+    clearKnownInboxItems();
+  }
 });

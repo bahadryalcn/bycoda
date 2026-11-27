@@ -128,6 +128,34 @@ describe("applyAppearanceSnapshot", () => {
     expect(captureAppearanceSnapshot().preferences?.surfaceContrast).toBe(100);
   });
 
+  it("captures and restores sent and AI message appearance with saved looks", () => {
+    const { appearance, fns } = mockAppearance();
+    const captured = captureAppearanceSnapshot();
+    expect(captured.preferences).toMatchObject({
+      userMessageOpacity: 42,
+      transcriptSurface: "reply",
+      transcriptSurfaceOpacity: 90,
+      messageColor: "theme",
+    });
+    applyAppearanceSnapshot(appearance, {
+      preferences: {
+        ...APPEARANCE_DEFAULTS,
+        userMessageOpacity: 80,
+        transcriptSurface: "off",
+        transcriptSurfaceOpacity: 0,
+        messageColor: "neutral",
+      },
+    });
+    expect(fns.onPreferences).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userMessageOpacity: 80,
+        transcriptSurface: "off",
+        transcriptSurfaceOpacity: 0,
+        messageColor: "neutral",
+      }),
+    );
+  });
+
   it("keeps word wrap and chat width and skips settings the snapshot does not hold", () => {
     const { appearance, fns } = mockAppearance();
     applyAppearanceSnapshot(appearance, {

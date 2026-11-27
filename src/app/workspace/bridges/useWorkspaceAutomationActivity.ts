@@ -15,43 +15,57 @@ import {
 import { listBoardTasks, taskMachines } from "../../../features/tasks/model/taskClient";
 import { socialClient } from "../../../features/social/model/socialClient";
 import { SOCIAL_CAPABILITY } from "../../../features/social/model/social";
+import { TimeoutError, withTimeout } from "../../../shared/lib/withTimeout";
+import { startForegroundPolling } from "../../../shared/lib/foregroundPolling";
+import { AUTOMATION_POLL_DEADLINES } from "./automationPollDeadlines";
 import type { InboxAutomationActivityDeps } from "./useInboxAutomationActivity";
+
+const POLL_MS = 30_000;
 
 /** Only reads event sources when the owner has enabled a matching automation. */
 export function useWorkspaceAutomationActivity({
   ensureAutomationRecovery,
   launchAutomation,
 }: InboxAutomationActivityDeps) {
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keeps the automation source timer and pending event claims scoped to the mounted workspace.
   useEffect(() => {
     let disposed = false;
-    let timer: ReturnType<typeof setTimeout>;
     let taskStates: Map<string, string> | undefined;
-    let running = false;
     const pending = new Map<string, WorkspaceAutomationEvent>();
     const recoveryToken = crypto.randomUUID();
-    // A hidden window reads no event sources; visibility resumes the poll at once.
-    const resume = () => {
-      if (document.hidden || disposed) return;
-      clearTimeout(timer);
-      void poll().catch((error: unknown) => console.warn("Automation activity poll failed", error));
-    };
     const poll = async () => {
-      if (running || disposed || document.hidden) return;
-      running = true;
       try {
-        if (!(await isLeadWindow()) || disposed) return;
-        const automations = (await listAutomations()).filter((automation) => automation.enabled);
+        const lead = await withTimeout(
+          isLeadWindow(),
+          AUTOMATION_POLL_DEADLINES.leaderCheckMs,
+          "Workspace leader check",
+        );
+        if (!lead || disposed) return;
+        const automations = (
+          await withTimeout(
+            listAutomations(),
+            AUTOMATION_POLL_DEADLINES.localReadMs,
+            "Automation list",
+          )
+        ).filter((automation) => automation.enabled);
         const kinds = new Set(
           automations.flatMap((automation) =>
             automationTriggers(automation).map((trigger) => trigger.kind),
           ),
         );
+        polling.setPeriod(POLL_MS, kinds.has("tasks") || kinds.has("social") || pending.size > 0);
         const events: WorkspaceAutomationEvent[] = [];
         const reads: Promise<void>[] = [];
         if (kinds.has("tasks"))
           reads.push(
             (async () => {
-              const tasks = await listBoardTasks(await taskMachines());
+              // State commits only after the bounded read returns; a late result is
+              // dropped, so the previous snapshot still detects the next transition.
+              const tasks = await withTimeout(
+                (async () => listBoardTasks(await taskMachines()))(),
+                AUTOMATION_POLL_DEADLINES.remoteReadMs,
+                "Task automation read",
+              );
               events.push(...taskAutomationEvents(tasks, taskStates));
               taskStates = new Map(
                 tasks.map((task) => [
@@ -66,18 +80,29 @@ export function useWorkspaceAutomationActivity({
         if (kinds.has("social"))
           reads.push(
             (async () => {
-              const reach = await probeMachines(SOCIAL_CAPABILITY);
+              const reach = await withTimeout(
+                probeMachines(SOCIAL_CAPABILITY),
+                AUTOMATION_POLL_DEADLINES.remoteReadMs,
+                "Social machine probe",
+              );
+              // Each machine has its own deadline so one stalled host cannot hide the rest.
               const results = await Promise.allSettled(
-                reach.capable.map(async (machine) => {
-                  const [snapshot, projects] = await Promise.all([
-                    socialClient(machine.id).snapshot(),
-                    machineProjects(machine),
-                  ]);
-                  return socialAutomationEvents(snapshot, machine, projects);
-                }),
+                reach.capable.map((machine) =>
+                  withTimeout(
+                    Promise.all([
+                      socialClient(machine.id).snapshot(),
+                      machineProjects(machine),
+                    ]).then(([snapshot, projects]) =>
+                      socialAutomationEvents(snapshot, machine, projects),
+                    ),
+                    AUTOMATION_POLL_DEADLINES.remoteReadMs,
+                    `Social automation read (${machine.id})`,
+                  ),
+                ),
               );
               for (const result of results)
                 if (result.status === "fulfilled") events.push(...result.value);
+                else console.warn("Social automation source unavailable", result.reason);
             })(),
           );
         const sourceResults = await Promise.allSettled(reads);
@@ -87,7 +112,13 @@ export function useWorkspaceAutomationActivity({
         if (disposed) return;
         for (const event of events) pending.set(event.key, event);
         if (!pending.size) return;
-        await ensureAutomationRecovery();
+        // Wait on the shared recovery without restarting it; on timeout the events
+        // stay pending and the next poll waits on the same recovery again.
+        await withTimeout(
+          ensureAutomationRecovery(),
+          AUTOMATION_POLL_DEADLINES.recoveryWaitMs,
+          "Automation recovery",
+        );
         if (disposed) return;
         const failed = new Set<string>();
         for (const item of await claimWorkspaceAutomationRuns(
@@ -99,22 +130,27 @@ export function useWorkspaceAutomationActivity({
           },
           recoveryToken,
         )) {
-          await launchAutomation(item.automation, item.run, false, item.prompt);
+          try {
+            await withTimeout(
+              launchAutomation(item.automation, item.run, false, item.prompt),
+              AUTOMATION_POLL_DEADLINES.launchAcceptMs,
+              "Automation launch",
+            );
+          } catch (error) {
+            // The claimed run keeps launching on its own; it is never claimed or launched again.
+            if (!(error instanceof TimeoutError)) throw error;
+            console.warn("Automation launch is still pending", item.run.id, error);
+          }
         }
         for (const key of pending.keys()) if (!failed.has(key)) pending.delete(key);
       } catch (error) {
         console.warn("Workspace automation activity failed", error);
-      } finally {
-        running = false;
-        if (!disposed && !document.hidden) timer = setTimeout(poll, 30_000);
       }
     };
-    document.addEventListener("visibilitychange", resume);
-    void poll().catch((error: unknown) => console.warn("Automation activity poll failed", error));
+    const polling = startForegroundPolling(poll, POLL_MS);
     return () => {
       disposed = true;
-      document.removeEventListener("visibilitychange", resume);
-      clearTimeout(timer);
+      polling.stop();
     };
   }, [ensureAutomationRecovery, launchAutomation]);
 }

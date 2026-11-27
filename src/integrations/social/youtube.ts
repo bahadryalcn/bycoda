@@ -12,8 +12,10 @@ import {
   setYouTubeCommentModeration,
   setYouTubeThumbnail,
   type YouTubeCommentStatus,
+  type YouTubeManagementContext,
 } from "./youtube-manage";
 import { createYouTubeQuota, type YouTubeQuota } from "./youtube-quota";
+import { uploadYouTubeFile } from "./youtube-upload";
 import { checkYouTubeSession, getYouTubeProfile, getYouTubeStatistics } from "./youtube-read";
 
 const endpoint = "https://www.googleapis.com/youtube/v3/";
@@ -22,6 +24,7 @@ export type YouTubeSendOptions = YouTubeVideoOptions & { categoryId?: string; pu
 /** Adapter with the YouTube-only operations that have no generic SocialAdapter method yet. */
 export type YouTubeAdapter = SocialAdapter & {
   quota: YouTubeQuota;
+  management(token: string, channelId: string): YouTubeManagementContext;
   setThumbnail(token: string, videoId: string, bytes: Uint8Array): Promise<void>;
   addToPlaylist(token: string, playlistId: string, videoId: string): Promise<string>;
   moderateComment(token: string, commentId: string, status: YouTubeCommentStatus): Promise<void>;
@@ -129,8 +132,10 @@ export function createYouTubeAdapter(http: SocialHttp, now = Date.now): YouTubeA
     };
   };
   return {
+    ignoresPublishedPosts: true,
     quota,
-    async send(account, job, token, media, checkpoint, beforeSubmit) {
+    management: (token, channelId) => ({ http, quota, token, channelId }),
+    async send(account, job, token, media, checkpoint, beforeSubmit, youtubeUpload) {
       const content = [job.payload.text, job.payload.link].filter(Boolean).join("\n");
       if (job.kind === "publish") {
         if (job.preparation?.youtubeVideoId !== undefined)
@@ -149,7 +154,10 @@ export function createYouTubeAdapter(http: SocialHttp, now = Date.now): YouTubeA
         const title = uploadTitle(options.title);
         const category = options.categoryId ?? "22";
         if (!/^\d{1,3}$/.test(category)) throw new SocialPlatformError("rejected");
-        const publishAt = scheduledPublish(options.publishAt, now());
+        const publishAt = scheduledPublish(
+          options.publishAt,
+          job.preparation?.youtubeUploadPending ? -Infinity : now(),
+        );
         // Verify the current credential still represents the configured channel.
         quota.charge("channels.list");
         const { value: channel } = await http.request(
@@ -160,27 +168,54 @@ export function createYouTubeAdapter(http: SocialHttp, now = Date.now): YouTubeA
           throw new SocialPlatformError("denied");
         // Without durable checkpointing, a later processing retry could upload the video twice.
         if (!checkpoint) throw new SocialPlatformError("unsupported");
-        const bytes = await media(asset.uploadId);
-        await beforeSubmit?.();
-        quota.charge("videos.insert");
-        const { value } = await http.uploadYouTubeVideo(
-          token,
-          {
-            snippet: {
-              title,
-              description: content,
-              categoryId: category,
-            },
-            status: {
-              // A scheduled upload must be private until YouTube publishes it at publishAt.
-              privacyStatus: publishAt ? "private" : options.privacy,
-              selfDeclaredMadeForKids: options.madeForKids,
-              containsSyntheticMedia: options.containsSyntheticMedia,
-              ...(publishAt ? { publishAt } : {}),
-            },
+        const metadata = {
+          snippet: {
+            title,
+            description: content,
+            categoryId: category,
           },
-          bytes,
-        );
+          status: {
+            // A scheduled upload must be private until YouTube publishes it at publishAt.
+            privacyStatus: publishAt ? "private" : options.privacy,
+            selfDeclaredMadeForKids: options.madeForKids,
+            containsSyntheticMedia: options.containsSyntheticMedia,
+            ...(publishAt ? { publishAt } : {}),
+          },
+        };
+        let response;
+        if (youtubeUpload) {
+          const source = await youtubeUpload.open(asset.uploadId);
+          const knownSession = await youtubeUpload.loadSession();
+          if (job.preparation?.youtubeUploadPending && !knownSession)
+            throw new SocialPlatformError("unknown");
+          const savePending = async () => {
+            const state = { ...job.preparation, youtubeUploadPending: true as const };
+            await checkpoint(state);
+            job.preparation = state;
+          };
+          if (knownSession && !job.preparation?.youtubeUploadPending) await savePending();
+          response = await uploadYouTubeFile({
+            http,
+            token,
+            metadata,
+            source,
+            knownSession,
+            beforeWrite: beforeSubmit,
+            now,
+            onStart: () => quota.charge("videos.insert"),
+            checkpoint: async (uri) => {
+              await youtubeUpload.saveSession(uri);
+              await savePending();
+            },
+          });
+        } else {
+          if (job.preparation?.youtubeUploadPending) throw new SocialPlatformError("unknown");
+          const bytes = await media(asset.uploadId);
+          await beforeSubmit?.();
+          quota.charge("videos.insert");
+          response = await http.uploadYouTubeVideo(token, metadata, bytes);
+        }
+        const { value } = response;
         const platformId = resultIdentity(value.id);
         const preparation: NonNullable<SocialJob["preparation"]> = {
           ...job.preparation,
@@ -189,12 +224,14 @@ export function createYouTubeAdapter(http: SocialHttp, now = Date.now): YouTubeA
             ? { youtubeVisibility: value.status.privacyStatus }
             : {}),
         };
+        delete preparation.youtubeUploadPending;
         job.preparation = preparation;
         try {
           await checkpoint(preparation);
         } catch {
           throw new SocialPlatformError("unknown");
         }
+        await youtubeUpload?.clearSession().catch(() => undefined);
         return processedVideo(account, job, token);
       }
       if (job.kind === "message" || !job.payload.postId || job.payload.media.length)

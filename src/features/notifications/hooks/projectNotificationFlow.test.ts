@@ -128,9 +128,10 @@ it("honors category choices before and after a project mute while another projec
   });
   await mount();
   click(projectRow("one"), "Notification categories for one");
+  // Category switches are named by their visible label, inside the project's legend group.
   act(() =>
-    projectRow("one")
-      .querySelector<HTMLInputElement>('[aria-label^="Issues and Linear tasks for one ("]')!
+    [...projectRow("one").querySelectorAll<HTMLButtonElement>('button[role="switch"]')]
+      .find((item) => item.textContent?.trim() === "Issues and Linear tasks")!
       .click(),
   );
   await pollUpdated(2);
@@ -209,7 +210,9 @@ it("bulk mutes through Settings and resumes just one project without losing unre
   act(() =>
     container.querySelector<HTMLInputElement>('[aria-label="Select all known projects"]')!.click(),
   );
-  mute(container.querySelector('[aria-label="Mute selected projects"]')!);
+  // The bulk trigger is a labelled "Mute" button (not the icon-only row trigger), then its menu.
+  click(container.querySelector('[role="group"][aria-label="Mute selected projects"]')!, "Mute");
+  click(document.querySelector('[role="menu"]')!, "Until resumed");
   await pollUpdated(0, 1);
   expect(activity.unseen).toBe(false);
   expect(play).not.toHaveBeenCalled();

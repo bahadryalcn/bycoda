@@ -18,7 +18,7 @@ import {
   splitPane,
 } from "./layout";
 import { createProjectTerminal, splitTerminalInDock } from "../../projects/model/projectTerminal";
-import { newSession, type Session } from "../../sessions/model/session";
+import { newSession, sessionWorkCwd, type Session } from "../../sessions/model/session";
 import {
   collectWorkspaceSnapshot,
   hydrateWorkspaceSnapshot,
@@ -32,6 +32,41 @@ function chat(id: string, cwd: string): Session {
   session.providerSessionId = "p1";
   return session;
 }
+
+it("restores the remote Host of a projectless draft and its acknowledged conversation", () => {
+  const draft = { ...newSession("codex", "~"), remoteExecutionEnvironmentId: "office" };
+  const tab = newTab(draft.id);
+  rememberRemoteSession(draft.id, "office-session");
+  const snapshot = collectWorkspaceSnapshot([tab], [draft], tab.id, "~", new Map());
+  rememberRemoteSession(draft.id, undefined);
+
+  const restored = hydrateWorkspaceSnapshot(snapshot, new Map());
+  expect(restored?.sessions[0]).toMatchObject({ cwd: "~", remoteExecutionEnvironmentId: "office" });
+  expect(remoteSessionFor(draft.id)).toBe("office-session");
+});
+
+it("restores the scratch directory without upgrading old projectless tabs", () => {
+  const scratch = newSession("codex", "~");
+  const legacy = { ...newSession("codex", "~"), scratchWorkspace: undefined };
+  const tab = newTab(scratch.id);
+  const snapshot = collectWorkspaceSnapshot(
+    [tab, newTab(legacy.id)],
+    [scratch, legacy],
+    tab.id,
+    "~",
+    new Map(),
+  );
+  const parsed = parseWorkspaceSnapshot(JSON.parse(JSON.stringify(snapshot)));
+  expect(parsed).not.toBeNull();
+  const restored = hydrateWorkspaceSnapshot(parsed!, new Map());
+  expect(restored?.sessions.find((session) => session.id === scratch.id)).toMatchObject({
+    scratchWorkspace: true,
+  });
+  expect(
+    restored?.sessions.find((session) => session.id === legacy.id)?.scratchWorkspace,
+  ).toBeUndefined();
+  expect(restored?.sessions.map(sessionWorkCwd)).toContain(sessionWorkCwd(scratch));
+});
 
 describe("remote conversation identity across a restart", () => {
   beforeEach(() => localStorage.clear());
@@ -448,6 +483,25 @@ describe("collectWorkspaceSnapshot", () => {
     expect(workspace?.projectTerminals?.[0]?.splitGroups).toEqual([[first.id, second.id]]);
   });
 
+  it("does not restore a remote command dock as a local terminal", () => {
+    const project = "remote://fixture/project";
+    const dock = createProjectTerminal(project, newTerminalFile(project, "Code block"));
+    const snapshot = collectWorkspaceSnapshot(
+      [{ ...newTab("s1"), id: "t1" }],
+      [],
+      "t1",
+      project,
+      new Map(),
+      [dock],
+    );
+    expect(snapshot.projectTerminals).toEqual([]);
+    const workspace = hydrateWorkspaceSnapshot(
+      { ...snapshot, projectTerminals: [dock] },
+      new Map(),
+    );
+    expect(workspace?.projectTerminals).toEqual([]);
+  });
+
   it("stores the last dock side for new projects", () => {
     const term = newTerminalFile("/tmp/a", "zsh");
     const dock = createProjectTerminal("/tmp/a", term);
@@ -509,6 +563,68 @@ describe("parseWorkspaceSnapshot", () => {
     });
     expect(parsed?.activeTabId).toBe("t1");
     expect(parsed?.tabs[0] && "extra" in parsed.tabs[0]).toBe(false);
+  });
+
+  it("prefers a tab from the saved project when the active tab is missing", () => {
+    const background = chat("background", "/byshoot");
+    const foreground = chat("foreground", "/jira");
+    const backgroundTab = newTab(background.id);
+    const foregroundTab = newTab(foreground.id);
+    const snapshot = collectWorkspaceSnapshot(
+      [backgroundTab, foregroundTab],
+      [background, foreground],
+      "missing",
+      foreground.cwd,
+      new Map(),
+    );
+
+    expect(parseWorkspaceSnapshot(snapshot)?.activeTabId).toBe(foregroundTab.id);
+  });
+
+  it("opens No project when no tab from the saved project survives", () => {
+    const background = chat("background", "/byshoot");
+    const foreground = chat("foreground", "/jira");
+    const backgroundTab = newTab(background.id);
+    const foregroundTab = newTab(foreground.id);
+    const snapshot = collectWorkspaceSnapshot(
+      [backgroundTab, foregroundTab],
+      [background, foreground],
+      foregroundTab.id,
+      foreground.cwd,
+      new Map(),
+    );
+
+    const restored = hydrateWorkspaceSnapshot(
+      snapshot,
+      new Map(),
+      new Set(),
+      new Set([foreground.id]),
+    );
+    const activeTab = restored?.tabs.find((tab) => tab.id === restored.activeTabId);
+    const activeSession = restored?.sessions.find((session) => session.id === activeTab?.focusedId);
+
+    expect(restored?.projectCwd).toBe("~");
+    expect(activeSession).toMatchObject({ cwd: "~", blocks: [] });
+    expect(restored?.tabs.map((tab) => tab.id)).toContain(backgroundTab.id);
+    expect(restored?.sessions.some((session) => session.id === foreground.id)).toBe(false);
+  });
+
+  it("keeps No project selected after another restart with project tabs in the background", () => {
+    const background = chat("background", "/byshoot");
+    const blank = newSession("cursor", "~");
+    const blankTab = newTab(blank.id);
+    const snapshot = collectWorkspaceSnapshot(
+      [newTab(background.id), blankTab],
+      [background, blank],
+      blankTab.id,
+      "~",
+      new Map(),
+    );
+
+    expect(hydrateWorkspaceSnapshot(snapshot, new Map())).toMatchObject({
+      activeTabId: blankTab.id,
+      projectCwd: "~",
+    });
   });
 
   it.each([

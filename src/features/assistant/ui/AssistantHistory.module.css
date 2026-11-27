@@ -1,12 +1,15 @@
 .history {
-  display: grid;
-  gap: 16px;
+  display: flex;
+  flex-direction: column;
+  /* An empty history centers its state in the pane height left under the toolbar. */
+  flex: 1 1 auto;
+  gap: var(--ui-space-4);
   inline-size: 100%;
   min-inline-size: 0;
 }
 .day {
   display: grid;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 .events {
@@ -23,8 +26,8 @@
   display: grid;
   grid-template-columns: 5rem minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 4px 12px;
-  padding: 8px 12px;
+  gap: var(--ui-space-1) var(--ui-space-3);
+  padding: var(--ui-space-2) var(--ui-space-3);
 }
 .kind {
   grid-column: 4;
@@ -48,17 +51,7 @@
   align-items: center;
   gap: 2px;
 }
-.empty {
-  display: block;
-  margin: 0;
-  padding-block: 24px;
-  text-align: center;
-}
-/* An empty live region must keep no height; the empty state still occupies its place only while it has text. */
-.empty:empty {
-  padding-block: 0;
-}
-@media (max-width: 540px) {
+@container assistant-room (max-width: 540px) {
   .event {
     grid-template-columns: 4.5rem minmax(0, 1fr) auto;
   }

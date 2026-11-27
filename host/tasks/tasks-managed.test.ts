@@ -230,6 +230,7 @@ it("projects durable publication receipts without releasing integration dependen
     plan: {
       token: "reviewed",
       expiresAt: 200,
+      expiresInMs: 200,
       workspaceId: workspace.id,
       expectedRevision: workspace.revision,
       sourceBranchRef: workspace.branchRef,
@@ -299,6 +300,7 @@ it.each([false, true])(
     const plan: WorkspaceDeliveryOperation["plan"] = {
       token: "artifact-review",
       expiresAt: 1000,
+      expiresInMs: 1000,
       action: "merge",
       workspaceId: workspace.id,
       expectedRevision: workspace.revision,
@@ -352,7 +354,7 @@ it.each([false, true])(
       return receipt;
     });
     const reviewed = await f.tasks.reviewDelivery(reviewing.id);
-    expect("artifacts" in reviewed && reviewed.artifacts.paths).toEqual([path]);
+    expect("artifacts" in reviewed && reviewed.artifacts?.paths).toEqual([path]);
     const request = {
       workspaceId: workspace.id,
       expectedRevision: plan.expectedRevision,
@@ -416,6 +418,7 @@ it.each(["source", "target"])(
     f.services.delivery.review = vi.fn(async () => ({
       token: "approved-artifacts",
       expiresAt: 1000,
+      expiresInMs: 1000,
       action: "merge",
       workspaceId: workspace.id,
       expectedRevision: workspace.revision,

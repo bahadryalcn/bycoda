@@ -224,7 +224,9 @@ it("lets keyboard users expand and collapse a truncated prompt", async () => {
   await act(async () => button!.click());
   expect(button!.getAttribute("aria-expanded")).toBe("true");
   expect(button!.textContent).toBe("Show less");
-  expect(container.querySelector("pre")?.classList).not.toContain("line-clamp-4");
+  expect(
+    container.querySelector('[data-selectable-agent-response="prompt"]')?.classList,
+  ).not.toContain("line-clamp-4");
 });
 
 it("keeps one prompt corner radius whatever the pane width", () => {
@@ -270,7 +272,10 @@ it("shows a copy error instead of success and allows retry", async () => {
   );
   const button = container.querySelector<HTMLButtonElement>('[aria-label="Copy message"]')!;
   await act(async () => button.click());
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Clipboard unavailable");
+  const alert = container.querySelector('[role="alert"]');
+  expect(alert?.textContent).toContain("Copy failed. Try again.");
+  expect(alert?.textContent).not.toContain("Clipboard unavailable");
+  expect(alert?.querySelector('button[aria-haspopup="dialog"]')).not.toBeNull();
   expect(button.getAttribute("aria-label")).toBe("Copy message");
   write.mockResolvedValue();
   await act(async () => button.click());

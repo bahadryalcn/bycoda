@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import { asRecord } from "../../../../shared/lib/records";
 import type {
   Attachment,
@@ -17,6 +18,7 @@ import {
 import { displayPath } from "../../../../shared/lib/paths";
 import { normalizeTaskListStatus } from "../../../../features/sessions/model/taskList";
 import { MAX_TOOL_DETAIL_CHARS } from "../../core/toolDetailLimits";
+import { parseRetryAt, retryAtField } from "../../core/retryAt";
 import { composeToolTitle, extractToolPreview, formatAgentType } from "../../core/preview";
 import { formatShellIntent, inferShellIntent } from "../../core/shellIntent";
 import { streamTextDelta } from "../../core/streamText";
@@ -24,9 +26,10 @@ import type { HarnessEvent, HarnessFileChange } from "../../core/types";
 import { dollarTokenAt } from "../../../../features/skills/model/slashCommands";
 import { retainToolInspection } from "../../../../features/sessions/model/toolInspection";
 import { codexStructuredResultText } from "./codexStructuredResult";
+import { t } from "../../../../shared/i18n/core";
 import {
-  COMPACTED_TEXT,
-  COMPACTING_TEXT,
+  compactedText,
+  compactingText,
   COMPACTION_STATUS_KEY,
 } from "../../../../features/sessions/model/compactionStatus";
 
@@ -139,8 +142,9 @@ export function buildTurnStartParams(input: {
       : {}),
     ...(input.model?.trim() ? { model: input.model.trim() } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
-    ...(input.serviceTier && input.serviceTier !== "default"
-      ? { serviceTier: input.serviceTier }
+    // A missing tier inherits the thread's last speed. Standard clears that override.
+    ...(input.serviceTier
+      ? { serviceTier: input.serviceTier === "default" ? null : input.serviceTier }
       : {}),
   };
 }
@@ -232,7 +236,7 @@ export function codexSkillStatesFromList(
 }
 
 export function isRecoverableThreadResumeError(error: unknown): boolean {
-  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  const message = errorText(error).toLowerCase();
   if (!message.includes("thread")) return false;
   return [
     "not found",
@@ -524,7 +528,14 @@ export function mapCodexNotification(
     const willRetry = rec.willRetry === true;
     if (willRetry) {
       return {
-        events: [{ type: "status", key: "provider-retry", text: message }],
+        events: [
+          {
+            type: "status",
+            key: "provider-retry",
+            text: message,
+            ...retryAtField(parseRetryAt(message, Date.now())),
+          },
+        ],
         diagnostic: message,
       };
     }
@@ -645,7 +656,7 @@ function mapTurnTerminal(method: string, rec: Record<string, unknown>): MappedCo
   if (status === "failed" && error) {
     events.push({ type: "session.error", message: error });
   } else if (status === "failed") {
-    events.push({ type: "session.error", message: "Codex turn failed." });
+    events.push({ type: "session.error", message: t("Codex turn failed.") });
   }
   return {
     events,
@@ -657,6 +668,15 @@ function mapTurnTerminal(method: string, rec: Record<string, unknown>): MappedCo
 
 function isUsageLimitError(error: Record<string, unknown> | null): boolean {
   return error?.codexErrorInfo === "usageLimitExceeded";
+}
+
+function imageAspectRatio(item: Record<string, unknown>): number | undefined {
+  const ratio = stringField(item, "aspectRatio")?.trim();
+  const size = stringField(item, "size")?.trim();
+  const dimensions =
+    ratio?.match(/^([1-9]\d{0,4})\s*[:/]\s*([1-9]\d{0,4})$/) ??
+    size?.match(/^([1-9]\d{0,4})\s*[x×]\s*([1-9]\d{0,4})$/i);
+  return dimensions ? Number(dimensions[1]) / Number(dimensions[2]) : undefined;
 }
 
 function mapItemLifecycle(method: string, rec: Record<string, unknown>): MappedCodexNotification {
@@ -672,8 +692,8 @@ function mapItemLifecycle(method: string, rec: Record<string, unknown>): MappedC
     return {
       events: [
         completed
-          ? { type: "status", key: COMPACTION_STATUS_KEY, running: false, text: COMPACTED_TEXT }
-          : { type: "status", key: COMPACTION_STATUS_KEY, running: true, text: COMPACTING_TEXT },
+          ? { type: "status", key: COMPACTION_STATUS_KEY, running: false, text: compactedText() }
+          : { type: "status", key: COMPACTION_STATUS_KEY, running: true, text: compactingText() },
       ],
     };
   }
@@ -710,9 +730,28 @@ function mapItemLifecycle(method: string, rec: Record<string, unknown>): MappedC
   }
 
   if (itemType === "imageGeneration") {
-    if (!completed) return { events: [] };
+    if (!completed) {
+      const aspectRatio = imageAspectRatio(item);
+      return {
+        events: [
+          {
+            type: "image.generationStarted",
+            itemId: callId,
+            ...(aspectRatio === undefined ? {} : { aspectRatio }),
+          },
+        ],
+      };
+    }
     const result = stringField(item, "result")?.trim();
-    if (!result) return { events: [] };
+    const status = stringField(item, "status");
+    const stopped = status === "cancelled" || status === "interrupted" || status === "stopped";
+    if (stopped || status === "failed" || !result) {
+      return {
+        events: [
+          { type: "image.generationEnded", itemId: callId, status: stopped ? "stopped" : "failed" },
+        ],
+      };
+    }
     const prompt = stringField(item, "revisedPrompt")?.trim();
     return {
       events: [
@@ -825,7 +864,7 @@ function mapToolItem(
         }),
         kind: "search",
         status,
-        preview: { kind: "search", query },
+        preview: { kind: "search", title: "webSearch", query },
       };
     }
     return {
@@ -839,7 +878,7 @@ function mapToolItem(
       }),
       kind: "search",
       status,
-      preview: { kind: "search", query },
+      preview: { kind: "search", title: "webSearch", query },
     };
   }
 

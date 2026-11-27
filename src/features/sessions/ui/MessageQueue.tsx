@@ -1,4 +1,6 @@
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { catalogText } from "../model/catalogText";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
+import { flushSync } from "react-dom";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { actionDragAttributes } from "../../../shared/ui/ActionHost";
 import { Text } from "../../../shared/ui/Text";
@@ -6,13 +8,19 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { activeQueueFeedback, type QueueFeedback } from "./queueFeedback";
 import { canSendQueueMessage } from "../model/queueAction";
 import { useAcceptedQueueDeparture, type MessageQueueProps } from "./useAcceptedQueueDeparture";
-import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { chatCitationPreview, extractChatCitations } from "../model/chatCitation";
+import { findCitationTokens } from "../model/citationTokens";
+import { rewriteTokenMatches } from "../model/attachmentTokens";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { LiveText } from "../../../shared/ui/LiveText";
 import {
+  DeliveryNoticeReopen,
   DeliveryProgressNotice,
   DeliveryProgressIndicator,
   deliveryIsPending,
   useDeliveryProgress,
+  useQueueDeliveryMessage,
 } from "./DeliveryProgressNotice";
 import { queueState } from "../../connections/public/queueState";
 import { useQueueHoldReason } from "../model/deliveryReview";
@@ -29,16 +37,16 @@ import {
 } from "../data/parentInputClosure";
 import { useT } from "../../../shared/i18n";
 import type { QueueAction } from "../model/queueAction";
+import type { Attachment } from "../model/session";
 import "./chat-controls.css";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
-  CornerDownRight,
   GripVertical,
-  ListEnd,
   Pause,
   Pencil,
   Play,
   Trash2,
+  ArrowLeftRight,
 } from "../../../shared/ui/icons";
 import {
   useEffect,
@@ -94,7 +102,7 @@ async function runQueueAction(
     setFeedback({
       error: true,
       actionId: id,
-      text: t(presentRemoteError(error, { explicit: true })),
+      text: presentRemoteError(error, { explicit: true }),
     });
     return false;
   } finally {
@@ -104,6 +112,8 @@ async function runQueueAction(
 }
 
 type AccountList = { id: string; label: string }[];
+// Even compact rows fill the capped viewport well before the end of one page.
+const QUEUE_PAGE_SIZE = 12;
 
 export function MessageQueue({
   sessionId,
@@ -112,16 +122,22 @@ export function MessageQueue({
   status,
   onDelete,
   canAttach,
+  references,
+  suggestions,
   remote = false,
   busy = false,
+  waitingOnSubagents = false,
   runningTarget,
   steerSupported = false,
+  account: conversationAccount,
   onEdit,
   onEditingChange,
   onReorder,
   onSteer,
   onResume,
-}: MessageQueueProps) {
+}: Omit<MessageQueueProps, "onEdit"> & {
+  onEdit?: (messageId: string, text: string, attachments: Attachment[]) => boolean | void;
+}) {
   const t = useT();
   // The account lists live in storage; the string snapshot keeps the subscription value-stable.
   const accountListsJson = useSyncExternalStore(
@@ -131,6 +147,7 @@ export function MessageQueue({
   );
   const accountLists: Partial<Record<string, AccountList>> = JSON.parse(accountListsJson);
   const delivery = useDeliveryProgress(sessionId);
+  const queueDelivery = useQueueDeliveryMessage(sessionId, delivery);
   const pendingDelivery = deliveryIsPending(delivery?.stage);
   const heldByOtherWindow = useSharedQueueLeaseHeld(sessionId ?? "");
   const holdReason = useQueueHoldReason(sessionId ?? "");
@@ -144,6 +161,12 @@ export function MessageQueue({
         : undefined,
   });
   const departing = useAcceptedQueueDeparture(messages, delivery);
+  const reviewRow = messages.find((row) => row.deliveryUnknown);
+  const [visibleCount, setVisibleCount] = useState(QUEUE_PAGE_SIZE);
+  // An uncertain delivery must be reachable immediately, including in a deep queue.
+  const hasMoreRows = !reviewRow && visibleCount < messages.length;
+  const visibleMessages = hasMoreRows ? messages.slice(0, visibleCount) : messages;
+  const showMoreRows = () => setVisibleCount(visibleCount + QUEUE_PAGE_SIZE);
   const actionRef = useRef(false);
   const [pendingAction, setPendingAction] = useState<string>();
   const dragAdmission = useRef<{
@@ -213,7 +236,7 @@ export function MessageQueue({
       setFeedback({
         error: true,
         actionId: "admission",
-        text: t(presentRemoteError(error, { explicit: true })),
+        text: presentRemoteError(error, { explicit: true }),
       }),
     );
   };
@@ -290,6 +313,7 @@ export function MessageQueue({
     event.preventDefault();
     const next = moveQueuedMessage(messages, id, index + (event.key === "ArrowUp" ? -1 : 1));
     if (next === messages) return;
+    if (hasMoreRows && index + 1 === visibleCount && event.key === "ArrowDown") showMoreRows();
     refocus.current = id;
     onReorder?.(next.map((message) => message.id));
     announceDrag(
@@ -338,6 +362,21 @@ export function MessageQueue({
   });
   const leaseHeld = !paused && hold.kind === "held" && hold.reason === "lease";
   const restored = status === "restored" && messages.length > 0;
+  // The reopen button sits in the first header that shows, so it never appears twice.
+  const reopenIn = paused
+    ? "paused"
+    : leaseHeld && sessionId
+      ? "lease"
+      : restored
+        ? "restored"
+        : "summary";
+  // Why a queue action is off while a send or a session checkpoint is in progress. Only
+  // `disabledReason` uses these; every `disabled` condition below is unchanged.
+  const sendingReason =
+    pendingAction || pendingDelivery ? t("Unavailable while the queue is sending") : undefined;
+  const busyReason = queueClosed
+    ? t("Unavailable while the session checkpoint is prepared")
+    : sendingReason;
   const canSend = (message: QueuedMessage) =>
     canSendQueueMessage(message, {
       blocked:
@@ -362,53 +401,80 @@ export function MessageQueue({
   };
   return (
     <Text as="div" size="inherit" tone="secondary" data-message-queue data-usage-guide="queue">
-      {queueClosed ? (
-        <p role="status">{t("Preparing session checkpoint. Your draft is kept.")}</p>
-      ) : null}
       <div
         {...surfaceAttributes(
-          { radius: "dock-top", variant: "floating", material: "glass" },
-          "relative z-0 px-2 py-1",
+          { radius: "popup", variant: "floating", material: "glass" },
+          "relative z-0 mb-2 px-2 pt-2 pb-1.5",
         )}
         data-message-queue-card
         ref={card}
       >
         {paused ? (
-          <Text as="div" size="caption" tone="inherit" className="mb-1 flex h-7 items-center gap-2">
-            <Pause className="icon-sm" />
+          <Text
+            as="div"
+            size="caption"
+            tone="inherit"
+            className="mb-1 flex min-h-(--ui-control-height-compact) flex-wrap items-center gap-x-2 gap-y-1"
+          >
+            <Pause className="icon-sm shrink-0" />
             {messages.length > 0 ? <DeliveryProgressIndicator sessionId={sessionId} /> : null}
-            <Tooltip label={holdDetail} asChild>
-              <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
-                {(delivery && (delivery.stage === "rejected" || delivery.stage === "unknown")) ||
-                messages.some((message) => message.deliveryUnknown)
-                  ? `${t("Queue")} · ${messages.length}`
-                  : hold.kind === "held" && hold.reason === "unknown"
-                    ? t("Queue held: delivery is not confirmed")
-                    : hold.kind === "held" && hold.reason === "rejected"
-                      ? holdDetail?.split(/\r?\n/, 1)[0] ||
-                        t("Queue paused: the last message was not accepted")
-                      : t("Queue paused because you interrupted")}
-              </Text>
-            </Tooltip>
-            <Button
-              variant="ghost"
-              type="button"
-              disabled={
-                !onResume ||
-                !!pendingAction ||
-                pendingDelivery ||
-                // An unconfirmed delivery is settled in the delivery notice, never by a blind resend.
-                (hold.kind === "held" && hold.reason === "unknown") ||
-                hasMissingAttachment(messages[0])
-              }
-              loading={pendingAction === "resume"}
-              loadingLabel={t("Resuming…")}
-              onClick={() => trigger("resume", onResume)}
-              className="shrink-0"
+            <Text
+              size="inherit"
+              tone="inherit"
+              className="min-w-0 flex-1 basis-40 [overflow-wrap:anywhere]"
             >
-              <Play className="icon-sm" />
-              {pendingAction === "resume" ? t("Resuming…") : t("Resume")}
-            </Button>
+              {(delivery &&
+                (delivery.stage === "rejected" ||
+                  delivery.stage === "unknown" ||
+                  delivery.stage === "waiting")) ||
+              messages.some((message) => message.deliveryUnknown)
+                ? `${t("Queue")} · ${messages.length}`
+                : hold.kind === "held" && hold.reason === "unknown"
+                  ? t("Queue held: delivery is not confirmed")
+                  : hold.kind === "held" && hold.reason === "rejected"
+                    ? t("Queue paused: the last message was not accepted")
+                    : // A failed turn or an unsynced hold also pauses: blame a Stop only when it was one.
+                      holdReason === "stopped"
+                      ? t("Queue paused because you interrupted")
+                      : t("Queue paused")}
+            </Text>
+            {reopenIn === "paused" && !reviewRow ? (
+              <DeliveryNoticeReopen sessionId={sessionId} messages={messages} />
+            ) : null}
+            {!reviewRow ? (
+              <Button
+                variant="ghost"
+                type="button"
+                disabled={
+                  !onResume ||
+                  !!pendingAction ||
+                  pendingDelivery ||
+                  // An unconfirmed delivery is settled in the delivery notice, never by a blind resend.
+                  (hold.kind === "held" && hold.reason === "unknown") ||
+                  hasMissingAttachment(messages[0])
+                }
+                disabledReason={
+                  sendingReason ??
+                  // An unconfirmed delivery is settled in the delivery notice, never by a blind resend.
+                  (hold.kind === "held" && hold.reason === "unknown"
+                    ? t("Delivery is not confirmed. Automatic resend is held.")
+                    : hasMissingAttachment(messages[0])
+                      ? t("Attachment missing")
+                      : !onResume
+                        ? t(
+                            "This queue action is unavailable. Reopen the conversation and try again.",
+                          )
+                        : undefined)
+                }
+                loading={pendingAction === "resume"}
+                loadingLabel={t("Resuming…")}
+                onClick={() => trigger("resume", onResume)}
+                startIcon={<Play className="icon-sm" />}
+                className="shrink-0"
+              >
+                {t("Resume")}
+              </Button>
+            ) : null}
           </Text>
         ) : null}
         {leaseHeld && sessionId ? (
@@ -416,37 +482,57 @@ export function MessageQueue({
             as="div"
             size="caption"
             tone="inherit"
-            className="mb-1 flex h-7 items-center gap-2"
+            className="mb-1 flex min-h-(--ui-control-height-compact) flex-wrap items-center gap-x-2 gap-y-1"
             data-queue-held-elsewhere
           >
-            <Pause className="icon-sm" />
-            <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+            <Pause className="icon-sm shrink-0" />
+            <Text
+              size="inherit"
+              tone="inherit"
+              className="min-w-0 flex-1 basis-40 [overflow-wrap:anywhere]"
+            >
               {activeFeedback && !activeFeedback.error
                 ? activeFeedback.text
                 : t("Queue held by another window, which sends it")}
             </Text>
+            {reopenIn === "lease" ? (
+              <DeliveryNoticeReopen sessionId={sessionId} messages={messages} />
+            ) : null}
             <Button
               variant="ghost"
               type="button"
               disabled={queueClosed || !!pendingAction || pendingDelivery}
+              disabledReason={busyReason}
               loading={pendingAction === "takeover"}
               loadingLabel={t("Taking over…")}
               onClick={() => trigger("takeover", () => takeOverSharedLocalQueue(sessionId))}
               className="shrink-0"
             >
-              {pendingAction === "takeover" ? t("Taking over…") : t("Take over")}
+              {t("Take over")}
             </Button>
           </Text>
         ) : null}
         {restored ? (
-          <Text as="div" size="caption" tone="inherit" className="mb-1 flex h-7 items-center gap-2">
-            <Pause className="icon-sm" />
+          <Text
+            as="div"
+            size="caption"
+            tone="inherit"
+            className="mb-1 flex min-h-(--ui-control-height-compact) flex-wrap items-center gap-x-2 gap-y-1"
+          >
+            <Pause className="icon-sm shrink-0" />
             <DeliveryProgressIndicator sessionId={sessionId} />
-            <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+            <Text
+              size="inherit"
+              tone="inherit"
+              className="min-w-0 flex-1 basis-40 [overflow-wrap:anywhere]"
+            >
               {messages.length === 1
                 ? t("1 queued message restored")
                 : t("{p0} queued messages restored", { p0: messages.length })}
             </Text>
+            {reopenIn === "restored" ? (
+              <DeliveryNoticeReopen sessionId={sessionId} messages={messages} />
+            ) : null}
             <Button
               variant="ghost"
               type="button"
@@ -458,15 +544,26 @@ export function MessageQueue({
                 hasMissingAttachment(messages[0]) ||
                 (!onResume && !canSend(messages[0]))
               }
+              disabledReason={
+                sendingReason ??
+                (messages.some((message) => message.deliveryUnknown) ||
+                delivery?.stage === "unknown"
+                  ? t("Delivery is not confirmed. Automatic resend is held.")
+                  : hasMissingAttachment(messages[0])
+                    ? t("Attachment missing")
+                    : !onResume && !canSend(messages[0])
+                      ? (busyReason ?? t("Queue is waiting for the current turn to finish."))
+                      : undefined)
+              }
               loading={pendingAction === "resume"}
-              loadingLabel={t("Resuming…")}
+              loadingLabel={t("Sending…")}
               onClick={() =>
                 trigger("resume", onResume ?? (onSteer ? () => onSteer(messages[0].id) : undefined))
               }
+              startIcon={<Play className="icon-sm" />}
               className="shrink-0"
             >
-              <Play className="icon-sm" />
-              {pendingAction === "resume" ? t("Sending…") : t("Send next")}
+              {t("Send next")}
             </Button>
           </Text>
         ) : null}
@@ -475,35 +572,51 @@ export function MessageQueue({
             as="div"
             size="caption"
             tone="inherit"
-            className="flex min-h-7 items-center gap-2 px-1"
+            className="flex min-h-6 items-center gap-2 px-1.5 text-(--transcript-ink-chrome)"
             data-queue-summary
           >
-            <ListEnd className="icon-sm shrink-0" />
             {messages.length > 0 ? <DeliveryProgressIndicator sessionId={sessionId} /> : null}
-            <span className="shrink-0">
-              {t("Queue")} · {messages.length}
-            </span>
+            <Text size="inherit" tone="primary" weight="medium" className="shrink-0">
+              {t("{p0} queued", { p0: messages.length })}
+            </Text>
             {activeFeedback && !activeFeedback.error ? (
-              <Text size="inherit" tone="inherit" truncate>
-                {activeFeedback.text}
-              </Text>
+              <OverflowTooltip label={activeFeedback.text}>
+                <Text size="inherit" tone="inherit" truncate tabIndex={0}>
+                  {activeFeedback.text}
+                </Text>
+              </OverflowTooltip>
+            ) : waitingOnSubagents ? (
+              <OverflowTooltip label={t("Sends when the subagents finish")}>
+                <Text size="inherit" tone="inherit" truncate tabIndex={0}>
+                  {t("Sends when the subagents finish")}
+                </Text>
+              </OverflowTooltip>
+            ) : null}
+            {reopenIn === "summary" ? (
+              <DeliveryNoticeReopen sessionId={sessionId} messages={messages} />
             ) : null}
           </Text>
         ) : null}
-        <DeliveryProgressNotice sessionId={sessionId} messages={messages} embedded />
-        {holdDetail && !delivery && (holdDetail.length > 180 || holdDetail.includes("\n")) ? (
-          <Text
-            as="p"
-            size="inherit"
-            tone="muted"
-            className="max-h-32 overflow-y-auto px-1 pb-1 whitespace-pre-wrap [overflow-wrap:anywhere]"
-          >
-            {holdDetail}
-          </Text>
+        {queueDelivery?.detail && messages.some((row) => row.id === queueDelivery.messageId) ? (
+          <LiveText
+            className="px-1 pb-1"
+            size="caption"
+            tone="secondary"
+            text={catalogText(t, queueDelivery.detail)}
+          />
         ) : null}
         <div
           className="max-h-[min(30dvh,15rem)] min-h-0 overflow-y-auto overscroll-contain"
           data-message-queue-rows
+          onScroll={
+            hasMoreRows
+              ? (event) => {
+                  const list = event.currentTarget;
+                  if (list.scrollHeight - list.scrollTop - list.clientHeight < list.clientHeight)
+                    showMoreRows();
+                }
+              : undefined
+          }
         >
           {departing ? (
             <div className="queue-departure" data-queue-departure={departing.id} aria-hidden="true">
@@ -518,7 +631,7 @@ export function MessageQueue({
               </Text>
             </div>
           ) : null}
-          {messages.map((message, index) => {
+          {visibleMessages.map((message, index) => {
             if (message.author?.kind === "delegation")
               return (
                 <QueuedDelegationRow
@@ -526,6 +639,7 @@ export function MessageQueue({
                   message={message}
                   itemRef={(node) => sortable.setItemRef(message.id, node)}
                   disabled={queueClosed || !!pendingAction || pendingDelivery}
+                  disabledReason={busyReason}
                   onRemove={() => removeMessage(message.id)}
                 />
               );
@@ -537,34 +651,47 @@ export function MessageQueue({
               target && supportsProviderAccounts(target.harness)
                 ? (accountLists[target.harness] ?? [])
                 : [];
-            const account = accounts.find(
-              (account) => account.id === (target?.providerAccountId ?? "default"),
-            );
+            // A row for the conversation's provider runs on its current account, not the
+            // one it was queued with (the owner may have switched after a usage limit).
+            const accountId =
+              target && conversationAccount && target.harness === conversationAccount.harness
+                ? conversationAccount.providerAccountId
+                : target?.providerAccountId;
+            const account = accounts.find((account) => account.id === (accountId ?? "default"));
             const accountLabel =
               target && supportsProviderAccounts(target.harness)
                 ? account
                   ? accountDisplayLabel(accounts, account)
-                  : target.providerAccountId &&
-                      target.providerAccountId !== DEFAULT_PROVIDER_ACCOUNT_ID
+                  : accountId && accountId !== DEFAULT_PROVIDER_ACCOUNT_ID
                     ? t("Removed account")
                     : t("Default account")
                 : undefined;
             const targetLabel =
               target && summary
-                ? [summary.model, accountLabel, summary.effort && t(summary.effort)]
+                ? [summary.model, accountLabel, summary.effort && catalogText(t, summary.effort)]
                     .filter(Boolean)
                     .join(" · ")
                 : undefined;
             const routeNote =
               route === "switch"
-                ? t("Steer switches provider")
+                ? t(
+                    "Steer stops the running turn, including its background work, and continues this conversation on the saved provider, as switching provider in the composer does.",
+                  )
                 : route === "restart"
-                  ? t("Steer restarts with this model")
+                  ? t(
+                      "Steer stops the running turn, including its background work, and starts this message as a new turn with its saved model.",
+                    )
                   : undefined;
             const files = message.attachments.length;
+            const { text, citations } = extractChatCitations(message.text);
             const label =
-              message.text.trim() ||
-              t(files === 1 ? "1 attachment" : "{p0} attachments", { p0: files });
+              rewriteTokenMatches(
+                text,
+                findCitationTokens(text, citations.length),
+                () => "",
+              ).trim() ||
+              citations.map(chatCitationPreview).filter(Boolean).join(" · ") ||
+              (files === 1 ? t("1 attachment") : t("{p0} attachments", { p0: files }));
             return (
               <Text
                 key={message.id}
@@ -574,7 +701,7 @@ export function MessageQueue({
                 tone="inherit"
                 {...actionDragAttributes(
                   { appearance: "lifted" },
-                  "reorder-item grid min-h-7 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2",
+                  "reorder-item grid min-h-8 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5 ps-1",
                 )}
               >
                 <Button
@@ -583,18 +710,20 @@ export function MessageQueue({
                   disabled={
                     messages.length < 2 || queueClosed || !!pendingAction || pendingDelivery
                   }
+                  disabledReason={messages.length < 2 ? undefined : busyReason}
                   variant="ghost"
                   type="button"
                   data-queue-handle={message.id}
                   tooltip={t("Drag to reorder")}
                   shortcut="Alt+↑ / Alt+↓"
-                  aria-label={t("Reorder queued message")}
                   aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
                   onPointerDown={(event) => {
                     if (messages.length < 2 || event.button !== 0) return;
                     if (dragAdmission.current && !dragAdmission.current.ended) return;
                     const admitted = queueOwner.admit();
                     if (!admitted) return;
+                    // Pointer reordering measures every row once at drag start.
+                    if (hasMoreRows) flushSync(() => setVisibleCount(messages.length));
                     // This may synchronously finish the previous settling
                     // drag. Its callback must still see its original ticket.
                     if (sortable.onItemPointerDown(message.id, event) !== true) {
@@ -620,20 +749,14 @@ export function MessageQueue({
                     </Text>
                   </OverflowTooltip>
                   {attachmentGone ? (
-                    <Tooltip
-                      label={t(
-                        "An attached file is gone. Edit this message to drop it, or remove the message.",
-                      )}
-                      asChild
+                    <Text
+                      size="inherit"
+                      tone="warning"
+                      className="block [overflow-wrap:anywhere]"
+                      data-queue-attachment-missing
                     >
-                      <Text
-                        size="inherit"
-                        tone="warning"
-                        className="block [overflow-wrap:anywhere]"
-                      >
-                        {t("Attachment missing")}
-                      </Text>
-                    </Tooltip>
+                      {t("Attachment missing")} · {t("Edit to drop it, or remove the message.")}
+                    </Text>
                   ) : null}
                   {target && targetLabel ? (
                     <Text
@@ -644,19 +767,44 @@ export function MessageQueue({
                     >
                       <HarnessIcon harness={target.harness} className="size-3 shrink-0" />
                       <span aria-hidden="true">·</span>
-                      <Tooltip label={t("Queued for {p0}", { p0: targetLabel })} asChild>
+                      <OverflowTooltip label={targetLabel}>
                         <Text size="inherit" tone="inherit" truncate>
                           {targetLabel}
                         </Text>
-                      </Tooltip>
-                      {routeNote ? <span className="shrink-0">· {routeNote}</span> : null}
+                      </OverflowTooltip>
+                      {routeNote ? (
+                        <InfoTooltip
+                          label={
+                            route === "switch"
+                              ? t("Steer switches provider")
+                              : t("Steer restarts with this model")
+                          }
+                          icon={<ArrowLeftRight className="icon-sm" aria-hidden="true" />}
+                          className="shrink-0"
+                        >
+                          {routeNote}
+                        </InfoTooltip>
+                      ) : null}
                     </Text>
                   ) : null}
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  {remote ? null : (
+                  {message.id === reviewRow?.id ? (
+                    <DeliveryProgressNotice
+                      sessionId={sessionId}
+                      messages={queued}
+                      inlineRowId={message.id}
+                      retryDisabled={
+                        queueClosed ||
+                        !!pendingAction ||
+                        pendingDelivery ||
+                        attachmentGone ||
+                        heldByOtherWindow
+                      }
+                    />
+                  ) : remote ? null : (
+                    // A worded action: the row's one way to send now reads as such, not as an arrow.
                     <Button
-                      iconOnly
                       size="sm"
                       label={
                         pendingAction === message.id ||
@@ -667,18 +815,23 @@ export function MessageQueue({
                       variant="ghost"
                       type="button"
                       disabled={!canSend(message)}
-                      tooltip={
-                        busy && (message.intent === "plan" || message.intent === "orchestrate")
-                          ? t("New messages wait until this turn finishes. Stop pauses the queue.")
-                          : route === "switch"
-                            ? t(
-                                "Steer stops the running turn, including its background work, and continues this conversation on the saved provider, as switching provider in the composer does.",
-                              )
-                            : route === "restart"
+                      disabledReason={
+                        busyReason ??
+                        (message.deliveryUnknown ||
+                        (delivery?.messageId === message.id && delivery.stage === "unknown")
+                          ? t("Delivery is not confirmed. Automatic resend is held.")
+                          : attachmentGone
+                            ? t("Attachment missing")
+                            : busy &&
+                                (message.intent === "plan" || message.intent === "orchestrate")
                               ? t(
-                                  "Steer stops the running turn, including its background work, and starts this message as a new turn with its saved model.",
+                                  "New messages wait until this turn finishes. Stop pauses the queue.",
                                 )
-                              : undefined
+                              : busy && !steerSupported && route === "join"
+                                ? t(
+                                    "This host cannot steer the active turn. The message remains queued.",
+                                  )
+                                : undefined)
                       }
                       loading={
                         pendingAction === message.id ||
@@ -690,16 +843,16 @@ export function MessageQueue({
                       }
                       className="shrink-0"
                     >
-                      <CornerDownRight className="icon-sm" />
+                      {t("Steer")}
                     </Button>
                   )}
                   <Button
                     iconOnly
                     label={t("Edit queued message")}
                     disabled={queueClosed || !!pendingAction || pendingDelivery}
+                    disabledReason={busyReason}
                     variant="ghost"
                     type="button"
-                    aria-label={t("Edit queued message")}
                     onClick={() => startEdit(message)}
                     className="shrink-0"
                   >
@@ -710,6 +863,7 @@ export function MessageQueue({
                     iconOnly
                     label={t("Remove queued message")}
                     disabled={queueClosed || !!pendingAction || pendingDelivery}
+                    disabledReason={busyReason}
                     onClick={() => removeMessage(message.id)}
                   >
                     <Trash2 className="icon-sm" />
@@ -718,6 +872,21 @@ export function MessageQueue({
               </Text>
             );
           })}
+          {hasMoreRows ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                const next = visibleMessages.length;
+                flushSync(showMoreRows);
+                card.current
+                  ?.querySelectorAll<HTMLElement>("[data-queue-handle], [data-queue-notice] button")
+                  [next]?.focus();
+              }}
+            >
+              {t("Show more")}
+            </Button>
+          ) : null}
         </div>
         {removals.map((entry) => (
           <QueueRemovalNotice
@@ -726,17 +895,18 @@ export function MessageQueue({
             onUndo={() => perform(`undo:${entry.id}`, entry.undo).then((value) => value === true)}
             onDismiss={dismissRemoval}
             disabled={queueClosed || !!pendingAction || pendingDelivery}
+            disabledReason={busyReason}
           />
         ))}
         {!delivery && activeFeedback?.error ? (
-          <InlineError className="py-1">{activeFeedback.text}</InlineError>
+          <InlineError inset="row">{activeFeedback.text}</InlineError>
         ) : null}
         {remote ? (
-          <InfoPopover>
+          <InfoTooltip>
             {t("Sent one at a time when the host finishes this turn, while {p0} is open.", {
               p0: PRODUCT_IDENTITY.displayName,
             })}
-          </InfoPopover>
+          </InfoTooltip>
         ) : null}
       </div>
       {editingMessage ? (
@@ -745,10 +915,14 @@ export function MessageQueue({
           parentSessionId={parentSessionId}
           message={editingMessage}
           canAttach={canAttach}
+          references={references}
+          suggestions={suggestions}
           onSave={(text, attachments) => {
-            if (!queueOwner.canMutate()) return;
-            onEdit?.(editingMessage.id, text, attachments);
+            if (!queueOwner.canMutate() || !onEdit) return false;
+            const result = onEdit(editingMessage.id, text, attachments);
+            if (result === false) return false;
             setEditingId(undefined);
+            return true;
           }}
           onRemove={() => removeMessage(editingMessage.id)}
           onCancel={cancelEdit}

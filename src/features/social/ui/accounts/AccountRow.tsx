@@ -1,40 +1,26 @@
+import { t } from "../../../../shared/i18n";
 import { Text } from "../../../../shared/ui/Text";
 import { Button } from "../../../../shared/ui/Button";
-import { surfaceAttributes, Surface } from "../../../../shared/ui/Surface";
+import { Surface } from "../../../../shared/ui/Surface";
 import { OverflowTooltip } from "../../../../shared/ui/Tooltip";
-import { Badge, type BadgeTone } from "../../../../shared/ui/Badge";
-import type { Capability, SocialAccount } from "../../model/social";
+import type { SocialAccount } from "../../model/social";
 import { PlatformMark } from "../common/PlatformIcon";
+import { AccountStatusMark } from "./AccountStatusMark";
 import type { AccountHealth } from "./accountsModel";
-import { accountModeText, capabilitySummary } from "./accountsModel";
 import "./accounts.css";
 
 export type AccountRowProps = {
   account: SocialAccount;
   health: AccountHealth;
-  capabilities?: readonly Pick<Capability, "operation" | "status">[];
   selected?: boolean;
   onOpen: () => void;
 };
 
-const HEALTH_TONE: Record<AccountHealth["status"], BadgeTone> = {
-  ok: "success",
-  warn: "warning",
-  error: "danger",
-};
-
 /**
- * One account as a card: platform mark, name, "Browser" or "API" (the Host reports no handle), its connection status
- * and what it can do. The whole card opens the account.
+ * One account as a card: platform mark and name, plus its connection status only when it needs
+ * attention. The whole card opens the account.
  */
-export function AccountRow({
-  account,
-  health,
-  capabilities = [],
-  selected = false,
-  onOpen,
-}: AccountRowProps) {
-  const summary = capabilitySummary(capabilities);
+export function AccountRow({ account, health, selected = false, onOpen }: AccountRowProps) {
   return (
     <Surface
       as="li"
@@ -66,30 +52,16 @@ export function AccountRow({
                 {account.name}
               </Text>
             </OverflowTooltip>
-            <Text size="caption" tone="muted" leading="inherit" className="social-account-row-mode">
-              {accountModeText(account)}
-            </Text>
-            <span className="social-account-row-status">
-              <Badge tone={HEALTH_TONE[health.status]} size="sm">
-                {health.text}
-              </Badge>
-            </span>
+            {health.status !== "ok" || account.paused ? (
+              <span className="social-account-row-status">
+                {health.status !== "ok" ? (
+                  <AccountStatusMark status={health.status} label={health.text} />
+                ) : null}
+                {account.paused ? <AccountStatusMark status="paused" label={t("Paused")} /> : null}
+              </span>
+            ) : null}
           </span>
         </span>
-        {summary ? (
-          <Text
-            size="caption"
-            tone="muted"
-            leading="inherit"
-            truncate
-            {...surfaceAttributes(
-              { frame: "pane", edge: "block-start" },
-              "social-account-row-caps",
-            )}
-          >
-            {summary}
-          </Text>
-        ) : null}
       </Button>
     </Surface>
   );

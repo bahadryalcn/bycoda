@@ -1,7 +1,128 @@
 import { createElement } from "react";
 import { renderToStaticMarkup, renderToReadableStream } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { EmptySession } from "./EmptySession";
+import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { adoptRemoteMachineInventory } from "../../connections/model/connections";
+import { projectlessMachineProject } from "../../connections/model/sessionMachineTarget";
+
+describe("empty session heading", () => {
+  afterEach(() => adoptRemoteMachineInventory([]));
+
+  it.each(["~", projectlessMachineProject("remote-host").key])(
+    "leaves project selection to the composer and workbench for %s",
+    (cwd) => {
+      const markup = renderToStaticMarkup(
+        createElement(EmptySession, { cwd, composer: createElement("textarea") }),
+      );
+
+      expect(markup).toContain("<textarea");
+      expect(markup).not.toContain("Open a project");
+      expect(markup).not.toContain("bycoda-task-brief");
+    },
+  );
+
+  it("shows the project path as visible text, not only on hover", () => {
+    const markup = renderToStaticMarkup(
+      createElement(EmptySession, { cwd: "/work/demo", composer: createElement("textarea") }),
+    );
+
+    expect(markup).toContain('<p class="bycoda-task-path">/work/demo</p>');
+  });
+
+  it("turns the heading into a project picker for a draft that may change project", () => {
+    const markup = renderToStaticMarkup(
+      createElement(EmptySession, {
+        cwd: "/work/demo",
+        composer: createElement("textarea"),
+        onProjectChange: () => {},
+      }),
+    );
+
+    expect(markup).toContain('aria-haspopup="dialog"');
+    expect(markup).toContain("Switch project, current project demo");
+    expect(markup).toContain('<p class="bycoda-task-path">/work/demo</p>');
+  });
+
+  it("offers the picker without a project so a draft can leave No project", () => {
+    const markup = renderToStaticMarkup(
+      createElement(EmptySession, {
+        cwd: "~",
+        composer: createElement("textarea"),
+        onProjectChange: () => {},
+      }),
+    );
+
+    expect(markup).toContain('aria-label="Choose project"');
+    expect(markup).not.toContain("bycoda-task-path");
+  });
+
+  it("lets a remote draft pick among its machine's projects from the heading", () => {
+    adoptRemoteMachineInventory([]);
+    const markup = renderToStaticMarkup(
+      createElement(EmptySession, {
+        cwd: "remote://remote-host/srv/api",
+        environmentId: "remote-host",
+        composer: createElement("textarea"),
+        onProjectChange: () => {},
+      }),
+    );
+
+    expect(markup).toContain("Switch project, current project api");
+    expect(markup).toContain("bycoda-task-path");
+  });
+
+  it("distinguishes projects that share the same folder name", () => {
+    for (const cwd of ["/work/client-a/demo", "/work/client-b/demo"]) {
+      const markup = renderToStaticMarkup(
+        createElement(EmptySession, { cwd, composer: createElement("textarea") }),
+      );
+
+      expect(markup).toMatch(/<h2[^>]*>demo<\/h2>/);
+      expect(markup).toContain(`<p class="bycoda-task-path">${cwd}</p>`);
+    }
+  });
+
+  it("shows the saved machine name and folder path for a remote project", () => {
+    adoptRemoteMachineInventory([
+      {
+        id: "saved-machine",
+        name: "Office Mac",
+        endpoint: "http://office.local",
+        environmentId: "host-id",
+      },
+    ]);
+    const markup = renderToStaticMarkup(
+      createElement(EmptySession, {
+        cwd: "remote://host-id/Users/user/projects/demo",
+        composer: createElement("textarea"),
+      }),
+    );
+
+    expect(markup).toContain("Office Mac · /Users/user/projects/demo");
+    expect(markup).not.toContain("remote://host-id");
+  });
+
+  it("uses a generic machine label until the saved name is available", () => {
+    const markup = renderToStaticMarkup(
+      createElement(EmptySession, {
+        cwd: "remote://host-id/C:/projects/demo",
+        composer: createElement("textarea"),
+      }),
+    );
+
+    expect(markup).toContain("Remote computer · C:/projects/demo");
+    expect(markup).not.toContain("remote://host-id");
+  });
+
+  it("names the wordmark with a role assistive technology reads", () => {
+    const markup = renderToStaticMarkup(
+      createElement(EmptySession, { cwd: "/work/demo", composer: createElement("textarea") }),
+    );
+
+    expect(markup).toContain(`role="img" aria-label="${PRODUCT_IDENTITY.displayName}"`);
+  });
+});
 
 describe("empty session background", () => {
   it("renders the lazy crew when no chat background is selected", async () => {

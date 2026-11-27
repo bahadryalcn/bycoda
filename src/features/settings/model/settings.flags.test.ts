@@ -40,9 +40,16 @@ afterEach(() => {
 });
 
 /** Change events that carry no detail payload. */
-const NO_DETAIL = new Set(["bycoda.closeToTray", "bycoda.tabAnimationsEnabled"]);
+const NO_DETAIL = new Set(["bycoda.minimizeToTray", "bycoda.tabAnimationsEnabled"]);
 /** Appearance flags keep the applied value for this window when the write fails. */
 const APPLIED_ON_FAILURE = new Set(["bycoda.bodyGlass"]);
+/** Stored flags publish only after the change is persisted. */
+const CONFIRMED_EVENTS = new Set([
+  "bycoda.notesEnabled",
+  "bycoda.liveAgentsEnabled",
+  "bycoda.keepAwakeScreen",
+  "bycoda.claudeHooks",
+]);
 
 describe.each([
   [
@@ -74,11 +81,11 @@ describe.each([
     settings.KEEP_AWAKE_SCREEN_CHANGE_EVENT,
   ],
   [
-    "bycoda.closeToTray",
-    settings.loadCloseToTray,
-    settings.saveCloseToTray,
-    true,
-    "bycoda:close-to-tray-change",
+    "bycoda.minimizeToTray",
+    settings.loadMinimizeToTray,
+    settings.saveMinimizeToTray,
+    false,
+    "bycoda:minimize-to-tray-change",
   ],
   [
     "bycoda.crewSceneEnabled",
@@ -169,7 +176,7 @@ describe.each([
     }
   });
 
-  it("still emits its change event when writing fails", () => {
+  it("follows the flag's change notification contract when writing fails", () => {
     const value = !fallback;
     const dispatch = vi.spyOn(window, "dispatchEvent");
     const setItem = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
@@ -180,7 +187,7 @@ describe.each([
       expect(() => save(value)).not.toThrow();
       // Appearance keeps the applied value in this window; other flags keep the stored value.
       expect(load()).toBe(APPLIED_ON_FAILURE.has(key) ? value : fallback);
-      const emits = eventName;
+      const emits = eventName && !CONFIRMED_EVENTS.has(key);
       expect(dispatch).toHaveBeenCalledTimes(emits ? 1 : 0);
       if (emits) {
         expect(dispatch).toHaveBeenCalledWith(
@@ -210,18 +217,18 @@ describe.each([
   });
 });
 
-it("disables close-to-tray outside Windows without consulting storage", () => {
+it("disables minimize-to-tray outside Windows without consulting storage", () => {
   platform.isWindows = false;
-  settings.saveCloseToTray(true);
+  settings.saveMinimizeToTray(true);
   const read = vi.spyOn(localStorage, "getItem");
 
-  expect(settings.loadCloseToTray()).toBe(false);
+  expect(settings.loadMinimizeToTray()).toBe(false);
   expect(read).not.toHaveBeenCalled();
 });
 
 /** Preferences the Host owns: storage is only a legacy source until the Host accepts a record. */
 const HOST_OWNED = [
-  ["bycoda.keepAwakeWhileAgentsWork", "keepAwakeWhileAgentsWork", false],
+  ["bycoda.keepAwakeWhileAgentsWork", "keepAwakeWhileAgentsWork", true],
   ["bycoda.resumeAtReset", "resumeAtReset", true],
   ["bycoda.autoContinueInterrupted", "autoContinueInterrupted", true],
 ] as const;
@@ -301,9 +308,9 @@ describe("after the Host accepts a record", () => {
   );
 
   it("ignores legacy storage once the Host owns the value", () => {
-    localStorage.setItem("bycoda.keepAwakeWhileAgentsWork", "1");
+    localStorage.setItem("bycoda.keepAwakeWhileAgentsWork", "0");
     localStorage.setItem("bycoda.keepAwakeHoldAfter", "1h");
-    expect(settings.loadKeepAwakeEnabled()).toBe(false);
+    expect(settings.loadKeepAwakeEnabled()).toBe(true);
     expect(settings.loadKeepAwakeHoldAfter()).toBe("0");
   });
 
@@ -317,8 +324,8 @@ describe("after the Host accepts a record", () => {
 
   it("reads keep-awake on Linux and macOS from the Host record", () => {
     platform.isWindows = false;
-    acceptHost({ keepAwakeWhileAgentsWork: true }, 2);
-    expect(settings.loadKeepAwakeEnabled()).toBe(true);
+    acceptHost({ keepAwakeWhileAgentsWork: false }, 2);
+    expect(settings.loadKeepAwakeEnabled()).toBe(false);
   });
 
   it("notifies another window's change through the Host snapshot, not storage events", () => {
@@ -326,10 +333,10 @@ describe("after the Host accepts a record", () => {
     const unsubscribe = settings.subscribeKeepAwakeEnabled(listener);
     window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.keepAwakeWhileAgentsWork" }));
     expect(listener).not.toHaveBeenCalled();
-    acceptHost({ keepAwakeWhileAgentsWork: true }, 2);
+    acceptHost({ keepAwakeWhileAgentsWork: false }, 2);
     expect(listener).toHaveBeenCalledTimes(1);
     unsubscribe();
-    acceptHost({ keepAwakeWhileAgentsWork: false }, 3);
+    acceptHost({ keepAwakeWhileAgentsWork: true }, 3);
     expect(listener).toHaveBeenCalledTimes(1);
   });
 });

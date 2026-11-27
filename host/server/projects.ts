@@ -31,10 +31,15 @@ import { ConversationTaskQueueTools } from "../conversation/conversation-task-qu
 import { branchCache } from "../git/git-actions";
 import { GitWatches } from "../git/git-watch";
 import { ModelCatalogCache } from "../providers/model-catalog-cache";
+import { CodexCatalogStore, codexCatalogIdentity } from "../providers/codex-catalog-store";
+import { CodexCatalogSignedOut } from "../../src/integrations/harness/providers/codex/codexCatalog";
 import { TranscriptPages } from "../sessions/transcriptPage";
 import { RevisionWaits } from "../storage/revisionWait";
 import { SyncTransfers } from "../sync/sync-transfer";
 import { RemoteChanges } from "../workspaces/remoteChanges";
+import { AssistantQuotaReader } from "../assistant/models/assistant-quota-reader";
+import { readUsageLimits } from "../usage/limits-report";
+import { hostUsageLimitsDeps } from "./usage-limits-deps";
 import { WorkspaceCommands } from "../workspaces/workspace-commands";
 import type { ServerBindings } from "./bindings";
 import { discoverModels, providerBinaries, WATCH_STAMP_MS } from "./support";
@@ -82,10 +87,23 @@ export function createProjectsRuntime(
               name: config.name,
               contextWindow: config.contextWindow,
             }))
-          : await discoverModels[provider](cwd);
+          : await discoverModels[provider](cwd).catch((error: unknown) => {
+              if (error instanceof CodexCatalogSignedOut) return [];
+              throw error;
+            });
       if (discovered.length || provider === "acp") setHarnessModels(provider, discovered);
       return discovered;
     },
+    undefined,
+    dependencies.providers.includes("codex")
+      ? {
+          store: new CodexCatalogStore(
+            join(dirname(dependencies.engine.store.attachmentDir), "codex-model-catalog.json"),
+            dependencies.engine.store.environmentId,
+          ),
+          identity: codexCatalogIdentity,
+        }
+      : undefined,
   );
   const transfers = new SyncTransfers();
   const desktopRecheckMs = async (id: string): Promise<Awaited<number>> => {
@@ -105,7 +123,7 @@ export function createProjectsRuntime(
   dependencies.tasks.onChange = () => signal.notify();
   const revisionWaits = new RevisionWaits(64, signal);
   const transcriptPages = new TranscriptPages();
-  const remoteChanges = new RemoteChanges(signal);
+  const remoteChanges = new RemoteChanges(signal, WATCH_STAMP_MS);
   const gitWatches = new GitWatches({
     onChange: (cwd, change) => {
       if (!change || change.refs) branchCache.clear(cwd);
@@ -239,6 +257,11 @@ export function createProjectsRuntime(
       ),
     providers: dependencies.providers,
     authStatus: readHarnessAuthStatus,
+    // The same provider quota samples that skip spent entries in the model order.
+    quota: new AssistantQuotaReader({
+      readLimits: () =>
+        readUsageLimits(hostUsageLimitsDeps(dependencies.engine.store.environmentId)),
+    }),
     defaultAccounts: async () =>
       providerDefaultAccounts(await readProviderAccountStyles(dependencies.engine.store)),
   });

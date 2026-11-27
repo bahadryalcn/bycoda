@@ -3,6 +3,7 @@ import { Activity, act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { Sheet } from "./Sheet";
+import { renderToStaticMarkup } from "react-dom/server";
 import { Modal } from "./Modal";
 
 it("leaves Escape in another pane alone and closes only the focused pane", () => {
@@ -168,6 +169,109 @@ it("releases Escape while Activity hides the sheet and preserves its draft", () 
   }
 });
 
+it("returns focus to the opener when a container sheet closes, even if the owner moved focus in", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const draw = (open: boolean, mounted = true) =>
+    act(() =>
+      root.render(
+        createElement(
+          "div",
+          null,
+          createElement("textarea", { id: "composer" }),
+          mounted
+            ? createElement(Sheet, {
+                modal: false,
+                anchor: "container",
+                side: "bottom",
+                open,
+                initialFocus: false,
+                title: "Side question",
+                onClose: () => undefined,
+                children: createElement("textarea", { id: "side-question" }),
+              })
+            : null,
+        ),
+      ),
+    );
+  try {
+    draw(false);
+    const composer = document.getElementById("composer")!;
+    composer.focus();
+    draw(true);
+    // The side-question owner moves focus into its own field after the sheet opens.
+    document.getElementById("side-question")!.focus();
+    expect(document.activeElement?.id).toBe("side-question");
+    // Closing and unmounting in the same turn (the owner drops the sheet once it is closed).
+    draw(false, false);
+    await Promise.resolve();
+    expect(document.activeElement).toBe(composer);
+  } finally {
+    act(() => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("does not pull focus back from a stacked overlay or a control the user moved to", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const draw = (open: boolean, modal: boolean) =>
+    act(() =>
+      root.render(
+        createElement(
+          "div",
+          null,
+          createElement("button", { id: "opener" }, "Open"),
+          createElement("input", { id: "elsewhere" }),
+          createElement(Sheet, {
+            modal: false,
+            anchor: "container",
+            open,
+            initialFocus: false,
+            title: "Details",
+            onClose: () => undefined,
+            children: createElement("input", { id: "inside" }),
+          }),
+          modal
+            ? createElement(Modal, {
+                title: "Confirm",
+                onClose: () => undefined,
+                children: createElement("input", { id: "modal-field" }),
+              })
+            : null,
+        ),
+      ),
+    );
+  try {
+    draw(false, false);
+    document.getElementById("opener")!.focus();
+    draw(true, false);
+    document.getElementById("inside")!.focus();
+    draw(false, false);
+    document.getElementById("elsewhere")!.focus();
+    await Promise.resolve();
+    expect(document.activeElement?.id).toBe("elsewhere");
+
+    document.getElementById("opener")!.focus();
+    draw(true, false);
+    document.getElementById("inside")!.focus();
+    // A confirmation opens as the sheet closes: it keeps focus.
+    draw(false, true);
+    document.getElementById("modal-field")!.focus();
+    await Promise.resolve();
+    expect(document.activeElement?.id).toBe("modal-field");
+  } finally {
+    act(() => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("keeps a persistent non-modal workspace named as a region with its custom header", () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const host = document.createElement("div");
@@ -275,6 +379,94 @@ it.each([
     const body = document.getElementById("child")!.parentElement!;
     expect(body.classList.contains("px-4")).toBe(padded);
     expect(body.classList.contains("pb-4")).toBe(padded);
+  } finally {
+    act(() => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps one detached ground and bounds a bottom sheet against its container", () => {
+  const props = {
+    modal: false,
+    anchor: "container",
+    side: "bottom",
+    size: 720,
+    title: "Panel",
+    onClose: () => undefined,
+    footer: "Actions",
+    children: "x",
+  } as const;
+  const detached = renderToStaticMarkup(createElement(Sheet, props));
+  expect(detached.match(/popover-backdrop/g)).toHaveLength(1);
+  expect(detached).toContain("max-block-size:100%");
+  expect(detached).toContain("block-size:720px");
+  expect(detached.slice(detached.indexOf("<footer"))).toContain("overflow-y-auto");
+
+  const docked = renderToStaticMarkup(createElement(Sheet, { ...props, surface: "canvas" }));
+  expect(docked).toContain('data-sheet-docked="true"');
+  expect(docked).not.toContain("popover-backdrop");
+});
+
+it("resolves named sizes and leaves CSS lengths alone", () => {
+  const width = (size: string) => {
+    const html = renderToStaticMarkup(
+      createElement(Sheet, {
+        modal: false,
+        anchor: "container",
+        title: "Panel",
+        onClose: () => undefined,
+        size,
+        children: "x",
+      }),
+    );
+    expect(html).toContain("min(100%, max(20rem, 94%))");
+    return html.match(/inline-size:min\(([^,]+),/)?.[1];
+  };
+  expect(width("sm")).toBe("380px");
+  expect(width("md")).toBe("40rem");
+  expect(width("lg")).toBe("48rem");
+  expect(width("xl")).toBe("56rem");
+  expect(width("37rem")).toBe("37rem");
+});
+
+it("shows a tab strip in the shared pane header, and no header for header={false}", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    act(() =>
+      root.render(
+        createElement(
+          "div",
+          null,
+          createElement(Sheet, {
+            modal: false,
+            anchor: "container",
+            title: "Tabbed",
+            tabs: createElement("div", { id: "strip" }, "tabs"),
+            closeLabel: "Back",
+            onClose: () => undefined,
+            children: "x",
+          }),
+          createElement(Sheet, {
+            modal: false,
+            anchor: "container",
+            title: "Bare",
+            header: false,
+            onClose: () => undefined,
+            children: "y",
+          }),
+        ),
+      ),
+    );
+    const sections = [...document.querySelectorAll("section")];
+    expect(sections[0].getAttribute("aria-label")).toBe("Tabbed");
+    expect(sections[0].querySelector("[data-pane-header-body] #strip")).not.toBeNull();
+    expect(sections[0].querySelector('button[aria-label="Back"]')).not.toBeNull();
+    expect(sections[1].getAttribute("aria-label")).toBe("Bare");
+    expect(sections[1].querySelector("header, [data-pane-header-body]")).toBeNull();
   } finally {
     act(() => root.unmount());
     host.remove();

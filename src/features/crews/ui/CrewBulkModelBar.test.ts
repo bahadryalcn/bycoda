@@ -35,5 +35,6 @@ it.each([
     .replace(/<[^>]*>/g, "")
     .trim();
   expect(buttonText).toBe(expected);
-  expect(/<button[^>]*\sdisabled(?:=|\s|>)/.test(html)).toBe(targetCount === 0);
+  expect(/<button[^>]*aria-disabled="true"/.test(html)).toBe(targetCount === 0);
+  expect(html).not.toContain("Select at least one member or profile.");
 });

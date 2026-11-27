@@ -41,7 +41,7 @@ export interface SessionQueueServicePorts<
   attachments: {
     validateExposure(params: SessionQueueParams): Promise<void>;
     /** Existing attachment parse/resolution contract; never trust caller paths/ownership. */
-    normalize(raw: unknown): Attachment[];
+    normalize(raw: unknown): Promise<Attachment[]>;
   };
 }
 const schemas = {
@@ -58,19 +58,21 @@ export function createSessionQueueService<
   Queue extends QueueServiceSnapshot,
   Attachment extends { id: string },
 >(ports: SessionQueueServicePorts<Queue, Attachment>) {
-  const normalize = (raw: unknown) => {
+  const normalize = async (raw: unknown) => {
     if (!raw || typeof raw !== "object" || !Array.isArray((raw as { messages?: unknown }).messages))
       throw new Error("Invalid queue");
     const value = raw as Record<string, unknown> & { messages: Record<string, unknown>[] };
-    return {
-      ...value,
-      messages: value.messages.map((message) => ({
+    const messages: Record<string, unknown>[] = [];
+    // Sequential, so the first invalid message reports the same error as before.
+    for (const message of value.messages)
+      messages.push({
         ...message,
-        attachments: ports.attachments
-          .normalize(message.attachments)
-          .map((file) => ({ ...file, hostEnvironmentId: ports.environmentId })),
-      })),
-    };
+        attachments: (await ports.attachments.normalize(message.attachments)).map((file) => ({
+          ...file,
+          hostEnvironmentId: ports.environmentId,
+        })),
+      });
+    return { ...value, messages };
   };
   const execute = async (
     action: SessionQueueAction,
@@ -117,7 +119,7 @@ export function createSessionQueueService<
     };
     const change =
       action === "change"
-        ? { before: normalize(params.before), after: normalize(params.after) }
+        ? { before: await normalize(params.before), after: await normalize(params.after) }
         : undefined;
     const result = await ports.transaction(async () => {
       // Admission may have waited behind another writer. Recheck at the actual owner.

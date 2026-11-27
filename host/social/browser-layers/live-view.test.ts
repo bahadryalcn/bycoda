@@ -52,7 +52,45 @@ describe("LiveViewRegistry", () => {
     clock = 1000;
     emit("Page.screencastFrame", frameEvent("QUFB"));
     expect(sent.at(-1)).toEqual({ method: "Page.screencastFrameAck", params: { sessionId: 7 } });
-    expect(await registry.frame("acc")).toEqual({ jpegBase64: "QUFB", width: 800, height: 600 });
+    expect(await registry.frame("acc")).toEqual({
+      seq: expect.any(Number),
+      jpegBase64: "QUFB",
+      width: 800,
+      height: 600,
+    });
+  });
+
+  it("answers a read whose cursor already names the current frame without the picture", async () => {
+    let clock = 0;
+    const registry = new LiveViewRegistry({
+      now: () => clock,
+      setTimer: () => 0,
+      clearTimer: () => undefined,
+    });
+    const { port, emit } = fakePort();
+    registry.attach("acc", port);
+    await registry.frame("acc");
+    clock = 1000;
+    emit("Page.screencastFrame", frameEvent("QUFB"));
+    const first = (await registry.frame("acc")) as { seq: number };
+    expect(await registry.frame("acc", first.seq)).toEqual({ unchanged: true });
+    expect(await registry.frame("acc", first.seq - 1)).toEqual(
+      expect.objectContaining({ seq: first.seq }),
+    );
+    clock = 2000;
+    emit("Page.screencastFrame", frameEvent("QkJC"));
+    const second = await registry.frame("acc", first.seq);
+    expect(second).toEqual(expect.objectContaining({ jpegBase64: "QkJC" }));
+    expect((second as { seq: number }).seq).toBeGreaterThan(first.seq);
+  });
+
+  it("refuses a malformed frame cursor before touching the screencast", async () => {
+    const registry = new LiveViewRegistry();
+    const { port, sent } = fakePort();
+    registry.attach("acc", port);
+    await expect(registry.frame("acc", -1)).rejects.toThrow("Invalid live view cursor");
+    await expect(registry.frame("acc", "1")).rejects.toThrow("Invalid live view cursor");
+    expect(sent).toEqual([]);
   });
 
   it("drops frames above two per second and frames over one MiB", async () => {
@@ -69,10 +107,14 @@ describe("LiveViewRegistry", () => {
     emit("Page.screencastFrame", frameEvent("first"));
     clock = 1200;
     emit("Page.screencastFrame", frameEvent("too-soon"));
-    expect((await registry.frame("acc"))?.jpegBase64).toBe("first");
+    expect(((await registry.frame("acc")) as { jpegBase64: string } | null)?.jpegBase64).toBe(
+      "first",
+    );
     clock = 2000;
     emit("Page.screencastFrame", frameEvent("x".repeat(1024 * 1024 * 2)));
-    expect((await registry.frame("acc"))?.jpegBase64).toBe("first");
+    expect(((await registry.frame("acc")) as { jpegBase64: string } | null)?.jpegBase64).toBe(
+      "first",
+    );
   });
 
   it("ignores frames from another CDP session", async () => {
@@ -114,7 +156,7 @@ describe("LiveViewRegistry", () => {
 });
 
 describe("commandsFor (owner input)", () => {
-  const frame = { jpegBase64: "", width: 800, height: 600 };
+  const frame = { seq: 1, jpegBase64: "", width: 800, height: 600 };
 
   it("maps a click inside the frame to move, press and release", () => {
     const commands = commandsFor({ type: "click", x: 10, y: 20 }, frame);

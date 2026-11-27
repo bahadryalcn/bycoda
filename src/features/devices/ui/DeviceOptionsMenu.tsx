@@ -1,17 +1,19 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Text } from "../../../shared/ui/Text";
 import { formatNumber } from "../../../shared/i18n";
-import { t } from "../../../shared/i18n/technical";
+import { t, useLocale } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
 import type { DeviceAction } from "../types";
 import { useState } from "react";
 import {
   Accessibility,
   Crosshair,
+  Maximize2,
   MessageSquarePlus,
+  Minimize2,
   Minus,
   Plus,
   Settings,
+  Smartphone,
   Terminal,
 } from "../../../shared/ui/icons";
 
@@ -47,6 +49,7 @@ export function DeviceOptionsMenu({
     onFold: (posture: Extract<DeviceAction, { type: "fold" }>["posture"]) => void;
   };
 }) {
+  useLocale();
   const [foldPosture, setFoldPosture] =
     useState<Extract<DeviceAction, { type: "fold" }>["posture"]>();
   const foldDevice = (posture: Extract<DeviceAction, { type: "fold" }>["posture"]) => {
@@ -61,9 +64,10 @@ export function DeviceOptionsMenu({
             <Button
               variant="item"
               loading={fold.loading && foldPosture === "closed"}
-              disabled={fold.disabled}
+              disabled={fold.disabled || fold.loading}
               disabledReason={fold.disabledReason}
               onClick={() => foldDevice("closed")}
+              startIcon={<Minimize2 className="icon-sm" aria-hidden />}
             >
               {t("Fold device")}
             </Button>
@@ -73,6 +77,7 @@ export function DeviceOptionsMenu({
               disabled={fold.disabled || fold.loading}
               disabledReason={fold.disabledReason}
               onClick={() => foldDevice("half-open")}
+              startIcon={<Smartphone className="icon-sm" aria-hidden />}
             >
               {t("Half-open device")}
             </Button>
@@ -82,6 +87,7 @@ export function DeviceOptionsMenu({
               disabled={fold.disabled || fold.loading}
               disabledReason={fold.disabledReason}
               onClick={() => foldDevice("open")}
+              startIcon={<Maximize2 className="icon-sm" aria-hidden />}
             >
               {t("Unfold device")}
             </Button>
@@ -93,8 +99,8 @@ export function DeviceOptionsMenu({
           disabledReason={inspect.disabledReason}
           loading={inspect.loading}
           onClick={inspect.onClick}
+          startIcon={<Accessibility className="icon-sm" aria-hidden />}
         >
-          <Accessibility className="icon-sm" aria-hidden />
           {t("Accessibility snapshot")}
         </Button>
         <Button
@@ -111,9 +117,10 @@ export function DeviceOptionsMenu({
             variant="item"
             loading={addDevice.loading}
             disabled={addDevice.disabled}
+            disabledReason={addDevice.disabledReason}
             onClick={addDevice.onClick}
+            startIcon={<MessageSquarePlus className="icon-sm" aria-hidden />}
           >
-            <MessageSquarePlus className="icon-sm" aria-hidden />
             {t("Add device to conversation")}
           </Button>
         )}
@@ -133,14 +140,12 @@ export function DeviceOptionsMenu({
         role="group"
         aria-label={t("Zoom")}
       >
-        <Text size="caption" tone="secondary" leading="inherit" className="device-panel-zoom-label">
-          {t("Zoom")}
-        </Text>
         <Button
           variant="ghost"
           iconOnly
           label={t("Zoom out")}
           disabled={zoom <= 1}
+          disabledReason={t("Minimum zoom reached")}
           onClick={() => onZoom(Math.max(1, zoom - 0.25))}
         >
           <Minus className="icon-sm" aria-hidden />
@@ -150,6 +155,7 @@ export function DeviceOptionsMenu({
           className="device-panel-zoom-value"
           tooltip={t("Fit to panel")}
           disabled={zoom === 1}
+          disabledReason={t("Already fitted to panel")}
           onClick={() => onZoom(1)}
         >
           {formatNumber(zoom, { style: "percent" })}
@@ -159,6 +165,7 @@ export function DeviceOptionsMenu({
           iconOnly
           label={t("Zoom in")}
           disabled={zoom >= 3}
+          disabledReason={t("Maximum zoom reached")}
           onClick={() => onZoom(Math.min(3, zoom + 0.25))}
         >
           <Plus className="icon-sm" aria-hidden />

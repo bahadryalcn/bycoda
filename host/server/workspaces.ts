@@ -1,4 +1,5 @@
-import { createHash } from "node:crypto";
+import { AsyncResource } from "node:async_hooks";
+import { createHash, randomUUID } from "node:crypto";
 import { readHostBuildIdentity } from "../build-identity";
 import { HostDomainAuthorizationError, type HostDomainContext } from "../domains/context";
 import { hasShellPhysicalOwner } from "../execution/shell-ownership";
@@ -13,7 +14,20 @@ export function createWorkspacesRuntime(
   dependencies: Pick<ServerBindings, "engine" | "desktop" | "runLeases" | "terminals" | "tasks">,
 ) {
   const inWorkspace = inManagedWorkspace;
+  const pendingRemovalRecovery = new Set<string>();
+  let recoveryRunning = false;
+  let nextRecoveryAt = 0;
   const managed = createManagedWorkspaceRuntime(dependencies.engine.store, dependencies.engine, {
+    deferRemovalRecovery: (id) => pendingRemovalRecovery.add(id),
+    // A dedicated service receives no desktop heartbeats. Retention already owns
+    // an hourly sweep and shutdown; resume pending journals on that same schedule.
+    retryDeferredRemovals: async () => {
+      if (dependencies.desktop.live.headlessRemovalConfigured) await retryDeferredRemovals();
+    },
+    withRemovalLease: (path, run, project) =>
+      dependencies.terminals.withWorktreeRemoval(path, () =>
+        dependencies.desktop.live.withRemovalLease(randomUUID(), path, run, project),
+      ),
     probe: async (workspace) => {
       const activities: import("../workspaces/workspace-contracts").WorkspaceActivity[] = [];
       const add = (
@@ -84,6 +98,24 @@ export function createWorkspacesRuntime(
       return true;
     },
   });
+  // Resume startup recovery in the Host scope, outside the heartbeat request.
+  const retryDeferredRemovals = AsyncResource.bind(async (): Promise<void> => {
+    if (!pendingRemovalRecovery.size || recoveryRunning || performance.now() < nextRecoveryAt)
+      return;
+    recoveryRunning = true;
+    try {
+      for (const id of pendingRemovalRecovery) {
+        await managed.removal.recover(id).then(
+          () => pendingRemovalRecovery.delete(id),
+          () => false,
+        );
+      }
+    } finally {
+      recoveryRunning = false;
+      nextRecoveryAt = performance.now() + 30_000;
+    }
+  });
+  dependencies.desktop.live.onRemovalHeartbeat = () => void retryDeferredRemovals().catch(() => {});
   const managedWorkspaces = managed.registry;
   const workspacePolicy = managed.policy;
   const featureClaims = managed.claims;

@@ -1,6 +1,7 @@
-import { Text } from "../../../shared/ui/Text";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { useState, useSyncExternalStore } from "react";
-import { Alert } from "../../../shared/ui/Alert";
+import { Disclosure } from "../../../shared/ui/Disclosure";
+import { errorText } from "../../../shared/lib/errors";
 import { DeliveryReviewChoice } from "../../sessions/public/DeliveryReviewChoice";
 import { resumeSharedLocalQueue, useLocalSharedQueueClient } from "../model/useSharedLocalQueues";
 import { t, useLocale } from "../../../shared/i18n";
@@ -27,23 +28,25 @@ export function SharedQueueRecoveryNotice({ sessionId }: { sessionId: string }) 
   const focusRequest = useDeliveryReviewRequest(sessionId);
   const lateSettlement = useLateSettlementPossible(sessionId);
   const [working, setWorking] = useState(false);
-  const [error, setError] = useState<string>();
+  const [failed, setFailed] = useState<{ message: string; details?: string }>();
   if (!client || !state.recovery) return null;
   const choose = async (outcome: "delivered" | "retry" | "keep" | "discard") => {
     if (working) return;
     setWorking(true);
-    setError(undefined);
+    setFailed(undefined);
     const recoveryId = client.snapshot().queue.claim?.id;
     try {
       // Delivered and discarded both take the row out; neither sends it again.
       await client.resolveRecovery(outcome === "delivered" || outcome === "discard");
       // "Send again" is the owner saying it never arrived: keep the row and let the queue drain.
-      if (outcome === "retry" && (await resumeSharedLocalQueue(sessionId)) === "late")
-        throw new Error(
-          t(
+      if (outcome === "retry" && (await resumeSharedLocalQueue(sessionId)) === "late") {
+        setFailed({
+          message: t(
             "The provider has not answered yet and may still deliver this message. Wait for the answer, or stop the turn.",
           ),
-        );
+        });
+        return;
+      }
       const progress = recoveryId ? readDeliveryProgress(sessionId, recoveryId) : undefined;
       if (progress && outcome !== "retry")
         updateDeliveryProgress(
@@ -57,16 +60,20 @@ export function SharedQueueRecoveryNotice({ sessionId }: { sessionId: string }) 
               : t("The queue is paused. Resume it only after checking the conversation."),
         );
     } catch (reason) {
-      setError(String(reason).replace(/^Error: /, ""));
+      setFailed({ message: t("Could not record this choice."), details: errorText(reason) });
     } finally {
       setWorking(false);
     }
   };
   return (
-    <Alert tone="warning" className="shrink-0">
-      <Text as="div" tone="inherit">
-        {t("Queued delivery is unknown. Sending is held for review.")}
-      </Text>
+    <Disclosure
+      key={focusRequest}
+      defaultOpen={focusRequest > 0}
+      variant="plain"
+      size="sm"
+      className="shrink-0"
+      summary={t("Delivery unconfirmed · Review")}
+    >
       <DeliveryReviewChoice
         text={state.recovery}
         working={working}
@@ -74,11 +81,11 @@ export function SharedQueueRecoveryNotice({ sessionId }: { sessionId: string }) 
         focusRequest={focusRequest}
         onChoose={(outcome) => void choose(outcome)}
       />
-      {error ? (
-        <Text as="div" tone="danger" className="mt-1">
-          {error}
-        </Text>
+      {failed ? (
+        <InlineError className="mt-1" details={failed.details}>
+          {failed.message}
+        </InlineError>
       ) : null}
-    </Alert>
+    </Disclosure>
   );
 }

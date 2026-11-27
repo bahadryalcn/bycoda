@@ -37,6 +37,12 @@
     opacity: 0.35;
   }
 }
+/* When the window is hidden or decorative motion is off, the glyph holds its frame and stays
+   on screen, so the state still reads as pending, but no compositor clock keeps running. */
+:global(html[data-decorative-motion="off"]) .spinner,
+:global(html[data-window-visible="off"]) .spinner {
+  animation-play-state: paused;
+}
 /* Reduced motion keeps the pending state visible without rotation. */
 @media (prefers-reduced-motion: reduce) {
   .spinner {

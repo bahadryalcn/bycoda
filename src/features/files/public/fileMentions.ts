@@ -3,6 +3,7 @@ export {
   applyFileMentionsToTurn,
   buildMentionIndex,
   fileMentionParts,
+  mentionCandidates,
   mentionLabel,
   mentionTokenAt,
   rankMentionFiles,

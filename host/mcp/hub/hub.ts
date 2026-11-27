@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { osSecretValues } from "../../secrets/secret-store";
+import { ManagedMcpServers } from "./managed-servers";
+import { osSecretValues, type SecretValueStore } from "../../secrets/secret-store";
 import { McpOAuth, type OAuthServerRef } from "./oauth/manager";
 import { measure } from "../../diagnostics/perf-metrics";
 import { HubCacheStore, type HubCache } from "./cache";
@@ -9,12 +10,22 @@ import { McpChild, REQUEST_TIMEOUT_MS, STOP_GRACE_MS } from "./child";
 import { McpInventory, type InventoryDefinition } from "./inventory";
 import { readLoadingPolicy, type McpLoadingPolicy } from "./load-policy";
 import { hubIdleMs, hubMode, type HubMode } from "./policy";
+import {
+  osProjectMcpCredentialValues,
+  projectMcpAccount,
+  ProjectMcpCredentials,
+} from "./project-credentials";
 import { readRssBytes } from "./rss";
 import { inventoryFiles, type AccountDirs, type InventoryFiles } from "./inventory-sources";
 
 type Rpc = Record<string, any>;
 
 export const MAX_HUB_CHILDREN = 48;
+/** Longest a start waits for a process slot at capacity before failing. */
+export const CAPACITY_WAIT_MS = 5_000;
+/** A child still handshaking after this long may be evicted to free a slot. Shorter than the
+ * wait, so a stuck start can free a slot within one wait. */
+export const STARTUP_GRACE_MS = 4_000;
 const RSS_SAMPLE_MS = 10_000;
 const PRUNE_IDLE_MS = 60 * 60_000;
 /** The describe call is on the session spawn path; the web side re-fetches a hub-less answer. */
@@ -31,6 +42,10 @@ export type HubOptions = {
   projectCwd?: (projectId: string) => Promise<string | undefined>;
   now?: () => number;
   maxChildren?: number;
+  /** Longest a start waits for a slot at `maxChildren`. Defaults to {@link CAPACITY_WAIT_MS}. */
+  capacityWaitMs?: number;
+  /** Handshake time after which a starting child may be evicted. Defaults to {@link STARTUP_GRACE_MS}. */
+  startupGraceMs?: number;
   idleMs?: Partial<Record<HubMode, number>>;
   requestTimeoutMs?: number;
   stopGraceMs?: number;
@@ -44,6 +59,7 @@ export type HubOptions = {
   policy?: () => Promise<McpLoadingPolicy>;
   /** Test seam. Defaults to Host-held OAuth backed by the encrypted secrets vault. */
   oauth?: McpOAuth;
+  projectCredentialValues?: SecretValueStore;
 };
 
 /** Longest an on-demand client request waits before giving up; callers may pass less. */
@@ -56,6 +72,8 @@ export type HubPeek = {
   tools: unknown[];
 };
 
+type SlotTicket = { wake: () => void; closed: boolean };
+
 /** Hosts inherited stdio MCP servers behind `/mcp/ext/<name>`, one child per (name, scope). */
 export class McpHub {
   private readonly children = new Map<string, McpChild>();
@@ -65,12 +83,20 @@ export class McpHub {
   private readonly now: () => number;
   private readonly maxChildren: number;
   private readonly codexSets: (cwd?: string) => Promise<Set<string>[]>;
+  private readonly refreshInventory: () => void;
+  private readonly projectCredentials: ProjectMcpCredentials;
+  private readonly managed: ManagedMcpServers;
+  /** Children that hold a slot before their process exists (between reserve and spawn). */
+  private readonly claimed = new Set<McpChild>();
+  /** Starts waiting for a slot, oldest first; only the head may take a freed slot. */
+  private readonly slotQueue: SlotTicket[] = [];
   private rss = new Map<number, number>();
   private rssSampledAt = 0;
   private rssSampling?: Promise<void>;
 
   constructor(private readonly options: HubOptions) {
     this.cacheStore = new HubCacheStore(options.dataDir);
+    this.managed = new ManagedMcpServers(join(options.dataDir, "mcp-hub", "servers"));
     this.now = options.now ?? Date.now;
     this.maxChildren = options.maxChildren ?? MAX_HUB_CHILDREN;
     const discovered = new McpInventory(
@@ -81,6 +107,10 @@ export class McpHub {
     );
     this.discovery = options.inventory ?? ((cwd) => discovered.definitions(cwd));
     this.codexSets = (cwd) => discovered.codexNameSets(cwd);
+    this.refreshInventory = () => discovered.invalidate();
+    this.projectCredentials = new ProjectMcpCredentials(
+      options.projectCredentialValues ?? osProjectMcpCredentialValues(options.dataDir),
+    );
   }
 
   private oauthManager?: McpOAuth;
@@ -101,17 +131,129 @@ export class McpHub {
   }
 
   /** Bearer header for an http server the owner signed into; undefined otherwise. */
-  httpAuth(server: OAuthServerRef): Promise<Record<string, string> | undefined> {
-    return this.oauth.httpAuth(server);
+  async httpAuth(server: OAuthServerRef): Promise<Record<string, string> | undefined> {
+    return await this.oauth.httpAuth(await this.oauthRuntimeRef(server));
   }
 
   /** A signed-in http server is hub-hosted for loading purposes. */
-  oauthSignedIn(server: OAuthServerRef): Promise<boolean> {
-    return this.oauth.signedIn(server);
+  async oauthSignedIn(server: OAuthServerRef): Promise<boolean> {
+    return await this.oauth.signedIn(await this.oauthRuntimeRef(server));
   }
 
-  inventory(cwd?: string): Promise<InventoryDefinition[]> {
-    return this.discovery(cwd);
+  oauthServerRef(def: Pick<InventoryDefinition, "name" | "url">, cwd?: string): OAuthServerRef {
+    return {
+      name: def.name,
+      url: def.url!,
+      ...(cwd ? { account: projectMcpAccount(cwd), inheritOwner: true } : {}),
+    };
+  }
+
+  private async oauthRuntimeRef(server: OAuthServerRef): Promise<OAuthServerRef> {
+    if (!server.account || !server.inheritOwner || (await this.oauth.hasAccountState(server)))
+      return server;
+    return { name: server.name, url: server.url };
+  }
+
+  async oauthProjectScoped(def: InventoryDefinition, cwd?: string): Promise<boolean> {
+    return (
+      !!cwd &&
+      def.kind === "http" &&
+      (await this.oauth.hasAccountState(this.oauthServerRef(def, cwd)))
+    );
+  }
+
+  async inventory(cwd?: string, includeDisabled = false): Promise<InventoryDefinition[]> {
+    const [inherited, global, project] = await Promise.all([
+      this.discovery(cwd),
+      this.managed.list(),
+      cwd ? this.managed.list(cwd) : [],
+    ]);
+    if (!global.length && !project.length) return inherited;
+    const names = new Set(inherited.map((server) => server.name));
+    const entries: InventoryDefinition[] = [];
+    const projectNames = new Set(project.map((server) => server.name));
+    for (const item of [...project, ...global.filter((server) => !projectNames.has(server.name))]) {
+      if (!item.enabled && !includeDisabled) continue;
+      const isProject = projectNames.has(item.name);
+      const source = isProject ? "bycoda-project" : "bycoda";
+      const base = `bycoda-${item.name}-${item.id.replaceAll("-", "").slice(0, 12)}`;
+      let name = base;
+      for (let n = 2; names.has(name); n++) name = `${base}-${n}`;
+      names.add(name);
+      entries.push({
+        name,
+        source,
+        sources: [source],
+        aliases: [],
+        managed: {
+          name: item.name,
+          scope: isProject ? "project" : "user",
+          revision: item.revision,
+          enabled: item.enabled,
+        },
+        ...("url" in item.config
+          ? { kind: "http" as const, url: item.config.url }
+          : { kind: "stdio" as const, command: item.config.command, args: item.config.args }),
+      });
+    }
+    return [...inherited, ...entries];
+  }
+
+  async manageServer(
+    input: Record<string, unknown>,
+    cwd: string | undefined,
+    authorize: () => Promise<void>,
+  ) {
+    const result = await this.managed.call(input, cwd, authorize);
+    if (input.action !== "get") this.refreshConfiguration();
+    return result;
+  }
+
+  ownCredentialsFor(cwd: string | undefined, definition: InventoryDefinition) {
+    return cwd || definition.managed?.scope === "user"
+      ? this.projectCredentials.get(cwd, definition)
+      : Promise.resolve(undefined);
+  }
+
+  async projectCredentialsFor(cwd: string | undefined, definition: InventoryDefinition) {
+    const own = await this.ownCredentialsFor(cwd, definition);
+    return (
+      own ??
+      (cwd &&
+      definition.managed?.scope === "user" &&
+      !(await this.oauthProjectScoped(definition, cwd))
+        ? await this.ownCredentialsFor(undefined, definition)
+        : undefined)
+    );
+  }
+
+  private async credentialTarget(cwd: string | undefined, name: string) {
+    const definition = (await this.inventory(cwd)).find((item) => item.name === name);
+    if (!definition || (!cwd && definition.managed?.scope !== "user"))
+      throw new Error("Unknown MCP server in this scope.");
+    return definition;
+  }
+
+  async projectCredentialStatus(cwd: string | undefined, name: string) {
+    const definition = await this.credentialTarget(cwd, name);
+    return {
+      kind: definition.kind,
+      configured: !!(await this.projectCredentials.get(cwd, definition)),
+    };
+  }
+
+  async setProjectCredentials(cwd: string | undefined, name: string, values: unknown) {
+    const definition = await this.credentialTarget(cwd, name);
+    await this.projectCredentials.set(cwd, definition, values);
+    this.resetPublications();
+    return { kind: definition.kind, configured: true };
+  }
+
+  async clearProjectCredentials(cwd: string | undefined, name: string) {
+    const definition = await this.credentialTarget(cwd, name);
+    await this.projectCredentials.clear(cwd, definition);
+    this.resetPublications();
+    return { kind: definition.kind, configured: false };
   }
 
   /** Only stdio entries are hubbed; http entries are passed through by the harness. */
@@ -125,6 +267,7 @@ export class McpHub {
     scopeKey: string,
     message: Rpc,
     cwd?: string,
+    signal?: AbortSignal,
   ): Promise<Rpc | undefined> {
     return await measure("mcp.ext.request", async () => {
       const definition = (await this.inventory(cwd)).find(
@@ -132,16 +275,19 @@ export class McpHub {
       );
       if (!definition) throw new Error("Unknown MCP server.");
       this.prune();
-      const mode = hubMode(name, definition);
+      const credential = await this.projectCredentialsFor(cwd, definition);
+      const mode =
+        definition.managed?.scope === "project" ? "perSession" : hubMode(name, definition);
       const scope = mode === "shared" ? "shared" : scopeKey;
       // Launch identity keeps same-named project servers from different folders apart.
-      const launch = launchKey(definition);
+      const launch = launchKey(definition, credential?.revision);
       const key = `${name}\0${launch}\0${scope}`;
-      const cacheKey = cacheKeyFor(definition);
+      const cacheKey = cacheKeyFor(definition, credential?.revision);
       let child = this.children.get(key);
       if (!child) {
         child = new McpChild({
           definition,
+          projectEnv: credential?.values,
           scopeKey: scope,
           cwd: mode === "perSession" && cwd ? cwd : homedir(),
           idleMs: this.options.idleMs?.[mode] ?? hubIdleMs(mode),
@@ -150,11 +296,12 @@ export class McpHub {
           now: this.now,
           loadCache: () => this.loadCache(cacheKey),
           saveCache: async (cache) => this.saveCache(cacheKey, cache),
-          beforeStart: (starting) => this.reserve(starting),
+          beforeStart: (starting, waitSignal) => this.reserve(starting, waitSignal),
+          onCapacityChange: () => this.wakeWaiters(),
         });
         this.children.set(key, child);
       }
-      return await child.handle(message);
+      return await child.handle(message, signal);
     });
   }
 
@@ -164,7 +311,8 @@ export class McpHub {
       (def) => def.name === name && def.kind === "stdio",
     );
     if (!definition) return undefined;
-    const cache = await this.loadCache(cacheKeyFor(definition));
+    const credential = await this.projectCredentialsFor(cwd, definition);
+    const cache = await this.loadCache(cacheKeyFor(definition, credential?.revision));
     if (!cache) return undefined;
     const init = cache.initialize as {
       serverInfo?: HubPeek["serverInfo"];
@@ -186,21 +334,26 @@ export class McpHub {
     deadlineMs: number = CLIENT_DEADLINE_MS,
   ): Promise<Rpc | undefined> {
     let timer: NodeJS.Timeout | undefined;
+    // Cancels a wait for a process slot once the caller has been answered or has timed out.
+    const cancel = new AbortController();
     const late = new Promise<Rpc>((resolve) => {
       timer = setTimeout(
-        () =>
+        () => {
+          cancel.abort();
           resolve({
             jsonrpc: "2.0",
             id: message.id ?? null,
             error: { code: -32001, message: `${name} MCP timed out.` },
-          }),
+          });
+        },
         Math.max(1, Math.min(deadlineMs, CLIENT_DEADLINE_MS)),
       );
     });
     try {
-      return await Promise.race([this.serve(name, scopeKey, message, cwd), late]);
+      return await Promise.race([this.serve(name, scopeKey, message, cwd, cancel.signal), late]);
     } finally {
       clearTimeout(timer);
+      cancel.abort();
     }
   }
 
@@ -220,6 +373,15 @@ export class McpHub {
     this.publishing.clear();
   }
 
+  refreshConfiguration(): void {
+    this.refreshInventory();
+    this.resetPublications();
+  }
+
+  configurationGeneration(): number {
+    return this.generation;
+  }
+
   private loadCache(name: string): Promise<HubCache | undefined> {
     let memo = this.cacheMemo.get(name);
     if (!memo) {
@@ -234,19 +396,89 @@ export class McpHub {
     await this.cacheStore.write(name, cache).catch(() => undefined);
   }
 
-  /** Keeps at most `maxChildren` processes. Shared idle children go first, then least recent. */
-  private async reserve(starting: McpChild): Promise<void> {
-    const running = [...this.children.values()].filter((child) => child !== starting && child.proc);
-    if (running.length < this.maxChildren) return;
-    const victim = running
-      .filter((child) => child.evictable)
+  /** Keeps at most `maxChildren` processes (a claimed, not yet spawned one counts). At the cap
+   * it waits, oldest start first, for a slot: a child that finishes its work or exits, or one
+   * that has been handshaking past the grace period, frees one. Fails after `capacityWaitMs`;
+   * `signal` (the caller gave up) and `shutdown()` end the wait without taking a slot. */
+  private async reserve(starting: McpChild, signal: AbortSignal): Promise<{ release(): void }> {
+    const ticket: SlotTicket = { wake: () => undefined, closed: false };
+    this.slotQueue.push(ticket);
+    const waitMs = this.options.capacityWaitMs ?? CAPACITY_WAIT_MS;
+    const limit = Date.now() + waitMs;
+    try {
+      for (;;) {
+        if (ticket.closed) throw new Error("MCP hub is shutting down.");
+        if (signal.aborted)
+          throw signal.reason instanceof Error
+            ? signal.reason
+            : new Error("MCP request cancelled.");
+        const head = this.slotQueue[0] === ticket;
+        if (head && this.claim(starting))
+          return {
+            release: () => {
+              this.claimed.delete(starting);
+              this.wakeWaiters();
+            },
+          };
+        const left = limit - Date.now();
+        if (left <= 0) throw new Error("MCP hub is at capacity; retry shortly.");
+        await new Promise<void>((resolve) => {
+          const done = () => {
+            clearTimeout(timer);
+            signal.removeEventListener("abort", done);
+            resolve();
+          };
+          // The head also wakes when the earliest starting child reaches the end of its grace.
+          const graceLeft = head ? this.nextGraceMs() : undefined;
+          const timer = setTimeout(done, Math.max(25, Math.min(left, graceLeft ?? left)));
+          signal.addEventListener("abort", done, { once: true });
+          ticket.wake = done;
+        });
+      }
+    } finally {
+      this.slotQueue.splice(this.slotQueue.indexOf(ticket), 1);
+      // The next waiter may now be the head.
+      this.wakeWaiters();
+    }
+  }
+
+  /** Takes a slot for `starting`, stopping one idle (or stalled starting) child if the cap is full. */
+  private claim(starting: McpChild): boolean {
+    const held = [...this.children.values()].filter(
+      (child) => child !== starting && (child.proc || this.claimed.has(child)),
+    );
+    if (held.length < this.maxChildren) {
+      this.claimed.add(starting);
+      return true;
+    }
+    const grace = this.options.startupGraceMs ?? STARTUP_GRACE_MS;
+    // Idle children go first (shared, then least recent); a stalled starting one is the last resort.
+    const victim = held
+      .filter((child) => child.canEvict(grace))
       .sort(
         (a, b) =>
+          Number(a.starting) - Number(b.starting) ||
           Number(a.scopeKey !== "shared") - Number(b.scopeKey !== "shared") ||
           a.lastUsed - b.lastUsed,
       )[0];
-    if (!victim) throw new Error("MCP hub is at capacity; retry shortly.");
+    if (!victim) return false;
     victim.stop();
+    this.claimed.add(starting);
+    return true;
+  }
+
+  private nextGraceMs(): number | undefined {
+    const grace = this.options.startupGraceMs ?? STARTUP_GRACE_MS;
+    let next: number | undefined;
+    for (const child of this.children.values()) {
+      const left = child.startupLeftMs(grace);
+      if (left !== undefined && (next === undefined || left < next)) next = left;
+    }
+    return next;
+  }
+
+  private wakeWaiters(): void {
+    for (const ticket of Array.from(this.slotQueue)) ticket.wake();
   }
 
   private prune(): void {
@@ -310,18 +542,43 @@ export class McpHub {
     const policy = await this.loadingPolicy();
     // On demand, hub-hosted stdio servers are reached through the conversation tools, not
     // wired into the session; their aliases stay in `disable` so native copies stay off.
+    const withCredentials = await Promise.all(
+      definitions.map(async (def) =>
+        (await this.projectCredentialsFor(cwd, def)) || (await this.oauthProjectScoped(def, cwd))
+          ? def
+          : undefined,
+      ),
+    );
+    const privateNames = new Set(withCredentials.flatMap((def) => (def ? [def.name] : [])));
+    const privateAliases = new Set(
+      withCredentials.flatMap(
+        (def) => def?.aliases.map((alias) => `${alias.provider}\0${alias.name}`) ?? [],
+      ),
+    );
+    const sharesPrivateAlias = (def: InventoryDefinition) =>
+      def.aliases.some((alias) => privateAliases.has(`${alias.provider}\0${alias.name}`));
     const hosted = new Set<string>();
     for (const def of definitions)
-      if (def.kind === "http" && (await this.oauthSignedIn({ name: def.name, url: def.url! })))
+      if (
+        def.kind === "http" &&
+        (privateNames.has(def.name) ||
+          sharesPrivateAlias(def) ||
+          (await this.oauthSignedIn(this.oauthServerRef(def, cwd))))
+      )
         hosted.add(def.name);
     const published = definitions.filter(
       (def) =>
-        (def.kind === "http" && !hosted.has(def.name)) ||
-        policy.mode === "always" ||
-        policy.direct.includes(def.name),
+        !(
+          def.kind === "http" &&
+          (def.managed || privateNames.has(def.name) || sharesPrivateAlias(def))
+        ) &&
+        (privateNames.has(def.name) || !sharesPrivateAlias(def)) &&
+        ((def.kind === "http" && !def.managed && !hosted.has(def.name)) ||
+          policy.mode === "always" ||
+          policy.direct.includes(def.name)),
     );
     const servers = published.map((def) => {
-      const mode = def.kind === "http" ? "shared" : hubMode(def.name, def);
+      const mode = def.managed?.scope === "project" ? "perSession" : hubMode(def.name, def);
       const codexName = codexNameFor(def.name, codexNames);
       if (def.kind === "http")
         return {
@@ -352,7 +609,12 @@ export class McpHub {
       for (const alias of def.aliases) {
         // Codex refuses overrides for names a candidate config lacks, so only names every
         // candidate has are safe to disable.
-        if (alias.provider === "codex" && !codexSets.every((set) => set.has(alias.name))) continue;
+        if (
+          alias.provider === "codex" &&
+          !privateAliases.has(`${alias.provider}\0${alias.name}`) &&
+          !codexSets.every((set) => set.has(alias.name))
+        )
+          continue;
         disable[alias.provider].add(alias.name);
       }
     }
@@ -427,8 +689,11 @@ export class McpHub {
   }
 
   shutdown(): void {
+    // Waiters must not spawn after shutdown.
+    for (const ticket of this.slotQueue) ticket.closed = true;
     for (const child of this.children.values()) child.stop();
     this.children.clear();
+    this.wakeWaiters();
   }
 }
 
@@ -441,11 +706,20 @@ export function codexNameFor(name: string, codexNames: ReadonlySet<string>): str
 
 /** Short digest of what would be launched or fetched. Environment values are excluded. */
 
-function launchKey(def: InventoryDefinition): string {
+function launchKey(def: InventoryDefinition, credentialRevision?: string): string {
   return createHash("sha256")
-    .update(JSON.stringify([def.kind, def.command, def.args, def.url]))
+    .update(
+      JSON.stringify([
+        def.kind,
+        def.command,
+        def.args,
+        def.url,
+        ...(credentialRevision ? [credentialRevision] : []),
+      ]),
+    )
     .digest("hex")
     .slice(0, 10);
 }
 
-const cacheKeyFor = (def: InventoryDefinition) => `${def.name.slice(0, 40)}-${launchKey(def)}`;
+const cacheKeyFor = (def: InventoryDefinition, credentialRevision?: string) =>
+  `${def.name.slice(0, 40)}-${launchKey(def, credentialRevision)}`;

@@ -171,15 +171,15 @@ export function TimeTriggerSentence<T extends AutomationSchedule>({
   }));
   const prefix =
     trigger.scheduleKind === "hourly"
-      ? "Every hour at"
+      ? t("Every hour at")
       : trigger.scheduleKind === "daily"
-        ? "Every day at"
+        ? t("Every day at")
         : trigger.scheduleKind === "weekdays"
-          ? "Every weekday at"
-          : "Every week on";
+          ? t("Every weekday at")
+          : t("Every week on");
   return (
     <>
-      <span>{t(prefix)}</span>
+      <span>{prefix}</span>
       {trigger.scheduleKind === "weekly" ? (
         <>
           <TriggerPill
@@ -214,11 +214,13 @@ export function TimeTriggerSentence<T extends AutomationSchedule>({
           ? gmtOffsetLabel()
           : (executionTimeZone ?? t("Execution host timezone unavailable"))}
       </Text>
-      <Text size="inherit" tone="muted" className="ml-1">
+      <Text size="inherit" tone="muted" className="ms-1">
         {executionTimeZone === undefined
           ? nextRunPreview(nextAt)
           : executionTimeZone && nextAt
-            ? `${t("Next run")} ${formatDate(nextAt, { timeZone: executionTimeZone, timeZoneName: "short" })}`
+            ? t("Next run {p0}", {
+                p0: formatDate(nextAt, { timeZone: executionTimeZone, timeZoneName: "short" }),
+              })
             : t("Host schedule preview unavailable")}
       </Text>
     </>
@@ -277,25 +279,12 @@ export function EventTriggerSentence({
             options={branchOptions}
             placeholder={t("Select a branch")}
             disabled={!projectChosen}
-            emptyLabel={projectChosen ? "No branches found" : "Choose a project first"}
+            emptyLabel={projectChosen ? t("No branches found") : t("Choose a project first")}
             onChange={(value) => onChange({ ...trigger, branch: value })}
           />
+          {!projectChosen ? <span>{t("Choose a project first")}</span> : null}
         </>
       ) : null}
-      <span>{t("by")}</span>
-      <TriggerPill
-        label={t("Actor")}
-        value={trigger.actor || "anyone"}
-        options={[
-          {
-            value: "anyone",
-            get label() {
-              return t("Anyone");
-            },
-          },
-        ]}
-        onChange={(value) => onChange({ ...trigger, actor: value })}
-      />
     </>
   );
 }

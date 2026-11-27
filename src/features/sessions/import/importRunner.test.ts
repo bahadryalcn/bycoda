@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { setLanguagePreference } from "../../../shared/i18n";
 import type {
   ClaudeTranscript,
   CodexTranscript,
@@ -24,6 +25,10 @@ import {
 } from "./importRunner";
 
 beforeEach(() => localStorage.clear());
+
+afterEach(async () => {
+  await setLanguagePreference("en");
+});
 
 function candidate(overrides: Partial<ImportCandidate> = {}): ImportCandidate {
   return {
@@ -82,6 +87,12 @@ function harness(overrides: Partial<ImportDeps> = {}): Harness {
       dropped: 0,
       oversizeSkipped: 0,
     }),
+    readEntries: async (): Promise<CodexTranscript> => ({
+      entries: [{ kind: "user", at: 5, text: "Add pagination" }],
+      truncated: false,
+      dropped: 0,
+      oversizeSkipped: 0,
+    }),
     placeholderDir: async (original) => {
       placeholders.push(original);
       return `C:/app/imported-history/Missing folder - ${placeholders.length}`;
@@ -119,6 +130,23 @@ async function run(
 }
 
 describe("runSessionImport", () => {
+  it("hydrates Claude workflows before persisting the imported session", async () => {
+    const h = harness({
+      hydrateClaudeWorkflows: async ({ session, cwd, providerSessionId }) => ({
+        ...session,
+        blocks: [
+          ...session.blocks,
+          { id: "workflow-proof", role: "system", text: `${cwd}|${providerSessionId}` },
+        ],
+      }),
+    });
+    await run(h, [candidate()]);
+    expect(
+      h.persisted[0].session.blocks.some(
+        (block) => block.id === "workflow-proof" && block.text.includes("conv-1"),
+      ),
+    ).toBe(true);
+  });
   it.each(["claude", "codex"] as const)(
     "imports a valid bounded %s tail without a user record",
     async (provider) => {
@@ -203,6 +231,52 @@ describe("runSessionImport", () => {
     expect(session.providerSessionId).toBe("thread-9");
     expect(session.blocks.map((b) => b.role)).toEqual(["system", "user", "assistant"]);
     expect(session.blocks[0].text).toContain("Codex thread");
+  });
+
+  it("imports another provider's conversation from its own store, bound to it", async () => {
+    const reads: string[] = [];
+    const h = harness({
+      readEntries: async (source) => {
+        reads.push(`${source.provider}:${source.providerSessionId}`);
+        return {
+          entries: [
+            { kind: "user", at: 5, text: "Add a test" },
+            { kind: "tool", at: 6, text: "", name: "shell", input: "ls", output: "a.rs" },
+            { kind: "assistant", at: 7, text: "Added." },
+          ],
+          truncated: false,
+          dropped: 0,
+          oversizeSkipped: 0,
+        };
+      },
+    });
+    await run(h, [candidate({ provider: "opencode", providerSessionId: "ses_9" })]);
+    expect(reads).toEqual(["opencode:ses_9"]);
+    const { session } = h.persisted[0];
+    expect(session.id).toBe("imp-opencode-ses_9");
+    expect(session.harness).toBe("opencode");
+    expect(session.providerSessionId).toBe("ses_9");
+    expect(session.blocks[0].text).toContain("Imported from OpenCode.");
+    expect(session.blocks.map((b) => b.role)).toEqual(["system", "user", "tool", "assistant"]);
+  });
+
+  it("imports OpenClaw history read-only on the generic ACP agent", async () => {
+    const h = harness({
+      readEntries: async () => ({
+        entries: [{ kind: "user", at: 5, text: "Plan my week" }],
+        truncated: false,
+        dropped: 0,
+        oversizeSkipped: 0,
+      }),
+    });
+    const summary = await run(h, [
+      candidate({ provider: "openclaw", providerSessionId: "s1", resumable: false }),
+    ]);
+    const { session } = h.persisted[0];
+    expect(session.harness).toBe("acp");
+    expect(session.providerSessionId).toBeUndefined();
+    expect(session.blocks[0].text).toContain("OpenClaw conversations cannot be continued here");
+    expect(summary.readOnly).toBe(1);
   });
 
   it("files a conversation whose folder is gone under a placeholder, read-only", async () => {
@@ -415,5 +489,32 @@ describe("fitBlocks", () => {
   it("leaves a transcript that fits alone", () => {
     const blocks = [block(1), block(2)];
     expect(fitBlocks(blocks)).toEqual({ blocks, trimmed: false });
+  });
+});
+
+describe("import notes and failure reasons", () => {
+  it("writes the import note in the language active at import time", async () => {
+    await setLanguagePreference("de");
+    const h = harness();
+    expect(await run(h, [candidate()])).toMatchObject({ imported: 1 });
+    expect(h.persisted[0].session.blocks[0].text).toBe(
+      "Importiert aus Claude Code. Eine neue Nachricht setzt dieselbe Unterhaltung fort.",
+    );
+  });
+
+  it("reports an app-raised failure by reason, not by English text", async () => {
+    const h = harness({
+      readClaude: async () => ({
+        text: "invalid json",
+        truncated: false,
+        totalRecords: 1,
+        keptRecords: 0,
+        oversizeSkipped: 0,
+      }),
+    });
+    const summary = await run(h, [candidate()]);
+    expect(summary.imported).toBe(0);
+    expect(summary.failed).toHaveLength(1);
+    expect(summary.failed[0]).toMatchObject({ reason: "noMessages" });
   });
 });

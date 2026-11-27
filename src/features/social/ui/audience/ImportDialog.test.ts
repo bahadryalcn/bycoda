@@ -6,6 +6,7 @@ import {
   ACCOUNT,
   asClient,
   bodyText,
+  openErrorDetails,
   buttonByText,
   clientMock,
   flush,
@@ -54,7 +55,7 @@ describe("ImportDialog", () => {
         collect: vi.fn(),
         import: vi.fn(async () => ({
           imported: 1,
-          rejected: [{ row: 4, reason: "Unknown account on this computer." }],
+          rejected: [{ row: 4, issues: ["Unknown account on this computer."] }],
         })),
       },
     });
@@ -89,6 +90,6 @@ describe("ImportDialog", () => {
     await flush();
     chooseFile("people.pdf", "not a table");
     await flush();
-    expect(bodyText()).toContain("Choose a CSV, Excel (.xlsx) or JSON file.");
+    expect(openErrorDetails()).toContain("Choose a CSV, Excel (.xlsx) or JSON file.");
   });
 });

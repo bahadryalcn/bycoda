@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import { z } from "zod";
 import {
   AssistantOwnerQuestionPresentSchema,
@@ -26,7 +27,7 @@ const recordKey = (value: OwnerQuestionPresentation) =>
   encodeURIComponent(
     JSON.stringify([value.environmentId, value.input.threadId, value.input.requestId]),
   );
-const errorText = "Saving this question is unconfirmed. Retry to verify the original card.";
+const errorText = "Saving this question could not be confirmed. Retry to verify the original card.";
 export class OwnerQuestionPresentationPending extends Error {
   readonly presentation: OwnerQuestionPresentation;
   constructor(presentation: OwnerQuestionPresentation) {
@@ -74,7 +75,7 @@ export function saveOwnerQuestionPresentation(storage: Storage, raw: OwnerQuesti
     key = recordKey(value),
     serialized = JSON.stringify(value);
   if (serialized.length > 128000)
-    throw new Error("The question data could not be verified. Refresh its original Host.");
+    throw new Error(t("The question data could not be verified. Refresh its original Host."));
   try {
     const old = storage.getItem(key);
     if (old && JSON.stringify(schema.parse(JSON.parse(old))) !== serialized)
@@ -85,7 +86,7 @@ export function saveOwnerQuestionPresentation(storage: Storage, raw: OwnerQuesti
     storage.setItem(indexKey(value.environmentId), JSON.stringify([...new Set([...keys, key])]));
   } catch {
     throw new Error(
-      "The question draft could not be saved on this device. Keep this card open and retry.",
+      t("The question draft could not be saved on this device. Keep this card open and retry."),
     );
   }
   return freeze(value);
@@ -102,13 +103,15 @@ export async function retryOwnerQuestionPresentation(
   const assert = () => {
     if (!authorized(captured.input.contextProjectIds))
       throw new Error(
-        "The question's Host or project visibility changed. Keep the original draft.",
+        t("The question's Host or project visibility changed. Keep the original draft."),
       );
   };
   assert();
   if (storage.getItem(key) !== serialized)
     throw new Error(
-      "The saved question draft does not match its original question. Keep it and refresh the question.",
+      t(
+        "The saved question draft does not match its original question. Keep it and refresh the question.",
+      ),
     );
   try {
     const result = await request(structuredClone(captured.input), captured.environmentId);

@@ -24,8 +24,12 @@ import {
   type WorkspaceContext,
 } from "../model/workspaceClient";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Heading } from "../../../shared/ui/Heading";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { describeRemoteError, presentRemoteError } from "../../connections/public/remoteFailure";
+import { hostLifetimeDeadline, remainingUntil } from "../../../shared/lib/time/hostLifetime";
+import { monotonicNow } from "../../../shared/lib/time/timestamps";
+import { shortSha } from "../../../shared/lib/shortSha";
 
 const CommitDiff = lazy(() =>
   import("../../source-control/ui/CommitDiff").then((module) => ({
@@ -76,8 +80,11 @@ export function WorkspaceReview({
     savedPublication(workspace, "attempt") ? "publish" : "merge",
   );
   const [pending, setPending] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<{ title: string; detail: string } | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ text: string; tone: "success" | "warning" } | null>(
+    null,
+  );
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [publication, setPublication] = useState<PublicationDraft>(
     () =>
@@ -96,17 +103,19 @@ export function WorkspaceReview({
   const publicationAttempt = useRef<PublicationAttempt | null>(
     savedPublication<PublicationAttempt>(workspace, "attempt"),
   );
+  // Persist the draft so closing the review does not discard publication edits.
   useEffect(() => {
     savePublication(workspace, "draft", publication);
   }, [workspace.id, workspace.environmentId, publication]);
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(() => monotonicNow());
+  // Recheck the Host plan lifetime after the window regains focus or visibility.
   useEffect(() => {
     if (!plan) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const check = () => {
       clearTimeout(timer);
-      const remaining = plan.expiresAt - Date.now();
-      setNow(Date.now());
+      const remaining = remainingUntil(plan.expiresAt);
+      setNow(monotonicNow());
       if (remaining > 0) timer = setTimeout(check, Math.min(remaining, 2_147_483_647));
     };
     check();
@@ -118,6 +127,7 @@ export function WorkspaceReview({
       document.removeEventListener("visibilitychange", check);
     };
   }, [plan]);
+  // Read publication capabilities for the active workspace's Host.
   useEffect(() => {
     let live = true;
     void getWorkspaceCapabilities(context)
@@ -126,20 +136,30 @@ export function WorkspaceReview({
       })
       .catch((reason) => {
         const message = presentRemoteError(reason);
-        if (live && message) setError(message);
+        if (live && message)
+          setError({
+            title: t("Couldn’t check workspace capabilities"),
+            detail: describeRemoteError(reason).details,
+          });
       });
     return () => {
       live = false;
     };
   }, [context.cwd, context.environmentId]);
 
+  const publicationReady = !!publication.repository.trim() && !!publication.title.trim();
+  function clearPlan() {
+    setPlan(null);
+    setDiffCommit(null);
+  }
+
   async function review(action: "merge" | "publish") {
-    if (lock.current) return;
+    if (lock.current || (action === "publish" && !publicationReady)) return;
     lock.current = true;
     setPending("review");
     setError(null);
     setMessage(null);
-    setPlan(null);
+    clearPlan();
     try {
       const fresh = await workspaceRequest(
         "workspaces.get",
@@ -147,6 +167,7 @@ export function WorkspaceReview({
         context,
       );
       if (!fresh) throw new Error(t("This workspace is no longer available."));
+      const sentAt = monotonicNow();
       const result = await workspaceRequest(
         "workspaces.delivery.review",
         {
@@ -157,16 +178,27 @@ export function WorkspaceReview({
         } as Parameters<typeof workspaceRequest<"workspaces.delivery.review">>[1],
         context,
       );
-      setPlan(result);
-      setNow(Date.now());
+      // `expiresAt` becomes a local monotonic deadline from the Host's lifetime; the Host's wall
+      // clock reading is not used here. The apply call sends only the token.
+      setPlan({ ...result, expiresAt: hostLifetimeDeadline(result.expiresInMs, sentAt) });
+      setNow(monotonicNow());
     } catch (reason) {
       const message = presentRemoteError(reason);
-      if (message) setError(message);
+      if (message) {
+        setError({
+          title:
+            action === "publish"
+              ? t("Couldn’t review publication")
+              : t("Couldn’t review workspace changes"),
+          detail: describeRemoteError(reason).details,
+        });
+      }
     } finally {
       lock.current = false;
       setPending(null);
     }
   }
+  // Prepare the initial merge review unless there is a publication to reconcile.
   useEffect(() => {
     if (!publicationAttempt.current) void review("merge");
   }, [workspace.id]);
@@ -175,7 +207,7 @@ export function WorkspaceReview({
     if (
       !plan ||
       lock.current ||
-      plan.expiresAt <= Date.now() ||
+      plan.expiresAt <= monotonicNow() ||
       plan.blockers.length ||
       plan.artifacts?.blockers.length ||
       plan.overlappingPaths.length
@@ -194,8 +226,14 @@ export function WorkspaceReview({
     } catch (reason) {
       // Keep the original token and operation key for publication reconciliation.
       // A lost response must never generate a second push or PR intent.
-      setError(presentRemoteError(reason, { explicit: true }));
-      if (plan.action === "merge") setPlan(null);
+      setError({
+        title:
+          plan.action === "merge"
+            ? t("Couldn’t merge workspace changes")
+            : t("Couldn’t confirm pull request creation"),
+        detail: describeRemoteError(reason).details,
+      });
+      if (plan.action === "merge") clearPlan();
     } finally {
       lock.current = false;
       setPending(null);
@@ -210,29 +248,56 @@ export function WorkspaceReview({
     };
     if (attempt.plan.action === "merge") {
       await workspaceRequest("workspaces.delivery.merge", params, context);
-      setMessage(
-        t("Merged into {p0}.", {
+      setMessage({
+        tone: "success",
+        text: t("Merged into {p0}.", {
           p0: branchName(attempt.plan.targetBranchRef),
         }),
-      );
-      setPlan(null);
+      });
+      clearPlan();
     } else {
       const result = await workspaceRequest("workspaces.delivery.publish", params, context);
       setReceipt(result);
       if (result.status === "complete") {
         publicationAttempt.current = null;
         savePublication(workspace, "attempt", null);
-        setPlan(null);
-        setMessage(t("Pull request created."));
-      } else
-        setMessage(
-          t(
+        clearPlan();
+        setMessage({ tone: "success", text: t("Pull request created.") });
+      } else {
+        setMessage({
+          tone: "warning",
+          text: t(
             "Publication is incomplete. Check the recorded push and pull request before continuing.",
           ),
-        );
+        });
+      }
     }
-    const fresh = await workspaceRequest("workspaces.get", { workspaceId: workspace.id }, context);
-    if (fresh) onWorkspaceChange?.(fresh);
+    await refreshWorkspace();
+  }
+  async function refreshWorkspace() {
+    setRefreshError(null);
+    try {
+      const fresh = await workspaceRequest(
+        "workspaces.get",
+        { workspaceId: workspace.id },
+        context,
+      );
+      if (fresh) onWorkspaceChange?.(fresh);
+    } catch (reason) {
+      const { details, message } = describeRemoteError(reason);
+      setRefreshError(details || message);
+    }
+  }
+  async function retryWorkspaceRefresh() {
+    if (lock.current) return;
+    lock.current = true;
+    setPending("refresh");
+    try {
+      await refreshWorkspace();
+    } finally {
+      lock.current = false;
+      setPending(null);
+    }
   }
   async function reconcilePublication() {
     if (!publicationAttempt.current || lock.current) return;
@@ -242,7 +307,10 @@ export function WorkspaceReview({
     try {
       await apply(publicationAttempt.current);
     } catch (reason) {
-      setError(presentRemoteError(reason, { explicit: true }));
+      setError({
+        title: t("Couldn’t check publication status"),
+        detail: describeRemoteError(reason).details,
+      });
     } finally {
       lock.current = false;
       setPending(null);
@@ -256,7 +324,7 @@ export function WorkspaceReview({
       : workspace.path;
   return (
     <Modal
-      title={t(mode === "publish" ? "Create PR" : "Review changes")}
+      title={mode === "publish" ? t("Create PR") : t("Review changes")}
       size="lg"
       onClose={() => {
         if (!lock.current) onClose();
@@ -275,10 +343,22 @@ export function WorkspaceReview({
               <Button
                 variant="secondary"
                 loading={pending === "review"}
-                disabled={!!pending && pending !== "review"}
+                loadingLabel={t("Preparing review…")}
+                disabled={
+                  (!!pending && pending !== "review") || (mode === "publish" && !publicationReady)
+                }
+                disabledReason={
+                  mode === "publish" && !publicationReady
+                    ? t("Enter a repository and title.")
+                    : undefined
+                }
                 onClick={() => void review(mode)}
               >
-                {t(plan ? "Refresh review" : "Retry review")}
+                {plan
+                  ? t("Refresh review")
+                  : mode === "publish"
+                    ? t("Review publication")
+                    : t("Retry review")}
               </Button>
               {plan && (
                 <Button
@@ -289,6 +369,13 @@ export function WorkspaceReview({
                     !!plan.blockers.length ||
                     !!plan.artifacts?.blockers.length ||
                     !!plan.overlappingPaths.length
+                  }
+                  disabledReason={
+                    pending
+                      ? t("Wait for the current operation to finish")
+                      : expired
+                        ? t("This review expired or is unavailable. Request a new review.")
+                        : t("Resolve the listed blockers first.")
                   }
                   onClick={() => void deliver()}
                 >
@@ -313,9 +400,14 @@ export function WorkspaceReview({
             <Button
               variant="secondary"
               disabled={!!pending || !capabilities.includes("workspaces.pr-publication.v1")}
+              disabledReason={
+                capabilities.includes("workspaces.pr-publication.v1")
+                  ? undefined
+                  : t("Update bycoda Host to review and deliver workspace changes.")
+              }
               onClick={() => {
                 setMode("publish");
-                setPlan(null);
+                clearPlan();
                 setError(null);
               }}
             >
@@ -337,24 +429,19 @@ export function WorkspaceReview({
         </div>
         {mode === "publish" && (
           <>
-            <Text as="p" size="inherit" tone="secondary">
-              {t(
-                "This action pushes the reviewed branch and creates a pull request. Both steps require your approval.",
-              )}
-            </Text>
             <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))] gap-3">
               {(
                 [
-                  ["repository", "Repository"],
-                  ["remote", "Remote"],
-                  ["baseBranchRef", "Base branch"],
-                  ["headBranchRef", "Head branch"],
-                  ["title", "Title"],
+                  ["repository", t("Repository")],
+                  ["remote", t("Remote")],
+                  ["baseBranchRef", t("Base branch")],
+                  ["headBranchRef", t("Head branch")],
+                  ["title", t("Title")],
                 ] as const
               ).map(([key, label]) => (
                 <TextField
                   key={key}
-                  label={t(label)}
+                  label={label}
                   value={publication[key]}
                   disabled={!!pending || attempted}
                   onChange={(event) => {
@@ -362,7 +449,7 @@ export function WorkspaceReview({
                       ...value,
                       [key]: event.target.value,
                     }));
-                    setPlan(null);
+                    clearPlan();
                   }}
                 />
               ))}
@@ -377,32 +464,34 @@ export function WorkspaceReview({
                   ...value,
                   body: event.target.value,
                 }));
-                setPlan(null);
+                clearPlan();
               }}
             />
-            <Button
-              variant="secondary"
-              disabled={
-                !!pending ||
-                attempted ||
-                !publication.repository.trim() ||
-                !publication.title.trim()
-              }
-              loading={pending === "review"}
-              onClick={() => void review("publish")}
-            >
-              {t("Review publication")}
-            </Button>
           </>
         )}
-        {pending === "review" && <LoadingText delay={false}>{t("Preparing review…")}</LoadingText>}
-        {error && <InlineError className="break-words">{error}</InlineError>}
-        {message && <p role="status">{message}</p>}
+        {error && <InlineError details={error.detail}>{error.title}</InlineError>}
+        {message && (
+          <InlineMessage tone={message.tone} live="polite">
+            {message.text}
+          </InlineMessage>
+        )}
+        {refreshError && (
+          <InlineError
+            details={refreshError}
+            action={{
+              label: t("Refresh workspace status"),
+              disabled: !!pending,
+              onClick: () => void retryWorkspaceRefresh(),
+            }}
+          >
+            {t("Couldn’t refresh workspace status")}
+          </InlineError>
+        )}
         {receipt && (
           <DescriptionList>
             <DescriptionItem term={t("Branch push")}>
               {receipt.push
-                ? `${receipt.push.remote} · ${receipt.push.sourceHead.slice(0, 12)}`
+                ? `${receipt.push.remote} · ${shortSha(receipt.push.sourceHead)}`
                 : t("Not confirmed")}
             </DescriptionItem>
             <DescriptionItem term={t("Pull request")}>
@@ -410,8 +499,15 @@ export function WorkspaceReview({
                 <Button
                   variant="link"
                   onClick={() => {
-                    if (receipt.pullRequest)
-                      openExternal(receipt.pullRequest.url).catch(() => undefined);
+                    if (receipt.pullRequest) {
+                      setError(null);
+                      void openExternal(receipt.pullRequest.url).catch((reason) =>
+                        setError({
+                          title: t("Couldn’t open the pull request"),
+                          detail: describeRemoteError(reason).details,
+                        }),
+                      );
+                    }
                   }}
                 >
                   #{receipt.pullRequest.number}
@@ -424,23 +520,22 @@ export function WorkspaceReview({
         )}
         {plan && (
           <>
-            <DescriptionList>
-              <DescriptionItem term={t("Source SHA")} monospace>
-                {plan.sourceHead}
-              </DescriptionItem>
-              <DescriptionItem term={t("Target SHA")} monospace>
-                {plan.targetHead}
-              </DescriptionItem>
-              <DescriptionItem term={t("Workspace revision")}>
-                {plan.expectedRevision}
-              </DescriptionItem>
-            </DescriptionList>
-            <Text as="p" size="caption" tone="secondary" className="break-all">
-              {t("Target status fingerprint")}: {plan.targetStatusFingerprint}
-            </Text>
-            <Text as="p" size="inherit" tone="secondary">
-              {t("Approval applies only to these revisions. Changes require a fresh review.")}
-            </Text>
+            <Disclosure summary={t("Details")}>
+              <DescriptionList>
+                <DescriptionItem term={t("Source SHA")} monospace>
+                  {plan.sourceHead}
+                </DescriptionItem>
+                <DescriptionItem term={t("Target SHA")} monospace>
+                  {plan.targetHead}
+                </DescriptionItem>
+                <DescriptionItem term={t("Workspace revision")}>
+                  {plan.expectedRevision}
+                </DescriptionItem>
+                <DescriptionItem term={t("Target status fingerprint")} monospace>
+                  {plan.targetStatusFingerprint}
+                </DescriptionItem>
+              </DescriptionList>
+            </Disclosure>
             {expired && (
               <InlineMessage tone="warning" live="assertive">
                 {t("This review expired. Refresh review before approving.")}
@@ -482,7 +577,7 @@ export function WorkspaceReview({
                         tooltip={sha}
                         onClick={() => setDiffCommit((value) => (value === sha ? null : sha))}
                       >
-                        {sha.slice(0, 12)}
+                        {shortSha(sha)}
                       </Button>
                     </li>
                   ))}
@@ -501,10 +596,10 @@ export function WorkspaceReview({
                 </ul>
               </section>
             </div>
-            {diffCommit && (
+            {diffCommit && plan.commits.includes(diffCommit) && (
               <section className="min-w-0 overflow-hidden">
                 <Heading size="item" level={3}>
-                  {t("Commit diff")} · {diffCommit.slice(0, 12)}
+                  {t("Commit diff")} · {shortSha(diffCommit)}
                 </Heading>
                 <Suspense fallback={<LoadingText>{t("Loading diff…")}</LoadingText>}>
                   <CommitDiff cwd={executionCwd} sha={diffCommit} />
@@ -536,7 +631,12 @@ export function WorkspaceReview({
                 <ul>
                   {plan.checks.map((check) => (
                     <li key={check.name} className="break-words">
-                      {check.name}: {t(check.status)}
+                      {check.name}:{" "}
+                      {
+                        { passed: t("Passed"), failed: t("Failed"), unknown: t("Unknown") }[
+                          check.status
+                        ]
+                      }
                     </li>
                   ))}
                 </ul>

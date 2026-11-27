@@ -195,7 +195,8 @@ describe("orchestration composer and card", () => {
     );
     expect(fullModel).toBeDefined();
     expect(fullModel?.getAttribute("data-truncate")).not.toBe("true");
-    expect(container.textContent).toContain("Codex");
+    // The harness is the row icon alone; the details no longer repeat its name as text.
+    expect(container.textContent).not.toContain("Codex");
   });
 
   it("keeps readonly proposal and task identities readable after assignment editing ends", async () => {
@@ -455,7 +456,7 @@ describe("orchestration composer and card", () => {
     expect(container.querySelector("textarea")).toBeNull();
     await click(document.querySelector('[aria-label="Details for Settings UI"]')!);
     await input(
-      document.querySelector('[aria-label="Instructions for task 1"]')!,
+      document.querySelector("textarea")!,
       "Build the accessible form and check keyboard navigation",
     );
     await click(
@@ -544,7 +545,7 @@ describe("orchestration composer and card", () => {
     expect(confirm).not.toHaveBeenCalled();
     await click(container.querySelector('[aria-label="Details for UI task"]')!);
     await input(
-      container.querySelector<HTMLTextAreaElement>('[aria-label="Instructions for task 1"]')!,
+      container.querySelector<HTMLTextAreaElement>("textarea")!,
       "Retained instructions\n".repeat(20),
     );
     const start = button("Confirm & start");
@@ -556,12 +557,14 @@ describe("orchestration composer and card", () => {
     expect(start.getAttribute("aria-disabled")).toBe("true");
     expect(start.getAttribute("aria-busy")).toBe("true");
     await act(async () => fail(new Error("Approval unavailable")));
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "Approval unavailable",
+    // A translated title leads; the raw Host text sits behind Details, not in the line.
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain("Could not start orchestration");
+    expect(alert?.textContent).not.toContain("Approval unavailable");
+    expect(alert?.textContent).toContain("Details");
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(
+      "Retained instructions\n".repeat(20),
     );
-    expect(
-      container.querySelector<HTMLTextAreaElement>('[aria-label="Instructions for task 1"]')?.value,
-    ).toBe("Retained instructions\n".repeat(20));
     expect(latest.settings.maxWorkers).toBe(3);
     expect(button("Confirm & start").disabled).toBe(false);
   });
@@ -1051,10 +1054,8 @@ describe("orchestration composer and card", () => {
       ),
     );
 
-    await click(document.querySelector('button[aria-label="Help"]')!);
-    expect(document.querySelector('[role="dialog"][aria-label="Help"]')?.textContent).toContain(
-      "Resume continues interrupted workers from their checkouts",
-    );
+    // The paragraph below already names the blocker, so Resume carries no second hint.
+    expect(button("Resume").hasAttribute("data-tooltip-owner")).toBe(false);
     expect(container.textContent).toContain(
       "Investigating the failure is still running in this project.",
     );

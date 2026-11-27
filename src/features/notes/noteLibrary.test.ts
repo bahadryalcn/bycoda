@@ -21,6 +21,17 @@ const note = (id: string, sourceCwd?: string, tags: string[] = []): Note => ({
 });
 
 describe("note library", () => {
+  it("uses the same project label for filters and groups while retaining the path as identity", () => {
+    const notes = [note("first", "/work/code"), note("second", "/work/code")];
+    const labels = { "/work/code": "Workspace alias" };
+    expect(noteLibraryProjects(notes, labels)).toMatchObject([
+      { key: "/work/code", name: "Workspace alias", count: 2 },
+    ]);
+    expect(groupNoteLibrary(notes, "project", labels)).toMatchObject([
+      { key: "project:/work/code", label: "Workspace alias", notes },
+    ]);
+  });
+
   it("explains deep body matches without pretending a truncated summary contains the match", () => {
     const summary = { ...note("deep"), body: undefined, preview: "Opening paragraph" };
     const matches = new Set(["deep"]);

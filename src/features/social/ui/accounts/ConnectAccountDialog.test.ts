@@ -6,6 +6,11 @@ import type { HostProject } from "../../../connections/model/protocol";
 import type { SocialClient } from "../../model/socialClient";
 import { ConnectAccountDialog } from "./ConnectAccountDialog";
 
+/** A control with a reason stays focusable: blocked is `disabled` or `aria-disabled`. */
+const isBlocked = (
+  node: { disabled?: boolean; getAttribute(name: string): string | null } | null | undefined,
+) => Boolean(node?.disabled) || node?.getAttribute("aria-disabled") === "true";
+
 vi.mock("../../../../shared/ui/Modal", () => ({
   Modal: (props: { title: string; children: ReactNode; footer: ReactNode }) =>
     createElement(
@@ -14,7 +19,13 @@ vi.mock("../../../../shared/ui/Modal", () => ({
       props.children,
       props.footer,
     ),
-  ModalActions: (props: { children: ReactNode }) => createElement("div", null, props.children),
+  ModalActions: (props: { reason?: string; children: ReactNode }) =>
+    createElement(
+      "div",
+      null,
+      props.reason ? createElement("p", { "data-reason": "" }, props.reason) : null,
+      props.children,
+    ),
 }));
 vi.mock("./EmailAccountDialog", () => ({
   EmailAccountDialog: () => createElement("div", { "data-testid": "email-dialog" }),
@@ -51,7 +62,11 @@ function fakeClient(create: ReturnType<typeof vi.fn> = vi.fn(async () => ({ id: 
 
 function render(
   client: ReturnType<typeof fakeClient>["client"],
-  props: { initialProjectId?: string; onClose?: () => void; onCreated?: (id: string) => void } = {},
+  props: {
+    initialProjectId?: string;
+    onClose?: () => void;
+    onCreated?: (id: string) => void;
+  } = {},
 ) {
   const onClose = props.onClose ?? vi.fn();
   const onCreated = props.onCreated ?? vi.fn();
@@ -108,13 +123,15 @@ async function choose(trigger: string, option: string) {
   await act(async () => found?.click());
 }
 
-it("defaults to the official API and asks for a name before it connects", () => {
+it("defaults to browser for X and asks for a name before it connects", () => {
   const { client } = fakeClient();
   render(client);
   expect(element.querySelector('button[aria-label="Platform: X"]')).not.toBeNull();
-  expect(element.querySelector('button[aria-label="How to connect: Official API"]')).not.toBeNull();
-  expect(button("Connect")?.disabled).toBe(true);
-  expect(element.textContent).toContain("Enter a name for this account.");
+  expect(
+    element.querySelector('button[aria-label="How to connect: Browser sign-in"]'),
+  ).not.toBeNull();
+  expect(isBlocked(button("Connect"))).toBe(true);
+  expect(document.body.textContent).not.toContain("Enter a name for this account.");
 });
 
 it("creates the account with the chosen projects and leaves the connection to its detail", async () => {
@@ -128,7 +145,7 @@ it("creates the account with the chosen projects and leaves the connection to it
     platform: "x",
     name: "Launch account",
     accountType: "member",
-    connection: "oauth",
+    connection: "browser",
     projectIds: ["p1", "p2"],
   });
   expect(onCreated).toHaveBeenCalledExactlyOnceWith("new-1");
@@ -142,15 +159,19 @@ it("switches to a token connection and the bot type when Telegram is chosen", as
   const { client, create } = fakeClient();
   render(client);
   await choose("Platform", "Telegram");
+  // Telegram offers a token and a browser sign-in, so the method select stays and defaults to token.
   expect(
     element.querySelector('button[aria-label="How to connect: Token from this computer"]'),
   ).not.toBeNull();
-  expect(element.querySelector('button[aria-label="Account type: Bot"]')).not.toBeNull();
   typeName("Channel bot");
   await submitForm();
   expect(create).toHaveBeenCalledWith(
     "accounts.create",
-    expect.objectContaining({ platform: "telegram", accountType: "bot", connection: "token" }),
+    expect.objectContaining({
+      platform: "telegram",
+      accountType: "bot",
+      connection: "token",
+    }),
   );
 });
 
@@ -162,7 +183,11 @@ it("uses a browser connection when the owner picks the browser sign-in", async (
   await submitForm();
   expect(create).toHaveBeenCalledWith(
     "accounts.create",
-    expect.objectContaining({ platform: "x", connection: "browser", accountType: "member" }),
+    expect.objectContaining({
+      platform: "x",
+      connection: "browser",
+      accountType: "member",
+    }),
   );
 });
 
@@ -175,7 +200,13 @@ it("keeps the entered name and shows the failure when the account cannot be crea
   const { onCreated } = render(client);
   typeName("Studio");
   await submitForm();
-  expect(element.textContent).toContain("The Host is busy.");
+  const alert = element.querySelector('[role="alert"]');
+  expect(alert?.textContent).toContain("The account could not be added. Try again.");
+  expect(document.body.textContent).not.toContain("The Host is busy.");
+  act(() => alert?.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')?.click());
+  expect(document.body.querySelector('[aria-label="Error details"]')?.textContent).toBe(
+    "The Host is busy.",
+  );
   expect(nameInput().value).toBe("Studio");
   expect(onCreated).not.toHaveBeenCalled();
 });
@@ -196,16 +227,18 @@ it("closes without creating when the owner cancels", async () => {
   expect(create).not.toHaveBeenCalled();
 });
 
-it("switches to the email account form from the same dialog", async () => {
+it("switches to the email account form from the platform select", async () => {
   const { client } = fakeClient();
   render(client);
-  await act(async () => button("Add an email account instead")?.click());
+  await choose("Platform", "Email");
   expect(element.querySelector('[data-testid="email-dialog"]')).not.toBeNull();
 });
 
 it("offers a new account only for browser accounts on platforms with a signup route", async () => {
   const { client } = fakeClient();
   render(client);
+  expect(button("Create a new X account instead")).toBeTruthy();
+  await choose("How to connect", "Official API");
   expect(button("Create a new X account instead")).toBeUndefined();
   await choose("Platform", "Reddit");
   expect(button("Create a new Reddit account instead")).toBeUndefined();

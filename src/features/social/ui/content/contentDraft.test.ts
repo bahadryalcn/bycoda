@@ -12,6 +12,8 @@ import {
   type ContentMedia,
 } from "./contentDraft";
 
+import { buildDraftVariants } from "./contentRules";
+
 const tiktokOptions: TikTokVideoOptions = {
   privacy: "SELF_ONLY",
   durationSeconds: 42,
@@ -217,4 +219,46 @@ describe("draftFromCampaign", () => {
     expect(DEFAULT_REPEAT.totalPosts).toBe(10);
     expect(emptyDraft().repeat.totalPosts).toBe(10);
   });
+});
+
+it("preserves each saved target and only applies shared fields that changed", () => {
+  const saved = campaign(
+    {},
+    {
+      variants: [
+        {
+          accountId: "a",
+          text: "First",
+          link: "https://example.com/a",
+          media: [{ kind: "image", uploadId: "a-image" }],
+          scheduledAt: 5345,
+          factIds: ["a-fact"],
+        },
+        {
+          accountId: "b",
+          text: "Second",
+          link: "https://example.com/b",
+          media: [{ kind: "image", uploadId: "b-image" }],
+          scheduledAt: 6345,
+          factIds: ["b-fact"],
+        },
+      ],
+    },
+  );
+  const accounts = saved.variants.map(({ accountId }) => ({
+    id: accountId,
+    platform: "x" as const,
+  })) as Parameters<typeof draftFromCampaign>[1] & object;
+  const draft = draftFromCampaign(saved, accounts);
+  const input = { draft, accounts, projectId: "p1", now: 10_000 };
+  expect(buildDraftVariants(input)).toEqual(saved.variants);
+  expect(buildDraftVariants(input, false)).toEqual(
+    saved.variants.map((variant) => ({ ...variant, scheduledAt: input.now })),
+  );
+  expect(buildDraftVariants({ ...input, draft: { ...draft, name: "Renamed" } })).toEqual(
+    saved.variants,
+  );
+  expect(buildDraftVariants({ ...input, draft: { ...draft, text: "Shared edit" } })).toEqual(
+    saved.variants.map((variant) => ({ ...variant, text: "Shared edit" })),
+  );
 });

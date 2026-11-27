@@ -2,13 +2,79 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { ToolInspectionPanel, inspectionJson, hasToolInspection } from "./ToolInspectionPanel";
+import {
+  ToolInspectionPanel,
+  inspectionJson,
+  hasToolInspection,
+  jsonNodeCount,
+  toolCallArguments,
+} from "./ToolInspectionPanel";
 import type { Block } from "../model/session";
 const clipboard = vi.hoisted(() => ({ copy: vi.fn(async (_text: string) => {}) }));
 vi.mock("../../../platform/tauri/clipboard", () => ({ copyMessage: clipboard.copy }));
 
 let container: HTMLDivElement;
 let root: Root;
+function diffBlock(text: string): Block {
+  return {
+    id: "diff",
+    role: "tool",
+    text: "Edit",
+    tool: { preview: { kind: "write", inspection: { kind: "diff", text } } },
+  };
+}
+
+it("keeps selected diff text exact and groups equal tones without CSS Highlights", async () => {
+  vi.stubGlobal("Highlight", undefined);
+  const text = "+one\r\n+two\r\n context\n-del\n-again";
+  await act(async () =>
+    root.render(createElement(ToolInspectionPanel, { block: diffBlock(text) })),
+  );
+  const pre = container.querySelector("pre")!;
+  expect(pre.textContent).toBe(text);
+  expect(pre.querySelectorAll("span")).toHaveLength(3);
+  expect(pre.querySelector('[data-tone="added"]')?.textContent).toBe("+one\r\n+two\r\n");
+  expect(pre.querySelector('[data-tone="removed"]')?.textContent).toBe("-del\n-again");
+});
+
+it("paints alternating lines on one text node and removes only a closing panel's ranges", async () => {
+  const registry = new Map<string, Set<StaticRange>>();
+  vi.stubGlobal("CSS", { ...CSS, highlights: registry });
+  vi.stubGlobal(
+    "Highlight",
+    class extends Set<StaticRange> {
+      constructor(...ranges: StaticRange[]) {
+        super(ranges);
+      }
+    },
+  );
+  vi.stubGlobal(
+    "StaticRange",
+    class {
+      constructor(init: StaticRangeInit) {
+        Object.assign(this, init);
+      }
+    },
+  );
+  const text = Array.from({ length: 1600 }, (_, index) => (index % 2 ? "-old" : "+new")).join("\n");
+  const panel = (key: string) =>
+    createElement(ToolInspectionPanel, { key, block: diffBlock(text) });
+  await act(async () => root.render([panel("first"), panel("second")]));
+  const pre = container.querySelector("pre")!;
+  expect(pre.textContent).toBe(text);
+  expect(pre.querySelectorAll("*")).toHaveLength(1);
+  const added = registry.get("bycoda-tool-diff-added")!;
+  expect(added.size).toBe(1600);
+  const first = [...added][0]!;
+  expect(first.startContainer.textContent!.slice(first.startOffset, first.endOffset)).toBe(
+    "+new\n",
+  );
+  await act(async () => root.render([panel("second")]));
+  expect(added.size).toBe(800);
+  expect(added.has(first)).toBe(false);
+  await act(async () => root.render(null));
+  expect(registry.size).toBe(0);
+});
 beforeEach(() => {
   clipboard.copy.mockReset().mockResolvedValue(undefined);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -131,6 +197,17 @@ it("recognizes only complete saved JSON collections", () => {
     expect(inspectionJson(text)).toBeNull();
 });
 
+it("reads a recorded tool call's arguments as JSON, not shell text or scalars", () => {
+  expect(
+    toolCallArguments(
+      'mcp__bycoda-conversation__conversation_agents_delegate: {"requestId":"a","n":2}',
+    ),
+  ).toEqual({ data: { requestId: "a", n: 2 } });
+  expect(toolCallArguments('tools.search: [{"q":"x"}]')).toEqual({ data: [{ q: "x" }] });
+  for (const text of ["git status", 'echo {"a":1}', "tool: 42", 'tool: {"a":', "no colon {}"])
+    expect(toolCallArguments(text)).toBeNull();
+});
+
 it("parses saved JSON once across render and copy feedback, then refreshes changed output", async () => {
   const text = '{"result":{"cached":true}}';
   const changed = '{"result":{"cached":false}}';
@@ -189,4 +266,38 @@ it("renders JSON output as a tree while truncated output and commands retain the
   );
   expect(container.querySelector('[role="tree"]')).toBeNull();
   expect(container.querySelector("pre")?.textContent).toBe(text);
+});
+
+it("shows one Copy JSON action on the card and no search toolbar for a small payload", async () => {
+  const block: Block = {
+    id: "small-json",
+    role: "tool",
+    text: "Result",
+    tool: { output: '{"ok":true,"items":[1,2]}', status: "completed" },
+  };
+  await act(async () => root.render(createElement(ToolInspectionPanel, { block })));
+  expect(container.querySelector('button[aria-label="Copy JSON"]')).not.toBeNull();
+  expect(container.querySelector('input[aria-label="Search JSON"]')).toBeNull();
+  expect(container.querySelector('button[aria-label="Expand all"]')).toBeNull();
+  const rows = container.querySelectorAll('[role="treeitem"]');
+  expect(rows[0]!.querySelector("button")).toBeNull();
+});
+
+it("keeps search and expand controls for a large payload", async () => {
+  const output = JSON.stringify({ items: Array.from({ length: 20 }, (_, i) => ({ id: i })) });
+  const block: Block = {
+    id: "big-json",
+    role: "tool",
+    text: "Result",
+    tool: { output, status: "completed" },
+  };
+  await act(async () => root.render(createElement(ToolInspectionPanel, { block })));
+  expect(container.querySelector('input[aria-label="Search JSON"]')).not.toBeNull();
+  expect(jsonNodeCount({ a: [1, 2, 3] }, 12)).toBe(5);
+  expect(
+    jsonNodeCount(
+      Array.from({ length: 100 }, () => 1),
+      12,
+    ),
+  ).toBeLessThan(20);
 });

@@ -1,5 +1,5 @@
 use bycoda_provider_process_guardian::protocol::{
-    self, ParentCommand, MAX_DATA_BYTES, MAX_FRAME_BYTES,
+    self, GuardianReply, ParentCommand, StartDetail, StartFailure, MAX_DATA_BYTES, MAX_FRAME_BYTES,
 };
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -90,4 +90,43 @@ fn launch_validation_keeps_exact_arguments_and_environment_with_no_control_locat
     ));
     env.insert("bad=key".into(), "value".into());
     assert!(!protocol::valid_start(&executable, &args, &cwd, &env));
+}
+
+#[test]
+fn failed_start_detail_is_optional_closed_and_bounded() {
+    let guardian = Uuid::new_v4().to_string();
+    let failed = |detail: Option<StartDetail>| GuardianReply::Failed {
+        version: protocol::VERSION,
+        guardian_id: guardian.clone(),
+        parent_id: None,
+        reason: StartFailure::SpawnFailed,
+        detail,
+    };
+    let encode = |reply: &GuardianReply| {
+        let mut frame = Vec::new();
+        protocol::write_reply(&mut frame, reply).unwrap();
+        serde_json::from_slice::<serde_json::Value>(&frame).unwrap()
+    };
+    // A refusal without an OS cause keeps the original five-field frame.
+    let plain = encode(&failed(None));
+    assert!(plain.get("detail").is_none());
+    assert_eq!(plain["reason"], "spawn-failed");
+    let caused = encode(&failed(Some(StartDetail::new(
+        "CreateProcess",
+        "NotFound",
+        Some(2),
+    ))));
+    assert_eq!(
+        caused["detail"],
+        json!({"step":"CreateProcess","kind":"NotFound","code":2})
+    );
+    let without_code = encode(&failed(Some(StartDetail::new("spawn", "Other", None))));
+    assert_eq!(without_code["detail"]["code"], serde_json::Value::Null);
+    // Unknown detail fields stay rejected, and text is cut to its bound.
+    let mut unknown = caused.clone();
+    unknown["detail"]["path"] = json!(r"C:\private");
+    assert!(serde_json::from_value::<GuardianReply>(unknown).is_err());
+    let long = StartDetail::new(&"s".repeat(1000), &"k".repeat(1000), None);
+    assert_eq!(long.step.len(), protocol::MAX_DETAIL_TEXT);
+    assert_eq!(long.kind.len(), protocol::MAX_DETAIL_TEXT);
 }

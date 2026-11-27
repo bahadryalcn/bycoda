@@ -1,2 +1,3 @@
 /** Public connections contract; exports stay explicit to preserve load isolation. */
-export { openWorkspaceUrl } from "../model/workspaceUrls";
+export { isHostDevelopmentUrl, openWorkspaceUrl } from "../model/workspaceUrls";
+export { useDevelopmentLinkMachine } from "../model/useDevelopmentLinkMachine";

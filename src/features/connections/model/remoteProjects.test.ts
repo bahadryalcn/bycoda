@@ -5,8 +5,11 @@ import {
   remotePath,
   remoteSessionGitCwd,
   remoteProjectFor,
+  subscribeRemoteProjects,
   verifyRemoteProjectAlias,
 } from "./remoteProjects";
+
+const REGISTRY_KEY = "bycoda.remote-projects.v2";
 
 it("uses a remote tab's linked checkout for Git even when the file cwd points elsewhere", () => {
   const project = { environmentId: "mac", cwd: "/repo" };
@@ -140,4 +143,41 @@ it("opens a folder on the host and saves it as a remote project", async () => {
   expect(remoteProjectFor(project.key)).toEqual(project);
   await expect(openRemoteProject(async () => null, "env", "/x")).rejects.toThrow("malformed");
   localStorage.removeItem("bycoda.remote-projects.v2");
+});
+
+it("parses the registry only when its stored text changes", () => {
+  const key = remotePath("env", "/repo");
+  const project = { key, environmentId: "env", projectId: "p1", cwd: "/repo" };
+  localStorage.setItem(REGISTRY_KEY, JSON.stringify({ [key]: project }));
+  expect(remoteProjectFor(key)).toEqual(project);
+  const parse = vi.spyOn(JSON, "parse");
+  try {
+    for (let read = 0; read < 3; read += 1) expect(remoteProjectFor(key)).toEqual(project);
+    expect(parse).not.toHaveBeenCalled();
+    localStorage.setItem(REGISTRY_KEY, JSON.stringify({ [key]: { ...project, projectId: "p2" } }));
+    expect(remoteProjectFor(key)?.projectId).toBe("p2");
+    expect(parse).toHaveBeenCalledTimes(1);
+  } finally {
+    parse.mockRestore();
+    localStorage.removeItem(REGISTRY_KEY);
+  }
+});
+
+it("wakes registry subscribers only for registry writes, storage clears, or this window's change event", () => {
+  const onChange = vi.fn();
+  const unsubscribe = subscribeRemoteProjects(onChange);
+  try {
+    window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.unrelated" }));
+    expect(onChange).not.toHaveBeenCalled();
+    window.dispatchEvent(new StorageEvent("storage", { key: REGISTRY_KEY }));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    window.dispatchEvent(new StorageEvent("storage", { key: null }));
+    expect(onChange).toHaveBeenCalledTimes(2);
+    window.dispatchEvent(new Event("bycoda:remote-projects-changed"));
+    expect(onChange).toHaveBeenCalledTimes(3);
+  } finally {
+    unsubscribe();
+  }
+  window.dispatchEvent(new StorageEvent("storage", { key: REGISTRY_KEY }));
+  expect(onChange).toHaveBeenCalledTimes(3);
 });

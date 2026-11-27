@@ -1,12 +1,11 @@
 import type { ComponentProps } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { Alert } from "../../../shared/ui/Alert";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { recordedSessionRows } from "../model/recordedSessionRows";
-import type { sessionUsage } from "../model/usageAnalytics";
+import type { UsageMetric, sessionUsage } from "../model/usageAnalytics";
 import { ContinuousUsageTable } from "./UsageCharts";
 import { UsageProviderIdentity } from "./UsageProviderIdentity";
 
@@ -18,6 +17,7 @@ export function UsageRecordedSessions({
   turnRows,
   selectedSession,
   onSelectSession,
+  metric = "duration",
 }: {
   unavailable: boolean;
   stateKey: string;
@@ -25,39 +25,42 @@ export function UsageRecordedSessions({
   turnRows: ComponentProps<typeof ContinuousUsageTable>["rows"];
   selectedSession: string | null;
   onSelectSession: (key: string | null) => void;
+  /** The page's selected metric; sessions fall back to agent time when no session has it. */
+  metric?: UsageMetric;
 }) {
   useLocale();
-  if (unavailable)
-    return (
-      <Alert tone="info">
-        {t("Session duration data is unavailable on this app version or could not be read.")}
-      </Alert>
-    );
+  // A failed read of the session logs is reported once, in the notice above the results.
+  if (unavailable) return null;
+  const rows = recordedSessionRows(sessionRows);
+  const tableMetric =
+    metric !== "duration" && rows.some((row) => row[metric] != null) ? metric : "duration";
   return (
     <section className="usage-sessions">
-      <div className="usage-section-heading">
-        <div className="flex items-center gap-2">
-          <Heading size="item" level={3}>
-            {t("Recorded sessions")}
-          </Heading>
-          <InfoPopover label={t("Recorded sessions")}>
-            {t(
-              "Session tokens come from recorded turn metrics. Only whole turns inside the interval are included; these values are not added to provider-log totals.",
-            )}
-          </InfoPopover>
-        </div>
-        {selectedSession && (
-          <Button variant="ghost" size="sm" onClick={() => onSelectSession(null)}>
-            {t("All sessions")}
-          </Button>
-        )}
-      </div>
       <ContinuousUsageTable
-        stateKey={stateKey}
+        stateKey={`${stateKey}:${tableMetric}`}
         caption={t("Recorded sessions")}
-        metric="duration"
-        rows={recordedSessionRows(sessionRows)}
+        metric={tableMetric}
+        rows={rows}
         onSelect={onSelectSession}
+        heading={
+          <>
+            <Heading size="item" level={3}>
+              {t("Recorded sessions")}
+            </Heading>
+            <InfoTooltip label={t("Recorded sessions")}>
+              {t(
+                "Session tokens come from recorded turn metrics. Only whole turns inside the interval are included; these values are not added to provider-log totals.",
+              )}
+            </InfoTooltip>
+          </>
+        }
+        actions={
+          selectedSession ? (
+            <Button variant="ghost" size="sm" onClick={() => onSelectSession(null)}>
+              {t("All sessions")}
+            </Button>
+          ) : null
+        }
       />
       {selectedSession &&
         sessionRows.map((row) => (
@@ -68,7 +71,7 @@ export function UsageRecordedSessions({
           </Text>
         ))}
       {selectedSession && (
-        <ContinuousUsageTable caption={t("Recorded turns")} rows={turnRows} metric="duration" />
+        <ContinuousUsageTable caption={t("Recorded turns")} rows={turnRows} metric={tableMetric} />
       )}
     </section>
   );

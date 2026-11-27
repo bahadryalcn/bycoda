@@ -147,7 +147,12 @@ export function seedSubagentAudit() {
       ...newSession("codex", "/fixture"),
       id: parentId,
       busy: false,
-      blocks: parentBlocks,
+      blocks: parentBlocks.map((block) =>
+        block.tool?.kind === "advisor" &&
+        new URLSearchParams(location.search).has("advisor-pending")
+          ? { ...block, tool: { ...block.tool, status: "pending" } }
+          : block,
+      ),
       modelSettings: { crossAdvisor: '{"harness":"claude","model":"claude:fable-5-2"}' },
     },
     child(1, "Benchmark review", {}, 1, [brief(1), said(1, "All 12 benchmarks agree.")]),

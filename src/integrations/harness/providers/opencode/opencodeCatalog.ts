@@ -1,6 +1,6 @@
 import { homeDir } from "../../../../platform/tauri/fs";
+import { applyProbedCatalog } from "../../core/catalogProbe";
 import {
-  setHarnessModels,
   withAutoCompactToggle,
   type AgentModel,
   type ModelSetting,
@@ -8,7 +8,11 @@ import {
 } from "../../../../features/sessions/model/models";
 import { execChild, hasHeadlessChildBackend, resolveOpenCodeBinary } from "../../core/child";
 import { OpenCodeClient } from "./opencodeClient";
-import { resolveOpenCodeV2Service, resolveOwnedOpenCodeCatalog } from "./opencodeService";
+import {
+  resolveOpenCodeV2Service,
+  withOwnedOpenCodeCatalog,
+  type OpenCodeV2Service,
+} from "./opencodeService";
 import { isTauri } from "@tauri-apps/api/core";
 import {
   asRecord,
@@ -31,6 +35,7 @@ type OpenCodeModelJson = {
   name?: string;
   variants?: Record<string, unknown>;
   limit?: { context?: number; input?: number; output?: number };
+  cost?: unknown;
 };
 
 type ParsedProvider = {
@@ -58,12 +63,7 @@ let inflight: Promise<void> | null = null;
 export function refreshOpenCodeCatalog(): Promise<void> {
   if (inflight) return inflight;
   inflight = discoverOpenCodeModels()
-    .then((models) => {
-      if (models.length > 0) setHarnessModels("opencode", models);
-    })
-    .catch((error: unknown) => {
-      console.debug("[bycoda] opencode catalog", error);
-    })
+    .then((models) => applyProbedCatalog("opencode", models))
     .finally(() => {
       inflight = null;
     });
@@ -107,31 +107,32 @@ export async function discoverOpenCodeModels(workingDirectory?: string): Promise
 }
 
 async function discoverOpenCodeV2Models(path: string, cwd: string): Promise<AgentModel[]> {
-  const service =
-    typeof isTauri === "function" && isTauri() && !hasHeadlessChildBackend()
-      ? await resolveOwnedOpenCodeCatalog(path, cwd)
-      : await resolveOpenCodeV2Service(path, cwd);
-  // Catalog requests stay on the server's default location: location-scoped
-  // requests return an empty model snapshot for some projects on 2.x and a
-  // 500 for directories the server has not registered.
-  const client = new OpenCodeClient(
-    service.url,
-    "",
-    "v2",
-    service.password,
-    undefined,
-    undefined,
-    undefined,
-    service.nativeOwnedService,
-  );
-  const [rawModels, rawProviders, rawAgents] = await Promise.all([
-    client.listModels(),
-    client.listProviders(),
-    // Agent discovery is optional, as in the v1 path: its failure must not
-    // lose models and providers.
-    client.listAgents().catch(() => []),
-  ]);
-  return flattenOpenCodeModels(parseV2Catalog(rawModels, rawProviders), parseV2Agents(rawAgents));
+  const read = async (service: OpenCodeV2Service) => {
+    // Catalog requests stay on the server's default location: location-scoped
+    // requests return an empty model snapshot for some projects on 2.x and a
+    // 500 for directories the server has not registered.
+    const client = new OpenCodeClient(
+      service.url,
+      "",
+      "v2",
+      service.password,
+      undefined,
+      undefined,
+      undefined,
+      service.nativeOwnedService,
+    );
+    const [rawModels, rawProviders, rawAgents] = await Promise.all([
+      client.listModels(),
+      client.listProviders(),
+      // Agent discovery is optional, as in the v1 path: its failure must not
+      // lose models and providers.
+      client.listAgents().catch(() => []),
+    ]);
+    return flattenOpenCodeModels(parseV2Catalog(rawModels, rawProviders), parseV2Agents(rawAgents));
+  };
+  return typeof isTauri === "function" && isTauri() && !hasHeadlessChildBackend()
+    ? withOwnedOpenCodeCatalog(path, cwd, read)
+    : read(await resolveOpenCodeV2Service(path, cwd));
 }
 
 export function parseV2Catalog(
@@ -184,6 +185,7 @@ export function parseV2Catalog(
       id: modelID,
       name: stringField(model, "name"),
       variants,
+      cost: model.cost,
       limit: limit
         ? {
             context: typeof limit.context === "number" ? limit.context : undefined,
@@ -316,6 +318,9 @@ export function flattenOpenCodeModels(
       const name = model.name?.trim() || titleCaseSlug(modelId);
       const nativeId = `${provider.id}/${model.id ?? modelId}`;
       const contextWindow = model.limit?.context;
+      const free =
+        (provider.id === "opencode" || provider.id === "opencode-go") &&
+        hasZeroTokenPrices(model.cost);
       models.push({
         id: `opencode:${nativeId}`,
         harness: "opencode",
@@ -324,10 +329,27 @@ export function flattenOpenCodeModels(
         provider: { id: provider.id, name: provider.name },
         settings: openCodeModelSettings(provider.id, model, primaryAgents),
         ...(contextWindow && contextWindow > 0 ? { contextWindow } : {}),
+        ...(free ? { free } : {}),
       });
     }
   }
   return models.sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function hasZeroTokenPrices(cost: unknown): boolean {
+  // V1 reports one price object; V2 reports a list of price tiers.
+  const tiers: unknown[] = Array.isArray(cost) ? cost : [cost];
+  return (
+    tiers.length > 0 &&
+    tiers.every((value) => {
+      const tier = asRecord(value);
+      if (tier?.input !== 0 || tier.output !== 0) return false;
+      const cache = asRecord(tier.cache);
+      return [tier.cache_read, tier.cache_write, cache?.read, cache?.write].every(
+        (price) => price === undefined || price === 0,
+      );
+    })
+  );
 }
 
 export function openCodeProviderName(providerID: string): string {

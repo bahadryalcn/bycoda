@@ -18,8 +18,9 @@ Model order, pools, role bindings and delegation defaults belong to [model routi
 ## Preserve
 
 - Preserve section IDs, saved selection, search metadata, deep-link/reveal expansion and focus when changing navigation.
-- Pages compose the shared Group/Row/AdvancedSettings owners; they do not introduce page-local row skins or a second overlay system.
+- Pages compose the shared Group/Row owners; they do not introduce page-local row skins or a second overlay system.
 - Preserve values, defaults, storage keys, custom values, validation and same-/sibling-window subscriptions; distinguish applied state from durable save.
+- Settings that save on change use `useConfirmedPreferences` (`shared/ui/settings`): one write lane per id, latest value wins, Retry replays only the latest, and each control takes `disabled={pending(id)}`. Do not hand-roll pending/failure state per page.
 - Retain drafts and in-flight ownership across tab changes, hidden panels and returning to Settings. Failed reads must not look like authoritative empty values.
 - Policies changes preserve complete legal text, license, document language and offline fallback. Navigation changes must match the tab keyboard model.
 - Connections changes preserve machine/Host identity, pairing secret lifecycle, credential gates and recovery. Visibility or pairing UI is not new remote execution authority.

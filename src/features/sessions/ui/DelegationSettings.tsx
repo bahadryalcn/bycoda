@@ -1,27 +1,19 @@
-import { Badge } from "../../../shared/ui/Badge";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Text } from "../../../shared/ui/Text";
-import { useRef, useState } from "react";
-import { useT } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/Button";
-import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
-import { SelectTrigger } from "../../../shared/ui/Select";
-import { ChevronDown, WandSparkles, X } from "../../../shared/ui/icons";
+import type { SearchableSelectOption } from "../../../shared/ui/SearchableSelect";
+import { WandSparkles, X } from "../../../shared/ui/icons";
 import {
-  delegationNextValue,
+  delegationOptionHarness,
   isDelegationSetting,
   isImageModelsSetting,
   isSubagentSetting,
-  delegationOptionSelected,
-  crossDelegationSummary,
   delegationShortLabel,
+  type DelegationOption,
 } from "../model/crossDelegation";
 import type { ModelSetting } from "../model/models";
 import type { HarnessId } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
+import { ModelAccountLabel, ModelAccountNumber } from "./ModelAccountIdentity";
 import { HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
-import type { DropdownMenuItem, DropdownMenuAction } from "../../../shared/ui/DropdownMenu";
-import { decodeAdvisor } from "../../../shared/model/host-contracts/delegation";
+import { CROSS_ADVISOR_KEY, decodeAdvisor } from "../../../shared/model/host-contracts/delegation";
 import {
   IMAGE_MODEL_INFO,
   type ImageModelId,
@@ -30,166 +22,17 @@ import {
 const providerIcon = (harness: HarnessId | undefined) =>
   harness ? <HarnessIcon harness={harness} className="size-3.5 shrink-0" /> : undefined;
 
-/**
- * Subagents (any provider): checkbox rows in a menu that stays open while
- * several models are toggled.
- */
-export function DelegationSubagentsControl({
-  label,
-  setting,
-  values,
-  disabled,
-  onChange,
-  appearance = "ghost",
-}: {
-  label: string;
-  setting: ModelSetting;
-  values: Record<string, string>;
-  disabled: boolean;
-  onChange: (value: string) => void;
-  /** `field` matches the bordered selects beside it on settings rows. */
-  appearance?: "ghost" | "field";
-}) {
-  const t = useT();
-  const anchor = useRef<HTMLButtonElement>(null);
-  const [open, setOpen] = useState(false);
-  const automatic = isSubagentSetting(setting) && (values[setting.id] ?? setting.value) === "auto";
-  const summary = automatic ? (
-    <Badge size="xs" tone="accent" icon={<WandSparkles className="icon-xs" />}>
-      {t("Automatic")}
-    </Badge>
-  ) : (
-    t(crossDelegationSummary(setting, values))
-  );
-  const firstPicked = setting.options.find(
-    (option) => option.value && delegationOptionSelected(setting, values, option.value),
-  )?.value;
-  return (
-    <div className="flex min-w-0 flex-col items-end gap-1">
-      {appearance === "field" ? (
-        <SelectTrigger
-          ref={anchor}
-          type="button"
-          aria-label={label}
-          aria-haspopup="menu"
-          expanded={open}
-          data-state={open ? "open" : "closed"}
-          data-disabled={disabled || undefined}
-          disabled={disabled}
-          onClick={() => setOpen((next) => !next)}
-          className="bycoda-arc-select w-auto max-w-52"
-        >
-          <span className="flex min-w-0 flex-1 items-center gap-1.5">
-            {firstPicked || setting.options.some((option) => option.value === "") ? (
-              <span className="grid size-4 shrink-0 place-items-center">
-                <DelegationOptionIcon setting={setting} value={firstPicked ?? ""} />
-              </span>
-            ) : null}
-            <Text size="inherit" tone="inherit" truncate className="min-w-0">
-              {summary}
-            </Text>
-          </span>
-        </SelectTrigger>
-      ) : (
-        <Button
-          ref={anchor}
-          variant="ghost"
-          type="button"
-          aria-label={label}
-          aria-haspopup="menu"
-          expanded={open}
-          disabled={disabled}
-          onClick={() => setOpen((next) => !next)}
-          className="w-[52%] max-w-[11.5rem] min-w-0 shrink-0"
-        >
-          <Text size="inherit" tone="inherit" truncate className="min-w-0">
-            {summary}
-          </Text>
-        </Button>
-      )}
-      {open ? (
-        <DropdownMenu
-          anchor={anchor}
-          label={label}
-          items={delegationMenuItems(setting, values, t)}
-          onPick={(id) => onChange(delegationNextValue(setting, values, id))}
-          onClose={() => setOpen(false)}
-          returnFocusRef={anchor}
-          side="bottom"
-          align="end"
-          width="content"
-          maxHeight={360}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-/**
- * A single any-provider choice (Advisor) as a full-width field: the setting's name sits inside
- * the field's top edge, the picked model under it without the provider the icon already shows.
- */
-export function DelegationField({
-  setting,
-  label,
-  picked,
-  emptyLabel,
-  disabled,
-  describedBy,
-  onClick,
-}: {
-  setting: ModelSetting;
-  label: string;
-  picked: { value: string; label: string } | undefined;
-  emptyLabel: string;
-  disabled: boolean;
-  describedBy?: string;
-  /** Opens the column-wide picker, which keeps the full "Provider · Model" labels. */
-  onClick: () => void;
-}) {
-  const t = useT();
-  return (
-    <Button
-      size="sm"
-      variant="secondary"
-      type="button"
-      fullWidth
-      align="start"
-      // The direct layout lets the label fill the field so the chevron sits at its far edge.
-      motion="none"
-      padding={{ block: "sm" }}
-      controlHeight="auto"
-      disabled={disabled}
-      aria-describedby={describedBy}
-      aria-haspopup="dialog"
-      data-model-setting-field
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={onClick}
-    >
-      <span className="flex min-w-0 flex-1 flex-col items-start">
-        <Text size="micro" data-setting-label>
-          {label}
-        </Text>
-        <Text
-          as="span"
-          size="inherit"
-          tone="inherit"
-          leading="snug"
-          className="flex max-w-full min-w-0 items-center gap-1.5"
-        >
-          {picked ? <DelegationOptionIcon setting={setting} value={picked.value} /> : null}
-          <Text size="inherit" tone="inherit" truncate className="min-w-0">
-            {picked ? delegationShortLabel(setting, picked.value, t(picked.label)) : emptyLabel}
-          </Text>
-        </Text>
-      </span>
-      <ChevronDown className="icon-xs shrink-0" tone="secondary" strokeWidth={1.75} />
-    </Button>
-  );
-}
-
 /** The provider icon of one any-provider delegation option; nothing for Off. */
-export function DelegationOptionIcon({ setting, value }: { setting: ModelSetting; value: string }) {
+export function DelegationOptionIcon({
+  setting,
+  value,
+  showAccountNumber = true,
+}: {
+  setting: ModelSetting;
+  value: string;
+  /** Fixed-size picker icon slots only hold the provider glyph. */
+  showAccountNumber?: boolean;
+}) {
   if (value === "auto") return <WandSparkles className="icon-sm shrink-0" />;
   if (value === "" && setting.options.find((option) => option.value === "")?.label === "Off")
     return <X className="icon-sm shrink-0" />;
@@ -200,104 +43,108 @@ export function DelegationOptionIcon({ setting, value }: { setting: ModelSetting
     return harness ? providerIcon(harness) : null;
   }
   const ref = isDelegationSetting(setting) ? decodeAdvisor(value) : undefined;
-  const color = (
-    setting.options.find((option) => option.value === value) as
-      | { accountColor?: string }
-      | undefined
-  )?.accountColor;
-  const dot = color ? (
-    <span
-      {...surfaceAttributes({ radius: "pill", variant: "user-color" }, "size-2 shrink-0 ")}
-      style={{ "--surface-user-color": color } as React.CSSProperties}
-      aria-hidden
-    />
-  ) : null;
-  if (!ref?.harness) return dot;
-  // The account dot sits on the icon's corner so both fit one icon slot (select triggers are 16px).
+  const option: DelegationOption | undefined = setting.options.find((item) => item.value === value);
   return (
-    <span className="relative inline-flex shrink-0">
-      {providerIcon(ref.harness)}
-      {dot ? (
-        <span
-          {...surfaceAttributes(
-            { radius: "pill", ring: "base-outer" },
-            "absolute -right-0.5 -bottom-0.5 flex [&>span]:size-1.5",
-          )}
-        >
-          {dot}
-        </span>
-      ) : null}
+    <span className="inline-flex shrink-0 items-center gap-1">
+      {providerIcon(ref?.harness)}
+      {showAccountNumber ? <ModelAccountNumber account={option} /> : null}
     </span>
   );
 }
 
-/** Any-provider model lists need room for "Provider · Model" labels. */
-export function settingMenuWidth(setting: ModelSetting, base: number): number {
-  return isDelegationSetting(setting) ? Math.max(base, 320) : base;
-}
-
-/** Shared single-line delegation rows; source label remains accessible. */
-function delegationMenuItems(
+/**
+ * One delegation choice rendered like the composer's model picker: provider icon, model name,
+ * the account as a numbered tag with its name, grouped by provider. Searchable by provider and
+ * account too. The account sits in its own slot, so it never overlaps the model name.
+ */
+export function delegationPickerOption(
   setting: ModelSetting,
-  values: Record<string, string>,
+  option: DelegationOption,
   t: (text: string) => string,
-): DropdownMenuItem[] {
-  const groups = new Map<string, DropdownMenuAction[]>();
-  const leading: DropdownMenuAction[] = [];
-  for (const option of setting.options) {
-    const ref = isDelegationSetting(setting) ? decodeAdvisor(option.value) : undefined;
-    const provider = ref ? HARNESS_TITLE[ref.harness] : "";
-    const parts = option.label.split(" · ");
-    const primary = provider && parts.length > 1 ? parts[1] : t(option.label);
-    const secondary = provider ? [provider, ...parts.slice(2)].join(" · ") : "";
-    const item: DropdownMenuAction = {
-      kind: "item",
-      id: option.value,
-      label: t(option.label),
-      title: t(option.label),
-      checked: delegationOptionSelected(setting, values, option.value),
-      selectionRole: "checkbox",
-      icon: <DelegationOptionIcon setting={setting} value={option.value} />,
-      content: (
-        <span className="flex min-w-0 flex-1 items-center gap-3">
-          <Text size="inherit" tone="inherit" truncate>
-            {primary}
-          </Text>
-          {secondary ? (
-            <Text size="caption" tone="muted" truncate>
-              {secondary}
-            </Text>
-          ) : null}
-        </span>
-      ),
-    };
-    if (!provider) leading.push(item);
-    else groups.set(provider, [...(groups.get(provider) ?? []), item]);
-  }
-  return [
-    ...leading,
-    ...Array.from(groups, ([provider, items]) =>
-      groups.size > 1 ? [{ kind: "group" as const, id: provider, label: provider, items }] : items,
-    ).flat(),
-  ];
+): SearchableSelectOption {
+  const harness = isImageModelsSetting(setting)
+    ? IMAGE_MODEL_INFO[option.value as ImageModelId]?.harness
+    : delegationOptionHarness(setting, option.value);
+  const provider = harness ? HARNESS_TITLE[harness] : undefined;
+  // An advisor model several accounts offer names its account, so the closed field tells them
+  // apart. An unavailable choice keeps its full "Unavailable: …" label.
+  const advisorLabel =
+    setting.id === CROSS_ADVISOR_KEY && option.modelLabel
+      ? delegationSelectChoice(setting, option, t).label
+      : undefined;
+  const name = option.modelLabel ?? delegationShortLabel(setting, option.value, t(option.label));
+  const label = advisorLabel ?? name;
+  return {
+    value: option.value,
+    label,
+    keywords: [provider, option.accountLabel, option.detail].filter(Boolean).join(" "),
+    icon: providerIcon(harness),
+    meta: option.accountLabel ? (
+      label === name ? (
+        <ModelAccountLabel account={{ ...option, accountLabel: option.accountLabel }} />
+      ) : (
+        <ModelAccountNumber account={option} />
+      )
+    ) : undefined,
+    description: option.detail,
+    group: provider,
+    disabled: "disabled" in option && option.disabled === true,
+  };
 }
 
+/** Picker options for every model choice of a setting, deduplicated and grouped by provider. */
+export function delegationPickerOptions(
+  setting: ModelSetting,
+  t: (text: string) => string,
+): SearchableSelectOption[] {
+  const seen = new Set<string>();
+  const options = setting.options.flatMap((option) => {
+    const choice = isImageModelsSetting(setting)
+      ? option.value !== ""
+      : !!decodeAdvisor(option.value);
+    if (!choice || seen.has(option.value)) return [];
+    seen.add(option.value);
+    return [delegationPickerOption(setting, option, t)];
+  });
+  // Consecutive options share a heading, so keep each provider's rows together in first-seen order.
+  const order = [...new Set(options.map((option) => option.group))];
+  return options.sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group));
+}
+
+/** The account of a model choice: its numbered colour tag and name, as the composer shows it. */
 /** Model as primary text, provider/account as quiet same-line metadata. */
-export function delegationSelectChoice(
+function delegationSelectChoice(
   setting: ModelSetting,
   option: ModelSetting["options"][number],
   t: (text: string) => string,
 ) {
   const ref = isDelegationSetting(setting) ? decodeAdvisor(option.value) : undefined;
+  const group =
+    ref &&
+    new Set(setting.options.map((item) => decodeAdvisor(item.value)?.harness).filter(Boolean))
+      .size > 1
+      ? HARNESS_TITLE[ref.harness]
+      : undefined;
+  if (isSubagentSetting(setting)) {
+    return {
+      label: delegationShortLabel(setting, option.value, t(option.label)),
+      group,
+    };
+  }
   const parts = option.label.split(" · ");
+  const model = ref && parts.length > 1 ? parts[1] : undefined;
+  // The same model offered by several accounts needs the account in its name, or a summary of
+  // the selection ("Haiku 5.5, Fable 5.2, Haiku 5.5") cannot tell the copies apart.
+  const shared =
+    ref &&
+    model &&
+    parts.length > 2 &&
+    setting.options.filter((item) => item.label.split(" · ")[1] === model).length > 1;
   return {
-    label: ref && parts.length > 1 ? parts[1] : t(option.label),
-    meta: ref ? [HARNESS_TITLE[ref.harness], ...parts.slice(2)].join(" · ") : undefined,
-    group:
-      ref &&
-      new Set(setting.options.map((item) => decodeAdvisor(item.value)?.harness).filter(Boolean))
-        .size > 1
-        ? HARNESS_TITLE[ref.harness]
-        : undefined,
+    label: model ? (shared ? [model, ...parts.slice(2)].join(" · ") : model) : t(option.label),
+    meta: ref
+      ? [HARNESS_TITLE[ref.harness], ...(shared ? [] : parts.slice(2))].join(" · ")
+      : undefined,
+    group,
   };
 }

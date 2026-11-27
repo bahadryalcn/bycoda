@@ -163,10 +163,14 @@ impl NativeGatewayChannel {
             json!({}),
         )?;
         channel.admit(&[])?;
-        if descriptor["environmentId"] != channel.selection.machine.environment_id
-            || descriptor["protocolVersion"] != 1
-        {
-            return Err("The owning Host identity or protocol changed; reconnect it before opening a private link".into());
+        if let Some(message) = crate::remote::protocol::protocol_mismatch(&descriptor) {
+            return Err(message.into());
+        }
+        if descriptor["environmentId"] != channel.selection.machine.environment_id {
+            return Err(
+                "The owning Host identity changed; reconnect it before opening a private link"
+                    .into(),
+            );
         }
         let websocket = descriptor["capabilities"]
             .as_array()

@@ -1,12 +1,13 @@
 use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, ToSocketAddrs};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::Engine;
 use serde::Serialize;
 use url::{Host, Url};
 
-const HTTP_TIMEOUT: Duration = Duration::from_secs(7);
+/// Overall budget for one preview: page, redirect hops, DNS and icon fetches.
+const LINK_PREVIEW_DEADLINE: Duration = Duration::from_secs(7);
 const MAX_REDIRECTS: usize = 5;
 const MAX_PAGE_BYTES: usize = 512 * 1024;
 const MAX_ICON_BYTES: usize = 256 * 1024;
@@ -35,8 +36,15 @@ pub async fn fetch_link_preview(url: String) -> Result<LinkPreviewMetadata, Stri
 }
 
 fn fetch_link_preview_sync(raw: &str) -> Result<LinkPreviewMetadata, String> {
+    // One deadline for the whole preview; every fetch draws from it.
+    let deadline = Instant::now() + LINK_PREVIEW_DEADLINE;
     let url = parse_public_url(raw)?;
-    let page = fetch_resource(url, "text/html,application/xhtml+xml;q=0.9", MAX_PAGE_BYTES)?;
+    let page = fetch_resource(
+        url,
+        "text/html,application/xhtml+xml;q=0.9",
+        MAX_PAGE_BYTES,
+        deadline,
+    )?;
     if !is_html(&page.content_type) {
         return Ok(LinkPreviewMetadata {
             title: None,
@@ -54,9 +62,10 @@ fn fetch_link_preview_sync(raw: &str) -> Result<LinkPreviewMetadata, String> {
         .and_then(|href| page.final_url.join(&href).ok())
         .filter(is_http_url);
 
+    // Once the deadline is spent, both icon attempts fail before any request.
     let favicon_data_url = linked_icon
-        .and_then(fetch_icon_data_url)
-        .or_else(|| fetch_icon_data_url(default_icon));
+        .and_then(|icon| fetch_icon_data_url(icon, deadline))
+        .or_else(|| fetch_icon_data_url(default_icon, deadline));
 
     Ok(LinkPreviewMetadata {
         title,
@@ -64,26 +73,33 @@ fn fetch_link_preview_sync(raw: &str) -> Result<LinkPreviewMetadata, String> {
     })
 }
 
-fn fetch_icon_data_url(url: Url) -> Option<String> {
-    let icon = fetch_resource(url, "image/*,*/*;q=0.1", MAX_ICON_BYTES).ok()?;
+fn fetch_icon_data_url(url: Url, deadline: Instant) -> Option<String> {
+    let icon = fetch_resource(url, "image/*,*/*;q=0.1", MAX_ICON_BYTES, deadline).ok()?;
     let mime = image_mime(icon.content_type.as_deref(), &icon.bytes)?;
     let encoded = base64::engine::general_purpose::STANDARD.encode(icon.bytes);
     Some(format!("data:{mime};base64,{encoded}"))
 }
 
-fn fetch_resource(mut url: Url, accept: &str, max_bytes: usize) -> Result<FetchedResource, String> {
+fn fetch_resource(
+    mut url: Url,
+    accept: &str,
+    max_bytes: usize,
+    deadline: Instant,
+) -> Result<FetchedResource, String> {
     let agent = ureq::AgentBuilder::new()
-        .timeout(HTTP_TIMEOUT)
         .redirects(0)
         // A proxy could resolve a different destination outside our checks.
         .try_proxy_from_env(false)
-        .resolver(resolve_public_target)
+        .resolver(move |netloc: &str| resolve_public_target(netloc, deadline))
         .build();
 
     for _ in 0..=MAX_REDIRECTS {
+        // Each hop gets only the time left on the shared deadline.
+        let remaining = remaining_budget(deadline, Instant::now())?;
         validate_public_target(&url)?;
         let response = match agent
             .get(url.as_str())
+            .timeout(remaining)
             .set("Accept", accept)
             .set("User-Agent", USER_AGENT)
             .call()
@@ -142,6 +158,15 @@ fn fetch_resource(mut url: Url, accept: &str, max_bytes: usize) -> Result<Fetche
     Err("Too many link preview redirects".into())
 }
 
+/// Time left before the preview's deadline. An expired budget is an error, so
+/// no request or DNS lookup starts after the deadline.
+fn remaining_budget(deadline: Instant, now: Instant) -> Result<Duration, String> {
+    deadline
+        .checked_duration_since(now)
+        .filter(|remaining| !remaining.is_zero())
+        .ok_or_else(|| "Link preview timed out".to_string())
+}
+
 fn parse_public_url(raw: &str) -> Result<Url, String> {
     let value = raw.trim();
     if value.is_empty() || value.len() > 8192 {
@@ -184,8 +209,13 @@ fn validate_public_target(url: &Url) -> Result<(), String> {
 
 // Resolve once per actual connection and return exactly the checked addresses.
 // DNS calls can outlive their caller, so also cap outstanding resolver threads.
-fn resolve_public_target(netloc: &str) -> std::io::Result<Vec<std::net::SocketAddr>> {
+fn resolve_public_target(
+    netloc: &str,
+    deadline: Instant,
+) -> std::io::Result<Vec<std::net::SocketAddr>> {
     use std::sync::atomic::{AtomicUsize, Ordering};
+    let wait = remaining_budget(deadline, Instant::now())
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "Link preview timed out"))?;
     static ACTIVE: AtomicUsize = AtomicUsize::new(0);
     // A plain compare-exchange loop: `fetch_update` is deprecated on newer toolchains
     // (renamed `try_update`), which older toolchains do not have yet.
@@ -218,7 +248,7 @@ fn resolve_public_target(netloc: &str) -> std::io::Result<Vec<std::net::SocketAd
         ACTIVE.fetch_sub(1, Ordering::AcqRel);
         return Err(error);
     }
-    let addresses = rx.recv_timeout(HTTP_TIMEOUT).map_err(|_| {
+    let addresses = rx.recv_timeout(wait).map_err(|_| {
         std::io::Error::new(std::io::ErrorKind::TimedOut, "Link preview DNS timed out")
     })??;
     if addresses.is_empty() || addresses.iter().any(|address| !is_public_ip(address.ip())) {
@@ -551,6 +581,25 @@ mod tests {
         }
         assert!(is_public_ip("8.8.8.8".parse().unwrap()));
         assert!(is_public_ip("2606:4700:4700::1111".parse().unwrap()));
+    }
+
+    #[test]
+    fn budget_shrinks_across_hops_and_ends_at_the_deadline() {
+        let start = Instant::now();
+        let deadline = start + Duration::from_secs(7);
+        assert_eq!(
+            remaining_budget(deadline, start + Duration::from_secs(5)),
+            Ok(Duration::from_secs(2))
+        );
+        assert!(remaining_budget(deadline, deadline).is_err());
+        assert!(remaining_budget(deadline, deadline + Duration::from_secs(1)).is_err());
+    }
+
+    #[test]
+    fn expired_deadline_starts_no_request() {
+        // Fails before validation or any socket work, so nothing goes on the wire.
+        let url = Url::parse("https://example.com/").unwrap();
+        assert!(fetch_resource(url, "text/html", MAX_PAGE_BYTES, Instant::now()).is_err());
     }
 
     #[test]

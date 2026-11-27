@@ -4,8 +4,11 @@
  * empty/one/many/error) where they model it; evidence from here is fixture evidence, never
  * installed-app acceptance (see docs/reference/testing.md).
  *
- *   pnpm exec vp dev --config tests/browser/vite.config.ts --port 14395 --strictPort   (background)
- *   node scripts/checks/ui-acceptance-matrix.mjs --out temp/verification/<id>/matrix [--only a,b] [--base http://127.0.0.1:14395]
+ *   node scripts/checks/ui-acceptance-matrix.mjs --out temp/verification/<id>/matrix [--only a,b]
+ *       Starts its own fixture server on port 14395 and always stops it; fails if the port is taken.
+ *   node scripts/checks/ui-acceptance-matrix.mjs --out ... --base http://127.0.0.1:<port>
+ *       Uses a server you started yourself (`pnpm exec vp dev --config tests/browser/vite.config.ts`
+ *       and stop it afterwards); the script owns no server.
  *   node scripts/checks/ui-acceptance-matrix.mjs --list     print the archetype table
  *
  * Output: <out>/<name>-<light|dark>-<width>.png; log lines are `ok`, `ERR <pageerror>` or `FAIL`.
@@ -13,6 +16,7 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
+import net from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
@@ -56,10 +60,53 @@ async function shellInit() {
     path.join(root, "tests/browser/app-shell/compact-navigation.spec.ts"),
     "utf8",
   );
-  const start = spec.indexOf("page.addInitScript(") + "page.addInitScript(".length;
+  // Other tests in the spec also call addInitScript; the shell stub lives in the fixture installer.
+  const installer = Math.max(0, spec.indexOf("async function installNavigationFixture("));
+  const start = spec.indexOf("page.addInitScript(", installer) + "page.addInitScript(".length;
   const stop = spec.indexOf("\n  });\n}", start) + 4;
   if (start < "page.addInitScript(".length || stop < start) return null;
   return require("esbuild").transformSync(`(${spec.slice(start, stop)})()`, { loader: "ts" }).code;
+}
+
+export const fixturePort = 14395;
+const readinessDeadlineMs = 60_000;
+
+/**
+ * Start the browser fixture Vite server in-process (no child tree) on a strict port. Refuses a busy
+ * port instead of adopting a server this script did not start.
+ */
+export async function startFixtureServer(port = fixturePort) {
+  const busy = await new Promise((done) => {
+    const probe = net.createServer();
+    probe.once("error", () => done(true));
+    probe.listen(port, "127.0.0.1", () => probe.close(() => done(false)));
+  });
+  const inUse = new Error(
+    `Port ${port} is already in use. Stop that server or pass --base http://127.0.0.1:${port}.`,
+  );
+  if (busy) throw inUse;
+  const { createServer } = await import("vite");
+  const server = await createServer({
+    configFile: path.join(root, "tests/browser/vite.config.ts"),
+    root,
+    clearScreen: false,
+    server: { host: "127.0.0.1", port, strictPort: true, open: false },
+  });
+  try {
+    await Promise.race([
+      server.listen(),
+      new Promise((_, fail) =>
+        setTimeout(
+          () => fail(new Error("Fixture server did not start in time.")),
+          readinessDeadlineMs,
+        ).unref(),
+      ),
+    ]);
+  } catch (error) {
+    await server.close();
+    throw /EADDRINUSE|already in use/i.test(String(error)) ? inUse : error;
+  }
+  return server;
 }
 
 async function main(args) {
@@ -69,14 +116,41 @@ async function main(args) {
   }
   const out = option(args, "out");
   if (!out) throw new Error("--out <dir> is required");
-  const base = option(args, "base") ?? "http://127.0.0.1:14395";
   const only = option(args, "only")?.split(",");
+  const explicitBase = option(args, "base");
+  let server;
+  let browser;
+  const stop = async () => {
+    await browser?.close().catch(() => {});
+    await server?.close().catch(() => {});
+  };
+  const onSignal = () => void stop().finally(() => process.exit(130));
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
+  try {
+    if (!explicitBase) server = await startFixtureServer();
+    await capture(
+      args,
+      out,
+      explicitBase ?? `http://127.0.0.1:${fixturePort}`,
+      only,
+      (b) => (browser = b),
+    );
+  } finally {
+    process.off("SIGINT", onSignal);
+    process.off("SIGTERM", onSignal);
+    await stop();
+  }
+}
+
+async function capture(args, out, base, only, onBrowser) {
   const { chromium } = await import(
     pathToFileURL(path.join(root, "node_modules/@playwright/test/index.mjs")).href
   );
   mkdirSync(out, { recursive: true });
   const init = await shellInit();
   const browser = await chromium.launch({ headless: true });
+  onBrowser(browser);
   let failed = 0;
   for (const [name, route] of archetypes) {
     if (only && !only.includes(name)) continue;

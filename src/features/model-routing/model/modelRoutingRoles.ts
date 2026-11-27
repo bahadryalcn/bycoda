@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import {
   MODEL_ROUTING_DELEGATION_KEYS,
   type ModelRoutingChoice,
@@ -184,4 +185,62 @@ export function roleBindingsForSave(roles: ModelRoutingDraft["roles"]): ModelRou
           ],
     ),
   );
+}
+
+/** The translated name of a role; `t()` takes literals only, so each label sits in its own case. */
+export function modelRoleLabel(labelKey: string): string {
+  switch (labelKey) {
+    case "Task worker":
+      return t("Task worker");
+    case "Task reviewer":
+      return t("Task reviewer");
+    case "Epic planner":
+      return t("Epic planner");
+    case "Epic final review":
+      return t("Epic final review");
+    case "Steward":
+      return t("Steward");
+    case "Automation":
+      return t("Automation");
+    case "Crew member":
+      return t("Crew member");
+    case "Assistant worker":
+      return t("Assistant worker");
+    case "Assistant planning":
+      return t("Assistant planning");
+    case "Assistant chief":
+      return t("Assistant chief");
+    case "Assistant reply":
+      return t("Assistant reply");
+    case "Voice reply":
+      return t("Voice reply");
+    case "Translation":
+      return t("Translation");
+    case "Reprompt":
+      return t("Reprompt");
+    case "Title":
+      return t("Title");
+    case "Git text":
+      return t("Git text");
+    case "Skill grouping":
+      return t("Skill grouping");
+    case "Theme generator":
+      return t("Theme generator");
+    case "Routing setup":
+      return t("Routing setup");
+    default:
+      return labelKey;
+  }
+}
+
+/** The translated title of a role group. */
+export function modelRoleGroupLabel(group: (typeof MODEL_ROLE_GROUPS)[number]): string {
+  switch (group) {
+    case "Unattended work":
+      return t("Unattended work");
+    case "Assistant and voice":
+      return t("Assistant and voice");
+    case "Helper models":
+      return t("Helper models");
+  }
 }

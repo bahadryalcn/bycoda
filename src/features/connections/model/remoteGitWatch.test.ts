@@ -9,15 +9,40 @@ const channel = vi.hoisted(() => ({
     stop: () => void;
   }[],
 }));
-const capabilities = vi.hoisted(() => ({ value: ["git.watch"] as string[] | undefined }));
+const capabilities = vi.hoisted(() => ({
+  value: ["git.watch"] as string[] | undefined,
+  cached: true,
+  loadFailures: 0,
+  machineFailures: 0,
+  loads: 0,
+}));
+const recovered = vi.hoisted(() => ({ listeners: new Set<() => void>() }));
 
 vi.mock("../../../platform/tauri/fs", () => ({ setRemoteGitWatcher: vi.fn() }));
 vi.mock("./connections", () => ({
-  cachedRemoteCapabilities: () => capabilities.value,
-  loadRemoteCapabilities: async () => capabilities.value,
-  remoteMachineFor: async () => ({ id: "machine-1" }),
+  cachedRemoteCapabilities: () => (capabilities.cached ? capabilities.value : undefined),
+  loadRemoteCapabilities: async () => {
+    capabilities.loads += 1;
+    if (capabilities.loadFailures > 0) {
+      capabilities.loadFailures -= 1;
+      throw new Error("describe timed out");
+    }
+    return capabilities.value;
+  },
+  remoteMachineFor: async () => {
+    if (capabilities.machineFailures > 0) {
+      capabilities.machineFailures -= 1;
+      throw new Error("remote_machines failed");
+    }
+    return { id: "machine-1" };
+  },
 }));
-vi.mock("./remoteHealth", () => ({ subscribeRemoteRecovered: () => () => {} }));
+vi.mock("./remoteHealth", () => ({
+  subscribeRemoteRecovered: (listener: () => void) => {
+    recovered.listeners.add(listener);
+    return () => recovered.listeners.delete(listener);
+  },
+}));
 vi.mock("./remoteMachineChannel", () => ({
   subscribeRemoteMachineChannel: vi.fn(
     (_machine: string, demand: () => MachineChannelDemand, listener: MachineChannelListener) => {
@@ -28,7 +53,11 @@ vi.mock("./remoteMachineChannel", () => ({
   ),
 }));
 
-import { GIT_UNWATCHABLE_RETRY_MS, watchRemoteGit } from "./remoteGitWatch";
+import {
+  GIT_START_RETRY_DELAYS_MS,
+  GIT_UNWATCHABLE_RETRY_MS,
+  watchRemoteGit,
+} from "./remoteGitWatch";
 
 const CWD = "remote://env-1/home/me/repo";
 const HOST = "/home/me/repo";
@@ -55,8 +84,81 @@ describe("remote .git watch", () => {
     vi.useFakeTimers();
     channel.subscribers.length = 0;
     capabilities.value = ["git.watch"];
+    capabilities.cached = true;
+    capabilities.loadFailures = 0;
+    capabilities.machineFailures = 0;
+    capabilities.loads = 0;
+    recovered.listeners.clear();
   });
   afterEach(() => vi.useRealTimers());
+
+  it("retries a failed capability read and starts watching once it answers", async () => {
+    capabilities.cached = false;
+    capabilities.loadFailures = 1;
+    const { stop } = start();
+    await settle();
+    expect(channel.subscribers).toHaveLength(0);
+
+    await vi.advanceTimersByTimeAsync(GIT_START_RETRY_DELAYS_MS[0]);
+    expect(channel.subscribers).toHaveLength(1);
+    stop();
+    expect(channel.subscribers[0].stop).toHaveBeenCalled();
+  });
+
+  it("handles a rejected machine lookup and retries it", async () => {
+    capabilities.machineFailures = 1;
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    const { stop } = start();
+    await settle();
+    expect(channel.subscribers).toHaveLength(0);
+    expect(unhandled).not.toHaveBeenCalled();
+    process.off("unhandledRejection", unhandled);
+
+    await vi.advanceTimersByTimeAsync(GIT_START_RETRY_DELAYS_MS[0]);
+    expect(channel.subscribers).toHaveLength(1);
+    stop();
+  });
+
+  it("gives up after a bounded number of failed attempts until the machine recovers", async () => {
+    capabilities.cached = false;
+    capabilities.loadFailures = Number.POSITIVE_INFINITY;
+    const { stop } = start();
+    await settle();
+    for (const delay of GIT_START_RETRY_DELAYS_MS) await vi.advanceTimersByTimeAsync(delay);
+    expect(capabilities.loads).toBe(GIT_START_RETRY_DELAYS_MS.length + 1);
+
+    await vi.advanceTimersByTimeAsync(GIT_UNWATCHABLE_RETRY_MS);
+    expect(capabilities.loads).toBe(GIT_START_RETRY_DELAYS_MS.length + 1);
+
+    capabilities.loadFailures = 0;
+    for (const listener of recovered.listeners) listener();
+    await settle();
+    expect(channel.subscribers).toHaveLength(1);
+    stop();
+  });
+
+  it("does not retry a host that answered without git.watch", async () => {
+    capabilities.value = ["machine.changes"];
+    capabilities.cached = false;
+    const { stop } = start();
+    await settle();
+    await vi.advanceTimersByTimeAsync(GIT_UNWATCHABLE_RETRY_MS);
+    expect(capabilities.loads).toBe(1);
+    expect(channel.subscribers).toHaveLength(0);
+    stop();
+  });
+
+  it("stops a pending retry on release", async () => {
+    capabilities.cached = false;
+    capabilities.loadFailures = 1;
+    const { stop } = start();
+    await settle();
+    stop();
+    await vi.advanceTimersByTimeAsync(GIT_UNWATCHABLE_RETRY_MS);
+    expect(capabilities.loads).toBe(1);
+    expect(channel.subscribers).toHaveLength(0);
+  });
 
   it("never watches a host without git.watch", async () => {
     capabilities.value = ["machine.changes"];

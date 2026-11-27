@@ -3,8 +3,9 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ServerSnippets } from "./ServerSnippets";
-import { saveSshSnippet } from "../model/sshSnippets";
+import { loadSshSnippets, saveSshSnippet } from "../model/sshSnippets";
 import { copyText } from "../../../platform/tauri/clipboard";
+vi.mock("../model/sshSnippets", { spy: true });
 vi.mock("../../../platform/tauri/clipboard", () => ({
   copyText: vi.fn().mockResolvedValue(undefined),
 }));
@@ -58,7 +59,8 @@ it("does not expose commands belonging to another server", async () => {
   const insert = [...container.querySelectorAll("button")].find((button) =>
     button.textContent?.includes("Insert into terminal"),
   )!;
-  expect(insert.getAttribute("disabled")).not.toBeNull();
+  // A reason-bearing disabled button may be aria-disabled instead of natively disabled.
+  expect(insert.getAttribute("disabled") ?? insert.getAttribute("aria-disabled")).not.toBeNull();
 });
 
 it("confirms save inside its action and clears confirmation when the draft changes", async () => {
@@ -66,7 +68,7 @@ it("confirms save inside its action and clears confirmation when the draft chang
   await act(async () => root.render(createElement(ServerSnippets, { serverId: "a" })));
   const find = (text: string) =>
     [...container.querySelectorAll("button")].find((button) => button.textContent === text)!;
-  await act(async () => find("Statusv1").click());
+  await act(async () => find("Status").click());
   await act(async () =>
     container
       .querySelector("form")!
@@ -105,4 +107,36 @@ it("offers working copy without terminal insertion when no prompt capability is 
       (status) => status.textContent === "Copied",
     ),
   ).toBe(true);
+});
+
+it.each([
+  ["git status", "git status"],
+  ["pwd\nls", ""],
+  ["pwd\u001b[0m", ""],
+  ["x".repeat(8193), ""],
+])("uses selected text only as a valid, unsaved draft", async (initialCommand, expected) => {
+  await act(async () =>
+    root.render(createElement(ServerSnippets, { serverId: "a", initialCommand })),
+  );
+  expect(container.querySelector("textarea")?.value).toBe(expected);
+  expect(loadSshSnippets("a")).toEqual([]);
+});
+
+it("loads the saved list only when browsing, including after saving a terminal selection", async () => {
+  vi.mocked(loadSshSnippets).mockClear();
+  await act(async () =>
+    root.render(createElement(ServerSnippets, { serverId: "a", initialCommand: "pwd" })),
+  );
+  await act(async () => {
+    saveSshSnippet({ serverId: "b", command: "git status" });
+    container
+      .querySelector("form")!
+      .dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+  });
+  expect(container.textContent).toContain("Saved");
+  expect(loadSshSnippets).not.toHaveBeenCalled();
+
+  await act(async () => root.render(createElement(ServerSnippets, { serverId: "a" })));
+  expect(container.querySelector("ul")?.textContent).toContain("pwd");
+  expect(loadSshSnippets).toHaveBeenCalledExactlyOnceWith("a");
 });

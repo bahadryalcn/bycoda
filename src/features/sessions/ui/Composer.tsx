@@ -1,4 +1,9 @@
+import { errorText } from "../../../shared/lib/errors";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
+import {
+  isAdoptedTurnStopping,
+  subscribeAdoptedStopping,
+} from "../../connections/public/adoptedStopping";
 import {
   expandSkillGroupTokens,
   isSkillGroupPickerItem,
@@ -10,12 +15,15 @@ import { ComposerAction } from "./ComposerAction";
 import { Text } from "../../../shared/ui/Text";
 export { ComposerAction } from "./ComposerAction";
 import { MessageQueue } from "./MessageQueue";
-import { RemoteOriginMark } from "./RemoteOriginMark";
 import { ComposerHighlight } from "./ComposerHighlight";
+import { ComposerAddMenu } from "./ComposerAddMenu";
+import { ComposerInlineEditor } from "./ComposerInlineEditor";
+import { composerInputFocused } from "./composerInlineInput";
+import { mayHaveComposerMarkdown } from "./ComposerMarkdown";
 import { registerVoiceDraftReader } from "../../voice/model/voiceDraftContext";
 import { DeliveryProgressIndicator } from "./DeliveryProgressNotice";
-import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { useClearComposerDraft } from "../hooks/useClearComposerDraft";
+import { hasForeignMachineAttachment } from "../../connections/public/sessionMachineTarget";
 import { useMountedComposerClosure } from "../hooks/useMountedComposerClosure";
 import type { MountedComposerAction } from "../data/composerClosure";
 import {
@@ -44,11 +52,15 @@ import {
 import { TranscriptSelectionMenu } from "./TranscriptSelectionMenu";
 import { ComposerCitations } from "./ComposerCitations";
 import { chatCitationTokens, removeCitationFromText } from "../model/citationTokens";
-import { extractChatCitations, withChatCitations, type ChatCitation } from "../model/chatCitation";
+import {
+  extractChatCitations,
+  withChatCitations,
+  type ComposerCitation,
+} from "../model/chatCitation";
 import { TranslationResultDialog } from "./TranslationResultDialog";
 import { releaseAttachments } from "../model/releaseAttachments";
 import { useT } from "../../../shared/i18n";
-import { MicrophoneRecoveryAction } from "../../voice/ui/MicrophoneRecoveryAction";
+import { isVoiceSetupError, VoiceRecoveryAction } from "../../voice/ui/MicrophoneRecoveryAction";
 import type { QueueAction } from "../model/queueAction";
 import { useComposerSpelling } from "../../settings/public/composerSpelling";
 import { ComposerTips } from "./ComposerTips";
@@ -58,6 +70,8 @@ import {
   useBundledHostStatus,
 } from "../../connections/public/bundledHostStatus";
 import { parseRemotePath } from "../../connections/public/remoteProjects";
+import { useRemoteSupports } from "../../connections/public/remoteCapabilities";
+import { HOST_ADDITIONAL_DIRS_CAPABILITY } from "../../../shared/model/host-contracts/session-additional-dirs";
 import { WorkspaceCreationStatus } from "../../workspaces/ui/WorkspaceCreationStatus";
 import { SessionWorkspaceActions } from "../../workspaces/ui/SessionWorkspaceActions";
 import { WorkspaceRewindPreviewHost } from "../../workspaces/ui/WorkspaceRewindPreview";
@@ -67,10 +81,7 @@ import {
   AiIdea,
   CircleDashed,
   CursorMagicSelection,
-  FilePlus,
-  Plus,
   Share,
-  SlidersHorizontal,
   Undo2,
   X,
 } from "../../../shared/ui/icons";
@@ -84,6 +95,7 @@ import {
   useState,
   useSyncExternalStore,
   type ClipboardEvent,
+  type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
@@ -97,21 +109,27 @@ import {
   retainAttachmentPickerSelection,
   revokeAttachment,
 } from "../model/attachments";
+import { collectSkippedAttachments } from "../model/attachmentSkips";
 import {
-  attachmentTokens,
+  attachmentDraftTokens,
+  compactAttachmentDraftTokens,
+  expandAttachmentDraftTokens,
   attachmentsDroppedByEdit,
   deleteTokenAtCaret,
   insertAtSelection,
   removeAttachmentFromText,
   tokensForIncoming,
 } from "../model/attachmentTokens";
-import { composerMaxHeight, resizeComposer } from "../model/composerResize";
+import { COMPOSER_MAX_HEIGHT, composerMaxHeight, resizeComposer } from "../model/composerResize";
 import { createComposerResizeFrame } from "./composerResizeFrame";
 import {
+  clipboardTextWithAttachments,
+  copyMessage,
   isFileReferenceText,
-  messageFilesFromClipboard,
+  messageFromClipboard,
   nativeClipboardAttachments,
 } from "../../../platform/tauri/clipboard";
+import { editDraftText } from "../model/queuedMessageEdit";
 import type { ContextUsage } from "../model/contextUsage";
 import type { Block } from "../model/session";
 import type { SessionUsage } from "../model/sessionUsage";
@@ -124,6 +142,7 @@ import {
   type MentionToken,
 } from "../../files/public/fileMentions";
 import type { ProjectFile } from "../../../platform/tauri/fs";
+import { isImportProvider } from "../../../platform/tauri/sessionImport";
 import { composeInboxMessage, type InboxComposerCard } from "../../inbox/model/githubTasks";
 import type { HandoffComposerCard } from "../model/handoff";
 import {
@@ -143,6 +162,7 @@ import type {
   ComposerTurnOptions,
 } from "../model/session";
 import { parseShellCommand } from "../model/shellRun";
+import { isProjectlessCwd } from "../model/recentSessions";
 import { clearConversationBlocker } from "../model/clearConversation";
 import { getSessions } from "../model/sessionsStore";
 import {
@@ -161,6 +181,10 @@ import type { UserQuestionPrompt, UserQuestionReply } from "../model/userQuestio
 import { historyKey, type HistoryBrowse } from "../model/composerHistory";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { captureDraft, dropPastedText, insertRestoredText } from "../../../shared/lib/draftRestore";
+import {
+  capturePastedTextAttachment,
+  insertPastedTextReference,
+} from "../model/pastedTextAttachment";
 import {
   createBlankSkill,
   dollarTokenAt,
@@ -191,7 +215,7 @@ import { McpServerPicker } from "./McpServerPicker";
 import { InboxMiniCard } from "../../inbox/ui/InboxMiniCard";
 import { NoteMiniCard } from "../../notes/ui/NoteMiniCard";
 import { HandoffMiniCard } from "./HandoffMiniCard";
-import { ModelPicker } from "./ModelPicker";
+import { ModelControlPills, ModelPicker } from "./ModelPicker";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { Button } from "../../../shared/ui/Button";
 import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
@@ -204,12 +228,14 @@ import { useTabGroupLogos } from "../../projects/public/useTabGroupLogos";
 import { useProjectBranchesState } from "../../source-control/public/useProjectBranches";
 import {
   keybindingPressed,
+  loadModelControls,
   loadNotesEnabled,
+  subscribeModelControls,
   subscribeNotesEnabled,
 } from "../../settings/public/settings";
 import { isNoteMentionPath, type NoteComposerCard } from "../../notes";
 import { useResolvedTabGroupLogo } from "../../workspace/model/tabGroups";
-import { ComposerNotices } from "./ComposerNotices";
+import { ComposerNotices, type ComposerFeedback } from "./ComposerNotices";
 import {
   supportsProviderAccounts,
   type ProviderAccountProvider,
@@ -218,7 +244,13 @@ import { consumePlanCommand, PLAN_COMMAND } from "../model/plan";
 import { consumeOperatorCommand, OPERATOR_COMMAND } from "../model/operatorCommand";
 import { consumeOrchestratorCommand, ORCHESTRATOR_COMMAND } from "../model/orchestratorCommand";
 import { consumeDraftCommand, DRAFT_COMMAND } from "../model/draftCommand";
-import { leadingModeCommand, MODE_COMMAND_INDENT, ModeCommandPill } from "./modeCommands";
+import {
+  ComposerModePicker,
+  leadingModeCommand,
+  MODE_COMMAND_INDENT,
+  ModeCommandPill,
+} from "./modeCommands";
+import { observeResize } from "../../../shared/lib/observeResize";
 import { BTW_COMMAND, consumeBtwCommand, consumeBtwPrefix } from "../model/btw";
 import { isCompactCommand } from "../model/compact";
 import {
@@ -238,7 +270,10 @@ import {
   type SessionFolderTarget,
   type SessionFolder,
 } from "../model/sessionFolders";
-import { organizationFoldersForProject } from "../model/sessionOrganizationOperations";
+import {
+  canOrganizeSessions,
+  organizationFoldersForProject,
+} from "../model/sessionOrganizationOperations";
 import {
   cachedSessionOrganization,
   hydrateSessionOrganization,
@@ -249,10 +284,13 @@ import type { SessionOrganizationResult } from "../model/sessionOrganizationStor
 import { SessionFolderPicker } from "./SessionFolderPicker";
 import { MCP_COMMAND, isMcpCommand } from "../model/mcpCommand";
 import { mcpContextText, newMcpTag, taggedMcpServers, type McpTag } from "../model/mcpPicker";
+import { COMPOSER_PICKER_SELECTOR } from "../model/composerPickerSelector";
+import { tokenSyncUnchanged, type TokenSyncSnapshot } from "../model/composerTokenSync";
 import {
   getComposerAttachments,
   getComposerMcpTags,
   getComposerDraftMode,
+  setComposerAttachments,
   setComposerDraftMode,
   setComposerDraftSnapshot,
   setComposerMcpTags,
@@ -262,6 +300,7 @@ import type { LastTurnRecall } from "../model/editLastTurn";
 import {
   isDefaultQueueChord,
   QUEUE_MESSAGE_COMMAND,
+  queueChordConsumesKey,
   queueShortcutApplies,
 } from "../model/composerQueue";
 import {
@@ -278,14 +317,31 @@ import {
   type DeferredExternalDraft,
 } from "./composerExternalDraft";
 import { useComposerMcpCatalog } from "./useComposerMcpCatalog";
-import { useComposerMentionSources } from "./useComposerMentionSources";
+import { useComposerMentionSources, usePendingMentionPick } from "./useComposerMentionSources";
 import { workItemMentionOf } from "../model/workItemMentionRows";
+import { CREWS_MENTION_SCOPE, crewMentionOf } from "../model/crewMentions";
+import {
+  composerMentionScopeHintOf,
+  deleteScopedMentionAtCaret,
+  scopedNoteMentionLabel,
+} from "../model/composerMentionScopes";
+import {
+  parseServerMentionQuery,
+  serverMentionAliasHint,
+  serverMentionOf,
+} from "../model/serverMentions";
 import { rememberWorkItemMention } from "../../inbox/public/workItemMentions";
 import { WorkItemMentionCwd } from "./WorkItemMentionChip";
 import { keepEqualToken } from "./keepEqualToken";
 import { useComposerWorkMode } from "./useComposerWorkMode";
 import { useComposerSlashInventory } from "./useComposerSlashInventory";
-import { applyTextareaEdit, insertDictatedText } from "./composerTextareaEdit";
+import {
+  applyTextareaEdit,
+  applyUndoableTextareaEdit,
+  selectedComposerAttachments,
+  applyMentionDeletion,
+  insertDictatedText,
+} from "./composerTextareaEdit";
 import { installAttachmentSelectionPolicy } from "./attachmentSelectionPolicy";
 import { DictationButton } from "../../voice/ui/DictationButton";
 import { useEditingLastTurn } from "./useEditingLastTurn";
@@ -294,7 +350,6 @@ import {
   useComposerAttachmentLifecycle,
   useComposerAttachmentReads,
   releaseOverLimit,
-  skippedPastedFiles,
 } from "./useComposerAttachments";
 import { useComposerFileDrop } from "./useComposerFileDrop";
 import { useComposerRegistrations } from "./useComposerRegistrations";
@@ -324,6 +379,8 @@ type Props = {
   runtimeMode: RuntimeMode;
   cwd?: string;
   executionCwd: string;
+  /** The Host has admitted a provider session in this projectless execution directory. */
+  indexScratchFiles?: boolean;
   sessionId?: string;
   /** Nested composers keep their own draft ID; null means no known logical root. */
   parentSessionId?: string | null;
@@ -331,11 +388,16 @@ type Props = {
   recents?: RecentProject[];
   hideProjectPicker?: boolean;
   hideBranchPicker?: boolean;
+  machinePicker?: (locked: boolean) => ReactNode;
+  machineEnvironmentId?: string;
   hideTopBar?: boolean;
+  /** Embedded conversations show their fixed execution identity in the panel header. */
+  hideIdentityControls?: boolean;
   /** Keeps Orchestrator mode and /orchestrator out of conversations that cannot run it. */
   hideOrchestrator?: boolean;
   /** Routes discovery to the host; local-only app modes remain unavailable. */
   remoteSession?: boolean;
+  adoptedSteerSupported?: boolean;
   remoteFeatures?: {
     attachments: boolean;
     questionAttachments?: boolean;
@@ -363,6 +425,8 @@ type Props = {
   busy?: boolean;
   /** The agent is done and only background commands keep the turn open. */
   backgroundOnly?: boolean;
+  /** The turn has ended and delegated subagents still run; Queue waits for them. */
+  subagentsRunning?: boolean;
   backgroundTaskCount?: number;
   worktreePreparing?: boolean;
   /** Allow typed text to be sent alongside Stop while a turn is running. */
@@ -376,6 +440,9 @@ type Props = {
   /** Model and settings of the turn in progress; queued rows saved for another one cannot steer it. */
   runningModelTarget?: ModelTarget;
   usageLimit?: UsageLimit;
+  /** Recovery lives with the transcript failure when that block is available. */
+  usageLimitInTranscript?: boolean;
+  modelPickerOpenRequest?: number;
   hotkeys?: boolean;
   onFocus: () => void;
   onCwdChange: (cwd: string) => void;
@@ -388,6 +455,11 @@ type Props = {
   worktreeBase?: string;
   onWorkspaceModeChange?: (mode: WorkspaceMode, base?: string) => void;
   onWorktreeBaseChange?: (base: string) => void;
+  /** The draft's new worktree starts from the fetched remote base. */
+  worktreeBaseRemote?: boolean;
+  onWorktreeBaseRemoteChange?: (remote: boolean) => void;
+  /** Progress id of the creation that is running for this draft; null or unset when idle. */
+  creationProgressId?: string | null;
   worktreeRemoved?: boolean;
   onManageWorktrees?: () => void;
   onNewTerminal?: () => void;
@@ -418,9 +490,9 @@ type Props = {
     text: string,
     attachments: Attachment[],
     parentAdmission?: ParentAdmission,
-  ) => boolean | void;
+  ) => boolean | void | Promise<boolean | void>;
   onStop?: () => void;
-  onCompactContext?: (parentAdmission?: ParentAdmission) => boolean;
+  onCompactContext?: (parentAdmission?: ParentAdmission) => boolean | Promise<boolean>;
   onNewSession?: (options?: NewSessionOptions, parentAdmission?: ParentAdmission) => void;
   onPlaceInFolder?: (
     target: SessionFolderTarget,
@@ -428,7 +500,11 @@ type Props = {
   /** Open the picker of conversations Claude Code stored for this project. */
   onResumeProviderSession?: (parentAdmission?: ParentAdmission) => void;
   onDeleteQueuedMessage?: (messageId: string) => import("../model/queueAction").QueueRemoval;
-  onEditQueuedMessage?: (messageId: string, text: string, attachments: Attachment[]) => void;
+  onEditQueuedMessage?: (
+    messageId: string,
+    text: string,
+    attachments: Attachment[],
+  ) => boolean | void;
   onQueuedMessageEditingChange?: (messageId?: string) => void;
   /** The queue in its new order, as ids; resolved against the live queue by the owner. */
   onReorderQueuedMessages?: (messageIds: string[], parentAdmission?: ParentAdmission) => void;
@@ -453,8 +529,6 @@ type Props = {
    */
   editingLastTurn?: boolean;
   onEditingLastTurnChange?: (editing: boolean) => void;
-  /** Shown in the workspace row when the conversation was started from another device. */
-  remoteOrigin?: "running" | "idle";
   /** Pane-level notices rendered first in the one notice stack above the card. */
   notices?: ReactNode;
   children?: ReactNode;
@@ -477,7 +551,7 @@ type SubmissionRun = {
   submitContinuationRef: {
     current: ((value: string, queue: boolean, original: ParentAdmission) => void) | null;
   };
-  setPasteError: (value: string | null | ((current: string | null) => string | null)) => void;
+  setPasteError: (value: SetStateAction<ComposerFeedback>) => void;
   setSubmission: (value: null) => void;
   t: (key: string) => string;
 };
@@ -507,8 +581,12 @@ async function awaitSubmission(run: SubmissionRun): Promise<void> {
       rawAction.apply(() => run.submitContinuationRef.current?.(run.value, run.queue, admitted)),
     );
   } catch (error) {
-    if (parentChanged.identity() === originalIdentity)
-      run.setPasteError(error instanceof Error ? error.message : String(error));
+    if (parentChanged.identity() === originalIdentity) {
+      run.setPasteError({
+        title: run.t("Could not prepare the message."),
+        detail: errorText(error),
+      });
+    }
   } finally {
     rawAction.finish();
     if (parentChanged.identity() === originalIdentity && run.submitLockRef.current === token) {
@@ -519,6 +597,14 @@ async function awaitSubmission(run: SubmissionRun): Promise<void> {
     }
   }
 }
+
+/**
+ * Cards already carried by a send that is still starting. The session keeps them
+ * until the turn commits, and a remounted composer must not send them again.
+ */
+const dispatchedCards = new WeakSet<object>();
+const undispatched = <T extends object>(card: T | undefined) =>
+  card && !dispatchedCards.has(card) ? card : undefined;
 
 export const Composer = memo(function Composer({
   enabled = true,
@@ -546,9 +632,13 @@ export const Composer = memo(function Composer({
   recents = [],
   hideProjectPicker = false,
   hideBranchPicker = false,
+  machinePicker,
+  machineEnvironmentId,
   hideTopBar = false,
+  hideIdentityControls = false,
   hideOrchestrator = false,
   remoteSession = false,
+  adoptedSteerSupported,
   sendBlockedReason,
   sendHeldReason,
   remoteFeatures,
@@ -566,6 +656,7 @@ export const Composer = memo(function Composer({
   question,
   busy = false,
   backgroundOnly = false,
+  subagentsRunning = false,
   backgroundTaskCount = 0,
   worktreePreparing = false,
   allowBusySubmit = true,
@@ -576,16 +667,22 @@ export const Composer = memo(function Composer({
   queueStatus,
   runningModelTarget,
   usageLimit,
+  usageLimitInTranscript,
+  modelPickerOpenRequest,
   onFocus,
   onCwdChange,
   onBranchChange,
   onWorktreeChange,
-  draftWorkspace = false,
+  draftWorkspace: allowDraftWorkspace = false,
+  indexScratchFiles = false,
   managedWorkspaceCreationReady = false,
   workspaceMode,
   worktreeBase,
   onWorkspaceModeChange,
   onWorktreeBaseChange,
+  worktreeBaseRemote = false,
+  onWorktreeBaseRemoteChange,
+  creationProgressId = null,
   worktreeRemoved = false,
   onManageWorktrees,
   onNewTerminal,
@@ -628,7 +725,6 @@ export const Composer = memo(function Composer({
   onRecalledMessageApplied,
   editingLastTurn,
   onEditingLastTurnChange,
-  remoteOrigin,
   notices,
   children,
 }: Props) {
@@ -638,11 +734,21 @@ export const Composer = memo(function Composer({
   const parentClosed = useParentInputsClosed(logicalParentSessionId);
   const parentInputRef = useRef<ParentInputHandle | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
-  const [citations, setCitationsState] = useState(
-    () => extractChatCitations(initialDraft ?? "").citations,
-  );
-  const citationsRef = useRef<ChatCitation[]>(citations);
-  const draftTextRef = useRef(extractChatCitations(initialDraft ?? "").text);
+  const [inlineAttachments, setInlineAttachments] = useState<ReadonlySet<string> | null>(null);
+  const inlineActive = inlineAttachments !== null;
+  const [initial] = useState(() => {
+    const value = extractChatCitations(initialDraft ?? "");
+    return {
+      ...value,
+      text: expandAttachmentDraftTokens(
+        value.text,
+        sessionId ? getComposerAttachments(sessionId) : [],
+      ),
+    };
+  });
+  const [citations, setCitationsState] = useState(initial.citations);
+  const citationsRef = useRef<ComposerCitation[]>(citations);
+  const draftTextRef = useRef(initial.text);
   const mountedClosureRef = useRef<ReturnType<typeof useMountedComposerClosure> | null>(null);
   const attachmentApplyDepth = useRef(0);
   const canMutateDraft = useCallback(
@@ -698,9 +804,8 @@ export const Composer = memo(function Composer({
   useEffect(() => () => inputResize.cancel(), [inputResize]);
   const boxRef = useRef<HTMLDivElement>(null);
   const subagentList = onOpenSubagent && subagents?.length ? subagents : undefined;
-  const hasSubagents = !!subagentList;
-  const plusRef = useRef<HTMLButtonElement>(null);
-  const modeRef = useRef<HTMLButtonElement>(null);
+  const composerRoot = useRef<HTMLDivElement>(null);
+  const composerControls = useRef<HTMLDivElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
   // A remount (or a restart) starts from the attachments the draft was saved with.
   const [attachments, setAttachments] = useState<Attachment[]>(() =>
@@ -711,6 +816,16 @@ export const Composer = memo(function Composer({
   const consumedQuoteId = useRef<number | null>(null);
   const draftRevisionRef = useRef(0);
   const userEditBeforeRef = useRef<string | null>(null);
+  const attachmentCutHistory = useRef<
+    {
+      generation: number;
+      before: { text: string; attachments: Attachment[]; start: number; end: number };
+      after: { text: string; attachments: Attachment[]; start: number; end: number };
+      borrowed: ReadonlySet<string>;
+      native: boolean;
+    }[]
+  >([]);
+  const applyingAttachmentCut = useRef(false);
   const draftResetTokenRef = useRef(draftResetToken);
   /** Bumped when the draft is cleared, so a late paste cannot land on the next one. */
   const pasteGenerationRef = useRef(0);
@@ -736,11 +851,17 @@ export const Composer = memo(function Composer({
     }
     previousBusyRef.current = busy;
   }, [busy]);
-  const stopping = useSyncExternalStore(
+  const harnessStopping = useSyncExternalStore(
     subscribeHarnessStopping,
     () => (sessionId ? isHarnessTurnStopping(sessionId) : false),
     () => false,
   );
+  const adoptedStopping = useSyncExternalStore(
+    subscribeAdoptedStopping,
+    () => (sessionId ? isAdoptedTurnStopping(sessionId) : false),
+    () => false,
+  );
+  const stopping = harnessStopping || adoptedStopping;
   const stopPendingSend = () => {
     parentInputRef.current?.();
     // Retire submission intent without discarding a clipboard read or its result.
@@ -754,14 +875,20 @@ export const Composer = memo(function Composer({
   const mentionRef = useRef<MentionToken | null>(null);
   /** Set while the text is an unedited entry recalled with Up/Down. */
   const historyRef = useRef<HistoryBrowse | null>(null);
+  /** The text, caret and skill list the slash/dollar/mention parse last ran for. */
+  const tokenSyncRef = useRef<TokenSyncSnapshot | null>(null);
   const escapeArmedRef = useRef<number | null>(null);
-  const replaceCitations = useCallback((next: ChatCitation[]) => {
+  const citationCommentDrafts = useRef(new Map<string, string>());
+  const replaceCitations = useCallback((next: ComposerCitation[]) => {
     if (JSON.stringify(citationsRef.current) === JSON.stringify(next)) return;
+    for (const id of citationCommentDrafts.current.keys()) {
+      if (!next.some((citation) => citation.id === id)) citationCommentDrafts.current.delete(id);
+    }
     citationsRef.current = next;
     setCitationsState(next);
     mountedClosureRef.current?.changed();
   }, []);
-  const [draft, setDraftState] = useState(() => extractChatCitations(initialDraft ?? "").text);
+  const [draft, setDraftState] = useState(initial.text);
   const setDraft = useCallback((update: SetStateAction<string>) => {
     const next = typeof update === "function" ? update(draftTextRef.current) : update;
     if (next !== draftTextRef.current) mountedClosureRef.current?.changed();
@@ -790,9 +917,10 @@ export const Composer = memo(function Composer({
   }, [canMutateDraft, clearVisibleComposer, replaceCitations]);
   // Updating defaultValue rewrites WebKit's text node and commits an active IME.
   // Apply later external drafts through the existing synchronization effect.
-  const [mountDraft] = useState(() =>
-    initialDraft === undefined ? undefined : extractChatCitations(initialDraft).text,
-  );
+  const [mountDraft] = useState(() => (initialDraft === undefined ? undefined : initial.text));
+  const hasProject = looksLikeProject(cwd) && !isProjectlessCwd(cwd);
+  const draftWorkspace = allowDraftWorkspace && hasProject;
+  const indexMentionFiles = (hasProject || indexScratchFiles) && looksLikeProject(executionCwd);
   const { branches: draftBranches } = useProjectBranchesState(
     executionCwd,
     draftWorkspace && enabled && !busy,
@@ -805,7 +933,7 @@ export const Composer = memo(function Composer({
       : worktreeBase;
   const workspaceCreation = useWorkspaceCreation(
     cwd,
-    draftWorkspace && enabled && looksLikeProject(cwd),
+    draftWorkspace && enabled && hasProject,
     workspaceMode,
     effectiveWorktreeBase,
   );
@@ -832,6 +960,7 @@ export const Composer = memo(function Composer({
           : undefined));
   // Policy reads are short-bounded; only an explicit worktree error stops Send.
   const workspaceSendBlocked =
+    hasProject &&
     draftWorkspace &&
     (workspaceCreation.pending || (!!workspaceCreationError && workspaceMode === "worktree"));
   const resolvedWorktreeBase =
@@ -840,11 +969,30 @@ export const Composer = memo(function Composer({
     () => extractChatCitations(initialDraft ?? "").text.trim().length > 0,
   );
   // Says so when a restored draft lost an attachment whose file is gone.
-  const [pasteError, setPasteError] = useState<string | null>(
+  const [pasteError, setPasteError] = useState<ComposerFeedback>(
     () => (sessionId ? takeComposerNotice(sessionId) : undefined) ?? null,
   );
   const [plusOpen, setPlusOpen] = useState(false);
+  const [narrowSettings, setNarrowSettings] = useState(false);
   const [modeOpen, setModeOpen] = useState(false);
+  // The model panel is portaled, so it needs the width decision from the composer container query.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- follows the container query through a ResizeObserver.
+  useLayoutEffect(() => {
+    const root = composerRoot.current;
+    const controls = composerControls.current;
+    if (!root || !controls) return;
+    let previous: boolean | undefined;
+    const sync = () => {
+      const narrow =
+        getComputedStyle(controls).getPropertyValue("--composer-settings-in-picker").trim() === "1";
+      if (narrow === previous) return;
+      previous = narrow;
+      setModeOpen(false);
+      setNarrowSettings(narrow);
+    };
+    sync();
+    return observeResize(root, sync);
+  }, []);
   const workMode = useComposerWorkMode(sessionId);
   const [planSelected, setPlanSelected] = workMode.plan;
   const [operatorSelected, setOperatorSelected] = workMode.operator;
@@ -893,7 +1041,13 @@ export const Composer = memo(function Composer({
   const [creatingSkill, setCreatingSkill] = useState(false);
   const [sessionFolderOpen, setSessionFolderOpen] = useState(false);
   const [sessionFolders, setSessionFolders] = useState<SessionFolder[]>([]);
-  const [sessionFolderError, setSessionFolderError] = useState<string | null>(null);
+  const [sessionFolderError, setSessionFolderError] = useState<ComposerFeedback>(null);
+  const folderLoadFailed = useStableCallback((error: unknown) =>
+    setSessionFolderError({
+      title: t("Could not refresh the session folders."),
+      detail: errorText(error),
+    }),
+  );
   const [sessionFolderPending, setSessionFolderPending] = useState(false);
   const [sessionFolderSaving, setSessionFolderSaving] = useState(false);
   const sessionFolderLoading = useRef(false);
@@ -971,9 +1125,15 @@ export const Composer = memo(function Composer({
   const [createError, setCreateError] = useState<string | null>(null);
   const [createBusy, setCreateBusy] = useState(false);
   const remote = remoteSession;
+  const steerSupported = remote
+    ? !!remoteFeatures?.steer
+    : (adoptedSteerSupported ?? canSteerHarness(runningModelTarget?.harness ?? harness));
+  // Remote panes cannot see the delegated subagents, so only local sessions wait on them.
+  const localSubagentsRunning = subagentsRunning && !remote;
   // Workspace APIs route remote:// paths to their owning machine.
   const localCwd = executionCwd;
   const notesEnabled = useSyncExternalStore(subscribeNotesEnabled, loadNotesEnabled, () => true);
+  const extrasBeside = useSyncExternalStore(subscribeModelControls, loadModelControls) === "beside";
   const spelling = useComposerSpelling();
   const queueShortcut = useKeybindingShortcut(QUEUE_MESSAGE_COMMAND);
   const stopShortcut = useKeybindingShortcut(STOP_TURN_COMMAND);
@@ -1017,8 +1177,13 @@ export const Composer = memo(function Composer({
     attachmentsRef.current = attachments;
   }, [slash, mention, attachments]);
   const mentionOpen =
-    mention !== null && (looksLikeProject(executionCwd) || (!remote && notesEnabled));
-  const tokens = useMemo(() => attachmentTokens(attachments), [attachments]);
+    mention !== null &&
+    (looksLikeProject(executionCwd) ||
+      (!remote &&
+        (notesEnabled ||
+          serverMentionAliasHint(mention.query) !== undefined ||
+          parseServerMentionQuery(mention.query) !== null)));
+  const tokens = useMemo(() => attachmentDraftTokens(attachments), [attachments]);
   const navigationEmpty =
     draft.length === 0 &&
     citations.length === 0 &&
@@ -1027,38 +1192,74 @@ export const Composer = memo(function Composer({
     !noteCard &&
     !handoffCard;
   const skillPickerOpen = creatingSkill || slash !== null;
-  const pickerOpen = skillPickerOpen || sessionFolderOpen || mcpPickerOpen;
-  const { skillCatalog, promptTemplates, dollarSkills, rankedSkills, skillNames, skillGroups } =
-    useComposerSlashInventory({
-      harness,
-      executionCwd: localCwd,
-      sessionId,
-      pickerOpen,
-      remote,
-      remotePlan: !!remoteFeatures?.plan,
-      hideOrchestrator: hideTopBar || hideOrchestrator,
-      canStartNewSession: !!onNewSession,
-      canSaveDraft: canSaveDraft && !!onSaveDraft,
-      canResumeProviderSession: !!onResumeProviderSession,
-      slashTrigger: slash?.trigger,
-      slashQuery: slash?.query ?? "",
-    });
+  const canUseSessionFolders = hasProject && !!onPlaceInFolder && canOrganizeSessions(cwd);
+  const pickerOpen =
+    skillPickerOpen ||
+    (canUseSessionFolders && (sessionFolderOpen || sessionFolderPending)) ||
+    mcpPickerOpen;
+  const {
+    skillCatalog,
+    promptTemplates,
+    dollarSkills,
+    rankedSkills: slashInventory,
+    skillNames,
+    skillGroups,
+    skillDetails,
+  } = useComposerSlashInventory({
+    harness,
+    executionCwd: localCwd,
+    sessionId,
+    pickerOpen,
+    remote,
+    remotePlan: !!remoteFeatures?.plan,
+    hideOrchestrator: hideTopBar || hideOrchestrator,
+    canStartNewSession: !!onNewSession,
+    canSaveDraft: canSaveDraft && !!onSaveDraft,
+    canResumeProviderSession: !!onResumeProviderSession,
+    slashTrigger: slash?.trigger,
+    slashQuery: slash?.query ?? "",
+  });
+  const rankedSkills = canUseSessionFolders
+    ? slashInventory
+    : slashInventory.filter(
+        (skill) => skill.kind !== "builtin" || skill.name !== SESSION_FOLDER_COMMAND.name,
+      );
   const hasGroupToken =
     skillGroups.length > 0 && expandSkillGroupTokens(draft, skillGroups) !== draft;
   const sessionDirsHarness =
     harness === "claude" || harness === "codex" || harness === "antigravity";
+  const remoteDirsSupported = useRemoteSupports(
+    cwd ?? executionCwd,
+    HOST_ADDITIONAL_DIRS_CAPABILITY,
+  );
   const showSessionDirs =
-    !remote && !compact && sessionDirsHarness && isLocalProject(cwd ?? executionCwd);
+    !compact &&
+    sessionDirsHarness &&
+    (remote
+      ? !!parseRemotePath(cwd ?? executionCwd) && !!remoteDirsSupported
+      : isLocalProject(cwd ?? executionCwd));
   const attachmentsSupported =
     (!remote || !!remoteFeatures?.attachments) && harnessSupportsAttachments(harness);
   const leadingMode = leadingModeCommand(draft, skillNames, { shell: true });
   const modeIndent = leadingMode ? MODE_COMMAND_INDENT : undefined;
+  const composerPlaceholder = worktreeRemoved
+    ? t("Select a branch or worktree to continue…")
+    : inboxCard
+      ? t("Add a note, or send to start…")
+      : noteCard
+        ? t("Add a message, or send…")
+        : handoffCard
+          ? t("Add context, or send to continue…")
+          : (placeholder ?? t("Message"));
   // No token can be styled without one of these introducers. Plain drafts use
   // the native text once, avoiding a second full wrapping layout in the overlay.
   const plainDraft =
     !leadingMode &&
+    !mayHaveComposerMarkdown(draft) &&
     !/[/@$]/.test(draft) &&
     !((attachments.length || citations.length) && draft.includes("["));
+  const showClearText =
+    (draft.length > 0 || attachments.length > 0) && !shell && !disabled && !parentClosed;
   useLayoutEffect(() => {
     // The indent can rewrap the first line after the input already resized.
     if (ref.current) resizeComposer(ref.current);
@@ -1086,13 +1287,24 @@ export const Composer = memo(function Composer({
   const {
     mentionIndex,
     rankedFiles,
+    fileRankingPending,
+    scope: mentionScope,
+    scopeLoading: mentionScopeLoading,
     filesFailed,
+    filesIndexNotice,
     retryFiles,
     workItemsLoading,
     workItemsScoped,
     workItemsAvailable,
+    workItemsFailure,
+    serversScoped,
+    serversAvailable,
+    serversLoading,
+    serversFailed,
+    retryServers,
   } = useComposerMentionSources({
     executionCwd,
+    indexFiles: indexMentionFiles,
     remote,
     notesEnabled,
     mentionOpen,
@@ -1177,7 +1389,7 @@ export const Composer = memo(function Composer({
         }
         return;
       }
-      const focused = document.activeElement === el;
+      const focused = composerInputFocused(el);
       const edit = insertAtSelection(
         el.value,
         focused ? { start: el.selectionStart, end: el.selectionEnd } : null,
@@ -1189,19 +1401,31 @@ export const Composer = memo(function Composer({
   );
 
   const addAttachments = useCallback(
-    (incoming: Attachment[]) => {
+    (
+      incoming: Attachment[],
+      notice?: string | null,
+      insertCopiedText?: (attachments: Attachment[]) => boolean,
+    ) => {
       if (!canMutateDraft()) return;
-      if (!harnessSupportsAttachments(harness) || incoming.length === 0) return;
+      if (!harnessSupportsAttachments(harness)) return;
+      if (incoming.length === 0) {
+        // Nothing to add, but the files a read left out are still said.
+        if (notice) setPasteError(notice);
+        return;
+      }
       const previous = attachmentsRef.current;
       const next = mergeAttachments(previous, incoming);
       attachmentsRef.current = next;
       setAttachments(next);
-      // Files the full draft left out are said, not silently dropped.
-      setPasteError(releaseOverLimit(previous, next, incoming));
+      const said = [releaseOverLimit(previous, next, incoming), notice].filter(Boolean).join(" ");
       draftRevisionRef.current += 1;
       // Skipped duplicates are not in `next`, so they get no token either.
-      insertIntoDraft(tokensForIncoming(previous, next.slice(previous.length)));
+      if (!insertCopiedText?.(next))
+        insertIntoDraft(tokensForIncoming(previous, next.slice(previous.length)));
       syncHasText(ref.current?.value ?? "");
+      // Said after the token insertion: that edit's input event clears the notice line.
+      // Files the full draft left out, and blobs a read skipped, are said, not silently dropped.
+      setPasteError(said || null);
       ref.current?.focus();
     },
     [canMutateDraft, harness, insertIntoDraft, syncHasText],
@@ -1228,7 +1452,7 @@ export const Composer = memo(function Composer({
       const index = attachmentsRef.current.findIndex((file) => file.id === id);
       if (index < 0) return;
       draftRevisionRef.current += 1;
-      insertIntoDraft(attachmentTokens(attachmentsRef.current)[index]);
+      insertIntoDraft(attachmentDraftTokens(attachmentsRef.current)[index]);
       ref.current?.focus();
     },
     [canMutateDraft, insertIntoDraft],
@@ -1274,6 +1498,7 @@ export const Composer = memo(function Composer({
   // detach it or leave it reading obsolete capabilities and callbacks.
   const attachmentSink = useAttachmentSink({ attachmentsSupported, remote, addAttachments });
   const { rememberAttachmentRead, readDroppedAttachments } = useComposerAttachmentReads({
+    attachmentsRef,
     parentInputRef,
     mountedClosure,
     sinkRef: attachmentSink,
@@ -1296,16 +1521,32 @@ export const Composer = memo(function Composer({
       userEditBeforeRef.current = el.value;
       const back = event.inputType === "deleteContentBackward";
       if (
+        event.defaultPrevented ||
         event.isComposing ||
         (!back && event.inputType !== "deleteContentForward") ||
         el.selectionStart !== el.selectionEnd
       ) {
         return;
       }
+      const direction = back ? "back" : "forward";
+      const mentionEdit =
+        event.cancelable && canMutateDraft()
+          ? deleteScopedMentionAtCaret(
+              el.value,
+              el.selectionStart,
+              direction,
+              mentionRef.current !== null,
+            )
+          : null;
+      if (mentionEdit) {
+        event.preventDefault();
+        applyMentionDeletion(el, mentionEdit);
+        return;
+      }
       const edit = deleteTokenAtCaret(
         el.value,
         el.selectionStart,
-        back ? "back" : "forward",
+        direction,
         attachmentsRef.current,
         chatCitationTokens(citationsRef.current.length),
         skillInvocationTokens(el.value).filter((token) => skillNames.has(token.name)),
@@ -1319,14 +1560,15 @@ export const Composer = memo(function Composer({
       removeSelectionPolicy();
       el.removeEventListener("beforeinput", onBeforeInput);
     };
-  }, [skillNames]);
+  }, [canMutateDraft, skillNames]);
 
   // An accepted external draft takes the same projection path as a native edit:
   // the textarea stays the authority and writes first, then the draft text,
   // Send/placeholder state and token menus follow it. Echoes of the current
   // text only refresh the ref, and nothing is written during an IME composition.
   const applyExternalDraft = (el: HTMLTextAreaElement, serialized: string) => {
-    const { text, citations: incomingCitations } = extractChatCitations(serialized);
+    const { text: rawText, citations: incomingCitations } = extractChatCitations(serialized);
+    const text = expandAttachmentDraftTokens(rawText, attachmentsRef.current);
     replaceCitations(incomingCitations);
     const replaced = el.value !== text;
     if (replaced) {
@@ -1427,8 +1669,7 @@ export const Composer = memo(function Composer({
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el || !enabled) return;
-    resizeComposer(el);
-    if (el.scrollHeight !== 0) return;
+    if (resizeComposer(el)) return;
     const frame = requestAnimationFrame(() => {
       if (ref.current === el) resizeComposer(el);
     });
@@ -1494,11 +1735,25 @@ export const Composer = memo(function Composer({
     return () => cancelAnimationFrame(frame);
   }, [draft, syncHighlightScroll]);
 
-  const syncTokensFromTextarea = (el: HTMLTextAreaElement) => {
+  /**
+   * `skipUnchanged` is for events that trail an input (select, keyup): the
+   * input already parsed this text and caret, so they parse only when the
+   * caret or the skill list moved. Input and click always parse.
+   */
+  const syncTokensFromTextarea = (el: HTMLTextAreaElement, skipUnchanged = false) => {
     if (creatingSkill) return;
     // A recalled "/plan" must not pop the menu over the next Up press.
     if (historyRef.current?.text === el.value) return;
-    const cursor = el.selectionStart ?? 0;
+    const { selectionStart, selectionEnd } = el;
+    const cursor = selectionStart === selectionEnd ? selectionStart : null;
+    const snapshot = { value: el.value, cursor, context: [dollarSkills, harness] };
+    if (skipUnchanged && tokenSyncUnchanged(tokenSyncRef.current, snapshot)) return;
+    tokenSyncRef.current = snapshot;
+    if (cursor === null) {
+      setSlash(null);
+      setMention(null);
+      return;
+    }
     const token = slashTokenAt(el.value, cursor, hasNativeCommands(harness));
     // `$name` opens only while some Codex skill matches, so `$HOME` stays text.
     const dollar = token ? null : dollarTokenAt(el.value, cursor);
@@ -1511,6 +1766,7 @@ export const Composer = memo(function Composer({
   };
 
   const openSessionFolderPicker = useCallback(() => {
+    if (!canUseSessionFolders) return;
     if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
       if (sessionFolderLoading.current) return;
       sessionFolderLoading.current = true;
@@ -1523,7 +1779,7 @@ export const Composer = memo(function Composer({
           setSessionFolderOpen(true);
         })
         .catch((error: unknown) => {
-          if (latestCwd() === cwd) setSessionFolderError(String(error));
+          if (latestCwd() === cwd) folderLoadFailed(error);
         })
         .finally(() => {
           sessionFolderLoading.current = false;
@@ -1533,23 +1789,20 @@ export const Composer = memo(function Composer({
     }
     setSessionFolders(loadSessionFolders(cwd));
     setSessionFolderOpen(true);
-  }, [cwd, latestCwd]);
+  }, [canUseSessionFolders, cwd, latestCwd, folderLoadFailed]);
 
   useEffect(() => {
-    if (!NATIVE_SESSION_ORGANIZATION_ACTIVE || !sessionFolderOpen) return;
-    return subscribeSessionOrganization(
-      () => {
-        const snapshot = cachedSessionOrganization();
-        if (!snapshot) return;
-        try {
-          setSessionFolders(organizationFoldersForProject(snapshot, cwd));
-        } catch (error) {
-          setSessionFolderError(String(error));
-        }
-      },
-      (error) => setSessionFolderError(String(error)),
-    );
-  }, [cwd, sessionFolderOpen]);
+    if (!NATIVE_SESSION_ORGANIZATION_ACTIVE || !canUseSessionFolders || !sessionFolderOpen) return;
+    return subscribeSessionOrganization(() => {
+      const snapshot = cachedSessionOrganization();
+      if (!snapshot) return;
+      try {
+        setSessionFolders(organizationFoldersForProject(snapshot, cwd));
+      } catch (error) {
+        folderLoadFailed(error);
+      }
+    }, folderLoadFailed);
+  }, [canUseSessionFolders, cwd, sessionFolderOpen, folderLoadFailed]);
 
   useEffect(() => {
     const el = ref.current;
@@ -1631,7 +1884,9 @@ export const Composer = memo(function Composer({
         return;
       }
       const sessionFolderCommand =
-        skill.kind === "builtin" && skill.name === SESSION_FOLDER_COMMAND.name && !!onPlaceInFolder;
+        canUseSessionFolders &&
+        skill.kind === "builtin" &&
+        skill.name === SESSION_FOLDER_COMMAND.name;
       if (sessionFolderCommand) {
         const next = replaceSlashToken(el.value, token, SESSION_FOLDER_COMMAND.invocation);
         el.value = next;
@@ -1724,7 +1979,7 @@ export const Composer = memo(function Composer({
       sessionId,
       t,
       publishDraft,
-      onPlaceInFolder,
+      canUseSessionFolders,
       openMcpPicker,
       onResumeProviderSession,
       openSessionFolderPicker,
@@ -1742,13 +1997,21 @@ export const Composer = memo(function Composer({
         return;
       }
       const workItem = workItemMentionOf(file);
-      const hint = workItem?.kind === "hint";
+      const server = serverMentionOf(file);
+      const scopeHint = composerMentionScopeHintOf(file);
+      const crew = crewMentionOf(file);
+      const hint = Boolean(scopeHint || workItem?.kind === "hint" || server?.hint);
       if (workItem?.kind === "item") rememberWorkItemMention(workItem.item);
       const label =
         workItem?.token ??
-        (remote || isNoteMentionPath(file.path)
-          ? file.relative
-          : mentionLabel(file, mentionIndexRef.current));
+        server?.token ??
+        scopeHint ??
+        (crew ? `${CREWS_MENTION_SCOPE}${crew.token}` : undefined) ??
+        (isNoteMentionPath(file.path)
+          ? scopedNoteMentionLabel(file.relative)
+          : remote
+            ? file.relative
+            : mentionLabel(file, mentionIndexRef.current));
       const next = replaceMentionToken(el.value, token, label, !hint);
       el.value = next;
       resizeComposer(el);
@@ -1765,6 +2028,14 @@ export const Composer = memo(function Composer({
     [canMutateDraft, syncHasText, remote],
   );
 
+  const pickPendingMention = usePendingMentionPick(
+    executionCwd,
+    sessionId,
+    mentionOpen ? mention : null,
+    fileRankingPending,
+    rankedFiles[mentionActive],
+    pickMention,
+  );
   const lastFocusToken = useRef(focusToken);
   useEffect(() => {
     const requested = lastFocusToken.current !== focusToken;
@@ -1782,7 +2053,7 @@ export const Composer = memo(function Composer({
 
     if (
       composer?.querySelector(
-        "[data-skill-picker], [data-session-folder-picker], [data-mention-picker], [data-mcp-picker], [data-composer-plus], [data-question-form]",
+        `${COMPOSER_PICKER_SELECTOR}, [data-composer-plus], [data-question-form]`,
       )
     )
       return;
@@ -2061,6 +2332,15 @@ export const Composer = memo(function Composer({
   const completeSubmit = (submittedValue: string, queue = false, original?: ParentAdmission) => {
     const value = ref.current?.value ?? submittedValue;
     if (!canMutateDraft()) return;
+    if (
+      machinePicker &&
+      hasForeignMachineAttachment(attachmentsRef.current, machineEnvironmentId)
+    ) {
+      setPasteError(
+        t("This file belongs to another machine. Remove it or switch back before sending."),
+      );
+      return;
+    }
     // Preserve public callback arguments while open. Only an actually closed
     // logical root needs the explicit private downstream continuation.
     const continuation = canMutateParentInputs(logicalParentSessionId) ? undefined : original;
@@ -2134,7 +2414,7 @@ export const Composer = memo(function Composer({
       return;
     }
     if (isResumeCommand(value)) {
-      if (remote || !onResumeProviderSession || (harness !== "claude" && harness !== "codex")) {
+      if (remote || !onResumeProviderSession || !isImportProvider(harness)) {
         setPasteError(
           remote
             ? t(
@@ -2175,7 +2455,10 @@ export const Composer = memo(function Composer({
     }
     if ((draftSelected || draftCommand.matched) && onSaveDraft) {
       const files = attachmentsRef.current;
-      const text = withChatCitations(draftCommand.text, citationsRef.current);
+      const text = withChatCitations(
+        compactAttachmentDraftTokens(draftCommand.text, files),
+        citationsRef.current,
+      );
       if (!text.trim() && files.length === 0) return;
       const input = {
         source: "composer-save-draft-intent",
@@ -2190,30 +2473,40 @@ export const Composer = memo(function Composer({
         sessionId: logicalParentSessionId,
         snapshot: () => input,
       });
+      const revision = draftRevisionRef.current;
+      const identity = parentChanged.identity();
+      const finishDraftSave = (accepted: boolean | void) => {
+        const isCurrent =
+          parentChanged.identity() === identity && draftRevisionRef.current === revision;
+        if (accepted === false) {
+          retained.release();
+          if (isCurrent)
+            setPasteError(t("The draft was not accepted. Your text and files are kept."));
+          return;
+        }
+        retained.update({ ...input, disposition: "accepted-unknown" });
+        if (!isCurrent || !ref.current) return;
+        pasteGenerationRef.current += 1;
+        clearComposer();
+        setAttachments([]);
+        setDraftSelected(false);
+        setSelectedMcp([]);
+        setPlusOpen(false);
+        setModeOpen(false);
+        setSlash(null);
+        setMention(null);
+        setCreatingSkill(false);
+        setCreateError(null);
+        syncHasText("");
+      };
       const accepted = onSaveDraft(
         mcpContextText(taggedMcpServers(text, selectedMcp), text),
         files,
         ...continuationArgs,
       );
-      if (accepted === false) {
-        retained.release();
-        setPasteError(t("The draft was not accepted. Your text and files are kept."));
-        return;
-      }
-      retained.update({ ...input, disposition: "accepted-unknown" });
-      if (!ref.current) return;
-      pasteGenerationRef.current += 1;
-      clearComposer();
-      setAttachments([]);
-      setDraftSelected(false);
-      setSelectedMcp([]);
-      setPlusOpen(false);
-      setModeOpen(false);
-      setSlash(null);
-      setMention(null);
-      setCreatingSkill(false);
-      setCreateError(null);
-      syncHasText("");
+      if (accepted instanceof Promise)
+        void accepted.then(finishDraftSave, () => finishDraftSave(false));
+      else finishDraftSave(accepted);
       return;
     }
     const folderCommand = consumeSessionFolderCommand(value);
@@ -2261,30 +2554,50 @@ export const Composer = memo(function Composer({
       syncHasText("");
       return;
     }
-    if (folderCommand.matched && onPlaceInFolder && !sessionFolderSelected) {
+    if (folderCommand.matched && canUseSessionFolders && !sessionFolderSelected) {
       openSessionFolderPicker();
       return;
     }
 
     if (isCompactCommand(value)) {
-      if (!onCompactContext?.(...continuationArgs)) return;
-      if (!ref.current) return;
-      pasteGenerationRef.current += 1;
-      clearComposer();
-      setPlusOpen(false);
-      setModeOpen(false);
-      setSlash(null);
-      setMention(null);
-      setCreatingSkill(false);
-      setCreateError(null);
-      syncHasText("");
+      const revision = draftRevisionRef.current;
+      const identity = parentChanged.identity();
+      const clearAcceptedCommand = (accepted: boolean) => {
+        if (
+          !accepted ||
+          !ref.current ||
+          draftRevisionRef.current !== revision ||
+          parentChanged.identity() !== identity
+        )
+          return;
+        pasteGenerationRef.current += 1;
+        clearComposer();
+        setPlusOpen(false);
+        setModeOpen(false);
+        setSlash(null);
+        setMention(null);
+        setCreatingSkill(false);
+        setCreateError(null);
+        syncHasText("");
+      };
+      const accepted = onCompactContext?.(...continuationArgs);
+      if (accepted instanceof Promise)
+        void accepted.then(clearAcceptedCommand).catch((error) => {
+          console.warn("Compaction could not start", error);
+        });
+      else clearAcceptedCommand(!!accepted);
       return;
     }
 
     // A group stays one chip in the draft; providers get its member invocations.
     const command = consumePlanCommand(
       expandSkillGroupTokens(
-        folderCommand.matched && sessionFolderSelected ? folderCommand.text : value,
+        compactAttachmentDraftTokens(
+          folderCommand.matched && canUseSessionFolders && sessionFolderSelected
+            ? folderCommand.text
+            : value,
+          attachmentsRef.current,
+        ),
         skillGroups,
       ),
     );
@@ -2299,16 +2612,26 @@ export const Composer = memo(function Composer({
       !remote && !hideTopBar && !hideOrchestrator && !command.planning
         ? consumeOrchestratorCommand(command.text)
         : { text: command.text, matched: false };
-    const text = isNativeCommandPrompt(orchestratorCommand.text, harness)
+    const nativePrompt = isNativeCommandPrompt(orchestratorCommand.text, harness);
+    const sendingInboxCard = undispatched(inboxCard);
+    const sendingNoteCard = undispatched(noteCard);
+    const sendingHandoffCard = undispatched(handoffCard);
+    const text = nativePrompt
       ? orchestratorCommand.text
-      : composeInboxMessage(inboxCard, orchestratorCommand.text);
+      : composeInboxMessage(sendingInboxCard, orchestratorCommand.text);
     const submittedCitations = [...citationsRef.current];
     const submittedText = withChatCitations(
       operatorSelected && !consumeOperatorCommand(text).matched ? `/operator ${text}` : text,
       submittedCitations,
     );
     const files = attachmentsRef.current;
-    if (!text && submittedCitations.length === 0 && files.length === 0 && !noteCard && !handoffCard)
+    if (
+      !text &&
+      submittedCitations.length === 0 &&
+      files.length === 0 &&
+      !sendingNoteCard &&
+      !sendingHandoffCard
+    )
       return;
     // The files stay in the draft; say why they are not going out.
     if (files.length > 0 && !harnessSupportsAttachments(harness)) {
@@ -2330,7 +2653,8 @@ export const Composer = memo(function Composer({
     // Clear the parent draft before onSubmit. The app can synchronously remount
     // the composer when the first message leaves an empty session (EmptySession →
     // docked layout). If draftRef still holds the sent text, the new instance
-    // resurrects it as initialDraft.
+    // resurrects it as initialDraft. The attachment cache is read on mount too.
+    const savedDraftAttachments = sessionId ? getComposerAttachments(sessionId) : [];
     const resendDraftRevision = draftRevisionRef.current;
     const resendBorrowedAttachmentIds = new Set(borrowedAttachmentIdsRef.current);
     const resendSelectedMcp = selectedMcp;
@@ -2362,7 +2686,22 @@ export const Composer = memo(function Composer({
       snapshot: () => dispatchInput,
       missingCoverage: ["decision-conservation"],
     });
+    if (sessionId && savedDraftAttachments.length > 0) {
+      mountedClosure.publishCache(() => setComposerAttachments(sessionId, []));
+    }
     publishDraft("", false);
+    // A native command or shell line leaves its cards attached for the next message.
+    const sentCards: object[] =
+      nativePrompt || shellLine
+        ? []
+        : [sendingInboxCard, sendingNoteCard, sendingHandoffCard].flatMap((card) =>
+            card ? [card] : [],
+          );
+    let sendRejected = false;
+    const releaseSentCards = () => {
+      sendRejected = true;
+      sentCards.forEach((card) => dispatchedCards.delete(card));
+    };
     const accepted = onSubmit(
       shellLine
         ? value.trim()
@@ -2372,7 +2711,7 @@ export const Composer = memo(function Composer({
         // The primary action steers; only the explicit queue action defers.
         ...(busy || queue
           ? {
-              followUpBehavior: queue ? ("queue" as const) : ("steer" as const),
+              followUpBehavior: queue || !steerSupported ? ("queue" as const) : ("steer" as const),
             }
           : {}),
         intent: shellLine
@@ -2382,9 +2721,13 @@ export const Composer = memo(function Composer({
             : orchestrationSelected || orchestratorCommand.matched
               ? "orchestrate"
               : "default",
+        // The session still holds these until the earlier send commits.
+        ...(noteCard && !sendingNoteCard ? { noteCard: undefined } : {}),
+        ...(handoffCard && !sendingHandoffCard ? { handoffCard: undefined } : {}),
         // Both project preparation and remote reconnect may reject after the
         // composer cleared. A newer draft keeps ownership of the composer.
         onSendRejected: () => {
+          releaseSentCards();
           retained.update({
             ...dispatchInput,
             disposition: "late-send-rejection",
@@ -2439,7 +2782,11 @@ export const Composer = memo(function Composer({
     // orchestration is paused). Keep the user's text, files and selected mode
     // intact so resolving the blocker never destroys their work.
     if (accepted === false) {
+      releaseSentCards();
       retained.release();
+      if (sessionId && savedDraftAttachments.length > 0) {
+        mountedClosure.publishCache(() => setComposerAttachments(sessionId, savedDraftAttachments));
+      }
       // Restore the typed text without the inbox prompt (its card is still
       // attached) and bring back the mode the typed /plan or /orchestrate
       // selected, so Enter cannot send a normal turn that may edit files.
@@ -2452,6 +2799,7 @@ export const Composer = memo(function Composer({
       setPasteError(t("The message was not accepted. Your text and files are kept."));
       return;
     }
+    if (!sendRejected) sentCards.forEach((card) => dispatchedCards.add(card));
     retained.update({ ...dispatchInput, disposition: "accepted-unknown" });
     pasteGenerationRef.current += 1;
     historyRef.current = null;
@@ -2494,6 +2842,19 @@ export const Composer = memo(function Composer({
       return;
     }
     if (creatingSkill) return;
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && /^[zy]$/i.test(e.key)) {
+      const undo = e.key.toLowerCase() === "z" && !e.shiftKey;
+      const el = e.currentTarget;
+      const cut = findAttachmentCut(undo, el.value);
+      if (cut && !cut.native) {
+        e.preventDefault();
+        const version = undo ? cut.before : cut.after;
+        restoreCutAttachments(version.attachments, cut.borrowed);
+        applyTextareaEdit(el, version.text, version.start);
+        el.setSelectionRange(version.start, version.end);
+        return;
+      }
+    }
     if (
       !e.shiftKey &&
       !e.ctrlKey &&
@@ -2514,6 +2875,29 @@ export const Composer = memo(function Composer({
     }
     const escapeArmedAt = escapeArmedRef.current;
     escapeArmedRef.current = null;
+    const field = e.currentTarget;
+    if (
+      inlineActive &&
+      (e.key === "Backspace" || e.key === "Delete") &&
+      !e.altKey &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.shiftKey &&
+      field.selectionStart === field.selectionEnd
+    ) {
+      const edit = deleteScopedMentionAtCaret(
+        field.value,
+        field.selectionStart,
+        e.key === "Backspace" ? "back" : "forward",
+        mentionRef.current !== null,
+      );
+      if (edit) {
+        e.preventDefault();
+        userEditBeforeRef.current = field.value;
+        applyMentionDeletion(field, edit);
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey && consumeBtwCommand(e.currentTarget.value).matched) {
       e.preventDefault();
       submit(e.currentTarget.value);
@@ -2522,6 +2906,7 @@ export const Composer = memo(function Composer({
 
     if (
       e.key === " " &&
+      canUseSessionFolders &&
       runsSessionFolderCommandOnSpace({
         text: e.currentTarget.value,
         selectionStart: e.currentTarget.selectionStart,
@@ -2576,6 +2961,7 @@ export const Composer = memo(function Composer({
         e.preventDefault();
         const file = rankedFiles[mentionActive];
         if (file) pickMention(file);
+        else pickPendingMention(e.currentTarget);
         return;
       }
       if (e.key === "Enter" && !e.shiftKey) {
@@ -2583,6 +2969,11 @@ export const Composer = memo(function Composer({
         if (file) {
           e.preventDefault();
           pickMention(file);
+          return;
+        }
+        if (fileRankingPending && !e.ctrlKey && !e.metaKey) {
+          e.preventDefault();
+          pickPendingMention(e.currentTarget);
           return;
         }
         setMention(null);
@@ -2597,7 +2988,7 @@ export const Composer = memo(function Composer({
         isCompactCommand(e.currentTarget.value) ||
         isResumeCommand(e.currentTarget.value) ||
         isMcpCommand(e.currentTarget.value) ||
-        isSessionFolderCommand(e.currentTarget.value))
+        (canUseSessionFolders && isSessionFolderCommand(e.currentTarget.value)))
     ) {
       e.preventDefault();
       submit(e.currentTarget.value);
@@ -2675,29 +3066,30 @@ export const Composer = memo(function Composer({
       }
     }
 
-    // Shift+Tab (rebindable) queues the message behind the running turn.
-    // With nothing to queue it does nothing: the key stays in the composer
-    // either way, so a press between turns never throws focus onto the toolbar.
+    // Shift+Tab (rebindable) queues the message behind the running turn. It only
+    // takes the key while something can be queued; otherwise Shift+Tab keeps its
+    // native job of moving focus backwards so keyboard users are never trapped.
+    // Open slash/mention/picker popups own Tab above and are excluded here.
     if (
       keybindingPressed(QUEUE_MESSAGE_COMMAND, e, isDefaultQueueChord(e)) &&
       !(slash || mentionOpen || pickerOpen)
     ) {
-      e.preventDefault();
-      if (
-        queueShortcutApplies({
-          busy,
-          backgroundOnly,
-          allowBusySubmit,
-          disabled: disabled || worktreeRemoved,
-          popupOpen: false,
-          draftMode: draftActive,
-          text: withChatCitations(e.currentTarget.value, citationsRef.current),
-          attachmentCount: attachmentsRef.current.length,
-        })
-      ) {
-        submit(e.currentTarget.value, true);
+      const applies = queueShortcutApplies({
+        busy,
+        backgroundOnly,
+        subagentsRunning: localSubagentsRunning,
+        allowBusySubmit,
+        disabled: disabled || worktreeRemoved,
+        popupOpen: false,
+        draftMode: draftActive,
+        text: withChatCitations(e.currentTarget.value, citationsRef.current),
+        attachmentCount: attachmentsRef.current.length,
+      });
+      if (queueChordConsumesKey(e, applies)) {
+        e.preventDefault();
+        if (applies) submit(e.currentTarget.value, true);
+        return;
       }
-      return;
     }
 
     // Plain arrows browse prompt history; Esc Esc owns conversation rewind.
@@ -2754,35 +3146,149 @@ export const Composer = memo(function Composer({
     ref.current?.focus();
   };
 
+  const findAttachmentCut = (undo: boolean, previous: string, next?: string) =>
+    attachmentCutHistory.current.find((cut) => {
+      const current = undo ? cut.after : cut.before;
+      const target = undo ? cut.before : cut.after;
+      return (
+        cut.generation === pasteGenerationRef.current &&
+        current.text === previous &&
+        (next === undefined || target.text === next) &&
+        current.attachments.length === attachmentsRef.current.length &&
+        current.attachments.every((file, index) => file.id === attachmentsRef.current[index].id)
+      );
+    });
+
+  const restoreCutAttachments = (files: Attachment[], borrowed: ReadonlySet<string>) => {
+    const current = new Map(attachmentsRef.current.map((file) => [file.id, file]));
+    const next = files.map((file) => current.get(file.id) ?? { ...file, previewUrl: undefined });
+    releaseAttachments(
+      attachmentsRef.current,
+      borrowedAttachmentIdsRef.current,
+      new Set(files.map((file) => file.id)),
+    );
+    borrowedAttachmentIdsRef.current = new Set(
+      files.filter((file) => borrowed.has(file.id)).map((file) => file.id),
+    );
+    attachmentsRef.current = next;
+    setAttachments(next);
+  };
+
+  const selectedAttachments = (value: string, selectionStart: number, selectionEnd: number) => {
+    return selectedComposerAttachments(value, selectionStart, selectionEnd, attachmentsRef.current);
+  };
+
+  const copyAttachmentSelection = (event: ClipboardEvent<HTMLTextAreaElement>, cut: boolean) => {
+    const el = event.currentTarget;
+    const { value, selectionStart, selectionEnd } = el;
+    const selection = selectedAttachments(value, selectionStart, selectionEnd);
+    if (!selection) return;
+    event.preventDefault();
+    if (!canMutateDraft()) return;
+    const { attachments, selected, text, start, end } = selection;
+    const revision = draftRevisionRef.current;
+    const generation = pasteGenerationRef.current;
+    const isCurrent = () =>
+      ref.current === el && el.isConnected && generation === pasteGenerationRef.current;
+    void copyMessage(text, selected)
+      .then(() => {
+        if (
+          !cut ||
+          !isCurrent() ||
+          revision !== draftRevisionRef.current ||
+          el.value !== value ||
+          el.selectionStart !== selectionStart ||
+          el.selectionEnd !== selectionEnd ||
+          !canMutateDraft()
+        )
+          return;
+        const edit = editDraftText(
+          { text: value, attachments },
+          value.slice(0, start) + value.slice(end),
+          start,
+        );
+        const borrowed = borrowedAttachmentIdsRef.current;
+        const entry = {
+          generation,
+          before: { text: value, attachments, start, end },
+          after: { ...edit.draft, start: edit.caret, end: edit.caret },
+          borrowed,
+          native: false,
+        };
+        attachmentCutHistory.current = [
+          entry,
+          ...attachmentCutHistory.current.filter((item) => item.generation === generation),
+        ].slice(0, 12);
+        restoreCutAttachments(edit.draft.attachments, borrowed);
+        userEditBeforeRef.current = null;
+        entry.native = applyUndoableTextareaEdit(
+          el,
+          edit.draft.text,
+          edit.caret,
+          applyingAttachmentCut,
+        );
+      })
+      .catch((error: unknown) => {
+        if (isCurrent())
+          setPasteError({ title: t("Could not copy the selection."), detail: errorText(error) });
+      });
+  };
+
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
     if (!canMutateDraft()) {
       e.preventDefault();
       return;
     }
     setPasteError(null);
-    const messageFiles = messageFilesFromClipboard(e.clipboardData);
-    if (messageFiles) {
+    const message = messageFromClipboard(e.clipboardData);
+    if (message) {
       e.preventDefault();
-      const captured = captureDraft(e.currentTarget);
-      const text = e.clipboardData.getData("text/plain");
-      if (captured) insertRestoredText(captured, text);
+      const el = e.currentTarget;
+      const captured = captureDraft(el);
+      if (captured && message.text) insertRestoredText(captured, message.text);
+      const revision = draftRevisionRef.current;
+      const expected = el.value;
+      const pasteEnd = message.text
+        ? captured && captured.start + message.text.length
+        : captured?.end;
       if (!attachmentsSupported) {
         setPasteError(t("This conversation does not accept attachments."));
         return;
       }
-      rememberAttachmentRead((accepted) =>
-        attachmentsFromFiles(messageFiles).then((pasted) =>
+      rememberAttachmentRead((accepted) => {
+        const skips = collectSkippedAttachments();
+        return attachmentsFromFiles(message.files, {
+          onSkipped: skips.onSkipped,
+          capacity: accepted.capacity,
+        }).then((pasted) =>
           accepted.apply(() => {
             if (!accepted.isCurrent()) {
               pasted.forEach(revokeAttachment);
               return;
             }
-            addAttachments(pasted);
-            const skipped = skippedPastedFiles(messageFiles, pasted);
-            if (skipped) setPasteError(skipped);
+            const canReplace = draftRevisionRef.current === revision;
+            addAttachments(pasted, skips.notice(accepted.capacity), (attachments) => {
+              if (
+                !captured ||
+                pasteEnd == null ||
+                ref.current !== el ||
+                !canReplace ||
+                el.value !== expected ||
+                (message.text && expected.slice(captured.start, pasteEnd) !== message.text)
+              )
+                return false;
+              const text = clipboardTextWithAttachments(message, pasted, attachments);
+              if (text === undefined) return false;
+              applyTextareaEdit(
+                el,
+                expected.slice(0, captured.start) + text + expected.slice(pasteEnd),
+                captured.start + text.length,
+              );
+              return true;
+            });
           }),
-        ),
-      );
+        );
+      });
       return;
     }
     const files = filesFromClipboard(e.clipboardData);
@@ -2797,6 +3303,40 @@ export const Composer = memo(function Composer({
         return;
       }
       const text = e.clipboardData.getData("text/plain");
+      const paste =
+        !shell && !isFileReferenceText(text)
+          ? capturePastedTextAttachment(e.currentTarget, text)
+          : undefined;
+      if (paste) {
+        e.preventDefault();
+        rememberAttachmentRead(async (accepted) => {
+          const skips = collectSkippedAttachments();
+          const incoming = await attachmentsFromFiles([paste.file], {
+            onSkipped: skips.onSkipped,
+            capacity: accepted.capacity,
+          });
+          accepted.apply(() => {
+            const el = ref.current;
+            if (!accepted.isCurrent() || !el) {
+              incoming.forEach(revokeAttachment);
+              return;
+            }
+            addAttachments(incoming, skips.notice(accepted.capacity), (attachments) => {
+              const index = attachments.findIndex((file) => file.id === incoming[0]?.id);
+              if (index >= 0 && el === paste.field) {
+                const edit = insertPastedTextReference(
+                  el.value,
+                  paste.range(el.value),
+                  attachmentDraftTokens(attachments)[index],
+                );
+                applyTextareaEdit(el, edit.text, edit.caret);
+              }
+              return true;
+            });
+          });
+        });
+        return;
+      }
       // Prose and whitespace alike are the webview's to insert.
       if (text && !isFileReferenceText(text)) return;
       // A file URI becomes a chip, so it is kept out of the draft; with no text
@@ -2806,26 +3346,32 @@ export const Composer = memo(function Composer({
       // the generation, so a finished read cannot attach onto a draft that is gone.
       const captured = isFileReferenceText(text) ? captureDraft(e.currentTarget) : null;
       rememberAttachmentRead((accepted) =>
-        nativeClipboardAttachments(text)
+        nativeClipboardAttachments(text, accepted.capacity)
           .then(({ files: pasted, warning }) =>
             accepted.apply(() => {
               if (!accepted.isCurrent()) {
                 pasted.forEach(revokeAttachment);
                 return;
               }
-              if (pasted.length) {
+              if (
+                pasted.length ||
+                warning ||
+                accepted.capacity.notice() ||
+                accepted.capacity.matchedPendingPath
+              ) {
                 // WebKit can insert the URI after preventDefault. The chip
                 // replaces it, so the draft must not keep that text.
                 if (captured) dropPastedText(captured, text);
                 addAttachments(pasted);
               } else if (captured) insertRestoredText(captured, text);
-              if (warning) setPasteError(warning);
+              const notice = warning ?? accepted.capacity.notice();
+              if (notice) setPasteError(notice);
             }),
           )
           .catch((reason: unknown) => {
             if (!accepted.isCurrent()) return;
             accepted.fail(reason);
-            setPasteError(reason instanceof Error ? reason.message : String(reason));
+            setPasteError({ title: t("Could not read attachments."), detail: errorText(reason) });
           }),
       );
       return;
@@ -2835,19 +3381,21 @@ export const Composer = memo(function Composer({
       setPasteError(t("This conversation does not accept attachments."));
       return;
     }
-    rememberAttachmentRead((accepted) =>
-      attachmentsFromFiles(files).then((pasted) =>
+    rememberAttachmentRead((accepted) => {
+      const skips = collectSkippedAttachments();
+      return attachmentsFromFiles(files, {
+        onSkipped: skips.onSkipped,
+        capacity: accepted.capacity,
+      }).then((pasted) =>
         accepted.apply(() => {
           if (!accepted.isCurrent()) {
             pasted.forEach(revokeAttachment);
             return;
           }
-          addAttachments(pasted);
-          const skipped = skippedPastedFiles(files, pasted);
-          if (skipped) setPasteError(skipped);
+          addAttachments(pasted, skips.notice(accepted.capacity));
         }),
-      ),
-    );
+      );
+    });
   };
 
   const attachFromPicker = () => {
@@ -2855,13 +3403,13 @@ export const Composer = memo(function Composer({
     const selection = retainAttachmentPickerSelection();
     setPasteError(null);
     rememberAttachmentRead((accepted) =>
-      pickAttachments(selection).then((files) =>
+      pickAttachments(selection, accepted.capacity).then((files) =>
         accepted.apply(() => {
           if (!accepted.isCurrent() || !attachmentSink.current.attachmentsSupported) {
             files.forEach(revokeAttachment);
             return;
           }
-          attachmentSink.current.addAttachments(files);
+          attachmentSink.current.addAttachments(files, accepted.capacity.notice());
           ref.current?.focus();
         }),
       ),
@@ -2890,11 +3438,7 @@ export const Composer = memo(function Composer({
         project={cwd ?? executionCwd}
         workingDirectory={executionCwd}
         recents={recents}
-        onProjectChange={
-          hideProjectPicker || hideTopBar
-            ? undefined
-            : (...args) => mutateParentInput(parentChanged, () => onCwdChange(...args))
-        }
+        worktreeMode={draftWorkspace && workspaceCreation.mode === "worktree"}
         enabled={enabled}
         onClose={() => ref.current?.focus()}
       />
@@ -2959,7 +3503,7 @@ export const Composer = memo(function Composer({
 
   // Reading mode tucks the workspace row away unless it has something to say.
   const workspaceNeedsAttention =
-    !!workspaceCreationError || workspaceCreation.pending || !!worktreeRemoved;
+    hasProject && (!!workspaceCreationError || workspaceCreation.pending || !!worktreeRemoved);
 
   // The project picker belongs to the execution context under the writing
   // surface, beside workspace and branch, not inside the box.
@@ -2985,18 +3529,111 @@ export const Composer = memo(function Composer({
   const onPickerSettingsChange = useStableCallback((settings: Record<string, string>) =>
     mutateParentInput(parentChanged, () => onModelSettingsChange?.(settings)),
   );
+  const onPickerAccessChange = useStableCallback((mode: RuntimeMode) =>
+    mutateParentInput(parentChanged, () => onRuntimeModeChange(mode)),
+  );
   const onPickerClose = useStableCallback(() => ref.current?.focus());
+  const settingsInModelPicker = narrowSettings && !hideIdentityControls;
+  const selectComposerMode = (id: string) => {
+    if (!canMutateDraft()) return;
+    if (id === "plan" && planActive) clearLeadingMode(PLAN_COMMAND.name);
+    if (id === "operator" && operatorActive) clearLeadingMode(OPERATOR_COMMAND.name);
+    if (id === "orchestrator" && orchestrationActive) clearLeadingMode(ORCHESTRATOR_COMMAND.name);
+    if (id === "draft" && draftActive) clearLeadingMode(DRAFT_COMMAND.name);
+    setPlanSelected(id === "plan" && !planActive);
+    setOperatorSelected(id === "operator" && !operatorActive);
+    setOrchestrationSelected(id === "orchestrator" && !orchestrationActive);
+    setDraftSelected(id === "draft" && !draftActive);
+    if (!settingsInModelPicker) ref.current?.focus();
+  };
+  const modeControl =
+    !compact && modeChoices.length > 0 ? (
+      <ComposerModePicker
+        choices={modeChoices}
+        onPick={selectComposerMode}
+        open={modeOpen}
+        onOpenChange={setModeOpen}
+        settings={settingsInModelPicker}
+      />
+    ) : null;
+  const changeCitations = (next: ComposerCitation[], removed?: number) => {
+    if (!canMutateDraft()) return;
+    parentChanged();
+    const el = ref.current;
+    replaceCitations(next);
+    draftRevisionRef.current += 1;
+    const text = el ? removeCitationFromText(el.value, citations.length, removed ?? -1) : "";
+    if (el && text !== el.value)
+      applyTextareaEdit(el, text, Math.min(el.selectionStart, text.length));
+    else publishDraft(el?.value ?? draftTextRef.current);
+  };
+
+  const draftActions =
+    showClearText || subagentList ? (
+      <div className="ms-1 me-1.5 flex shrink-0 items-center gap-0.5">
+        {showClearText ? (
+          <Button
+            variant="ghost"
+            size="xs"
+            iconOnly
+            label={t("Clear")}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              const field = ref.current;
+              if (!field || !canMutateDraft() || composingRef.current) return;
+              field.focus();
+              // Recorded like a cut, so undo brings back the text and its attachments together.
+              const generation = pasteGenerationRef.current;
+              const borrowed = borrowedAttachmentIdsRef.current;
+              const entry = {
+                generation,
+                before: {
+                  text: field.value,
+                  attachments: attachmentsRef.current,
+                  start: 0,
+                  end: field.value.length,
+                },
+                after: { text: "", attachments: [], start: 0, end: 0 },
+                borrowed,
+                native: false,
+              };
+              attachmentCutHistory.current = [
+                entry,
+                ...attachmentCutHistory.current.filter((item) => item.generation === generation),
+              ].slice(0, 12);
+              draftRevisionRef.current += 1;
+              restoreCutAttachments([], borrowed);
+              setPasteError(null);
+              userEditBeforeRef.current = null;
+              if (field.value) {
+                entry.native = applyUndoableTextareaEdit(field, "", 0, applyingAttachmentCut);
+              }
+              syncHasText("");
+            }}
+          >
+            <X className="icon-xs" />
+          </Button>
+        ) : null}
+        {subagentList && onOpenSubagent ? (
+          <SessionSubagentsMenu agents={subagentList} onOpen={onOpenSubagent} />
+        ) : null}
+      </div>
+    ) : null;
+
   return (
     <div
+      ref={composerRoot}
       data-composer
       data-usage-guide="composer"
       data-usage-guide-active={hotkeys ? "true" : undefined}
       data-composer-reading={reading ? "true" : undefined}
+      style={{ "--composer-draft-max-height": `${COMPOSER_MAX_HEIGHT}px` } as CSSProperties}
       className={`relative shrink-0 ${shell || compact ? "" : "p-1.5 pt-0"}`}
       onMouseDown={disabled ? undefined : onFocus}
       onKeyDownCapture={disabled ? undefined : onComposerKeyDown}
     >
       <ComposerQuestionForm
+        checkpointNoticeOwned
         question={question}
         sessionId={sessionId}
         parentSessionId={logicalParentSessionId}
@@ -3022,7 +3659,10 @@ export const Composer = memo(function Composer({
           enabled={enabled}
         />
       ) : null}
-      {draftWorkspace && workspaceCreationError && (hideTopBar || hideBranchPicker) ? (
+      {hasProject &&
+      draftWorkspace &&
+      workspaceCreationError &&
+      (hideTopBar || hideBranchPicker) ? (
         <div className="px-3 py-2">
           <WorkspaceCreationStatus
             pending={false}
@@ -3040,6 +3680,13 @@ export const Composer = memo(function Composer({
         allowReprompt
         selection={translationSelection.selection}
         onDismiss={translationSelection.dismissSelection}
+        onCopy={async () => {
+          const selection = translationSelection.selection;
+          if (!selection || ref.current?.value !== selection.value || !canMutateDraft())
+            throw new Error("The selected draft text is no longer available.");
+          const copied = selectedAttachments(selection.value, selection.start, selection.end);
+          await copyMessage(copied?.text ?? selection.text, copied?.selected);
+        }}
         onTranslate={(target) => {
           if (!canMutateDraft()) return;
           const selection = translationSelection.selection;
@@ -3076,25 +3723,28 @@ export const Composer = memo(function Composer({
       ) : null}
       <ComposerNotices
         leading={notices}
-        sessionId={sessionId}
-        queuedMessages={queuedMessages}
-        usageLimit={usageLimit}
+        usageLimit={usageLimitInTranscript ? undefined : usageLimit}
         accountProvider={accountProvider}
         providerAccountId={providerAccountId}
         guard={(run) => mutateParentInput(parentChanged, run)}
         onUsageLimitResume={onUsageLimitResume}
+        usageLimitResumeDisabled={busy || disabled}
         onUsageLimitResumeAtReset={onUsageLimitResumeAtReset}
         onUsageLimitDismiss={onUsageLimitDismiss}
         onSelectProviderAccount={onSelectProviderAccount}
-        onSwitchModel={() => setModelPickerRequest((count) => count + 1)}
-        pasteError={pasteError}
+        onSwitchModel={
+          hideIdentityControls ? undefined : () => setModelPickerRequest((count) => count + 1)
+        }
+        pasteError={
+          typeof pasteError === "string" && isVoiceSetupError(pasteError)
+            ? t("Dictation setup is needed")
+            : pasteError
+        }
         pasteErrorAction={
-          pasteError ? <MicrophoneRecoveryAction message={pasteError} /> : undefined
+          typeof pasteError === "string" ? <VoiceRecoveryAction message={pasteError} /> : undefined
         }
         sessionFolderError={sessionFolderError}
         sessionFolderMutationBlocked={sessionFolderMutationBlocked}
-        sessionFolderPending={sessionFolderPending}
-        sessionFolderSaving={sessionFolderSaving}
         onSessionFolderRecovered={(message) => {
           if (!message) setSessionFolderMutationBlocked(false);
           setSessionFolderError(message);
@@ -3105,14 +3755,31 @@ export const Composer = memo(function Composer({
         key={sessionId}
         sessionId={sessionId}
         messages={queuedMessages}
+        references={{
+          names: skillNames,
+          skillParts: skillTextParts,
+          skillGroups,
+          skillDetails,
+          mentions: mentionIndex.labels,
+          mcpTags: selectedMcp,
+          onOpenFile,
+        }}
+        suggestions={{
+          harness,
+          executionCwd,
+          sessionId,
+          remote,
+          remotePlan: !!remoteFeatures?.plan,
+          notesEnabled,
+        }}
         status={queueStatus}
         canAttach={attachmentsSupported}
         remote={remote && !remoteFeatures?.steer}
         busy={busy}
+        waitingOnSubagents={!busy && localSubagentsRunning}
         runningTarget={remote ? undefined : { harness, model, modelSettings, runningModelTarget }}
-        steerSupported={
-          remote ? !!remoteFeatures?.steer : canSteerHarness(runningModelTarget?.harness ?? harness)
-        }
+        account={{ harness, providerAccountId }}
+        steerSupported={steerSupported}
         onDelete={onDeleteQueuedMessage}
         onEdit={onEditQueuedMessage}
         onEditingChange={onQueuedMessageEditingChange}
@@ -3185,7 +3852,7 @@ export const Composer = memo(function Composer({
               }}
             />
           </ComposerSuggestions>
-        ) : sessionFolderOpen ? (
+        ) : canUseSessionFolders && sessionFolderOpen ? (
           <ComposerSuggestions
             anchor={boxRef}
             below={shell}
@@ -3199,6 +3866,7 @@ export const Composer = memo(function Composer({
           >
             <SessionFolderPicker
               folders={sessionFolders}
+              saving={sessionFolderSaving}
               onPick={(target) => {
                 if (
                   !canMutateDraft() ||
@@ -3248,7 +3916,12 @@ export const Composer = memo(function Composer({
                   }
                   requestAnimationFrame(() => el.focus());
                 })()
-                  .catch((error: unknown) => setSessionFolderError(String(error)))
+                  .catch((error: unknown) =>
+                    setSessionFolderError({
+                      title: t("Could not change the session folder."),
+                      detail: errorText(error),
+                    }),
+                  )
                   .finally(() => {
                     sessionFolderLoading.current = false;
                     setSessionFolderPending(false);
@@ -3261,8 +3934,14 @@ export const Composer = memo(function Composer({
               }}
             />
           </ComposerSuggestions>
+        ) : canUseSessionFolders && sessionFolderPending ? (
+          <ComposerSuggestions anchor={boxRef} below={shell} solid>
+            <Text as="p" size="caption" tone="secondary" className="px-3 py-2">
+              {t("Loading folders…")}
+            </Text>
+          </ComposerSuggestions>
         ) : skillPickerOpen ? (
-          <ComposerSuggestions anchor={boxRef} below={shell}>
+          <ComposerSuggestions anchor={boxRef} below={shell} matchComposer>
             <SkillPicker
               parentSessionId={logicalParentSessionId}
               skills={rankedSkills}
@@ -3349,21 +4028,31 @@ export const Composer = memo(function Composer({
           </ComposerSuggestions>
         ) : null}
         {mentionOpen && !pickerOpen ? (
-          <ComposerSuggestions anchor={boxRef} below={shell}>
+          <ComposerSuggestions anchor={boxRef} below={shell} solid matchComposer>
             <FileMentionPicker
               files={rankedFiles}
               query={mention?.query ?? ""}
               active={mentionActive}
               loading={
+                serversLoading ||
                 workItemsLoading ||
-                (!workItemsScoped &&
-                  looksLikeProject(executionCwd) &&
+                mentionScopeLoading ||
+                fileRankingPending ||
+                (!serversScoped &&
+                  !workItemsScoped &&
+                  !mentionScope &&
+                  indexMentionFiles &&
                   peekProjectFiles(executionCwd) == null)
               }
               workItemsScoped={workItemsScoped}
+              scope={mentionScope}
+              serversScoped={serversScoped}
+              includeServers={serversAvailable}
               includeWorkItems={workItemsAvailable}
-              failed={filesFailed}
-              onRetry={retryFiles}
+              workItemsFailure={workItemsFailure}
+              failed={serversScoped ? serversFailed : filesFailed}
+              indexNotice={filesIndexNotice}
+              onRetry={serversScoped ? retryServers : retryFiles}
               includeNotes={notesEnabled}
               onActive={setMentionActive}
               onPick={pickMention}
@@ -3386,32 +4075,30 @@ export const Composer = memo(function Composer({
           <ComposerCitations
             citations={citations}
             disabled={parentClosed || !!submission}
-            onChange={(next, removed) => {
-              if (!canMutateDraft()) return;
-              parentChanged();
-              const el = ref.current;
-              replaceCitations(next);
-              draftRevisionRef.current += 1;
-              // Removing a quote takes its `[quoteN]` token and renumbers the rest.
-              const text = el
-                ? removeCitationFromText(el.value, citations.length, removed ?? -1)
-                : "";
-              if (el && text !== el.value)
-                applyTextareaEdit(el, text, Math.min(el.selectionStart, text.length));
-              else publishDraft(el?.value ?? draftTextRef.current);
-            }}
+            onChange={changeCitations}
+            drafts={citationCommentDrafts}
+            inlineText={inlineActive ? draft : undefined}
           />
           {attachments.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5 px-3 pt-2">
-              {attachments.map((file, index) => (
-                <AttachmentChip
-                  key={file.id}
-                  attachment={file}
-                  token={tokens[index]}
-                  onInsertToken={() => insertAttachmentToken(file.id)}
-                  onRemove={() => removeAttachment(file.id)}
-                />
-              ))}
+            // Draft actions take the chip row's top-right corner so the text keeps its full width.
+            <div className={`flex items-start ps-3 pt-1.5 ${draftActions ? "" : "pe-3"}`}>
+              <div className="flex min-w-0 flex-1 flex-wrap gap-1.5 pt-0.5">
+                {attachments.map((file, index) => (
+                  <AttachmentChip
+                    key={file.id}
+                    attachment={file}
+                    token={tokens[index]}
+                    draft={{ projectRoot: executionCwd }}
+                    onInsertToken={
+                      !shell && inlineAttachments?.has(file.id)
+                        ? undefined
+                        : () => insertAttachmentToken(file.id)
+                    }
+                    onRemove={() => removeAttachment(file.id)}
+                  />
+                ))}
+              </div>
+              {draftActions}
             </div>
           ) : null}
 
@@ -3448,113 +4135,150 @@ export const Composer = memo(function Composer({
             />
           ) : null}
 
-          <div className="relative">
-            {subagentList && onOpenSubagent ? (
-              <div className="absolute top-1.5 right-1.5 z-1 flex">
-                <SessionSubagentsMenu agents={subagentList} onOpen={onOpenSubagent} />
-              </div>
-            ) : null}
-            {!plainDraft ? (
-              <div
-                ref={highlightRef}
-                aria-hidden
+          <div className="flex items-start">
+            <div className="relative min-w-0 flex-1">
+              {!plainDraft && !inlineActive ? (
+                <div
+                  ref={highlightRef}
+                  aria-hidden
+                  style={{ textIndent: modeIndent }}
+                  className={`composer-highlight pointer-events-none absolute inset-0 max-h-(--composer-draft-max-height) overflow-hidden whitespace-pre-wrap wrap-break-word px-3 text-ui-body leading-5.5 text-(--ui-tone-neutral-fg) font-sans ${
+                    shell ? "py-4" : "py-3"
+                  }`}
+                >
+                  <WorkItemMentionCwd value={cwd}>
+                    <ComposerHighlight
+                      text={draft}
+                      mode={leadingMode}
+                      names={skillNames}
+                      skillParts={skillTextParts}
+                      skillGroups={skillGroups}
+                      skillDetails={skillDetails}
+                      mentions={mentionIndex.labels}
+                      mcpTags={selectedMcp}
+                      attachments={attachments}
+                      citations={citations.length}
+                      citationSources={citations}
+                      field={ref}
+                      onOpenFile={onOpenFile}
+                    />
+                  </WorkItemMentionCwd>
+                </div>
+              ) : null}
+              <ComposerInlineEditor
+                field={ref}
+                text={draft}
+                attachmentProjectRoot={executionCwd}
+                references={{
+                  names: skillNames,
+                  skillParts: skillTextParts,
+                  skillGroups,
+                  skillDetails,
+                  mentions: mentionIndex.labels,
+                  mcpTags: selectedMcp,
+                  attachments,
+                  citations: citations.length,
+                  citationSources: citations,
+                  modeEnd: leadingMode?.end ?? 0,
+                  onOpenFile,
+                }}
+                label={inputAriaLabel ?? t("Message")}
+                placeholder={composerPlaceholder}
+                readOnly={parentClosed}
+                disabled={disabled}
+                spellCheck={spelling}
+                onInlineAttachments={setInlineAttachments}
+                onRemoveAttachment={removeAttachment}
+                citationCommentDrafts={citationCommentDrafts}
+                onChangeCitations={changeCitations}
+              />
+              {/* ui-drift-ignore: raw-native-control -- bespoke composer editor: overlay highlight, auto-resize, mention/skill keyboard */}
+              <textarea
+                ref={ref}
+                hidden={inlineActive}
+                aria-hidden={inlineActive || undefined}
+                readOnly={parentClosed}
+                data-ui-focus="group"
+                data-composer-empty={navigationEmpty ? "true" : undefined}
+                data-composer-plain={plainDraft ? "true" : undefined}
                 style={{ textIndent: modeIndent }}
-                className={`composer-highlight pointer-events-none absolute inset-0 max-h-40 overflow-hidden whitespace-pre-wrap wrap-break-word px-3 text-ui-body leading-5.5 text-(--ui-tone-neutral-fg) font-sans ${
+                rows={reading ? 1 : 2}
+                // A group chip hides its source slug, which the spellchecker would still underline.
+                spellCheck={spelling && !hasGroupToken}
+                autoCorrect={spelling ? "on" : "off"}
+                defaultValue={mountDraft}
+                placeholder={composerPlaceholder}
+                aria-label={inputAriaLabel ?? t("Message")}
+                disabled={disabled}
+                className={`composer-field relative max-h-(--composer-draft-max-height) w-full resize-none overflow-x-hidden whitespace-pre-wrap wrap-break-word bg-transparent px-3 text-ui-body leading-5.5 placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap font-sans ${
                   shell ? "py-4" : "py-3"
-                } ${hasSubagents ? "pe-16" : ""}`}
-              >
-                <WorkItemMentionCwd value={cwd}>
-                  <ComposerHighlight
-                    text={draft}
-                    mode={leadingMode}
-                    names={skillNames}
-                    skillParts={skillTextParts}
-                    skillGroups={skillGroups}
-                    mentions={mentionIndex.labels}
-                    mcpTags={selectedMcp}
-                    attachments={attachments}
-                    citations={citations.length}
-                    field={ref}
-                  />
-                </WorkItemMentionCwd>
-              </div>
-            ) : null}
-            {/* ui-drift-ignore: raw-native-control -- bespoke composer editor: overlay highlight, auto-resize, mention/skill keyboard */}
-            <textarea
-              ref={ref}
-              readOnly={parentClosed}
-              data-ui-focus="group"
-              data-composer-empty={navigationEmpty ? "true" : undefined}
-              data-composer-plain={plainDraft ? "true" : undefined}
-              style={{ textIndent: modeIndent }}
-              rows={reading ? 1 : 2}
-              // A group chip hides its source slug, which the spellchecker would still underline.
-              spellCheck={spelling && !hasGroupToken}
-              autoCorrect={spelling ? "on" : "off"}
-              defaultValue={mountDraft}
-              placeholder={
-                worktreeRemoved
-                  ? t("Select a branch or worktree to continue…")
-                  : inboxCard
-                    ? t("Add a note, or send to start…")
-                    : noteCard
-                      ? t("Add a message, or send…")
-                      : handoffCard
-                        ? t("Add context, or send to continue…")
-                        : (placeholder ?? t("Message"))
-              }
-              aria-label={inputAriaLabel}
-              disabled={disabled}
-              className={`composer-field scrollbar-none relative max-h-40 w-full resize-none overflow-x-hidden whitespace-pre-wrap wrap-break-word bg-transparent px-3 text-ui-body leading-5.5 placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap font-sans ${
-                shell ? "py-4" : "py-3"
-              } ${hasSubagents ? "pe-16" : ""}`}
-              onFocus={onFocus}
-              onKeyDown={onKeyDown}
-              onPaste={onPaste}
-              onScroll={(e) => syncHighlightScroll(e.currentTarget)}
-              onClick={(e) => syncTokensFromTextarea(e.currentTarget)}
-              onKeyUp={(e) => syncTokensFromTextarea(e.currentTarget)}
-              onSelect={(e) => syncTokensFromTextarea(e.currentTarget)}
-              onInput={(e) => {
-                if (!parentChanged.canMutate()) {
-                  parentChanged();
-                  return;
-                }
-                const el = e.currentTarget;
-                const history = currentTranslationHistory();
-                if (history && el.value !== history.original && el.value !== history.translated)
-                  translationHistoryRef.current = null;
-                // A user edit that took a token out of the text takes its
-                // attachment with it; the rest renumber like a chip removal.
-                const before = userEditBeforeRef.current;
-                userEditBeforeRef.current = null;
-                if (before !== null) {
-                  const files = attachmentsRef.current;
-                  for (const index of attachmentsDroppedByEdit(before, el.value, files)) {
-                    removeAttachment(files[index].id);
+                }`}
+                onFocus={onFocus}
+                onKeyDown={onKeyDown}
+                onCopy={(event) => copyAttachmentSelection(event, false)}
+                onCut={(event) => copyAttachmentSelection(event, true)}
+                onPaste={onPaste}
+                onScroll={(e) => syncHighlightScroll(e.currentTarget)}
+                onClick={(e) => syncTokensFromTextarea(e.currentTarget)}
+                onKeyUp={(e) => syncTokensFromTextarea(e.currentTarget, true)}
+                onSelect={(e) => syncTokensFromTextarea(e.currentTarget, true)}
+                onInput={(e) => {
+                  if (!parentChanged.canMutate()) {
+                    parentChanged();
+                    return;
                   }
-                }
-                if (enterBtwFromPrefix(el)) return;
-                inputResize.schedule(el);
-                draftRevisionRef.current += 1;
-                setDraft(el.value);
-                setSelectedMcp((current) => {
-                  const retained = current.filter(
-                    (tag) => taggedMcpServers(el.value, [tag]).length > 0,
-                  );
-                  return retained.length === current.length ? current : retained;
-                });
-                setPasteError(null);
-                if (sessionFolderSelected && !consumeSessionFolderCommand(el.value).matched) {
-                  setSessionFolderSelected(false);
-                }
-                syncHasText(el.value);
-                syncTokensFromTextarea(el);
-              }}
-            />
+                  const el = e.currentTarget;
+                  const history = currentTranslationHistory();
+                  if (history && el.value !== history.original && el.value !== history.translated)
+                    translationHistoryRef.current = null;
+                  // A user edit that took a token out of the text takes its
+                  // attachment with it; the rest renumber like a chip removal.
+                  const before = userEditBeforeRef.current;
+                  userEditBeforeRef.current = null;
+                  const { inputType } = e.nativeEvent as InputEvent;
+                  const undo = inputType === "historyUndo";
+                  const cut =
+                    (undo || inputType === "historyRedo") &&
+                    findAttachmentCut(undo, before ?? draftTextRef.current, el.value);
+                  if (cut) {
+                    const version = undo ? cut.before : cut.after;
+                    restoreCutAttachments(version.attachments, cut.borrowed);
+                    el.setSelectionRange(version.start, version.end);
+                  } else if (before !== null && !applyingAttachmentCut.current) {
+                    const files = attachmentsRef.current;
+                    for (const index of attachmentsDroppedByEdit(before, el.value, files)) {
+                      removeAttachment(files[index].id);
+                    }
+                  }
+                  if (enterBtwFromPrefix(el)) return;
+                  inputResize.schedule(el);
+                  draftRevisionRef.current += 1;
+                  setDraft(el.value);
+                  setSelectedMcp((current) => {
+                    const retained = current.filter(
+                      (tag) => taggedMcpServers(el.value, [tag]).length > 0,
+                    );
+                    return retained.length === current.length ? current : retained;
+                  });
+                  setPasteError(null);
+                  if (sessionFolderSelected && !consumeSessionFolderCommand(el.value).matched) {
+                    setSessionFolderSelected(false);
+                  }
+                  syncHasText(el.value);
+                  syncTokensFromTextarea(el);
+                }}
+              />
+            </div>
+            {draftActions && attachments.length === 0 ? (
+              <div className="mt-1.5">{draftActions}</div>
+            ) : null}
           </div>
 
-          <div className="composer-controls flex items-center gap-1 px-2 pb-2">
+          <div
+            ref={composerControls}
+            className="composer-controls flex items-center gap-1 px-2 pb-2"
+            data-busy={busy || undefined}
+          >
             {queuedMessages.length === 0 ? (
               <DeliveryProgressIndicator sessionId={sessionId} />
             ) : null}
@@ -3564,214 +4288,108 @@ export const Composer = memo(function Composer({
               className="composer-toolbar flex min-w-0 flex-1 items-center"
             >
               <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-                <MemoModelPicker
-                  harness={harness}
-                  model={model}
-                  values={modelSettings}
-                  allowedHarnesses={allowedModelHarnesses}
-                  project={cwd}
-                  showEffortSummary
-                  hotkeys={hotkeys && enabled}
-                  openRequest={modelPickerRequest}
-                  accountId={providerAccountId}
-                  accountChoices={Boolean(onSelectProviderAccount)}
-                  extrasDisabled={disabled || !onModelSettingsChange}
-                  onChange={onPickerModelChange}
-                  onSettingsChange={onPickerSettingsChange}
-                  onClose={onPickerClose}
-                />
-                {!compact && harness !== "fx" ? (
+                {!hideIdentityControls ? (
+                  <MemoModelPicker
+                    harness={harness}
+                    model={model}
+                    values={modelSettings}
+                    allowedHarnesses={allowedModelHarnesses}
+                    project={cwd}
+                    compactIdentity
+                    showEffortSummary
+                    hotkeys={hotkeys && enabled}
+                    openRequest={(modelPickerOpenRequest ?? 0) + modelPickerRequest}
+                    closeOnPick={Boolean(usageLimit)}
+                    accountId={providerAccountId}
+                    accountChoices={Boolean(onSelectProviderAccount)}
+                    accessMode={settingsInModelPicker && harness !== "fx" ? runtimeMode : undefined}
+                    accessBusy={settingsInModelPicker && busy}
+                    onAccessModeChange={onPickerAccessChange}
+                    modeControl={settingsInModelPicker ? modeControl : undefined}
+                    extrasDisabled={disabled || !onModelSettingsChange}
+                    extrasDisabledReason={
+                      disabled
+                        ? "Settings are locked while this conversation is updating."
+                        : onModelSettingsChange
+                          ? undefined
+                          : "Settings can't be changed here."
+                    }
+                    onChange={onPickerModelChange}
+                    onSettingsChange={onPickerSettingsChange}
+                    onClose={onPickerClose}
+                  />
+                ) : null}
+                {/* Chat settings "Extras summary"; the menu stays complete. */}
+                {extrasBeside &&
+                !hideIdentityControls &&
+                !compact &&
+                !disabled &&
+                onModelSettingsChange ? (
+                  <ModelControlPills
+                    harness={harness}
+                    model={model}
+                    values={modelSettings}
+                    omitEffort
+                    onSettingsChange={onPickerSettingsChange}
+                    onClose={onPickerClose}
+                  />
+                ) : null}
+                {!hideIdentityControls && !settingsInModelPicker && !compact && harness !== "fx" ? (
                   <AccessPicker
                     value={runtimeMode}
                     busy={busy}
+                    iconOnly
                     unavailable={unavailableRuntimeModes(harness)}
-                    onChange={(...args) =>
-                      mutateParentInput(parentChanged, () => onRuntimeModeChange(...args))
-                    }
+                    onChange={onPickerAccessChange}
                     onClose={() => ref.current?.focus()}
                   />
                 ) : null}
-                {!compact && modeChoices.length > 0 ? (
-                  <div className="relative flex shrink-0">
-                    <Button
-                      ref={modeRef}
-                      size="sm"
-                      variant="ghost"
-                      iconOnly
-                      label={t("Mode")}
-                      tooltip={t("Mode")}
-                      selected={modeOpen}
-                      aria-haspopup="menu"
-                      aria-expanded={modeOpen}
-                      data-composer-mode-trigger
-                      onClick={() => setModeOpen((open) => !open)}
-                      onKeyDown={(event) => {
-                        if (event.key === "ArrowDown") {
-                          event.preventDefault();
-                          setModeOpen(true);
-                        }
-                      }}
-                    >
-                      <SlidersHorizontal className="icon-sm" />
-                    </Button>
-                    {modeOpen ? (
-                      <DropdownMenu
-                        anchor={modeRef}
-                        returnFocusRef={modeRef}
-                        label={t("Mode")}
-                        side="top"
-                        align="start"
-                        width={280}
-                        onClose={() => setModeOpen(false)}
-                        data-composer-mode-menu
-                        items={[
-                          {
-                            kind: "group",
-                            id: "mode",
-                            label: t("Mode"),
-                            items: modeChoices,
-                          },
-                        ]}
-                        onPick={(id) => {
-                          if (!canMutateDraft()) return;
-                          if (id === "plan") {
-                            setPlanSelected(!planActive);
-                            if (planActive) clearLeadingMode(PLAN_COMMAND.name);
-                            setOperatorSelected(false);
-                            setOrchestrationSelected(false);
-                            setDraftSelected(false);
-                          } else if (id === "operator") {
-                            setOperatorSelected(!operatorActive);
-                            if (operatorActive) clearLeadingMode(OPERATOR_COMMAND.name);
-                            setPlanSelected(false);
-                            setOrchestrationSelected(false);
-                            setDraftSelected(false);
-                          } else if (id === "orchestrator") {
-                            setOrchestrationSelected(!orchestrationActive);
-                            if (orchestrationActive) clearLeadingMode(ORCHESTRATOR_COMMAND.name);
-                            setPlanSelected(false);
-                            setOperatorSelected(false);
-                            setDraftSelected(false);
-                          } else if (id === "draft") {
-                            setDraftSelected(!draftActive);
-                            if (draftActive) clearLeadingMode(DRAFT_COMMAND.name);
-                            setPlanSelected(false);
-                            setOperatorSelected(false);
-                            setOrchestrationSelected(false);
-                          }
-                          ref.current?.focus();
-                        }}
-                      />
-                    ) : null}
-                  </div>
-                ) : null}
+                {settingsInModelPicker ? null : modeControl}
                 {hideTopBar || hideBranchPicker ? sessionDirectoryPicker : null}
               </div>
             </div>
             {/* Without the context row below, the tip sits with the trailing
                 actions instead of adding an extra row inside the writing surface. */}
             {hideTopBar || hideBranchPicker ? <ComposerTips active={focused && !disabled} /> : null}
-            <div className={compact ? "hidden" : "relative flex shrink-0"}>
-              <Button
-                ref={plusRef}
-                variant="ghost"
-                iconOnly
-                label={t("Add files or skills")}
-                tooltip={t("Add files or skills")}
-                data-usage-guide="composer-plus"
-                selected={plusOpen}
-                aria-haspopup="menu"
-                aria-expanded={plusOpen}
-                onClick={() => setPlusOpen((open) => !open)}
-                onKeyDown={(event) => {
-                  if (event.key === "ArrowDown") {
-                    event.preventDefault();
-                    setPlusOpen(true);
-                  }
-                }}
-              >
-                <Plus className="icon-sm" />
-              </Button>
-              {plusOpen ? (
-                <DropdownMenu
-                  anchor={plusRef}
-                  returnFocusRef={plusRef}
-                  label={t("Add files or skills")}
-                  side="top"
-                  align="end"
-                  width={280}
-                  onClose={() => setPlusOpen(false)}
-                  data-composer-plus
-                  items={[
-                    {
-                      kind: "group",
-                      id: "add",
-                      label: t("Add to message"),
-                      items: [
-                        {
-                          kind: "item",
-                          id: "upload",
-                          label: t("Upload file"),
-                          icon: <FilePlus />,
-                          disabled: !attachmentsSupported,
-                          description: attachmentsSupported
-                            ? undefined
-                            : remote && !remoteFeatures?.attachments
-                              ? t("Update this machine’s host to attach files")
-                              : t("{p0} does not support attachments", {
-                                  p0: HARNESS_TITLE[harness],
-                                }),
-                        },
-                        ...(!remote
-                          ? [
-                              {
-                                kind: "item" as const,
-                                id: "skills",
-                                label: t("Skills"),
-                                icon: <CursorMagicSelection />,
-                                description:
-                                  harness === "codex"
-                                    ? t("Choose a skill or type $name")
-                                    : t("Choose a skill or type /name"),
-                              },
-                            ]
-                          : []),
-                      ],
-                    },
-                  ]}
-                  onPick={(id) => {
-                    if (!canMutateDraft()) return;
-                    if (id === "upload") {
-                      attachFromPicker();
-                      return;
-                    }
-                    if (id === "skills") {
-                      const el = ref.current;
-                      if (!el) return;
-                      const prefix = harness === "codex" ? "$" : "/";
-                      const lead = el.value && !/\s$/.test(el.value) ? " " : "";
-                      const start = el.value.length + lead.length;
-                      const next = el.value + lead + prefix;
-                      el.value = next;
-                      el.setSelectionRange(next.length, next.length);
-                      resizeComposer(el);
-                      setDraft(next);
-                      syncHasText(next);
-                      setSlash({
-                        start,
-                        end: next.length,
-                        query: "",
-                        ...(prefix === "$" ? { trigger: "$" as const } : {}),
-                      });
-                      setSkillActive(0);
-                      el.focus();
-                      return;
-                    }
-                    ref.current?.focus();
-                  }}
-                />
-              ) : null}
-            </div>
+            <ComposerAddMenu
+              open={plusOpen}
+              onOpenChange={setPlusOpen}
+              className={compact ? "hidden" : undefined}
+              usageGuide="composer-plus"
+              uploadUnavailable={
+                attachmentsSupported
+                  ? undefined
+                  : remote && !remoteFeatures?.attachments
+                    ? t("Update this machine’s host to attach files")
+                    : t("{p0} does not support attachments", { p0: HARNESS_TITLE[harness] })
+              }
+              skillPrefix={remote ? undefined : harness === "codex" ? "$" : "/"}
+              onUpload={() => {
+                if (canMutateDraft()) attachFromPicker();
+              }}
+              onSkills={() => {
+                if (!canMutateDraft()) return;
+                const el = ref.current;
+                if (!el) return;
+                const prefix = harness === "codex" ? "$" : "/";
+                const lead = el.value && !/\s$/.test(el.value) ? " " : "";
+                const start = el.value.length + lead.length;
+                const next = el.value + lead + prefix;
+                el.value = next;
+                el.setSelectionRange(next.length, next.length);
+                resizeComposer(el);
+                setDraft(next);
+                syncHasText(next);
+                setSlash({
+                  start,
+                  end: next.length,
+                  query: "",
+                  ...(prefix === "$" ? { trigger: "$" as const } : {}),
+                });
+                setSkillActive(0);
+                el.focus();
+              }}
+            />
             {!compact && operatorActive ? (
               <ModeCommandPill
                 name={OPERATOR_COMMAND.name}
@@ -3820,9 +4438,7 @@ export const Composer = memo(function Composer({
               <Button
                 variant="ghost"
                 type="button"
-                tooltip={t("Stop editing last message")}
                 shortcut="Esc"
-                aria-label={t("Stop editing last message")}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={exitEditMode}
                 className="shrink-0"
@@ -3845,6 +4461,11 @@ export const Composer = memo(function Composer({
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={recallLastTurn}
                 disabled={disabled || worktreeRemoved}
+                disabledReason={
+                  worktreeRemoved
+                    ? t("Select a branch or worktree to continue…")
+                    : t("Action unavailable.")
+                }
               >
                 <Undo2 className="icon-sm" />
               </Button>
@@ -3886,29 +4507,25 @@ export const Composer = memo(function Composer({
                 hasValue={hasValue && !worktreeRemoved}
                 allowBusySubmit={allowBusySubmit}
                 label={draftActive ? t("Save draft") : t("Send")}
-                busyLabel={
+                followUpAction={
                   draftActive
                     ? undefined
-                    : t(
-                        !(remote
-                          ? remoteFeatures?.steer
-                          : canSteerHarness(runningModelTarget?.harness ?? harness)) ||
-                          resolveFollowUpRoute({
-                            busy,
-                            worktreePreparing,
-                            intent: planActive
-                              ? "plan"
-                              : orchestrationActive
-                                ? "orchestrate"
-                                : "default",
-                            operatorCommand: operatorActive,
-                            backgroundTaskCount,
-                            backgroundOnly,
-                            requested: "steer",
-                          }) === "queue"
-                          ? "Queue message"
-                          : "Steer",
-                      )
+                    : !steerSupported ||
+                        resolveFollowUpRoute({
+                          busy,
+                          worktreePreparing,
+                          intent: planActive
+                            ? "plan"
+                            : orchestrationActive
+                              ? "orchestrate"
+                              : "default",
+                          operatorCommand: operatorActive,
+                          backgroundTaskCount,
+                          backgroundOnly,
+                          requested: "steer",
+                        }) === "queue"
+                      ? "queue"
+                      : "steer"
                 }
                 blockedReason={
                   sendHeldReason ??
@@ -3922,6 +4539,7 @@ export const Composer = memo(function Composer({
                   queueShortcutApplies({
                     busy,
                     backgroundOnly,
+                    subagentsRunning: localSubagentsRunning,
                     allowBusySubmit,
                     disabled: disabled || worktreeRemoved || workspaceSendBlocked,
                     popupOpen: false,
@@ -3940,7 +4558,7 @@ export const Composer = memo(function Composer({
             </div>
           </div>
         </div>
-        {!hideTopBar && hideBranchPicker && projectContextPicker ? (
+        {!hideTopBar && hideBranchPicker && (machinePicker || projectContextPicker) ? (
           <div
             data-composer-secondary=""
             data-composer-attention={workspaceNeedsAttention ? "" : undefined}
@@ -3948,6 +4566,7 @@ export const Composer = memo(function Composer({
             aria-label={t("Chat workspace")}
             className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-2 pb-1 pt-1.5"
           >
+            {machinePicker?.(!!submission || busy)}
             {projectContextPicker}
           </div>
         ) : null}
@@ -3968,8 +4587,9 @@ export const Composer = memo(function Composer({
               data-composer-workspace-controls
               className="flex min-w-0 flex-1 flex-wrap items-center justify-start gap-x-3 gap-y-1"
             >
+              {machinePicker?.(!!submission || busy)}
               {projectContextPicker}
-              {draftWorkspace && onWorkspaceModeChange && onWorktreeBaseChange ? (
+              {hasProject && draftWorkspace && onWorkspaceModeChange && onWorktreeBaseChange ? (
                 <>
                   {workspaceCreationError ? (
                     <WorkspaceIdentity worktree={workspaceCreation.mode === "worktree"} />
@@ -3979,26 +4599,40 @@ export const Composer = memo(function Composer({
                       cwd={executionCwd}
                       mode={workspaceCreation.mode}
                       base={resolvedWorktreeBase}
-                      enabled={enabled && !busy && !workspaceCreation.pending}
+                      enabled={enabled && !busy}
+                      pending={workspaceCreation.pending}
                       onModeChange={(...args) =>
                         mutateParentInput(parentChanged, () => onWorkspaceModeChange?.(...args))
                       }
                       onBaseChange={(...args) =>
                         mutateParentInput(parentChanged, () => onWorktreeBaseChange?.(...args))
                       }
-                      onSelectWorktree={
+                      baseRemote={worktreeBaseRemote}
+                      onBaseRemoteChange={
+                        onWorktreeBaseRemoteChange
+                          ? (remote) =>
+                              mutateParentInput(parentChanged, () =>
+                                onWorktreeBaseRemoteChange(remote),
+                              )
+                          : undefined
+                      }
+                      previousWorktree={
                         onWorktreeChange
-                          ? async (...args) => {
-                              const result = mutateParentInput(parentChanged, () =>
-                                onWorktreeChange(...args),
-                              );
-                              if (result === false)
-                                throw new Error("Session input is temporarily closed.");
-                              return await result;
+                          ? {
+                              project: cwd ?? executionCwd,
+                              sessionId,
+                              getSessions,
+                              onSelect: async (...args) => {
+                                const result = mutateParentInput(parentChanged, () =>
+                                  onWorktreeChange(...args),
+                                );
+                                if (result === false)
+                                  throw new Error("Session input is temporarily closed.");
+                                await result;
+                              },
                             }
                           : undefined
                       }
-                      onOpenSettings={onManageWorktrees}
                       onClose={() => ref.current?.focus()}
                     />
                   )}
@@ -4007,6 +4641,7 @@ export const Composer = memo(function Composer({
                       <BranchPicker
                         cwd={executionCwd}
                         branch={branch}
+                        hideWithoutRepository
                         enabled={enabled && !busy}
                         onChange={
                           onBranchChange
@@ -4015,12 +4650,24 @@ export const Composer = memo(function Composer({
                               }
                             : undefined
                         }
+                        onSelectWorktree={
+                          onWorktreeChange
+                            ? async (...args) => {
+                                const result = mutateParentInput(parentChanged, () =>
+                                  onWorktreeChange(...args),
+                                );
+                                if (result === false)
+                                  throw new Error("Session input is temporarily closed.");
+                                await result;
+                              }
+                            : undefined
+                        }
                         onClose={() => ref.current?.focus()}
                       />
                     </div>
                   ) : null}
                 </>
-              ) : worktreeRemoved && onWorktreeChange ? (
+              ) : hasProject && worktreeRemoved && onWorktreeChange ? (
                 <>
                   <WorktreePicker
                     cwd={cwd}
@@ -4045,7 +4692,7 @@ export const Composer = memo(function Composer({
                     onClose={() => ref.current?.focus()}
                   />
                 </>
-              ) : (
+              ) : hasProject ? (
                 <>
                   {onWorktreeChange ? (
                     <WorkspaceIdentity worktree={pathKey(cwd) !== pathKey(executionCwd)} />
@@ -4054,6 +4701,7 @@ export const Composer = memo(function Composer({
                     <BranchPicker
                       cwd={executionCwd}
                       branch={branch}
+                      hideWithoutRepository
                       enabled={enabled && !busy}
                       onChange={
                         onBranchChange
@@ -4062,22 +4710,24 @@ export const Composer = memo(function Composer({
                             }
                           : undefined
                       }
+                      worktreeLocked
                       onClose={() => ref.current?.focus()}
                     />
                   </div>
                 </>
-              )}
-              {sessionDirectoryPicker ? (
+              ) : null}
+              {hasProject && sessionDirectoryPicker ? (
                 <div data-composer-directories className="flex min-w-0 justify-end">
                   {sessionDirectoryPicker}
                 </div>
               ) : null}
-              <RemoteOriginMark origin={remoteOrigin} labelled />
             </div>
             <ComposerTips active={focused && !disabled} />
-            {draftWorkspace ? (
+            {hasProject && draftWorkspace ? (
               <div className="basis-full pb-1">
                 <WorkspaceCreationStatus
+                  progressId={creationProgressId}
+                  context={{ cwd: cwd ?? executionCwd }}
                   preview={
                     workspaceCreation.mode === "worktree" ? workspaceCreation.preview : undefined
                   }

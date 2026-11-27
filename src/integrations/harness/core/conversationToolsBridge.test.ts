@@ -95,6 +95,25 @@ describe("Provider conversation tool bridge", () => {
     expect(await conversationToolsBridge("logs-malformed")).toBeNull();
   });
 
+  it("asks the Host again after its restart window instead of reusing the earlier executable", async () => {
+    vi.useFakeTimers();
+    invoke.mockResolvedValueOnce({ ...bridge, command: "old-host-node" });
+    expect((await conversationToolsBridge("host-restart"))?.command).toBe("old-host-node");
+    const calls = invoke.mock.calls.length;
+    expect((await conversationToolsBridge("host-restart#2"))?.command).toBe("old-host-node");
+    expect(invoke.mock.calls).toHaveLength(calls);
+    vi.advanceTimersByTime(5_001);
+    // The restarting Host does not answer: no bridge, never the old one.
+    invoke.mockRejectedValueOnce(new Error("Host restarting"));
+    expect(await conversationToolsBridge("host-restart")).toBeNull();
+    vi.advanceTimersByTime(2_001);
+    invoke.mockResolvedValueOnce({ ...bridge, command: "new-host-node" });
+    expect((await conversationToolsBridge("host-restart"))?.command).toBe("new-host-node");
+    // Another session never inherits this session's answer.
+    invoke.mockResolvedValueOnce({ ...bridge, command: "other-host-node" });
+    expect((await conversationToolsBridge("host-restart-other"))?.command).toBe("other-host-node");
+  });
+
   it("keeps a valid MCP hub declaration on the bridge and drops a malformed one", async () => {
     const externalMcp = {
       servers: [

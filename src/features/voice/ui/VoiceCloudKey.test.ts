@@ -46,28 +46,35 @@ it.each(["elevenlabs", "openrouter"] as const)(
     expect(host.textContent).toContain("Checking saved key");
     await type("draft-secret");
     expect(
-      [...host.querySelectorAll("button")].find((button) => button.textContent === "Save")!
-        .disabled,
-    ).toBe(true);
+      [...host.querySelectorAll("button")]
+        .find((button) => button.textContent === "Save")!
+        .getAttribute("aria-disabled"),
+    ).toBe("true");
     await act(async () => reject(new Error("Host unavailable")));
     expect(host.textContent).toContain("Could not check saved key");
-    expect(host.querySelector("input")!.placeholder).toBe("Key status unknown");
+    expect(host.querySelector("input")!.placeholder).toBe("Paste API key");
     backend.cloudStatus.mockResolvedValue({ [provider]: true });
     await click("Retry status");
-    expect(host.textContent).toContain("Key saved");
+    expect(host.textContent).toContain("Saved");
     expect(host.querySelector("input")!.value).toBe("draft-secret");
     expect(host.querySelector("input")!.type).toBe("password");
     expect(backend.setCloudKey).not.toHaveBeenCalled();
     backend.setCloudKey.mockRejectedValue(new Error("The key could not be saved."));
     await click("Save");
     expect(host.querySelector("input")!.value).toBe("draft-secret");
-    expect(host.textContent).toContain("Key saved");
+    expect(host.textContent).toContain("Saved");
+    expect(host.textContent).toContain("Could not save the voice API key.");
+    expect(host.textContent).not.toContain("The key could not be saved.");
+    await click("Details");
+    expect(document.body.textContent).toContain("The key could not be saved.");
+    await click("Details");
     await click("Remove");
-    expect(host.textContent).toContain("Key saved");
+    expect(host.textContent).toContain("Could not remove the voice API key.");
+    expect(host.textContent).toContain("Saved");
     expect(host.querySelector("input")!.value).toBe("draft-secret");
     backend.setCloudKey.mockResolvedValue({ [provider]: false });
     await click("Remove");
-    expect(host.textContent).not.toContain("Key saved");
+    expect(host.textContent).not.toContain("Saved");
     expect(host.querySelector("input")!.value).toBe("");
   },
 );
@@ -83,7 +90,7 @@ it("accepts authoritative absent status and ignores a late read after provider c
   backend.cloudStatus.mockResolvedValue({ openrouter: false });
   await act(async () => root.render(createElement(VoiceCloudKey, { provider: "openrouter" })));
   await act(async () => finish({ elevenlabs: true }));
-  expect(host.textContent).not.toContain("Key saved");
+  expect(host.textContent).not.toContain("Saved");
   expect(host.querySelector("input")!.placeholder).toBe("Paste API key");
   expect(host.querySelector("input")!.value).toBe("");
   expect(backend.setCloudKey).not.toHaveBeenCalled();

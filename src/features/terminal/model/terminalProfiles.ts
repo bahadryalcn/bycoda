@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { createWindowStore } from "../../../shared/lib/store";
@@ -140,7 +141,7 @@ export function useTerminalProfiles():
       })
       .catch((reason: unknown) => {
         if (alive) {
-          setError(reason instanceof Error ? reason.message : String(reason));
+          setError(errorText(reason));
           setValue({ profiles: [], defaultId: null });
         }
       });

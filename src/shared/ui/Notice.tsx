@@ -9,6 +9,8 @@ export type NoticeTone = "info" | "success" | "warning" | "danger" | "neutral";
 export type NoticeAction = {
   label: string;
   onClick: () => void;
+  /** Hierarchy for a button action. Inline actions render as links. */
+  variant?: "primary" | "secondary";
   /** Shows progress and blocks a second activation; the caller owns the operation. */
   pending?: boolean;
   disabled?: boolean;
@@ -16,6 +18,8 @@ export type NoticeAction = {
   ariaLabel?: string;
   /** Tooltip shown while `disabled`, naming why the action is unavailable. */
   disabledReason?: string;
+  /** Tooltip that adds detail the label cannot carry (the scope of a grant). Never repeat the label. */
+  tooltip?: string;
 };
 
 /** One glyph per tone for every notice, so tone never rides on colour alone. */
@@ -47,11 +51,6 @@ const FIRST_LINE: Record<NoticeSize, string> = {
 /**
  * A box exactly one first line tall that centres its child, so a glyph, action or dismiss control
  * sits on the first line of one-line, wrapped and titled copy alike.
- *
- * @group feedback
- * @use Internal part of the notice anatomy shared by Alert, InlineMessage, Toast and empty states.
- * @avoid Direct use in a feature: use Alert, InlineMessage/InlineError, Toast or EmptyState.
- * @status internal
  *
  * @group feedback
  * @use Internal part of the notice anatomy shared by Alert, InlineMessage, Toast and empty states.
@@ -112,6 +111,25 @@ export function NoticeGlyph({
   );
 }
 
+/**
+ * Inner spacing of a state (EmptyState, LoadingText, InlineError, InlineMessage), on the Surface
+ * padding scale. `none` (default) adds nothing: the surrounding row, panel or form owns the gap.
+ * `row` (8/12) sits a state inside a list row or form; `panel` (12/16) gives it a panel's breathing room.
+ * Alert and the toast card use the same 8/12 inset through `--ui-space-2` / `--ui-space-3`.
+ */
+export type StateInset = "none" | "row" | "panel";
+
+const STATE_INSET_CLASS: Record<StateInset, string> = {
+  none: "",
+  row: "px-3 py-2",
+  panel: "px-4 py-3",
+};
+
+/** Tailwind classes for a state's `inset`; empty for `none` or unset. */
+export function stateInsetClass(inset: StateInset | undefined): string {
+  return STATE_INSET_CLASS[inset ?? "none"];
+}
+
 /** Class that plays the one notice enter motion (opacity and a short rise; fade under reduced motion). */
 export const noticeEnterClass = styles.enter;
 
@@ -129,8 +147,10 @@ export function NoticeLink({ action }: { action: NoticeAction }) {
       layout="text"
       loading={action.pending ?? false}
       disabled={action.disabled}
+      truncate
       aria-label={action.ariaLabel}
-      tooltip={action.disabled ? action.disabledReason : undefined}
+      disabledReason={action.disabledReason}
+      tooltip={action.tooltip}
       onClick={action.onClick}
     >
       {action.label}
@@ -145,15 +165,17 @@ export function NoticeLink({ action }: { action: NoticeAction }) {
  * @avoid Direct use in a feature: use Alert, InlineMessage/InlineError, Toast or EmptyState.
  * @status internal
  */
-export function NoticeButton({ action }: { action: NoticeAction }) {
+export function NoticeButton({ action, quiet }: { action: NoticeAction; quiet?: boolean }) {
   return (
     <Button
-      variant="secondary"
+      variant={quiet ? "ghost" : (action.variant ?? "secondary")}
       size="sm"
-      loading={action.pending ?? false}
+      // Only an action its owner can mark pending reserves the spinner slot; the rest stay compact.
+      loading={action.pending}
       disabled={action.disabled}
       aria-label={action.ariaLabel}
-      tooltip={action.disabled ? action.disabledReason : undefined}
+      disabledReason={action.disabledReason}
+      tooltip={action.tooltip}
       onClick={action.onClick}
     >
       {action.label}

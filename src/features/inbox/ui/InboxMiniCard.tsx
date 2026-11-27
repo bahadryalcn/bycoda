@@ -16,7 +16,9 @@ export function InboxMiniCard({ card, onDismiss }: Props) {
   useLocale();
   const kindLabel =
     card.kind === "pr"
-      ? t(card.provider === "gitlab" ? "Merge request" : "Pull request")
+      ? card.provider === "gitlab"
+        ? t("Merge request")
+        : t("Pull request")
       : t("Issue");
   const serviceLabel = providerLabel(card.provider);
 

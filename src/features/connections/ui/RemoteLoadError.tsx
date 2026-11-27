@@ -1,9 +1,7 @@
-import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { NoticeButton, NoticeLink, type NoticeAction } from "../../../shared/ui/Notice";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
-import { Toast } from "../../../shared/ui/ToastRegion";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useState } from "react";
@@ -14,46 +12,34 @@ import type { RemoteFailure } from "../model/remoteFailure";
 import { useRemoteConnection } from "../model/useRemoteConnection";
 import { useRemoteConnectionFeedback } from "./RemoteConnectionFeedback";
 /** One compact, inline explanation of why a remote project's data could not be
- * loaded, with what the user can do about it. `stale` says older data is still
- * shown (dimmed) below it. */
+ * loaded, with what the user can do about it. Older data that is still shown
+ * dimmed below it needs no sentence of its own. */
 export function RemoteLoadError({
   cwd,
   failure,
-  stale = false,
   onRetry,
   compact = false,
   coordinated = true,
   onDismiss,
   recovering = false,
-  toast = false,
 }: {
   cwd: string;
   failure: RemoteFailure;
+  /** Accepted for callers that pass it; the dimmed data already says so. */
   stale?: boolean;
   onRetry?: () => void;
   compact?: boolean;
-  /** The workspace notice renders the single shared recovery control. */
+  /** The machine's session notice renders the single shared recovery control. */
   coordinated?: boolean;
   onDismiss?: () => void;
-  /** Shared machine notice while automatic recovery handles a short outage. */
+  /** Session machine notice while automatic recovery handles a short outage. */
   recovering?: boolean;
-  /** The workspace owner's one top-center notice per machine (shared toast stack). */
-  toast?: boolean;
 }) {
   useLocale();
   const { machine, status, reconnecting, reconnect } = useRemoteConnection(cwd);
   const [reconnectError, setReconnectError] = useState("");
   const shared = useRemoteConnectionFeedback(coordinated ? cwd : undefined, failure);
   if (shared) return null;
-  if (recovering && toast)
-    return (
-      <Toast
-        tone="info"
-        title={t("Reconnecting…")}
-        message={machine?.name ?? t("this machine")}
-        durationMs={null}
-      />
-    );
   if (recovering)
     return (
       <InlineMessage tone="info">
@@ -69,7 +55,11 @@ export function RemoteLoadError({
             p0: PRODUCT_IDENTITY.displayName,
             p1: name,
           })
-        : t("Couldn’t load from the machine");
+        : failure.kind === "identity"
+          ? t("{p0}’s identity changed", { p0: name })
+          : failure.kind === "temporary"
+            ? t("{p0} is busy right now", { p0: name })
+            : t("Couldn’t load from the machine");
   const needsAuth = needsSignIn(status);
   const startReconnect = () => {
     setReconnectError("");
@@ -92,7 +82,7 @@ export function RemoteLoadError({
           },
         ]
       : []),
-    ...(failure.kind === "unreachable" || failure.kind === "outdated" || failure.kind === "identity"
+    ...(failure.kind === "unreachable" || failure.kind === "outdated"
       ? [
           {
             label: t("Connection settings"),
@@ -115,38 +105,13 @@ export function RemoteLoadError({
           onClick: startReconnect,
           pending: reconnecting,
         }
-      : failure.kind === "other" && onRetry
-        ? { label: t("Retry"), onClick: onRetry }
-        : undefined;
+      : failure.kind === "identity"
+        ? // Reconnecting cannot clear a changed identity: only the owner re-pairs the machine.
+          { label: t("Review in Connections"), onClick: openConnections }
+        : failure.kind === "other" && onRetry
+          ? { label: t("Retry"), onClick: onRetry }
+          : undefined;
   const reconnectFailed = reconnectError && reconnectError !== failure.message;
-  if (toast) {
-    const detail = [
-      failure.message,
-      reconnectFailed ? `${t("Reconnecting failed: ")}${reconnectError}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
-    return (
-      <Toast
-        tone="warning"
-        title={title}
-        message={stale ? t("Showing what was last loaded.") : undefined}
-        action={primary}
-        extra={
-          detail ? (
-            <ErrorDetails
-              title={title}
-              detail={detail}
-              actions={(close) => secondaryActions(close).map(renderButton)}
-            />
-          ) : undefined
-        }
-        actions={detail ? undefined : secondaryActions()}
-        durationMs={null}
-        onDismiss={onDismiss}
-      />
-    );
-  }
   if (compact) {
     // One stable row: the raw transport text stays behind Details, never in the bar.
     const dismiss: NoticeAction | undefined = onDismiss
@@ -178,18 +143,14 @@ export function RemoteLoadError({
         <strong>{title}</strong>
         {reconnectFailed ? (
           <span className="mt-1 flex min-w-0 flex-wrap items-baseline gap-2">
-            <Text size="inherit" tone="inherit" wrap="anywhere" className="min-w-0">
-              {t("Reconnecting failed: ")}
-              {reconnectError}
-            </Text>
+            {t("Reconnecting failed")}
             <ErrorDetails
               className="shrink-0"
-              title={t("Reconnecting failed: ")}
+              title={t("Reconnecting failed")}
               detail={reconnectError}
             />
           </span>
         ) : null}
-        {stale ? <span className="mt-1 block">{t("Showing what was last loaded.")}</span> : null}
       </InlineMessage>
     );
   }
@@ -203,17 +164,22 @@ export function RemoteLoadError({
       title={title}
       action={first}
       secondaryAction={second}
-      extra={third ? <NoticeButton action={third} /> : undefined}
+      extra={
+        <>
+          {failure.message ? <ErrorDetails title={title} detail={failure.message} /> : null}
+          {third ? <NoticeButton action={third} /> : null}
+        </>
+      }
       onDismiss={onDismiss}
     >
-      <p className="break-words">{failure.message}</p>
       {reconnectFailed ? (
-        <p className="mt-1 break-words">
-          {t("Reconnecting failed: ")}
-          {reconnectError}
-        </p>
+        <InlineMessage
+          tone="warning"
+          extra={<ErrorDetails title={t("Reconnecting failed")} detail={reconnectError} />}
+        >
+          {t("Reconnecting failed")}
+        </InlineMessage>
       ) : null}
-      {stale ? <p className="mt-1">{t("Showing what was last loaded.")}</p> : null}
     </Alert>
   );
 }

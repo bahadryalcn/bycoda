@@ -4,6 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import GuideHub from "./GuideHub";
 import { GUIDE_ACTION_EVENT, guideActionBlocker, loadSeenGuideTopics } from "../model/guide";
+import { guideTopics } from "../model/guideTopics";
+import wiki from "../model/wiki.json";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -52,7 +54,7 @@ it("reveals a topic's surface through the shared action request and closes", asy
 it("explains project-only topics instead of offering a silent no-op", async () => {
   await render("~");
   await act(async () => button("Changes & Git").click());
-  expect(button("Open Changes").disabled).toBe(true);
+  expect(button("Open changes").getAttribute("aria-disabled")).toBe("true");
   expect(document.body.textContent).toContain("Open a project first.");
   await act(async () => button("Terminal").click());
   expect(button("Open the terminal").disabled).toBe(false);
@@ -62,6 +64,19 @@ it("records viewed topics across openings", async () => {
   await render("~");
   await act(async () => button("Notes").click());
   expect(loadSeenGuideTopics()).toEqual(["projects", "notes"]);
+});
+
+it("names the full tour and the topic tour differently, and leaves the article to the Wiki tab", async () => {
+  await render("/Users/me/code/app");
+  expect(button("Take the tour").disabled).toBe(false);
+  expect(button("Tour this topic").disabled).toBe(false);
+  expect(document.body.textContent).not.toContain("Read the Projects article");
+  expect(document.body.textContent).not.toContain("steps done");
+  expect(
+    Array.from(document.body.querySelectorAll("button")).filter(
+      (element) => element.textContent?.trim() === "Tour",
+    ),
+  ).toHaveLength(0);
 });
 
 it("mirrors the openers' gates", () => {
@@ -74,4 +89,12 @@ it("mirrors the openers' gates", () => {
   expect(guideActionBlocker("inbox", { ...local, cwd: "~" })).toBe("project");
   expect(guideActionBlocker("notes", remote)).toBe("notes-disabled");
   expect(guideActionBlocker("open-project", { ...local, cwd: "" })).toBeNull();
+});
+
+it("keeps durable Wiki links for all interactive topics", () => {
+  const articles = wiki.groups.flatMap((group) => group.articles);
+  const ids = new Set(articles.map((article) => article.id));
+  expect(ids.size).toBe(articles.length);
+  for (const topic of guideTopics()) expect(ids.has(topic.id)).toBe(true);
+  for (const article of articles) expect(article.id).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 });

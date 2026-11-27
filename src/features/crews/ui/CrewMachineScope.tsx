@@ -6,6 +6,7 @@ import { pathKey } from "../../../shared/lib/paths";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -30,7 +31,7 @@ import {
 import { crewMachineLabel } from "../model/crewActionError";
 import { useProjectCrews } from "../model/crewClient";
 import { crewCwdOn, orderCrewMachines } from "../model/crewMachineScope";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { describeRemoteError, presentRemoteError } from "../../connections/public/remoteFailure";
 
 type CrewState = ReturnType<typeof useProjectCrews>;
 
@@ -84,6 +85,9 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
     retry: false,
   });
   const projectsShownCentrally = useConnectionErrorShownCentrally(projects.error);
+  const { message: summary, details: summaryDetails } = projects.error
+    ? describeRemoteError(projects.error)
+    : { message: "", details: "" };
   const [newName, setNewName] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
@@ -115,7 +119,7 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
     }
   };
   /** `wide`: a full-width form field; otherwise a compact header control. Both keep the label. */
-  const projectPicker = (disabled: boolean, wide = false) => {
+  const projectPicker = (disabled: boolean, wide = false, canCreate = true) => {
     if (!machine) return null;
     const listed = (projects.data ?? []).map((project) => hostProjectCwd(machine, project));
     const options = [
@@ -143,20 +147,24 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
           disabled={disabled || creating}
           onChange={setScopeCwd}
           // Pinned below the list, so it stays visible however many projects there are.
-          footer={({ close }) => (
-            <Button
-              variant="ghost"
-              size="sm"
-              startIcon={<FolderPlus className="icon-sm" />}
-              onClick={() => {
-                close();
-                setCreateError("");
-                setNewName("");
-              }}
-            >
-              {t("New project…")}
-            </Button>
-          )}
+          footer={
+            canCreate
+              ? ({ close }) => (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    startIcon={<FolderPlus className="icon-sm" />}
+                    onClick={() => {
+                      close();
+                      setCreateError("");
+                      setNewName("");
+                    }}
+                  >
+                    {t("New project…")}
+                  </Button>
+                )
+              : undefined
+          }
         />
         {newName !== null ? (
           <Modal
@@ -169,7 +177,12 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
             }}
             footer={
               <ModalActions>
-                <Button variant="ghost" disabled={creating} onClick={cancel}>
+                <Button
+                  variant="ghost"
+                  disabled={creating}
+                  disabledReason={t("Wait for the current operation to finish")}
+                  onClick={cancel}
+                >
                   {t("Cancel")}
                 </Button>
                 <Button
@@ -179,6 +192,7 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
                   startIcon={<FolderPlus className="icon-sm" />}
                   loading={creating}
                   disabled={disabled || !newName.trim()}
+                  disabledReason={!newName.trim() ? t("Enter a name first.") : undefined}
                 >
                   {t("Create project")}
                 </Button>
@@ -209,8 +223,15 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
           </Modal>
         ) : null}
         {projects.error && !projectsShownCentrally ? (
-          <InlineMessage tone="warning">
-            {projects.error instanceof Error ? projects.error.message : String(projects.error)}
+          <InlineMessage
+            tone="warning"
+            extra={
+              summaryDetails && summaryDetails !== summary ? (
+                <ErrorDetails title={summary} detail={summaryDetails} />
+              ) : undefined
+            }
+          >
+            {summary}
           </InlineMessage>
         ) : null}
       </div>
@@ -239,14 +260,16 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
         ) : null}
         {machineList.error ? (
           <InlineError
-            retry={{ onRetry: () => void machineList.refetch(), pending: machineList.isFetching }}
+            details={describeRemoteError(machineList.error).details}
+            retry={{
+              onRetry: () => void machineList.refetch(),
+              pending: machineList.isFetching,
+            }}
           >
-            {machineList.error instanceof Error
-              ? machineList.error.message
-              : String(machineList.error)}
+            {describeRemoteError(machineList.error).message}
           </InlineError>
         ) : null}
-        {switchError ? <InlineMessage tone="warning">{switchError}</InlineMessage> : null}
+        {switchError ? <InlineError details={switchError} /> : null}
       </div>
     ) : null;
   return { cwd: scopeCwd, state: away ? scoped : state, picker, projectPicker };

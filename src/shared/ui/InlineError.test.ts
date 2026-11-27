@@ -99,6 +99,21 @@ it("blocks a pending action and shows details behind a link only when needed", a
   }
 });
 
+it("labels an unlabeled retry with the shared Try again wording", async () => {
+  const onRetry = vi.fn();
+  const { container, done } = await mount(
+    createElement(InlineError, { retry: { onRetry }, children: "Could not load" }),
+  );
+  try {
+    const retry = container.querySelector("button")!;
+    expect(retry.textContent).toBe("Try again");
+    act(() => retry.click());
+    expect(onRetry).toHaveBeenCalledOnce();
+  } finally {
+    done();
+  }
+});
+
 it("re-inks copy and glyph with the overlay ink on a dark scrim", async () => {
   const { container, done } = await mount(
     createElement(InlineError, { overlay: true, children: "Could not load" }),

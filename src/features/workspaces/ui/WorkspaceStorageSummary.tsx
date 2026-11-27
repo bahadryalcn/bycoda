@@ -1,8 +1,7 @@
 import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Badge } from "../../../shared/ui/Badge";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { UsageMeter } from "../../../shared/ui/UsageMeter";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { Group, SettingsFeedback } from "../../../shared/ui/settings";
@@ -44,21 +43,15 @@ export function WorkspaceStorageSummary({
             {storage.root}
           </Text>
         }
-        scope={
-          busy
-            ? t("Refreshing storage…")
-            : stale
-              ? t("Showing the last storage reading.")
-              : undefined
-        }
+        scope={stale && !busy ? t("Showing the last storage reading.") : undefined}
         info={
-          <InfoPopover>
+          <InfoTooltip>
             <p>
               {t(
                 "Read from the Host when this page last refreshed. Directory sizes can be unknown, and removing a directory may not free its full size.",
               )}
             </p>
-          </InfoPopover>
+          </InfoTooltip>
         }
         action={
           <Button
@@ -69,70 +62,56 @@ export function WorkspaceStorageSummary({
             loading={busy}
             loadingLabel={t("Refreshing storage…")}
             disabled={disabled}
+            disabledReason={t("Wait for the current operation to finish")}
             onClick={onRefresh}
           >
             <RefreshCw className="icon-sm" />
           </Button>
         }
       >
-        <Text
-          as="div"
-          size="secondary"
-          tone="inherit"
-          leading="inherit"
-          className={styles.storageBody}
-        >
-          <div className={styles.storageLine}>
-            <span>
-              <Text as="strong" size="inherit" tone="inherit" weight="medium" leading="inherit">
-                {measure(storage.materializedBytes)}
-              </Text>{" "}
-              <Text as="span" size="caption" tone="secondary" weight="regular" leading="inherit">
-                {"/ "}
-                {t("{p0} budget", {
-                  p0: workspaceStorageSize(storage.budgetBytes),
-                })}
+        <Text as="div" size="secondary" tone="inherit" leading="inherit" className="tabular-nums">
+          <div className={styles.storageBody}>
+            <div className={styles.storageLine}>
+              <span>
+                <Text as="strong" size="inherit" tone="inherit" weight="medium" leading="inherit">
+                  {measure(storage.materializedBytes)}
+                </Text>{" "}
+                <Text as="span" size="caption" tone="secondary" weight="regular" leading="inherit">
+                  {"/ "}
+                  {t("{p0} budget", {
+                    p0: workspaceStorageSize(storage.budgetBytes),
+                  })}
+                </Text>
+              </span>
+              <Text size="inherit" tone="secondary" leading="inherit" className={styles.free}>
+                {t("Free on disk {p0}", { p0: measure(storage.freeBytes) })}
               </Text>
-            </span>
-            {warning && (
-              <Badge size="sm" tone="warning">
-                {t("Storage warning")}
-              </Badge>
-            )}
-            <Text size="inherit" tone="secondary" leading="inherit" className={styles.free}>
-              {t("Free on disk {p0}", { p0: measure(storage.freeBytes) })}
-            </Text>
+            </div>
+            {storage.materializedBytes !== null ? (
+              <UsageMeter
+                label={t("Directory budget")}
+                segments={[
+                  {
+                    id: "storage",
+                    label: t("Directory budget"),
+                    value: storage.materializedBytes,
+                  },
+                ]}
+                limit={storage.budgetBytes}
+                showLegend={false}
+                compact
+                tone={warning ? "warning" : "neutral"}
+              />
+            ) : null}
+            <DescriptionList columns="auto" size="sm">
+              <DescriptionItem term={t("Recovery objects")}>
+                {measure(storage.recoveryBytes)}
+              </DescriptionItem>
+            </DescriptionList>
           </div>
-          {storage.materializedBytes !== null ? (
-            <UsageMeter
-              label={t("Directory budget")}
-              segments={[
-                {
-                  id: "storage",
-                  label: t("Directory budget"),
-                  value: storage.materializedBytes,
-                },
-              ]}
-              limit={storage.budgetBytes}
-              showLegend={false}
-              compact
-              tone={warning ? "warning" : "neutral"}
-            />
-          ) : null}
-          <DescriptionList columns="auto" size="sm">
-            <DescriptionItem term={t("Worktree folders")}>
-              {measure(storage.materializedBytes)}
-            </DescriptionItem>
-            <DescriptionItem term={t("Recovery objects")}>
-              {measure(storage.recoveryBytes)}
-            </DescriptionItem>
-          </DescriptionList>
         </Text>
         {storage.materialization !== "allowed" && (
-          <SettingsFeedback
-            state="warning"
-            action={{ label: t("Refresh storage"), disabled, onClick: onRefresh }}
-          >
+          <SettingsFeedback state="warning">
             {storage.materialization === "paused"
               ? t("New workspaces are paused. Required free space: {p0}.", {
                   p0: workspaceStorageSize(storage.requiredFreeBytes),

@@ -1,6 +1,6 @@
 import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
 import { useCallback } from "react";
-import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
+import { remoteSessionProject } from "../../../features/connections/model/sessionMachineTarget";
 import type { PlanBuildTarget } from "../../../features/sessions/model/session";
 import { buildRemotePlan } from "../../../features/connections/model/remoteSessionActions";
 import { saveLastModelSettings } from "../../../features/sessions/model/models";
@@ -16,7 +16,7 @@ export function usePlanActions({ onSubmit }: PlanActionDeps) {
   const onUpdatePlan = useCallback((sessionId: string, blockId: string, text: string) => {
     setSessions((prev) =>
       prev.map((session) => {
-        if (hostSessionBinding(session) || remoteProjectFor(session.cwd)) return session;
+        if (hostSessionBinding(session) || remoteSessionProject(session)) return session;
         if (session.id !== sessionId || session.busy) return session;
         return {
           ...session,
@@ -50,7 +50,7 @@ export function usePlanActions({ onSubmit }: PlanActionDeps) {
   const onBuildPlan = useCallback(
     (sessionId: string, blockId: string, target?: PlanBuildTarget) => {
       const session = sessionsRef.current.find((entry) => entry.id === sessionId);
-      if (session && (hostSessionBinding(session) || remoteProjectFor(session.cwd))) {
+      if (session && (hostSessionBinding(session) || remoteSessionProject(session))) {
         buildRemotePlan(sessionId, blockId, target);
         return;
       }

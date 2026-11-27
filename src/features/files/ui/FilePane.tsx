@@ -1,4 +1,4 @@
-import { Text } from "../../../shared/ui/Text";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
@@ -256,7 +256,11 @@ function FilePaneComponent({
                   visible={visible && file.id === pane.activeFileId}
                 />
               ) : kind && !delimited && !file.recoveredEditorDraft ? (
-                <DocumentView path={file.path} cwd={file.cwd} />
+                <DocumentView
+                  path={file.path}
+                  cwd={file.cwd}
+                  visible={visible && file.id === pane.activeFileId}
+                />
               ) : (
                 <Editor
                   documentId={file.id}
@@ -354,14 +358,23 @@ function PlanSurface({
 
   if (!block || !plan) {
     return (
-      <div className="grid h-full place-items-center p-6 text-center">
-        <Text role="status" as="p" size="secondary" tone="secondary">
-          {t("This plan is no longer in the session.")}
-        </Text>
+      <div className="grid h-full place-items-center p-4">
+        <EmptyState
+          context="panel"
+          title={t("This plan is no longer in the session.")}
+          description={t("Open the session that created it to see the plan.")}
+        />
       </div>
     );
   }
 
+  const buildReason = session?.busy
+    ? t("Wait for the current turn to finish before building the plan.")
+    : !block.text.trim()
+      ? t("The plan is empty.")
+      : block.plan?.status === "streaming"
+        ? t("Wait for the plan to finish")
+        : undefined;
   const buildDisabled =
     !!session?.busy ||
     !block.text.trim() ||
@@ -401,13 +414,12 @@ function PlanSurface({
             <Button
               size="sm"
               variant="ghost"
-              motion="none"
-              type="button"
+              startIcon={<Play className="icon-sm" />}
               disabled={buildDisabled}
+              disabledReason={buildReason}
               loading={block.plan?.status === "building"}
               onClick={() => onBuildPlan(plan.sessionId, block.id)}
             >
-              <Play className="icon-sm" />
               {buildLabel}
             </Button>
             {session && !remote ? (

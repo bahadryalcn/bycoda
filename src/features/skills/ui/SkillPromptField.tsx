@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -20,7 +21,7 @@ import {
 } from "../model/skills";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { useKeyedActiveIndex } from "../../../shared/hooks/useKeyedActiveIndex";
-import { SkillPicker } from "./SkillPicker";
+import { SkillPicker, skillOptionId } from "./SkillPicker";
 import { Popover } from "../../../shared/ui/Popover";
 import { PromptField } from "../../../shared/ui/PromptField";
 import { DraftToken } from "../../../shared/ui/DraftToken";
@@ -32,9 +33,9 @@ type Props = {
   harness: HarnessId;
   cwd: string;
   onChange: (value: string) => void;
-  /** Accessible name; defaults to "Instructions". */
-  label?: string;
-  placeholder?: string;
+  /** Accessible name; the caller words it for its own surface. */
+  label: string;
+  placeholder: string;
   /** Smallest height in lines (default 4). */
   minRows?: number;
   maxRows?: number;
@@ -55,8 +56,8 @@ export function SkillPromptField({
   harness,
   cwd,
   onChange,
-  label = "Instructions",
-  placeholder = "Tell the agent what to do when this automation runs…",
+  label,
+  placeholder,
   minRows = 4,
   maxRows,
   maxHeight,
@@ -93,6 +94,11 @@ export function SkillPromptField({
     `${harness}\u0000${cwd}\u0000${slash?.query ?? ""}`,
     rankedSkills.length,
   );
+  // The list only renders when there are rows; the field references it only then.
+  const listId = useId();
+  const listOpen = slash !== null && rankedSkills.length > 0;
+  const activeOptionId =
+    listOpen && rankedSkills[active] ? skillOptionId(listId, active) : undefined;
 
   const syncSlashToken = useCallback(
     (field: HTMLTextAreaElement) => {
@@ -174,8 +180,12 @@ export function SkillPromptField({
         />
       }
       spellCheck={false}
+      role="combobox"
       aria-haspopup="listbox"
+      aria-autocomplete="list"
       aria-expanded={slash !== null}
+      aria-controls={listOpen ? listId : undefined}
+      aria-activedescendant={activeOptionId}
       value={value}
       onBlur={() => setSlash(null)}
       onChange={(event) => {
@@ -211,6 +221,7 @@ export function SkillPromptField({
             creating={false}
             cwd={cwd}
             compact
+            listId={listId}
             showCreate={false}
             onActive={setActive}
             onPick={pickSkill}

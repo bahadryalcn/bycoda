@@ -8,8 +8,14 @@ import {
   resolveProjectLocation,
 } from "../../../platform/tauri/fs";
 import { isFilesystemTab, type FilePaneTab } from "../../workspace/model/layout";
-import { isEqualOrInside, pathKey, parentPath } from "../../../shared/lib/paths";
+import {
+  isEqualOrInside,
+  isRemoteProjectPath,
+  pathKey,
+  parentPath,
+} from "../../../shared/lib/paths";
 import { isBlankSession } from "../../projects/public/projectReturn";
+import { t } from "../../../shared/i18n/gitCore";
 
 export type Worktree = {
   path: string;
@@ -37,10 +43,48 @@ export type WorktreeRemovalReview = {
   hasTerminals: boolean;
   hasAgents: boolean;
 };
-export const reviewWorktreeRemoval = (cwd: string, path: string) =>
-  invoke<WorktreeRemovalReview>("git_worktree_removal_review", { cwd, path });
+export const reviewWorktreeRemoval = async (cwd: string, path: string) => {
+  assertLocalRemoval(cwd, path);
+  return invoke<WorktreeRemovalReview>("git_worktree_removal_review", { cwd, path });
+};
 
-export const listWorktrees = (cwd: string) => invokeWorkspace<Worktrees>("git_worktrees", { cwd });
+/**
+ * A Host older than the state fields lists worktrees without `dirty`, `unpushed` and
+ * `sessionIds`: those stay unknown (`null`), never clean.
+ */
+export function normalizeWorktrees(listed: {
+  worktrees: (Omit<Worktree, "dirty" | "unpushed" | "sessionIds"> &
+    Partial<Pick<Worktree, "dirty" | "unpushed" | "sessionIds">>)[];
+  defaultRoot: string;
+}): Worktrees {
+  return {
+    ...listed,
+    worktrees: listed.worktrees.map((tree) => ({
+      ...tree,
+      locked: tree.locked ?? false,
+      prunable: tree.prunable ?? false,
+      dirty: tree.dirty ?? null,
+      unpushed: tree.unpushed ?? null,
+      sessionIds: tree.sessionIds ?? [],
+    })),
+  };
+}
+
+/**
+ * `background` queues the read behind interactive Git work on a Host. `light` skips the per-checkout
+ * dirty/unpushed probes (they stay `null`) for callers that only need path, branch, head and `missing`.
+ */
+export const listWorktrees = async (
+  cwd: string,
+  options: { background?: boolean; light?: boolean } = {},
+) =>
+  normalizeWorktrees(
+    await invokeWorkspace<Parameters<typeof normalizeWorktrees>[0]>("git_worktrees", {
+      cwd,
+      ...(options.background ? { background: true } : {}),
+      ...(options.light ? { light: true } : {}),
+    }),
+  );
 
 /** A missing parent may be an unmounted volume, not a deleted worktree. */
 export async function worktreeDeletedExternally(path: string): Promise<boolean> {
@@ -86,7 +130,7 @@ export function temporaryWorktreeBranchName(id: string = crypto.randomUUID()): s
     .replace(/[^a-zA-Z0-9]/g, "")
     .slice(0, 8)
     .toLowerCase();
-  return `mc/${token || Date.now().toString(36)}`;
+  return `by/${token || Date.now().toString(36)}`;
 }
 
 export function orchestrationWorktreeBranchName(id: string): string {
@@ -94,15 +138,25 @@ export function orchestrationWorktreeBranchName(id: string): string {
     .replace(/[^a-zA-Z0-9]/g, "")
     .slice(0, 12)
     .toLowerCase();
-  return `mc/orch-${token || Date.now().toString(36)}`;
+  return `by/orch-${token || Date.now().toString(36)}`;
 }
 
 export function namedWorktreeBranch(fragment: string): string | null {
   const clean = fragment
     .trim()
-    .replace(/^(?:mc|bycoda)\/+/, "")
+    .replace(/^(?:by|mc|bycoda)\/+/, "")
     .replace(/^\/+|\/+$/g, "");
-  return clean ? `mc/${clean}` : null;
+  return clean ? `by/${clean}` : null;
+}
+
+/** Native removal accepts only local paths. Remote removal routes through the owning Host. */
+function assertLocalRemoval(...paths: string[]) {
+  if (paths.some(isRemoteProjectPath))
+    throw new Error(
+      t(
+        "Deleting worktrees runs on this computer, so it is unavailable for a project on a connected machine.",
+      ),
+    );
 }
 
 export async function removeWorktree(
@@ -111,14 +165,21 @@ export async function removeWorktree(
   force = false,
   keepSessions = false,
   expectedReview?: WorktreeRemovalReview,
+  /** Safe-deletes the branch after removal; Git keeping it is reported in `branchNotice`. */
+  deleteBranch = false,
 ) {
-  const result = await invoke<{ sessionIds: string[]; projectCwd: string }>("git_worktree_remove", {
-    cwd,
-    path,
-    force,
-    keepSessions,
-    ...(expectedReview ? { expectedReview } : {}),
-  });
+  assertLocalRemoval(cwd, path);
+  const result = await invoke<{ sessionIds: string[]; projectCwd: string; branchNotice?: string }>(
+    "git_worktree_remove",
+    {
+      cwd,
+      path,
+      force,
+      keepSessions,
+      ...(expectedReview ? { expectedReview } : {}),
+      ...(deleteBranch ? { deleteBranch } : {}),
+    },
+  );
   notifyGitChanged();
   return result;
 }
@@ -138,8 +199,10 @@ export async function removeOrchestrationBranch(cwd: string, branch: string) {
 }
 
 /** Read-only preflight; final removal must still recheck for new blockers. */
-export const checkWorktreeRemoval: RemoveWorktree = (cwd, path, force) =>
-  invoke("git_worktree_check_remove", { cwd, path, force });
+export const checkWorktreeRemoval: RemoveWorktree = async (cwd, path, force) => {
+  assertLocalRemoval(cwd, path);
+  return invoke("git_worktree_check_remove", { cwd, path, force });
+};
 
 export function assertWorktreeFilesClosed(path: string, files: readonly FilePaneTab[]) {
   if (
@@ -149,7 +212,7 @@ export function assertWorktreeFilesClosed(path: string, files: readonly FilePane
         (isFilesystemTab(file) && isEqualOrInside(file.path, path)),
     )
   ) {
-    throw new Error("Close the files and terminals open in this worktree first.");
+    throw new Error(t("Close the files and terminals open in this worktree first."));
   }
 }
 
@@ -230,4 +293,17 @@ export type RemoveWorktree = (
   path: string,
   force: boolean,
   keepSessions?: boolean,
-) => Promise<void | { sessionIds: string[]; projectCwd: string }>;
+  expectedReview?: WorktreeRemovalReview,
+  deleteBranch?: boolean,
+) => Promise<void | { sessionIds: string[]; projectCwd: string; branchNotice?: string }>;
+
+/** Git refuses to delete these as a convenience; the dialog disables the option instead. */
+const KEPT_BRANCHES = new Set(["main", "master"]);
+
+/** Why "Also delete branch" is unavailable for this worktree, or undefined when it is offered. */
+export function branchDeleteBlock(tree: Pick<Worktree, "branch" | "unpushed">) {
+  if (!tree.branch) return undefined;
+  if (tree.unpushed) return "unpushed" as const;
+  if (KEPT_BRANCHES.has(tree.branch)) return "default" as const;
+  return undefined;
+}

@@ -23,6 +23,7 @@ const entry = (name: string, parent = "/fixture", isDir = false): FsEntry => ({
   isDir,
   ignored: false,
 });
+const bulkSize = new URLSearchParams(location.search).has("large") ? 3000 : 350;
 const dirs = new Map<string, FsEntry[]>([
   [
     "/fixture",
@@ -48,8 +49,8 @@ const dirs = new Map<string, FsEntry[]>([
   ["/fixture/assets/images", [entry("hero.png", "/fixture/assets/images")]],
   [
     "/fixture/bulk",
-    Array.from({ length: 350 }, (_, i) =>
-      entry(`item${String(i).padStart(3, "0")}.ts`, "/fixture/bulk"),
+    Array.from({ length: bulkSize }, (_, i) =>
+      entry(`item${String(i).padStart(String(bulkSize).length, "0")}.ts`, "/fixture/bulk"),
     ),
   ],
 ]);
@@ -84,6 +85,12 @@ Object.assign(window, {
       // does, so no incidental answer ("the machine replied") clears the outage mid-test.
       if (remoteDown && !command.startsWith("plugin:event|"))
         throw new Error("Machine is unreachable");
+      // ?binary=unsupported: bytes that are not an image, so the unsupported card shows.
+      if (
+        command === "read_binary_file" &&
+        new URLSearchParams(location.search).get("binary") === "unsupported"
+      )
+        return new TextEncoder().encode("\u007fELF fixture firmware payload ".repeat(4096)).buffer;
       if (command === "read_binary_file")
         return (await fetch("/brand/bycoda-tasks.png")).arrayBuffer();
       if (command === "reveal_path" && operationState.hold)
@@ -172,7 +179,14 @@ function Fixture() {
         </section>
       ) : new URLSearchParams(location.search).has("binary") ? (
         <section className="min-w-0 flex-1">
-          <BinaryFileView cwd="/fixture" path="/fixture/preview.png" />
+          <BinaryFileView
+            cwd="/fixture"
+            path={
+              new URLSearchParams(location.search).get("binary") === "unsupported"
+                ? "/fixture/build/firmware-v2.4.1-release.bin"
+                : "/fixture/preview.png"
+            }
+          />
         </section>
       ) : preview ? (
         <FilePreviewSearch active contentVersion="fixture">

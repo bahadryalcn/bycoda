@@ -15,11 +15,33 @@ for (const theme of ["light", "dark"])
       const details = page.getByRole("region", { name: "Server details", exact: true });
       await expect(details).toBeVisible();
       const toolTabs = details.getByRole("tablist", { name: "Server tools", exact: true });
+      expect(
+        await toolTabs.evaluate((strip) => {
+          const pane = strip.closest("section")!;
+          const style = getComputedStyle(pane);
+          return {
+            sameCanvas:
+              style.backgroundColor === getComputedStyle(strip.parentElement!).backgroundColor,
+            noFloatingShadow: style.boxShadow === "none",
+            tabsFit: strip.scrollWidth <= strip.clientWidth,
+            opaque: style.backgroundColor !== "rgba(0, 0, 0, 0)",
+            fillsPane: pane.offsetWidth === pane.parentElement!.clientWidth,
+          };
+        }),
+      ).toEqual({
+        sameCanvas: true,
+        noFloatingShadow: true,
+        tabsFit: true,
+        opaque: true,
+        fillsPane: true,
+      });
       await toolTabs.getByRole("tab", { name: "Connection", exact: true }).focus();
       await page.keyboard.press("End");
       await expect(toolTabs.getByRole("tab", { name: "Activity", exact: true })).toBeFocused();
-      if (width === 800)
-        expect(await toolTabs.evaluate((strip) => strip.scrollLeft)).toBeGreaterThan(0);
+      await expect(toolTabs.getByRole("tab", { name: "Activity", exact: true })).toHaveCSS(
+        "outline-style",
+        "solid",
+      );
       await page.keyboard.press("Home");
       await expect(toolTabs.getByRole("tab", { name: "Connection", exact: true })).toBeFocused();
       const folder = "temp/verification/2026-11-14-servers-six";
@@ -182,7 +204,7 @@ for (const theme of ["light", "dark"]) {
       const rows = page.getByRole("list", { name: "Servers", exact: true });
       await expect(rows.locator("[data-server-row]")).toHaveCount(36);
       const saved = page.getByRole("region", { name: "Saved SSH tabs", exact: true });
-      const savedToggle = saved.getByRole("button", { name: /^Saved SSH tabs/ });
+      const savedToggle = saved.getByRole("button", { name: /^Saved SSH tabs \d+$/ });
       await expect(savedToggle).toHaveAttribute("aria-expanded", "true");
       expect(await page.getByText("Remember saved SSH tabs", { exact: true }).count()).toBe(1);
       await expect(rows.getByRole("checkbox")).toHaveCount(0);
@@ -208,13 +230,6 @@ for (const theme of ["light", "dark"]) {
       await page.getByRole("textbox", { name: "Search servers" }).fill("");
       await expect(saved.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
       await saved.getByRole("checkbox", { name: "Select saved SSH tabs", exact: true }).check();
-      await saved.getByRole("button", { name: "Remove selected", exact: true }).click();
-      const remove = page.getByRole("dialog", { name: "Remove 1 saved tabs?" });
-      await expect(remove).toContainText("Servers and open terminals are kept.");
-      await remove.getByRole("button", { name: "Cancel", exact: true }).click();
-      await expect(
-        saved.getByRole("checkbox", { name: "Select saved SSH tabs", exact: true }),
-      ).toBeChecked();
       await savedToggle.click();
       await expect(savedToggle).toHaveAttribute("aria-expanded", "false");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
@@ -227,6 +242,15 @@ for (const theme of ["light", "dark"]) {
         true,
       );
       await page.screenshot({ path: `${evidence}/${theme}-${width}-cards.png` });
+      await savedToggle.click();
+      await expect(savedToggle).toHaveAttribute("aria-expanded", "true");
+      await expect(saved.getByRole("checkbox", { name: "1 selected", exact: true })).toBeChecked();
+      // Removing saved tab references needs no confirmation: servers and open terminals stay.
+      await saved.getByRole("button", { name: "Remove selected", exact: true }).click();
+      await expect(
+        saved.getByRole("checkbox", { name: "Select saved SSH tabs", exact: true }),
+      ).toHaveCount(0);
+      await expect(page.locator('[data-server-row="fixture-0"]')).toBeVisible();
       expect(errors).toEqual([]);
     });
   }
@@ -254,16 +278,12 @@ test("removing saved tabs keeps the server and never launches a connection", asy
     "/tests/browser/terminal/servers.html?terminalWorkspace&sshFixture&serverRestoreFixture",
   );
   const saved = page.getByRole("region", { name: "Saved SSH tabs", exact: true });
-  await expect(saved.getByRole("button", { name: /^Saved SSH tabs/ })).toHaveAttribute(
+  await expect(saved.getByRole("button", { name: /^Saved SSH tabs \d+$/ })).toHaveAttribute(
     "aria-expanded",
     "true",
   );
   await saved.getByRole("checkbox", { name: "Select saved SSH tabs", exact: true }).check();
   await saved.getByRole("button", { name: "Remove selected", exact: true }).click();
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Remove selected", exact: true })
-    .click();
   await expect(
     saved.getByRole("checkbox", { name: "Select saved SSH tabs", exact: true }),
   ).toHaveCount(0);
@@ -286,6 +306,8 @@ test("server detail drafts survive opening and returning from a terminal", async
   const details = page.getByRole("region", { name: "Server details", exact: true });
   await details.getByRole("tab", { name: "Organization", exact: true }).click();
   await details.getByRole("combobox", { name: "Group", exact: true }).fill("Unfinished group");
+  // The group saves itself when the field is left; leave it first so the click lands on a settled form.
+  await details.getByRole("combobox", { name: "Group", exact: true }).blur();
   await details.getByRole("button", { name: "Connect via SSH", exact: true }).click();
   await expect(page.getByRole("region", { name: "SSH terminal", exact: true })).toBeVisible();
   await expect(details).toBeHidden();

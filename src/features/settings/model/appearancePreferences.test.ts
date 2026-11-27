@@ -10,6 +10,142 @@ import {
 } from "./appearancePreferences";
 
 describe("appearance preferences", () => {
+  it("defaults, bounds and applies chat message appearance independently", () => {
+    expect(normalizeAppearancePreferences({})).toMatchObject({
+      userMessageOpacity: 42,
+      transcriptSurface: "reply",
+      transcriptSurfaceOpacity: 90,
+      messageColor: "theme",
+    });
+    const base = loadAppearancePreferences();
+    const saved = saveAppearancePreferences(
+      {
+        ...base,
+        userMessageOpacity: -10,
+        transcriptSurfaceOpacity: 115,
+        messageColor: "neutral",
+      },
+      base,
+    );
+    expect(loadAppearancePreferences()).toMatchObject({
+      userMessageOpacity: 0,
+      transcriptSurfaceOpacity: 100,
+      messageColor: "neutral",
+    });
+    applyAppearancePreferences(saved);
+    const root = document.documentElement;
+    expect(root.dataset.chatMessageColor).toBe("neutral");
+    expect(root.hasAttribute("data-chat-user-surface-off")).toBe(true);
+    expect(root.dataset.transcriptSurface).toBe("reply");
+    expect(root.style.getPropertyValue("--appearance-transcript-surface-opacity")).toBe("100%");
+    expect(root.hasAttribute("data-chat-assistant-surface-off")).toBe(false);
+  });
+
+  it("migrates a stored assistant opacity into the reading surface opacity", () => {
+    const migrated = normalizeAppearancePreferences({ assistantMessageOpacity: 60 } as never);
+    expect(migrated).toMatchObject({ transcriptSurface: "reply", transcriptSurfaceOpacity: 60 });
+    expect(migrated).not.toHaveProperty("assistantMessageOpacity");
+  });
+
+  it("turns a stored zero assistant opacity into the off surface and the default opacity", () => {
+    expect(normalizeAppearancePreferences({ assistantMessageOpacity: 0 } as never)).toMatchObject({
+      transcriptSurface: "off",
+      transcriptSurfaceOpacity: 90,
+    });
+  });
+
+  it("keeps stored transcript fields over a leftover assistant opacity", () => {
+    expect(
+      normalizeAppearancePreferences({
+        assistantMessageOpacity: 0,
+        transcriptSurfaceOpacity: 30,
+        transcriptSurface: "column",
+      } as never),
+    ).toMatchObject({ transcriptSurface: "column", transcriptSurfaceOpacity: 30 });
+  });
+
+  it("ignores a malformed legacy value and bounds or defaults every transcript field", () => {
+    expect(normalizeAppearancePreferences({ assistantMessageOpacity: "x" } as never)).toMatchObject(
+      { transcriptSurface: "reply", transcriptSurfaceOpacity: 90 },
+    );
+    expect(
+      normalizeAppearancePreferences({
+        transcriptSurface: "bogus",
+        transcriptSurfaceBlur: 99,
+        transcriptBodyInk: 10,
+        transcriptChromeInk: 200,
+        transcriptCards: "x",
+        transcriptActions: "hover",
+      } as never),
+    ).toMatchObject({
+      transcriptSurface: "reply",
+      transcriptSurfaceBlur: 24,
+      transcriptBodyInk: 80,
+      transcriptChromeInk: 100,
+      transcriptCards: "inset",
+      transcriptActions: "hover",
+    });
+  });
+
+  it("applies transcript surface, ink, cards, actions and the contrast scale", () => {
+    applyAppearancePreferences({
+      ...APPEARANCE_DEFAULTS,
+      transcriptSurface: "off",
+      transcriptCards: "outline",
+      transcriptActions: "hover",
+      transcriptSurfaceBlur: 8,
+      transcriptBodyInk: 96,
+      transcriptChromeInk: 70,
+      contrast: 150,
+    });
+    const root = document.documentElement;
+    expect(root.dataset.transcriptSurface).toBe("off");
+    expect(root.dataset.transcriptCards).toBe("outline");
+    expect(root.dataset.transcriptActions).toBe("hover");
+    expect(root.style.getPropertyValue("--appearance-transcript-surface-blur")).toBe("8px");
+    expect(root.style.getPropertyValue("--appearance-transcript-body-ink")).toBe("96%");
+    expect(root.style.getPropertyValue("--appearance-transcript-chrome-ink")).toBe("70%");
+    expect(root.style.getPropertyValue("--appearance-contrast-scale")).toBe("1.5");
+  });
+  it("defaults file references to colored with a tone per kind and rejects unknown tones", () => {
+    expect(normalizeAppearancePreferences({})).toMatchObject({
+      transcriptFileRefs: "colored",
+      fileToneCode: "info",
+      fileToneMarkup: "warning",
+      fileToneDocs: "feature",
+      fileToneData: "success",
+      fileToneMedia: "orchestration",
+      fileToneArchive: "neutral",
+      fileToneFolder: "accent",
+      fileToneOther: "neutral",
+    });
+    expect(
+      normalizeAppearancePreferences({
+        transcriptFileRefs: "rainbow",
+        fileToneCode: "#ff0000",
+        fileToneDocs: "danger",
+      } as never),
+    ).toMatchObject({
+      transcriptFileRefs: "colored",
+      fileToneCode: "info",
+      fileToneDocs: "danger",
+    });
+  });
+
+  it("applies the file reference style and one hue variable per kind", () => {
+    applyAppearancePreferences({
+      ...APPEARANCE_DEFAULTS,
+      transcriptFileRefs: "plain",
+      fileToneDocs: "danger",
+      fileToneOther: "neutral",
+    });
+    const root = document.documentElement;
+    expect(root.dataset.fileRefs).toBe("plain");
+    expect(root.style.getPropertyValue("--file-ref-hue-docs")).toBe("var(--color-danger)");
+    expect(root.style.getPropertyValue("--file-ref-hue-other")).toBe("var(--color-content)");
+    expect(root.style.getPropertyValue("--file-ref-hue-code")).toBe("var(--color-info)");
+  });
+
   it("defaults the image layer on, persists off and restores its default DOM state", () => {
     expect(normalizeAppearancePreferences({}).chatBackgroundLayer).toBe(true);
     expect(

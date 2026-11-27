@@ -7,23 +7,24 @@ type HostCall = {
   command: string;
   args: { method?: string; machineId?: string; params?: Record<string, unknown> };
 };
-// Project and Server scope live in the toolbar's Scope popover; open it when it is closed.
-async function openScope(page: Page) {
-  if (await page.getByRole("dialog", { name: "Scope", exact: true }).count()) return;
+// Server, Project, Status and Sprint scope live in the toolbar's one Filter popover; open it when it is closed.
+async function openFilter(page: Page) {
+  if (await page.getByRole("dialog", { name: "Filter", exact: true }).count()) return;
   await page
     .locator("header.task-board-toolbar")
-    .getByRole("button", { name: "Scope", exact: true })
+    .getByRole("button", { name: "Filter", exact: true })
     .click();
 }
 async function choose(page: Page, label: string, option: string | RegExp, scope?: Locator) {
-  if (label === "Project" || label === "Server") await openScope(page);
+  if (!scope && (label === "Project" || label === "Server" || label === "Sprint"))
+    await openFilter(page);
   await (scope ?? page).getByRole("button", { name: new RegExp(`^${label}:`) }).click();
   await page.getByRole("option", { name: option, exact: typeof option === "string" }).click();
 }
 async function open(page: Page) {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto(fixture);
-  await expect(page.getByRole("tab", { name: "Backlog", exact: true })).toHaveAttribute(
+  await expect(page.getByRole("tab", { name: "Tasks", exact: true })).toHaveAttribute(
     "aria-selected",
     "true",
   );
@@ -44,9 +45,8 @@ async function pickDate(page: Page, scope: Locator, label: string, date: string)
   await day.click();
   await expect(calendar).toHaveCount(0);
 }
-// The board's sprint filter lives in the Filters popover with the other collection filters.
+// The board's sprint filter lives in the Filter popover with the other collection filters.
 async function filterSprint(page: Page, sprint: string) {
-  await page.getByRole("button", { name: /^Filters/ }).click();
   await choose(page, "Sprint", sprint);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: /^Sprint:/ })).toHaveCount(0);
@@ -62,26 +62,26 @@ async function createSprint(
   await page.getByRole("tab", { name: "Sprints", exact: true }).click();
   await page.getByRole("button", { name: "New sprint", exact: true }).click();
   const form = page.getByRole("dialog", { name: "New sprint", exact: true });
-  await form.getByLabel("Sprint name", { exact: true }).fill(name);
-  await form.getByLabel("Sprint goal", { exact: true }).fill(goal);
+  await form.getByLabel("Name", { exact: true }).fill(name);
+  await form.getByLabel("Goal (optional)", { exact: true }).fill(goal);
   await form.getByRole("button", { name: /^Projects:/ }).click();
   await page.getByRole("option", { name: /^local-project / }).click();
   await page.getByRole("option", { name: /^remote-project / }).click();
   await page.keyboard.press("Escape");
   await form
     .locator("summary")
-    .filter({ hasText: /^Work estimates$/ })
+    .filter({ hasText: /^Capacity/ })
     .click();
   await form.getByLabel("Sprint capacity (points)", { exact: true }).fill("13");
   await pickDate(page, form, "Start date", "2026-10-26");
   await pickDate(page, form, "End date", "2026-11-09");
-  await form.getByRole("button", { name: "Save sprint", exact: true }).click();
+  await form.getByRole("button", { name: "Create sprint", exact: true }).click();
   await expect(form).not.toBeVisible();
   await page.getByRole("radio", { name: "Board view", exact: true }).check();
   await expect(page.getByRole("button", { name: "Start sprint", exact: true })).toBeVisible();
 }
 async function assignTasks(page: Page) {
-  await page.getByRole("tab", { name: "Backlog", exact: true }).click();
+  await page.getByRole("tab", { name: "Tasks", exact: true }).click();
   await page.getByRole("button", { name: "More actions", exact: true }).first().click();
   await page.getByRole("menuitemcheckbox", { name: "Select tasks", exact: true }).click();
   await page.getByRole("checkbox", { name: "Select task: PC onboarding", exact: true }).check();
@@ -96,6 +96,17 @@ async function assignTasks(page: Page) {
     )
     .toBe(2);
   await page.getByRole("button", { name: "Finish selection", exact: true }).click();
+}
+// The report is a closed "Report" disclosure on the selected sprint's page.
+async function openReport(page: Page) {
+  const report = page.getByRole("region", { name: "Sprint reports", exact: true });
+  if (!(await report.count()))
+    await page
+      .locator("summary")
+      .filter({ hasText: /^Report$/ })
+      .click();
+  await expect(report).toBeVisible();
+  return report;
 }
 async function calls(page: Page): Promise<HostCall[]> {
   return page.evaluate(
@@ -153,11 +164,11 @@ test("long sprint names and goals keep planning controls and the board reachable
       },
     });
   }, longName);
-  await page
-    .locator("header.task-board-toolbar")
-    .getByRole("button", { name: "Refresh", exact: true })
-    .click();
-  await expect(page.getByRole("heading", { name: longName, exact: true })).toBeVisible();
+  // There is no manual refresh on a healthy board: the sprint read follows the 15 s poll.
+  test.setTimeout(90_000);
+  await expect(page.getByRole("heading", { name: longName, exact: true })).toBeVisible({
+    timeout: 40_000,
+  });
   await mkdir(captures, { recursive: true });
   await page.screenshot({
     path: `${captures}/${test.info().project.name}-long-content-390.png`,
@@ -166,7 +177,10 @@ test("long sprint names and goals keep planning controls and the board reachable
   await expect
     .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
     .toBe(true);
-  await page.locator("summary").filter({ hasText: "Sprint goal" }).click();
+  await page
+    .locator("summary")
+    .filter({ hasText: /^Goal$/ })
+    .click();
   await page.screenshot({
     path: `${captures}/${test.info().project.name}-long-content-expanded-390.png`,
     fullPage: true,
@@ -190,7 +204,7 @@ test("cross-machine sprint supports planning, inheritance, completion and frozen
   await assignTasks(page);
   await page.getByRole("tab", { name: "Sprints", exact: true }).click();
   await filterSprint(page, "Release confidence");
-  await openScope(page);
+  await openFilter(page);
   await page.getByRole("button", { name: /^Project:/ }).click();
   await expect(page.getByRole("option", { name: /^remote-api / })).toHaveCount(0);
   await expect(page.getByRole("option", { name: /^local-docs / })).toHaveCount(0);
@@ -223,27 +237,29 @@ test("cross-machine sprint supports planning, inheritance, completion and frozen
   await filterSprint(page, "Release confidence");
   await page.getByRole("button", { name: "Start sprint", exact: true }).click();
   await expect(page.getByRole("button", { name: "Complete sprint", exact: true })).toBeVisible();
-  await page.getByRole("tab", { name: "Reports", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Burndown", exact: true })).toBeVisible();
+  const report = await openReport(page);
+  await expect(report.getByText("Burndown", { exact: true })).toBeVisible();
   await expect(
-    page.getByRole("table").first().getByRole("cell", { name: "3", exact: true }),
+    report
+      .getByRole("table", { name: "Project capacity" })
+      .getByRole("cell", { name: "3", exact: true }),
   ).toHaveCount(2);
   await mkdir(captures, { recursive: true });
   await page.screenshot({
     path: `${captures}/${test.info().project.name === "webkit" ? "webkit-" : ""}report-1440-dark.png`,
     fullPage: true,
   });
-  await page.getByRole("tab", { name: "Sprints", exact: true }).click();
   await page.getByRole("button", { name: "Complete sprint", exact: true }).click();
   const completion = page.getByRole("dialog", { name: "Complete sprint", exact: true });
   await completion.getByRole("checkbox", { name: "PC onboarding", exact: true }).check();
   await completion.getByRole("button", { name: "Complete sprint", exact: true }).click();
   await expect(completion).not.toBeVisible();
-  await page.getByRole("tab", { name: "Reports", exact: true }).click();
+  await openReport(page);
   await expect(
     page.getByText("This report was frozen when the sprint completed.", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Sprint velocity", exact: true })).toBeVisible();
+  // Recorded velocity is a closed disclosure under the report.
+  await expect(page.locator("summary").filter({ hasText: /^Sprint velocity$/ })).toBeVisible();
   const mutations = (await calls(page)).filter(
     (call) =>
       call.args.method?.startsWith("sprints.") &&
@@ -309,9 +325,10 @@ for (const width of [800, 1280])
       await page.screenshot({
         path: `temp/verification/task-surfaces/sprint-list-${theme}-${width}.png`,
       });
-      await page.getByRole("tab", { name: "Reports", exact: true }).click();
-      await choose(page, "Sprint", "Sprint 42");
-      await expect(page.getByRole("heading", { name: "Burndown", exact: true })).toBeVisible();
+      // The report belongs to the chosen sprint's page.
+      await collection.getByRole("button", { name: /^Sprint 42/ }).click();
+      const report = await openReport(page);
+      await expect(report.getByText("Burndown", { exact: true })).toBeVisible();
       await mkdir("temp/verification/sprint-report-visual", { recursive: true });
       await page.screenshot({
         path: `temp/verification/sprint-report-visual/${theme}-${width}.png`,

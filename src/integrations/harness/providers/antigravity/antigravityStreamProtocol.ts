@@ -92,6 +92,7 @@
  *   conversation); whether `--disable-slash-commands` also hides skills from
  *   the model (without it a "/x" prompt is refused in stream-json mode).
  */
+import { t } from "../../../../shared/i18n/core";
 import { promptText } from "../../../../features/sessions/model/attachmentPrompt";
 import type { AgentModel } from "../../../../features/sessions/model/models";
 import type {
@@ -428,7 +429,10 @@ function stepEvents(state: StreamState, step: Record<string, unknown>): StreamOu
 function deniedSummary(state: StreamState): string | undefined {
   if (state.denied.length === 0) return undefined;
   const what = [...new Set(state.denied)].join(", ");
-  return `Antigravity denied ${what} because headless agy cannot ask for permission. Switch to Full access to allow it.`;
+  return t(
+    "Antigravity denied {p0} because headless agy cannot ask for permission. Switch to Full access to allow it.",
+    { p0: what },
+  );
 }
 
 /**
@@ -473,7 +477,7 @@ export function handleStreamLine(state: StreamState, line: string): StreamOutcom
       if (note) events.push({ type: "status", text: note });
       const status = str(result.status) ?? "ERROR";
       if (status === "SUCCESS") return { events, result: { ok: true } };
-      const error = str(result.error) ?? `Antigravity ended the turn (${status}).`;
+      const error = str(result.error) ?? t("Antigravity ended the turn ({p0}).", { p0: status });
       return { events, result: { ok: false, error } };
     }
     default:

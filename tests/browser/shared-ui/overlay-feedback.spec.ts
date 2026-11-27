@@ -1,4 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
+import {
+  PANE_MATRIX,
+  countVisibleMessages,
+  expectAnnouncedOnce,
+  expectFailureShownOnce,
+  expectLayoutContracts,
+  openPane,
+  watchAnnouncements,
+} from "../support/uiLayoutAssertions";
 
 declare global {
   interface Window {
@@ -420,16 +429,23 @@ test.describe("feedback behavior", () => {
     expect(await counter(page, "notice-retry")).toBe(1);
     await page.clock.fastForward(1000);
     await expect(retry).not.toHaveAttribute("aria-busy", "true");
-    // The action closes the row beside the copy, never between title and message.
-    const boxes = await Promise.all([
+    // Both controls center on the title and message as a single block.
+    const [title, message, action, dismiss] = await Promise.all([
       notice.getByText("Update failed").boundingBox(),
       notice.getByText("The release feed returned 503").boundingBox(),
       retry.boundingBox(),
+      notice.getByRole("button", { name: "Dismiss notice" }).boundingBox(),
     ]);
-    expect(boxes[0]!.y).toBeLessThan(boxes[1]!.y);
-    expect(boxes[2]!.x).toBeGreaterThanOrEqual(boxes[1]!.x + boxes[1]!.width);
+    expect(title!.y).toBeLessThan(message!.y);
+    expect(action!.x).toBeGreaterThanOrEqual(message!.x + message!.width);
+    const copyCenter = (title!.y + message!.y + message!.height) / 2;
+    for (const control of [action!, dismiss!]) {
+      expect(Math.abs(control.y + control.height / 2 - copyCenter)).toBeLessThanOrEqual(1);
+    }
     await page.getByRole("button", { name: "Show file action error" }).click();
-    const fileError = page.getByRole("alert").filter({ hasText: "Could not rename the file." });
+    const fileError = page
+      .getByRole("alert")
+      .filter({ hasText: "Couldn’t open the file in its default app" });
     await page.clock.fastForward(60_000);
     await expect(fileError).toBeVisible();
   });
@@ -499,10 +515,14 @@ test.describe("feedback behavior", () => {
         .locator('[data-frame="empty-page"]')
         .getByRole("button", { name: "Open folder", exact: true }),
     ).toBeVisible();
-    // Existing callers with no context keep the page presentation.
+    // A caller with no context keeps the page presentation; the document viewers sit in a panel.
+    await expect(page.locator('[data-frame="empty-page"] [data-context]')).toHaveAttribute(
+      "data-context",
+      "page",
+    );
     await expect(
       page.locator('[data-frame="empty-consumer-document"] [data-context]'),
-    ).toHaveAttribute("data-context", "page");
+    ).toHaveAttribute("data-context", "panel");
   });
 
   test("boot failure keeps the label and retry reachable by keyboard at narrow and short sizes", async ({
@@ -518,7 +538,7 @@ test.describe("feedback behavior", () => {
         width,
       );
       const title = page.getByRole("heading", { level: 1 });
-      const retry = page.getByRole("button", { name: "Reload app" });
+      const retry = page.getByRole("button", { name: "Reload", exact: true });
       for (const box of [await title.boundingBox(), await retry.boundingBox()]) {
         expect(box!.x).toBeGreaterThanOrEqual(0);
         expect(box!.x + box!.width).toBeLessThanOrEqual(width);
@@ -533,14 +553,77 @@ test.describe("feedback behavior", () => {
       await expect(toggle).toBeFocused();
       await page.keyboard.press("Enter");
       await expect(toggle).toHaveAttribute("aria-expanded", "true");
-      await page.keyboard.press("Tab");
-      await expect(page.getByLabel("Error details")).toBeFocused();
+      // Copy sits in the details header, before the scrollable text.
       await page.keyboard.press("Tab");
       const copy = page.getByRole("button", { name: "Copy details" });
       await expect(copy).toBeFocused();
       await page.keyboard.press("Enter");
       await expect(page.getByRole("button", { name: "Copied" })).toBeVisible();
       expect(await page.evaluate(() => window.__clipboard.writes.length)).toBe(1);
+      await page.keyboard.press("Tab");
+      await expect(page.getByLabel("Error details")).toBeFocused();
     }
   });
 });
+
+// Runtime layout contracts for feedback surfaces inside a real 320 px pane.
+for (const { theme, width } of PANE_MATRIX)
+  test(`feedback surfaces keep their layout contracts in a 320px pane ${theme} ${width}`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`${URL}?view=pane&theme=${theme}`);
+    await openPane(page, { theme, width, pane: '[data-pane="feedback"]' });
+    await expectLayoutContracts(page, {
+      surface: "feedback alerts, inline message and empty state (320px pane)",
+      root: '[data-pane="feedback"]',
+      // The unbroken remote machine name is deliberately longer than the pane: it must wrap or
+      // truncate, never push the dismiss control out of the alert.
+      allow: {},
+    });
+  });
+
+for (const { theme, width } of PANE_MATRIX)
+  test(`one failed operation shows and announces its message once ${theme} ${width}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`${URL}?view=operations&theme=${theme}`);
+    const message = "Could not save the file.";
+    const history = ['[data-testid="history"]'];
+    const surface = "failed operation toast";
+    await watchAnnouncements(page, message);
+    await page.getByRole("button", { name: "Fail operation A", exact: true }).click();
+    await expectFailureShownOnce(page, { surface, message, history });
+    await expectAnnouncedOnce(page, surface);
+    // Retry updates the same operation in place: still one visible message, one more announcement
+    // is not allowed to stack a second card.
+    await page.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect.poll(() => counter(page, "retry-a")).toBe(1);
+    await expectFailureShownOnce(page, { surface: `${surface} after retry`, message, history });
+    // The stored history line stays silent: it is never counted as a notice.
+    expect(await countVisibleMessages(page, { surface, message })).toBe(2);
+    // A second, distinct operation with identical copy keeps its own card and its own Retry.
+    await page.getByRole("button", { name: "Fail operation B", exact: true }).click();
+    await expectFailureShownOnce(page, {
+      surface: `${surface} (two operations)`,
+      message,
+      history,
+      expected: 2,
+    });
+    const retries = page.locator("[data-toast-stack]").getByRole("button", {
+      name: "Retry",
+      exact: true,
+    });
+    await expect(retries).toHaveCount(2);
+    await retries.last().click();
+    await expect.poll(() => counter(page, "retry-b")).toBe(1);
+    expect(await counter(page, "retry-a")).toBe(1);
+    await expectFailureShownOnce(page, {
+      surface: `${surface} (two operations after retry)`,
+      message,
+      history,
+      expected: 2,
+    });
+  });

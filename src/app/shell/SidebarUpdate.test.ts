@@ -61,7 +61,17 @@ describe("isSidebarUpdateActionable", () => {
     const actionable = phases.filter((phase) =>
       isSidebarUpdateActionable({ phase, currentVersion: "0.1.37" }),
     );
-    expect(actionable).toEqual(["available", "downloading"]);
+    expect(actionable).toEqual(["available", "downloading", "error"]);
+  });
+});
+
+describe("SidebarUpdateFooter errors", () => {
+  it("keeps a failed update without a version visible in the rail", () => {
+    setAppUpdateSnapshot({ phase: "error", currentVersion: "0.1.37", error: "network down" });
+    const markup = renderToStaticMarkup(createElement(SidebarUpdateFooter, {}));
+
+    expect(markup).not.toBe("");
+    expect(markup).not.toContain("Update to");
   });
 });
 
@@ -97,7 +107,7 @@ describe("SidebarUpdate", () => {
     );
 
     expect(markup).toContain("Downloading 42%");
-    expect(markup).toContain('disabled=""');
+    expect(markup).toContain('aria-busy="true"');
   });
 
   it("ignores a second click while readAppVersion is still pending", async () => {
@@ -146,8 +156,7 @@ describe("SidebarUpdateFooter", () => {
       }),
     );
 
-    expect(markup).toContain("Updated to 0.1.37");
-    expect(markup).toContain("What&#x27;s new");
+    expect(markup).toContain("What&#x27;s new in 0.1.37");
     expect(markup).not.toContain("Check for updates");
     expect(markup).not.toContain("Update to");
   });

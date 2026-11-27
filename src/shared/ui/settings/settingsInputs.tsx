@@ -2,7 +2,6 @@ import { SegmentedControl } from "../SegmentedControl";
 import { Select as SharedSelect, type SelectProps } from "../Select";
 import { Slider as SharedSlider } from "../Slider";
 import { Switch } from "../Switch";
-import { Text } from "../Text";
 
 import "./settings.css";
 
@@ -20,18 +19,21 @@ export function Segmented<T extends string>({
   options,
   onChange,
   optionIdPrefix,
+  disabled = false,
 }: {
   label: string;
   value: T;
   options: { value: T; label: string }[];
   onChange: (value: T) => void;
   optionIdPrefix?: string;
+  /** Blocks every option, e.g. while this row's save is pending. */
+  disabled?: boolean;
 }) {
   return (
     <SegmentedControl
       label={label}
       value={value}
-      options={options}
+      options={disabled ? options.map((option) => ({ ...option, disabled: true })) : options}
       onValueChange={(next) => {
         const selected = options.find((option) => option.value === next);
         if (selected) onChange(selected.value);
@@ -42,7 +44,7 @@ export function Segmented<T extends string>({
   );
 }
 
-/** Settings Row slider with a fixed-width value readout. */
+/** Settings Row slider with the public slider's inline readout. */
 export function Slider({
   label,
   value,
@@ -72,7 +74,7 @@ export function Slider({
       <SharedSlider
         label={label}
         hideLabel
-        showValue={false}
+        valuePlacement="track"
         min={min}
         max={max}
         step={step}
@@ -83,13 +85,6 @@ export function Slider({
         onValueChange={onChange}
         onValueCommit={onValueCommit}
       />
-      <Text
-        size="caption"
-        tone={disabled ? "disabled" : "primary"}
-        className="min-w-[5ch] shrink-0 text-right tabular-nums"
-      >
-        {display}
-      </Text>
     </div>
   );
 }

@@ -102,7 +102,11 @@ it.each(["save", "remove"])(
     renderMenu(vi.fn(), { logoProject: "/repo", logoPath: "/existing.png", onClose, onLogoChange });
     const label = action === "save" ? "Change project logo" : "Remove project logo";
     await act(async () => button(label).click());
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain("maximum 2 MB");
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not update the project logo.",
+    );
+    await act(async () => button("Details: Could not update the project logo.").click());
+    expect(document.body.textContent).toContain("maximum 2 MB");
     expect(onClose).not.toHaveBeenCalled();
     expect(onLogoChange).not.toHaveBeenCalled();
     if (action === "save") vi.mocked(pickAndSetProjectLogo).mockResolvedValueOnce("/new.png");
@@ -246,4 +250,29 @@ it("names the field after its target and badges an item's icon with a status", (
   const item = button("Machine");
   expect(item.textContent).toContain("Studio Mac · Not connected");
   expect(item.querySelector('[role="img"][aria-label="Not connected"]')).not.toBeNull();
+});
+
+it("does not take focus on open and saves a typed name on blur or Enter", () => {
+  const onRename = vi.fn();
+  renderMenu(vi.fn(), { onRename, nameLabel: "Project name" });
+  const input = document.querySelector<HTMLInputElement>('input[aria-label="Project name"]')!;
+  expect(document.activeElement).not.toBe(input);
+
+  act(() => input.focus());
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "Renamed",
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  act(() => input.blur());
+  expect(onRename).toHaveBeenCalledExactlyOnceWith("private", "Renamed");
+
+  onRename.mockClear();
+  act(() => input.focus());
+  act(() => {
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  });
+  expect(onRename).toHaveBeenCalledWith("private", "Renamed");
 });

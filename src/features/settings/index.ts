@@ -17,6 +17,7 @@ export type * as modelAppearancePreferencesApi from "./public/appearancePreferen
 export type * as modelApplicationPreferencesControlApi from "./public/applicationPreferencesControl";
 export type * as modelComposerSpellingApi from "./public/composerSpelling";
 export type * as modelDecorativeMotionApi from "./public/decorativeMotion";
+export type * as modelRemoteMediaModeApi from "./public/remoteMediaMode";
 export type * as modelMcpApi from "./public/mcp";
 export type * as modelMcpSettingsCacheApi from "./public/mcpSettingsCache";
 export type * as modelModelsSettingsLinkApi from "./public/modelsSettingsLink";
@@ -32,3 +33,4 @@ export type * as uiGradientBlurBackgroundApi from "./public/GradientBlurBackgrou
 export type * as uiLiveBackgroundCanvasApi from "./public/LiveBackgroundCanvas";
 export type * as uiDesignStudioApi from "./public/DesignStudio";
 export type * as uiSettingsControlsApi from "../../shared/ui/settings";
+export type * as secondaryWindowAppearanceApi from "./public/secondaryWindowAppearance";

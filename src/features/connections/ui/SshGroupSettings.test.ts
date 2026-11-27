@@ -76,6 +76,13 @@ afterEach(async () => {
   host.remove();
   vi.unstubAllGlobals();
 });
+const detailsText = async () => {
+  const trigger = [...document.querySelectorAll("button")].find(
+    (entry) => entry.textContent === "Details",
+  )!;
+  await act(async () => trigger.click());
+  return document.body.textContent ?? "";
+};
 const button = (text: string) =>
   [...document.querySelectorAll("button")].find((item) => item.textContent === text)!;
 const render = () =>
@@ -90,33 +97,32 @@ async function input(label: string, value: string) {
     element.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
-it("loads saved inheritance read-only, requires an explicit fresh preview and applies only the reviewed digest", async () => {
+it("loads saved inheritance read-only, previews it automatically and applies only the reviewed digest", async () => {
   await render();
-  expect(native.preview).toHaveBeenCalledExactlyOnceWith(server.id, null, true);
-  expect(native.apply).not.toHaveBeenCalled();
-  expect(button("Apply inheritance").disabled).toBe(true);
-  await act(async () => button("Preview effective configuration").click());
+  expect(native.preview).toHaveBeenNthCalledWith(1, server.id, null, true);
   expect(native.preview).toHaveBeenLastCalledWith(server.id, binding, false);
+  expect(native.apply).not.toHaveBeenCalled();
   expect(document.body.textContent).toContain("group-user@server.invalid:22");
   expect(document.body.textContent).toContain("Production · r4");
   await act(async () => button("Apply inheritance").click());
   expect(native.apply).toHaveBeenCalledExactlyOnceWith(server.id, binding, binding, "fresh-digest");
-  expect(button("Apply inheritance").disabled).toBe(true);
+  expect(document.body.textContent).toContain("SSH inheritance updated.");
 });
-it("invalidates a preview after a checkbox edit and preserves selections after native CAS rejection", async () => {
+it("previews again after a checkbox edit and preserves selections after native CAS rejection", async () => {
   await render();
-  await act(async () => button("Preview effective configuration").click());
   const label = [...document.querySelectorAll("label")].find(
     (item) => item.textContent?.trim() === "SSH port",
   )!;
-  await act(async () => label.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
-  expect(button("Apply inheritance").disabled).toBe(true);
   const changed = { ...binding, fields: ["user", "port"] };
   native.preview.mockResolvedValue(preview(changed as typeof binding));
-  await act(async () => button("Preview effective configuration").click());
+  await act(async () => label.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+  expect(native.preview).toHaveBeenLastCalledWith(server.id, changed, false);
   native.apply.mockRejectedValue(new Error("configuration changed"));
   await act(async () => button("Apply inheritance").click());
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain("configuration changed");
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not complete this action.",
+  );
+  expect(await detailsText()).toContain("configuration changed");
   expect(label.querySelector<HTMLInputElement>("input")!.checked).toBe(true);
   expect(native.apply).toHaveBeenCalledTimes(1);
 });
@@ -137,7 +143,7 @@ it("preserves edited group drafts on save conflict and in-use deletion errors, w
   await act(async () => new Promise((resolve) => setTimeout(resolve, 320)));
   await act(async () => button("Confirm delete").click());
   expect(native.remove).toHaveBeenCalledExactlyOnceWith(group.id, 4);
-  expect(document.body.textContent).toContain("group in use");
+  expect(await detailsText()).toContain("group in use");
   expect(button("Save group")).toBeTruthy();
 });
 it("never migrates a legacy display label and creates profiles only after explicit group save", async () => {
@@ -158,7 +164,7 @@ it("never migrates a legacy display label and creates profiles only after explic
     null,
   );
   expect(native.apply).not.toHaveBeenCalled();
-  expect(native.preview).toHaveBeenCalledTimes(1);
+  expect(native.preview).toHaveBeenCalledTimes(2);
   expect(button("Saved")).toBeTruthy();
   expect(document.body.textContent).not.toContain("Group defaults saved.");
   await input("Group name", "Changed defaults");

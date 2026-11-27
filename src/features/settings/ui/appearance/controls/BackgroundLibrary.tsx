@@ -120,6 +120,7 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
                   {...surfaceAttributes({ variant: "selected", radius: "row" }, styles.tile)}
                   selected={image.id === currentId}
                   disabled={appearance.chatBackgroundBusy || applyingId !== null || loading}
+                  disabledReason={t("Wait for the current operation to finish")}
                   loading={applyingId === image.id}
                   loadingLabel={t("Applying…")}
                   selectionIndicator="accent-ring"
@@ -180,7 +181,7 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
                   disabledReason={
                     themes.some((theme) => theme.imageId === image.id)
                       ? t("This media is used by a saved design. Delete the design first.")
-                      : undefined
+                      : t("Wait for the current operation to finish")
                   }
                   onClick={() => remove(image)}
                 >

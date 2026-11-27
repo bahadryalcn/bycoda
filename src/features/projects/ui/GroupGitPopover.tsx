@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Text } from "../../../shared/ui/Text";
@@ -6,7 +7,7 @@ import { useT } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import { gitDiffIndex } from "../../../platform/tauri/fs";
 import { basename } from "../../../platform/tauri/fs";
-import { Popover, type PopoverAnchor } from "../../../shared/ui/Popover";
+import { Popover, popupListClassName, type PopoverAnchor } from "../../../shared/ui/Popover";
 import { applyProjectDiffStats } from "../../source-control/public/useProjectDiffStats";
 import { summarizeGroupGit } from "../model/groupGit";
 import { isLocalProject } from "../model/recents";
@@ -42,7 +43,7 @@ async function loadDetail(path: string, isCancelled: () => boolean): Promise<Det
       hasUpstream: index.upstream != null,
     };
   } catch (error) {
-    return { state: "error", message: error instanceof Error ? error.message : String(error) };
+    return { state: "error", message: errorText(error) };
   }
 }
 
@@ -102,17 +103,17 @@ export function GroupGitPopover({
       anchor={anchor}
       align="start"
       width={320}
-      role="dialog"
+      kind="dialog"
       aria-label={t("{p0} git overview", { p0: name })}
       onDismiss={onDismiss}
-      className="overflow-y-auto p-1"
+      className={popupListClassName}
     >
       <Text as="p" size="caption" tone="muted" className="px-2.5 pb-1 pt-1.5">
-        {summary.known}
-        {t(" of ")}
-        {summary.local}
-        {t(" local projects loaded ·")} {summary.dirty}{" "}
-        {summary.dirty === 1 ? t("project has") : t("projects have")} {t("uncommitted changes")}
+        {t("{p0} of {p1} local projects loaded · {p2} with uncommitted changes", {
+          p0: summary.known,
+          p1: summary.local,
+          p2: summary.dirty,
+        })}
         {summary.syncKnown > 0 ? ` · ↑${summary.ahead} ↓${summary.behind}` : ""}
       </Text>
       <ul>
@@ -125,18 +126,13 @@ export function GroupGitPopover({
                 variant="item"
                 motion="none"
                 type="button"
-                tooltip={t("Open this project's Changes tab")}
+                tooltip={path}
                 onClick={() => onSelect(path)}
-                className="flex w-full flex-wrap items-center gap-2 text-left"
+                className="flex w-full flex-wrap items-center gap-2 text-start"
               >
-                <span className="min-w-0 flex-1">
-                  <Text as="div" size="inherit" tone="inherit" wrap="anywhere">
-                    {basename(path)}
-                  </Text>
-                  <Text as="div" size="micro" tone="muted" wrap="anywhere">
-                    {path}
-                  </Text>
-                </span>
+                <Text size="inherit" tone="inherit" wrap="anywhere" className="min-w-0 flex-1">
+                  {basename(path)}
+                </Text>
                 {!local ? (
                   <Text size="micro" tone="muted" className="shrink-0">
                     {t("remote")}
@@ -159,9 +155,11 @@ export function GroupGitPopover({
                       {detail.branch ?? t("detached")}
                     </Text>
                     <Tooltip
-                      label={t(detail.files === 1 ? "{p0} changed file" : "{p0} changed files", {
-                        p0: detail.files,
-                      })}
+                      label={
+                        detail.files === 1
+                          ? t("{p0} changed file", { p0: detail.files })
+                          : t("{p0} changed files", { p0: detail.files })
+                      }
                       asChild
                     >
                       <Text size="inherit" tone={detail.files > 0 ? "warning" : "inherit"}>

@@ -1,11 +1,21 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const fixture = "/tests/browser/chat/composer-host-compatibility.html";
 const waiting =
   "The Host update on this computer is waiting for active sessions to finish and will install automatically.";
-// A blocked Send names its reason after the action.
-const blockedSend = /^Send\. /;
+// A blocked Send keeps its name; the reason is its accessible description.
+const blockedSend = "Send";
 const capture = (name: string) => `temp/verification/c1/${test.info().project.name}/${name}.png`;
+
+/** The status shows a short headline; the Host's explanation sits behind its Details control. */
+async function expectStatusDetail(page: Page, status: Locator, text: string) {
+  await expect(status).toContainText("Could not prepare the workspace.");
+  const details = status.getByRole("button", { name: /^Details/ });
+  await details.click();
+  await expect(page.getByText(text)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(details).toHaveAttribute("aria-expanded", "false");
+}
 
 async function readyCurrentCheckout(page: Page) {
   await expect(page.locator("[data-workspace-creation-status]")).toHaveCount(0);
@@ -39,6 +49,28 @@ test.beforeEach(async ({ page }) => {
 });
 
 for (const theme of ["light", "dark"] as const) {
+  test(`adopted Stop stays pending until the Host settles (${theme})`, async ({ page }) => {
+    await page.goto(`${fixture}?adopted-stop&bundle=current`);
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    await page.getByRole("button", { name: "Stop", exact: true }).click();
+    const pending = page.getByRole("button", { name: "Stopping…" });
+    await expect(pending).toBeDisabled();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.c1Host.calls.filter((call) => call.method === "commands.dispatch").length,
+        ),
+      )
+      .toBe(1);
+    await page.screenshot({ path: `temp/verification/adopted-stop/${theme}.png` });
+    await page.getByRole("button", { name: "Settle Host turn" }).click();
+    await expect(pending).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
+  });
+
   test(`compact composer offers current checkout while the Host update waits (${theme})`, async ({
     page,
   }) => {
@@ -50,8 +82,8 @@ for (const theme of ["light", "dark"] as const) {
       theme === "light",
     );
     const status = page.locator("[data-workspace-creation-status]");
-    await expect(status).toContainText(waiting);
-    await expect(page.getByRole("button", { name: blockedSend })).toBeDisabled();
+    await expectStatusDetail(page, status, waiting);
+    await expect(page.getByRole("button", { name: blockedSend, exact: true })).toBeDisabled();
     await expect(
       page.getByRole("button", { name: "Use current checkout", exact: true }),
     ).toBeInViewport();
@@ -94,8 +126,8 @@ for (const theme of ["light", "dark"] as const) {
       theme === "light",
     );
     const status = page.locator("[data-workspace-creation-status]");
-    await expect(status).toContainText(waiting);
-    await expect(page.getByRole("button", { name: blockedSend })).toBeDisabled();
+    await expectStatusDetail(page, status, waiting);
+    await expect(page.getByRole("button", { name: blockedSend, exact: true })).toBeDisabled();
     await page.screenshot({ path: capture(`deferred-host-update-${theme}`) });
     await page.setViewportSize({ width: 800, height: 900 });
     await expect(
@@ -124,11 +156,13 @@ for (const theme of ["light", "dark"] as const) {
       theme === "light",
     );
     const status = page.locator("[data-workspace-creation-status]");
-    await expect(status).toContainText(
+    await expectStatusDetail(
+      page,
+      status,
       "Update bycoda Host on this project's machine to use managed workspaces. Your checkout is not used as a fallback.",
     );
-    await expect(status).not.toContainText(waiting);
-    await expect(page.getByRole("button", { name: blockedSend })).toBeDisabled();
+    await expect(page.getByText(waiting)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: blockedSend, exact: true })).toBeDisabled();
     await expect(
       page.getByRole("button", { name: "Use current checkout", exact: true }),
     ).toBeEnabled();
@@ -145,14 +179,14 @@ for (const theme of ["light", "dark"] as const) {
       theme === "light",
     );
     const status = page.locator("[data-workspace-creation-status]");
-    await expect(status).toContainText(waiting);
+    await expectStatusDetail(page, status, waiting);
     await page
       .getByRole("button", { name: "Simulate Host upgrade and reconnect", exact: true })
       .click();
     // The consequence leads; the exact ref and commit are the hover detail.
     await expect(status).toContainText("New worktree from main");
     await status.getByText("New worktree from main", { exact: true }).hover();
-    await expect(page.getByRole("tooltip")).toHaveText("Based on main @ 01234567");
+    await expect(page.getByRole("tooltip")).toHaveText("Based on main @ 0123456");
     await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
     await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(
       "Keep this draft while the Host updates",

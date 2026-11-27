@@ -1,5 +1,4 @@
 import { Skeleton } from "../../../shared/ui/Skeleton";
-import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useNativePopoverHost } from "../../../shared/ui/Popover";
@@ -11,17 +10,12 @@ type Props = Omit<ComponentPropsWithoutRef<"button">, "children" | "className"> 
   label: string;
   loading?: boolean;
   worktree?: boolean;
-  dimWhenDisabled?: boolean;
+  /** Why the trigger is disabled; it keeps the button focusable and says what to do. */
+  disabledReason?: string;
 };
 
 /** Keep working-copy and branch modes visually identical in the composer. */
-export function GitPickerTrigger({
-  label,
-  loading = false,
-  worktree = false,
-  dimWhenDisabled: _dimWhenDisabled = true,
-  ...props
-}: Props) {
+export function GitPickerTrigger({ label, loading = false, worktree = false, ...props }: Props) {
   useLocale();
   const host = useNativePopoverHost();
   if (host) return null;
@@ -29,11 +23,11 @@ export function GitPickerTrigger({
   return (
     <Button
       size="sm"
-      variant="ghost"
+      variant="chip"
       motion="none"
       type="button"
       {...props}
-      className="flex min-w-0 max-w-64 items-center gap-1.5"
+      className="min-w-0 max-w-64"
     >
       <Icon className="icon-sm shrink-0" />
       <span className="relative flex min-w-0 flex-1">
@@ -47,12 +41,7 @@ export function GitPickerTrigger({
           <MiddleTruncate mode="text">{label}</MiddleTruncate>
         )}
       </span>
-      {worktree && (
-        <Badge size="xs" appearance="subtle" className="shrink-0">
-          {t("Worktree")}
-        </Badge>
-      )}
-      <ChevronDown className="icon-xs shrink-0" tone="muted" />
+      {props.disabled ? null : <ChevronDown className="icon-xs shrink-0" tone="muted" />}
     </Button>
   );
 }

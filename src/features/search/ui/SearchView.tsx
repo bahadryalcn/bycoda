@@ -1,16 +1,16 @@
+import { errorText } from "../../../shared/lib/errors";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import {
   actionContentAttributes,
   actionContentScopeAttributes,
 } from "../../../shared/ui/ActionHost";
 import { PickerListRoot } from "../../../shared/ui/picker/PickerList";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { terminalText } from "../../../shared/lib/terminalText";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Alert } from "../../../shared/ui/Alert";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -22,7 +22,7 @@ import { motionAttributes } from "../../../shared/ui/Motion";
 import { Modal } from "../../../shared/ui/Modal";
 import "./search.css";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
-import { projectDisplayName } from "../../projects/model/projectNames";
+import { projectDisplayNameFrom, useProjectLabels } from "../../projects/model/projectNames";
 import { t, useLocale } from "../../../shared/i18n";
 import { Search, Maximize2, Minimize2 } from "../../../shared/ui/icons";
 import {
@@ -39,11 +39,11 @@ import { rowCopy } from "./searchRowCopy";
 import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import {
   conversationRowsFrom,
   flattenGrouped,
   groupHitsWithCounts,
-  type GroupedHitCounts,
   hitsFromContentMatches,
   hitsFromFileRanks,
   mergeHits,
@@ -57,10 +57,10 @@ import {
 import {
   loadProjectFiles,
   peekProjectFiles,
-  rankProjectFiles,
   recentOpenedFiles,
   subscribeProjectFiles,
-} from "../../files/model/fileIndex";
+  useFileRanking,
+} from "../../files/public/fileIndex";
 import { pathKey } from "../../../shared/lib/paths";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { IS_MAC } from "../../../platform/tauri/platform";
@@ -134,6 +134,8 @@ type Props = {
   onOpenProject: (path: string) => void;
 };
 
+const NO_RECENT_PATHS: string[] = [];
+
 export function SearchView({
   open,
   presentation = "page",
@@ -154,6 +156,7 @@ export function SearchView({
   onOpenProject,
 }: Props) {
   useLocale();
+  const projectLabels = useProjectLabels();
   const inputRef = useRef<HTMLInputElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -254,7 +257,7 @@ export function SearchView({
           if (!cancelled && revision === requestedRevision)
             setFileIndexError({
               cwd,
-              error: error instanceof Error ? error.message : String(error),
+              error: errorText(error),
             });
         });
     };
@@ -273,13 +276,16 @@ export function SearchView({
     () => (localConversationsEnabled ? conversationRowsFrom(history, deferredSessions) : []),
     [localConversationsEnabled, history, deferredSessions],
   );
-  const fileHits = useMemo(
-    () =>
-      filesEnabled && deferredTrimmed && looksLikeProject(cwd)
-        ? hitsFromFileRanks(rankProjectFiles(files, deferredTrimmed, recentOpenedFiles(cwd), 40))
-        : [],
-    [filesEnabled, cwd, files, deferredTrimmed],
+  const recentPaths = recentOpenedFiles(cwd);
+  const { results: rankedFiles, pending: rankingPending } = useFileRanking(
+    filesEnabled && !!trimmed && looksLikeProject(cwd),
+    cwd,
+    files,
+    deferredTrimmed,
+    recentPaths.length ? recentPaths : NO_RECENT_PATHS,
+    { limit: 40, backgroundQuery: trimmed },
   );
+  const fileHits = useMemo(() => hitsFromFileRanks(rankedFiles), [rankedFiles]);
   const titleHits = useMemo(
     () =>
       localConversationsEnabled && deferredTrimmed
@@ -289,17 +295,20 @@ export function SearchView({
   );
   const liveMessageHits = useMemo(() => {
     if (!localConversationsEnabled) return [];
-    const eligibleIds = new Set(conversationRows.map((session) => session.id));
+    // The row's recency is the session's own timestamp (`Session` carries none).
+    const eligibleUpdatedAt = new Map(
+      conversationRows.map((session) => [session.id, session.updatedAt]),
+    );
     return messageSearch.search(
       deferredTrimmed
         ? deferredSessions
-            .filter((session) => eligibleIds.has(session.id))
+            .filter((session) => eligibleUpdatedAt.has(session.id))
             .map((session) => ({
               id: session.id,
               cwd: session.cwd,
               harness: session.harness,
               title: session.title,
-              updatedAt: Date.now(),
+              updatedAt: eligibleUpdatedAt.get(session.id) ?? 0,
               blocks: session.blocks,
             }))
         : [],
@@ -313,8 +322,8 @@ export function SearchView({
     deferredTrimmed,
   ]);
   const projectHits = useMemo(
-    () => (projectsEnabled && trimmed ? searchRecentProjects(recents, trimmed) : []),
-    [projectsEnabled, recents, trimmed],
+    () => (projectsEnabled && trimmed ? searchRecentProjects(recents, trimmed, projectLabels) : []),
+    [projectsEnabled, recents, trimmed, projectLabels],
   );
   const grouping = useMemo(
     () => {
@@ -322,7 +331,7 @@ export function SearchView({
       return { groups, assignments: loadProjectGroupAssignments(groups) };
     },
     // Re-read when the search opens or the project list changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadProjectGroups reads stored state, so it must re-run on open and on recents change only
     [open, recents],
   );
   // The filters belong to the Conversations tab; the All tab searches everywhere.
@@ -370,6 +379,7 @@ export function SearchView({
   const showFileError = !!error && !fileShownCentrally;
   const showConversationError = !!conversationError && !conversationShownCentrally;
   const loading =
+    rankingPending ||
     (fileMode && projectSearch.loading) ||
     (conversationMode && conversation.loading) ||
     deferredTrimmed !== trimmed;
@@ -388,13 +398,14 @@ export function SearchView({
     [visibleChatSessions],
   );
   const chatGroups = useMemo(
-    () => groupChatSessions(visibleChatSessions, grouping),
-    [visibleChatSessions, grouping],
+    () => groupChatSessions(visibleChatSessions, grouping, projectLabels),
+    [visibleChatSessions, grouping, projectLabels],
   );
   const chatRows = useMemo(() => chatEntries(chatGroups), [chatGroups]);
 
+  const hasQuery = !!trimmed;
   const grouped = useMemo(() => {
-    const eligible = trimmed
+    const eligible = hasQuery
       ? mergeHits(
           titleHits,
           liveMessageHits,
@@ -423,7 +434,7 @@ export function SearchView({
     remoteHits,
     scope,
     titleHits,
-    trimmed,
+    hasQuery,
     lock,
     cwd,
   ]);
@@ -433,7 +444,7 @@ export function SearchView({
   // through; every other tab steps through `hits`.
   const chatMode = scope === "conversations";
   const rowCount = chatMode ? chatRows.length : hits.length;
-  const resultsCurrent = deferredTrimmed === trimmed;
+  const resultsCurrent = deferredTrimmed === trimmed && !rankingPending;
   const rowIds = useMemo(
     () => (chatMode ? chatRows : hits).map((row) => row.id),
     [chatMode, chatRows, hits],
@@ -483,7 +494,7 @@ export function SearchView({
     onClose();
   };
 
-  const openHit = (hit: AppSearchHit | null) => {
+  const openHit = useStableCallback((hit: AppSearchHit | null) => {
     if (!resultsCurrent || !hit) return;
     if (hit.kind === "file") {
       onOpenFile(hit.path, undefined, { exact: true });
@@ -495,7 +506,11 @@ export function SearchView({
       onOpenSession(hit.sessionId, hit.blockId, trimmed);
     } else onOpenProject(hit.path);
     onClose();
-  };
+  });
+
+  const onActiveResult = useStableCallback((index: number) => {
+    if (resultsCurrent) setActive(index);
+  });
 
   const onQueryKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (isImeComposition(event.nativeEvent)) return;
@@ -525,26 +540,57 @@ export function SearchView({
   const indexing = pendingIndex > 0 && (scope === "all" || chatMode);
   const noResults = !empty && rowCount === 0 && !loading && !error && !conversationError;
   const limitNotice =
-    !empty && (truncated || (!chatMode && grouped.omitted > 0)) ? (
-      <InfoPopover label={t("Search result limits")}>
-        <p>
-          {truncated ? t("Results limited to the first matches") : t("Showing first matches")}
-          {!chatMode && grouped.omitted > 0
-            ? ` · ${grouped.omitted} ${t("more loaded matches")}`
-            : ""}
-        </p>
-      </InfoPopover>
+    !empty && resultsCurrent && (truncated || (!chatMode && grouped.omitted > 0)) ? (
+      <Text as="p" size="micro" tone="muted" className="px-2.5 py-1">
+        {truncated ? t("Results limited to the first matches") : t("Showing first matches")}
+        {!chatMode && grouped.omitted > 0
+          ? ` · ${grouped.omitted} ${t("more loaded matches")}`
+          : ""}
+      </Text>
     ) : null;
   const indexNotice =
     pendingIndex > 0 && !conversationError && conversationMode ? (
-      <Text as="p" size="micro" tone="muted" className="px-2.5 py-1">
-        {t("Application-wide indexing")}: {t("Indexing ")}
-        {pendingIndex}
-        {t(" conversation")}
-        {pendingIndex === 1 ? "" : "s"}
-        {t(". Results may be incomplete.")}
-      </Text>
+      <div className="flex items-center gap-1 px-2 py-1">
+        <LoadingText delay={false}>
+          {pendingIndex === 1
+            ? t("Indexing {p0} conversation", { p0: pendingIndex })
+            : t("Indexing {p0} conversations", { p0: pendingIndex })}
+        </LoadingText>
+        <InfoTooltip label={t("Indexing status")}>
+          {t("Results may be incomplete until indexing finishes.")}
+        </InfoTooltip>
+      </div>
     ) : null;
+
+  const searchField = (
+    <SearchInputGroup appearance="field" className="w-full">
+      <Search className="icon-sm shrink-0" strokeWidth={1.75} aria-hidden="true" />
+      <SearchInput
+        type="search"
+        focusOwner="group"
+        ref={inputRef}
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        onKeyDown={onQueryKeyDown}
+        placeholder={t("Search files, conversations, and projects")}
+        aria-label={t("Search")}
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={!empty && rowCount > 0}
+        aria-controls={!empty && rowCount > 0 ? listId : undefined}
+        aria-activedescendant={
+          resultsCurrent && !empty && rowCount > 0 ? optionId(active) : undefined
+        }
+        spellCheck={false}
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        data-tauri-drag-region="false"
+        className="min-w-0 flex-1 select-text"
+      />
+      {loading ? <Spinner size="sm" className="shrink-0" tone="secondary" /> : null}
+    </SearchInputGroup>
+  );
 
   const content = (
     <Text
@@ -559,79 +605,42 @@ export function SearchView({
       className={`app-search @container/search flex min-h-0 min-w-0 flex-1 flex-col ${presentation === "dialog" ? "app-search-dialog" : ""}`}
     >
       <div className="flex shrink-0 flex-col">
-        <PaneHeader
-          dragRegion={presentation === "page"}
-          chromeInset={
-            presentation === "page" ? (!besideRail ? true : compactRail ? "compact" : false) : false
-          }
-          className="select-none"
-          leading={
-            presentation === "page" && !besideRail ? (
-              <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
-            ) : null
-          }
-          actions={
-            presentation === "dialog" ? (
-              <Button variant="ghost" iconOnly label={t("Full screen")} onClick={onExpand}>
-                <Maximize2 className="icon-sm" />
-              </Button>
-            ) : onCompact ? (
-              <Button variant="ghost" iconOnly label={t("Restore")} onClick={onCompact}>
-                <Minimize2 className="icon-sm" />
-              </Button>
-            ) : null
-          }
-          trailing={presentation === "page" && !IS_MAC ? <WindowControls /> : null}
-        >
-          <div className="min-w-0 flex-1 px-2">
-            <SearchInputGroup appearance="field" className="w-full">
-              <Search className="icon-sm shrink-0" strokeWidth={1.75} aria-hidden="true" />
-              <SearchInput
-                type="search"
-                focusOwner="group"
-                ref={inputRef}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                onKeyDown={onQueryKeyDown}
-                placeholder={t("Search files, conversations, and projects")}
-                aria-label={t("Search")}
-                role="combobox"
-                aria-autocomplete="list"
-                aria-expanded={!empty && rowCount > 0}
-                aria-controls={!empty && rowCount > 0 ? listId : undefined}
-                aria-activedescendant={
-                  resultsCurrent && !empty && rowCount > 0 ? optionId(active) : undefined
-                }
-                spellCheck={false}
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                data-tauri-drag-region="false"
-                className="min-w-0 flex-1 select-text"
-              />
-              {loading ? <Spinner size="sm" className="shrink-0" tone="secondary" /> : null}
-            </SearchInputGroup>
-          </div>
-        </PaneHeader>
+        {presentation === "page" ? (
+          <PaneHeader
+            dragRegion
+            chromeInset={!besideRail ? true : compactRail ? "compact" : false}
+            className="select-none"
+            leading={
+              !besideRail ? <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} /> : null
+            }
+            actions={
+              onCompact ? (
+                <Button variant="ghost" iconOnly label={t("Restore")} onClick={onCompact}>
+                  <Minimize2 className="icon-sm" />
+                </Button>
+              ) : null
+            }
+            trailing={!IS_MAC ? <WindowControls /> : null}
+          >
+            <div className="min-w-0 flex-1 px-2">{searchField}</div>
+          </PaneHeader>
+        ) : null}
 
         <div className="app-search-mode-band">
-          <div className="min-w-0 flex-1 overflow-x-auto">
-            <SegmentedControl
-              label={t("Search in")}
-              value={scope}
-              onValueChange={(value) => setScope(value as SearchScope)}
-              options={SCOPES.map((item) => ({
-                value: item.id,
-                label: item.label,
-              }))}
-            />
-          </div>
-          {scope === "files" || (chatMode && filters.scope !== "everywhere") ? (
-            <Text size="caption" tone="secondary" truncate>
-              {projectDisplayName(cwd)}
+          <SegmentedControl
+            label={t("Search in")}
+            value={scope}
+            onValueChange={(value) => setScope(value as SearchScope)}
+            options={SCOPES.map((item) => ({
+              value: item.id,
+              label: item.label,
+            }))}
+          />
+          {scope === "files" ? (
+            <Text size="caption" tone="secondary" truncate className="min-w-0 flex-1">
+              {projectDisplayNameFrom(cwd, projectLabels)}
             </Text>
           ) : null}
-          {limitNotice}
           {chatMode ? (
             <ChatFilterBar
               filters={chatFilters}
@@ -640,38 +649,40 @@ export function SearchView({
             />
           ) : null}
         </div>
+        {limitNotice}
       </div>
 
       {!empty && (showFileError || showConversationError) ? (
-        <Alert tone="danger" className="mx-2 mt-2 max-h-40 shrink-0 overflow-auto break-words">
-          {showFileError ? (
-            <p>
-              {t("File search failed: ")}
-              {error}{" "}
+        <Alert
+          tone="danger"
+          title={t("Search failed")}
+          className="mx-2 mt-2 shrink-0 break-words"
+          extra={
+            <>
+              <ErrorDetails
+                detail={[
+                  showFileError ? error : null,
+                  showConversationError ? conversationError : null,
+                ]
+                  .filter(Boolean)
+                  .join("\n")}
+              />
               <Button
                 variant="ghost"
                 size="sm"
-                type="button"
                 onClick={() => {
-                  projectSearch.retry();
-                  setFileRetry((value) => value + 1);
+                  if (showFileError) {
+                    projectSearch.retry();
+                    setFileRetry((value) => value + 1);
+                  }
+                  if (showConversationError) conversation.retry();
                 }}
               >
-                {t("Retry file search")}
+                {t("Retry")}
               </Button>
-            </p>
-          ) : null}
-          {showConversationError ? (
-            <p>
-              {t("Conversation search failed: ")}
-              {conversationError}{" "}
-              <Button variant="ghost" size="sm" type="button" onClick={conversation.retry}>
-                {t("Retry conversation search")}
-              </Button>
-            </p>
-          ) : null}
-          {rowCount > 0 ? <p>{t("Results below may be incomplete.")}</p> : null}
-        </Alert>
+            </>
+          }
+        />
       ) : null}
 
       <div
@@ -679,27 +690,28 @@ export function SearchView({
         aria-busy={loading}
         className={
           empty
-            ? "min-h-0 overflow-y-auto overscroll-none px-3 py-2"
+            ? "flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-none px-3 py-2"
             : "min-h-0 flex-1 overflow-y-auto overscroll-none px-1.5 py-1.5"
         }
       >
         {!empty && loading && rowCount === 0 ? (
-          <LoadingText delay={false} className="px-2 py-1.5">
+          <LoadingText delay={false} inset="row">
             {t("Searching…")}
           </LoadingText>
         ) : null}
         {empty ? (
-          <EmptyState context="panel" icon={<Search className="icon-md" />} />
+          <EmptyState
+            context="panel"
+            illustration="search-empty"
+            description={t("Type to search across the project")}
+          />
         ) : noResults ? (
-          <>
-            <EmptyState
-              size="inline"
-              kind="filtered"
-              className="px-2 py-1.5"
-              description={t(indexing ? "No indexed matches yet" : "No results")}
-            />
-            {indexNotice}
-          </>
+          <EmptyState
+            size="inline"
+            kind="filtered"
+            inset="row"
+            description={indexing ? t("No indexed matches yet") : t("No results")}
+          />
         ) : chatMode ? (
           <>
             {indexNotice}
@@ -718,57 +730,34 @@ export function SearchView({
           <>
             {indexNotice}
             <ResultList
+              projectLabels={projectLabels}
               listId={listId}
-              counts={grouped.counts}
               hits={hits}
               active={resultsCurrent ? active : -1}
-              query={trimmed}
-              onActive={(index) => {
-                if (resultsCurrent) setActive(index);
-              }}
+              query={deferredTrimmed}
+              onActive={onActiveResult}
               onOpen={openHit}
             />
           </>
         )}
       </div>
-      <Text
-        as="footer"
-        size="caption"
-        tone="secondary"
-        leading="inherit"
-        {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "app-search-footer")}
-      >
-        <span>
-          <ShortcutKbd size="xs" tone="primary">
-            ↑
-          </ShortcutKbd>{" "}
-          <ShortcutKbd size="xs" tone="primary">
-            ↓
-          </ShortcutKbd>{" "}
-          {t("Navigate")}
-        </span>
-        <span>
-          <ShortcutKbd size="xs" tone="primary">
-            Enter
-          </ShortcutKbd>{" "}
-          {t("Open")}
-        </span>
-        <span>
-          <ShortcutKbd size="xs" tone="primary">
-            Esc
-          </ShortcutKbd>{" "}
-          {t("Close")}
-        </span>
-      </Text>
     </Text>
   );
   return presentation === "dialog" ? (
     <Modal
+      scroll="none"
       padding="none"
       title={t("Search")}
       size="lg"
       onClose={onClose}
-      className="app-search-modal"
+      toolbar={
+        <>
+          <div className="min-w-0 flex-1">{searchField}</div>
+          <Button variant="ghost" iconOnly label={t("Full screen")} onClick={onExpand}>
+            <Maximize2 className="icon-sm" />
+          </Button>
+        </>
+      }
     >
       {content}
     </Modal>
@@ -778,22 +767,23 @@ export function SearchView({
 }
 
 function ResultList({
+  projectLabels,
   listId,
-  counts,
   hits,
   active,
   query,
   onActive,
   onOpen,
 }: {
+  projectLabels: Record<string, string>;
   listId: string;
-  counts: GroupedHitCounts;
   hits: AppSearchHit[];
   active: number;
   query: string;
   onActive: (index: number) => void;
   onOpen: (hit: AppSearchHit) => void;
 }) {
+  "use memo";
   useLocale();
   const activeRef = useRef<HTMLButtonElement>(null);
   const pointer = useRef({ x: Number.NaN, y: Number.NaN, allow: false });
@@ -829,7 +819,7 @@ function ResultList({
     <PickerListRoot id={listId} label={t("Search results")} onMouseMove={onListMouseMove}>
       {hits.map((hit, index) => {
         const highlighted = index === active;
-        const row = rowCopy(hit, query);
+        const row = rowCopy(hit, query, projectLabels);
         const heading =
           hit.kind === "conversation"
             ? t("Sessions")
@@ -840,18 +830,6 @@ function ResultList({
                 : hit.kind === "content"
                   ? t("File content")
                   : t("Projects");
-        const count =
-          counts[
-            hit.kind === "conversation"
-              ? "conversations"
-              : hit.kind === "message"
-                ? "messages"
-                : hit.kind === "file"
-                  ? "files"
-                  : hit.kind === "project"
-                    ? "projects"
-                    : "content"
-          ];
         const fullIdentity =
           hit.kind === "file"
             ? hit.path
@@ -869,13 +847,12 @@ function ResultList({
                 tone="secondary"
                 weight="medium"
                 role="presentation"
-                className="flex items-center gap-2 px-2.5 pb-1 pt-2"
+                className="flex items-center gap-2 px-2 pb-1 pt-2"
               >
                 <span>{heading}</span>
-                <span className="tabular-nums">{count.shown}</span>
               </Text>
             ) : null}
-            <Tooltip label={fullIdentity}>
+            <Tooltip label={fullIdentity} when="overflow">
               <ListRow
                 active={highlighted}
                 aria-selected={highlighted}
@@ -946,15 +923,13 @@ function ResultList({
                   leading="inherit"
                   className="app-search-result-kind sr-only"
                 >
-                  {t(
-                    hit.kind === "conversation"
-                      ? "Session"
-                      : hit.kind === "message"
-                        ? "Message"
-                        : hit.kind === "project"
-                          ? "Project"
-                          : "File",
-                  )}
+                  {hit.kind === "conversation"
+                    ? t("Session")
+                    : hit.kind === "message"
+                      ? t("Message")
+                      : hit.kind === "project"
+                        ? t("Project")
+                        : t("File")}
                 </Text>
               </ListRow>
             </Tooltip>

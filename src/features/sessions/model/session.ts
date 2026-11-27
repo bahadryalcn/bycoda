@@ -1,7 +1,9 @@
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import { stripAttachmentTokens } from "./attachmentTokens";
+import type { BtwErrorCode } from "./btwError";
 import type { InlineVisual } from "./inlineVisual";
 import type { ToolInspection } from "./toolInspection";
+import type { SearchSource } from "./searchSources";
 import { dropContextWindow, type ContextUsage } from "./contextUsage";
 import type { SessionUsage } from "./sessionUsage";
 import type { SessionGoal } from "./providerGoal";
@@ -24,6 +26,7 @@ import { loadProjectProviderSettings, projectDefaultAccountId } from "./projectP
 import { applySessionDefaults, providerSessionDefaults } from "./providerSessionDefaults";
 import { HARNESS_LABEL, HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
 import type { HarnessId } from "../../../shared/model/harnessIdentity";
+import type { InterjectionMeta } from "../../../shared/model/interjection";
 
 export { HARNESSES, HARNESS_LABEL, HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
 export type { HarnessId } from "../../../shared/model/harnessIdentity";
@@ -76,6 +79,9 @@ export type ComposerTurnOptions = {
   draftBlockId?: string;
   /** Queue this message behind a running turn instead of following the follow-up setting. */
   followUpBehavior?: "queue" | "steer";
+  /** Overrides the session's card; undefined when an earlier send already carries it. */
+  noteCard?: NoteComposerCard;
+  handoffCard?: HandoffComposerCard;
 };
 
 export type PlanStatus = "streaming" | "ready" | "building" | "built";
@@ -145,7 +151,10 @@ export type BtwThread = {
   providerThreadId?: string;
   /** Account that owns this side conversation's provider thread. */
   providerAccountId?: string;
+  /** Raw failure text for logs and recovery; the sheet shows `errorCode` or a redacted form of it. */
   error?: string;
+  /** Set when the app itself refused the request; translated where the sheet renders it. */
+  errorCode?: BtwErrorCode;
   /** Live harness blocks for the in-flight reply; not persisted. */
   pendingBlocks?: Block[];
 };
@@ -161,13 +170,7 @@ export type SecondOpinionMeta = {
 };
 
 /** A mid-turn interjection the harness asked to surface, e.g. OMP advisor notes. */
-export type InterjectionSeverity = "nit" | "concern" | "blocker";
-
-export type InterjectionMeta = {
-  customType: string;
-  /** Highest severity among this interjection's retained notes, when any is known. */
-  severity?: InterjectionSeverity;
-};
+export type { InterjectionMeta, InterjectionSeverity } from "../../../shared/model/interjection";
 
 export type ToolPreviewKind = "read" | "write" | "shell" | "search";
 
@@ -177,6 +180,11 @@ export type ToolPreviewLine = {
   number?: number;
   kind: ToolPreviewLineKind;
   text: string;
+};
+
+export type ToolFileChange = {
+  path: string;
+  counts?: { additions: number; deletions: number };
 };
 
 export type ToolPreview = {
@@ -190,6 +198,8 @@ export type ToolPreview = {
   /** Write supplied new contents without the previous file to compare. */
   contentOnly?: boolean;
   query?: string;
+  /** Pages a web search returned, when the provider reports them. */
+  sources?: SearchSource[];
   lines?: ToolPreviewLine[];
   output?: string;
   /** Bounded original edit or command for explicit inspection in saved history. */
@@ -199,6 +209,14 @@ export type ToolPreview = {
 /** One thing a subagent did, mirrored into the parent transcript. */
 export type AgentStepKind = "tool" | "message" | "reasoning";
 
+export type AgentInput = {
+  sender?: string;
+  mode?: "auto" | "queue" | "steer";
+  effectiveMode?: "queue" | "steer";
+  delivery?: "queued" | "sending" | "submitted" | "accepted" | "failed" | "cancelled" | "unknown";
+  detail?: string;
+};
+
 export type AgentStep = {
   /** A provider-native subagent run inside this step, retained for nested inspection. */
   agentRun?: AgentRunMeta;
@@ -207,6 +225,9 @@ export type AgentStep = {
   kind: AgentStepKind;
   /** Tool label, or the prose the subagent wrote. */
   text: string;
+  /** Input and execution round on the fuller Host child timeline. */
+  input?: AgentInput;
+  round?: number;
   toolKind?: string;
   status?: string;
   /** Failure text only; a failed step is shown open and in red. */
@@ -218,6 +239,8 @@ export type AgentStep = {
   outputTruncated?: boolean;
 };
 
+export type WorkflowAgentParent = { callId: string; phase?: string };
+
 /**
  * The inside of a delegated run: what the subagent is called, and the trail it
  * left. Held on the parent Agent tool block so the transcript can open it
@@ -228,6 +251,8 @@ export type AgentRunMeta = {
   name: string;
   /** Provider agent type, e.g. "code-reviewer". */
   agentType?: string;
+  /** The provider Workflow call that launched this native subagent. */
+  workflow?: WorkflowAgentParent;
   /** Model reported for the child, which may differ from its parent. */
   model?: string;
   /** What the subagent was asked to do, bounded. Absent when the provider does not expose it. */
@@ -242,6 +267,12 @@ export type AgentRunMeta = {
 };
 
 export type AttachmentKind = "image" | "audio" | "file";
+
+export type ImageGenerationMeta = {
+  itemId: string;
+  status: "running" | "completed" | "failed" | "stopped";
+  aspectRatio?: number;
+};
 
 export type GeneratedImageMeta = {
   /** Desktop preview only; persistence retains metadata, not image bytes. */
@@ -269,6 +300,8 @@ export type Attachment = {
   path?: string;
   /** Base64 payload for vision images (and pasted blobs) sent to the harness. */
   data?: string;
+  /** Saved queue record only: the pasted payload lives outside it and is loaded back on restore. */
+  externalPayload?: true;
   /** Object URL for in-session thumbnails. Not persisted. */
   previewUrl?: string;
   /** Remote history preview loaded on explicit user action. Never persisted. */
@@ -307,6 +340,8 @@ export type UsageLimit = {
   resetsAt?: number;
   /** Send a continue turn once the window resets. */
   resumeAtReset?: boolean;
+  /** The limited target, retained while the user can continue on a different target. */
+  recoveryFrom?: Pick<Session, "harness" | "model" | "providerAccountId">;
 };
 
 /** Provider/model provenance captured when a user turn is submitted. */
@@ -391,6 +426,7 @@ export type Block = {
   /** Accepted question replies retain authorship independently of transcript text. */
   questionAnswers?: { prompt: string; answers: string[] }[];
   image?: GeneratedImageMeta;
+  imageGeneration?: ImageGenerationMeta;
   attachments?: Attachment[];
   streaming?: boolean;
   /** Epoch ms when this user turn started. */
@@ -423,6 +459,8 @@ export type Block = {
     kind?: string;
     status?: string;
     detail?: string;
+    /** Completed per-file edits, without the provider's raw file contents. */
+    fileChanges?: ToolFileChange[];
     preview?: ToolPreview;
     /**
      * A subagent step's result, for the panel to expand. Set only on the blocks
@@ -443,6 +481,7 @@ export type Block = {
     requestId: number;
     /** Issued by the original request owner; missing only on legacy snapshots. */
     occurrenceId?: string;
+    sessionApprovalScope?: import("../../../shared/model/sessionApprovalGrant").SessionApprovalScope;
     decided?: "allow" | "deny" | "cancelled";
   };
   /** Inner activity of a delegated run. Present on Agent/Task tool blocks. */
@@ -465,6 +504,8 @@ export type Block = {
   noteCard?: NoteCardMeta;
   /** Provider, account and model switches folded into one row; system blocks only. */
   modelSwitch?: import("./modelSwitchHistory").ModelSwitchMeta;
+  /** First row of a branched session: the source session and reply it was cut at; system blocks only. */
+  branchOrigin?: { sessionId: string; blockId: string; title: string };
   /** Exact CI repair instructions and evidence supplied with this user turn. */
   ciContext?: string;
   /** Mid-turn interjection chrome; system blocks only. Body lives in text. */
@@ -473,6 +514,8 @@ export type Block = {
   shell?: ShellRun;
   /** An error or interruption row the reader must not miss; never folds into the trail. */
   notice?: "error" | "interrupt" | "info";
+  /** Interruption notes only: the next launch may still continue this turn on its own. */
+  autoContinueArmed?: boolean;
   statusKey?: string;
   /** Status rows only: when the work behind this row started, while it still runs. */
   statusRunningSince?: number;
@@ -533,6 +576,8 @@ export type Session = {
   historyPartial?: boolean;
   /** Only a tail page is available; sending/editing/persistence must wait. */
   historyLoading?: boolean;
+  /** Cursor for a stored transcript opened without reading all of its history. */
+  storedHistory?: { before?: number; revision: number };
   historyLoadError?: string;
   /** Receipt for an acknowledged floating-composer handoff. */
   quickLaunchAccepted?: boolean;
@@ -548,11 +593,17 @@ export type Session = {
   title: string;
   /** Project / working directory for this session. */
   cwd: string;
+  /** New projectless chats have a machine-managed working directory of their own. */
+  scratchWorkspace?: true;
+  /** Owning Host for a No project draft or conversation on another machine. */
+  remoteExecutionEnvironmentId?: string;
   blocks: Block[];
   /** True while a harness turn is in flight. */
   busy?: boolean;
   /** Temporary provider retry, cleared on progress or turn end. */
   retryMessage?: string;
+  /** Epoch ms of the next provider attempt, when the provider reported it. Read only with `retryMessage`. */
+  retryAt?: number;
   /** Selection of the running turn, separate from the composer's next choice. In-memory only. */
   runningModelTarget?: ModelTarget;
   /** What the live turn waits on after the agent yielded with background work. In-memory only. */
@@ -604,8 +655,19 @@ export type Session = {
   workspaceMode?: WorkspaceMode;
   /** Base ref for a worktree that will be created on first send. */
   worktreeBase?: string;
+  /** Start the new worktree from the base's fetched upstream (`workspaces.creation.v2`). */
+  worktreeBaseRemote?: boolean;
+  /**
+   * Repositories and branch slug frozen at the first send's prepare, so a retry after a timeout
+   * repeats the same Host request (its idempotency signature) even if the project's choice or
+   * the title changed meanwhile. Cleared once the workspace exists.
+   */
+  worktreeRepositories?: string[];
+  worktreeSlug?: string;
   /** Internal guard while the first turn creates its selected worktree. */
   worktreePreparing?: boolean;
+  /** Client-chosen id of the running `workspaces.prepare`; the progress card polls it. In-memory only. */
+  worktreeProgressId?: string;
   /** Select a working copy before continuing after the previous one was deleted. */
   worktreeRemoved?: boolean;
   /** One-shot composer text when opening a session from Inbox. */
@@ -764,6 +826,7 @@ export function newSession(
     runtimeMode: runtimeMode ?? runtimeModeForNewSession(harness, defaults.runtimeMode),
     title: HARNESS_LABEL[harness],
     cwd,
+    ...(cwd === "~" ? { scratchWorkspace: true as const } : {}),
     providerAccountId: accountId,
     blocks: [],
   };
@@ -853,6 +916,12 @@ export function retargetSessionToProject(session: Session, cwd: string): Session
   return {
     ...session,
     cwd,
+    ...(cwd !== session.cwd
+      ? {
+          scratchWorkspace: cwd === "~" ? true : undefined,
+          remoteExecutionEnvironmentId: undefined,
+        }
+      : {}),
     harness,
     model: resolved.id,
     modelSettings: settings,
@@ -973,7 +1042,11 @@ export function sessionDisplayTitle(title: string, harness: HarnessId): string {
   return title;
 }
 
-/** Working copy the agent and session git UIs should use. */
-export function sessionWorkCwd(session: { cwd: string; worktreeCwd?: string }): string {
+/** Working directory for the session, distinct from its project association. */
+export function sessionWorkCwd(
+  session: Pick<Session, "cwd" | "worktreeCwd"> & Partial<Pick<Session, "id" | "scratchWorkspace">>,
+): string {
+  if (session.cwd === "~" && session.scratchWorkspace && session.id)
+    return `~/.bycoda-host/scratch/session-${session.id}`;
   return session.worktreeCwd || session.cwd;
 }

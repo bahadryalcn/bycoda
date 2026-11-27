@@ -17,26 +17,26 @@ and workflow/retry/readback rules, and `tools.status` for declared capability ev
 Follow cursors; avoid dumping the legacy full `tools.list` catalog. A declared tool
 is not proof it is offered, enabled, connected, ready or authorized for this session.
 
-| The user wants to...                                         | Use                                                                                                           |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| know what other sessions/agents in this project are doing    | `sessions.list`, `sessions.read`                                                                              |
-| run something later, in parallel, or as tracked work         | `tasks.create` (+ `tasks.start`), then `tasks.get`                                                            |
-| plan a multi-step outcome                                    | `goals.create` (the owner approves the plan)                                                                  |
-| have a team of agents work on something                      | `crews.*`, see references/work.md                                                                             |
-| remember or share something for the project                  | `notes.*`                                                                                                     |
-| do something on a schedule ("every morning...")              | `automations.*`; project upkeep: `stewards.*`                                                                 |
-| start, restart or stop the app or dev server                 | `devServers.*` (not a hidden background shell)                                                                |
-| check browser or server errors                               | `logs.read`, `runtime_logs_read`                                                                              |
-| look at or type into a terminal                              | `terminals.*`                                                                                                 |
-| find, read or save project files; inspect Git                | `files.*`, `git.*` (Git is read-only here)                                                                    |
-| see what changed in this session                             | `checkpoints.status`, `checkpoints.diff`                                                                      |
-| test on a phone, simulator or emulator                       | `machines.list`, then `devices.*`                                                                             |
-| open a web page and look at it                               | `browser.preview` with stable `requestId`, URL and `show:true`; inspect execution and presentation separately |
-| show a panel in the app (tasks, notes, settings, devices...) | `ui.workspace.open`, `ui.tools.open`                                                                          |
-| manage saved SSH Servers                                     | `servers.*`                                                                                                   |
-| review or act on a PR or issue                               | `inbox.*`                                                                                                     |
-| write a post, reply or message                               | `bycoda-social`, starting with `social_policy_get`                                                            |
-| use a skill                                                  | `skills.search`, then `skills.read`                                                                           |
+| The user wants to...                                             | Use                                                                                                           |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| know what other sessions/agents in this project are doing        | `sessions.list`, `sessions.read`                                                                              |
+| run something later, in parallel, or as tracked work             | `tasks.create` (+ `tasks.start`), then `tasks.get`                                                            |
+| plan an Epic (only when asked for an Epic, `/epic`, board tasks) | `goals.create` (the owner approves the plan); never for "goal" or `/goal`                                     |
+| have a team of agents work on something                          | `crews.*`, see references/work.md                                                                             |
+| remember or share something for the project                      | `notes.*`                                                                                                     |
+| do something on a schedule ("every morning...")                  | `automations.*`; project upkeep: `stewards.*`                                                                 |
+| start, restart or stop the app or dev server                     | `devServers.*` (not a hidden background shell)                                                                |
+| check browser or server errors                                   | `logs.read`, `runtime_logs_read`                                                                              |
+| look at or type into a terminal                                  | `terminals.*`                                                                                                 |
+| find, read or save project files; inspect Git                    | `files.*`, `git.*` (Git is read-only here)                                                                    |
+| see what changed in this session                                 | `checkpoints.status`, `checkpoints.diff`                                                                      |
+| test on a phone, simulator or emulator                           | `machines.list`, then `devices.*`                                                                             |
+| open a web page and look at it                                   | `browser.preview` with stable `requestId`, URL and `show:true`; inspect execution and presentation separately |
+| show a panel in the app (tasks, notes, settings, devices...)     | `ui.workspace.open`, `ui.tools.open`                                                                          |
+| manage saved SSH Servers                                         | `servers.*`                                                                                                   |
+| review or act on a PR or issue                                   | `inbox.*`                                                                                                     |
+| write a post, reply or message                                   | `bycoda-social`, starting with `social_policy_get`                                                            |
+| use a skill                                                      | `skills.search`, then `skills.read`                                                                           |
 
 Read references relative to the path returned by `skills.read`:
 
@@ -44,6 +44,7 @@ Read references relative to the path returned by `skills.read`:
 - `references/workspace.md`: read when using projects, groups, files, Git, terminals, settings, or panels.
 - `references/runtime.md`: read when using dev servers, Servers, machines, devices, browser, or logs.
 - `references/inbox-social.md`: read when using Inbox, PR reviews, or social.
+- `references/live-stream.md`: use `liveStream.*` for TikTok LIVE reading, the demo, OBS and going live.
 
 ## Rules
 

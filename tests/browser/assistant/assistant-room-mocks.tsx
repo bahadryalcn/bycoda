@@ -16,8 +16,13 @@ import {
 const realControls = new URLSearchParams(location.search).has("real-controls");
 const desktopParams = new URLSearchParams(location.search);
 const globalRoomFixture = desktopParams.has("global-room");
-// Optional Work capture: installation consent lives only in this page's memory.
-if (desktopParams.has("work-model")) {
+// Settings fixtures keep installation consent in this page's memory.
+if (
+  desktopParams.has("work-model") ||
+  desktopParams.has("redesign") ||
+  desktopParams.has("native-consent") ||
+  desktopParams.has("real-controls")
+) {
   mockWindows("main");
   const consents = new Map<string, Record<string, unknown>>();
   mockIPC(async (command, args) => {
@@ -29,13 +34,14 @@ if (desktopParams.has("work-model")) {
       const revision = Number(previous?.revision ?? 0);
       if (args.expectedRevision !== revision) throw new Error("Native consent revision changed");
       if (
-        !["watch", "projects", "everything"].includes(String(args.permissionLevel)) ||
+        !["ask", "watch", "projects", "everything"].includes(String(args.permissionLevel)) ||
         !Array.isArray(args.projectIds) ||
         !Array.isArray(args.criticalExclusions)
       )
         throw new Error("Invalid assistant consent");
       const grant = {
         revision: revision + 1,
+        active: true,
         environmentId,
         permissionLevel: args.permissionLevel,
         projectIds: args.projectIds,
@@ -1645,5 +1651,14 @@ export async function hostFeatureRequest<T>(..._args: unknown[]): Promise<T> {
 export async function listHostToolMachines(): Promise<never[]> {
   return [];
 }
+export async function deviceTouchAvailable(): Promise<boolean> {
+  return false;
+}
+export async function subscribeDeviceVideo(): Promise<never> {
+  throw new Error("Native device video is unavailable in the Assistant Room fixture");
+}
 
 applyRecordsDataset(snapshot);
+export async function openBrowserFrameStream(): Promise<never> {
+  throw new Error("Native media is unavailable in this fixture");
+}

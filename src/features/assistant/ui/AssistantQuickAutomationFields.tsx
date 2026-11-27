@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { AssistantQuickAutomationAction } from "../../../shared/model/assistantQuickAutomation";
 import { t } from "../../../shared/i18n";
 import { formatDate } from "../../../shared/i18n/core";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
@@ -15,10 +16,11 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Switch } from "../../../shared/ui/Switch";
 import { ModelPicker } from "../../sessions/public/ModelPicker";
 import { defaultModelSettings, resolveModel } from "../../sessions/model/models";
-import { RUNTIME_MODES, RUNTIME_MODE_LABEL } from "../../sessions/model/session";
+import { RUNTIME_MODES } from "../../sessions/model/session";
+import { runtimeModeLabel } from "../model/runtimeModeText";
 import { REMOTE_PROVIDERS, isRemoteProvider } from "../../connections/model/protocol";
 import { TimeTriggerSentence } from "../../automations/ui/TriggerEditor";
-import { Text } from "../../../shared/ui/Text";
+import { Text, textAttributes } from "../../../shared/ui/Text";
 import styles from "./AssistantView.module.css";
 
 /** One finite owner-reviewed schedule. No inheritance or Run now action. */
@@ -110,7 +112,7 @@ export function AssistantQuickAutomationFields({
             disabled={disabled}
             options={RUNTIME_MODES.map((mode) => ({
               value: mode,
-              label: t(RUNTIME_MODE_LABEL[mode]),
+              label: runtimeModeLabel(mode),
             }))}
             onValueChange={(runtimeMode) =>
               update({ runtimeMode: runtimeMode as AssistantQuickAutomationAction["runtimeMode"] })
@@ -119,7 +121,7 @@ export function AssistantQuickAutomationFields({
         </div>
         <FieldGroup legend={t("Automation schedule")} className={styles.scheduleField}>
           {value.scheduleKind === "once" && value.runAt !== undefined ? (
-            <Text as="p" size="micro" tone="secondary" leading="inherit" className={styles.muted}>
+            <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.muted}>
               {t("Runs once on {p0}, then turns itself off.", {
                 p0: formatDate(value.runAt, { dateStyle: "full", timeStyle: "short" }),
               })}
@@ -133,11 +135,11 @@ export function AssistantQuickAutomationFields({
                   value={value.scheduleKind}
                   disabled={disabled}
                   options={[
-                    ["hourly", "Hourly"],
-                    ["daily", "Daily"],
-                    ["weekdays", "Weekdays"],
-                    ["weekly", "Weekly"],
-                  ].map(([id, label]) => ({ value: id, label: t(label) }))}
+                    { value: "hourly", label: t("Hourly") },
+                    { value: "daily", label: t("Daily") },
+                    { value: "weekdays", label: t("Weekdays") },
+                    { value: "weekly", label: t("Weekly") },
+                  ]}
                   onValueChange={(scheduleKind) =>
                     update({
                       scheduleKind: scheduleKind as AssistantQuickAutomationAction["scheduleKind"],
@@ -145,12 +147,11 @@ export function AssistantQuickAutomationFields({
                   }
                 />
               </div>
-              <Text
-                as="div"
-                size="secondary"
-                tone="neutral"
-                leading="inherit"
-                className={styles.scheduleSentence}
+              <div
+                {...textAttributes(
+                  { size: "secondary", tone: "neutral", leading: "inherit" },
+                  styles.scheduleSentence,
+                )}
               >
                 <TimeTriggerSentence
                   trigger={
@@ -164,29 +165,37 @@ export function AssistantQuickAutomationFields({
                     if (!disabled) onChange(next);
                   }}
                 />
-              </Text>
+              </div>
             </div>
           )}
         </FieldGroup>
-        <div className={styles.fieldRow}>
-          <Numeric
-            label={t("Run time limit (minutes)")}
-            value={value.maxRunMinutes}
-            max={10080}
-            onChange={(maxRunMinutes) => update({ maxRunMinutes })}
-          />
-          <Numeric
-            label={t("Runs per day")}
-            value={value.maxRunsPerDay}
-            max={1000}
-            onChange={(maxRunsPerDay) => update({ maxRunsPerDay })}
-          />
-        </div>
-        <Text as="p" size="micro" tone="secondary" leading="inherit" className={styles.muted}>
-          {t(
-            "Zero uses the default run time limit in Models and no daily run limit. Automation limits are independent of the assistant token budget.",
-          )}
-        </Text>
+        {/* Limits default to zero (Models default, no daily cap); only an owner who set one sees it open. */}
+        <Disclosure
+          summary={t("Limits")}
+          size="sm"
+          tone="secondary"
+          defaultOpen={value.maxRunMinutes > 0 || value.maxRunsPerDay > 0}
+        >
+          <div className={styles.fieldRow}>
+            <Numeric
+              label={t("Run time limit (minutes)")}
+              value={value.maxRunMinutes}
+              max={10080}
+              onChange={(maxRunMinutes) => update({ maxRunMinutes })}
+            />
+            <Numeric
+              label={t("Runs per day")}
+              value={value.maxRunsPerDay}
+              max={1000}
+              onChange={(maxRunsPerDay) => update({ maxRunsPerDay })}
+            />
+          </div>
+          <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.muted}>
+            {t(
+              "Zero uses the default run time limit in Models and no daily run limit. Automation limits are independent of the assistant token budget.",
+            )}
+          </Text>
+        </Disclosure>
         <div className={styles.fieldRow}>
           <Switch
             label={t("Isolate each run in a worktree")}

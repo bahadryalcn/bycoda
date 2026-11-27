@@ -5,6 +5,7 @@ import { Heading } from "../../../shared/ui/Heading";
 import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Badge } from "../../../shared/ui/Badge";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Modal } from "../../../shared/ui/Modal";
 import { ActionHost, actionContentAttributes } from "../../../shared/ui/ActionHost";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
@@ -13,22 +14,23 @@ import type { BoardTask } from "../model/taskClient";
 import { t, useLocale } from "../../../shared/i18n";
 import { memo, useState } from "react";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
-import { Bot, GripVertical } from "../../../shared/ui/icons";
-import { taskStatusLine, QUIET_TASK_STATUS } from "../model/taskStatusLine";
-import { TaskStatusText } from "./TaskStatusLine";
+import { Bot, GripVertical, TriangleAlert } from "../../../shared/ui/icons";
+import { QUIET_TASK_STATUS } from "../model/taskStatusLine";
+import { TaskStatusText, taskDisplayStatus } from "./TaskStatusLine";
 import { unreadReviewNotes } from "../model/taskReviewNotes";
 import { resolveModel } from "../../sessions/public/models";
 import { TaskActions, type TaskActionHandlers } from "./TaskCardActions";
 import { VerificationSummary } from "./TaskCardVerification";
+import { taskCardKeyIntent } from "./taskCardKeys";
 import "./task-board.css";
 
-export { TaskActions, VerificationSummary };
-export type { TaskActionHandlers };
-
+/** A board card: the same content as a list row (state when it adds information, project, model,
+ * elapsed time, one lead action and an overflow), compact, in the column that names its state. */
 export const TaskCard = memo(function TaskCard({
   task,
   timeLabel,
   project,
+  helperFailure,
   selected,
   onOpen,
   actionsFor,
@@ -41,6 +43,8 @@ export const TaskCard = memo(function TaskCard({
   timeLabel: string;
   project: string;
   goal?: string;
+  /** Why a helper of this task failed, when one did. */
+  helperFailure?: string;
   planning?: string;
   waitingForText: string;
   selected: boolean;
@@ -58,6 +62,7 @@ export const TaskCard = memo(function TaskCard({
       task={task}
       timeLabel={timeLabel}
       project={project}
+      helperFailure={helperFailure}
       selected={selected}
       onOpen={() => onOpen(task.machineId + ":" + task.id)}
       {...actionsFor(task)}
@@ -69,6 +74,7 @@ function TaskCardBody({
   task,
   timeLabel,
   project,
+  helperFailure,
   selected,
   onOpen,
   ...actions
@@ -76,6 +82,7 @@ function TaskCardBody({
   task: BoardTask;
   timeLabel: string;
   project: string;
+  helperFailure?: string;
   /** Its detail panel is open. */
   selected: boolean;
   onOpen: () => void;
@@ -85,17 +92,9 @@ function TaskCardBody({
   const model = resolveModel(task.harness, task.model);
   const unread = unreadReviewNotes(task.reviewNotes);
   // Exceptional state leads the card; execution metadata stays in the detail panel.
-  const currentStatus = taskStatusLine(task);
-  const status =
-    taskWorkspaceState(task).needsRenewedApproval && !task.mergeError
-      ? {
-          ...currentStatus,
-          label: t("Review changes"),
-          detail: t("Automatic merge is suspended. Review changes to renew approval."),
-        }
-      : currentStatus;
+  const status = taskDisplayStatus(task);
   const hasFailureDetails = Boolean(
-    task.error || task.mergeError || task.budgetStop || task.repairStop || task.verification,
+    task.error || task.mergeError || task.stop || task.verification,
   );
   // The column already names plain states; the line names everything else.
   const showStatus =
@@ -132,15 +131,31 @@ function TaskCardBody({
       aria-busy={actions.pending || undefined}
       aria-current={selected || undefined}
       tabIndex={0}
+      aria-keyshortcuts={
+        actions.onEarlier || actions.onLater ? "Alt+ArrowUp Alt+ArrowDown" : undefined
+      }
       onClick={onOpen}
       onKeyDown={(event) => {
-        if (event.target === event.currentTarget && event.key === "Enter") onOpen();
+        const intent = taskCardKeyIntent({
+          key: event.key,
+          altKey: event.altKey,
+          ownTarget: event.target === event.currentTarget,
+          canMoveEarlier: Boolean(actions.onEarlier),
+          canMoveLater: Boolean(actions.onLater),
+          busy: actions.busy,
+        });
+        if (!intent) return;
+        // Space and Alt+Arrow would otherwise scroll the board.
+        event.preventDefault();
+        if (intent === "open") onOpen();
+        else if (intent === "earlier") actions.onEarlier?.();
+        else actions.onLater?.();
       }}
       {...surfaceAttributes({ radius: "row" }, "task-board-card cursor-pointer")}
     >
       <Heading size="item" lines={2} className="task-card-title">
         {actions.pending ? (
-          <Spinner size="xs" label={t("Loading…")} className="mr-1 inline-block" />
+          <Spinner size="xs" label={t("Loading…")} className="me-1 inline-block" />
         ) : null}
         {task.title}
         <GripVertical
@@ -170,17 +185,31 @@ function TaskCardBody({
           {project}
         </Text>
         {statusBadges}
+        {helperFailure !== undefined ? (
+          <Tooltip label={helperFailure || t("A helper failed")} asChild>
+            <span
+              data-task-helper-failed
+              role="img"
+              aria-label={t("A helper failed")}
+              className="inline-flex shrink-0"
+            >
+              <TriangleAlert className="icon-xs" tone="danger" strokeWidth={1.75} />
+            </span>
+          </Tooltip>
+        ) : null}
         {unread ? (
           <Badge
             variant="count"
-            label={t(unread === 1 ? "{p0} new review note" : "{p0} new review notes", {
-              p0: unread,
-            })}
+            label={
+              unread === 1
+                ? t("{p0} new review note", { p0: unread })
+                : t("{p0} new review notes", { p0: unread })
+            }
           >
             {unread}
           </Badge>
         ) : null}
-        {task.stale ? (
+        {task.stale && !task.pendingRefresh ? (
           <Text tone="warning" size="inherit">
             {t("Offline")}
           </Text>
@@ -198,7 +227,7 @@ function TaskCardBody({
           </span>
         ) : null}
       </Text>
-      <TaskActions task={task} compact {...actions} />
+      <TaskActions task={task} className="task-card-actions" {...actions} />
       {failureOpen ? (
         <div onClick={(event) => event.stopPropagation()}>
           <Modal title={t("Task details")} onClose={() => setFailureOpen(false)}>
@@ -211,10 +240,12 @@ function TaskCardBody({
             >
               <Heading size="item">{task.title}</Heading>
               <TaskStatusText status={{ ...status, detail: undefined }} />
-              {task.budgetStop ? <p>{task.budgetStop}</p> : null}
-              {task.repairStop?.message ? <p>{task.repairStop.message}</p> : null}
-              {task.error ? <p>{task.error}</p> : null}
-              {task.mergeError ? <p>{task.mergeError}</p> : null}
+              {task.stop ? (
+                <InlineError details={task.stop.message} />
+              ) : task.error ? (
+                <InlineError details={task.error} />
+              ) : null}
+              {task.mergeError ? <InlineError details={task.mergeError} /> : null}
               {task.verification ? <VerificationSummary verification={task.verification} /> : null}
             </Text>
           </Modal>

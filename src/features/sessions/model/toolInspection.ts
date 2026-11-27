@@ -1,4 +1,5 @@
 import type { ToolPreview } from "./session";
+import { normalizeSearchSources } from "./searchSources";
 
 /** Retained tool input, independent of the current file or Git working tree. */
 export type ToolInspection = {
@@ -19,7 +20,17 @@ export function boundedToolPreview(
   preview: ToolPreview | undefined,
   max = MAX_TOOL_INSPECTION_CHARS,
 ): ToolPreview | undefined {
-  if (!preview || preview.inspection === undefined) return preview;
+  if (!preview) return preview;
+  if (preview.sources !== undefined) {
+    const sources = normalizeSearchSources(preview.sources);
+    const { sources: _sources, ...others } = preview;
+    return boundedInspection(sources.length ? { ...others, sources } : others, max);
+  }
+  return boundedInspection(preview, max);
+}
+
+function boundedInspection(preview: ToolPreview, max: number): ToolPreview {
+  if (preview.inspection === undefined) return preview;
   const value = preview.inspection as unknown;
   const { inspection: _inspection, ...rest } = preview;
   if (!value || typeof value !== "object") return rest;

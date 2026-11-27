@@ -130,6 +130,7 @@ export function MergeSection({
           size="sm"
           loading={checking}
           disabled={disabled}
+          disabledReason={disabled ? t("Wait for the current action to finish.") : undefined}
           onClick={() => void findMatches().catch(() => undefined)}
         >
           {t("Find possible duplicates")}
@@ -152,6 +153,7 @@ export function MergeSection({
             variant="secondary"
             size="sm"
             disabled={disabled}
+            disabledReason={disabled ? t("Wait for the current action to finish.") : undefined}
             onClick={() =>
               void merge(item).catch((err: unknown) =>
                 setError(presentRemoteError(err, { explicit: true })),
@@ -162,7 +164,9 @@ export function MergeSection({
           </Button>
         </div>
       ))}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? (
+        <InlineError details={error}>{t("Could not complete this action.")}</InlineError>
+      ) : null}
       {dialog}
     </div>
   );
@@ -220,6 +224,7 @@ export function PersonDataSection({
           variant="secondary"
           size="sm"
           disabled={disabled}
+          disabledReason={disabled ? t("Wait for the current action to finish.") : undefined}
           onClick={() => void exportPerson().catch(() => undefined)}
         >
           {t("Export")}
@@ -228,6 +233,7 @@ export function PersonDataSection({
           tone="danger"
           size="sm"
           disabled={disabled}
+          disabledReason={disabled ? t("Wait for the current action to finish.") : undefined}
           onClick={() =>
             void deletePerson().catch((err: unknown) =>
               setError(presentRemoteError(err, { explicit: true })),
@@ -237,7 +243,9 @@ export function PersonDataSection({
           {t("Delete person data")}
         </Button>
       </div>
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? (
+        <InlineError details={error}>{t("Could not complete this action.")}</InlineError>
+      ) : null}
       {exported !== undefined ? (
         <Modal
           title={t("Exported data")}

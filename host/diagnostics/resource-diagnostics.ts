@@ -1,5 +1,6 @@
 import { cpus, freemem, loadavg, totalmem } from "node:os";
 import { createHash } from "node:crypto";
+import { RESOURCE_SAMPLE_LIMIT } from "../../src/shared/diagnostics/resourceSampleLimit";
 
 export type ResourceSample = {
   at: number;
@@ -68,7 +69,7 @@ export class ResourceDiagnostics {
         },
       });
       while (
-        this.samples.length > 60 ||
+        this.samples.length > RESOURCE_SAMPLE_LIMIT ||
         Buffer.byteLength(JSON.stringify(this.samples)) > 64 * 1024
       )
         this.samples.shift();

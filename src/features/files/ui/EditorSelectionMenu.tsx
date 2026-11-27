@@ -4,7 +4,7 @@ import { ShortcutKeys } from "../../../shared/ui/ShortcutKbd";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useEffect, useRef } from "react";
 import { MessageSquarePlus } from "../../../shared/ui/icons";
-import { Popover } from "../../../shared/ui/Popover";
+import { Popover, popupListClassName } from "../../../shared/ui/Popover";
 import { formatEditorSelectionReference, type EditorCodeSelection } from "../model/editorSelection";
 import { requestAddToChat } from "../../sessions/public/quoteDraft";
 
@@ -47,25 +47,21 @@ export function EditorSelectionMenu({
       onDismiss={onDismiss}
       role="toolbar"
       aria-label={t("Selected code actions")}
-      className="p-1"
+      className={popupListClassName}
     >
       <Button
         size="sm"
         variant="ghost"
-        motion="none"
-        type="button"
+        startIcon={<MessageSquarePlus aria-hidden="true" className="icon-sm" strokeWidth={1.75} />}
+        endIcon={<ShortcutKeys shortcut="mod+l" size="xs" />}
         aria-keyshortcuts="Control+l Meta+l"
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => {
           requestAddToChat(formatEditorSelectionReference(selection), "plain");
           onDismiss();
         }}
-        className="flex items-center gap-1.5 whitespace-nowrap"
-        leading="none"
       >
-        <MessageSquarePlus aria-hidden="true" className="icon-sm" strokeWidth={1.75} />
         {t("Add to chat")}
-        <ShortcutKeys shortcut="mod+l" size="xs" />
       </Button>
     </Popover>
   );

@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { remoteRequest } from "../../connections/model/connections";
 import type { HostDescriptor, HostSession, RemoteMachine } from "../../connections/model/protocol";
@@ -29,7 +30,7 @@ export async function captureAssistantHostRead(
     !machine.environmentId ||
     (expectedEnvironmentId && machine.environmentId !== expectedEnvironmentId)
   )
-    throw new Error("The captured Host is no longer available. Retry its original connection.");
+    throw new Error(t("The captured Host is no longer available. Retry its original connection."));
   const { id, environmentId } = machine;
   const descriptor = await remoteRequest<HostDescriptor>(
     id,
@@ -40,7 +41,7 @@ export async function captureAssistantHostRead(
     environmentId,
   );
   if (!descriptor || descriptor.environmentId !== environmentId)
-    throw new Error("The captured Host connection changed. Retry its original connection.");
+    throw new Error(t("The captured Host connection changed. Retry its original connection."));
   if (!Array.isArray(descriptor.capabilities) || !descriptor.capabilities.includes("assistant.v1"))
     throw new Error("Update bycoda Host on the selected computer to use this feature.");
   const read = <T>(
@@ -65,14 +66,14 @@ export async function captureAssistantHostRead(
         await read("assistant.request", { op: "projects.list" }),
       );
       if (!response.projects)
-        throw new Error("Project visibility could not be verified. Retry loading projects.");
+        throw new Error(t("Project visibility could not be verified. Retry loading projects."));
       return response.projects;
     },
     snapshot: async () => {
       const response = AssistantResponseValidationSchema.parse(
         await read("assistant.request", { op: "snapshot", limit: 100 }),
       );
-      if (!response.snapshot) throw new Error("The current assistant state is unavailable.");
+      if (!response.snapshot) throw new Error(t("The current assistant state is unavailable."));
       return response.snapshot;
     },
   });

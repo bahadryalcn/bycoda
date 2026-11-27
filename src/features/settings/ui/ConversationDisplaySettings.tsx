@@ -1,29 +1,40 @@
-import { useState, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
+import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { t, useLocale } from "../../../shared/i18n";
 import { loadStreamingTextMode, subscribeStreamingTextMode } from "../model/settings";
+import { DEFAULT_AGENT_DEFAULTS } from "../../tasks/public/agentDefaults";
+import { APPEARANCE_DEFAULTS } from "../model/appearancePreferences";
+import {
+  TRANSCRIPT_LAYOUT_DEFAULT,
+  loadTranscriptLayout,
+  saveTranscriptLayout,
+  subscribeTranscriptLayout,
+  type TranscriptLayout,
+} from "../model/appearance";
 import { saveAgentDefaultConfirmed } from "../model/agentDefaults";
-import { Row, Select, SettingsFeedback, Toggle } from "../../../shared/ui/settings";
+import { Row, Segmented, Toggle, useConfirmedPreferences } from "../../../shared/ui/settings";
 import type { AppearanceSettings } from "./useAppearanceSettings";
 
+/** How the conversation is laid out and animated: transcript layout, width, word wrap and streaming. */
 export function ConversationDisplaySettings({ appearance: a }: { appearance: AppearanceSettings }) {
   useLocale();
   const p = a.preferences;
-  const [failedMode, setFailedMode] = useState<"paced" | "adaptive" | null>(null);
-  const [modePending, setModePending] = useState(false);
-  const saveModeConfirmed = async (next: "paced" | "adaptive") => {
-    setModePending(true);
-    try {
-      const saved = await saveAgentDefaultConfirmed("streamingTextMode", next);
-      setFailedMode(saved && loadStreamingTextMode() === next ? null : next);
-    } catch {
-      setFailedMode(next);
-    } finally {
-      setModePending(false);
-    }
-  };
-  const saveMode = (next: "paced" | "adaptive") => {
-    void saveModeConfirmed(next).catch(console.error);
-  };
+  const { commit, pending, feedback } = useConfirmedPreferences();
+  const saveMode = (next: "paced" | "adaptive") =>
+    commit("streaming-text-mode", {
+      write: () => saveAgentDefaultConfirmed("streamingTextMode", next),
+      verify: () => loadStreamingTextMode() === next,
+    });
+  const [transcriptLayout, setTranscriptLayout] = useStoredPreferenceState(
+    loadTranscriptLayout,
+    subscribeTranscriptLayout,
+  );
+  const saveLayout = (next: TranscriptLayout) =>
+    commit("transcript-layout", {
+      write: () => saveTranscriptLayout(next),
+      verify: () => loadTranscriptLayout() === next,
+      onConfirmed: () => setTranscriptLayout(next),
+    });
   const streamingTextMode = useSyncExternalStore(
     subscribeStreamingTextMode,
     loadStreamingTextMode,
@@ -32,14 +43,31 @@ export function ConversationDisplaySettings({ appearance: a }: { appearance: App
   return (
     <>
       <Row
+        id="transcript-layout"
+        feedback={feedback("transcript-layout")}
+        label={t("Transcript layout")}
+        modified={transcriptLayout !== TRANSCRIPT_LAYOUT_DEFAULT && !pending("transcript-layout")}
+        onReset={() => saveLayout(TRANSCRIPT_LAYOUT_DEFAULT)}
+        description={t("Choose a wider transcript or compact chat bubbles.")}
+      >
+        <Segmented
+          label={t("Transcript layout")}
+          value={transcriptLayout}
+          disabled={pending("transcript-layout")}
+          options={[
+            { value: "full", label: t("Full width") },
+            { value: "chat", label: t("Chat") },
+          ]}
+          onChange={saveLayout}
+        />
+      </Row>
+      <Row
         id="chat-width"
         label={t("Chat width")}
-        description={t(
-          "Limit message width on large screens. Full width uses all available space.",
-        )}
+        modified={p.chatWidth !== APPEARANCE_DEFAULTS.chatWidth}
+        onReset={() => a.onPreferences({ ...p, chatWidth: APPEARANCE_DEFAULTS.chatWidth })}
       >
-        <Select
-          hideLabel
+        <Segmented
           label={t("Chat width")}
           value={p.chatWidth}
           options={[
@@ -65,7 +93,7 @@ export function ConversationDisplaySettings({ appearance: a }: { appearance: App
           onChange={(value) =>
             a.onPreferences({
               ...p,
-              chatWidth: value === "wide" || value === "full" ? value : "comfortable",
+              chatWidth: value,
             })
           }
         />
@@ -73,9 +101,8 @@ export function ConversationDisplaySettings({ appearance: a }: { appearance: App
       <Row
         id="code-word-wrap"
         label={t("Word wrap")}
-        description={t(
-          "Wrap long lines in chat code blocks. File editors keep their own wrap control.",
-        )}
+        modified={p.wordWrap !== APPEARANCE_DEFAULTS.wordWrap}
+        onReset={() => a.onPreferences({ ...p, wordWrap: APPEARANCE_DEFAULTS.wordWrap })}
       >
         <Toggle
           label={t("Word wrap")}
@@ -85,33 +112,21 @@ export function ConversationDisplaySettings({ appearance: a }: { appearance: App
       </Row>
       <Row
         id="streaming-text-mode"
-        feedback={
-          modePending ? (
-            <SettingsFeedback state="loading" immediate>
-              {t("Saving…")}
-            </SettingsFeedback>
-          ) : failedMode ? (
-            <SettingsFeedback
-              state="error"
-              action={{ label: t("Retry"), onClick: () => saveMode(failedMode) }}
-            >
-              {t("Could not save changes")}
-            </SettingsFeedback>
-          ) : undefined
-        }
+        feedback={feedback("streaming-text-mode")}
         label={t("Streaming text animation")}
-        description={t(
-          "Paced reveals words steadily. Adaptive shows text as it arrives and adjusts the fade to the stream rhythm.",
-        )}
+        modified={
+          streamingTextMode !== DEFAULT_AGENT_DEFAULTS.streamingTextMode &&
+          !pending("streaming-text-mode")
+        }
+        onReset={() => saveMode(DEFAULT_AGENT_DEFAULTS.streamingTextMode)}
       >
-        <Select
-          hideLabel
+        <Segmented
           label={t("Streaming text animation")}
           value={streamingTextMode}
-          disabled={modePending}
+          disabled={pending("streaming-text-mode")}
           options={[
-            { value: "paced", label: t("Paced (default)") },
-            { value: "adaptive", label: t("Immediate with adaptive fade") },
+            { value: "paced", label: t("Paced") },
+            { value: "adaptive", label: t("Instant") },
           ]}
           onChange={(value) => saveMode(value === "adaptive" ? "adaptive" : "paced")}
         />

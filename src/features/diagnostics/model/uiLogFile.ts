@@ -20,15 +20,19 @@ export function createUiLogFile(
   write: (lines: UiLogFileLine[]) => Promise<void>,
   now: () => number = Date.now,
 ): UiLogSink {
+  // `seen` holds queued lines only; a line that is dropped by a limit or fails to write is not
+  // remembered, so the next occurrence can still be written.
   const seen = new Map<string, number>();
-  let pending: UiLogFileLine[] = [];
+  let pending: { line: UiLogFileLine; key: string; at: number }[] = [];
   let minute = 0;
   let written = 0;
   const flush = () => {
-    const lines = pending;
+    const batch = pending;
     pending = [];
     // -- the log file is best effort; reporting a failed write would feed this sink again.
-    write(lines).catch(() => {});
+    write(batch.map((queued) => queued.line)).catch(() => {
+      for (const { key, at } of batch) if (seen.get(key) === at) seen.delete(key);
+    });
   };
   return (level, category, message) => {
     const text = truncateGraphemes(
@@ -39,15 +43,15 @@ export function createUiLogFile(
     const key = `${level}\0${text}`;
     const last = seen.get(key);
     if (last !== undefined && at - last < REPEAT_MS) return;
-    if (seen.size >= REMEMBERED) seen.clear();
-    seen.set(key, at);
     if (at - minute >= 60_000) {
       minute = at;
       written = 0;
     }
     if (written >= MINUTE_LINES || pending.length >= BATCH_LINES) return;
+    if (seen.size >= REMEMBERED) seen.clear();
+    seen.set(key, at);
     written += 1;
-    pending.push({ level, message: text });
+    pending.push({ line: { level, message: text }, key, at });
     if (pending.length === 1) setTimeout(flush, FLUSH_MS);
   };
 }

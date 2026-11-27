@@ -53,7 +53,7 @@ describe("sanitizeThemeGroup", () => {
 
   it("keeps accessibility guards tighter than the sliders", () => {
     expect(sanitizeThemeGroup("interface", { contrast: 75, uiScale: 200 })).toEqual({
-      contrast: 100,
+      contrast: 115,
       uiScale: 150,
     });
     expect(sanitizeThemeGroup("interface", { surfaceContrast: 250 })).toEqual({

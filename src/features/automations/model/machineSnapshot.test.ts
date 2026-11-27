@@ -15,13 +15,18 @@ vi.mock("../../connections/model/connections", async (original) => ({
   recordRemoteCapabilities: vi.fn(),
 }));
 
-import { listHostAutomations, probeMachines } from "./hostAutomationClient";
+import {
+  deleteHostAutomation,
+  invalidateHostAutomationReads,
+  listHostAutomations,
+  probeMachines,
+} from "./hostAutomationClient";
 import {
   MACHINE_SNAPSHOT_TTL_MS,
   invalidateMachineSnapshot,
   machineCapabilities,
 } from "./machineSnapshot";
-import { goalMachines, listBoardGoals } from "../../tasks/model/goalClient";
+import { deleteGoal, goalMachines, listBoardGoals } from "../../tasks/model/goalClient";
 import { listBoardTasks, probeTaskMachines } from "../../tasks/model/taskClient";
 
 const mac: RemoteMachine = {
@@ -110,6 +115,48 @@ describe("machine snapshot", () => {
         machine.environmentId,
       );
     }
+  });
+
+  it("shares goal and automation lists between a board and the background notifier", async () => {
+    invalidateHostAutomationReads(mac.id);
+    await Promise.all([
+      listBoardGoals([mac]),
+      listBoardGoals([mac]),
+      listHostAutomations([mac]),
+      listHostAutomations([mac], { maxAgeMs: 35_000 }),
+    ]);
+    expect(calls("goals.list", mac.id)).toBe(1);
+    expect(calls("automations.list", mac.id)).toBe(1);
+    // The notifier tolerates recent data; a view always reads fresh.
+    await listHostAutomations([mac], { maxAgeMs: 35_000 });
+    expect(calls("automations.list", mac.id)).toBe(1);
+    await listHostAutomations([mac]);
+    expect(calls("automations.list", mac.id)).toBe(2);
+    vi.advanceTimersByTime(35_001);
+    await listHostAutomations([mac], { maxAgeMs: 35_000 });
+    expect(calls("automations.list", mac.id)).toBe(3);
+  });
+
+  it("reads goals and automations again after this desktop wrote to the machine", async () => {
+    invalidateHostAutomationReads(mac.id);
+    await listHostAutomations([mac], { maxAgeMs: 35_000 });
+    await deleteHostAutomation({ id: "auto", host: { machineId: mac.id } } as never);
+    await listHostAutomations([mac], { maxAgeMs: 35_000 });
+    expect(calls("automations.list", mac.id)).toBe(2);
+    let release!: (value: unknown[]) => void;
+    request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    const before = listBoardGoals([mac]);
+    await vi.advanceTimersByTimeAsync(0);
+    await deleteGoal({ id: "goal", machineId: mac.id } as never);
+    const after = listBoardGoals([mac]);
+    release([]);
+    await Promise.all([before, after]);
+    expect(calls("goals.list", mac.id)).toBe(2);
   });
 
   it("reuses the answers until the TTL passes, then asks again", async () => {

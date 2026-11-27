@@ -40,7 +40,11 @@ export type WorkingIndicatorSize = "xs" | "sm" | "md";
  * Under reduced motion or with decorative motion off the bars stay visible and still.
  * Only the root animates (opacity): animated SVG children and per-bar
  * animations kept the main thread rendering every frame, see the CSS module.
- * The root pauses while it is outside the viewport (shared observer).
+ * With `children` the label itself is the signal: a band of light sweeps across
+ * it (compositor-only transforms, stepped), and a glyph beside it holds still.
+ * The sweep follows Appearance > Working animation and stops with reduced or
+ * decorative motion off; the secondary label stays readable either way.
+ * The signal pauses while it is outside the viewport (shared observer).
  * @group feedback
  * @use Compact "agent is working" signal beside a session, row or status line.
  * @avoid Generic loading or a pending button: Spinner. Measurable progress: Progress. Unknown pane load: SurfaceLoading.
@@ -54,6 +58,7 @@ export function WorkingIndicator({
   text,
   truncate,
   glyph = true,
+  live,
 }: {
   /** Placement only (margins, alignment). Toggle visibility on a wrapper; color and size belong to the component. */
   className?: string;
@@ -66,12 +71,15 @@ export function WorkingIndicator({
   glyph?: boolean;
   /** Announces the activity politely. Omit it when a nearby status already does. */
   label?: string;
+  /** With a visible label (`children`), makes the label itself the polite live region, so a caller never hand-writes `role="status"`. Omit it when a nearby status already announces. */
+  live?: boolean;
   /** Matches the shared icon scale: xs 12px (default), sm 14px, md 16px. */
   size?: WorkingIndicatorSize;
   /** A 6px dot for dense session status slots; bars retain the shared icon size. */
   variant?: "bars" | "dot";
 }) {
   const root = useRef<HTMLSpanElement>(null);
+  const labeled = children !== undefined;
   // Pause the shared working animation while its signal is outside the viewport.
   useEffect(() => {
     const element = root.current;
@@ -82,10 +90,10 @@ export function WorkingIndicator({
       observer.unobserve(element);
       element.removeAttribute(OFFSCREEN_ATTRIBUTE);
     };
-  }, [glyph]);
+  }, [labeled]);
   const signal = (
     <span
-      ref={root}
+      ref={labeled ? undefined : root}
       aria-hidden={label ? undefined : "true"}
       role={label ? "status" : undefined}
       data-size={size}
@@ -108,12 +116,24 @@ export function WorkingIndicator({
       ) : null}
     </span>
   );
-  if (children === undefined) return signal;
+  if (!labeled) return signal;
   return (
-    <span className={[styles.labeled, className].filter(Boolean).join(" ")}>
+    <span
+      ref={root}
+      role={live ? "status" : undefined}
+      className={[styles.labeled, className].filter(Boolean).join(" ")}
+    >
       {glyph ? signal : null}
-      <Text size="inherit" tone="secondary" {...text} truncate={truncate}>
+      <Text size="inherit" tone="secondary" {...text} truncate={truncate} className={styles.label}>
         {children}
+        {/* The sweep: a brighter copy of the label seen through a moving band. */}
+        <span aria-hidden="true" data-tooltip-ignore="" className={styles.sweepClip}>
+          <span className={styles.sweep}>
+            <span className={styles.sweepCounter}>
+              <span className={styles.sweepText}>{children}</span>
+            </span>
+          </span>
+        </span>
       </Text>
     </span>
   );

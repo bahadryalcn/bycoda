@@ -11,8 +11,44 @@ import { X_BROWSER_SCOPES } from "../../src/integrations/social/capabilities";
 import { xMediaFormat } from "../../src/integrations/social/xMedia";
 import type { SocialPrincipal, SocialService } from "./social";
 import { SocialBrowserWorkflows } from "./social-browser-workflows";
+import {
+  parseLinkedInBrowserManagement,
+  runLinkedInBrowserManagement,
+} from "./linkedin/linkedin-browser-management";
 import type { SocialBrowserIntent } from "../../src/features/social/model/socialBrowser";
+// Instagram bounded browser operations.
+import {
+  instagramFollow,
+  instagramFollowers,
+  instagramHandle,
+  openInstagramRecipientProfile,
+  parseInstagramFollowChange,
+} from "./social-browser-instagram-audience";
+import { changeInstagramPost, parseInstagramPostChange } from "./social-browser-instagram-posts";
+import { deleteInstagramPostOnce, instagramPostDeletion } from "./browser/instagram-post-deletion";
+import { instagramBrowserMentions } from "./social-browser-instagram-mentions";
+import { readInstagramEarnings } from "./social-browser-instagram-earnings";
+import {
+  changeInstagramHighlight,
+  parseInstagramHighlightChange,
+  readInstagramHighlights,
+} from "./social-browser-instagram-highlights";
+import {
+  instagramLikeComment,
+  parseInstagramCommentLike,
+} from "./social-browser-instagram-comment-like";
+import type { BrowserRecipeContext } from "./social-browser-recipe";
+import { needsHumanError } from "./browser/challenge";
+import { osSecretValues, type SecretValueStore } from "../secrets/secret-store";
+import {
+  InstagramLiveProducer,
+  instagramLiveActor,
+  instagramStreamRef,
+  instagramStreamStored,
+} from "./browser/instagram-live";
+import { exact } from "./core/social-helpers";
 import { XProfileActions, parseXProfilePatch } from "./social-browser-profile";
+import { deleteXPost } from "./social-browser-x-delete";
 import {
   LinkedInProfileActions,
   parseLinkedInProfilePatch,
@@ -21,17 +57,31 @@ import { BrowserSendLimiter } from "./browser/limiter";
 import { ExistingChromeBindings } from "./browser/existing-chrome-bindings";
 import { connectExistingChrome } from "./browser/existing-chrome-connect";
 import { runLayered, visibilityOf, type BrowserWiring } from "./browser-layers/wiring";
-import { PlatformBrowserSessions } from "./social-browser-platforms";
+import {
+  PlatformBrowserSessions,
+  type YouTubeBrowserOperationOptions,
+} from "./social-browser-platforms";
+import type { YouTubeBrowserRecipeContext } from "./browser/youtube-recipe-guards";
 import { SOCIAL_BROWSER_RECIPES } from "./social-browser-recipes";
+import { readFacebookMonetization } from "./social-browser-facebook-monetization";
 import {
   FacebookProfileActions,
+  facebookProfilePhotoDigest,
   parseFacebookProfilePatch,
+  writeFacebookBrowserProfile,
 } from "./social-browser-facebook-profile";
 import {
   InstagramProfileActions,
   parseInstagramProfilePatch,
 } from "./social-browser-instagram-profile";
 import type { BrowserRecipe } from "./social-browser-recipe";
+import { hash } from "./core/social-helpers";
+import {
+  parseSnapchatProfilePatch,
+  SnapchatProfileActions,
+} from "./social-browser-snapchat-profile";
+import { readSnapchatFriends } from "./social-browser-snapchat-messaging";
+import { SNAP, snapchatBrowserRecipe } from "./social-browser-snapchat";
 import { xIdentity, xUserId, type XBrowserDeps } from "./social-browser-x-page";
 import { pollX } from "./social-browser-x-inbox";
 import { publishX } from "./social-browser-x-compose";
@@ -76,6 +126,16 @@ export class XBrowserSessions {
   private chromeReviews = new Map<string, symbol>();
   private logins = new Map<string, LoginFlow>();
   private reads = new Map<string, ReadSession>();
+  private instagramLiveVault?: SecretValueStore;
+  private readonly instagramLiveSessions = new Map<
+    string,
+    {
+      session: BrowserSession;
+      producer: InstagramLiveProducer;
+      platformId: string;
+      epoch: string | undefined;
+    }
+  >();
   constructor(
     private readonly directory: string,
     private readonly launcher: BrowserLauncher | undefined = systemBrowserLauncher(),
@@ -179,6 +239,46 @@ export class XBrowserSessions {
     await this.platforms.forget(accountId);
     return { status: "idle" as const };
   }
+  // LinkedIn owner-only browser analytics.
+  async linkedInProfileAnalytics(
+    service: SocialService,
+    principal: SocialPrincipal,
+    accountId: string,
+  ) {
+    const account = await service.accountForBrowserManagement(principal, accountId, false);
+    const verifyAccount = async () => {
+      const current = await service.accountForBrowserManagement(principal, accountId, false);
+      if (
+        this.stopped ||
+        current.platform !== "linkedin" ||
+        current.accountType !== "member" ||
+        current.connection !== "browser" ||
+        !current.connected ||
+        current.paused ||
+        current.platformId !== account.platformId ||
+        current.executorId !== service.store.environmentId
+      )
+        throw new SocialPlatformError("denied");
+      if (this.workflows.hasActive(accountId) || this.platforms.waiting(accountId))
+        throw new Error("Finish the account's active browser operation first.");
+      await service.store.db.checkAuthorization();
+    };
+    return this.platforms.readLinkedInProfileAnalytics(account, verifyAccount);
+  }
+
+  linkedInBrowserManagement(
+    service: SocialService,
+    principal: SocialPrincipal,
+    raw: Record<string, unknown>,
+  ) {
+    const input = parseLinkedInBrowserManagement(raw);
+    return runLinkedInBrowserManagement(service, principal, input, this.platforms, () => {
+      if (this.stopped) throw new SocialPlatformError("denied");
+      if (this.workflows.hasActive(input.accountId) || this.platforms.waiting(input.accountId))
+        throw new Error("Finish the account's active browser operation first.");
+    });
+  }
+
   async profileAction(
     service: SocialService,
     p: SocialPrincipal,
@@ -187,8 +287,17 @@ export class XBrowserSessions {
     input: Record<string, unknown>,
   ) {
     const account = await service.accountForBrowserManagement(p, accountId, action !== "read");
+    if (account.platform === "snapchat") {
+      if (action === "follow") throw new SocialPlatformError("unsupported");
+      return await this.snapchatProfileAction(service, p, accountId, action, input);
+    }
     const linkedIn = account.platform === "linkedin" && account.accountType === "organization";
-    const facebook = account.platform === "facebook" && account.accountType === "page";
+    // Facebook profile management uses the selected browser actor for both account types.
+    const facebookType =
+      account.accountType === "page" || account.accountType === "member"
+        ? account.accountType
+        : undefined;
+    const facebook = account.platform === "facebook" && facebookType !== undefined;
     const instagram =
       account.platform === "instagram" && ["member", "professional"].includes(account.accountType);
     const check = async () => {
@@ -202,7 +311,7 @@ export class XBrowserSessions {
             current.platform === "linkedin" &&
             current.accountType === "organization"
           ) &&
-          !(facebook && current.platform === "facebook" && current.accountType === "page") &&
+          !facebook &&
           !instagram) ||
         current.connection !== "browser" ||
         !current.connected ||
@@ -240,7 +349,7 @@ export class XBrowserSessions {
         ? linkedIn
           ? parseLinkedInProfilePatch(input.patch)
           : facebook
-            ? parseFacebookProfilePatch(input.patch)
+            ? parseFacebookProfilePatch(input.patch, facebookType)
             : instagram
               ? parseInstagramProfilePatch(input.patch)
               : parseXProfilePatch(input.patch)
@@ -256,10 +365,17 @@ export class XBrowserSessions {
       let session: BrowserSession | undefined;
       try {
         const files: { avatar?: string; banner?: string } = {};
+        let facebookPhotoDigest: string | undefined;
         for (const kind of ["avatar", "banner"] as const) {
-          const id = patch?.[kind === "avatar" ? "avatarUploadId" : "bannerUploadId"];
+          const id =
+            kind === "avatar"
+              ? patch?.avatarUploadId
+              : patch && "bannerUploadId" in patch
+                ? patch.bannerUploadId
+                : undefined;
           if (!id) continue;
           const bytes = await service.readOwnerMedia(p, id);
+          if (facebook) facebookPhotoDigest = facebookProfilePhotoDigest(bytes);
           const format = xMediaFormat(bytes);
           if (format === "mp4") throw new SocialPlatformError("rejected");
           await mkdir(staging, { recursive: true, mode: 0o700 });
@@ -293,18 +409,33 @@ export class XBrowserSessions {
         if (facebook) {
           const recipe = this.recipes.find((entry) => entry.platform === "facebook");
           if (!recipe) throw new SocialPlatformError("unsupported");
-          const actions = new FacebookProfileActions(
-            page,
-            account.platformId,
-            check,
-            async () => {
-              const identity = await recipe.identity(page, account);
-              if (identity?.platformId !== account.platformId || identity.accountType !== "page")
-                throw new SocialPlatformError("denied");
-            },
-            async (expression, timeout) => await this.until(page, expression, timeout),
-          );
-          return action === "read" ? await actions.read() : await actions.update(patch!, files);
+          const actions = (recordSubmission?: () => void) =>
+            new FacebookProfileActions(
+              page,
+              account.platformId,
+              check,
+              async () => {
+                const identity = await recipe.identity(page, account);
+                if (
+                  identity?.platformId !== account.platformId ||
+                  identity.accountType !== facebookType
+                )
+                  throw new SocialPlatformError("denied");
+              },
+              async (expression, timeout) => await this.until(page, expression, timeout),
+              facebookType,
+              recordSubmission,
+            );
+          return action === "read"
+            ? await actions().read()
+            : await writeFacebookBrowserProfile(
+                service,
+                accountId,
+                account.platformId,
+                patch!,
+                (recordSubmission) => actions(recordSubmission).update(patch!, files),
+                facebookPhotoDigest,
+              );
         }
         if (linkedIn) {
           const actions = new LinkedInProfileActions(
@@ -334,6 +465,486 @@ export class XBrowserSessions {
       }
     });
   }
+  // Instagram owner-only browser operations share the account lock and identity check.
+  async instagramAction(
+    service: SocialService,
+    principal: SocialPrincipal,
+    accountId: string,
+    action:
+      | "post"
+      | "followers"
+      | "follow"
+      | "mentions"
+      | "comment-like"
+      | "recipient"
+      | "earnings"
+      | "highlights"
+      | "highlight-change",
+    input: Record<string, unknown>,
+  ) {
+    const writing =
+      action !== "followers" &&
+      action !== "mentions" &&
+      action !== "recipient" &&
+      action !== "earnings" &&
+      action !== "highlights";
+    const account = await service.accountForBrowserManagement(principal, accountId, writing);
+    const check = async () => {
+      const current = await service.accountForBrowserManagement(principal, accountId, writing);
+      if (
+        current.platform !== "instagram" ||
+        current.connection !== "browser" ||
+        !current.connected ||
+        current.paused ||
+        !current.platformId ||
+        current.platformId !== account.platformId ||
+        current.accountType !== account.accountType ||
+        current.executorId !== service.store.environmentId ||
+        this.stopped
+      )
+        throw new SocialPlatformError("denied");
+      if (this.workflows.hasActive(accountId) || this.platforms.waiting(accountId))
+        throw new SocialPlatformError("denied");
+    };
+    await check();
+    const recipe = this.recipes.find((entry) => entry.platform === "instagram");
+    if (!this.launcher || !recipe) throw new SocialPlatformError("unsupported");
+    const patch = action === "post" ? parseInstagramPostChange(input) : undefined;
+    const handle =
+      action === "followers" || action === "recipient" ? instagramHandle(input.handle) : undefined;
+    const follow = action === "follow" ? parseInstagramFollowChange(input) : undefined;
+    const like = action === "comment-like" ? parseInstagramCommentLike(input) : undefined;
+    const highlight =
+      action === "highlight-change" ? parseInstagramHighlightChange(input) : undefined;
+    return this.exclusive(accountId, async () => {
+      await check();
+      if (patch?.action === "delete") {
+        const deletion = await instagramPostDeletion(service, account.platformId, patch.postUrl);
+        if (deletion) return { postUrl: patch.postUrl, changed: false, deletion };
+      }
+      const profile = this.profile(accountId, "browser-profiles");
+      // Payout screens may contain payment details outside the named earnings summaries.
+      // Keep this dedicated window out of the shared browser tracker and live view.
+      const session =
+        action === "earnings"
+          ? await this.launcher!(profile, true, "hidden").catch(() => {
+              throw new SocialPlatformError("unsupported");
+            })
+          : await this.launchAt(accountId, profile, this.background);
+      try {
+        const page = session.page;
+        const context: BrowserRecipeContext = {
+          page,
+          account,
+          files: [],
+          now: this.now,
+          waitFor: <T>(expression: string, timeout = 15_000) =>
+            this.until<T>(page, expression, timeout),
+          verifyIdentity: async () => {
+            await check();
+            const identity = await recipe.identity(page, account);
+            if (identity?.platformId !== account.platformId)
+              throw new SocialPlatformError("denied");
+            await check();
+            if (
+              highlight &&
+              highlight.action !== "delete" &&
+              (await service.setting("sending")) !== "true"
+            )
+              throw new SocialPlatformError("denied");
+          },
+        };
+        const authorizeOutbound = async (
+          recipientId: string,
+          channel: "comment" | "mention",
+          recordAttempt: boolean,
+        ) => {
+          if ((await service.setting("sending")) !== "true")
+            throw new SocialPlatformError("denied");
+          await service.assertSendable({ platform: "instagram", platformId: recipientId }, channel);
+          if (recordAttempt) {
+            await this.limiter.reserve(accountId);
+            await this.limiter.record(accountId);
+          }
+        };
+        if (patch?.action === "delete")
+          return await deleteInstagramPostOnce(service, account.platformId, patch, (beforeDelete) =>
+            changeInstagramPost(context, patch, async () => {
+              await check();
+              await beforeDelete();
+            }),
+          );
+        if (patch) return await changeInstagramPost(context, patch);
+        if (follow)
+          return await instagramFollow(context, follow, (recipientId, recordAttempt) =>
+            authorizeOutbound(recipientId, "mention", recordAttempt),
+          );
+        if (like)
+          return await instagramLikeComment(context, like, (recipientId) =>
+            authorizeOutbound(recipientId, "comment", true),
+          );
+        if (action === "earnings") {
+          try {
+            return await readInstagramEarnings(context);
+          } catch (error) {
+            if (error instanceof SocialPlatformError) throw error;
+            throw new SocialPlatformError("unsupported");
+          }
+        }
+        if (action === "highlights") return await readInstagramHighlights(context);
+        if (highlight)
+          return await changeInstagramHighlight(context, highlight, async () => {
+            await check();
+            if (highlight.action !== "delete" && (await service.setting("sending")) !== "true")
+              throw new SocialPlatformError("denied");
+            await this.limiter.reserve(accountId);
+            await this.limiter.record(accountId);
+            await check();
+          });
+        if (action === "mentions") return await instagramBrowserMentions(context);
+        if (action === "recipient")
+          return {
+            handle: handle!,
+            platformId: await openInstagramRecipientProfile(context, handle!),
+          };
+        return await instagramFollowers(context, handle!);
+      } finally {
+        await session.close().catch(() => undefined);
+      }
+    });
+  }
+  /** Snapchat browser reads use the current grant; profile mutations stay owner-authorized. */
+  async snapchatProfileAction(
+    service: SocialService,
+    principal: SocialPrincipal,
+    accountId: string,
+    action: "read" | "update" | "create" | "monetization" | "delete-story" | "friends",
+    input: Record<string, unknown> = {},
+  ) {
+    const writing = action !== "read" && action !== "monetization" && action !== "friends";
+    const authorized = () =>
+      writing
+        ? service.accountForBrowserManagement(principal, accountId, true)
+        : service.access(principal, accountId, "read");
+    const account = await authorized();
+    if (action === "friends" && account.accountType !== "member")
+      throw new SocialPlatformError("unsupported");
+    const check = async () => {
+      const current = await authorized();
+      if (
+        current.platform !== "snapchat" ||
+        current.connection !== "browser" ||
+        !current.connected ||
+        !current.accessApproved ||
+        (current.expiresAt !== undefined && current.expiresAt <= this.now()) ||
+        current.paused ||
+        current.executorId !== service.store.environmentId ||
+        current.platformId !== account.platformId ||
+        current.accountType !== account.accountType ||
+        !["public_profile", "member"].includes(current.accountType)
+      )
+        throw new SocialPlatformError("denied");
+      if (
+        this.workflows.hasActive(accountId) ||
+        ["waiting", "checking"].includes(this.logins.get(accountId)?.status ?? "")
+      )
+        throw new Error("Finish the account's active browser operation first.");
+    };
+    await check();
+    if (!this.launcher) throw new SocialPlatformError("unsupported");
+    if (writing) {
+      const confirmation = {
+        update: "UPDATE_SNAPCHAT_PROFILE",
+        create: "CREATE_SNAPCHAT_PROFILE",
+        "delete-story": "DELETE_SNAPCHAT_STORY",
+      };
+      if (input.confirm !== confirmation[action]) throw new SocialPlatformError("denied");
+    }
+    const patch =
+      action === "update" || action === "create"
+        ? parseSnapchatProfilePatch(input.patch)
+        : undefined;
+    const storyId = typeof input.storyId === "string" ? input.storyId : undefined;
+    if (action === "delete-story" && !storyId) throw new SocialPlatformError("denied");
+    const mutationKey = `snapchat:browser-mutation:${hash(
+      JSON.stringify([
+        account.platformId,
+        action,
+        patch
+          ? Object.entries(patch).sort(([left], [right]) => left.localeCompare(right))
+          : storyId,
+      ]),
+    )}`;
+    return this.exclusive(accountId, async () => {
+      await check();
+      if (writing && (await service.setting(mutationKey))) throw new SocialPlatformError("unknown");
+      let marked = false;
+      const beforeMutation = async () => {
+        await check();
+        await service.store.transaction(async () => {
+          if (await service.setting(mutationKey)) throw new SocialPlatformError("unknown");
+          await service.setSetting(mutationKey, "submitted");
+        });
+        marked = true;
+      };
+      const staging = join(this.directory, "snapchat-profile-uploads", randomUUID());
+      let session: BrowserSession | undefined;
+      try {
+        let avatar: string | undefined;
+        if (patch?.avatarUploadId) {
+          const bytes = await service.readOwnerMedia(principal, patch.avatarUploadId);
+          const format = xMediaFormat(bytes);
+          if (format === "mp4") throw new SocialPlatformError("rejected");
+          await mkdir(staging, { recursive: true, mode: 0o700 });
+          avatar = join(staging, `avatar.${format}`);
+          await writeFileAtomic(avatar, bytes, { mode: 0o600 });
+        }
+        session = await this.launchAt(
+          accountId,
+          this.profile(accountId, "browser-profiles"),
+          this.background,
+        );
+        const { page } = session;
+        if (action === "friends") {
+          await page.goto(SNAP);
+          return await readSnapchatFriends(
+            {
+              page,
+              waitFor: (expression, timeout = 12_000) => this.until(page, expression, timeout),
+              verifyIdentity: async () => {
+                await check();
+                const verified = await snapchatBrowserRecipe.identity(page, account);
+                if (
+                  verified?.platformId !== account.platformId ||
+                  verified.accountType !== "member"
+                )
+                  throw new SocialPlatformError("denied");
+              },
+            },
+            account.platformId,
+          );
+        }
+        const actions = new SnapchatProfileActions(
+          page,
+          account,
+          check,
+          (expression, timeout) => this.until(page, expression, timeout),
+          beforeMutation,
+        );
+        if (action === "read") return await actions.read();
+        if (action === "monetization") return await actions.monetization();
+        let result;
+        try {
+          result =
+            action === "create"
+              ? await actions.create(patch!, avatar)
+              : action === "update"
+                ? await actions.update(patch!, avatar)
+                : await actions.deleteStory(storyId!);
+        } catch (error) {
+          if (marked && !(error instanceof SocialPlatformError && error.code === "unknown"))
+            await service.setSetting(mutationKey, "");
+          throw error;
+        }
+        if (marked) await service.setSetting(mutationKey, "");
+        return result;
+      } finally {
+        await session?.close().catch(() => undefined);
+        await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
+  }
+  // Facebook Monetization browser read.
+  async facebookMonetization(service: SocialService, p: SocialPrincipal, accountId: string) {
+    const verify = async () => {
+      const account = await service.accountForBrowserManagement(p, accountId, false);
+      if (
+        account.platform !== "facebook" ||
+        account.accountType !== "page" ||
+        !account.connected ||
+        account.paused ||
+        account.executorId !== service.store.environmentId
+      )
+        throw new SocialPlatformError("denied");
+      if (this.workflows.hasActive(accountId) || this.platforms.waiting(accountId))
+        throw new Error("Finish the account's active browser operation first.");
+      return account;
+    };
+    await verify();
+    if (!this.launcher) throw new SocialPlatformError("unsupported");
+    return await this.exclusive(accountId, async () => {
+      const account = await verify();
+      const session = await this.launchAt(
+        accountId,
+        this.profile(accountId, "browser-profiles"),
+        this.background,
+      );
+      try {
+        const result = await readFacebookMonetization(session.page, account.platformId, this.wait);
+        if ((await verify()).platformId !== account.platformId)
+          throw new SocialPlatformError("denied");
+        return result;
+      } finally {
+        await session.close();
+        await session.profileReleased?.();
+      }
+    });
+  }
+
+  /** A private owner window. It deliberately bypasses the observable browser wiring. */
+  async instagramLiveAction(
+    service: SocialService,
+    principal: SocialPrincipal,
+    accountId: string,
+    input: Record<string, unknown>,
+  ) {
+    exact(input, ["accountId", "action", "confirm"]);
+    const action = input.action;
+    if (
+      action !== "open" &&
+      action !== "status" &&
+      action !== "capture" &&
+      action !== "start" &&
+      action !== "end" &&
+      action !== "forget" &&
+      action !== "close"
+    )
+      throw new Error("Invalid Instagram Live action.");
+    if (
+      (action === "start" && input.confirm !== "START_INSTAGRAM_LIVE") ||
+      (action === "end" && input.confirm !== "END_INSTAGRAM_LIVE") ||
+      (action === "forget" && input.confirm !== "FORGET_INSTAGRAM_STREAM_CREDENTIALS")
+    )
+      throw new Error("Confirm the Instagram Live action.");
+    const account = await service.accountForBrowserManagement(
+      principal,
+      accountId,
+      action === "start",
+    );
+    const epoch = await service.connectionReviewEpoch(principal, accountId);
+    const check = async () => {
+      const current = await service.accountForBrowserManagement(
+        principal,
+        accountId,
+        action === "start",
+      );
+      if (
+        current.platform !== "instagram" ||
+        current.connection !== "browser" ||
+        !current.connected ||
+        current.platformId !== account.platformId ||
+        !current.platformId ||
+        current.executorId !== service.store.environmentId ||
+        this.stopped ||
+        (await service.connectionReviewEpoch(principal, accountId)) !== epoch ||
+        this.workflows.hasActive(accountId) ||
+        this.platforms.waiting(accountId) ||
+        (await this.chrome.get(accountId))
+      )
+        throw new SocialPlatformError("denied");
+      if (action === "start" && (current.paused || (await service.setting("sending")) !== "true"))
+        throw new SocialPlatformError("denied");
+    };
+    return this.exclusive(
+      accountId,
+      async () => {
+        await check();
+        const vault = (this.instagramLiveVault ??= osSecretValues(
+          join(this.directory, "instagram-live"),
+          service.store.environmentId,
+        ));
+        let opened = this.instagramLiveSessions.get(accountId);
+        if (opened && (opened.epoch !== epoch || opened.platformId !== account.platformId))
+          throw new SocialPlatformError("denied");
+        if (action === "open" && !opened) {
+          const recipe = this.recipes.find((entry) => entry.platform === "instagram");
+          if (!this.launcher || !recipe) throw new SocialPlatformError("unsupported");
+          const session = await this.launcher(
+            this.profile(accountId, "browser-profiles"),
+            false,
+            "visible",
+          );
+          const verify = async () => {
+            const hit = await detectChallenge(session.page);
+            if (hit) throw needsHumanError(hit);
+            const actor =
+              (await recipe.identity(session.page, account))?.platformId ??
+              (await instagramLiveActor(session.page));
+            if (actor !== account.platformId) throw new SocialPlatformError("denied");
+          };
+          try {
+            await session.page.goto("https://www.instagram.com/");
+            await this.until(
+              session.page,
+              `location.origin === 'https://www.instagram.com' &&
+              (location.pathname !== '/' || !!document.querySelector('a[href="/direct/inbox/"],a[href="/accounts/edit/"]'))`,
+              15_000,
+            );
+            await verify();
+          } catch (error) {
+            await session.close().catch(() => undefined);
+            throw error instanceof SocialPlatformError ? error : new SocialPlatformError("unknown");
+          }
+          const producer = new InstagramLiveProducer(
+            session.page,
+            verify,
+            vault,
+            accountId,
+            account.platformId,
+            epoch,
+          );
+          opened = { session, producer, platformId: account.platformId, epoch };
+          this.instagramLiveSessions.set(accountId, opened);
+          void session.closed
+            .then(async () => {
+              await session.profileReleased?.();
+              if (this.instagramLiveSessions.get(accountId)?.session === session)
+                this.instagramLiveSessions.delete(accountId);
+            })
+            .catch(() => undefined);
+        }
+        if (action === "forget") await vault.delete(instagramStreamRef(accountId));
+        if (action === "close" && opened) {
+          const current = await opened.producer.read();
+          if (current.state === "live" || current.state === "unknown")
+            throw new SocialPlatformError("denied");
+          await this.closeInstagramLive(accountId);
+          opened = undefined;
+        }
+        if (action === "capture" || action === "start" || action === "end") {
+          if (!opened) throw new SocialPlatformError("unsupported");
+          await check();
+          if (action === "capture") await opened.producer.capture();
+          else await opened.producer.control(action, check);
+        }
+        const status = opened
+          ? await opened.producer.read()
+          : { state: "offline" as const, canStart: false };
+        return {
+          ...status,
+          windowOpen: !!opened,
+          credentialsStored: await instagramStreamStored(
+            vault,
+            accountId,
+            account.platformId,
+            epoch,
+          ),
+        };
+      },
+      false,
+      true,
+    );
+  }
+
+  private async closeInstagramLive(accountId: string) {
+    const opened = this.instagramLiveSessions.get(accountId);
+    if (!opened) return;
+    await opened.session.close();
+    await opened.session.profileReleased?.();
+    if (this.instagramLiveSessions.get(accountId) === opened)
+      this.instagramLiveSessions.delete(accountId);
+  }
+
   /** Opens an account browser with its visibility setting and tracks its page for the layers and live view. */
   private async launchAt(
     accountId: string,
@@ -360,11 +971,14 @@ export class XBrowserSessions {
     accountId: string,
     action: () => Promise<T>,
     retainRead = false,
+    allowInstagramLive = false,
   ): Promise<T> {
     const previous = this.locks.get(accountId) ?? Promise.resolve();
     const next = previous
       .catch(() => undefined)
       .then(async () => {
+        if (!allowInstagramLive && this.instagramLiveSessions.has(accountId))
+          throw new SocialPlatformError("denied");
         if (!retainRead) await this.closeRead(accountId);
         return await action();
       });
@@ -536,14 +1150,17 @@ export class XBrowserSessions {
     );
     return { status: flow.status, expiresAt: flow.expiresAt };
   }
-  async status(service: SocialService, p: SocialPrincipal, accountId: string) {
+  async status(service: SocialService, p: SocialPrincipal, accountId: string, loginFlow = false) {
     const account = await service.accountForOAuth(p, accountId);
     const source = (await this.chrome.get(accountId))
       ? ("existing-chrome" as const)
       : ("dedicated" as const);
+    if (account.platform !== "x" && loginFlow)
+      return { ...this.platforms.status(accountId), source };
     if (account.platform !== "x")
       return { ...(await this.platforms.check(service, p, account)), source };
     const flow = this.logins.get(accountId);
+    if (loginFlow) return { status: flow?.status ?? "idle", error: flow?.error, source };
     if (flow?.status === "waiting" || flow?.status === "checking")
       return { status: flow.status, error: flow.error };
     if (!account.connected || !account.platformId)
@@ -655,21 +1272,33 @@ export class XBrowserSessions {
       await flow.session?.close().catch(() => undefined);
     }
     // Browser helper processes can hold profile files briefly after closing.
-    return this.exclusive(accountId, async () => {
-      await this.chrome.set(accountId, undefined);
-      for (const folder of ["x-browser", "browser-profiles"])
-        await rm(this.profile(accountId, folder), {
-          recursive: true,
-          force: true,
-          maxRetries: 10,
-          retryDelay: 200,
-        });
-    });
+    return this.exclusive(
+      accountId,
+      async () => {
+        await this.closeInstagramLive(accountId);
+        await this.instagramLiveVault?.delete(instagramStreamRef(accountId));
+        await this.chrome.set(accountId, undefined);
+        for (const folder of ["x-browser", "browser-profiles"])
+          await rm(this.profile(accountId, folder), {
+            recursive: true,
+            force: true,
+            maxRetries: 10,
+            retryDelay: 200,
+          });
+      },
+      false,
+      true,
+    );
   }
   /** Stop owner login/workflow windows without deleting persistent signed-in profiles. */
   async stop(service: SocialService): Promise<void> {
     this.stopped = true;
     this.chromeReviews.clear();
+    await Promise.all(
+      [...this.instagramLiveSessions.keys()].map((id) =>
+        this.exclusive(id, () => this.closeInstagramLive(id), false, true),
+      ),
+    );
     await this.chrome.stop();
     for (const flow of this.logins.values()) {
       flow.cancelled = true;
@@ -693,10 +1322,45 @@ export class XBrowserSessions {
       await this.wait(250);
     }
   }
+  youtubeOperation<T>(
+    account: SocialAccount,
+    run: (context: YouTubeBrowserRecipeContext) => Promise<T>,
+    options?: YouTubeBrowserOperationOptions,
+  ): Promise<T> {
+    return this.platforms.youtubeOperation(account, run, options);
+  }
   adapter(): SocialAdapter {
     const platforms = this.platforms.adapter();
     return {
       creatorInfo: platforms.creatorInfo,
+      deletePost: (account, token, postId, beforeSubmit) => {
+        if (account.platform !== "x")
+          return platforms.deletePost!(account, token, postId, beforeSubmit);
+        return this.exclusive(account.id, async () => {
+          if (
+            this.stopped ||
+            ["waiting", "checking"].includes(this.logins.get(account.id)?.status ?? "") ||
+            this.workflows.hasActive(account.id)
+          )
+            throw new SocialPlatformError("denied");
+          const deps = this.deps();
+          const launcher = this.launcher;
+          await deleteXPost(
+            {
+              ...deps,
+              launcher: launcher ? (profile) => launcher(profile, true, "hidden") : undefined,
+              identity: (page, target) => this.identity(page, target),
+            },
+            account,
+            postId,
+            beforeSubmit &&
+              (async () => {
+                await beforeSubmit();
+                if (this.stopped) throw new SocialPlatformError("denied");
+              }),
+          );
+        });
+      },
       send: (account, job, token, media, checkpoint, beforeSubmit) =>
         account.platform === "x"
           ? this.exclusive(
@@ -717,6 +1381,10 @@ export class XBrowserSessions {
             )
           : platforms.poll(account, token, posts, cursor),
     };
+  }
+  // TikTok uses the same account lock as sign-in and the normal publishing adapter.
+  get runTikTok() {
+    return this.platforms.runTikTok.bind(this.platforms);
   }
   private async identity(page: BrowserPage, account: SocialAccount) {
     await xIdentity(page, account, this.directory);

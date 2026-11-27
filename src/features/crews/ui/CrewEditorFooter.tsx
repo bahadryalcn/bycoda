@@ -2,12 +2,13 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import type { CrewAutosaveStatus } from "./useCrewAutosave";
 
 /**
- * The editor's footer: what is saved (or what blocks saving) on the left; New work, or
- * Create crew for a crew that is not stored yet, on the right. There is no Save or Discard
- * for a stored crew: it saves itself.
+ * The editor's footer: what is saved (or what blocks saving) on the left, Create crew for a
+ * crew that is not stored yet on the right. A stored crew has no Save, Discard, New work, copy
+ * or delete here: it saves itself, and the Teams menu owns the rest.
  */
 export function CrewEditorFooter({
   isNew,
@@ -16,12 +17,9 @@ export function CrewEditorFooter({
   error,
   onRetry,
   creating,
-  starting,
   pending,
   blocked,
-  canStart,
   onCreate,
-  onStart,
 }: {
   isNew: boolean;
   /** Why the draft cannot be saved yet, when the owner has something to fix. */
@@ -30,22 +28,19 @@ export function CrewEditorFooter({
   error: string;
   onRetry: () => void;
   creating: boolean;
-  starting: boolean;
   pending: boolean;
   /** A revision conflict is open: nothing is sent until it is resolved. */
   blocked: boolean;
-  canStart: boolean;
   onCreate: () => void;
-  onStart: () => void;
 }) {
   const state = blocked ? null : issue ? (
     <InlineError live="polite">{issue}</InlineError>
   ) : status === "error" ? (
-    <InlineError retry={{ onRetry }}>{error}</InlineError>
+    <InlineError details={error} retry={{ onRetry }}>
+      {t("Could not save the crew.")}
+    </InlineError>
   ) : status === "saving" ? (
-    <InlineMessage tone="neutral" icon={null}>
-      {t("Saving…")}
-    </InlineMessage>
+    <LoadingText>{t("Saving…")}</LoadingText>
   ) : status === "saved" || (status === "idle" && !isNew) ? (
     <InlineMessage tone="neutral" icon={null}>
       {t("All changes saved")}
@@ -58,15 +53,6 @@ export function CrewEditorFooter({
         {isNew ? (
           <Button variant="primary" loading={creating} disabled={pending} onClick={onCreate}>
             {t("Create crew")}
-          </Button>
-        ) : canStart ? (
-          <Button
-            variant="primary"
-            loading={starting}
-            disabled={pending || blocked}
-            onClick={onStart}
-          >
-            {t("New work")}
           </Button>
         ) : null}
       </div>

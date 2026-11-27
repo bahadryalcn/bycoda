@@ -1,11 +1,21 @@
 import { sessionIssue } from "../model/sessionIssue";
-import { sessionDelegationParent } from "../../../shared/model/host-contracts/delegation";
+import {
+  sessionBackgroundOwner,
+  sessionDelegationParent,
+} from "../../../shared/model/host-contracts/delegation";
 import { wasTurnInterrupted } from "../model/inFlight";
-import { sessionProviderHistory } from "../model/sessionProviderHistory";
+import {
+  sameSessionProviderHistory,
+  sessionProviderHistory,
+} from "../model/sessionProviderHistory";
 import { sessionActivityAt } from "../model/sessionActivity";
 import type { OrchestrationRun } from "../../orchestration/model/orchestration";
 import { summarizeOrchestration } from "../../orchestration/model/orchestrationSummary";
-import { fuzzyMatch } from "../../../shared/lib/fuzzy";
+import {
+  fuzzyIncludes,
+  prepareFuzzyQuery,
+  type PreparedFuzzyQuery,
+} from "../../../shared/lib/fuzzy";
 import { projectName } from "../../../shared/lib/paths";
 import { sameProjectPath } from "../../projects/public/recents";
 import {
@@ -82,21 +92,25 @@ export function filterSessionsByArchive(
 }
 
 export function filterSessionsByQuery(rows: SessionSummary[], query: string): SessionSummary[] {
-  const needle = query.trim();
-  if (!needle) return rows;
+  const needle = prepareFuzzyQuery(query);
+  if (!needle.tokens.length) return rows;
   return rows.filter((row) => sessionSearchHit(row, needle));
 }
 
-function sessionSearchHit(row: SessionSummary, query: string): boolean {
+function sessionSearchHit(row: SessionSummary, query: PreparedFuzzyQuery): boolean {
   const title = sessionDisplayTitle(row.title, row.harness);
-  const git = [row.repo, row.branch].filter(Boolean).join("/");
-  const fields = [title, row.title, row.model, row.harness, git];
-  return fields.some((field) => field && fuzzyMatch(query, field) != null);
+  if (fuzzyIncludes(query, title) || (row.title !== title && fuzzyIncludes(query, row.title))) {
+    return true;
+  }
+  if (fuzzyIncludes(query, row.model) || fuzzyIncludes(query, row.harness)) return true;
+  const git = row.repo && row.branch ? `${row.repo}/${row.branch}` : row.repo || row.branch;
+  return !!git && fuzzyIncludes(query, git);
 }
 
 export function summaryFromSession(session: Session, git?: SessionGitHint): SessionSummary {
   return {
     delegationParent: sessionDelegationParent(session) ?? null,
+    backgroundOwner: sessionBackgroundOwner(session),
     providerHistory: sessionProviderHistory(session),
     issue: sessionIssue(session),
     interrupted: wasTurnInterrupted(session),
@@ -140,12 +154,22 @@ function gitOverlayForCwd(cwd: string, git?: SessionGitHint): SessionGitHint {
   return { ...git, repo: name };
 }
 
+/** First row index per id, so a live session finds its stored row without a scan. */
+function indexRowsById(rows: readonly SessionSummary[]): Map<string, number> {
+  const index = new Map<string, number>();
+  rows.forEach((row, position) => {
+    if (!index.has(row.id)) index.set(row.id, position);
+  });
+  return index;
+}
+
 export function historyWithLiveSessions(
   history: SessionSummary[],
   sessions: Session[],
   cwd: string,
   git?: SessionGitHint,
   runs: readonly OrchestrationRun[] = [],
+  composerDraftIds: ReadonlySet<string> = new Set(),
 ): SessionSummary[] {
   const workerIds = new Set([
     ...sessions.filter((session) => session.orchestrationLeadId).map((session) => session.id),
@@ -162,14 +186,16 @@ export function historyWithLiveSessions(
       !workerIds.has(entry.id) &&
       sameProjectPath(entry.cwd, cwd),
   );
+  let rowIndex = indexRowsById(rows);
   const hint = projectGitHint(rows, gitOverlayForCwd(cwd, git));
   for (const session of sessions) {
     if (session.inboxAsk || workerIds.has(session.id)) continue;
     if (!sameProjectPath(session.cwd, cwd)) continue;
-    const live = session.busy || sessionNeedsInput(session);
+    // A blank conversation with unsent composer text is listed as a draft.
+    const live = session.busy || sessionNeedsInput(session) || composerDraftIds.has(session.id);
     if (!shouldPersistSession(session) && !live) continue;
-    const storedIndex = rows.findIndex((row) => row.id === session.id);
-    if (storedIndex >= 0) {
+    const storedIndex = rowIndex.get(session.id);
+    if (storedIndex !== undefined) {
       const stored = rows[storedIndex];
       const draft = !!sessionDraftBlock(session);
       const automationId = session.automationId || stored.automationId;
@@ -182,8 +208,10 @@ export function historyWithLiveSessions(
         session.historyPartial || session.historyLoading
           ? (stored.providerHistory ?? sessionProviderHistory(session))
           : sessionProviderHistory(session);
-      const providerHistoryChanged =
-        JSON.stringify(stored.providerHistory) !== JSON.stringify(providerHistory);
+      const providerHistoryChanged = !sameSessionProviderHistory(
+        stored.providerHistory,
+        providerHistory,
+      );
       const interrupted =
         session.historyPartial || session.historyLoading
           ? stored.interrupted
@@ -217,6 +245,7 @@ export function historyWithLiveSessions(
       ...(session.branch ? { branch: session.branch } : {}),
     };
     rows = mergeHistorySummary(rows, summaryFromSession(session, sessionHint));
+    rowIndex = indexRowsById(rows);
   }
   const byLead = new Map(runs.map((run) => [run.leadId, run]));
   return rows

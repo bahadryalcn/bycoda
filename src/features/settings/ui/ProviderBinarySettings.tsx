@@ -1,9 +1,10 @@
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Text } from "../../../shared/ui/Text";
 import { SettingsFeedback } from "../../../shared/ui/settings";
 
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
-import { Surface } from "../../../shared/ui/Surface";
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { ExternalLink, FolderOpen, Pencil, RefreshCw } from "../../../shared/ui/icons";
@@ -27,6 +28,7 @@ import {
   MINIMUM_OPENCODE_VERSION,
   parseOpenCodeVersion,
 } from "../../../integrations/harness/providers/opencode/opencodeProtocol";
+import { errorText } from "../../../shared/lib/errors";
 
 import { revealPath } from "../../../platform/tauri/fs";
 import { open as pickFile } from "@tauri-apps/plugin-dialog";
@@ -91,7 +93,7 @@ export function ProviderBinaryControl({
   const inspectionBusy = useRef(false);
   const mounted = useRef(true);
   const request = useRef(0);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ title: string; detail?: string } | null>(null);
   const [revealError, setRevealError] = useState<string | null>(null);
   // Callers key this control by provider, so every provider starts from fresh state.
   useEffect(() => {
@@ -118,12 +120,19 @@ export function ProviderBinaryControl({
           ...next,
           overridden: Boolean(binaryPath?.trim()),
         });
-        setError(binaryInspectionError(provider, next));
+        const problem = binaryInspectionError(provider, next);
+        setError(
+          problem
+            ? {
+                title: next.error ? t("Could not inspect the CLI executable.") : problem,
+                detail: next.error || undefined,
+              }
+            : null,
+        );
         return next;
       } catch (cause) {
         if (!mounted.current || generation !== request.current) return null;
-        const message = cause instanceof Error ? cause.message : String(cause);
-        setError(message);
+        setError({ title: t("Could not inspect the CLI executable."), detail: errorText(cause) });
         return null;
       } finally {
         if (generation === request.current) {
@@ -160,14 +169,10 @@ export function ProviderBinaryControl({
     const generation = request.current + 1;
     const next = await inspect(value, "save");
     if (!mounted.current || generation !== request.current || !next) return;
-    const validationError = binaryInspectionError(provider, next);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
+    if (binaryInspectionError(provider, next)) return;
     if (!saveProviderBinaryPath(provider, value)) {
       setInspection(undefined);
-      setError(t("Could not save the binary path."));
+      setError({ title: t("Could not save the binary path.") });
       return;
     }
     setOverridden(true);
@@ -188,7 +193,7 @@ export function ProviderBinaryControl({
       return;
     if (!saveProviderBinaryPath(provider, null)) {
       setInspection(undefined);
-      setError(t("Could not save the binary path."));
+      setError({ title: t("Could not save the binary path.") });
       return;
     }
     setDraft("");
@@ -203,7 +208,9 @@ export function ProviderBinaryControl({
     <Button
       className="shrink-0"
       loading={operation === "choose"}
+      startIcon={<FolderOpen className="icon-sm" />}
       disabled={working}
+      disabledReason={t("Wait for the current operation to finish")}
       onClick={() => {
         if (inspectionBusy.current) return;
         const generation = ++request.current;
@@ -221,7 +228,11 @@ export function ProviderBinaryControl({
             }
           })
           .catch((cause) => {
-            if (mounted.current && generation === request.current) setError(String(cause));
+            if (mounted.current && generation === request.current)
+              setError({
+                title: t("Could not choose the CLI executable."),
+                detail: errorText(cause),
+              });
           })
           .finally(() => {
             if (generation === request.current) {
@@ -231,7 +242,6 @@ export function ProviderBinaryControl({
           });
       }}
     >
-      <FolderOpen className="icon-sm" />
       {t("Choose executable")}
     </Button>
   );
@@ -240,6 +250,7 @@ export function ProviderBinaryControl({
       <Button
         className="shrink-0"
         disabled={working}
+        disabledReason={t("Wait for the current operation to finish")}
         onClick={() => {
           if (inline) {
             onCancel?.();
@@ -257,6 +268,7 @@ export function ProviderBinaryControl({
           className="shrink-0"
           loading={operation === "auto"}
           disabled={working}
+          disabledReason={t("Wait for the current operation to finish")}
           onClick={() => void useAuto()}
         >
           {t("Use auto-detected path")}
@@ -267,14 +279,18 @@ export function ProviderBinaryControl({
         type="submit"
         form={formId}
         loading={operation === "save"}
+        loadingLabel={t("Checking path…")}
         disabled={working || (inline && !draft.trim())}
+        disabledReason={
+          working ? t("Wait for the current operation to finish") : t("Enter the CLI path first.")
+        }
       >
-        {working ? t("Checking path…") : inline ? t("Add provider") : t("Save path")}
+        {inline ? t("Add provider") : t("Save path")}
       </Button>
     </ModalActions>
   );
   const pathForm = (
-    <form id={formId} className="mt-2" onSubmit={submit}>
+    <form id={formId} className="grid gap-2" onSubmit={submit}>
       <TextField
         label={t("CLI path")}
         id={`${provider}-binary-path`}
@@ -282,6 +298,12 @@ export function ProviderBinaryControl({
         type="text"
         value={draft}
         placeholder={inspection?.path ?? t("Auto-detected path")}
+        description={t(
+          "Enter the absolute path to the CLI executable. Changes apply after restarting {p0}.",
+          {
+            p0: PRODUCT_IDENTITY.displayName,
+          },
+        )}
         disabled={working}
         autoFocus
         onChange={(event) => {
@@ -289,13 +311,15 @@ export function ProviderBinaryControl({
           setError(null);
         }}
       />
-      {inline ? <div className="mt-2">{chooseExecutable}</div> : null}
-      <Text as="p" size="caption" tone="secondary" className="mt-1.5">
-        {t("Enter the absolute path to the CLI executable. Changes apply after restarting {p0}.", {
-          p0: PRODUCT_IDENTITY.displayName,
-        })}
-      </Text>
-      {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
+      {inline ? chooseExecutable : null}
+      {error ? (
+        <SettingsFeedback
+          state="error"
+          extra={error.detail ? <ErrorDetails detail={error.detail} /> : undefined}
+        >
+          {error.title}
+        </SettingsFeedback>
+      ) : null}
       {inline ? <ModalFooter>{pathActions}</ModalFooter> : null}
     </form>
   );
@@ -322,9 +346,11 @@ export function ProviderBinaryControl({
         aria-expanded={open}
         aria-controls={`${provider}-binary-popover`}
         aria-haspopup="dialog"
-        tooltip={t(restartRequired ? "{p0} CLI path (restart required)" : "{p0} CLI path", {
-          p0: title,
-        })}
+        tooltip={
+          restartRequired
+            ? t("{p0} CLI path (restart required)", { p0: title })
+            : t("{p0} CLI path", { p0: title })
+        }
         onClick={() => {
           if (open) {
             dismiss(true);
@@ -339,72 +365,63 @@ export function ProviderBinaryControl({
       >
         <FolderOpen className="icon-sm" strokeWidth={1.75} />
         {showLabel
-          ? t(missing ? (provider === "acp" ? "Add provider" : "Set up") : "CLI setup")
+          ? missing
+            ? provider === "acp"
+              ? t("Add provider")
+              : t("Set up")
+            : t("CLI setup")
           : null}
       </Button>
       {open ? (
         <Modal
           size="sm"
           title={t("{p0} CLI details", { p0: title })}
-          description={t(
-            "The CLI path selects an executable on this machine. Account sign-in and model defaults are managed separately.",
-          )}
           onClose={() => dismiss(true)}
           footer={editing ? pathActions : undefined}
         >
-          <div aria-busy={working} id={`${provider}-binary-popover`}>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <Badge size="sm" tone={error ? "warning" : restartRequired ? "warning" : "neutral"}>
-                {working
-                  ? t("Checking…")
-                  : error
-                    ? t("Needs attention")
-                    : restartRequired
-                      ? t("Restart required")
-                      : overridden
-                        ? t("Configured")
-                        : inspection
-                          ? t("Auto-detected")
-                          : t("Not checked yet")}
+          <div className="grid gap-2" aria-busy={working} id={`${provider}-binary-popover`}>
+            {restartRequired ? (
+              <Badge size="sm" tone="warning">
+                {t("Restart required")}
               </Badge>
-            </div>
+            ) : null}
             {editing ? (
               pathForm
             ) : (
               <>
-                <Surface variant="inset" padding="sm" className="mt-2">
-                  <Text
-                    size="caption"
-                    tone="secondary"
-                    className="block max-h-12 overflow-y-auto whitespace-pre-wrap break-all font-mono"
-                  >
-                    {inspection?.path ??
-                      (error ? t("CLI could not be resolved") : t("Checking the selected CLI…"))}
+                {inspection ? (
+                  <OutputBlock frame="filled">
+                    {[inspection.path, inspection.version].filter(Boolean).join("\n")}
+                  </OutputBlock>
+                ) : !error ? (
+                  <Text size="caption" tone="secondary">
+                    {t("Checking the selected CLI…")}
                   </Text>
-                  <Text
-                    size="caption"
-                    tone="secondary"
-                    className="mt-1 block max-h-10 overflow-y-auto whitespace-pre-wrap break-words"
+                ) : null}
+                {error ? (
+                  <SettingsFeedback
+                    state="error"
+                    extra={error.detail ? <ErrorDetails detail={error.detail} /> : undefined}
                   >
-                    {inspection?.version ??
-                      (error ? t("Retry to check this CLI") : t("Checking version…"))}
-                  </Text>
-                </Surface>
-                {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
-                {revealError ? (
-                  <SettingsFeedback state="error">
-                    {t("Could not open the CLI location: {p0}", { p0: revealError })}
+                    {error.title}
                   </SettingsFeedback>
                 ) : null}
-                <div className="mt-3 flex justify-end gap-2">
+                {revealError ? (
+                  <SettingsFeedback state="error" extra={<ErrorDetails detail={revealError} />}>
+                    {t("Could not open the CLI location.")}
+                  </SettingsFeedback>
+                ) : null}
+                <ModalActions>
                   {error ? (
                     <Button
                       className="shrink-0"
                       disabled={working}
-                      aria-label={t(
-                        overridden ? "Retry {p0} configured path" : "Retry {p0} auto-detect",
-                        { p0: title },
-                      )}
+                      disabledReason={t("Wait for the current operation to finish")}
+                      aria-label={
+                        overridden
+                          ? t("Retry {p0} configured path", { p0: title })
+                          : t("Retry {p0} auto-detect", { p0: title })
+                      }
                       onClick={() => void inspect(overridden ? draft.trim() || null : null)}
                     >
                       <RefreshCw className="icon-sm" strokeWidth={1.75} />
@@ -415,10 +432,11 @@ export function ProviderBinaryControl({
                     className="shrink-0"
                     aria-label={t("Open {p0} CLI location", { p0: title })}
                     disabled={!inspection}
+                    disabledReason={t("Checking the selected CLI…")}
                     onClick={() => {
                       if (inspection) {
                         void revealPath(inspection.path).catch((cause) => {
-                          setRevealError(cause instanceof Error ? cause.message : String(cause));
+                          setRevealError(errorText(cause));
                         });
                       }
                     }}
@@ -430,12 +448,13 @@ export function ProviderBinaryControl({
                     className="shrink-0"
                     aria-label={t("Edit {p0} CLI path", { p0: title })}
                     disabled={working}
+                    disabledReason={t("Wait for the current operation to finish")}
                     onClick={() => setEditing(true)}
                   >
                     <Pencil className="icon-sm" strokeWidth={1.75} />
                     {t("Edit path")}
                   </Button>
-                </div>
+                </ModalActions>
               </>
             )}
           </div>

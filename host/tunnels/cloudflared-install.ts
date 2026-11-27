@@ -43,7 +43,8 @@ export function verifyCloudflared(bytes: Uint8Array, checksum: string): void {
 }
 
 /** PATH wins. Only checksum-pinned bytes may become an executable in Host data. */
-export async function installCloudflared(directory: string): Promise<string> {
+export async function installCloudflared(directory: string, cancel?: AbortSignal): Promise<string> {
+  cancel?.throwIfAborted();
   const existing = await tunnelExecutable("cloudflare");
   if (existing) return existing;
   const release = RELEASES[`${process.platform}-${process.arch}`];
@@ -60,11 +61,17 @@ export async function installCloudflared(directory: string): Promise<string> {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     const response = await fetch(
       `https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/${asset}`,
-      { signal: AbortSignal.timeout(120_000) },
+      {
+        signal: cancel
+          ? AbortSignal.any([cancel, AbortSignal.timeout(120_000)])
+          : AbortSignal.timeout(120_000),
+      },
     );
     if (!response.ok) throw new Error("Cloudflared download failed");
     bytes = Buffer.from(await response.arrayBuffer());
     verifyCloudflared(bytes, checksum);
+    // A cancelled preparation must not keep writing into Host data.
+    cancel?.throwIfAborted();
     await writeFileAtomic(archive, bytes, { mode: 0o700 });
   }
   if (!asset.endsWith(".tgz")) {

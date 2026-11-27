@@ -2,16 +2,18 @@ import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { TabList, Tab, Tabs } from "../../../shared/ui/Tabs";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useEffect, useId, useMemo, useState } from "react";
-import { documentErrorMessage } from "../model/documentViewer";
+import { documentProblemParts } from "../model/documentProblemText";
+import { documentProblem, type DocumentProblem } from "../model/documentViewer";
 import { loadSpreadsheet } from "../model/spreadsheetClient";
 import type { Spreadsheet } from "../model/spreadsheet";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { DocumentMessage } from "./DocumentMessage";
 import { SheetGridView } from "./SheetGridView";
 
 type State =
   | { status: "loading" }
   | { status: "ready"; book: Spreadsheet }
-  | { status: "error"; message: string };
+  | { status: "error"; problem: DocumentProblem };
 type SourceState = { source: object; state: State };
 
 export default function SheetViewer({
@@ -44,7 +46,7 @@ export default function SheetViewer({
         if (!controller.signal.aborted)
           setLoaded({
             source,
-            state: { status: "error", message: documentErrorMessage(cause) },
+            state: { status: "error", problem: documentProblem(cause) },
           });
       },
     );
@@ -56,8 +58,12 @@ export default function SheetViewer({
   }
   if (state.status === "error") {
     return (
-      <DocumentMessage title={t("Couldn’t read this spreadsheet")} error>
-        {state.message}
+      <DocumentMessage
+        title={t("Couldn’t read this spreadsheet")}
+        error
+        detail={documentProblemParts(state.problem).detail}
+      >
+        {documentProblemParts(state.problem).reason}
       </DocumentMessage>
     );
   }
@@ -81,9 +87,9 @@ export default function SheetViewer({
         />
       </div>
       {state.book.omittedSheets > 0 ? (
-        <p role="status" className="px-3 text-ui-caption text-(--ui-text-secondary)">
+        <InlineMessage tone="info" inset="row">
           {t("Only the first 100 sheets are previewed.")}
-        </p>
+        </InlineMessage>
       ) : null}
       {names.length > 1 ? (
         <Tabs
@@ -94,7 +100,9 @@ export default function SheetViewer({
         >
           <TabList
             label={t("Workbook sheets")}
-            className="flex min-h-(--ui-control-height-compact) shrink-0 items-center gap-1 overflow-x-auto border-t border-(--ui-pane-border) px-2 py-1 text-ui-caption"
+            scroll="auto"
+            inset="sm"
+            className="min-h-(--ui-control-height-compact) shrink-0 border-t border-(--ui-pane-border) text-ui-caption"
           >
             {names.map((name, index) => (
               <Tab key={name} value={String(index)} className="shrink-0">

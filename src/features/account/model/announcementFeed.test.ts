@@ -97,6 +97,24 @@ describe("announcement polling", () => {
     stop();
   });
 
+  it("polls again after a stalled fetch ends with a deadline error", async () => {
+    let calls = 0;
+    const { feed, fetchItems, stop } = setup({
+      fetchItems: () =>
+        ++calls === 1
+          ? new Promise((_, reject) =>
+              setTimeout(() => reject(new TypeError("Account request timed out")), 15_000),
+            )
+          : Promise.resolve([item("a", "info", "2026-11-01T00:00:00Z")]),
+    });
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(feed.setItems).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(ANNOUNCEMENT_POLL_MS);
+    expect(fetchItems).toHaveBeenCalledTimes(2);
+    expect(feed.setItems).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
   it("keeps the last list when a fetch fails", async () => {
     const { feed, stop } = setup({ fetchItems: async () => Promise.reject(new Error("down")) });
     await vi.advanceTimersByTimeAsync(0);

@@ -23,8 +23,7 @@ export type TaskBudgetScope =
   | { taskId: string; goalId?: never }
   | { goalId: string; taskId?: never };
 export type TaskRunBudgetUsage = {
-  /** False when older work exists outside the durable run ledger. Totals are lower bounds. */
-  historyComplete: boolean;
+  /** Observed run time; a sleep or stall gap adds nothing and is not an error. */
   agentMinutes: number;
   attempts: number;
   completedRuns: number;

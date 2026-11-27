@@ -3,78 +3,131 @@
    state, so connecting or speaking never moves a control. */
 .stage {
   display: grid;
-  gap: 10px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
-  margin-block-end: 10px;
+  margin-block-end: var(--ui-space-2);
+  padding: var(--ui-space-2);
+}
+.stage[data-layout="stage"] {
+  justify-items: center;
+  gap: var(--ui-space-2);
+  margin-block-end: 0;
+  padding-block: var(--ui-space-1);
+  text-align: center;
+}
+.stage[data-layout="strip"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin-block-end: var(--space-2);
+  padding: var(--space-2) 0;
+}
+.stage[data-layout="strip"] .status {
+  flex: 1 1 12rem;
+}
+.stage[data-layout="stage"] .status {
+  flex-direction: column;
+  gap: var(--ui-space-2);
+  inline-size: 100%;
+}
+.stage[data-layout="stage"]:not([data-full-call]) {
+  /* Keep the scope selector above the call dock in short saved panels. */
+  --voice-stage-gap: clamp(0px, calc((var(--voice-stage-height) - 286px) / 4), var(--ui-space-2));
+  gap: var(--voice-stage-gap);
+  padding-block: min(var(--ui-space-1), var(--voice-stage-gap));
+}
+.stage[data-layout="stage"]:not([data-full-call]) .status {
+  gap: var(--voice-stage-gap);
+}
+.stage[data-layout="stage"]:not([data-full-call]) .statusText {
+  row-gap: min(var(--ui-space-1), var(--voice-stage-gap));
+}
+.stage[data-layout="stage"] .statusText {
+  justify-items: center;
+  max-inline-size: 100%;
+}
+.stage[data-layout="stage"] .statusLine {
+  justify-content: center;
+  min-block-size: var(--ui-space-5);
+}
+.stage[data-layout="stage"] .statusEnd {
+  margin-inline-start: 0;
+}
+.stage[data-layout="stage"] .meta {
+  justify-content: center;
+}
+.stage[data-layout="stage"] .scope {
+  justify-content: center;
+}
+.stage[data-full-call] {
+  gap: clamp(var(--ui-space-2), 1.3dvh, var(--ui-space-4));
+  padding: 0;
+}
+.stage[data-full-call] .status {
+  gap: var(--ui-space-3);
+}
+.stage[data-full-call] .statusLine {
+  min-block-size: 1.6rem;
+}
+.stage[data-full-call] .captionSlot {
+  min-block-size: 2.75rem;
+  display: grid;
+  place-items: center;
+  inline-size: 100%;
+  text-align: center;
+}
+/* The words in flight on the call stage; long replies stay readable in the transcript. */
+.spoken {
+  max-inline-size: min(100%, 36ch);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.stage[data-full-call] .spoken {
+  max-inline-size: min(100%, 58ch);
+  margin: 0;
+}
+.meta {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  min-inline-size: 0;
+  font-variant-numeric: tabular-nums;
 }
 .status {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--ui-space-3);
   min-inline-size: 0;
 }
 .statusText {
   display: grid;
   flex: 1 1 0;
-  gap: 4px;
+  gap: var(--ui-space-1);
   min-inline-size: 0;
 }
 .statusLine {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
-  min-block-size: 24px;
+  min-block-size: var(--ui-space-6);
 }
 .statusEnd {
   margin-inline-start: auto;
 }
 
-/* Readouts: label and value pairs on hairlines. The engine takes the full row; the live input
-   meter and session clock share the next one. Labels never wrap. */
-.readouts {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px 12px;
-  margin-block-start: 8px;
-  font-variant-numeric: tabular-nums;
-}
-.readout {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  min-inline-size: 0;
-  padding-block-start: 4px;
-}
-.readout:first-child {
-  grid-column: 1 / -1;
-}
-.readout > :first-child {
-  flex: none;
-  white-space: nowrap;
-}
-.meter {
-  display: flex;
-  flex: none;
-  gap: 4px;
-}
-.meter > i {
-  inline-size: 3px;
-  block-size: 8px;
-  border-radius: var(--ui-radius-xs);
-  background: var(--ui-fill-subtle);
-}
-.meter > i[data-on] {
-  background: var(--ui-tone-info-fg);
-}
 .caption {
   overflow-wrap: break-word;
+}
+:global([data-full-screen]) .caption {
+  text-align: center;
 }
 .scope {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 
@@ -82,13 +135,13 @@
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--ui-space-3);
   min-inline-size: 0;
   min-block-size: 4.5rem;
   max-block-size: min(42dvh, 300px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  margin-block-end: 8px;
+  margin-block-end: var(--ui-space-2);
 }
 .row {
   display: flex;
@@ -99,9 +152,13 @@
 }
 .bubble {
   max-inline-size: 85%;
-  padding: 6px 10px;
+  padding: var(--ui-space-2) var(--ui-space-3);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.row[data-role="assistant"] .bubble {
+  max-inline-size: min(100%, 62ch);
+  padding-inline: var(--space-1);
 }
 
 /* Footer: a single row that wraps only when the panel is narrower than its controls. */
@@ -109,7 +166,7 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 .bar > * {
@@ -119,10 +176,33 @@
   flex: 1 1 0;
   min-inline-size: 0;
 }
+/* Live call controls: the turn choice, then a centred, phone-style dock of round buttons. */
+.callFooter {
+  display: grid;
+  gap: var(--ui-space-2);
+  min-inline-size: 0;
+}
+.callDock {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--ui-space-2);
+  min-inline-size: 0;
+}
+.callDock > * {
+  flex-shrink: 0;
+}
 
 /* A resized panel gives the transcript all the height it has. */
 [data-sized] .chat {
   max-block-size: none;
+}
+[data-full-screen] .chat {
+  min-block-size: 0;
+  max-block-size: none;
+  padding-block-start: var(--ui-space-3);
+  margin-block-end: 0;
 }
 
 /* Open question or job review in its own panel beside the companion (VoiceSidePanel). Fixed to
@@ -137,7 +217,7 @@
   min-inline-size: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 8px;
+  padding: var(--ui-space-2);
 }
 
 /* In a window too small for a side panel: docked above the controls with its own scroll. */
@@ -146,7 +226,7 @@
   max-block-size: min(55dvh, 440px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 8px 10px;
+  padding: var(--ui-space-2) var(--ui-space-3);
 }
 
 /* Resize grip in the header: drag outward and up; the icon points the way it resizes. */
@@ -158,24 +238,20 @@
 }
 .resizeEdge[data-resize-direction="n"],
 .resizeEdge[data-resize-direction="s"] {
-  left: 12px;
-  right: 12px;
-  height: 6px;
+  left: var(--ui-space-3);
+  right: var(--ui-space-3);
   cursor: ns-resize;
 }
 .resizeEdge[data-resize-direction="e"],
 .resizeEdge[data-resize-direction="w"] {
-  top: 12px;
-  bottom: 12px;
-  width: 6px;
+  top: var(--ui-space-3);
+  bottom: var(--ui-space-3);
+  inline-size: 6px;
   cursor: ew-resize;
 }
-.resizeEdge[data-resize-direction="ne"],
-.resizeEdge[data-resize-direction="nw"],
-.resizeEdge[data-resize-direction="se"],
-.resizeEdge[data-resize-direction="sw"] {
-  width: 12px;
-  height: 12px;
+.resizeCorner {
+  width: var(--ui-space-3);
+  height: var(--ui-space-3);
 }
 .resizeEdge[data-resize-direction="ne"],
 .resizeEdge[data-resize-direction="sw"] {
@@ -196,6 +272,11 @@
 }
 .resizeEdge[data-resize-direction*="w"] {
   left: 0;
+}
+/* The edge is already a 6px hit area on the panel's border box; the sash's ±3px pseudo-element
+   would only add scrollable overflow past the clipped panel. */
+.resizeEdge[data-resize-direction][data-orientation]::before {
+  inset: 0;
 }
 /* The side panel is the question's surface; drop the card frame inside it. */
 .side:has([data-question-form]) {

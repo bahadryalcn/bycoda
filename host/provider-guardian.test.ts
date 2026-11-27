@@ -371,3 +371,19 @@ it("warns and falls back to the plain guard for a declared invalid guardian, lik
   expect(warn).toHaveBeenCalled();
   warn.mockRestore();
 });
+
+native("reports the failing step and OS error when the provider cannot be started", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "bycoda-guardian-test-"));
+  const child = new NativeGuardianChild(executable!, {
+    command: join(directory, "missing-provider.exe"),
+    args: [],
+    cwd: directory,
+    env: { ...process.env },
+  });
+  active.add(child);
+  child.stderr.resume();
+  // The guardian's bounded detail reaches the Host error: step, kind, OS code.
+  await expect(child.started).rejects.toThrow(
+    /startup failed: spawn-failed \(CreateProcess: NotFound, os error 2\)/,
+  );
+});

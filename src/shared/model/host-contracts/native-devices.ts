@@ -2,6 +2,16 @@ import { z } from "zod";
 import { SafeCounterSchema } from "./schemas";
 
 export const DevicePlatformSchema = z.enum(["ios", "android"]);
+/** The pinned expo-device-hub the Host installs; setup copy quotes this same value. */
+export const DEVICE_HUB_VERSION = "0.12.0";
+/** The pinned agent-device CLI agents drive devices with; Settings quotes this same value. */
+export const AGENT_DEVICE_VERSION = "0.21.23";
+/** Who holds a device or browser lease right now; absent when nobody does. */
+export const LeaseHolderSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("session"), sessionId: z.string() }),
+  z.strictObject({ kind: z.literal("controller") }),
+]);
+export type LeaseHolder = z.infer<typeof LeaseHolderSchema>;
 export const DeviceSummarySchema = z.strictObject({
   id: z.string(),
   name: z.string(),
@@ -10,6 +20,8 @@ export const DeviceSummarySchema = z.strictObject({
   booted: z.boolean(),
   physical: z.boolean(),
   supportsFold: z.boolean().optional(),
+  /** Set by owner `devices.list` when a live control lease exists (`devices.holder.v1`). */
+  heldBy: LeaseHolderSchema.optional(),
 });
 export const DeviceHostStatusSchema = z.strictObject({
   running: z.boolean(),
@@ -32,7 +44,18 @@ export const DeviceFrameSchema = z.strictObject({
   mime: z.enum(["image/png", "image/jpeg"]),
   base64: z.string(),
   capturedAt: z.string(),
+  /** Device pixel size of a frame scaled for a viewer (`maxEdge`); absent at full resolution. */
+  sourceWidth: SafeCounterSchema.optional(),
+  sourceHeight: SafeCounterSchema.optional(),
 });
+/**
+ * Phone viewer support: `devices.capture` accepts `maxEdge` and may scale the frame, and
+ * `devices.action` accepts the `key` (back, app switcher) and `rotate` actions.
+ */
+export const DEVICE_VIEWER_CAPABILITY = "devices.viewer.v2";
+/** Minimum pause after a fallback capture, also the Host cache lifetime. */
+export const DEVICE_STILL_MIN_GAP_MS = 100;
+
 /**
  * Raw byte cap of one `devices.stream` response. A response of exactly this many
  * bytes was cut by the cap and may end inside a frame.
@@ -45,7 +68,14 @@ export const DeviceStreamChunkSchema = z.strictObject({
   base64: z.string(),
   width: SafeCounterSchema,
   height: SafeCounterSchema,
+  boundary: z.boolean().optional(),
 });
+export const DeviceTouchSchema = z.strictObject({
+  phase: z.enum(["down", "move", "up", "cancel"]),
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+});
+export type DeviceTouch = z.infer<typeof DeviceTouchSchema>;
 const coordinate = SafeCounterSchema.max(20000);
 export const DeviceActionSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("openApp"), app: z.string() }),
@@ -59,6 +89,8 @@ export const DeviceActionSchema = z.discriminatedUnion("type", [
     endY: coordinate,
   }),
   z.strictObject({ type: z.literal("home") }),
+  z.strictObject({ type: z.literal("key"), key: z.enum(["back", "appSwitcher"]) }),
+  z.strictObject({ type: z.literal("rotate"), orientation: z.enum(["portrait", "landscape"]) }),
   z.strictObject({
     type: z.literal("fold"),
     posture: z.enum(["closed", "half-open", "open"]),
@@ -150,16 +182,33 @@ export const NATIVE_DEVICES_RPC_SCHEMAS = {
     result: DeviceSummarySchema,
   },
   "devices.capture": {
-    params: z.strictObject({ ...base, deviceId: z.string() }),
+    params: z.strictObject({
+      ...base,
+      deviceId: z.string(),
+      maxEdge: z.number().int().min(320).max(4096).optional(),
+    }),
     result: DeviceFrameSchema,
   },
   "devices.stream": {
     params: z.strictObject({ ...base, deviceId: z.string(), cursor: SafeCounterSchema.optional() }),
     result: DeviceStreamChunkSchema,
   },
+  "devices.touch": {
+    params: z.strictObject({
+      ...base,
+      deviceId: z.string(),
+      leaseId: z.string(),
+      touch: DeviceTouchSchema,
+    }),
+    result: z.strictObject({ accepted: z.literal(true) }),
+  },
   "devices.control.status": {
     params: z.strictObject({ ...base, deviceId: z.string() }),
-    result: z.strictObject({ deviceId: z.string(), busy: z.boolean() }),
+    result: z.strictObject({
+      deviceId: z.string(),
+      busy: z.boolean(),
+      heldBy: LeaseHolderSchema.optional(),
+    }),
   },
   "devices.control.claim": {
     params: z.strictObject({ ...base, deviceId: z.string(), requestId: z.string() }),

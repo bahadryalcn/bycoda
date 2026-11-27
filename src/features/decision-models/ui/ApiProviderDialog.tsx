@@ -76,8 +76,6 @@ export function ApiProviderDialog({
       return;
     }
     setErrors({});
-    // The key leaves component state before the request, so a failed attempt does not keep it.
-    setApiKey("");
     const input: DecisionSourceInput = {
       name: entry.name,
       kind: entry.kind,
@@ -85,7 +83,13 @@ export function ApiProviderDialog({
       ...(entry.endpoint ? { endpoint: entry.endpoint } : {}),
       ...(model.trim() ? { model: model.trim() } : {}),
     };
-    void flow.submit(input, contractLabel(entry.adapter), key).catch(() => undefined);
+    // The key stays in state while the add is in flight or after it fails, so a retry needs no retyping.
+    void flow
+      .submit(input, contractLabel(entry.adapter), key)
+      .then((added) => {
+        if (added) setApiKey("");
+      })
+      .catch(() => undefined);
   };
 
   const openDocs = (url: string) => {
@@ -96,9 +100,6 @@ export function ApiProviderDialog({
   return (
     <Modal
       title={t("API provider")}
-      description={t(
-        "Add a provider with your own key. The address and contract come from the catalog.",
-      )}
       size="md"
       onClose={close.requestClose}
       footer={
@@ -110,7 +111,9 @@ export function ApiProviderDialog({
             <Button
               variant="primary"
               loading={flow.busy}
+              loadingLabel={flow.phase === "testing" ? t("Testing…") : t("Saving…")}
               disabled={flow.busy || !entry}
+              disabledReason={entry ? undefined : t("Choose a provider first.")}
               onClick={submit}
             >
               {t("Add and test")}
@@ -168,7 +171,7 @@ export function ApiProviderDialog({
           description={
             entry?.kind === "gateway"
               ? t("The model list for this gateway is not available yet. Type the model name.")
-              : t("Type the model name, if the provider needs one.")
+              : undefined
           }
           value={model}
           monospace
@@ -188,9 +191,6 @@ export function ApiProviderDialog({
           error={errors.key}
           onChange={(event) => setApiKey(event.target.value)}
         />
-        {flow.phase === "testing" ? (
-          <InlineMessage tone="info">{t("Testing the connection…")}</InlineMessage>
-        ) : null}
         {flow.failure !== null ? <ErrorNotice error={flow.failure} /> : null}
         {linkFailure !== null ? <ErrorNotice error={linkFailure} /> : null}
         {flow.outcome ? (

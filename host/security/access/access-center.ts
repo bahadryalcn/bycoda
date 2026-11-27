@@ -9,7 +9,13 @@ import {
 export type HostAccessReport = {
   environmentId: string;
   sampledAt: number;
-  devices: { id: string; name: string; isCurrent: boolean }[];
+  devices: {
+    id: string;
+    name: string;
+    isCurrent: boolean;
+    canManageDevices?: boolean;
+    isLocalDesktop?: boolean;
+  }[];
   devicesTruncated: boolean;
   lan: { state: MobileAccessStatus["state"] };
   privateNetwork: { state: MobileAccessStatus["state"] };
@@ -23,16 +29,7 @@ type Dependencies = {
   privateNetwork: () => Promise<MobileAccessStatus>;
   tunnels: () => Promise<TunnelOverview>;
 };
-const ACCESS_STATES = [
-  "ready",
-  "setup-required",
-  "install-required",
-  "sign-in-required",
-  "offline",
-  "approval-required",
-  "permission-required",
-  "unavailable",
-];
+const ACCESS_STATES = ["ready", "setup-required", "unavailable"];
 const safeStatus = async (read: Dependencies["lan"]) => {
   try {
     const value = await read();
@@ -128,7 +125,13 @@ export async function readHostAccess(
   return {
     environmentId,
     sampledAt: now(),
-    devices: devices.devices.map(({ id, name, isCurrent }) => ({ id, name, isCurrent })),
+    devices: devices.devices.map(({ id, name, isCurrent, canManageDevices, isLocalDesktop }) => ({
+      id,
+      name,
+      isCurrent,
+      ...(typeof canManageDevices === "boolean" ? { canManageDevices } : {}),
+      ...(typeof isLocalDesktop === "boolean" ? { isLocalDesktop } : {}),
+    })),
     devicesTruncated: devices.devicesTruncated,
     lan,
     privateNetwork,

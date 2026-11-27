@@ -1,8 +1,13 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { ProviderDefaultsSaveBar, type DefaultsSaveState } from "./ProviderDefaultsSaveBar";
+import { ProviderDefaultsScopeRow } from "./providerDefaultsTargetsPicker";
+
+const changesOf = (count: number) =>
+  Array.from({ length: count }, (_, index) => ({ id: String(index), label: `Field ${index}` }));
 
 it("confirms saved defaults in the action while retaining unsaved counts and save errors", async () => {
   const container = document.createElement("div");
@@ -12,10 +17,7 @@ it("confirms saved defaults in the action while retaining unsaved counts and sav
     await act(async () =>
       root.render(
         createElement(ProviderDefaultsSaveBar, {
-          target: { kind: "global" },
-          options: [],
-          onTargetChange: vi.fn(),
-          pending,
+          changes: changesOf(pending),
           saveState,
           saving,
           onSave: vi.fn(),
@@ -27,27 +29,25 @@ it("confirms saved defaults in the action while retaining unsaved counts and sav
   try {
     await render(0, { state: "saved", target: "Global" });
     expect(
-      [...container.querySelectorAll("button")].some((button) => button.textContent === "Saved"),
+      [...container.querySelectorAll("button")].some((button) =>
+        button.textContent?.startsWith("Saved"),
+      ),
     ).toBe(true);
-    expect(container.querySelector(".provider-save-bar-status")).toBeNull();
+    expect(container.textContent).not.toContain("unsaved");
     await render(2, { state: "saved", target: "Global" });
-    expect(container.querySelector(".provider-save-bar-status")?.textContent).toContain(
-      "2 unsaved changes",
-    );
+    expect(container.textContent).toContain("2 unsaved changes");
     expect(
       [...container.querySelectorAll("button")].some((button) => button.textContent === "Save"),
     ).toBe(true);
     await render(2, { state: "error", message: "Storage unavailable" });
-    expect(container.querySelector(".provider-save-bar-status")?.textContent).toContain(
-      "Storage unavailable",
-    );
+    expect(container.textContent).toContain("Storage unavailable");
     expect(
       [...container.querySelectorAll("button")].some((button) => button.textContent === "Retry"),
     ).toBe(true);
     await render(2, { state: "idle" }, true);
     for (const label of ["Save", "Discard"]) {
       const button = [...container.querySelectorAll("button")].find(
-        (node) => node.textContent === label,
+        (node) => node.textContent === label || node.textContent === "Saving…",
       )!;
       expect(button.getAttribute("aria-disabled")).toBe("true");
     }
@@ -57,72 +57,70 @@ it("confirms saved defaults in the action while retaining unsaved counts and sav
   }
 });
 
-it("summarizes Global and multiple targets without losing project count", async () => {
-  const { defaultsTargetsSummary } = await import("./providerDefaultsTargetsPicker");
-  const options = [
-    { value: "global", label: "Global" },
-    { value: "project:a", label: "A" },
-    { value: "project:b", label: "B" },
-  ];
-  expect(defaultsTargetsSummary(["project:a", "project:b"], options)).toBe("All projects (2)");
-  expect(defaultsTargetsSummary(["global", "project:a"], options)).toBe(
-    "Bycoda defaults + 1 overrides",
-  );
-});
-
-it("keeps group apply details available when the draft is clean", async () => {
+it("offers one-provider or all-providers at save time, not in the scope row", async () => {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
+  const onDraftChange = vi.fn();
   try {
     await act(async () =>
       root.render(
         createElement(ProviderDefaultsSaveBar, {
-          target: { kind: "group", id: "team", workspace: false },
-          options: [{ value: "group:team", label: "Team" }],
-          pending: 0,
+          changes: changesOf(1),
           saveState: { state: "idle" },
           onSave: vi.fn(),
           onDiscard: vi.fn(),
+          activeProvider: "codex",
+          providers: ["codex", "claude"],
+          draft: { providers: {}, accounts: {} },
+          onDraftChange,
+        }),
+      ),
+    );
+    const group = container.querySelector('[role="radiogroup"][aria-label="Apply to"]');
+    expect(group).not.toBeNull();
+    await act(async () =>
+      [...group!.querySelectorAll<HTMLElement>('[role="radio"]')]
+        .find((radio) => radio.textContent?.includes("All providers"))!
+        .click(),
+    );
+    expect(onDraftChange).toHaveBeenCalledWith(expect.objectContaining({ providerScope: "all" }));
+    await act(async () =>
+      root.render(
+        createElement(ProviderDefaultsScopeRow, {
+          target: { kind: "global" },
           onTargetChange: vi.fn(),
         }),
       ),
     );
-    expect(container.querySelector('[aria-label="Apply details"]')).not.toBeNull();
+    expect(container.textContent).toContain("Where these settings apply");
+    expect(container.querySelector('[aria-label="Apply to"]')).toBeNull();
   } finally {
     await act(async () => root.unmount());
     container.remove();
   }
 });
 
-it("shows the provider scope only while changes are pending", async () => {
+it("shows where defaults are saved above the fields, not in the save bar", async () => {
+  const css = readFileSync("src/features/settings/ui/ProviderDefaults.css", "utf8");
+  expect(css).not.toMatch(/\[aria-label/);
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  const render = (pending: number, providerScope?: "all") =>
-    act(async () =>
+  try {
+    await act(async () =>
       root.render(
-        createElement(ProviderDefaultsSaveBar, {
+        createElement(ProviderDefaultsScopeRow, {
           target: { kind: "global" },
-          options: [],
           onTargetChange: vi.fn(),
-          pending,
-          saveState: { state: "idle" },
-          onSave: vi.fn(),
-          onDiscard: vi.fn(),
-          activeProvider: "codex",
-          draft: { providers: {}, accounts: {}, ...(providerScope ? { providerScope } : {}) },
-          onDraftChange: vi.fn(),
         }),
       ),
     );
-  try {
-    await render(0);
-    expect(container.textContent).not.toContain("Apply to");
-    await render(1);
-    expect(container.textContent).toContain("Apply to");
-    await render(0, "all");
-    expect(container.textContent).toContain("Apply to");
+    expect(container.textContent).toContain("Where these settings apply");
+    expect(
+      container.querySelector('[role="radiogroup"][aria-label="Where these settings apply"]'),
+    ).not.toBeNull();
+    expect(container.querySelector("button[aria-haspopup='dialog']")).toBeNull();
   } finally {
     await act(async () => root.unmount());
     container.remove();

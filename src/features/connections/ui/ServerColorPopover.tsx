@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { normalizeHex } from "../../../shared/lib/colorUtils";
 import { t, useLocale } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/Button";
 import { ColorPickerPopover, ColorSwatchRow } from "../../../shared/ui/ColorPickerPopover";
 import { TAB_GROUP_COLORS } from "../../workspace/model/tabGroups";
 import type { ServerMetadataPatch, ServerRecord } from "../model/serverInventory";
-import { serverAccentColor, serverHasColor } from "./serverColor";
+import { serverAccentColor } from "./serverColor";
 
 /** Custom picker drags preview locally; the native store is written once the pointer settles. */
 const CUSTOM_SAVE_DELAY_MS = 250;
@@ -43,9 +42,12 @@ export function ServerColorPopover({
   const shownCustom = draft ?? customColor;
   const fallback = normalizeHex(TAB_GROUP_COLORS[0]);
   return (
-    <div className="flex flex-col gap-3 p-3">
+    <div className="flex flex-col gap-3">
       <ColorSwatchRow
         colors={TAB_GROUP_COLORS}
+        labels={TAB_GROUP_COLORS.map((_, index) =>
+          index === 0 ? t("No color") : t("Color {p0}", { p0: index + 1 }),
+        )}
         colorIndex={colorIndex}
         customColor={shownCustom}
         customPickerOpen={pickerOpen}
@@ -66,17 +68,6 @@ export function ServerColorPopover({
           }}
         />
       ) : null}
-      <Button
-        variant="ghost"
-        disabled={!serverHasColor(server) && draft == null}
-        onClick={() => {
-          cancelPending();
-          setPickerOpen(false);
-          onPick({ colorIndex: null, customColor: null });
-        }}
-      >
-        {t("No color")}
-      </Button>
     </div>
   );
 }

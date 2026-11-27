@@ -20,7 +20,8 @@ vi.mock("../../../platform/tauri/fs", () => ({
     diffPatch: "+change",
   })),
 }));
-vi.mock("../../../features/providers/model/providerAccounts", () => ({
+vi.mock("../../../features/providers/model/providerAccounts", async (original) => ({
+  ...(await original<typeof import("../../../features/providers/model/providerAccounts")>()),
   defaultProviderAccountId: (provider: string) => `${provider}-account`,
 }));
 import { runHarnessTextPrompt, generateHarnessCommitMessage } from "./registry";
@@ -33,6 +34,7 @@ import {
   generateCommitMessage,
   generatePrContent,
 } from "../../../features/source-control/model/gitTextGeneration";
+import { generatePrContent as generateCorePrContent } from "./textHarness";
 import {
   setHarnessModels,
   resetHarnessModelOverlays,
@@ -72,6 +74,24 @@ it("passes the selected native model, account and advisor to isolated Git genera
     }),
   );
   expect(generateHarnessCommitMessage).not.toHaveBeenCalled();
+});
+it.each([
+  ["claude", "claude:sonnet-5"],
+  ["codex", "codex:gpt-5.4"],
+  ["grok", "grok:grok-build"],
+] as const)("uses the selected %s account for commit generation", async (harness, model) => {
+  vi.mocked(runHarnessTextPrompt).mockResolvedValue('{"subject":"Fix generation","body":""}');
+  await expect(
+    generateCommitMessage("/repo", undefined, undefined, {
+      harness,
+      model,
+      modelSettings: {},
+      providerAccountId: "work",
+    }),
+  ).resolves.toBe("Fix generation");
+  expect(runHarnessTextPrompt).toHaveBeenCalledWith(
+    expect.objectContaining({ harness, providerAccountId: "work" }),
+  );
 });
 it("uses Codex advertised reasoning and service tier for PR generation", async () => {
   setHarnessModels("codex", [
@@ -126,6 +146,31 @@ it("uses Codex advertised reasoning and service tier for PR generation", async (
       modelSettings: { effort: "high", serviceTier: "fast", autoCompactWindow: "default" },
     }),
   );
+});
+// #1369: the selected-model PR path forwards the dialog's abort signal to the provider run.
+it("forwards the abort signal for PR generation", async () => {
+  vi.mocked(runHarnessTextPrompt).mockResolvedValue('{"title":"Fix","body":"Body"}');
+  const controller = new AbortController();
+  await generateCorePrContent(
+    "/repo",
+    "claude",
+    { harness: "claude", model: "claude:sonnet-5", modelSettings: {} },
+    undefined,
+    controller.signal,
+  );
+  expect(runHarnessTextPrompt).toHaveBeenCalledWith(
+    expect.objectContaining({ signal: controller.signal }),
+  );
+  controller.abort();
+  await expect(
+    generateCorePrContent(
+      "/repo",
+      "claude",
+      { harness: "claude", model: "claude:sonnet-5", modelSettings: {} },
+      undefined,
+      controller.signal,
+    ),
+  ).rejects.toThrow();
 });
 it("rejects malformed output and cancelled requests", async () => {
   const choice = {

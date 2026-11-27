@@ -1,14 +1,14 @@
 /* The "Create with AI" dialog: model choice, interview and preview. */
 .stage {
   display: grid;
-  gap: 16px;
+  gap: var(--ui-space-4);
   min-inline-size: 0;
 }
 .interviewControls {
   display: flex;
   align-items: end;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 .muted {
@@ -23,7 +23,7 @@
 .chat {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--ui-space-3);
   min-inline-size: 0;
   min-block-size: min(18vh, 120px);
   max-block-size: 40vh;
@@ -32,7 +32,7 @@
 .bubble {
   max-inline-size: min(86%, 520px);
   margin: 0;
-  padding: 8px 12px;
+  padding: var(--ui-space-2) var(--ui-space-3);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
@@ -57,14 +57,14 @@
 }
 .fields {
   display: grid;
-  margin-block: -8px;
+  margin-block: calc(-1 * var(--ui-space-2));
   padding: 0;
   list-style: none;
 }
 .field {
   display: grid;
   gap: 6px;
-  padding: 8px 0;
+  padding: var(--ui-space-2) 0;
   min-inline-size: 0;
 }
 .change {
@@ -76,20 +76,20 @@
 }
 .avatarSection {
   display: grid;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 .avatarResult {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--ui-space-3);
   min-inline-size: 0;
 }
 
 /* Shared by the picker in Settings and the preview. */
 .generator {
   display: grid;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 .generatorRow {
@@ -97,5 +97,5 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--ui-space-2);
 }

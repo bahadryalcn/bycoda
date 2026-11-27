@@ -7,6 +7,8 @@ import { lstat, open, readFile, rm } from "node:fs/promises";
 import { join, win32 } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { SocialPlatformError } from "../../src/integrations/social/adapter";
+import { createLogger } from "../diagnostics/logger";
+import { OPEN_CONTROL_QUERY } from "./social-browser-publishing-shared";
 
 const BROWSER_RESPONSE_ORIGINS = [
   "https://x.com",
@@ -24,6 +26,7 @@ const BROWSER_RESPONSE_ORIGINS = [
   "https://web.whatsapp.com",
   "https://web.telegram.org",
 ];
+const REDDIT_RESPONSE_ORIGIN = "https://www.reddit.com";
 
 /** Minimal page surface used by the X browser-session flows; mocked in tests. */
 export interface BrowserPage {
@@ -105,6 +108,23 @@ export function findBrowser(
 }
 
 type CdpListener = (method: string, params: any, sessionId?: string) => void;
+/** Largest text frame accepted from the browser; real replies (screenshots, response bodies) stay far below. */
+export const MAX_CDP_FRAME_LENGTH = 32 * 1024 * 1024;
+const log = createLogger("host.social.browser");
+const isRecord = (value: unknown): value is Record<string, any> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+const isThenable = (value: unknown): value is PromiseLike<unknown> =>
+  isRecord(value) && typeof value.then === "function";
+/** A frame is one JSON object in a text message; anything else is dropped without trusting it. */
+function parseFrame(data: unknown): Record<string, any> | undefined {
+  if (typeof data !== "string" || data.length > MAX_CDP_FRAME_LENGTH) return undefined;
+  try {
+    const message: unknown = JSON.parse(data);
+    return isRecord(message) ? message : undefined;
+  } catch {
+    return undefined;
+  }
+}
 /** Chrome DevTools Protocol over Node's built-in WebSocket; no browser download or driver package. */
 export class Cdp {
   private next = 0;
@@ -117,22 +137,10 @@ export class Cdp {
     }
   >();
   private listeners = new Set<CdpListener>();
+  private warned = new Set<string>();
   readonly closed: Promise<void>;
   private constructor(private readonly socket: WebSocket) {
-    socket.addEventListener("message", (event) => {
-      const message = JSON.parse(String(event.data));
-      if (message.id === undefined) {
-        for (const listener of this.listeners)
-          listener(message.method, message.params, message.sessionId);
-        return;
-      }
-      const waiter = this.pending.get(message.id);
-      if (!waiter) return;
-      this.pending.delete(message.id);
-      clearTimeout(waiter.timer);
-      if (message.error) waiter.reject(new Error(message.error.message));
-      else waiter.resolve(message.result ?? {});
-    });
+    socket.addEventListener("message", (event) => this.receive(event.data));
     this.closed = new Promise((resolve) =>
       socket.addEventListener("close", () => {
         for (const waiter of this.pending.values()) {
@@ -198,6 +206,46 @@ export class Cdp {
   on(listener: CdpListener) {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+  /**
+   * One frame from the browser. A frame or listener that fails is dropped here: the Host exits on
+   * an uncaught exception, so nothing thrown while handling browser-controlled data may escape.
+   */
+  private receive(data: unknown) {
+    const message = parseFrame(data);
+    if (!message) return this.warnOnce("frame", "Dropped a malformed browser debugging frame.");
+    if (message.id === undefined) {
+      if (typeof message.method !== "string")
+        return this.warnOnce("frame", "Dropped a malformed browser debugging frame.");
+      const sessionId = typeof message.sessionId === "string" ? message.sessionId : undefined;
+      // Snapshot so a listener that unsubscribes mid-dispatch cannot skip a sibling.
+      for (const listener of Array.from(this.listeners)) {
+        try {
+          const outcome: unknown = listener(message.method, message.params, sessionId);
+          if (isThenable(outcome))
+            outcome.then(undefined, () =>
+              this.warnOnce("listener", "A browser event listener failed."),
+            );
+        } catch {
+          this.warnOnce("listener", "A browser event listener failed.");
+        }
+      }
+      return;
+    }
+    const waiter = typeof message.id === "number" ? this.pending.get(message.id) : undefined;
+    if (!waiter) return;
+    this.pending.delete(message.id);
+    clearTimeout(waiter.timer);
+    if (message.error) {
+      const reason = message.error?.message;
+      waiter.reject(new Error(typeof reason === "string" ? reason : "Browser command failed."));
+    } else waiter.resolve(isRecord(message.result) ? message.result : {});
+  }
+  /** Fixed text only: frame and page content never reach the log. One line per kind per connection. */
+  private warnOnce(kind: string, text: string) {
+    if (this.warned.has(kind)) return;
+    this.warned.add(kind);
+    log.warn(text);
   }
   close() {
     this.socket.close();
@@ -415,8 +463,26 @@ export function cdpPage(
         "base64",
       ),
     async click(selector) {
+      const query = selector.startsWith("[data-bycoda-web-control=")
+        ? `${OPEN_CONTROL_QUERY}(document, ${JSON.stringify(selector)})`
+        : `[...document.querySelectorAll(${JSON.stringify(selector)})]`;
       const point = await evaluate<{ x: number; y: number } | null>(
-        `(() => { const matches = [...document.querySelectorAll(${JSON.stringify(selector)})].filter(e => e.getClientRects().length && getComputedStyle(e).visibility !== "hidden"); if (matches.length !== 1) return null; const element = matches[0]; if (element.disabled || element.getAttribute("aria-disabled") === "true") return null; element.scrollIntoView({ block: "center" }); const box = element.getBoundingClientRect(); const x = box.x + box.width / 2, y = box.y + box.height / 2; const hit = document.elementFromPoint(x, y); return hit && element.contains(hit) ? { x, y } : null; })()`,
+        `(() => {
+          const matches = ${query}.filter(e => e.getClientRects().length && getComputedStyle(e).visibility !== "hidden");
+          if (matches.length !== 1) return null;
+          const element = matches[0];
+          if (element.disabled || element.getAttribute("aria-disabled") === "true") return null;
+          element.scrollIntoView({ block: "center" });
+          const box = element.getBoundingClientRect();
+          const x = box.x + box.width / 2, y = box.y + box.height / 2;
+          let hit = document.elementFromPoint(x, y);
+          while (hit?.shadowRoot && !element.contains(hit)) {
+            const next = hit.shadowRoot.elementFromPoint(x, y);
+            if (!next || next === hit) break;
+            hit = next;
+          }
+          return hit && element.contains(hit) ? { x, y } : null;
+        })()`,
       );
       if (!point) throw new Error("Page element is missing.");
       // Trusted input events; X ignores many synthetic DOM clicks.
@@ -494,7 +560,11 @@ export function cdpPage(
             return;
           }
           path.lastIndex = 0;
-          if (BROWSER_RESPONSE_ORIGINS.includes(url.origin) && path.test(url.pathname))
+          if (
+            (BROWSER_RESPONSE_ORIGINS.includes(url.origin) ||
+              url.origin === REDDIT_RESPONSE_ORIGIN) &&
+            path.test(url.pathname)
+          )
             requests.add(params.requestId);
         }
         if (method === "Network.loadingFinished" && requests.delete(params.requestId)) {

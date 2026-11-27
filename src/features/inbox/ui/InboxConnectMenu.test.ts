@@ -6,15 +6,18 @@ import { InboxConnectMenu } from "./InboxConnectMenu";
 
 vi.mock("../../../shared/i18n", () => ({
   useLocale: () => "de",
-  t: (key: string, values?: { p0?: string }) =>
-    key === "Connect {p0}" ? `${values?.p0} verbinden` : key,
+  t: (key: string) => key,
 }));
 vi.mock("../../../shared/ui/DropdownMenu", () => ({
-  DropdownMenu: ({ items }: { items: { label: string }[] }) =>
-    createElement("div", null, items.map((item) => item.label).join(", ")),
+  DropdownMenu: ({ items }: { items: { label: string; items?: { label: string }[] }[] }) =>
+    createElement(
+      "div",
+      null,
+      items.map((item) => [item.label, ...(item.items ?? []).map((row) => row.label)].join(", ")),
+    ),
 }));
 
-it("lets translations place the provider before the connect action", () => {
+it("titles the menu with the action and labels each row with only the provider", () => {
   const markup = renderToStaticMarkup(
     createElement(InboxConnectMenu, {
       anchor: { x: 0, y: 0 },
@@ -23,5 +26,7 @@ it("lets translations place the provider before the connect action", () => {
       onClose: () => {},
     }),
   );
-  expect(markup).toContain("GitHub verbinden");
+  expect(markup).toContain("GitHub");
+  expect(markup).not.toContain("Connect GitHub");
+  expect(markup).not.toContain("Connect an inbox source");
 });

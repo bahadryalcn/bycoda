@@ -113,6 +113,40 @@ it("auto-settles only idle sessions past the window", async () => {
   expect(await service.list()).toMatchObject([{ sessionId: "old", settledBy: "auto" }]);
 });
 
+it("auto-settle persists in batches and re-reads each row when its batch lands", async () => {
+  const { service, state } = await fixture();
+  const writes = vi.spyOn(SessionLifecycleStore.prototype, "updateMany");
+  const single = vi.spyOn(SessionLifecycleStore.prototype, "update");
+  try {
+    state.rows = Array.from({ length: 250 }, (_, index) => idle(`s${index}`, 9));
+    // An un-settle that lands first keeps its session active, as the per-session write did.
+    await service.unsettle("s7", context);
+    writes.mockClear();
+    single.mockClear();
+    expect(await service.autoSettle()).toBe(249);
+    expect(writes).toHaveBeenCalledTimes(3);
+    expect(single).not.toHaveBeenCalled();
+    const records = await service.list();
+    expect(records).toHaveLength(249);
+    expect(records.every((record) => record.settledBy === "auto")).toBe(true);
+    expect(await service.autoSettle()).toBe(0);
+  } finally {
+    writes.mockRestore();
+    single.mockRestore();
+  }
+});
+
+it("a concurrent un-settle between the checks and the batch write wins", async () => {
+  const { service, state, ports } = await fixture();
+  state.rows = [idle("a", 9), idle("b", 9)];
+  (ports.runState as ReturnType<typeof vi.fn>).mockImplementation(async (sessionId: string) => {
+    if (sessionId === "b") await service.unsettle("a", context);
+    return { exists: true, running: false, queued: 0 };
+  });
+  expect(await service.autoSettle()).toBe(1);
+  expect((await service.list()).map((record) => record.sessionId)).toEqual(["b"]);
+});
+
 it("auto-settle skips queued sessions and can be turned off", async () => {
   const { service, state } = await fixture();
   state.rows = [idle("s", 9)];
@@ -162,6 +196,18 @@ it("a settings change without an archive window keeps the saved one", async () =
   await expect(
     service.configure({ afterDays: 1, archiveAfterDays: 7 }, { authorized: async () => false }),
   ).rejects.toThrow(/revoked/);
+});
+
+it("concurrent settings changes each keep the window they did not name", async () => {
+  const { service } = await fixture();
+  await service.configure({ afterDays: 3, archiveAfterDays: 14 }, context);
+  const [archive, settle] = await Promise.all([
+    service.configure({ archiveAfterDays: 30 }, context),
+    service.configure({ afterDays: 7 }, context),
+  ]);
+  expect(archive.archiveAfterDays).toBe(30);
+  expect(settle.afterDays).toBe(7);
+  expect(await service.autoSettleSettings()).toEqual({ afterDays: 7, archiveAfterDays: 30 });
 });
 
 it("auto-archives only sessions settled past the archive window", async () => {

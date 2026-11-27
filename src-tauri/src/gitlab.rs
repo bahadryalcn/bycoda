@@ -133,6 +133,7 @@ pub async fn gitlab_set_config(
     token: String,
 ) -> Result<GitlabStatus, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        checks::clear_project_cache();
         let url = normalize_gitlab_url(&url)?;
         let token = token.trim().to_string();
         if token.is_empty() {
@@ -855,7 +856,12 @@ fn gitlab_post_form(
 }
 
 fn gitlab_agent() -> ureq::Agent {
-    crate::integrations::http::agent(HTTP_TIMEOUT, Some(0))
+    // One process-wide agent keeps pooled connections alive across calls; the token travels
+    // per request, so the agent carries no account state.
+    static AGENT: std::sync::OnceLock<ureq::Agent> = std::sync::OnceLock::new();
+    AGENT
+        .get_or_init(|| crate::integrations::http::agent(HTTP_TIMEOUT, Some(0)))
+        .clone()
 }
 
 fn read_gitlab_response(
@@ -959,11 +965,17 @@ fn encode_path_component(value: &str) -> String {
 fn gitlab_repo_for(root: &Path, gitlab_url: &str) -> Result<String, String> {
     let mut cmd = Command::new("git");
     crate::hide_window_console(&mut cmd);
-    let output = cmd
-        .args(["config", "--get-regexp", r"^remote\..*\.url$"])
-        .current_dir(root)
-        .output()
-        .map_err(|_| "Could not run git".to_string())?;
+    cmd.args(["config", "--get-regexp", r"^remote\..*\.url$"])
+        .current_dir(root);
+    // Deadline and spawn gate come from the shared git helper, so a hung git
+    // cannot hold a blocking-pool thread forever.
+    let output = crate::fs::git_cmd_output(&mut cmd).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::TimedOut {
+            "Git timed out while reading repository remotes".to_string()
+        } else {
+            "Could not run git".to_string()
+        }
+    })?;
     if !output.status.success() && output.status.code() != Some(1) {
         return Err("Could not read git remotes".into());
     }
@@ -1348,6 +1360,38 @@ mod tests {
             encode_path_component("acme/platform web"),
             "acme%2Fplatform%20web"
         );
+    }
+
+    #[test]
+    fn detects_gitlab_repo_from_git_remotes_preferring_origin() {
+        // Regression for #703: repo detection runs git through the shared deadline helper.
+        let root = std::env::temp_dir().join(format!("gitlab-repo-for-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let git = |args: &[&str]| {
+            let status = Command::new("git")
+                .args(args)
+                .current_dir(&root)
+                .status()
+                .unwrap();
+            assert!(status.success(), "git {args:?} failed");
+        };
+        git(&["init", "-q"]);
+        git(&[
+            "remote",
+            "add",
+            "mirror",
+            "https://gitlab.example.com/other/mirror.git",
+        ]);
+        git(&[
+            "remote",
+            "add",
+            "origin",
+            "https://gitlab.example.com/acme/web.git",
+        ]);
+        let repo = gitlab_repo_for(&root, "https://gitlab.example.com");
+        let _ = fs::remove_dir_all(&root);
+        assert_eq!(repo, Ok("acme/web".to_string()));
     }
 
     #[test]

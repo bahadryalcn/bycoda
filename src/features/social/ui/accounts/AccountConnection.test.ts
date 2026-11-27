@@ -6,6 +6,11 @@ import type { Capability, SocialAccount } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
 import { AccountConnection } from "./AccountConnection";
 
+/** A control with a reason stays focusable: blocked is `disabled` or `aria-disabled`. */
+const isBlocked = (
+  node: { disabled?: boolean; getAttribute(name: string): string | null } | null | undefined,
+) => Boolean(node?.disabled) || node?.getAttribute("aria-disabled") === "true";
+
 const openExternal = vi.hoisted(() => vi.fn(async (_url: string) => undefined));
 vi.mock("../../../../platform/tauri/openExternal", () => ({ openExternal }));
 vi.mock("./platform/TelegramChannelConnect", () => ({
@@ -26,6 +31,7 @@ beforeEach(() => {
 
 afterEach(() => {
   act(() => root.unmount());
+  vi.useRealTimers();
   element.remove();
 });
 
@@ -36,6 +42,7 @@ const account = (patch: Partial<SocialAccount> = {}): SocialAccount =>
     name: "Studio",
     accountType: "member",
     connection: "oauth",
+    xApiProduct: "pay-per-use",
     connected: false,
     paused: false,
     grants: {},
@@ -55,8 +62,16 @@ const expiredPublish: Capability = {
 function fakeClient(patch: Record<string, unknown> = {}) {
   return {
     browserBegin: vi.fn(async () => ({ status: "waiting", expiresAt: 1 })),
-    browserStatus: vi.fn(async () => ({ status: "connected" })),
-    oauthBegin: vi.fn(async () => ({ url: "https://example.test/authorize", expiresAt: 1 })),
+    browserStatus: vi.fn<SocialClient["browserStatus"]>(async () => ({
+      status: "connected",
+    })),
+    browserCancelLogin: vi.fn<SocialClient["browserCancelLogin"]>(async () => ({
+      status: "idle",
+    })),
+    oauthBegin: vi.fn(async () => ({
+      url: "https://example.test/authorize",
+      expiresAt: 1,
+    })),
     oauthStatus: vi.fn(async () => ({ status: "waiting", candidates: [] })),
     oauthSelect: vi.fn(async () => ({})),
     tokenConnect: vi.fn(async () => ({})),
@@ -67,7 +82,9 @@ function fakeClient(patch: Record<string, unknown> = {}) {
 
 it("requests the owner's chosen OAuth operations instead of always requesting publishing", async () => {
   const client = fakeClient();
-  render(client, { capabilities: [expiredPublish, { ...expiredPublish, operation: "reply" }] });
+  render(client, {
+    capabilities: [expiredPublish, { ...expiredPublish, operation: "reply" }],
+  });
   const reply = [...element.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find(
     (input) => input.closest("label")?.textContent?.includes("Replies"),
   );
@@ -105,6 +122,14 @@ function render(
 
 function button(text: string) {
   return [...element.querySelectorAll("button")].find((node) => node.textContent === text);
+}
+
+function expectErrorDetails(summary: string, detail: string) {
+  const alert = element.querySelector('[role="alert"]');
+  expect(alert?.textContent).toContain(summary);
+  expect(document.body.textContent).not.toContain(detail);
+  act(() => alert?.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')?.click());
+  expect(document.body.querySelector('[aria-label="Error details"]')?.textContent).toBe(detail);
 }
 
 function typeInto(input: HTMLInputElement | null | undefined, value: string) {
@@ -159,17 +184,19 @@ it("shows the platform's own error from the status check", async () => {
   });
   render(client);
   await act(async () => button("Check connection")?.click());
-  expect(element.textContent).toContain("Access was denied.");
+  expectErrorDetails("The connection could not be started. Try again.", "Access was denied.");
 });
 
 it("keeps an organization account from starting until the numeric organization ID is entered", async () => {
   const client = fakeClient();
-  render(client, { account: account({ platform: "linkedin", accountType: "organization" }) });
+  render(client, {
+    account: account({ platform: "linkedin", accountType: "organization" }),
+  });
   const start = () => button("Connect in browser");
-  expect(start()?.disabled).toBe(true);
+  expect(isBlocked(start())).toBe(true);
   const field = element.querySelector<HTMLInputElement>('input:not([type="checkbox"])');
   typeInto(field, "12ab");
-  expect(start()?.disabled).toBe(true);
+  expect(isBlocked(start())).toBe(true);
   typeInto(field, "123456");
   expect(start()?.disabled).toBe(false);
   await act(async () => start()?.click());
@@ -178,10 +205,15 @@ it("keeps an organization account from starting until the numeric organization I
 
 it("starts the browser sign-in from the row, the owner finishes it there, and a status check reports it", async () => {
   const client = fakeClient();
+  client.browserStatus.mockResolvedValueOnce({ status: "waiting" });
   const onChanged = render(client, {
     account: account({ connection: "browser", connected: true }),
     capabilities: [
-      { ...expiredPublish, reasonCode: "browser.reconnect", source: "browser" } as Capability,
+      {
+        ...expiredPublish,
+        reasonCode: "browser.reconnect",
+        source: "browser",
+      } as Capability,
     ],
   });
   await act(async () => button("Sign in again in the browser")?.click());
@@ -189,15 +221,62 @@ it("starts the browser sign-in from the row, the owner finishes it there, and a 
   expect(element.textContent).toContain("Waiting for you");
   expect(button("Sign in again in the browser")).toBeTruthy();
   await act(async () => button("Check connection")?.click());
-  expect(client.browserStatus).toHaveBeenCalledWith("a1");
+  expect(client.browserStatus).toHaveBeenCalledWith("a1", true);
   expect(element.textContent).toContain("Connected");
   // The Host owns the verified state; starting or checking the sign-in never writes a grant.
   expect(client.request).not.toHaveBeenCalled();
   expect(onChanged).toHaveBeenCalledTimes(1);
 });
 
+it("updates an open browser sign-in through verification and failure without a click", async () => {
+  vi.useFakeTimers();
+  const client = fakeClient();
+  client.browserStatus
+    .mockResolvedValueOnce({ status: "waiting" })
+    .mockResolvedValueOnce({ status: "checking" })
+    .mockResolvedValueOnce({
+      status: "failed",
+      error: "The identity could not be verified.",
+    });
+  const onChanged = render(client, {
+    account: account({ platform: "reddit", connection: "browser" }),
+  });
+
+  await act(async () => button("Sign in in the browser")?.click());
+  expect(element.textContent).toContain("Waiting for you");
+  await act(async () => vi.advanceTimersByTimeAsync(2_000));
+  expect(element.textContent).toContain("Checking…");
+  await act(async () => vi.advanceTimersByTimeAsync(2_000));
+  expectErrorDetails("Sign-in failed. Start sign-in again.", "The identity could not be verified.");
+  expect(button("Stop")).toBeUndefined();
+  expect(button("Sign in in the browser")?.disabled).toBe(false);
+  expect(onChanged).not.toHaveBeenCalled();
+
+  await act(async () => vi.advanceTimersByTimeAsync(6_000));
+  expect(client.browserStatus).toHaveBeenCalledTimes(3);
+});
+
+it("ignores a status check still in flight when the owner stops sign-in", async () => {
+  const status = Promise.withResolvers<Awaited<ReturnType<SocialClient["browserStatus"]>>>();
+  const client = fakeClient();
+  client.browserStatus.mockReturnValueOnce(status.promise);
+  const onChanged = render(client, {
+    account: account({ connection: "browser" }),
+  });
+
+  await act(async () => button("Sign in in the browser")?.click());
+  expect(client.browserStatus).toHaveBeenCalledExactlyOnceWith("a1", true);
+  await act(async () => button("Stop")?.click());
+  expect(client.browserCancelLogin).toHaveBeenCalledExactlyOnceWith("a1");
+  await act(async () => status.resolve({ status: "connected" }));
+  expect(element.textContent).toContain("Not checked");
+  expect(onChanged).not.toHaveBeenCalled();
+});
+
 it("labels the first browser sign-in differently from signing in again", () => {
-  render(fakeClient(), { account: account({ connection: "browser", connected: false }) });
+  render(fakeClient(), {
+    account: account({ connection: "browser", connected: false }),
+  });
   expect(button("Sign in in the browser")).toBeTruthy();
   expect(button("Sign in again in the browser")).toBeUndefined();
 });
@@ -210,14 +289,21 @@ it("says plainly when the sign-in could not be started and keeps the actions ava
   });
   render(client, { account: account({ connection: "browser" }) });
   await act(async () => button("Sign in in the browser")?.click());
-  expect(element.textContent).toContain("The browser profile is busy.");
+  expectErrorDetails(
+    "The connection could not be started. Try again.",
+    "The browser profile is busy.",
+  );
   expect(button("Sign in in the browser")?.disabled).toBe(false);
 });
 
 it("connects a token account with the account id only, because the Host holds the credential", async () => {
   const client = fakeClient();
   const onChanged = render(client, {
-    account: account({ platform: "whatsapp", accountType: "business", connection: "token" }),
+    account: account({
+      platform: "whatsapp",
+      accountType: "business",
+      connection: "token",
+    }),
   });
   expect(element.querySelector('input[type="password"]')).toBeNull();
   await act(async () => button("Connect")?.click());
@@ -232,16 +318,24 @@ it("does not refresh as connected when the token connection fails", async () => 
     }),
   });
   const onChanged = render(client, {
-    account: account({ platform: "whatsapp", accountType: "business", connection: "token" }),
+    account: account({
+      platform: "whatsapp",
+      accountType: "business",
+      connection: "token",
+    }),
   });
   await act(async () => button("Connect")?.click());
   expect(onChanged).not.toHaveBeenCalled();
-  expect(element.textContent).toContain("The token was refused.");
+  expectErrorDetails("The connection could not be started. Try again.", "The token was refused.");
 });
 
 it("uses the channel review for Telegram and offers no one-click Connect on its capability rows", () => {
   render(fakeClient(), {
-    account: account({ platform: "telegram", accountType: "channel", connection: "token" }),
+    account: account({
+      platform: "telegram",
+      accountType: "channel",
+      connection: "token",
+    }),
     capabilities: [expiredPublish],
   });
   expect(element.querySelector('[data-testid="telegram-connect"]')).not.toBeNull();
@@ -250,9 +344,13 @@ it("uses the channel review for Telegram and offers no one-click Connect on its 
 });
 
 it("shows the X profile editor only for a connected X account", () => {
-  render(fakeClient(), { account: account({ platform: "x", connected: false }) });
+  render(fakeClient(), {
+    account: account({ platform: "x", connected: false }),
+  });
   expect(element.querySelector('[data-testid="x-profile"]')).toBeNull();
-  render(fakeClient(), { account: account({ platform: "x", connected: true }) });
+  render(fakeClient(), {
+    account: account({ platform: "x", connected: true }),
+  });
   expect(element.querySelector('[data-testid="x-profile"]')).not.toBeNull();
 });
 
@@ -264,14 +362,18 @@ it("starts nothing while the Host is offline", () => {
     disabled: true,
   });
   expect(button("Connect")).toBeUndefined();
-  expect(button("Reconnect in browser")?.disabled).toBe(true);
-  expect(button("Check connection")?.disabled).toBe(true);
+  expect(isBlocked(button("Reconnect in browser"))).toBe(true);
+  expect(isBlocked(button("Check connection"))).toBe(true);
   expect(client.oauthBegin).not.toHaveBeenCalled();
 });
 
 it("says on which computer the account is connected", () => {
-  render(fakeClient(), { account: account({ connected: true }), onThisComputer: false });
-  expect(element.textContent).toContain("This account is connected on another computer.");
+  render(fakeClient(), {
+    account: account({ connected: true }),
+    onThisComputer: false,
+  });
+  act(() => element.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click());
+  expect(document.body.textContent).toContain("This account is connected on another computer.");
 });
 
 it("shows OAuth waiting feedback and refreshes only after a verified connection", async () => {
@@ -289,7 +391,7 @@ it("shows OAuth waiting feedback and refreshes only after a verified connection"
 it("does not claim a disconnected account is connected on another computer", () => {
   render(fakeClient(), { onThisComputer: false });
   expect(element.textContent).not.toContain("This account is connected on another computer.");
-  expect(element.textContent).toContain("Connection needed");
+  expect(element.querySelector('button[aria-label="Help"]')).toBeNull();
 });
 
 it("offers one connection flow and no capability-row shortcut around organization validation", async () => {
@@ -299,7 +401,7 @@ it("offers one connection flow and no capability-row shortcut around organizatio
     capabilities: [expiredPublish],
   });
   expect(button("Connect")).toBeUndefined();
-  expect(button("Connect in browser")?.disabled).toBe(true);
+  expect(isBlocked(button("Connect in browser"))).toBe(true);
   expect(client.oauthBegin).not.toHaveBeenCalled();
 });
 
@@ -307,7 +409,12 @@ it("keeps capability details in compact status groups without hiding the connect
   render(fakeClient(), {
     capabilities: [
       expiredPublish,
-      { ...expiredPublish, operation: "reply", status: "available", reasonCode: "api.ready" },
+      {
+        ...expiredPublish,
+        operation: "reply",
+        status: "available",
+        reasonCode: "api.ready",
+      },
       {
         ...expiredPublish,
         operation: "analytics",
@@ -335,11 +442,16 @@ it("keeps capability details in compact status groups without hiding the connect
 
 it("requires a LinkedIn Page target for browser organizations", async () => {
   const client = fakeClient();
+  client.browserStatus.mockResolvedValueOnce({ status: "waiting" });
   render(client, {
-    account: account({ platform: "linkedin", accountType: "organization", connection: "browser" }),
+    account: account({
+      platform: "linkedin",
+      accountType: "organization",
+      connection: "browser",
+    }),
   });
   const start = button("Sign in in the browser")!;
-  expect(start.disabled).toBe(true);
+  expect(isBlocked(start)).toBe(true);
   typeInto(
     element.querySelector<HTMLInputElement>('input:not([type="checkbox"])'),
     "https://www.linkedin.com/company/example/",
@@ -354,7 +466,9 @@ it("requires a LinkedIn Page target for browser organizations", async () => {
 });
 
 it("does not display idle as an active check", async () => {
-  const client = fakeClient({ browserStatus: vi.fn(async () => ({ status: "idle" })) });
+  const client = fakeClient({
+    browserStatus: vi.fn(async () => ({ status: "idle" })),
+  });
   render(client, { account: account({ connection: "browser" }) });
   await act(async () => button("Check connection")?.click());
   expect(element.textContent).toContain("Not checked");

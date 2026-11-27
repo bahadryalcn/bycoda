@@ -39,7 +39,6 @@
   display: flex;
   flex: 1 1 0;
   align-items: center;
-  gap: 2px;
   min-inline-size: 0;
   overflow: hidden;
 }
@@ -199,7 +198,7 @@
   cursor: pointer;
   color: var(--host-tool-muted);
   padding-block: 3px;
-  min-block-size: 32px;
+  min-block-size: max(32px, var(--ui-control-height-compact));
   align-content: center;
 }
 .host-tool-help summary:active {
@@ -304,22 +303,6 @@
 .host-browser-target {
   overflow-wrap: anywhere;
   color: var(--ui-text-secondary);
-}
-.host-browser-controls {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  overflow: auto;
-  color: var(--color-content);
-  font-size: var(--ui-font-secondary);
-  line-height: 1.5;
-}
-.host-browser-controls .host-browser-side-section {
-  padding: 0;
-  background: none;
-}
-.host-browser-controls .host-tool-actions {
-  gap: 2px;
 }
 /* Keep the canvas wide; scroll the image without changing its pointer coordinate box. */
 .host-browser-preview {

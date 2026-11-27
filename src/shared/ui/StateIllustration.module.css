@@ -1,0 +1,19 @@
+@layer properties, theme, base, components, utilities;
+
+@layer components {
+  .art {
+    display: block;
+    flex: none;
+    max-inline-size: 100%;
+    object-fit: contain;
+    image-rendering: pixelated;
+    user-select: none;
+    pointer-events: none;
+  }
+}
+
+/* The pixel art is outlined in near-black; on the dark canvas a faint halo keeps the outline
+   (hat, speech bubble) readable. Light theme needs none. */
+html:not(.theme-light) .art {
+  filter: drop-shadow(0 0 1px color-mix(in oklab, var(--ui-text-secondary) 55%, transparent));
+}

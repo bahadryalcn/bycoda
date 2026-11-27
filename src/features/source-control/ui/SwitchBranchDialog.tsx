@@ -4,11 +4,12 @@ import { TextareaField } from "../../../shared/ui/TextareaField";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { Text } from "../../../shared/ui/Text";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { WandSparkles, X } from "../../../shared/ui/icons";
 import { useEffect, useRef, useState } from "react";
 import { generateCommitMessage } from "../model/gitTextGeneration";
-import { MOD } from "../../../platform/tauri/platform";
 
 type Busy = "stash" | "commit" | null;
 
@@ -18,6 +19,8 @@ type Props = {
   creating?: boolean;
   busy: Busy;
   error?: string | null;
+  /** Files git says the switch would overwrite; empty when it named none. */
+  files?: readonly string[];
   onStash: () => void;
   onCommit: (message: string) => void;
   onCancel: () => void;
@@ -29,6 +32,7 @@ export function SwitchBranchDialog({
   creating = false,
   busy,
   error,
+  files = [],
   onStash,
   onCommit,
   onCancel,
@@ -111,16 +115,30 @@ export function SwitchBranchDialog({
             motion="none"
             type="button"
             disabled={Boolean(busy) || generating}
+            disabledReason={
+              busy
+                ? t("Wait for the current operation to finish")
+                : generating
+                  ? t("Generating message…")
+                  : undefined
+            }
             onClick={onCancel}
           >
             {t("Cancel")}
           </Button>
+          {/* Emphasis stays on Stash & switch: it must not move under the pointer as the user types. */}
           <Button
             variant="secondary"
             motion="none"
             type="button"
             loading={busy === "commit"}
+            shortcut="Mod+Enter"
             disabled={!canCommit}
+            disabledReason={
+              !trimmed && !busy && !generating
+                ? t("Write a commit message to commit and switch")
+                : undefined
+            }
             onClick={() => onCommit(trimmed)}
           >
             {t("Commit & switch")}
@@ -131,6 +149,13 @@ export function SwitchBranchDialog({
             type="button"
             loading={busy === "stash"}
             disabled={Boolean(busy) || generating}
+            disabledReason={
+              busy
+                ? t("Wait for the current operation to finish")
+                : generating
+                  ? t("Generating message…")
+                  : undefined
+            }
             onClick={onStash}
           >
             {t("Stash & switch")}
@@ -139,6 +164,23 @@ export function SwitchBranchDialog({
       }
     >
       <div aria-busy={Boolean(busy) || generating} className="flex flex-col gap-3">
+        {files.length > 0 ? (
+          <div className="flex min-w-0 flex-col gap-1">
+            <Text
+              as="div"
+              size="micro"
+              tone="muted"
+              leading="tight"
+              className="max-h-32 overflow-y-auto"
+            >
+              {files.map((file) => (
+                <p key={file} className="font-mono break-all">
+                  {file}
+                </p>
+              ))}
+            </Text>
+          </div>
+        ) : null}
         <div className="flex min-w-0 flex-col gap-1">
           <TextareaField
             hideLabel
@@ -148,7 +190,7 @@ export function SwitchBranchDialog({
             minRows={1}
             maxRows={8}
             value={message}
-            placeholder={t("Message ({p0}↩ to commit)", { p0: MOD })}
+            placeholder={t("Commit message")}
             disabled={Boolean(busy) || generating}
             aria-label={t("Commit message")}
             className="w-full"
@@ -172,6 +214,7 @@ export function SwitchBranchDialog({
                 generating ? t("Stop commit message generation") : t("Generate commit message")
               }
               disabled={Boolean(busy)}
+              disabledReason={busy ? t("Wait for the current operation to finish") : undefined}
               onClick={() => (generating ? cancelGenerate() : void generate())}
               className="self-end"
             >
@@ -184,8 +227,20 @@ export function SwitchBranchDialog({
           </div>
         </div>
 
-        {generateError ? <Alert tone="danger">{generateError}</Alert> : null}
-        {error ? <Alert tone="danger">{error}</Alert> : null}
+        {generateError ? (
+          <Alert
+            tone="danger"
+            title={t("Couldn’t generate a commit message")}
+            extra={<ErrorDetails detail={generateError} />}
+          />
+        ) : null}
+        {error ? (
+          <Alert
+            tone="danger"
+            title={t("Couldn’t switch branch")}
+            extra={<ErrorDetails detail={error} />}
+          />
+        ) : null}
       </div>
     </Modal>
   );

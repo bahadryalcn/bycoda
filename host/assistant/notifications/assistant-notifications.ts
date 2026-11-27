@@ -3,6 +3,7 @@ import type {
   AssistantNotification,
   AssistantProfile,
 } from "../../../src/shared/model/host-contracts/assistant";
+import { taskNeedsInput } from "../../../src/shared/model/host-contracts/task-stop";
 import { assistantPolicy } from "../../../src/shared/model/assistantPolicy";
 import type { StoreDatabase } from "../../store-db";
 import { assistantNotificationUrgent } from "../work/assistant-job-holds";
@@ -30,7 +31,7 @@ export async function readAssistantNotifications(
 ): Promise<AssistantNotification[]> {
   const rows = await ports.db
     .prepare(
-      "SELECT value FROM assistant_runtime WHERE id LIKE 'notification:%' AND deleted_at IS NULL AND json_extract(value,'$.value.acknowledgedAt') IS NULL AND json_extract(value,'$.value.supersededBy') IS NULL AND (?=1 OR json_extract(value,'$.value.kind') NOT IN ('task.done','task.needsInput')) ORDER BY updated_at,id LIMIT 100",
+      "SELECT value FROM assistant_runtime WHERE id>='notification:' AND id<'notification;' AND deleted_at IS NULL AND json_extract(value,'$.value.acknowledgedAt') IS NULL AND json_extract(value,'$.value.supersededBy') IS NULL AND (?=1 OR json_extract(value,'$.value.kind') NOT IN ('task.done','task.needsInput')) ORDER BY updated_at,id LIMIT 100",
     )
     .all(ports.taskNotificationAllowed ? 1 : 0);
   const presence = await ports.presence(),
@@ -80,7 +81,7 @@ export async function readAssistantNotifications(
               id?: string;
               projectId?: string;
               status?: string;
-              needsInput?: boolean;
+              stop?: { nextAction: string };
               createdAt?: number;
             })
           : undefined;
@@ -91,7 +92,7 @@ export async function readAssistantNotifications(
           task.createdAt !== value.taskCreatedAt ||
           (value.kind === "task.done"
             ? task.status !== "done"
-            : task.needsInput !== true || task.status === "done")
+            : !taskNeedsInput(task) || task.status === "done")
         )
           return null;
         if (

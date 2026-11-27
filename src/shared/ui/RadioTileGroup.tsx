@@ -1,6 +1,7 @@
 import { useRef, type KeyboardEvent, type ReactNode } from "react";
 import { radioKeyTarget } from "../lib/radioKeyTarget";
 import { Button, type ButtonProps } from "./Button";
+import styles from "./RadioTileGroup.module.css";
 
 type TileButtonProps = Partial<
   Pick<
@@ -44,7 +45,11 @@ export interface RadioTileGroupProps {
   onOptionIntent?: (value: string) => void;
   disabled?: boolean;
   "aria-describedby"?: string;
-  /** Layout of the group (grid, columns, scroll area). */
+  /** Tile arrangement owned by the group: `portrait` and `preview` flow into a wrapping grid,
+   *  `icon` packs square icon tiles, `list` stacks full-width rows that mark the choice
+   *  themselves (no selection ring). Unset wraps content-sized tiles. */
+  tileLayout?: "portrait" | "icon" | "preview" | "list";
+  /** Placement of the group (width, columns, scroll area). Spacing and wrapping belong to the group. */
   className?: string;
   /** Applied to every tile; the selected tile is `[aria-checked="true"]`. */
   tileClassName?: string;
@@ -70,6 +75,7 @@ export function RadioTileGroup({
   onValueChange,
   onOptionIntent,
   disabled,
+  tileLayout,
   className,
   tileClassName,
   tile,
@@ -97,7 +103,8 @@ export function RadioTileGroup({
       role="radiogroup"
       aria-label={label}
       aria-describedby={describedBy}
-      className={className}
+      data-tile-layout={tileLayout}
+      className={[styles.tiles, className].filter(Boolean).join(" ")}
     >
       {options.map((option, index) => {
         const on = index === selected;
@@ -119,7 +126,7 @@ export function RadioTileGroup({
             tabIndex={index === tabStop ? 0 : -1}
             disabled={!isEnabled(index)}
             tooltip={option.tooltip}
-            className={[tileClassName, option.className].filter(Boolean).join(" ") || undefined}
+            className={[styles.tile, tileClassName, option.className].filter(Boolean).join(" ")}
             onMouseDown={keepFocus ? (event) => event.preventDefault() : undefined}
             onClick={() => onValueChange(option.value)}
             onPointerEnter={onOptionIntent ? () => onOptionIntent(option.value) : undefined}

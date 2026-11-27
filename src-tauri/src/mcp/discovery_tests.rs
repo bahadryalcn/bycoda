@@ -85,3 +85,48 @@ fn global_discovery_ignores_project_configuration_and_opt_outs() {
     }
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn unreadable_configuration_is_reported_apart_from_no_servers() {
+    let directory =
+        std::env::temp_dir().join(format!("bycoda-mcp-warnings-{}", uuid::Uuid::new_v4()));
+    let home = directory.join("home");
+    std::fs::create_dir_all(home.join(".codex")).unwrap();
+    std::fs::create_dir_all(home.join(".cursor")).unwrap();
+    // A half-written Claude file and a Codex file whose broken line holds a credential.
+    std::fs::write(
+        home.join(".claude.json"),
+        r#"{"mcpServers": {"docs": {"env": {"TOKEN": "claude-secret""#,
+    )
+    .unwrap();
+    std::fs::write(
+        home.join(".codex/config.toml"),
+        "[mcp_servers.codex]\ntoken = codex-secret\n",
+    )
+    .unwrap();
+    std::fs::write(home.join(".cursor/mcp.json"), r#"{"mcpServers":{}}"#).unwrap();
+    let desktop = home.join("desktop.json");
+    let found = discover_with_warnings(&home, None, None, &desktop, None).unwrap();
+    assert!(found.connections.is_empty());
+    let warned: Vec<_> = found
+        .warnings
+        .iter()
+        .map(|warning| warning.provider.as_str())
+        .collect();
+    // The valid empty Cursor file and the missing Desktop file are not warnings.
+    assert_eq!(warned, ["claude", "codex"]);
+    let serialized = serde_json::to_string(&found).unwrap();
+    assert!(!serialized.contains("claude-secret") && !serialized.contains("codex-secret"));
+    assert!(found.warnings[1].message.contains("line 2"));
+
+    // Repairing the file clears the warning and lists the servers again.
+    std::fs::write(
+        home.join(".claude.json"),
+        r#"{"mcpServers":{"docs":{"command":"node"}}}"#,
+    )
+    .unwrap();
+    let repaired = discover_with_warnings(&home, None, None, &desktop, None).unwrap();
+    assert_eq!(repaired.connections.len(), 1);
+    assert_eq!(repaired.warnings.len(), 1);
+    std::fs::remove_dir_all(directory).unwrap();
+}

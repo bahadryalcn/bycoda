@@ -1,51 +1,6 @@
-.muted {
-  margin: 0;
-}
-
 .consentChoices {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
-  gap: 8px 16px;
+  gap: var(--ui-space-2) var(--ui-space-4);
   min-inline-size: 0;
-}
-
-.permission {
-  display: grid;
-  gap: 8px;
-  min-inline-size: 0;
-}
-.permissionText {
-  display: grid;
-  gap: 2px;
-  margin: 0;
-}
-
-.retention {
-  display: grid;
-  gap: 6px;
-  min-inline-size: 0;
-}
-.hint {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 6px;
-  min-inline-size: 0;
-}
-.hint > p {
-  flex: 1;
-}
-
-.usage {
-  display: grid;
-  gap: 8px;
-  min-inline-size: 0;
-}
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
 }

@@ -15,6 +15,15 @@ vi.mock("../../../integrations/harness/core/auth", () => ({
 
 import { ProviderSignInDialog } from "./ProviderSignInDialog";
 
+async function rawDetails(scope: ParentNode = document): Promise<string> {
+  const trigger = scope.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+  if (!trigger) return "";
+  await act(async () => trigger.click());
+  return (
+    document.querySelector<HTMLElement>('[role="dialog"][aria-label^="Details"]')?.textContent ?? ""
+  );
+}
+
 let container: HTMLDivElement;
 let root: Root;
 
@@ -89,7 +98,9 @@ describe("ProviderSignInDialog", () => {
     );
     await act(async () => button("Sign in to Codex").click());
     expect(signedIn).not.toHaveBeenCalled();
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Login cancelled");
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(dialog.textContent).toContain("Sign-in failed");
+    expect(await rawDetails(dialog)).toContain("Login cancelled");
   });
   it("launches provider login and offers a clear continuation state", async () => {
     const close = vi.fn();
@@ -104,7 +115,7 @@ describe("ProviderSignInDialog", () => {
     );
 
     const dialog = document.querySelector('[role="dialog"]');
-    expect(dialog?.textContent).toContain("Authentication required");
+    expect(dialog?.textContent).toContain("Grok Build sign-in required");
     expect(dialog?.textContent).toContain("Sign in to Grok Build");
     expect(dialog?.querySelector(".size-9")).not.toBeNull();
 

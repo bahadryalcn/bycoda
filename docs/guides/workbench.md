@@ -99,6 +99,77 @@ All generated/imported code retains the existing isolated, offline HTML sandbox.
 In ordinary chat, `runtime: "three"` on visual tools supplies this same offline
 runtime; background reads return the authored source and runtime for revisions.
 
+## Application menu and tabs
+
+The title-bar application menu keeps session creation, search, Inbox and Notes
+in the main list. Tab closing, view and zoom controls, and terminal actions have
+their own submenus. Use Settings > General for updates, the guide and the tour,
+or Settings > Workspace for Autosave. Inbox opens with Ctrl+Shift+I (⌘⇧I on
+Mac) and Notes with Ctrl+Shift+L (⌘⇧L on Mac). The menu shows the active
+shortcuts from Settings > Keybindings.
+
+Select a conversation tab above Inbox to open it. Use the title-bar Back button
+to return to your Inbox selection and filters. The open conversation tabs follow
+the workspace project. The project picker next to **Send to agent** sets the
+agent's destination for the current item.
+
+After an app update, open What's new from the expanded sidebar footer. Hover or
+focus the icon to see the installed version, or use the close button at its upper corner to
+dismiss the notice.
+
+## Session machine
+
+A compact **Run on** picker sits below the new-session composer, to the left of
+the workspace controls. It shows the saved name of the machine that will run the session. Choose
+**This computer** or a connected Host. Offline machines stay listed but cannot be
+chosen. A draft keeps its choice across tab switches and restarts.
+
+- **No project** defaults to **This computer**. Its first run uses a private scratch
+  folder on the chosen machine. Local and remote conversations without a project both
+  appear under **No project**; remote rows show their owner.
+- A project draft defaults to the machine that hosts the project's checkout. Choosing
+  another machine switches to that machine's copy of the same repository when the rail
+  has one. The picker lists machines that already have the project first and offers the
+  others as "Add to <machine>". That opens a dialog that clones the repository there over
+  SSH or HTTPS into the folder you name, optionally copying chosen files git ignores
+  (text files; folders git ignores whole are left out), or **Locate folder** picks a folder
+  that machine already has without cloning. A project without a hosted remote goes
+  straight to the folder picker. The destination's checkout, branch, workspace policy, provider
+  and account apply.
+- The picker is read-only after the first accepted send or Host draft save; the
+  session stays on its owning machine.
+- If the chosen machine is unreachable, the draft keeps its text, references and
+  attachments. Retry, or choose another machine when that is safe. A file that belongs
+  to another machine blocks sending until you remove it or switch back.
+- If a Host cannot start a session without a project, the picker explains that it must
+  be updated before it can be used for **No project** sessions.
+- Changing the machine while a request is uncertain does not move that request. It
+  stays on its original machine and uses the existing reconciliation path.
+
+Cancelling a folder choice keeps the current draft and view.
+
+## Conversation history
+
+Long conversations open at their recent messages. Scroll toward the top of the
+conversation to load earlier messages. The message you were reading stays in place.
+
+## Transient notifications
+
+Information, success and progress notices appear at the top right. Warnings and
+errors appear at the top center. Notices normally disappear after ten seconds of
+focused window time; hovering or focusing them pauses the timer. Requests that need
+an owner decision retain their existing actions and placement.
+
+Open the bell next to Settings at the bottom of the left sidebar to revisit dismissed or
+expired notices. When the sidebar is hidden, the bell moves to the left end of the
+workspace footer. This device keeps the latest 100 entries across restarts. The log
+keeps plain-text summaries, not interactive controls or secret inputs. Provider
+update notices include the offered versions; closing a notice leaves an update
+running. Completion or failure appears separately and enters the same log. Open
+Settings > Providers to inspect progress or retry an update.
+
+Closing the active conversation tab selects a neighboring tab in the same project
+and worktree. Closing a background tab keeps the current selection.
 Closing the last conversation tab in the current project keeps a blank conversation
 in that project. Hidden tabs from other projects are not selected, including when
 the closing tab has no project of its own and uses the project on screen.
@@ -109,11 +180,15 @@ or keyboard focus. Click it to refresh conversations. Loading and connection fai
 keep their existing feedback; a healthy remote project has no success checkmark.
 
 The workspace footer uses one compact spacing rhythm for conversation tools,
-terminal, navigation, sound, view refresh, fullscreen and notifications.
-Click a provider's quota summary to inspect its accounts. Refresh usage in that
-panel reloads the displayed provider and account; Refresh current view remains
-in the workspace controls. Browsing quota accounts does not change a conversation's
-selected account.
+terminal, navigation, sound, view refresh and fullscreen.
+Click a provider's quota summary to open its usage panel. Where the panel lists
+accounts, browsing them leaves the conversation's selected account in place.
+**Refresh usage** reloads the displayed provider and account. **Refresh current
+view** is in the workspace controls.
+If a quota refresh fails and a saved reading exists, the panel shows that reading
+and its age.
+Claude and Codex show available credits under the banked-reset icon. Each credit
+shows its expiry next to **Use reset**. Select **Confirm** to spend that credit.
 
 Tools navigation omits the standalone Terminal tab and picker option, including
 the combined tools window. Open project terminals from the workspace terminal actions.
@@ -127,6 +202,15 @@ or waiting for an operation; the current custom value is kept.
 Search Phone or Sharing to open those Connections tabs; automatic reconnect
 continues to open its Machines setting.
 
+A setting that differs from its default shows a Restore default icon beside its
+title; the icon disappears once the default is back. Rows without a meaningful
+default have no icon: accounts and credentials, lists such as machines, profiles
+or skills, chosen folders and devices, permission and data-sharing consent, network
+exposure, agent access and protection settings whose default is less strict
+(Start in privacy mode, Lock when idle, local-only personal data). New installs
+follow the system light or dark mode and prevent idle sleep while agents work.
+
+Pages with a reset action show it in the Settings toolbar and ask for confirmation.
 General's Restore defaults restores Application language to System and the independent
 Git and Technical languages to English. If a reset step fails, completed steps remain
 applied and the confirmation offers retry. Folder rows refresh after a successful reset;
@@ -138,9 +222,12 @@ the pointer keeps the keyboard target unchanged; arrow keys move that target and
 keep it visible. Enter opens it, and checkboxes select folders independently.
 
 Application operation approvals mark their conversation as needing approval in
-session lists and as waiting for input beside the composer. The exact operation
-stays in its approval card with Approve and Cancel actions. Waiting ends when the
-last pending approval is answered, expires or is revoked.
+session lists and as waiting for input beside the composer. Inbox cards show
+the operation and its target. Open **Details** to read the preview in place or
+choose **Review** to open the approval in a dialog. **Exact request text** shows
+the full request. If you are on another page, the dialog opens there with
+**Cancel** and **Approve** in its footer. Waiting ends when the last pending
+approval is answered, expires or is revoked.
 
 Title-bar project and conversation actions stay icon-only on hover and focus.
 Their tooltips show command names and configured shortcuts, with project details where available.
@@ -163,6 +250,13 @@ A toast waiting behind the visible three keeps its countdown and returns as the 
 front close. Reminder and
 approval cards stay fully visible beside the stack.
 
+Press Ctrl+Shift+J (⌘⇧J on macOS) to move keyboard focus to a pending request popup,
+also while a dialog is open; press it again to reach the next popup. Focus lands on the
+card's conversation button, so nothing is allowed or denied until you press **Allow** or
+**Deny** yourself. Tab moves through the popup controls, Escape returns focus to where you
+were without closing the dialog, and Tab past the last control returns to the dialog. The
+shortcut can be changed in **Settings > Keybindings** (App: Focus Approval Requests).
+
 Dragging the project rail much narrower than its minimum width switches to the compact rail when the compact rail is enabled; reopening the full rail restores its previous width.
 The compact rail keeps its width and uses standard-sized navigation targets and icons.
 The footer places the voice companion first, followed by GitHub and available updates,
@@ -175,29 +269,57 @@ Dismissal applies to both compact and expanded footers for the current version.
 The docked voice companion and GitHub icon have transparent idle backgrounds like Settings
 and Account; the floating voice companion keeps its raised surface.
 In an expanded footer with enough room, hovering or focusing the update icon reveals
-its label. Clicking it opens the existing update dialog.
+its label. Click it to compare your installed version with the available version
+and read the release notes. Use the download button to start the update or choose
+**Remind me tomorrow** to see the prompt later.
 
-Collapsed project navigation uses a 56px icon rail with a centered divider and a
-small-size vector mark. Expanded sections share label and count columns; Last
+**Ctrl+B** on Windows and Linux or **Command+B** on macOS cycles through three layouts.
+With both panes open, the first press collapses the project list while keeping the
+Sessions, Explorer, or Changes pane fixed on the left. The next press closes that pane
+for conversation focus. Press again to restore both panes. Collapsed project navigation
+uses the compact icon rail when enabled. **Ctrl+Shift+B** or **Command+Shift+B** still
+toggles the session sidebar independently.
+
+Collapsed project navigation uses a 56px icon rail with a centered divider.
+Expanded sections share label and count columns; Last
 sessions keeps separate collapse and open actions. The workspace header emphasizes
-the current location. Its Back, Forward and Expand projects controls sit after the
-title, before conversation search; Expand projects is no longer repeated in the
-compact rail. Narrow workspace panes keep the header on one row; More actions
-contains conversation search, selection, filters and New session. Crews, Servers, Notes,
+the current location and holds only the conversation tools, aligned to the right,
+and a filled **New session** button at the far right, with a label when the workspace
+pane is wide and an icon when space is limited. Click the main button to start in
+the current project. Click its arrow or right-click the main button to open the
+project picker directly. Choosing another project opens its **Sessions** list
+with the new conversation selected. In narrow panes, **More
+actions** contains conversation search, selection and filters. Crews, Servers, Notes,
 Automations, Social Media, Tasks and Room appear directly as stacked rail icons.
 Hover or focus an icon for its name and shortcut. The rail scrolls in short windows
-while Account and Settings remain at the bottom. Recovered work uses a restore
-arrow; Last sessions uses a clock. Rail section headings share one icon and label grid;
+while Account and Settings remain at the bottom. A **Recovered work** icon appears
+beside Settings when there is work to review or a recovery error to retry. Its
+badge shows the number of items to review. Rail section headings share one icon and label grid;
 hover or keyboard focus replaces a collapsible section's icon with its disclosure arrow.
 Pinned also collapses and remembers that choice.
-Activity groups attention separately: failures are red, retries and input requests use
-the warning tone. Its collapsed header retains the attention icon and count. Last sessions rows in the rail and combined list only open conversations; they have
-no pin, settle, archive, delete controls or action menu. Crew Start stays at the right edge, with options to its left.
+Library Sync keeps linked workspace headers under their parent groups on paired desktops.
+Projects from another machine stay in their groups while waiting for that machine to connect.
+Checkouts of one repository on different machines share one project row. Repositories match
+by their `origin` remote, read on each machine once it is connected; two clones on the same
+machine stay separate rows. The row is this computer's checkout when there is one, and shows
+the other machine while that copy is open. Removing or archiving the row affects only the
+copy it shows; the other machine's copy then takes the row. The project menu's "Show machines
+separately" gives every copy its own row, and "Combine with other machines" folds them again.
+Once the remote workspace is available, its header opens the workspace on its owning machine.
+Activity sits below the project list and starts collapsed. Its header shows activity counts.
+Expanding it leaves the project list scrollable. Last sessions rows in the rail open
+conversations. The combined list has its own row actions.
+Crew Start stays at the right edge, with options to its left.
 Project Git totals occupy the right edge until hover or focus reveals options; opening
 those options keeps the Git summary in the menu. Narrow group and workspace rows keep secondary
 shortcuts in that menu: **Changes** opens the existing Git overview, and **Lock group**
 retains the same lock action. Appearance exposes background controls
 directly below the compact icon picker.
+
+In Settings > Appearance > Interface > Chat messages, set the background opacity
+of your messages and AI replies independently. Zero leaves the text on the chat
+canvas. Both use the selected theme color or a neutral tone. The preview updates
+as you move a slider.
 
 In Settings > Appearance > Background > Image, the Library keeps previously used
 images. A failed library read shows Retry instead of an empty library; any loaded
@@ -218,13 +340,24 @@ projects are not scanned by local GitHub commands. Saved checkout filters still
 apply to their repository; clearing a selection also clears its old checkout aliases.
 Non-Git folders and folders without remotes do not block loading. Operational
 failures keep Retry and expandable details while available items remain visible.
+
+To link a conversation to a GitHub item, right-click its sidebar row and choose
+**Link GitHub issue or PR**. Search the conversation's repository by title or
+number and select a result, or paste a full GitHub URL. Choose **Link** to save.
+
 Searchable filters inside the Inbox filter menu open beside it. They prefer the
 right edge and flip left when space is limited; constrained windows keep the
 choices within the viewport. Escape closes the inner picker first.
 
-When you scroll up in a conversation, **Jump to latest** appears above the composer.
+The conversation follows the latest reply until you scroll up or navigate to an
+earlier message. **Jump to latest** appears above the composer when you scroll up.
 Click it, or focus it and press Enter or Space, to return to the end and resume
 following new messages.
+**Load newer messages** appears when there are newer turns outside the open page
+that are still hidden. It loads the next page of conversation history.
+With **Anchor prompts to top** enabled, the active prompt stays at the top while
+the assistant works. When the turn finishes, the conversation ends at the latest
+reply.
 
 On Windows and Linux, scrollbar thumbs appear when you hover over or focus a
 scrolling area. Touch-only devices and high-contrast mode keep them visible.
@@ -264,31 +397,43 @@ model from the conversation provider, preferring Haiku, Terra or Flash. If no
 lightweight model is available, choose one explicitly. Failed generation keeps the
 current title and offers Retry; a concurrent manual rename is preserved.
 
-The Activity panel separates conversations that need attention from working, waiting
-and finished conversations. All failures, retries, questions and approvals appear
-in the attention group before ordinary work, without the ordinary preview limit.
-Select a conversation to inspect its error, answer its question or review its approval
-in the existing conversation view. Opening a row never retries work or grants approval.
-While a project is open, its running conversations are summarized in a disclosure
-row. Expand it to select a conversation directly. Waiting conversations keep their
-own group and do not count as running. The panel header counts all conversations;
-when collapsed, it retains an attention count. Last Sessions keeps the complete list.
+Activity lists sessions by turn start time, newest first when known. Each row has
+a status badge, and the header shows a count for each status.
+Select a row to open its conversation or bring its existing window forward.
+Unseen completions and sessions with a failed turn also appear in Activity.
+Conversation history retains the results, and the Settled shelf shows conversations
+that have been settled. A conversation whose own subagents
+or background commands still run counts as running and shows **Working**; its tooltip
+names what runs ("Subagents running: 4"). Conversations waiting only on delegated
+tasks or a pull request watch show **Waiting**, keep their own group and do not count
+as running. Last Sessions keeps the complete list.
 
-Above the composer, expanded background work shows the reported model and provider
-icon above each subagent's title. Hover or focus the information icon to see status
-counts in a card; click or tap to keep it open. The separate arrow toggles the list.
-Steps, failed steps and elapsed time sit beside
-the opening chevron. Animated bars mark running work; a green check marks completed
-work, a red cross marks failure, and warning icons distinguish stopped and interrupted
-runs. Hover or focus a row for its full identity and status. Missing child-model
-metadata stays unspecified rather than borrowing the parent conversation's model.
+Above the composer, **Background work** shows a labeled count for each status.
+Open it to see subagents and commands. Scroll the notice area to reach every row
+when the list is long. Subagent rows show the title first, the
+reported model and provider below it, and step counts and elapsed time beside the
+opening chevron. Animated bars mark running work, a green check marks completed
+work, a red cross marks failure, and warning icons distinguish stopped and
+interrupted runs. Select a row to inspect the run. When available, the action
+to stop all work appears above the expanded list. **Stop all** stays quiet until pressed; the first press asks for confirmation in the danger color. Its tooltip explains whether it stops
+background work only or interrupts the whole turn. Missing child-model metadata
+stays unspecified.
+
+The **Session subagents** button by the composer also opens past runs. Each row
+shows the run title, a status icon, the reported model with its provider icon,
+and the elapsed time when available. Hover over a row to read the full title and
+status. Select a row to open the run.
 
 Tooltip content is chosen by each control: readable labels stay quiet on hover,
 while hints explain icons, missing shortcuts and additional context. Overflow
 hints reveal full text when a label is clipped or hidden; narrow panes keep their
 icon explanations. Explicit tooltip content is shown as supplied. Error reasons
 and connection details remain available; accessible control names do not depend
-on whether a tooltip is visible.
+on whether a tooltip is visible. Hover or Tab to an info icon to read a short
+explanation. Open the details button when the information needs its own panel.
+
+Project and conversation rows use the same detail card layout. Project cards show
+the folder path, the machine for remote projects, and relevant status badges.
 
 Conversation deletion keeps its confirmation and shows progress while work is
 pending. Sidebar bulk deletion uses one compact row: a red spinner, clipped conversation
@@ -311,9 +456,12 @@ safe mid-turn delivery offer Queue while busy instead of Steer. Claude takes a
 Steer at its next tool step, or right after the current reply; the turn stays open
 until that message has run. An older Claude Code that cannot report message
 progress keeps the Steer queued instead.
-Each queued message keeps the provider, model and account it was queued with, so
-one queue can mix providers; rows run in order and the queue switches provider
-between them on its own. Steer with a different provider than the running turn
+Each queued message keeps the provider and model it was queued with, so one queue
+can mix providers; rows run in order and the queue switches provider between them
+on its own. A row for the conversation's provider runs on the account the
+conversation uses now, so switching accounts after a usage limit carries the
+queue with it; a row that switches provider starts on the account it was queued
+with. Steer with a different provider than the running turn
 stops that turn and starts the message on the selected provider; the rest of the
 queue then continues in order. Only Stop, a failed turn, a usage limit or an
 unconfirmed delivery pause the queue for Resume.
@@ -359,6 +507,14 @@ update it before responding. Older saved requests without this identity remain
 readable; refresh the conversation or update its execution client to obtain a
 verifiable request. The app does not add an identity to an old queued decision.
 
+For a verified Claude workspace filename search on the Host, choose **Always allow
+this session** to allow later searches of the same kind in that conversation.
+Open **More actions > Session approvals** to see or revoke the grant. Grants
+survive turns in the same conversation and expire when it is cleared, archived,
+or deleted, when its execution settings change, or when the Host restarts.
+Shell commands, file changes, credential access and native subagent requests
+continue through the existing approval rules.
+
 Saved local conversations support [session links and Markdown references](local-session-references.md),
 including compact details and opening a cited conversation beside the current one.
 
@@ -366,11 +522,12 @@ Use the project rail to choose a project or workspace, the sessions list to
 choose a conversation, and the top tabs to switch open work. These keep their
 existing saved widths, layout and density settings. Standard and detailed session
 rows show project identity above the conversation title. Within one project,
-rows keep neutral backgrounds while showing the saved project mark. Pin, archive
-and delete appear in the project header on hover or keyboard focus. Pin replaces
-the project mark beside its name; pinned rows keep the pin visible. Touch keeps
-them available. Status stays at the upper right; hover or keyboard focus hides
-its word while keeping its icon and Working elapsed time. Plain branch text and larger
+rows keep neutral backgrounds while showing the saved project mark. Pin, Settle,
+Archive and Delete appear in the project header on hover or keyboard focus. Pin replaces
+the project mark beside its name; pinned rows keep the pin visible. Settle, Archive
+and Delete take the place of the idle timestamp. Touch keeps the actions available.
+Status stays at the upper right; hover or keyboard focus hides its word while
+keeping its icon and Working elapsed time. Plain branch text and larger
 provider icons sit below the title without shifting when actions appear.
 Previous providers appear muted; the last provider used retains its color. Hover or focus the title for model, location and handoff
 details. Compact density keeps one-line rows.
@@ -386,6 +543,25 @@ Menu actions apply to the focused workspace. Tray session actions open their own
 window; terminal output, pinch zoom and reminder navigation stay with their target
 window. Shared preferences and reminder lists still update across workspaces.
 
+On Windows, **Close window**, **Alt+F4**, and the taskbar's close action close
+the selected windows after the usual save and confirmation checks. Use
+**File > Minimize to tray** to keep one workspace running in the background. To
+make the Minimize button do the same, enable **Minimize to tray** under
+**Settings > General > Application behavior**. The button minimizes to the
+taskbar by default.
+
+Left-click the Bycoda tray icon to reopen the most recently hidden workspace.
+The tray tooltip shows **Working**, **Failed**, and **Needs input** counts.
+Automatic retries count as working.
+Right-click and choose **Hidden windows** to open or close a specific one.
+Use **File > Quit** or **Quit Bycoda** in the tray to close the whole app,
+including hidden windows.
+
+When the WebView2 browser process exits on Windows, Bycoda tries to restore the
+interface in the existing windows. Local Host, terminal, and agent processes
+stay running during this recovery. If the interface cannot be restored, Bycoda
+asks before restarting when it detects work that the restart would interrupt.
+
 Reload asks for confirmation when this window has running local conversations or
 unsaved file changes. It interrupts this window's local conversations; work on a
 remote Host and work in other windows continue. Cancelling keeps the window open.
@@ -394,13 +570,18 @@ Time spent answering those dialogs does not consume the timeout for saving the
 workspace. A failed save keeps the app open and reports the failure.
 
 Opening a conversation already held by another window focuses that window.
+The sidebar shows **Opening…** when a selection takes longer than half a second.
+When available, the last saved page of a local Host conversation can appear while
+the Host confirms the transcript. You can keep typing a draft during this check.
 Local conversations and remote Host conversations keep one window owner, including
 idle tabs. If the owner cannot be verified, opening stops with an error so you can
 retry. Moving tabs keeps the source until the destination confirms receipt;
 running local turns wait until they finish before moving.
 
-The primary window restores the saved workspace. Additional windows start blank
-unless they receive an explicit tab transfer. Each window records its own running
+The primary window restores the saved workspace. If the active tab is unavailable,
+it opens another tab in the saved project when possible. Otherwise it starts a blank
+conversation under **No project**. Additional windows start blank unless they receive
+an explicit tab transfer. Each window records its own running
 conversations for recovery without replacing another window's records. A local
 conversation enters recovery only after its original process has stopped; unknown
 process state stays protected.
@@ -411,27 +592,36 @@ tabs or consume its recovery state. If storage cannot load, the startup retry
 screen remains available.
 
 Click **Last sessions** in the project rail to open a combined workspace list. It
-shows conversations active during the last seven days, newest first, with each
-project's saved icon, color and background. This view stays open when a conversation
-is selected. A refresh keeps the previous complete list visible until the new
-history has loaded; an error leaves that list available while retrying.
+shows conversations active during the last seven days, newest first by default, with
+each project's saved icon, color and background. The sliders menu groups conversations
+by project or state and sorts by newest or oldest activity. Select an active grouping
+again to return to the flat list. Right-click a conversation to pin or rename it,
+regenerate its title, copy identifiers, link a GitHub issue or PR, or schedule a
+reminder for a locally saved conversation. **Select** starts multi-selection across
+projects while keeping the current conversation open. A refresh keeps the previous
+complete list visible until the new history has loaded; an error leaves that list
+available while retrying.
 Explorer and Changes follow that conversation's real project and
-execution worktree. The **+** action in Last Sessions first asks which project should own the new
-conversation. Search or choose a project, including the current one; cancelling
-creates nothing. The new conversation uses that project’s defaults and selected
-checkout while Last Sessions stays open. Choose **No project** to start a conversation
-that belongs to no project: it runs in the folder set under Settings → General →
-**Folder for sessions without a project** (your home folder by default; the folder is
-created when missing) and appears in Last Sessions with a folder icon. Choosing a project from the rail returns
+execution worktree. **New session** in Last sessions asks which project should own the
+new conversation. Search or choose a project, including the current one. Cancelling
+creates nothing. The new conversation uses the chosen project's defaults and selected
+checkout. Choosing the current project keeps Last sessions open. Choosing another
+project opens its **Sessions** list. Choose **No project** to start a conversation
+without a project. Bycoda gives it its own working directory under
+`~/.bycoda-host/scratch` when it first runs. The files stay on disk when the
+conversation is deleted. Choose **No project** next to **Last sessions** to browse these
+conversations or start another one. Older projectless conversations keep the folder
+configured under **Settings → General**. Choosing a project from the rail returns
 to its own conversation list. The
 combined list does not make unrelated repositories share Git operations. The time
-filter can narrow this window to Today; Clear restores Last 7 days. Remote rows
-come from available history and show a coverage note rather than claiming a full
-remote archive. Pin actions are available only in the project view. Local rows
-provide Settle, Archive and Delete; each action updates that conversation in its
-own project, even while another project is open. Remote lifecycle actions remain
-in the owning project view. Deleting several remote conversations at once
-sends them together; the result appears on both computers.
+filter can narrow this window to Today. Clear restores Last 7 days. The list uses
+current remote project results when available and shows a coverage note when a
+remote project cannot supply current results. Right-click a row or press
+**Shift+F10** to open its actions. **Archive** and **Delete** use the conversation's
+owning project, including on a connected remote machine. **Settle** uses the
+session's owning Host. Open the **Settled** filter to find those sessions and
+bring them back with **Un-settle**. Use the project view to pin conversations or
+act on several at once.
 
 In **Settings > Archive**, project archive and restore keep the source entry until
 the destination is saved. Storage errors leave the project reachable for retry;
@@ -444,18 +634,23 @@ assistant. It uses the Host's management record for local and remote projects an
 combines with provider, time, archive and status filters. Clear filters restores the full list.
 
 **Settle** (the check mark in a conversation's header, or on its sidebar row
-when you hover it) moves a finished conversation to the collapsed **Settled**
+when you hover it) uses the owning Host for both local and connected remote
+projects. It moves a finished conversation to the collapsed **Settled**
 group at the end of the project's list. The **Settled** filter lists only
 settled conversations. It does not lock anything: the conversation stays writable, and its next
 message moves it back to the active list. Settling while a turn runs waits for
 the turn; a failed turn or a queued message leaves it active. **Un-settle**
 brings it back and keeps it out of automatic settling until its next message.
 Settle stays disabled in a new conversation until it has a submitted message; unsent drafts do not enable it.
+In a project list, select several conversations and choose **Settle** from the
+right-click menu or the check mark on a selected row. The same action works in
+local and connected remote projects. It leaves already settled conversations in place.
+Pin, Unpin, Settle and Un-settle update the list immediately. If the Host rejects a change, the list returns to its confirmed state and shows the error.
 Conversations idle for three days settle on their own; change or turn this off
 in Settings → Session list → **Auto-settle after**. Pinned, archived, running and
 waiting conversations never settle automatically, and pinned, foldered or
 reminder conversations stay where you placed them. Settling applies to
-conversations on this computer's Host; archive and tasks are unchanged by it.
+conversations on their owning Host. Archive and tasks are separate actions.
 
 To keep the shelf short, Settings → Session list → **Archive settled after**
 archives conversations that stayed settled for 7, 14, 30 or 90 days. It is off
@@ -499,10 +694,20 @@ Only ungrouped projects can be pinned. Groups and linked workspaces have no pin 
 and a project's earlier pin is dropped when it joins a group. Group members are
 indented under the header on a guide line.
 
-A single conversation shows one compact title row with its tabs and actions; a
+One title bar runs across the top of every main window, in the same order on
+macOS, Windows and Linux: the sidebar toggle, the bycoda mark, Back, Forward,
+Search, then the open tabs. On macOS the window buttons sit before the toggle;
+on Windows and Linux the window buttons close the bar on the right. The bycoda
+wordmark shows beside the mark while the project rail is expanded. Search shrinks
+to its icon in a narrow window. The project rail and the sidebars below the bar
+hold no window controls, history buttons or Search of their own.
+
+A single conversation shows its tabs and actions in that title bar; a
 pane gets its own header only when the workspace is split. On Windows and Linux
-the menu button at the start of the title row opens the application menus, and
-Alt or F10 still opens them from the keyboard. The Changes tab always shows how
+the bycoda mark at the start of the title bar opens the application menus, and
+Alt or F10 still opens them from the keyboard: the menu bar takes focus, Left and
+Right move between menus, Down opens one, and Escape hides the bar and returns
+focus to where you were. The Changes tab always shows how
 many files changed; the added and removed line totals appear when the tab has
 room, and its tooltip names both counts. Keyboard focus on a session row opens
 a small detail card with the title, model, branch or worktree, path, status and
@@ -528,8 +733,12 @@ with tooltips; a failed copy or save shows the reason and a retry icon in place.
 
 The notifications sheet lists pending requests and **Recent**, the common log of
 what the app announced (the last 100): questions, approvals, finished and failed
-turns, reminders, background work, assistant messages and account notices. Each
+turns, reminders, background work, assistant messages and account notices.
+Successful subagent runs appear in the conversation's activity without a desktop
+banner, completion sound or entry in **Recent**. Each notification history
 row has a prominent title, a quieter two-line preview and a plain status icon.
+For stale remote data, the expanded message includes the data name, the last
+verification time when available, and the sanitized failure reason if one was reported.
 The project, event label and relative time sit below the preview. Expand a row
 to read its full title and message, inspect its path, open its destination or
 remove it. Status icons use semantic colors: failed turns use red, finished turns
@@ -608,6 +817,9 @@ Independent service, storage and operation errors retain their own feedback and
 retry controls. Notification timing does not change sending permissions or replay
 messages and commands.
 
+When the owning Host reports that an open conversation was deleted, bycoda shows an
+informational notice and disables sending in that conversation.
+
 Before starting a local desktop turn, bycoda saves the conversation. If the save
 fails, the send reports that the conversation could not be saved before starting.
 Resolve the storage error before trying again. If the conversation changes while
@@ -629,6 +841,10 @@ reset and newer changes from another window take precedence over an older drag.
 Maximizing a split panel changes its corner action to Restore panel layout and
 shows inward arrows. Restoring returns the outward arrows and the previous split.
 
+The context meter stays available while the provider's reading is pending or
+unavailable. It shows the reported token count as soon as it arrives and adds a
+percentage when the model's context limit is known.
+
 After successful context compaction, the context meter replaces its old reading
 with the provider's new count when available. Otherwise the old fullness clears
 until the provider reports a new reading; compaction does not imply zero tokens.
@@ -643,9 +859,13 @@ If session ownership cannot be loaded, the saved source remains available with R
 
 ## Notes
 
-The note header keeps title, project and tags together. The check icon means saved;
-Save remains available as an icon and with the keyboard shortcut. Failures and recovery
-keep their visible messages.
+In Session Notes, click the title in the top bar to rename the note. A new note opens
+with focus in its writing area, and tags are visible under the title. Session Notes
+saves automatically. Use Save in the bottom bar or Ctrl/Cmd+S to save immediately.
+Closing the panel flushes pending changes; reopening resumes the
+last note and preserves a failed draft. Private edits that still need review appear in
+a compact Review changes notice with Open note, Copy exact text and expandable recovery text.
+The library keeps its keyboard Save command and shows failures and recovery messages.
 
 Use the plus beside tags to assign an existing library tag or a ready-made tag. Type
 and press Enter for a custom tag. The library shows tag shortcuts beneath search;
@@ -668,9 +888,9 @@ project without moving or relinking the note. The message remains unsent.
 
 ## Models and providers
 
-**Settings > Models** has four tabs: **Background work** (Who uses what, All models,
-Groups and Work limits), **Chats**, **Subagents** and **Providers** (provider list and
-detail, CLI table and Decision models). The Grok account row
+**Settings > Models** has three tabs: **Background work** (Who uses what, All models,
+Groups and Work limits), **Defaults** (chat and subagent defaults) and **Providers** (provider list and
+detail, with CLI versions in each header). Decision models have their own page. The Grok account row
 reports the local Grok Build CLI sign-in. See [Models](models.md) for selection,
 inheritance and running-session behavior.
 

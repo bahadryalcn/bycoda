@@ -7,6 +7,11 @@ import type { BrowserSettings as BrowserSettingsValue } from "../../model/social
 import type { SocialClient } from "../../model/socialClient";
 import { BrowserSettings } from "../accounts/BrowserSettings";
 
+/** A control with a reason stays focusable: blocked is `disabled` or `aria-disabled`. */
+const isBlocked = (
+  node: { disabled?: boolean; getAttribute(name: string): string | null } | null | undefined,
+) => Boolean(node?.disabled) || node?.getAttribute("aria-disabled") === "true";
+
 /**
  * Consent gates of browser-driven work, seen from the account's Browser card: a waiting screen
  * is shown as "Waiting for you", the live view never acts for the owner, and desktop control
@@ -37,8 +42,26 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+/** A disabled-with-reason control stays focusable; its reason is the shared tooltip. */
+async function tooltipText(target: HTMLElement): Promise<string> {
+  await act(async () => {
+    target.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    target.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
 function settings(patch: Partial<BrowserSettingsValue> = {}): BrowserSettingsValue {
-  return { accountId: "a1", visibility: "hidden", desktopControl: { allowed: false }, ...patch };
+  return {
+    accountId: "a1",
+    visibility: "hidden",
+    desktopControl: { allowed: false },
+    ...patch,
+  };
 }
 
 function clientWith(loaded: BrowserSettingsValue | Error = settings()) {
@@ -48,7 +71,11 @@ function clientWith(loaded: BrowserSettingsValue | Error = settings()) {
   });
   const set = vi.fn(async (input: BrowserSettingsValue) => structuredClone(input));
   const resolve = vi.fn(async () => undefined);
-  const browserViewFrame = vi.fn(async () => ({ jpegBase64: "QUFB", width: 10, height: 10 }));
+  const browserViewFrame = vi.fn(async () => ({
+    jpegBase64: "QUFB",
+    width: 10,
+    height: 10,
+  }));
   const browserViewInput = vi.fn(async () => undefined);
   const client = {
     browser: { settings: { get, set }, needsHuman: { resolve } },
@@ -104,15 +131,12 @@ async function chooseComputer(name: string) {
   await act(async () => option.click());
 }
 
-it("shows a waiting-for-you state with guidance only when a recognised screen needs the owner", async () => {
+it("shows a waiting-for-you state with state only when a recognised screen needs the owner", async () => {
   const { client } = clientWith();
   await mount(client, { needsHuman: true });
   expect(element.textContent).toContain("Waiting for you");
-  expect(element.textContent).toContain("Open the live view to finish the step that needs you.");
   await mount(client, { needsHuman: false });
-  expect(element.textContent).not.toContain(
-    "Open the live view to finish the step that needs you.",
-  );
+  expect(element.textContent).not.toContain("Waiting for you");
 });
 
 it("opens the live view for the owner without resolving the wait, saving or sending input", async () => {
@@ -121,7 +145,7 @@ it("opens the live view for the owner without resolving the wait, saving or send
   await act(async () => button("Open live view").click());
   await settle();
   expect(element.querySelector('section[aria-label="Live browser view"]')).not.toBeNull();
-  expect(browserViewFrame).toHaveBeenCalledWith("a1");
+  expect(browserViewFrame).toHaveBeenCalledWith("a1", undefined);
   expect(resolve).not.toHaveBeenCalled();
   expect(browserViewInput).not.toHaveBeenCalled();
   expect(set).not.toHaveBeenCalled();
@@ -136,7 +160,10 @@ it("keeps desktop control off by default and offers no computer until it is allo
   await mount(client);
   expect(desktopSwitch().getAttribute("aria-checked")).toBe("false");
   expect(element.textContent).not.toContain("Choose a computer");
-  expect(element.textContent).toContain(
+  await act(async () =>
+    element.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click(),
+  );
+  expect(document.body.textContent).toContain(
     "Desktop control runs only when you're away and on another computer.",
   );
 });
@@ -145,12 +172,14 @@ it("blocks saving allowed desktop control until the owner names the computer, th
   const { client, set } = clientWith();
   await mount(client);
   await act(async () => desktopSwitch().click());
-  expect(button("Save browser settings").disabled).toBe(true);
-  expect(element.textContent).toContain("Choose the computer desktop control may use.");
+  expect(button("Save browser settings").getAttribute("aria-disabled")).toBe("true");
+  expect(await tooltipText(button("Save browser settings"))).toContain(
+    "Choose the computer desktop control may use.",
+  );
   await act(async () => button("Save browser settings").click());
   expect(set).not.toHaveBeenCalled();
   await chooseComputer("Office PC");
-  expect(button("Save browser settings").disabled).toBe(false);
+  expect(button("Save browser settings").getAttribute("aria-disabled")).toBeNull();
   await act(async () => button("Save browser settings").click());
   await settle();
   expect(set).toHaveBeenCalledExactlyOnceWith({
@@ -158,16 +187,20 @@ it("blocks saving allowed desktop control until the owner names the computer, th
     visibility: "hidden",
     desktopControl: { allowed: true, computerId: "c2" },
   });
-  expect(element.textContent).toContain("No changes to save.");
+  // Nothing left to save is obvious from the untouched form: no sentence, the button is just off.
+  expect(element.textContent).not.toContain("No changes to save.");
+  expect(isBlocked(button("Save browser settings"))).toBe(true);
 });
 
 it("blocks every change and explains why when this computer is not connected", async () => {
   const { client, set } = clientWith();
   await mount(client, { disabled: true });
-  expect(desktopSwitch().disabled).toBe(true);
-  expect(button("Open live view").disabled).toBe(true);
-  expect(button("Save browser settings").disabled).toBe(true);
-  expect(element.textContent).toContain("Connect to this computer to change this account.");
+  expect(isBlocked(desktopSwitch())).toBe(true);
+  expect(isBlocked(button("Open live view"))).toBe(true);
+  expect(button("Save browser settings").getAttribute("aria-disabled")).toBe("true");
+  expect(await tooltipText(button("Save browser settings"))).toContain(
+    "Connect to this computer to change this account.",
+  );
   expect(set).not.toHaveBeenCalled();
 });
 
@@ -179,7 +212,7 @@ it("keeps the owner's edit and shows the Host's reason when saving fails", async
   await chooseComputer("Studio Mac");
   await act(async () => button("Save browser settings").click());
   await settle();
-  expect(element.textContent).toContain("The Host refused the change.");
+  expect(element.textContent).toContain("The browser settings could not be saved. Try again.");
   expect(desktopSwitch().getAttribute("aria-checked")).toBe("true");
   expect(button("Save browser settings").disabled).toBe(false);
 });

@@ -1,4 +1,4 @@
-import { Text } from "../../../shared/ui/Text";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { useLayoutEffect, useRef } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -16,6 +16,7 @@ export function SshJumpChainEditor({
   onChange: (value: string[]) => void;
   disabled?: boolean;
 }) {
+  const busyReason = disabled ? t("Wait for the current action to finish.") : undefined;
   // Stable row identities live beside the persisted string[]; they are never saved.
   const idsRef = useRef<number[]>([]);
   const nextIdRef = useRef(0);
@@ -74,6 +75,13 @@ export function SshJumpChainEditor({
                   iconOnly
                   label={`${t("Move up")}: ${index + 1}`}
                   disabled={disabled || index === 0}
+                  disabledReason={
+                    disabled
+                      ? busyReason
+                      : index === 0
+                        ? t("The first jump host cannot move up.")
+                        : undefined
+                  }
                   data-jump-move={-1}
                   onClick={() => move(index, -1)}
                 >
@@ -84,6 +92,13 @@ export function SshJumpChainEditor({
                   iconOnly
                   label={`${t("Move down")}: ${index + 1}`}
                   disabled={disabled || index === value.length - 1}
+                  disabledReason={
+                    disabled
+                      ? busyReason
+                      : index === value.length - 1
+                        ? t("The last jump host cannot move down.")
+                        : undefined
+                  }
                   data-jump-move={1}
                   onClick={() => move(index, 1)}
                 >
@@ -96,6 +111,7 @@ export function SshJumpChainEditor({
               iconOnly
               label={`${t("Remove jump host")}: ${index + 1}`}
               disabled={disabled}
+              disabledReason={busyReason}
               onClick={() => {
                 ids.splice(index, 1);
                 onChange(value.filter((_, i) => i !== index));
@@ -106,19 +122,28 @@ export function SshJumpChainEditor({
           </div>
         </div>
       ))}
-      <Button
-        variant="ghost"
-        disabled={disabled || value.length >= MAX_SSH_JUMP_HOSTS}
-        onClick={() => onChange([...value, ""])}
-      >
-        <Plus className="icon-xs" />
-        {t("Add jump host")}
-      </Button>
-      {value.length > 1 ? (
-        <Text as="p" tone="muted">
-          {t("Hops follow this order. Each hop requires its own trusted host key.")}
-        </Text>
-      ) : null}
+      <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          startIcon={<Plus className="icon-xs" />}
+          disabled={disabled || value.length >= MAX_SSH_JUMP_HOSTS}
+          disabledReason={
+            disabled
+              ? busyReason
+              : value.length >= MAX_SSH_JUMP_HOSTS
+                ? t("A connection can use at most {p0} jump hosts.", { p0: MAX_SSH_JUMP_HOSTS })
+                : undefined
+          }
+          onClick={() => onChange([...value, ""])}
+        >
+          {t("Add jump host")}
+        </Button>
+        {value.length > 1 ? (
+          <InfoPopover>
+            {t("Hops follow this order. Each hop requires its own trusted host key.")}
+          </InfoPopover>
+        ) : null}
+      </div>
     </div>
   );
 }

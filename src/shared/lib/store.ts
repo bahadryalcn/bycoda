@@ -44,6 +44,38 @@ export function createStore<Args extends unknown[] = []>(
   };
 }
 
+/** Share one source listener and snapshot while mounted. The reader must keep identity
+ * for unchanged values, including during the initial render before subscribing. */
+export function createObservedSnapshot<T>(
+  read: () => T,
+  watch: (changed: () => void) => () => void,
+) {
+  const listeners = createStore();
+  let stop: (() => void) | undefined;
+  let value: T;
+  return {
+    getSnapshot: () => (stop ? value : read()),
+    subscribe(listener: () => void) {
+      const remove = listeners.subscribe(() => listener());
+      if (!stop) {
+        stop = watch(() => {
+          value = read();
+          listeners.notify();
+        });
+        // Cover a change between render and subscribing, including after a previous unmount.
+        value = read();
+      }
+      return () => {
+        remove();
+        if (!listeners.size) {
+          stop?.();
+          stop = undefined;
+        }
+      };
+    },
+  };
+}
+
 /** Per-subscription window listeners retain DOM deduplication and storage ordering. */
 export function createWindowStore(source: WindowStoreSource) {
   return {
@@ -71,4 +103,13 @@ export function boundedSet<K, V>(cache: Map<K, V>, key: K, value: V, limit = 64)
   cache.delete(key);
   cache.set(key, value);
   while (cache.size > limit) cache.delete(cache.keys().next().value!);
+}
+
+/** Read a value and mark it the newest entry; `null` when absent. Pairs with `boundedSet`. */
+export function boundedGet<K, V>(cache: Map<K, V>, key: K): V | null {
+  if (!cache.has(key)) return null;
+  const value = cache.get(key)!;
+  cache.delete(key);
+  cache.set(key, value);
+  return value;
 }

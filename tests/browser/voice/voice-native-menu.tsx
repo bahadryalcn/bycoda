@@ -76,7 +76,7 @@ function Fixture() {
                 aria-label={item.label}
                 fullWidth
                 variant="ghost"
-                role="menuitemradio"
+                role={item.checked === undefined ? "menuitem" : "menuitemradio"}
                 aria-checked={item.checked}
                 disabled={item.disabled}
                 onClick={() => send({ type: "fixture-native-pick", rid: menu.rid, id: item.id })}

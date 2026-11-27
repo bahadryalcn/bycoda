@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { TerminalTools, type TerminalTool } from "../../../src/features/terminal/ui/TerminalTools";
+import { RemoteShellSuggestionsOverlay } from "../../../src/features/terminal/ui/RemoteShellSuggestionsOverlay";
 import type {
   SshShellController,
   SshShellState,
@@ -58,7 +59,12 @@ export function RemoteSuggestionsFixture() {
   const shell: SshShellController = {
     state: snapshot,
     waiting: new URLSearchParams(location.search).has("waiting"),
-    error: new URLSearchParams(location.search).has("failed") ? "Fixture shell unavailable" : "",
+    notice: new URLSearchParams(location.search).has("failed")
+      ? "Remote shell integration is unavailable"
+      : "",
+    noticeDetails: new URLSearchParams(location.search).has("failed")
+      ? "Fixture shell unavailable"
+      : undefined,
     automatic: true,
     source: "commands",
     request: async () => refresh(),
@@ -93,6 +99,14 @@ export function RemoteSuggestionsFixture() {
         suggestionsAllowed={false}
         remoteShell={shell}
       />
+      {terminal && (mode === null || mode === "remote") ? (
+        <RemoteShellSuggestionsOverlay
+          shell={shell}
+          terminal={terminal}
+          selectionMode={mode === "remote"}
+          onClose={() => setMode(null)}
+        />
+      ) : null}
       <div ref={element} />
     </div>
   );

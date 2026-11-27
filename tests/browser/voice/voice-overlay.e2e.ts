@@ -1,11 +1,47 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
+import { PANE_MATRIX, expectLayoutContracts, openPane } from "../support/uiLayoutAssertions";
 
 // Fixture evidence: synthetic state through a stubbed IPC. Native placement,
 // always-on-top and dragging across applications need the desktop app.
 const captures = join(process.cwd(), "temp/verification/voice-overlay");
+
+async function selectOverlayMenuItem(page: Page, id: string, label: string) {
+  await page.getByRole("button", { name: "More voice options", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (itemId) =>
+          (window as any).fixtureOverlay
+            .nativeMenu()
+            ?.items.find((item: { id: string }) => item.id === itemId),
+        id,
+      ),
+    )
+    .toMatchObject({ label, disabled: false });
+  await page.evaluate((itemId) => (window as any).fixtureOverlay.pickNativeMenu(itemId), id);
+}
+test("floating window has one way back to the app", async ({ page }) => {
+  await page.goto("/tests/browser/voice/voice-overlay.html?compact=0");
+  await expect(page.getByRole("button", { name: "Full screen", exact: true })).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Return voice companion to the app", exact: true })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).fixtureOverlay.calls.some(
+          (call: any) => call.cmd === "plugin:event|emit_to" && call.args?.payload === "dock",
+        ),
+      ),
+    )
+    .toBe(true);
+});
 // Replies are chat bubbles in the companion's "Conversation" list; the newest one is last.
+// The transcript sits behind the call screen's Conversation toggle; it exists once voice is live.
+const showConversation = (panel: Locator) =>
+  panel.getByRole("button", { name: "Conversation", exact: true }).click();
 const lastReply = (panel: Locator) =>
   panel
     .getByRole("list", { name: "Conversation", exact: true })
@@ -13,7 +49,7 @@ const lastReply = (panel: Locator) =>
     .filter({ hasText: "Reply:" })
     .last();
 for (const theme of ["light", "dark"])
-  test(`Turkish compact native turn menu ${theme}`, async ({ page }) => {
+  test(`Turkish compact native overflow menu ${theme}`, async ({ page }) => {
     const output = join(process.cwd(), "temp/verification/voice-turn-menu-2026-11-03/captures");
     await mkdir(output, { recursive: true });
     await page.setViewportSize({ width: 800, height: 900 });
@@ -21,8 +57,8 @@ for (const theme of ["light", "dark"])
     const frame = page.frameLocator('iframe[title="Synthetic native voice window"]'),
       proof = page.locator("[data-native-menu-proof]");
     await expect(page.locator("[data-native-window-size]")).toHaveText("380 × 56 webview");
-    const automatic = frame.getByRole("button", { name: "Konuşmayı bitirme", exact: true });
-    await expect(automatic).toHaveText("");
+    const more = frame.getByRole("button", { name: "Diğer ses seçenekleri", exact: true });
+    await expect(more).toHaveText("");
     const inside = () =>
       frame.locator("main").evaluate(
         (element) =>
@@ -38,32 +74,25 @@ for (const theme of ["light", "dark"])
           }),
       );
     expect(await inside()).toBe(true);
-    await automatic.click();
+    await more.click();
     const menu = page.getByRole("menu", { name: "Synthetic turn ending menu", exact: true });
-    await expect(
-      menu.getByRole("menuitemradio", { name: "Duraklayınca yanıtla", exact: false }),
-    ).toBeChecked();
-    await expect(
-      menu.getByRole("menuitemradio", { name: "Hazır olunca ben bitireceğim", exact: false }),
-    ).not.toBeChecked();
+    // The overflow holds actions only: the turn-ending choice lives on the expanded dock.
+    await expect(menu.getByRole("menuitemradio")).toHaveCount(0);
+    await expect(menu.getByRole("menuitem")).toHaveCount(2);
+    const finish = menu.getByRole("menuitem", { name: "Konuşmamı bitir", exact: true });
+    await expect(finish).toHaveCount(0);
     await proof.screenshot({ path: join(output, `${theme}-800-tr-native-auto-menu.png`) });
-    await menu
-      .getByRole("menuitemradio", { name: "Hazır olunca ben bitireceğim", exact: false })
-      .click();
-    await expect(automatic).toBeVisible();
+    await page.getByRole("button", { name: "Dismiss synthetic menu", exact: true }).click();
+    await expect(menu).toBeHidden();
     await frame
       .locator("body")
       .evaluate(() => (window as any).fixtureOverlay.emit({ manualTurnEnd: true }));
-    const finish = frame.getByRole("button", { name: "Konuşmamı bitir", exact: true });
-    await expect(finish).toHaveText("");
+    await expect(more).toHaveText("");
     expect(await inside()).toBe(true);
-    await frame.getByRole("button", { name: "Konuşmayı bitirme", exact: true }).click();
-    await expect(
-      menu.getByRole("menuitemradio", { name: "Hazır olunca ben bitireceğim", exact: false }),
-    ).toBeChecked();
-    await expect(
-      menu.getByRole("menuitemradio", { name: "Duraklayınca yanıtla", exact: false }),
-    ).not.toBeChecked();
+    await more.click();
+    await expect(menu.getByRole("menuitemradio")).toHaveCount(0);
+    await expect(menu.getByRole("menuitem")).toHaveCount(3);
+    await expect(finish).toBeEnabled();
     await proof.screenshot({ path: join(output, `${theme}-800-tr-native-manual-menu.png`) });
     const finishes = () =>
       frame
@@ -75,14 +104,15 @@ for (const theme of ["light", "dark"])
             ).length,
         );
     expect(await finishes()).toBe(0);
-    await page.getByRole("button", { name: "Dismiss synthetic menu", exact: true }).click();
     await finish.click();
     await expect.poll(finishes).toBe(1);
     await proof.screenshot({ path: join(output, `${theme}-800-tr-native-finish.png`) });
   });
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
-    test(`native turn menu outside bounded webview ${theme} ${width}`, async ({ page }) => {
+    test(`native overflow and turn menus outside bounded webview ${theme} ${width}`, async ({
+      page,
+    }) => {
       const output = join(process.cwd(), "temp/verification/voice-turn-menu-2026-11-03/captures");
       await mkdir(output, { recursive: true });
       await page.setViewportSize({ width, height: 900 });
@@ -110,6 +140,7 @@ for (const theme of ["light", "dark"])
       await page.goto(`/tests/browser/voice/voice-native-menu.html?theme=${theme}&compact=1`);
       const frame = page.frameLocator('iframe[title="Synthetic native voice window"]');
       const proof = page.locator("[data-native-menu-proof]");
+      const more = frame.getByRole("button", { name: "More voice options", exact: true });
       const commands = () =>
         frame
           .locator("body")
@@ -119,14 +150,18 @@ for (const theme of ["light", "dark"])
               .map((call: any) => call.args.payload),
           );
       await expect(page.locator("[data-native-window-size]")).toHaveText("380 × 56 webview");
-      await frame.getByRole("button", { name: "Turn ending", exact: true }).click();
+      await more.click();
       const menu = page.getByRole("menu", { name: "Synthetic turn ending menu", exact: true });
+      const finish = menu.getByRole("menuitem", { name: "Finish turn", exact: true });
+      // Automatic turns: the overflow is Expand and Return only, with no turn-ending radios.
+      await expect(menu.getByRole("menuitemradio")).toHaveCount(0);
       await expect(
-        menu.getByRole("menuitemradio", { name: "Reply when I pause", exact: false }),
-      ).toBeChecked();
+        menu.getByRole("menuitem", { name: "Expand voice companion", exact: true }),
+      ).toBeEnabled();
       await expect(
-        menu.getByRole("menuitemradio", { name: "I'll finish when ready", exact: false }),
-      ).not.toBeChecked();
+        menu.getByRole("menuitem", { name: "Return to app", exact: true }),
+      ).toBeEnabled();
+      await expect(finish).toHaveCount(0);
       await expect(frame.getByRole("menu")).toHaveCount(0);
       expect(
         (await commands()).filter((command: string) =>
@@ -138,47 +173,30 @@ for (const theme of ["light", "dark"])
       });
       await page.getByRole("button", { name: "Dismiss synthetic menu", exact: true }).click();
       await expect(menu).toHaveCount(0);
-      expect(
-        (await commands()).filter((command: string) =>
-          ["finishTurn", "manualTurnEnd", "automaticTurnEnd"].includes(command),
-        ),
-      ).toEqual([]);
-      await frame.getByRole("button", { name: "Turn ending", exact: true }).click();
-      await menu
-        .getByRole("menuitemradio", { name: "I'll finish when ready", exact: false })
-        .click();
-      await expect
-        .poll(
-          async () =>
-            (await commands()).filter((command: string) => command === "manualTurnEnd").length,
-        )
-        .toBe(1);
-      await expect(frame.getByRole("button", { name: "Turn ending", exact: true })).toBeVisible(); // no optimistic owner ACK
       await frame
         .locator("body")
         .evaluate(() => (window as any).fixtureOverlay.emit({ manualTurnEnd: true }));
-      await frame.getByRole("button", { name: "Turn ending", exact: true }).click();
-      await expect(
-        menu.getByRole("menuitemradio", { name: "I'll finish when ready", exact: false }),
-      ).toBeChecked();
-      await expect(
-        menu.getByRole("menuitemradio", { name: "Reply when I pause", exact: false }),
-      ).not.toBeChecked();
+      await more.click();
+      await expect(menu.getByRole("menuitemradio")).toHaveCount(0);
+      await expect(finish).toBeEnabled();
       await proof.screenshot({
         path: join(output, `${theme}-${width}-native-compact-manual-menu.png`),
       });
       await page.getByRole("button", { name: "Dismiss synthetic menu", exact: true }).click();
+      // Opening or dismissing the menu never ends the owner's turn.
       expect((await commands()).filter((command: string) => command === "finishTurn")).toHaveLength(
         0,
       );
-      await frame.getByRole("button", { name: "Finish turn", exact: true }).click();
+      await more.click();
+      await finish.click();
       await expect
         .poll(
           async () =>
             (await commands()).filter((command: string) => command === "finishTurn").length,
         )
         .toBe(1);
-      await frame.getByRole("button", { name: "Expand voice companion", exact: true }).click();
+      await more.click();
+      await menu.getByRole("menuitem", { name: "Expand voice companion", exact: true }).click();
       await expect(frame.locator("main")).not.toHaveAttribute("data-compact");
       // Expanded, the turn mode button is named after the current mode.
       await frame.getByRole("button", { name: "I'll finish when ready", exact: true }).click();
@@ -209,9 +227,9 @@ for (const theme of ["light", "dark"])
       await page.goto(
         `/tests/browser/voice/voice-native-menu.html?theme=${theme}&compact=1&native-menu-fail`,
       );
-      await frame.getByRole("button", { name: "Turn ending", exact: true }).click();
+      await more.click();
       await expect(
-        frame.getByText("The turn mode menu could not be opened. Try again.", { exact: true }),
+        frame.getByText("The menu could not be opened. Try again.", { exact: true }),
       ).toBeVisible();
       expect(
         await frame
@@ -228,25 +246,18 @@ for (const theme of ["light", "dark"])
       await proof.screenshot({ path: join(output, `${theme}-${width}-native-failure.png`) });
       await frame.getByRole("button", { name: "Dismiss", exact: true }).click();
       await expect(page.locator("[data-native-window-size]")).toHaveText("380 × 56 webview");
-      await frame.getByRole("button", { name: "Turn ending", exact: true }).click();
+      await more.click();
+      await expect(menu.getByRole("menuitemradio")).toHaveCount(0);
       await expect(
-        menu.getByRole("menuitemradio", { name: "Reply when I pause", exact: false }),
-      ).toBeChecked();
+        menu.getByRole("menuitem", { name: "Expand voice companion", exact: true }),
+      ).toBeEnabled();
       await proof.screenshot({ path: join(output, `${theme}-${width}-native-retry-menu.png`) });
-      await menu
-        .getByRole("menuitemradio", { name: "I'll finish when ready", exact: false })
-        .click();
-      await expect
-        .poll(
-          async () =>
-            (await commands()).filter((command: string) => command === "manualTurnEnd").length,
-        )
-        .toBe(1);
-      await expect(frame.getByRole("button", { name: "Turn ending", exact: true })).toBeVisible();
       await frame
         .locator("body")
         .evaluate(() => (window as any).fixtureOverlay.emit({ manualTurnEnd: true }));
-      await expect(frame.getByRole("button", { name: "Finish turn", exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Dismiss synthetic menu", exact: true }).click();
+      await more.click();
+      await expect(finish).toBeEnabled();
     });
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
@@ -264,6 +275,7 @@ for (const theme of ["light", "dark"])
       await panel.screenshot({ path: join(output, `${theme}-${width}-ready.png`) });
       await panel.getByRole("button", { name: "Start voice", exact: true }).click();
       await expect.poll(() => page.evaluate(() => (window as any).fixtureVoice.connects)).toBe(1);
+      await showConversation(panel);
       await page.evaluate(() =>
         (window as any).fixtureVoice.speech("Keep my full request together."),
       );
@@ -276,7 +288,7 @@ for (const theme of ["light", "dark"])
         conversation.getByRole("listitem").and(panel.locator('[data-role="assistant"]')),
       ).toBeVisible();
       await panel.screenshot({ path: join(output, `${theme}-${width}-listening.png`) });
-      const controls = ["Pause mic", "Silence", "Disconnect voice"];
+      const controls = ["Mute microphone", "Stop speaking", "Disconnect voice"];
       // The controls share one row once the listening layout has settled.
       await expect
         .poll(async () => {
@@ -321,16 +333,21 @@ for (const theme of ["light", "dark"])
           true,
         ),
       );
-      await expect(panel.getByRole("img", { name: "Voice needs attention" })).toBeVisible();
+      await expect(panel.getByText("Voice needs attention", { exact: true })).toBeVisible();
       const errorMessage = "Voice input cleanup was not confirmed. Start voice again.";
-      await expect(panel.getByText(errorMessage, { exact: true })).toBeVisible();
+      // The failure is one alert: a "Voice needs attention" lead-in, then the reason.
+      await expect(panel.getByRole("alert")).toHaveText(`Voice needs attention: ${errorMessage}`);
       await expect(panel.getByRole("button", { name: "Start voice", exact: true })).toBeVisible();
       await panel.screenshot({ path: join(output, `${theme}-${width}-attention.png`) });
       await panel.getByRole("button", { name: "Compact voice companion", exact: true }).click();
       await panel.getByRole("button", { name: "Voice needs attention", exact: true }).click();
-      await expect(panel.getByText(errorMessage, { exact: true })).toBeVisible();
+      await expect(panel.getByRole("alert")).toContainText(errorMessage);
       await expect(panel.getByRole("button", { name: "Dismiss", exact: true })).toBeVisible();
+      const details = "Details: Voice needs attention";
+      await panel.getByRole("button", { name: details, exact: true }).click();
+      await expect(page.getByRole("dialog", { name: details })).toContainText(errorMessage);
       await page.screenshot({ path: join(output, `${theme}-${width}-error-details.png`) });
+      await page.keyboard.press("Escape");
       await panel.getByRole("button", { name: "Start voice", exact: true }).click();
       await expect.poll(() => page.evaluate(() => (window as any).fixtureVoice.connects)).toBe(2);
       expect(await page.evaluate(() => (window as any).fixtureVoice.closes)).toBe(1);
@@ -359,7 +376,8 @@ for (const theme of ["light", "dark"])
       );
       await page.setViewportSize({ width: compactSize.width, height: compactSize.height });
       await mirror.screenshot({ path: join(output, `${theme}-${width}-floating-compact.png`) });
-      await mirror.getByRole("button", { name: "Expand voice companion", exact: true }).click();
+      await selectOverlayMenuItem(page, "expand", "Expand voice companion");
+      await expect(mirror).not.toHaveAttribute("data-compact");
       await page.setViewportSize({ width, height: 900 });
       await page.evaluate(() =>
         (window as any).fixtureOverlay.emit({
@@ -374,11 +392,15 @@ for (const theme of ["light", "dark"])
       await expect(
         mirror.getByRole("alert").getByRole("button", { name: "Dismiss" }),
       ).toBeVisible();
+      // The raw reason sits behind Details, like in the panel.
+      await expect(mirror.getByText("Voice needs attention", { exact: true })).toBeVisible();
+      await mirror
+        .getByRole("button", { name: "Details: Voice needs attention", exact: true })
+        .click();
       await expect(
-        mirror.getByText("Voice input cleanup was not confirmed. Start voice again.", {
-          exact: true,
-        }),
-      ).toBeVisible();
+        page.getByRole("dialog", { name: "Details: Voice needs attention" }),
+      ).toContainText("Voice input cleanup was not confirmed. Start voice again.");
+      await page.keyboard.press("Escape");
       await mirror.screenshot({ path: join(output, `${theme}-${width}-floating-details.png`) });
       expect(await mirror.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
         true,
@@ -400,7 +422,6 @@ for (const theme of ["light", "dark"])
       await panel.getByRole("button", { name: "Start voice", exact: true }).click();
       const presenceMessage =
         "Current computer presence could not be verified. Mark yourself here before talking.";
-      await expect(panel.getByRole("paragraph").filter({ hasText: presenceMessage })).toBeVisible();
       await expect(panel.getByRole("alert")).toHaveText(presenceMessage);
       expect(await page.evaluate(() => (window as any).fixtureVoice.connects)).toBe(0);
       await panel.screenshot({
@@ -420,6 +441,7 @@ for (const theme of ["light", "dark"])
       await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
       const panel = page.locator("section[data-voice-state]");
       await panel.getByRole("button", { name: "Start voice", exact: true }).click();
+      await showConversation(panel);
       await page.evaluate(() => (window as any).fixtureVoice.speech("Sözümü kesme."));
       await expect(panel.getByText("Rule save is pending. Retry.", { exact: true })).toBeVisible();
       await expect(panel.getByRole("button", { name: "Finish turn", exact: true })).toHaveCount(0);
@@ -453,14 +475,19 @@ for (const theme of ["light", "dark"])
       expect(calls.some((call: any) => call.args?.payload === "finishTurn")).toBe(true);
       await overlay.screenshot({ path: join(output, `${theme}-${width}-manual-overlay.png`) });
       await page.goto(`/tests/browser/voice/voice-visual-styles.html?theme=${theme}`);
-      // The conversation style group shows this switch directly, without an Advanced disclosure.
-      const manual = page.getByRole("switch", { name: "I decide when my turn ends", exact: true });
-      await manual.scrollIntoViewIfNeeded();
-      await expect(manual).toBeVisible();
-      await manual.uncheck();
-      await expect(manual).not.toBeChecked();
-      await manual.check();
-      await expect(manual).toBeChecked();
+      // Settings offers the same choice as one select: "I end my turn" is the manual mode.
+      const turn = page.getByRole("button", { name: /^Wait before replying:/ });
+      await turn.scrollIntoViewIfNeeded();
+      await expect(turn).toBeVisible();
+      await turn.click();
+      await page.getByRole("option", { name: "I end my turn", exact: true }).click();
+      await expect(turn).toContainText("I end my turn");
+      await turn.click();
+      await page.getByRole("option", { name: "Natural pause", exact: true }).click();
+      await expect(turn).toContainText("Natural pause");
+      await turn.click();
+      await page.getByRole("option", { name: "I end my turn", exact: true }).click();
+      await expect(turn).toContainText("I end my turn");
       await page.screenshot({ path: join(output, `${theme}-${width}-manual-settings.png`) });
       expect(await page.evaluate(() => (window as any).fixtureVoice.connects)).toBe(0);
     });
@@ -490,6 +517,7 @@ for (const theme of ["light", "dark"])
       });
       expect(sourceGuard).toEqual({ environmentId: "fixture-host", frozen: true, rejected: true });
       await panel.getByRole("button", { name: "Start voice", exact: true }).click();
+      await showConversation(panel);
       await page.evaluate(() => (window as any).fixtureVoice.speech("delete recovery job"));
       // The question shows beside its icon (aria-hidden) and names the answer group.
       await expect(
@@ -547,10 +575,8 @@ for (const theme of ["light", "dark"])
         (window as any).fixtureVoice.remoteAckLost = true;
         (window as any).fixtureVoice.speech("Read remote status");
       });
-      await expect(
-        panel.getByRole("paragraph").filter({ hasText: "Conversation was not saved. Retry." }),
-      ).toBeVisible();
-      await expect(panel.getByRole("alert")).toHaveText("Conversation was not saved. Retry.");
+      await expect(panel.getByRole("alert")).toBeVisible();
+      await expect(panel.getByRole("alert")).toContainText("Conversation was not saved. Retry.");
       await panel.screenshot({ path: join(output, `${theme}-${width}-remote-pending.png`) });
       await panel.getByRole("button", { name: "Save conversation", exact: true }).click();
       await expect(
@@ -574,10 +600,8 @@ for (const theme of ["light", "dark"])
       await panel.screenshot({ path: join(output, `${theme}-${width}-remote-recovered.png`) });
       await page.evaluate(() => ((window as any).fixtureVoice.remoteAvailable = false));
       await page.evaluate(() => (window as any).fixtureVoice.speech("Keep the next remote turn"));
-      await expect(
-        panel.getByRole("paragraph").filter({ hasText: "Conversation was not saved. Retry." }),
-      ).toBeVisible();
-      await expect(panel.getByRole("alert")).toHaveText("Conversation was not saved. Retry.");
+      await expect(panel.getByRole("alert")).toBeVisible();
+      await expect(panel.getByRole("alert")).toContainText("Conversation was not saved. Retry.");
       await panel.screenshot({ path: join(output, `${theme}-${width}-remote-offline.png`) });
     });
 for (const theme of ["light", "dark"])
@@ -656,18 +680,19 @@ for (const theme of ["light", "dark"])
 
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
-    test(`voice choice and setup controls: ${theme} ${width}`, async ({ page }) => {
+    test(`voice choice and job review controls: ${theme} ${width}`, async ({ page }) => {
       const output = join(process.cwd(), "temp/verification/arif-assistant");
       await mkdir(output, { recursive: true });
       await page.setViewportSize({ width, height: 900 });
       // Job review is opt-in (profile confirmJobs); this scenario asks for it.
       await page.goto(
-        `/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global&confirm-jobs`,
+        `/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global&confirm-jobs&local-choice`,
       );
       await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
       const panel = page.locator("section[data-voice-state]");
       await panel.getByRole("button", { name: "Start voice", exact: true }).click();
       await expect(panel).toHaveAttribute("data-voice-state", "listening");
+      await showConversation(panel);
       await page.evaluate(() => (window as any).fixtureVoice.speech("show choices"));
       // The question shows beside its icon (aria-hidden) and names the answer group.
       await expect(
@@ -680,10 +705,17 @@ for (const theme of ["light", "dark"])
       await panel.getByRole("button", { name: "Send answer", exact: true }).click();
       await expect(lastReply(panel)).toContainText("Your project choice has been recorded.");
       expect(await page.evaluate(() => (window as any).fixtureVoice.submits)).toBe(0);
-      await page.evaluate(() => (window as any).fixtureVoice.speech("give jobs"));
+      await page.evaluate(() =>
+        (window as any).fixtureVoice.speech(
+          "start a job to review recovery and improve the help page",
+        ),
+      );
       // The review is a dialog outside the companion panel.
       const review = page.getByRole("dialog", { name: "Review jobs before starting", exact: true });
       await expect(review).toBeVisible();
+      // One project is the lead automatically; the spoken approval hint is gone, Start stays explicit.
+      await expect(review.getByText("Lead project", { exact: false })).toHaveCount(0);
+      await expect(review.getByText("Say “start”", { exact: false })).toHaveCount(0);
       expect(await page.evaluate(() => (window as any).fixtureVoice.jobs)).toHaveLength(0);
       await review
         .getByRole("textbox", { name: "Title", exact: true })
@@ -696,13 +728,6 @@ for (const theme of ["light", "dark"])
         { title: "Review recovery carefully" },
         { title: "Improve the help page" },
       ]);
-      for (const step of ["provider", "voice", "microphone"]) {
-        await page.goto(
-          `/tests/browser/voice/voice-visual-styles.html?theme=${theme}&setup-step=${step}`,
-        );
-        await expect(page.getByRole("heading", { name: `Assistant Arif · ${step}` })).toBeVisible();
-        await page.screenshot({ path: join(output, `${theme}-${width}-setup-${step}.png`) });
-      }
     });
 
 for (const theme of ["light", "dark"])
@@ -750,8 +775,8 @@ for (const theme of ["light", "dark"]) {
     expect(await panel.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
     await page.screenshot({ path: join(captures, `${theme}-compact.png`) });
 
-    await page.getByRole("button", { name: "Pause mic" }).click();
-    await page.getByRole("button", { name: "Return voice companion to the app" }).click();
+    await page.getByRole("button", { name: "Mute microphone" }).click();
+    await selectOverlayMenuItem(page, "return", "Return to app");
     const sent = await page.evaluate(() =>
       (window as any).fixtureOverlay.calls
         .filter((call: any) => call.cmd === "plugin:event|emit_to")
@@ -760,7 +785,7 @@ for (const theme of ["light", "dark"]) {
     expect(sent).toContainEqual([{ kind: "AnyLabel", label: "main" }, "toggleMute"]);
     expect(sent).toContainEqual([{ kind: "AnyLabel", label: "main" }, "dock"]);
 
-    await page.getByRole("button", { name: "Expand voice companion" }).click();
+    await selectOverlayMenuItem(page, "expand", "Expand voice companion");
     await expect(panel).not.toHaveAttribute("data-compact");
     const fits = await page.evaluate(() =>
       (window as any).fixtureOverlay.calls.filter((call: any) => call.cmd === "voice_overlay_fit"),
@@ -829,7 +854,7 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(
-        `/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global&confirm-jobs`,
+        `/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global&local-choice`,
       );
       await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
       const panel = page.locator("section[data-voice-state]");
@@ -846,3 +871,32 @@ for (const theme of ["light", "dark"])
       await side.screenshot({ path: info.outputPath(`voice-side-${theme}-${width}.png`) });
     });
   }
+
+// Runtime layout contracts for the voice panel inside a real 320 px pane, in both themes at both
+// window sizes, in its idle and its listening state. The in-app panel is the pane here.
+for (const { theme, width } of PANE_MATRIX)
+  for (const state of ["idle", "listening"] as const)
+    test(`voice panel keeps its layout contracts in a 320px pane ${state} ${theme} ${width}`, async ({
+      page,
+    }) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global`);
+      await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+      const panel = page.locator("section[data-voice-state]");
+      await expect(panel).toBeVisible();
+      if (state === "listening")
+        await panel.getByRole("button", { name: "Start voice", exact: true }).click();
+      await openPane(page, { theme, width, pane: "section[data-voice-state]" });
+      await expectLayoutContracts(page, {
+        surface: `voice panel ${state} (320px pane)`,
+        root: "section[data-voice-state]",
+        allow: {
+          gap: [
+            {
+              selector: ".bycoda-arc-segmented",
+              reason: "Segmented options sit in one inset track with a deliberate 2px separation.",
+            },
+          ],
+        },
+      });
+    });

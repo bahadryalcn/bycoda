@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { LimitsFetch } from "./limits-fetch";
+import { quotaRetryAfterMs, type LimitsFetch } from "./limits-fetch";
 import {
   MONTHLY_MINUTES,
   SESSION_MINUTES,
@@ -152,11 +152,13 @@ export async function fetchOpencodeLimits(
   request: typeof fetch = fetch,
 ): Promise<LimitsFetch> {
   const key = await readKey().catch(() => null);
-  if (!key) return { status: "unavailable", error: "OpenCode Go not connected" };
+  if (!key)
+    return { status: "unavailable", error: "OpenCode Go not connected", reason: "signedOut" };
   try {
     const response = await request(USAGE_URL, {
       headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
       signal: AbortSignal.timeout(REQUEST_MS),
+      redirect: "error",
     });
     // A valid key without a Go subscription is "not applicable", not a failure.
     if (response.status === 401 || response.status === 403)
@@ -168,6 +170,11 @@ export async function fetchOpencodeLimits(
       return {
         status: "error",
         error: `OpenCode Go usage request failed (${response.status})`,
+        ...(response.status === 429
+          ? {
+              retryAfterMs: quotaRetryAfterMs(response.headers.get("Retry-After")),
+            }
+          : {}),
       };
     const text = await response.text();
     if (text.length > MAX_BODY_BYTES)

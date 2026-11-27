@@ -1,4 +1,8 @@
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import {
+  describeRemoteError,
+  presentRemoteError,
+  type RemoteErrorView,
+} from "../../connections/public/remoteFailure";
 import { Text } from "../../../shared/ui/Text";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -16,7 +20,7 @@ import type {
 } from "../../../shared/model/host-contracts/assistant";
 import { useAssistantControlSource } from "../model/useAssistantControlSource";
 import rt from "./room/RoomTabs.module.css";
-const actionError = (cause: unknown) => presentRemoteError(cause, { explicit: true });
+const actionError = describeRemoteError;
 
 type Row = NonNullable<AssistantResponse["observationDeliveries"]>[number];
 export function AssistantNotificationRecovery({
@@ -34,7 +38,7 @@ export function AssistantNotificationRecovery({
   const [threadId, setThreadId] = useState<string>();
   const [rows, setRows] = useState<Row[]>([]);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [problem, setProblem] = useState<RemoteErrorView | null>(null);
   const epoch = useRef(0);
   const bound = useRef({ environmentId, projects });
   bound.current = { environmentId, projects };
@@ -61,8 +65,7 @@ export function AssistantNotificationRecovery({
         if (active) setThreadId(result.thread.id);
       })
       .catch((cause) => {
-        const message = presentRemoteError(cause);
-        if (active && message) setError(message);
+        if (active && presentRemoteError(cause)) setProblem(describeRemoteError(cause));
       });
     return () => {
       active = false;
@@ -73,7 +76,7 @@ export function AssistantNotificationRecovery({
     const sequence = ++epoch.current,
       host = environmentId;
     setBusy(true);
-    setError("");
+    setProblem(null);
     if (selected !== projectId) setRows([]);
     setSelected(projectId);
     try {
@@ -104,7 +107,7 @@ export function AssistantNotificationRecovery({
         bound.current.environmentId === host &&
         bound.current.projects.some((project) => project.id === projectId)
       )
-        setError(actionError(cause));
+        setProblem(actionError(cause));
     } finally {
       if (sequence === epoch.current) setBusy(false);
     }
@@ -118,7 +121,7 @@ export function AssistantNotificationRecovery({
       : state === "unknown"
         ? t("Outcome unknown")
         : state === "accepted"
-          ? t("Native queue accepted; display not confirmed")
+          ? t("Native queue accepted; display could not be confirmed")
           : t("Notification suppressed");
   return (
     <Disclosure size="sm" summary={t("Task notification recovery")} onOpenChange={setExpanded}>
@@ -139,26 +142,15 @@ export function AssistantNotificationRecovery({
             value={choice}
             options={projectOptions}
             disabled={busy || source !== "registered"}
-            onChange={setChoice}
-          />
-          <Button
-            variant="secondary"
-            startIcon={<RefreshCw className="icon-sm" />}
-            loading={busy || (expanded && source === "pending")}
-            loadingLabel={
-              source === "pending" ? t("Checking Room registration…") : t("Check notifications")
-            }
-            size="sm"
-            disabled={!choice || busy || source !== "registered"}
-            onClick={() => {
-              void read(choice).catch((cause) => setError(actionError(cause)));
+            onChange={(projectId) => {
+              // Choosing the project is the only input; the read follows it directly.
+              setChoice(projectId);
+              if (projectId) void read(projectId).catch((cause) => setProblem(actionError(cause)));
             }}
-          >
-            {t("Check notifications")}
-          </Button>
+          />
         </div>
-        {error ? <InlineError>{error}</InlineError> : null}
-        {selected && !busy && !error && rows.length === 0 ? (
+        {problem ? <InlineError details={problem.details}>{problem.message}</InlineError> : null}
+        {selected && !busy && !problem && rows.length === 0 ? (
           <EmptyState
             size="inline"
             kind="empty"
@@ -167,7 +159,7 @@ export function AssistantNotificationRecovery({
         ) : null}
         {rows.map((row) => (
           <div key={row.notificationId} className={rt.recoveryRow}>
-            <MiddleTruncate className={rt.recoveryId}>{row.notificationId}</MiddleTruncate>
+            <MiddleTruncate>{row.notificationId}</MiddleTruncate>
             <Badge size="xs" tone={row.state === "unknown" ? "danger" : "neutral"}>
               {stateLabel(row.state)}
             </Badge>
@@ -179,7 +171,7 @@ export function AssistantNotificationRecovery({
                 disabled={busy}
                 onClick={() => {
                   void read(row.projectId, row.notificationId).catch((cause) =>
-                    setError(actionError(cause)),
+                    setProblem(actionError(cause)),
                   );
                 }}
               >

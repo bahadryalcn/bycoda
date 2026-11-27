@@ -7,10 +7,19 @@ import {
 import {
   assertDomainAuthority,
   HostDomainRefusalError,
+  HostDomainOutcomeError,
   refuseHost,
   type HostDomainContext,
 } from "../context";
 import { isApprovalOccurrenceId } from "../../../src/shared/model/approvalOccurrence";
+
+/** Provider delivery evidence carried by the repository port across receipt compaction. */
+type SteerReceipt = {
+  runId: string;
+  claimToken?: string;
+  outcome?: "delivered" | "not_delivered";
+};
+export type StoredCommandReceipt = CommandReceipt & { steer?: SteerReceipt };
 
 /** Commands that act on a conversation; approvals and answers stay with the prompt's owner. */
 const CREW_OWNED_COMMANDS: ReadonlySet<string> = new Set([
@@ -70,8 +79,10 @@ export interface CommandServicePorts<View> {
   repository: {
     receiptStatus(
       commandId: string,
-      options?: { admit?: boolean },
-    ): Promise<CommandReceipt | null | undefined>;
+      options?: { admit?: boolean; includeSteer?: boolean },
+    ): Promise<StoredCommandReceipt | null | undefined>;
+    bindSteerClaim(id: string, token: string): Promise<void>;
+    settleSteerReceipt(id: string, outcome: "delivered" | "not_delivered"): Promise<void>;
     desktopCommandStatus(
       commandId: string,
       principalId: string | undefined,
@@ -99,6 +110,11 @@ export interface CommandServicePorts<View> {
     attachmentRefs(raw: unknown): readonly { id: string; size: number }[];
     previewContextual(command: Contextual, view: View): Promise<{ digest: string }>;
     command(command: SessionCommand, context?: HostDomainContext): Promise<CommandReceipt>;
+    steerDelivery(
+      receipt: CommandReceipt,
+      runId: string,
+      signal: AbortSignal,
+    ): Promise<"delivered" | "not_delivered" | "unknown">;
     clearConversation(command: Extract<SessionCommand, { type: "send" }>): Promise<CommandReceipt>;
     rewind(command: Extract<SessionCommand, { type: "rewind" }>): Promise<CommandReceipt>;
     assertHostMayRun(sessionId: string): Promise<void>;
@@ -117,6 +133,18 @@ export interface CommandServicePorts<View> {
       authority: { epoch?: number; legacy: boolean; claimToken?: string },
     ): Promise<CommandQueueSnapshot>;
     consumed(sessionId: string, id: string, claimToken?: string): Promise<unknown>;
+    claimSteer(
+      sessionId: string,
+      id: string,
+      clientId: string,
+      revision: number,
+      authority: { epoch?: number; legacy: boolean },
+    ): Promise<string>;
+    settleSteer(
+      sessionId: string,
+      token: string,
+      outcome: "delivered" | "not_delivered" | "unknown",
+    ): Promise<void>;
     sameModelTarget(a: ModelTarget, b: ModelTarget): boolean;
     kick(sessionId: string): void;
     leaseHeld(holder: string, detail: string): Error;
@@ -144,6 +172,36 @@ export interface CommandServicePorts<View> {
  * after acceptance only loses the reply, never rolls back an accepted effect.
  */
 export function createCommandService<View>(ports: CommandServicePorts<View>) {
+  async function confirmSteer(
+    receipt: CommandReceipt,
+    steer: SteerReceipt,
+    context: HostDomainContext,
+  ) {
+    // An admitted steer belongs to the Host even if its socket disconnects. The
+    // engine bounds this wait and the caller is reauthorized before any reply.
+    const outcome =
+      steer.outcome ??
+      (await ports.execution.steerDelivery(receipt, steer.runId, new AbortController().signal));
+    if (!steer.outcome) {
+      await ports.repository.transaction(async () => {
+        if (steer.claimToken)
+          await ports.queue.settleSteer(receipt.sessionId, steer.claimToken, outcome);
+        if (outcome !== "unknown")
+          await ports.repository.settleSteerReceipt(receipt.commandId, outcome);
+      });
+    }
+    await assertDomainAuthority(context);
+    if (outcome === "not_delivered")
+      throw new HostDomainRefusalError(
+        "COMMAND_BUSY",
+        "conflict",
+        true,
+        "The active turn is not ready for steering.",
+      );
+    if (outcome === "unknown")
+      throw new HostDomainOutcomeError("The operation outcome is unknown.", "unknown");
+    return receipt;
+  }
   return {
     async status(params: unknown, context: HostDomainContext): Promise<CommandReceipt | null> {
       await assertDomainAuthority(context);
@@ -153,9 +211,11 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
         await assertDomainAuthority(context);
         return desktop;
       }
-      const receipt = await ports.repository.receiptStatus(commandId);
+      const stored = await ports.repository.receiptStatus(commandId, { includeSteer: true });
       await assertDomainAuthority(context);
-      return receipt ?? null;
+      if (!stored) return null;
+      const { steer, ...receipt } = stored;
+      return steer ? confirmSteer(receipt, steer, context) : receipt;
     },
     async dispatch(
       raw: unknown,
@@ -367,6 +427,8 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
         }
         const watch = await ports.nativeProjection.watch(sessionId);
         if (watch?.running) {
+          if (command.type === "approve" && command.allowForSession)
+            throw new Error("Session grants require the original Host tool request");
           if (!ports.nativeProjection.alive())
             throw new Error(
               "The bycoda app on that computer isn't responding. Try again when it's open.",
@@ -442,12 +504,20 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
         await assertDomainAuthority(context);
         return receipt;
       }
+      let steer: SteerReceipt | undefined;
       const dispatch = () =>
         ports.repository.transaction(async () => {
           await assertDomainAuthority(context);
           // Admission can wait for writer retirement. Fence the exact row again
           // inside the receipt transaction so concurrent edits cannot change it.
-          if (queued && !(await accepted()))
+          const previous =
+            queued || command.type === "steer"
+              ? await ports.repository.receiptStatus(command.commandId, {
+                  admit: true,
+                  includeSteer: true,
+                })
+              : undefined;
+          if (queued && !previous)
             await ports.queue.assertSend(
               sessionId,
               queued.id,
@@ -457,10 +527,27 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
               queueAuthority!,
             );
           const receipt = await ports.execution.command(command, context);
+          if (command.type === "steer") {
+            steer = previous?.steer ?? { runId: command.runId };
+            if (queued && !previous) {
+              const token =
+                queued.claimToken ??
+                (await ports.queue.claimSteer(
+                  sessionId,
+                  queued.id,
+                  queued.clientId,
+                  queued.revision,
+                  queueAuthority!,
+                ));
+              await ports.repository.bindSteerClaim(command.commandId, token);
+              steer.claimToken = token;
+            }
+          }
           // These are one admission unit with the receipt; cancellation must not
           // strand a consumed message or skip its accepted owner directive.
           if (
             queued &&
+            command.type !== "steer" &&
             (await ports.queue.get(sessionId)).messages.some((row) => row.id === queued.id)
           )
             await ports.queue.consumed(
@@ -475,6 +562,7 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
       const receipt = ["send", "compact", "contextual"].includes(command.type)
         ? await ports.nativeProjection.withRetiredWriters(sessionId, dispatch)
         : await dispatch();
+      if (steer) await confirmSteer(receipt, steer, context);
       if (["send", "steer", "compact", "contextual", "shell"].includes(command.type))
         await ports.repository.touchWorkspace(sessionId);
       if (command.type === "usageLimit") ports.queue.kick(sessionId);

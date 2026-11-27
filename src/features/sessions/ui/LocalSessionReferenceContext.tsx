@@ -7,6 +7,7 @@ export interface LocalSessionReferenceMetadata {
   origin?: string;
   status?: string;
   archived?: boolean;
+  agentRole?: string;
 }
 
 export interface LocalSessionReferenceNavigation {

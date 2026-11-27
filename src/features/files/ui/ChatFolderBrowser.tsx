@@ -3,6 +3,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
@@ -23,11 +24,19 @@ import {
   localExplorerPath,
   saveExplorerMapping,
 } from "../../../shared/lib/remoteExplorerPaths";
-import { displayPath, isEqualOrInside, parentPath } from "../../../shared/lib/paths";
+import { isEqualOrInside, parentPath } from "../../../shared/lib/paths";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { ArrowUp, ExternalLink, FolderOpen } from "../../../shared/ui/icons";
 import { FileTypeIcon } from "./FileTypeIcon";
 import type { OpenFileFn } from "../../search/model/search";
+import { TREE_WINDOW_CHUNK, windowEntries } from "../model/fileTree";
+
+/** Folders first, then by name; run once per loaded listing, not per render. */
+function sortFolderEntries(entries: FolderListing["entries"]) {
+  return [...entries].sort(
+    (a, b) => Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name),
+  );
+}
 
 /** Browse folders belonging to another machine without granting file access. */
 export function ChatFolderBrowser({
@@ -54,6 +63,7 @@ export function ChatFolderBrowser({
   const [editingMapping, setEditingMapping] = useState(false);
   const [remoteRoot, setRemoteRoot] = useState(path);
   const [localRoot, setLocalRoot] = useState("");
+  const [limit, setLimit] = useState(TREE_WINDOW_CHUNK);
   const revealRequested = useRef(false);
   const copyAbort = useRef<AbortController | null>(null);
   const revealLabel = IS_MAC
@@ -62,6 +72,8 @@ export function ChatFolderBrowser({
       ? "Reveal in File Explorer"
       : "Open in File Manager";
   const entries = listing?.entries;
+  // Large folders render a first chunk; the listing itself is already sorted.
+  const { shown, hidden } = windowEntries(entries ?? [], limit, []);
   const parentDir = parentPath(directory);
   const parent = listing?.parent ?? (parentDir !== directory ? parentDir : undefined);
 
@@ -134,10 +146,12 @@ export function ChatFolderBrowser({
   async function saveMapping() {
     await runAction("mapping", async () => {
       if (!isEqualOrInside(directory, remoteRoot))
-        throw new Error("The connected folder must contain the folder currently being browsed.");
+        throw new Error(t("The connected folder must contain the folder currently being browsed."));
       if (!(await isLocalDirectory(localRoot.trim())))
         throw new Error(
-          "The shared folder is unavailable on this computer. Check its connection or update the shared folder path.",
+          t(
+            "The shared folder is unavailable on this computer. Check its connection or update the shared folder path.",
+          ),
         );
       saveExplorerMapping(remoteRoot, localRoot);
       const localPath = localExplorerPath(directory);
@@ -155,15 +169,16 @@ export function ChatFolderBrowser({
       void revealDirectory();
     }
     // Only the initial request should open the OS file manager automatically.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only the first request on open reveals the folder; later directory changes must not
   }, []);
   useEffect(() => {
     let cancelled = false;
     setListing(null);
     setError(undefined);
+    setLimit(TREE_WINDOW_CHUNK);
     void browseDirectory(directory).then(
       (folder) => {
-        if (!cancelled) setListing(folder);
+        if (!cancelled) setListing({ ...folder, entries: sortFolderEntries(folder.entries) });
       },
       (reason) => {
         if (!cancelled) setError(String(reason));
@@ -185,18 +200,11 @@ export function ChatFolderBrowser({
       footer={
         editingMapping ? (
           <ModalActions>
-            <Button
-              variant="ghost"
-              motion="none"
-              type="button"
-              disabled={busy}
-              onClick={() => setEditingMapping(false)}
-            >
+            <Button variant="ghost" disabled={busy} onClick={() => setEditingMapping(false)}>
               {t("Cancel")}
             </Button>
             <Button
               variant="primary"
-              motion="none"
               type="submit"
               form={mappingFormId}
               disabled={busy}
@@ -219,10 +227,12 @@ export function ChatFolderBrowser({
             iconOnly
             label={t("Parent folder")}
             variant="ghost"
-            motion="none"
-            type="button"
-            aria-label={t("Parent folder")}
             disabled={busy || !parent}
+            disabledReason={
+              busy
+                ? t("Wait for the current file operation to finish")
+                : t("Already in the top folder.")
+            }
             onClick={() => parent && setDirectory(parent)}
           >
             <ArrowUp className="icon-md" />
@@ -231,12 +241,17 @@ export function ChatFolderBrowser({
             {directory}
           </Text>
         </div>
-        <div className="flex flex-wrap gap-2 py-2">
+        <div className="flex flex-wrap items-center gap-2 py-2">
           <Button
             variant="ghost"
-            motion="none"
-            type="button"
             disabled={busy || !listing?.canOpenFiles}
+            disabledReason={
+              busy
+                ? t("Wait for the current file operation to finish")
+                : t(
+                    "This folder is outside registered projects. To access its files, open a shared folder in your file manager.",
+                  )
+            }
             loading={pendingAction === "live"}
             onClick={() => void openLiveFolder()}
           >
@@ -244,32 +259,26 @@ export function ChatFolderBrowser({
           </Button>
           <Button
             variant="ghost"
-            motion="none"
-            type="button"
             disabled={busy}
             loading={pendingAction === "reveal"}
             onClick={() => void revealDirectory()}
           >
             {revealLabel}
           </Button>
-          <Button
-            variant="ghost"
-            motion="none"
-            type="button"
-            disabled={busy}
-            onClick={configureMapping}
-          >
+          <Button variant="ghost" disabled={busy} onClick={configureMapping}>
             {t("Shared folder settings")}
           </Button>
+          <InfoPopover label={t("About live folders and local copies")}>
+            <Text as="p" size="caption" tone="secondary">
+              {t(
+                "Live folders show the connected computer’s current files. Remote changes are visible; writing is disabled.",
+              )}
+            </Text>
+            <Text as="p" size="caption" tone="secondary">
+              {t("Local copies do not sync changes back to the connected machine.")}
+            </Text>
+          </InfoPopover>
         </div>
-        <Text as="p" size="caption" tone="secondary">
-          {t(
-            "Live folders show the connected computer’s current files. Remote changes are visible; writing is disabled.",
-          )}
-        </Text>
-        <Text as="p" size="caption" tone="secondary">
-          {t("Local copies do not sync changes back to the connected machine.")}
-        </Text>
         {editingMapping ? (
           <Text as="div" size="body" tone="inherit">
             <form
@@ -297,15 +306,13 @@ export function ChatFolderBrowser({
                 label={t("Same folder on this computer")}
                 disabled={busy}
                 className="font-mono"
-                placeholder={IS_WIN ? t("\\\\MacBook\\share\\projects") : "/Volumes/share/projects"}
+                placeholder={IS_WIN ? "\\\\MacBook\\share\\projects" : "/Volumes/share/projects"}
                 value={localRoot}
                 onChange={(event) => setLocalRoot(event.target.value)}
                 required
               />
               <Button
                 variant="ghost"
-                motion="none"
-                type="button"
                 disabled={busy}
                 loading={pendingAction === "choose"}
                 className="justify-self-start"
@@ -322,24 +329,27 @@ export function ChatFolderBrowser({
           </Text>
         ) : null}
         {copyProgress ? (
-          <LoadingText className="py-2">
+          <LoadingText inset="row">
             {t("Downloading…")} {copyProgress}
           </LoadingText>
         ) : null}
         {actionError ? (
-          <InlineError className="py-2">
-            {t("Could not open the shared folder: ")}
-            {actionError}
+          <InlineError inset="row" details={actionError}>
+            {t("Could not open the shared folder.")}
           </InlineError>
         ) : null}
         {error ? (
-          <InlineError className="py-3" retry={{ onRetry: () => setReload((value) => value + 1) }}>
-            {error}
+          <InlineError
+            inset="row"
+            details={error}
+            retry={{ onRetry: () => setReload((value) => value + 1) }}
+          >
+            {t("Couldn’t open this folder")}
           </InlineError>
         ) : !entries ? (
-          <LoadingText className="py-3">{t("Loading folder…")}</LoadingText>
+          <LoadingText inset="row">{t("Loading folder…")}</LoadingText>
         ) : entries.length === 0 ? (
-          <EmptyState size="inline" className="py-3" description={t("This folder is empty.")} />
+          <EmptyState size="inline" inset="row" description={t("This folder is empty.")} />
         ) : (
           <>
             {!listing?.canOpenFiles ? (
@@ -350,55 +360,64 @@ export function ChatFolderBrowser({
               </Text>
             ) : null}
             <ul aria-label={t("Folder contents")} className="max-h-80 overflow-auto py-2">
-              {[...entries]
-                .sort((a, b) => Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name))
-                .map((entry) => (
-                  <li key={entry.path} className="flex min-w-0 items-center gap-1">
+              {shown.map((entry) => (
+                <li key={entry.path} className="flex min-w-0 items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    disabled={busy || (!entry.isDir && (!listing?.canOpenFiles || !onOpenFile))}
+                    disabledReason={
+                      busy
+                        ? t("Wait for the current file operation to finish")
+                        : !listing?.canOpenFiles
+                          ? t(
+                              "This folder is outside registered projects. To access its files, open a shared folder in your file manager.",
+                            )
+                          : t("Not available yet.")
+                    }
+                    className="flex min-w-0 flex-1 items-center gap-2 text-start disabled:cursor-not-allowed"
+                    onClick={() => {
+                      if (entry.isDir) setDirectory(entry.path);
+                      else {
+                        onOpenFile?.(entry.path, undefined, { exact: true });
+                        onClose();
+                      }
+                    }}
+                  >
+                    {entry.isDir ? (
+                      <FolderOpen className="icon-md shrink-0" />
+                    ) : (
+                      <FileTypeIcon name={entry.name} isDir={false} size="md" />
+                    )}
+                    <Tooltip label={entry.name} when="overflow" asChild>
+                      <Text truncate size="body" tone="inherit" className="min-w-0">
+                        {entry.name}
+                      </Text>
+                    </Tooltip>
+                  </Button>
+                  {!entry.isDir && listing?.canOpenFiles ? (
                     <Button
+                      iconOnly
+                      label={`${t("Open local copy")}: ${entry.name}`}
                       variant="ghost"
-                      motion="none"
-                      type="button"
-                      disabled={busy || (!entry.isDir && (!listing?.canOpenFiles || !onOpenFile))}
-                      className="flex min-w-0 flex-1 items-center gap-2 text-start disabled:cursor-not-allowed"
-                      onClick={() => {
-                        if (entry.isDir) setDirectory(entry.path);
-                        else {
-                          onOpenFile?.(entry.path, undefined, { exact: true });
-                          onClose();
-                        }
-                      }}
+                      disabled={busy}
+                      loading={pendingAction === `copy:${entry.path}`}
+                      onClick={() => void openLocalCopy(entry.path)}
                     >
-                      {entry.isDir ? (
-                        <FolderOpen className="icon-md shrink-0" />
-                      ) : (
-                        <FileTypeIcon name={entry.name} isDir={false} size="md" />
-                      )}
-                      <Tooltip label={displayPath(entry.path, directory)} asChild>
-                        <Text truncate size="body" tone="inherit" className="min-w-0">
-                          {entry.name}
-                        </Text>
-                      </Tooltip>
+                      <ExternalLink className="icon-md" />
                     </Button>
-                    {!entry.isDir && listing?.canOpenFiles ? (
-                      <Button
-                        iconOnly
-                        label={`${t("Open local copy")}: ${entry.name}`}
-                        variant="ghost"
-                        motion="none"
-                        type="button"
-                        disabled={busy}
-                        loading={pendingAction === `copy:${entry.path}`}
-                        tooltip={t("Open local copy")}
-                        aria-label={`${t("Open local copy")}: ${entry.name}`}
-
-                        onClick={() => void openLocalCopy(entry.path)}
-                      >
-                        <ExternalLink className="icon-md" />
-                      </Button>
-                    ) : null}
-                  </li>
-                ))}
+                  ) : null}
+                </li>
+              ))}
             </ul>
+            {hidden > 0 ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setLimit((n) => n + TREE_WINDOW_CHUNK)}
+              >
+                {t("Show {p0} more…", { p0: Math.min(TREE_WINDOW_CHUNK, hidden) })}
+              </Button>
+            ) : null}
           </>
         )}
       </div>

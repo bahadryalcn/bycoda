@@ -1,6 +1,4 @@
 import { useSyncExternalStore } from "react";
-import { InlineMessage } from "../../../shared/ui/InlineError";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useT } from "../../../shared/i18n";
 import { sameProjectPath } from "../../projects/public/recents";
 import {
@@ -9,6 +7,7 @@ import {
   subscribeRemoteActivityNotices,
   type RemoteActivityNotice,
 } from "../model/remoteActivityNotice";
+import { NoticeActionButton, TranscriptNotice } from "./TranscriptNotice";
 
 /** What another device did in this project (`cwd`) or in the inbox (`inbox`). */
 export function RemoteActivityNotices(props: { cwd: string } | { inbox: true }) {
@@ -17,21 +16,53 @@ export function RemoteActivityNotices(props: { cwd: string } | { inbox: true }) 
     getRemoteActivityNotices,
     getRemoteActivityNotices,
   );
-  return notices
-    .filter((notice) =>
-      "inbox" in props
-        ? notice.scope === "inbox"
-        : notice.scope !== "inbox" && sameProjectPath(notice.scope.cwd, props.cwd),
-    )
-    .map((notice) => (
-      <RemoteActivity
-        key={`${notice.kind}:${notice.scope === "inbox" ? "inbox" : notice.scope.cwd}`}
-        notice={notice}
-      />
-    ));
+  const scoped = notices.filter((notice) =>
+    "inbox" in props
+      ? notice.scope === "inbox"
+      : notice.scope !== "inbox" && sameProjectPath(notice.scope.cwd, props.cwd),
+  );
+  // Every kind of one scope reads as one row, so several remote actions never stack lines.
+  return scoped.length > 0 ? <RemoteActivityRow notices={scoped} /> : null;
 }
 
-function RemoteActivity({ notice }: { notice: RemoteActivityNotice }) {
+function RemoteActivityRow({ notices }: { notices: RemoteActivityNotice[] }) {
+  const t = useT();
+  return (
+    <div
+      className="shrink-0 px-3 py-1"
+      data-remote-activity={notices.map((notice) => notice.kind).join(" ")}
+    >
+      <TranscriptNotice
+        kind={notices.some((notice) => notice.failed) ? "warning" : "info"}
+        title={t("Changes from another device")}
+        detail={notices.map((notice, index) => (
+          <RemoteActivityText
+            key={`${notice.kind}:${notice.scope === "inbox" ? "inbox" : notice.scope.cwd}`}
+            notice={notice}
+            separated={index > 0}
+          />
+        ))}
+        actions={
+          <NoticeActionButton
+            quiet
+            action={{
+              label: t("Dismiss"),
+              onClick: () => notices.forEach(dismissRemoteActivityNotice),
+            }}
+          />
+        }
+      />
+    </div>
+  );
+}
+
+function RemoteActivityText({
+  notice,
+  separated,
+}: {
+  notice: RemoteActivityNotice;
+  separated: boolean;
+}) {
   const t = useT();
   const device = notice.devices.join(", ") || t("Another device");
   const one = notice.done === 1;
@@ -89,16 +120,9 @@ function RemoteActivity({ notice }: { notice: RemoteActivityNotice }) {
     .filter(Boolean)
     .join(" ");
   return (
-    <div
-      {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "shrink-0 px-3 py-2")}
-      data-remote-activity={notice.kind}
-    >
-      <InlineMessage
-        tone={notice.failed ? "warning" : "info"}
-        action={{ label: t("Dismiss"), onClick: () => dismissRemoteActivityNotice(notice) }}
-      >
-        <span className="min-w-0 break-words">{text}</span>
-      </InlineMessage>
-    </div>
+    <>
+      {separated ? " " : ""}
+      {text}
+    </>
   );
 }

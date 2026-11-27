@@ -10,7 +10,10 @@ const mocks = vi.hoisted(() => ({
   kill: vi.fn(),
 }));
 vi.mock("../../connections/public/hostFeatureClient", () => ({ featureHost: mocks.host }));
-vi.mock("../../connections/public/connections", () => ({ remoteRequest: mocks.request }));
+vi.mock("../../connections/public/connections", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../connections/public/connections")>()),
+  remoteRequest: mocks.request,
+}));
 vi.mock("../../../platform/tauri/pty", () => ({ killPty: mocks.kill }));
 vi.mock("../model/terminalProfiles", () => ({
   listTerminalProfiles: mocks.profiles,
@@ -97,6 +100,40 @@ it("shares the initial output read with polling so chunks are never duplicated",
   expect(controller.snapshot().output).toBe("once");
 });
 
+it("stops the original Host process and drains the retained output before dismissal", async () => {
+  mocks.request
+    .mockResolvedValueOnce({ writable: true, profiles: [] })
+    .mockResolvedValueOnce({ id: "terminal", shell: "zsh" })
+    .mockResolvedValueOnce({
+      output: "",
+      cursor: 0,
+      truncated: false,
+      hasMore: false,
+      terminal: { state: "running", exitCode: null },
+    })
+    .mockResolvedValueOnce({ accepted: true })
+    .mockResolvedValueOnce({
+      output: "final",
+      cursor: 5,
+      truncated: false,
+      hasMore: false,
+      terminal: { state: "exited", exitCode: 130 },
+    });
+  const controller = createCodeTerminal(options);
+  await controller.start();
+  expect(controller.canDismiss()).toBe(false);
+  await controller.stop();
+  expect(mocks.request.mock.calls.map(([, method]) => method)).toEqual([
+    "terminals.list",
+    "terminals.create",
+    "terminals.read",
+    "terminals.interrupt",
+    "terminals.read",
+  ]);
+  expect(controller.snapshot()).toMatchObject({ phase: "exited", output: "final", exitCode: 130 });
+  expect(controller.canDismiss()).toBe(true);
+});
+
 it("never falls back to native or repeats an unknown Host creation", async () => {
   mocks.request
     .mockResolvedValueOnce({ writable: true, profiles: [{ id: "pwsh", kind: "pwsh" }] })
@@ -110,6 +147,28 @@ it("never falls back to native or repeats an unknown Host creation", async () =>
   expect(mocks.request.mock.calls.filter((args) => args[1] === "terminals.create")).toHaveLength(1);
   await controller.stop();
   expect(controller.snapshot().error).toContain("Terminal identity is unknown");
+});
+
+it.each([
+  ["RPC_WS_OVERLOAD", true],
+  ["RPC_WS_INTERRUPTED", false],
+] as const)("classifies %s without resending terminal creation", async (code, deferred) => {
+  const reason = Object.assign(new Error("Could not start terminal"), { code });
+  mocks.request
+    .mockResolvedValueOnce({ writable: true, profiles: [] })
+    .mockRejectedValueOnce(reason);
+  const controller = createCodeTerminal(options);
+  await controller.start();
+  await controller.start();
+  if (deferred)
+    expect(controller.snapshot()).toMatchObject({ phase: "not-started", actionError: reason });
+  else {
+    expect(controller.snapshot().error).toMatch(/outcome is unknown/i);
+    expect(controller.snapshot().actionError).toBeUndefined();
+  }
+  expect(
+    mocks.request.mock.calls.filter(([, method]) => method === "terminals.create"),
+  ).toHaveLength(1);
 });
 
 it("refuses stale conversation after asynchronous shell discovery", async () => {
@@ -142,4 +201,118 @@ it("uses matching native shell and captures bounded output plus real exit", asyn
   expect(controller.snapshot().output).toBe("🚀".repeat(15_000));
   run.onOutput("a" + "\u0301".repeat(30_000));
   expect(controller.snapshot().output).toBe("");
+});
+
+it("does not notify listeners for an empty read with unchanged phase and error", async () => {
+  const empty = {
+    output: "",
+    cursor: 0,
+    truncated: false,
+    hasMore: false,
+    terminal: { state: "running", exitCode: null },
+  };
+  mocks.request
+    .mockResolvedValueOnce({ writable: true, profiles: [] })
+    .mockResolvedValueOnce({ id: "terminal", shell: "PowerShell" })
+    .mockResolvedValueOnce(empty)
+    .mockResolvedValueOnce(empty)
+    .mockResolvedValueOnce({ ...empty, output: "next", cursor: 4 });
+  const controller = createCodeTerminal(options);
+  await controller.start();
+  const listener = vi.fn();
+  controller.subscribe(listener);
+  const before = controller.snapshot();
+  await expect(controller.refresh()).resolves.toBe("idle");
+  expect(controller.snapshot()).toBe(before);
+  expect(listener).not.toHaveBeenCalled();
+  await expect(controller.refresh()).resolves.toBe("progress");
+  expect(controller.snapshot().output).toBe("next");
+  expect(listener).toHaveBeenCalledTimes(1);
+});
+
+it("reports failed reads once per distinct error and recovers in one notification", async () => {
+  mocks.request
+    .mockResolvedValueOnce({ writable: true, profiles: [] })
+    .mockResolvedValueOnce({ id: "terminal", shell: "PowerShell" })
+    .mockResolvedValueOnce({
+      output: "a",
+      cursor: 1,
+      truncated: false,
+      hasMore: false,
+      terminal: { state: "running", exitCode: null },
+    })
+    .mockRejectedValueOnce(new Error("offline"))
+    .mockRejectedValueOnce(new Error("offline"))
+    .mockResolvedValueOnce({
+      output: "b",
+      cursor: 2,
+      truncated: false,
+      hasMore: false,
+      terminal: { state: "running", exitCode: null },
+    });
+  const controller = createCodeTerminal(options);
+  await controller.start();
+  const listener = vi.fn();
+  controller.subscribe(listener);
+  await expect(controller.refresh()).resolves.toBe("failed");
+  await expect(controller.refresh()).resolves.toBe("failed");
+  expect(listener).toHaveBeenCalledTimes(1);
+  expect(controller.snapshot()).toMatchObject({ phase: "unknown", error: "offline" });
+  await expect(controller.refresh()).resolves.toBe("progress");
+  expect(listener).toHaveBeenCalledTimes(2);
+  expect(controller.snapshot()).toMatchObject({ phase: "running", output: "ab", error: undefined });
+});
+
+it("retains output through a transient read failure and never launches the command again", async () => {
+  const outage = Object.assign(new Error("Host is stopping."), { code: "HOST_STOPPING" });
+  mocks.request
+    .mockResolvedValueOnce({ writable: true, profiles: [] })
+    .mockResolvedValueOnce({ id: "terminal", shell: "PowerShell" })
+    .mockResolvedValueOnce({
+      output: "a",
+      cursor: 1,
+      truncated: false,
+      hasMore: false,
+      terminal: { state: "running", exitCode: null },
+    })
+    .mockRejectedValueOnce(outage)
+    .mockResolvedValueOnce({
+      output: "b",
+      cursor: 2,
+      truncated: false,
+      hasMore: false,
+      terminal: { state: "running", exitCode: null },
+    });
+  const controller = createCodeTerminal(options);
+  await controller.start();
+  await expect(controller.refresh()).resolves.toBe("failed");
+  expect(controller.snapshot()).toMatchObject({ phase: "running", output: "a", readError: outage });
+  await expect(controller.refresh()).resolves.toBe("progress");
+  expect(controller.snapshot()).toMatchObject({
+    phase: "running",
+    output: "ab",
+    readError: undefined,
+  });
+  expect(
+    mocks.request.mock.calls.filter(([, method]) => method === "terminals.create"),
+  ).toHaveLength(1);
+});
+
+it("trims remote output at a grapheme boundary without losing order", async () => {
+  mocks.request
+    .mockResolvedValueOnce({ writable: true, profiles: [] })
+    .mockResolvedValueOnce({ id: "terminal", shell: "PowerShell" })
+    .mockResolvedValueOnce({
+      output: "x".repeat(29_999) + "é" + "tail",
+      cursor: 1,
+      truncated: false,
+      hasMore: false,
+      terminal: { state: "running", exitCode: null },
+    });
+  const controller = createCodeTerminal(options);
+  await controller.start();
+  const { output, truncated } = controller.snapshot();
+  expect(truncated).toBe(true);
+  expect(output.length).toBeLessThanOrEqual(30_000);
+  expect(output.endsWith("étail")).toBe(true);
 });

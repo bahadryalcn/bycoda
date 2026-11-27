@@ -1,7 +1,14 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { forEachAsync } from "../async-collections";
+import { HostEngine } from "../engine";
 import { HostStore } from "../store";
-import { assertNotCrewManaged, crewManagedSession, crewSessionRuns } from "./crew-managed-session";
+import { HostTasks } from "../tasks/service";
+import {
+  assertNotCrewManaged,
+  crewManagedSession,
+  crewMemberRunIds,
+  crewSessionRuns,
+} from "./crew-managed-session";
 import { initializeCrewSchedulerProjection } from "./crew-scheduler-projection";
 
 const stores: HostStore[] = [];
@@ -44,6 +51,24 @@ it("finds coordinator, member and reviewer sessions of unfinished runs only", as
   });
   await expect(assertNotCrewManaged(f.store, "plain")).resolves.toBeUndefined();
 });
+it("resolves unfinished runs for member and reviewer sessions without decoding run payloads", async () => {
+  const f = await fixture();
+  await f.run("a", "active", "lead-a");
+  await f.run("b", "paused", "lead-b");
+  await f.run("done", "finished", "old-lead");
+  await f.task("t1", { crewRunId: "a", sessionId: "worker" });
+  await f.task("t2", { crewRunId: "b", reviewer: { sessionId: "worker" } });
+  await f.task("t3", { crewRunId: "done", sessionId: "worker" });
+  await f.task("t4", { sessionId: "plain" });
+  await f.store.db.prepare("INSERT INTO tasks(id,value) VALUES('broken','{')").run();
+  expect(await crewMemberRunIds(f.store, "worker")).toEqual(["a", "b"]);
+  for (const id of ["lead-a", "plain", "nobody", ""])
+    expect(await crewMemberRunIds(f.store, id)).toEqual([]);
+  const bare = new HostStore(":memory:");
+  stores.push(bare);
+  expect(await crewMemberRunIds(bare, "worker")).toEqual([]);
+});
+
 it("lists every crew session of a project, finished runs included, for list summaries", async () => {
   const f = await fixture();
   await f.run("live", "paused", "lead");
@@ -63,4 +88,25 @@ it("lists every crew session of a project, finished runs included, for list summ
   const bare = new HostStore(":memory:");
   stores.push(bare);
   expect((await crewSessionRuns(bare, "p")).size).toBe(0);
+});
+
+it("uses the task index when listing sessions for a project's crew runs", async () => {
+  const f = await fixture();
+  await f.run("legacy", "finished", "lead");
+  await f.task("legacy-task", {
+    id: "legacy-task",
+    projectId: "p",
+    status: "done",
+    updatedAt: 1,
+    crewRunId: "legacy",
+    sessionId: "worker",
+  });
+  await new HostTasks(f.store, new HostEngine(f.store, {})).ready;
+  const prepare = vi.spyOn(f.store.db, "prepare");
+  expect((await crewSessionRuns(f.store, "p")).get("worker")).toBe("legacy");
+  const query = prepare.mock.calls.find(([sql]) => sql.includes("tasks t"))?.[0];
+  const plan = await f.store.db.prepare(`EXPLAIN QUERY PLAN ${query}`).all("p");
+  expect(plan.map((row) => row.detail)).toContainEqual(
+    expect.stringMatching(/SEARCH t USING INDEX tasks_crew_run/),
+  );
 });

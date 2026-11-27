@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, State};
 mod events;
+mod reconnect;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,10 +35,15 @@ struct LiveForward {
     /// Rolling tail of ssh's stderr, drained for the life of the process.
     stderr: Arc<Mutex<String>>,
     stopping: bool,
+    /// Set once the command path armed the watcher, which then restarts an
+    /// unexpected exit. A listing must leave that exit to the watcher.
+    auto_reconnect: bool,
 }
 #[derive(Default)]
 pub struct SshForwards {
     sessions: Mutex<HashMap<String, LiveForward>>,
+    /// Bumped by `ssh_forward_retry_now` so waiting reconnects try at once.
+    nudge: std::sync::atomic::AtomicU64,
 }
 type ForwardOwner = crate::ssh_window_lifecycle::Lease;
 const STDERR_KEEP: usize = 8 * 1024;
@@ -191,32 +197,78 @@ impl SshForwards {
     fn owner(&self, owner: &str) -> Result<ForwardOwner, String> {
         crate::ssh_window_lifecycle::capture(owner)
     }
+    /// Marks the window's forwards as stopping under the lock and takes their
+    /// children without waiting for them. Finish with `reap_detached`, which
+    /// blocks, so the event loop calls it from a tracked reaper.
+    pub(crate) fn detach_window(&self, owner: &str) -> Vec<DetachedForward> {
+        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        sessions
+            .iter_mut()
+            .filter(|(_, live)| live.owner == owner && !live.owner_lease.is_alive())
+            .filter_map(|(id, live)| mark_stopping(id, live))
+            .map(DetachedForward)
+            .collect()
+    }
+    /// Reaps detached forwards in parallel; each reap waits for its own kill.
+    pub(crate) fn reap_detached(&self, detached: Vec<DetachedForward>) {
+        std::thread::scope(|scope| {
+            for DetachedForward(item) in detached {
+                scope.spawn(move || {
+                    let _ = stop_pending(self, item);
+                });
+            }
+        });
+    }
+    #[cfg(test)]
     pub(crate) fn kill_window(&self, owner: &str) {
-        let pending = {
-            let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
-            sessions
-                .iter_mut()
-                .filter(|(_, live)| live.owner == owner && !live.owner_lease.is_alive())
-                .filter_map(|(id, live)| mark_stopping(id, live))
-                .collect::<Vec<_>>()
-        };
-        for item in pending {
-            let _ = stop_pending(self, item);
-        }
+        self.reap_detached(self.detach_window(owner));
+    }
+    fn mark_all_stopping(&self) -> Vec<DetachedForward> {
+        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        sessions
+            .iter_mut()
+            .filter_map(|(id, live)| mark_stopping(id, live))
+            .map(DetachedForward)
+            .collect()
     }
     pub(crate) fn kill_all(&self) {
-        let pending = {
-            let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
-            sessions
-                .iter_mut()
-                .filter_map(|(id, live)| mark_stopping(id, live))
-                .collect::<Vec<_>>()
-        };
-        for item in pending {
-            let _ = stop_pending(self, item);
+        let pending = self.mark_all_stopping();
+        self.reap_detached(pending);
+    }
+    /// Exit-time `kill_all` that stops waiting after `budget`, so forward cleanup
+    /// cannot push the harness and terminal reap past the exit deadline.
+    pub(crate) fn kill_all_within(&self, budget: Duration) {
+        let pending = self.mark_all_stopping();
+        self.reap_within(pending, Instant::now() + budget, reap_child);
+    }
+    /// Reaps each forward on its own thread and returns at `deadline`. A reap still
+    /// running keeps its child on that thread; the process owns it until exit.
+    fn reap_within(
+        &self,
+        detached: Vec<DetachedForward>,
+        deadline: Instant,
+        reap: fn(Option<Child>) -> Result<(), Option<Child>>,
+    ) {
+        let (done, finished) = std::sync::mpsc::channel();
+        for DetachedForward(mut item) in detached {
+            let done = done.clone();
+            std::thread::spawn(move || {
+                let result = reap(item.child.take());
+                let _ = done.send((item, result));
+            });
+        }
+        drop(done);
+        while let Ok((item, result)) =
+            finished.recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        {
+            let _ = finish_stopping(self, item, result);
         }
     }
 }
+/// Exit budget for SSH forward cleanup, within the exit teardown deadline.
+pub(crate) const EXIT_REAP_BUDGET: Duration = Duration::from_secs(1);
+/// A forward whose child was taken from state and still has to be reaped.
+pub(crate) struct DetachedForward(PendingForwardStop);
 impl Drop for SshForwards {
     fn drop(&mut self) {
         self.kill_all();
@@ -384,6 +436,97 @@ fn start_for_owner(
     )
 }
 
+/// The value a running forward is compared against. A restart must resolve to
+/// the same one, so an edited target or changed trust never reuses an old grant.
+fn forward_identity(connection_id: &str, args: &[String]) -> Result<String, String> {
+    serde_json::to_string(&(connection_id, args)).map_err(|_| "Invalid forwarding target".into())
+}
+
+fn spawn_forward(
+    args: Vec<String>,
+    proxy: Option<&Arc<crate::ssh_http_proxy::HttpProxyLease>>,
+) -> Result<(Child, Arc<Mutex<String>>), String> {
+    let mut command = Command::new("ssh");
+    if let Some(proxy) = proxy {
+        command.envs(proxy.environment());
+    }
+    command
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .env("SSH_ASKPASS_REQUIRE", "never")
+        .env("PATH", crate::harness::gui_search_path());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    #[cfg(windows)]
+    let spawned = crate::windows::spawn_managed(&mut command);
+    #[cfg(not(windows))]
+    let spawned = command.spawn();
+    let mut child = spawned.map_err(|_| "Could not launch SSH forwarding process")?;
+    let stderr = Arc::new(Mutex::new(String::new()));
+    if let Some(pipe) = child.stderr.take() {
+        let sink = stderr.clone();
+        std::thread::spawn(move || drain_stderr(pipe, sink));
+    }
+    Ok((child, stderr))
+}
+
+/// Why a started generation never reached a stable loopback listener.
+enum ListenerEnd {
+    Cancelled,
+    Exited(String),
+    TimedOut,
+}
+
+/// Waits until the generation's own child holds the listener for 100 ms. It
+/// never stops the forward: the caller decides between removing and retrying.
+fn await_listener(
+    state: &SshForwards,
+    id: &str,
+    generation: uuid::Uuid,
+    address: SocketAddr,
+) -> Result<ForwardStatus, ListenerEnd> {
+    let deadline = Instant::now() + Duration::from_secs(18);
+    let mut listener_since = None;
+    while Instant::now() < deadline {
+        let listening = TcpStream::connect_timeout(&address, Duration::from_millis(50)).is_ok();
+        let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        let live = sessions
+            .get_mut(id)
+            .filter(|live| live.generation == generation)
+            .ok_or(ListenerEnd::Cancelled)?;
+        if live.stopping || live.status.state == "unknown" {
+            return Err(ListenerEnd::Cancelled);
+        }
+        let failed = !matches!(
+            live.child.as_mut().map(|child| child.try_wait()),
+            Some(Ok(None))
+        );
+        if failed {
+            return Err(ListenerEnd::Exited(stderr_detail(&live.stderr)));
+        }
+        if listening {
+            // Observe the listener twice with the same live child, allowing a
+            // conflicting bind failure to settle without blocking owner cleanup.
+            if listener_since.get_or_insert_with(Instant::now).elapsed()
+                >= Duration::from_millis(100)
+            {
+                live.status.state = "running".into();
+                return Ok(live.status.clone());
+            }
+        } else {
+            listener_since = None;
+        }
+        drop(sessions);
+        std::thread::sleep(Duration::from_millis(30));
+    }
+    Err(ListenerEnd::TimedOut)
+}
+
 fn start_for_owner_notifying(
     state: &SshForwards,
     owner: &ForwardOwner,
@@ -401,9 +544,7 @@ fn start_for_owner_notifying(
     if id.is_empty() || id.len() > 200 || id.chars().any(char::is_control) {
         return Err("Invalid forwarding identifier".into());
     }
-    let identity =
-        serde_json::to_string(&(&connection_id, identity_args.as_ref().unwrap_or(&args)))
-            .map_err(|_| "Invalid forwarding target")?;
+    let identity = forward_identity(&connection_id, identity_args.as_ref().unwrap_or(&args))?;
     // The common native lifecycle lock covers spawning and registration only.
     let lifetime = owner;
     let owner = lifetime.owner();
@@ -457,32 +598,7 @@ fn start_for_owner_notifying(
             return Err("Forward changed during startup; retry.".into());
         }
         drop(TcpListener::bind(address).map_err(|_| "Local port is already in use")?);
-        let mut command = Command::new("ssh");
-        if let Some(proxy) = &resources.0 {
-            command.envs(proxy.environment());
-        }
-        command
-            .args(args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .env("SSH_ASKPASS_REQUIRE", "never")
-            .env("PATH", crate::harness::gui_search_path());
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            command.process_group(0);
-        }
-        #[cfg(windows)]
-        let spawned = crate::windows::spawn_managed(&mut command);
-        #[cfg(not(windows))]
-        let spawned = command.spawn();
-        let mut child = spawned.map_err(|_| "Could not launch SSH forwarding process")?;
-        let stderr = Arc::new(Mutex::new(String::new()));
-        if let Some(pipe) = child.stderr.take() {
-            let sink = stderr.clone();
-            std::thread::spawn(move || drain_stderr(pipe, sink));
-        }
+        let (child, stderr) = spawn_forward(args, resources.0.as_ref())?;
         let live = LiveForward {
             _http_proxy: resources.0.take(),
             _jump_config: resources.1.take(),
@@ -493,6 +609,7 @@ fn start_for_owner_notifying(
             child: Some(child),
             stderr,
             stopping: false,
+            auto_reconnect: false,
             status: ForwardStatus {
                 id: id.clone(),
                 connection_id,
@@ -516,45 +633,18 @@ fn start_for_owner_notifying(
         return Ok(status);
     }
     on_created(generation);
-    let deadline = Instant::now() + Duration::from_secs(18);
-    let mut listener_since = None;
-    while Instant::now() < deadline {
-        let listening = TcpStream::connect_timeout(&address, Duration::from_millis(50)).is_ok();
-        let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
-        let live = sessions
-            .get_mut(&id)
-            .filter(|live| live.generation == generation)
-            .ok_or("SSH forwarding was cancelled")?;
-        if live.stopping || live.status.state == "unknown" {
-            return Err("SSH forwarding was cancelled".into());
-        }
-        let failed = !matches!(
-            live.child.as_mut().map(|child| child.try_wait()),
-            Some(Ok(None))
-        );
-        if failed {
-            let detail = stderr_detail(&live.stderr);
-            drop(sessions);
+    match await_listener(state, &id, generation, address) {
+        Ok(status) => Ok(status),
+        Err(ListenerEnd::Cancelled) => Err("SSH forwarding was cancelled".into()),
+        Err(ListenerEnd::Exited(detail)) => {
             let _ = stop_generation(state, &id, generation);
-            return Err(format!("SSH forwarding failed. Check host trust, agent/key authentication and destination.{detail}"));
+            Err(format!("SSH forwarding failed. Check host trust, agent/key authentication and destination.{detail}"))
         }
-        if listening {
-            // Observe the listener twice with the same live child, allowing a
-            // conflicting bind failure to settle without blocking owner cleanup.
-            if listener_since.get_or_insert_with(Instant::now).elapsed()
-                >= Duration::from_millis(100)
-            {
-                live.status.state = "running".into();
-                return Ok(live.status.clone());
-            }
-        } else {
-            listener_since = None;
+        Err(ListenerEnd::TimedOut) => {
+            let _ = stop_generation(state, &id, generation);
+            Err("SSH forwarding timed out before opening the loopback listener".into())
         }
-        drop(sessions);
-        std::thread::sleep(Duration::from_millis(30));
     }
-    let _ = stop_generation(state, &id, generation);
-    Err("SSH forwarding timed out before opening the loopback listener".into())
 }
 
 #[tauri::command(async)]
@@ -650,10 +740,19 @@ pub fn ssh_forward_start(
                 id,
                 generation,
                 owner,
+                // A proxy approval is single-use, so only forwards without one are restarted.
+                endpoint.http_proxy.is_none(),
             );
         }
     }
     result
+}
+/// Window focus or network return: reconnects that are waiting try at once.
+#[tauri::command]
+pub fn ssh_forward_retry_now(state: State<'_, SshForwards>) {
+    state
+        .nudge
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }
 #[tauri::command(async)]
 pub fn ssh_forward_stop(
@@ -752,7 +851,8 @@ fn list_owned(state: &SshForwards, owner: &ForwardOwner) -> Vec<ForwardStatus> {
         .iter_mut()
         .filter(|(_, live)| live.owner_lease.same_generation(owner) && owner.is_alive())
         .map(|(id, live)| {
-            if let Some(child) = &mut live.child {
+            // The armed watcher owns an unexpected exit and may restart it.
+            if let Some(child) = live.child.as_mut().filter(|_| !live.auto_reconnect) {
                 if let Ok(Some(_)) = child.try_wait() {
                     live.child = None;
                     live.stopping = true;
@@ -800,6 +900,7 @@ mod tests {
             child: None,
             stderr: Default::default(),
             stopping: false,
+            auto_reconnect: false,
             status: ForwardStatus {
                 id: id.into(),
                 connection_id: "server".into(),
@@ -934,6 +1035,26 @@ mod tests {
         assert_eq!(live.owner, "owner");
         drop(sessions);
         assert!(stop_owned(&state, "owner", "id").is_err());
+    }
+
+    #[test]
+    fn detach_window_marks_stopping_without_reaping_until_asked() {
+        let state = SshForwards::default();
+        for id in ["a", "b"] {
+            let live = placeholder(id, "detached-window");
+            state.sessions.lock().unwrap().insert(id.into(), live);
+        }
+        crate::ssh_window_lifecycle::close("detached-window");
+        let detached = state.detach_window("detached-window");
+        assert_eq!(detached.len(), 2);
+        {
+            let sessions = state.sessions.lock().unwrap();
+            assert!(sessions
+                .values()
+                .all(|live| live.status.state == "stopping"));
+        }
+        state.reap_detached(detached);
+        assert!(state.sessions.lock().unwrap().is_empty());
     }
 
     #[test]
@@ -1256,6 +1377,8 @@ mod tests {
             let deadline = Instant::now() + Duration::from_secs(30);
             while Instant::now() < deadline {
                 if let Ok((mut stream, _)) = target.accept() {
+                    // BSD/macOS accepted sockets inherit the listener's non-blocking mode.
+                    stream.set_nonblocking(false).unwrap();
                     stream
                         .set_read_timeout(Some(Duration::from_secs(2)))
                         .unwrap();
@@ -1485,5 +1608,27 @@ mod tests {
         state.kill_window("socks-owner");
         assert!(TcpListener::bind(("127.0.0.1", local_port)).is_ok());
         assert!(state.sessions.lock().unwrap().is_empty());
+    }
+
+    // Regression for #512: a wedged forward reap must not hold app quit past its budget.
+    #[test]
+    fn exit_forward_reap_gives_up_at_its_budget_on_a_wedged_child() {
+        fn wedged_reap(_: Option<Child>) -> Result<(), Option<Child>> {
+            std::thread::sleep(Duration::from_secs(30));
+            Ok(())
+        }
+        let state = SshForwards::default();
+        let wedged = PendingForwardStop {
+            id: "wedged".into(),
+            generation: uuid::Uuid::new_v4(),
+            child: None,
+        };
+        let started = Instant::now();
+        state.reap_within(
+            vec![DetachedForward(wedged)],
+            started + Duration::from_millis(50),
+            wedged_reap,
+        );
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 }

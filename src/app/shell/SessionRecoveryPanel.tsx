@@ -1,3 +1,4 @@
+import { errorText } from "../../shared/lib/errors";
 import { Text } from "../../shared/ui/Text";
 import { modelDisplayName, modelSearchText } from "../../features/sessions/public/modelDisplayName";
 import { Alert } from "../../shared/ui/Alert";
@@ -6,6 +7,7 @@ import { RecoveryStatusBadge } from "../../features/workspace/ui/RecoveryStatusB
 import { SegmentedControl } from "../../shared/ui/SegmentedControl";
 import { Checkbox } from "../../shared/ui/Checkbox";
 import { Button } from "../../shared/ui/Button";
+import { SplitButton } from "../../shared/ui/SplitButton";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { SearchInput, SearchInputGroup } from "../../shared/ui/SearchInput";
 import {
@@ -17,7 +19,6 @@ import { useLocale, useT } from "../../shared/i18n";
 import { Modal } from "../../shared/ui/Modal";
 import { DropdownMenu, type DropdownMenuItem } from "../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../shared/ui/EmptyState";
-import { InfoPopover } from "../../shared/ui/InfoPopover";
 import { InlineError } from "../../shared/ui/InlineError";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import {
@@ -44,6 +45,7 @@ import type { WorkspaceSessionStub } from "../../features/workspace/model/worksp
 import { getSession } from "../../features/sessions/data/sessionStore";
 import { MoreHorizontal, Search, X } from "../../shared/ui/icons";
 import { RecoveryVerification } from "./RecoveryVerification";
+import { LiveText } from "../../shared/ui/LiveText";
 import { surfaceAttributes } from "../../shared/ui/Surface";
 import "./session-recovery.css";
 
@@ -79,7 +81,7 @@ export function SessionRecoveryPanel({
   const [pending, setPending] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const pendingRef = useRef(false);
-  const [error, setError] = useState("");
+  const [outcomeText, setOutcomeText] = useState("");
   const [errorArea, setErrorArea] = useState<"open" | "list">("open");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuAnchor = useRef<HTMLButtonElement>(null);
@@ -118,10 +120,7 @@ export function SessionRecoveryPanel({
           results.set(id, await getSession(id));
         } catch (cause) {
           results.set(id, "error");
-          if (!cancelled)
-            setReadErrors((previous) =>
-              new Map(previous).set(id, cause instanceof Error ? cause.message : String(cause)),
-            );
+          if (!cancelled) setReadErrors((previous) => new Map(previous).set(id, errorText(cause)));
         }
       }
     };
@@ -219,7 +218,7 @@ export function SessionRecoveryPanel({
     pendingRef.current = true;
     setPendingAction(action);
     setPending(true);
-    setError("");
+    setOutcomeText("");
     setOpenOutcome(null);
     setErrorArea("open");
     try {
@@ -228,12 +227,12 @@ export function SessionRecoveryPanel({
     } catch (cause) {
       if (cause instanceof RecoveryOpenError) {
         setOpenOutcome(cause);
-        setError(
+        setOutcomeText(
           cause.acknowledgmentFailed
-            ? t("Conversation tabs are open, but the recovery update could not be saved.")
+            ? t("Session tabs are open, but the recovery update could not be saved.")
             : t("Some recovery entries could not be opened."),
         );
-      } else setError(t("Recovery could not finish. Check the open tabs before retrying."));
+      } else setOutcomeText(t("Recovery could not finish. Check the open tabs before retrying."));
     } finally {
       pendingRef.current = false;
       setPendingAction(null);
@@ -259,20 +258,19 @@ export function SessionRecoveryPanel({
     pendingRef.current = true;
     setPendingAction(action);
     setPending(true);
-    setError("");
+    setOutcomeText("");
     setErrorArea("list");
     try {
       await onRemove(ids);
       setSelected((previous) => new Set([...previous].filter((id) => !ids.includes(id))));
     } catch {
-      setError(t("Could not update the recovery list. Try again."));
+      setOutcomeText(t("Could not update the recovery list. Try again."));
     } finally {
       pendingRef.current = false;
       setPendingAction(null);
       setPending(false);
     }
   };
-  const hiddenCount = rows.length - shown.length;
   const listMaintenancePending =
     pendingAction === "remove-selected" ||
     pendingAction === "clear-completed" ||
@@ -287,10 +285,10 @@ export function SessionRecoveryPanel({
             label: t("Remove {p0} selected from list", { p0: selectedIds.length }),
             description:
               hiddenSelectedCount > 0
-                ? t("Conversation history is kept. {p0} selected outside this view stay listed.", {
+                ? t("Session history is kept. {p0} selected outside this view stay listed.", {
                     p0: hiddenSelectedCount,
                   })
-                : t("Conversation history is kept."),
+                : t("Session history is kept."),
           },
         ] satisfies DropdownMenuItem[])
       : []),
@@ -300,7 +298,7 @@ export function SessionRecoveryPanel({
             kind: "item",
             id: "clear-completed",
             label: t("Remove {p0} completed from list", { p0: completedIds.length }),
-            description: t("Done and idle entries only. Conversation history is kept."),
+            description: t("Done and idle sessions only. Session history is kept."),
           },
         ] satisfies DropdownMenuItem[])
       : []),
@@ -309,9 +307,7 @@ export function SessionRecoveryPanel({
       kind: "item",
       id: "clear-all",
       label: t("Clear recovery list ({p0})", { p0: rows.length }),
-      description: t(
-        "Removes every entry, including those not shown. Conversation history is kept.",
-      ),
+      description: t("Removes every entry, including those not shown. Session history is kept."),
       danger: true,
       disabled: rows.length === 0,
     },
@@ -338,11 +334,12 @@ export function SessionRecoveryPanel({
         size={showToolbar ? undefined : "sm"}
         iconOnly
         label={t("Recovery list maintenance")}
-        tooltip={t("Recovery list maintenance")}
+        title=""
         aria-haspopup="menu"
         aria-expanded={menuOpen}
         className={showToolbar ? "ms-auto" : undefined}
         disabled={pending && !listMaintenancePending}
+        disabledReason={t("A recovery operation is in progress")}
         loading={listMaintenancePending}
         onClick={() => setMenuOpen((value) => !value)}
       >
@@ -353,7 +350,7 @@ export function SessionRecoveryPanel({
           anchor={menuAnchor}
           label={t("Recovery list maintenance")}
           returnFocusRef={menuAnchor}
-          width={280}
+          size="md"
           items={menuItems}
           onPick={pickMaintenance}
           onClose={() => setMenuOpen(false)}
@@ -362,8 +359,11 @@ export function SessionRecoveryPanel({
     </>
   ) : null;
   const primaryOpensSelected = selectedIds.length > 0;
-  const listError = error && errorArea === "list" ? error : "";
-  const openError = error && errorArea === "open" ? error : "";
+  // The primary action opens exactly what the owner sees: the selection, else the filtered list.
+  const primaryIds = primaryOpensSelected ? selectedIds : shown.map((row) => row.stub.id);
+  const primaryAction = primaryOpensSelected ? "open-selected" : "open-shown";
+  const listNotice = outcomeText && errorArea === "list" ? outcomeText : "";
+  const openNotice = outcomeText && errorArea === "open" ? outcomeText : "";
   const content = (
     <div className="session-recovery recovery-pane" aria-busy={pending}>
       {showToolbar ? (
@@ -411,22 +411,23 @@ export function SessionRecoveryPanel({
         </div>
       ) : null}
       {selected.size > 0 ? (
-        <Text role="status" as="div" size="caption" tone="secondary" className="recovery-status">
-          <span>{t("{p0} selected in this view", { p0: selectedIds.length })}</span>
+        <Text as="div" size="caption" tone="secondary" className="recovery-status">
+          <LiveText text={t("{p0} selected in this view", { p0: selectedIds.length })} />
           {hiddenSelectedCount > 0 ? (
-            <span>{t("{p0} selected outside this view", { p0: hiddenSelectedCount })}</span>
+            <LiveText text={t("{p0} selected outside this view", { p0: hiddenSelectedCount })} />
           ) : null}
           <Button
             variant="ghost"
             size="sm"
             disabled={pending}
+            disabledReason={t("A recovery operation is in progress")}
             onClick={() => setSelected(new Set())}
           >
             {t("Clear selection")}
           </Button>
         </Text>
       ) : null}
-      {listError ? <Alert tone="danger">{listError}</Alert> : null}
+      {listNotice ? <Alert tone="danger">{listNotice}</Alert> : null}
       <div className="recovery-body">
         {shown.length ? (
           <ul
@@ -443,7 +444,11 @@ export function SessionRecoveryPanel({
                   <Checkbox
                     checked={selected.has(stub.id)}
                     disabled={pending}
-                    aria-label={t("Select {p0}", { p0: title })}
+                    aria-label={
+                      pending
+                        ? t("Select {p0}. A recovery operation is in progress", { p0: title })
+                        : t("Select {p0}", { p0: title })
+                    }
                     onChange={() => toggle(stub.id)}
                   />
                   <HarnessIcon harness={stub.harness} className="size-4 shrink-0" />
@@ -459,18 +464,25 @@ export function SessionRecoveryPanel({
                     </Text>
                     <Text as="div" size="caption" tone="muted" className="break-words">
                       <p>{`${projectDisplayNameFrom(stub.cwd, projectLabels)} · ${machine}`}</p>
-                      <p className="select-text [overflow-wrap:anywhere]">{stub.cwd}</p>
                       <p>
                         {HARNESS_TITLE[stub.harness]} · {modelDisplayName(stub.model, stub.harness)}
                       </p>
                     </Text>
-                    <Text as="div" size="caption" tone="secondary">
-                      <RecoveryStatusBadge key={status} status={status} /> ·{" "}
-                      {activityAt
-                        ? t("Last activity {p0}", { p0: formatRelative(activityAt, Date.now()) })
-                        : t("Recovered {p0}", {
-                            p0: formatRelative(recovery.capturedAt, Date.now()),
-                          })}
+                    <Text
+                      as="div"
+                      size="caption"
+                      tone="secondary"
+                      className="flex flex-wrap items-center gap-x-1"
+                    >
+                      <RecoveryStatusBadge key={status} status={status} />
+                      <span>
+                        <span aria-hidden="true">· </span>
+                        {activityAt
+                          ? t("Last activity: {p0}", { p0: formatRelative(activityAt, Date.now()) })
+                          : t("Recovered {p0}", {
+                              p0: formatRelative(recovery.capturedAt, Date.now()),
+                            })}
+                      </span>
                     </Text>
                     {verification ? (
                       <RecoveryVerification
@@ -489,6 +501,7 @@ export function SessionRecoveryPanel({
                     size="sm"
                     motion="none"
                     disabled={pending}
+                    disabledReason={t("A recovery operation is in progress")}
                     loading={pendingAction === `open:${stub.id}`}
                     onClick={() => void open([stub.id], false, `open:${stub.id}`)}
                   >
@@ -496,13 +509,25 @@ export function SessionRecoveryPanel({
                   </Button>
                   <InlineAction
                     reveal="always"
-                    label={t("Remove {p0} from recovery list", { p0: title })}
+                    label={
+                      pending
+                        ? t("Remove {p0} from recovery list. A recovery operation is in progress", {
+                            p0: title,
+                          })
+                        : t("Remove {p0} from recovery list", { p0: title })
+                    }
                     motion="none"
                     className="recovery-remove"
                     disabled={pending}
                     loading={pendingAction === `remove:${stub.id}`}
-                    aria-label={t("Remove {p0} from recovery list", { p0: title })}
-                    tooltip={t("Remove from recovery list. Conversation history is kept.")}
+                    aria-label={
+                      pending
+                        ? t("Remove {p0} from recovery list. A recovery operation is in progress", {
+                            p0: title,
+                          })
+                        : t("Remove {p0} from recovery list", { p0: title })
+                    }
+                    title=""
                     onClick={() => void remove([stub.id], `remove:${stub.id}`)}
                   >
                     <X className="icon-md" aria-hidden="true" />
@@ -515,6 +540,7 @@ export function SessionRecoveryPanel({
           <EmptyState
             context="panel"
             kind="empty"
+            illustration="success"
             title={t("No recovered sessions")}
             description={t("Nothing is waiting to be reopened.")}
           />
@@ -535,15 +561,16 @@ export function SessionRecoveryPanel({
           <EmptyState
             context="panel"
             kind="empty"
+            illustration="success"
             title={t("No recovered sessions")}
             description={t("Nothing is waiting to be reopened.")}
           />
         )}
       </div>
       <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "recovery-footer")}>
-        {openError ? (
+        {openNotice ? (
           <Alert tone="danger">
-            {openError}
+            {openNotice}
             {openOutcome ? (
               <Text
                 as="div"
@@ -562,6 +589,7 @@ export function SessionRecoveryPanel({
                   variant="ghost"
                   size="sm"
                   disabled={pending}
+                  disabledReason={t("A recovery operation is in progress")}
                   loading={pendingAction === "retry-open"}
                   onClick={() =>
                     void open(
@@ -580,67 +608,57 @@ export function SessionRecoveryPanel({
           </Alert>
         ) : null}
         <div className="recovery-actions">
-          <Button
-            variant="secondary"
-            size="sm"
-            motion="none"
-            disabled={pending || !rows.length}
-            loading={pendingAction === "restore"}
-            onClick={() =>
-              void open(
-                rows.map((row) => row.stub.id),
-                true,
-                "restore",
-              )
-            }
-          >
-            {t("Restore chat layout")}
-          </Button>
-          <InfoPopover className="shrink-0">
-            <p>
-              {hiddenCount > 0
-                ? t("Open all opens all {p0} recovered sessions, including {p1} not shown here.", {
-                    p0: rows.length,
-                    p1: hiddenCount,
-                  })
-                : t("Open all opens all {p0} recovered sessions.", { p0: rows.length })}
-            </p>
-            <p>
-              {t(
-                "Opening tabs does not restart work. Restore chat layout also brings back your earlier chat splits.",
-              )}
-            </p>
-          </InfoPopover>
           {showToolbar ? null : maintenanceControl}
           <span className="recovery-actions-end flex flex-wrap items-center gap-2">
-            {primaryOpensSelected ? (
-              <Button
-                variant="primary"
-                size="sm"
-                motion="none"
-                disabled={pending}
-                loading={pendingAction === "open-selected"}
-                onClick={() => void open(selectedIds)}
-              >
-                {t("Open selected")} ({selectedIds.length})
-              </Button>
-            ) : null}
-            <Button
-              variant={primaryOpensSelected ? "secondary" : "primary"}
+            <SplitButton
+              variant="primary"
               size="sm"
               motion="none"
-              disabled={pending || !rows.length}
-              loading={pendingAction === "open-all"}
-              onClick={() =>
-                void open(
-                  rows.map((row) => row.stub.id),
-                  false,
-                  "open-all",
-                )
+              label={t("Open sessions")}
+              trailing={
+                <Badge size="xs" variant="count">
+                  {primaryIds.length}
+                </Badge>
               }
-            >
-              {t("Open all")} ({rows.length})
-            </Button>
+              tooltip={primaryOpensSelected ? t("Open selected") : t("Open shown")}
+              menuLabel={t("More ways to open")}
+              disabled={pending || !primaryIds.length}
+              loading={
+                pendingAction === primaryAction ||
+                pendingAction === "open-all" ||
+                pendingAction === "restore"
+              }
+              onClick={() => void open(primaryIds, false, primaryAction)}
+              actions={[
+                ...(primaryIds.length !== rows.length
+                  ? [
+                      {
+                        id: "open-all",
+                        label: `${t("Open all")} (${rows.length})`,
+                        onSelect: () =>
+                          void open(
+                            rows.map((row) => row.stub.id),
+                            false,
+                            "open-all",
+                          ),
+                      },
+                    ]
+                  : []),
+                {
+                  id: "restore",
+                  label: t("Restore chat layout"),
+                  description: t("Opens all {p0} and brings back your earlier chat splits.", {
+                    p0: rows.length,
+                  }),
+                  onSelect: () =>
+                    void open(
+                      rows.map((row) => row.stub.id),
+                      true,
+                      "restore",
+                    ),
+                },
+              ]}
+            />
           </span>
         </div>
       </div>
@@ -654,7 +672,8 @@ export function SessionRecoveryPanel({
       title={t("Recovered sessions")}
       onClose={pending ? () => {} : onClose}
       size="md"
-      className="session-recovery-dialog"
+      scroll="none"
+      hideCloseTooltip
       fitViewport
     >
       {content}

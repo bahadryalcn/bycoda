@@ -119,7 +119,7 @@ it("clears renewal ownership when setup fails after listener publication", async
   const failed = await f.access.status();
   expect(failed).toMatchObject({
     state: "unavailable",
-    reason: "Mobile LAN access could not start. Check the selected network and retry.",
+    reason: "Mobile access could not start. Check the selected network and retry.",
   });
   expect(failed.endpoint).toBeUndefined();
   expect(failed.tls).toBeUndefined();

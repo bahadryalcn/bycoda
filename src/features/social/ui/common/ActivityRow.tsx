@@ -4,14 +4,7 @@ import { Text } from "../../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
 import { ActionHost, InlineTextAction } from "../../../../shared/ui/ActionHost";
-import {
-  Check,
-  MessageMultiple,
-  MessageSquare,
-  Share,
-  UserRound,
-  Zap,
-} from "../../../../shared/ui/icons";
+import { MessageMultiple, MessageSquare, Share, UserRound, Zap } from "../../../../shared/ui/icons";
 import { StatusText, type StatusTextStatus } from "./StatusText";
 import "./activity-row.css";
 
@@ -25,7 +18,7 @@ export type ActivityRowProps = {
   /** Already formatted time, for example from the shared Timestamp helpers. */
   time: string;
   status: StatusTextStatus;
-  /** Operation kind for the leading icon; omit for the neutral glyph. */
+  /** Operation kind for the leading icon; omit for the generic "other" glyph. Status never picks the glyph. */
   kind?: ActivityKind;
   /** Caption content before the time, for example a platform glyph and account name. */
   meta?: ReactNode;
@@ -33,7 +26,7 @@ export type ActivityRowProps = {
   details?: ReactNode;
   /**
    * Omit when the entry cannot be undone: no Undo button is rendered, so the reason belongs in
-   * `details`. With `blockedReason`, Undo stays visible but disabled, and the tooltip says why.
+   * `details`. With `blockedReason`, Undo stays visible but disabled, and the tooltip says why (once).
    */
   undo?: {
     onUndo: () => void;
@@ -80,9 +73,8 @@ function KindIcon({ kind, neutral }: { kind?: ActivityKind; neutral: boolean }) 
     case "audience":
       return <UserRound {...props} />;
     case "other":
-      return <Zap {...props} />;
     default:
-      return <Check {...props} />;
+      return <Zap {...props} />;
   }
 }
 

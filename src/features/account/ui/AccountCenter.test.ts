@@ -128,7 +128,7 @@ describe("account center", () => {
       await select(tab!);
       const original = container.querySelector(`[aria-label="${label}"]`);
       expect(original).not.toBeNull();
-      await select("Profile");
+      await select("Account");
       expect(original?.isConnected).toBe(true);
       await select(tab!);
       expect(container.querySelector(`[aria-label="${label}"]`)).toBe(original);
@@ -160,14 +160,11 @@ describe("account center", () => {
     mocks.state = signedIn();
     await render(AccountScreen);
     expect(tabs()).toEqual([
-      "Profile",
-      "Security",
-      "Devices",
+      "Account",
       "Active time",
       "Notifications",
       "Privacy & data",
       "Support",
-      "Account status",
     ]);
     expect(container.textContent).toContain("ada@example.com");
   });
@@ -178,11 +175,6 @@ describe("account center", () => {
     window.addEventListener(OPEN_SETTINGS_EVENT, open);
     try {
       await render(AccountScreen);
-      await click(
-        [...container.querySelectorAll('[role="tab"]')].find(
-          (tab) => tab.textContent === "Security",
-        ),
-      );
       await click(
         [...container.querySelectorAll("button")].find(
           (button) => button.textContent === "Open settings",
@@ -199,9 +191,6 @@ describe("account center", () => {
     vi.stubEnv("VITE_BYCODA_ACCOUNT_PORTAL_URL", "https://portal.example.test");
     mocks.state = signedIn();
     await render(AccountScreen);
-    await click(
-      [...container.querySelectorAll('[role="tab"]')].find((t) => t.textContent === "Security"),
-    );
     await click(button("Open account page"));
     expect(mocks.openExternal).toHaveBeenCalledWith("https://portal.example.test/security");
   });
@@ -211,7 +200,7 @@ describe("account center", () => {
     await render(AccountScreen);
     await click(
       [...container.querySelectorAll('[role="tab"]')].find(
-        (t) => t.textContent === "Account status",
+        (t) => t.textContent === "Privacy & data",
       ),
     );
     await click(button("Deactivate…"));
@@ -225,7 +214,7 @@ describe("account center", () => {
     await render(AccountScreen);
     await click(
       [...container.querySelectorAll('[role="tab"]')].find(
-        (t) => t.textContent === "Account status",
+        (t) => t.textContent === "Privacy & data",
       ),
     );
     await click(button("Delete account…"));
@@ -237,10 +226,10 @@ describe("account center", () => {
   it("limits a deactivated account to three tabs and offers reactivation", async () => {
     mocks.state = signedIn(deactivatedContext);
     await render(AccountScreen);
-    expect(tabs()).toEqual(["Profile", "Privacy & data", "Account status"]);
+    expect(tabs()).toEqual(["Account", "Privacy & data"]);
     await click(
       [...container.querySelectorAll('[role="tab"]')].find(
-        (t) => t.textContent === "Account status",
+        (t) => t.textContent === "Privacy & data",
       ),
     );
     await click(button("Reactivate account"));
@@ -264,5 +253,13 @@ describe("account rail row", () => {
     expect(container.textContent).toContain("Ada");
     expect(container.querySelector("[data-account-avatar]")?.textContent).toBe("A");
     expect(container.querySelector("button")?.getAttribute("aria-current")).toBe("true");
+  });
+
+  it("keeps the account tabs in one horizontal strip at any width", async () => {
+    mocks.state = signedIn();
+    await render(AccountScreen);
+    expect(container.querySelector('[role="tablist"]')?.getAttribute("aria-orientation")).toBe(
+      "horizontal",
+    );
   });
 });

@@ -39,9 +39,7 @@ describe("settings navigation account row", () => {
         createElement(SettingsAccountRow, { section: "general", panelId: "p", onSelect }),
       ),
     );
-    expect(container.querySelector(".bycoda-settings-category-label")!.textContent).toBe(
-      "My account",
-    );
+    expect(container.querySelector(".bycoda-settings-category-label")).toBeNull();
     const row = container.querySelector("button")!;
     expect(row.textContent).toContain("Sign in");
     expect(row.getAttribute("aria-current")).toBeNull();

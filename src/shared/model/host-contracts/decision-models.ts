@@ -118,7 +118,12 @@ export const DecisionAnswerSchema = z.strictObject({
   model: text(200),
 });
 
-export const DecisionErrorAnswerSchema = z.strictObject({ error: DecisionErrorCodeSchema });
+/** Answers add `config_damaged`: the saved settings cannot be read, so no source was tried. */
+export const DecisionAnswerErrorCodeSchema = z.enum([
+  ...DecisionErrorCodeSchema.options,
+  "config_damaged",
+]);
+export const DecisionErrorAnswerSchema = z.strictObject({ error: DecisionAnswerErrorCodeSchema });
 
 export const DecisionResultSchema = z.strictObject({
   answers: z.record(text(64), z.union([DecisionAnswerSchema, DecisionErrorAnswerSchema])),
@@ -151,6 +156,8 @@ export const DiscoveryCandidateSchema = z.strictObject({
 export const DiscoveryResultSchema = z.strictObject({
   found: z.array(DiscoveryCandidateSchema).max(200),
   incomplete: z.boolean().optional(),
+  /** Epoch ms when the Host finished the scan this answer comes from. Absent: nothing valid is cached, so a first open may scan. */
+  scannedAt: z.number().int().min(0).optional(),
 });
 
 export const HardwareInfoSchema = z.strictObject({
@@ -242,6 +249,28 @@ export const DecisionLocalPlanSchema = z.strictObject({
   freeDiskBytes: z.number().int().min(0),
   fits: z.boolean(),
 });
+
+/**
+ * A Host that advertises this capability can start an install without holding the request open,
+ * report its bytes, and cancel it. An older Host only has the awaited `decisionModels.local.install`.
+ */
+export const DECISION_INSTALL_CAPABILITY = "decisionModels.install.v1";
+export const DecisionInstallProgressSchema = z.strictObject({
+  modelId: IdentifierSchema,
+  fileName: text(260),
+  fileIndex: z.number().int().min(0).max(7),
+  fileCount: z.number().int().min(0).max(8),
+  bytesDone: z.number().int().min(0),
+  /** Counts only files whose catalog size is known. */
+  bytesTotal: z.number().int().min(0),
+});
+/** `running` carries progress; `failed` carries a fixed, path-free message. */
+export const DecisionInstallStateSchema = z.strictObject({
+  state: z.enum(["idle", "running", "installed", "failed", "cancelled"]),
+  progress: DecisionInstallProgressSchema.optional(),
+  error: text(500).optional(),
+});
+export const DecisionInstallCancelResultSchema = z.strictObject({ cancelled: z.boolean() });
 
 const Sha256Schema = z.string().regex(WIRE_SHA256_PATTERN);
 const FolderModelSchema = z.strictObject({
@@ -389,6 +418,21 @@ export const DECISION_MODELS_RPC = {
     result: DecisionLocalPlanSchema,
     query: true,
   },
+  "decisionModels.local.installStart": {
+    params: DecisionLocalInstallParamsSchema,
+    result: DecisionInstallStateSchema,
+    query: false,
+  },
+  "decisionModels.local.installProgress": {
+    params: DecisionModelIdParamsSchema,
+    result: DecisionInstallStateSchema,
+    query: true,
+  },
+  "decisionModels.local.cancelInstall": {
+    params: DecisionModelIdParamsSchema,
+    result: DecisionInstallCancelResultSchema,
+    query: false,
+  },
   "decisionModels.manual.verify": {
     params: DecisionManualVerifyParamsSchema,
     result: DecisionManualVerifyResultSchema,
@@ -438,6 +482,13 @@ export const DECISION_MODELS_RPC = {
 
 export type DecisionModelsMethod = keyof typeof DECISION_MODELS_RPC;
 
+/** Methods that exist only on a Host advertising `DECISION_INSTALL_CAPABILITY`. */
+const INSTALL_CONTROL_METHODS: ReadonlySet<DecisionModelsMethod> = new Set([
+  "decisionModels.local.installStart",
+  "decisionModels.local.installProgress",
+  "decisionModels.local.cancelInstall",
+]);
+
 /**
  * Owner-RPC inventory for decision models; advertised by no WS capability yet. The caller passes
  * its workflow builder in, as appearanceMethods does, so this module never imports methods at runtime.
@@ -452,7 +503,12 @@ export function decisionModelsMethods(
 ) {
   const operation = (method: DecisionModelsMethod): HostRpcMethodDefinition => {
     const schema = DECISION_MODELS_RPC[method];
-    const definition = workflow("decisionModels.v1", schema.params, schema.result, schema.query);
+    const definition = workflow(
+      INSTALL_CONTROL_METHODS.has(method) ? DECISION_INSTALL_CAPABILITY : "decisionModels.v1",
+      schema.params,
+      schema.result,
+      schema.query,
+    );
     // A cold local runtime can need a minute before its first connection test.
     if (method === "decisionModels.sources.test" || method === "decisionModels.local.start")
       return { ...definition, responseTimeoutMs: 95_000 };
@@ -484,6 +540,9 @@ export function decisionModelsMethods(
     "decisionModels.local.stop": operation("decisionModels.local.stop"),
     "decisionModels.local.uninstall": operation("decisionModels.local.uninstall"),
     "decisionModels.local.status": operation("decisionModels.local.status"),
+    "decisionModels.local.installStart": operation("decisionModels.local.installStart"),
+    "decisionModels.local.installProgress": operation("decisionModels.local.installProgress"),
+    "decisionModels.local.cancelInstall": operation("decisionModels.local.cancelInstall"),
     "decisionModels.routing.get": operation("decisionModels.routing.get"),
     "decisionModels.routing.set": operation("decisionModels.routing.set"),
     "decisionModels.catalog.get": operation("decisionModels.catalog.get"),

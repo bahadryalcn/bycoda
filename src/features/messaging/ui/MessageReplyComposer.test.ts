@@ -131,9 +131,12 @@ describe("MessageReplyComposer", () => {
     const onSent = vi.fn();
     render(onSent);
 
-    expect(container.textContent).toContain("Sends to #general in Slack");
     await pressSend();
-    expect(container.textContent).toContain("network down");
+    expect(container.textContent).toContain("The reply was not sent.");
+    // The raw failure sits behind the Details popover.
+    const trigger = document.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+    await act(async () => trigger?.click());
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("network down");
     expect(container.querySelector("textarea")?.value).toBe("Hello");
     expect(onSent).not.toHaveBeenCalled();
 
@@ -148,6 +151,43 @@ describe("MessageReplyComposer", () => {
     expect(second.requestId).toBe(first.requestId);
     expect(container.querySelector("textarea")?.value).toBe("");
     expect(readReplyDraft(key).body).toBe("");
+  });
+
+  it("shows no destination hint for chat providers, and an email address only when the header lacks it", () => {
+    render(vi.fn());
+    expect(container.textContent).not.toContain("#general");
+    expect(container.textContent).not.toContain("Sends to");
+    act(() =>
+      root.render(
+        createElement(MessageReplyComposer, {
+          thread: { ...thread, provider: "teams", title: "Design sync" },
+          replyAddress: null,
+          onSent: vi.fn(),
+        }),
+      ),
+    );
+    expect(container.textContent).not.toContain("Sends to");
+    expect(container.textContent).not.toContain("Design sync");
+    act(() =>
+      root.render(
+        createElement(MessageReplyComposer, {
+          thread: { ...thread, provider: "email", participants: ["Ada <ada@example.com>"] },
+          replyAddress: "ada@example.com",
+          onSent: vi.fn(),
+        }),
+      ),
+    );
+    expect(container.textContent).not.toContain("Reply to ada@example.com");
+    act(() =>
+      root.render(
+        createElement(MessageReplyComposer, {
+          thread: { ...thread, provider: "email", participants: ["Ada"] },
+          replyAddress: "ada@example.com",
+          onSent: vi.fn(),
+        }),
+      ),
+    );
+    expect(container.textContent).toContain("Reply to ada@example.com");
   });
 
   it("does not send an empty draft", async () => {

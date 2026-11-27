@@ -9,6 +9,7 @@ Keep saved teams, reusable member profiles and executing run snapshots distinct.
 
 ## Source starts
 
+- `src/features/crews/ui/page/CrewsPage.tsx`: the three tabs (Teams, Members, Work); the Work tab (`CrewWorkManager.tsx`) is the one work manager.
 - `src/features/crews/ui/CrewEditor.tsx`: definition editor UI.
 - `src/features/crews/model/crewClient.ts`: client calls to the Host.
 - `host/crews/crews.ts`: Host service for definitions and runs.
@@ -16,17 +17,19 @@ Keep saved teams, reusable member profiles and executing run snapshots distinct.
 ## Workflow
 
 1. Identify whether the change concerns definition editing, library/scope copies, work/run controls or ambient scene. Follow that surface to its current model and Host owner.
-2. The editor is one autosaving page (access row, bulk model bar, member rows, Advanced). Keep draft ownership when expanding members, filtering or adding; autosave sends only valid drafts with revision checks, one request at a time. Apply source-profile updates only through the explicit update operation.
+2. The editor is one autosaving page (look button, name, Access chip, member rows, one More options; the bulk model bar and roster search appear only for a long roster). Keep draft ownership when expanding members, filtering or adding; autosave sends only valid drafts with revision checks, one request at a time. Apply source-profile updates only through the explicit update operation.
 3. Route mutations through the existing Crew client/service with revision checks and stable request IDs. Reconcile unknown outcomes with the authoritative owner instead of repeating Start.
 4. Exercise model/catalog failure, conflicting edits, partial copies, run controls and current reviewer/request states; check adjacent task/settings/rail consumers when their contract changes.
 
 ## Preserve
 
-- Scheduler reads use a transactionally backfilled SQLite active-run projection maintained by metadata insert/update/delete triggers, including legacy writers. Invalid source fails closed; history remains canonical. Delivery updates keep original coordinator and persisted command identity. SQLite JSON write/trigger traversal still scales with canonical state; active payloads are never truncated.
+- Scheduler reads use a SQLite active-run projection kept by insert/update/delete triggers (legacy writers too). Invalid source fails closed; history stays canonical. Delivery updates keep the original coordinator and command identity. Active payloads are never truncated. Full-state writes persist only runs that differ from the read they came from, and refuse (retry) if another writer put a different run at a row; reordered, shrunk or unread run lists use the full rewrite. Finished history has no retention: pruning must first prove history queries, finish sequence, receipts and recovery stay intact.
 
 - Owner-started work runs with the crew's `policy.runtimeMode` (default supervised, capability `crews.access.v1`); task-started work keeps the task's mode and members follow the run's mode.
 - A member tool profile (`crews.tools.v1`) only narrows; the Host writes it into session model settings at start. `host/crews/crew-tools.ts` checks Host Conversation Tools before the existing authorization; `host/crews/crew-native-tools.ts` maps it onto provider-native tools (Claude, Codex; other providers refuse a read-only member), the MCP hub allowlist and the skill policy at the Host provider boundary.
 - Retain every role/instruction, fixed/custom and automatic model choices, independent model settings, scope/groups and defaults tombstones.
+- `useProjectCrews` polls only `crews.list`; the model catalog is a separate scoped read (`useRemoteModelCatalog`: Host, environment and project key, cached, bounded pending/error polling) with an explicit `refreshCatalog`. Never fold `models.list` back into the run poll.
+- A task may run with a crew or `auto`; the Host names incompatible options and crew sessions use the shared helper policy, see [work executor](../feature-tasks-goals/references/work-executor.md).
 - Members select Default, Pool or Fixed through [model routing](../feature-model-routing/SKILL.md). Pools reference the Host-wide order. Resolve at run start and keep running snapshots fixed.
 - Keep roster rows focused on name, role, model and groups; full instructions belong in the member form, not repeated instruction-heading previews.
 - Saved-definition edits do not rewrite existing run/member/model snapshots. Device-local appearance must not change execution settings.
@@ -39,7 +42,7 @@ Keep saved teams, reusable member profiles and executing run snapshots distinct.
 ## Focused checks
 
 - Choose crew/crewClient/crewRoster/crewPresentation tests and changed UI tests; Host changes need relevant crews, lifecycle/defaults and dispatcher suites. Use `host/crews/crew-native-session.test.ts` for native coordinator resolution, ownership races and command routing.
-- Exercise Team/library/settings/work/rail states. Exercise isolated Host/native orchestration separately from browser fixtures; review scene motion and keyboard only when affected.
+- Exercise Team/library/settings/work/rail states; test Host/native orchestration apart from browser fixtures.
 
 ## References
 

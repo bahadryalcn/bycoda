@@ -22,7 +22,6 @@ import {
   createChildProcessHandle,
   capturedChildRoute,
   execChild,
-  freeHarnessPort,
   resolveOpenCodeBinary,
   spawnChild,
   watchChild,
@@ -82,6 +81,8 @@ type TextSetup = {
   child?: ChildProcessHandle;
   cancelled: boolean;
   serverUrl: string;
+  // Set only by this setup's own child exit; undefined while it is still running.
+  exitCode?: number | null;
   stop?: Promise<void>;
   createWork?: Promise<{ base: OpenCodeClient; cleanupClient: OpenCodeClient; id: string }>;
   transferred?: boolean;
@@ -285,19 +286,21 @@ async function startLive(
       watchChild(
         child,
         observeUrl,
-        () => {
+        (code) => {
+          setup.exitCode = code;
           setup.cancelled = true;
           if (session) session.closed = true;
           if (live === session) live = null;
         },
         observeUrl,
       );
-      const port = await freeHarnessPort();
+      // Port 0: opencode binds the ephemeral port itself and prints it, which
+      // observeUrl reads. A probed port could be taken before serve binds it.
       assertCurrent();
       await spawnChild(
         child,
         path,
-        ["serve", `--hostname=127.0.0.1`, `--port=${port}`],
+        ["serve", `--hostname=127.0.0.1`, `--port=0`],
         cwd,
         undefined,
         "opencode",
@@ -307,7 +310,11 @@ async function startLive(
     const url =
       generation === "v2"
         ? setup.serverUrl
-        : await waitForUrl(() => setup.serverUrl, SERVER_TIMEOUT_MS);
+        : await waitForUrl(
+            () => setup.serverUrl,
+            () => setup.exitCode,
+            SERVER_TIMEOUT_MS,
+          );
     assertCurrent();
     const eventRoute = setup.child ? capturedChildRoute(setup.child) : TEXT_CHILD_ID;
     const base = new OpenCodeClient(
@@ -664,13 +671,25 @@ export function getOpenCodeTextResponse(parts: unknown[] | undefined): string {
     .trim();
 }
 
-function waitForUrl(read: () => string, timeoutMs: number): Promise<string> {
+function waitForUrl(
+  read: () => string,
+  exited: () => number | null | undefined,
+  timeoutMs: number,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const started = Date.now();
     const tick = () => {
       const url = read();
       if (url) {
         resolve(url);
+        return;
+      }
+      if (exited() !== undefined) {
+        reject(
+          new Error(
+            `OpenCode text server exited before startup completed (code: ${String(exited())}).`,
+          ),
+        );
         return;
       }
       if (Date.now() - started >= timeoutMs) {

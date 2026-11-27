@@ -9,8 +9,11 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { getGroupLockView, subscribeGroupLock } from "../../../features/group-lock/model/groupLock";
 import { isProjectLockedIn } from "../../../features/group-lock/model/lockState";
+import { startLeaseHeartbeat } from "../../../platform/tauri/leaseHeartbeat";
 import { sessionWorkCwd, type Session } from "../../../features/sessions/model/session";
 import { useShellSessionsSelector } from "../../../features/sessions/model/sessionsStore";
+
+const HISTORY_HEARTBEAT_MS = 15_000;
 
 export function historySourceProjection(sessions: Session[], locked: (cwd: string) => boolean) {
   return sessions
@@ -55,9 +58,10 @@ export function useHistorySourceRegistration() {
     publish(sources);
   }, [sources, publish]);
   useEffect(() => {
-    const timer = window.setInterval(() => refresh(), 15000);
+    // The worker clock keeps the lease on time while the window is hidden; unmount withdraws it at once.
+    const stop = startLeaseHeartbeat(() => refresh(), HISTORY_HEARTBEAT_MS);
     return () => {
-      window.clearInterval(timer);
+      stop();
       publish([]);
     };
   }, [publish]);

@@ -26,6 +26,7 @@ vi.mock("./CrewMemberForm", () => ({
 
 vi.mock("../model/crewComposer", () => ({
   composerCanAssign: () => false,
+  composerDefaultMember: () => "lead",
   composerTitle: (text: string) => text,
 }));
 vi.mock("../model/crewOwnerActions", () => ({
@@ -61,16 +62,13 @@ it.each(["idle", "saved"] as const)(
         error: "",
         onRetry: vi.fn(),
         creating: false,
-        starting: false,
         pending: false,
         blocked: true,
-        canStart: true,
         onCreate: vi.fn(),
-        onStart: vi.fn(),
       }),
     );
     expect(html).not.toContain("All changes saved");
-    expect(html).toContain("disabled");
+    expect(html).not.toContain("New work");
   },
 );
 it.each([false, true])("retires only the submitted owner note, newer edit: %s", async (newer) => {
@@ -86,8 +84,6 @@ it.each([false, true])("retires only the submitted owner note, newer edit: %s", 
       createElement(CrewWorkOwnerActions, {
         run: { id: "run", status: "active" } as CrewRunView,
         tools: { machineId: "host", tasksSupported: true, call } as CrewOwnerTools,
-        memberId: "lead",
-        onMemberChange: vi.fn(),
       }),
     ),
   );
@@ -113,7 +109,8 @@ it.each([false, true])("retires only the submitted owner note, newer edit: %s", 
   if (newer) type("New unsent note");
   await act(async () => complete());
   expect(textarea.value).toBe(newer ? "New unsent note" : "");
-  expect(container.textContent?.includes("Note sent to the lead.")).toBe(!newer);
+  // A cleared textarea is the confirmation; no success line is shown.
+  expect(container.textContent?.includes("Note sent to the lead.")).toBe(false);
 });
 
 it("keeps an edited library profile until explicit discard", async () => {
@@ -128,13 +125,12 @@ it("keeps an edited library profile until explicit discard", async () => {
           project: { id: "project" },
           catalog: {},
         } as unknown as ProjectCrews,
-        profile: {
+        saved: {
           id: "member",
           name: "Original",
           candidates: [{}],
           updatedAt: 1,
         } as unknown as SavedCrewAgent,
-        groupNames: [],
         onClose,
       }),
     ),
@@ -148,8 +144,8 @@ it("keeps an edited library profile until explicit discard", async () => {
     field.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await act(async () =>
-    [...document.querySelectorAll<HTMLButtonElement>("button")]
-      .find((button) => button.textContent === "Cancel")!
+    document
+      .querySelector<HTMLButtonElement>('[role="dialog"] button[aria-label="Close"]')!
       .click(),
   );
   expect(onClose).not.toHaveBeenCalled();
@@ -163,8 +159,8 @@ it("keeps an edited library profile until explicit discard", async () => {
   expect(field.value).toBe("Unsent profile");
   expect(onClose).not.toHaveBeenCalled();
   await act(async () =>
-    [...document.querySelectorAll<HTMLButtonElement>("button")]
-      .find((button) => button.textContent === "Cancel")!
+    document
+      .querySelector<HTMLButtonElement>('[role="dialog"] button[aria-label="Close"]')!
       .click(),
   );
   await act(async () =>

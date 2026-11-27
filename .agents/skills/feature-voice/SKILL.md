@@ -11,6 +11,7 @@ Own capture, recognition, playback and companion UI across `src/features/voice/`
 
 - UI/model: `src/features/voice/ui/` (VoiceCompanion, VoiceSettings, DictationButton) and `src/features/voice/model/` (voiceSession, localVoice, realtimeVoice).
 - Host: `host/voice/` (runtime/setup and worker dispatch); `host/assistant/voice/` owns admitted Assistant delivery.
+- Phone calls: the native Host socket carries only the methods in `src/shared/model/host-contracts/voice.ts` (capability `transport.ws.voice.v1`), routed by `host/voice/voice-ws-operations.ts`; setup, models and keys stay on owner RPC. A Grok Voice / OpenAI Realtime call (capability `voice.realtime.relay.v1`) runs in `host/voice/voice-realtime-relay.ts` with the provider credential kept on the Host and one `ask_assistant` tool bound to the call's thread; call choices live in `host/voice/voice-call-settings.ts`. Session payload, instructions, VAD and speaker ids shared by desktop and Host are in `src/shared/model/voice-realtime/`.
 - Native: `src-tauri/src/` owns presence, microphone settings, generation and overlay adapters. Follow the affected adapter in the [owner map](references/surfaces.md).
 - Tests: adjacent UI/model/Host suites and voice fixtures in `tests/browser/`.
 
@@ -31,7 +32,7 @@ Own capture, recognition, playback and companion UI across `src/features/voice/`
 - Played history needs actual playback receipts. Preserve acknowledgement/wait policy, pending choices, engagement privacy and accepted-job tracking in local/cloud routes.
 - Dictation uses composer draft/selection ownership, preserving IME, attachments and cancellation; no implicit send. Companion/dictation switches and recognition-only setup remain independent.
 - Style, movement and compact changes preserve connection, focus, clamped placement and accessible actions. Overlays mirror owner audio/tools through whitelisted commands, never workspace authority.
-- Persona, memory and rules are quoted data. Exact accepted corrections, versioned owner forget and store success govern memory; disabled memory rejects saves. Retain legacy backups.
+- Assistant settings own name, address and tone; with a Host profile the legacy persona adds only its name and rules. Memory and rules are quoted data. Exact accepted corrections, versioned owner forget and store success govern memory; disabled memory rejects saves. Retain legacy backups.
 - History binds original thread/session, scope and idempotency. Disclosure intersects frozen contributors with live visibility; missing history cannot redirect speech or grant tools.
 - With Confirm jobs before starting on, job review creates nothing before Start; otherwise jobs start directly. Choices are not approvals; job/note actions need exact intent/scope, deletion confirmation and retained partial/unknown results. No model stop-all.
 - Auto language follows accepted owner speech; fixed language wins, unknown Auto refuses real briefings. Output-only playback grants no capture/tools. Setup retains engine choices and truthful recovery without installation authority.

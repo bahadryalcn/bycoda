@@ -3,6 +3,7 @@ import { basename, join } from "node:path";
 import { createLogger, LogSink, parseLogLevel, setDefaultLogSink } from "./logger";
 import { installConsoleBridge } from "./console-bridge";
 import { installCrashHandlers } from "./crash";
+import { watchLoopStalls } from "./loop-stall";
 
 const HEALTH_INTERVAL_MS = 15 * 60_000;
 
@@ -38,6 +39,8 @@ export function startHostDiagnostics(options: {
 
   const loop = monitorEventLoopDelay({ resolution: 20 });
   loop.enable();
+  // Profiles are saved only while the owner's Host setting turns them on.
+  const stalls = watchLoopStalls({ log: createLogger("host.loop"), profileDir: logDir });
   const health = createLogger("host.health");
   const timer = setInterval(() => {
     const memory = process.memoryUsage();
@@ -45,6 +48,8 @@ export function startHostDiagnostics(options: {
       rssMb: Math.round(memory.rss / 1_048_576),
       heapUsedMb: Math.round(memory.heapUsed / 1_048_576),
       loopLagP99Ms: Math.round(loop.percentile(99) / 1e6),
+      loopLagMaxMs: Math.round(loop.max / 1e6),
+      stallMaxMs: stalls.takeMaxLagMs(),
       handles: process.getActiveResourcesInfo?.().length,
     });
     loop.reset();
@@ -56,6 +61,7 @@ export function startHostDiagnostics(options: {
     stopping(reason) {
       if (stopped) return;
       stopped = true;
+      stalls.stop();
       lifecycle.info("stopping", {
         reason,
         uptimeSec: Math.round((Date.now() - startedAt) / 1000),

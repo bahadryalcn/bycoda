@@ -138,6 +138,18 @@ const listeners = createStore({ snapshot: true });
 let channel: BroadcastChannel | null = null;
 let lastActivityAt = Date.now();
 let privacyRevision = 0;
+/**
+ * Moves whenever this desktop locks everything, changes or loses its password, or
+ * re-reads its settings. The Host ends every phone's unlock when it changes; the
+ * nonce makes a restarted desktop differ from its earlier self.
+ */
+let remoteGrantCount = 0;
+// Created on first use: importing this module must not need WebCrypto (tests stub it, sync imports this).
+let remoteGrantNonce: string | undefined;
+export function getRemoteGrantEpoch(): string {
+  remoteGrantNonce ??= crypto.randomUUID();
+  return `${remoteGrantNonce}:${remoteGrantCount}`;
+}
 let stateRequest: { id: string; revision: number } | undefined;
 
 function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
@@ -240,8 +252,10 @@ function persistUnlocked() {
 function dispatch(action: LockAction) {
   if (action.type === "lock" || action.type === "lockAll") {
     hiddenGroupsAuthorized = false;
-    if (action.type === "lockAll") temporarilyVisible.clear();
-    else for (const id of action.groupIds) temporarilyVisible.delete(id);
+    if (action.type === "lockAll") {
+      temporarilyVisible.clear();
+      remoteGrantCount += 1;
+    } else for (const id of action.groupIds) temporarilyVisible.delete(id);
   }
   unlocked = lockReducer(unlocked, action);
   persistUnlocked();
@@ -287,7 +301,10 @@ function saveSettings(next: GroupLockSettings, requirePersistence = false): bool
       ];
   settings = next;
   if (persisted) clearPrivacyOptionFailures();
-  if (recordChanged) hiddenGroupsAuthorized = false;
+  if (recordChanged) {
+    hiddenGroupsAuthorized = false;
+    remoteGrantCount += 1;
+  }
   persistUnlocked();
   invalidate();
   if (recordChanged && !applyingRemoteLock) {
@@ -512,6 +529,29 @@ export function closeHiddenGroups() {
   invalidate();
 }
 
+/**
+ * A phone that passed the hidden-list password shows a group again. Only the hiding
+ * preference changes: the desktop's own unlock and hidden-list state stay as they are.
+ */
+export function unhideGroupForRemote(groupId: string): Promise<boolean> {
+  if (!storageAvailable) return Promise.resolve(false);
+  return withRoomPrivacyMutation(() => {
+    if (!hiddenGroups.has(groupId)) return false;
+    const next = new Set(hiddenGroups);
+    next.delete(groupId);
+    try {
+      localStorage.setItem(HIDDEN_KEY, JSON.stringify([...next]));
+    } catch {
+      return false;
+    }
+    hiddenGroups = next;
+    temporarilyVisible.delete(groupId);
+    optimisticLocks.delete(groupId);
+    dispatch({ type: "replace", groupIds: [...unlocked] });
+    return true;
+  });
+}
+
 /** Restore only this group, even when the unlock-all preference is enabled. */
 export function restoreHiddenGroup(groupId: string, temporary = false): Promise<boolean> {
   if (!storageAvailable) return Promise.resolve(false);
@@ -655,6 +695,7 @@ export function retryGroupLockStorage(): boolean {
   unlocked = new Set();
   temporarilyVisible.clear();
   hiddenGroupsAuthorized = false;
+  remoteGrantCount += 1;
   invalidate();
   return storageAvailable;
 }
@@ -672,6 +713,7 @@ function onStorage(event: StorageEvent) {
   }
   if (key === SETTINGS_KEY) {
     hiddenGroupsAuthorized = false;
+    remoteGrantCount += 1;
     storageAvailable = groupLockSettingsReadable(event.newValue);
     if (storageAvailable) {
       settings = parseGroupLockSettings(event.newValue);

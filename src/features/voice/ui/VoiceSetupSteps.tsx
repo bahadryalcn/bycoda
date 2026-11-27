@@ -1,11 +1,11 @@
-import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Select } from "../../../shared/ui/settings";
 import { t } from "../../../shared/i18n";
+import { voiceProviderLabel, voiceProviderOptions } from "../model/voiceProviders";
 import { errorText } from "../../../shared/lib/errors";
+import { withTimeout } from "../../../shared/lib/withTimeout";
 import {
   loadVoiceSettings,
   saveVoiceSettings,
@@ -16,112 +16,74 @@ import { realtimeSecret } from "../model/realtimeVoiceClient";
 import { localVoiceBackend } from "../model/localVoiceClient";
 import { speakerEngine, speakerOptions } from "../model/voiceSpeakers";
 import { previewVoice } from "../model/voicePreview";
-import { RealtimeVoice } from "../model/realtimeVoice";
-import { LocalVoice } from "../model/localVoice";
-import { voiceLanguageCode } from "../model/voiceLanguage";
-import { VoiceSettings } from "./VoiceSettings";
-import { Disclosure } from "../../../shared/ui/Disclosure";
+import { MicrophoneInputSettings } from "./MicrophoneInputSettings";
+import { openSettingsSection } from "../../settings/public/settingsLink";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LiveText } from "../../../shared/ui/LiveText";
+import { isMicrophoneBlocked } from "../model/microphoneAccess";
 import { MicrophoneRecoveryAction } from "./MicrophoneRecoveryAction";
 import styles from "./VoiceSetupSteps.module.css";
-
-/** Audio inputs, or null when the browser cannot list them; the select then keeps its current options. */
-async function listMicrophones(): Promise<MediaDeviceInfo[] | null> {
-  try {
-    const all = await navigator.mediaDevices.enumerateDevices();
-    return all.filter((device) => device.kind === "audioinput");
-  } catch {
-    return null;
-  }
-}
 
 export function VoiceSetupSteps({
   step,
   onValidChange,
   language = "auto",
   name = "",
-  onEvidence,
 }: {
   step: "provider" | "voice" | "microphone";
   onValidChange: (valid: boolean) => void;
   language?: string;
   name?: string;
-  onEvidence?: (e: {
-    providerVerified?: boolean;
-    voiceVerified?: boolean;
-    microphoneVerified?: boolean;
-  }) => void;
 }) {
   const settings = useVoiceSettings();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [transcript, setTranscript] = useState("");
   const [confirmed, setConfirmed] = useState(false);
-  const [advanced, setAdvanced] = useState(false);
-  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-  const level = useRef(0);
-  const meter = useRef<HTMLMeterElement | null>(null);
   const playback = useRef<AbortController | null>(null);
-  const mic = useRef<RealtimeVoice | LocalVoice | null>(null);
   const epoch = useRef(0);
-  const callbacks = useRef({ onValidChange, onEvidence });
-  callbacks.current = { onValidChange, onEvidence };
+  const callback = useRef(onValidChange);
+  callback.current = onValidChange;
   const config = JSON.stringify({ step, settings, language });
-  useEffect(() => {
-    if (step !== "microphone") return;
-    const timer = setInterval(() => {
-      if (meter.current) meter.current.value = level.current;
-    }, 120);
-    return () => clearInterval(timer);
-  }, [step]);
-  const refreshDevices = (stale: () => boolean) =>
-    listMicrophones().then((found) => {
-      if (found && !stale()) setDevices(found);
-    });
-  useEffect(() => {
-    if (step !== "microphone") return;
-    let stale = false;
-    void listMicrophones().then((found) => {
-      if (found && !stale) setDevices(found);
-    });
-    return () => {
-      stale = true;
-    };
-  }, [step]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Release playback and discard stale check results when configuration changes.
   useEffect(() => {
     epoch.current++;
-    callbacks.current.onValidChange(false);
+    callback.current(false);
     setConfirmed(false);
     setError("");
     setBusy(false);
-    setTranscript("");
     return () => {
       epoch.current++;
       playback.current?.abort();
-      mic.current?.close();
-      mic.current = null;
     };
   }, [config]);
-  const valid = (e: Parameters<NonNullable<typeof onEvidence>>[0]) => {
+  const valid = () => {
     setConfirmed(true);
-    callbacks.current.onValidChange(true);
-    callbacks.current.onEvidence?.(e);
+    callback.current(true);
   };
   async function check() {
     if (busy) return;
     const attempt = epoch.current;
     setConfirmed(false);
-    callbacks.current.onValidChange(false);
+    callback.current(false);
     setBusy(true);
     setError("");
     try {
       if (settings.mode === "local") {
-        const status = await localVoiceBackend.inspect(voiceRuntimeSettings(settings));
+        const status = await withTimeout(
+          localVoiceBackend.inspect(voiceRuntimeSettings(settings)),
+          20_000,
+          t("Check connection"),
+        );
         if (!status.ready)
           throw new Error(status.missing.join(", ") || "Local voice is not ready.");
-      } else await realtimeSecret(settings.mode === "grok" ? "xai" : "openai");
-      if (epoch.current === attempt) valid({ providerVerified: true });
+      } else {
+        await withTimeout(
+          realtimeSecret(settings.mode === "grok" ? "xai" : "openai"),
+          15_000,
+          t("Check connection"),
+        );
+      }
+      if (epoch.current === attempt) valid();
     } catch (cause) {
       if (epoch.current === attempt) setError(errorText(cause));
     } finally {
@@ -134,13 +96,13 @@ export function VoiceSetupSteps({
     playback.current = controller;
     const attempt = epoch.current;
     setConfirmed(false);
-    callbacks.current.onValidChange(false);
+    callback.current(false);
     setBusy(true);
     setError("");
     try {
       await previewVoice(settings, language, name, controller.signal, () => {
         if (epoch.current === attempt) {
-          valid({ voiceVerified: true });
+          valid();
           setBusy(false);
         }
       });
@@ -149,77 +111,6 @@ export function VoiceSetupSteps({
         setError(errorText(cause));
         setBusy(false);
       }
-    }
-  }
-  async function testMicrophone() {
-    if (busy) return;
-    const attempt = epoch.current;
-    setConfirmed(false);
-    callbacks.current.onValidChange(false);
-    setBusy(true);
-    setError("");
-    setTranscript("");
-    const accepted = (text: string, detected?: string) => {
-      if (epoch.current !== attempt) return;
-      setTranscript(text);
-      const expected = voiceLanguageCode(language);
-      if (expected && detected && voiceLanguageCode(detected) !== expected) {
-        setError(t("The recognized language differs from your chosen language."));
-      } else valid({ microphoneVerified: true });
-      mic.current?.close();
-      mic.current = null;
-      setBusy(false);
-    };
-    const failed = (message: string) => {
-      if (epoch.current === attempt) {
-        setError(message);
-        setBusy(false);
-        mic.current?.close();
-        mic.current = null;
-        void refreshDevices(() => epoch.current !== attempt);
-      }
-    };
-    try {
-      if (settings.mode === "local") {
-        const voice = new LocalVoice(
-          {
-            start: () => ({ sequence: 0 }),
-            transcript: (result) => accepted(result.text, result.language),
-            state: () => {},
-            error: failed,
-          },
-          voiceLanguageCode(language) ?? "",
-          voiceRuntimeSettings(settings),
-          level,
-          { languageLock: voiceLanguageCode(language), deviceId: settings.microphoneId },
-        );
-        mic.current = voice;
-        await voice.connect();
-      } else {
-        const voice = new RealtimeVoice(
-          settings.mode === "grok" ? "xai" : "openai",
-          {
-            state: () => {},
-            reply: () => {},
-            transcript: accepted,
-            playback: () => {},
-            tool: async () => ({ error: "Tools are disabled during microphone test." }),
-            error: failed,
-          },
-          "en",
-          level,
-          settings.speakers[settings.mode],
-          "",
-          language,
-        );
-        mic.current = voice;
-        const secret = await realtimeSecret(settings.mode === "grok" ? "xai" : "openai");
-        if (epoch.current === attempt)
-          await voice.connect(secret, [], { deviceId: settings.microphoneId });
-      }
-      await refreshDevices(() => epoch.current !== attempt);
-    } catch (cause) {
-      failed(errorText(cause));
     }
   }
   const engine = speakerEngine(settings);
@@ -232,16 +123,12 @@ export function VoiceSetupSteps({
             onValueChange={(mode) =>
               saveVoiceSettings({ ...loadVoiceSettings(), mode: mode as typeof settings.mode })
             }
-            options={[
-              { value: "openai", label: "OpenAI" },
-              { value: "grok", label: "Grok (xAI)" },
-              { value: "local", label: t("On this computer") },
-            ]}
+            options={voiceProviderOptions()}
             label={t("Voice provider")}
           />
           <div className={styles.actions}>
             <Button onClick={() => void check()} loading={busy}>
-              {t("Check connection")}
+              {t("Check {p0}", { p0: voiceProviderLabel(settings.mode) })}
             </Button>
             <LiveText
               size="caption"
@@ -250,21 +137,18 @@ export function VoiceSetupSteps({
               text={confirmed ? t("Ready") : ""}
             />
           </div>
-          <Disclosure
-            {...surfaceAttributes({ frame: "pane", edge: "block-start" }, styles.details)}
-            summary={t("Voice settings")}
-            onOpenChange={setAdvanced}
-          >
-            {advanced ? <VoiceSettings /> : null}
-          </Disclosure>
+          {error && (
+            <Button variant="ghost" onClick={() => openSettingsSection("voice")}>
+              {t("Voice settings")}
+            </Button>
+          )}
         </>
       ) : null}
       {step === "voice" ? (
         <>
           {engine ? (
             <Select
-              hideLabel
-              label={t("Voice")}
+              label={t("Speaker")}
               value={settings.speakers[engine]}
               options={speakerOptions(engine)}
               onChange={(value) =>
@@ -281,7 +165,10 @@ export function VoiceSetupSteps({
             </Button>
             <Button
               variant="ghost"
+              disabled={!busy && !confirmed}
+              disabledReason={t("Nothing is playing.")}
               onClick={() => {
+                epoch.current++;
                 playback.current?.abort();
                 setBusy(false);
               }}
@@ -297,63 +184,16 @@ export function VoiceSetupSteps({
           </div>
         </>
       ) : null}
-      {step === "microphone" ? (
-        <>
-          <Select
-            hideLabel
-            label={t("Microphone")}
-            value={settings.microphoneId ?? ""}
-            options={[
-              { value: "", label: t("System default") },
-              ...devices.map((device) => ({
-                value: device.deviceId,
-                label: device.label || device.deviceId,
-              })),
-            ]}
-            onChange={(microphoneId) => saveVoiceSettings({ ...loadVoiceSettings(), microphoneId })}
-          />
-          <Text as="p" size="inherit" tone="secondary" leading="normal" className={styles.hint}>
-            {t("Start the microphone test, then say one sentence.")}
-          </Text>
-          <div className={styles.actions}>
-            <Button onClick={() => void testMicrophone()} loading={busy}>
-              {t("Test microphone")}
-            </Button>
-            {busy ? (
-              <Button
-                onClick={() => {
-                  epoch.current++;
-                  mic.current?.close();
-                  mic.current = null;
-                  setBusy(false);
-                }}
-              >
-                {t("Stop")}
-              </Button>
-            ) : null}
-            <meter
-              className={styles.level}
-              min={0}
-              max={1}
-              ref={meter}
-              defaultValue={0}
-              aria-label={t("Microphone level")}
-            />
-          </div>
-          <LiveText
-            {...surfaceAttributes(
-              {
-                variant: transcript ? "card" : undefined,
-              },
-              transcript ? styles.transcript : "sr-only",
-            )}
-            leading="normal"
-            text={transcript ?? ""}
-          />
-        </>
-      ) : null}
+      {step === "microphone" ? <MicrophoneInputSettings /> : null}
       {error ? (
-        <InlineError extra={<MicrophoneRecoveryAction message={error} />}>{t(error)}</InlineError>
+        <InlineError
+          details={error}
+          extra={<MicrophoneRecoveryAction blocked={isMicrophoneBlocked(error)} />}
+        >
+          {step === "provider"
+            ? t("Could not check the voice provider.")
+            : t("Could not play the voice preview.")}
+        </InlineError>
       ) : null}
     </div>
   );

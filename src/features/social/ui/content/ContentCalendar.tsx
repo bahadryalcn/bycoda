@@ -3,7 +3,7 @@ import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { ClampText } from "../../../../shared/ui/ClampText";
 import { Text } from "../../../../shared/ui/Text";
 import { formatDate, t } from "../../../../shared/i18n";
-import { wallClockNow } from "../../../../shared/lib/time/wallClock";
+import { useMinuteNow } from "../../../../shared/hooks/useMinuteNow";
 import { ActionHost } from "../../../../shared/ui/ActionHost";
 import { Button } from "../../../../shared/ui/Button";
 import { Plus } from "../../../../shared/ui/icons";
@@ -30,6 +30,13 @@ export type ContentCalendarProps = {
 
 const MAX_MONTH_ENTRIES = 3;
 
+function toggleDay(current: Set<string>, key: string): Set<string> {
+  const next = new Set(current);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  return next;
+}
+
 /** Week or month grid of planned, sent and failed posts. A day opens the editor on that day. */
 export function ContentCalendar({
   view,
@@ -41,7 +48,8 @@ export function ContentCalendar({
   const [expandedDays, setExpandedDays] = useState<Set<string>>(() => new Set());
   const days = view === "week" ? weekDays(anchor) : monthCells(anchor);
   const byDay = entriesByDay(entries);
-  const now = wallClockNow();
+  // Minute-floored clock: "today" moves to the new day at local midnight while the calendar stays open.
+  const now = useMinuteNow();
   const month = new Date(anchor).getMonth();
   return (
     <div
@@ -66,43 +74,58 @@ export function ContentCalendar({
           ))}
         </Text>
       ) : null}
-      <div className="content-calendar-grid">
+      <div className="content-calendar-grid" role="list">
         {days.map((day, index) => {
           const key = dayKey(day);
           const dayEntries = byDay.get(key) ?? [];
+          const expanded = expandedDays.has(key);
+          const overflow = view === "month" && dayEntries.length > MAX_MONTH_ENTRIES;
           const { shown, more } =
-            view === "month" && !expandedDays.has(key)
+            view === "month" && !expanded
               ? splitMonthEntries(dayEntries, MAX_MONTH_ENTRIES)
               : { shown: dayEntries, more: 0 };
           const outside = view === "month" && new Date(day).getMonth() !== month;
           const today = isToday(day, now);
           return (
-            <section
+            <div
               key={key}
+              role="listitem"
               {...surfaceAttributes(
                 {
                   frame: index ? "pane" : undefined,
-                  edge: index >= 7 ? (index % 7 ? "start" : "block-start") : "inline-start",
+                  edge: index >= 7 ? (index % 7 ? "start" : "block-start") : "responsive-start",
                   variant: today ? "inset" : undefined,
                 },
                 "content-day",
               )}
               data-today={today || undefined}
               data-outside={outside || undefined}
-              aria-label={formatDate(day, { weekday: "long", day: "numeric", month: "long" })}
+              aria-current={today ? "date" : undefined}
             >
               <div className="content-day-head">
+                {/* The full date is the day's accessible name; the visible number and weekday are decoration. */}
+                <span className="sr-only">
+                  {formatDate(day, { weekday: "long", day: "numeric", month: "long" })}
+                </span>
                 <span className="content-day-title" aria-hidden="true">
-                  {view === "week" ? (
-                    <Text
-                      size="caption"
-                      tone="muted"
-                      leading="inherit"
-                      className="content-day-weekday"
-                    >
-                      {formatDate(day, { weekday: "short" })}
-                    </Text>
-                  ) : null}
+                  <Text
+                    size="caption"
+                    tone={view === "month" && today ? "accent-on-solid" : "muted"}
+                    leading="inherit"
+                    {...surfaceAttributes(
+                      view === "month" && today
+                        ? { radius: "pill", tone: "accent", toneFill: "solid" }
+                        : {},
+                      "content-day-weekday",
+                    )}
+                  >
+                    {formatDate(
+                      day,
+                      view === "month"
+                        ? { weekday: "short", day: "numeric", month: "short" }
+                        : { weekday: "short" },
+                    )}
+                  </Text>
                   <Text
                     as="span"
                     size={view === "month" ? "secondary" : "title"}
@@ -128,6 +151,16 @@ export function ContentCalendar({
                   label={t("New post on {p0}", {
                     p0: formatDate(day, { day: "numeric", month: "short" }),
                   })}
+                  disabled={
+                    startOfDay(day) < startOfDay(now) ||
+                    (today && dayKey(now + 60_000) !== dayKey(day))
+                  }
+                  disabledReason={
+                    startOfDay(day) < startOfDay(now) ||
+                    (today && dayKey(now + 60_000) !== dayKey(day))
+                      ? t("Pick a time in the future.")
+                      : undefined
+                  }
                   onClick={() => onPickDay(startOfDay(day))}
                 >
                   <Plus className="icon-xs" aria-hidden />
@@ -161,6 +194,7 @@ export function ContentCalendar({
                         >
                           {formatDate(entry.at, { hour: "2-digit", minute: "2-digit" })}
                         </Text>
+                        <ContentStateDot state={entry.status} />
                       </Text>
                       <ClampText
                         as="span"
@@ -173,25 +207,30 @@ export function ContentCalendar({
                       >
                         {entry.text.trim() || t("Media post")}
                       </ClampText>
-                      <ContentStateDot state={entry.status} />
                     </span>
                   </Button>
                 </ActionHost>
               ))}
-              {more ? (
+              {overflow ? (
                 <Button
                   variant="link"
                   layout="text"
-                  aria-expanded={false}
-                  label={t("Show all posts on {p0}", {
-                    p0: formatDate(day, { day: "numeric", month: "long" }),
-                  })}
-                  onClick={() => setExpandedDays((current) => new Set([...current, key]))}
+                  aria-expanded={expanded}
+                  label={
+                    expanded
+                      ? t("Show fewer posts on {p0}", {
+                          p0: formatDate(day, { day: "numeric", month: "long" }),
+                        })
+                      : t("Show all posts on {p0}", {
+                          p0: formatDate(day, { day: "numeric", month: "long" }),
+                        })
+                  }
+                  onClick={() => setExpandedDays((current) => toggleDay(current, key))}
                 >
-                  {t("{p0} more", { p0: more })}
+                  {expanded ? t("Show less") : t("{p0} more", { p0: more })}
                 </Button>
               ) : null}
-            </section>
+            </div>
           );
         })}
       </div>

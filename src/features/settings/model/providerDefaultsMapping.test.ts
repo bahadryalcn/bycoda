@@ -66,14 +66,11 @@ it("copies supported explicit values, maps fast, and never copies model/account 
   expect(mapped.draft.providers.codex).toEqual({
     effort: "high",
     runtimeMode: "full-access",
-    extras: { serviceTier: "fast", crossSubagents: "[]" },
+    extras: { serviceTier: "fast" },
   });
   expect(mapped.draft.accounts).toEqual(draft.accounts);
-  expect(mapped.skipped).toContainEqual({
-    harness: "codex",
-    field: "crossAdvisor",
-    value: "model-identity",
-  });
+  // Helpers have their own All providers choice, so they are neither copied nor reported.
+  expect(mapped.skipped).toEqual([]);
   expect(draft.providers).not.toHaveProperty("codex");
 });
 
@@ -95,7 +92,7 @@ it("reports unsupported values and preserves resets and explicit Off", () => {
   expect(mapped.skipped).toEqual([{ harness: "codex", field: "effort", value: "max" }]);
   expect(mapped.draft.providers.codex).toEqual({
     runtimeMode: null,
-    extras: { serviceTier: "default", crossAdvisor: "null" },
+    extras: { serviceTier: "default" },
   });
 });
 
@@ -126,7 +123,7 @@ it("does not reinterpret unknown service tiers as Standard", () => {
   expect(mapped.skipped).toEqual([{ harness: "claude", field: "serviceTier", value: "flex" }]);
 });
 
-it("copies Automatic and subagent ceiling independently of the main effort", () => {
+it("never copies helpers to other providers", () => {
   const result = mapDefaultsToProviders(
     {
       accounts: {},
@@ -140,9 +137,24 @@ it("copies Automatic and subagent ceiling independently of the main effort", () 
     "claude",
     [codex],
   );
-  expect(result.draft.providers.codex).toEqual({
-    effort: "low",
-    extras: { crossSubagents: "auto", crossSubagentMaxEffort: "max" },
-  });
+  expect(result.draft.providers.codex).toEqual({ effort: "low" });
   expect(result.skipped).toEqual([]);
+});
+
+it("copies the source's saved values with the edit, so every provider ends up as shown", () => {
+  const mapped = mapDefaultsToProviders(
+    { accounts: {}, providers: { claude: { extras: { crossSubagents: "[]" } } } },
+    "claude",
+    [codex],
+    {
+      effort: "low",
+      runtimeMode: "full-access",
+      extras: { crossSubagentMaxEffort: "low", imageModels: "", crossSubagents: "auto" },
+    },
+  );
+  expect(mapped.draft.providers.codex).toEqual({
+    effort: "low",
+    runtimeMode: "full-access",
+  });
+  expect(mapped.draft.providers.claude).toEqual({ extras: { crossSubagents: "[]" } });
 });

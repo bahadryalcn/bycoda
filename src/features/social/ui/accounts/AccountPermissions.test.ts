@@ -2,14 +2,22 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { HostProject } from "../../../connections/model/protocol";
 import type { SocialAccount, SocialPermission } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
+import { socialQueryScope } from "../../model/socialQuery";
 import { AccountPermissions } from "./AccountPermissions";
 
-let element: HTMLDivElement, root: Root;
+/** A control with a reason stays focusable: blocked is `disabled` or `aria-disabled`. */
+const isBlocked = (
+  node: { disabled?: boolean; getAttribute(name: string): string | null } | null | undefined,
+) => Boolean(node?.disabled) || node?.getAttribute("aria-disabled") === "true";
+
+let element: HTMLDivElement, root: Root, cache: QueryClient;
 
 beforeEach(() => {
+  cache = new QueryClient();
   element = document.createElement("div");
   document.body.append(element);
   root = createRoot(element);
@@ -17,6 +25,7 @@ beforeEach(() => {
 
 afterEach(() => {
   act(() => root.unmount());
+  cache.clear();
   element.remove();
 });
 
@@ -41,18 +50,23 @@ function render(
     projects?: HostProject[];
     disabled?: boolean;
     onChanged?: () => void;
+    client?: SocialClient;
   } = {},
 ) {
   const onChanged = props.onChanged ?? vi.fn();
   act(() =>
     root.render(
-      createElement(AccountPermissions, {
-        client: { request } as unknown as SocialClient,
-        account: props.account ?? account(),
-        projects: props.projects ?? projects,
-        disabled: props.disabled ?? false,
-        onChanged,
-      }),
+      createElement(
+        QueryClientProvider,
+        { client: cache },
+        createElement(AccountPermissions, {
+          client: props.client ?? ({ request } as unknown as SocialClient),
+          account: props.account ?? account(),
+          projects: props.projects ?? projects,
+          disabled: props.disabled ?? false,
+          onChanged,
+        }),
+      ),
     ),
   );
   return onChanged;
@@ -93,7 +107,9 @@ it("offers the Assistant only reading and drafting, never sending", () => {
 it("saves the Assistant grant against the version that was read", async () => {
   const request = vi.fn(async () => ({}));
   const onChanged = render(request, {
-    account: account({ assistantGrant: { permissions: ["read"], version: "v3" } }),
+    account: account({
+      assistantGrant: { permissions: ["read"], version: "v3" },
+    }),
   });
   expect(checkbox(ASSISTANT, "Can read").checked).toBe(true);
   expect(checkbox(ASSISTANT, "Prepare drafts").checked).toBe(false);
@@ -110,7 +126,7 @@ it("saves the Assistant grant against the version that was read", async () => {
 it("sends no expected version for a first grant and keeps drafting dependent on reading", async () => {
   const request = vi.fn(async () => ({}));
   render(request);
-  expect(checkbox(ASSISTANT, "Prepare drafts").disabled).toBe(true);
+  expect(isBlocked(checkbox(ASSISTANT, "Prepare drafts"))).toBe(true);
   act(() => checkbox(ASSISTANT, "Can read").click());
   expect(checkbox(ASSISTANT, "Prepare drafts").disabled).toBe(false);
   act(() => checkbox(ASSISTANT, "Prepare drafts").click());
@@ -128,7 +144,9 @@ it("sends no expected version for a first grant and keeps drafting dependent on 
 
 it("tells the owner that Assistant access is paused while voice retirement is pending", () => {
   render(vi.fn(), {
-    account: account({ assistantGrantPending: { permissions: ["read", "draft"] } }),
+    account: account({
+      assistantGrantPending: { permissions: ["read", "draft"] },
+    }),
   });
   expect(element.textContent).toContain(
     "Assistant access is paused while voice retirement is pending.",
@@ -149,9 +167,28 @@ it("keeps reading apart from sending when a project is granted access", async ()
   expect(onChanged).toHaveBeenCalledTimes(1);
 });
 
+it("invalidates the changed project's content after saving access", async () => {
+  const request = vi.fn(async () => ({}));
+  const client = { request } as unknown as SocialClient;
+  const scope = [...socialQueryScope(client), "content", "snapshot"];
+  const changed = [...scope, "p1"];
+  const unrelated = [...scope, "p2"];
+  cache.setQueryData(changed, {});
+  cache.setQueryData(unrelated, {});
+  render(request, { client });
+
+  act(() => checkbox(PROJECT, "Publish").click());
+  await submit(PROJECT);
+
+  expect(cache.getQueryState(changed)?.isInvalidated).toBe(true);
+  expect(cache.getQueryState(unrelated)?.isInvalidated).toBe(false);
+});
+
 it("adds and removes single project permissions without touching the others", async () => {
   const request = vi.fn(async () => ({}));
-  const grants: Record<string, SocialPermission[]> = { p1: ["read", "draft", "publish"] };
+  const grants: Record<string, SocialPermission[]> = {
+    p1: ["read", "draft", "publish"],
+  };
   render(request, { account: account({ grants }) });
   expect(checkbox(PROJECT, "Publish").checked).toBe(true);
   expect(checkbox(PROJECT, "Can reply").checked).toBe(false);
@@ -182,7 +219,7 @@ it("says why access cannot be saved and keeps the edit when the Host refuses it"
   const onChanged = render(request);
   act(() => checkbox(PROJECT, "Can read").click());
   await submit(PROJECT);
-  expect(element.textContent).toContain("The grant changed on another computer.");
+  expect(element.textContent).toContain("Project access could not be saved. Try again.");
   expect(checkbox(PROJECT, "Can read").checked).toBe(true);
   expect(onChanged).not.toHaveBeenCalled();
 });
@@ -190,17 +227,15 @@ it("says why access cannot be saved and keeps the edit when the Host refuses it"
 it("locks every permission while the Host is offline", () => {
   render(vi.fn(), { disabled: true });
   for (const input of element.querySelectorAll<HTMLInputElement>("input[type=checkbox]"))
-    expect(input.disabled).toBe(true);
+    expect(isBlocked(input)).toBe(true);
   const save = [...element.querySelectorAll("button")].filter((node) =>
     ["Save permissions", "Save project access"].includes(node.textContent ?? ""),
   );
   expect(save).toHaveLength(2);
-  for (const node of save) expect(node.disabled).toBe(true);
+  for (const node of save) expect(isBlocked(node)).toBe(true);
 });
 
-it("states that access does not approve a send", () => {
+it("keeps the card free of a loose help button", () => {
   render(vi.fn());
-  expect(element.textContent).toContain(
-    "Access applies only to this account and can be revoked here. Sending still requires the autonomy level below.",
-  );
+  expect(element.querySelector('button[aria-label="Help"]')).toBeNull();
 });

@@ -58,9 +58,7 @@ describe("assistant messages remain visible around folded work", () => {
     expect(container.textContent).toContain("Trying the other config.");
     expect(container.textContent).toContain("The investigation is complete.");
     expect(container.querySelector(".zen-fold-prose")).toBeNull();
-    const toggle = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Show the work"]',
-    )!;
+    const toggle = container.querySelector<HTMLElement>('summary[aria-label="Show the work"]')!;
     expect(toggle).not.toBeNull();
 
     act(() => toggle.click());

@@ -1,10 +1,11 @@
-import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Play, X } from "../../../shared/ui/icons";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { Play } from "../../../shared/ui/icons";
 import { startLocalHost, useLocalHostState } from "../model/localHostService";
+import { errorText } from "../../../shared/lib/errors";
 
 /** Starts this computer's stopped host; reports the reason when it cannot. */
 export function LocalHostStartButton({
@@ -25,7 +26,7 @@ export function LocalHostStartButton({
       await startLocalHost();
       onStarted?.();
     } catch (reason) {
-      onError?.(t(reason instanceof Error ? reason.message : String(reason)));
+      onError?.(errorText(reason));
     } finally {
       setStarting(false);
     }
@@ -67,10 +68,11 @@ export function useLocalHostDownNotice() {
     setStarting(true);
     setError(undefined);
     try {
+      // The service publishes the real state, which hides the notice; a host that stops again
+      // is shown again because nothing here keeps it dismissed.
       await startLocalHost();
-      setHidden(true);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(errorText(reason));
     } finally {
       setStarting(false);
     }
@@ -92,37 +94,30 @@ export function LocalHostDownNotice({
 }) {
   useLocale();
   return (
-    <Alert tone="warning">
-      <div className="min-w-0 flex-1">
-        <Text as="p" size="inherit" tone="inherit" weight="medium">
-          {t("The host on this computer is not running.")}
-        </Text>
-        <Text
-          as="p"
-          size="inherit"
-          tone="inherit"
-          leading="relaxed"
-          className="ui-secondary-text mbs-0.5"
-        >
-          {notice.error
-            ? t(notice.error)
-            : t("Tasks, sessions and sync on this computer are unavailable until it starts.")}
-        </Text>
-        <Button
-          className="mbs-2"
-          variant="secondary"
-          size="sm"
-          loading={notice.starting}
-          loadingLabel={t("Starting host…")}
-          startIcon={<Play className="icon-sm" aria-hidden />}
-          onClick={() => void notice.start()}
-        >
-          {t("Start host")}
-        </Button>
-      </div>
-      <Button iconOnly variant="ghost" size="sm" label={t("Dismiss")} onClick={notice.dismiss}>
-        <X className="icon-sm" aria-hidden />
-      </Button>
+    <Alert
+      // Controlled: dismissing removes the notice at once; the owner hides the row itself.
+      open
+      tone="warning"
+      title={t("The host on this computer is not running.")}
+      action={{
+        label: t("Start host"),
+        onClick: () => void notice.start(),
+        pending: notice.starting,
+      }}
+      dismissLabel={t("Dismiss")}
+      onDismiss={notice.dismiss}
+      extra={
+        notice.error ? (
+          <ErrorDetails
+            title={t("The host on this computer could not be started.")}
+            detail={notice.error}
+          />
+        ) : undefined
+      }
+    >
+      {notice.error
+        ? t("The host on this computer could not be started.")
+        : t("Tasks, sessions and sync on this computer are unavailable until it starts.")}
     </Alert>
   );
 }

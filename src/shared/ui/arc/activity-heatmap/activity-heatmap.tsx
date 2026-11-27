@@ -20,6 +20,7 @@ import {
 } from "motion/react";
 import type { Variants } from "motion/react";
 import { motionTokens } from "../lib/motion-tokens";
+import { TOOLTIP_DELAY_MS } from "../../Tooltip";
 import styles from "./activity-heatmap.module.css";
 
 export interface ActivityDay {
@@ -58,6 +59,8 @@ export interface ActivityHeatmapProps {
   moreLabel?: string;
   /** Levels two to four also carry a growing centre dot, so intensity never depends on colour alone. On by default. */
   markers?: boolean;
+  /** Accessible name of the level buttons group. Defaults to English. */
+  legendLabel?: string;
 }
 
 type Model = {
@@ -328,6 +331,7 @@ export function ActivityHeatmap({
   lessLabel = "Less",
   moreLabel = "More",
   markers = true,
+  legendLabel = "Highlight days by level",
 }: ActivityHeatmapProps) {
   const reduced = useReducedMotionSafe();
   const id = useId();
@@ -410,7 +414,7 @@ export function ActivityHeatmap({
   };
   useEffect(() => () => window.clearTimeout(previewTimer.current), []);
 
-  // Tooltip: one bubble for the whole grid. It jumps into place when it opens and glides on a spring between cells after that.
+  // One bubble for the grid. Pointer hover waits on each day, while keyboard navigation can glide between days.
   const [tip, setTip] = useState<Tip | null>(null);
   const [open, setOpen] = useState(false);
   const [change, setChange] = useState<Change>("instant");
@@ -473,7 +477,8 @@ export function ActivityHeatmap({
     window.clearTimeout(hideTimer.current);
     hideTimer.current = window.setTimeout(() => setOpen(false), delay);
   }
-  useEffect(() => () => window.clearTimeout(hideTimer.current), []);
+  // Discard pending hover work when the grid's days change or the chart unmounts.
+  useEffect(() => () => window.clearTimeout(hideTimer.current), [model]);
 
   useLayoutEffect(() => {
     const root = rootRef.current,
@@ -509,8 +514,8 @@ export function ActivityHeatmap({
     return () => scroller?.removeEventListener("scroll", follow);
   }, [tip, open, reduced, tipX, tipY, tipWidth]);
 
-  const indexOf = (element: Element | null) => {
-    const cell = element?.closest<HTMLElement>("[data-index]");
+  const indexOf = (element: EventTarget | null) => {
+    const cell = element instanceof Element ? element.closest<HTMLElement>("[data-index]") : null;
     return cell && gridRef.current?.contains(cell)
       ? { cell, index: Number(cell.dataset.index) }
       : null;
@@ -519,8 +524,24 @@ export function ActivityHeatmap({
     gridRef.current?.querySelector<HTMLElement>(`[data-index="${index}"]`)?.focus();
 
   function onGridPointerOver(event: PointerEvent<HTMLDivElement>) {
-    const hit = indexOf(event.target as Element);
-    if (hit) show(contentFor(hit.index, hit.cell));
+    const hit = indexOf(event.target);
+    if (!hit || indexOf(event.relatedTarget)?.cell === hit.cell) return;
+    if (event.pointerType === "touch") {
+      show(contentFor(hit.index, hit.cell));
+      return;
+    }
+    window.clearTimeout(hideTimer.current);
+    hideTimer.current = window.setTimeout(
+      () => show(contentFor(hit.index, hit.cell)),
+      TOOLTIP_DELAY_MS,
+    );
+  }
+  function onGridPointerOut(event: PointerEvent<HTMLDivElement>) {
+    if (event.pointerType === "touch") return;
+    const hit = indexOf(event.target);
+    if (!hit || indexOf(event.relatedTarget)?.cell === hit.cell) return;
+    window.clearTimeout(hideTimer.current);
+    setOpen(false);
   }
   function onGridPointerLeave(event: PointerEvent<HTMLDivElement>) {
     // A keyboard user keeps their bubble on the focused day. A tap focuses its day too, so the bubble stays until focus moves on;
@@ -718,6 +739,7 @@ export function ActivityHeatmap({
               data-direction={range.direction < 0 ? "back" : undefined}
               data-highlight={highlight ?? undefined}
               onPointerOver={onGridPointerOver}
+              onPointerOut={onGridPointerOut}
               onPointerLeave={onGridPointerLeave}
               onFocus={onGridFocus}
               onBlur={onGridBlur}
@@ -758,7 +780,7 @@ export function ActivityHeatmap({
           <div
             className={styles.swatches}
             role="group"
-            aria-label="Highlight days by level"
+            aria-label={legendLabel}
             onKeyDown={onLegendKeyDown}
           >
             {LEVELS.map((level) => (

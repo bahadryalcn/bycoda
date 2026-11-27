@@ -99,6 +99,15 @@ for (const theme of ["light", "dark"])
       });
       await dialog.getByRole("button", { name: "Open beside", exact: true }).click();
       await expect(page.locator("[data-opened]")).toHaveText("Beside: stable-session · turn-2");
+      const subagent = page.getByRole("region", { name: "Subagent reference" });
+      await subagent.getByRole("button", { name: "Session details" }).click();
+      await expect(dialog).toContainText("Subagent · Running");
+      await expect(dialog.getByRole("button")).toHaveCount(1);
+      await page.screenshot({
+        path: `temp/verification/subagent-reference/${theme}-${width}-details.png`,
+      });
+      await dialog.getByRole("button", { name: "Open", exact: true }).click();
+      await expect(page.locator("[data-opened]")).toHaveText("Focused: subagent-session");
       const notes = page.getByRole("region", { name: "Notes references" });
       await notes.getByRole("link", { name: "Related conversation", exact: true }).click();
       await expect(page.locator("[data-note-editing]")).toHaveText("Reading");
@@ -113,7 +122,13 @@ for (const theme of ["light", "dark"])
       await expect(dialog).toHaveCount(0);
       await page.getByRole("checkbox", { name: "Unavailable target" }).check();
       await link.click();
-      await expect(transcript).toContainText("This local session is unavailable.");
+      await expect(transcript).toContainText("Could not open this session.");
+      // The raw reason lives behind the shared Details control, not in the transcript line.
+      await transcript.getByRole("button", { name: /^Details/ }).click();
+      await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText(
+        "This local session is unavailable.",
+      );
+      await page.keyboard.press("Escape");
       await page.screenshot({
         path: `${captures}/${theme}-${width}-error.png`,
         fullPage: true,
@@ -123,7 +138,12 @@ for (const theme of ["light", "dark"])
       await expect(page.locator("[data-opened]")).toHaveText("Focused: stable-session · turn-2");
       await page.getByRole("checkbox", { name: "Missing cited turn" }).check();
       await link.click();
-      await expect(transcript).toContainText("The cited turn is unavailable.");
+      await expect(transcript).toContainText("Could not open this session.");
+      await transcript.getByRole("button", { name: /^Details/ }).click();
+      await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText(
+        "The cited turn is unavailable.",
+      );
+      await page.keyboard.press("Escape");
       await page.screenshot({
         path: `${captures}/${theme}-${width}-missing-turn.png`,
         fullPage: true,
@@ -195,7 +215,7 @@ for (const theme of ["light", "dark"])
         name: "Host worker reference",
         exact: true,
       });
-      await expect(worker).toContainText("Run by the orchestrator · read-only");
+      // Read-only is signalled by the absent composer, not by a status label.
       await expect(worker).toContainText("Review the local reference navigation.");
       await expect(worker.locator("[data-session-composer]")).toHaveCount(0);
       await worker.scrollIntoViewIfNeeded();

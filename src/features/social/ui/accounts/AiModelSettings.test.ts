@@ -18,7 +18,9 @@ const picker = vi.hoisted(() => ({
 // The app's model picker has its own tests; here only the inherit choice and the saved agent matter.
 vi.mock("../../../sessions/public/ModelPicker", () => ({
   ModelPicker: (
-    props: typeof picker.props & { inheritChoice?: { label: string; selected: boolean } },
+    props: typeof picker.props & {
+      inheritChoice?: { label: string; selected: boolean };
+    },
   ) => {
     picker.props = props;
     return createElement(
@@ -55,10 +57,9 @@ it("asks for a model and does not offer Do not use AI when no agent is set", () 
   );
   expect(element.querySelector('[data-testid="model-picker"]')?.textContent).toBe("Choose a model");
   expect(element.textContent).not.toContain("Do not use AI");
-  expect(element.textContent).toContain("AI cannot write replies or plans until you do.");
 });
 
-it("explains what the saved agent does when one is set", () => {
+it("shows the saved agent without an explanatory sentence", () => {
   const policies: SocialPolicies = {
     global: { agent: { provider: "claude", model: "m" } },
     platforms: {},
@@ -72,7 +73,7 @@ it("explains what the saved agent does when one is set", () => {
       }),
     ),
   );
-  expect(element.textContent).toContain("AI uses this model to write replies, plans and reports.");
+  expect(element.textContent).not.toContain("AI uses this model to write replies");
 });
 
 it("reads saved effort and account and persists settings through the reviewed policy write", async () => {
@@ -107,7 +108,10 @@ it("reads saved effort and account and persists settings through the reviewed po
       policies: {
         ...policies,
         global: {
-          agent: { ...policies.global.agent, modelSettings: { reasoningEffort: "xhigh" } },
+          agent: {
+            ...policies.global.agent,
+            modelSettings: { reasoningEffort: "xhigh" },
+          },
         },
       },
     }),

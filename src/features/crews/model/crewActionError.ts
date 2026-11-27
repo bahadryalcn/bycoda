@@ -5,7 +5,12 @@ import type { RemoteMachine } from "../../connections/public/protocol";
 
 /** A failed crew action, with the machine and operation it belongs to. */
 export type CrewActionError = {
+  /** The title and the raw reason in one line, for logs and tests. */
   message: string;
+  /** The translated headline: what failed and where. */
+  title: string;
+  /** The raw reason, shown behind Details. */
+  detail: string;
   /** When it failed; a later successful read of the same machine retires a connection failure. */
   at: number;
   /** The machine could not be asked at all, as opposed to refusing this one action. */
@@ -31,14 +36,13 @@ export function crewActionError(
           "bycoda Host on this computer did not answer. It may be restarting; try again in a moment.",
         )
       : failure.message;
+  const title = machine
+    ? t("{p0} failed on {p1}", { p0: operation, p1: crewMachineLabel(machine) })
+    : t("{p0} failed", { p0: operation });
   return {
-    message: machine
-      ? t("{p0} failed on {p1}: {p2}", {
-          p0: operation,
-          p1: crewMachineLabel(machine),
-          p2: detail,
-        })
-      : t("{p0} failed: {p1}", { p0: operation, p1: detail }),
+    message: `${title}: ${detail}`,
+    title,
+    detail,
     at,
     connection,
   };

@@ -20,91 +20,74 @@ export function commitMenuItems(
   commit: GitHistoryCommit,
   mutationsDisabled = false,
 ): ExplorerMenuItem[] {
-  const items: ExplorerMenuItem[] = [
-    { kind: "item", id: "open-changes", label: "Open Changes" },
-    { kind: "item", id: "blame", label: "Open in Blame" },
-    { kind: "item", id: "github", label: "Open on GitHub" },
+  return [
+    { kind: "item", id: "open-changes", label: t("Open changes") },
+    { kind: "item", id: "blame", label: t("Open in blame") },
+    { kind: "item", id: "github", label: t("Open on GitHub") },
     { kind: "sep" },
     {
       kind: "item",
       id: "checkout",
-      label: "Checkout (Detached)",
+      label: t("Checkout (Detached)"),
       disabled: mutationsDisabled,
     },
     { kind: "sep" },
     {
       kind: "item",
       id: "branch",
-      label: "Create Branch…",
+      label: t("Create branch…"),
       disabled: mutationsDisabled,
     },
     {
       kind: "item",
       id: "tag",
-      label: "Create Tag…",
+      label: t("Create Tag…"),
       disabled: mutationsDisabled,
     },
     { kind: "sep" },
     {
       kind: "item",
       id: "cherry-pick",
-      label: "Cherry-Pick",
+      label: t("Cherry-Pick"),
       disabled: commit.head || mutationsDisabled,
     },
     {
       kind: "item",
       id: "revert",
-      label: "Revert Commit",
+      label: t("Revert Commit"),
       disabled: mutationsDisabled,
     },
     {
       kind: "item",
       id: "reset",
-      label: "Reset Current Branch to Here",
+      label: t("Reset Current Branch to Here"),
       disabled: commit.head || mutationsDisabled,
       submenu: [
         {
           kind: "item",
           id: "reset-soft",
-          label: "Soft",
-          description: "Keep changes staged",
+          label: t("Soft"),
+          description: t("Keep changes staged"),
         },
         {
           kind: "item",
           id: "reset-mixed",
-          label: "Mixed",
-          description: "Keep changes unstaged",
+          label: t("Mixed"),
+          description: t("Keep changes unstaged"),
         },
         {
           kind: "item",
           id: "reset-hard",
-          label: "Hard",
-          description: "Discard all changes",
+          label: t("Hard"),
+          description: t("Discard all changes"),
           danger: true,
         },
       ],
     },
     { kind: "sep" },
-    { kind: "item", id: "copy-sha", label: "Copy Commit ID" },
-    { kind: "item", id: "copy-message", label: "Copy Commit Message" },
+    { kind: "item", id: "copy-sha", label: t("Copy Commit ID") },
+    { kind: "item", id: "copy-message", label: t("Copy Commit Message") },
   ];
-  return items.map((item) =>
-    item.kind === "sep"
-      ? item
-      : {
-          ...item,
-          label: t(item.label),
-          submenu: item.submenu?.map((child) =>
-            child.kind === "sep"
-              ? child
-              : {
-                  ...child,
-                  label: t(child.label),
-                  description: child.description ? t(child.description) : undefined,
-                },
-          ),
-        },
-  );
 }
 
 /** Only repository URLs on GitHub can become an external commit link. */
@@ -151,13 +134,15 @@ export function filterHistory(commits: GitHistoryCommit[], query: string): GitHi
   );
 }
 
-const OPERATION_LABELS = {
-  merge: "Merge",
-  rebase: "Rebase",
-  "cherry-pick": "Cherry-pick",
-  revert: "Revert",
-} as const;
-
-export function operationLabel(operation: keyof typeof OPERATION_LABELS): string {
-  return OPERATION_LABELS[operation];
+export function operationLabel(operation: "merge" | "rebase" | "cherry-pick" | "revert"): string {
+  switch (operation) {
+    case "rebase":
+      return t("Rebase");
+    case "cherry-pick":
+      return t("Cherry-pick");
+    case "revert":
+      return t("Revert");
+    case "merge":
+      return t("Merge");
+  }
 }

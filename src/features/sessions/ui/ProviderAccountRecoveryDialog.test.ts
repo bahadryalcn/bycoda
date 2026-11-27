@@ -94,11 +94,10 @@ it("shows pending only on the selected account and keeps retry available on fail
     button.click();
   });
   expect(onSelect).toHaveBeenCalledOnce();
-  expect(document.querySelectorAll('button[aria-busy="true"]')).toHaveLength(1);
-  expect(button.getAttribute("aria-busy")).toBe("true");
-  expect(document.activeElement).toBe(button);
+  expect(document.querySelectorAll('[aria-busy="true"]')).toHaveLength(1);
+  expect(button.querySelector('[aria-busy="true"]')).not.toBeNull();
   await act(async () => reject(new Error("Transfer unavailable")));
-  expect(button.hasAttribute("aria-busy")).toBe(false);
+  expect(button.querySelector('[aria-busy="true"]')).toBeNull();
   expect(document.querySelector('[role="alert"]')?.textContent).toBe("Transfer unavailable");
 });
 

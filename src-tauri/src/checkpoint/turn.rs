@@ -1,6 +1,8 @@
 //! Workspace boundaries complement structured-edit ownership, including shell edits.
 use super::*;
 use std::sync::{Condvar, PoisonError};
+#[path = "active_sessions.rs"]
+pub(super) mod active_sessions;
 #[path = "leases.rs"]
 pub(super) mod leases;
 #[path = "turn_paths.rs"]
@@ -152,10 +154,18 @@ pub(super) fn has_recorded_turn(dir: &Path) -> Result<bool, String> {
 }
 fn save_turn(dir: &Path, turn: &Turn) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    if turn.active {
+        // Indexed before the record exists, so recovery can never miss it.
+        active_sessions::mark(dir)?;
+    }
     let tmp = dir.join("turn.json.tmp");
     std::fs::write(&tmp, serde_json::to_vec(turn).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
-    std::fs::rename(tmp, dir.join("turn.json")).map_err(|e| e.to_string())
+    std::fs::rename(tmp, dir.join("turn.json")).map_err(|e| e.to_string())?;
+    if !turn.active {
+        active_sessions::clear(dir);
+    }
+    Ok(())
 }
 pub(super) fn record_structured_capture(dir: &Path, paths: &[String]) -> Result<(), String> {
     if let Some(mut turn) = read_turn(dir)?.filter(|t| t.active) {
@@ -395,12 +405,23 @@ impl Drop for RecoveryTicket {
     }
 }
 
+/// False when the marker could not be written, so the index is not complete yet.
+fn mark_for_index(dir: &Path) -> bool {
+    active_sessions::mark(dir)
+        .map_err(|error| log::warn!("Checkpoint active marker was not written: {error}"))
+        .is_ok()
+}
+
 /// Snapshot of the startup scan. Settling runs git, so it happens in `run`
 /// on a background thread, never while the app is starting its UI.
 pub(super) struct RecoveryPlan {
     store: CheckpointStore,
     active: Vec<(RecoveryTicket, String, Turn)>,
-    settled: Vec<(String, Turn)>,
+    /// Marked sessions whose record was not active at scan time.
+    stale: Vec<String>,
+    /// Turn records the scan opened.
+    #[cfg(test)]
+    pub(super) records_read: usize,
 }
 
 impl RecoveryPlan {
@@ -421,18 +442,36 @@ impl RecoveryPlan {
             // Released only after settlement, so a waiter never sees "still recording".
             drop(ticket);
         }
-        for (session, turn) in self.settled {
-            // A previous peer may have resurrected this exact settled
-            // lease. Re-read under the session gate before retiring it.
-            let _ = self.store.exclusive(&session, &[&turn.cwd], |s| {
-                if let Some(current) = read_turn(&s.session_dir(&session))? {
-                    if !current.active && current.id == turn.id && same_cwd(&current.cwd, &turn.cwd)
-                    {
-                        leases::release(&s.leases, &session, &turn.id)?;
-                    }
+        for session in self.stale {
+            // A command may have begun a new turn since the scan; the record
+            // is re-read under the session gate before its marker is dropped.
+            let _ = self.store.exclusive(&session, &[], |s| {
+                let dir = s.session_dir(&session);
+                // An unreadable record keeps its marker: its state is unknown.
+                if read_turn(&dir)?.is_none_or(|turn| !turn.active) {
+                    active_sessions::clear(&dir);
                 }
                 Ok(())
             });
+        }
+        // A crash between persisting a settled record and releasing its lease
+        // leaves the lease behind. Leases are few, so this never walks sessions.
+        match leases::native_turns(&self.store.leases) {
+            Ok(held) => {
+                for (session, turn_id, cwd) in held {
+                    // A previous peer may have resurrected this exact settled
+                    // lease. Re-read under the session gate before retiring it.
+                    let _ = self.store.exclusive(&session, &[&cwd], |s| {
+                        if let Some(current) = read_turn(&s.session_dir(&session))? {
+                            if !current.active && current.id == turn_id {
+                                leases::release(&s.leases, &session, &turn_id)?;
+                            }
+                        }
+                        Ok(())
+                    });
+                }
+            }
+            Err(error) => log::warn!("Checkpoint lease recovery skipped: {error}"),
         }
     }
 }
@@ -755,10 +794,16 @@ impl CheckpointStore {
             read_turn(&self.session_dir(session_id))?.filter(|t| same_cwd(&t.cwd, cwd))
         {
             if let Some(error) = turn.error {
-                return Err(format!("Workspace checkpoint failed: {error}"));
+                // The bracketed codes are typed markers the review card reads; keep the legacy text before them.
+                return Err(format!(
+                    "Workspace checkpoint failed: {error} [CHECKPOINT_FAILED]"
+                ));
             }
             if turn.active {
-                return Err("Workspace checkpoint is still recording this turn".into());
+                return Err(
+                    "Workspace checkpoint is still recording this turn [CHECKPOINT_RECORDING]"
+                        .into(),
+                );
             }
         }
         Ok(())
@@ -1103,34 +1148,71 @@ impl CheckpointStore {
         self.plan_recovery().run();
     }
 
-    /// Git-free scan of every session record. Active turns are registered with
-    /// the barrier here, so commands arriving after this call already wait.
+    /// Git-free scan of the sessions with an active turn. Active turns are
+    /// registered with the barrier here, so commands arriving after this call
+    /// already wait. Only marked sessions are opened; the first launch with the
+    /// index has no markers yet and walks every record once to build them.
     pub(super) fn plan_recovery(&self) -> RecoveryPlan {
         let mut plan = RecoveryPlan {
             store: self.clone(),
             active: Vec::new(),
-            settled: Vec::new(),
+            stale: Vec::new(),
+            #[cfg(test)]
+            records_read: 0,
         };
-        let Ok(entries) = std::fs::read_dir(&self.root) else {
-            return plan;
+        let marked = if active_sessions::ready(&self.root) {
+            active_sessions::sessions(&self.root)
+                .map_err(|error| log::warn!("Checkpoint active index unreadable: {error}"))
+                .ok()
+        } else {
+            None
         };
-        for entry in entries.flatten() {
-            let session = entry.file_name().to_string_lossy().into_owned();
-            if validate_id(&session, "session").is_err()
-                || !entry.file_type().is_ok_and(|kind| kind.is_dir())
-            {
-                continue;
+        let building = marked.is_none();
+        let candidates = match marked {
+            Some(sessions) => sessions,
+            None => {
+                let Ok(entries) = std::fs::read_dir(&self.root) else {
+                    return plan;
+                };
+                entries
+                    .flatten()
+                    .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+                    .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                    .filter(|session| validate_id(session, "session").is_ok())
+                    .collect()
             }
-            match read_turn(&entry.path()) {
+        };
+        let mut indexed = true;
+        for session in candidates {
+            let dir = self.session_dir(&session);
+            #[cfg(test)]
+            {
+                plan.records_read += 1;
+            }
+            match read_turn(&dir) {
                 Ok(Some(turn)) if turn.active => {
+                    if building {
+                        indexed &= mark_for_index(&dir);
+                    }
                     let ticket = self.barrier.register(&session, &turn.cwd);
                     plan.active.push((ticket, session, turn));
                 }
-                Ok(Some(turn)) => plan.settled.push((session, turn)),
-                Ok(None) => {}
-                Err(error) => log::warn!(
-                    "Checkpoint record for session {session} is unreadable and was not recovered: {error}"
-                ),
+                Ok(Some(_) | None) if !building => plan.stale.push(session),
+                Ok(Some(_) | None) => {}
+                Err(error) => {
+                    log::warn!(
+                        "Checkpoint record for session {session} is unreadable and was not recovered: {error}"
+                    );
+                    // Its state is unknown, so it stays a candidate at every launch.
+                    if building {
+                        indexed &= mark_for_index(&dir);
+                    }
+                }
+            }
+        }
+        if building && indexed {
+            if let Err(error) = active_sessions::mark_ready(&self.root) {
+                log::warn!("Checkpoint active index was not completed: {error}");
             }
         }
         plan

@@ -104,12 +104,34 @@ def windows_binary_digest(path):
 def read_json(path):
     return json.loads(pathlib.Path(path).read_text(encoding='utf-8-sig'))
 
+WINDOWS = os.name == 'nt'
+REPLACE_RETRY_SECONDS = 5.0
+
 def write_json(path, value):
+    """Atomically publish JSON. Receipts and job records are polled by other processes."""
     path = pathlib.Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + f'.{os.getpid()}.tmp')
     tmp.write_text(json.dumps(value, indent=2), encoding='utf-8')
-    os.replace(tmp, path)
+    # Windows refuses to replace a file another process has open without
+    # FILE_SHARE_DELETE (the helper's receipt poll, a status reader, antivirus or
+    # the indexer) with ERROR_ACCESS_DENIED/SHARING_VIOLATION. Such a hold lasts
+    # milliseconds, so wait for it with a short bounded backoff.
+    deadline = time.monotonic() + REPLACE_RETRY_SECONDS
+    delay = .01
+    while True:
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if not WINDOWS or time.monotonic() >= deadline:
+                tmp.unlink(missing_ok=True)
+                raise
+            time.sleep(delay)
+            delay = min(delay * 2, .25)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
 
 def safe_child(root, name):
     root = pathlib.Path(root).resolve()

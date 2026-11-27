@@ -11,6 +11,13 @@ import type {
   AssistantThreadSummaryState,
 } from "../../../src/shared/model/assistantThreadSummary";
 import { assistantPolicy } from "../../../src/shared/model/assistantPolicy";
+import { monotonicNow } from "../../../src/shared/lib/time/timestamps";
+/** Gap between passes while one pass keeps finding work, and after a pass that threw. */
+const CONTINUE_MS = 1000;
+const FAILED_PASS_RETRY_MS = 5000;
+/** States a pass may pick up once their `retryAfter` has passed. */
+const ELIGIBLE_STATE =
+  "(json_extract(s.value,'$.pending')=1 OR json_extract(s.value,'$.manual')=1 OR json_extract(s.value,'$.blocked') IN ('privacy','source','budget','capacity'))";
 type Admission = { profile: AssistantProfile; day: string; tokenCap: number; capacityKey: string };
 type State = {
   cursor: number;
@@ -135,8 +142,12 @@ const bounded = (text: string, bytes: number) => {
 /** Rolling text artifacts, never a tool/approval/owner-rule execution grant. */
 export class HostAssistantThreadSummaries {
   readonly ready: Promise<void>;
-  private timer?: ReturnType<typeof setInterval>;
-  private active?: Promise<void>;
+  private timer?: ReturnType<typeof setTimeout>;
+  private timerAt = 0;
+  private started = false;
+  private dirty = false;
+  private loop?: Promise<void>;
+  private active?: Promise<boolean>;
   private controller?: AbortController;
   private activeThread?: string;
   private closed = false;
@@ -229,33 +240,138 @@ export class HostAssistantThreadSummaries {
       .get(id);
     return row ? (JSON.parse(row.value) as Artifact) : undefined;
   }
+  /** Queue rows past the cursor whose message is live: trashed or purged messages are omitted, never a source failure. */
   private async rows(threadId: string, cursor: number, limit: number) {
     return this.store.db
       .prepare(
-        "SELECT q.sequence,q.message_id FROM assistant_summary_queue q WHERE q.thread_id=? AND q.sequence>? ORDER BY q.sequence LIMIT ?",
+        "SELECT q.sequence,q.message_id FROM assistant_summary_queue q JOIN assistant_messages m ON m.id=q.message_id AND m.deleted_at IS NULL WHERE q.thread_id=? AND q.sequence>? ORDER BY q.sequence LIMIT ?",
       )
       .all(threadId, cursor, limit);
   }
+  private async live(messageId: string) {
+    return !!(await this.store.db
+      .prepare("SELECT 1 FROM assistant_messages WHERE id=? AND deleted_at IS NULL")
+      .get(messageId));
+  }
+  /**
+   * Drops only rows that can never be read again: queue rows of purged messages (restore needs
+   * the message row) and every row of a thread that no longer exists. Artifacts of live threads
+   * stay because message provenance (`summaryProofId`) replays against them, and queue sequences
+   * never repeat (AUTOINCREMENT), so cursors stay valid.
+   */
+  async reclaim(): Promise<void> {
+    await this.ready;
+    const db = this.store.db,
+      noThread = (owner: string) =>
+        `NOT EXISTS (SELECT 1 FROM assistant_threads t WHERE t.id=${owner})`;
+    await db
+      .prepare(
+        "DELETE FROM assistant_summary_queue WHERE NOT EXISTS (SELECT 1 FROM assistant_messages m WHERE m.id=assistant_summary_queue.message_id)",
+      )
+      .run();
+    for (const table of ["queue", "requests", "states"])
+      await db
+        .prepare(
+          `DELETE FROM assistant_summary_${table} WHERE ${noThread(`assistant_summary_${table}.thread_id`)}`,
+        )
+        .run();
+    // A running intent still owns its reserved budget settlement, so it is never dropped here.
+    await db
+      .prepare(
+        `DELETE FROM assistant_summary_intents WHERE json_extract(value,'$.status')<>'running' AND ${noThread("json_extract(assistant_summary_intents.value,'$.threadId')")}`,
+      )
+      .run();
+    await db
+      .prepare(
+        `DELETE FROM assistant_summary_artifacts WHERE ${noThread("json_extract(assistant_summary_artifacts.value,'$.threadId')")}`,
+      )
+      .run();
+  }
+  /**
+   * Enables the worker. Nothing polls: a pass runs on `wake()` (a queued message, an explicit
+   * refresh, the Host's own minute tick) or at the earliest saved `retryAfter` deadline, so an
+   * idle Host never scans the summary states. Durable pending/blocked states found here are
+   * picked up by the first pass.
+   */
   start() {
-    if (this.timer || this.closed) return;
-    this.timer = setInterval(() => {
-      void this.drain().catch(() => undefined);
-    }, 1000);
+    if (this.started || this.closed) return;
+    this.started = true;
+    this.wake();
+  }
+  /** Arms one pass no later than `delay` ms from now; an earlier armed wake is kept. */
+  wake(delay = 0) {
+    if (!this.started || this.closed) return;
+    if (this.loop) {
+      // The running pass may have read its candidates before this change: run another.
+      this.dirty = true;
+      return;
+    }
+    const at = monotonicNow() + delay;
+    if (this.timer && this.timerAt <= at) return;
+    clearTimeout(this.timer);
+    this.timerAt = at;
+    this.timer = setTimeout(() => {
+      this.timer = undefined;
+      const loop = this.pump().finally(() => {
+        if (this.loop === loop) this.loop = undefined;
+      });
+      this.loop = loop;
+    }, delay);
     this.timer.unref?.();
+  }
+  private async pump(): Promise<void> {
+    await this.ready;
+    for (;;) {
+      let again: number | undefined;
+      try {
+        do {
+          this.dirty = false;
+          again = (await this.pass()) ? CONTINUE_MS : undefined;
+        } while (this.dirty && !this.closed);
+      } catch {
+        again = FAILED_PASS_RETRY_MS;
+      }
+      if (this.closed) return;
+      try {
+        // Work remains or a pass failed: look again soon. Otherwise sleep until the earliest
+        // saved retry deadline; with none, only the next wake runs a pass.
+        again ??= await this.untilNextRetry();
+      } catch {
+        again = FAILED_PASS_RETRY_MS;
+      }
+      if (this.dirty) continue; // woken during the lookup
+      this.loop = undefined;
+      if (again !== undefined) this.wake(again);
+      return;
+    }
+  }
+  /** Milliseconds until the earliest future `retryAfter` of a state a pass would pick up. */
+  private async untilNextRetry(): Promise<number | undefined> {
+    const now = this.now(),
+      row = await this.store.db
+        .prepare(
+          `SELECT min(json_extract(s.value,'$.retryAfter')) AS due FROM assistant_summary_states s JOIN assistant_threads t ON t.id=s.thread_id AND t.deleted_at IS NULL WHERE ${ELIGIBLE_STATE} AND json_extract(s.value,'$.retryAfter')>?`,
+        )
+        .get(now),
+      due = row?.due === null || row?.due === undefined ? undefined : Number(row.due);
+    return due !== undefined && Number.isFinite(due) ? Math.max(1, due - now) : undefined;
   }
   abort() {
     this.controller?.abort();
   }
   async close() {
     this.closed = true;
-    clearInterval(this.timer);
+    clearTimeout(this.timer);
     this.timer = undefined;
     this.abort();
     await this.active;
+    await this.loop;
   }
   async record(messageId: string): Promise<void> {
     await this.ready;
+    let queued = false as boolean; // set inside the transaction callback, which TypeScript cannot see
     await this.store.transaction(async () => {
+      queued = false;
       const row = await this.store.db
         .prepare("SELECT value FROM assistant_messages WHERE id=? AND deleted_at IS NULL")
         .get(messageId);
@@ -270,13 +386,17 @@ export class HostAssistantThreadSummaries {
       const state = await this.state(message.threadId),
         interval = assistantPolicy(await this.ports.profile()).summaryRefreshMessages;
       if (state.blocked === "unknown") return;
-      if ((await this.rows(message.threadId, state.cursor, interval)).length >= interval)
+      if ((await this.rows(message.threadId, state.cursor, interval)).length >= interval) {
         await this.writeState(message.threadId, {
           ...state,
           pending: true,
           public: state.public?.status === "working" ? state.public : this.status("pending"),
         });
+        queued = true;
+      }
     }, "critical");
+    // Only after the commit, so the pass it wakes can read the pending state.
+    if (queued) this.wake();
   }
   async refresh(threadId: string, requestId: string): Promise<void> {
     await this.ready;
@@ -308,6 +428,7 @@ export class HostAssistantThreadSummaries {
         public: this.status("pending"),
       });
     }, "critical");
+    this.wake();
   }
   async clear(threadId: string): Promise<void> {
     await this.ready;
@@ -405,17 +526,28 @@ export class HostAssistantThreadSummaries {
       ...(state.public ? { summaryState: state.public } : {}),
     };
   }
+  // Snapshot listings drop the proof and summary text, so a thread that needs no source
+  // validation only has its state badge to resolve. Summary-bearing threads keep the full
+  // projection because validation can downgrade their badge to "blocked".
+  async listingProjection(thread: AssistantThread): Promise<AssistantThread> {
+    if (thread.summary && this.ports.validateSourceProofs) return this.projection(thread);
+    const { summaryProof: _, summaryState: __, ...raw } = thread;
+    const state = await this.state(thread.id);
+    return { ...raw, ...(state.public ? { summaryState: state.public } : {}) };
+  }
   async drain(): Promise<void> {
     await this.ready;
     if (this.closed) return;
+    await this.pass();
+  }
+  /** One pass over due candidates; true when it handled one, so more may be waiting. */
+  private pass(): Promise<boolean> {
     if (this.active) return this.active;
-    const run = this.run();
-    this.active = run;
-    try {
-      await run;
-    } finally {
+    const run = this.run().finally(() => {
       if (this.active === run) this.active = undefined;
-    }
+    });
+    this.active = run;
+    return run;
   }
   private async block(
     threadId: string,
@@ -433,17 +565,18 @@ export class HostAssistantThreadSummaries {
       public: this.status("blocked", message),
     });
   }
-  private async run(): Promise<void> {
+  /** Handles at most one due thread; resolves true when it did (every such path changes its state). */
+  private async run(): Promise<boolean> {
     const candidates = await this.store.db
       .prepare(
-        "SELECT s.thread_id AS id FROM assistant_summary_states s JOIN assistant_threads t ON t.id=s.thread_id AND t.deleted_at IS NULL WHERE (json_extract(s.value,'$.pending')=1 OR json_extract(s.value,'$.manual')=1 OR json_extract(s.value,'$.blocked') IN ('privacy','source','budget','capacity')) AND coalesce(json_extract(s.value,'$.retryAfter'),0)<=? ORDER BY CASE WHEN json_extract(s.value,'$.pending')=1 OR json_extract(s.value,'$.manual')=1 THEN 0 ELSE 1 END,t.updated_at LIMIT 20",
+        `SELECT s.thread_id AS id FROM assistant_summary_states s JOIN assistant_threads t ON t.id=s.thread_id AND t.deleted_at IS NULL WHERE ${ELIGIBLE_STATE} AND coalesce(json_extract(s.value,'$.retryAfter'),0)<=? ORDER BY CASE WHEN json_extract(s.value,'$.pending')=1 OR json_extract(s.value,'$.manual')=1 THEN 0 ELSE 1 END,t.updated_at LIMIT 20`,
       )
       .all(this.now());
-    if (!candidates.length) return;
+    if (!candidates.length) return false;
     const profile = await this.ports.profile(),
       interval = assistantPolicy(profile).summaryRefreshMessages;
     for (const candidate of candidates) {
-      if (this.closed) return;
+      if (this.closed) return false;
       const threadId = String(candidate.id),
         state = await this.state(threadId);
       if (
@@ -462,7 +595,7 @@ export class HostAssistantThreadSummaries {
           "budget",
           "Summary generation is waiting for enabled settings, working hours, a configured reply model or token capacity.",
         );
-        return;
+        return true;
       }
       if (
         state.blocked === "capacity" &&
@@ -491,7 +624,7 @@ export class HostAssistantThreadSummaries {
           "source",
           "The verified summary no longer matches this conversation.",
         );
-        return;
+        return true;
       }
       if (thread.summary && !previous) {
         await this.block(
@@ -500,10 +633,13 @@ export class HostAssistantThreadSummaries {
           "source",
           "The existing summary has no verified source artifact. Clear or replace it explicitly before refreshing.",
         );
-        return;
+        return true;
       }
       for (const row of rows) {
         const message = await this.ports.message(String(row.message_id));
+        // A message trashed or purged after the queue read is omitted from the summary; any
+        // other unreadable source stays a block so a live source is never summarized blindly.
+        if (!message && !(await this.live(String(row.message_id)))) continue;
         if (!message || message.threadId !== threadId || !message.projectIds) {
           await this.block(
             threadId,
@@ -511,10 +647,28 @@ export class HostAssistantThreadSummaries {
             "source",
             "Some conversation sources cannot be verified. Restore or clear their source before updating the summary.",
           );
-          return;
+          return true;
         }
         messages.push(message);
         for (const id of message.projectIds) projects.add(id);
+      }
+      if (rows.length && !messages.length) {
+        // Every queued source was omitted: move past them instead of re-reading them each minute.
+        await this.store.transaction(async () => {
+          const current = await this.state(threadId);
+          if (current.epoch !== state.epoch || current.cursor !== state.cursor) return;
+          await this.writeState(threadId, {
+            ...current,
+            cursor: Number(rows.at(-1)!.sequence),
+            pending: false,
+            manual: false,
+            blocked: undefined,
+            retryAfter: undefined,
+            requests: [],
+            public: this.status("ready"),
+          });
+        }, "critical");
+        continue;
       }
       if (!messages.length && !previous) {
         await this.writeState(threadId, {
@@ -524,7 +678,7 @@ export class HostAssistantThreadSummaries {
           requests: [],
           public: this.status("ready"),
         });
-        return;
+        return true;
       }
       const allowed = async () => {
         for (const id of projects) {
@@ -544,7 +698,7 @@ export class HostAssistantThreadSummaries {
           "privacy",
           "A conversation source is hidden, locked or has no fresh owner privacy signal.",
         );
-        return;
+        return true;
       }
       const priorProofs = previous
         ? await this.sourceProofs(threadId, previous.proof.id)
@@ -556,7 +710,7 @@ export class HostAssistantThreadSummaries {
           "source",
           "The existing summary has no complete source identity proof. Clear or rebuild it explicitly.",
         );
-        return;
+        return true;
       }
       let sourceProofs:
         | {
@@ -569,7 +723,7 @@ export class HostAssistantThreadSummaries {
         sourceProofs = await this.ports.sourceProofs?.(messages, [...projects], priorProofs);
       } catch {
         await this.block(threadId, state, "privacy", "Conversation source access is unavailable.");
-        return;
+        return true;
       }
       const instructions = await this.ports.instructions(),
         previousText = previous?.text ?? "",
@@ -808,7 +962,8 @@ export class HostAssistantThreadSummaries {
           this.activeThread = undefined;
         }
       }
-      return;
+      return true;
     }
+    return false;
   }
 }

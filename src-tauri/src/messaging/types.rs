@@ -91,6 +91,16 @@ pub struct Message {
     pub attachments: Vec<Attachment>,
 }
 
+/// One page of a conversation, oldest first. `earlier` is the provider's opaque cursor to
+/// pass back as `before` for the page of older messages; absent when nothing older is left.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MessagePage {
+    pub messages: Vec<Message>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub earlier: Option<String>,
+}
+
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceStart {

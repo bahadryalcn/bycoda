@@ -58,6 +58,17 @@ vi.mock("../../../shared/ui/Popover", async () => ({
 }));
 
 import { ModelPicker, preloadModelPicker } from "./ModelPicker";
+const settingsReads = vi.hoisted(() => vi.fn());
+vi.mock("./modelStoreReaders", async (original) => {
+  const actual = await original<typeof import("./modelStoreReaders")>();
+  return {
+    ...actual,
+    menuSettingsAtRevision(...args: Parameters<typeof actual.menuSettingsAtRevision>) {
+      settingsReads();
+      return actual.menuSettingsAtRevision(...args);
+    },
+  };
+});
 import { renameProviderAccount, saveProviderAccount } from "../../providers/model/providerAccounts";
 import { resetDisabledModels, resetHarnessModelOverlays, setHarnessModels } from "../model/models";
 import { KEYBINDINGS, saveKeybindingOverride } from "../../settings/model/settings";
@@ -113,6 +124,14 @@ async function openPanel() {
   return panel()!;
 }
 
+it("derives model settings only when their panel is open", async () => {
+  settingsReads.mockClear();
+  await render({ harness: "codex", model: "gpt-5" });
+  expect(settingsReads).not.toHaveBeenCalled();
+  await openPanel();
+  expect(settingsReads).toHaveBeenCalled();
+});
+
 async function click(element: Element) {
   await act(async () => (element as HTMLElement).click());
 }
@@ -145,9 +164,11 @@ async function inputText(input: HTMLInputElement, value: string) {
 
 const listbox = () => panel()!.querySelector<HTMLElement>('[role="listbox"]')!;
 const providerTab = (label: string) =>
-  panel()!.querySelector<HTMLButtonElement>(
-    `[role="tablist"][aria-label="Providers"] [role="tab"][aria-label="${label}"]`,
-  )!;
+  [
+    ...panel()!.querySelectorAll<HTMLButtonElement>(
+      '[role="tablist"][aria-label="Providers"] [role="tab"]',
+    ),
+  ].find((tab) => tab.getAttribute("aria-label")?.split(" · ")[0] === label)!;
 
 /** A setting block, switching to the column tab that holds it when needed. */
 async function settingBlock(id: string) {
@@ -230,6 +251,21 @@ describe("model panel", () => {
     expect(panel()).toBeNull();
     expect(document.activeElement).toBe(trigger());
   });
+  it("leaves Escape to an open Access menu that has not taken focus yet", async () => {
+    await render({ harness: "claude", model: "claude:opus-5" });
+    await openPanel();
+    const menu = document.createElement("div");
+    menu.setAttribute("data-access-picker", "");
+    document.body.append(menu);
+    try {
+      await key(window, "Escape");
+      expect(panel()).not.toBeNull();
+    } finally {
+      menu.remove();
+    }
+    await key(window, "Escape");
+    expect(panel()).toBeNull();
+  });
   it("toggles the full panel with the registered shortcut and returns focus", async () => {
     const binding = KEYBINDINGS.find((row) => row.command === "App: Switch Model")!;
     expect(KEYBINDINGS.filter((row) => row.keys === binding.keys)).toHaveLength(1);
@@ -264,69 +300,95 @@ describe("model panel", () => {
     expect(document.activeElement).toBe(trigger());
   });
 
-  it.each([
-    ["subagentModel", "default", "subagentPolicy"],
-    ["autoCompact", "off", "autoCompactWindow"],
-  ])("locks %s dependent settings until their parent is enabled", async (parent, value, child) => {
-    setHarnessModels("cursor", [
-      {
-        id: "cursor:dependent",
+  it.each(["data-mcp-picker", "data-session-folder-picker"])(
+    "does not open over a focused composer %s",
+    async (attribute) => {
+      await render({ harness: "claude", model: "claude:opus-5", hotkeys: true });
+      const blocking = document.createElement("div");
+      blocking.setAttribute(attribute, "");
+      const search = document.createElement("input");
+      blocking.append(search);
+      document.body.append(blocking);
+      search.focus();
+      await act(async () => {
+        search.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: ">",
+            code: "Period",
+            ctrlKey: true,
+            shiftKey: true,
+            bubbles: true,
+          }),
+        );
+      });
+      expect(panel()).toBeNull();
+      blocking.remove();
+    },
+  );
+
+  it.each([["autoCompact", "off", "autoCompactWindow"]])(
+    "locks %s dependent settings until their parent is enabled",
+    async (parent, value, child) => {
+      setHarnessModels("cursor", [
+        {
+          id: "cursor:dependent",
+          harness: "cursor",
+          name: "Dependent",
+          nativeId: "dependent",
+          settings: [
+            {
+              id: parent,
+              label: "Parent",
+              kind: "select",
+              value,
+              options: [
+                { value, label: "Default" },
+                { value: "enabled", label: "Enabled" },
+              ],
+            },
+            {
+              id: child,
+              label: "Child",
+              kind: "select",
+              value: "default",
+              options: [
+                { value: "default", label: "Default" },
+                { value: "custom", label: "Custom" },
+              ],
+            },
+          ],
+        },
+      ]);
+      const onSettingsChange = vi.fn();
+      await render({
         harness: "cursor",
-        name: "Dependent",
-        nativeId: "dependent",
-        settings: [
-          {
-            id: parent,
-            label: "Parent",
-            kind: "select",
-            value,
-            options: [
-              { value, label: "Default" },
-              { value: "enabled", label: "Enabled" },
-            ],
-          },
-          {
-            id: child,
-            label: "Child",
-            kind: "select",
-            value: "default",
-            options: [
-              { value: "default", label: "Default" },
-              { value: "custom", label: "Custom" },
-            ],
-          },
-        ],
-      },
-    ]);
-    const onSettingsChange = vi.fn();
-    await render({
-      harness: "cursor",
-      model: "cursor:dependent",
-      onSettingsChange,
-    });
-    await openPanel();
-    const locked = optionByText(await settingBlock(child), "radio", "Custom");
-    expect(locked.disabled).toBe(true);
-    await click(locked);
-    expect(onSettingsChange).not.toHaveBeenCalled();
+        model: "cursor:dependent",
+        onSettingsChange,
+      });
+      await openPanel();
+      const locked = optionByText(await settingBlock(child), "radio", "Custom");
+      expect(locked.disabled).toBe(true);
+      await click(locked);
+      expect(onSettingsChange).not.toHaveBeenCalled();
 
-    await render({
-      harness: "cursor",
-      model: "cursor:dependent",
-      values: { [parent]: "enabled" },
-      onSettingsChange,
-    });
-    const custom = optionByText(await settingBlock(child), "radio", "Custom");
-    expect(custom.disabled).toBe(false);
-    await click(custom);
-    expect(onSettingsChange).toHaveBeenCalledWith({
-      [parent]: "enabled",
-      [child]: "custom",
-    });
-    expect(panel()).not.toBeNull();
-  });
+      await render({
+        harness: "cursor",
+        model: "cursor:dependent",
+        values: { [parent]: "enabled" },
+        onSettingsChange,
+      });
+      const custom = optionByText(await settingBlock(child), "radio", "Custom");
+      expect(custom.disabled).toBe(false);
+      await click(custom);
+      expect(onSettingsChange).toHaveBeenCalledWith({
+        [parent]: "enabled",
+        [child]: "custom",
+      });
+      expect(panel()).not.toBeNull();
+    },
+  );
 
-  it("lists a long short-choice such as the subagent policy inline, not behind a picker", async () => {
+  it("leaves out the subagent model and policy rows that Subagents replaces", async () => {
     setHarnessModels("cursor", [
       {
         id: "cursor:policy",
@@ -365,17 +427,8 @@ describe("model panel", () => {
       onSettingsChange,
     });
     await openPanel();
-    const block = await settingBlock("subagentPolicy");
-    expect(block.querySelector("[aria-haspopup]")).toBeNull();
-    expect(optionByText(block, "radio", "Agent's choice").getAttribute("aria-checked")).toBe(
-      "true",
-    );
-    expect(block.textContent).toContain("Subagent model policy");
-    await click(optionByText(block, "radio", "Override all"));
-    expect(onSettingsChange).toHaveBeenCalledWith({
-      subagentModel: "enabled",
-      subagentPolicy: "force",
-    });
+    await expect(settingBlock("subagentPolicy")).rejects.toThrow("No setting block");
+    expect(container.querySelector('[data-setting-id="subagentModel"]')).toBeNull();
   });
 
   it("focuses a visible model search after its first frame", async () => {
@@ -555,7 +608,7 @@ describe("model panel", () => {
     await click(providerTab("Favorites"));
     expect(
       [...listbox().querySelectorAll('[role="option"]')].map((option) =>
-        option.textContent?.trim().replace(/\s+(Cursor|OpenCode Go)$/, ", $1"),
+        option.getAttribute("aria-label"),
       ),
     ).toEqual(["Auto, Cursor", "Muse Spark 1.3, Cursor", "Muse Spark 1.3, OpenCode Go"]);
   });
@@ -617,6 +670,34 @@ describe("model panel", () => {
     expect(panel()).toBeNull();
     await openPanel();
     expect(providerTab("Grok Build").getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("keeps a typed search and provider while the pointer drifts over the provider rail", async () => {
+    await render({ harness: "grok", model: "grok:grok-4.6", values: { effort: "high" } });
+    await openPanel();
+    const search = container.querySelector<HTMLInputElement>('input[aria-label="Search models"]')!;
+    await inputText(search, "Grok");
+    const openCodeTab = providerTab("OpenCode");
+    await movePointer(openCodeTab);
+    expect(openCodeTab.getAttribute("aria-selected")).toBe("false");
+    expect(providerTab("Grok Build").getAttribute("aria-selected")).toBe("true");
+    expect(search.value).toBe("Grok");
+
+    // A deliberate click still switches providers and starts that list fresh.
+    await click(openCodeTab);
+    expect(openCodeTab.getAttribute("aria-selected")).toBe("true");
+    expect(search.value).toBe("");
+  });
+
+  it("previews a provider on hover again once the search is empty", async () => {
+    await render({ harness: "grok", model: "grok:grok-4.6", values: { effort: "high" } });
+    await openPanel();
+    const search = container.querySelector<HTMLInputElement>('input[aria-label="Search models"]')!;
+    await inputText(search, "Grok");
+    await inputText(search, "");
+    const openCodeTab = providerTab("OpenCode");
+    await movePointer(openCodeTab);
+    expect(openCodeTab.getAttribute("aria-selected")).toBe("true");
   });
 });
 
@@ -779,7 +860,8 @@ describe("model panel settings column", () => {
     await click(tabs[1]);
     expect(columnLabels()).toEqual(["Advisor", "Image models", "Subagents", "Subagent max effort"]);
     const rows = [...container.querySelectorAll("[data-model-settings] [data-setting-id]")];
-    expect(new Set(rows.map((row) => row.parentElement)).size).toBe(1);
+    // Every row is wrapped by its reason hint, so the shared list is the scroller they sit in.
+    expect(new Set(rows.map((row) => row.closest(".overflow-y-auto"))).size).toBe(1);
   });
 
   it("toggles Fast with its switch and shows it in the trigger", async () => {
@@ -891,7 +973,7 @@ describe("model panel settings column", () => {
     expect(block.firstElementChild?.textContent).toContain("high");
   });
 
-  it("offers only the effort levels the subagent models support and preserves manual choice", async () => {
+  it("offers only the effort levels the subagent models support behind an Automatic switch", async () => {
     const change = vi.fn();
     await openOrdered({ crossSubagentMaxEffort: "high" }, change);
     let block = await settingBlock("crossSubagentMaxEffort");
@@ -910,16 +992,20 @@ describe("model panel settings column", () => {
     });
     block = await settingBlock("crossSubagentMaxEffort");
     expect(automatic().getAttribute("aria-checked")).toBe("true");
-    expect(block.textContent).toContain("No limit");
+    expect(block.querySelector("[data-automatic]")).not.toBeNull();
     expect(block.querySelector('[role="radio"][aria-checked="true"]')).toBeNull();
+    // Leaving Automatic starts in the middle of the offered ceilings.
     await click(automatic());
-    expect(change).toHaveBeenLastCalledWith({ crossSubagentMaxEffort: "high" });
+    expect(change).toHaveBeenLastCalledWith({ crossSubagentMaxEffort: "medium" });
+    // A bar while Automatic is on sets that ceiling directly.
+    await click(block.querySelectorAll<HTMLButtonElement>('[role="radio"]')[3]);
+    expect(change).toHaveBeenLastCalledWith({ crossSubagentMaxEffort: "xhigh" });
   });
 
   it("explains the hovered setting in the help strip", async () => {
     await openOrdered({});
     const help = () => container.querySelector("[data-model-setting-help]")!.textContent;
-    expect(help()).toContain("Help");
+    expect(help()).not.toContain("Help");
     await act(async () => {
       container
         .querySelector('[data-setting-id="fast"] [role="switch"]')!
@@ -928,10 +1014,17 @@ describe("model panel settings column", () => {
     expect(help()).toContain("Same model, faster output");
   });
 
+  it("shows a single labelled help control and no placeholder text when no setting is pointed at", async () => {
+    await openOrdered({});
+    const footer = container.querySelector("[data-model-setting-help]")!;
+    expect(footer.textContent).not.toContain("Help");
+    expect(footer.querySelectorAll('button[aria-label="Model settings"]')).toHaveLength(1);
+  });
+
   it("opens complete settings help without hovering and retains it when focus moves into help", async () => {
     await openOrdered({});
     const footer = container.querySelector("[data-model-setting-help]")!;
-    const help = footer.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!;
+    const help = footer.querySelector<HTMLButtonElement>('button[aria-label="Model settings"]')!;
     expect(help).not.toBeNull();
     await act(async () => help.focus());
     await click(help);
@@ -956,6 +1049,102 @@ describe("model panel settings column", () => {
     await act(async () => trigger().click());
     await act(async () => trigger().click());
     expect(panel()!.dataset.side).toBe("bottom");
+  });
+
+  describe("field trigger badges", () => {
+    const badge = (name: string) => trigger().querySelector<HTMLElement>(`[${name}]`);
+    const renderField = (values: Record<string, string>, extra: Partial<PickerProps> = {}) =>
+      render({
+        harness: "cursor",
+        model: "cursor:ordered",
+        values,
+        presentation: "field",
+        showEffortSummary: true,
+        ...extra,
+      });
+
+    it("names effort and tells Fast on from Fast off", async () => {
+      await openOrdered({});
+      await act(async () => trigger().click());
+      await renderField({});
+      expect(badge("data-model-effort")?.getAttribute("aria-label")).toBe("Effort: low");
+      expect(badge("data-model-fast")).toBeNull();
+      await renderField({ fast: "true", effort: "high" });
+      expect(badge("data-model-fast")?.getAttribute("data-model-fast")).toBe("on");
+      expect(badge("data-model-fast")?.getAttribute("aria-label")).toBe("Fast on");
+      expect(badge("data-model-effort")?.textContent).toBe("high");
+      expect(trigger().getAttribute("aria-label")).toContain("Fast");
+    });
+
+    it("shows no Fast badge for a model without Fast and keeps the inline trigger unchanged", async () => {
+      setHarnessModels("cursor", [
+        {
+          id: "cursor:ordered",
+          harness: "cursor",
+          name: "Ordered",
+          nativeId: "ordered",
+          settings: [sel("effort", "Reasoning", "low", ["low", "high"])],
+        },
+      ]);
+      await renderField({});
+      expect(badge("data-model-effort")).not.toBeNull();
+      expect(badge("data-model-fast")).toBeNull();
+      await render({ harness: "cursor", model: "cursor:ordered", showEffortSummary: true });
+      expect(badge("data-model-effort")?.hasAttribute("role")).toBe(false);
+    });
+
+    it("lists only settings that differ from the model default", async () => {
+      await openOrdered({});
+      await act(async () => trigger().click());
+      await renderField({});
+      expect(trigger().querySelector("[data-model-extra]")).toBeNull();
+      await renderField({ autoCompactWindow: "400k" });
+      expect(badge("data-model-extra")?.getAttribute("aria-label")).toBe(
+        "Auto-compact window: 400k",
+      );
+    });
+
+    it("names the account without accountChoices", async () => {
+      saveProviderAccount({ id: "account-work", provider: "claude", label: "work" });
+      setHarnessModels("claude", [
+        { id: "claude:opus-5.5", harness: "claude", name: "Opus 5.5", nativeId: "opus-5.5" },
+      ]);
+      await render({
+        harness: "claude",
+        model: "claude:opus-5.5",
+        presentation: "field",
+        accountId: "account-work",
+      });
+      expect(badge("data-model-account")?.getAttribute("aria-label")).toBe("Account: work");
+      expect(trigger().getAttribute("aria-label")).toContain("Account: work");
+      await render({
+        harness: "claude",
+        model: "claude:opus-5.5",
+        presentation: "field",
+        accountId: "account-gone",
+      });
+      expect(badge("data-model-account")?.textContent).toBe("Removed account");
+    });
+  });
+
+  it("removes the Agents tab and its settings with hideAgentSettings", async () => {
+    await openOrdered({});
+    expect(
+      [...container.querySelectorAll('[data-model-settings] [role="tab"]')].map(
+        (tab) => tab.textContent,
+      ),
+    ).toEqual(["Settings", "Agents"]);
+    await act(async () => trigger().click());
+    await render({
+      harness: "cursor",
+      model: "cursor:ordered",
+      showEffortSummary: true,
+      hideAgentSettings: true,
+    });
+    await openPanel();
+    expect(container.querySelector('[data-model-settings] [role="tab"]')).toBeNull();
+    expect(container.querySelector('[data-setting-id="advisor"]')).toBeNull();
+    expect(container.querySelector('[data-setting-id="effort"]')).not.toBeNull();
   });
 
   it("offers a labelled inherit choice that maps to the owner's empty value", async () => {
@@ -1049,17 +1238,19 @@ describe("model panel accounts", () => {
   const accountRows = () => [
     ...accountList()!.querySelectorAll<HTMLButtonElement>('[role="radiogroup"] [role="radio"]'),
   ];
-  const accountLabel = (row: Element) => row.querySelector("span > span")?.textContent;
+  const accountLabel = (row: Element) =>
+    row.querySelector("[data-model-account-name]")?.textContent;
   const accountRow = (label: string) => accountRows().find((row) => accountLabel(row) === label)!;
 
-  it("names a lone account without a switch or menu", async () => {
+  it("hides a lone account without hiding its models", async () => {
     await openClaude();
-    expect(panel()!.querySelector("[data-model-account-label]")).not.toBeNull();
+    expect(panel()!.querySelector("[data-model-account-label]")).toBeNull();
+    expect(listbox()).not.toBeNull();
     expect(accountSwitch()).toBeNull();
     expect(accountMenu()).toBeNull();
   });
 
-  it("switches between two accounts in one click and lists each model once", async () => {
+  it("collapses two accounts behind the account control and lists each model once", async () => {
     addClaudeAccounts(["work"]);
     const onChange = vi.fn();
     await openClaude(onChange);
@@ -1068,11 +1259,16 @@ describe("model panel accounts", () => {
         option.textContent?.trim(),
       ),
     ).toEqual(["Opus 5.5", "Sonnet 5"]);
-    const radios = [...accountSwitch()!.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
-    expect(radios.map((radio) => radio.textContent?.trim())).toEqual(["personal", "work"]);
+    expect(accountList()).toBeNull();
+    await click(accountMenu()!);
+    const radios = accountRows();
+    expect(
+      radios.map((radio) => radio.querySelector("[data-model-account-number]")?.textContent),
+    ).toEqual(["1", "2"]);
     expect(radios[0].getAttribute("aria-checked")).toBe("true");
     await click(radios[1]);
     expect(onChange).toHaveBeenCalledExactlyOnceWith("claude", "claude:opus-5.5", "account-work");
+    expect(accountList()).toBeNull();
     expect(panel()).not.toBeNull();
   });
 
@@ -1084,7 +1280,7 @@ describe("model panel accounts", () => {
     await click(accountMenu()!);
     expect(accountMenu()!.getAttribute("aria-expanded")).toBe("true");
     expect(accountList()).not.toBeNull();
-    expect(panel()!.querySelector('[role="listbox"]')).toBeNull();
+    expect(panel()!.querySelector('[role="listbox"]')).not.toBeNull();
     expect(accountSearch()).toBeNull();
     expect(accountRows().map(accountLabel)).toEqual(["personal", "work", "lab"]);
     await click(accountRow("lab"));
@@ -1119,7 +1315,8 @@ describe("model panel accounts", () => {
     const onChange = vi.fn();
     await openClaude(onChange);
     await click(providerTab("Codex"));
-    await click(optionByText(accountSwitch()!, "radio", "team"));
+    await click(accountMenu()!);
+    await click(accountRows().find((radio) => radio.textContent?.includes("team"))!);
     // Another provider's account waits for the model picked there.
     expect(onChange).not.toHaveBeenCalled();
     await click(optionByText(listbox(), "option", "GPT 6"));

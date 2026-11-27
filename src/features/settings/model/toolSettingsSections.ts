@@ -42,7 +42,6 @@ export function toolSettingsTabForAnchor(anchor: string | null): ToolSettingsTab
   if (anchor?.startsWith("device-")) return "devices";
   if (anchor?.startsWith("logs-")) return "logs";
   if (anchor?.startsWith("servers-")) return "devServers";
-  if (anchor?.startsWith("bykit-")) return "bykit";
   return null;
 }
 
@@ -112,6 +111,30 @@ export const TOOL_SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "browser scale fit",
   },
   {
+    id: "device-enabled",
+    section: "tools",
+    get label() {
+      return t("Use devices");
+    },
+    keywords: "devices panel simulator emulator hub enable disable",
+  },
+  {
+    id: "device-agent-access",
+    section: "tools",
+    get label() {
+      return t("Agents can use devices");
+    },
+    keywords: "devices agents agent-device simulator emulator permission access",
+  },
+  {
+    id: "device-sources",
+    section: "tools",
+    get label() {
+      return t("Device sources");
+    },
+    keywords: "devices machines computers remote mac ssh host simulator emulator test connection",
+  },
+  {
     id: "device-auto-live",
     section: "tools",
     get label() {
@@ -169,7 +192,7 @@ export const TOOL_SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "bykit-instructions",
-    section: "tools",
+    section: "providers",
     get label() {
       return t("Tell agents to use bykit");
     },

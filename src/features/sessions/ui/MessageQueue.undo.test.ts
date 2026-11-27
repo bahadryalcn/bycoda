@@ -64,6 +64,52 @@ it("removes once without confirmation and keeps Undo after the last row disappea
   expect(container.querySelector("[data-queue-removal]")).toBeNull();
 });
 
+it("keeps a rejected queue edit open until the queue accepts a retry", async () => {
+  const attachments = [
+    {
+      id: "a",
+      name: "shot.png",
+      mimeType: "image/png",
+      kind: "image" as const,
+      size: 1,
+      data: "AA==",
+    },
+  ];
+  const onEdit = vi.fn().mockReturnValueOnce(false).mockReturnValue(true);
+  await act(async () =>
+    root.render(
+      createElement(MessageQueue, {
+        messages: [{ id: "q1", text: "saved [image1]", attachments }],
+        canAttach: true,
+        onEdit,
+      }),
+    ),
+  );
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Edit queued message"]')!.click(),
+  );
+  const field = document.body.querySelector("textarea")!;
+  const save = () =>
+    [...document.body.querySelectorAll("button")].find((b) => b.textContent === "Save")!;
+  await act(async () => {
+    field.value = "edited [image1]";
+    field.setSelectionRange(field.value.length, field.value.length);
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => save().click());
+  expect(document.body.querySelector("textarea")).toBe(field);
+  expect(field.value).toBe("edited [image1]");
+  expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not save changes.",
+  );
+  await act(async () => save().click());
+  expect(onEdit.mock.calls).toEqual([
+    ["q1", "edited [image1]", attachments],
+    ["q1", "edited [image1]", attachments],
+  ]);
+  expect(document.body.querySelector("textarea")).toBeNull();
+});
+
 it("disposes retained removal recovery when the queue unmounts", async () => {
   const dispose = vi.fn();
   await act(async () =>

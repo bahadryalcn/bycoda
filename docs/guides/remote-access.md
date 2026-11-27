@@ -1,12 +1,35 @@
 # Remote access (experimental)
 
+## Manage device access
+
+Open **Settings → Connections → Devices** and find the computer whose access
+you want to manage. **Manage devices** lets another paired device grant or remove
+device management and revoke access on that computer. New pairings start with
+standard access. Creating a pairing ticket and using it require the issuer to
+have management access. The computer's own local desktop retains management access.
+
+The list focuses on paired access. A Host's built-in desktop credential is hidden.
+Older remote local sync credentials may appear as **Local sync** when their Host
+still lists them as ordinary pairings.
+
+For recovery, enable **Manage this computer from my account** on each computer
+you want to manage, while signed in to your bycoda account. Then sign in at
+[account.bycoda.codes](https://account.bycoda.codes/) and open **Devices →
+Computer access**. The portal shows the latest synchronized device list. A
+permission change or revocation queues while the target computer cannot sync
+and takes effect when bycoda is open and signed in there.
+
 ## Work from both computers
 
-Before installing an app update, the interruption confirmation lists saved machines,
-their freshly checked running-session counts and which computer restarts. Local
-and SSH Host updates use the same preview for their selected Host. Alternate routes
-to one environment count once. Unavailable or incomplete activity is shown as
-unknown, never idle. Counts refresh while the confirmation remains open.
+Before an app update, the confirmation lists machines with running sessions
+and shows which machine restarts. A Host update checks only the selected Host.
+On this computer, the app reads the running session count directly from the local Host.
+Desktop activity appears immediately,
+and each Host's count appears as its check completes. Alternate routes to one
+environment count once. If the selected Host's activity cannot be checked, its
+update confirmation warns that work could be interrupted. Counts refresh while
+the confirmation stays open. The app checks for releases every five minutes while
+the update feed is reachable and backs off after failures.
 
 An app update installs only on this computer. Desktop-owned or legacy work may
 stop; Host-owned work continues while its Host remains running. A Host update
@@ -31,9 +54,10 @@ does not prove reconnection succeeded. Host discovery and desktop heartbeats do
 not wait indefinitely for optional Tailscale route or push-subscription lookups.
 An interrupted HTTP read retries once within its original deadline when the
 shared contract explicitly marks it as a safe query. Writes and unknown methods
-are never replayed by this recovery. Old consumed buffer reports check the Host's
-receipt before sending a cleanup acknowledgement; missing receipts remain held
-locally for recovery instead of repeatedly sending an unprovable acknowledgement.
+are never replayed by this recovery.
+When both ends support separate admission for native service deliveries, the
+desktop checks the original receipt for the final result. A delivery that expires
+before admission leaves no receipt and cannot start later from the Host queue.
 Queued turns retain file history under their original message IDs, including
 Host-generated queue IDs, so their file review and revert remain available.
 Host discovery waits at most 250 ms for optional Tailscale routes. A slow lookup
@@ -54,18 +78,62 @@ migration of existing conversations or installed a new Windows application.
 
 bycoda can run Claude Code, Codex, Cursor, Grok Build, OpenCode, Pi, OMP, fx, Hermes Agent, and Antigravity sessions on a separate Windows, Linux, or macOS host. The host owns the provider processes and session database. Closing the desktop, closing a session tab, or losing the SSH tunnel does not stop a host session.
 
-A folder on a connected machine is a project in the rail, marked with a globe. Every session in it runs on that machine, in the same session view and composer as a local session. The Sessions sidebar lists that machine's sessions for the project.
+A folder on a connected machine is a project in the rail, marked with a server icon. Every session in it runs on that machine, in the same session view and composer as a local session. The Sessions sidebar lists that machine's sessions for the project.
 
 When a continued Codex conversation is archived in Codex, sending a follow-up asks the owning provider to restore that same thread before starting the turn. Opening history alone does not restore it. If restoration or identity verification fails, the follow-up fails rather than silently starting an empty thread. Check the owning machine and account before retrying.
 
 ## Free access outside your network
 
-In **Settings → Connections → External tunnels**, enable **Access from outside
-the network (Cloudflare Quick Tunnel)** for the selected Host. It is off by default.
+In **Settings → Connections → Sharing**, choose **Create link**, select the computer,
+then choose **bycoda host** and **Cloudflare**. Select **Start sharing** to open the
+tunnel. Check **Restart tunnel automatically** before starting if you want the Host
+to keep the tunnel available. The option is off by default.
 No Cloudflare account, token or paid service is needed. bycoda uses an installed
 cloudflared or downloads a pinned, checksum-verified copy into its private data
 directory. The URL changes whenever the tunnel starts. The Host starts it again
-after restart or verified unexpected exit. Stopping the tunnel disables this setting.
+after restart or verified unexpected exit if you enabled the option. Use **Stop tunnel**
+on the shared link or **Stop automatic Host access** in the Cloudflare Host form to
+stop automatic access.
+
+### Private and public paths
+
+Settings → Connections → Devices separates the two kinds of phone path. **Private — only
+your devices** holds **Local network** and **Tailscale (private)**: the encrypted phone
+listener answers only on your network or Tailscale address, never from the internet.
+**Public internet** covers the Cloudflare, ngrok and **Tailscale Funnel (public)** tunnels
+started under Sharing. Anyone on the internet can reach a public address; only a device
+credential protects it. Tailscale (private) and Tailscale Funnel are different options.
+
+**Tailscale Funnel (public)** is a Host-only provider. It runs
+`tailscale funnel --https=<port> <tunnel ingress>` in the foreground, so stopping the
+tunnel removes the funnel. It picks the first free port of 443, 8443 and 10000 and never
+changes your existing Serve or Funnel configuration. If Funnel is not enabled for your
+tailnet, the row reports it and **Open approval page** opens the Tailscale admin page;
+start the tunnel again afterwards.
+
+Phones do not use public paths unless you turn on **Allow phones over the public
+internet** (off by default; turning it on asks first). While it is on, the Host accepts
+phones on its public tunnels and offers live public Host tunnel addresses as the last
+route, after the local network and Tailscale. Turning it off refuses phones on new
+requests and connections again.
+
+### Device keys
+
+Every computer or phone paired with a Host is bound to its own Ed25519 key, and every
+request and WebSocket upgrade carries a short-lived signed proof. A stolen device token alone
+is useless. This desktop generates the key when it pairs (pairing codes, account-approved
+pairing, SSH setup and the automatic link to this computer's Host), keeps its 32-byte seed
+sealed in the saved connection beside the token, and replaces or removes it together with
+the token. A computer paired before keys existed is bound the next time it connects over a
+private route. A Host that answers with a refused proof on a public tunnel shows **Re-pair
+this computer over a private connection** on that machine. The automatic link to this
+computer's Host is re-paired once per launch when the Host reports its credential as not
+this computer's own or without a key.
+
+A running tunnel keeps its URL through isolated origin errors, such as the Host
+restarting, and through a single lost connection; it is retired and reported as a
+connection failure only when every connection stays down for 30 seconds or the
+provider reports none left.
 
 With account computer discovery enabled and the desktop signed in, URL changes
 are published within the next five-second check. Paired desktop clients re-fetch
@@ -73,23 +141,33 @@ account routes during reconnect and require a nonce-based HMAC-SHA256 possession
 proof before sending their saved credential. The proof uses the device credential's
 SHA-256 hash, stays bound to the expected environment and a Host-owned published
 origin, and never discloses the credential or its hash. Public environment identity
-alone does not authenticate a Host. Account listing permission remains required.
+alone does not authenticate a Host. A completed proof is reused for 60 seconds, only
+for the same route, machine and credential. It ends early when the route fails or is
+retired, and a proof that has to be repeated counts against the call's own timeout.
+Account listing permission remains required.
 Pairing and device permissions still apply. A headless Host does not run the
 desktop account publisher. Quick Tunnels have no uptime guarantee and do not
 support SSE; HTTP RPC remains the fallback transport.
 
-**Settings → Connections** lists **Machines found** above the saved machines. It
-combines computers signed in to your account, Tailscale devices and SSH config
-aliases, each with its OS, online state and sources; **Refresh machines** reloads
-it. Choose **Add** to connect one. A machine with an SSH address is set up as in
-the SSH section below, without a form. Manual entry stays under **Advanced: add
-manually**, collapsed by default.
+**Settings → Connections → Computers** lists your saved computers. **Add a computer**
+opens a dialog: **Found** combines computers signed in to your account, Tailscale
+devices, SSH config aliases and known hosts, each with its sources and online state,
+with a search by name or address. The same computer found by several sources is one
+row: an account computer joins the SSH entry on its Tailscale or home-network address.
+Saved computers are hidden from **Found**. If a saved SSH computer changes its address,
+discovery can also recognize it when both addresses have the same public host key in
+your SSH known hosts file.
+Choose **Add** to connect one. A machine with an
+SSH address is set up as in the SSH section below, without a form; for an account
+computer, setup stops if that address answers as a different computer. Its progress and
+any host key or password prompt show on the Computers tab. **Enter address** holds
+the SSH and Host URL form.
 
 Each saved machine row shows its status and a route count; **N routes ›** opens
 its addresses. The row's switch turns that machine's connection on or off.
 
 A computer that only the account knows (no SSH address) is added with one click
-from Machines found. The requesting desktop sends an end-to-end
+from **Add a computer → Found**. The requesting desktop sends an end-to-end
 encrypted request through the account; the other computer shows the requester's name,
 platform and a six-digit code to compare, with Allow and Deny. On Allow, that computer
 issues a device credential, seals it to the requester's one-time key and the account
@@ -105,7 +183,9 @@ outcome is never replayed on another route. Closing the pairing dialog cancels
 pending setup and status waits before a ticket can be redeemed.
 Plain HTTP is used only for loopback. The other computer must be signed in with the same
 account, online, and have "Let my signed-in phones find this computer" on; pairing needs
-its phone access (Tailscale or local network) to be set up once.
+an HTTPS route there (a tunnel). Tunnels are for other computers; phones use one only when public phone access is allowed. The home-network phone route is not
+used between desktops: without an HTTPS route or an SSH address, **Add** stays off and its
+info icon says so.
 
 ## Create a Host conversation on this computer
 
@@ -208,7 +288,7 @@ capacity is full, new operations wait while the retained input stays available.
 When inserting several images, a later failure preserves references to images
 already saved so their outcome can be checked before another attempt.
 
-For a local project, open its project menu and choose **New conversation on this
+For a local project, open its project menu and choose **New session on this
 computer's Host**. bycoda connects to this computer's Host before opening the new
 conversation. Send the first message to create it there. The project and selected
 worktree remain on this computer, while the Host owns execution and transcript
@@ -250,8 +330,20 @@ SSH forwarding rules show **Stopping** while a stop is in progress. If the local
 process exit cannot be confirmed, the rule shows **Status unknown** and offers
 **Retry stop** before it can be started or removed again.
 
+A forward you started that loses its SSH process, for example after Wi-Fi drops or
+the computer sleeps, shows **Reconnecting…** and is restarted without a prompt: after
+2 seconds, then waiting about twice as long each time up to 5 minutes, and at once
+when the network returns or the window regains focus. After 12 attempts in a row that
+did not hold for 30 seconds it shows **Failed**. A restart uses the saved connection
+and the same host-key and sign-in checks as **Start**. A changed host key, a
+rejected key, an edited connection, or a route that needs a new proxy approval stops
+it at **Failed** instead, and you start it again. **Stop** ends the rule for good;
+it is never restarted afterwards.
+
 When a Host connection is blocked, the conversation shows one connection recovery
-notice. Use **Reconnect** there to verify the saved machine and open a fresh
+notice above the message box; a machine whose project is not open shows none.
+While a machine is off and you are not working in it, it is checked only every
+few minutes; opening its project checks it at once. Use **Reconnect** there to verify the saved machine and open a fresh
 connection. The conversation, queue and workspace reload after recovery; a failed
 queue read continues to hold sending. Reconnecting never resends a message whose
 delivery is uncertain. Authentication or machine identity failures may require
@@ -311,6 +403,16 @@ when that machine changes them. Your own actions do not produce a notice on your
 own screen. Deleting many conversations from a remote PC sends the deletions
 together, and both sides report the result.
 
+## Catching up a conversation on this computer
+
+When another device continues a conversation through this computer's Host, the
+desktop catches up automatically. You can read the conversation while the latest
+messages arrive. Reopening a long conversation loads the older local pages needed
+to compare its history and bring in new Host messages. If the desktop cannot finish syncing, **Sync conversation**
+retries the read. If both copies changed, the desktop asks which version to keep.
+When a turn starts on this desktop, the working indicator takes over from the automatic sync spinner.
+Syncing preserves your draft and queued messages and does not resend a turn.
+
 ## Connect through SSH
 
 ### Servers catalog and terminal tabs
@@ -324,16 +426,19 @@ beside the catalog; **Recently used first** changes order without filtering entr
 
 Group shortcuts above the catalog narrow the existing search without clearing it.
 User-selected server colors appear on the identity tile, separately
-from the Host connection status. Selecting an entry opens a right-hand details sheet
-and reserves its own space, so the catalog reflows and other servers remain selectable.
+from the Host connection status. Selecting an entry opens its details beside the
+catalog, so other servers remain selectable.
 On narrow panes the details sit below the catalog. Escape closes details from anywhere
 in Servers and returns focus to the selected entry; an open menu closes first.
-List rows adapt to the catalog's remaining width. Detail tool tabs scroll horizontally
-when space is limited, keeping their full labels and keyboard navigation.
-Its header stays visible; connection actions and tool
-tabs stay together while scrolling. Switching tool tabs preserves unfinished drafts.
+List rows adapt to the catalog's remaining width. Detail tool tabs wrap when space
+is limited, keeping their full labels and keyboard navigation. The header stays
+visible. Connection actions and tabs stay together while scrolling. Switching
+tabs preserves unfinished drafts. Long SSH key paths wrap below the key chooser.
 SSH settings, server editing, Termius import and SFTP open in side sheets with their
 existing explicit save, import, connection and transfer approvals.
+Opening the SFTP sheet lists the server's home directory automatically; the remote
+directory field navigates on Enter and a refresh button reloads it. Downloads, uploads
+and recovery actions still ask for their own approval.
 Server names are optional; an empty name uses the SSH address. Refreshing SSH keys
 preserves the selected path, while a failed refresh clears outdated key metadata.
 Known-host searches show an empty-result message with a reset action.
@@ -343,11 +448,37 @@ The existing terminal close policy asks before closing foreground work or a term
 whose process status cannot be determined. Closing the active tab selects a surviving
 neighbor. Opening, running, failed and exited labels describe the terminal lifecycle;
 an opened terminal does not by itself verify remote SSH authentication.
+For a paired Host, **Connect via SSH** starts the machine's login shell. A
+custom shell integration can be selected from the terminal's tools. A Host's
+**Connected** badge reflects the Host service connection.
 
 While a terminal is open, **Saved SSH tabs** holds the restore preference and pending
 entries. Only saved connections can be remembered. Restoring an entry requires
 **Connect**, opens a new shell and does not replay previous commands. Exact endpoint
 and identity-file details remain available from the terminal's connection information.
+
+**Ask AI** asks which project should own the conversation and opens it beside
+the terminal. Drag the divider or use its arrow keys to resize the pane.
+Select terminal text and choose **Send to agent** to add the excerpt to the
+draft, or **Send to Host** to submit it immediately through that conversation. The
+manual shell stays private. The conversation can request commands on the saved
+server. Running commands appear inline in the standard session transcript.
+Expand a command row to inspect its live output.
+Temporary connections support chat and selected excerpts. Save the connection
+to let the conversation request an SSH command on it.
+
+Type `@srv:` or `@server:` in the desktop composer to find a saved SSH server by
+name or ID. A server reference identifies the target and grants no permission.
+In a remote conversation, type the saved server ID after the prefix. The agent
+resolves it through the owning Host's available server tools.
+
+The terminal header keeps Find and the terminal actions menu in view. For a
+saved server, **Save command** opens the command editor from the header or a
+single-line terminal selection. Leave the name blank to use the command as its
+label. If the same command already exists for that server, the terminal shows
+**Command already saved.** Use
+**Saved commands** in the terminal actions menu to edit or copy saved entries.
+Inserting a saved command requires a verified empty prompt with shell integration.
 
 Agents use `servers.ssh.execute` to request a command on a saved SSH target.
 The connected desktop asks for approval inside bycoda of the exact target and command unless
@@ -380,19 +511,39 @@ Prerequisites:
 
 SSH host verification and password/passphrase prompts appear in Settings. Changed host keys are rejected by OpenSSH. Passwords/passphrases are used only for the current authentication, not saved. When key/agent authentication is available, opening the remote view restores a lost tunnel automatically. If SSH needs another prompt, use **Reconnect** in Settings. Reconnecting uses the saved device credential and checks the host's identity.
 
-A machine can be reached at more than one address, for example its Tailscale address and its home-network address. Besides the address you saved and its optional other address, a connected host reports its own home-network and Tailscale IPv4 addresses, and the desktop remembers them for that machine. Each connection checks all of these addresses at once and uses the saved address when it answers, otherwise the first one that does. So a Mac saved under its Tailscale address still connects over the home network while Tailscale is signed out. A remembered address is only a hint: it must present the saved address's SSH host key and answer as the same host, so another computer that takes over that address later is never used. Saved addresses never change, and each new report from the host replaces the addresses it reported before. When a connection had to use a later address, the desktop checks the preferred ones every minute and moves to the best one that signs in completely; requests in progress then continue over the new connection. An address that stays silent or fails is checked less often, up to every 30 minutes. **Connections** settings lists every address under **Addresses**, in the order a connection tries them: the SSH address, the other address and the ones the host found. Each row shows its kind (home network or Tailscale), whether its SSH port responds right now, and which one is in use. The SSH and other address are always tried; change them with **Edit name and address…**. An address the host found can be turned off, for example one on a VPN or virtual adapter that this computer cannot reach; it is then never tried, and a connection already using it moves to another address within a minute. Turning an address on or off never reorders the list. **Try first** chooses whether the SSH address, home-network addresses or Tailscale addresses are tried first. These choices are kept when the host reports its addresses again. Hosts do not report addresses on adapters named as virtual (Hyper-V, WSL, Docker, VPN).
+In **Settings → Connections → Computers**, open a computer's actions and choose
+**Edit name and address…**. A name change saves immediately. Address or port
+changes use **Save and reconnect** and show connection progress on the Computers tab.
+
+A machine can be reached at more than one address, for example its Tailscale address and its home-network address. Besides the address you saved and its optional other address, a connected host reports its own home-network and Tailscale IPv4 addresses, and the desktop remembers them for that machine. Each connection checks all of these addresses at once and uses the saved address when it answers, otherwise the first one that does. So a Mac saved under its Tailscale address still connects over the home network while Tailscale is signed out. A remembered address is only a hint: it must present the saved address's SSH host key and answer as the same host, so another computer that takes over that address later is never used. Saved addresses never change, and each new report from the host replaces the addresses it reported before. When a connection had to use a later address, the desktop checks the preferred ones every minute and moves to the best one that signs in completely; requests in progress then continue over the new connection. An address that stays silent or fails is checked less often, up to every 30 minutes. **Connections** settings lists every address under **Addresses**, in the order a connection tries them: the SSH address, the other address and the ones the host found. Each row shows its kind (home network or Tailscale), whether its SSH port responds right now, and which one is in use. The SSH and other address are always available as candidates; change them with **Edit name and address…**. An address the host found can be turned off, for example one on a VPN or virtual adapter that this computer cannot reach; it is then never tried, and a connection already using it moves to another address within a minute. Turning an address on or off never reorders the list. **Try first** chooses whether the SSH address, home-network addresses or Tailscale addresses are tried first. These choices are kept when the host reports its addresses again. Hosts do not report addresses on adapters named as virtual (Hyper-V, WSL, Docker, VPN).
 
 While a machine is off or out of reach, bycoda checks it again in the background, waiting about twice as long each time, from 2 seconds up to 5 minutes, and at once when the window regains focus or the network returns. A connection that drops again within 30 seconds keeps the longer wait. Nothing is checked while the computer is offline, and checks stop after the window has been hidden for 10 minutes. They stay quiet: the **Reconnect** button and the project row show progress only for a reconnect you start. Turn off **Automatically reconnect to remote machines** to stop them.
+
+While a project's machine cannot be asked, its Files and Changes panes, and its session list when the machine is not added, paired or turned on here, show one notice instead of loading: the machine is not added on this computer, it no longer accepts this computer's pairing (pair again), it needs you to sign in, it is turned off here, or it is not answering (bycoda waits for it). A machine that is only not answering keeps what a pane already loaded, dimmed under a reconnect notice, and the notice replaces a pane only when it has nothing loaded yet. **Manage connections** opens Connections settings. These panes start no reads or background checks meanwhile and load again on their own once the machine is available. A machine whose state is not known yet is still asked once.
 
 The forward binds to a temporary port on the laptop's loopback interface. Quitting the desktop closes only that forward. It does not stop the host service or its agent sessions.
 
 **Remove** in Settings asks for confirmation and offers two choices. **Remove from this desktop only** deletes the saved connection and closes its forward. The host keeps running, and this desktop's device credential stays valid on it. **Revoke access and remove** first asks the host to revoke the credential this desktop is using, then removes the connection. It needs the machine to be reachable, and if revocation fails the connection is kept. Neither option stops the host, affects other desktops' credentials, or deletes sessions. Adding the same machine again reconnects its projects, tabs, and history.
+
+Restoring a saved SSH tunnel shares one 20-second budget across address checks and
+connection attempts. Other requests to that machine report that reconnect is in
+progress. If every address is silent, SSH still tries the preferred address.
 
 ## Start a session
 
 1. In the project rail, click **+** next to Projects and choose **Open folder on a machine…**.
 2. Choose the machine, browse to an existing checkout (or type its absolute path, such as `/home/me/code/my-app`), and click **Open**.
 3. Send a message. The first message creates the session on the host with the model, reasoning effort, and permission mode shown in the composer.
+
+If the folder list fails to load, use **Retry loading folders** in the folder picker.
+
+Remote projects show a server icon in the project rail. Hover or focus the project to see its machine, folder path, and connection status. Remote sessions show the server icon beside the provider icons.
+The new session screen shows the saved machine name and the folder path on that machine. If the name is unavailable, it shows **Remote computer** beside the path.
+While a remote turn runs, the composer shows its working status and offers **Stop**.
+
+When you open a session started from a remote connection on the computer that runs it,
+the composer shows **This computer**. Hover or focus that label to see where the session
+started, followed by its current location.
 
 The composer's model picker lists models for the providers installed on the host. Model, provider-specific settings, and permission changes apply to the host session directly, and the next turn uses them; a change made during a running turn is applied when that turn finishes. If the host cannot load its model list, or no longer lists the session's model, the session's saved settings remain visible. The normal workspace and branch pickers use the host checkout through the shared file and Git commands. Choose an existing host worktree or create one from a branch before the first message; the session then runs in that working copy. Once the conversation starts, its worktree is fixed, as in a local session. Start a new session to use another worktree. The branch picker can search local and remote branches, create a local branch, and switch the current working copy when it is clean and the project's sessions are idle. Machine connection state appears on its project rail dot.
 
@@ -436,7 +587,17 @@ state; cancellation releases it after accepted storage work finishes. This check
 does not move an existing conversation to another computer or enable a new
 execution default. Installed multi-device migration still requires acceptance.
 
-HTTPS endpoints can also be entered if you operate a reverse proxy to the loopback host. Plain HTTP is accepted only for loopback endpoints. Native desktop HTTP carries the saved credential; it is not exposed to the renderer or browser storage. The native connection store is `remote-machines.json` in the desktop app's data directory, with mode 0600 on Unix. This initial implementation does not use the OS keychain.
+HTTPS endpoints can also be entered if you operate a reverse proxy to the loopback host. Plain HTTP is accepted only for loopback endpoints. Native desktop HTTP carries the saved credential. The native connection store is `remote-machines.json` in the desktop app's data directory, with mode 0600 on Unix. Device credentials in this file are encrypted with a key held by the operating system's credential store. Existing plaintext entries migrate when the desktop loads its saved connections. Backups made before migration can still contain the original keys.
+
+## Keep this computer reachable when bycoda is closed
+
+By default the local Host belongs to the desktop app: it starts when bycoda opens and stops when bycoda quits. While it is stopped, phones and other computers cannot reach this computer's projects, and automations do not run.
+
+To keep it reachable, open **Settings → Connections → Computers** and turn on **Keep this computer reachable when bycoda is closed** on the **This computer** row. The Host then runs as a login service and keeps running after bycoda closes. Turning the switch off hands the Host back to the app. Computers that already had a login service keep it.
+
+A change while sessions or shells are running waits until they finish, shown as "Turning on/off when running sessions finish". **Switch now** interrupts them after a confirmation; their history is kept. Quitting bycoda while sessions run lists them and asks first. Quitting then stops them gracefully and keeps their history.
+
+Setting up SSH access to a remote machine turns this switch on for that machine, and the success notice says so. To return it to app mode, turn the switch off on that computer.
 
 ## Manage the host
 
@@ -531,12 +692,11 @@ and worker cleanup. Its cached status and Stop control remain available while
 new work is refused. Stopping the local SSH process can still leave the remote
 script's outcome unknown; check that outcome before starting another run.
 
-Development source now retains the original Native editor buffer report and
-desktop finish/format request before sending it. If the connection breaks after
+Development source now retains the original desktop finish/format request before sending it. If the connection breaks after
 the Host may have accepted the request, recovery asks for that original's outcome
 instead of repeating the operation. An unknown outcome stays pending; it does
 not mean the operation failed. In particular, formatting must not be repeated
-automatically and an old buffer receipt cannot mark a newer editor state saved.
+automatically.
 After the local result has been safely consumed, a separate acknowledgement lets
 the Host release its large retained result. If that acknowledgement is interrupted,
 the app retries cleanup without repeating the original operation. Pending cleanup
@@ -544,13 +704,6 @@ does not undo a successful local result. When retained result capacity is full,
 the Host rejects new formatting before starting it.
 This source behavior still requires installed-platform acceptance; it is not a
 claim about the version currently installed on your computer.
-
-In the development source, the Host database also retains buffer reports and
-their recovery metadata. These are paths and dirty/unknown flags, not an extra
-copy of unsaved editor text. Existing report/archive JSON files are legacy copies;
-copying them alone does not back up new reports. Keep a coherent Host database
-backup for restoration. Reading a recovered report does not mark an old editor
-owner current or authorize resolving dirty buffers.
 
 If the Host's helper handler has finished but its result is still unknown,
 development source can release that request's reserved result capacity without
@@ -571,7 +724,7 @@ New development clients can also clean up completed delivery records in ordered
 groups while retaining a permanent guard against replay. Interrupted cleanup does
 not repeat the operation. Missing or uncertain outcomes stop cleanup until their
 original state is known. After a computer connection starts using this protocol,
-older clients must update before sending new buffer reports, finish replies or
+older clients must update before sending new finish replies or
 formatting requests through that connection; existing outcomes can still be read.
 This remains development-source behavior pending installed-platform acceptance.
 
@@ -579,7 +732,7 @@ This remains development-source behavior pending installed-platform acceptance.
 
 Supported: persistent remote text conversations with all ten local provider adapters, follow-up turns, approvals, questions where the provider offers them, cancellation, per-device revocation, reconnect, remote file browsing and text editing, Git status, file diffs, and history, staging and commits, branch selection and creation, worktree selection and creation, and a tracked Git diff against HEAD. OpenCode's server and event stream stay on the host's loopback interface. Cursor's optional enrichment from its native session database is not available on the headless host; basic transcript and subagent events still work. The desktop polls the host and downloads only transcript blocks that changed since its last update (every 0.75 s while a session runs, 3 s otherwise). The desktop rejects any single host response over 16 MiB. A sync above 4 MiB, such as reopening a very long transcript or one very large tool output, is sent as a series of bounded pieces of one consistent revision. Transcript size is therefore not limited by the response cap. The host writes streamed output in 120 ms batches and keeps a bounded event journal.
 
-Remote history appears in the Sessions sidebar of each project on a machine. Host snapshots also populate the app's normal session state while the tab is open; they are not written to the local session store. Remote `/compact` uses the provider's context compaction, and `/plan` selects the host provider's plan mode. Queued follow-ups and editing the last message still need host commands. Other local slash commands and skill expansion are not yet available remotely. Worktree deletion, terminals, generated image output, named provider accounts, `/operator`, automations, and orchestration are not implemented yet. Other remote prompts are sent directly to the provider.
+Remote history appears in the Sessions sidebar of each project on a machine. Host snapshots also populate the app's normal session state while the tab is open; they are not written to the local session store. Remote `/compact` uses the provider's context compaction, and `/plan` selects the host provider's plan mode. Queued follow-ups and editing the last message still need host commands. Other local slash commands and skill expansion are not yet available remotely. For interactive terminals, see [remote project terminals](terminal.md#open-a-remote-project-terminal). Worktree deletion, generated image output, `/operator`, automations, and orchestration are not implemented yet. Other remote prompts are sent directly to the provider.
 
 The headless host runs the reused TypeScript adapters with a Node process backend. It proves the execution boundary without introducing the planned Rust daemon/worker IPC yet. Node is included in host release archives, separately from the desktop application.
 
@@ -625,6 +778,12 @@ Required approvals appear inside the source conversation when it is visible, or 
 Full access reuses execution permission for saved SSH commands in the original coding session. It does not grant publication, credentials, clipboard or physical input, persistent file access, privacy changes or delegation. Those decisions keep their existing approval boundaries.
 
 ### Short connection interruptions
+
+The desktop retries interrupted reads in the background. A read can show a small
+loading indicator during its first three seconds. If the Host reports that it is
+shutting down, the desktop gives the restarted Host seven seconds to answer.
+Failures that need your input appear immediately. Unconfirmed deliveries remain
+visible so you can check the outcome before sending again.
 
 During sleep, network changes or a Host restart, mounted workspace panes share one
 **Reconnecting…** notice per machine for up to 45 seconds. Loaded content and drafts

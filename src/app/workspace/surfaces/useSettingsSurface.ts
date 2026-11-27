@@ -21,10 +21,10 @@ import {
   loadSettingsSection,
   loadSettingsAliasAnchor,
   saveSettingsSection,
+  settingsAnchorForSection,
   settingsSectionForAnchor,
   type SettingsSectionId,
 } from "../../../features/settings/model/settings";
-import { toolSettingsAnchorForSection } from "../../../features/settings/model/toolSettingsSections";
 import { OPEN_CONNECTIONS_EVENT } from "../../../features/connections/model/connections";
 import { OPEN_DECISION_MODELS_SETTINGS_EVENT } from "../../../features/decision-models/model/decisionModelsSettings";
 import { OPEN_PROVIDER_SETTINGS_EVENT } from "../../../features/providers/public/providerSettingsLink";
@@ -128,16 +128,15 @@ export function useSettingsSurfaceActions({
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
       setServersViewOpen?.(false);
-      const targetAnchor = anchor ?? toolSettingsAnchorForSection(section);
+      const targetAnchor = anchor ?? settingsAnchorForSection(section);
       const targetSection = settingsSectionForAnchor(section, targetAnchor);
       if (targetSection) {
         setSettingsSection(targetSection);
         saveSettingsSection(targetSection);
       }
       setSettingsAnchor(targetAnchor);
-      // The existing external reveal counter also replays explicit tool links to the same row.
-      if (targetSection === "tools" && targetAnchor)
-        setNotificationSettingsRequest((request) => request + 1);
+      // Explicit links must reveal the same row again after section normalization.
+      if (targetAnchor) setNotificationSettingsRequest((request) => request + 1);
       setNotificationProjectPath(null);
       setSettingsOpen(true);
     });
@@ -172,10 +171,11 @@ export function useSettingsSurfaceActions({
 
   useEffect(() => {
     const openProviders = () => openSettings("providers");
-    window.addEventListener(OPEN_DECISION_MODELS_SETTINGS_EVENT, openProviders);
+    const openDecisionModels = () => openSettings("decisionModels");
+    window.addEventListener(OPEN_DECISION_MODELS_SETTINGS_EVENT, openDecisionModels);
     window.addEventListener(OPEN_PROVIDER_SETTINGS_EVENT, openProviders);
     return () => {
-      window.removeEventListener(OPEN_DECISION_MODELS_SETTINGS_EVENT, openProviders);
+      window.removeEventListener(OPEN_DECISION_MODELS_SETTINGS_EVENT, openDecisionModels);
       window.removeEventListener(OPEN_PROVIDER_SETTINGS_EVENT, openProviders);
     };
   }, [openSettings]);

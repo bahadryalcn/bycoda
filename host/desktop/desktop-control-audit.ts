@@ -39,8 +39,11 @@ export const DesktopOperationAuditSchema = z.strictObject({
     "clipboard-clear",
   ]),
   headed: z.boolean(),
-  /** Owner-set mode in force for this effect; absent on events recorded before modes existed. */
-  permissionMode: z.enum(DESKTOP_PERMISSION_MODES).optional(),
+  /**
+   * Owner-set mode in force for this effect; absent on events recorded before modes existed.
+   * "auto" was a mode until 2026-11 and stays readable in recorded history.
+   */
+  permissionMode: z.enum([...DESKTOP_PERMISSION_MODES, "auto"]).optional(),
   operation: DesktopControlOperationSchema.omit({ errorCode: true }),
 });
 export type DesktopOperationAudit = z.infer<typeof DesktopOperationAuditSchema>;

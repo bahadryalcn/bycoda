@@ -19,32 +19,47 @@ afterEach(() => {
   element.remove();
 });
 
-const profile: XProfileState = { name: "Studio", bio: "Hello", location: "", website: "" };
+const profile: XProfileState = {
+  name: "Studio",
+  bio: "Hello",
+  location: "",
+  website: "",
+};
 
 function button(text: string) {
   return [...element.querySelectorAll("button")].find((node) => node.textContent === text);
 }
 
+function expectErrorDetails(summary: string, detail: string) {
+  const alert = element.querySelector('[role="alert"]');
+  expect(alert?.textContent).toContain(summary);
+  expect(document.body.textContent).not.toContain(detail);
+  act(() => alert?.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')?.click());
+  expect(document.body.querySelector('[aria-label="Error details"]')?.textContent).toBe(detail);
+}
+
 it("reads the profile only when asked", async () => {
   const xProfileRead = vi.fn(async () => profile);
-  const client = { xProfileRead, xProfileUpdate: vi.fn() } as unknown as SocialClient;
-  act(() =>
-    root.render(createElement(XProfileEditor, { client, accountId: "a1", accountName: "Studio" })),
-  );
+  const client = {
+    xProfileRead,
+    xProfileUpdate: vi.fn(),
+  } as unknown as SocialClient;
+  act(() => root.render(createElement(XProfileEditor, { client, accountId: "a1" })));
   expect(xProfileRead).not.toHaveBeenCalled();
   await act(async () => button("Read profile")?.click());
   expect(xProfileRead).toHaveBeenCalledWith("a1");
 });
 
 it("saves only the fields that changed, with the read-back of the Host", async () => {
-  const xProfileUpdate = vi.fn(async () => ({ ...profile, location: "Istanbul" }));
+  const xProfileUpdate = vi.fn(async () => ({
+    ...profile,
+    location: "Istanbul",
+  }));
   const client = {
     xProfileRead: vi.fn(async () => profile),
     xProfileUpdate,
   } as unknown as SocialClient;
-  act(() =>
-    root.render(createElement(XProfileEditor, { client, accountId: "a1", accountName: "Studio" })),
-  );
+  act(() => root.render(createElement(XProfileEditor, { client, accountId: "a1" })));
   await act(async () => button("Read profile")?.click());
   const location =
     element.querySelector<HTMLInputElement>(
@@ -72,7 +87,6 @@ function mount(client: Record<string, unknown>) {
       createElement(XProfileEditor, {
         client: client as unknown as SocialClient,
         accountId: "a1",
-        accountName: "Studio",
       }),
     ),
   );
@@ -126,20 +140,26 @@ it("sends one read for a double press and offers a retry after a failed read", a
   });
   expect(xProfileRead).toHaveBeenCalledTimes(1);
   await act(async () => fail(new Error("The profile page did not load.")));
-  expect(element.textContent).toContain("The profile page did not load.");
+  expectErrorDetails(
+    "The profile could not be verified. Read the profile again before saving.",
+    "The profile page did not load.",
+  );
   expect(element.querySelector("form")).toBeNull();
-  await act(async () => button("Read profile")?.click());
+  const retry = [...element.querySelectorAll<HTMLButtonElement>('[role="alert"] button')].find(
+    (node) => node.textContent === "Read profile",
+  );
+  await act(async () => retry?.click());
   expect(xProfileRead).toHaveBeenCalledTimes(2);
   expect(control("About").value).toBe("Draft");
 });
 
-it("blocks saving until something changed and says why, then until a name is entered", async () => {
+it("blocks saving until something changed, then until a name is entered", async () => {
   mount({ xProfileRead: vi.fn(async () => profile), xProfileUpdate: vi.fn() });
   await act(async () => button("Read profile")?.click());
   expect(button("Save profile")?.disabled).toBe(true);
-  expect(reasons()).toContain("No changes to save.");
+  expect(reasons()).not.toContain("No changes to save.");
   typeInto("Profile name", "   ");
-  expect(reasons()).toContain("Enter a profile name.");
+  expect(button("Save profile")?.getAttribute("aria-disabled")).toBe("true");
 });
 
 it("does not send a save for an unchanged profile even when the form is submitted", async () => {
@@ -151,14 +171,19 @@ it("does not send a save for an unchanged profile even when the form is submitte
 });
 
 it("shows what the Host read back after a save and treats it as the new saved profile", async () => {
-  const xProfileUpdate = vi.fn(async () => ({ ...profile, name: "Studio Official" }));
+  const xProfileUpdate = vi.fn(async () => ({
+    ...profile,
+    name: "Studio Official",
+  }));
   mount({ xProfileRead: vi.fn(async () => profile), xProfileUpdate });
   await act(async () => button("Read profile")?.click());
   typeInto("Profile name", "studio official");
   await submitProfile();
-  expect(xProfileUpdate).toHaveBeenCalledExactlyOnceWith("a1", { name: "studio official" });
+  expect(xProfileUpdate).toHaveBeenCalledExactlyOnceWith("a1", {
+    name: "studio official",
+  });
   expect(control("Profile name").value).toBe("Studio Official");
-  expect(reasons()).toContain("No changes to save.");
+  expect(button("Save profile")?.disabled).toBe(true);
 });
 
 it("keeps the owner's edits and shows the failure when the profile cannot be verified", async () => {
@@ -169,7 +194,8 @@ it("keeps the owner's edits and shows the failure when the profile cannot be ver
   await act(async () => button("Read profile")?.click());
   typeInto("About", "Changed bio");
   await submitProfile();
-  expect(element.textContent).toContain(
+  expectErrorDetails(
+    "The profile could not be verified. Read the profile again before saving.",
     "The new bio was not found when the profile was read back.",
   );
   expect(control("About").value).toBe("Changed bio");
@@ -184,7 +210,11 @@ it("follows an exact username on its own action, without touching the profile", 
     changed: true,
   }));
   const xProfileUpdate = vi.fn();
-  mount({ xProfileRead: vi.fn(async () => profile), xProfileUpdate, xProfileFollow });
+  mount({
+    xProfileRead: vi.fn(async () => profile),
+    xProfileUpdate,
+    xProfileFollow,
+  });
   expect(button("Follow")?.disabled).toBe(true);
   expect(reasons()).toContain("Enter an X username of 1 to 15 letters, digits or underscores.");
   typeInto("X username to follow", "@bycoda");

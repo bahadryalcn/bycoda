@@ -1,13 +1,10 @@
-import { Badge } from "../../../../shared/ui/Badge";
 import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/assistant";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { InfoPopover } from "../../../../shared/ui/InfoPopover";
-import { LiveText } from "../../../../shared/ui/LiveText";
 import { Text } from "../../../../shared/ui/Text";
 import { Select } from "../../../../shared/ui/Select";
 import { Row } from "../../../../shared/ui/settings";
 import styles from "./costUsage.module.css";
-import viewStyles from "../AssistantView.module.css";
 
 /** Conversation retention draft and, when given, today's usage on the same row. Saved by the page footer. */
 export function AssistantRetentionField({
@@ -15,11 +12,13 @@ export function AssistantRetentionField({
   disabled,
   onChange,
   usage,
+  dailyBudget,
 }: {
   value: number;
   disabled: boolean;
   onChange: (days: number) => void;
   usage?: AssistantSnapshot["usage"];
+  dailyBudget?: number;
 }) {
   return (
     <>
@@ -30,13 +29,7 @@ export function AssistantRetentionField({
             <Text as="p" size="secondary">
               {t("Older messages move to Recently deleted for seven days.")}
             </Text>
-            <Text
-              as="p"
-              size="micro"
-              tone="secondary"
-              leading="inherit"
-              className={viewStyles.muted}
-            >
+            <Text as="p" size="secondary">
               {t(
                 "Summaries and unsent drafts are kept. Choosing Forever does not restore deleted messages.",
               )}
@@ -61,9 +54,9 @@ export function AssistantRetentionField({
           onValueChange={(next) => onChange(Number(next))}
         />
       </Row>
-      <Row label={t("Today's usage")} stacked>
+      <Row label={t("Today's usage")}>
         {usage ? (
-          <AssistantUsageChips usage={usage} />
+          <AssistantUsageSummary usage={usage} dailyBudget={dailyBudget} />
         ) : (
           <Text size="caption" tone="secondary">
             {t("Unavailable")}
@@ -74,49 +67,62 @@ export function AssistantRetentionField({
   );
 }
 
-/** Measured usage as compact chips. Missing usage is stated once, never shown as zero. */
-export function AssistantUsageChips({ usage }: { usage: AssistantSnapshot["usage"] }) {
+/** Local budget usage, with provider metrics in the details popover. */
+export function AssistantUsageSummary({
+  usage,
+  dailyBudget = 0,
+}: {
+  usage: AssistantSnapshot["usage"];
+  dailyBudget?: number;
+}) {
   const cache = usage.cacheUsage;
   const unavailable = t("Unavailable");
   // Worker tokens already count cache reads at one tenth; the raw read count is its own chip.
-  const chips: [string, string][] = [
+  const details: [string, string][] = [
     [t("Supervisor tokens"), formatNumber(usage.chiefTokens)],
     [t("Worker tokens"), formatNumber(usage.workerTokens)],
   ];
   if (cache?.cacheReadTokens !== undefined)
-    chips.push([t("Cache read tokens"), formatNumber(cache.cacheReadTokens)]);
+    details.push([t("Cache read tokens"), formatNumber(cache.cacheReadTokens)]);
   if (cache?.cacheWriteTokens !== undefined)
-    chips.push([t("Cache write tokens"), formatNumber(cache.cacheWriteTokens)]);
+    details.push([t("Cache write tokens"), formatNumber(cache.cacheWriteTokens)]);
   if (cache?.cacheHitPercent !== undefined)
-    chips.push([
+    details.push([
       t("Mean reported cache hit"),
       `${formatNumber(cache.cacheHitPercent, { maximumFractionDigits: 1 })}%`,
     ]);
+  const status =
+    usage.workerUsageIncomplete || (cache && !cache.complete)
+      ? t("Some usage is unavailable.")
+      : usage.estimated
+        ? t("Estimated")
+        : "";
   return (
     <div className={styles.usage}>
-      <ul className={styles.chips} aria-label={t("Today's usage")}>
-        {chips.map(([label, value]) => (
-          <li key={label}>
-            <Badge size="sm" appearance="subtle">
-              {label}: {value}
-            </Badge>
-          </li>
+      <Text size="secondary">
+        {dailyBudget > 0
+          ? t("{p0} of {p1} tokens", {
+              p0: formatNumber(usage.total),
+              p1: formatNumber(dailyBudget),
+            })
+          : t("{p0} tokens", { p0: formatNumber(usage.total) })}
+      </Text>
+      {status && (
+        <Text size="caption" tone="secondary">
+          {status}
+        </Text>
+      )}
+      <InfoPopover label={t("Usage details")}>
+        {details.map(([label, value]) => (
+          <Text key={label} as="p" size="secondary">
+            {label}: {value}
+          </Text>
         ))}
-      </ul>
-      <LiveText
-        size="micro"
-        tone="secondary"
-        leading="inherit"
-        className={`${viewStyles.muted} ${styles.usageNote}`}
-        text={
-          usage.workerUsageIncomplete || !cache || !cache.complete
-            ? t("Some usage is unavailable.")
-            : ""
-        }
-      />
-      {cache ? (
-        <>
-          <InfoPopover label={t("About usage")}>
+        <Text as="p" size="secondary">
+          {t("Local scheduling limits, not a provider billing cap.")}
+        </Text>
+        {cache ? (
+          <>
             {usage.workerUsageIncomplete && (
               <Text as="p" size="secondary">
                 {t("Usage unavailable. No zero usage is assumed.")}
@@ -142,57 +148,32 @@ export function AssistantUsageChips({ usage }: { usage: AssistantSnapshot["usage
                 {t("Mean reported cache hit")}: {unavailable}
               </Text>
             )}
-            <Text
-              as="p"
-              size="micro"
-              tone="secondary"
-              leading="inherit"
-              className={viewStyles.muted}
-            >
+            <Text as="p" size="secondary">
               {t("{p0} of {p1} worker turns measured", {
                 p0: formatNumber(cache.measuredTurns),
                 p1: formatNumber(cache.totalTurns),
               })}
             </Text>
-            <Text
-              as="p"
-              size="micro"
-              tone="secondary"
-              leading="inherit"
-              className={viewStyles.muted}
-            >
+            <Text as="p" size="secondary">
               {t(
                 "Budgets count cache reads at one tenth of a new token. Cache reads re-read earlier context and cost far less than new tokens.",
               )}
             </Text>
             {cache.cacheHitPercent !== undefined && (
-              <Text
-                as="p"
-                size="micro"
-                tone="secondary"
-                leading="inherit"
-                className={viewStyles.muted}
-              >
+              <Text as="p" size="secondary">
                 {t(
                   "Average of {p0} provider-reported worker percentages. This is not a billing discount.",
                   { p0: formatNumber(cache.percentageTurns) },
                 )}
               </Text>
             )}
-          </InfoPopover>
-        </>
-      ) : (
-        <InfoPopover label={t("About usage")}>
+          </>
+        ) : (
           <Text as="p" size="secondary">
             {t("Cache usage unavailable")}
           </Text>
-          {usage.workerUsageIncomplete && (
-            <Text as="p" size="secondary">
-              {t("Usage unavailable. No zero usage is assumed.")}
-            </Text>
-          )}
-        </InfoPopover>
-      )}
+        )}
+      </InfoPopover>
     </div>
   );
 }

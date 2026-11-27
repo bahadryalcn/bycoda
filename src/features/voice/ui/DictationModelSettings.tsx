@@ -45,22 +45,14 @@ export function DictationModelSettings({
       : []),
   ];
   return (
-    <Row id="dictation-model" label={t("Dictation model")}>
-      <div className="flex min-w-0 flex-col gap-2">
-        <Select
-          hideLabel
-          label={t("Dictation model")}
-          value={value}
-          options={options}
-          disabled={engine === "openrouter" && (pending || error || !models)}
-          onChange={(next) =>
-            change({ dictationModels: { ...settings.dictationModels, [engine]: next } })
-          }
-        />
-        {engine === "openrouter" && pending ? (
+    <Row
+      id="dictation-model"
+      label={t("Model")}
+      feedback={
+        // One message at a time: loading, load failure, or a saved model that is gone.
+        engine === "openrouter" && pending ? (
           <LoadingText>{t("Loading transcription models…")}</LoadingText>
-        ) : null}
-        {engine === "openrouter" && error ? (
+        ) : engine === "openrouter" && error ? (
           <InlineError
             retry={{
               onRetry: () => {
@@ -70,18 +62,26 @@ export function DictationModelSettings({
           >
             {t("Could not load transcription models. Retry to refresh the catalog.")}
           </InlineError>
-        ) : null}
-        {engine === "openrouter" &&
-        models &&
-        !pending &&
-        !error &&
-        chosen &&
-        !models.some((model) => model.id === chosen) ? (
+        ) : engine === "openrouter" &&
+          models &&
+          chosen &&
+          !models.some((model) => model.id === chosen) ? (
           <InlineError>
             {t("Saved transcription model is unavailable. Choose an available model.")}
           </InlineError>
-        ) : null}
-      </div>
+        ) : undefined
+      }
+    >
+      <Select
+        hideLabel
+        label={t("Model")}
+        value={value}
+        options={options}
+        disabled={engine === "openrouter" && (pending || error || !models)}
+        onChange={(next) =>
+          change({ dictationModels: { ...settings.dictationModels, [engine]: next } })
+        }
+      />
     </Row>
   );
 }

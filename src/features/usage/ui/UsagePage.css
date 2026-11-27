@@ -1,26 +1,13 @@
 .usage-page {
   display: grid;
-  gap: 16px;
+  gap: var(--ui-space-4);
   min-inline-size: 0;
 }
 
 .usage-active-time {
   display: grid;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
-}
-
-.usage-active-heading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-inline-size: 0;
-}
-
-.usage-active-source {
-  margin-inline-start: auto;
-
-  overflow-wrap: anywhere;
 }
 
 .usage-active-time .usage-active-metrics {
@@ -35,55 +22,56 @@
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--ui-space-2);
 }
 
-/* The display switch and refresh sit at the end of the section title row. */
-.usage-toolbar h2 {
+/* The display switch sits at the end of the section title row (the page toolbar owns refresh). */
+.usage-toolbar > :first-child {
   margin-inline-end: auto;
 }
 
-.usage-display-toggle {
+.usage-display-setting {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-
-  cursor: pointer;
+  gap: var(--ui-space-2);
 }
+
 .usage-accounts {
   display: grid;
   min-inline-size: 0;
 }
 
+/* Identity column, then the quota columns; loading and error lines span the row. */
 .usage-account {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(14rem, 20rem) minmax(0, 1fr);
   align-items: center;
-  gap: 12px 24px;
+  gap: var(--ui-space-3) var(--ui-space-6);
+  min-block-size: 4.5rem;
   min-inline-size: 0;
-  padding: 12px;
+  padding: var(--ui-space-3);
+}
+
+.usage-account > :not(.usage-account-heading, .usage-quota-list) {
+  grid-column: 1 / -1;
 }
 
 .usage-account-heading {
-  flex: 1 1 17rem;
   min-inline-size: 0;
   align-items: start;
   flex-wrap: nowrap;
-  gap: 8px;
+  gap: var(--ui-space-2);
 }
 
 .usage-account-identity {
   flex: 1;
   min-inline-size: 0;
   display: grid;
-  gap: 4px;
+  gap: var(--ui-space-1);
 }
 
 .usage-account-name {
   overflow-wrap: anywhere;
-}
-
-.usage-account-provider {
 }
 
 .usage-account-subtitle {
@@ -94,21 +82,26 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 
-.usage-account-default {
-  flex-shrink: 0;
-}
-
+/* The observation and menu slots are always present, so a first reading never reflows the row. */
 .usage-account-observed {
   flex-shrink: 0;
   margin-inline-start: auto;
-  padding-block-start: 2px;
+  min-inline-size: 7ch;
+  padding-block-start: var(--ui-space-1);
+  text-align: end;
 
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.usage-account-actions {
+  flex-shrink: 0;
+  min-inline-size: var(--ui-control-height);
+  min-block-size: var(--ui-control-height);
 }
 
 /* Recovery belongs to its account and wraps below the quota comparison. */
@@ -118,18 +111,41 @@
   overflow-wrap: anywhere;
 }
 
+/* A window keeps its column across rows, so 5-hour, weekly and monthly meters line up. */
 .usage-quota-list {
-  flex: 3 1 27rem;
   min-inline-size: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
-  gap: 12px 24px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--ui-space-3) var(--ui-space-6);
+}
+
+.usage-quota[data-kind="session"] {
+  grid-column: 1;
+}
+
+.usage-quota[data-kind="weekly"] {
+  grid-column: 2;
+}
+
+.usage-quota[data-kind="monthly"] {
+  grid-column: 3;
+}
+
+@media (max-width: 720px) {
+  .usage-account,
+  .usage-quota-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .usage-quota[data-kind] {
+    grid-column: auto;
+  }
 }
 
 .usage-quota {
   display: grid;
   min-inline-size: 0;
-  gap: 4px;
+  gap: var(--ui-space-1);
 }
 
 .usage-quota-heading {
@@ -139,7 +155,7 @@
 /* The quota title stacks its reset countdown under the period name and may wrap. */
 span.usage-quota-title {
   display: grid;
-  gap: 2px;
+  gap: var(--ui-space-1);
   overflow: visible;
   white-space: normal;
 }
@@ -154,21 +170,23 @@ span.usage-budget-title {
   display: flex;
   flex-shrink: 0;
   align-items: baseline;
-  gap: 4px;
+  gap: var(--ui-space-1);
 }
 
 .usage-quota-heading strong {
+  display: inline-block;
+  min-inline-size: 4ch;
+  text-align: end;
   font-variant-numeric: tabular-nums;
 }
 
 .usage-quota-reset {
-  font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 
 .usage-analysis {
   display: grid;
-  gap: 12px;
+  gap: var(--ui-space-3);
   min-inline-size: 0;
 }
 

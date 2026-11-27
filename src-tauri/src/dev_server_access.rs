@@ -17,6 +17,7 @@ use tauri::{AppHandle, Manager};
 const CHUNK: usize = 256 * 1024;
 const HEADER_LIMIT: usize = 64 * 1024;
 const IDLE: Duration = Duration::from_secs(15 * 60);
+const MAX_CONNECTIONS: usize = 32;
 struct Gateway {
     port: u16,
     alive: AtomicBool,
@@ -241,6 +242,31 @@ fn first_request(
     }
 }
 
+/// Tells the browser the gateway is full so it can retry, instead of a bare connection reset.
+/// Runs on the accept loop, so it spawns nothing and waits only a short, fixed time.
+fn refuse_over_capacity(mut socket: TcpStream) {
+    let _ = socket.set_nonblocking(false);
+    let _ = socket.set_write_timeout(Some(Duration::from_millis(100)));
+    let _ = socket.write_all(b"HTTP/1.1 503 Service Unavailable\r\nRetry-After: 1\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nThe private development server connection is busy. Retry in a moment.\n");
+    let _ = socket.shutdown(Shutdown::Write);
+    // Drain request data for a bounded interval. A single nonblocking read can
+    // miss bytes still arriving and closing with unread bytes can send a reset.
+    let deadline = Instant::now() + Duration::from_millis(20);
+    let mut bytes = [0_u8; 4096];
+    let mut remaining = HEADER_LIMIT;
+    while remaining > 0 {
+        let wait = deadline.saturating_duration_since(Instant::now());
+        if wait.is_zero() || socket.set_read_timeout(Some(wait)).is_err() {
+            break;
+        }
+        let limit = remaining.min(bytes.len());
+        match socket.read(&mut bytes[..limit]) {
+            Ok(0) | Err(_) => break,
+            Ok(count) => remaining -= count,
+        }
+    }
+}
+
 fn connection(mut socket: TcpStream, access: Access, gateway: Arc<Gateway>) {
     let mut response_started = false;
     let result = relay(&mut socket, &access, &gateway, &mut response_started);
@@ -284,45 +310,50 @@ fn relay(
             stream.clone(),
             gateway.clone(),
         );
-        let writer = std::thread::spawn(move || {
-            let mut buffer = vec![0; CHUNK];
-            let mut remaining = first.remaining;
-            while !writer_done.load(Ordering::SeqCst) && writer_gateway.alive.load(Ordering::SeqCst)
-            {
-                if first.websocket && !writer_upgraded.load(Ordering::SeqCst) {
-                    std::thread::sleep(Duration::from_millis(10));
-                    continue;
-                }
-                if !first.websocket && remaining == 0 {
-                    return;
-                }
-                let limit = if first.websocket {
-                    CHUNK
-                } else {
-                    remaining.min(CHUNK)
-                };
-                match upload.read(&mut buffer[..limit]) {
-                    Ok(0) => break,
-                    Ok(count) => {
-                        if writer_access
-                            .write(&writer_stream, &buffer[..count])
-                            .is_err()
-                        {
-                            break;
-                        }
-                        if !first.websocket {
-                            remaining -= count;
-                        }
-                        if let Ok(mut touched) = writer_gateway.touched.lock() {
-                            *touched = Instant::now();
-                        }
+        // A body-less plain request has nothing to upload, so it needs no writer thread.
+        let needs_writer = first.websocket || first.remaining > 0;
+        let writer = needs_writer.then(|| {
+            std::thread::spawn(move || {
+                let mut buffer = vec![0; CHUNK];
+                let mut remaining = first.remaining;
+                while !writer_done.load(Ordering::SeqCst)
+                    && writer_gateway.alive.load(Ordering::SeqCst)
+                {
+                    if first.websocket && !writer_upgraded.load(Ordering::SeqCst) {
+                        std::thread::sleep(Duration::from_millis(10));
+                        continue;
                     }
-                    Err(error) if timeout(&error) => continue,
-                    Err(_) => break,
+                    if !first.websocket && remaining == 0 {
+                        return;
+                    }
+                    let limit = if first.websocket {
+                        CHUNK
+                    } else {
+                        remaining.min(CHUNK)
+                    };
+                    match upload.read(&mut buffer[..limit]) {
+                        Ok(0) => break,
+                        Ok(count) => {
+                            if writer_access
+                                .write(&writer_stream, &buffer[..count])
+                                .is_err()
+                            {
+                                break;
+                            }
+                            if !first.websocket {
+                                remaining -= count;
+                            }
+                            if let Ok(mut touched) = writer_gateway.touched.lock() {
+                                *touched = Instant::now();
+                            }
+                        }
+                        Err(error) if timeout(&error) => continue,
+                        Err(_) => break,
+                    }
                 }
-            }
-            writer_done.store(true, Ordering::SeqCst);
-            let _ = upload.shutdown(Shutdown::Both);
+                writer_done.store(true, Ordering::SeqCst);
+                let _ = upload.shutdown(Shutdown::Both);
+            })
         });
         let mut failure = None;
         let mut response_headers = Vec::new();
@@ -444,7 +475,9 @@ fn relay(
         }
         finished.store(true, Ordering::SeqCst);
         let _ = socket.shutdown(Shutdown::Both);
-        let _ = writer.join();
+        if let Some(writer) = writer {
+            let _ = writer.join();
+        }
         failure.map_or(Ok(()), Err)
     })();
     let _ = access.call("devServers.bridgeClose", json!({ "streamId": stream }));
@@ -539,8 +572,8 @@ pub async fn remote_dev_server_url(
                     }
                     match listener.accept() {
                         Ok((socket, _)) => {
-                            if running.active.load(Ordering::SeqCst) >= 32 {
-                                drop(socket);
+                            if running.active.load(Ordering::SeqCst) >= MAX_CONNECTIONS {
+                                refuse_over_capacity(socket);
                                 continue;
                             }
                             // Accepted sockets can inherit the listener's nonblocking mode.
@@ -584,7 +617,31 @@ pub async fn remote_dev_server_url(
 
 #[cfg(test)]
 mod tests {
-    use super::{allowed_headers, browser_request};
+    use super::{allowed_headers, browser_request, refuse_over_capacity};
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::time::Duration;
+
+    #[test]
+    fn answers_a_full_gateway_with_a_retryable_503_instead_of_a_reset() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut browser = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        browser
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let (socket, _) = listener.accept().unwrap();
+        let request = format!(
+            "GET /asset.js HTTP/1.1\r\nHost: 127.0.0.1:1\r\nX-Test: {}\r\n\r\n",
+            "a".repeat(8192)
+        );
+        browser.write_all(request.as_bytes()).unwrap();
+        refuse_over_capacity(socket);
+        let mut received = String::new();
+        browser.read_to_string(&mut received).unwrap();
+        assert!(received.starts_with("HTTP/1.1 503 Service Unavailable\r\n"));
+        assert!(received.contains("Retry-After: 1\r\n"));
+        assert!(received.contains("Connection: close\r\n"));
+    }
 
     #[test]
     fn admits_navigation_and_same_origin_websockets() {

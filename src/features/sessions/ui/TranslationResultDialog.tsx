@@ -5,6 +5,7 @@ import { Text } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
 import { Alert } from "../../../shared/ui/Alert";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import { usePresentationNow } from "./AgentClock";
 import { useModelSource } from "./modelSource";
 import {
   subscribeHarnessAvailability,
@@ -30,6 +31,7 @@ import {
 } from "../../providers/model/providerAccounts";
 import { ModelPicker } from "./ModelPicker";
 import { Button } from "../../../shared/ui/Button";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import { Spinner } from "../../../shared/ui/Spinner";
 import styles from "./TranslationResultDialog.module.css";
 import {
@@ -85,37 +87,31 @@ export function TranslationResultDialog({
   const [result, setResult] = useState("");
   const [error, setError] = useState<TranslationErrorKind | null>(null);
   // Copy has its own lifecycle so a clipboard failure never invalidates a valid result.
-  const [copyState, setCopyState] = useState<"idle" | "pending" | "copied" | "error">("idle");
-  const copyRun = useRef(0);
-  const resetCopy = () => {
-    copyRun.current += 1;
-    setCopyState("idle");
-  };
+  const [copyFailed, setCopyFailed] = useState(false);
+  const resetCopy = () => setCopyFailed(false);
   const [attempt, setAttempt] = useState(0);
   const [pending, setPending] = useState(() => canTranslate(translator));
   const [applyError, setApplyError] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const runStarted = useRef(0);
+  const now = usePresentationNow(pending);
   const runnable = canTranslate(translator);
+  // Each pending run restarts the count; the seconds below are read on the shared clock.
   useEffect(() => {
     if (!pending) return;
-    const started = Date.now();
+    runStarted.current = Date.now();
     setElapsed(0);
-    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
-    return () => clearInterval(timer);
   }, [pending, attempt, translator]);
-  useEffect(
-    () => () => {
-      copyRun.current += 1;
-    },
-    [],
-  );
+  useEffect(() => {
+    if (!pending) return;
+    setElapsed(Math.max(0, Math.floor((now - runStarted.current) / 1000)));
+  }, [now, pending]);
   useEffect(() => {
     if (!routingReady || !requested || !runnable) return;
     const controller = new AbortController();
     setPending(true);
     setError(null);
-    copyRun.current += 1;
-    setCopyState("idle");
+    setCopyFailed(false);
     setApplyError(false);
     setResult("");
     const onOutput = (output: string) => {
@@ -146,15 +142,10 @@ export function TranslationResultDialog({
     runnable,
     routingReady,
   ]);
-  const hintText = pending
-    ? elapsed >= 12
+  const hintText =
+    pending && elapsed >= 12
       ? t("Taking longer than usual. You can cancel or choose another model.")
-      : null
-    : result && !error && reprompt
-      ? t("After applying: ↑ original, ↓ rewritten prompt.")
-      : result && !error
-        ? t("After applying: ↑ original, ↓ translation.")
-        : null;
+      : null;
   return (
     <Modal
       title={
@@ -163,11 +154,6 @@ export function TranslationResultDialog({
           : target === "en"
             ? t("Translate to English")
             : t("Translate to Chinese")
-      }
-      description={
-        reprompt
-          ? t("Review the clearer prompt before applying it to your text.")
-          : t("Review the translation before applying it to your text.")
       }
       size="lg"
       onClose={onClose}
@@ -195,38 +181,28 @@ export function TranslationResultDialog({
               {reprompt ? t("Reprompt") : t("Translate selected text")}
             </Button>
           ) : null}
-          {error ? (
-            <Button variant="secondary" onClick={() => setAttempt(attempt + 1)}>
-              {t("Retry")}
-            </Button>
-          ) : null}
           {result && !pending && !error ? (
-            <Button
+            <CopyButton
               variant="secondary"
-              disabled={copyState === "pending"}
-              loading={copyState === "pending"}
-              onClick={async () => {
-                if (copyState === "pending") return;
-                const run = ++copyRun.current;
-                setCopyState("pending");
-                try {
-                  await copyMessage(result);
-                  if (copyRun.current === run) setCopyState("copied");
-                } catch {
-                  if (copyRun.current === run) setCopyState("error");
-                }
-              }}
-            >
-              {copyState === "copied"
-                ? t("Copied")
-                : copyState === "error"
-                  ? t("Retry copy")
-                  : t("Copy")}
-            </Button>
+              label={t("Copy")}
+              resetKeys={[result]}
+              onClick={() => setCopyFailed(false)}
+              onCopy={() => copyMessage(result)}
+              onCopyError={() => setCopyFailed(true)}
+            />
           ) : null}
           <Button
             variant={result && !pending && !error ? "primary" : "secondary"}
             disabled={!result || pending || !!error}
+            disabledReason={
+              pending
+                ? reprompt
+                  ? t("Rewriting…")
+                  : t("Translating…")
+                : error
+                  ? t("Retry before applying.")
+                  : t("Nothing to apply yet.")
+            }
             onClick={() => {
               try {
                 onApply(result);
@@ -249,9 +225,6 @@ export function TranslationResultDialog({
         className={`bycoda-arc ${styles.content}`}
       >
         <div className={styles.modelRow}>
-          <Text size="caption" tone="secondary" leading="inherit">
-            {reprompt ? t("Reprompt model") : t("Translation model")}
-          </Text>
           <ModelPicker
             harness={translator.harness}
             model={translator.model ?? ""}
@@ -297,16 +270,12 @@ export function TranslationResultDialog({
                 {t("Original text")}
               </Heading>
             </header>
-            <Text
-              as="div"
-              size="inherit"
-              tone="inherit"
-              leading="relaxed"
-              className={styles.text}
-              tabIndex={0}
-            >
-              {text}
-            </Text>
+            {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- the scrollable text box must stay keyboard-scrollable */}
+            <div className={styles.text} tabIndex={0}>
+              <Text as="div" size="inherit" tone="inherit" leading="relaxed">
+                {text}
+              </Text>
+            </div>
           </section>
           <section
             {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" }, styles.pane)}
@@ -317,52 +286,41 @@ export function TranslationResultDialog({
               <Heading size="item" id={`${id}-translation`}>
                 {reprompt ? t("Rewritten prompt") : t("Translation")}
               </Heading>
-              <Text
-                size="caption"
-                tone="secondary"
-                leading="inherit"
-                className={styles.status}
-                role="status"
-              >
-                {pending ? <Spinner size="xs" /> : null}
-                {pending
-                  ? reprompt
-                    ? t("Rewriting…")
-                    : t("Translating…")
-                  : result && !error
-                    ? t("Ready")
-                    : t("Preview")}
-                {pending ? (
-                  <span aria-hidden="true" className={styles.elapsed}>
-                    {elapsed}s
-                  </span>
-                ) : null}
+              <Text size="caption" tone="secondary" leading="inherit">
+                <span className={styles.status} role="status">
+                  {pending ? <Spinner size="xs" /> : null}
+                  {pending ? (reprompt ? t("Rewriting…") : t("Translating…")) : null}
+                  {pending ? (
+                    <span aria-hidden="true" className={styles.elapsed}>
+                      {elapsed}s
+                    </span>
+                  ) : null}
+                </span>
               </Text>
             </header>
             <div className={styles.result}>
               {pending && !result ? (
-                <Text
-                  as="div"
-                  size="inherit"
-                  tone="secondary"
-                  leading="relaxed"
-                  className={styles.placeholder}
-                >
-                  <div aria-hidden="true" className={styles.skeleton}>
-                    <SkeletonBar height="8px" />
-                    <SkeletonBar height="8px" index={1} />
-                    <SkeletonBar height="8px" width="65%" index={2} />
-                  </div>
-                </Text>
+                <div className={styles.placeholder}>
+                  <Text as="div" size="inherit" tone="secondary" leading="relaxed">
+                    <div aria-hidden="true" className={styles.skeleton}>
+                      <SkeletonBar height="8px" />
+                      <SkeletonBar height="8px" />
+                      <SkeletonBar height="8px" width="65%" />
+                    </div>
+                  </Text>
+                </div>
               ) : error ? (
-                <Alert tone="danger">
+                <Alert
+                  tone="danger"
+                  action={{ label: t("Retry"), onClick: () => setAttempt(attempt + 1) }}
+                >
                   {error === "authentication"
                     ? reprompt
                       ? t(
-                          "Sign in to the selected provider in Settings > Providers, then retry reprompt.",
+                          "Sign in to the selected provider in Settings → Providers, then retry reprompt.",
                         )
                       : t(
-                          "Sign in to the selected provider in Settings > Providers, then retry translation.",
+                          "Sign in to the selected provider in Settings → Providers, then retry translation.",
                         )
                     : error === "timeout"
                       ? reprompt
@@ -381,39 +339,30 @@ export function TranslationResultDialog({
                           : t("Could not translate. Try again.")}
                 </Alert>
               ) : result ? (
-                <Text
-                  as="div"
-                  size="inherit"
-                  tone="inherit"
-                  leading="relaxed"
-                  tabIndex={0}
-                  className={styles.text}
-                >
-                  {result}
-                </Text>
+                // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- the scrollable result box must stay keyboard-scrollable
+                <div tabIndex={0} className={styles.text}>
+                  <Text as="div" size="inherit" tone="inherit" leading="relaxed">
+                    {result}
+                  </Text>
+                </div>
               ) : (
-                <Text
-                  as="p"
-                  role="status"
-                  size="inherit"
-                  tone="secondary"
-                  leading="relaxed"
-                  className={styles.placeholder}
-                >
-                  {!runnable
-                    ? reprompt
-                      ? t("This provider does not support reprompt requests. Choose another model.")
-                      : t(
-                          "This provider does not support translation requests yet. You can choose another translation model.",
-                        )
-                    : !translator.model?.trim()
+                <div role="status" className={styles.placeholder}>
+                  <Text as="p" size="inherit" tone="secondary" leading="relaxed">
+                    {!runnable
                       ? reprompt
-                        ? t("Choose a reprompt model.")
-                        : t("Choose a translation model.")
-                      : reprompt
-                        ? t("Reprompt")
-                        : t("Translate selected text")}
-                </Text>
+                        ? t(
+                            "This provider does not support reprompt requests. Choose another model.",
+                          )
+                        : t(
+                            "This provider does not support translation requests yet. You can choose another translation model.",
+                          )
+                      : !translator.model?.trim()
+                        ? reprompt
+                          ? t("Choose a reprompt model.")
+                          : t("Choose a translation model.")
+                        : null}
+                  </Text>
+                </div>
               )}
             </div>
           </section>
@@ -424,8 +373,7 @@ export function TranslationResultDialog({
               ? t("The text changed. Select it again to reprompt.")
               : t("The text changed. Select it again to translate.")}
           </Alert>
-        ) : null}
-        {copyState === "error" && result && !error ? (
+        ) : copyFailed && result && !error ? (
           <Alert tone="danger">
             {reprompt
               ? t(

@@ -1,3 +1,4 @@
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -23,6 +24,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { Group, Row, SettingsFeedback, Toggle } from "../../../shared/ui/settings";
+import { errorText } from "../../../shared/lib/errors";
 import { HostShellRow, shellCount } from "./HostShellRow";
 import "./SettingsCollection.css";
 import "./TerminalSettings.css";
@@ -48,7 +50,7 @@ export function TerminalPage() {
       const result = await saveTerminalProfile(id);
       if (!result.mirrored) setUnmirrored({ id });
     } catch (error) {
-      setSaveProblem(error instanceof Error ? error.message : String(error));
+      setSaveProblem(errorText(error));
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -62,7 +64,7 @@ export function TerminalPage() {
         if (generation === request.current) setListed(value);
       })
       .catch((error: unknown) => {
-        if (generation === request.current) setProblem(String(error));
+        if (generation === request.current) setProblem(errorText(error));
       })
       .finally(() => {
         if (generation === request.current) setScanning(false);
@@ -88,8 +90,6 @@ export function TerminalPage() {
       <Group
         id="host-shells"
         title={t("Default shell by machine")}
-        description={t("Each machine uses its own shell, wherever you send the command from.")}
-        descriptionVisible
         persistence={{ mode: "automatic" }}
         info={
           <InfoPopover className="shrink-0" label={t("How it works")} width={360}>
@@ -105,17 +105,7 @@ export function TerminalPage() {
             </p>
             <p>
               {t(
-                "`!commands` in this computer's synced sessions run on this computer, using the shell selected here.",
-              )}
-            </p>
-            <p>
-              {t(
                 "`!commands` in this server's sessions run on the remote server, using the shell selected here, even when you type them on this computer.",
-              )}
-            </p>
-            <p>
-              {t(
-                "Applies to new commands on this host. Already open terminals keep their current shell.",
               )}
             </p>
           </InfoPopover>
@@ -157,9 +147,8 @@ export function TerminalPage() {
             onRefresh={() => scan(true)}
             feedback={
               saveProblem ? (
-                <SettingsFeedback state="error">
-                  {t("Could not save the terminal profile. Select it again to retry.")}{" "}
-                  {saveProblem}
+                <SettingsFeedback state="error" extra={<ErrorDetails detail={saveProblem} />}>
+                  {t("Could not save the terminal profile. Select it again to retry.")}
                 </SettingsFeedback>
               ) : unmirrored && !saving ? (
                 <SettingsFeedback
@@ -176,12 +165,10 @@ export function TerminalPage() {
                   )}
                 </SettingsFeedback>
               ) : saving ? (
-                <SettingsFeedback state="loading" immediate>
-                  {t("Saving…")}
-                </SettingsFeedback>
+                <SettingsFeedback state="loading">{t("Saving…")}</SettingsFeedback>
               ) : problem ? (
-                <SettingsFeedback state="error">
-                  {t("Could not discover shells. Use Look again to retry.")} {problem}
+                <SettingsFeedback state="error" extra={<ErrorDetails detail={problem} />}>
+                  {t("Could not discover shells. Use Look again to retry.")}
                 </SettingsFeedback>
               ) : scanning && !listed ? (
                 <SettingsFeedback state="loading">{t("Looking for shells…")}</SettingsFeedback>
@@ -206,13 +193,7 @@ function CodeBlockSettings() {
       resetLabel={t("Reset code blocks")}
       onReset={() => saveCodeRunReport(CODE_RUN_REPORT_DEFAULT)}
     >
-      <Row
-        id="terminal-code-result"
-        label={t("Add result to chat when finished")}
-        description={t(
-          "When a code block you run from a chat finishes, its output is added to the message box for you to review and send.",
-        )}
-      >
+      <Row id="terminal-code-result" label={t("Add result to chat when finished")}>
         <Toggle
           label={t("Add result to chat when finished")}
           on={report}
@@ -235,8 +216,9 @@ export function RemoteMachineShells() {
           <SettingsFeedback
             state="error"
             action={{ label: t("Retry"), pending: loading, onClick: refresh }}
+            extra={<ErrorDetails detail={error} />}
           >
-            {error}
+            {t("Could not load connected machines.")}
           </SettingsFeedback>
         </div>
       ) : null}
@@ -282,10 +264,9 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
   const savingRef = useRef(false);
   const generation = useRef(0);
   const [retry, setRetry] = useState(0);
-  const explain = (error: unknown) => {
-    const text = String(error).replace(/^Error: /, "");
-    return /unsupported|unknown method|not supported/i.test(text) ? HOST_UPDATE_NOTICE : text;
-  };
+  const requiresUpdate =
+    problem !== null &&
+    (problem === HOST_UPDATE_NOTICE || /unsupported|unknown method|not supported/i.test(problem));
   useEffect(() => {
     let alive = true;
     generation.current++;
@@ -302,7 +283,7 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
           }
         },
         (error) => {
-          if (alive) setProblem(explain(error));
+          if (alive) setProblem(errorText(error));
         },
       )
       .finally(() => {
@@ -336,7 +317,7 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
         },
         (error) => {
           if (version === generation.current) {
-            setProblem(explain(error));
+            setProblem(errorText(error));
             setNeedsRead(true);
           }
         },
@@ -397,13 +378,20 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
         problem ? (
           <SettingsFeedback
             state="error"
+            extra={problem !== HOST_UPDATE_NOTICE ? <ErrorDetails detail={problem} /> : undefined}
             action={{
               label: needsRead ? t("Read current shell") : t("Retry"),
               disabled: saving || loading,
               onClick: reread,
             }}
           >
-            {problem}
+            {requiresUpdate
+              ? t(
+                  "Update bycoda Host in Machines settings to use this on projects on another machine.",
+                )
+              : needsRead
+                ? t("Could not confirm the remote shell change.")
+                : t("Could not read remote shells.")}{" "}
             {needsRead && requestedShell !== null ? (
               <p>
                 {t("Requested shell: {p0}", {
@@ -415,7 +403,7 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
             ) : null}
           </SettingsFeedback>
         ) : saving || saved ? (
-          <SettingsFeedback state={saved ? "success" : "loading"} immediate>
+          <SettingsFeedback state={saved ? "success" : "loading"} immediate={saved}>
             {saving ? t("Saving…") : loading ? t("Asking the machine…") : t("Saved")}
           </SettingsFeedback>
         ) : null

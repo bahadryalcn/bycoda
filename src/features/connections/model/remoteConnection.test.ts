@@ -5,6 +5,7 @@ import {
   connectionIndicator,
   connectionOutcome,
   INITIAL_CONNECTION,
+  isPairingRefused,
   reduceConnection,
   sanitizeConnectionError,
   sendAfterReconnect,
@@ -13,6 +14,7 @@ import {
   shouldRetryBlocked,
   type RemoteConnectionState,
 } from "./remoteConnection";
+import { PROOF_REQUIRED } from "./connectionReason";
 
 const down = "Machine is unreachable. Check the host and SSH tunnel, then reconnect.";
 const denied =
@@ -20,6 +22,18 @@ const denied =
 const timedOut = "SSH timed out connecting to the machine.";
 
 describe("connectionOutcome", () => {
+  it("gives no status for a request refused because the machine is turned off", () => {
+    const refused = Object.assign(new Error("Machine connection is disabled"), {
+      code: "RPC_WS_DISABLED",
+    });
+    expect(connectionOutcome(refused)).toEqual({});
+    for (const state of [
+      { status: "connected", lastSeen: 10 },
+      { status: "unreachable", error: "down", lastSeen: 10 },
+    ] as const)
+      expect(reduceConnection(state, { type: "failure", error: refused, at: 20 })).toBe(state);
+  });
+
   it.each(["RPC_WS_BLOCKED", "RPC_WS_TLS", "RPC_WS_SCHEMA"])(
     "holds sending for %s until explicit recovery",
     (code) => {
@@ -96,6 +110,11 @@ describe("sanitizeConnectionError", () => {
       ),
     ).toBe("No route to host.");
     expect(sanitizeConnectionError("x".repeat(500)).length).toBe(198);
+  });
+
+  it("keeps a complete grapheme at the truncation boundary", () => {
+    const prefix = "x".repeat(196) + "👩‍💻";
+    expect(sanitizeConnectionError(prefix + "y".repeat(10))).toBe(prefix + "…");
   });
 });
 
@@ -175,12 +194,37 @@ describe("reduceConnection", () => {
     expect(connecting).toBe(INITIAL_CONNECTION);
   });
 
-  it("blocks a machine that refused the request's access, and never calls it connected", () => {
+  it("treats a revoked pairing as an identity problem: no blind retry, pair again", () => {
     const text =
-      "Host rejected request [RPC_AUTHORIZATION] (workspace.run). Reconnect the selected machine and check its access scope.";
+      "Host rejected request [RPC_AUTHORIZATION] (workspace.run). This machine no longer accepts this computer's pairing; pair it again.";
+    expect(connectionOutcome(text)).toEqual({
+      status: "identity-mismatch",
+      error: "This machine no longer accepts this computer’s pairing. Add it again in Connections.",
+      specific: true,
+    });
+    const state = reduceConnection({ status: "connected", lastSeen: 10 }, fail(text, 20));
+    expect(state).toMatchObject({ status: "identity-mismatch", lastSeen: 10 });
+    expect(reduceConnection(state, ok(30))).toBe(state);
+    expect(blocksSending(state.status)).toBe(true);
+  });
+
+  it("tells the owner to re-pair privately when a public tunnel refused an unbound computer", () => {
+    const text =
+      "Host rejected request [RPC_AUTHORIZATION] [RPC_PROOF_REQUIRED] (environment.describe). Re-pair this computer over a private connection (SSH, the local network or Tailscale): this machine does not accept an unbound computer over a public tunnel.";
+    const outcome = connectionOutcome(text);
+    expect(outcome).toMatchObject({ status: "identity-mismatch", specific: true });
+    expect(outcome.error).toBe(PROOF_REQUIRED);
+    const state = reduceConnection({ status: "connected", lastSeen: 10 }, fail(text, 20));
+    expect(isPairingRefused(state)).toBe(true);
+    expect(reduceConnection(state, ok(30))).toBe(state);
+  });
+
+  it("blocks a machine whose route a proxy refused, with its own reason", () => {
+    const text =
+      "Host rejected request [RPC_ROUTE_REJECTED] (sessions.queue.get). A proxy or origin header in front of the machine was refused; check the route to it.";
     expect(connectionOutcome(text)).toEqual({
       status: "connection-blocked",
-      error: text,
+      error: "A proxy or origin header in front of the machine was refused. Check the route to it.",
       specific: true,
     });
     const state = reduceConnection({ status: "connected", lastSeen: 10 }, fail(text, 20));

@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import {
+  accountUsageSummary,
   clampUsedPercent,
   exhaustedWindowResetAt,
+  formatResetCountdownWith,
   formatResetDuration,
   type ProviderRateLimits,
+  updatedLabel,
 } from "./rateLimits";
 import { getAllRateLimits, loadRateLimits, subscribeRateLimits } from "./rateLimitsCache";
 import {
@@ -20,6 +23,8 @@ import type { BoundFormat } from "../../../shared/i18n/boundFormat";
 
 /** At or below this much headroom an account reads as "Running low". */
 export const LOW_HEADROOM_PERCENT = 20;
+/** At or below this much headroom a low account reads as critical (red instead of yellow). */
+export const CRITICAL_HEADROOM_PERCENT = 10;
 
 /** Same `provider:id` key the identity cache uses. */
 export const accountUsageKey = identityKey;
@@ -31,6 +36,8 @@ export type AccountStatus = {
   label: string;
   /** Extra context, e.g. "back in 31m" for an exhausted account. */
   detail: string | null;
+  /** A low account at or below `CRITICAL_HEADROOM_PERCENT`. */
+  critical?: boolean;
 };
 
 /**
@@ -70,10 +77,19 @@ export function accountStatusWith(
     return { tone: "checking", label: "Checking…", detail: null };
   }
   if (limits?.status === "error" || limits?.status === "unavailable") {
+    const { usedPercent } = accountUsageSummary(limits, now);
+    if (usedPercent !== null) {
+      return {
+        tone: "unknown",
+        label: translate("Refresh failed. {p0}", { p0: updatedLabel(limits, now, translate) }),
+        detail: translate("{p0}% left", { p0: 100 - usedPercent }),
+      };
+    }
     return {
       tone: "unknown",
-      label:
-        limits.error || (limits.status === "unavailable" ? "Not signed in" : "Usage unavailable"),
+      label: providerAccountSignedOut(limits)
+        ? "Not signed in"
+        : limits.error || "Usage unavailable",
       detail: null,
     };
   }
@@ -100,31 +116,23 @@ export function accountStatusWith(
       tone: "low",
       label: "Running low",
       detail: translate("{p0}% left", { p0: Math.round(headroom) }),
+      critical: headroom <= CRITICAL_HEADROOM_PERCENT,
     };
   }
   return { tone: "ready", label: "Ready", detail: null };
 }
 
-/** True when usage failed because the account has to sign in again. */
-export function needsProviderLogin(limits: ProviderRateLimits): boolean {
-  if (limits.status === "unavailable") return true;
-  if (limits.status !== "error") return false;
-  const text = limits.error?.toLowerCase() ?? "";
+/**
+ * Signed out or expired, and a browser sign-in can fix it (the CLI exists).
+ * Only the fetch layer's structured `reason` counts; the error text is display-only.
+ */
+export function providerAccountSignedOut(limits: ProviderRateLimits): boolean {
   return (
-    text.includes("expired") ||
-    text.includes("sign-in") ||
-    text.includes("not signed in") ||
-    text.includes("not connected") ||
-    text.includes("authentication")
+    (limits.status === "error" || limits.status === "unavailable") && limits.reason === "signedOut"
   );
 }
 
-/** Signed out or expired, and a browser sign-in can fix it (the CLI exists). */
-export function providerAccountSignedOut(limits: ProviderRateLimits): boolean {
-  return needsProviderLogin(limits) && !limits.error?.toLowerCase().includes("cli not found");
-}
-
-/** "back in 31m" for the used-up window that stays blocked longest. */
+/** "Resets in 31m" for the used-up window that stays blocked longest. */
 function backIn(
   limits: ProviderRateLimits,
   now: number,
@@ -133,7 +141,7 @@ function backIn(
 ): string | null {
   const resetAt = exhaustedWindowResetAt(limits);
   if (resetAt == null || resetAt <= now) return null;
-  return translate("Resets in {p0}", { p0: format.formatResetDuration(resetAt - now) });
+  return formatResetCountdownWith(resetAt - now, translate, format);
 }
 
 /** The account with the most headroom, if it is comfortably above "low". */
@@ -205,4 +213,12 @@ export function useProviderAccountUsage(
   const refresh = useCallback(() => void load(accountsFor(provider), true), [load, provider]);
 
   return { usage, now, refreshing: inflight > 0, refresh };
+}
+
+/** The host's note for an idle Claude account: usage is simply not known until it is used again. */
+export function usageRenewalPending(limits: ProviderRateLimits | undefined): boolean {
+  return (
+    limits?.status === "error" &&
+    Boolean(limits.error?.toLowerCase().includes("will update when this account is used"))
+  );
 }

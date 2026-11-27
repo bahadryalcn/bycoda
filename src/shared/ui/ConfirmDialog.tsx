@@ -1,3 +1,4 @@
+import { errorText } from "../lib/errors";
 import {
   isValidElement,
   useCallback,
@@ -9,13 +10,14 @@ import {
   type ReactNode,
 } from "react";
 import { useT } from "../i18n";
-import { Alert } from "./Alert";
+import { InlineError } from "./InlineError";
 import { Button } from "./Button";
 import { Checkbox } from "./Checkbox";
 import { AlertCircle, CircleX } from "./icons";
 import { Modal, ModalActions } from "./Modal";
 import { Switch } from "./Switch";
 import { TextField } from "./TextField";
+import { Text } from "./Text";
 
 /** What the owner has entered in the dialog so far. */
 export type ConfirmState = {
@@ -44,7 +46,7 @@ export type ConfirmConsequence = ConfirmConsequenceItem | ReactNode;
 export type ConfirmRequest = {
   title: string;
   /** The question or the one-sentence outcome. */
-  message: ReactNode;
+  message?: ReactNode;
   /** Label of the confirming button, e.g. "Delete". A function follows the acknowledge state. */
   confirmLabel: string | ((state: ConfirmState) => string);
   /** Defaults to "Cancel". */
@@ -88,6 +90,11 @@ export type ConfirmRequest = {
   confirmDisabled?: boolean;
   /** Further footer actions placed before Cancel, such as "Refresh preview". */
   extraActions?: ReactNode;
+  /**
+   * A second way out that also closes the dialog, e.g. "Discard and leave" next to "Save and
+   * leave". It runs `onSelect` and settles as not confirmed; Cancel stays the safe choice.
+   */
+  alternative?: { label: string; onSelect: () => void; danger?: boolean };
   /**
    * Optional async work run on confirm. The dialog stays open with both buttons
    * disabled until it settles; a rejection keeps the dialog open with the error
@@ -205,7 +212,7 @@ async function attemptConfirm(
     onSettle(true);
     return null;
   } catch (cause) {
-    return cause instanceof Error ? cause.message : String(cause);
+    return errorText(cause);
   }
 }
 
@@ -296,6 +303,19 @@ export function ConfirmDialog({
       footer={
         <ModalActions>
           {request.extraActions}
+          {request.alternative ? (
+            <Button
+              variant="ghost"
+              tone={request.alternative.danger ? "danger" : undefined}
+              disabled={pending}
+              onClick={() => {
+                request.alternative!.onSelect();
+                onSettle(false);
+              }}
+            >
+              {request.alternative.label}
+            </Button>
+          ) : null}
           <Button variant="ghost" data-confirm-cancel="" disabled={pending} onClick={dismiss}>
             {request.cancelLabel ?? t("Cancel")}
           </Button>
@@ -316,7 +336,11 @@ export function ConfirmDialog({
         aria-busy={pending || undefined}
         className="flex flex-col gap-3 text-ui-secondary break-words text-(--ui-text-secondary)"
       >
-        <p>{request.message}</p>
+        {request.message == null || request.message === "" ? null : (
+          <Text as="p" size="inherit" tone="inherit" wrap="preserve-lines">
+            {request.message}
+          </Text>
+        )}
         {request.details ? <div className="min-w-0">{request.details}</div> : null}
         {consequences?.length ? <ConfirmConsequences items={consequences} /> : null}
         {request.body}
@@ -376,11 +400,7 @@ export function ConfirmDialog({
             />
           </div>
         ) : null}
-        {error ? (
-          <Alert tone="danger" className="break-words">
-            {error}
-          </Alert>
-        ) : null}
+        {error ? <InlineError details={error} className="break-words" /> : null}
       </div>
     </Modal>
   );

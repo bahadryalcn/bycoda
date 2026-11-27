@@ -104,6 +104,8 @@ static QUIT_COUNTER: AtomicU32 = AtomicU32::new(1);
 struct QuitConfirm {
     id: u32,
     in_flight: u32,
+    desktop_in_flight: u32,
+    host_activity: crate::host_lifecycle::Activity,
 }
 
 pub fn open_new_window(app: &AppHandle) -> Result<(), String> {
@@ -197,10 +199,14 @@ pub fn open_host_tools_window(
     let config = configure_host_tools_window(main, title, url);
     let creation = crate::native_window_lifecycle::admit_window(app, TOOLS_WINDOW_LABEL)?;
     crate::ssh_window_lifecycle::register(TOOLS_WINDOW_LABEL)?;
+    crate::webview_recovery::remember_config(&config);
     let window = WebviewWindowBuilder::from_config(app, &config)
         .map_err(|error| error.to_string())
         .and_then(|builder| builder.build().map_err(|error| error.to_string()))
-        .inspect_err(|_| crate::ssh_window_lifecycle::close(TOOLS_WINDOW_LABEL))?;
+        .inspect_err(|_| {
+            crate::webview_recovery::forget_config(TOOLS_WINDOW_LABEL);
+            crate::ssh_window_lifecycle::close(TOOLS_WINDOW_LABEL);
+        })?;
     creation.created(&window);
     let _ = ensure_window_reachable(&window);
     Ok(true)
@@ -467,13 +473,19 @@ pub fn ensure_window_reachable(window: &WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
+/// Logical minimum for secondary session windows. Smaller than the main
+/// workspace's, since a window hosts one conversation, but wide enough for the
+/// custom title row (menu, tabs, layout button, caption buttons) and the
+/// Working bar to stay usable instead of overlapping or clipping.
+const SESSION_WINDOW_MIN_SIZE: (f64, f64) = (480.0, 320.0);
+
 fn configure_session_window(config: &mut tauri::utils::config::WindowConfig, reveal: bool) {
     config.visible = reveal;
     config.focus = reveal;
-    // Secondary windows host individual conversations, so they must not inherit
-    // the main workspace's minimum size when its config is cloned.
-    config.min_width = None;
-    config.min_height = None;
+    // Not the main workspace's minimum (inherited by the cloned config), and
+    // not none: a sliver-sized window cannot fit the title row.
+    config.min_width = Some(SESSION_WINDOW_MIN_SIZE.0);
+    config.min_height = Some(SESSION_WINDOW_MIN_SIZE.1);
 }
 
 pub fn open_session_window(app: &AppHandle, reveal: bool) -> Result<WebviewWindow, String> {
@@ -532,6 +544,7 @@ fn build_session_window_with_url(
     };
 
     crate::ssh_window_lifecycle::register(&label)?;
+    crate::webview_recovery::remember_config(&config);
     let build = || {
         let builder =
             WebviewWindowBuilder::from_config(app, &config).map_err(|err| err.to_string())?;
@@ -546,6 +559,7 @@ fn build_session_window_with_url(
     #[cfg(not(target_os = "macos"))]
     let window = build();
     let window = window.inspect_err(|_| {
+        crate::webview_recovery::forget_config(&label);
         crate::ssh_window_lifecycle::close(&label);
         app.state::<crate::window_transfer::WindowTransferState>()
             .discard(&label);
@@ -585,7 +599,7 @@ fn build_session_window_with_url(
 
 /// The page colour to fill the window with when glass is off. Not a constant:
 /// Linux can turn glass off in dark mode, not just light.
-#[derive(Clone, Copy, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct Rgb {
     pub r: u8,
     pub g: u8,
@@ -600,9 +614,12 @@ impl Rgb {
     }
 }
 
-/// Close with a running chat hides the webview so the harness child keeps going.
+/// Hide the webview and keep its work running.
 #[tauri::command]
 pub fn hide_window(window: WebviewWindow) -> Result<(), String> {
+    #[cfg(windows)]
+    return crate::tray::windows::park(&window);
+    #[cfg(not(windows))]
     window.hide().map_err(|err| err.to_string())
 }
 
@@ -716,6 +733,13 @@ pub fn ensure_launch_window_visible(app: &AppHandle) {
 
 pub fn allow_exit() -> bool {
     ALLOW_EXIT.load(Ordering::SeqCst)
+}
+
+pub(crate) fn quit_in_progress() -> bool {
+    QUIT_RUN
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .is_some()
 }
 
 /// What the coordinator should do once a stage's bookkeeping is settled.
@@ -1009,7 +1033,25 @@ fn start_confirm(app: &AppHandle, id: u32) {
     ) else {
         return;
     };
-    if in_flight == 0 {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let host_activity = crate::host_lifecycle::quit_activity();
+        present_quit_confirmation(&app, id, in_flight, host_activity);
+    });
+}
+
+fn present_quit_confirmation(
+    app: &AppHandle,
+    id: u32,
+    in_flight: u32,
+    host_activity: crate::host_lifecycle::Activity,
+) {
+    #[cfg(windows)]
+    if crate::webview_recovery::is_rebuilding() {
+        clear_run(id);
+        return;
+    }
+    if in_flight == 0 && host_activity.count() == 0 && !host_activity.unknown {
         start_commit(app, id);
         return;
     }
@@ -1043,7 +1085,16 @@ fn start_confirm(app: &AppHandle, id: u32) {
             run.prompt = Some(label.clone());
         }
     }
-    let payload = QuitConfirm { id, in_flight };
+    let payload = QuitConfirm {
+        id,
+        desktop_in_flight: in_flight,
+        // Existing clients only know this total. S4 can show the Host subtotal
+        // separately using hostActivity.
+        in_flight: in_flight
+            .saturating_add(host_activity.count())
+            .saturating_add(u32::from(host_activity.unknown)),
+        host_activity,
+    };
     if app
         .emit_to(EventTarget::webview_window(&label), QUIT_CONFIRM, payload)
         .is_err()
@@ -1223,6 +1274,7 @@ mod primary_workspace;
 pub use primary_workspace::{
     is_primary_workspace, primary_workspace_label, PRIMARY_WORKSPACE_CHANGED,
 };
+pub(crate) mod exit_shutdown;
 pub mod quit_finalization;
 pub use quit_finalization::{confirm_quit, request_quit};
 
@@ -1444,7 +1496,7 @@ mod tests {
     }
 
     #[test]
-    fn session_windows_do_not_inherit_the_main_workspace_minimum_size() {
+    fn session_windows_use_their_own_title_row_minimum_size() {
         let main = tauri::utils::config::WindowConfig {
             min_width: Some(800.0),
             min_height: Some(520.0),
@@ -1453,9 +1505,16 @@ mod tests {
         for reveal in [false, true] {
             let mut config = main.clone();
             configure_session_window(&mut config, reveal);
-            assert_eq!(config.min_width, None);
-            assert_eq!(config.min_height, None);
+            assert_eq!(config.min_width, Some(480.0));
+            assert_eq!(config.min_height, Some(320.0));
         }
+        // Unconfigured configs (no main minimum) still get the bound.
+        let mut bare = tauri::utils::config::WindowConfig::default();
+        configure_session_window(&mut bare, true);
+        assert_eq!(
+            (bare.min_width, bare.min_height),
+            (Some(480.0), Some(320.0))
+        );
         assert_eq!(main.min_width, Some(800.0));
         assert_eq!(main.min_height, Some(520.0));
     }

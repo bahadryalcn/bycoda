@@ -13,7 +13,9 @@
         id: "c1-local-host",
         environmentId: "c1-environment",
         name: "Fixture Host",
-        endpoint: "http://fixture.invalid",
+        endpoint: new URLSearchParams(location.search).has("adopted-stop")
+          ? "http://127.0.0.1:3776"
+          : "http://fixture.invalid",
         localHost: true,
       };
       window.c1Host = { upgraded: false, calls: [] };
@@ -35,10 +37,15 @@
                   ? "current"
                   : "deferred",
               message: "The host update waits until running sessions finish.",
+              reason: "waiting-for-sessions",
               installed: window.c1Host.upgraded ? "0.6.91" : "0.6.90",
               bundled: "0.6.91",
             };
           if (command === "remote_request") {
+            if (args.method === "sessions.get")
+              return { status: "running", runId: "fixture-run", revision: 1 };
+            if (args.method === "commands.dispatch" && args.params?.type === "cancel")
+              return { commandId: args.params.commandId };
             if (args.method === "environment.describe")
               return {
                 environmentId: machine.environmentId,

@@ -44,8 +44,9 @@ to `feature-managed-workspaces`.
 
 ## Focused checks
 
-Use normal `pnpm check:web` / `pnpm host:build` only when their inputs are affected;
-use the focused graph/build helper tests identified in the map. Keep local,
+Use the focused graph/build helper tests identified in the map when the affected
+behavior needs verification. Follow the [testing schedule](../../../docs/reference/testing.md#order-of-verification)
+for full gates. Keep local,
 cross-platform, signed-package and installed acceptance separate in the handoff.
 
 ## References

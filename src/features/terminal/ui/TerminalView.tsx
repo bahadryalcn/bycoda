@@ -3,33 +3,36 @@ import type { ISearchOptions } from "@xterm/addon-search";
 import { loadAppearancePreferences } from "../../settings/model/appearancePreferences";
 import { Terminal } from "@xterm/xterm";
 import { WebLinksAddon } from "@xterm/addon-web-links";
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
-import { invoke } from "@tauri-apps/api/core";
 import { getPtyStatus } from "../../../platform/tauri/pty";
 import { shouldPollTerminalMeta } from "../model/terminalMetaPolling";
 import { isTerminalTextEdit, terminalToolShortcut } from "../model/terminalKeys";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { defaultTerminalTitle, parseOsc7Cwd, type TerminalMetaPatch } from "../model/terminalTab";
 import { isLightScheme } from "../../settings/model/appearance";
-import { IS_MAC } from "../../../platform/tauri/platform";
 import "@xterm/xterm/css/xterm.css";
 import { activateTerminalLink } from "../model/terminalLinks";
 import { TerminalSelectionMenu } from "./TerminalSelectionMenu";
-import { TerminalTools, type TerminalTool } from "./TerminalTools";
+import { type TerminalTool } from "./TerminalTools";
+import { TerminalControls, type TerminalShellActions } from "./TerminalControls";
 import type { SshEndpoint } from "../../connections/model/serverInventory";
-import { useSshShellIntegration } from "../model/sshShellIntegration";
-import { Modal } from "../../../shared/ui/Modal";
-import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
-import { LoadingText } from "../../../shared/ui/LoadingText";
 import { useT } from "../../../shared/i18n";
+import { useToast } from "../../../shared/ui/ToastRegion";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { reportFailure } from "../../../shared/ui/reportFailure";
+import { describeRemoteError } from "../../connections/public/remoteFailure";
+import { describeActionFailure, useGracedFailure } from "../../connections/public/transientFailure";
+import { loadSshSnippets } from "../../connections/model/sshSnippets";
 import { bindTerminalDomInput } from "../runtime/terminalDomInput";
 import { createTerminalFitting } from "../runtime/terminalFitting";
 import {
   createTerminalPtyRuntime,
   terminalPtyLaunch,
+  type SshProjectTerminal,
   type TerminalPtyRuntime,
 } from "../runtime/terminalPtyRuntime";
 import {
@@ -42,13 +45,13 @@ import { createTerminalTypography } from "../runtime/terminalTypography";
 import { createTerminalVisibility } from "../runtime/terminalVisibility";
 import { createTerminalWebgl } from "../runtime/terminalWebgl";
 
-const ServerSnippets = lazy(() =>
-  import("../../connections/ui/ServerSnippets").then((module) => ({
-    default: module.ServerSnippets,
-  })),
-);
-
 type Props = {
+  toolbarTarget?: HTMLDivElement | null;
+  /** The dock passes null for background panes, which have no visible toolbar. */
+  dockToolbarTarget?: HTMLDivElement | null;
+  sshConnectionName?: string;
+  onSendToAgent?: (text: string) => Promise<void>;
+  onSendToHost?: (text: string) => Promise<void>;
   /** Surface-specific typography, independent of the code editor's text size. */
   fontSize?: number;
   onFontSizeChange?: (size: number) => void;
@@ -59,6 +62,7 @@ type Props = {
   profile?: string;
   /** Canonical SSH-only connection. No local profile, cwd or launch replay. */
   sshConnectionId?: string;
+  sshProject?: SshProjectTerminal;
   /** Quick connections remain ephemeral and use the same native SSH engine. */
   sshEndpoint?: SshEndpoint;
   shellIntegration?: "auto" | "bash" | "zsh" | "powershell";
@@ -88,6 +92,18 @@ type Props = {
 // no terminal asks again.
 let metaSupported = true;
 
+function checkSavedCommand(serverId: string, initialCommand: string) {
+  const command = initialCommand.trim();
+  if (!command) return {};
+  try {
+    return {
+      duplicate: loadSshSnippets(serverId).some((snippet) => snippet.command.trim() === command),
+    };
+  } catch (reason) {
+    return { error: reason };
+  }
+}
+
 async function reconnectTerminal(
   reconnect: () => unknown,
   fail: (reason: unknown) => void,
@@ -103,6 +119,11 @@ async function reconnectTerminal(
 }
 
 export function TerminalView({
+  toolbarTarget,
+  dockToolbarTarget,
+  sshConnectionName,
+  onSendToAgent,
+  onSendToHost,
   fontSize,
   onFontSizeChange,
   lineHeight,
@@ -110,6 +131,7 @@ export function TerminalView({
   cwd,
   profile,
   sshConnectionId,
+  sshProject,
   sshEndpoint,
   shellIntegration,
   agentForwardingReviewId,
@@ -158,34 +180,24 @@ export function TerminalView({
       shellIntegration === "powershell") &&
     (sshConnectionId || sshEndpoint),
   );
-  const remoteShell = useSshShellIntegration(id, integrated);
-  // "auto" keeps the default, but until the remote shell reports integration
-  // for this tab the explicit Bash/Zsh/PowerShell option stays reachable.
-  const manualSuggestionsAvailable =
-    integrated && shellIntegration === "auto" && remoteShell.state?.id !== id;
-  const promptCallback = useRef(onSshPromptReady);
-  useLayoutEffect(() => {
-    promptCallback.current = onSshPromptReady;
-  }, [onSshPromptReady]);
-  const promptedId = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (
-      integrated &&
-      remoteShell.state?.id === id &&
-      remoteShell.state.status === "ready" &&
-      remoteShell.state.promptReady === true &&
-      promptedId.current !== id
-    ) {
-      promptedId.current = id;
-      promptCallback.current?.();
-    }
-  }, [id, integrated, remoteShell.state]);
-  const getRemoteShell = useStableCallback(() => remoteShell);
+  const shellActions = useRef<TerminalShellActions | null>(null);
+  const bindShellActions = useStableCallback((actions: TerminalShellActions | null) => {
+    shellActions.current = actions;
+  });
+  const suspendShellSuggestions = useStableCallback(() => shellActions.current?.suspendAutomatic());
   const isActive = useStableCallback(() => active);
   const composingRef = useRef(false);
   const editRevisionRef = useRef(0);
-  const invalidateRemoteShell = remoteShell.invalidate;
-  const [snippetsOpen, setSnippetsOpen] = useState(false);
+  const [snippets, setSnippets] = useState<{ initialCommand?: string } | null>(null);
+  const toast = useToast();
+  const alreadySaved = () => toast.show({ message: t("Command already saved."), tone: "info" });
+  const handleSaveCommand = (initialCommand: string) => {
+    if (!sshConnectionId) return;
+    const { duplicate, error } = checkSavedCommand(sshConnectionId, initialCommand);
+    if (error) void reportFailure(error, { toast }).catch(() => undefined);
+    else if (duplicate) alreadySaved();
+    else setSnippets({ initialCommand });
+  };
   // Same signal as the WebGL addon: the terminal is actually on screen. Without
   // IntersectionObserver there is no signal, so assume visible.
   const [onScreen, setOnScreen] = useState(typeof IntersectionObserver === "undefined");
@@ -204,10 +216,15 @@ export function TerminalView({
   const changeFontSizeRef = useRef<(size: number) => void>(() => {});
   const resetFontSizeRef = useRef<() => void>(() => {});
   const [tool, setTool] = useState<TerminalTool>(null);
+  const getTool = useStableCallback(() => tool);
   const [shellReady, setShellReady] = useState(false);
-  const [inputError, setInputError] = useState<string | null>(null);
+  const [inputError, setInputError] = useState<{ reason: unknown; message: string } | null>(null);
+  const [startupError, setStartupError] = useState<unknown>();
+  const [startupOutcome, setStartupOutcome] = useState<string>();
+  const startupFailure = useGracedFailure({ error: startupError, scope: id });
+  const startupMessage = startupOutcome ?? startupFailure.visibleError;
   // The raw reason of a connection failure is left to the central connection notice.
-  const inputErrorShownCentrally = useConnectionErrorShownCentrally(inputError);
+  const inputErrorShownCentrally = useConnectionErrorShownCentrally(inputError?.reason);
   const [exitCode, setExitCode] = useState<number | null | undefined>(undefined);
   const [reconnecting, setReconnecting] = useState(false);
   const reconnectPending = useRef(false);
@@ -218,6 +235,11 @@ export function TerminalView({
   const runningProcessRef = useRef<string | null>(null);
   /** Refreshes the foreground-process title now (set by the status poll). */
   const metaPokeRef = useRef<() => void>(() => {});
+
+  // Reason: publish the native lifecycle failure when its startup diagnostic becomes visible.
+  useEffect(() => {
+    if (startupMessage) lifecycleRef.current?.("failed");
+  }, [startupMessage]);
 
   useEffect(() => {
     const outer = outerRef.current;
@@ -244,7 +266,8 @@ export function TerminalView({
       allowProposedApi: true,
       smoothScrollDuration: 0,
       theme: colors.theme,
-      macOptionIsMeta: IS_MAC,
+      // The DOM input handler enables Meta per key on macOS.
+      macOptionIsMeta: false,
       linkHandler: { activate: activateTerminalLink },
     });
     term.open(host);
@@ -260,6 +283,8 @@ export function TerminalView({
     setTerminal(term);
     setShellReady(false);
     setInputError(null);
+    setStartupError(undefined);
+    setStartupOutcome(undefined);
     setExitCode(undefined);
     setTool(null);
 
@@ -274,6 +299,7 @@ export function TerminalView({
       launch: terminalPtyLaunch({
         keyGenerationPath,
         sshConnectionId,
+        sshProject,
         sshEndpoint,
         shellIntegration,
         agentForwardingReviewId,
@@ -290,7 +316,7 @@ export function TerminalView({
       lifecycle: (state) => lifecycleRef.current?.(state),
       onExit: (code) => {
         ++editRevisionRef.current;
-        getRemoteShell().suspendAutomatic();
+        shellActions.current?.suspendAutomatic();
         setTool(null);
         setShellReady(false);
         setExitCode(code ?? null);
@@ -304,19 +330,23 @@ export function TerminalView({
         }
       },
       onSpawned: () => setShellReady(true),
-      onStartFailed: (message) => {
+      onStartFailed: (error, attemptedLaunch) => {
         term.options.disableStdin = true;
-        getRemoteShell().suspendAutomatic();
+        shellActions.current?.suspendAutomatic();
         setShellReady(false);
-        setExitCode(null);
-        setInputError(message);
-        term.writeln(`\x1b[31m${message}\x1b[0m`);
+        if (attemptedLaunch) {
+          const failure = describeActionFailure(error);
+          if (failure.transient) setStartupError(error);
+          else setStartupOutcome(failure.message);
+        } else {
+          setStartupError(error);
+        }
       },
-      onInputFailure: (message) => {
+      onInputFailure: (reason) => {
         term.options.disableStdin = true;
-        getRemoteShell().suspendAutomatic();
+        shellActions.current?.suspendAutomatic();
         setTool(null);
-        setInputError(message);
+        setInputError({ reason, message: describeRemoteError(reason).message });
       },
     });
     ptyRuntimeRef.current = pty;
@@ -328,7 +358,7 @@ export function TerminalView({
       onCompositionStart: () => {
         ++editRevisionRef.current;
         composingRef.current = true;
-        getRemoteShell().suspendAutomatic();
+        shellActions.current?.suspendAutomatic();
       },
       onCompositionEnd: () => {
         composingRef.current = false;
@@ -351,8 +381,8 @@ export function TerminalView({
       // keystrokes. PSReadLine/Readline own those navigation groups.
       const textEdit = isTerminalTextEdit(data);
       if (integrated) {
-        invalidateRemoteShell(textEdit);
-        setTool((current) => (current === "remote" ? null : current));
+        shellActions.current?.invalidate(textEdit);
+        if (getTool() === "remote") setTool(null);
       }
       void pty.enqueueInput(data).then((written) => {
         if (!written) return;
@@ -367,7 +397,7 @@ export function TerminalView({
           !composingRef.current &&
           term.buffer.active.type !== "alternate"
         )
-          getRemoteShell().notifyInput();
+          shellActions.current?.notifyInput();
       });
     });
 
@@ -418,7 +448,7 @@ export function TerminalView({
       isSpawned: () => pty.spawned,
       onEnterAlternateScreen: () => {
         ++editRevisionRef.current;
-        getRemoteShell().suspendAutomatic();
+        shellActions.current?.suspendAutomatic();
       },
     });
     applySizeRef.current = fitting.applySize;
@@ -441,7 +471,7 @@ export function TerminalView({
     return () => {
       // View-driven work stops first; the process is untouched until retire().
       pty.detach();
-      getRemoteShell().suspendAutomatic();
+      suspendShellSuggestions();
       fitting.dispose();
       visibility?.dispose();
       webgl.dispose();
@@ -465,6 +495,7 @@ export function TerminalView({
   }, [
     id,
     sshConnectionId,
+    sshProject,
     sshEndpoint,
     shellIntegration,
     agentForwardingReviewId,
@@ -473,8 +504,8 @@ export function TerminalView({
     integrated,
     keyGenerationPath,
     privateTerminal,
-    invalidateRemoteShell,
-    getRemoteShell,
+    getTool,
+    suspendShellSuggestions,
     isActive,
     isOnScreen,
     getProfile,
@@ -485,9 +516,9 @@ export function TerminalView({
   useEffect(() => {
     if (!active || !onScreen) {
       ++editRevisionRef.current;
-      getRemoteShell().suspendAutomatic();
+      shellActions.current?.suspendAutomatic();
     }
-  }, [active, onScreen, getRemoteShell]);
+  }, [active, onScreen]);
 
   // Identity-stable: the callers pass an inline arrow, so depending on the
   // prop itself would tear down and re-arm the poll — and repeat lookup — on
@@ -592,14 +623,46 @@ export function TerminalView({
     applySizeRef.current();
   }, [fontSize, lineHeight]);
 
+  const inputPausedBody = t(
+    "Some input may not have reached the terminal. Check the shell before continuing.",
+  );
+  // One recovery step for a closed terminal: reconnect where the owner supports it, otherwise leave.
+  const closedAction = onReconnect
+    ? {
+        label: t("Reconnect"),
+        pending: reconnecting,
+        onClick: async () => {
+          if (reconnectPending.current) return;
+          reconnectPending.current = true;
+          setReconnecting(true);
+          await reconnectTerminal(
+            onReconnect,
+            (reason) => {
+              void reportFailure(reason, {
+                toast: { show: ({ message }) => setStartupOutcome(message) },
+              }).catch(() => undefined);
+            },
+            () => {
+              reconnectPending.current = false;
+              setReconnecting(false);
+            },
+          );
+        },
+      }
+    : onReturnToServers
+      ? { label: t("Back to servers"), onClick: onReturnToServers }
+      : undefined;
+
   return (
     <div
       {...actionContentScopeAttributes()}
       ref={outerRef}
       className="bycoda-terminal relative flex h-full w-full min-h-0 min-w-0 flex-col"
-      onMouseDown={() => termRef.current?.focus()}
+      onMouseDown={(event) => {
+        if (hostRef.current?.contains(event.target as Node)) termRef.current?.focus();
+      }}
       onKeyDownCapture={(event) => {
-        if (snippetsOpen) return;
+        if (snippets) return;
         if (isImeComposition(event.nativeEvent)) return;
         const next = terminalToolShortcut(event, !privateTerminal || integrated);
         if (!next) return;
@@ -614,7 +677,7 @@ export function TerminalView({
           return;
         if (next === "command" && integrated) {
           setTool("remote");
-          void remoteShell.request(remoteShell.source);
+          shellActions.current?.requestCurrent();
           return;
         }
         if (tool === next) {
@@ -627,166 +690,93 @@ export function TerminalView({
         setTool(next);
       }}
     >
-      <TerminalTools
+      <TerminalControls
+        toolbarTarget={toolbarTarget}
+        dockToolbarTarget={dockToolbarTarget}
+        sshConnectionName={sshConnectionName}
         fontSize={displayFontSize}
         savedFontSize={savedFontSize}
         onResetFontSize={() => resetFontSizeRef.current()}
         onFontSizeChange={(size) => changeFontSizeRef.current(size)}
         searchDecorations={searchDecorations}
-        terminalId={id}
+        id={id}
         terminal={terminal}
         mode={tool}
         onModeChange={setTool}
         ready={shellReady}
         suggestionsAllowed={!privateTerminal}
-        remoteShell={integrated ? remoteShell : undefined}
+        integrated={integrated}
+        autoIntegration={shellIntegration === "auto"}
+        bindShellActions={bindShellActions}
+        sshConnectionId={sshConnectionId}
+        onSshPromptReady={onSshPromptReady}
         onStartupReview={sshConnectionId ? onStartupReview : undefined}
         onEnableShellIntegration={
-          (sshConnectionId || sshEndpoint) && (!integrated || manualSuggestionsAvailable)
-            ? onEnableShellIntegration
-            : undefined
+          sshConnectionId || sshEndpoint ? onEnableShellIntegration : undefined
         }
-        onSavedCommands={
-          integrated && sshConnectionId
-            ? () => {
-                setSnippetsOpen(true);
-                void remoteShell.request();
-              }
-            : undefined
-        }
+        snippets={snippets}
+        onOpenSavedCommands={() => setSnippets({})}
+        onSaveSelectedCommand={handleSaveCommand}
+        onCloseSnippets={() => setSnippets(null)}
+        onAlreadySaved={alreadySaved}
+        onSendSelectedText={onSendToAgent}
       />
-      {snippetsOpen && sshConnectionId ? (
-        <Modal
-          title={t("Saved SSH commands")}
-          onClose={() => {
-            setSnippetsOpen(false);
-            remoteShell.dismiss();
-            termRef.current?.focus();
-          }}
-          fitViewport
-        >
-          <div className="flex flex-wrap items-center gap-2 text-ui-caption text-(--ui-text-muted)">
-            <Button
-              variant="ghost"
-              size="sm"
-              loading={remoteShell.waiting}
-              onClick={() => void remoteShell.request()}
-            >
-              {t("Refresh")}
-            </Button>
-            <span>
-              {(remoteShell.error ? t(remoteShell.error) : "") ||
-                t("Insert commands at an empty shell prompt. Press Enter in the terminal to run.")}
-            </span>
-          </div>
-          <Suspense fallback={<LoadingText />}>
-            <ServerSnippets
-              embedded
-              serverId={sshConnectionId}
-              serverName={
-                remoteShell.state
-                  ? `${remoteShell.state.user}@${remoteShell.state.host}`
-                  : undefined
-              }
-              onInsert={
-                remoteShell.state?.status === "suggestions" && remoteShell.state.prefix === ""
-                  ? async (value) => {
-                      const snapshot = remoteShell.state;
-                      if (
-                        !snapshot?.requestId ||
-                        snapshot.prefix !== "" ||
-                        snapshot.status !== "suggestions"
-                      )
-                        throw new Error("Request a fresh snapshot at an empty shell prompt");
-                      await invoke("ssh_terminal_command_insert", {
-                        id,
-                        requestId: snapshot.requestId,
-                        value,
-                      });
-                      remoteShell.dismiss();
-                      setSnippetsOpen(false);
-                      termRef.current?.focus();
-                    }
-                  : undefined
-              }
-            />
-          </Suspense>
-        </Modal>
-      ) : null}
-      {exitCode !== undefined ? (
+      <div ref={hostRef} className="bycoda-terminal-host min-h-0 min-w-0 flex-1 overflow-hidden" />
+      {startupFailure.pending ? (
+        <LoadingText inset="row" className="shrink-0" aria-busy="true" />
+      ) : startupMessage || exitCode !== undefined ? (
         <div className="shrink-0 px-3 py-2">
-          <Alert tone={exitCode === 0 ? "info" : "warning"}>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-ui-caption font-medium">
-                {t("Terminal closed")}
-                {exitCode != null ? ` · ${t("Exit code")}: ${exitCode}` : ""}
-              </span>
-              {onReconnect ? (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  loading={reconnecting}
-                  onClick={async () => {
-                    if (reconnectPending.current) return;
-                    reconnectPending.current = true;
-                    setReconnecting(true);
-                    await reconnectTerminal(
-                      onReconnect,
-                      (reason) => setInputError(String(reason)),
-                      () => {
-                        reconnectPending.current = false;
-                        setReconnecting(false);
-                      },
-                    );
-                  }}
-                >
-                  {t("Reconnect")}
-                </Button>
-              ) : onReturnToServers ? (
-                <Button size="sm" variant="secondary" onClick={onReturnToServers}>
-                  {t("Back to servers")}
-                </Button>
-              ) : null}
-            </div>
-            {inputError && !inputErrorShownCentrally ? (
-              <p className="mbs-2 break-words text-ui-caption">{inputError}</p>
-            ) : null}
-            {inputError ? (
-              <p className="mbs-2 break-words text-ui-caption text-(--ui-text-muted)">
-                {t(
-                  "Input paused. Some input may not have reached the terminal. Check the shell before continuing.",
-                )}
-              </p>
-            ) : null}
+          <Alert
+            tone={exitCode === 0 ? "info" : "warning"}
+            title={
+              exitCode != null
+                ? `${t("Terminal closed")} · ${t("Exit code")}: ${exitCode}`
+                : t("Terminal closed")
+            }
+            action={closedAction}
+            extra={
+              <>
+                {startupMessage ? (
+                  <ErrorDetails title={t("Terminal closed")} detail={startupMessage} />
+                ) : null}
+                {inputError != null && !inputErrorShownCentrally ? (
+                  <ErrorDetails title={t("Input paused")} detail={inputError.message} />
+                ) : null}
+              </>
+            }
+          >
+            {startupMessage || inputError == null ? null : inputPausedBody}
           </Alert>
         </div>
       ) : inputError !== null ? (
         <div className="shrink-0 px-3 py-2">
-          <Alert tone="warning">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-ui-caption font-medium">{t("Input paused")}</span>
-              <Button size="sm" variant="secondary" onClick={() => resumeInputRef.current()}>
-                {t("Resume input")}
-              </Button>
-            </div>
-            <p className="mbs-1 text-ui-caption">
-              {t(
-                "Input paused. Some input may not have reached the terminal. Check the shell before continuing.",
-              )}
-            </p>
-            {inputErrorShownCentrally ? null : (
-              <p className="mbs-2 break-words text-ui-caption text-(--ui-text-muted)">
-                {inputError}
-              </p>
-            )}
+          <Alert
+            tone="warning"
+            title={t("Input paused")}
+            action={{ label: t("Resume input"), onClick: () => resumeInputRef.current() }}
+            extra={
+              inputErrorShownCentrally ? undefined : (
+                <ErrorDetails title={t("Input paused")} detail={inputError.message} />
+              )
+            }
+          >
+            {inputPausedBody}
           </Alert>
         </div>
       ) : null}
-      <div ref={hostRef} className="bycoda-terminal-host min-h-0 min-w-0 flex-1 overflow-hidden" />
       <TerminalSelectionMenu
         terminal={terminal}
         host={hostRef}
-        active={active && onScreen && tool !== "search" && !privateTerminal}
+        active={
+          active &&
+          onScreen &&
+          tool !== "search" &&
+          (!privateTerminal || !!(onSendToAgent || sshConnectionId))
+        }
+        onSendToAgent={onSendToAgent}
+        onSendToHost={onSendToHost}
+        onSaveCommand={sshConnectionId ? handleSaveCommand : undefined}
+        privateTerminal={privateTerminal}
         cwd={cwd}
       />
     </div>

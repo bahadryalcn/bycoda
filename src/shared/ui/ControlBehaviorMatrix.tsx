@@ -132,11 +132,7 @@ function ActionsMatrix() {
         <Button disabled iconOnly variant="ghost" label={t("Disabled icon action")}>
           <Plus className="size-3.5" aria-hidden />
         </Button>
-        <Button
-          selected={pressed}
-          aria-pressed={pressed}
-          onClick={() => setPressed((value) => !value)}
-        >
+        <Button pressed={pressed} onClick={() => setPressed((value) => !value)}>
           {t("Selected action")}
         </Button>
         <Button variant="primary" disabled>
@@ -156,9 +152,7 @@ function ActionsMatrix() {
       </MatrixGroup>
       <MatrixGroup name={t("Joined and split actions")} testId="matrix-action-groups">
         <ButtonGroup aria-label={t("Joined actions")}>
-          <Button selected aria-pressed>
-            {t("Day")}
-          </Button>
+          <Button pressed>{t("Day")}</Button>
           <Button disabled>{t("Week")}</Button>
           <Button>{t("Month")}</Button>
         </ButtonGroup>
@@ -204,9 +198,9 @@ function ActionsMatrix() {
               {t("Approve")}
             </Button>
             <Button variant="ghost" disabled>
-              {t("Request changes")}
+              {t("Changes")}
             </Button>
-            <Button variant="ghost" selected aria-pressed>
+            <Button variant="ghost" pressed>
               {t("Comment")}
             </Button>
             <Button variant="ghost" loading loadingLabel={t("Merging")}>

@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { useTooltip } from "./Tooltip";
+import { inspectTooltipAnchor } from "./tooltipVisibility";
 
 const roots: Root[] = [];
 
@@ -57,6 +58,20 @@ it("does not re-render an overflow anchor when a descendant's inline style chang
   child.style.opacity = "1";
   await flushMutations();
   expect(onRender).not.toHaveBeenCalled();
+});
+
+it("ignores a decorative copy of the label when reading text and clipping", () => {
+  const anchor = document.createElement("span");
+  anchor.textContent = "Running 2 commands";
+  const copy = document.createElement("span");
+  copy.setAttribute("data-tooltip-ignore", "");
+  copy.style.overflow = "hidden";
+  copy.textContent = "Running 2 commands";
+  Object.defineProperty(copy, "clientWidth", { configurable: true, value: 100 });
+  Object.defineProperty(copy, "scrollWidth", { configurable: true, value: 300 });
+  anchor.append(copy);
+  document.body.append(anchor);
+  expect(inspectTooltipAnchor(anchor)).toEqual({ text: "Running 2 commands", clipped: false });
 });
 
 it("still re-renders an overflow anchor when a descendant's class or hidden attribute changes", async () => {

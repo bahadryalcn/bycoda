@@ -98,7 +98,10 @@ export function validCommand(value: unknown, followup = false): value is HostCom
           ["default", "plan", "build"].includes(value.intent as string)) &&
         optionalString(value.draftBlockId) &&
         optionalString(value.planBlockId) &&
-        optionalString(value.expectedPlanText)
+        optionalString(value.expectedPlanText) &&
+        (value.additionalDirs === undefined ||
+          (Array.isArray(value.additionalDirs) &&
+            value.additionalDirs.every((dir) => typeof dir === "string")))
       );
     case "removeDraft":
       return typeof value.draftBlockId === "string" && !!value.draftBlockId;

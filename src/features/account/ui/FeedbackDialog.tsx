@@ -5,10 +5,9 @@ import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { Heading } from "../../../shared/ui/Heading";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
-import { AiIdea, CircleAlert, Lock, MoreHorizontal, Star } from "../../../shared/ui/icons";
+import { AiIdea, CircleAlert, MoreHorizontal, Star } from "../../../shared/ui/icons";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { diagnosticResultText, getDiagnosticsMode, sendDiagnosticLogs } from "../../diagnostics";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
@@ -20,13 +19,13 @@ import {
   FEEDBACK_KINDS,
   FEEDBACK_MESSAGE_MAX,
   submitFeedback,
+  validateFeedbackDraft,
   type FeedbackDraft,
   type FeedbackKind,
   type FeedbackSubmitResult,
 } from "../model/feedback";
 import { closeFeedbackDialog, useFeedbackDialogOpen } from "../model/feedbackDialog";
 import { ContactByEmail } from "./AccountSupport";
-import styles from "./FeedbackDialog.module.css";
 
 function kindLabel(kind: FeedbackKind): string {
   switch (kind) {
@@ -67,22 +66,6 @@ function kindPlaceholder(kind: FeedbackKind): string {
   }
 }
 
-function Brand({ title, text, centered }: { title: string; text: string; centered?: boolean }) {
-  return (
-    <div className={`${styles.brand} ${centered ? styles.brandCentered : ""}`}>
-      <img className={styles.logo} src={PRODUCT_IDENTITY.logoSrc} alt="" />
-      <div>
-        <Heading size="item" level={2} className={styles.brandTitle}>
-          {title}
-        </Heading>
-        <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.brandText}>
-          {text}
-        </Text>
-      </div>
-    </div>
-  );
-}
-
 function FeedbackForm({ signedIn, open }: { signedIn: boolean; open: boolean }) {
   const [draft, setDraft] = useState<FeedbackDraft>(() => ({
     ...EMPTY_FEEDBACK_DRAFT,
@@ -90,45 +73,18 @@ function FeedbackForm({ signedIn, open }: { signedIn: boolean; open: boolean }) 
   }));
   const [result, setResult] = useState<FeedbackSubmitResult | null>(null);
   const [busy, setBusy] = useState(false);
+  // Any edit makes the last outcome stale. A send still in flight keeps its outcome: it sets
+  // `result` when it settles, so the dialog shows it on the next open.
+  const edit = (next: FeedbackDraft) => {
+    setDraft(next);
+    setResult(null);
+  };
   const close = () => {
-    if (result?.status === "sent" && !draft.message.trim()) setResult(null);
+    if (!busy) setResult(null);
     closeFeedbackDialog();
   };
 
   if (!open) return null;
-
-  if (result?.status === "sent" && !draft.message.trim()) {
-    return (
-      <Modal
-        title={t("Send feedback")}
-        size="sm"
-        minimalHeader
-        onClose={close}
-        footer={
-          <ModalActions>
-            <Button variant="primary" onClick={close}>
-              {t("Close")}
-            </Button>
-          </ModalActions>
-        }
-      >
-        <Brand
-          centered
-          title={t("Thank you!")}
-          text={t("Thank you for your feedback. Reference: {p0}", {
-            p0: result.reference,
-          })}
-        />
-        {result.logs && result.logs !== "sent" ? (
-          <InlineMessage tone="warning">
-            {t("Your feedback was sent, but the logs were not. {p0}", {
-              p0: diagnosticResultText(result.logs),
-            })}
-          </InlineMessage>
-        ) : null}
-      </Modal>
-    );
-  }
 
   const length = draft.message.trim().length;
   const send = async () => {
@@ -154,7 +110,8 @@ function FeedbackForm({ signedIn, open }: { signedIn: boolean; open: boolean }) 
       setBusy(false);
     }
   };
-  const invalid = result?.status === "invalid" ? result.issues[0] : undefined;
+  // Derived from the draft as it is now, and only while the last send was rejected.
+  const invalid = result?.status === "invalid" ? validateFeedbackDraft(draft)[0] : undefined;
 
   return (
     <Modal
@@ -173,6 +130,7 @@ function FeedbackForm({ signedIn, open }: { signedIn: boolean; open: boolean }) 
             form="feedback-form"
             loading={busy}
             disabled={length === 0}
+            disabledReason={length === 0 ? t("Add a message.") : undefined}
           >
             {t("Send")}
           </Button>
@@ -187,27 +145,22 @@ function FeedbackForm({ signedIn, open }: { signedIn: boolean; open: boolean }) 
           if (!busy) send().catch(() => undefined);
         }}
       >
-        <Brand
-          title={t("Help shape {p0}", { p0: PRODUCT_IDENTITY.displayName })}
-          text={t("Tell us what works, what does not and what you wish existed.")}
-        />
         <RadioGroup
           variant="tiles"
           label={t("Kind of feedback")}
-          className={styles.kinds}
-          tileClassName={styles.kind}
+          tileLayout="portrait"
           tile={{ selectionIndicator: "subtle-ring" }}
           value={draft.kind}
           options={FEEDBACK_KINDS.map((value) => ({
             value,
             content: (
-              <>
+              <span className="flex flex-col items-center gap-1">
                 {kindIcon(value)}
                 <span>{kindLabel(value)}</span>
-              </>
+              </span>
             ),
           }))}
-          onValueChange={(value) => setDraft({ ...draft, kind: value as FeedbackKind })}
+          onValueChange={(value) => edit({ ...draft, kind: value as FeedbackKind })}
         />
         <TextareaField
           label={t("Message")}
@@ -217,7 +170,9 @@ function FeedbackForm({ signedIn, open }: { signedIn: boolean; open: boolean }) 
           minRows={5}
           maxRows={12}
           autosize
-          description={`${length}/${FEEDBACK_MESSAGE_MAX}`}
+          description={
+            length > FEEDBACK_MESSAGE_MAX * 0.8 ? `${length}/${FEEDBACK_MESSAGE_MAX}` : undefined
+          }
           error={
             invalid === "message-missing"
               ? t("Add a message.")
@@ -227,23 +182,21 @@ function FeedbackForm({ signedIn, open }: { signedIn: boolean; open: boolean }) 
                   })
                 : undefined
           }
-          onChange={(event) => setDraft({ ...draft, message: event.target.value })}
+          onChange={(event) => edit({ ...draft, message: event.target.value })}
         />
-        <div className={styles.ratingRow}>
+        <div className="flex flex-wrap items-center gap-2">
           <Text size="caption" tone="secondary" leading="inherit">
             {t("How is your experience? (optional)")}
           </Text>
           <RadioGroup
             variant="tiles"
             label={t("Rating")}
-            className={styles.stars}
-            tileClassName={styles.star}
+            tileLayout="icon"
             tile={{ variant: "ghost", size: "sm" }}
             value={draft.rating === null ? "" : String(draft.rating)}
             options={[1, 2, 3, 4, 5].map((n) => ({
               value: String(n),
               ariaLabel: t("{p0} of 5", { p0: n }),
-              className: draft.rating !== null && n <= draft.rating ? styles.starOn : undefined,
               content: (
                 <Star
                   className="icon-lg"
@@ -252,37 +205,29 @@ function FeedbackForm({ signedIn, open }: { signedIn: boolean; open: boolean }) 
               ),
             }))}
             onValueChange={(value) =>
-              setDraft({
+              edit({
                 ...draft,
                 rating: Number(value) === draft.rating ? null : Number(value),
               })
             }
           />
-          {draft.rating !== null ? (
-            <Button variant="ghost" size="sm" onClick={() => setDraft({ ...draft, rating: null })}>
-              {t("Clear rating")}
-            </Button>
-          ) : null}
         </div>
         <Checkbox
           size="secondary"
           label={t("Include app version and system")}
-          description={t("App version, platform, OS version and release channel.")}
           checked={draft.includeContext}
-          onChange={(event) => setDraft({ ...draft, includeContext: event.target.checked })}
+          onChange={(event) => edit({ ...draft, includeContext: event.target.checked })}
         />
         <Checkbox
           size="secondary"
           label={t("Attach diagnostic logs")}
-          description={t(
-            "Redacted app and Host logs help us find the cause. They never include your conversations.",
-          )}
           checked={draft.attachLogs}
-          onChange={(event) => setDraft({ ...draft, attachLogs: event.target.checked })}
+          onChange={(event) => edit({ ...draft, attachLogs: event.target.checked })}
         />
-        <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.privacy}>
-          <Lock className="icon-xs" />
-          {t("Only what you write is sent. Do not paste secrets.")}
+        <Text as="p" size="caption" tone="secondary" leading="inherit">
+          {t(
+            "Only what you write and the options ticked above are sent; logs never include your conversations. Do not paste secrets.",
+          )}
         </Text>
         {result?.status === "sent" ? (
           <>

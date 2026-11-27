@@ -1,4 +1,4 @@
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { describeRemoteError } from "../../connections/public/remoteFailure";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
@@ -30,11 +30,14 @@ import {
 } from "../model/assistantOwnerQuestions";
 import styles from "./AssistantOwnerQuestions.module.css";
 import {
+  OwnerQuestionPresentationPending,
   pendingOwnerQuestionPresentations,
   retryOwnerQuestionPresentation,
   type OwnerQuestionPresentation,
 } from "../model/assistantOwnerQuestionPresentations";
-const actionError = (cause: unknown) => presentRemoteError(cause, { explicit: true });
+/** A failure as the translated sentence plus the raw text for Details. */
+type Problem = { message: string; details?: string };
+const actionError = (cause: unknown): Problem => describeRemoteError(cause);
 
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem" | "removeItem">;
 type Props = {
@@ -142,7 +145,7 @@ function PendingPresentation({
 }) {
   const t = useT(),
     [pending, setPending] = useState(false),
-    [error, setError] = useState("");
+    [problem, setProblem] = useState<Problem | null>(null);
   const checking = useRef(false),
     guard = useRef(authorized);
   guard.current = authorized;
@@ -150,28 +153,33 @@ function PendingPresentation({
     if (checking.current) return;
     checking.current = true;
     setPending(true);
-    setError("");
+    setProblem(null);
     try {
       await retryOwnerQuestionPresentation(value, storage, request, (ids) => guard.current(ids));
       notify();
       onChanged?.();
-    } catch {
-      setError(t("Saving this question is unconfirmed. Retry to verify the original card."));
+    } catch (cause) {
+      // Unknown delivery keeps the exact draft for a later retry; authority and draft mismatches keep their own message.
+      setProblem(
+        cause instanceof OwnerQuestionPresentationPending
+          ? { message: t("Could not be confirmed after retry. Check the Host connection.") }
+          : actionError(cause),
+      );
     } finally {
       checking.current = false;
       setPending(false);
     }
   };
   return (
-    <Text as="article" size="inherit" tone="inherit" leading="normal" className={styles.card}>
+    <article className={styles.card}>
       <Heading size="section" level={3} className={styles.title}>
         {value.input.title ?? value.input.questions[0].prompt}
       </Heading>
-      {error ? (
-        <InlineError>{error}</InlineError>
+      {problem ? (
+        <InlineError details={problem.details}>{problem.message}</InlineError>
       ) : (
         <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.status}>
-          {t("Saving this question is unconfirmed. Retry to verify the original card.")}
+          {t("Saving this question could not be confirmed. Retry to verify the original card.")}
         </Text>
       )}
       <div className={styles.footer}>
@@ -179,7 +187,7 @@ function PendingPresentation({
           {t("Retry")}
         </Button>
       </div>
-    </Text>
+    </article>
   );
 }
 function OwnerQuestionCard({
@@ -221,14 +229,14 @@ function OwnerQuestionCard({
         ),
       };
     } catch (error) {
-      return { error: error instanceof Error ? error.message : String(error) };
+      return { problem: actionError(error) };
     }
   }, [environmentId, question, storage, epoch]);
   const model = creation.model,
     prompt = useMemo(() => ownerQuestionPrompt(question, t("Type your answer")), [question, t]);
   const [ready, setReady] = useState(false),
     [pending, setPending] = useState(false),
-    [error, setError] = useState(""),
+    [problem, setProblem] = useState<Problem | null>(null),
     [resolved, setResolved] = useState<AssistantOwnerQuestion>(),
     [expanded, setExpanded] = useState(false);
   const alive = useRef(true),
@@ -244,7 +252,9 @@ function OwnerQuestionCard({
     if (!model) return;
     const hydrated = writeQuestionDraft(model.scope, prompt, model.formDraft, true);
     if (!hydrated.ok) {
-      setError(t("This question draft could not be restored. Keep the original card and retry."));
+      setProblem({
+        message: t("This question draft could not be restored. Keep the original card and retry."),
+      });
       return;
     }
     setReady(true);
@@ -254,7 +264,7 @@ function OwnerQuestionCard({
       try {
         model.saveDraft(draft);
       } catch (cause) {
-        if (alive.current) setError(cause instanceof Error ? cause.message : String(cause));
+        if (alive.current) setProblem(actionError(cause));
       }
     });
   }, [model, prompt]);
@@ -267,7 +277,7 @@ function OwnerQuestionCard({
         onChanged?.();
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setProblem(actionError(cause));
     }
   }, [model, current, prompt, onChanged]);
   function complete(value: AssistantOwnerQuestion) {
@@ -275,7 +285,7 @@ function OwnerQuestionCard({
     resolveQuestionDraft(model.scope, prompt);
     if (alive.current) {
       setResolved(value);
-      setError("");
+      setProblem(null);
       setPending(false);
     }
     onChanged?.();
@@ -284,7 +294,7 @@ function OwnerQuestionCard({
     if (!model || checking.current) return;
     checking.current = true;
     setPending(true);
-    setError("");
+    setProblem(null);
     try {
       const port: OwnerQuestionPort = (input, expected) => request(input, expected);
       const value = await (reply
@@ -293,7 +303,7 @@ function OwnerQuestionCard({
       complete(value);
     } catch (cause) {
       if (alive.current) {
-        setError(actionError(cause));
+        setProblem(actionError(cause));
         setPending(false);
       }
     } finally {
@@ -304,14 +314,14 @@ function OwnerQuestionCard({
     if (checking.current) return;
     checking.current = true;
     setPending(true);
-    setError("");
+    setProblem(null);
     try {
       if (!guard.current()) return;
       const result = await request({ op: "questions.get", id: question.id }, environmentId);
       if (!guard.current()) return;
       if (!result.ownerQuestion)
         throw new Error(
-          "The question is no longer available. Keep this draft and review its original work.",
+          t("The question is no longer available. Keep this draft and review its original work."),
         );
       onChanged?.();
       if (
@@ -320,7 +330,7 @@ function OwnerQuestionCard({
       )
         setResolved(result.ownerQuestion);
     } catch (cause) {
-      if (alive.current) setError(actionError(cause));
+      if (alive.current) setProblem(actionError(cause));
     } finally {
       checking.current = false;
       if (alive.current) setPending(false);
@@ -330,36 +340,26 @@ function OwnerQuestionCard({
     held = !!model?.intentPending;
   if (!creation.model)
     return (
-      <Text
-        as="article"
-        size="inherit"
-        tone="inherit"
-        leading="normal"
+      <article
         {...surfaceAttributes({ variant: "card", frame: "card", radius: "card" }, styles.card)}
       >
         <Heading size="section" level={3} className={styles.title}>
           {question.prompt.title ?? t("Question")}
         </Heading>
-        <InlineError>
-          {t(
-            creation.error ??
-              "This question draft could not be restored. Keep the original card and retry.",
-          )}
+        <InlineError details={creation.problem?.details}>
+          {creation.problem?.message ??
+            t("This question draft could not be restored. Keep the original card and retry.")}
         </InlineError>
         <Button size="sm" onClick={notify}>
           {t("Retry")}
         </Button>
-      </Text>
+      </article>
     );
   if (!held && ["answered", "cancelled", "superseded"].includes(value.status)) return null;
   const snoozed = !held && value.status === "snoozed" && !expanded;
   const stale = value.sourceCurrent === false;
   return (
-    <Text
-      as="article"
-      size="inherit"
-      tone="inherit"
-      leading="normal"
+    <article
       {...surfaceAttributes(
         ready && !snoozed && !stale
           ? { variant: "page", frame: "none", radius: "none" }
@@ -391,7 +391,7 @@ function OwnerQuestionCard({
               disabled={pending}
               onClick={stale ? () => void refresh() : () => setExpanded(true)}
             >
-              {t(stale ? "Refresh" : "Answer now")}
+              {stale ? t("Refresh") : t("Answer now")}
             </Button>
           </div>
         </>
@@ -404,10 +404,10 @@ function OwnerQuestionCard({
               ? { delivery: "sending" as const }
               : held
                 ? { delivery: "unknown" as const }
-                : error
+                : problem
                   ? { delivery: "failed" as const }
                   : {}),
-            ...(error ? { error: t(error) } : {}),
+            ...(problem ? { error: problem.message } : {}),
           }}
           draftScope={model!.scope}
           dismissLabel={t("Later")}
@@ -418,11 +418,13 @@ function OwnerQuestionCard({
         />
       ) : (
         <LoadingText delay={false} className={styles.status}>
-          {t("Loading...")}
+          {t("Loading…")}
         </LoadingText>
       )}
-      {error && (!ready || snoozed || stale) ? <InlineError>{t(error)}</InlineError> : null}
-      {!ready && error ? (
+      {problem && (!ready || snoozed || stale) ? (
+        <InlineError details={problem.details}>{problem.message}</InlineError>
+      ) : null}
+      {!ready && problem ? (
         <Button size="sm" onClick={notify}>
           {t("Retry")}
         </Button>
@@ -433,10 +435,10 @@ function OwnerQuestionCard({
             {t("Retry")}
           </Button>
           <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.status}>
-            {t("The answer is unconfirmed. Your original choice is kept.")}
+            {t("Your answer could not be confirmed. Your original choice is kept.")}
           </Text>
         </div>
       ) : null}
-    </Text>
+    </article>
   );
 }

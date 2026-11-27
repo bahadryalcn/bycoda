@@ -1,14 +1,12 @@
-import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { chatBackgroundKind } from "../../../../../shared/lib/chatBackgroundKind";
 import { ChatBackgroundMedia } from "../../ChatBackgroundMedia";
 import { DesignStudioButton } from "../controls/DesignStudioButton";
 import { BackgroundHistory } from "../../BackgroundHistory";
 import { BackgroundName } from "../../BackgroundName";
-import { Text } from "../../../../../shared/ui/Text";
+import { ErrorDetails } from "../../../../../shared/ui/ErrorDetails";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
-import { PRODUCT_IDENTITY } from "../../../../../shared/lib/productIdentity";
-import { ImagePlus } from "../../../../../shared/ui/icons";
+import { ImagePlus, Sparkles } from "../../../../../shared/ui/icons";
 import { Button } from "../../../../../shared/ui/Button";
 import { IS_LINUX } from "../../../../../platform/tauri/platform";
 import { useColorScheme } from "../../../../../shared/hooks/useColorScheme";
@@ -21,6 +19,9 @@ import {
   subscribeWorkspaceBackground,
 } from "../../../model/workspaceBackground";
 import {
+  applyChatBackgroundBlur,
+  applyChatBackgroundEmptyOpacity,
+  applyChatBackgroundSessionOpacity,
   CHAT_BACKGROUND_EMPTY_OPACITY_DEFAULT,
   CHAT_BACKGROUND_SESSION_OPACITY_DEFAULT,
   CHAT_BACKGROUND_SCOPE_DEFAULT,
@@ -59,12 +60,12 @@ import { AppearanceSaveFeedback, type AppearanceSettings } from "../../useAppear
 import { AppearanceSection } from "./AppearanceSection";
 import { LayerStack } from "../controls/LayerStack";
 import { GlassControl } from "../controls/GlassControl";
+import { DraftSlider } from "../controls/DraftSlider";
 import { SceneStrip } from "../controls/SceneStrip";
 import { BackgroundPreview, RandomCombinationButton } from "../controls/BackgroundPreview";
 import { BackgroundLibrary } from "../controls/BackgroundLibrary";
 import { ImageDropZone } from "../controls/ImageDropZone";
 import { generatorSession } from "../controls/themeGeneratorSession";
-import { LiveBackgroundCanvas } from "../../LiveBackgroundCanvas";
 import layerStyles from "../controls/LayerStack.module.css";
 import imageStyles from "../controls/BackgroundImage.module.css";
 
@@ -193,15 +194,7 @@ export function BackgroundSection({ appearance }: { appearance: AppearanceSettin
             onToggle: () => saveLiveBackground(effect === "none" ? lastScene : "none"),
             strength:
               effect === "none" ? t("None") : `${liveBackgroundLabel(effect)} · ${livePercent}%`,
-            thumbnail: (
-              <LiveBackgroundCanvas
-                effect={effect === "none" ? lastScene : effect}
-                intensity={1}
-                still
-                demoSpeech
-                className="absolute inset-0"
-              />
-            ),
+            thumbnail: <Sparkles aria-hidden />,
             settingIds: ["live-background"],
             content: (
               <Group
@@ -263,7 +256,6 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
   const emptyVisibility = Math.round(appearance.chatBackgroundEmptyOpacity * 100);
   const sessionVisibility = Math.round(appearance.chatBackgroundSessionOpacity * 100);
   const busy = appearance.chatBackgroundBusy;
-  const [preview, setPreview] = useState<"empty" | "conversation">("empty");
   const [decoded, setDecoded] = useState<{ src: string; state: "ready" | "error" } | null>(null);
   useEffect(() => {
     if (!src || media) return;
@@ -335,7 +327,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
             <div
               className={`relative isolate h-full w-full overflow-hidden ${imageState === "ready" ? "chat-pane-background" : ""}`}
               data-project-chat-background="false"
-              data-session-empty={preview === "empty"}
+              data-session-empty="true"
             >
               {media ? <ChatBackgroundMedia path={appearance.chatBackgroundPath} /> : null}
               {imageState === "loading" ? (
@@ -346,33 +338,6 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
                 appearance.newThreadBackgroundEffect === "gradient-blur" ? (
                 <GradientBlurBackground className="gradient-blur-preview absolute inset-0" />
               ) : null}
-              {imageState === "ready" && preview === "conversation" ? (
-                <div
-                  className="relative flex h-full flex-col items-end justify-center gap-1 p-2"
-                  aria-hidden
-                >
-                  <Text
-                    size="micro"
-                    tone="primary"
-                    {...surfaceAttributes(
-                      { radius: "sm", variant: "selected" },
-                      "max-w-[80%] px-2 py-0.5",
-                    )}
-                  >
-                    {t("Session")}
-                  </Text>
-                  <Text
-                    size="micro"
-                    tone="secondary"
-                    {...surfaceAttributes(
-                      { radius: "sm", variant: "card" },
-                      "self-start px-2 py-0.5",
-                    )}
-                  >
-                    {PRODUCT_IDENTITY.displayName}
-                  </Text>
-                </div>
-              ) : null}
             </div>
           ) : undefined}
         </ImageDropZone>
@@ -380,29 +345,17 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
           <BackgroundName path={appearance.chatBackgroundPath} />
           <div className={imageStyles.actions}>
             {hasImage ? (
-              <>
-                <Button
-                  className="shrink-0"
-                  onClick={() => choose()}
-                  disabled={busy}
-                  loading={appearance.chatBackgroundOperation === "choose"}
-                  loadingLabel={t("Loading…")}
-                  stableWidth
-                >
-                  {t("Choose background")}
-                </Button>
-                <Button
-                  className="shrink-0"
-                  onClick={remove}
-                  disabled={busy}
-                  tone="danger"
-                  loading={appearance.chatBackgroundOperation === "remove"}
-                  loadingLabel={t("Loading…")}
-                  stableWidth
-                >
-                  {t("Remove")}
-                </Button>
-              </>
+              <Button
+                className="shrink-0"
+                onClick={remove}
+                disabled={busy}
+                tone="danger"
+                loading={appearance.chatBackgroundOperation === "remove"}
+                loadingLabel={t("Loading…")}
+                stableWidth
+              >
+                {t("Remove")}
+              </Button>
             ) : (
               <Button
                 onClick={() => choose()}
@@ -416,13 +369,14 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
             )}
           </div>
           <Row label={t("Blur")} info={t("Applies to global and project images.")}>
-            <Slider
+            <DraftSlider
               label={t("Chat background blur")}
               value={appearance.chatBackgroundBlur}
-              display={`${appearance.chatBackgroundBlur}px`}
+              format={(next) => `${next}px`}
               min={CHAT_BACKGROUND_BLUR_MIN}
               max={CHAT_BACKGROUND_BLUR_MAX}
-              onChange={appearance.onChatBackgroundBlur}
+              apply={applyChatBackgroundBlur}
+              commit={appearance.onChatBackgroundBlur}
             />
           </Row>
         </div>
@@ -453,39 +407,17 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
         </SettingsFeedback>
       ) : null}
       {appearance.chatBackgroundError ? (
-        <SettingsFeedback state="error">{appearance.chatBackgroundError}</SettingsFeedback>
+        <SettingsFeedback
+          state="error"
+          extra={<ErrorDetails detail={appearance.chatBackgroundError.detail} />}
+        >
+          {appearance.chatBackgroundError.operation === "remove"
+            ? t("Could not remove the chat background.")
+            : t("Could not set the chat background.")}
+        </SettingsFeedback>
       ) : null}
       {hasImage ? (
         <>
-          <Row label={t("Preview")}>
-            <Segmented
-              label={t("Preview")}
-              value={preview}
-              onChange={setPreview}
-              options={[
-                { value: "empty", label: t("Empty only") },
-                { value: "conversation", label: t("Session") },
-              ]}
-            />
-          </Row>
-          {!media ? (
-            <Row
-              stacked
-              label={t("Background effect")}
-              info={NEW_THREAD_BACKGROUND_EFFECT_DESCRIPTIONS[appearance.newThreadBackgroundEffect]}
-            >
-              <Segmented
-                label={t("Background effect")}
-                value={appearance.newThreadBackgroundEffect}
-                options={NEW_THREAD_BACKGROUND_EFFECTS.map((effect) => ({
-                  value: effect,
-                  label: NEW_THREAD_BACKGROUND_EFFECT_LABELS[effect],
-                }))}
-                onChange={appearance.onNewThreadBackgroundEffect}
-                optionIdPrefix="new-thread-background-effect"
-              />
-            </Row>
-          ) : null}
           <Row label={t("Show on")} info={t("Empty sessions only, or every conversation.")}>
             <Segmented
               label={t("Show background on")}
@@ -507,30 +439,50 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
               onChange={appearance.onChatBackgroundScope}
             />
           </Row>
+          {!media ? (
+            <Row
+              stacked
+              label={t("Background effect")}
+              info={NEW_THREAD_BACKGROUND_EFFECT_DESCRIPTIONS[appearance.newThreadBackgroundEffect]}
+            >
+              <Segmented
+                label={t("Background effect")}
+                value={appearance.newThreadBackgroundEffect}
+                options={NEW_THREAD_BACKGROUND_EFFECTS.map((effect) => ({
+                  value: effect,
+                  label: NEW_THREAD_BACKGROUND_EFFECT_LABELS[effect],
+                }))}
+                onChange={appearance.onNewThreadBackgroundEffect}
+                optionIdPrefix="new-thread-background-effect"
+              />
+            </Row>
+          ) : null}
           <Row
             label={t("Empty chat visibility")}
             info={t("Background strength before a chat has messages.")}
           >
-            <Slider
+            <DraftSlider
               label={t("Empty chat background visibility")}
               value={emptyVisibility}
-              display={`${emptyVisibility}%`}
+              format={(next) => `${next}%`}
               min={Math.round(CHAT_BACKGROUND_OPACITY_MIN * 100)}
               max={Math.round(CHAT_BACKGROUND_OPACITY_MAX * 100)}
-              onChange={appearance.onChatBackgroundEmptyOpacity}
+              apply={(next) => applyChatBackgroundEmptyOpacity(next / 100)}
+              commit={appearance.onChatBackgroundEmptyOpacity}
             />
           </Row>
           <Row
             label={t("Session visibility")}
             info={t("Background strength once the conversation has messages.")}
           >
-            <Slider
+            <DraftSlider
               label={t("Session background visibility")}
               value={sessionVisibility}
-              display={`${sessionVisibility}%`}
+              format={(next) => `${next}%`}
               min={Math.round(CHAT_BACKGROUND_OPACITY_MIN * 100)}
               max={Math.round(CHAT_BACKGROUND_OPACITY_MAX * 100)}
-              onChange={appearance.onChatBackgroundSessionOpacity}
+              apply={(next) => applyChatBackgroundSessionOpacity(next / 100)}
+              commit={appearance.onChatBackgroundSessionOpacity}
             />
           </Row>
         </>

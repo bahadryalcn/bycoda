@@ -6,15 +6,31 @@ import { lockCooldownMs, type VerifyResult } from "../model/groupLock";
 import { PasswordField } from "../../../shared/ui/PasswordField";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
+import { CooldownNotice } from "./CooldownNotice";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
-/** What to tell the user about a refused password, or `null` when it was accepted. */
+/** The live cool-down notice; rendered from the running timer, never stored. */
+export function cooldownMessage(remainingMs: number): string | null {
+  return remainingMs > 0
+    ? t("Too many wrong passwords. Try again in {p0}.", { p0: formatCooldown(remainingMs) })
+    : null;
+}
+
+/**
+ * What to tell the user about a refused password to keep as a stored error, or
+ * `null` when it was accepted or a cool-down is running (the live timer owns
+ * that notice, so it cannot outlive the cool-down).
+ */
 export function verifyFailureMessage(result: VerifyResult, cooldownMs: number): string | null {
   if (result.ok) return null;
   if (result.reason === "no-password") return t("No lock password is set.");
-  if (cooldownMs > 0) {
-    return t("Too many wrong passwords. Try again in {p0}.", { p0: formatCooldown(cooldownMs) });
-  }
+  if (cooldownMs > 0) return null;
   return t("Wrong password.");
+}
+
+/** A thrown check or save failure as the user reads it; Host transport codes never show raw. */
+export function promptErrorMessage(reason: unknown): string {
+  return presentRemoteError(reason, { explicit: true });
 }
 
 /** What to tell the user when the password was right but the change was not fully saved. */
@@ -52,7 +68,8 @@ export const pause = (ms: number) => new Promise<void>((resolve) => window.setTi
 
 type Props = {
   title: string;
-  description: string;
+  /** Only when the title and submit label do not already say what the password is for. */
+  description?: string;
   submitLabel: string;
   danger?: boolean;
   /** Checks the password; the dialog closes through `onDone` when it passes. */
@@ -63,7 +80,7 @@ type Props = {
 
 /**
  * Asks for the lock password. A wrong one is answered after a short pause and
- * clears the field; repeated misses start a cool-down kept by the lock model,
+ * clears the field (a thrown failure keeps it); repeated misses start a cool-down kept by the lock model,
  * so closing and reopening this dialog does not skip it.
  */
 export function PasswordPromptDialog({
@@ -80,7 +97,7 @@ export function PasswordPromptDialog({
   const formId = useId();
   const alive = useRef(true);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const cooldown = useCooldown(lockCooldownMs());
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- tracks prompt lifetime to discard verification completions after unmount
@@ -91,29 +108,32 @@ export function PasswordPromptDialog({
     };
   }, []);
 
+  const message = cooldownMessage(cooldown.remainingMs) ?? notice;
+  const hasMessage = message != null;
+
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Synchronizes retry focus with the password input becoming editable after a failed verification.
   useEffect(() => {
-    if (!busy && error) input.current?.focus();
-  }, [busy, error]);
+    if (!busy && hasMessage) input.current?.focus();
+  }, [busy, hasMessage]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const password = input.current?.value ?? "";
     if (busy || cooldown.remainingMs > 0) return;
     if (!password) {
-      setError(t("Enter your lock password."));
+      setNotice(t("Enter your lock password."));
       input.current?.focus();
       return;
     }
     setBusy(true);
-    setError(null);
+    setNotice(null);
     try {
       const result = await verify(password);
       if (!alive.current) return;
       if (input.current) input.current.value = "";
       if (result.ok) {
         if (result.incomplete) {
-          setError(incompleteMessage(result.incomplete));
+          setNotice(incompleteMessage(result.incomplete));
           return;
         }
         onDone();
@@ -122,22 +142,15 @@ export function PasswordPromptDialog({
       if (result.reason === "wrong") await pause(WRONG_PASSWORD_DELAY_MS);
       if (!alive.current) return;
       if (result.retryAfterMs > 0) cooldown.start(result.retryAfterMs);
-      setError(verifyFailureMessage(result, result.retryAfterMs));
+      setNotice(verifyFailureMessage(result, result.retryAfterMs));
     } catch (reason) {
+      // A thrown failure is not a refused password: keep it typed so the retry is one click.
       if (!alive.current) return;
-      if (input.current) input.current.value = "";
-      setError(t(reason instanceof Error ? reason.message : String(reason)));
+      setNotice(promptErrorMessage(reason));
     } finally {
       if (alive.current) setBusy(false);
     }
   };
-
-  const message =
-    cooldown.remainingMs > 0
-      ? t("Too many wrong passwords. Try again in {p0}.", {
-          p0: formatCooldown(cooldown.remainingMs),
-        })
-      : error;
 
   return (
     // The running check cannot be cancelled, so the dialog stays until it finishes.
@@ -155,6 +168,7 @@ export function PasswordPromptDialog({
             type="submit"
             form={formId}
             disabled={busy || cooldown.remainingMs > 0}
+            aria-describedby={cooldown.remainingMs > 0 ? "lock-password-error" : undefined}
             variant="primary"
             tone={danger ? "danger" : "neutral"}
             loading={busy}
@@ -177,7 +191,9 @@ export function PasswordPromptDialog({
           aria-invalid={message != null || undefined}
           aria-describedby={message ? "lock-password-error" : undefined}
         />
-        {message ? (
+        {cooldown.remainingMs > 0 ? (
+          <CooldownNotice id="lock-password-error">{message}</CooldownNotice>
+        ) : message ? (
           <Alert id="lock-password-error" tone="danger">
             {message}
           </Alert>

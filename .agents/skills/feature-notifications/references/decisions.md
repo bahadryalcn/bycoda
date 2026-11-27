@@ -1,5 +1,16 @@
 # Notification decisions
 
+## Routine notice placement and history
+
+Owner decision, 2026-11-17: "bunlar sağ üstte açılsada sadece uyarı ve hatalar ortaya gelse" and "daha sonra takip edeiblecieğimzi biyere" (routine notices at top right, only warnings and errors at center, with somewhere to revisit them).
+
+Shared toasts default to top-end for information, success and progress, top-center
+for warning and danger. Explicit placements and decision-request slots retain their
+contracts. Plain-text toast summaries join the existing capped device-local
+notification history; expiry and dismissal do not remove them. Provider update
+completion is announced even after its launch notice closes. Children, action
+payloads and secrets are never scraped into history.
+
 ## Application-owned approval presentation
 
 Owner decision, 2026-11-07: "I do not want native approvals; if permission is needed they should be requested from inside the app, even from the chat" (translated)

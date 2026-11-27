@@ -24,7 +24,7 @@ describe("changesTooltipDetails", () => {
     );
     expect(scope).toContain("main");
     expect(scope).toContain("upstream");
-    expect(scope).toContain("This session");
+    expect(scope).not.toContain("This session");
     expect(stats).toContain("543 files");
     expect(stats).toMatch(/data-side="added">\+20,563/);
     expect(stats).toMatch(/data-side="removed">−8,788/);

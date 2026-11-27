@@ -1,5 +1,5 @@
 import { useT } from "../../shared/i18n";
-import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
+import { BrandMark } from "../../shared/ui/BrandMark";
 import { FailureState, isModuleLoadError } from "../../shared/ui/FailureState";
 
 /** Must stay independent of App so a failed App chunk can still recover. */
@@ -11,13 +11,8 @@ export function BootFailure({ error, onRetry }: { error: unknown; onRetry: () =>
         fullScreen
         brand={
           <div className="bycoda-wordmark bycoda-boot-brand">
-            <img src={PRODUCT_IDENTITY.logoSrc} alt="" draggable={false} />
-            <img
-              className="bycoda-brand-lettering"
-              src={PRODUCT_IDENTITY.wordmarkSrc}
-              alt=""
-              draggable={false}
-            />
+            <BrandMark draggable={false} />
+            <BrandMark variant="wordmark" className="bycoda-brand-lettering" draggable={false} />
           </div>
         }
         title={t("Couldn’t start")}
@@ -30,7 +25,7 @@ export function BootFailure({ error, onRetry }: { error: unknown; onRetry: () =>
         }
         error={error}
         onRetry={onRetry}
-        retryLabel={t("Reload app")}
+        retryLabel={t("Reload")}
       />
     </main>
   );

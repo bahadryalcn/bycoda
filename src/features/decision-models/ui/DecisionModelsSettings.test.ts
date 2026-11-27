@@ -10,6 +10,11 @@ import type { DecisionRouting, DecisionSource, DiscoveryCandidate } from "../mod
 
 import { DecisionModelsSettings } from "./DecisionModelsSettings";
 
+vi.mock("../../../platform/tauri/platform", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../platform/tauri/platform")>();
+  return { ...actual, IS_WIN: true, IS_MAC: false, IS_LINUX: false };
+});
+
 import {
   bodyText,
   buttonByText,
@@ -210,6 +215,11 @@ async function renderSettings(options: Parameters<typeof createClient>[0] = {}) 
   return { mocks };
 }
 
+async function openScanSettings() {
+  clickButton("Scan settings");
+  await settleDecisionUi();
+}
+
 function clickInList(listLabel: string, buttonText: string) {
   const list = document.querySelector(`[aria-label="${listLabel}"]`);
 
@@ -238,7 +248,7 @@ describe("DecisionModelsSettings sources", () => {
 
     expect(bodyText()).toContain("This did not work. Try again.");
 
-    clickButton("Try again");
+    clickButton("Retry");
 
     await settleDecisionUi();
 
@@ -285,7 +295,8 @@ describe("DecisionModelsSettings sources", () => {
 
     expect(document.querySelector('[role="combobox"]')).toBeNull();
 
-    expect(buttonByText("Add from folder")).toBeDefined();
+    // The section header's Add model menu is the only add action; the empty state has none.
+    expect(buttonByText("Add from folder")).toBeUndefined();
   });
 
   it("lists connected sources with their status", async () => {
@@ -303,7 +314,7 @@ describe("DecisionModelsSettings sources", () => {
 
     expect(mocks.list).toHaveBeenCalledTimes(1);
 
-    clickButton("Try again");
+    clickButton("Retry");
 
     await settleDecisionUi();
 
@@ -404,6 +415,35 @@ describe("DecisionModelsSettings found on this computer", () => {
     });
 
     expect(mocks.scan).not.toHaveBeenCalled();
+  });
+
+  it("does not scan again when the Host already confirmed nothing was found", async () => {
+    const { mocks } = await renderSettings({
+      results: async () => ({ found: [], scannedAt: 1_000_000 }),
+    });
+
+    expect(mocks.scan).not.toHaveBeenCalled();
+    expect(buttonByText("Scan again")).toBeDefined();
+  });
+
+  it("keeps an incomplete empty scan visible without scanning on open", async () => {
+    const { mocks } = await renderSettings({
+      results: async () => ({ found: [], incomplete: true, scannedAt: 1_000_000 }),
+    });
+
+    expect(mocks.scan).not.toHaveBeenCalled();
+    expect(bodyText()).toContain("The scan is incomplete");
+  });
+
+  it("scans again only when the user asks after a confirmed empty result", async () => {
+    const { mocks } = await renderSettings({
+      results: async () => ({ found: [], scannedAt: 1_000_000 }),
+    });
+
+    clickButton("Scan again");
+    await settleDecisionUi();
+
+    expect(mocks.scan).toHaveBeenCalledTimes(1);
   });
 
   it("keeps earlier results visible until cancellation settles the original scan", async () => {
@@ -517,15 +557,13 @@ describe("DecisionModelsSettings found on this computer", () => {
 
 describe("DecisionModelsSettings add paths", () => {
   it.each([
-    ["Local file path", "Use a model file on this computer"],
+    ["Add from a file or address", "Add from a file or address"],
 
-    ["Local service", "Running address"],
-
-    ["Install on this computer", "A local model runs on this computer"],
+    ["Install on this computer", "Install on this computer"],
 
     ["API provider", "No providers are listed yet."],
 
-    ["Custom endpoint", "Connect a service at an address you choose."],
+    ["Custom endpoint", "Key header name (optional)"],
   ])("opens the %s dialog from the Add menu", async (menuLabel, marker) => {
     await renderSettings({});
 
@@ -554,7 +592,7 @@ describe("DecisionModelsSettings privacy and routing", () => {
     expect(control).not.toBeNull();
     expect(control?.id).toBeTruthy();
     const label = document.querySelector(`label[for="${control?.id}"]`);
-    expect(label?.textContent).toContain("Personal data stays on this computer");
+    expect(label?.textContent).toContain("Send personal data only to models on this computer");
     expect(control?.closest('[data-settings-part="row"]')).not.toBeNull();
   });
 
@@ -577,7 +615,7 @@ describe("DecisionModelsSettings privacy and routing", () => {
   it("hides routing save until a route changes", async () => {
     await renderSettings({ sources: [source()] });
 
-    expect(buttonByText("Save routing")).toBeUndefined();
+    expect(buttonByText("Save routing")?.disabled ?? true).toBe(true);
 
     const thresholds = document.querySelectorAll<HTMLInputElement>('input[inputmode="decimal"]');
 
@@ -675,6 +713,7 @@ describe("DecisionModelsSettings scan settings", () => {
   it("rescans unchanged settings without rewriting them", async () => {
     const { mocks } = await renderSettings();
 
+    await openScanSettings();
     clickButton("Scan with these settings");
 
     await settleDecisionUi();
@@ -689,6 +728,7 @@ describe("DecisionModelsSettings scan settings", () => {
 
     expect(mocks.settingsGet).toHaveBeenCalledTimes(1);
 
+    await openScanSettings();
     const ports = document.querySelector<HTMLInputElement>('input[placeholder="8080, 9000"]');
 
     expect(ports?.value).toBe("8080");
@@ -715,6 +755,7 @@ describe("DecisionModelsSettings scan settings", () => {
   it("refuses an invalid port before calling the Host", async () => {
     const { mocks } = await renderSettings();
 
+    await openScanSettings();
     const ports = document.querySelector<HTMLInputElement>('input[placeholder="8080, 9000"]');
 
     if (!ports) throw new Error("ports field not found");
@@ -732,6 +773,7 @@ describe("DecisionModelsSettings scan settings", () => {
 
   it("shows the folder example with single backslashes", async () => {
     await renderSettings();
+    await openScanSettings();
 
     const folders = Array.from(document.querySelectorAll("textarea")).find(
       (field) => field.placeholder === "D:\\Models",
@@ -741,7 +783,7 @@ describe("DecisionModelsSettings scan settings", () => {
   });
 });
 
-it("sorts new discoveries first and offers no Add action on connected items", async () => {
+it("lists only new discoveries, leaving connected ones to Connected models", async () => {
   await renderSettings({
     sources: [{ ...source(), local: { modelPath: "C:/Models/connected.gguf" } }],
 
@@ -764,11 +806,11 @@ it("sorts new discoveries first and offers no Add action on connected items", as
 
   const rows = list.querySelectorAll("li");
 
+  expect(rows).toHaveLength(1);
+
   expect(rows[0].textContent).toContain("New file");
 
-  expect(rows[1].textContent).toContain("Connected");
-
-  expect(rows[1].querySelector("button")).toBeNull();
+  expect(list.textContent).not.toContain("Connected file");
 });
 
 it("tests all models and keeps each result visible after stale list refresh", async () => {
@@ -805,6 +847,48 @@ it("tests all models and keeps each result visible after stale list refresh", as
   expect(rows[1].textContent).toContain("Failed");
 });
 
+it("runs Test all two at a time and summarizes every failed source without a top error", async () => {
+  const { mocks } = await renderSettings({
+    sources: ["a", "b", "c", "d", "e"].map((id) =>
+      source({ id, name: `Fake ${id}`, status: "unknown" }),
+    ),
+  });
+
+  let inFlight = 0;
+
+  let maxInFlight = 0;
+
+  mocks.test.mockImplementation(async (params?: unknown) => {
+    const { id } = params as { id: string };
+
+    inFlight += 1;
+
+    maxInFlight = Math.max(maxInFlight, inFlight);
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    inFlight -= 1;
+
+    if (id === "b") throw new Error("fake rejection for b");
+
+    return { sourceId: id, ok: id !== "d", durationMs: 3 };
+  });
+
+  clickButton("Test all");
+
+  await vi.waitFor(async () => {
+    await settleDecisionUi();
+
+    expect(bodyText()).toContain("2 of 5 connection tests failed");
+  });
+
+  expect(mocks.test).toHaveBeenCalledTimes(5);
+
+  expect(maxInFlight).toBe(2);
+
+  expect(bodyText()).not.toContain("This did not work. Try again.");
+});
+
 it("keeps local runtime Stop available after a failed connection test", async () => {
   const { mocks } = await renderSettings({ sources: [source()] });
 
@@ -838,39 +922,43 @@ it("keeps full model paths available through Details without repeating them in e
 
   await settleDecisionUi();
 
-  act(() => menuItemByText("Details")!.click());
+  act(() => menuItemByText("Show details")!.click());
 
   await settleDecisionUi();
 
   expect(list.textContent).toContain(modelPath);
 });
 
-it("keeps scan settings collapsed and preserves drafts across disclosure toggles", async () => {
-  await renderSettings();
+it("keeps scan settings closed until opened and discards a draft only after confirmation", async () => {
+  const { mocks } = await renderSettings();
 
-  const disclosure = Array.from(document.querySelectorAll("details")).find(
-    (item) => item.querySelector("summary")?.textContent === "Scan settings",
-  )!;
+  expect(document.querySelector('input[placeholder="8080, 9000"]')).toBeNull();
 
-  expect(disclosure.open).toBe(false);
+  await openScanSettings();
 
-  const ports = disclosure.querySelector<HTMLInputElement>('input[placeholder="8080, 9000"]')!;
+  setInputValue(
+    document.querySelector<HTMLInputElement>('input[placeholder="8080, 9000"]')!,
+    "9001",
+  );
 
-  act(() => {
-    disclosure.open = true;
-  });
+  clickButton("Cancel");
 
-  setInputValue(ports, "9001");
+  await settleDecisionUi();
 
-  act(() => {
-    disclosure.open = false;
-  });
+  expect(bodyText()).toContain("Your scan settings have not been saved.");
 
-  act(() => {
-    disclosure.open = true;
-  });
+  clickButton("Discard changes");
 
-  expect(ports.value).toBe("9001");
+  await settleDecisionUi();
+
+  expect(document.querySelector('input[placeholder="8080, 9000"]')).toBeNull();
+
+  await openScanSettings();
+
+  expect(document.querySelector<HTMLInputElement>('input[placeholder="8080, 9000"]')?.value).toBe(
+    "8080",
+  );
+  expect(mocks.settingsSet).not.toHaveBeenCalled();
 });
 
 describe("decision source test freshness", () => {
@@ -914,7 +1002,7 @@ describe("decision source test freshness", () => {
 
     await settleDecisionUi();
 
-    clickButton("Try again");
+    clickButton("Retry");
 
     await settleDecisionUi();
 
@@ -1047,7 +1135,7 @@ it("retries a failed catalog read from the API dialog and recovers", async () =>
 
   await settleDecisionUi();
 
-  clickButton("Try again");
+  clickButton("Retry");
 
   await settleDecisionUi();
 
@@ -1110,7 +1198,7 @@ it("names the selected remote Host in uninstall confirmation without uninstallin
 
   await settleDecisionUi();
 
-  expect(bodyText()).toContain("Personal data stays on Host Remote A");
+  expect(bodyText()).toContain("Send personal data only to models on Host Remote A");
 
   clickIconButton("More actions");
 
@@ -1266,6 +1354,7 @@ it("retains Host routing and scan drafts after a section remount", async () => {
   clickButton("Customize");
   await settleDecisionUi();
   setInputValue(document.querySelector<HTMLInputElement>('input[inputmode="decimal"]')!, "0.74");
+  await openScanSettings();
   const folders = document.querySelector<HTMLTextAreaElement>("textarea")!;
   setInputValue(folders, "D:\\NewModels");
   unmountDecisionUi(mounted);
@@ -1282,6 +1371,76 @@ it("retains Host routing and scan drafts after a section remount", async () => {
   expect(document.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("D:\\NewModels");
 });
 
+it("names the remote Host while its scan is running", async () => {
+  let finish!: (result: { found: DiscoveryCandidate[] }) => void;
+  const waiting = new Promise<{ found: DiscoveryCandidate[] }>((resolve) => {
+    finish = resolve;
+  });
+  const { client } = createClient({ scan: async () => waiting });
+
+  mounted = mountDecisionUi(
+    createElement(DecisionModelsSettings, { client, hostName: "Remote A", remote: true }),
+  );
+
+  await settleDecisionUi();
+
+  expect(bodyText()).toContain("Scanning Host Remote A");
+  expect(bodyText()).not.toContain("Scanning this computer");
+
+  act(() => finish({ found: [] }));
+
+  await settleDecisionUi();
+});
+
+it("uses a neutral folder example and error for a remote Host", async () => {
+  const { client, mocks } = createClient({});
+
+  mounted = mountDecisionUi(
+    createElement(DecisionModelsSettings, { client, hostName: "Remote A", remote: true }),
+  );
+
+  await settleDecisionUi();
+
+  await openScanSettings();
+  const folders = document.querySelector<HTMLTextAreaElement>(
+    'textarea[placeholder="Folder path, one per line"]',
+  );
+
+  if (!folders) throw new Error("folder field not found");
+
+  setInputValue(folders, "models\\gguf");
+
+  clickButton("Save and scan");
+
+  await settleDecisionUi();
+
+  expect(bodyText()).toContain("Enter full folder paths, one per line.");
+
+  expect(mocks.settingsSet).not.toHaveBeenCalled();
+});
+
+it("names the Windows folder example for a local scan on Windows", async () => {
+  const { mocks } = await renderSettings();
+
+  // A CSS attribute selector would read the backslash as an escape, so match the value directly.
+  await openScanSettings();
+  const folders = Array.from(document.querySelectorAll<HTMLTextAreaElement>("textarea")).find(
+    (field) => field.placeholder === "D:\\Models",
+  );
+
+  if (!folders) throw new Error("folder field not found");
+
+  setInputValue(folders, "models");
+
+  clickButton("Save and scan");
+
+  await settleDecisionUi();
+
+  expect(bodyText()).toContain("Enter full folder paths, for example D:\\Models.");
+
+  expect(mocks.settingsSet).not.toHaveBeenCalled();
+});
+
 it("retains pending scan save and failure across Host remount and isolates another Host", async () => {
   const { client, mocks } = createClient({});
   let fail!: (error: Error) => void;
@@ -1293,12 +1452,14 @@ it("retains pending scan save and failure across Host remount and isolates anoth
   );
   mounted = mountDecisionUi(createElement(DecisionModelsSettings, { client, hostId: "scan-a" }));
   await settleDecisionUi();
+  await openScanSettings();
   setInputValue(document.querySelector<HTMLTextAreaElement>("textarea")!, "D:\\Pending");
   clickButton("Save and scan");
   await settleDecisionUi();
   unmountDecisionUi(mounted);
   mounted = mountDecisionUi(createElement(DecisionModelsSettings, { client, hostId: "scan-b" }));
   await settleDecisionUi();
+  await openScanSettings();
   expect(document.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("D:\\Models");
   unmountDecisionUi(mounted);
   mounted = mountDecisionUi(createElement(DecisionModelsSettings, { client, hostId: "scan-a" }));
@@ -1329,9 +1490,9 @@ it("keeps Host routing draft through a failed initial read and retry", async () 
     createElement(DecisionModelsSettings, { client, hostId: "routing-read-retry" }),
   );
   await settleDecisionUi();
-  expect(bodyText()).toContain("This did not work. Try again.");
+  expect(bodyText()).toContain("Could not load the routing.");
   expect(document.querySelector('input[inputmode="decimal"]')).toBeNull();
-  clickButton("Try again");
+  clickButton("Retry");
   await settleDecisionUi();
   clickButton("Customize");
   await settleDecisionUi();
@@ -1354,6 +1515,7 @@ it("acknowledges delayed scan settings saved while the page is unmounted", async
     createElement(DecisionModelsSettings, { client, hostId: "scan-success" }),
   );
   await settleDecisionUi();
+  await openScanSettings();
   setInputValue(document.querySelector<HTMLTextAreaElement>("textarea")!, "D:\\Saved");
   clickButton("Save and scan");
   await settleDecisionUi();
@@ -1365,6 +1527,7 @@ it("acknowledges delayed scan settings saved while the page is unmounted", async
     createElement(DecisionModelsSettings, { client, hostId: "scan-success" }),
   );
   await settleDecisionUi();
+  await openScanSettings();
   expect(document.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("D:\\Saved");
   expect(buttonByText("Scan with these settings")).toBeDefined();
   expect(mocks.settingsSet).toHaveBeenCalledTimes(1);

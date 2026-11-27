@@ -1,8 +1,16 @@
-import { AssistantQuotaReader } from "../assistant/models/assistant-quota-reader";
+import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
+import {
+  AssistantQuotaReader,
+  QUOTA_WARM_TIMEOUT_MS,
+} from "../assistant/models/assistant-quota-reader";
 import { readDisabledModels } from "../providers/disabled-models";
-import { hostProviderAccounts } from "../providers/provider-accounts";
+import { createProviderAccountStatusCache } from "../providers/provider-account-status";
+import {
+  hostProviderAccounts,
+  type HostProviderAccountCatalog,
+} from "../providers/provider-accounts";
 import { providerAuthStatus } from "../providers/provider-auth";
-import type { UsageLimitsReport } from "../usage/limits-report";
+import type { QuotaTarget, UsageLimitsReport } from "../usage/limits-report";
 import { providerAccountKind } from "./account-kind";
 import { createModelRoutingService, type ModelRoutingService } from "./service";
 import type { ModelRoutingStore } from "./storage";
@@ -39,20 +47,44 @@ export function hostModelRoutingService(store: ModelRoutingStore): ModelRoutingS
 export function createHostModelRoutingService(ports: {
   store: ModelRoutingStore;
   catalog(): Promise<ModelRoutingCatalog>;
-  readLimits(): Promise<UsageLimitsReport>;
+  readLimits(target: QuotaTarget): Promise<UsageLimitsReport>;
   command(provider: "claude" | "codex"): Promise<string>;
 }): ModelRoutingService {
   const quota = new AssistantQuotaReader({ readLimits: ports.readLimits });
   const catalog = () => ports.catalog().catch(() => undefined);
+  const probeAuth = (provider: "claude" | "codex", id: string) =>
+    ports
+      .command(provider)
+      .then((command) => providerAuthStatus(provider, command, id))
+      .catch(() => "unknown" as const);
+  const accountStatuses = createProviderAccountStatusCache({ probe: probeAuth });
   const service = createModelRoutingService({
     store: ports.store,
     accounts: () => hostProviderAccounts(),
     catalog,
-    async signals(state) {
+    async signals(state, options) {
       const [models, disabled, accounts] = await Promise.all([
         catalog(),
         readDisabledModels(ports.store),
         hostProviderAccounts(),
+        // Settings status only: run-start resolution stays non-blocking.
+        options?.awaitQuota
+          ? (async () => {
+              // One shared budget across the accounts actually named by the routing list.
+              const started = monotonicNow();
+              const targets = new Map(
+                state.entries.map((entry) => [
+                  `${entry.harness}:${entry.providerAccountId ?? "default"}`,
+                  entry,
+                ]),
+              );
+              for (const { harness, providerAccountId } of targets.values()) {
+                const left = QUOTA_WARM_TIMEOUT_MS - elapsedSince(started);
+                if (left <= 0) break;
+                await quota.warm(harness, left, providerAccountId);
+              }
+            })()
+          : undefined,
       ]);
       const auth = new Map<string, boolean>();
       const accountKeys = [
@@ -62,21 +94,29 @@ export function createHostModelRoutingService(ports: {
             .map((entry) => `${entry.harness}\n${entry.providerAccountId ?? "default"}`),
         ),
       ];
-      await Promise.all(
-        accountKeys.map(async (key) => {
-          const [provider, id] = key.split("\n") as ["claude" | "codex", string];
-          if (id !== "default" && !accounts[provider]?.some((account) => account.id === id)) {
-            auth.set(key, false);
-            return;
-          }
-          // Operational/unsupported probes are unknown, not proof of sign-out.
-          const status = await ports
-            .command(provider)
-            .then((command) => providerAuthStatus(provider, command, id))
-            .catch(() => "unknown");
-          auth.set(key, status !== "signedOut");
-        }),
-      );
+      const known: { provider: "claude" | "codex"; id: string; key: string }[] = [];
+      for (const key of accountKeys) {
+        const [provider, id] = key.split("\n") as ["claude" | "codex", string];
+        if (id !== "default" && !accounts[provider]?.some((account) => account.id === id))
+          auth.set(key, false);
+        else known.push({ provider, id, key });
+      }
+      if (options?.awaitQuota) {
+        // The settings status read shows the live state, so it probes every account afresh.
+        await Promise.all(
+          known.map(async ({ provider, id, key }) => {
+            // Operational/unsupported probes are unknown, not proof of sign-out.
+            auth.set(key, (await probeAuth(provider, id)) !== "signedOut");
+          }),
+        );
+      } else {
+        // Run start reuses the last known sign-in state instead of spawning a CLI per account.
+        const statuses = await accountStatuses.read({
+          claude: known.filter((a) => a.provider === "claude").map((a) => ({ id: a.id })),
+          codex: known.filter((a) => a.provider === "codex").map((a) => ({ id: a.id })),
+        } as HostProviderAccountCatalog);
+        for (const { key } of known) auth.set(key, statuses.get(key) !== "signed-out");
+      }
       // Match the disabled-model preference's dotted/CLI Claude equivalence, without
       // the picker decoration's intentional fallback when every model is disabled.
       const preferenceKey = (id: string) =>

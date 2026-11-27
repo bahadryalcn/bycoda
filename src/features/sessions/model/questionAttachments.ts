@@ -153,7 +153,7 @@ export async function prepareOwnedQuestionAttachment(
   const owner = pending.questionCustody;
   if (!owner) return pending;
   if (file.data === undefined)
-    throw new Error(t("Cannot attach {p0}: no file data is available.", { p0: file.name }));
+    throw new Error(t("Couldn’t attach {p0}: no file data is available.", { p0: file.name }));
   const identity = params(owner);
   await invoke("reserve_question_attachment", {
     ...identity,
@@ -256,7 +256,7 @@ export async function prepareQuestionAttachments(files: Attachment[]): Promise<A
       let path = file.path;
       if (!path?.trim()) {
         if (!file.data)
-          throw new Error(t("Cannot attach {p0}: no file data is available.", { p0: file.name }));
+          throw new Error(t("Couldn’t attach {p0}: no file data is available.", { p0: file.name }));
         path = await invoke<string>("write_attachment", { name: file.name, data: file.data });
       }
       if (!path?.trim()) throw new Error(t("Could not save attachment {p0}.", { p0: file.name }));

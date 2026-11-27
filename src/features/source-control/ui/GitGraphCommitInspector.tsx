@@ -17,6 +17,8 @@ import {
   type GitHistoryCommit,
 } from "../../../platform/tauri/fs";
 import { t, useLocale } from "../../../shared/i18n/git";
+import { useFormat } from "../../../shared/i18n";
+import { fileCountLabel } from "../model/gitGraphDisplay";
 import { useGitResource } from "../hooks/useGitResource";
 import { buildUnifiedFile } from "../model/unifiedDiff";
 import { UnifiedDiffView } from "./UnifiedDiffView";
@@ -32,7 +34,9 @@ export function GitGraphCommitInspector({
   disabled = false,
   mode = "changes",
   onMode,
+  openCommit,
 }: {
+  openCommit?: { has: (sha: string) => boolean; open: (sha: string) => void };
   cwd: string;
   commit: GitHistoryCommit;
   onBranch: () => void;
@@ -42,6 +46,7 @@ export function GitGraphCommitInspector({
   onMode?: (mode: "changes" | "blame") => void;
 }) {
   useLocale();
+  const format = useFormat();
   const readFiles = useCallback(() => gitCommitFiles(cwd, commit.sha), [cwd, commit.sha]);
   const files = useGitResource(cwd, `graph-files:${cwd}:${commit.sha}`, true, readFiles, false);
   const [fileQuery, setFileQuery] = useState("");
@@ -98,6 +103,17 @@ export function GitGraphCommitInspector({
             {commit.shortSha}
           </Code>
           <div className="flex items-center gap-1">
+            {onMode ? (
+              <TabStrip
+                label={t("Commit view")}
+                value={mode}
+                items={[
+                  { value: "changes", label: t("Changes") },
+                  { value: "blame", label: t("Blame") },
+                ]}
+                onValueChange={(value) => onMode(value as "changes" | "blame")}
+              />
+            ) : null}
             <Button
               variant="ghost"
               size="sm"
@@ -105,8 +121,9 @@ export function GitGraphCommitInspector({
               type="button"
               onClick={onBranch}
               disabled={disabled}
+              disabledReason={disabled ? t("Wait for the current operation to finish") : undefined}
             >
-              {t("Create Branch…")}
+              {t("New branch")}
             </Button>
             {onClose ? (
               <Button
@@ -126,12 +143,14 @@ export function GitGraphCommitInspector({
           {commit.subject}
         </Heading>
         <Text as="p" size="caption" tone="secondary" className="mt-1">
-          {commit.author} · {new Date(commit.timestamp * 1000).toLocaleString()}
+          {commit.author} ·{" "}
+          {format.formatDate(commit.timestamp * 1000, {
+            dateStyle: "medium",
+            timeStyle: "short",
+          })}
         </Text>
         <Text as="p" size="caption" tone="secondary" className="flex gap-2 tabular-nums">
-          <span>
-            {files.data?.length ?? "…"} {t("files")}
-          </span>
+          <span>{files.data ? fileCountLabel(files.data.length, format) : "…"}</span>
           <DiffStat additions={totals.additions} deletions={totals.deletions} showZero />
         </Text>
       </header>
@@ -155,7 +174,7 @@ export function GitGraphCommitInspector({
           onChange={(event) => setFileQuery(event.target.value)}
         />
         <section aria-label={t("Changed files")} className="min-h-0">
-          {files.loading && !files.data ? <GitLoading text="Loading…" /> : null}
+          {files.loading && !files.data ? <GitLoading text={t("Loading…")} /> : null}
           {visibleFiles.map((file) => (
             <Button
               variant="item"
@@ -166,8 +185,9 @@ export function GitGraphCommitInspector({
               tooltipWhen="overflow"
               type="button"
               aria-pressed={relative === file.relative}
+              fullWidth
+              align="start"
               onClick={() => setPicked(file.relative)}
-              className="flex w-full items-center justify-start gap-2"
             >
               <FileTypeIcon name={file.relative} isDir={false} size="sm" />
               <Text as="span" size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
@@ -180,8 +200,8 @@ export function GitGraphCommitInspector({
             <EmptyState
               size="inline"
               kind={fileQuery ? "filtered" : "empty"}
-              className="px-3"
-              description={t(fileQuery ? "No matching files" : "No changed files")}
+              inset="row"
+              description={fileQuery ? t("No matching files") : t("No changed files")}
             />
           ) : null}
         </section>
@@ -193,35 +213,8 @@ export function GitGraphCommitInspector({
           onRetry={files.refresh}
         />
       ) : null}
-      <Text
-        as="div"
-        size="caption"
-        tone="secondary"
-        {...surfaceAttributes(
-          { frame: "pane", edge: "bottom" },
-          "flex min-h-9 shrink-0 items-center justify-between border-(--ui-pane-border) px-3",
-        )}
-      >
-        <span>
-          {mode === "blame"
-            ? deleted
-              ? t("Blame at parent (deleted file)")
-              : t("Blame at commit")
-            : t("Parent → commit")}
-        </span>
-        {onMode ? (
-          <TabStrip
-            label={t("Commit view")}
-            value={mode}
-            items={[
-              { value: "changes", label: t("Changes") },
-              { value: "blame", label: t("Blame") },
-            ]}
-            onValueChange={(value) => onMode(value as "changes" | "blame")}
-          />
-        ) : null}
-      </Text>
-      {relative ? (
+      {/* The file list navigates; the diff header names the path. Blame has no header of its own. */}
+      {relative && mode === "blame" ? (
         <Text
           as="div"
           size="caption"
@@ -246,6 +239,7 @@ export function GitGraphCommitInspector({
             iconOnly
             label={t("Previous file")}
             disabled={selectedIndex <= 0}
+            disabledReason={selectedIndex <= 0 ? t("This is the first file.") : undefined}
             onClick={() => setPicked(visibleFiles[selectedIndex - 1].relative)}
           >
             <ChevronLeft className="icon-sm" />
@@ -257,6 +251,11 @@ export function GitGraphCommitInspector({
             iconOnly
             label={t("Next file")}
             disabled={selectedIndex < 0 || selectedIndex >= visibleFiles.length - 1}
+            disabledReason={
+              selectedIndex < 0 || selectedIndex >= visibleFiles.length - 1
+                ? t("This is the last file.")
+                : undefined
+            }
             onClick={() => setPicked(visibleFiles[selectedIndex + 1].relative)}
           >
             <ChevronRight className="icon-sm" />
@@ -266,7 +265,7 @@ export function GitGraphCommitInspector({
       {diff.error ? (
         <GitFeedback title={t("Couldn’t load diff")} detail={diff.error} onRetry={diff.refresh} />
       ) : null}
-      {diff.loading && !diff.data ? <GitLoading text="Loading…" /> : null}
+      {diff.loading && !diff.data ? <GitLoading text={t("Loading…")} /> : null}
       <div className="flex min-h-0 flex-1 flex-col">
         {mode === "blame" && relative && diff.data && !diff.data.binary && !diff.data.tooLarge ? (
           <GitCommitBlameView
@@ -275,6 +274,7 @@ export function GitGraphCommitInspector({
             sha={deleted ? commit.parents[0] : commit.sha}
             relative={relative}
             text={deleted ? diff.data.original : diff.data.current}
+            openCommit={openCommit}
           />
         ) : (
           <UnifiedDiffView files={models} />

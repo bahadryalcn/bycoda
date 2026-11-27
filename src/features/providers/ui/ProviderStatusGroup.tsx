@@ -1,12 +1,11 @@
 import { Text } from "../../../shared/ui/Text";
 import { useState, useSyncExternalStore } from "react";
-import { DataTableRow } from "../../../shared/ui/SortableDataTable";
-import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { formatRelativeTime } from "../../../shared/i18n/format";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Badge } from "../../../shared/ui/Badge";
 import { Code } from "../../../shared/ui/Code";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Heading } from "../../../shared/ui/Heading";
 import {
   ArrowDownCircle,
@@ -15,7 +14,6 @@ import {
   CircleX,
   CircleHelp,
   Minus,
-  Bot,
 } from "../../../shared/ui/icons";
 import { hasProbedHarnessAvailability } from "../../../integrations/harness/core/availability";
 import { HARNESS_TITLE, type HarnessId } from "../../../shared/model/harnessIdentity";
@@ -32,12 +30,14 @@ import { ProviderBinaryControl } from "../../settings/ui/ProviderBinarySettings"
 import { useGrokSignInState } from "./providerStatus";
 
 import {
+  cancelHarnessUpdateRun,
   getHarnessUpdateSnapshot,
   runHarnessUpdate,
   subscribeHarnessUpdates,
   type HarnessUpdateRun,
 } from "../model/harnessUpdateActions";
-/** Account detail identity; CLI facts live in the CLI tab. */
+import { describeHarnessUpdateFailure } from "../model/harnessUpdateFailure";
+/** Account detail identity; CLI facts follow in ProviderStatusGroup. */
 export function ProviderDetailHeader({
   harness,
   available,
@@ -52,16 +52,14 @@ export function ProviderDetailHeader({
   return (
     <header className="provider-detail-header">
       <HarnessIcon harness={harness} className="icon-lg shrink-0" />
-      <Heading size="page" level={3} className="provider-detail-title">
+      <Heading size="section" level={3} className="provider-detail-title">
         {HARNESS_TITLE[harness]}
       </Heading>
-      {harness === "cursor" || harness === "grok" ? (
+      {harness === "grok" || (harness === "cursor" && signInCompleted) ? (
         <Text as="span" size="caption" tone="secondary">
           {harness === "grok"
             ? t("Sign-in: {p0}", { p0: grokAuth.label })
-            : signInCompleted
-              ? t("CLI sign-in completed")
-              : t("Sign-in: Not checked")}
+            : t("CLI sign-in completed")}
         </Text>
       ) : null}
     </header>
@@ -69,10 +67,14 @@ export function ProviderDetailHeader({
 }
 /** Detail below the line: why an update failed, or what a finished one left unverified. */
 function updateNotice(
+  harness: HarnessId,
   state: HarnessUpdateRun,
   check: HarnessVersionCheck | undefined,
-): { state: "error" | "warning"; text: string } | null {
-  if (state.status === "failed") return { state: "error", text: state.error };
+): { state: "error" | "warning"; text: string; detail?: string } | null {
+  if (state.status === "failed") {
+    const { headline, detail } = describeHarnessUpdateFailure(harness, state.failure);
+    return { state: "error", text: headline, detail };
+  }
   if (state.status !== "updated" || check?.status === "behind") return null;
   if (state.catalogRefresh === "failed") {
     return {
@@ -85,27 +87,26 @@ function updateNotice(
   return null;
 }
 /**
- * Sign-in, plan or limit state, and the CLI version with its update state and refresh, in the
- * order a person checks them when something does not work.
+ * The CLI version with its update state, refresh and path actions, shown beside the provider's
+ * header.
  */
 export function ProviderStatusGroup({
   id,
   harness,
   available,
   checkedAt,
-  onCheck: _checkAll,
   onRowCheck,
-  onSetup: _onSetup,
 }: {
   id?: string;
   harness: HarnessId;
   available: boolean;
   /** When this window last finished a version check, if it did. */
   checkedAt: number | null;
-  onCheck: () => void;
+  /** Unused; kept optional so callers can drop it. */
+  onCheck?: () => void;
   onRowCheck?: (check: HarnessVersionCheck) => void;
-  /** Takes the person to the Runtime section's CLI setup. */
-  onSetup: () => void;
+  /** Unused; kept optional so callers can drop it. */
+  onSetup?: () => void;
 }) {
   useLocale();
   const { checks, checking, runs } = useSyncExternalStore(
@@ -132,7 +133,7 @@ export function ProviderStatusGroup({
       installedVersion: async (id) => {
         const inspection = await inspectHarnessBinary(id);
         if (!inspection.version)
-          throw new Error(inspection.error ?? "The CLI reported no version.");
+          throw new Error(inspection.error ?? t("The CLI reported no version."));
         return inspection.version;
       },
       latestVersion: fetchLatestHarnessVersion,
@@ -148,11 +149,12 @@ export function ProviderStatusGroup({
   };
   const run: HarnessUpdateRun = runs[harness] ?? { status: "idle" };
   const title = HARNESS_TITLE[harness];
-  const notice = updateNotice(run, check);
+  const notice = updateNotice(harness, run, check);
   const notFound = hasProbedHarnessAvailability() && !available;
   const canCheck = UPDATABLE_HARNESSES.has(harness);
   const busy = canCheck && (checking || rowChecking);
-  const version = !notFound && check && check.status !== "unknown" ? check.installed : "—";
+  // An unknown version shows nothing rather than a placeholder.
+  const version = !notFound && check && check.status !== "unknown" ? check.installed : null;
   const checkLabel = t("{p0}: {p1}", { p0: t("Check for updates"), p1: title });
   const status =
     run.status === "updating"
@@ -182,6 +184,8 @@ export function ProviderStatusGroup({
             : check?.status === "current"
               ? Check
               : CircleHelp;
+  // The Update button already says an update is waiting, so the mark would say it twice.
+  const updateOffered = !notFound && check?.status === "behind";
   const hint =
     !canCheck && !notFound
       ? t("This CLI has no release feed. Update checks are not available.")
@@ -189,61 +193,57 @@ export function ProviderStatusGroup({
         ? t("Checked {p0}", { p0: formatRelativeTime(lastChecked) })
         : undefined;
   return (
-    <DataTableRow
-      id={id}
-      data-setting-id={`cli-path-${harness}`}
-      className="provider-inventory-row"
-      cells={[
-        <span key="name" className="provider-inventory-name">
-          {harness === "acp" ? (
-            <Bot className="icon-md shrink-0" aria-hidden />
-          ) : (
-            <HarnessIcon harness={harness} className="icon-md shrink-0" />
-          )}
-          <OverflowTooltip label={title}>
-            <Text size="secondary" tone={notFound ? "secondary" : "primary"} truncate>
-              {title}
-            </Text>
-          </OverflowTooltip>
-        </span>,
-        <Code key="version" size="caption" tone="secondary" className="tabular-nums">
-          {version}
-        </Code>,
-        <Tooltip key="status" label={hint}>
-          {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- passive status details must remain reachable by keyboard to open their tooltip */}
-          <span tabIndex={hint ? 0 : undefined}>
-            <Badge
-              size="xs"
-              tone={
-                busy || notFound
-                  ? "neutral"
-                  : run.status === "failed"
-                    ? "danger"
-                    : check?.status === "behind"
-                      ? "accent"
-                      : check?.status === "current"
-                        ? "success"
-                        : "neutral"
-              }
-            >
-              <StatusIcon className="icon-xs shrink-0" aria-hidden />
-              {status}
-            </Badge>
-          </span>
-        </Tooltip>,
-        <div key="actions" className="provider-inventory-actions">
-          {!notFound && check?.status === "behind" ? (
+    <div id={id} data-setting-id={`cli-path-${harness}`} className="provider-cli-status">
+      <div className="provider-cli-status-line">
+        {version ? (
+          <Code size="caption" tone="secondary" className="tabular-nums">
+            {version}
+          </Code>
+        ) : null}
+        {/* While work runs, its own control shows the progress; the mark would say it twice. */}
+        {run.status === "updating" || busy || updateOffered ? null : (
+          <Tooltip label={hint ?? status}>
+            {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- passive status details must remain reachable by keyboard to open their tooltip */}
+            <span tabIndex={0} role="img" aria-label={status}>
+              <StatusIcon
+                className="icon-sm shrink-0"
+                tone={
+                  busy || notFound
+                    ? "secondary"
+                    : run.status === "failed"
+                      ? "danger"
+                      : check?.status === "behind"
+                        ? "accent"
+                        : check?.status === "current"
+                          ? "success"
+                          : "secondary"
+                }
+                aria-hidden
+              />
+            </span>
+          </Tooltip>
+        )}
+        <div className="provider-inventory-actions">
+          {updateOffered && check ? (
             <Button
               size="sm"
               variant="primary"
               tone="accent"
               onClick={() => void runHarnessUpdate(check)}
               loading={run.status === "updating"}
-              disabled={run.status === "updating"}
-              aria-label={t("Update {p0} to {p1}", { p0: title, p1: check.latest })}
+              loadingLabel={t("Updating…")}
               tooltip={t("Update {p0} to {p1}", { p0: title, p1: check.latest })}
             >
               {t("Update")}
+            </Button>
+          ) : null}
+          {run.status === "updating" ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => void cancelHarnessUpdateRun(harness).catch(() => undefined)}
+            >
+              {t("Cancel")}
             </Button>
           ) : null}
           {!notFound && canCheck ? (
@@ -252,9 +252,9 @@ export function ProviderStatusGroup({
               variant="ghost"
               iconOnly
               label={checkLabel}
-              tooltip={checkLabel}
               loading={busy}
               disabled={busy || run.status === "updating"}
+              disabledReason={t("Wait for the update to finish.")}
               onClick={onCheck}
             >
               <RefreshCw className="icon-sm" aria-hidden />
@@ -266,22 +266,23 @@ export function ProviderStatusGroup({
             showLabel={notFound}
             triggerVariant="ghost"
           />
-        </div>,
-      ]}
-      detail={
-        notice || (check?.status === "unknown" && !notFound && canCheck) ? (
-          <>
-            {notice ? (
-              <SettingsFeedback state={notice.state}>{notice.text}</SettingsFeedback>
-            ) : null}
-            {check?.status === "unknown" && !notFound && canCheck ? (
-              <SettingsFeedback state="warning">
-                {t("Could not check: {p0}", { p0: check.error })}
-              </SettingsFeedback>
-            ) : null}
-          </>
-        ) : null
-      }
-    />
+        </div>
+      </div>
+      {notice ? (
+        <SettingsFeedback
+          state={notice.state}
+          extra={
+            notice.detail ? <ErrorDetails title={notice.text} detail={notice.detail} /> : undefined
+          }
+        >
+          {notice.text}
+        </SettingsFeedback>
+      ) : null}
+      {check?.status === "unknown" && !notFound && canCheck ? (
+        <SettingsFeedback state="warning">
+          {t("Could not check: {p0}", { p0: check.error })}
+        </SettingsFeedback>
+      ) : null}
+    </div>
   );
 }

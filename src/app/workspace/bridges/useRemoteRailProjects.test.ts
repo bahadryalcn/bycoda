@@ -29,7 +29,7 @@ const listed: RemoteRailSession[] = ["known", "mine"].map((id) => ({
 
 vi.mock("../../../features/connections/model/connections", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../features/connections/model/connections")>()),
-  useRemoteRailSessions: () => listed,
+  useRemoteRailSessions: () => ({ sessions: listed, freshProjects: [] }),
 }));
 
 afterEach(() => {

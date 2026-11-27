@@ -125,6 +125,39 @@ it("includes application settings in the review revision", async () => {
   });
   expect((await f.patch({ kind: "theme", value: "dark" }, stale.revision)).state).toBe("failed");
 });
+it("reads and patches chat appearance only through a current, approved review", async () => {
+  const f = fixture();
+  const authorize = vi.fn(async () => false);
+  const context = { ...f.context, authorize };
+  const original = await f.read();
+  const patch = async (operationId: string, value: Record<string, unknown>) =>
+    (await f.control(context, "preferences.patch", {
+      operationId,
+      expectedRevision: original.revision,
+      change: { kind: "chatMessages", value },
+    })) as DesktopPreferencesStatus;
+  expect(original.application.chatMessages).toEqual({
+    userMessageOpacity: 42,
+    assistantMessageOpacity: 90,
+    messageColor: "theme",
+  });
+  expect((await patch("denied", { assistantMessageOpacity: 70 })).state).toBe("failed");
+  expect(authorize).toHaveBeenCalledOnce();
+  authorize.mockResolvedValue(true);
+  expect((await patch("invalid", { userMessageOpacity: 101, messageColor: "neutral" })).state).toBe(
+    "failed",
+  );
+  expect((await f.read()).application.chatMessages).toEqual(original.application.chatMessages);
+  const result = await patch("allowed", { assistantMessageOpacity: 70, messageColor: "neutral" });
+  expect(result.state).toBe("applied");
+  expect(result.snapshot?.application.chatMessages).toEqual({
+    userMessageOpacity: 42,
+    assistantMessageOpacity: 70,
+    messageColor: "neutral",
+  });
+  expect(result.snapshot?.application.transcript.surfaceOpacity).toBe(70);
+  expect((await patch("stale", { userMessageOpacity: 40 })).state).toBe("failed");
+});
 it("reads cached metadata only, explicitly reads a reviewed body, and uses canonical template mutations", async () => {
   const f = fixture();
   expect((await f.read()).atomic).toBe(false);

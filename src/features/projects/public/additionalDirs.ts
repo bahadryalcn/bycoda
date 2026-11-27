@@ -1,10 +1,20 @@
 /** Public projects contract; exports stay explicit to preserve load isolation. */
 export {
+  MAX_PROJECT_REPOSITORIES,
+  acceptsSessionDir,
+  addProjectFolder,
   additionalDirsForSession,
   loadAdditionalDirs,
+  loadProjectBaseRemote,
+  loadProjectRepositoryChoice,
+  projectRepositoryCandidates,
+  saveProjectBaseRemote,
+  saveProjectRepositoryChoice,
   loadSessionAdditionalDirs,
+  providerAdditionalDirsForSession,
   removeSessionAdditionalDirs,
   saveSessionAdditionalDirs,
+  saveSessionExtraWorktrees,
   subscribeSessionAdditionalDirs,
   useSessionAdditionalDirs,
 } from "../model/additionalDirs";

@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { SafeCounterSchema, WIRE_UUID_V4_PATTERN } from "./schemas";
+import { NATIVE_DELIVERY_MAX_BYTES } from "./native-delivery-identity";
+import { SafeCounterSchema, WIRE_SHA256_PATTERN, WIRE_UUID_V4_PATTERN } from "./schemas";
 
 const uuid4 = WIRE_UUID_V4_PATTERN;
 const epochUuid = z.string().regex(uuid4);
@@ -48,7 +49,40 @@ export function parseNativeDeliveryEpochCompactParams(value: unknown) {
     throw new Error("Delivery epoch compaction exceeds its bounded prefix");
   return result;
 }
+/** Separately negotiated: old clients never resolve gaps and old Hosts never offer it. */
+export const NATIVE_DELIVERY_EPOCH_GAP_CAPABILITY = "native.delivery.epochs.gaps.v1";
+export const NATIVE_DELIVERY_EPOCH_GAP_METHOD = "native.delivery.epochs.gap.resolve";
+/** The exact missing original, as the producer allocated and offered it. */
+export const NativeDeliveryEpochGapParamsSchema = NativeDeliveryEpochRefSchema.extend({
+  sequence: SafeCounterSchema.min(1),
+  kind: z.enum([
+    "buffer",
+    "native.services.conversation.desktop.finish",
+    "native.services.workspace.format",
+  ]),
+  sha256: z.string().regex(WIRE_SHA256_PATTERN),
+  byteLength: SafeCounterSchema.min(1).max(NATIVE_DELIVERY_MAX_BYTES),
+});
+export type NativeDeliveryEpochGapParams = z.infer<typeof NativeDeliveryEpochGapParamsSchema>;
+/** `not_admitted` is a durable Host witness that this original was never admitted
+ * and never can be: no effect, no result and no success. `admitted` means Host
+ * retains its receipt; the producer must resolve it through ordinary delivery.
+ * `abandoned` means Host admitted it, nothing is running it, and Host retired the receipt
+ * without a consumable result: no result can ever publish and the original is never
+ * replayed, so the producer fences the slot. A buffer producer then relies on its next
+ * full report, which supersedes the lost one. */
+export const NativeDeliveryEpochGapResultSchema = z.discriminatedUnion("outcome", [
+  NativeDeliveryEpochGapParamsSchema.extend({ outcome: z.literal("not_admitted") }),
+  NativeDeliveryEpochGapParamsSchema.extend({ outcome: z.literal("admitted") }),
+  NativeDeliveryEpochGapParamsSchema.extend({ outcome: z.literal("abandoned") }),
+]);
+export type NativeDeliveryEpochGapResult = z.infer<typeof NativeDeliveryEpochGapResultSchema>;
+
 export const NATIVE_DELIVERY_EPOCH_RPC_SCHEMAS = {
+  [NATIVE_DELIVERY_EPOCH_GAP_METHOD]: {
+    params: NativeDeliveryEpochGapParamsSchema,
+    result: NativeDeliveryEpochGapResultSchema,
+  },
   "native.delivery.epochs.open": {
     params: z.strictObject({ openId: epochUuid }),
     result: NativeDeliveryEpochDescriptionSchema,

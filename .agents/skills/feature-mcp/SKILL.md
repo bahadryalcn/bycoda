@@ -15,9 +15,14 @@ Use for Settings MCP list/discovery/add/login/remove/config and External MCP acc
 
 ## Preserve
 
-- Keep outgoing provider configurations separate from incoming local-Host access grants; a token-management RPC does not imply outgoing remote configuration support.
-- Global discovery uses `globalOnly` and bypasses project paths and Claude project opt-outs; keep its cache separate from Project. Claude enablement remains project-only; Global Codex/OpenCode writes retain exact config identity.
+- Keep outgoing provider configuration, project credentials, bycoda OAuth and incoming local-Host grants under their respective owners.
+- Hub-managed servers persist on their owning Host. Keep management scoped, revision-checked and separate from provider configuration, and omit launch details and credentials from inventory responses.
+- Global discovery uses `globalOnly` on the selected computer. Project uses the project's owning computer and Host. Keep discovery caches scoped by computer and project. Claude enablement remains project-only. Global Codex/OpenCode writes retain exact config identity.
+- Remote provider configuration runs on the owning computer's desktop runtime. With a reachable Host, keep hub inventory, project credentials and bycoda OAuth available when the remote provider configuration runtime is unavailable.
+- Keep project HTTP headers and stdio environment values in the owning Host's vault. Return metadata only and apply values when new bycoda sessions load the server.
+- Keep bycoda OAuth scoped to the owning Host and selected project. Inherit the global login until the project completes its own sign-in or explicitly disconnects.
 - Preserve exact provider/scope/name/config identity and applicable local-only picker restrictions. Same-name Claude health is not independently verified per-scope health.
+- `mcp_discover` returns `{ connections, warnings }`: a missing file configures nothing, but an existing unreadable or malformed one is a warning (path plus a content-free reason) that the list, picker and empty state must show instead of "no servers". Unchanged settled files are parsed once (`src-tauri/src/mcp/config_read.rs`, keyed by path, mtime and size).
 - Configured/Disabled are configuration evidence; do not relabel them Connected from a saved file or unsupported health probe.
 - Continuous rendering reveals cached full-array matches, preserving search, focus, expanded rows and scroll; it must not add network pages or repeat discovery/health per batch.
 - Add/login/remove/config actions retain explicit intent, native confirmation/scope selection, validation, locked write/merge protection, duplicate guards and draft recovery.

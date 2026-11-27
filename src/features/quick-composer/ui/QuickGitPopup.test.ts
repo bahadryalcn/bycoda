@@ -85,7 +85,11 @@ async function render(
 }
 function button(label: string) {
   return [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-    (el) => el.textContent?.trim() === label || el.getAttribute("aria-label") === label,
+    (el) =>
+      el.textContent?.trim() === label ||
+      el.getAttribute("aria-label") === label ||
+      // Picker options carry a description after their title.
+      el.querySelector("[class*='choiceLabel']")?.textContent?.trim() === label,
   )!;
 }
 beforeEach(async () => {
@@ -120,7 +124,7 @@ it.each(["workspace", "base"] as const)(
     git.available = false;
     git.settled = false;
     await render(kind, { cwd: "/cold-repo", mode: "worktree" });
-    expect(container.textContent).toContain("Loading branches…");
+    expect(container.textContent).toContain("Loading…");
     expect(onFinish).not.toHaveBeenCalled();
 
     git.available = true;
@@ -184,7 +188,7 @@ it("keeps branch creation inside the popup and finishes only after creating the 
     );
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  await act(async () => button("Create branch").click());
+  await act(async () => button("Create").click());
   expect(gitCreateBranch).toHaveBeenCalledWith("/repo", "feature/popup");
   expect(onFinish).toHaveBeenCalledTimes(1);
 });

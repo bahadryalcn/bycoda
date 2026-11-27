@@ -140,6 +140,14 @@ Owner: "plan and arrange this screen so providers with several accounts can be m
 
 A project, group or workspace target stores the account each provider's new chats start on (`accounts` in project provider settings); a picker pin of the same provider stays the latest choice and moves with it. New-conversation defaults resolve through that account unless an explicit account is given. Account defaults themselves stay machine-wide; per-project-per-account overrides are not built. Providers > Defaults lists subagent, advisor, subagent policy and ceiling rows after the conversation rows; Background work > Subagents keeps them too, with the same draft and save rules.
 
+## Queued rows follow the conversation's current account
+
+Date: 2026-11-17
+
+Owner: "say I queued something and the running account hit its limit. I switched the account and pressed resume ... could the queue be going out with the old account?" (translated from Turkish)
+
+A queued row keeps its provider and model, but on the conversation's own provider it runs on the account the conversation uses now: the Host drainer (`queueRowCommands`), the remote drain (`useQueuedSendDrain`) and the local submit path agree, and the queue row shows that account. Only a row that switches provider starts on the account it was queued with.
+
 ## Subagents may start subagents, one level deep
 
 Date: 2026-11-17
@@ -172,3 +180,16 @@ Other providers keep Host advisor sessions; only Claude Code has a built-in advi
 and never folds into the activity trail. In a Claude conversation the Advisor menu lists each
 Claude model once (`builtInAdvisorChoices`). A Host advisor needs the bridge, so an unready
 bridge tells model and owner (`needsHostDelegation`); its notice is headed "Advisor completion".
+
+## History for Bycoda-managed delegates
+
+Date: 2026-11-22
+
+Owner: "If it is in Bycoda, it is in Bycoda. Being able to work on it from the other providers is not important to us." (translated from Turkish)
+
+New Host-created subagents and advisors keep their user-facing history in Bycoda. Codex and
+Claude Code use nonpersistent provider sessions and restore bounded Bycoda context when the
+provider process is replaced. Pi and OMP keep resumable native history under Host state.
+OpenCode archives the native session before prompting and can continue it by ID. Preserve
+the selected provider account and the storage of existing conversations. Use a provider's
+verified history control before extending this policy to another native adapter.

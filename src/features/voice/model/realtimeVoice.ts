@@ -1,11 +1,21 @@
+import { routeVoiceOutput } from "./voiceOutputDevice";
+import { errorText } from "../../../shared/lib/errors";
 import { boundToolOutput } from "./voiceToolOutput";
 import captureUrl from "./voiceCapture.js?url&no-inline";
 import type { RealtimeProvider, RealtimeSecret } from "./realtimeVoiceClient";
-import { VoiceVad, decodePcmBase64, pcmBase64 } from "./voiceVad";
-import { speechTranscript } from "./voiceTranscript";
+import {
+  VoiceVad,
+  decodePcmBase64,
+  pcmBase64,
+} from "../../../shared/model/voice-realtime/voiceVad";
+import { removeSpeechFillers, speechTranscript } from "./voiceTranscript";
 import { voiceTools } from "./voiceToolSchemas";
-import { voiceInstructions } from "./voiceInstructions";
-import { voiceLanguageCode } from "./voiceLanguage";
+import { voiceInstructions } from "../../../shared/model/voice-realtime/voiceInstructions";
+import {
+  REALTIME_SPEECH_SPEED,
+  realtimeSessionPayload,
+} from "../../../shared/model/voice-realtime/realtimeSession";
+import { voiceLanguageCode } from "../../../shared/model/voice-realtime/voiceLanguage";
 import {
   classifyVoiceFailure,
   VOICE_ROTATION_MS,
@@ -14,10 +24,18 @@ import {
 } from "./voiceReconnect";
 import { refusedVoiceCancel } from "./realtimeVoiceErrors";
 import { voiceSeedItems } from "./voiceOpenWork";
-import { openMicrophone } from "./microphoneAccess";
+import { swapMicrophone, voiceMicrophoneConstraints } from "./microphoneSwap";
+import { openMicrophone, stopMicrophone } from "./microphoneAccess";
+import {
+  VOICE_AUDIO_STEP_MS,
+  VOICE_HOST_STEP_MS,
+  VOICE_MICROPHONE_STEP_MS,
+  VOICE_SOCKET_STEP_MS,
+  voiceConnectionStep,
+} from "./voiceConnectionStep";
 import { t } from "../../../shared/i18n";
-import { voiceTranscriptionHint } from "./voiceFeatureLexicon";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
+import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import {
   voiceRuntimeDeadline,
   voiceToolWaitsForOwner,
@@ -39,8 +57,7 @@ export type VoiceEvent = {
 
 export { voiceTools, voiceInstructions };
 
-/** OpenAI output speed (0.25–1.5). */
-export const REALTIME_SPEECH_SPEED = 1.1;
+export { REALTIME_SPEECH_SPEED };
 
 /** The client commits candidate audio and explicitly authorizes each response. */
 export function realtimeSession(
@@ -52,58 +69,94 @@ export function realtimeSession(
   languageLock = "auto",
   experimentalSemanticVad = false,
 ) {
-  const audioFormat = { type: "audio/pcm", rate: 24000 };
-  if (provider === "openai")
-    return {
-      type: "realtime",
-      model,
-      instructions: voiceInstructions(language, persona, languageLock),
-      output_modalities: ["audio"],
-      tools: voiceTools,
-      tool_choice: "auto",
-      audio: {
-        input: {
-          format: audioFormat,
-          noise_reduction: { type: "near_field" },
-          transcription: {
-            model: "gpt-4o-mini-transcribe",
-            // Optional vocabulary hint supported by the current transcription model.
-            // No private target names and no replacement of recognized owner speech.
-            prompt: voiceTranscriptionHint(voiceLanguageCode(languageLock) ?? language),
-            ...(voiceLanguageCode(languageLock)
-              ? { language: voiceLanguageCode(languageLock) }
-              : {}),
-          },
-          turn_detection: experimentalSemanticVad
-            ? {
-                type: "semantic_vad",
-                eagerness: "auto",
-                create_response: false,
-                interrupt_response: false,
-              }
-            : null,
-        },
-        // Default 1.0 sounds slow in conversation, especially outside English.
-        output: { format: audioFormat, voice: voice || "marin", speed: REALTIME_SPEECH_SPEED },
-      },
-    };
-  return {
+  return realtimeSessionPayload({
+    provider,
+    model,
+    language,
     instructions: voiceInstructions(language, persona, languageLock),
-    voice: voice || "eve",
-    reasoning: { effort: "none" },
-    turn_detection: { type: null },
     tools: voiceTools,
-    audio: { input: { format: audioFormat }, output: { format: audioFormat } },
-  };
+    voice,
+    languageLock,
+    experimentalSemanticVad,
+  });
 }
 
 /** Silence (s) that ends a spoken turn. Natural mid-sentence pauses are often
  * 0.6–1 s, so a shorter value answers half-finished sentences. */
 export const REALTIME_END_SILENCE = 1.2;
-/** ASR wait for one committed candidate, including its upload. */
+/** Separate progress windows for commit/upload and ASR. */
 const TRANSCRIPT_TIMEOUT = 15_000;
+/** Renew the socket credential when less than this is left: socket open plus session
+ * confirmation may take the whole socket budget. */
+const SECRET_RENEW_MARGIN_MS = VOICE_SOCKET_STEP_MS;
 /** Queued upload that never drains for this long means the link is stalled. */
 const CONGESTION_LIMIT = 15_000;
+
+/** Connection metadata only. Never put provider messages, transcripts, tool arguments or
+ * any other text the owner may have spoken or typed into an event. */
+export type VoiceDiagnostic =
+  | {
+      kind: "close";
+      code: number;
+      ageMs: number;
+      intentional: boolean;
+      wasClean: boolean;
+      pendingCalls: number;
+      responding: boolean;
+    }
+  | { kind: "ready"; connectMs: number; seededItems: number }
+  | { kind: "provider-error"; code: string; type: string; recoverable: boolean }
+  | { kind: "tool-result-dropped"; name: string; elapsedMs: number }
+  | {
+      kind: "fail";
+      code: string;
+      ageMs: number;
+      pendingCalls: number;
+      socketState?: number;
+      lastProviderFrameAgoMs?: number;
+    }
+  | {
+      kind: "session-summary";
+      ageMs: number;
+      commits: number;
+      ackMedianMs: number;
+      ackMaxMs: number;
+      responses: number;
+      toolCalls: number;
+      toolResultsDropped: number;
+      firstAudioMedianMs?: number;
+    }
+  | {
+      kind: "input-deadline";
+      stage: "commit" | "transcript";
+      elapsedMs: number;
+      bufferedBytes: number;
+      previousBufferedBytes?: number;
+      uploadExtensions: number;
+      socketState?: number;
+      lastProviderFrameAgoMs?: number;
+    };
+
+/** Latency samples kept per session; older ones are dropped. */
+const MAX_LATENCY_SAMPLES = 200;
+/** Provider error code/type and tool names are short identifiers; cut anyway. */
+const MAX_DIAGNOSTIC_CODE = 80;
+
+function recordSample(samples: number[], value: number) {
+  samples.push(value);
+  if (samples.length > MAX_LATENCY_SAMPLES) samples.shift();
+}
+
+function medianOf(samples: readonly number[]) {
+  if (!samples.length) return 0;
+  const sorted = [...samples].sort((a, b) => a - b);
+  const middle = sorted.length >> 1;
+  return Math.round(sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2);
+}
+
+function diagnosticCode(value: unknown) {
+  return typeof value === "string" ? truncateGraphemes(value, MAX_DIAGNOSTIC_CODE, "") : "";
+}
 
 type Callbacks = {
   state: (state: "speaking" | "replying" | "listening") => void;
@@ -143,12 +196,7 @@ type Callbacks = {
       | "playback_interrupted";
     durationMs: number;
   }) => void;
-  diagnostic?: (event: {
-    kind: "close";
-    code: number;
-    ageMs: number;
-    intentional: boolean;
-  }) => void;
+  diagnostic?: (event: VoiceDiagnostic) => void;
 };
 
 /** Cloud speech-to-speech (xAI Grok Voice or OpenAI Realtime) over one WebSocket,
@@ -187,6 +235,7 @@ export class RealtimeVoice {
   >();
   private cancelEvents = new Map<string, string | undefined>();
   private eventSequence = 0;
+  private lastProviderFrameAt?: number;
   private pendingAdmissionAt?: number;
   private responseTiming = new Map<string, { admittedAt: number; scheduled: boolean }>();
   private replyPlayback = new Map<string, { pending: number; done: boolean; hasAudio: boolean }>();
@@ -222,6 +271,13 @@ export class RealtimeVoice {
   private updates: string[] = [];
   private calls = new Map<string, string>();
   private pendingCalls = 0;
+  private commits = 0;
+  private responseCount = 0;
+  private toolCalls = 0;
+  private toolResultsDropped = 0;
+  private ackLatencies: number[] = [];
+  private maxAckMs = 0;
+  private firstAudioLatencies: number[] = [];
   private continueAfterTools = false;
   private playing = false;
   private vad?: VoiceVad;
@@ -239,6 +295,8 @@ export class RealtimeVoice {
     epoch: number;
     committedAt: number;
     itemId?: string;
+    /** The provider confirmed this commit, possibly without naming its item. */
+    acknowledged?: boolean;
     activate?: () => void;
     timer: ReturnType<typeof setTimeout>;
   };
@@ -254,15 +312,61 @@ export class RealtimeVoice {
   private startedAt = 0;
   private rotationTimer?: ReturnType<typeof setInterval>;
   private rotationRequested = false;
+  /** The open microphone; a switch replaces it without reconnecting. */
+  private deviceId?: string;
+  private microphoneSwap: Promise<void> = Promise.resolve();
+  private swappingMicrophone = false;
   private deviceChanged = () => {
     const tracks = this.stream?.getAudioTracks();
     if (
       !this.closed &&
+      !this.swappingMicrophone &&
       tracks &&
       (!tracks.length || tracks.every((track) => track.readyState === "ended"))
     )
       this.fail("Microphone lost.", "microphone_lost");
   };
+
+  /** Moves capture to another microphone without ending the conversation. */
+  switchMicrophone(deviceId: string | undefined): Promise<void> {
+    this.microphoneSwap = this.microphoneSwap.then(async () => {
+      const previous = this.deviceId;
+      if (previous === deviceId) return;
+      this.deviceId = deviceId;
+      if (this.closed || !this.input || !this.stream || !this.source || !this.capture) return;
+      this.vad?.reset();
+      this.level.current = 0;
+      this.swappingMicrophone = true;
+      try {
+        const next = await swapMicrophone({
+          context: this.input,
+          capture: this.capture,
+          stream: this.stream,
+          source: this.source,
+          deviceId,
+          previousDeviceId: previous,
+          muted: () => this.muted,
+          signal: this.lifetime.signal,
+          onEnded: () => {
+            if (!this.closed) this.fail("Microphone lost.", "microphone_lost");
+          },
+        });
+        if (this.closed) {
+          next.source.disconnect();
+          stopMicrophone(next.stream);
+          return;
+        }
+        this.stream = next.stream;
+        this.source = next.source;
+        this.deviceId = next.deviceId;
+      } catch {
+        if (!this.closed) this.fail("Microphone lost.", "microphone_lost");
+      } finally {
+        this.swappingMicrophone = false;
+      }
+    });
+    return this.microphoneSwap;
+  }
 
   get canRotate() {
     return (
@@ -284,6 +388,7 @@ export class RealtimeVoice {
     turnEndSilence?: number;
     allowBargeIn?: boolean;
     manualTurnEnd?: boolean;
+    removeFillers?: boolean;
     experimentalSemanticVad?: boolean;
   }): boolean {
     if (
@@ -364,6 +469,7 @@ export class RealtimeVoice {
       turnEndSilence?: number;
       allowBargeIn?: boolean;
       manualTurnEnd?: boolean;
+      removeFillers?: boolean;
       experimentalSemanticVad?: boolean;
     } = {},
   ) {}
@@ -376,8 +482,12 @@ export class RealtimeVoice {
       summary?: string;
       /** Bounded unfinished-work text, seeded as data only. */
       openWork?: string;
+      /** The app's own record of work this assistant started (`VoiceWorkLedger.seed`), data only. */
+      voiceWork?: string;
       deviceId?: string;
       disclosureCurrent?: () => boolean;
+      /** Mints a fresh credential when `secret` would expire before the socket finishes. */
+      renewSecret?: () => Promise<RealtimeSecret>;
     } = {},
   ) {
     if (
@@ -405,17 +515,25 @@ export class RealtimeVoice {
           throw new Error(
             t("Microphone access requires the desktop app or a secure browser context."),
           );
-        this.stream = await openMicrophone({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-            ...(options.deviceId ? { deviceId: { exact: options.deviceId } } : {}),
-          },
-          video: false,
+        this.deviceId = options.deviceId;
+        const opening = openMicrophone(voiceMicrophoneConstraints(options.deviceId), {
+          signal: this.lifetime.signal,
         });
+        try {
+          this.stream = await voiceConnectionStep(
+            "microphone",
+            this.provider,
+            opening,
+            VOICE_MICROPHONE_STEP_MS,
+            t("Voice could not start: microphone did not respond."),
+          );
+        } catch (cause) {
+          // A stream granted after the deadline must not keep the microphone open.
+          void opening.then(stopMicrophone, () => undefined);
+          throw cause;
+        }
         if (this.closed) {
-          this.stream.getTracks().forEach((track) => track.stop());
+          stopMicrophone(this.stream);
           return;
         }
         requireDisclosure();
@@ -429,9 +547,22 @@ export class RealtimeVoice {
         // Capture at the provider's PCM rate; play at the device rate.
         this.input = new AudioContext({ sampleRate: 24000 });
         this.output = new AudioContext();
-        await this.input.resume();
+        const audioStalled = t("Voice could not start: audio did not initialize.");
+        await voiceConnectionStep(
+          "audio-resume",
+          this.provider,
+          this.input.resume(),
+          VOICE_AUDIO_STEP_MS,
+          audioStalled,
+        );
         requireDisclosure();
-        await this.input.audioWorklet.addModule(captureUrl);
+        await voiceConnectionStep(
+          "audio-worklet",
+          this.provider,
+          this.input.audioWorklet.addModule(captureUrl),
+          VOICE_AUDIO_STEP_MS,
+          audioStalled,
+        );
         requireDisclosure();
         this.source = this.input.createMediaStreamSource(this.stream);
         this.vad = new VoiceVad(
@@ -512,7 +643,7 @@ export class RealtimeVoice {
               this.congestedSince = now;
             this.congestedBytes = buffered;
             if (elapsedSince(this.congestedSince, now) > CONGESTION_LIMIT) {
-              this.fail("Voice connection is too slow. Start voice again.");
+              this.fail("Voice connection is too slow. Start voice again.", "audio-send-backlog");
               return;
             }
           } else this.congestedSince = undefined;
@@ -525,11 +656,28 @@ export class RealtimeVoice {
             this.send({ type: "input_audio_buffer.append", audio: pcmBase64(frame) });
         };
       } else this.output = new AudioContext();
+      routeVoiceOutput(this.output);
       this.outputGain = this.output.createGain();
       this.outputGain.gain.value = this.outputMuted ? 0 : 1;
       this.outputGain.connect(this.output.destination);
-      await voiceRuntimeDeadline(() => this.output!.resume(), this.lifetime.signal, 12_000);
+      await voiceRuntimeDeadline(
+        () => this.output!.resume(),
+        this.lifetime.signal,
+        VOICE_AUDIO_STEP_MS,
+      );
       requireDisclosure();
+      // The provider credential lives 60 s, and the steps above may have waited on a slow
+      // Host or a microphone prompt: renew it rather than open a socket it cannot finish.
+      if (options.renewSecret && secret.expires_at * 1000 - Date.now() < SECRET_RENEW_MARGIN_MS) {
+        secret = await voiceConnectionStep(
+          "secret-renew",
+          this.provider,
+          options.renewSecret(),
+          VOICE_HOST_STEP_MS,
+          t("Voice could not start: the voice key was not issued."),
+        );
+        requireDisclosure();
+      }
       const socket = (this.socket = new WebSocket(
         secret.url,
         this.provider === "openai"
@@ -540,7 +688,7 @@ export class RealtimeVoice {
         const timer = setTimeout(() => {
           reject(new Error("Voice connection timed out."));
           this.close();
-        }, 12000);
+        }, VOICE_SOCKET_STEP_MS);
         this.abortConnect = (error) => {
           clearTimeout(timer);
           reject(error);
@@ -579,11 +727,14 @@ export class RealtimeVoice {
           }
           clearTimeout(timer);
           const code = event?.code ?? 1006;
-          this.callbacks.diagnostic?.({
+          this.diagnose({
             kind: "close",
             code,
             ageMs: elapsedSince(this.startedAt),
             intentional: this.closed,
+            wasClean: event?.wasClean === true,
+            pendingCalls: this.pendingCalls,
+            responding: this.responding,
           });
           const message =
             code === 1008 ? "Voice connection permission denied." : "Voice connection closed.";
@@ -598,6 +749,7 @@ export class RealtimeVoice {
             this.fail("Voice connection failed. Start voice again.");
             return;
           }
+          this.lastProviderFrameAt = monotonicNow();
           if (event.type === "session.updated" && !this.ready) {
             if (this.conversation.experimentalSemanticVad) {
               const session = event.session as
@@ -633,7 +785,18 @@ export class RealtimeVoice {
             }
             this.ready = true;
             clearTimeout(timer);
-            for (const item of voiceSeedItems(options.summary, options.openWork, recentTurns)) {
+            const seedItems = voiceSeedItems(
+              options.summary,
+              options.openWork,
+              recentTurns,
+              options.voiceWork,
+            );
+            this.diagnose({
+              kind: "ready",
+              connectMs: elapsedSince(this.startedAt),
+              seededItems: seedItems.length,
+            });
+            for (const item of seedItems) {
               if (!disclosureCurrent()) {
                 this.close();
                 return;
@@ -680,6 +843,17 @@ export class RealtimeVoice {
       case "conversation.item.added": {
         const id = (event.item as { id?: unknown } | undefined)?.id ?? event.item_id;
         if (typeof id !== "string" || !id) return;
+        // Commits are serialized, so a new owner audio item belongs to the pending commit.
+        // Client-created seed, status and image items carry text or image content instead.
+        if (
+          !this.conversation.experimentalSemanticVad &&
+          this.pendingInput &&
+          !this.pendingInput.itemId &&
+          !this.createdItems.has(id) &&
+          ownerAudioItem(event.item)
+        ) {
+          this.acknowledgePendingInput(id);
+        }
         this.rememberCreatedItem(id);
         this.deleteDiscardedInput();
         break;
@@ -729,6 +903,7 @@ export class RealtimeVoice {
             this.responseTiming.delete(this.responseTiming.keys().next().value!);
           this.pendingAdmissionAt = undefined;
         }
+        this.responseCount++;
         this.responseTools.set(id, this.expectedResponse.tools && !this.expectedResponse.cancelled);
         if (this.expectedResponse.cancelled) this.suppressed.add(id);
         if (this.expectedResponse.cancelOnCreated) this.cancelResponse(id);
@@ -787,8 +962,7 @@ export class RealtimeVoice {
           this.activateCandidate = undefined;
           break;
         }
-        if (typeof event.item_id === "string" && this.pendingInput && !this.pendingInput.itemId)
-          this.pendingInput.itemId = event.item_id;
+        this.acknowledgePendingInput(typeof event.item_id === "string" ? event.item_id : undefined);
         break;
       }
       case "conversation.item.input_audio_transcription.completed":
@@ -869,6 +1043,12 @@ export class RealtimeVoice {
         if (!benignCancel) {
           const message = errorMessage(event) ?? "The voice request failed.";
           const details = classifyVoiceFailure(message, code);
+          this.diagnose({
+            kind: "provider-error",
+            code: diagnosticCode(code),
+            type: diagnosticCode((event.error as { type?: unknown } | undefined)?.type),
+            recoverable: details.recoverable,
+          });
           if (
             !details.recoverable ||
             /session_expired|session.*limit|server_error|connection/i.test(code)
@@ -921,6 +1101,7 @@ export class RealtimeVoice {
     )
       return;
     const candidate = this.candidates.shift()!;
+    this.commits++;
     this.pendingInput = {
       epoch: candidate.epoch,
       committedAt: performance.now(),
@@ -931,26 +1112,64 @@ export class RealtimeVoice {
     this.send({ type: "input_audio_buffer.commit" });
   }
 
+  private acknowledgePendingInput(id?: string) {
+    const pending = this.pendingInput;
+    if (!pending) return;
+    if (!pending.itemId && id) pending.itemId = id;
+    if (pending.acknowledged) return;
+    pending.acknowledged = true;
+    const ackMs = elapsedSince(pending.committedAt);
+    recordSample(this.ackLatencies, ackMs);
+    this.maxAckMs = Math.max(this.maxAckMs, ackMs);
+    clearTimeout(pending.timer);
+    pending.timer = this.transcriptDeadline();
+  }
+
   /** Starts the wait for a committed candidate's transcript. Re-armed on restore. */
   private transcriptDeadline(): ReturnType<typeof setTimeout> {
     let uploading = Number.POSITIVE_INFINITY;
+    let uploadExtensions = 0;
     const expire = () => {
       const pending = this.pendingInput;
       if (!pending) return;
       // Quarantine untranscribed audio (often noise). A late final transcript
       // can still be accepted until a delete was actually sent; otherwise only
       // confirmed deletion or a fresh provider session can release the fence.
-      if (pending.itemId) return this.rejectPending(true);
-      // The wait includes the upload: a long utterance on a slow link is still
-      // being sent, so wait again while the backlog keeps shrinking.
       const buffered = this.socket?.bufferedAmount ?? 0;
-      if (buffered > 0 && buffered < uploading) {
+      const stage = pending.acknowledged || pending.itemId ? "transcript" : "commit";
+      // Give a draining upload another window, including when it just reached
+      // zero. A buffer that was always empty still uses the original deadline.
+      if (
+        stage === "commit" &&
+        buffered < uploading &&
+        (buffered > 0 || Number.isFinite(uploading))
+      ) {
         uploading = buffered;
+        uploadExtensions++;
         pending.timer = setTimeout(expire, TRANSCRIPT_TIMEOUT);
         return;
       }
+      this.diagnose({
+        kind: "input-deadline",
+        stage,
+        elapsedMs: Math.round(elapsedSince(pending.committedAt)),
+        bufferedBytes: buffered,
+        previousBufferedBytes: Number.isFinite(uploading) ? uploading : undefined,
+        uploadExtensions,
+        socketState: this.socket?.readyState,
+        lastProviderFrameAgoMs:
+          this.lastProviderFrameAt === undefined
+            ? undefined
+            : Math.round(elapsedSince(this.lastProviderFrameAt)),
+      });
+      if (pending.itemId) return this.rejectPending(true);
+      // Confirmed audio with no item identity cannot be deleted; only a fresh session is clean.
+      if (pending.acknowledged) {
+        this.fail("Voice connection is too slow. Start voice again.", "audio-transcript-missing");
+        return;
+      }
       // Without even a commit acknowledgement the connection is unresponsive.
-      this.fail("Voice connection is too slow. Start voice again.");
+      this.fail("Voice connection is too slow. Start voice again.", "audio-commit-unacknowledged");
     };
     return setTimeout(expire, TRANSCRIPT_TIMEOUT);
   }
@@ -1026,6 +1245,13 @@ export class RealtimeVoice {
         timer: this.transcriptDeadline(),
       };
     }
+    if (
+      id &&
+      this.pendingInput?.acknowledged &&
+      !this.pendingInput.itemId &&
+      !this.createdItems.has(id)
+    )
+      this.pendingInput.itemId = id;
     if (!id || id !== this.pendingInput?.itemId) return;
     if (event.type === "conversation.item.input_audio_transcription.completed") {
       // A matching final transcript refers to the committed user item itself;
@@ -1037,7 +1263,13 @@ export class RealtimeVoice {
     clearTimeout(timer);
     this.pendingInput = undefined;
     if (this.conversation.experimentalSemanticVad) this.semanticInput = undefined;
-    const text = speechTranscript(typeof event.transcript === "string" ? event.transcript : "");
+    const spoken = speechTranscript(typeof event.transcript === "string" ? event.transcript : "");
+    // A hesitation alone ("eee") is discarded like empty speech once the owner opted in.
+    const text = this.conversation.removeFillers
+      ? removeSpeechFillers(spoken, {
+          language: voiceLanguageCode(this.languageLock) ?? this.language,
+        })
+      : spoken;
     if (
       this.closed ||
       this.muted ||
@@ -1051,6 +1283,8 @@ export class RealtimeVoice {
       this.flushUpdates();
       return;
     }
+    // Record what the owner already heard before this turn moves the conversation on.
+    this.settleElapsedPlayback();
     if (this.callbacks.interceptTranscript?.(text)) {
       this.discardInput(id);
       this.commitCandidate();
@@ -1104,22 +1338,34 @@ export class RealtimeVoice {
       /* Invalid arguments reach the handler as empty. */
     }
     this.pendingCalls++;
+    this.toolCalls++;
+    const toolStartedAt = monotonicNow();
     void voiceRuntimeDeadline(
       (wait) =>
-        voiceToolWaitsForOwner(name)
+        voiceToolWaitsForOwner(name, args)
           ? this.callbacks.tool(name, args, wait)
           : this.callbacks.tool(name, args),
       this.lifetime.signal,
+      undefined,
+      name === "app_tool_call" && typeof args.requestId === "string" ? args.requestId : undefined,
     )
       .catch((error: unknown) => ({
         status: "uncertain",
         requestId: args.requestId,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorText(error),
         retry: "Read the operation state before retrying. No automatic resend was made.",
       }))
       .then((output) => {
         this.pendingCalls--;
-        if (this.closed) return;
+        if (this.closed) {
+          this.toolResultsDropped++;
+          this.diagnose({
+            kind: "tool-result-dropped",
+            name: truncateGraphemes(name, MAX_DIAGNOSTIC_CODE, ""),
+            elapsedMs: elapsedSince(toolStartedAt),
+          });
+          return;
+        }
         let serialized: string;
         try {
           serialized = JSON.stringify(output ?? {});
@@ -1371,6 +1617,31 @@ export class RealtimeVoice {
     else this.callbacks.replyDiscarded?.(id);
   }
 
+  /** A completed response whose scheduled audio has elapsed was played, even if `ended` is late. */
+  private settleElapsedPlayback() {
+    const now = this.output?.currentTime ?? 0;
+    for (const [id, playback] of this.replyPlayback) {
+      if (!playback.done || !playback.hasAudio || !playback.pending) continue;
+      const entries = [...this.playout.values()].filter((entry) => entry.responseId === id);
+      if (
+        !entries.length ||
+        entries.some((entry) => entry.chunks.some((chunk) => chunk.start + chunk.duration > now))
+      )
+        continue;
+      playback.pending = 0;
+      this.finishPlayback(id);
+    }
+  }
+
+  /** Captured owner audio on this microphone epoch that never became an accepted transcript. */
+  private hasLostSpeech() {
+    return (
+      this.pendingInput?.epoch === this.inputEpoch ||
+      this.discardedInput?.awaitingTranscript?.epoch === this.inputEpoch ||
+      this.candidates.some((candidate) => candidate.epoch === this.inputEpoch)
+    );
+  }
+
   /** Explicitly yield the turn, including responses that have not been created yet. */
   pause() {
     this.pendingTurn = false;
@@ -1508,6 +1779,7 @@ export class RealtimeVoice {
     const timing = responseId && this.responseTiming.get(responseId);
     if (timing && !timing.scheduled) {
       timing.scheduled = true;
+      recordSample(this.firstAudioLatencies, Math.max(0, performance.now() - timing.admittedAt));
       this.callbacks.timing?.({
         stage: "first_scheduled_output",
         durationMs: Math.max(
@@ -1547,8 +1819,21 @@ export class RealtimeVoice {
 
   private fail(message: string, code?: string) {
     if (!this.closed) {
+      const speechLost = this.hasLostSpeech();
+      this.diagnose({
+        kind: "fail",
+        code: diagnosticCode(code ?? ""),
+        ageMs: this.startedAt ? elapsedSince(this.startedAt) : 0,
+        pendingCalls: this.pendingCalls,
+        socketState: this.socket?.readyState,
+        lastProviderFrameAgoMs:
+          this.lastProviderFrameAt === undefined
+            ? undefined
+            : Math.round(elapsedSince(this.lastProviderFrameAt)),
+      });
       this.close();
-      this.callbacks.error(message, true, classifyVoiceFailure(message, code));
+      const failure = classifyVoiceFailure(message, code);
+      this.callbacks.error(message, true, speechLost ? { ...failure, speechLost } : failure);
     }
   }
 
@@ -1573,8 +1858,31 @@ export class RealtimeVoice {
     )
       throw new Error("Voice generation closure is unconfirmed.");
   }
+  /** Observability only; a throwing listener must never alter the session. */
+  private diagnose(event: VoiceDiagnostic) {
+    try {
+      this.callbacks.diagnostic?.(event);
+    } catch {
+      /* Diagnostics never affect the connection. */
+    }
+  }
+
   close() {
     if (this.closed) return;
+    this.settleElapsedPlayback();
+    this.diagnose({
+      kind: "session-summary",
+      ageMs: this.startedAt ? elapsedSince(this.startedAt) : 0,
+      commits: this.commits,
+      ackMedianMs: medianOf(this.ackLatencies),
+      ackMaxMs: Math.round(this.maxAckMs),
+      responses: this.responseCount,
+      toolCalls: this.toolCalls,
+      toolResultsDropped: this.toolResultsDropped,
+      firstAudioMedianMs: this.firstAudioLatencies.length
+        ? medianOf(this.firstAudioLatencies)
+        : undefined,
+    });
     this.closed = true;
     this.lifetime.abort();
     this.clearResponseTimer();
@@ -1602,8 +1910,8 @@ export class RealtimeVoice {
     this.silence();
     this.stream?.getTracks().forEach((track) => {
       track.onended = null;
-      track.stop();
     });
+    stopMicrophone(this.stream);
     navigator.mediaDevices?.removeEventListener?.("devicechange", this.deviceChanged);
     this.source?.disconnect();
     this.capture?.disconnect();
@@ -1621,6 +1929,17 @@ export class RealtimeVoice {
     ).then(() => {});
     void this.audioClosure.catch(() => {});
   }
+}
+
+function ownerAudioItem(item: unknown) {
+  const { role, content } = (item ?? {}) as { role?: unknown; content?: unknown };
+  return (
+    role === "user" &&
+    (!Array.isArray(content) ||
+      !content.some((part: { type?: unknown } | null) =>
+        ["input_text", "input_image"].includes(String(part?.type)),
+      ))
+  );
 }
 
 function errorMessage(event: VoiceEvent) {

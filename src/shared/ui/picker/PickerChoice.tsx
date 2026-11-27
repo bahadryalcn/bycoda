@@ -5,7 +5,9 @@ import choice from "../arc/combobox/combobox.module.css";
 import styles from "./picker.module.css";
 
 /**
- * Content slots shared by Select, SearchableSelect and composable PickerList rows.
+ * Content slots shared by Select, SearchableSelect and composable PickerList rows:
+ * [icon] label · meta / description [trailing] [check]. The check closes the row so the
+ * leading edge stays icon and label; its slot is reserved on every row so nothing shifts.
  * The row controller owns focus and selection; Arc owns every row state.
  * @group choice
  * @use Inside a shared choice row, with its committed selected state.
@@ -33,7 +35,7 @@ export function PickerChoice({
   /** False only for action lists without a committed selection. */
   showSelection?: boolean;
 }) {
-  const check = selected ? <Check aria-hidden strokeWidth={2} /> : null;
+  const check = selected ? <Check aria-hidden /> : null;
   const checkSlot = (
     <span className={choice.choiceCheck} aria-hidden="true">
       {check}
@@ -41,7 +43,6 @@ export function PickerChoice({
   );
   return (
     <>
-      {showSelection ? checkSlot : null}
       {icon != null ? (
         <span className={choice.choiceIcon} aria-hidden="true">
           {icon}
@@ -61,11 +62,12 @@ export function PickerChoice({
         </span>
       </OverflowTooltip>
       {meta != null ? (
-        <span className={styles.meta} title={typeof meta === "string" ? meta : undefined}>
-          {meta}
-        </span>
+        <OverflowTooltip label={typeof meta === "string" ? meta : undefined}>
+          <span className={styles.meta}>{meta}</span>
+        </OverflowTooltip>
       ) : null}
       {trailing != null ? <span className={styles.trailing}>{trailing}</span> : null}
+      {showSelection ? checkSlot : null}
     </>
   );
 }

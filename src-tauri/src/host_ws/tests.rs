@@ -1,4 +1,16 @@
 use super::*;
+use std::thread;
+
+// Regression for #503: each route used to get its own OS thread and current-thread
+// runtime, multiplied across five brokers. Route workers must stay tasks on the
+// shared async runtime, so the thread and runtime constructors must not return.
+#[test]
+fn host_ws_route_workers_run_on_the_shared_async_runtime() {
+    let production = include_str!("mod.rs");
+    assert!(!production.contains("thread::Builder::new()"));
+    assert!(!production.contains("new_current_thread"));
+    assert!(production.contains("tauri::async_runtime::spawn(async move"));
+}
 
 #[test]
 fn remote_admission_errors_block_only_explicit_identity_auth_or_schema() {
@@ -146,8 +158,8 @@ fn generic_ws_cannot_bypass_private_native_or_raw_development_gateway_ingress() 
     .unwrap();
     for method in [
         "native.turn.begin",
-        "native.buffers.upload.start",
-        "native.buffers.recovery.list",
+        "native.services.upload.begin",
+        "native.buffers.update",
         "devServers.bridgeCheck",
         "devServers.bridgeOpen",
         "devServers.bridgeRead",
@@ -293,98 +305,6 @@ fn absolute_deadline_detaches_dispatched_effect_and_status_keeps_original_identi
     broker.shutdown();
 }
 
-fn native_recovery_source() -> Value {
-    json!({"reportId":"a".repeat(64),"reportVersion":1,"ownerId":"native-owner","ownerVersion":1,"snapshotDigest":"b".repeat(64)})
-}
-pub(crate) fn native_recovery_page() -> Value {
-    json!({"version":1,"qualified":false,"records":[],"next":null,"incomplete":false,"duplicatesPossible":false})
-}
-fn native_recovery_status() -> Value {
-    json!({"version":1,"qualified":false,"source":native_recovery_source(),"found":false,"inspectable":false,"resolution":"unsupported"})
-}
-
-#[test]
-fn native_profile_callers_keep_actual_pending_work_independent_of_window_detach() {
-    use super::native_profile::NativeProfileBroker;
-    let (started, waiting) = mpsc::channel();
-    let (release, released) = mpsc::channel();
-    let (done, finished) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
-        let mut socket = accept(&listener).await;
-        hello(
-            &mut socket,
-            &[
-                "native.buffers.recovery.list",
-                "native.buffers.recovery.status",
-            ],
-            "host.1",
-        )
-        .await;
-        let first = next(&mut socket).await;
-        assert_eq!(first["method"], "native.buffers.recovery.list");
-        started.send(()).unwrap();
-        tokio::task::spawn_blocking(move || released.recv().unwrap())
-            .await
-            .unwrap();
-        result(&mut socket, &first, native_recovery_page()).await;
-        let second = next(&mut socket).await;
-        assert_eq!(second["method"], "native.buffers.recovery.status");
-        result(&mut socket, &second, native_recovery_status()).await;
-        tokio::task::spawn_blocking(move || finished.recv().unwrap())
-            .await
-            .unwrap();
-    });
-    let profile = NativeProfileBroker::default();
-    let caller = profile.capture(server.route()).unwrap();
-    assert!(
-        caller
-            .begin("projects.list", json!({}), RequestOptions::default())
-            .err()
-            .unwrap()
-            .unsupported
-    );
-    let pending = caller
-        .begin(
-            "native.buffers.recovery.list",
-            json!({}),
-            RequestOptions::default(),
-        )
-        .unwrap();
-    waiting.recv_timeout(Duration::from_secs(3)).unwrap();
-    // Even a window label equal to the private anchor cannot address its pool.
-    let windows = HostWsBroker::default();
-    windows.detach("native-profile-owner");
-    drop(caller); // the actual pending call retains its private caller scope
-    release.send(()).unwrap();
-    let (value, guard) = pending.wait().unwrap().into_guarded();
-    assert_eq!(value, native_recovery_page());
-    guard.check().unwrap();
-    // A fresh caller reuses this context's same physical connection.
-    let second = profile.capture(server.route()).unwrap();
-    let (value, second_guard) = second
-        .begin(
-            "native.buffers.recovery.status",
-            native_recovery_source(),
-            RequestOptions::default(),
-        )
-        .unwrap()
-        .wait()
-        .unwrap()
-        .into_guarded();
-    assert_eq!(value, native_recovery_status());
-    second_guard.check().unwrap();
-    profile.invalidate_machine("machine.1");
-    assert!(guard.check().is_err() && second_guard.check().is_err());
-    assert!(second
-        .begin(
-            "native.buffers.recovery.list",
-            json!({}),
-            RequestOptions::default()
-        )
-        .is_err());
-    done.send(()).unwrap();
-}
-
 #[test]
 fn native_profile_context_is_bounded_loopback_only_and_cannot_reopen_after_shutdown() {
     use super::native_profile::NativeProfileBroker;
@@ -397,12 +317,12 @@ fn native_profile_context_is_bounded_loopback_only_and_cannot_reopen_after_shutd
         "native-selected",
     )
     .unwrap();
-    assert!(profile.capture(remote).is_err());
-    assert!(!NativeProfileBroker::supports_params(
+    assert!(profile.capture_workspace(remote).is_err());
+    assert!(!NativeProfileBroker::supports_workspace_params(
         "projects.list",
         &json!({})
     ));
-    assert!(!NativeProfileBroker::supports_params(
+    assert!(!NativeProfileBroker::supports_workspace_params(
         "native.buffers.recovery.status",
         &json!({})
     ));
@@ -415,144 +335,22 @@ fn native_profile_context_is_bounded_loopback_only_and_cannot_reopen_after_shutd
     )
     .unwrap();
     let callers = (0..128)
-        .map(|_| profile.capture(route.clone()).unwrap())
+        .map(|_| profile.capture_workspace(route.clone()).unwrap())
         .collect::<Vec<_>>();
-    assert!(profile.capture(route.clone()).is_err());
+    assert!(profile.capture_workspace(route.clone()).is_err());
     drop(callers);
-    let caller = profile.capture(route.clone()).unwrap();
+    let caller = profile.capture_workspace(route.clone()).unwrap();
     profile.shutdown();
-    assert!(profile.capture(route).is_err());
+    assert!(profile.capture_workspace(route).is_err());
     assert!(caller
         .begin(
-            "native.buffers.recovery.list",
-            json!({}),
+            "native.activity.end",
+            json!({"activityId":"fixture"}),
             RequestOptions::default()
         )
         .is_err());
 }
 
-#[test]
-fn native_profile_bulk_keeps_caller_and_disclosure_guard_through_real_download() {
-    use super::native_profile::NativeProfileBroker;
-    let _serial = BULK_TEST
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let value = json!({"version":1,"qualified":false,"source":native_recovery_source(),
-        "rawReport":"x".repeat(1_200_000),"owner":{"ownerId":"native-owner","updatedAt":1,"unknown":false,"buffers":[]},"resolution":"unsupported"});
-    let bytes = Arc::new(serde_json::to_vec(&value).unwrap());
-    let data = bytes.clone();
-    let (started, waiting) = mpsc::sync_channel(1);
-    let (done, finished) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
-        let mut socket = accept(&listener).await;
-        hello(
-            &mut socket,
-            &[
-                "native.buffers.recovery.read",
-                "native.buffers.recovery.status",
-            ],
-            "host.1",
-        )
-        .await;
-        let read = next(&mut socket).await;
-        result(&mut socket, &read, json!({"$bulk":descriptor(&data)})).await;
-        let (stream, _) = listener.accept().await.unwrap();
-        let (release, released) = mpsc::sync_channel(1);
-        let first_bytes = data.clone();
-        let first = tokio::task::spawn_blocking(move || {
-            http_chunk(
-                stream.into_std().unwrap(),
-                &first_bytes,
-                0,
-                Some(started),
-                Some(released),
-            )
-        });
-        let other = next(&mut socket).await;
-        assert_eq!(other["method"], "native.buffers.recovery.status");
-        result(&mut socket, &other, native_recovery_status()).await;
-        release.send(()).unwrap();
-        first.await.unwrap();
-        for offset in (65536..data.len()).step_by(65536) {
-            let (stream, _) = listener.accept().await.unwrap();
-            let data = data.clone();
-            tokio::task::spawn_blocking(move || {
-                http_chunk(stream.into_std().unwrap(), &data, offset, None, None)
-            })
-            .await
-            .unwrap();
-        }
-        tokio::task::spawn_blocking(move || finished.recv().unwrap())
-            .await
-            .unwrap();
-    });
-    let profile = NativeProfileBroker::default();
-    let caller = profile.capture(server.route()).unwrap();
-    let pending = caller
-        .begin(
-            "native.buffers.recovery.read",
-            native_recovery_source(),
-            RequestOptions::default(),
-        )
-        .unwrap();
-    drop(caller);
-    let call = thread::spawn(move || pending.wait());
-    waiting.recv_timeout(Duration::from_secs(3)).unwrap();
-    assert_eq!(bulk::in_flight(), (1, bytes.len()));
-    let other = profile.capture(server.route()).unwrap();
-    other
-        .begin(
-            "native.buffers.recovery.status",
-            native_recovery_source(),
-            RequestOptions::default(),
-        )
-        .unwrap()
-        .wait()
-        .unwrap();
-    let (actual, guard) = call.join().unwrap().unwrap().into_guarded();
-    assert_eq!(actual, value);
-    assert_eq!(bulk::in_flight(), (1, bytes.len()));
-    guard.check().unwrap();
-    profile.invalidate_environment("host.1");
-    assert!(guard.check().is_err());
-    drop(guard);
-    assert_eq!(bulk::in_flight(), (0, 0));
-    done.send(()).unwrap();
-}
-
-#[test]
-fn native_profile_recovery_cannot_use_a_renderer_selected_generic_ws_route() {
-    let broker = HostWsBroker::default();
-    let route = NativeRoute::new(
-        "machine",
-        "environment",
-        "http://127.0.0.1:1",
-        "fixture-token",
-        "fixture-native-binding",
-    )
-    .unwrap();
-    for method in [
-        "native.buffers.recovery.list",
-        "native.buffers.recovery.read",
-        "native.buffers.recovery.status",
-    ] {
-        assert!(!HostWsBroker::supports_method(method));
-        assert!(!HostWsBroker::supports_params(method, &json!({})));
-        let error = broker
-            .begin_request(
-                &route,
-                "window",
-                method,
-                json!({}),
-                RequestOptions::default(),
-            )
-            .err()
-            .unwrap();
-        assert!(error.unsupported);
-        assert!(!error.uncertain);
-    }
-    assert!(broker.connections.lock().unwrap().is_empty());
-}
 use futures_util::{SinkExt, StreamExt};
 use std::io::{Read, Write};
 use std::{future::Future, sync::atomic::AtomicUsize};
@@ -2439,6 +2237,112 @@ fn bulk_unary_download_keeps_other_rpc_and_socket_read_loop_available() {
     broker.shutdown();
 }
 
+/// Reads one chunk request at `offset`, then drops the socket without a response,
+/// like a link glitch mid-transfer.
+fn http_drop(mut stream: std::net::TcpStream, offset: usize) {
+    stream.set_nonblocking(false).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    let mut headers = Vec::new();
+    while !headers.ends_with(b"\r\n\r\n") {
+        let mut byte = [0];
+        stream.read_exact(&mut byte).unwrap();
+        headers.push(byte[0]);
+        assert!(headers.len() < 8192);
+    }
+    let headers = String::from_utf8(headers).unwrap();
+    assert!(headers.starts_with(&format!(
+        "GET /ws-bulk/transfer.fixture?offset={offset} HTTP/1.1"
+    )));
+    let _ = stream.shutdown(std::net::Shutdown::Both);
+}
+
+#[test]
+fn bulk_transient_chunk_drop_retries_same_offset_and_completes() {
+    let _serial = BULK_TEST
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let bytes = Arc::new(
+        serde_json::to_vec(
+            &json!([{"id":"project.bulk","cwd":"/fixture","name":"x".repeat(140_000)}]),
+        )
+        .unwrap(),
+    );
+    let data = bytes.clone();
+    let server = Server::spawn(move |listener| async move {
+        let mut socket = accept(&listener).await;
+        hello(&mut socket, &["projects.list"], "host.1").await;
+        let request = next(&mut socket).await;
+        result(&mut socket, &request, json!({"$bulk":descriptor(&data)})).await;
+        // First attempt at offset 0 glitches; the retry must re-request offset 0.
+        let (stream, _) = listener.accept().await.unwrap();
+        tokio::task::spawn_blocking(move || http_drop(stream.into_std().unwrap(), 0))
+            .await
+            .unwrap();
+        for offset in (0..data.len()).step_by(65536) {
+            let (stream, _) = listener.accept().await.unwrap();
+            let data = data.clone();
+            tokio::task::spawn_blocking(move || {
+                http_chunk(stream.into_std().unwrap(), &data, offset, None, None)
+            })
+            .await
+            .unwrap();
+        }
+        let _ = time::timeout(Duration::from_millis(150), socket.next()).await;
+    });
+    let broker = HostWsBroker::default();
+    let reply = broker
+        .request(
+            &server.route(),
+            "window.a",
+            "projects.list",
+            json!({}),
+            RequestOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(reply.result[0]["name"].as_str().unwrap().len(), 140_000);
+    broker.shutdown();
+}
+
+#[test]
+fn bulk_persistent_chunk_failure_stops_after_bounded_attempts() {
+    let _serial = BULK_TEST
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let bytes = Arc::new(
+        serde_json::to_vec(
+            &json!([{"id":"project.bulk","cwd":"/fixture","name":"x".repeat(140_000)}]),
+        )
+        .unwrap(),
+    );
+    let data = bytes.clone();
+    let server = Server::spawn(move |listener| async move {
+        let mut socket = accept(&listener).await;
+        hello(&mut socket, &["projects.list"], "host.1").await;
+        let request = next(&mut socket).await;
+        result(&mut socket, &request, json!({"$bulk":descriptor(&data)})).await;
+        // Exactly three attempts (first try plus two retries), all at offset 0.
+        for _ in 0..3 {
+            let (stream, _) = listener.accept().await.unwrap();
+            tokio::task::spawn_blocking(move || http_drop(stream.into_std().unwrap(), 0))
+                .await
+                .unwrap();
+        }
+        let _ = time::timeout(Duration::from_millis(150), socket.next()).await;
+    });
+    let broker = HostWsBroker::default();
+    let outcome = broker.request(
+        &server.route(),
+        "window.a",
+        "projects.list",
+        json!({}),
+        RequestOptions::default(),
+    );
+    assert!(outcome.is_err());
+    broker.shutdown();
+}
+
 #[test]
 fn bulk_hash_and_environment_mismatch_are_rejected() {
     let _serial = BULK_TEST
@@ -2874,4 +2778,37 @@ fn resource_retirement_fences_cross_window_stateful_unary_without_claiming_not_s
         let _ = done_tx.send(());
         broker.shutdown();
     }
+}
+
+// A native caller enqueues on a runtime worker and then blocks for the reply. The route worker
+// it woke sits in that worker's LIFO slot, which other workers cannot steal, so a plain blocking
+// wait stranded the socket loop: no reply was read, no Host ping answered, and the Host closed
+// the connection while the caller timed out with RPC_WS_INTERRUPTED.
+#[test]
+fn a_blocking_reply_wait_on_a_runtime_worker_keeps_the_woken_route_task_running() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let (wake_tx, mut wake_rx) = tokio::sync::mpsc::channel::<()>(1);
+    let (reply_tx, reply_rx) = mpsc::channel::<()>();
+    runtime.spawn(async move {
+        while wake_rx.recv().await.is_some() {
+            let _ = reply_tx.send(());
+        }
+    });
+    thread::sleep(Duration::from_millis(50));
+    let replied = runtime.block_on(async move {
+        tokio::spawn(async move {
+            wake_tx.try_send(()).unwrap();
+            wait_for_reply(&reply_rx, Duration::from_secs(2)).is_ok()
+        })
+        .await
+        .unwrap()
+    });
+    assert!(
+        replied,
+        "the woken route task was stranded behind a blocking wait"
+    );
 }

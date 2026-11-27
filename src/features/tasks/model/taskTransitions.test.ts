@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { Automation } from "../../automations/model/automations";
 import type { BoardGoal } from "./goalClient";
 import type { BoardTask } from "./taskClient";
+import { buildTaskStop } from "../../../shared/model/host-contracts/task-stop";
+
+const asking = { stop: buildTaskStop({ code: "input_required", message: "Answer needed." }, 1) };
 import {
   backgroundSnapshot,
   backgroundTransitions,
@@ -83,10 +86,20 @@ describe("background transitions", () => {
     expect(
       messages(
         { tasks: [task()] },
-        { tasks: [task({ status: "blocked", error: "Tests failed" })] },
+        {
+          tasks: [
+            task({
+              status: "blocked",
+              stop: buildTaskStop(
+                { code: "run_failed", phase: "worker", message: "Tests failed" },
+                1,
+              ),
+            }),
+          ],
+        },
       ),
-    ).toEqual(["tasks/failed: Blocked: Ship the report — Tests failed"]);
-    expect(messages({ tasks: [task()] }, { tasks: [task({ needsInput: true })] })).toEqual([
+    ).toEqual(["tasks/failed: Blocked: Ship the report — Failed: Tests failed"]);
+    expect(messages({ tasks: [task()] }, { tasks: [task(asking)] })).toEqual([
       "tasks/input: Waiting for you: Ship the report",
     ]);
   });
@@ -94,9 +107,7 @@ describe("background transitions", () => {
   it("stays quiet when nothing changed, or a task leaves those states", () => {
     const review = task({ status: "review" });
     expect(messages({ tasks: [review] }, { tasks: [review] })).toEqual([]);
-    expect(
-      messages({ tasks: [task({ needsInput: true })] }, { tasks: [task({ needsInput: false })] }),
-    ).toEqual([]);
+    expect(messages({ tasks: [task(asking)] }, { tasks: [task({ stop: undefined })] })).toEqual([]);
     expect(messages({ tasks: [review] }, { tasks: [task({ status: "done" })] })).toEqual([]);
   });
 
@@ -105,7 +116,7 @@ describe("background transitions", () => {
       expect(
         messages(
           { tasks: [task({ status })] },
-          { tasks: [task({ status: "todo", needsInput: true, error: "x" })] },
+          { tasks: [task({ status: "todo", ...asking, error: "x" })] },
         ),
       ).toEqual([]);
   });
@@ -115,7 +126,7 @@ describe("background transitions", () => {
       backgroundTransitions(
         emptyBackgroundSnapshot(),
         backgroundSnapshot(
-          [task({ status: "review" }), task({ id: "b", needsInput: true })],
+          [task({ status: "review" }), task({ id: "b", ...asking })],
           [automation({ lastRunStatus: "failed" }, true)],
         ),
       ),

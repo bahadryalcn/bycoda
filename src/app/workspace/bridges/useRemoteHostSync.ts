@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import { startProviderAccountHostSync } from "../../../features/providers/public/providerAccountHostSync";
+import { WorkspaceActionError } from "../../model/workspaceActionError";
 import { startModelEnabledHostSync } from "../../../features/sessions/model/modelEnabledHostSync";
 import { startBykitHostSync } from "../../../features/host-tools/public/bykitHostSync";
+import { startRendererModelRoutingAfterPaint } from "../../../features/model-routing/public/rendererBootstrap";
 import {
   getShellSessions,
   sessionsRef,
@@ -22,7 +24,7 @@ import {
   keepUnchangedFields,
   remoteSessionState,
 } from "../../../features/connections/model/remoteSessionState";
-import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
+import { remoteSessionProject } from "../../../features/connections/model/sessionMachineTarget";
 import {
   acknowledgedHostSessionBinding,
   hostSessionBinding,
@@ -32,6 +34,7 @@ import type { LinkedSessionUpdate } from "../../../features/inbox/model/linkedSe
 import { t } from "../../../shared/i18n";
 
 export interface RemoteHostSync {
+  hydrateAdoptedHistoryRef: MutableRefObject<((id: string) => Promise<boolean>) | undefined>;
   localHostReachable: MutableRefObject<boolean>;
   loadRunningOnHostRef: MutableRefObject<((ids: string[]) => void) | undefined>;
   onRefreshAdoptedSession: RefreshAdoptedSession;
@@ -53,10 +56,13 @@ export function pruneClosedSnapshots(
 /** Adopted-host and remote-snapshot wiring. The handler table for the desktop
  * live channel is assigned by the caller, since it closes over workspace state. */
 export function useRemoteHostSync(): RemoteHostSync {
+  const hydrateAdoptedHistoryRef = useRef<(id: string) => Promise<boolean>>(undefined);
   const loadRunningOnHostRef = useRef<(ids: string[]) => void>(undefined);
   const refreshAdoptedSessionRef = useRef<RefreshAdoptedSession>(undefined);
   useEffect(() => startProviderAccountHostSync(), []);
   useEffect(() => startModelEnabledHostSync(), []);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Start delegation and catalog synchronization with the Host after the workspace paints.
+  useEffect(() => startRendererModelRoutingAfterPaint(), []);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- publishes the Settings bykit switch to the local Host while the workspace is mounted
   useEffect(() => startBykitHostSync(), []);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- timer reporting owner input to other connected Hosts while the workspace is mounted
@@ -66,11 +72,16 @@ export function useRemoteHostSync(): RemoteHostSync {
     setSessions,
     loadRunningOnHostRef,
     refreshAdoptedSessionRef,
+    subscribeShell,
+    hydrateAdoptedHistoryRef,
   );
   const onRefreshAdoptedSession = useCallback<RefreshAdoptedSession>(
     (sessionId, target, resolution) => {
       const refresh = refreshAdoptedSessionRef.current;
-      if (!refresh) return Promise.reject(new Error("Host unavailable. Try again."));
+      if (!refresh)
+        return Promise.reject(
+          new WorkspaceActionError("hostUnavailable", "Host unavailable. Try again."),
+        );
       return refresh(sessionId, target, resolution);
     },
     [],
@@ -152,7 +163,7 @@ export function useRemoteHostSync(): RemoteHostSync {
     setSessions((current) => {
       const entry = current.find((candidate) => candidate.id === shellId);
       if (!entry) return current;
-      const project = remoteProjectFor(entry.cwd);
+      const project = remoteSessionProject(entry);
       if (!project) return current;
       return current.map((candidate) =>
         candidate.id === shellId ? remoteSessionState(candidate, snapshot, project) : candidate,
@@ -161,6 +172,7 @@ export function useRemoteHostSync(): RemoteHostSync {
   }, []);
 
   return {
+    hydrateAdoptedHistoryRef,
     localHostReachable,
     loadRunningOnHostRef,
     onRefreshAdoptedSession,

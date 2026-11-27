@@ -38,7 +38,7 @@ function ready() {
     },
     paths: { fixedRoots: true, reparseFree: true, rootAbsent: false },
     archive: { verified: true },
-    tools: { node24ProtectedSigned: true, pwsh7Protected: true, frameworkCompiler: true },
+    tools: { node26ProtectedSigned: true, pwsh7Protected: true, frameworkCompiler: true },
     sources: { complete: true },
     policy: {
       schemaVersion: 1,
@@ -172,6 +172,9 @@ test("Prepare is explicit elevated guest-only, pin-verified and idempotent, pres
   f.paths.rootAbsent = true;
   f.prepared = { trusted: false, hashes: false };
   assert.equal(evaluateRunner(f, { mode: "Prepare" }).status, "ready-to-prepare");
+  f.tools.node26ProtectedSigned = false;
+  denied(f, "protected-node26-pwsh7-and-framework-compiler-required", { mode: "Prepare" });
+  f.tools.node26ProtectedSigned = true;
   f.archive.verified = false;
   denied(f, "exact-official-runner-archive-required", { mode: "Prepare" });
   f.archive.verified = true;

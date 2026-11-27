@@ -90,7 +90,7 @@ export function boundFormat(): BoundFormat {
       formatCompactCount: (value, selected) => formatCompactCount(value, selected),
       formatImportDate: (at) => formatImportDate(at),
       formatArchiveDate: (value) => formatArchiveDate(value),
-      formatResetDuration: (ms) => formatResetDuration(ms),
+      formatResetDuration: (ms) => formatResetDuration(ms, locale),
       formatUsageTokens: (value) => formatUsageTokens(value),
       formatGithubRelativeTime: (iso, now, selected) =>
         formatGithubRelativeTime(iso, now, selected),

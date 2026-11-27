@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { newSession } from "../../sessions/model/session";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
 import {
@@ -10,6 +10,7 @@ import {
   hitsFromContentMatches,
   hitsFromSessionSearch,
   mergeHits,
+  recencyBonus,
   searchConversationTitles,
   searchRecentProjects,
   searchSessionMessages,
@@ -127,6 +128,25 @@ describe("searchSessionMessages", () => {
 });
 
 describe("searchRecentProjects", () => {
+  it("reads labels once for all candidates and searches their display names", () => {
+    const data: Record<string, string> = {
+      "bycoda:tab-group:labels": JSON.stringify({ "/work/b": "Alias" }),
+      "bycoda:tab-group:key-version": "2",
+    };
+    const getItem = vi.fn((key: string) => data[key] ?? null);
+    vi.stubGlobal("localStorage", { getItem });
+    try {
+      const recents = ["a", "b", "c", "d"].map((name) => ({ path: `/work/${name}`, openedAt: 1 }));
+      const hits = searchRecentProjects(recents, "alias");
+      expect(hits).toMatchObject([{ path: "/work/b", name: "Alias", positions: [0, 1, 2, 3, 4] }]);
+      expect(getItem.mock.calls.filter(([key]) => key === "bycoda:tab-group:labels")).toHaveLength(
+        1,
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("matches project folder names", () => {
     const hits = searchRecentProjects(
       [
@@ -276,6 +296,34 @@ describe("conversationRowsFrom", () => {
     live.title = "cursor · Live title";
     const rows = conversationRowsFrom([summary("s1", "/tmp/a", "cursor · Old title", 5)], [live]);
     expect(rows).toEqual([expect.objectContaining({ id: "s1", title: "cursor · Live title" })]);
+  });
+
+  it("gives a live session without history no wall-clock recency", () => {
+    const live = newSession("cursor", "/repo");
+    live.id = "unsaved";
+    const [row] = conversationRowsFrom([], [live]);
+    expect(row.updatedAt).toBe(0);
+    expect(recencyBonus(row.updatedAt)).toBe(0);
+    expect(conversationRowsFrom([], [live])[0].updatedAt).toBe(row.updatedAt);
+  });
+
+  it("uses a live session's own recorded timestamp when history lacks it", () => {
+    const live = newSession("cursor", "/repo");
+    live.id = "unsaved";
+    live.blocks = [
+      { id: "b1", role: "system", text: "", statusRunningSince: 1_600_000_000_000 },
+      { id: "b2", role: "assistant", text: "", turnStoppedAt: 1_700_000_000_000 },
+    ];
+    const [row] = conversationRowsFrom([], [live]);
+    expect(row.updatedAt).toBe(1_700_000_000_000);
+  });
+
+  it("keeps history recency for a live session that has a history row", () => {
+    const live = newSession("cursor", "/repo");
+    live.id = "s1";
+    live.blocks = [{ id: "b1", role: "assistant", text: "", turnStoppedAt: 1_800_000_000_000 }];
+    const [row] = conversationRowsFrom([summary("s1", "/repo", "Saved", 42)], [live]);
+    expect(row.updatedAt).toBe(42);
   });
 });
 

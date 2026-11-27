@@ -1,4 +1,6 @@
-import { projectDisplayName } from "../projects/model/projectNames";
+import { projectDisplayNameFrom } from "../projects/public/projectNames";
+import { looksLikeProject } from "../projects/public/recents";
+import { loadTabGroupLabels } from "../workspace/public/tabGroups";
 import { pathKey } from "../../shared/lib/paths";
 import { noteSourceProject, type NoteMetadata } from "./notes";
 
@@ -55,10 +57,10 @@ export function saveNoteLibraryPreferences(value: NoteLibraryPreferences) {
 }
 
 export function noteProjectKey(note: NoteMetadata) {
-  return noteSourceProject(note.sourceCwd) && note.sourceCwd ? pathKey(note.sourceCwd) : "";
+  return note.sourceCwd && looksLikeProject(note.sourceCwd) ? pathKey(note.sourceCwd) : "";
 }
 
-export function noteLibraryProjects(notes: readonly NoteMetadata[]) {
+export function noteLibraryProjects(notes: readonly NoteMetadata[], labels = loadTabGroupLabels()) {
   const projects = new Map<string, { key: string; path: string; name: string; count: number }>();
   for (const note of notes) {
     const key = noteProjectKey(note);
@@ -69,7 +71,7 @@ export function noteLibraryProjects(notes: readonly NoteMetadata[]) {
       projects.set(key, {
         key,
         path: note.sourceCwd!,
-        name: projectDisplayName(note.sourceCwd!),
+        name: projectDisplayNameFrom(note.sourceCwd!, labels),
         count: 1,
       });
   }
@@ -130,8 +132,10 @@ export type NoteLibraryGroup<NoteItem extends NoteMetadata = NoteMetadata> = {
 export function groupNoteLibrary<NoteItem extends NoteMetadata>(
   notes: NoteItem[],
   grouping: NoteGrouping,
+  labels?: Record<string, string>,
 ): NoteLibraryGroup<NoteItem>[] {
   if (grouping === "none") return [{ key: "all", label: "", notes }];
+  const projectLabels = grouping === "project" ? (labels ?? loadTabGroupLabels()) : undefined;
   const groups = new Map<string, NoteLibraryGroup<NoteItem>>();
   for (const note of notes) {
     const entries =
@@ -139,7 +143,7 @@ export function groupNoteLibrary<NoteItem extends NoteMetadata>(
         ? [
             {
               key: `project:${noteProjectKey(note)}`,
-              label: noteSourceProject(note.sourceCwd) ?? "",
+              label: noteSourceProject(note.sourceCwd, projectLabels) ?? "",
               path: note.sourceCwd,
             },
           ]

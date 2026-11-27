@@ -59,6 +59,60 @@ const entry = (over: Partial<AdoptedEntry> = {}): AdoptedEntry => ({
 });
 
 describe("merging with digests", () => {
+  it.each([false, true])(
+    "clears a saved divergence after the Host settled a tool (projected: %s)",
+    async (projected) => {
+      const question = user("u");
+      const stamped = {
+        ...question,
+        author: { kind: "task", id: "job", name: "Assistant", reason: "kickoff" },
+      } as Block;
+      const pending: Block = {
+        id: "t",
+        role: "tool",
+        text: "",
+        tool: {
+          callId: "t",
+          title: "Subagent",
+          status: "in_progress",
+          ...(projected ? { output: "step output\n".repeat(10_000) } : {}),
+        },
+      };
+      const failed: Block = { ...pending, tool: { ...pending.tool!, status: "failed" } };
+      const local = session([question, pending], {
+        adoptedBase: conversationHead([stamped, failed]),
+        adoptedSyncConflict: true,
+        adoptedDivergence: { key: "previous-conflict" },
+      });
+      const host = hostOf([stamped, failed, reply("r")], { status: "running" });
+      host.session.blocks[1] = previewBlock(failed, host.revision, true);
+      expect(!!host.session.blocks[1].remoteContent).toBe(projected);
+
+      const apply = vi.fn<(merged: Session) => void>();
+      const conflict = vi.fn();
+      await mirrorAdoptedSessions({
+        list: async () => [entry({ status: "running", revision: host.revision })],
+        load: async () => host,
+        local: () => [local],
+        mirrored: new Map(),
+        apply,
+        conflict,
+      });
+
+      expect(conflict).not.toHaveBeenCalled();
+      expect(apply).toHaveBeenCalledOnce();
+      const merged = apply.mock.calls[0]?.[0];
+      expect(merged?.blocks).toEqual([stamped, failed, reply("r")]);
+      expect(merged?.adoptedSyncConflict).toBeUndefined();
+      expect(merged?.adoptedDivergence).toBeUndefined();
+      expect(merged?.adoptedBase).toEqual(host.head);
+      expect(merged?.continuingElsewhere).toBe(true);
+      expect(
+        mergeAdoptedSession({ ...local, blocks: [...local.blocks, user("local")] }, host),
+      ).toBeUndefined();
+    },
+  );
+
   it("takes later Host turns over a copy saved without the Host's author stamps", () => {
     const author = { kind: "task", id: "c1", name: "Crew", reason: "kickoff" } as Block["author"];
     const stamped = { ...user("u"), author };

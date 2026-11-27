@@ -25,10 +25,12 @@ import { ActivityDock } from "../../../src/features/sessions/ui/ActivityDock";
 import { registerHarness } from "../../../src/integrations/harness/core/registry";
 import { applyHarnessEvent } from "../../../src/integrations/harness/core/apply";
 import { EmptySession } from "../../../src/features/sessions/ui/EmptySession";
+import { applyThemePreference } from "../../../src/features/settings/model/appearance";
 import { WorkingIndicator } from "../../../src/shared/ui/WorkingIndicator";
 import { WorkspaceFooter } from "../../../src/app/workspace/layout/WorkspaceFooter";
 import { UsageFooter } from "../../../src/app/shell/UsageFooter";
 import { ModelSourceContext } from "../../../src/features/sessions/ui/modelSource";
+import { buildRemoteModelSource } from "../../../src/features/connections/model/remoteModelSource";
 import {
   modelsFor,
   resolveModel,
@@ -39,9 +41,13 @@ import {
 import {
   setHarnessAttachmentsSupported,
   newSession,
+  type Block,
   type HarnessId,
   type RuntimeMode,
+  type UsageLimit,
 } from "../../../src/features/sessions/model/session";
+import { AgentTranscript } from "../../../src/features/sessions/ui/AgentTranscript";
+import { usageLimitAfterTargetChange } from "../../../src/features/sessions/model/usageLimit";
 import { modelsForClaudeVersion } from "../../../src/integrations/harness/providers/claude/claudeCatalog";
 import { parseCodexModelList } from "../../../src/integrations/harness/providers/codex/codexCatalog";
 import { languageReady } from "../../../src/shared/i18n";
@@ -49,6 +55,8 @@ import {
   renameProviderAccount,
   saveProviderAccount,
 } from "../../../src/features/providers/model/providerAccounts";
+import { idleRateLimits } from "../../../src/features/providers/model/rateLimits";
+import { setCachedRateLimits } from "../../../src/features/providers/model/rateLimitsCache";
 import "../../../src/styles/index.css";
 
 // Real composer and catalogs, without a native host or provider invocation.
@@ -62,7 +70,10 @@ setHarnessModels(
       displayName: "GPT-5.4",
       supportedReasoningEfforts: ["low", "medium", "high"],
       defaultReasoningEffort: "medium",
-      serviceTiers: ["fast"],
+      serviceTiers: [
+        { id: "fast", name: "Fast" },
+        { id: "ultrafast", name: "Ultrafast" },
+      ],
     },
   ]),
 );
@@ -75,20 +86,70 @@ const source = {
   probed: () => true,
   refresh: () => {},
 };
+// `?mention-files[=incomplete]`: the project file listing answers, so typing "@" in the composer
+// shows the real mention picker with rows instead of the "Could not index files" failure.
+if (new URLSearchParams(location.search).has("mention-files")) {
+  const relatives = [
+    "src/app/App.tsx",
+    "src/features/sessions/ui/Composer.tsx",
+    "src/features/sessions/ui/ComposerSuggestions.tsx",
+    "src/features/voice/ui/VoiceSettings.tsx",
+    "src/shared/ui/Button.tsx",
+    "docs/guides/chat-artifacts-and-connected-files.md",
+    "package.json",
+    "README.md",
+  ];
+  const listing = {
+    root: "/fixture",
+    files: relatives.map((relative) => ({ name: relative.split("/").at(-1)!, relative })),
+    truncated: new URLSearchParams(location.search).get("mention-files") === "incomplete",
+  };
+  Object.assign(window, {
+    __TAURI_INTERNALS__: {
+      invoke: async (cmd: string) => {
+        if (cmd === "list_project_files") return listing;
+        throw new Error(`Unmocked fixture command: ${cmd}`);
+      },
+    },
+  });
+}
 const accountPicker = new URLSearchParams(location.search).has("accounts");
 // A provider whose transport takes text only: files dragged over the composer are refused with a reason.
 if (new URLSearchParams(location.search).has("no-attachments"))
   setHarnessAttachmentsSupported("claude", false);
 const welcome = new URLSearchParams(location.search).has("welcome");
+const projectless = welcome && new URLSearchParams(location.search).has("no-project");
 const withCrew = new URLSearchParams(location.search).has("crew");
 const withFooter = new URLSearchParams(location.search).has("footer");
 const chatLayout = new URLSearchParams(location.search).has("chat-layout");
+const pastedTextFixture = new URLSearchParams(location.search).has("pasted-text");
 const workspaceFooter = new URLSearchParams(location.search).has("workspace-footer");
 const remoteLayout = new URLSearchParams(location.search).has("remote");
+const remoteAccountCatalog = new URLSearchParams(location.search).has("remote-accounts")
+  ? {
+      claude: [
+        { id: "default", label: "Host default" },
+        { id: "mac-work", label: "Mac work" },
+        { id: "mac-review", label: "Mac review" },
+        { id: "mac-personal", label: "Mac personal" },
+      ],
+    }
+  : undefined;
 const showProjectPicker = new URLSearchParams(location.search).has("project-picker");
 const longAccount = new URLSearchParams(location.search).has("long-account");
 // Test-only data boundary. The URL retains the stress case across reloads.
 const worstModelData = new URLSearchParams(location.search).get("data") === "worst";
+const savedSubagents = new URLSearchParams(location.search).has("saved-subagents");
+if (new URLSearchParams(location.search).has("large-model-catalog")) {
+  setHarnessModels("claude", [
+    ...modelsFor("claude"),
+    ...Array.from({ length: 200 }, (_, index) => ({
+      harness: "claude" as const,
+      id: `claude:catalog-${index}`,
+      name: `Catalog ${index}`,
+    })),
+  ]);
+}
 const quotaStress = new URLSearchParams(location.search).has("quota-stress");
 const stressDraft =
   "Bu uzun konuşma taslağını koru. Aleksandra Wiśniewska-Kowalczyk ile araştırma sonuçlarını karşılaştır, ardından فريق البحث والتطوير الدولي 🧑🏽‍💻 ekibinin model ve hesap tercihlerini açıkla. ".repeat(
@@ -151,9 +212,11 @@ if (chatLayout || translationSelection) {
       runTextPrompt: async () => "Translated fixture text",
     });
 }
-const fixtureCwd = welcome
-  ? "/fixture/a-long-project-name-for-checking-narrow-workspace-panels"
-  : "/fixture";
+const fixtureCwd = projectless
+  ? "~"
+  : welcome
+    ? "/fixture/a-long-project-name-for-checking-narrow-workspace-panels"
+    : "/fixture";
 if (accountPicker) {
   renameProviderAccount(
     "claude",
@@ -186,6 +249,23 @@ if (accountPicker) {
     .forEach((label, index) =>
       saveProviderAccount({ id: `account-extra-${index}`, provider: "claude", label }),
     );
+  const usageParams = new URLSearchParams(location.search);
+  if (usageParams.has("account-usage")) {
+    const now = Math.floor(Date.now() / 60_000) * 60_000;
+    for (const [id, usedPercent, hours] of [
+      ["default", 8, 131],
+      ["account-work", usageParams.has("stale-usage") ? 53 : 35, 100],
+      ["account-extra-0", 100, 7],
+    ] as const) {
+      setCachedRateLimits("claude", id, {
+        ...idleRateLimits("claude"),
+        status: usageParams.has("stale-usage") && id === "account-work" ? "error" : "ok",
+        updatedAt:
+          usageParams.has("stale-usage") && id === "account-work" ? now - 24 * 60_000 : now,
+        weekly: { usedPercent, windowMinutes: 10_080, resetsAt: now + hours * 3_600_000 },
+      });
+    }
+  }
 }
 
 import {
@@ -193,6 +273,7 @@ import {
   updateDeliveryProgress,
   clearDeliveryProgress,
 } from "../../../src/features/sessions/model/deliveryProgress";
+import { DeliveryProgressNotice } from "../../../src/features/sessions/ui/DeliveryProgressNotice";
 
 function Fixture() {
   const queueVisual = new URLSearchParams(location.search).get("queue-state");
@@ -206,12 +287,12 @@ function Fixture() {
   );
   useEffect(() => {
     const theme = new URLSearchParams(location.search).get("theme");
-    if (theme) document.documentElement.classList.toggle("theme-light", theme === "light");
+    if (theme === "light" || theme === "dark") applyThemePreference(theme);
   }, []);
   const queueFeedback = new URLSearchParams(location.search).has("queue-feedback");
   const deliveryProgress = new URLSearchParams(location.search).has("delivery-progress");
   const [queueStatus, setQueueStatus] = useState<"paused" | "active">(
-    ["active", "busy", "one", "empty", "last-success"].includes(queueVisual ?? "")
+    ["active", "busy", "one", "empty", "last-success", "writer-wait"].includes(queueVisual ?? "")
       ? "active"
       : "paused",
   );
@@ -221,13 +302,30 @@ function Fixture() {
       updateDeliveryProgress("composer-layout-fixture", progress, "accepted");
       return () => clearDeliveryProgress("composer-layout-fixture", progress);
     }
-    if (queueVisual !== "rejected") return;
+    if (queueVisual === "writer-wait" || queueVisual === "writer-blocked") {
+      const progress = beginDeliveryProgress("composer-layout-fixture", "queued", "preparing");
+      const waiting = queueVisual === "writer-wait";
+      updateDeliveryProgress(
+        "composer-layout-fixture",
+        progress,
+        waiting ? "waiting" : "rejected",
+        waiting
+          ? "Waiting for the previous run to finish."
+          : "Check the conversation on its Host before resuming.",
+        false,
+        true,
+      );
+      return () => clearDeliveryProgress("composer-layout-fixture", progress);
+    }
+    if (queueVisual !== "rejected" && queueVisual !== "waiting") return;
     const progress = beginDeliveryProgress("composer-layout-fixture", "queued", "preparing");
     updateDeliveryProgress(
       "composer-layout-fixture",
       progress,
-      "rejected",
-      "The provider rejected the message. It remains queued and paused.",
+      queueVisual,
+      queueVisual === "waiting"
+        ? "RPC_WS_DEADLINE: Host request deadline elapsed or native consumer detached. The operation outcome is unknown; reconcile its command receipt before retrying."
+        : "The provider rejected the message. It remains queued and paused.",
     );
     return () => clearDeliveryProgress("composer-layout-fixture", progress);
   }, [queueVisual]);
@@ -247,7 +345,15 @@ function Fixture() {
                 .map((model) => ({ harness: "claude", model: model.id })),
             ) ?? "",
         }
-      : {},
+      : savedSubagents
+        ? {
+            crossSubagents: encodeSubagents([
+              { harness: "claude", model: "claude:opus-5-5", providerAccountId: "default" },
+              { harness: "claude", model: "claude:sonnet-5-5", providerAccountId: "account-work" },
+              { harness: "opencode", model: "opencode:beam-free" },
+            ])!,
+          }
+        : {},
   );
   const [runtimeMode, setRuntimeMode] = useState<RuntimeMode>("supervised");
   const [busy, setBusy] = useState(
@@ -255,7 +361,12 @@ function Fixture() {
   );
   const [disabled, setDisabled] = useState(false);
   const [accountId, setAccountId] = useState("default");
+  const [quotaLimit, setQuotaLimit] = useState<UsageLimit | undefined>(() =>
+    quotaStress ? { resetsAt: Date.now() + 9 * 24 * 60 * 60_000, resumeAtReset: true } : undefined,
+  );
+  const [quotaResumes, setQuotaResumes] = useState(0);
   const [terminalOpened, setTerminalOpened] = useState(false);
+  const [sentPastedText, setSentPastedText] = useState<Block[]>([]);
   const [compacted, setCompacted] = useState(0);
   const compactReading = new URLSearchParams(location.search).get("compact-context");
   const [contextSession, setContextSession] = useState<ReturnType<typeof newSession>>(() => ({
@@ -264,28 +375,41 @@ function Fixture() {
   }));
   const composer = (
     <>
-      <div
-        data-session-header
-        className="session-header-title flex min-w-0 items-center gap-2 border-b border-stroke p-2"
-      >
-        <span className="min-w-0 flex-1 truncate text-xs">Chat layout fixture</span>
+      {!projectless ? (
         <div
-          {...surfaceAttributes(
-            { frame: "pane", edge: "inline-start" },
-            "min-w-0 max-w-[48%] flex-[0_1_auto] ps-2.5",
-          )}
+          data-session-header
+          className="session-header-title flex min-w-0 items-center gap-2 border-b border-stroke p-2"
         >
-          <SessionAgentIdentity
-            harness={harness}
-            model={model}
-            accountId={accountId}
-            running={busy}
-            showAccount={accountPicker}
+          <span className="min-w-0 flex-1 truncate text-xs">Chat layout fixture</span>
+          <div
+            {...surfaceAttributes(
+              { frame: "pane", edge: "inline-start" },
+              "min-w-0 max-w-[48%] flex-[0_1_auto] ps-2.5",
+            )}
+          >
+            <SessionAgentIdentity
+              harness={harness}
+              model={model}
+              accountId={accountId}
+              running={busy}
+              showAccount={accountPicker}
+            />
+          </div>
+        </div>
+      ) : null}
+      {deliveryProgress ? (
+        // The notice is an in-flow banner owned by SessionPane; mirror that mount here.
+        <div data-session-body className="relative flex flex-col">
+          <DeliveryProgressNotice
+            sessionId="composer-layout-fixture"
+            messages={[{ id: "queued", text: "Queued task", attachments: [] }]}
           />
         </div>
-      </div>
+      ) : null}
+      {sentPastedText.length ? <AgentTranscript visible blocks={sentPastedText} /> : null}
       <Composer
         onReorderQueuedMessages={queueVisual ? (ids) => setFixtureRows(ids) : undefined}
+        onEditQueuedMessage={pastedTextFixture ? () => {} : undefined}
         queuedMessages={
           queueVisual
             ? [
@@ -426,8 +550,16 @@ function Fixture() {
           }
           return true;
         }}
-        initialDraft={quotaStress ? stressDraft : "Keep this chat draft"}
-        usageLimit={quotaStress ? {} : undefined}
+        initialDraft={projectless ? undefined : quotaStress ? stressDraft : "Keep this chat draft"}
+        usageLimit={quotaLimit}
+        onUsageLimitResume={() => {
+          setQuotaResumes((count) => count + 1);
+          setQuotaLimit(undefined);
+        }}
+        onUsageLimitDismiss={() => setQuotaLimit(undefined)}
+        onUsageLimitResumeAtReset={(resumeAtReset) =>
+          setQuotaLimit((limit) => (limit ? { ...limit, resumeAtReset } : undefined))
+        }
         editLastTurnSupported={new URLSearchParams(location.search).has("shortcuts")}
         lastTurnRecall={
           new URLSearchParams(location.search).has("shortcuts")
@@ -438,11 +570,32 @@ function Fixture() {
         busy={busy}
         disabled={disabled}
         providerAccountId={accountId}
-        onSelectProviderAccount={accountPicker ? (_, id) => setAccountId(id) : undefined}
+        onSelectProviderAccount={
+          accountPicker || remoteAccountCatalog
+            ? (_, id) => {
+                setAccountId(id);
+                setQuotaLimit((usageLimit) =>
+                  usageLimitAfterTargetChange(
+                    { harness, model, providerAccountId: accountId, usageLimit },
+                    { harness, model, providerAccountId: id },
+                  ),
+                );
+              }
+            : undefined
+        }
         onFocus={() => {}}
         onCwdChange={() => {}}
-        onSubmit={() => {}}
+        onSubmit={(text, attachments) => {
+          if (pastedTextFixture)
+            setSentPastedText([{ id: "pasted-fixture", role: "user", text, attachments }]);
+        }}
         onModelChange={(next, id, account) => {
+          setQuotaLimit((usageLimit) =>
+            usageLimitAfterTargetChange(
+              { harness, model, providerAccountId: accountId, usageLimit },
+              { harness: next, model: id, providerAccountId: account ?? accountId },
+            ),
+          );
           setHarness(next);
           setModel(id);
           if (account) setAccountId(account);
@@ -467,7 +620,24 @@ function Fixture() {
     </>
   );
   return (
-    <ModelSourceContext.Provider value={source}>
+    <ModelSourceContext.Provider
+      value={
+        remoteAccountCatalog
+          ? {
+              ...source,
+              id: "remote:fixture",
+              accounts: buildRemoteModelSource({
+                catalog: { models: {}, errors: {}, accounts: remoteAccountCatalog },
+                environmentId: "fixture",
+                hostSession: undefined,
+                descriptor: undefined,
+                providers: ["claude"],
+                refreshCatalog: source.refresh,
+              }).accounts,
+            }
+          : source
+      }
+    >
       <main
         style={
           visualBackground
@@ -537,7 +707,12 @@ function Fixture() {
           </div>
         ) : null}
         {welcome ? (
-          <EmptySession cwd={fixtureCwd} composer={composer} hasChatBackground={!withCrew} />
+          <EmptySession
+            cwd={fixtureCwd}
+            composer={composer}
+            hasChatBackground={!withCrew}
+            onProjectChange={projectless ? () => {} : undefined}
+          />
         ) : (
           composer
         )}
@@ -555,7 +730,6 @@ function Fixture() {
                 setPullRequestsOnly={() => {}}
                 onOpenInbox={() => {}}
                 openSettings={() => {}}
-                active={undefined}
                 projectCwd={fixtureCwd}
                 usageProviders={["claude", "codex"]}
                 usageSession={undefined}
@@ -596,6 +770,9 @@ function Fixture() {
         <output data-testid="compacted" className="hidden">
           {compacted}
         </output>
+        <output data-testid="quota-resumes" className="hidden">
+          {quotaResumes}
+        </output>
       </main>
     </ModelSourceContext.Provider>
   );
@@ -630,7 +807,7 @@ function SurfaceProbeFixture() {
     label: "Advisor",
     kind: "select" as const,
     value,
-    options: [{ value, label: "Fixture account", accountColor: "#b55272" }],
+    options: [{ value, label: "Fixture account", accountColor: "#b55272", accountNumber: 2 }],
   };
   const [values, setValues] = useState({ effort: "low" });
   return (

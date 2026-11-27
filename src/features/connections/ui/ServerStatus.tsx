@@ -1,4 +1,4 @@
-import { Text } from "../../../shared/ui/Text";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { useSyncExternalStore } from "react";
 import { t } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
@@ -6,6 +6,7 @@ import { Button } from "../../../shared/ui/Button";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { RefreshCw, X } from "../../../shared/ui/icons";
 import { useRemoteMachineOnline } from "../model/connections";
+import { useMachineFocus } from "../hooks/useMachineFocus";
 import type { RemoteMachine } from "../model/protocol";
 import { connectionIndicator, needsSignIn } from "../model/remoteConnection";
 import { readRemoteConnection, subscribeChanges } from "../model/remoteHealth";
@@ -23,14 +24,18 @@ export function MachineStatus({
   machine,
   details = false,
   showDiagnostics = true,
+  quiet = false,
 }: {
   machine: RemoteMachine;
   details?: boolean;
-  compact?: boolean;
+  /** List rows: say nothing while the machine is simply not connected; only live or problem states show. */
+  quiet?: boolean;
   /** A detail surface can place the secondary host diagnostics in its own disclosure. */
   showDiagnostics?: boolean;
 }) {
   useRemoteMachineOnline(machine.id);
+  // A machine shown in settings is one the user is looking at: keep its status live.
+  useMachineFocus(machine.environmentId);
   const state = useSyncExternalStore(
     subscribeChanges,
     () => readRemoteConnection(machine.environmentId),
@@ -53,17 +58,23 @@ export function MachineStatus({
         : state.status === "outdated-host"
           ? t("Update Host")
           : indicator.tone === "down"
-            ? t("Not connected")
+            ? lifecycle.paused
+              ? t("Automatic reconnect paused")
+              : t("Not connected")
             : indicator.tone === "connecting"
               ? t("Connecting")
-              : t(degraded ? "Refresh pending" : "Connected");
+              : degraded
+                ? t("Refresh pending")
+                : t("Connected");
   const tone =
     needsSignIn(state.status) || state.status === "unreachable"
       ? "warning"
       : indicator.tone === "connected" && !degraded
         ? "success"
         : "neutral";
-  // Health is always readable; SSH capability is a separate type label.
+  if (quiet && !details && indicator.tone === "down" && tone === "neutral" && !lifecycle.paused)
+    return null;
+  // Health is readable whenever it is live or a problem; SSH capability is a separate type label.
   const badge = (
     <Badge variant="dot" size="sm" tone={tone}>
       <LiveText text={label} />
@@ -73,11 +84,7 @@ export function MachineStatus({
   return (
     <div className="flex flex-col items-start gap-2">
       {badge}
-      {state.error ? (
-        <Text as="p" tone="muted" leading="relaxed" className="w-full break-words">
-          {state.error}
-        </Text>
-      ) : null}
+      {state.error ? <ErrorDetails title={label} detail={state.error} /> : null}
       {showDiagnostics ? <RemoteConnectionDetails environmentId={machine.environmentId} /> : null}
     </div>
   );
@@ -102,6 +109,11 @@ export function ReconnectAction({ machine }: { machine: RemoteMachine }) {
         label={t("Reconnect")}
         loading={reconnecting}
         disabled={state.status === "identity-mismatch"}
+        disabledReason={
+          state.status === "identity-mismatch"
+            ? t("This computer's identity changed. Remove it and add it again to reconnect.")
+            : undefined
+        }
         onClick={() => void reconnectRemoteMachine(machine.environmentId, { signIn: true })}
       >
         <RefreshCw aria-hidden className="icon-sm" />

@@ -17,6 +17,7 @@ import {
   hasRunningSubagent,
   initialThinkingIndex,
   lastActivityIndex,
+  mcpToolDisplay,
   nestedScrollAbsorbsWheel,
   proseSummary,
   resolveToolCallDisplay,
@@ -554,6 +555,18 @@ describe("activityPhaseTitle", () => {
     expect(title([read("r1", "a.ts"), read("r2", "b.ts")])).toBe("Read 2 files");
     expect(title([read("r1", "src/index.css")])).toBe("Read index.css");
     expect(title([search("s1"), search("s2")])).toBe("Searched the project");
+    const web = (id: string): Block => ({
+      ...search(id, "release notes"),
+      tool: {
+        kind: "search",
+        title: "WebSearch",
+        status: "completed",
+        preview: { kind: "search", title: "WebSearch", query: "release notes" },
+      },
+    });
+    expect(title([web("w1"), web("w2")])).toBe("Searched the web");
+    expect(title([web("w1")], true)).toBe("Searching the web");
+    expect(title([web("w1"), search("s1")])).toBe("Searched the project");
     expect(title([search("s1"), read("r1")])).toBe("Explored the project");
     expect(title([edit("e1", "a.ts"), edit("e2", "b.ts")])).toBe("Edited 2 files");
     expect(title([shell("a"), shell("b")])).toBe("Ran 2 commands");
@@ -1502,4 +1515,21 @@ it("keeps Claude's built-in advisor on its own row, live and settled", () => {
     const items = groupTurnItems([read, advisor, read], { settled });
     expect(items.map((item) => item.type)).toEqual(["activity", "block", "activity"]);
   }
+});
+
+it("splits an MCP tool id into readable tool and server words", () => {
+  expect(mcpToolDisplay("mcp__bycoda-conversation__conversation_agents_delegate")).toEqual({
+    tool: "conversation agents delegate",
+    server: "bycoda conversation",
+  });
+  expect(
+    mcpToolDisplay('mcp__bycoda-conversation__conversation_agents_wait: {"runIds":[]}'),
+  ).toEqual({ tool: "conversation agents wait", server: "bycoda conversation" });
+  expect(mcpToolDisplay('bycoda-conversation:conversation_agents_list: {"limit":20}')).toEqual({
+    tool: "conversation agents list",
+    server: "bycoda conversation",
+  });
+  expect(mcpToolDisplay("Read: notes.md")).toBeUndefined();
+  expect(mcpToolDisplay("git status")).toBeUndefined();
+  expect(mcpToolDisplay("mcp__server__a b")).toBeUndefined();
 });

@@ -1,19 +1,10 @@
 import { t } from "../../../shared/i18n/git";
 import { isEqualOrInside, pathKey, projectKey } from "../../../shared/lib/paths";
+import { shortSha } from "../../../shared/lib/shortSha";
 import type { Worktree } from "./worktrees";
 
-const KEY = "bycoda.sourceControl.checkout.v1:";
-/** Persisted value meaning the user explicitly chose the "All checkouts" overview. */
-const ALL = "*";
-
-export type CheckoutGroups = {
-  /** The session's checkout, then the main folder (deduplicated). */
-  primary: Worktree[];
-  /** Other checkouts with changes, unpushed commits or sessions. */
-  active: Worktree[];
-  /** Clean checkouts with nothing unpushed and no sessions. */
-  idle: Worktree[];
-};
+/** Prefix of the per-session review-target choice that the sidebar header replaced. */
+const LEGACY_KEY = "bycoda.sourceControl.checkout.v1:";
 
 export const folderName = (path: string) =>
   path
@@ -32,46 +23,34 @@ export function sessionCheckout(cwd: string, paths: readonly string[]): string |
   return best;
 }
 
-export function mainCheckout(
-  paths: readonly string[],
-  worktrees: Readonly<Record<string, Worktree>>,
-): string | undefined {
-  return paths.find((path) => worktrees[path]?.isMain);
-}
-
-/** Default checkout: the session's own, then the main folder, then the first one. */
-export function defaultCheckout(
-  cwd: string,
-  paths: readonly string[],
-  worktrees: Readonly<Record<string, Worktree>>,
-): string {
-  return sessionCheckout(cwd, paths) ?? mainCheckout(paths, worktrees) ?? paths[0] ?? cwd;
-}
-
-/**
- * Storage scope: the session's own checkout, so a session in one worktree never
- * inherits the choice made from another.
- */
-export function checkoutSelectionScope(cwd: string, paths: readonly string[]): string {
+/** State scope: the session's own checkout, so a session in one worktree never shares row state with another. */
+function checkoutSelectionScope(cwd: string, paths: readonly string[]): string {
   return projectKey(sessionCheckout(cwd, paths) ?? cwd);
 }
 
-/** Returns a checkout path, "" for all checkouts, or null when nothing is stored. */
-export function loadCheckoutSelection(scope: string): string | null {
-  try {
-    const value = localStorage.getItem(KEY + scope);
-    return value === null ? null : value === ALL ? "" : value;
-  } catch {
-    return null;
-  }
+/**
+ * Retained-state key prefix of the worktree panel. The Changes tab badge reads the panel's
+ * last-used row and Graph choice under it, so both follow the same repository.
+ */
+export function checkoutStateKey(cwd: string, paths: readonly string[]): string {
+  return `source-control:checkouts:${checkoutSelectionScope(cwd, paths)}`;
 }
 
-export function saveCheckoutSelection(scope: string, selection: string): void {
-  try {
-    localStorage.setItem(KEY + scope, selection === "" ? ALL : selection);
-  } catch {
-    /* storage unavailable: the choice lasts for this window only */
-  }
+/**
+ * The repository the All-worktrees panel follows for Stashes and Graph (and the Changes badge):
+ * the Graph choice, else the row last used, else the first section. A choice only counts while
+ * its worktree is still one of the sections.
+ */
+export function followedCheckoutRepository(
+  sectionRoots: readonly string[],
+  paths: readonly string[],
+  choices: readonly string[],
+): string | undefined {
+  const listed = (path: string) => {
+    const owner = path ? sessionCheckout(path, paths) : undefined;
+    return !!owner && sectionRoots.some((root) => same(root, owner));
+  };
+  return choices.find(listed) ?? sectionRoots[0];
 }
 
 /** Each checkout and its discovered child repositories are separate Git targets. */
@@ -93,53 +72,13 @@ export function checkoutRepositoryPaths(
     });
 }
 
-/** Resolves a stored/explicit choice to a live checkout path, "" (all) or the default. */
-export function resolveCheckoutSelection(
-  choice: string | null,
-  cwd: string,
-  paths: readonly string[],
-  worktrees: Readonly<Record<string, Worktree>>,
-  modules?: Readonly<Record<string, readonly string[]>>,
-): string {
-  if (choice === "") return "";
-  const candidates = modules ? checkoutRepositoryPaths(paths, modules) : paths;
-  const match = choice === null ? undefined : candidates.find((path) => same(path, choice));
-  // A saved child repository may precede discovery; a missing read is not removal.
-  if (
-    !match &&
-    choice &&
-    modules &&
-    paths.some((root) => modules[root] === undefined && isEqualOrInside(choice, root))
-  )
-    return choice;
-  return match ?? defaultCheckout(cwd, paths, worktrees);
-}
-
-export const isIdleCheckout = (tree: Worktree) =>
-  !tree.dirty && !(tree.unpushed && tree.unpushed > 0) && tree.sessionIds.length === 0;
-
-export function groupCheckouts(trees: readonly Worktree[], cwd: string): CheckoutGroups {
-  const current = sessionCheckout(
-    cwd,
-    trees.map((tree) => tree.path),
-  );
-  const rank = (tree: Worktree) => (current && same(tree.path, current) ? 0 : tree.isMain ? 1 : 2);
-  const primary = trees.filter((tree) => rank(tree) < 2).sort((a, b) => rank(a) - rank(b));
-  const rest = trees.filter((tree) => rank(tree) === 2);
-  return {
-    primary,
-    active: rest.filter((tree) => !isIdleCheckout(tree)),
-    idle: rest.filter(isIdleCheckout),
-  };
-}
-
 export function checkoutTitle(tree: Worktree): string {
   return checkoutTitleWith(tree, t);
 }
 
 /** Checkout title using the caller's reactive translator. */
 export function checkoutTitleWith(tree: Worktree, translate: (message: string) => string): string {
-  return tree.branch ?? `${translate("Detached")} · ${tree.head.slice(0, 7)}`;
+  return tree.branch ?? `${translate("Detached HEAD")} · ${shortSha(tree.head)}`;
 }
 
 const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -149,10 +88,16 @@ const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "");
  * hash identifies nothing; branches drop a folder name that only repeats them
  * (`audit/x-harness` in `harness`, `mc/3e93` in `wt-mc-3e93`).
  */
-export function checkoutRowLabels(tree: Worktree): { title: string; detail?: string } {
+export function checkoutRowLabels(tree: Worktree): {
+  title: string;
+  detail?: string;
+} {
   const folder = folderName(tree.path);
   if (!tree.branch)
-    return { title: folder, detail: t("Detached {p0}", { p0: tree.head.slice(0, 7) }) };
+    return {
+      title: folder,
+      detail: t("Detached {p0}", { p0: shortSha(tree.head) }),
+    };
   const leaf = slug(tree.branch.split("/").pop() ?? tree.branch);
   const name = slug(folder);
   const redundant = !!name && !!leaf && (leaf.endsWith(name) || name.endsWith(leaf));
@@ -160,12 +105,35 @@ export function checkoutRowLabels(tree: Worktree): { title: string; detail?: str
 }
 
 /**
- * Selector label: the folder, marking the session's checkout. The branch is the
- * option's secondary text; the panel's branch control right below the selector
- * already names it, so the trigger does not repeat it.
+ * A Git or filesystem failure that says the working directory itself is gone
+ * ("cannot change to '<path>'", ENOENT, Windows "os error 2/3"). It only says the
+ * path may be missing; callers confirm with `worktreeDeletedExternally` before
+ * treating a failure as a removed checkout.
  */
-export function checkoutOptionLabel(tree: Worktree, isSession: boolean): string {
-  const parts = [folderName(tree.path)];
-  if (isSession) parts.push(t("This session"));
-  return parts.join(" · ");
+export function isMissingPathError(error: string | null | undefined): boolean {
+  return (
+    !!error &&
+    /cannot change to|no such file or directory|not a directory|os error [23]\b|cannot find the (?:file|path)|\bENOENT\b|sistem belirtilen dosyayı bulamıyor/i.test(
+      error,
+    )
+  );
+}
+
+/** The listed path a "cannot change to '<path>'" failure names, if it is one of `paths`. */
+export function missingPathNamedIn(
+  error: string | null | undefined,
+  paths: readonly string[],
+): string | undefined {
+  const named = error?.match(/cannot change to '([^']+)'/i)?.[1];
+  return named ? paths.find((path) => same(path, named)) : undefined;
+}
+
+/** One-time cleanup of the retired per-session review-target choices (header focus replaces them). */
+export function dropLegacyCheckoutSelections(): void {
+  try {
+    for (const key of Object.keys(localStorage))
+      if (key.startsWith(LEGACY_KEY)) localStorage.removeItem(key);
+  } catch {
+    /* storage unavailable: nothing was persisted */
+  }
 }

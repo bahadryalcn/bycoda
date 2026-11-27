@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AgentTranscript } from "../../../src/features/sessions/ui/AgentTranscript";
+import { TranscriptSkillGroups } from "../../../src/features/sessions/ui/SkillTokenText";
 import { ActivityDock } from "../../../src/features/sessions/ui/ActivityDock";
+import { ComposerNoticeStack } from "../../../src/features/sessions/ui/ComposerNoticeStack";
 import { newSession, type Block } from "../../../src/features/sessions/model/session";
 import {
   appendSteerUser,
@@ -13,13 +15,17 @@ import {
   saveTranscriptAnchor,
   saveTranscriptLayout,
 } from "../../../src/features/settings/model/appearance";
+import { installInputModality } from "../../../src/shared/ui/inputModality";
 import "../../../src/styles/index.css";
+
+installInputModality();
 import { lazy, Suspense } from "react";
 const CodeTerminalFixture = lazy(async () => ({
   default: (await import("./code-terminal-fixture")).CodeTerminalFixture,
 }));
 
-saveTranscriptAnchor(false);
+const anchor = new URLSearchParams(location.search).has("anchor");
+saveTranscriptAnchor(anchor);
 saveTranscriptLayout(new URLSearchParams(location.search).has("full-width") ? "full" : "chat");
 
 // Settled plain text isolates layout during scrolling from streaming, image
@@ -65,6 +71,8 @@ function Fixture() {
   const streaming = new URLSearchParams(location.search).has("streaming");
   const [streamText, setStreamText] = useState("Streaming response");
   const [running, setRunning] = useState(true);
+  const [showJump, setShowJump] = useState(false);
+  const jumpToBottom = useRef<(() => void) | null>(null);
   const longText = new URLSearchParams(window.location.search).has("longText");
   const artifacts = new URLSearchParams(window.location.search).has("artifacts");
   const rewind = new URLSearchParams(window.location.search).has("rewind");
@@ -83,7 +91,7 @@ function Fixture() {
       },
     });
   }, []);
-  return (
+  const transcript = (
     <AgentTranscript
       blocks={
         streaming
@@ -160,13 +168,21 @@ function Fixture() {
                     {
                       id: "long-text",
                       role: "user",
-                      text: "Selectable excerpt\n" + "Long content ".repeat(200),
+                      text: "# Selectable excerpt\n\n" + "Long content ".repeat(200),
                     },
                   ]
                 : blocks
       }
       visible={!parked}
       busy={streaming ? running : artifacts}
+      onJumpToBottomChange={anchor ? setShowJump : undefined}
+      onJumpToBottomReady={
+        anchor
+          ? (jump) => {
+              jumpToBottom.current = jump;
+            }
+          : undefined
+      }
       onSaveNote={
         streaming
           ? async (text) => {
@@ -185,10 +201,25 @@ function Fixture() {
       parked={parked}
     />
   );
+  return anchor ? (
+    <div className="relative h-full">
+      {transcript}
+      {showJump ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
+          <Button className="pointer-events-auto" onClick={() => jumpToBottom.current?.()}>
+            Jump to latest
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  ) : (
+    transcript
+  );
 }
 
 function ChatLayoutFixture() {
   const backgroundWork = new URLSearchParams(location.search).has("background-work");
+  const dockInNotices = new URLSearchParams(location.search).has("dock-in-notices");
   const startedAt = Date.now() - 269_000;
   const layoutBlocks: Block[] = [
     {
@@ -238,7 +269,26 @@ function ChatLayoutFixture() {
         detail: `Command result ${index}: readable-output-marker`,
       },
     })),
+    // An answer after the work folds it behind the turn's work line.
+    ...(new URLSearchParams(location.search).has("answered")
+      ? [{ id: "layout-answer", role: "assistant" as const, text: "Komutlar tamamlandı." }]
+      : []),
   ];
+  const dock = (
+    <ActivityDock
+      sessionId="layout-session"
+      blocks={layoutBlocks}
+      busy
+      backgroundTasks={backgroundWork ? ["layout-command-9"] : undefined}
+      backgroundAgents={backgroundWork ? 0 : undefined}
+      perItemStop={backgroundWork}
+      onStopAgent={backgroundWork ? async () => {} : undefined}
+      onStopAll={backgroundWork ? async () => {} : undefined}
+      pendingQuestion={false}
+      atEnd
+      onOpenAgent={() => {}}
+    />
+  );
   return (
     <div
       className="flex h-dvh min-w-0 flex-col bg-background-base text-content"
@@ -257,19 +307,7 @@ function ChatLayoutFixture() {
         />
       </div>
       <div data-composer className="mx-auto w-full max-w-4xl px-4 py-2">
-        <ActivityDock
-          sessionId="layout-session"
-          blocks={layoutBlocks}
-          busy
-          backgroundTasks={backgroundWork ? ["layout-command-9"] : undefined}
-          backgroundAgents={backgroundWork ? 0 : undefined}
-          perItemStop={backgroundWork}
-          onStopAgent={backgroundWork ? async () => {} : undefined}
-          onStopAll={backgroundWork ? async () => {} : undefined}
-          pendingQuestion={false}
-          atEnd
-          onOpenAgent={() => {}}
-        />
+        {dockInNotices ? <ComposerNoticeStack>{dock}</ComposerNoticeStack> : dock}
       </div>
     </div>
   );
@@ -382,6 +420,12 @@ function TechnicalErrorsFixture() {
         blocks={[
           { id: "technical-prompt", role: "user", text: "Continue the project review" },
           { id: "technical-error", role: "system", notice: "error", text: rawTechnicalError },
+          {
+            id: "provider-error",
+            role: "system",
+            notice: "error",
+            text: 'API Error: HTTP 503 {"error":{"message":"The provider is temporarily unavailable."},"request_id":"req_503"}',
+          },
           { id: "plain-prompt", role: "user", text: "Continue in the selected working copy" },
           {
             id: "plain-error",
@@ -392,6 +436,48 @@ function TechnicalErrorsFixture() {
         ]}
       />
     </div>
+  );
+}
+
+function SkillGroupFixture() {
+  const members = [
+    "brag",
+    "brag-slim",
+    "product-launch-video",
+    "video-shotcraft",
+    "motion-graphics",
+  ];
+  const context = new URLSearchParams(location.search).has("longText")
+    ? "Reference material for the video. ".repeat(20)
+    : "";
+  return (
+    <TranscriptSkillGroups
+      value={[
+        {
+          kind: "template",
+          scope: "template",
+          source: "bycoda",
+          templateId: "skill-group:video",
+          groupId: "video",
+          name: "Video",
+          invocation: "group-video",
+          memberCount: members.length,
+          members,
+          description: "",
+          body: "",
+        },
+      ]}
+    >
+      <AgentTranscript
+        blocks={[
+          {
+            id: "skill-group",
+            role: "user",
+            text: `Create a short product video.\n\n${members.map((name) => `/${name}`).join(" ")} Use these skills.\n\n${context}`,
+          },
+        ]}
+      />
+    </TranscriptSkillGroups>
   );
 }
 
@@ -408,6 +494,8 @@ createRoot(host).render(
     <MessageBubblesFixture />
   ) : new URLSearchParams(location.search).has("chat-layout") ? (
     <ChatLayoutFixture />
+  ) : new URLSearchParams(location.search).has("skill-group") ? (
+    <SkillGroupFixture />
   ) : (
     <Fixture />
   ),

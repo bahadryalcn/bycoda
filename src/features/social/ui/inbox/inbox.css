@@ -36,13 +36,6 @@
   gap: 0.5rem;
 }
 
-.inbox-account-failures {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-
 .inbox-notices {
   display: flex;
   flex-direction: column;
@@ -81,19 +74,22 @@
 /* Conversation list */
 .inbox-list {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
   gap: var(--space-2);
 }
 
-.inbox-rows {
+/* Conversation and tag details are separate controls. */
+.inbox-row-item {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  overflow-y: auto;
+  min-width: 0;
+}
+
+.inbox-row-tags {
+  padding-inline: var(--space-2);
+  padding-block-end: var(--space-1);
 }
 
 .inbox-row {
@@ -134,22 +130,10 @@
   min-width: 0;
 }
 
-.inbox-row-time,
-.inbox-line-time {
+.inbox-row-time {
   flex: none;
   margin: 0;
   font-variant-numeric: tabular-nums;
-}
-
-.inbox-row-subject,
-.inbox-row-preview {
-  margin: 0;
-}
-
-.inbox-row-subject {
-}
-
-.inbox-row-preview {
 }
 
 .inbox-row-meta {
@@ -193,9 +177,6 @@
   align-items: center;
   gap: 0.25rem;
   min-width: 0;
-}
-
-.inbox-conversation-account-name {
 }
 
 .inbox-tag-field {
@@ -246,4 +227,12 @@
     padding-block-start: var(--space-3);
     padding-inline-start: 0;
   }
+}
+
+.inbox-new-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 28rem;
+  padding-block: 0.5rem;
 }

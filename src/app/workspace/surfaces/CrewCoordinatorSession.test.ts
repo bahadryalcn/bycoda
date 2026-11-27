@@ -6,6 +6,8 @@ import type { Session } from "../../../features/sessions/model/session";
 import { resetSessionsStore } from "../../../features/sessions/model/sessionsStore";
 import { CrewCoordinatorSession } from "./CrewCoordinatorSession";
 import type { WorkspaceSessionPaneProps } from "../layout/WorkspaceMainArea";
+import { setLanguagePreference } from "../../../shared/i18n";
+import { LOADING_DELAY_MS } from "../../../shared/hooks/useDelayedVisible";
 
 const { pane, stopRequest, managed, confirmStop } = vi.hoisted(() => ({
   pane: vi.fn((_props: Record<string, unknown>) => null),
@@ -58,6 +60,34 @@ it("renders the canonical coordinator with existing app handlers after host adop
   vi.unstubAllGlobals();
 });
 
+it("re-renders its loading label when the app language changes", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const coordinator = { id: "lead", cwd: "/crew", blocks: [] } as unknown as Session;
+  resetSessionsStore([coordinator]);
+  // onOpen never resolves, so the component stays in its loading state across the switch.
+  const onOpen = vi.fn(() => new Promise<void>(() => undefined));
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  await act(async () =>
+    root.render(
+      createElement(CrewCoordinatorSession, {
+        target: { machineId: "host", projectId: "project", sessionId: "lead", cwd: "/crew" },
+        onOpen,
+        paneProps: {} as unknown as WorkspaceSessionPaneProps,
+      }),
+    ),
+  );
+  // The shared loading line stays hidden for its first moments so fast opens never flash it.
+  await act(async () => new Promise((resolve) => setTimeout(resolve, LOADING_DELAY_MS + 50)));
+  expect(container.textContent).toContain("Loading session…");
+  await act(async () => setLanguagePreference("de"));
+  expect(container.textContent).toContain("Sitzung wird geladen…");
+  await act(async () => setLanguagePreference("en"));
+  await act(async () => root.unmount());
+  resetSessionsStore([]);
+  vi.unstubAllGlobals();
+});
+
 it("routes inline Stop through confirmed Crew stop on the exact owner host", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   managed.mockReturnValue({ runId: "run", role: "coordinator" });
@@ -76,7 +106,9 @@ it("routes inline Stop through confirmed Crew stop on the exact owner host", asy
   );
   const props = pane.mock.calls.at(-1)![0];
   await act(async () => (props.onStop as (id: string) => void)("lead"));
-  expect(confirmStop).toHaveBeenCalledWith(expect.objectContaining({ confirmLabel: "Stop work" }));
+  expect(confirmStop).toHaveBeenCalledWith(
+    expect.objectContaining({ title: "Stop work?", confirmLabel: "Stop" }),
+  );
   expect(stopRequest).toHaveBeenCalledWith(
     "host",
     "crews.stop",

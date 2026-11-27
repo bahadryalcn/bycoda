@@ -1,12 +1,26 @@
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
-import { formatDuration } from "../../../shared/i18n/format";
-import { t, useLocale } from "../../../shared/i18n";
+import { formatDuration, formatUsageTokens } from "../../../shared/i18n/format";
+import { formatNumber, t, useLocale } from "../../../shared/i18n";
 import { Surface } from "../../../shared/ui/Surface";
 import type { CrewRunView } from "../model/crewClient";
-import { crewRunElapsedMs, crewRunSummary, crewRunUsage } from "../model/crewUsage";
+import { crewRunElapsedMs, crewRunSummary, crewRunUsage, type CrewUsage } from "../model/crewUsage";
 import { CrewFaces } from "./CrewFaces";
-import { crewUsageText } from "./CrewWorkTimeline";
+
+/** Duration, tokens and cost on one line; unknown parts are left out. */
+export function crewUsageText(usage: CrewUsage): string {
+  const parts: string[] = [];
+  if (usage.durationMs !== undefined) parts.push(formatDuration(usage.durationMs));
+  if (usage.tokens !== undefined)
+    parts.push(
+      usage.tokensExact
+        ? t("{p0} tokens", { p0: formatUsageTokens(usage.tokens) })
+        : t("At least {p0} tokens", { p0: formatUsageTokens(usage.tokens) }),
+    );
+  if (usage.costUsd !== undefined)
+    parts.push(formatNumber(usage.costUsd, { style: "currency", currency: "USD" }));
+  return parts.join(" · ");
+}
 
 /** A finished work at a glance: what was accepted, who did it, how long it took and what is left. */
 export function CrewWorkSummary({ run }: { run: CrewRunView }) {

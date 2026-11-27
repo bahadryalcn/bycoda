@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { AccountApiError, type PendingPairRequest } from "@bycoda/account-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { generatePairKeypair, openPairTicket } from "../../../integrations/account-pair-crypto";
@@ -8,6 +9,7 @@ import {
   pairAad,
   pairRequestCode,
   startPhoneConnectInbox,
+  watchPairingView,
 } from "./phoneConnectInbox";
 import {
   buildConnectInfo,
@@ -42,11 +44,11 @@ function request(over: Partial<PendingPairRequest> = {}): PendingPairRequest {
 }
 
 describe("buildConnectInfo", () => {
-  it("orders LAN before Tailscale before tunnel, deduplicates and caps at four", () => {
+  it("orders LAN before Tailscale, deduplicates and caps at four", () => {
     expect(
       buildConnectInfo(
         host([
-          { endpoint: "https://fresh.trycloudflare.com" },
+          { endpoint: "https://fourth.ts.net" },
           { endpoint: "https://pc.ts.net" },
           { endpoint: "http://192.168.1.3:3777", lanKey: "a".repeat(64) },
           { endpoint: "https://pc.ts.net" },
@@ -56,9 +58,22 @@ describe("buildConnectInfo", () => {
       )?.routes.map((route) => route.endpoint),
     ).toEqual([
       "http://192.168.1.3:3777",
+      "https://fourth.ts.net",
       "https://pc.ts.net",
       "https://other.ts.net",
-      "https://fresh.trycloudflare.com",
+    ]);
+  });
+  it("puts public tunnel routes last, flagged, and drops insecure ones", () => {
+    const info = buildConnectInfo(
+      host([
+        { endpoint: "https://a.trycloudflare.com", public: true },
+        { endpoint: "http://192.168.1.3:3777", lanKey: "a".repeat(64) },
+        { endpoint: "http://evil.example", public: true },
+      ]),
+    );
+    expect(info?.routes).toEqual([
+      { endpoint: "http://192.168.1.3:3777", lanKey: "a".repeat(64) },
+      { endpoint: "https://a.trycloudflare.com", public: true },
     ]);
   });
   it("keeps valid routes and drops private http routes without a pin", () => {
@@ -84,11 +99,11 @@ describe("phone connect publisher", () => {
     return { api, stop };
   };
 
-  it("publishes and unpublishes a changed tunnel within five seconds", async () => {
+  it("publishes and unpublishes a changed route within five seconds", async () => {
     let current = host([{ endpoint: "https://pc.ts.net" }]);
     const { api, stop } = setup(async () => current);
     await vi.advanceTimersByTimeAsync(0);
-    current = host([...current.mobileRoutes!, { endpoint: "https://new.trycloudflare.com" }]);
+    current = host([...current.mobileRoutes!, { endpoint: "https://new.ts.net" }]);
     await vi.advanceTimersByTimeAsync(5_000);
     expect(api.putConnectInfo.mock.calls.at(-1)![0].body.routes).toHaveLength(2);
     current = host([{ endpoint: "https://pc.ts.net" }]);
@@ -174,25 +189,36 @@ describe("phone connect publisher", () => {
 });
 
 describe("phone connect inbox", () => {
-  it("polls fast while visible, slowly while hidden, and stops on 404", async () => {
-    let visible = true;
+  it("polls fast only with pairing UI or pending requests and pauses while hidden", async () => {
+    const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(false);
     const listPairRequests = vi.fn().mockResolvedValue({ items: [] });
     const stop = startPhoneConnectInbox({
       api: { listPairRequests },
       onRequests: () => undefined,
-      isVisible: () => visible,
     });
+    await vi.advanceTimersByTimeAsync(11_999);
+    expect(listPairRequests).toHaveBeenCalledTimes(1);
+    const close = watchPairingView();
     await vi.advanceTimersByTimeAsync(0);
-    await vi.advanceTimersByTimeAsync(3_000);
     expect(listPairRequests).toHaveBeenCalledTimes(2);
-    visible = false;
-    await vi.advanceTimersByTimeAsync(3_000); // third call happens, then the slow interval starts
-    await vi.advanceTimersByTimeAsync(10_000);
+    listPairRequests.mockResolvedValue({ items: [request()] });
+    await vi.advanceTimersByTimeAsync(3_000);
     expect(listPairRequests).toHaveBeenCalledTimes(3);
-    await vi.advanceTimersByTimeAsync(10_000);
+    close();
+    await vi.advanceTimersByTimeAsync(3_000);
     expect(listPairRequests).toHaveBeenCalledTimes(4);
+    hidden.mockReturnValue(true);
+    document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(listPairRequests).toHaveBeenCalledTimes(4);
+    hidden.mockReturnValue(false);
+    document.dispatchEvent(new Event("visibilitychange"));
+    window.dispatchEvent(new Event("focus"));
+    expect(listPairRequests).toHaveBeenCalledTimes(5);
     stop();
-
+    hidden.mockRestore();
+  });
+  it("stops discovery on 404", async () => {
     const old = vi.fn().mockRejectedValue(new AccountApiError(404, "not_found", "no"));
     const onError = vi.fn();
     startPhoneConnectInbox({

@@ -12,6 +12,7 @@ import {
   subscribeNotificationPreferences,
 } from "../model/notificationPreferences";
 import { pathKey } from "../../../shared/lib/paths";
+import { describeLocalError } from "../../connections/public/remoteFailure";
 import { isProjectLocked } from "../../group-lock/public/projectLock";
 import { logNotification } from "../model/notificationLog";
 import {
@@ -75,6 +76,7 @@ export function useSessionReminders(
   const callbacks = useRef({ onOpenSession, ensureSaved });
   callbacks.current = { onOpenSession, ensureSaved };
 
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- this hook is uncompiled (it writes refs during render), so its effect dependencies need stable callbacks
   const configure = useCallback(async () => {
     const request = ++configurationRevision.current;
     // Native preferences are global state. Keep writes ordered and skip queued
@@ -108,6 +110,7 @@ export function useSessionReminders(
     }
   }, []);
 
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- this hook is uncompiled (it writes refs during render), so its effect dependencies need stable callbacks
   const refresh = useCallback(async () => {
     const request = ++revision.current;
     try {
@@ -129,14 +132,19 @@ export function useSessionReminders(
         await configure();
       }
     } catch (error) {
-      if (request === revision.current) setError(String(error));
+      if (request === revision.current) setError(localError(error));
     }
   }, [configure]);
 
   const report = (error: unknown) => {
-    toast.show({ tone: "danger", title: t("Reminder"), message: String(error) });
+    toast.show({
+      tone: "danger",
+      title: t("Reminder"),
+      message: describeLocalError(error, t("Could not update this reminder.")),
+    });
   };
 
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- this hook is uncompiled (it writes refs during render), so its effect dependencies need stable callbacks
   const schedule = useCallback(
     async (ids: readonly string[], dueAt: number) => {
       try {
@@ -150,6 +158,7 @@ export function useSessionReminders(
     [refresh],
   );
 
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- this hook is uncompiled (it writes refs during render), so its effect dependencies need stable callbacks
   const cancel = useCallback(
     async (ids: readonly string[], expectedDueAt?: number) => {
       try {
@@ -162,6 +171,7 @@ export function useSessionReminders(
     [refresh],
   );
 
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- this hook is uncompiled (it writes refs during render), so its effect dependencies need stable callbacks
   const dismissDue = useCallback(
     async (sessionId: string) => {
       const reminder = remindersRef.current.find(
@@ -173,6 +183,7 @@ export function useSessionReminders(
     [cancel],
   );
 
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- this hook is uncompiled (it writes refs during render), so its effect dependencies need stable callbacks
   const openHere = useCallback(
     async (reminder: ReminderTarget) => {
       try {
@@ -193,7 +204,7 @@ export function useSessionReminders(
     const configureCurrent = () => {
       refreshPolicy();
       void configure().catch((error) => {
-        if (!disposed) setError(String(error));
+        if (!disposed) setError(localError(error));
       });
     };
     const takeOpen = async () => {
@@ -202,7 +213,7 @@ export function useSessionReminders(
         const request = await invoke<ReminderTarget | null>("reminder_take_open");
         if (request && !disposed) await openHere(request);
       } catch (error) {
-        if (!disposed) setError(String(error));
+        if (!disposed) setError(localError(error));
       }
     };
     const subscribe = async (event: string, handler: () => void) => {
@@ -226,7 +237,7 @@ export function useSessionReminders(
         await refresh();
         await takeOpen();
       } catch (error) {
-        if (!disposed) setError(String(error));
+        if (!disposed) setError(localError(error));
       }
     })();
     const onFocus = () => {
@@ -270,9 +281,10 @@ export function useSessionReminders(
   useEffect(() => {
     void invoke("reminder_register_window", {
       sessionIds: JSON.parse(sessionIdsKey),
-    }).catch((error) => setError(String(error)));
+    }).catch((error) => setError(localError(error)));
   }, [sessionIdsKey]);
 
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- this hook is uncompiled (it writes refs during render), so its effect dependencies need stable callbacks
   const open = useCallback(async (reminder: ReminderTarget) => {
     try {
       await invoke("reminder_open", {
@@ -284,6 +296,7 @@ export function useSessionReminders(
     }
   }, []);
 
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- this hook is uncompiled (it writes refs during render), so its effect dependencies need stable values
   const due = useMemo(
     () =>
       reminders.filter((reminder) => {
@@ -327,6 +340,9 @@ export function useSessionReminders(
     open,
   };
 }
+
+/** A failed load or listener, as the inline reminder state shows it. */
+const localError = (error: unknown) => describeLocalError(error, t("Couldn’t load reminders."));
 
 function sameReminders(a: readonly SessionReminder[], b: readonly SessionReminder[]): boolean {
   return (

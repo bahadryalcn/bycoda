@@ -1,6 +1,7 @@
 import { keybindingPressed, matchCustomKeybinding, type ShortcutEvent } from "./settings";
 import { isImeComposition } from "../../../shared/lib/keyboard";
-import type { LayoutPreset } from "../../workspace/model/layoutPresets";
+import type { LayoutPreset } from "../../workspace";
+import type { FocusDir } from "../../workspace/model/layout";
 import type { SettingsSectionId } from "./settings";
 
 /** Optional direct destinations, available to record without taking existing chords. */
@@ -26,6 +27,23 @@ export const LAYOUT_SHORTCUTS: Record<string, LayoutPreset> = {
   "Pane: Equalize Sizes": "equalize",
 };
 
+/** Keyboard route to docking a pane beside its neighbour, the same move the pointer drag makes. */
+export const PANE_MOVE_COMMANDS: Record<string, { dir: FocusDir; key: string }> = {
+  "Pane: Move Left": { dir: "left", key: "ArrowLeft" },
+  "Pane: Move Right": { dir: "right", key: "ArrowRight" },
+  "Pane: Move Up": { dir: "up", key: "ArrowUp" },
+  "Pane: Move Down": { dir: "down", key: "ArrowDown" },
+};
+
+/** The pane move direction a key press requests, or null. */
+export function paneMoveDirection(event: ShortcutEvent & { key: string }): FocusDir | null {
+  const modified = (event.metaKey || event.ctrlKey) && event.altKey && event.shiftKey;
+  for (const [command, { dir, key }] of Object.entries(PANE_MOVE_COMMANDS)) {
+    if (keybindingPressed(command, event, modified && event.key === key)) return dir;
+  }
+  return null;
+}
+
 type AppShortcutEvent = ShortcutEvent & {
   key: string;
   isComposing: boolean;
@@ -49,6 +67,7 @@ const APP_SHORTCUTS: [string, string, boolean][] = [
   ["App: Open Tasks", "y", true],
   ["App: Open Automations", "u", true],
   ["App: Open Crews", "e", true],
+  ["App: Focus Approval Requests", "j", true],
 ];
 
 const APP_COMMANDS = new Set([

@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
@@ -13,6 +14,7 @@ import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
 import { InlineAction } from "../../../shared/ui/ActionHost";
 import { ContextMenu } from "../../../shared/ui/ContextMenu";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { LiveText } from "../../../shared/ui/LiveText";
@@ -28,7 +30,7 @@ import { NoteWordCount } from "./NoteWordCount";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { bridgeQueryEvents } from "../../../shared/lib/queryClient";
-import { projectDisplayName } from "../../projects/model/projectNames";
+import { projectDisplayNameFrom, useProjectLabels } from "../../projects/model/projectNames";
 import { ToolHeader } from "../../../app/shell/ToolNavigation";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
 import { formatDate, t, useLocale } from "../../../shared/i18n";
@@ -67,6 +69,7 @@ import {
   loadLibraryNoteSummaries,
   NOTES_CHANGED_EVENT,
   noteSourceProject,
+  noteHeading,
   noteTitle,
   peekLibraryNoteSummaries,
   peekNoteDetail,
@@ -176,6 +179,7 @@ export function NotesView({
   onToggleSidebar,
 }: Props) {
   useLocale();
+  const projectLabels = useProjectLabels();
   useEffect(mountNotesView, []);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -245,14 +249,23 @@ export function NotesView({
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchingBody, setSearchingBody] = useState(false);
   const [searchRevision, setSearchRevision] = useState(0);
+  // Body search reruns when the note set or a note's saved revision changes, not on every
+  // new array identity (list refetch, draft merge that changed no row).
+  const noteSearchSignature = useMemo(
+    () => notes.map((note) => `${note.id}\u0000${note.updatedAt}`).join("\n"),
+    [notes],
+  );
+  // Query whose body matches are currently shown; a refresh for it keeps them on screen.
+  const shownBodyQuery = useRef<string | null>(null);
   useEffect(() => {
     const needle = deferredQuery.trim();
     if (!needle) {
+      shownBodyQuery.current = null;
       setSearchError(null);
       setSearchingBody(false);
       return;
     }
-    setSearchingBody(true);
+    setSearchingBody(shownBodyQuery.current !== needle);
     let active = true;
     // Coalesce typing before asking the native body index. Stale query results
     // never join a newer set of metadata filters.
@@ -260,6 +273,7 @@ export function NotesView({
       void searchNotes(needle).then(
         (ids) => {
           if (active) {
+            shownBodyQuery.current = needle;
             setBodyMatches({ query: needle, ids: new Set(ids) });
             setSearchError(null);
             setSearchingBody(false);
@@ -267,7 +281,7 @@ export function NotesView({
         },
         (cause: unknown) => {
           if (active) {
-            setSearchError(cause instanceof Error ? cause.message : String(cause));
+            setSearchError(errorText(cause));
             setSearchingBody(false);
           }
         },
@@ -277,7 +291,7 @@ export function NotesView({
       active = false;
       clearTimeout(timer);
     };
-  }, [deferredQuery, notes, searchRevision]);
+  }, [deferredQuery, noteSearchSignature, searchRevision]);
   const [libraryPreferences, setLibraryPreferences] = useState(loadNoteLibraryPreferences);
   const [projectFilter, setProjectFilter] = useState<string | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
@@ -286,7 +300,7 @@ export function NotesView({
   const [collapsedGroups, setCollapsedGroups] = useState(() => new Set<string>());
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const pendingListFocus = useRef<{ id: string; group: string } | null>(null);
-  const projects = useMemo(() => noteLibraryProjects(notes), [notes]);
+  const projects = useMemo(() => noteLibraryProjects(notes, projectLabels), [notes, projectLabels]);
   const allTags = useMemo(() => [...new Set(notes.flatMap((note) => note.tags))].sort(), [notes]);
   useEffect(() => saveNoteLibraryPreferences(libraryPreferences), [libraryPreferences]);
   const [selectedId, setSelectedId] = useState<string | null>(() => {
@@ -430,8 +444,8 @@ export function NotesView({
     [notes, deferredQuery, projectFilter, tagFilter, libraryPreferences.sort, bodyMatches],
   );
   const groups = useMemo(
-    () => groupNoteLibrary(visible, libraryPreferences.grouping),
-    [visible, libraryPreferences.grouping],
+    () => groupNoteLibrary(visible, libraryPreferences.grouping, projectLabels),
+    [visible, libraryPreferences.grouping, projectLabels],
   );
   const headings = libraryPreferences.grouping !== "none";
   const libraryRows = useMemo(
@@ -559,7 +573,7 @@ export function NotesView({
   });
   const createScopeLabel = (scope: NoteCreateScope) =>
     [
-      scope.sourceCwd ? projectDisplayName(scope.sourceCwd) : t("No project"),
+      scope.sourceCwd ? projectDisplayNameFrom(scope.sourceCwd, projectLabels) : t("No project"),
       ...(scope.tags ?? []).map((tag) => `#${tag}`),
     ].join(" · ");
 
@@ -591,7 +605,7 @@ export function NotesView({
     } catch (err: unknown) {
       setActionFailure({
         kind: "create",
-        message: err instanceof Error ? err.message : String(err),
+        message: errorText(err),
         retry: () => void onCreate(scope),
       });
     } finally {
@@ -635,7 +649,7 @@ export function NotesView({
     try {
       targets = copyNativeCaptureData(deleteTargets);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = errorText(error);
       setActionFailure({ kind: "bulk", message });
       return message;
     }
@@ -684,9 +698,7 @@ export function NotesView({
         } catch (reason) {
           const draft = drafts.get(note.id);
           if (draft) draft.skipSave.current = false;
-          failures.push(
-            `${note.title}: ${reason instanceof Error ? reason.message : String(reason)}`,
-          );
+          failures.push(`${note.title}: ${errorText(reason)}`);
           failedNotes.push(note);
         }
       }
@@ -738,14 +750,14 @@ export function NotesView({
         ...stored,
         ...edits,
         body,
-        title: (edits.title ?? stored.title).trim() || noteTitle(body),
+        title: noteHeading(body) ?? ((edits.title ?? stored.title).trim() || noteTitle(body)),
       };
       if (!body.trim()) throw new Error(t("This note has no content to add to chat."));
       onAddToChat(note);
     } catch (err: unknown) {
       setActionFailure({
         kind: "chat",
-        message: err instanceof Error ? err.message : String(err),
+        message: errorText(err),
         retry,
       });
     } finally {
@@ -826,17 +838,17 @@ export function NotesView({
             ref={selectionButton}
             variant="ghost"
             size="sm"
+            iconOnly
             label={t("Select notes")}
-            selected={selectionMode}
-            aria-pressed={selectionMode}
+            pressed={selectionMode}
             disabled={bulkDeleting}
+            disabledReason={t("Deleting…")}
             onClick={() => {
               setSelectionMode((current) => !current);
               setCheckedIds(new Set());
             }}
           >
             <Check className="icon-sm" />
-            {t("Select notes")}
           </Button>
         ) : null}
         <Button
@@ -902,7 +914,7 @@ export function NotesView({
             // return focus to the current trigger instead of the one that opened this.
             if (reason === "escape") filtersButton.current?.focus();
           }}
-          className="note-filters-popover"
+          variant="panel"
         >
           <div className="note-library-controls">
             <SearchableSelect
@@ -933,16 +945,19 @@ export function NotesView({
                 })),
               ]}
             />
-            <SearchableSelect
-              hideLabel
-              label={t("Filter by tag")}
-              value={tagFilter ?? ""}
-              onChange={(value) => setTagFilter(value || null)}
-              options={[
-                { value: "", label: t("All tags") },
-                ...allTags.map((tag) => ({ value: tag, label: "#" + tag })),
-              ]}
-            />
+            {/* Two or more tags are filtered from the chip row; a lone tag has no row, so it is picked here. */}
+            {allTags.length === 1 ? (
+              <SearchableSelect
+                hideLabel
+                label={t("Filter by tag")}
+                value={tagFilter ?? ""}
+                onChange={(value) => setTagFilter(value || null)}
+                options={[
+                  { value: "", label: t("All tags") },
+                  ...allTags.map((tag) => ({ value: tag, label: "#" + tag })),
+                ]}
+              />
+            ) : null}
             <Select
               hideLabel
               label={t("Group notes by")}
@@ -983,6 +998,7 @@ export function NotesView({
           <Checkbox
             aria-label={t("Select all filtered notes")}
             disabled={bulkDeleting || visible.length === 0}
+            disabledReason={bulkDeleting ? t("Deleting…") : t("No notes to select.")}
             checked={visible.length > 0 && visible.every((note) => checkedIds.has(note.id))}
             indeterminate={
               visible.some((note) => checkedIds.has(note.id)) &&
@@ -1007,6 +1023,7 @@ export function NotesView({
           <Button
             tone="danger"
             disabled={checkedIds.size === 0 || bulkDeleting}
+            disabledReason={bulkDeleting ? t("Deleting…") : t("Select a note first.")}
             onClick={() => setDeleteTargets(notes.filter((note) => checkedIds.has(note.id)))}
           >
             <Trash2 className="icon-sm" />
@@ -1015,6 +1032,7 @@ export function NotesView({
           <Button
             variant="ghost"
             disabled={bulkDeleting}
+            disabledReason={t("Deleting…")}
             onClick={() => {
               setSelectionMode(false);
               setCheckedIds(new Set());
@@ -1043,9 +1061,17 @@ export function NotesView({
         }}
       >
         {actionFailure ? (
-          <Alert tone="danger" className="">
-            {t("Could not load or update notes: ")}
-            {actionFailure.message}{" "}
+          <Alert
+            tone="danger"
+            className=""
+            title={t("Could not load or update notes.")}
+            extra={
+              <ErrorDetails
+                title={t("Could not load or update notes.")}
+                detail={actionFailure.message}
+              />
+            }
+          >
             {actionFailure.retry ? (
               <Button
                 variant="ghost"
@@ -1072,16 +1098,20 @@ export function NotesView({
         {[...drafts]
           .filter(([id, draft]) => id !== selectedId && draft.error)
           .map(([id, draft]) => (
-            <Alert tone="danger" key={id} className="">
-              {t("Unsaved note: ")}
-              {draft.error}{" "}
+            <Alert
+              tone="danger"
+              key={id}
+              className=""
+              title={t("Could not save note")}
+              extra={<ErrorDetails title={t("Could not save note")} detail={draft.error ?? ""} />}
+            >
               <Button variant="ghost" size="sm" type="button" onClick={() => setSelectedId(id)}>
                 {t("Recover draft")}
               </Button>
             </Alert>
           ))}
         {loading && notes.length === 0 ? (
-          <SurfaceLoading className="py-10" title={t("Loading notes…")} />
+          <SurfaceLoading className="min-h-0 flex-1" title={t("Loading notes…")} />
         ) : (
           <div data-note-library className="min-h-0 flex flex-1 flex-col">
             <ContinuousList
@@ -1159,11 +1189,13 @@ export function NotesView({
                         aria-label={t("Select note: {p0}", { p0: row.note.title })}
                         checked={checkedIds.has(row.note.id)}
                         disabled={bulkDeleting}
+                        disabledReason={t("Deleting…")}
                         onChange={() => toggleChecked(row.note.id)}
                       />
                     ) : null}
                     <NoteCard
                       note={row.note}
+                      projectLabels={projectLabels}
                       group={row.group.key}
                       grouping={libraryPreferences.grouping}
                       sort={libraryPreferences.sort}
@@ -1198,7 +1230,7 @@ export function NotesView({
         {...resize.sashProps}
         label={t("Resize notes list")}
         appearance="hidden"
-        className="absolute inset-y-0 -right-px"
+        className="absolute inset-y-0 end-0"
       />
     </div>
   );
@@ -1294,9 +1326,14 @@ export function NotesView({
             </Text>
           ) : null}
           {detailError ? (
-            <Alert tone="danger" className="">
-              {t("Could not load or update notes: ")}
-              {detailError}{" "}
+            <Alert
+              tone="danger"
+              className=""
+              title={t("Could not load or update notes.")}
+              extra={
+                <ErrorDetails title={t("Could not load or update notes.")} detail={detailError} />
+              }
+            >
               <Button
                 variant="ghost"
                 size="sm"
@@ -1362,7 +1399,7 @@ export function NotesView({
               </Text>
               {menu.target.kind === "note" && menuNote?.sourceCwd ? (
                 <Text size="inherit" tone="inherit" truncate className="block">
-                  {projectDisplayName(menuNote.sourceCwd)}
+                  {projectDisplayNameFrom(menuNote.sourceCwd, projectLabels)}
                 </Text>
               ) : null}
             </Text>
@@ -1386,6 +1423,7 @@ export function NotesView({
 
 function NoteCard({
   note,
+  projectLabels,
   group,
   grouping,
   sort,
@@ -1398,6 +1436,7 @@ function NoteCard({
   onMenu,
 }: {
   note: NoteSummary;
+  projectLabels: Record<string, string>;
   group: string;
   grouping: NoteGrouping;
   sort: NoteSort;
@@ -1412,7 +1451,7 @@ function NoteCard({
   useLocale();
   const date = noteLibraryDate(note, sort);
   const validDate = Number.isFinite(date.timestamp) && date.timestamp > 0;
-  const project = noteSourceProject(note.sourceCwd);
+  const project = noteSourceProject(note.sourceCwd, projectLabels);
   const match = noteLibraryMatchLocation(note, query, bodyMatches);
   const preview = match === "content" ? t("Match in note") : note.preview || t("No preview");
   const secondary = [grouping !== "project" ? project : "", preview].filter(Boolean).join(" · ");
@@ -1555,7 +1594,13 @@ function NoteDetail({
   useLocale();
   if (!note) {
     return (
-      <EmptyState icon={<File />} description={t("Select a note")} className="min-w-0 flex-1" />
+      <EmptyState
+        context="page"
+        illustration="inbox-empty"
+        title={t("Select a note")}
+        description={t("Pick a note from the list, or create a new one.")}
+        className="min-w-0 flex-1"
+      />
     );
   }
   return (
@@ -1594,6 +1639,7 @@ function NoteEditor({
 }) {
   useLocale();
   const modesId = useId();
+  const projectLabels = useProjectLabels();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const [previewEditing, setPreviewEditing] = useState(false);
   // Mode, narrow-pane routing and toolbar target; find and image insertion read
@@ -1610,6 +1656,10 @@ function NoteEditor({
     setToolbarTarget,
     toolbarTargetRef,
   } = useNoteEditorMode(note.id, previewEditing);
+  // The Source editor is built the first time Source/Split is shown and then stays mounted, so a
+  // note that is only read never pays for CodeMirror and a revealed one keeps its undo history.
+  const [sourceMounted, setSourceMounted] = useState(visibleMode !== "preview");
+  if (!sourceMounted && visibleMode !== "preview") setSourceMounted(true);
   const blank = !note.body.trim() && note.title === "Untitled";
   const [draftState] = useState(() => {
     const existing = drafts.get(note.id);
@@ -1637,9 +1687,10 @@ function NoteEditor({
   const inputOwner = draftInputOwner(draftState);
   const preparing = useNotePreparing(inputOwner);
   useNoteExternal(inputOwner, note);
-  const title = edits.title ?? note.title;
-  const titleError = noteTitleError(title);
   const body = edits.body ?? note.body;
+  // The first level-one heading is the note's name; the title field mirrors it.
+  const title = noteHeading(body) ?? edits.title ?? note.title;
+  const titleError = noteTitleError(title);
   const tags = edits.tags ?? note.tags;
   // Keep only an unsaved choice locally so completed moves survive reopening.
   const [projectChange, setProjectChange] = useState<{ path: string } | null>(
@@ -1752,8 +1803,9 @@ function NoteEditor({
     const nextBody = changes.body ?? current.body;
     const titleFocused = document.activeElement === titleFieldRef.current;
     const nextTitle =
-      (changes.title ?? current.title).trim() ||
-      (titleFocused ? current.title : noteTitle(nextBody));
+      noteHeading(nextBody) ??
+      ((changes.title ?? current.title).trim() ||
+        (titleFocused ? current.title : noteTitle(nextBody)));
     if (noteTitleError(nextTitle)) return current;
     const nextTags = changes.tags ?? current.tags;
     const nextProject = projectChangeRef.current;
@@ -1821,7 +1873,7 @@ function NoteEditor({
       else publish();
       return saved;
     } catch (err: unknown) {
-      const failed = () => setSaveError(err instanceof Error ? err.message : String(err));
+      const failed = () => setSaveError(errorText(err));
       if (parent) parent.apply(failed);
       else failed();
       return current;
@@ -1849,7 +1901,7 @@ function NoteEditor({
       saveTimer.current = null;
       saveTimerWork.current = null;
       return enqueueNoteSave(note.id, persist, work)
-        .catch((error) => setSaveError(String(error)))
+        .catch((error) => setSaveError(errorText(error)))
         .finally(() => {
           delayed?.();
           work();
@@ -1921,10 +1973,24 @@ function NoteEditor({
     };
   }, [saveNow, draftState, note.id, inputOwner]);
 
+  const commitTitle = () => {
+    if (!inputOwner.allowed() || draftState.unadmittedInputs?.includes("title")) return;
+    const next = title.trim() || noteTitle(body);
+    if (next !== title) editNote({ title: next });
+    if (noteRef.current.slugPending) finalizeRef.current = { title: next };
+    void saveNow();
+  };
+
   const onTitleKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key !== "Enter" || isImeComposition(event.nativeEvent)) return;
     event.preventDefault();
-    event.currentTarget.blur();
+    // Moving focus into the body commits the title through its blur, and keeps the keyboard position.
+    if (visibleMode === "source" && editorViewRef.current) {
+      editorViewRef.current.focus();
+      return;
+    }
+    // No source editor to receive focus: commit here and keep focus on the title.
+    commitTitle();
   };
 
   const onEditorShortcut = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -1992,53 +2058,52 @@ function NoteEditor({
       >
         <header className="note-detail-header">
           <div className="note-detail-titlerow">
-            <TextField
-              label={t("Note title")}
-              appearance="quiet"
-              fieldVariant="compact"
-              error={titleError}
-              hideLabel
-              ref={titleFieldRef}
-              value={title}
-              onChange={(event) => {
-                const value = event.target.value;
-                if (!inputOwner.allowed() || !inputOwner.canRetainText("title", value)) {
-                  inputOwner.external(() => {
-                    draftState.unadmittedInputs = [
-                      ...new Set([...(draftState.unadmittedInputs ?? []), "title"]),
-                    ];
-                    editsRef.current = { ...editsRef.current, title: value };
-                    setEdits(editsRef.current);
-                    setSaveError(
-                      t(
-                        "This input was not admitted. Your text is retained; open the note to edit it.",
-                      ),
-                    );
-                  });
-                  return;
-                }
-                draftState.unadmittedInputs = draftState.unadmittedInputs?.filter(
-                  (key) => key !== "title",
-                );
-                finalizeRef.current = null;
-                editNote({ title: value });
-                scheduleSave();
-              }}
-              onBlur={() => {
-                if (!inputOwner.allowed() || draftState.unadmittedInputs?.includes("title")) return;
-                const next = title.trim() || noteTitle(body);
-                if (next !== title) editNote({ title: next });
-                if (noteRef.current.slugPending) finalizeRef.current = { title: next };
-                void saveNow();
-              }}
-              onKeyDown={onTitleKeyDown}
-              readOnly={preparing}
-              fieldClassName="note-detail-title"
-              textSize="title"
-              weight="medium"
-              leading="snug"
-              placeholder={t("Untitled")}
-            />
+            {/* A body that starts with a heading already names the note; the title field would say it twice. */}
+            {noteHeading(body) && !titleError ? (
+              <span className="note-detail-title" />
+            ) : (
+              <TextField
+                label={t("Note title")}
+                appearance="quiet"
+                fieldVariant="compact"
+                error={titleError}
+                hideLabel
+                ref={titleFieldRef}
+                value={title}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (!inputOwner.allowed() || !inputOwner.canRetainText("title", value)) {
+                    inputOwner.external(() => {
+                      draftState.unadmittedInputs = [
+                        ...new Set([...(draftState.unadmittedInputs ?? []), "title"]),
+                      ];
+                      editsRef.current = { ...editsRef.current, title: value };
+                      setEdits(editsRef.current);
+                      setSaveError(
+                        t(
+                          "This input was not admitted. Your text is retained; open the note to edit it.",
+                        ),
+                      );
+                    });
+                    return;
+                  }
+                  draftState.unadmittedInputs = draftState.unadmittedInputs?.filter(
+                    (key) => key !== "title",
+                  );
+                  finalizeRef.current = null;
+                  editNote({ title: value });
+                  scheduleSave();
+                }}
+                onBlur={commitTitle}
+                onKeyDown={onTitleKeyDown}
+                readOnly={preparing}
+                fieldClassName="note-detail-title"
+                textSize="title"
+                weight="medium"
+                leading="snug"
+                placeholder={t("Untitled")}
+              />
+            )}
             <div className="note-detail-actions">
               {preparing ? (
                 <LoadingText>{t("Preparing checkpoint…")}</LoadingText>
@@ -2047,7 +2112,6 @@ function NoteEditor({
                   state={noteSaveState({
                     deleting: false,
                     saveError,
-                    titleError,
                     recovering,
                     saving: Boolean(saving || saveAction),
                     dirty,
@@ -2058,6 +2122,7 @@ function NoteEditor({
                 projectCwd={sourceCwd ?? activeCwd}
                 recents={recents}
                 disabled={!canAddToChat}
+                disabledReason={t("Write something in the note first.")}
                 onAdd={(targetCwd) => onAddToChat(draft, targetCwd)}
               />
               <Button
@@ -2076,10 +2141,10 @@ function NoteEditor({
                   anchor={actionsButton}
                   align="end"
                   width={340}
-                  role="dialog"
+                  kind="dialog"
                   aria-label={t("Details")}
                   onDismiss={() => setActionsOpen(false)}
-                  autoFocus
+                  variant="panel"
                   className="note-details-popover"
                 >
                   <Text
@@ -2096,7 +2161,7 @@ function NoteEditor({
                     <DescriptionItem term={t("Project")}>
                       {sourceCwd ? (
                         <>
-                          {projectDisplayName(sourceCwd)}
+                          {projectDisplayNameFrom(sourceCwd, projectLabels)}
                           <Text as="div" size="caption" tone="secondary" wrap="anywhere">
                             {sourceCwd}
                           </Text>
@@ -2149,6 +2214,9 @@ function NoteEditor({
                 }}
               />
             </div>
+            <span className="tabular-nums">
+              <NoteWordCount body={body} />
+            </span>
             <div className="note-detail-tags">
               <NoteTagsEditor
                 availableTags={availableTags}
@@ -2166,22 +2234,21 @@ function NoteEditor({
                 }}
               />
             </div>
-            <Text size="caption" tone="muted" leading="inherit" className="note-detail-words">
-              <NoteWordCount body={body} />
-            </Text>
           </Text>
           {saveError ? (
-            <Alert tone="danger" className="note-detail-error">
-              <span>
-                {t("Could not save note: ")}
-                {saveError}
-              </span>
+            <Alert
+              tone="danger"
+              className="note-detail-error"
+              title={t("Could not save note")}
+              extra={<ErrorDetails title={t("Could not save note")} detail={saveError} />}
+            >
               <Button
                 variant="ghost"
                 size="sm"
                 type="button"
                 loading={saveAction === "retry"}
                 disabled={recovering || (saving && saveAction !== "retry")}
+                disabledReason={recovering ? t("Saving recovery copy…") : t("Saving…")}
                 onClick={() => void saveFromAction("retry")}
                 textDecoration="rest-underline"
                 className="shrink-0"
@@ -2220,7 +2287,7 @@ function NoteEditor({
                     setSaveError(null);
                     window.dispatchEvent(new Event(NOTES_CHANGED_EVENT));
                   } catch (error) {
-                    setSaveError(error instanceof Error ? error.message : String(error));
+                    setSaveError(errorText(error));
                   } finally {
                     recoveringRef.current = false;
                     setRecovering(false);
@@ -2273,32 +2340,34 @@ function NoteEditor({
             {...dropZoneHandlers}
           >
             <div className={visibleMode === "split" ? "note-layout note-split" : "note-layout"}>
-              {/* Stays mounted in preview so undo history survives the switch. */}
+              {/* Built on first reveal; stays mounted afterwards so undo history survives the switch. */}
               <NoteEditorPane
                 label={t("Source")}
                 scrollKey={`${note.id}:source`}
                 hidden={visibleMode === "preview"}
                 split={visibleMode === "split"}
               >
-                <NoteMarkdownEditor
-                  inputObserver={inputOwner.observer("source")}
-                  inputPublication={
-                    bodyPublication?.value === body
-                      ? bodyPublication.proof
-                      : inputOwner.resultControlPublication(note, "source", body)
-                  }
-                  viewRef={editorViewRef}
-                  minHeight={0}
-                  autoFocus={blank && visibleMode === "source"}
-                  value={body}
-                  onChange={(next) => {
-                    editNote({ body: next });
-                    scheduleSave();
-                  }}
-                  onSave={() => void saveNow()}
-                  onPasteImages={pasteImages}
-                  onFocus={() => setToolbarTarget("source")}
-                />
+                {sourceMounted ? (
+                  <NoteMarkdownEditor
+                    inputObserver={inputOwner.observer("source")}
+                    inputPublication={
+                      bodyPublication?.value === body
+                        ? bodyPublication.proof
+                        : inputOwner.resultControlPublication(note, "source", body)
+                    }
+                    viewRef={editorViewRef}
+                    minHeight={0}
+                    autoFocus={blank && visibleMode === "source"}
+                    value={body}
+                    onChange={(next) => {
+                      editNote({ body: next });
+                      scheduleSave();
+                    }}
+                    onSave={() => void saveNow()}
+                    onPasteImages={pasteImages}
+                    onFocus={() => setToolbarTarget("source")}
+                  />
+                ) : null}
               </NoteEditorPane>
               <NoteEditorPane
                 label={t("Document")}

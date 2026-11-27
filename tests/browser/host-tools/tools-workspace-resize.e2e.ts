@@ -6,14 +6,14 @@ test("resizes tool panels from their shared edge in all four placements", async 
   await page.addStyleTag({ content: "#root { height:100dvh; }" });
   await page.getByRole("tab", { name: "Logs", exact: true }).click();
   await page.getByRole("button", { name: "Panel placement", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Separate Logs panel", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Move Logs to layout", exact: true }).click();
   const dock = page.getByRole("complementary", { name: "Tool panels" });
   const separator = page.getByRole("separator", { name: "Tool panels" });
   for (const side of ["right", "left", "bottom", "top"]) {
     await dock.getByRole("button", { name: /^Placement:/ }).click();
     await page
       .getByRole("menuitemradio", {
-        name: `Dock ${side[0].toUpperCase()}${side.slice(1)}`,
+        name: `Dock ${side}`,
         exact: true,
       })
       .click();

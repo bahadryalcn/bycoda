@@ -26,20 +26,18 @@ afterEach(async () => {
   container.remove();
   vi.unstubAllGlobals();
 });
-const submit = () =>
-  act(async () => {
-    container
-      .querySelector("form")!
-      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-  });
 const input = (value: string) =>
   act(async () => {
     const field = container.querySelector("input")!;
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, value);
     field.dispatchEvent(new Event("input", { bubbles: true }));
   });
+const leave = () =>
+  act(async () => {
+    container.querySelector("input")!.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+  });
 
-it("confirms only acknowledged metadata saves and clears the action on edits or failure", async () => {
+it("saves metadata when a field is left, once per change, and reports a failed write", async () => {
   let finish!: () => void;
   vi.mocked(updateServerMetadata).mockImplementation(
     () =>
@@ -48,26 +46,40 @@ it("confirms only acknowledged metadata saves and clears the action on edits or 
       }),
   );
   await act(async () => root.render(createElement(ServerOrganization, { server, expanded: true })));
+  expect(container.querySelector('button[type="submit"]')).toBeNull();
+  // Leaving an untouched field writes nothing.
+  await leave();
+  expect(updateServerMetadata).not.toHaveBeenCalled();
   await input("Production");
-  await submit();
-  expect(container.querySelector('button[type="submit"]')?.getAttribute("aria-busy")).toBe("true");
-  expect(container.querySelector('button[type="submit"]')?.textContent).not.toBe("Saved");
-  await submit();
+  await leave();
   expect(updateServerMetadata).toHaveBeenCalledTimes(1);
+  expect(updateServerMetadata).toHaveBeenCalledWith("server-1", {
+    group: "Production",
+    tags: [],
+    favorite: false,
+  });
   await act(async () => finish());
-  expect(container.querySelector('button[type="submit"]')?.textContent).toBe("Saved");
-  expect(
-    [...container.querySelectorAll('[role="status"]')].filter(
-      (status) => !status.classList.contains("sr-only"),
-    ),
-  ).toHaveLength(0);
-  await input("Edited draft");
-  expect(container.querySelector('button[type="submit"]')?.textContent).toBe("Save");
+  // The acknowledged value is not written again.
+  await leave();
+  expect(updateServerMetadata).toHaveBeenCalledTimes(1);
   vi.mocked(updateServerMetadata).mockRejectedValue(new Error("write failed"));
-  await submit();
+  await input("Edited draft");
+  await leave();
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
     "Couldn’t save server organization.",
   );
-  expect(container.querySelector('button[type="submit"]')?.textContent).toBe("Save");
   expect(container.querySelector("input")?.value).toBe("Edited draft");
+});
+
+it("saves the favorite flag as soon as it flips", async () => {
+  vi.mocked(updateServerMetadata).mockResolvedValue(undefined);
+  await act(async () => root.render(createElement(ServerOrganization, { server, expanded: true })));
+  await act(async () =>
+    container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
+  );
+  expect(updateServerMetadata).toHaveBeenCalledWith("server-1", {
+    group: "",
+    tags: [],
+    favorite: true,
+  });
 });

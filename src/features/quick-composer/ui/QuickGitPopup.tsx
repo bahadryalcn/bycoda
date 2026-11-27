@@ -2,6 +2,7 @@
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { t, useLocale } from "../../../shared/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -90,7 +91,11 @@ export function QuickGitPopup({ onShown }: { onShown: () => void }) {
         void invoke("quick_git_fit", { id: request.id, height }).catch(() => undefined);
       }}
     >
-      {error ? <InlineError className="px-3 py-2">{error}</InlineError> : null}
+      {error ? (
+        <InlineError inset="row" details={error}>
+          {t("Could not apply the workspace choice.")}
+        </InlineError>
+      ) : null}
       {host && request ? (
         <QuickGitPopupPicker key={request.id} request={request} onFinish={finish} />
       ) : null}
@@ -138,10 +143,13 @@ export function QuickGitPopupPicker({
   if (waiting)
     return (
       <Text as="div" size="caption" tone="inherit" className="flex items-center gap-3 px-3 py-3">
-        <Text as="p" size="inherit" tone="secondary" role="status" className="flex-1">
-          {settled ? t("Couldn’t load branches for this project.") : t("Loading branches…")}
-        </Text>
-        <Button variant="ghost" motion="none" type="button" className="" onClick={() => finish()}>
+        <LiveText
+          className="flex-1"
+          size="inherit"
+          tone="secondary"
+          text={settled ? t("Couldn’t load branches for this project.") : t("Loading…")}
+        />
+        <Button variant="ghost" motion="none" onClick={() => finish()}>
           {t("Close")}
         </Button>
       </Text>

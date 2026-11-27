@@ -1,65 +1,20 @@
-.statusRow,
-.actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  min-width: 0;
-}
-.statusRow > :first-child {
-  flex: 1;
-  min-width: 0;
-}
-.hint,
 .detail {
   margin: 0;
   overflow-wrap: anywhere;
 }
 .locations {
   display: grid;
-  gap: 12px;
+  gap: var(--ui-space-3, 0.75rem);
   min-width: 0;
-}
-.fieldRow :global(.settings-row) {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-}
-.fieldRow :global(.settings-row-control) {
-  max-width: 100%;
-  width: 100%;
 }
 .path {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2, 0.5rem);
   min-width: 0;
   width: 100%;
 }
 .path > :first-child {
   flex: 1;
   min-width: 0;
-}
-@media (max-width: 600px) {
-  .engine :global(.settings-row) {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-  }
-  .engine :global(.settings-row-control) {
-    width: 100%;
-    max-width: 100%;
-    justify-content: flex-start;
-  }
-}
-
-.visualChoice :global(.settings-row) {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-}
-.visualChoice :global(.settings-row-control) {
-  inline-size: 100%;
-  max-inline-size: 100%;
-  justify-content: flex-start;
 }

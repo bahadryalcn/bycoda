@@ -1,5 +1,6 @@
 import type { SubmitDeps, SubmitInput, SubmitPreflight, SubmitSetup } from "./submitTypes";
 import type { SubmitTurnEvents } from "./submitTurnEvents";
+import { errorText } from "../../../../shared/lib/errors";
 import { requireRoomNativeOutput, startNativeOutputSession } from "./prepareNativeOutputSession";
 import { readableHarnessError } from "../../../../integrations/harness/core/readableError";
 import { TurnNotReadyError } from "../../../../integrations/harness/core/types";
@@ -415,8 +416,9 @@ export async function runSubmitDispatch(
       if (queueSubmittedFollowUp(ctx, input, pre)) return;
     }
     if (turn.wrap) revealHandoff(turn.wrap.text);
+    const detail = errorText(error);
     const message = readableHarnessError(
-      error instanceof Error ? error.message : String(error) || `${current.harness} adapter failed`,
+      error instanceof Error || detail ? detail : `${current.harness} adapter failed`,
     );
     turn.controlOutcome.error = message;
     turn.replyEndedAt ??= Date.now();

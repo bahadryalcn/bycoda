@@ -7,7 +7,7 @@ import { formatNumber, t } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuAction } from "../../../shared/ui/DropdownMenu";
-import { InlineMessage } from "../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { MoreHorizontal, ArrowUp, Copy } from "../../../shared/ui/icons";
@@ -21,6 +21,7 @@ import {
   sourceKindLabel,
   sourceStatusLabel,
   sourceStatusTone,
+  sourceTestFailureText,
 } from "../model/decisionView";
 import { ErrorNotice } from "./ErrorNotice";
 import { SourceKindIcon } from "./SourceIcon";
@@ -84,7 +85,7 @@ export function SourceRow({
   };
   const menuItems: DropdownMenuAction[] = [
     { kind: "item", id: "edit", label: t("Edit"), disabled: busy && !testing },
-    { kind: "item", id: "details", label: t("Details") },
+    { kind: "item", id: "details", label: showDetails ? t("Hide details") : t("Show details") },
     {
       kind: "item",
       id: "measure",
@@ -131,9 +132,9 @@ export function SourceRow({
   };
   const details = [
     source.local?.modelPath
-      ? t("Local file")
+      ? t("Model file")
       : source.kind === "local"
-        ? t("Local service")
+        ? t("Running service")
         : sourceKindLabel(source.kind),
     source.local?.modelPath ??
       source.endpoint ??
@@ -165,11 +166,7 @@ export function SourceRow({
   const accuracy = formatAccuracy(source.lastAccuracy);
   const cost = formatCost(source.costPerMTokens);
   const failedReason =
-    tested && !tested.ok
-      ? sourceErrorText(tested.error)
-      : source.status === "error"
-        ? t("Failed")
-        : null;
+    tested && !tested.ok && !testing ? sourceTestFailureText(source.kind, tested.error) : null;
   return (
     <li {...surfaceAttributes({ separator: "block" }, "flex min-w-0 flex-col gap-2 px-4 py-2.5")}>
       <div className="flex min-w-0 items-center justify-between gap-3">
@@ -187,47 +184,36 @@ export function SourceRow({
               >
                 {source.name}
               </Text>
-              <Tooltip label={failedReason ?? undefined}>
-                <Badge
-                  className="shrink-0"
-                  tabIndex={failedReason ? 0 : undefined}
-                  tone={
-                    busy
-                      ? "neutral"
-                      : tested
-                        ? tested.ok
-                          ? "success"
-                          : "danger"
-                        : sourceStatusTone(source.status)
-                  }
-                  size="xs"
-                >
-                  {status}
-                </Badge>
-              </Tooltip>
+              <Badge
+                className="shrink-0"
+                tone={
+                  busy
+                    ? "neutral"
+                    : tested
+                      ? tested.ok
+                        ? "success"
+                        : "danger"
+                      : sourceStatusTone(source.status)
+                }
+                size="xs"
+              >
+                {status}
+              </Badge>
               {usedFirst ? (
                 <Badge className="shrink-0" size="xs" icon={<ArrowUp />}>
                   {t("Used first")}
                 </Badge>
               ) : null}
               {duplicate ? (
-                <Tooltip
-                  label={t(
-                    "Same model or endpoint as {p1}. Use More actions > Remove source to remove this copy.",
-                    { p1: duplicate },
-                  )}
+                <Badge
+                  className="decision-source-duplicate"
+                  size="xs"
+                  tone="warning"
+                  truncate
+                  icon={<Copy />}
                 >
-                  <Badge
-                    className="decision-source-duplicate"
-                    tabIndex={0}
-                    size="xs"
-                    tone="warning"
-                    truncate
-                    icon={<Copy />}
-                  >
-                    {t("Duplicate of {p1}", { p1: duplicate })}
-                  </Badge>
-                </Tooltip>
+                  {t("Duplicate of {p1}", { p1: duplicate })}
+                </Badge>
               ) : null}
             </div>
             <Text
@@ -286,7 +272,7 @@ export function SourceRow({
           {details[1] ? (
             <MiddleTruncate className="min-w-0 basis-full">{String(details[1])}</MiddleTruncate>
           ) : null}
-          {[failedReason, accuracy ? t("Last accuracy {p1}", { p1: accuracy }) : null, cost]
+          {[accuracy ? t("Last accuracy {p1}", { p1: accuracy }) : null, cost]
             .filter(Boolean)
             .map((detail, index) => (
               <span key={index}>{detail}</span>
@@ -296,6 +282,7 @@ export function SourceRow({
           ) : null}
         </Text>
       ) : null}
+      {failedReason ? <InlineError>{failedReason}</InlineError> : null}
       {note?.kind === "evaluate" ? (
         <InlineMessage tone={note.result.error ? "warning" : "info"}>
           {evaluationText(note.result)}

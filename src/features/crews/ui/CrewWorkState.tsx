@@ -1,7 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { useLocale } from "../../../shared/i18n";
 import { Badge, type BadgeSize, type BadgeTone } from "../../../shared/ui/Badge";
-import { Clock } from "../../../shared/ui/icons";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import type { CrewRunView } from "../model/crewClient";
@@ -30,50 +29,41 @@ function namedState(state: CrewExecutionState, forList: boolean) {
 }
 
 /**
- * What needs the owner (CR-W04), plus the working signal while work runs. A paused or idle
- * run shows no state badge: its Resume or Start control already says so, and the state stays
- * available to assistive technology.
+ * The open work's execution state (CR-W04), plus the working signal while work runs. A paused
+ * or idle run shows no badge: its Resume or Start control already says so, and the state stays
+ * available to assistive technology. What needs the owner is stated once, by its alert below.
  */
 export function CrewWorkBadges({ run, size = "sm" }: { run: CrewRunView; size?: BadgeSize }) {
   useLocale();
   const state = crewExecutionState(run);
   const attention = crewOpenAttention(run);
   const running = run.status !== "finished" && crewHasRunningWork(run);
-  return (
-    <>
-      {namedState(state, false) || state === "finished" ? (
-        <Badge
-          tone={executionTone(state)}
-          size={size}
-          icon={running ? <WorkingIndicator size="xs" /> : undefined}
-        >
-          {crewExecutionLabel(state)}
-        </Badge>
-      ) : (
-        <span className="sr-only">{crewExecutionLabel(state)}</span>
-      )}
-      {attention ? (
-        <Badge tone={attentionTone(attention)} size={size}>
-          {crewAttentionLabel(attention)}
-        </Badge>
-      ) : null}
-    </>
+  return (namedState(state, false) && !attention) || state === "finished" ? (
+    <Badge
+      tone={executionTone(state)}
+      size={size}
+      icon={running ? <WorkingIndicator size="xs" /> : undefined}
+    >
+      {crewExecutionLabel(state)}
+    </Badge>
+  ) : (
+    <span className="sr-only">{crewExecutionLabel(state)}</span>
   );
 }
 
-/** Plain-text form for lists and the rail: "Paused · Needs decision"; idle work says nothing. */
+/** Plain-text form for lists and the rail: one status, the open attention or else "Paused"; idle work says nothing. */
 export function CrewWorkStatusText({ run }: { run: CrewRunView }) {
   useLocale();
   const state = crewExecutionState(run);
   const attention = crewOpenAttention(run);
   const running = run.status !== "finished" && crewHasRunningWork(run);
-  const named = namedState(state, true);
+  // One status: an open decision, review or blocker outranks the execution label.
+  const named = namedState(state, true) && !attention;
   if (!named && !attention) return null;
   return (
     <span className="inline-flex min-w-0 shrink-0 items-center gap-1">
       {running ? <WorkingIndicator size="xs" /> : null}
       {named ? <span>{crewExecutionLabel(state)}</span> : null}
-      {named && attention ? <span aria-hidden="true">·</span> : null}
       {attention ? (
         <Badge tone={attentionTone(attention)} size="xs">
           {crewAttentionLabel(attention)}
@@ -93,8 +83,7 @@ export function crewQuietProgress(run: CrewRunView) {
 /** Last change of the work record; the full date stays in the tooltip. */
 export function CrewWorkUpdated({ value }: { value: number }) {
   return (
-    <Text tone="muted" className="inline-flex items-center gap-1">
-      <Clock aria-hidden="true" className="icon-xs shrink-0" />
+    <Text tone="muted">
       <Timestamp value={value} />
     </Text>
   );

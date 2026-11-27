@@ -117,6 +117,8 @@ export class OpenCodeV2EventTranslator {
             status: {
               type: "retry",
               message: `Retrying${attempt ? ` (attempt ${attempt})` : ""}${reason ? `: ${reason}` : ""}`,
+              // v1 status carries `next` as epoch ms; v2 names the same instant `retryAt`/`next`.
+              next: data.next ?? data.retryAt,
             },
           },
         };

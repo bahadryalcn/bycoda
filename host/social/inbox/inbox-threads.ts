@@ -13,34 +13,82 @@ export type InboxView = {
   threads: SocialThread[];
 };
 
+/** Account visibility comes from `accounts(p)`; thread visibility is the owner's, or the principal's project. */
+function threadVisible(
+  ctx: SocialActionContext,
+  accountById: Map<string, SocialAccount>,
+  thread: SocialThread,
+): boolean {
+  return (
+    accountById.has(thread.accountId) &&
+    (ctx.principal.kind === "owner" || thread.projectId === ctx.principal.projectId)
+  );
+}
+
 /**
- * Loads the accounts, contacts and threads one principal may read. Account visibility comes from
- * `accounts(p)`; thread visibility is the owner's, or the principal's project for everyone else.
+ * Loads the accounts, contacts and threads one principal may read.
+ * shortcut: full kind scans, as SocialService.visibleThreads does, for the unified list only.
+ * Upgrade to a paged, SQL-filtered list query; per-conversation operations use `loadThread` and
+ * `loadPersonThreads`.
  */
 export async function loadInboxView(ctx: SocialActionContext): Promise<InboxView> {
   const accounts = await ctx.service.accounts(ctx.principal);
   const accountById = new Map(accounts.map((account) => [account.id, account]));
-  // shortcut: full kind scans, as SocialService.visibleThreads already does. Upgrade to an indexed
-  // thread query when the audience store exposes one (see the phase 4 done file, requests).
   const contacts = await ctx.store.legacyRecords<SocialContact>("contact");
   const threads = await ctx.store.legacyRecords<SocialThread>("thread");
   return {
     accounts,
     accountById,
     contactById: new Map(contacts.map((contact) => [contact.id, contact])),
-    threads: threads.filter(
-      (thread) =>
-        accountById.has(thread.accountId) &&
-        (ctx.principal.kind === "owner" || thread.projectId === ctx.principal.projectId),
-    ),
+    threads: threads.filter((thread) => threadVisible(ctx, accountById, thread)),
   };
 }
 
-/** Unknown and invisible conversations share one message, so a caller cannot probe ids. */
-export function findVisibleThread(view: InboxView, threadId: string): SocialThread {
-  const thread = view.threads.find((item) => item.id === threadId);
-  if (!thread) throw new Error("Conversation not found.");
-  return thread;
+/**
+ * Reads one conversation and its account by id, with the same visibility rule as the full view.
+ * Unknown and invisible conversations share one message, so a caller cannot probe ids.
+ */
+export async function loadThread(
+  ctx: SocialActionContext,
+  threadId: string,
+): Promise<{ thread: SocialThread; account: SocialAccount }> {
+  const accounts = await ctx.service.accounts(ctx.principal);
+  const accountById = new Map(accounts.map((account) => [account.id, account]));
+  const thread = await ctx.store.getThread(threadId);
+  const account =
+    thread && threadVisible(ctx, accountById, thread)
+      ? accountById.get(thread.accountId)
+      : undefined;
+  if (!thread || !account) throw new Error("Conversation not found.");
+  return { thread, account };
+}
+
+/**
+ * Readable conversations whose contact is one of `handles`, each with its contact and account.
+ * Fetches only those rows, so cost follows the person, not the whole inbox.
+ */
+export async function loadPersonThreads(
+  ctx: SocialActionContext,
+  accounts: readonly SocialAccount[],
+  handles: readonly { accountId: string; platformId: string }[],
+): Promise<{ thread: SocialThread; contact: SocialContact; account: SocialAccount }[]> {
+  const accountById = new Map(accounts.map((account) => [account.id, account]));
+  const platformIdsByAccount = new Map<string, string[]>();
+  for (const handle of handles) {
+    if (!accountById.has(handle.accountId)) continue;
+    platformIdsByAccount.set(handle.accountId, [
+      ...(platformIdsByAccount.get(handle.accountId) ?? []),
+      handle.platformId,
+    ]);
+  }
+  const result: { thread: SocialThread; contact: SocialContact; account: SocialAccount }[] = [];
+  for (const [accountId, platformIds] of platformIdsByAccount)
+    for (const { thread, contact } of await ctx.store.threadsForHandles(accountId, platformIds)) {
+      const account = accountById.get(thread.accountId);
+      if (account && threadVisible(ctx, accountById, thread))
+        result.push({ thread, contact, account });
+    }
+  return result;
 }
 
 /** The newest event of a conversation, whatever order the events were stored in. */

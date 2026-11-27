@@ -1,13 +1,13 @@
-import { execFileAsync as exec } from "../../src/shared/lib/processExecution.node";
+import { hostGitExec } from "./git-exec-pool";
 import {
   gitMutationScope,
   isHostGitMutation,
-  isManagedWorkspaceBranch,
   MANAGED_DELIVERY_REVIEW_REQUIRED,
   withHostGitMutation,
 } from "./git-mutations";
-import { isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path";
-import { readFile, realpath } from "node:fs/promises";
+import { isManagedWorkspaceBranch } from "../managed/workspace-branch-naming";
+import { dirname, isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path";
+import { readFile, realpath, stat } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
 import {
@@ -117,12 +117,13 @@ async function git(
 ): Promise<string> {
   try {
     return (
-      await exec(
+      await hostGitExec.exec(
         "git",
         [...(args.includes("--") ? ["--literal-pathspecs"] : []), "--no-pager", ...args],
         {
           cwd: root,
           timeout,
+          lane: timeout === NETWORK_MS ? "network" : "default",
           maxBuffer,
           encoding: "utf8",
           windowsHide: true,
@@ -535,25 +536,46 @@ export class BranchCache {
   }
 }
 
-/** The branch named by a checkout's own `HEAD` file, read without spawning git.
- * Undefined means "ask git": a subfolder, a detached or reftable HEAD, or any read problem. */
-async function headBranchFromFiles(cwd: string): Promise<string | undefined> {
+/** The branch named by the enclosing checkout's `HEAD` file, read without spawning git.
+ * Session lists poll every folder, and a Windows spawn blocks the Host event loop, so
+ * subfolders walk up to their checkout and a missing folder or non-repository answers
+ * "" (what git would), as does a detached HEAD. Undefined means "ask git": a reftable
+ * HEAD or a read problem. */
+export async function headBranchFromFiles(cwd: string): Promise<string | undefined> {
   try {
-    let gitDir = join(cwd, ".git");
+    if (!(await stat(cwd)).isDirectory()) return "";
+  } catch {
+    return "";
+  }
+  try {
+    let root = cwd;
     let marker: string;
-    try {
-      marker = await readFile(gitDir, "utf8");
-    } catch (error) {
-      // `.git` is a directory in a normal checkout: read its HEAD below.
-      if ((error as NodeJS.ErrnoException).code !== "EISDIR") return undefined;
-      marker = "";
+    for (;;) {
+      try {
+        marker = await readFile(join(root, ".git"), "utf8");
+        break;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        // `.git` is a directory in a normal checkout: read its HEAD below.
+        if (code === "EISDIR") {
+          marker = "";
+          break;
+        }
+        if (code !== "ENOENT" && code !== "ENOTDIR") return undefined;
+        const parent = dirname(root);
+        if (parent === root) return "";
+        root = parent;
+      }
     }
+    let gitDir = join(root, ".git");
     if (marker) {
       const target = /^gitdir:\s*(.+?)\s*$/m.exec(marker)?.[1];
       if (!target) return undefined;
-      gitDir = isAbsolute(target) ? target : resolvePath(cwd, target);
+      gitDir = isAbsolute(target) ? target : resolvePath(root, target);
     }
     const head = (await readFile(join(gitDir, "HEAD"), "utf8")).trim();
+    // Detached: `git symbolic-ref --quiet` would exit 1, which the cache records as "".
+    if (/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(head)) return "";
     const ref = /^ref:\s*refs\/heads\/(.+)$/.exec(head)?.[1];
     // `.invalid` is the reftable placeholder; only plain local branches are answered here.
     return ref && ref !== ".invalid" ? ref : undefined;
@@ -565,14 +587,32 @@ async function headBranchFromFiles(cwd: string): Promise<string | undefined> {
 export const branchCache = new BranchCache(async (cwd) => {
   const fromFiles = await headBranchFromFiles(cwd);
   if (fromFiles !== undefined) return fromFiles;
-  const { stdout } = await exec("git", ["symbolic-ref", "--quiet", "--short", "HEAD"], {
+  const { stdout } = await hostGitExec.exec("git", ["symbolic-ref", "--quiet", "--short", "HEAD"], {
     cwd,
     timeout: 2_000,
     windowsHide: true,
-    env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
+    env: { GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
   });
   return stdout.trim();
 });
+
+type ManagedBranchRegistry = (root: string, branchRef: string) => Promise<boolean>;
+let managedBranchRegistry: ManagedBranchRegistry | null = null;
+/** The Host registers its workspace records here: the fail-safe when a branch marker is missing. */
+export function setManagedBranchRegistry(registry: ManagedBranchRegistry | null): void {
+  managedBranchRegistry = registry;
+}
+
+/** Marker or registry says managed; ownership that cannot be read counts as managed (never fails open). */
+const managedBranchOrUnknown = async (root: string, branch: string) => {
+  try {
+    if (await isManagedWorkspaceBranch(root, branch)) return true;
+    const ref = branch.startsWith("refs/heads/") ? branch : `refs/heads/${branch}`;
+    return (await managedBranchRegistry?.(root, ref)) === true;
+  } catch {
+    return true;
+  }
+};
 
 /** Runs one command in `root`, a validated working copy. */
 export async function runGitAction(
@@ -582,7 +622,11 @@ export async function runGitAction(
 ): Promise<unknown> {
   // A managed source cannot be integrated through the old reference-only API,
   // even when a caller bypasses WorkspaceCommands and invokes this helper.
-  if (command === "git_merge" && isManagedWorkspaceBranch(input.reference))
+  if (
+    command === "git_merge" &&
+    typeof input.reference === "string" &&
+    (await managedBranchOrUnknown(root, input.reference))
+  )
     throw new Error(MANAGED_DELIVERY_REVIEW_REQUIRED);
   const run = () => runGitActionSerialized(command, root, input);
   return isHostGitMutation(command) || command === "git_management_snapshot"
@@ -601,10 +645,11 @@ async function runGitActionSerialized(
       "for-each-ref",
       `--points-at=${sha}`,
       "--format=%(refname)",
-      "refs/heads/bycoda/s/",
-      "refs/heads/bycoda/t/",
+      "refs/heads/by/",
     ]);
-    if (managedSources.trim()) throw new Error(MANAGED_DELIVERY_REVIEW_REQUIRED);
+    for (const ref of managedSources.split("\n").filter(Boolean))
+      if (await managedBranchOrUnknown(root, ref))
+        throw new Error(MANAGED_DELIVERY_REVIEW_REQUIRED);
   }
   if (command === "git_init") {
     // A new repository may only start where Git finds none, never nested in one.
@@ -665,28 +710,53 @@ const HEAD_PRESERVING: ReadonlySet<string> = new Set<GitActionCommand>([
   "git_fetch",
 ]);
 
+const SNAPSHOT_MS = 10_000;
+const SNAPSHOT_REFS_BYTES = 2 * 1024 * 1024;
+
+/** Hashes a git command's output as it streams, so large diffs and indexes never
+ * have to fit in a buffer. Fails with the command that could not be read. */
+async function gitOutputDigest(root: string, args: string[]): Promise<string> {
+  const hash = createHash("sha256");
+  await hostGitExec
+    .exec("git", ["--no-pager", ...args], {
+      cwd: root,
+      timeout: SNAPSHOT_MS,
+      env: { LC_ALL: "C.UTF-8", GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
+      onOutput: (stream, chunk) => {
+        if (stream === "stdout") hash.update(chunk);
+      },
+    })
+    .catch((error: { killed?: boolean; code?: string }) => {
+      const timedOut = error.killed || error.code === "ETIMEDOUT";
+      throw new Error(
+        `Git management snapshot could not read \`git ${args.join(" ")}\`${timedOut ? ` within ${SNAPSHOT_MS / 1000} seconds` : ""}. No action was executed.`,
+      );
+    });
+  return hash.digest("hex");
+}
+
 /** An opaque receipt: credentials in remote configuration never leave the host. */
 export async function gitManagementSnapshot(
   root: string,
 ): Promise<{ token: string; refs: Record<string, string> }> {
   await ensureWorkTree(root);
-  const read = (args: string[]) =>
-    git(root, args, { timeout: 10_000, maxBuffer: 2 * 1024 * 1024 }).catch(() => {
-      throw new Error(
-        "Git management snapshot is unavailable or exceeds the safe size/time limit. No action was executed.",
-      );
-    });
+  const refsArgs = ["for-each-ref", "--format=%(refname)%00%(objectname)%00%(symref)"];
   const parts = await Promise.all([
     realpath(root),
     gitOrNull(root, ["rev-parse", "--verify", "HEAD"]),
     gitOrNull(root, ["symbolic-ref", "--quiet", "HEAD"]),
-    read(["for-each-ref", "--format=%(refname)%00%(objectname)%00%(symref)"]),
-    read(["config", "--list", "--null", "--includes"]),
-    read(["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
-    read(["diff", "--no-ext-diff", "--binary", "--"]),
-    read(["diff", "--cached", "--no-ext-diff", "--binary", "--"]),
-    read(["remote", "-v"]),
-    read(["ls-files", "--stage", "-z"]),
+    // Refs are parsed and returned, so they stay buffered and bounded.
+    git(root, refsArgs, { timeout: SNAPSHOT_MS, maxBuffer: SNAPSHOT_REFS_BYTES }).catch(() => {
+      throw new Error(
+        "Git management snapshot has too many references or could not read them. No action was executed.",
+      );
+    }),
+    gitOutputDigest(root, ["config", "--list", "--null", "--includes"]),
+    gitOutputDigest(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
+    gitOutputDigest(root, ["diff", "--no-ext-diff", "--binary", "--"]),
+    gitOutputDigest(root, ["diff", "--cached", "--no-ext-diff", "--binary", "--"]),
+    gitOutputDigest(root, ["remote", "-v"]),
+    gitOutputDigest(root, ["ls-files", "--stage", "-z"]),
   ]);
   const refs: Record<string, string> = Object.fromEntries(
     (parts[3] ?? "")

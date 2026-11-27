@@ -10,11 +10,16 @@ export { FileSection } from "./FileSection";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { useOwnedTimeout } from "../../../shared/hooks/useOwnedTimeout";
 import { t, useLocale, useT } from "../../../shared/i18n/git";
-import { amendPushedCopy, discardSelectedCopy, discardUnstagedCopy } from "./gitConfirmCopy";
+import {
+  amendPushedCopy,
+  defaultBranchCopy,
+  discardSelectedCopy,
+  discardUnstagedCopy,
+  trustRepositoryCopy,
+} from "./gitConfirmCopy";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import {
-  CheckCircle,
   FileDiff,
   GitBranch,
   ListFilter,
@@ -25,8 +30,6 @@ import {
   PanelRight,
   RefreshCw,
   Undo2,
-  WandSparkles,
-  X,
 } from "../../../shared/ui/icons";
 import {
   Suspense,
@@ -37,6 +40,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -50,10 +54,17 @@ import { GitConflictRows } from "./GitConflictRows";
 import { GitOperationBanner } from "./GitOperationBanner";
 import { GitPanelSections, usePanelPreferencesMenu } from "./GitPanelSections";
 import { GitActionsMenu, type ChangesActions } from "./GitActionsMenu";
-import { BranchPicker, type CheckoutChoice } from "./BranchPicker";
+import { isMissingPathError } from "../model/checkoutSelection";
+import { isAgentWorktree } from "../model/worktreeRows";
+import { BranchPicker } from "./BranchPicker";
 import { applyCommit, applyIndexAction, applySync } from "../model/optimisticIndex";
 import { ACTION_LABEL, busyLabel } from "../model/gitBusyLabel";
-import { AUTO_FETCH_MS, loadAutoFetch, saveAutoFetch } from "../model/autoFetch";
+import {
+  AUTO_FETCH_MS,
+  loadAutoFetch,
+  saveAutoFetch,
+  subscribeAutoFetch,
+} from "../model/autoFetch";
 import {
   basename,
   gitCommit,
@@ -66,6 +77,7 @@ import {
   gitHeadMessage,
   gitPrCreate,
   gitPrStatus,
+  gitPull,
   gitPush,
   gitStageAll,
   gitStageFile,
@@ -85,10 +97,12 @@ import type { HarnessId } from "../../sessions";
 import { recordInboxSelfActivity } from "../../inbox/model/inboxSelfActivity";
 import { loadChangesView, saveChangesView } from "../../settings/public/appearance";
 import type { ChangesView } from "../../settings";
-import { generatePrContent } from "../model/gitTextGeneration";
+import { generatePrContent, prContentFromCommits } from "../model/gitTextGeneration";
+import { PrGenerationError } from "../model/prGenerationError";
 import { invalidateWatchedFiles } from "../../files/public/fileWatch";
 import { MOD } from "../../../platform/tauri/platform";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
+import { shortSha } from "../../../shared/lib/shortSha";
 import {
   GIT_ACTIONS,
   GIT_CONFLICTS,
@@ -115,23 +129,23 @@ import {
   withGitBackgroundFetch,
 } from "../model/gitPanelState";
 import { useLegacyConflictStatus } from "../hooks/useLegacyConflictStatus";
-import { confirmNative, confirmDiscardFile } from "../model/gitConfirmation";
+import { confirmGitAction, confirmDiscardFile } from "../model/gitConfirmation";
 import { invalidateGitIndex } from "../model/gitIndexStore";
 
-import { GitFeedback } from "./GitFeedback";
+import { GitCommitGenerationNotice, GitFeedback } from "./GitFeedback";
 import { usePrStatus } from "../hooks/usePrStatus";
 import { ACTIVE_PROJECT_REFRESH_MS } from "../model/gitRefreshPolicy";
 import { Button } from "../../../shared/ui/Button";
-import { Spinner } from "../../../shared/ui/Spinner";
+import { LiveText } from "../../../shared/ui/LiveText";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import type { Worktree } from "../model/worktrees";
 import { requestWorktreeManagement } from "../model/worktreeManagement";
 import styles from "./CheckoutHeader.module.css";
-import { CheckoutIdentity } from "./CheckoutIdentity";
+import { CheckoutIdentity, CheckoutStatus, checkoutBranch } from "./CheckoutIdentity";
 import { UpstreamLabel } from "./UpstreamLabel";
-import { InlineAction } from "../../../shared/ui/ActionHost";
 import { TextareaField } from "../../../shared/ui/TextareaField";
-import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
+import { GitCommitGenerationActions } from "./GitGenerationSettings";
 import { ChangeList } from "./GitChangesList";
 import { useDiffIndex, announceGitChange } from "../hooks/useDiffIndex";
 import { useCommitDraft } from "../hooks/useCommitDraft";
@@ -154,10 +168,14 @@ type Props = {
     name: string;
     checkout?: Worktree;
     current?: boolean;
+    /** A separate repository found inside the listed worktree, not a worktree itself. */
+    nested?: boolean;
     expanded?: boolean;
     onToggle: (expanded: boolean) => void;
     /** This repository's gitlink change in its parent, shown beside its name. */
     pointer?: ReactNode;
+    /** Narrows the Changes list to this repository (VS Code's single-repository mode) or shows all again. */
+    scope?: { only: boolean; onToggle: () => void };
   };
   /** Repositories listed below this one: their gitlinks leave this list. */
   submodules?: SubmoduleListing;
@@ -176,8 +194,8 @@ type Props = {
   refreshInTarget?: boolean;
   /** The target header above already offers worktree management. */
   worktreesInTarget?: boolean;
-  /** Puts the working-copy choice in the branch control, so target and branch share one row. */
-  checkout?: CheckoutChoice & { onRefresh: () => void };
+  /** The panel is one worktree's own view: its branch picker leads the single header row. */
+  checkout?: { onRefresh: () => void; onMissing?: () => Promise<boolean> };
 };
 
 export function GitChangesPanel({
@@ -205,10 +223,21 @@ export function GitChangesPanel({
     index,
     reload,
     showOptimistic,
-    error: loadError,
+    error: reportedError,
     loading,
     checking,
   } = useDiffIndex(cwd, enabled, !repository || repository.expanded === true, paneRef);
+  // A checkout deleted from elsewhere fails every read with not-found: the owner confirms it is
+  // gone and falls back to the default checkout, so no error is shown for the vanished path.
+  // A not-found read of a folder that still exists is a genuine failure and stays visible.
+  const onMissing = checkout?.onMissing;
+  const [stillThere, setStillThere] = useState(false);
+  const vanished = !!onMissing && !stillThere && isMissingPathError(reportedError);
+  const loadError = vanished ? null : reportedError;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- asks the filesystem whether the read folder still exists after a not-found Git read
+  useEffect(() => {
+    if (vanished) void onMissing().then((deleted) => setStillThere(!deleted));
+  }, [vanished, onMissing]);
   // Fetch, and the merge status of a host that predates conflict info, need
   // this computer or a host with `git.actions`.
   const gitActions = useRemoteSupports(cwd, GIT_ACTIONS) === true;
@@ -232,6 +261,7 @@ export function GitChangesPanel({
   // Shared across the header and the changed-files list so no two Git
   // mutations ever run against the same checkout at once.
   const [busy, setBusy] = useGitPanelState(cwd, "busy");
+  const busyReason = busy ? t("Wait for the current operation to finish") : undefined;
   const [status, setStatus] = useGitPanelState(cwd, "status");
   // The step a running action is on ("Pushing…"), shown beside the spinner.
   const [pending, setPending] = useGitPanelState(cwd, "pending");
@@ -258,10 +288,10 @@ export function GitChangesPanel({
   }, [cwd, feedback]);
 
   const canFetch = gitActions && Boolean(index?.remote);
-  const [autoFetch, setAutoFetch] = useState(loadAutoFetch);
+  // Shared preference: every repository panel and window follows the saved value.
+  const autoFetch = useSyncExternalStore(subscribeAutoFetch, loadAutoFetch);
   const toggleAutoFetch = () => {
     saveAutoFetch(!autoFetch);
-    setAutoFetch(!autoFetch);
   };
   const preferences = usePanelPreferencesMenu({
     autoFetch,
@@ -309,19 +339,18 @@ export function GitChangesPanel({
 
   if (!cwd || cwd === "~") {
     return (
-      <EmptyState
-        size="inline"
-        kind="empty"
-        className="px-3 py-2"
-        description={t("No project folder")}
-      />
+      <EmptyState size="inline" kind="empty" inset="row" description={t("No project folder")} />
     );
   }
 
   // The one branch control: leads the header of the single panel and sits with
   // the actions in a grouped repository row.
+  // A worktree section names its own branch; an in-worktree branch is never switched here.
+  const worktreeSection = !!repository?.checkout && !repository.checkout.isMain;
   const branchControl =
-    detailsOpen && (checkout || (index?.repository !== false && (index?.branch || repository))) ? (
+    detailsOpen &&
+    !worktreeSection &&
+    (checkout || (index?.repository !== false && (index?.branch || repository))) ? (
       <Text
         className={`flex min-w-0 items-center gap-1 ${repository ? "max-w-48 shrink-4" : "-ms-1.5 max-w-[65%] shrink-0"}`}
       >
@@ -331,7 +360,6 @@ export function GitChangesPanel({
           branch={index?.branch ?? undefined}
           enabled={enabled && !busy && !loading}
           popoverSide="bottom"
-          checkouts={checkout}
           onChange={() => {
             onMutated();
             changesRef.current?.refreshPr?.();
@@ -362,11 +390,34 @@ export function GitChangesPanel({
                         },
                         detail: presentRemoteError(error, { explicit: true }),
                         retry: feedback.retry,
+                        alternate: feedback.alternate,
                       }),
                     )
                 : undefined
             }
           />
+          {feedback.alternate && !busy ? (
+            <Button
+              variant="link"
+              size="sm"
+              className="mx-3 mb-2 self-start"
+              onClick={() =>
+                void feedback.alternate?.run().catch((error) =>
+                  setGitFeedback(cwd, {
+                    kind: "error",
+                    get title() {
+                      return t("Couldn’t create pull request");
+                    },
+                    detail: presentRemoteError(error, { explicit: true }),
+                    retry: feedback.retry,
+                    alternate: feedback.alternate,
+                  }),
+                )
+              }
+            >
+              {feedback.alternate.label}
+            </Button>
+          ) : null}
           {feedback.url ? (
             <Button
               variant="link"
@@ -374,7 +425,10 @@ export function GitChangesPanel({
               className="mx-3 mb-2 self-start"
               onClick={() =>
                 void openUrl(feedback.url!).catch((error) =>
-                  setGitFeedback(cwd, { ...feedback, detail: String(error) }),
+                  setGitFeedback(cwd, {
+                    ...feedback,
+                    detail: presentRemoteError(error, { explicit: true }),
+                  }),
                 )
               }
             >
@@ -393,6 +447,26 @@ export function GitChangesPanel({
       ) : null}
     </>
   );
+  // One row format: a worktree reads "branch · folder · This session"; a repository reads
+  // "name · branch". The branch picker beside an open header already shows the branch.
+  const liveBranch = checkoutBranch({ index, checkout: repository?.checkout });
+  const branchLabel =
+    liveBranch ??
+    ((index ? index.head : repository?.checkout?.head)
+      ? `${t("Detached HEAD")} · ${shortSha((index ? index.head : repository?.checkout?.head) ?? "")}`
+      : undefined);
+  // One row format, no text markers: icon, bold name (project, branch or repository folder) and
+  // a muted branch. Where the row lives (session, separate repository) is only the tooltip.
+  const identity = repository ? (
+    <CheckoutIdentity
+      repository={!repository.checkout}
+      agent={!!repository.checkout && isAgentWorktree(repository.checkout)}
+      icon={!branchControl || !repository.checkout}
+      // A worktree is named by its live branch (it may have moved since the list was read).
+      title={worktreeSection ? (branchLabel ?? repository.name) : repository.name}
+      detail={branchControl || worktreeSection ? undefined : branchLabel}
+    />
+  ) : null;
   return (
     <div
       ref={paneRef}
@@ -401,88 +475,80 @@ export function GitChangesPanel({
       onContextMenu={embedded ? undefined : preferences.onContextMenu}
     >
       {preferences.menu}
-      <Text
-        as="header"
-        size="inherit"
-        tone={repository ? "primary" : "inherit"}
+      <header
         className={repository ? styles.header : styles.branchHeader}
         data-current-checkout={repository?.current || undefined}
       >
-        {repository ? (
-          <Button
-            size="sm"
-            variant="item"
-            motion="none"
-            expanded={detailsOpen}
-            chevron="start"
-            onClick={() => repository.onToggle(!detailsOpen)}
-            tooltip={`${repository.name} · ${cwd}`}
-            className={styles.disclosure}
-          >
-            <CheckoutIdentity
-              name={repository.name}
-              checkout={repository.checkout}
-              index={index}
-              showReference={!branchControl}
-            />
-            {repository.current ? (
-              <Text size="caption" leading="inherit" tone="accent" className={styles.current}>
-                {t("Current")}
-              </Text>
-            ) : null}
-          </Button>
-        ) : (
-          <>
-            {branchControl ?? (
-              <Text as="span" size="secondary" tone="primary" weight="medium" className="shrink-0">
-                {index?.repository === false || !index
-                  ? t("Changes")
-                  : `${t("Detached")} · ${(index.head ?? "").slice(0, 7)}`}
-              </Text>
-            )}
-            {index?.upstream && detailsOpen ? <UpstreamLabel upstream={index.upstream} /> : null}
-          </>
-        )}
-        {repository?.pointer}
-        {busy && !localProgressVisible ? (
-          <Text
-            role="status"
-            size="micro"
-            tone="secondary"
-            className="flex min-w-0 items-center gap-1"
-          >
-            <Spinner size="xs" className="shrink-0" />
-            <Text size="inherit" tone="inherit" wrap="anywhere" className="min-w-0">
-              {pending ?? busyLabel(busy)}
-            </Text>
-          </Text>
-        ) : !busy && status ? (
-          <Text role="status" size="micro" tone="secondary" wrap="anywhere" className="min-w-0">
-            {status}
-          </Text>
-        ) : null}
-        <div className={repository ? styles.actions : "ms-auto flex min-w-0 items-center gap-1"}>
-          {repository && index ? (
-            <Text size="caption" leading="inherit" tone="secondary" className={styles.summary}>
-              <FileDiff aria-hidden className="icon-xs" />
-              <span aria-label={`${t("Changes")}: ${files.length + conflicts.length}`}>
-                {files.length + conflicts.length}
-              </span>
-              {conflicts.length > 0 ? (
-                <Text size="inherit" tone="warning" className={styles.conflicts}>
-                  {t("Merge Conflicts")}: {conflicts.length}
+        <Text
+          as="div"
+          size="inherit"
+          tone={repository ? "primary" : "inherit"}
+          className="contents"
+        >
+          {repository ? (
+            <Button
+              size="sm"
+              variant="item"
+              motion="none"
+              expanded={detailsOpen}
+              chevron="start"
+              onClick={() => repository.onToggle(!detailsOpen)}
+              // The row shows names; the hint adds where the folder is.
+              tooltip={repository.nested ? t("Separate repository · {p0}", { p0: cwd }) : cwd}
+              className={styles.disclosure}
+            >
+              {identity}
+            </Button>
+          ) : (
+            <>
+              {branchControl ?? (
+                <Text
+                  as="span"
+                  size="secondary"
+                  tone="primary"
+                  weight="medium"
+                  className="shrink-0"
+                >
+                  {index?.repository === false || !index
+                    ? t("Changes")
+                    : `${t("Detached HEAD")} · ${shortSha(index.head ?? "")}`}
                 </Text>
-              ) : null}
-              {!detailsOpen && (index.ahead ?? 0) > 0 ? <span>↑{index.ahead}</span> : null}
-              {!detailsOpen && (index.behind ?? 0) > 0 ? <span>↓{index.behind}</span> : null}
-            </Text>
+              )}
+              {index?.upstream && detailsOpen ? <UpstreamLabel upstream={index.upstream} /> : null}
+            </>
+          )}
+          {repository?.pointer}
+          {busy && !localProgressVisible ? (
+            <LoadingText size="micro" tone="secondary" className="wrap-anywhere">
+              {pending ?? busyLabel(busy)}
+            </LoadingText>
+          ) : !busy && status ? (
+            <LiveText
+              size="micro"
+              tone="secondary"
+              className="min-w-0 wrap-anywhere"
+              text={status}
+            />
           ) : null}
-          {repository ? branchControl : null}
-          {/* Fixed icon columns keep these actions aligned with the section
-              actions below; controls owned by the header above leave their
-              column empty so the menu stays at the trailing edge. */}
-          <div className={styles.branchSlots}>
-            <span className={styles.branchSlot}>
+          <div className={repository ? styles.actions : "ms-auto flex min-w-0 items-center gap-1"}>
+            {repository ? (
+              <>
+                <CheckoutStatus
+                  changes={index ? files.length + conflicts.length : undefined}
+                  dirty={repository.checkout?.dirty}
+                  ahead={detailsOpen ? 0 : (index?.ahead ?? 0)}
+                  behind={detailsOpen ? 0 : (index?.behind ?? 0)}
+                />
+                {conflicts.length > 0 ? (
+                  <Text size="caption" tone="warning" className={styles.conflicts}>
+                    {t("Merge conflicts")}: {conflicts.length}
+                  </Text>
+                ) : null}
+              </>
+            ) : null}
+            {repository ? branchControl : null}
+            {/* Always shown: the branch label gives way first when the panel narrows. */}
+            <div className={styles.branchSlots}>
               {detailsOpen && !refreshInTarget ? (
                 <Button
                   variant="ghost"
@@ -490,6 +556,7 @@ export function GitChangesPanel({
                   iconOnly
                   label={t("Refresh source control")}
                   disabled={!enabled || !!busy}
+                  disabledReason={busyReason}
                   loading={loading}
                   loadingLabel={t("Refreshing…")}
                   onClick={() => {
@@ -501,8 +568,6 @@ export function GitChangesPanel({
                   <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
                 </Button>
               ) : null}
-            </span>
-            <span className={styles.branchSlot}>
               {worktreesInTarget || notRepository ? null : (
                 <Button
                   size="sm"
@@ -510,13 +575,12 @@ export function GitChangesPanel({
                   iconOnly
                   label={t("Manage worktrees…")}
                   disabled={!enabled || !!busy}
+                  disabledReason={busyReason}
                   onClick={() => requestWorktreeManagement(cwd)}
                 >
                   <FolderTree aria-hidden className="icon-sm" />
                 </Button>
               )}
-            </span>
-            <span className={styles.branchSlot}>
               {index && !notRepository ? (
                 <GitActionsMenu
                   cwd={cwd}
@@ -532,35 +596,29 @@ export function GitChangesPanel({
                   onOpenCommit={onOpenCommit}
                   toolbar={false}
                   onRevealChanges={repository ? () => repository.onToggle(true) : undefined}
+                  repositoryScope={repository?.scope}
                 />
               ) : null}
-            </span>
+            </div>
           </div>
-        </div>
-      </Text>
+        </Text>
+      </header>
       {repository && operation && !detailsOpen ? (
-        <InlineMessage tone="warning" live="off" className="px-2">
+        <InlineMessage tone="warning" live="off" inset="row">
           {operation}
         </InlineMessage>
       ) : null}
       {repository && loadError && !detailsOpen ? (
-        <InlineError className="px-2" details={loadError} />
+        <InlineError inset="row" details={loadError} />
       ) : null}
       {loadError?.includes("dubious ownership") ? (
         <Button
           variant="ghost"
           size="sm"
           disabled={!enabled || !!busy}
+          disabledReason={busyReason}
           onClick={async () => {
-            if (
-              !(await confirmNative(
-                t(
-                  "Trust Git repository at {path}? This adds only this path to Git safe.directory.",
-                ).replace("{path}", cwd),
-                t("Trust this repository"),
-              ))
-            )
-              return;
+            if (!(await confirmGitAction(trustRepositoryCopy(cwd)))) return;
             setBusy("trust");
             try {
               await gitTrustRepository(cwd);
@@ -594,10 +652,13 @@ export function GitChangesPanel({
             <EmptyState
               context="panel"
               kind="empty"
+              illustration="no-projects"
+              className="min-h-0 flex-1"
               title={t("This folder is not a Git repository")}
-              description={t("Initialize a repository to track changes in this folder.")}
+              description={t("Initialize a repository to track changes, commit and branch.")}
               action={{
                 label: t("Initialize Repository"),
+                variant: "primary",
                 pending: busy === "init",
                 disabled: !enabled || (!!busy && busy !== "init"),
                 onClick: async () => {
@@ -655,7 +716,7 @@ export function GitChangesPanel({
         </div>
       )}
       {/* An overview row leaves Stashes and Graph to the one shared set below the rows. */}
-      {!embedded && !repository && !notRepository ? (
+      {!embedded && !repository && index && !notRepository ? (
         <GitPanelSections
           cwd={cwd}
           enabled={enabled}
@@ -674,7 +735,6 @@ function ChangedFiles({
   textHarness,
   index,
   loadError,
-  loading,
   checking,
   files,
   submodules,
@@ -715,7 +775,7 @@ function ChangedFiles({
   pending: string | null;
   setPending: (value: string | null) => void;
   /** Shows the index an action is about to produce, ahead of the reload. */
-  showOptimistic: (next: GitDiffIndex) => void;
+  showOptimistic: ReturnType<typeof useDiffIndex>["showOptimistic"];
   /** Filled with the handlers the header menu calls into. */
   actionsRef: RefObject<ChangesActions | null>;
   onOpenFile: (path: string, kind: GitFileDiffKind, pin?: boolean) => void;
@@ -758,12 +818,6 @@ function ChangedFiles({
   const [listed, pointers] = useSubmodulePointers(files, submodules, (...args) => run(...args));
   const staged = useMemo(() => listed.filter((file) => file.staged), [listed]);
   const unstaged = useMemo(() => listed.filter((file) => file.unstaged), [listed]);
-  const collisionNames = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const file of files)
-      counts.set(basename(file.relative), (counts.get(basename(file.relative)) ?? 0) + 1);
-    return new Set([...counts].filter(([, count]) => count > 1).map(([name]) => name));
-  }, [files]);
   const visibleStaged = useMemo(
     () => staged.filter((file) => file.relative.toLowerCase().includes(deferredFileQuery)),
     [staged, deferredFileQuery],
@@ -794,12 +848,10 @@ function ChangedFiles({
     !!index?.branch && !!index.defaultBranch && index.branch === index.defaultBranch;
   const committing = busy === "commit" || busy === "pr";
   const canGenerate = files.length > 0 && !committing;
-  const fail = (error: unknown, operation = "Git operation failed") => {
+  const fail = (error: unknown, operation = t("Git operation failed")) => {
     setGitFeedback(cwd, {
       kind: "error",
-      get title() {
-        return t(operation);
-      },
+      title: operation,
       detail: presentRemoteError(error, { explicit: true }),
     });
   };
@@ -807,13 +859,22 @@ function ChangedFiles({
     message,
     setMessage,
     generating,
+    generationResult,
+    dismissGenerationResult,
+    useGeneratedMessage,
     amend,
     generationChoice,
+    commitGenerationChoice,
+    setCommitGenerationChoice,
     generate,
     cancelGenerate,
     toggleAmend: toggleAmendDraft,
     clearDraft,
   } = useCommitDraft({ cwd, index, textHarness, canGenerate, fail });
+  // Cancels a running PR description (provider call) when the list unmounts or moves to another repository (#1369).
+  const prGeneration = useRef<AbortController | null>(null);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Abort the active pull request description request when its repository changes or unmounts.
+  useEffect(() => () => prGeneration.current?.abort(), [cwd]);
   // Nothing staged: Commit takes every change, as the header menu's Commit does.
   const canCommit =
     (staged.length > 0 || amend || unstaged.length > 0) &&
@@ -869,11 +930,7 @@ function ChangedFiles({
     return withGitPanelRuntime(cwd, async () => {
       if (!onDefault || !index?.branch) return true;
       const branch = index.branch;
-      return confirmNative(
-        kind === "pr"
-          ? t('Create a pull request from default branch "{p0}"?', { p0: branch })
-          : t('Push to default branch "{p0}"?', { p0: branch }),
-      );
+      return confirmGitAction(defaultBranchCopy(kind, branch));
     });
   };
 
@@ -910,10 +967,10 @@ function ChangedFiles({
           fail(
             error,
             action === "stage"
-              ? "Couldn’t stage changes"
+              ? t("Couldn’t stage changes")
               : action === "unstage"
-                ? "Couldn’t unstage changes"
-                : "Couldn’t discard changes",
+                ? t("Couldn’t unstage changes")
+                : t("Couldn’t discard changes"),
           );
         }
       });
@@ -938,7 +995,7 @@ function ChangedFiles({
       const queue = fileActions.current;
       if (gitPanelRuntime(cwd).state.busy && queue.size === 0) return;
       if (action === "discard") {
-        const ok = await confirmNative(...discardSelectedCopy(selectedFiles.length));
+        const ok = await confirmGitAction(discardSelectedCopy(selectedFiles.length));
         if (!ok || (gitPanelRuntime(cwd).state.busy && queue.size === 0)) return;
       }
       if (queue.size === 0) setGitFeedback(cwd, null);
@@ -962,10 +1019,10 @@ function ChangedFiles({
           fail(
             error,
             action === "stage"
-              ? "Couldn’t stage changes"
+              ? t("Couldn’t stage changes")
               : action === "unstage"
-                ? "Couldn’t unstage changes"
-                : "Couldn’t discard changes",
+                ? t("Couldn’t unstage changes")
+                : t("Couldn’t discard changes"),
           );
         }
       });
@@ -982,24 +1039,32 @@ function ChangedFiles({
   const runAll = async (action: "stage" | "unstage" | "discard") => {
     return withGitPanelRuntime(cwd, async () => {
       if (gitPanelRuntime(cwd).state.busy) return;
+      // A filter limits every bulk action to the rows on screen.
+      const targets = action === "unstage" ? visibleStaged : visibleUnstaged;
+      if (deferredFileQuery && targets.length === 0) return;
       if (action === "discard") {
-        const n = unstaged.length;
+        const n = targets.length;
         if (n === 0) return;
-        const only = unstaged[0];
+        const only = targets[0];
         const untrackedOnly = n === 1 && only?.status === "untracked";
-        const ok = await confirmNative(
-          ...discardUnstagedCopy(n, only && basename(only.relative), untrackedOnly),
+        const ok = await confirmGitAction(
+          discardUnstagedCopy(n, only && basename(only.relative), untrackedOnly),
         );
         if (!ok) return;
       }
       if (gitPanelRuntime(cwd).state.busy) return;
       setGitFeedback(cwd, null);
       setBusy(action);
-      const discarded = action === "discard" ? unstaged.map((file) => file.path) : undefined;
+      const discarded = action === "discard" ? targets.map((file) => file.path) : undefined;
+      const shown = deferredFileQuery ? targets.map((file) => file.relative) : undefined;
       generationMutation.version++;
-      if (index) showOptimistic(applyIndexAction(index, action));
+      if (index) showOptimistic(applyIndexAction(index, action, shown && new Set(shown)));
       try {
-        if (action === "stage") await gitStageAll(cwd);
+        if (shown) {
+          if (action === "stage") await gitStageFiles(cwd, shown);
+          else if (action === "unstage") await gitUnstageFiles(cwd, shown);
+          else await gitDiscardFiles(cwd, shown);
+        } else if (action === "stage") await gitStageAll(cwd);
         else if (action === "unstage") await gitUnstageAll(cwd);
         else await gitDiscardAll(cwd);
         onMutated(discarded, "index");
@@ -1008,10 +1073,10 @@ function ChangedFiles({
         fail(
           error,
           action === "stage"
-            ? "Couldn’t stage changes"
+            ? t("Couldn’t stage changes")
             : action === "unstage"
-              ? "Couldn’t unstage changes"
-              : "Couldn’t discard changes",
+              ? t("Couldn’t unstage changes")
+              : t("Couldn’t discard changes"),
         );
       } finally {
         setBusy(null);
@@ -1039,7 +1104,10 @@ function ChangedFiles({
           if (action === "stage") await gitStageFile(cwd, relative);
           else await gitUnstageFile(cwd, relative);
         } catch (error) {
-          fail(error, action === "stage" ? "Couldn’t stage changes" : "Couldn’t unstage changes");
+          fail(
+            error,
+            action === "stage" ? t("Couldn’t stage changes") : t("Couldn’t unstage changes"),
+          );
         }
       });
       queue.tail = task;
@@ -1063,7 +1131,7 @@ function ChangedFiles({
   const confirmAmend = async (amending: boolean) => {
     return withGitPanelRuntime(cwd, async () => {
       if (!amending || !index?.headPushed) return true;
-      return confirmNative(...amendPushedCopy());
+      return confirmGitAction(amendPushedCopy());
     });
   };
 
@@ -1098,21 +1166,30 @@ function ChangedFiles({
       let committed = false;
       let pushed = false;
       try {
-        if (stageAll) await gitStageAll(cwd);
+        // A filter keeps the hidden files out of the commit.
+        const shown = deferredFileQuery ? visibleUnstaged.map((file) => file.relative) : undefined;
+        if (stageAll) {
+          if (!shown) await gitStageAll(cwd);
+          else if (shown.length > 0) await gitStageFiles(cwd, shown);
+        }
         // Amending with an empty box keeps the message the commit already has.
         const text = message.trim() || (await gitHeadMessage(cwd));
         await gitCommit(cwd, text, amending, options?.signoff ?? false);
         committed = true;
-        // The commit is made: its files leave the list now, not after the push
-        // and the reload that follow.
-        if (index) showOptimistic(applyCommit(index, stageAll));
+        // Update the list and its tab totals together once the commit succeeds.
+        const committedIndex =
+          index &&
+          (shown && stageAll
+            ? applyCommit(applyIndexAction(index, "stage", new Set(shown)), false, amending)
+            : applyCommit(index, stageAll, amending));
+        if (committedIndex) showOptimistic(committedIndex, { publishStats: true });
         clearDraft();
         if (push || createPr) {
           setPending("Pushing…");
           await gitPush(cwd);
           pushed = true;
           recordPrActivity();
-          if (index) showOptimistic(applySync(applyCommit(index, stageAll)));
+          if (committedIndex) showOptimistic(applySync(committedIndex));
         }
         onMutated();
         if (createPr) {
@@ -1130,7 +1207,7 @@ function ChangedFiles({
             retry: () =>
               retryPublication(!pushed && (push || createPr), createPr, index?.branch ?? null),
           });
-        else fail(error, "Couldn’t commit changes");
+        else fail(error, t("Couldn’t commit changes"));
         onMutated();
       } finally {
         setBusy(null);
@@ -1155,7 +1232,9 @@ function ChangedFiles({
       setGitFeedback(cwd, null);
       setBusy("sync");
       try {
-        await gitSync(cwd);
+        if (canPublish || index.behind === 0) await gitPush(cwd);
+        else if (pushesCommits) await gitSync(cwd);
+        else await gitPull(cwd);
         if (pushesCommits) recordPrActivity();
         // The counts are settled now: the action must not offer the same push
         // again while the reload reads.
@@ -1163,7 +1242,7 @@ function ChangedFiles({
         onMutated();
         reloadPr();
       } catch (error) {
-        fail(error, canPublish ? "Couldn’t publish branch" : "Couldn’t synchronize changes");
+        fail(error, canPublish ? t("Couldn’t publish branch") : t("Couldn’t synchronize changes"));
         onMutated();
       } finally {
         setBusy(null);
@@ -1171,12 +1250,23 @@ function ChangedFiles({
     });
   };
 
-  async function openCreatedPr() {
+  // `commitSummary` is the owner's explicit choice after generation failed; it is never a silent fallback.
+  async function openCreatedPr(commitSummary = false) {
     return withGitPanelRuntime(cwd, async () => {
-      const content = generationChoice
-        ? await generatePrContent(cwd, textHarness, generationChoice)
-        : await generatePrContent(cwd, textHarness);
-      if (!content) throw new Error("Could not prepare pull request content");
+      let content;
+      if (commitSummary) content = await prContentFromCommits(cwd);
+      else {
+        const controller = new AbortController();
+        prGeneration.current = controller;
+        content = await generatePrContent(
+          cwd,
+          textHarness,
+          generationChoice,
+          undefined,
+          controller.signal,
+        );
+      }
+      if (!content) throw new PrGenerationError(new Error("No text provider returned content"));
       const url = await gitPrCreate(cwd, content.title, content.body, content.base, content.head);
       const number = Number(/\/pull\/(\d+)(?:[/?#]|$)/.exec(url)?.[1]);
       if (Number.isInteger(number) && number > 0) recordPrActivity(number);
@@ -1196,21 +1286,38 @@ function ChangedFiles({
           get title() {
             return t("Pull request created; couldn’t open the link");
           },
-          detail: String(error),
+          detail: presentRemoteError(error, { explicit: true }),
           url: url.trim(),
         });
       }
     });
   }
 
-  async function retryPublication(push: boolean, createPr: boolean, branch: string | null) {
+  /** A failed description is explained without provider text and offers the commit summary as an explicit choice. */
+  function publicationFailure(error: unknown, again: (commitSummary: boolean) => Promise<void>) {
+    if (!(error instanceof PrGenerationError))
+      return { detail: presentRemoteError(error, { explicit: true }) };
+    return {
+      detail: t(
+        "The pull request description couldn’t be generated. Retry, choose another model, or create it from the commit summary.",
+      ),
+      alternate: { label: t("Create with commit summary"), run: () => again(true) },
+    };
+  }
+
+  async function retryPublication(
+    push: boolean,
+    createPr: boolean,
+    branch: string | null,
+    commitSummary = false,
+  ) {
     return withGitPanelRuntime(cwd, async () => {
       let remainingPush = push;
       try {
         await withGitOperation(cwd, push ? "Pushing…" : "Creating pull request…", async () => {
           const current = await gitDiffIndex(cwd);
           if (current.branch !== branch)
-            throw new Error("The branch changed. Review the current branch before publishing.");
+            throw new Error(t("The branch changed. Review the current branch before publishing."));
           if (remainingPush) {
             await gitPush(cwd);
             remainingPush = false;
@@ -1225,14 +1332,16 @@ function ChangedFiles({
                 },
                 url: existing.url,
               });
-            else await openCreatedPr();
+            else await openCreatedPr(commitSummary);
           }
         });
       } catch (error) {
         setGitFeedback(cwd, {
           kind: "warning",
           title: remainingPush ? t("Commit created; push failed") : t("Publication incomplete"),
-          detail: presentRemoteError(error, { explicit: true }),
+          ...publicationFailure(error, (summary) =>
+            retryPublication(remainingPush, createPr, branch, summary),
+          ),
           retry: () => retryPublication(remainingPush, createPr, branch),
         });
       } finally {
@@ -1266,7 +1375,14 @@ function ChangedFiles({
           title: pushed
             ? t("Branch pushed; pull request creation failed")
             : t("Couldn’t create pull request"),
-          detail: presentRemoteError(error, { explicit: true }),
+          ...publicationFailure(error, (summary) =>
+            retryPublication(
+              !pushed && (index?.ahead ?? 0) > 0,
+              true,
+              index?.branch ?? null,
+              summary,
+            ),
+          ),
           retry: () =>
             retryPublication(!pushed && (index?.ahead ?? 0) > 0, true, index?.branch ?? null),
         });
@@ -1281,118 +1397,112 @@ function ChangedFiles({
   return (
     <aside className={`flex min-h-0 min-w-0 flex-col ${fill ? "flex-1" : "shrink-0"}`}>
       <div {...surfaceAttributes({ frame: fill ? "pane" : undefined, edge: "bottom" }, "shrink-0")}>
-        <div className="flex flex-col gap-1.5 p-2">
-          <div className="relative min-w-0">
-            <TextareaField
-              label={t("Commit message")}
-              hideLabel
-              fieldClassName={styles.messageField}
-              textSize="caption"
-              ref={messageRef}
-              fieldSize="sm"
-              minRows={1}
-              maxRows={8}
-              autosize
-              value={message}
-              placeholder={
-                amend
-                  ? t("Amend message ({p0}↩ to amend)", { p0: MOD })
-                  : t("Message ({p0}↩ to commit)", { p0: MOD })
-              }
-              disabled={!canEditMessage}
-              onChange={(event) => setMessage(event.target.value)}
-              onKeyDown={(event) => {
-                if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && canCommit) {
-                  event.preventDefault();
-                  void commit(false);
+        {/* No repository data yet or a failed first read: there is nothing to commit, so no form. */}
+        {index ? (
+          <div className="flex flex-col gap-1.5 p-2">
+            <div className="relative min-w-0">
+              <TextareaField
+                label={t("Commit message")}
+                hideLabel
+                fieldClassName={styles.messageField}
+                textSize="caption"
+                ref={messageRef}
+                fieldSize="sm"
+                minRows={1}
+                maxRows={8}
+                autosize
+                value={message}
+                placeholder={
+                  amend
+                    ? t("Amend message ({p0}↩ to amend)", { p0: MOD })
+                    : t("Message ({p0}↩ to commit)", { p0: MOD })
                 }
-              }}
-              className={styles.message}
-              endAdornment={
-                <>
-                  {generating ? <WorkingIndicator label={t("Generating message…")} /> : null}
-                  <InlineAction
-                    reveal="always"
-                    label={
-                      generating
-                        ? t("Stop commit message generation")
-                        : t("Generate commit message")
-                    }
-                    disabled={!generating && !canGenerate}
-                    onClick={() => (generating ? cancelGenerate() : void generate())}
-                  >
-                    {generating ? (
-                      <X className="icon-sm" strokeWidth={1.75} />
-                    ) : (
-                      <WandSparkles className="icon-sm" strokeWidth={1.75} />
-                    )}
-                  </InlineAction>
-                </>
-              }
-            />
+                disabled={!canEditMessage}
+                onChange={(event) => setMessage(event.target.value)}
+                onKeyDown={(event) => {
+                  if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && canCommit) {
+                    event.preventDefault();
+                    void commit(false);
+                  }
+                }}
+                className={styles.message}
+                endAdornment={
+                  <GitCommitGenerationActions
+                    key={cwd}
+                    cwd={cwd}
+                    preferred={textHarness}
+                    choice={commitGenerationChoice}
+                    onChange={setCommitGenerationChoice}
+                    canGenerate={canGenerate}
+                    generating={generating}
+                    generate={() => void generate()}
+                    cancel={cancelGenerate}
+                  />
+                }
+              />
+            </div>
+            <div className="min-w-0">
+              <GitCommitActions
+                index={index ?? null}
+                pr={pr}
+                busy={busy}
+                pending={pending}
+                hasRemote={hasRemote}
+                hasOpenPr={hasOpenPr}
+                onDefault={onDefault}
+                amend={amend}
+                commitIntent={commitIntent}
+                canCommit={canCommit}
+                blockedReason={blockedMessage}
+                canCommitPush={canCommitPush}
+                canCommitPushPr={canCommitPushPr}
+                canSync={canSync}
+                canPublish={canPublish}
+                canCreatePr={canCreatePr}
+                canViewPr={canViewPr}
+                canOpenMenu={canOpenMenu}
+                menuOpen={menuOpen}
+                onMenuOpenChange={setMenuOpen}
+                onCommit={(push, createPr) => void commit(push, createPr)}
+                onToggleAmend={() => void toggleAmend()}
+                onSync={() => void sync()}
+                onCreatePr={() => void createPr()}
+                onViewPr={() => {
+                  if (pr?.url)
+                    openUrlSafely(pr.url, (error) =>
+                      setGitFeedback(cwd, {
+                        kind: "error",
+                        get title() {
+                          return t("Could not open the link");
+                        },
+                        detail: presentRemoteError(error, { explicit: true }),
+                      }),
+                    );
+                }}
+              />
+            </div>
+            {generationResult && (
+              <GitCommitGenerationNotice
+                result={generationResult}
+                onUse={useGeneratedMessage}
+                onDismiss={dismissGenerationResult}
+                disabled={!canEditMessage}
+              />
+            )}
           </div>
-          <div className="min-w-0">
-            <GitCommitActions
-              index={index ?? null}
-              pr={pr}
-              busy={busy}
-              pending={pending}
-              hasRemote={hasRemote}
-              hasOpenPr={hasOpenPr}
-              onDefault={onDefault}
-              amend={amend}
-              commitIntent={commitIntent}
-              canCommit={canCommit}
-              blockedReason={blockedMessage}
-              canCommitPush={canCommitPush}
-              canCommitPushPr={canCommitPushPr}
-              canSync={canSync}
-              canPublish={canPublish}
-              canCreatePr={canCreatePr}
-              canViewPr={canViewPr}
-              canOpenMenu={canOpenMenu}
-              menuOpen={menuOpen}
-              onMenuOpenChange={setMenuOpen}
-              onCommit={(push, createPr) => void commit(push, createPr)}
-              onToggleAmend={() => void toggleAmend()}
-              onSync={() => void sync()}
-              onCreatePr={() => void createPr()}
-              onViewPr={() => {
-                if (pr?.url)
-                  openUrlSafely(pr.url, (error) =>
-                    setGitFeedback(cwd, {
-                      kind: "error",
-                      get title() {
-                        return t("Could not open the link");
-                      },
-                      detail: String(error),
-                    }),
-                  );
-              }}
-            />
-          </div>
-        </div>
+        ) : null}
         {notices}
       </div>
-      {prLoading ? (
-        <Text role="status" as="p" size="micro" tone="secondary" className="px-3 py-1">
-          {t("Checking pull request…")}
-        </Text>
-      ) : prError ? (
+      {prLoading ? null : prError ? (
         <GitFeedback title={t("Couldn’t check pull request")} detail={prError} onRetry={reloadPr} />
       ) : null}
-      {loadError && !failure ? (
+      {loadError && !failure && !(!index && isMissingPathError(loadError)) ? (
         <GitFeedback
           title={t("Couldn’t load Git changes")}
           detail={loadError}
           stale={!!index}
           onRetry={() => onMutated()}
         />
-      ) : null}
-      {loading && index ? (
-        <Text role="status" as="p" size="micro" tone="secondary" className="px-3 py-1">
-          {t("Refreshing changes…")}
-        </Text>
       ) : null}
       {failure ? (
         <RemoteLoadError cwd={cwd} failure={failure} stale={!!index} onRetry={() => onMutated()} />
@@ -1403,13 +1513,13 @@ function ChangedFiles({
           side="bottom"
           align="end"
           width={280}
-          role="dialog"
+          kind="dialog"
           aria-label={t("Filter changed files")}
           onDismiss={(reason) => {
             if (reason === "escape") filterAnchor.focus({ preventScroll: true });
             setFilterAnchor(null);
           }}
-          className="p-3"
+          variant="panel"
         >
           <SearchInput
             type="search"
@@ -1427,6 +1537,7 @@ function ChangedFiles({
             variant="ghost"
             motion="none"
             disabled={!fileQuery}
+            disabledReason={fileQuery ? undefined : t("No file filter is applied.")}
             onClick={() => setFileQuery("")}
             className="mt-2"
           >
@@ -1457,7 +1568,9 @@ function ChangedFiles({
             <EmptyState
               context={fill ? "page" : "panel"}
               className={fill ? "h-full" : undefined}
-              icon={diverged ? <GitBranch /> : <CheckCircle />}
+              illustration={diverged ? false : "success"}
+              icon={diverged ? <GitBranch /> : undefined}
+              title={diverged ? undefined : t("All clean")}
               description={
                 diverged
                   ? t("Diverged from {p0}", { p0: index.upstream ?? "upstream" })
@@ -1469,7 +1582,7 @@ function ChangedFiles({
           <>
             {conflicts.length > 0 ? (
               <FileSection
-                title={t("Merge Conflicts")}
+                title={t("Merge conflicts")}
                 count={conflicts.length}
                 open={conflictsExpanded}
                 onToggle={() => {
@@ -1536,7 +1649,9 @@ function ChangedFiles({
                   },
                   {
                     get title() {
-                      return t("Unstage All Changes");
+                      return deferredFileQuery
+                        ? t("Unstage {p0} shown", { p0: visibleStaged.length })
+                        : t("Unstage All Changes");
                     },
                     icon: <Minus className="icon-sm" strokeWidth={1.75} />,
                     onClick: () => void runAll("unstage"),
@@ -1545,7 +1660,6 @@ function ChangedFiles({
               >
                 <ChangeList
                   files={visibleStaged}
-                  collisionNames={collisionNames}
                   onOpenInEditor={onOpenInEditor}
                   view={view}
                   kind="staged"
@@ -1586,7 +1700,9 @@ function ChangedFiles({
                   },
                   {
                     get title() {
-                      return t("Discard All Changes");
+                      return deferredFileQuery
+                        ? t("Discard {p0} shown", { p0: visibleUnstaged.length })
+                        : t("Discard All Changes");
                     },
                     icon: <Undo2 className="icon-sm" strokeWidth={1.75} />,
                     overflow: true,
@@ -1595,7 +1711,9 @@ function ChangedFiles({
                   },
                   {
                     get title() {
-                      return t("Stage All Changes");
+                      return deferredFileQuery
+                        ? t("Stage {p0} shown", { p0: visibleUnstaged.length })
+                        : t("Stage all changes");
                     },
                     icon: <Plus className="icon-sm" strokeWidth={1.75} />,
                     onClick: () => void runAll("stage"),
@@ -1604,7 +1722,6 @@ function ChangedFiles({
               >
                 <ChangeList
                   files={visibleUnstaged}
-                  collisionNames={collisionNames}
                   onOpenInEditor={onOpenInEditor}
                   view={view}
                   kind="unstaged"
@@ -1620,20 +1737,11 @@ function ChangedFiles({
               </FileSection>
             ) : null}
             {pointers.length > 0 ? (
-              <Text as="p" size="caption" tone="secondary" className="px-3 py-1">
+              <InlineMessage tone="info" inset="row">
                 {t("Submodule pointer changes: {p0}, shown on their submodule rows.", {
                   p0: pointers.length,
                 })}
-              </Text>
-            ) : null}
-            {deferredFileQuery ? (
-              <Text role="status" as="p" size="caption" tone="secondary" className="px-3 py-1">
-                {visibleStaged.length + visibleUnstaged.length} / {staged.length + unstaged.length}{" "}
-                {t("staged and unstaged entries")}
-                <span className="block">
-                  {t("All actions affect the entire repository, including hidden entries.")}
-                </span>
-              </Text>
+              </InlineMessage>
             ) : null}
           </>
         )}

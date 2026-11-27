@@ -273,6 +273,108 @@ describe("desktop window ownership", () => {
     }
   });
 
+  describe("after the Host machine sleeps", () => {
+    const WAKE_GAP_MS = 30 * 60_000;
+    const directoryProjection = {
+      version: 1 as const,
+      groups: [],
+      excludedPaths: [],
+      excludedGroupIds: [],
+      projects: [{ cwd: "/work", name: "Work" }],
+    };
+    const watched = () => {
+      const clock = { now: 1_000_000 };
+      // The watched clock samples on its own interval, so keep real timers out of the test.
+      vi.useFakeTimers();
+      const live = new DesktopLive(() => clock.now, true);
+      return { clock, live };
+    };
+
+    it("keeps every window's sessions and directory when another window beats first after wake", () => {
+      try {
+        const { clock, live } = watched();
+        const idle = vi.fn();
+        live.onIdle = idle;
+        live.beat({ clientId: "a", sessions: [{ id: "a1", busy: true }] });
+        live.beat({
+          clientId: "b",
+          sessions: [{ id: "b1", busy: true }],
+          projectDirectory: directoryProjection,
+        });
+        clock.now += WAKE_GAP_MS;
+        live.beat({ clientId: "a", sessions: [{ id: "a1", busy: true }] });
+        expect(idle).not.toHaveBeenCalled();
+        expect(live.busyClient("b1")).toBe("b");
+        expect(live.running("b1", false)).toBe(true);
+        expect(live.projectDirectory([], "env").privacyReady).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("still evicts a window that stays silent for a full window after the wake", () => {
+      try {
+        const { clock, live } = watched();
+        const idle = vi.fn();
+        live.onIdle = idle;
+        live.beat({ clientId: "a", sessions: [{ id: "a1", busy: true }] });
+        live.beat({ clientId: "b", sessions: [{ id: "b1", busy: true }] });
+        clock.now += WAKE_GAP_MS;
+        live.beat({ clientId: "a", sessions: [{ id: "a1", busy: true }] });
+        // Window "a" keeps beating through the ticker; "b" never answers again.
+        for (let elapsed = 0; elapsed < DESKTOP_BEAT_STALE_MS + 5_000; elapsed += 5_000) {
+          clock.now += 5_000;
+          vi.advanceTimersByTime(5_000);
+          live.beat({ clientId: "a", sessions: [{ id: "a1", busy: true }] });
+        }
+        expect(idle).toHaveBeenCalledWith("b1", "b", "gone");
+        expect(live.busyClient("b1")).toBeUndefined();
+        expect(live.busyClient("a1")).toBe("a");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps a busy window running for a reader that runs before any window beats after wake", () => {
+      try {
+        const { clock, live } = watched();
+        live.beat({ clientId: "a", sessions: [{ id: "s", busy: true }] });
+        clock.now += WAKE_GAP_MS;
+        expect(live.alive()).toBe(true);
+        expect(live.busyClient("s")).toBe("a");
+        expect(live.running("s", false)).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps a window's directory snapshot, and drops it once the window is silent past the window", () => {
+      try {
+        const { clock, live } = watched();
+        live.beat({ clientId: "a", sessions: [], projectDirectory: directoryProjection });
+        clock.now += WAKE_GAP_MS;
+        expect(live.projectDirectory([], "env").privacyReady).toBe(true);
+        for (let elapsed = 0; elapsed < DESKTOP_BEAT_STALE_MS + 5_000; elapsed += 5_000) {
+          clock.now += 5_000;
+          vi.advanceTimersByTime(5_000);
+        }
+        expect(live.projectDirectory([], "env").privacyReady).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not forgive silence on a clock that is not watched", () => {
+      let now = 0;
+      const live = new DesktopLive(() => now);
+      live.beat({ clientId: "a", sessions: [{ id: "a1", busy: true }] });
+      live.beat({ clientId: "b", sessions: [{ id: "b1", busy: true }] });
+      now += WAKE_GAP_MS;
+      live.beat({ clientId: "a", sessions: [{ id: "a1", busy: true }] });
+      expect(live.busyClient("b1")).toBeUndefined();
+    });
+  });
+
   it("reclaims old undeliverable commands while preserving a brief same-session reconnect", () => {
     let now = 0;
     const live = new DesktopLive(() => now);
@@ -449,6 +551,32 @@ describe("desktop window ownership", () => {
 });
 
 describe("privacy-filtered project directory", () => {
+  it("lists one entry per folder when legacy rows spell its path differently", () => {
+    const live = new DesktopLive();
+    live.beat({
+      clientId: "a",
+      sessions: [],
+      projectDirectoryRevision: "1",
+      projectDirectory: {
+        version: 1,
+        groups: [],
+        excludedPaths: [],
+        excludedGroupIds: [],
+        projects: [{ cwd: "G:/Projects/app", name: "App" }],
+      },
+    });
+    const row = (id: string, cwd: string) => ({ id, cwd, name: "App" });
+    const listed = (rows: ReturnType<typeof row>[]) =>
+      live.projectDirectory(rows, "host").projects.map((project) => project.id);
+    const backslash = row("b-id", "G:\\Projects\\app");
+    const slash = row("a-id", "G:/Projects/app");
+    expect(listed([backslash, slash])).toEqual(["a-id"]);
+    expect(listed([slash, backslash])).toEqual(["a-id"]);
+    // The row spelled like the desktop wins over a lower id.
+    expect(listed([row("a-id", "G:\\Projects\\app"), row("b-id", "G:/Projects/app")])).toEqual([
+      "b-id",
+    ]);
+  });
   it("renews only an acknowledged client's exact privacy revision and requires content after reset", () => {
     let now = 0;
     const live = new DesktopLive(() => now);
@@ -611,7 +739,7 @@ describe("privacy-filtered project directory", () => {
     excludedPaths: ["G:/Private"],
     excludedGroupIds: ["private"],
   });
-  it("preserves all host IDs and adds desktop-only folders without registering them", () => {
+  it("lists one host ID per folder and adds desktop-only folders without registering them", () => {
     const live = new DesktopLive(() => 0);
     const registered: HostProject[] = Array.from({ length: 80 }, (_, index) => ({
       id: `p${index}`,
@@ -635,11 +763,12 @@ describe("privacy-filtered project directory", () => {
     );
     expect(result.privacyReady).toBe(true);
     expect(result.projects.find((project) => project.id === "p0")?.name).toBe("Shared");
+    expect(result.projects.some((project) => project.id === "p1")).toBe(false);
     expect(result.projects.find((project) => project.id === "p2")?.name).toBe("P2");
-    expect(result.projects.filter((project) => project.registered)).toHaveLength(80);
+    expect(result.projects.filter((project) => project.registered)).toHaveLength(79);
     expect(
       result.projects
-        .filter((project) => project.id === "p0" || project.id === "p1")
+        .filter((project) => project.id === "p0")
         .every((project) => project.groupId === "work"),
     ).toBe(true);
     expect(result.projects.find((project) => project.cwd === "G:/New")).toMatchObject({

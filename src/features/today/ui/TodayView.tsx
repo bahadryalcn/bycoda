@@ -14,6 +14,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { BarChart, DonutChart, type BarChartDatum } from "../../../shared/ui/Charts";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -25,6 +26,7 @@ import { useTodayData } from "../hooks/useTodayData";
 import type { TodayData, TodayPeriod, TodayTotals } from "../model/todayAggregate";
 import { SummaryPanel } from "./TodaySummaryPanel";
 import styles from "./today.module.css";
+import { Motion } from "../../../shared/ui/Motion";
 
 const cost = (totals: Pick<TodayTotals, "cost" | "unpricedTokens">) =>
   `${totals.unpricedTokens > 0 ? "≥ " : ""}${formatUsageCost(totals.cost)}`;
@@ -34,27 +36,51 @@ const run = (ms: number) => (ms < 60_000 ? formatDuration(ms) : formatActiveMinu
 const range = (from: Date, to: Date) =>
   `${formatDate(from, { month: "short", day: "numeric" })} - ${formatDate(to, { month: "short", day: "numeric", year: "numeric" })}`;
 
-function Stat({ label, value, hint }: { label: string; value: ReactNode; hint?: ReactNode }) {
+/** Clock time of the last complete read; the date is added once it is not the day the figures are for. */
+const updatedLabel = (at: number, figuresAt: number) =>
+  formatDate(
+    at,
+    new Date(at).toDateString() === new Date(figuresAt).toDateString()
+      ? { hour: "numeric", minute: "2-digit" }
+      : { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" },
+  );
+
+function Stat({
+  label,
+  value,
+  hint,
+  info,
+}: {
+  label: string;
+  value: ReactNode;
+  /** Status line under the value. */
+  hint?: ReactNode;
+  /** Detail behind an info icon beside the label. */
+  info?: ReactNode;
+}) {
   return (
-    <Surface variant="page" padding="md" className={styles.stat}>
-      <Text size="caption" tone="secondary" leading="inherit">
-        {label}
-      </Text>
-      <Text
-        as="strong"
-        size="title"
-        tone="inherit"
-        weight="medium"
-        leading="tight"
-        className={styles.statValue}
-      >
-        {value}
-      </Text>
-      {hint ? (
-        <Text size="caption" tone="muted" leading="inherit">
-          {hint}
+    <Surface variant="page" padding="md">
+      <div className={styles.stat}>
+        <Text size="caption" tone="secondary" leading="inherit" className="flex items-center gap-1">
+          {label}
+          {info ? <InfoPopover label={label}>{info}</InfoPopover> : null}
         </Text>
-      ) : null}
+        <Text
+          as="strong"
+          size="title"
+          tone="inherit"
+          weight="medium"
+          leading="tight"
+          className="tabular-nums"
+        >
+          {value}
+        </Text>
+        {hint ? (
+          <Text size="caption" tone="muted" leading="inherit">
+            {hint}
+          </Text>
+        ) : null}
+      </div>
     </Surface>
   );
 }
@@ -68,24 +94,29 @@ export function TodayView() {
   const locale = useLocale();
   const titleId = useId();
   const [period, setPeriod] = useState<TodayPeriod>("today");
-  const { data, pricing, loading, refreshing, failed, reload } = useTodayData(period);
+  const { data, loadedPeriod, pricing, loading, refreshing, failed, updatedAt, reload } =
+    useTodayData(period);
   const overview = useActivityOverview();
   const { summary: activity, failed: activityFailed } = overview;
-  const activeMinutes = activity ? (period === "today" ? activity.today : activity.week) : null;
+  // Every figure beside the loaded data follows the period it was loaded for, not the selected one.
+  const activeMinutes = activity
+    ? loadedPeriod === "today"
+      ? activity.today
+      : activity.week
+    : null;
   const activeStat = (
     <Stat
       label={t("Active time")}
       value={activeMinutes == null ? "—" : formatActiveMinutes(activeMinutes)}
-      hint={
+      info={
         activity
           ? t("This month {p0} · This year {p1}", {
               p0: formatActiveMinutes(activity.month),
               p1: formatActiveMinutes(activity.year),
             })
-          : activityFailed
-            ? t("Active time is unavailable right now.")
-            : null
+          : null
       }
+      hint={!activity && activityFailed ? t("Active time is unavailable right now.") : null}
     />
   );
   const empty =
@@ -95,6 +126,16 @@ export function TodayView() {
       <div className={styles.header}>
         <SectionLabel labelId={titleId}>{t("Activity")}</SectionLabel>
         <div className={styles.controls}>
+          {updatedAt && data ? (
+            <Text
+              size="caption"
+              tone="muted"
+              leading="inherit"
+              className={`${styles.updated} tabular-nums`}
+            >
+              {t("Updated")} {updatedLabel(updatedAt, data.window.end)}
+            </Text>
+          ) : null}
           <SegmentedControl
             label={t("Period")}
             value={period}
@@ -117,39 +158,63 @@ export function TodayView() {
       </div>
       {failed ? (
         <Alert tone="warning">
-          {t("Some usage could not be read. Figures may be incomplete.")}
+          {t(
+            "Some usage or model prices could not be read. Figures may be incomplete or use older prices.",
+          )}
         </Alert>
       ) : null}
       {!data ? (
         <LoadingText>{t("Loading activity")}</LoadingText>
       ) : empty ? (
-        <div className={styles.stats}>{activeStat}</div>
-      ) : (
         <>
-          <div className={styles.stats}>
-            <Stat label={t("Sessions")} value={data.totals.sessions} />
-            <Stat label={t("Agent run time")} value={run(data.totals.runMs)} />
-            {activeStat}
-            <Stat
-              label={t("Cost")}
-              value={cost(data.totals)}
-              hint={t("API-equivalent, not billed")}
+          <div className={styles.stats}>{activeStat}</div>
+          {/* A failed read is explained by the alert above; it must not read as "no activity". */}
+          {failed ? null : (
+            <EmptyState
+              context="panel"
+              kind="empty"
+              description={
+                loadedPeriod === "today"
+                  ? t("No agent activity recorded today.")
+                  : t("No agent activity recorded this week.")
+              }
             />
-          </div>
-          <ActivitySources overview={overview} />
-          <TodayCharts data={data} activity={activity ? activityBars(activity) : null} />
-          <ProjectTable data={data} />
-          <div className={styles.summary}>
-            <SummaryPanel
-              key={`${period}:${locale}`}
-              data={data}
-              pricing={pricing}
-              activeMinutes={activeMinutes}
-              language={locale}
-            />
-          </div>
+          )}
         </>
+      ) : (
+        <Motion
+          transition="opacity"
+          duration="standard"
+          className={loadedPeriod !== period ? "opacity-55" : undefined}
+          aria-busy={refreshing}
+        >
+          <div className={styles.body}>
+            <div className={styles.stats}>
+              <Stat label={t("Sessions")} value={data.totals.sessions} />
+              <Stat label={t("Agent run time")} value={run(data.totals.runMs)} />
+              {activeStat}
+              <Stat
+                label={t("Cost")}
+                value={cost(data.totals)}
+                info={t("API-equivalent, not billed")}
+              />
+            </div>
+            <ActivitySources overview={overview} />
+            <TodayCharts data={data} activity={activity ? activityBars(activity) : null} />
+            <ProjectTable data={data} />
+          </div>
+        </Motion>
       )}
+      {data ? (
+        <div className={styles.summary}>
+          <SummaryPanel
+            data={data}
+            pricing={pricing}
+            activeMinutes={activeMinutes}
+            language={locale}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -171,7 +236,7 @@ function TodayCharts({ data, activity }: { data: TodayData; activity: BarChartDa
       data.days.map((day) => ({
         key: day.key,
         label: formatDate(new Date(day.start), { weekday: "long", month: "short", day: "numeric" }),
-        axisLabel: formatDate(new Date(day.start), { weekday: "narrow" }),
+        axisLabel: formatDate(new Date(day.start), { weekday: "short" }),
         value: runMinutes(day.runMs),
       })),
     [data.days],
@@ -180,28 +245,32 @@ function TodayCharts({ data, activity }: { data: TodayData; activity: BarChartDa
   const bars = week ? days : activity;
   return (
     <div className={styles.charts}>
-      <Surface variant="page" padding="md" className={styles.chart}>
-        <SectionLabel>{t("Agent run time by project")}</SectionLabel>
-        {projects.length ? (
-          <DonutChart
-            data={projects}
-            label={t("Agent run time by project")}
-            formatValue={run}
-            totalLabel={t("Total")}
-            size={148}
-            maxSegments={6}
-          />
-        ) : (
-          <EmptyState size="inline" description={t("No recorded run time")} />
-        )}
+      <Surface variant="page" padding="md">
+        <div className={styles.chart}>
+          <SectionLabel>{t("Agent run time by project")}</SectionLabel>
+          {projects.length ? (
+            <DonutChart
+              data={projects}
+              label={t("Agent run time by project")}
+              formatValue={run}
+              totalLabel={t("Total")}
+              size={148}
+              maxSegments={6}
+            />
+          ) : (
+            <EmptyState size="inline" description={t("No recorded run time")} />
+          )}
+        </div>
       </Surface>
-      <Surface variant="page" padding="md" className={styles.chart}>
-        <TodayBars
-          bars={bars}
-          agentPeriod={
-            week ? range(new Date(data.window.start), new Date(data.window.end)) : undefined
-          }
-        />
+      <Surface variant="page" padding="md">
+        <div className={styles.chart}>
+          <TodayBars
+            bars={bars}
+            agentPeriod={
+              week ? range(new Date(data.window.start), new Date(data.window.end)) : undefined
+            }
+          />
+        </div>
       </Surface>
     </div>
   );
@@ -246,7 +315,7 @@ function ProjectTable({ data }: { data: TodayData }) {
           label: t("Project"),
           sortable: true,
           render: (_, row) => (
-            <Tooltip label={row.path || todayLabel(row.label)} asChild>
+            <Tooltip label={row.path || undefined} asChild>
               <span>{todayLabel(row.label)}</span>
             </Tooltip>
           ),

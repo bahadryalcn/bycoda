@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { buildTaskStop } from "../../../src/shared/model/host-contracts/task-stop";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -42,6 +43,8 @@ async function fixture(extra: AssistantPorts = {}) {
     store = new HostStore(path);
     await store.ready;
     tasks = new HostTasks(store, engine, () => clock.now);
+    // The fixture supplies child states and sessions. Let the scheduler reconcile them without launching workers.
+    tasks.assistantTaskAdmission = async () => false;
     goals = new HostGoals(store, engine, tasks, () => clock.now);
     await goals.ready;
     service = new HostAssistant(store, {
@@ -361,19 +364,18 @@ it("keeps a blocked goal recoverable and follows running children while its job 
   const noon = new Date(f.clock.now);
   noon.setHours(12, 0, 0, 0);
   f.clock.now = noon.getTime();
-  const { job, goal, task } = await f.seed();
+  const { job, task } = await f.seed();
   task.status = "blocked";
   await f.saveTask(task);
   await f.configure("jobs", { keepAwakeWhileWorking: true, keepAwakeWhileAway: false });
+  await f.goals.tick();
   await f.service.tick();
   expect((await f.job(job.id)).status).toBe("waiting");
   task.status = "queued";
-  goal.status = "running";
-  await f.saveTask(task);
-  await f.saveGoal(goal);
   await f.saveSession("worker", 100, "running");
   task.sessionId = "worker";
   await f.saveTask(task);
+  await f.goals.tick();
   await f.service.tick();
   let current = await f.job(job.id);
   expect(current.status).toBe("running");
@@ -549,6 +551,7 @@ it("simulates five unattended jobs, actual usage thresholds, restart, and indepe
     await f.saveTask(entry.task);
   }
   await f.configure("chief");
+  await f.goals.tick();
   await f.service.tick();
   expect((await f.job(jobs[2].job.id)).status).toBe("waiting");
   expect((await f.job(jobs[1].job.id)).status).toBe("waiting");
@@ -958,7 +961,11 @@ it("polls admitted task observations through the existing notification outbox in
     readPresence: async () => ({ supported: true, locked: false, idleMs: 0 }),
   });
   const { task } = await f.seed();
-  await f.saveTask({ ...task, needsInput: true, projectId: f.project.id });
+  await f.saveTask({
+    ...task,
+    stop: buildTaskStop({ code: "input_required", message: "Answer needed." }, 1),
+    projectId: f.project.id,
+  });
   await f.store.db.exec(
     "CREATE TABLE assistant_observation_source_revisions(source TEXT NOT NULL,source_id TEXT NOT NULL,version INTEGER NOT NULL,PRIMARY KEY(source,source_id))",
   );
@@ -996,6 +1003,51 @@ it("polls admitted task observations through the existing notification outbox in
   expect(notices).toHaveLength(1);
   expect(notices[0]).toMatchObject({ taskId: task.id, eligible: true });
   expect(f.engine.command).not.toHaveBeenCalled();
+});
+
+it("serves owner requests while a task observation poll waits on the desktop", async () => {
+  let release!: () => void;
+  let entered!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const poll = vi.fn<NonNullable<AssistantPorts["pollObservedTasks"]>>(async () => {
+    entered();
+    await held;
+  });
+  const f = await fixture({
+    manualProjectVisible: async () => true,
+    taskNotificationAllowed: async () => true,
+    observationTasksReady: () => true,
+    pollObservedTasks: poll,
+    readPresence: async () => ({ supported: true, locked: false, idleMs: 0 }),
+  });
+  await f.seed();
+  const policy = {
+    id: "manualPolicy",
+    version: 1,
+    createdAt: f.clock.now,
+    updatedAt: f.clock.now,
+    value: { enabled: true, version: 1, projectIds: [f.project.id] },
+  };
+  await f.store.db
+    .prepare(
+      "INSERT OR REPLACE INTO assistant_runtime(id,value,version,updated_at) VALUES(?,?,?,?)",
+    )
+    .run(policy.id, JSON.stringify(policy), 1, f.clock.now);
+  await f.configure("report", { observationTaskNeedsInput: true, quietStart: 0, quietEnd: 0 });
+  const ticking = f.service.tick();
+  const second = f.service.tick();
+  await started;
+  // A queued owner write finishes while the poll is still held.
+  await f.configure("report", { observationTaskDone: true });
+  expect(poll).toHaveBeenCalledTimes(1);
+  release();
+  await Promise.all([ticking, second]);
+  expect(poll).toHaveBeenCalledTimes(1);
 });
 
 it("honors task-observation opt-out while project visibility is pending", async () => {

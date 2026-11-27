@@ -77,6 +77,60 @@ it("only requests closed recovery after an explicit owner action", async () => {
   expect(recovery.recoverClosed).toBe(true);
 });
 
+it("offers owner rebuild when the live policy diverged from the saved one", async () => {
+  vi.resetModules();
+  mocks.invoke.mockReset();
+  mocks.scope.mockReturnValue({ stableStorageKeys: { groups: [] } });
+  const diverged = "Privacy policy has not been acknowledged by this window";
+  mocks.invoke.mockImplementation((command: string) =>
+    command === "control_privacy_projection_read"
+      ? Promise.resolve({ revision: 4 })
+      : Promise.reject(new Error(diverged)),
+  );
+  const model = await import("./roomPrivacyProjection");
+  model.activateRoomPrivacyProjection();
+  await vi.waitFor(() => expect(model.getRoomPrivacyStatus().error).toBe(diverged));
+  expect(model.canRetryRoomPrivacyProjection()).toBe(false);
+  expect(model.canRebuildRoomPrivacyProjection()).toBe(true);
+  mocks.invoke.mockResolvedValue({ revision: 5 });
+  await model.rebuildClosedRoomPrivacyProjection();
+  const recovery = mocks.invoke.mock.calls
+    .filter(([command]) => command === "control_privacy_projection_transition")
+    .at(-1)![1];
+  expect(recovery.recoverClosed).toBe(true);
+  expect(model.getRoomPrivacyStatus().error).toBeNull();
+  model.deactivateRoomPrivacyProjection();
+});
+
+it("rebases a change that failed inside its lease onto an owner rebuild", async () => {
+  vi.resetModules();
+  mocks.invoke.mockReset();
+  mocks.scope.mockReturnValue({ stableStorageKeys: { groups: [] } });
+  const diverged = "Privacy policy has not been acknowledged by this window";
+  mocks.invoke.mockResolvedValue({ revision: 4 });
+  const model = await import("./roomPrivacyProjection");
+  model.activateRoomPrivacyProjection();
+  await vi.waitFor(() => expect(model.getRoomPrivacyStatus().pending).toBe(false));
+  mocks.invoke.mockImplementation((command: string) =>
+    command === "control_privacy_projection_begin"
+      ? Promise.reject(new Error(diverged))
+      : Promise.resolve({ revision: 4 }),
+  );
+  await expect(model.withRoomPrivacyMutation(() => "folder")).rejects.toThrow(diverged);
+  const held = mocks.invoke.mock.calls
+    .filter(([command]) => command === "control_privacy_projection_begin")
+    .at(-1)![1].operationId;
+  expect(model.canRebuildRoomPrivacyProjection()).toBe(true);
+  mocks.invoke.mockResolvedValue({ revision: 5 });
+  await model.rebuildClosedRoomPrivacyProjection();
+  const recovery = mocks.invoke.mock.calls
+    .filter(([command]) => command === "control_privacy_projection_transition")
+    .at(-1)![1];
+  expect(recovery).toMatchObject({ expected: 5, recoverClosed: true, rebaseFrom: held });
+  expect(recovery.operationId).not.toBe(held);
+  model.deactivateRoomPrivacyProjection();
+});
+
 it("keeps the recovery payload unchanged after an uncertain acknowledgement", async () => {
   vi.resetModules();
   mocks.invoke.mockReset();
@@ -415,6 +469,80 @@ it("holds the overload once automatic retries are exhausted", async () => {
     expect(transitions()).toHaveLength(6);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(transitions()).toHaveLength(6);
+  } finally {
+    model.deactivateRoomPrivacyProjection();
+    vi.useRealTimers();
+  }
+});
+
+const INTERRUPTED =
+  "RPC_WS_INTERRUPTED: Native Host connection did not return a result. The operation outcome is unknown; reconcile its command receipt before retrying.";
+/** Active projection whose native commands fail as interrupted when `fail` says so. */
+async function startInterrupted(fail: (command: string, call: number) => boolean) {
+  vi.resetModules();
+  vi.useFakeTimers();
+  mocks.invoke.mockReset();
+  mocks.scope.mockReturnValue({ stableStorageKeys: { groups: [] } });
+  const calls: Record<string, number> = {};
+  mocks.invoke.mockImplementation((command: string) => {
+    calls[command] = (calls[command] ?? 0) + 1;
+    if (command === "control_privacy_projection_read") return Promise.resolve({ revision: 4 });
+    if (fail(command, calls[command])) return Promise.reject(new Error(INTERRUPTED));
+    return Promise.resolve(
+      command === "control_privacy_projection_transition" ? { revision: 5 } : undefined,
+    );
+  });
+  const model = await import("./roomPrivacyProjection");
+  model.activateRoomPrivacyProjection();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(model.getRoomPrivacyStatus()).toEqual({ pending: false, error: null });
+  return model;
+}
+
+it("keeps an applied change and reconciles an interrupted commit under the same operation", async () => {
+  // Transition 1 is the activation drain; the change's own commit (2) and its first replay (3)
+  // lose their native result, as when the native Host connection stalls or is replaced.
+  const model = await startInterrupted(
+    (command, call) => command === "control_privacy_projection_transition" && call > 1 && call < 4,
+  );
+  try {
+    const apply = vi.fn(() => "unlocked");
+    const result = model.withRoomPrivacyMutation(apply);
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(result).resolves.toBe("unlocked");
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(model.getRoomPrivacyStatus()).toEqual({ pending: true, error: null });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(model.getRoomPrivacyStatus()).toEqual({ pending: false, error: null });
+    const calls = transitions();
+    expect(calls).toHaveLength(4);
+    expect(calls[2][1]).toEqual(calls[1][1]);
+    expect(calls[3][1]).toEqual(calls[1][1]);
+  } finally {
+    model.deactivateRoomPrivacyProjection();
+    vi.useRealTimers();
+  }
+});
+
+it("refuses a change whose begin was interrupted and reconciles that begin in the background", async () => {
+  const model = await startInterrupted(
+    (command, call) => command === "control_privacy_projection_begin" && call === 1,
+  );
+  try {
+    const apply = vi.fn(() => "unlocked");
+    const result = model.withRoomPrivacyMutation(apply);
+    const refused = expect(result).rejects.toThrow(INTERRUPTED);
+    await vi.advanceTimersByTimeAsync(0);
+    await refused;
+    expect(apply).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(model.getRoomPrivacyStatus()).toEqual({ pending: false, error: null });
+    const begins = mocks.invoke.mock.calls.filter(
+      ([command]) => command === "control_privacy_projection_begin",
+    );
+    expect(begins).toHaveLength(2);
+    expect(begins[1][1]).toEqual({ operationId: begins[0][1].operationId });
+    await expect(model.withRoomPrivacyMutation(() => "next")).resolves.toBe("next");
   } finally {
     model.deactivateRoomPrivacyProjection();
     vi.useRealTimers();

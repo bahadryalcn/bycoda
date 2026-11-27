@@ -7,6 +7,9 @@ import {
   sealDesktopReview,
   type DesktopReviewScope,
 } from "../desktop/reviewed-desktop-scope";
+import { deviceProofThumbprint, parseDeviceProofJwk } from "../../src/integrations/device-proof";
+import { isTunnelIngress } from "../security/ingress";
+import { requireDeviceProof } from "../security/device-proof";
 import { readHostAccess } from "../security/access/access-center";
 import { inlineSessionSync } from "../sessions/inlineSessionSync";
 import { previewRewindHistory } from "../sessions/transcriptPage";
@@ -16,6 +19,11 @@ import type { OwnerRpcRequest } from "./owner-rpc-context";
 import { WATCH_STAMP_MS } from "./support";
 import { saveDisabledModels } from "../providers/disabled-models";
 import { saveBykitEnabled } from "../bykit/bykit-hint";
+import { readAgentDevicesEnabled, saveAgentDevicesEnabled } from "../devices/device-agent-access";
+import {
+  readStallProfilesEnabled,
+  saveStallProfilesEnabled,
+} from "../diagnostics/stall-profile-setting";
 import {
   readProviderAccountStyles,
   saveProviderAccountStyles,
@@ -28,8 +36,9 @@ export async function handleDevicesRpc(
     | "mobilePairing"
     | "engine"
     | "mobileLan"
-    | "mobileAccess"
+    | "mobileTailnet"
     | "tunnels"
+    | "tunnelIngress"
     | "workspace"
     | "diagnostics"
     | "sharedBrowser"
@@ -41,7 +50,6 @@ export async function handleDevicesRpc(
     | "projectChangeSnapshot"
     | "taskChangeEtag"
     | "gitWatches"
-    | "desktopRecheckMs"
     | "desktopWatch"
     | "desktopSigningSecret"
     | "scopedDesktopCall"
@@ -64,6 +72,7 @@ export async function handleDevicesRpc(
     case "devices.boot":
     case "devices.capture":
     case "devices.stream":
+    case "devices.touch":
     case "devices.control.status":
     case "devices.control.claim":
     case "devices.control.release":
@@ -83,6 +92,8 @@ export async function handleDevicesRpc(
       request.result = {
         ...(await dependencies.tasks.limits.state()),
         providerAccountStyles: await readProviderAccountStyles(dependencies.engine.store),
+        stallProfiles: await readStallProfilesEnabled(dependencies.engine.store),
+        agentDevices: await readAgentDevicesEnabled(dependencies.engine.store),
       };
       break;
     case "host.settings.save":
@@ -100,11 +111,17 @@ export async function handleDevicesRpc(
         dependencies.invalidateModelCatalog();
       if (request.params.bykitInstructions !== undefined)
         await saveBykitEnabled(dependencies.engine.store, request.params.bykitInstructions);
+      if (request.params.stallProfiles !== undefined)
+        await saveStallProfilesEnabled(dependencies.engine.store, request.params.stallProfiles);
+      if (request.params.agentDevices !== undefined)
+        await saveAgentDevicesEnabled(dependencies.engine.store, request.params.agentDevices);
       if (request.params.settings !== undefined)
         await dependencies.tasks.limits.save(request.params.settings);
       request.result = {
         ...(await dependencies.tasks.limits.state()),
         providerAccountStyles: await readProviderAccountStyles(dependencies.engine.store),
+        stallProfiles: await readStallProfilesEnabled(dependencies.engine.store),
+        agentDevices: await readAgentDevicesEnabled(dependencies.engine.store),
       };
       void dependencies.tasks
         .tick()
@@ -127,11 +144,47 @@ export async function handleDevicesRpc(
       break;
     case "host.access.read":
       request.result = await readHostAccess(dependencies.engine.store.environmentId, {
-        devices: async () => await dependencies.engine.store.pairedDevices(request.token),
+        devices: async () =>
+          await (request.params.includeDevicePermissions === true
+            ? dependencies.engine.store.pairedDeviceDetails(request.token)
+            : dependencies.engine.store.pairedDevices(request.token)),
         lan: async () => await dependencies.mobileLan.status(),
-        privateNetwork: async () => await dependencies.mobileAccess.status(),
+        privateNetwork: async () => await dependencies.mobileTailnet.status(),
         tunnels: async () => await dependencies.tunnels.status(),
       });
+      break;
+    case "devices.paired":
+      if (
+        !request.input.params ||
+        typeof request.input.params !== "object" ||
+        Array.isArray(request.input.params) ||
+        Object.keys(request.params).length !== 0
+      )
+        throw new Error("Unexpected devices.paired parameters");
+      request.result = await dependencies.engine.store.pairedDeviceDetails(request.token);
+      break;
+    case "devices.applyRecovery":
+      await dependencies.engine.store.applyDeviceRecovery(
+        HostDeviceAccessRequest.parse(request.input.params),
+        request.token,
+      );
+      request.result = { applied: true };
+      break;
+    case "devices.setManagement":
+      if (
+        Object.keys(request.params).some((key) => key !== "id" && key !== "enabled") ||
+        typeof request.params.id !== "string" ||
+        !/^[a-zA-Z0-9_-]{1,128}$/.test(request.params.id) ||
+        typeof request.params.enabled !== "boolean"
+      )
+        throw new Error("Invalid paired device permission");
+      request.result = {
+        updated: await dependencies.engine.store.setDeviceManagement(
+          request.params.id,
+          request.token,
+          request.params.enabled,
+        ),
+      };
       break;
     case "devices.revokeOther":
       if (
@@ -156,7 +209,7 @@ export async function handleDevicesRpc(
       request.result =
         request.params.mode === "lan"
           ? await dependencies.mobileLan.status()
-          : await dependencies.mobileAccess.status();
+          : await dependencies.mobileTailnet.status();
       break;
     case "mobile.access.enable":
       if (
@@ -167,12 +220,18 @@ export async function handleDevicesRpc(
       request.result =
         request.params.mode === "lan"
           ? await dependencies.mobileLan.enable(request.params.address)
-          : await dependencies.mobileAccess.enable();
+          : await dependencies.mobileTailnet.enable(request.params.address);
       break;
     case "mobile.access.disable":
-      if (request.params.mode !== "lan")
-        throw new Error("Only local network access can be disabled here.");
-      request.result = await dependencies.mobileLan.disable();
+      if (
+        request.params.mode !== undefined &&
+        !["lan", "tailscale"].includes(String(request.params.mode))
+      )
+        throw new Error("Invalid phone connection mode.");
+      request.result =
+        request.params.mode === "tailscale"
+          ? await dependencies.mobileTailnet.disable()
+          : await dependencies.mobileLan.disable();
       break;
     case "tunnels.status":
       request.result = await dependencies.tunnels.status();
@@ -183,9 +242,41 @@ export async function handleDevicesRpc(
     case "tunnels.stop":
       request.result = await dependencies.tunnels.stop(request.params);
       break;
+    case "tunnels.phones":
+      request.result = await dependencies.tunnels.setPhonesOverPublic(request.params);
+      // Turning it off also ends the phone sockets a public tunnel already carries.
+      if (!dependencies.tunnels.allowsPhonesOverPublic())
+        await dependencies.tunnelIngress.closeRefused();
+      break;
     case "tunnels.credential":
       request.result = await dependencies.tunnels.credential(request.params);
       break;
+    case "devices.bindProofKey": {
+      // Binds the calling credential to a client key, once. Public tunnels never carry it.
+      if (isTunnelIngress(request.request))
+        throw new Error("A device key is bound over a private connection, not a public tunnel.");
+      const jwk = parseDeviceProofJwk(request.params.proofKey);
+      if (!jwk) throw new Error("A device proof key is required.");
+      const key = { jkt: deviceProofThumbprint(jwk), x: jwk.x };
+      const bound = (await dependencies.engine.store.deviceAuthority(request.token))?.binding;
+      // A bound caller already showed a proof for its stored key at the gate; this only
+      // confirms it is the same key. An unbound caller proves possession of the new key here.
+      if (!bound) {
+        const proof = requireDeviceProof({
+          request: request.request,
+          token: request.token,
+          environmentId: dependencies.engine.store.environmentId,
+          binding: key,
+        });
+        if (!proof.ok) throw new Error(`Device proof is missing or invalid (${proof.reason}).`);
+      }
+      const outcome = await dependencies.engine.store.bindDeviceProofKey(request.token, key);
+      if (outcome === "different")
+        throw new Error("This credential is already bound to a different key.");
+      if (outcome === "unknown") throw new Error("Device credential is invalid or revoked");
+      request.result = { proofBound: true, jkt: key.jkt };
+      break;
+    }
     case "devices.revokeSelf":
       dependencies.workspace.cancelSearches(request.tokenHash);
       dependencies.diagnostics.revoke(request.token);
@@ -261,24 +352,12 @@ export async function handleDevicesRpc(
           );
           if (epoch !== (await dependencies.sessionSourceEpoch(sessionId)))
             throw new Error("Session read owner changed; retry");
-          return { revision, sourceEpoch: epoch };
+          return { revision, sourceEpoch: epoch, desktopRunning: stamp?.running };
         },
         dependencies.projectChangeSnapshot,
         () => request.closing || request.response.destroyed || request.pollState.revoked,
         dependencies.taskChangeEtag,
         async (cwd) => await dependencies.gitWatches.read(cwd),
-        async () =>
-          Array.isArray(request.params.sessions) &&
-          (
-            await Promise.all(
-              request.params.sessions.map(
-                async (entry: { sessionId: string }) =>
-                  await dependencies.desktopRecheckMs(entry.sessionId),
-              ),
-            )
-          ).some((duration) => duration === WATCH_STAMP_MS)
-            ? WATCH_STAMP_MS
-            : 1000,
         request.tokenHash,
         () => dependencies.engine.store.authenticated(request.token),
       );
@@ -400,3 +479,4 @@ export async function handleDevicesRpc(
     }
   }
 }
+import { HostDeviceAccessRequest } from "@bycoda/account-contracts";

@@ -40,6 +40,10 @@
 .count {
   flex: none;
 }
+:is(.text, .inline)[data-section-label-wrap] {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .inline {
   font-size: var(--ui-font-micro);
   line-height: var(--ui-leading-micro);
@@ -192,6 +196,37 @@
   }
   .root[data-compact-rail] .heading,
   :global([data-rail-section-header]) :global([data-rail-section-primary]) {
+    padding-inline: 0;
+  }
+}
+
+/* variant="rail": the sidebar section header. Caption size and medium weight, the leading gutter
+   (--ui-list-gutter) and the 16px mark column that ListRow rows share, so header and rows align.
+   The gutter lives on the row; the inner buttons add none. */
+.root[data-variant="rail"] {
+  padding-inline: var(--ui-list-gutter, 0.5rem);
+}
+.root[data-variant="rail"] .text {
+  font-size: var(--ui-font-caption);
+  line-height: var(--ui-leading-caption);
+}
+.root[data-variant="rail"] :is(.toggle, .labelButton) {
+  padding-inline: 0;
+}
+.root[data-variant="rail"] .mark {
+  gap: var(--space-2);
+}
+.root[data-variant="rail"] :is(.icon, .chevron),
+.root[data-variant="rail"] :is(.icon, .chevron) > svg {
+  inline-size: var(--ui-icon-md);
+  block-size: var(--ui-icon-md);
+}
+.root[data-variant="rail"] :is(.icon, .chevron) {
+  justify-content: center;
+  align-items: center;
+}
+@container rail (max-width: 140px) {
+  .root[data-variant="rail"][data-compact-rail] {
     padding-inline: 0;
   }
 }

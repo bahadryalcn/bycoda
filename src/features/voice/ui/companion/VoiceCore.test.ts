@@ -40,10 +40,62 @@ it("follows the measured input while you speak and stays flat when muted", () =>
   expect(loud).toBeGreaterThan(4);
 
   act(() =>
-    root.render(createElement(VoiceCore, { state: "muted", level, name: "", avatar: undefined })),
+    root.render(
+      createElement(VoiceCore, { state: "connected", level, name: "", avatar: undefined }),
+    ),
   );
+  expect(core.dataset.pose).toBe("connected");
   const quiet = Math.max(...[...host.querySelectorAll("[data-spoke]")].map(spokeLength));
   expect(quiet).toBeCloseTo(1, 1);
+});
+
+it("keeps requesting frames across blur and resumes after hiding without focus", () => {
+  let frame: FrameRequestCallback = () => {};
+  const request = vi.fn((callback: FrameRequestCallback) => {
+    frame = callback;
+    return 7;
+  });
+  const cancel = vi.fn();
+  vi.stubGlobal("requestAnimationFrame", request);
+  vi.stubGlobal("cancelAnimationFrame", cancel);
+  const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  try {
+    act(() =>
+      root.render(
+        createElement(VoiceCore, {
+          state: "assistant",
+          level: { current: 0 },
+          name: "",
+          avatar: undefined,
+        }),
+      ),
+    );
+    expect(request).toHaveBeenCalledTimes(1);
+    hasFocus.mockReturnValue(false);
+    act(() => {
+      window.dispatchEvent(new Event("blur"));
+    });
+    expect(cancel).not.toHaveBeenCalled();
+    frame(700);
+    expect(request).toHaveBeenCalledTimes(2);
+    hidden.mockReturnValue(true);
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(cancel).toHaveBeenCalledWith(7);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(host.querySelector<HTMLElement>("[data-state]")?.dataset.pose).toBe("assistant");
+    hidden.mockReturnValue(false);
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(request).toHaveBeenCalledTimes(3);
+  } finally {
+    hidden.mockRestore();
+    hasFocus.mockRestore();
+    vi.unstubAllGlobals();
+  }
 });
 
 it("draws a broken ring without turning arcs on error and shows the avatar initial", () => {
@@ -61,32 +113,34 @@ it("draws a broken ring without turning arcs on error and shows the avatar initi
   expect(host.querySelector("[data-initial]")?.getAttribute("data-initial")).toBe("A");
 });
 
-it("shows the engine always and the session clock only while live", () => {
-  vi.useFakeTimers();
+it("states where audio goes only when it leaves this computer", () => {
   const props = {
     visualState: "listening" as const,
+    artwork: "listening" as const,
     working: false,
     audioLevel: { current: 0.5 },
     statusText: "Listening",
     sessionStatusText: "",
-    live: true,
-    engine: "OpenAI",
     privacy: "Audio is sent to the provider while voice is on.",
-    workspace: false,
-    globalScope: true,
     name: "Arif",
     avatar: undefined,
-    onScopeChange: () => {},
+    stage: true,
+    caption: "Latest spoken line",
     onStopWork: () => {},
   };
   act(() => root.render(createElement(VoiceCompanionStatus, props)));
-  expect(host.textContent).toContain("OpenAI");
-  expect(host.querySelectorAll("i[data-on]").length).toBe(5);
-  expect(host.textContent).toContain("0:00");
-  act(() => vi.advanceTimersByTime(3_000));
-  expect(host.textContent).toContain("0:03");
+  expect(host.querySelector('[aria-label="Privacy"]')).not.toBeNull();
+  expect(host.querySelector('[data-layout="stage"] [data-size="stage"]')).not.toBeNull();
+  expect(host.textContent).toContain("Latest spoken line");
 
-  act(() => root.render(createElement(VoiceCompanionStatus, { ...props, live: false })));
-  expect(host.textContent).toContain("OpenAI");
-  expect(host.textContent).not.toContain("0:03");
+  act(() => root.render(createElement(VoiceCompanionStatus, { ...props, stage: false })));
+  // The strip beside the transcript leaves the spoken line to the transcript.
+  expect(host.querySelector('[data-layout="strip"] [data-size="stage"]')).toBeNull();
+  expect(
+    host.querySelector('[data-layout="strip"] [data-call-art="orb"][data-size="strip"]'),
+  ).not.toBeNull();
+  expect(host.textContent).not.toContain("Latest spoken line");
+
+  act(() => root.render(createElement(VoiceCompanionStatus, { ...props, privacy: "" })));
+  expect(host.querySelector('[aria-label="Privacy"]')).toBeNull();
 });

@@ -1,4 +1,7 @@
+import { errorText } from "../../../shared/lib/errors";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import {
+  createElement,
   useCallback,
   useEffect,
   type Dispatch,
@@ -399,7 +402,7 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
             toast.show({
               tone: "warning",
               title: t("The session was deleted. Its worktree was kept."),
-              message: t("{p0}\n\nYou can manage it in Settings → Worktrees.", {
+              message: t("{p0}\n\nYou can manage it in Settings → Workspace.", {
                 p0: String(error),
               }),
             });
@@ -421,7 +424,7 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
           deletionStatus = undefined;
           return false;
         }
-        const detail = error instanceof Error ? error.message : String(error);
+        const detail = errorText(error);
         if (deletionStatus) {
           deletionStatus = { ...deletionStatus, outcome: "failed", error: detail };
           setSessionDeletionStatus(deletionStatus);
@@ -436,7 +439,7 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
             mode === "archive"
               ? t("Could not archive this conversation.")
               : t("Could not delete this conversation."),
-          message: detail,
+          extra: createElement(ErrorDetails, { detail }),
         });
         return false;
       } finally {

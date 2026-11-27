@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ContinuousList, CollectionFooter } from "./ContinuousList";
 import { resetRetainedState } from "../hooks/useRetainedState";
@@ -110,6 +112,41 @@ it("keeps focused record mounted when selection changes", async () => {
   expect(container.querySelector('[data-collection-key="999"]')).not.toBeNull();
 });
 
+it("keeps focus out of list state so moving focus between mounted rows renders no row", async () => {
+  const renderItem = vi.fn((item: string) => createElement("button", null, `Row ${item}`));
+  await act(async () =>
+    root.render(createElement(ContinuousList<string>, { ...props, renderItem })),
+  );
+  const first = container.querySelector<HTMLButtonElement>('[data-collection-key="0"] button')!;
+  const second = container.querySelector<HTMLButtonElement>('[data-collection-key="1"] button')!;
+  await act(async () => first.focus());
+  renderItem.mockClear();
+  await act(async () => second.focus());
+  expect(renderItem).not.toHaveBeenCalled();
+  expect(document.activeElement).toBe(second);
+});
+
+it("keeps the focused row mounted when scrolling moves it out of the default range", async () => {
+  await act(async () => root.render(createElement(ContinuousList<string>, props)));
+  const scroller = container.querySelector<HTMLElement>("[data-continuous-list]")!;
+  const focused = container.querySelector<HTMLButtonElement>('[data-collection-key="0"] button')!;
+  await act(async () => focused.focus());
+  await act(async () => {
+    scroller.scrollTop = 32000;
+    scroller.dispatchEvent(new Event("scroll"));
+  });
+  expect(container.querySelector('[data-collection-key="500"]')).not.toBeNull();
+  expect(focused.isConnected).toBe(true);
+  expect(document.activeElement).toBe(focused);
+});
+
+it("reads focus from a ref, not list state (source regression)", () => {
+  const source = readFileSync(join(process.cwd(), "src/shared/ui/ContinuousList.tsx"), "utf8");
+  expect(source).not.toMatch(/setFocusedKey|useState<string \| null>/);
+  expect(source).toMatch(/const focusedKey = useRef<string \| null>\(null\)/);
+  expect(source).toMatch(/focusedKey\.current = key/);
+});
+
 it("moves the finite window through the full loaded collection on scroll", async () => {
   await act(async () => root.render(createElement(ContinuousList<string>, props)));
   const scroller = container.querySelector<HTMLElement>("[data-continuous-list]")!;
@@ -211,4 +248,92 @@ it("distinguishes loading, empty and failed initial reads", async () => {
     root.render(createElement(ContinuousList<string>, { ...props, items: [] })),
   );
   expect(container.textContent).toContain("No records");
+});
+
+it("shows one initial state with no rows and a separate continuation state with rows", async () => {
+  const state = () =>
+    container.querySelector("[data-collection-footer]")!.getAttribute("data-state");
+  await act(async () =>
+    root.render(
+      createElement(ContinuousList<string>, { ...props, items: [], loading: true, error: "x" }),
+    ),
+  );
+  expect(state()).toBe("initial");
+  expect(container.textContent).not.toContain("x");
+  expect(container.textContent).not.toContain("No records");
+  await act(async () =>
+    root.render(
+      createElement(ContinuousList<string>, { ...props, items: [], emptyMessage: "No sessions" }),
+    ),
+  );
+  expect(container.textContent).toBe("No sessions");
+  await act(async () =>
+    root.render(
+      createElement(ContinuousList<string>, { ...props, items: ["one"], error: "Offline" }),
+    ),
+  );
+  expect(state()).toBe("continuation");
+  expect(container.textContent).toContain("Row one");
+  expect(container.textContent).toContain("Offline");
+  expect(container.textContent).not.toContain("No records");
+});
+
+const loadMoreButton = () =>
+  [...container.querySelectorAll("button")].find((entry) =>
+    entry.textContent?.includes("Load more"),
+  );
+
+it("keeps an explicit Load more on a short loadOnScroll page that cannot scroll", async () => {
+  const onLoadMore = vi.fn();
+  const options = { ...props, items: ["one"], hasMore: true, loadOnScroll: true, onLoadMore };
+  await act(async () => root.render(createElement(ContinuousList<string>, options)));
+  const scroller = container.querySelector<HTMLElement>("[data-continuous-list]")!;
+  Object.defineProperty(scroller, "scrollHeight", { value: 480, configurable: true });
+  expect(onLoadMore).not.toHaveBeenCalled();
+  const button = loadMoreButton()!;
+  expect(button).toBeDefined();
+  await act(async () => button.click());
+  expect(onLoadMore).toHaveBeenCalledOnce();
+});
+
+it("offers Load more when a filter leaves a loadOnScroll page empty but more remains", async () => {
+  const onLoadMore = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(ContinuousList<string>, {
+        ...props,
+        items: [],
+        hasMore: true,
+        loadOnScroll: true,
+        onLoadMore,
+      }),
+    ),
+  );
+  await act(async () => loadMoreButton()!.click());
+  expect(onLoadMore).toHaveBeenCalledOnce();
+});
+
+it("shows pending, failure and end states of a loadOnScroll continuation", async () => {
+  const onLoadMore = vi.fn();
+  const options = { ...props, items: ["one"], hasMore: true, loadOnScroll: true, onLoadMore };
+  await act(async () =>
+    root.render(createElement(ContinuousList<string>, { ...options, loading: true })),
+  );
+  expect(loadMoreButton()!.getAttribute("aria-disabled")).toBe("true");
+  await act(async () => loadMoreButton()!.click());
+  expect(onLoadMore).not.toHaveBeenCalled();
+  await act(async () =>
+    root.render(
+      createElement(ContinuousList<string>, { ...options, error: "Offline", onRetry: onLoadMore }),
+    ),
+  );
+  expect(container.textContent).toContain("Row one");
+  expect(container.textContent).toContain("Offline");
+  await act(async () => loadMoreButton()!.click());
+  expect(onLoadMore).toHaveBeenCalledOnce();
+  await act(async () =>
+    root.render(createElement(ContinuousList<string>, { ...options, hasMore: false })),
+  );
+  expect(loadMoreButton()).toBeUndefined();
+  expect(container.textContent).toContain("Row one");
 });

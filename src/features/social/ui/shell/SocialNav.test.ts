@@ -25,14 +25,18 @@ it("reveals external selection, container resize and enlarged tab text without s
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
     this: HTMLElement,
   ) {
-    const nav = this.closest("nav");
+    const nav = this.closest<HTMLElement>("[role=tablist]");
     const scroll = nav?.scrollLeft ?? 0;
     const left =
-      this.tagName === "NAV" ? 0 : this.dataset.tabValue === "accounts" ? 400 - scroll : -scroll;
+      this.getAttribute("role") === "tablist"
+        ? 0
+        : this.dataset.tabValue === "accounts"
+          ? 400 - scroll
+          : -scroll;
     return {
       left,
       right:
-        this.tagName === "NAV"
+        this.getAttribute("role") === "tablist"
           ? 300
           : this.dataset.tabValue === "accounts"
             ? accountsRight - scroll
@@ -41,7 +45,7 @@ it("reveals external selection, container resize and enlarged tab text without s
   });
   const onSelect = vi.fn();
   act(() => root.render(createElement(SocialNav, { active: "accounts", onSelect })));
-  const nav = element.querySelector("nav")!;
+  const nav = element.querySelector<HTMLElement>("[role=tablist]")!;
   expect(nav.scrollLeft).toBe(300);
   accountsRight = 700;
   act(() => resize.listeners.get(nav)?.());

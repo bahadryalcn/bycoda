@@ -1,12 +1,11 @@
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { useState, useSyncExternalStore, type FormEvent } from "react";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ActionHost } from "../../../shared/ui/ActionHost";
-import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
-import { Modal } from "../../../shared/ui/Modal";
 import { Text } from "../../../shared/ui/Text";
-import { Briefcase, MoreHorizontal, UserRound } from "../../../shared/ui/icons";
+import { AlertCircle, Briefcase, MoreHorizontal, UserRound } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
 import { HARNESS_TITLE } from "../../sessions";
 import {
@@ -28,7 +27,7 @@ import {
   ProviderAccountSubtitle,
 } from "../../providers/public/accountIdentity";
 import { Group, SettingsFeedback } from "../../../shared/ui/settings";
-import { ProviderAccountEditor, type AccountEditor } from "./ProviderAccountEditor";
+import { ProviderAccountDialog, type AccountEditor } from "../../providers/public/accountIdentity";
 
 /** Personal/Work tag shared by every account row. */
 export function AccountKindTag({ tag, work }: { tag: string; work: boolean }) {
@@ -53,7 +52,13 @@ export function AccountKindTag({ tag, work }: { tag: string; work: boolean }) {
  * The one machine-wide sign-in of a CLI without account profiles, shown as
  * the same row as a profile account. Name, colour and kind are local labels.
  */
-export function SharedCliAccountCard({ provider }: { provider: SharedCliAccountProvider }) {
+export function SharedCliAccountCard({
+  provider,
+  visible = true,
+}: {
+  provider: SharedCliAccountProvider;
+  visible?: boolean;
+}) {
   useLocale();
   const snapshot = useSyncExternalStore(subscribeProviderAccounts, () =>
     JSON.stringify(sharedCliAccount(provider)),
@@ -80,7 +85,7 @@ export function SharedCliAccountCard({ provider }: { provider: SharedCliAccountP
   };
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!editor?.label.trim()) return;
+    if (!editor?.kind || !editor.label.trim()) return;
     if (save({ label: editor.label, kind: editor.kind, color: editor.color })) setEditor(null);
   };
 
@@ -89,7 +94,13 @@ export function SharedCliAccountCard({ provider }: { provider: SharedCliAccountP
       id={`shared-cli-account-${provider}`}
       layout="full"
       title={t("Accounts")}
-      feedback={error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : undefined}
+      feedback={
+        error && !editor ? (
+          <SettingsFeedback state="error" extra={<ErrorDetails detail={error} />}>
+            {t("Could not save this account.")}
+          </SettingsFeedback>
+        ) : undefined
+      }
     >
       <div
         data-settings-part="account-list"
@@ -139,9 +150,12 @@ export function SharedCliAccountCard({ provider }: { provider: SharedCliAccountP
           {/* An empty status column would wrap the menu onto its own line at narrow widths. */}
           {missing ? (
             <div className="provider-account-status">
-              <Badge size="sm" tone="warning" className="shrink-0">
-                {t("Not installed")}
-              </Badge>
+              <AlertCircle
+                role="img"
+                aria-label={t("Not installed")}
+                tone="warning"
+                className="icon-sm"
+              />
             </div>
           ) : null}
           <div className="provider-account-actions">
@@ -150,7 +164,6 @@ export function SharedCliAccountCard({ provider }: { provider: SharedCliAccountP
               variant="ghost"
               iconOnly
               label={t("Actions for {p0}", { p0: label })}
-              tooltip={t("Account actions")}
               aria-haspopup="menu"
               aria-expanded={menu !== null}
               onClick={(event) => {
@@ -175,15 +188,16 @@ export function SharedCliAccountCard({ provider }: { provider: SharedCliAccountP
           onPick={(id) => {
             const anchor = menu;
             setMenu(null);
-            if (id === "rename")
+            if (id === "rename") {
+              setError(null);
               setEditor({
                 provider,
                 accountId: account.id,
                 label,
                 color: account.color,
-                kind: account.kind,
+                kind: account.kind ?? "personal",
               });
-            else if (id === "color") setColorAnchor(anchor);
+            } else if (id === "color") setColorAnchor(anchor);
           }}
         />
       ) : null}
@@ -195,21 +209,23 @@ export function SharedCliAccountCard({ provider }: { provider: SharedCliAccountP
           onPick={(color) => void save({ color })}
         />
       ) : null}
-      {editor ? (
-        <Modal size="sm" title={t("Edit account")} onClose={() => setEditor(null)}>
-          <ProviderAccountEditor
-            editor={editor}
-            working={false}
-            onLabel={(next) =>
-              setEditor((current) => (current ? { ...current, label: next } : current))
-            }
-            onMetadata={(metadata) =>
-              setEditor((current) => (current ? { ...current, ...metadata } : current))
-            }
-            onCancel={() => setEditor(null)}
-            onSubmit={submit}
-          />
-        </Modal>
+      {visible && editor ? (
+        <ProviderAccountDialog
+          editor={editor}
+          working={false}
+          submitError={error ? t("Could not save this account.") : undefined}
+          onLabel={(next) =>
+            setEditor((current) => (current ? { ...current, label: next } : current))
+          }
+          onMetadata={(metadata) =>
+            setEditor((current) => (current ? { ...current, ...metadata } : current))
+          }
+          onCancel={() => {
+            setError(null);
+            setEditor(null);
+          }}
+          onSubmit={submit}
+        />
       ) : null}
     </Group>
   );

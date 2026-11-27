@@ -11,6 +11,8 @@ import {
   type ReactNode,
 } from "react";
 import { t, useLocale } from "../../../shared/i18n/git";
+import { useFormat } from "../../../shared/i18n";
+import { fileCountLabel } from "../model/gitGraphDisplay";
 import {
   gitDiffIndex,
   gitFetch,
@@ -29,6 +31,7 @@ import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { Sash } from "../../../shared/ui/Sash";
+import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import {
   GIT_ACTIONS,
@@ -39,11 +42,13 @@ import { useGitResource } from "../hooks/useGitResource";
 import { setGitFeedback, useGitPanelState, withGitOperation } from "../model/gitPanelState";
 import { invalidateGitIndex } from "../model/gitIndexStore";
 import { invalidateWatchedFiles } from "../../files/public/fileWatch";
-import { confirmNative } from "../model/gitConfirmation";
+import { confirmGitAction } from "../model/gitConfirmation";
+import { discardConflictCopy } from "./gitConfirmCopy";
 import { GitGraphBranches } from "./GitGraphBranches";
 import { GitGraphCommitInspector } from "./GitGraphCommitInspector";
 import { GitGraphConflictEditor } from "./GitGraphConflictEditor";
 import { GitChangesPanel } from "./GitChangesPanel";
+import { AheadBehindCount } from "./AheadBehindCount";
 import { WorkingTreeDiff } from "./WorkingTreeDiff";
 import { GitStashSection } from "./GitStashSection";
 import { GitFeedback } from "./GitFeedback";
@@ -57,6 +62,8 @@ type Props = {
   onCommit: (commit: GitHistoryCommit | null) => void;
   onDirty: (dirty: boolean) => void;
   onBranch: (commit: GitHistoryCommit) => void;
+  /** Lets blame jump to a commit by hash; absent when the graph cannot resolve one. */
+  openCommit?: { has: (sha: string) => boolean; open: (sha: string) => void };
   graph: ReactNode;
 };
 const ACTION = "shrink-0";
@@ -170,9 +177,11 @@ export function GitGraphWorkspace({
   onCommit,
   onBranch,
   onDirty,
+  openCommit,
   graph,
 }: Props) {
   useLocale();
+  const format = useFormat();
   const supported = useRemoteSupports(cwd, GIT_ACTIONS) === true;
   const conflictSupported = useRemoteSupports(cwd, GIT_CONFLICTS) === true;
   const [busy] = useGitPanelState(cwd, "busy");
@@ -259,24 +268,23 @@ export function GitGraphWorkspace({
   };
   const run = async (label: string, action: () => Promise<unknown>) => {
     if (!supported || busy) return false;
-    if (dirty && label !== "Saving conflict resolution…" && label !== "Resolving conflict…") {
-      if (!(await confirmNative(t("Discard the unsaved conflict resolution?"), t("Discard"))))
-        return false;
+    if (dirty && label !== t("Saving conflict resolution…") && label !== t("Resolving conflict…")) {
+      if (!(await confirmGitAction(discardConflictCopy()))) return false;
       dirtyChanged(false);
       setConflict(null);
     }
     try {
-      await withGitOperation(cwd, t(label), action);
-      setGitFeedback(cwd, {
-        kind: "success",
-        title: t("Git operation complete"),
-      });
+      await withGitOperation(cwd, label, action);
       return true;
     } catch (error) {
       setGitFeedback(cwd, {
         kind: "error",
-        title: t("Git operation failed"),
+        // The progress label names the action that failed ("Fetching…" -> "Fetching failed").
+        title: t("{p0} failed", { p0: label.replace(/…$/, "") }),
         detail: presentRemoteError(error, { explicit: true }),
+        retry: async () => {
+          await run(label, action);
+        },
       });
       onCommit(null);
       return false;
@@ -284,8 +292,7 @@ export function GitGraphWorkspace({
       changed();
     }
   };
-  const leaveEditor = async () =>
-    !dirty || (await confirmNative(t("Discard the unsaved conflict resolution?"), t("Discard")));
+  const leaveEditor = async () => !dirty || (await confirmGitAction(discardConflictCopy()));
   const openFile = async (path: string, kind: GitFileDiffKind) => {
     if (!(await leaveEditor())) return;
     setConflict(null);
@@ -302,6 +309,51 @@ export function GitGraphWorkspace({
   const showBusy =
     busy &&
     !(conflict && (busy === t("Saving conflict resolution…") || busy === t("Resolving conflict…")));
+  // One short sync action leads the header (Pull when behind, Push when ahead, otherwise Fetch);
+  // the other two live in the actions menu.
+  const hostReason = !supported
+    ? t("Update bycoda Host in Machines settings to use this on projects on another machine.")
+    : busy
+      ? t("Wait for the current operation to finish")
+      : undefined;
+  const operationReason = index.data?.operation
+    ? t("Finish the current Git operation first.")
+    : undefined;
+  const syncActions = {
+    fetch: {
+      label: t("Fetch"),
+      count: 0,
+      reason: hostReason ?? (index.data?.remote ? undefined : t("No remotes")),
+      disabled: !supported || !!busy || !index.data?.remote,
+      pending: t("Fetching…"),
+      run: () => void run(t("Fetching…"), () => gitFetch(cwd)),
+    },
+    pull: {
+      label: t("Pull"),
+      count: index.data?.behind ?? 0,
+      reason:
+        hostReason ??
+        (index.data?.upstream ? operationReason : t("This branch has no upstream branch.")),
+      disabled: !supported || !!busy || !index.data?.upstream || !!index.data?.operation,
+      pending: t("Pulling…"),
+      run: () => void run(t("Pulling…"), () => gitPull(cwd)),
+    },
+    push: {
+      label: t("Push"),
+      count: index.data?.ahead ?? 0,
+      reason: hostReason ?? (index.data?.remote ? operationReason : t("No remotes")),
+      disabled: !supported || !!busy || !index.data?.remote || !!index.data?.operation,
+      pending: t("Pushing…"),
+      run: () => void run(t("Pushing…"), () => gitPush(cwd)),
+    },
+  };
+  const primarySync: keyof typeof syncActions = index.data?.behind
+    ? "pull"
+    : index.data?.ahead
+      ? "push"
+      : "fetch";
+  const primary = syncActions[primarySync];
+  const primaryPending = !!busy && busy === primary.pending;
   return (
     <Text
       ref={workspaceRef}
@@ -331,48 +383,30 @@ export function GitGraphWorkspace({
             <span>{folder}</span>
           </Tooltip>
         }
+        primaryAction={
+          <>
+            {showBusy && !primaryPending ? (
+              <LoadingText className="me-1">{busy}</LoadingText>
+            ) : null}
+            <Button
+              size="sm"
+              variant="ghost"
+              motion="none"
+              type="button"
+              disabled={primary.disabled}
+              disabledReason={primary.disabled ? primary.reason : undefined}
+              onClick={primary.run}
+              loading={primaryPending}
+              loadingLabel={primary.pending}
+              className={ACTION}
+            >
+              {primary.label}
+              {primary.count ? <span className="ms-1 tabular-nums">{primary.count}</span> : null}
+            </Button>
+          </>
+        }
         actions={
           <>
-            {showBusy ? <LoadingText className="me-1">{busy}</LoadingText> : null}
-            <Button
-              size="sm"
-              variant="ghost"
-              motion="none"
-              type="button"
-              disabled={!supported || !!busy || !index.data?.remote}
-              onClick={() => void run("Fetching…", () => gitFetch(cwd))}
-              className={ACTION}
-            >
-              {t("Fetch")}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              motion="none"
-              type="button"
-              disabled={!supported || !!busy || !index.data?.upstream || !!index.data?.operation}
-              onClick={() => void run("Pulling…", () => gitPull(cwd))}
-              className={ACTION}
-            >
-              {t("Pull")}
-              {index.data?.behind ? (
-                <span className="ms-1 tabular-nums">{index.data.behind}</span>
-              ) : null}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              motion="none"
-              type="button"
-              disabled={!supported || !!busy || !index.data?.remote || !!index.data?.operation}
-              onClick={() => void run("Pushing…", () => gitPush(cwd))}
-              className={ACTION}
-            >
-              {t("Push")}
-              {index.data?.ahead ? (
-                <span className="ms-1 tabular-nums">{index.data.ahead}</span>
-              ) : null}
-            </Button>
             <Button
               size="sm"
               variant="ghost"
@@ -383,6 +417,7 @@ export function GitGraphWorkspace({
               aria-haspopup="menu"
               aria-expanded={!!actionAnchor}
               disabled={!supported || !!busy}
+              disabledReason={!supported || busy ? hostReason : undefined}
               onClick={(event) => setActionAnchor(actionAnchor ? null : event.currentTarget)}
             >
               <MoreHorizontal className="icon-md" />
@@ -391,21 +426,20 @@ export function GitGraphWorkspace({
         }
       >
         <GitBranch className="icon-md shrink-0" tone="accent" />
-        <Text as="span" size="caption" tone="inherit" weight="medium" truncate className="max-w-44">
-          {index.data ? (index.data.branch ?? t("Detached HEAD")) : "…"}
-        </Text>
-        <Tooltip
-          label={
-            t("Outgoing commits") +
-            `: ${index.data?.ahead ?? 0} · ` +
-            t("Incoming commits") +
-            `: ${index.data?.behind ?? 0}`
-          }
+        <Text
+          as="span"
+          size="caption"
+          tone="inherit"
+          weight="medium"
+          className="flex min-w-0 max-w-44"
         >
-          <Text size="caption" tone="secondary" className="tabular-nums">
-            {index.data ? `↑${index.data.ahead ?? 0} ↓${index.data.behind ?? 0}` : null}
-          </Text>
-        </Tooltip>
+          <MiddleTruncate className="min-w-0">
+            {index.data ? (index.data.branch ?? t("Detached HEAD")) : "…"}
+          </MiddleTruncate>
+        </Text>
+        {index.data ? (
+          <AheadBehindCount ahead={index.data.ahead ?? 0} behind={index.data.behind ?? 0} />
+        ) : null}
       </PaneHeader>
       {actionAnchor ? (
         <DropdownMenu
@@ -415,7 +449,7 @@ export function GitGraphWorkspace({
             {
               kind: "item",
               id: "stage",
-              label: t("Stage All Changes"),
+              label: t("Stage all changes"),
               disabled:
                 !!busy ||
                 !index.data?.files.some((file) => file.unstaged) ||
@@ -434,13 +468,23 @@ export function GitGraphWorkspace({
               label: t("Stash"),
               disabled: !!busy || !index.data?.files.length || !!index.data?.conflicts?.length,
             },
+            { kind: "sep" },
+            ...(["fetch", "pull", "push"] as const)
+              .filter((id) => id !== primarySync)
+              .map((id) => ({
+                kind: "item" as const,
+                id,
+                label: syncActions[id].label,
+                disabled: syncActions[id].disabled,
+              })),
           ]}
           onClose={() => setActionAnchor(null)}
           onPick={(id) => {
             setActionAnchor(null);
-            if (id === "stage") void run("Staging…", () => gitStageAll(cwd));
-            else if (id === "unstage") void run("Unstaging…", () => gitUnstageAll(cwd));
-            else if (id === "stash") void run("Stashing…", () => gitStash(cwd));
+            if (id === "stage") void run(t("Staging…"), () => gitStageAll(cwd));
+            else if (id === "unstage") void run(t("Unstaging…"), () => gitUnstageAll(cwd));
+            else if (id === "stash") void run(t("Stashing…"), () => gitStash(cwd));
+            else if (id === "fetch" || id === "pull" || id === "push") syncActions[id].run();
           }}
         />
       ) : null}
@@ -472,7 +516,7 @@ export function GitGraphWorkspace({
           <>
             <aside
               ref={branchPane.setPaneRef}
-              className="flex max-h-full min-w-[180px] shrink-0 flex-col overflow-hidden"
+              className="flex max-h-full min-w-45 shrink-0 flex-col overflow-hidden"
             >
               <GitGraphBranches
                 cwd={cwd}
@@ -493,15 +537,14 @@ export function GitGraphWorkspace({
         ) : null}
         {/* An explicitly reopened branch rail shares narrow windows with the inspector. The
             graph can yield to its compact commit column instead of pushing the inspector offscreen. */}
-        <section aria-label={t("Commit Graph")} className="flex min-w-[180px] flex-1 flex-col">
+        <section aria-label={t("Commit graph")} className="flex min-w-45 flex-1 flex-col">
           <div {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "shrink-0")}>
             <Button
               size="sm"
               variant="item"
               motion="none"
               type="button"
-              aria-pressed={!commit}
-              selected={false}
+              pressed={!commit}
               onClick={() => onCommit(null)}
               {...surfaceAttributes(
                 { radius: "none" },
@@ -521,9 +564,9 @@ export function GitGraphWorkspace({
                 {t("Working tree")}
               </Text>
               <Text size="inherit" tone="secondary">
-                {index.data?.files.length ?? 0} {t("files")}
+                {fileCountLabel(index.data?.files.length ?? 0, format)}
                 {index.data?.conflicts?.length
-                  ? ` · ${index.data.conflicts.length} ${t("conflicts")}`
+                  ? ` · ${t("{p0} conflicts", { p0: format.formatNumber(index.data.conflicts.length) })}`
                   : ""}
               </Text>
             </Button>
@@ -534,7 +577,7 @@ export function GitGraphWorkspace({
         <aside
           ref={inspectorPane.setPaneRef}
           aria-label={t("Git inspector")}
-          className="flex min-w-[360px] shrink-0 flex-col"
+          className="flex min-w-90 shrink-0 flex-col"
         >
           {commit ? (
             <GitGraphCommitInspector
@@ -545,6 +588,7 @@ export function GitGraphWorkspace({
               mode={commitMode}
               onMode={onCommitMode}
               onBranch={() => onBranch(commit)}
+              openCommit={openCommit}
               onClose={() => onCommit(null)}
             />
           ) : (

@@ -1,6 +1,5 @@
 import { toolPreferences } from "../host-tools/public/toolPreferences";
-import type { CSSProperties } from "react";
-import { Tooltip } from "../../shared/ui/Tooltip";
+import type { CSSProperties, ReactNode } from "react";
 import { surfaceAttributes } from "../../shared/ui/Surface";
 import { OutputBlock } from "../../shared/ui/OutputBlock";
 import { Text } from "../../shared/ui/Text";
@@ -9,12 +8,17 @@ import { NumberField } from "../../shared/ui/NumberField";
 import { DeviceBar } from "./ui/DeviceBar";
 import { DeviceSetupPanel } from "./ui/DeviceSetupPanel";
 import { DeviceConnectState, DeviceWaitingState } from "./ui/DeviceStageStates";
+import { DeviceFrameState } from "./ui/DeviceFrameState";
 import { DeviceOptionsMenu } from "./ui/DeviceOptionsMenu";
 import { DeviceInspector } from "./ui/DeviceInspector";
 import { presentRemoteError } from "../connections/public/remoteFailure";
+import { useGracedFailure } from "../connections/public/transientFailure";
+import { recordUiLog } from "../diagnostics/public/uiLog";
 import { useDeviceStatus } from "./hooks/useDeviceStatus";
 import { useDeviceLiveStream } from "./hooks/useDeviceLiveStream";
 import { kindLabel, platformVersionLabel, stateLabel } from "./model/deviceLabels";
+import { createAnnotationDraftCache } from "./model/annotationDraftCache";
+import { createTouchSession, type TouchPoint, type TouchSession } from "./model/touchSession";
 import {
   peekToolsDraftPart,
   subscribeToolsDraftTransfer,
@@ -24,13 +28,15 @@ import {
 } from "../host-tools/toolsDraftTransfer";
 import { TextField } from "../../shared/ui/TextField";
 import { TextareaField } from "../../shared/ui/TextareaField";
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as technicalI18n from "../../shared/i18n/technical";
 import { DeviceNotices } from "./ui/DeviceNotices";
+import { DEVICE_STILL_MIN_GAP_MS } from "../../shared/model/host-contracts/native-devices";
 import { LoadingText } from "../../shared/ui/LoadingText";
-import { Switch } from "../../shared/ui/Switch";
 import { Button } from "../../shared/ui/Button";
-import { Disclosure } from "../../shared/ui/Disclosure";
+import { Alert } from "../../shared/ui/Alert";
+import { ErrorDetails } from "../../shared/ui/ErrorDetails";
+import { FailureState } from "../../shared/ui/FailureState";
 import { useConnectionErrorShownCentrally } from "../../shared/ui/connectionErrorGate";
 import { Progress } from "../../shared/ui/Progress";
 import { Popover } from "../../shared/ui/Popover";
@@ -76,7 +82,7 @@ import type {
   DeviceControlLease,
   DeviceInspection,
 } from "./types";
-const { dateTimeFormat, getLocale, relativeTimeFormat, t, useLocale } = technicalI18n;
+const { t, useLocale } = technicalI18n;
 type DeviceOperation =
   | "status"
   | "connect"
@@ -89,8 +95,6 @@ type DeviceOperation =
   | "setupControl"
   | "start"
   | "stop"
-  | "claim"
-  | "release"
   | "inspect"
   | DeviceAction["type"];
 type AnnotationDraft = {
@@ -103,40 +107,20 @@ type AnnotationDraft = {
 };
 // Layout/tool switches unmount the surface. Keep unfinished image edits in the
 // source conversation and machine scope, without retaining a device permission.
-const annotationDraftCache = new Map<string, Record<string, AnnotationDraft>>();
+/** Consecutive failed control-status reads before the UI treats control as lost (10 s apart). */
+const CONTROL_STATUS_MAX_FAILURES = 3;
+/** Pointer position as a 0 to 1 fraction of the preview, clamped so a drag past the edge stays on screen. */
+const touchPoint = (
+  event: { clientX: number; clientY: number },
+  bounds: { left: number; top: number; width: number; height: number },
+): TouchPoint => ({
+  x: Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width)),
+  y: Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height)),
+});
+
+const annotationDraftCache = createAnnotationDraftCache<AnnotationDraft>();
 type DeviceInputs = Record<string, { app: string; text: string }>;
 const inputDraftCache = new Map<string, DeviceInputs>();
-/** Readable capture time and age for a retained frame; undefined when the Host sent no real timestamp. */
-function capturedLabel(capturedAt: string, now: number): string | undefined {
-  const at = Date.parse(capturedAt);
-  if (!Number.isFinite(at)) return undefined;
-  let locale: string | undefined;
-  try {
-    locale = getLocale();
-    dateTimeFormat(locale);
-  } catch {
-    locale = undefined;
-  }
-  const seconds = Math.max(0, Math.round((now - at) / 1000));
-  const relative = relativeTimeFormat(locale, {
-    numeric: "auto",
-    style: "short",
-  });
-  const age =
-    seconds < 2
-      ? relative.format(0, "second")
-      : seconds < 60
-        ? relative.format(-seconds, "second")
-        : seconds < 3600
-          ? relative.format(-Math.round(seconds / 60), "minute")
-          : relative.format(-Math.round(seconds / 3600), "hour");
-  const time = new Date(at).toLocaleTimeString(locale, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-  return t("Captured {p0} · {p1}", { p0: time, p1: age });
-}
 const unavailableTransport = (cause: unknown) =>
   /RPC_HOST_UNAVAILABLE|host unavailable|host connection.*(?:closed|refused)/i.test(String(cause));
 
@@ -145,6 +129,7 @@ type DevicePanelProps = {
   active?: boolean;
   api: DevicePanelApi;
   hostLabel?: string;
+  machinePicker?: ReactNode;
   onAddDevice?: (device: DeviceSummary) => Promise<void>;
   onAddImage?: (
     device: DeviceSummary,
@@ -166,7 +151,7 @@ function apiKeyFor(api: DevicePanelApi): number {
   return key;
 }
 
-/** RPC only: opening this panel starts viewing; control remains opt-in. */
+/** A visible panel follows the selected device and acquires its control lease. */
 export function DevicePanel(props: DevicePanelProps) {
   // A new Host API (conversation or machine switch) starts a fresh surface.
   return <DevicePanelSurface key={apiKeyFor(props.api)} {...props} />;
@@ -176,13 +161,13 @@ function DevicePanelSurface({
   active: visible = true,
   api,
   hostLabel,
+  machinePicker,
   onAddDevice,
   onAddImage,
   draftScope,
   transferScope,
 }: DevicePanelProps) {
   useLocale();
-  const ownershipDescriptionId = useId();
   const saved = transferScope ? peekToolsDraftPart(transferScope, "device") : undefined;
   const [status, setStatus] = useState<DeviceHostStatus>();
   const [devices, setDevices] = useState<DeviceSummary[]>([]);
@@ -193,8 +178,7 @@ function DevicePanelSurface({
   );
   function readableDeviceError(error: string): string | undefined {
     if (/DEVICE_CONTROL_BUSY/.test(error)) return t("Device control held by another controller");
-    if (/DEVICE_CONTROL_LEASE_INVALID/.test(error))
-      return t("Device control expired. Claim control again to send input.");
+    if (/DEVICE_CONTROL_LEASE_INVALID/.test(error)) return t("Device control expired.");
     if (/DEVICE_INSPECTION_STALE/.test(error))
       return t("The device screen changed. Refresh inspection before selecting a node.");
     if (/DEVICE_INSPECTION_UNSUPPORTED/.test(error))
@@ -203,13 +187,18 @@ function DevicePanelSurface({
   }
   const [connectionUnavailable, setConnectionUnavailable] = useState(false);
   const [discoveryUnavailable, setDiscoveryUnavailable] = useState(false);
+  const [listFailure, setListFailure] = useState<{ cause: unknown; disconnected: boolean }>();
+  const [listAttempt, setListAttempt] = useState(0);
+  const [liveCaptureFailure, setLiveCaptureFailure] = useState<{
+    deviceId: string;
+    cause: unknown;
+  }>();
   const [autoLive] = useState(() => toolPreferences.deviceAutoLive.load());
   // A panel restored from a retained draft (for example after moving the dock) keeps viewing that
   // device like a freshly opened one; a frozen annotation frame stays paused. An unbooted device
   // is corrected to paused when the device list loads.
   const [live, setLive] = useState(() => autoLive && !!saved?.selected && !saved.annotating);
-  // The surface starts by reading the Host status in the effect below.
-  const [busy, setBusy] = useState(true);
+  const [actionBusy, setBusy] = useState(false);
   const [operation, setOperation] = useState<DeviceOperation>();
   const [loadingDevices, setLoadingDevices] = useState(false);
   const [error, setError] = useState<string | undefined>(saved?.error);
@@ -228,6 +217,7 @@ function DevicePanelSurface({
   }, []);
   const [control, setControl] = useState(false);
   const [controlStatus, setControlStatus] = useState<DeviceControlStatus>();
+  const [controlError, setControlError] = useState<string>();
   const [controlLease, setControlLease] = useState<DeviceControlLease>();
   const controlLeaseRef = useRef(controlLease);
   controlLeaseRef.current = controlLease;
@@ -253,7 +243,6 @@ function DevicePanelSurface({
   >(saved?.notice);
   // Set when the device action itself succeeded but the follow-up frame read failed.
   const [actionCompleted, setActionCompleted] = useState(saved?.actionCompleted ?? false);
-  const [now, setNow] = useState(() => Date.now());
   const [x, setX] = useState(0);
   const [y, setY] = useState(0);
   const [endX, setEndX] = useState(0);
@@ -271,6 +260,8 @@ function DevicePanelSurface({
     () => saved?.annotations ?? (draftScope ? (annotationDraftCache.get(draftScope) ?? {}) : {}),
   );
   const annotationsRef = useRef(annotations);
+  // Pins this scope while the panel is mounted so the bounded draft cache never evicts a draft the user is editing.
+  useEffect(() => (draftScope ? annotationDraftCache.pin(draftScope) : undefined), [draftScope]);
   useEffect(() => {
     if (!transferScope) return;
     return subscribeToolsDraftTransfer(transferScope, ({ device }) => {
@@ -366,10 +357,7 @@ function DevicePanelSurface({
     // not inside a state updater that React may repeat or discard.
     const next = typeof change === "function" ? change(annotationsRef.current) : change;
     annotationsRef.current = next;
-    if (draftScope) {
-      annotationDraftCache.delete(draftScope);
-      if (Object.keys(next).length) annotationDraftCache.set(draftScope, next);
-    }
+    if (draftScope) annotationDraftCache.set(draftScope, next);
     setAnnotationState(next);
   };
   const gesture = useRef<{
@@ -378,12 +366,20 @@ function DevicePanelSurface({
     clientX: number;
     clientY: number;
     pointerId: number;
+    deviceId: string;
+    leaseId: string | undefined;
+    width: number;
+    height: number;
   } | null>(null);
+  // The one live touch in progress; it owns a pointer, a target and a lease until it ends.
+  const liveTouch = useRef<{ session: TouchSession; pointerId: number } | null>(null);
   const scope = useMemo(() => ({}), [api]);
   const currentScope = useRef(scope);
   currentScope.current = scope;
   const pending = useRef<object | null>(null);
   const pendingDone = useRef<Promise<void>>(Promise.resolve());
+  const inputQueue = useRef<Promise<void>>(Promise.resolve());
+  const queuedGestures = useRef(0);
   const capturePending = useRef<Promise<DeviceFrame> | null>(null);
   const mounted = useRef(true);
   const visibleRef = useRef(visible);
@@ -394,7 +390,29 @@ function DevicePanelSurface({
       mounted.current = false;
     };
   }, []);
-  const reload = useDeviceStatus(api, visible, setStatus, setError, setBusy, connectionUnavailable);
+  const deviceStatus = useDeviceStatus(
+    api,
+    visible,
+    setStatus,
+    connectionUnavailable || !!listFailure?.disconnected,
+  );
+  const busy = actionBusy || deviceStatus.loading;
+  const discoveryFailure = useGracedFailure({
+    error: visible && status?.running ? listFailure?.cause : undefined,
+    loading: visible && (loadingDevices || operation === "refresh"),
+    retry: () => setListAttempt((value) => value + 1),
+    defer: true,
+  });
+  const liveCaptureCause =
+    visible && live && liveCaptureFailure?.deviceId === selected
+      ? liveCaptureFailure.cause
+      : undefined;
+  const liveCaptureUnavailable = unavailableTransport(liveCaptureCause);
+  const captureFailure = useGracedFailure({
+    error: liveCaptureCause,
+    scope: selected,
+    defer: true,
+  });
   const execute = useCallback(
     async <T,>(
       name: DeviceOperation,
@@ -418,20 +436,20 @@ function DevicePanelSurface({
       setErrorOperation(name);
       if (name !== "addImage" && name !== "capture") setActionCompleted(false);
       try {
-        // A live capture must finish before boot/stop/input or another capture.
+        // A live capture and sent gestures must finish before boot/stop/input or another capture.
         await capturePending.current?.catch(() => {});
+        await inputQueue.current;
         if (!current()) return;
         const value = await work(current);
         if (current()) commit(value);
       } catch (cause) {
         if (current()) {
-          setError(
-            presentRemoteError(cause, { explicit: name !== "status" && name !== "capture" }),
-          );
+          setError(presentRemoteError(cause, { explicit: true }));
           if (name === "status") setStatus(undefined);
-          if (name === "refresh") setDiscoveryUnavailable(true);
-          if (/DEVICE_CONTROL_BUSY/.test(String(cause)) && name === "claim")
-            setControlStatus({ deviceId: selectedRef.current, busy: true });
+          if (name === "refresh") {
+            setDiscoveryUnavailable(true);
+            setListFailure({ cause, disconnected: true });
+          }
           if (/DEVICE_CONTROL_LEASE_INVALID/.test(String(cause))) {
             setControl(false);
             setControlLease(undefined);
@@ -454,7 +472,7 @@ function DevicePanelSurface({
             setInspection(undefined);
             setSelectedNode("");
           }
-          if (unavailableTransport(cause)) setConnectionUnavailable(true);
+          if (name !== "refresh" && unavailableTransport(cause)) setConnectionUnavailable(true);
         }
       } finally {
         finishPending();
@@ -469,16 +487,19 @@ function DevicePanelSurface({
     [scope, transferScope?.cwd, transferScope?.sessionId, transferScope?.targetValue],
   );
   const capture = useCallback(
-    (deviceId: string) => {
+    (deviceId: string, background = false) => {
       const requestScope = scope;
       const operation = api.capture(deviceId).then(
         (value) => {
-          if (mounted.current && currentScope.current === requestScope)
+          if (mounted.current && currentScope.current === requestScope) {
             setConnectionUnavailable(false);
+            if (selectedRef.current === deviceId) setLiveCaptureFailure(undefined);
+          }
           return value;
         },
         (cause: unknown) => {
           if (
+            !background &&
             mounted.current &&
             currentScope.current === requestScope &&
             unavailableTransport(cause)
@@ -506,6 +527,7 @@ function DevicePanelSurface({
       setLive(booted && autoLive);
       setControl(false);
       setControlStatus(undefined);
+      setControlError(undefined);
       setControlLease(undefined);
       setInspection(undefined);
       setSelectedNode("");
@@ -531,19 +553,34 @@ function DevicePanelSurface({
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
   const applyDevices = useCallback(
-    (value: Awaited<ReturnType<DevicePanelApi["list"]>>) => {
+    (value: Awaited<ReturnType<DevicePanelApi["list"]>>, background = false) => {
+      const warning = value.errors.length ? value.errors.join("\n") : undefined;
+      if (background && warning)
+        recordUiLog("warn", "devices.list", "Background discovery reported platform errors", {
+          count: value.errors.length,
+        });
+      setListFailure(background && warning ? { cause: warning, disconnected: false } : undefined);
       setDiscoveryUnavailable(value.errors.length > 0);
+      if (!background && !retainedOutcome.current) {
+        setErrorOperation("refresh");
+        setError(warning);
+      } else if (
+        background &&
+        !warning &&
+        !retainedOutcome.current &&
+        errorOperationRef.current === "refresh"
+      ) {
+        setError(undefined);
+      }
+      // Failed discovery cannot confirm that previously observed devices went away.
+      if (warning && !value.devices.length) return;
       setDevicesLoaded(true);
       setDevices(value.devices);
-      if (!retainedOutcome.current) {
-        setErrorOperation("refresh");
-        setError(value.errors.length ? value.errors.join("\n") : undefined);
-      }
       const current = value.devices.find((device) => device.id === selectedRef.current);
       if (!current) {
         if (selectedRef.current && transferScope && peekToolsDraftPart(transferScope, "device"))
           return;
-        // Prefer a connected phone. Opening the panel starts viewing, never input or boot.
+        // Prefer a connected phone. Opening the panel does not send input or boot a device.
         const preferred =
           value.devices.find((device) => device.booted && device.physical) ??
           value.devices.find((device) => device.booted) ??
@@ -557,12 +594,14 @@ function DevicePanelSurface({
     },
     [selectDevice, transferScope?.cwd, transferScope?.sessionId, transferScope?.targetValue],
   );
+  // Refresh the observed device list after opening, recovery or a background read failure.
   useEffect(() => {
     if (!visible) return;
     // An unread/failed status is not a confirmed stop; keep the retained target and frame.
     if (!status) return;
     if (!status.running) {
       setLoadingDevices(false);
+      setListFailure(undefined);
       setDevicesLoaded(false);
       setLive(false);
       setSelected("");
@@ -577,13 +616,13 @@ function DevicePanelSurface({
       .then(
         (value) => {
           if (!active) return;
-          applyDevices(value);
+          applyDevices(value, true);
         },
         (cause: unknown) => {
           if (active) {
             setDiscoveryUnavailable(true);
-            setConnectionUnavailable(true);
-            setError(presentRemoteError(cause, { explicit: true }));
+            // Keep discovery failures independent of frame and action outcomes.
+            setListFailure({ cause, disconnected: true });
           }
         },
       )
@@ -593,32 +632,45 @@ function DevicePanelSurface({
     return () => {
       active = false;
     };
-  }, [api, status?.running, applyDevices, visible, reload]);
+  }, [api, status?.running, applyDevices, visible, deviceStatus.reload, listAttempt]);
   // Video when the Host can stream this device; the still captures below are the fallback.
   const liveStream = useDeviceLiveStream({
     stream: api.stream,
+    subscribeStream: api.subscribeStream,
     deviceId: selected,
     enabled: visible && live && !!selected && !!status?.running,
-    onFrame: useCallback((value: DeviceFrame, deviceId: string) => {
+    onInterrupted: (deviceId, lastFrame) => {
       if (selectedRef.current !== deviceId) return;
-      setFrame(value);
+      if (lastFrame) setFrame(lastFrame);
+      setFrameStale(true);
+    },
+    onFrame: useCallback((deviceId: string) => {
+      if (selectedRef.current !== deviceId) return;
+      setLiveCaptureFailure(undefined);
       setFrameStale(false);
       setActionCompleted(false);
       if (errorOperationRef.current === "capture") setError(undefined);
     }, []),
   });
-  const streaming = liveStream.active;
+  const streaming = !!liveStream.picture;
+  const screenSize = liveStream.picture ?? imageSize;
   useEffect(() => {
     if (!visible || !live || !selected || !status?.running || streaming) return;
+    setLiveCaptureFailure(undefined);
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
     const poll = async () => {
       if (cancelled) return;
       const started = performance.now();
-      if (!document.hidden && !pending.current && !capturePending.current) {
+      if (
+        !document.hidden &&
+        !pending.current &&
+        !capturePending.current &&
+        !queuedGestures.current
+      ) {
         try {
-          const value = await capture(selected);
+          const value = await capture(selected, true);
           if (!cancelled) {
             setFrame(value);
             setFrameStale(false);
@@ -630,8 +682,8 @@ function DevicePanelSurface({
           }
         } catch (cause) {
           if (!cancelled) {
-            setErrorOperation("capture");
-            setError(presentRemoteError(cause));
+            // Capture retries already back off. Only their presentation needs a grace period.
+            setLiveCaptureFailure({ deviceId: selected, cause });
             setFrameStale(true);
             failures++;
           }
@@ -644,7 +696,7 @@ function DevicePanelSurface({
           },
           failures
             ? Math.min(8000, 1000 * 2 ** failures)
-            : Math.max(100, 250 - (performance.now() - started)),
+            : Math.max(DEVICE_STILL_MIN_GAP_MS, 333 - (performance.now() - started)),
         );
     };
     void poll();
@@ -652,7 +704,7 @@ function DevicePanelSurface({
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [live, selected, capture, status?.running, visible, streaming, setErrorOperation]);
+  }, [live, selected, capture, status?.running, visible, streaming]);
   const action = (command: DeviceAction) =>
     void execute(
       command.type,
@@ -662,7 +714,7 @@ function DevicePanelSurface({
           controlLease.deviceId !== selected ||
           controlLease.expiresAt <= Date.now()
         )
-          throw new Error(t("Claim device control before sending input."));
+          throw new Error("DEVICE_CONTROL_LEASE_INVALID");
         setInspection(undefined);
         setSelectedNode("");
         if (command.type === "fold") {
@@ -699,7 +751,128 @@ function DevicePanelSurface({
         }
       },
     );
+  // Screen gestures reach the device like a remote screen: they never put the panel in its busy
+  // state, so the stage, device bar and following taps stay live while earlier input is sent.
+  // Gestures run one after another in the order the user made them.
+  const reportGestureFailure = (
+    cause: unknown,
+    operation: "press" | "swipe",
+    deviceId: string,
+    current: () => boolean,
+  ) => {
+    if (!current()) return;
+    setErrorOperation(operation);
+    setError(presentRemoteError(cause, { explicit: true }));
+    if (/DEVICE_CONTROL_LEASE_INVALID/.test(String(cause))) {
+      setControl(false);
+      setControlLease(undefined);
+      delete claimRequests.current[deviceId];
+    }
+    if (unavailableTransport(cause)) setConnectionUnavailable(true);
+  };
+  // Video and live stills already show the result; a paused screen reads one still.
+  const refreshPausedStill = async (deviceId: string, current: () => boolean) => {
+    try {
+      const value = await capture(deviceId);
+      if (!current()) return;
+      setFrame(value);
+      setFrameStale(false);
+    } catch (cause) {
+      if (!current()) return;
+      setFrameStale(true);
+      setErrorOperation("capture");
+      setError(String(cause));
+      setActionCompleted(true);
+    }
+  };
+  // Queues input behind earlier gestures; releasing control waits for all of it.
+  const enqueueInput = (run: () => Promise<void>) => {
+    queuedGestures.current++;
+    const next = inputQueue.current
+      .then(run)
+      .finally(() => {
+        queuedGestures.current--;
+      })
+      .catch(() => {});
+    inputQueue.current = next;
+    pendingDone.current = Promise.all([pendingDone.current, next]).then(() => {});
+  };
+  const sendGesture = (command: Extract<DeviceAction, { type: "press" | "swipe" }>) => {
+    const deviceId = selected;
+    const requestScope = scope;
+    const leaseId = controlLeaseRef.current?.leaseId;
+    if (!leaseId) return;
+    const refreshStill = !streaming && !live;
+    const current = () =>
+      mounted.current && currentScope.current === requestScope && selectedRef.current === deviceId;
+    setInspection(undefined);
+    setSelectedNode("");
+    enqueueInput(async () => {
+      await capturePending.current?.catch(() => {});
+      const lease = controlLeaseRef.current;
+      if (
+        !current() ||
+        lease?.leaseId !== leaseId ||
+        lease.deviceId !== deviceId ||
+        lease.expiresAt <= Date.now()
+      )
+        return;
+      try {
+        const output = await api.action(deviceId, command, lease.leaseId);
+        if (!current()) return;
+        setOutput(output);
+        if (errorOperationRef.current === "press" || errorOperationRef.current === "swipe")
+          setError(undefined);
+      } catch (cause) {
+        reportGestureFailure(cause, command.type, deviceId, current);
+        return;
+      }
+      if (refreshStill) await refreshPausedStill(deviceId, current);
+    });
+  };
+  // A Host that speaks the touch protocol follows the pointer while it moves, so scrolls and
+  // drags track the finger. A failed live touch is reported, never replayed as press or swipe.
+  const startLiveTouch = (start: TouchPoint, pointerId: number, leaseId: string) => {
+    const touch = api.touch;
+    if (!touch) return;
+    const deviceId = selected;
+    const requestScope = scope;
+    const refreshStill = !streaming && !live;
+    const current = () =>
+      mounted.current && currentScope.current === requestScope && selectedRef.current === deviceId;
+    const session = createTouchSession({
+      start,
+      after: inputQueue.current,
+      gate: async () => {
+        await capturePending.current?.catch(() => {});
+        const lease = controlLeaseRef.current;
+        return (
+          current() &&
+          visibleRef.current &&
+          lease?.leaseId === leaseId &&
+          lease.deviceId === deviceId &&
+          lease.expiresAt > Date.now()
+        );
+      },
+      send: (phase, point) => touch(deviceId, { phase, x: point.x, y: point.y }, leaseId),
+      onFailure: (cause) => reportGestureFailure(cause, "press", deviceId, current),
+    });
+    const entry = { session, pointerId };
+    liveTouch.current = entry;
+    // The queue holds later input until this touch has ended on the Host.
+    enqueueInput(async () => {
+      const completed = await session.done;
+      if (liveTouch.current === entry) liveTouch.current = null;
+      if (!completed || !current()) return;
+      if (errorOperationRef.current === "press" || errorOperationRef.current === "swipe")
+        setError(undefined);
+      if (refreshStill) await refreshPausedStill(deviceId, current);
+    });
+  };
   const device = devices.find((item) => item.id === selected);
+  const ownershipSupported =
+    status?.controlProtocol === 1 && !!api.claimControl && !!api.releaseControl;
+  const controlReady = visible && !!status?.running && !!device?.booted && ownershipSupported;
   useEffect(() => {
     if (!controlLease) return;
     const expiryTimer = setTimeout(
@@ -713,10 +886,6 @@ function DevicePanelSurface({
         setControlLease(undefined);
         setInspection(undefined);
         delete claimRequests.current[controlLease.deviceId];
-        setDeviceNotice({
-          text: t("Device control expired. Claim control again to send input."),
-          error: false,
-        });
       },
       Math.min(2_147_483_647, Math.max(0, controlLease.expiresAt - Date.now())),
     );
@@ -770,65 +939,100 @@ function DevicePanelSurface({
       clearTimeout(timer);
     };
   }, [api, visible, controlLease?.leaseId, controlLease?.expiresAt]);
+  // Release the lease when the selected target can no longer accept control.
   useEffect(() => {
-    if (!visible) {
+    if (!controlReady) {
       if (controlLeaseRef.current) delete claimRequests.current[controlLeaseRef.current.deviceId];
       setControl(false);
+      setControlStatus(undefined);
+      setControlError(undefined);
       setControlLease(undefined);
       setInspection(undefined);
     }
-  }, [visible]);
+  }, [controlReady]);
+  // Claim only the active, booted target and reconcile ownership while it remains visible.
   useEffect(() => {
-    if (!visible || !selected || status?.controlProtocol !== 1 || !api.controlStatus) return;
+    const { claimControl, releaseControl, controlStatus: readControl } = api;
+    if (!controlReady || !claimControl || !releaseControl) return;
     let current = true;
     let reading = false;
-    const refresh = () => {
+    let claimingRequest: string | undefined;
+    // A rejected read is "unknown", not "not held": only a run of failures drops control.
+    let failures = 0;
+    const refresh = async () => {
       if (document.hidden || pending.current || reading) return;
       reading = true;
       const leaseAtRead = controlLeaseRef.current;
-      void api.controlStatus!(selected)
-        .then(
-          (value) => {
-            if (!current) return;
-            setControlStatus(value);
-            if (controlLeaseRef.current === leaseAtRead) {
-              if (!value.busy) {
-                setControl(false);
-                setControlLease(undefined);
-                delete claimRequests.current[selected];
-              } else if (leaseAtRead && leaseAtRead.expiresAt > Date.now()) setControl(true);
-            }
-          },
-          () => {
-            if (current) {
-              setControl(false);
-              setControlStatus(undefined);
-            }
-          },
-        )
-        .finally(() => {
-          reading = false;
-        })
-        .catch(() => {});
+      try {
+        const value = await readControl?.(selected);
+        if (!current || controlLeaseRef.current !== leaseAtRead) return;
+        failures = 0;
+        setControlStatus(value);
+        if (leaseAtRead) {
+          if (!value || value.busy) {
+            if (leaseAtRead.expiresAt > Date.now()) setControl(true);
+            return;
+          }
+          setControl(false);
+          setControlLease(undefined);
+          setInspection(undefined);
+          delete claimRequests.current[selected];
+        }
+        // A previous claim can have reached the Host even if its reply was lost.
+        if (annotating || (value?.busy && !claimRequests.current[selected])) return;
+        const requestId = (claimRequests.current[selected] ??= crypto.randomUUID());
+        claimingRequest = requestId;
+        try {
+          const lease = await claimControl(selected, requestId);
+          if (!current || selectedRef.current !== selected || !visibleRef.current) {
+            await releaseControl(selected, lease.leaseId).catch(() => {});
+            return;
+          }
+          controlLeaseRef.current = lease;
+          setControlLease(lease);
+          setControlStatus({ deviceId: selected, busy: true });
+          setControlError(undefined);
+          setControl(true);
+        } catch (cause) {
+          if (!current) return;
+          if (/DEVICE_CONTROL_BUSY|DEVICE_CONTROL_LEASE_INVALID/.test(String(cause))) {
+            delete claimRequests.current[selected];
+            setControlStatus({ deviceId: selected, busy: true });
+            setControlError(undefined);
+          } else setControlError(presentRemoteError(cause));
+        } finally {
+          claimingRequest = undefined;
+        }
+      } catch {
+        if (!current || ++failures < CONTROL_STATUS_MAX_FAILURES) return;
+        setControl(false);
+        setControlStatus(undefined);
+      } finally {
+        reading = false;
+      }
     };
-    refresh();
-    const timer = setInterval(refresh, 10000);
+    const poll = () => void refresh().catch(() => {});
+    poll();
+    const timer = setInterval(poll, 10000);
     return () => {
       current = false;
+      if (claimingRequest && claimRequests.current[selected] === claimingRequest)
+        delete claimRequests.current[selected];
       clearInterval(timer);
     };
-  }, [api, selected, visible, status?.controlProtocol]);
+  }, [api, selected, controlReady, annotating]);
   const canViewDevice = !!device?.booted && !loadingDevices;
-  const ownershipSupported =
-    status?.controlProtocol === 1 && !!api.claimControl && !!api.releaseControl;
   const canControlDevice =
     canViewDevice &&
-    ownershipSupported &&
+    controlReady &&
     control &&
     !!controlLease?.leaseId &&
+    controlLease.deviceId === selected &&
     controlLease.expiresAt > Date.now() &&
     !!status?.agentInstalled &&
-    !connectionUnavailable;
+    !connectionUnavailable &&
+    !liveCaptureUnavailable &&
+    !listFailure?.disconnected;
   const canView = canViewDevice && !busy;
   const canControl = canControlDevice && !busy;
   const unavailable = (name: DeviceOperation, enabled = true) =>
@@ -843,11 +1047,27 @@ function DevicePanelSurface({
   const coordinatesValid =
     Number.isFinite(x) && Number.isFinite(y) && x >= 0 && y >= 0 && x <= 20000 && y <= 20000;
   const sdkAvailable = !!status?.platforms.some((item) => item.available);
-  const refreshDevices = () => void execute("refresh", api.list, applyDevices);
-  const discoveryError = errorOperation === "status" || errorOperation === "refresh";
+  const refreshDevices = () => void execute("refresh", api.list, (value) => applyDevices(value));
+  const refreshStatus = () => {
+    deviceStatus.clearFailure();
+    void execute("status", api.status, setStatus);
+  };
+  const shownError =
+    error ??
+    deviceStatus.visibleError ??
+    discoveryFailure.visibleError ??
+    captureFailure.visibleError;
+  const shownErrorOperation = error
+    ? errorOperation
+    : deviceStatus.visibleError
+      ? "status"
+      : discoveryFailure.visibleError
+        ? "refresh"
+        : "capture";
+  const discoveryError = shownErrorOperation === "status" || shownErrorOperation === "refresh";
   // A machine connection failure while loading devices is explained once by the central notice.
   const discoveryShownCentrally = useConnectionErrorShownCentrally(
-    discoveryError ? error : undefined,
+    discoveryError ? shownError : undefined,
   );
   const draft = annotations[selected];
   const updateDraft = (change: (value: AnnotationDraft) => AnnotationDraft) =>
@@ -862,8 +1082,9 @@ function DevicePanelSurface({
       redo: [],
     }));
   const beginAnnotation = () => {
-    if (!frame || busy) return;
+    if (busy) return;
     const current = liveStream.snapshot() ?? frame;
+    if (!current) return;
     setFrame(current);
     setLive(false);
     setAnnotations((values) =>
@@ -1003,9 +1224,9 @@ function DevicePanelSurface({
     );
   };
   const directionalSwipe = (direction: "up" | "down" | "left" | "right") => {
-    if (!imageSize.width || !imageSize.height) return;
-    const width = imageSize.width - 1,
-      height = imageSize.height - 1;
+    if (!screenSize.width || !screenSize.height) return;
+    const width = screenSize.width - 1,
+      height = screenSize.height - 1;
     const starts = {
       up: [0.5, 0.75, 0.5, 0.25],
       down: [0.5, 0.25, 0.5, 0.75],
@@ -1013,7 +1234,7 @@ function DevicePanelSurface({
       right: [0.25, 0.5, 0.75, 0.5],
     } as const;
     const [x, y, endX, endY] = starts[direction];
-    action({
+    sendGesture({
       type: "swipe",
       x: Math.round(x * width),
       y: Math.round(y * height),
@@ -1021,7 +1242,54 @@ function DevicePanelSurface({
       endY: Math.round(endY * height),
     });
   };
-  const captureFailed = !!error && errorOperation === "capture";
+  const explicitCaptureFailed = !!error && errorOperation === "capture";
+  const captureFailed = explicitCaptureFailed || !!liveCaptureCause;
+  const [touchHost, setTouchHost] = useState<DevicePanelApi>();
+  const probeTouch =
+    visible &&
+    status?.running &&
+    status.touchProtocol !== 1 &&
+    (status.platform === "win32" || status.platform === "darwin") &&
+    status.platforms.some((entry) => entry.platform === "android" && entry.available);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- probes the Host for optional touch support, independent of inventory and first-frame reads
+  useEffect(() => {
+    let current = true;
+    setTouchHost(undefined);
+    if (probeTouch && api.touchAvailable) {
+      void api.touchAvailable().then(
+        (available) => {
+          if (current && available) setTouchHost(api);
+        },
+        () => {},
+      );
+    }
+    return () => {
+      current = false;
+    };
+  }, [api, probeTouch, deviceStatus.reload]);
+  const liveTouchSupported =
+    !!api.touch && (status?.touchProtocol === 1 || (probeTouch && touchHost === api));
+  const hasInspection = !!inspection;
+  // A live touch belongs to one target, lease and fresh, controllable screen. Leaving any of them
+  // (switch, hide, permission or lease loss, stale frame, annotation, inspection, resize) or
+  // unmounting ends it with a cancel; the cancel still goes out under the touch's own lease.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Release the Android pointer when its view or lease changes.
+  useEffect(
+    () => () => liveTouch.current?.session.end("cancel"),
+    [
+      api,
+      selected,
+      visible,
+      controlLease?.leaseId,
+      controlEnabled,
+      captureFailed,
+      frameStale,
+      hasInspection,
+      liveTouchSupported,
+      screenSize.width,
+      screenSize.height,
+    ],
+  );
   const bootDevice = () =>
     void execute(
       "boot",
@@ -1045,40 +1313,13 @@ function DevicePanelSurface({
       },
     );
   const shownFrame = annotating ? draft?.frame : frame;
-  const liveFrameDelayed =
-    !!frame &&
-    live &&
-    !streaming &&
-    Number.isFinite(Date.parse(frame.capturedAt)) &&
-    now - Date.parse(frame.capturedAt) >= 3000;
-  const frameStateVisible =
-    !!frame &&
-    (!live ||
-      annotating ||
-      frameStale ||
-      captureFailed ||
-      connectionUnavailable ||
-      liveFrameDelayed);
-  useEffect(() => {
-    if (!visible || !frame || streaming) return;
-    setNow(Date.now());
-    const timer = setInterval(
-      () => {
-        if (!document.hidden) setNow(Date.now());
-      },
-      live ? 1000 : 5000,
-    );
-    return () => clearInterval(timer);
-  }, [!!frame, live, visible, streaming]);
-  const frameCaptured = shownFrame ? capturedLabel(shownFrame.capturedAt, now) : undefined;
-  const ownershipLabel = control
-    ? t("Device control claimed by this controller")
-    : controlStatus?.busy
-      ? t("Device control held by another controller")
-      : t("Viewing only · Device control not claimed");
-  const toolbarReason = connectionUnavailable
-    ? t("The device connection is unavailable. Refresh devices to reconnect.")
-    : undefined;
+  const toolbarReason =
+    connectionUnavailable ||
+    (liveCaptureUnavailable && captureFailure.visibleError) ||
+    (listFailure?.disconnected &&
+      (discoveryFailure.visibleError || (error && errorOperation === "refresh")))
+      ? t("The device connection is unavailable. Refresh devices to reconnect.")
+      : undefined;
   const controlReason =
     toolbarReason ??
     (annotating
@@ -1087,10 +1328,10 @@ function DevicePanelSurface({
         ? t(
             "This Host does not support device control ownership. Update the Host to control this device.",
           )
-        : !control
-          ? t("Claim device control before sending input.")
-          : !status?.agentInstalled
-            ? t("Run setup with control enabled to install the control tools.")
+        : !status?.agentInstalled
+          ? t("Set up device control")
+          : !control
+            ? (controlError ?? (controlStatus?.busy ? undefined : t("Connecting…")))
             : undefined);
   const surfaceTitle = surface
     ? t(
@@ -1124,45 +1365,50 @@ function DevicePanelSurface({
     <section
       className="host-tool-panel device-panel bycoda-arc"
       aria-label={t("Devices")}
-      aria-busy={busy || loadingDevices}
+      aria-busy={busy || loadingDevices || discoveryFailure.pending}
     >
-      {error && !discoveryShownCentrally && (
-        <Disclosure
-          {...surfaceAttributes(
-            { frame: "danger", edge: "bottom", tone: "danger" },
-            "device-panel-error",
-          )}
-          role="alert"
-          size="sm"
-          summary={
-            readableDeviceError(error) ??
-            (discoveryError
-              ? t("Could not load devices")
-              : actionCompleted
-                ? t("Action completed; screen unavailable")
-                : captureFailed
-                  ? t("Device screen unavailable")
-                  : t("Device action failed"))
-          }
-        >
-          <OutputBlock size="micro" tone="primary" leading="inherit">
-            {error}
-          </OutputBlock>
-        </Disclosure>
+      {shownError && !discoveryShownCentrally && status && (
+        <div className="device-panel-error">
+          <Alert
+            tone="danger"
+            title={
+              readableDeviceError(shownError) ??
+              (discoveryError
+                ? t("Could not load devices")
+                : actionCompleted
+                  ? t("Action completed; screen unavailable")
+                  : shownErrorOperation === "capture"
+                    ? t("Device screen unavailable")
+                    : t("Device action failed"))
+            }
+            extra={<ErrorDetails detail={shownError} />}
+          />
+        </div>
       )}
-      {!status && !error && (
-        <LoadingText size="caption" leading="inherit" className="px-4 py-5">
+      {!status && !shownError && operation !== "status" && (
+        <LoadingText size="caption" leading="inherit" inset="panel">
           {t("Checking device support…")}
         </LoadingText>
       )}
-      {!status && ((error && !discoveryShownCentrally) || operation === "status") && (
-        <Button
-          loading={operation === "status"}
-          disabled={unavailable("status")}
-          onClick={() => void execute("status", api.status, setStatus)}
-        >
-          {t("Retry")}
-        </Button>
+      {!status && ((shownError && !discoveryShownCentrally) || operation === "status") && (
+        <FailureState
+          context="panel"
+          illustration="unreachable"
+          title={
+            readableDeviceError(shownError ?? "") ??
+            (discoveryError || operation === "status"
+              ? t("Could not load devices")
+              : t("Device action failed"))
+          }
+          description={
+            hostLabel
+              ? t("The device service on {p0} did not respond.", { p0: hostLabel })
+              : t("The device service did not respond.")
+          }
+          error={discoveryShownCentrally ? "" : (shownError ?? "")}
+          retrying={operation === "status"}
+          onRetry={unavailable("status") ? undefined : refreshStatus}
+        />
       )}
       {status && !status.running && (
         <DeviceConnectState
@@ -1190,81 +1436,13 @@ function DevicePanelSurface({
             selected={selected}
             hostLabel={hostLabel}
             disabled={busy || loadingDevices}
-            loading={loadingDevices}
+            loading={loadingDevices || discoveryFailure.pending}
+            discoveryFailed={discoveryUnavailable}
             refreshing={operation === "refresh" || loadingDevices}
             refreshDisabled={unavailable("refresh", !loadingDevices)}
             onSelect={selectDevice}
             onRefresh={refreshDevices}
           >
-            {device && (
-              <>
-                <Tooltip
-                  label={
-                    !ownershipSupported
-                      ? t(
-                          "This Host does not support device control ownership. Update the Host to control this device.",
-                        )
-                      : ownershipLabel
-                  }
-                  side="bottom"
-                >
-                  <Switch
-                    label={t("Allow device control")}
-                    checked={control}
-                    aria-describedby={ownershipDescriptionId}
-                    aria-busy={operation === "claim" || operation === "release"}
-                    disabled={
-                      busy ||
-                      !device?.booted ||
-                      !ownershipSupported ||
-                      (!control && controlStatus?.busy && !error)
-                    }
-                    onCheckedChange={() => {
-                      setAnnotating(false);
-                      if (annotating && control) return;
-                      if (control && controlLease?.leaseId && api.releaseControl) {
-                        void execute(
-                          "release",
-                          () => api.releaseControl!(selected, controlLease.leaseId),
-                          () => {
-                            setControlStatus({
-                              deviceId: selected,
-                              busy: false,
-                            });
-                            setControl(false);
-                            setControlLease(undefined);
-                            delete claimRequests.current[selected];
-                            setInspection(undefined);
-                          },
-                        ).catch(showActionError);
-                      } else if (api.claimControl) {
-                        claimRequests.current[selected] ??= crypto.randomUUID();
-                        void execute(
-                          "claim",
-                          () => api.claimControl!(selected, claimRequests.current[selected]),
-                          (value) => {
-                            setControlLease(value);
-                            setControlStatus({
-                              deviceId: value.deviceId,
-                              busy: true,
-                            });
-                            setControl(!!value.leaseId);
-                          },
-                        ).catch(showActionError);
-                      }
-                    }}
-                  />
-                </Tooltip>
-                {!control && controlStatus?.busy ? (
-                  <Text as="span" size="secondary" tone="warning" className="ms-2">
-                    {t("Control in use")}
-                  </Text>
-                ) : null}
-                <span id={ownershipDescriptionId} className="sr-only">
-                  {ownershipLabel}
-                </span>
-              </>
-            )}
             {!device && optionsButton("bottom")}
           </DeviceBar>
           <DeviceNotices
@@ -1319,12 +1497,29 @@ function DevicePanelSurface({
                     disabled={busy}
                     className="device-panel-annotation"
                   />
-                ) : frame ? (
+                ) : frame || streaming ? (
                   <Button
                     variant="ghost"
                     motion="none"
                     layout="media"
                     className="device-panel-preview-control"
+                    data-device-screen
+                    style={
+                      screenSize.height
+                        ? ({
+                            "--device-aspect":
+                              liveStream.picture?.aspect ?? screenSize.width / screenSize.height,
+                          } as CSSProperties)
+                        : undefined
+                    }
+                    data-device-interactive={
+                      controlEnabled &&
+                      !frameStale &&
+                      !captureFailed &&
+                      device?.platform === "android"
+                        ? true
+                        : undefined
+                    }
                     aria-disabled={
                       (!controlEnabled || frameStale || captureFailed) && !previewInspection
                     }
@@ -1345,13 +1540,13 @@ function DevicePanelSurface({
                         !captureFailed &&
                         !inspection &&
                         device?.platform === "android" &&
-                        imageSize.width &&
-                        imageSize.height
+                        screenSize.width &&
+                        screenSize.height
                       )
-                        action({
+                        sendGesture({
                           type: "press",
-                          x: Math.round(imageSize.width / 2),
-                          y: Math.round(imageSize.height / 2),
+                          x: Math.round(screenSize.width / 2),
+                          y: Math.round(screenSize.height / 2),
                         });
                     }}
                     onKeyDown={(event) => {
@@ -1374,11 +1569,11 @@ function DevicePanelSurface({
                         return;
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        if (!imageSize.width || !imageSize.height) return;
-                        action({
+                        if (!screenSize.width || !screenSize.height) return;
+                        sendGesture({
                           type: "press",
-                          x: Math.round(imageSize.width / 2),
-                          y: Math.round(imageSize.height / 2),
+                          x: Math.round(screenSize.width / 2),
+                          y: Math.round(screenSize.height / 2),
                         });
                         return;
                       }
@@ -1395,19 +1590,11 @@ function DevicePanelSurface({
                       }
                     }}
                     onPointerDown={(event) => {
-                      const image = event.currentTarget.querySelector("img");
-                      if (!image) return;
-                      const imageBounds = image.getBoundingClientRect();
-                      if (
-                        event.clientX < imageBounds.left ||
-                        event.clientX > imageBounds.right ||
-                        event.clientY < imageBounds.top ||
-                        event.clientY > imageBounds.bottom
-                      )
-                        return;
                       if (inspection) {
                         gesture.current = null;
-                        if (event.button === 0) {
+                        liveTouch.current?.session.end("cancel");
+                        const image = event.currentTarget.querySelector("img");
+                        if (event.button === 0 && image) {
                           const target = pointNode(image, event.clientX, event.clientY);
                           setSelectedNode(target?.id ?? "");
                           setHoveredNode("");
@@ -1423,30 +1610,66 @@ function DevicePanelSurface({
                         frameStale
                       )
                         return;
-                      const bounds = image.getBoundingClientRect();
+                      const target = event.currentTarget;
+                      const bounds = target.getBoundingClientRect();
                       if (
                         !bounds.width ||
                         !bounds.height ||
-                        !image.naturalWidth ||
-                        !image.naturalHeight
+                        !screenSize.width ||
+                        !screenSize.height
                       )
                         return;
-                      image.setPointerCapture(event.pointerId);
+                      // One touch at a time; a second pointer never disturbs it.
+                      if (liveTouch.current && !liveTouch.current.session.closed) return;
+                      target.setPointerCapture(event.pointerId);
+                      if (liveTouchSupported && controlLease?.leaseId) {
+                        gesture.current = null;
+                        startLiveTouch(
+                          touchPoint(event, bounds),
+                          event.pointerId,
+                          controlLease.leaseId,
+                        );
+                        return;
+                      }
                       gesture.current = {
                         x: Math.round(
-                          ((event.clientX - bounds.left) * image.naturalWidth) / bounds.width,
+                          ((event.clientX - bounds.left) * screenSize.width) / bounds.width,
                         ),
                         y: Math.round(
-                          ((event.clientY - bounds.top) * image.naturalHeight) / bounds.height,
+                          ((event.clientY - bounds.top) * screenSize.height) / bounds.height,
                         ),
                         clientX: event.clientX,
                         clientY: event.clientY,
                         pointerId: event.pointerId,
+                        deviceId: selected,
+                        leaseId: controlLease?.leaseId,
+                        width: screenSize.width,
+                        height: screenSize.height,
                       };
                     }}
                     onPointerUp={(event) => {
                       if (inspection) {
                         gesture.current = null;
+                        liveTouch.current?.session.end("cancel");
+                        return;
+                      }
+                      const touching = liveTouch.current;
+                      if (
+                        touching &&
+                        !touching.session.closed &&
+                        touching.pointerId === event.pointerId
+                      ) {
+                        // The live touch owns this gesture; it never falls back to press or swipe.
+                        const bounds = event.currentTarget.getBoundingClientRect();
+                        if (
+                          !controlEnabled ||
+                          captureFailed ||
+                          frameStale ||
+                          !bounds.width ||
+                          !bounds.height
+                        )
+                          touching.session.end("cancel");
+                        else touching.session.end("up", touchPoint(event, bounds));
                         return;
                       }
                       const start = gesture.current;
@@ -1454,38 +1677,47 @@ function DevicePanelSurface({
                       if (
                         !start ||
                         start.pointerId !== event.pointerId ||
+                        start.deviceId !== selected ||
+                        start.leaseId !== controlLease?.leaseId ||
+                        start.width !== screenSize.width ||
+                        start.height !== screenSize.height ||
                         !controlEnabled ||
                         captureFailed ||
                         frameStale
                       )
                         return;
-                      const image = event.currentTarget.querySelector("img");
-                      if (!image) return;
-                      const bounds = image.getBoundingClientRect();
+                      const bounds = event.currentTarget.getBoundingClientRect();
+                      if (
+                        !bounds.width ||
+                        !bounds.height ||
+                        !screenSize.width ||
+                        !screenSize.height
+                      )
+                        return;
                       const x = Math.max(
                         0,
                         Math.min(
-                          image.naturalWidth - 1,
+                          screenSize.width - 1,
                           Math.round(
-                            ((event.clientX - bounds.left) * image.naturalWidth) / bounds.width,
+                            ((event.clientX - bounds.left) * screenSize.width) / bounds.width,
                           ),
                         ),
                       );
                       const y = Math.max(
                         0,
                         Math.min(
-                          image.naturalHeight - 1,
+                          screenSize.height - 1,
                           Math.round(
-                            ((event.clientY - bounds.top) * image.naturalHeight) / bounds.height,
+                            ((event.clientY - bounds.top) * screenSize.height) / bounds.height,
                           ),
                         ),
                       );
                       if (
                         Math.hypot(event.clientX - start.clientX, event.clientY - start.clientY) < 6
                       )
-                        action({ type: "press", x: start.x, y: start.y });
+                        sendGesture({ type: "press", x: start.x, y: start.y });
                       else
-                        action({
+                        sendGesture({
                           type: "swipe",
                           x: start.x,
                           y: start.y,
@@ -1493,58 +1725,71 @@ function DevicePanelSurface({
                           endY: y,
                         });
                     }}
-                    onPointerCancel={() => {
+                    onPointerCancel={(event) => {
                       gesture.current = null;
+                      if (liveTouch.current?.pointerId === event.pointerId)
+                        liveTouch.current.session.end("cancel");
+                    }}
+                    onLostPointerCapture={(event) => {
+                      gesture.current = null;
+                      // After a normal pointerup the touch has already ended, so this is a no-op.
+                      if (liveTouch.current?.pointerId === event.pointerId)
+                        liveTouch.current.session.end("cancel");
                     }}
                     onPointerMove={(event) => {
+                      if (liveTouch.current?.pointerId === event.pointerId) {
+                        const bounds = event.currentTarget.getBoundingClientRect();
+                        if (bounds.width && bounds.height)
+                          liveTouch.current.session.move(touchPoint(event, bounds));
+                        return;
+                      }
+                      if (!previewInspection) return;
                       const image = event.currentTarget.querySelector("img");
-                      if (!image) return;
-                      if (previewInspection)
+                      if (image)
                         setHoveredNode(pointNode(image, event.clientX, event.clientY)?.id ?? "");
                     }}
                     onPointerLeave={() => setHoveredNode("")}
                   >
-                    <img
-                      key={inspection?.inspectionId ?? "device-live-frame"}
-                      alt={t("Current device screen")}
-                      className={
-                        controlEnabled &&
-                        !frameStale &&
-                        !captureFailed &&
-                        device?.platform === "android"
-                          ? "host-frame-interactive"
-                          : undefined
-                      }
-                      src={imageSource(frame)}
-                      draggable={false}
-                      onLoad={(event) => {
-                        const image = event.currentTarget;
-                        setImageSize({
-                          width: image.naturalWidth,
-                          height: image.naturalHeight,
-                        });
-                        if (image.naturalHeight)
-                          image.style.setProperty(
-                            "--device-aspect",
-                            String(image.naturalWidth / image.naturalHeight),
-                          );
-                      }}
-                    />
-                    {streaming && !inspection && (
+                    {streaming && !inspection ? (
                       <canvas
                         ref={liveStream.canvasRef}
                         className="device-panel-live"
-                        aria-hidden
+                        role="img"
+                        aria-label={t("Current device screen")}
                       />
-                    )}
+                    ) : frame ? (
+                      <img
+                        key={inspection?.inspectionId ?? "device-live-frame"}
+                        alt={t("Current device screen")}
+                        className={
+                          controlEnabled &&
+                          !frameStale &&
+                          !captureFailed &&
+                          device?.platform === "android"
+                            ? "host-frame-interactive"
+                            : undefined
+                        }
+                        src={imageSource(frame)}
+                        draggable={false}
+                        onLoad={(event) => {
+                          const image = event.currentTarget;
+                          const { naturalWidth: width, naturalHeight: height } = image;
+                          setImageSize((current) =>
+                            current.width === width && current.height === height
+                              ? current
+                              : { width, height },
+                          );
+                        }}
+                      />
+                    ) : null}
                   </Button>
                 ) : (
                   <DeviceWaitingState
                     devices={devices}
                     device={device}
                     selected={selected}
-                    loadingDevices={loadingDevices}
-                    error={!!error}
+                    loadingDevices={loadingDevices || discoveryFailure.pending}
+                    error={!!shownError}
                     live={live}
                     facts={(item) =>
                       `${platformVersionLabel(item)}, ${kindLabel(item)}, ${stateLabel(item)}`
@@ -1703,11 +1948,10 @@ function DevicePanelSurface({
                     tooltipSide="left"
                     label={t("Mark device screen")}
                     tooltipDetails={[t("Pause live view and mark a captured frame.")]}
-                    selected={annotating}
-                    aria-pressed={annotating}
-                    disabled={!frame || busy}
+                    pressed={annotating}
+                    disabled={(!frame && !streaming) || busy}
                     disabledReason={
-                      !frame
+                      !frame && !streaming
                         ? t("Marking needs a captured frame.")
                         : t("Wait for the current operation to finish")
                     }
@@ -1723,6 +1967,9 @@ function DevicePanelSurface({
                       label={t("Add marked image to draft")}
                       loading={operation === "addImage"}
                       disabled={unavailable("addImage")}
+                      disabledReason={t(
+                        "Wait for the current device action to finish, or set up the device first.",
+                      )}
                       onClick={addImage}
                     >
                       <MessageSquarePlus className="icon-sm" aria-hidden />
@@ -1782,28 +2029,18 @@ function DevicePanelSurface({
                 </div>
               </ScrollArea>
             )}
-            {frameStateVisible && (
-              <Tooltip label={shownFrame?.capturedAt} asChild>
-                <Text
-                  truncate
-                  size="micro"
-                  tone="primary"
-                  leading="inherit"
-                  {...surfaceAttributes(
-                    { variant: "floating", frame: "pane", radius: "pill", elevation: "floating" },
-                    "device-panel-frame-state",
-                  )}
-                >
-                  {annotating
-                    ? t("Marking · Frozen frame")
-                    : captureFailed || connectionUnavailable || frameStale
-                      ? t("Last frame · Not live")
-                      : liveFrameDelayed
-                        ? t("Last frame · Refreshing")
-                        : t("Paused")}
-                  {frameCaptured ? ` · ${frameCaptured}` : ""}
-                </Text>
-              </Tooltip>
+            {frame && (
+              <DeviceFrameState
+                frame={frame}
+                shownFrame={shownFrame}
+                live={live}
+                streaming={streaming}
+                visible={visible}
+                annotating={annotating}
+                frameStale={frameStale && !captureFailure.pending}
+                captureFailed={explicitCaptureFailed || !!captureFailure.visibleError}
+                connectionUnavailable={!!toolbarReason}
+              />
             )}
             {annotating && draft && (
               <div
@@ -1904,6 +2141,7 @@ function DevicePanelSurface({
               setHoveredNode("");
             }
           }}
+          variant="panel"
           className="device-panel-popover bycoda-arc"
           kind="dialog"
           aria-label={surfaceTitle}
@@ -1986,6 +2224,9 @@ function DevicePanelSurface({
               ) : null}
               <Button
                 disabled={unavailable("openApp", canControlDevice && !annotating && !!app.trim())}
+                disabledReason={t(
+                  "Wait for the current device action to finish, or set up the device first.",
+                )}
                 loading={operation === "openApp"}
                 onClick={() => action({ type: "openApp", app: app.trim() })}
               >
@@ -2012,6 +2253,9 @@ function DevicePanelSurface({
                 disabled={unavailable(
                   "type",
                   canControlDevice && !annotating && !!text && !textError,
+                )}
+                disabledReason={t(
+                  "Wait for the current device action to finish, or set up the device first.",
                 )}
                 loading={operation === "type"}
                 onClick={() => action({ type: "type", text })}
@@ -2040,6 +2284,9 @@ function DevicePanelSurface({
               />
               <Button
                 disabled={unavailable("press", canControlDevice && !annotating && coordinatesValid)}
+                disabledReason={t(
+                  "Wait for the current device action to finish, or set up the device first.",
+                )}
                 loading={operation === "press"}
                 onClick={() => action({ type: "press", x, y })}
               >
@@ -2076,6 +2323,9 @@ function DevicePanelSurface({
                     endX <= 20000 &&
                     endY <= 20000,
                 )}
+                disabledReason={t(
+                  "Wait for the current device action to finish, or set up the device first.",
+                )}
                 loading={operation === "swipe"}
                 onClick={() => action({ type: "swipe", x, y, endX, endY })}
               >
@@ -2091,7 +2341,10 @@ function DevicePanelSurface({
                     <Button
                       key={direction}
                       variant="ghost"
-                      disabled={!controlEnabled || !imageSize.width || captureFailed}
+                      disabled={!controlEnabled || !screenSize.width || captureFailed}
+                      disabledReason={t(
+                        "Wait for the current device action to finish, or set up the device first.",
+                      )}
                       onClick={() => directionalSwipe(direction)}
                     >
                       {t(
@@ -2149,6 +2402,9 @@ function DevicePanelSurface({
                   variant="primary"
                   loading={operation === "addImage"}
                   disabled={unavailable("addImage")}
+                  disabledReason={t(
+                    "Wait for the current device action to finish, or set up the device first.",
+                  )}
                   onClick={addImage}
                 >
                   {t("Add marked image to draft")}
@@ -2164,6 +2420,9 @@ function DevicePanelSurface({
                   <Button
                     loading={operation === "addImage"}
                     disabled={unavailable("addImage")}
+                    disabledReason={t(
+                      "Wait for the current device action to finish, or set up the device first.",
+                    )}
                     onClick={() => {
                       const attachment = draft.transferOperation!;
                       void execute(
@@ -2232,17 +2491,18 @@ function DevicePanelSurface({
             <DeviceSetupPanel
               status={status}
               hostLabel={hostLabel}
+              machinePicker={machinePicker}
               unknown={connectionUnavailable || discoveryUnavailable}
               deviceCount={
                 devicesLoaded && !loadingDevices && !discoveryUnavailable
                   ? devices.length
                   : undefined
               }
-              showLastError={!error}
+              showLastError={!shownError}
               refresh={{
                 loading: operation === "status",
                 disabled: unavailable("status", !loadingDevices),
-                onClick: () => void execute("status", api.status, setStatus),
+                onClick: refreshStatus,
               }}
               setup={{
                 loading: operation === "setup",

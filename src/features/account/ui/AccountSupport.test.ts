@@ -62,12 +62,16 @@ describe("support tab", () => {
     expect(container.textContent).toContain("Do not paste passwords, tokens");
   });
 
-  it("asks for a subject and a message without calling the API", async () => {
+  it("keeps Send unavailable until a subject and a message are filled, without calling the API", async () => {
     await act(async () => root.render(createElement(AccountSupport)));
-    await click(button("Send to support"));
-    expect(container.textContent).toContain("Add a subject.");
-    expect(container.textContent).toContain("Add a message.");
+    const send = button("Send to support");
+    expect(send.getAttribute("aria-disabled")).toBe("true");
+    await click(send);
     expect(mocks.createSupportTicket).not.toHaveBeenCalled();
+    type(subject(), "Sync stuck");
+    expect(send.getAttribute("aria-disabled")).toBe("true");
+    type(message(), "It never finishes.");
+    expect(send.getAttribute("aria-disabled")).toBeNull();
   });
 
   it("sends the ticket, shows the reference and clears the form", async () => {
@@ -127,6 +131,34 @@ describe("support tab", () => {
     expect(subject().value).toBe("New unsent issue");
     expect(message().value).toBe("New unsent message");
     expect(container.textContent).toContain("Reference: earlier-ticket");
+  });
+
+  it("drops a stale field error once the user fixes that field", async () => {
+    await act(async () => root.render(createElement(AccountSupport)));
+    type(subject(), "s".repeat(201));
+    type(message(), "m".repeat(5001));
+    await click(button("Send to support"));
+    expect(container.textContent).toContain("Use at most 200 characters.");
+    type(subject(), "Sync stuck");
+    // The field is valid at once; its message leaves through an exit animation.
+    expect(subject().getAttribute("aria-invalid")).toBeNull();
+    expect(message().getAttribute("aria-invalid")).toBe("true");
+    await vi.waitFor(() => expect(container.textContent).not.toContain("Use at most 200"));
+    expect(container.textContent).toContain("Use at most 5000 characters.");
+  });
+
+  it("clears a stale failure banner when the user edits the draft", async () => {
+    mocks.createSupportTicket.mockRejectedValueOnce(
+      new AccountApiError(429, "rate_limited", "slow", "req_2"),
+    );
+    await act(async () => root.render(createElement(AccountSupport)));
+    type(subject(), "Sync stuck");
+    type(message(), "It never finishes.");
+    await click(button("Send to support"));
+    expect(container.textContent).toContain("Too many requests");
+    type(message(), "It never finishes, again.");
+    expect(container.textContent).not.toContain("Too many requests");
+    expect(message().value).toBe("It never finishes, again.");
   });
 });
 

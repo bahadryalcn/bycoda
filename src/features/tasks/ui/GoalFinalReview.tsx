@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { StatusText } from "../../../shared/ui/StatusText";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { GOAL_FINAL_ACCEPTANCE_CRITERIA, goalPlanReviews } from "../model/hostGoals";
@@ -30,18 +31,30 @@ export function GoalFinalReview({
   if (!goal.finalAcceptance && goal.plan && !goalPlanReviews(goal).final) return null;
   return (
     <div className="grid min-w-0 gap-2">
-      <p role="status">
-        {t("Final epic acceptance")}:{" "}
-        {t(
-          goal.finalAcceptance?.status === "passed"
-            ? "Verified"
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2">
+        <Text size="secondary" tone="secondary">
+          {t("Final epic acceptance")}
+        </Text>
+        <StatusText
+          tone={
+            goal.finalAcceptance?.status === "passed"
+              ? "done"
+              : goal.finalAcceptance?.status === "failed"
+                ? "failed"
+                : goal.finalAcceptance?.status === "running"
+                  ? "running"
+                  : "idle"
+          }
+        >
+          {goal.finalAcceptance?.status === "passed"
+            ? t("Verified")
             : goal.finalAcceptance?.status === "failed"
-              ? "Failed"
+              ? t("Failed")
               : goal.finalAcceptance?.status === "running"
-                ? "Running"
-                : "Queued",
-        )}
-      </p>
+                ? t("Running")
+                : t("Queued")}
+        </StatusText>
+      </div>
       {goal.finalAcceptance?.note ? (
         <Text as="p" tone="secondary" size="inherit" className="break-words">
           {goal.finalAcceptance.note}
@@ -60,6 +73,13 @@ export function GoalFinalReview({
             variant="secondary"
             size="sm"
             disabled={busy || goal.stale || !goal.finalReviewSupported}
+            disabledReason={
+              goal.stale
+                ? t("The host is offline.")
+                : !goal.finalReviewSupported
+                  ? t("Update the selected host to recheck final acceptance.")
+                  : undefined
+            }
             onClick={onRecheckFinal}
           >
             {t("Recheck final acceptance")}

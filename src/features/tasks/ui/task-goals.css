@@ -1,12 +1,19 @@
-/* Goals: the board section, goal cards, plan steps and the goal dialogs. */
+/* Goals: the epics section, compact epic cards, plan steps and the goal dialogs. */
+.task-goals-section {
+  display: grid;
+  min-inline-size: 0;
+  gap: 0.125rem;
+  padding: 0.5rem 1rem;
+}
 .goal-list {
   display: flex;
-  max-block-size: 18rem;
+  /* Capped by the window too: the epics cannot crowd the task list out of a short window. */
+  max-block-size: min(18rem, 30dvh);
   min-inline-size: 0;
   flex-direction: column;
   gap: 0.5rem;
   overflow-y: auto;
-  padding-block: 0.25rem 0.5rem;
+  padding-block: 0.25rem 0;
   margin: 0;
   list-style: none;
 }
@@ -15,25 +22,19 @@
   container-name: goal-card;
   display: grid;
   min-inline-size: 0;
-  gap: 0.5rem;
+  gap: 0.375rem;
 }
 .goal-card-head {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: 0.5rem 0.75rem;
   min-inline-size: 0;
-}
-.goal-card-well {
-  display: grid;
-  place-items: center;
-  inline-size: 1.75rem;
-  block-size: 1.75rem;
 }
 .goal-card-main {
   display: grid;
   min-inline-size: 0;
-  gap: 0.25rem;
+  gap: 0.125rem;
 }
 .goal-card-title-row,
 .goal-card-meta {
@@ -41,11 +42,11 @@
   min-inline-size: 0;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.25rem 0.75rem;
+  gap: 0 0.25rem;
 }
 .goal-card-title-row {
   flex-wrap: nowrap;
-  gap: 0.5rem;
+  gap: 0.375rem;
 }
 .goal-card-title {
   min-inline-size: 0;
@@ -58,18 +59,11 @@
   font-variant-numeric: tabular-nums;
 }
 .goal-card-progress > [role="progressbar"] {
-  inline-size: 6rem;
+  inline-size: 5.5rem;
 }
 .goal-card-projects {
-  display: flex;
   min-inline-size: 0;
-  align-items: center;
-  gap: 0.375rem;
-}
-.goal-card-machine {
-  min-inline-size: 0;
-  overflow: hidden;
-  white-space: nowrap;
+  max-inline-size: 16rem;
 }
 .goal-card-actions {
   display: flex;
@@ -86,6 +80,9 @@
   min-inline-size: 0;
   gap: 0.5rem;
   padding-block-start: 0.5rem;
+}
+.goal-card-body[hidden] {
+  display: none;
 }
 .goal-card-body p {
   margin: 0;
@@ -130,71 +127,34 @@
   align-items: start;
   gap: 0.5rem;
 }
-@container goal-card (max-width: 520px) {
+@container goal-card (max-width: 420px) {
   .goal-card-head {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
   .goal-card-actions {
-    grid-column: 1 / -1;
     justify-content: flex-start;
   }
 }
 
-/* Dialog sections: a titled group of settings-style rows between hairlines. */
-.goal-form-sections {
-  display: grid;
-  gap: 1.25rem;
-  min-inline-size: 0;
-}
-.goal-section {
-  display: grid;
-  min-inline-size: 0;
-  gap: 0.25rem;
-}
-.goal-section-rows {
-  display: grid;
-  min-inline-size: 0;
-}
-.goal-section-pad {
-  display: grid;
-  min-inline-size: 0;
-  gap: 0.75rem;
-}
-.goal-option {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.75rem;
-  min-inline-size: 0;
-  padding: 0.5rem 0.75rem;
-}
-.goal-option-text {
-  display: grid;
-  min-inline-size: 0;
-}
-.goal-option-control {
-  display: flex;
-  min-inline-size: 0;
-  max-inline-size: 16rem;
-  justify-content: flex-end;
-}
-.goal-option-wide {
-  padding: 0.5rem 0.75rem;
-}
-.goal-projects {
+/* Compact project selection and one working-copy picker per project. */
+.goal-project-controls {
   display: flex;
   min-inline-size: 0;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--ui-space-2);
+  padding-block: var(--ui-space-1);
 }
-.goal-project-chip {
-  display: inline-flex;
-  max-inline-size: 14rem;
+.goal-project-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) auto;
+  min-inline-size: 0;
   align-items: center;
-  gap: 0.25rem;
-  block-size: 1.5rem;
-  padding-inline: 0.5rem 0.25rem;
+  gap: var(--ui-space-1);
+  padding-block: var(--ui-space-1);
+}
+.goal-project-row > :nth-child(2) {
+  max-inline-size: min(12rem, 38vi);
 }
 .goal-session-task {
   display: grid;

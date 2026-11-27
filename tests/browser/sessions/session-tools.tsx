@@ -7,8 +7,11 @@ import { ToolsWorkspace, dockHostTools } from "../../../src/features/host-tools/
 import HostToolsWindow from "../../../src/features/host-tools/HostToolsWindow";
 import type { ToolsSession } from "../../../src/features/host-tools/toolsSessionRegistry";
 import { calls } from "../host-tools/host-tools-mocks";
+import { AgentTranscript } from "../../../src/features/sessions/ui/AgentTranscript";
+import { rememberRemoteSession } from "../../../src/features/connections/model/connections";
 import "../../../src/styles/index.css";
 const query = new URLSearchParams(location.search);
+const remotePreview = query.has("remote-preview");
 if (query.get("role") === "source" && query.get("shared-device") === "1")
   localStorage.removeItem("session-tools.fixture-device-runtime");
 applyThemePreference(query.get("theme") === "light" ? "light" : "dark");
@@ -29,7 +32,9 @@ const sessions: ToolsSession[] = [
     initialTab: "browser",
   },
   {
-    cwd: "remote://mac/Users/demo/Studio",
+    cwd: remotePreview
+      ? "remote://fixture-mac-env/Users/demo/Studio"
+      : "remote://mac/Users/demo/Studio",
     sessionId: "host-studio",
     composerSessionId: "composer-studio",
     composerWindow: "main",
@@ -50,7 +55,7 @@ const sessions: ToolsSession[] = [
   },
 ];
 function Source() {
-  const [active, setActive] = useState(sessions[0]);
+  const [active, setActive] = useState(sessions[remotePreview ? 1 : 0]);
   useEffect(() => {
     dockHostTools(sessions[0]);
     dockHostTools(sessions[1]);
@@ -74,12 +79,27 @@ function Source() {
         <div className="flex min-w-0 flex-1 flex-col gap-3 p-5">
           <h1>{active.title}</h1>
           <p>{active.cwd}</p>
-          <p>Conversation content</p>
+          {remotePreview && active.sessionId === "host-studio" ? (
+            <AgentTranscript
+              cwd={active.cwd}
+              sessionId={active.composerSessionId}
+              blocks={[
+                {
+                  id: "remote-preview-links",
+                  role: "assistant",
+                  text: "[Open patient panel](http://localhost:3019/patients?view=active#list)\n\n[Open appointments](http://localhost:3019/appointments)",
+                },
+              ]}
+            />
+          ) : (
+            <p>Conversation content</p>
+          )}
         </div>
       </ToolsWorkspace>
     </div>
   );
 }
+if (remotePreview) rememberRemoteSession("composer-studio", "host-studio");
 createRoot(document.getElementById("root")!).render(
   query.get("role") === "hub" ? <HostToolsWindow {...sessions[0]} /> : <Source />,
 );

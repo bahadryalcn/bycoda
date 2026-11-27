@@ -1,43 +1,44 @@
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useEffect, useRef } from "react";
 import { t } from "../../../shared/i18n";
-import { Disclosure } from "../../../shared/ui/Disclosure";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { approveGoal, goalKey, recheckGoalFinalReview, replanGoal } from "../model/goalClient";
 import type { BoardTask } from "../model/taskClient";
 import { GoalCard } from "./GoalCard";
 import { ALL_GOALS, type TaskGoalsController } from "./TaskGoalsController";
 import "./task-goals.css";
 
-/** Goals above the board, filtered to the one the owner is looking at. */
+/** Epics above the tasks as compact cards, filtered to the one the owner is looking at. An epic
+ * that needs the owner opens its details by itself, so nothing hides behind a closed heading. */
 export function GoalList({
   goals,
   filter,
   tasks,
   acting,
+  onOpenTask,
   revealKey,
 }: {
   goals: TaskGoalsController;
   filter: string;
   tasks: BoardTask[];
   acting: string | null;
+  onOpenTask: (task: BoardTask) => void;
   revealKey?: string;
 }) {
-  const disclosure = useRef<HTMLDetailsElement>(null);
+  const section = useRef<HTMLElement>(null);
+  // A reveal request (a notification or the epic filter) brings the epics into view.
   useEffect(() => {
-    if (revealKey && disclosure.current) {
-      disclosure.current.open = true;
-      disclosure.current.scrollIntoView?.({ block: "nearest" });
-    }
+    if (revealKey) section.current?.scrollIntoView?.({ block: "nearest" });
   }, [revealKey]);
   return (
-    <Disclosure
-      ref={disclosure}
-      variant="row"
-      size="sm"
-      {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "task-goals-disclosure")}
-      summary={t("Epics")}
-      count={goals.goals.length}
+    <section
+      ref={section}
+      aria-label={t("Epics")}
+      {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "task-goals-section")}
     >
+      <SectionLabel as="h2" count={goals.goals.length}>
+        {t("Epics")}
+      </SectionLabel>
       <ul aria-label={t("Epics")} className="goal-list">
         {goals.goals
           .filter((goal) => filter === ALL_GOALS || goalKey(goal.machineId, goal.id) === filter)
@@ -48,6 +49,7 @@ export function GoalList({
                 <GoalCard
                   goal={goal}
                   tasks={tasks.filter((task) => task.machineId === goal.machineId)}
+                  onOpenTask={onOpenTask}
                   busy={acting != null}
                   pending={acting === `goal:${key}`}
                   onApprove={() => goals.actOn(goal, () => approveGoal(goal)).catch(goals.report)}
@@ -67,6 +69,6 @@ export function GoalList({
             );
           })}
       </ul>
-    </Disclosure>
+    </section>
   );
 }

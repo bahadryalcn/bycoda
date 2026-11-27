@@ -251,8 +251,8 @@ describe("recent sessions preferences", () => {
     });
   });
 
-  it("defaults to the last 10, expanded", () => {
-    expect(loadRecentSessionsPrefs()).toEqual({ collapsed: false, count: 10 });
+  it("defaults to the last 3, expanded", () => {
+    expect(loadRecentSessionsPrefs()).toEqual({ collapsed: false, count: 3 });
   });
 
   it("round-trips and ignores a count that is not offered", () => {
@@ -261,7 +261,7 @@ describe("recent sessions preferences", () => {
     saveRecentSessionsPrefs({ collapsed: true, count: 20 });
     expect(loadRecentSessionsPrefs()).toEqual({ collapsed: true, count: 20 });
     localStorage.setItem("bycoda.lastSessions", JSON.stringify({ collapsed: false, count: 7 }));
-    expect(loadRecentSessionsPrefs().count).toBe(10);
+    expect(loadRecentSessionsPrefs().count).toBe(3);
   });
 });
 

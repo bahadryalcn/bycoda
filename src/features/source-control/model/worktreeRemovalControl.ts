@@ -85,6 +85,7 @@ const defaults: Deps = {
         t("External Git or filesystem changes cannot be locked by this review."),
       ].join("\n"),
       confirmLabel: t("Remove worktree"),
+      cancelLabel: t("Cancel"),
       tone: "danger",
       reveal: true,
     }),
@@ -146,9 +147,7 @@ export function createWorktreeRemovalControl(overrides: Partial<Deps> = {}) {
       exact(input, ["path"]);
       const path = text(input.path);
       if (isEqualOrInside(context.workingCwd, path) || isEqualOrInside(context.projectCwd, path))
-        throw new Error(
-          "Open a conversation in the base working copy before removing this worktree",
-        );
+        throw new Error("Open a conversation in the base worktree before removing this worktree");
       const currentOwner = deps.owner();
       if (!currentOwner) throw new Error("Desktop worktree lifecycle owner is unavailable");
       const ui = currentOwner.capture(path);

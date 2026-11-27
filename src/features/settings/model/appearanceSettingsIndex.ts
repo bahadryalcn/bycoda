@@ -1,8 +1,96 @@
+import { IS_MAC } from "../../../platform/tauri/platform";
 import { t } from "../../../shared/i18n/core";
 import type { SettingsEntry } from "./settings";
+import { FILE_REF_KINDS, type FileRefKind } from "../../../shared/lib/fileReferenceKind";
 
-/** Searchable Appearance controls; each `id` is a row's setting id in the Appearance tabs. */
+/** Names of the file kinds whose reference color the Chat appearance tab sets. */
+export const FILE_KIND_LABELS: Record<FileRefKind, () => string> = {
+  code: () => t("Code"),
+  markup: () => t("Web and markup"),
+  docs: () => t("Documents"),
+  data: () => t("Data and config"),
+  media: () => t("Media"),
+  archive: () => t("Archives"),
+  folder: () => t("Folders"),
+  other: () => t("Other files"),
+};
+
+/** Searchable appearance and transcript controls, indexed by their current Settings page. */
 export const APPEARANCE_SETTINGS_INDEX: SettingsEntry[] = [
+  ...(
+    [
+      [
+        "transcript-preset",
+        () => t("Reading look"),
+        "transcript preset glass plain contrast reading look",
+      ],
+      [
+        "transcript-surface",
+        () => t("Reading surface"),
+        "transcript reading surface reply column off okuma yüzeyi",
+      ],
+      [
+        "transcript-surface-opacity",
+        () => t("Surface opacity"),
+        "transcript reply surface fill transparency yanıt yüzey saydamlık",
+      ],
+      [
+        "transcript-surface-blur",
+        () => t("Surface blur"),
+        "transcript surface backdrop blur bulanıklık",
+      ],
+      [
+        "chat-message-color",
+        () => t("Surface color"),
+        "chat bubble neutral theme tint sohbet mesaj renk",
+      ],
+      [
+        "user-message-opacity",
+        () => t("Your message opacity"),
+        "chat bubble glass transparency sohbet mesaj saydamlık",
+      ],
+      [
+        "transcript-body-ink",
+        () => t("Reply text"),
+        "transcript reply text brightness ink metin parlaklık",
+      ],
+      [
+        "transcript-chrome-ink",
+        () => t("Tool and action text"),
+        "transcript tool command action text brightness ink araç komut metin",
+      ],
+      [
+        "transcript-cards",
+        () => t("Cards and code"),
+        "transcript card code table inset outline solid kart kod tablo",
+      ],
+      [
+        "transcript-actions",
+        () => t("Message actions"),
+        "transcript copy actions hover always eylem kopyala",
+      ],
+      [
+        "transcript-file-refs",
+        () => t("File references"),
+        "transcript file folder reference icon color dosya klasör referans simge",
+      ],
+    ] as const
+  ).map(([id, label, keywords]) => ({
+    id,
+    section: "appearance" as const,
+    get label() {
+      return label();
+    },
+    keywords,
+  })),
+  ...FILE_REF_KINDS.map((kind) => ({
+    id: `file-tone-${kind}`,
+    section: "appearance" as const,
+    get label() {
+      return FILE_KIND_LABELS[kind]();
+    },
+    keywords: `file reference color tone ${kind} dosya renk`,
+  })),
   {
     id: "tab-animations",
     section: "appearance",
@@ -33,7 +121,8 @@ export const APPEARANCE_SETTINGS_INDEX: SettingsEntry[] = [
     get label() {
       return t("Surface contrast");
     },
-    keywords: "card cards layer layers elevation depth black field dialog surface lift canvas",
+    keywords:
+      "advanced tone card cards layer layers elevation depth black field dialog surface lift canvas",
   },
   {
     id: "accent-readability",
@@ -50,7 +139,7 @@ export const APPEARANCE_SETTINGS_INDEX: SettingsEntry[] = [
       return t("Background tone");
     },
     keywords:
-      "pure true black white oled amoled canvas tinted tint dark light theme saf siyah beyaz arka plan",
+      "advanced tone pure true black white oled amoled canvas tinted tint dark light theme saf siyah beyaz arka plan",
   },
   {
     id: "interface-font",
@@ -109,7 +198,7 @@ export const APPEARANCE_SETTINGS_INDEX: SettingsEntry[] = [
       return t("Interaction color");
     },
     keywords:
-      "hover selected selection pressed row button gray grey tint color strength seçim üzerine gelme gri renk",
+      "advanced tone hover selected selection pressed row button gray grey tint color strength seçim üzerine gelme gri renk",
   },
   {
     id: "interaction-strength",
@@ -117,7 +206,7 @@ export const APPEARANCE_SETTINGS_INDEX: SettingsEntry[] = [
     get label() {
       return t("Interaction strength");
     },
-    keywords: "hover selected pressed state intensity gray grey tint",
+    keywords: "advanced tone hover selected pressed state intensity gray grey tint",
   },
   {
     id: "scrollbar-color",
@@ -127,22 +216,26 @@ export const APPEARANCE_SETTINGS_INDEX: SettingsEntry[] = [
     },
     keywords: "scrollbar scroll bar thumb color accent theme kaydırma çubuğu renk",
   },
-  {
-    id: "scrollbar-size",
-    section: "appearance",
-    get label() {
-      return t("Scrollbar size");
-    },
-    keywords: "scrollbar scroll bar width thickness thin wide kaydırma çubuğu kalınlık",
-  },
-  {
-    id: "scrollbar-visibility",
-    section: "appearance",
-    get label() {
-      return t("Show scrollbars");
-    },
-    keywords: "scrollbar scroll bar always visible hover hide kaydırma çubuğu göster",
-  },
+  ...(!IS_MAC
+    ? ([
+        {
+          id: "scrollbar-size",
+          section: "appearance",
+          get label() {
+            return t("Scrollbar size");
+          },
+          keywords: "scrollbar scroll bar width thickness thin wide kaydırma çubuğu kalınlık",
+        },
+        {
+          id: "scrollbar-visibility",
+          section: "appearance",
+          get label() {
+            return t("Show scrollbars");
+          },
+          keywords: "scrollbar scroll bar always visible hover hide kaydırma çubuğu göster",
+        },
+      ] satisfies SettingsEntry[])
+    : []),
   {
     id: "scrollbar-strength",
     section: "appearance",
@@ -191,7 +284,7 @@ export const APPEARANCE_SETTINGS_INDEX: SettingsEntry[] = [
     get label() {
       return t("Hue");
     },
-    keywords: "tint color chrome",
+    keywords: "advanced tone tint color chrome",
   },
   {
     id: "saturation",
@@ -199,7 +292,7 @@ export const APPEARANCE_SETTINGS_INDEX: SettingsEntry[] = [
     get label() {
       return t("Saturation");
     },
-    keywords: "tint color neutral grey gray",
+    keywords: "advanced tone tint color neutral grey gray",
   },
   {
     id: "dark-lightness",
@@ -207,7 +300,7 @@ export const APPEARANCE_SETTINGS_INDEX: SettingsEntry[] = [
     get label() {
       return t("Dark-mode lightness");
     },
-    keywords: "black brightness contrast background",
+    keywords: "advanced tone black brightness contrast background",
   },
   {
     id: "sidebar-opacity",

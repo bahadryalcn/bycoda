@@ -19,12 +19,14 @@ import {
   type TaskColumn,
   type TaskStatus,
 } from "../model/hostTasks";
+import { isConfigurationConflict } from "../model/configurationConflict";
 import type { SprintBoardController } from "../model/sprintClient";
 import { workspaceOperationKey, workspaceRequest } from "../../workspaces/public/workspaceClient";
 import { taskWorkspaceState } from "../../workspaces/public/taskWorkspaceState";
-import { COLUMN_LABELS } from "./TaskBoardColumns";
+import { columnLabel } from "../model/taskColumnLabel";
 import type { PlanningRecovery, useTaskBoardOperations } from "./useTaskBoardOperations";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { workCrewId } from "../../../shared/model/host-contracts/work-executor";
 
 /** The board's task mutations: move, reorder, save, delete and edit, each writing the
  * host's answer back through `put` so a later poll cannot roll it back. */
@@ -32,7 +34,7 @@ export function useTaskMutations({
   ops,
   put,
   machines,
-  visibleTasks,
+  displayedTasks,
   setDraft,
   currentSprint,
   sprintBoard,
@@ -45,15 +47,15 @@ export function useTaskMutations({
     remove: (task: BoardTask) => void;
   };
   machines: RemoteMachine[];
-  visibleTasks: readonly BoardTask[];
+  displayedTasks: readonly BoardTask[];
   setDraft: (draft: TaskDraft | null) => void;
   currentSprint: { id: string } | undefined;
   sprintBoard: SprintBoardController;
   addPlanningRecovery: (item: PlanningRecovery) => void;
 }) {
-  const { setError, saving, setSaving, acting, act, refresh, confirm } = ops;
+  const { setError, reportError, saving, setSaving, acting, act, refresh, confirm } = ops;
   const { task: putTask, tasks: putTasks, remove: removeTask } = put;
-  const report = (reason: unknown) => setError(presentRemoteError(reason, { explicit: true }));
+  const report = (reason: unknown) => reportError(reason);
 
   const actOnTask = (task: BoardTask, action: () => Promise<BoardTask>) =>
     act(task, action, putTask);
@@ -99,14 +101,14 @@ export function useTaskMutations({
   const onTaskDrop = async (task: BoardTask, column: TaskColumn, before?: BoardTask) => {
     if (acting || task.stale) return;
     if (taskColumn(task.status) !== column) {
-      if (!canMoveTask(task.status, column, task.crewRunId ?? task.crewDefinitionId)) return;
+      if (!canMoveTask(task.status, column, task.crewRunId ?? workCrewId(task))) return;
       if (
         (column === "blocked" ||
           (column === "done" && hasUnmergedBranch(task)) ||
           (task.status === "review" && column === "queued")) &&
         !(await confirm({
           title: t("Move task"),
-          message: t("Move this task to {p0}?", { p0: t(COLUMN_LABELS[column]) }),
+          message: t("Move this task to {p0}?", { p0: columnLabel(column) }),
           confirmLabel: t("Move"),
           danger: false,
         }))
@@ -117,18 +119,16 @@ export function useTaskMutations({
     }
     if (!task.workspaceControlsSupported) return;
     if (column !== "todo" && column !== "queued") return;
-    const ordered = tasksInColumn(visibleTasks, column).filter(
-      (item) => item.machineId === task.machineId && item.id !== task.id,
+    const ordered = tasksInColumn(displayedTasks, column).filter(
+      (item) => item.machineId === task.machineId && item.status === task.status,
     );
+    const from = ordered.findIndex((item) => item.id === task.id);
+    if (from < 0 || before?.id === task.id || ordered.some((item) => item.stale)) return;
+    if (before && (before.machineId !== task.machineId || before.status !== task.status)) return;
+    const [moving] = ordered.splice(from, 1);
     const index = before ? ordered.findIndex((item) => item.id === before.id) : ordered.length;
-    if (
-      before &&
-      (before.machineId !== task.machineId ||
-        before.status !== task.status ||
-        before.id === task.id)
-    )
-      return;
-    ordered.splice(index < 0 ? ordered.length : index, 0, task);
+    if (index < 0 || index === from || !moving) return;
+    ordered.splice(index, 0, moving);
     await act(task, () => reorderTasks(ordered), putTasks);
   };
 
@@ -151,13 +151,10 @@ export function useTaskMutations({
             id: `task:${saved.machineId}:${saved.id}`,
             title: saved.title,
             sprintId: currentSprint.id,
+            reason: presentRemoteError(reason, { explicit: true }),
             task: saved,
           });
-          setError(
-            t("Task created. Sprint assignment failed: {p0}", {
-              p0: presentRemoteError(reason, { explicit: true }),
-            }),
-          );
+          setError(null);
           refresh().catch(report);
           return;
         }
@@ -170,6 +167,8 @@ export function useTaskMutations({
       refresh().catch(report);
     } catch (reason: unknown) {
       setError(presentRemoteError(reason, { explicit: true }));
+      // The form keeps its draft; the board shows what the other client saved.
+      if (isConfigurationConflict(reason)) refresh().catch(report);
     } finally {
       setSaving(false);
     }
@@ -214,6 +213,7 @@ export function useTaskMutations({
       return true;
     } catch (reason: unknown) {
       setError(presentRemoteError(reason, { explicit: true }));
+      if (isConfigurationConflict(reason)) refresh().catch(report);
       return false;
     }
   };

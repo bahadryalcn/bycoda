@@ -4,6 +4,7 @@ import {
   assistantDeltaFromEvent,
   buildPiPrompt,
   buildPiSpawnArgs,
+  supportsPiChatOnly,
   buildPiSteer,
   forkMessagesFromRpcData,
   contextFromSessionStats,
@@ -32,6 +33,35 @@ import {
 import { OMP_FLAVOR, PI_FLAVOR } from "./piFlavor";
 
 describe("buildPiSpawnArgs", () => {
+  it("keeps chat-only sessions tool-free and inside scratch across resume", () => {
+    const flags = buildPiSpawnArgs(PI_FLAVOR, {
+      chatOnlyCwd: "/scratch/run",
+      resume: "abc123",
+      plan: true,
+      skillPaths: ["/repo/skill"],
+    });
+    expect(flags).toEqual(
+      expect.arrayContaining([
+        "--no-tools",
+        "--no-extensions",
+        "--no-mcp",
+        "--no-skills",
+        "--no-prompt-templates",
+        "--no-context-files",
+        "--no-approve",
+        "--system-prompt",
+        "--session-dir",
+        "/scratch/run/.bycoda-pi-sessions",
+        "--session",
+        "abc123",
+      ]),
+    );
+    expect(flags).not.toContain("--tools");
+    expect(flags).not.toContain("--skill");
+    expect(() => buildPiSpawnArgs(OMP_FLAVOR, { chatOnlyCwd: "/scratch/run" })).toThrow();
+    expect(supportsPiChatOnly(flags.join(" "))).toBe(true);
+    expect(supportsPiChatOnly(flags.filter((value) => value !== "--no-mcp").join(" "))).toBe(false);
+  });
   it("starts RPC without stripping the user's extensions", () => {
     expect(buildPiSpawnArgs(PI_FLAVOR, {})).toEqual(["--mode", "rpc"]);
     expect(buildPiSpawnArgs(PI_FLAVOR, { model: "anthropic/claude-sonnet-4" })).toEqual([
@@ -47,6 +77,20 @@ describe("buildPiSpawnArgs", () => {
       "abc123",
     ]);
   });
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "keeps $label's private session directory on resume",
+    (flavor) => {
+      expect(buildPiSpawnArgs(flavor, { sessionDir: "/private/agent", resume: "abc123" })).toEqual([
+        "--mode",
+        "rpc",
+        "--session-dir",
+        "/private/agent",
+        flavor.resumeFlag,
+        "abc123",
+      ]);
+    },
+  );
 
   it("can skip session files without disabling extensions", () => {
     expect(buildPiSpawnArgs(PI_FLAVOR, { noSession: true })).toEqual([

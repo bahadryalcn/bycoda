@@ -8,13 +8,16 @@ import { RemoteActivityNotices } from "../../sessions/public/RemoteActivityNotic
 import { githubRepositoryOptions } from "../model/inboxRepositoryFilters";
 import { ContinuousList } from "../../../shared/ui/ContinuousList";
 import { Badge } from "../../../shared/ui/Badge";
+import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
 import { Button } from "../../../shared/ui/Button";
 import "./InboxView.css";
 import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { FailureState } from "../../../shared/ui/FailureState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
+import { InboxGithubListControls, type InboxListLayout } from "./InboxGithubListControls";
 import { Sash } from "../../../shared/ui/Sash";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
@@ -29,7 +32,7 @@ import { useInboxProviderScopes } from "../hooks/useInboxProviderScopes";
 import { useInboxSourceSelection } from "../hooks/useInboxSourceSelection";
 import { useLinkedTarget, useLinkedTargetItem } from "../hooks/useLinkedTarget";
 import { visibleInboxItems } from "../model/inboxVisibleItems";
-import { hasActiveOverlay } from "../../../shared/ui/overlay";
+import { shouldHandleGlobalEscape } from "../../../shared/ui/overlay";
 import {
   ChevronsUpDown,
   ChevronLeft,
@@ -51,7 +54,7 @@ import {
   useState,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { InboxFiltersMenu, INBOX_FILTER_MENU_WIDTH } from "./InboxFiltersMenu";
+import { InboxFiltersMenu } from "./InboxFiltersMenu";
 import { InboxConnectMenu } from "./InboxConnectMenu";
 import { JiraBoardView } from "./JiraBoardView";
 import type { JiraBoardIssue } from "../model/jiraBoard";
@@ -60,7 +63,8 @@ import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { useDragResize } from "../../../shared/hooks/useDragResize";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
-import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
+import { useTabGroupLogos } from "../../projects/public/useTabGroupLogos";
+import { releaseGithubReadBlock } from "../model/githubReadGate";
 import {
   inboxItemKey,
   inboxProjectsForRail,
@@ -106,7 +110,6 @@ import {
 } from "../model/inboxSeen";
 import { saveHiddenLinearTeamIds } from "../model/linear";
 import { saveHiddenJiraProjectIds } from "../model/jira";
-import {} from "../../workspace/model/tabGroups";
 import { InboxDiscussionPanel, type InboxSessionPortal } from "./InboxDiscussionPanel";
 import { inboxAskKey } from "../model/inboxAsk";
 import { InboxDetailBody } from "./InboxDetailBody";
@@ -187,23 +190,42 @@ export function InboxView({
   const queryVisible = useQueryVisible();
   const [refreshAction, setRefreshAction] = useState<"toolbar" | "retry" | null>(null);
   const refreshActionRef = useRef<"toolbar" | "retry" | null>(null);
-  const [readStatusError, setReadStatusError] = useState<string | null>(null);
+  const [readStatusError, setReadStatusError] = useState<"save" | "partial" | null>(null);
   const [failedReadItem, setFailedReadItem] = useState<InboxItem | null>(null);
   const seenSaveGeneration = useRef(0);
   const [refresh, setRefresh] = useState(0);
   const requestRefresh = (action: "toolbar" | "retry", retryFailedOnly = false) => {
     if (refreshActionRef.current) return;
+    // Both actions are explicit: a pause GitHub did not time may be probed again. A reset time
+    // GitHub stated still holds, so the read fails at once with that time and spends no request.
+    if (source === "github") releaseGithubReadBlock();
     refreshActionRef.current = action;
     collection.setRetryFailedOnly(retryFailedOnly);
     setRefreshAction(action);
     setRefresh((value) => value + 1);
   };
   const [detailOpen, setDetailOpen] = useState(false);
+  const [githubListKind, setGithubListKind] = useRetainedState<"issue" | "pr">(
+    `${viewStateKey}:github-kind`,
+    () => {
+      const { hiddenKinds } = loadInboxFilters();
+      return hiddenKinds.includes("issue") && !hiddenKinds.includes("pr") ? "pr" : "issue";
+    },
+  );
+  const [listLayout, setListLayout] = useRetainedState<InboxListLayout>(
+    `inbox:${projectKey(cwd)}:github-list-layout`,
+    "compact",
+  );
+  const [splitView, setSplitView] = useRetainedState(
+    `inbox:${projectKey(cwd)}:github-split-view`,
+    true,
+  );
   const [jiraView, setJiraView] = useRetainedState<"list" | "board">(
     `${viewStateKey}:jira-view`,
     "list",
   );
   const [boardIssue, setBoardIssue] = useState<JiraBoardIssue | null>(null);
+  const [boardFilterItems, setBoardFilterItems] = useState<JiraBoardIssue[]>([]);
   const boardIssueOrigin = useRef<HTMLElement | null>(null);
   const closeBoardIssue = () => {
     setBoardIssue(null);
@@ -248,18 +270,39 @@ export function InboxView({
     },
   });
   const { targetSelectionKey } = linked;
+  const githubKind =
+    source === "github" && !pullRequestsOnly
+      ? linked.pinnedKey && target
+        ? target.kind
+        : githubListKind
+      : null;
   const searchInput = linked.searchPinned ? "" : retainedSearch;
   const deferredSearch = useDeferredValue(searchInput);
-  const [retainedKey, setSelectedKey] = useRetainedState<string | null>(
+  const [sourceKey, setSourceKey] = useRetainedState<string | null>(
     `${viewStateKey}:${source}:selected`,
-    targetSelectionKey,
+    null,
   );
+  const [githubPrKey, setGithubPrKey] = useRetainedState<string | null>(
+    `${viewStateKey}:github:pr:selected`,
+    null,
+  );
+  const [githubIssueKey, setGithubIssueKey] = useRetainedState<string | null>(
+    `${viewStateKey}:github:issue:selected`,
+    null,
+  );
+  const [retainedKey, setSelectedKey] =
+    githubKind === "pr"
+      ? [githubPrKey, setGithubPrKey]
+      : githubKind === "issue"
+        ? [githubIssueKey, setGithubIssueKey]
+        : [sourceKey, setSourceKey];
   // The selection stays the user's own choice; a linked target only pins it.
   const selectedKey = linked.pinnedKey ?? retainedKey;
   /** Hands the pinned target over to the user's retained selection and search. */
   const releaseTarget = () => {
     if (!linked.pinnedKey) return;
     setSelectedKey(linked.pinnedKey);
+    if (githubKind) setGithubListKind(githubKind);
     setRetainedSearch("");
     linked.releaseTarget();
   };
@@ -279,19 +322,20 @@ export function InboxView({
   const codeScopes = useCodeHostScopes(source, refresh);
   const [connectMenuOpen, setConnectMenuOpen] = useState(false);
   const connectButtonRef = useRef<HTMLButtonElement | null>(null);
-  const [filterMenu, setFilterMenu] = useState<{ x: number; y: number } | null>(null);
+  const [filterMenu, setFilterMenu] = useState<HTMLButtonElement | null>(null);
 
   const projects = useMemo(() => inboxProjectsForRail(recents, cwd), [cwd, recents]);
   const projectOptions = useMemo(() => inboxProjectOptions(projects, logos), [logos, projects]);
+  const isGithubSource = source === "github";
   const activeFilters = useMemo(
     () =>
       pruneInboxFilters(
-        filters,
+        isGithubSource ? { ...filters, hiddenKinds: [] } : filters,
         projects.map((project) => project.path),
       ),
-    [filters, projects],
+    [filters, projects, isGithubSource],
   );
-  const listScope = `${viewStateKey}:${JSON.stringify([source, activeFilters, jiraScope, linearScope])}`;
+  const listScope = `${viewStateKey}:${JSON.stringify([source, githubKind, activeFilters, jiraScope, linearScope])}`;
   const filtersActive =
     codeScopes.hidden.length > 0 ||
     hasActiveInboxFilters(activeFilters, source, linearHiddenTeamIds, jiraHiddenProjectIds);
@@ -371,9 +415,30 @@ export function InboxView({
     },
   });
 
+  const visibleSources = visibleInboxSources(connections).filter(
+    (source) => !pullRequestsOnly || !isTrackerSource(source),
+  );
+  const connectableSources = connectableInboxSources(connections);
+  const sourceAvailable = visibleSources.includes(source);
+  const noSourcesConnected = visibleSources.length === 0;
+  const hasMessaging = messaging.accounts.length > 0;
+  const messagesOpen = hasMessaging && (messagesChosen || noSourcesConnected);
+  const connectMessages = !pullRequestsOnly && messaging.loaded && !hasMessaging;
+  const boardDetailOpen =
+    boardIssue !== null && !messagesOpen && source === "jira" && jiraView === "board";
+
   useEffect(() => {
+    // Jira drag cancellation and controls that consume Escape run first. An
+    // unhandled Escape in an editable field still belongs to that field.
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented || hasActiveOverlay()) return;
+      if (!shouldHandleGlobalEscape(event)) return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest(
+          "input, textarea, select, [contenteditable]:not([contenteditable=false])",
+        )
+      )
+        return;
       event.preventDefault();
       event.stopPropagation();
       if (filterMenu) {
@@ -384,21 +449,15 @@ export function InboxView({
         setConnectMenuOpen(false);
         return;
       }
+      if (boardDetailOpen) {
+        closeBoardIssue();
+        return;
+      }
       onCloseRef.current?.();
     };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [connectMenuOpen, filterMenu]);
-
-  const visibleSources = visibleInboxSources(connections).filter(
-    (source) => !pullRequestsOnly || !isTrackerSource(source),
-  );
-  const connectableSources = connectableInboxSources(connections);
-  const sourceAvailable = visibleSources.includes(source);
-  const noSourcesConnected = visibleSources.length === 0;
-  const hasMessaging = messaging.accounts.length > 0;
-  const messagesOpen = hasMessaging && (messagesChosen || noSourcesConnected);
-  const connectMessages = !pullRequestsOnly && messaging.loaded && !hasMessaging;
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [boardDetailOpen, connectMenuOpen, filterMenu]);
 
   const collection = useInboxCollection({
     projects,
@@ -414,7 +473,7 @@ export function InboxView({
   const { items, providerErrors } = collection;
   const loading = collection.loading || collection.pendingProviders.includes(source);
   const showCollectionTools = loading || items.length > 0 || narrowed;
-  const linearProjects = useMemo(() => linearProjectOptions(items), [items]);
+  const linearProjects = linearProjectOptions(items);
 
   const { targetItem, patchTargetItem } = useLinkedTargetItem({ target, cwd, items });
 
@@ -434,7 +493,12 @@ export function InboxView({
     setMessagesChosen(false);
     selectSource(item.provider);
     setSearchInput(item.identifier || String(item.number));
-    setSelectedKey(inboxItemKey(item));
+    if (item.provider === "github" && (item.kind === "issue" || item.kind === "pr")) {
+      setGithubListKind(item.kind);
+      (item.kind === "pr" ? setGithubPrKey : setGithubIssueKey)(inboxItemKey(item));
+    } else {
+      setSelectedKey(inboxItemKey(item));
+    }
     setDetailOpen(true);
   });
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- store listener for chat work-item chips; a request sent before mount waits in the store.
@@ -451,7 +515,7 @@ export function InboxView({
     const applyResult = (saved: boolean) => {
       if (seenSaveGeneration.current !== generation) return;
       setFailedReadItem(saved ? null : item);
-      setReadStatusError(saved ? null : "Could not save read status. Please try again.");
+      setReadStatusError(saved ? null : "save");
     };
     const result = markInboxItemSeen({ key, updatedAt: item.updatedAt });
     if (typeof result === "boolean") applyResult(result);
@@ -467,6 +531,7 @@ export function InboxView({
       visibleInboxItems({
         items,
         pullRequestsOnly,
+        githubKind,
         prSort,
         filters: activeFilters,
         search: deferredSearch,
@@ -477,12 +542,13 @@ export function InboxView({
           scopes: codeScopesLoaded,
           hidden: codeScopesHidden,
         },
-        target,
+        target: linked.pinnedKey ? target : null,
         targetItem,
         now: Date.now(),
       }),
     [
       pullRequestsOnly,
+      githubKind,
       prSort,
       activeFilters,
       items,
@@ -490,6 +556,7 @@ export function InboxView({
       source,
       sourceAvailable,
       target,
+      linked.pinnedKey,
       targetItem,
       codeScopesProvider,
       codeScopesLoaded,
@@ -497,24 +564,14 @@ export function InboxView({
     ],
   );
 
-  const inboxSeenTick = useInboxSeenTick();
+  useInboxSeenTick();
   const seenStorageStatus = inboxSeenStatus();
-  const sourceEntries = useMemo(
-    () =>
-      sourceAvailable
-        ? items
-            .filter((item) => item.provider === source)
-            .map((item) => ({
-              key: inboxItemKey(item),
-              updatedAt: item.updatedAt,
-            }))
-        : [],
-    [items, source, sourceAvailable],
-  );
-  const sourceHasUnseen = useMemo(
-    () => inboxHasUnseenItems(sourceEntries),
-    [inboxSeenTick, sourceEntries],
-  );
+  const sourceEntries = sourceAvailable
+    ? items
+        .filter((item) => item.provider === source)
+        .map((item) => ({ key: inboxItemKey(item), updatedAt: item.updatedAt }))
+    : [];
+  const sourceHasUnseen = inboxHasUnseenItems(sourceEntries);
 
   const sourceError = providerErrors[source] ?? null;
   // Full pages mean older items may not be loaded; the list reads have no total.
@@ -524,7 +581,9 @@ export function InboxView({
   // selected identity from allowed loaded data before considering a default.
   const allowedItems = sourceAvailable
     ? filterCodeHostScopes(
-        items.filter((item) => item.provider === source),
+        items.filter(
+          (item) => item.provider === source && (!githubKind || item.kind === githubKind),
+        ),
         codeScopes.provider,
         codeScopes.scopes,
         codeScopes.hidden,
@@ -554,7 +613,7 @@ export function InboxView({
 
   const onFiltersChange = (next: InboxFilters) => {
     const pruned = pruneInboxFilters(
-      next,
+      source === "github" ? { ...next, hiddenKinds: filters.hiddenKinds } : next,
       projects.map((project) => project.path),
     );
     setFilters(pruned);
@@ -562,25 +621,53 @@ export function InboxView({
   };
 
   const onSourceChange = (next: InboxSource) => {
+    setFilterMenu(null);
     setDetailOpen(false);
     releaseTarget();
-    setSelectedKey(null);
+    if (!githubKind) setSelectedKey(null);
     setBoardIssue(null);
     setMessagesChosen(false);
     selectSource(next);
   };
 
-  const onFilterButtonClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
-    if (filterMenu) {
-      setFilterMenu(null);
-      return;
-    }
-    const rect = event.currentTarget.getBoundingClientRect();
-    setFilterMenu({
-      x: rect.right - INBOX_FILTER_MENU_WIDTH,
-      y: rect.bottom + 2,
-    });
-  };
+  const filterLabel = filtersActive ? t("Filter inbox (filters active)") : t("Filter inbox");
+  const toggleFilterMenu = (event: ReactMouseEvent<HTMLButtonElement>) =>
+    setFilterMenu(filterMenu ? null : event.currentTarget);
+  const filterTrigger =
+    source === "jira" ? (
+      <FilterTrigger
+        label={filterLabel}
+        activeCount={filterCount}
+        onReset={resetFilters}
+        aria-expanded={!!filterMenu}
+        aria-haspopup="dialog"
+        className="shrink-0"
+        onClick={toggleFilterMenu}
+      />
+    ) : (
+      <div
+        className="relative shrink-0"
+        data-filter-trigger=""
+        data-filter-active={filtersActive ? "" : undefined}
+      >
+        <Button
+          iconOnly
+          variant="ghost"
+          label={filterLabel}
+          selected={filtersActive}
+          aria-expanded={!!filterMenu}
+          aria-haspopup="dialog"
+          onClick={toggleFilterMenu}
+        >
+          <ListFilter className="icon-sm" strokeWidth={1.75} />
+        </Button>
+        {filterCount > 0 ? (
+          <Badge variant="count" size="xs" className="pointer-events-none absolute -right-1 -top-1">
+            {filterCount}
+          </Badge>
+        ) : null}
+      </div>
+    );
 
   const sourceRow = (
     <InboxSourceRow
@@ -600,7 +687,7 @@ export function InboxView({
   const toolbarActions = (
     <ButtonGroup
       aria-label={source === "jira" ? t("Jira view") : t("Inbox")}
-      className="ml-auto shrink-0"
+      className="ms-auto shrink-0"
       onKeyDown={(event) => {
         if (source !== "jira" || !(event.target as HTMLElement).matches("button[data-value]"))
           return;
@@ -656,14 +743,13 @@ export function InboxView({
           variant="ghost"
           type="button"
           disabled={!sourceHasUnseen}
+          disabledReason={t("Everything here is already read.")}
           onClick={() => {
             setFailedReadItem(null);
             const generation = ++seenSaveGeneration.current;
             const applyResult = (saved: boolean) => {
               if (seenSaveGeneration.current === generation)
-                setReadStatusError(
-                  saved ? null : "Some read status updates may have saved. Retry to complete.",
-                );
+                setReadStatusError(saved ? null : "partial");
             };
             const result = markInboxItemsSeen(sourceEntries);
             if (typeof result === "boolean") applyResult(result);
@@ -674,18 +760,21 @@ export function InboxView({
           <CheckCheck className="icon-sm" strokeWidth={1.75} />
         </Button>
       ) : null}
-      <Button
-        iconOnly
-        label={t("Refresh")}
-        variant="ghost"
-        type="button"
-        loading={refreshAction === "toolbar"}
-        disabled={refreshAction === "retry"}
-        onClick={() => requestRefresh("toolbar")}
-        className="shrink-0"
-      >
-        <RefreshCw className="icon-sm" strokeWidth={1.75} />
-      </Button>
+      {source === "jira" && jiraView === "board" ? null : (
+        <Button
+          iconOnly
+          label={t("Refresh")}
+          variant="ghost"
+          type="button"
+          loading={refreshAction === "toolbar"}
+          disabled={refreshAction === "retry"}
+          disabledReason={t("Retrying…")}
+          onClick={() => requestRefresh("toolbar")}
+          className="shrink-0"
+        >
+          <RefreshCw className="icon-sm" strokeWidth={1.75} />
+        </Button>
+      )}
     </ButtonGroup>
   );
 
@@ -698,6 +787,24 @@ export function InboxView({
       )}
     >
       {sourceRow}
+      {sourceAvailable && source === "github" ? (
+        <InboxGithubListControls
+          kind={githubKind}
+          layout={listLayout}
+          onLayoutChange={setListLayout}
+          splitView={splitView}
+          onSplitViewChange={(value) => {
+            setSplitView(value);
+            setDetailOpen(false);
+          }}
+          onKindChange={(kind) => {
+            releaseTarget();
+            setGithubListKind(kind);
+            setDetailOpen(false);
+            setDiscussionOpen(false);
+          }}
+        />
+      ) : null}
       {noSourcesConnected ? null : (
         <div className="inbox-collection-toolbar flex shrink-0 flex-wrap items-center gap-2 px-2 py-1.5">
           {showCollectionTools ? (
@@ -708,18 +815,22 @@ export function InboxView({
                   focusOwner="group"
                   value={searchInput}
                   onChange={(event) => setSearchInput(event.target.value)}
-                  placeholder={t("Filter issues")}
+                  placeholder={
+                    githubKind === "pr" || pullRequestsOnly
+                      ? t("Filter loaded items")
+                      : t("Filter issues")
+                  }
                   aria-label={t("Filter loaded items")}
                   spellCheck={false}
                   autoComplete="off"
                 />
               </SearchInputGroup>
-              {pullRequestsOnly ? (
+              {pullRequestsOnly || githubKind ? (
                 <>
                   <Button
                     iconOnly
                     ref={sortButtonRef}
-                    label={t("Sort pull requests")}
+                    label={githubKind === "issue" ? t("Sort") : t("Sort pull requests")}
                     variant="ghost"
                     type="button"
                     aria-haspopup="menu"
@@ -731,7 +842,7 @@ export function InboxView({
                   {sortMenuOpen ? (
                     <DropdownMenu
                       anchor={sortButtonRef}
-                      label={t("Sort pull requests")}
+                      label={githubKind === "issue" ? t("Sort") : t("Sort pull requests")}
                       returnFocusRef={sortButtonRef}
                       onClose={() => setSortMenuOpen(false)}
                       items={[
@@ -758,32 +869,7 @@ export function InboxView({
                   ) : null}
                 </>
               ) : null}
-              <div
-                className="relative shrink-0"
-                data-filter-trigger=""
-                data-filter-active={filtersActive ? "" : undefined}
-              >
-                <Button
-                  iconOnly
-                  variant="ghost"
-                  label={filtersActive ? t("Filter inbox (filters active)") : t("Filter inbox")}
-                  selected={filtersActive}
-                  aria-expanded={!!filterMenu}
-                  aria-haspopup="dialog"
-                  onClick={onFilterButtonClick}
-                >
-                  <ListFilter className="icon-sm" strokeWidth={1.75} />
-                </Button>
-                {filterCount > 0 ? (
-                  <Badge
-                    variant="count"
-                    size="xs"
-                    className="pointer-events-none absolute -right-1 -top-1"
-                  >
-                    {filterCount}
-                  </Badge>
-                ) : null}
-              </div>
+              {filterTrigger}
             </div>
           ) : null}
           {toolbarActions}
@@ -791,7 +877,9 @@ export function InboxView({
       )}
       {readStatusError ? (
         <Alert tone="danger">
-          {t(readStatusError)}
+          {readStatusError === "save"
+            ? t("Could not save read status. Please try again.")
+            : t("Some read status updates may have saved. Retry to complete.")}
           {failedReadItem ? (
             <Button
               data-inbox-read-retry
@@ -803,7 +891,7 @@ export function InboxView({
           ) : null}
         </Alert>
       ) : null}
-      {seenStorageStatus.state === "error" ? (
+      {!readStatusError && seenStorageStatus.state === "error" ? (
         <InlineMessage
           tone="warning"
           action={{ label: t("Retry"), onClick: retryInboxSeenStorage }}
@@ -811,7 +899,7 @@ export function InboxView({
           {t("Inbox read status is unavailable. Unread indicators may be incomplete.")}
         </InlineMessage>
       ) : null}
-      {sourceError ? (
+      {sourceError && visibleItems.length > 0 ? (
         <InboxLoadError
           error={sourceError}
           retrying={refreshAction === "retry"}
@@ -822,7 +910,9 @@ export function InboxView({
       <div ref={setListScrollRef} className="min-h-0 flex-1 overflow-hidden flex flex-col">
         {noSourcesConnected ? (
           <EmptyState
-            icon={<Inbox aria-hidden="true" />}
+            context="panel"
+            illustration="connect-computer"
+            title={t("No inbox source connected")}
             description={
               pullRequestsOnly
                 ? t("Connect GitHub, GitLab or Azure DevOps to view pull requests.")
@@ -834,9 +924,16 @@ export function InboxView({
                 : undefined
             }
           />
-        ) : sourceError && visibleItems.length === 0 ? null : loading &&
-          visibleItems.length === 0 ? (
-          <LoadingText className="justify-center py-10" />
+        ) : sourceError && visibleItems.length === 0 ? (
+          <FailureState
+            context="panel"
+            title={t("Could not load.")}
+            error={sourceError}
+            onRetry={() => requestRefresh("retry", source === "github")}
+            retrying={refreshAction === "retry"}
+          />
+        ) : loading && visibleItems.length === 0 ? (
+          <LoadingText layout="fill" />
         ) : visibleItems.length === 0 &&
           !(source === "jira" && collection.jiraContinuation.hasMore) ? (
           !pullRequestsOnly &&
@@ -845,7 +942,9 @@ export function InboxView({
           !(source !== "github" && activeFilters.assignedToMe) ? (
             <EmptyState
               kind="empty"
-              icon={<Inbox aria-hidden="true" />}
+              context="panel"
+              illustration="no-projects"
+              title={t("No project open")}
               description={t("Open a project to fill the inbox")}
               action={
                 onOpenProject
@@ -856,13 +955,21 @@ export function InboxView({
           ) : pullRequestsOnly && needsLocalProject && projects.length === 0 ? (
             <EmptyState
               kind="empty"
-              icon={<Inbox aria-hidden="true" />}
+              context="panel"
+              illustration="no-projects"
+              title={t("No project open")}
               description={t("Add a project to see its repository's pull requests.")}
+              action={
+                onOpenProject
+                  ? { label: t("Add project"), onClick: () => void onOpenProject() }
+                  : undefined
+              }
             />
           ) : narrowed ? (
             <EmptyState
               kind="filtered"
-              icon={<Inbox aria-hidden="true" />}
+              context="panel"
+              illustration="search-empty"
               description={t("No loaded items match these filters.")}
               onReset={resetNarrowing}
               resetLabel={t("Clear filters")}
@@ -870,7 +977,9 @@ export function InboxView({
           ) : (
             <EmptyState
               kind="empty"
-              icon={<Inbox aria-hidden="true" />}
+              context="panel"
+              illustration="success"
+              title={t("All clear")}
               description={t("No items to show.")}
             />
           )
@@ -884,12 +993,18 @@ export function InboxView({
             onRetry={collection.jiraContinuation.loadMore}
             fill
             className="p-1.5 overscroll-none"
-            label={t("Inbox")}
+            label={
+              githubKind === "issue"
+                ? t("Issues")
+                : githubKind === "pr"
+                  ? t("Pull requests")
+                  : t("Inbox")
+            }
             items={visibleItems}
             stateKey={`inbox:${listScope}`}
             itemKey={inboxItemKey}
             requiredKey={selected ? inboxItemKey(selected) : null}
-            estimateSize={48}
+            estimateSize={source === "github" && listLayout === "comfortable" ? 76 : 48}
             renderItem={(item) => {
               const key = inboxItemKey(item);
               const relatedSessionCount = sessionCounts.get(key) ?? 0;
@@ -900,6 +1015,7 @@ export function InboxView({
                     active={selected != null && key === inboxItemKey(selected)}
                     relatedSessionCount={relatedSessionCount}
                     onSelect={selectItem}
+                    comfortable={source === "github" && listLayout === "comfortable"}
                   />
                 </div>
               );
@@ -919,20 +1035,20 @@ export function InboxView({
         {...resize.sashProps}
         appearance="hidden"
         label={t("Resize inbox list")}
-        className="absolute inset-y-0 -right-px"
+        className="inbox-list-sash absolute inset-y-0 end-0"
       />
     </div>
   );
 
   const filtersPortal = filterMenu ? (
     <InboxFiltersMenu
-      items={items}
+      items={source === "jira" && jiraView === "board" ? boardFilterItems : items}
       codeHostProjects={codeScopes.scopes?.projects}
       hiddenCodeHostProjects={codeScopes.hidden}
       codeHostError={codeScopes.error}
+      codeHostIncomplete={codeScopes.scopes?.incomplete ?? null}
       onCodeHostProjectsChange={codeScopes.save}
-      x={filterMenu.x}
-      y={filterMenu.y}
+      anchor={filterMenu}
       projects={source === "github" ? githubRepositoryOptions(projects) : projectOptions}
       linearProjects={linearProjects}
       linearTeams={linearTeams}
@@ -1002,20 +1118,6 @@ export function InboxView({
         {toolNavigation ? <ToolNavigation /> : null}
       </PaneHeader>
       <RemoteActivityNotices inbox />
-      {pullRequestsOnly && needsLocalProject && projects.length === 0 && onOpenProject ? (
-        <header
-          {...surfaceAttributes(
-            { frame: "pane", edge: "bottom" },
-            "flex shrink-0 flex-wrap items-center gap-2 px-3 py-2",
-          )}
-        >
-          {pullRequestsOnly && needsLocalProject && projects.length === 0 && onOpenProject ? (
-            <Button variant="ghost" type="button" onClick={() => void onOpenProject()}>
-              {t("Add project")}
-            </Button>
-          ) : null}
-        </header>
-      ) : null}
       {messagesOpen ? (
         <MessagesPanel accounts={messaging.accounts} sourceRow={sourceRow} />
       ) : source === "jira" && jiraView === "board" ? (
@@ -1035,6 +1137,8 @@ export function InboxView({
           >
             <JiraBoardView
               revision={refresh}
+              filters={activeFilters}
+              filterTrigger={filterTrigger}
               selectedIssueId={boardIssue?.id}
               onSelect={(issue) => {
                 boardIssueOrigin.current =
@@ -1043,11 +1147,12 @@ export function InboxView({
               }}
               onScopeChanged={() => setBoardIssue(null)}
               onChanged={() => setRefresh((value) => value + 1)}
-              onIssuesLoaded={(issues) =>
+              onIssuesLoaded={(issues) => {
+                setBoardFilterItems(issues);
                 setBoardIssue((old) =>
                   old ? (issues.find((issue) => issue.id === old.id) ?? old) : null,
-                )
-              }
+                );
+              }}
             />
             {boardIssue ? (
               <aside
@@ -1056,12 +1161,6 @@ export function InboxView({
                   "jira-board-detail",
                 )}
                 aria-label={boardIssue.identifier}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape" && !hasActiveOverlay()) {
-                    event.preventDefault();
-                    closeBoardIssue();
-                  }
-                }}
               >
                 <Button
                   variant="ghost"
@@ -1083,6 +1182,12 @@ export function InboxView({
                   repairSessions={repairSessions}
                   onRepairChecks={onRepairChecks}
                   onOpenSession={onOpenSession}
+                  onJiraStatusChange={(status) => {
+                    setBoardIssue((current) =>
+                      current?.id === boardIssue.id ? { ...current, ...status } : current,
+                    );
+                    setRefresh((value) => value + 1);
+                  }}
                 />
               </aside>
             ) : null}
@@ -1092,6 +1197,7 @@ export function InboxView({
         <div
           className="inbox-list-detail flex min-h-0 min-w-0 flex-1"
           data-detail-open={detailOpen}
+          data-list-only={source === "github" && !splitView}
         >
           {list}
           <div className="inbox-detail-pane flex min-h-0 min-w-0 flex-1 flex-col">
@@ -1120,6 +1226,18 @@ export function InboxView({
                   onRepairChecks={onRepairChecks}
                   onOpenSession={onOpenSession}
                   onItemChange={updateInboxItem}
+                  onJiraStatusChange={
+                    selected
+                      ? (status) => {
+                          updateInboxItem({
+                            ...selected,
+                            state: status.state,
+                            stateType: status.stateType,
+                          });
+                          setRefresh((value) => value + 1);
+                        }
+                      : undefined
+                  }
                 />
               </div>
               {discussionOpen && selected ? (

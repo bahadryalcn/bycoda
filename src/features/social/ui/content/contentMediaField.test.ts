@@ -79,7 +79,59 @@ afterEach(() => {
   element.remove();
 });
 
+describe("Instagram public media", () => {
+  function attach(address: string) {
+    const input = element.querySelector<HTMLInputElement>('input[type="url"]')!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+        input,
+        address,
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const button = [...element.querySelectorAll("button")].find(
+      (node) => node.textContent === "Attach media URL",
+    )!;
+    act(() => button.click());
+  }
+
+  it("attaches a public HTTPS asset with no local upload", () => {
+    render({ instagramMedia: "public-only" });
+    expect(fileInput()).toBeNull();
+    attach("https://cdn.example.com/cover.jpg");
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({
+        name: "cover.jpg",
+        media: { kind: "image", url: "https://cdn.example.com/cover.jpg" },
+      }),
+    ]);
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("rejects an address with credentials without losing the typed value", () => {
+    render({ instagramMedia: "public-only" });
+    attach("https://user:pass@cdn.example.com/cover.jpg");
+    expect(text()).toContain("Enter a public HTTPS media URL without credentials.");
+    expect(element.querySelector<HTMLInputElement>('input[type="url"]')?.value).toContain(
+      "cdn.example.com/cover.jpg",
+    );
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
 describe("attaching files", () => {
+  it("routes WebM selected for a YouTube API account to its large-video upload path", async () => {
+    const video = new File(["000000000000"], "youtube.webm", { type: "video/webm" });
+    Object.defineProperty(video, "size", { value: 70 * 1024 ** 2 });
+    render({ youtubeAccountId: "youtube-api" });
+    expect(fileInput().accept).toContain("video/webm");
+    choose(video);
+    await flush();
+    expect(uploadVideo).toHaveBeenCalledWith(video, undefined, "youtube-api");
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({ youtubeApiOnly: true, media: { kind: "video", uploadId: "v1" } }),
+    ]);
+  });
   it("uploads a PNG and adds it after the media already attached", async () => {
     render({ media: [saved("old")] });
     choose(png());
@@ -219,7 +271,7 @@ describe("removing media and disabled state", () => {
     render({ editor, media: [saved("a", "m1"), saved("b")] });
     act(() =>
       [...element.querySelectorAll("button")]
-        .find((item) => item.textContent === "Remove a.png")!
+        .find((item) => item.getAttribute("aria-label") === "Remove a.png")!
         .click(),
     );
     expect((onChange.mock.calls[0]![0] as ContentMedia[]).map((item) => item.localId)).toEqual([
@@ -233,7 +285,7 @@ describe("removing media and disabled state", () => {
     render({ editor, media: [saved("b")] });
     act(() =>
       [...element.querySelectorAll("button")]
-        .find((item) => item.textContent === "Remove b.png")!
+        .find((item) => item.getAttribute("aria-label") === "Remove b.png")!
         .click(),
     );
     expect(onChange).toHaveBeenCalledWith([]);
@@ -249,7 +301,7 @@ describe("removing media and disabled state", () => {
     render({ editor, media: [saved("a", "m1")] });
     act(() =>
       [...element.querySelectorAll("button")]
-        .find((item) => item.textContent === "Remove a.png")!
+        .find((item) => item.getAttribute("aria-label") === "Remove a.png")!
         .click(),
     );
     await flush();
@@ -265,9 +317,9 @@ describe("removing media and disabled state", () => {
     expect(fileInput().disabled).toBe(true);
     expect(text()).toContain("Photos and video: Not available yet");
     const remove = [...element.querySelectorAll("button")].find(
-      (item) => item.textContent === "Remove a.png",
+      (item) => item.getAttribute("aria-label") === "Remove a.png",
     )!;
-    expect(remove.disabled).toBe(true);
+    expect(remove.getAttribute("aria-disabled")).toBe("true");
   });
 });
 

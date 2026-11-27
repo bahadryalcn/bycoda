@@ -38,6 +38,17 @@ export function matchingCodeProfile<T extends { id: string; kind?: string }>(
 
 export const CODE_OUTPUT_LIMIT = 30_000;
 
+export const CODE_POLL_BASE_MS = 300;
+const CODE_POLL_IDLE_MAX_MS = 1_500;
+const CODE_POLL_FAILURE_MAX_MS = 15_000;
+
+/** Next Host read delay: output keeps the base cadence, quiet reads slow to 1.5 s, failures double up to 15 s. */
+export function codeTerminalPollDelay(idleReads: number, failures: number): number {
+  if (failures > 0)
+    return Math.min(CODE_POLL_BASE_MS * 2 ** Math.min(failures, 6), CODE_POLL_FAILURE_MAX_MS);
+  return Math.min(CODE_POLL_BASE_MS * 2 ** Math.min(idleReads, 3), CODE_POLL_IDLE_MAX_MS);
+}
+
 export function terminalResultMessage(
   command: string,
   cwd: string,

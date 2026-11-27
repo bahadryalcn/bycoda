@@ -16,48 +16,14 @@
   padding-inline: var(--space-6) var(--space-2);
   flex-shrink: 0;
 }
-.usage-guide-progress {
-  margin-inline-start: auto;
-  font-variant-numeric: tabular-nums;
-}
-.usage-guide-close {
-  min-inline-size: 44px;
-  min-block-size: 44px;
-}
 .usage-guide-scroll {
   min-block-size: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--space-6);
 }
-.usage-guide-hero {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  margin-block-end: var(--space-4);
-}
-.usage-guide-intro {
-  flex: 1;
-  min-inline-size: 0;
-}
-.usage-guide-intro h2 {
-  text-wrap: balance;
-}
-.usage-guide-companion {
-  display: block;
-  margin-block-start: var(--space-3);
-}
-.usage-guide-character {
-  flex: 0 0 auto;
-  inline-size: clamp(72px, 18vw, 104px);
-  block-size: 132px;
-  object-fit: contain;
-  filter: saturate(0.25) var(--crew-figure-rim);
-}
 .usage-guide-content p {
   margin: 0;
-}
-.usage-guide-description {
 }
 .usage-guide-example {
   display: flex;
@@ -125,11 +91,6 @@
   .usage-guide-footer {
     padding: var(--space-3) var(--space-4);
   }
-  .usage-guide-character {
-    block-size: 96px;
-  }
-  .usage-guide-intro h2 {
-  }
 }
 @media (prefers-reduced-motion: no-preference) {
   .usage-guide-scroll {
@@ -149,7 +110,23 @@
 
 /* Compact card: first-run tour and "What's new" highlights. */
 .usage-guide-panel--compact {
-  inline-size: min(340px, calc(100vw - 32px));
+  inline-size: min(400px, calc(100vw - 32px));
+}
+/* The guide mascot stands at the card's start edge beside the step text. */
+.usage-guide-card-body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-4);
+}
+.usage-guide-mascot {
+  inline-size: 64px;
+  block-size: 112px;
+  image-rendering: pixelated;
+  user-select: none;
+}
+.usage-guide-card-text {
+  min-inline-size: 0;
 }
 .usage-guide-panel--compact .usage-guide-toolbar {
   padding-block: var(--space-1);

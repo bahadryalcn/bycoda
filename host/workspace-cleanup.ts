@@ -14,7 +14,12 @@ import {
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { runGitText } from "../src/shared/lib/processExecution.node";
 import { withHostGitMutation } from "./git/git-mutations";
-import { invalidateHostWorktrees } from "./git/git-worktrees";
+import {
+  invalidateHostWorktrees,
+  removeSiblingWorktree,
+  siblingBlocker,
+} from "./git/git-worktrees";
+
 import {
   assertNoFollowPath,
   entryMissing,
@@ -61,6 +66,23 @@ const git = (cwd: string, args: string[]) =>
     maxBuffer: 32 * 1024 * 1024,
     env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
   });
+
+let membershipGeneration = 0;
+
+export function workspaceCleanupMembershipGeneration(): number {
+  return membershipGeneration;
+}
+
+async function mutateWorktreeMembership(cwd: string, args: string[]) {
+  try {
+    return await git(cwd, args);
+  } finally {
+    // Git can unregister a worktree before reporting a directory removal failure.
+    invalidateHostWorktrees();
+    membershipGeneration++;
+  }
+}
+
 async function registrations(cwd: string) {
   const records = (await git(cwd, ["worktree", "list", "--porcelain", "-z"]))
     .split("\0\0")
@@ -103,7 +125,7 @@ export async function retentionSourceClean(path: string): Promise<boolean> {
 // Serialize CPU/IO-heavy scans and bound both worker lifetime and queued admission.
 let fingerprintPending = 0;
 let fingerprintTail: Promise<void> = Promise.resolve();
-async function fingerprintSource(data: Record<string, unknown>): Promise<string> {
+export async function fingerprintSource(data: Record<string, unknown>): Promise<string> {
   if (fingerprintPending >= 16) throw new Error("Cleanup fingerprint capacity exceeded; retry.");
   fingerprintPending++;
   const previous = fingerprintTail;
@@ -554,6 +576,7 @@ export async function guardedRemoveWorkspace(
       );
       if (exists(index)) copyFileSync(index, join(input.archiveRoot, "index"));
       const ref = `refs/bycoda/rewinds/${input.operationId}/rescue-head`;
+      await input.assertAuthorized?.();
       await git(input.projectCwd, ["update-ref", ref, registered.head]);
       const indexRef = `refs/bycoda/rewinds/${input.operationId}/rescue-index`;
       // A copied index alone does not retain staged-only blobs against Git GC.
@@ -611,20 +634,15 @@ export async function guardedRemoveWorkspace(
       await validateWorkspaceCleanupPaths(input.managedRoot, input.path);
       if ((await inventoryWorkspaceLinks(input.path)).length)
         throw new Error("Links appeared during recovery; cleanup remains blocked.");
+      await input.assertAuthorized?.();
       archive(input.path, `recovered-directory-${randomUUID()}`);
     }
-    if (registered && (await entryMissing(input.path))) {
-      // The directory is already gone: prune only its stale registration. The branch and refs stay.
-      await input.assertAuthorized?.();
-      await git(input.projectCwd, ["worktree", "prune"]);
-      if (
-        (await registrations(input.projectCwd)).some((r) => sameWorkspacePath(r.path, input.path))
-      )
-        throw new Error("Stale workspace registration could not be pruned.");
-    } else if (registered) {
+    // A missing directory completes removal. Git may retain its stale registration.
+    const directoryAlreadyMissing = await entryMissing(input.path);
+    if (registered && !directoryAlreadyMissing) {
       await input.assertAuthorized?.();
       try {
-        await git(input.projectCwd, [
+        await mutateWorktreeMembership(input.projectCwd, [
           "worktree",
           "remove",
           ...(input.allowDirty || trackedLinks.size > 0 ? ["--force"] : []),
@@ -644,14 +662,22 @@ export async function guardedRemoveWorkspace(
           const remaining = await inventoryWorkspaceLinks(input.path);
           if (remaining.length)
             throw new Error("Links appeared during removal; cleanup remains blocked.");
+          await input.assertAuthorized?.();
           archive(input.path, `remaining-${randomUUID()}`);
         }
         if (
           (await registrations(input.projectCwd)).some((r) => sameWorkspacePath(r.path, input.path))
-        )
-          await git(input.projectCwd, ["worktree", "remove", "--", input.path]).catch(() => {
+        ) {
+          await input.assertAuthorized?.();
+          await mutateWorktreeMembership(input.projectCwd, [
+            "worktree",
+            "remove",
+            "--",
+            input.path,
+          ]).catch(() => {
             throw error;
           });
+        }
       }
     } else if (exists(input.path)) {
       await input.assertAuthorized?.();
@@ -659,18 +685,23 @@ export async function guardedRemoveWorkspace(
     }
     await input.phase?.("git-removed", recoveryIds, archives);
     if (
-      exists(input.path) ||
-      (await registrations(input.projectCwd)).some((r) => sameWorkspacePath(r.path, input.path))
+      !(await entryMissing(input.path)) ||
+      (!directoryAlreadyMissing &&
+        (await registrations(input.projectCwd)).some((r) => sameWorkspacePath(r.path, input.path)))
     )
       throw new Error("Cleanup reconciliation pending; retry after handles unlock.");
     await input.phase?.("reconciled", recoveryIds, archives);
-    invalidateHostWorktrees();
     return { archives, recoveryIds };
   });
 }
 
 export interface WorkspaceCleanupDependencies {
   assertAuthorized?(): Promise<void>;
+  withRemovalLease?<T>(
+    path: string,
+    run: (assertLease: () => void) => Promise<T>,
+    project: () => Promise<string>,
+  ): Promise<T>;
   /** @internal Only the existing failed removal's blocked metadata, never filesystem work. */
   recoveryBookkeeping?<T>(work: () => Promise<T>): Promise<T>;
   registry: Pick<
@@ -678,6 +709,10 @@ export interface WorkspaceCleanupDependencies {
     "get" | "update" | "saveOperation" | "getOperation" | "findOperation" | "listOperations"
   >;
   reservations: ExecutionActivityReservations;
+  /** Sibling worktrees (other repositories) of the workspace; retired together with it. */
+  siblings?(
+    workspace: ManagedWorkspace,
+  ): Promise<{ repository: string; path: string; branch: string }[]>;
   /** Resolve recorded materialization root, project checkout and private recovery root (not a changed policy root). */
   location(
     workspace: ManagedWorkspace,
@@ -753,6 +788,11 @@ export function createWorkspaceRemovalService(
         if ((await deps.reservations.list(workspace.id)).length)
           throw new Error("Workspace is still in use.");
         if (workspace.state === "active") throw new Error("Active workspace cannot be removed.");
+        // Siblings keep the primary's safety: locked, re-pointed or dirty ones block the removal.
+        for (const sibling of (await deps.siblings?.(workspace)) ?? []) {
+          const blocker = await siblingBlocker(sibling);
+          if (blocker) throw new Error(blocker);
+        }
       } catch (error) {
         blockers.push(error instanceof Error ? error.message : String(error));
       }
@@ -774,7 +814,7 @@ export function createWorkspaceRemovalService(
       plans.set(plan.token, structuredClone(plan));
       return plan;
     },
-    async apply(request, authority) {
+    async apply(request, authority, assertLease?: () => void) {
       const existing = await deps.registry.findOperation({
         workspaceId: request.workspaceId,
         kind: "removal",
@@ -856,8 +896,14 @@ export function createWorkspaceRemovalService(
         recoveryIds: [],
         automatic: scheduler,
       };
-      await deps.registry.saveOperation(op, null);
-      return execute(op, false, scheduler);
+      const start = async (lease?: () => void) => {
+        lease?.();
+        await deps.registry.saveOperation(op, null);
+        return execute(op, false, scheduler, lease);
+      };
+      return !assertLease && deps.withRemovalLease
+        ? deps.withRemovalLease(plan.path, start, async () => (await deps.location(w)).projectCwd)
+        : start(assertLease);
     },
     async status({ workspaceId }) {
       const workspace = await get(workspaceId);
@@ -919,7 +965,18 @@ export function createWorkspaceRemovalService(
     async recover(operationId) {
       const op = await deps.registry.getOperation(operationId);
       if (!op || op.kind !== "removal") throw new Error("Unknown removal operation.");
-      if (op.phase !== "complete") await execute(op, true);
+      if (op.phase !== "complete") {
+        if (!deps.withRemovalLease)
+          throw new Error("Recovery requires a fresh desktop removal lease. Reconnect and retry.");
+        await deps.withRemovalLease(
+          op.plan.path,
+          async (assertLease) => {
+            assertLease();
+            await execute(op, true, undefined, assertLease);
+          },
+          async () => (await deps.location(await get(op.workspaceId))).projectCwd,
+        );
+      }
       return (await deps.registry.getOperation(operationId))!;
     },
   };
@@ -927,6 +984,7 @@ export function createWorkspaceRemovalService(
     op: RemovalJournal,
     recovering: boolean,
     scheduler = op.automatic !== false,
+    assertLease?: () => void,
   ) {
     let w = await get(op.workspaceId);
     const phase = op.phase === "blocked" ? op.resumePhase : op.phase;
@@ -999,8 +1057,16 @@ export function createWorkspaceRemovalService(
       const archiveRoot = op.archiveRoot ?? join(location.archiveRoot, op.id);
       op.archiveRoot = archiveRoot;
       await save(op.phase);
+      // Refuse before the primary is touched: a dirty sibling must not leave a half-removed workspace.
+      for (const sibling of (await deps.siblings?.(w)) ?? []) {
+        const blocker = await siblingBlocker(sibling);
+        if (blocker) throw new Error(blocker);
+      }
       await guardedRemoveWorkspace({
-        assertAuthorized: deps.assertAuthorized,
+        assertAuthorized: async () => {
+          await deps.assertAuthorized?.();
+          assertLease?.();
+        },
         ...location,
         archiveRoot,
         path: op.plan.path,
@@ -1017,6 +1083,13 @@ export function createWorkspaceRemovalService(
           await save(next);
         },
       });
+      // Retired with the primary; each keeps its branch like the primary does. Idempotent, so a
+      // recovered removal repeats it safely.
+      for (const sibling of (await deps.siblings?.(w)) ?? []) {
+        await deps.assertAuthorized?.();
+        assertLease?.();
+        await removeSiblingWorktree(sibling);
+      }
       w = await deps.registry.update({
         workspaceId: w.id,
         expectedRevision: op.workspaceRevision ?? w.revision,

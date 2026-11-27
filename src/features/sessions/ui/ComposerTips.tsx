@@ -4,6 +4,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
 import { Text } from "../../../shared/ui/Text";
 import { AiIdea } from "../../../shared/ui/icons";
+import { catalogText } from "../model/catalogText";
 import "./ComposerTips.css";
 
 export const COMPOSER_TIPS = [
@@ -63,23 +64,25 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
   const locale = useLocale();
   const [index, setTip] = useState(() => Math.floor(Math.random() * COMPOSER_TIPS.length));
   const [open, setOpen] = useState(false);
-  const [focusWithin, setFocusWithin] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
   const tipId = useId();
+  const tipLabel = open ? t("Next tip") : t("Tip");
   const [hidden, setHidden] = useState(() => typeof document !== "undefined" && document.hidden);
   useEffect(() => {
     const update = () => setHidden(document.hidden);
     document.addEventListener("visibilitychange", update);
     return () => document.removeEventListener("visibilitychange", update);
   }, []);
+  // Rotate only while the popover is closed: a tip that is open must stay put for the reader,
+  // and the next opening shows the advanced tip. Timer is cleared on close, hide or inactivity.
   useEffect(() => {
-    if (!active || !open || focusWithin || hidden) return;
+    if (!active || open || hidden) return;
     const timer = window.setInterval(
       () => setTip((index) => (index + 1) % COMPOSER_TIPS.length),
       COMPOSER_TIP_INTERVAL,
     );
     return () => window.clearInterval(timer);
-  }, [active, open, focusWithin, hidden]);
+  }, [active, open, hidden]);
 
   return (
     <Text
@@ -96,22 +99,20 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
         size="sm"
         iconOnly
         motion="none"
-        label={t(open ? "Next tip" : "Tip")}
+        label={tipLabel}
         title=""
         aria-controls={open ? tipId : undefined}
         aria-haspopup="dialog"
         aria-expanded={open}
         className="composer-tips-icon"
         textTone="muted"
-        onFocus={() => setFocusWithin(true)}
-        onBlur={() => setFocusWithin(false)}
         onClick={() => {
           if (open) setTip((current) => (current + 1) % COMPOSER_TIPS.length);
           else setOpen(true);
         }}
       >
         <AiIdea className="icon-sm" />
-        <span className="sr-only">{t(open ? "Next tip" : "Tip")}</span>
+        <span className="sr-only">{tipLabel}</span>
       </Button>
       {open ? (
         <Popover
@@ -125,12 +126,12 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
           width={320}
           restoreFocus={false}
           onDismiss={() => setOpen(false)}
-          className="p-3"
+          variant="panel"
         >
           <Text as="div" tone="secondary" leading="relaxed" className="composer-tips-copy">
             <TipText
               key={`${locale}-${index}`}
-              text={t(COMPOSER_TIPS[index])}
+              text={catalogText(t, COMPOSER_TIPS[index])}
               animate={active && !hidden}
             />
           </Text>

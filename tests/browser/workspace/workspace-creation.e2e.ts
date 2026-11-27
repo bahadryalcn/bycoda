@@ -106,17 +106,27 @@ for (const theme of ["light", "dark"]) {
       await page.goto(
         `/tests/browser/workspace/workspace-creation.html?theme=${theme}&old-host&worktree`,
       );
-      await expect(page.locator("[data-workspace-creation-status]")).toContainText(
+      await page
+        .locator("[data-workspace-creation-status]")
+        .getByText("Details", { exact: true })
+        .click();
+      await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText(
         "Update bycoda Host",
       );
       expect((await expectNoAdmission(page)).submissions).toEqual([]);
-      // The disabled Send control carries the reason in its accessible name.
-      await expect(page.getByRole("button", { name: /^Send\. Update bycoda Host/ })).toBeDisabled();
+      // The disabled Send control keeps its name and carries the reason as its description.
+      const send = page.getByRole("button", { name: "Send", exact: true });
+      await expect(send).toBeDisabled();
+      await expect(send).toHaveAccessibleDescription(/Update bycoda Host/);
       await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(
         /Keep the owner's draft/,
       );
       await page.getByRole("button", { name: "Retry", exact: true }).click();
-      await expect(page.locator("[data-workspace-creation-status]")).toContainText(
+      await page
+        .locator("[data-workspace-creation-status]")
+        .getByText("Details", { exact: true })
+        .click();
+      await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText(
         "Update bycoda Host",
       );
       await page.screenshot({

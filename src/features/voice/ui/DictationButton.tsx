@@ -15,6 +15,9 @@ import { dictationLanguage, useVoiceSettings, voiceRuntimeSettings } from "../mo
 import { DictationOptions } from "./DictationOptions";
 import styles from "./DictationButton.module.css";
 
+/** The local model stays loaded this long after dictation stops; no setting owns it. */
+const IDLE_UNLOAD_MINUTES = 5;
+
 /**
  * Composer microphone: speech is recognized on this computer (the voice
  * companion's local installation) or by the chosen cloud provider. The phrase in
@@ -91,6 +94,13 @@ export function DictationButton({
       void current.stop().catch(() => {});
       return;
     }
+    // The default local path can share the companion's existing recognizer.
+    const sharesCompanion =
+      settings.enabled &&
+      settings.mode === "local" &&
+      !settings.dictationLocalModelPath &&
+      settings.dictationLanguage === "auto" &&
+      settings.dictationSilenceFilter;
     const next = new Dictation(
       {
         text: (text, final) => latest.current.onText(text, final, next),
@@ -100,7 +110,7 @@ export function DictationButton({
           visual.current?.style.setProperty("--dictation-level", "0");
           if (value === "idle") dictation.current = null;
         },
-        error: (message) => latest.current.onError(t(message)),
+        error: (message) => latest.current.onError(message),
         level: (value) => {
           if (dictation.current !== next) return;
           // Only the tiny visual updates at capture cadence, never the composer.
@@ -112,8 +122,12 @@ export function DictationButton({
       },
       dictationLanguage(settings, locale),
       {
-        ...voiceRuntimeSettings(settings),
-        idleUnloadMinutes: settings.dictationIdleUnloadMinutes,
+        ...voiceRuntimeSettings({ ...settings, natural: sharesCompanion && settings.natural }),
+        idleUnloadMinutes: IDLE_UNLOAD_MINUTES,
+        ...(!sharesCompanion && {
+          dictationLanguage: settings.dictationLanguage,
+          dictationSilenceFilter: settings.dictationSilenceFilter,
+        }),
         ...(settings.dictationLocalModelPath
           ? { whisperPath: settings.dictationLocalModelPath, whisperExact: true }
           : {}),
@@ -127,7 +141,7 @@ export function DictationButton({
         dictionary: settings.dictationDictionary,
         projectId,
         removeFillers: settings.dictationRemoveFillers,
-        language: dictationLanguage(settings, locale),
+        language: settings.dictationLanguage === "auto" ? undefined : settings.dictationLanguage,
         correctionCue: settings.dictationCleanup.correctionCue,
         cleanup: settings.dictationCleanup,
         silenceFilter: settings.dictationSilenceFilter,
@@ -184,27 +198,29 @@ export function DictationButton({
           ? t("Stop dictation")
           : t("Dictate");
   return (
-    <ButtonGroup aria-label={t("Dictation")} surface="transparent">
+    <ButtonGroup aria-label={t("Dictation")} surface="navigation">
       <Button
         variant="ghost"
         motion="none"
         iconOnly
+        stretch
+        touchTarget="control"
         label={label}
         shortcut={shortcut ?? undefined}
-        tooltip={state === "idle" ? t("Dictate: speak and the text appears here") : label}
         data-dictation-state={state}
         aria-busy={state === "starting" || state === "finishing" || undefined}
         pressed={listening || state === "starting"}
         tone={listening ? "danger" : undefined}
         // Preparing can take a while; the button stays clickable so it can be cancelled.
         disabled={disabled}
+        disabledReason={t("Dictation is unavailable right now.")}
         // Keep the caret in the message box while the microphone toggles.
         onMouseDown={(event) => event.preventDefault()}
         onClick={toggle}
       >
         <span ref={visual} className={styles.visual} data-state={state} aria-hidden="true">
           {state === "idle" ? (
-            <Mic className="icon-sm" strokeWidth={2} />
+            <Mic className="icon-sm" />
           ) : state === "listening" ? (
             <span className={styles.wave}>
               {[0, 1, 2, 3, 4].map((index) => (

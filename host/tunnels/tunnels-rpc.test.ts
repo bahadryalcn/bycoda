@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { deviceProofKeyFromSeed } from "../../src/integrations/device-proof";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,6 +21,11 @@ async function setup() {
   const tunnels = {
     boot: vi.fn(async () => {}),
     publicHostUrl: vi.fn(() => undefined),
+    publicPhoneUrls: vi.fn(() => [] as string[]),
+    allowsPhonesOverPublic: vi.fn(() => false),
+    setPhonesOverPublic: vi.fn(async (input: { enabled?: unknown }) => ({
+      phonesOverPublic: input.enabled === true,
+    })),
     status: vi.fn(async () => ({ environmentId: store.environmentId })),
     start: vi.fn(async () => ({})),
     stop: vi.fn(async () => ({})),
@@ -40,7 +46,7 @@ async function setup() {
   );
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = (server.address() as { port: number }).port;
-  const device = await store.issueDevice("Owner desktop");
+  const device = await store.issueDevice("Owner desktop", "desktop", true);
   const call = async (
     method: string,
     options: { token?: string; environmentId?: string; origin?: string; params?: unknown } = {},
@@ -113,6 +119,7 @@ describe("external tunnels use existing authenticated RPC", () => {
         ticket: ticket.ticket,
         claimId: randomBytes(32).toString("base64url"),
         deviceName: "Existing phone protocol",
+        proofKey: deviceProofKeyFromSeed(new Uint8Array(32).fill(3)).publicJwk,
       }),
     });
     expect(response.status).toBe(200);
@@ -135,6 +142,7 @@ describe("external tunnels use existing authenticated RPC", () => {
       "tunnels.start",
       "tunnels.stop",
       "tunnels.credential",
+      "tunnels.phones",
     ]) {
       expect((await s.call(method)).status).toBe(401);
       expect(
@@ -146,7 +154,7 @@ describe("external tunnels use existing authenticated RPC", () => {
     }
     await s.store.revokeToken(s.device.token);
     expect((await s.call("tunnels.start", { token: s.device.token })).status).toBe(401);
-    for (const method of ["status", "start", "stop", "credential"] as const)
+    for (const method of ["status", "start", "stop", "credential", "setPhonesOverPublic"] as const)
       expect(s.tunnels[method]).not.toHaveBeenCalled();
   });
   it("advertises the capability and routes authorized control calls without returning input credentials", async () => {
@@ -164,5 +172,11 @@ describe("external tunnels use existing authenticated RPC", () => {
     });
     expect(result.value.result).toEqual({ saved: true });
     expect(JSON.stringify(result.value)).not.toContain("synthetic-secret");
+    const phones = await s.call("tunnels.phones", {
+      token: s.device.token,
+      params: { enabled: true },
+    });
+    expect(phones.value.result).toEqual({ phonesOverPublic: true });
+    expect(s.tunnels.setPhonesOverPublic).toHaveBeenCalledWith({ enabled: true });
   });
 });

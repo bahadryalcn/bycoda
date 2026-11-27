@@ -14,8 +14,8 @@ import {
 import { X } from "../../icons";
 import { Button } from "../../Button";
 import {
-  NoticeButton,
   NoticeGlyph,
+  NoticeLink,
   NoticeSlot,
   noticeEnterClass,
   type NoticeAction,
@@ -34,12 +34,14 @@ export interface AlertProps extends HTMLAttributes<HTMLDivElement> {
   open?: boolean;
   /** Shows a dismiss button. An uncontrolled alert collapses first, then calls this. */
   onDismiss?: () => void;
-  /** The one follow-up (Retry, Open settings), rendered as a secondary small button after the copy. */
+  /** The one follow-up (Retry, Open settings), rendered as a text link after the copy. */
   action?: NoticeAction;
   /** A second follow-up, rendered after `action`. */
   secondaryAction?: NoticeAction;
   /** Escape for one non-button control after the actions (an ErrorDetails trigger, a menu). */
   extra?: ReactNode;
+  /** Vertically center the actions and dismiss control beside multiline copy. */
+  actionsAlign?: "center";
   /** Accessible name of the dismiss control. Defaults to `Dismiss` plus the title. */
   dismissLabel?: string;
 }
@@ -56,6 +58,7 @@ function AlertBox({
   action,
   secondaryAction,
   extra,
+  actionsAlign,
   dismissLabel,
   ...props
 }: AlertBoxProps) {
@@ -65,7 +68,13 @@ function AlertBox({
   return (
     <div
       {...props}
-      className={[styles.alert, styles[tone], noticeEnterClass, className]
+      className={[
+        styles.alert,
+        styles[tone],
+        actionsAlign && styles.centerActions,
+        noticeEnterClass,
+        className,
+      ]
         .filter(Boolean)
         .join(" ")}
       role={role ?? (tone === "danger" ? "alert" : "status")}
@@ -79,14 +88,14 @@ function AlertBox({
         </div>
         {hasActions ? (
           <div className={styles.actions}>
-            {action ? <NoticeButton action={action} /> : null}
-            {secondaryAction ? <NoticeButton action={secondaryAction} /> : null}
+            {action ? <NoticeLink action={action} /> : null}
+            {secondaryAction ? <NoticeLink action={secondaryAction} /> : null}
             {extra}
           </div>
         ) : null}
       </div>
       {onDismiss ? (
-        <NoticeSlot size="box">
+        <NoticeSlot size="box" className={actionsAlign ? styles.centerDismiss : undefined}>
           <Button
             type="button"
             variant="ghost"

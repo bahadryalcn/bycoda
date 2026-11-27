@@ -1,17 +1,24 @@
-import { TransientNotice } from "../../../shared/ui/TransientNotice";
-import { useLocale } from "../../../shared/i18n/technical";
+import { Toast } from "../../../shared/ui/ToastRegion";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { t, useLocale } from "../../../shared/i18n/technical";
 
 export function FileActionError({
-  message,
+  details,
   onDismiss,
 }: {
-  message: string;
+  details: string;
   onDismiss: () => void;
 }) {
   useLocale();
   // Shared notice: portalled to the body so a transformed or contained
-  // ancestor cannot clip it, and sticky until the user dismisses it.
+  // ancestor cannot clip it. Routine file errors dismiss themselves.
+  const title = t("Couldn’t open the file in its default app");
   return (
-    <TransientNotice tone="danger" message={message} durationMs={null} onDismiss={onDismiss} />
+    <Toast
+      tone="danger"
+      message={title}
+      extra={<ErrorDetails title={title} detail={details} />}
+      onDismiss={onDismiss}
+    />
   );
 }

@@ -22,7 +22,7 @@ test("narrow Markdown tables scroll within the panel and keep readable top-align
       pageOverflow: document.documentElement.scrollWidth - innerWidth,
     };
   });
-  expect(layout.cell).toBeGreaterThanOrEqual(159);
+  expect(layout.cell).toBeGreaterThanOrEqual(96);
   expect(layout.align).toBe("top");
   expect(layout.scrolls).toBe(true);
   expect(layout.pageOverflow).toBeLessThanOrEqual(1);

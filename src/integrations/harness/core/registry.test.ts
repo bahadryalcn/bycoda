@@ -64,6 +64,7 @@ import {
   isLiveHarness,
   listHarnesses,
   refreshHarnessCatalogs,
+  refreshHarnessCatalogsStrict,
   registerHarness,
   resetHarnessIdlePark,
   sendHarnessTurn,
@@ -77,12 +78,13 @@ import {
 } from "./registry";
 import type { HarnessEvent, HarnessOperationContext, SendTurnInput, SteerTurnInput } from "./types";
 import { createChildProcessHandle, spawnChild, killChild, type ChildProcessHandle } from "./child";
-import { nativeControlTurnReceipt } from "./controlTurn";
+import { nativeControlTurnReceipt, nativeSessionCapability } from "./controlTurn";
+import { resolveOpenCodeV2Service } from "../providers/opencode/opencodeService";
 import { claudeAdapter } from "../providers/claude/claudeAdapter";
 import { codexAdapter } from "../providers/codex/codexAdapter";
 import { genericAcpAdapter } from "../providers/generic-acp/genericAcpAdapter";
 import { registerBuiltinHarnesses } from "./register";
-import { LANGUAGES, setLanguagePreference, t } from "../../../shared/i18n/core";
+import { LANGUAGES, setLanguagePreference } from "../../../shared/i18n/core";
 import { delegationFallback, delegationNotice } from "./delegationReadiness";
 
 function stub(id: HarnessId, extra: Partial<HarnessAdapter> = {}): HarnessAdapter {
@@ -126,8 +128,10 @@ describe("harness registry", () => {
           ...(bounded ? { crossSubagentMaxEffort: "high" } : {}),
         };
         const guidance = delegationFallback(modelSettings, false);
+        const expected = delegationNotice(guidance);
+        await setLanguagePreference("en");
         const notice = delegationNotice(guidance);
-        const expected = t(notice);
+        await setLanguagePreference(locale);
         if (locale !== "en") expect(expected).not.toBe(notice);
         await sendHarnessTurn({
           harness: "codex",
@@ -1267,6 +1271,54 @@ describe("harness registry", () => {
     expect(retainedHarnessWriters()).not.toContain("lightweight-transfer");
   });
 
+  it("releases a parked OpenCode service reference and reacquires on the next turn", async () => {
+    vi.useFakeTimers();
+    nativeReceipts();
+    const fixture = nativeInvoke.getMockImplementation()!;
+    let acquired = 0;
+    nativeInvoke.mockImplementation(async (command, raw) => {
+      if (command === "owned_opencode_acquire")
+        return {
+          serviceId: "service",
+          referenceId: `reference-${++acquired}`,
+          endpoint: "http://127.0.0.1:1",
+        };
+      if (command === "owned_opencode_release") return true;
+      return fixture(command, raw);
+    });
+    const sendTurn = vi.fn(async (turn: SendTurnInput) => {
+      await resolveOpenCodeV2Service(
+        "opencode",
+        turn.cwd,
+        nativeSessionCapability(turn.nativeControlTurn!),
+      );
+    });
+    const stopSession = vi.fn(async () => {});
+    registerHarness(stub("opencode", { sendTurn, stopSession }));
+    const input = {
+      harness: "opencode" as const,
+      sessionId: "opencode-park",
+      cwd: "/tmp",
+      model: "opencode:test",
+      runtimeMode: "supervised" as const,
+      text: "hello",
+      onEvent: vi.fn(),
+    };
+    const releases = () =>
+      nativeInvoke.mock.calls.filter(([command]) => command === "owned_opencode_release");
+
+    await sendHarnessTurn(input);
+    await vi.advanceTimersByTimeAsync(HARNESS_IDLE_PARK_MS - 1);
+    expect(releases()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(stopSession).toHaveBeenCalledOnce();
+    expect(releases()).toHaveLength(1);
+    expect(releases()[0][1]).toMatchObject({ referenceId: "reference-1" });
+
+    await sendHarnessTurn(input);
+    expect(acquired).toBe(2);
+  });
+
   it("retains the writer record when stop and native retire both fail", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const stopSession = vi.fn(async (): Promise<void> => {
@@ -1795,6 +1847,18 @@ describe("harness registry", () => {
     },
   );
 
+  it("gives ACP text helpers the provider's own model ID", async () => {
+    const runTextPrompt = vi.fn(async (_input: import("./registry").TextPromptInput) => "done");
+    registerHarness(stub("cursor", { runTextPrompt }));
+    await runHarnessTextPrompt({
+      harness: "cursor",
+      cwd: "/tmp",
+      prompt: "question",
+      model: "cursor:composer-2.5",
+    });
+    expect(runTextPrompt.mock.calls[0]?.[0].model).toBe("composer-2.5");
+  });
+
   it("keeps foreign model remapping and never fabricates no-dispatch proof after adapter entry", async () => {
     const runTextPrompt = vi.fn(async (_input: import("./registry").TextPromptInput) => {
       throw new Error("entered adapter failed");
@@ -1898,6 +1962,40 @@ describe("harness registry", () => {
 
     expect(claude).toHaveBeenCalledOnce();
     expect(pi).not.toHaveBeenCalled();
+  });
+
+  it("lets routine refreshes fail quietly but surfaces the failure to a strict caller", async () => {
+    const debug = vi.spyOn(console, "debug").mockImplementation(() => undefined);
+    const failure = new Error("probe failed");
+    registerHarness(
+      stub("pi", {
+        refreshCatalog: vi.fn(async () => {
+          throw failure;
+        }),
+      }),
+    );
+    try {
+      await expect(refreshHarnessCatalogs(["pi"])).resolves.toBeUndefined();
+      expect(debug).toHaveBeenCalled();
+      await expect(refreshHarnessCatalogsStrict(["pi"])).rejects.toBe(failure);
+    } finally {
+      debug.mockRestore();
+    }
+  });
+
+  it("reports which harnesses a strict refresh actually probed", async () => {
+    const claude = vi.fn(async () => undefined);
+    const pi = vi.fn(async () => {
+      throw new Error("pi down");
+    });
+    registerHarness(stub("claude", { refreshCatalog: claude }));
+    registerHarness(stub("pi", { refreshCatalog: pi }));
+    await expect(refreshHarnessCatalogsStrict(["claude"])).resolves.toEqual(new Set(["claude"]));
+    const failure = await refreshHarnessCatalogsStrict(["claude", "pi"]).catch(
+      (error: unknown) => error,
+    );
+    expect(failure).toMatchObject({ message: "pi down" });
+    expect(claude).toHaveBeenCalledTimes(2);
   });
 
   it("does not spawn a catalog probe twice after a live list lands", async () => {

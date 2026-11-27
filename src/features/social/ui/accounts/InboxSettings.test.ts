@@ -48,7 +48,7 @@ it("puts the switch back and shows the failure when the Host refuses the change"
   const onChanged = render(settings, false);
   await act(async () => toggle()?.click());
   expect(toggle()?.getAttribute("aria-checked")).toBe("false");
-  expect(element.textContent).toContain("The Host is offline.");
+  expect(element.textContent).toContain("The inbox setting could not be saved. Try again.");
   expect(onChanged).not.toHaveBeenCalled();
 });
 

@@ -391,7 +391,7 @@ function implementManager(options: ManagerOptions, state: RetainedState) {
     if (!force && sameView(doc.emitted, state)) return;
     doc.emitted = state;
     // Snapshot the notification boundary: a callback can subscribe/unsubscribe.
-    // oxlint-disable-next-line unicorn/no-useless-spread
+    // oxlint-disable-next-line unicorn/no-useless-spread -- iterate a copy so a listener can unsubscribe during the loop
     for (const listener of [...doc.listeners]) {
       try {
         listener(state);
@@ -1091,4 +1091,3 @@ if (typeof window !== "undefined") {
   };
 }
 export const bindEditorDraftDocument = defaultManager.bindDocument;
-export const flushEditorDraftPersistence = defaultManager.flush;

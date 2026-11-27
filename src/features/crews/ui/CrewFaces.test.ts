@@ -63,5 +63,9 @@ it("shows no chip when every member fits", async () => {
 
 it("blinks only the active members", async () => {
   const wrapper = await render({ members: crew, max: 4, activeIds: new Set(["c", "d"]) });
-  expect(wrapper.querySelectorAll("style")).toHaveLength(2);
+  const faces = [...wrapper.querySelectorAll("svg")];
+  const blinks = faces.map((face) => face.querySelectorAll(".member-avatar-eye").length > 0);
+  // Crew order puts the coordinator first, then Ben, Ayla and Deniz: c and d are active.
+  expect(blinks.filter(Boolean)).toHaveLength(2);
+  expect(blinks.filter((blinking) => !blinking)).toHaveLength(2);
 });

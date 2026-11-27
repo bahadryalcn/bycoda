@@ -1,13 +1,10 @@
-import { surfaceAttributes } from "../../../../shared/ui/Surface";
+import { Code } from "../../../../shared/ui/Code";
 import { useState } from "react";
-import { Text } from "../../../../shared/ui/Text";
 import { t, useLocale } from "../../../../shared/i18n";
-import { copyText } from "../../../../platform/tauri/clipboard";
-import { Button } from "../../../../shared/ui/Button";
+import { CopyButton } from "../../../../shared/ui/CopyButton";
 import { PasswordField } from "../../../../shared/ui/PasswordField";
 import { TextField } from "../../../../shared/ui/TextField";
-import { Copy } from "../../../../shared/ui/icons";
-import { AdvancedSettings, Row, Toggle } from "../../../../shared/ui/settings";
+import { Row, Toggle } from "../../../../shared/ui/settings";
 import { BrowserSignIn } from "./BrowserSignIn";
 import { slackSaveInput, slackSignInSaveInput } from "./chatAccountInputs";
 import {
@@ -36,7 +33,7 @@ export const SLACK_BOT_SCOPES = [
   "chat:write",
 ] as const;
 
-/** Loopback redirect Slack apps must register; native listens on this fixed port. */
+/** HTTPS redirect URI a Slack application must register. */
 export const SLACK_REDIRECT_URL = "https://bycoda.codes/oauth/slack/";
 
 export function SlackSettings() {
@@ -44,7 +41,6 @@ export function SlackSettings() {
   return (
     <MessagingAccountsCard
       provider="slack"
-      emptyLabel={t("No Slack workspaces connected yet.")}
       addLabel={t("Add workspace")}
       describe={(account) => account.identity || t("Slack workspace")}
       Form={SlackAccountForm}
@@ -58,7 +54,6 @@ function SlackAccountForm({ account, onSaved, onCancel, onSavingChange }: Accoun
   const [token, setToken] = useState("");
   const [clientId, setClientId] = useState("");
   const [authHandle, setAuthHandle] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const { saving, error, save } = useAccountSave(onSaved, onSavingChange);
   const submitToken = () => {
     save(slackSaveInput(token, account?.id)).catch(() => undefined);
@@ -72,13 +67,6 @@ function SlackAccountForm({ account, onSaved, onCancel, onSavingChange }: Accoun
       <Row
         stacked
         label={account ? t("Reconnect workspace") : t("Connect a workspace")}
-        info={
-          useBotToken
-            ? undefined
-            : t(
-                "Sign in with the Slack account whose channels and direct messages you want to read and answer.",
-              )
-        }
         persistence={{ mode: "explicit", state: saving ? "saving" : dirty ? "dirty" : "idle" }}
       >
         {useBotToken ? (
@@ -113,7 +101,6 @@ function SlackAccountForm({ account, onSaved, onCancel, onSavingChange }: Accoun
       {useBotToken ? (
         <SetupSteps
           title={t("How to get a bot token")}
-          label={t("Slack app setup")}
           steps={[
             t("Create a Slack app at api.slack.com/apps for your workspace."),
             t("Under OAuth & Permissions, add the bot token scopes listed below."),
@@ -121,68 +108,46 @@ function SlackAccountForm({ account, onSaved, onCancel, onSavingChange }: Accoun
             t("Invite the bot to each channel it should read with /invite."),
           ]}
         >
-          <Text
-            as="p"
-            size="caption"
-            tone="secondary"
-            leading="inherit"
-            {...surfaceAttributes({ radius: "card", variant: "card" }, "integration-code")}
-          >
-            {SLACK_BOT_SCOPES.join(" ")}
-          </Text>
+          <Code variant="block">{SLACK_BOT_SCOPES.join(" ")}</Code>
           <div className="integration-actions">
-            <Button
-              stableWidth
-              reserveLabels={[t("Copied")]}
-              startIcon={<Copy className="icon-sm" />}
-              onClick={() => {
-                copyText(SLACK_BOT_SCOPES.join(",")).then(
-                  () => setCopied(true),
-                  () => setCopied(false),
-                );
-              }}
-            >
-              {copied ? t("Copied") : t("Copy scopes")}
-            </Button>
+            <CopyButton label={t("Copy scopes")} text={SLACK_BOT_SCOPES.join(",")} />
           </div>
         </SetupSteps>
       ) : null}
-      <AdvancedSettings defaultOpen={false} keepMounted>
-        <Row
+      <Row
+        label={t("Use a bot token instead")}
+        info={t("A bot reads only the channels it is invited to and replies as the bot.")}
+      >
+        <Toggle
           label={t("Use a bot token instead")}
-          info={t("A bot reads only the channels it is invited to and replies as the bot.")}
+          on={useBotToken}
+          onChange={setUseBotToken}
+          disabled={saving}
+        />
+      </Row>
+      {useBotToken ? null : (
+        <Row
+          stacked
+          label={t("Slack app client ID")}
+          info={t(
+            "Only needed when you use your own Slack app. Turn on PKCE for the app, add the redirect URL {p0} and add these user token scopes: {p1}",
+            { p0: SLACK_REDIRECT_URL, p1: SLACK_BOT_SCOPES.join(", ") },
+          )}
         >
-          <Toggle
-            label={t("Use a bot token instead")}
-            on={useBotToken}
-            onChange={setUseBotToken}
+          <TextField
+            label={t("Slack app client ID")}
+            hideLabel
+            aria-label={t("Slack app client ID")}
+            value={clientId}
+            onChange={(event) => setClientId(event.target.value)}
+            placeholder="0000000000.0000000000000"
+            autoComplete="off"
+            spellCheck={false}
+            monospace
             disabled={saving}
           />
         </Row>
-        {useBotToken ? null : (
-          <Row
-            stacked
-            label={t("Slack app client ID")}
-            info={t(
-              "Only needed when you use your own Slack app. Turn on PKCE for the app, add the redirect URL {p0} and add these user token scopes: {p1}",
-              { p0: SLACK_REDIRECT_URL, p1: SLACK_BOT_SCOPES.join(", ") },
-            )}
-          >
-            <TextField
-              label={t("Slack app client ID")}
-              hideLabel
-              aria-label={t("Slack app client ID")}
-              value={clientId}
-              onChange={(event) => setClientId(event.target.value)}
-              placeholder="0000000000.0000000000000"
-              autoComplete="off"
-              spellCheck={false}
-              monospace
-              disabled={saving}
-            />
-          </Row>
-        )}
-      </AdvancedSettings>
+      )}
       <AccountFormActions
         saving={saving}
         error={error}

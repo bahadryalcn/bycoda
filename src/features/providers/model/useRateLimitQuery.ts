@@ -1,58 +1,33 @@
-import { useEffect } from "react";
-import { focusManager, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
-import { bridgeQueryEvents } from "../../../shared/lib/queryClient";
-import { getCachedRateLimits, loadRateLimits, subscribeRateLimits } from "./rateLimitsCache";
-import type { RateLimitProvider } from "./rateLimits";
+import { useQuery } from "@tanstack/react-query";
+import { useForegroundQueryPolling, useQueryVisible } from "../../../shared/hooks/useQueryVisible";
+import { foregroundPollsVisible } from "../../../shared/lib/foregroundPolling";
+import {
+  loadPolledRateLimits,
+  loadRateLimits,
+  useCachedRateLimits,
+  QUOTA_POLL_MS,
+  type QuotaSource,
+} from "./rateLimitsCache";
 
-/** Claude reads a cheap endpoint; Codex starts a `codex app-server` process per read, so it is polled rarely.
- * The footer's Refresh button and sign-in flows still read on demand. */
-const POLL_MS: Record<RateLimitProvider, number> = {
-  claude: 120_000,
-  codex: 600_000,
-  opencode: 120_000,
-  grok: 600_000,
-};
-
-export const rateLimitQueryKey = (provider: RateLimitProvider, accountId: string) =>
+export const rateLimitQueryKey = (provider: QuotaSource, accountId: string) =>
   ["rate-limits", provider, accountId] as const;
 
 export const loadRateLimitsForQuery = (
-  provider: RateLimitProvider,
+  provider: QuotaSource,
   accountId = "default",
   force = false,
-) => loadRateLimits(provider, accountId, force, () => focusManager.isFocused(), true);
+) => loadRateLimits(provider, accountId, force, foregroundPollsVisible);
 
-export function useRateLimitQuery(
-  provider: RateLimitProvider,
-  accountId: string,
-  enabled: boolean,
-) {
-  const client = useQueryClient();
+export function useRateLimitQuery(provider: QuotaSource, accountId: string, enabled: boolean) {
   const visible = useQueryVisible();
   const queryKey = rateLimitQueryKey(provider, accountId);
   const query = useQuery({
     queryKey,
     enabled: enabled && visible,
-    staleTime: POLL_MS[provider],
-    queryFn: () =>
-      loadRateLimitsForQuery(provider, accountId, client.getQueryData(queryKey) !== undefined),
-    refetchInterval: POLL_MS[provider],
+    staleTime: QUOTA_POLL_MS[provider],
+    queryFn: () => loadPolledRateLimits(provider, accountId, foregroundPollsVisible),
+    refetchOnWindowFocus: false,
   });
-  useEffect(() => {
-    let previous = getCachedRateLimits(provider, accountId);
-    return bridgeQueryEvents(
-      client,
-      (receive) =>
-        subscribeRateLimits(() => {
-          const value = getCachedRateLimits(provider, accountId);
-          if (value === previous) return;
-          previous = value;
-          // Loading presentation is owned by explicit actions; polling retains its snapshot.
-          if (value.status !== "fetching" && value.status !== "idle") receive(value);
-        }),
-      (data) => ({ queryKey: rateLimitQueryKey(provider, accountId), data }),
-    );
-  }, [client, provider, accountId]);
-  return query.data ?? getCachedRateLimits(provider, accountId);
+  useForegroundQueryPolling(query.refetch, QUOTA_POLL_MS[provider], enabled);
+  return useCachedRateLimits(provider, accountId);
 }

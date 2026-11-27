@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { handleOwnerApprovalControl, type AppControlRequest } from "./ownerApprovalControl";
 import { useEffect, useRef, type MutableRefObject } from "react";
 import { flushSync } from "react-dom";
@@ -18,12 +19,16 @@ import { NOTES_CHANGED_EVENT, upsertNote } from "../../../features/notes";
 import { orchestrator } from "../../../features/orchestration/model/orchestration";
 import { sameProjectPath } from "../../../features/projects/model/recents";
 import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
-import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
+import { remoteSessionProject } from "../../../features/connections/model/sessionMachineTarget";
 import { getSession, listSessionsByProject } from "../../../features/sessions/data/sessionStore";
 import { sessionDraftBlock, sessionWorkCwd } from "../../../features/sessions/model/session";
 import { useHistorySourceRegistration } from "./useHistorySourceRegistration";
-import { sessionsRef } from "../../../features/sessions/model/sessionsStore";
-import { createWorktree, listWorktrees } from "../../../features/source-control/model/worktrees";
+import {
+  sessionsRef,
+  subscribeSessionCommits,
+} from "../../../features/sessions/model/sessionsStore";
+import { listWorktrees } from "../../../features/source-control/model/worktrees";
+import { createProjectWorktree } from "../../../features/source-control/model/remoteWorktrees";
 import type { useQuickSessionLaunch } from "../bridges/useQuickSessionLaunch";
 import type { useSessionDraftActions } from "../sessions/useSessionDraftActions";
 import type { useSessionLoading } from "../sessions/useSessionLoading";
@@ -322,7 +327,7 @@ export function useAppControlRequests({
               session.inboxAsk ||
               orchestrator.run(sessionId) ||
               hostSessionBinding(session) ||
-              remoteProjectFor(session.cwd)
+              remoteSessionProject(session)
             )
               throw new Error("Session is unavailable in this project.");
             const block = session.blocks.find(
@@ -870,6 +875,11 @@ export function useAppControlRequests({
               ? target
               : null;
           },
+          subscribeSession: (id, listener) =>
+            subscribeSessionCommits((previous, next) => {
+              // Only this session's record identity matters; streamed text commits still re-read it.
+              if (previous.find((s) => s.id === id) !== next.find((s) => s.id === id)) listener();
+            }),
           send: async (id, prompt, requestId) => {
             const target = await ensureOpenSessionRef.current(id);
             if (
@@ -919,7 +929,7 @@ export function useAppControlRequests({
           },
           worktrees: (cwd) => listWorktrees(cwd),
           createWorktree: (cwd, branch, base, existing) =>
-            createWorktree(cwd, branch, base, existing),
+            createProjectWorktree(cwd, branch, base, existing),
           notes: () => invoke("notes_list"),
           note: (id) => invoke("notes_get", { id }),
           saveNote: async (note) => {
@@ -950,7 +960,7 @@ export function useAppControlRequests({
               id: payload.id,
               response: {
                 ok: false,
-                error: error instanceof Error ? error.message : String(error),
+                error: errorText(error),
               },
             }),
         )

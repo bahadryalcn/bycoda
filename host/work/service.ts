@@ -62,9 +62,8 @@ export class HostWork {
   }
 
   private async schedule(): Promise<void> {
-    for (const work of await this.list()) {
-      if (work.state === "queued" || work.state === "waiting") await this.start(work.id);
-    }
+    for (const work of await this.storage.listPending()) await this.start(work.id);
+    await this.storage.archiveCompleted();
   }
 
   private async update(id: string, change: (work: WorkRecord) => WorkRecord): Promise<WorkRecord> {
@@ -212,10 +211,14 @@ export class HostWork {
 
   /** Run before waking producers after restart. No missing ACK is treated as a failed launch. */
   async reconcile(): Promise<void> {
-    for (const item of await this.list()) {
-      if (!item.reserved || this.launches.has(item.id)) continue;
+    for (const item of await this.storage.listReserved()) {
+      if (this.launches.has(item.id)) continue;
       if (!item.dispatchStarted) {
-        await this.update(item.id, (work) => ({ ...work, state: "queued", reserved: false }));
+        await this.update(item.id, (work) =>
+          work.reserved && !work.dispatchStarted
+            ? { ...work, state: "queued", reserved: false }
+            : work,
+        );
         continue;
       }
       const observation = await this.callbacks.observe(item);

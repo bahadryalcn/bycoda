@@ -134,11 +134,14 @@ for line in sys.stdin:
             if probability < 0.7:
                 print(json.dumps({'id': req['id'], 'complete': False, 'probability': round(probability, 3)}), flush=True)
                 continue
-        options = dict(beam_size=1, condition_on_previous_text=False, vad_filter=True, without_timestamps=True, hotwords=HOTWORDS)
+        options = dict(beam_size=1, condition_on_previous_text=False, vad_filter=config.get('dictationSilenceFilter', True), without_timestamps=True, hotwords=HOTWORDS)
+        language = config.get('dictationLanguage')
+        if language and language != 'auto':
+            options['language'] = language
         segments, info = model.transcribe(audio, **options)
         # Short clips often get an uncertain language guess; the app language is
         # the better choice then. A confident other language is kept.
-        if hint and info.language != hint and info.language_probability < 0.75:
+        if 'language' not in options and hint and info.language != hint and info.language_probability < 0.75:
             segments, info = model.transcribe(audio, language=hint, **options)
         text = accepted_transcript(segments)
         print(json.dumps({'id': req['id'], 'text': text, 'language': info.language, 'inferenceMs': round((time.monotonic()-started)*1000), **({} if probability is None else {'complete': True, 'probability': round(probability, 3)})}), flush=True)

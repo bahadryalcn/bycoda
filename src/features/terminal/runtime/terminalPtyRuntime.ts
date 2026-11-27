@@ -1,4 +1,6 @@
+import { errorText } from "../../../shared/lib/errors";
 import { invoke } from "@tauri-apps/api/core";
+import { terminalText } from "../../../shared/lib/terminalText";
 import {
   killPty,
   readyPtyBridge,
@@ -20,6 +22,7 @@ import { loadTerminalProfile } from "../model/terminalProfiles";
 
 export type TerminalLifecycleState = "opened-on-computer" | "exited" | "failed" | "closed";
 export type TerminalShellIntegration = "auto" | "bash" | "zsh" | "powershell";
+export type SshProjectTerminal = { environmentId: string; cwd: string };
 
 /** What kind of native process this runtime owns. Exactly one variant per view. */
 export type TerminalPtyLaunch =
@@ -27,6 +30,7 @@ export type TerminalPtyLaunch =
   | {
       kind: "ssh-saved";
       connectionId: string;
+      project?: SshProjectTerminal;
       shellIntegration?: TerminalShellIntegration;
       agentForwardingReviewId?: string;
       expectedConfigurationDigest?: string;
@@ -44,6 +48,7 @@ export type TerminalPtyLaunch =
 export type TerminalPtyLaunchInput = {
   keyGenerationPath?: string;
   sshConnectionId?: string;
+  sshProject?: SshProjectTerminal;
   sshEndpoint?: SshEndpoint;
   shellIntegration?: TerminalShellIntegration;
   agentForwardingReviewId?: string;
@@ -60,6 +65,7 @@ export function terminalPtyLaunch(input: TerminalPtyLaunchInput): TerminalPtyLau
     return {
       kind: "ssh-saved",
       connectionId: input.sshConnectionId,
+      ...(input.sshProject ? { project: input.sshProject } : {}),
       shellIntegration: input.shellIntegration,
       agentForwardingReviewId: input.agentForwardingReviewId,
       expectedConfigurationDigest: input.expectedConfigurationDigest,
@@ -97,9 +103,9 @@ export type TerminalPtyRuntimeOptions = {
   /** Spawn succeeded and the process is live. */
   onSpawned(): void;
   /** Spawn was refused or failed while the view is still attached. */
-  onStartFailed(message: string): void;
+  onStartFailed(error: unknown, attemptedLaunch: boolean): void;
   /** Serial input failed or backed up while the view is still attached. */
-  onInputFailure(message: string): void;
+  onInputFailure(error: unknown): void;
 };
 
 /**
@@ -155,7 +161,7 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
     },
     (error) => {
       if (closed) return;
-      options.onInputFailure(error instanceof Error ? error.message : String(error));
+      options.onInputFailure(error);
     },
   );
 
@@ -184,6 +190,7 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
         return invoke<void>("ssh_terminal_spawn", {
           id,
           connectionId: launch.connectionId,
+          ...(launch.project ? { project: launch.project } : {}),
           cols,
           rows,
           ...(shellIntegration ? { shellIntegration } : {}),
@@ -212,10 +219,17 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
           ...(launch.httpProxyTicketId ? { httpProxyTicketId: launch.httpProxyTicketId } : {}),
         });
       }
-      case "local":
-        return run
-          ? spawnPty(id, launch.cwd, cols, rows, launch.profile() ?? loadTerminalProfile(), run)
-          : spawnPty(id, launch.cwd, cols, rows, launch.profile() ?? loadTerminalProfile());
+      case "local": {
+        const profile = launch.profile() ?? loadTerminalProfile();
+        if (!run) return spawnPty(id, launch.cwd, cols, rows, profile);
+        // Display the command without interpreting control bytes or adding it to captured output.
+        const command = run.command
+          .split(/\r\n?|\n/)
+          .map((line) => terminalText(line).text)
+          .join("\r\n");
+        output.append(`$ ${command}\r\n`);
+        return spawnPty(id, launch.cwd, cols, rows, profile, run);
+      }
     }
   };
 
@@ -249,7 +263,7 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
           completed.onExit(code ?? null);
         }
         const status = code == null ? "" : ` (${code})`;
-        output.append(`\n[process exited${status}]\r\n`);
+        output.append(`\r\n[process exited${status}]\r\n`);
       },
       true,
     );
@@ -259,7 +273,8 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
     if (stale()) throw new Error("Reviewed terminal source changed or became private");
     if (options.authorizeStart.current && !(await options.authorizeStart.current()))
       throw new Error("Reviewed terminal authority expired or was revoked");
-    if (closed || stale()) throw new Error("Reviewed terminal source changed or became private");
+    if (closed || stale() || run?.canStart?.() === false)
+      throw new Error("Reviewed terminal source changed or became private");
     didStart = true;
     return spawnNative();
   };
@@ -331,13 +346,12 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
           }
         })
         .catch((error) => {
-          options.lifecycle("failed");
           spawned = false;
-          const message = error instanceof Error ? error.message : String(error);
+          const message = errorText(error);
           failRun(message);
           if (!closed) {
             exited = true;
-            options.onStartFailed(message);
+            options.onStartFailed(error, didStart);
           }
           throw error;
         });

@@ -29,21 +29,23 @@ vi.mock("../../../../shared/ui/ConfirmDialog", () => ({
     dialog: null,
   }),
 }));
-vi.mock("../common/ScreenHeader", () => ({
-  ScreenHeader: (props: {
-    title: string;
-    description?: string;
-    secondary?: { id: string; label: string; disabled?: boolean; onSelect: () => void }[];
+vi.mock("../../../../shared/ui/DropdownMenu", () => ({
+  DropdownMenu: (props: {
+    items: { id: string; label: string; disabled?: boolean }[];
+    onPick: (id: string) => void;
   }) =>
     createElement(
-      "header",
+      "div",
       null,
-      createElement("h2", null, props.title),
-      createElement("p", { "data-testid": "description" }, props.description),
-      ...(props.secondary ?? []).map((item) =>
+      ...props.items.map((item) =>
         createElement(
           "button",
-          { key: item.id, "data-menu": item.id, disabled: item.disabled, onClick: item.onSelect },
+          {
+            key: item.id,
+            "data-menu": item.id,
+            disabled: item.disabled,
+            onClick: () => props.onPick(item.id),
+          },
           item.label,
         ),
       ),
@@ -142,13 +144,21 @@ function render(
   return onChanged;
 }
 
-const menu = (id: string) => element.querySelector<HTMLButtonElement>(`button[data-menu="${id}"]`);
+const menu = (id: string) => {
+  // The overflow menu mounts on demand, like the real one.
+  if (!element.querySelector("[data-menu]"))
+    act(() =>
+      element.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')?.click(),
+    );
+  return element.querySelector<HTMLButtonElement>(`button[data-menu="${id}"]`);
+};
 
 it("pauses the account from the menu and refreshes", async () => {
   const request = vi.fn(async () => ({}));
   const onChanged = render(request);
   expect(menu("pause")?.textContent).toBe("Pause account");
-  await act(async () => menu("pause")?.click());
+  const item = menu("pause");
+  await act(async () => item?.click());
   expect(request).toHaveBeenCalledExactlyOnceWith("accounts.pause", {
     accountId: "a1",
     paused: true,
@@ -160,8 +170,9 @@ it("offers Resume for a paused account and sends the opposite value", async () =
   const request = vi.fn(async () => ({}));
   render(request, { account: account({ paused: true }) });
   expect(menu("pause")?.textContent).toBe("Resume account");
-  expect(element.textContent).toContain("Paused");
-  await act(async () => menu("pause")?.click());
+  expect(element.querySelector('[aria-label="Account status: Paused"]')).not.toBeNull();
+  const item = menu("pause");
+  await act(async () => item?.click());
   expect(request).toHaveBeenCalledExactlyOnceWith("accounts.pause", {
     accountId: "a1",
     paused: false,
@@ -173,19 +184,29 @@ it("shows the failure and does not refresh when the Host refuses to pause", asyn
     throw new Error("The Host is busy.");
   });
   const onChanged = render(request);
-  await act(async () => menu("pause")?.click());
-  expect(element.textContent).toContain("The Host is busy.");
+  const item = menu("pause");
+  await act(async () => item?.click());
+  const alert = element.querySelector('[role="alert"]');
+  expect(alert?.textContent).toContain("The account could not be changed. Try again.");
+  expect(document.body.textContent).not.toContain("The Host is busy.");
+  act(() => alert?.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')?.click());
+  expect(document.body.querySelector('[aria-label="Error details"]')?.textContent).toBe(
+    "The Host is busy.",
+  );
   expect(onChanged).not.toHaveBeenCalled();
 });
 
 it("asks with a danger confirmation before removing a connection and removes only after it", async () => {
   const request = vi.fn(async () => ({}));
   const onChanged = render(request);
-  await act(async () => menu("remove")?.click());
+  const item = menu("remove");
+  await act(async () => item?.click());
   expect(confirmRequests).toHaveLength(1);
   expect(confirmRequests[0]?.danger).toBe(true);
   expect(confirmRequests[0]?.title).toBe("Remove the connection of Studio?");
-  expect(request).toHaveBeenCalledExactlyOnceWith("accounts.disconnect", { accountId: "a1" });
+  expect(request).toHaveBeenCalledExactlyOnceWith("accounts.disconnect", {
+    accountId: "a1",
+  });
   expect(onChanged).toHaveBeenCalledTimes(1);
 });
 
@@ -193,7 +214,8 @@ it("keeps the connection when the owner declines the removal", async () => {
   confirmAnswer.accept = false;
   const request = vi.fn(async () => ({}));
   const onChanged = render(request);
-  await act(async () => menu("remove")?.click());
+  const item = menu("remove");
+  await act(async () => item?.click());
   expect(confirmRequests).toHaveLength(1);
   expect(request).not.toHaveBeenCalled();
   expect(onChanged).not.toHaveBeenCalled();
@@ -202,7 +224,7 @@ it("keeps the connection when the owner declines the removal", async () => {
 it("has nothing to remove for an account that is not connected", () => {
   render(vi.fn(), { account: account({ connected: false }) });
   expect(menu("remove")?.disabled).toBe(true);
-  expect(element.textContent).toContain("Connection needed");
+  expect(element.querySelector('[aria-label="Account status: Connection needed"]')).not.toBeNull();
 });
 
 it("disables both menu actions while the Host is offline", () => {
@@ -218,23 +240,19 @@ it("disables both menu actions while the Host is offline", () => {
 it("tells the connection card whether the account lives on this computer", () => {
   render(vi.fn(), { account: account({ executorId: "other" }) });
   expect(seen.connection?.onThisComputer).toBe(false);
-  expect(element.querySelector('[data-testid="description"]')?.textContent).toContain(
-    "On another computer",
-  );
   render(vi.fn(), { account: account({ executorId: "e1" }) });
   expect(seen.connection?.onThisComputer).toBe(true);
-  expect(element.querySelector('[data-testid="description"]')?.textContent).toContain(
-    "On this computer",
-  );
 });
 
 it("shows the browser options only for a browser account and passes the waiting-for-you flag", () => {
   render(vi.fn(), { account: account({ connection: "oauth" }) });
   expect(seen.browser).toBeUndefined();
-  render(vi.fn(), { account: account({ connection: "browser" }), needsHuman: true });
+  render(vi.fn(), {
+    account: account({ connection: "browser" }),
+    needsHuman: true,
+  });
   expect(seen.browser?.accountId).toBe("a1");
   expect(seen.browser?.needsHuman).toBe(true);
-  expect(element.textContent).toContain("Waiting for you");
 });
 
 it("keeps connection, who may use the account and how far AI may act as separate cards", () => {

@@ -46,7 +46,6 @@ it("tells the sidebar and the connection health only about real changes", async 
     rerender = () => setTick((tick) => tick + 1);
     return createElement(CrewSidebar, {
       cwd: "remote://environment/Users/owner/project",
-      onOpen: vi.fn(),
       onManagedChange,
     });
   }

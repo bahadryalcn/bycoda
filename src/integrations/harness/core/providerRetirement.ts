@@ -134,6 +134,14 @@ export class ProviderRetirementError extends Error {
   }
 }
 
+/** The caller stopped waiting. The exact captured physical operation is still in flight. */
+export class ProviderRetirementWaitError extends Error {
+  constructor(readonly completion: Promise<void>) {
+    super("The previous provider is still stopping. Retry in a moment.");
+    this.name = "ProviderRetirementWaitError";
+  }
+}
+
 function failure(
   keeper: Keeper,
   family: string,
@@ -204,13 +212,11 @@ function attempt(
     MIN_LATE_WAIT_MS,
     KILL_WAIT_MS - (Date.now() - (killStartedAt.get(entry) ?? Date.now())),
   );
+  const completion = entry.work;
   return Promise.race([
-    entry.work,
+    completion,
     new Promise<void>((_, reject) => {
-      timer = setTimeout(
-        () => reject(new Error("The previous provider is still stopping. Retry in a moment.")),
-        remaining,
-      );
+      timer = setTimeout(() => reject(new ProviderRetirementWaitError(completion)), remaining);
     }),
   ]).finally(() => {
     if (timer !== undefined) clearTimeout(timer);

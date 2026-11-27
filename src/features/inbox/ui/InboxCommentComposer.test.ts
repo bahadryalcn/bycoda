@@ -85,25 +85,22 @@ it("switches source, split and preview without losing the draft or submitting", 
     );
     editor.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  const select = async (label: string) => {
-    const tab = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(
-      (tab) => tab.textContent === label,
-    )!;
-    expect(tab).toBeDefined();
-    await act(async () => tab.click());
-    expect(tab.getAttribute("aria-selected")).toBe("true");
-  };
-  expect(container.querySelector("[data-comment-preview]")?.textContent).toBe("**preview draft**");
-  await select("Preview");
+  const toggle = () => container.querySelector<HTMLButtonElement>('button[aria-label="Preview"]')!;
+  // One writing surface by default; the toolbar belongs to it, the empty preview has no text.
+  expect(container.querySelector("[data-comment-preview]")).toBeNull();
+  expect(container.textContent).not.toContain("No preview");
+  expect(
+    container.querySelector('[role="group"][aria-label="Markdown formatting"]'),
+  ).not.toBeNull();
+  await act(async () => toggle().click());
+  expect(toggle().getAttribute("aria-pressed")).toBe("true");
+  expect(container.querySelector('[role="group"][aria-label="Markdown formatting"]')).toBeNull();
   expect(editor.closest("[hidden]")).not.toBeNull();
   expect(container.querySelector("[data-comment-preview]")?.textContent).toBe("**preview draft**");
-  await select("Source");
+  await act(async () => toggle().click());
   expect(editor.closest("[hidden]")).toBeNull();
   expect(container.querySelector("[data-comment-preview]")).toBeNull();
-  await select("Split");
   expect(editor.value).toBe("**preview draft**");
-  expect(editor.closest("[hidden]")).toBeNull();
-  expect(container.querySelector("[data-comment-preview]")?.textContent).toBe(editor.value);
   expect(onSubmit).not.toHaveBeenCalled();
   act(() => root.unmount());
   container.remove();
@@ -256,14 +253,12 @@ it.each(["GitHub", "GitLab", "Azure DevOps", "Linear"])(
       );
       field.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    const tab = (label: string) =>
-      Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(
-        (node) => node.textContent === label,
-      )!;
-    await act(async () => tab("Preview").click());
+    const toggle = () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="Preview"]')!;
+    await act(async () => toggle().click());
     expect(field.closest("[hidden]")).not.toBeNull();
     expect(container.querySelector("[data-comment-preview]")?.textContent).toBe("**draft**");
-    await act(async () => tab("Source").click());
+    await act(async () => toggle().click());
     expect(field.closest("[hidden]")).toBeNull();
     await act(async () =>
       container

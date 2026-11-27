@@ -1,8 +1,14 @@
 import type { HarnessId } from "./session";
 import { HARNESSES } from "./session";
 import type { SessionSummary } from "../data/sessionStore";
+import { subscribePreferenceChanges } from "../../../shared/lib/storedSetting";
 
 export type SessionTimeFilter = "all" | "today" | "7d" | "30d";
+
+export type GlobalSessionListView = {
+  groupBy: "none" | "project" | "state";
+  sort: "newest" | "oldest";
+};
 
 export type SessionStatusFilter = {
   working: boolean;
@@ -15,6 +21,8 @@ export type SessionSidebarFilters = {
   /** Lists only the sessions on the Settled shelf of this computer's Host. */
   showSettled: boolean;
   assistantManaged: boolean;
+  /** Lists the sessions tasks, goals, automations, stewards and crews open for their own work. */
+  showBackground: boolean;
   hiddenHarnesses: HarnessId[];
   time: SessionTimeFilter;
   status: SessionStatusFilter;
@@ -30,12 +38,19 @@ export const DEFAULT_SESSION_SIDEBAR_FILTERS: SessionSidebarFilters = {
   showArchived: false,
   showSettled: false,
   assistantManaged: false,
+  showBackground: false,
   hiddenHarnesses: [],
   time: "all",
   status: DEFAULT_SESSION_STATUS_FILTER,
 };
 
 const FILTERS_KEY = "bycoda.sessionSidebarFilters";
+const LEGACY_ARCHIVED_KEY = "bycoda.sessionsShowArchived";
+
+/** Archive follows filters changed in sibling windows and refreshes them when it regains focus. */
+export function subscribeSessionSidebarFilters(onChange: () => void): () => void {
+  return subscribePreferenceChanges([FILTERS_KEY, LEGACY_ARCHIVED_KEY], "focus", onChange);
+}
 
 export function harnessesInSessions(rows: SessionSummary[]): HarnessId[] {
   const seen = new Set<HarnessId>();
@@ -47,7 +62,7 @@ export function loadSessionSidebarFilters(): SessionSidebarFilters {
   try {
     const raw = localStorage.getItem(FILTERS_KEY);
     if (!raw) {
-      const legacyArchived = localStorage.getItem("bycoda.sessionsShowArchived") === "1";
+      const legacyArchived = localStorage.getItem(LEGACY_ARCHIVED_KEY) === "1";
       return legacyArchived
         ? { ...DEFAULT_SESSION_SIDEBAR_FILTERS, showArchived: true }
         : DEFAULT_SESSION_SIDEBAR_FILTERS;
@@ -57,6 +72,7 @@ export function loadSessionSidebarFilters(): SessionSidebarFilters {
       showArchived: parsed.showArchived === true,
       showSettled: parsed.showSettled === true,
       assistantManaged: parsed.assistantManaged === true,
+      showBackground: parsed.showBackground === true,
       hiddenHarnesses: Array.isArray(parsed.hiddenHarnesses)
         ? parsed.hiddenHarnesses.filter(isHarnessId)
         : [],
@@ -88,6 +104,7 @@ export function hasActiveSessionFilters(
     filters.showArchived ||
     filters.showSettled ||
     filters.assistantManaged ||
+    filters.showBackground ||
     filters.hiddenHarnesses.length > 0 ||
     filters.time !== defaultTime ||
     filters.status.working ||

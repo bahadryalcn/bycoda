@@ -25,9 +25,10 @@ it("maps the quiet states", () => {
     tone: "warning",
     text: "Sync is unavailable. Update the host on this machine.",
   });
+  // Capabilities not read yet (a cold start, a Host still starting) is no problem to report.
   expect(summarizeSync({ state: "unlinked", pendingOps: 0 }, now)).toEqual({
-    tone: "warning",
-    text: "Sync is not linked yet.",
+    tone: "muted",
+    text: "Sync has not run yet",
   });
 });
 
@@ -60,4 +61,20 @@ it("appends pending changes to every state", () => {
   expect(
     summarizeSync({ state: "error", lastError: UNREACHABLE, pendingOps: 2 }, now).text,
   ).toMatch(/ · 2 pending changes$/);
+});
+
+it("keeps a transient wait muted and treats TLS failures as permanent", () => {
+  expect(
+    summarizeSync(
+      { state: "error", lastError: "[HOST_STOPPING] Host is stopping.", pendingOps: 2 },
+      now,
+      true,
+    ),
+  ).toEqual({ tone: "muted", text: "Syncing… · 2 pending changes" });
+  expect(
+    summarizeSync(
+      { state: "error", lastError: "[RPC_WS_TLS] Certificate refused", pendingOps: 0 },
+      now,
+    ).tone,
+  ).toBe("danger");
 });

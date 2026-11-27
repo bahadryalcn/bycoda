@@ -12,10 +12,70 @@ export type UpdateMachineImpact = {
   affected: boolean;
   running: number | null;
   desktopRunning: number | null;
+  desktopSessionIds?: string[];
 };
 
+async function readRunningSessions(machine: RemoteMachine, finished: () => boolean) {
+  const projects = await remoteRequest<HostProject[]>(
+    machine.id,
+    "projects.list",
+    {},
+    false,
+    false,
+    machine.environmentId,
+  );
+  const all = new Map<string, Pick<HostSessionSummary, "id" | "status" | "executionOwner">>();
+  // Leave Host capacity for foreground work, and stop scheduling after the timeout.
+  for (let offset = 0; offset < projects.length && !finished(); offset += 4) {
+    const lists = await Promise.all(
+      projects
+        .slice(offset, offset + 4)
+        .map((project) =>
+          remoteRequest<SessionsListResult>(
+            machine.id,
+            "sessions.list",
+            { projectId: project.id },
+            false,
+            false,
+            machine.environmentId,
+          ),
+        ),
+    );
+    for (const list of lists) {
+      if (!Array.isArray(list) && !("sessions" in list))
+        throw new Error("Missing update activity snapshot");
+      for (const session of Array.isArray(list) ? list : list.sessions)
+        all.set(session.id, session);
+    }
+  }
+  return [...all.values()].filter((session) => session.status === "running");
+}
+
 /** Fresh metadata only: never fetch transcripts or mistake failed reads for idle. */
-export async function readUpdateImpact(target: UpdateTarget): Promise<UpdateMachineImpact[]> {
+export async function readUpdateImpact(
+  target: UpdateTarget,
+  onMachine?: (row: UpdateMachineImpact) => void,
+): Promise<UpdateMachineImpact[]> {
+  if (target === "local-host") {
+    const running = await withTimeout(
+      invoke<number | null>("local_host_update_activity"),
+      8_000,
+      "Local Host activity",
+    );
+    const row: UpdateMachineImpact = {
+      id: "this-computer",
+      name: "",
+      local: true,
+      affected: true,
+      running:
+        typeof running === "number" && Number.isSafeInteger(running) && running >= 0
+          ? running
+          : null,
+      desktopRunning: null,
+    };
+    onMachine?.(row);
+    return [row];
+  }
   const machines = await withTimeout(
     invoke<RemoteMachine[]>("remote_machines"),
     8_000,
@@ -32,69 +92,47 @@ export async function readUpdateImpact(target: UpdateTarget): Promise<UpdateMach
     else if (machine.localHost) unique.set(key, { ...previous, localHost: true });
   }
   const rows = await Promise.all(
-    [...unique.values()].map(async (machine) => {
-      const row: UpdateMachineImpact = {
-        id: machine.id,
-        name: machine.name,
-        local: machine.localHost === true,
-        affected:
-          typeof target === "object" ? target.machineId === machine.id : machine.localHost === true,
-        running: null,
-        desktopRunning: null,
-      };
-      try {
-        const sessions = await withTimeout(
-          (async () => {
-            const projects = await remoteRequest<HostProject[]>(
-              machine.id,
-              "projects.list",
-              {},
-              true,
-              false,
-              machine.environmentId,
-            );
-            const lists = await Promise.all(
-              projects.map((project) =>
-                remoteRequest<SessionsListResult>(
-                  machine.id,
-                  "sessions.list",
-                  { projectId: project.id },
-                  true,
-                  false,
-                  machine.environmentId,
-                ),
-              ),
-            );
-            const all = new Map<
-              string,
-              Pick<HostSessionSummary, "id" | "status" | "executionOwner">
-            >();
-            for (const list of lists) {
-              if (!Array.isArray(list) && !("sessions" in list))
-                throw new Error("Missing update activity snapshot");
-              for (const session of Array.isArray(list) ? list : list.sessions)
-                all.set(session.id, session);
-            }
-            return [...all.values()].filter((session) => session.status === "running");
-          })(),
-          8_000,
-          "Update activity",
-        );
-        row.running = sessions.length;
-        // Legacy ownership is uncertain; warn conservatively rather than promise continuation.
-        row.desktopRunning = sessions.filter((session) => session.executionOwner !== "host").length;
-      } catch {
-        // Offline, old and incomplete Hosts remain explicitly unknown.
-      }
-      return row;
-    }),
+    [...unique.values()]
+      .filter((machine) => target === "app" || target.machineId === machine.id)
+      .map(async (machine) => {
+        const row: UpdateMachineImpact = {
+          id: machine.id,
+          name: machine.name,
+          local: machine.localHost === true,
+          affected:
+            typeof target === "object"
+              ? target.machineId === machine.id
+              : machine.localHost === true,
+          running: null,
+          desktopRunning: null,
+        };
+        let finished = false;
+        try {
+          const sessions = await withTimeout(
+            readRunningSessions(machine, () => finished),
+            8_000,
+            "Update activity",
+          );
+          row.running = sessions.length;
+          // Legacy ownership is uncertain; warn conservatively rather than promise continuation.
+          row.desktopSessionIds = sessions
+            .filter((session) => session.executionOwner !== "host")
+            .map((session) => session.id);
+          row.desktopRunning = row.desktopSessionIds.length;
+        } catch {
+          // Offline, old and incomplete Hosts remain explicitly unknown.
+        }
+        finished = true;
+        onMachine?.(row);
+        return row;
+      }),
   );
-  if (!rows.some((row) => row.local))
+  if (target === "app" && !rows.some((row) => row.local))
     rows.unshift({
       id: "this-computer",
       name: "",
       local: true,
-      affected: target === "app" || target === "local-host",
+      affected: true,
       running: null,
       desktopRunning: null,
     });

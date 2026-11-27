@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { appName } from "../../../shared/lib/appName";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { TransientNotice } from "../../../shared/ui/TransientNotice";
+import { Toast } from "../../../shared/ui/ToastRegion";
 
 /**
  * The one-time welcome offer for the first-run tour. It is a quiet corner notice, never a modal:
@@ -19,12 +19,9 @@ export function TourOffer({ onStart, onLater }: { onStart: () => void; onLater: 
     actions.current?.querySelector<HTMLElement>("[data-tour-offer-start]")?.focus();
   }, []);
   return (
-    <TransientNotice
+    <Toast
       tone="info"
-      title={t("Welcome to {p0}", { p0: appName() })}
-      message={t(
-        "New here? A one-minute tour shows where everything is. You can start it later from the Guide.",
-      )}
+      message={t("Welcome to {p0}", { p0: appName() })}
       aria-label={t("Tour")}
       durationMs={null}
       onDismiss={onLater}
@@ -37,6 +34,6 @@ export function TourOffer({ onStart, onLater }: { onStart: () => void; onLater: 
           {t("Start tour")}
         </Button>
       </div>
-    </TransientNotice>
+    </Toast>
   );
 }

@@ -29,12 +29,12 @@ export function CrewAppearancePicker({
   crewId,
   look,
   onChange,
-  disabled,
+  busy,
 }: {
   crewId: string;
   look: CrewAppearance;
   onChange: (patch: CrewAppearance) => void;
-  disabled?: boolean;
+  busy?: boolean;
 }) {
   useLocale();
   const trigger = useRef<HTMLButtonElement>(null);
@@ -50,7 +50,7 @@ export function CrewAppearancePicker({
         label={t("Crew icon and color")}
         aria-haspopup="dialog"
         aria-expanded={open}
-        disabled={disabled}
+        disabled={busy}
         onClick={() => setOpen((value) => !value)}
         className="shrink-0"
       >
@@ -62,21 +62,20 @@ export function CrewAppearancePicker({
           side="bottom"
           align="start"
           width={288}
-          constrainHeight
           onDismiss={() => setOpen(false)}
-          role="dialog"
+          kind="dialog"
           aria-label={t("Crew icon and color")}
-          className="bycoda-arc overflow-y-auto overscroll-contain"
+          variant="compact"
         >
-          <div className="flex flex-col gap-2 p-2">
-            <div className="flex flex-wrap gap-[calc(var(--space-1)/2)]">
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-1">
               <RadioGroup
                 variant="tiles"
                 label={t("Crew icon")}
                 value={look.icon ?? ""}
                 onValueChange={(icon) => onChange({ icon })}
                 tile={{ motion: "none" }}
-                className="flex flex-wrap gap-[calc(var(--space-1)/2)]"
+                tileLayout="icon"
                 options={QUICK_ICONS.map((icon) => ({
                   value: icon,
                   iconOnly: true,

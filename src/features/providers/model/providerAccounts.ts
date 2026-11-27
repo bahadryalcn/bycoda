@@ -9,9 +9,10 @@ const LEGACY_ACCOUNTS_KEY = "bycoda.providerAccounts.v1";
 const ACCOUNTS_KEY = "bycoda.providerAccounts.v2";
 const SHARED_CLI_ACCOUNTS_KEY = "bycoda.sharedCliAccounts.v1";
 const CHANGE_EVENT = "bycoda-provider-accounts-changed";
+const ACCOUNT_STORAGE_KEYS = [ACCOUNTS_KEY, LEGACY_ACCOUNTS_KEY, SHARED_CLI_ACCOUNTS_KEY] as const;
 const accountStore = createWindowStore({
   event: CHANGE_EVENT,
-  storageKeys: [ACCOUNTS_KEY, LEGACY_ACCOUNTS_KEY, SHARED_CLI_ACCOUNTS_KEY],
+  storageKeys: ACCOUNT_STORAGE_KEYS,
 });
 
 export const DEFAULT_PROVIDER_ACCOUNT_ID = "default";
@@ -85,7 +86,7 @@ export type ProviderAccount = {
   provider: ProviderAccountProvider;
   label: string;
   isDefault?: boolean;
-  /** Owner label; absent keeps the verified identity-derived category. */
+  /** Explicit type. Legacy data without a type resolves to Personal. */
   kind?: "personal" | "work";
   /** Palette token; unset accounts get a stable colour derived from the id. */
   color?: ProviderAccountColor;
@@ -99,7 +100,7 @@ export function sharedCliAccount(provider: SharedCliAccountProvider): SharedCliA
     id: DEFAULT_PROVIDER_ACCOUNT_ID,
     provider,
     label: cleanLabel(entry.label),
-    ...(entry.kind === "personal" || entry.kind === "work" ? { kind: entry.kind } : {}),
+    kind: entry.kind === "work" ? "work" : "personal",
     ...(validAccountColor(entry.color) ? { color: entry.color } : {}),
   };
 }
@@ -111,11 +112,11 @@ export function saveSharedCliAccount(
   const stored = readRecord<Record<string, unknown>>(SHARED_CLI_ACCOUNTS_KEY);
   const previous = sharedCliAccount(account.provider);
   const label = "label" in account ? cleanLabel(account.label) : previous.label;
-  const kind = "kind" in account ? account.kind : previous.kind;
+  const kind = account.kind ?? previous.kind;
   const color = "color" in account ? account.color : previous.color;
   stored[account.provider] = {
     ...(label ? { label } : {}),
-    ...(kind ? { kind } : {}),
+    kind: kind ?? "personal",
     ...(color ? { color } : {}),
   };
   writeJson(SHARED_CLI_ACCOUNTS_KEY, stored);
@@ -149,6 +150,28 @@ export function providerAccountColorValue(
 
 type StoredAccounts = Partial<Record<ProviderAccountProvider, ProviderAccount[]>>;
 
+/**
+ * Raw stored account records. Equal values mean `providerAccounts` would return the same
+ * content, so readers can skip parsing while nothing was written. Reading is not parsing.
+ */
+export function providerAccountsStorageVersion(): readonly (string | null)[] {
+  try {
+    return ACCOUNT_STORAGE_KEYS.map((key) => localStorage.getItem(key));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Primitive snapshot for `useSyncExternalStore`: changes exactly when a stored account record
+ * does, and costs string reads only, never a parse or a serialisation of every account.
+ */
+export function providerAccountsStorageRevision(): string {
+  return providerAccountsStorageVersion()
+    .map((value) => value ?? "\u0000")
+    .join("\u0001");
+}
+
 export function providerAccounts(provider: ProviderAccountProvider): ProviderAccount[] {
   const managed = readRecord<StoredAccounts>(ACCOUNTS_KEY);
   const stored = readRecord<StoredAccounts>(LEGACY_ACCOUNTS_KEY);
@@ -157,6 +180,7 @@ export function providerAccounts(provider: ProviderAccountProvider): ProviderAcc
   if (authoritative) stored[provider] = managed[provider];
   const accounts = Array.isArray(stored[provider]) ? stored[provider] : [];
   let defaultLabel = DEFAULT_PROVIDER_ACCOUNT_LABEL;
+  let defaultKind: ProviderAccount["kind"];
   let foundDefault = false;
   const profiles = accounts.flatMap((account) => {
     const id = validAccountId(account?.id) ? account.id : "";
@@ -164,6 +188,7 @@ export function providerAccounts(provider: ProviderAccountProvider): ProviderAcc
     if (!authoritative && id === DEFAULT_PROVIDER_ACCOUNT_ID) {
       if (label && !foundDefault) {
         defaultLabel = label;
+        if (account.kind === "personal" || account.kind === "work") defaultKind = account.kind;
         foundDefault = true;
       }
       return [];
@@ -194,6 +219,7 @@ export function providerAccounts(provider: ProviderAccountProvider): ProviderAcc
       id: DEFAULT_PROVIDER_ACCOUNT_ID,
       provider,
       label: defaultLabel,
+      ...(defaultKind ? { kind: defaultKind } : {}),
       isDefault: true,
     },
     ...profiles,
@@ -296,7 +322,7 @@ export function editProviderAccount(
   stored[provider] = serializeProviderAccounts(
     accounts.map((account) =>
       account.id === accountId
-        ? { ...account, label, color: metadata.color, kind: metadata.kind }
+        ? { ...account, label, color: metadata.color, kind: metadata.kind ?? account.kind }
         : account,
     ),
   );
@@ -409,7 +435,9 @@ export function defaultProviderAccountId(provider: ProviderAccountProvider): str
 }
 
 /** `defaultProviderAccountId` over an account list the caller already holds. */
-export function defaultProviderAccountIdIn(accounts: readonly ProviderAccount[]): string {
+export function defaultProviderAccountIdIn(
+  accounts: readonly Pick<ProviderAccount, "id" | "isDefault">[],
+): string {
   return accounts.find((account) => account.isDefault)?.id ?? DEFAULT_PROVIDER_ACCOUNT_ID;
 }
 
@@ -455,6 +483,28 @@ export function providerAccountLabelIn(
       ? translate("Removed account")
       : translate("Default account"))
   );
+}
+
+const GENERATED_ACCOUNT_LABEL = /^account-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+
+/**
+ * The one name every surface shows for an account. A stored label that is empty or only the
+ * generated account id is not a name: it falls back to the sign-in email, else "Account N"
+ * (N is the account's place among its provider's accounts). Stored data is never rewritten.
+ */
+export function accountDisplayLabel(
+  account: Pick<ProviderAccount, "id" | "provider" | "label">,
+  accounts: readonly Pick<ProviderAccount, "id" | "provider">[] = [],
+  email?: string | null,
+): string {
+  const label = cleanLabel(account.label);
+  if (label === DEFAULT_PROVIDER_ACCOUNT_LABEL) return t("Default account");
+  if (label && label !== account.id && !GENERATED_ACCOUNT_LABEL.test(label)) return label;
+  const address = email?.trim();
+  if (address) return address;
+  const peers = accounts.filter((entry) => entry.provider === account.provider);
+  const index = peers.findIndex((entry) => entry.id === account.id);
+  return t("Account {p0}", { p0: (index < 0 ? peers.length : index) + 1 });
 }
 
 export function subscribeProviderAccounts(listener: () => void): () => void {

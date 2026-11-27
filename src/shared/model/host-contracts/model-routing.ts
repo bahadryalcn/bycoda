@@ -12,6 +12,14 @@ import { ModelSettingsSchema, SessionProviderSchema } from "./session-commands";
  */
 export const HOST_MODEL_ROUTING = "models.routing.v1";
 
+/**
+ * Machine code the Host puts in front of its message (`CODE: message`, like `LEASE_HELD`) when a
+ * save's `expectedVersion` no longer matches the stored document. Hosts without it send only the
+ * exact legacy message, which clients still accept.
+ */
+export const MODEL_ROUTING_CONFLICT_CODE = "MODEL_ROUTING_CONFLICT";
+export const MODEL_ROUTING_CONFLICT_MESSAGE = "Model routing changed; reload before saving.";
+
 const id = z.string().min(1).max(200);
 
 export const MODEL_ROUTING_ROLES = [
@@ -64,6 +72,19 @@ export const ModelRoutingTargetSchema = z.strictObject({
 });
 export type ModelRoutingTarget = z.infer<typeof ModelRoutingTargetSchema>;
 
+/** Settings are editable without changing the persisted model and account identity. */
+export function sameModelRoutingTarget(
+  previous: ModelRoutingTarget | undefined,
+  target: ModelRoutingTarget,
+): boolean {
+  return (
+    previous !== undefined &&
+    previous.harness === target.harness &&
+    previous.model === target.model &&
+    (previous.providerAccountId ?? "default") === (target.providerAccountId ?? "default")
+  );
+}
+
 /** Account-expanded provider catalogs need more room than a hand-built shortlist. */
 export const MODEL_ROUTING_MAX_ENTRIES = 500;
 /** A row of the main order. The limit is defined here once and applies in every pool. */
@@ -88,6 +109,16 @@ export const ModelRoutingPoolSchema = z.strictObject({
   entryIds: z.array(id).max(MODEL_ROUTING_MAX_ENTRIES),
   /** Other pools included by reference after this pool's own entries. Cycles are rejected. */
   poolIds: z.array(id).max(MODEL_ROUTING_MAX_POOLS).optional(),
+  /**
+   * Group-wide effort written by earlier saves. The Groups editor moves it into
+   * `memberSettings` of the pool's own models and saves without it.
+   */
+  effort: z.enum(["low", "medium", "high"]).optional(),
+  /**
+   * Per-model settings (effort, speed) this pool applies over its own models' order settings,
+   * keyed by entry id. Keys must be in `entryIds`; models of included pools use their own pool's.
+   */
+  memberSettings: z.record(id, ModelSettingsSchema).optional(),
 });
 export type ModelRoutingPool = z.infer<typeof ModelRoutingPoolSchema>;
 
@@ -129,24 +160,27 @@ export const ModelRoutingDelegationSchema = z.strictObject({
 export type ModelRoutingDelegation = z.infer<typeof ModelRoutingDelegationSchema>;
 
 /** Calendar thresholds for unattended Work; omitted or zero means unlimited. */
+const WorkCapPeriodSchema = z.strictObject({
+  tokens: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+  costUsd: z.number().finite().nonnegative().optional(),
+});
 export const WorkCalendarCapsSchema = z.strictObject({
-  daily: z
-    .strictObject({
-      tokens: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
-      costUsd: z.number().finite().nonnegative().optional(),
-    })
-    .optional(),
-  monthly: z
-    .strictObject({
-      tokens: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
-      costUsd: z.number().finite().nonnegative().optional(),
-    })
-    .optional(),
+  daily: WorkCapPeriodSchema.optional(),
+  /** Host-local ISO week, Monday 00:00 to the next Monday 00:00. */
+  weekly: WorkCapPeriodSchema.optional(),
+  monthly: WorkCapPeriodSchema.optional(),
 });
 export type WorkCalendarCaps = z.infer<typeof WorkCalendarCapsSchema>;
 export const WorkCapsSchema = z.strictObject({
   total: WorkCalendarCapsSchema.optional(),
   providers: z.partialRecord(SessionProviderSchema, WorkCalendarCapsSchema).optional(),
+  /**
+   * Provider default for `minRemainingPercent`: the selector skips that provider's entries
+   * with no own value when less than this share of their account quota is left (0-100).
+   */
+  reservePercent: z
+    .partialRecord(SessionProviderSchema, z.number().int().min(0).max(100))
+    .optional(),
 });
 
 const routingFields = {
@@ -229,6 +263,8 @@ export const ModelRoutingEntryStatusSchema = z.strictObject({
   skip: z.enum(MODEL_ROUTING_SKIP_REASONS).optional(),
   leftPercent: z.number().min(0).max(100).optional(),
   resetsAt: z.number().int().nonnegative().optional(),
+  /** Why no `leftPercent` is known: still being read, no plan quota exists, or the read failed. */
+  limitState: z.enum(["reading", "noQuota", "unavailable"]).optional(),
 });
 export type ModelRoutingEntryStatus = z.infer<typeof ModelRoutingEntryStatusSchema>;
 
@@ -255,3 +291,25 @@ export const ModelRoutingResolveParamsSchema = z.strictObject({
 export const ModelRoutingResolveResultSchema = z.strictObject({
   resolution: ModelRoutingResolutionSchema,
 });
+
+/** One model family priced and rated by the public OpenRouter catalog (Artificial Analysis index). */
+export const ModelCatalogFactSchema = z.strictObject({
+  /** Lowercase id without provider prefix and with dots as dashes, e.g. `claude-opus-5-5`. */
+  family: z.string().min(1).max(200),
+  /** Standard API dollars per million tokens. */
+  inputUsd: z.number().min(0).max(100_000),
+  outputUsd: z.number().min(0).max(100_000),
+  intelligenceIndex: z.number().min(0).max(1000).optional(),
+});
+export type ModelCatalogFact = z.infer<typeof ModelCatalogFactSchema>;
+export const MODEL_CATALOG_FACTS_MAX = 5000;
+export const ModelRoutingCatalogFactsParamsSchema = z.strictObject({});
+/** Read-only: live prices and capability scores for smart setup. Grants no write authority. */
+export const ModelRoutingCatalogFactsResultSchema = z.strictObject({
+  fetchedAt: z.number().int().nonnegative().optional(),
+  source: z.literal("openrouter"),
+  models: z.array(ModelCatalogFactSchema).max(MODEL_CATALOG_FACTS_MAX),
+  /** Set when the refresh failed; `models` then holds the last good (stale) list or is empty. */
+  error: z.string().max(500).optional(),
+});
+export type ModelRoutingCatalogFactsResult = z.infer<typeof ModelRoutingCatalogFactsResultSchema>;

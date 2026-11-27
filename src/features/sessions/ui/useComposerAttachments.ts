@@ -1,3 +1,5 @@
+import type { ComposerFeedback } from "./ComposerNotices";
+import { errorText } from "../../../shared/lib/errors";
 import {
   useCallback,
   useEffect,
@@ -10,7 +12,9 @@ import {
 import type { ComposerPreparation } from "../data/composerClosure";
 import type { ParentAdmission, ParentInputHandle } from "../data/parentInputClosure";
 import type { useMountedComposerClosure } from "../hooks/useMountedComposerClosure";
-import { MAX_ATTACHMENTS, MAX_EMBED_BYTES, revokeAttachment } from "../model/attachments";
+import { MAX_ATTACHMENTS, revokeAttachment, type SkippedAttachment } from "../model/attachments";
+import { collectSkippedAttachments } from "../model/attachmentSkips";
+import { beginAttachmentRead, type AttachmentReadCapacity } from "../model/attachmentReadCapacity";
 import { setComposerAttachments } from "../model/draftCache";
 import { releaseAttachments } from "../model/releaseAttachments";
 import { harnessSupportsAttachments, type Attachment, type HarnessId } from "../model/session";
@@ -22,7 +26,8 @@ type MountedClosure = ReturnType<typeof useMountedComposerClosure>;
 export type AttachmentSink = {
   attachmentsSupported: boolean;
   remote: boolean;
-  addAttachments: (incoming: Attachment[]) => void;
+  /** `notice` says which files this read left out; it joins any over-limit notice. */
+  addAttachments: (incoming: Attachment[], notice?: string | null) => void;
 };
 
 /**
@@ -72,21 +77,6 @@ export function releaseOverLimit(
   });
 }
 
-/**
- * Pasted blobs that could not be read (over the embed limit, or unreadable) are
- * left out by the reader. Says so when every pasted file was a blob.
- */
-export function skippedPastedFiles(files: File[], attached: Attachment[]): string | null {
-  if (files.some((file) => (file as File & { path?: string }).path?.trim())) return null;
-  const skipped = files.length - attached.length;
-  if (skipped <= 0) return null;
-  return t("{p0} of {p1} pasted files could not be attached (larger than {p2} MB or unreadable).", {
-    p0: skipped,
-    p1: files.length,
-    p2: Math.round(MAX_EMBED_BYTES / (1024 * 1024)),
-  });
-}
-
 type LifecycleOptions = {
   sessionId: string | undefined;
   harness: HarnessId;
@@ -95,7 +85,7 @@ type LifecycleOptions = {
   borrowedAttachmentIdsRef: RefObject<Set<string>>;
   pasteGenerationRef: RefObject<number>;
   mountedClosure: MountedClosure;
-  setPasteError: Dispatch<SetStateAction<string | null>>;
+  setPasteError: Dispatch<SetStateAction<ComposerFeedback>>;
 };
 
 /**
@@ -160,6 +150,7 @@ export function useComposerAttachmentLifecycle({
 }
 
 type ReadOptions = {
+  attachmentsRef: RefObject<Attachment[]>;
   parentInputRef: RefObject<ParentInputHandle | null>;
   mountedClosure: MountedClosure;
   sinkRef: RefObject<AttachmentSink>;
@@ -169,7 +160,7 @@ type ReadOptions = {
   pasteFailuresRef: RefObject<number>;
   /** Pasted and dropped files still reading; Send waits for it. */
   pasteFlightRef: RefObject<Promise<void> | null>;
-  setPasteError: Dispatch<SetStateAction<string | null>>;
+  setPasteError: Dispatch<SetStateAction<ComposerFeedback>>;
 };
 
 // Module level: React Compiler cannot lower try/finally inside a hook.
@@ -189,6 +180,7 @@ function applyAtDepth<T>(depth: { current: number }, mutation: () => T): T {
  * Composer's send path, which also reads them; this hook only advances them.
  */
 export function useComposerAttachmentReads({
+  attachmentsRef,
   parentInputRef,
   mountedClosure,
   sinkRef,
@@ -199,8 +191,13 @@ export function useComposerAttachmentReads({
   setPasteError,
 }: ReadOptions) {
   const t = useT();
+  const slots = useRef({ generation: 0, pending: new Set<string | symbol>() });
   const rememberAttachmentRead = useCallback(
-    (read: (accepted: ComposerPreparation & { isCurrent(): boolean }) => Promise<void>) => {
+    (
+      read: (
+        accepted: ComposerPreparation & { isCurrent(): boolean; capacity: AttachmentReadCapacity },
+      ) => Promise<void>,
+    ) => {
       let parentAttempt: ParentAdmission | null = parentInputRef.current?.admit() ?? null;
       if (!parentAttempt) {
         setPasteError(t("Attachments cannot be added while this conversation changes. Try again."));
@@ -221,12 +218,16 @@ export function useComposerAttachmentReads({
           throw new Error("Attachment preparation belongs to an earlier draft.");
         generation = pasteGenerationRef.current;
         failures = pasteFailuresRef.current;
+        if (generation !== slots.current.generation)
+          slots.current = { generation, pending: new Set() };
+        const capacity = beginAttachmentRead(() => attachmentsRef.current, slots.current.pending);
         return read({
           ...accepted,
+          capacity,
           isCurrent: () => pasteGenerationRef.current === generation,
           apply: (mutation) =>
             attempt.apply(() => accepted.apply(() => applyAtDepth(attachmentApplyDepth, mutation))),
-        });
+        }).finally(capacity.finish);
       });
       void work.then(initialParentAttempt.finish, initialParentAttempt.finish);
       const flight = work.then(
@@ -240,7 +241,7 @@ export function useComposerAttachmentReads({
           // later reset/send still makes its explicit retry stale before work.
           generation = pasteGenerationRef.current;
           failures = pasteFailuresRef.current;
-          setPasteError(reason instanceof Error ? reason.message : String(reason));
+          setPasteError({ title: t("Could not read attachments."), detail: errorText(reason) });
         },
       );
       const previous = pasteFlightRef.current;
@@ -253,6 +254,7 @@ export function useComposerAttachmentReads({
     // The ref objects are stable; they are listed so the compiler can keep this memoization.
     [
       mountedClosure,
+      attachmentsRef,
       setPasteError,
       t,
       pasteFlightRef,
@@ -264,30 +266,44 @@ export function useComposerAttachmentReads({
   );
 
   const readDroppedAttachments = useCallback(
-    (read: () => Promise<Attachment[]>) => {
+    (
+      read: (
+        onSkipped: (skipped: SkippedAttachment[]) => void,
+        capacity?: AttachmentReadCapacity,
+      ) => Promise<Attachment[]>,
+    ) => {
       setPasteError(null);
       rememberAttachmentRead((accepted) =>
         Promise.resolve()
-          .then(read)
-          .then((incoming) =>
+          .then(() => {
+            // Per read, so an explicit retry never reports an earlier attempt twice.
+            const skips = collectSkippedAttachments();
+            return read(skips.onSkipped, accepted.capacity).then((incoming) => ({
+              incoming,
+              notice: skips.notice(accepted.capacity),
+            }));
+          })
+          .then(({ incoming, notice }) =>
             accepted.apply(() => {
               if (!accepted.isCurrent() || !sinkRef.current.attachmentsSupported) {
                 incoming.forEach(revokeAttachment);
                 return;
               }
               if (incoming.length === 0) {
+                // Skipped blobs are named; only a vanished path gets the generic line.
                 setPasteError(
-                  t("Nothing to attach. The file may have been moved, renamed, or deleted."),
+                  notice ??
+                    t("Nothing to attach. The file may have been moved, renamed, or deleted."),
                 );
                 return;
               }
-              sinkRef.current.addAttachments(incoming);
+              sinkRef.current.addAttachments(incoming, notice);
             }),
           )
           .catch((reason: unknown) => {
             if (!accepted.isCurrent()) return;
             accepted.fail(reason);
-            setPasteError(reason instanceof Error ? reason.message : String(reason));
+            setPasteError({ title: t("Could not read attachments."), detail: errorText(reason) });
           }),
       );
     },

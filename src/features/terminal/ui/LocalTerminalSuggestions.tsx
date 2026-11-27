@@ -1,5 +1,5 @@
 import { PickerList, usePickerList } from "../../../shared/ui/picker";
-import { Text } from "../../../shared/ui/Text";
+import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { useT } from "../../../shared/i18n";
@@ -246,10 +246,24 @@ export function LocalTerminalSuggestions({
     });
     return () => cancelAnimationFrame(frame);
   }, [terminal, explicit]);
+  const activeValue = snapshot?.suggestions[selected] ?? null;
+  // Keys are shown only on the highlighted row; the spoken sentence keeps the same guidance for screen readers.
+  const keyHints = (
+    <>
+      <span className="sr-only">{t("Tab completes. Enter inserts. Escape closes.")}</span>
+      <span aria-hidden="true">
+        <ShortcutKbd size="xs">Tab</ShortcutKbd> <ShortcutKbd size="xs">Enter</ShortcutKbd>
+      </span>
+    </>
+  );
   const list = usePickerList({
-    options: (snapshot?.suggestions ?? []).map((value) => ({ value, title: value })),
-    value: snapshot?.suggestions[selected] ?? null,
-    activeValue: snapshot?.suggestions[selected] ?? null,
+    options: (snapshot?.suggestions ?? []).map((value) => ({
+      value,
+      title: value,
+      trailing: value === activeValue ? keyHints : undefined,
+    })),
+    value: activeValue,
+    activeValue,
     onActiveValueChange: (value) => {
       const index = snapshot?.suggestions.indexOf(value ?? "") ?? -1;
       if (index >= 0) {
@@ -266,16 +280,14 @@ export function LocalTerminalSuggestions({
       <TerminalGhostText terminal={terminal} suffix={value.slice(snapshot.prefix.length)} />
       {explicit ? (
         <TerminalCursorPopover terminal={terminal} onDismiss={dismiss}>
-          <PickerList
-            label={t("Command suggestions")}
-            controller={list}
-            checkPlacement="none"
-            pointerHighlight="movement"
-            className={styles.list}
-          />
-          <Text as="div" size="caption" tone="muted" className={styles.hint}>
-            {t("Tab to complete. Enter to insert. Run with Enter in the terminal.")}
-          </Text>
+          <div className={styles.list}>
+            <PickerList
+              label={t("Command suggestions")}
+              controller={list}
+              checkPlacement="none"
+              pointerHighlight="movement"
+            />
+          </div>
         </TerminalCursorPopover>
       ) : null}
     </>

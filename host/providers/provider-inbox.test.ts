@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { StoreDatabase } from "../store-db";
 import { ProviderInboxBridge } from "./provider-inbox";
 import type { RemoteInboxOperation } from "../../src/features/inbox/model/remoteInbox";
@@ -48,6 +48,18 @@ describe("desktop provider inbox job bridge", () => {
     await bridge.beat("native", "desktop", { version: 1, replies: [{ id: receipt.id, result }] });
     expect((await bridge.result("client", "jira-priority")).result).toEqual(result);
     await expect(bridge.result("other", "jira-priority")).rejects.toThrow();
+  });
+  it("prunes the job table once per request instead of again for availability (#813)", async () => {
+    const { bridge, db } = setup();
+    await bridge.beat("native", "desktop", { version: 1 });
+    await bridge.request("client", "first", read);
+    const prepare = vi.spyOn(db, "prepare");
+    await bridge.request("client", "second", read);
+    const expiryDeletes = prepare.mock.calls.filter(([sql]) =>
+      String(sql).includes("DELETE FROM remote_inbox_jobs WHERE expires<?"),
+    );
+    prepare.mockRestore();
+    expect(expiryDeletes).toHaveLength(1);
   });
   it("delivers the requesting device name with a job and omits it when unknown", async () => {
     const { bridge } = setup();
@@ -176,6 +188,23 @@ describe("desktop provider inbox job bridge", () => {
     for (let index = 0; index < 5; index++) await bridge.request("client", `read-${index}`, read);
     expect((await bridge.beat("native", "desktop", { version: 1 })).jobs).toHaveLength(2);
     expect((await bridge.beat("native", "desktop", { version: 1 })).jobs).toHaveLength(0);
+  });
+  it("drops a queued list the same device replaced, keeping other reads and other devices", async () => {
+    const { bridge } = setup();
+    await bridge.beat("native", "desktop", { version: 1 });
+    const list = (search: string): RemoteInboxOperation => ({
+      action: "list",
+      projects: [{ path: "/project" }],
+      query: { assignedToMe: false, state: "open", search },
+    });
+    await bridge.request("client", "providers", read);
+    await bridge.request("client", "list-a", list("a"));
+    await bridge.request("other", "list-other", list("a"));
+    await bridge.request("client", "list-ab", list("ab"));
+    expect(await bridge.result("client", "list-a")).toMatchObject({ state: "failed" });
+    expect((await bridge.result("client", "list-ab")).state).toBe("queued");
+    expect((await bridge.result("other", "list-other")).state).toBe("queued");
+    expect((await bridge.result("client", "providers")).state).toBe("queued");
   });
   it("marks a dispatched send uncertain after disconnect and never reclaims it", async () => {
     const { bridge, advance } = setup();

@@ -6,7 +6,6 @@ import {
   type HostTask,
   type TaskOwnerNotice,
 } from "../../src/features/tasks/model/hostTasks";
-import { HOST_INTERRUPTED, STOPPED_BY_USER } from "../sessions/sessionRuns";
 import type { HostStore } from "../store";
 import { RUNTIME_RETRY_NOTICE } from "./constants";
 import { QUESTION_NOTICE } from "./constants";
@@ -104,14 +103,15 @@ export function completionNotices(
   return notices;
 }
 
-/** Provider, network and session failures that a fresh attempt can overcome.
- * Owner stops, budgets, limits, permission/credential gates and host stops are not. */
-export function isTransientRunFailure(task: HostTask, error: string | undefined): boolean {
-  if (task.error || !error || error === HOST_INTERRUPTED || error === STOPPED_BY_USER) return false;
-  if (error === "The run's session was deleted.") return false;
-  return !/permission|approv|denied|credential|unauthori[sz]ed|forbidden|budget|billing|sign(?:ed)?[- ]?(?:in|out)|log(?:ged)?[- ]?(?:in|out)|api key|persist|time limit|run limit/i.test(
-    error,
-  );
+/** A failed run that a fresh attempt may overcome. Owner stops, host interruptions, deleted sessions,
+ * permission/credential gates and a run past its time limit are not; the run's structured `cause`
+ * and the recorded stop decide, never the provider's message. */
+export function isTransientRunFailure(
+  task: HostTask,
+  outcome: { status: string; error?: string; cause?: string },
+): boolean {
+  if (outcome.status !== "failed" || !outcome.error || outcome.cause) return false;
+  return task.stop?.code !== "budget_exhausted";
 }
 
 export function runtimeRetryCount(task: HostTask): number {

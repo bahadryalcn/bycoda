@@ -135,7 +135,7 @@ export function GitGraphConflictEditor({
     if (!loaded || disabled || pending.current) return;
     const value = loaded.stages[side];
     if (loaded.disk === null || value === null) {
-      void runConflict(side, "Resolving conflict…", async () => {
+      void runConflict(side, t("Resolving conflict…"), async () => {
         await gitResolveConflict(cwd, relative, side);
         onResolved();
       });
@@ -143,7 +143,7 @@ export function GitGraphConflictEditor({
   };
   const save = async () => {
     if (!loaded || loaded.disk === null || hasConflictMarkers(draft)) return;
-    const success = await runConflict("save", "Saving conflict resolution…", async () => {
+    const success = await runConflict("save", t("Saving conflict resolution…"), async () => {
       if ((await readTextFile(path)) !== loaded.disk)
         throw new Error(t("The file changed on disk. Reopen it before saving your resolution."));
       const serialized = restoreMixedLineEndings(draft, loaded.disk);
@@ -166,8 +166,7 @@ export function GitGraphConflictEditor({
         onRetry={() => setRetry((value) => value + 1)}
       />
     );
-  if (!loaded)
-    return <LoadingText className="px-3 py-2">{t("Loading conflict versions")}</LoadingText>;
+  if (!loaded) return <LoadingText inset="row">{t("Loading conflict versions")}</LoadingText>;
   if (loaded.disk !== null && hasConflictMarkers(loaded.disk))
     return (
       <MergeConflictEditor
@@ -213,6 +212,11 @@ export function GitGraphConflictEditor({
               type="button"
               loading={operation === "ours"}
               disabled={operation !== "ours" && (disabled || operation !== null)}
+              disabledReason={
+                operation !== "ours" && (disabled || operation !== null)
+                  ? t("Wait for the current operation to finish")
+                  : undefined
+              }
               onClick={() => take("ours")}
             >
               {t("Use current")}
@@ -224,6 +228,11 @@ export function GitGraphConflictEditor({
               type="button"
               loading={operation === "theirs"}
               disabled={operation !== "theirs" && (disabled || operation !== null)}
+              disabledReason={
+                operation !== "theirs" && (disabled || operation !== null)
+                  ? t("Wait for the current operation to finish")
+                  : undefined
+              }
               onClick={() => take("theirs")}
             >
               {t("Use incoming")}
@@ -235,6 +244,11 @@ export function GitGraphConflictEditor({
                 motion="none"
                 type="button"
                 disabled={disabled || operation !== null}
+                disabledReason={
+                  disabled || operation !== null
+                    ? t("Wait for the current operation to finish")
+                    : undefined
+                }
                 onClick={() => setDraft(resolveConflictMarkers(draft, "both"))}
               >
                 {t("Use both")}
@@ -259,6 +273,13 @@ export function GitGraphConflictEditor({
                 (operation !== "save" && (disabled || operation !== null)) ||
                 hasConflictMarkers(draft)
               }
+              disabledReason={
+                hasConflictMarkers(draft)
+                  ? t("Resolve every conflict marker before staging")
+                  : operation !== "save" && (disabled || operation !== null)
+                    ? t("Wait for the current operation to finish")
+                    : undefined
+              }
               onClick={() => void save()}
               className="shrink-0"
             >
@@ -268,17 +289,17 @@ export function GitGraphConflictEditor({
           ours={{
             text: loaded.stages.ours,
             label: loaded.oursLabel,
-            origin: "Git index · stage 2",
+            origin: t("Git index · stage 2"),
           }}
           theirs={{
             text: loaded.stages.theirs,
             label: loaded.theirsLabel,
-            origin: "Git index · stage 3",
+            origin: t("Git index · stage 3"),
           }}
         >
           <div className="flex min-h-0 flex-1 flex-col">
             {hasConflictMarkers(draft) ? (
-              <InlineMessage tone="warning" live="off" className="px-3 pb-1">
+              <InlineMessage tone="warning" live="off" inset="row">
                 {t("Resolve every conflict marker before staging")}
               </InlineMessage>
             ) : null}
@@ -304,7 +325,7 @@ export function GitGraphConflictEditor({
           </div>
           <EmptyState
             size="inline"
-            className="px-3"
+            inset="row"
             description={t("Choose a whole-file version to resolve this conflict")}
           />
         </>

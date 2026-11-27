@@ -1,5 +1,7 @@
+import { t } from "../../../shared/i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { newRequestId } from "../../../shared/lib/id/requestId";
+import { unconfirmedError } from "./unconfirmedOutcome";
 
 const SCOPE = "assistant-thread-sends.v2";
 const LEGACY = "bycoda.assistant.send-intents";
@@ -240,12 +242,12 @@ export async function sendAssistantNative<T>(
     claim: { key: storageKey, operationId: claimId, mode: "acquire" },
   });
   if (!acquired.applied)
-    throw new Error("The reply has not been confirmed. Check the conversation before retrying.");
+    throw new Error(t("The reply has not been confirmed. Check the conversation before retrying."));
   if (source !== null && localStorage.getItem(LEGACY) !== source)
     throw new Error("The send identity changed. Check the conversation before retrying.");
   const version =
     current?.version ?? acquired.entries.find((entry) => entry.key === storageKey)?.version;
-  if (version === undefined) throw new Error("The send identity was not confirmed.");
+  if (version === undefined) throw unconfirmedError("The send identity");
   if (previous !== null) {
     const old = previous as Partial<AssistantSendIntent>;
     if (
@@ -265,7 +267,7 @@ export async function sendAssistantNative<T>(
         pageToken: page,
       });
     }
-    throw new Error("The reply has not been confirmed. Check the conversation before retrying.");
+    throw new Error(t("The reply has not been confirmed. Check the conversation before retrying."));
   }
   const saved = await invoke<Outcome>("canonical_store_transaction", {
     scope: SCOPE,

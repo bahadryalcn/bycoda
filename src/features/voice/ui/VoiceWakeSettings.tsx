@@ -66,22 +66,25 @@ export function VoiceWakeRows({
   profile?: { name: string; language: string };
 }) {
   const defaults = defaultWakePhrases(profile?.language, getLocale(), profile?.name ?? "");
+  const enabled = settings.enabled && settings.wakeEnabled === true;
   return (
     <>
       <Row
         id="voice-wake"
         label={t("Wake and sleep phrases")}
         description={t(
-          "Listens on this computer only for your wake phrase, while no conversation is open, and starts Talk when you say it. Your sleep phrase ends the conversation. Audio never leaves this computer before the phrase is heard.",
+          "Start and end a conversation with your voice. Waiting for the wake phrase uses the local voice pack and keeps audio on this device.",
         )}
+        modified={enabled}
+        onReset={() => change({ wakeEnabled: false })}
       >
         <Toggle
           label={t("Wake and sleep phrases")}
-          on={settings.wakeEnabled === true}
+          on={enabled}
           onChange={(wakeEnabled) => change({ wakeEnabled })}
         />
       </Row>
-      {settings.wakeEnabled === true && (
+      {enabled && (
         <>
           <PhraseField
             id="voice-wake-phrase"

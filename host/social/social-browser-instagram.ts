@@ -5,6 +5,9 @@ import {
   type SocialSendResult,
 } from "../../src/integrations/social/adapter";
 import type { BrowserRecipeContext, BrowserPollResult } from "./social-browser-recipe";
+import { detectChallenge, needsHumanError } from "./browser/challenge";
+import { openInstagramDirectThread } from "./social-browser-instagram-dm";
+import { COMMENT_SUBMIT_LABELS, NEXT_LABELS, SEND_LABELS, SHARE_LABELS } from "./browser/ui-labels";
 import {
   numeric,
   object,
@@ -19,7 +22,7 @@ import {
   type Value,
 } from "./social-browser-meta-shared";
 
-function instagramPost(raw: unknown): { code: string; id?: string; url: string } {
+export function instagramPost(raw: unknown): { code: string; id?: string; url: string } {
   if (typeof raw !== "string") throw new SocialPlatformError("unsupported");
   const stored = /^ig:([A-Za-z0-9_-]{1,64}):(\d{1,30})$/.exec(raw);
   if (stored)
@@ -247,20 +250,18 @@ export async function instagramPublish(context: BrowserRecipeContext, job: Socia
   );
   if (!phase) throw new SocialPlatformError("unsupported");
   if (!phase.caption && phase.filters)
-    await click(context, '[role="dialog"] button,[role="dialog"] [role="button"]', [
-      "Next",
-      "İleri",
-    ]);
+    await click(context, '[role="dialog"] button,[role="dialog"] [role="button"]', NEXT_LABELS);
   else if (!phase.caption) throw new SocialPlatformError("unsupported");
   const editor = await mark(
     context,
     '[role="dialog"] [contenteditable="true"][role="textbox"],[role="dialog"] textarea[aria-label="Write a caption..."],[role="dialog"] textarea[aria-label="Bir açıklama yaz..."]',
   );
   await context.page.fill(editor, text);
-  const submit = await mark(context, '[role="dialog"] button,[role="dialog"] [role="button"]', [
-    "Share",
-    "Paylaş",
-  ]);
+  const submit = await mark(
+    context,
+    '[role="dialog"] button,[role="dialog"] [role="button"]',
+    SHARE_LABELS,
+  );
   return capture(
     context,
     /\/api\/v1\/media\/(?:configure|configure_sidecar|configure_to_clips)\/?(?:\?|$)/,
@@ -283,52 +284,76 @@ export async function instagramComment(context: BrowserRecipeContext, job: Socia
     post = instagramPost(job.payload.postId);
   if (job.payload.media.length || !post.id) throw new SocialPlatformError("unsupported");
   const parent = job.kind === "reply" ? job.payload.threadId : undefined;
-  if (parent && !numeric(parent)) throw new SocialPlatformError("unsupported");
+  if (job.kind === "reply" && !numeric(parent)) throw new SocialPlatformError("unsupported");
+  const paths = [`/p/${post.code}`, `/reel/${post.code}`];
+  const checkedContext: BrowserRecipeContext = {
+    ...context,
+    verifyIdentity: async () => {
+      await context.verifyIdentity();
+      const onPost = await context.page.evaluate<boolean>(String.raw`
+        location.origin === 'https://www.instagram.com' &&
+        ${JSON.stringify(paths)}.includes(location.pathname.replace(/\/$/, ''))
+      `);
+      if (!onPost) throw new SocialPlatformError("unsupported");
+    },
+  };
   await context.page.goto(post.url);
-  await context.verifyIdentity();
+  await checkedContext.verifyIdentity();
   if (parent) {
+    const parentPaths = paths.map((path) => `${path}/c/${parent}`);
     const selected = await context.waitFor<boolean>(
-      `(() => {
-      const link = document.querySelector('a[href*="/c/${parent}/"]');
-      const row = link?.closest('li');
-      const buttons = [...(row?.querySelectorAll('button,[role="button"]') || [])].filter(el => ['Reply','Yanıtla'].includes(el.textContent.trim()) && el.getClientRects().length);
+      String.raw`(() => {
+      const rows = [...new Set([...document.querySelectorAll('main a[href*="/c/"]')]
+        .filter(link => link.getClientRects().length && link.origin === location.origin &&
+          ${JSON.stringify(parentPaths)}.includes(link.pathname.replace(/\/$/, '')))
+        .map(link => link.closest('li')).filter(Boolean))];
+      if (rows.length !== 1) return false;
+      const buttons = [...rows[0].querySelectorAll('button,[role="button"]')].filter(el =>
+        ['Reply','Yanıtla'].includes(el.textContent.trim()) &&
+        el.getClientRects().length && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
       if (buttons.length !== 1) return false;
+      document.querySelectorAll('[data-bycoda-meta-reply]').forEach(el => el.removeAttribute('data-bycoda-meta-reply'));
       buttons[0].setAttribute('data-bycoda-meta-reply','true'); return true;
     })()`,
       15_000,
     );
     if (!selected) throw new SocialPlatformError("unsupported");
+    await checkedContext.verifyIdentity();
     await context.page.click('[data-bycoda-meta-reply="true"]');
   }
   const editor = await mark(
     context,
     'main textarea[aria-label="Add a comment…"],main textarea[aria-label="Add a comment..."],main textarea[aria-label="Yorum ekle…"],main textarea[aria-label="Yorum ekle..."]',
   );
+  await checkedContext.verifyIdentity();
   await context.page.fill(editor, text);
-  const submit = await mark(context, 'main button,main [role="button"]', [
-    "Post",
-    "Paylaş",
-    "Gönder",
-  ]);
+  const submit = await mark(context, 'main button,main [role="button"]', COMMENT_SUBMIT_LABELS);
   return capture(
-    context,
+    checkedContext,
     new RegExp(`/api/v1/web/comments/${post.id}/add/(?:\\?|$)`),
     () => context.page.click(submit),
     (raw) => parseInstagramBrowserCommented(raw, context.account.platformId, text, parent),
   );
 }
 
-export async function instagramMessage(context: BrowserRecipeContext, job: SocialJob) {
+export async function instagramMessage(baseContext: BrowserRecipeContext, job: SocialJob) {
+  const context: BrowserRecipeContext = {
+    ...baseContext,
+    verifyIdentity: async () => {
+      const challenge = await detectChallenge(baseContext.page);
+      if (challenge) throw needsHumanError(challenge);
+      await baseContext.verifyIdentity();
+    },
+  };
   const text = validateText(job),
-    recipient = job.payload.recipientId,
-    threadId = job.payload.threadId;
-  if (
-    !numeric(recipient) ||
-    !numeric(threadId) ||
-    recipient === context.account.platformId ||
-    job.payload.media.length
-  )
+    recipient = job.payload.recipientId;
+  if (!numeric(recipient) || recipient === context.account.platformId || job.payload.media.length)
     throw new SocialPlatformError("unsupported");
+  const threadId =
+    job.kind === "message" && !job.payload.threadId
+      ? await openInstagramDirectThread(context, job.payload.instagramRecipientHandle, recipient)
+      : job.payload.threadId;
+  if (!numeric(threadId)) throw new SocialPlatformError("unsupported");
   const url = `https://www.instagram.com/direct/t/${threadId}/`;
   const threadPath = new RegExp(`/api/v1/direct_v2/threads/${threadId}/(?:\\?|$)`);
   const before = values(await readResponse(context, url, threadPath), true)[0];
@@ -344,8 +369,9 @@ export async function instagramMessage(context: BrowserRecipeContext, job: Socia
     context,
     'main [contenteditable="true"][role="textbox"],main textarea[placeholder="Message..."],main textarea[placeholder="Mesaj..."]',
   );
+  await context.verifyIdentity();
   await context.page.fill(editor, text);
-  const submit = await mark(context, 'main button,main [role="button"]', ["Send", "Gönder"]);
+  const submit = await mark(context, 'main button,main [role="button"]', SEND_LABELS);
   let itemId = "";
   await capture(
     context,
@@ -455,5 +481,6 @@ export const instagramOperations: SocialOperation[] = [
   "comments.read",
   "inbox.read",
   "message.reply",
+  "message.start",
   "poll",
 ];

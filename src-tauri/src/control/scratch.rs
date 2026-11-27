@@ -1,5 +1,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
+
+const RETIRED_PREFIX: &str = "bycoda-retired-";
+// Newer quarantines may still belong to a retirement running in another instance.
+const RETIRED_MIN_AGE: Duration = Duration::from_secs(60 * 60);
 
 #[cfg(unix)]
 fn identity(path: &Path) -> Result<String, String> {
@@ -146,6 +151,71 @@ impl Drop for ProcessScratch {
     }
 }
 
+pub(super) fn start_retired_sweep() {
+    let spawned = std::thread::Builder::new()
+        .name("scratch-sweep".into())
+        .spawn(|| {
+            let removed = sweep_retired(&std::env::temp_dir(), SystemTime::now());
+            if removed > 0 {
+                log::info!("removed {removed} retired scratch directories");
+            }
+        });
+    if let Err(error) = spawned {
+        log::warn!("scratch sweep unavailable: {error}");
+    }
+}
+
+// Only exact `bycoda-retired-<uuid>` plain directories are candidates. Worker
+// scratch is never swept: nothing records which live process owns it.
+fn sweep_retired(root: &Path, now: SystemTime) -> usize {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return 0;
+    };
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(id) = name.to_str().and_then(|n| n.strip_prefix(RETIRED_PREFIX)) else {
+            continue;
+        };
+        if uuid::Uuid::parse_str(id).is_err() {
+            continue;
+        }
+        let path = entry.path();
+        let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        let old_enough = metadata
+            .modified()
+            .ok()
+            .and_then(|modified| now.duration_since(modified).ok())
+            .is_some_and(|age| age >= RETIRED_MIN_AGE);
+        if !old_enough || !is_plain_dir(&metadata) {
+            continue;
+        }
+        // A failed removal stays on disk and is retried by the next startup sweep.
+        match std::fs::remove_dir_all(&path) {
+            Ok(()) => removed += 1,
+            Err(error) => log::warn!("retired scratch retained at {}: {error}", path.display()),
+        }
+    }
+    removed
+}
+
+fn is_plain_dir(metadata: &std::fs::Metadata) -> bool {
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return false;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return false;
+        }
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -199,6 +269,36 @@ mod tests {
         assert_eq!(std::fs::read(retained.join("recovery")).unwrap(), b"keep");
         std::mem::forget(scratch);
         std::fs::remove_dir_all(retained).unwrap();
+    }
+    #[test]
+    fn sweep_reclaims_only_old_plain_retired_directories() {
+        let root = std::env::temp_dir().join(format!("bycoda-sweep-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let retired = root.join(format!("bycoda-retired-{}", uuid::Uuid::new_v4()));
+        let worker = root.join(format!("bycoda-worker-{}", uuid::Uuid::new_v4()));
+        let not_uuid = root.join("bycoda-retired-not-a-uuid");
+        let file = root.join(format!("bycoda-retired-{}", uuid::Uuid::new_v4()));
+        for dir in [&retired, &worker, &not_uuid] {
+            std::fs::create_dir(dir).unwrap();
+        }
+        std::fs::write(&file, b"keep").unwrap();
+        let later = SystemTime::now() + RETIRED_MIN_AGE * 2;
+        assert_eq!(sweep_retired(&root, later), 1);
+        assert!(!retired.exists());
+        assert!(worker.exists());
+        assert!(not_uuid.exists());
+        assert!(file.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn sweep_preserves_recent_retired_directories() {
+        let root = std::env::temp_dir().join(format!("bycoda-sweep-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let retired = root.join(format!("bycoda-retired-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&retired).unwrap();
+        assert_eq!(sweep_retired(&root, SystemTime::now()), 0);
+        assert!(retired.exists());
+        std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn unconfirmed_exit_retains_original_claim() {

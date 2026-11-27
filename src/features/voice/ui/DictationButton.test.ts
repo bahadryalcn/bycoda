@@ -260,40 +260,39 @@ it("reports its run with the session and whether its message box is on screen", 
   vi.unstubAllGlobals();
 });
 
-it("chooses the dictation language from the composer and disables options while listening", async () => {
+it("chooses the dictation language from the composer and disables it while listening", async () => {
   saveVoiceSettings({ ...loadVoiceSettings(), dictationEnabled: true, dictationEngine: "xai" });
   await render();
   const options = () =>
-    element.querySelector<HTMLButtonElement>('button[aria-label="Dictation options"]')!;
+    element.querySelector<HTMLButtonElement>('button[aria-label="Dictation language"]')!;
   const item = (name: string) =>
     [...document.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find((row) =>
       row.textContent?.includes(name),
     );
   await act(async () => options().click());
-  await act(async () => item("Dictation language")!.click());
+  expect(item("Dictation recognition")).toBeUndefined();
   await act(async () => item("Türkçe")!.click());
   expect(loadVoiceSettings().dictationLanguage).toBe("tr");
   expect(item("Türkçe")).toBeUndefined();
   await act(async () => element.querySelector("button")!.click());
   await act(async () => mock.callbacks.state("listening"));
   expect(mock.args[0]).toBe("tr");
-  expect(options().disabled).toBe(true);
+  expect(options().getAttribute("aria-disabled")).toBe("true");
 });
 
-it("joins the microphone and its options in one group and marks each recognizer", async () => {
+it("joins the microphone and its language choice in one group", async () => {
   saveVoiceSettings({ ...loadVoiceSettings(), dictationEnabled: true });
   await render();
   const group = element.querySelector('[role="group"][data-button-group="joined"]')!;
   expect(group.getAttribute("aria-label")).toBe("Dictation");
   expect(
     [...group.querySelectorAll("button")].map((button) => button.getAttribute("aria-label")),
-  ).toEqual(["Dictate", "Dictation options"]);
-  const item = (name: string) =>
-    [...document.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find((row) =>
-      row.textContent?.includes(name),
-    )!;
-  await act(async () => group.querySelectorAll("button")[1].click());
-  await act(async () => item("Dictation recognition").click());
-  for (const name of ["This computer", "OpenAI", "Grok", "OpenRouter"])
-    expect(item(name).querySelector("svg, img"), name).not.toBeNull();
+  ).toEqual(["Dictate", "Dictation language"]);
+});
+
+it("always unloads the idle local model after five minutes", async () => {
+  saveVoiceSettings({ ...loadVoiceSettings(), dictationEnabled: true });
+  const { button } = await render();
+  await act(async () => button()!.click());
+  expect(mock.args[1]).toMatchObject({ idleUnloadMinutes: 5 });
 });

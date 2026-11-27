@@ -3,13 +3,22 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n/git";
 import { prettyCwd, projectName } from "../../../shared/lib/paths";
-import { Badge } from "../../../shared/ui/Badge";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { Heading } from "../../../shared/ui/Heading";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Tooltip } from "../../../shared/ui/Tooltip";
-import { FolderOpen, Trash2 } from "../../../shared/ui/icons";
+import { shortSha } from "../../../shared/lib/shortSha";
+import {
+  ArrowUp,
+  CircleAlert,
+  CircleHelp,
+  FolderOpen,
+  Clock,
+  Lock,
+  Trash2,
+} from "../../../shared/ui/icons";
 import type { Worktree } from "../model/worktrees";
 import styles from "./WorktreesPage.module.css";
 
@@ -42,14 +51,31 @@ export function WorktreeRow({
   onDelete: () => void;
 }) {
   const folderName = projectName(tree.path);
-  const head = t("Detached at {p0}", { p0: tree.head.slice(0, 7) });
-  const sessions = `${sessionCount}${t(" session")}${sessionCount === 1 ? "" : "s"}${t(" in this worktree")}`;
-  const caption = [tree.branch ?? head, sessions].join(" · ");
-  const statusTone =
-    tree.missing || tree.dirty ? "warning" : tree.dirty == null ? "neutral" : "success";
+  const head = t("Detached at {p0}", { p0: shortSha(tree.head) });
+  const sessions =
+    sessionCount === 0
+      ? undefined
+      : sessionCount === 1
+        ? t("{p0} session in this worktree", { p0: sessionCount })
+        : t("{p0} sessions in this worktree", { p0: sessionCount });
+  // The folder name already heads the row, so a branch of the same name is not repeated.
+  const branchLabel = tree.branch ?? head;
+  const caption = [branchLabel === folderName ? undefined : branchLabel, sessions]
+    .filter(Boolean)
+    .join(" · ");
+  // Only exceptions need a status icon.
+  const statusLabel = tree.missing
+    ? t("Missing folder")
+    : tree.dirty == null
+      ? t("Status unavailable")
+      : tree.dirty
+        ? t("Uncommitted changes")
+        : undefined;
+  const StatusIcon = tree.missing || tree.dirty ? CircleAlert : CircleHelp;
   return (
     <ActionHost
       role="listitem"
+      aria-current={selected ? "true" : undefined}
       {...surfaceAttributes(
         { radius: "none", separator: "block" },
         `settings-collection-row ${styles.row}`,
@@ -67,55 +93,59 @@ export function WorktreeRow({
               {folderName}
             </Heading>
           </Tooltip>
-          <Badge size="sm" tone={statusTone}>
-            {tree.missing
-              ? t("Missing folder")
-              : tree.dirty == null
-                ? t("Status unavailable")
-                : tree.dirty
-                  ? t("Uncommitted changes")
-                  : t("Clean")}
-          </Badge>
-          {selected && (
-            <Badge size="sm" tone="info">
-              {t("Selected project folder")}
-            </Badge>
+          {statusLabel && (
+            <InfoTooltip label={t("Status")} icon={<StatusIcon aria-hidden className="icon-xs" />}>
+              {statusLabel}
+            </InfoTooltip>
           )}
           {!!tree.unpushed && (
-            <Tooltip label={t("Counted against remote branches already fetched locally.")} asChild>
-              <Badge size="sm" tone="info">
-                {tree.unpushed}
-                {t(" unpublished commit")}
-                {tree.unpushed === 1 ? "" : "s"}
-              </Badge>
-            </Tooltip>
-          )}
-          {tree.unpushed == null && !tree.missing && (
-            <Tooltip
-              label={t(
-                "Commits not on a remote could not be counted. Nothing was fetched or checked remotely.",
-              )}
-              asChild
+            <InfoTooltip
+              label={t("Unpushed commits")}
+              icon={<ArrowUp aria-hidden className="icon-xs" />}
             >
-              <Badge size="sm" tone="neutral">
-                {t("Publication unknown")}
-              </Badge>
-            </Tooltip>
+              {tree.unpushed === 1
+                ? t("{p0} unpublished commit", { p0: tree.unpushed })
+                : t("{p0} unpublished commits", { p0: tree.unpushed })}{" "}
+              {t("Counted against remote branches already fetched locally.")}
+            </InfoTooltip>
           )}
-          {removing && <Badge size="sm">{t("Removing directory…")}</Badge>}
+          {removing && (
+            <InfoTooltip
+              label={t("Directory removal")}
+              icon={<Clock aria-hidden className="icon-xs" />}
+            >
+              {t("Removing directory…")}
+            </InfoTooltip>
+          )}
           {tree.locked && (
-            <Badge size="sm" tone="warning">
+            <InfoTooltip label={t("Lock status")} icon={<Lock aria-hidden className="icon-xs" />}>
               {t("Locked")}
-            </Badge>
+            </InfoTooltip>
           )}
         </div>
-        <Tooltip label={caption} when="overflow">
-          <Text size="caption" tone="muted" leading="inherit" truncate className={styles.caption}>
-            {caption}
-          </Text>
-        </Tooltip>
+        {caption && (
+          <Tooltip label={caption} when="overflow">
+            <Text
+              size="caption"
+              tone="muted"
+              leading="inherit"
+              family="mono"
+              truncate
+              className={styles.caption}
+            >
+              {caption}
+            </Text>
+          </Tooltip>
+        )}
         <Tooltip label={prettyCwd(tree.path)} when="overflow">
-          <Text size="caption" tone="muted" leading="inherit" truncate className={styles.caption}>
+          <Text
+            size="caption"
+            tone="muted"
+            leading="inherit"
+            family="mono"
+            truncate
+            className={styles.caption}
+          >
             {prettyCwd(tree.path)}
           </Text>
         </Tooltip>
@@ -136,6 +166,7 @@ export function WorktreeRow({
           motion="none"
           type="button"
           disabled={tree.missing}
+          disabledReason={t("This folder is not on disk.")}
           tooltip={t("Reveal folder")}
           onClick={onReveal}
         >

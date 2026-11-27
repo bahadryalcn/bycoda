@@ -94,6 +94,10 @@ hash-pinned tools in the actual elevated guest. That UUID is the guest's
 installation is explicit. Installers run hidden with time/size bounds, quiet MSI
 syntax and recorded exit/version checks; 3010 means a guest restart is needed.
 
+Runner preparation and the protected control runtime require Node 26. For an
+existing Node 24 guest, provision a guest with the reviewed Node 26 tools and
+control payload before selecting it for CI.
+
 Then use `windows-vm-session.ps1 -Mode CreateAccount -ExpectedVmUuid <UUID>` to
 create the nonadministrator account and real Windows profile. Its generated
 password remains in the guest's protected LSA secret and is never returned.

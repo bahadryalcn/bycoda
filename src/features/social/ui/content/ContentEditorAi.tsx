@@ -42,7 +42,7 @@ export function ContentEditorAi({
   const [open, setOpen] = useState(false);
   const [instruction, setInstruction] = useState("");
   const [suggestion, setSuggestion] = useState<AiPostDraft>();
-  const [error, setError] = useState<string>();
+  const [problem, setProblem] = useState<{ title: string; details?: string }>();
   const pending = useSocialPending();
   const gate: ActionGate = disabled
     ? closed(t("Wait for the current action to finish."))
@@ -58,7 +58,7 @@ export function ContentEditorAi({
   const ask = () =>
     void pending
       .run("content.ai", async () => {
-        setError(undefined);
+        setProblem(undefined);
         setSuggestion(undefined);
         try {
           const result = await askAiForPost(client, {
@@ -66,16 +66,17 @@ export function ContentEditorAi({
             projectId: projectId!,
           });
           if (result) setSuggestion(result);
-          else setError(t("AI did not return a post. Write it yourself or try again."));
+          else
+            setProblem({ title: t("AI did not return a post. Write it yourself or try again.") });
         } catch (caught) {
-          setError(
-            caught instanceof Error
-              ? presentRemoteError(caught, { explicit: true })
-              : t("AI could not write the post."),
-          );
+          setProblem({
+            title: t("AI could not write the post."),
+            details:
+              caught instanceof Error ? presentRemoteError(caught, { explicit: true }) : undefined,
+          });
         }
       })
-      .catch(() => setError(t("AI could not write the post.")));
+      .catch(() => setProblem({ title: t("AI could not write the post.") }));
   return (
     <div className="content-ai">
       <Button
@@ -83,6 +84,7 @@ export function ContentEditorAi({
         size="sm"
         aria-expanded={open}
         disabled={disabled}
+        disabledReason={disabled ? t("Wait for the current action to finish.") : undefined}
         onClick={() => setOpen((value) => !value)}
       >
         {t("Ask AI")}
@@ -93,7 +95,6 @@ export function ContentEditorAi({
             label={t("What should the post say?")}
             value={instruction}
             disabled={disabled}
-            description={t("AI drafts the text. You review it before anything is saved.")}
             onChange={(event) => setInstruction(event.target.value)}
           />
           <DisabledReason
@@ -105,9 +106,9 @@ export function ContentEditorAi({
           >
             {t("Write with AI")}
           </DisabledReason>
-          {error ? (
-            <InlineError>
-              {error}
+          {problem ? (
+            <InlineError details={problem.details}>
+              {problem.title}
               <Button variant="link" size="sm" onClick={() => onNavigate("command")}>
                 {t("Open Command")}
               </Button>
@@ -128,6 +129,7 @@ export function ContentEditorAi({
                 variant="primary"
                 size="sm"
                 disabled={disabled}
+                disabledReason={disabled ? t("Wait for the current action to finish.") : undefined}
                 onClick={() => {
                   onUse(suggestion);
                   setSuggestion(undefined);

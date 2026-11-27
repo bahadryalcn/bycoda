@@ -115,7 +115,14 @@ export class ActivityService {
   }
 
   private async save(days: Map<string, ActivityDay>): Promise<void> {
-    const sorted = [...days.values()].sort((a, b) => (keyOf(a) < keyOf(b) ? -1 : 1));
+    const sorted = [...days.values()];
+    // Map order is already key order unless a record for an earlier key was added, so skip the
+    // sort in the common case. The bytes written are identical either way.
+    let ordered = true;
+    for (let i = 1; ordered && i < sorted.length; i++) {
+      ordered = keyOf(sorted[i - 1]!) < keyOf(sorted[i]!);
+    }
+    if (!ordered) sorted.sort((a, b) => (keyOf(a) < keyOf(b) ? -1 : 1));
     await writeFileAtomic(
       this.file,
       `${JSON.stringify({ version: ACTIVITY_STORE_VERSION, days: sorted })}\n`,

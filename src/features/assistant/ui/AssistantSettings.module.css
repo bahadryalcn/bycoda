@@ -1,6 +1,4 @@
-.dialog {
-  block-size: min(760px, calc(100dvh - 48px));
-}
+/* Hallmark: Bycoda settings, with the existing canvas and room controls. */
 .form {
   display: flex;
   flex-direction: column;
@@ -10,80 +8,32 @@
 }
 .navigation {
   flex: none;
-  padding: 0 20px 8px;
-  overflow-x: auto;
-  overscroll-behavior-inline: contain;
+  padding: var(--space-2) var(--space-4);
 }
 .tabs {
-  inline-size: max-content;
-  min-inline-size: 100%;
-  flex-wrap: nowrap;
+  inline-size: 100%;
 }
 .content {
   flex: 1;
   min-block-size: 0;
   min-inline-size: 0;
   overscroll-behavior: contain;
-  padding: 14px 20px 20px;
-  scroll-padding-block: 14px;
+  padding: var(--space-3) var(--space-4) var(--space-5);
+  scroll-padding-block: var(--space-3);
   container-type: inline-size;
 }
-/* Each tab holds titled settings groups; the groups own their spacing. `ownRows` marks the tabs
-   built from profile rows; the projects and computer tabs keep their own control sizes. */
+/* Each tab holds titled settings groups; the groups own their spacing. */
 .page[hidden] {
   display: none;
 }
-/* One control column width in every row so selects, fields and segmented choices share a right
-   edge. Hours need room for two selects, a dash and a switch. Below 560px the rows stack. */
-@container (min-width: 560px) {
-  .ownRows :global(.settings-row:not([data-stacked]) > .settings-row-control) {
-    inline-size: 16rem;
-    max-inline-size: 16rem;
-  }
-  .ownRows :global(.settings-row:not([data-stacked]) > .settings-row-control):has([data-hours]) {
-    inline-size: 24rem;
-    max-inline-size: 24rem;
-  }
-}
-/* Footer actions wrap when translated labels or discard feedback need another line. */
 .footer {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  inline-size: 100%;
-  min-inline-size: 0;
+  flex: none;
+  padding-inline: var(--space-4);
 }
-.footerRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-inline-size: 0;
-}
-.footerRow > * {
-  min-inline-size: 0;
-}
-.footerActions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-inline-start: auto;
-  min-inline-size: 0;
-}
-@media (max-width: 640px) {
-  .dialog {
-    block-size: calc(100dvh - 24px);
-  }
-  .navigation {
-    padding-inline: 12px;
-  }
+@media (max-width: 40rem) {
+  .navigation,
+  .footer,
   .content {
-    padding: 10px 12px 14px;
+    padding-inline: var(--space-3);
   }
-}
-/* Scopes the profile-row control width to one group without adding a layout box. */
-.rowsScope {
-  display: contents;
 }

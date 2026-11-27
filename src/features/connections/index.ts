@@ -1,5 +1,6 @@
 /** Public types and optional surface loaders. Runtime contracts are declared below. */
 export type {
+  DesktopConcealedGroups,
   DesktopProjectDirectory,
   HostCommand,
   HostProject,
@@ -17,12 +18,17 @@ export type * as storedBlockFormApi from "./public/storedBlockForm";
 export type * as modelHostFeatureClientApi from "./public/hostFeatureClient";
 export type * as modelLocalHostServiceApi from "./public/localHostService";
 export type * as modelLocalSyncApi from "./public/localSync";
+export type * as modelMachineFolderPickApi from "./public/machineFolderPick";
+export type * as adoptedStoppingApi from "./public/adoptedStopping";
+export type * as modelLocalHostRetryApi from "./public/localHostRetry";
 export type * as modelProjectAppearanceApi from "./public/projectAppearance";
 export type * as modelProtocolApi from "./public/protocol";
 export type * as modelQueueStateApi from "./public/queueState";
 export type * as modelRemoteCapabilitiesApi from "./public/remoteCapabilities";
 export type * as modelRemoteFailureApi from "./public/remoteFailure";
+export type * as modelTransientFailureApi from "./public/transientFailure";
 export type * as modelRemoteHealthApi from "./public/remoteHealth";
+export type * as modelMachineAvailabilityApi from "./public/machineAvailability";
 export type * as modelRemoteMachineChannelApi from "./public/remoteMachineChannel";
 export type * as modelRemoteProjectsApi from "./public/remoteProjects";
 export type * as modelUseRemoteProjectApi from "./public/useRemoteProject";
@@ -33,17 +39,24 @@ export type * as modelSessionExecutionBindingApi from "./public/sessionExecution
 export type * as modelUseRemoteSessionBindingApi from "./public/useRemoteSessionBinding";
 export type * as modelUseHostSessionBindingApi from "./public/useHostSessionBinding";
 export type * as modelSessionExecutionClientApi from "./public/sessionExecutionClient";
+export type * as uiSettingsHostsApi from "./public/settingsHosts";
 export type * as modelUseSharedLocalQueuesApi from "./public/useSharedLocalQueues";
 export type * as modelWorkspaceUrlsApi from "./public/workspaceUrls";
 export type * as uiAdoptedSessionNoticeApi from "./public/AdoptedSessionNotice";
 export type * as uiConnectionsSettingsApi from "./public/ConnectionsSettings";
 export type * as uiHostModelSourceApi from "./public/HostModelSource";
 export type * as uiLocalHostDownNoticeApi from "./public/LocalHostDownNotice";
+export type * as uiRemoteActionErrorApi from "./public/RemoteActionError";
 export type * as uiRemoteLoadErrorApi from "./public/RemoteLoadError";
+export type * as uiMachineUnavailableApi from "./public/MachineUnavailable";
 export type * as uiRemoteSessionApi from "./public/RemoteSession";
+export type * as uiSessionMachinePickerApi from "./public/SessionMachinePicker";
+export type * as modelSessionMachineTargetApi from "./public/sessionMachineTarget";
 export type * as uiSharedQueueRecoveryNoticeApi from "./public/SharedQueueRecoveryNotice";
 export type * as uiUnreachableMachinesNoticeApi from "./public/UnreachableMachinesNotice";
 
 export type * as headlessApi from "./public/headless";
 export type * as delegatedRuns from "./public/delegatedRuns";
 export type * as uiDelegatedSessionRequestsApi from "./public/DelegatedSessionRequests";
+
+export const loadServerSnippets = () => import("./ui/ServerSnippets");

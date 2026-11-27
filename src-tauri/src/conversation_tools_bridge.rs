@@ -19,6 +19,7 @@ mod assistant_notification_owner;
 mod assistant_observation_publisher;
 mod delegation_readiness;
 mod management_actions;
+pub(crate) use management_actions::MANAGEMENT_APPROVAL_ACTIONS;
 mod owner_approval;
 #[path = "privacy_account_capture.rs"]
 mod privacy_account_capture;
@@ -29,7 +30,7 @@ mod room_inbox;
 #[path = "conversation_servers.rs"]
 mod servers;
 #[path = "conversation_ssh_execution.rs"]
-mod ssh_execution;
+pub(crate) mod ssh_execution;
 #[path = "voice_generation_retirement.rs"]
 pub(crate) mod voice_generation_retirement;
 #[path = "workspace_operation_owner.rs"]
@@ -87,7 +88,7 @@ pub(crate) fn device_finish_payload(
 mod relay;
 #[cfg(test)]
 use relay::next_poll_delay;
-pub(crate) use relay::start_desktop_relay;
+pub(crate) use relay::{start_desktop_relay, stop_desktop_relay};
 
 fn execute_desktop_request(
     app: &AppHandle,
@@ -677,6 +678,149 @@ fn escape_approval_direction(value: &str) -> String {
         .collect()
 }
 
+enum ApprovalProject {
+    Path(String),
+    Id(String),
+    ApplicationWide,
+}
+
+/// Where a management approval applies: a project folder, a Room project ID or the whole application.
+fn management_approval_project(request: &Value) -> Result<ApprovalProject, String> {
+    Ok(if request.get("targetProjectCwd").is_some() {
+        ApprovalProject::Path(desktop_approval_field(request, "targetProjectCwd", 4096)?)
+    } else if request.get("threadId").is_some() && request.get("cwd").is_none() {
+        match request.get("projectId") {
+            Some(_) => ApprovalProject::Id(desktop_approval_field(request, "projectId", 200)?),
+            None => ApprovalProject::ApplicationWide,
+        }
+    } else {
+        ApprovalProject::Path(desktop_approval_field(request, "cwd", 4096)?)
+    })
+}
+
+/// The input the owner reviews: written file content becomes a bounded preview with its size and digest.
+fn management_review_input(action: &str, input: &Value) -> Result<Value, String> {
+    if !input.is_object() {
+        return Err("Management input required".into());
+    }
+    let mut review_input = input.clone();
+    if action == "files.write" {
+        let content = review_input
+            .get("content")
+            .and_then(Value::as_str)
+            .ok_or("File content required")?;
+        let preview: String = content.chars().take(8000).collect();
+        let digest = format!("{:x}", Sha256::digest(content.as_bytes()));
+        let size = content.len();
+        let truncated = preview.len() < size;
+        review_input["content"] =
+            json!({ "preview": preview, "truncated": truncated, "bytes": size, "sha256": digest });
+    }
+    Ok(review_input)
+}
+
+/// Every string, key included, with direction controls made visible, as the text record shows them.
+fn escape_approval_value(value: &Value) -> Value {
+    match value {
+        Value::String(text) => Value::String(escape_approval_direction(text)),
+        Value::Array(items) => Value::Array(items.iter().map(escape_approval_value).collect()),
+        Value::Object(fields) => Value::Object(
+            fields
+                .iter()
+                .map(|(key, item)| (escape_approval_direction(key), escape_approval_value(item)))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
+/// Structured preview of an operation `management_approval_message` already validated; the text stays the record.
+fn management_approval_details(request: &Value) -> Result<Value, String> {
+    let operation = &request["input"]["operation"];
+    let action = operation["action"]
+        .as_str()
+        .ok_or("Management action required")?;
+    let project = match management_approval_project(request)? {
+        ApprovalProject::Path(path) => json!({ "kind": "path", "value": path }),
+        ApprovalProject::Id(id) => json!({ "kind": "id", "value": id }),
+        ApprovalProject::ApplicationWide => json!({ "kind": "application" }),
+    };
+    let review_input = management_review_input(action, &operation["input"])?;
+    validate_live_stream_approval(action, &review_input)?;
+    let mut details = json!({
+        "kind": "management",
+        "action": action,
+        "project": project,
+        "input": review_input,
+    });
+    let notice = management_consequence(action);
+    if !notice.is_empty() {
+        details["notice"] = json!(notice);
+    }
+    Ok(escape_approval_value(&details))
+}
+
+/// What an approved operation does beyond its listed input; empty when the input says it all.
+fn management_consequence(action: &str) -> &'static str {
+    if action == "git.push" {
+        "This publishes the listed local commits to the listed remote branch. It never forces, deletes or rewrites remote history; an uncertain result is never retried."
+    } else if action == "git.merge" {
+        "This merges the listed source branch into the current branch (fast-forward or merge commit only). A conflict aborts the merge and restores the checkout."
+    } else if action == "social.send" {
+        "This sends the exact reviewed draft to an external recipient. Review the account, recipient, complete message and media above. Approval applies only to this operation; a queued job is not proof of delivery."
+    } else if action == "liveStream.obsStream" {
+        "This starts broadcasting the active OBS scene to the destination configured in OBS. It can disclose video and audio outside bycoda."
+    } else if action == "liveStream.goLive" {
+        "This starts a public broadcast of the listed OBS scene to every listed Social account at once. It can disclose video and audio outside bycoda. Approval applies to this operation only."
+    } else if action.starts_with("terminals.") {
+        "This controls a Host pipe shell. Its launch directory is not a sandbox; accepted input may continue running after Room closes. Command completion is not observed."
+    } else {
+        ""
+    }
+}
+
+/// Broadcast approvals show only fields the dialog can render faithfully: reject any other shape.
+fn validate_live_stream_approval(action: &str, review_input: &Value) -> Result<(), String> {
+    if action == "liveStream.obsStream" {
+        if review_input
+            .as_object()
+            .is_none_or(|input| input.len() != 2)
+            || review_input["action"] != "start"
+            || review_input.get("scene").is_none_or(|scene| {
+                !scene.is_null() && scene.as_str().is_none_or(|name| name.chars().count() > 200)
+            })
+        {
+            return Err("Invalid OBS broadcast approval".into());
+        }
+    } else if action == "liveStream.goLive" {
+        let accounts = review_input["accounts"]
+            .as_array()
+            .filter(|accounts| (1..=6).contains(&accounts.len()));
+        if review_input
+            .as_object()
+            .is_none_or(|input| input.len() != 2)
+            || accounts.is_none()
+        {
+            return Err("Invalid Social broadcast approval".into());
+        }
+        desktop_approval_field(review_input, "scene", 256)?;
+        for account in accounts.into_iter().flatten() {
+            if account.as_object().is_none_or(|entry| entry.len() != 3)
+                || !matches!(
+                    account["platform"].as_str(),
+                    Some("youtube" | "tiktok" | "instagram" | "facebook" | "linkedin" | "x")
+                )
+            {
+                return Err("Invalid Social broadcast approval".into());
+            }
+            for field in ["accountId", "label"] {
+                desktop_approval_field(account, field, 256)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 fn management_approval_message(request: &Value) -> Result<(String, String), String> {
     if request.get("threadId").is_some() && request.get("projectId").is_none() {
         if request.get("sessionId").is_some() {
@@ -699,69 +843,37 @@ fn management_approval_message(request: &Value) -> Result<(String, String), Stri
     let action = operation["action"]
         .as_str()
         .ok_or("Management action required")?;
-    if !management_actions::MANAGEMENT_APPROVAL_ACTIONS.contains(&action) {
+    if !MANAGEMENT_APPROVAL_ACTIONS.contains(&action) {
         return Err("Unsupported management approval action".into());
     }
     let operation_hash = operation["operationHash"]
         .as_str()
         .filter(|value| value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
         .ok_or("Invalid management operation hash")?;
-    if !operation["input"].is_object() {
-        return Err("Management input required".into());
-    }
-    let mut review_input = operation["input"].clone();
-    if action == "files.write" {
-        let content = review_input
-            .get("content")
-            .and_then(Value::as_str)
-            .ok_or("File content required")?;
-        let preview: String = content.chars().take(8000).collect();
-        let digest = format!("{:x}", Sha256::digest(content.as_bytes()));
-        let size = content.len();
-        let truncated = preview.len() < size;
-        review_input["content"] =
-            json!({ "preview": preview, "truncated": truncated, "bytes": size, "sha256": digest });
-    }
+    let review_input = management_review_input(action, &operation["input"])?;
     let details =
         serde_json::to_string_pretty(&review_input).map_err(|_| "Invalid management input")?;
     if details.len() > 32000 {
         return Err("Management approval is too large".into());
     }
-    let cwd = if request.get("targetProjectCwd").is_some() {
-        escape_approval_direction(
-            &serde_json::to_string(&desktop_approval_field(request, "targetProjectCwd", 4096)?)
-                .map_err(|_| "Invalid project")?,
-        )
-    } else if request.get("threadId").is_some() && request.get("cwd").is_none() {
-        match request.get("projectId") {
-            Some(_) => {
-                escape_approval_direction(&desktop_approval_field(request, "projectId", 200)?)
-            }
-            None => "Application-wide".to_string(),
+    let cwd = match management_approval_project(request)? {
+        ApprovalProject::Path(path) => {
+            escape_approval_direction(&serde_json::to_string(&path).map_err(|_| "Invalid project")?)
         }
-    } else {
-        escape_approval_direction(
-            &serde_json::to_string(&desktop_approval_field(request, "cwd", 4096)?)
-                .map_err(|_| "Invalid project")?,
-        )
+        ApprovalProject::Id(id) => escape_approval_direction(&id),
+        ApprovalProject::ApplicationWide => "Application-wide".to_string(),
     };
     let environment = escape_approval_direction(
         &serde_json::to_string(&desktop_approval_field(request, "environmentId", 200)?)
             .map_err(|_| "Invalid host")?,
     );
     let details = escape_approval_direction(&details);
-    let consequence = if action == "git.push" {
-        "
-This publishes the listed local commits to the listed remote branch. It never forces, deletes or rewrites remote history; an uncertain result is never retried."
-    } else if action == "git.merge" {
-        "
-This merges the listed source branch into the current branch (fast-forward or merge commit only). A conflict aborts the merge and restores the checkout."
-    } else if action == "social.send" {
-        "\nThis sends the exact reviewed draft to an external recipient. Review the account, recipient, complete message and media above. Approval applies only to this operation; a queued job is not proof of delivery."
-    } else if action.starts_with("terminals.") {
-        "\nThis controls a Host pipe shell. Its launch directory is not a sandbox; accepted input may continue running after Room closes. Command completion is not observed."
+    validate_live_stream_approval(action, &review_input)?;
+    let consequence = management_consequence(action);
+    let consequence = if consequence.is_empty() {
+        String::new()
     } else {
-        ""
+        format!("\n{consequence}")
     };
     Ok((format!("Requested operation: {action}\nProject: {cwd}\nHost: {environment}\n\n{details}\n{consequence}\nOperation hash: {operation_hash}\nApprove only this exact operation. Existing permission and revision checks still apply."), operation_hash.to_string()))
 }
@@ -1093,8 +1205,10 @@ pub(crate) fn inbox_approval_message(operation: &Value, cwd: &str) -> Result<Str
     let action = operation["action"]
         .as_str()
         .ok_or("Invalid inbox approval")?;
-    if !matches!(action, "comment" | "pr-action" | "review")
-        || operation["cwd"].as_str() != Some(cwd)
+    if !matches!(
+        action,
+        "comment" | "jira-comment-images" | "pr-action" | "review"
+    ) || operation["cwd"].as_str() != Some(cwd)
     {
         return Err("Invalid inbox approval scope".into());
     }
@@ -1108,12 +1222,19 @@ pub(crate) fn inbox_approval_message(operation: &Value, cwd: &str) -> Result<Str
         .as_str()
         .or_else(|| item["id"].as_str())
         .unwrap_or("");
-    let content = if action == "comment" {
-        operation["body"]
+    let content = if matches!(action, "comment" | "jira-comment-images") {
+        let body = operation["body"]
             .as_str()
             .filter(|body| !body.is_empty() && body.len() <= 120000)
-            .ok_or("Invalid inbox comment")?
-            .to_owned()
+            .ok_or("Invalid inbox comment")?;
+        if action == "jira-comment-images" {
+            if provider != "jira" || item["kind"] != "jira" || !operation["inReplyTo"].is_null() {
+                return Err("Invalid Jira image comment approval".into());
+            }
+            crate::jira::agent_comment::approval_content(operation, body)?
+        } else {
+            body.to_owned()
+        }
     } else if action == "review" {
         if provider != "github" || item["kind"] != "pr" {
             return Err("Invalid PR review approval".into());
@@ -1272,8 +1393,14 @@ pub async fn harness_conversation_tools_bridge(
     session_id: String,
     check_ready: Option<bool>,
     prepare_spawn: Option<bool>,
+    check_respawn: Option<bool>,
 ) -> Result<Option<Value>, String> {
     crate::harness::run_blocking("harness_conversation_tools_bridge", move || {
+        if check_respawn == Some(true) {
+            return Ok(Some(json!({
+                "respawn": delegation_readiness::respawn_restores_tools(&app, &session_id)
+            })));
+        }
         if check_ready == Some(true) {
             if prepare_spawn == Some(true) {
                 crate::harness::tool_grants::prepare_conversation_spawn(&app, &session_id);
@@ -2008,6 +2135,35 @@ mod tests {
         assert!(message.contains("git.commit"));
         assert!(message.contains("Commit reviewed changes"));
         assert_eq!(hash, "a".repeat(64));
+        let mut stream = request.clone();
+        stream["input"]["operation"]["action"] = json!("liveStream.obsStream");
+        stream["input"]["operation"]["input"] = json!({"action":"start", "scene":"Studio"});
+        let (message, _) = management_approval_message(&stream).unwrap();
+        assert!(message.contains("starts broadcasting") && message.contains("Studio"));
+        stream["input"]["operation"]["input"]["streamKey"] = json!("not for approval");
+        assert!(management_approval_message(&stream).is_err());
+        stream["input"]["operation"]["action"] = json!("liveStream.goLive");
+        stream["input"]["operation"]["input"] = json!({
+            "accounts": [
+                {"accountId": "youtube-one", "label": "Studio channel", "platform": "youtube"},
+                {"accountId": "tiktok-one", "label": "Short channel", "platform": "tiktok"}
+            ],
+            "scene": "Studio"
+        });
+        let (message, _) = management_approval_message(&stream).unwrap();
+        assert!(message.contains("public broadcast") && message.contains("Studio channel"));
+        assert!(message.contains("youtube-one") && message.contains("Studio"));
+        assert!(message.contains("tiktok-one") && message.contains("Short channel"));
+        let valid = stream["input"]["operation"]["input"].clone();
+        stream["input"]["operation"]["input"]["streamKey"] = json!("not for approval");
+        assert!(management_approval_message(&stream).is_err());
+        stream["input"]["operation"]["input"] = valid.clone();
+        stream["input"]["operation"]["input"]["accounts"][1]["streamKey"] = json!("hidden");
+        assert!(management_approval_message(&stream).is_err());
+        stream["input"]["operation"]["input"] = valid.clone();
+        stream["input"]["operation"]["input"]["accounts"] = json!([]);
+        assert!(management_approval_message(&stream).is_err());
+        stream["input"]["operation"]["input"] = valid;
         let mut note = request.clone();
         note["input"]["operation"]["action"] = json!("notes.update");
         note["input"]["operation"]["input"] = json!({"requestId":"note-request","noteInput":{"id":"note","expectedUpdatedAt":42,"body":"reviewed text"}});
@@ -2075,5 +2231,37 @@ mod tests {
         let (message, _) = management_approval_message(&invalid).unwrap();
         assert!(message.contains("\\u202eexact\\u202c"));
         assert!(!message.contains('\u{202e}'));
+    }
+
+    #[test]
+    fn management_approval_details_preview_the_same_reviewed_input() {
+        let request = json!({
+            "action":"management.write.authorize", "sessionId":"session",
+            "cwd":"C:\\project", "environmentId":"host",
+            "input":{"operation":{"action":"git.commit", "input":{"requestId":"one","message":"Fix \u{202e}login"}, "operationHash":"a".repeat(64)}}
+        });
+        let details = management_approval_details(&request).unwrap();
+        assert_eq!(details["kind"], "management");
+        assert_eq!(details["action"], "git.commit");
+        assert_eq!(
+            details["project"],
+            json!({"kind":"path","value":"C:\\project"})
+        );
+        assert_eq!(details["input"]["message"], "Fix \\u202elogin");
+        let mut file = request.clone();
+        file["input"]["operation"]["action"] = json!("files.write");
+        file["input"]["operation"]["input"] =
+            json!({"requestId":"f", "path":"a.ts", "content":"x".repeat(9000)});
+        let details = management_approval_details(&file).unwrap();
+        assert_eq!(details["input"]["content"]["truncated"], true);
+        assert_eq!(details["input"]["content"]["bytes"], 9000);
+        let mut room = request.clone();
+        room.as_object_mut().unwrap().remove("sessionId");
+        room.as_object_mut().unwrap().remove("cwd");
+        room["threadId"] = json!("thread");
+        assert_eq!(
+            management_approval_details(&room).unwrap()["project"],
+            json!({"kind":"application"})
+        );
     }
 }

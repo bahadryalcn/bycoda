@@ -3,15 +3,19 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SessionHostTools } from "./SessionHostTools";
+import { toolPreferences } from "./model/toolPreferences";
 import {
+  deviceTouchAvailable,
   hostFeatureRequest,
   hostToolRequest,
   listHostToolMachines,
 } from "../connections/model/hostFeatureClient";
 vi.mock("../connections/model/hostFeatureClient", () => ({
+  deviceTouchAvailable: vi.fn().mockResolvedValue(false),
   hostFeatureRequest: vi.fn(),
   hostToolRequest: vi.fn(),
   listHostToolMachines: vi.fn(),
+  subscribeDeviceVideo: vi.fn().mockRejectedValue(new Error("DEVICE_STREAM_UNSUPPORTED")),
 }));
 let root: Root;
 let container: HTMLDivElement;
@@ -108,7 +112,7 @@ it("keeps common chrome compact and selects another tool without starting resour
   );
   expect(container.querySelectorAll(".host-tools-topbar")).toHaveLength(1);
   expect(toolChooser().textContent).toContain("Resource usage");
-  expect(container.textContent).toContain("No samples yet");
+  expect(container.textContent).toContain("Take a sample to start the charts.");
   expect(
     vi.mocked(hostFeatureRequest).mock.calls.some((call) => call[2] === "resources.read"),
   ).toBe(false);
@@ -214,6 +218,32 @@ it("retains visited tools and moves between visible tool tabs with the keyboard"
   ).toBe(false);
 });
 
+it("starts device discovery before the touch capability probe finishes", async () => {
+  vi.mocked(deviceTouchAvailable).mockImplementationOnce(() => new Promise(() => {}));
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) =>
+    method === "devices.status"
+      ? {
+          running: true,
+          installed: true,
+          platform: "win32",
+          platforms: [{ platform: "android", available: true }],
+        }
+      : { devices: [], errors: [] },
+  );
+  await toolAct(() =>
+    root.render(
+      createElement(SessionHostTools, {
+        cwd: "/repo",
+        title: "Devices",
+        sessionId: "s",
+        initialTab: "devices",
+      }),
+    ),
+  );
+  expect(deviceTouchAvailable).toHaveBeenCalled();
+  expect(hostFeatureRequest).toHaveBeenCalledWith("/repo", "device.host", "devices.list", {});
+});
+
 it("keeps every tool on the remote project and uses the host conversation identity", async () => {
   const cwd = "remote://macbook/Users/owner/project";
   const sessionId = "host-session";
@@ -261,7 +291,7 @@ it("keeps every tool on the remote project and uses the host conversation identi
   expect(vi.mocked(hostFeatureRequest).mock.calls.every((call) => call[0] === cwd)).toBe(true);
 });
 
-it("resets device control when switching conversations in the same project", async () => {
+it("hands off automatic device control when switching conversations in the same project", async () => {
   vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method, params) =>
     method === "devices.list"
       ? {
@@ -301,26 +331,21 @@ it("resets device control when switching conversations in the same project", asy
     );
   await render("first");
   await chooseTool("Devices");
-  await toolAct(async () =>
-    container
-      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!
-      .click(),
-  );
-  expect(
-    container
-      .querySelector('[role="switch"][aria-label="Allow device control"]')!
-      .getAttribute("aria-checked"),
-  ).toBe("true");
-  expect(
-    vi.mocked(hostFeatureRequest).mock.calls.some((call) => call[2] === "devices.control.claim"),
-  ).toBe(true);
+  const claims = () =>
+    vi.mocked(hostFeatureRequest).mock.calls.filter((call) => call[2] === "devices.control.claim");
+  expect(claims()).toHaveLength(1);
+  const firstRequest = claims()[0][3]?.requestId;
   await render("second");
   await chooseTool("Devices");
-  expect(
-    container
-      .querySelector('[role="switch"][aria-label="Allow device control"]')!
-      .getAttribute("aria-checked"),
-  ).toBe("false");
+  expect(hostFeatureRequest).toHaveBeenCalledWith(
+    "remote://mac/repo",
+    "device.host",
+    "devices.control.release",
+    { deviceId: "sim", leaseId: `lease-${String(firstRequest)}` },
+  );
+  expect(claims()).toHaveLength(2);
+  expect(claims()[1][3]?.requestId).not.toBe(firstRequest);
+  expect(container.querySelector('[aria-label="Allow device control"]')).toBeNull();
 });
 
 const clickToolTab = chooseTool;
@@ -350,6 +375,141 @@ const chooseMachine = async (value: string) => {
   );
 };
 
+it.each(["project", "local", "machine:local"])(
+  "shows one local machine with the %s target selected",
+  async (initialMachine) => {
+    const onViewChange = vi.fn();
+    await toolAct(() =>
+      root.render(
+        createElement(SessionHostTools, {
+          cwd: "/local/project",
+          sessionId: "session",
+          title: "Local project",
+          initialTab: "browser",
+          initialMachine,
+          onViewChange,
+        }),
+      ),
+    );
+    await openMachineOptions();
+    const options = [
+      ...document.querySelectorAll('[role="listbox"][aria-label="Tool machine"] [role="option"]'),
+    ];
+    const localOptions = options.filter((option) => option.textContent?.includes("This computer"));
+    expect(localOptions).toHaveLength(1);
+    expect(localOptions[0]?.getAttribute("aria-selected")).toBe("true");
+    expect(options.find((option) => option.textContent === "MacBook")).toBeDefined();
+    expect(onViewChange).toHaveBeenLastCalledWith({ tab: "browser", machine: initialMachine });
+  },
+);
+
+it("shows one selected computer when a remote project resolves to this desktop's environment", async () => {
+  await toolAct(() =>
+    root.render(
+      createElement(SessionHostTools, {
+        cwd: "remote://local-env/project",
+        sessionId: "session",
+        title: "Local environment",
+        initialTab: "devices",
+        initialMachine: "local",
+      }),
+    ),
+  );
+  await openMachineOptions();
+  const options = [
+    ...document.querySelectorAll('[role="listbox"][aria-label="Tool machine"] [role="option"]'),
+  ];
+  expect(options).toHaveLength(3);
+  expect(
+    options
+      .filter((option) => option.getAttribute("aria-selected") === "true")
+      .map((option) => option.textContent),
+  ).toEqual(["This computer"]);
+});
+
+it("switches Devices from a local project to the paired Mac from Setup and access", async () => {
+  const cwd = "/local/project";
+  vi.mocked(hostToolRequest).mockResolvedValue({
+    running: false,
+    installed: true,
+    agentInstalled: false,
+    platform: "darwin",
+    platforms: [{ platform: "ios", available: true }],
+  });
+  await toolAct(() =>
+    root.render(
+      createElement(SessionHostTools, { cwd, sessionId: "session", title: "Local project" }),
+    ),
+  );
+  await clickToolTab("Devices");
+  const openSetup = () =>
+    toolAct(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Setup and access")!
+        .click(),
+    );
+  const setup = () => document.querySelector('[role="dialog"][aria-label="Setup and access"]')!;
+  await openSetup();
+  await toolAct(() =>
+    setup()
+      .querySelector<HTMLButtonElement>(
+        'button[aria-haspopup="dialog"][aria-label*="Tool machine"]',
+      )!
+      .click(),
+  );
+  await toolAct(() =>
+    [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')]
+      .find((option) => option.textContent === "MacBook")!
+      .click(),
+  );
+  expect(hostToolRequest).toHaveBeenCalledExactlyOnceWith(
+    cwd,
+    "device.host",
+    "devices.status",
+    {},
+    { kind: "machine", machineId: "mac" },
+  );
+  await openSetup();
+  expect(setup().textContent).toContain("MacBook");
+  expect(setup().textContent).toContain("SDK detected");
+  expect(hostToolRequest).toHaveBeenCalledTimes(1);
+});
+
+it("keeps a restored explicit project machine selected on the single owner row", async () => {
+  const cwd = "remote://macbook/repo";
+  await toolAct(() =>
+    root.render(
+      createElement(SessionHostTools, {
+        cwd,
+        sessionId: "session",
+        title: "Remote project",
+        initialTab: "devices",
+        initialMachine: "machine:mac",
+      }),
+    ),
+  );
+  await openMachineOptions();
+  const ownerOptions = [
+    ...document.querySelectorAll('[role="listbox"][aria-label="Tool machine"] [role="option"]'),
+  ].filter((option) => option.textContent?.includes("MacBook"));
+  expect(ownerOptions).toHaveLength(1);
+  expect(ownerOptions[0]?.textContent).toContain("Project host");
+  expect(ownerOptions[0]?.getAttribute("aria-selected")).toBe("true");
+  expect(hostToolRequest).toHaveBeenCalledWith(
+    cwd,
+    "device.host",
+    "devices.status",
+    {},
+    {
+      kind: "machine",
+      machineId: "mac",
+    },
+  );
+  await chooseMachine("local");
+  await chooseMachine("project");
+  expect(hostFeatureRequest).toHaveBeenCalledWith(cwd, "device.host", "devices.status", {});
+});
+
 it("offers local and saved machines only for host tools while keeping conversation tools on their owner", async () => {
   const cwd = "remote://macbook/Users/owner/project";
   await toolAct(async () =>
@@ -358,12 +518,12 @@ it("offers local and saved machines only for host tools while keeping conversati
   expect(listHostToolMachines).toHaveBeenCalledOnce();
   await clickToolTab("Devices");
   await openMachineOptions();
-  expect(
-    document.querySelector('[role="listbox"][aria-label="Tool machine"]')?.textContent,
-  ).toContain("MacBook");
-  expect(
-    document.querySelector('[role="listbox"][aria-label="Tool machine"]')?.textContent,
-  ).toContain("Project host");
+  const ownerOptions = [
+    ...document.querySelectorAll('[role="listbox"][aria-label="Tool machine"] [role="option"]'),
+  ].filter((option) => option.textContent?.includes("MacBook"));
+  expect(ownerOptions).toHaveLength(1);
+  expect(ownerOptions[0]?.textContent).toContain("Project host");
+  expect(ownerOptions[0]?.getAttribute("aria-selected")).toBe("true");
   expect(
     document.querySelector('[role="listbox"][aria-label="Tool machine"]')?.textContent,
   ).toContain("This computer");
@@ -384,7 +544,7 @@ it("offers local and saved machines only for host tools while keeping conversati
     (button) => button.textContent === "Connect devices",
   )!;
   expect(connect).toBeTruthy();
-  expect(connect.disabled).toBe(true); // The selected host reports an installed runtime without a detected SDK.
+  expect(connect.getAttribute("aria-disabled")).toBe("true"); // The selected host reports an installed runtime without a detected SDK.
   expect(hostToolRequest).not.toHaveBeenCalledWith(
     cwd,
     "device.host",
@@ -397,8 +557,11 @@ it("offers local and saved machines only for host tools while keeping conversati
       .find((button) => button.textContent === "Setup and access")!
       .click(),
   );
+  expect(document.querySelector(".device-panel-setup-host")?.textContent).toContain(
+    "This computer",
+  );
   expect(document.querySelector(".device-panel-setup-summary")?.textContent).toContain(
-    "This computer · Device host stopped",
+    "Device host stopped",
   );
   await clickToolTab("Resource usage");
   await toolAct(async () =>
@@ -428,24 +591,9 @@ it("offers local and saved machines only for host tools while keeping conversati
       ),
     { timeout: 10_000, interval: 25 },
   );
-  await toolAct(() =>
-    container
-      .querySelector<HTMLButtonElement>('button[aria-label="Browser controls and setup"]')!
-      .click(),
-  );
-  const controls = document.querySelector<HTMLElement>(
-    '[role="dialog"][aria-label="Browser controls and setup"]',
-  )!;
-  expect(controls).not.toBeNull();
-  const help = controls.querySelector<HTMLDetailsElement>("details")!;
-  expect(help.open).toBe(false);
-  await toolAct(() => {
-    help.open = true;
-    help.dispatchEvent(new Event("toggle"));
-  });
-  expect(help.textContent).toContain(
-    "Browser selections can be attached only on this conversation's project host.",
-  );
+  expect(
+    document.querySelector('[role="dialog"][aria-label="Browser controls and setup"]'),
+  ).toBeNull();
   const annotate = container.querySelector<HTMLButtonElement>(
     'button[aria-label="Select element and add to composer"]',
   )!;
@@ -524,10 +672,19 @@ it("clears the device screen and control and discovers devices on another machin
         base64: target?.kind === "local" ? "new-host-frame" : "old-host-frame",
         capturedAt: "now",
       };
+    if (method === "devices.control.status") return { deviceId: "sim", busy: false };
+    if (method === "devices.control.claim")
+      return {
+        deviceId: "sim",
+        leaseId: target?.kind === "local" ? "local-lease" : "project-lease",
+        expiresAt: Number.MAX_SAFE_INTEGER,
+      };
+    if (method === "devices.control.release") return { released: true };
     return {
       running: true,
       installed: true,
       agentInstalled: true,
+      controlProtocol: 1,
       platform: "darwin",
       platforms: [],
     };
@@ -548,11 +705,6 @@ it("clears the device screen and control and discovers devices on another machin
     container.querySelector('button[aria-label^="Selected device:"]')?.getAttribute("aria-label"),
   ).toContain("iPhone");
   await toolAct(async () =>
-    container
-      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!
-      .click(),
-  );
-  await toolAct(async () =>
     [...container.querySelectorAll("button")]
       .find((button) => button.getAttribute("aria-label") === "Capture")!
       .click(),
@@ -563,11 +715,19 @@ it("clears the device screen and control and discovers devices on another machin
   expect(
     container.querySelector('button[aria-label^="Selected device:"]')?.getAttribute("aria-label"),
   ).toContain("iPhone");
-  expect(
-    container
-      .querySelector('[role="switch"][aria-label="Allow device control"]')!
-      .getAttribute("aria-checked"),
-  ).toBe("false");
+  expect(hostFeatureRequest).toHaveBeenCalledWith(
+    "remote://macbook/repo",
+    "device.host",
+    "devices.control.release",
+    { deviceId: "sim", leaseId: "project-lease" },
+  );
+  expect(hostToolRequest).toHaveBeenCalledWith(
+    "remote://macbook/repo",
+    "device.host",
+    "devices.control.claim",
+    expect.objectContaining({ deviceId: "sim" }),
+    { kind: "local" },
+  );
   expect(hostToolRequest).toHaveBeenCalledWith(
     "remote://macbook/repo",
     "device.host",
@@ -575,4 +735,82 @@ it("clears the device screen and control and discovers devices on another machin
     {},
     { kind: "local" },
   );
+});
+
+it("moves an explicit Browser request to the project Host and navigates it once", async () => {
+  const cwd = "remote://macbook/Users/owner/project";
+  const props = {
+    cwd,
+    sessionId: "host-session",
+    title: "Remote",
+    initialTab: "devices" as const,
+    initialMachine: "machine:linux",
+  };
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) =>
+    method === "devServers.list"
+      ? { status: "ok", servers: [], scannedAt: Date.now() }
+      : {
+          open: method !== "browser.status",
+          url: "http://localhost:3000/a?b=1#c",
+          controlling: method !== "browser.status",
+          leaseId: method !== "browser.status" ? "lease" : undefined,
+          leaseExpiresAt: Date.now() + 30_000,
+        },
+  );
+  await toolAct(async () => root.render(createElement(SessionHostTools, props)));
+  const viewRequest = {
+    id: "session-host-tools-navigation",
+    tab: "browser" as const,
+    machine: "project",
+    url: "http://localhost:3000/a?b=1#c",
+  };
+  await toolAct(async () =>
+    root.render(createElement(SessionHostTools, { ...props, viewRequest })),
+  );
+  await toolAct(async () =>
+    root.render(createElement(SessionHostTools, { ...props, viewRequest: { ...viewRequest } })),
+  );
+  const opens = vi
+    .mocked(hostFeatureRequest)
+    .mock.calls.filter((call) => call[2] === "browser.open");
+  expect(opens).toEqual([
+    [
+      cwd,
+      "browser.sessionScopes.v1",
+      "browser.open",
+      expect.objectContaining({ url: viewRequest.url }),
+    ],
+  ]);
+  expect(
+    vi.mocked(hostToolRequest).mock.calls.some((call) => String(call[2]).startsWith("browser.")),
+  ).toBe(false);
+});
+
+it("follows Settings: Use devices removes the Devices tab and removed sources leave its picker", async () => {
+  localStorage.clear();
+  toolPreferences.devicesEnabled.save(false);
+  toolPreferences.deviceHiddenMachines.save(["mac"]);
+  try {
+    await toolAct(async () =>
+      root.render(
+        createElement(SessionHostTools, { cwd: "/devices-off", sessionId: "s", title: "Off" }),
+      ),
+    );
+    expect(toolTabs().map((tab) => tab.getAttribute("aria-label"))).not.toContain("Devices");
+    expect(toolChooser().textContent).toContain("Host browser");
+    expect(
+      [...vi.mocked(hostFeatureRequest).mock.calls, ...vi.mocked(hostToolRequest).mock.calls].some(
+        (call) => String(call[2]).startsWith("devices."),
+      ),
+    ).toBe(false);
+
+    await toolAct(() => toolPreferences.devicesEnabled.save(true));
+    await clickToolTab("Devices");
+    await openMachineOptions();
+    const options = document.querySelector('[role="listbox"][aria-label="Tool machine"]');
+    expect(options?.textContent).toContain("Linux server");
+    expect(options?.textContent).not.toContain("MacBook");
+  } finally {
+    localStorage.clear();
+  }
 });

@@ -3,6 +3,7 @@ import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import type { DropdownMenuAction } from "../../../shared/ui/dropdownMenuModel";
@@ -86,6 +87,11 @@ export function CrewMemberTeamMenu({
         expanded={open}
         loading={assignment.busy === agent.id}
         disabled={assignment.busy !== null}
+        disabledReason={
+          assignment.busy !== null && assignment.busy !== agent.id
+            ? t("Wait for the current operation to finish")
+            : undefined
+        }
         onClick={() => {
           assignment.clearError(agent.id);
           setOpen(true);
@@ -97,7 +103,7 @@ export function CrewMemberTeamMenu({
         <DropdownMenu
           anchor={trigger}
           label={t("Teams of {p0}", { p0: agent.name })}
-          width={260}
+          size="md"
           items={[
             {
               kind: "group",
@@ -170,6 +176,15 @@ export function CrewBulkTeamAdd({
         expanded={open}
         loading={assignment.busy === "bulk"}
         disabled={assignment.busy !== null || !selected.length || !definitions.length}
+        disabledReason={
+          assignment.busy !== null && assignment.busy !== "bulk"
+            ? t("Wait for the current operation to finish")
+            : !selected.length
+              ? t("Select at least one member first.")
+              : !definitions.length
+                ? t("Create a crew first.")
+                : undefined
+        }
         onClick={() => {
           setResult(null);
           assignment.clearError("bulk");
@@ -182,7 +197,7 @@ export function CrewBulkTeamAdd({
         <DropdownMenu
           anchor={trigger}
           label={t("Add to team")}
-          width={260}
+          size="md"
           items={definitions.map((team) => teamItem("add", team, undefined))}
           onPick={(id) => {
             const team = definitions.find((item) => `add:${item.id}` === id);
@@ -197,7 +212,7 @@ export function CrewBulkTeamAdd({
       ) : null}
       {failure ? (
         <div className="basis-full">
-          <Alert tone="danger">{failure}</Alert>
+          <InlineError details={failure} />
         </div>
       ) : null}
       {result?.added.length ? (
@@ -211,7 +226,7 @@ export function CrewBulkTeamAdd({
         <div className="basis-full">
           <Alert tone="warning">
             <p>{t("Skipped {p0}:", { p0: result.skipped.length })}</p>
-            <ul className="mt-1 list-disc pl-4">
+            <ul className="mt-1 list-disc ps-4">
               {result.skipped.map((skip, index) => (
                 <li key={`${index}:${skip.name}`} className="break-words [overflow-wrap:anywhere]">
                   {skip.name}: {skip.reason}

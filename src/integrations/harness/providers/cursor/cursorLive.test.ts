@@ -14,6 +14,7 @@ const sent: string[] = [];
 let heldApprovalWrite: (() => Promise<void>) | null = null;
 let onLine: ((line: string) => void) | undefined;
 let onExit: ((code: number) => void) | undefined;
+let onStderr: ((line: string) => void) | undefined;
 let queueAgent: ((message: Record<string, unknown>) => void) | null = null;
 
 beforeEach(() => {
@@ -26,9 +27,15 @@ vi.mock("../../core/child", () =>
     spawnChild: async () => undefined,
     killChild: async () => undefined,
     unwatchChild: () => undefined,
-    watchChild: (_id: string, line: (value: string) => void, exit: (code: number) => void) => {
+    watchChild: (
+      _id: string,
+      line: (value: string) => void,
+      exit: (code: number) => void,
+      stderr?: (value: string) => void,
+    ) => {
       onLine = line;
       onExit = exit;
+      onStderr = stderr;
     },
     writeChild: async (_id: string, line: string) => {
       sent.push(line);
@@ -308,7 +315,8 @@ it("keeps concurrent Cursor questions reachable until each native response is wr
     "both responses acknowledged",
   );
   expect(
-    events.reduce(applyHarnessEvent, newSession("cursor", "/repo")).pendingQuestion,
+    events.reduce((state, event) => applyHarnessEvent(state, event), newSession("cursor", "/repo"))
+      .pendingQuestion,
   ).toBeUndefined();
   reply(promptId, { stopReason: "end_turn" });
   await turn;
@@ -366,7 +374,10 @@ describe("cursor background subagents", () => {
     });
     reply(promptId, { stopReason: "end_turn" });
     await turn;
-    const session = events.reduce(applyHarnessEvent, newSession("cursor", "/repo"));
+    const session = events.reduce(
+      (state, event) => applyHarnessEvent(state, event),
+      newSession("cursor", "/repo"),
+    );
     const row = session.blocks.find((block) => block.tool?.callId === "call_agent")!;
     expect(row.text).toBe("Review ACP routing");
     expect(row.tool?.status).toBe("completed");
@@ -862,6 +873,21 @@ it("Cursor exit settles the original approval without writing to the exited proc
   }
 });
 
+it("fails the in-flight turn with the exit code and redacted stderr tail (Windows tty output)", async () => {
+  const { events, turn } = await startTurn("cursor-exit-diagnostics");
+  const failed = turn.catch((error: unknown) => error as Error);
+  expect(onStderr).toBeTypeOf("function");
+  // A Windows pseudo-terminal colors lines and ends them with CRLF.
+  onStderr!("\u001b[31mError: request rejected\u001b[0m\r\n");
+  onStderr!("Authorization: Bearer abcdef0123456789abcdef\r\n");
+  onExit!(3);
+  const error = (await failed) as Error;
+  expect(error.message).toBe(
+    "Cursor CLI exited (exit code 3):\nError: request rejected\nAuthorization: Bearer …",
+  );
+  expect(events).toContainEqual({ type: "session.ended", code: 3 });
+});
+
 it("owns timer-backed stored-tool enrichment before its actual file read settles", async () => {
   const { events, promptId, turn } = await startTurn("cursor-causal");
   let release!: (value: Array<{ toolCallId: string; toolName: string; args: unknown }>) => void;
@@ -1108,3 +1134,121 @@ it.each([true, false])(
     }
   },
 );
+
+describe("cursor model selection", () => {
+  function rejectRequest(id: number, message: string) {
+    onLine!(JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32602, message } }));
+  }
+
+  function requestsFor(method: string) {
+    return parse().filter((message) => message.method === method && message.id != null);
+  }
+
+  async function startSelectionTurn(sessionId: string) {
+    const events: HarnessEvent[] = [];
+    const turn = sendCursorTurn({
+      sessionId,
+      cwd: "/repo",
+      model: "cursor:gpt-5",
+      modelSettings: { effort: "high" },
+      runtimeMode: "supervised",
+      text: "hello",
+      attachments: [],
+      onEvent: (event) => events.push(event),
+    });
+    await waitFor(() => !!outboundRequest("initialize"), "initialize");
+    reply(outboundRequest("initialize")!.id as number, {});
+    await waitFor(() => !!outboundRequest("authenticate"), "authenticate");
+    reply(outboundRequest("authenticate")!.id as number, {});
+    await waitFor(() => !!outboundRequest("session/new"), "session/new");
+    reply(outboundRequest("session/new")!.id as number, {
+      sessionId: "cursor_1",
+      configOptions: [
+        { id: "model", category: "model", currentValue: "composer-2.5" },
+        { id: "effort", category: "thought_level", currentValue: "medium" },
+      ],
+    });
+    await waitFor(() => requestsFor("session/set_config_option").length === 1, "set model option");
+    return { events, turn };
+  }
+
+  it("reports rejected model and setting changes instead of hiding them", async () => {
+    const { events, turn } = await startSelectionTurn("cursor-selection-rejected");
+    rejectRequest(requestsFor("session/set_config_option")[0]!.id as number, "unknown model");
+    await waitFor(() => !!outboundRequest("session/set_model"), "session/set_model");
+    rejectRequest(outboundRequest("session/set_model")!.id as number, "unknown model");
+    await waitFor(() => requestsFor("session/set_config_option").length === 2, "set effort");
+    rejectRequest(requestsFor("session/set_config_option")[1]!.id as number, "bad effort");
+    await waitFor(() => !!outboundRequest("session/prompt"), "session/prompt");
+    reply(outboundRequest("session/prompt")!.id as number, { stopReason: "end_turn" });
+    await turn;
+
+    const statuses = events.flatMap((event) => (event.type === "status" ? [event.text] : []));
+    expect(statuses).toEqual([
+      "Cursor could not apply the selected model (gpt-5); continuing with its current model.",
+      "Cursor could not apply the selected effort setting; continuing with its current setting.",
+    ]);
+  });
+
+  it("fails the turn instead of prompting when a model change times out", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { turn } = await startSelectionTurn("cursor-selection-timeout");
+      const outcome = turn.then(
+        () => null,
+        (error: unknown) => error,
+      );
+      await vi.advanceTimersByTimeAsync(20_001);
+
+      expect(await outcome).toBeInstanceOf(Error);
+      expect(outboundRequest("session/set_model")).toBeUndefined();
+      expect(outboundRequest("session/prompt")).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+it("keeps a Cursor turn pending past the former 30 minute wall-clock cap", async () => {
+  const sessionId = "cursor-deadline";
+  const events: HarnessEvent[] = [];
+  vi.useFakeTimers();
+  try {
+    const waitForMethod = async (method: string) => {
+      for (let i = 0; i < 200; i++) {
+        const found = outboundRequest(method);
+        if (found) return found.id as number;
+        await vi.advanceTimersByTimeAsync(5);
+      }
+      throw new Error(`timed out waiting for ${method}`);
+    };
+    const turn = sendCursorTurn({
+      sessionId,
+      cwd: "/repo",
+      model: "cursor:composer-2.5",
+      modelSettings: {},
+      runtimeMode: "supervised",
+      text: "long run",
+      attachments: [],
+      onEvent: (event) => events.push(event),
+    });
+    const outcome = turn.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    reply(await waitForMethod("initialize"), {});
+    reply(await waitForMethod("authenticate"), {});
+    reply(await waitForMethod("session/new"), {
+      sessionId: "cursor_1",
+      configOptions: [{ id: "model", category: "model", currentValue: "composer-2.5" }],
+    });
+    const promptId = await waitForMethod("session/prompt");
+    await vi.advanceTimersByTimeAsync(31 * 60_000);
+    reply(promptId, { stopReason: "end_turn" });
+    expect(await outcome).toBeUndefined();
+    expect(events.some((event) => event.type === "session.error")).toBe(false);
+  } finally {
+    vi.useRealTimers();
+    await stopCursorSession(sessionId);
+  }
+});

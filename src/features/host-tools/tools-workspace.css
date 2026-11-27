@@ -31,6 +31,13 @@
 
   overflow: clip;
 }
+.tools-workspace-dock[data-embedded="true"] {
+  flex: 1;
+  inline-size: 100% !important;
+  block-size: 100% !important;
+  max-inline-size: none;
+  max-block-size: none;
+}
 .tools-workspace:is([data-placement="top"], [data-placement="bottom"]) .tools-workspace-dock {
   inline-size: 100%;
   max-inline-size: none;
@@ -110,7 +117,6 @@
 }
 .host-tools-content-logs .host-tools-machine select {
   flex: 1;
-  min-inline-size: 160px;
 }
 .runtime-logs-monitor-setup form,
 .runtime-logs-monitor {
@@ -166,19 +172,6 @@
 }
 .tools-hub-pane[hidden] {
   display: none;
-}
-.tools-hub-empty {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 16px;
-}
-.tools-hub-empty strong {
-  max-inline-size: 100%;
-  overflow-wrap: anywhere;
 }
 @media (width < 540px) {
   .tools-hub-title {

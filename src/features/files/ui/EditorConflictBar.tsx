@@ -1,9 +1,9 @@
 import { Text } from "../../../shared/ui/Text";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { ChevronDown, ChevronUp } from "../../../shared/ui/icons";
-
-const iconButton = "shrink-0";
+import { InlineError } from "../../../shared/ui/InlineError";
 
 /**
  * The editor's merge-conflict strip: how many blocks are left and a way to
@@ -37,12 +37,8 @@ export function EditorConflictBar({
     <Button
       size="sm"
       variant="ghost"
-      motion="none"
-      type="button"
-      tooltip={t("Open the next conflicted file")}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onNextFile}
-      className="shrink-0"
     >
       {t("Next file")}
     </Button>
@@ -58,26 +54,21 @@ export function EditorConflictBar({
     >
       {count > 0 ? (
         <>
-          <Text
+          <LiveText
             size="inherit"
             tone="warning"
             weight="medium"
             className="tabular-nums"
-            role="status"
-          >
-            {count === 1 ? t("1 conflict") : t("{p0} conflicts", { p0: count })}
-          </Text>
+            text={count === 1 ? t("1 conflict") : t("{p0} conflicts", { p0: count })}
+          />
           <div className="flex min-w-0 flex-wrap items-center gap-1">
             {fileNote ? (
-              <Text
-                wrap="anywhere"
+              <LiveText
                 size="inherit"
                 tone="secondary"
-                className="min-w-0 mr-1"
-                role="status"
-              >
-                {fileNote}
-              </Text>
+                className="min-w-0 me-1 wrap-anywhere"
+                text={fileNote}
+              />
             ) : null}
             {nextFile}
             <Button
@@ -85,12 +76,8 @@ export function EditorConflictBar({
               iconOnly
               label={t("Previous conflict")}
               variant="ghost"
-              motion="none"
-              type="button"
-              aria-label={t("Previous conflict")}
               onMouseDown={(event) => event.preventDefault()}
               onClick={onPrev}
-              className={iconButton}
             >
               <ChevronUp className="icon-sm" strokeWidth={1.75} />
             </Button>
@@ -99,12 +86,8 @@ export function EditorConflictBar({
               iconOnly
               label={t("Next conflict")}
               variant="ghost"
-              motion="none"
-              type="button"
-              aria-label={t("Next conflict")}
               onMouseDown={(event) => event.preventDefault()}
               onClick={onNext}
-              className={iconButton}
             >
               <ChevronDown className="icon-sm" strokeWidth={1.75} />
             </Button>
@@ -112,46 +95,37 @@ export function EditorConflictBar({
         </>
       ) : (
         <>
-          <Text
-            size="inherit"
-            tone="secondary"
-            wrap="anywhere"
-            className="min-w-0 flex-1"
-            role="status"
-          >
-            {error ? (
-              <Text size="inherit" tone="danger">
-                {error}
-              </Text>
-            ) : (
-              t("All conflicts resolved")
-            )}
-          </Text>
+          {error ? (
+            <InlineError className="min-w-0 flex-1" details={error}>
+              {t("Couldn’t mark the file as resolved")}
+            </InlineError>
+          ) : (
+            <LiveText
+              size="inherit"
+              tone="secondary"
+              className="min-w-0 flex-1 wrap-anywhere"
+              text={t("All conflicts resolved")}
+            />
+          )}
           <div className="flex min-w-0 flex-wrap items-center gap-1">
             {fileNote ? (
-              <Text
-                wrap="anywhere"
+              <LiveText
                 size="inherit"
                 tone="secondary"
-                className="min-w-0"
-                role="status"
-              >
-                {fileNote}
-              </Text>
+                className="min-w-0 wrap-anywhere"
+                text={fileNote}
+              />
             ) : null}
             {nextFile}
             <Button
               size="sm"
               variant="ghost"
-              motion="none"
-              type="button"
-              disabled={marking}
+              loading={marking}
+              loadingLabel={t("Staging…")}
               onMouseDown={(event) => event.preventDefault()}
               onClick={onMarkResolved}
-              tooltip={t("Save the file and stage it")}
-              className="shrink-0"
             >
-              {marking ? t("Staging…") : t("Mark resolved")}
+              {t("Mark resolved")}
             </Button>
           </div>
         </>

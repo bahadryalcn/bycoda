@@ -80,7 +80,8 @@ it("keeps the original output when copying fails", async () => {
       .click(),
   );
   expect(document.querySelector("pre")?.textContent).toBe("original output");
-  expect(document.body.textContent).toContain("Clipboard unavailable");
+  expect(document.body.textContent).toContain("Copy failed. Try again.");
+  expect(document.querySelector('[data-copy-state="failed"]')).not.toBeNull();
   expect(document.body.textContent).not.toContain("Copied");
 });
 
@@ -122,7 +123,7 @@ it("shows note failures without losing the diagnostic and allows retry", async (
   );
   await click("Details");
   await click("Add to notes");
-  expect(document.body.textContent).toContain("Notes unavailable");
+  expect(document.body.textContent).toContain("Could not save note");
   expect(document.querySelector("pre")?.textContent).toBe("output");
   await click("Add to notes");
   expect(document.body.textContent).toContain("Saved");

@@ -1,5 +1,6 @@
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { Text } from "../../../../shared/ui/Text";
+import { ErrorDetails } from "../../../../shared/ui/ErrorDetails";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
@@ -61,7 +62,12 @@ export function ReportPanel({ report, busy, onLoad }: ReportPanelProps) {
               { value: "day", label: t("Day") },
               { value: "week", label: t("Week") },
             ]}
-            onValueChange={(value) => setPeriod(value === "week" ? "week" : "day")}
+            onValueChange={(value) => {
+              const next = value === "week" ? "week" : "day";
+              setPeriod(next);
+              // A report is already on screen: switching the period refreshes it instead of leaving a stale one.
+              if (data && !busy && next !== period) onLoad(next);
+            }}
           />
           <Button variant="secondary" size="sm" loading={busy} onClick={() => onLoad(period)}>
             {t("Create report")}
@@ -75,16 +81,21 @@ export function ReportPanel({ report, busy, onLoad }: ReportPanelProps) {
             "command-frame-body command-report-body",
           )}
         >
-          <Text size="secondary" tone="secondary">
-            {report?.period === "week" ? t("Week report") : t("Day report")}
-          </Text>
-          {report?.period !== period ? (
-            <InlineMessage tone="info">
-              {t("Create a new report for the selected period.")}
-            </InlineMessage>
-          ) : null}
           <ReportList title={t("Done")} lines={data.done} />
           <ReportList title={t("Results")} lines={data.results} />
+          {data.suggestionsError ? (
+            <InlineMessage
+              tone="warning"
+              extra={
+                <ErrorDetails
+                  detail={data.suggestionsError}
+                  title={t("Suggestions could not be generated.")}
+                />
+              }
+            >
+              {t("Suggestions could not be generated.")}
+            </InlineMessage>
+          ) : null}
           <ReportList title={t("Suggestions")} lines={data.suggestions} />
           {!data.done.length && !data.results.length ? (
             <EmptyState

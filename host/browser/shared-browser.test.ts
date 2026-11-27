@@ -8,6 +8,8 @@ import {
 } from "./shared-browser";
 import { RuntimeLogsService } from "../execution/runtime-logs";
 
+type FrameResult = { data: string; leaseId?: string; documentId?: string; navigationId?: string };
+
 it("resizes the owned session to390px, reports real frame dimensions and bounds pointer input", async () => {
   const page = {
     goto: vi.fn(),
@@ -138,7 +140,7 @@ it("loads lazily, enforces device control leases and rejects unsupported URLs/in
     "a",
   );
   expect(loader).toHaveBeenCalledTimes(1);
-  const shared = await browser.dispatch("browser.frame", {}, "b");
+  const shared = (await browser.dispatch("browser.frame", {}, "b")) as FrameResult;
   expect(shared.leaseId).toBeUndefined();
   expect(shared.data).toBe(Buffer.from("frame").toString("base64"));
   await expect(
@@ -158,6 +160,25 @@ it("restricts URL protocol and rejects embedded credentials", () => {
   expect(() => sharedBrowserUrl("file:///etc/passwd")).toThrow();
   expect(() => sharedBrowserUrl("https://user:secret@host.example")).toThrow();
   expect(sharedBrowserUrl("http://localhost:3000")).toBe("http://localhost:3000/");
+});
+
+it("opens browser-bar addresses without a scheme and rejects malformed ones as plain errors", () => {
+  expect(sharedBrowserUrl("www.google.com")).toBe("https://www.google.com/");
+  expect(sharedBrowserUrl("  example.com/path?q=1 ")).toBe("https://example.com/path?q=1");
+  expect(sharedBrowserUrl("localhost:3000")).toBe("http://localhost:3000/");
+  expect(sharedBrowserUrl("192.168.1.5:8080/app")).toBe("http://192.168.1.5:8080/app");
+  expect(() => sharedBrowserUrl("mailto:someone@example.com")).toThrow();
+  for (const input of ["", "not a url", "http://"]) {
+    let failure: unknown;
+    try {
+      sharedBrowserUrl(input);
+    } catch (error) {
+      failure = error;
+    }
+    // A TypeError is reported to clients as an internal "Host request failed".
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(TypeError);
+  }
 });
 
 it("reads only the agent's session without acquiring or renewing browser control", async () => {
@@ -463,7 +484,7 @@ it("closes a page created after host shutdown rather than resurrecting the brows
         newContext: async () => ({
           newPage: () =>
             new Promise((resolve) => {
-              finishPage = resolve;
+              finishPage = resolve as (value: unknown) => void;
             }),
         }),
       }),
@@ -519,16 +540,26 @@ it("isolates scoped browser pages and keeps document identity through input", as
     const pb = { ...b, leaseId: claimB.leaseId };
     await registry.dispatch("browser.open", { ...pa, url: "https://example.com/a" }, "owner");
     await registry.dispatch("browser.open", { ...pb, url: "https://example.com/b" }, "owner");
-    const before = await registry.dispatch("browser.frame", pa, "owner");
+    const before = (await registry.dispatch("browser.frame", pa, "owner")) as FrameResult;
     await registry.dispatch("browser.input", { ...pa, kind: "click", x: 1, y: 1 }, "owner");
-    const after = await registry.dispatch("browser.frame", pa, "owner");
+    const after = (await registry.dispatch("browser.frame", pa, "owner")) as FrameResult;
     expect(launches).toBe(1);
-    expect(before.data).not.toBe((await registry.dispatch("browser.frame", pb, "owner")).data);
+    expect(before.data).not.toBe(
+      ((await registry.dispatch("browser.frame", pb, "owner")) as FrameResult).data,
+    );
     expect(after.documentId).toBe(before.documentId);
     expect(after.navigationId).not.toBe(before.navigationId);
     await registry.dispatch("browser.release", pa, "owner");
-    const observedA = await registry.dispatchForSession("browser.frame", a, "agent");
-    const observedB = await registry.dispatchForSession("browser.frame", b, "agent");
+    const observedA = (await registry.dispatchForSession(
+      "browser.frame",
+      a,
+      "agent",
+    )) as FrameResult;
+    const observedB = (await registry.dispatchForSession(
+      "browser.frame",
+      b,
+      "agent",
+    )) as FrameResult;
     expect(observedA.data).toBe(before.data);
     expect(observedB.data).not.toBe(observedA.data);
     await expect(
@@ -696,4 +727,149 @@ it("streams live frames beside a pending operation and falls back to screenshots
     await browser.close();
   }
   expect(session.detach).toHaveBeenCalled();
+});
+
+it("reports who holds the browser without exposing owner fingerprints or other lease ids", async () => {
+  let now = 1000;
+  const browser = new SharedBrowser(undefined, () => now);
+  expect((await browser.dispatch("browser.status", {}, "desktop")).heldBy).toBeUndefined();
+  const agent = await browser.dispatchForSession(
+    "browser.claim",
+    { projectId: "project", sessionId: "session-1" },
+    "agent",
+  );
+  const observed = await browser.dispatch("browser.status", {}, "phone");
+  expect(observed.heldBy).toEqual({ kind: "session", sessionId: "session-1" });
+  expect(observed.leaseId).toBeUndefined();
+  expect(JSON.stringify(observed)).not.toContain(String(agent.leaseId));
+  const owner = await browser.dispatch("browser.claim", {}, "desktop", { takeover: true });
+  expect(owner.heldBy).toEqual({ kind: "controller" });
+  now = owner.leaseExpiresAt!;
+  expect((await browser.dispatch("browser.status", {}, "phone")).heldBy).toBeUndefined();
+});
+
+function pooledChromium() {
+  const processes: { disconnect: () => void; close: ReturnType<typeof vi.fn> }[] = [];
+  const pages: Record<string, (() => void)[]>[] = [];
+  const loader = (async () => ({
+    chromium: {
+      launch: async () => {
+        const disconnected: (() => void)[] = [];
+        const close = vi.fn(async () => {});
+        processes.push({ disconnect: () => disconnected.forEach((fn) => fn()), close });
+        return {
+          on: (_event: "disconnected", listener: () => void) => disconnected.push(listener),
+          newContext: async () => ({
+            close: async () => {},
+            newPage: async () => {
+              const handlers: Record<string, (() => void)[]> = {};
+              pages.push(handlers);
+              return {
+                goto: async () => {},
+                url: () => "https://example.com",
+                screenshot: async () => Buffer.from("frame"),
+                mouse: { click: async () => {}, wheel: async () => {} },
+                keyboard: { type: async () => {}, press: async () => {} },
+                on: (event: string, listener: () => void) =>
+                  (handlers[event] ??= []).push(listener),
+                off: () => {},
+              };
+            },
+          }),
+          close,
+        };
+      },
+    },
+  })) as unknown as BrowserLoader;
+  return { loader, processes, pages };
+}
+
+async function openSession(registry: SessionBrowserRegistry, sessionId: string) {
+  const scope = { projectId: "p", sessionId };
+  const claim = await registry.dispatch("browser.claim", scope, "owner");
+  const params = { ...scope, leaseId: claim.leaseId };
+  await registry.dispatch("browser.open", { ...params, url: "https://example.com" }, "owner");
+  return params;
+}
+
+it("launches a fresh pooled Chromium after the shared process disconnects or a page crashes", async () => {
+  const { loader, processes, pages } = pooledChromium();
+  // The crash listener is attached with the runtime-log capture, as in the Host composition.
+  const registry = new SessionBrowserRegistry(loader, Date.now, {
+    runtimeLogs: new RuntimeLogsService(),
+  });
+  try {
+    const a = await openSession(registry, "a");
+    expect(processes).toHaveLength(1);
+    processes[0].disconnect();
+    await openSession(registry, "b");
+    expect(processes).toHaveLength(2);
+    // The crashed page is dropped so the owning session opens a new one instead of a dead page.
+    pages[0].crash.forEach((fn) => fn());
+    await vi.waitFor(async () =>
+      expect(await registry.dispatch("browser.status", a, "owner")).toMatchObject({ open: false }),
+    );
+  } finally {
+    await registry.close();
+  }
+});
+
+it("closes the pooled Chromium after bounded idle without closing it under a live context", async () => {
+  vi.useFakeTimers();
+  try {
+    const { loader, processes } = pooledChromium();
+    const registry = new SessionBrowserRegistry(loader);
+    const a = await openSession(registry, "a");
+    const b = await openSession(registry, "b");
+    await registry.dispatch("browser.close", a, "owner");
+    // Past the 2 minute pool idle, yet inside the 5 minute idle close of session b itself.
+    await vi.advanceTimersByTimeAsync(4 * 60_000);
+    expect(processes[0].close).not.toHaveBeenCalled();
+    // The 30 second control lease lapsed meanwhile, so session b claims again to close.
+    const reclaim = await registry.dispatch(
+      "browser.claim",
+      { projectId: "p", sessionId: "b" },
+      "owner",
+    );
+    await registry.dispatch("browser.close", { ...b, leaseId: reclaim.leaseId }, "owner");
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(processes[0].close).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(processes[0].close).toHaveBeenCalledTimes(1);
+    await openSession(registry, "c");
+    expect(processes).toHaveLength(2);
+    await registry.close();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("passes an optional validated JPEG quality to one-shot browser frames", async () => {
+  const page = {
+    goto: vi.fn(),
+    url: () => "http://localhost:3000/",
+    screenshot: vi.fn(async () => Buffer.from("frame")),
+  };
+  const loader = (async () => ({
+    chromium: {
+      launch: async () => ({
+        newContext: async () => ({ newPage: async () => page }),
+        close: vi.fn(),
+      }),
+    },
+  })) as unknown as BrowserLoader;
+  const browser = new SharedBrowser(loader);
+  const claim = await browser.dispatch("browser.claim", {}, "agent");
+  const params = { leaseId: claim.leaseId };
+  await browser.dispatch("browser.open", { ...params, url: page.url() }, "agent");
+  const qualities = async () => page.screenshot.mock.calls.map((call: any[]) => call[0].quality);
+
+  await browser.dispatch("browser.frame", params, "agent");
+  await browser.dispatch("browser.frame", { ...params, quality: 30 }, "agent");
+  expect(await qualities()).toEqual([65, 30]);
+  for (const quality of [10, 50.5])
+    await expect(
+      browser.dispatch("browser.frame", { ...params, quality }, "agent"),
+    ).rejects.toThrow("Invalid browser frame quality");
+  expect(page.screenshot).toHaveBeenCalledTimes(2);
 });

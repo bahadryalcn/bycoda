@@ -4,7 +4,7 @@ import { Surface } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
-import { AiIdea, CircleDashed, PanelRight, Play } from "../../../shared/ui/icons";
+import { AiIdea, CircleDashed, Play } from "../../../shared/ui/icons";
 import { planSummary, planTitle } from "../model/plan";
 import type { HarnessId, PlanBlockMeta, PlanBuildTarget } from "../model/session";
 import { BuildTargetButton } from "./SecondOpinionButton";
@@ -42,6 +42,11 @@ export function PlanPreview({
     plan?.status === "streaming" ||
     plan?.status === "building" ||
     plan?.status === "built";
+  // Building and Built say why in their label, and an empty plan has nothing to explain.
+  const buildDisabledReason =
+    busy || streaming || plan?.status === "streaming"
+      ? t("Wait for the plan to finish")
+      : undefined;
   const buildLabel =
     plan?.status === "building"
       ? t("Building…")
@@ -50,96 +55,103 @@ export function PlanPreview({
         : t("Build");
 
   return (
-    <Surface variant="card" padding="none" className="mb-2 overflow-hidden">
-      <div className="flex items-start gap-2.5 px-3 py-2.5">
-        {streaming ? (
-          <CircleDashed className="mt-0.5 icon-md shrink-0" tone="secondary" strokeWidth={1.75} />
-        ) : (
-          <AiIdea className="mt-0.5 icon-md shrink-0" tone="secondary" strokeWidth={1.75} />
-        )}
-        <div className="min-w-0 flex-1">
-          {onOpen ? (
-            <Button
-              fullWidth
-              variant="item"
-              type="button"
-              className="block w-full text-left"
-              tooltip={title}
-              tooltipWhen="overflow"
-              onClick={onOpen}
-            >
-              <Text as="span" size="inherit" tone="inherit" truncate className="block">
-                {title}
-              </Text>
-            </Button>
+    <Surface
+      variant="card"
+      padding="none"
+      className="mb-2 overflow-hidden font-sans"
+      data-plan-card
+    >
+      <div className="px-3.5 py-3">
+        <div className="flex min-w-0 items-center gap-2.5 text-(--transcript-ink-emphasis)">
+          {streaming ? (
+            <CircleDashed
+              className="icon-md shrink-0 text-(--transcript-ink-chrome)"
+              strokeWidth={1.75}
+            />
           ) : (
-            <OverflowTooltip label={title}>
-              <Text
-                as="span"
-                size="secondary"
-                tone="secondary"
-                weight="medium"
-                truncate
-                className="block font-sans"
-              >
-                {title}
-              </Text>
-            </OverflowTooltip>
+            <AiIdea
+              className="icon-md shrink-0 text-(--transcript-ink-chrome)"
+              strokeWidth={1.75}
+            />
           )}
-          {summary ? (
-            <ClampText
-              as="p"
-              lines={3}
-              expandable={false}
-              size="caption"
-              tone="secondary"
-              leading="normal"
-              className="mt-0.5 font-sans"
-            >
-              {summary}
-            </ClampText>
-          ) : null}
-          {onOpen || onBuild ? (
-            <div className="mt-2 flex items-center justify-end gap-1.5">
-              {onOpen ? (
-                <Button
-                  variant="ghost"
-                  type="button"
-                  tooltip={t("Open in pane")}
-                  aria-label={t("Open plan in pane")}
-                  className="shrink-0"
-                  onClick={onOpen}
+          <div className="min-w-0 flex-1">
+            {onOpen ? (
+              <Button
+                fullWidth
+                variant="item"
+                type="button"
+                className="block w-full text-start"
+                tooltip={title}
+                tooltipWhen="overflow"
+                onClick={onOpen}
+              >
+                <Text
+                  as="span"
+                  size="body"
+                  tone="inherit"
+                  weight="medium"
+                  truncate
+                  className="block"
                 >
-                  <PanelRight className="icon-xs" strokeWidth={1.75} />
-                  {t("Open")}
-                </Button>
-              ) : null}
-              {onBuild ? (
-                <div className="flex items-center gap-0.5 font-sans">
-                  <Button
-                    className="shrink-0"
-                    variant="secondary"
-                    type="button"
-                    disabled={buildDisabled}
-                    onClick={() => onBuild()}
-                  >
-                    <Play className="icon-xs" strokeWidth={1.75} />
-                    {buildLabel}
-                  </Button>
-                  {harness ? (
-                    <BuildTargetButton
-                      from={harness}
-                      model={model}
-                      settings={modelSettings}
-                      disabled={buildDisabled}
-                      onPick={onBuild}
-                    />
-                  ) : null}
-                </div>
+                  {title}
+                </Text>
+              </Button>
+            ) : (
+              <OverflowTooltip label={title}>
+                <Text
+                  as="span"
+                  size="body"
+                  tone="inherit"
+                  weight="medium"
+                  truncate
+                  className="block font-sans"
+                >
+                  {title}
+                </Text>
+              </OverflowTooltip>
+            )}
+          </div>
+        </div>
+        {summary ? (
+          <ClampText
+            as="p"
+            lines={3}
+            expandable={false}
+            size="caption"
+            tone="inherit"
+            leading="normal"
+            className="mt-2 font-sans text-(--transcript-ink-chrome)"
+          >
+            {summary}
+          </ClampText>
+        ) : null}
+        {onBuild ? (
+          <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+            <div className="flex items-center gap-0.5 font-sans">
+              <Button
+                className="shrink-0"
+                variant="secondary"
+                type="button"
+                disabled={buildDisabled}
+                disabledReason={buildDisabledReason}
+                onClick={() => onBuild()}
+              >
+                <Play className="icon-xs" strokeWidth={1.75} />
+                {buildLabel}
+              </Button>
+              {harness ? (
+                <BuildTargetButton
+                  from={harness}
+                  model={model}
+                  settings={modelSettings}
+                  disabled={buildDisabled}
+                  disabledReason={buildDisabledReason}
+                  onPick={onBuild}
+                />
               ) : null}
             </div>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
       </div>
     </Surface>
   );

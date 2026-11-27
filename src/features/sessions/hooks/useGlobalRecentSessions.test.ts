@@ -11,15 +11,35 @@ vi.mock("../data/sessionStore", () => ({
   listRecentSessionsSincePage: fetch,
   finalizeRecentSessionPages: (rows: SessionSummary[]) => rows,
 }));
+const merged = vi.hoisted(() => vi.fn());
+vi.mock("../model/globalRecentSessions", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../model/globalRecentSessions")>();
+  return {
+    ...actual,
+    mergeGlobalRecentSessions: (...args: Parameters<typeof actual.mergeGlobalRecentSessions>) => {
+      merged();
+      return actual.mergeGlobalRecentSessions(...args);
+    },
+  };
+});
 let history: SessionSummary[] = [];
 let sessions: Session[] = [];
 let enabled = true;
 let allowed = new Set(["/visible"]);
+let remoteRows: SessionSummary[] = [];
+let freshRemoteProjects: string[] = [];
 let result: ReturnType<typeof useGlobalRecentSessions>;
 let renders = 0;
 function Probe() {
   renders++;
-  const current = useGlobalRecentSessions(history, sessions, enabled, allowed);
+  const current = useGlobalRecentSessions(
+    history,
+    sessions,
+    enabled,
+    allowed,
+    remoteRows,
+    freshRemoteProjects,
+  );
   useLayoutEffect(() => {
     result = current;
   });
@@ -42,6 +62,32 @@ afterEach(() => {
   history = [];
   sessions = [];
   allowed = new Set(["/visible"]);
+  remoteRows = [];
+  freshRemoteProjects = [];
+});
+
+it("uses fresh remote lists, including an empty one, and keeps the note for partial coverage", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const online = "remote://online/visible";
+  const offline = "remote://offline/visible";
+  allowed = new Set(["/visible", online, offline]);
+  history = [row, { ...row, cwd: online, id: "removed" }];
+  remoteRows = [{ ...row, cwd: offline, id: "cached" }];
+  freshRemoteProjects = [online];
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root.render(createElement(Probe)));
+    expect(result.rows.map(({ id }) => id).sort()).toEqual(["a", "cached"]);
+    expect(result.remoteHistoryLimited).toBe(true);
+    freshRemoteProjects = [online, offline];
+    remoteRows = [{ ...row, cwd: offline, id: "live" }];
+    await act(async () => root.render(createElement(Probe)));
+    expect(result.rows.map(({ id }) => id).sort()).toEqual(["a", "live"]);
+    expect(result.remoteHistoryLimited).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
 });
 
 it("does not render the owner for unchanged live provider history on a tick", async () => {
@@ -80,6 +126,79 @@ it("does not render the owner for unchanged live provider history on a tick", as
     ];
     await act(async () => root.render(createElement(Probe)));
     expect(result.rows[0].providerHistory?.activeHarness).toBe("claude");
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("builds no projection while closed and has current rows in the render that opens it", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  enabled = false;
+  const live = (title: string): Session => ({
+    ...newSession("codex", "/visible"),
+    id: "live",
+    title,
+    blocks: [{ id: "u", role: "user", text: "hello", startedAt: Date.now() }],
+  });
+  fetch.mockResolvedValue({ rows: [], nextCursor: null });
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root.render(createElement(Probe)));
+    for (let index = 0; index < 4; index++) {
+      history = [{ ...row, id: `h${index}` }];
+      sessions = [live(`Live ${index}`)];
+      await act(async () => root.render(createElement(Probe)));
+    }
+    await act(async () => {
+      vi.advanceTimersByTime(120_000);
+    });
+    expect(merged).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(result.rows).toEqual([]);
+    sessions = [live("Live now")];
+    history = [{ ...row, id: "h-now" }];
+    enabled = true;
+    await act(async () => root.render(createElement(Probe)));
+    // No timer advance: the fetch is still debounced, yet the live and history rows are current.
+    expect(fetch).not.toHaveBeenCalled();
+    expect(result.rows.map((item) => item.id).sort()).toEqual(["h-now", "live"]);
+    expect(result.rows.find((item) => item.id === "live")?.title).toBe("Live now");
+    // Closing again drops the rows and later session changes build nothing.
+    enabled = false;
+    await act(async () => root.render(createElement(Probe)));
+    expect(result.rows).toEqual([]);
+    const callsClosed = merged.mock.calls.length;
+    sessions = [live("Live closed")];
+    await act(async () => root.render(createElement(Probe)));
+    expect(merged.mock.calls.length).toBe(callsClosed);
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("does not merge again when the minute clock only expires a row", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  const now = Date.now();
+  vi.setSystemTime(now);
+  const recent = { ...row, updatedAt: now - 7 * 86400000 + 90_000 };
+  fetch.mockImplementation(async () => ({ rows: [{ ...recent }], nextCursor: null }));
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root.render(createElement(Probe)));
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(result.rows).toHaveLength(1);
+    const before = merged.mock.calls.length;
+    await act(async () => {
+      vi.advanceTimersByTime(120_000);
+    });
+    expect(result.rows).toHaveLength(0);
+    expect(merged.mock.calls.length).toBe(before);
   } finally {
     await act(async () => root.unmount());
     vi.unstubAllGlobals();
@@ -422,6 +541,35 @@ it("reports a readable retry message after repeated snapshot changes", async () 
     expect(fetch).toHaveBeenCalledTimes(3);
     expect(result.error).toBe("Recent sessions changed while loading. Retry shortly.");
     expect(result.loading).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("retries a five-second local Host restart without publishing a recent-session error", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  const started = Date.now();
+  fetch.mockImplementation(async () => {
+    if (Date.now() - started < 5_000) throw new Error("Host database is closing.");
+    return { rows: [row], nextCursor: null };
+  });
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root.render(createElement(Probe)));
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    expect(result.loading).toBe(true);
+    expect(result.error).toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(2_300));
+    expect(result.error).toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(2_400));
+    expect(result.error).toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(1_900));
+    expect(result.error).toBeNull();
+    expect(result.loading).toBe(false);
+    expect(result.rows).toEqual([row]);
+    expect(fetch).toHaveBeenCalledTimes(3);
   } finally {
     await act(async () => root.unmount());
     vi.unstubAllGlobals();

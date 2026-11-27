@@ -85,6 +85,43 @@ export function listHostSkills(
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * `listHostSkills` for the Host event loop: same source precedence, provider
+ * and disabled-path rules, but every filesystem call is async and the scan
+ * shares the discovery entry budget. `truncated` is true when the name cap or
+ * the budget stopped discovery, so the list is known to be incomplete.
+ * Unlike candidate discovery it does not retry on concurrent changes: a
+ * listing is a display snapshot, not an authority for a prepared operation.
+ */
+export async function listHostSkillsAsync(
+  project: string | null,
+  home = homedir(),
+  disabledPaths: string[] = [],
+  provider?: string,
+): Promise<{ skills: DiscoveredSkill[]; truncated: boolean }> {
+  const budget: DiscoveryBudget = { remaining: 10_000, truncated: false, stamps: new Map() };
+  const disabled = new Set(
+    (await Promise.all(disabledPaths.map((path) => canonicalAsync(path)))).filter(Boolean),
+  );
+  const byName = new Map<string, DiscoveredSkill>();
+  let capped = false;
+  for await (const skill of listSkillRootsInOrderAsync(project, home, budget)) {
+    if (!skillMatchesProvider(skill, provider)) continue;
+    if (disabled.size && disabled.has(await canonicalAsync(skill.path))) continue;
+    if (byName.has(skill.name)) continue;
+    if (byName.size >= MAX_SKILLS) {
+      // A further distinct name exists, so the cap really hid something.
+      capped = true;
+      break;
+    }
+    byName.set(skill.name, skill);
+  }
+  return {
+    skills: [...byName.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    truncated: capped || budget.truncated,
+  };
+}
+
 export type HostSkillCandidate = DiscoveredSkill & { active: boolean };
 
 /**
@@ -745,10 +782,22 @@ function validateTransferPath(path: string): void {
   }
 }
 
+const canonicalKey = (resolved: string): string => {
+  const real = resolved.replace(/\\/g, "/");
+  return process.platform === "win32" ? real.replace(/^\/\/\?\//, "").toLowerCase() : real;
+};
+
 const canonical = (path: string): string | undefined => {
   try {
-    const real = realpathSync.native(path).replace(/\\/g, "/");
-    return process.platform === "win32" ? real.replace(/^\/\/\?\//, "").toLowerCase() : real;
+    return canonicalKey(realpathSync.native(path));
+  } catch {
+    return undefined;
+  }
+};
+
+const canonicalAsync = async (path: string): Promise<string | undefined> => {
+  try {
+    return canonicalKey(await realpath(path));
   } catch {
     return undefined;
   }

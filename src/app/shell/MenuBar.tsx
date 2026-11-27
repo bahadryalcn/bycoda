@@ -3,12 +3,21 @@ import { Text } from "../../shared/ui/Text";
 import { Button } from "../../shared/ui/Button";
 import { useT } from "../../shared/i18n";
 import { invoke } from "@tauri-apps/api/core";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { ContextMenu, type ContextMenuItem } from "../../shared/ui/ContextMenu";
-import { ALT, MOD, SHIFT } from "../../platform/tauri/platform";
-import { runUpdateFlow } from "../model/updater";
-import { openUsageGuide } from "../../features/onboarding/model/usageGuide";
-import { startTour } from "../../features/onboarding/model/tourState";
+import { isImeComposition } from "../../shared/lib/keyboard";
+import { ALT, IS_WIN, MOD, SHIFT } from "../../platform/tauri/platform";
+import { useToast } from "../../shared/ui/ToastRegion";
+import { reportFailure } from "../../shared/ui/reportFailure";
+import { hideCurrentWindow } from "../model/appLifecycle";
 import type { TitleBarLayout } from "./TitleBar";
 import {
   SPLIT_DOWN_ID,
@@ -17,6 +26,7 @@ import {
   layoutPresetFromMenuId,
 } from "./layoutMenu";
 import {
+  KEYBINDINGS,
   loadAutosave,
   loadKeybindingOverrides,
   saveAutosave,
@@ -35,6 +45,14 @@ type MenuKey = "file" | "view" | "terminal";
  */
 export const APP_MENU_TOGGLE_EVENT = "bycoda:app-menu-toggle";
 
+/** Toggles the compact application menu so it drops down under `anchor`. */
+export function toggleAppMenuAt(anchor: Element) {
+  const rect = anchor.getBoundingClientRect();
+  window.dispatchEvent(
+    new CustomEvent(APP_MENU_TOGGLE_EVENT, { detail: { x: rect.left, y: rect.bottom + 2 } }),
+  );
+}
+
 type Props = {
   onNew: () => void;
   onNewTerminal?: () => void;
@@ -46,7 +64,8 @@ type Props = {
   onCloseCurrentTab?: () => void;
   onCloseOtherTabs?: () => void;
   onCloseIdleTabs?: () => void;
-  idleTabCount?: number;
+  /** Read only while the menu renders its items, so the bar never counts idle tabs on its own. */
+  countIdleTabs?: () => number;
   onCloseAllTabs?: () => void;
   onPickProject?: () => void;
   onFindInProject?: () => void;
@@ -59,6 +78,19 @@ type Props = {
   layout?: TitleBarLayout;
 };
 
+function closeIdleTabsItem(label: string, countIdleTabs: Props["countIdleTabs"]): ContextMenuItem {
+  // The menu reads the current count whenever it checks the row, including while already open.
+  return Object.defineProperty(
+    { kind: "item" as const, id: "close_idle_tabs", label },
+    "disabled",
+    {
+      enumerable: true,
+      configurable: true,
+      get: () => !countIdleTabs?.(),
+    },
+  );
+}
+
 const MemoMenuBar = memo(function MenuBar({
   onNew,
   onNewTerminal,
@@ -70,7 +102,7 @@ const MemoMenuBar = memo(function MenuBar({
   onCloseCurrentTab,
   onCloseOtherTabs,
   onCloseIdleTabs,
-  idleTabCount,
+  countIdleTabs,
   onCloseAllTabs,
   onPickProject,
   onFindInProject,
@@ -83,6 +115,7 @@ const MemoMenuBar = memo(function MenuBar({
   layout,
 }: Props) {
   const t = useT();
+  const toast = useToast();
   const [open, setOpen] = useState(false);
   const [activeMenu, setActiveMenu] = useState<MenuKey | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
@@ -91,16 +124,46 @@ const MemoMenuBar = memo(function MenuBar({
   const [keybindingOverrides, refreshShortcuts] = useState(loadKeybindingOverrides);
   const [autosave, setAutosave] = useState(loadAutosave);
   const barRef = useRef<HTMLDivElement>(null);
+  // Roving tab stop of the menubar: the last focused top-level menu button.
+  const [tabStop, setTabStop] = useState<MenuKey>("file");
+
+  const focusMenuButton = (key: MenuKey) => {
+    barRef.current
+      ?.querySelector<HTMLElement>(`[data-menubar-key="${key}"]`)
+      ?.focus({ preventScroll: true });
+  };
+
+  // The bar takes focus when it appears and hands it back to where the user was when it hides,
+  // unless an action already moved focus somewhere real (a dialog, an input).
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Move DOM focus into the menu on open and restore it on close.
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.activeElement;
+    const returnTo =
+      previous instanceof HTMLElement && previous !== document.body ? previous : null;
+    focusMenuButton("file");
+    return () => {
+      const current = document.activeElement;
+      if (
+        (!current || current === document.body || !current.isConnected) &&
+        returnTo?.isConnected
+      ) {
+        returnTo.focus({ preventScroll: true });
+      }
+    };
+  }, [open]);
 
   useEffect(() => subscribeKeybindings(() => refreshShortcuts(loadKeybindingOverrides())), []);
 
   useEffect(() => subscribeAutosave(() => setAutosave(loadAutosave())), []);
 
   // Same rule as `keybindingShortcutLabel`, read from the state this component re-renders on.
-  const shortcut = (command: string, keys: string) => {
+  const shortcut = (command: string, keys?: string) => {
     const override = keybindingOverrides[command];
     if (override?.disabled) return undefined;
-    return override?.shortcut ? quickComposerShortcutLabel(override.shortcut) : keys;
+    return override?.shortcut
+      ? quickComposerShortcutLabel(override.shortcut)
+      : (keys ?? KEYBINDINGS.find((binding) => binding.command === command)?.keys);
   };
 
   // Toggle with a standalone Alt tap or F10 (outside terminals, where F10 belongs to the program).
@@ -119,6 +182,11 @@ const MemoMenuBar = memo(function MenuBar({
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
+      // Alt and F10 pressed while an IME is composing belong to the IME, not to the menu bar.
+      if (isImeComposition(e)) {
+        altPressedAlone = false;
+        return;
+      }
       if (e.key === "Alt") {
         altPressedAlone = true;
       } else if (altPressedAlone) {
@@ -138,7 +206,7 @@ const MemoMenuBar = memo(function MenuBar({
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
-      if (e.key === "Alt" && altPressedAlone) {
+      if (e.key === "Alt" && altPressedAlone && !isImeComposition(e)) {
         toggle();
         altPressedAlone = false;
       }
@@ -148,13 +216,20 @@ const MemoMenuBar = memo(function MenuBar({
       altPressedAlone = false;
     };
 
+    // Alt+click and Alt+drag are gestures, not taps: a pointer press while Alt is held cancels the tap.
+    const onPointerDown = () => {
+      altPressedAlone = false;
+    };
+
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("blur", onBlur);
+    window.addEventListener("pointerdown", onPointerDown, true);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
+      window.removeEventListener("pointerdown", onPointerDown, true);
     };
   }, []);
 
@@ -169,8 +244,7 @@ const MemoMenuBar = memo(function MenuBar({
     setMenuAnchor(null);
   }, []);
 
-  // The title bar's compact menu button opens File, View and Terminal as one popover
-  // under the button (no extra band); with no anchor it falls back to the Alt menubar.
+  // Open the compact menu at its trigger, or the Alt menubar when no anchor is supplied.
   useEffect(() => {
     const onToggle = (event: Event) => {
       if (open || activeMenu || popover) {
@@ -193,6 +267,11 @@ const MemoMenuBar = memo(function MenuBar({
       setOpen(false);
       setPopover(null);
 
+      const reportWindowAction = (error: unknown) =>
+        reportFailure(error, { toast }).catch((failure) =>
+          console.warn("Window action failed", failure),
+        );
+
       switch (id) {
         case "new_tab":
           onNew();
@@ -206,6 +285,15 @@ const MemoMenuBar = memo(function MenuBar({
         case "new_window":
           void invoke("open_new_window").catch(() => {});
           break;
+        case "close_window":
+          void getCurrentWindow().close().catch(reportWindowAction);
+          break;
+        case "minimize_to_tray":
+          void hideCurrentWindow().catch(reportWindowAction);
+          break;
+        case "quit_app":
+          void invoke("request_app_quit").catch(reportWindowAction);
+          break;
         case "open_project":
           onPickProject?.();
           break;
@@ -217,12 +305,6 @@ const MemoMenuBar = memo(function MenuBar({
           break;
         case "open_notes":
           onOpenNotes?.();
-          break;
-        case "usage_guide":
-          openUsageGuide();
-          break;
-        case "product_tour":
-          startTour("first-run");
           break;
         case "go_to_file":
           onGoToFile?.();
@@ -259,9 +341,6 @@ const MemoMenuBar = memo(function MenuBar({
         case "toggle_diff":
           onShowSourceControl?.();
           break;
-        case "check_for_updates":
-          void runUpdateFlow(true);
-          break;
         case "zoom_in":
           onZoomIn?.();
           break;
@@ -290,7 +369,6 @@ const MemoMenuBar = memo(function MenuBar({
       onCloseCurrentTab,
       onCloseOtherTabs,
       onCloseIdleTabs,
-      idleTabCount,
       onCloseAllTabs,
       onFindInProject,
       onGoToFile,
@@ -307,29 +385,96 @@ const MemoMenuBar = memo(function MenuBar({
       onZoomIn,
       onZoomOut,
       onZoomReset,
+      toast,
     ],
   );
 
-  const getMenuItems = (key: MenuKey): ContextMenuItem[] => {
+  if (!popover && !open && !activeMenu) return null;
+
+  const destinations: ContextMenuItem[] = [
+    ...(onOpenInbox
+      ? [
+          {
+            kind: "item" as const,
+            id: "open_inbox",
+            label: t("Inbox"),
+            shortcut: shortcut("App: Open Inbox"),
+          },
+        ]
+      : []),
+    ...(onOpenNotes
+      ? [
+          {
+            kind: "item" as const,
+            id: "open_notes",
+            label: t("Notes"),
+            shortcut: shortcut("App: Open Notes"),
+          },
+        ]
+      : []),
+  ];
+
+  const tabActions: ContextMenuItem[] = [
+    {
+      kind: "item",
+      id: "close_tab",
+      label: t("Close pane"),
+      shortcut: shortcut("Pane: Close", `${MOD}W`),
+    },
+    {
+      kind: "item",
+      id: "close_other_tabs",
+      label: t("Close other tabs"),
+      shortcut: shortcut("Tab: Close Others", `${MOD}${ALT}T`),
+    },
+    ...(onCloseIdleTabs ? [closeIdleTabsItem(t("Close idle tabs"), countIdleTabs)] : []),
+    {
+      kind: "item",
+      id: "close_all_tabs",
+      label: t("Close all tabs"),
+      shortcut: shortcut("Tab: Close All", `${MOD}${SHIFT}W`),
+    },
+  ];
+
+  const layoutItem: ContextMenuItem[] = layout
+    ? [
+        {
+          kind: "item",
+          id: "layout_menu",
+          label: t("Layout"),
+          submenu: buildLayoutMenuItems({
+            current: layout.current,
+            canArrange: layout.canArrange,
+            splitRightShortcut: shortcut("Pane: Split Right", `${MOD}D`),
+            splitDownShortcut: shortcut("Pane: Split Down", `${MOD}${SHIFT}D`),
+          }),
+        },
+      ]
+    : [];
+
+  const windowActions: ContextMenuItem[] = IS_WIN
+    ? [
+        { kind: "sep" },
+        { kind: "item", id: "close_window", label: t("Close window"), shortcut: "Alt+F4" },
+        { kind: "item", id: "minimize_to_tray", label: t("Minimize to tray") },
+        { kind: "item", id: "quit_app", label: t("Quit") },
+      ]
+    : [];
+
+  const getMenuItems = (key: MenuKey, compact = false): ContextMenuItem[] => {
     switch (key) {
       case "file":
         return [
           {
             kind: "item",
             id: "new_tab",
-            label: t("New Session"),
+            label: t("New session"),
             shortcut: shortcut("Tab: New", `${MOD}T`),
           },
           {
             kind: "item",
-            id: "new_terminal",
-            label: t("New Terminal"),
-            shortcut: shortcut("Terminal: New", `${MOD}\``),
-          },
-          {
-            kind: "item",
             id: "new_window",
-            label: t("New Window"),
+            label: t("New window"),
             shortcut: shortcut("App: New Window", `${MOD}${SHIFT}N`),
           },
           { kind: "sep" },
@@ -343,7 +488,7 @@ const MemoMenuBar = memo(function MenuBar({
           {
             kind: "item",
             id: "open_project",
-            label: t("Open Project…"),
+            label: t("Open project…"),
             shortcut: shortcut("App: Open Project", `${MOD}O`),
           },
           {
@@ -355,139 +500,61 @@ const MemoMenuBar = memo(function MenuBar({
           {
             kind: "item",
             id: "go_to_file",
-            label: t("Go to File…"),
+            label: t("Go to file…"),
             shortcut: shortcut("App: Go to File", `${MOD}P`),
           },
           {
             kind: "item",
             id: "find_in_project",
-            label: t("Find in Files…"),
+            label: t("Find in files…"),
             shortcut: shortcut("App: Find in Files", `${MOD}${SHIFT}F`),
           },
-          { kind: "sep" },
-          {
-            kind: "item",
-            id: "close_tab",
-            label: t("Close Pane"),
-            shortcut: shortcut("Pane: Close", `${MOD}W`),
-          },
-          {
-            kind: "item",
-            id: "close_other_tabs",
-            label: t("Close Other Tabs"),
-            shortcut: shortcut("Tab: Close Others", `${MOD}${ALT}T`),
-          },
-          ...(onCloseIdleTabs
-            ? [
-                {
-                  kind: "item" as const,
-                  id: "close_idle_tabs",
-                  label: t("Close Idle Tabs"),
-                  disabled: !idleTabCount,
-                },
-              ]
-            : []),
-          {
-            kind: "item",
-            id: "close_all_tabs",
-            label: t("Close All Tabs"),
-            shortcut: shortcut("Tab: Close All", `${MOD}${SHIFT}W`),
-          },
-          { kind: "sep" },
-          {
-            kind: "item",
-            id: "check_for_updates",
-            label: t("Check for Updates…"),
-          },
+          ...(!compact ? [{ kind: "sep" as const }, ...tabActions, ...windowActions] : []),
         ];
       case "view":
         return [
           {
             kind: "item",
-            id: "usage_guide",
-            label: t("Usage guide"),
-          },
-          {
-            kind: "item",
-            id: "product_tour",
-            label: t("Take the tour"),
-          },
-          { kind: "sep" },
-          {
-            kind: "item",
             id: "toggle_sidebar",
-            label: t("Toggle Sidebar"),
+            label: t("Toggle sidebar"),
             shortcut: shortcut("App: Toggle Sidebar", `${MOD}B`),
           },
           {
             kind: "item",
             id: "toggle_session_sidebar",
-            label: t("Toggle Session Sidebar"),
+            label: t("Toggle session sidebar"),
             shortcut: shortcut("App: Toggle Session Sidebar", `${MOD}${SHIFT}B`),
           },
-          {
-            kind: "item",
-            id: "open_inbox",
-            label: t("Inbox"),
-          },
-          ...(onOpenNotes
-            ? [
-                {
-                  kind: "item" as const,
-                  id: "open_notes",
-                  label: t("Notes"),
-                },
-              ]
-            : []),
-          {
-            kind: "item",
-            id: "toggle_terminal",
-            label: t("Toggle Terminal"),
-            shortcut: shortcut("Terminal: Toggle Dock", `${MOD}J`),
-          },
+          ...(!compact ? destinations : []),
           {
             kind: "item",
             id: "open_model_picker",
-            label: t("Switch Model…"),
+            label: t("Switch model…"),
             shortcut: shortcut("App: Switch Model", `${MOD}${SHIFT}.`),
           },
           {
             kind: "item",
             id: "toggle_diff",
-            label: t("Toggle Source Control"),
+            label: t("Toggle source control"),
           },
-          ...(layout
-            ? [
-                {
-                  kind: "item" as const,
-                  id: "layout_menu",
-                  label: t("Layout"),
-                  submenu: buildLayoutMenuItems({
-                    current: layout.current,
-                    canArrange: layout.canArrange,
-                    splitRightShortcut: shortcut("Pane: Split Right", `${MOD}D`),
-                    splitDownShortcut: shortcut("Pane: Split Down", `${MOD}${SHIFT}D`),
-                  }),
-                },
-              ]
-            : []),
+          ...(!compact ? layoutItem : []),
           { kind: "sep" },
           {
             kind: "item",
             id: "zoom_in",
-            label: t("Zoom In"),
+            label: t("Zoom in"),
             shortcut: shortcut("View: Zoom In", `${MOD}+`),
           },
           {
             kind: "item",
             id: "zoom_out",
-            label: t("Zoom Out"),
+            label: t("Zoom out"),
             shortcut: shortcut("View: Zoom Out", `${MOD}-`),
           },
           {
             kind: "item",
             id: "zoom_reset",
-            label: t("Reset Zoom"),
+            label: t("Reset zoom"),
             shortcut: shortcut("View: Reset Zoom", `${MOD}0`),
           },
         ];
@@ -496,13 +563,13 @@ const MemoMenuBar = memo(function MenuBar({
           {
             kind: "item",
             id: "new_terminal",
-            label: t("New Terminal"),
+            label: t("New terminal"),
             shortcut: shortcut("Terminal: New", `${MOD}\``),
           },
           {
             kind: "item",
             id: "toggle_terminal",
-            label: t("Toggle Terminal"),
+            label: t("Toggle terminal"),
             shortcut: shortcut("Terminal: Toggle Dock", `${MOD}J`),
           },
         ];
@@ -515,21 +582,25 @@ const MemoMenuBar = memo(function MenuBar({
         x={popover.x}
         y={popover.y}
         items={[
-          ...getMenuItems("file"),
+          ...getMenuItems("file", true),
+          ...destinations,
           { kind: "sep" },
-          ...getMenuItems("view"),
-          { kind: "sep" },
-          ...getMenuItems("terminal"),
+          { kind: "item", id: "tabs_menu", label: t("Tabs and panes"), submenu: tabActions },
+          ...layoutItem,
+          { kind: "item", id: "view_menu", label: t("View"), submenu: getMenuItems("view", true) },
+          {
+            kind: "item",
+            id: "terminal_menu",
+            label: t("Terminal"),
+            submenu: getMenuItems("terminal"),
+          },
+          ...windowActions,
         ]}
         ariaLabel={t("Application menu")}
         onPick={handlePick}
         onClose={() => setPopover(null)}
       />
     );
-  }
-
-  if (!open && !activeMenu) {
-    return null;
   }
 
   const MENUS: { key: MenuKey; label: string }[] = [
@@ -547,10 +618,78 @@ const MemoMenuBar = memo(function MenuBar({
     },
   ];
 
+  const moveToMenu = (from: MenuKey, to: "next" | "previous" | "first" | "last") => {
+    const index = MENUS.findIndex((menu) => menu.key === from);
+    const target =
+      to === "first"
+        ? MENUS[0]
+        : to === "last"
+          ? MENUS[MENUS.length - 1]
+          : MENUS[(index + (to === "next" ? 1 : -1) + MENUS.length) % MENUS.length];
+    if (!target) return;
+    const button = barRef.current?.querySelector<HTMLElement>(`[data-menubar-key="${target.key}"]`);
+    if (!button) return;
+    // Focus first so the new menu's overlay records the button as its focus return.
+    button.focus({ preventScroll: true });
+    if (activeMenu) openDropdown(target.key, button);
+  };
+
+  // Standard menubar keys: Left/Right between menus (opening the neighbour while one is open),
+  // Down/Up open the focused menu, Home/End jump, Escape hides the bar. Key events from the
+  // dropdown bubble here through the React tree; the dropdown keeps its own item keys.
+  const onBarKeyDown = (e: ReactKeyboardEvent<HTMLElement>) => {
+    if (isImeComposition(e.nativeEvent) || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const target = e.target instanceof Element ? e.target : null;
+    const menu = target?.closest('[role="menu"]');
+    if (menu) {
+      if (!activeMenu || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+      // A submenu owns Left (close it) and Right; a row that opens a submenu owns Right.
+      if (menu.id.endsWith("-submenu")) return;
+      const row = document.getElementById(menu.getAttribute("aria-activedescendant") ?? "");
+      if (e.key === "ArrowRight" && row?.hasAttribute("aria-haspopup")) return;
+      e.preventDefault();
+      moveToMenu(activeMenu, e.key === "ArrowRight" ? "next" : "previous");
+      return;
+    }
+    const key = target?.closest<HTMLElement>("[data-menubar-key]")?.dataset.menubarKey as
+      | MenuKey
+      | undefined;
+    if (!key || e.defaultPrevented) return;
+    const button = target?.closest<HTMLElement>("[data-menubar-key]");
+    switch (e.key) {
+      case "ArrowRight":
+        moveToMenu(key, "next");
+        break;
+      case "ArrowLeft":
+        moveToMenu(key, "previous");
+        break;
+      case "Home":
+        moveToMenu(key, "first");
+        break;
+      case "End":
+        moveToMenu(key, "last");
+        break;
+      case "ArrowDown":
+      case "ArrowUp":
+        if (button) openDropdown(key, button);
+        break;
+      case "Escape":
+        closeMenu();
+        setOpen(false);
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+  };
+
   return (
     <Text
       ref={barRef}
       data-workspace-menubar
+      role="menubar"
+      aria-label={t("Application menu")}
+      onKeyDown={onBarKeyDown}
       as="div"
       size="caption"
       tone="inherit"
@@ -570,6 +709,11 @@ const MemoMenuBar = memo(function MenuBar({
             motion="none"
             key={key}
             type="button"
+            // oxlint-disable-next-line bycoda/menu-uses-dropdown -- the desktop menu bar is a real role=menubar whose titles must be menuitems; its dropdowns use ContextMenu
+            role="menuitem"
+            data-menubar-key={key}
+            tabIndex={tabStop === key ? 0 : -1}
+            onFocus={() => setTabStop(key)}
             data-tauri-drag-region="false"
             aria-haspopup="menu"
             aria-expanded={isActive}
@@ -593,6 +737,7 @@ const MemoMenuBar = memo(function MenuBar({
 
       {activeMenu && menuAnchor ? (
         <ContextMenu
+          key={activeMenu}
           x={menuAnchor.x}
           y={menuAnchor.y}
           items={getMenuItems(activeMenu)}

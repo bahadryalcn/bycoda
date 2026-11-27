@@ -8,7 +8,6 @@ import { saveNotificationsEnabled } from "../../notifications/model/notification
 
 const permission = vi.hoisted(() => ({ value: "denied", windows: true }));
 vi.mock("../../../platform/tauri/systemPermissions", () => ({
-  listenSystemPermissionsChanged: () => () => {},
   systemPermissionsStatus: async () => {
     if (permission.value === "unavailable") throw new Error("Unavailable");
     return {
@@ -34,6 +33,7 @@ vi.mock("../../../platform/tauri/platform", () => ({
   IS_MAC: false,
 }));
 vi.mock("../../notifications/model/notifications", () => ({
+  NOTIFICATIONS_DEFAULT: false,
   cachedNotificationPermission: () => permission.value,
   loadNotificationsEnabled: () => false,
   saveNotificationsEnabled: vi.fn(),
@@ -153,7 +153,7 @@ it("keeps a rejected preference unchanged and retries beside its initiating cont
 it("offers read-only recovery for unavailable permission status", async () => {
   permission.value = "unavailable";
   await act(async () => root.render(createElement(NotificationAlerts)));
-  expect(container.textContent).toContain("Status unavailable");
+  expect(container.querySelector('[aria-label="Status unavailable"]')).not.toBeNull();
   permission.value = "granted";
   const refresh = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent === "Check again",
@@ -181,7 +181,9 @@ it("names Windows availability instead of an already-enabled desktop prerequisit
   permission.windows = false;
   await act(async () => root.render(createElement(NotificationAlerts)));
   const row = container.querySelector('[data-setting-id="notification-event-taskbar"]')!;
-  expect(row.textContent).toContain("Enable Desktop notifications first");
+  // Platform availability wins over the desktop-notifications prerequisite, before and after.
+  expect(row.textContent).toContain("Taskbar badges and flashing are available only on Windows.");
+  expect(row.textContent).not.toContain("Enable Desktop notifications first");
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Desktop notifications"]')!.click(),
   );

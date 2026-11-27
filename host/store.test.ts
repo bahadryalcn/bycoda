@@ -178,6 +178,24 @@ describe("managed workspace persistence", () => {
     ).toMatchObject({ n: 1 });
     spy.mockRestore();
   });
+  it("keeps the summaries of every registered project cached, not only the last 16", async () => {
+    const store = new HostStore(join(open(), "summary-capacity.db"));
+    cleanups.push(() => store.close());
+    const ids: string[] = [];
+    for (let index = 0; index < 40; index++) {
+      const project = await store.addProject(`/summary-capacity-${index}`, `P${index}`);
+      await store.save(session(`capacity-${index}`, project.id), {});
+      ids.push(project.id);
+    }
+    for (const id of ids) await store.summaries(id);
+    const prepare = vi.spyOn(store.db, "prepare");
+    for (const id of ids) expect(await store.summaries(id)).toHaveLength(1);
+    const reads = prepare.mock.calls.filter(([sql]) =>
+      String(sql).includes("FROM session_state WHERE project_id"),
+    );
+    prepare.mockRestore();
+    expect(reads).toHaveLength(0);
+  });
   it("does not refresh a legacy summary after authority transfers during hydration", async () => {
     const store = new HostStore(join(open(), "summary-authority.db"));
     cleanups.push(() => store.close());
@@ -280,7 +298,7 @@ describe("managed workspace persistence", () => {
       environmentId: "host",
       owner: { kind: "session", id: `session-${id}` },
       path: `/managed/${id}`,
-      branchRef: `refs/heads/bycoda/s/test-${id}`,
+      branchRef: `refs/heads/by/test-${id}`,
       baseRef: "refs/heads/main",
       baseCommit: "a".repeat(40),
       targetBranchRef: "refs/heads/main",
@@ -600,6 +618,52 @@ describe("incremental project summaries", () => {
       await writer.close();
     }
   });
+  it("reparses only the summary an external writer changed on a cache miss", async () => {
+    const path = join(open(), "summary-reuse.db"),
+      store = new HostStore(path);
+    cleanups.push(async () => await store.close());
+    const project = await store.addProject("/summary-reuse", "Reuse");
+    await store.save(session("stable", project.id), {});
+    const moving = await store.save(session("moving", project.id), {});
+    expect(await store.summaries(project.id)).toHaveLength(2);
+    const writer = new DatabaseSync(path);
+    try {
+      writer
+        .prepare("UPDATE session_state SET summary=? WHERE id=?")
+        .run(JSON.stringify({ ...summary(moving), title: "external" }), "moving");
+      const parse = vi.spyOn(JSON, "parse");
+      try {
+        const list = await store.summaries(project.id);
+        expect(list.find((row) => row.id === "moving")?.title).toBe("external");
+        expect(parse.mock.calls.some(([text]) => String(text).includes('"id":"moving"'))).toBe(
+          true,
+        );
+        expect(
+          parse.mock.calls.filter(([text]) => String(text).includes('"id":"stable"')),
+        ).toHaveLength(0);
+      } finally {
+        parse.mockRestore();
+      }
+    } finally {
+      await writer.close();
+    }
+  });
+  it("keeps the cached row count equal to the rows held across projects", async () => {
+    const store = new HostStore(join(open(), "summary-row-count.db"));
+    cleanups.push(async () => await store.close());
+    const first = await store.addProject("/summary-row-count-a", "A");
+    const second = await store.addProject("/summary-row-count-b", "B");
+    await store.save(session("a1", first.id), {});
+    await store.save(session("a2", first.id), {});
+    await store.save(session("b1", second.id), {});
+    const counted = () => (store as unknown as { summaryRowCount: number }).summaryRowCount;
+    await store.summaries(first.id);
+    await store.summaries(second.id);
+    expect(counted()).toBe(3);
+    await store.save(session("a3", first.id), {});
+    expect(await store.summaries(first.id)).toHaveLength(3);
+    expect(counted()).toBe(4);
+  });
 });
 describe("project filesystem identity", () => {
   it("reuses a project for equivalent folder spellings without emitting changes", async () => {
@@ -617,6 +681,19 @@ describe("project filesystem identity", () => {
     expect(notify).not.toHaveBeenCalled();
     expect((await store.addProject(join(directory, "another"), "Another")).id).not.toBe(project.id);
   });
+  it.runIf(process.platform === "win32")(
+    "reuses a project registered with backslashes when added with slashes",
+    async () => {
+      const directory = open();
+      const store = new HostStore(join(directory, "host.db"));
+      cleanups.push(async () => await store.close());
+      const project = await store.addProject(directory.replace(/\//g, "\\"), "Original");
+      expect((await store.addProject(directory.replace(/\\/g, "/"), "Slashed")).id).toBe(
+        project.id,
+      );
+      expect(await store.projects()).toHaveLength(1);
+    },
+  );
   it("preserves legacy project IDs and their sessions when opening an alias", async () => {
     const directory = open();
     const store = new HostStore(join(directory, "host.db"));
@@ -969,6 +1046,59 @@ describe("sparse journal checkpoints", () => {
     }
   });
 });
+it("accepts a mirrored message author whose keys come back in another order", async () => {
+  const store = new HostStore(join(open(), "author-order.db"));
+  cleanups.push(async () => await store.close());
+  const project = await store.addProject("/author-order", "Author order");
+  const author = {
+    kind: "delegation",
+    runId: "run",
+    title: "Translate",
+    reason: "completion",
+  } as const;
+  const notice: Block = { id: "notice", role: "user", text: "Subagent completion", author };
+  await store.save(
+    session("parent", project.id, {
+      session: { ...session("parent", project.id).session, blocks: [notice] },
+    }),
+    {},
+  );
+  // The desktop's native storage writes object keys sorted; the author itself is unchanged.
+  const sorted = { kind: "delegation", reason: "completion", runId: "run", title: "Translate" };
+  const current = await store.session("parent");
+  await store.save(
+    {
+      ...current,
+      revision: current.revision + 1,
+      session: {
+        ...current.session,
+        blocks: [
+          { ...notice, author: sorted } as Block,
+          { id: "reply", role: "assistant", text: "Ok" },
+        ],
+      },
+    },
+    {},
+  );
+  expect((await store.session("parent")).session.blocks.map((block) => block.id)).toEqual([
+    "notice",
+    "reply",
+  ]);
+  const next = await store.session("parent");
+  await expect(
+    store.save(
+      {
+        ...next,
+        revision: next.revision + 1,
+        session: {
+          ...next.session,
+          blocks: [{ ...notice, author: { ...author, title: "Forged" } }],
+        },
+      },
+      {},
+    ),
+  ).rejects.toThrow("authorship");
+});
 it("keeps both session ownership indexes consistent when moving projects", async () => {
   const directory = open();
   const store = new HostStore(join(directory, "ownership.db"));
@@ -1077,6 +1207,8 @@ it("keeps session revisions in bounded metadata memory after the first indexed r
   cleanups.push(async () => await reopened.close());
   const prepare = vi.spyOn(reopened.db, "prepare");
   expect(await reopened.sessionStateMetadata("metadata")).toEqual({
+    projectId: project.id,
+    createdAt: saved.createdAt,
     revision: saved.revision,
     status: "idle",
     desktop: false,
@@ -1085,6 +1217,105 @@ it("keeps session revisions in bounded metadata memory after the first indexed r
   expect(await reopened.sessionRevision("metadata")).toBe(saved.revision);
   expect((await reopened.sessionStateMetadata("metadata"))?.status).toBe("idle");
   expect(prepare).toHaveBeenCalledTimes(1);
+});
+describe("reads beside the writer queue", () => {
+  it("serves summaries, projects and adopted rows while a writer scope holds the queue", async () => {
+    const store = new HostStore(join(open(), "beside-writer.db"));
+    cleanups.push(async () => await store.close());
+    const project = await store.addProject("/beside-writer", "Beside");
+    await store.save(session("beside", project.id), {});
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const writer = store.db.storeScope(async () => {
+      entered.resolve();
+      await release.promise;
+    });
+    await entered.promise;
+    try {
+      expect(await store.summaries(project.id)).toHaveLength(1);
+      expect((await store.project(project.id)).name).toBe("Beside");
+      expect((await store.projects()).length).toBe(1);
+      expect(await store.adopted(project.id)).toEqual([]);
+    } finally {
+      release.resolve();
+      await writer;
+    }
+  });
+  it("shows an unflushed save and then its flush, never an older row than the version it caches", async () => {
+    const path = join(open(), "beside-pending.db");
+    const store = new HostStore(path);
+    cleanups.push(async () => await store.close());
+    const project = await store.addProject("/beside-pending", "Pending");
+    let value = await store.save(session("moving", project.id), {});
+    expect((await store.summaries(project.id))[0]?.revision).toBe(value.revision);
+    for (let index = 0; index < 5; index++) {
+      value = await store.save(
+        { ...value, revision: value.revision + 1, updatedAt: value.updatedAt + 1 },
+        {},
+        { deferred: true },
+      );
+      // Unwritten state wins over the stored row, cached or not.
+      expect((await store.summaries(project.id))[0]?.revision).toBe(value.revision);
+    }
+    await store.flushAll();
+    expect((await store.summaries(project.id))[0]?.revision).toBe(value.revision);
+    // The reader connection sees the flushed commit and a rebuilt list agrees with the cache.
+    const reopened = new HostStore(path);
+    cleanups.push(async () => await reopened.close());
+    expect((await reopened.summaries(project.id))[0]?.revision).toBe(value.revision);
+  });
+  it("sees a project registered by a committed transaction on the next read", async () => {
+    const store = new HostStore(join(open(), "beside-registry.db"));
+    cleanups.push(async () => await store.close());
+    await store.addProject("/beside-registry-a", "A");
+    expect((await store.projects()).map((row) => row.name)).toEqual(["A"]);
+    await store.addProject("/beside-registry-b", "B");
+    expect((await store.projects()).map((row) => row.name)).toEqual(["A", "B"]);
+  });
+});
+describe("session reads beside the writer", () => {
+  async function seeded(name: string) {
+    const path = join(open(), name);
+    const first = new HostStore(path);
+    const project = await first.addProject(`/${name}`, name);
+    const saved = await first.save(session("s1", project.id), {});
+    await first.close();
+    // A reopened store has a cold cache, so reads must come from SQLite.
+    const store = new HostStore(path);
+    cleanups.push(async () => await store.close());
+    await store.ready;
+    return { store, project, saved };
+  }
+  it("prefers an unwritten session over the stored row", async () => {
+    const { store, project, saved } = await seeded("pending.db");
+    await store.save(
+      { ...saved, revision: saved.revision + 1, updatedAt: saved.updatedAt + 1 },
+      {},
+      { deferred: true },
+    );
+    expect((await store.session("s1")).revision).toBe(saved.revision + 1);
+    expect((await store.sessionStateMetadata("s1"))?.revision).toBe(saved.revision + 1);
+    expect(project.id).toBe(saved.projectId);
+  });
+  it("sees its own writes inside a writer scope", async () => {
+    const { store, saved } = await seeded("owner.db");
+    const next = await store.db.storeScope(async () => {
+      await store.save({ ...saved, revision: saved.revision + 1 }, {});
+      return {
+        value: await store.session("s1"),
+        metadata: await store.sessionStateMetadata("s1"),
+      };
+    });
+    expect(next.value.revision).toBe(saved.revision + 1);
+    expect(next.metadata?.revision).toBe(saved.revision + 1);
+  });
+  it("rejects a credential at once after it was revoked", async () => {
+    const { store } = await seeded("auth.db");
+    const { token } = await store.issueDevice("Phone", "phone");
+    expect(await store.authenticated(token)).toBe(true);
+    expect(await store.revokeToken(token)).toBe(true);
+    expect(await store.authenticated(token)).toBe(false);
+  });
 });
 afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!();
@@ -1112,6 +1343,65 @@ function session(id: string, projectId: string, extra: Partial<HostSession> = {}
     ...extra,
   } as unknown as HostSession;
 }
+
+it("persists conversation image reservations across reopening and removes them with the session", async () => {
+  const directory = open();
+  const path = join(directory, "image-budget.db");
+  const first = new HostStore(path);
+  try {
+    const project = await first.addProject(directory, "Test");
+    await first.save(session("image-session", project.id), {});
+    await expect(first.reserveConversationImage("image-session", 3)).resolves.toBe(1);
+  } finally {
+    await first.close();
+  }
+
+  const reopened = new HostStore(path);
+  cleanups.push(() => reopened.close());
+  await expect(reopened.conversationImagesUsed("image-session")).resolves.toBe(1);
+  expect(
+    await Promise.all([
+      reopened.reserveConversationImage("image-session", 3),
+      reopened.reserveConversationImage("image-session", 3),
+      reopened.reserveConversationImage("image-session", 3),
+    ]),
+  ).toEqual([2, 3, undefined]);
+  await expect(reopened.conversationImagesUsed("image-session")).resolves.toBe(3);
+  await reopened.deleteSession("image-session");
+  await expect(reopened.conversationImagesUsed("image-session")).resolves.toBe(0);
+});
+
+it("uses pending run identities ahead of checkpointed session metadata", async () => {
+  const directory = open();
+  const store = new HostStore(join(directory, "host.db"));
+  cleanups.push(() => store.close());
+  const { id: projectId } = await store.addProject(directory, "Test");
+  const event = { type: "test" };
+  await store.save(session("finishing", projectId), event);
+  await store.save(session("starting", projectId), event);
+  await store.save(
+    session("finishing", projectId, { revision: 2, status: "running", runId: "checkpointed" }),
+    event,
+    { journal: true },
+  );
+  await store.save(session("no-run-id", projectId, { status: "running" }), event);
+  expect(await store.runningSessionRuns()).toEqual([
+    { sessionId: "finishing", projectId, runId: "checkpointed" },
+  ]);
+
+  await store.transaction(async () => {
+    await store.save(session("finishing", projectId, { revision: 3 }), event, { deferred: true });
+    await store.save(
+      session("starting", projectId, { revision: 2, status: "running", runId: "pending" }),
+      event,
+      { deferred: true },
+    );
+    expect(await store.runningSessionRuns()).toEqual([
+      { sessionId: "starting", projectId, runId: "pending" },
+    ]);
+  });
+});
+
 describe("HostStore.adopted", () => {
   it("lists only desktop-shared sessions and tracks updates", async () => {
     const directory = open();
@@ -1267,6 +1557,7 @@ describe("HostStore.adopted", () => {
             revision: 9,
             updatedAt: 90,
             status: "running",
+            runId: "legacy-run",
           }),
         ),
       );
@@ -1278,6 +1569,9 @@ describe("HostStore.adopted", () => {
     await raw.close();
     const store = new HostStore(path);
     cleanups.push(async () => await store.close());
+    expect(await store.runningSessionRuns()).toEqual([
+      { sessionId: "late", projectId: project.id, runId: "legacy-run" },
+    ]);
     expect((await store.summaries(project.id)).map((entry) => entry.id).sort()).toEqual([
       "a",
       "b",
@@ -1314,8 +1608,150 @@ describe("HostStore.adopted", () => {
     cleanups.push(async () => await store.close());
     expect(await store.adopted()).toMatchObject([{ id: "a", desktopUpdatedAt: 3 }]);
   });
+  it("retires a deleted session's change counters and still moves the project scope", async () => {
+    const directory = open();
+    const store = new HostStore(join(directory, "host.db"));
+    cleanups.push(async () => await store.close());
+    const project = await store.addProject(directory, "Test");
+    await store.save(session("a", project.id), { type: "t" });
+    const seenSession = store.versions.session("a", false);
+    const seenScope = store.versions.scope(project.id, false);
+    expect(seenSession).toBeGreaterThan(0);
+    await store.deleteSession("a");
+    // Deletion delivery: the project scope a session stream watches still moves.
+    expect(store.versions.scope(project.id, false)).toBeGreaterThan(seenScope);
+    // A reader holding the old per-session counter sees it change, not a stale match.
+    expect(store.versions.session("a", false)).not.toBe(seenSession);
+    expect(store.versions.session("a", false)).toBe(0);
+    expect(store.versions.lastStep("a")).toBe(1);
+  });
 });
 describe("HostStore device credentials", () => {
+  it("caps details at 256, orders current first then id, and persists phone metadata", async () => {
+    const path = join(open(), "device-details.db");
+    let store = new HostStore(path);
+    try {
+      const current = await store.issueDevice("Phone", "phone");
+      const pairedAt = (await store.pairedDeviceDetails(current.token)).devices[0]?.pairedAt;
+      await store.transaction(async () => {
+        for (let index = 0; index < 256; index++)
+          await store.db
+            .prepare("INSERT INTO devices (id, name, hash) VALUES (?, ?, ?)")
+            .run(`other-${String(index).padStart(3, "0")}`, "\n", `hash-${index}`);
+      });
+      await store.close();
+      store = new HostStore(path);
+      const details = await store.pairedDeviceDetails(current.token);
+      expect(details.devicesTruncated).toBe(true);
+      expect(details.devices).toHaveLength(256);
+      expect(details.devices[0]).toEqual({
+        id: current.id,
+        name: "Phone",
+        isCurrent: true,
+        canManageDevices: false,
+        isLocalDesktop: false,
+        kind: "phone",
+        pairedAt,
+      });
+      expect(details.devices[1]).toEqual({
+        id: "other-000",
+        name: "other-000",
+        isCurrent: false,
+        canManageDevices: false,
+        isLocalDesktop: false,
+      });
+      expect(details.devices.at(-1)?.id).toBe("other-254");
+      expect(JSON.stringify(details)).not.toContain("hash");
+      expect(JSON.stringify(details)).not.toContain(current.token);
+    } finally {
+      await store.close();
+    }
+  });
+  it("migrates legacy devices without inventing metadata and persists new metadata", async () => {
+    const path = join(open(), "devices.db");
+    const legacy = new DatabaseSync(path);
+    legacy.exec(`CREATE TABLE devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, hash TEXT NOT NULL UNIQUE);
+      INSERT INTO devices VALUES ('legacy', 'Old device', 'old-hash');`);
+    legacy.close();
+    const store = new HostStore(path);
+    const clock = vi.spyOn(Date, "now").mockReturnValue(100_000);
+    try {
+      const current = await store.issueDevice("Desktop\nname", "desktop");
+      expect(await store.pairedDeviceDetails(current.token)).toEqual({
+        devices: [
+          {
+            id: current.id,
+            name: "Desktop name",
+            isCurrent: true,
+            canManageDevices: false,
+            isLocalDesktop: false,
+            kind: "desktop",
+            pairedAt: 100_000,
+          },
+          {
+            id: "legacy",
+            name: "Old device",
+            isCurrent: false,
+            canManageDevices: false,
+            isLocalDesktop: false,
+          },
+        ],
+        devicesTruncated: false,
+      });
+      expect((await store.pairedDevices(current.token)).devices[0]).toEqual({
+        id: current.id,
+        name: "Desktop name",
+        isCurrent: true,
+      });
+      await store.db
+        .prepare("UPDATE devices SET kind='invalid', paired_at=-1, last_seen_at=1.5 WHERE id=?")
+        .run(current.id);
+      expect((await store.pairedDeviceDetails(current.token)).devices[0]).toEqual({
+        id: current.id,
+        name: "Desktop name",
+        isCurrent: true,
+        canManageDevices: false,
+        isLocalDesktop: false,
+      });
+      await store.revokeToken(current.token);
+      await expect(store.pairedDeviceDetails(current.token)).rejects.toThrow("revoked");
+    } finally {
+      clock.mockRestore();
+      await store.close();
+    }
+  });
+  it("throttles last-seen writes across DB lookups and ignores write failures", async () => {
+    const store = new HostStore(join(open(), "seen.db"));
+    const clock = vi.spyOn(Date, "now").mockReturnValue(100_000);
+    try {
+      const current = await store.issueDevice("Phone", "phone");
+      expect(await store.authenticated(current.token)).toBe(true);
+      const lastSeen = async () =>
+        (await store.pairedDeviceDetails(current.token)).devices[0]?.lastSeenAt;
+      expect(await lastSeen()).toBe(100_000);
+      clock.mockReturnValue(101_000);
+      expect(await store.authenticated(current.token)).toBe(true);
+      expect(await lastSeen()).toBe(100_000);
+      // Revocation clears the auth cache, forcing a fresh lookup of the surviving token.
+      await store.revokeDevice("missing");
+      expect(await store.authenticated(current.token)).toBe(true);
+      expect(await lastSeen()).toBe(100_000);
+      clock.mockReturnValue(160_000);
+      await store.revokeDevice("missing");
+      expect(await store.authenticated(current.token)).toBe(true);
+      expect(await lastSeen()).toBe(160_000);
+      await store.db.exec(
+        "CREATE TRIGGER reject_seen BEFORE UPDATE OF last_seen_at ON devices BEGIN SELECT RAISE(FAIL, 'read only'); END;",
+      );
+      clock.mockReturnValue(220_000);
+      await store.revokeDevice("missing");
+      expect(await store.authenticated(current.token)).toBe(true);
+      expect(await lastSeen()).toBe(160_000);
+    } finally {
+      clock.mockRestore();
+      await store.close();
+    }
+  });
   it("drops a remembered credential the moment it is revoked", async () => {
     const directory = open();
     const store = new HostStore(join(directory, "host.db"));
@@ -1333,30 +1769,114 @@ describe("HostStore device credentials", () => {
     expect(await store.authenticated(second.token)).toBe(false);
     expect(await store.authenticated("unknown")).toBe(false);
   });
-  it("sees an external revocation when the authentication cache expires", async () => {
-    const directory = open();
-    const path = join(directory, "host.db");
-    const store = new HostStore(path);
+  it.each(["authenticated", "authenticateIncomingDevice"] as const)(
+    "%s sees an external revocation when the authentication cache expires",
+    async (check) => {
+      const directory = open();
+      const path = join(directory, "host.db");
+      const store = new HostStore(path);
+      cleanups.push(async () => await store.close());
+      const device = await store.issueDevice("cli-revoked");
+      expect(await store.authenticated(device.token)).toBe(true);
+      expect(await store.authenticated(device.token)).toBe(true);
+      const other = new DatabaseSync(path);
+      try {
+        other.prepare("DELETE FROM devices WHERE id=?").run(device.id);
+      } finally {
+        await other.close();
+      }
+      const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 1501);
+      try {
+        expect(await store[check](device.token)).toBe(false);
+      } finally {
+        clock.mockRestore();
+      }
+    },
+  );
+  it("does not renew an incoming credential invalidated during its read", async () => {
+    const store = new HostStore(join(open(), "host.db"));
     cleanups.push(async () => await store.close());
-    const device = await store.issueDevice("cli-revoked");
-    expect(await store.authenticated(device.token)).toBe(true);
-    expect(await store.authenticated(device.token)).toBe(true);
-    const other = new DatabaseSync(path);
-    try {
-      other.prepare("DELETE FROM devices WHERE id=?").run(device.id);
-    } finally {
-      await other.close();
-    }
+    const device = await store.issueDevice("desktop");
+    await store.authenticated(device.token);
     const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 1501);
+    const snapshot = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const readScope = store.db.readScope.bind(store.db);
+    const paused = vi.spyOn(store.db, "readScope").mockImplementationOnce(async (read) => {
+      const value = await readScope(read);
+      snapshot.resolve();
+      await release.promise;
+      return value;
+    });
+    const check = store.authenticateIncomingDevice(device.token);
     try {
-      expect(await store.authenticated(device.token)).toBe(false);
+      await snapshot.promise;
+      await store.revokeToken(device.token);
+      release.resolve();
+      expect(await check).toBe(false);
     } finally {
+      release.resolve();
+      paused.mockRestore();
       clock.mockRestore();
     }
   });
 });
 describe("HostStore receipts", () => {
   const receipt = (commandId: string) => ({ commandId }) as unknown as CommandReceipt;
+  it("recovers unresolved follow-up evidence from a session saved before steer-aware receipts", async () => {
+    const directory = open();
+    const store = new HostStore(join(directory, "host.db"));
+    try {
+      const project = await store.addProject(directory, "legacy");
+      const old = session("s", project.id);
+      old.session.blocks.push({
+        id: "steer",
+        role: "user",
+        text: "follow-up",
+        draft: true,
+        followUpDelivery: "uncertain",
+      });
+      await store.save(old, {});
+      const wire = { commandId: "steer", sessionId: "s", revision: 1 };
+      await store.recordReceipt("sig", wire);
+      expect(await store.receiptStatus("steer")).toEqual(wire);
+      expect((await store.receiptStatus("steer", { includeSteer: true }))?.steer).toBeDefined();
+      await store.save(
+        { ...old, revision: 2 },
+        {
+          type: "command",
+          command: { type: "steer", commandId: "old-command", runId: "original-run" },
+        },
+      );
+      await store.recordReceipt("sig", { ...wire, commandId: "old-command", revision: 2 });
+      expect((await store.receiptStatus("old-command", { includeSteer: true }))?.steer).toEqual({
+        runId: "original-run",
+      });
+    } finally {
+      await store.close();
+    }
+  });
+  it("keeps steer proof and claim private through compaction and restart", async () => {
+    const path = join(open(), "host.db");
+    const store = new HostStore(path);
+    const wire = { commandId: "steer", sessionId: "s", revision: 1 };
+    await store.recordReceipt("sig", { ...wire, steer: { runId: "r" } });
+    await store.transaction(() => store.bindSteerClaim("steer", "token"), "critical");
+    await store.db.prepare("UPDATE receipts SET created_at=0 WHERE id='steer'").run();
+    await store.pruneReceipts();
+    await store.transaction(() => store.settleSteerReceipt("steer", "not_delivered"), "critical");
+    await store.close();
+    const reopened = new HostStore(path);
+    try {
+      expect(await reopened.receipt("steer", "sig")).toEqual(wire);
+      expect(await reopened.receiptStatus("steer", { includeSteer: true })).toEqual({
+        ...wire,
+        steer: { runId: "r", claimToken: "token", outcome: "not_delivered" },
+      });
+    } finally {
+      await reopened.close();
+    }
+  });
   it("compacts old request signatures while preserving exact retry answers", async () => {
     const directory = open();
     const path = join(directory, "host.db");

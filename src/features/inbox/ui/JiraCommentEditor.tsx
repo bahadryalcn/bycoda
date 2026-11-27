@@ -13,6 +13,7 @@ import {
 import { Button } from "../../../shared/ui/Button";
 import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
 import { FileField } from "../../../shared/ui/FileField";
+import { errorText } from "../../../shared/lib/errors";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { InboxCommentPreview } from "./InboxCommentPreview";
 import {
@@ -33,13 +34,30 @@ import {
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 
 const commands = [
-  ["bold", "Bold", Bold],
-  ["italic", "Italic", Italic],
-  ["code", "Code", CodeBlock],
-  ["bullet", "Bullet list", ListBullet],
-  ["numbered", "Numbered list", ListNumbered],
-  ["link", "Link", Link],
+  ["bold", Bold],
+  ["italic", Italic],
+  ["code", CodeBlock],
+  ["bullet", ListBullet],
+  ["numbered", ListNumbered],
+  ["link", Link],
 ] as const;
+
+function commandLabel(command: (typeof commands)[number][0]): string {
+  switch (command) {
+    case "bold":
+      return t("Bold");
+    case "italic":
+      return t("Italic");
+    case "code":
+      return t("Code");
+    case "bullet":
+      return t("Bullet list");
+    case "numbered":
+      return t("Numbered list");
+    case "link":
+      return t("Link");
+  }
+}
 
 export function JiraCommentEditor({
   value,
@@ -65,6 +83,9 @@ export function JiraCommentEditor({
   const [imageError, setImageError] = useRetainedState(`${draftIdentity}:image-error`, "");
   const [reading, setReading] = useRetainedState(`${draftIdentity}:image-reading`, false);
   const locked = disabled || reading;
+  const lockedReason = reading
+    ? t("Reading the image…")
+    : t("Wait for the comment to finish sending.");
   const addPaths = async (paths: string[]) => {
     if (locked || readPending.current) return;
     if (images.length + paths.length > 8) {
@@ -98,7 +119,7 @@ export function JiraCommentEditor({
         })),
       ]);
     } catch (error) {
-      setImageError(String(error));
+      setImageError(errorText(error));
     } finally {
       readPending.current = false;
       setReading(false);
@@ -173,7 +194,7 @@ export function JiraCommentEditor({
       );
       onImages([...images, ...added]);
     } catch (error) {
-      setImageError(String(error));
+      setImageError(errorText(error));
     } finally {
       readPending.current = false;
       setReading(false);
@@ -206,35 +227,49 @@ export function JiraCommentEditor({
         event.preventDefault();
         event.stopPropagation();
         void addFiles(Array.from(event.dataTransfer.files)).catch((error) =>
-          setImageError(String(error)),
+          setImageError(errorText(error)),
         );
       }}
     >
       <InboxCommentPreview
         draftIdentity={draftIdentity}
         value={value}
-        toolbar={(mode) => (
-          <ButtonGroup
-            surface="transparent"
-            className="self-start flex-wrap"
-            aria-label={t("Markdown formatting")}
-          >
-            {commands.map(([command, label, Icon]) => (
-              <Button
-                key={command}
-                type="button"
-                variant="ghost"
-                size="sm"
-                iconOnly
-                label={t(label)}
-                disabled={locked || mode === "preview"}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => run(command)}
-              >
-                <Icon className="icon-sm" />
-              </Button>
-            ))}
-          </ButtonGroup>
+        toolbar={() => (
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <ButtonGroup
+              surface="transparent"
+              className="self-start flex-wrap"
+              aria-label={t("Markdown formatting")}
+            >
+              {commands.map(([command, Icon]) => (
+                <Button
+                  key={command}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  iconOnly
+                  label={commandLabel(command)}
+                  disabled={locked}
+                  disabledReason={lockedReason}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => run(command)}
+                >
+                  <Icon className="icon-sm" />
+                </Button>
+              ))}
+            </ButtonGroup>
+            <FileField
+              label={t("Images")}
+              hideLabel
+              buttonLabel={t("Insert image")}
+              accept={JIRA_IMAGE_TYPES.join(",")}
+              multiple
+              disabled={locked}
+              onFiles={(files) => {
+                void addFiles(files).catch((error) => setImageError(errorText(error)));
+              }}
+            />
+          </div>
         )}
       >
         <div className="min-w-0" inert={locked}>
@@ -244,7 +279,7 @@ export function JiraCommentEditor({
             // Notes' Mod+S must never publish a public Jira comment.
             onSave={() => {}}
             onPasteImages={(files) => {
-              void addFiles(files).catch((error) => setImageError(String(error)));
+              void addFiles(files).catch((error) => setImageError(errorText(error)));
             }}
             viewRef={viewRef}
             minHeight={64}
@@ -253,17 +288,6 @@ export function JiraCommentEditor({
           />
         </div>
       </InboxCommentPreview>
-      <FileField
-        label={t("Images")}
-        hideLabel
-        buttonLabel={t("Insert image")}
-        accept={JIRA_IMAGE_TYPES.join(",")}
-        multiple
-        disabled={locked}
-        onFiles={(files) => {
-          void addFiles(files).catch((error) => setImageError(String(error)));
-        }}
-      />
       {images.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {images.map((image) => (
@@ -276,6 +300,7 @@ export function JiraCommentEditor({
                 iconOnly
                 label={t("Remove {p0}", { p0: image.name })}
                 disabled={locked}
+                disabledReason={lockedReason}
                 onClick={() => onImages(images.filter((item) => item.id !== image.id))}
               >
                 <X className="icon-xs" />
@@ -284,7 +309,7 @@ export function JiraCommentEditor({
           ))}
         </div>
       ) : null}
-      {imageError ? <InlineError>{imageError}</InlineError> : null}
+      {imageError ? <InlineError details={imageError} /> : null}
     </div>
   );
 }

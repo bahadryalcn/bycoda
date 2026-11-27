@@ -36,7 +36,10 @@ vi.mock("../model/sshRunbookQueue", () => ({
 vi.mock("./useSshHttpProxyApproval", () => ({
   useSshHttpProxyApproval: () => ({ request: proxy.request, dialog: null }),
 }));
-vi.mock("../model/sshGroupDefaults", () => ({ previewSshConfiguration: configuration.preview }));
+vi.mock("../model/sshGroupDefaults", () => ({
+  previewSshConfiguration: configuration.preview,
+  listSshGroupDefaults: vi.fn().mockResolvedValue([]),
+}));
 vi.mock("../../terminal/ui/TerminalView", () => ({
   TerminalView: ({
     id,
@@ -134,7 +137,8 @@ vi.mock("../../terminal/ui/TerminalView", () => ({
     );
   },
 }));
-vi.mock("../../../app/shell/ToolNavigation", () => ({
+vi.mock("../../../app/shell/ToolNavigation", async () => ({
+  ToolNavigationContext: (await import("react")).createContext(null),
   ToolHeader: ({ children }: { children: unknown }) => children,
 }));
 vi.mock("../../../app/shell/WindowControls", () => ({ WindowControls: () => null }));
@@ -145,6 +149,30 @@ const server: ServerRecord = {
   sshEndpoint: { host: "example.invalid", port: 22 },
   metadata: { tags: [], favorite: false },
 };
+it("opens a paired Host's login shell without a POSIX integration command", async () => {
+  const paired: ServerRecord = {
+    ...server,
+    kind: "host",
+    machine: {
+      id: server.id,
+      name: server.name,
+      endpoint: "ssh://example.invalid",
+      environmentId: "windows",
+      ssh: { target: "example.invalid", remotePort: 3776 },
+    },
+  };
+  function OpenHost() {
+    const open = useOpenServerTerminal();
+    return createElement("button", { onClick: () => void open?.(paired) }, "Open paired Host");
+  }
+  await act(async () =>
+    root.render(createElement(ServersTerminalWorkspace, { children: createElement(OpenHost) })),
+  );
+  await act(async () => container.querySelector("button")!.click());
+  const terminal = container.querySelector("[data-terminal-id]");
+  expect(terminal).not.toBeNull();
+  expect(terminal?.hasAttribute("data-integration")).toBe(false);
+});
 it("mobile review uses the canonical native form and closes its own terminal while preserving an existing desktop terminal", async () => {
   const digest = "a".repeat(64);
   configuration.preview.mockResolvedValue({
@@ -189,7 +217,7 @@ it("mobile review uses the canonical native form and closes its own terminal whi
   expect(document.querySelector('[role="dialog"]')).not.toBeNull();
   await act(async () =>
     [...document.querySelectorAll('[role="dialog"] button')]
-      .find((button) => button.textContent === "Connect")!
+      .find((button) => named(button, "Connect"))!
       .click(),
   );
   const opened = (await pending) as SshWorkspaceStatus;
@@ -255,7 +283,7 @@ it("keeps the approval pending until final live authority settles and refuses re
   });
   await act(async () =>
     [...document.querySelectorAll('[role="dialog"] button')]
-      .find((button) => button.textContent === "Connect")!
+      .find((button) => named(button, "Connect"))!
       .click(),
   );
   expect(authorize).toBeTypeOf("function");
@@ -280,9 +308,7 @@ it("cold restore previews the current canonical target and connects a fresh shel
   expect(events.mounted).toEqual([]);
   expect(container.textContent).toContain("example.invalid:22");
   await act(async () =>
-    [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Connect")!
-      .click(),
+    [...container.querySelectorAll("button")].find((button) => named(button, "Connect"))!.click(),
   );
   expect(events.mounted).toEqual([server.id]);
   const terminal = container.querySelector("[data-terminal-id]")!;
@@ -335,7 +361,7 @@ it("keeps an open mobile review when a desktop tab asks for another inherited re
   );
   await act(async () =>
     [...document.querySelectorAll('[role="dialog"] button')]
-      .find((button) => button.textContent === "Connect")!
+      .find((button) => named(button, "Connect"))!
       .click(),
   );
   expect(events.mounted).toEqual([server.id]);
@@ -378,23 +404,28 @@ it("keeps an open mobile review when a desktop tab asks for another inherited re
   expect(settled).toBe(false);
   await act(async () =>
     [...document.querySelectorAll('[role="dialog"] button')]
-      .find((button) => button.textContent === "Connect")!
+      .find((button) => named(button, "Connect"))!
       .click(),
   );
   expect(await pending).toMatchObject({ state: "opened-on-computer" });
 });
 
+// Icon-only actions (cold-restore Connect) are named by aria-label, not text.
+const named = (button: Element, name: string) =>
+  button.textContent === name || button.getAttribute("aria-label") === name;
 function Inventory() {
   const open = useOpenServerTerminal();
   return createElement("button", { onClick: () => open?.(server) }, "Open explicit SSH");
 }
 it("requests startup review once for explicit live terminals and never for restored integration", async () => {
+  // The startup review queue reads runbook names when it opens.
+  native.invoke.mockImplementation(async (command: string) =>
+    command === "ssh_runbooks_list" ? [] : undefined,
+  );
   serverTerminalRestoreState.initialize({ version: 1, enabled: false, tabs: [] });
   const click = async (label: string) =>
     act(async () =>
-      [...container.querySelectorAll("button")]
-        .find((button) => button.textContent === label)!
-        .click(),
+      [...container.querySelectorAll("button")].find((button) => named(button, label))!.click(),
     );
   const prompt = async () =>
     act(async () =>
@@ -478,7 +509,7 @@ it("reviews inherited configuration before a new terminal and never persists the
   expect(document.body.textContent).toContain("literal $(not executed)");
   await act(async () =>
     [...document.querySelectorAll('[role="dialog"] button')]
-      .find((button) => button.textContent === "Connect")!
+      .find((button) => named(button, "Connect"))!
       .click(),
   );
   expect(events.mounted).toEqual([server.id]);
@@ -694,7 +725,8 @@ it("generates a key only after the explicit action and does not restore keygen o
       .click(),
   );
   expect(events.mounted).toEqual(["keygen:C:/disposable/id_ed25519"]);
-  expect(container.textContent).toContain("C:/disposable/id_ed25519");
+  // The key path reaches the terminal (asserted above); its tab is named for the action.
+  expect(container.textContent).toContain("Generate SSH key");
   await act(async () => root.render(null));
   await act(async () => render());
   expect(events.mounted).toHaveLength(1);
@@ -835,6 +867,9 @@ it("Delete requests the same close policy and preserves a terminal when confirma
   expect(container.querySelectorAll('[role="tab"]')).toHaveLength(1);
   expect(events.unmounted).toEqual([]);
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not close the terminal.",
+  );
+  expect(container.querySelector('[role="alert"]')?.textContent).not.toContain(
     "fixture confirmation unavailable",
   );
 });

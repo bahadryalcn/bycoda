@@ -74,3 +74,33 @@ it("serializes a changed morning preference behind its pending acknowledgement a
   );
   expect(mock.request).toHaveBeenCalledTimes(2);
 });
+// Regression: a visible window leaves snapshot reads to the shared 15 s poller (no duplicate read per tick).
+it("does not read the snapshot itself while the window is visible", async () => {
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  await mount();
+  await vi.waitFor(() =>
+    expect(mock.request).toHaveBeenCalledWith(expect.objectContaining({ op: "briefing.schedule" })),
+  );
+  expect(mock.refresh).not.toHaveBeenCalled();
+  vi.restoreAllMocks();
+});
+it.each(["visible", "hidden"] as const)(
+  "leaves snapshot polling to the store while %s",
+  async (visibility) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 19, 10));
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue(visibility);
+    saveDailySummaryTime("11:00");
+    try {
+      await mount();
+      await act(async () => vi.advanceTimersByTimeAsync(60_000));
+      expect(mock.lead).toHaveBeenCalledOnce();
+      expect(mock.refresh).not.toHaveBeenCalled();
+      await act(async () => vi.advanceTimersByTimeAsync(59 * 60_000));
+      expect(mock.lead).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    }
+  },
+);

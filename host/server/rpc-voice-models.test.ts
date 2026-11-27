@@ -28,6 +28,7 @@ it("prevents model jobs, runtime starts and setup jobs from overlapping", async 
       input: { method },
       params: { id: "small", action: "delete" },
       request: { headers: {}, socket: { remoteAddress: "127.0.0.1" } },
+      thisComputer: true,
     }) as unknown as Parameters<typeof handleVoiceRpc>[1];
   modelService.state = "working";
   await expect(handleVoiceRpc(dependencies, request("voice.local.start"))).rejects.toThrow(

@@ -1,23 +1,11 @@
 import { skillDisabled, type SkillPolicy } from "../../../integrations/harness/core/skillPolicy";
 import { loadSkillRestrictions } from "./skillPreferences";
-import {
-  loadSkills,
-  slugSkillName,
-  type Skill,
-  type SkillCatalogContext,
-  type TemplateSkill,
-} from "./skills";
+import { loadSkills, slugSkillName, type Skill, type SkillCatalogContext } from "./skills";
+import type { SkillGroupPickerItem } from "./skillGroupPickerItem";
 import { skillInvocationTokens } from "./skillTokens";
 import { listSkillGroups, resolveSkillGroup, type SkillGroup } from "./skillGroups";
-export type SkillGroupPickerItem = TemplateSkill & {
-  groupId: string;
-  memberCount: number;
-  /** Member invocations, in group order. */
-  members: string[];
-};
-export function isSkillGroupPickerItem(skill: Skill): skill is SkillGroupPickerItem {
-  return skill.kind === "template" && "groupId" in skill && typeof skill.groupId === "string";
-}
+export { isSkillGroupPickerItem, type SkillGroupPickerItem } from "./skillGroupPickerItem";
+
 /** Slash command of a group, without the slash. */
 export function skillGroupInvocation(group: Pick<SkillGroup, "name" | "invocation">): string {
   return group.invocation || `group-${slugSkillName(group.name) || "skills"}`;

@@ -106,6 +106,61 @@ it("stops frame work for static states, offscreen surfaces and reduced motion", 
   expect(cancelFrame).toHaveBeenCalledTimes(2);
   expect(container.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
 });
+it("keeps animating across blur and resumes after hiding without focus", async () => {
+  await render("listening");
+  expect(requestFrame).toHaveBeenCalledTimes(1);
+  const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+  const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  try {
+    await act(async () => {
+      window.dispatchEvent(new Event("blur"));
+    });
+    expect(cancelFrame).not.toHaveBeenCalled();
+    expect(container.firstElementChild?.getAttribute("data-animating")).toBe("true");
+    frameCallback(700);
+    expect(requestFrame).toHaveBeenCalledTimes(2);
+    hidden.mockReturnValue(true);
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(cancelFrame).toHaveBeenCalledWith(42);
+    expect(container.firstElementChild?.getAttribute("data-animating")).toBe("false");
+    expect(container.firstElementChild?.getAttribute("data-state")).toBe("listening");
+    expect(requestFrame).toHaveBeenCalledTimes(2);
+    hidden.mockReturnValue(false);
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(requestFrame).toHaveBeenCalledTimes(3);
+    expect(container.firstElementChild?.getAttribute("data-animating")).toBe("true");
+  } finally {
+    hidden.mockRestore();
+    hasFocus.mockRestore();
+  }
+});
+
+it("keeps the reduced-motion input meter running while the window is unfocused", async () => {
+  vi.useFakeTimers();
+  reduced = true;
+  const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+  try {
+    const level = { current: 0 };
+    await render("listening", "dots", level);
+    await act(async () => {
+      window.dispatchEvent(new Event("blur"));
+    });
+    const bar = container.querySelector("[data-bar]")!;
+    const quiet = Number(bar.getAttribute("height"));
+    level.current = 0.8;
+    await act(async () => vi.advanceTimersByTime(120));
+    expect(Number(bar.getAttribute("height"))).toBeGreaterThan(quiet);
+    expect(requestFrame).not.toHaveBeenCalled();
+  } finally {
+    hasFocus.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
 it("reads microphone levels directly without rerendering", async () => {
   const level = { current: 0 };
   await render("user", "dots", level);

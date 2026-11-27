@@ -47,7 +47,7 @@ export interface ExpandingSearchProps {
   /** Names the button, the field, and the results, such as "Search projects and docs". */
   label: string;
   items: ExpandingSearchItem[];
-  /** Already ranked external results. Their order is never regrouped or filtered. */
+  /** Already ranked external results, never filtered. Items with a `group` gather under that heading, groups in order of first appearance. */
   results?: ExpandingSearchItem[];
   query?: string;
   onQueryChange?: (query: string) => void;

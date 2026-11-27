@@ -92,6 +92,39 @@ it("reuses identical scoped content, expires snapshots and bounds retained/admit
   expect(retain("owner", "three", { value: 3 }).transferId).not.toBe(third.transferId);
 });
 
+it("keeps a transfer alive past its first deadline while chunks are read, within the hard cap", () => {
+  const { pool, retain, advance } = fixture({ ttlMs: 100, maxLifetimeMs: 250 });
+  const descriptor = retain("owner", "one", { text: "a".repeat(60) });
+  expect(descriptor.expiresAt).toBe(1250);
+  expect(descriptor.totalBytes).toBeGreaterThan(descriptor.chunkBytes * 4);
+  // A client checking the descriptor before every read can keep reading past the initial idle window.
+  for (let index = 0; index < 4; index++) {
+    advance(60);
+    expect(1060 + index * 60).toBeLessThan(descriptor.expiresAt);
+    expect(
+      pool.chunk("owner", descriptor.transferId, index * descriptor.chunkBytes).length,
+    ).toBeGreaterThan(0);
+  }
+  // At the advertised hard deadline, the last read is still within the idle window.
+  advance(10);
+  expect(() => pool.chunk("owner", descriptor.transferId, 4 * descriptor.chunkBytes)).toThrow(
+    "unavailable",
+  );
+});
+
+it("reclaims an abandoned transfer and ignores unauthorized reads when sliding expiry", () => {
+  const { pool, retain, advance } = fixture({ ttlMs: 100, maxLifetimeMs: 10_000 });
+  const descriptor = retain("owner", "one", { text: "a".repeat(60) });
+  advance(90);
+  expect(() => pool.chunk("other", descriptor.transferId, 0)).toThrow("unavailable");
+  advance(20);
+  expect(() => pool.chunk("owner", descriptor.transferId, 0)).toThrow("unavailable");
+  const second = retain("owner", "two", { text: "b".repeat(60) });
+  pool.chunk("owner", second.transferId, 0);
+  advance(100);
+  expect(() => pool.chunk("owner", second.transferId, second.chunkBytes)).toThrow("unavailable");
+});
+
 it("never evicts a transfer that is still being downloaded and caps the overflow", () => {
   const { pool, retain, advance } = fixture({ maxTransfers: 1, ttlMs: 100_000 });
   const first = retain("owner", "one", { text: "a".repeat(60) });

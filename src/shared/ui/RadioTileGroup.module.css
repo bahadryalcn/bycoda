@@ -1,0 +1,41 @@
+@layer properties, theme, base, components, utilities;
+/* The group owns tile spacing, wrapping and focus clearance. Caller className may still
+   change placement (columns, width), layered below Tailwind utilities. */
+@layer components {
+  .tiles {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: var(--space-2);
+    min-inline-size: 0;
+    /* Clearance so a scroll or overflow container never clips a tile's focus outline. */
+    padding: var(--ui-focus-width);
+  }
+  .tiles[data-tile-layout="portrait"] {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
+  }
+  .tiles[data-tile-layout="preview"] {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+  }
+  .tiles[data-tile-layout="icon"] {
+    gap: var(--space-1);
+  }
+  .tiles[data-tile-layout="list"] {
+    display: grid;
+    gap: 0.125rem;
+  }
+  .tile {
+    min-inline-size: 0;
+  }
+}
+
+/* The selection ring is drawn inside the tile bounds, so it is never clipped at the edge
+   of the group or its scroll container. Outranks the outer rings of Button's indicators. */
+.tiles:not([data-tile-layout="list"])
+  .tile[role="radio"][aria-checked="true"][data-button-selected][data-button-hierarchy]:not(
+    [data-selection-indicator="dot"]
+  ) {
+  box-shadow: inset 0 0 0 2px var(--ui-selected-ring);
+}

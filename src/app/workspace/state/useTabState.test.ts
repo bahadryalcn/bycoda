@@ -2,10 +2,32 @@
 import { act, createElement, memo, type SetStateAction } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import { useActiveTabSetter, useTabState } from "./useTabState";
+import { useActiveTabSetter, useTabState, useWorkspaceSeed } from "./useTabState";
 import { newSession } from "../../../features/sessions/model/session";
 import { getSessions, setSessions } from "../../../features/sessions/model/sessionsStore";
 import { newTab } from "../../../features/workspace/model/layout";
+
+it("starts in No project when only recent projects exist", () => {
+  const recentsKey = "bycoda.recentProjects";
+  const previousRecents = localStorage.getItem(recentsKey);
+  localStorage.setItem(recentsKey, JSON.stringify([{ path: "/byshoot", openedAt: 1 }]));
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const root = createRoot(document.createElement("div"));
+  let cwd: string | undefined;
+  function Harness() {
+    cwd = useWorkspaceSeed({ toolWindow: null }).session.cwd;
+    return null;
+  }
+  try {
+    act(() => root.render(createElement(Harness)));
+    expect(cwd).toBe("~");
+  } finally {
+    act(() => root.unmount());
+    if (previousRecents === null) localStorage.removeItem(recentsKey);
+    else localStorage.setItem(recentsKey, previousRecents);
+    vi.unstubAllGlobals();
+  }
+});
 
 it.each(["advisor", "subagent"])(
   "removes a %s tab when its lineage arrives without removing the session",
@@ -136,5 +158,45 @@ it("keeps the tabs array and a memoized consumer when an update changes nothing"
     expect(consumerRenders).toBe(rendersBefore + 1);
   } finally {
     act(() => root.unmount());
+  }
+});
+
+it("does not re-render for a change to an ordinary conversation, only for a hidden child", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const root = createRoot(document.createElement("div"));
+  const session = { ...newSession("codex", "/repo"), id: "ordinary" };
+  setSessions([session]);
+  const seed = { session, tab: newTab(session.id) };
+  let renders = 0;
+  function Harness() {
+    useTabState({ seed, windowTransfer: null, resumed: null });
+    renders += 1;
+    return null;
+  }
+  try {
+    act(() => root.render(createElement(Harness)));
+    const rendersBefore = renders;
+    act(() => setSessions([{ ...session, busy: true, title: "Renamed" }]));
+    act(() => setSessions([{ ...session, busy: false }]));
+    expect(renders).toBe(rendersBefore);
+    const child = {
+      ...newSession("codex", "/repo"),
+      id: "child",
+      modelSettings: {
+        delegationParent: JSON.stringify({
+          parentSessionId: session.id,
+          runId: "run",
+          kind: "subagent",
+          model: "codex:m",
+          startedAt: 1,
+        }),
+      },
+    };
+    act(() => setSessions([session, child]));
+    expect(renders).toBeGreaterThan(rendersBefore);
+  } finally {
+    act(() => root.unmount());
+    setSessions([]);
+    vi.unstubAllGlobals();
   }
 });

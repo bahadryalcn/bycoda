@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import type {
   HostSession,
   HostSessionSummary,
@@ -9,6 +10,11 @@ import { remoteBackoffDelay, withBackoffJitter } from "./remotePollingPolicy";
 import { cachedRemoteCapabilities, mayStartTunnel, remoteRequest } from "./connections";
 import { startPerformanceSpan } from "../../../shared/lib/performanceTrace";
 import { subscribeRemoteRecovered } from "./remoteHealth";
+import {
+  isMachineFocused,
+  subscribeMachineFocused,
+  UNFOCUSED_OFFLINE_CHECK_MS,
+} from "./machineFocus";
 import { nativeConnectionFailureCode } from "./remoteFailure";
 import {
   captureConnectionGeneration,
@@ -33,7 +39,14 @@ import {
   rememberStreamSnapshot,
   type StreamDeltaState,
 } from "./sessionStreamDelta";
+import {
+  PROJECT_DELTA_CAPABILITY,
+  applyProjectDelta,
+  projectStreamList,
+  type ProjectStreamState,
+} from "./projectSessionDelta";
 import { z } from "zod";
+import { cancelQueuedSessionSyncs, setFocusedSyncSessions } from "./coldSyncGate";
 
 export type MachineChannelDemand = {
   active?: { projectId: string; sessionId: string; lastActiveAt: number };
@@ -72,6 +85,8 @@ type Channel = {
   failures: number;
   instanceId?: string;
   polling: boolean;
+  /** The held poll that owns `polling`; a reset detaches it so a new poll can start at once. */
+  activePoll?: object;
   subscriptionId: string;
   epoch: number;
   refreshPending: boolean;
@@ -82,6 +97,10 @@ type Channel = {
   requestSequence: number;
   responseSequence: number;
   wsFailed?: boolean;
+  /** Re-arms WebSocket after a fallback; HTTP keeps serving until it fires. */
+  wsRetryTimer?: ReturnType<typeof setTimeout>;
+  /** Fallbacks since WebSocket last stayed ready; sets the next retry delay. */
+  wsRetryAttempts?: number;
   wsRoute?: { runtime: EnvironmentRuntime; release(): void };
   /** Watches the route's readiness so a stuck WebSocket falls back to HTTP. */
   wsWatch?: ReturnType<typeof setInterval>;
@@ -155,6 +174,40 @@ function releaseWs(channel: Channel) {
 }
 /** A WS route that is not ready (connecting or retry-wait) this long is abandoned for HTTP. */
 const WS_NOT_READY_MS = 5_000;
+/** First WebSocket retry after a fallback; it doubles per fallback up to the cap. */
+const WS_RETRY_BASE_MS = 30_000;
+const WS_RETRY_MAX_MS = 300_000;
+/** A route this long ready again counts as recovered: the retry ladder starts over. */
+const WS_STABLE_MS = 10_000;
+
+function clearWsRetry(channel: Channel) {
+  if (channel.wsRetryTimer) clearTimeout(channel.wsRetryTimer);
+  channel.wsRetryTimer = undefined;
+}
+/** Leave the HTTP fallback and let the next demand reconcile reopen the WebSocket. */
+function rearmWs(channel: Channel) {
+  clearWsRetry(channel);
+  channel.wsFailed = false;
+}
+/** Bounded exponential retry: a fallback that HTTP absorbed never raises a recovery event. */
+function scheduleWsRetry(machineId: string, channel: Channel) {
+  clearWsRetry(channel);
+  const attempts = channel.wsRetryAttempts ?? 0;
+  channel.wsRetryAttempts = attempts + 1;
+  const delay = withBackoffJitter(Math.min(WS_RETRY_MAX_MS, WS_RETRY_BASE_MS * 2 ** attempts));
+  channel.wsRetryTimer = setTimeout(() => {
+    channel.wsRetryTimer = undefined;
+    if (channel.stopped || channels.get(machineId) !== channel || !channel.wsFailed) return;
+    rearmWs(channel);
+    // A held poll must be replaced to hand the covered streams to WebSocket; an
+    // idle channel opens it on its next poll, which keeps its own failure back-off.
+    if (channel.polling) refreshDemand(machineId, channel);
+    else {
+      transportDemand(machineId, channel);
+      schedule(machineId, channel);
+    }
+  }, delay);
+}
 /** Same fallback for a WS error and for a route that never becomes ready. */
 function failWs(
   machineId: string,
@@ -171,6 +224,7 @@ function failWs(
   if (channel.stopped || channel.wsFailed) return;
   channel.wsFailed = true;
   releaseWs(channel);
+  scheduleWsRetry(machineId, channel);
   // Read transport fallback is not an outage if HTTP still answers. Identity,
   // admission and malformed-data errors remain visible immediately.
   for (const subscriber of notify ? channel.subscribers : []) {
@@ -185,7 +239,7 @@ function failWs(
 /** A consumer-level stream failure: the machine link itself is fine. */
 export class MachineChannelStreamError extends Error {
   constructor(cause: unknown) {
-    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    super(errorText(cause), { cause });
     this.name = "MachineChannelStreamError";
   }
 }
@@ -207,8 +261,13 @@ function failWsStream(machineId: string, channel: Channel, key: string, error: u
 function watchWsRoute(machineId: string, channel: Channel) {
   if (channel.wsWatch) clearInterval(channel.wsWatch);
   let notReadySince: number | undefined;
+  let readySince: number | undefined;
   channel.wsWatch = setInterval(() => {
     const transport = channel.wsRoute?.runtime.state?.transport;
+    if (transport === "ready") {
+      readySince ??= Date.now();
+      if (Date.now() - readySince >= WS_STABLE_MS) channel.wsRetryAttempts = 0;
+    } else readySince = undefined;
     if (!transport || transport === "ready") {
       notReadySince = undefined;
       return;
@@ -234,10 +293,19 @@ let stopWake: (() => void) | undefined;
 
 function startWake() {
   if (stopWake) return;
-  const wake = (environmentId?: string, reset = false) => {
+  const wake = (environmentId?: string, reset = false, networkBack = false) => {
     for (const [machineId, channel] of channels) {
       const environment = environmentForMachine(machineId);
       if (environmentId && environment && environment !== environmentId) continue;
+      // A window focus is no news about a down machine nobody works in; its rare check stands.
+      if (
+        !environmentId &&
+        !networkBack &&
+        channel.failures &&
+        environment &&
+        !isMachineFocused(environment)
+      )
+        continue;
       if (reset) {
         releaseWs(channel);
         const route = nativeRoutes.get(machineId);
@@ -245,10 +313,20 @@ function startWake() {
           nativeRoutes.delete(machineId);
           void route.runtime.close().catch(() => {});
         }
-        channel.wsFailed = false;
+        rearmWs(channel);
+        channel.wsRetryAttempts = 0;
         channel.wsExcluded = undefined;
         channel.epoch++;
         channel.refreshPending = true;
+        // The held poll cannot be cancelled; the epoch bump discards its late result and
+        // detaching it lets the snapshot poll start now instead of after its hold ends.
+        channel.activePoll = undefined;
+        channel.polling = false;
+      } else if (networkBack && channel.wsFailed) {
+        // The network is back: retry WebSocket now instead of waiting for its timer.
+        // Focus wakes keep the fallback; only a real network return re-arms it.
+        rearmWs(channel);
+        channel.wsRetryAttempts = 0;
       }
       channel.failures = 0;
       if (channel.timer) clearTimeout(channel.timer);
@@ -263,17 +341,20 @@ function startWake() {
     wake(environmentId, true),
   );
   const onWake = () => wake();
+  const onOnline = () => wake(undefined, false, true);
+  const stopFocus = subscribeMachineFocused((environmentId) => wake(environmentId));
   if (typeof window !== "undefined") {
     window.addEventListener("focus", onWake);
-    window.addEventListener("online", onWake);
+    window.addEventListener("online", onOnline);
     document.addEventListener("visibilitychange", onVisibility);
   }
   stopWake = () => {
     unsubscribe();
     stopInvalidation();
+    stopFocus();
     if (typeof window !== "undefined") {
       window.removeEventListener("focus", onWake);
-      window.removeEventListener("online", onWake);
+      window.removeEventListener("online", onOnline);
       document.removeEventListener("visibilitychange", onVisibility);
     }
     stopWake = undefined;
@@ -484,6 +565,10 @@ function transportDemand(machineId: string, channel: Channel): MachineChangesReq
       if (!sessions.has(id)) subscriber.streamEpochs.delete(id);
   }
   const demand = mergedDemand(channel);
+  setFocusedSyncSessions(
+    machineId,
+    demand.activeSessions?.map((session) => session.sessionId) ?? [],
+  );
   const environmentId = environmentForMachine(machineId);
   const enabled =
     !channel.wsFailed &&
@@ -521,6 +606,11 @@ function transportDemand(machineId: string, channel: Channel): MachineChangesReq
         !!environmentId &&
         !!cachedRemoteCapabilities(environmentId)?.includes(STREAM_TAIL_CAPABILITY);
       const tailState = tail ? createStreamDeltaState() : undefined;
+      const projectDelta =
+        kind === "project" &&
+        !!environmentId &&
+        !!cachedRemoteCapabilities(environmentId)?.includes(PROJECT_DELTA_CAPABILITY);
+      let projectState: ProjectStreamState<HostSessionSummary> | undefined;
       const onError = (error: unknown) =>
         nativeConnectionFailureCode(error)
           ? failWs(machineId, channel, error)
@@ -637,9 +727,39 @@ function transportDemand(machineId: string, channel: Channel): MachineChangesReq
                 },
               )
             : route.runtime.retain(
-                { kind: "project", projectId: id },
                 {
-                  parse: (data) => projectSnapshotSchema.parse(data),
+                  kind: "project",
+                  projectId: id,
+                  ...(projectDelta ? { delta: true as const } : {}),
+                },
+                {
+                  parse: (data, metadata) => {
+                    if (metadata.kind === "snapshot") {
+                      const value = projectSnapshotSchema.parse(data);
+                      const sessions = value.sessions as HostSessionSummary[];
+                      return {
+                        etag: value.etag,
+                        sessions,
+                        next:
+                          projectDelta && metadata.revision !== undefined
+                            ? {
+                                revision: metadata.revision,
+                                rows: new Map(sessions.map((row) => [row.id, row])),
+                                ids: sessions.map((row) => row.id),
+                              }
+                            : undefined,
+                      };
+                    }
+                    if (!projectDelta) throw new Error("Host sent an unrequested project delta");
+                    const { etag, next } = applyProjectDelta(
+                      projectState,
+                      data,
+                      metadata.baseRevision,
+                      metadata.revision,
+                      (row) => SessionSummarySchema.parse(row) as HostSessionSummary,
+                    );
+                    return { etag, sessions: projectStreamList(next), next };
+                  },
                   commit: async (value, input) => {
                     const subscribers = [...channel.subscribers];
                     for (const subscriber of subscribers) {
@@ -667,6 +787,9 @@ function transportDemand(machineId: string, channel: Channel): MachineChangesReq
                       if (!input.isCurrent())
                         throw new Error("Host subscription changed during application");
                     }
+                    // Remember the list only once it is applied, so a rejected event
+                    // never becomes the baseline of the next delta.
+                    projectState = value.next;
                   },
                   onError,
                 },
@@ -833,6 +956,8 @@ function schedule(machineId: string, channel: Channel, delay = 0) {
 async function poll(machineId: string, channel: Channel) {
   if (channel.stopped || channel.polling || !channel.subscribers.size) return;
   channel.polling = true;
+  const self = {};
+  channel.activePoll = self;
   const epoch = channel.epoch;
   const refreshing = channel.refreshPending;
   const done = startPerformanceSpan("remote-control");
@@ -886,11 +1011,20 @@ async function poll(machineId: string, channel: Channel) {
       }
     }
     channel.failures = Math.min(6, channel.failures + 1);
-    delay = withBackoffJitter(remoteBackoffDelay(channel.failures));
+    const environmentId = environmentForMachine(machineId);
+    // A machine nobody works in is not asked every 30 s while it stays down.
+    delay =
+      environmentId && !isMachineFocused(environmentId)
+        ? UNFOCUSED_OFFLINE_CHECK_MS
+        : withBackoffJitter(remoteBackoffDelay(channel.failures));
   } finally {
     done();
-    channel.polling = false;
-    schedule(machineId, channel, epoch !== channel.epoch ? 0 : delay || 100);
+    // A detached poll no longer owns `polling` or the schedule: the newer poll does.
+    if (channel.activePoll === self) {
+      channel.activePoll = undefined;
+      channel.polling = false;
+      schedule(machineId, channel, epoch !== channel.epoch ? 0 : delay || 100);
+    }
   }
 }
 
@@ -940,7 +1074,9 @@ export function subscribeRemoteMachineChannel(
       return;
     }
     channel!.stopped = true;
+    cancelQueuedSessionSyncs(machineId);
     releaseWs(channel!);
+    clearWsRetry(channel!);
     if (channel!.timer) clearTimeout(channel!.timer);
     channel!.timer = undefined;
     channels.delete(machineId);
@@ -960,6 +1096,7 @@ export function resetRemoteMachineChannelsForTests() {
   for (const channel of channels.values()) {
     channel.stopped = true;
     releaseWs(channel);
+    clearWsRetry(channel);
     if (channel.timer) clearTimeout(channel.timer);
   }
   channels.clear();

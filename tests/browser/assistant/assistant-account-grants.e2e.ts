@@ -15,8 +15,9 @@ for (const theme of ["light", "dark"])
       await page.goto(`/tests/browser/assistant/assistant-room.html?account-grants&theme=${theme}`);
       // The permissions card is always visible (no disclosure to open).
       await expect(page.getByRole("region", { name: "Who can use this account" })).toBeVisible();
+      await expect(page.getByRole("group", { name: "Assistant permissions" })).toBeVisible();
       await expect(
-        page.getByText("Sending still requires the autonomy level below.", { exact: false }),
+        page.getByRole("button", { name: "Save permissions", exact: true }),
       ).toBeVisible();
       await expect(page.getByRole("checkbox", { name: "Can read" })).toBeChecked();
       await page.screenshot({
@@ -51,7 +52,6 @@ for (const theme of ["light", "dark"])
       await page.getByText("Task notification recovery").click();
       await page.getByRole("button", { name: /^Project\b/ }).click();
       await page.getByRole("option", { name: "Fixture project", exact: true }).click();
-      await page.getByRole("button", { name: "Check notifications", exact: true }).click();
       await expect(page.getByText("Outcome unknown")).toBeVisible();
       await expect(page.getByRole("button", { name: "Check original status" })).toBeVisible();
       await page.screenshot({

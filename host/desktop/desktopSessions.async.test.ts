@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { fork } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -6,6 +7,8 @@ import { join, resolve, dirname, basename } from "node:path";
 import { DesktopSessions } from "./desktopSessions";
 import { DesktopLive } from "./desktopLive";
 import { AsyncHostNotes } from "../host-notes-async";
+
+vi.mock("node:child_process", { spy: true });
 
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -103,6 +106,35 @@ it("does not block a main-thread timer and uses a heartbeat arriving during a lo
   expect(value.sessions[0].title).toBe("committed after lock");
   expect(value.sessions[0].status).toBe("running");
   expect(desktop.opened).toBe(0);
+});
+
+it("reads project cwd through the shared metadata worker with a signal and no fork", async () => {
+  const { desktop, cwd } = fixture();
+  vi.mocked(fork).mockClear();
+  const controller = new AbortController();
+  const lookup = desktop.projectCwdAsync("visible", controller.signal);
+  const shared = desktop.projectCwdAsync("visible", new AbortController().signal);
+  controller.abort();
+  await expect(lookup).rejects.toThrow("cancelled");
+  await expect(shared).resolves.toBe(cwd);
+  await expect(desktop.projectCwdAsync("visible", controller.signal)).rejects.toThrow("cancelled");
+  expect(vi.mocked(fork).mock.calls.length).toBe(0);
+  expect(desktop.opened).toBe(0);
+});
+
+it("bounds a stuck project cwd lookup at 30 seconds with a clear error", async () => {
+  vi.useFakeTimers();
+  try {
+    const { desktop } = fixture();
+    vi.spyOn(desktop, "metadataAsync").mockReturnValue(new Promise(() => undefined));
+    const lookup = desktop.projectCwdAsync("visible");
+    const rejected = expect(lookup).rejects.toThrow("timed out");
+    await vi.advanceTimersByTimeAsync(29_999);
+    await vi.advanceTimersByTimeAsync(1);
+    await rejected;
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("runs stamp, queue metadata, canonical project and complete snapshot reads off the request thread", async () => {
@@ -322,5 +354,60 @@ it("serves cancellable stamp reads from the shared point reader instead of a hel
     expect(desktop.opened).toBe(0);
   } finally {
     read.mockRestore();
+  }
+});
+
+it("matches the worker's database fingerprint without a sync stat on the event loop", async () => {
+  const { db, desktop, paths } = fixture();
+  const before = await desktop.fingerprintAsync();
+  expect(before).toBe(desktop.fingerprint());
+  expect(before.split("|")).toHaveLength(paths.length * 2);
+  db.exec("INSERT INTO sessions(id,cwd,harness,blocks_json) VALUES('later','/x','codex','[]')");
+  const after = await desktop.fingerprintAsync();
+  expect(after).not.toBe(before);
+  expect(after).toBe(desktop.fingerprint());
+});
+
+it("reopens the database after bounded waits for SQLite IOERR_TRUNCATE", () => {
+  const { path, cwd } = fixture();
+  let attempts = 0;
+  const pause = vi.fn();
+  const desktop = new DesktopSessions(
+    () => [path],
+    "win32",
+    undefined,
+    undefined,
+    (file, options) => {
+      if (++attempts < 3) throw Object.assign(new Error("disk I/O error"), { errcode: 1546 });
+      return new DatabaseSync(file, options);
+    },
+    pause,
+  );
+  try {
+    expect(desktop.readMetadataList(cwd, "P", ["codex"]).sessions.map((s) => s.id)).toContain(
+      "visible",
+    );
+    expect(pause.mock.calls).toEqual([[50], [100]]);
+  } finally {
+    desktop.close();
+  }
+});
+
+it.each([
+  { code: 1546, attempts: 5, waits: [50, 100, 200, 400] },
+  { code: 10, attempts: 2, waits: [] },
+])("bounds physical read retries for SQLite error $code", ({ code, attempts, waits }) => {
+  const { path, cwd } = fixture();
+  const open = vi.fn(() => {
+    throw Object.assign(new Error("read failed"), { errcode: code });
+  });
+  const pause = vi.fn();
+  const desktop = new DesktopSessions(() => [path], "win32", undefined, undefined, open, pause);
+  try {
+    expect(() => desktop.readMetadataList(cwd, "P", ["codex"])).toThrow();
+    expect(open).toHaveBeenCalledTimes(attempts);
+    expect(pause.mock.calls.map(([delay]) => delay)).toEqual(waits);
+  } finally {
+    desktop.close();
   }
 });

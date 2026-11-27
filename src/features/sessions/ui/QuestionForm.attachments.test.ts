@@ -120,6 +120,14 @@ afterEach(() => {
 });
 
 describe("question attachments", () => {
+  it("places a labeled file action with the answer instead of the delivery controls", () => {
+    render();
+    const attach = button("Attach files");
+    expect(attach.textContent).toContain("Attach files");
+    expect(attach.closest("fieldset")).not.toBeNull();
+    expect(attach.parentElement?.contains(button("Send answer"))).toBe(false);
+  });
+
   it("keeps legacy questions usable for text answers", () => {
     prompt = { ...prompt, occurrenceId: undefined, providerTurnId: undefined };
     const onReply = render();
@@ -133,7 +141,7 @@ describe("question attachments", () => {
 
   it("sends a picked file as an attachment-only answer", async () => {
     const onReply = render();
-    expect(button("Send answer").disabled).toBe(true);
+    expect(button("Send answer").getAttribute("aria-disabled")).toBe("true");
     await pick();
     expect(node.textContent).toContain(file.name);
     expect(button("Send answer").disabled).toBe(false);
@@ -164,8 +172,33 @@ describe("question attachments", () => {
     Object.defineProperty(event, "clipboardData", { value: { files: [image], items: [] } });
     await act(async () => node.querySelector("textarea")!.dispatchEvent(event));
     expect(event.defaultPrevented).toBe(true);
-    expect(mocks.fromFiles).toHaveBeenCalledWith([image], { persistBlobs: false });
+    expect(mocks.fromFiles).toHaveBeenCalledWith([image], {
+      persistBlobs: false,
+      onSkipped: expect.any(Function),
+    });
     expect(node.textContent).toContain(file.name);
+  });
+
+  it("attaches the valid pasted files and names the oversized one instead of rejecting all", async () => {
+    render();
+    const huge = new File(["x"], "backup.zip", { type: "application/zip" });
+    const image = new File(["image"], "screen.png", { type: "image/png" });
+    mocks.fromFiles.mockImplementationOnce(
+      async (
+        _files: File[],
+        options?: { onSkipped?: (skipped: { name: string; reason: string }[]) => void },
+      ) => {
+        options?.onSkipped?.([{ name: "backup.zip", reason: "too-large" }]);
+        return [file];
+      },
+    );
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", { value: { files: [huge, image], items: [] } });
+    await act(async () => node.querySelector("textarea")!.dispatchEvent(event));
+
+    expect(node.textContent).toContain(file.name);
+    expect(node.textContent).toContain("backup.zip is larger than 20 MB and was not attached.");
+    expect(node.textContent).not.toContain("Try attaching them again");
   });
 
   it("uses the shared file-drop read path", async () => {
@@ -206,7 +239,7 @@ describe("question attachments", () => {
     const onReply = render();
     await pick();
     act(() => button("Send answer").click());
-    expect(button("Attach files").disabled).toBe(true);
+    expect(button("Attach files").getAttribute("aria-disabled")).toBe("true");
     expect(button(`Remove ${file.name}`)).toBeUndefined();
     expect(mocks.drop?.disabled).toBe(true);
     act(() =>

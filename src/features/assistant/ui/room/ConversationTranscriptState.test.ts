@@ -15,6 +15,9 @@ it("shows messages as soon as any are visible", () => {
 it("covers search loading, no results and no open thread", () => {
   expect(conversationTranscriptState({ ...base, query: "x", searching: true })).toBe("loading");
   expect(conversationTranscriptState({ ...base, query: "x" })).toBe("filtered");
+  expect(conversationTranscriptState({ ...base, query: "x", searchFailed: true })).toBe(
+    "search-failed",
+  );
   expect(conversationTranscriptState({ ...base, query: "x", visibleCount: 1 })).toBe("messages");
   expect(conversationTranscriptState({ ...base, threadId: "" })).toBe("closed");
 });

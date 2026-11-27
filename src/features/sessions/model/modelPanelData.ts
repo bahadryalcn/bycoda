@@ -2,20 +2,22 @@ import { isEffortSettingId, type ModelSetting } from "./models";
 import { settingGroupId } from "./modelPickerData";
 import { CROSS_SUBAGENTS_KEY } from "../../../shared/model/host-contracts/delegation";
 import { IMAGE_MODELS_KEY } from "../../../shared/model/host-contracts/image-models";
-import type { ProviderRateLimits } from "../../providers/public/accountUsage";
+import {
+  accountUsageSummary as providerAccountUsageSummary,
+  type ProviderRateLimits,
+} from "../../providers/public/accountUsage";
 
 /**
  * How the account control looks for a given number of accounts: nothing to pick with one,
- * a one-click switch with two, a short list up to five and a searchable list beyond that.
+ * a collapsible list up to five and a searchable one beyond that.
  */
-export type AccountSwitcherKind = "none" | "label" | "switch" | "menu" | "search";
+export type AccountSwitcherKind = "none" | "label" | "menu" | "search";
 
 export const ACCOUNT_MENU_SEARCH_FROM = 6;
 
 export function accountSwitcherKind(count: number): AccountSwitcherKind {
   if (count <= 0) return "none";
   if (count === 1) return "label";
-  if (count === 2) return "switch";
   return count < ACCOUNT_MENU_SEARCH_FROM ? "menu" : "search";
 }
 
@@ -128,31 +130,28 @@ export function splitPanelSettings(settings: readonly ModelSetting[]): {
   };
 }
 
-export type AccountUsageSummary = {
-  /** Used share of the tightest window, or null without usage data. */
-  usedPercent: number | null;
-  /** When that window resets, if known and still ahead. */
-  resetsAt: number | null;
+export type AccountUsageSummary = ReturnType<typeof providerAccountUsageSummary> & {
+  /** A live window has no headroom, before rounding for display. */
+  exhausted: boolean;
 };
 
-/**
- * Usage of the window with the least headroom. A window whose reset time has passed counts
- * as unused, matching `accountHeadroom`.
- */
+/** Keep observed usage for display, but disable choices only on fresh, exhausted quota. */
 export function accountUsageSummary(
   limits: ProviderRateLimits | undefined,
   now: number,
 ): AccountUsageSummary {
-  if (limits?.status !== "ok") return { usedPercent: null, resetsAt: null };
-  let tightest: { used: number; resetsAt: number | null } | null = null;
-  for (const window of [limits.session, limits.weekly, limits.monthly]) {
-    if (!window) continue;
-    const expired = window.resetsAt != null && window.resetsAt <= now;
-    const used = expired ? 0 : Math.min(100, Math.max(0, window.usedPercent || 0));
-    if (!tightest || used > tightest.used)
-      tightest = { used, resetsAt: expired ? null : window.resetsAt };
+  const summary = providerAccountUsageSummary(limits, now);
+  if (limits?.status !== "ok" || summary.usedPercent !== 100) {
+    return { ...summary, exhausted: false };
   }
-  return tightest
-    ? { usedPercent: Math.round(tightest.used), resetsAt: tightest.resetsAt }
-    : { usedPercent: null, resetsAt: null };
+
+  let latestReset: number | undefined;
+  for (const window of [limits.session, limits.weekly, limits.monthly]) {
+    if (!window || !(window.usedPercent >= 100)) continue;
+    if (window.resetsAt == null) return { ...summary, resetsAt: null, exhausted: true };
+    if (window.resetsAt > now) latestReset = Math.max(latestReset ?? now, window.resetsAt);
+  }
+  return latestReset === undefined
+    ? { ...summary, exhausted: false }
+    : { ...summary, resetsAt: latestReset, exhausted: true };
 }

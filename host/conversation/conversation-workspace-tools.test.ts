@@ -318,11 +318,118 @@ describe("direct application workspace tools", () => {
         transitionId: "31",
       },
     ]);
-    // The desktop's native Jira prepare dialog is the owner approval.
-    expect(s.approval).not.toHaveBeenCalled();
+    // Only the board change asks, and only for a Full access permit: an approval without one
+    // leaves the desktop's native Jira prepare dialog as the owner approval.
+    expect(s.approval).toHaveBeenCalledOnce();
+    expect(s.approval.mock.calls[0]![0]).toMatchObject({ action: "jira-board-transition" });
     await expect(
       s.call("inbox.jira.move", { requestId: "rank", snapshotId, key: "ENG-12", target: "rank" }),
     ).rejects.toThrow("rank anchor");
+  });
+
+  it("attaches only a well-formed native permit to a Jira board change and keeps one receipt", async () => {
+    const s = await setup();
+    await s.inbox.beat("native", "desktop", { version: 1 });
+    const snapshotId = "0f8fad5b-d9cb-469f-a165-70867728950e";
+    const change = (requestId: string) =>
+      s.call("inbox.jira.transition", { requestId, snapshotId, key: "ENG-12", transitionId: "31" });
+    const permit = "11111111-2222-4333-8444-555555555555";
+    const answers: unknown[] = [
+      { approved: true, permit },
+      { approved: false, permit },
+      { approved: true, permit: "not-a-permit" },
+      new Error("desktop unavailable"),
+    ];
+    s.approval.mockImplementation(async () => {
+      const answer = answers.shift();
+      if (answer instanceof Error) throw answer;
+      return answer as { approved: boolean };
+    });
+    const first = await change("permitted");
+    // A retry returns the first receipt without asking for another permit.
+    expect(await change("permitted")).toEqual(first);
+    expect(s.approval).toHaveBeenCalledOnce();
+    for (const requestId of ["declined", "malformed", "failed"]) await change(requestId);
+    const jobs: any[] = [];
+    let replies: { id: string; result: null }[] = [];
+    for (let beat = 0; beat < 6 && jobs.length < 4; beat++) {
+      const delivered = (await s.inbox.beat("native", "desktop", { version: 1, replies })).jobs;
+      jobs.push(...delivered);
+      replies = delivered.map((job: any) => ({ id: job.id, result: null }));
+    }
+    expect(jobs.map((job: any) => job.operation.permit)).toEqual([
+      permit,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    await expect(
+      s.call("inbox.jira.transition", {
+        requestId: "forged",
+        snapshotId,
+        key: "ENG-12",
+        transitionId: "31",
+        permit,
+      }),
+    ).rejects.toThrow();
+  });
+  it("approves scoped Jira comment images and binds the receipt to the approved bytes", async () => {
+    const s = await setup();
+    const jiraItem = {
+      provider: "jira",
+      kind: "jira",
+      number: 12,
+      repo: "",
+      id: "10012",
+      identifier: "ENG-12",
+    };
+    await s.inbox.beat("native", "desktop", { version: 1 });
+    const listed = (await s.call("inbox.providers.list", { requestId: "jira-images-list" })) as {
+      id: string;
+    };
+    await s.inbox.beat("native", "desktop", { version: 1 });
+    await s.inbox.beat("native", "desktop", {
+      version: 1,
+      replies: [
+        { id: listed.id, result: { items: [{ ...jiraItem, projectPath: s.project.cwd }] } },
+      ],
+    });
+    const input = {
+      requestId: "jira-images",
+      item: jiraItem,
+      body: "Verified",
+      imagePaths: ["screen.png"],
+    };
+    writeFileSync(join(s.project.cwd, "screen.png"), "fixture bytes");
+    await expect(
+      s.call("inbox.comment", { ...input, imagePaths: ["../screen.png"] }),
+    ).rejects.toThrow("outside");
+    expect(s.approval).not.toHaveBeenCalled();
+    s.approval.mockResolvedValueOnce({ approved: false });
+    await expect(s.call("inbox.comment", input)).rejects.toThrow("declined");
+    expect((await s.inbox.beat("native", "desktop", { version: 1 })).jobs).toEqual([]);
+
+    const permit = "0f8fad5b-d9cb-469f-a165-70867728950e";
+    s.approval.mockResolvedValueOnce({ approved: true, permit } as {
+      approved: boolean;
+      permit: string;
+    });
+    const receipt = await s.call("inbox.comment", input);
+    const approved = s.approval.mock.calls.at(-1)?.[0];
+    expect(approved).toMatchObject({
+      action: "jira-comment-images",
+      body: "Verified",
+      item: jiraItem,
+      images: [{ path: "screen.png", sha256: expect.stringMatching(/^[a-f0-9]{64}$/) }],
+    });
+    expect(await s.call("inbox.comment", input)).toEqual(receipt);
+    expect((await s.inbox.beat("native", "desktop", { version: 1 })).jobs[0].operation).toEqual({
+      ...approved,
+      permit,
+    });
+    writeFileSync(join(s.project.cwd, "screen.png"), "changed bytes");
+    await expect(s.call("inbox.comment", input)).rejects.toThrow("another operation");
+    expect(s.approval).toHaveBeenCalledTimes(2);
   });
   it("exposes run history and cancellation while preventing an automation from controlling itself", async () => {
     const s = await setup(true);

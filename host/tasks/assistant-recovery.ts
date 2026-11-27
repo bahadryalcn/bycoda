@@ -1,3 +1,5 @@
+import { withoutBackgroundOwner } from "../../src/shared/model/host-contracts/delegation";
+import { taskNeedsInput } from "../../src/shared/model/host-contracts/task-stop";
 import {
   assistantRecoveryIdentity,
   readAssistantRecovery,
@@ -9,10 +11,12 @@ import type { AssistantJob } from "../../src/shared/model/host-contracts/assista
 
 import { type HostTask } from "../../src/features/tasks/model/hostTasks";
 import { sessionRunState } from "../sessions/sessionRuns";
+import { stallConfirmed } from "../execution/confirmed-silence";
 import { RETRY_FEEDBACK_LIMIT } from "./constants";
 import { OWNER_NOTICE_LIMIT } from "./constants";
 import { ownerNotice } from "./review-outcomes";
 import type { TaskContext } from "./context";
+import { workCrewId } from "../../src/shared/model/host-contracts/work-executor";
 export async function captureAssistantRecovery(
   context: TaskContext,
   input: {
@@ -70,9 +74,9 @@ export async function captureAssistantRecovery(
     throw new Error("The original recovery worker source changed or already finished.");
   if (
     task.crewRunId ||
-    task.crewDefinitionId ||
+    workCrewId(task) ||
     task.reviewer ||
-    task.needsInput ||
+    taskNeedsInput(task) ||
     task.error ||
     task.artifactDeliveryPending ||
     record.session.pendingQuestion ||
@@ -96,7 +100,12 @@ export async function captureAssistantRecovery(
     !Number.isSafeInteger(activity.lastActivityAt) ||
     activity.lastActivityAt < 0 ||
     activity.lastActivityAt > context.now() ||
-    context.now() - activity.lastActivityAt < Math.max(5, stall) * 60000
+    !stallConfirmed(
+      context.store,
+      activity.lastActivityAt,
+      Math.max(5, stall) * 60000,
+      context.now(),
+    )
   )
     throw new Error(
       "The current worker has no confirmed stalled activity; let its canonical task settle first.",
@@ -202,7 +211,8 @@ export async function recoverAssistantWorker(
       session.model !== task.model ||
       session.runtimeMode !== task.runtimeMode ||
       (session.providerAccountId ?? "default") !== (task.providerAccountId ?? "default") ||
-      JSON.stringify(session.modelSettings) !== JSON.stringify(task.modelSettings) ||
+      JSON.stringify(withoutBackgroundOwner(session.modelSettings)) !==
+        JSON.stringify(task.modelSettings) ||
       session.pendingQuestion ||
       session.pendingSwitch ||
       session.queuedMessages?.length ||
@@ -242,7 +252,12 @@ export async function recoverAssistantWorker(
         const task = (await context.find(source.taskId))!;
         await context.block(
           task,
-          "The assistant retired a stalled worker for one bounded recovery.",
+          {
+            code: "run_failed",
+            phase: "worker",
+            actor: "host",
+            message: "The assistant retired a stalled worker for one bounded recovery.",
+          },
           context.now(),
         );
         expected = (await context.taskValue(task.id))!;

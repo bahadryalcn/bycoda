@@ -37,10 +37,10 @@ export function registerAssistantNarration(
     const operationHash = createHash("sha256")
       .update(JSON.stringify(["room.disclosure", threadId, ids.slice().sort(), requestId]))
       .digest("hex");
-    const captures: Array<{
-      envelope: unknown;
-      expected: import("../assistant/native/assistant-visibility-admission").ExpectedVisibilityCapture;
-    }> = [];
+    const captures: import("../assistant/native/assistant-visibility-admission").ExpectedVisibilityCapture[] =
+      [];
+    // Each proof is verified as it arrives, so a long run of captures never ages out the first.
+    const collected = dependencies.visibilityAdmission.collect(authorized);
     for (const projectId of ids) {
       const project = await dependencies.engine.store.project(projectId);
       const result = (await dependencies.conversationDesktop.callAssistantThread(
@@ -53,32 +53,31 @@ export function registerAssistantNarration(
           targetProjectCwd: project.cwd,
         },
         authorized,
+        { signal: admission.signal },
       )) as { relayId: string; envelope: unknown };
-      captures.push({
-        envelope: result.envelope,
-        expected: {
-          environmentId: dependencies.engine.store.environmentId,
-          threadId,
-          projectId,
-          targetCwd: project.cwd,
-          action: "room.disclosure",
-          requestId,
-          operationHash,
-          relayId: result.relayId,
-        },
-      });
+      const expected = {
+        environmentId: dependencies.engine.store.environmentId,
+        threadId,
+        projectId,
+        targetCwd: project.cwd,
+        action: "room.disclosure",
+        requestId,
+        operationHash,
+        relayId: result.relayId,
+      };
+      await collected.project(result.envelope, expected);
+      captures.push(expected);
     }
     const proofs = [...(projectProofs ?? [])];
     if (proofs.some((proof) => !ids.includes(proof.projectId)))
       throw new Error("Room disclosure contains an unqualified project source.");
     for (const item of captures) {
-      const expected = proofs.filter((proof) => proof.projectId === item.expected.projectId);
-      if (expected.some((proof) => proof.cwd !== item.expected.targetCwd))
+      const expected = proofs.filter((proof) => proof.projectId === item.projectId);
+      if (expected.some((proof) => proof.cwd !== item.targetCwd))
         throw new Error("Room project identity changed before disclosure.");
-      if (!expected.length)
-        proofs.push({ projectId: item.expected.projectId, cwd: item.expected.targetCwd });
+      if (!expected.length) proofs.push({ projectId: item.projectId, cwd: item.targetCwd });
     }
-    return dependencies.visibilityAdmission.withCaptures(captures, authorized, (valid) =>
+    return collected.run((valid) =>
       dependencies.engine.store.withProjectIdentityRead(proofs, async (identityValid) => {
         if (!valid() || !identityValid()) throw new Error("Room project scope revoked.");
         return effect(() => valid() && identityValid());
@@ -209,10 +208,8 @@ export function registerAssistantNarration(
         },
       );
     }
-    const captures: Array<{
-      envelope: unknown;
-      expected: import("../assistant/native/assistant-visibility-admission").ExpectedVisibilityCapture;
-    }> = [];
+    // Each proof is verified as it arrives, so a long run of captures never ages out the first.
+    const collected = dependencies.visibilityAdmission.collect(authorized);
     for (const proof of projectProofs) {
       if ((await dependencies.engine.store.project(proof.projectId)).cwd !== proof.cwd)
         throw new Error("Summary project identity changed.");
@@ -229,30 +226,17 @@ export function registerAssistantNarration(
         authorized,
       )) as { relayId: string; envelope: unknown };
       checkIssuer(captured.envelope);
-      captures.push({
-        envelope: captured.envelope,
-        expected: {
-          environmentId: dependencies.engine.store.environmentId,
-          threadId: actor.id,
-          projectId: proof.projectId,
-          targetCwd: proof.cwd,
-          action: "summary.disclosure",
-          requestId,
-          operationHash,
-          relayId: captured.relayId,
-        },
+      await collected.project(captured.envelope, {
+        environmentId: dependencies.engine.store.environmentId,
+        threadId: actor.id,
+        projectId: proof.projectId,
+        targetCwd: proof.cwd,
+        action: "summary.disclosure",
+        requestId,
+        operationHash,
+        relayId: captured.relayId,
       });
     }
-    const nativeCaptures: Array<{
-      envelope: unknown;
-      expected: {
-        environmentId: string;
-        threadId: string;
-        relayId: string;
-        requestId: string;
-        operationHash: string;
-      };
-    }> = [];
     if (nativeProofs.length) {
       const captured = (await dependencies.conversationDesktop.callAssistantThread(
         "privacy.account.capture",
@@ -260,34 +244,27 @@ export function registerAssistantNarration(
         { threadId: actor.id, environmentId: dependencies.engine.store.environmentId },
         authorized,
       )) as { relayId: string; envelope: unknown };
-      nativeCaptures.push({
-        envelope: captured.envelope,
-        expected: {
-          environmentId: dependencies.engine.store.environmentId,
-          threadId: actor.id,
-          requestId,
-          operationHash,
-          relayId: captured.relayId,
-        },
+      await collected.account(captured.envelope, {
+        environmentId: dependencies.engine.store.environmentId,
+        threadId: actor.id,
+        requestId,
+        operationHash,
+        relayId: captured.relayId,
       });
     }
-    return dependencies.visibilityAdmission.withCaptures(
-      captures,
-      authorized,
-      (nativeValid, identity) =>
-        dependencies.engine.store.withProjectIdentityRead(projectProofs, async (projectValid) => {
-          verifyNative(identity);
-          const valid = () => nativeValid() && projectValid();
-          if (!valid()) throw new Error("Summary source access changed.");
-          if (!accountProofs.length) return run(valid);
-          return dependencies.social.withAssistantAccountProofs(
-            actor.id,
-            accountProofs,
-            authorized,
-            (accountValid) => run(() => valid() && accountValid()),
-          );
-        }),
-      nativeCaptures,
+    return collected.run((nativeValid, identity) =>
+      dependencies.engine.store.withProjectIdentityRead(projectProofs, async (projectValid) => {
+        verifyNative(identity);
+        const valid = () => nativeValid() && projectValid();
+        if (!valid()) throw new Error("Summary source access changed.");
+        if (!accountProofs.length) return run(valid);
+        return dependencies.social.withAssistantAccountProofs(
+          actor.id,
+          accountProofs,
+          authorized,
+          (accountValid) => run(() => valid() && accountValid()),
+        );
+      }),
     );
   };
 

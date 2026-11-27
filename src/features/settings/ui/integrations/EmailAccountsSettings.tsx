@@ -19,7 +19,6 @@ export function EmailAccountsSettings() {
   return (
     <MessagingAccountsCard
       provider="email"
-      emptyLabel={t("No email accounts connected yet.")}
       addLabel={t("Add account")}
       describe={describeEmail}
       Form={EmailAccountForm}

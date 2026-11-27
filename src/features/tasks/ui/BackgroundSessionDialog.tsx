@@ -1,12 +1,14 @@
+import { errorText } from "../../../shared/lib/errors";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { Modal } from "../../../shared/ui/Modal";
 import {
   loadBackgroundSessionSummary,
   type BackgroundSessionSummary,
@@ -61,7 +63,7 @@ export function BackgroundSessionDialog({
       },
       (reason: unknown) => {
         if (alive) {
-          setError(reason instanceof Error ? reason.message : String(reason));
+          setError(errorText(reason));
           setLoading(false);
           pending.current = false;
         }
@@ -73,22 +75,15 @@ export function BackgroundSessionDialog({
   }, [target.machineId, target.sessionId, revision]);
 
   return (
-    <Modal
-      title={summary?.title ?? t("Background session")}
-      onClose={onClose}
-      size="md"
-      footer={
-        <ModalActions>
-          <Button variant="ghost" type="button" onClick={onClose}>
-            {t("Close")}
-          </Button>
-        </ModalActions>
-      }
-    >
+    <Modal title={summary?.title ?? t("Background session")} onClose={onClose} size="md">
       <div className="flex min-h-0 flex-col gap-3">
         {error ? (
-          <Alert tone="danger" className="flex-wrap">
-            <span>{error}</span>
+          <Alert
+            tone="danger"
+            className="flex-wrap"
+            title={t("Could not open this session.")}
+            extra={<ErrorDetails title={t("Could not open this session.")} detail={error} />}
+          >
             <Button
               variant="ghost"
               type="button"
@@ -106,20 +101,16 @@ export function BackgroundSessionDialog({
           <LoadingText delay={false} className="h-20 justify-center" />
         ) : (
           <>
-            <div className="flex flex-col gap-1">
-              <Text as="p" size="caption" leading="snug" tone="secondary">
-                {summary.status}
-                {t(" · on this computer’s host")}
-              </Text>
-            </div>
+            <Text as="p" size="caption" leading="snug" tone="secondary">
+              {summary.status}
+            </Text>
             <Text
               as="div"
-              size="caption"
+              size="secondary"
               leading="relaxed"
-              tone="secondary"
               {...surfaceAttributes(
-                { frame: "card", edge: "all" },
-                "min-h-0 flex-1 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-(--ui-radius-card)-(--ui-card-border) p-3",
+                { variant: "card", frame: "card", radius: "card" },
+                "min-h-0 flex-1 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words p-3",
               )}
             >
               {summary.reply || <EmptyState size="inline" description={t("No reply yet.")} />}

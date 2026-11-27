@@ -10,7 +10,9 @@ alone does not establish runtime support.
 
 `host/managed/managed-workspace-runtime.ts` composes the production services once. Startup
 reconciles provably stopped Host activities and recovers creation, rewind,
-delivery and removal journals before admitting new writers. Sessions, tasks,
+delivery and removal journals before admitting new writers. A creation blocked
+before Git ran (no folder, branch or registration) is not retried at startup:
+it stays recorded, fenced and listed for its owner's retry or cleanup. Sessions, tasks,
 goals, automations and stewards use authoritative registry execution paths.
 Providers, shells, terminals, editor writes and development servers participate
 in shared durable activity/reservation admission. Uncertain activity remains
@@ -23,7 +25,7 @@ preserves workspace identity through full and incremental reloads. Native turn,
 activity and rewind adapters use native-kept paired Host credentials and durable
 SQLite fences; missing capabilities keep these operations unavailable.
 The integrated Host implements and advertises managed creation, native turn
-capture, native process/buffer admission and native rewind coordination through
+capture, native process admission and native rewind coordination through
 the trusted transports below. Isolated native acceptance is described below;
 live provider and installed/released acceptance remain separate.
 
@@ -41,12 +43,13 @@ manual synthetic writers. Live providers, simultaneous native applications in
 separate worktrees, and installed/released behavior still require acceptance.
 
 Native process leases are released by the same authenticated device only after
-confirmed settlement. Complete buffer reports are scoped to device, app profile,
-process instance and window; another client cannot clear them. Restart, stale,
-missing or uncertain reports remain blocking until fresh reconciliation. There
-is no blind timeout that declares a dead or unreachable app clean. Stale windows
-or earlier process instances can therefore remain blocked until explicitly
-reconciled; a fresh report from a different instance does not erase them. Mobile
+confirmed settlement. The Host stores no editor buffers: a worktree-removal lease
+from a connected desktop refuses with reason `editors` while unsaved files are
+under the path, and every grant carries `checks: ["editors"]`. A grant without it
+(older desktop) is refused. With no desktop connected for 2 minutes (and the Host
+up 2 minutes), a clean, non-forced removal proceeds and Git's own refusal is the
+backstop. There is no blind timeout that declares a dead or unreachable app
+clean for any other lease. Mobile
 source is maintained in the separate `mobile/` repository; inspect its current
 contracts when changing a mobile-facing operation. Installed/released inclusion remains unknown
 until compared with the actual running build identity.
@@ -102,16 +105,61 @@ SHA; never copy an unrelated dirty checkout. A configured root applies to new
 directories and does not move existing ones. Preparation failure for a resolved
 or explicitly selected worktree remains an error; it never switches to current.
 
-Branches use `bycoda/s/<slug>-<12id>` or `bycoda/t/<slug>-<12id>`; directories use
-`wt-<12id>`. Generate names once. Validate collisions and ownership with the full
-workspace ID, not its shortened display form. Creation failure never falls back
-to main. Unsupported managed operations on older Hosts require a visible update
+Branches use `by/<8hex>` for sessions (a temporary name) and `by/<slug>-<8hex>` for
+tasks (final, never renamed); directories use `wt-<12id>`. Generate names once.
+Managed ownership is decided by `git config branch.<name>.bycodaWorkspace <workspaceId>`,
+written when the branch is created, never by the `by/` prefix: a hand-made `by/x`
+branch is not managed. Validate collisions and ownership with the full workspace ID,
+not its shortened display form. Creation failure never falls back to main.
+Unsupported managed operations on older Hosts require a visible update
 explanation; current-checkout creation uses the existing compatible path.
 
-`host/managed/managed-workspaces.ts` implements branch/directory naming and
-`host/git/turn-git-history.ts` implements turn/rewind refs. Constants define prefixes
-and the 12-character display ID length; implementations validate Git ref
-components and full ownership.
+`workspaces.renameBranch` (`workspaceId`, `expectedRevision`, `fragment`,
+`idempotencyKey`) renames a session's temporary branch once to `by/<fragment>`
+after the first turn names it. It sanitizes the fragment, tries suffixes `-2` to
+`-9` on collision and otherwise keeps the temporary name (`renamed: false`),
+renames the branch in the primary and every sibling worktree, and updates
+`branchRef` and the revision in one journaled transaction. It refuses while a
+mutation is active, an upstream is set or a delivery review is pending; delivery
+plans bind the revision, so a rename invalidates an earlier review. A failed or
+skipped rename is silent and keeps the temporary name.
+
+`host/managed/workspace-branch-naming.ts` owns naming, the marker and rename;
+`host/managed/workspace-creation.ts` owns creation. `host/git/turn-git-history.ts`
+implements turn/rewind refs. Constants define prefixes and the 12-character
+display ID length; implementations validate Git ref components and full ownership.
+
+### Creation v2
+
+Creation runs entirely in the Host behind capability `workspaces.creation.v2`.
+`workspaces.prepare` accepts `repositories` (project folders that get a sibling
+worktree on the same branch, at most 8), `baseFromRemote` and a client-chosen
+`progressId`, and returns `extraWorktrees` (folder to worktree path) and
+`baseSource` (`remote` or `local`). A Host without the capability must not
+receive extras or a remote start in worktree mode; the app shows the update
+explanation instead of falling back silently.
+
+Start from remote resolves the base's upstream and runs `git fetch <remote> <branch>`
+with a 60-second deadline and no terminal prompts, then starts from the fetched SHA.
+A missing upstream or remote branch starts from the local base with `baseSource`
+`local`; a network failure is a visible error.
+
+Multi-repository creation journals every sibling in a durable sibling journal
+(`host/managed/workspace-sibling-journal.ts`) before Git runs. On a definite
+failure or cancel, the operation removes every worktree it created, deletes with
+`branch -D` only branches it created, retires the primary workspace and its marker
+ref, and releases the idempotency receipt. Reused existing worktrees are never
+touched. A timeout or killed Git leaves the outcome unknown: the operation is
+recovered instead of rolled back, and retrying the same idempotency key recovers
+the same workspace.
+
+`workspaces.prepare.status` and `workspaces.prepare.cancel`, keyed by `progressId`,
+poll an in-memory registry with a TTL (`host/managed/workspace-creation-progress.ts`).
+Stages are fetch, checkout (with "repository n of total" and percent from
+`git worktree add --progress`), submodules, setup (only when explicit bootstrap
+runs) and agent (set by the client when the turn starts). Cancel aborts the Git
+child and rolls back as above. `workspaces.prepare` and `workspaces.renameBranch`
+use the Git mutation deadline.
 
 ## Lifecycle and storage
 
@@ -206,7 +254,7 @@ HEAD refs retain commits; index/worktree snapshots may wrap trees in internal
 commits. Preserve separate index metadata for exact staging restoration. These
 are turn/recovery records, with no periodic WIP ring or nightly job.
 
-Rewind previews use short-lived plan tokens. Apply settles writers and buffers,
+Rewind previews use short-lived plan tokens. Apply settles writers,
 acquires execution/session/Git gates, revalidates revisions and fingerprints,
 and journals rescue transcript/HEAD/index/worktree state before mutation.
 Recovery phases are `prepared`, `git-restored`, `conversation-restored`,
@@ -234,16 +282,17 @@ RPC request/response types are frozen in
 operations through the shared runtime; delivery and
 publication require authenticated owner transport, not agent credentials.
 
-| RPC methods                                                         | Capability                     |
-| ------------------------------------------------------------------- | ------------------------------ |
-| `workspaces.prepare/get/list/resume/finish/close`                   | `workspaces.managed.v1`        |
-| `projects.workspacePolicy.get/update`                               | `workspaces.policy.v1`         |
-| `workspaces.featureClaims.list/acquire/release`                     | `workspaces.managed.v1`        |
-| `sessions.rewind.plan/apply`                                        | `sessions.git-rewind.v1`       |
-| `sessions.rewind.undo`                                              | `sessions.git-rewind-undo.v1`  |
-| `workspaces.delivery.review/merge`                                  | `workspaces.delivery.v1`       |
-| `workspaces.delivery.publish`                                       | `workspaces.pr-publication.v1` |
-| `workspaces.cleanup.plan/apply/status`, `workspaces.storage.status` | `workspaces.lifecycle.v1`      |
+| RPC methods                                                                                                              | Capability                     |
+| ------------------------------------------------------------------------------------------------------------------------ | ------------------------------ |
+| `workspaces.prepare/get/list/resume/finish/close`                                                                        | `workspaces.managed.v1`        |
+| `workspaces.prepare.status/cancel`, `workspaces.renameBranch`, `workspaces.prepare` with `repositories`/`baseFromRemote` | `workspaces.creation.v2`       |
+| `projects.workspacePolicy.get/update`                                                                                    | `workspaces.policy.v1`         |
+| `workspaces.featureClaims.list/acquire/release`                                                                          | `workspaces.managed.v1`        |
+| `sessions.rewind.plan/apply`                                                                                             | `sessions.git-rewind.v1`       |
+| `sessions.rewind.undo`                                                                                                   | `sessions.git-rewind-undo.v1`  |
+| `workspaces.delivery.review/merge`                                                                                       | `workspaces.delivery.v1`       |
+| `workspaces.delivery.publish`                                                                                            | `workspaces.pr-publication.v1` |
+| `workspaces.cleanup.plan/apply/status`, `workspaces.storage.status`                                                      | `workspaces.lifecycle.v1`      |
 
 Additional integration transports retain the frozen owner contract:
 
@@ -255,7 +304,7 @@ Additional integration transports retain the frozen owner contract:
 - `sessions.rewind.status` exposes durable operation/Undo discovery for
   Host-executed sessions; persisted browser IDs are discovery hints only.
 - Trusted `native.turn.begin/end`, `native.activity.start/end`,
-  `native.buffers.update` and `native.rewind.plan/prepare/apply/status/ack` use
+  and `native.rewind.plan/prepare/apply/status/ack` use
   native execution/activity/rewind capabilities. Native transcript rescue is
   persisted before Git restore; Host completion waits for native receipt
   acknowledgement. Capability absence must never trigger opaque provider revert
@@ -347,3 +396,12 @@ Reports include outcome; done by surface with path:line; checks and opened
 screenshots with exact unverified checks; branch/commit and readiness for review;
 remaining blockers with actor; and build stamp with inclusion
 included/excluded/unknown. A completion timestamp alone cannot prove inclusion.
+
+## Dedicated Linux removal admission
+
+Manual removals, scheduled cleanup and resumed removal journals use the same
+execution-Host lease. A dedicated system service can verify exclusive account
+and filesystem ownership as described in [Managed workspaces](../guides/managed-workspaces.md).
+The Host makes that decision from its local deployment settings and OS evidence.
+Clients cannot opt in through review or removal RPC parameters. Any desktop
+already observed in this Host process continues through native acknowledgement.

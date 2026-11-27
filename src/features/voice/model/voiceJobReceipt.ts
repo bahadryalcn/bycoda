@@ -76,10 +76,8 @@ export function voiceJobsAcceptedSpeech(jobs: readonly AcceptedJob[]) {
   const done = (key: "noteId" | "automationId") =>
     jobs.filter((job) => job.kind === "quick" && job.status === "done" && job.quickResult?.[key])
       .length;
-  return t(
-    project === 1
-      ? "{p0} personal notes saved. {p1} automations created. 1 project job accepted."
-      : "{p0} personal notes saved. {p1} automations created. {p2} project jobs accepted.",
-    { p0: done("noteId"), p1: done("automationId"), p2: project },
-  );
+  const slots = { p0: done("noteId"), p1: done("automationId"), p2: project };
+  return project === 1
+    ? t("{p0} personal notes saved. {p1} automations created. 1 project job accepted.", slots)
+    : t("{p0} personal notes saved. {p1} automations created. {p2} project jobs accepted.", slots);
 }

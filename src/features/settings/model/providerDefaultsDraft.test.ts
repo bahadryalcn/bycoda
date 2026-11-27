@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
 import { beforeEach, expect, it, vi } from "vitest";
-import { pathKey } from "../../../shared/lib/paths";
 import { saveProviderAccount } from "../../providers/model/providerAccounts";
 import { loadDefaultModels, loadLastModelChoice } from "../../sessions/public/models";
 import { loadProjectProviderSettings } from "../../sessions/public/projectProviders";
@@ -13,7 +12,6 @@ import {
   EMPTY_DRAFT,
   accountDraftKey,
   draftSize,
-  groupProjectKeys,
   overlaySessionDefaults,
   parseTargetValue,
   recordField,
@@ -24,23 +22,6 @@ import {
 } from "./providerDefaultsDraft";
 import { saveDefaultsDraft } from "./providerDefaultsSave";
 import { providersTabForSetting } from "./providerSettingsTabs";
-
-const groups = [
-  { id: "team", name: "Team", collapsed: false },
-  {
-    id: "wallet",
-    name: "Wallet",
-    collapsed: false,
-    workspaceFile: "/work/wallet/wallet.code-workspace",
-    workspaceFolders: ["/work/wallet/api"],
-  },
-];
-const assignments = {
-  [pathKey("/work/web")]: "team",
-  [pathKey("/work/wallet")]: "team",
-  [pathKey("/work/wallet/api")]: "wallet",
-  [pathKey("/work/other")]: "elsewhere",
-};
 
 beforeEach(() => {
   localStorage.clear();
@@ -79,22 +60,11 @@ it("counts pending changes across providers, accounts and the default provider",
   expect(draftSize(withChange(draft, { harness: "codex" }, undefined))).toBe(2);
 });
 
-it("round-trips targets and drops unknown groups to Global", () => {
+it("round-trips targets and drops anything else to Global", () => {
   const project = { kind: "project", path: "/work/web" } as const;
-  expect(parseTargetValue(targetValue(project), groups)).toEqual(project);
-  expect(parseTargetValue("group:wallet", groups)).toEqual({
-    kind: "group",
-    id: "wallet",
-    workspace: true,
-  });
-  expect(parseTargetValue("group:gone", groups)).toEqual({ kind: "global" });
-});
-
-it("expands a group to its projects and the projects of nested workspaces", () => {
-  expect(groupProjectKeys("team", groups, assignments).sort()).toEqual(
-    [pathKey("/work/web"), pathKey("/work/wallet"), pathKey("/work/wallet/api")].sort(),
-  );
-  expect(groupProjectKeys("wallet", groups, assignments)).toEqual([pathKey("/work/wallet/api")]);
+  expect(parseTargetValue(targetValue(project))).toEqual(project);
+  expect(parseTargetValue("group:wallet")).toEqual({ kind: "global" });
+  expect(parseTargetValue("project:")).toEqual({ kind: "global" });
 });
 
 it("saves a change set to Global", () => {
@@ -113,39 +83,24 @@ it("saves a change set to Global", () => {
   expect(loadLastModelChoice()).toEqual({ harness: "codex", model: "gpt-x" });
 });
 
-it("saves the same change set into every project of a group and clears a model override", () => {
-  localStorage.setItem("bycoda.projectGroups", JSON.stringify(groups));
-  localStorage.setItem("bycoda.projectGroupAssignments", JSON.stringify(assignments));
+it("saves a change set into one project and clears a model override", () => {
   const draft: DefaultsDraft = {
     defaultProvider: "claude",
     providers: { claude: { model: "sonnet", extras: { fast: "on" }, hidden: false } },
     accounts: {},
   };
-  expect(saveDefaultsDraft(draft, { kind: "group", id: "team", workspace: false }).state).toBe(
-    "saved",
-  );
-  for (const path of ["/work/web", "/work/wallet", "/work/wallet/api"]) {
-    expect(loadProjectProviderSettings(path)).toEqual({
-      defaultHarness: "claude",
-      defaultModel: "sonnet",
-      models: { claude: "sonnet" },
-      defaults: { claude: { extras: { fast: "on" } } },
-    });
-  }
+  expect(saveDefaultsDraft(draft, { kind: "project", path: "/work/web" }).state).toBe("saved");
+  expect(loadProjectProviderSettings("/work/web")).toEqual({
+    defaultHarness: "claude",
+    defaultModel: "sonnet",
+    models: { claude: "sonnet" },
+    defaults: { claude: { extras: { fast: "on" } } },
+  });
   expect(loadProjectProviderSettings("/work/other")).toEqual({});
 
   const clear: DefaultsDraft = { providers: { claude: { model: null } }, accounts: {} };
   saveDefaultsDraft(clear, { kind: "project", path: "/work/web" });
   expect(loadProjectProviderSettings("/work/web").models).toBeUndefined();
-});
-
-it("refuses an empty group instead of reporting a save", () => {
-  localStorage.setItem("bycoda.projectGroups", JSON.stringify(groups));
-  const outcome = saveDefaultsDraft(
-    { providers: { claude: { effort: "high" } }, accounts: {} },
-    { kind: "group", id: "team", workspace: false },
-  );
-  expect(outcome.state).toBe("unsaved");
 });
 
 it("saves account overrides whatever the target and keeps their model", () => {
@@ -223,14 +178,14 @@ it("reports unsaved when storage refuses the write", () => {
 });
 
 it("maps searched settings to their Providers tab", () => {
-  expect(providersTabForSetting("agent-clis")).toBe("chat");
+  expect(providersTabForSetting("agent-clis")).toBe("defaults");
   expect(providersTabForSetting("enabled-models")).toBe("providers");
   expect(providersTabForSetting("cli-path-codex")).toBe("providers");
   expect(providersTabForSetting("terminal-account-profiles-codex")).toBe("providers");
   expect(providersTabForSetting("acp-registry")).toBe("providers");
   expect(providersTabForSetting("models-roles")).toBe("work");
-  expect(providersTabForSetting("subagents")).toBe("delegation");
-  expect(providersTabForSetting("decision-models")).toBe("providers");
+  expect(providersTabForSetting("subagents")).toBe("defaults");
+  expect(providersTabForSetting("decision-models")).toBeUndefined();
   expect(providersTabForSetting("show-remaining-usage")).toBeUndefined();
   expect(providersTabForSetting(null)).toBeUndefined();
 });

@@ -1,8 +1,7 @@
 import { createContext, useContext, type ReactNode } from "react";
 import { Switch } from "../../../../shared/ui/Switch";
 import { Text } from "../../../../shared/ui/Text";
-import { InfoPopover } from "../../../../shared/ui/InfoPopover";
-import { t } from "../../../../shared/i18n";
+import { InfoTooltip } from "../../../../shared/ui/InfoPopover";
 import { Row } from "../../../../shared/ui/settings";
 import roleStyles from "../AssistantProfileFields.module.css";
 
@@ -36,11 +35,9 @@ export function ProfileRow({
     <Row
       label={label}
       description={info ? description : undefined}
+      descriptionVisible={Boolean(info)}
       info={
-        info ??
-        (description ? (
-          <InfoPopover label={`${label}: ${t("Help")}`}>{description}</InfoPopover>
-        ) : undefined)
+        info ?? (description ? <InfoTooltip label={label}>{description}</InfoTooltip> : undefined)
       }
       stacked={stacked}
     >
@@ -74,10 +71,7 @@ export function ProfileSwitch({
         label={label}
         description={info ? description : undefined}
         info={
-          info ??
-          (description ? (
-            <InfoPopover label={`${label}: ${t("Help")}`}>{description}</InfoPopover>
-          ) : undefined)
+          info ?? (description ? <InfoTooltip label={label}>{description}</InfoTooltip> : undefined)
         }
       >
         <Switch aria-label={label} checked={checked} onCheckedChange={onCheckedChange} />

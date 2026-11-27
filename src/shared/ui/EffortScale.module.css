@@ -4,6 +4,9 @@
   inline-size: 100%;
   min-inline-size: 0;
 }
+.label {
+  margin-block-end: var(--space-1);
+}
 .header {
   display: flex;
   flex-wrap: wrap;
@@ -11,6 +14,10 @@
   justify-content: space-between;
   gap: var(--space-1) var(--space-3);
   margin-block-end: var(--space-1);
+}
+/* The Automatic switch sits on the value's line; centre them so the track and text align. */
+.scale:has(> .header [role="switch"]) > .header {
+  align-items: center;
 }
 .value {
   margin-inline-start: auto;
@@ -42,6 +49,7 @@ button.bar {
   block-size: var(--effort-height);
   border-radius: inherit;
   background: var(--control-track);
+  transition: opacity 150ms ease;
 }
 .bar[data-filled] > .fill {
   background: var(--ui-effort-fill);
@@ -49,8 +57,10 @@ button.bar {
 .bar[data-filled][data-ultra] > .fill {
   background: var(--ui-effort-ultra-fill);
 }
-/* An inherited level shows where the default lands without reading as a saved choice. */
-.bar[data-inherited] > .fill {
+/* An inherited level shows where the default lands without reading as a saved choice; while
+   Automatic is on every bar reads inactive yet stays choosable. */
+.bar[data-inherited] > .fill,
+.scale[data-automatic] .fill {
   opacity: 0.5;
 }
 button.bar[aria-checked="true"][data-button-selected] {
@@ -77,5 +87,60 @@ button.bar[aria-checked="true"][data-button-selected] {
 @media (hover: hover) and (pointer: fine) {
   .bar:not(:disabled, [aria-checked="true"]):hover {
     background: var(--ui-surface-hover);
+  }
+  .scale[data-automatic] .bar:not(:disabled):hover > .fill {
+    opacity: 0.8;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fill {
+    transition: none;
+  }
+}
+
+/* Forced colors replace the gradient/track fills and the selected tile background, so
+   every bar would disappear. Redraw them with system colours: an outlined bar is an
+   unfilled level, a Highlight bar a filled one, an outlined Highlight bar an inherited
+   level, and the chosen tile gets a Highlight frame;
+   other tiles reserve the same frame width in Canvas, so nothing shifts. Disabled bars
+   and the chosen frame use GrayText. */
+@media (forced-colors: active) {
+  button.bar {
+    border: var(--ui-focus-width) solid Canvas;
+  }
+  button.bar[aria-checked="true"] {
+    border-color: Highlight;
+  }
+  .fill {
+    forced-color-adjust: none;
+    box-sizing: border-box;
+    border: 1px solid CanvasText;
+    background: Canvas;
+  }
+  .bar[data-filled] > .fill,
+  .bar[data-filled][data-ultra] > .fill {
+    border-color: Highlight;
+    background: Highlight;
+  }
+  .bar[data-filled][data-inherited] > .fill {
+    opacity: 1;
+    background: Canvas;
+  }
+  .scale[data-automatic] .fill {
+    opacity: 1;
+  }
+  .scale[data-disabled] .bar {
+    opacity: 1;
+  }
+  .scale[data-disabled] .bar[aria-checked="true"] {
+    border-color: GrayText;
+  }
+  .scale[data-disabled] .fill,
+  .scale[data-disabled] .bar[data-filled] > .fill {
+    border-color: GrayText;
+    background: Canvas;
+  }
+  .scale[data-disabled] .bar[data-filled] > .fill {
+    background: GrayText;
   }
 }

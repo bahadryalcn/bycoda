@@ -65,7 +65,11 @@ function fakeClient(options: Options = {}) {
     actions: vi.fn(options.list ?? (async () => ({ items: options.actions ?? [] }))),
     undo: vi.fn(options.undo ?? (async () => ({}))),
   };
-  return { client: { sectionSnapshot, ai } as unknown as SocialClient, sectionSnapshot, ai };
+  return {
+    client: { sectionSnapshot, ai } as unknown as SocialClient,
+    sectionSnapshot,
+    ai,
+  };
 }
 
 async function mount(options: Options = {}) {
@@ -87,7 +91,7 @@ const button = (text: string) =>
   [...element.querySelectorAll("button")].find((b) => b.textContent?.trim() === text);
 const rows = () => [...element.querySelectorAll<HTMLElement>(".social-activity-row")];
 
-it("reads only the selected project's history, 20 jobs at most", async () => {
+it("reads only the selected project's history, 20 jobs per page", async () => {
   const { sectionSnapshot } = await mount({ projectId: "p1" });
   expect(sectionSnapshot).toHaveBeenCalledExactlyOnceWith({
     section: "history",
@@ -98,13 +102,17 @@ it("reads only the selected project's history, 20 jobs at most", async () => {
 
 it("reads every project's history when no project is selected", async () => {
   const { sectionSnapshot } = await mount();
-  expect(sectionSnapshot).toHaveBeenCalledExactlyOnceWith({ section: "history", limit: 20 });
+  expect(sectionSnapshot).toHaveBeenCalledExactlyOnceWith({
+    section: "history",
+    limit: 20,
+  });
 });
 
-it("shows at most 20 jobs even when the Host sends more", async () => {
+it("shows every row a Host without paging sends and offers no Load more", async () => {
   const jobs = Array.from({ length: 25 }, (_, index) => job({ id: `j${index}` }));
   await mount({ jobs });
-  expect(rows()).toHaveLength(20);
+  expect(rows()).toHaveLength(25);
+  expect(button("Load more")).toBeUndefined();
 });
 
 it("says nothing was sent only after a successful empty read", async () => {
@@ -161,7 +169,7 @@ it("renders stored message text as text and never as markup or a link", async ()
   expect(element.textContent).toContain("<img src=x onerror=alert(1)> hello");
 });
 
-it("shortens long message text to 160 characters and shows the Host error as a helper line without expanding", async () => {
+it("shortens long message text to 160 characters and keeps the Host error behind Details", async () => {
   await mount({
     jobs: [
       job({
@@ -173,7 +181,11 @@ it("shortens long message text to 160 characters and shows the Host error as a h
   });
   expect(element.textContent).toContain(`${"a".repeat(159)}…`);
   expect(element.textContent).not.toContain("a".repeat(160));
-  expect(element.textContent).toContain("Rate limited");
+  expect(element.textContent).not.toContain("Rate limited");
+  await act(async () => button("Details")?.click());
+  expect(document.body.querySelector('[aria-label="Error details"]')?.textContent).toBe(
+    "Rate limited",
+  );
 });
 
 it.each<[string | undefined, string]>([
@@ -184,13 +196,17 @@ it.each<[string | undefined, string]>([
   [undefined, "Needs review"],
 ])("explains a held job with reason %s as %s", async (reviewReason, text) => {
   await mount({ jobs: [job({ status: "review", reviewReason })] });
-  expect(element.querySelector(".social-history-held-reason")?.textContent).toContain(text);
+  expect(element.textContent).toContain(text);
 });
 
 it("never offers to send a held, failed or uncertain job again", async () => {
   await mount({
     jobs: ["review", "failed", "queued", "cancelled"].map((status, index) =>
-      job({ id: `j${index}`, status: status as SocialJob["status"], reviewReason: "needs_human" }),
+      job({
+        id: `j${index}`,
+        status: status as SocialJob["status"],
+        reviewReason: "needs_human",
+      }),
     ),
     // An AI action without an inverse: the Host recorded no undo, so no Undo button is rendered.
     actions: [{ ...action({ id: "x-no-inverse", status: "failed" }), undo: undefined }],
@@ -199,8 +215,6 @@ it("never offers to send a held, failed or uncertain job again", async () => {
   expect(labels.filter((label) => /retry|resend|send again/i.test(label))).toEqual([]);
   // Jobs never carry an Undo; the no-inverse action has none either.
   expect(labels.filter((label) => label === "Undo")).toEqual([]);
-  // The reason for the missing Undo is shown directly in the row.
-  expect(element.textContent).toContain("This action cannot be undone.");
 });
 
 it("undoes a finished AI action once and reads the history again", async () => {
@@ -237,7 +251,7 @@ it("shows the Host's reason when an undo is refused and does not re-read as if i
   await act(async () => button("Undo")?.click());
   await act(async () => undefined);
   expect(ai.undo).toHaveBeenCalledTimes(1);
-  expect(element.textContent).toContain("The list no longer exists.");
+  expect(element.textContent).toContain("The action could not be undone. Try again.");
   expect(sectionSnapshot).toHaveBeenCalledTimes(1);
 });
 
@@ -254,7 +268,9 @@ it("falls back to a plain message when an undo fails without a reason", async ()
 });
 
 it("shows technical action names and reasons directly", async () => {
-  await mount({ actions: [action({ status: "failed", reason: "Account paused." })] });
+  await mount({
+    actions: [action({ status: "failed", reason: "Account paused." })],
+  });
   expect(element.textContent).toContain("lists.addMembers");
   expect(element.textContent).toContain("Account paused.");
 });

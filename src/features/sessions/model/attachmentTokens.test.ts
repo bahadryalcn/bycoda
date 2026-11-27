@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { parser } from "@lezer/markdown";
+import { describe, expect, it, vi } from "vitest";
 import {
   attachmentLegend,
+  attachmentDraftTokens,
+  compactAttachmentDraftTokens,
+  expandAttachmentDraftTokens,
   attachmentTokens,
   attachmentsDroppedByEdit,
   deleteTokenAtCaret,
@@ -67,10 +71,20 @@ describe("attachmentTokens", () => {
   });
 
   it("gives incoming files the next numbers after the ones already there", () => {
-    expect(tokensForIncoming([image(), doc()], [image(), image()])).toBe(
-      `${tok("Image", 2)} ${tok("Image", 3)}`,
+    const [file, first, second, third] = attachmentDraftTokens([doc(), image(), image(), image()]);
+    expect(tokensForIncoming([image(), doc()], [image(), image()])).toBe(`${second} ${third}`);
+    expect(tokensForIncoming([], [doc(), image()])).toBe(`${file} ${first}`);
+  });
+
+  it("expands an old draft name while keeping literal code and the delivery reference", () => {
+    const files = [doc("draft-context.txt")];
+    const current = `[File${NBSP}1${NBSP}·${NBSP}draft-context.txt${NBSP}·${NBSP}1${NBSP}B]`;
+    const old = "Write [file1] and `[file1]`.";
+    expect(expandAttachmentDraftTokens(old, files)).toBe(`Write ${current} and \`[file1]\`.`);
+    expect(compactAttachmentDraftTokens(`Write ${current} and \`[file1]\`.`, files)).toBe(
+      `Write ${tok("File", 1)} and \`[file1]\`.`,
     );
-    expect(tokensForIncoming([], [doc(), image()])).toBe(`${tok("File", 1)} ${tok("Image", 1)}`);
+    expect(attachmentsDroppedByEdit(old, `Write ${current}`, files)).toEqual([]);
   });
 });
 
@@ -265,6 +279,29 @@ describe("removeAttachmentFromText", () => {
 
 describe("attachmentsDroppedByEdit", () => {
   const files = [image(), doc(), image("b.png")];
+
+  it("keeps references without parsing Markdown when their spellings survive a draft edit", () => {
+    const paragraphs = "Long note with `inline code` and [unrelated links](./file.md).\n\n".repeat(
+      500,
+    );
+    const before = paragraphs + "[image1] [image1] [file1]";
+    const parse = vi.spyOn(Object.getPrototypeOf(parser), "parse");
+    try {
+      expect(attachmentsDroppedByEdit(before, before.replace("[image1] ", ""), files)).toEqual([]);
+      expect(attachmentsDroppedByEdit(before, "新" + before, files)).toEqual([]);
+      expect(parse.mock.calls.length).toBe(0);
+    } finally {
+      parse.mockRestore();
+    }
+  });
+
+  it("keeps a surviving alias but ignores aliases in code when the last reference disappears", () => {
+    const files = [{ ...image(), id: "photo-1" }];
+    const named = "[Image: first.png; ref=photo-1]";
+    const code = "`" + named + "`";
+    expect(attachmentsDroppedByEdit("[image1] [image1]", named, files)).toEqual([]);
+    expect(attachmentsDroppedByEdit("[image1] " + code, code, files)).toEqual([0]);
+  });
 
   it("reports a token the edit deleted", () => {
     expect(attachmentsDroppedByEdit("a [image1] [file1] b", "a [file1] b", files)).toEqual([0]);

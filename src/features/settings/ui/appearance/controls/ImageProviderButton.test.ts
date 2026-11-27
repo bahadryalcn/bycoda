@@ -46,15 +46,19 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("selects either image provider, updates its icon, and disables generation with None", async () => {
+it("selects either image provider, labels the trigger, and disables generation with None", async () => {
   expect(trigger().getAttribute("aria-label")).toBe("Background image: None");
   expect(trigger().querySelector("svg")).not.toBeNull();
   await open();
   expect(document.querySelectorAll('[role="menuitemradio"]')).toHaveLength(3);
   expect(document.querySelector('[aria-label="None"][aria-checked="true"]')).not.toBeNull();
+  expect(
+    document.querySelector('[role="menuitemradio"][aria-label="Codex"] img')?.getAttribute("src"),
+  ).toBe(HARNESS_ICONS.codex);
   await pick("Codex");
   expect(changed).toHaveBeenLastCalledWith("codex");
   expect(trigger().getAttribute("aria-label")).toBe("Background image: Codex");
+  expect(trigger().textContent).toBe("Codex");
   expect(trigger().querySelector("img")?.getAttribute("src")).toBe(HARNESS_ICONS.codex);
   expect(document.activeElement).toBe(trigger());
   await open();
@@ -62,14 +66,14 @@ it("selects either image provider, updates its icon, and disables generation wit
   await pick("Gemini");
   expect(changed).toHaveBeenLastCalledWith("gemini");
   expect(trigger().getAttribute("aria-label")).toBe("Background image: Gemini");
-  expect(trigger().querySelector("img")).toBeNull();
-  expect(trigger().querySelector("svg")).not.toBeNull();
+  expect(trigger().textContent).toBe("Gemini");
   await open();
   expect(document.querySelector('[aria-label="Gemini"][aria-checked="true"]')).not.toBeNull();
   await pick("None");
   expect(changed).toHaveBeenLastCalledWith("none");
   expect(trigger().getAttribute("aria-pressed")).toBe("false");
   expect(trigger().getAttribute("aria-label")).toBe("Background image: None");
+  expect(trigger().textContent).toBe("Background image");
 });
 
 it("keeps keyboard navigation and returns focus on Escape without changing provider", async () => {

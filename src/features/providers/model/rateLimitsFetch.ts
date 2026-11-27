@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { invoke } from "@tauri-apps/api/core";
 import { homeDir } from "../../../platform/tauri/fs";
 import {
@@ -7,6 +8,7 @@ import {
   parseOpencodeGoUsage,
   unavailableRateLimits,
   type ProviderRateLimits,
+  type RateLimitFailureReason,
 } from "./rateLimits";
 import {
   captureChildProcess,
@@ -18,7 +20,7 @@ import {
   watchChild,
 } from "../../../integrations/harness/core/child";
 import { asRecord } from "../../../integrations/harness/providers/codex/codexProtocol";
-import { JsonRpcClient } from "../../../integrations/harness/core/jsonRpc";
+import { JsonRpcClient, JsonRpcResponseError } from "../../../integrations/harness/core/jsonRpc";
 import { newRequestId } from "../../../shared/lib/id/requestId";
 
 const USAGE_CHILD_ID = "bycoda-codex-usage";
@@ -57,10 +59,34 @@ export async function fetchOpencodeGoRateLimits(): Promise<ProviderRateLimits> {
     // footer retries instead of sticking in "unavailable" forever.
     return errorRateLimits("opencode", "OpenCode Go usage response was unexpected");
   }
+  // No key at all (no HTTP request) or a 401 is a sign-in problem; a 403 is a valid key without a plan.
+  const reason = httpSignInReason(result);
   if (result.status === "unavailable") {
-    return unavailableRateLimits("opencode", result.error?.trim() || "OpenCode Go not connected");
+    return unavailableRateLimits(
+      "opencode",
+      result.error?.trim() || "OpenCode Go not connected",
+      reason,
+    );
   }
-  return errorRateLimits("opencode", result.error?.trim() || "OpenCode Go usage unavailable");
+  return errorRateLimits(
+    "opencode",
+    result.error?.trim() || "OpenCode Go usage unavailable",
+    null,
+    reason,
+  );
+}
+
+/**
+ * The native usage commands answer `unavailable` without an HTTP status when no
+ * credential could be read, and with 401 when the provider rejected it. Nothing
+ * else (403, 5xx, transport errors, an identity change) says the account is signed out.
+ */
+function httpSignInReason(result: {
+  status: string;
+  httpStatus?: number | null;
+}): RateLimitFailureReason | undefined {
+  if (result.httpStatus === 401) return "signedOut";
+  return result.status === "unavailable" && result.httpStatus == null ? "signedOut" : undefined;
 }
 
 export type CodexRateLimitResetOutcome =
@@ -95,8 +121,13 @@ export async function fetchClaudeRateLimits(
         status: parsed.status === "ok" ? "ok" : parsed.status,
       };
     }
+    const reason = httpSignInReason(result);
     if (result.status === "unavailable") {
-      return unavailableRateLimits("claude", result.error?.trim() || "Claude not signed in");
+      return unavailableRateLimits(
+        "claude",
+        result.error?.trim() || "Claude not signed in",
+        reason,
+      );
     }
     if (result.status === "renewal_pending") {
       return {
@@ -104,7 +135,12 @@ export async function fetchClaudeRateLimits(
         renewalPending: true,
       };
     }
-    return errorRateLimits("claude", result.error?.trim() || "Claude usage unavailable");
+    return errorRateLimits(
+      "claude",
+      result.error?.trim() || "Claude usage unavailable",
+      null,
+      reason,
+    );
   } catch (error) {
     return errorRateLimits(
       "claude",
@@ -118,7 +154,7 @@ export async function fetchCodexRateLimits(accountId = "default"): Promise<Provi
   try {
     path = (await resolveCodexBinary()).path;
   } catch {
-    return unavailableRateLimits("codex", "Codex CLI not found");
+    return unavailableRateLimits("codex", "Codex CLI not found", "cliMissing");
   }
 
   const cwd = await homeDir();
@@ -140,14 +176,28 @@ export async function fetchCodexRateLimits(accountId = "default"): Promise<Provi
     }
     return parsed;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (/not signed in|chatgpt authentication required|not authenticated/i.test(message)) {
-      return unavailableRateLimits("codex", "Codex not signed in");
-    }
-    if (/ENOENT|not found|could not run/i.test(message)) {
-      return unavailableRateLimits("codex", "Codex CLI not found");
+    const message = errorText(error);
+    // Only the app-server's own refusal can mean "signed out", and it is confirmed
+    // with the account's `requiresOpenaiAuth`, not by reading the refusal text.
+    if (
+      error instanceof JsonRpcResponseError &&
+      (await codexRequiresSignIn(path, cwd, accountId))
+    ) {
+      return unavailableRateLimits("codex", "Codex not signed in", "signedOut");
     }
     return errorRateLimits("codex", message);
+  }
+}
+
+/** Same account scope as the failed read: `account/read` reports a missing ChatGPT login. */
+async function codexRequiresSignIn(path: string, cwd: string, accountId: string): Promise<boolean> {
+  try {
+    const account = asRecord(
+      await requestCodexAccount<unknown>(path, cwd, "account/read", {}, accountId),
+    );
+    return account != null && !account.account && account.requiresOpenaiAuth === true;
+  } catch {
+    return false;
   }
 }
 

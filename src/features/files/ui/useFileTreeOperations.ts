@@ -1,4 +1,4 @@
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { reportFailure } from "../../../shared/ui/reportFailure";
 import type { CopyNotice } from "./MoveRecoveryNotice";
 import { useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { wellFormedFileName } from "../model/fileName";
@@ -159,7 +159,7 @@ export function useFileTreeOperations({
         cwd,
         touched: [...new Set([...(current?.cwd === cwd ? current.touched : []), ...touched])],
         forget: [...new Set([...(current?.cwd === cwd ? current.forget : []), ...forget])],
-        message: presentRemoteError(error, { explicit: true }),
+        error,
       }));
     }
   };
@@ -444,7 +444,15 @@ export function useFileTreeOperations({
     try {
       await work();
     } catch (err: unknown) {
-      if (activeRoot.current === cwd) setOpError(presentRemoteError(err, { explicit: true }));
+      if (activeRoot.current === cwd) {
+        await reportFailure(err, {
+          toast: {
+            show: ({ message }) => {
+              if (activeRoot.current === cwd) setOpError(message);
+            },
+          },
+        });
+      }
     } finally {
       operationRunning.current = false;
       setOperationPending(false);

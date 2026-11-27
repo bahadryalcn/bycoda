@@ -71,6 +71,8 @@ export function ProjectMultiSelect({
   const [newGroupAnchor, setNewGroupAnchor] = useState<HTMLElement | null>(null);
   const [name, setName] = useState("");
   const [error, setError] = useState(false);
+  // A name that matches a group the user cannot see here; shown on the field, not as a save failure.
+  const [nameTaken, setNameTaken] = useState(false);
   const [groupPending, setGroupPending] = useState(false);
   const [deleting, setDeleting] = useState<string[] | null>(null);
   const latestPaths = useStableCallback(() => paths);
@@ -92,6 +94,7 @@ export function ProjectMultiSelect({
     setNewGroupAnchor(null);
     setDeleting(null);
     setError(false);
+    setNameTaken(false);
   };
   const selectAll = () => {
     setStored(new Set(paths.map(pathKey)));
@@ -188,6 +191,7 @@ export function ProjectMultiSelect({
     else if (id === "new") {
       setName("");
       setError(false);
+      setNameTaken(false);
       setNewGroupAnchor(trigger);
     }
   };
@@ -222,8 +226,8 @@ export function ProjectMultiSelect({
         <Popover
           anchor={newGroupAnchor}
           width={240}
-          className="p-2"
-          role="dialog"
+          variant="compact"
+          kind="dialog"
           aria-label={t("New group name")}
           onDismiss={() => {
             if (!groupPending) setNewGroupAnchor(null);
@@ -238,9 +242,10 @@ export function ProjectMultiSelect({
                 (group) => group.name.toLocaleLowerCase() === name.trim().toLocaleLowerCase(),
               );
               if (existing && !groups.some((allowed) => allowed.id === existing.id)) {
-                setError(true);
+                setNameTaken(true);
                 return;
               }
+              setNameTaken(false);
               setGroupPending(true);
               void withRoomPrivacyMutation(() => !!assignProjectsToNamedGroup(name, chosen))
                 .then(
@@ -260,7 +265,11 @@ export function ProjectMultiSelect({
               autoFocus
               className="min-w-0"
               value={name}
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) => {
+                setName(event.target.value);
+                setNameTaken(false);
+              }}
+              error={nameTaken ? t("A group with this name already exists") : undefined}
             />
             {error ? (
               <Alert tone="danger">{t("Could not save project changes. Try again.")}</Alert>
@@ -272,6 +281,9 @@ export function ProjectMultiSelect({
                 type="button"
                 onClick={() => setNewGroupAnchor(null)}
                 disabled={groupPending}
+                disabledReason={
+                  groupPending ? t("Wait for the current operation to finish") : undefined
+                }
               >
                 {t("Cancel")}
               </Button>
@@ -280,6 +292,13 @@ export function ProjectMultiSelect({
                 motion="none"
                 type="submit"
                 disabled={groupPending || !chosen.length || !name.trim()}
+                disabledReason={
+                  groupPending
+                    ? t("Wait for the current operation to finish")
+                    : !chosen.length
+                      ? t("Choose at least one project.")
+                      : t("Enter a name.")
+                }
                 loading={groupPending}
               >
                 {t("Group")}

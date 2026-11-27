@@ -18,6 +18,7 @@ export {
   sameProjectPath,
 } from "../../../shared/lib/paths";
 import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
+import { subscribePreferenceChanges } from "../../../shared/lib/storedSetting";
 
 const KEY = "bycoda.recentProjects";
 const RAIL_ORDER_KEY = "bycoda.projectRailOrder";
@@ -139,8 +140,10 @@ export function newProjectPaths(before: Iterable<string>, after: readonly string
 export function rememberImportedProjects(
   entries: readonly { path: string; lastUsedAt: number }[],
 ): RecentProject[] {
-  const current = loadRecents();
-  const archived = loadArchivedProjects();
+  // Strict like `rememberProjectNow`: an unreadable value must fail the import,
+  // not look empty and be overwritten (recents) or let archived projects back in.
+  const current = loadRecents(true);
+  const archived = requireArchivedProjects();
   const added: RecentProject[] = [];
   for (const entry of [...entries].sort((a, b) => b.lastUsedAt - a.lastUsedAt)) {
     const path = normalize(entry.path);
@@ -157,6 +160,8 @@ export function rememberImportedProjects(
   if (added.length === 0) return current;
   const next = [...current, ...added].slice(0, MAX);
   save(next);
+  if (localStorage.getItem(KEY) !== JSON.stringify(next))
+    throw new Error("Could not save recent projects.");
   return next;
 }
 
@@ -262,9 +267,8 @@ export function archiveProject(path: string): RecentProject[] {
  */
 export type ArchivedProjectsRead = { state: "ready" | "unavailable"; items: ArchivedProject[] };
 
-export function readArchivedProjects(): ArchivedProjectsRead {
+function parseArchivedProjects(raw: string | null): ArchivedProjectsRead {
   try {
-    const raw = localStorage.getItem(ARCHIVED_KEY);
     if (!raw) return { state: "ready", items: [] };
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return { state: "unavailable", items: [] };
@@ -288,25 +292,48 @@ export function readArchivedProjects(): ArchivedProjectsRead {
   }
 }
 
+let lastArchive: { raw: string | null; read: ArchivedProjectsRead } | undefined;
+
+/** Every check reads current storage. Only decoding and path validation can be reused. */
+function archivedProjectsSnapshot(): ArchivedProjectsRead {
+  try {
+    const raw = localStorage.getItem(ARCHIVED_KEY);
+    if (lastArchive?.raw !== raw) lastArchive = { raw, read: parseArchivedProjects(raw) };
+    return lastArchive.read;
+  } catch {
+    lastArchive = undefined;
+    return { state: "unavailable", items: [] };
+  }
+}
+
+export function readArchivedProjects(): ArchivedProjectsRead {
+  const { state, items } = archivedProjectsSnapshot();
+  return { state, items: items.map((item) => ({ ...item })) };
+}
+
 export function loadArchivedProjects(): ArchivedProject[] {
   return readArchivedProjects().items;
 }
 
-function requireArchivedProjects(): ArchivedProject[] {
-  const read = readArchivedProjects();
+function requireArchivedProjects(): readonly ArchivedProject[] {
+  const read = archivedProjectsSnapshot();
   if (read.state !== "ready") throw new Error("Could not read archived projects.");
   return read.items;
 }
 
 export function subscribeArchivedProjects(onChange: () => void): () => void {
   if (typeof window === "undefined") return () => {};
-  window.addEventListener(ARCHIVED_CHANGED, onChange);
-  return () => window.removeEventListener(ARCHIVED_CHANGED, onChange);
+  const unsubscribe = subscribePreferenceChanges([ARCHIVED_KEY], ARCHIVED_CHANGED, onChange);
+  window.addEventListener("focus", onChange);
+  return () => {
+    unsubscribe();
+    window.removeEventListener("focus", onChange);
+  };
 }
 
 function saveArchived(next: ArchivedProject[]) {
   const raw = JSON.stringify(next);
-  localStorage.setItem(ARCHIVED_KEY, JSON.stringify(next));
+  localStorage.setItem(ARCHIVED_KEY, raw);
   if (localStorage.getItem(ARCHIVED_KEY) !== raw)
     throw new Error("Could not save archived projects.");
   notifyProjectPathsChanged();

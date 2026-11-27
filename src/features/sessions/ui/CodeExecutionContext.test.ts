@@ -4,11 +4,20 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { CodeExecutionProvider, CodeRunButton } from "./CodeExecutionContext";
 
-const mocks = vi.hoisted(() => ({ create: vi.fn(), start: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  create: vi.fn(),
+  start: vi.fn(),
+  dialog: vi.fn(() => null),
+  toast: vi.fn(),
+}));
 vi.mock("../../terminal/public/codeExecution", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   createCodeTerminal: mocks.create,
-  CodeTerminalDialog: () => null,
+  CodeTerminalDialog: mocks.dialog,
+}));
+vi.mock("../../../shared/ui/ToastRegion", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  toast: { show: mocks.toast },
 }));
 afterEach(() => vi.clearAllMocks());
 
@@ -56,7 +65,7 @@ it("blocks partial source and executes complete source once despite double click
     });
   try {
     await act(async () => root.render(render(true)));
-    expect(container.querySelector("button")?.disabled).toBe(true);
+    expect(container.querySelector("button")?.getAttribute("aria-disabled")).toBe("true");
     await act(async () => root.render(render(false)));
     await act(async () => {
       container.querySelector("button")!.click();
@@ -118,5 +127,82 @@ it("opens a native run in the project dock and reports its settled output once",
     expect(report.mock.calls[0][0]).toContain("hi");
   } finally {
     await act(async () => root.unmount());
+  }
+});
+
+it("opens a remote run in the project dock before dispatching it on the Host", async () => {
+  const controller = {
+    snapshot: () => ({ id: "remote-run", phase: "starting" }),
+    start: vi.fn(async () => {}),
+  };
+  mocks.create.mockReturnValue(controller);
+  const openRemoteTerminal = vi.fn(() => {
+    expect(controller.start).not.toHaveBeenCalled();
+    return true;
+  });
+  const cwd = "remote://mac/project";
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(CodeExecutionProvider, {
+          scope: { sessionId: "s", projectCwd: cwd, native: false, openRemoteTerminal },
+          cwd,
+          children: createElement(CodeRunButton, {
+            code: "sleep 10",
+            language: "bash",
+            incomplete: false,
+          }),
+        }),
+      ),
+    );
+    await act(async () => container.querySelector("button")!.click());
+    expect(openRemoteTerminal).toHaveBeenCalledWith(
+      "s",
+      expect.objectContaining({ controller, options: expect.objectContaining({ cwd }) }),
+    );
+    expect(controller.start).toHaveBeenCalledOnce();
+    expect(mocks.dialog).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("keeps a deferred native startup failure in the fallback dialog without a toast", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const controller = {
+    start: vi.fn(async () => {}),
+    snapshot: () => ({
+      phase: "unknown",
+      actionError: new Error("[RPC_TIMEOUT] Terminal profiles timed out."),
+    }),
+  };
+  mocks.create.mockReturnValue(controller);
+  const openTerminal = vi.fn();
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(CodeExecutionProvider, {
+          scope: { sessionId: "s", projectCwd: "/project", native: true, openTerminal },
+          cwd: "/project",
+          children: createElement(CodeRunButton, {
+            code: "echo hi",
+            language: "bash",
+            incomplete: false,
+          }),
+        }),
+      ),
+    );
+    await act(async () => container.querySelector("button")!.click());
+    expect(mocks.dialog).toHaveBeenCalledOnce();
+    expect(mocks.toast).not.toHaveBeenCalled();
+    expect(openTerminal).not.toHaveBeenCalled();
+    expect(controller.start).toHaveBeenCalledOnce();
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
   }
 });

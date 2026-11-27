@@ -1,3 +1,4 @@
+import { ownerPromptLabel } from "../model/ownerPromptLabels";
 import { Text } from "../../../shared/ui/Text";
 import { useState, type FormEvent } from "react";
 import { useFormat, useT } from "../../../shared/i18n";
@@ -99,21 +100,32 @@ export function OwnerSecretForm({ request }: { request: OwnerSecretInput }) {
           type="button"
           onClick={() => cancelOwnerSecretInput(request.id)}
         >
-          {t(request.cancelLabel)}
+          {ownerPromptLabel(t, request.cancelLabel)}
         </Button>
-        <Button size="sm" type="submit" disabled={!value || tooLong}>
-          {t(request.confirmLabel)}
+        <Button
+          size="sm"
+          type="submit"
+          disabled={!value || tooLong}
+          disabledReason={tooLong ? t("The secret is too long.") : t("Enter the secret first.")}
+        >
+          {ownerPromptLabel(t, request.confirmLabel)}
         </Button>
       </div>
     </form>
   );
 }
 
-/** Off-screen conversations use this dialog; closing it cancels the request. */
-export function OwnerSecretDialog({ request }: { request: OwnerSecretInput }) {
+/** Off-screen conversations use this dialog; closing it only defers the request, the Cancel button rejects it. */
+export function OwnerSecretDialog({
+  request,
+  onClose,
+}: {
+  request: OwnerSecretInput;
+  onClose: () => void;
+}) {
   const t = useT();
   return (
-    <Modal onClose={() => cancelOwnerSecretInput(request.id)} title={t("Secret request")} size="sm">
+    <Modal onClose={onClose} title={t("Secret request")} size="sm">
       <div className="flex flex-col gap-3">
         <OwnerSecretHeader request={request} />
         <OwnerSecretForm request={request} />

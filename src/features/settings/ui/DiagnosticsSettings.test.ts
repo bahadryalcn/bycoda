@@ -5,6 +5,38 @@ import { expect, it, vi } from "vitest";
 import { DiagnosticsGroup } from "./DiagnosticsSettings";
 const copy = vi.hoisted(() => vi.fn());
 vi.mock("../../../platform/tauri/clipboard", () => ({ copyText: copy }));
+const stallProfiles = vi.hoisted(() => ({
+  load: vi.fn(async () => false),
+  save: vi.fn(async (enabled: boolean) => enabled),
+}));
+vi.mock("../model/hostStallProfiles", () => ({
+  loadHostStallProfiles: stallProfiles.load,
+  saveHostStallProfiles: stallProfiles.save,
+}));
+it("shows the Host CPU profile switch off by default and stores a change on the Host", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const hostSwitch = () =>
+    container.querySelector<HTMLButtonElement>(
+      '#host-stall-profiles [role="switch"], [data-setting-id="host-stall-profiles"] [role="switch"]',
+    ) ?? [...container.querySelectorAll<HTMLButtonElement>('[role="switch"]')].at(-1)!;
+  try {
+    await act(async () => root.render(createElement(DiagnosticsGroup)));
+    expect(hostSwitch().getAttribute("aria-checked")).toBe("false");
+    await act(async () => hostSwitch().click());
+    expect(stallProfiles.save).toHaveBeenCalledWith(true);
+    expect(hostSwitch().getAttribute("aria-checked")).toBe("true");
+    stallProfiles.save.mockRejectedValueOnce(new Error("Host offline"));
+    await act(async () => hostSwitch().click());
+    expect(hostSwitch().getAttribute("aria-checked")).toBe("true");
+    expect(container.textContent).toContain("Could not confirm the Host setting.");
+    expect(container.textContent).toContain("Retry");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
 it("keeps copy feedback local, prevents duplicates, and preserves retry after failure", async () => {
   let reject!: (reason: Error) => void;
   copy
@@ -34,12 +66,13 @@ it("keeps copy feedback local, prevents duplicates, and preserves retry after fa
     expect(button.getAttribute("aria-busy")).toBe("true");
     expect(document.activeElement).toBe(button);
     await act(async () => reject(new Error("Clipboard unavailable")));
-    expect(container.querySelector('[role="alert"]')?.textContent).toBe("Clipboard unavailable");
+    expect(button.getAttribute("data-copy-state")).toBe("failed");
+    expect(button.textContent).toBe("Copy failed. Try again.");
     expect(button.getAttribute("aria-busy")).not.toBe("true");
     await act(async () => button.click());
     expect(copy).toHaveBeenCalledTimes(2);
+    expect(button.getAttribute("data-copy-state")).toBe("copied");
     expect(container.textContent).toContain("Copied");
-    expect(container.querySelector('[role="alert"]')).toBeNull();
     await act(async () => container.querySelector<HTMLElement>('[role="switch"]')!.click());
   } finally {
     await act(async () => root.unmount());
@@ -47,7 +80,7 @@ it("keeps copy feedback local, prevents duplicates, and preserves retry after fa
   }
 });
 
-it("shows only the latest operation: Clear replaces a still-visible Copied", async () => {
+it("shows Cleared after Clear, and a new Copy hides it", async () => {
   copy.mockReset().mockResolvedValue(undefined);
   const container = document.createElement("div");
   document.body.append(container);
@@ -61,7 +94,8 @@ it("shows only the latest operation: Clear replaces a still-visible Copied", asy
     expect(container.textContent).toContain("Copied");
     await act(async () => named("Clear").click());
     expect(container.textContent).toContain("Cleared");
-    expect(container.textContent).not.toContain("Copied");
+    await act(async () => named("Copied").click());
+    expect(container.textContent).not.toContain("Cleared");
     await act(async () => container.querySelector<HTMLElement>('[role="switch"]')!.click());
   } finally {
     await act(async () => root.unmount());

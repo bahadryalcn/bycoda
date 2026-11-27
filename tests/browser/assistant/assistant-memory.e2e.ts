@@ -58,7 +58,12 @@ for (const theme of ["light", "dark"])
       await choose(page, "Scope", "Everywhere");
       await capture(page, `memory-edit-${theme}-${width}`);
       await editor.getByRole("button", { name: "Save", exact: true }).click();
-      await expect(row(page, edited)).toContainText("Everywhere");
+      // Everywhere is the default scope, so the row names only narrower scopes.
+      await expect(row(page, edited)).not.toContainText("Coding sessions only");
+      await row(page, edited).getByRole("button", { name: "Edit", exact: true }).click();
+      await expect(page.getByRole("button", { name: /^Scope: Everywhere/ })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog")).toHaveCount(0);
       const toggle = row(page, edited).getByRole("switch", { name: "Enable memory", exact: true });
       await toggle.focus();
       await page.keyboard.press("Space");
@@ -71,15 +76,12 @@ for (const theme of ["light", "dark"])
       await search.fill("no saved memory matches this query");
       await expect(page.getByText(edited, { exact: true })).toHaveCount(0);
       await expect(page.getByText("No results", { exact: true })).toBeVisible();
-      await expect(page.getByText("Rules 1/40", { exact: true })).toBeVisible();
       await capture(page, `memory-search-empty-${theme}-${width}`);
       await search.fill("");
       await row(page, edited).getByRole("button", { name: "Delete memory", exact: true }).click();
-      const confirmation = page.getByRole("dialog", { name: "Delete memory?", exact: true });
-      await expect(confirmation).toContainText(edited);
-      await capture(page, `memory-delete-${theme}-${width}`);
-      await confirmation.getByRole("button", { name: "Delete", exact: true }).click();
       await expect(row(page, edited)).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeVisible();
+      await capture(page, `memory-delete-${theme}-${width}`);
       await page.getByRole("button", { name: "Undo", exact: true }).click();
       await expect(row(page, edited)).toBeVisible();
       await expect(

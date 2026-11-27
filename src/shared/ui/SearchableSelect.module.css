@@ -72,16 +72,16 @@ button:global(.bycoda-arc):is(
   position: sticky;
   inset-block-start: 0;
   z-index: 1;
-  background: var(--ui-surface-raised);
-  padding: 0.375rem 0.5rem 0.125rem;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-micro);
-  font-weight: 500;
-  line-height: 1.35;
+  background: var(--ui-surface-floating);
+  padding: var(--ui-space-1, 0.25rem) var(--ui-space-2, 0.5rem);
+}
+/* Keep the inter-group space inside the measured heading in a windowed menu. */
+.groupHeading[data-after-group] {
+  padding-block-start: 0.625rem;
 }
 .pinnedOption {
   position: sticky;
   inset-block-start: 0;
   z-index: 1;
-  background: var(--ui-surface-raised);
+  background: var(--ui-surface-floating);
 }

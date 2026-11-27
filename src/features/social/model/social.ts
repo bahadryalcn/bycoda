@@ -1,8 +1,10 @@
 /** Public host contract. OAuth credentials and tool grants never belong here. */
 import type { RemoteProvider } from "../../connections/model/protocol";
+import type { YouTubeCapability } from "../../../integrations/social/capabilities/youtube-operations";
 // Payload shapes are owned by the adapters; type-only imports keep one source of truth.
+import type { InstagramPublishOptions } from "../../../integrations/social/adapters/instagram-publish";
 import type { RedditPayload } from "../../../integrations/social/adapters/reddit-rules";
-import type { XPostExtras } from "../../../integrations/social/adapters/x";
+import type { XPostExtras } from "../../../integrations/social/x-publish";
 import type {
   WhatsAppInteractive,
   WhatsAppTemplateMessage,
@@ -99,7 +101,7 @@ export const SOCIAL_ACCOUNT_TYPES = {
 export const PROFILE_ONLY_PLATFORMS: readonly SocialPlatform[] = [];
 export const TOKEN_PLATFORMS: readonly SocialPlatform[] = ["whatsapp", "telegram"];
 export type SocialPermission = "read" | "draft" | "publish" | "reply" | "message" | "comment";
-export type SocialOperation =
+export type BaseSocialOperation =
   | "publish"
   | "media"
   | "comments.read"
@@ -114,7 +116,22 @@ export type SocialOperation =
   | "delete"
   | "analytics"
   | "audience.collect"
-  | "profile.read";
+  | "profile.read"
+  // X capabilities.
+  | "x.engagement"
+  | "x.relationships"
+  | "x.lists"
+  | "x.spaces"
+  // Facebook Page operations
+  | "profile.update"
+  | "post.edit"
+  | "post.schedule"
+  | "comment.moderate"
+  | "comment.privateReply"
+  | "mentions.read"
+  | "live.read"
+  | "live.transmit";
+export type SocialOperation = BaseSocialOperation | YouTubeCapability;
 export type Capability = {
   operation: SocialOperation;
   status: "available" | "unsupported" | "pending" | "expired";
@@ -148,6 +165,8 @@ export type SocialAccount = {
   connected: boolean;
   /** Undefined means OAuth. Browser uses the executor's isolated web profile; token uses host-configured bot/business credentials. */
   connection?: "oauth" | "browser" | "token";
+  /** Owner-selected X API billing product. Absent means paid X calls are disabled. */
+  xApiProduct?: "pay-per-use" | "enterprise";
   /** Hybrid mode: API first, browser only when the adapter allows the fallback. */
   fallback?: "browser";
   paused: boolean;
@@ -182,12 +201,20 @@ export type SocialProjectProfile = {
   facts: PublicFact[];
 };
 export type SocialMedia = {
-  kind: "image" | "video" | "document";
+  kind: "image" | "video" | "document" | "audio";
   url?: string;
   uploadId?: string;
   alt?: string;
   title?: string;
 };
+export type LinkedInPostFormat =
+  | {
+      kind: "poll";
+      question: string;
+      options: string[];
+      duration: "ONE_DAY" | "THREE_DAYS" | "SEVEN_DAYS" | "FOURTEEN_DAYS";
+    }
+  | { kind: "article"; source: string; title: string; description?: string };
 export type CampaignVariant = {
   accountId: string;
   text: string;
@@ -198,7 +225,11 @@ export type CampaignVariant = {
   youtube?: YouTubeVideoOptions;
   tiktok?: TikTokVideoOptions;
   snapchat?: SnapchatPublishOptions;
-  facebook?: FacebookReelOptions;
+  instagram?: InstagramPublishOptions;
+  x?: XPostExtras;
+  linkedinFormat?: LinkedInPostFormat;
+  reddit?: RedditPayload;
+  facebook?: FacebookPublishOptions;
 };
 /** Explicit Reel destination; omission preserves ordinary Page feed publishing. */
 export type FacebookReelOptions = {
@@ -208,12 +239,22 @@ export type FacebookReelOptions = {
   height: number;
   frameRate: number;
 };
+export type FacebookPublishOptions =
+  | FacebookReelOptions
+  | { target: "feed"; scheduledPublishAt: number }
+  | { target: "video"; scheduledPublishAt?: number }
+  | { target: "story" };
 export type SnapchatPublishOptions = {
-  target: "spotlight" | "story";
+  target: "spotlight" | "story" | "saved_story";
   locale?: string;
   durationSeconds: number;
   width: number;
   height: number;
+  storyTtl?: "ONE_DAY" | "TWO_DAYS" | "THREE_DAYS" | "ONE_WEEK";
+  linkStickerText?: string;
+  linkStickerPlacement?: { centerX: number; centerY: number };
+  captionCenterY?: number;
+  savedStorySources?: { kind: "spotlight" | "snap"; id: string }[];
 };
 export type TikTokCreatorInfo = {
   nickname: string;
@@ -241,6 +282,7 @@ export type TikTokVideoOptions = {
   mode?: "direct" | "inbox";
 };
 export type YouTubeVideoOptions = {
+  format?: "video" | "short";
   title: string;
   privacy: "private" | "unlisted" | "public";
   madeForKids: boolean;
@@ -300,6 +342,7 @@ export type SocialThread = {
   lastInboundAt: number;
   replyUntil?: number;
   replyAllowed?: boolean;
+  instagramSource?: "live_comment";
   platformPostId?: string;
   events: {
     id: string;
@@ -349,6 +392,8 @@ export type SocialDraft = {
   /** Absent for a personal draft bound to an unassigned account conversation. */
   projectId?: string;
   kind: "reply" | "message" | "comment";
+  /** An eligible Page comment answered privately in Messenger. */
+  facebookPrivateReply?: true;
   threadId?: string;
   contactId: string;
   postId?: string;
@@ -356,6 +401,7 @@ export type SocialDraft = {
   media?: SocialMedia[];
   factIds: string[];
   inboundEventId?: string;
+  instagramPrivateReply?: true;
   createdAt: number;
   /** Review reason; autonomy uses "awaiting_approval" | "needs_human" | "retry_exhausted". */
   reviewReason?: string;
@@ -423,18 +469,23 @@ export type SocialJob = {
     media: SocialMedia[];
     link?: string;
     recipientId?: string;
+    instagramRecipientHandle?: string;
     threadId?: string;
     postId?: string;
     objectPostId?: string;
     youtube?: YouTubeVideoOptions;
     tiktok?: TikTokVideoOptions;
     snapchat?: SnapchatPublishOptions;
-    facebook?: FacebookReelOptions;
+    instagram?: InstagramPublishOptions;
+    linkedinFormat?: LinkedInPostFormat;
+    facebook?: FacebookPublishOptions;
     reddit?: RedditPayload;
     x?: XPostExtras;
     whatsapp?: { template?: WhatsAppTemplateMessage; interactive?: WhatsAppInteractive };
     /** Meta 24-hour messaging window end (epoch ms), set from the thread when the draft is created. */
     replyUntil?: number;
+    instagramPrivateReply?: { commentId: string; until: number };
+    facebookPrivateReply?: true;
   };
   contactId?: string;
   status: "queued" | "running" | "succeeded" | "failed" | "review" | "cancelled";
@@ -458,6 +509,7 @@ export type SocialJob = {
   createdAt: number;
   actorId: string;
   preparation?: {
+    xThread?: { postIds: string[]; submitting: boolean };
     containerId?: string;
     mediaIds?: string[];
     /** Meta preparation is bound to the exact actor/content and expires with its containers. */
@@ -467,6 +519,7 @@ export type SocialJob = {
       signature: string;
       startedAt: number;
       publishedId?: string;
+      instagramSubmitted?: true;
     };
     facebookReel?: {
       actorId: string;
@@ -474,6 +527,13 @@ export type SocialJob = {
       videoId: string;
       stage: "created" | "uploading" | "uploaded" | "submitted";
       createdAt: number;
+    };
+    facebookMedia?: {
+      actorId: string;
+      signature: string;
+      mediaId?: string;
+      stage: "created" | "uploading" | "uploaded" | "submitted";
+      postId?: string;
     };
     linkedinMedia?: {
       actorId: string;
@@ -484,13 +544,19 @@ export type SocialJob = {
     snapchatMedia?: {
       actorId: string;
       signature: string;
-      mediaId: string;
+      mediaId?: string;
       createdAt: number;
       spotlightId?: string;
-      /** Set before the Spotlight submit call; a retry after it is refused as uncertain. */
+      storyId?: string;
+      storySnapId?: string;
+      savedStoryId?: string;
+      mediaIds?: string[];
+      /** Persisted before submit so a lost response never triggers a second publication. */
       submittedAt?: number;
     };
     tiktokPublishId?: string;
+    /** YouTube session URL is held by the Host credential store. */
+    youtubeUploadPending?: true;
     youtubeVideoId?: string;
     youtubeVisibility?: "private" | "unlisted" | "public";
     xVideo?: { id: string; expiresAt: number };
@@ -569,6 +635,9 @@ export type SocialCollectionFilter = {
   status?: string;
   segmentId?: string;
   since?: number;
+  /** jobs only, with `scheduledTo`: epoch-ms window [from, to) on `scheduledAt`, ordered by it ascending. */
+  scheduledFrom?: number;
+  scheduledTo?: number;
 };
 export type SocialWorkspaceFilters = Partial<Record<SocialCollection, SocialCollectionFilter>>;
 export type SocialWorkspaceQuery = {

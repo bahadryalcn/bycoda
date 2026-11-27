@@ -1,6 +1,8 @@
+import { graphemeLength, truncateGraphemes } from "./text.ts";
+
 export function limitSection(value: string, maxChars: number): string {
-  if (value.length <= maxChars) return value;
-  return `${value.slice(0, maxChars)}\n\n[truncated]`;
+  if (graphemeLength(value) <= maxChars) return value;
+  return `${truncateGraphemes(value, maxChars, "")}\n\n[truncated]`;
 }
 
 export function extractJsonObject(raw: string): string | null {
@@ -37,8 +39,10 @@ export function extractJsonObject(raw: string): string | null {
 
 const GIT_TEXT_KEYS = ["subject", "title", "message", "body", "branch"] as const;
 
-/** Memoized JSON grammar suffixes avoid extracting and parsing every overlapping brace.
- * Tables use 14 bytes/code unit on ordinary supported string lengths; no payload cap changes. */
+/** Replies above this size skip keyed selection; its tables cost about 14 bytes per code unit. */
+const KEYED_JSON_SCAN_LIMIT = 64 * 1024;
+
+/** Memoized JSON grammar suffixes avoid extracting and parsing every overlapping brace. */
 function selectedJsonObject(raw: string): { start: number; end: number } | null {
   const length = raw.length;
   const IndexTable = length < 0xffff_ffff ? Uint32Array : Float64Array;
@@ -174,15 +178,22 @@ function selectedJsonObject(raw: string): { start: number; end: number } | null 
   return fallback;
 }
 
-export function parseJsonObject(raw: string): Record<string, unknown> | null {
-  const trimmed = raw.trim();
-  const selected = selectedJsonObject(trimmed);
-  if (!selected) return null;
+function parseObjectText(json: string | null): Record<string, unknown> | null {
+  if (json === null) return null;
   try {
-    return JSON.parse(trimmed.slice(selected.start, selected.end)) as Record<string, unknown>;
+    return JSON.parse(json) as Record<string, unknown>;
   } catch {
     return null;
   }
+}
+
+export function parseJsonObject(raw: string): Record<string, unknown> | null {
+  const trimmed = raw.trim();
+  // shortcut: replies over 64 KiB use the first balanced object without key selection, to bound
+  // table memory; upgrade to a streaming keyed scan if large keyed replies must pick a non-first object.
+  if (trimmed.length > KEYED_JSON_SCAN_LIMIT) return parseObjectText(extractJsonObject(trimmed));
+  const selected = selectedJsonObject(trimmed);
+  return selected ? parseObjectText(trimmed.slice(selected.start, selected.end)) : null;
 }
 
 export function stringField(rec: Record<string, unknown>, key: string): string {

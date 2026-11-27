@@ -1,42 +1,53 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { Badge } from "../../../shared/ui/Badge";
 import { useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { InlineError } from "../../../shared/ui/InlineError";
-import { BlockQuote, Copy, Info, X } from "../../../shared/ui/icons";
+import { CopyButton } from "../../../shared/ui/CopyButton";
+import {
+  BlockQuote,
+  Info,
+  MessageSquare,
+  StickyNote,
+  UsersRound,
+  X,
+} from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
 import { copyMessage } from "../../../platform/tauri/clipboard";
-import { chatCitationPreview, chatCitationToken, type ChatCitation } from "../model/chatCitation";
+import {
+  chatCitationPreview,
+  chatCitationToken,
+  fileCommentLabel,
+  type ChatCitation,
+  type ComposerCitation,
+  type FileCommentCitation,
+} from "../model/chatCitation";
 import { SkillTokenText } from "./SkillTokenText";
 import { WorkItemMentionChip } from "./WorkItemMentionChip";
 import { tokenLabel } from "../model/attachmentTokens";
 import { findCitationTokens } from "../model/citationTokens";
 import { highlightChatCitation } from "../model/chatCitationHighlight";
 import styles from "./ChatCitationText.module.css";
-import { providerForAlias } from "../../inbox/public/workItemMentions";
+import { scopedMentionParts } from "../model/composerMentionScopes";
 
-/** Display every tracker token, including repeats beyond the context lookup limit. */
-export function workItemMentionParts(text: string): { text: string; workItem?: true }[] {
-  const parts: { text: string; workItem?: true }[] = [];
-  const tokens = /(^|[\s([{])(@([a-z]+):[a-z0-9](?:[a-z0-9_./#!-]*[a-z0-9])?)/gi;
-  let end = 0;
-  for (const match of text.matchAll(tokens)) {
-    if (!providerForAlias(match[3])) continue;
-    const start = match.index + match[1].length;
-    if (start > end) parts.push({ text: text.slice(end, start) });
-    parts.push({ text: match[2], workItem: true });
-    end = start + match[2].length;
-  }
-  if (end < text.length) parts.push({ text: text.slice(end) });
-  return parts;
-}
-
-/** Tracker tokens render as chips that look up their item on click. */
-export function WorkItemMentionText({ text }: { text: string }) {
-  return workItemMentionParts(text).map((part, index) =>
-    part.workItem ? (
+/** Tracker tokens keep their lookup action. Crew and note tokens retain their source text. */
+export function ScopedMentionText({ text }: { text: string }) {
+  return scopedMentionParts(text).map((part, index) =>
+    part.kind === "work-item" ? (
       <WorkItemMentionChip key={index} token={part.text} />
+    ) : part.kind ? (
+      <Badge
+        key={index}
+        size="xs"
+        appearance="subtle"
+        tone="accent"
+        icon={part.kind === "crew" ? <UsersRound /> : <StickyNote />}
+        data-scoped-mention={part.kind}
+      >
+        {part.text}
+      </Badge>
     ) : (
       <SkillTokenText key={index} text={part.text} />
     ),
@@ -44,7 +55,73 @@ export function WorkItemMentionText({ text }: { text: string }) {
 }
 
 /** An inline `[quoteN]` in sent text: hover highlights the source, click jumps to it. */
-export function CitationTokenPill({ token, citation }: { token: string; citation: ChatCitation }) {
+export function CitationTokenPill({
+  token,
+  citation,
+}: {
+  token: string;
+  citation: ComposerCitation;
+}) {
+  return citation.file ? (
+    <FileCommentPill citation={citation} />
+  ) : (
+    <ConversationCitationToken token={token} citation={citation} />
+  );
+}
+
+function FileCommentPill({ citation }: { citation: FileCommentCitation }) {
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const label = fileCommentLabel(citation.file);
+  return (
+    <>
+      <Button
+        variant="link"
+        layout="text"
+        motion="none"
+        type="button"
+        aria-label={label}
+        aria-haspopup="dialog"
+        aria-expanded={Boolean(anchor)}
+        onClick={(event) => {
+          event.stopPropagation();
+          setAnchor(event.currentTarget);
+        }}
+      >
+        <Text as="span" size="inherit" tone="feature">
+          <span className={styles.token}>
+            <MessageSquare className={styles.tokenIcon} aria-hidden />
+            {label}
+          </span>
+        </Text>
+      </Button>
+      {anchor ? (
+        <Popover
+          anchor={anchor}
+          side="top"
+          width={360}
+          kind="dialog"
+          aria-label={label}
+          onDismiss={() => setAnchor(null)}
+          flow="scroll"
+        >
+          <div className={styles.details}>
+            <Text size="caption" tone="secondary" wrap="anywhere">
+              {citation.file.path}
+            </Text>
+            <blockquote className={styles.quote}>
+              <Text size="secondary">{citation.text}</Text>
+            </blockquote>
+            <Text as="p" size="secondary" className={styles.comment}>
+              {citation.comment}
+            </Text>
+          </div>
+        </Popover>
+      ) : null}
+    </>
+  );
+}
+
+function ConversationCitationToken({ token, citation }: { token: string; citation: ChatCitation }) {
   const [unavailable, setUnavailable] = useState(false);
   return (
     <Button
@@ -67,25 +144,24 @@ export function CitationTokenPill({ token, citation }: { token: string; citation
         );
       }}
     >
-      <Text
-        as="span"
-        size="inherit"
-        tone={unavailable ? "secondary" : "accent"}
-        {...surfaceAttributes(
-          {
-            radius: "control",
-            tone: unavailable ? "neutral" : "accent",
-            ring: unavailable ? "tone-neutral" : "tone-accent",
-          },
-          styles.token,
-        )}
-        data-unavailable={unavailable || undefined}
-      >
-        <BlockQuote className={styles.tokenIcon} aria-hidden />
-        {/* Brackets stay in the DOM so selecting and copying give the token back. */}
-        <span className="sr-only">[</span>
-        {tokenLabel(token)}
-        <span className="sr-only">]</span>
+      <Text as="span" size="inherit" tone={unavailable ? "secondary" : "accent"}>
+        <span
+          {...surfaceAttributes(
+            {
+              radius: "control",
+              tone: unavailable ? "neutral" : "accent",
+              ring: unavailable ? "tone-neutral" : "tone-accent",
+            },
+            styles.token,
+          )}
+          data-unavailable={unavailable || undefined}
+        >
+          <BlockQuote className={styles.tokenIcon} aria-hidden />
+          {/* Brackets stay in the DOM so selecting and copying give the token back. */}
+          <span className="sr-only">[</span>
+          {tokenLabel(token)}
+          <span className="sr-only">]</span>
+        </span>
       </Text>
     </Button>
   );
@@ -95,10 +171,9 @@ function Citation({ citation, token }: { citation: ChatCitation; token?: string 
   const t = useT();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [unavailable, setUnavailable] = useState(false);
-  const [copyState, setCopyState] = useState<"idle" | "pending" | "copied" | "error">("idle");
   const label = citation.comment.trim() || citation.text;
   return (
-    <div className={styles.item}>
+    <div {...surfaceAttributes({ variant: "card", radius: "card" }, styles.item)}>
       <div className={styles.row}>
         <Button
           variant="link"
@@ -122,16 +197,15 @@ function Citation({ citation, token }: { citation: ChatCitation; token?: string 
         >
           <BlockQuote className="icon-sm shrink-0" />
           {token ? (
-            <Text
-              as="span"
-              size="inherit"
-              tone="accent"
-              {...surfaceAttributes(
-                { radius: "control", tone: "accent", ring: "tone-accent" },
-                styles.token,
-              )}
-            >
-              {tokenLabel(token)}
+            <Text as="span" size="inherit" tone="accent">
+              <span
+                {...surfaceAttributes(
+                  { radius: "control", tone: "accent", ring: "tone-accent" },
+                  styles.token,
+                )}
+              >
+                {tokenLabel(token)}
+              </span>
             </Text>
           ) : null}
           <Text size="inherit" tone="inherit" truncate className={styles.label}>
@@ -153,10 +227,10 @@ function Citation({ citation, token }: { citation: ChatCitation; token?: string 
         </Button>
       </div>
       {unavailable ? (
-        <Text size="caption" tone="secondary" className={styles.fallback} role="status">
+        <InlineMessage tone="warning">
           {t("Source changed or unavailable. The saved quote is preserved.")}
           <span className={styles.excerpt}>{citation.text}</span>
-        </Text>
+        </InlineMessage>
       ) : null}
       {anchor ? (
         <Popover
@@ -164,10 +238,11 @@ function Citation({ citation, token }: { citation: ChatCitation; token?: string 
           side="top"
           align="end"
           width={360}
+          variant="panel"
           onDismiss={() => setAnchor(null)}
         >
           <div className={styles.details}>
-            <Text as="div" tone="inherit" leading="inherit" className={styles.header}>
+            <div className={styles.header}>
               <strong>{t("Quoted reply")}</strong>
               <Button
                 iconOnly
@@ -178,10 +253,12 @@ function Citation({ citation, token }: { citation: ChatCitation; token?: string 
               >
                 <X className="icon-sm" />
               </Button>
-            </Text>
-            <Text as="blockquote" size="secondary" leading="inherit" className={styles.quote}>
-              {citation.text}
-            </Text>
+            </div>
+            <blockquote className={styles.quote}>
+              <Text size="secondary" leading="inherit">
+                {citation.text}
+              </Text>
+            </blockquote>
             {citation.comment ? (
               <Text
                 as="p"
@@ -193,27 +270,13 @@ function Citation({ citation, token }: { citation: ChatCitation; token?: string 
                 {citation.comment}
               </Text>
             ) : null}
-            <Button
+            <CopyButton
               variant="ghost"
               size="sm"
-              loading={copyState === "pending"}
-              onClick={async () => {
-                if (copyState === "pending") return;
-                setCopyState("pending");
-                try {
-                  await copyMessage(citation.text);
-                  setCopyState("copied");
-                } catch {
-                  setCopyState("error");
-                }
-              }}
-            >
-              <Copy className="icon-sm" />
-              {copyState === "copied" ? t("Quote copied") : t("Copy quote")}
-            </Button>
-            {copyState === "error" ? (
-              <InlineError>{t("Could not copy quote. Please try again.")}</InlineError>
-            ) : null}
+              label={t("Copy quote")}
+              copiedLabel={t("Quote copied")}
+              onCopy={() => copyMessage(citation.text)}
+            />
           </div>
         </Popover>
       ) : null}
@@ -229,20 +292,26 @@ export function ChatCitationList({
   citations,
   text,
 }: {
-  citations: readonly ChatCitation[];
+  citations: readonly ComposerCitation[];
   text: string;
 }) {
-  if (!citations.length) return null;
   const used = new Set(findCitationTokens(text, citations.length).map((match) => match.index));
+  if (!citations.some((citation, index) => !citation.file || !used.has(index))) return null;
   return (
     <div className={styles.list}>
-      {citations.map((citation, index) => (
-        <Citation
-          key={`${citation.id}:${index}`}
-          citation={citation}
-          token={used.has(index) ? chatCitationToken(index) : undefined}
-        />
-      ))}
+      {citations.map((citation, index) =>
+        citation.file ? (
+          used.has(index) ? null : (
+            <FileCommentPill key={`${citation.id}:${index}`} citation={citation} />
+          )
+        ) : (
+          <Citation
+            key={`${citation.id}:${index}`}
+            citation={citation}
+            token={used.has(index) ? chatCitationToken(index) : undefined}
+          />
+        ),
+      )}
     </div>
   );
 }

@@ -13,8 +13,8 @@ import {
   subscribeInteractionTint,
   type InteractionTintSource,
 } from "../../../model/interactionTint";
-import { Group, Row, Segmented } from "../../../../../shared/ui/settings";
-import { DraftSlider } from "./ToneSliders";
+import { Row, Segmented } from "../../../../../shared/ui/settings";
+import { DraftSlider } from "./DraftSlider";
 import "./ThemeControls.css";
 
 const snapshot = () => JSON.stringify(loadInteractionTint());
@@ -22,10 +22,10 @@ const STRENGTH_MIN = 50;
 const STRENGTH_MAX = 200;
 
 /**
- * The "Interaction" group: which color hover, selected and pressed mix in, and how strongly.
- * The Tone preview above already shows Rest, Hover, Selected and Pressed, so there is no second
- * preview here. Strength previews while dragging and is stored on release. One reset restores
- * the whole record.
+ * The interaction rows (Advanced in the Theme tab): which color hover, selected and pressed mix in,
+ * and how strongly. The theme preview already shows Rest, Hover, Selected and Pressed, so there is
+ * no second preview here. Strength previews while dragging and is stored on release. The color
+ * row's reset restores the whole record.
  */
 export function StateLadder() {
   useLocale();
@@ -36,16 +36,15 @@ export function StateLadder() {
   const anchor = useRef<HTMLDivElement>(null);
   const update = (change: Partial<typeof value>) => saveInteractionTint({ ...value, ...change });
   return (
-    <Group
-      title={t("Interaction")}
-      modified={snapshot() !== JSON.stringify(INTERACTION_TINT_DEFAULT)}
-      resetLabel={t("Reset interaction states")}
-      onReset={() => saveInteractionTint(INTERACTION_TINT_DEFAULT)}
-    >
+    <>
       <Row
         id="interaction-tint"
+        controlWidth="fill"
         label={t("Interaction color")}
         description={t("The color that hover, selected and pressed surfaces mix in.")}
+        modified={snapshot() !== JSON.stringify(INTERACTION_TINT_DEFAULT)}
+        resetLabel={t("Reset interaction states")}
+        onReset={() => saveInteractionTint(INTERACTION_TINT_DEFAULT)}
       >
         <div ref={anchor} className="state-ladder-source">
           <Segmented<InteractionTintSource>
@@ -68,7 +67,6 @@ export function StateLadder() {
               size="sm"
               inset="icon"
               aria-label={t("Custom color")}
-              tooltip={t("Custom color")}
               onClick={() => setOpen(true)}
             >
               <span
@@ -116,6 +114,6 @@ export function StateLadder() {
           commit={(strength) => update({ strength })}
         />
       </Row>
-    </Group>
+    </>
   );
 }

@@ -1,27 +1,25 @@
 import { Spinner } from "../../../shared/ui/Spinner";
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text, type TextTone } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
 import { StatusDot } from "../../../shared/ui/StatusDot";
-import { Divider } from "../../../shared/ui/Divider";
-import { Heading } from "../../../shared/ui/Heading";
 import { Wrench } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
 import { formatDuration } from "../../../shared/i18n/format";
 import { elapsedSince } from "../../../shared/lib/time/timestamps";
+import { subscribeVoiceSecond } from "../model/voicePresentationTimers";
 import type { VoiceToolActivityEntry } from "../model/voiceToolActivity";
 import styles from "./VoiceToolActivityPanel.module.css";
 
-const STATUS: Record<VoiceToolActivityEntry["state"], string> = {
-  running: "Running",
-  "waiting-owner": "Waiting for you",
-  returned: "Done",
-  failed: "Failed",
-  uncertain: "Result unknown. Check before retrying.",
-};
+const statusLabels = (): Record<VoiceToolActivityEntry["state"], string> => ({
+  running: t("Running"),
+  "waiting-owner": t("Waiting for you"),
+  returned: t("Done"),
+  failed: t("Failed"),
+  uncertain: t("Result unknown. Check before retrying."),
+});
 
 const STATUS_TONE: Record<VoiceToolActivityEntry["state"], TextTone> = {
   running: "secondary",
@@ -55,11 +53,10 @@ export function VoiceToolActivityPanel({
   // Keep elapsed time current while an action is running or awaiting its owner.
   useEffect(() => {
     if (!running) return;
-    const timer = setInterval(() => refresh((value) => value + 1), 1000);
-    return () => clearInterval(timer);
+    return subscribeVoiceSecond(() => refresh((value) => value + 1));
   }, [running]);
   if (!entries.length) return null;
-  const label = t(running ? "Taking action…" : "Voice actions");
+  const label = running ? t("Taking action…") : t("Voice actions");
   return (
     <>
       <Button
@@ -69,7 +66,6 @@ export function VoiceToolActivityPanel({
         className={styles.trigger}
         data-running={running || undefined}
         label={`${label} (${entries.length})`}
-        tooltip={label}
         aria-haspopup="dialog"
         aria-expanded={Boolean(anchor)}
         onClick={(event) => setAnchor(anchor ? null : event.currentTarget)}
@@ -94,82 +90,73 @@ export function VoiceToolActivityPanel({
       {anchor && (
         <Popover
           anchor={anchor}
-          role="dialog"
+          kind="dialog"
           aria-label={t("Voice actions")}
-          width={340}
+          variant="panel"
+          size="lg"
           flow="scroll"
           tabIndex={0}
           onDismiss={() => setAnchor(null)}
-          className={styles.popover}
         >
-          <div className={styles.header}>
-            <Heading size="caption">{t("Voice actions")}</Heading>
-            <Text size="caption" tone="muted">
-              {entries.length}
-            </Text>
-          </div>
-          <Divider decorative />
           <ul className={styles.list}>
             {entries.map((entry) => {
               const live = entry.state === "running" || entry.state === "waiting-owner";
+              // Technical ids stay out of the row; the stop button's name keeps them so each action stays unique.
+              const details = [entry.name, entry.target, entry.requestId]
+                .filter(Boolean)
+                .join(" · ");
               return (
-                <Tooltip
-                  key={entry.id}
-                  label={[entry.name, entry.target, entry.requestId].filter(Boolean).join(" · ")}
-                  asChild
-                >
-                  <li className={styles.row} data-state={entry.state} key={entry.id}>
-                    <div className={styles.marker}>
-                      {entry.state === "running" ? (
-                        <Spinner size="sm" />
-                      ) : (
-                        <StatusDot
-                          tone={
-                            entry.state === "returned"
-                              ? "muted"
-                              : entry.state === "failed"
-                                ? "danger"
-                                : "warning"
-                          }
-                        />
-                      )}
-                    </div>
-                    <div className={styles.details}>
-                      <Text
-                        as="div"
-                        size="secondary"
-                        weight="medium"
-                        tone="primary"
-                        wrap="anywhere"
-                      >
-                        {voiceActionLabel(entry.name)}
-                      </Text>
-                      <Text
-                        as="div"
-                        size="caption"
-                        leading="normal"
-                        tone={STATUS_TONE[entry.state]}
-                        wrap="anywhere"
-                      >
-                        {t(STATUS[entry.state])}
-                      </Text>
-                    </div>
-                    <Text size="caption" tone="muted" className={styles.time}>
-                      {formatDuration(entry.elapsedMs ?? elapsedSince(entry.startedAt))}
-                    </Text>
-                    {live && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        touchTarget={touchTarget}
-                        className={styles.stop}
-                        onClick={() => onStopWaiting(entry.id)}
-                      >
-                        {t("Stop waiting")}
-                      </Button>
+                <li className={styles.row} data-state={entry.state} key={entry.id}>
+                  <div className={styles.marker}>
+                    {entry.state === "running" ? (
+                      <Spinner size="sm" />
+                    ) : (
+                      <StatusDot
+                        tone={
+                          entry.state === "returned"
+                            ? "muted"
+                            : entry.state === "failed"
+                              ? "danger"
+                              : "warning"
+                        }
+                      />
                     )}
-                  </li>
-                </Tooltip>
+                  </div>
+                  <div className={styles.details}>
+                    <Text as="div" size="secondary" weight="medium" tone="primary" wrap="anywhere">
+                      {voiceActionLabel(entry.name)}
+                    </Text>
+                    <Text
+                      as="div"
+                      size="caption"
+                      leading="normal"
+                      tone={STATUS_TONE[entry.state]}
+                      wrap="anywhere"
+                    >
+                      {statusLabels()[entry.state]}
+                    </Text>
+                    {entry.target ? (
+                      <Text as="div" size="caption" tone="muted" wrap="anywhere">
+                        {entry.target}
+                      </Text>
+                    ) : null}
+                  </div>
+                  <Text size="caption" tone="muted" className="tabular-nums">
+                    {formatDuration(entry.elapsedMs ?? elapsedSince(entry.startedAt))}
+                  </Text>
+                  {live && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      touchTarget={touchTarget}
+                      className={styles.stop}
+                      label={t("Stop waiting for {p0}", { p0: details })}
+                      onClick={() => onStopWaiting(entry.id)}
+                    >
+                      {t("Stop waiting")}
+                    </Button>
+                  )}
+                </li>
               );
             })}
           </ul>

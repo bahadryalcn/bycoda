@@ -1,5 +1,3 @@
-import { unlink } from "node:fs/promises";
-import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   nativeDeliveryFixture,
@@ -10,7 +8,6 @@ import {
   nativeDeliveryConsumedResult,
   initializeNativeDeliveryStore,
 } from "./native-delivery-store";
-import { durableWrite } from "../git/turn-git-history";
 import { StoreDatabase } from "../store-db";
 
 const format = "native.services.workspace.format" as const;
@@ -35,7 +32,6 @@ const formatJson = () =>
       cursorOffset: 0,
     },
   });
-const consumedBuffer = nativeDeliveryConsumedResult("buffer", { acknowledged: true });
 const consumedFinish = nativeDeliveryConsumedResult(finish, { accepted: true });
 
 it("stores serde_json sorted-key consumed identity separately from exact source bytes", async () => {
@@ -56,7 +52,6 @@ it("stores serde_json sorted-key consumed identity separately from exact source 
   });
   expect(row?.resultSource?.sha256).toBe(deliverySha(JSON.stringify(result)));
   expect(row?.consumedResult?.sha256).not.toBe(row?.resultSource?.sha256);
-  expect(consumedBuffer.byteLength).toBe(21);
   expect(consumedFinish.byteLength).toBe(17);
   expect(nativeDeliveryConsumedResult(format, null)).toEqual({
     sha256: deliverySha("null"),
@@ -74,17 +69,6 @@ it("reserves each finite maximum durably before its actual effect and converts i
     await f.store.db
       .prepare("SELECT state,reserved_bytes FROM native_delivery_receipts WHERE original_id=?")
       .get(originalId);
-  const bufferJson = f.report(),
-    bufferId = deliveryIdentity(bufferJson);
-  f.setWrite(async (path) => {
-    if (path.includes("buffers"))
-      expect(await reserved(bufferId.originalId)).toEqual({
-        state: "admitted",
-        reserved_bytes: 21,
-      });
-  });
-  await f.call("native.buffers.delivery.apply", { ...bufferId, paramsJson: bufferJson });
-  await f.call("native.buffers.delivery.ack", { ...bufferId, consumedResult: consumedBuffer });
   const finishJson = JSON.stringify({ id: "finish-reservation", result: null }),
     finishId = deliveryIdentity(finishJson);
   f.setFinish(async () => {
@@ -282,68 +266,6 @@ it("enforces the global reservation bound across principals before a seventeenth
   ).toBe(2 * maximum);
 });
 
-it("retires an admitted buffer only after actual original proof and never consults FS for a tombstone", async () => {
-  const f = await fixture(),
-    paramsJson = f.report(),
-    identity = deliveryIdentity(paramsJson);
-  let written = false;
-  f.setWrite(async (path, bytes) => {
-    if (!written && path.includes("buffers")) {
-      written = true;
-      await durableWrite(path, bytes);
-      throw new Error("Original projection committed but record acknowledgement lost");
-    }
-  });
-  expect(await f.call("native.buffers.delivery.apply", { ...identity, paramsJson })).toMatchObject({
-    state: "recorded",
-  });
-  expect((await f.journal.readMetadata(f.principal, "buffer", identity))?.state).toBe("admitted");
-  f.setWrite(undefined);
-  await f.reopen();
-  const row = await f.journal.readMetadata(f.principal, "buffer", identity);
-  const retired = { ...identity, state: "retired", consumedResult: consumedBuffer };
-  expect(
-    await f.call("native.buffers.delivery.ack", { ...identity, consumedResult: consumedBuffer }),
-  ).toEqual(retired);
-  await unlink(join(f.root, "native-activity", "buffers", `${row!.proof!.reportId}.json`));
-  await f.reopen();
-  const verify = vi
-    .spyOn(f.buffers, "verifyDelivery")
-    .mockRejectedValue(new Error("Retired lookup must not verify FS"));
-  expect(await f.call("native.buffers.delivery.status", identity)).toEqual(retired);
-  expect(await f.call("native.buffers.delivery.apply", { ...identity, paramsJson })).toEqual(
-    retired,
-  );
-  expect(
-    await f.call("native.buffers.delivery.ack", { ...identity, consumedResult: consumedBuffer }),
-  ).toEqual(retired);
-  expect(verify).not.toHaveBeenCalled();
-  expect(f.counts.buffers).toBe(1);
-});
-
-it("refuses buffer retirement without current/archive proof and rejects a changed planned proof", async () => {
-  const f = await fixture(),
-    paramsJson = f.report(),
-    identity = deliveryIdentity(paramsJson);
-  await f.call("native.buffers.delivery.apply", { ...identity, paramsJson });
-  const row = await f.journal.readMetadata(f.principal, "buffer", identity),
-    proof = row!.proof!;
-  await f.store.db
-    .prepare("UPDATE native_delivery_receipts SET proof_json=? WHERE original_id=?")
-    .run(JSON.stringify({ ...proof, reportVersion: proof.reportVersion + 1 }), identity.originalId);
-  await expect(
-    f.journal.retire(f.principal, "buffer", identity, consumedBuffer, proof),
-  ).rejects.toThrow("same verified planned");
-  await f.store.db
-    .prepare("UPDATE native_delivery_receipts SET proof_json=? WHERE original_id=?")
-    .run(JSON.stringify(proof), identity.originalId);
-  await unlink(join(f.root, "native-activity", "buffers", `${proof.reportId}.json`));
-  await expect(
-    f.call("native.buffers.delivery.ack", { ...identity, consumedResult: consumedBuffer }),
-  ).rejects.toThrow("exact current or archived proof");
-  expect((await f.journal.readMetadata(f.principal, "buffer", identity))?.state).toBe("recorded");
-});
-
 it("binds ACK to exact original, target, consumed digest, principal and current authentication", async () => {
   const f = await fixture(),
     paramsJson = JSON.stringify({ id: "ack-identity", result: null }),
@@ -438,9 +360,9 @@ it("rolls back a precommit retirement failure and retains the original result fo
 
 it("critically migrates existing file receipts and holds legacy uncertain rows without deleting or replaying them", async () => {
   const f = await fixture(),
-    paramsJson = f.report(),
+    paramsJson = JSON.stringify({ id: "legacy-finish", result: null }),
     identity = deliveryIdentity(paramsJson);
-  await f.call("native.buffers.delivery.apply", { ...identity, paramsJson });
+  await f.call("native.services.delivery.apply", { ...identity, target: finish, paramsJson });
   const unknown = deliveryIdentity(formatJson());
   await f.journal.admit("legacy-paired-principal", format, unknown);
   await f.store.transaction(async () => {
@@ -451,7 +373,10 @@ it("critically migrates existing file receipts and holds legacy uncertain rows w
         state TEXT NOT NULL, result_json TEXT, proof_json TEXT,
         PRIMARY KEY(environment_id,principal_id,original_id));
       INSERT INTO native_delivery_receipts SELECT environment_id,principal_id,kind,original_id,sha256,byte_length,state,result_json,proof_json FROM native_delivery_new;
-      DROP TABLE native_delivery_new;`);
+      DROP TABLE native_delivery_new;
+      DROP TABLE native_delivery_quota_totals;
+      DROP TABLE native_delivery_quota_scopes;
+      DROP TABLE native_delivery_quota_state;`);
   });
   const beforeMigration = f.store.db.exec.bind(f.store.db);
   vi.spyOn(f.store.db, "exec").mockImplementation(async (sql) => {
@@ -483,8 +408,8 @@ it("critically migrates existing file receipts and holds legacy uncertain rows w
   });
   await f.reopen();
   expect(modes).toContain(2);
-  expect((await f.journal.readMetadata(f.principal, "buffer", identity))?.consumedResult).toEqual(
-    consumedBuffer,
+  expect((await f.journal.readMetadata(f.principal, finish, identity))?.consumedResult).toEqual(
+    consumedFinish,
   );
   expect((await f.journal.readMetadata("legacy-paired-principal", format, unknown))?.state).toBe(
     "admitted",
@@ -501,13 +426,9 @@ it("critically migrates existing file receipts and holds legacy uncertain rows w
       ?.count,
   ).toBe(2);
   expect(
-    await f.call("native.buffers.delivery.ack", { ...identity, consumedResult: consumedBuffer }),
-  ).toMatchObject({ state: "retired" });
-  await f.reopen();
-  expect(await f.call("native.buffers.delivery.status", identity)).toMatchObject({
-    state: "retired",
-  });
-  expect(f.counts).toEqual({ buffers: 1, finish: 0, format: 0 });
+    await f.call("native.services.delivery.apply", { ...identity, target: finish, paramsJson }),
+  ).toMatchObject({ state: "recorded", result: { accepted: true } });
+  expect(f.counts.finish).toBe(1);
 });
 
 it("keeps tiny receipt retention bounded by actual principal metadata rows", async () => {
@@ -517,7 +438,7 @@ it("keeps tiny receipt retention bounded by actual principal metadata rows", asy
     await f.store.db
       .prepare(`WITH RECURSIVE retained(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM retained WHERE n<250000)
       INSERT INTO native_delivery_receipts (environment_id,principal_id,kind,original_id,sha256,byte_length,state,reserved_bytes)
-      SELECT ?,?,'buffer','retained-'||n,?,2,'admitted',21 FROM retained`)
+      SELECT ?,?,'native.services.conversation.desktop.finish','retained-'||n,?,2,'admitted',17 FROM retained`)
       .run(f.store.environmentId, f.principal, "a".repeat(64));
   });
   await expect(
@@ -532,5 +453,5 @@ it("keeps tiny receipt retention bounded by actual principal metadata rows", asy
     await f.store.db
       .prepare("SELECT COUNT(*) AS rows,SUM(reserved_bytes) AS fixed FROM native_delivery_receipts")
       .get(),
-  ).toEqual({ rows: 250000, fixed: 5_250_000 });
+  ).toEqual({ rows: 250000, fixed: 4_250_000 });
 });

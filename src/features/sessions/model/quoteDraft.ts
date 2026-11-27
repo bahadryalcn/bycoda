@@ -42,7 +42,7 @@ export function requestAddToChat(text: string, mode: AddToChatMode = "quote") {
 
 /** Initial composer text for an add-to-chat request that opens a new session. */
 export function composerSeedForAddToChat(text: string, mode: AddToChatMode = "quote"): string {
-  return mode === "plain" ? appendComposerInsert("", text) : appendSelectionQuote("", text);
+  return consumeQuoteRequest("", null, { id: 0, text, mode }).draft;
 }
 
 export type QuoteConsumption = {

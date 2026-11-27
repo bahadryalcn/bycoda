@@ -1,15 +1,18 @@
-import { Text } from "../../../shared/ui/Text";
+import { describeRemoteError } from "../../connections/public/remoteFailure";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useActionState, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useProjectBranchesState } from "../hooks/useProjectBranches";
 import { LAYER } from "../../../shared/lib/layers";
-import { createWorktree, type Worktree } from "../model/worktrees";
+import { type Worktree } from "../model/worktrees";
+import { createProjectWorktree } from "../model/remoteWorktrees";
 import { prettyCwd } from "../../../shared/lib/paths";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 
 export function CreateWorktreeDialog({
   cwd,
@@ -66,10 +69,11 @@ export function CreateWorktreeDialog({
   const [error, submit, busy] = useActionState<string | undefined, FormData>(async () => {
     if (!name.trim()) return;
     try {
-      const tree = await createWorktree(baseCwd, name.trim(), base, existing);
+      const tree = await createProjectWorktree(baseCwd, name.trim(), base, existing);
       await onCreated(tree);
     } catch (err) {
-      return String(err);
+      const { details, message } = describeRemoteError(err);
+      return details || message;
     }
   }, undefined);
   return (
@@ -81,7 +85,7 @@ export function CreateWorktreeDialog({
         if (!busy) onCancel();
       }}
       footer={
-        <ModalActions>
+        <ModalActions reason={name.trim() ? undefined : t("Enter a name.")}>
           <Button variant="ghost" motion="none" type="button" disabled={busy} onClick={onCancel}>
             {t("Cancel")}
           </Button>
@@ -93,45 +97,41 @@ export function CreateWorktreeDialog({
             loading={busy}
             disabled={busy || !name.trim()}
           >
-            {t("Create worktree")}
+            {t("Create")}
           </Button>
         </ModalActions>
       }
     >
       <form id={formId} className="flex flex-col gap-4" action={submit}>
-        <Text as="p" size="caption" tone="secondary">
-          {t("An independent working copy of ")}
-          {prettyCwd(cwd)}
-          {t(". Existing uncommitted changes stay in their current working copy.")}
-        </Text>
-        <SearchableSelect
-          label={t("Branch type")}
-          disabled={busy}
-          value={existing ? "existing" : "new"}
-          options={[
-            {
-              value: "new",
-              get label() {
-                return t("Create a new branch");
-              },
-            },
-            {
-              value: "existing",
-              get label() {
-                return t("Use an existing local branch");
-              },
-            },
-          ]}
-          onChange={(value) => {
-            setExisting(value === "existing");
-            setName("");
-          }}
-          searchPlaceholder="Search options…"
-          layer={LAYER.dialogPopover}
-        />
+        <div className="flex items-center gap-1">
+          <SegmentedControl
+            className="min-w-0 flex-1"
+            label={t("Branch type")}
+            value={existing ? "existing" : "new"}
+            options={[
+              { value: "new", label: t("New branch"), disabled: busy },
+              { value: "existing", label: t("Existing branch"), disabled: busy },
+            ]}
+            onValueChange={(value) => {
+              setExisting(value === "existing");
+              setName("");
+            }}
+          />
+          <InfoPopover className="shrink-0">
+            <span>
+              {t(
+                "An independent worktree of {p0}. Existing uncommitted changes stay in their current worktree.",
+                { p0: prettyCwd(cwd) },
+              )}
+            </span>
+            {defaultRoot ? (
+              <span>{t("Created in {p0}", { p0: prettyCwd(defaultRoot) })}</span>
+            ) : null}
+          </InfoPopover>
+        </div>
         {existing ? (
           <SearchableSelect
-            label={t("Existing branch")}
+            label={t("Branch")}
             value={name}
             disabled={busy}
             options={localBranches}
@@ -167,17 +167,11 @@ export function CreateWorktreeDialog({
             loadingLabel={t("Loading branches…")}
             error={branchError}
             onChange={setBase}
-            searchPlaceholder="Search branches and refs…"
+            searchPlaceholder={t("Search branches and refs…")}
             layer={LAYER.dialogPopover}
           />
         )}
-        {defaultRoot && (
-          <Text as="p" size="micro" tone="muted" className="break-all">
-            {t("Created in ")}
-            {prettyCwd(defaultRoot)}
-          </Text>
-        )}
-        {error ? <InlineError>{error}</InlineError> : null}
+        {error ? <InlineError details={error}>{t("Couldn’t create worktree")}</InlineError> : null}
       </form>
     </Modal>
   );

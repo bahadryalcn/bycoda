@@ -18,14 +18,20 @@ export function CrashReportNotice() {
   useLocale();
   const pending = useSyncExternalStore(subscribeDiagnostics, getPendingCrash);
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<DiagnosticSendStatus | null>(null);
+  // -- The outcome belongs to the crash it was produced for; a later crash starts with the question again.
+  const [outcome, setOutcome] = useState<{
+    crash: NonNullable<typeof pending>;
+    status: DiagnosticSendStatus;
+  } | null>(null);
   if (!pending) return null; // -- Sending clears the crash toast; no second success toast.
-  const send = async (always: boolean) => {
+  const result = outcome?.crash === pending ? outcome.status : null;
+  // "Always send" lives in the diagnostics setting, so the toast asks only for this crash.
+  const send = async () => {
     setBusy(true);
     try {
-      setResult(await sendPendingCrash(always));
+      setOutcome({ crash: pending, status: await sendPendingCrash(false) });
     } catch {
-      setResult("failed"); // -- the marker stays, so Send can be tried again.
+      setOutcome({ crash: pending, status: "failed" }); // -- the marker stays, so Send can be tried again.
     } finally {
       setBusy(false);
     }
@@ -46,11 +52,10 @@ export function CrashReportNotice() {
       width="lg"
       actionsPlacement="footer"
       actions={[
-        { label: t("Send"), pending: busy, onClick: () => void send(false).catch(() => undefined) },
         {
-          label: t("Always send"),
-          disabled: busy,
-          onClick: () => void send(true).catch(() => undefined),
+          label: failed ? t("Try again") : t("Send"),
+          pending: busy,
+          onClick: () => void send().catch(() => undefined),
         },
         {
           label: t("Don't send"),

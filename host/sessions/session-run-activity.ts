@@ -16,6 +16,8 @@ export function isSessionRunActivity(event: HarnessEvent, changed: boolean): boo
     case "tool.started":
     case "message.completed":
     case "reasoning.completed":
+    case "image.generationStarted":
+    case "image.generationEnded":
     case "image.generated":
     case "question.asked":
     case "question.resolved":

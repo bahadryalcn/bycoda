@@ -72,6 +72,109 @@ describe("project location synchronization", () => {
   });
 });
 
+describe("concurrent synchronization", () => {
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  }
+
+  function storedLocations() {
+    return JSON.parse(localStorage.getItem("bycoda.projectLocations") ?? "{}") as Record<
+      string,
+      { path: string; identity: string }
+    >;
+  }
+
+  it("keeps identities recorded by other syncs while a resolve is in flight", async () => {
+    const first = deferred<{ path: string; identity: string }>();
+    const second = deferred<{ path: string; identity: string }>();
+    vi.mocked(resolveProjectLocation).mockImplementation((path) =>
+      path === "/work/one" ? first.promise : second.promise,
+    );
+
+    const syncOne = synchronizeProjectLocation("/work/one");
+    const syncTwo = synchronizeProjectLocation("/work/two");
+    first.resolve({ path: "/work/one", identity: "unix:1:1" });
+    await syncOne;
+    second.resolve({ path: "/work/two", identity: "unix:2:2" });
+    await syncTwo;
+
+    const stored = Object.values(storedLocations());
+    expect(stored).toHaveLength(2);
+    expect(stored).toEqual(
+      expect.arrayContaining([
+        { path: "/work/one", identity: "unix:1:1" },
+        { path: "/work/two", identity: "unix:2:2" },
+      ]),
+    );
+  });
+
+  it("keeps an identity remembered during a resolve when a moved project is replaced", async () => {
+    vi.mocked(resolveProjectLocation).mockResolvedValueOnce({
+      path: "/work/old",
+      identity: "unix:3:3",
+    });
+    await rememberProjectLocation("/work/old");
+
+    const moving = deferred<{ path: string; identity: string }>();
+    vi.mocked(resolveProjectLocation).mockImplementation((path) =>
+      path === "/work/old"
+        ? moving.promise
+        : Promise.resolve({ path: "/work/other", identity: "unix:4:4" }),
+    );
+    const sync = synchronizeProjectLocation("/work/old");
+    await rememberProjectLocation("/work/other");
+    moving.resolve({ path: "/work/new", identity: "unix:3:3" });
+    await expect(sync).resolves.toMatchObject({ path: "/work/new", moved: true });
+
+    const stored = Object.values(storedLocations());
+    expect(stored).toHaveLength(2);
+    expect(stored).toEqual(
+      expect.arrayContaining([
+        { path: "/work/new", identity: "unix:3:3" },
+        { path: "/work/other", identity: "unix:4:4" },
+      ]),
+    );
+  });
+
+  it("does not rewrite storage when the resolved identity is already saved", async () => {
+    vi.mocked(resolveProjectLocation).mockResolvedValue({
+      path: "/work/same",
+      identity: "unix:5:5",
+    });
+    await rememberProjectLocation("/work/same");
+    const setItem = vi.spyOn(localStorage, "setItem");
+
+    await synchronizeProjectLocation("/work/same");
+    await rememberProjectLocation("/work/same");
+
+    expect(setItem).not.toHaveBeenCalled();
+  });
+
+  it("writes when a stored identity changes", async () => {
+    vi.mocked(resolveProjectLocation).mockResolvedValueOnce({
+      path: "/work/same",
+      identity: "unix:5:5",
+    });
+    await rememberProjectLocation("/work/same");
+    const setItem = vi.spyOn(localStorage, "setItem");
+    vi.mocked(resolveProjectLocation).mockResolvedValueOnce({
+      path: "/work/same",
+      identity: "unix:6:6",
+    });
+
+    await synchronizeProjectLocation("/work/same");
+
+    expect(setItem).toHaveBeenCalledTimes(1);
+    expect(Object.values(storedLocations())).toEqual([
+      { path: "/work/same", identity: "unix:6:6" },
+    ]);
+  });
+});
+
 describe("short lived validation cache", () => {
   it("reuses successful unchanged identity but revalidates after access invalidation", async () => {
     vi.mocked(resolveProjectLocation).mockResolvedValue({

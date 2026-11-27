@@ -13,30 +13,41 @@ import styles from "./Popover.module.css";
 
 export { POPUP_MAX_WIDTH, POPUP_VIEWPORT_PADDING, popupListWidth } from "../lib/popover";
 
+/** Paint shared by detached overlays; the owning component sets the frame geometry. */
+export const floatingFrameClassName = styles.floatingFrame;
+
 /** Shared frame class for native-window popup roots; content still uses Popover and shared rows. */
 export const nativePopupFrameClassName = styles.frame;
 
 /**
- * Floating glass shared by Popover and app-rendered native popup roots.
+ * Floating ground shared by in-window overlays (theme glass) and native popup roots (opaque).
  * @group overlay
  * @use Backdrop inside a positioned shared popup frame.
  * @avoid Complete in-app floating content: Popover. OS-window roots use useNativePopupFrame.
  */
 export function PopupBackdrop({
-  solid = false,
-  frosted = false,
+  solid,
+  className,
+  ref,
 }: {
+  /** Opaque ground without glass: OS-window popup roots, which have no app content behind them. */
   solid?: boolean;
+  /** Same glass as the default ground; kept so existing callers need no change. */
   frosted?: boolean;
+  className?: string;
+  ref?: Ref<HTMLDivElement>;
 }) {
   return (
     <div
+      ref={ref}
       aria-hidden="true"
-      className={
-        solid
-          ? "popover-solid pointer-events-none absolute inset-0 z-0 rounded-[inherit]"
-          : `pointer-events-none absolute inset-0 z-0 [border-radius:inherit] backdrop-blur-xl popover-backdrop${frosted ? " popover-frosted" : ""}`
-      }
+      className={[
+        "pointer-events-none absolute inset-0 z-0 [border-radius:inherit]",
+        solid ? "popover-solid" : "popover-backdrop",
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
     />
   );
 }
@@ -85,7 +96,7 @@ export function useNativePopupFrame({
         if (typeof ref === "function") return ref(node);
         if (ref) ref.current = node;
       },
-      className: `${styles.frame} ${styles.nativeFrame}`,
+      className: `${styles.frame} ${floatingFrameClassName} ${styles.nativeFrame}`,
       style: {
         "--popup-min-width": `${popupListWidth(0, minWidth)}px`,
         "--popup-max-width": `${POPUP_MAX_WIDTH}px`,
@@ -128,12 +139,14 @@ export function NativePopover({
     },
   });
   return (
-    <div {...frameProps}>
-      <PopupBackdrop />
-      <div
-        className={`${contentClassName} max-h-[var(--native-popup-max-height)] overflow-y-auto`}
-        style={{ "--native-popup-max-height": `${maxHeight}px` } as CSSProperties}
-      >
+    <div
+      {...frameProps}
+      style={
+        { ...frameProps.style, "--native-popup-max-height": `${maxHeight}px` } as CSSProperties
+      }
+    >
+      <PopupBackdrop solid />
+      <div className={`${contentClassName} max-h-[var(--native-popup-max-height)] overflow-y-auto`}>
         {host ? <NativePopupHost value={host}>{children}</NativePopupHost> : null}
       </div>
     </div>

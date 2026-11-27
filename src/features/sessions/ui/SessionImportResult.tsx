@@ -1,10 +1,24 @@
 import { Text } from "../../../shared/ui/Text";
 import { useFormat, useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Surface } from "../../../shared/ui/Surface";
 import { Progress } from "../../../shared/ui/Progress";
 import { candidateKey } from "../import/importModel";
-import type { ImportProgress, ImportSummary } from "../import/importRunner";
+import type { ImportFailureReason, ImportProgress, ImportSummary } from "../import/importRunner";
+
+/** Translated text for an import failure the app raised; provider errors stay raw. */
+export function importFailureMessage(
+  t: (message: string) => string,
+  reason: ImportFailureReason,
+): string {
+  switch (reason) {
+    case "noMessages":
+      return t("The conversation has no messages to import");
+    case "unsupportedId":
+      return t("Unsupported conversation id");
+  }
+}
 
 /** Complete count labels: translators own number placement and noun forms. */
 export function importCount(
@@ -39,11 +53,6 @@ export function RunningView({ progress }: { progress: ImportProgress }) {
       <Progress compact value={percent} max={100} />
       <Text as="p" size="caption" tone="secondary" truncate>
         {progress.current ?? " "}
-      </Text>
-      <Text as="p" size="micro" tone="secondary">
-        {t("Imported: {p0}", { p0: formatNumber(progress.imported) })}
-        {progress.skipped > 0 ? t(" · {p0} skipped", { p0: progress.skipped }) : ""}
-        {progress.failed.length > 0 ? t(" · {p0} failed", { p0: progress.failed.length }) : ""}
       </Text>
     </div>
   );
@@ -103,7 +112,14 @@ export function DoneView({ summary }: { summary: ImportSummary }) {
                   {failure.candidate.firstPrompt}
                 </Text>
                 {" — "}
-                {failure.error}
+                {failure.reason ? (
+                  importFailureMessage(t, failure.reason)
+                ) : (
+                  <>
+                    {t("The conversation could not be imported.")}{" "}
+                    <ErrorDetails title={failure.candidate.firstPrompt} detail={failure.error} />
+                  </>
+                )}
               </Text>
             ))}
           </ul>

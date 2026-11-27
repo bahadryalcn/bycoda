@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { CodexEntry } from "../../../platform/tauri/sessionImport";
 import { INTERRUPT_MESSAGE, markTurnInterrupted } from "./inFlight";
 import { newSession, type Block, type Session } from "./session";
-import { withFinishedTurn } from "./turnRecovery";
 import { EARLIER_STEPS_NOTE, withTurnSteps } from "./turnSteps";
 
 // Synthetic transcripts only: the shapes of the CLI records, none of their content.
@@ -67,8 +66,6 @@ describe("withTurnSteps (Claude)", () => {
     expect(next.blocks[1].tool?.detail).toBe("a.txt");
     // The quit note is gone, and the final reply is not added a second time.
     expect(next.blocks.some((block) => block.text === INTERRUPT_MESSAGE)).toBe(false);
-    const done = withFinishedTurn(next, "Fixed.");
-    expect(done.blocks.filter((block) => block.role === "assistant")).toHaveLength(1);
   });
 
   it("adds only what is missing when the live stream stored part of the turn", () => {
@@ -159,9 +156,11 @@ describe("withTurnSteps (Claude)", () => {
       claudeToolResult("t8", "ok"),
       claudeReply("m9", "Built."),
     ].join("\n");
-    const next = withTurnSteps(chat([user]), { text: tail, startReached: false }, "finished");
-    expect(roles(next)).toEqual(["user", "system", "tool", "assistant"]);
+    const session = markTurnInterrupted({ ...chat([user]), busy: true });
+    const next = withTurnSteps(session, { text: tail, startReached: false }, "interrupted");
+    expect(roles(next)).toEqual(["user", "system", "tool", "assistant", "system"]);
     expect(next.blocks[1].text).toBe(EARLIER_STEPS_NOTE);
+    expect(withTurnSteps(session, { text: tail, startReached: false }, "finished")).toBe(session);
   });
 
   it("does not claim missing steps when the session already holds the turn's earlier ones", () => {

@@ -1,8 +1,14 @@
+import { errorText } from "../../../shared/lib/errors";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { InboxItem } from "./githubTasks";
 export type CodeHostScope = { id: string; path: string; name: string };
-export type CodeHostScopes = { instance: string; projects: CodeHostScope[] };
+/** `incomplete` is set when the Host kept the projects it loaded but could not load them all. */
+export type CodeHostScopes = {
+  instance: string;
+  projects: CodeHostScope[];
+  incomplete?: string | null;
+};
 type Provider = "gitlab" | "azuredevops";
 export function normalizeCodeHostInstance(instance: string): string {
   const value = instance.trim();
@@ -121,7 +127,7 @@ export function useCodeHostScopes(source: string, revision: number) {
           setResult({
             id,
             scopes: null,
-            error: reason instanceof Error ? reason.message : String(reason),
+            error: errorText(reason),
           });
       });
     return () => {
@@ -141,7 +147,7 @@ export function useCodeHostScopes(source: string, revision: number) {
       saveHiddenScopes(provider, scopes.instance, ids);
       report(null);
     } catch (reason) {
-      report(reason instanceof Error ? reason.message : String(reason));
+      report(errorText(reason));
     }
   };
   return { provider, scopes, hidden, error, save };

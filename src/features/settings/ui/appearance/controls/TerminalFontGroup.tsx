@@ -52,7 +52,7 @@ export function TerminalFontGroup({ appearance: a }: { appearance: AppearanceSet
     >
       <Row
         id="terminal-font"
-        label={t("Terminal font")}
+        label={t("Font")}
         modified={
           p.terminalFontSource !== d.terminalFontSource || p.terminalFont !== d.terminalFont
         }
@@ -85,7 +85,7 @@ export function TerminalFontGroup({ appearance: a }: { appearance: AppearanceSet
       </Row>
       <Row
         id="terminal-font-size"
-        label={t("Terminal font size")}
+        label={t("Size")}
         modified={p.terminalSize !== d.terminalSize}
         onReset={() => a.onPreferences({ ...p, terminalSize: d.terminalSize })}
       >

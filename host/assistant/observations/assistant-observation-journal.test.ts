@@ -1,14 +1,34 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { HostStore } from "../../store";
 import { AssistantObservationJournal } from "./assistant-observation-journal";
+import type { SQLInputValue } from "node:sqlite";
+
+/** Narrows a journal read to its `ok` page. */
+const ok = <T extends { status: string }>(page: T) => page as Extract<T, { status: "ok" }>;
 
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const close of cleanup.splice(0)) await close();
 });
+it("keeps a Host closing during setup from becoming an unhandled rejection", async () => {
+  const unhandled = vi.fn();
+  process.on("unhandledRejection", unhandled);
+  try {
+    const journal = new AssistantObservationJournal({
+      ready: Promise.resolve(),
+      db: { exec: () => Promise.reject(new Error("closing")) },
+    } as unknown as HostStore);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(unhandled).not.toHaveBeenCalled();
+    await expect(journal.ready).rejects.toThrow("closing");
+  } finally {
+    process.off("unhandledRejection", unhandled);
+  }
+});
+
 async function fixture() {
   const dir = mkdtempSync(join(tmpdir(), "assistant-observations-"));
   const store = new HostStore(join(dir, "host.db"));
@@ -54,7 +74,7 @@ it("keeps the Chief task cursor independent from other source types", async () =
   await journal.acknowledge(
     "chief:task",
     scope,
-    page.nextCursor,
+    ok(page).nextCursor,
     async () => true,
     () => true,
   );
@@ -117,7 +137,7 @@ it("commits source and observation together; replay, ack and dedupe use durable 
     journal.acknowledge(
       "chief",
       scope,
-      page.nextCursor + 1,
+      ok(page).nextCursor + 1,
       async () => true,
       () => true,
     ),
@@ -125,7 +145,7 @@ it("commits source and observation together; replay, ack and dedupe use durable 
   await journal.acknowledge(
     "chief",
     scope,
-    page.nextCursor,
+    ok(page).nextCursor,
     async () => true,
     () => true,
   );
@@ -218,7 +238,7 @@ it("survives restart, concurrent producers and separates Hosts and scopes", asyn
   await journal.acknowledge(
     "observer",
     scope,
-    before.nextCursor,
+    ok(before).nextCursor,
     async () => true,
     () => true,
   );
@@ -292,7 +312,7 @@ it("rechecks captured authorization after async source validation before offerin
     journal.acknowledge(
       "chief",
       scope,
-      page.nextCursor,
+      ok(page).nextCursor,
       async () => true,
       () => current,
     ),
@@ -316,4 +336,35 @@ it("expires retained records and reports a gap before any stale replay", async (
   expect(
     (await store.db.prepare("SELECT COUNT(*) AS n FROM assistant_observation_events").get())?.n,
   ).toBe(0);
+});
+
+it("indexes the expiry lookup used by retention and keeps retained rows when upgrading", async () => {
+  const { store, journal } = await fixture();
+  const kept = await store.transaction(() => journal.append(event));
+  const plan = async (sql: string, ...args: unknown[]) =>
+    (await store.db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...(args as SQLInputValue[])))
+      .map((row) => String(row.detail))
+      .join("\n");
+  // `+` keeps SQLite's rowid min/max shortcut from bypassing the index, as in the retention SQL.
+  const expiryLookup =
+    "SELECT MAX(+sequence) FROM assistant_observation_events WHERE expires_at<=?";
+  expect(await plan(expiryLookup, Date.now())).toContain("assistant_observation_expiry");
+
+  await store.db.exec("DROP INDEX assistant_observation_expiry");
+  const upgraded = new AssistantObservationJournal(store);
+  await upgraded.ready;
+  expect(await plan(expiryLookup, Date.now())).toContain("assistant_observation_expiry");
+  expect(
+    (await store.db.prepare("SELECT sequence FROM assistant_observation_events").all()).map((row) =>
+      Number(row.sequence),
+    ),
+  ).toEqual([kept.sequence]);
+  // The retention trigger uses the index-friendly form, also when reopening an older database.
+  expect(
+    (
+      await store.db
+        .prepare("SELECT sql FROM sqlite_master WHERE name='assistant_observation_retention'")
+        .get()
+    )?.sql,
+  ).toContain("MAX(+sequence)");
 });

@@ -11,39 +11,77 @@ const sheets = [
 ] as const;
 
 describe("popup choice surfaces", () => {
-  it.each(sheets)("%s never frames an option row in any state", (file, names) => {
-    const css = readFileSync(join(__dirname, file), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
-    const row = new RegExp(`\\.(?:${names})(?![\\w-])`);
-    const frames: string[] = [];
-    for (const [, selector, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-      if (!row.test(selector) || /\s>\s/.test(selector)) continue;
-      for (const [, property, value] of body.matchAll(/([\w-]+)\s*:\s*([^;{}]+);/g)) {
-        if (
-          /^(?:border(?!-radius)(?:-[\w-]+)?|outline(?:-(?:width|color|style))?|box-shadow)$/.test(
-            property,
-          ) &&
-          !/^(?:0(?:px)?|none|transparent)(?:\s*!important)?$/.test(value.trim())
-        ) {
-          frames.push(`${selector.trim()}: ${property}: ${value}`);
+  it.each(sheets)(
+    "%s keeps option rows unframed apart from a keyboard focus cue",
+    (file, names) => {
+      const css = readFileSync(join(__dirname, file), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+      const row = new RegExp(`\\.(?:${names})(?![\\w-])`);
+      const frames: string[] = [];
+      for (const [, selector, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        if (!row.test(selector) || /\s>\s/.test(selector)) continue;
+        for (const [, property, value] of body.matchAll(/([\w-]+)\s*:\s*([^;{}]+);/g)) {
+          const disabledChoiceFocus =
+            file === "arc/combobox/combobox.module.css" &&
+            selector.trim() === '.choice[aria-disabled="true"][data-highlighted]:not(:disabled)' &&
+            property === "outline" &&
+            value === "var(--ui-focus-width) solid var(--ui-focus-ring-color)";
+          if (
+            !disabledChoiceFocus &&
+            /^(?:border(?!-radius)(?:-[\w-]+)?|outline(?:-(?:width|color|style))?|box-shadow)$/.test(
+              property,
+            ) &&
+            !/^(?:0(?:px)?|none|transparent)(?:\s*!important)?$/.test(value.trim())
+          ) {
+            frames.push(`${selector.trim()}: ${property}: ${value}`);
+          }
         }
       }
-    }
-    expect(frames).toEqual([]);
-  });
+      expect(frames).toEqual([]);
+    },
+  );
 
   it("normalizes semantic options without removing container or input focus", () => {
-    const css = readFileSync(join(__dirname, "../../styles/arc.css"), "utf8");
-    const reset = css.match(/:root :is\(\s*\[role="option"\][\s\S]*?\{([^}]+)\}/)?.[1];
+    const css = readFileSync(join(__dirname, "../../styles/arc.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    const roles = ["option", "menuitem", "menuitemradio", "menuitemcheckbox"];
+    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({
+      selector: selector.replace(/\s+/g, " ").trim(),
+      body,
+    }));
+    const forRoles = (rule: { selector: string }) =>
+      roles.every((role) => rule.selector.includes(`[role="${role}"]`));
+    const reset = rules.find(
+      (rule) =>
+        forRoles(rule) && !rule.selector.includes(":focus-visible") && /border: 0/.test(rule.body),
+    );
     expect(reset).toBeDefined();
-    expect(reset).toContain("border: 0 !important;");
-    expect(reset).toContain("outline: none !important;");
-    expect(reset).toContain("box-shadow: none !important;");
-    for (const role of ["option", "menuitem", "menuitemradio", "menuitemcheckbox"]) {
-      expect(css.match(/:root :is\(\s*\[role="option"\][\s\S]*?\{/)?.[0]).toContain(
-        `[role="${role}"]`,
-      );
+    // Zero specificity and no !important: a component's own ring, border or shadow on a role row wins.
+    expect(reset!.selector.startsWith(":where(:root) :where(")).toBe(true);
+    expect(reset!.body).toContain("border: 0;");
+    expect(reset!.body).toContain("box-shadow: none;");
+    // The global reset must never again hold a role row's border, outline or shadow with !important.
+    for (const rule of rules.filter(forRoles)) {
+      expect(rule.body).not.toMatch(/(?:border|outline|box-shadow)[\w-]*\s*:[^;]*!important/);
     }
-    const arc = readFileSync(join(__dirname, "../../styles/arc.css"), "utf8");
+    // Keyboard focus keeps the hover fill and gains the shared focus line (transparent under pointer input).
+    const focus = rules.find(
+      (rule) =>
+        forRoles(rule) &&
+        rule.selector.includes(":focus-visible") &&
+        /--ui-surface-hover/.test(rule.body),
+    );
+    expect(focus).toBeDefined();
+    expect(focus!.selector.startsWith(":where(:root) :where(")).toBe(true);
+    expect(focus!.body).toContain("box-shadow: var(--ui-focus-ring);");
+    // The shared row skin owns its fill-only focus, so the fallback line never frames a ListRow.
+    const row = readFileSync(join(__dirname, "ListRow.module.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    expect(row).toMatch(/\.row\s*\{[^}]*box-shadow: none;/);
+    const arc = css;
     expect(arc).toContain("outline: var(--ui-focus-width) solid var(--ui-focus-ring-color)");
     const picker = readFileSync(join(__dirname, "picker/picker.module.css"), "utf8");
     expect(picker).toMatch(/\.list\.list:focus-visible\s*\{\s*box-shadow: inset/);
@@ -52,6 +90,26 @@ describe("popup choice surfaces", () => {
 
 const read = (file: string) =>
   readFileSync(join(__dirname, file), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+
+it("shares the root spacing and radius scale with Arc surfaces", () => {
+  const root = read("../../styles/index.css");
+  const arc = read("../../styles/arc.css");
+  const arcRoot = [...arc.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter(([, selector]) => selector.trim() === ".bycoda-arc")
+    .map(([, , body]) => body)
+    .join("\n");
+  expect(arcRoot).toContain("--control-height-lg:");
+  const names = [
+    ...[1, 2, 3, 4, 5, 6, 8, 10, 12, 16].map((step) => `space-${step}`),
+    ...["control", "panel", "surface", "pill"].map((role) => `radius-${role}`),
+  ];
+  for (const name of names) {
+    const declaration = new RegExp(`--${name}\\s*:`, "g");
+    expect(root.match(declaration), name).toHaveLength(1);
+    expect(arcRoot, name).not.toMatch(declaration);
+  }
+});
+
 const rule = (css: string, selector: string) => {
   const start = css.search(new RegExp(String.raw`(^|\})\s*\.${selector.slice(1)}\s*\{`));
   if (start < 0) return "";

@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import type { Terminal } from "@xterm/xterm";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TerminalTools } from "./TerminalTools";
+import { RemoteShellSuggestionsOverlay } from "./RemoteShellSuggestionsOverlay";
 import type { SshShellController } from "../model/sshShellIntegration";
 
 vi.mock("./TerminalCursorPopover", () => ({
@@ -52,11 +53,11 @@ it("shows the effective terminal size and resets only through its owner callback
     await openTools(host);
     expect(
       document
-        .querySelector('[role="status"][aria-label="Terminal font size"]')
+        .querySelector('[aria-label="Terminal font size"] [role="status"]')
         ?.textContent?.trim(),
     ).toBe("19px");
     const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-      (node) => node.getAttribute("aria-label") === "Reset text size",
+      (node) => node.textContent === "Reset text size",
     )!;
     await act(async () => button.click());
     expect(reset).toHaveBeenCalledOnce();
@@ -107,17 +108,18 @@ it("requests a startup review explicitly without writing terminal input and bloc
     );
     expect(review).not.toHaveBeenCalled();
     await openTools(host);
-    const button = document.querySelector<HTMLButtonElement>(
-      '[aria-label="Review startup scripts"]',
-    )!;
-    await act(async () => {
-      button.click();
-      button.click();
-    });
+    const startupItem = () =>
+      [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+        (node) => node.textContent === "Review startup scripts",
+      )!;
+    await act(async () => startupItem().click());
     expect(review).toHaveBeenCalledTimes(1);
-    expect(button.getAttribute("aria-disabled")).toBe("true");
+    await openTools(host);
+    expect(startupItem().disabled).toBe(true);
+    await act(async () => startupItem().click());
+    expect(review).toHaveBeenCalledTimes(1);
     await act(async () => finish());
-    expect(button.getAttribute("aria-disabled")).not.toBe("true");
+    expect(startupItem().disabled).toBe(false);
     expect(paste).not.toHaveBeenCalled();
     expect(input).not.toHaveBeenCalled();
   } finally {
@@ -161,19 +163,14 @@ it("opens PowerShell suggestions only from an explicit alternative without termi
     );
     expect(enable).not.toHaveBeenCalled();
     await openTools(host);
-    const help = document.querySelector<HTMLButtonElement>(
-      '[aria-label="About shell suggestions"]',
-    )!;
-    expect(help.getAttribute("aria-expanded")).toBe("false");
-    await act(async () => help.click());
+    const menuItem = (label: string) =>
+      [...document.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]')].find((element) =>
+        element.textContent?.includes(label),
+      )!;
+    await act(async () => menuItem("About shell suggestions").click());
     expect(document.body.textContent).toContain("PSReadLine 2.4+");
-    await act(async () => help.click());
-    await act(async () =>
-      document.querySelector<HTMLButtonElement>('[aria-label="Shell suggestions"]')!.click(),
-    );
-    const option = [...document.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]')].find(
-      (element) => element.textContent?.includes("PowerShell suggestions"),
-    )!;
+    await openTools(host);
+    const option = menuItem("PowerShell suggestions");
     await act(async () => option.click());
     expect(enable).toHaveBeenCalledExactlyOnceWith("powershell");
     expect(paste).not.toHaveBeenCalled();
@@ -181,6 +178,46 @@ it("opens PowerShell suggestions only from an explicit alternative without termi
   } finally {
     await act(async () => root.unmount());
     host.remove();
+  }
+});
+
+it("can save and manage commands from a saved SSH header before the terminal is ready", async () => {
+  const host = document.createElement("div");
+  const toolbarTarget = document.createElement("div");
+  document.body.append(host, toolbarTarget);
+  const root = createRoot(host);
+  const save = vi.fn();
+  const manage = vi.fn();
+  try {
+    await act(async () =>
+      root.render(
+        createElement(TerminalTools, {
+          terminal: null,
+          mode: null,
+          ready: false,
+          onModeChange: vi.fn(),
+          onSaveCommand: save,
+          onSavedCommands: manage,
+          toolbarTarget,
+        }),
+      ),
+    );
+    const saveButton = Array.from(toolbarTarget.querySelectorAll("button")).find(
+      (button) => button.textContent === "Save command",
+    );
+    await act(async () => saveButton!.click());
+    expect(save).toHaveBeenCalledOnce();
+    await openTools(toolbarTarget);
+    const manager = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent === "Saved commands",
+    );
+    expect(document.body.textContent).not.toContain("Clear terminal");
+    await act(async () => manager!.click());
+    expect(manage).toHaveBeenCalledOnce();
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    toolbarTarget.remove();
   }
 });
 
@@ -250,7 +287,8 @@ it("keeps automatic exposure and source choices explicit without requesting on m
     state: undefined,
     preview: undefined,
     waiting: false,
-    error: "",
+    notice: "",
+    noticeDetails: undefined,
     automatic: false,
     source: "commands" as const,
     request: vi.fn(async () => {}),
@@ -284,7 +322,11 @@ it("keeps automatic exposure and source choices explicit without requesting on m
     expect(document.body.textContent).toContain("Session only.");
     await act(async () => (document.querySelector('[role="switch"]') as HTMLButtonElement).click());
     expect(shell.setAutomatic).toHaveBeenCalledExactlyOnceWith(true);
-    const paths = [...document.querySelectorAll('[role="radio"]')].find((item) =>
+    const source = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Suggestion source: Commands"]',
+    )!;
+    await act(async () => source.click());
+    const paths = [...document.querySelectorAll('[role="option"]')].find((item) =>
       item.textContent?.includes("Remote paths"),
     ) as HTMLButtonElement;
     await act(async () => paths.click());
@@ -342,7 +384,8 @@ it("keeps the passive suggestion popover mounted while the next snapshot is pend
     },
     preview: undefined,
     waiting: false,
-    error: "",
+    notice: "",
+    noticeDetails: undefined,
     automatic: true,
     source: "commands",
     request: vi.fn(async () => {}),
@@ -357,13 +400,11 @@ it("keeps the passive suggestion popover mounted while the next snapshot is pend
   const render = (remoteShell: SshShellController) =>
     act(async () =>
       root.render(
-        createElement(TerminalTools, {
+        createElement(RemoteShellSuggestionsOverlay, {
           terminal,
-          mode: null,
-          onModeChange: vi.fn(),
-          ready: true,
-          suggestionsAllowed: false,
-          remoteShell,
+          selectionMode: false,
+          onClose: vi.fn(),
+          shell: remoteShell,
         }),
       ),
     );

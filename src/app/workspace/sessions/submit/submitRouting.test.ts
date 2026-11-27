@@ -33,6 +33,43 @@ beforeEach(() => {
   vi.mocked(remoteSessionActions).mockReset();
 });
 
+it.each([true, false])(
+  "prepares a stored conversation before sending (ready: %s)",
+  async (ready) => {
+    const session = newDefaultSession("G:/local");
+    sessionsRef.current = [
+      { ...session, historyLoading: true, storedHistory: { revision: 1, before: 42 } },
+    ];
+    const submit = vi.fn(() => true);
+    const ensureSessionHistoryForExecution = vi.fn(async () => ready);
+    const onSendRejected = vi.fn();
+    const ctx = {
+      getSubmitSessionRef: () => ({ current: submit }),
+      ensureSessionHistoryForExecution,
+      refs: {
+        windowTransferPendingRef: { current: false },
+        movingSessionIds: { current: new Set() },
+        editedResends: { isActive: () => false },
+        retiringTurns: { current: new Set() },
+        turnGen: { current: new Map() },
+      },
+    } as unknown as SubmitDeps;
+    const options = { onSendRejected };
+    expect(
+      await routeSubmitSession(ctx, {
+        sessionId: session.id,
+        text: "Continue",
+        attachments: [],
+        options,
+      }),
+    ).toBe(ready);
+    expect(ensureSessionHistoryForExecution).toHaveBeenCalledWith(session.id);
+    if (ready) expect(submit).toHaveBeenCalledWith(session.id, "Continue", [], options);
+    else expect(submit).not.toHaveBeenCalled();
+    expect(onSendRejected).toHaveBeenCalledTimes(ready ? 0 : 1);
+  },
+);
+
 it.each([undefined, "steer", "queue"] as const)(
   "routes explicit local Host %s intent only to its registered owner",
   (followUpBehavior) => {

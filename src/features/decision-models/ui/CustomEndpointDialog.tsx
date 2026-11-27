@@ -66,8 +66,6 @@ export function CustomEndpointDialog({
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
     const key = apiKey.trim();
-    // The key leaves component state before the request, so a failed attempt does not keep it.
-    setApiKey("");
     const input: DecisionSourceInput = {
       name: clampName(name),
       kind: endpointSourceKind(endpoint),
@@ -77,13 +75,18 @@ export function CustomEndpointDialog({
       // The Host checks the header name; an empty field keeps Authorization: Bearer.
       ...(authHeader.trim() ? { authHeader: authHeader.trim() } : {}),
     };
-    void flow.submit(input, contractLabel(adapter), key || undefined).catch(() => undefined);
+    // The key stays in state while the add is in flight or after it fails, so a retry needs no retyping.
+    void flow
+      .submit(input, contractLabel(adapter), key || undefined)
+      .then((added) => {
+        if (added) setApiKey("");
+      })
+      .catch(() => undefined);
   };
 
   return (
     <Modal
       title={t("Custom endpoint")}
-      description={t("Connect a service at an address you choose.")}
       size="md"
       onClose={close.requestClose}
       footer={
@@ -92,7 +95,13 @@ export function CustomEndpointDialog({
             {flow.done ? t("Close") : t("Cancel")}
           </Button>
           {flow.done ? null : (
-            <Button variant="primary" loading={flow.busy} disabled={flow.busy} onClick={submit}>
+            <Button
+              variant="primary"
+              loading={flow.busy}
+              loadingLabel={flow.phase === "testing" ? t("Testing…") : t("Saving…")}
+              disabled={flow.busy}
+              onClick={submit}
+            >
               {t("Add and test")}
             </Button>
           )}
@@ -117,7 +126,6 @@ export function CustomEndpointDialog({
         />
         <Select
           label={t("Contract")}
-          description={t("The request format the service uses. The test checks it.")}
           value={adapter}
           disabled={locked}
           options={CONTRACT_ADAPTERS.map((value) => ({ value, label: contractLabel(value) }))}
@@ -144,16 +152,12 @@ export function CustomEndpointDialog({
         />
         <TextField
           label={t("Key header name (optional)")}
-          description={t("Leave empty to send the key as Authorization: Bearer.")}
+          placeholder="Authorization"
           value={authHeader}
           monospace
           disabled={locked}
           onChange={(event) => setAuthHeader(event.target.value)}
         />
-        <InlineMessage tone="neutral">{t("Field mapping is not available yet.")}</InlineMessage>
-        {flow.phase === "testing" ? (
-          <InlineMessage tone="info">{t("Testing the connection…")}</InlineMessage>
-        ) : null}
         {flow.failure !== null ? <ErrorNotice error={flow.failure} /> : null}
         {flow.outcome ? (
           <InlineMessage tone={flow.outcome.tone}>{flow.outcome.text}</InlineMessage>

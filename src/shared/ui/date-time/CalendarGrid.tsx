@@ -81,7 +81,9 @@ export function CalendarGrid({
   const weekStart = format.weekStart;
   const offset = (first.getDay() - weekStart + 7) % 7;
   const count = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
-  const cells = Array.from({ length: Math.ceil((offset + count) / 7) * 7 }, (_, i) =>
+  // Six week rows for every month, so paging never resizes the popover or the footer below it.
+  // Cells without a date render no button, so they add no keyboard stop.
+  const cells = Array.from({ length: 6 * 7 }, (_, i) =>
     i >= offset && i < offset + count ? addDays(first, i - offset) : null,
   );
   const monthKey = dateKey(first).slice(0, 7);
@@ -173,7 +175,6 @@ export function CalendarGrid({
                       data-today={(today && key === dateKey(today)) || undefined}
                       aria-current={today && key === dateKey(today) ? "date" : undefined}
                       aria-label={label}
-                      title={label}
                       tabIndex={key === selectedKey ? 0 : -1}
                       disabled={unavailable}
                       className={styles.day}

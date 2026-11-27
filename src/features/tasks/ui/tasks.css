@@ -23,7 +23,7 @@
   padding-block: 0;
   margin-block: 0;
 }
-.task-workspace-fields p,
+.task-workspace-fields [role="status"],
 .task-workspace-fields [role="alert"] {
   grid-column: 1 / -1;
   overflow-wrap: anywhere;
@@ -32,24 +32,12 @@
   min-inline-size: 0;
   overflow-wrap: anywhere;
 }
-.task-goals-disclosure {
-  flex-shrink: 0;
-  min-inline-size: 0;
-}
-.task-create-sprint-context {
-  padding: 0.5rem 1rem 0;
-
-  overflow-wrap: anywhere;
-}
 .task-row-select {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
   cursor: pointer;
 }
-@media (pointer: coarse) {
-}
-
 .task-status-details {
   display: grid;
   gap: 0.75rem;

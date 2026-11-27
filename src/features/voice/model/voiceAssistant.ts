@@ -1,7 +1,7 @@
 import { boundToolOutput } from "./voiceToolOutput";
 import { shouldWaitForVoice } from "./voiceSpeechPolicy";
-import { VOICE_FEATURE_CONTEXT } from "./voiceFeatureLexicon";
-import { VOICE_SHARED_POLICY } from "./voiceInstructions";
+import { VOICE_FEATURE_CONTEXT } from "../../../shared/model/voice-realtime/voiceFeatureLexicon";
+import { VOICE_SHARED_POLICY } from "../../../shared/model/voice-realtime/voiceInstructions";
 import { runHarnessTextPrompt } from "../../../integrations/harness";
 import type { Session } from "../../sessions/model/session";
 import { monotonicNow, elapsedSince } from "../../../shared/lib/time/timestamps";
@@ -12,7 +12,7 @@ import {
   voiceLimitFallback,
   voiceProgressText,
 } from "./voiceAssistantNotices";
-import { personaBlock } from "./voicePrompt";
+import { personaBlock } from "../../../shared/model/voice-realtime/voicePrompt";
 import { voiceRequest } from "./voiceConversation";
 import {
   voiceRuntimeDeadline,
@@ -236,7 +236,7 @@ async function runTurn(
       input.signal.throwIfAborted();
       return {
         action: "reply",
-        reply: summary || voiceLimitFallback(input.transcript, observations.length),
+        reply: summary || voiceLimitFallback(input.transcript),
         requestIds: observedRequestIds(observations),
       };
     }
@@ -253,19 +253,25 @@ async function runTurn(
         result = observedResult(
           await voiceRuntimeDeadline(
             (wait) =>
-              voiceToolWaitsForOwner(decision.name)
+              voiceToolWaitsForOwner(decision.name, decision.args)
                 ? input.execute(decision.name, decision.args, input.signal, wait)
                 : input.execute(decision.name, decision.args, input.signal),
             input.signal,
+            undefined,
+            decision.name === "app_tool_call" && typeof decision.args.requestId === "string"
+              ? decision.args.requestId
+              : undefined,
           ),
         );
       } catch (error) {
         result = {
           status: "uncertain",
           error:
-            error instanceof Error
-              ? error.message
-              : "The application tool did not return a verified result.",
+            typeof error === "string"
+              ? error
+              : error instanceof Error
+                ? error.message
+                : "The application tool did not return a verified result.",
           requestId: decision.args.requestId,
           retry: "Read the operation state before retrying. No automatic resend was made.",
         };

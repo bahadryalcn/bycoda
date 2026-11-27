@@ -8,8 +8,9 @@ import { parseRemoteAttachments, resolveAttachments } from "../attachments/attac
 import { browseHostDirectories, createHostDirectory } from "../browser/browse";
 import { initializeEmptyProjectRepository } from "../git/git-init";
 import { DesktopCommandDelivery } from "../desktop/desktop-command-delivery";
-import { spawn } from "node:child_process";
-import { stat } from "node:fs/promises";
+import { hostGitExec } from "../git/git-exec-pool";
+import { dirname } from "node:path";
+import { mkdir, rm, stat } from "node:fs/promises";
 import { createProjectsService } from "../domains/projects/service";
 import {
   createSessionQueueService,
@@ -28,6 +29,8 @@ import type { ServerBindings } from "./bindings";
 import { DESKTOP_RUN_ID } from "./support";
 import { clientMessageQueue } from "../sessions/client-message-queue";
 import { assertDomainAuthority } from "../domains/context";
+import { readInlineVisual } from "../conversation/inline-visual-store";
+import { inlineVisualIds } from "../conversation/inline-visual-retention";
 export function createSessionServicesRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -54,18 +57,31 @@ export function createSessionServicesRuntime(
   const projectsService = createProjectsService({
     list: dependencies.namedProjects,
     clonePorts: {
-      spawn: (command, args, options) => spawn(command, args, options),
-      exists: (path) =>
-        stat(path).then(
-          () => true,
-          () => false,
-        ),
+      exec: hostGitExec.exec.bind(hostGitExec),
+      folders: {
+        exists: (path) =>
+          stat(path).then(
+            () => true,
+            () => false,
+          ),
+        // mkdir without recursion fails when anything already exists, so a true result is a folder this call created.
+        claim: (path) =>
+          mkdir(path).then(
+            () => true,
+            (error: NodeJS.ErrnoException) => {
+              if (error.code === "EEXIST") return false;
+              throw error;
+            },
+          ),
+        remove: (path) => rm(path, { recursive: true, force: true }),
+      },
     },
     directoryPorts: {
-      directory: async () =>
+      directory: async (context) =>
         dependencies.desktop.live.projectDirectory(
           await dependencies.engine.store.projects(),
           dependencies.engine.store.environmentId,
+          dependencies.desktop.live.groupLock.access(context.principalId),
         ),
       browse: browseHostDirectories,
       createDirectory: createHostDirectory,
@@ -88,15 +104,27 @@ export function createSessionServicesRuntime(
     repository: {
       projectList: dependencies.projectSessionList,
       session: (id, signal) => dependencies.engine.store.session(id, signal),
-      sync: (id, revision, signal) => dependencies.engine.store.sync(id, revision, signal),
+      sessionSync: (id, revision, signal) =>
+        dependencies.engine.store.sessionSync(id, revision, signal),
       readView: dependencies.readSessionView,
-      catchUp: (id, signal) => dependencies.catchUp(id, undefined, signal),
+      catchUp: async (id, signal) => {
+        // Only a stored desktop copy can be newer; the refresh would load the session to learn that.
+        const metadata = await dependencies.engine.store
+          .sessionReadMetadata(id)
+          .catch(() => undefined);
+        if (metadata && !metadata.desktop) return;
+        await dependencies.catchUp(id, undefined, signal);
+      },
     },
     nativeProjection: {
-      watch: dependencies.desktopWatch,
+      watch: (id, fresh, signal) => dependencies.desktopWatch(id, fresh, signal, true),
       view: dependencies.desktopView,
       sync: dependencies.desktopSync,
       recheckMs: dependencies.desktopRecheckMs,
+    },
+    visuals: {
+      contains: (blocks, id) => inlineVisualIds({ blocks }).includes(id),
+      read: (id) => readInlineVisual(dirname(dependencies.engine.store.attachmentDir), id),
     },
     transcript: {
       page: (...args) => dependencies.transcriptPages.page(...args),

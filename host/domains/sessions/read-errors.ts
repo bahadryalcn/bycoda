@@ -13,11 +13,11 @@ export function isSessionReadErrorKind(value: unknown): value is SessionReadErro
 
 /** Safe query failures; private helper/storage diagnostics remain in the cause. */
 export class SessionReadError extends Error {
-  constructor(
-    readonly kind: SessionReadErrorKind,
-    options?: ErrorOptions,
-  ) {
+  declare readonly kind: SessionReadErrorKind;
+
+  constructor(kind: SessionReadErrorKind, options?: ErrorOptions) {
     super(messages[kind], options);
+    this.kind = kind;
     this.name = "SessionReadError";
   }
 }

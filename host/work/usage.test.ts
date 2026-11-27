@@ -44,6 +44,33 @@ describe("Work usage calendar and admission", () => {
     }
   });
 
+  it("defines the week as Host-local Monday 00:00 to the next Monday", () => {
+    const friday = workUsageWindows(now).weekly;
+    expect(friday.start).toBe(new Date(2026, 10, 9).getTime());
+    expect(friday.nextResetAt).toBe(new Date(2026, 10, 16).getTime());
+    const sunday = workUsageWindows(new Date(2026, 10, 15, 23, 59).getTime()).weekly;
+    expect(sunday.start).toBe(friday.start);
+    const monday = workUsageWindows(new Date(2026, 10, 16).getTime()).weekly;
+    expect(monday.start).toBe(friday.nextResetAt);
+    const crossing = workUsageWindows(new Date(2026, 10, 30, 12).getTime()).weekly;
+    expect(new Date(crossing.nextResetAt).getMonth()).toBe(11);
+  });
+
+  it("admits against weekly caps and reports the weekly reset", () => {
+    const week = workUsageWindows(now).weekly;
+    const usage = read([
+      run({ runId: "monday", startedAt: week.start + 1000, settledAt: week.start + 2000 }),
+      run({ runId: "last-week", startedAt: week.start - 5000, settledAt: week.start - 4000 }),
+    ]);
+    expect(usage.weekly.tokens.used).toBe(100);
+    expect(evaluateWorkCaps({ weekly: { tokens: 101 } }, usage).allowed).toBe(true);
+    const reached = evaluateWorkCaps({ weekly: { tokens: 100 } }, usage);
+    expect(reached.waits).toMatchObject([
+      { code: "workCapReached", period: "weekly", nextResetAt: week.nextResetAt },
+    ]);
+    expect(evaluateWorkCaps({ weekly: { costUsd: 0 } }, usage).allowed).toBe(true);
+  });
+
   it("counts exact runs once and sums accounts only for their provider total", () => {
     const first = run();
     const rows = [

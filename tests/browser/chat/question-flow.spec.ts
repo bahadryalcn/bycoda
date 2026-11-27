@@ -3,6 +3,52 @@ const captureRoot =
   process.env.BYCODA_APPROVAL_VERIFICATION_DIR ?? "temp/verification/question-flow";
 
 for (const theme of ["light", "dark"] as const) {
+  for (const width of [1280, 800, 390]) {
+    test(`question file controls and navigation stay aligned at ${width}px in ${theme}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 950 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/chat/question-flow.html?theme=${theme}&variant=choices&multiple=1&attachments=1`,
+      );
+      const form = page.locator("[data-question-form]");
+      const attach = form.getByRole("button", { name: "Attach files", exact: true });
+      await expect(attach).toHaveText("Attach files");
+      await form.getByRole("radio", { name: /Windows and macOS/ }).check();
+      const next = form.getByRole("button", { name: "Next", exact: true });
+      const sendBounds = await next.boundingBox();
+      // Compact, not stretched: it holds the widest of its pending and retry labels
+      // ("Sending answer…", "Connection issue") so pressing it never shifts the row.
+      expect(sendBounds!.width).toBeLessThan(170);
+      const controls = await form.evaluate((node) => {
+        const buttons = [...node.querySelectorAll("button")];
+        const attach = buttons.find((button) => button.textContent?.trim() === "Attach files")!;
+        const next = node.querySelector('button[type="submit"]')!;
+        return {
+          fileBottom: attach.getBoundingClientRect().bottom,
+          nextTop: next.getBoundingClientRect().top,
+          fileInFields: !!attach.closest("fieldset"),
+        };
+      });
+      expect(controls.fileInFields).toBe(true);
+      expect(controls.fileBottom).toBeLessThanOrEqual(controls.nextTop);
+      await form.screenshot({ path: `${captureRoot}/question-layout-${theme}-${width}.png` });
+      await next.click();
+      await expect(form.getByRole("button", { name: "Back", exact: true })).toBeVisible();
+      await attach.click();
+      await expect(
+        form.getByRole("button", { name: "Remove picked.txt", exact: true }),
+      ).toBeVisible();
+      await form.screenshot({ path: `${captureRoot}/question-files-${theme}-${width}.png` });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(
+        false,
+      );
+    });
+  }
+}
+
+for (const theme of ["light", "dark"] as const) {
   for (const width of [1280, 800]) {
     test(`fixed choices retain additional notes at ${width}px in ${theme}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 950 });
@@ -168,17 +214,16 @@ for (const theme of ["light", "dark"] as const) {
         const bounds = await row.evaluate((node) => {
           const row = node.getBoundingClientRect();
           const actions = node.querySelector(".user-message-actions")!.getBoundingClientRect();
-          const content = node
-            .querySelector(".user-message-hover-zone")!
-            .firstElementChild!.getBoundingClientRect();
+          const bubble = node.querySelector(".user-message-bubble")?.getBoundingClientRect();
           return {
             rowBottom: row.bottom,
-            actionTop: actions.top,
+            actionRight: actions.right,
             actionBottom: actions.bottom,
-            contentBottom: content.bottom,
+            bubbleLeft: bubble?.left ?? Number.POSITIVE_INFINITY,
           };
         });
-        expect(bounds.actionTop).toBeGreaterThanOrEqual(bounds.contentBottom);
+        // The actions sit beside the bubble, never over it or under the row.
+        expect(bounds.actionRight).toBeLessThanOrEqual(bounds.bubbleLeft + 1);
         expect(bounds.actionBottom).toBeLessThanOrEqual(bounds.rowBottom);
       }
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
@@ -375,10 +420,19 @@ for (const theme of ["light", "dark"] as const) {
         name: "Notifications",
         exact: true,
       });
-      const sheet = page.getByRole("dialog", {
-        name: "Notifications",
-        exact: true,
-      });
+      // The notifications sheet only lists requests; Answer opens the approval in its own dialog,
+      // which is the surface every decision control below belongs to.
+      const list = page.getByRole("dialog", { name: "Notifications", exact: true });
+      const sheet = page.getByRole("dialog", { name: "Needs approval", exact: true });
+      const openApproval = async (effect: number) => {
+        await notices.click();
+        await list
+          .locator(".approval-toast")
+          .filter({ hasText: `Synthetic fixture effect ${effect}` })
+          .getByRole("button", { name: "Answer", exact: true })
+          .click();
+        await expect(sheet).toContainText(`Synthetic fixture effect ${effect}`);
+      };
       const calls = page.getByLabel("Approval callback count", { exact: true });
       const settlements = page.getByLabel("Approval callback settlements", {
         exact: true,
@@ -389,8 +443,7 @@ for (const theme of ["light", "dark"] as const) {
         exact: true,
       });
       await expect(transcript.locator(".agent-transcript")).toHaveCount(1);
-      await notices.click();
-      await expect(sheet).toContainText("Synthetic fixture effect 72");
+      await openApproval(72);
       const allow = sheet.getByRole("button", { name: "Allow", exact: true });
       await allow.focus();
       await allow.press("Enter");
@@ -431,7 +484,7 @@ for (const theme of ["light", "dark"] as const) {
       await expect(calls).toHaveText("1");
       await expect(settlements).toHaveText("0");
       await expect(gate).toHaveText("closing");
-      await notices.click();
+      await openApproval(72);
       await expect(allow).toHaveAttribute("aria-busy", "true");
       await expect(allow).toBeDisabled();
       await expect(sheet.getByRole("button", { name: "Deny", exact: true })).toBeDisabled();
@@ -480,8 +533,8 @@ for (const theme of ["light", "dark"] as const) {
         repeatBlocked: true,
       });
       expect(original.original.session.id).toBe("fixture-decision-approval-session");
-      await notices.click();
-      await expect(sheet.locator('.approval-toast [role="status"]')).toBeVisible();
+      await openApproval(72);
+      await expect(sheet.getByRole("status")).toBeVisible();
       await expect(sheet.getByRole("alert")).toHaveCount(0);
       await expect(allow).toBeDisabled();
       await decisionCapture(
@@ -498,7 +551,7 @@ for (const theme of ["light", "dark"] as const) {
           exact: true,
         })
         .click();
-      await notices.click();
+      await openApproval(72);
       await expect(allow).toBeDisabled();
       await expect(calls).toHaveText("1");
       await sheet.getByRole("button", { name: "Close", exact: true }).click();
@@ -521,7 +574,7 @@ for (const theme of ["light", "dark"] as const) {
           exact: true,
         })
         .click();
-      await notices.click();
+      await openApproval(73);
       await expect(sheet).toContainText("Synthetic fixture effect 73");
       await expect(allow).toBeEnabled();
       await allow.click();
@@ -546,8 +599,8 @@ for (const theme of ["light", "dark"] as const) {
       await expect(pooledAllow).toBeDisabled();
       await page.getByRole("button", { name: "Complete new callback", exact: true }).click();
       await expect(settlements).toHaveText("2");
-      await notices.click();
-      await expect(sheet.locator('.approval-toast [role="status"]')).toBeVisible();
+      await openApproval(73);
+      await expect(sheet.getByRole("status")).toBeVisible();
       await expect(sheet.getByRole("alert")).toHaveCount(0);
       await expect(allow).toBeDisabled();
       await expect(page.getByLabel("Approval callback identities", { exact: true })).toHaveText(
@@ -575,7 +628,7 @@ for (const theme of ["light", "dark"] as const) {
         providerAck: "unproved",
         repeatBlocked: true,
       });
-      await notices.click();
+      await openApproval(73);
       await decisionCapture(
         page,
         testInfo,
@@ -597,7 +650,13 @@ for (const theme of ["light", "dark"] as const) {
           `/tests/browser/chat/question-flow.html?theme=${theme}&approval&${variant}`,
         );
         await page.getByRole("button", { name: "Notifications", exact: true }).click();
-        const sheet = page.getByRole("dialog", { name: "Notifications", exact: true });
+        // The sheet decides nothing in place: Answer opens the approval in its own dialog.
+        await page
+          .getByRole("dialog", { name: "Notifications", exact: true })
+          .getByRole("button", { name: "Answer", exact: true })
+          .first()
+          .click();
+        const sheet = page.getByRole("dialog", { name: "Needs approval", exact: true });
         await sheet.getByRole("button", { name: "Allow", exact: true }).click();
         const message =
           variant === "approvalOldHost"

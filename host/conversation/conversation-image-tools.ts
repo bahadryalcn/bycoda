@@ -12,7 +12,11 @@ import {
 import { antigravityImageModel, listImageModels } from "../images/image-models";
 import { generateAntigravityImage } from "../images/antigravity-images";
 import type { Session } from "../../src/features/sessions/model/session";
-import { imageModelAllowed } from "../../src/shared/model/host-contracts/image-models";
+import {
+  IMAGE_MODELS_KEY,
+  decodeImageModels,
+  imageModelAllowed,
+} from "../../src/shared/model/host-contracts/image-models";
 import type { HostStore } from "../store";
 import type { SessionRunEngine } from "../sessions/sessionRuns";
 import { writeFileAtomic } from "../storage/atomic-write";
@@ -65,8 +69,6 @@ export function describeImageConversationTool(action: string) {
     return `Generate one raster image (icon, sprite, background, illustration) with a Host image provider and save it as a new workspace file. Only the image models selected for this session (images.status marks them); antigravity runs Nano Banana in a child Antigravity session that may ask for approval. No owner approval per image, at most ${MAX_IMAGES_PER_SESSION} images per conversation. Returns the saved path, provider, model and pixel size. Inspect the file before referencing it; report the provider in your handoff.`;
 }
 
-const used = new Map<string, number>();
-
 type ImageSession = Pick<Session, "id" | "modelSettings" | "runtimeMode" | "worktreeCwd">;
 
 /** Image providers stay Host-owned; agents choose only prompt, file, ratio and provider. */
@@ -91,6 +93,11 @@ export async function callImageConversationTool(
   await check();
   const { session } = options;
   const allowed = (id: string) => imageModelAllowed(session.modelSettings, id);
+  // The owner turned image generation off: no model is offered and nothing is generated.
+  const off = decodeImageModels(session.modelSettings?.[IMAGE_MODELS_KEY])?.length === 0;
+  if (off && action === "images.status") return { models: [], off: true, remaining: 0 };
+  if (off && action === "images.generate")
+    throw new Error("Image generation is off for this session.");
   const antigravity = options.antigravity ?? (() => antigravityImageModel());
   const all =
     options.adapters ??
@@ -101,7 +108,10 @@ export async function callImageConversationTool(
         ...model,
         selected: allowed(model.provider),
       })),
-      remaining: Math.max(0, MAX_IMAGES_PER_SESSION - (used.get(session.id) ?? 0)),
+      remaining: Math.max(
+        0,
+        MAX_IMAGES_PER_SESSION - (await options.engine.store.conversationImagesUsed(session.id)),
+      ),
     };
   if (action !== "images.generate") throw new Error("Unknown image action.");
   const target = workspacePath(root, input.path);
@@ -110,9 +120,6 @@ export async function callImageConversationTool(
     throw new Error("Image path must end with .png, .jpg or .jpeg.");
   if (await exists(target))
     throw new Error("A file already exists at this path; choose a new name.");
-  const count = used.get(session.id) ?? 0;
-  if (count >= MAX_IMAGES_PER_SESSION)
-    throw new Error(`Image limit reached (${MAX_IMAGES_PER_SESSION} per conversation).`);
   const provider = String(input.provider ?? "automatic");
   if (input.model !== undefined && provider === "automatic")
     throw new Error("Choose an explicit provider to select a model.");
@@ -125,8 +132,14 @@ export async function callImageConversationTool(
     Object.entries(all).filter(([id]) => allowed(id)),
   ) as SocialImageAdapters;
   const aspectRatio = (input.aspectRatio ?? "1:1") as "1:1" | "4:5" | "16:9";
-  // Counting before the call keeps a failed or uncertain generation inside the budget.
-  used.set(session.id, count + 1);
+  // Reserved durably before any filesystem or provider work: a failed or uncertain generation
+  // stays counted, and a restart cannot reopen the budget. Refusals above reserve nothing.
+  const reserved = await options.engine.store.reserveConversationImage(
+    session.id,
+    MAX_IMAGES_PER_SESSION,
+  );
+  if (reserved === undefined)
+    throw new Error(`Image limit reached (${MAX_IMAGES_PER_SESSION} per conversation).`);
   await mkdir(dirname(target), { recursive: true });
   // Resolve the parent through links so a symlinked folder cannot leave the workspace.
   await existingPath(root, relative(root, dirname(target)), true);

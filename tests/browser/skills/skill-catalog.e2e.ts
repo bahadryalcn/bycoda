@@ -34,9 +34,12 @@ for (const theme of ["light", "dark"])
       await expect(firstRecipe.locator("code")).toContainText(
         "https://github.com/pbakaus/impeccable/tree/main/.agents/skills/impeccable",
       );
+      // The installer reference lives in the catalog's info popover, not in each recipe.
+      await catalog.getByRole("button", { name: "Help", exact: true }).click();
       await expect(
-        firstRecipe.getByRole("button", { name: "Installer reference", exact: true }),
+        page.getByRole("button", { name: "Installer reference", exact: true }),
       ).toBeVisible();
+      await catalog.getByRole("button", { name: "Help", exact: true }).click();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
@@ -73,11 +76,15 @@ test("selected scope and provider reach installation boundary", async ({ page })
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/tests/browser/skills/skill-catalog.html");
   await discover(page);
+  await page.getByRole("button", { name: "Install to…", exact: true }).click();
   await page.getByRole("button", { name: /^Installation scope:/ }).click();
   await page.getByRole("option", { name: "This project", exact: true }).click();
   await page.getByRole("button", { name: /^Provider:/ }).click();
   await page.getByRole("option", { name: "Codex", exact: true }).click();
   await page.screenshot({ path: `${folder}/target-dark-1280.png` });
+  // Close the target popover; the choice is summarized beside the button.
+  await page.getByRole("button", { name: "Install to…", exact: true }).click();
+  await expect(page.getByText("This project", { exact: false }).first()).toBeVisible();
   await page.getByRole("button", { name: "Install impeccable", exact: true }).click();
   const calls = await page.evaluate(
     () => (window as unknown as { skillCatalogFixtureCalls: unknown[] }).skillCatalogFixtureCalls,
@@ -97,10 +104,14 @@ for (const theme of ["light", "dark"])
       await page.goto(`/tests/browser/skills/skill-catalog.html?result=failed&theme=${theme}`);
       await discover(page);
       await page.getByRole("button", { name: "Install impeccable", exact: true }).click();
+      await expect(page.getByText("Could not install the skill.", { exact: true })).toBeVisible();
+      // The raw download error sits behind the failure's Details control.
+      await page.getByRole("button", { name: /^Details/ }).click();
       await expect(
         page.getByText("Could not download skill source (HTTP 503).", { exact: true }),
       ).toBeVisible();
       await page.screenshot({ path: `${folder}/failed-${theme}-${width}.png` });
+      await page.keyboard.press("Escape");
       await page.getByRole("button", { name: "Dismiss", exact: true }).click();
       await expect(
         page.getByRole("button", { name: "Install impeccable", exact: true }),
@@ -172,7 +183,8 @@ for (const theme of ["light", "dark"])
       await expect(rows.first().getByRole("switch")).toBeChecked();
       await rows.first().getByRole("switch").click();
       await expect(rows.first().getByRole("switch")).not.toBeChecked();
-      await expect(rows.first()).toContainText("Installed, off");
+      // An installed copy with a known preference is shown by its switch alone, with no status text.
+      await expect(rows.first()).not.toContainText("Not installed");
       await expect(rows.last()).toContainText("Not installed");
       await page.screenshot({
         path: `temp/verification/search-skills-notes/skill-machines-${theme}-${width}.png`,

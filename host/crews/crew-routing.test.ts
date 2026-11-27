@@ -50,7 +50,13 @@ async function setup(entries: ModelRoutingEntry[]) {
     },
     errors: {},
   } as HostModelCatalog;
-  const tasks = { list: vi.fn(async () => []), save: vi.fn(async (task) => task), tick: vi.fn() };
+  const tasks = {
+    list: vi.fn(async () => []),
+    get: vi.fn(async () => undefined),
+    listCrewRun: vi.fn(async () => []),
+    save: vi.fn(async (task) => task),
+    tick: vi.fn(),
+  };
   const session = {
     revision: 1,
     updatedAt: 1000,
@@ -107,11 +113,11 @@ async function setup(entries: ModelRoutingEntry[]) {
   const current = await readModelRouting(store);
   await saveModelRouting(
     store,
-    {
+    () => ({
       ...structuredClone(EMPTY_MODEL_ROUTING),
       entries,
       delegation: { global: { crossAdvisor: "codex:advisor" }, providers: {}, accounts: {} },
-    },
+    }),
     current.version,
     1,
   );

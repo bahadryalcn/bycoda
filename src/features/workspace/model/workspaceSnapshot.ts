@@ -1,6 +1,7 @@
 import { markTurnInterrupted, type ResumedWorkspace } from "../../sessions/model/inFlight";
-import { isUserConversation } from "../../../shared/model/host-contracts/delegation";
+import { isListedConversation } from "../../../shared/model/host-contracts/delegation";
 import { withoutInternalWorkspaceSessions } from "./delegatedWorkspace";
+import { findTabForProject, workspaceTabCwd } from "./workspaceTabGroups";
 import {
   closeLeaf,
   isAgentTab,
@@ -28,6 +29,7 @@ import { parseRecoveredEditorDraft } from "../../files/model/editorDraftRecovery
 import type { ServerTerminalRestore } from "../../connections/model/serverTerminalRestore";
 import { serverTerminalRestoreState } from "../../connections/model/serverTerminalRestoreState";
 import { parseRemotePath, remotePath } from "../../connections/model/remoteProjects";
+import { remoteSessionProjectKey } from "../../connections/public/sessionMachineTarget";
 import {
   cachedRemoteSessionSummary,
   rememberRemoteSession,
@@ -42,6 +44,7 @@ import type { InboxAskContext } from "../../inbox/model/inboxAsk";
 import {
   HARNESSES,
   RUNTIME_MODES,
+  newDefaultSession,
   newSession,
   type HarnessId,
   type RuntimeMode,
@@ -52,6 +55,8 @@ export type WorkspaceSessionStub = {
   inboxAsk?: InboxAskContext;
   id: string;
   cwd: string;
+  scratchWorkspace?: true;
+  remoteExecutionEnvironmentId?: string;
   harness: HarnessId;
   model: string;
   modelSettings: Record<string, string>;
@@ -119,7 +124,23 @@ export function collectWorkspaceSnapshot(
       : {}),
     ...(isDockSide(lastDockSide) ? { lastDockSide } : {}),
   });
-  return withProjectReturnTargets(snapshot, memory);
+  return withProjectReturnTargets(
+    { ...snapshot, activeTabId: savedWorkspaceTabId(snapshot) },
+    memory,
+  );
+}
+
+function savedWorkspaceTabId({
+  tabs,
+  sessions,
+  activeTabId,
+  projectCwd,
+}: Pick<WorkspaceSnapshot, "tabs" | "activeTabId" | "projectCwd"> & {
+  sessions: Pick<Session, "id" | "cwd">[];
+}): string {
+  if (tabs.some((tab) => tab.id === activeTabId)) return activeTabId;
+  if (projectCwd === "~") return tabs.find((tab) => !workspaceTabCwd(tab, sessions))?.id ?? "";
+  return findTabForProject(tabs, sessions, projectCwd)?.id ?? "";
 }
 
 function withProjectReturnTargets(
@@ -207,9 +228,6 @@ export function parseWorkspaceSnapshot(raw: unknown, allowEmpty = false): Worksp
   const sessions = Array.isArray(value.sessions)
     ? value.sessions.map(sanitizeStub).filter((stub): stub is WorkspaceSessionStub => stub != null)
     : [];
-  const activeTabId = tabs.some((tab) => tab.id === value.activeTabId)
-    ? value.activeTabId
-    : (tabs[0]?.id ?? "");
   const projectCwd =
     typeof value.projectCwd === "string" && value.projectCwd.trim() ? value.projectCwd.trim() : "~";
   const projectTerminals = Array.isArray(value.projectTerminals)
@@ -221,13 +239,16 @@ export function parseWorkspaceSnapshot(raw: unknown, allowEmpty = false): Worksp
   const snapshot = withoutInternalWorkspaceSessions({
     tabs,
     sessions,
-    activeTabId,
+    activeTabId: value.activeTabId,
     projectCwd,
     projectTerminals,
     lastDockSide,
   });
   return snapshot.tabs.length > 0 || allowEmpty
-    ? withProjectReturnTargets(snapshot, parseProjectReturnTargets(value.projectReturnTargets))
+    ? withProjectReturnTargets(
+        { ...snapshot, activeTabId: savedWorkspaceTabId(snapshot) },
+        parseProjectReturnTargets(value.projectReturnTargets),
+      )
     : null;
 }
 
@@ -272,11 +293,11 @@ export function hydrateWorkspaceSnapshot(
     const stub = stubs.get(id);
     const base = record ?? (stub ? sessionFromStub(stub) : null);
     if (!base || base.inboxAsk) return null;
-    if (!isUserConversation(base)) {
+    if (!isListedConversation(base)) {
       excludedIds.add(id);
       return null;
     }
-    if (stub?.remoteSessionId && parseRemotePath(stub.cwd)) {
+    if (stub?.remoteSessionId && parseRemotePath(remoteSessionProjectKey(stub))) {
       const bound = remoteSessionFor(id);
       if (!bound) {
         // Decide before binding: binding takes the host id away from any other shell.
@@ -331,22 +352,35 @@ export function hydrateWorkspaceSnapshot(
   }
 
   if (tabs.length === 0) return null;
-  const activeTabId = tabs.some((tab) => tab.id === parsed.activeTabId)
-    ? parsed.activeTabId
-    : tabs[0].id;
-  const projectCwd =
-    parsed.projectCwd !== "~" ? parsed.projectCwd : (sessions.values().next().value?.cwd ?? "~");
+  const restoredSessions = [...sessions.values()];
+  let activeTabId = savedWorkspaceTabId({
+    ...parsed,
+    tabs,
+    sessions: restoredSessions,
+  });
+  let projectCwd = parsed.projectCwd;
+  if (!activeTabId) {
+    const session = newDefaultSession();
+    const tab = newTab(session.id);
+    restoredSessions.push(session);
+    tabs.push(tab);
+    activeTabId = tab.id;
+    projectCwd = session.cwd;
+  } else if (projectCwd === "~") {
+    const activeTab = tabs.find((tab) => tab.id === activeTabId);
+    if (activeTab) projectCwd = workspaceTabCwd(activeTab, restoredSessions) ?? "~";
+  }
 
   return {
     tabs,
-    sessions: [...sessions.values()],
+    sessions: restoredSessions,
     activeTabId,
     projectCwd,
     projectTerminals: parsed.projectTerminals,
     projectReturnMemory: reconcileProjectReturn({
       memory: parseProjectReturnTargets(parsed.projectReturnTargets),
       tabs,
-      sessions: [...sessions.values()],
+      sessions: restoredSessions,
       activeTabId,
     }),
     lastDockSide: parsed.lastDockSide,
@@ -355,13 +389,18 @@ export function hydrateWorkspaceSnapshot(
 
 function sessionStub(session: Session): WorkspaceSessionStub | null {
   if (!session.id) return null;
-  const remoteSessionId = parseRemotePath(session.cwd) ? remoteSessionFor(session.id) : undefined;
+  const projectKey = remoteSessionProjectKey(session);
+  const remoteSessionId = parseRemotePath(projectKey) ? remoteSessionFor(session.id) : undefined;
   const remote = remoteSessionId
-    ? cachedRemoteSessionSummary(session.cwd, remoteSessionId)
+    ? cachedRemoteSessionSummary(projectKey, remoteSessionId)
     : undefined;
   return {
     id: session.id,
     cwd: session.cwd || "~",
+    ...(session.cwd === "~" && session.scratchWorkspace ? { scratchWorkspace: true } : {}),
+    ...(session.cwd === "~" && session.remoteExecutionEnvironmentId
+      ? { remoteExecutionEnvironmentId: session.remoteExecutionEnvironmentId }
+      : {}),
     harness: remote?.harness ?? session.harness,
     model: session.model,
     modelSettings: { ...session.modelSettings },
@@ -388,6 +427,8 @@ function sessionFromStub(stub: WorkspaceSessionStub): Session {
   return {
     ...session,
     id: stub.id,
+    scratchWorkspace: stub.scratchWorkspace,
+    remoteExecutionEnvironmentId: stub.remoteExecutionEnvironmentId,
     // A snapshot is a saved choice, not a new conversation. Catalog discovery
     // and the current picker preferences must not replace its model.
     model: stub.model || session.model,
@@ -409,6 +450,12 @@ function sanitizeStub(raw: unknown): WorkspaceSessionStub | null {
   const harness = asHarness(value.harness);
   const runtimeMode = asRuntimeMode(value.runtimeMode);
   if (!harness || !runtimeMode) return null;
+  const remoteExecutionEnvironmentId =
+    value.cwd === "~" &&
+    typeof value.remoteExecutionEnvironmentId === "string" &&
+    /^[A-Za-z0-9_-]{1,180}$/.test(value.remoteExecutionEnvironmentId)
+      ? value.remoteExecutionEnvironmentId
+      : undefined;
   const modelSettings =
     value.modelSettings &&
     typeof value.modelSettings === "object" &&
@@ -422,12 +469,15 @@ function sanitizeStub(raw: unknown): WorkspaceSessionStub | null {
   return {
     id: value.id,
     cwd: typeof value.cwd === "string" && value.cwd.trim() ? value.cwd.trim() : "~",
+    ...(value.cwd === "~" && value.scratchWorkspace === true ? { scratchWorkspace: true } : {}),
+    ...(remoteExecutionEnvironmentId ? { remoteExecutionEnvironmentId } : {}),
     harness,
     model: typeof value.model === "string" ? value.model : "",
     modelSettings,
     runtimeMode,
     title: typeof value.title === "string" ? value.title : "",
-    ...(parseRemotePath(typeof value.cwd === "string" ? value.cwd : "") &&
+    ...((remoteExecutionEnvironmentId ||
+      parseRemotePath(typeof value.cwd === "string" ? value.cwd : "")) &&
     typeof value.remoteSessionId === "string" &&
     value.remoteSessionId.trim()
       ? { remoteSessionId: value.remoteSessionId.trim() }
@@ -709,6 +759,7 @@ function sanitizeProjectTerminal(raw: unknown): ProjectTerminalDock | null {
   if (typeof value.projectPath !== "string" || !value.projectPath.trim()) {
     return null;
   }
+  if (parseRemotePath(value.projectPath)) return null;
   if (!isDockSide(value.side)) return null;
   const pane = sanitizePane(value.pane);
   if (!pane) return null;

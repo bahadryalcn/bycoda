@@ -1,12 +1,54 @@
-import { statSync, lstatSync, unlinkSync } from "node:fs";
+import { lstatSync, unlinkSync } from "node:fs";
 import { join, basename, dirname, resolve } from "node:path";
 import type { Attachment } from "../../src/features/sessions/model/session";
 import type { RemoteAttachment } from "../../src/features/connections/model/protocol";
 import type { HostStore } from "../store";
 import { mkdir, open, readdir, stat, type FileHandle } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { parseBrowserAnnotation } from "../../src/shared/lib/browserAnnotation";
+import { HOST_ATTACHMENT_ID as UUID } from "../../src/shared/model/hostAttachmentId";
 import { HostDomainRefusalError } from "../domains/context";
+import { attachmentDeletionHeld } from "../storage/snapshots";
+import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
+import { createDedupedWarn } from "../diagnostics/log-dedupe";
+import { createLogger } from "../diagnostics/logger";
+import { currentRequestTrace } from "../diagnostics/request-trace";
+
+const attachmentLog = createLogger("host.attachments");
+const warnMissing = createDedupedWarn({ write: (line) => attachmentLog.warn(line) });
+const attachmentLogKey = randomBytes(32);
+type AttachmentObservation = "upload-partial" | "upload-complete" | "read" | "collected";
+const attachmentObservations = new WeakMap<
+  HostStore,
+  Map<string, { state: AttachmentObservation; at: number }>
+>();
+
+function observeAttachment(store: HostStore, id: string, state: AttachmentObservation): void {
+  let records = attachmentObservations.get(store);
+  if (!records) attachmentObservations.set(store, (records = new Map()));
+  const key = id.toLowerCase();
+  records.delete(key);
+  records.set(key, { state, at: monotonicNow() });
+  if (records.size > 1024) records.delete(records.keys().next().value!);
+}
+
+function logMissingAttachment(
+  store: HostStore,
+  id: string,
+  source: "generated" | "session-reference",
+  offset: number,
+): void {
+  const key = id.toLowerCase();
+  const ref = createHmac("sha256", attachmentLogKey).update(key).digest("hex").slice(0, 16);
+  const observed = attachmentObservations.get(store)?.get(key);
+  const trace = currentRequestTrace();
+  warnMissing(
+    `attachment bytes missing ref=${ref}`,
+    `source=${source} chunk=${offset === 0 ? "first" : "later"} lastObserved=${observed?.state ?? "unknown"}` +
+      (observed ? ` observedAgoMs=${Math.round(elapsedSince(observed.at))}` : "") +
+      (trace ? ` traceId=${trace.id}` : ""),
+  );
+}
 // Reads, status hashes and writes of the same file observe a single ordered stream.
 // Each operation closes its handle; settled queues retain neither handles nor stores.
 const attachmentOperations = new Map<string, Promise<void>>();
@@ -80,7 +122,9 @@ export async function attachmentUploadStatus(
       if (!info.isFile() || info.size > Number(input.size))
         throw new Error("Uploaded attachment size mismatch");
       const hash = createHash("sha256");
-      const bytes = Buffer.alloc(Math.min(64 * 1024, info.size));
+      // Full-prefix hash stays mandatory; a larger read window only cuts the
+      // awaited reads per status call (20 MiB: ~20 reads instead of ~320).
+      const bytes = Buffer.alloc(Math.min(1024 * 1024, info.size));
       for (let offset = 0; offset < info.size; offset += bytes.length) {
         const chunk = bytes.subarray(0, Math.min(bytes.length, info.size - offset));
         await readExactly(handle, chunk, offset);
@@ -96,7 +140,6 @@ export async function attachmentUploadStatus(
 }
 export const MAX_REMOTE_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_CHUNK_BYTES = 512 * 1024;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export function attachmentPath(store: HostStore, id: string): string {
   if (!UUID.test(id)) throw new Error("Invalid attachment ID");
   return join(store.attachmentDir, id);
@@ -163,7 +206,13 @@ export async function writeAttachmentChunk(
       } else {
         throw new Error("Attachment chunks are out of order");
       }
-      return { offset: Number(offset) + bytes.length };
+      const nextOffset = Number(offset) + bytes.length;
+      observeAttachment(
+        store,
+        basename(path),
+        Math.max(nextOffset, info.size) === Number(size) ? "upload-complete" : "upload-partial",
+      );
+      return { offset: nextOffset };
     } finally {
       await handle.close();
     }
@@ -202,13 +251,20 @@ export function parseRemoteAttachments(value: unknown): RemoteAttachment[] {
     };
   });
 }
-export function resolveAttachments(store: HostStore, refs: RemoteAttachment[]): Attachment[] {
-  return refs.map((ref) => {
+/** Send, draft and queue paths resolve references in order; the first failure still wins. */
+export async function resolveAttachments(
+  store: HostStore,
+  refs: RemoteAttachment[],
+): Promise<Attachment[]> {
+  const resolved: Attachment[] = [];
+  for (const ref of refs) {
     const path = attachmentPath(store, ref.id);
     touchAttachment(join(dirname(resolve(path)), basename(path).toLowerCase()));
-    if (statSync(path).size !== ref.size) throw new Error(`Attachment ${ref.name} is incomplete`);
-    return { ...ref, path };
-  });
+    if ((await stat(path)).size !== ref.size)
+      throw new Error(`Attachment ${ref.name} is incomplete`);
+    resolved.push({ ...ref, path });
+  }
+  return resolved;
 }
 /** Question replies may contain many files; do not block the Host event loop on stat. */
 export async function resolveQuestionAttachments(
@@ -228,14 +284,35 @@ export async function resolveQuestionAttachments(
 }
 /** Clients match this wording to stop asking for a file this machine does not hold. */
 export const ATTACHMENT_MISSING_MESSAGE = "Attachment file is missing on this machine.";
-/** Reads only an attachment already accepted into this session. Paths supplied
- * by the client are never used, and each response stays below the RPC cap. */
-export async function readAttachmentChunk(
+type SessionAttachment = {
+  attachment: { id: string; size: number };
+  generated?: { path: string };
+};
+/** A download reads one file in many chunks; only the first chunk loads the session. */
+const DOWNLOAD_RESOLVE_TTL_MS = 30_000;
+const DOWNLOAD_RESOLVE_MAX = 64;
+const downloadResolves = new WeakMap<
+  HostStore,
+  Map<string, { resolved: SessionAttachment; usedAt: number }>
+>();
+async function resolveSessionAttachment(
   store: HostStore,
   input: Record<string, unknown>,
-  sessionFor: HostStore["session"] = async (id) => await store.session(id),
-) {
-  const session = await sessionFor(String(input.sessionId ?? ""));
+  sessionFor: HostStore["session"],
+): Promise<SessionAttachment> {
+  const sessionId = String(input.sessionId ?? "");
+  const key = `${sessionId}\0${String(input.id ?? "")}`;
+  const now = Date.now();
+  let cache = downloadResolves.get(store);
+  if (!cache) downloadResolves.set(store, (cache = new Map()));
+  // Offset 0 starts a download, so it always re-checks the session; later chunks of the same
+  // download reuse that answer while the download stays active.
+  const cached = Number(input.offset) > 0 ? cache.get(key) : undefined;
+  if (cached && now - cached.usedAt <= DOWNLOAD_RESOLVE_TTL_MS) {
+    cached.usedAt = now;
+    return cached.resolved;
+  }
+  const session = await sessionFor(sessionId);
   const generated = session.session.blocks.find(
     (block) => block.id === input.id && block.image,
   )?.image;
@@ -245,6 +322,23 @@ export async function readAttachmentChunk(
         .flatMap((block) => block.attachments ?? [])
         .find((file) => file.id === input.id);
   if (!attachment) throw new Error("Session attachment not found");
+  const resolved = { attachment, generated };
+  cache.delete(key);
+  for (const [entry, value] of cache) {
+    if (cache.size < DOWNLOAD_RESOLVE_MAX && now - value.usedAt <= DOWNLOAD_RESOLVE_TTL_MS) break;
+    cache.delete(entry);
+  }
+  cache.set(key, { resolved, usedAt: now });
+  return resolved;
+}
+/** Reads only an attachment already accepted into this session. Paths supplied
+ * by the client are never used, and each response stays below the RPC cap. */
+export async function readAttachmentChunk(
+  store: HostStore,
+  input: Record<string, unknown>,
+  sessionFor: HostStore["session"] = async (id) => await store.session(id),
+) {
+  const { attachment, generated } = await resolveSessionAttachment(store, input, sessionFor);
   if (
     !Number.isSafeInteger(attachment.size) ||
     attachment.size < 0 ||
@@ -264,6 +358,12 @@ export async function readAttachmentChunk(
       handle = await open(path, "r");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      logMissingAttachment(
+        store,
+        attachment.id,
+        generated ? "generated" : "session-reference",
+        Number(offset),
+      );
       // A session can reference a file whose bytes never reached this machine. Nothing was
       // read, and asking again cannot succeed, so the answer is a non-retryable refusal.
       // The code set is closed for connected clients, so this uses the generic
@@ -284,6 +384,7 @@ export async function readAttachmentChunk(
         Math.min(3 * Math.floor(MAX_CHUNK_BYTES / 3), attachment.size - Number(offset)),
       );
       await readExactly(handle, bytes, Number(offset));
+      if (Number(offset) === 0) observeAttachment(store, attachment.id, "read");
       return {
         data: bytes.toString("base64"),
         offset: Number(offset) + bytes.length,
@@ -293,6 +394,10 @@ export async function readAttachmentChunk(
       await handle.close();
     }
   });
+}
+function pruneAttachmentTouches(now: number, graceMs: number): void {
+  for (const [key, touched] of attachmentTouches)
+    if (touched < now - graceMs && !attachmentOperations.has(key)) attachmentTouches.delete(key);
 }
 /** Progress of one reference pass that runs in short slices, so other database
  * requests run between them instead of waiting behind (or cancelling) a full-database
@@ -402,6 +507,11 @@ export async function collectAttachmentGarbage(
       // In slices this guards only the slice that completes the pass and deletes.
       startedStamp = await stamp();
       const { candidates, referenced } = scan;
+      // Candidates no reference has been seen for yet. When none is left nothing can be deleted, so the
+      // pass ends there instead of reading the rest of the database to confirm it (every sweep used to
+      // read every table while all its candidates were still in use).
+      let unresolved = 0;
+      for (const id of candidates) if (!referenced.has(id)) unresolved++;
       const scanStarted = performance.now();
       let sliceStarted = scanStarted;
       let sliceCharacters = 0;
@@ -425,7 +535,10 @@ export async function collectAttachmentGarbage(
             const chunk = value.slice(Math.max(0, at - 35), at + 256 * 1024);
             for (const match of chunk.matchAll(UUID_PATTERN)) {
               const id = match[0].toLowerCase();
-              if (candidates.has(id)) referenced.add(id);
+              if (candidates.has(id) && !referenced.has(id)) {
+                referenced.add(id);
+                unresolved--;
+              }
             }
             sliceCharacters += chunk.length;
             if (sliceCharacters >= 256 * 1024 || performance.now() - sliceStarted >= 8)
@@ -435,6 +548,10 @@ export async function collectAttachmentGarbage(
         return true;
       };
       while (scan.table < scan.tables.length) {
+        if (unresolved === 0) {
+          pruneAttachmentTouches(now, graceMs);
+          return abandon();
+        }
         const name = scan.tables[scan.table]!;
         let rows: Record<string, unknown>[] | undefined;
         if (resume) {
@@ -482,6 +599,8 @@ export async function collectAttachmentGarbage(
       // removals share this transaction rather than committing per file.
       return await store.transaction(async () => {
         if (resume) resume.scan = undefined;
+        // A snapshot cut is still copying files its database backup references.
+        if (attachmentDeletionHeld(store.attachmentDir)) return [];
         if ((await stamp()) !== startedStamp) return [];
         // A write by another connection at any point in a sliced pass.
         if (
@@ -515,13 +634,12 @@ export async function collectAttachmentGarbage(
           }
           if (!info.isFile() || Math.max(info.mtimeMs, info.ctimeMs) > now - graceMs) continue;
           unlinkSync(path);
+          observeAttachment(store, id, "collected");
           attachmentTouches.delete(key);
           removed.push(id);
           await onRemoved?.(id.toLowerCase());
         }
-        for (const [key, touched] of attachmentTouches)
-          if (touched < now - graceMs && !attachmentOperations.has(key))
-            attachmentTouches.delete(key);
+        pruneAttachmentTouches(now, graceMs);
         return removed;
       });
     })

@@ -1,10 +1,12 @@
 """Idle-only host/app installation. Spawned headlessly by local_update.py."""
+import hashlib
 import json
 import contextlib
 import os
 import pathlib
 import plistlib
 import re
+import shlex
 import shutil
 import sqlite3
 import sys
@@ -38,6 +40,35 @@ def windows_app_process_filter(app):
     allowed = '@(' + ','.join(ps_quote(path) for path in paths) + ')'
     return (f'Get-Process | Where-Object {{ $_.ProcessName -eq "{PRODUCT_IDENTITY["binaryName"]}" '
             f'-and {allowed} -contains $_.Path }}')
+
+def windows_instance_pipe(app):
+    """The running app's single-instance pipe, as src-tauri/src/windows_instance.rs `pipe_name`
+    derives it for a release launch without arguments."""
+    identifier = PRODUCT_IDENTITY['bundleIdentifier']
+    name = hashlib.sha256()
+    for value in (identifier, os.path.join(os.environ.get('APPDATA', ''), identifier), str(app), 'release'):
+        name.update(value.lower().encode('utf-8') + b'\0')
+    return '\\\\.\\pipe\\bycoda-relaunch-' + name.hexdigest()
+
+def request_windows_app_quit(app, process_filter, seconds=20):
+    """Ask the running app to quit through its own save run, which leaves its native buffers
+    clean; a forced stop left one dirty predecessor per update. A build without the quit signal
+    ignores it, and False sends the caller to its forced stop as before."""
+    if os.name != 'nt':
+        return False
+    try:
+        with open(windows_instance_pipe(app), 'wb', buffering=0) as pipe:
+            pipe.write(b'\x03')
+    except OSError:
+        return False
+    while seconds > 0:
+        interval = min(seconds, 50)
+        if ps(f'$running = @({process_filter}); '
+              f'if ($running.Count) {{ $running | Wait-Process -Timeout {interval} -ErrorAction SilentlyContinue }}; '
+              f'@({process_filter}).Count') == '0':
+            return True
+        seconds -= interval
+    return False
 
 def windows_app_snapshot(app, rollback, manifest):
     """Reuse only an intact previous installation, never overwrite recovery data."""
@@ -98,15 +129,134 @@ def restore_windows_app(app, saved, hashes, rollback, process_filter):
         # Both the known-good snapshot and failed replacement remain available.
         raise RuntimeError('Windows rollback failed; recovery artifacts retained at ' + str(rollback))
 
-def wait_idle(db, sql, report):
+def active_session_ids(database, query):
+    with contextlib.closing(sqlite3.connect(database.resolve().as_uri() + '?mode=ro', uri=True, timeout=3)) as conn:
+        return {row[0] for row in conn.execute(query)}
+
+def host_active_ids(base):
+    return active_session_ids(base / 'host.db', "SELECT id FROM sessions WHERE status='running' OR shell_running=1")
+
+def host_installation_exists(base):
+    return any((base / name).exists() for name in ('runtime-path', 'running.json', 'service.ps1', 'service-launcher.json'))
+
+def host_mode(base):
+    try:
+        state = read_json(base / 'lifecycle.json')
+    except FileNotFoundError:
+        return 'service' if (base / 'runtime-path').exists() else 'app'
+    if not isinstance(state, dict) or type(state.get('version')) is not int or state['version'] != 1 or state.get('mode') not in ('app', 'service'):
+        raise RuntimeError('Invalid Host lifecycle.json; inspect the installation before updating it')
+    return state['mode']
+
+def unbooted_app_host(base):
+    return ((base / 'lifecycle.json').is_file() and host_mode(base) == 'app' and
+            not any((base / name).exists() for name in ('owner.db', 'owner.lock', 'running.json')))
+
+def desktop_running():
+    if os.name == 'nt':
+        app = pathlib.Path(os.environ['LOCALAPPDATA']) / PRODUCT_IDENTITY['productName'] / (PRODUCT_IDENTITY['binaryName'] + '.exe')
+        return ps('@(' + windows_app_process_filter(app) + ').Count') != '0'
+    executable = MAC_APPLICATIONS / (PRODUCT_IDENTITY['productName'] + '.app') / 'Contents/MacOS' / PRODUCT_IDENTITY['binaryName']
+    return any(line.strip() == str(executable)
+               for line in run(['ps', '-ax', '-o', 'comm='], timeout=15).splitlines())
+
+def app_host_activity():
+    with contextlib.closing(sqlite3.connect((BASE / 'host.db').resolve().as_uri() + '?mode=ro', uri=True, timeout=3)) as conn:
+        return conn.execute("""SELECT
+            (SELECT count(*) FROM sessions WHERE status='running' OR shell_running=1)
+            + (SELECT count(*) FROM automation_runs WHERE json_extract(value, '$.status')='running')""").fetchone()[0]
+
+def app_host_cli(runtime, *args):
+    node = runtime / ('node.exe' if os.name == 'nt' else 'bin/node')
+    return run([str(node), str(runtime / 'host.mjs'), *args, '--data-dir', str(BASE)], timeout=115)
+
+def verify_offline_host(runtime, manifest, fresh):
+    info = json.loads(app_host_cli(runtime, 'build-info').splitlines()[-1])
+    if info.get('version') != manifest['version']:
+        raise RuntimeError('Offline Host runtime version mismatch')
+    if not fresh and count(BASE / 'host.db', 'pragma quick_check') != 'ok':
+        raise RuntimeError('Host database integrity check failed')
+
+def publish_app_file(path, content, mode):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, staging = tempfile.mkstemp(prefix=path.name + '-', suffix='.tmp', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'wb') as file:
+            file.write(content)
+        pathlib.Path(staging).chmod(mode)
+        os.replace(staging, path)
+    finally:
+        pathlib.Path(staging).unlink(missing_ok=True)
+
+def app_owned_host_install(runtime, release, manifest, report):
+    fresh = not (BASE / 'host.db').exists()
+    if fresh and host_installation_exists(BASE) and not unbooted_app_host(BASE):
+        raise RuntimeError('Existing bycoda host database is missing; installation requires recovery')
+    pointer = BASE / 'runtime-path'
+    launcher = BASE / 'bin' / (PRODUCT_IDENTITY['hostLauncher'] + ('.cmd' if os.name == 'nt' else ''))
+    stable = BASE / 'engine' / ('node.exe' if os.name == 'nt' else 'node')
+    previous = pointer.read_text(encoding='utf-8-sig').strip() if pointer.exists() else None
+    rollback = release / 'rollback-host'
+    rollback.mkdir(exist_ok=True)
+    if not fresh:
+        wait_idle(app_host_activity, report)
+        backup(BASE / 'host.db', rollback / 'host.db')
+        wait_idle(app_host_activity, report)
+    report('installing', runtime=str(runtime))
+    if not fresh:
+        app_host_cli(runtime, 'app-stop', '--if-idle')
+    if fresh and not (BASE / 'lifecycle.json').exists():
+        app_host_cli(runtime, 'service', 'uninstall', '--initialize-app')
+    saved = {}
+    for path in (pointer, launcher, stable):
+        if path.exists():
+            saved[path] = pathlib.Path(shutil.copy2(path, rollback / path.name))
+    verifying_live = False
+    try:
+        app_host_cli(runtime, 'app-runtime-prepare')
+        verify_offline_host(runtime, manifest, fresh)
+        if os.name == 'nt':
+            content = ('@echo off\r\nsetlocal DisableDelayedExpansion\r\n'
+                       f'"{runtime / "node.exe"}" "{runtime / "host.mjs"}" %*\r\n'
+                       'exit /b %errorlevel%\r\n')
+        else:
+            content = '#!/bin/sh\nexec ' + shlex.quote(str(runtime / 'bin/node')) + ' ' + shlex.quote(str(runtime / 'host.mjs')) + ' "$@"\n'
+        publish_app_file(launcher, content.encode('utf-8'), 0o755)
+        publish_app_file(pointer, (str(runtime) + '\n').encode('utf-8'), 0o600)
+        if desktop_running():
+            report('verifying-app-host', runtime=str(runtime))
+            verifying_live = True
+            verify_host(runtime)
+    except Exception:
+        if verifying_live:
+            report('installing', runtime=str(runtime))
+            app_host_cli(runtime, 'app-stop', '--if-idle')
+        for path, mode in ((stable, 0o700), (launcher, 0o755), (pointer, 0o600)):
+            if path in saved:
+                publish_app_file(path, saved[path].read_bytes(), mode)
+            else:
+                path.unlink(missing_ok=True)
+        raise
+    pruned = prune_host_runtimes(runtime, previous) if previous else []
+    report('installed', runtime=str(runtime), **({'firstInstall': True} if fresh else {}),
+           **({'prunedRuntimes': pruned} if pruned else {}),
+           **installed_identity(manifest, runtime / 'bycoda-host.mjs', host=True))
+
+def app_active_count(base, desktop):
+    active = active_session_ids(desktop, 'SELECT session_id FROM in_flight_sessions') if desktop is not None else set()
+    if (base / 'host.db').exists() or (host_installation_exists(base) and not unbooted_app_host(base)):
+        active.update(host_active_ids(base))
+    return len(active)
+
+def wait_idle(read_count, report, phase='waiting'):
     last = object()
     while True:
         try:
-            active = count(db, sql)
+            active = read_count()
         except Exception:
             active = None  # A read error is never proof that the app/host is idle.
         if active != last:
-            report('waiting', activeSessions=active)
+            report(phase, activeSessions=active)
             last = active
         if active == 0:
             return
@@ -208,10 +358,13 @@ def host_install(release, manifest, report):
         verify_tree(runtime, manifest['hostHashes'])
     else:
         shutil.copytree(source, runtime)
+    if host_mode(BASE) == 'app':
+        app_owned_host_install(runtime, release, manifest, report)
+        return
     if not (BASE / 'host.db').exists():
         # A fresh, independent product has no previous database to read. Never
         # reinterpret a missing DB for an existing installation as idle.
-        if any((BASE / name).exists() for name in ('runtime-path', 'running.json', 'service.ps1', 'service-launcher.json')):
+        if host_installation_exists(BASE):
             raise RuntimeError('Existing bycoda host database is missing; installation requires recovery')
         launcher = PRODUCT_IDENTITY['hostLauncher'] + ('.cmd' if os.name == 'nt' else '')
         (BASE / 'bin').mkdir(parents=True, exist_ok=True)
@@ -231,7 +384,7 @@ def host_install(release, manifest, report):
         report('installed', runtime=str(runtime), firstInstall=True,
                **installed_identity(manifest, runtime / 'bycoda-host.mjs', host=True))
         return
-    wait_idle(BASE / 'host.db', "select count(*) from sessions where status='running' or shell_running=1", report)
+    wait_idle(lambda: len(host_active_ids(BASE)), report)
     rollback = release / 'rollback-host'
     rollback.mkdir(exist_ok=True)
     backup(BASE / 'host.db', rollback / 'host.db')
@@ -248,6 +401,7 @@ def host_install(release, manifest, report):
             shutil.copy2(path, rollback / path.name)
             saved_configs.append(path)
     previous = (BASE / 'runtime-path').read_text(encoding='utf-8-sig').strip()
+    wait_idle(lambda: len(host_active_ids(BASE)), report)
     report('installing', runtime=str(runtime))
     if os.name == 'nt':
         # Use the new CLI's graceful shutdown + owned launcher-tree cleanup.
@@ -255,7 +409,7 @@ def host_install(release, manifest, report):
         port = installed_windows_host_port()
         node = runtime / 'node.exe'
         entry = runtime / 'host.mjs'
-        run([str(node), str(entry), 'service', 'uninstall', '--data-dir', str(BASE)])
+        run([str(node), str(entry), 'service', 'uninstall', '--preserve-mode', '--data-dir', str(BASE)])
         try:
             run([str(node), str(entry), 'service', 'install', '--data-dir', str(BASE), '--port', str(port)])
             verify_host(runtime)
@@ -267,7 +421,7 @@ def host_install(release, manifest, report):
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_text(content, encoding='utf-8')
         except Exception:
-            run([str(node), str(entry), 'service', 'uninstall', '--data-dir', str(BASE)])
+            run([str(node), str(entry), 'service', 'uninstall', '--preserve-mode', '--data-dir', str(BASE)])
             for path in saved_configs:
                 shutil.copy2(rollback / path.name, path)
             for path in missing_configs:
@@ -364,6 +518,7 @@ def verify_host(runtime):
     raise RuntimeError('New host did not pass runtime/health/database checks')
 
 def app_install(release, manifest, report):
+    owned_host = host_mode(BASE) == 'app'
     windows = os.name == 'nt'
     app = (pathlib.Path(os.environ['LOCALAPPDATA']) / PRODUCT_IDENTITY['productName'] /
            (PRODUCT_IDENTITY['binaryName']+'.exe') if windows else
@@ -375,8 +530,11 @@ def app_install(release, manifest, report):
     verify_tree(release if windows else release / (PRODUCT_IDENTITY['productName']+'.app'), manifest['appHashes'])
     # Give the turn scheduling this update time to persist its final reply.
     time.sleep(30)
-    if has_database:
-        wait_idle(desktop_db(), 'select count(*) from in_flight_sessions', report)
+    def active():
+        desktop = desktop_db()
+        return app_active_count(BASE, desktop if has_database or desktop.exists() else None)
+
+    wait_idle(active, report)
     rollback = release / 'rollback-app'
     rollback.mkdir(exist_ok=True)
     if has_database:
@@ -384,7 +542,6 @@ def app_install(release, manifest, report):
             verify_desktop_backup(rollback / 'desktop.db')
         else:
             backup(desktop_db(), rollback / 'desktop.db')
-    report('installing')
     if windows:
         app = pathlib.Path(os.environ['LOCALAPPDATA']) / PRODUCT_IDENTITY['productName']/(PRODUCT_IDENTITY['binaryName']+'.exe')
         saved = rollback / 'installation'
@@ -395,9 +552,15 @@ def app_install(release, manifest, report):
         app_q = ps_quote(app)
         process_filter = windows_app_process_filter(app)
         was_running = ps('@(' + process_filter + ').Count') != '0'
-        ps(process_filter + ' | ForEach-Object { [void]$_.CloseMainWindow() }')
-        time.sleep(5)
-        if has_database and count(desktop_db(), 'select count(*) from in_flight_sessions') != 0:
+        wait_idle(active, report)
+        report('installing')
+        if not (request_windows_app_quit(app, process_filter, seconds=65) if owned_host else
+                request_windows_app_quit(app, process_filter)):
+            if owned_host and was_running and (BASE / 'runtime-path').exists():
+                raise RuntimeError('App did not finish quitting its Host; app installation canceled')
+            ps(process_filter + ' | ForEach-Object { [void]$_.CloseMainWindow() }')
+            time.sleep(5)
+        if active() != 0:
             raise RuntimeError('A new turn started; app installation canceled')
         # Close-to-tray retains an idle process; only terminate the known app path.
         ps(process_filter + ' | Stop-Process -Force -PassThru | Wait-Process -Timeout 30')
@@ -420,11 +583,14 @@ def app_install(release, manifest, report):
         saved, staged = mac_app_update_paths(app, manifest['id'])
         if saved.exists() or staged.exists():
             raise RuntimeError('Rollback/staging app already exists; refusing overwrite')
+        report('installing')
         run(['codesign', '--verify', '--deep', '--strict', str(release / (PRODUCT_IDENTITY['productName']+'.app'))])
         run(['ditto', str(release / (PRODUCT_IDENTITY['productName']+'.app')), str(staged)])
+        # A staged bundle already exists; an interrupted job requires the installation recovery check.
+        wait_idle(active, report, phase='installing')
         if not first_install:
             run(['osascript', '-e', f'tell application "{PRODUCT_IDENTITY["productName"]}" to quit'])
-        deadline = time.monotonic() + 30
+        deadline = time.monotonic() + (65 if owned_host else 30)
         while time.monotonic() < deadline:
             try:
                 run(['pgrep', '-f', re.escape(str(app/'Contents/MacOS'/PRODUCT_IDENTITY['binaryName']))])
@@ -433,7 +599,7 @@ def app_install(release, manifest, report):
             time.sleep(1)
         else:
             raise RuntimeError('App did not quit; installation canceled')
-        if has_database and count(desktop_db(), 'select count(*) from in_flight_sessions') != 0:
+        if active() != 0:
             raise RuntimeError('A new turn started; app installation canceled')
         if not first_install:
             app.rename(saved)
@@ -455,6 +621,30 @@ def app_install(release, manifest, report):
         run(['open', '-a', str(app)])
     binary = app if windows else app / 'Contents/MacOS' / PRODUCT_IDENTITY['binaryName']
     report('installed', version=manifest['version'], **installed_identity(manifest, binary))
+
+SECRET_FLAG = re.compile(r'key|token|secret|password|-encodedcommand', re.IGNORECASE)
+SECRET_TEXT = re.compile(r'(Bearer\s+)\S+|("(?:secret|token|launchKey)"\s*:\s*)"[^"]*"|\b[a-f0-9]{32,}\b', re.IGNORECASE)
+
+def redact(text):
+    return SECRET_TEXT.sub(lambda m: (m.group(1) or m.group(2) or '') + '<redacted>', text)
+
+def log_command_failure(error, tail=4000):
+    """Stage log only (stderr is install-<component>.log): the job record shown to
+    clients keeps its generic message. Values after secret-like flags, encoded
+    PowerShell scripts, bearer tokens and long hex keys are redacted."""
+    argv = [str(arg) for arg in (error.cmd if isinstance(error.cmd, (list, tuple)) else [error.cmd])]
+    shown = ['<redacted>' if index and SECRET_FLAG.search(argv[index - 1]) else redact(arg)
+             for index, arg in enumerate(argv)]
+    print('Command failed: ' + ' '.join(shown), file=sys.stderr)
+    print(f'returncode={getattr(error, "returncode", None)} timeout={getattr(error, "timeout", None)}',
+          file=sys.stderr)
+    for name in ('stderr', 'stdout'):
+        value = getattr(error, name, None)
+        if isinstance(value, bytes):
+            value = value.decode('utf-8', 'replace')
+        if value:
+            print(f'{name} (last {tail} characters):\n' + redact(value)[-tail:], file=sys.stderr)
+    sys.stderr.flush()
 
 def main(launch_key=None):
     manifest_path = pathlib.Path(sys.argv[1]).resolve()
@@ -479,7 +669,9 @@ def main(launch_key=None):
             report('starting')
             (host_install if component == 'host' else app_install)(release, manifest, report)
         except Exception as error:
-            # Never print auth state or arbitrary subprocess output.
+            if hasattr(error, 'cmd'):
+                log_command_failure(error)
+            # Never put auth state or arbitrary subprocess output in the job record.
             report('failed', errorType=type(error).__name__, error=str(error) if not hasattr(error, 'cmd') else 'Command failed; see local stage logs')
             raise SystemExit(1)
 

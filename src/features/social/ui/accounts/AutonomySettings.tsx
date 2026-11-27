@@ -1,9 +1,12 @@
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../../shared/ui/InlineError";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { TimePicker } from "../../../../shared/ui/TimePicker";
 import { useEffect, useState } from "react";
 import { getLocale, t } from "../../../../shared/i18n";
+import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
@@ -14,7 +17,6 @@ import { Switch } from "../../../../shared/ui/Switch";
 import { Text } from "../../../../shared/ui/Text";
 import { TextField } from "../../../../shared/ui/TextField";
 import { ConfirmAutonomy } from "../common/ConfirmAutonomy";
-import { DisabledReason, gateProps, type ActionGate } from "../common/DisabledReason";
 import {
   DEFAULT_AUTONOMY,
   type AutonomyAction,
@@ -34,6 +36,7 @@ import {
   weekdayLabels,
   workingHoursError,
 } from "./accountsModel";
+import { accountBlockedReason } from "./blockedReason";
 import { useAccountWrite } from "./useAccountWrite";
 import "./accounts.css";
 
@@ -87,7 +90,10 @@ function payloadFrom(draft: Draft): { ok: true; policy: object } | { ok: false; 
     limits[action] = parsed.value ?? DEFAULT_AUTONOMY.limits[action];
   }
   if (!draft.hours.enabled)
-    return { ok: true, policy: { levels: draft.levels, limits, workingHours: null } };
+    return {
+      ok: true,
+      policy: { levels: draft.levels, limits, workingHours: null },
+    };
   const problem = workingHoursError(draft.hours);
   if (problem) return { ok: false, message: problem };
   return {
@@ -112,13 +118,14 @@ function payloadFrom(draft: Draft): { ok: true; policy: object } | { ok: false; 
 export function AutonomySettings({ client, account, disabled, onChanged }: AutonomySettingsProps) {
   const [policy, setPolicy] = useState<AutonomyPolicy>();
   const [draft, setDraft] = useState<Draft>();
-  const [loadError, setLoadError] = useState("");
-  const [formError, setFormError] = useState("");
-  const { error, is, write } = useAccountWrite(
+  const [loadProblem, setLoadProblem] = useState<{ title: string; details?: string }>();
+  const [formMessage, setFormMessage] = useState("");
+  const { failureTitle, details, is, write } = useAccountWrite(
     t("The autonomy settings could not be saved. Try again."),
   );
   const confirmation = useConfirm();
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Reads this account's autonomy policy from the Host; `alive` drops a read that settles after the account changed.
   useEffect(() => {
     let alive = true;
     client.autonomy.get(account.id).then(
@@ -127,8 +134,12 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
         setPolicy(value);
         setDraft(draftFrom(value));
       },
-      () => {
-        if (alive) setLoadError(t("The autonomy settings could not be read. Try again."));
+      (reason) => {
+        if (alive)
+          setLoadProblem({
+            title: t("The autonomy settings could not be read. Try again."),
+            details: presentRemoteError(reason, { explicit: true }),
+          });
       },
     );
     return () => {
@@ -142,8 +153,8 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
         {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
         aria-label={t("Autonomy")}
       >
-        {loadError ? (
-          <InlineError>{loadError}</InlineError>
+        {loadProblem ? (
+          <InlineError details={loadProblem.details}>{loadProblem.title}</InlineError>
         ) : (
           <LoadingText delay={false} className="social-muted">
             {t("Loading…")}
@@ -157,11 +168,6 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
   const saved = payloadFrom(draftFrom(policy));
   const changed =
     !saved.ok || !built.ok || JSON.stringify(built.policy) !== JSON.stringify(saved.policy);
-  const saveGate: ActionGate = disabled
-    ? { disabled: true, disabledReason: t("Connect to this computer to change this account.") }
-    : !changed
-      ? { disabled: true, disabledReason: t("No changes to save.") }
-      : { disabled: false };
 
   const askLevel = (action: AutonomyAction, next: AutonomyLevel) => {
     if (next !== "autonomous") {
@@ -192,7 +198,11 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
       .then((ok) => {
         if (ok)
           setDraft(
-            (current) => current && { ...current, levels: { ...current.levels, [action]: next } },
+            (current) =>
+              current && {
+                ...current,
+                levels: { ...current.levels, [action]: next },
+              },
           );
       })
       .catch(() => undefined);
@@ -200,10 +210,10 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
 
   const save = () => {
     if (!built.ok) {
-      setFormError(built.message);
+      setFormMessage(built.message);
       return;
     }
-    setFormError("");
+    setFormMessage("");
     void write("autonomy", () =>
       client.request<AutonomyPolicy>("autonomy.set", {
         accountId: account.id,
@@ -226,17 +236,19 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
       {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
       aria-label={t("Autonomy")}
     >
-      <Text as="p" tone="muted" leading="snug" className="social-card-description">
-        {t("Platform limits, opt-outs, working hours and the global AI stop still apply.")}
-      </Text>
-      <div className="social-autonomy-row social-autonomy-header" aria-hidden>
-        <Text as="span" size="caption" tone="muted">
+      <div className="social-autonomy-row social-autonomy-header">
+        <Text as="span" size="caption" tone="muted" aria-hidden>
           {t("Action")}
         </Text>
-        <Text as="span" size="caption" tone="muted">
-          {t("Autonomy")}
-        </Text>
-        <Text as="span" size="caption" tone="muted">
+        <span className="social-autonomy-head-cell">
+          <Text as="span" size="caption" tone="muted" aria-hidden>
+            {t("Autonomy")}
+          </Text>
+          <InfoPopover>
+            {t("Platform limits, opt-outs, working hours and the global AI stop still apply.")}
+          </InfoPopover>
+        </span>
+        <Text as="span" size="caption" tone="muted" aria-hidden>
           {t("Per day")}
         </Text>
       </div>
@@ -250,7 +262,10 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
             label={autonomyLabel(action)}
             value={draft.levels[action]}
             disabled={disabled || is("autonomy")}
-            options={AUTONOMY_LEVELS.map((level) => ({ value: level, label: levelText(level) }))}
+            options={AUTONOMY_LEVELS.map((level) => ({
+              value: level,
+              label: levelText(level),
+            }))}
             onValueChange={(next) => askLevel(action, next as AutonomyLevel)}
           />
           <NumberField
@@ -265,15 +280,15 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
             onChange={(event) =>
               setDraft({
                 ...draft,
-                limits: { ...draft.limits, [action]: event.currentTarget.value },
+                limits: {
+                  ...draft.limits,
+                  [action]: event.currentTarget.value,
+                },
               })
             }
           />
         </div>
       ))}
-      <Text as="p" tone="muted" leading="snug" className="social-muted">
-        {t("Leave a daily limit blank to use the default.")}
-      </Text>
       <Switch
         label={t("Act only during working hours")}
         checked={draft.hours.enabled}
@@ -287,7 +302,10 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
             value={draft.hours.timeZone}
             disabled={disabled || is("autonomy")}
             onChange={(event) =>
-              setDraft({ ...draft, hours: { ...draft.hours, timeZone: event.currentTarget.value } })
+              setDraft({
+                ...draft,
+                hours: { ...draft.hours, timeZone: event.currentTarget.value },
+              })
             }
           />
           <TimePicker
@@ -306,6 +324,7 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
             {weekdayLabels(getLocale()).map(({ day, label }) => (
               <Checkbox
                 disabled={disabled || is("autonomy")}
+                disabledReason={accountBlockedReason(disabled)}
                 checked={draft.hours.days.includes(day)}
                 onChange={(event) =>
                   setDraft({
@@ -328,18 +347,22 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
         </div>
       ) : null}
       <div className="social-field-row">
-        <DisabledReason
+        {/* Nothing to save is obvious from the untouched form, so only the offline reason is said. */}
+        <Button
           variant="primary"
           size="sm"
           loading={is("autonomy")}
           onClick={save}
-          {...gateProps(saveGate)}
+          disabled={disabled || !changed}
+          disabledReason={
+            disabled ? t("Connect to this computer to change this account.") : undefined
+          }
         >
           {t("Save autonomy")}
-        </DisabledReason>
+        </Button>
       </div>
-      {formError ? <InlineError>{formError}</InlineError> : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {formMessage ? <InlineError>{formMessage}</InlineError> : null}
+      {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       {confirmation.dialog}
     </section>
   );

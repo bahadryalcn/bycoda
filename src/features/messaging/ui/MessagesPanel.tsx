@@ -2,18 +2,18 @@ import { FailureState } from "../../../shared/ui/FailureState";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useDeferredValue, useMemo, useRef, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import { useDragResize } from "../../../shared/hooks/useDragResize";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Sash } from "../../../shared/ui/Sash";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
-import { ChevronLeft, MessageMultiple, RefreshCw, Search } from "../../../shared/ui/icons";
+import { ChevronLeft, RefreshCw, Search } from "../../../shared/ui/icons";
 import { useMessageThreads } from "../hooks/useMessageThreads";
 import { useWindowActive } from "../hooks/useWindowActive";
 import {
@@ -35,7 +35,6 @@ const MIN_WIDTH = 240;
 const MAX_WIDTH = 420;
 const DEFAULT_WIDTH = 320;
 let rememberedWidth = DEFAULT_WIDTH;
-const ERROR_GRAPHEMES = 160;
 
 /**
  * The Inbox "Messages" source: conversations of every messaging account in one list
@@ -52,10 +51,8 @@ export function MessagesPanel({
 }) {
   useLocale();
   const active = useWindowActive();
-  const { threads, failures, loading, loaded, refresh, patchThread } = useMessageThreads(
-    accounts,
-    active,
-  );
+  const { threads, failures, loading, loaded, refresh, refreshAccounts, patchThread } =
+    useMessageThreads(accounts, active);
   const [search, setSearch] = useRetainedState("inbox:messages:search", "");
   const deferredSearch = useDeferredValue(search);
   const [savedFilters, setFilters] = useRetainedState<MessageFilters>(
@@ -105,6 +102,14 @@ export function MessagesPanel({
   const disconnected = accounts.filter((account) => !account.connected);
   const connectedCount = accounts.length - disconnected.length;
   const allFailed = connectedCount > 0 && failures.length === connectedCount;
+  // One Retry reloads only the failed accounts; healthy accounts keep their threads.
+  const retryFailed = () => refreshAccounts(failures.map(({ account }) => account.id));
+  const failureHeadline =
+    failures.length === 1
+      ? t("Could not refresh {p0}.", {
+          p0: failures[0].account.label || failures[0].account.identity,
+        })
+      : t("Could not refresh {p0} accounts.", { p0: String(failures.length) });
 
   const selectThread = useStableCallback((thread: MessageThread) => {
     markThreadSeen(thread);
@@ -124,24 +129,28 @@ export function MessagesPanel({
   const listBody =
     connectedCount === 0 ? (
       <FailureState
-        icon={<MessageMultiple aria-hidden="true" />}
+        context="panel"
+        illustration="connect-computer"
+        title={t("No messaging account connected")}
         description={t("Reconnect a messaging account to read its conversations.")}
         action={{ label: t("Open settings"), onClick: openMessagingSettings }}
       />
     ) : threads.length === 0 && allFailed ? (
       <FailureState
-        icon={<MessageMultiple aria-hidden="true" />}
+        context="panel"
+        illustration="unreachable"
         description={t("Could not load messages.")}
-        onRetry={refresh}
+        onRetry={retryFailed}
         retrying={loading}
       />
     ) : threads.length === 0 && (loading || !loaded) ? (
-      <LoadingText className="justify-center py-10" />
+      <LoadingText layout="fill" />
     ) : visible.length === 0 ? (
       narrowed ? (
         <EmptyState
           kind="filtered"
-          icon={<MessageMultiple aria-hidden="true" />}
+          context="panel"
+          illustration="search-empty"
           description={t("No conversations match these filters.")}
           onReset={resetNarrowing}
           resetLabel={t("Clear filters")}
@@ -149,8 +158,9 @@ export function MessagesPanel({
       ) : (
         <EmptyState
           kind="empty"
-          icon={<MessageMultiple aria-hidden="true" />}
-          description={t("No conversations yet.")}
+          context="panel"
+          illustration="chat-empty"
+          description={t("No conversations yet. New messages from connected accounts appear here.")}
         />
       )
     ) : (
@@ -210,33 +220,35 @@ export function MessagesPanel({
         </div>
         {failures.length > 0 && !(threads.length === 0 && allFailed) ? (
           <div className="flex shrink-0 flex-col gap-1 px-3 py-1">
-            {failures.map(({ account, error }) => (
-              <InlineMessage
-                key={account.id}
-                tone="warning"
-                title={error}
-                retry={{ onRetry: refresh, pending: loading }}
-              >
-                {t("Could not refresh {p0}: {p1}", {
-                  p0: account.label || account.identity,
-                  p1: truncateGraphemes(error, ERROR_GRAPHEMES),
-                })}
-              </InlineMessage>
-            ))}
+            <InlineMessage
+              tone="warning"
+              retry={{ onRetry: retryFailed, pending: loading }}
+              extra={
+                <ErrorDetails
+                  title={failureHeadline}
+                  detail={failures
+                    .map(({ account, error }) => `${account.label || account.identity}: ${error}`)
+                    .join("\n")}
+                />
+              }
+            >
+              {failureHeadline}
+            </InlineMessage>
           </div>
         ) : null}
         {connectedCount > 0 && disconnected.length > 0 ? (
           <div className="flex shrink-0 flex-col gap-1 px-3 py-1">
-            {disconnected.map((account) => (
-              <InlineMessage
-                key={account.id}
-                tone="neutral"
-                live="off"
-                action={{ label: t("Open settings"), onClick: openMessagingSettings }}
-              >
-                {t("{p0} is not connected.", { p0: account.label || account.identity })}
-              </InlineMessage>
-            ))}
+            <InlineMessage
+              tone="neutral"
+              live="off"
+              action={{ label: t("Open settings"), onClick: openMessagingSettings }}
+            >
+              {disconnected.length === 1
+                ? t("{p0} is not connected.", {
+                    p0: disconnected[0].label || disconnected[0].identity,
+                  })
+                : t("{p0} accounts are not connected.", { p0: String(disconnected.length) })}
+            </InlineMessage>
           </div>
         ) : null}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{listBody}</div>
@@ -244,7 +256,7 @@ export function MessagesPanel({
           {...sashProps}
           appearance="hidden"
           label={t("Resize conversation list")}
-          className="absolute inset-y-0 -right-px"
+          className="absolute inset-y-0 end-0"
         />
       </div>
       <div className="inbox-detail-pane flex min-h-0 min-w-0 flex-1 flex-col">
@@ -268,10 +280,12 @@ export function MessagesPanel({
               onSent={onSent}
             />
           ) : (
-            <div className="grid h-full place-items-center">
+            <div className="flex h-full min-h-0 flex-col">
               <EmptyState
-                icon={<MessageMultiple aria-hidden="true" />}
-                description={t("Select a conversation")}
+                context="page"
+                illustration="chat-empty"
+                title={t("Select a conversation")}
+                description={t("Pick a conversation from the list to read and reply.")}
               />
             </div>
           )}

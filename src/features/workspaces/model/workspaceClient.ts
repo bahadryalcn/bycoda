@@ -5,6 +5,7 @@ import { machineCapabilities } from "../../automations/model/machineSnapshot";
 import { remoteRequest } from "../../connections/model/connections";
 import type { RemoteMachine } from "../../connections/model/protocol";
 import { parseRemotePath } from "../../connections/model/remoteProjects";
+import { projectlessMachineSession } from "../../connections/public/sessionMachineTarget";
 import type { WorkspaceRpcContract, WorkspaceRpcMethod } from "./contracts";
 
 export type WorkspaceRpcParams = { [K in WorkspaceRpcMethod]: WorkspaceRpcContract[K]["request"] };
@@ -17,18 +18,49 @@ export type WorkspaceContext = {
   machineId?: string;
   ownerProjectId?: string;
 };
-export const WORKSPACE_UPDATE_REQUIRED =
-  "Update bycoda Host on this project's machine to use managed workspaces. Your project checkout will not be used as a fallback.";
 
 /** Stable classification for UI recovery actions, independent of translated copy. */
 export class WorkspaceCapabilityError extends Error {
   constructor() {
-    super(t(WORKSPACE_UPDATE_REQUIRED));
+    super(
+      t(
+        "Update bycoda Host on this project's machine to use managed workspaces. Your project checkout will not be used as a fallback.",
+      ),
+    );
     this.name = "WorkspaceCapabilityError";
   }
 }
 
-const requiredCapability = (method: WorkspaceRpcMethod): string => {
+export class WorkspaceProjectRequiredError extends Error {
+  constructor() {
+    super(t("Choose a project to use managed workspaces."));
+    this.name = "WorkspaceProjectRequiredError";
+  }
+}
+
+/** Host capability for multi-repository creation, remote-base start, progress/cancel and branch rename. */
+export const WORKSPACE_CREATION_V2 = "workspaces.creation.v2";
+
+/** True when a prepare request uses a field only a `workspaces.creation.v2` Host understands. */
+export const prepareNeedsCreationV2 = (params: WorkspaceRpcParams["workspaces.prepare"]): boolean =>
+  (params.repositories?.length ?? 0) > 0 || params.baseFromRemote === true;
+
+const requiredCapability = (
+  method: WorkspaceRpcMethod,
+  params?: WorkspaceRpcParams[WorkspaceRpcMethod],
+): string => {
+  if (
+    method === "workspaces.prepare.status" ||
+    method === "workspaces.prepare.cancel" ||
+    method === "workspaces.renameBranch"
+  )
+    return WORKSPACE_CREATION_V2;
+  if (
+    method === "workspaces.prepare" &&
+    params &&
+    prepareNeedsCreationV2(params as WorkspaceRpcParams["workspaces.prepare"])
+  )
+    return WORKSPACE_CREATION_V2;
   if (method.startsWith("projects.workspacePolicy.")) return "workspaces.policy.v1";
   if (method === "sessions.rewind.undo") return "sessions.git-rewind-undo.v1";
   if (method.startsWith("sessions.rewind.")) return "sessions.git-rewind.v1";
@@ -59,7 +91,8 @@ async function owningMachine(context: WorkspaceContext): Promise<RemoteMachine> 
 
 /** Resolve on the execution host. A path is never substituted for a project ID. */
 export async function resolveWorkspaceContext(cwd: string) {
-  if (!cwd.trim() || cwd === "~") throw new Error(t("Choose a project to use managed workspaces."));
+  if (!cwd.trim() || cwd === "~" || projectlessMachineSession(cwd))
+    throw new WorkspaceProjectRequiredError();
   const machine = await owningMachine({ cwd });
   const project = await hostProjectFor(machine, cwd);
   return {
@@ -115,7 +148,8 @@ export async function workspaceRequest<K extends WorkspaceRpcMethod>(
 ): Promise<WorkspaceRpcResults[K]> {
   const machine = await owningMachine(context);
   const capabilities = await machineCapabilities(machine);
-  if (!capabilities.includes(requiredCapability(method))) throw new WorkspaceCapabilityError();
+  if (!capabilities.includes(requiredCapability(method, params)))
+    throw new WorkspaceCapabilityError();
   // A publish review is meaningful only when the same host can publish it.
   if (
     method === "workspaces.delivery.review" &&
@@ -157,3 +191,16 @@ export async function workspaceRequest<K extends WorkspaceRpcMethod>(
 export function workspaceOperationKey() {
   return crypto.randomUUID();
 }
+
+/** Polls/cancels use the same paired transport; a missing v2 capability raises WorkspaceCapabilityError. */
+export const workspacePrepareStatus = (progressId: string, context: WorkspaceContext = {}) =>
+  workspaceRequest("workspaces.prepare.status", { progressId }, context);
+
+export const workspacePrepareCancel = (progressId: string, context: WorkspaceContext = {}) =>
+  workspaceRequest("workspaces.prepare.cancel", { progressId }, context);
+
+/** Renames the temporary `by/<8hex>` branch of a managed workspace to `by/<fragment>`. */
+export const workspaceRenameBranch = (
+  params: WorkspaceRpcParams["workspaces.renameBranch"],
+  context: WorkspaceContext = {},
+) => workspaceRequest("workspaces.renameBranch", params, context);

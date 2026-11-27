@@ -80,6 +80,168 @@ function input(
   };
 }
 
+describe("Instagram API publication drafts", () => {
+  const story = account({ id: "story", platform: "instagram", instagramAccountType: "BUSINESS" });
+  const feed = account({ id: "feed", platform: "instagram", instagramAccountType: "CREATOR" });
+  const browser = account({ id: "web", platform: "instagram", connection: "browser" });
+  const remote = (id: string, kind: "image" | "video" = "image"): ContentMedia => ({
+    localId: id,
+    name: id,
+    media: { kind, url: `https://media.example.com/${id}` },
+  });
+
+  it("accepts 20 mixed public media items and preserves the browser media limits", () => {
+    const media = Array.from({ length: 20 }, (_, index) =>
+      remote(`asset-${index}`, index % 2 ? "video" : "image"),
+    );
+    expect(draftProblems(input({ media }, [feed]))).toEqual([]);
+    expect(draftProblems(input({ media: [...media, remote("extra")] }, [feed]))).toEqual([
+      expect.objectContaining({ accountId: feed.id, text: expect.stringContaining("one and 20") }),
+    ]);
+    expect(
+      draftProblems(input({ media }, [feed, browser])).map((problem) => problem.accountId),
+    ).toEqual([browser.id, browser.id]);
+    expect(draftProblems(input({ media: [image("local")] }, [feed]))).toEqual([
+      expect.objectContaining({
+        accountId: feed.id,
+        text: expect.stringContaining("public HTTPS"),
+      }),
+    ]);
+  });
+
+  it("keeps Story and feed metadata isolated across review and reopening", () => {
+    const media = [remote("cover")];
+    const target = input(
+      {
+        text: "Feed caption",
+        link: "https://example.com",
+        media,
+        platform: {
+          [story.id]: {
+            instagram: { format: "story", locationId: "123", altText: { cover: "Old alt" } },
+          },
+          [feed.id]: { instagram: { collaborators: ["peer"], altText: { cover: "A new cover." } } },
+        },
+      },
+      [story, feed],
+    );
+    expect(draftProblems(target)).toEqual([]);
+    const variants = buildVariants(target);
+    expect(variants[0]).toMatchObject({
+      text: "",
+      instagram: { format: "story" },
+      media: [media[0].media],
+    });
+    expect(variants[0].link).toBeUndefined();
+    expect(variants[0].instagram?.locationId).toBeUndefined();
+    expect(variants[0].media[0].alt).toBeUndefined();
+    expect(variants[1]).toMatchObject({
+      text: "Feed caption",
+      link: "https://example.com",
+      media: [{ alt: "A new cover." }],
+    });
+    const reopened = draftFromCampaign(
+      {
+        id: "draft",
+        name: "Shared campaign",
+        projectIds: ["p1"],
+        variants,
+        revision: 1,
+        paused: false,
+        createdAt: NOW,
+      },
+      [story, feed],
+    );
+    expect(buildVariants({ ...target, draft: reopened })).toEqual(variants);
+  });
+
+  it("holds a removed tag target for correction instead of moving it to the next item", () => {
+    const first = remote("first");
+    const second = remote("second", "video");
+    const target = input(
+      {
+        media: [first, second],
+        platform: {
+          [feed.id]: {
+            instagram: { userTags: [{ id: "tag", localMediaId: "second", username: "peer" }] },
+          },
+        },
+      },
+      [feed],
+    );
+    expect(draftProblems(target)).toEqual([]);
+    expect(buildVariants(target)[0].instagram?.userTags?.[0].mediaIndex).toBe(1);
+    target.draft.media = [second];
+    expect(buildVariants(target)[0].instagram?.userTags?.[0].mediaIndex).toBe(0);
+    target.draft.media = [first];
+    expect(draftProblems(target)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: expect.stringContaining("Choose an attachment") }),
+      ]),
+    );
+  });
+});
+
+describe("Snapchat publication formats", () => {
+  const snapchat = account({
+    id: "snapchat-1",
+    platform: "snapchat",
+    accountType: "public_profile",
+    platformId: "c3a5321a-1a0a-4f01-8603-b8473750cd9d",
+  });
+
+  it("builds a scheduled Public Story photo with its selected expiry", () => {
+    const post = input(
+      {
+        text: "",
+        media: [image("photo")],
+        when: "later",
+        scheduledAt: "2026-12-01T12:00",
+        platform: { [snapchat.id]: { snapchat: { target: "story", storyTtl: "TWO_DAYS" } } },
+      },
+      [snapchat],
+    );
+    expect(draftProblems(post)).toEqual([]);
+    expect(buildVariants(post)[0]).toMatchObject({
+      scheduledAt: new Date("2026-12-01T12:00").getTime(),
+      text: "",
+      snapchat: { target: "story", storyTtl: "TWO_DAYS" },
+    });
+  });
+
+  it("keeps exact Saved Story sources in the draft and strips the editable input from the wire", () => {
+    const post = input(
+      {
+        platform: {
+          [snapchat.id]: {
+            snapchat: {
+              target: "saved_story",
+              sourceText: "snap:story_12345, spotlight:spotlight_12345",
+            },
+          },
+        },
+      },
+      [snapchat],
+    );
+    expect(draftProblems(post)).toEqual([]);
+    const variant = buildVariants(post)[0]!;
+    expect(variant.snapchat).toMatchObject({
+      target: "saved_story",
+      savedStorySources: [
+        { kind: "snap", id: "story_12345" },
+        { kind: "spotlight", id: "spotlight_12345" },
+      ],
+    });
+    expect(variant.snapchat).not.toHaveProperty("sourceText");
+    expect(
+      draftFromCampaign({ variants: [variant] } as SocialCampaign).platform[snapchat.id]?.snapchat,
+    ).toMatchObject({
+      target: "saved_story",
+      savedStorySources: variant.snapchat?.savedStorySources,
+    });
+  });
+});
+
 describe("media rules per platform", () => {
   it("allows up to four X images or one video, never a mix", () => {
     const x = account({ id: "x1", platform: "x" });
@@ -180,6 +342,27 @@ describe("TikTok privacy and consent", () => {
 });
 
 describe("YouTube and Reddit", () => {
+  it("accepts square and portrait Shorts up to three minutes", () => {
+    const options = {
+      title: "Launch",
+      privacy: "public",
+      madeForKids: false,
+      format: "short",
+    } as const;
+    expect(youtubeProblems(options, { width: 1080, height: 1080, durationSeconds: 180 })).toEqual(
+      [],
+    );
+    expect(youtubeProblems(options, { width: 1080, height: 1920, durationSeconds: 150 })).toEqual(
+      [],
+    );
+    expect(
+      youtubeProblems(options, { width: 1920, height: 1080, durationSeconds: 20 }),
+    ).toHaveLength(1);
+    expect(
+      youtubeProblems(options, { width: 1080, height: 1920, durationSeconds: 181 }),
+    ).toHaveLength(1);
+    expect(youtubeProblems(options)).toHaveLength(1);
+  });
   it("requires a title up to 100 characters, privacy and an answer on made-for-kids", () => {
     expect(youtubeProblems({})).toHaveLength(3);
     expect(
@@ -188,17 +371,39 @@ describe("YouTube and Reddit", () => {
     expect(youtubeProblems({ title: "Launch", privacy: "public", madeForKids: false })).toEqual([]);
   });
 
-  it("requires exactly one valid subreddit and reports Reddit posting as not connected", () => {
+  it("requires a Reddit destination and title and carries a profile link post into the campaign", () => {
     expect(redditProblems(undefined)).toHaveLength(1);
     expect(redditProblems({ subreddit: "a b", flair: "" })[0]).toContain("Choose one subreddit");
-    expect(redditProblems({ subreddit: "launches", flair: "" })).toEqual([
-      "Reddit posting is not connected to the Host yet.",
-    ]);
+    expect(redditProblems({ subreddit: "launches", flair: "" })).toEqual(["Enter a title."]);
+    const reddit = account({ id: "r1", platform: "reddit", connection: "browser" });
+    const draft = input(
+      {
+        text: "",
+        link: "https://example.com/releases",
+        platform: {
+          r1: { reddit: { subreddit: "u_bycoda", title: " Release notes ", flair: "" } },
+        },
+      },
+      [reddit],
+    );
+    expect(draftProblems(draft)).toEqual([]);
+    const variants = buildVariants(draft);
+    expect(variants[0]?.reddit).toEqual({
+      subreddits: ["u_bycoda"],
+      title: "Release notes",
+      kind: "link",
+    });
+    const reopened = draftFromCampaign({ id: "c1", name: "Release", variants } as SocialCampaign);
+    expect(reopened.platform.r1?.reddit).toEqual({
+      subreddit: "u_bycoda",
+      title: "Release notes",
+      flair: "",
+    });
   });
 });
 
 describe("characters and links", () => {
-  it("counts Telegram channel bot posts in UTF-16 units and other posts in code points", () => {
+  it("counts Telegram channel bot posts in UTF-16 units and X posts using weighted length", () => {
     const bot = account({
       id: "t1",
       platform: "telegram",
@@ -207,7 +412,7 @@ describe("characters and links", () => {
     });
     const web = account({ id: "x1", platform: "x" });
     expect(characterCount(bot, "😀")).toBe(2);
-    expect(characterCount(web, "😀")).toBe(1);
+    expect(characterCount(web, "😀")).toBe(2);
   });
 
   it("applies the Facebook Reel and Telegram media caps", () => {
@@ -256,6 +461,20 @@ describe("account availability", () => {
 });
 
 describe("draftProblems", () => {
+  it("allows choosing a draft-only account but explains why this project cannot publish", () => {
+    const x = account({ id: "x1", platform: "x", name: "QA", grants: { p1: ["read", "draft"] } });
+    const rules = input({}, [x]);
+
+    expect(accountAvailability(x, rules)).toEqual({ disabled: false });
+    expect(draftProblems(rules)).toEqual([
+      {
+        accountId: "x1",
+        text: "X · QA: Grant publishing permission for this project in Accounts first.",
+        fix: "accounts",
+      },
+    ]);
+  });
+
   it("asks for a project, content and an account before anything else", () => {
     const x = account({ id: "x1", platform: "x" });
     const problems = draftProblems(

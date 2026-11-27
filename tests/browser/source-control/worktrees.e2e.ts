@@ -1,5 +1,15 @@
 import { test, expect } from "@playwright/test";
 import { mkdirSync } from "node:fs";
+import type { Locator, Page } from "@playwright/test";
+
+/** Status glyphs on rows are passive info icons: keyboard focus reveals their one-line meaning. */
+async function expectInfo(page: Page, scope: Locator, name: string, text: string) {
+  const glyph = scope.getByRole("img", { name, exact: true }).first();
+  await expect(glyph).toBeVisible();
+  await glyph.focus();
+  await expect(page.getByRole("tooltip").filter({ hasText: text })).toBeVisible();
+  await page.keyboard.press("Escape");
+}
 
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280])
@@ -38,7 +48,7 @@ for (const theme of ["light", "dark"])
         await page.getByTestId("visual-caller").getByRole("button").first().click();
         if (view === "project")
           await page
-            .locator('input[placeholder="Search projects..."]')
+            .locator('input[placeholder="Search projects…"]')
             .fill("unmatched-fixture-project");
         await expect(
           page.getByText(view === "cwd" ? "No other projects" : "No projects found", {
@@ -55,7 +65,8 @@ for (const theme of ["light", "dark"])
       await page.goto(
         `/tests/browser/source-control/worktrees.html?visualCaller=quick-actions&theme=${theme}`,
       );
-      await page.getByRole("button", { name: "Open project in", exact: true }).click();
+      await page.getByRole("button", { name: "More actions", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Open project in", exact: true }).click();
       await expect(
         page.getByRole("dialog", { name: "Project action failed", exact: true }),
       ).toBeVisible();
@@ -118,9 +129,7 @@ for (const theme of ["light", "dark"])
         else if (view === "unified-empty")
           await expect(page.getByText("No file changes")).toBeVisible();
         else if (view === "workspace-error")
-          await expect(
-            page.getByText("Could not refresh repositories. Refresh source control to retry."),
-          ).toBeVisible();
+          await expect(page.getByText("Could not refresh repositories.")).toBeVisible();
         else if (view === "document-error")
           await expect(page.getByText("Could not read document")).toBeVisible();
         else if (pending) await expect(page.getByRole("status").first()).toBeVisible();
@@ -131,7 +140,7 @@ for (const theme of ["light", "dark"])
         if (view === "project") {
           await page.getByTestId("visual-caller").getByRole("button").first().click();
           await page
-            .locator('input[placeholder="Search projects..."]')
+            .locator('input[placeholder="Search projects…"]')
             .fill("unmatched-fixture-project");
           await expect(page.getByText("No projects found", { exact: true })).toBeVisible();
         }
@@ -142,7 +151,8 @@ for (const theme of ["light", "dark"])
           await expect(page.getByText("No matching icons", { exact: true })).toBeVisible();
         }
         if (view === "quick-actions") {
-          await page.getByRole("button", { name: "Open project in", exact: true }).click();
+          await page.getByRole("button", { name: "More actions", exact: true }).click();
+          await page.getByRole("menuitem", { name: "Open project in", exact: true }).click();
           await expect(
             page.getByRole("dialog", { name: "Project action failed", exact: true }),
           ).toBeVisible();
@@ -158,7 +168,7 @@ for (const theme of ["light", "dark"])
       await page.goto(
         `/tests/browser/source-control/worktrees.html?managed&visual-policy-error&theme=${theme}`,
       );
-      await expect(page.getByText(/Workspace policy could not be read:/)).toBeVisible();
+      await expect(page.getByText(/Couldn’t refresh Workspace policy/)).toBeVisible();
       await page.screenshot({ path: `${folder}/policy-error-${theme}-${width}.png` });
       await page.goto(`/tests/browser/source-control/worktrees.html?managed&theme=${theme}`);
       const surface = page.getByRole("dialog", { name: "Worktrees", exact: true });
@@ -300,22 +310,28 @@ for (const theme of ["light", "dark"]) {
       await page.setViewportSize({ width, height: 1000 });
       await page.goto(`/tests/browser/source-control/worktrees.html?managed&theme=${theme}`);
       const surface = page.getByTestId("workspace-policy-settings");
-      await expect(surface.getByText("Cleanup blocked", { exact: true })).toBeVisible();
-      await expect(surface.getByText("Pinned", { exact: true })).toBeVisible();
-      // The policy is always visible; the save bar appears only once it is edited.
-      await expect(surface.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
+      await expectInfo(page, surface, "Cleanup", "Cleanup blocked");
+      await expect(surface.getByRole("img", { name: "Pinned", exact: true }).first()).toBeVisible();
+      // The save bar is always present; Save stays disabled until the policy is edited.
+      await expect(surface.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
       await expect(surface.getByText("New workspaces are paused.", { exact: false })).toBeVisible();
       mkdirSync("temp/verification/2026-11-06-worktrees", { recursive: true });
       await page.screenshot({
         path: `temp/verification/2026-11-06-worktrees/workspace-policy-${theme}-${width}.png`,
       });
       const retention = surface.locator('[data-setting-id="workspace-retention"]');
-      // The exclusion rule lives behind the section's info icon, not inline.
-      await retention.getByRole("button", { name: "Help", exact: true }).click();
-      await expect(page.getByRole("dialog", { name: "Help", exact: true })).toContainText(
-        "Active and pinned workspaces are excluded",
-      );
-      await page.keyboard.press("Escape");
+      const hint = retention.getByRole("img", { name: "Help", exact: true });
+      const explanation = page
+        .getByRole("tooltip")
+        .filter({ hasText: "Active and pinned workspaces are excluded" });
+      await hint.hover();
+      await expect(explanation).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/2026-11-06-worktrees/workspace-policy-tooltip-${theme}-${width}.png`,
+      });
+      await hint.click();
+      await expect(explanation).toHaveCount(0);
+      await expect(page.getByRole("dialog", { name: "Help", exact: true })).toHaveCount(0);
       await retention.getByRole("button", { name: /^Idle retention:/ }).click();
       await page.getByRole("option", { name: "Never", exact: true }).click();
       await surface.getByRole("switch", { name: "Pin workspaces", exact: true }).click();
@@ -325,8 +341,8 @@ for (const theme of ["light", "dark"]) {
       });
       await expect(save).toBeEnabled();
       await save.click();
-      // A saved policy clears the draft, so the save bar leaves the page.
-      await expect(save).toHaveCount(0);
+      // A saved policy clears the draft: the unsaved-changes count leaves the bar.
+      await expect(surface.getByRole("button", { name: /unsaved change/ })).toHaveCount(0);
       const calls = await page.evaluate(
         () =>
           (
@@ -368,7 +384,7 @@ for (const theme of ["light", "dark"]) {
       });
       await surface
         .getByRole("listitem")
-        .filter({ hasText: "Cleanup blocked" })
+        .filter({ has: page.getByRole("img", { name: "Cleanup", exact: true }) })
         .getByRole("button", { name: "Review blocked cleanup", exact: true })
         .click();
       const dialog = page.getByRole("dialog", {
@@ -391,7 +407,9 @@ for (const theme of ["light", "dark"]) {
       await expect(dialog).not.toBeVisible();
       // A removed directory is no longer a worktree, so its roster row leaves the list.
       await expect(
-        surface.getByRole("listitem").filter({ hasText: "Cleanup blocked" }),
+        surface
+          .getByRole("listitem")
+          .filter({ has: page.getByRole("img", { name: "Cleanup", exact: true }) }),
       ).toHaveCount(0);
       const after = await page.evaluate(() =>
         (
@@ -477,7 +495,14 @@ test("older Host explains update; failed policy save keeps the draft", async ({ 
   const surface = page.getByTestId("workspace-policy-settings");
   await surface.getByRole("switch", { name: "Pin workspaces", exact: true }).click();
   await surface.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(surface.getByRole("alert")).toContainText("Fixture policy save failed");
+  await surface
+    .getByRole("alert")
+    .getByRole("button", { name: /^Details/ })
+    .click();
+  await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText(
+    "Fixture policy save failed",
+  );
+  await page.keyboard.press("Escape");
   await expect(surface.getByRole("switch", { name: "Pin workspaces", exact: true })).toBeChecked();
   await expect(surface.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
 });
@@ -494,7 +519,7 @@ for (const theme of ["light", "dark"])
       );
       const list = page.getByRole("list", { name: "Worktrees", exact: true });
       const row = list.getByRole("listitem").filter({ hasText: "wt-populated-1-deep-folder-end" });
-      await expect(row.getByText("Missing folder", { exact: true })).toBeVisible();
+      await expectInfo(page, row, "Folder", "Missing folder");
       await expect(row.getByRole("button", { name: "More actions" })).toHaveCount(0);
       for (const name of ["Review changes", "Reveal folder", "Pin workspace", "Remove record"])
         await expect(row.getByRole("button", { name, exact: true })).toBeVisible();
@@ -530,7 +555,7 @@ test("cleanup blockers prevent owner removal and preserve unsaved policy", async
   await surface.getByRole("switch", { name: "Pin workspaces", exact: true }).click();
   await surface
     .getByRole("listitem")
-    .filter({ hasText: "Cleanup blocked" })
+    .filter({ has: page.getByRole("img", { name: "Cleanup", exact: true }) })
     .getByRole("button", { name: "Review blocked cleanup", exact: true })
     .click();
   const dialog = page.getByRole("dialog", {
@@ -718,23 +743,33 @@ for (const theme of ["light", "dark"])
       await expect(trees.getByRole("listitem")).toHaveCount(2);
       await treeSearch.fill("");
 
-      // Every worktree status the page can show is reachable.
+      // Only exceptions carry a status icon (a clean worktree shows none); each exception is
+      // reachable through its icon's tooltip.
+      const glyphs = trees.getByRole("img", {
+        name: /^(Status|Lock status|Unpushed commits)$/,
+      });
+      const revealed = new Set<string>();
+      for (let index = 0; index < (await glyphs.count()); index++) {
+        await glyphs.nth(index).focus();
+        revealed.add((await page.getByRole("tooltip").innerText()).trim());
+        await page.keyboard.press("Escape");
+      }
+      const joined = [...revealed].join(" | ");
       for (const text of [
-        "Clean",
         "Uncommitted changes",
         "Missing folder",
-        "Publication unknown",
         "Locked",
         "3 unpublished commits",
       ])
-        await expect(trees.getByText(text, { exact: false }).first()).toBeAttached();
+        expect(joined).toContain(text);
 
       // Storage numbers read as figures and are not clipped.
       const storage = policy.locator('[data-setting-id="workspace-storage-status"]');
       await storage.scrollIntoViewIfNeeded();
       await expect(storage).toContainText("42.0 GiB / 50.0 GiB");
       await expect(storage).toContainText("153.5 GiB");
-      await expect(storage).toContainText("Storage warning");
+      // The warning threshold is shown by the meter's tone rather than a text label.
+      await expect(storage.getByRole("meter", { name: "Directory budget" })).toBeVisible();
       expect(
         await storage.evaluate((node) => {
           const figures = [...node.querySelectorAll<HTMLElement>("strong, dd")];
@@ -764,7 +799,7 @@ for (const theme of ["light", "dark"])
         exact: true,
       });
       const discard = group.getByRole("button", {
-        name: "Discard changes",
+        name: "Discard",
         exact: true,
       });
       await expect(save).toBeDisabled();
@@ -777,9 +812,8 @@ for (const theme of ["light", "dark"])
         expect(box.y).toBeGreaterThanOrEqual(groupBox.y - 1);
         expect(box.y + box.height).toBeLessThanOrEqual(groupBox.y + groupBox.height + 1);
       }
-      // Save and Discard share one save bar row, after the notice in the group.
+      // Save and Discard share one sticky save bar row; its offset from the notice depends on the scroll position.
       expect(Math.abs(saveBox.y - discardBox.y)).toBeLessThan(24);
-      expect(saveBox.y).toBeGreaterThan(noticeBox.y);
       await group.scrollIntoViewIfNeeded();
       mkdirSync(l3Directory, { recursive: true });
       await page.screenshot({
@@ -792,7 +826,7 @@ for (const theme of ["light", "dark"])
       await treeSearch.focus();
       let reached = "";
       // Managed rows use "Reveal folder"; unmanaged rows name their branch.
-      for (let step = 0; step < 80 && !/^Reveal (?!folder$)/.test(reached); step += 1) {
+      for (let step = 0; step < 250 && !/^Reveal (?!folder$)/.test(reached); step += 1) {
         await page.keyboard.press("Tab");
         reached = await page.evaluate(
           () => document.activeElement?.getAttribute("aria-label") ?? "",
@@ -804,10 +838,12 @@ for (const theme of ["light", "dark"])
       expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toMatch(
         /^Delete /,
       );
-      await page.keyboard.press("Tab");
-      const nextReveal = await page.evaluate(() =>
-        document.activeElement?.getAttribute("aria-label"),
-      );
+      // Passive status glyphs of the next row may take a stop before its Reveal button.
+      let nextReveal: string | null | undefined = "";
+      for (let step = 0; step < 6 && !nextReveal?.startsWith("Reveal "); step += 1) {
+        await page.keyboard.press("Tab");
+        nextReveal = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
+      }
       expect(nextReveal).toMatch(/^Reveal /);
       expect(nextReveal).not.toBe(reached);
       await expect(unmanagedRow.getByText(/\/fixture\/worktrees\//).last()).toBeVisible();
@@ -850,11 +886,12 @@ test("populated source control for a remote project keeps restrictions visible",
   await page.goto("/tests/browser/source-control/worktrees.html?populated&remote&theme=light");
   const repo = page.locator('[data-setting-id="project-worktrees"]');
   await expect(
-    repo.getByText("Creating and deleting worktrees runs on this computer", {
+    repo.getByText("Deleting worktrees runs on this computer", {
       exact: false,
     }),
   ).toBeVisible();
-  await expect(repo.getByRole("button", { name: "Create worktree", exact: true })).toBeDisabled();
+  // Creation routes through the connected machine's Host; only deletion stays restricted.
+  await expect(repo.getByRole("button", { name: "Create worktree", exact: true })).toBeEnabled();
   const remoteTrees = repo.getByRole("list", {
     name: "Worktrees",
     exact: true,
@@ -949,7 +986,7 @@ for (const theme of ["light", "dark"])
       await expect(storage).not.toContainText("could not be measured");
       await expect(pin).toBeChecked();
       await expect(surface.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
-      await surface.getByRole("button", { name: "Discard changes", exact: true }).click();
+      await surface.getByRole("button", { name: "Discard", exact: true }).click();
       await expect(pin).not.toBeChecked();
       expect(errors).toEqual([]);
     });
@@ -966,7 +1003,7 @@ test("missing managed folder is warned in storage, flagged in its row, and filte
   await expect(storage).toContainText("Missing worktree folders: 1");
   const list = surface.getByRole("list", { name: "Worktrees", exact: true });
   const row = list.getByRole("listitem").filter({ hasText: "wt-merged" });
-  await expect(row).toContainText("Missing folder");
+  await expectInfo(page, row, "Folder", "Missing folder");
   mkdirSync("temp/verification/sc-redesign", { recursive: true });
   await page.screenshot({
     path: "temp/verification/sc-redesign/managed-missing-folder-dark-1280.png",

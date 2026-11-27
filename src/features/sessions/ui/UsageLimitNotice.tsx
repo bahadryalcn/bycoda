@@ -1,75 +1,118 @@
-import { InlineMessage } from "../../../shared/ui/InlineError";
-import type { NoticeAction } from "../../../shared/ui/Notice";
-import { Button } from "../../../shared/ui/Button";
-import { useT } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
-import { Gauge, X } from "../../../shared/ui/icons";
+import type { ReactNode } from "react";
+import { NoticeLink, type NoticeAction } from "../../../shared/ui/Notice";
+import { useFormat, useT } from "../../../shared/i18n";
+import { Gauge } from "../../../shared/ui/icons";
+import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
 import type { ProviderAccountProvider } from "../../providers/model/providerAccounts";
 import type { UsageLimit } from "../model/session";
-import { formatUsageLimitReset } from "../model/usageLimit";
+import { formatUsageLimitResetWith, usageLimitResetDelay } from "../model/usageLimit";
 import { ProviderAccountMenu } from "./ProviderAccountMenu";
+import { NoticeActionButton, TranscriptNotice } from "./TranscriptNotice";
 
 export function UsageLimitNotice({
   limit,
   provider,
   accountId,
   onResume,
+  resumeDisabled,
   onResumeAtReset,
   onSwitchAccount,
   onSwitchModel,
   onDismiss,
+  details,
+  providerSummary,
 }: {
   limit: UsageLimit;
   /** Set for claude/codex; with `accountId`, other accounts can take over. */
   provider?: ProviderAccountProvider;
   accountId?: string;
   onResume?: () => void;
+  resumeDisabled?: boolean;
   onResumeAtReset?: (enabled: boolean) => void;
   onSwitchAccount?: (accountId: string) => void;
   /** Opens the composer's model picker to continue on another model. */
   onSwitchModel?: () => void;
   onDismiss?: () => void;
+  details?: ReactNode;
+  providerSummary?: string;
 }) {
   const t = useT();
-  const [now, setNow] = useState(Date.now);
-  const waiting = limit.resetsAt != null && limit.resetsAt > now;
-  // Tick the countdown, and flip to "Resume" once the window resets.
+  const format = useFormat();
+  const ready = limit.recoveryFrom !== undefined;
+  const resetsAt = ready ? undefined : limit.resetsAt;
+  // The minute clock drives the countdown label; it can trail the reset by up to a minute.
+  const minuteNow = useMinuteNow(resetsAt != null);
+  // Reason: the flip to "Resume" must land at resetsAt itself, so a one-shot deadline timer records it.
+  const [deadlineNow, setDeadlineNow] = useState(0);
   useEffect(() => {
-    if (!waiting) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
-    return () => window.clearInterval(timer);
-  }, [waiting]);
+    if (resetsAt == null) return;
+    const delay = usageLimitResetDelay(resetsAt, Date.now());
+    if (delay === undefined) return;
+    const timer = window.setTimeout(() => setDeadlineNow(Math.max(Date.now(), resetsAt)), delay);
+    return () => window.clearTimeout(timer);
+  }, [resetsAt]);
+  const now = Math.max(minuteNow, deadlineNow);
+  const waiting = resetsAt != null && resetsAt > now;
 
-  const resetText =
-    limit.resetsAt == null
-      ? ""
+  // An unknown reset cannot be armed, so the only recovery is a direct retry.
+  const resetText = ready
+    ? undefined
+    : resetsAt == null
+      ? (providerSummary ?? t("Reset time unknown"))
       : waiting
-        ? t("Resets {p0}", { p0: formatUsageLimitReset(limit.resetsAt, now) })
+        ? t("Resets {p0}", { p0: formatUsageLimitResetWith(resetsAt, now, t, format) })
         : t("Limit has reset");
 
-  const resume: NoticeAction | undefined = !waiting
-    ? onResume
-      ? { label: t("Resume"), onClick: onResume }
-      : undefined
-    : onResumeAtReset
-      ? limit.resumeAtReset
-        ? { label: t("Resuming at reset"), onClick: () => onResumeAtReset(false) }
-        : { label: t("Resume at reset"), onClick: () => onResumeAtReset(true) }
+  // The toggle names the action it performs: "Cancel auto-resume" while armed, "Resume at reset" to arm.
+  const resume: NoticeAction | undefined =
+    !waiting && onResume
+      ? {
+          label: ready ? t("Continue") : resetsAt == null ? t("Try again") : t("Resume"),
+          disabled: resumeDisabled,
+          onClick: onResume,
+        }
       : undefined;
   const switchModel: NoticeAction | undefined = onSwitchModel
     ? { label: t("Switch model"), onClick: onSwitchModel }
     : undefined;
+  const canChangeAutoResume = waiting && onResumeAtReset;
+  const primary = resume ?? (!ready ? switchModel : undefined);
+  const secondary = resume && !ready ? switchModel : undefined;
+  const description = [
+    resetText,
+    !waiting && !onResume ? t("Send a message to continue.") : undefined,
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
-    <InlineMessage
+    <TranscriptNotice
       data-usage-limit
-      tone="warning"
-      icon={<Gauge className="icon-sm" aria-hidden />}
-      action={resume ?? switchModel}
-      secondaryAction={resume ? switchModel : undefined}
+      kind={ready ? "info" : "warning"}
+      icon={ready ? undefined : <Gauge className="icon-md" aria-hidden />}
+      title={ready ? t("Ready to continue") : t("Usage limit reached")}
+      detail={description || undefined}
+      onDismiss={onDismiss}
+      dismissLabel={t("Dismiss usage limit notice")}
       extra={
         <>
-          {provider && onSwitchAccount ? (
+          {details}
+          {canChangeAutoResume ? (
+            <NoticeLink
+              action={{
+                label: limit.resumeAtReset ? t("Cancel auto-resume") : t("Resume at reset"),
+                onClick: () => canChangeAutoResume(!limit.resumeAtReset),
+              }}
+            />
+          ) : null}
+        </>
+      }
+      actions={
+        <>
+          {primary ? <NoticeActionButton action={primary} /> : null}
+          {secondary ? <NoticeActionButton quiet action={secondary} /> : null}
+          {!ready && provider && onSwitchAccount ? (
             <ProviderAccountMenu
               variant="notice"
               provider={provider}
@@ -77,24 +120,8 @@ export function UsageLimitNotice({
               onSelect={onSwitchAccount}
             />
           ) : null}
-          <Button
-            iconOnly
-            label={t("Dismiss usage limit notice")}
-            variant="ghost"
-            type="button"
-            tooltip={t("Dismiss")}
-            aria-label={t("Dismiss usage limit notice")}
-            onClick={onDismiss}
-            className="shrink-0"
-          >
-            <X className="icon-sm" />
-          </Button>
         </>
       }
-    >
-      <strong>{t("Usage limit reached")} </strong>
-      {resetText}
-      {!waiting && !onResume ? <> {t("Send a message to continue.")}</> : null}
-    </InlineMessage>
+    />
   );
 }

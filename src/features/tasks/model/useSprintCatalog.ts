@@ -1,14 +1,21 @@
 import { useQueries } from "@tanstack/react-query";
 import { t } from "../../../shared/i18n";
-import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
+import {
+  useForegroundQueryFamilyPolling,
+  useQueryVisible,
+} from "../../../shared/hooks/useQueryVisible";
 import { machineCapabilities } from "../../automations/public/hostMachines";
 import { remoteRequest } from "../../connections/public/connections";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import type { RemoteMachine } from "../../connections";
 import { HOST_SPRINTS, type HostSprint, type SprintBoard } from "./hostSprints";
 
 export type SprintCatalogSource = {
   machine: RemoteMachine;
   sprints: HostSprint[];
+  /** The read did not succeed, so these sprints may be stale or missing. */
+  failed: boolean;
+  /** What to show for the failure; null for a success or a passing transport blip the shared connection notice already covers. */
   error: string | null;
 };
 
@@ -20,15 +27,18 @@ export async function readSprintCatalogSource(
 ): Promise<SprintCatalogSource> {
   try {
     if (!(await machineCapabilities(machine)).includes(HOST_SPRINTS))
-      return { machine, sprints: [], error: t("Update this server to view its sprints.") };
+      return {
+        machine,
+        sprints: [],
+        failed: true,
+        error: t("Update this server to view its sprints."),
+      };
     const board = await remoteRequest<SprintBoard>(machine.id, "sprints.list");
-    return { machine, sprints: board.sprints, error: null };
+    return { machine, sprints: board.sprints, failed: false, error: null };
   } catch (reason) {
-    return {
-      machine,
-      sprints: [],
-      error: reason instanceof Error ? reason.message : String(reason),
-    };
+    // A transient transport error stays a failure (the sprints stay unavailable and the
+    // query keeps its stale answer) but shows no text of its own.
+    return { machine, sprints: [], failed: true, error: presentRemoteError(reason) ?? null };
   }
 }
 
@@ -42,20 +52,20 @@ export function sprintCatalogKey(
 /** Query-owned server snapshots survive view changes; route identities never share cached records. */
 export function useSprintCatalog(machines: readonly RemoteMachine[]) {
   const visible = useQueryVisible();
+  useForegroundQueryFamilyPolling(SPRINT_CATALOG_QUERY_KEY, 15_000);
   const routes = [...new Map(machines.map((machine) => [machine.environmentId, machine])).values()];
   const answers = useQueries({
     queries: routes.map((machine) => ({
       queryKey: [...SPRINT_CATALOG_QUERY_KEY, machine.id, machine.environmentId, machine.endpoint],
       queryFn: async () => {
         const source = await readSprintCatalogSource(machine);
-        if (source.error) throw new Error(source.error);
+        if (source.failed) throw new Error(source.error ?? "");
         return source;
       },
       enabled: visible,
       retry: false,
       staleTime: 15_000,
-      refetchInterval: visible ? 15_000 : false,
-      refetchIntervalInBackground: true,
+      refetchOnWindowFocus: false,
     })),
   });
   return {
@@ -66,7 +76,8 @@ export function useSprintCatalog(machines: readonly RemoteMachine[]) {
             {
               machine: routes[index]!,
               sprints: answer.data?.sprints ?? [],
-              error: answer.error ? answer.error.message : null,
+              failed: !!answer.error,
+              error: answer.error?.message || null,
             },
           ],
     ),

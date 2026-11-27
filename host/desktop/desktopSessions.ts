@@ -1,9 +1,10 @@
 import { SessionReadProcesses } from "../session-read-process";
-import { desktopDelegationParent } from "./delegated-children";
+import { desktopBackgroundOwner, desktopDelegationParent } from "./delegated-children";
 import { normalizeProjectPath, sameProjectPath } from "./project-path";
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, statSync, Stats } from "node:fs";
+import { stat } from "node:fs/promises";
 import { desktopReadSource, readDesktopSnapshot, type DesktopReadSource } from "./snapshot-read";
 import { SessionReadError } from "../domains/sessions/read-errors";
 import { homedir } from "node:os";
@@ -62,16 +63,26 @@ export function desktopDatabasePaths(
   platform: NodeJS.Platform = process.platform,
   home = homedir(),
 ): string[] {
+  return selectDesktopDatabases(env, platform, home, existsSync);
+}
+
+/** The selection rules behind `desktopDatabasePaths`; `exists` is their only disk access. */
+function selectDesktopDatabases(
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform,
+  home: string,
+  exists: (file: string) => boolean,
+): string[] {
   const override = env.BYCODA_DESKTOP_DB;
   if (override)
     return override
       .split(delimiter)
       .filter(Boolean)
-      .filter((p) => existsSync(p));
+      .filter((p) => exists(p));
   // An isolated development run keeps its desktop data under its own identifier. Its Host
   // reads that database only: never the installed app's, and not another run's.
   const isolated = env.BYCODA_DESKTOP_DATA_DIR;
-  if (isolated) return [join(isolated, DATABASE)].filter((p) => existsSync(p));
+  if (isolated) return [join(isolated, DATABASE)].filter((p) => exists(p));
   const base =
     platform === "win32"
       ? env.APPDATA || join(home, "AppData", "Roaming")
@@ -80,29 +91,161 @@ export function desktopDatabasePaths(
         : env.XDG_DATA_HOME || join(home, ".local", "share");
   const release = join(base, RELEASE_IDENTIFIER, DATABASE);
   const dev = join(base, DEV_IDENTIFIER, DATABASE);
-  const found = existsSync(release) ? [release] : [];
+  const found = exists(release) ? [release] : [];
   // With no release database (a machine that only runs the dev app) the dev
   // database is the only session source, so it is read either way.
-  if ((found.length === 0 || includesDevDatabase(env)) && existsSync(dev)) found.push(dev);
+  if ((found.length === 0 || includesDevDatabase(env)) && exists(dev)) found.push(dev);
   return found;
 }
 
-let pathsCache: { key: string; at: number; value: string[] } | undefined;
+/** Same selection as `desktopDatabasePaths()` with its existence checks made on the libuv
+ * pool. Pass one records every file the selection would check (with none present, it checks
+ * the dev database too); pass two applies the real answers. */
+async function desktopDatabasePathsAsync(env: NodeJS.ProcessEnv): Promise<string[]> {
+  const platform = process.platform;
+  const home = homedir();
+  const checked = new Set<string>();
+  selectDesktopDatabases(env, platform, home, (file) => {
+    checked.add(file);
+    return false;
+  });
+  const present = new Set<string>();
+  await Promise.all(
+    [...checked].map((file) =>
+      stat(file).then(
+        () => present.add(file),
+        (error: NodeJS.ErrnoException) => {
+          if (error.code !== "ENOENT" && error.code !== "ENOTDIR") throw error;
+        },
+      ),
+    ),
+  );
+  return selectDesktopDatabases(env, platform, home, (file) => present.has(file));
+}
 
-/** `desktopDatabasePaths()` stats up to three files; watchers ask per tick. */
-function cachedDesktopDatabasePaths(): string[] {
-  const key = [
+const DATABASE_PATHS_TTL_MS = 3_000;
+/** The oldest answer ever served; past it the paths are recomputed instead of revalidated. */
+const DATABASE_PATHS_MAX_AGE_MS = 30_000;
+/** A stat that never returns must not hold `pathsRefresh` forever. */
+const REFRESH_TIMEOUT_MS = 5_000;
+let pathsCache:
+  | {
+      key: string;
+      validatedAt: number;
+      attemptedAt: number;
+      value: string[];
+      /** A candidate could not be checked (EACCES, EBUSY…): the answer is used for one TTL,
+       * then checked again, and it never counts as a validation. */
+      uncertain?: boolean;
+    }
+  | undefined;
+/** The one refresh in flight, if any. */
+let pathsRefresh: Promise<void> | undefined;
+
+/** One fingerprint part: identity, time and size of a file, or why it could not be read. */
+function statPart(file: string, value: Stats | unknown): string {
+  if (value instanceof Stats)
+    return `${file}:${value.dev}:${value.ino}:${value.mtimeMs}:${value.ctimeMs}:${value.size}`;
+  const code = (value as NodeJS.ErrnoException).code;
+  return code === "ENOENT" || code === "ENOTDIR" ? "-" : `unavailable:${code ?? "unknown"}`;
+}
+
+/** `desktopDatabasePaths()` stats up to three files; watchers ask per tick. Stale-while-
+ * revalidate: after the first (synchronous) answer, an expired answer is served at once and
+ * refreshed off the main thread, so no request blocks on a stalled disk. An env change
+ * still recomputes synchronously. */
+const desktopPathsKey = () =>
+  [
     process.env.BYCODA_DESKTOP_DB,
     process.env.BYCODA_DESKTOP_DATA_DIR,
     process.env.APPDATA,
     process.env.XDG_DATA_HOME,
     devHostKey(process.env),
   ].join("\0");
+
+export function cachedDesktopDatabasePaths(): string[] {
+  const key = desktopPathsKey();
   const now = Date.now();
-  if (pathsCache?.key === key && now - pathsCache.at < 3_000) return pathsCache.value;
-  const value = desktopDatabasePaths();
-  pathsCache = { key, at: now, value };
-  return value;
+  // An answer older than the age bound is never served: a refresh that keeps failing or
+  // hanging must not pin a pre-install `[]` for the life of the Host.
+  const same = pathsCache?.key === key ? pathsCache : undefined;
+  if (!same || now - same.validatedAt >= DATABASE_PATHS_MAX_AGE_MS) {
+    // An uncertain answer is reused for one TTL instead of re-statting on every call.
+    if (same?.uncertain && now - same.attemptedAt < DATABASE_PATHS_TTL_MS) return same.value;
+    let uncertain = false;
+    const value = selectDesktopDatabases(process.env, process.platform, homedir(), (file) => {
+      try {
+        statSync(file);
+        return true;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        // One unreadable candidate does not hide the others; it reads as absent for now.
+        if (code !== "ENOENT" && code !== "ENOTDIR") uncertain = true;
+        return false;
+      }
+    });
+    pathsCache = {
+      key,
+      validatedAt: uncertain ? (same?.validatedAt ?? 0) : now,
+      attemptedAt: now,
+      value,
+      uncertain,
+    };
+    return value;
+  }
+  if (now - same.attemptedAt >= DATABASE_PATHS_TTL_MS && !pathsRefresh)
+    refreshDesktopDatabasePaths(same);
+  return same.value;
+}
+
+/** Async callers: the cached answer while it is young, else a fresh one made off the main thread. */
+export async function desktopDatabasePathsFresh(): Promise<string[]> {
+  const cached = pathsCache;
+  const key = desktopPathsKey();
+  if (cached?.key === key && Date.now() - cached.validatedAt < DATABASE_PATHS_MAX_AGE_MS)
+    return cachedDesktopDatabasePaths();
+  try {
+    const value = await withTimeout(desktopDatabasePathsAsync(process.env));
+    const now = Date.now();
+    // The environment changed meanwhile: answer for the new one.
+    if (desktopPathsKey() !== key) return cachedDesktopDatabasePaths();
+    if (pathsCache === cached) pathsCache = { key, validatedAt: now, attemptedAt: now, value };
+    return value;
+  } catch {
+    // Past the age bound nothing stale is served (a pre-install `[]` must not stick), and the
+    // disk that just stalled is not statted synchronously.
+    return [];
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error("desktop database lookup timed out")),
+      REFRESH_TIMEOUT_MS,
+    );
+    timer.unref();
+    promise.then(resolve, reject).finally(() => clearTimeout(timer));
+  });
+}
+
+function refreshDesktopDatabasePaths(cached: NonNullable<typeof pathsCache>): void {
+  pathsRefresh = withTimeout(desktopDatabasePathsAsync(process.env))
+    .then(
+      (value) => {
+        if (pathsCache === cached) {
+          const now = Date.now();
+          pathsCache = { key: cached.key, validatedAt: now, attemptedAt: now, value };
+        }
+      },
+      () => {
+        // Keep the last good answer; retry after another TTL instead of on every call.
+        if (pathsCache === cached) cached.attemptedAt = Date.now();
+      },
+    )
+    .finally(() => {
+      pathsRefresh = undefined;
+    });
 }
 
 // One entry per project and provider set. A round over every project (110+
@@ -237,6 +380,7 @@ function userText(block: unknown): string {
  * machine. The desktop is the only writer; this never writes.
  */
 /** Resolves with the shared read, or rejects as soon as `signal` aborts; the read itself continues. */
+const PROJECT_CWD_DEADLINE_MS = 30_000;
 function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   const abort = () => new Error("Session read cancelled before completion.");
   if (signal.aborted) return Promise.reject(abort());
@@ -248,15 +392,30 @@ function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
 }
 
 export class DesktopSessions {
+  declare private readonly paths: () => string[];
+  declare private readonly platform: NodeJS.Platform;
+  /** The app's heartbeat: running state and live prompts. */
+  declare readonly live: DesktopLive;
+  declare private readonly idleMs: number;
+  declare private readonly openDatabase: HostNotesDatabaseFactory;
+  declare private readonly waitForTruncateRetry: ((ms: number) => void) | undefined;
+
   constructor(
-    private readonly paths: () => string[] = cachedDesktopDatabasePaths,
-    private readonly platform: NodeJS.Platform = process.platform,
-    /** The app's heartbeat: running state and live prompts. */
-    readonly live = new DesktopLive(),
-    private readonly idleMs = 5000,
-    private readonly openDatabase: HostNotesDatabaseFactory = (path, options) =>
-      new DatabaseSync(path, options),
-  ) {}
+    paths: () => string[] = cachedDesktopDatabasePaths,
+    platform: NodeJS.Platform = process.platform,
+    live = new DesktopLive(),
+    idleMs = 5000,
+    openDatabase: HostNotesDatabaseFactory = (path, options) => new DatabaseSync(path, options),
+    /** Only an isolated SQLite worker may wait between physical read attempts. */
+    waitForTruncateRetry?: (ms: number) => void,
+  ) {
+    this.paths = paths;
+    this.platform = platform;
+    this.live = live;
+    this.idleMs = idleMs;
+    this.openDatabase = openDatabase;
+    this.waitForTruncateRetry = waitForTruncateRetry;
+  }
 
   private stamps = new Map<string, { at: number; rows: DesktopStampRow[] }>();
 
@@ -302,6 +461,18 @@ export class DesktopSessions {
         if (isHostNotesAdmissionFault(error) || error instanceof SessionReadError) throw error;
         // A stale handle (file replaced, schema migrated) is retried once fresh.
         this.drop(path);
+        // Windows cannot truncate a mapped WAL index until the other mapping is released.
+        if (
+          this.platform === "win32" &&
+          this.waitForTruncateRetry &&
+          attempt < 4 &&
+          error instanceof Error &&
+          "errcode" in error &&
+          error.errcode === 1546
+        ) {
+          this.waitForTruncateRetry(50 * 2 ** attempt);
+          continue;
+        }
         if (attempt > 0) {
           console.error("Could not read desktop sessions:", error);
           if (
@@ -378,36 +549,62 @@ export class DesktopSessions {
    * Two stats per database instead of re-reading every session row.
    */
   fingerprint(): string {
-    const parts: string[] = [];
-    for (const path of this.paths())
-      for (const file of [path, `${path}-wal`]) {
+    return this.fingerprintFiles()
+      .map((file) => {
         try {
-          const stat = statSync(file);
-          parts.push(
-            `${file}:${stat.dev}:${stat.ino}:${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`,
-          );
+          return statPart(file, statSync(file));
         } catch (error) {
-          const code = (error as NodeJS.ErrnoException).code;
-          parts.push(
-            code === "ENOENT" || code === "ENOTDIR" ? "-" : `unavailable:${code ?? "unknown"}`,
-          );
+          return statPart(file, error);
         }
-      }
-    return parts.join("|");
+      })
+      .join("|");
+  }
+
+  /**
+   * `fingerprint()` for the Host event loop: the stats run on the libuv pool, so a stalled
+   * disk (a restore point, an antivirus scan) cannot freeze the Host. Concurrent callers
+   * share one round of stats.
+   */
+  fingerprintAsync(): Promise<string> {
+    this.fingerprintFlight ??= Promise.all(
+      this.fingerprintFiles().map((file) =>
+        stat(file).then(
+          (value) => statPart(file, value),
+          (error: unknown) => statPart(file, error),
+        ),
+      ),
+    )
+      .then((parts) => parts.join("|"))
+      .finally(() => {
+        this.fingerprintFlight = undefined;
+      });
+    return this.fingerprintFlight;
+  }
+  private fingerprintFlight?: Promise<string>;
+
+  private fingerprintFiles(): string[] {
+    return this.paths().flatMap((path) => [path, `${path}-wal`]);
   }
 
   /** Releases every cached connection (host shutdown). */
   close(): void {
+    void this.closeAsync().catch((error) => {
+      console.warn("[bycoda] desktop session readers did not all close cleanly", error);
+    });
+  }
+  async closeAsync(): Promise<void> {
     this.metadataGeneration++;
-    void this.sessionReadProcesses.close().catch(() => undefined);
+    const readers = Promise.all([
+      this.sessionReadProcesses.close(),
+      this.metadataReader?.close(),
+      this.transcriptReader?.close(),
+      this.pointReader?.close(),
+    ]);
     this.metadataFlights.clear();
     this.metadataKeys.clear();
     this.listMetadataCache.clear();
-    void this.metadataReader?.close();
     this.metadataReader = undefined;
-    void this.transcriptReader?.close();
     this.transcriptReader = undefined;
-    void this.pointReader?.close();
     this.pointReader = undefined;
     this.stampFlights.clear();
     this.recordFlights.clear();
@@ -417,19 +614,12 @@ export class DesktopSessions {
     this.metadataCache.clear();
     this.listSnapshots.clear();
     for (const path of Array.from(this.handles.keys())) this.drop(path);
+    await readers;
   }
   /** Read workers release OS handles before replying; metadata stays cached. */
   releaseReadHandles(): void {
     for (const path of Array.from(this.handles.keys())) this.drop(path);
   }
-  async closeAsync(): Promise<void> {
-    const reader = this.metadataReader;
-    const transcripts = this.transcriptReader;
-    const points = this.pointReader;
-    this.close();
-    await Promise.all([reader?.close(), transcripts?.close(), points?.close()]);
-  }
-
   private rows(
     db: DatabaseSync,
     columns: Set<string>,
@@ -641,10 +831,9 @@ export class DesktopSessions {
 
   private summaryOf({ row, inFlight }: Found, projectId: string): HostSessionSummary {
     const updatedAt = Number(row.updated_at);
+    const managedBy = managementOf(row);
     return {
-      ...(assistantSessionManagement(parse(row.assistant_management_json))
-        ? { managedBy: assistantSessionManagement(parse(row.assistant_management_json)) }
-        : {}),
+      ...(managedBy ? { managedBy } : {}),
       projectId,
       revision: updatedAt,
       status: inFlight ? "running" : row.interrupted ? "interrupted" : "idle",
@@ -664,6 +853,9 @@ export class DesktopSessions {
       linkedWorkItem: parse(row.linked_work_item_json),
       needsInput: false,
       delegationParent: desktopDelegationParent(row.model_settings),
+      ...(desktopBackgroundOwner(row.model_settings)
+        ? { backgroundOwner: desktopBackgroundOwner(row.model_settings) }
+        : {}),
       ...(row.orchestration_lead_id
         ? { orchestrationLeadId: String(row.orchestration_lead_id) }
         : {}),
@@ -855,6 +1047,8 @@ export class DesktopSessions {
   async listSnapshotAsync(projectCwd: string, projectId: string, providers: readonly string[]) {
     const requestKey = JSON.stringify([projectCwd, projectId, providers]),
       generation = this.metadataGeneration;
+    // Taken before the cache lookup, so the entry compared below is the one in the cache now.
+    const database = this.metadataKeys.has(requestKey) ? await this.fingerprintAsync() : undefined;
     const knownKey = this.metadataKeys.get(requestKey),
       knownEntry = knownKey ? this.listSnapshots.get(knownKey) : undefined;
     // Unchanged database files (two stats) and unchanged heartbeat: the cached
@@ -862,7 +1056,7 @@ export class DesktopSessions {
     if (
       knownKey &&
       knownEntry &&
-      knownEntry.database === this.fingerprint() &&
+      knownEntry.database === database &&
       Date.now() - knownEntry.refreshed < 30_000 &&
       knownEntry.live === this.live.listVersion(knownEntry.ids, knownEntry.stored)
     ) {
@@ -1134,23 +1328,25 @@ export class DesktopSessions {
   }
 
   async projectCwdAsync(id: string, signal?: AbortSignal): Promise<string | undefined> {
-    if (signal) {
-      const generation = this.metadataGeneration;
-      const record = await this.sessionReadProcesses.read<DesktopMetadataRecord | undefined>(
-        {
-          kind: "desktop",
-          paths: this.paths(),
-          platform: this.platform,
-          method: "metadata",
-          sessionId: id,
-        },
-        signal,
+    if (signal?.aborted) throw new Error("Session read cancelled before completion.");
+    const generation = this.metadataGeneration;
+    const work = this.metadataAsync(id);
+    let timer: NodeJS.Timeout | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error("Session project folder lookup timed out.")),
+        PROJECT_CWD_DEADLINE_MS,
       );
+      timer.unref();
+    });
+    try {
+      const record = await Promise.race([signal ? untilAborted(work, signal) : work, deadline]);
       this.assertReadGeneration(generation);
-      signal.throwIfAborted();
+      signal?.throwIfAborted();
       return record?.cwd;
+    } finally {
+      clearTimeout(timer);
     }
-    return (await this.metadataAsync(id))?.cwd;
   }
 
   /** Worker-only identity lookup. Reads existing origin identity; never initializes it. */
@@ -1286,6 +1482,11 @@ export class DesktopSessions {
 
   samePath(a: string, b: string): boolean {
     return sameProjectPath(a, b, this.platform);
+  }
+
+  /** The key `samePath` compares: equal keys are the same folder. */
+  pathKey(path: string): string {
+    return normalizeProjectPath(path, this.platform);
   }
 
   snapshot(id: string, projectId: string): HostSession | undefined {
@@ -1451,12 +1652,11 @@ export class DesktopSessions {
   ): Omit<HostSession, "session"> & { session: Omit<Session, "blocks"> } {
     const { row } = found;
     const updatedAt = Number(row.updated_at);
+    const managedBy = managementOf(row);
     // The transcript this desktop last agreed on with the host; an older app has no column.
     const adoptedBase = parseHead(parse(row.adopted_base));
     const session: Omit<Session, "blocks"> = {
-      ...(assistantSessionManagement(parse(row.assistant_management_json))
-        ? { managedBy: assistantSessionManagement(parse(row.assistant_management_json)) }
-        : {}),
+      ...(managedBy ? { managedBy } : {}),
       id: String(row.id),
       harness: String(row.harness) as Session["harness"],
       model: String(row.model ?? ""),
@@ -1497,6 +1697,12 @@ export class DesktopSessions {
 /** Where the provider ran: the selected worktree, else the project folder. */
 function workCwd(row: Row): string {
   return String(row.worktree_cwd || row.cwd);
+}
+
+/** The validated assistant provenance of a desktop row. A null, malformed or legacy column
+ * yields `undefined`. Each builder calls this once per row and reuses the result. */
+function managementOf(row: Row) {
+  return assistantSessionManagement(parse(row.assistant_management_json));
 }
 
 function parse(value: unknown): any {

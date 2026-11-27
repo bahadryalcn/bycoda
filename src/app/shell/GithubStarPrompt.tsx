@@ -3,11 +3,13 @@ import { Text } from "../../shared/ui/Text";
 import { Button } from "../../shared/ui/Button";
 import { ButtonGroup } from "../../shared/ui/ButtonGroup";
 import { useT } from "../../shared/i18n";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openExternal } from "../../platform/tauri/openExternal";
 import { useEffect, useState, type ReactNode } from "react";
 import { version as appVersion } from "../../../package.json";
 import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
-import { Star, X } from "../../shared/ui/icons";
+import { X } from "../../shared/ui/icons";
+import { GithubMark } from "../../shared/ui/GithubMark";
+import { useToast } from "../../shared/ui/ToastRegion";
 import styles from "./GithubStarPrompt.module.css";
 
 /** Dismissal is per app version, so the prompt returns once after every update. */
@@ -42,7 +44,7 @@ function useGithubStar(version: string) {
   };
   return {
     visible: !!repositoryUrl && !dismissed,
-    open: () => void openUrl(repositoryUrl!).catch(() => undefined),
+    repositoryUrl,
     dismiss: handleDismiss,
   };
 }
@@ -73,7 +75,17 @@ function GithubStarPromptBody({
 }: PromptProps) {
   const t = useT();
   const star = useGithubStar(version);
-  const { visible } = star;
+  const toast = useToast();
+  const { visible, repositoryUrl } = star;
+  const openRepository = () => {
+    openExternal(repositoryUrl!).catch(() =>
+      toast.show({
+        id: "github-star-open-failed",
+        tone: "danger",
+        message: t("Could not open the link. Try again."),
+      }),
+    );
+  };
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Persist the mounted dialog impression in localStorage so reopening it does not repeat this version.
   useEffect(() => {
     if (!oncePerVersion || !visible) return;
@@ -93,12 +105,12 @@ function GithubStarPromptBody({
         motion="none"
         type="button"
         aria-label={t("View {p0} on GitHub", { p0: PRODUCT_IDENTITY.displayName })}
-        onClick={star.open}
+        onClick={openRepository}
         {...(icon
           ? actionContentAttributes({ phase: "rest", hide: "corner" })
           : { className: "min-w-0 flex-1" })}
       >
-        <Star className={icon ? "icon-md" : "icon-xs shrink-0"} strokeWidth={1.75} />
+        <GithubMark className={icon ? "icon-md" : "icon-xs shrink-0"} />
         {!icon ? (
           <Text size="caption" tone="inherit" weight="medium" truncate>
             {t("View on GitHub")}
@@ -128,12 +140,20 @@ function GithubStarPromptBody({
   ) : null;
   return (
     <ButtonGroup
-      surface={icon ? "transparent" : "navigation"}
+      surface={icon || oncePerVersion ? "transparent" : "navigation"}
       aria-label={t("Actions")}
       data-github-star-prompt
       data-icon={icon || undefined}
       data-compact={compact || undefined}
-      className={icon ? styles.icons : visible ? "w-full" : "self-end"}
+      className={
+        icon
+          ? styles.icons
+          : oncePerVersion
+            ? "ms-auto max-w-full"
+            : visible
+              ? "w-full"
+              : "self-end"
+      }
     >
       {icon && visible ? (
         <div {...actionContentScopeAttributes(styles.star)}>{buttons}</div>

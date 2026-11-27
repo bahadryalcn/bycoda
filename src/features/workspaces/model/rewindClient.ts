@@ -135,8 +135,12 @@ export async function applyWorkspaceRewind(
   idempotencyKey: string,
   displayed?: RewindAuthority,
 ): Promise<{ receipt: SessionRewindReceipt; session: Session; snapshot?: HostSession }> {
-  if (plan.blockers.length || plan.expiresAt <= Date.now())
-    throw new Error(t("This rewind preview is blocked or expired. Refresh the preview."));
+  if (plan.blockers.length)
+    throw new Error(
+      t("This rewind preview is blocked. Clear the blockers, then refresh the preview."),
+    );
+  if (plan.expiresAt <= Date.now())
+    throw new Error(t("This rewind preview has expired. Refresh the preview."));
   const expected = authority(plan);
   const current = authority(
     displayed ?? { authorityGeneration: session.adoptedAuthorityGeneration },

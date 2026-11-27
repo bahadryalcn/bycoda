@@ -3,7 +3,6 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Text } from "../../../shared/ui/Text";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { t } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
@@ -33,40 +32,45 @@ export function ServerOrganization({
   const tagPrefix = tags.includes(",") ? tags.slice(0, tags.lastIndexOf(",") + 1) + " " : "";
   const [favorite, setFavorite] = useState(server.metadata.favorite);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [saved, setSaved] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
+  /** What the last acknowledged save (or the loaded record) holds; an unchanged draft saves nothing. */
+  const persisted = useRef(JSON.stringify([group, tags, favorite]));
   const title = <>{t("Organization")}</>;
+  // Metadata saves itself when a field is left or the favorite flips; there is no Save button.
+  const save = async (next: { group: string; tags: string; favorite: boolean }) => {
+    const snapshot = JSON.stringify([next.group, next.tags, next.favorite]);
+    if (pending.current || snapshot === persisted.current) return;
+    pending.current = true;
+    setSaving(true);
+    setSaveMessage("");
+    try {
+      await updateServerMetadata(server.id, {
+        group: next.group.trim(),
+        tags: [
+          ...new Set(
+            next.tags
+              .split(",")
+              .map((tag) => tag.trim())
+              .filter(Boolean),
+          ),
+        ],
+        favorite: next.favorite,
+      });
+      persisted.current = snapshot;
+    } catch {
+      setSaveMessage(t("Couldn’t save server organization."));
+    } finally {
+      pending.current = false;
+      setSaving(false);
+    }
+  };
   const content = (
     <>
       <form
         className="mbs-3 flex flex-col gap-3"
-        onSubmit={async (event) => {
+        onSubmit={(event) => {
           event.preventDefault();
-          if (pending.current) return;
-          pending.current = true;
-          setSaving(true);
-          setError("");
-          setSaved(false);
-          try {
-            await updateServerMetadata(server.id, {
-              group: group.trim(),
-              tags: [
-                ...new Set(
-                  tags
-                    .split(",")
-                    .map((tag) => tag.trim())
-                    .filter(Boolean),
-                ),
-              ],
-              favorite,
-            });
-            setSaved(true);
-          } catch {
-            setError(t("Couldn’t save server organization."));
-          } finally {
-            pending.current = false;
-            setSaving(false);
-          }
+          void save({ group, tags, favorite });
         }}
       >
         <TextField
@@ -75,10 +79,8 @@ export function ServerOrganization({
           value={group}
           maxLength={100}
           disabled={saving}
-          onChange={(event) => {
-            setGroup(event.target.value);
-            setSaved(false);
-          }}
+          onChange={(event) => setGroup(event.target.value)}
+          onBlur={() => void save({ group, tags, favorite })}
         />
         <TextField
           label={t("Tags")}
@@ -86,11 +88,9 @@ export function ServerOrganization({
           value={tags}
           maxLength={1000}
           disabled={saving}
-          onChange={(event) => {
-            setTags(event.target.value);
-            setSaved(false);
-          }}
-          description={t("Separate tags with commas.")}
+          placeholder={t("e.g. prod, web")}
+          onChange={(event) => setTags(event.target.value)}
+          onBlur={() => void save({ group, tags, favorite })}
         />
         <datalist id={`${suggestionsId}-groups`}>
           {groups.map((value) => (
@@ -107,17 +107,12 @@ export function ServerOrganization({
           disabled={saving}
           onChange={(event) => {
             setFavorite(event.target.checked);
-            setSaved(false);
+            void save({ group, tags, favorite: event.target.checked });
           }}
           label={t("Favorite")}
           className="flex items-center gap-2"
         />
-        {error ? <InlineError>{error}</InlineError> : null}
-        <div className="flex justify-end gap-2">
-          <Button type="submit" loading={saving} success={saved} successLabel={t("Saved")}>
-            {t("Save")}
-          </Button>
-        </div>
+        {saveMessage ? <InlineError>{saveMessage}</InlineError> : null}
       </form>
     </>
   );

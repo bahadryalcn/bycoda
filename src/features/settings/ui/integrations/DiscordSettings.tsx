@@ -17,7 +17,6 @@ export function DiscordSettings() {
   return (
     <MessagingAccountsCard
       provider="discord"
-      emptyLabel={t("No Discord bots connected yet.")}
       addLabel={t("Add bot")}
       describe={(account) => {
         const count = accountChannelIds(account).length;
@@ -73,7 +72,6 @@ function DiscordAccountForm({ account, onSaved, onCancel, onSavingChange }: Acco
       </Row>
       <SetupSteps
         title={t("How to set up a Discord bot")}
-        label={t("Discord bot setup")}
         steps={[
           t("Create an application at discord.com/developers/applications and add a bot."),
           t("Reset the bot token, copy it and paste it above."),

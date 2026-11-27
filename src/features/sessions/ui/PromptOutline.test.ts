@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
-import { act, createElement, createRef } from "react";
+import { act, createElement, createRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { ExpandingButtonGroupItem } from "../../../shared/ui/ButtonGroup";
+import { ButtonGroup, type ExpandingButtonGroupItem } from "../../../shared/ui/ButtonGroup";
 import { setLanguagePreference } from "../../../shared/i18n";
 import type { Block } from "../model/session";
 import { PromptOutline } from "./PromptOutline";
@@ -35,6 +35,35 @@ afterEach(async () => {
 });
 
 const prompt = (id: string, text: string) => ({ id, role: "user", text }) as unknown as Block;
+
+it("mounts a bounded prompt menu from the narrow pane header", async () => {
+  const scope = createRef<HTMLDivElement>();
+  const blocks = Array.from({ length: 500 }, (_, i) => prompt(String(i), `Prompt ${i}`));
+  const height = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(320);
+  const rowHeight = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(28);
+  function Pane() {
+    const [action, setAction] = useState<ExpandingButtonGroupItem | null>(null);
+    return createElement(
+      "div",
+      { ref: scope },
+      action &&
+        createElement(ButtonGroup, { variant: "expanding", label: "Actions", items: [action] }),
+      createElement(PromptOutline, { blocks, scope, onTriggerChange: setAction }),
+    );
+  }
+  try {
+    await act(async () => root.render(createElement(Pane)));
+    const trigger = host.querySelector<HTMLButtonElement>('[data-id="prompt-outline"]')!;
+    await act(async () => trigger.click());
+    const rows = document.querySelectorAll('[role="menuitemradio"]');
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.length).toBeLessThan(64);
+    expect(rows[0].getAttribute("aria-setsize")).toBe("500");
+  } finally {
+    height.mockRestore();
+    rowHeight.mockRestore();
+  }
+});
 
 it("offers a header menu of prompts when the rail is hidden, and removes it with the prompts", async () => {
   const scope = createRef<HTMLDivElement>();

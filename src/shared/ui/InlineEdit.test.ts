@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { InlineEdit } from "./InlineEdit";
+import type { NativeInputObserver, NativeInputRead } from "../lib/native-input-observer";
 let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
@@ -46,6 +47,45 @@ it("updates an idle title when the saved value changes externally", async () => 
   expect(
     container.querySelector('button[aria-label="Note title: External update"]'),
   ).not.toBeNull();
+});
+it("does not retain the old idle value as private input after an external rename", async () => {
+  let read!: () => NativeInputRead;
+  const observer: NativeInputObserver = {
+    attach: (reader) => {
+      read = reader;
+      return {
+        changed() {},
+        refresh() {},
+        unregister() {},
+        closed: () => false,
+        allowed: () => true,
+        external: (apply) => apply(),
+        operation: () => null,
+      };
+    },
+  };
+  const renderObserved = async (value: string) => {
+    await act(async () =>
+      root.render(
+        createElement(InlineEdit, {
+          value,
+          label: "Note title",
+          onSave: vi.fn(),
+          inputObserver: observer,
+        }),
+      ),
+    );
+  };
+  await renderObserved("Untitled");
+  await renderObserved("First line of note");
+  expect(read().snapshot).toMatchObject({
+    draft: "First line of note",
+    committed: "First line of note",
+    editing: false,
+  });
+  await edit("Unsubmitted title");
+  await renderObserved("Changed elsewhere");
+  expect(read().snapshot.draft).toBe("Unsubmitted title");
 });
 it("shows the latest external title after cancelling a local edit", async () => {
   const save = await render("Original");

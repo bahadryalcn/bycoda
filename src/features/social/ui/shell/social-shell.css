@@ -27,11 +27,6 @@
 .social-shell-nav {
   flex: 0 1 auto;
   min-width: 0;
-  overflow-x: auto;
-}
-
-.social-shell-nav > [role="tablist"] {
-  min-inline-size: max-content;
 }
 
 .social-shell-ai {
@@ -56,6 +51,12 @@
   justify-content: space-between;
   gap: var(--space-2);
   min-inline-size: 0;
+}
+
+.social-live-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
 .social-shell-workarea {

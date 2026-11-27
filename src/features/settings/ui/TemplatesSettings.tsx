@@ -1,3 +1,4 @@
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -6,11 +7,12 @@ import { TextField } from "../../../shared/ui/TextField";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { Button } from "../../../shared/ui/Button";
 import { LiveText } from "../../../shared/ui/LiveText";
-import { Badge } from "../../../shared/ui/Badge";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { t, useLocale } from "../../../shared/i18n";
 import { Plus } from "../../../shared/ui/icons";
-import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
+import { Group, Row, SettingsFeedback, SettingsSaveBar } from "../../../shared/ui/settings";
+import { errorText } from "../../../shared/lib/errors";
+import { templateChanges } from "./templatesChanges";
 import {
   CURSOR_PLACEHOLDER,
   loadPromptTemplates,
@@ -48,13 +50,15 @@ let retainedDraft: {
 export function clearRetainedTemplateDraft() {
   retainedDraft = null;
 }
-function templateStorageAvailable() {
+// Cached per stored string: the render path asks on every keystroke, and only a changed raw value needs a parse.
+let storageCheck: { raw: string | null; available: boolean } | null = null;
+function checkTemplateStorage(raw: string | null) {
   try {
-    const raw: unknown = JSON.parse(localStorage.getItem("bycoda.promptTemplates") ?? "[]");
-    if (!Array.isArray(raw)) return false;
+    const parsed: unknown = JSON.parse(raw ?? "[]");
+    if (!Array.isArray(parsed)) return false;
     return (
-      raw.length === loadPromptTemplates().length &&
-      raw.every(
+      parsed.length === loadPromptTemplates().length &&
+      parsed.every(
         (item) =>
           item &&
           typeof item.id === "string" &&
@@ -65,6 +69,44 @@ function templateStorageAvailable() {
   } catch {
     return false;
   }
+}
+function templateStorageAvailable() {
+  let raw: string | null;
+  try {
+    raw = localStorage.getItem("bycoda.promptTemplates");
+  } catch {
+    return false;
+  }
+  if (storageCheck?.raw !== raw) storageCheck = { raw, available: checkTemplateStorage(raw) };
+  return storageCheck.available;
+}
+
+type TemplateProblem = { field: "name" | "body" | "trigger"; message: string };
+
+// One rule per message, so the user can see which field broke and why.
+function templateProblem(
+  row: PromptTemplate,
+  triggers: ReadonlySet<string>,
+): TemplateProblem | null {
+  const trigger = normalizeTrigger(row.trigger);
+  if (!row.name.trim()) return { field: "name", message: t("Enter a name.") };
+  if (!row.body.trim()) return { field: "body", message: t("Enter template text.") };
+  if (row.body.length > MAX_TEMPLATE_BODY) {
+    return {
+      field: "body",
+      message: t("Use at most {p0} characters.", { p0: String(MAX_TEMPLATE_BODY) }),
+    };
+  }
+  if (trigger && !isValidTrigger(trigger)) {
+    return {
+      field: "trigger",
+      message: t("Use 1 to 24 letters, numbers or dashes for the trigger."),
+    };
+  }
+  if (trigger && triggers.has(trigger)) {
+    return { field: "trigger", message: t("This trigger is already used by another template.") };
+  }
+  return null;
 }
 
 export function TemplatesSettings() {
@@ -80,7 +122,7 @@ export function TemplatesSettings() {
     () => retainedDraft?.selected ?? saved[0]?.id ?? null,
   );
   const [query, setQuery] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ title: string; detail?: string } | null>(null);
   const [fieldError, setFieldError] = useState<{
     id: string;
     field: "name" | "body" | "trigger";
@@ -92,14 +134,21 @@ export function TemplatesSettings() {
   const triggerRef = useRef<HTMLInputElement>(null);
   const dirty = !sameTemplates(rows, baseline);
   const changedElsewhere = !sameTemplates(saved, baseline);
-  const available = templateStorageAvailable();
-  const selected = rows.find((row) => row.id === selectedId) ?? rows[0];
-  const matches = rows.filter((row) =>
-    [row.name, row.trigger ?? "", row.body]
-      .join(" ")
-      .toLocaleLowerCase()
-      .includes(query.trim().toLocaleLowerCase()),
+  // Read during render through the store, so a storage change re-renders without a per-keystroke parse.
+  const available = useSyncExternalStore(
+    subscribePromptTemplates,
+    templateStorageAvailable,
+    templateStorageAvailable,
   );
+  const selected = rows.find((row) => row.id === selectedId) ?? rows[0];
+  const matches = query.trim()
+    ? rows.filter((row) =>
+        [row.name, row.trigger ?? "", row.body]
+          .join(" ")
+          .toLocaleLowerCase()
+          .includes(query.trim().toLocaleLowerCase()),
+      )
+    : rows;
   useEffect(() => {
     retainedDraft = dirty ? { rows, baseline, selected: selectedId } : null;
   }, [rows, baseline, selectedId, dirty]);
@@ -114,9 +163,15 @@ export function TemplatesSettings() {
     setFieldError(null);
     setRows((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)));
   };
+  const editRows = (next: PromptTemplate[]) => {
+    setSavedMessage(false);
+    setError(null);
+    setFieldError(null);
+    setRows(next);
+  };
   const reload = () => {
     if (!templateStorageAvailable()) {
-      setError(t("Template storage is unavailable. Retry reading before saving."));
+      setError({ title: t("Template storage is unavailable. Retry reading before saving.") });
       return;
     }
     const current = loadPromptTemplates();
@@ -127,46 +182,42 @@ export function TemplatesSettings() {
     setSavedMessage(false);
     retainedDraft = null;
   };
-  const save = () => {
+  /** True only once storage returns what was written; any refusal keeps the rows. */
+  const save = (): boolean => {
     if (!templateStorageAvailable()) {
-      setError(t("Template storage is unavailable. Retry reading before saving."));
-      return;
+      setError({ title: t("Template storage is unavailable. Retry reading before saving.") });
+      return false;
     }
     if (!sameTemplates(loadPromptTemplates(), baseline)) {
-      setError(
-        t(
+      setError({
+        title: t(
           "Templates changed in another window. Reload before saving to avoid overwriting those changes.",
         ),
-      );
-      return;
+      });
+      return false;
     }
     const triggers = new Set<string>();
     for (const row of rows) {
-      const trigger = normalizeTrigger(row.trigger);
-      const field = !row.name.trim()
-        ? "name"
-        : !row.body.trim() || row.body.length > MAX_TEMPLATE_BODY
-          ? "body"
-          : trigger && (!isValidTrigger(trigger) || triggers.has(trigger))
-            ? "trigger"
-            : null;
-      if (field) {
-        setFieldError({ id: row.id, field });
+      const problem = templateProblem(row, triggers);
+      if (problem) {
+        setFieldError({ id: row.id, field: problem.field });
         setSelectedId(row.id);
-        setError(t("Check the selected template's name, text and unique trigger."));
+        setError({ title: problem.message });
         requestAnimationFrame(() =>
-          (field === "name"
+          (problem.field === "name"
             ? nameRef.current
-            : field === "body"
+            : problem.field === "body"
               ? bodyRef.current
               : triggerRef.current
           )?.focus(),
         );
-        return;
+        return false;
       }
+      const trigger = normalizeTrigger(row.trigger);
       if (trigger) triggers.add(trigger);
     }
     try {
+      // A write that throws is the only refusal storage gives; returning is the acknowledgment.
       savePromptTemplates(rows);
       const current = loadPromptTemplates();
       setRows([...current]);
@@ -174,8 +225,10 @@ export function TemplatesSettings() {
       setError(null);
       setSavedMessage(true);
       retainedDraft = null;
+      return true;
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError({ title: t("Could not save templates."), detail: errorText(reason) });
+      return false;
     }
   };
   const addTemplate = () => {
@@ -190,12 +243,20 @@ export function TemplatesSettings() {
     <Button
       variant="ghost"
       disabled={!available || rows.length >= MAX_TEMPLATES}
+      disabledReason={
+        available
+          ? t("You have reached the template limit.")
+          : t("Template storage is unavailable.")
+      }
       onClick={addTemplate}
     >
       <Plus strokeWidth={1.75} />
       {t("Add template")}
     </Button>
   );
+  const listed = dirty ? templateChanges(rows, baseline, editRows) : [];
+  // Anything the list does not name still counts, so Save never hides behind a clean count.
+  const changes = dirty && !listed.length ? [{ id: "other", label: t("Other changes") }] : listed;
   const empty = rows.length === 0;
   const showPanel = !empty || dirty || changedElsewhere || !available || error != null;
   return (
@@ -281,8 +342,7 @@ export function TemplatesSettings() {
                       variant="item"
                       align="start"
                       fullWidth
-                      selected={row.id === selected?.id}
-                      aria-pressed={row.id === selected?.id}
+                      pressed={row.id === selected?.id}
                       onClick={() => setSelectedId(row.id)}
                     >
                       <span className="template-manager-item">
@@ -323,7 +383,7 @@ export function TemplatesSettings() {
                     aria-label={t("Template name")}
                     error={
                       fieldError?.id === selected.id && fieldError.field === "name"
-                        ? (error ?? undefined)
+                        ? error?.title
                         : undefined
                     }
                     value={selected.name}
@@ -337,7 +397,7 @@ export function TemplatesSettings() {
                     aria-label={t("Template trigger")}
                     error={
                       fieldError?.id === selected.id && fieldError.field === "trigger"
-                        ? (error ?? undefined)
+                        ? error?.title
                         : undefined
                     }
                     value={selected.trigger ?? ""}
@@ -352,7 +412,7 @@ export function TemplatesSettings() {
                     aria-label={t("Template text")}
                     error={
                       fieldError?.id === selected.id && fieldError.field === "body"
-                        ? (error ?? undefined)
+                        ? error?.title
                         : undefined
                     }
                     value={selected.body}
@@ -376,42 +436,36 @@ export function TemplatesSettings() {
               ) : null}
             </div>
           ) : null}
-          <div className="template-manager-actions">
-            <Button
-              variant="primary"
-              disabled={!available || !dirty || changedElsewhere}
-              success={savedMessage && !dirty && !error}
-              successLabel={t("Saved")}
-              onClick={save}
-            >
-              {t("Save templates")}
-            </Button>
-            {dirty || changedElsewhere ? (
-              <Button onClick={reload}>{t("Discard changes and reload")}</Button>
-            ) : null}
-            {dirty && !error ? (
-              <Badge
-                className="template-manager-state"
-                role="status"
-                aria-live="polite"
-                aria-atomic="true"
-                tone="warning"
+          <SettingsSaveBar
+            id="prompt-templates"
+            title={t("Prompt templates")}
+            changes={changes}
+            pending={false}
+            saved={savedMessage && !error}
+            canSave={available && !changedElsewhere}
+            saveLabel={t("Save templates")}
+            discardLabel={t("Discard changes and reload")}
+            discardEnabled={dirty || changedElsewhere}
+            onDiscard={reload}
+            onSave={save}
+          >
+            {/* A validation error is already announced on its field; do not announce it twice. */}
+            {error && !(selected && fieldError?.id === selected.id) ? (
+              <SettingsFeedback
+                state="error"
+                extra={error.detail ? <ErrorDetails detail={error.detail} /> : undefined}
               >
-                {t("Unsaved changes")}
-              </Badge>
+                {error.title}
+              </SettingsFeedback>
             ) : null}
-          </div>
-          {/* A validation error is already announced on its field; do not announce it twice. */}
-          {error && !(selected && fieldError?.id === selected.id) ? (
-            <SettingsFeedback state="error">{error}</SettingsFeedback>
-          ) : null}
-          {changedElsewhere && dirty ? (
-            <SettingsFeedback state="warning">
-              {t(
-                "Templates changed in another window. Reload before saving to avoid overwriting those changes.",
-              )}
-            </SettingsFeedback>
-          ) : null}
+            {changedElsewhere && dirty ? (
+              <SettingsFeedback state="warning">
+                {t(
+                  "Templates changed in another window. Reload before saving to avoid overwriting those changes.",
+                )}
+              </SettingsFeedback>
+            ) : null}
+          </SettingsSaveBar>
         </div>
       ) : null}
     </Group>

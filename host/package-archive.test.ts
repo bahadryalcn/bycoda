@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 // @ts-expect-error JavaScript packaging helper runs directly under Node.
 import { createTarArchive, extractTarMembers } from "./package-archive.mjs";
@@ -70,11 +70,19 @@ it.each(implementations)(
     writeFileSync(join(source, "node-test", "bin", "node"), "synthetic runtime\n");
     writeFileSync(join(source, "node-test", "LICENSE"), "synthetic license\n");
     writeFileSync(join(source, "node-test", "excluded.txt"), "not selected\n");
+    // Git for Windows tar runs gzip as a separate program beside tar.exe.
+    const env = isAbsolute(executable)
+      ? {
+          ...process.env,
+          PATH: [dirname(executable), process.env.PATH].filter(Boolean).join(delimiter),
+        }
+      : process.env;
     const run = (_command: string, args: string[], options: object) =>
-      execFileSync(executable, args, options);
+      execFileSync(executable, args, { ...options, env });
     createTarArchive(hostArchive, source, run);
     const listing = execFileSync(executable, ["-tzf", basename(hostArchive)], {
       cwd: root,
+      env,
       windowsHide: true,
       encoding: "utf8",
     });
@@ -83,7 +91,7 @@ it.each(implementations)(
     // their existing leading ./ entries.
     const fd = openSync(archive, "w");
     try {
-      execFileSync(executable, ["-czf", "-", "node-test"], {
+      run("tar", ["-czf", "-", "node-test"], {
         cwd: source,
         windowsHide: true,
         stdio: ["ignore", fd, "pipe"],

@@ -23,7 +23,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-deps
         with:
-          node-version: "24"
+          node-version: "26.13.1"
           install: "false"
       - name: Recheck PR head and parse bounded artifact bytes with trusted code
         env:

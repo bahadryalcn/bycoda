@@ -21,6 +21,8 @@ import {
 } from "./useWorkspaceDirectoryActions";
 import { useProjectOpen, type ProjectOpenDeps } from "./useProjectOpen";
 import { loadRecents } from "../../../features/projects/model/recents";
+import { remotePath } from "../../../features/connections/public/remoteProjects";
+import { loadProjectBaseRemote } from "../../../features/projects/model/additionalDirs";
 
 const effects = vi.hoisted(() => ({
   forget: vi.fn(),
@@ -101,6 +103,7 @@ async function mount(session: Session) {
   deps = {
     activeTab: tab,
     onFocusPane: vi.fn(),
+    onMovePane: vi.fn(),
     windowTransferPendingRef: { current: false },
     movingTabIds: { current: new Set() },
     setTabs: (update) => {
@@ -298,4 +301,59 @@ it("retains Native branch retirement and workspace mode/base callbacks", async (
     worktreeBase: "develop",
   });
   expect(effects.git).toHaveBeenCalledOnce();
+});
+
+it("keeps a projectless conversation in No project and opens the chosen folder in a new tab", async () => {
+  const source = {
+    ...newSession("claude", "~"),
+    blocks: [{ id: "user-1", role: "user" as const, text: "Hello" }],
+  };
+  await mount(source);
+  await act(async () => directory.onCwdChange(source.id, "G:/beta"));
+  expect(deps.sessionsRef.current.find((session) => session.id === source.id)).toBe(source);
+  expect(source).toMatchObject({ cwd: "~", scratchWorkspace: true });
+  const next = deps.sessionsRef.current.find((session) => session.id !== source.id)!;
+  expect(next).toMatchObject({ cwd: "G:/beta", blocks: [] });
+  expect(deps.appendTab).toHaveBeenCalledOnce();
+  expect(effects.keep).not.toHaveBeenCalled();
+});
+
+it("keeps a remote draft on its machine as a scratch workspace when it moves to No project", async () => {
+  const source = {
+    ...newSession("claude", remotePath("build", "/home/me/alpha")),
+    providerAccountId: "build-profile",
+    workspaceMode: "worktree" as const,
+    worktreeBase: "main",
+    worktreeBaseRemote: true,
+    branch: "topic",
+  };
+  await mount(source);
+  await act(async () => directory.onCwdChange(source.id, "~"));
+  expect(deps.sessionsRef.current.find((session) => session.id === source.id)).toMatchObject({
+    cwd: "~",
+    remoteExecutionEnvironmentId: "build",
+    providerAccountId: undefined,
+    workspaceMode: undefined,
+    worktreeBase: undefined,
+    worktreeBaseRemote: undefined,
+    branch: undefined,
+  });
+  expect(deps.appendTab).not.toHaveBeenCalled();
+});
+
+it("starts a worktree draft from the project's remembered Start from remote choice", async () => {
+  const source = newSession("codex", "G:/alpha");
+  await mount(source);
+  await act(async () => directory.onWorkspaceModeChange(source.id, "worktree", "main"));
+  expect(deps.sessionsRef.current[0]?.worktreeBaseRemote).toBeUndefined();
+  await act(async () => directory.onWorktreeBaseRemoteChange(source.id, true));
+  expect(deps.sessionsRef.current[0]?.worktreeBaseRemote).toBe(true);
+  expect(loadProjectBaseRemote("G:/alpha")).toBe(true);
+  const next = newSession("codex", "G:/alpha");
+  await mount(next);
+  await act(async () => directory.onWorkspaceModeChange(next.id, "worktree", "main"));
+  expect(deps.sessionsRef.current[0]).toMatchObject({ worktreeBaseRemote: true });
+  await act(async () => directory.onWorktreeBaseRemoteChange(next.id, false));
+  expect(loadProjectBaseRemote("G:/alpha")).toBe(false);
+  expect(loadProjectBaseRemote("G:/beta")).toBe(false);
 });

@@ -1,11 +1,11 @@
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { describeRemoteError, type RemoteErrorView } from "../../connections/public/remoteFailure";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Heading } from "../../../shared/ui/Heading";
-import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { X, Mic, Volume2, Square, File, Check, Languages } from "../../../shared/ui/icons";
 import type { AssistantSnapshot } from "../../../shared/model/host-contracts/assistant";
 import {
@@ -27,6 +27,7 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { briefingSections } from "./room/briefingSections";
 import { LiveText } from "../../../shared/ui/LiveText";
+import { Spinner } from "../../../shared/ui/Spinner";
 
 /** Longer briefing text folds to this many characters until the owner expands it. */
 
@@ -67,8 +68,8 @@ export function AssistantBriefingCard({
   const [speaking, setSpeaking] = useState<"idle" | "loading" | "playing">("idle");
   const [busy, setBusy] = useState("");
   const busyRef = useRef(false);
-  const [error, setError] = useState("");
-  const [audioError, setAudioError] = useState("");
+  const [problem, setProblem] = useState<RemoteErrorView | null>(null);
+  const [audioProblem, setAudioProblem] = useState<RemoteErrorView | null>(null);
   const [approvals, setApprovals] = useState<AssistantApprovalTarget[] | null>(null);
   const [unavailable, setUnavailable] = useState(0);
   useEffect(() => {
@@ -76,8 +77,8 @@ export function AssistantBriefingCard({
     busyRef.current = false;
     setBusy("");
     setApprovals(null);
-    setError("");
-    setAudioError("");
+    setProblem(null);
+    setAudioProblem(null);
     setSpeaking("idle");
     return () => {
       epoch.current++;
@@ -92,7 +93,7 @@ export function AssistantBriefingCard({
     const controller = new AbortController();
     playback.current = controller;
     const captured = epoch.current;
-    setAudioError("");
+    setAudioProblem(null);
     setSpeaking("loading");
     try {
       await listenAssistantBriefing(
@@ -107,7 +108,7 @@ export function AssistantBriefingCard({
       );
     } catch (cause) {
       if (!controller.signal.aborted && captured === epoch.current)
-        setAudioError(presentRemoteError(cause, { explicit: true }));
+        setAudioProblem(describeRemoteError(cause));
     } finally {
       if (playback.current === controller) {
         playback.current = null;
@@ -120,14 +121,14 @@ export function AssistantBriefingCard({
     busyRef.current = true;
     const captured = epoch.current;
     setBusy(key);
-    setError("");
+    setProblem(null);
     const current = () => {
-      if (captured !== epoch.current) throw new Error("This briefing is no longer open.");
+      if (captured !== epoch.current) throw new Error(t("This briefing is no longer open."));
     };
     try {
       await action(current);
     } catch (cause) {
-      if (captured === epoch.current) setError(presentRemoteError(cause, { explicit: true }));
+      if (captured === epoch.current) setProblem(describeRemoteError(cause));
     } finally {
       if (captured === epoch.current) {
         busyRef.current = false;
@@ -142,12 +143,12 @@ export function AssistantBriefingCard({
   ) {
     const owner = captured ?? (await captureAssistantHostRead(target.environmentId));
     if (owner.environmentId !== target.environmentId)
-      throw new Error("The approval's Host changed. Check again.");
+      throw new Error(t("The approval's Host changed. Check again."));
     const current = await owner.snapshot();
     guard();
     if (!canSeeProject(target.projectId))
-      throw new Error("The selected project is no longer visible.");
-    if (!current) throw new Error("The current assistant state is unavailable.");
+      throw new Error(t("The selected project is no longer visible."));
+    if (!current) throw new Error(t("The current assistant state is unavailable."));
     await verifyAssistantApproval(
       target,
       current.jobs.filter((job) => assistantJobVisible(job, canSeeProject)),
@@ -155,15 +156,15 @@ export function AssistantBriefingCard({
     );
     guard();
     if (!canSeeProject(target.projectId))
-      throw new Error("The selected project is no longer visible.");
+      throw new Error(t("The selected project is no longer visible."));
     const job = current.jobs.find((job) => job.id === target.jobId);
     if (job && !assistantJobVisible(job, canSeeProject))
-      throw new Error("The selected project is no longer visible.");
+      throw new Error(t("The selected project is no longer visible."));
     if (target.kind === "goal") {
-      if (!onOpenGoal) throw new Error("Epic navigation is unavailable.");
+      if (!onOpenGoal) throw new Error(t("Epic navigation is unavailable."));
       await onOpenGoal(target);
     } else {
-      if (!onOpenSession) throw new Error("Session navigation is unavailable.");
+      if (!onOpenSession) throw new Error(t("Session navigation is unavailable."));
       await onOpenSession(target.sessionId, target.environmentId);
       requestTranscriptJump(target.sessionId, target.blockId);
     }
@@ -174,7 +175,7 @@ export function AssistantBriefingCard({
     const owner = await captureAssistantHostRead(environmentId);
     const current = await owner.snapshot();
     guard();
-    if (!current) throw new Error("The current assistant state is unavailable.");
+    if (!current) throw new Error(t("The current assistant state is unavailable."));
     const result = await findAssistantApprovals(
       current.jobs.filter((job) => assistantJobVisible(job, canSeeProject)),
       owner,
@@ -186,11 +187,8 @@ export function AssistantBriefingCard({
     if (targets.length === 1 && result.unavailable === 0) await open(targets[0], guard, owner);
   }
   return (
-    <Surface
-      as="section"
-      variant="canvas"
-      padding="none"
-      className={briefingStyles.briefing}
+    <section
+      {...surfaceAttributes({ variant: "canvas" }, briefingStyles.briefing)}
       aria-label={t("While you were away")}
     >
       <div className={briefingStyles.header}>
@@ -199,6 +197,8 @@ export function AssistantBriefingCard({
         </Heading>
         <Button
           iconOnly
+          variant="ghost"
+          size="sm"
           label={t("Dismiss")}
           disabled={!!busy}
           onClick={() =>
@@ -260,6 +260,11 @@ export function AssistantBriefingCard({
           <Button variant="primary" startIcon={<Mic />} onClick={onSetupVoice}>
             {t("Set up voice")}
           </Button>
+        ) : speaking === "idle" && unknownLanguage && !activeVoice ? (
+          // Without a spoken language Listen cannot start; the one useful control is the choice.
+          <Button variant="primary" startIcon={<Languages />} onClick={onChooseLanguage}>
+            {t("Choose language")}
+          </Button>
         ) : speaking === "idle" ? (
           <Button
             variant="primary"
@@ -272,18 +277,20 @@ export function AssistantBriefingCard({
             }
             onClick={() => void listen()}
           >
-            {t(audioError ? "Retry listening" : "Listen")}
+            {audioProblem ? t("Retry listening") : t("Listen")}
           </Button>
         ) : (
+          // Preparing stays cancellable, so the Stop action itself carries the pending state.
+          // ui-drift-ignore: button-manual-pending -- Button loading blocks presses; this Stop must cancel while audio prepares
           <Button
-            startIcon={<Square />}
+            startIcon={speaking === "loading" ? <Spinner size="sm" /> : <Square />}
             onClick={() => {
               playback.current?.abort();
               playback.current = null;
               setSpeaking("idle");
             }}
           >
-            {t("Stop listening")}
+            {speaking === "loading" ? t("Preparing audio…") : t("Stop listening")}
           </Button>
         )}
         <Button variant="ghost" startIcon={<File />} onClick={onOpenNotes}>
@@ -305,27 +312,11 @@ export function AssistantBriefingCard({
         size="caption"
         tone="muted"
         leading="inherit"
-        text={
-          speaking === "idle"
-            ? ""
-            : t(
-                speaking === "loading"
-                  ? "Preparing audio..."
-                  : "Reading the briefing. This does not open the microphone.",
-              )
-        }
+        text={speaking === "playing" ? t("Reading the briefing.") : ""}
       />
-      {snapshot.profile.voiceSetupComplete && unknownLanguage && (
-        <div className={briefingStyles.languageHint}>
-          <Text as="span" tone="muted" leading="inherit" className={briefingStyles.muted}>
-            {t("Speak once or choose a language before listening.")}
-          </Text>
-          <Button startIcon={<Languages />} onClick={onChooseLanguage}>
-            {t("Choose language")}
-          </Button>
-        </div>
+      {audioProblem && (
+        <InlineError details={audioProblem.details}>{audioProblem.message}</InlineError>
       )}
-      {audioError && <InlineError>{t(audioError)}</InlineError>}
       <LiveText
         className={briefingStyles.muted}
         size="caption"
@@ -351,10 +342,15 @@ export function AssistantBriefingCard({
               >
                 <Text as="span" size="inherit" tone="inherit" leading="normal">
                   {target.title} ·{" "}
-                  {t(target.kind === "goal" ? "Plan approval" : "Command approval")}
+                  {target.kind === "goal" ? t("Plan approval") : t("Command approval")}
                 </Text>
                 <Button
                   disabled={!!busy || (target.kind === "goal" ? !onOpenGoal : !onOpenSession)}
+                  disabledReason={
+                    !busy && (target.kind === "goal" ? !onOpenGoal : !onOpenSession)
+                      ? t("This approval cannot be opened here.")
+                      : undefined
+                  }
                   onClick={() => void run("opening", (guard) => open(target, guard))}
                 >
                   {t("Review")}
@@ -363,7 +359,7 @@ export function AssistantBriefingCard({
             ))}
         </div>
       )}
-      {error && <InlineError>{t(error)}</InlineError>}
-    </Surface>
+      {problem && <InlineError details={problem.details}>{problem.message}</InlineError>}
+    </section>
   );
 }

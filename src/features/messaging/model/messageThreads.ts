@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import type { MessageThread, MessagingAccount, MessagingProvider } from "./messagingTypes";
 
 /** Thread ids are only unique within one account. */
@@ -149,9 +150,26 @@ export function resetThreadSeenForTests(): void {
   seenAt.clear();
 }
 
-export const MESSAGING_PROVIDER_LABELS: Record<MessagingProvider, string> = {
-  email: "Email",
-  slack: "Slack",
-  discord: "Discord",
-  teams: "Microsoft Teams",
-};
+const MESSAGING_PROVIDERS: readonly string[] = [
+  "email",
+  "slack",
+  "discord",
+  "teams",
+] satisfies MessagingProvider[];
+
+/** Whether `id` names a messaging provider the app knows, offered or paused. */
+export const isKnownMessagingProvider = (id: string): boolean => MESSAGING_PROVIDERS.includes(id);
+
+/** The translated provider name; call it while rendering so it follows the language. */
+export function messagingProviderLabel(provider: MessagingProvider): string {
+  switch (provider) {
+    case "email":
+      return t("Email");
+    case "slack":
+      return t("Slack");
+    case "discord":
+      return t("Discord");
+    case "teams":
+      return t("Microsoft Teams");
+  }
+}

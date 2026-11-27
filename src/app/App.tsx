@@ -2,6 +2,10 @@ import { Text } from "../shared/ui/Text";
 import { CrewManagedSessionsFeed } from "../features/crews/public/managed";
 import { parseRemotePath } from "../features/connections/model/remoteProjects";
 import {
+  projectlessMachineSession,
+  remoteSessionProjectKey,
+} from "../features/connections/model/sessionMachineTarget";
+import {
   configureSessionWindowFocus,
   remoteSessionOwnershipKey,
   syncSessionWindowOwnership,
@@ -10,10 +14,8 @@ import { useSidebarActions } from "./workspace/layout/useSidebarActions";
 import { useLocalSessionReferences } from "./workspace/sessions/useLocalSessionReferences";
 import { LocalSessionReferenceProvider } from "../features/sessions/ui/LocalSessionReferenceContext";
 import { VoiceCompanionGate } from "../features/voice/ui/VoiceCompanionGate";
-import {
-  RemoteConnectionFeedbackProvider,
-  RemoteConnectionNotices,
-} from "../features/connections/ui/RemoteConnectionFeedback";
+import type { VoiceWorkspaceOutlet } from "../features/voice/ui/VoiceCompanion";
+import { RemoteConnectionFeedbackProvider } from "../features/connections/ui/RemoteConnectionFeedback";
 import { AssistantNotifications } from "../features/assistant/ui/AssistantNotifications";
 import { AssistantBackgroundRoom } from "../features/assistant/model/AssistantBackgroundRoom";
 import { useVoiceAppBridge, useVoiceRailProjects } from "./workspace/bridges/useVoiceAppBridge";
@@ -104,6 +106,7 @@ import { useHistorySessionArchive } from "./workspace/sessions/useHistorySession
 import { useHistorySessionMeta } from "./workspace/sessions/useHistorySessionMeta";
 import { useTitleTabActions } from "./workspace/sessions/useTitleTabActions";
 import { useSessionModelActions } from "./workspace/sessions/useSessionModelActions";
+import { useUsageLimitFailover } from "./workspace/sessions/useUsageLimitFailover";
 import { useSessionDraftActions } from "./workspace/sessions/useSessionDraftActions";
 import { useSessionShell } from "./workspace/sessions/useSessionShell";
 import { useSubmitSession } from "./workspace/sessions/submit/useSubmitSession";
@@ -114,6 +117,7 @@ import { useSecondOpinion } from "./workspace/sessions/useSecondOpinion";
 import { useBtwThreads } from "./workspace/sessions/useBtwThreads";
 import { useBtwActions } from "./workspace/sessions/useBtwActions";
 import { useHandoff } from "./workspace/sessions/useHandoff";
+import { useBranchSession } from "./workspace/sessions/useBranchSession";
 import { useAutoContinue } from "./workspace/sessions/useAutoContinue";
 import { useCompactAndRewind } from "./workspace/sessions/useCompactAndRewind";
 import { useOrchestrationState } from "./workspace/bridges/useOrchestrationState";
@@ -122,6 +126,7 @@ import { useOrchestrationWorkerPanes } from "./workspace/bridges/useOrchestratio
 import { useOrchestrationActions } from "./workspace/bridges/useOrchestrationActions";
 import { useWorktreeRemoval } from "./workspace/projects/useWorktreeRemoval";
 import { useWorkspaceDirectoryActions } from "./workspace/projects/useWorkspaceDirectoryActions";
+import { useSessionMachineActions } from "./workspace/projects/useSessionMachineActions";
 import { useWorktreeSelection } from "./workspace/projects/useWorktreeSelection";
 import { useProjectOpen } from "./workspace/projects/useProjectOpen";
 import { useProjectImport } from "./workspace/projects/useProjectImport";
@@ -141,7 +146,9 @@ import {
 import { useDesktopLiveHandlers } from "./workspace/control/useDesktopLiveHandlers";
 import { useWindowDragPreview } from "./model/useWindowDragPreview";
 import { DetachedWorkingBar } from "./shell/DetachedWorkingBar";
-import { WindowControlsVisible } from "./shell/WindowControls";
+import { BelowWindowChrome } from "./shell/WindowControls";
+import { useFittedShellPanes } from "./shell/fitShellPanes";
+import { remoteSessionSummary } from "./shell/sidebarSessionCollections";
 import { Suspense, useCallback, useMemo, useEffect, useRef, useState } from "react";
 import { useWorktreeFocus } from "../features/source-control/model/worktreeFocus";
 import { useStableCallback } from "../shared/hooks/useStableCallback";
@@ -152,12 +159,12 @@ import { useProjectBranches } from "../features/source-control/hooks/useProjectB
 import { useInboxActivity } from "../features/inbox/hooks/useInboxUnseen";
 import { IS_MAC } from "../platform/tauri/platform";
 import { useLinkedWorkspaceGroups } from "../features/projects/hooks/useLinkedWorkspaceGroups";
-import { additionalDirsForSession } from "../features/projects/model/additionalDirs";
+import { providerAdditionalDirsForSession } from "../features/projects/model/additionalDirs";
 import { setAdditionalDirsResolver } from "../integrations/harness/core/additionalDirs";
 import { leafIds, newTab } from "../features/workspace/model/layout";
 import { idleWorkspaceTabIds } from "../features/workspace/model/idleTabs";
 import { useCloseForeignEmptyTabs } from "./workspace/tabs/useCloseForeignEmptyTabs";
-import { composerDraftOf, composerDraftRevision } from "../features/sessions/model/draftCache";
+import { composerDraftOf } from "../features/sessions/model/draftCache";
 import { type WindowTransferPayload } from "./model/windowTransfer";
 import { paneDropFromPoint } from "../features/workspace/model/paneDrop";
 import {
@@ -214,6 +221,10 @@ import {
   sameProjectPath,
 } from "../features/projects/model/recents";
 import {
+  linkedProjectOnMachine,
+  savedProjectLinks,
+} from "../features/projects/model/projectRepositories";
+import {
   useAddNoteToChatListener,
   useAddToChatListener,
   useWorktreeManagementListener,
@@ -224,17 +235,16 @@ import { useQueuePersistence } from "../features/sessions/hooks/useQueuePersiste
 import { type SessionSummary } from "../features/sessions/data/sessionStore";
 import { TranscriptPoolOutlet } from "../features/sessions/ui/TranscriptPool";
 import { useDockBadge } from "../features/notifications/hooks/useDockBadge";
-import { useKeepAwake } from "../features/settings/model/keepAwake";
-import { useInputNotifications } from "../features/notifications/hooks/useInputNotifications";
+import { SessionNotificationBridges } from "./workspace/bridges/SessionNotificationBridges";
 import { useBackgroundNotifications } from "../features/notifications/hooks/useBackgroundNotifications";
 import { useSocialNotifications } from "../features/notifications/hooks/useSocialNotifications";
 import { useAccountPlatform } from "./hooks/useAccountPlatform";
-import { useAttentionNotifications } from "../features/notifications/hooks/useAttentionNotifications";
 import { useQuickComposerLaunches } from "../features/quick-composer/hooks/useQuickComposerLaunches";
 
 import {
   rememberRemotePendingWorktree,
   rememberRemoteSession,
+  remoteMachineFor,
   remoteSessionFor,
 } from "../features/connections/model/connections";
 import { useRemoteUnseenFinished } from "../features/connections/model/useRemoteUnseenFinished";
@@ -288,6 +298,7 @@ import { useWorkspaceTitleBar } from "./workspace/layout/useWorkspaceTitleBar";
 import { useRecoveryControl } from "./workspace/layout/useRecoveryControl";
 import { WorkspaceAuxSurfaces } from "./workspace/layout/WorkspaceAuxSurfaces";
 import { useSocialSessionPanel } from "./workspace/bridges/useSocialSessionPanel";
+import { useServerAgentPanel } from "./workspace/bridges/useServerAgentPanel";
 import { WorkspaceMainArea } from "./workspace/layout/WorkspaceMainArea";
 import {
   WorkspaceRecoveryDialogs,
@@ -388,7 +399,6 @@ function Workspace({
     sessionDeleteDialog,
     setSessionDeleteDialog,
   } = useSessionRecoveryState();
-  useKeepAwake(sessions);
   const switchingWorktrees = useRef(new Map<string, string>());
   const removingWorktreePaths = useRef(new Set<string>());
   const deleteConfirmationPending = useRef(false);
@@ -424,12 +434,21 @@ function Workspace({
     setComposerFocusToken,
     tabProjectsRef,
     projectOfTab,
-    projectRailOpen,
+    projectRailOpen: storedProjectRailOpen,
     setProjectRailOpen,
-    sessionSidebarOpen,
+    sessionSidebarOpen: storedSessionSidebarOpen,
     setSessionSidebarOpen,
   } = useComposerRailState({ windowTransfer, resumed });
+  // The stored rail/sidebar choices stay as the user left them; a window (or UI zoom)
+  // too narrow for them beside the main column shows the compact rail instead.
+  const fittedPanes = useFittedShellPanes({
+    rail: storedProjectRailOpen,
+    sidebar: storedSessionSidebarOpen,
+  });
+  const projectRailOpen = fittedPanes.rail;
+  const sessionSidebarOpen = fittedPanes.sidebar;
   const [lastSessionsOpen, setLastSessionsOpen] = useState(false);
+  const [voiceWorkspaceOutlet, setVoiceWorkspaceOutlet] = useState<VoiceWorkspaceOutlet>();
   const [newListedSessionRequest, setNewListedSessionRequest] = useState(0);
   const tabCloseScope = "project" as const;
   const {
@@ -459,12 +478,18 @@ function Workspace({
   );
   const { inboxAskPortal, setInboxAskPortal, openingInboxSessions } = useInboxAskPortal();
   const socialSessionPanel = useSocialSessionPanel();
+  const submitAfterProjectSyncRef = useRef<Submit>(() => false);
+  const serverAgentPanel = useServerAgentPanel(visibleRecents, submitAfterProjectSyncRef);
+  const panelSessionIds = useMemo(
+    () => [...socialSessionPanel.sessionIds, ...serverAgentPanel.sessionIds],
+    [socialSessionPanel.sessionIds, serverAgentPanel.sessionIds],
+  );
   const socialSessionTargets = useMemo(
     () => ({
-      sessionIds: socialSessionPanel.sessionIds,
+      sessionIds: panelSessionIds,
       register: socialSessionPanel.registerTarget,
     }),
-    [socialSessionPanel.sessionIds, socialSessionPanel.registerTarget],
+    [panelSessionIds, socialSessionPanel.registerTarget],
   );
   const {
     serversViewOpen,
@@ -551,6 +576,7 @@ function Workspace({
 
   const {
     localHostReachable,
+    hydrateAdoptedHistoryRef,
     loadRunningOnHostRef,
     onRefreshAdoptedSession,
     desktopLiveHandlers,
@@ -560,12 +586,12 @@ function Workspace({
   const linkedWorkItemActivityFetches = useRef(new Map<string, number>());
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
-  // Provider adapters ask this for a session's extra folders at launch.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Register the provider adapters' folder resolver while this workspace is mounted.
   useEffect(() => {
     setAdditionalDirsResolver((sessionId) => {
       const session = sessionsRef.current.find((item) => item.id === sessionId);
       return session && isLocalProject(session.cwd)
-        ? additionalDirsForSession(sessionId, session.cwd)
+        ? providerAdditionalDirsForSession(sessionId, session.cwd)
         : [];
     });
     return () => setAdditionalDirsResolver(() => []);
@@ -719,7 +745,6 @@ function Workspace({
   const openingFileWindowIds = useRef(new Set<string>());
   const importedSessionsApplied = useRef(false);
   const projectLocationSyncs = useProjectLocationSyncs();
-  const submitAfterProjectSyncRef = useRef<Submit>(() => false);
 
   useProjectLocationSeeding({
     recents,
@@ -793,7 +818,7 @@ function Workspace({
   });
   const gitCwdBranches = useProjectBranches(
     gitCwd,
-    Boolean(gitCwd) && gitCwd !== "~" && !isRemoteProjectPath(sidebarCwd),
+    Boolean(gitCwd) && sidebarCwd !== "~" && !isRemoteProjectPath(sidebarCwd),
   );
   const explorerRootLabel =
     active?.worktreeCwd && sameProjectPath(gitCwd, sessionWorkCwd(active))
@@ -821,24 +846,36 @@ function Workspace({
 
   const approvalSessionIds = useApprovalSessionIds(sessions);
 
-  const activeSessionId = inboxViewOpen
-    ? inboxAskPortal?.sessionId
-    : automationsViewOpen && socialBoardShown && socialSessionPanel.portal
-      ? socialSessionPanel.portal.sessionId
-      : active?.id;
+  const activeSessionId =
+    serversViewOpen && serverAgentPanel.portal
+      ? serverAgentPanel.portal.sessionId
+      : inboxViewOpen
+        ? inboxAskPortal?.sessionId
+        : automationsViewOpen && socialBoardShown && socialSessionPanel.portal
+          ? socialSessionPanel.portal.sessionId
+          : active?.id;
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
 
-  useInputNotifications(sessions, activeSessionId);
-  useAttentionNotifications(sessions, activeSessionId);
   useBackgroundNotifications(automationsViewOpen && taskBoardShown);
   useSocialNotifications();
   useAccountPlatform();
   useNotificationPermissionProbe();
   const unseenFinishedIds = useUnseenFinishedIds(sessions, busySessionIds, activeSessionId);
 
-  const { listedRemoteSessions, loadedRemoteHostIds, unopenedRemote, unopenedRemoteRef } =
-    useRemoteRailProjects({ visibleRecents, sessionRecovery, lockSnapshot, sessions });
+  const {
+    listedRemoteSessions,
+    freshRemoteProjects,
+    loadedRemoteHostIds,
+    unopenedRemote,
+    unopenedRemoteRef,
+  } = useRemoteRailProjects({
+    visibleRecents,
+    sessionRecovery,
+    lockSnapshot,
+    sessions,
+    includeProjectless: sidebarCwd === "~" || lastSessionsOpen,
+  });
   // The unopened list already leaves out loaded sessions and the one a tab is
   // creating, so the user's own first turn never shows as finished elsewhere.
   const [remoteUnseenFinishedIds, dismissRemoteFinished] = useRemoteUnseenFinished(
@@ -849,6 +886,7 @@ function Workspace({
 
   const { nextLiveAgents, liveAgents, ownedLiveSessionKeys, sessionWaits } = useLiveAgentStatus({
     sessions,
+    tabs,
     listedRemoteSessions,
     unseenFinishedIds,
     unopenedRemote,
@@ -857,6 +895,8 @@ function Workspace({
     liveAgentsEnabled,
   });
 
+  const [notificationTriggerTarget, setNotificationTriggerTarget] =
+    useState<HTMLSpanElement | null>(null);
   const { hiddenApprovalToasts, pendingNotifications } = useWorkspaceNotifications({
     sessions,
     activeTabId,
@@ -942,8 +982,6 @@ function Workspace({
     inFlightSyncKey,
     sawInFlight,
     workspaceSyncKey,
-    setProjectCwd,
-    setRecents,
   });
 
   // Tabs are views. Hidden idle sessions drop their child. A visible session
@@ -954,7 +992,7 @@ function Workspace({
     sessionsRef,
     tabs,
     tabsRef,
-    retainedSessionIds: socialSessionPanel.sessionIds,
+    retainedSessionIds: panelSessionIds,
     orchestrationRuns,
     liveAgentsEnabled,
     unseenFinishedIds,
@@ -1047,6 +1085,7 @@ function Workspace({
   });
   const {
     focusProjectTerminal,
+    remoteTerminalAvailable,
     openProjectTerminal,
     onOpenTerminal,
     onNewTerminal,
@@ -1056,6 +1095,7 @@ function Workspace({
     onNewTerminalInSession,
     onRunSessionProjectAction,
     onRunSessionCode,
+    onRunRemoteSessionCode,
   } = useProjectTerminalOpen({
     dock: projectTerminalDock,
     activeTab,
@@ -1145,13 +1185,9 @@ function Workspace({
       movingTabIds,
     ],
   );
-  // Read cheap mutable revisions without subscribing the entire app to typing.
-  const draftRevision = composerDraftRevision();
-  const movingTabsKey = [...movingTabIds.current].join("\0");
-  const idleTabCount = useMemo(
-    () => idleTabIds(activeTabId, dirtyFiles).length,
-    [idleTabIds, activeTabId, dirtyFiles, draftRevision, movingTabsKey],
-  );
+  // Menus that show the idle count call this only while they render open, so streamed session
+  // updates no longer rescan every tab. The stable identity keeps memoized menu bars quiet.
+  const countIdleTabs = useStableCallback(() => idleTabIds(activeTabId, dirtyFiles).length);
   const onCloseIdleTabs = () => {
     const ids = idleTabIds();
     if (ids.length > 0) onCloseTabs(ids, activeTabIdRef.current);
@@ -1302,6 +1338,7 @@ function Workspace({
     tabsRef,
     sessionsRef,
     activeTabIdRef,
+    windowTransferPendingRef,
     dirtyFilesRef,
     setDirtyFiles,
     setTabs,
@@ -1333,6 +1370,7 @@ function Workspace({
     sessions,
     sidebarCwd,
     projectCwd,
+    inboxViewOpen,
     activeTabId,
     projectWorktree,
     tabWorkspace,
@@ -1353,7 +1391,11 @@ function Workspace({
     tabsRef,
     sessionsRef,
     inboxAskPortal:
-      automationsViewOpen && socialBoardShown ? socialSessionPanel.portal : inboxAskPortal,
+      serversViewOpen && serverAgentPanel.portal
+        ? serverAgentPanel.portal
+        : automationsViewOpen && socialBoardShown
+          ? socialSessionPanel.portal
+          : inboxAskPortal,
     isMovingPane,
     workspaceNavigation,
     setMaximizedPane,
@@ -1416,10 +1458,12 @@ function Workspace({
 
   const {
     invalidateLoadedSession,
-    loadStoredSession,
     ensureOpenSession,
     onPopOutSession,
     onPrefetchHistorySession,
+    onRetrySessionHistory,
+    onLoadSessionHistory,
+    ensureSessionHistoryForExecution,
   } = useSessionLoading({
     sessionsRef,
     setSessions,
@@ -1437,11 +1481,12 @@ function Workspace({
     refreshHistory,
   });
 
+  hydrateAdoptedHistoryRef.current = ensureSessionHistoryForExecution;
+
   /** Loads sessions this machine's host runs for another computer, so the
    * Working card shows them without a tab; they unload once seen after done. */
   useRunningOnHostLoader({
     loadRunningOnHostRef,
-    loadStoredSession,
     openingSessionIds,
     removingSessionIds,
     loadedSessionCache,
@@ -1493,13 +1538,21 @@ function Workspace({
     workspaceNavigation,
   });
 
-  const closeSurfaces = () => {
+  const closeSurfaces = useCallback(() => {
+    setSettingsOpen(false);
     setSearchViewOpen(false);
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
     setServersViewOpen(false);
-  };
+  }, [
+    setSettingsOpen,
+    setSearchViewOpen,
+    setInboxViewOpen,
+    setNotesViewOpen,
+    setAutomationsViewOpen,
+    setServersViewOpen,
+  ]);
   const {
     onApproval,
     onQuestionReply,
@@ -1517,6 +1570,7 @@ function Workspace({
     dismissRemoteFinished,
     onSelectRemoteSession,
     closeSurfaces,
+    workspaceNavigation,
   });
 
   const { sessionReminders } = useSessionReminderActions({
@@ -1564,6 +1618,7 @@ function Workspace({
   const { onRenameHistorySession } = useSessionRename({
     sessionsRef,
     setSessions,
+    setHistory,
     loadedSessionCache,
     lastPersisted,
     invalidateLoadedSession,
@@ -1574,6 +1629,7 @@ function Workspace({
   const { onRegenerateHistorySessionTitle } = useSessionTitleRegeneration({
     sessionsRef,
     setSessions,
+    setHistory,
     loadedSessionCache,
     lastPersisted,
     invalidateLoadedSession,
@@ -1706,15 +1762,18 @@ function Workspace({
 
   const {
     onFocusDir,
+    onMovePaneDir,
     onRatio,
     onCwdChange,
     onBranchChange,
     onWorkspaceModeChange,
     onWorktreeBaseChange,
+    onWorktreeBaseRemoteChange,
     onSelectWorkspace,
   } = useWorkspaceDirectoryActions({
     activeTab,
     onFocusPane,
+    onMovePane,
     windowTransferPendingRef,
     movingTabIds,
     setTabs,
@@ -1757,6 +1816,7 @@ function Workspace({
     openProjects,
     onSelectProject,
     pickProject,
+    pickProjectOnMachine,
     openSyncedProject,
   } = useProjectOpen({
     setServersViewOpen,
@@ -1893,7 +1953,7 @@ function Workspace({
       .filter((entry) => !isRemoteProjectPath(entry.path))
       .map((entry) => ({ root: entry.path, projectCwd: entry.path })),
     ...sessions
-      .filter((session) => !isRemoteProjectPath(session.cwd))
+      .filter((session) => !isRemoteProjectPath(remoteSessionProjectKey(session)))
       .map((session) => ({ root: sessionWorkCwd(session), projectCwd: session.cwd })),
   ];
   const allowEditorRecoveryPath = (path: string) =>
@@ -1978,6 +2038,7 @@ function Workspace({
       activeSessionIdRef,
     },
     getSubmitSessionRef: () => submitSessionRef,
+    ensureSessionHistoryForExecution,
     workspaceNavigation,
     applyProjectLocationChange,
     dismissNoticesForContinuedSession,
@@ -2050,6 +2111,7 @@ function Workspace({
     onRename: onRenameHistorySession,
     onArchive: onArchiveHistorySession,
     onDelete: onDeleteHistorySession,
+    onDeleteNow: (sessionId) => onDeleteHistorySessionNow(sessionId, true),
     onSubmit: submitSession,
     onStop: (sessionId) => onStopRef.current(sessionId),
     onStopForRoom: (sessionId) => onStopForRoomRef.current(sessionId),
@@ -2091,6 +2153,7 @@ function Workspace({
     sessionsRef,
     setSessions,
     onSubmit: submitSession,
+    ensureSessionHistoryForExecution,
     enqueueHarnessEvent,
     flushHarnessEvents,
     onStopRef,
@@ -2126,6 +2189,17 @@ function Workspace({
     onUsageLimitResume,
   });
 
+  useUsageLimitFailover({
+    sessions,
+    sessionsRef,
+    movingSessionIds,
+    windowTransferPendingRef,
+    enqueueHarnessEvent,
+    flushHarnessEvents,
+    onModelChange,
+    onSubmit,
+  });
+
   const { openSessionBeside, onSecondOpinion } = useSecondOpinion({
     sessionsRef,
     setSessions,
@@ -2153,6 +2227,17 @@ function Workspace({
     runBtwRequest,
   });
   const { onHandoff } = useHandoff({ sessionsRef, openSessionBeside });
+  const { onBranchFromReply, onOpenBranchSource } = useBranchSession({
+    sessionsRef,
+    setSessions,
+    setActiveTabId,
+    setProjectTerminalFocused,
+    setComposerFocused,
+    appendTab,
+    persistSession,
+    ensureSessionHistoryForExecution,
+    openSession: (sessionId) => void onPreviewHistorySession(sessionId, { keepOpen: true }),
+  });
   useAutoContinue({
     sessions,
     sessionsRef,
@@ -2162,6 +2247,7 @@ function Workspace({
     onSubmit,
   });
   const { onCompactContext, onRewindMessage } = useCompactAndRewind({
+    ensureSessionHistoryForExecution,
     sessionsRef,
     setSessions,
     turnGen,
@@ -2256,11 +2342,31 @@ function Workspace({
     () => withProjectlessKey(visibleRecents.map((project) => pathKey(project.path))),
     [visibleRecents],
   );
+  const listedRecentProjectKeys = useMemo(
+    () =>
+      new Set([
+        ...allowedRecentProjectKeys,
+        ...listedRemoteSessions.flatMap(({ project }) =>
+          projectlessMachineSession(project) ? [pathKey(project)] : [],
+        ),
+      ]),
+    [allowedRecentProjectKeys, listedRemoteSessions],
+  );
   const lastSessionsData = useGlobalRecentSessions(
     history,
     sessions,
     lastSessionsOpen,
-    allowedRecentProjectKeys,
+    listedRecentProjectKeys,
+    useMemo(
+      () =>
+        lastSessionsOpen
+          ? listedRemoteSessions
+              .filter(({ session }) => !session.draft)
+              .map(({ project, session }) => remoteSessionSummary(session, project))
+          : [],
+      [lastSessionsOpen, listedRemoteSessions],
+    ),
+    freshRemoteProjects,
   );
 
   // Which conversations a live crew manages: the session surfaces lock their stop, delete and
@@ -2317,8 +2423,8 @@ function Workspace({
     onReload,
     onFindInProject,
   } = useWindowChromeActions({
-    projectRailOpen,
-    sessionSidebarOpen,
+    projectRailOpen: storedProjectRailOpen,
+    sessionSidebarOpen: storedSessionSidebarOpen,
     setServersViewOpen,
     setProjectRailOpen,
     setSessionSidebarOpen,
@@ -2358,6 +2464,7 @@ function Workspace({
     onOpenInbox,
     onLeaveInbox,
     onOpenServers,
+    onOpenCrews,
     onLeaveServers,
     onOpenNotes,
     onLeaveNotes,
@@ -2477,8 +2584,9 @@ function Workspace({
       const remoteId = remoteSessionFor(id);
       if (remoteId) {
         announcedSessionIds.push(remoteId);
-        if (parseRemotePath(session.cwd)) {
-          const key = remoteSessionOwnershipKey(session.cwd, remoteId);
+        const project = remoteSessionProjectKey(session);
+        if (parseRemotePath(project)) {
+          const key = remoteSessionOwnershipKey(project, remoteId);
           ownedWindowSessionIds.push(key);
           announcedSessionIds.push(key);
         }
@@ -2486,6 +2594,7 @@ function Workspace({
     }
     return { ownedWindowSessionIds, announcedSessionIds };
   }, [sessions, tabs, remoteBindingRevision]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep native window ownership claims in sync with the open session panes.
   useEffect(() => {
     void syncSessionWindowOwnership(ownedWindowSessionIds).catch((error) => {
       console.error("Conversation ownership synchronization failed", error);
@@ -2524,9 +2633,11 @@ function Workspace({
                 session.id === target.sessionId ||
                 remoteSessionFor(session.id) === target.sessionId ||
                 (!!remoteSessionFor(session.id) &&
-                  !!parseRemotePath(session.cwd) &&
-                  remoteSessionOwnershipKey(session.cwd, remoteSessionFor(session.id)!) ===
-                    target.sessionId),
+                  !!parseRemotePath(remoteSessionProjectKey(session)) &&
+                  remoteSessionOwnershipKey(
+                    remoteSessionProjectKey(session),
+                    remoteSessionFor(session.id)!,
+                  ) === target.sessionId),
             )?.id ?? target.sessionId;
           if (target.requireOwned) {
             if (!focusOpenSession(localId))
@@ -2594,12 +2705,14 @@ function Workspace({
     surface: {
       settingsOpen,
       searchViewOpen,
+      searchDialogOpen,
       inboxViewOpen,
       notesViewOpen,
       serversViewOpen,
       automationsViewOpen,
       socialBoardShown,
       taskBoardShown,
+      auxiliaryTool,
       settingsSection,
       projectCwd,
       activeTab,
@@ -2623,8 +2736,10 @@ function Workspace({
       onOpenAutomations,
       onOpenTasks,
       onOpenServers,
-      onOpenSearch,
+      onOpenCrews,
       openSettings,
+      setAuxiliaryTool,
+      onLeaveSearch,
     },
     focusOpenSession,
     isDetachedSessionWindow: () => detachedSessionWindow,
@@ -2636,6 +2751,7 @@ function Workspace({
     onRailBack,
     onRailForward,
     onShowWorkspace,
+    onSelectWorkspaceTab,
   } = useRailNavigation({
     auxiliaryTool,
     setAuxiliaryTool,
@@ -2705,6 +2821,7 @@ function Workspace({
     onActivate,
     onSplit,
     onFocusDir,
+    onMovePaneDir,
     onToggleSidebar,
     onToggleSessionSidebar,
     onGoToFile,
@@ -2763,6 +2880,19 @@ function Workspace({
 
   const { onManageWorktrees } = useManageWorktrees({ openSettings });
 
+  const onSessionMachineChange = useSessionMachineActions({
+    sessionsRef,
+    onCwdChange,
+    chooseProject: async (environmentId, cwd) => {
+      // The same repository already on that machine needs no folder picker.
+      const copy = linkedProjectOnMachine(savedProjectLinks(loadRecents()), cwd, environmentId);
+      if (copy) return copy;
+      if (!environmentId) return pickProjectOnMachine({ kind: "local" }, cwd);
+      const machine = await remoteMachineFor(environmentId);
+      if (!machine) throw new Error("The selected machine is unavailable");
+      return pickProjectOnMachine({ kind: "remote", machineId: machine.id }, cwd);
+    },
+  });
   const { sessionPaneProps } = useSessionPaneProps({
     onKeepSession,
     tabs,
@@ -2774,12 +2904,17 @@ function Workspace({
     onFocusPane,
     onClosePane,
     onCwdChange,
+    onSessionMachineChange,
     onBranchChange,
     onComposerWorktreeChange,
     onRemoteSnapshot,
     onRefreshAdoptedSession,
+    onRetrySessionHistory,
+    onLoadSessionHistory,
     onWorkspaceModeChange,
+    onPrepareSessionHistory: ensureSessionHistoryForExecution,
     onWorktreeBaseChange,
+    onWorktreeBaseRemoteChange,
     onManageWorktrees,
     onModelChange,
     onModelSettingsChange,
@@ -2819,6 +2954,8 @@ function Workspace({
     onBuildPlan,
     onSecondOpinion,
     onHandoff,
+    onBranchFromReply,
+    onOpenBranchSource,
     onBtwSubmit,
     onBtwRetry,
     onBtwDelete,
@@ -2827,6 +2964,7 @@ function Workspace({
     onNewTerminalInSession,
     onRunSessionProjectAction,
     onRunSessionCode,
+    onRunRemoteSessionCode,
   });
 
   // Settings is a dialog over the visible work context: the shared Modal makes the background
@@ -2835,25 +2973,16 @@ function Workspace({
   // while Settings presents as a dialog) that those chrome conditions still read.
   const settingsPageOpen = false;
 
-  const {
-    chromeSurfaceOpen,
-    compactProjectRail,
-    detachedSessionWindow,
-    compactRailActive,
-    trayProjectKeys,
-  } = useWorkspaceChromeFlags({
-    serversViewOpen,
-    toolWindow,
-    windowTransfer,
-    searchViewOpen,
-    settingsOpen: settingsPageOpen,
-    inboxViewOpen,
-    notesViewOpen,
-    automationsViewOpen,
-    collapsedProjectRailMode,
-    projectRailOpen,
-    visibleRecents,
-  });
+  const { compactProjectRail, detachedSessionWindow, compactRailActive, trayProjectKeys } =
+    useWorkspaceChromeFlags({
+      toolWindow,
+      windowTransfer,
+      collapsedProjectRailMode: fittedPanes.compactRailForced
+        ? "compact"
+        : collapsedProjectRailMode,
+      projectRailOpen,
+      visibleRecents,
+    });
   useTraySessions({
     history,
     live: railLiveSessions,
@@ -2867,7 +2996,9 @@ function Workspace({
     },
   });
 
-  const compactTitleBar = IS_MAC && compactRailActive && !chromeSurfaceOpen;
+  // Every main window has one title bar across its full width, above the rail and the panes.
+  // A detached window has no rail and keeps the bar inside its single column.
+  const titleBarAbove = !detachedSessionWindow;
   const layoutControl = useLayoutControl({
     activeTab,
     activeTabId,
@@ -2892,11 +3023,8 @@ function Workspace({
   );
   const inboxAskSessions = useStableValue(
     useMemo(
-      () =>
-        sessions.filter(
-          (session) => session.inboxAsk || socialSessionPanel.sessionIds.includes(session.id),
-        ),
-      [sessions, socialSessionPanel.sessionIds],
+      () => sessions.filter((session) => session.inboxAsk || panelSessionIds.includes(session.id)),
+      [sessions, panelSessionIds],
     ),
     shallowArrayEqual,
   );
@@ -2921,14 +3049,16 @@ function Workspace({
     sidebarCwd,
     projectRailOpen,
     sessionSidebarOpen,
-    compactTitleBar,
+    spansWindow: titleBarAbove,
+    searchActive: searchViewOpen,
+    onSearch: onOpenSearch,
     tabVisitNav,
     surfaceForward,
     onRailBack,
     onRailForward,
     onToggleSidebar,
     onToggleSessionSidebar,
-    activateTab,
+    activateTab: onSelectWorkspaceTab,
     onNew,
     onNewTerminal,
     onOpenSettings,
@@ -2938,7 +3068,7 @@ function Workspace({
     onCloseTitleTab,
     onCloseTabs,
     onCloseIdleTabs,
-    idleTabCount,
+    countIdleTabs,
     onArchiveTitleTab,
     onDeleteTitleTab,
     onReorderTabs,
@@ -2998,19 +3128,38 @@ function Workspace({
       (record) =>
         record.state === "retained" && record.serializedTextDigest !== record.baselineDigest,
     ).length,
-    // Earlier path-only reports are inspected on demand and are absent from
-    // the modern draft count. Keep their desktop entry reachable at count 0.
     editorDraftAvailable: editorDraftRecovery.available,
     setRecoveryOpen,
     clearRecoveredSessions,
   });
 
   const sidebarActions = useSidebarActions({
+    onOpenNoProject: () => {
+      setLastSessionsOpen(false);
+      onShowWorkspace();
+      workspaceNavigation.cancel();
+      const session = active?.cwd === "~" ? active : undefined;
+      const tab = session
+        ? activeTab
+        : tabsRef.current.find((entry) =>
+            sessionsRef.current.some(
+              (candidate) => candidate.id === entry.focusedId && candidate.cwd === "~",
+            ),
+          );
+      if (tab) activateTab(tab.id, session?.id);
+      else onNewSessionForProject("~");
+      setSessionSidebarOpen(true);
+      setSidebarTab("sessions", "~");
+    },
     onNewListedSession: (project: string) => {
       if (!canCreateListedSession(project, allowedRecentProjectKeys, getGroupLockView().lock)) {
         throw new Error(t("This project is no longer available."));
       }
       onNewSessionForProject(project);
+      if (!sameProjectPath(project, sidebarCwd)) {
+        setLastSessionsOpen(false);
+        setSidebarTab("sessions", project);
+      }
     },
     onOpenLastSessions: () => {
       setLastSessionsOpen(true);
@@ -3028,13 +3177,14 @@ function Workspace({
       onShowWorkspace();
     },
     onSelectListedSession: (sessionId: string, cwd: string, options?: { keepOpen?: boolean }) => {
-      if (!allowedRecentProjectKeys.has(pathKey(cwd))) return;
+      if (!listedRecentProjectKeys.has(pathKey(cwd))) return;
       setSearchViewOpen(false);
       setInboxViewOpen(false);
       setServersViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
-      if (sidebarTab === "sessions") setSidebarTab("sessions", cwd);
+      if (sidebarTab === "sessions")
+        setSidebarTab("sessions", projectlessMachineSession(cwd)?.cwd ?? cwd);
       if (isRemoteProjectPath(cwd)) {
         onSelectRemoteSession(cwd, listedRemoteSessionId(sessionsRef.current, cwd, sessionId), {
           preview: !options?.keepOpen,
@@ -3072,7 +3222,6 @@ function Workspace({
     onFileMoved: onFileMoved,
     onFileDeleted: onFileDeleted,
     onGoBack: onRailBack,
-    onGoForward: onRailForward,
     onOpenDiff: onOpenWorkingTreeDiff,
     onOpenAllChanges: onOpenAllChanges,
     onOpenCommit: onOpenCommit,
@@ -3158,6 +3307,32 @@ function Workspace({
     }),
     [onboardingProjects, onboardingSessions, onboardingRestored, onboardingTransferred],
   );
+  const workspaceMenuBar = !IS_MAC ? (
+    <WorkspaceMenuBar
+      activeTabId={activeTabId}
+      onNew={onNew}
+      onNewTerminal={onNewTerminal}
+      onToggleTerminal={onToggleProjectTerminal}
+      onGoToFile={onGoToFile}
+      onToggleSidebar={onToggleSidebar}
+      onToggleSessionSidebar={onToggleSessionSidebar}
+      onShowSourceControl={onToggleChanges}
+      onCloseCurrentTab={onCloseCurrentTab}
+      onCloseOtherTabs={onCloseOtherTabs}
+      onCloseIdleTabs={onCloseIdleTabs}
+      countIdleTabs={countIdleTabs}
+      onCloseAllTabs={onCloseAllTabs}
+      onPickProject={pickProject}
+      onFindInProject={onFindInProject}
+      onSearch={onOpenSearch}
+      onOpenInbox={onOpenInbox}
+      onOpenNotes={notesEnabled ? onOpenNotes : undefined}
+      onZoomIn={onZoomIn}
+      onZoomOut={onZoomOut}
+      onZoomReset={onZoomReset}
+      layout={layoutControl}
+    />
+  ) : null;
   return (
     <RemoteConnectionFeedbackProvider>
       <LocalSessionReferenceProvider value={localSessionReferences}>
@@ -3169,8 +3344,12 @@ function Workspace({
               tone="primary"
               className="app-canvas flex h-full flex-col"
             >
-              {compactTitleBar ? workspaceTitleBar : null}
-              <RemoteConnectionNotices />
+              {titleBarAbove ? (
+                <div data-window-chrome className="flex shrink-0 flex-col">
+                  {workspaceMenuBar}
+                  {workspaceTitleBar}
+                </div>
+              ) : null}
               <CrewManagedSessionsFeed cwds={crewFeedCwds} />
               {!detachedSessionWindow && <AssistantNotifications />}
               {!detachedSessionWindow && !toolWindow && !windowTransfer && (
@@ -3178,6 +3357,7 @@ function Workspace({
               )}
               <VoiceCompanionGate
                 {...voiceApp}
+                onWorkspaceOutlet={setVoiceWorkspaceOutlet}
                 activeId={activeSessionId}
                 onSubmit={submitSession}
                 onStop={onStop}
@@ -3185,13 +3365,16 @@ function Workspace({
               {detachedSessionWindow && (!IS_MAC || liveAgents.length > 0) ? (
                 <DetachedWorkingBar agents={liveAgents} onSelectAgent={onSelectLiveAgent} />
               ) : null}
-              <WindowControlsVisible.Provider value={!detachedSessionWindow}>
+              <BelowWindowChrome titleBarAbove={titleBarAbove}>
                 <div className="flex min-h-0 min-w-0 flex-1">
                   {!detachedSessionWindow ? (
                     <WorkspaceSidebar
+                      notificationTriggerRef={setNotificationTriggerTarget}
                       newListedSessionRequest={newListedSessionRequest}
                       onNewListedSession={sidebarActions.onNewListedSession}
+                      onOpenNoProject={sidebarActions.onOpenNoProject}
                       lastSessionsData={lastSessionsData}
+                      lastSessionsRemoteRows={listedRemoteSessions}
                       lastSessionsOpen={lastSessionsOpen}
                       onOpenLastSessions={sidebarActions.onOpenLastSessions}
                       onCloseLastSessions={sidebarActions.onCloseLastSessions}
@@ -3245,16 +3428,13 @@ function Workspace({
                       onOpenTerminal={sidebarActions.onOpenTerminal}
                       onFileMoved={sidebarActions.onFileMoved}
                       onFileDeleted={sidebarActions.onFileDeleted}
-                      tabVisitNav={tabVisitNav}
                       searchViewOpen={searchViewOpen}
                       inboxViewOpen={inboxViewOpen}
                       notesViewOpen={notesViewOpen}
                       serversViewOpen={serversViewOpen}
                       automationsViewOpen={automationsViewOpen}
                       auxiliaryTool={auxiliaryTool}
-                      surfaceForward={surfaceForward}
                       onGoBack={sidebarActions.onGoBack}
-                      onGoForward={sidebarActions.onGoForward}
                       onOpenDiff={sidebarActions.onOpenDiff}
                       onOpenAllChanges={sidebarActions.onOpenAllChanges}
                       onOpenCommit={sidebarActions.onOpenCommit}
@@ -3294,7 +3474,6 @@ function Workspace({
                       notesEnabled={notesEnabled}
                       projectRailOpen={projectRailOpen}
                       compactProjectRail={compactProjectRail}
-                      titleBarAbove={compactTitleBar}
                       onToggleProjectRail={sidebarActions.onToggleProjectRail}
                       unseenFinishedIds={unseenFinishedIds}
                       inboxUnseen={inboxUnseen}
@@ -3343,36 +3522,12 @@ function Workspace({
                         undefined
                       }
                     >
-                      {!IS_MAC ? (
-                        <WorkspaceMenuBar
-                          activeTabId={activeTabId}
-                          onNew={onNew}
-                          onNewTerminal={onNewTerminal}
-                          onToggleTerminal={onToggleProjectTerminal}
-                          onGoToFile={onGoToFile}
-                          onToggleSidebar={onToggleSidebar}
-                          onToggleSessionSidebar={onToggleSessionSidebar}
-                          onShowSourceControl={onToggleChanges}
-                          onCloseCurrentTab={onCloseCurrentTab}
-                          onCloseOtherTabs={onCloseOtherTabs}
-                          onCloseIdleTabs={onCloseIdleTabs}
-                          idleTabCount={idleTabCount}
-                          onCloseAllTabs={onCloseAllTabs}
-                          onPickProject={pickProject}
-                          onFindInProject={onFindInProject}
-                          onSearch={onOpenSearch}
-                          onOpenInbox={onOpenInbox}
-                          onOpenNotes={notesEnabled ? onOpenNotes : undefined}
-                          onZoomIn={onZoomIn}
-                          onZoomOut={onZoomOut}
-                          onZoomReset={onZoomReset}
-                          layout={layoutControl}
-                        />
-                      ) : null}
-                      {compactTitleBar ? null : workspaceTitleBar}
+                      {titleBarAbove ? null : workspaceMenuBar}
+                      {titleBarAbove ? null : workspaceTitleBar}
 
                       <SessionPanelTargetsContext.Provider value={socialSessionTargets}>
                         <WorkspaceMainArea
+                          voiceWorkspaceOutlet={voiceWorkspaceOutlet}
                           dockGridRef={dockGridRef}
                           projectCwd={projectCwd}
                           projectTerminals={projectTerminals}
@@ -3384,6 +3539,7 @@ function Workspace({
                           commitDockSize={commitDockSize}
                           onNewTerminal={onNewTerminal}
                           onNewTerminalWithProfile={onNewTerminalWithProfile}
+                          remoteTerminalAvailable={remoteTerminalAvailable}
                           onSplitProjectTerminal={onSplitProjectTerminal}
                           openSettings={openSettings}
                           onSelectProjectTerminal={onSelectProjectTerminal}
@@ -3463,11 +3619,15 @@ function Workspace({
                       socialWorkspaceTargets={socialSessionPanel.workspaceTargets}
                       socialSessionPortal={socialSessionPanel.portal}
                       socialVisible={automationsViewOpen && socialBoardShown}
+                      serverSessionIds={serverAgentPanel.sessionIds}
+                      serverSessionPortal={serverAgentPanel.portal}
+                      serversVisible={serversViewOpen}
                       composerFocused={composerFocused}
                       composerFocusToken={composerFocusToken}
                       sessionPaneProps={sessionPaneProps}
                     />
                     <WorkspaceToolPanels
+                      serverAgent={serverAgentPanel.api}
                       sessionPaneProps={sessionPaneProps}
                       onLoadCrewCoordinator={(target) =>
                         onOpenBackgroundSession(target, true, true)
@@ -3559,6 +3719,7 @@ function Workspace({
                       setCollapsedProjectRailMode={setCollapsedProjectRailMode}
                     />
                     <WorkspaceFooter
+                      notificationTriggerTarget={notificationTriggerTarget}
                       searchViewOpen={searchViewOpen}
                       inboxViewOpen={inboxViewOpen}
                       notesViewOpen={notesViewOpen}
@@ -3567,7 +3728,6 @@ function Workspace({
                       settingsOpen={settingsPageOpen}
                       settingsSection={settingsSection}
                       openSettings={openSettings}
-                      active={active}
                       projectCwd={projectCwd}
                       usageProviders={usageProviders}
                       usageSession={usageSession}
@@ -3577,6 +3737,7 @@ function Workspace({
                       onToggleRunningTerminal={onToggleRunningTerminal}
                       onNewTerminal={onNewTerminal}
                       onShowProjectTerminal={onShowProjectTerminal}
+                      remoteTerminalAvailable={remoteTerminalAvailable}
                       currentProjectDock={currentProjectDock}
                       dockVisible={dockVisible}
                       conversationTools={conversationTools}
@@ -3600,6 +3761,11 @@ function Workspace({
                   activeTab={activeTab}
                   onOpenFile={onOpenFile}
                   onArrangeActiveTab={onArrangeActiveTab}
+                  onOpenRecovery={
+                    editorDraftRecovery.available && !toolWindow && !windowTransfer
+                      ? () => setRecoveryOpen(true)
+                      : undefined
+                  }
                   actions={actions}
                 />
 
@@ -3613,16 +3779,12 @@ function Workspace({
                   removeRecoveredSessions={removeRecoveredSessions}
                   editorDraftRecovery={editorDraftRecovery}
                   editorDraftRecords={visibleEditorDraftRecords}
-                  canInspectLegacyReports={() => {
-                    const view = getGroupLockView();
-                    return view.lock.lockedGroupIds.size === 0 && view.hiddenGroupIds.size === 0;
-                  }}
-                  getLegacyReportPrivacySnapshot={getGroupLockView}
                   sessionDeleteDialog={sessionDeleteDialog}
                   setSessionDeleteDialog={setSessionDeleteDialog}
                 />
-                <WorkspaceNotices sessionReminders={sessionReminders} openSettings={openSettings} />
-                <AppConfirmHost />
+                <WorkspaceNotices sessionReminders={sessionReminders} />
+                <SessionNotificationBridges activeSessionId={activeSessionId} />
+                <AppConfirmHost onOpenSession={onOpenApprovalSession} />
                 <WorkspacePickerDialogs
                   resumePickerFor={resumePickerFor}
                   setResumePickerFor={setResumePickerFor}
@@ -3645,7 +3807,7 @@ function Workspace({
                   providerSignInRequest={providerSignInRequest}
                   setProviderSignInRequest={setProviderSignInRequest}
                 />
-              </WindowControlsVisible.Provider>
+              </BelowWindowChrome>
             </Text>
             <TranscriptPoolOutlet pool={transcriptPool} />
           </OrchestrationWorkers.Provider>

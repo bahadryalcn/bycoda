@@ -4,8 +4,8 @@ import {
   createProviderRetirementLedger,
   withProviderRetirement,
 } from "../../core/providerRetirement";
+import { applyProbedCatalog } from "../../core/catalogProbe";
 import { homeDir } from "../../../../platform/tauri/fs";
-import { setHarnessModels } from "../../../../features/sessions/model/models";
 import { AcpClient } from "../../core/acp";
 import {
   createChildProcessHandle,
@@ -39,13 +39,7 @@ let inflight: Promise<void> | null = null;
 export function refreshGrokCatalog(): Promise<void> {
   if (inflight) return inflight;
   inflight = discoverGrokModels()
-    .then((models) => {
-      if (models.length > 0) setHarnessModels("grok", models);
-    })
-    .catch((error: unknown) => {
-      assertOptionalProviderProbeError(error);
-      console.debug("[bycoda] grok catalog", error);
-    })
+    .then((models) => applyProbedCatalog("grok", models))
     .finally(() => {
       inflight = null;
     });

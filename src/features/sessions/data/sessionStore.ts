@@ -1,9 +1,11 @@
+import { errorText } from "../../../shared/lib/errors";
 import { invoke } from "@tauri-apps/api/core";
 import { inlineVisualValue } from "../model/inlineVisual";
 import { readToolWindow } from "../../../app/model/toolWindows";
 import { serverTerminalRestoreState } from "../../connections/public/serverTerminalRestoreState";
+import { bindStoredAdoptedImageReaders } from "../../connections/public/connections";
 import { buildSessionBlockDelta, type PersistedBlock } from "./sessionDelta";
-import { parseHead, type ConversationHead } from "../../sync/model/conversationHead";
+import { parseHead, type ConversationHead } from "../../sync/public/conversationHead";
 import { PersistenceBaselines } from "./persistenceBaselines";
 import {
   hostSessionBinding,
@@ -43,8 +45,10 @@ import { pathKey } from "../../../shared/lib/paths";
 import { persistableAttachment } from "../model/attachments";
 import { boundedToolPreview } from "../model/toolInspection";
 import { clearComposerDraft } from "../model/draftCache";
+import { retireToolsDraftsForSession } from "../../host-tools/toolsDraftTransfer";
 import { buildConversationReplay } from "../model/conversationRewind";
 import { repairSessionModelIdentity } from "../model/sessionModelIdentity";
+import { recoverClaudeWorkflows } from "./claudeWorkflowRecovery";
 import {
   markMissingAttachments,
   persistableQueue,
@@ -92,6 +96,7 @@ import type {
 } from "../model/session";
 import { sanitizeModelSwitch } from "../model/modelSwitchHistory";
 import { HARNESSES } from "../model/session";
+import { isBtwErrorCode } from "../model/btwError";
 import { asRuntimeMode, withSessionDelegation } from "./storedSessionFields";
 import { assistantSessionManagement, sessionMessageAuthor } from "../model/sessionProvenance";
 import {
@@ -157,7 +162,7 @@ type SessionRecord = {
   contextWindow?: number | null;
   branch?: string | null;
   worktreeCwd?: string | null;
-  workspaceMode?: "current" | "worktree" | null;
+  workspaceMode?: "current" | "worktree" | "scratch" | null;
   workspaceId?: string | null;
   workspaceRevision?: number | null;
   worktreeRemoved?: boolean;
@@ -187,7 +192,7 @@ type SessionUpsertPayload = {
   contextWindow?: number;
   branch?: string;
   worktreeCwd?: string;
-  workspaceMode?: "current" | "worktree";
+  workspaceMode?: "current" | "worktree" | "scratch";
   workspaceId?: string;
   workspaceRevision?: number;
   worktreeRemoved?: boolean;
@@ -203,13 +208,17 @@ type SessionUpsertPayload = {
 export function shouldPersistSession(session: Session): boolean {
   return (
     !hostSessionBinding(session) &&
+    !session.remoteExecutionEnvironmentId &&
     !session.historyPartial &&
     !session.historyLoading &&
     !session.inboxAsk &&
     !isRemoteProjectPath(session.cwd) &&
-    session.cwd !== "~" &&
+    (session.cwd !== "~" || session.scratchWorkspace === true) &&
     (session.blocks.some((block) => block.role === "user") ||
-      (session.rewindHistory?.length ?? 0) > 0)
+      (session.rewindHistory?.length ?? 0) > 0 ||
+      // A first message held in the queue (a refused or interrupted send) is the
+      // conversation's content: list it and keep the record its queue belongs to.
+      (session.queuedMessages?.length ?? 0) > 0)
   );
 }
 
@@ -248,7 +257,11 @@ function persistableMeta(session: Session): Omit<SessionUpsertPayload, "blocks">
     ...(session.context?.window ? { contextWindow: session.context.window } : {}),
     ...(session.branch ? { branch: session.branch } : {}),
     ...(session.worktreeCwd ? { worktreeCwd: session.worktreeCwd } : {}),
-    ...(session.workspaceMode ? { workspaceMode: session.workspaceMode } : {}),
+    ...(session.cwd === "~" && session.scratchWorkspace
+      ? { workspaceMode: "scratch" }
+      : session.workspaceMode
+        ? { workspaceMode: session.workspaceMode }
+        : {}),
     ...(session.workspaceId ? { workspaceId: session.workspaceId } : {}),
     ...(Number.isSafeInteger(session.workspaceRevision) && session.workspaceRevision! >= 0
       ? { workspaceRevision: session.workspaceRevision }
@@ -509,7 +522,7 @@ export function upsertClearedSession(session: Session): Promise<SessionSummary |
     session.historyLoading ||
     session.inboxAsk ||
     isRemoteProjectPath(session.cwd) ||
-    session.cwd === "~"
+    (session.cwd === "~" && !session.scratchWorkspace)
   )
     throw new Error("Invalid cleared conversation");
   return persistSession(session, undefined, true);
@@ -1048,7 +1061,7 @@ function summaryActivityAt(row: { updatedAt: number; lastActivityAt?: number }):
 }
 
 export async function listSessionsByProject(cwd: string): Promise<SessionSummary[]> {
-  if (!cwd || cwd === "~") return [];
+  if (!cwd) return [];
   const rows = await invoke<SessionSummary[]>("session_list_by_project", {
     cwd: normalizeProjectPath(cwd),
   });
@@ -1267,6 +1280,10 @@ export async function searchSessionContent(options: {
 }
 
 export type SessionHydrationOptions = {
+  /** Read the recent window and wait for explicit requests for older pages. */
+  deferHistory?: boolean;
+  /** A detached native preview. Its blocks can be reused after a fresh native stamp check. */
+  cachedPreview?: Session;
   /** Applied only if the consumer still owns the original, idle snapshot. */
   onHydrated?: (original: Session, hydrated: Session) => void;
   onHydrationFailed?: (original: Session) => void;
@@ -1277,6 +1294,93 @@ type StoredTranscriptPage = {
   totalBlocks: number;
   revision: number;
 };
+
+const STORED_HISTORY_INITIAL_BLOCKS = 48;
+const STORED_HISTORY_INITIAL_TURNS = 10;
+const STORED_HISTORY_PAGE_BLOCKS = 80;
+
+// A new block array (edits, live output, older pages) cannot inherit the original page's stamp.
+const previewStamps = new WeakMap<
+  Block[],
+  {
+    id: string;
+    createdAt: number;
+    totalBlocks: number;
+    before: number;
+    revision: number;
+    blockLeadId?: string;
+  }
+>();
+
+export function canRetainStoredPreview(session: Session): boolean {
+  return (
+    !!session.historyLoading &&
+    !!session.storedHistory &&
+    previewStamps.has(session.blocks) &&
+    !session.historyPartial &&
+    !session.inboxAsk &&
+    !session.remoteExecutionEnvironmentId &&
+    !isRemoteProjectPath(session.cwd) &&
+    !hostSessionBinding(session)
+  );
+}
+
+async function readOpeningPage(sessionId: string, limit: number, preview?: Session) {
+  const stamp = preview && previewStamps.get(preview.blocks);
+  if (preview && stamp?.id === sessionId) {
+    // before:0 returns current metadata and revision under the usual deletion/rewind guards.
+    const head = await invoke<StoredTranscriptPage | null>("session_get_page", {
+      sessionId,
+      before: 0,
+      limit: 1,
+    });
+    if (!head) return { page: null };
+    if (
+      head.revision === stamp.revision &&
+      head.session.transcriptRevision === stamp.revision &&
+      head.totalBlocks === stamp.totalBlocks &&
+      head.session.createdAt === stamp.createdAt &&
+      !head.session.adoptedBase
+    ) {
+      return {
+        page: {
+          ...head,
+          before: stamp.before,
+          session: {
+            ...head.session,
+            orchestrationLeadId: head.session.orchestrationLeadId ?? stamp.blockLeadId,
+          },
+        },
+        blocks: preview.blocks,
+      };
+    }
+  }
+  return {
+    page: await invoke<StoredTranscriptPage | null>("session_get_page", { sessionId, limit }),
+  };
+}
+
+export async function getEarlierStoredHistory(session: Session, forFind = false) {
+  const cursor = session.storedHistory;
+  if (cursor?.before == null || deletedSessionIds.has(session.id)) return null;
+  const page = await invoke<StoredTranscriptPage | null>("session_get_page", {
+    sessionId: session.id,
+    before: cursor.before,
+    revision: cursor.revision,
+    limit: forFind ? 200 : STORED_HISTORY_PAGE_BLOCKS,
+  });
+  if (deletedSessionIds.has(session.id)) return null;
+  if (
+    !page ||
+    page.revision !== cursor.revision ||
+    (page.before != null && page.before >= cursor.before)
+  )
+    throw new Error("Invalid transcript cursor");
+  return {
+    blocks: recordToSession(page.session).blocks,
+    cursor: { revision: page.revision, before: page.before ?? undefined },
+  };
+}
 
 export function getSession(
   sessionId: string,
@@ -1290,8 +1394,7 @@ export function getSession(
     try {
       result = await loadStoredSession(sessionId, options, work);
     } catch (error) {
-      if ((error instanceof Error ? error.message : String(error)) !== "Session was deleted")
-        throw error;
+      if (errorText(error) !== "Session was deleted") throw error;
       deletedSessionIds.add(sessionId);
       work.confirmRecovery();
       return null;
@@ -1332,7 +1435,7 @@ async function loadStoredSession(
   const finish = startPerformanceSpan("session-load");
   // Consumers without progressive callbacks require complete history and queues.
   // The native full read uses the authoritative transcript compatibility view.
-  if (!options.onHydrated) {
+  if (!options.onHydrated && !options.deferHistory) {
     try {
       const record = await invoke<SessionRecord | null>("session_get", { sessionId });
       if (!record || deletedSessionIds.has(sessionId)) return null;
@@ -1350,8 +1453,17 @@ async function loadStoredSession(
     }
   }
   let page: StoredTranscriptPage | null;
+  let cachedBlocks: Block[] | undefined;
+  let queueRead: Promise<unknown> | undefined;
   try {
-    page = await invoke<StoredTranscriptPage | null>("session_get_page", { sessionId, limit: 80 });
+    const pageRead = readOpeningPage(
+      sessionId,
+      options.deferHistory ? STORED_HISTORY_INITIAL_BLOCKS : 80,
+      options.deferHistory ? options.cachedPreview : undefined,
+    );
+    // Opening a recent tail also restores its queue. Check attachment paths only after the page exists.
+    if (options.deferHistory) queueRead = readStoredQueue(sessionId).catch(() => []);
+    ({ page, blocks: cachedBlocks } = await pageRead);
   } catch (error) {
     finish();
     throw error;
@@ -1361,9 +1473,35 @@ async function loadStoredSession(
     return null;
   }
   const record = page.session;
-  const session = recordToSession(record);
+  const session = recordToSession(record, cachedBlocks);
+  if (options.deferHistory) {
+    const loadedBlocks = session.blocks;
+    let turns = 0;
+    for (let index = session.blocks.length - 1; index > 0; index--) {
+      if (session.blocks[index].role !== "user" || ++turns !== STORED_HISTORY_INITIAL_TURNS)
+        continue;
+      session.blocks = session.blocks.slice(index);
+      page.before = (page.before ?? 0) + index;
+      break;
+    }
+    if (page.before != null) {
+      session.storedHistory = { before: page.before, revision: page.revision };
+      if (!cachedBlocks && record.transcriptRevision === page.revision && !record.adoptedBase)
+        previewStamps.set(session.blocks, {
+          id: sessionId,
+          createdAt: record.createdAt,
+          totalBlocks: page.totalBlocks,
+          before: page.before,
+          revision: page.revision,
+          blockLeadId: loadedBlocks.find(
+            (block) => block.orchestrationLeadId && block.orchestrationLeadId !== sessionId,
+          )?.orchestrationLeadId,
+        });
+    }
+  }
   session.historyLoading = page.before != null;
   finish({ blocks: session.blocks.length, revision: page.revision });
+  if (session.storedHistory) return withStoredQueue(session, queueRead);
   if (!session.historyLoading)
     persistenceBaselines.set(sessionId, {
       blocks: incrementalBlocks(session),
@@ -1423,6 +1561,7 @@ async function loadStoredSession(
               record.updatedAt,
               record.transcriptRevision,
               background,
+              queueRead,
             );
             if (!deletedSessionIds.has(sessionId)) options.onHydrated?.(complete, hydrated);
             background.confirmRecovery();
@@ -1444,11 +1583,12 @@ async function hydrateStoredSession(
   expectedUpdatedAt: number,
   expectedRevision?: number,
   work?: PersistenceWork,
+  queueRead?: Promise<unknown>,
 ): Promise<Session> {
   const session = { ...original };
   const [repaired, queued] = await Promise.all([
     repairStoredSession(session, expectedUpdatedAt, expectedRevision, work),
-    withStoredQueue(session),
+    withStoredQueue(session, queueRead),
   ]);
   return repairSessionModelIdentity({
     ...repaired,
@@ -1472,9 +1612,9 @@ export async function existingPaths(paths: string[]): Promise<Set<string>> {
  * session is idle after a restart, so the queue waits for the user instead of
  * sending into a chat nobody has looked at yet.
  */
-async function withStoredQueue(session: Session): Promise<Session> {
+async function withStoredQueue(session: Session, queueRead?: Promise<unknown>): Promise<Session> {
   try {
-    const queue = await loadStoredQueue(session.id);
+    const queue = await loadStoredQueue(session.id, queueRead);
     if (queue.length === 0) return session;
     return { ...session, queuedMessages: queue, queueStatus: "restored" };
   } catch {
@@ -1484,9 +1624,16 @@ async function withStoredQueue(session: Session): Promise<Session> {
 }
 
 /** The saved queue for a session id, with attachments whose file is gone flagged. */
-export async function loadStoredQueue(sessionId: string): Promise<QueuedMessage[]> {
-  const raw = await invoke<unknown>("session_get_queue", { sessionId });
+export async function loadStoredQueue(
+  sessionId: string,
+  queueRead = readStoredQueue(sessionId),
+): Promise<QueuedMessage[]> {
+  const raw = await queueRead;
   return markMissingAttachments(restoreQueuedMessages(raw), existingPaths);
+}
+
+function readStoredQueue(sessionId: string) {
+  return invoke<unknown>("session_get_queue", { sessionId });
 }
 
 /** Write the session's queue through to disk; an empty queue removes it. */
@@ -1519,6 +1666,18 @@ async function repairStoredSession(
   expectedRevision?: number,
   work?: PersistenceWork,
 ): Promise<Session> {
+  if (session.harness === "claude") {
+    const recovered = await recoverClaudeWorkflows(session);
+    if (recovered !== session) {
+      const committed = await upsertSessionIfUnchanged(
+        recovered,
+        expectedUpdatedAt,
+        expectedRevision,
+        work,
+      ).catch(() => false);
+      if (committed) session = recovered;
+    }
+  }
   if (session.harness === "claude" && session.providerSessionId) {
     const toolIds = shellPlaceholderIds(session.blocks);
     if (toolIds.length) {
@@ -1666,6 +1825,7 @@ export async function deleteSession(sessionId: string, imagePaths: string[] = []
     forgetHostSessionShell(sessionId);
     await flushHostSessionBindings(sessionId);
     clearComposerDraft(sessionId);
+    retireToolsDraftsForSession(sessionId);
     return;
   }
   // Native deletion can also strip a lead's ownership from stored worker rows.
@@ -1697,6 +1857,7 @@ export async function deleteSession(sessionId: string, imagePaths: string[] = []
       removeSessionAdditionalDirs(sessionId);
       // The cache's change listener deletes the saved draft row.
       clearComposerDraft(sessionId, work);
+      retireToolsDraftsForSession(sessionId);
       // IDs are never reused after explicit deletion. A delayed hydration,
       // recovery or sibling snapshot may still arrive long after one minute.
       // Native deletion also retains this decision across renderer restarts.
@@ -1706,6 +1867,127 @@ export async function deleteSession(sessionId: string, imagePaths: string[] = []
       throw error;
     }
   });
+}
+
+/** Ids the project lists, split by owner: Native rows, and Host-owned shells (deleted through their Host). */
+async function listedProjectSessionIds(
+  cwd: string,
+): Promise<{ native: string[]; hostOwned: string[] }> {
+  const normalized = normalizeProjectPath(cwd);
+  // Ids only: the summary list runs git and provenance work for every row.
+  const rows = await invoke<string[]>("session_ids_by_project", { cwd: normalized });
+  return {
+    native: rows.filter((id) => !hasHostSessionOwnerFence(id)),
+    hostOwned: hostSessionShellSummaries()
+      .filter((entry) => normalizeProjectPath(entry.cwd) === normalized)
+      .map((entry) => entry.id),
+  };
+}
+
+/** How many conversations `listSessionsByProject` would return, without loading them. */
+export async function countSessionsByProject(cwd: string): Promise<number> {
+  if (!cwd || cwd === "~") return 0;
+  const { native, hostOwned } = await listedProjectSessionIds(cwd);
+  return native.length + hostOwned.length;
+}
+
+type ProjectDeleteOutcome = {
+  deleted: string[];
+  skipped: string[];
+  failed: { sessionId: string; error: string } | null;
+  notAttempted: string[];
+};
+
+/** At most this many Native conversations per call: bounds one write-lane hold and one failure's reach. */
+const PROJECT_DELETE_BATCH = 200;
+
+async function deleteNativeProjectBatch(
+  cwd: string,
+  sessionIds: string[],
+): Promise<ProjectDeleteOutcome> {
+  const batch = new Set(sessionIds);
+  return sessionPersistence.run(sessionIds, "delete-project", async (work) => {
+    for (const id of sessionIds) deletedSessionIds.add(id);
+    let outcome: ProjectDeleteOutcome;
+    try {
+      // A lead with workers still has writes in flight. Finish those before
+      // the deletion transaction strips their ownership metadata.
+      const pendingWrites = [...sessionWriteQueues.entries()]
+        .filter(
+          ([queuedId]) =>
+            batch.has(queuedId) || batch.has(sessionWriteLeadById.get(queuedId) ?? ""),
+        )
+        .map(([, pending]) => pending);
+      if (pendingWrites.length > 0) await Promise.all(pendingWrites);
+      outcome = await invoke<ProjectDeleteOutcome>("session_delete_by_project", {
+        cwd,
+        sessionIds,
+      });
+    } catch (error) {
+      for (const id of sessionIds) deletedSessionIds.delete(id);
+      throw error;
+    }
+    const gone = new Set(outcome.deleted);
+    // A conversation that was kept can be saved again.
+    for (const id of sessionIds) if (!gone.has(id)) deletedSessionIds.delete(id);
+    for (const id of outcome.deleted) {
+      persistenceBaselines.delete(id);
+      removeSessionAdditionalDirs(id);
+      // The cache's change listener deletes the saved draft row.
+      clearComposerDraft(id, work);
+      retireToolsDraftsForSession(id);
+    }
+    sessionPersistence.forget?.(outcome.deleted);
+    work.confirmRecovery();
+    return outcome;
+  });
+}
+
+/**
+ * Delete every conversation `listSessionsByProject` shows for the project:
+ * Native rows in bulk, Host-owned ones through their owning Host. Stops at the
+ * first failure and says how far it got; what was deleted stays deleted, the
+ * rest is untouched, so the caller keeps the project and can retry.
+ */
+export async function deleteSessionsByProject(cwd: string): Promise<number> {
+  if (!cwd || cwd === "~") return 0;
+  const normalized = normalizeProjectPath(cwd);
+  const { native, hostOwned } = await listedProjectSessionIds(cwd);
+  const total = native.length + hostOwned.length;
+  let deleted = 0;
+  let settled = 0;
+  const stopped = (error: unknown) => {
+    const detail = errorText(error);
+    return new Error(
+      `Deleted ${deleted} of ${total} conversations; ${total - settled} could not be removed and the project was kept. ${detail}`,
+      { cause: error },
+    );
+  };
+  for (let start = 0; start < native.length; start += PROJECT_DELETE_BATCH) {
+    let outcome: ProjectDeleteOutcome;
+    try {
+      outcome = await deleteNativeProjectBatch(
+        normalized,
+        native.slice(start, start + PROJECT_DELETE_BATCH),
+      );
+    } catch (error) {
+      throw stopped(error);
+    }
+    deleted += outcome.deleted.length;
+    // A skipped row is no longer filed under the project, so it is not ours to delete.
+    settled += outcome.deleted.length + outcome.skipped.length;
+    if (outcome.failed) throw stopped(new Error(outcome.failed.error));
+  }
+  for (const id of hostOwned) {
+    try {
+      await deleteSession(id);
+    } catch (error) {
+      throw stopped(error);
+    }
+    deleted += 1;
+    settled += 1;
+  }
+  return deleted;
 }
 
 /** Delete a draft-only record while allowing its still-open blank session id to be saved later. */
@@ -1950,7 +2232,28 @@ function sanitizeBlock(block: Block, options?: { hydrate?: boolean }): Block | n
   const image = sanitizeGeneratedImage(block.image);
   const inlineVisual = block.role === "tool" ? inlineVisualValue(block.inlineVisual) : undefined;
   if (inlineVisual) next.inlineVisual = inlineVisual;
-  if (block.role === "image" && !image) return null;
+  if (block.role === "image") {
+    const generation = block.imageGeneration;
+    const itemId = sanitizeNestedId(generation?.itemId);
+    const status = generation?.status;
+    const aspectRatio = generation?.aspectRatio;
+    if (
+      itemId &&
+      status !== undefined &&
+      (image
+        ? status === "completed"
+        : status === "running" || status === "failed" || status === "stopped")
+    ) {
+      next.imageGeneration = {
+        itemId,
+        status: options?.hydrate && status === "running" ? "stopped" : status,
+        ...(typeof aspectRatio === "number" && Number.isFinite(aspectRatio) && aspectRatio > 0
+          ? { aspectRatio }
+          : {}),
+      };
+    }
+    if (!image && !next.imageGeneration) return null;
+  }
   if (image) next.image = image;
   if (block.startedAt != null) next.startedAt = block.startedAt;
   if (block.durationMs != null) next.durationMs = block.durationMs;
@@ -2057,8 +2360,20 @@ function sanitizeBlock(block: Block, options?: { hydrate?: boolean }): Block | n
     if (block.notice === "error" || block.notice === "interrupt" || block.notice === "info") {
       next.notice = block.notice;
     }
+    if (block.notice === "interrupt" && block.autoContinueArmed === true) {
+      next.autoContinueArmed = true;
+    }
     if (block.shell) next.shell = sanitizeShellRun(block.shell);
     if (block.modelSwitch) next.modelSwitch = sanitizeModelSwitch(block.modelSwitch);
+    const origin = block.branchOrigin;
+    const originSession = sanitizeNestedId(origin?.sessionId);
+    const originBlock = sanitizeNestedId(origin?.blockId);
+    if (origin && originSession && originBlock && typeof origin.title === "string")
+      next.branchOrigin = {
+        sessionId: originSession,
+        blockId: originBlock,
+        title: origin.title.slice(0, 200),
+      };
   }
   return next;
 }
@@ -2162,6 +2477,7 @@ function sanitizeBtwThreads(value: unknown, hydrate: boolean): BtwThread[] | und
       return [];
     }
     const error = typeof record.error === "string" ? record.error.trim() : "";
+    const errorCode = isBtwErrorCode(record.errorCode) ? record.errorCode : undefined;
     const model = typeof record.model === "string" ? record.model.trim() : "";
     const harness =
       typeof record.harness === "string" &&
@@ -2189,10 +2505,12 @@ function sanitizeBtwThreads(value: unknown, hydrate: boolean): BtwThread[] | und
         ...(interrupted
           ? {
               error: error || "This by-the-way request was interrupted before reload.",
+              ...(errorCode ? { errorCode } : error ? {} : { errorCode: "interrupted" as const }),
             }
-          : error
-            ? { error }
-            : {}),
+          : {
+              ...(error ? { error } : {}),
+              ...(errorCode ? { errorCode } : {}),
+            }),
       },
     ];
   });
@@ -2443,12 +2761,14 @@ function normalizeSummary(summary: SessionSummary): SessionSummary {
   };
 }
 
-function recordToSession(record: SessionRecord): Session {
-  const blocks = Array.isArray(record.blocks)
-    ? record.blocks
-        .map((block) => sanitizeBlock(block, { hydrate: true }))
-        .filter((block): block is Block => block != null)
-    : [];
+function recordToSession(record: SessionRecord, validatedBlocks?: Block[]): Session {
+  const blocks =
+    validatedBlocks ??
+    (Array.isArray(record.blocks)
+      ? record.blocks
+          .map((block) => sanitizeBlock(block, { hydrate: true }))
+          .filter((block): block is Block => block != null)
+      : []);
   const linkedWorkItem = sanitizeLinkedWorkItem(record.linkedWorkItem);
   const rewindHistory = sanitizeRewindHistory(record.rewindHistory);
   const adoptedDivergence = parseAdoptedDivergence(record.adoptedDivergence);
@@ -2467,7 +2787,7 @@ function recordToSession(record: SessionRecord): Session {
       record.modelSettings && typeof record.modelSettings === "object" ? record.modelSettings : {},
     runtimeMode: asRuntimeMode(record.runtimeMode),
     title: record.title,
-    blocks,
+    blocks: adoptedBase ? bindStoredAdoptedImageReaders(record.id, blocks) : blocks,
     busy: false,
     orchestrationLeadId:
       record.orchestrationLeadId ??
@@ -2483,6 +2803,9 @@ function recordToSession(record: SessionRecord): Session {
     ...(record.worktreeCwd ? { worktreeCwd: record.worktreeCwd } : {}),
     ...(record.workspaceMode === "current" || record.workspaceMode === "worktree"
       ? { workspaceMode: record.workspaceMode }
+      : {}),
+    ...(record.cwd === "~"
+      ? { scratchWorkspace: record.workspaceMode === "scratch" ? true : undefined }
       : {}),
     ...(record.workspaceId ? { workspaceId: record.workspaceId } : {}),
     ...(Number.isSafeInteger(record.workspaceRevision) && record.workspaceRevision! >= 0

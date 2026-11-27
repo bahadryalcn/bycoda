@@ -1,7 +1,12 @@
 import type { SocialAdapter, SocialHttp } from "../adapter";
 import { SocialPlatformError } from "../adapter";
 import type { CollectedPerson } from "../audience-types";
-import { parseTelegramUpdate, telegramChatName } from "../telegram-webhook";
+import {
+  parseTelegramDiscussionThread,
+  parseTelegramUpdate,
+  telegramChatName,
+  telegramDiscussionThread,
+} from "../telegram-webhook";
 import { mediaFormat, messageText, messagingContentIssue } from "./messaging-shared";
 import { deleteTelegramMessage } from "./telegram-api";
 
@@ -13,12 +18,30 @@ const chatId = (raw: unknown): string => {
 
 export function createTelegramAdapter(http: SocialHttp): SocialAdapter {
   return {
+    ignoresPublishedPosts: true,
     async send(account, job, token, media, _checkpoint, beforeSubmit) {
       if (messagingContentIssue(account, job)) throw new SocialPlatformError("unsupported");
       const text = messageText(job);
-      const recipient = chatId(job.payload.threadId ?? job.payload.recipientId);
+      const discussion = parseTelegramDiscussionThread(job.payload.threadId);
+      if (
+        discussion &&
+        (account.accountType !== "bot" ||
+          job.kind !== "reply" ||
+          job.payload.recipientId !== discussion.chatId)
+      )
+        throw new SocialPlatformError("denied");
+      const recipient = chatId(
+        discussion?.chatId ?? job.payload.threadId ?? job.payload.recipientId,
+      );
+      const reply = discussion
+        ? { message_id: discussion.rootId, allow_sending_without_reply: false }
+        : undefined;
       const item = job.payload.media[0];
-      let body: Record<string, unknown> | FormData = { chat_id: recipient, text };
+      let body: Record<string, unknown> | FormData = {
+        chat_id: recipient,
+        text,
+        ...(reply ? { reply_parameters: reply } : {}),
+      };
       let method: "sendMessage" | "sendPhoto" | "sendVideo" = "sendMessage";
       if (item) {
         const bytes = await media(item.uploadId!);
@@ -26,6 +49,7 @@ export function createTelegramAdapter(http: SocialHttp): SocialAdapter {
         const form = new FormData();
         form.set("chat_id", recipient);
         if (text) form.set("caption", text);
+        if (reply) form.set("reply_parameters", JSON.stringify(reply));
         form.set(
           item.kind === "image" ? "photo" : "video",
           new Blob([new Uint8Array(bytes)], { type: format.mime }),
@@ -34,12 +58,34 @@ export function createTelegramAdapter(http: SocialHttp): SocialAdapter {
         body = form;
         method = item.kind === "image" ? "sendPhoto" : "sendVideo";
       }
+      if (discussion) {
+        const me = await http.telegram("getMe", token);
+        if (
+          me?.is_bot !== true ||
+          !Number.isSafeInteger(me.id) ||
+          String(me.id) !== account.platformId
+        )
+          throw new SocialPlatformError("denied");
+        const group = await http.telegram("getChat", token, { chat_id: recipient });
+        if (
+          group?.type !== "supergroup" ||
+          !Number.isSafeInteger(group.id) ||
+          String(group.id) !== recipient ||
+          !Number.isSafeInteger(group.linked_chat_id) ||
+          String(group.linked_chat_id) !== discussion.channelId
+        )
+          throw new SocialPlatformError("denied");
+      }
       await beforeSubmit?.();
       const result = await http.telegram(method, token, body);
       if (
         !Number.isSafeInteger(result?.message_id) ||
         result.message_id <= 0 ||
         String(result.chat?.id) !== recipient ||
+        (item ? (result.caption ?? "") !== text : result.text !== text) ||
+        (discussion &&
+          (result.chat?.type !== "supergroup" ||
+            telegramDiscussionThread(result.reply_to_message) !== job.payload.threadId)) ||
         (item?.kind === "image" &&
           (!Array.isArray(result.photo) ||
             !result.photo.some(
@@ -68,6 +114,11 @@ export function createTelegramAdapter(http: SocialHttp): SocialAdapter {
         if (!Number.isSafeInteger(update.update_id) || update.update_id < offset) continue;
         next = Math.max(next, update.update_id + 1);
         const message = update.message;
+        if (message?.is_automatic_forward === true) {
+          const incoming = parseTelegramUpdate(update);
+          if (incoming) events.push(incoming.event);
+          continue;
+        }
         if (
           !message ||
           message.from?.is_bot ||

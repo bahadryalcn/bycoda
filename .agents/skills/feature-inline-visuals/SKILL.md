@@ -26,11 +26,12 @@ Own the typed inline snapshot and its isolated renderer. Ordinary HTML attachmen
 ## Preserve
 
 - Keep the inline frame compact with one toolbar of accessible icon actions for source, reload, side-panel opening and expansion. Reuse the shared resizable Sheet for the side panel, keep the conversation usable, and retain the mounted preview during source disclosure.
+- One card owns one preview: a single HtmlPreview renders into one host element that moves between the card, panel and full-view slots (`inlineVisualFrameHost.ts`), so inline/panel/full transitions keep the same preview token and iframe element and the card keeps its snapshot height with a Close row in the slot. Never mount a second HtmlPreview per view, and never add frame authority to make the move work. Details and the per-platform limit: [decisions](references/decisions.md).
 - Keep proactive visual guidance in `src/integrations/harness/core/toolWorkflowGuidance.ts` and Host tool descriptions aligned: use visuals when they clarify an answer, with short subject-based titles and fitted content; simple replies stay text.
 
 - Accept exactly one inline HTML source or confined workspace HTML path. Recheck the original principal before returning a capture.
 - Preview uses an isolated offline context; network/WebSocket/subresource requests, same-origin privileges, nested frames, forms, native APIs and top navigation remain denied.
-- Visual images contain their own bounded data, never mutable local/remote asset paths. The tool result carries only `{version: 2, id, title, height}`; never echo page HTML back through tool output. The desktop reads a stored page only by a 64-hex id and rejects a hash mismatch.
+- Visual images contain their own bounded data, never mutable local/remote asset paths. The tool result carries only `{version: 2, id, title, height}`; never echo page HTML back through tool output. The local desktop and the originating Host verify the 64-hex id against the stored content. Remote reads require a reference in the selected conversation.
 - The page gets theme CSS variables from `INLINE_VISUAL_THEME_TOKENS`; theme values are filtered so they cannot leave the base style element. The doctype stays first so pages keep standards mode.
 - Keep the original result/source accessible, shared Modal/overlay focus/Escape and local loading/error/retry. Generated content retains its authored appearance.
 - HTML preview creation and cleanup share a renderer-chosen UUID and exact native page issuer. Unmount or a lost creation reply closes that same token; close-before-create cannot resurrect it. Retire proven old pages and fence closed tokens, but never age out a live iframe or unknown creation merely to admit new work.

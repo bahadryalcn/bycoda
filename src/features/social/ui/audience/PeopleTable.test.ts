@@ -112,21 +112,22 @@ describe("PeopleTable", () => {
     expect(props.onOpen).toHaveBeenCalledWith("p1");
   });
 
-  it("shows the platforms, the stage, the score and at most two tags with a +N overflow", () => {
+  it("shows platforms and score, names the status icon, and opens all tags", () => {
     renderTable();
     const [adaRow, graceRow] = Array.from(document.querySelectorAll("tbody tr"));
     expect(adaRow!.querySelector('[aria-label="X"]')).not.toBeNull();
-    expect(adaRow!.querySelector('[role="meter"]')?.getAttribute("aria-valuenow")).toBe("87");
-    expect(adaRow!.textContent).toContain("New");
+    expect(adaRow!.querySelector('[role="meter"]')).toBeNull();
+    expect(adaRow!.querySelector('[aria-label="New"]')).not.toBeNull();
     expect(adaRow!.textContent).toContain("87");
-    expect(adaRow!.textContent).toContain("vip");
+    expect(adaRow!.querySelector('button[aria-label="Tags"]')).not.toBeNull();
 
-    expect(graceRow!.textContent).toContain("No account");
+    expect(graceRow!.textContent).not.toContain("No account");
     expect(graceRow!.textContent).toContain("–");
-    expect(graceRow!.textContent).toContain("alpha");
-    expect(graceRow!.textContent).toContain("bravo");
-    expect(graceRow!.textContent).not.toContain("charlie");
-    expect(graceRow!.textContent).toContain("+3");
+    expect(graceRow!.textContent).not.toContain("alpha");
+    act(() => graceRow!.querySelector<HTMLButtonElement>('button[aria-label="Tags"]')!.click());
+    expect(document.body.textContent).toContain("alpha");
+    expect(document.body.textContent).toContain("bravo");
+    expect(document.body.textContent).toContain("charlie");
   });
 
   it("offers Load more only while the Host has another page", () => {
@@ -137,7 +138,35 @@ describe("PeopleTable", () => {
     renderTable({ hasMore: false });
     expect(buttonByText("Load more people")).toBeUndefined();
   });
+
+  it("keeps the Host order and offers no sort while more pages remain", () => {
+    renderTable({ people: [grace, ada], hasMore: true });
+    expect(document.body.textContent).not.toContain("Load all people to sort.");
+    expect(document.querySelector('[aria-label="Sort by Name"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Sort by Score"]')).toBeNull();
+    expect(firstRowCell()?.textContent).toContain("Grace");
+  });
+
+  it("sorts the rows once every page is loaded", () => {
+    renderTable({ people: [grace, ada], hasMore: false });
+    expect(document.body.textContent).not.toContain("Load all people to sort.");
+    act(() => document.querySelector<HTMLButtonElement>('[aria-label="Sort by Name"]')!.click());
+    expect(firstRowCell()?.textContent).toContain("Ada");
+  });
+
+  it("drops an earlier sort when more pages appear, so the loaded page is not reordered", () => {
+    renderTable({ people: [grace, ada], hasMore: false });
+    act(() => document.querySelector<HTMLButtonElement>('[aria-label="Sort by Name"]')!.click());
+    expect(firstRowCell()?.textContent).toContain("Ada");
+
+    renderTable({ people: [grace, ada], hasMore: true });
+    expect(firstRowCell()?.textContent).toContain("Grace");
+  });
 });
+
+function firstRowCell(): Element | null {
+  return document.querySelector("tbody tr td[data-primary]");
+}
 
 it("reserves intrinsic categorical cells and bounds long identities with full value access", () => {
   const name = "Alexandria " + "VeryLongFamilyName".repeat(12);
@@ -160,8 +189,8 @@ it("reserves intrinsic categorical cells and bounds long identities with full va
   expect(table.querySelector('tbody td[data-label="Status"]')?.getAttribute("data-sizing")).toBe(
     "content",
   );
-  expect(table.querySelector('tbody td[data-label="Status"]')?.textContent).toBe("New");
-  expect(table.querySelector('tbody td[data-label="Accounts"]')?.textContent).toBe("No account");
+  expect(table.querySelector('tbody td[data-label="Status"] [aria-label="New"]')).not.toBeNull();
+  expect(table.querySelector('tbody td[data-label="Accounts"]')?.textContent).toBe("–");
   expect(table.querySelector("tbody td[data-primary]")?.textContent).toContain(name);
   expect(table.querySelector("tbody td[data-primary]")?.textContent).toContain(address);
 });

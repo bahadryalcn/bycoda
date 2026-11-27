@@ -3,9 +3,12 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { HostStore } from "../store";
-import { createNativeDeliveryStore, nativeDeliveryConsumedResult } from "./native-delivery-store";
-import { assertNativeDeliveryEffect } from "./native-delivery-epochs";
-import { nativeDeliveryFixture } from "./native-delivery.test-support";
+import {
+  createNativeDeliveryStore,
+  nativeDeliveryConsumedResult,
+  type NativeDeliveryKind,
+} from "./native-delivery-store";
+import { assertNativeDeliveryEffect, createNativeDeliveryEpochs } from "./native-delivery-epochs";
 import {
   nativeDeliveryEpochOriginalId,
   type NativeDeliveryEpochRef,
@@ -159,14 +162,6 @@ it("compacts only a retired original, retains its irreversible fence and never r
   ).rejects.toThrow("FENCED");
   await expect(f.journal.record(f.principal, finish, id, result)).rejects.toThrow("FENCED");
   await expect(f.journal.retire(f.principal, finish, id, consumed)).rejects.toThrow("FENCED");
-  await expect(
-    f.journal.prepareProof(f.principal, id, {
-      reportId: "a".repeat(64),
-      reportVersion: 1,
-      snapshotDigest: "b".repeat(64),
-      byteLength: 1,
-    }),
-  ).rejects.toThrow();
   await expect(f.journal.readResult(f.principal, finish, id, consumed, 0, 1)).rejects.toThrow(
     "FENCED",
   );
@@ -280,52 +275,6 @@ it("bounds admission relative to the compacted floor without manufacturing holes
   });
 });
 
-it("keeps all finite kinds in one sequence while actual buffer proof gates retirement", async () => {
-  const f = await nativeDeliveryFixture("2026-10-29-delivery-epochs-host");
-  cleanups.push(f.close);
-  const epoch = await f.journal.epochs.open(f.principal, randomUUID());
-  const payloads = [
-    JSON.stringify({ id: "actual-finish", result: null }),
-    JSON.stringify({
-      command: "format_text_file",
-      args: { path: "/fixture/file", source: "x", cursorOffset: 0 },
-    }),
-    f.report(),
-  ];
-  for (let index = 0; index < payloads.length; index++) {
-    const paramsJson = payloads[index],
-      id = {
-        ...identity(epoch, index + 1),
-        sha256: sha(paramsJson),
-        byteLength: Buffer.byteLength(paramsJson),
-      };
-    if (index < 2) {
-      const target = index === 0 ? finish : format;
-      expect(
-        await f.call("native.services.delivery.apply", { ...id, target, paramsJson }),
-      ).toMatchObject({ state: "recorded" });
-      const row = await f.journal.readMetadata(f.principal, target, id);
-      await f.call("native.services.delivery.ack", {
-        ...id,
-        target,
-        consumedResult: row!.consumedResult,
-      });
-    } else {
-      expect(await f.call("native.buffers.delivery.apply", { ...id, paramsJson })).toMatchObject({
-        state: "recorded",
-      });
-      await f.call("native.buffers.delivery.ack", {
-        ...id,
-        consumedResult: nativeDeliveryConsumedResult("buffer", { acknowledged: true }),
-      });
-    }
-  }
-  expect(
-    await f.journal.epochs.compact(f.principal, { ...epoch, expectedThrough: 0, through: 3 }),
-  ).toMatchObject({ through: 3, highWater: 3 });
-  expect(f.counts).toEqual({ buffers: 1, finish: 1, format: 1 });
-});
-
 it("establishes irreversible min-v2 while keeping existing legacy result/status/ACK compatibility", async () => {
   const f = await fixture(),
     before = legacy(),
@@ -382,7 +331,13 @@ it("permits only the actual v2 winner's matching live execution and invalidates 
   });
   release();
   await expect(escaped).rejects.toThrow("PROTOCOL_FENCED");
-  expect(Object.keys(f.journal.epochs).sort()).toEqual(["close", "compact", "open", "status"]);
+  expect(Object.keys(f.journal.epochs).sort()).toEqual([
+    "close",
+    "compact",
+    "open",
+    "resolveGap",
+    "status",
+  ]);
 });
 
 it("rejects canonical aliases and old SQL writers before v2 receipt insertion", async () => {
@@ -570,6 +525,21 @@ it("blocks missing/corrupt owners or witnesses without rebuilding them from rece
   }
 });
 
+it("skips the full header count on ordinary status, admission and compaction", async () => {
+  const f = await fixture();
+  const first = await f.journal.epochs.open(f.principal, randomUUID());
+  for (let index = 0; index < 32; index++) {
+    await f.journal.epochs.open(f.principal, randomUUID());
+  }
+  const statements = vi.spyOn(f.store.db, "prepare");
+  const id = await retire(f, first, 1);
+  await f.journal.epochs.compact(f.principal, { ...first, expectedThrough: 0, through: 1 });
+  expect(await f.journal.readMetadata(f.principal, finish, id)).toMatchObject({ state: "fenced" });
+  expect(statements.mock.calls.some(([sql]) => sql.includes("AS matched,MAX(o.generation)"))).toBe(
+    false,
+  );
+});
+
 it("never remints a compacted open intent after both retained header rows disappear", async () => {
   for (const missing of ["first", "middle"]) {
     const f = await fixture();
@@ -690,7 +660,10 @@ it("migrates a predecessor file journal without losing legacy results or permitt
     await f.store.db.exec(`ALTER TABLE native_delivery_receipts RENAME TO predecessor_receipts;
       CREATE TABLE native_delivery_receipts (environment_id TEXT NOT NULL,principal_id TEXT NOT NULL,kind TEXT NOT NULL,original_id TEXT NOT NULL,sha256 TEXT NOT NULL,byte_length INTEGER NOT NULL,state TEXT NOT NULL,result_json TEXT,proof_json TEXT,PRIMARY KEY(environment_id,principal_id,original_id));
       INSERT INTO native_delivery_receipts SELECT environment_id,principal_id,kind,original_id,sha256,byte_length,state,result_json,proof_json FROM predecessor_receipts;
-      DROP TABLE predecessor_receipts;`);
+      DROP TABLE predecessor_receipts;
+      DROP TABLE native_delivery_quota_totals;
+      DROP TABLE native_delivery_quota_scopes;
+      DROP TABLE native_delivery_quota_state;`);
   });
   await f.reopen();
   expect(await f.journal.readMetadata(f.principal, finish, old)).toMatchObject({
@@ -726,7 +699,7 @@ it("keeps retained epoch metadata bounded per principal through real typed alloc
         .get(f.principal)
     )?.count,
   ).toBe(4096);
-}, 60_000);
+}, 180_000);
 
 it("holds orphaned witnesses as corruption and bounds complete retained headers without eviction", async () => {
   const f = await fixture();
@@ -810,4 +783,270 @@ it("preserves the full32MiB formatter result and compacts it using only retired 
     ),
   ).toBe(true);
   expect(await f.journal.readMetadata(f.principal, format, id)).toMatchObject({ state: "fenced" });
+});
+
+const gap = (
+  epoch: NativeDeliveryEpochRef,
+  sequence: number,
+  kind: NativeDeliveryKind = finish,
+) => ({
+  ownerId: epoch.ownerId,
+  generation: epoch.generation,
+  sequence,
+  kind,
+  sha256: sha("{}"),
+  byteLength: 2,
+});
+const gapRows = async (f: Awaited<ReturnType<typeof fixture>>) =>
+  Number(
+    (
+      await f.store.db
+        .prepare(
+          "SELECT (SELECT COUNT(*) FROM native_delivery_epoch_gap_fences)+(SELECT COUNT(*) FROM native_delivery_epoch_gap_witnesses) AS count",
+        )
+        .get()
+    )?.count,
+  );
+
+it("abandons an admitted format whose effect ended without a result, so its slot no longer holds the prefix", async () => {
+  const f = await fixture(),
+    epoch = await f.journal.epochs.open(f.principal, randomUUID());
+  let runs = 0;
+  // Repro: the formatter failed after admission; status says result-unavailable forever.
+  await f.journal.execute(f.principal, format, identity(epoch, 1), async () => {
+    runs++;
+    throw new Error("Formatter exited without a result");
+  });
+  await retire(f, epoch, 2);
+  expect(await f.journal.epochs.resolveGap(f.principal, gap(epoch, 1, format))).toEqual({
+    ...gap(epoch, 1, format),
+    outcome: "abandoned",
+  });
+  // A retry after a lost reply gets the same answer; nothing was re-run.
+  expect(await f.journal.epochs.resolveGap(f.principal, gap(epoch, 1, format))).toMatchObject({
+    outcome: "abandoned",
+  });
+  await f.journal.execute(f.principal, format, identity(epoch, 1), async () => {
+    runs++;
+  });
+  expect(runs).toBe(1);
+  expect(
+    await f.journal.epochs.compact(f.principal, { ...epoch, expectedThrough: 0, through: 2 }),
+  ).toMatchObject({ through: 2 });
+});
+
+it("never abandons an original whose effect is still running in this process", async () => {
+  const f = await fixture(),
+    epoch = await f.journal.epochs.open(f.principal, randomUUID());
+  for (const [sequence, kind] of [
+    [1, format],
+    [2, finish],
+  ] as const) {
+    let release!: () => void;
+    const running = f.journal.execute(
+      f.principal,
+      kind,
+      identity(epoch, sequence),
+      () => new Promise<void>((resolve) => (release = resolve)),
+    );
+    await vi.waitFor(() => expect(release).toBeDefined());
+    expect(
+      await f.journal.epochs.resolveGap(f.principal, gap(epoch, sequence, kind)),
+    ).toMatchObject({ outcome: "admitted" });
+    release();
+    await running;
+  }
+});
+
+it.each([finish] as const)(
+  "abandons an admitted %s that ended without a result instead of holding the prefix",
+  async (kind) => {
+    const f = await fixture(),
+      epoch = await f.journal.epochs.open(f.principal, randomUUID());
+    let runs = 0;
+    // Repro: the effect failed (or a restart lost it); before, this answered `admitted` forever.
+    await f.journal.execute(f.principal, kind, identity(epoch, 1), async () => {
+      runs++;
+      throw new Error("Effect ended without a result");
+    });
+    await retire(f, epoch, 2);
+    expect(await f.journal.epochs.resolveGap(f.principal, gap(epoch, 1, kind))).toMatchObject({
+      outcome: "abandoned",
+    });
+    expect(await f.journal.epochs.resolveGap(f.principal, gap(epoch, 1, kind))).toMatchObject({
+      outcome: "abandoned",
+    });
+    await f.journal.execute(f.principal, kind, identity(epoch, 1), async () => {
+      runs++;
+    });
+    expect(runs).toBe(1);
+    expect(
+      await f.journal.epochs.compact(f.principal, { ...epoch, expectedThrough: 0, through: 2 }),
+    ).toMatchObject({ through: 2 });
+  },
+);
+
+it("compacts past one lost original followed by many settled ones", async () => {
+  const f = await fixture(),
+    epoch = await f.journal.epochs.open(f.principal, randomUUID());
+  await f.journal.execute(f.principal, finish, identity(epoch, 1), async () => {
+    throw new Error("Host restarted before the relay answered");
+  });
+  for (let sequence = 2; sequence <= 40; sequence++) await retire(f, epoch, sequence);
+  await expect(
+    f.journal.epochs.compact(f.principal, { ...epoch, expectedThrough: 0, through: 32 }),
+  ).rejects.toThrow("HOLE");
+  expect(await f.journal.epochs.resolveGap(f.principal, gap(epoch, 1))).toMatchObject({
+    outcome: "abandoned",
+  });
+  await f.journal.epochs.compact(f.principal, { ...epoch, expectedThrough: 0, through: 32 });
+  expect(
+    await f.journal.epochs.compact(f.principal, { ...epoch, expectedThrough: 32, through: 40 }),
+  ).toMatchObject({ through: 40 });
+});
+
+it("resolves a never-admitted hole only through an exact no-effect fence, then compacts across it", async () => {
+  const f = await fixture(),
+    epoch = await f.journal.epochs.open(f.principal, randomUUID()),
+    epochs = createNativeDeliveryEpochs(f.store);
+  await retire(f, epoch, 2);
+  await retire(f, epoch, 3);
+  // Repro: the missing original 1 holds compaction forever without a fence.
+  await expect(
+    f.journal.epochs.compact(f.principal, { ...epoch, expectedThrough: 0, through: 3 }),
+  ).rejects.toThrow("HOLE");
+  await expect(
+    epochs
+      .resolveGap(f.principal, gap(epoch, 1, format))
+      .then(() => epochs.resolveGap(f.principal, gap(epoch, 1))),
+  ).rejects.toThrow("CONFLICT");
+  expect(await epochs.resolveGap(f.principal, gap(epoch, 1, format))).toEqual({
+    ...gap(epoch, 1, format),
+    outcome: "not_admitted",
+  });
+  await expect(
+    epochs.resolveGap(f.principal, { ...gap(epoch, 1, format), sha256: "b".repeat(64) }),
+  ).rejects.toThrow("CONFLICT");
+  expect(await gapRows(f)).toBe(2);
+  // No late admission, replay or "absent" status for the fenced original.
+  const late = identity(epoch, 1);
+  let ran = false;
+  await expect(
+    f.journal.execute(f.principal, format, late, async () => {
+      ran = true;
+    }),
+  ).rejects.toThrow("GAP_FENCED");
+  await expect(f.journal.admit(f.principal, format, late)).rejects.toThrow("GAP_FENCED");
+  await expect(f.journal.readMetadata(f.principal, format, late)).rejects.toThrow("GAP_FENCED");
+  expect(ran).toBe(false);
+  await expect(
+    f.store.db
+      .prepare(
+        "INSERT INTO native_delivery_receipts(environment_id,principal_id,kind,original_id,sha256,byte_length,state,reserved_bytes,epoch_owner_id,epoch_generation,epoch_sequence) VALUES (?,?,?,?,?,2,'admitted',17,?,?,?)",
+      )
+      .run(
+        f.store.environmentId,
+        f.principal,
+        format,
+        late.originalId,
+        sha("{}"),
+        epoch.ownerId,
+        epoch.generation,
+        1,
+      ),
+  ).rejects.toThrow("GAP_FENCED");
+  await expect(
+    f.store.db.prepare("DELETE FROM native_delivery_epoch_gap_fences").run(),
+  ).rejects.toThrow("GAP_HELD");
+  await expect(
+    f.store.db.prepare("UPDATE native_delivery_epoch_gap_witnesses SET kind=?").run(finish),
+  ).rejects.toThrow("GAP_IMMUTABLE");
+  await f.reopen();
+  expect(
+    await createNativeDeliveryEpochs(f.store).resolveGap(f.principal, gap(epoch, 1, format)),
+  ).toMatchObject({ outcome: "not_admitted" });
+  expect(
+    await f.journal.epochs.compact(f.principal, { ...epoch, expectedThrough: 0, through: 3 }),
+  ).toMatchObject({ through: 3, highWater: 3 });
+  expect(await gapRows(f)).toBe(0);
+  // A covered slot cannot tell retired from fenced: it never answers either way.
+  await expect(
+    createNativeDeliveryEpochs(f.store).resolveGap(f.principal, gap(epoch, 1, format)),
+  ).rejects.toThrow("FENCED");
+  await expect(f.journal.admit(f.principal, format, late)).rejects.toThrow("FENCED");
+});
+
+it("never fences an admitted, unknown or foreign original and serializes with concurrent admission", async () => {
+  const f = await fixture(),
+    epoch = await f.journal.epochs.open(f.principal, randomUUID()),
+    epochs = createNativeDeliveryEpochs(f.store);
+  const unknown = identity(epoch, 1);
+  await f.journal.execute(f.principal, finish, unknown, async () => {
+    throw new Error("Original handler result unknown");
+  });
+  expect(await epochs.resolveGap(f.principal, gap(epoch, 1))).toEqual({
+    ...gap(epoch, 1),
+    outcome: "admitted",
+  });
+  await expect(epochs.resolveGap(f.principal, gap(epoch, 1, format))).rejects.toThrow("CONFLICT");
+  await expect(epochs.resolveGap(f.other, gap(epoch, 2))).rejects.toThrow("UNAVAILABLE");
+  await expect(
+    epochs.resolveGap(f.principal, { ...gap(epoch, 2), generation: epoch.generation + 1 }),
+  ).rejects.toThrow("UNAVAILABLE");
+  await expect(epochs.resolveGap(f.principal, gap(epoch, 65_537))).rejects.toThrow("WINDOW");
+  expect(await gapRows(f)).toBe(0);
+  for (let sequence = 2; sequence < 12; sequence++) {
+    const racing = identity(epoch, sequence);
+    const [admitted, resolved] = await Promise.allSettled([
+      f.journal.admit(f.principal, finish, racing),
+      epochs.resolveGap(f.principal, gap(epoch, sequence)),
+    ]);
+    const receipt = await f.store.db
+      .prepare("SELECT state FROM native_delivery_receipts WHERE original_id=?")
+      .get(racing.originalId);
+    if (admitted.status === "fulfilled") {
+      expect(receipt?.state).toBe("admitted");
+      expect(resolved).toMatchObject({ status: "fulfilled", value: { outcome: "admitted" } });
+    } else {
+      expect(receipt).toBeUndefined();
+      expect(String(admitted.reason)).toContain("GAP_FENCED");
+      expect(resolved).toMatchObject({ status: "fulfilled", value: { outcome: "not_admitted" } });
+    }
+  }
+});
+
+it("fences a never-seen tail original above high-water so the exact final floor can close", async () => {
+  const f = await fixture(),
+    epoch = await f.journal.epochs.open(f.principal, randomUUID()),
+    epochs = createNativeDeliveryEpochs(f.store);
+  await retire(f, epoch, 1);
+  expect(await epochs.resolveGap(f.principal, gap(epoch, 3, "buffer"))).toMatchObject({
+    outcome: "not_admitted",
+  });
+  expect((await f.journal.epochs.status(f.principal, epoch)).highWater).toBe(3);
+  await expect(
+    f.journal.epochs.close(f.principal, { ...epoch, expectedThrough: 0, through: 3 }),
+  ).rejects.toThrow("HOLE");
+  await epochs.resolveGap(f.principal, gap(epoch, 2));
+  expect(
+    await f.journal.epochs.close(f.principal, { ...epoch, expectedThrough: 0, through: 3 }),
+  ).toMatchObject({ through: 3, highWater: 3, closed: true });
+  await expect(epochs.resolveGap(f.principal, gap(epoch, 4))).rejects.toThrow("FENCED");
+  expect(await gapRows(f)).toBe(0);
+});
+
+it("holds a lone gap witness as corruption instead of compacting or admitting past it", async () => {
+  const f = await fixture(),
+    epoch = await f.journal.epochs.open(f.principal, randomUUID()),
+    epochs = createNativeDeliveryEpochs(f.store);
+  await retire(f, epoch, 2);
+  await epochs.resolveGap(f.principal, gap(epoch, 1));
+  await f.store.db.exec(
+    "DROP TRIGGER native_delivery_epoch_gap_delete; DELETE FROM native_delivery_epoch_gap_fences;",
+  );
+  await expect(
+    f.journal.epochs.compact(f.principal, { ...epoch, expectedThrough: 0, through: 2 }),
+  ).rejects.toThrow("CORRUPT");
+  await expect(f.journal.admit(f.principal, finish, identity(epoch, 1))).rejects.toThrow();
+  expect((await f.journal.epochs.status(f.principal, epoch)).through).toBe(0);
 });

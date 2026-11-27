@@ -1,13 +1,47 @@
 //! Blocking TCP/TLS connection with per-operation timeouts and an overall deadline.
 use std::io::{ErrorKind, Read, Write};
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, OnceLock};
 use std::time::{Duration, Instant};
 use ureq::rustls::{ClientConfig, ClientConnection, RootCertStore, StreamOwned};
 
 pub(super) const IO_TIMEOUT: Duration = Duration::from_secs(20);
 const RESOLVE_TIMEOUT: Duration = Duration::from_secs(10);
+/// A lookup the caller gave up on keeps its thread until the OS resolver returns, so the
+/// number of such lookups is capped; past the cap new lookups fail at once.
+const MAX_PENDING_RESOLVES: usize = 4;
+static PENDING_RESOLVES: AtomicUsize = AtomicUsize::new(0);
 const READ_CHUNK: usize = 16 * 1024;
+
+/// One slot of the pending-lookup cap, released when the lookup thread finishes.
+struct PendingResolve<'a>(&'a AtomicUsize);
+
+impl<'a> PendingResolve<'a> {
+    fn acquire(count: &'a AtomicUsize) -> Option<Self> {
+        let mut current = count.load(Ordering::Acquire);
+        loop {
+            if current >= MAX_PENDING_RESOLVES {
+                return None;
+            }
+            match count.compare_exchange_weak(
+                current,
+                current + 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return Some(Self(count)),
+                Err(actual) => current = actual,
+            }
+        }
+    }
+}
+
+impl Drop for PendingResolve<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
 
 enum Stream {
     Plain(TcpStream),
@@ -48,6 +82,11 @@ fn tls_config() -> Arc<ClientConfig> {
 }
 
 fn resolve(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
+    let Some(pending) = PendingResolve::acquire(&PENDING_RESOLVES) else {
+        return Err(format!(
+            "Too many mail server lookups are still pending. Try {host} again shortly."
+        ));
+    };
     let (sender, receiver) = mpsc::channel();
     let target = format!("{host}:{port}");
     std::thread::spawn(move || {
@@ -56,6 +95,7 @@ fn resolve(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
                 .to_socket_addrs()
                 .map(|addrs| addrs.collect::<Vec<_>>()),
         );
+        drop(pending);
     });
     match receiver.recv_timeout(RESOLVE_TIMEOUT) {
         Ok(Ok(addrs)) if !addrs.is_empty() => Ok(addrs),
@@ -238,5 +278,37 @@ impl Conn {
             Stream::Tls(tls) => tls.write_all(bytes).and_then(|_| tls.flush()),
         };
         result.map_err(|error| self.io_error(error))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn abandoned_lookup_keeps_its_slot_until_the_worker_finishes() {
+        let count = AtomicUsize::new(0);
+        let other_lookups: Vec<_> = (1..MAX_PENDING_RESOLVES)
+            .map(|_| PendingResolve::acquire(&count).unwrap())
+            .collect();
+        let pending = PendingResolve::acquire(&count).unwrap();
+        let (result, abandoned_receiver) = mpsc::channel();
+        let (finish, blocked_worker) = mpsc::channel();
+
+        std::thread::scope(|scope| {
+            let worker = scope.spawn(move || {
+                let _ = blocked_worker.recv();
+                assert!(result.send(()).is_err());
+                drop(pending);
+            });
+            drop(abandoned_receiver);
+            let rejected_while_blocked = PendingResolve::acquire(&count).is_none();
+            finish.send(()).unwrap();
+            worker.join().unwrap();
+            assert!(rejected_while_blocked);
+        });
+
+        assert!(PendingResolve::acquire(&count).is_some());
+        drop(other_lookups);
     }
 }

@@ -1,4 +1,5 @@
 import { type HostTask } from "../../src/features/tasks/model/hostTasks";
+import { restartHold } from "./stop-reasons";
 import type { HostGoal } from "../../src/features/tasks/model/hostGoals";
 import type { TaskContext } from "./context";
 import { readTaskRuntimeBudget } from "../work/runtime-budget";
@@ -31,26 +32,38 @@ export async function setGoalPaused(
   }, "critical");
 }
 
-export async function setGoalPauseReason(
+export async function syncGoalPauseReason(
   context: TaskContext,
-  goalId: string,
   reason: "assistant-budget" | "assistant-hours",
-  paused: boolean,
+  goalIds: readonly string[],
 ): Promise<void> {
   if (reason !== "assistant-budget" && reason !== "assistant-hours")
     throw new Error("Unsupported goal pause reason.");
   await context.ready;
-  await context.store.transaction(async () => {
-    if (paused)
-      await context.store.db
-        .prepare("INSERT OR IGNORE INTO task_goal_reason_holds(goal_id,reason) VALUES (?,?)")
-        .run(goalId, reason);
-    else
-      await context.store.db
-        .prepare("DELETE FROM task_goal_reason_holds WHERE goal_id=? AND reason=?")
-        .run(goalId, reason);
-    await context.publishGoalPause(goalId);
-  }, "critical");
+  await context.store.db.scope(async () => {
+    const current = new Set(
+      (
+        await context.store.db
+          .prepare("SELECT goal_id FROM task_goal_reason_holds WHERE reason=?")
+          .all(reason)
+      ).map((row) => String(row.goal_id)),
+    );
+    const desired = new Set(goalIds);
+    const added = [...desired].filter((id) => !current.has(id));
+    const removed = [...current].filter((id) => !desired.has(id));
+    if (!added.length && !removed.length) return;
+    await context.store.transaction(async () => {
+      const insert = context.store.db.prepare(
+        "INSERT INTO task_goal_reason_holds(goal_id,reason) VALUES (?,?)",
+      );
+      const remove = context.store.db.prepare(
+        "DELETE FROM task_goal_reason_holds WHERE goal_id=? AND reason=?",
+      );
+      for (const id of added) await insert.run(id, reason);
+      for (const id of removed) await remove.run(id, reason);
+      for (const id of [...added, ...removed]) await context.publishGoalPause(id);
+    }, "critical");
+  });
 }
 
 export async function publishGoalPause(context: TaskContext, goalId: string): Promise<void> {
@@ -81,12 +94,12 @@ export async function budgetReason(
   task: HostTask,
   starting = false,
 ): Promise<string | undefined> {
-  const runtime = await readTaskRuntimeBudget(context.budgets, task, starting);
+  const runtime = await readTaskRuntimeBudget(context.budgets, task);
   if (runtime.blocked) return `Task ${task.title}: ${runtime.reason}`;
   const own = await context.budgets.evaluate({ taskId: task.id }, task.budget, { starting });
   const parent = await context.budgetParent(task);
   if (parent) {
-    const parentRuntime = await readTaskRuntimeBudget(context.budgets, parent, starting);
+    const parentRuntime = await readTaskRuntimeBudget(context.budgets, parent);
     if (parentRuntime.blocked) return `Crew task ${parent.title}: ${parentRuntime.reason}`;
   }
   const parentLimit = parent?.budget
@@ -123,7 +136,9 @@ export async function budgetParent(
   }
   if (!task.crewRunId) return;
   const row = await context.store.db
-    .prepare("SELECT value FROM tasks WHERE json_extract(value, '$.crewExecutionId')=? LIMIT 1")
+    .prepare(
+      "SELECT value FROM tasks WHERE CASE WHEN json_valid(value) THEN json_extract(value,'$.crewExecutionId') END=? LIMIT 1",
+    )
     .get(task.crewRunId);
   return row ? (JSON.parse(String(row.value)) as HostTask) : undefined;
 }
@@ -135,8 +150,8 @@ export async function budgetBlock(
   now: number,
 ): Promise<HostTask> {
   return await context.block(
-    { ...task, budgetStop: reason, awaitingOwnerRestart: true },
-    `Run budget: ${reason}`,
+    task,
+    { code: "budget_exhausted", message: reason, error: `Run budget: ${reason}` },
     now,
     true,
   );
@@ -178,11 +193,13 @@ export async function updateGoalSettings(
         ...(!active && settings.maxRunMinutes !== undefined
           ? { maxRunMinutes: settings.maxRunMinutes }
           : {}),
-        ...(task.status === "blocked" && changedContinue ? { awaitingOwnerRestart: true } : {}),
-        ...(settings.continueUntilDone &&
-        !task.continueUntilDone &&
-        task.repairStop?.reason === "limit"
-          ? { repairStop: undefined, needsInput: undefined, awaitingOwnerRestart: true }
+        ...(task.status === "blocked" &&
+        changedContinue &&
+        !(task.stop?.code === "repair_exhausted" && task.stop.repair === "external")
+          ? { stop: restartHold(context.now()) }
+          : {}),
+        ...(settings.continueUntilDone && !task.continueUntilDone && task.stop?.repair === "limit"
+          ? { stop: restartHold(context.now()) }
           : {}),
         updatedAt: context.now(),
       });

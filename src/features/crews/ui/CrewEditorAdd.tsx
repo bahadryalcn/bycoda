@@ -1,9 +1,6 @@
-import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
-import { Heading } from "../../../shared/ui/Heading";
 import { Button } from "../../../shared/ui/Button";
 import { ChevronLeft } from "../../../shared/ui/icons";
-import type { CrewRole } from "../model/crew";
 import type { ProjectCrews } from "../model/crewClient";
 import { blankMember } from "../model/crewEditorDraft";
 import { memberDraftStarted } from "../model/crewRoster";
@@ -23,25 +20,21 @@ export function CrewEditorAddPage({
   cwd,
   data,
   additions,
-  role,
   onBack,
 }: {
   cwd: string;
   data: ProjectCrews;
   additions: CrewAdditions;
-  role?: CrewRole;
   onBack: () => void;
 }) {
   const { newMember, issues } = additions;
   return (
     <>
-      <div className="flex items-center gap-2">
-        <Button variant="ghost" startIcon={<ChevronLeft />} onClick={onBack}>
+      {/* The dialog title names this page; entering it moves focus to the way back. */}
+      <div className="flex items-center">
+        <Button variant="ghost" startIcon={<ChevronLeft />} onClick={onBack} data-page-heading>
           {t("Back to team")}
         </Button>
-        <Heading size="section" level={3} tabIndex={-1} data-page-heading>
-          {t("Add members")}
-        </Heading>
       </div>
       <CrewMemberPicker
         cwd={cwd}
@@ -49,19 +42,11 @@ export function CrewEditorAddPage({
         mode={additions.mode}
         onModeChange={additions.setMode}
         selected={additions.picked}
-        onSelectedChange={(next) => {
-          if (!additions.picked.length && next.length) additions.setPickedFor(role);
-          additions.setPicked(next);
-        }}
+        onSelectedChange={additions.setPicked}
         draft={newMember}
         onDraftChange={(patch) => additions.setNewMember((current) => ({ ...current, ...patch }))}
-        role={role}
         nameError={issues && !newMember.name.trim() ? t("Add a name") : undefined}
         modelError={issues && !newMember.candidates.length ? t("Choose a model") : undefined}
-        libraryScope={additions.scope}
-        onLibraryScopeChange={additions.setScope}
-        saveToLibrary={additions.saveToLibrary}
-        onSaveToLibraryChange={additions.setSaveToLibrary}
       />
     </>
   );
@@ -70,64 +55,48 @@ export function CrewEditorAddPage({
 export function CrewEditorAddFooter({
   data,
   additions,
-  role,
   pending,
-  adding,
   onAdd,
 }: {
   data: ProjectCrews;
   additions: CrewAdditions;
-  role?: CrewRole;
   pending: boolean;
-  adding: boolean;
   onAdd: () => void;
 }) {
-  const { mode, newMember, issues } = additions;
+  const { mode, newMember } = additions;
   const { livePicked } = liveAdditions(data, additions);
   return (
-    <>
-      <div role="status" className="flex min-w-0 flex-col gap-0.5">
-        {mode === "new" && issues && (!newMember.name.trim() || !newMember.candidates.length) ? (
-          <Text tone="danger" className="min-w-0 break-words">
-            {t("Every member needs a name and a model.")}
-          </Text>
-        ) : null}
-        {mode === "library" && livePicked.length ? (
-          // The picker names the picks and what its filter hides; the add keeps every pick.
-          <Text className="min-w-0 break-words">
-            {t("Adds all {p0} picked members, including any the filter hides.", {
-              p0: livePicked.length,
-            })}
-          </Text>
-        ) : null}
-      </div>
-      <div className="flex min-w-0 flex-wrap justify-end gap-2">
-        {mode === "new" && memberDraftStarted(newMember) ? (
-          <Button
-            variant="ghost"
-            disabled={pending}
-            onClick={() => {
-              additions.setNewMember(blankMember(data, role));
-              additions.setSaveToLibrary(false);
-              additions.setIssues(false);
-            }}
-          >
-            {t("Discard draft")}
-          </Button>
-        ) : null}
+    <div className="flex min-w-0 flex-wrap justify-end gap-2">
+      {mode === "new" && memberDraftStarted(newMember) ? (
         <Button
-          variant="primary"
-          loading={adding}
-          disabled={pending || (mode === "library" && !livePicked.length)}
-          onClick={onAdd}
+          variant="ghost"
+          disabled={pending}
+          onClick={() => {
+            additions.setNewMember(blankMember(data));
+            additions.setIssues(false);
+          }}
         >
-          {mode === "library"
-            ? livePicked.length === 1
-              ? t("Add 1 member")
-              : t("Add {p0} members", { p0: livePicked.length })
-            : t("Add to crew")}
+          {t("Discard draft")}
         </Button>
-      </div>
-    </>
+      ) : null}
+      <Button
+        variant="primary"
+        disabled={pending || (mode === "library" && !livePicked.length)}
+        disabledReason={
+          mode === "library" && !livePicked.length
+            ? t("Select at least one member first.")
+            : undefined
+        }
+        onClick={onAdd}
+      >
+        {mode !== "library"
+          ? t("Add to crew")
+          : livePicked.length === 0
+            ? t("Add members")
+            : livePicked.length === 1
+              ? t("Add 1 member")
+              : t("Add {p0} members", { p0: livePicked.length })}
+      </Button>
+    </div>
   );
 }

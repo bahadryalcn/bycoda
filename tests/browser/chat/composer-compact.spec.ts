@@ -1,9 +1,11 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
+import { PANE_MATRIX, expectLayoutContracts, openPane } from "../support/uiLayoutAssertions";
 
 // Fixture evidence for the composer reading mode (V2-001). Captures are written
 // only when V2_CAPTURE is set; the assertions always run.
 const captureDir = process.env.V2_CAPTURE_DIR ?? "temp/verification/v2-001";
+const DRAFT_HEIGHT_LIMIT = 224;
 if (process.env.V2_CAPTURE) mkdirSync(captureDir, { recursive: true });
 async function capture(page: Page, name: string) {
   if (process.env.V2_CAPTURE) {
@@ -40,6 +42,910 @@ const scroller = (page: Page) => page.locator(".agent-transcript");
 const reading = (page: Page) => page.locator("[data-composer][data-composer-reading]");
 const field = (page: Page) => page.locator("[data-composer] textarea");
 
+test("the composer shows the current computer and remote origin in order on hover", async ({
+  page,
+}) => {
+  for (const width of [1280, 800]) {
+    for (const light of [false, true]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(url({ "remote-origin": "", turns: "2" }, light));
+      const location = page
+        .locator("[data-composer-workspace]")
+        .getByText("This computer", { exact: true });
+      const history = page.getByRole("tooltip");
+      await expect(location).toBeVisible();
+      await expect(location.locator(".lucide-monitor-smartphone")).toHaveCount(0);
+      await expect(page.getByText("Remote connection", { exact: true })).toHaveCount(0);
+      await expect(history).toHaveCount(0);
+      await location.hover();
+      await expect(history).toHaveText(
+        /Connection history.*Started from a remote connection.*This computer/s,
+      );
+      await expect(
+        history
+          .getByText("Connection history", { exact: true })
+          .locator(":scope > .lucide-monitor-smartphone:first-child"),
+      ).toBeVisible();
+      await capture(page, `session-location-${width}-${light ? "light" : "dark"}`);
+      await page.mouse.move(0, 0);
+      await expect(history).toHaveCount(0);
+      await location.focus();
+      await expect(history).toBeVisible();
+    }
+  }
+});
+
+test("the session composer places text immediately after a pasted link", async ({
+  page,
+  context,
+  browserName,
+}) => {
+  test.skip(browserName !== "chromium", "Clipboard permissions are required");
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(url());
+  const address =
+    "http://localhost:3000/dashboard/user/user-authorization-operations?view=permissions";
+  const draft = `${address} üzerinden`;
+  await field(page).focus();
+  await page.evaluate((text) => navigator.clipboard.writeText(text), draft);
+  await page.keyboard.press("ControlOrMeta+v");
+  const editor = page.locator("[data-composer-inline-input]");
+  const link = editor.getByRole("link", { name: address });
+  await expect(link).toBeVisible();
+  const gap = await link.evaluate((chip) => {
+    const walker = document.createTreeWalker(chip.parentElement!, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const start = node.textContent!.indexOf("üzerinden");
+      if (start === -1) continue;
+      const word = document.createRange();
+      word.setStart(node, start);
+      word.setEnd(node, node.textContent!.length);
+      return word.getBoundingClientRect().left - chip.getBoundingClientRect().right;
+    }
+    throw new Error("Missing text after the link");
+  });
+  expect(gap).toBeGreaterThanOrEqual(0);
+  expect(gap).toBeLessThan(8);
+  await expect(field(page)).toHaveValue(draft);
+});
+
+for (const light of [false, true]) {
+  test(`access stays in the model panel and narrow controls share one row (${light ? "light" : "dark"})`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(url({ draft: "short" }, light));
+    await expect(field(page)).toHaveValue("Summarise the failing tests");
+    await stream(page, 1);
+    const composer = page.locator("[data-composer]");
+    const directAccess = composer.locator("[data-access-picker-trigger]");
+    const model = composer.locator("[data-model-picker-presentation]");
+    const panel = page.getByRole("dialog", { name: "Model and settings" });
+    const panelAccess = panel.locator("[data-access-picker-trigger]");
+    const accessOptions = page.getByRole("dialog", { name: "Access options" });
+    const add = composer.getByRole("button", { name: "Add files or skills" });
+    const steer = composer.getByText("Steer", { exact: true });
+    const theme = light ? "light" : "dark";
+
+    await expect(directAccess).toBeVisible();
+    await model.click();
+    await expect(panelAccess).toHaveCount(0);
+    await expect(panel.getByRole("button", { name: "Mode", exact: true })).toHaveCount(0);
+    await capture(page, `access-${theme}-1280`);
+    await page.keyboard.press("Escape");
+    await directAccess.click();
+    await expect(accessOptions).toBeVisible();
+    await accessOptions.getByRole("option", { name: /Full access/ }).click();
+    await expect(directAccess).toHaveAccessibleName("Full access");
+
+    await page.setViewportSize({ width: 800, height: 800 });
+    await composer.evaluate((element) => (element.style.maxInlineSize = "22rem"));
+    await expect(directAccess).toBeHidden();
+    for (const control of [add, steer]) {
+      const modelBox = (await model.boundingBox())!;
+      const controlBox = (await control.boundingBox())!;
+      expect(
+        Math.abs(modelBox.y + modelBox.height / 2 - controlBox.y - controlBox.height / 2),
+      ).toBeLessThan(2);
+    }
+    await capture(page, `toolbar-${theme}-800`);
+    await model.click();
+    await expect(panelAccess).toBeVisible();
+    await expect(panelAccess).toHaveAccessibleName("Full access");
+    await panelAccess.click();
+    await expect(accessOptions).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(accessOptions).toBeHidden();
+    await expect(panelAccess).toBeFocused();
+    await panelAccess.click();
+    await accessOptions.getByRole("option", { name: /Supervised/ }).click();
+    await expect(panelAccess).toHaveAccessibleName("Supervised");
+    await expect(
+      panel.locator("[data-model-setting-help]").locator("[data-access-picker-trigger]"),
+    ).toHaveCount(0);
+    await panel.getByRole("tab", { name: "Agents" }).click();
+    await expect(panelAccess).toHaveCount(0);
+    await panel.getByRole("tab", { name: "Settings" }).click();
+    const mode = panel.getByRole("button", { name: "Mode", exact: true });
+    await expect(panelAccess).toBeVisible();
+    await expect(mode).toBeVisible();
+    const accessBounds = (await panelAccess.boundingBox())!;
+    const modeBounds = (await mode.boundingBox())!;
+    expect(modeBounds.y - (accessBounds.y + accessBounds.height)).toBeGreaterThanOrEqual(9);
+    await capture(page, `access-${theme}-800`);
+    await mode.click();
+    const modeMenu = page.getByRole("menu", { name: "Mode", exact: true });
+    await expect(modeMenu).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(modeMenu).toBeHidden();
+    await expect(mode).toBeFocused();
+    await mode.click();
+    await modeMenu.getByText("Operator", { exact: true }).click();
+    await page.keyboard.press("Escape");
+    const activeMode = composer.getByRole("button", { name: "Turn off Operator" });
+    await expect(activeMode).toBeVisible();
+    await expect(activeMode).toHaveText("");
+    await capture(page, `mode-${theme}-800`);
+    await activeMode.click();
+    await expect(activeMode).toHaveCount(0);
+    await expect(field(page)).toHaveValue("Summarise the failing tests");
+  });
+}
+
+for (const light of [false, true]) {
+  test(`Stop yields to follow-up actions in a narrow composer (${light ? "light" : "dark"})`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(url({ draft: "short" }, light));
+    await expect(field(page)).toHaveValue("Summarise the failing tests");
+    await stream(page, 1);
+    const composer = page.locator("[data-composer]");
+    const stop = composer.getByRole("button", { name: "Stop", exact: true });
+    const queue = composer.getByRole("button", { name: "Queue message", exact: true });
+    const steer = composer.getByText("Steer", { exact: true });
+    await expect(queue).toBeVisible();
+    await expect(steer).toBeVisible();
+    await expect(stop).toBeVisible();
+    await capture(page, `follow-up-${light ? "light" : "dark"}-1280`);
+
+    await page.setViewportSize({ width: 800, height: 800 });
+    await composer.evaluate((element) => (element.style.maxInlineSize = "22rem"));
+    await expect(queue).toBeVisible();
+    await expect(steer).toBeVisible();
+    await expect(stop).toBeHidden();
+    await capture(page, `follow-up-${light ? "light" : "dark"}-800`);
+
+    await field(page).fill("");
+    await expect(stop).toBeVisible();
+
+    await field(page).fill("Keep this draft");
+    await expect(stop).toBeHidden();
+    await field(page).press("Escape");
+    await expect.poll(async () => (await fixtureEvents(page)).stops).toBe(1);
+    await expect(field(page)).toHaveValue("Keep this draft");
+  });
+}
+
+for (const [width, light] of [
+  [800, false],
+  [800, true],
+  [1280, false],
+  [1280, true],
+] as const) {
+  const surface = `${light ? "light" : "dark"}-${width}`;
+  test(`scrolling drafts stay clear of the composer controls (${surface})`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(url({ draft: "long" }, light));
+    const controls = page.locator(".composer-controls");
+    const expectGap = async (editor: Locator, kind: string) => {
+      await expect
+        .poll(() => editor.evaluate((element) => element.scrollHeight > element.clientHeight))
+        .toBe(true);
+      await editor.evaluate((element) => (element.scrollTop = 32));
+      await capture(page, `toolbar-spacing-${kind}-${surface}`);
+      await expect
+        .poll(() => editor.evaluate((element) => element.clientHeight))
+        .toBeGreaterThanOrEqual(200);
+      await expect
+        .poll(async () => {
+          const editorBox = await editor.boundingBox();
+          const controlsBox = await controls.boundingBox();
+          return editorBox && controlsBox ? controlsBox.y - (editorBox.y + editorBox.height) : 0;
+        })
+        .toBeGreaterThanOrEqual(8);
+    };
+    await expectGap(field(page), "native");
+    await page.goto(url({ inlineExamples: "repeated-pdf" }, light));
+    const editor = page.locator("[data-composer-inline-input]");
+    await expect(editor.locator('[data-inline-reference="skill"]')).toBeVisible();
+    await editor.press("ControlOrMeta+End");
+    await page.keyboard.insertText("\nAnother line in the draft.".repeat(15));
+    await expectGap(page.locator("[data-composer] .cm-scroller"), "inline");
+  });
+
+  test(`Markdown stays formatted after the inline editor activates (${surface})`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(url({ inlineExamples: "repeated-pdf" }, light));
+    const editor = page.locator("[data-composer-inline-input]");
+    await expect(editor.locator('[data-inline-reference="attachment"]')).toHaveCount(2);
+    const source =
+      "## İş teklifleri\n\n**Eksik kalanlar:** Spam araması boş döndü. [file1]\n\n- `Takip` notu";
+    await field(page).evaluate((input: HTMLTextAreaElement) => {
+      input.focus();
+      input.select();
+    });
+    await page.keyboard.insertText(source);
+    await expect(field(page)).toHaveValue(source);
+    await expect(editor.locator('[data-inline-reference="attachment"]')).toHaveCount(1);
+    await expect(editor.locator('[data-draft-markdown="strong"]')).toContainText("Eksik kalanlar:");
+    await expect(editor.locator('[data-draft-markdown="heading"]')).toContainText("İş teklifleri");
+    await expect(editor.locator('[data-draft-markdown="code"]')).toContainText("Takip");
+    const marker = editor
+      .locator('[data-draft-markdown="strong"] [data-draft-markdown="mark"]')
+      .first();
+    await expect(marker).toHaveCSS("color", "rgba(0, 0, 0, 0)");
+    await field(page).evaluate((input: HTMLTextAreaElement) => {
+      const start = input.value.indexOf("**");
+      input.setSelectionRange(start + 1, start + 1);
+    });
+    await expect(marker).toHaveAttribute("data-editing-mark", "");
+    await expect(marker).not.toHaveCSS("color", "rgba(0, 0, 0, 0)");
+    await editor.blur();
+    await expect(marker).toHaveCSS("color", "rgba(0, 0, 0, 0)");
+    await editor.focus();
+    const scroller = page.locator(".cm-scroller");
+    const shortHeight = await scroller.evaluate((element) => element.clientHeight);
+    expect(shortHeight).toBeLessThan(DRAFT_HEIGHT_LIMIT);
+    await field(page).evaluate((input: HTMLTextAreaElement) => {
+      input.setSelectionRange(input.value.length, input.value.length);
+    });
+    await page.keyboard.insertText(`\n${"\nBir satır daha.".repeat(15)}`);
+    await expect
+      .poll(() => scroller.evaluate((element) => element.clientHeight))
+      .toBe(DRAFT_HEIGHT_LIMIT);
+    expect(await scroller.evaluate((element) => element.scrollHeight)).toBeGreaterThan(
+      DRAFT_HEIGHT_LIMIT,
+    );
+    await scroller.evaluate((element) => (element.scrollTop = 0));
+    await capture(page, `markdown-${surface}`);
+  });
+}
+
+for (const width of [1280, 800]) {
+  for (const light of [false, true]) {
+    const surface = `${light ? "light" : "dark"}-${width}`;
+    test(`draft Markdown and clear text work in both composer editors (${surface})`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      for (const inline of [false, true]) {
+        await page.goto(
+          url(inline ? { inlineExamples: "repeated-pdf", turns: "2" } : { turns: "2" }, light),
+        );
+        const editor = inline ? page.locator("[data-composer-inline-input]") : field(page);
+        const clear = page.getByRole("button", { name: "Clear", exact: true });
+        const source =
+          "Aşağıdaki performans sorunlarına bakar mısın?\n\n## Bulgular (önem sırasıyla)\n\n1. **Stil hesabı eleman başına çok pahalı.** ~9,4k elemanlı DOM’da tam stil hesabı 109 ms sürüyor. CSS’te 10.337 kural, 145 `@container`, 163 `:has()` var." +
+          (inline ? " [file1]" : "");
+        await editor.focus();
+        await editor.press("ControlOrMeta+a");
+        await page.keyboard.insertText(source);
+        await expect(field(page)).toHaveValue(source);
+        const composer = page.locator("[data-composer]");
+        await expect(composer.locator('[data-draft-markdown="heading"]')).toContainText("Bulgular");
+        await editor.blur();
+        await capture(page, `draft-${inline ? "references" : "text"}-${surface}`);
+        await expect(clear).toBeVisible();
+        if (inline) await clear.click();
+        else await clear.press("Enter");
+        await expect(field(page)).toHaveValue("");
+        await expect(editor).toBeFocused();
+        await expect(clear).toBeHidden();
+        // Clear empties the whole draft, attachments included; undo brings both back together.
+        if (inline)
+          await expect(composer.getByRole("button", { name: /^Remove .*\.pdf$/ })).toHaveCount(0);
+        await editor.press("ControlOrMeta+z");
+        await expect(field(page)).toHaveValue(source);
+        if (inline)
+          await expect(editor.locator('[data-inline-reference="attachment"]')).toHaveCount(1);
+      }
+    });
+  }
+}
+
+test("selecting all with an inline skill keeps suggestions closed", async ({ page }) => {
+  for (const light of [false, true]) {
+    await page.goto(url({ inlineExamples: "repeated-pdf" }, light));
+    const editor = page.locator("[data-composer-inline-input]");
+    const picker = page.locator("[data-skill-picker]");
+    await expect(editor.locator('[data-inline-reference="skill"]')).toHaveText("ui-ux-pro-max");
+    const original = await field(page).inputValue();
+    await expect(picker).toBeHidden();
+
+    await editor.press("ControlOrMeta+a");
+    await expect
+      .poll(() =>
+        field(page).evaluate((input: HTMLTextAreaElement) => [
+          input.selectionStart,
+          input.selectionEnd,
+        ]),
+      )
+      .toEqual([0, original.length]);
+    await expect(picker).toBeHidden();
+    await expect(field(page)).toHaveValue(original);
+    await capture(page, `select-all-skill-${light ? "light" : "dark"}`);
+  }
+});
+
+test("cut and paste restores a PNG attachment inside the sentence", async ({
+  page,
+  context,
+  browserName,
+}) => {
+  test.skip(browserName !== "chromium", "Clipboard permissions are required");
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(url({ clipboardRoundTrip: "" }));
+  const image = page.locator('[data-composer-inline-input] [data-inline-reference="attachment"]');
+  await expect(image).toHaveAccessibleName("Open image.png");
+  const original = await field(page).inputValue();
+  await field(page).evaluate((input: HTMLTextAreaElement) => {
+    input.focus();
+    input.select();
+  });
+  await page.keyboard.press("ControlOrMeta+x");
+  await expect(field(page)).toHaveValue("");
+  await expect(image).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+v");
+  await expect(field(page)).toHaveValue(original);
+  await expect(image).toHaveAccessibleName("Open image.png");
+  await expect(page.locator("html")).toHaveAttribute("data-clipboard-image-bytes", "68");
+});
+
+// The copy handler writes the clipboard once, asynchronously (the formats wait for the file
+// bytes). Chromium rejects a read that overlaps that write with an InvalidStateError ("Clipboard
+// data has changed"); a read started right after the key press can land inside it. That is the
+// writer arriving, not a failure: report no HTML yet so the poll reads again, and let any other
+// error through.
+const clipboardHtml = (page: Page) =>
+  page.evaluate(async () => {
+    try {
+      const [item] = await navigator.clipboard.read();
+      return item?.types.includes("text/html")
+        ? await (await item.getType("text/html")).text()
+        : "";
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "InvalidStateError") return "";
+      throw error;
+    }
+  });
+
+test("inline composer cuts real file bytes and restores the reference on undo", async ({
+  page,
+  context,
+  browserName,
+}) => {
+  test.skip(browserName !== "chromium", "Clipboard permissions are required");
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(url({ inlineExamples: "" }));
+  const editor = page.locator("[data-composer-inline-input]");
+  const csv = editor.locator("[data-inline-reference]").filter({ hasText: "bycoda-usage.csv" });
+  await expect(csv).toBeVisible();
+  const original = await field(page).inputValue();
+  await field(page).evaluate((input: HTMLTextAreaElement) => {
+    const token = /\[[^\]]*bycoda-usage\.csv[^\]]*\]/.exec(input.value)!;
+    input.focus();
+    input.setSelectionRange(token.index, token.index + token[0].length);
+  });
+  await page.keyboard.press("ControlOrMeta+c");
+  let html = "";
+  await expect
+    .poll(async () => (html = await clipboardHtml(page)))
+    .toContain('data-bycoda-file="bycoda-usage.csv"');
+  expect(html).toContain("data:text/csv;base64,ZmVhdHVyZSxldmVudHMKY29tcG9zZXIsMTI4");
+  await expect(csv).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+x");
+  await expect(csv).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(field(page)).toHaveValue(original);
+  await expect(csv).toBeVisible();
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+Shift+z" : "Control+y");
+  await expect(csv).toHaveCount(0);
+});
+
+test("the session composer renders all eight compact references in the editable line", async ({
+  page,
+  browserName,
+}) => {
+  const evidence = "temp/verification/composer-compact-references";
+  mkdirSync(evidence, { recursive: true });
+  for (const [width, light] of [
+    [800, false],
+    [800, true],
+    [1280, false],
+    [1280, true],
+  ] as const) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(url({ inlineExamples: "" }, light));
+    const box = page.locator("[data-composer]");
+    const editor = box.locator("[data-composer-inline-input]");
+    const references = editor.locator("[data-inline-reference]");
+    await expect(references).toHaveCount(8);
+    await expect(editor.locator('[data-inline-reference="skill"]')).toHaveAttribute(
+      "spellcheck",
+      "false",
+    );
+    await expect(editor.locator('[data-inline-reference="group"]')).toHaveAttribute(
+      "spellcheck",
+      "false",
+    );
+    await expect(editor).toHaveAttribute("spellcheck", "true");
+    await expect(editor).toHaveCSS("font-family", /sans-serif/);
+    await expect(box.locator("[data-attachment-chip]")).toHaveCount(4);
+    await expect(
+      box.locator('[data-attachment-chip="image"]').getByText("158 KB", { exact: true }),
+    ).toBeVisible();
+    await expect(references.locator(":scope > span")).toHaveText([
+      "image.png",
+      "Bahadir-Halay.pdf",
+      "bycoda-usage.csv",
+      "bycoda-export.json",
+      "PreviewTunnel.ts",
+      "github.com · project",
+      "ui-ux-pro-max",
+      "Design and polish interfaces",
+    ]);
+    expect(
+      await references.evaluateAll((chips) =>
+        chips.every((chip) => {
+          const style = getComputedStyle(chip);
+          const first = chip.firstElementChild!.getBoundingClientRect();
+          const last = chip.lastElementChild!.getBoundingClientRect();
+          const rect = chip.getBoundingClientRect();
+          return style.paddingInline === "4px" && rect.width - (last.right - first.left) <= 10.5;
+        }),
+      ),
+    ).toBe(true);
+    await box.screenshot({
+      path: `${evidence}/${light ? "light" : "dark"}-${width}.png`,
+      animations: "disabled",
+    });
+
+    if (width !== 800 || light) continue;
+    await editor.getByRole("button", { name: "Open PreviewTunnel.ts" }).click();
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-composer-opened-file",
+      "/fixture/src/PreviewTunnel.ts",
+    );
+    await editor.getByRole("link", { name: "https://github.com/example/project" }).click();
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-composer-opened-url",
+      "https://github.com/example/project",
+    );
+    await editor.getByRole("link", { name: "https://github.com/example/project" }).press("F2");
+    await expect(editor).toContainText("https://github.com/example/project");
+    await page.keyboard.press("Control+End");
+    await expect(references).toHaveCount(8);
+
+    await editor.getByRole("button", { name: "Open image.png" }).click();
+    await expect(page.getByRole("dialog").locator("img")).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    await editor.getByRole("button", { name: "Open bycoda-usage.csv" }).click();
+    await expect(page.getByRole("dialog").getByText("composer", { exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await editor.getByRole("button", { name: "Design and polish interfaces" }).click();
+    await expect(page.getByRole("dialog", { name: "Design and polish interfaces" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await editor.focus();
+    await page.keyboard.press("Control+Home");
+    await page.keyboard.type("Not: ");
+    await expect(field(page)).toHaveValue(/^Not: Önce /);
+    await page.keyboard.press("Control+z");
+    await expect(field(page)).toHaveValue(/^Önce /);
+    await expect(references).toHaveCount(8);
+
+    if (browserName === "chromium") {
+      const client = await page.context().newCDPSession(page);
+      await page.keyboard.press("Control+End");
+      await client.send("Input.imeSetComposition", {
+        text: "入力",
+        selectionStart: 2,
+        selectionEnd: 2,
+      });
+      await client.send("Input.insertText", { text: "入力" });
+      await expect(field(page)).toHaveValue(/入力$/);
+      await expect(references).toHaveCount(8);
+      await client.detach();
+    }
+    await editor
+      .getByRole("button", { name: "Open bycoda-export.json" })
+      .click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Remove bycoda-export.json" }).click();
+    await expect(references).toHaveCount(7);
+    await expect(field(page)).not.toHaveValue(/bycoda-export\.json/);
+  }
+});
+test("repeated PDF references use their intrinsic width with small padding", async ({ page }) => {
+  const evidence = "temp/verification/composer-repeat-pdf";
+  mkdirSync(evidence, { recursive: true });
+  for (const width of [800, 1280]) {
+    for (const light of [false, true]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(url({ inlineExamples: "repeated-pdf" }, light));
+      const box = page.locator("[data-composer]");
+      const editor = box.locator("[data-composer-inline-input]");
+      const pdfs = editor.getByRole("button", { name: "Open Detailed-project-report-tr (1).pdf" });
+      await expect(pdfs).toHaveCount(2);
+      await expect(editor.locator('[data-inline-reference="skill"]')).toHaveText("ui-ux-pro-max");
+      await expect(box.locator("[data-attachment-chip]")).toHaveCount(1);
+      for (const pdf of await pdfs.all()) {
+        await expect(pdf).toHaveText("Detailed-project-report-tr (1).pdf71 KB");
+        await expect(pdf).toHaveCSS("padding-inline", "4px");
+        const extraWidth = await pdf.evaluate((chip) => {
+          const icon = chip.firstElementChild!.getBoundingClientRect();
+          const size = chip.lastElementChild!.getBoundingClientRect();
+          return chip.getBoundingClientRect().width - (size.right - icon.left);
+        });
+        expect(extraWidth).toBeCloseTo(10, 0);
+      }
+      await box.screenshot({ path: `${evidence}/${light ? "light" : "dark"}-${width}.png` });
+    }
+  }
+});
+test("shows the complete attached filename in the card and inline while writing", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 800, height: 800 });
+  await page.goto(url({ attach: "" }));
+  const input = field(page);
+  await input.fill("I wrote this first. Review ");
+  const box = page.locator("[data-composer]");
+  const name = box
+    .locator('[data-attachment-chip="file"]')
+    .getByText("draft-context.txt", { exact: true });
+  await expect(name).toBeVisible();
+  expect(await name.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+  await name.click({ button: "right" });
+  const insert = page.getByRole("menuitem", { name: /^Insert .* into the message$/ });
+  await insert.click();
+  const editor = box.locator("[data-composer-inline-input]");
+  const label = editor.locator('[data-inline-reference="attachment"] > span');
+  await expect(label).toBeVisible();
+  await expect(label).toHaveText("draft-context.txt");
+  await expect(box.locator("[data-attachment-chip]")).toHaveCount(1);
+  expect(await label.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+  await expect(editor).toBeFocused();
+  await editor.pressSequentially(" and reply.");
+  await expect(input).toHaveValue(/and reply\.$/);
+  await name.click({ button: "right" });
+  await expect(page.getByRole("menu")).toBeVisible();
+  await expect(insert).toHaveCount(0);
+  await page.keyboard.press("Escape");
+});
+test("wraps a long attached filename on narrow layouts without losing characters", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  const filename = `${"very-long-export-".repeat(10)}report.txt`;
+  await page.goto(url({ attach: filename, draft: "legacyFile" }));
+  const box = page.locator("[data-composer]");
+  const label = box.locator('[data-inline-reference="attachment"] > span');
+  await expect(label).toBeVisible();
+  await expect(label).toHaveText(filename);
+  expect(await label.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+  expect(await box.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+  await expect(
+    box.getByRole("button", { name: `Open ${filename}`, exact: true }).first(),
+  ).toBeVisible();
+});
+test("skill panels match the composer and keep their actions visible", async ({ page }) => {
+  for (const light of [false, true]) {
+    for (const width of [800, 1280]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(url({ inlineExamples: "skill-panels" }, light));
+      const box = page.locator("[data-composer-box]");
+      const editor = box.locator("[data-composer-inline-input]");
+      // Floating panels share the one theme glass (--ui-floating-glass), resolved here by a probe.
+      const composerMaterial = await box.evaluate((element) => {
+        const probe = document.createElement("div");
+        probe.style.cssText =
+          "background: var(--ui-floating-glass); backdrop-filter: var(--ui-floating-glass-filter)";
+        element.append(probe);
+        const style = getComputedStyle(probe);
+        const material = { fill: style.backgroundColor, filter: style.backdropFilter };
+        probe.remove();
+        return material;
+      });
+      const checkMaterial = async (panel: Locator) => {
+        const surface = panel.locator(':scope > [aria-hidden="true"]');
+        await expect(surface).toHaveCSS("background-color", composerMaterial.fill);
+        await expect(surface).toHaveCSS("backdrop-filter", composerMaterial.filter);
+      };
+      await editor.getByRole("button", { name: "ui-ux-pro-max", exact: true }).click();
+      const details = page.getByRole("dialog", { name: "ui-ux-pro-max" });
+      const openFile = details.getByRole("button", { name: "Open SKILL.md" });
+      await expect(openFile).toBeVisible();
+      await capture(page, `skill-details-${light ? "light" : "dark"}-${width}`);
+      await expect(openFile).toHaveAttribute("data-button-variant", "secondary");
+      await checkMaterial(details.locator(".."));
+      await openFile.click();
+      await expect(page.locator("html")).toHaveAttribute(
+        "data-composer-opened-file",
+        "/fixture/.claude/skills/ui-ux-pro-max/SKILL.md",
+      );
+      await editor.focus();
+      await page.keyboard.press("Control+End");
+      await page.keyboard.type(" /");
+      const list = page.getByRole("listbox", { name: "Commands and skills" });
+      const create = page.getByRole("button", { name: "New skill", exact: true });
+      await expect(list).toBeVisible();
+      await expect(create).toBeVisible();
+      await list.getByRole("option").last().scrollIntoViewIfNeeded();
+      await expect(create).toBeInViewport({ ratio: 1 });
+      await page.keyboard.type("ui-u");
+      await capture(page, `skill-picker-${light ? "light" : "dark"}-${width}`);
+      const options = list.getByRole("option");
+      await expect(options).toHaveCount(2);
+      // A matching group leads the skills it contains.
+      await expect(options.first()).toContainText("/group-interface-design");
+      await expect(options.first()).toHaveAttribute("aria-selected", "true");
+      await expect(options.nth(1)).toContainText("/ui-ux-pro-max");
+      await expect(create).toHaveAttribute("data-button-variant", "secondary");
+      const panel = list.locator("xpath=ancestor::*[@data-popover-side][last()]");
+      await checkMaterial(panel);
+      await expect
+        .poll(async () => {
+          const panelBounds = await panel.boundingBox();
+          const boxBounds = await box.boundingBox();
+          if (!panelBounds || !boxBounds) return Infinity;
+          return Math.max(
+            Math.abs(panelBounds.width - boxBounds.width),
+            Math.abs(panelBounds.x - boxBounds.x),
+          );
+        })
+        .toBeLessThanOrEqual(1);
+      await expect(options.first()).toBeInViewport({ ratio: 1 });
+      await page.keyboard.press("ArrowDown");
+      await expect(options.nth(1)).toHaveAttribute("aria-selected", "true");
+      await page.keyboard.press("Enter");
+      await expect(editor.getByRole("button", { name: "ui-ux-pro-max", exact: true })).toHaveCount(
+        2,
+      );
+    }
+  }
+});
+
+test("opens references from the real session composer in both themes and widths", async ({
+  page,
+}) => {
+  const evidence = "temp/verification/composer-compact-references";
+  mkdirSync(evidence, { recursive: true });
+  for (const light of [true, false]) {
+    for (const width of [800, 1280]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(url({ attach: "", draft: "legacyFile" }, light));
+      const input = field(page);
+      const draft =
+        "I wrote this first. Review [File\u00a01\u00a0·\u00a0draft-context.txt\u00a0·\u00a07\u00a0B] and https://example.com/design";
+      await expect(input).toHaveValue(draft);
+      const references = page.locator("[data-composer-inline-input]");
+      const file = references.getByRole("button", { name: "Open draft-context.txt" });
+      await expect(file).toHaveCSS("cursor", "pointer");
+      await expect(
+        references.getByRole("link", { name: "https://example.com/design" }),
+      ).toBeVisible();
+      await file.click();
+      await expect(page.getByRole("dialog").getByText("context", { exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(file).toBeFocused();
+      await expect(input).toHaveValue(draft);
+      await page.mouse.move(0, 0);
+      await page.locator("[data-composer]").screenshot({
+        path: `${evidence}/session-${light ? "light" : "dark"}-${width}.png`,
+        animations: "disabled",
+      });
+    }
+  }
+});
+// The user bubble is a foreground tint (opacity * 0.1786 of the content colour); the reply is the
+// surface colour at its own opacity.
+const expectedMessageFill = (node: Locator, opacity: number, opaque = false, user = false) =>
+  node.evaluate(
+    (element, { opacity, opaque, user }) => {
+      const sample = document.createElement("span");
+      sample.style.background = opaque
+        ? "var(--ui-chat-message-color)"
+        : user
+          ? `color-mix(in srgb, var(--color-content) ${opacity * 0.1786}%, transparent)`
+          : `color-mix(in oklab, var(--ui-chat-message-color) ${opacity}%, transparent)`;
+      element.append(sample);
+      const fill = getComputedStyle(sample).backgroundColor;
+      sample.remove();
+      return fill;
+    },
+    { opacity, opaque, user },
+  );
+
+for (const light of [true, false])
+  for (const width of [800, 1280])
+    test(`dictation segments stay joined beside Stop (${light ? "light" : "dark"} ${width})`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(url({ dictation: "", goal: "" }, light));
+      const group = page.getByRole("group", { name: "Dictation", exact: true });
+      const microphone = group.getByRole("button", { name: "Dictate", exact: true });
+      const options = group.getByRole("button", { name: "Dictation language" });
+      const stop = page.getByRole("button", { name: "Stop", exact: true });
+      await expect(stop).toBeVisible();
+      await expect(microphone).toBeVisible();
+      await expect(group).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      const microphoneIcon = microphone.locator("svg");
+      const optionsIcon = options.locator("svg");
+      await expect(optionsIcon).toHaveCSS(
+        "color",
+        await microphoneIcon.evaluate((icon) => getComputedStyle(icon).color),
+      );
+      await expect(optionsIcon).toHaveCSS(
+        "stroke-width",
+        await microphoneIcon.evaluate((icon) => getComputedStyle(icon).strokeWidth),
+      );
+      await capture(page, `dictation-${light ? "light" : "dark"}-${width}`);
+      const micBox = (await microphone.boundingBox())!;
+      const optionsBox = (await options.boundingBox())!;
+      const stopBox = (await stop.boundingBox())!;
+      expect(optionsBox.x).toBeCloseTo(micBox.x + micBox.width);
+      expect(optionsBox.height).toBeCloseTo(micBox.height);
+      expect(optionsBox.width).toBeLessThan(micBox.width);
+      expect(stopBox.x).toBeGreaterThan(optionsBox.x + optionsBox.width);
+      expect(
+        await group.evaluate((element) => getComputedStyle(element, "::after").display),
+      ).not.toBe("none");
+
+      await microphone.focus();
+      await page.keyboard.press("Tab");
+      await expect(options).toBeFocused();
+      await page.keyboard.press("Enter");
+      const menu = page.getByRole("menu", { name: "Dictation language" });
+      await expect(menu).toBeVisible();
+      const menuBox = (await menu.boundingBox())!;
+      expect(menuBox.y + menuBox.height).toBeLessThan(optionsBox.y);
+      await page.keyboard.press("Escape");
+      await expect(menu).toHaveCount(0);
+      await expect(options).toBeFocused();
+    });
+
+for (const light of [true, false])
+  for (const width of [800, 1280])
+    test(`chat message surfaces and Working ${light ? "light" : "dark"} ${width}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(url({ goal: "" }, light));
+      await page.evaluate(() => {
+        const root = document.documentElement;
+        root.classList.add(
+          "has-chat-background",
+          "chat-background-effect-ready",
+          "has-user-accent",
+        );
+        root.style.setProperty(
+          "--chat-background-image",
+          "radial-gradient(currentColor 1px, transparent 1px), linear-gradient(120deg, #234368, #284c46)",
+        );
+        root.style.setProperty("--chat-background-session-opacity", "0.65");
+      });
+      const box = page.locator("[data-composer-box]");
+      const dock = page.locator('[data-activity-dock="working"]');
+      const message = page.locator('[data-prompt-anchor="user-39"] .user-message-bubble');
+      const reply = page.locator('[data-selectable-agent-response="reply-39"]');
+      await expect(dock).toBeVisible();
+      await expect(box).toBeVisible();
+      await expect(message).toBeInViewport();
+      await expect(reply).toBeInViewport();
+      await capture(page, `user-message-working-${light ? "light" : "dark"}-${width}`);
+
+      for (const mode of ["glass", "no-blur", "streaming", "forced-colors"] as const) {
+        await page.emulateMedia({ forcedColors: mode === "forced-colors" ? "active" : "none" });
+        await page.evaluate((state) => {
+          document.documentElement.toggleAttribute("data-performance-no-blur", state === "no-blur");
+          const pane = document.querySelector(".chat-pane-background")!;
+          if (state === "streaming") pane.setAttribute("data-session-streaming", "true");
+          else pane.removeAttribute("data-session-streaming");
+        }, mode);
+        const working = await dock.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return { fill: style.backgroundColor, filter: style.backdropFilter };
+        });
+        await expect(box).toHaveCSS("background-color", working.fill);
+        await expect(box).toHaveCSS("backdrop-filter", working.filter);
+        for (const [node, opacity] of [
+          [message, 42],
+          [page.locator("[data-transcript-reply]").last(), 90],
+        ] as const) {
+          // The reading surface blurs only by the Transcript surface blur setting (0 by default), not by the dock glass.
+          await expect(node).toHaveCSS("backdrop-filter", "none");
+          await expect(node).toHaveCSS(
+            "background-color",
+            await expectedMessageFill(node, opacity, mode === "forced-colors", node === message),
+          );
+        }
+      }
+    });
+
+for (const light of [true, false])
+  test(`a flat transcript glass drops only the per-message blur ${light ? "light" : "dark"}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(url({ goal: "" }, light));
+    // Turn the Transcript surface blur on so each message opens its own backdrop layer.
+    await page.evaluate(() => {
+      const root = document.documentElement;
+      root.classList.add("has-chat-background");
+      root.toggleAttribute("data-transcript-blur", true);
+      root.style.setProperty("--appearance-transcript-surface-blur", "12px");
+    });
+    const pane = page.locator(".chat-pane-background");
+    const box = page.locator("[data-composer-box]");
+    const message = page.locator('[data-prompt-anchor="user-39"] .user-message-bubble');
+    const reply = page.locator("[data-transcript-reply]").last();
+    const glass = await box.evaluate((element) => getComputedStyle(element).backdropFilter);
+    expect(glass).not.toBe("none");
+    const fills = async () =>
+      Promise.all(
+        [message, reply, box].map((node) =>
+          node.evaluate((element) => {
+            const style = getComputedStyle(element);
+            return [style.backgroundColor, style.borderColor, style.boxShadow, style.borderRadius];
+          }),
+        ),
+      );
+    const before = await fills();
+    // Without the marker every message carries the blur; with it, only the repeated blur is gone.
+    if ((await pane.getAttribute("data-transcript-glass")) !== "flat") {
+      await expect(message).toHaveCSS("backdrop-filter", "blur(12px)");
+      await expect(reply).toHaveCSS("backdrop-filter", "blur(12px)");
+      await pane.evaluate((element) => element.setAttribute("data-transcript-glass", "flat"));
+    }
+    await expect(message).toHaveCSS("backdrop-filter", "none");
+    await expect(reply).toHaveCSS("backdrop-filter", "none");
+    await expect(box).toHaveCSS("backdrop-filter", glass);
+    expect(await fills()).toEqual(before);
+    await pane.evaluate((element) => element.removeAttribute("data-transcript-glass"));
+  });
+
+test("saved chat message appearance reaches the real transcript", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "bycoda.appearancePreferences.v1",
+      JSON.stringify({
+        userMessageOpacity: 100,
+        transcriptSurface: "off",
+        messageColor: "neutral",
+      }),
+    );
+  });
+  await page.goto(url());
+  const root = page.locator("html");
+  const message = page.locator('[data-prompt-anchor="user-39"] .user-message-bubble');
+  const reply = page.locator(
+    '[data-transcript-reply]:has([data-selectable-agent-response="reply-39"])',
+  );
+  await expect(root).toHaveAttribute("data-chat-message-color", "neutral");
+  await expect(root).toHaveAttribute("data-transcript-surface", "off");
+  await expect(reply).toHaveCSS("backdrop-filter", "none");
+  await expect(message).toHaveCSS(
+    "background-color",
+    await expectedMessageFill(message, 100, false, true),
+  );
+  await expect(reply).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+});
+
 for (const light of [true, false])
   for (const width of [800, 1280])
     test(`composer workspace stays transparent ${light ? "light" : "dark"} ${width}`, async ({
@@ -59,11 +965,20 @@ for (const light of [true, false])
 
 for (const light of [true, false])
   for (const width of [800, 1280])
-    test(`composer and question glass fallback ${light ? "light" : "dark"} ${width}`, async ({
+    test(`composer and question translucency ${light ? "light" : "dark"} ${width}`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(url({ "docked-question": "" }, light));
+      await page.evaluate(() => {
+        const root = document.documentElement;
+        root.classList.add("has-chat-background", "chat-background-effect-ready");
+        root.style.setProperty(
+          "--chat-background-image",
+          "linear-gradient(120deg, oklch(55% 0.18 255), oklch(70% 0.17 170))",
+        );
+        root.style.setProperty("--chat-background-session-opacity", "0.65");
+      });
       const box = page.locator("[data-composer-box]");
       const question = page.locator("[data-question-form] > form");
       await expect(question).toBeVisible();
@@ -72,28 +987,31 @@ for (const light of [true, false])
         await page.emulateMedia({ forcedColors: mode === "forced-colors" ? "active" : "none" });
         await page.evaluate((state) => {
           document.documentElement.toggleAttribute("data-performance-no-blur", state === "no-blur");
-          const session = document.querySelector("[data-composer]");
-          session?.toggleAttribute("data-session-streaming", state === "streaming");
+          const session = document.querySelector(".chat-pane-background");
+          session?.removeAttribute("data-session-streaming");
           if (state === "streaming") session?.setAttribute("data-session-streaming", "true");
         }, mode);
         for (const node of [box, question]) {
           const actual = await node.evaluate((element) => {
             const s = getComputedStyle(element);
-            const probe = document.createElement("span");
-            element.appendChild(probe);
-            probe.style.background = "var(--ui-composer-surface)";
-            const opaque = getComputedStyle(probe).backgroundColor;
-            probe.remove();
-            return { background: s.backgroundColor, filter: s.backdropFilter, opaque };
+            const sample = document.createElement("canvas").getContext("2d")!;
+            sample.fillStyle = s.backgroundColor;
+            sample.fillRect(0, 0, 1, 1);
+            return { alpha: sample.getImageData(0, 0, 1, 1).data[3]!, filter: s.backdropFilter };
           });
-          // Glass was dropped (DECISIONS-LOG): every mode paints the one opaque composer surface.
-          expect(actual.background).toBe(actual.opaque);
-          expect(actual.filter).toBe("none");
+          expect(actual.alpha).toBeGreaterThan(0);
+          if (mode === "glass") {
+            expect(actual.alpha).toBeLessThan(255);
+            expect(actual.filter).toContain("blur(");
+          } else {
+            expect(actual.alpha).toBe(255);
+            expect(actual.filter).toBe("none");
+          }
         }
         await expect(field(page)).toHaveValue("Retained composer draft");
         await page.screenshot({
           animations: "disabled",
-          path: `temp/verification/feature-controls/composer-question-${mode}-${light ? "light" : "dark"}-${width}.png`,
+          path: `temp/verification/composer-translucency/${test.info().project.name}/composer-question-${mode}-${light ? "light" : "dark"}-${width}.png`,
         });
       }
     });
@@ -105,6 +1023,19 @@ for (const light of [true, false])
       await page.goto(url({ "context-sections": "" }, light));
       await page.getByRole("button").first().click();
       const dialog = page.getByRole("dialog", { name: "Context usage" });
+      await expect(dialog.getByText("18%", { exact: true })).toBeVisible();
+      await expect(dialog.getByText("184K / 1M tokens")).toBeVisible();
+      await expect(dialog.getByText("70.0 TPS")).toBeVisible();
+      const rows = dialog.locator(".context-meter-metrics > div");
+      await expect(rows).toHaveCount(3);
+      for (const row of await rows.all()) {
+        const { term, value } = await row.evaluate((node) => ({
+          term: node.querySelector("dt")!.getBoundingClientRect().toJSON(),
+          value: node.querySelector("dd")!.getBoundingClientRect().toJSON(),
+        }));
+        expect(value.top).toBeCloseTo(term.top, 0);
+        expect(value.left).toBeGreaterThan(term.right);
+      }
       for (const section of ["agents", "stats", "actions"]) {
         const node = dialog.locator(`.context-meter-${section}`);
         await expect(node).toBeVisible();
@@ -120,9 +1051,9 @@ for (const light of [true, false])
         expect(actual.width).toBe("1px");
         expect(actual.color).toBe(actual.expected);
       }
-      await page.screenshot({
+      await dialog.screenshot({
         animations: "disabled",
-        path: `temp/verification/feature-controls/context-sections-${light ? "light" : "dark"}-${width}.png`,
+        path: `temp/verification/context-meter/${test.info().project.name}-${light ? "light" : "dark"}-${width}.png`,
       });
     });
 
@@ -221,6 +1152,12 @@ const state = (page: Page) =>
       reading: !!document.querySelector("[data-composer][data-composer-reading]"),
     };
   });
+// Upper bound for waits on work that the browser paces. The transcript paints a few turns and
+// grows to its 20-turn window in a low-priority transition (about 1 s on a free machine), and
+// WebKit animates a long wheel delta frame by frame: on a starved CI runner (a Linux WebKit under
+// load sat idle for 4-7 s before reaching the end) either takes longer than the 5 s default. It only
+// bounds the wait; every expected value stays as it was.
+const SETTLE_WAIT = 20_000;
 async function wheel(page: Page, deltaY: number) {
   const box = (await scroller(page).boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 3);
@@ -228,26 +1165,39 @@ async function wheel(page: Page, deltaY: number) {
   await page.waitForTimeout(120);
 }
 async function readHistory(page: Page, deltaY = -1800) {
+  const start = await state(page);
   await wheel(page, deltaY);
-  await expect(reading(page)).toHaveCount(1);
+  await expect(reading(page)).toHaveCount(1, { timeout: SETTLE_WAIT });
+  // WebKit may only have applied the first wheel increment when reading mode
+  // appears. Prepending older turns can change absolute offsets on Chromium.
+  const travel = Math.min(start.top, -deltaY);
+  let lastTop: number | undefined;
+  await expect
+    .poll(
+      async () => {
+        const current = await state(page);
+        const moved = current.distance - start.distance + current.viewport - start.viewport;
+        const settled = current.top === lastTop && moved >= travel - 80;
+        lastTop = current.top;
+        return settled;
+      },
+      { timeout: SETTLE_WAIT },
+    )
+    .toBe(true);
   // Let the dock motion settle before measuring.
   await page.waitForTimeout(350);
 }
 async function open(page: Page, query: Record<string, string> = {}, light = false) {
   await page.goto(url(query, light));
-  await expect(field(page)).toBeVisible();
-  // The transcript renders its history progressively (later in WebKit); wait until it has
-  // settled so the reader's first scroll happens over the full history, not an empty start.
-  let previous = -1;
+  await expect(field(page)).toBeVisible({ timeout: SETTLE_WAIT });
+  // The fixture has 40 turns. Wait for the full initial 20-turn window. The
+  // first, shorter paint can also hold the same scroll height for two samples.
+  await expect(scroller(page).locator('[data-transcript-turn="user-20"]')).toBeAttached({
+    timeout: SETTLE_WAIT,
+  });
   await expect
-    .poll(async () => {
-      const height = await scroller(page).evaluate((el) => el.scrollHeight);
-      const settled = height === previous && height > 2 * (await state(page)).viewport;
-      previous = height;
-      return settled;
-    })
-    .toBe(true);
-  await expect.poll(async () => (await state(page)).distance).toBeLessThan(2);
+    .poll(async () => (await state(page)).distance, { timeout: SETTLE_WAIT })
+    .toBeLessThan(2);
 }
 
 for (const light of [false, true]) {
@@ -256,6 +1206,8 @@ for (const light of [false, true]) {
     test("normal at the end, compact while reading history, normal on focus and at the end", async ({
       page,
     }) => {
+      // The settle waits above can each take seconds on a starved runner (see SETTLE_WAIT).
+      test.slow();
       await page.setViewportSize({ width: 1280, height: 800 });
       await open(page, {}, light);
       const normal = await state(page);
@@ -272,7 +1224,7 @@ for (const light of [false, true]) {
       // Focus restores the normal layout without moving the reading position.
       const before = (await state(page)).top;
       await field(page).click();
-      await expect(reading(page)).toHaveCount(0);
+      await expect(reading(page)).toHaveCount(0, { timeout: SETTLE_WAIT });
       await page.waitForTimeout(350);
       const focused = await state(page);
       expect(Math.abs(focused.top - before)).toBeLessThanOrEqual(1);
@@ -281,13 +1233,17 @@ for (const light of [false, true]) {
 
       // Leaving focus while still reading history compacts again.
       await page.locator(".agent-transcript").click({ position: { x: 40, y: 40 } });
-      await expect(reading(page)).toHaveCount(1);
+      await expect(reading(page)).toHaveCount(1, { timeout: SETTLE_WAIT });
       await page.waitForTimeout(350);
       expect(Math.abs((await state(page)).top - before)).toBeLessThanOrEqual(1);
 
-      // Returning to the end restores the normal layout and following.
+      // Returning to the end restores the normal layout and following. The wheel's animated
+      // scroll reaches the end first; the layout and the pinned end follow it.
       await wheel(page, 20000);
-      await expect(reading(page)).toHaveCount(0);
+      await expect(reading(page)).toHaveCount(0, { timeout: SETTLE_WAIT });
+      await expect
+        .poll(async () => (await state(page)).distance, { timeout: SETTLE_WAIT })
+        .toBeLessThan(2);
       await page.waitForTimeout(350);
       const end = await state(page);
       expect(end.distance).toBeLessThan(2);
@@ -297,8 +1253,13 @@ for (const light of [false, true]) {
     test("one mounted textarea keeps its draft, caret and size to its content", async ({
       page,
     }) => {
+      // Four full page loads, each about 2.3 s on a free machine (see SETTLE_WAIT, plus the
+      // reading-mode dock motion). The 30 s default left no margin on a CI runner that is 2-3x
+      // slower, which timed out inside open(). The expectations are unchanged.
+      test.slow();
       await page.setViewportSize({ width: 1280, height: 800 });
       const heights: Record<string, number> = {};
+      let long: Awaited<ReturnType<typeof state>> | undefined;
       for (const draft of ["none", "short", "multi", "long"]) {
         await open(page, { draft }, light);
         await page.evaluate(() => {
@@ -310,6 +1271,7 @@ for (const light of [false, true]) {
         await readHistory(page);
         const compact = await state(page);
         heights[draft] = compact.field;
+        if (draft === "long") long = compact;
         expect(compact.field).toBeLessThanOrEqual(full.field);
         await capture(page, `${theme}-1280-4-reading-draft-${draft}`);
         await field(page).focus();
@@ -334,12 +1296,10 @@ for (const light of [false, true]) {
       expect(heights.none).toBe(heights.short);
       expect(heights.multi).toBeGreaterThan(heights.short + 20);
       expect(heights.long).toBeGreaterThanOrEqual(heights.multi);
-      // A very long draft is capped and scrolls inside the field.
-      await open(page, { draft: "long" }, light);
-      await readHistory(page);
-      const long = await state(page);
-      expect(long.field).toBeLessThanOrEqual(132 + 2);
-      expect(long.fieldScrolls).toBe(true);
+      // A very long draft is capped and scrolls inside the field. Its compact state was read in
+      // the loop above after the same fresh load and history read.
+      expect(long!.field).toBeLessThanOrEqual(132 + 2);
+      expect(long!.fieldScrolls).toBe(true);
     });
 
     test("does not toggle back and forth after compacting", async ({ page }) => {
@@ -701,3 +1661,118 @@ for (const theme of ["light", "dark"])
         path: `temp/verification/session-last-interactions/pane-${theme}-${width}.png`,
       });
     });
+
+// Runtime layout contracts for the composer in a real 320 px pane, in both themes at both window
+// sizes. The session pane becomes the 320 px pane; the dock must fit it without clipping.
+for (const { theme, width } of PANE_MATRIX)
+  test(`composer dock keeps its layout contracts in a 320px pane ${theme} ${width}`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(url({}, theme === "light"));
+    await expect(field(page)).toBeVisible();
+    await openPane(page, { theme, width, pane: "main[data-integrated-session]" });
+    await expectLayoutContracts(page, {
+      surface: "composer dock (320px pane)",
+      root: "[data-session-composer]",
+      allow: {
+        overflow: [
+          {
+            selector: ".cm-scroller, textarea",
+            reason: "The draft field scrolls its own long text vertically inside the editor.",
+          },
+        ],
+        gap: [
+          {
+            selector: ".composer-controls",
+            reason:
+              "In a pane under 31rem the toolbar packs its icon buttons at 4px so Stop and Send stay on one row; the model chip keeps its 6px glyph gap.",
+          },
+        ],
+      },
+    });
+  });
+
+// Composer contract: at 800 px the machine, checkout and branch chips show readable labels, and the
+// access shield is icon-only for every mode. Chips are the buttons of the workspace controls.
+for (const { theme, width } of PANE_MATRIX.filter((entry) => entry.width === 800))
+  test(`composer workspace chips show readable labels at 800px ${theme}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(url({ workspaceChips: "1", turns: "0" }, theme === "light"));
+    const controls = page.locator("[data-composer-workspace-controls]");
+    await expect(controls).toBeVisible();
+    await expect(controls.getByRole("button", { name: /^Run on:/ })).toHaveText("This computer");
+    await expect(
+      controls.getByRole("button", { name: "Workspace Current checkout" }),
+    ).toBeVisible();
+    await expect(controls.getByRole("button", { name: "Branch main", exact: true })).toBeVisible();
+    const chips = await controls.locator("button, [role='combobox']").evaluateAll((nodes) =>
+      nodes
+        .filter((node) => node.getBoundingClientRect().width > 0)
+        .map((node) => {
+          const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+          let text = "";
+          for (let n = walker.nextNode(); n; n = walker.nextNode()) text += n.textContent ?? "";
+          const label = text.replace(/\s+/g, " ").trim();
+          const box = node.getBoundingClientRect();
+          return {
+            name: node.getAttribute("aria-label") ?? label,
+            label,
+            width: box.width,
+            clipped: node.scrollWidth > node.clientWidth + 1,
+          };
+        }),
+    );
+    expect(chips.length, "workspace controls render their chips").toBeGreaterThanOrEqual(3);
+    for (const chip of chips) {
+      expect(
+        chip.label.length,
+        `chip "${chip.name}" shows a readable label, not an icon alone`,
+      ).toBeGreaterThan(0);
+      expect(chip.clipped, `chip "${chip.name}" label is not clipped`).toBe(false);
+    }
+  });
+
+test("the access shield stays icon-only for every mode", async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 800 });
+  await page.goto(url());
+  const trigger = page.locator("[data-access-picker-trigger]");
+  await expect(trigger).toBeVisible();
+  const iconOnly = () =>
+    trigger.evaluate((node) => ({
+      text: ((node as HTMLElement).innerText ?? "").replace(/\s+/g, " ").trim(),
+      glyphs: node.querySelectorAll("svg").length,
+      name: node.getAttribute("aria-label") ?? "",
+    }));
+  const check = async (mode: string) => {
+    const state = await iconOnly();
+    expect(state.text, `access shield (${mode}) shows no text`).toBe("");
+    expect(state.glyphs, `access shield (${mode}) shows its icon`).toBeGreaterThan(0);
+    expect(state.name.length, `access shield (${mode}) keeps an accessible name`).toBeGreaterThan(
+      0,
+    );
+  };
+  await check("initial");
+  await trigger.click();
+  const options = page.locator("[data-access-picker]").getByRole("option");
+  const count = await options.count();
+  expect(count, "the access menu lists every mode").toBeGreaterThan(1);
+  await page.keyboard.press("Escape");
+  const selectedNames = new Set<string>();
+  for (let index = 0; index < count; index++) {
+    await trigger.click();
+    const option = page.locator("[data-access-picker]").getByRole("option").nth(index);
+    const mode = (await option.textContent())?.trim() ?? String(index);
+    if (await option.isDisabled()) {
+      await page.keyboard.press("Escape");
+      continue;
+    }
+    await option.click();
+    await check(mode);
+    selectedNames.add((await trigger.getAttribute("aria-label")) ?? "");
+    await trigger.click();
+    await expect(options.nth(index)).toHaveAttribute("aria-selected", "true");
+    await page.keyboard.press("Escape");
+  }
+  expect(selectedNames.size).toBeGreaterThan(1);
+});

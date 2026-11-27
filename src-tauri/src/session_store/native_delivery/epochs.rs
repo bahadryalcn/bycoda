@@ -3,6 +3,10 @@
 use super::*;
 use serde::{Deserialize, Serialize};
 
+#[path = "epoch_gaps.rs"]
+mod gaps;
+pub(crate) use gaps::record_gap_tx;
+
 const MARKER_ROWS: i64 = 1_000_000;
 const MARKER_BYTES: i64 = 128 * 1024 * 1024;
 const COMPACT_ROWS: i64 = 32;
@@ -113,6 +117,7 @@ impl EpochHandle {
         self.state.generation as u64
     }
     /// Latest observed Host floor, not evidence that local rows can be deleted.
+    #[cfg(test)]
     pub(crate) fn through(&self) -> u64 {
         self.state.host_through as u64
     }
@@ -173,6 +178,10 @@ pub(super) fn parse_id(value: &str) -> Option<V2Id> {
         sequence,
     })
 }
+/// Neutral codec view of a canonical epoch original id: (owner, generation, sequence).
+pub(crate) fn parse_original_id(value: &str) -> Option<(String, i64, i64)> {
+    parse_id(value).map(|id| (id.owner, id.generation, id.sequence))
+}
 
 fn table(conn: &Connection, name: &str) -> Result<bool, String> {
     conn.query_row(
@@ -193,18 +202,17 @@ pub(super) fn check_structure(conn: &Connection) -> Result<(), String> {
         }
     }
     let anchored = anchor(conn)?;
+    // The gap table is either absent (pre-upgrade epoch Store) or fully guarded.
+    let gap = gaps::installed(conn)?;
+    if gap.0 != gap.1 || (gap.0 && count == 0) {
+        return Err(invalid());
+    }
     if count == 0 && !anchored {
-        if exists(conn)? {
-            let v2:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM native_delivery_originals WHERE original_id LIKE 'nd2:%')",[],|r|r.get(0)).map_err(|_|invalid())?;
-            if v2 {
-                return Err(invalid());
-            }
+        if exists(conn)? && has_epoch_ids(conn, TABLE)? {
+            return Err(invalid());
         }
-        if remote_ack_table_exists(conn)? {
-            let v2:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM native_delivery_remote_acks WHERE original_id LIKE 'nd2:%')",[],|r|r.get(0)).map_err(|_|invalid())?;
-            if v2 {
-                return Err(invalid());
-            }
+        if remote_ack_table_exists(conn)? && has_epoch_ids(conn, "native_delivery_remote_acks")? {
+            return Err(invalid());
         }
         return Ok(());
     }
@@ -213,6 +221,21 @@ pub(super) fn check_structure(conn: &Connection) -> Result<(), String> {
     }
     namespace(conn)?;
     Ok(())
+}
+
+fn has_epoch_ids(conn: &Connection, table: &str) -> Result<bool, String> {
+    // Fixed-prefix GLOB uses the ID index. Keep the case-insensitive evidence
+    // check from LIKE even though only lowercase nd2 IDs can be valid.
+    conn.query_row(
+        &format!(
+            "SELECT EXISTS(SELECT 1 FROM {table}
+          WHERE original_id GLOB 'nd2:*' OR original_id GLOB 'Nd2:*'
+          OR original_id GLOB 'nD2:*' OR original_id GLOB 'ND2:*')"
+        ),
+        [],
+        |r| r.get(0),
+    )
+    .map_err(|_| invalid())
 }
 fn namespace(conn: &Connection) -> Result<(String, String), String> {
     let ids = identity(conn)?;
@@ -240,14 +263,23 @@ fn namespace(conn: &Connection) -> Result<(String, String), String> {
     Ok(ids)
 }
 
-fn initialize(conn: &Connection) -> Result<(), String> {
+pub(super) fn has_gap_table(conn: &Connection) -> Result<bool, String> {
+    table(conn, gaps::TABLE)
+}
+
+fn initialize(conn: &Connection, runtime: uuid::Uuid) -> Result<(), String> {
     require_full(conn)?;
     check_structure(conn)?;
     if table(conn, TABLES[0])? {
-        read_budget(conn)?;
+        // Existing epoch Stores gain the gap-proof table in this FULL write.
+        gaps::migrate(conn)?;
+        retire_legacy_buffers(conn)?;
+        install_allocation_index(conn)?;
+        check_integrity(conn, runtime, true)?;
         return Ok(());
     }
     schema(conn)?;
+    retire_legacy_buffers(conn)?;
     remote_ack_schema(conn)?;
     conn.execute_batch(SCHEMA).map_err(|e| e.to_string())?;
     let ids = identity(conn)?;
@@ -271,7 +303,15 @@ fn initialize(conn: &Connection) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     install_guards(conn)?;
-    check_structure(conn)
+    install_allocation_index(conn)?;
+    check_structure(conn)?;
+    check_integrity(conn, runtime, true)?;
+    Ok(())
+}
+
+fn install_allocation_index(conn: &Connection) -> Result<(), String> {
+    conn.execute_batch("CREATE INDEX IF NOT EXISTS native_delivery_allocation_semantic ON native_delivery_epoch_allocations(source_store_id,source_profile_id,semantic_key)")
+        .map_err(|e| e.to_string())
 }
 
 const STATE_COLUMNS:&str="open_id,owner_id,generation,source_store_id,source_profile_id,route_fingerprint,local_through,high_water,host_through,host_high_water,closed,digest";
@@ -311,16 +351,19 @@ fn decode_state(row: &rusqlite::Row<'_>) -> rusqlite::Result<(State, String)> {
         row.get(11)?,
     ))
 }
-fn state(conn: &Connection, owner: &str, generation: i64) -> Result<State, String> {
-    state_inner(conn, owner, generation, true)
-}
-fn state_inner(
+fn state(
     conn: &Connection,
+    runtime: uuid::Uuid,
     owner: &str,
     generation: i64,
-    check_budget: bool,
 ) -> Result<State, String> {
+    #[cfg(test)]
+    tests::STATE_READS.with(|reads| reads.set(reads.get() + 1));
     check_structure(conn)?;
+    check_integrity(conn, runtime, true)?;
+    state_metadata(conn, owner, generation)
+}
+fn state_metadata(conn: &Connection, owner: &str, generation: i64) -> Result<State, String> {
     let read = |name: &str| {
         conn.query_row(
             &format!(
@@ -347,10 +390,35 @@ fn state_inner(
     if intent != value.open_id {
         return Err(invalid());
     }
-    let expected = value.high_water - value.local_through;
-    if expected > MAX_ROWS as i64 {
+    if value.high_water - value.local_through > MAX_ROWS as i64 {
         return Err(invalid());
     }
+    Ok(value)
+}
+
+const AUDIT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+type AuditKey = (uuid::Uuid, usize, i64, i64);
+// Normal FULL journal transactions preserve coverage. A foreign commit or DDL
+// forces another audit even before the periodic deadline.
+static AUDITS: std::sync::Mutex<Vec<(AuditKey, std::time::Instant)>> =
+    std::sync::Mutex::new(Vec::new());
+
+pub(in crate::session_store) fn invalidate_connection_audit(
+    conn: &Connection,
+) -> Result<(), String> {
+    // The RegisteredConnection can preserve this address across a writer swap,
+    // but SQLite's data_version is scoped to the old connection.
+    let address = conn as *const Connection as usize;
+    AUDITS
+        .lock()
+        .map_err(|_| invalid())?
+        .retain(|(key, _)| key.1 != address);
+    Ok(())
+}
+
+fn verify_slots(conn: &Connection, value: &State, expected: i64) -> Result<(), String> {
+    #[cfg(test)]
+    tests::SLOT_COUNTS.with(|counts| counts.set(counts.get() + 1));
     let actual:i64=conn.query_row("SELECT COUNT(*) FROM native_delivery_epoch_allocations a JOIN native_delivery_originals o ON o.original_id=a.original_id AND o.source_store_id=a.source_store_id AND o.source_profile_id=a.source_profile_id AND o.route_fingerprint=a.route_fingerprint AND o.semantic_key=a.semantic_key AND o.method=a.method AND o.payload_sha256=a.payload_sha256 AND o.payload_bytes=a.payload_bytes WHERE a.owner_id=?1 AND a.generation=?2 AND a.sequence>?3 AND a.sequence<=?4 AND a.original_id='nd2:'||a.owner_id||':'||a.generation||':'||a.sequence",params![value.owner_id,value.generation,value.local_through,value.high_water],|r|r.get(0)).map_err(|_|invalid())?;
     let stray:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM native_delivery_epoch_allocations WHERE owner_id=?1 AND generation=?2 AND (sequence<=?3 OR sequence>?4))",params![value.owner_id,value.generation,value.local_through,value.high_water],|r|r.get(0)).map_err(|_|invalid())?;
     if actual != expected || stray {
@@ -358,14 +426,13 @@ fn state_inner(
     }
     if value.local_through > 0 {
         let covered:i64=conn.query_row("SELECT COUNT(*) FROM native_delivery_semantic_retirements WHERE owner_id=?1 AND generation=?2 AND sequence BETWEEN 1 AND ?3 AND source_store_id=?4 AND source_profile_id=?5 AND route_fingerprint=?6",params![value.owner_id,value.generation,value.local_through,value.source_store_id,value.source_profile_id,value.route],|r|r.get(0)).map_err(|_|invalid())?;
-        if covered != value.local_through {
+        // Every compacted slot is a semantic marker or a permanent gap proof.
+        let fenced = gaps::covered(conn, value)?;
+        if covered.checked_add(fenced) != Some(value.local_through) {
             return Err(invalid());
         }
     }
-    if check_budget {
-        read_budget(conn)?;
-    }
-    Ok(value)
+    Ok(())
 }
 fn read_intent(
     conn: &Connection,
@@ -458,7 +525,12 @@ fn pinned(conn: &Connection, expected: &EpochHandle) -> Result<State, String> {
     if conn as *const Connection as usize != expected.connection {
         return Err(stale());
     }
-    let value = state(conn, &expected.state.owner_id, expected.state.generation)?;
+    let value = state(
+        conn,
+        expected.runtime,
+        &expected.state.owner_id,
+        expected.state.generation,
+    )?;
     if value.open_id != expected.state.open_id
         || value.route != expected.state.route
         || value.source_store_id != expected.state.source_store_id
@@ -480,7 +552,7 @@ pub(crate) fn open_id(store: &SessionStore, route: &str) -> Result<String, Strin
         return Err(invalid());
     }
     write(store, |conn| {
-        initialize(conn)?;
+        initialize(conn, store.native_instance_id())?;
         let ids = namespace(conn)?;
         if let Some(id) = read_intent(conn, &ids, route)? {
             return Ok(id);
@@ -560,7 +632,7 @@ pub(crate) fn bind_tx(
     if !hex(route) {
         return Err(invalid());
     }
-    initialize(conn)?;
+    initialize(conn, store.native_instance_id())?;
     let ids = namespace(conn)?;
     if read_intent(conn, &ids, route)?.as_deref() != Some(&description.open_id) {
         return Err(stale());
@@ -570,7 +642,7 @@ pub(crate) fn bind_tx(
         if owner != description.owner_id || generation as u64 != description.generation {
             return Err(stale());
         }
-        let value = state(conn, &owner, generation)?;
+        let value = state(conn, store.native_instance_id(), &owner, generation)?;
         if description.through < value.host_through as u64
             || description.high_water < value.host_high_water as u64
             || description.high_water > value.high_water as u64
@@ -628,6 +700,7 @@ pub(crate) fn current(store: &SessionStore, expected: &EpochHandle) -> Result<Ep
     Ok(handle(&conn, store, pinned(&conn, expected)?))
 }
 
+#[cfg(test)]
 pub(crate) fn prepare(
     store: &SessionStore,
     semantic_key: &str,
@@ -657,6 +730,37 @@ pub(crate) fn prepare_with_budget(
     budget: usize,
 ) -> Result<Original, String> {
     prepare_inputs(semantic_key, route, method, raw)?;
+    prepare_epoch(store, semantic_key, route, method, raw, epoch, budget)
+}
+
+#[cfg(test)]
+pub(crate) fn prepare_legacy_buffer(
+    store: &SessionStore,
+    semantic_key: &str,
+    route: &str,
+    raw: &str,
+    epoch: &EpochHandle,
+) -> Result<Original, String> {
+    prepare_epoch(
+        store,
+        semantic_key,
+        route,
+        LEGACY_BUFFER,
+        raw,
+        epoch,
+        LEGACY_BUFFER_BUDGET,
+    )
+}
+
+fn prepare_epoch(
+    store: &SessionStore,
+    semantic_key: &str,
+    route: &str,
+    method: &str,
+    raw: &str,
+    epoch: &EpochHandle,
+    budget: usize,
+) -> Result<Original, String> {
     runtime(store, epoch)?;
     write(store, |conn| {
         let mut value = pinned(conn, epoch)?;
@@ -708,6 +812,9 @@ pub(super) fn legacy_allocation_allowed(conn: &Connection, route: &str) -> Resul
             "NATIVE_DELIVERY_V2_REQUIRED: this route already initialized an ordered stream".into(),
         );
     }
+    // A legacy original has no epoch to pin. Before minting a UUID, validate
+    // the bounded route catalog so a damaged v2 binding can't fall back to v1.
+    verify_catalog(conn, &ids, false)?;
     Ok(())
 }
 
@@ -715,8 +822,47 @@ pub(super) fn validate_original(conn: &Connection, original: &Original) -> Resul
     let Some(id) = parse_id(original.id()) else {
         return Ok(());
     };
-    let value = state(conn, &id.owner, id.generation)?;
-    if id.sequence <= value.local_through
+    let value = state(conn, original.runtime, &id.owner, id.generation)?;
+    validate_original_in_state(conn, original, &id, &value)
+}
+
+/// Validates the originals of one page, reading each epoch state once. `state` re-verifies
+/// every live slot, so checking it per original made a 32-row page cost seconds at a large
+/// backlog and the bounded recovery pass ran out of time before reaching any held original.
+pub(super) struct PageValidator<'c> {
+    conn: &'c Connection,
+    states: std::collections::HashMap<(String, i64), Result<State, String>>,
+}
+impl<'c> PageValidator<'c> {
+    pub(super) fn new(conn: &'c Connection) -> Self {
+        Self {
+            conn,
+            states: std::collections::HashMap::new(),
+        }
+    }
+    pub(super) fn check(&mut self, original: &Original) -> Result<(), String> {
+        let Some(id) = parse_id(original.id()) else {
+            return Ok(());
+        };
+        let conn = self.conn;
+        let value = self
+            .states
+            .entry((id.owner.clone(), id.generation))
+            .or_insert_with(|| state(conn, original.runtime, &id.owner, id.generation))
+            .clone()?;
+        validate_original_in_state(conn, original, &id, &value)
+    }
+}
+
+fn validate_original_in_state(
+    conn: &Connection,
+    original: &Original,
+    id: &V2Id,
+    value: &State,
+) -> Result<(), String> {
+    if id.owner != value.owner_id
+        || id.generation != value.generation
+        || id.sequence <= value.local_through
         || id.sequence > value.high_water
         || original.source_store_id != value.source_store_id
         || original.source_profile_id != value.source_profile_id
@@ -743,7 +889,7 @@ pub(crate) fn for_original(
     Ok(Some(handle(
         &conn,
         store,
-        state(&conn, &id.owner, id.generation)?,
+        state(&conn, original.runtime, &id.owner, id.generation)?,
     )))
 }
 
@@ -775,10 +921,31 @@ fn read_budget(conn: &Connection) -> Result<(i64, i64), String> {
         || value.0 > MARKER_ROWS
         || value.1 < 0
         || value.1 > MARKER_BYTES
+        || (value.0 == 0) != (value.1 == 0)
         || budget_hash(&ids, value.0, value.1) != value.2
     {
         return Err(invalid());
     }
+    let tip: Option<String> = conn
+        .query_row(
+            &format!(
+                "SELECT {} FROM native_delivery_semantic_retirements ORDER BY rowid DESC LIMIT 1",
+                bounded("budget_digest", 64, 64)
+            ),
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|_| invalid())?;
+    if tip.as_deref() != (value.0 != 0).then_some(value.2.as_str()) {
+        return Err(invalid());
+    }
+    Ok((value.0, value.1))
+}
+
+fn verify_budget(conn: &Connection, expected: (i64, i64)) -> Result<(), String> {
+    #[cfg(test)]
+    tests::MARKER_COUNTS.with(|counts| counts.set(counts.get() + 1));
     let actual: (i64, i64) = conn
         .query_row(
             "SELECT COUNT(*),COALESCE(SUM(weight),0) FROM native_delivery_semantic_retirements",
@@ -786,13 +953,106 @@ fn read_budget(conn: &Connection) -> Result<(i64, i64), String> {
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .map_err(|_| invalid())?;
-    if actual != (value.0, value.1) {
+    if actual != expected {
         return Err(invalid());
     }
-    Ok((value.0, value.1))
+    Ok(())
+}
+
+fn check_integrity(conn: &Connection, runtime: uuid::Uuid, has_epochs: bool) -> Result<(), String> {
+    if has_epochs {
+        read_budget(conn)?;
+    }
+    let connection = conn as *const Connection as usize;
+    let (data, schema) = conn
+        .query_row(
+            "SELECT data_version,schema_version FROM pragma_data_version(),pragma_schema_version()",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|_| invalid())?;
+    let key = (runtime, connection, data, schema);
+    if AUDITS
+        .lock()
+        .map_err(|_| invalid())?
+        .iter()
+        .any(|(cached, at)| *cached == key && at.elapsed() < AUDIT_INTERVAL)
+    {
+        return Ok(());
+    }
+    let audit = |snapshot: &Connection| -> Result<bool, String> {
+        usage::verify(snapshot)?;
+        if !has_epochs {
+            return Ok(true);
+        }
+        let guarded = guards_present(snapshot)?;
+        if !guarded {
+            static MISSING_GUARDS: std::sync::Once = std::sync::Once::new();
+            MISSING_GUARDS.call_once(|| {
+                log::warn!(
+                    "Native delivery epoch guards missing. Running a full audit on every call."
+                );
+            });
+        }
+        verify_budget(snapshot, read_budget(snapshot)?)?;
+        verify_catalog(snapshot, &namespace(snapshot)?, true)?;
+        Ok(guarded)
+    };
+    let guarded = if conn.is_autocommit() {
+        let tx = conn.unchecked_transaction().map_err(|_| invalid())?;
+        let guarded = audit(&tx)?;
+        tx.commit().map_err(|_| invalid())?;
+        guarded
+    } else {
+        audit(conn)?
+    };
+    let mut audits = AUDITS.lock().map_err(|_| invalid())?;
+    audits.retain(|(cached, _)| cached.0 != runtime || cached.1 != connection);
+    if guarded {
+        if audits.len() >= 16 {
+            audits.remove(0);
+        }
+        audits.push((key, std::time::Instant::now()));
+    }
+    Ok(())
+}
+
+fn guards_present(conn: &Connection) -> Result<bool, String> {
+    // A local statement could erase replay evidence without changing either cookie.
+    let guards: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN (
+              'native_delivery_semantic_retirements_retained',
+              'native_delivery_semantic_retirements_immutable',
+              'native_delivery_semantic_retirements_no_replace',
+              'native_delivery_semantic_marker_account',
+              'native_delivery_semantic_marker_valid',
+              'native_delivery_semantic_marker_capacity',
+              'native_delivery_semantic_budget_retained',
+              'native_delivery_semantic_budget_monotonic',
+              'native_delivery_semantic_budget_witness_retained',
+              'native_delivery_semantic_budget_witness_monotonic',
+              'native_delivery_epochs_retained',
+              'native_delivery_epoch_witnesses_retained',
+              'native_delivery_epoch_intents_retained',
+              'native_delivery_epoch_intent_witnesses_retained',
+              'native_delivery_epoch_allocation_retained',
+              'native_delivery_epoch_allocation_immutable',
+              'native_delivery_no_delete',
+              'native_delivery_identity_immutable',
+              'native_delivery_identity_no_replace',
+              'native_delivery_epoch_gaps_retained',
+              'native_delivery_epoch_gaps_immutable',
+              'native_delivery_epoch_gaps_no_replace')",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|_| invalid())?;
+    Ok(guards == if gaps::installed(conn)?.0 { 22 } else { 19 })
 }
 pub(super) fn check_semantic(
     conn: &Connection,
+    runtime: uuid::Uuid,
     ids: &(String, String),
     semantic: &str,
     route: &str,
@@ -801,10 +1061,27 @@ pub(super) fn check_semantic(
     bytes: usize,
 ) -> Result<(), String> {
     check_structure(conn)?;
-    if !table(conn, "native_delivery_semantic_retirements")? {
+    let has_epochs = table(conn, "native_delivery_semantic_retirements")?;
+    check_integrity(conn, runtime, has_epochs)?;
+    if !has_epochs {
         return Ok(());
     }
-    read_budget(conn)?;
+    read_intent(conn, ids, route)?;
+    let old:Option<(String,String,String,i64)>=conn.query_row(&format!("SELECT {},{},{},payload_bytes FROM native_delivery_semantic_retirements WHERE source_store_id=?1 AND source_profile_id=?2 AND semantic_key=?3",bounded("route_fingerprint",64,64),bounded("method",1,128),bounded("payload_sha256",64,64)),params![ids.0,ids.1,semantic],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional().map_err(|_|invalid())?;
+    if let Some(old) = old {
+        if old != (route.into(), method.into(), hash.into(), bytes as i64) {
+            return Err("NATIVE_DELIVERY_CONFLICT: this retired original key belongs to a different route, method or exact request bytes".into());
+        }
+        return Err("NATIVE_DELIVERY_RETIRED: this semantic original was durably consumed and compacted; do not create another identity".into());
+    }
+    gaps::check_semantic(conn, ids, semantic, route, method, hash, bytes)
+}
+
+fn verify_catalog(
+    conn: &Connection,
+    ids: &(String, String),
+    audit_slots: bool,
+) -> Result<(), String> {
     // A v1 writer must not remint an original after losing a v2 slot/marker.
     // Validate the bounded initialized stream catalog; never reconstruct tips.
     let mut intents = conn
@@ -839,16 +1116,17 @@ pub(super) fn check_semantic(
         return Err(invalid());
     }
     for (owner, generation) in bound {
-        state_inner(conn, &owner, generation, false)?;
-    }
-    let old:Option<(String,String,String,i64)>=conn.query_row(&format!("SELECT {},{},{},payload_bytes FROM native_delivery_semantic_retirements WHERE source_store_id=?1 AND source_profile_id=?2 AND semantic_key=?3",bounded("route_fingerprint",64,64),bounded("method",1,128),bounded("payload_sha256",64,64)),params![ids.0,ids.1,semantic],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional().map_err(|_|invalid())?;
-    if let Some(old) = old {
-        if old != (route.into(), method.into(), hash.into(), bytes as i64) {
-            return Err("NATIVE_DELIVERY_CONFLICT: this retired original key belongs to a different route, method or exact request bytes".into());
+        let value = state_metadata(conn, &owner, generation)?;
+        if audit_slots {
+            verify_slots(conn, &value, value.high_water - value.local_through)?;
         }
-        return Err("NATIVE_DELIVERY_RETIRED: this semantic original was durably consumed and compacted; do not create another identity".into());
     }
     Ok(())
+}
+
+struct Prefix {
+    slots: Vec<(Original, bool)>,
+    blocker: Option<Original>,
 }
 
 fn prefix(
@@ -857,29 +1135,96 @@ fn prefix(
     end: i64,
     runtime: uuid::Uuid,
     connection: usize,
-    strict: bool,
-) -> Result<Vec<Original>, String> {
+) -> Result<Prefix, String> {
+    // `(original, gap)`: consumed and remote-ACKed, or exactly proven never admitted.
     let mut originals = Vec::new();
     for sequence in value.local_through + 1..=end {
         let id = format!("nd2:{}:{}:{}", value.owner_id, value.generation, sequence);
-        let original = read(conn, &id, runtime, connection)?.ok_or_else(invalid)?;
-        if original.phase() != Phase::Acknowledged || !remote_acked(conn, &original)? {
-            if strict {
-                return Err("NATIVE_DELIVERY_EPOCH_HOLE: Host floor cannot replace local consume and remote ACK evidence".into());
-            }
-            break;
+        let original = read_record(conn, &id, runtime, connection)?.ok_or_else(invalid)?;
+        let id = parse_id(original.id()).ok_or_else(invalid)?;
+        validate_original_in_state(conn, &original, &id, value)?;
+        let retired = original.phase() == Phase::Acknowledged && remote_acked(conn, &original)?;
+        if !retired && !gaps::proven(conn, &original)? {
+            return Ok(Prefix {
+                slots: originals,
+                blocker: Some(original),
+            });
         }
-        originals.push(original);
+        originals.push((original, !retired));
     }
-    Ok(originals)
+    Ok(Prefix {
+        slots: originals,
+        blocker: None,
+    })
 }
-pub(crate) fn eligible_through(store: &SessionStore, epoch: &EpochHandle) -> Result<u64, String> {
+
+/// The compacted prefix of an open epoch on this route that still retains slots past it,
+/// so idle maintenance has work. Read-only; `None` before the epoch tables exist.
+pub(crate) fn backlog(store: &SessionStore, route: &str) -> Result<Option<i64>, String> {
+    store.with_read_conn(|conn| {
+        let exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='native_delivery_epochs')",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if !exists {
+            return Ok(None);
+        }
+        conn.query_row(
+            "SELECT MIN(local_through) FROM native_delivery_epochs WHERE route_fingerprint=?1 AND closed=0 AND local_through<high_water",
+            [route],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())
+    })
+}
+
+pub(crate) struct MaintenancePlan {
+    pub(crate) expected_through: u64,
+    pub(crate) eligible_through: u64,
+    pub(crate) gap: Option<Original>,
+}
+
+pub(crate) fn maintenance_plan(
+    store: &SessionStore,
+    epoch: &EpochHandle,
+    gap_supported: bool,
+) -> Result<MaintenancePlan, String> {
     runtime(store, epoch)?;
     let conn = store.lock_conn()?;
-    let value = pinned(&conn, epoch)?;
+    // Keep the pinned state and its checked originals in one SQLite snapshot.
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let value = pinned(&tx, epoch)?;
     let end = value.high_water.min(value.local_through + COMPACT_ROWS);
-    let rows = prefix(&conn, &value, end, epoch.runtime, epoch.connection, false)?;
-    Ok((value.local_through + rows.len() as i64) as u64)
+    let prefix = prefix(&tx, &value, end, epoch.runtime, epoch.connection)?;
+    let eligible_through = value.local_through + prefix.slots.len() as i64;
+    let mut gap = None;
+    // A retired prefix takes priority. Only try the first unresolved slot.
+    if gap_supported && eligible_through <= value.host_through {
+        if let Some(original) = prefix.blocker {
+            if gaps::eligible(&original) && !remote_acked(&tx, &original)? {
+                gap = Some(original);
+            }
+        }
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(MaintenancePlan {
+        expected_through: value.host_through as u64,
+        eligible_through: eligible_through as u64,
+        gap,
+    })
+}
+
+#[cfg(test)]
+fn eligible_through(store: &SessionStore, epoch: &EpochHandle) -> Result<u64, String> {
+    Ok(maintenance_plan(store, epoch, false)?.eligible_through)
+}
+
+#[cfg(test)]
+fn gap_candidate(store: &SessionStore, epoch: &EpochHandle) -> Result<Option<Original>, String> {
+    Ok(maintenance_plan(store, epoch, true)?.gap)
 }
 #[cfg(test)]
 pub(crate) fn compact(
@@ -918,9 +1263,16 @@ fn compact_limits(
         return Err(stale());
     }
     let end = (description.through as i64).min(value.local_through + COMPACT_ROWS);
-    let originals = prefix(conn, &value, end, epoch.runtime, epoch.connection, true)?;
+    let prefix = prefix(conn, &value, end, epoch.runtime, epoch.connection)?;
+    if prefix.blocker.is_some() {
+        return Err("NATIVE_DELIVERY_EPOCH_HOLE: Host floor cannot replace local consume and remote ACK evidence".into());
+    }
+    let (originals, fenced): (Vec<_>, Vec<_>) = prefix.slots.into_iter().partition(|slot| !slot.1);
     let (rows, bytes) = read_budget(conn)?;
-    let weights = originals.iter().map(marker_weight).collect::<Vec<_>>();
+    let weights = originals
+        .iter()
+        .map(|slot| marker_weight(&slot.0))
+        .collect::<Vec<_>>();
     let added = weights
         .iter()
         .try_fold(0i64, |sum, n| sum.checked_add(*n))
@@ -940,7 +1292,7 @@ fn compact_limits(
     let ids = namespace(conn)?;
     let mut used_rows = rows;
     let mut used_bytes = bytes;
-    for (original, weight) in originals.iter().zip(weights) {
+    for ((original, _), weight) in originals.iter().zip(weights) {
         let id = parse_id(original.id()).ok_or_else(invalid)?;
         let consumed = original.consumed_result()?;
         used_rows += 1;
@@ -963,10 +1315,14 @@ fn compact_limits(
         )
         .map_err(|e| e.to_string())?;
     }
+    // A gap slot gets no marker: its permanent proof is the covered evidence.
+    for (original, _) in &fenced {
+        gaps::compact_slot(conn, original)?;
+    }
     if read_budget(conn)? != (total_rows, total_bytes) {
         return Err(invalid());
     }
-    Ok(originals.len())
+    Ok(originals.len() + fenced.len())
 }
 fn marker_weight(o: &Original) -> i64 {
     (320 + o.source_store_id.len()
@@ -1030,13 +1386,13 @@ fn install_guards(conn: &Connection) -> Result<(), String> {
     ] {
         conn.execute_batch(&format!("CREATE TRIGGER {name}_monotonic BEFORE UPDATE ON {name} WHEN NEW.id!=OLD.id OR NEW.rows<OLD.rows OR NEW.rows>OLD.rows+32 OR NEW.rows>1000000 OR NEW.bytes<OLD.bytes OR NEW.bytes>134217728 BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_CAPACITY'); END; CREATE TRIGGER {name}_retained BEFORE DELETE ON {name} BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_RETAINED'); END;")).map_err(|e|e.to_string())?;
     }
-    conn.execute_batch(GUARDS).map_err(|e| e.to_string())
+    conn.execute_batch(GUARDS).map_err(|e| e.to_string())?;
+    gaps::migrate(conn)
 }
 
+// The semantic guard, original/allocation/unavailable retention guards are
+// defined once in `gaps::migrate`, which also upgrades older epoch Stores.
 const GUARDS: &str = r#"
-CREATE TRIGGER native_delivery_epoch_semantic_guard BEFORE INSERT ON native_delivery_originals
-WHEN EXISTS(SELECT 1 FROM native_delivery_semantic_retirements m WHERE m.source_store_id=NEW.source_store_id AND m.source_profile_id=NEW.source_profile_id AND m.semantic_key=NEW.semantic_key) OR EXISTS(SELECT 1 FROM native_delivery_epoch_allocations a WHERE a.source_store_id=NEW.source_store_id AND a.source_profile_id=NEW.source_profile_id AND a.semantic_key=NEW.semantic_key AND a.original_id!=NEW.original_id)
-BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_RETIRED'); END;
 CREATE TRIGGER native_delivery_epoch_insert_guard BEFORE INSERT ON native_delivery_originals WHEN NEW.original_id LIKE 'nd2:%' AND NOT EXISTS(
  SELECT 1 FROM native_delivery_epoch_allocations a JOIN native_delivery_epochs e ON e.owner_id=a.owner_id AND e.generation=a.generation
  JOIN native_delivery_epoch_witnesses w ON w.owner_id=e.owner_id AND w.generation=e.generation AND w.digest=e.digest AND w.open_id=e.open_id AND w.source_store_id=e.source_store_id AND w.source_profile_id=e.source_profile_id AND w.route_fingerprint=e.route_fingerprint AND w.local_through=e.local_through AND w.high_water=e.high_water AND w.host_through=e.host_through AND w.host_high_water=e.host_high_water AND w.closed=e.closed
@@ -1076,11 +1432,6 @@ CREATE TRIGGER native_delivery_semantic_marker_account AFTER INSERT ON native_de
  UPDATE native_delivery_semantic_budget SET rows=rows+1,bytes=bytes+NEW.weight,digest=NEW.budget_digest WHERE id=1;
  UPDATE native_delivery_semantic_budget_witness SET rows=rows+1,bytes=bytes+NEW.weight,digest=NEW.budget_digest WHERE id=1;
 END;
-DROP TRIGGER native_delivery_no_delete;
-CREATE TRIGGER native_delivery_no_delete BEFORE DELETE ON native_delivery_originals WHEN OLD.phase!='acknowledged' OR NOT EXISTS(
- SELECT 1 FROM native_delivery_semantic_retirements m JOIN native_delivery_epochs e ON e.owner_id=m.owner_id AND e.generation=m.generation JOIN native_delivery_epoch_witnesses w ON w.owner_id=e.owner_id AND w.generation=e.generation AND w.digest=e.digest AND w.open_id=e.open_id AND w.source_store_id=e.source_store_id AND w.source_profile_id=e.source_profile_id AND w.route_fingerprint=e.route_fingerprint AND w.local_through=e.local_through AND w.high_water=e.high_water AND w.host_through=e.host_through AND w.host_high_water=e.host_high_water AND w.closed=e.closed AND w.local_through=e.local_through
- WHERE OLD.original_id='nd2:'||m.owner_id||':'||m.generation||':'||m.sequence AND m.original_id=OLD.original_id AND m.source_store_id=OLD.source_store_id AND m.source_profile_id=OLD.source_profile_id AND m.semantic_key=OLD.semantic_key AND m.route_fingerprint=OLD.route_fingerprint AND m.method=OLD.method AND m.payload_sha256=OLD.payload_sha256 AND m.payload_bytes=OLD.payload_bytes AND m.result_sha256=OLD.result_sha256 AND m.result_bytes=OLD.result_bytes AND m.sequence<=e.local_through AND e.local_through<=e.host_through)
-BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_RETAINED'); END;
 DROP TRIGGER native_delivery_remote_ack_retained;
 CREATE TRIGGER native_delivery_remote_ack_retained BEFORE DELETE ON native_delivery_remote_acks WHEN NOT EXISTS(
  SELECT 1 FROM native_delivery_semantic_retirements m JOIN native_delivery_epochs e ON e.owner_id=m.owner_id AND e.generation=m.generation JOIN native_delivery_epoch_witnesses w ON w.owner_id=e.owner_id AND w.generation=e.generation AND w.digest=e.digest AND w.open_id=e.open_id AND w.source_store_id=e.source_store_id AND w.source_profile_id=e.source_profile_id AND w.route_fingerprint=e.route_fingerprint AND w.local_through=e.local_through AND w.high_water=e.high_water AND w.host_through=e.host_through AND w.host_high_water=e.host_high_water AND w.closed=e.closed AND w.local_through=e.local_through
@@ -1088,13 +1439,6 @@ CREATE TRIGGER native_delivery_remote_ack_retained BEFORE DELETE ON native_deliv
  WHERE m.original_id=OLD.original_id AND m.original_id='nd2:'||m.owner_id||':'||m.generation||':'||m.sequence
  AND o.source_store_id=m.source_store_id AND o.source_profile_id=m.source_profile_id AND o.route_fingerprint=m.route_fingerprint AND o.semantic_key=m.semantic_key AND o.method=m.method AND o.payload_sha256=m.payload_sha256 AND o.payload_bytes=m.payload_bytes
  AND m.result_sha256=OLD.result_sha256 AND m.result_bytes=OLD.result_bytes AND m.sequence<=e.local_through AND e.local_through<=e.host_through)
-BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_RETAINED'); END;
-CREATE TRIGGER native_delivery_epoch_allocation_retained BEFORE DELETE ON native_delivery_epoch_allocations WHEN NOT EXISTS(
- SELECT 1 FROM native_delivery_semantic_retirements m JOIN native_delivery_epochs e ON e.owner_id=m.owner_id AND e.generation=m.generation JOIN native_delivery_epoch_witnesses w ON w.owner_id=e.owner_id AND w.generation=e.generation AND w.digest=e.digest AND w.open_id=e.open_id AND w.source_store_id=e.source_store_id AND w.source_profile_id=e.source_profile_id AND w.route_fingerprint=e.route_fingerprint AND w.local_through=e.local_through AND w.high_water=e.high_water AND w.host_through=e.host_through AND w.host_high_water=e.host_high_water AND w.closed=e.closed AND w.local_through=e.local_through
- WHERE m.original_id=OLD.original_id AND m.original_id='nd2:'||m.owner_id||':'||m.generation||':'||m.sequence
- AND m.source_store_id=OLD.source_store_id AND m.source_profile_id=OLD.source_profile_id AND m.route_fingerprint=OLD.route_fingerprint AND m.semantic_key=OLD.semantic_key AND m.method=OLD.method AND m.payload_sha256=OLD.payload_sha256 AND m.payload_bytes=OLD.payload_bytes
- AND m.owner_id=OLD.owner_id AND m.generation=OLD.generation AND m.sequence=OLD.sequence AND m.sequence<=e.local_through
- AND NOT EXISTS(SELECT 1 FROM native_delivery_originals o WHERE o.original_id=OLD.original_id))
 BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_RETAINED'); END;
 "#;
 

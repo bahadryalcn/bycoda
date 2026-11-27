@@ -10,30 +10,29 @@ import { ProfileSelect } from "./ProfileControls";
 import { ScheduleHours } from "./ScheduleHours";
 import { ProfileSwitch, useProfileRows } from "./SettingsProfileRow";
 import styles from "./schedule.module.css";
-import viewStyles from "../AssistantView.module.css";
 import { Text } from "../../../../shared/ui/Text";
 import roleStyles from "../AssistantProfileFields.module.css";
-import { AdvancedSettings } from "../../../../shared/ui/settings";
 
-const notificationOptions = [
-  ["all", "All updates"],
-  ["urgent", "Urgent only"],
-  ["none", "None"],
-] as const;
+const notificationOptions = () =>
+  [
+    ["all", t("All updates")],
+    ["urgent", t("Urgent only")],
+    ["none", t("None")],
+  ] as const;
 
 /** The presence and hours explanation, shown beside the section title. */
 export function AssistantScheduleInfo() {
   return (
     <InfoPopover label={t("About presence and hours")}>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
+      <Text as="p" size="secondary">
         {t("Idle and away are based on inactivity.")}
       </Text>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
+      <Text as="p" size="secondary">
         {t(
           "Outside work hours, new work waits and accepted turns can finish. Quiet hours hold notifications for the next briefing.",
         )}
       </Text>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
+      <Text as="p" size="secondary">
         {t(
           "Task observations use only projects enabled for manual supervision. Notifications still follow presence and quiet hours.",
         )}
@@ -61,20 +60,20 @@ export function AssistantScheduleFields({
     values.map((value) => ({ value, label: t("{p0} min", { p0: value }) }));
   const availabilityInfo = (
     <InfoPopover label={t("About availability")}>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
+      <Text as="p" size="secondary">
         {t(
           "Matching work hours allow work all day. Outside these hours, accepted turns can finish; new work waits.",
         )}
       </Text>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
+      <Text as="p" size="secondary">
         {t("Do not disturb and quiet hours hold notifications for your next briefing.")}
       </Text>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
+      <Text as="p" size="secondary">
         {t(
           "Prevents sleep while jobs run or away mode is enabled. Locking the screen still protects your desktop.",
         )}
       </Text>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
+      <Text as="p" size="secondary">
         {t("Work tracking continues while voice is off.")}
       </Text>
     </InfoPopover>
@@ -86,22 +85,25 @@ export function AssistantScheduleFields({
         <ProfileSelect
           label={t("When present")}
           value={String(value.notificationPresent ?? policy.notificationPresent)}
-          options={notificationOptions}
+          options={notificationOptions()}
           onValueChange={(next) =>
-            onChange({ notificationPresent: next as AssistantProfilePatch["notificationPresent"] })
+            onChange({
+              notificationPresent: next as AssistantProfilePatch["notificationPresent"],
+            })
           }
         />
         <ProfileSelect
           label={t("When away")}
           value={String(value.notificationAway ?? policy.notificationAway)}
-          options={notificationOptions}
+          options={notificationOptions()}
           onValueChange={(next) =>
-            onChange({ notificationAway: next as AssistantProfilePatch["notificationAway"] })
+            onChange({
+              notificationAway: next as AssistantProfilePatch["notificationAway"],
+            })
           }
         />
         <ProfileSwitch
           label={t("Task done")}
-          description={t("Observed tasks in projects enabled for manual supervision.")}
           checked={policy.observationTaskDone}
           onCheckedChange={(observationTaskDone) => onChange({ observationTaskDone })}
         />
@@ -139,39 +141,33 @@ export function AssistantScheduleFields({
           checked={value.keepAwakeWhileAway ?? true}
           onCheckedChange={(keepAwakeWhileAway) => onChange({ keepAwakeWhileAway })}
         />
-        <AdvancedSettings
-          title={t("Inactivity and recovery")}
-          defaultOpen={!validPolicy}
-          keepMounted
-        >
-          <AssistantPresetNumber
-            label={t("Idle after")}
-            value={value.idleMinutes ?? policy.idleMinutes}
-            min={1}
-            max={1440}
-            unit={t("minutes")}
-            presets={minutes([5, 10, 15, 30, 60])}
-            onChange={(idleMinutes) => onChange({ idleMinutes })}
-          />
-          <AssistantPresetNumber
-            label={t("Away after")}
-            value={value.awayMinutes ?? policy.awayMinutes}
-            min={2}
-            max={10080}
-            unit={t("minutes")}
-            presets={minutes([15, 30, 60, 120, 240])}
-            onChange={(awayMinutes) => onChange({ awayMinutes })}
-          />
-          <AssistantPresetNumber
-            label={t("Stall timeout")}
-            value={value.stallMinutes ?? 15}
-            min={5}
-            max={1440}
-            unit={t("minutes")}
-            presets={minutes([5, 15, 30, 60, 120])}
-            onChange={(stallMinutes) => onChange({ stallMinutes })}
-          />
-        </AdvancedSettings>
+        <AssistantPresetNumber
+          label={t("Idle after")}
+          value={value.idleMinutes ?? policy.idleMinutes}
+          min={1}
+          max={1440}
+          unit={t("minutes")}
+          presets={minutes([5, 10, 15, 30, 60])}
+          onChange={(idleMinutes) => onChange({ idleMinutes })}
+        />
+        <AssistantPresetNumber
+          label={t("Away after")}
+          value={value.awayMinutes ?? policy.awayMinutes}
+          min={2}
+          max={10080}
+          unit={t("minutes")}
+          presets={minutes([15, 30, 60, 120, 240])}
+          onChange={(awayMinutes) => onChange({ awayMinutes })}
+        />
+        <AssistantPresetNumber
+          label={t("Stall timeout")}
+          value={value.stallMinutes ?? 15}
+          min={5}
+          max={1440}
+          unit={t("minutes")}
+          presets={minutes([5, 15, 30, 60, 120])}
+          onChange={(stallMinutes) => onChange({ stallMinutes })}
+        />
         {!validPolicy && <InlineError>{t("Away must start later than idle.")}</InlineError>}
       </>
     );
@@ -214,17 +210,21 @@ export function AssistantScheduleFields({
         <ProfileSelect
           label={t("When present")}
           value={String(value.notificationPresent ?? policy.notificationPresent)}
-          options={notificationOptions}
+          options={notificationOptions()}
           onValueChange={(next) =>
-            onChange({ notificationPresent: next as AssistantProfilePatch["notificationPresent"] })
+            onChange({
+              notificationPresent: next as AssistantProfilePatch["notificationPresent"],
+            })
           }
         />
         <ProfileSelect
           label={t("When away")}
           value={String(value.notificationAway ?? policy.notificationAway)}
-          options={notificationOptions}
+          options={notificationOptions()}
           onValueChange={(next) =>
-            onChange({ notificationAway: next as AssistantProfilePatch["notificationAway"] })
+            onChange({
+              notificationAway: next as AssistantProfilePatch["notificationAway"],
+            })
           }
         />
         <div className={styles.switchCell}>
@@ -242,10 +242,9 @@ export function AssistantScheduleFields({
           />
         </div>
         <div className={styles.hintRow}>
-          <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
-            {t("Observed tasks in projects enabled for manual supervision.")}
-          </Text>
-          {!observationTasksAvailable && (
+          {observationTasksAvailable ? (
+            <Text size="secondary">{t("Task observations available")}</Text>
+          ) : (
             <Badge tone="warning" size="xs">
               {t("Readiness not confirmed")}
             </Badge>
@@ -296,7 +295,10 @@ function AssistantReminderFields({
         min={0}
         max={10}
         unit={t("reminders")}
-        presets={[0, 1, 2, 3, 5, 10].map((value) => ({ value, label: String(value) }))}
+        presets={[0, 1, 2, 3, 5, 10].map((value) => ({
+          value,
+          label: String(value),
+        }))}
         onChange={(urgentNotificationRepeats) => onChange({ urgentNotificationRepeats })}
       />
       <AssistantPresetNumber

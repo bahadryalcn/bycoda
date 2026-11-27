@@ -1,7 +1,6 @@
 import { phonePairingCode, phonePairingError } from "./phonePairingContract";
 import type { RemoteMachine } from "./protocol";
-import type { PhonePairingApi, PhonePairingState } from "./phonePairingTypes";
-import type { MobileAccessMode } from "../../../integrations/mobile-lan";
+import type { PhonePairingApi, PhonePairingMode, PhonePairingState } from "./phonePairingTypes";
 
 const CLOSED: PhonePairingState = { stage: "closed" };
 
@@ -11,7 +10,7 @@ export class PhonePairingCoordinator {
   private generation = 0;
   private listeners = new Set<() => void>();
   private pollId: string | undefined;
-  private mode: MobileAccessMode = "lan";
+  private mode: PhonePairingMode = "lan";
 
   constructor(
     private readonly api: PhonePairingApi,
@@ -43,7 +42,7 @@ export class PhonePairingCoordinator {
     this.release(previous);
   };
 
-  open = async (machine: RemoteMachine, mode: MobileAccessMode = this.mode): Promise<void> => {
+  open = async (machine: RemoteMachine, mode: PhonePairingMode = this.mode): Promise<void> => {
     this.mode = mode;
     const previous = this.state;
     const generation = ++this.generation;
@@ -63,7 +62,7 @@ export class PhonePairingCoordinator {
     }
   };
 
-  selectMode = async (mode: MobileAccessMode): Promise<void> => {
+  selectMode = async (mode: PhonePairingMode): Promise<void> => {
     if (this.state.stage !== "closed") await this.open(this.state.machine, mode);
   };
 
@@ -72,15 +71,16 @@ export class PhonePairingCoordinator {
     if (
       state.stage === "closed" ||
       ["checking", "creating", "enabling"].includes(state.stage) ||
-      this.mode !== "lan" ||
-      !this.api.disable
+      !this.api.disable ||
+      // The public choice is a tunnel the owner manages elsewhere, not a listener.
+      this.mode === "public"
     )
       return;
     const generation = ++this.generation;
     this.release(state);
     this.publish({ stage: "checking", machine: state.machine });
     try {
-      const access = await this.api.disable(state.machine);
+      const access = await this.api.disable(state.machine, this.mode);
       if (generation === this.generation)
         this.publish({ stage: "access", machine: state.machine, access });
     } catch (error) {
@@ -113,7 +113,9 @@ export class PhonePairingCoordinator {
     const state = this.state;
     if (
       state.stage !== "access" ||
-      !["setup-required", "permission-required"].includes(state.access.state)
+      // A failed bind can be retried on another address.
+      !["setup-required", "unavailable"].includes(state.access.state) ||
+      this.mode === "public"
     )
       return;
     const generation = this.generation;

@@ -11,7 +11,7 @@ import {
   readInboxStatus,
   writeInboxStatus,
 } from "./inbox-status";
-import { findVisibleThread, lastEvent, loadInboxView, type InboxView } from "./inbox-threads";
+import { lastEvent, loadInboxView, loadThread, type InboxView } from "./inbox-threads";
 import {
   type InboxItem,
   type InboxStatus,
@@ -73,6 +73,7 @@ type Row = {
   accountId: string;
   platform: SocialPlatform;
   kind: "comment" | "message";
+  instagramSource?: "live_comment";
   title: string;
   preview: string;
   at: number;
@@ -102,6 +103,7 @@ export async function unifiedInbox(
         accountId: thread.accountId,
         platform,
         kind: thread.kind,
+        instagramSource: thread.instagramSource,
         title: contact?.name ?? thread.platformThreadId,
         preview: truncateGraphemes(last?.text ?? "", PREVIEW_GRAPHEMES),
         at: last?.at ?? thread.lastInboundAt,
@@ -157,6 +159,7 @@ async function toItem(ctx: SocialActionContext, row: Row): Promise<InboxItem> {
     accountId: row.accountId,
     platform: row.platform,
     kind: row.kind,
+    ...(row.instagramSource ? { instagramSource: row.instagramSource } : {}),
     ...(person ? { person: { id: person.id, name: person.name } } : {}),
     title: row.title,
     preview: row.preview,
@@ -193,17 +196,53 @@ function unreadableAccounts(
   return result;
 }
 
-/** Owner or assigned principal sets the status and tags of one conversation. Status is data only. */
+/**
+ * Owner or assigned principal changes the status and/or tags of one conversation. Status is data
+ * only. Each field is optional: a field that is not sent keeps the value stored now, so a client
+ * holding an older list snapshot never writes back a stale status or tag list. `tags` replaces the
+ * whole list; `addTags` / `removeTags` change single tags against the stored list. `tags` cannot be
+ * combined with the two deltas. The read-merge-write runs in one store transaction, so concurrent
+ * updates (another window, the phone, an automation) both apply.
+ */
 export async function setInboxStatus(
   ctx: SocialActionContext,
   input: Record<string, unknown>,
 ): Promise<{ threadId: string; status: InboxStatus; tags: string[] }> {
-  exact(input, ["threadId", "status", "tags"]);
-  const view = await loadInboxView(ctx);
-  const thread = findVisibleThread(view, str(input.threadId, "conversation"));
-  const status = parseStatus(input.status);
-  const previous = await readInboxStatus(ctx.store, thread.id);
-  const tags = input.tags === undefined ? (previous?.tags ?? []) : parseTags(input.tags);
-  await writeInboxStatus(ctx.store, { threadId: thread.id, status, tags, updatedAt: ctx.now() });
-  return { threadId: thread.id, status, tags };
+  exact(input, ["threadId", "status", "tags", "addTags", "removeTags"]);
+  const { thread } = await loadThread(ctx, str(input.threadId, "conversation"));
+  const hasTagChange =
+    input.tags !== undefined || input.addTags !== undefined || input.removeTags !== undefined;
+  if (input.status === undefined && !hasTagChange) throw new Error("Invalid inbox status.");
+  if (input.tags !== undefined && (input.addTags !== undefined || input.removeTags !== undefined))
+    throw new Error("Invalid inbox tags.");
+  const status = input.status === undefined ? undefined : parseStatus(input.status);
+  const replacement = input.tags === undefined ? undefined : parseTags(input.tags);
+  const additions = input.addTags === undefined ? [] : parseTags(input.addTags);
+  const removals = new Set(input.removeTags === undefined ? [] : parseTags(input.removeTags));
+  const direction = lastEvent(thread)?.direction;
+
+  const saved = await ctx.store.transaction(async () => {
+    const previous = await readInboxStatus(ctx.store, thread.id);
+    const base = replacement ?? previous?.tags ?? [];
+    const tags = hasTagChange
+      ? parseTags([...base.filter((tag) => !removals.has(tag)), ...additions])
+      : base;
+    const record = {
+      threadId: thread.id,
+      status: status ?? effectiveStatus(previous, direction),
+      tags,
+      updatedAt: ctx.now(),
+    };
+    // A tag change that leaves the stored record as it is (tag already present or absent) writes nothing.
+    if (
+      previous &&
+      status === undefined &&
+      previous.tags.length === tags.length &&
+      previous.tags.every((tag, index) => tag === tags[index])
+    )
+      return previous;
+    await writeInboxStatus(ctx.store, record);
+    return record;
+  });
+  return { threadId: thread.id, status: saved.status, tags: saved.tags };
 }

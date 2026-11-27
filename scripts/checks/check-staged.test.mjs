@@ -22,19 +22,22 @@ function fixture(t) {
 test("reads the index version and never rewrites a partially staged working file", (t) => {
   const { root, git } = fixture(t);
   writeFileSync(join(root, "file.ts"), "export const value = 1;\n");
-  git("add", "file.ts");
+  writeFileSync(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+  git("add", "file.ts", "pnpm-lock.yaml");
   writeFileSync(join(root, "file.ts"), "owner's unstaged draft\n");
   const indexBefore = git("write-tree");
   const seen = [];
   const report = checkStaged({
     root,
     runTool(name, args, input) {
-      seen.push({ name, input });
+      seen.push({ name, args, input });
       return { status: 0, stdout: name === "oxfmt" ? input : "", stderr: "" };
     },
   });
   assert.equal(report.success, true);
+  assert.deepEqual(report.checked, ["file.ts"]);
   assert.equal(seen[0].input, "export const value = 1;\n");
+  assert.equal(seen[1].args.at(-1), "file.ts");
   assert.equal(readFileSync(join(root, "file.ts"), "utf8"), "owner's unstaged draft\n");
   assert.equal(git("write-tree"), indexBefore);
 });

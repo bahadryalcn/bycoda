@@ -1,4 +1,4 @@
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { describeRemoteError } from "../../connections/public/remoteFailure";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Code } from "../../../shared/ui/Code";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
@@ -8,13 +8,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { useRemoteMachines } from "../../connections/model/connections";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Surface } from "../../../shared/ui/Surface";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Select } from "../../../shared/ui/Select";
 import { TextField } from "../../../shared/ui/TextField";
 import { InlineError } from "../../../shared/ui/InlineError";
 import styles from "./AssistantRemoteAccess.module.css";
-const actionError = (cause: unknown) => presentRemoteError(cause, { explicit: true });
+/** A failure as the translated sentence plus optional raw text for Details. */
+type Problem = { message: string; details?: string };
+const actionError = (cause: unknown): Problem => describeRemoteError(cause);
 
 type NativeIdentity = {
   installationId: string;
@@ -69,7 +71,7 @@ export function AssistantRemoteAccess({
   }, [draftKey, machineId, projectId, scope, duration]);
   const [identity, setIdentity] = useState<NativeIdentity>();
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
+  const [problem, setProblem] = useState<Problem | null>(null);
   const [request, setRequest] = useState(() => readRequest(draftKey));
   const [result, setResult] = useState("");
   const [retainedGrant, setRetainedGrant] = useState("");
@@ -79,11 +81,11 @@ export function AssistantRemoteAccess({
   );
   async function showIdentity() {
     setPending(true);
-    setError("");
+    setProblem(null);
     try {
       setIdentity(await invoke<NativeIdentity>("room_delegation_native_identity"));
     } catch (cause) {
-      setError(actionError(cause));
+      setProblem(actionError(cause));
     } finally {
       setPending(false);
     }
@@ -94,12 +96,12 @@ export function AssistantRemoteAccess({
     try {
       localStorage.setItem(requestKey(draftKey), JSON.stringify(original));
     } catch {
-      setError(t("Cannot retain the original request. Connection was not started."));
+      setProblem({ message: t("Cannot retain the original request. Connection was not started.") });
       return;
     }
     setRequest(original);
     setPending(true);
-    setError("");
+    setProblem(null);
     setResult("");
     const actions = [
       "sessions.list",
@@ -121,12 +123,12 @@ export function AssistantRemoteAccess({
       localStorage.removeItem(requestKey(draftKey));
       setRequest(undefined);
     } catch (cause) {
-      const message = actionError(cause);
-      if (message === "Room delegation cancelled") {
+      const failure = actionError(cause);
+      if (failure.message === "Room delegation cancelled") {
         localStorage.removeItem(requestKey(draftKey));
         setRequest(undefined);
       }
-      setError(message);
+      setProblem(failure);
     } finally {
       setPending(false);
     }
@@ -134,7 +136,7 @@ export function AssistantRemoteAccess({
   async function inspect() {
     if (!request) return;
     setPending(true);
-    setError("");
+    setProblem(null);
     try {
       const status = await invoke<{
         state: string;
@@ -149,7 +151,7 @@ export function AssistantRemoteAccess({
         `${t("Original request")}: ${status.state}${status.result?.grantId ? ` (${status.result.grantId})` : ""}`,
       );
     } catch (cause) {
-      setError(actionError(cause));
+      setProblem(actionError(cause));
     } finally {
       setPending(false);
     }
@@ -157,7 +159,7 @@ export function AssistantRemoteAccess({
   async function revokeRetained() {
     if (!request || !retainedGrant) return;
     setPending(true);
-    setError("");
+    setProblem(null);
     try {
       await invoke("room_delegation_revoke_retained", {
         machineId: request.machineId,
@@ -169,11 +171,20 @@ export function AssistantRemoteAccess({
       setRetainedGrant("");
       setResult(t("Original grant revoked."));
     } catch (cause) {
-      setError(actionError(cause));
+      setProblem(actionError(cause));
     } finally {
       setPending(false);
     }
   }
+  const connectReason = request
+    ? t("Check or revoke the original request first.")
+    : sourceStatus !== "registered"
+      ? t("Room registration is not ready.")
+      : !machineId
+        ? t("Choose a paired Host first.")
+        : !projectId.trim()
+          ? t("Enter the target project ID first.")
+          : undefined;
   return (
     <>
       {open && (
@@ -182,7 +193,7 @@ export function AssistantRemoteAccess({
           size="md"
           onClose={onClose}
           footer={
-            <ModalActions>
+            <ModalActions reason={connectReason}>
               <Button onClick={onClose}>{t("Close")}</Button>
               <Button
                 variant="primary"
@@ -195,7 +206,7 @@ export function AssistantRemoteAccess({
                   !projectId.trim()
                 }
                 onClick={() => {
-                  void connect().catch((cause: unknown) => setError(actionError(cause)));
+                  void connect().catch((cause: unknown) => setProblem(actionError(cause)));
                 }}
               >
                 {t("Connect")}
@@ -204,13 +215,20 @@ export function AssistantRemoteAccess({
           }
         >
           <div className={styles.body}>
-            <Text as="p" size="caption" tone="secondary" leading="normal" className={styles.status}>
-              {sourceStatus === "registered"
-                ? t("This Room is registered on its original Host.")
-                : sourceStatus === "unavailable"
+            {/* A healthy registration needs no sentence; only the checking and failed states do. */}
+            {sourceStatus !== "registered" && (
+              <Text
+                as="p"
+                size="caption"
+                tone="secondary"
+                leading="normal"
+                className={styles.status}
+              >
+                {sourceStatus === "unavailable"
                   ? t("Room registration is unavailable. Reopen the Room to retry.")
                   : t("Checking Room registration…")}
-            </Text>
+              </Text>
+            )}
             <div className={styles.grid}>
               <Select
                 label={t("Paired Host")}
@@ -249,7 +267,9 @@ export function AssistantRemoteAccess({
                 ]}
               />
             </div>
-            {machinesError && <InlineError>{machinesError}</InlineError>}
+            {machinesError && (
+              <InlineError details={machinesError}>{t("Could not load machines.")}</InlineError>
+            )}
             {!loading && !machinesError && !targets.length && (
               <EmptyState
                 size="inline"
@@ -264,7 +284,12 @@ export function AssistantRemoteAccess({
               )}
             </Text>
             {request && (
-              <Surface variant="card" padding="md" className={styles.request}>
+              <div
+                {...surfaceAttributes(
+                  { variant: "card", frame: "card", radius: "card" },
+                  styles.request,
+                )}
+              >
                 <Text as="p" leading="normal">
                   {t("Inspect the original request before starting another connection.")}{" "}
                   <Code>{request.requestId}</Code>
@@ -273,7 +298,7 @@ export function AssistantRemoteAccess({
                   <Button
                     disabled={pending}
                     onClick={() => {
-                      void inspect().catch((cause: unknown) => setError(actionError(cause)));
+                      void inspect().catch((cause: unknown) => setProblem(actionError(cause)));
                     }}
                   >
                     {t("Inspect request")}
@@ -283,7 +308,7 @@ export function AssistantRemoteAccess({
                       disabled={pending}
                       onClick={() => {
                         void revokeRetained().catch((cause: unknown) =>
-                          setError(actionError(cause)),
+                          setProblem(actionError(cause)),
                         );
                       }}
                     >
@@ -291,7 +316,7 @@ export function AssistantRemoteAccess({
                     </Button>
                   )}
                 </div>
-              </Surface>
+              </div>
             )}
             {result && (
               <Text
@@ -310,15 +335,20 @@ export function AssistantRemoteAccess({
                 loading={pending}
                 disabled={pending}
                 onClick={() => {
-                  void showIdentity().catch((cause) => setError(actionError(cause)));
+                  void showIdentity().catch((cause) => setProblem(actionError(cause)));
                 }}
               >
                 {t("Show native identity for owner enrollment")}
               </Button>
             </div>
-            {error && <InlineError>{error}</InlineError>}
+            {problem && <InlineError details={problem.details}>{problem.message}</InlineError>}
             {identity && (
-              <Surface variant="card" padding="md" className={styles.identity}>
+              <div
+                {...surfaceAttributes(
+                  { variant: "card", frame: "card", radius: "card" },
+                  styles.identity,
+                )}
+              >
                 <Text as="p" tone="inherit" leading="inherit">
                   {t("Installation ID")}: <Code>{identity.installationId}</Code>
                 </Text>
@@ -328,7 +358,7 @@ export function AssistantRemoteAccess({
                 <OutputBlock size="caption" tone="inherit" leading="inherit" frame="none">
                   {identity.publicKey}
                 </OutputBlock>
-              </Surface>
+              </div>
             )}
           </div>
         </Modal>

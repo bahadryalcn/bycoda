@@ -15,6 +15,15 @@ import {
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 
+// Raw error text sits behind the Details popover; open it and read the dialog it shows.
+async function detailsText() {
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+  if (!trigger) return "";
+  await act(async () => trigger.click());
+  // The Details popover opens last, above any enclosing dialog.
+  return [...document.querySelectorAll('[role="dialog"]')].at(-1)?.textContent ?? "";
+}
+
 let container: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
@@ -36,7 +45,7 @@ beforeEach(() => {
     }
     if (command === "jira_list_projects") return [{ id: "10000", key: "ENG", name: "Engineering" }];
     if (command === "jira_list_boards")
-      return [{ id: 7, name: "Engineering board", kind: "kanban" }];
+      return [{ id: 7, name: "Engineering board", kind: "kanban", projectId: "10000" }];
     throw new Error(`Unexpected command: ${command}`);
   });
 });
@@ -47,11 +56,23 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+/** Plain form fields are named by their visible label. */
+function jiraField(label: string) {
+  const owner = [...container.querySelectorAll("label")].find(
+    (item) => item.textContent?.trim() === label,
+  );
+  return (
+    owner?.htmlFor
+      ? container.querySelector<HTMLInputElement>(`[id="${owner.htmlFor}"]`)
+      : owner?.querySelector<HTMLInputElement>("input")
+  ) as HTMLInputElement;
+}
+
 async function input(label: string, value: string) {
-  const field = container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+  const target = jiraField(label);
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, value);
-    field.dispatchEvent(new Event("input", { bubbles: true }));
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(target, value);
+    target.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
 
@@ -74,7 +95,7 @@ async function submit() {
 it("reveals the typed Jira token with the shared control while preserving its value", async () => {
   await act(async () => root.render(createElement(JiraSettings)));
   await input("Jira API token", "fixture-token");
-  const field = container.querySelector<HTMLInputElement>('input[aria-label="Jira API token"]')!;
+  const field = jiraField("Jira API token");
   expect(field.type).toBe("password");
   await act(async () =>
     container.querySelector<HTMLButtonElement>('button[aria-label="Show password"]')!.click(),
@@ -177,17 +198,11 @@ it("shows authentication errors without claiming a successful connection", async
   await input("Jira API token", "bad-token");
   vi.mocked(invoke).mockRejectedValueOnce(new Error("Jira email or API token is invalid"));
   await submit();
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("invalid");
+  expect(await detailsText()).toContain("invalid");
   expect(container.querySelector("form")).not.toBeNull();
-  expect(container.querySelector<HTMLInputElement>('input[aria-label="Jira site"]')?.value).toBe(
-    "acme",
-  );
-  expect(
-    container.querySelector<HTMLInputElement>('input[aria-label="Atlassian email"]')?.value,
-  ).toBe("ada@example.com");
-  expect(
-    container.querySelector<HTMLInputElement>('input[aria-label="Jira API token"]')?.value,
-  ).toBe("bad-token");
+  expect(jiraField("Jira site").value).toBe("acme");
+  expect(jiraField("Atlassian email").value).toBe("ada@example.com");
+  expect(jiraField("Jira API token").value).toBe("bad-token");
   expect(container.textContent).not.toContain("Projects");
   await submit();
   expect(container.textContent).toContain("ada@example.com");
@@ -204,7 +219,84 @@ it("preserves project and board permissions when reconnecting", async () => {
   await submit();
   expect(loadHiddenJiraProjectIds()).toEqual(["10000"]);
   expect(loadAllowedJiraBoardIds()).toEqual([7]);
-  expect(invoke).not.toHaveBeenCalledWith("jira_list_boards", expect.anything());
+  expect(boardRequests()).toEqual([{ projectIds: null }]);
+  expect(scope("Boards")).toEqual({ total: 0, selected: 0 });
+});
+
+/** The count text shows only while searching, so read selection from the checklist rows. */
+function scope(label: string) {
+  const boxes = [
+    ...container.querySelectorAll<HTMLInputElement>(
+      `[role="group"][aria-label="${label}"] input[type=checkbox]`,
+    ),
+  ];
+  return { total: boxes.length, selected: boxes.filter((box) => box.checked).length };
+}
+
+function boardRequests() {
+  return vi
+    .mocked(invoke)
+    .mock.calls.filter(([command]) => command === "jira_list_boards")
+    .map(([, args]) => args);
+}
+
+function boardCheckbox(name: string) {
+  return Array.from(container.querySelectorAll<HTMLLabelElement>("label.inbox-scope-row"))
+    .find((row) => row.textContent?.includes(name))
+    ?.querySelector<HTMLInputElement>("input[type=checkbox]");
+}
+
+it("scopes boards from one cached catalog when project checkboxes change", async () => {
+  let finishBoards!: () => void;
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === "jira_status") return { connected: false, site: "", email: "" };
+    if (command === "jira_set_config") return { connected: true, ...(args as object) };
+    if (command === "jira_list_projects")
+      return [
+        { id: "10000", key: "ENG", name: "Engineering" },
+        { id: "10001", key: "OPS", name: "Operations" },
+      ];
+    if (command === "jira_list_boards")
+      return new Promise((resolve) => {
+        finishBoards = () =>
+          resolve([
+            { id: 7, name: "Eng board", kind: "scrum", projectId: "10000" },
+            { id: 8, name: "Ops board", kind: "kanban", projectId: "10001" },
+          ]);
+      });
+    throw new Error(`Unexpected command: ${command}`);
+  });
+  await act(async () => root.render(createElement(JiraSettings)));
+  await input("Jira site", "acme.atlassian.net");
+  await input("Atlassian email", "ada@example.com");
+  await input("Jira API token", "secret");
+  await submit();
+  expect(boardRequests()).toEqual([{ projectIds: null }]);
+  await act(async () => finishBoards());
+  expect(scope("Boards")).toEqual({ total: 2, selected: 0 });
+  await pickOption("Ops board");
+  expect(loadAllowedJiraBoardIds()).toEqual([8]);
+
+  const ops = await pickOption("Operations");
+  expect(ops.checked).toBe(false);
+  expect(loadHiddenJiraProjectIds()).toEqual(["10001"]);
+  expect(boardCheckbox("Ops board")).toBeUndefined();
+  expect(boardCheckbox("Eng board")!.disabled).toBe(false);
+  expect(scope("Boards")).toEqual({ total: 1, selected: 0 });
+  // The hidden project's board choice stays persisted for when the project returns.
+  expect(loadAllowedJiraBoardIds()).toEqual([8]);
+
+  await pickOption("Engineering");
+  expect(loadHiddenJiraProjectIds()).toEqual(["10000", "10001"]);
+  expect(scope("Boards")).toEqual({ total: 0, selected: 0 });
+
+  await pickOption("Operations");
+  await pickOption("Engineering");
+  expect(boardCheckbox("Ops board")!.checked).toBe(true);
+  expect(boardCheckbox("Ops board")!.disabled).toBe(false);
+  expect(scope("Boards")).toEqual({ total: 2, selected: 1 });
+  // Every checkbox above narrowed the first catalog instead of starting another request.
+  expect(boardRequests()).toEqual([{ projectIds: null }]);
 });
 
 it("filters projects by name or key without changing saved scope", async () => {
@@ -213,7 +305,7 @@ it("filters projects by name or key without changing saved scope", async () => {
   await input("Atlassian email", "ada@example.com");
   await input("Jira API token", "secret");
   await submit();
-  expect(container.textContent).toContain("1 of 1 projects selected");
+  expect(scope("Projects")).toEqual({ total: 1, selected: 1 });
   await act(async () => {
     const search = container.querySelector<HTMLInputElement>(
       'input[aria-label="Search projects"], input[placeholder="Search projects"]',
@@ -237,4 +329,36 @@ it("filters projects by name or key without changing saved scope", async () => {
   expect(project.checked).toBe(false);
   expect(container.textContent).toContain("0 of 1 projects selected");
   expect(loadHiddenJiraProjectIds()).toEqual(["10000"]);
+});
+
+it("names the background refresh setting, not Inbox scope, when its save fails and keeps the saved value", async () => {
+  localStorage.setItem("bycoda.jiraBackgroundSync", "true");
+  const base = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (command, args) =>
+    command === "jira_status"
+      ? { connected: true, site: "acme.atlassian.net", email: "ada@example.com" }
+      : base(command, args),
+  );
+  // happy-dom's localStorage does not route through Storage.prototype, so spy on the instance.
+  const original = localStorage.setItem.bind(localStorage);
+  const setItem = vi.spyOn(localStorage, "setItem").mockImplementation((key, value) => {
+    if (key === "bycoda.jiraBackgroundSync") throw new Error("Storage is full");
+    return original(key, value);
+  });
+  await act(async () => root.render(createElement(JiraSettings)));
+  for (let round = 0; round < 3; round += 1)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  const toggle = container.querySelector<HTMLButtonElement>(
+    '[role="switch"][aria-label="Automatically refresh Jira in the background"]',
+  )!;
+  await act(async () => toggle.click());
+  expect(container.textContent).toContain(
+    "The Jira background refresh setting is unavailable. Retry before changing it.",
+  );
+  expect(container.textContent).not.toContain("Saved Inbox scope");
+  expect(localStorage.getItem("bycoda.jiraBackgroundSync")).toBe("true");
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  setItem.mockRestore();
 });

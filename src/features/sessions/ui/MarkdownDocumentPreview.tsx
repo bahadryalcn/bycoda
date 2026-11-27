@@ -31,9 +31,7 @@ export const MarkdownDocumentPreview = memo(function MarkdownDocumentPreview({
       header={
         document.metadata !== null ? (
           <Disclosure size="sm" variant="card" summary={metadataLabel} className="mb-6">
-            <OutputBlock className="border-t border-(--ui-tone-neutral-border) px-3 py-2">
-              {document.metadata}
-            </OutputBlock>
+            <OutputBlock>{document.metadata}</OutputBlock>
           </Disclosure>
         ) : null
       }

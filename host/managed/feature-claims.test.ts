@@ -43,7 +43,7 @@ async function fixture() {
     environmentId: "host",
     owner: { kind: "session", id: `session-${id}` },
     path: join(directory, `wt-${id}`),
-    branchRef: `refs/heads/bycoda/s/test-${id}`,
+    branchRef: `refs/heads/by/test-${id}`,
     baseRef: "refs/heads/main",
     baseCommit: git("rev-parse", "HEAD"),
     targetBranchRef: "refs/heads/main",

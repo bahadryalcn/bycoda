@@ -9,6 +9,7 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
+import { observeResize } from "../lib/observeResize";
 import { Badge } from "./Badge";
 import { Button, type ButtonProps } from "./Button";
 import styles from "./Tabs.module.css";
@@ -157,6 +158,15 @@ export type TabListProps = Omit<ComponentPropsWithRef<"div">, "role" | "aria-lab
   /** `hidden`: the strip scrolls along its axis (a row sideways, a column vertically) with no
    *  visible bar, for a strip that overflows its row. Unset keeps the surrounding overflow. */
   scrollbar?: "hidden";
+  /** Overflow of the strip. `auto`: tabs keep their width and the strip scrolls along its axis.
+   *  `wrap`: tabs wrap onto further rows. Unset keeps the surrounding overflow. */
+  scroll?: "auto" | "wrap";
+  /** `sm`: the strip carries its own edge padding, for a strip that sits directly in a panel
+   *  (never a caller margin or padding class). Unset: no padding. */
+  inset?: "sm";
+  /** `track`: the tabs sit in one bordered track and the selected tab is raised, for the
+   *  top-level topics of a page (Settings). Unset: the plain strip. */
+  appearance?: "track";
 };
 
 /**
@@ -175,6 +185,9 @@ export function TabList({
   label,
   items,
   scrollbar,
+  scroll,
+  inset,
+  appearance,
   className,
   children,
   onKeyDown,
@@ -186,6 +199,7 @@ export function TabList({
 
   // Exactly one tab stop: the selected enabled tab, else the first enabled one (a value
   // that matches no tab, or a disabled selection, must not leave the strip unreachable).
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- updates DOM tab stops to match the selected enabled tab
   useLayoutEffect(() => {
     const list = listRef.current;
     if (!list) return;
@@ -195,6 +209,55 @@ export function TabList({
       all.find(enabled);
     for (const tab of all) tab.tabIndex = tab === stop ? 0 : -1;
   });
+
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- scrolls the selected DOM tab into view after selection and resize
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list || tabs.orientation !== "horizontal") return;
+    const scrolls =
+      scroll === "auto" ||
+      scrollbar === "hidden" ||
+      (scroll === "wrap" && list.closest("[data-pane-header-tabs]"));
+    if (!scrolls) return;
+    const all = ownTabs(list);
+    const tab = all.find((entry) => entry.dataset.tabValue === tabs.value);
+    if (!tab) return;
+    const reveal = () => {
+      const bounds = list.getBoundingClientRect();
+      const selected = tab.getBoundingClientRect();
+      if (selected.left < bounds.left) list.scrollLeft += selected.left - bounds.left;
+      else if (selected.right > bounds.right) list.scrollLeft += selected.right - bounds.right;
+    };
+    reveal();
+    const cleanups = [list, ...all].map((node) => observeResize(node, reveal));
+    return () => cleanups.forEach((cleanup) => cleanup());
+  }, [scroll, scrollbar, tabs.orientation, tabs.value]);
+
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- moves the track indicator under the selected DOM tab after selection and resize
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list || appearance !== "track") return;
+    const tab = ownTabs(list).find((entry) => entry.dataset.tabValue === tabs.value);
+    if (!tab) {
+      list.style.removeProperty("--tab-indicator-inline-size");
+      return;
+    }
+    const place = () => {
+      // A hidden strip measures 0; keep the last position until it is shown again.
+      if (!tab.offsetWidth) return;
+      list.style.setProperty("--tab-indicator-x", `${tab.offsetLeft}px`);
+      list.style.setProperty("--tab-indicator-y", `${tab.offsetTop}px`);
+      list.style.setProperty("--tab-indicator-inline-size", `${tab.offsetWidth}px`);
+      list.style.setProperty("--tab-indicator-block-size", `${tab.offsetHeight}px`);
+      // The first placement jumps; only later moves slide.
+      if (!list.hasAttribute("data-indicator-ready")) {
+        requestAnimationFrame(() => list.setAttribute("data-indicator-ready", ""));
+      }
+    };
+    place();
+    const cleanups = [list, tab].map((node) => observeResize(node, place));
+    return () => cleanups.forEach((cleanup) => cleanup());
+  }, [appearance, tabs.value]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     onKeyDown?.(event);
@@ -222,7 +285,11 @@ export function TabList({
     event.preventDefault();
     event.stopPropagation();
     target.focus({ preventScroll: true });
-    target.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
+    target.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+      behavior: "instant",
+    });
     const next = target.dataset.tabValue;
     if (tabs.activation === "automatic" && next !== undefined) tabs.select(next);
   };
@@ -241,6 +308,9 @@ export function TabList({
       data-fill={tabs.fill || undefined}
       data-responsive={tabs.responsive || undefined}
       data-scrollbar={scrollbar}
+      data-scroll={scroll}
+      data-inset={inset}
+      data-appearance={appearance}
       className={[styles.list, className].filter(Boolean).join(" ")}
       onKeyDown={handleKeyDown}
     >

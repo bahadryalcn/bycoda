@@ -36,6 +36,7 @@ function fixtureRoot(t) {
   // Vite+ finds the `lint` block in the nearest vite.config.*; the fixture gets the same one.
   mkdirSync(join(root, dirname(lintConfigModule)), { recursive: true });
   cpSync(join(repoRoot, lintConfigModule), join(root, lintConfigModule));
+  cpSync(join(repoRoot, ".oxfmtrc.json"), join(root, ".oxfmtrc.json"));
   writeFileSync(join(root, "package.json"), JSON.stringify({ name: "fixture", private: true }));
   writeFileSync(
     join(root, "vite.config.mjs"),
@@ -169,6 +170,14 @@ const rustFixture = [
   "fn read<R: std::io::Read>(r: R) { for _ in std::io::BufReader::new(r).lines() {} }",
   "fn run(mut cmd: std::process::Command) { let _ = cmd.output(); }",
   'fn notify(app: &tauri::AppHandle) { let _ = app.emit("x", ()); }',
+  "#[tauri::command(async)]",
+  "pub fn notes_list(store: State<'_, Store>) -> Result<(), String> { store.lock_conn().map(|_| ()) }",
+  "#[tauri::command(async)]",
+  "pub fn trivial(value: String) -> String { value }",
+  "#[tauri::command]",
+  "pub async fn notes_get(app: AppHandle) -> Result<(), String> {",
+  '    run_blocking("notes_get", move || app.state::<Store>().lock_conn().map(|_| ())).await',
+  "}",
   "",
 ].join("\n");
 
@@ -196,6 +205,7 @@ test("the rule set flags each defect class once and names its rule", (t) => {
     "rust-command-output-without-timeout",
     "rust-emit-broadcast",
     "rust-rename-without-fsync",
+    "rust-sync-command-blocking-work",
   ]);
   for (const finding of findings) {
     assert.ok(finding.message.length > 20, `${finding.rule} explains the alternative`);
@@ -348,6 +358,35 @@ test("the Date.now ban covers Host scheduler, budget and watchdog modules by nam
       .map(({ file }) => file)
       .sort(),
     ["host/demo/job-scheduler.ts", "host/demo/run-budget.ts", "host/demo/turn-watchdog.ts"],
+  );
+});
+
+test("task-state-from-stop-code rejects classifying a task by its error text", (t) => {
+  const root = fixtureRoot(t);
+  write(
+    root,
+    "host/tasks/demo.ts",
+    [
+      'export const a = (task: { error?: string }) => task.error === "Stopped by you.";',
+      "export const b = (task: { error?: string }) => task.error?.startsWith('Review failed');",
+      "export const c = (task: { error?: string }) => /interrupted/i.test(task.error);",
+      "export const d = (task: { error?: string }, run: { error?: string }) => task.error !== run.error;",
+      "export const e = (task: { error?: string }) => task.error !== undefined && Boolean(task.error);",
+      "",
+    ].join("\n"),
+  );
+  write(
+    root,
+    "host/other/demo.ts",
+    'export const f = (task: { error?: string }) => task.error === "x";\n',
+  );
+  assert.deepEqual(
+    scanRule(root, "bycoda/task-state-from-stop-code").map(({ file, line }) => [file, line]),
+    [
+      ["host/tasks/demo.ts", 1],
+      ["host/tasks/demo.ts", 2],
+      ["host/tasks/demo.ts", 3],
+    ],
   );
 });
 

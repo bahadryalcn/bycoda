@@ -4,8 +4,10 @@ import { markAutoContinueDue } from "../../features/sessions/model/autoContinue"
 import { isOwnerStoppedTurn } from "../../features/sessions/model/turnInterruption";
 import {
   classifyTurnRecovery,
+  disarmAutoContinue,
+  isAutoContinueArmed,
   shouldAutoContinue,
-  withFinishedTurn,
+  type TurnRecovery,
 } from "../../features/sessions/model/turnRecovery";
 import type { TurnSteps } from "../../features/sessions/model/turnSteps";
 import { loadAutoContinueInterrupted } from "../../features/settings/model/settings";
@@ -22,6 +24,8 @@ import { initializeAgentDefaults } from "../../features/settings/public/agentDef
  */
 const LOCAL_CHILD_LIVENESS = "dead" as const;
 const PROBE_TIMEOUT_MS = 3000;
+/** The Host can still be starting at launch; about 30 seconds covers a cold start. */
+const HOST_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 15_000];
 
 function transcriptProvider(session: Session): "claude" | "codex" | null {
   const provider = session.harness;
@@ -87,14 +91,43 @@ async function withRecordedSteps(
   }
 }
 
+function markDueIfEnabled(session: Session, recovery: TurnRecovery): void {
+  if (
+    shouldAutoContinue({
+      recovery,
+      enabled: loadAutoContinueInterrupted(),
+      queuedCount: session.queuedMessages?.length ?? 0,
+    })
+  ) {
+    markAutoContinueDue(session.id);
+  }
+}
+
+/** Runs after first paint. If the Host never answers, the chat keeps its manual Continue. */
+async function decideWhenHostAnswers(session: Session, recovery: TurnRecovery): Promise<void> {
+  for (const delay of HOST_RETRY_DELAYS_MS) {
+    await new Promise((resolve) => window.setTimeout(resolve, delay));
+    try {
+      await initializeAgentDefaults();
+    } catch {
+      continue;
+    }
+    markDueIfEnabled(session, recovery);
+    return;
+  }
+}
+
 /**
  * A chat that was mid-turn when Bycoda went away: look at what really
  * happened before anything is sent. A turn that finished is shown as finished;
  * only a turn that was cut off may be continued, and only when that is certain.
- * Either way the steps the CLI recorded while the app was away are filled in.
+ * Each interruption gets one launch to continue automatically, so a chat the
+ * user left interrupted is not sent later. Either way the steps the CLI
+ * recorded while the app was away are filled in.
  */
 export async function recoverInterruptedTurn(session: Session): Promise<Session> {
   if (isOwnerStoppedTurn(session.blocks)) return session;
+  const armed = isAutoContinueArmed(session);
   const [tail, steps] = await Promise.all([transcriptTail(session), readRecordedSteps(session)]);
   const recovery = classifyTurnRecovery({
     wasInFlight: true,
@@ -103,28 +136,24 @@ export async function recoverInterruptedTurn(session: Session): Promise<Session>
     transcript: tail === "unsupported" ? tail : tail.state,
   });
   if (recovery.state === "finished") {
-    return withFinishedTurn(
-      await withRecordedSteps(session, steps, "finished"),
-      tail === "unsupported" ? undefined : tail.finalText,
-    );
+    // The tail probe can describe the previous provider turn if the newest
+    // local prompt never reached it. Only the turn-step merge can place a reply.
+    return disarmAutoContinue(await withRecordedSteps(session, steps, "finished"));
   }
-  const recovered =
+  const recovered = disarmAutoContinue(
     recovery.state === "interrupted"
       ? await withRecordedSteps(session, steps, "interrupted")
-      : session;
+      : session,
+  );
+  if (!armed || !recovery.certain) return recovered;
   try {
     await initializeAgentDefaults();
   } catch {
+    void decideWhenHostAnswers(recovered, recovery).catch((error: unknown) => {
+      console.warn("Could not decide automatic continuation", error);
+    });
     return recovered;
   }
-  if (
-    shouldAutoContinue({
-      recovery,
-      enabled: loadAutoContinueInterrupted(),
-      queuedCount: recovered.queuedMessages?.length ?? 0,
-    })
-  ) {
-    markAutoContinueDue(recovered.id);
-  }
+  markDueIfEnabled(recovered, recovery);
   return recovered;
 }

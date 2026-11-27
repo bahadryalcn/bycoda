@@ -16,8 +16,13 @@ import type { SubmissionAcceptance } from "../../../model/submissionAcceptance";
 import { queueSubmittedFollowUp } from "./submitBusySteer";
 import { beginSendStarting, claimStartingGeneration } from "./submitStarting";
 import { showSubmitNotice } from "./submitNotice";
-import { QueueDeferredError } from "../../../../features/connections/model/sharedQueue";
+import {
+  QueueDeferredError,
+  QueueRunLeaseBlockedError,
+  QueueRunLeasePendingError,
+} from "../../../../features/connections/model/sharedQueue";
 import { t } from "../../../../shared/i18n";
+import { catalogText } from "../../../../features/sessions/model/catalogText";
 
 /** Conversations whose send is waiting for its lease, by the generation that owns the wait. */
 const starting = new Map<string, number>();
@@ -117,6 +122,10 @@ export function gateRunLease(
         await firstLook;
         if (!runLeaseMachine()) {
           if (!isRunLeaseDiscoveryPending()) return await startWhenCurrent();
+          if (options?.queuedMessageId)
+            throw new QueueRunLeasePendingError(
+              "The conversation is still getting ready. This message will be sent when it is free.",
+            );
           if (!options?.managed && !options?.appRequestId && !options?.ciRepair) recoverUnstarted();
           else options?.onSendRejected?.();
           const text =
@@ -128,11 +137,26 @@ export function gateRunLease(
       }
       const outcome = await acquireRunLease(sessionId);
       granted = outcome.kind === "granted";
-      if (outcome.kind === "failed") {
+      if (outcome.kind === "failed" || outcome.kind === "waiting") {
+        if (options?.queuedMessageId) {
+          if (!isCurrent()) throw turnChangedDeferral();
+          if (outcome.kind === "waiting") throw new QueueRunLeasePendingError(outcome.text);
+          if (outcome.queueMayWait)
+            throw new QueueRunLeasePendingError("Waiting for the host to confirm your request.");
+          throw new QueueRunLeaseBlockedError(
+            "Check the conversation on its Host before resuming.",
+          );
+        }
         if (!options?.managed && !options?.appRequestId && !options?.ciRepair) recoverUnstarted();
         else options?.onSendRejected?.();
-        showSubmitNotice(sessionId, outcome.text, "error");
-        options?.onSettled?.({ status: "failed", text: "", error: outcome.text });
+        const message =
+          outcome.kind === "waiting"
+            ? catalogText(t, outcome.text)
+            : outcome.text === "Check the conversation on its Host before resuming."
+              ? t("Check the conversation on its Host before resuming.")
+              : outcome.text;
+        showSubmitNotice(sessionId, message, outcome.kind === "waiting" ? "info" : "error");
+        options?.onSettled?.({ status: "failed", text: "", error: message });
         return false;
       }
       if (outcome.kind !== "held") return await startWhenCurrent();

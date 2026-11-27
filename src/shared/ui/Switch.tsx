@@ -4,6 +4,8 @@ import { controlPaddingStyle, type ControlPadding } from "./Button";
 
 export type SwitchProps = ArcSwitchProps & {
   ref?: Ref<HTMLButtonElement>;
+  /** Blocks changes while a save is pending, with keyboard focus retained. */
+  busy?: boolean;
   /** Token padding for the labeled setting row; the track keeps its own geometry. */
   padding?: ControlPadding;
   /** A labeled choice card owns its neutral frame and hover layer; checked state remains on the track. */
@@ -21,6 +23,8 @@ export type SwitchProps = ArcSwitchProps & {
 export function Switch({
   className,
   type = "button",
+  busy = false,
+  onClick,
   padding,
   appearance,
   style,
@@ -31,6 +35,12 @@ export function Switch({
       {...props}
       data-choice-appearance={appearance}
       type={type}
+      aria-busy={busy || props["aria-busy"]}
+      aria-disabled={busy || props["aria-disabled"]}
+      onClick={(event) => {
+        if (busy) event.preventDefault();
+        else onClick?.(event);
+      }}
       style={{ ...style, ...controlPaddingStyle(props.label ? padding : undefined) }}
       className={["bycoda-arc bycoda-arc-switch", className].filter(Boolean).join(" ")}
     />

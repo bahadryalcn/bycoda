@@ -4,28 +4,6 @@
   min-inline-size: 0;
 }
 
-/* Version, update state and progress live in one action area; it may use more than the default control width. */
-#setting-update .settings-row-control {
-  max-inline-size: 26rem;
-}
-.general-update-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 8px;
-}
-
 .general-version {
   font-family: var(--font-mono);
-}
-
-/* Setup and help actions share one width, so the column of buttons keeps one right edge. */
-.general-action {
-  min-inline-size: 7.5rem;
-}
-
-/* Match the developer name's inline inset to the shared Button links. */
-.general-about-value {
-  padding-inline: var(--space-1);
 }

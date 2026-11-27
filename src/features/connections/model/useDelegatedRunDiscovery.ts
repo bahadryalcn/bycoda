@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { featureHost } from "./hostFeatureClient";
 import { loadRemoteSession, remoteRequest } from "./connections";
 import { getSessions, setSessions, useSession } from "../../sessions/public/sessionsStore";
+import { looksLikeProject } from "../../projects/public/recents";
 import { discoverDelegatedRuns, type DelegatedDiscoveryPort } from "./delegatedRunDiscovery";
 import type { HostSession, HostSessionSummary } from "./protocol";
 import { isUserConversation } from "../../../shared/model/host-contracts/delegation";
@@ -50,30 +51,31 @@ export async function listDelegatedRunSummaries(
 const port: DelegatedDiscoveryPort = {
   host: (cwd) => featureHost(cwd, "sessions.desktop"),
   list: listDelegatedRunSummaries,
-  read: (machineId, id, known) => loadRemoteSession(machineId, id, known),
+  read: (machineId, id, known) => loadRemoteSession(machineId, id, known, { deferPreviews: true }),
 };
 
 export function useDelegatedRunDiscovery(parentId: string, visible: boolean) {
   const parent = useSession(parentId);
-  const [failure, setFailure] = useState<{ parentId: string; message: string }>();
+  const [failure, setFailure] = useState<{ parentId: string; cwd: string; message: string }>();
   const [retry, setRetry] = useState(0);
   const cwd = parent?.cwd;
   const eligible = !!parent && isUserConversation(parent);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Refresh this visible owner's delegated conversation tree with its serving Host until the pane closes.
   useEffect(() => {
-    if (!isTauri() || !visible || !eligible || !cwd || !parent) return;
+    if (!isTauri() || !visible || !eligible || !cwd || !looksLikeProject(cwd)) return;
     let current = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const known = new Map<string, HostSession>();
-    const nestedListed = new Set<string>();
+    const nestedListed = new Map<string, number>();
     const report = (error: unknown) => {
       const message = delegatedDiscoveryFailure(error);
-      if (current && message !== undefined) setFailure({ parentId, message });
+      if (current && message !== undefined) setFailure({ parentId, cwd, message });
     };
     const load = async () => {
       try {
         const before = new Map(getSessions().map((session) => [session.id, session]));
         const snapshot = before.get(parentId);
-        if (!snapshot) return;
+        if (!snapshot || snapshot.cwd !== cwd) return;
         const children = await discoverDelegatedRuns(
           snapshot,
           port,
@@ -101,7 +103,9 @@ export function useDelegatedRunDiscovery(parentId: string, visible: boolean) {
           const next = sessions.map((session) => {
             const update = updates.get(session.id);
             updates.delete(session.id);
-            return update ? { ...session, ...update } : session;
+            // Discovery mirrors Host-owned children. Their running state comes from
+            // continuingElsewhere, even when an older shell still carries native busy.
+            return update ? { ...session, ...update, busy: undefined } : session;
           });
           return [...next, ...updates.values()];
         });
@@ -122,7 +126,7 @@ export function useDelegatedRunDiscovery(parentId: string, visible: boolean) {
     };
   }, [parentId, cwd, visible, eligible, retry]);
   return {
-    error: failure?.parentId === parentId ? failure.message : undefined,
+    error: failure?.parentId === parentId && failure.cwd === cwd ? failure.message : undefined,
     retry: () => setRetry((value) => value + 1),
   };
 }

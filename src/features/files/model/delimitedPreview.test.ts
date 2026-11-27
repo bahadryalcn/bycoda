@@ -35,8 +35,12 @@ describe("delimited table preview", () => {
     expect(Object.keys(result.cells).length).toBeLessThanOrEqual(100_000);
   });
   it("rejects corrupt/binary input and handles empty files", () => {
-    expect(() => parseDelimitedPreview(bytes('a,"unterminated'), "csv")).toThrow("not closed");
-    expect(() => parseDelimitedPreview(bytes("binary\0data"), "csv")).toThrow("binary");
+    expect(() => parseDelimitedPreview(bytes('a,"unterminated'), "csv")).toThrow(
+      expect.objectContaining({ problem: { reason: "unclosedQuote" } }),
+    );
+    expect(() => parseDelimitedPreview(bytes("binary\0data"), "csv")).toThrow(
+      expect.objectContaining({ problem: { reason: "binaryData" } }),
+    );
     expect(parseDelimitedPreview(bytes(""), "csv").sheets[0].rowCount).toBe(0);
   });
 });

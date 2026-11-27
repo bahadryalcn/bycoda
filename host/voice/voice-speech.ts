@@ -21,6 +21,12 @@ export type VoiceSpeechDependencies = {
   request?: typeof fetch;
 };
 
+/** Per-utterance queue bounds for a consumer that polls slower than synthesis.
+ * Audio is measured in base64 characters (what the client receives), not chunk count alone. */
+const MAX_QUEUED_CHUNKS = 410;
+const MAX_QUEUED_AUDIO_CHARS = 8 * 1024 * 1024;
+const OVERFLOW_ERROR = "Speech playback fell behind and was stopped. Try again.";
+
 /** One warm synthesizer: a local Python worker, or ElevenLabs over HTTPS.
  * A new utterance supersedes only its owner's playback. */
 export class VoiceSpeechService {
@@ -30,6 +36,11 @@ export class VoiceSpeechService {
   private speeches = new Map<string, Speech>();
 
   constructor(private readonly dependencies: VoiceSpeechDependencies = {}) {}
+
+  /** Whether a synthesizer is loaded or loading, so `start` would do no new work. */
+  get started() {
+    return Boolean(this.loading);
+  }
 
   start(config: VoiceRuntimeConfig) {
     if (this.loading) return this.loading;
@@ -161,8 +172,26 @@ export class VoiceSpeechService {
       const waiter = speech.waiter;
       speech.waiter = undefined;
       waiter(chunk);
-    } else if (speech.chunks.length < 410) speech.chunks.push(chunk);
-    else this.cancel(speech.owner, id);
+    } else if (this.fits(speech, chunk)) speech.chunks.push(chunk);
+    else this.overflow(id, speech, chunk.done === true);
+  }
+
+  private fits(speech: Speech, chunk: VoiceChunk) {
+    if (speech.chunks.length >= MAX_QUEUED_CHUNKS) return false;
+    const queued = speech.chunks.reduce((sum, item) => sum + (item.audio?.length ?? 0), 0);
+    return queued + (chunk.audio?.length ?? 0) <= MAX_QUEUED_AUDIO_CHARS;
+  }
+
+  /** A slow consumer loses the utterance, but never silently: synthesis stops, queued audio is
+   * dropped so no stale part replays, and the reason is the terminal error chunk that next() returns. */
+  private overflow(id: string, speech: Speech, finished: boolean) {
+    clearTimeout(speech.timer);
+    speech.ended = true;
+    if (!finished) {
+      if (speech.abort) speech.abort.abort();
+      else this.child?.stdin.write(JSON.stringify({ cancel: id }) + "\n");
+    }
+    speech.chunks = [{ done: true, error: OVERFLOW_ERROR }];
   }
 
   async next(owner: string, id: unknown): Promise<VoiceChunk> {

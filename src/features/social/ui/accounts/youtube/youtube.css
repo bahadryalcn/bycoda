@@ -1,0 +1,74 @@
+/* YouTube management: a section strip, a browse area that reads, and a task area that writes. Semantic tokens only. */
+.youtube-manage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-inline-size: 0;
+}
+
+.youtube-browse,
+.youtube-task {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+.youtube-task {
+  padding-block-start: var(--space-3);
+}
+
+.youtube-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+
+.youtube-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+.youtube-field {
+  min-inline-size: 0;
+}
+
+.youtube-field[data-wide] {
+  grid-column: 1 / -1;
+}
+
+.youtube-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-block-size: 18rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.youtube-row {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.youtube-row-static {
+  display: flex;
+  padding-inline: var(--space-2);
+}
+
+.youtube-selected,
+.youtube-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}

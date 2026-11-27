@@ -1,6 +1,14 @@
-import { useLayoutEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import { LAYER } from "../lib/layers";
+import { observeResize } from "../lib/observeResize";
 import {
   layoutStack,
   TOAST_STACK_VISIBLE,
@@ -9,12 +17,12 @@ import {
   type ToastStackTarget,
 } from "./arc/toast-stack/toast-stack";
 import { OverlayMenuLayer } from "./overlay";
-import { ToastCard, type ToastContentProps } from "./ToastCard";
+import { ToastCard, type ToastContentProps, type ToastTone } from "./ToastCard";
 
 /**
  * Toast card re-export for consumers of the shared toast queue.
  * @group feedback
- * @use Render toast content through Toast or TransientNotice.
+ * @use Render toast content through Toast or the `toast` queue.
  * @avoid Placement and expiry queue: Toast. Inline feedback: InlineMessage.
  * @status internal
  */
@@ -28,13 +36,27 @@ export {
 } from "./ToastCard";
 
 /**
- * Where a toast stacks. One stack per placement; `top-center` is the default and the one place
- * every alert, warning and info shows. Corners remain only for explicitly placed legacy cards.
+ * Where a toast stacks. Routine messages use top-end; warnings and errors use top-center.
  */
 export type ToastPlacement = "top-center" | "bottom-end" | "top-end" | "bottom-start" | "top-start";
 
-/** The single shared alert location under the title bar. */
-export const DEFAULT_TOAST_PLACEMENT: ToastPlacement = "top-center";
+/** Routine feedback stays beside the work, under the title bar. */
+export const DEFAULT_TOAST_PLACEMENT: ToastPlacement = "top-end";
+const defaultPlacement = (tone: ToastTone): ToastPlacement =>
+  tone === "warning" || tone === "danger" ? "top-center" : DEFAULT_TOAST_PLACEMENT;
+
+export type ToastAnnouncement = {
+  id: string;
+  title: string;
+  message: string;
+  tone: ToastTone;
+  occurredAt: number;
+  /** The toast asked to stay until dismissed (`durationMs={null}`). */
+  persist?: boolean;
+  /** The toast carries an action, so it is worth keeping after it leaves. */
+  hasAction?: boolean;
+};
+const announcementListeners = new Set<(entry: ToastAnnouncement) => void>();
 const PLACEMENTS: readonly ToastPlacement[] = [
   "top-center",
   "bottom-end",
@@ -44,6 +66,13 @@ const PLACEMENTS: readonly ToastPlacement[] = [
 ];
 
 const DEFAULT_INSET = 12;
+/**
+ * How far each corner column reaches past the window edge. A scroll box clips at its own padding
+ * edge, and the floating shadow reaches 8px below and 24px of blur past a toast. The column bleeds
+ * this far and its padding gives the toasts back their inset, so layout is unchanged and no shadow
+ * is cut off.
+ */
+const SHADOW_BLEED = 32;
 /** Keeps the toast stack on the inner side of every feature card in its corner. */
 const STACK_ORDER = 1000;
 
@@ -78,6 +107,7 @@ type Corner = {
   pile: Pile;
   listeners: Set<() => void>;
   subscribe: (listener: () => void) => () => void;
+  stopResize?: () => void;
 };
 const corners = new Map<ToastPlacement, Corner>();
 const insets: Partial<Record<ToastPlacement, number>> = {};
@@ -85,13 +115,47 @@ let toastSeq = 0;
 /** Keys count up, so a newer toast sorts and stacks above an older one. */
 const nextToastKey = () => (toastSeq += 1);
 
+/** Fixes where a corner column sits and how far its scroll box reaches past the window edge. */
+function placeColumn(placement: ToastPlacement, node: HTMLDivElement) {
+  const top = placement.startsWith("top");
+  const end = placement.endsWith("end");
+  const center = placement.endsWith("center");
+  node.style.top = top ? `-${SHADOW_BLEED}px` : "";
+  node.style.bottom = top ? "" : `-${SHADOW_BLEED}px`;
+  node.style.insetInlineStart = center || !end ? `-${SHADOW_BLEED}px` : "";
+  node.style.insetInlineEnd = center || end ? `-${SHADOW_BLEED}px` : "";
+  node.style.maxHeight = `calc(100dvh + ${2 * SHADOW_BLEED}px)`;
+  node.style.paddingInline = `${DEFAULT_INSET + SHADOW_BLEED}px`;
+  applyInset(placement, node);
+}
+
 function applyInset(placement: ToastPlacement, node: HTMLDivElement) {
   const inset = insets[placement] ?? DEFAULT_INSET;
   const top = placement.startsWith("top");
-  // The column's own padding is the inset, so card shadows and focus rings are never clipped
-  // by its scroll box. The padding is pointer-transparent like the rest of the column.
-  node.style.paddingBlockStart = `${top ? inset : DEFAULT_INSET}px`;
-  node.style.paddingBlockEnd = `${top ? DEFAULT_INSET : inset}px`;
+  // The padding is the toasts' inset from the window edge; the bleed past it is shadow room that
+  // stays pointer-transparent like the rest of the column.
+  node.style.paddingBlockStart = `${(top ? inset : DEFAULT_INSET) + SHADOW_BLEED}px`;
+  node.style.paddingBlockEnd = `${(top ? DEFAULT_INSET : inset) + SHADOW_BLEED}px`;
+}
+
+/** On narrow windows, routine feedback sits below centered alerts instead of covering them. */
+function syncTopCorners() {
+  const routine = corners.get("top-end");
+  if (!routine?.node.isConnected) return;
+  const center = corners.get("top-center");
+  const routineBox = routine.stack.getBoundingClientRect();
+  let inset = insets["top-end"] ?? DEFAULT_INSET;
+  if (center?.node.isConnected) {
+    for (const child of center.node.children) {
+      const box = child.getBoundingClientRect();
+      if (box.height > 0 && box.left < routineBox.right && box.right > routineBox.left) {
+        inset = Math.max(inset, box.bottom + DEFAULT_INSET);
+      }
+    }
+  }
+  const padding = `${inset + SHADOW_BLEED}px`;
+  if (routine.node.style.paddingBlockStart !== padding)
+    routine.node.style.paddingBlockStart = padding;
 }
 
 /** Recomputes where every toast of the corner sits and tells the toasts. */
@@ -107,6 +171,7 @@ function syncPile(entry: Corner) {
   entry.pile = { keys: [...entry.keys], targets, expanded };
   entry.stack.style.blockSize = `${listHeight}px`;
   entry.stack.toggleAttribute("data-empty", entry.keys.length === 0);
+  syncTopCorners();
   for (const listener of entry.listeners) listener();
 }
 
@@ -162,15 +227,16 @@ function corner(placement: ToastPlacement): Corner {
     const end = placement.endsWith("end");
     const center = placement.endsWith("center");
     node.dataset.toastRegion = placement;
-    node.setAttribute("aria-live", "polite");
+    // No aria-live: each toast card announces itself through its own role (alert or status), so a
+    // live column around it would announce every toast twice.
     // A bottom column grows upward: what leaves through the window edge then never scrolls it.
     node.className = [
-      "pointer-events-none fixed flex max-h-dvh gap-2 overflow-y-auto overscroll-contain px-3",
-      top ? "top-0 flex-col" : "bottom-0 flex-col-reverse",
-      center ? "inset-x-0 items-center" : end ? "end-0 items-end" : "start-0 items-start",
+      "pointer-events-none fixed flex gap-2 overflow-y-auto overscroll-contain",
+      top ? "flex-col" : "flex-col-reverse",
+      center ? "items-center" : end ? "items-end" : "items-start",
     ].join(" ");
     node.style.zIndex = String(LAYER.toast);
-    applyInset(placement, node);
+    placeColumn(placement, node);
     const stack = document.createElement("div");
     stack.dataset.toastStack = "";
     stack.dataset.empty = "";
@@ -207,11 +273,28 @@ function corner(placement: ToastPlacement): Corner {
 function joinCorner(entry: Corner) {
   entry.users += 1;
   if (!entry.node.isConnected) document.body.append(entry.node);
+  if (
+    entry.users === 1 &&
+    (entry === corners.get("top-center") || entry === corners.get("top-end"))
+  ) {
+    const stop = observeResize(entry.node, syncTopCorners);
+    window.addEventListener("resize", syncTopCorners);
+    entry.stopResize = () => {
+      stop();
+      window.removeEventListener("resize", syncTopCorners);
+    };
+  }
+  syncTopCorners();
 }
 
 function leaveCorner(entry: Corner) {
   entry.users -= 1;
-  if (entry.users <= 0) entry.node.remove();
+  if (entry.users <= 0) {
+    entry.stopResize?.();
+    entry.stopResize = undefined;
+    entry.node.remove();
+  }
+  syncTopCorners();
 }
 
 /** Joins the corner column for the lifetime of the caller; the column leaves with its last user. */
@@ -300,11 +383,7 @@ export type ToastSlotProps = {
  * @use Put a feature's own card (reminder panel, approval request) in the shared top-center alert column.
  * @avoid Plain messages: Toast or useToast. Never position a notice with fixed and an offset.
  */
-export function ToastSlot({
-  placement = DEFAULT_TOAST_PLACEMENT,
-  order,
-  children,
-}: ToastSlotProps) {
+export function ToastSlot({ placement = "top-center", order, children }: ToastSlotProps) {
   const entry = useCorner(placement);
   if (!entry) return null;
   return createPortal(
@@ -322,28 +401,56 @@ export function ToastSlot({
 
 export type ToastProps = ToastContentProps & {
   placement?: ToastPlacement;
+  /** Plain-text summary for the notification log. Never include secrets or hidden context. */
+  historyMessage?: string;
 };
 
 /**
  * A declarative toast owned by a component: it shows while rendered and joins the shared
- * top-center stack (or its explicit placement's stack).
+ * top-end stack, or top-center for warnings and errors (unless placement is explicit).
  *
  * ```tsx
  * {saved ? <Toast tone="success" message={t("Saved")} onDismiss={() => setSaved(false)} /> : null}
  * ```
- * The newest toast sits in front and up to three show at once; hovering or focusing the stack
- * fans it out. All tones expire after ten seconds by default; expiry pauses on hover, focus
- * inside, an open stack, while waiting behind the visible three, and in a hidden or unfocused
- * window. Pass `durationMs={null}` for an
- * explicitly persistent notice.
+ * `tone` is required. The newest toast sits in front and up to three show at once; hovering or
+ * focusing the stack fans it out. Info and success expire after five seconds, warnings after
+ * eight, errors after ten, and an error with an action stays until dismissed; expiry pauses on
+ * hover, focus inside, an open stack, while waiting behind the visible three, and in a hidden or
+ * unfocused window. The dismiss control shows on hover and focus (always on a notice that never expires).
+ * Pass `durationMs={null}` for an explicitly persistent notice.
  * @group feedback
  * @use Background or nonblocking event owned by a component: result, undo, retry, progress.
  * @avoid Save feedback next to its control: InlineMessage. Page or panel notice: Alert. Code with no component: useToast. A feature's own card: ToastSlot.
  * @arc toast-stack
  */
-export function Toast({ placement = DEFAULT_TOAST_PLACEMENT, ...props }: ToastProps) {
+export function Toast({ placement, historyMessage, ...props }: ToastProps) {
+  const [id] = useState(nextToastKey);
+  const previous = useRef("");
+  const occurrence = useRef(0);
+  const title = props.title ?? "";
+  const message = historyMessage ?? (typeof props.message === "string" ? props.message : "");
+  const tone = props.tone;
+  const persist = props.durationMs === null;
+  const hasAction = Boolean(props.action || props.actions?.length);
+  // Record only announced plain text; rendered children and action payloads stay out of history.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- synchronizes the mounted notice's announced text with external notification history
+  useEffect(() => {
+    const signature = JSON.stringify([title, message, tone]);
+    if ((!title && !message) || signature === previous.current) return;
+    previous.current = signature;
+    const entry = {
+      id: `toast:${id}:${++occurrence.current}`,
+      title,
+      message,
+      tone,
+      occurredAt: Date.now(),
+      persist: persist || undefined,
+      hasAction: hasAction || undefined,
+    };
+    for (const listener of announcementListeners) listener(entry);
+  }, [id, title, message, tone, persist, hasAction]);
   return (
-    <StackedToast placement={placement}>
+    <StackedToast placement={placement ?? defaultPlacement(tone)}>
       <ToastCard {...props} />
     </StackedToast>
   );
@@ -353,7 +460,7 @@ export function Toast({ placement = DEFAULT_TOAST_PLACEMENT, ...props }: ToastPr
  * Imperative queue: useToast() / toast
  * ------------------------------------------------------------------------------------------- */
 
-export type ToastOptions = Omit<ToastContentProps, "onDismiss"> & {
+export type ToastOptions = Omit<ToastProps, "onDismiss" | "count"> & {
   /** Reusing an id replaces that toast in place (a retry updates its own failure). */
   id?: string;
   placement?: ToastPlacement;
@@ -363,7 +470,7 @@ export type ToastOptions = Omit<ToastContentProps, "onDismiss"> & {
   onDismiss?: () => void;
 };
 
-type Entry = ToastOptions & { id: string };
+type Entry = ToastOptions & { id: string; count?: number; fixedId?: boolean };
 let queue: readonly Entry[] = [];
 const listeners = new Set<() => void>();
 let counter = 0;
@@ -380,9 +487,50 @@ function subscribe(listener: () => void) {
   };
 }
 
+/**
+ * Plain toasts compare by what the owner sees. A toast with a callback (`action`, `actions`,
+ * `extra`), rows, progress or a bound id is its own operation and never merges: two identical
+ * failures with different Retry callbacks stay two cards, each with its own callback.
+ */
+function repeatKey(options: ToastOptions, fixedId: boolean): string | null {
+  if (
+    fixedId ||
+    options.children ||
+    options.progress ||
+    options.action ||
+    options.actions?.length ||
+    options.extra
+  )
+    return null;
+  if (options.message !== undefined && typeof options.message !== "string") return null;
+  // Placement, lifetime and dismissibility are part of what the owner sees and how it behaves.
+  return JSON.stringify([
+    options.tone,
+    options.title ?? "",
+    options.message ?? "",
+    options.placement ?? "",
+    options.durationMs ?? "",
+    options.dismissible ?? true,
+    options.dismissDisabled ?? false,
+  ]);
+}
+
 function show(options: ToastOptions): string {
+  // A repeat carrying its own dismiss effect would lose it inside the card it merges into.
+  const key = repeatKey(options, options.id !== undefined || options.onDismiss !== undefined);
+  const same =
+    key === null
+      ? undefined
+      : queue.find((item) => !item.fixedId && repeatKey(item, false) === key);
+  if (same) {
+    // The same toast again: one card counts the repeats and restarts its time.
+    publish(
+      queue.map((item) => (item === same ? { ...item, count: (item.count ?? 1) + 1 } : item)),
+    );
+    return same.id;
+  }
   const id = options.id ?? `toast-${++counter}`;
-  const entry = { ...options, id };
+  const entry = { ...options, id, fixedId: options.id !== undefined };
   const index = queue.findIndex((item) => item.id === id);
   publish(index < 0 ? [...queue, entry] : queue.map((item, i) => (i === index ? entry : item)));
   return id;
@@ -402,7 +550,7 @@ function dismiss(id: string) {
 
 function dismissAll(placement?: ToastPlacement) {
   const leaving = queue.filter(
-    (item) => !placement || (item.placement ?? DEFAULT_TOAST_PLACEMENT) === placement,
+    (item) => !placement || (item.placement ?? defaultPlacement(item.tone)) === placement,
   );
   publish(queue.filter((item) => !leaving.includes(item)));
   for (const item of leaving) item.onDismiss?.();
@@ -410,16 +558,22 @@ function dismissAll(placement?: ToastPlacement) {
 
 /**
  * Imperative toasts for code that has no component to own one (a background result). Shown by
- * the mounted `<ToastRegion />`; component-owned notices render `<Toast>` instead.
+ * the mounted `<ToastRegion />`; component-owned notices render `<Toast>` instead. `tone` is
+ * required. Showing the same plain tone, title and message while it is visible adds to its "×N"
+ * count and restarts its time instead of opening another toast. A toast with an action, rows,
+ * progress, an `onDismiss` or an `id` is never merged: pass the operation's `id` so a retry updates
+ * its own card, and never rely on text to identify an operation.
  */
 export const toast = { show, update, dismiss, dismissAll } as const;
 
-/** `show(options)` returns the id; `update(id, patch)`; `dismiss(id)`; `dismissAll(placement?)`. */
+/** `show` announces immediately. Route operation failures through `reportFailure` first. */
 export function useToast() {
   return toast;
 }
 
 export type ToastRegionProps = {
+  /** Receives plain-text announcements for the application's existing notification history. */
+  onRecord?: (entry: ToastAnnouncement) => void;
   /**
    * Distance from the window edge per corner, in px (default 12). Top corners use it to clear
    * the title bar; bottom corners to clear the status bar.
@@ -435,7 +589,16 @@ export type ToastRegionProps = {
  * @use Mount once per window to render the imperative `toast` queue and set placement insets.
  * @avoid Mounting a second region or a second toast layer. Component-owned messages: Toast.
  */
-export function ToastRegion({ insets: next }: ToastRegionProps) {
+export function ToastRegion({ insets: next, onRecord }: ToastRegionProps) {
+  // Subscribe before declarative toast effects announce their initial content.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- holds the application's history listener while its toast region is mounted
+  useLayoutEffect(() => {
+    if (!onRecord) return;
+    announcementListeners.add(onRecord);
+    return () => {
+      announcementListeners.delete(onRecord);
+    };
+  }, [onRecord]);
   const handleDismiss = (id: string) => dismiss(id);
   const entries = useSyncExternalStore(
     subscribe,
@@ -454,14 +617,23 @@ export function ToastRegion({ insets: next }: ToastRegionProps) {
   }, [key]);
   return (
     <>
-      {entries.map(({ id, placement, dismissible = true, onDismiss: _onDismiss, ...props }) => (
-        <Toast
-          key={id}
-          {...props}
-          placement={placement}
-          onDismiss={dismissible ? () => handleDismiss(id) : undefined}
-        />
-      ))}
+      {entries.map(
+        ({
+          id,
+          placement,
+          dismissible = true,
+          onDismiss: _onDismiss,
+          fixedId: _fixedId,
+          ...props
+        }) => (
+          <Toast
+            key={id}
+            {...props}
+            placement={placement}
+            onDismiss={dismissible ? () => handleDismiss(id) : undefined}
+          />
+        ),
+      )}
     </>
   );
 }

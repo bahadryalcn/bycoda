@@ -23,3 +23,7 @@ Paths are repository-root relative. Search the named task/goal/sprint/steward ac
 - Mobile task/goal consumers live under nested `mobile/`; exact method/capability parity must be read from actual clients. Native adapters retain their own receipt and operation gates.
 - Focused suites: `src/features/tasks/model/taskClient.test.ts`, `taskTransitions.test.ts`, `taskWorkspace.test.ts`, `goalClient.test.ts`; UI `TasksView.test.ts`, `TaskLimits.test.ts`; `host/tasks/tasks.test.ts`, `host/goals/goals.test.ts` and changed task delivery/sprint/steward suites.
 - Browser family `tests/browser/tasks/tasks.tsx` and related goal/create/detail scenarios: empty/long titles, disconnected, queued dependencies, blocked preflight, budget, review and pending/retry. Search current locale sentence keys across the rendered controls and scheduler outcomes.
+
+## Board reads
+
+- Board, daily-summary and background-notifier reads share one request per machine (`sharedMachineListReads` for goals and automations, the task read cache for tasks). A write drops that machine's shared read; only the notifier may accept a recent automation answer, and its poll has a deadline that retires late results.

@@ -1,7 +1,6 @@
 import { z } from "zod";
 import {
   NativeDeliveryIdentitySchema,
-  NativeBufferDeliveryRecordedSchema,
   NativeDeliveryResultSourceSchema,
   NativeDeliveryConsumedResultSchema,
 } from "./native-delivery-identity";
@@ -14,17 +13,24 @@ import {
   parseNativeDeliveryEpochOriginalId,
 } from "./native-delivery-epochs";
 
-export const NativeBufferDeliveryApplyParamsSchema = NativeDeliveryIdentitySchema.extend({
-  paramsJson: z.string(),
-});
 const serviceIdentity = NativeDeliveryIdentitySchema.extend({
   target: NativeServiceUploadTargetSchema,
 });
+/**
+ * Opt-in fast acknowledgement (capability `native.services.delivery.admission.v1`). A caller
+ * that sends it gets `state: "accepted"` as soon as the original is durably admitted, and
+ * reads the typed outcome later with `native.services.delivery.status` for the same original
+ * (sending the same field). Without it, apply answers synchronously as before.
+ */
+export const NativeServiceDeliveryAcknowledgeSchema = z.literal("admission");
 export const NativeServiceDeliveryApplyParamsSchema = serviceIdentity.extend({
   paramsJson: z.string(),
+  acknowledge: NativeServiceDeliveryAcknowledgeSchema.optional(),
+});
+const serviceStatusParams = serviceIdentity.extend({
+  acknowledge: NativeServiceDeliveryAcknowledgeSchema.optional(),
 });
 const absent = z.strictObject({ state: z.literal("absent") });
-const unknown = NativeDeliveryIdentitySchema.extend({ state: z.literal("unknown") });
 const fenced = NativeDeliveryIdentitySchema.extend({
   state: z.literal("fenced"),
   epoch: NativeDeliveryEpochFenceSchema,
@@ -42,25 +48,12 @@ export const nativeDeliveryMatchesEpochFence = (value: z.infer<typeof fenced>) =
     return false;
   }
 };
-export const NativeBufferDeliveryAckParamsSchema = NativeDeliveryIdentitySchema.extend({
-  consumedResult: NativeDeliveryConsumedResultSchema,
-});
 export const NativeServiceDeliveryAckParamsSchema = serviceIdentity.extend({
   consumedResult: NativeDeliveryConsumedResultSchema,
-});
-export const NativeBufferDeliveryRetiredSchema = NativeBufferDeliveryAckParamsSchema.extend({
-  state: z.literal("retired"),
 });
 export const NativeServiceDeliveryRetiredSchema = NativeServiceDeliveryAckParamsSchema.extend({
   state: z.literal("retired"),
 });
-export const NativeBufferDeliveryStatusSchema = z.union([
-  absent,
-  unknown,
-  fenced,
-  NativeBufferDeliveryRecordedSchema,
-  NativeBufferDeliveryRetiredSchema,
-]);
 export const NativeServiceDeliveryStatusSchema = z.union([
   absent,
   fenced.extend({ target: NativeServiceUploadTargetSchema }),
@@ -71,6 +64,9 @@ export const NativeServiceDeliveryStatusSchema = z.union([
     resultUnavailable: z.literal(true),
   }),
   serviceIdentity.extend({ state: z.literal("unknown") }),
+  // Durably admitted and still executing in this Host process. Only an `acknowledge`
+  // caller sees it, and it proves nothing about the outcome: poll status for that.
+  serviceIdentity.extend({ state: z.literal("accepted") }),
   serviceIdentity.extend({
     state: z.literal("recorded"),
     resultSource: NativeDeliveryResultSourceSchema,
@@ -88,28 +84,16 @@ export const NativeServiceDeliveryStatusSchema = z.union([
 ]);
 export const NATIVE_DELIVERY_RPC_SCHEMAS = {
   ...NATIVE_DELIVERY_EPOCH_RPC_SCHEMAS,
-  "native.buffers.delivery.ack": {
-    params: NativeBufferDeliveryAckParamsSchema,
-    result: NativeBufferDeliveryRetiredSchema,
-  },
   "native.services.delivery.ack": {
     params: NativeServiceDeliveryAckParamsSchema,
     result: NativeServiceDeliveryRetiredSchema,
-  },
-  "native.buffers.delivery.apply": {
-    params: NativeBufferDeliveryApplyParamsSchema,
-    result: NativeBufferDeliveryStatusSchema,
-  },
-  "native.buffers.delivery.status": {
-    params: NativeDeliveryIdentitySchema,
-    result: NativeBufferDeliveryStatusSchema,
   },
   "native.services.delivery.apply": {
     params: NativeServiceDeliveryApplyParamsSchema,
     result: NativeServiceDeliveryStatusSchema,
   },
   "native.services.delivery.status": {
-    params: serviceIdentity,
+    params: serviceStatusParams,
     result: NativeServiceDeliveryStatusSchema,
   },
   "native.services.delivery.result.read": {
@@ -126,7 +110,6 @@ export const NATIVE_DELIVERY_RPC_SCHEMAS = {
   },
 } as const;
 export type NativeDeliveryMethod = keyof typeof NATIVE_DELIVERY_RPC_SCHEMAS;
-export type NativeBufferDeliveryStatus = z.infer<typeof NativeBufferDeliveryStatusSchema>;
 export type NativeServiceDeliveryStatus = z.infer<typeof NativeServiceDeliveryStatusSchema>;
 export const NATIVE_DELIVERY_METHODS = Object.freeze(
   Object.keys(NATIVE_DELIVERY_RPC_SCHEMAS) as NativeDeliveryMethod[],

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseStandaloneHttpUrl, parseUserMessageLink, userLinkRanges } from "./linkPreview";
+import {
+  cachedUserLinkRanges,
+  parseStandaloneHttpUrl,
+  parseUserMessageLink,
+  userLinkRanges,
+} from "./linkPreview";
 
 describe("parseStandaloneHttpUrl", () => {
   it("normalizes a standalone web URL for display", () => {
@@ -90,5 +95,27 @@ describe("userLinkRanges", () => {
 
   it("ignores text without a web URL", () => {
     expect(userLinkRanges("file:///tmp/a.txt and plain words")).toEqual([]);
+  });
+});
+
+describe("cachedUserLinkRanges", () => {
+  it("returns the same ranges for unchanged text and the same result as userLinkRanges", () => {
+    const text = "see https://example.com/docs, then https://example.org";
+    const first = cachedUserLinkRanges(text);
+    expect(first).toEqual(userLinkRanges(text));
+    expect(cachedUserLinkRanges(text)).toBe(first);
+    expect(cachedUserLinkRanges(`${text} more`)).not.toBe(first);
+  });
+
+  it("keeps a bounded number of texts, dropping the least recently used", () => {
+    const first = cachedUserLinkRanges("https://first.example");
+    for (let index = 0; index < 20; index += 1)
+      cachedUserLinkRanges(`https://filler-${index}.example`);
+    expect(cachedUserLinkRanges("https://first.example")).not.toBe(first);
+  });
+
+  it("does not retain very long drafts", () => {
+    const text = `${"word ".repeat(5000)}https://example.com`;
+    expect(cachedUserLinkRanges(text)).not.toBe(cachedUserLinkRanges(text));
   });
 });

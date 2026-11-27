@@ -1,3 +1,5 @@
+import { bytesToBase64 } from "../../../shared/lib/base64";
+
 /**
  * The stored form of the app lock password: a salted PBKDF2 hash, never the
  * password. The record carries its own parameters, so raising the cost later
@@ -60,8 +62,8 @@ export async function createPasswordRecord(
     v: RECORD_VERSION,
     alg: ALGORITHM,
     iterations: PBKDF2_ITERATIONS,
-    salt: toBase64(salt),
-    hash: toBase64(hash),
+    salt: bytesToBase64(salt),
+    hash: bytesToBase64(hash),
   };
 }
 
@@ -116,12 +118,6 @@ export function parsePasswordRecord(value: unknown): PasswordRecord | null {
 
 function randomBytes(count: number): Uint8Array {
   return globalThis.crypto.getRandomValues(new Uint8Array(count));
-}
-
-function toBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
 }
 
 function fromBase64(value: string): Uint8Array {

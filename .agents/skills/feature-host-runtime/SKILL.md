@@ -14,6 +14,7 @@ installed acceptance remain separate; a successful slice grants no migration/def
 
 - Host: `host/domains/`, `host/transport/`, `host/storage/` and `host/execution/`; `host/server.ts` and `host/engine.ts` compose the runtime.
 - Windows login tasks: `host/service/windows-task.ts` and `packages/host-service-launcher/`. Keep Node launch direct, preserve per-user authority and refuse live runtime replacement; never compile a launcher during installation or fall back to an encoded shell action.
+- Host lifecycle: `src-tauri/src/host_lifecycle/` and `host/service/lifecycle-mode.ts`.
 - Domain effects: `host/workspaces/`, `host/desktop/`, `host/conversation/`, `host/terminals/` and `host/devices/`; public entries are domain services.
 - Desktop: `src/features/connections/model/` and `src/shared/lib/host-runtime/`; schemas are under `src/shared/model/host-contracts/`.
 - Providers: `src/integrations/harness/core/` and `src/integrations/harness/providers/`.
@@ -37,12 +38,12 @@ installed acceptance remain separate; a successful slice grants no migration/def
 - Persist remote commands before dispatch. Retain exact payloads, unknown outcomes, quarantined evidence and corrupt owner fences; never replay dispatched mutations.
 - Corrupt lifecycle metadata or endpoint failure cannot prove Host retirement. Kernel-lease proof and explicit repair own legacy/corrupt-state recovery.
 - Workspace publication retains expected content, rooted target, current permission checks and file ACLs. Preserve uncertain candidates and original source/recovery bytes.
+- Desktop window liveness, the subscription control lane (`host/transport/ws/control-lane.ts`) and `sessions.queue.claimDispatch` rules: [contracts](references/contracts.md).
 - Authentication/heartbeat admission stays separate from controls. Original monotonic deadlines and physical slot accounting survive queue waits and observer cancellation.
 - Subscription resume needs committed cursor proof for the exact live page, owner, target and resource; changed/unproven membership requires a fresh snapshot.
 - Desktop effects persist original receipts before offer; unknown/offered work cannot be reoffered. Page tokens route existing scope; ACK proves handling only.
 - Fence original authority/request identity before retiring proven settled receipts. Pending effects, failed cleanup, warm/unknown owners and physical completion need their own retained proof; preview settlement includes requested presentation.
 - Preserve drafts, queues, approvals and attachments. Detach does not Stop; migration needs its full admission contract.
-- `sessions.queue.claimDispatch` admits an existing desktop queue claim only for its exact row, client, token and drain epoch. Recheck the queue revision inside the command receipt transaction and settle the claim there; older Hosts defer the handoff.
 
 ## Focused checks
 

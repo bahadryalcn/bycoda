@@ -7,6 +7,225 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.30]
+
+### Added
+
+- Social accounts can publish, moderate and read insights for Instagram, Facebook, TikTok, X, YouTube, LinkedIn and Snapchat, with owner review before anything is sent.
+- Live streaming goes live on several Social accounts at once from OBS.
+- Realtime voice calls can run through the Host.
+- Empty, error and offline states share one set of illustrations.
+- Browser profile import finds Chrome, Edge, Brave, Vivaldi, Opera, Chromium and Firefox on macOS and Linux too.
+- Room privacy protection can be rebuilt after an interrupted change, without dropping any lock.
+
+### Changed
+
+- The Tasks screens are simpler:
+  - A new task uses one form with the same machine, project, model, access and working copy choices as the message box. The title is optional and comes from the description when left empty.
+  - The page has Tasks and Sprints tabs, one Filter button and count chips that filter the list.
+  - Tasks are grouped into Needs you, Blocked, Running, To do and Done.
+  - Each sprint page has its report.
+- The Crews screens are simpler:
+  - The page has Teams, Members and Work tabs with one main action each.
+  - Work opens first when a crew needs a decision, and keeps run history and work in other projects on the same tab.
+  - Crew and member forms have one More options section, and the sidebar no longer lists crew work.
+- The Automations screens are simpler:
+  - One editor uses the same project, model, access and working copy choices as the message box. The name comes from the instructions when left empty.
+  - Triggers, run history and templates each have one place in the editor.
+- The voice assistant is simpler:
+  - Voice settings has Assistant, Conversation and Dictation groups, and a cloud provider's privacy note is always visible.
+  - The live voice call has one More menu. The overlay's Full screen mode and the launcher's wake popover are gone.
+  - The message box's dictation menu holds Language only.
+- The interface follows one design system:
+  - Toasts, alerts and the notification center share one feedback language.
+  - Unavailable actions say why.
+  - Optional help sits behind info buttons instead of paragraphs.
+  - Tooltips appear only when they add something.
+- Renamed projects keep their names in Tasks, Search and Notes.
+
+### Fixed
+
+- Sessions without a project open and list correctly.
+- The new task form no longer shows a "Merge automatically" option that had no effect.
+- Default settings apply to all providers again: per-provider copies that matched the shared default no longer block changes.
+- Running tasks that wait for input are listed under Needs you.
+- Live streaming start and stop no longer time out after 30 seconds on remote machines.
+- Narrow layouts: settings rows, the composer Stop button, the task details panel, notification rows and the account footer no longer overflow or clip.
+- Shortened English labels are restored.
+
+## [0.7.25]
+
+### Added
+
+- Automations can hold recipes: versioned, ordered task and owner-decision steps. **Repeat this** on a finished task prefills one, and a declined decision or blocked step stops the recipe with its reason.
+- Tasks show who ran the work and why they stopped or are waiting, list their helper delegations and flag failed helpers on the board card.
+- Tasks, epics, crews and automations share one executor choice (agent, crew or auto); new work defaults to **Use settings**.
+- Browser profiles can be managed in Settings, together with the access each profile grants.
+- Dictation and voice can use local GGUF transcription models.
+- Daily active-time sharing offers **Send once**, **Send for today**, **Ask later** and **Never send**, with at most one receipt per local day.
+
+### Improved
+
+- Settings show every row in full; collapsible rows are gone.
+- Background work sessions (task workers and reviewers, planners, automations, stewards and crews) stay out of session lists, search and restored tabs unless pinned or **Show background sessions** is on.
+- Epic tasks and crew assignments open from their parent card instead of separate board rows.
+- Task runtime counts only observed time, so sleep or a stall no longer blocks a task.
+- Chat, voice, Room and automation tasks are created through one path and keep the owner's request word for word; **/task** creates the task directly.
+- Computer use and Jira board changes follow Assistant access permissions, and approval queues and notification review share one flow.
+- Follow-ups to Claude wait in the queue while its provider is starting.
+
+### Fixed
+
+- Bare MCP authorization tokens are sent with the Bearer scheme.
+- Queued messages survive deferred history loading and interrupted turns, and **Load newer messages** appears only when newer turns are hidden.
+
+## [0.7.23]
+
+### Added
+
+- **Ctrl+B** (Command+B on macOS) cycles the workspace through three pane layouts; **Ctrl+Shift+B** still toggles the session sidebar.
+- On Windows and macOS, a loopback address in the Browser panel opens a direct local preview; **Shared host browser** keeps viewports, element selection and recording.
+- Voice calls can show presented views built from the app's own components (tables, charts, forms, copyable drafts and buttons that run tools), and the companion opens Settings, Inbox, Notes and other views by voice.
+- Right-click a conversation and choose **Link GitHub issue or PR** to link it to a GitHub item.
+- **Settings > Models > Background work > Prepare setup draft** fills providers, model order, groups and job bindings in one step; **By account** groups models under each account with its live quota.
+- MCP server details show the signed-in account when the server advertises a profile tool.
+- Commit message generation has its own account and model picker per checkout.
+
+### Improved
+
+- **Settings > Privacy** chooses **Do not send**, **Ask every time** or **Send every time** per sharing category; diagnostic reports ask for approval by default and show the redacted data before sending.
+- Live device view streams Android devices on Windows and macOS Hosts and iOS simulators on a Mac, keeping the last frame visible during short interruptions.
+- The model picker, workspace footer and Usage & limits share one account reading, and keep the last measured percentage visible when a refresh fails.
+- Usage shows token totals and recorded time as soon as local logs are read, before prices and quotas load.
+- File mentions rank project files faster, and a draft holds up to 20 attachments.
+- The update prompt compares the installed and available versions and offers **Remind me tomorrow**.
+- Saved remote connection tokens are encrypted with a key kept in the system credential store.
+
+### Fixed
+
+- Stop on a conversation run by this computer's Host stays pending until the Host confirms the turn ended.
+- Session reads and checkpoint status stay current after background changes.
+
+## [0.7.22]
+
+### Added
+
+- Link a project across machines and open terminals on a paired SSH machine at the project's folder.
+- Pasting 8,000 or more characters into a chat saves the text as a **Pasted text** attachment instead of filling the draft.
+- Remote conversations open matching HTTP development links in your system browser through a private forward, labeled with the computer's saved name.
+- **Settings > Chat > Advanced conversation settings > At usage limit, continue on** chooses what a conversation does when its provider stops it at a usage limit.
+- Jira Inbox changes an issue's status from its detail and shares filters across the list, Kanban and backlog views.
+- MCP sign-in can be cancelled while the browser step is pending.
+- Local video and audio files play inline in conversations, above the reply that links them or the sent message that attaches them.
+
+### Improved
+
+- The queued message editor uses the same controls as the chat composer.
+- In narrow chat panes, Access and Mode move to the model panel's **Settings** tab, and Queue and Steer take priority over Stop while you have a draft.
+- Activity lists failed and unseen completed sessions with a count per state in its header.
+- Long messages expand in place; **Expand** opens them in a dialog with the same formatting.
+- Markdown previews zoom with Ctrl and the mouse wheel, and chat links open Markdown files in Preview.
+- Device and Browser panels obtain control automatically and stream live frames where the Host supports it.
+- Assistant access presets apply one permission level and show **Custom** whenever grants differ.
+- Remote sessions load faster, and workspace file navigation follows the project on each machine.
+- The notification bell sits beside Settings at the bottom of the left sidebar, and moves to the workspace footer when the sidebar is hidden.
+
+### Fixed
+
+- Pressing End in a long model list scrolls to the last model in WebKit after the list was filtered or resized.
+- Escape right after opening the Access or Mode menu in the model panel closes only that menu.
+- A Host closing during startup no longer stops with an unhandled error.
+- Transcript activity labels show their separators and ellipses correctly.
+- WebView2 recovery on Windows relaunches the app when the browser process exits.
+
+## [0.7.20]
+
+### Changed
+
+- The local Host now runs with the desktop app and stops when you quit, after listing running sessions and stopping them gracefully. Turn on "Keep this computer reachable when bycoda is closed" under Settings → Connections → Computers to keep it running as a login service.
+
+### Improved
+
+- Remote session synchronization uses fewer database write-queue admissions, and large sync responses reuse their encoded payload.
+- Long referenced message drafts keep their selection and undo history when a very long wrapped line switches to the native text field.
+- Windows login-service Hosts use normal scheduling priority.
+- Starting local voice reuses a recent successful runtime check. Compatible speech and recognition workers can start together.
+- Typing in a long draft pauses background scene rendering and keeps the current frame visible.
+- Native buffer reads reuse one long-lived git reader instead of starting three git processes per read.
+- The Host no longer checks the desktop database files with blocking disk calls, so a stalled disk (a restore point, an antivirus scan) cannot freeze it.
+- Social audit records are kept for 30 days, and the notification poller's old read records are removed.
+
+### Fixed
+
+- Refreshing an open Git review after a file becomes clean clears the diff and preserves the baseline needed to stage subsequent edits.
+- Restoring projects waits for the initial Host connection before listing sessions. Background session discovery no longer fetches attachment previews before they are needed.
+- Restored workspace panels share SSH discovery and stagger their initial file and Git reads. A connection already in progress no longer triggers account route recovery. Cancel and approval actions keep their own timing during discovery retries.
+- The Send button stays on the model row in a narrow composer, including when the selected model has a long name.
+- Scrolling up through a long conversation continues to load earlier messages while the wheel gesture is still moving.
+- On Linux WebKit, message bubbles keep their translucent backgrounds and borders without a separate blur layer per message, making long conversations faster to scroll.
+- Worktree removal detects unsaved files opened through alternate paths, including Windows short directory names.
+- Switching streams preserves pending project and session lists. Browser annotations retain their details beside inline images.
+- Reopened sessions can use their original desktop attachment when a Host copy is unavailable. A temporary Codex catalog failure keeps previously loaded models available.
+- On macOS and Linux, cancelling a Git operation also stops its helper processes. Worktree removal recognizes active sessions opened through an alternate path.
+
+## [0.7.15]
+
+### Added
+
+- Set up a local Ollama server from the app and use its models with OpenCode.
+- Show Claude Workflow subagents in the chat, and GitHub inbox layouts with richer Markdown previews.
+- Choose the model that writes commit messages, with immediate feedback while a push runs.
+
+### Improved
+
+- Bound Host queues, scans, uploads, retention and blocking work so long sessions, crews and automations stay responsive.
+- Pause background polling and timers while windows are hidden, and keep settled chat messages from re-rendering on focus changes.
+- Show one clear notice when a remote machine cannot be asked, and clearer messages when a saved choice or remote action could not be confirmed.
+- Format diagnostics values, dates, bytes and durations consistently in every language.
+- Give voice connections more time to start and refresh their connection key before it expires.
+- Keep the Host responsive with many worktrees, subagent runs and long transcripts: branch names, network status and session reads no longer start extra processes on every poll.
+- The Host log reports real event-loop stalls (with a saved CPU profile when they repeat) instead of every held long poll.
+
+### Fixed
+
+- Crew and automation runs no longer stay pending after scheduler cleanup.
+- Workspace setup retries a locked database instead of failing.
+- Large native uploads no longer time out over WebSocket.
+- The Windows Host launcher keeps its real exit code, cleans up child processes and updates without a half-moved install.
+- Closing a tooltip no longer blocks focus from returning to the field that opened it.
+- The composer keeps its fill in dark mode, and the voice panel no longer overflows sideways.
+- Voice no longer stays on "Connecting voice…" when a step never answers; it names the stalled step and retries.
+- Worktree cleanups whose recovery branch was deleted finish instead of retrying on every launch.
+- Restoring the editor position after an update no longer logs a layout error.
+
+## [0.7.13]
+
+### Improved
+
+- Route models by saved order with usage failover, smart setup and clearer model order limits.
+- Show working sessions in the sidebar and device hosts in the device panel.
+- Queue a message while delegated subagents still run; it sends when the last one finishes.
+- Recover remote sessions and shared queues more reliably after reconnects.
+
+### Fixed
+
+- A `/goal` mention inside a message no longer creates a bycoda Epic; only an explicit Epic request does.
+- An idle window keeps a single shared-queue timer.
+
+## [0.7.12]
+
+### Improved
+
+- Manage paired devices in one panel and show live desktop state on connected machines.
+- Save settings pages through one shared save bar that warns before leaving unsaved changes.
+- Refresh smart model setup, model order limits and role groups with live catalog facts.
+- Show toast history and clearer copy, notes and question flows.
+
+### Fixed
+
+- Keep queued sends and remote group locks consistent after reconnects.
+- Recover local network pairing when the LAN address changes.
+
 ## [0.7.11]
 
 ### Improved

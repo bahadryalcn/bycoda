@@ -278,12 +278,41 @@ describe("Telegram channel publishing", () => {
       },
       deleteMessage: true,
     });
-    await f.adapter.deletePost!(account(), "123:synthetic", `${channelId}:7`);
-    expect(f.methods()).toEqual(["getMe", "getChatMember", "deleteMessage"]);
+    const guard = vi.fn(async () => {
+      expect(f.methods()).toEqual(["getMe", "getChat", "getChatMember"]);
+    });
+    await f.adapter.deletePost!(account(), "123:synthetic", `${channelId}:7`, guard);
+    expect(guard).toHaveBeenCalledOnce();
+    expect(f.methods()).toEqual(["getMe", "getChat", "getChatMember", "deleteMessage"]);
     await expect(
       f.adapter.deletePost!(account(), "123:synthetic", "-1000000000001:7"),
     ).rejects.toMatchObject({ code: "denied" });
-    expect(f.methods()).toHaveLength(3);
+    expect(f.methods()).toHaveLength(4);
+  });
+  it.each([
+    { getChat: { id: Number(channelId), type: "supergroup" } },
+    {
+      getChatMember: {
+        user: { id: 999, is_bot: true },
+        status: "administrator",
+        can_delete_messages: true,
+      },
+    },
+    {
+      getChatMember: {
+        user: { id: 123, is_bot: true },
+        status: "administrator",
+        can_delete_messages: false,
+      },
+    },
+  ])("refuses deletion before submission when channel or bot rights changed", async (responses) => {
+    const f = fixture(responses);
+    const guard = vi.fn();
+    await expect(
+      f.adapter.deletePost!(account(), "123:synthetic", `${channelId}:7`, guard),
+    ).rejects.toMatchObject({ code: "denied" });
+    expect(guard).not.toHaveBeenCalled();
+    expect(f.methods()).not.toContain("deleteMessage");
   });
   it("does not consume getUpdates or expose channel direct messages", async () => {
     const f = fixture();

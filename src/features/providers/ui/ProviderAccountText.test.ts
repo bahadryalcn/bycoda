@@ -88,6 +88,23 @@ it("AccountStatusLabel keeps its detail ink by default and takes the new roles",
   expect(roled).toContain('data-truncate="true"');
 });
 
+it("shows a low account as its remaining percent in yellow or red, without a badge", () => {
+  const low = renderToStaticMarkup(
+    createElement(AccountStatusLabel, {
+      status: { tone: "low", label: "Running low", detail: "15% left", critical: false },
+    }),
+  );
+  expect(low).toContain("15% left");
+  expect(low).toContain('data-tone="warning"');
+  expect(low).not.toContain("Running low");
+  const critical = renderToStaticMarkup(
+    createElement(AccountStatusLabel, {
+      status: { tone: "low", label: "Running low", detail: "8% left", critical: true },
+    }),
+  );
+  expect(critical).toContain('data-tone="danger"');
+});
+
 it("updates derived account details after language changes without remounting", async () => {
   const now = 1000;
   const Status = ({ percent }: { percent: number }) => {

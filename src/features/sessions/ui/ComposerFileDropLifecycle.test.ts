@@ -8,6 +8,7 @@ import {
   type ExplorerFilePointerDragDetail,
 } from "../../../shared/lib/drag";
 import { Composer } from "./Composer";
+import { openErrorDetails } from "./errorDetails.fixture";
 
 const { invoke, listen, platform } = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -42,35 +43,38 @@ let root: Root;
 let submit: ReturnType<typeof vi.fn>;
 let handlers: Set<(event: { payload: DragDropEvent }) => void>;
 
+function composer(props: Record<string, unknown>) {
+  return createElement(Composer, {
+    focused: false,
+    harness: "codex",
+    model: "",
+    runtimeMode: "supervised",
+    executionCwd: "~",
+    hideTopBar: true,
+    onFocus: vi.fn(),
+    onCwdChange: vi.fn(),
+    onModelChange: vi.fn(),
+    onRuntimeModeChange: vi.fn(),
+    onSubmit: submit,
+    ...props,
+  });
+}
+
 async function render(props: Record<string, unknown> = {}) {
   await act(async () => {
-    root.render(
-      createElement(
-        "div",
-        { "data-session-drop": "session-1" },
-        createElement(Composer, {
-          focused: false,
-          harness: "codex",
-          model: "",
-          runtimeMode: "supervised",
-          executionCwd: "~",
-          hideTopBar: true,
-          onFocus: vi.fn(),
-          onCwdChange: vi.fn(),
-          onModelChange: vi.fn(),
-          onRuntimeModeChange: vi.fn(),
-          onSubmit: submit,
-          ...props,
-        }),
-      ),
-    );
+    root.render(createElement("div", { "data-session-drop": "session-1" }, composer(props)));
   });
   setDropRect(0, 0, 500, 500);
   return container.querySelector<HTMLElement>("[data-composer-box]")!;
 }
 
-function setDropRect(left: number, top: number, right: number, bottom: number) {
-  const session = container.querySelector<HTMLElement>("[data-composer-box]")!;
+function setDropRect(
+  left: number,
+  top: number,
+  right: number,
+  bottom: number,
+  session = container.querySelector<HTMLElement>("[data-composer-box]")!,
+) {
   session.getBoundingClientRect = () =>
     ({
       left,
@@ -114,7 +118,7 @@ function dropBadge() {
 }
 
 function attachmentCount() {
-  return container.querySelectorAll('[aria-label^="Remove "]').length;
+  return container.querySelectorAll("[data-attachment-chip]").length;
 }
 
 function explorerDrag(detail: ExplorerFilePointerDragDetail) {
@@ -244,6 +248,55 @@ describe("Composer image drops", () => {
     expect(attachmentCount()).toBe(1);
   });
 
+  it("shares one native listener across split panels and their warm replacements", async () => {
+    const setPair = async (active: number) => {
+      await act(async () => {
+        root.render(
+          createElement(
+            "div",
+            {},
+            [0, 1, 2, 3].map((index) =>
+              composer({
+                key: index,
+                enabled: Math.floor(index / 2) === active,
+                focused: index === 2,
+              }),
+            ),
+          ),
+        );
+      });
+      const boxes = Array.from(container.querySelectorAll<HTMLElement>("[data-composer-box]"));
+      boxes.forEach((box, index) =>
+        setDropRect((index % 2) * 400, 0, (index % 2) * 400 + 399, 500, box),
+      );
+      return boxes;
+    };
+    await setPair(0);
+    const boxes = await setPair(1);
+    expect(listen).toHaveBeenCalledTimes(1);
+    expect(handlers.size).toBe(1);
+    for (const receive of handlers) {
+      receive({
+        payload: {
+          type: "enter",
+          paths: ["/project/report.pdf"],
+          position: { x: 550, y: 100 },
+        } as DragDropEvent,
+      });
+      receive({ payload: { type: "over", position: { x: 100, y: 100 } } as DragDropEvent });
+    }
+    expect(boxes[2].dataset.dropIndicator).toBe("inside");
+    expect(dropBadge()).toBe("Attach 1 file");
+    await nativeDrop(["/project/report.pdf"], 550, 100);
+    expect(attachmentCount()).toBe(1);
+    expect(boxes[3].querySelector("[data-attachment-chip]")).not.toBeNull();
+    expect(invoke.mock.calls.filter(([command]) => command === "inspect_paths")).toHaveLength(1);
+    await setPair(0);
+    await nativeDrop(["/project/other.pdf"], 120, 100);
+    expect(boxes[0].querySelector("[data-attachment-chip]")).not.toBeNull();
+    expect(listen).toHaveBeenCalledTimes(1);
+  });
+
   it("uses current attachment capabilities without replacing the listener", async () => {
     const session = await render();
     await render({ harness: "fx" });
@@ -260,9 +313,9 @@ describe("Composer image drops", () => {
     expect(attachmentCount()).toBe(1);
   });
 
-  it("ignores a native listener whose registration finishes after disabling", async () => {
+  it("ignores a late native registration while disabled and after a new registration", async () => {
     let finishRegistration: (() => void) | undefined;
-    listen.mockImplementation((handler) => {
+    listen.mockImplementationOnce((handler) => {
       handlers.add(handler);
       return new Promise<() => void>((resolve) => {
         finishRegistration = () =>
@@ -277,9 +330,15 @@ describe("Composer image drops", () => {
     expect(attachmentCount()).toBe(0);
     expect(invoke).not.toHaveBeenCalledWith("inspect_paths", expect.anything());
 
+    await render({ disabled: false });
+    await nativeDrop(["/project/report.pdf"]);
+    expect(attachmentCount()).toBe(1);
+    expect(invoke.mock.calls.filter(([command]) => command === "inspect_paths")).toHaveLength(1);
     await act(async () => {
       finishRegistration?.();
     });
+    expect(handlers.size).toBe(1);
+    await render({ disabled: true });
     expect(handlers.size).toBe(0);
   });
 
@@ -384,9 +443,7 @@ describe("Composer image drops", () => {
     invoke.mockRejectedValue(new Error("Cannot read the dropped file."));
     await nativeDrop(["/project/image.png"]);
 
-    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
-      "Cannot read the dropped file.",
-    );
+    expect(openErrorDetails(container)).toBe("Cannot read the dropped file.");
   });
 
   it("discards an earlier read even when attachment support returns before it resolves", async () => {
@@ -417,6 +474,70 @@ describe("Composer image drops", () => {
     await nativeDrop(["/project/image.png"]);
 
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("Nothing to attach");
+  });
+
+  describe("dropped blobs over the embed limit", () => {
+    function oversizedBlob(name: string) {
+      const file = new File(["x"], name, { type: "application/zip" });
+      Object.defineProperty(file, "size", { value: 20 * 1024 * 1024 + 1 });
+      return file;
+    }
+    const alertText = () => container.querySelector('[role="alert"]')?.textContent;
+
+    it("names the oversized file and keeps its valid sibling and the draft", async () => {
+      invoke.mockImplementation(async (command: string) =>
+        command === "write_attachment" ? "/owned/notes.txt" : [],
+      );
+      const session = await render();
+      await act(async () => {
+        domDrag(session, "drop", [
+          oversizedBlob("backup.zip"),
+          new File(["notes"], "notes.txt", { type: "text/plain" }),
+        ]);
+      });
+      // The valid sibling is read through a FileReader, which needs real macrotasks to finish.
+      for (let waited = 0; waited < 2000 && attachmentCount() !== 1; waited += 10) {
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        });
+      }
+
+      expect(attachmentCount()).toBe(1);
+      expect(alertText()).toBe("backup.zip is larger than 20 MB and was not attached.");
+      expect(invoke).not.toHaveBeenCalledWith(
+        "write_attachment",
+        expect.objectContaining({ name: "backup.zip" }),
+      );
+    });
+
+    it("explains an all-oversized drop instead of saying the file was moved or deleted", async () => {
+      const session = await render();
+      await act(async () => {
+        domDrag(session, "drop", [oversizedBlob("backup.zip")]);
+      });
+
+      expect(attachmentCount()).toBe(0);
+      expect(alertText()).toBe("backup.zip is larger than 20 MB and was not attached.");
+      expect(alertText()).not.toContain("Nothing to attach");
+    });
+
+    it("keeps a large dropped file with a disk path as a path reference", async () => {
+      invoke.mockImplementation(async (command: string, args: { paths?: string[] }) =>
+        command === "inspect_paths"
+          ? (args.paths ?? []).map((path) => ({
+              path,
+              name: "backup.zip",
+              size: 500 * 1024 * 1024,
+              isDir: false,
+            }))
+          : [],
+      );
+      await render();
+      await nativeDrop(["/project/backup.zip"]);
+
+      expect(attachmentCount()).toBe(1);
+      expect(alertText()).toBeUndefined();
+    });
   });
 
   it("allows a DOM image drop after an empty native drop", async () => {

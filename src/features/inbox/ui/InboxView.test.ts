@@ -58,13 +58,16 @@ function renderDetail(inboxItem: InboxItem, relatedSessions: SessionSummary[] = 
 }
 
 describe("InboxDetail layout", () => {
-  it("keeps labels alongside people and update metadata", () => {
+  it("groups GitHub labels below people and timestamps in the pinned header", () => {
     const root = document.createElement("div");
     root.innerHTML = renderDetail(item({ labels: [{ name: "merchant", color: "" }] }));
     const labels = root.querySelector('[aria-label="Labels"]');
-    expect(labels?.parentElement?.parentElement?.tagName).toBe("DIV");
-    expect(labels?.parentElement?.parentElement?.textContent).toContain("Updated ");
-    expect(labels?.parentElement?.parentElement?.textContent).toContain("Unassigned");
+    const header = labels?.closest("[data-inbox-detail-header]");
+    const serverHeader = header?.textContent ?? "";
+    expect(serverHeader).toContain("Unassigned");
+    expect(serverHeader).toContain("Updated ");
+    expect(serverHeader).toContain("merchant");
+    expect(serverHeader.indexOf("Updated ")).toBeLessThan(serverHeader.indexOf("merchant"));
   });
 
   it("aligns Jira actions with the working-folder picker", () => {
@@ -121,15 +124,13 @@ describe("InboxDetail layout", () => {
     expect(markup).not.toContain("backdrop-blur");
   });
 
-  it("shows when a PR was created alongside its last update", () => {
+  it("shows only the last update in the detail meta line", () => {
     const markup = renderDetail({
       ...item({ kind: "pr" }),
       createdAt: "2026-09-01T08:00:00Z",
     });
-    expect(markup).toContain("Created ");
-    expect(markup).toContain('dateTime="2026-09-01T08:00:00.000Z"');
+    expect(markup).not.toContain("Created ");
     expect(markup).toContain("Updated ");
-    expect(renderDetail(item({ kind: "pr" }))).not.toContain("Created ");
   });
 
   it("keeps issue identity and actions outside the body scroller", () => {

@@ -16,6 +16,7 @@ export interface ReadBlock {
   draft?: boolean;
   durationMs?: number;
   approval?: { decided?: unknown };
+  inlineVisual?: unknown;
 }
 export interface ReadView {
   revision: number;
@@ -66,13 +67,21 @@ export interface SessionReadPorts<
       parentSessionId?: string,
     ): Promise<{ list: Summary[]; etag: string }>;
     session(sessionId: string, signal?: AbortSignal): Promise<View>;
-    sync(
+    /** The view and its sync answer from one coherent read. */
+    sessionSync(
       sessionId: string,
       revision?: number,
       signal?: AbortSignal,
-    ): Promise<ReadSync<View, Delta, View["session"]["blocks"][number]>>;
+    ): Promise<{
+      current: View;
+      sync: ReadSync<View, Delta, View["session"]["blocks"][number]>;
+    }>;
     readView(sessionId: string): Promise<View>;
     catchUp(sessionId: string, signal?: AbortSignal): Promise<void>;
+  };
+  visuals: {
+    contains(blocks: readonly ReadBlock[], id: string): boolean;
+    read(id: string): Promise<{ title: string; html: string; height: number }>;
   };
   nativeProjection: {
     watch(
@@ -198,12 +207,9 @@ export function createSessionReadService<
           ? ports.repository.catchUp(id, context.signal)
           : ports.repository.catchUp(id));
         context.signal?.throwIfAborted();
-        current = await (context.signal
-          ? ports.repository.session(id, context.signal)
-          : ports.repository.session(id));
-        sync = await (context.signal
-          ? ports.repository.sync(id, revision, context.signal)
-          : ports.repository.sync(id, revision));
+        ({ current, sync } = await (context.signal
+          ? ports.repository.sessionSync(id, revision, context.signal)
+          : ports.repository.sessionSync(id, revision)));
       }
       if (params.partial === true && (!epoch || params.sourceEpoch === epoch)) {
         const ids = params.loadedBlockIds ?? [];
@@ -394,6 +400,16 @@ export function createSessionReadService<
             history: { revision: value.revision, totalBlocks: value.session.blocks.length },
           },
         });
+      });
+    },
+    inlineVisual(params: LegacyParams, context: SessionDomainContext) {
+      return read(context, async () => {
+        const sessionId = String(params.sessionId ?? "");
+        const id = String(params.id ?? "");
+        const value = await load(sessionId, await ports.nativeProjection.watch(sessionId));
+        if (!ports.visuals.contains(value.session.blocks, id))
+          throw new Error("Visual is unavailable in this conversation");
+        return ports.visuals.read(id);
       });
     },
     /** Finished turns only; the reader adds a running turn from its own start time. */

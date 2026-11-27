@@ -19,9 +19,13 @@ it("loads private Jira pictures through media, falls back on decode failure, and
   const container = document.createElement("div");
   const root = createRoot(container);
   const avatarUrl = "https://acme.atlassian.net/secure/useravatar?avatarId=42";
+  let expectSignalAbortedOnUnmount = () => {};
   try {
     await act(async () => root.render(createElement(InboxAvatar, { name: "Ada", avatarUrl })));
-    expect(fetchInboxMedia).toHaveBeenCalledWith(avatarUrl);
+    expect(fetchInboxMedia).toHaveBeenCalledWith(avatarUrl, expect.any(AbortSignal));
+    const signal = vi.mocked(fetchInboxMedia).mock.calls[0]![1]!;
+    expect(signal.aborted).toBe(false);
+    expectSignalAbortedOnUnmount = () => expect(signal.aborted).toBe(true);
     expect(container.querySelector("img")?.getAttribute("src")).toBe("blob:jira-avatar");
     act(() => container.querySelector("img")!.dispatchEvent(new Event("error")));
     expect(container.querySelector("img")).toBeNull();
@@ -31,6 +35,7 @@ it("loads private Jira pictures through media, falls back on decode failure, and
     );
   } finally {
     act(() => root.unmount());
+    expectSignalAbortedOnUnmount();
     expect(revoke).toHaveBeenCalledWith("blob:jira-avatar");
     create.mockRestore();
     revoke.mockRestore();

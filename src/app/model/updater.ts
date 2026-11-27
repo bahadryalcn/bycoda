@@ -1,3 +1,5 @@
+import { errorText } from "../../shared/lib/errors";
+import { ErrorDetails } from "../../shared/ui/ErrorDetails";
 import { t } from "../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
 import { confirmInApp } from "../../shared/model/appConfirm";
@@ -28,11 +30,13 @@ export type UpdaterSnapshot = {
 const MAX_NOTES = 1200;
 
 let pendingUpdate: Update | null = null;
+let probeSerial = 0;
 let updateFlow: Promise<UpdaterSnapshot> | null = null;
+let updateFlowManual = false;
 let installation: Promise<UpdaterSnapshot> | null = null;
 
 function isUpdaterNotConfiguredError(error: unknown): boolean {
-  const text = error instanceof Error ? error.message : String(error);
+  const text = errorText(error);
   return /updater does not have any endpoints set/i.test(text);
 }
 
@@ -85,8 +89,12 @@ async function checkFeeds(currentVersion: string, explicit: boolean): Promise<Up
 /** `explicit` marks a check the user asked for, as opposed to a background probe. */
 export async function probeForUpdate(explicit = false): Promise<Update | null> {
   if (!(await isUpdaterEnabled())) return null;
+  // A channel switch starts a newer probe while an older one may still be in flight; only the
+  // newest probe may set the update an install would use, so the old feed cannot overwrite it.
+  const serial = ++probeSerial;
   const update = await checkFeeds(await readAppVersion(), explicit);
-  pendingUpdate = update;
+  // A running flow or install owns the update its prompt names; a background probe must not swap it.
+  if (serial === probeSerial && !updateFlow && !installation) pendingUpdate = update;
   if (update) announceUpdateAvailable(update.version);
   return update;
 }
@@ -95,12 +103,26 @@ export function runUpdateFlow(
   manual: boolean,
   onProgress?: (snapshot: UpdaterSnapshot) => void,
 ): Promise<UpdaterSnapshot> {
-  const active = installation ?? updateFlow;
-  if (active)
-    return active.then((snapshot) => {
+  if (installation)
+    return installation.then((snapshot) => {
       onProgress?.(snapshot);
       return snapshot;
     });
+  if (updateFlow) {
+    if (!manual || updateFlowManual)
+      return updateFlow.then((snapshot) => {
+        onProgress?.(snapshot);
+        return snapshot;
+      });
+    // A background flow never prompts or reports "latest". Let it settle, then answer the user's
+    // check: an available update goes to the install prompt, anything else runs a manual check.
+    return updateFlow.then((snapshot) =>
+      snapshot.phase === "available"
+        ? installPendingUpdate(onProgress)
+        : runUpdateFlow(true, onProgress),
+    );
+  }
+  updateFlowManual = manual;
   updateFlow = runUpdateFlowOnce(manual, onProgress).finally(() => {
     updateFlow = null;
   });
@@ -169,11 +191,15 @@ async function runUpdateFlowOnce(
       return idle;
     }
 
-    const error = err instanceof Error ? err.message : String(err);
+    const error = errorText(err);
     const failed: UpdaterSnapshot = { phase: "error", currentVersion, error };
     onProgress?.(failed);
     if (manual) {
-      toast.show({ tone: "danger", title: t("Couldn't check for updates."), message: error });
+      toast.show({
+        tone: "danger",
+        title: t("Couldn't check for updates."),
+        extra: createElement(ErrorDetails, { detail: error }),
+      });
     }
     return failed;
   }
@@ -260,7 +286,7 @@ async function installPendingUpdateOnce(
     try {
       await relaunch();
     } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
+      const detail = errorText(err);
       const error = t("The update was installed. Restart the app manually to finish.\n\n{p0}", {
         p0: detail,
       });
@@ -274,7 +300,7 @@ async function installPendingUpdateOnce(
       currentVersion: update.version,
     };
   } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
+    const error = errorText(err);
     const failed: UpdaterSnapshot = {
       phase: "error",
       currentVersion,

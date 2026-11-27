@@ -1,2 +1,27 @@
 /** Public sessions contract; exports stay explicit to preserve load isolation. */
-export { attachmentsFromPaths, persistableAttachment } from "../model/attachments";
+export {
+  attachmentsFromFiles,
+  attachmentsFromPaths,
+  filesFromClipboard,
+  isAttachmentFolder,
+  MAX_ATTACHMENTS,
+  MAX_EMBED_BYTES,
+  mergeAttachments,
+  persistableAttachment,
+  pickAttachments,
+  retainAttachmentPickerSelection,
+  revokeAttachment,
+} from "../model/attachments";
+export {
+  attachmentDraftTokens,
+  findTokens,
+  rewriteTokenMatches,
+  splitNamedAttachmentReferences,
+  stripAttachmentTokens,
+} from "../model/attachmentTokens";
+export type { Attachment } from "../model/session";
+export { beginAttachmentRead, type AttachmentReadCapacity } from "../model/attachmentReadCapacity";
+export {
+  capturePastedTextAttachment,
+  insertPastedTextReference,
+} from "../model/pastedTextAttachment";

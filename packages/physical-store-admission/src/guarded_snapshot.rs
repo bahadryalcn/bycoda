@@ -23,12 +23,47 @@ pub struct SnapshotEntry {
     pub data: Vec<u8>,
 }
 
+/// Full snapshot: identity, metadata and a SHA-256 of every regular file.
 pub fn snapshot_child(parent: &Dir, name: &OsStr) -> io::Result<Vec<SnapshotEntry>> {
+    snapshot(parent, name, true)
+}
+
+/// Same walk and identity checks as [`snapshot_child`] without reading file
+/// bytes (`data` stays empty for files). Only compare it with
+/// [`same_metadata`], never with `==` against a full snapshot.
+pub fn snapshot_child_metadata(parent: &Dir, name: &OsStr) -> io::Result<Vec<SnapshotEntry>> {
+    snapshot(parent, name, false)
+}
+
+/// Whether two snapshots describe the same tree ignoring content digests.
+pub fn same_metadata(a: &[SnapshotEntry], b: &[SnapshotEntry]) -> bool {
+    a.len() == b.len()
+        && a.iter().zip(b).all(|(x, y)| {
+            let same = x.path == y.path
+                && x.kind == y.kind
+                && x.device == y.device
+                && x.inode == y.inode
+                && x.size == y.size
+                && x.modified == y.modified
+                && x.permissions == y.permissions;
+            #[cfg(windows)]
+            {
+                same && x.security == y.security
+            }
+            #[cfg(not(windows))]
+            {
+                same
+            }
+        })
+}
+
+fn snapshot(parent: &Dir, name: &OsStr, read_data: bool) -> io::Result<Vec<SnapshotEntry>> {
     fn visit(
         parent: &Dir,
         name: &OsStr,
         path: &Path,
         entries: &mut Vec<SnapshotEntry>,
+        read_data: bool,
     ) -> io::Result<()> {
         let before = child_metadata(parent, name)?;
         let kind = before.file_type();
@@ -75,7 +110,7 @@ pub fn snapshot_child(parent: &Dir, name: &OsStr) -> io::Result<Vec<SnapshotEntr
                 .collect::<io::Result<Vec<_>>>()?;
             children.sort();
             for child in children {
-                visit(&dir, &child, &path.join(&child), entries)?;
+                visit(&dir, &child, &path.join(&child), entries, read_data)?;
             }
             (0, Vec::new())
         } else if kind.is_file() {
@@ -97,20 +132,24 @@ pub fn snapshot_child(parent: &Dir, name: &OsStr) -> io::Result<Vec<SnapshotEntr
             if before.dev() != opened.dev() || before.ino() != opened.ino() {
                 return Err(io::Error::other("Source file replaced"));
             }
-            let mut hash = Sha256::new();
-            let mut buffer = [0u8; 65536];
-            loop {
-                let n = file.read(&mut buffer)?;
-                if n == 0 {
-                    break;
+            let mut digest = Vec::new();
+            if read_data {
+                let mut hash = Sha256::new();
+                let mut buffer = [0u8; 65536];
+                loop {
+                    let n = file.read(&mut buffer)?;
+                    if n == 0 {
+                        break;
+                    }
+                    hash.update(&buffer[..n]);
                 }
-                hash.update(&buffer[..n]);
+                digest = hash.finalize().to_vec();
             }
             let after = file.metadata()?;
             if opened.len() != after.len() || opened.modified().ok() != after.modified().ok() {
                 return Err(io::Error::other("Source file changed"));
             }
-            (1, hash.finalize().to_vec())
+            (1, digest)
         } else {
             return Err(io::Error::new(
                 io::ErrorKind::Unsupported,
@@ -140,6 +179,6 @@ pub fn snapshot_child(parent: &Dir, name: &OsStr) -> io::Result<Vec<SnapshotEntr
         Ok(())
     }
     let mut entries = Vec::new();
-    visit(parent, name, Path::new(""), &mut entries)?;
+    visit(parent, name, Path::new(""), &mut entries, read_data)?;
     Ok(entries)
 }

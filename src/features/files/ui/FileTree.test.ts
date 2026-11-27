@@ -15,6 +15,7 @@ import {
   verifiedDirAt,
 } from "../model/fileTree";
 import type { FsEntry } from "../../../platform/tauri/fs";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import {
   EXPLORER_FILE_POINTER_DRAG_EVENT,
   type ExplorerFilePointerDragDetail,
@@ -190,7 +191,54 @@ afterEach(() => {
   copied.length = 0;
 });
 
+it("keeps Show all bounded and reaches the last file and the entire selection by keyboard", async () => {
+  directories.set(
+    cwd,
+    Array.from({ length: 3000 }, (_, i) => file(`item${String(i).padStart(4, "0")}.ts`)),
+  );
+  await refreshDir(cwd);
+  await act(async () => render());
+  const showAll = [...container.querySelectorAll("button")].find((button) =>
+    button.textContent.includes("Show all"),
+  );
+  await act(async () => showAll!.click());
+  expect(container.querySelectorAll("[role=treeitem]").length).toBeLessThan(400);
+  await press(row("item0000.ts"), { key: "End" });
+  expect(document.activeElement).toBe(row("item2999.ts"));
+  await press(row("item2999.ts"), { key: "Enter" });
+  expect(props.onOpenFile).toHaveBeenCalledWith(`${cwd}/item2999.ts`, undefined, { exact: true });
+  await press(row("item2999.ts"), { key: "a", ctrlKey: true });
+  await press(row("item2999.ts"), { key: "Enter" });
+  expect(props.onOpenFile).toHaveBeenCalledTimes(3001);
+  expect(container.querySelectorAll("[role=treeitem]").length).toBeLessThan(400);
+});
+
 describe("NameRow filesystem collision ownership", () => {
+  it("keeps a focused rename field when a directory refresh moves its row across a virtual page boundary", async () => {
+    const entries = Array.from({ length: 424 }, (_, i) =>
+      file(`item${String(i).padStart(4, "0")}.ts`),
+    );
+    directories.set(cwd, entries);
+    await refreshDir(cwd);
+    await act(async () => render());
+    const showAll = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Show all"),
+    );
+    await act(async () => showAll!.click());
+    await press(row("item0000.ts"), { key: "End" });
+    await press(row("item0423.ts"), { key: "F2" });
+    const input = container.querySelector<HTMLInputElement>("[data-name-row] input")!;
+    expect(document.activeElement).toBe(input);
+    directories.set(cwd, [file("another.ts"), ...entries]);
+    await act(async () => {
+      await refreshDir(cwd);
+      announceDirListings();
+    });
+    expect(row("another.ts")).toBeTruthy();
+    expect(container.querySelector("[data-name-row] input")).toBe(input);
+    expect(document.activeElement).toBe(input);
+  });
+
   it("submits a case variant to the owner and displays its collision rejection", async () => {
     const onCommit = vi
       .fn()
@@ -335,7 +383,7 @@ describe("NameRow IME composition", () => {
 });
 
 describe("FileTree render isolation", () => {
-  it.each(["New File", "New Folder", "Rename"])(
+  it.each(["New file", "New folder", "Rename"])(
     "commits %s once and retries only the failed listing",
     async (action) => {
       props.onFileMoved = vi.fn();
@@ -347,7 +395,7 @@ describe("FileTree render isolation", () => {
       )!;
       await act(async () => item.click());
       const input = container.querySelector<HTMLInputElement>(
-        'input[aria-label^="Type file name"]',
+        'input[aria-label="File name"], input[aria-label="Folder name"]',
       )!;
       act(() => {
         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
@@ -359,7 +407,9 @@ describe("FileTree render isolation", () => {
       vi.mocked(props.onOpenFile).mockClear();
       failures.set(cwd, "listing unavailable");
       await press(input, { key: "Enter" });
-      expect(container.querySelector('input[aria-label^="Type file name"]')).toBeNull();
+      expect(
+        container.querySelector('input[aria-label="File name"], input[aria-label="Folder name"]'),
+      ).toBeNull();
       expect(container.querySelector('[role="alert"]')?.textContent).toContain(
         "File change saved. Refresh failed.",
       );
@@ -368,7 +418,7 @@ describe("FileTree render isolation", () => {
           `${cwd}/first.ts`,
           `${cwd}/new-entry`,
         );
-      if (action === "New File")
+      if (action === "New file")
         expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${cwd}/new-entry`, undefined, {
           exact: true,
         });
@@ -376,7 +426,9 @@ describe("FileTree render isolation", () => {
       expect(vi.mocked(invoke).mock.calls.filter(([name]) => name === command)).toHaveLength(1);
       failures.delete(cwd);
       await act(async () =>
-        container.querySelector<HTMLButtonElement>('[role="alert"] button')!.click(),
+        [...container.querySelectorAll<HTMLButtonElement>('[role="alert"] button')]
+          .find((item) => item.textContent === "Retry")!
+          .click(),
       );
       expect(container.querySelector('[role="alert"]')).toBeNull();
       expect(row("new-entry")).not.toBeNull();
@@ -418,6 +470,9 @@ describe("FileTree render isolation", () => {
       reveal.click();
     });
     expect(vi.mocked(invoke).mock.calls.filter(([name]) => name === "reveal_path")).toHaveLength(1);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    });
     expect(
       [...container.querySelectorAll('[role="status"]')].some((status) =>
         status.textContent?.includes("Working…"),
@@ -437,6 +492,10 @@ describe("FileTree render isolation", () => {
 
     await act(async () => render());
     expect(container.querySelector('[data-remote-data-state="error"]')).not.toBeNull();
+    // The failure is readable in the row without hovering the sync status.
+    expect(container.querySelector('[data-remote-data-state="error"]')!.textContent).toContain(
+      presentRemoteError("host unavailable", { explicit: true }),
+    );
     expect(container.querySelector('[data-remote-data-state="empty"]')).toBeNull();
     expect(row("first.ts")).toBeNull();
 
@@ -584,7 +643,7 @@ describe("FileTree render isolation", () => {
     expect(rootButton.textContent).toContain("mc/update-readme-tests");
     expect(rootButton.lastElementChild?.className).not.toContain("uppercase");
     expect(container.querySelector('[role="tree"]')?.getAttribute("aria-label")).toBe(
-      "mc/update-readme-tests files",
+      "Files in mc/update-readme-tests",
     );
   });
 
@@ -669,7 +728,6 @@ describe("FileTree excluded files", () => {
     act(() => saveShowExcludedFiles(false));
     expect(row("debug.log")).toBeNull();
     const scope = container.querySelector("[data-explorer-selection-scope]");
-    expect(scope?.textContent).toContain("Selected: 2");
     expect(scope?.textContent).toContain("Selection includes hidden items: 1");
     const confirm = vi.fn(() => false);
     vi.stubGlobal("confirm", confirm);
@@ -825,7 +883,7 @@ describe("FileTree copies paths", () => {
     });
     try {
       await press(row("first.ts"), { key: "C", metaKey: true, shiftKey: true });
-      expect(container.textContent).toContain("Could not copy. Try again.");
+      expect(container.textContent).toContain("Could not copy text. Please try again.");
       expect(container.textContent).not.toContain("Copied");
       expect(document.querySelector("textarea")).toBeNull();
       const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
@@ -909,6 +967,9 @@ describe("FileTree starts Explorer file drags", () => {
     const preview = document.querySelector<HTMLElement>(".explorer-file-drag-preview");
     expect(preview).not.toBeNull();
     expect(preview?.getAttribute("aria-hidden")).toBe("true");
+    expect(preview?.getAttribute("data-surface-variant")).toBe("floating");
+    expect(preview?.getAttribute("data-surface-radius")).toBe("popup");
+    expect(preview?.getAttribute("data-surface-elevation")).toBe("floating");
     expect(preview?.textContent).toContain("first.ts");
     expect(preview?.children).toHaveLength(2);
     expect(preview?.querySelectorAll('[data-icon="first.ts"]')).toHaveLength(1);

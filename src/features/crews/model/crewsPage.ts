@@ -28,7 +28,7 @@ export function requestOpenCrewsPage() {
 
 /** Where the Crews page should land; every field is optional. */
 export type CrewsPageTarget = {
-  tab?: "active" | "teams" | "members" | "work";
+  tab?: "teams" | "members" | "work";
   /** Work tab: the crew whose work to list. */
   definitionId?: string;
   /** Work tab: the run to show. */

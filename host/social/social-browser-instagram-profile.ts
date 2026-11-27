@@ -1,21 +1,46 @@
 import type { BrowserPage } from "./social-browser";
-import type { XProfilePatch, XProfileState } from "../../src/features/social/model/socialBrowser";
+import type {
+  InstagramProfilePatch,
+  InstagramProfileState,
+} from "../../src/features/social/model/socialBrowser";
 import { SocialPlatformError } from "../../src/integrations/social/adapter";
+import { detectChallenge, needsHumanError } from "./browser/challenge";
+import { instagramHandle } from "./social-browser-instagram-audience";
 
 type Until = <T>(expression: string, timeout: number) => Promise<T | undefined>;
 const photoTitles = ["Change profile photo", "Profil fotoğrafını değiştir"];
 const cancelLabels = ["Cancel", "İptal"];
 const submitLabels = ["Submit", "Gönder"];
+const textFields = {
+  bio: "textarea#pepBio",
+  name: 'input[aria-label="Name"],input[aria-label="Ad"]',
+  username: 'input[aria-label="Username"],input[aria-label="Kullanıcı adı"]',
+  website: 'input[aria-label="Website"],input[aria-label="İnternet sitesi"]',
+} as const;
 
-/** Only fields present in the desktop profile editor; links and names use other surfaces. */
-export function parseInstagramProfilePatch(raw: unknown): XProfilePatch {
+function isProfileLink(value: string): boolean {
+  if (!value) return true;
+  if (value.length > 2048 || value.trim() !== value || /\s/.test(value)) return false;
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
+/** Each requested field must also be available on the verified desktop editor. */
+export function parseInstagramProfilePatch(raw: unknown): InstagramProfilePatch {
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
     throw new Error("Invalid profile update.");
-  const patch: XProfilePatch = {};
+  const patch: InstagramProfilePatch = {};
   for (const [key, value] of Object.entries(raw)) {
     if (typeof value !== "string" || value.includes("\0"))
       throw new Error("Invalid profile field.");
     if (key === "bio" && [...value].length <= 150) patch.bio = value;
+    else if (key === "name" && [...value].length <= 64) patch.name = value;
+    else if (key === "username") patch.username = instagramHandle(value);
+    else if (key === "website" && isProfileLink(value)) patch.website = value;
     else if (key === "avatarUploadId" && /^[a-f0-9-]{36}$/i.test(value))
       patch.avatarUploadId = value;
     else throw new Error("Unsupported Instagram profile field.");
@@ -47,6 +72,8 @@ export class InstagramProfileActions {
   }
   private async verify() {
     await this.authorize();
+    const challenge = await detectChallenge(this.page);
+    if (challenge) throw needsHumanError(challenge);
     await this.identity();
     if (!(await this.page.evaluate<boolean>(this.expression("return true;"))))
       throw new SocialPlatformError("denied");
@@ -54,8 +81,11 @@ export class InstagramProfileActions {
   private async open() {
     await this.authorize();
     await this.page.goto("https://www.instagram.com/accounts/edit/");
-    if (!(await this.until<boolean>(this.expression("return photos.length===1;"), 20_000)))
+    if (!(await this.until<boolean>(this.expression("return photos.length===1;"), 20_000))) {
+      const challenge = await detectChallenge(this.page);
+      if (challenge) throw needsHumanError(challenge);
       throw new SocialPlatformError("unsupported");
+    }
     await this.verify();
   }
   private photoExpression(beforePath?: string, expectedPath?: string) {
@@ -71,16 +101,28 @@ export class InstagramProfileActions {
         return url.href;
       }catch{return;}`);
   }
-  private async values(): Promise<XProfileState> {
-    const value = await this.page.evaluate<string | undefined>(
-      this.expression("return bio.value;"),
+  private async values(): Promise<InstagramProfileState> {
+    const values = await this.page.evaluate<
+      Pick<InstagramProfileState, "bio" | "name" | "username" | "website"> | undefined
+    >(
+      this.expression(`
+        const inputValue = selector => {
+          const inputs = [...main.querySelectorAll(selector)].filter(el =>
+            visible(el) && !el.disabled && !el.readOnly && ['text','url'].includes(el.type));
+          return inputs.length === 1 ? inputs[0].value : undefined;
+        };
+        return {
+          bio: bio.value,
+          name: inputValue(${JSON.stringify(textFields.name)}) ?? '',
+          username: inputValue(${JSON.stringify(textFields.username)}),
+          website: inputValue(${JSON.stringify(textFields.website)}) ?? '',
+        };
+      `),
     );
-    if (typeof value !== "string") throw new SocialPlatformError("unknown");
+    if (!values || typeof values.bio !== "string") throw new SocialPlatformError("unknown");
     return {
-      name: "",
-      bio: value,
+      ...values,
       location: "",
-      website: "",
       avatarUrl: await this.page.evaluate<string | undefined>(this.photoExpression()),
     };
   }
@@ -133,7 +175,7 @@ export class InstagramProfileActions {
     await this.open();
     return this.values();
   }
-  async update(raw: XProfilePatch, files: { avatar?: string; banner?: string }) {
+  async update(raw: InstagramProfilePatch, files: { avatar?: string; banner?: string }) {
     const patch = parseInstagramProfilePatch(raw);
     if (files.banner || !!patch.avatarUploadId !== !!files.avatar)
       throw new SocialPlatformError("rejected");
@@ -141,6 +183,22 @@ export class InstagramProfileActions {
     let mutationAttempted = false;
     try {
       const before = await this.values();
+      const requested = (Object.keys(textFields) as (keyof typeof textFields)[]).filter(
+        (field) => patch[field] !== undefined,
+      );
+      for (const field of requested) {
+        const available = await this.page.evaluate<boolean>(
+          this.expression(`
+          const inputs = document.querySelectorAll(${JSON.stringify(textFields[field])});
+          if (inputs.length !== 1) return false;
+          const el = inputs[0];
+          return main.contains(el) && visible(el) && !el.disabled && !el.readOnly &&
+            (el === bio || ['text','url'].includes(el.type));
+        `),
+        );
+        if (!available) throw new SocialPlatformError("unsupported");
+      }
+      const edits = requested.filter((field) => patch[field] !== before[field]);
       // Reject cross-account avatar propagation before changing even a separate text field.
       if (files.avatar) {
         await this.preparePhoto();
@@ -148,9 +206,11 @@ export class InstagramProfileActions {
         if (!(await this.until<boolean>(this.expression("return dialogs.length===0;"), 15_000)))
           throw new SocialPlatformError("unsupported");
       }
-      if (patch.bio !== undefined && patch.bio !== before.bio) {
-        await this.verify();
-        await this.page.fill("textarea#pepBio", patch.bio);
+      if (edits.length) {
+        for (const field of edits) {
+          await this.verify();
+          await this.page.fill(textFields[field], patch[field]!);
+        }
         const submit = await this.mark(submitLabels, "main");
         await this.verify();
         mutationAttempted = true;
@@ -164,7 +224,9 @@ export class InstagramProfileActions {
         if (!saved) throw new SocialPlatformError("unknown");
         await this.verify();
         await this.open();
-        if ((await this.values()).bio !== patch.bio) throw new SocialPlatformError("unknown");
+        const fresh = await this.values();
+        if (edits.some((field) => fresh[field] !== patch[field]))
+          throw new SocialPlatformError("unknown");
       }
       let avatarUrl: string | undefined;
       if (files.avatar) {
@@ -207,7 +269,7 @@ export class InstagramProfileActions {
       }
       await this.verify();
       const saved = await this.values();
-      if (patch.bio !== undefined && saved.bio !== patch.bio)
+      if (edits.some((field) => saved[field] !== patch[field]))
         throw new SocialPlatformError("unknown");
       return { ...saved, ...(avatarUrl ? { avatarUrl } : {}) };
     } catch (error) {

@@ -62,6 +62,12 @@ describe("editDraftText", () => {
 });
 
 describe("deleteDraftTokenAtCaret", () => {
+  it("deletes one scoped reference and keeps the next queued reference", () => {
+    const draft = { text: "@crews:planner @notes:checklist", attachments: [] };
+    const edit = deleteDraftTokenAtCaret(draft, "@crews:planner ".length, "back");
+    expect(edit?.draft.text).toBe("@notes:checklist");
+    expect(edit?.caret).toBe(0);
+  });
   it("Backspace right after a token removes the token and its attachment", () => {
     const draft = { text: "look [file1]", attachments: [file("f", "file")] };
     const result = deleteDraftTokenAtCaret(draft, 12, "back")!;
@@ -80,10 +86,10 @@ describe("addDraftAttachments", () => {
     const draft = { text: "[image1] and [image2]", attachments: [file("old"), file("keep")] };
     const result = addDraftAttachments(draft, [file("new")], { start: 0, end: 8 });
     expect(result.draft).toEqual({
-      text: `${tok("Image", 2)} and ${tok("Image", 1)}`,
+      text: `[Image 2 · new · 1 B] and ${tok("Image", 1)}`,
       attachments: [file("keep"), file("new")],
     });
-    expect(result.caret).toBe(tok("Image", 2).length);
+    expect(result.caret).toBe("[Image 2 · new · 1 B]".length);
   });
 
   it("frees attachment capacity before replacing a selected token", () => {
@@ -94,7 +100,7 @@ describe("addDraftAttachments", () => {
     });
     expect(result.draft.attachments).toHaveLength(20);
     expect(result.draft.attachments.some((item) => item.id === "f0")).toBe(false);
-    expect(result.draft.text).toBe(tok("Image", 20));
+    expect(result.draft.text).toBe("[Image 20 · new · 1 B]");
   });
   it("appends the files and puts their tokens at the caret", () => {
     const draft = { text: "hello", attachments: [file("x")] };
@@ -103,7 +109,7 @@ describe("addDraftAttachments", () => {
       end: 5,
     });
     expect(result.draft.attachments.map((f) => f.id)).toEqual(["x", "y", "d"]);
-    expect(result.draft.text).toBe(`hello ${tok("Image", 2)} ${tok("File", 1)}`);
+    expect(result.draft.text).toBe("hello [Image 2 · y · 1 B] [File 1 · d · 1 B]");
     expect(result.caret).toBe(result.draft.text.length);
   });
 

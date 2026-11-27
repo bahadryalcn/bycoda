@@ -1,8 +1,8 @@
 use super::oauth::{self, BrowserPoll, BrowserStart};
 use super::store::{valid_id, Store, STORE_LOCK};
 use super::types::{
-    now_ms, Account, AccountView, DevicePoll, DeviceStart, Message, Provider, SaveAccountInput,
-    Secret, Thread,
+    now_ms, Account, AccountView, DevicePoll, DeviceStart, Message, MessagePage, Provider,
+    SaveAccountInput, Secret, Thread,
 };
 use super::{discord, email, microsoft, slack, teams};
 use serde_json::Value;
@@ -13,6 +13,8 @@ use tauri::{AppHandle, Manager};
 const DEFAULT_THREAD_LIMIT: usize = 50;
 const MAX_THREAD_LIMIT: usize = 200;
 const MAX_REPLY_CHARS: usize = 20_000;
+/// Longest older-page cursor accepted; a Graph next link is the longest kind.
+const MAX_CURSOR_BYTES: usize = 2048;
 const REPLY_DEDUPE_WINDOW: Duration = Duration::from_secs(600);
 
 /// Recent replies by requestId so a retried click never sends twice.
@@ -256,14 +258,23 @@ pub async fn messaging_thread_messages(
     app: AppHandle,
     account_id: String,
     thread_id: String,
-) -> Result<Vec<Message>, String> {
+    before: Option<String>,
+) -> Result<MessagePage, String> {
+    // The cursor is provider-opaque; each provider validates it before it reaches a URL or command.
+    if before
+        .as_ref()
+        .is_some_and(|cursor| cursor.len() > MAX_CURSOR_BYTES)
+    {
+        return Err("This conversation page is invalid. Reload the conversation.".into());
+    }
     blocking(move || {
         with_account(&app, &account_id, |account, secret| {
+            let before = before.as_deref();
             match account.provider {
-                Provider::Email => email::thread_messages(account, secret, &thread_id),
-                Provider::Slack => slack::thread_messages(account, secret, &thread_id),
-                Provider::Discord => discord::thread_messages(account, secret, &thread_id),
-                Provider::Teams => teams::thread_messages(account, secret, &thread_id),
+                Provider::Email => email::thread_messages(account, secret, &thread_id, before),
+                Provider::Slack => slack::thread_messages(account, secret, &thread_id, before),
+                Provider::Discord => discord::thread_messages(account, secret, &thread_id, before),
+                Provider::Teams => teams::thread_messages(account, secret, &thread_id, before),
             }
         })
     })

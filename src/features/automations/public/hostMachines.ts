@@ -3,6 +3,7 @@ export {
   backgroundMachineFor,
   backgroundMachines,
   hostProjectCwd,
+  hostProjectFor,
 } from "../model/hostAutomationClient";
 export {
   invalidateMachineSnapshot,

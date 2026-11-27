@@ -1,8 +1,6 @@
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
-import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
-import { dateTimeFormat } from "../../../../shared/lib/intl";
 import { t } from "../../../../shared/i18n";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { Sheet } from "../../../../shared/ui/Sheet";
@@ -47,10 +45,25 @@ export function AccountsScreen({
   const { snapshot } = data;
   const accounts = snapshot?.accounts ?? [];
   const selected = accounts.find((account) => account.id === selectedId);
+  const youtubeSection =
+    target &&
+    typeof target === "object" &&
+    "youtubeSection" in target &&
+    target.youtubeSection === "videos" &&
+    accountTargetId(target) === selectedId
+      ? "videos"
+      : undefined;
   const hostOnline = snapshot?.hostOnline ?? shellState.hostOnline;
   const connectGate: ActionGate = shellState.unreachable
     ? { disabled: true, disabledReason: t("Could not reach this computer.") }
     : { disabled: false };
+  // One notice with one Retry: the first failure wins, a reload retries all three reads.
+  const loadProblem =
+    data.failureTitle ||
+    (data.projectsError
+      ? t("Could not read projects. Previous results may be out of date.")
+      : "") ||
+    (data.needsHumanError ? t("Could not check whether accounts need your attention.") : "");
 
   return (
     <div className="social-accounts-screen">
@@ -71,25 +84,13 @@ export function AccountsScreen({
       >
         {t("Accounts")}
       </SectionLabel>
-      {data.error ? (
-        <InlineError retry={{ onRetry: data.reload, label: t("Try again") }}>
-          {data.error}
+      {loadProblem ? (
+        <InlineError
+          details={data.failureTitle ? data.errorDetails : undefined}
+          retry={{ onRetry: data.reload, label: t("Try again") }}
+        >
+          {loadProblem}
         </InlineError>
-      ) : null}
-      {data.projectsError ? (
-        <InlineError retry={{ onRetry: data.reload, label: t("Try again") }}>
-          {t("Could not read projects. Previous results may be out of date.")}
-        </InlineError>
-      ) : null}
-      {data.needsHumanError ? (
-        <InlineError retry={{ onRetry: data.reload, label: t("Try again") }}>
-          {t("Could not check whether accounts need your attention.")}
-        </InlineError>
-      ) : null}
-      {data.checkedAt ? (
-        <Text size="caption" tone="secondary">
-          {t("Last checked: {p1}", { p1: dateTimeFormat().format(data.checkedAt) })}
-        </Text>
       ) : null}
       <section className="social-accounts-section" aria-label={t("Accounts")}>
         {!snapshot && data.loading ? (
@@ -104,7 +105,6 @@ export function AccountsScreen({
                 key={account.id}
                 account={account}
                 selected={account.id === selectedId}
-                capabilities={snapshot?.capabilities[account.id] ?? []}
                 health={accountHealth({
                   account,
                   capabilities: snapshot?.capabilities[account.id] ?? [],
@@ -116,14 +116,7 @@ export function AccountsScreen({
             ))}
           </ul>
         ) : snapshot ? (
-          <EmptyHint
-            message={t("No accounts yet. Connect one to start.")}
-            action={{
-              label: t("Connect account"),
-              onClick: () => setConnectOpen(true),
-              ...connectGate,
-            }}
-          />
+          <EmptyHint message={t("No accounts yet. Connect one to start.")} />
         ) : null}
       </section>
       {snapshot ? (
@@ -136,7 +129,7 @@ export function AccountsScreen({
         />
       ) : null}
       {selected && snapshot ? (
-        <Sheet title={selected.name} size="42rem" onClose={() => setSelectedId(undefined)}>
+        <Sheet title={selected.name} size="md" onClose={() => setSelectedId(undefined)}>
           <AccountDetail
             key={selected.id}
             client={client}
@@ -147,6 +140,7 @@ export function AccountsScreen({
             now={data.now}
             hostOnline={hostOnline}
             onChanged={data.reload}
+            youtubeSection={youtubeSection}
           />
         </Sheet>
       ) : null}

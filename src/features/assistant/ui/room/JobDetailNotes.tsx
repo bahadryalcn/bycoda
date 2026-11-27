@@ -1,7 +1,6 @@
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
-import { Text } from "../../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import type {
   AssistantJob,
@@ -42,28 +41,17 @@ export function JobDetailNotes({
   const hits = jobNoteHits(job, notes);
   if (!hits.length)
     return (
-      <EmptyState
-        size="inline"
-        kind="empty"
-        className={styles.muted}
-        description={t("No notes mention this job yet.")}
-      />
+      <EmptyState size="inline" kind="empty" description={t("No notes mention this job yet.")} />
     );
   return (
     <div {...surfaceAttributes({ dividers: "pane" }, styles.block)}>
       {hits.map(({ note, lines }) => (
-        <Text
-          as="section"
-          key={note.id}
-          tone="inherit"
-          leading="inherit"
-          className={styles.noteHit}
-        >
+        <section key={note.id} className={styles.noteHit}>
           <Button variant="link" onClick={() => onOpenNote(note)}>
             {note.title}
           </Button>
           <AgentMarkdown text={lines.join("\n\n")} />
-        </Text>
+        </section>
       ))}
     </div>
   );

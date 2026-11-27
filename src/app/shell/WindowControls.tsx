@@ -1,13 +1,20 @@
+import { errorText } from "../../shared/lib/errors";
 import { useT } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Copy, Minus, Square, X } from "../../shared/ui/icons";
-import { createContext, useContext, useState } from "react";
-import { TransientNotice } from "../../shared/ui/TransientNotice";
+import { createContext, useContext, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Toast } from "../../shared/ui/ToastRegion";
 import { ErrorDetails, errorHeadline, fitsOneLine } from "../../shared/ui/ErrorDetails";
 import { setNativeFullscreen } from "../../platform/tauri/fullscreen";
 import { refreshWindowState, useNativeWindowState } from "../../platform/tauri/windowState";
 import { surfaceAttributes } from "../../shared/ui/Surface";
+import { WindowTitleBarAbove } from "../../shared/ui/PaneHeader";
+import {
+  loadMinimizeToTray,
+  subscribeMinimizeToTray,
+} from "../../features/settings/model/settings";
+import { hideCurrentWindow } from "../model/appLifecycle";
 
 export async function toggleWindowMaximize(): Promise<void> {
   const win = getCurrentWindow();
@@ -15,13 +22,28 @@ export async function toggleWindowMaximize(): Promise<void> {
   else await win.toggleMaximize();
 }
 
-// Full-height caption buttons, flush with the title bar edge. They stay Buttons so the shared
-// tooltip, focus ring and hover states apply; `data-tauri-drag-region="false"` keeps them out of
-// the window drag area.
-const CONTROL_CLASS = "h-full w-10 min-h-0 rounded-none";
-
 // Detached workspaces own their controls in the persistent Working bar.
 export const WindowControlsVisible = createContext(true);
+
+/**
+ * The part of a window below its chrome row. The window buttons live above it (the title bar
+ * of a main window, the Working bar of a detached one), so headers inside draw none. Under a
+ * title bar that spans the window they also reserve no traffic-light space and repeat no
+ * Back/Forward or sidebar toggle.
+ */
+export function BelowWindowChrome({
+  titleBarAbove,
+  children,
+}: {
+  titleBarAbove: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <WindowControlsVisible.Provider value={false}>
+      <WindowTitleBarAbove.Provider value={titleBarAbove}>{children}</WindowTitleBarAbove.Provider>
+    </WindowControlsVisible.Provider>
+  );
+}
 
 export function WindowControls() {
   const visible = useContext(WindowControlsVisible);
@@ -35,6 +57,11 @@ function NativeWindowControls() {
   const isMaximized = native?.maximized ?? false;
   const isFullscreen = native?.fullscreen ?? false;
   const [error, setError] = useState<string | null>(null);
+  const minimizeToTray = useSyncExternalStore(
+    subscribeMinimizeToTray,
+    loadMinimizeToTray,
+    () => false,
+  );
 
   const runAction = async (action: () => Promise<void>) => {
     setError(null);
@@ -42,11 +69,12 @@ function NativeWindowControls() {
       await action();
       await refreshWindowState().catch(() => null);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setError(errorText(failure));
     }
   };
 
-  const handleMinimize = () => void runAction(() => getCurrentWindow().minimize());
+  const handleMinimize = () =>
+    void runAction(minimizeToTray ? hideCurrentWindow : () => getCurrentWindow().minimize());
   const handleToggleMaximize = () => void runAction(toggleWindowMaximize);
   const handleClose = () => void runAction(() => getCurrentWindow().close());
 
@@ -60,7 +88,7 @@ function NativeWindowControls() {
       data-tauri-drag-region="false"
     >
       {error ? (
-        <TransientNotice
+        <Toast
           tone="danger"
           durationMs={null}
           message={errorHeadline(error)}
@@ -70,26 +98,27 @@ function NativeWindowControls() {
       ) : null}
       <Button
         iconOnly
-        label={t("Minimize window")}
-        tooltip={t("Minimize")}
-        tooltipSide="bottom"
-        variant="ghost"
+        label={minimizeToTray ? t("Minimize to tray") : t("Minimize window")}
+        variant="caption"
         motion="none"
         data-tauri-drag-region="false"
         onClick={handleMinimize}
-        className={CONTROL_CLASS}
       >
         <Minus className="icon-sm" strokeWidth={1.75} />
       </Button>
       <Button
         iconOnly
-        label={isMaximized || isFullscreen ? t("Restore window") : t("Maximize window")}
-        tooltip={isMaximized || isFullscreen ? t("Restore") : t("Maximize")}
-        variant="ghost"
+        label={
+          isFullscreen
+            ? t("Exit full screen")
+            : isMaximized
+              ? t("Restore window")
+              : t("Maximize window")
+        }
+        variant="caption"
         motion="none"
         data-tauri-drag-region="false"
         onClick={handleToggleMaximize}
-        className={CONTROL_CLASS}
       >
         {isMaximized || isFullscreen ? (
           <Copy className="icon-sm" strokeWidth={1.75} />
@@ -100,12 +129,10 @@ function NativeWindowControls() {
       <Button
         iconOnly
         label={t("Close window")}
-        tooltip={t("Close")}
-        variant="ghost"
+        variant="caption"
         motion="none"
         data-tauri-drag-region="false"
         onClick={handleClose}
-        className={CONTROL_CLASS}
       >
         <X className="icon-sm" strokeWidth={1.75} />
       </Button>

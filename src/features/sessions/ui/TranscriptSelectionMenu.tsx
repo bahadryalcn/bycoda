@@ -1,4 +1,5 @@
 /** Different job: Selection toolbar and comment editor act on transcript ranges; they are not a value picker. */
+import { errorText } from "../../../shared/lib/errors";
 import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -22,7 +23,8 @@ import {
   FloatingButtonGroup,
   type FloatingButtonGroupAction,
 } from "../../../shared/ui/FloatingButtonGroup";
-import { type TranscriptSelection } from "../model/transcriptSelection";
+import { resolveTranscriptSelection, type TranscriptSelection } from "../model/transcriptSelection";
+import { sameRect } from "../model/selectionGeometry";
 import {
   translationTargets,
   type TranslationTarget,
@@ -31,12 +33,20 @@ import {
 
 type Props = {
   selection: TranscriptSelection | null;
-  onAddToChat?: (text: string) => void;
+  onCopy?: () => Promise<void>;
+  onAddToChat?: (text: string) => void | Promise<void>;
+  addToChatLabel?: string;
   onAddToNotes?: (text: string) => void | Promise<void>;
   onDismiss: () => void;
   onTranslate?: (target: TextActionTarget) => void;
   sessionId?: string;
   allowReprompt?: boolean;
+  extraActions?: {
+    id: string;
+    label: string;
+    icon: FloatingButtonGroupAction["icon"];
+    onSelect: (text: string) => void | Promise<void>;
+  }[];
 };
 
 type Operations = {
@@ -78,7 +88,7 @@ async function settleSelectionOperation({
     }
   } catch (error) {
     if (owner !== epoch.current) return;
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorText(error);
     update((current) => ({ ...current, errors: { ...current.errors, [id]: message } }));
   } finally {
     if (owner === epoch.current) {
@@ -127,12 +137,15 @@ function useSelectionOperationRunner(
 
 export function TranscriptSelectionMenu({
   selection: liveSelection,
+  onCopy,
   onAddToChat,
+  addToChatLabel,
   onAddToNotes,
   onDismiss,
   onTranslate,
   sessionId,
   allowReprompt = false,
+  extraActions,
 }: Props) {
   const t = useT();
   const dismissSelection = useEffectEvent(() => onDismiss());
@@ -149,14 +162,9 @@ export function TranscriptSelectionMenu({
       ? citationDraft.selection
       : liveSelection;
   const [copied, setCopied] = useState<string | null>(null);
+  // Identity only: response text would make every render serialize the whole reply.
   const selectionKey = selection
-    ? JSON.stringify([
-        sessionId,
-        selection.responseId,
-        selection.occurrence,
-        selection.text,
-        selection.responseText,
-      ])
+    ? JSON.stringify([sessionId, selection.responseId, selection.text])
     : null;
 
   const rail = useRef<HTMLDivElement>(null);
@@ -165,8 +173,8 @@ export function TranscriptSelectionMenu({
     const toolbar = rail.current?.firstElementChild;
     if (!(toolbar instanceof HTMLElement)) return;
     // Targets arrive asynchronously. Measure the intrinsic tray, not the already
-    // viewport-clamped popup. Include menu padding (8) and frame border (2).
-    const measure = () => setMenuWidth(toolbar.offsetWidth + 10);
+    // viewport-clamped popup. Include menu padding (16, --ui-space-2 per side) and frame border (2).
+    const measure = () => setMenuWidth(toolbar.offsetWidth + 18);
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(toolbar);
@@ -192,27 +200,56 @@ export function TranscriptSelectionMenu({
     };
   }, [selection?.text, Boolean(onTranslate)]);
 
-  // Scrolling or resizing moves the text out from under the menu, so the
-  // selection it acts on is gone; drop it rather than chase the range.
+  // Scrolling (also auto-scroll while a reply streams) or resizing moves the text under the menu.
+  // Follow the live range instead of dropping the selection; only the loss of the selected text
+  // dismisses. A selection that cannot be re-measured would keep a stale rect, so it is dismissed.
+  const [geometry, setGeometry] = useState<{
+    selection: TranscriptSelection;
+    rect: DOMRect;
+    visible: boolean;
+  } | null>(null);
+  const commentOpen = Boolean(citationDraft?.open && citationDraft.sessionId === sessionId);
   useEffect(() => {
     if (!selection) return;
-    const dismiss = (event: Event) => {
-      // Scrolling the action rail or comment must not discard its selection.
+    let frame = 0;
+    const dismiss = () => {
+      setCitationDraft((current) => current && { ...current, open: false });
+      dismissSelection();
+    };
+    const refresh = () => {
+      frame = 0;
+      const next = selection.measure?.();
+      if (!next) {
+        // An open comment keeps the user's draft and its frozen source; only the anchor is lost.
+        if (!commentOpen) dismiss();
+        return;
+      }
+      setGeometry((current) =>
+        current?.selection === selection &&
+        current.visible === next.visible &&
+        sameRect(current.rect, next.rect)
+          ? current
+          : { selection, ...next },
+      );
+    };
+    const onMove = (event: Event) => {
+      // Scrolling the action rail or comment must not move or discard its selection.
       if (
         event.target instanceof Element &&
         event.target.closest("[data-citation-comment], [data-selection-menu]")
       )
         return;
-      setCitationDraft((current) => current && { ...current, open: false });
-      dismissSelection();
+      if (!selection.measure) return dismiss();
+      if (!frame) frame = requestAnimationFrame(refresh);
     };
-    window.addEventListener("scroll", dismiss, true);
-    window.addEventListener("resize", dismiss);
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
     return () => {
-      window.removeEventListener("scroll", dismiss, true);
-      window.removeEventListener("resize", dismiss);
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("resize", onMove);
     };
-  }, [selection]);
+  }, [selection, commentOpen]);
 
   // Operation state belongs to the text it was started for: a selection that
   // goes away or is replaced directly by another drops pending/error state, and
@@ -234,6 +271,12 @@ export function TranscriptSelectionMenu({
     onDismiss();
   });
   if (!selection) return null;
+  // A measurement belongs to the selection it was read for; a new selection starts from its own rect.
+  const live = geometry?.selection === selection ? geometry : null;
+  const anchor = live?.rect ?? selection.rect;
+  // Scrolled out of view the toolbar is hidden, not discarded; it returns with the text. An open
+  // comment stays, anchored at the nearest edge.
+  if (live && !live.visible && !commentOpen) return null;
 
   const action = (
     id: string,
@@ -261,7 +304,7 @@ export function TranscriptSelectionMenu({
       void run(
         "copy",
         async () => {
-          await copyMessage(selection.text);
+          await (onCopy ? onCopy() : copyMessage(selection.text));
           setCopied(selectionKey);
         },
         false,
@@ -271,30 +314,35 @@ export function TranscriptSelectionMenu({
     items.push({
       ...action(
         "chat",
-        sessionId && selection.responseId ? t("Add citation") : t("Add to chat"),
+        addToChatLabel ??
+          (sessionId && selection.responseId ? t("Add citation") : t("Add to chat")),
         <MessageSquarePlus />,
         () => onAddToChat(selection.text),
       ),
       onSelect: () => {
-        if (!sessionId || !selection.responseId || !selection.responseText) {
+        // Read the occurrence now, while the live selection still exists; the draft keeps it.
+        const resolved = resolveTranscriptSelection(selection);
+        if (!sessionId || !selection.responseId || !resolved?.responseText) {
           void run("chat", () => onAddToChat(selection.text));
           return;
         }
         setCitationDraft((current) => ({
           sessionId,
-          selection,
+          selection: resolved,
           comment:
             current &&
             current.sessionId === sessionId &&
-            current.selection.responseId === selection.responseId &&
-            current.selection.text === selection.text &&
-            current.selection.occurrence === selection.occurrence
+            current.selection.responseId === resolved.responseId &&
+            current.selection.text === resolved.text &&
+            current.selection.occurrence === resolved.occurrence
               ? current.comment
               : "",
           open: true,
         }));
       },
     });
+  for (const extra of extraActions ?? [])
+    items.push(action(extra.id, extra.label, extra.icon, () => extra.onSelect(selection.text)));
   if (onTranslate) {
     if (allowReprompt)
       items.push(action("reprompt", t("Reprompt"), <Sparkles />, () => onTranslate("reprompt")));
@@ -323,7 +371,7 @@ export function TranscriptSelectionMenu({
     };
     return (
       <Popover
-        anchor={selection.rect}
+        anchor={anchor}
         side="bottom"
         align="start"
         width={336}
@@ -331,76 +379,80 @@ export function TranscriptSelectionMenu({
         aria-label={t("Add citation")}
         flow="scroll"
         onDismiss={closeComment}
-        className={styles.comment}
+        variant="panel"
         data-citation-comment
       >
-        <Text
-          as="div"
-          size="caption"
-          tone="inherit"
-          weight="medium"
-          leading="inherit"
-          className={styles.header}
-        >
-          <span>{t("Add citation")}</span>
-          <Button variant="ghost" size="sm" iconOnly label={t("Close")} onClick={closeComment}>
-            <X />
-          </Button>
-        </Text>
-        <Text as="div" size="caption" tone="secondary" leading="relaxed">
-          <blockquote {...surfaceAttributes({ frame: "pane", edge: "inline-start" }, styles.quote)}>
-            {selection.text}
-          </blockquote>
-        </Text>
-        <TextareaField
-          label={t("Comment")}
-          placeholder={t("Add an optional comment…")}
-          fieldSize="sm"
-          minRows={2}
-          maxRows={5}
-          autosize
-          value={citationDraft.comment}
-          onChange={(event) =>
-            setCitationDraft((current) => current && { ...current, comment: event.target.value })
-          }
-        />
-        <div className={styles.footer}>
-          <Button variant="ghost" size="sm" onClick={closeComment}>
-            {t("Cancel")}
-          </Button>
-          <Button
-            size="sm"
-            loading={pending.chat}
-            onClick={() =>
-              void run("chat", () => {
-                if (!sessionId || !selection.responseId || !selection.responseText || !onAddToChat)
-                  return;
-                onAddToChat(
-                  serializeChatCitation({
-                    version: 1,
-                    id: crypto.randomUUID(),
-                    sessionId,
-                    blockId: selection.responseId,
-                    text: selection.text,
-                    sourceText: selection.responseText,
-                    occurrence: selection.occurrence ?? 0,
-                    comment: citationDraft.comment,
-                  }),
-                );
-              })
+        <div className={styles.comment}>
+          <div className={styles.header}>
+            <Text as="span" size="caption" tone="inherit" weight="medium" leading="inherit">
+              {t("Add citation")}
+            </Text>
+            <Button variant="ghost" size="sm" iconOnly label={t("Close")} onClick={closeComment}>
+              <X />
+            </Button>
+          </div>
+          <Text as="div" size="caption" tone="secondary" leading="relaxed">
+            <blockquote
+              {...surfaceAttributes({ frame: "pane", edge: "inline-start" }, styles.quote)}
+            >
+              {selection.text}
+            </blockquote>
+          </Text>
+          <TextareaField
+            label={t("Comment")}
+            placeholder={t("Add an optional comment…")}
+            fieldSize="sm"
+            minRows={2}
+            maxRows={5}
+            autosize
+            value={citationDraft.comment}
+            onChange={(event) =>
+              setCitationDraft((current) => current && { ...current, comment: event.target.value })
             }
-          >
-            {t("Add to chat")}
-          </Button>
+          />
+          <div className={styles.footer}>
+            <Button variant="ghost" size="sm" onClick={closeComment}>
+              {t("Cancel")}
+            </Button>
+            <Button
+              size="sm"
+              loading={pending.chat}
+              onClick={() =>
+                void run("chat", () => {
+                  if (
+                    !sessionId ||
+                    !selection.responseId ||
+                    !selection.responseText ||
+                    !onAddToChat
+                  )
+                    return;
+                  onAddToChat(
+                    serializeChatCitation({
+                      version: 1,
+                      id: crypto.randomUUID(),
+                      sessionId,
+                      blockId: selection.responseId,
+                      text: selection.text,
+                      sourceText: selection.responseText,
+                      occurrence: selection.occurrence ?? 0,
+                      comment: citationDraft.comment,
+                    }),
+                  );
+                })
+              }
+            >
+              {t("Add to chat")}
+            </Button>
+          </div>
+          {errors.chat ? <InlineError>{errors.chat}</InlineError> : null}
         </div>
-        {errors.chat ? <InlineError>{errors.chat}</InlineError> : null}
       </Popover>
     );
   }
 
   return (
     <Popover
-      anchor={selection.rect}
+      anchor={anchor}
       side="top"
       align="center"
       width={menuWidth}
@@ -408,12 +460,10 @@ export function TranscriptSelectionMenu({
         if (reason === "escape") window.getSelection()?.removeAllRanges();
         onDismiss();
       }}
-      className={styles.menu}
+      variant="compact"
       data-selection-menu
     >
-      {/* Raised popup family: the Popover owns surface, elevation and radius; the
-          rows are compact and calm. This wrapper is the one scroll owner on
-          short viewports. */}
+      {/* The rail owns scrolling on short viewports. */}
       <div ref={rail} className={styles.rail}>
         <FloatingButtonGroup
           label={t("Selected text actions")}
@@ -425,7 +475,7 @@ export function TranscriptSelectionMenu({
         />
         {items.map(({ id }) =>
           errors[id] ? (
-            <InlineError key={id} className="px-2 py-1">
+            <InlineError key={id} inset="row">
               {id === "notes" ? t("Could not save note. ") : t("Could not complete this action. ")}
               {errors[id]}
             </InlineError>

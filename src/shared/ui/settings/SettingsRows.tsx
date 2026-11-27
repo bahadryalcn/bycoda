@@ -1,18 +1,18 @@
 import { actionHostAttributes } from "../ActionHost";
 import { surfaceAttributes } from "../Surface";
 import { Text } from "../Text";
-import { useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useContext, useEffect, useId, useRef, type ReactNode } from "react";
 
 import { FieldLabel } from "../Field";
 import { InlineMessage } from "../InlineError";
 import { Badge } from "../Badge";
+import { LoadingText } from "../LoadingText";
 import { useTooltip } from "../Tooltip";
 import { Button } from "../Button";
 import { Heading } from "../Heading";
 import { SettingsOperationFeedback, type SettingsFeedbackProps } from "./SettingsFeedback";
-import { InfoPopover } from "../InfoPopover";
-import { Popover } from "../Popover";
-import { Info, RotateCcw } from "../icons";
+import { InfoTooltip } from "../InfoPopover";
+import { RotateCcw } from "../icons";
 
 import { useT } from "../../i18n";
 
@@ -39,7 +39,7 @@ export function SettingResetButton({
   disabled = false,
 }: {
   onReset: () => void;
-  /** Accessible name and tooltip. Defaults to "Restore default". */
+  /** Accessible name. Defaults to "Restore default". */
   label?: string;
   disabled?: boolean;
 }) {
@@ -76,7 +76,7 @@ type SettingReset = {
   modified?: boolean;
   /** Restores this row's (or group's) default. The reset icon renders only with `modified`. */
   onReset?: () => void;
-  /** Accessible name and tooltip of the reset icon. Defaults to "Restore default". */
+  /** Accessible name of the reset icon. Defaults to "Restore default". */
   resetLabel?: string;
 };
 
@@ -114,33 +114,29 @@ export function SettingsFeedback(props: SettingsFeedbackProps) {
   );
 }
 
-/** One info (ⓘ) affordance per title: a hidden description and a plain-string `info` share one popover. */
+/** A hidden description and a plain-string `info` share one tooltip. */
 function HelpSlot({ description, info }: { description?: ReactNode; info: ReactNode }) {
   if (description == null || description === "") return <InfoSlot info={info} />;
   if (info != null && typeof info !== "string") {
     return (
       <>
-        <InfoPopover className="shrink-0">
-          <p>{description}</p>
-        </InfoPopover>
+        <InfoTooltip className="shrink-0">{description}</InfoTooltip>
         <InfoSlot info={info} />
       </>
     );
   }
   return (
-    <InfoPopover className="shrink-0">
-      <p>{description}</p>
-      {info ? <p>{info}</p> : null}
-    </InfoPopover>
+    <InfoTooltip className="shrink-0">
+      {description}
+      {info && info !== description ? ` ${info}` : null}
+    </InfoTooltip>
   );
 }
 
-/** A plain-string `info` becomes the standard info popover; custom nodes render as given. */
+/** A plain-string `info` becomes a tooltip. Custom nodes render as given. */
 function InfoSlot({ info }: { info: ReactNode }) {
   return typeof info === "string" ? (
-    <InfoPopover className="shrink-0">
-      <p>{info}</p>
-    </InfoPopover>
+    <InfoTooltip className="shrink-0">{info}</InfoTooltip>
   ) : (
     <>{info}</>
   );
@@ -181,28 +177,30 @@ function SettingStatus({ persistence }: Pick<SettingDetails, "persistence">) {
   const t = useT();
   const state = persistence?.state;
   const showSaveHint = persistence?.mode === "explicit";
-  if (!persistence || !(showSaveHint || (state && state !== "idle"))) return null;
+  // An explicit save shows its progress in its own Save action; an automatic one shows a delayed
+  // line, so a quick save never flashes a badge.
+  const saving = state === "saving";
+  const showSaving = saving && !showSaveHint;
+  if (!persistence || !(showSaveHint || (state && state !== "idle" && (!saving || showSaving))))
+    return null;
   return (
     <Text as="div" size="caption" tone="secondary" leading="normal" className="settings-hint">
       {showSaveHint ? <span>{t("Changes require saving")}</span> : null}
-      {state && state !== "idle" ? (
+      {showSaving ? (
+        <LoadingText size="caption" tone="secondary">
+          {t("Saving…")}
+        </LoadingText>
+      ) : null}
+      {state && state !== "idle" && !saving ? (
         <Badge
-          tone={
-            state === "error"
-              ? "danger"
-              : state === "saved"
-                ? "success"
-                : state === "saving"
-                  ? "info"
-                  : "warning"
-          }
+          tone={state === "error" ? "danger" : state === "saved" ? "success" : "warning"}
           role="status"
           aria-live="polite"
           aria-atomic="true"
         >
           {state === "dirty" ? t("Unsaved changes") : null}
-          {state === "saving" ? t("Saving…") : null}
           {state === "saved" ? t("Saved") : null}
+          {/* oxlint-disable-next-line bycoda/no-raw-error-text -- persistence.error is the owner-written ReactNode message, documented as such on SettingsPersistence */}
           {state === "error" ? (persistence.error ?? t("Could not save changes")) : null}
         </Badge>
       ) : null}
@@ -265,176 +263,9 @@ function useControlDescriptions(descriptionId: string | undefined) {
 }
 
 /**
- * Secondary settings as one disclosure row: the title sits on the same x as row titles, the
- * chevron on the right, and a hairline separates it from the rows above. Put it last in a Group.
- * Closed by default, as the design system requires; pass `defaultOpen` only for a disclosure that
- * must start open (for example a form the user opened on purpose).
- * A search/reveal landing on this section or one of its `settingIds` opens it. Keep children to
- * Rows; never use it to hold only a paragraph (use `info` on the related row instead).
- * @group layout
- * @use Closing disclosure row for secondary settings inside a settings Group.
- * @avoid A standalone collapsible panel: Disclosure. A paragraph of help: `info` on the Row.
- */
-export function AdvancedSettings({
-  children,
-  id,
-  settingIds,
-  title,
-  defaultOpen = false,
-  keepMounted = false,
-}: {
-  children: ReactNode;
-  id?: string;
-  settingIds?: readonly string[];
-  title?: ReactNode;
-  defaultOpen?: boolean;
-  /** Retain draft/control identity while making a closed body hidden and inert. */
-  keepMounted?: boolean;
-}) {
-  const t = useT();
-  const headingId = useId();
-  const contentId = useId();
-  const revealed = useContext(RevealedSetting);
-  const targeted = revealed != null && (revealed === id || !!settingIds?.includes(revealed));
-  const [open, setOpen] = useState(defaultOpen || targeted);
-  const [wasTargeted, setWasTargeted] = useState(targeted);
-  if (targeted !== wasTargeted) {
-    setWasTargeted(targeted);
-    if (targeted) setOpen(true);
-  }
-  return (
-    <section
-      id={id ? settingDomId(id) : undefined}
-      data-setting-id={id}
-      data-open={open || undefined}
-      data-settings-part="advanced"
-      {...surfaceAttributes(
-        { layout: "settings-advanced", frame: "card", radius: "card" },
-        "settings-advanced",
-      )}
-      aria-labelledby={headingId}
-      tabIndex={-1}
-    >
-      <Heading
-        size="item"
-        level={3}
-        id={headingId}
-        tone="secondary"
-        className="settings-subheading"
-      >
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          align="start"
-          fullWidth
-          motion="none"
-          {...surfaceAttributes({ radius: "none" }, "settings-advanced-toggle")}
-          expanded={open}
-          aria-controls={keepMounted ? contentId : undefined}
-          onClick={() => setOpen((current) => !current)}
-        >
-          {title ?? t("Advanced")}
-        </Button>
-      </Heading>
-      {keepMounted ? (
-        <div
-          id={contentId}
-          className="settings-advanced-content"
-          data-settings-part="advanced-content"
-          hidden={!open}
-          inert={!open}
-          aria-hidden={!open || undefined}
-        >
-          {children}
-        </div>
-      ) : open ? (
-        children
-      ) : null}
-    </section>
-  );
-}
-
-/**
- * Shared page help and optional page reset, reachable by pointer and keyboard.
- * @group overlay
- * @use The "About this page" button of a settings page: description, automatic-save note, page reset.
- * @avoid A hint on one row or group: `info` on Row or Group. Any other hint: InfoPopover.
- */
-export function SettingsPageHelp({
-  description,
-  automaticSave = false,
-  className = "",
-  reset,
-}: {
-  description?: string;
-  automaticSave?: boolean;
-  className?: string;
-  reset?: { label: string; onClick: () => void };
-}) {
-  const t = useT();
-  const anchor = useRef<HTMLButtonElement>(null);
-  const [open, setOpen] = useState(false);
-  if (!description && !automaticSave && !reset) return null;
-  return (
-    <>
-      <Button
-        ref={anchor}
-        variant="ghost"
-        size="sm"
-        iconOnly
-        label={t("About this page")}
-        className={`settings-page-help shrink-0 ${className}`}
-        aria-haspopup="dialog"
-        expanded={open}
-        onClick={() => setOpen(!open)}
-      >
-        <Info aria-hidden className="icon-sm" />
-      </Button>
-      {open ? (
-        <Popover
-          anchor={anchor}
-          kind="dialog"
-          aria-label={t("About this page")}
-          autoFocus
-          tabIndex={-1}
-          flow="scroll"
-          onDismiss={() => setOpen(false)}
-          className="flex flex-col gap-2 p-3"
-        >
-          {description ? (
-            <Text as="p" tone="secondary">
-              {description}
-            </Text>
-          ) : null}
-          {automaticSave ? (
-            <Text as="p" tone="secondary">
-              {t("Changes save automatically")}
-            </Text>
-          ) : null}
-          {reset ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setOpen(false);
-                reset.onClick();
-              }}
-            >
-              <RotateCcw aria-hidden className="icon-sm" />
-              {reset.label}
-            </Button>
-          ) : null}
-        </Popover>
-      ) : null}
-    </>
-  );
-}
-
-/**
  * A titled topic of related settings: a heading above a thin-bordered, rounded frame whose
  * rows are separated by hairline dividers (owner decision 2026-10-31, V3-013; no gray fill).
- * Children should be `Row`s and a closing `AdvancedSettings`; wrap other content in a stacked Row.
+ * Children should be `Row`s; wrap other content in a stacked Row.
  *
  * - `description`: behind the info (ⓘ) affordance by default. `descriptionVisible` shows it as a
  *   muted subline, only for scope, dependency or consequence.
@@ -471,7 +302,7 @@ export function Group({
   /** Kept for existing callers; the frame no longer changes with it. */
   layout?: "columns" | "full";
   variant?: "open" | "box";
-  /** Show `description` as a muted subline (default `false`: behind the info popover). */
+  /** Show `description` as a muted subline (default `false`: in a tooltip). */
   descriptionVisible?: boolean;
   /** Longer explanation for an information popover beside the title. */
   info?: ReactNode;
@@ -494,6 +325,7 @@ export function Group({
       data-revealed={flash || undefined}
       data-settings-layout={layout}
       data-settings-variant={variant}
+      data-settings-flat={layerEditor || undefined}
       tabIndex={-1}
       aria-labelledby={headingId}
       aria-describedby={hasDescription ? descriptionId : undefined}
@@ -569,7 +401,7 @@ export function Group({
  * One setting: title + one short muted `description` on the left, control on the right at one
  * compact height and one right edge. Put long or rare detail in `info` (ⓘ), not in `description`.
  *
- * - `description` sits behind the info (ⓘ) popover; `descriptionVisible` opts into a visible muted
+ * - `description` sits in the info (ⓘ) tooltip. `descriptionVisible` opts into a visible muted
  *   subline, only for scope, dependency or consequence.
  * - `modified` + `onReset`: small reset icon next to the title while the value differs from its
  *   default, e.g. `<Row modified={size !== 14} onReset={() => setSize(14)} …>`.
@@ -580,6 +412,13 @@ export function Group({
  *   "your choice is preserved" text.
  * - `disabled`: the same dimmed, inert state without the indent (e.g. while an operation runs).
  * - `stacked`: wide controls (fields, editors, lists) sit under the label at full width.
+ * - `controlWidth`: `"aligned"` (16rem) to share a fixed column across a group,
+ *   `"wide"` (28rem) for a pair of selects or a short field, `"fill"` for a control that takes all the
+ *   room the label leaves (segmented choice, card strip). Default keeps the 12-18rem right column.
+ *   In a narrow row (below 35rem) every non-stacked control stays beside its label while both fit
+ *   and wraps under it only when they do not, so a switch or short select never stacks.
+ * - `density="compact"`: the row inset steps down (`--ui-row-inset-block-compact`) for short rows.
+ * - `feedbackPosition="start"`: the feedback (a preview) sits above the label and control.
  * @group layout
  * @use One setting inside a Group: label and description left, control right.
  * @avoid A row of a data list: CollectionRow. A whole topic: Group. A labelled form field outside settings: Field.
@@ -594,7 +433,11 @@ export function Row({
   feedback,
   controlId,
   stacked = false,
+  controlWidth = "default",
+  density = "default",
+  feedbackPosition = "end",
   descriptionVisible = false,
+  descriptionTone = "secondary",
   info,
   dependsOn,
   disabled = false,
@@ -613,8 +456,16 @@ export function Row({
   controlId?: string;
   /** Wide controls (text fields, editors, lists) sit under the label at full width. */
   stacked?: boolean;
-  /** Show `description` as a muted subline (default `false`: behind the info popover). */
+  /** Width of the right-hand control column: `wide` 28rem, `fill` the whole remaining width. Ignored when `stacked`. */
+  controlWidth?: "default" | "aligned" | "wide" | "fill";
+  /** `compact` steps the row inset down for short rows (one control, no description). */
+  density?: "default" | "compact";
+  /** `start` places the feedback above the label and control (a preview that opens the row). */
+  feedbackPosition?: "end" | "start";
+  /** Show `description` as a muted subline (default `false`: in a tooltip). */
   descriptionVisible?: boolean;
+  /** Use `muted` for metadata such as a timestamp. */
+  descriptionTone?: "secondary" | "muted";
   /** Longer explanation for an information popover beside the label. */
   info?: ReactNode;
   /** Dependent sub-row: indented; `false` (the parent is off) disables it. Omit for a normal row. */
@@ -646,13 +497,18 @@ export function Row({
   });
 
   const rowSurface = surfaceAttributes({ radius: "none", reveal: "row" }, "settings-row");
+  const feedbackContent = feedback ? <div className="settings-row-feedback">{feedback}</div> : null;
   return (
     <div
       id={id ? settingDomId(id) : undefined}
       data-setting-id={id}
       data-settings-part="row"
+      data-settings-flat={layerEditor || undefined}
       data-revealed={flash || undefined}
       data-stacked={stacked || undefined}
+      data-control-width={controlWidth === "default" ? undefined : controlWidth}
+      data-density={layerEditor ? "compact" : density === "default" ? undefined : density}
+      data-feedback-position={feedbackPosition === "end" ? undefined : feedbackPosition}
       data-dependent={dependsOn !== undefined || undefined}
       data-disabled={inactive || undefined}
       tabIndex={-1}
@@ -667,6 +523,7 @@ export function Row({
       aria-describedby={inactive && hasDescription ? descriptionId : undefined}
       aria-disabled={inactive || undefined}
     >
+      {feedbackPosition === "start" ? feedbackContent : null}
       <div className="settings-row-label">
         <div className="settings-title-line">
           {controlId ? (
@@ -705,7 +562,7 @@ export function Row({
             <Text
               as="p"
               size="caption"
-              tone="secondary"
+              tone={descriptionTone}
               leading="normal"
               className="settings-description settings-help-text"
             >
@@ -729,7 +586,7 @@ export function Row({
       >
         {children}
       </div>
-      {feedback ? <div className="settings-row-feedback">{feedback}</div> : null}
+      {feedbackPosition === "end" ? feedbackContent : null}
       {reasonTip.tooltip}
     </div>
   );

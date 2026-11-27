@@ -273,7 +273,7 @@ pub(crate) fn claude_project_dir(config_dir: &Path, cwd: &str) -> PathBuf {
 /// The directory a Claude account keeps its config and transcripts in. An
 /// added account runs its CLI with `CLAUDE_CONFIG_DIR` pointed at its own
 /// profile, so its conversations live there and never under `~/.claude`.
-fn claude_config_dir(
+pub(crate) fn claude_config_dir(
     app: &AppHandle,
     provider_account_id: Option<&str>,
 ) -> Result<PathBuf, String> {
@@ -469,34 +469,52 @@ pub struct OmpAssistantText {
 /// from their persisted transcript. The provider id is already stored with the
 /// session; matching the original JSONL keeps the repair deterministic instead
 /// of guessing from neighbouring reasoning text.
-#[tauri::command(async)]
-pub fn omp_session_interjections(
+#[tauri::command]
+pub async fn omp_session_interjections(
     provider_session_id: String,
 ) -> Result<Vec<OmpInterjectionAnchor>, String> {
-    let Some(path) = omp_session_path(&provider_session_id)? else {
-        return Ok(Vec::new());
-    };
-    parse_omp_interjections(&path)
+    crate::harness::run_blocking("omp_session_interjections", move || {
+        let Some(path) = omp_session_path(&provider_session_id)? else {
+            return Ok(Vec::new());
+        };
+        parse_omp_interjections(&path)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn omp_active_assistant_texts(
+#[tauri::command]
+pub async fn omp_active_assistant_texts(
     provider_session_id: String,
 ) -> Result<Vec<OmpAssistantText>, String> {
-    let Some(path) = omp_session_path(&provider_session_id)? else {
-        return Ok(Vec::new());
-    };
-    active_omp_assistant_texts(&path)
+    crate::harness::run_blocking("omp_active_assistant_texts", move || {
+        let Some(path) = omp_session_path(&provider_session_id)? else {
+            return Ok(Vec::new());
+        };
+        active_omp_assistant_texts(&path)
+    })
+    .await
 }
 
 /// Recover Bash commands that older UI builds saved as a bare "Shell" row.
 /// Claude's own transcript retains the complete tool input by tool-use id.
-#[tauri::command(async)]
-pub fn claude_shell_commands(
+#[tauri::command]
+pub async fn claude_shell_commands(
     app: AppHandle,
     provider_session_id: String,
     provider_account_id: Option<String>,
     tool_ids: Vec<String>,
+) -> Result<HashMap<String, String>, String> {
+    crate::harness::run_blocking("claude_shell_commands", move || {
+        claude_shell_commands_sync(&app, &provider_session_id, provider_account_id, &tool_ids)
+    })
+    .await
+}
+
+fn claude_shell_commands_sync(
+    app: &AppHandle,
+    provider_session_id: &str,
+    provider_account_id: Option<String>,
+    tool_ids: &[String],
 ) -> Result<HashMap<String, String>, String> {
     if provider_session_id.is_empty()
         || !provider_session_id
@@ -508,7 +526,7 @@ pub fn claude_shell_commands(
     if tool_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let config_dir = claude_config_dir(&app, provider_account_id.as_deref())?;
+    let config_dir = claude_config_dir(app, provider_account_id.as_deref())?;
     let transcript_name = format!("{provider_session_id}.jsonl");
     let root = config_dir.join("projects");
     let Some(path) = std::fs::read_dir(root).ok().and_then(|projects| {
@@ -519,7 +537,7 @@ pub fn claude_shell_commands(
     }) else {
         return Ok(HashMap::new());
     };
-    claude_shell_commands_from_file(&path, &tool_ids)
+    claude_shell_commands_from_file(&path, tool_ids)
 }
 
 fn claude_shell_commands_from_file(
@@ -824,9 +842,37 @@ fn parse_omp_interjections(path: &Path) -> Result<Vec<OmpInterjectionAnchor>, St
 }
 
 /// Immediate children of `path` (project tree). Folders first, then files.
-#[tauri::command(async)]
-pub fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
-    list_dir_sync(&expand_home(&path))
+/// Runs on the blocking pool: `read_dir` plus a `git check-ignore` spawn queued
+/// behind the Windows spawn gate must not pin a tokio worker.
+#[tauri::command]
+pub async fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
+    crate::harness::run_blocking("list_dir", move || list_dir_sync(&expand_home(&path))).await
+}
+
+/// Cheap change stamp of one folder (its own modified time and entry count). The
+/// tree polls every expanded folder; an unchanged stamp lets it skip reading,
+/// ignore-checking and serializing a huge listing. `None` means "cannot tell"
+/// (unreadable folder, no modified time): the caller then reads the listing, so
+/// a real error still surfaces from `list_dir`.
+#[tauri::command]
+pub async fn list_dir_stamp(path: String) -> Result<Option<String>, String> {
+    crate::harness::run_blocking("list_dir_stamp", move || {
+        Ok(list_dir_stamp_sync(&expand_home(&path)))
+    })
+    .await
+}
+
+fn list_dir_stamp_sync(dir: &Path) -> Option<String> {
+    let modified = std::fs::metadata(dir)
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()?;
+    // Counting entries guards a filesystem whose directory mtime is coarse or
+    // not bumped by every add or remove; it allocates nothing per entry.
+    let count = std::fs::read_dir(dir).ok()?.filter(Result::is_ok).count();
+    Some(format!("{}:{count}", modified.as_nanos()))
 }
 
 pub(crate) fn list_dir_sync(dir: &Path) -> Result<Vec<DirEntry>, String> {
@@ -925,7 +971,7 @@ fn compare_natural_names(a: &str, b: &str) -> std::cmp::Ordering {
     (a.len() - i).cmp(&(b.len() - j)).then_with(|| a.cmp(b))
 }
 
-const MAX_PROJECT_FILES: usize = 20_000;
+pub(crate) const MAX_PROJECT_FILES: usize = 20_000;
 const MAX_WALK_DIRS: usize = 4_000;
 
 #[derive(Serialize, Clone, Debug)]
@@ -954,11 +1000,44 @@ pub struct ProjectFileListing {
     truncated: bool,
 }
 
+/// Resolve reserved scratch paths without applying the legacy bare-home folder override.
+pub(crate) fn resolve_scratch_cwd(cwd: &str) -> Result<Option<PathBuf>, String> {
+    cwd.starts_with("~/.bycoda-host/scratch/session-")
+        .then(|| crate::session_folder::resolve_session_cwd(cwd))
+        .transpose()
+}
+
+#[cfg(test)]
+pub(crate) fn isolated_scratch_test_home(test: &str) -> Option<PathBuf> {
+    const CHILD_HOME: &str = "BYCODA_TEST_SCRATCH_HOME";
+    if let Some(home) = std::env::var_os(CHILD_HOME) {
+        return Some(home.into());
+    }
+    // A child can override home without changing environment variables for parallel tests.
+    let home = tempfile::tempdir().unwrap();
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    crate::hide_window_console(&mut command);
+    command
+        .args(["--exact", test, "--nocapture"])
+        .env(CHILD_HOME, home.path())
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path());
+    let result = output_with_timeout(&mut command, Duration::from_secs(30)).unwrap();
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert!(
+        result.status.success() && stdout.contains("1 passed"),
+        "{stdout}\n{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    None
+}
+
 fn project_file_listing(cwd: &str) -> Result<ProjectFileListing, String> {
+    let root = resolve_scratch_cwd(cwd)?.unwrap_or_else(|| expand_home(cwd));
     let truncated = AtomicBool::new(false);
-    let files = list_project_files_inner(cwd, None, &truncated)?;
+    let files = list_project_files_inner(&root, None, &truncated)?;
     Ok(ProjectFileListing {
-        root: path_to_js(&expand_home(cwd)),
+        root: path_to_js(&root),
         truncated: truncated.load(Ordering::Relaxed),
         files: files
             .into_iter()
@@ -990,29 +1069,41 @@ pub(crate) fn list_project_files_sync(cwd: &str) -> Result<Vec<ProjectFile>, Str
 /// so both take the flag: `git ls-files` and the walk it falls back to. The
 /// walk is the one that can run for minutes, but the listing is the one that
 /// can hold a hundred megabytes, so neither is left uninterruptible.
+#[cfg(test)]
 pub(crate) fn list_project_files_sync_cancellable(
     cwd: &str,
     cancel: Option<&AtomicBool>,
 ) -> Result<Vec<ProjectFile>, String> {
-    list_project_files_inner(cwd, cancel, &AtomicBool::new(false))
+    list_project_files_with_completeness(cwd, cancel).map(|(files, _)| files)
+}
+
+/// The cancellable listing plus whether it stopped at a file, directory or
+/// `git ls-files` cap, so a caller that searches the listing can say it did
+/// not cover the whole tree.
+pub(crate) fn list_project_files_with_completeness(
+    cwd: &str,
+    cancel: Option<&AtomicBool>,
+) -> Result<(Vec<ProjectFile>, bool), String> {
+    let truncated = AtomicBool::new(false);
+    let files = list_project_files_inner(&expand_home(cwd), cancel, &truncated)?;
+    Ok((files, truncated.load(Ordering::Relaxed)))
 }
 
 fn list_project_files_inner(
-    cwd: &str,
+    root: &Path,
     cancel: Option<&AtomicBool>,
     truncated: &AtomicBool,
 ) -> Result<Vec<ProjectFile>, String> {
-    let root = expand_home(cwd);
     if !root.is_dir() {
         return Err(format!("{}: Not a directory", root.display()));
     }
-    if !is_indexable_root(&root) {
+    if !is_indexable_root(root) {
         return Ok(Vec::new());
     }
     if cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
         return Ok(Vec::new());
     }
-    if let Some(files) = git_ls_files_inner(&root, cancel, truncated) {
+    if let Some(files) = git_ls_files_inner(root, cancel, truncated) {
         return Ok(files);
     }
     // `git_ls_files` returns `None` for "not a git repo", truncation, and
@@ -1021,7 +1112,7 @@ fn list_project_files_inner(
     if cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
         return Ok(Vec::new());
     }
-    Ok(walk_project_files_inner(&root, cancel.into(), truncated))
+    Ok(walk_project_files_inner(root, cancel.into(), truncated))
 }
 
 /// `git check-ignore` queues behind the Windows spawn gate, and the tree
@@ -1347,15 +1438,17 @@ pub struct GitHistory {
 
 /// Recent commits for the Graph view: HEAD, upstream, and the default
 /// branch, or every branch, remote branch, and tag when `all` is set.
-/// Newest first, with parent SHAs for the graph.
+/// Newest first, with parent SHAs for the graph. `skip` continues after that
+/// many commits of the same topological walk, so pages append without re-reading.
 #[tauri::command]
 pub async fn git_history(
     cwd: String,
     limit: Option<u32>,
     all: Option<bool>,
+    skip: Option<u32>,
 ) -> Result<GitHistory, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        git_history_scoped(&expand_home(&cwd), limit, all.unwrap_or(false))
+        git_history_scoped(&expand_home(&cwd), limit, skip, all.unwrap_or(false))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -3484,10 +3577,15 @@ fn git_history_tips(root: &Path) -> Vec<String> {
 
 #[cfg(test)]
 fn git_history_for(root: &Path, limit: Option<u32>) -> Result<GitHistory, String> {
-    git_history_scoped(root, limit, false)
+    git_history_scoped(root, limit, None, false)
 }
 
-fn git_history_scoped(root: &Path, limit: Option<u32>, all: bool) -> Result<GitHistory, String> {
+fn git_history_scoped(
+    root: &Path,
+    limit: Option<u32>,
+    skip: Option<u32>,
+    all: bool,
+) -> Result<GitHistory, String> {
     if !git_is_work_tree(root) {
         return match git_checked(root, &["rev-parse", "--is-inside-work-tree"]) {
             Err(error) if error.to_lowercase().contains("not a git repository") => {
@@ -3520,8 +3618,11 @@ fn git_history_scoped(root: &Path, limit: Option<u32>, all: bool) -> Result<GitH
         "--decorate=short".to_string(),
         "--max-count".to_string(),
         count,
-        "--format=%H%x00%h%x00%P%x00%an%x00%at%x00%D%x00%s%x1e".to_string(),
     ];
+    if let Some(skip) = skip.filter(|skip| *skip > 0) {
+        args.push(format!("--skip={skip}"));
+    }
+    args.push("--format=%H%x00%h%x00%P%x00%an%x00%at%x00%D%x00%s%x1e".to_string());
     args.extend(tips);
     let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
     let Some(text) = git_run(root, &args_ref) else {
@@ -6041,14 +6142,8 @@ fn gh_run(root: &Path, args: &[&str], allow_empty: bool) -> Result<String, Strin
     gh_run_with_token(root, args, allow_empty, None)
 }
 
-fn gh_run_with_token(
-    root: &Path,
-    args: &[&str],
-    allow_empty: bool,
-    token: Option<&str>,
-) -> Result<String, String> {
-    let program = crate::github_cli::gh_program()?;
-    let mut cmd = Command::new(&program);
+fn gh_command(program: &Path, root: &Path, args: &[&str], token: Option<&str>) -> Command {
+    let mut cmd = Command::new(program);
     cmd.current_dir(root)
         .args(args)
         .env("GIT_TERMINAL_PROMPT", "0")
@@ -6056,6 +6151,10 @@ fn gh_run_with_token(
         .env("GH_PAGER", "cat")
         .env("GIT_PAGER", "cat");
     crate::harness::apply_gui_env(&mut cmd);
+    if args.starts_with(&["repo", "view"]) {
+        // Inbox discovery recognizes Git's non-repository diagnostic in gh stderr.
+        cmd.env("LC_ALL", "C");
+    }
     if let Some(token) = token {
         cmd.env("GH_TOKEN", token)
             .env_remove("GITHUB_TOKEN")
@@ -6063,6 +6162,17 @@ fn gh_run_with_token(
             .env_remove("GITHUB_ENTERPRISE_TOKEN");
     }
     crate::hide_window_console(&mut cmd);
+    cmd
+}
+
+fn gh_run_with_token(
+    root: &Path,
+    args: &[&str],
+    allow_empty: bool,
+    token: Option<&str>,
+) -> Result<String, String> {
+    let program = crate::github_cli::gh_program()?;
+    let mut cmd = gh_command(&program, root, args, token);
     let output = output_with_timeout(&mut cmd, GIT_NETWORK_TIMEOUT).map_err(|error| {
         if error.kind() == ErrorKind::NotFound {
             "GitHub CLI (`gh`) is not installed.".to_string()
@@ -6238,6 +6348,16 @@ fn git_cmd_for_args_with_path(args: &[&str], gui_path: impl FnOnce() -> String) 
 const GIT_NETWORK_TIMEOUT: Duration = Duration::from_secs(300);
 pub(crate) const GIT_LOCAL_TIMEOUT: Duration = Duration::from_secs(120);
 
+/// First gap between exit checks on a running git child. Most local git commands finish
+/// within milliseconds, so the gap starts short instead of sleeping the full ceiling.
+const GIT_WAIT_POLL_MIN: Duration = Duration::from_millis(1);
+/// Ceiling for that gap. It equals the old fixed sleep, so exit detection is never slower.
+const GIT_WAIT_POLL_MAX: Duration = Duration::from_millis(25);
+
+fn next_git_wait_poll(poll: Duration) -> Duration {
+    (poll * 2).min(GIT_WAIT_POLL_MAX)
+}
+
 fn git_is_network_command(args: &[&str]) -> bool {
     matches!(args.first().copied(), Some("push" | "pull" | "fetch"))
 }
@@ -6247,6 +6367,11 @@ pub(crate) fn output_with_timeout(
     cmd: &mut Command,
     timeout: Duration,
 ) -> std::io::Result<std::process::Output> {
+    let _reservation = cmd
+        .get_current_dir()
+        .map(crate::worktree_lifecycle::reserve_spawn)
+        .transpose()
+        .map_err(std::io::Error::other)?;
     let child = cmd
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -6284,6 +6409,7 @@ fn wait_with_timeout(
             .map(|pipe| Box::new(pipe) as Box<dyn Read + Send>),
     );
     let deadline = Instant::now() + timeout;
+    let mut poll = GIT_WAIT_POLL_MIN;
     let status = loop {
         if let Some(status) = child.try_wait()? {
             break status;
@@ -6299,7 +6425,9 @@ fn wait_with_timeout(
                 ),
             ));
         }
-        thread::sleep(Duration::from_millis(25));
+        // Never sleep past the deadline, so the timeout still fires on time.
+        thread::sleep(poll.min(deadline.saturating_duration_since(Instant::now())));
+        poll = next_git_wait_poll(poll);
     };
     Ok(std::process::Output {
         status,
@@ -6639,6 +6767,7 @@ fn git_stream_command(
                 let _ = done_tx.send(Err("Git process owner unavailable".into()));
                 return;
             };
+            let mut poll = GIT_WAIT_POLL_MIN;
             let result = loop {
                 match child.try_wait() {
                     Ok(Some(status)) => {
@@ -6674,7 +6803,9 @@ fn git_stream_command(
                     }
                     .to_string());
                 }
-                thread::sleep(Duration::from_millis(25));
+                // Cancel is still seen within the 25 ms ceiling; the sleep never passes the deadline.
+                thread::sleep(poll.min(deadline.saturating_duration_since(Instant::now())));
+                poll = next_git_wait_poll(poll);
             };
             let _ = done_tx.send(result);
         });
@@ -6731,6 +6862,19 @@ mod git_stream_process_tests {
     use super::*;
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
+    #[test]
+    fn git_wait_poll_starts_short_and_settles_at_the_old_ceiling() {
+        let mut poll = GIT_WAIT_POLL_MIN;
+        assert_eq!(poll, Duration::from_millis(1));
+        let mut previous = poll;
+        for _ in 0..8 {
+            poll = next_git_wait_poll(poll);
+            assert!(poll >= previous && poll <= GIT_WAIT_POLL_MAX);
+            previous = poll;
+        }
+        assert_eq!(poll, Duration::from_millis(25));
+    }
+
     fn child(name: &str) -> Command {
         let mut command = Command::new(std::env::current_exe().unwrap());
         crate::hide_window_console(&mut command);
@@ -6767,9 +6911,9 @@ mod git_stream_process_tests {
     #[ignore = "isolated child fixture"]
     fn inherited_pipe_holder() {
         let signal = PathBuf::from(std::env::var_os("BYCODA_STREAM_FIXTURE_RELEASE").unwrap());
-        let deadline = Instant::now() + Duration::from_secs(15);
+        let deadline = Instant::now() + Duration::from_secs(60);
         while !signal.exists() && Instant::now() < deadline {
-            std::thread::yield_now();
+            std::thread::sleep(Duration::from_millis(10));
         }
     }
 
@@ -6826,32 +6970,44 @@ mod git_stream_process_tests {
     fn inherited_pipe_retains_capacity_until_reader_retires() {
         let _test = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
         let before = TEST_STREAMS.load(Ordering::Acquire);
-        let release =
-            std::env::temp_dir().join(format!("bycoda-git-stream-release-{}", Uuid::new_v4()));
-        let mut process = child("fs::git_stream_process_tests::inherited_pipe_parent");
-        process.env("BYCODA_STREAM_FIXTURE_RELEASE", &release);
-        let mut observed = Vec::new();
-        let result = git_stream_command(
-            &TEST_STREAMS,
-            process,
-            Instant::now() + Duration::from_secs(3),
-            |chunk| {
-                observed.extend_from_slice(chunk);
-                Ok(())
-            },
-        );
-        assert!(result.is_err());
-        assert!(observed
-            .windows(b"PIPE_HOLDER_READY".len())
-            .any(|window| window == b"PIPE_HOLDER_READY"));
-        assert!(TEST_STREAMS.load(Ordering::Acquire) > before);
-        std::fs::write(&release, b"release").unwrap();
-        let deadline = Instant::now() + Duration::from_secs(4);
-        while TEST_STREAMS.load(Ordering::Acquire) > before && Instant::now() < deadline {
-            std::thread::yield_now();
+        // The deadline is the stimulus, and it also has to cover starting two test
+        // processes (parent, then holder), which is slow while the whole suite runs. An
+        // attempt whose fixture was not up in time is released and retried with a longer
+        // deadline; every attempt whose fixture did start is asserted strictly.
+        for seconds in [3, 10, 30, 90] {
+            let release =
+                std::env::temp_dir().join(format!("bycoda-git-stream-release-{}", Uuid::new_v4()));
+            let mut process = child("fs::git_stream_process_tests::inherited_pipe_parent");
+            process.env("BYCODA_STREAM_FIXTURE_RELEASE", &release);
+            let mut observed = Vec::new();
+            let result = git_stream_command(
+                &TEST_STREAMS,
+                process,
+                Instant::now() + Duration::from_secs(seconds),
+                |chunk| {
+                    observed.extend_from_slice(chunk);
+                    Ok(())
+                },
+            );
+            let started = observed
+                .windows(b"PIPE_HOLDER_READY".len())
+                .any(|window| window == b"PIPE_HOLDER_READY");
+            if started {
+                assert!(result.is_err());
+                assert!(TEST_STREAMS.load(Ordering::Acquire) > before);
+            }
+            std::fs::write(&release, b"release").unwrap();
+            let retire = Instant::now() + Duration::from_secs(120);
+            while TEST_STREAMS.load(Ordering::Acquire) > before && Instant::now() < retire {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            assert_eq!(TEST_STREAMS.load(Ordering::Acquire), before);
+            std::fs::remove_file(release).unwrap();
+            if started {
+                return;
+            }
         }
-        assert_eq!(TEST_STREAMS.load(Ordering::Acquire), before);
-        std::fs::remove_file(release).unwrap();
+        panic!("the inherited-pipe fixture never started");
     }
 }
 
@@ -8479,6 +8635,43 @@ fn stat_files_sync(paths: Vec<String>) -> Result<Vec<FileMtime>, String> {
         .collect())
 }
 
+/// Windows drive roots from the OS logical-drive bitmask. Reads no disk, so an empty or
+/// disconnected drive cannot stall it; callers still stat each root before listing it.
+#[tauri::command]
+pub fn list_windows_drives() -> Vec<String> {
+    #[cfg(windows)]
+    {
+        drive_roots(unsafe { windows_sys::Win32::Storage::FileSystem::GetLogicalDrives() })
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn drive_roots(mask: u32) -> Vec<String> {
+    (0..26u8)
+        .filter(|bit| mask & (1u32 << bit) != 0)
+        .map(|bit| format!("{}:/", char::from(b'A' + bit)))
+        .collect()
+}
+
+#[cfg(test)]
+mod drive_roots_tests {
+    use super::drive_roots;
+
+    /// #613: drive letters come from the logical-drive bitmask alone, with no disk I/O.
+    #[test]
+    fn drive_roots_follow_the_logical_drive_bitmask() {
+        assert!(drive_roots(0).is_empty());
+        assert_eq!(drive_roots(0b101), ["A:/", "C:/"]);
+        assert_eq!(drive_roots(1 << 25), ["Z:/"]);
+        // Bits above Z are not drives.
+        assert!(drive_roots(1 << 26).is_empty());
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PathInfo {
@@ -9324,9 +9517,13 @@ pub async fn move_path(
     .await
 }
 
-#[tauri::command(async)]
-pub fn reveal_path(path: String) -> Result<(), String> {
-    let requested = expand_home(&path);
+#[tauri::command]
+pub async fn reveal_path(path: String) -> Result<(), String> {
+    crate::harness::run_blocking("reveal_path", move || reveal_path_sync(&path)).await
+}
+
+fn reveal_path_sync(path: &str) -> Result<(), String> {
+    let requested = expand_home(path);
     // A reference to a file that was moved or not written yet still opens the
     // closest folder that exists, so the action never silently does nothing.
     let path = nearest_existing_path(&requested)
@@ -9636,7 +9833,7 @@ mod tests {
     fn git_history_reports_invalid_repository_access() {
         let dir = tmp("git-history-read-state");
         let missing = dir.0.join("missing");
-        assert!(git_history_scoped(&missing, Some(10), false).is_err());
+        assert!(git_history_scoped(&missing, Some(10), None, false).is_err());
     }
 
     #[test]
@@ -10352,6 +10549,39 @@ mod tests {
     }
 
     #[test]
+    fn file_index_creates_scratch_before_provider_launch() {
+        let Some(home) = isolated_scratch_test_home(
+            "fs::tests::file_index_creates_scratch_before_provider_launch",
+        ) else {
+            return;
+        };
+        let scratch = home.join(".bycoda-host").join("scratch");
+        let folder = scratch.join("session-file-index");
+        let cwd = "~/.bycoda-host/scratch/session-file-index";
+        assert!(!folder.exists());
+        let listing = project_file_listing(cwd).unwrap();
+        assert!(folder.is_dir());
+        assert_eq!(listing.root, path_to_js(&folder));
+        assert!(listing.files.is_empty());
+        assert!(!listing.truncated);
+
+        std::fs::write(folder.join("output.txt"), "keep").unwrap();
+        let listing = project_file_listing(cwd).unwrap();
+        assert_eq!(listing.root, path_to_js(&folder));
+        assert_eq!(listing.files.len(), 1);
+        assert_eq!(listing.files[0].relative, "output.txt");
+        assert_eq!(
+            crate::session_folder::resolve_session_cwd(cwd).unwrap(),
+            folder
+        );
+
+        let occupied = scratch.join("session-occupied");
+        std::fs::write(&occupied, "keep").unwrap();
+        assert!(project_file_listing("~/.bycoda-host/scratch/session-occupied").is_err());
+        assert_eq!(std::fs::read_to_string(occupied).unwrap(), "keep");
+    }
+
+    #[test]
     fn project_dirs_stay_indexable() {
         let dir = tmp("index-root");
         assert!(is_indexable_root(&dir.0));
@@ -10551,6 +10781,22 @@ mod tests {
         let mut ignored = ignored_names(&list_dir_sync(&dir.0).unwrap());
         ignored.sort_unstable();
         assert_eq!(ignored, vec!["a.log", "secret.txt"]);
+    }
+
+    #[test]
+    fn list_dir_stamp_is_stable_until_entries_change_and_unknown_when_unreadable() {
+        let dir = tmp("list-dir-stamp");
+        std::fs::write(dir.0.join("a.ts"), "x\n").unwrap();
+        let first = list_dir_stamp_sync(&dir.0).expect("readable folder has a stamp");
+        assert_eq!(list_dir_stamp_sync(&dir.0).as_deref(), Some(first.as_str()));
+
+        std::fs::write(dir.0.join("b.ts"), "x\n").unwrap();
+        let added = list_dir_stamp_sync(&dir.0).unwrap();
+        assert_ne!(added, first);
+        assert!(added.ends_with(":2"));
+
+        assert_eq!(list_dir_stamp_sync(&dir.0.join("missing")), None);
+        assert_eq!(list_dir_stamp_sync(&dir.0.join("a.ts")), None);
     }
 
     #[test]
@@ -12186,6 +12432,26 @@ mod tests {
     }
 
     #[test]
+    fn github_repository_discovery_uses_stable_git_diagnostics() {
+        let command = gh_command(
+            Path::new("gh"),
+            Path::new("."),
+            &["repo", "view", "--json", "nameWithOwner,parent"],
+            None,
+        );
+        assert_eq!(
+            command
+                .get_envs()
+                .find(|(key, _)| *key == "LC_ALL")
+                .and_then(|(_, value)| value),
+            Some(std::ffi::OsStr::new("C")),
+        );
+
+        let command = gh_command(Path::new("gh"), Path::new("."), &["pr", "view"], None);
+        assert!(!command.get_envs().any(|(key, _)| key == "LC_ALL"));
+    }
+
+    #[test]
     fn parse_github_repositories_includes_a_forks_parent() {
         let json = r#"{
             "nameWithOwner": "EricRasputin/bycoda-eric",
@@ -13336,8 +13602,13 @@ mod tests {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
-        let result = git_bounded_output::run(
-            &mut command,
+        // Other Git tests share the Windows spawn gate. Measure the silent
+        // child's deadline after the fixture has acquired its spawn turn.
+        let turn = GIT_SPAWN_GATE.enter();
+        let child = command.spawn().unwrap();
+        drop(turn);
+        let result = git_bounded_output::collect(
+            child,
             &[],
             1024,
             None,
@@ -13549,10 +13820,43 @@ mod tests {
         commit_file(&dir.0, "b.txt", "beta\n", "on side");
         assert!(git(&dir.0, &["checkout", "main"]));
 
-        let current = git_history_scoped(&dir.0, None, false).unwrap();
+        let current = git_history_scoped(&dir.0, None, None, false).unwrap();
         assert!(current.commits.iter().all(|c| c.subject != "on side"));
-        let all = git_history_scoped(&dir.0, None, true).unwrap();
+        let all = git_history_scoped(&dir.0, None, None, true).unwrap();
         assert!(all.commits.iter().any(|c| c.subject == "on side"));
+    }
+
+    #[test]
+    fn git_history_skip_continues_the_same_topological_walk() {
+        let dir = tmp("git-history-skip");
+        if !init_git_commit(&dir.0, &[("a.txt", "alpha\n")]) {
+            return;
+        }
+        assert!(git(&dir.0, &["checkout", "-b", "side"]));
+        commit_file(&dir.0, "b.txt", "beta\n", "on side");
+        assert!(git(&dir.0, &["checkout", "main"]));
+        commit_file(&dir.0, "c.txt", "gamma\n", "on main");
+        assert!(git(
+            &dir.0,
+            &["merge", "--no-ff", "-m", "merge side", "side"]
+        ));
+        commit_file(&dir.0, "d.txt", "delta\n", "after merge");
+
+        let whole = git_history_scoped(&dir.0, None, None, true).unwrap();
+        let first = git_history_scoped(&dir.0, Some(2), None, true).unwrap();
+        let second = git_history_scoped(&dir.0, Some(2), Some(2), true).unwrap();
+        let rest = git_history_scoped(&dir.0, None, Some(4), true).unwrap();
+
+        let paged: Vec<_> = first
+            .commits
+            .iter()
+            .chain(&second.commits)
+            .chain(&rest.commits)
+            .cloned()
+            .collect();
+        assert_eq!(paged, whole.commits);
+        assert_eq!(first.head, whole.head);
+        assert_eq!(second.head, whole.head);
     }
 
     #[test]

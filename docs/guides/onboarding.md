@@ -1,5 +1,8 @@
 # Getting started
 
+The Account and Connections steps play a short illustration when opened. They use still
+images when decorative animations are off or the app follows your system's reduced-motion setting.
+
 Fresh desktop workspaces open a compact setup dialog: Account, Statistics, Workspace,
 Appearance, Agents, Connections, Projects. Every step is directly accessible and
 optional. Navigation and completion actions stay visible while the content scrolls.
@@ -19,11 +22,12 @@ The language selector applies immediately. Reopen the flow from Settings → Gen
   later in Settings → Account. A cancelled or failed sign-in returns to the step with
   the reason and keeps the guest choice. Existing users are not asked.
 - Statistics (builds with accounts, until you have answered) asks whether to share anonymous
-  statistics: "Share anonymous statistics" or "Don't share", equal choices. It explains what is
-  sent (a random install id, app version, operating system, release channel and date, at most
-  once a day) and what never is (sessions, prompts, code, file names, projects, account
-  details). Statistics are off unless you say yes; change it any time in Settings → Account →
-  Privacy & data, or Settings → Privacy without an account. Installations that skip setup get
+  statistics: "Share anonymous statistics" or "Don't share", equal choices. The info icon holds
+  the shared statistics disclosure (`statsDisclosure` in `src/features/account`): what is sent
+  (a random install id, app version, operating system, release channel and date, at most once
+  a day), what never is (sessions, prompts, code, file names, projects, account details), that
+  it is off unless you say yes, and where to change it (Settings → Privacy). The consent toast
+  and Settings show the same text. Installations that skip setup get
   the same question once in a small notice that never blocks work.
 - Workspace selects Tasks, Automations, Inbox, Notes and Social Media navigation.
   Coding, files, terminal and Git remain available. Choices save immediately and
@@ -45,16 +49,24 @@ The language selector applies immediately. Reopen the flow from Settings → Gen
   or a custom color with an adjustable strength. Preview in app turns Settings
   into a side panel without dimming, so live backgrounds, the crew and glass can
   be judged on the real workspace; Escape returns to the full dialog.
-  The theme generator's dice fills the prompt with a new combination of scene, light
+  Open Generate with AI from the Appearance toolbar. Minimize puts generation status
+  at the bottom of the page. Close removes the dialog and dock, and the toolbar keeps
+  showing active work and new results. Reopen the dialog to see individual jobs or
+  cancel one. The theme generator's dice fills the prompt with a new combination of scene, light
   and finish. Generate themes and Random look show three suggestion cards; choosing a
   card applies the whole look: a suggestion without its own gradient switches the
   previous gradient off. Its image follows the image button (None, Codex or Gemini):
-  with a provider, choosing a card draws that card's image once and applies it when it
-  lands, unless another look was chosen meanwhile; with None, the previous background
-  image is removed. A finished image stays on its card, choosing the card again reuses
-  it, and the card's preview button opens it in the shared viewer. Failed images can be
-  retried, and a failed theme refresh keeps the previous suggestions. A saved look is
-  a snapshot of the current appearance, so it does not include a pending image.
+  with a provider, choosing a card draws its image after applying the theme. Generate
+  image can also draw it directly from a card. Preview opens the finished image in
+  the shared viewer. Change image draws another candidate and keeps the previous one
+  available while it runs. Use image applies the chosen drawing. With None, a theme
+  without an image clears the previous background image. Failed images can be
+  retried from generation activity, and a failed theme refresh keeps the previous suggestions.
+  Generation activity shows each request with its own status and Cancel action. A new
+  set of themes keeps earlier images visible in activity as they finish. Recent
+  activity lets you preview finished images even after their original cards are gone.
+  A saved look is
+  a snapshot of the current appearance and includes the image in use.
   Gradient generation uses the theme generator model and applies when ready unless a
   newer look supersedes it. Selecting a suggested or saved
   theme pre-fills its editable name when saving the current look. Palette and
@@ -93,8 +105,10 @@ The language selector applies immediately. Reopen the flow from Settings → Gen
   editor for computers and sharing. The local sync host is excluded
   from the remote computer list. Remote presence is not presented as proof of a
   successful connection.
-- Projects discovers local Claude/Codex interactive conversations and groups them
-  by usable folder. Already imported conversations and missing folders are excluded.
+- Projects discovers local interactive conversations from Claude Code, Codex,
+  Cursor, Grok, OpenCode, Pi, omp, Hermes, Antigravity CLI and OpenClaw and groups
+  them by provider, then by usable folder. Providers without a resumable session
+  id import as read-only history. Already imported conversations and missing folders are excluded.
   Selected folders import through the existing bounded, cancellable import runner.
   Failures and shortened/history-only imports stay visible in the result screen.
   New folders can be added with the native folder picker. Remote folders use the
@@ -112,8 +126,8 @@ optional action and remains available in Settings.
 
 ## Manage providers after setup
 
-**Settings > Models > Providers** shows the provider list and detail, then the CLI
-table and **Decision models**. Settings search opens the relevant part.
+**Settings > Models > Providers** shows the provider list and detail, with CLI version and
+update actions in the detail header. Settings search opens the relevant part.
 
 - **Provider detail** shows a provider rail with a **Default** badge and an account
   summary. Choose a provider to manage its accounts. **Edit account** changes the
@@ -131,7 +145,7 @@ table and **Decision models**. Settings search opens the relevant part.
   provider's path control to configure its executable; missing providers offer
   **Set up**. Custom ACP providers use **Add provider**.
 - **Settings > Models > Chats** sets the provider, model, effort and permissions
-  for new conversations. **Settings > Models > Subagents** holds advisor, subagent and image model defaults. Effort uses a stepped scale with the selected label beside it.
+  for new conversations. **Helpers and delegation** on the same page holds advisor, image model and subagent defaults. Effort uses a stepped scale with the selected label beside it.
   Use the apply bar to choose provider scope and several save
   destinations, then save. See [provider defaults](agent-tools.md#cross-provider-advisor-and-subagents)
   for inheritance, skipped fields and retrying failed destinations.
@@ -141,16 +155,27 @@ table and **Decision models**. Settings search opens the relevant part.
   refresh button checks the catalog. Successful checks stay quiet, including when
   nothing changed; failures show a notice. Built-in lists and unavailable CLIs
   retain their provenance or setup guidance.
-- **Decision models** (below the CLI table) manages connected sources, local discovery, privacy and
+- **Settings > Decision models** manages connected sources, local discovery, privacy and
   task routing. See [Manage decision models](decision-models.md).
 
 ## Guide
 
-The Guide (View → Usage guide, or Settings → General) is a topic-by-topic walkthrough
-that works with the app instead of only describing it.
+In a new session without a project, **Open a project** opens the folder picker and
+**Guide** opens the usage guide. You can also open the Guide from View → Usage guide
+or Settings → General. **Steps** contains
+the interactive walkthrough. **Wiki** contains the searchable product reference,
+including remote access, permissions, background work and troubleshooting.
+Open Wiki from a topic to read its matching article. The bundled reference works
+offline. Each article links to its browser edition at [bycoda.codes/guide](https://bycoda.codes/guide).
+
+Maintain the wiki in `src/features/onboarding/model/wiki.json`. Publish that same
+file with the website and the account portal. Keep article IDs stable because they
+are used as permanent URLs and as links from the interactive Guide.
 
 - **Steps.** Every topic lists a few short steps (Chat with agents has four, including
-  choosing the access mode). A step shows ✓ when it is finished:
+  choosing the access mode). In the chat composer, hover over or focus the access mode
+  icon to see its name. Open the picker to see the available modes and their descriptions.
+  A step shows ✓ when it is finished:
   automatically when the app already shows it (a project is open, several projects
   exist, a project is pinned, a session already has a message, you opened a diff, a
   commit or all changes for review, you opened a terminal), when you use the topic's
@@ -191,8 +216,8 @@ start a session, open Explorer, Changes or the terminal, open the Guide) and the
 
 - **Who sees the offer.** Everyone who has never finished, skipped or declined the tour,
   existing users included. A small notice offers "Take a 1-minute tour" or "Later" once. It
-  never appears over Quick setup, the Guide or any open dialog; it waits until they are
-  closed (for Quick setup that means after "Finish setup" or "Set up later"). "Later" ends the
+  waits for Quick setup, the Guide and other dialogs to close. If a dialog opens while
+  the notice is visible, the notice hides until the dialog closes. "Later" ends the
   offer for good, and so does finishing or skipping the tour.
 - **Start it again.** Guide → "Take the tour", View → Take the tour, and Settings → General →
   Getting started → Take the tour. A tour left part-way shows "Resume tour" and continues from

@@ -1,19 +1,20 @@
 import { surfaceAttributes } from "../../shared/ui/Surface";
+import { paneEdgeLabel } from "./paneEdgeLabel";
 import { ScrollArea } from "../../shared/ui/ScrollArea";
 import { Text } from "../../shared/ui/Text";
 import { Button } from "../../shared/ui/Button";
 import { Badge } from "../../shared/ui/Badge";
 import { StatusDot } from "../../shared/ui/StatusDot";
-import { WindowChromeInset } from "../../shared/ui/PaneHeader";
+import { WindowChromeInset, WindowTitleBarAbove } from "../../shared/ui/PaneHeader";
 import { Tooltip } from "../../shared/ui/Tooltip";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { WorkspaceFeatureGate } from "../../features/settings/ui/WorkspaceFeatureGate";
 import { t, useLocale, useT } from "../../shared/i18n";
 import {
-  AppWindow,
   CheckCircle,
   ChevronLeft,
   ChevronRight,
+  Clock,
   PanelRight,
   Inbox,
   Menu,
@@ -24,6 +25,7 @@ import {
   SplitSquare,
   StickyNote,
   Terminal,
+  Undo2,
   X,
 } from "../../shared/ui/icons";
 import {
@@ -66,7 +68,8 @@ import {
 } from "../model/windowTransferPopout";
 import { beginWindowTabDrag } from "../model/windowDragPreview";
 import { WindowControls } from "./WindowControls";
-import { APP_MENU_TOGGLE_EVENT } from "./MenuBar";
+import { toggleAppMenuAt } from "./MenuBar";
+import { TitleBarBrand, TitleBarSearch } from "./TitleBarLead";
 import { IS_MAC } from "../../platform/tauri/platform";
 import type { RecentProject } from "../../features/projects/model/recents";
 import { ExplorerMenu, type ExplorerMenuItem } from "../../features/files/ui/ExplorerMenu";
@@ -159,7 +162,14 @@ type Props = {
   cwd: string;
   projectRailOpen?: boolean;
   sessionSidebarOpen?: boolean;
-  compactRail?: boolean;
+  /**
+   * The bar spans the whole window above the rail and the panes (every main window). It then
+   * leads with the window buttons' space, the sidebar toggle, the brand, Back/Forward and Search.
+   * A detached window keeps its own narrower bar.
+   */
+  spansWindow?: boolean;
+  searchActive?: boolean;
+  onSearch?: () => void;
   canGoBack?: boolean;
   canGoForward?: boolean;
   onGoBack?: () => void;
@@ -174,9 +184,10 @@ type Props = {
   onOpenNotes?: () => void;
   onClose: (id: string) => void;
   onCloseMany: (ids: string[], fallbackId: string) => void;
-  /** Closes every tab whose sessions are all idle; `idleTabCount` drives the disabled state. */
+  /** Closes every tab whose sessions are all idle; `countIdleTabs` drives the disabled state. */
   onCloseIdleTabs?: () => void;
-  idleTabCount?: number;
+  /** Read only while the tab context menu is open, so the title bar never counts while idle. */
+  countIdleTabs?: () => number;
   onArchiveTab?: (id: string) => void;
   onDeleteTab?: (id: string) => void;
   onReorder: (ids: string[], movedId?: string) => void;
@@ -329,7 +340,7 @@ function withTabMoveItems(
       kind: "item",
       id: TAB_MOVE_LEFT_ID,
       get label() {
-        return t("Move Left");
+        return t("Move left");
       },
       disabled: index === 0,
     },
@@ -337,7 +348,7 @@ function withTabMoveItems(
       kind: "item",
       id: TAB_MOVE_RIGHT_ID,
       get label() {
-        return t("Move Right");
+        return t("Move right");
       },
       disabled: index === count - 1,
     },
@@ -373,13 +384,14 @@ function TitleTabItem({
   itemRef?: (el: HTMLDivElement | null) => void;
 }) {
   const t = useT();
-  const { headline, meta, tooltip } = buildTabCopy(tab, t("New session"), t);
+  const copy = buildTabCopy(tab, t("New session"), t);
+  const { headline, tooltip, meta } = copy;
   const fileIcon = tab.files[0];
-  const accessibleTooltip = [
-    tooltip,
+  const tooltipExtras = [
     ...(tab.previewSessionId || tab.previewFileId ? [t("Preview")] : []),
     ...((tab.doneHarnesses?.length ?? 0) > 0 ? [t("Response complete")] : []),
-  ].join(" · ");
+  ];
+  const accessibleTooltip = [tooltip, ...tooltipExtras].join(" · ");
 
   const setItemRef = sortable.setItemRef;
   const setNode = (el: HTMLDivElement | null) => {
@@ -424,7 +436,8 @@ function TitleTabItem({
         align="start"
         motion="none"
         type="button"
-        tooltip={accessibleTooltip}
+        tooltip={tooltip}
+        tooltipDetails={tooltipExtras}
         aria-label={accessibleTooltip}
         aria-current={active ? "page" : undefined}
         data-tauri-drag-region="false"
@@ -477,11 +490,11 @@ function TitleTabItem({
             </TabLabel>
             {tab.pendingWindowMove || tab.movingWindow ? (
               <Tooltip
-                label={
+                details={[
                   tab.movingWindow
                     ? t("Opening new window…")
-                    : t("Moves to a new window when the response finishes")
-                }
+                    : t("Moves to a new window when the response finishes"),
+                ]}
               >
                 <Text
                   size="inherit"
@@ -494,7 +507,7 @@ function TitleTabItem({
                       : t("Moves to a new window when the response finishes")
                   }
                 >
-                  <AppWindow className="icon-xs" strokeWidth={1.75} />
+                  <Clock className="icon-xs" strokeWidth={1.75} />
                 </Text>
               </Tooltip>
             ) : null}
@@ -509,7 +522,7 @@ function TitleTabItem({
               size="caption"
               tone="secondary"
               leading="tight"
-              className="hidden max-w-[45%] shrink-0 @min-[11rem]:block"
+              className="hidden min-w-0 shrink @min-[11rem]:block"
             >
               {meta}
             </TabLabel>
@@ -547,7 +560,8 @@ function TitleTabItem({
 
 function TabStripChevron({ side, onClick }: { side: "left" | "right"; onClick: () => void }) {
   useLocale();
-  const label = side === "left" ? "Scroll tabs left" : "Scroll tabs right";
+  const t = useT();
+  const label = side === "left" ? t("Scroll tabs left") : t("Scroll tabs right");
   const Icon = side === "left" ? ChevronLeft : ChevronRight;
   return (
     <Button
@@ -559,7 +573,7 @@ function TabStripChevron({ side, onClick }: { side: "left" | "right"; onClick: (
       data-tauri-drag-region="false"
       onPointerDown={(event) => event.stopPropagation()}
       onClick={onClick}
-      className={`absolute top-1/2 z-1 -translate-y-1/2 ${side === "left" ? "left-1" : "right-1"}`}
+      className="shrink-0"
     >
       <Icon className="icon-sm" strokeWidth={1.75} />
     </Button>
@@ -595,7 +609,7 @@ export function IconButton({
       variant="ghost"
       motion="none"
       type="button"
-      aria-pressed={active || accent}
+      pressed={active ?? accent}
       aria-disabled={disabled}
       data-tauri-drag-region="false"
       onClick={() => {
@@ -649,14 +663,7 @@ function AppMenuButton() {
         type="button"
         aria-haspopup="menu"
         data-tauri-drag-region="false"
-        onClick={(event) => {
-          const rect = event.currentTarget.getBoundingClientRect();
-          window.dispatchEvent(
-            new CustomEvent(APP_MENU_TOGGLE_EVENT, {
-              detail: { x: rect.left, y: rect.bottom + 2 },
-            }),
-          );
-        }}
+        onClick={(event) => toggleAppMenuAt(event.currentTarget)}
       >
         <Menu className="icon-sm" strokeWidth={1.75} aria-hidden="true" />
       </Button>
@@ -674,7 +681,6 @@ export function TabVisitNav({
   onGoForward,
   onTogglePanel,
   panelActive = false,
-  panelLabel = "Toggle Projects",
 }: {
   canGoBack?: boolean;
   canGoForward?: boolean;
@@ -682,7 +688,6 @@ export function TabVisitNav({
   onGoForward?: () => void;
   onTogglePanel?: () => void;
   panelActive?: boolean;
-  panelLabel?: string;
 }) {
   const t = useT();
   return (
@@ -700,7 +705,7 @@ export function TabVisitNav({
       </IconButton>
       {onTogglePanel ? (
         <IconButton
-          label={t(panelLabel)}
+          label={t("Toggle sidebar")}
           command="App: Toggle Sidebar"
           active={panelActive}
           onClick={onTogglePanel}
@@ -712,7 +717,10 @@ export function TabVisitNav({
   );
 }
 
-/** Back + rail toggle for overlay surfaces when the project rail is closed. */
+/**
+ * Back + rail toggle for overlay surfaces when the project rail is closed. Below a title bar
+ * that spans the window it renders nothing: that bar already holds both.
+ */
 export function OverlayNav({
   onBack,
   onToggleSidebar,
@@ -721,7 +729,9 @@ export function OverlayNav({
   onToggleSidebar?: () => void;
 }) {
   const t = useT();
+  const titleBarAbove = useContext(WindowTitleBarAbove);
   const navigation = useContext(ToolNavigationContext)?.history;
+  if (titleBarAbove) return null;
   if (navigation)
     return (
       <TabVisitNav
@@ -742,8 +752,9 @@ export function OverlayNav({
       ) : null}
       {onToggleSidebar ? (
         <IconButton
-          label={t("Toggle Sidebar")}
+          label={t("Toggle sidebar")}
           command="App: Toggle Sidebar"
+          active={false}
           onClick={onToggleSidebar}
         >
           <PanelLeft className="icon-sm" strokeWidth={1.75} />
@@ -778,7 +789,9 @@ function TitleBarComponent({
   cwd,
   projectRailOpen = true,
   sessionSidebarOpen = true,
-  compactRail = false,
+  spansWindow = false,
+  searchActive = false,
+  onSearch,
   canGoBack = false,
   canGoForward = false,
   onGoBack,
@@ -794,7 +807,7 @@ function TitleBarComponent({
   onClose,
   onCloseMany,
   onCloseIdleTabs,
-  idleTabCount,
+  countIdleTabs,
   onArchiveTab,
   onDeleteTab,
   onReorder,
@@ -829,7 +842,7 @@ function TitleBarComponent({
               {
                 kind: "item" as const,
                 id: "toggle-maximize",
-                label: t(layout.maximized ? "Restore panel layout" : "Maximize panel"),
+                label: layout.maximized ? t("Restore panel layout") : t("Maximize panel"),
                 shortcut: maximizeShortcut ?? undefined,
               },
             ]
@@ -944,10 +957,10 @@ function TitleBarComponent({
                 event,
                 tabId === activeId &&
                   tabs.find((tab) => tab.id === tabId)?.focusedPaneId === over.id
-                  ? t("Split {p0} with a new session", { p0: t(over.edge) })
+                  ? t("Split {p0} with a new session", { p0: paneEdgeLabel(over.edge, t) })
                   : over.edge === "center"
                     ? t("Add as pane tab")
-                    : t("Place {p0}", { p0: t(over.edge) }),
+                    : t("Place {p0}", { p0: paneEdgeLabel(over.edge, t) }),
               );
             return over != null || !overStrip;
           },
@@ -1015,7 +1028,7 @@ function TitleBarComponent({
   const { tabOverflow, scrollTabsBy, activeTabRef } = useTabStripScroll({
     tabStripRef,
     activeId,
-    tabs,
+    tabCount: displayed.filter((entry) => !entry.opening).length,
     dragging: Boolean(sortable.draggingId),
   });
   const setActiveTabNode = (node: HTMLDivElement | null) => {
@@ -1054,7 +1067,7 @@ function TitleBarComponent({
           t,
           detached,
           closeShortcut,
-          idleTabCount,
+          countIdleTabs,
           hasReturnTabToMain: Boolean(onReturnTabToMain),
           hasMoveToNewWindow: Boolean(onMoveToNewWindow),
           hasCloseIdleTabs: Boolean(onCloseIdleTabs),
@@ -1197,42 +1210,52 @@ function TitleBarComponent({
     <header
       {...surfaceAttributes(
         { frame: "pane", edge: "bottom" },
-        `bycoda-titlebar flex h-9 shrink-0 select-none items-stretch${compactRail ? " body-glass" : ""}`,
+        `bycoda-titlebar flex h-9 shrink-0 select-none items-stretch${spansWindow ? " body-glass" : ""}`,
       )}
       // The row is one compact control plus 4px above and below, so it grows with
       // the density and UI-scale setting instead of clipping its controls at 36px.
       style={TITLEBAR_HEIGHT_STYLE}
       data-tauri-drag-region="deep"
     >
-      {!IS_MAC ? <AppMenuButton /> : null}
-      {compactRail ? (
+      {spansWindow ? (
+        // One fixed order on every platform and in every rail state. The toggle comes before
+        // the brand because the wordmark shows only while the rail is expanded: placed after
+        // it, the toggle would move under the pointer on every click.
         <div
-          data-compact-title-nav
-          // Native traffic lights occupy 64px plus 6px clearance.
-          style={
-            IS_MAC
-              ? ({ "--mac-traffic-lights-reserve": "calc(4rem + 0.375rem)" } as React.CSSProperties)
-              : undefined
-          }
-          className={`flex shrink-0 items-center ${IS_MAC ? "ps-(--mac-traffic-lights-reserve)" : "ps-1.5"}`}
+          data-title-lead
+          className={`flex shrink-0 items-center gap-1 pe-1 ${IS_MAC ? "" : "ps-1.5"}`}
         >
+          <WindowChromeInset />
+          <IconButton
+            label={t("Toggle sidebar")}
+            command="App: Toggle Sidebar"
+            active={projectRailOpen}
+            onClick={onToggleSidebar}
+          >
+            <PanelLeft className="icon-sm" strokeWidth={1.75} />
+          </IconButton>
+          <TitleBarBrand wordmark={projectRailOpen} />
           <TabVisitNav
             canGoBack={canGoBack}
             canGoForward={canGoForward}
             onGoBack={onGoBack}
             onGoForward={onGoForward}
           />
+          {onSearch ? <TitleBarSearch active={searchActive} onClick={onSearch} /> : null}
         </div>
+      ) : !IS_MAC ? (
+        <AppMenuButton />
       ) : null}
-      {/* Both the rail and the sidebar step aside without a project, so the
-          title bar takes over the traffic lights and the rail toggle. */}
-      {projectless && railClosed && !compactRail ? (
+      {/* A detached window has no rail: without a project its title bar takes over the
+          traffic lights and the rail toggle. */}
+      {projectless && railClosed && !spansWindow ? (
         <>
           <WindowChromeInset />
           <div className="flex shrink-0 items-center px-1.5">
             <IconButton
-              label={t("Toggle Sidebar")}
+              label={t("Toggle sidebar")}
               command="App: Toggle Sidebar"
+              active={projectRailOpen}
               onClick={onToggleSidebar}
             >
               <PanelLeft className="icon-sm" strokeWidth={1.75} />
@@ -1242,11 +1265,12 @@ function TitleBarComponent({
       ) : null}
       {!sessionSidebarOpen && !projectless && onToggleSessionSidebar ? (
         <>
-          <WindowChromeInset active={railClosed && !compactRail} />
+          <WindowChromeInset active={railClosed && !spansWindow} />
           <div className="flex shrink-0 items-center px-1.5">
             <IconButton
               label={t("Toggle Session Sidebar")}
               command="App: Toggle Session Sidebar"
+              active={sessionSidebarOpen}
               onClick={onToggleSessionSidebar}
             >
               <PanelRight className="icon-sm" strokeWidth={1.75} />
@@ -1261,19 +1285,7 @@ function TitleBarComponent({
           placement="below"
           onCwdChange={onSelectProject}
           onNewTerminal={onNewTerminal}
-          buttonClassName="flex h-full min-w-0 max-w-64 shrink items-center gap-2 px-6 text-left"
-        >
-          <Text
-            size="body"
-            tone="secondary"
-            weight="medium"
-            leading="tight"
-            truncate
-            className="min-w-0"
-          >
-            {t("No project")}
-          </Text>
-        </CwdPicker>
+        />
       ) : null}
 
       <div
@@ -1286,7 +1298,9 @@ function TitleBarComponent({
         )}
       >
         <div
-          className="relative h-full min-w-0 flex-1 overflow-hidden"
+          // The chevrons are flex siblings of the strip, never an overlay: a tab or its
+          // close button can not sit underneath one.
+          className="flex h-full min-w-0 flex-1 items-center gap-0.5 overflow-hidden px-0.5"
           onWheel={(event) => {
             const el = tabStripRef.current;
             if (!el || el.scrollWidth <= el.clientWidth) return;
@@ -1306,7 +1320,7 @@ function TitleBarComponent({
             scrollbar="hidden"
             ref={setTabStripRef}
             data-title-tab-strip
-            className="flex h-full min-w-0 cursor-default items-center gap-0.5 overscroll-none pl-1.5 pr-2.5"
+            className="flex h-full min-w-0 flex-1 cursor-default items-center gap-0.5 overscroll-none pl-1 pr-2"
           >
             {displayed.map((entry) => {
               const tab = entry.item;
@@ -1393,7 +1407,7 @@ function TitleBarComponent({
               "Return all sessions to the main window; running responses finish before moving",
             )}
           >
-            <AppWindow className="icon-md" aria-hidden />
+            <Undo2 className="icon-md" aria-hidden />
           </Button>
         ) : null}
         <TitleBarActionsSlot />
@@ -1415,7 +1429,9 @@ function TitleBarComponent({
           y={tabMenu.y}
           width={244}
           items={contextMenuItems}
-          ariaLabel={`Tab actions for ${buildTabCopy(contextTab, t("New session"), t).headline}`}
+          ariaLabel={t("Tab actions for {p0}", {
+            p0: buildTabCopy(contextTab, t("New session"), t).headline,
+          })}
           onPick={onPickTabMenu}
           onClose={() => setTabMenu(null)}
         />

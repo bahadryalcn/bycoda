@@ -2,32 +2,35 @@ import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useEffect, useRef } from "react";
 import { X } from "../../../shared/ui/icons";
-import { Stepper } from "../../../shared/ui/Stepper";
 import { LiveText } from "../../../shared/ui/LiveText";
 import type { TooltipRenderProps } from "react-joyride";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
+import { tourMascotPose, type TourMascotPose } from "../model/tourMascot";
+import wave from "../../../assets/onboarding/tour/wave.webp";
+import point from "../../../assets/onboarding/tour/point.webp";
+import think from "../../../assets/onboarding/tour/think.webp";
+import typing from "../../../assets/onboarding/tour/type.webp";
+import inspect from "../../../assets/onboarding/tour/inspect.webp";
+import cheer from "../../../assets/onboarding/tour/cheer.webp";
 
-const guides = [
-  { name: "Obi-Wan Kenobi", asset: "obi-wan" },
-  { name: "Leia Organa", asset: "leia" },
-  { name: "Yoda", asset: "yoda" },
-  { name: "Luke Skywalker", asset: "luke" },
-  { name: "Chewbacca", asset: "chewbacca" },
-];
+const MASCOT: Record<TourMascotPose, string> = {
+  wave,
+  point,
+  think,
+  type: typing,
+  inspect,
+  cheer,
+};
 
 /**
- * Joyride owns positioning, focus management and tour actions; Arc owns the controls.
- * Steps flagged `data: { compact: true }` (first-run and "What's new" tours) get the compact card.
+ * The one tour card for every spotlight tour (first-run, "What's new" and the Guide's quick
+ * tours). Joyride owns positioning, focus management and tour actions; Arc owns the controls.
+ * One short step: progress, title, a sentence, an optional Try it (in `content`), Skip/Back/Next.
  */
-export function UsageGuideTooltip(props: TooltipRenderProps) {
-  return props.step.data?.compact ? <TourCard {...props} /> : <UsageGuidePanel {...props} />;
-}
-
-/** One short step: progress, title, a sentence, an optional Try it (in `content`), Skip/Back/Next. */
-function TourCard({
+export function UsageGuideTooltip({
   backProps,
   closeProps,
   index,
@@ -41,6 +44,7 @@ function TourCard({
   const card = useRef<HTMLElement>(null);
   // Joyride traps focus in the card and lands on the primary action when it opens. A Try it
   // button disappears with its step, so focus is put back on the main action for the next card.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Moves DOM focus to the new card's primary action after the step changes.
   useEffect(() => {
     const root = card.current;
     if (!root || root.contains(document.activeElement)) return;
@@ -83,25 +87,61 @@ function TourCard({
         </Button>
       </Text>
       <ScrollArea gutter="stable" className="usage-guide-scroll" key={index}>
-        <Heading size="page" level={2} id="usage-guide-title" className="usage-guide-tour-title">
-          {step.title}
-        </Heading>
-        {step.content}
+        <div className="usage-guide-card-body">
+          <img
+            src={
+              MASCOT[
+                tourMascotPose(
+                  (step.data as { mascot?: TourMascotPose } | undefined)?.mascot,
+                  index,
+                  isLastStep,
+                )
+              ]
+            }
+            alt=""
+            width={64}
+            height={112}
+            draggable={false}
+            className="usage-guide-mascot"
+          />
+          <div className="usage-guide-card-text">
+            <Heading
+              size="page"
+              level={2}
+              id="usage-guide-title"
+              className="usage-guide-tour-title"
+            >
+              {step.title}
+            </Heading>
+            {step.content}
+          </div>
+        </div>
       </ScrollArea>
       <footer className="usage-guide-footer">
         {size > 1 && !isLastStep ? (
-          <Button {...skipProps} variant="ghost" size="sm" className="usage-guide-skip">
+          <Button
+            {...withoutTitle(skipProps)}
+            variant="ghost"
+            size="sm"
+            className="usage-guide-skip"
+          >
             {t("Skip tour")}
           </Button>
         ) : null}
         <div className="usage-guide-actions">
           {size > 1 ? (
-            <Button {...backProps} variant="secondary" size="sm" disabled={index === 0}>
+            <Button
+              {...withoutTitle(backProps)}
+              variant="secondary"
+              size="sm"
+              disabled={index === 0}
+              disabledReason={t("This is the first step.")}
+            >
               {t("Back")}
             </Button>
           ) : null}
-          <Button {...primaryProps} size="sm">
-            {t(isLastStep ? "Done" : "Next")}
+          <Button {...withoutTitle(primaryProps)} size="sm">
+            {isLastStep ? t("Done") : t("Next")}
           </Button>
         </div>
       </footer>
@@ -109,103 +149,11 @@ function TourCard({
   );
 }
 
-function UsageGuidePanel({
-  backProps,
-  closeProps,
-  index,
-  isLastStep,
-  primaryProps,
-  skipProps,
-  size,
-  step,
-  tooltipProps,
-}: TooltipRenderProps) {
-  const guide = guides[index % guides.length];
-  return (
-    <Text
-      as="section"
-      size="body"
-      tone="primary"
-      leading="normal"
-      {...tooltipProps}
-      {...surfaceAttributes(
-        { variant: "floating", frame: "card", radius: "panel" },
-        "bycoda-arc usage-guide-panel",
-      )}
-      data-joyride-step={index}
-      aria-labelledby="usage-guide-title"
-      aria-describedby="usage-guide-description"
-    >
-      <Text
-        as="header"
-        size="caption"
-        tone="secondary"
-        leading="normal"
-        {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "usage-guide-toolbar")}
-      >
-        <span>{t("Usage guide")}</span>
-        <LiveText
-          className="usage-guide-progress"
-          text={t("Step {p0} of {p1}", { p0: index + 1, p1: size })}
-        />
-        <Button
-          {...closeProps}
-          variant="ghost"
-          iconOnly
-          label={closeProps["aria-label"] ?? closeProps.title ?? t("Close")}
-        >
-          <X className="icon-lg" aria-hidden="true" />
-        </Button>
-      </Text>
-      <ScrollArea gutter="stable" className="usage-guide-scroll" key={index}>
-        <div className="usage-guide-hero">
-          <div className="usage-guide-intro">
-            <Heading size="page" level={2} id="usage-guide-title">
-              {step.title}
-            </Heading>
-            <Text size="caption" tone="muted" leading="inherit" className="usage-guide-companion">
-              {guide.name}
-            </Text>
-          </div>
-          <img
-            className="usage-guide-character"
-            src={`/crew/star-wars/${guide.asset}.svg`}
-            alt=""
-            width={104}
-            height={144}
-          />
-        </div>
-        {step.content}
-      </ScrollArea>
-      <footer {...surfaceAttributes({ frame: "pane", edge: "top" }, "usage-guide-footer")}>
-        <Stepper
-          label={t("Usage guide")}
-          steps={Array.from({ length: size }, (_, position) => ({
-            id: String(position),
-            label: t("Step {p0} of {p1}", { p0: position + 1, p1: size }),
-          }))}
-          current={index}
-          compact
-        />
-        <div className="usage-guide-actions">
-          {size > 1 && !isLastStep ? (
-            <Button
-              {...skipProps}
-              variant="ghost"
-              aria-label={t("Skip tour")}
-              className="usage-guide-skip"
-            >
-              {t("Skip tour")}
-            </Button>
-          ) : null}
-          {size > 1 ? (
-            <Button {...backProps} variant="secondary" disabled={index === 0}>
-              {t("← Back")}
-            </Button>
-          ) : null}
-          <Button {...primaryProps}>{t(isLastStep ? "Done" : "Continue →")}</Button>
-        </div>
-      </footer>
-    </Text>
-  );
+/**
+ * Joyride puts a `title` on its action props; the shared `Button` turns `title` into a tooltip
+ * that only repeats the visible label, so the tour drops it.
+ */
+function withoutTitle<T extends { title?: string }>(props: T): Omit<T, "title"> {
+  const { title: _title, ...rest } = props;
+  return rest;
 }

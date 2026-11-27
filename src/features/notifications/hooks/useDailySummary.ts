@@ -12,7 +12,11 @@ import {
   saveDailySummarySentAt,
 } from "../model/dailySummarySettings";
 import { withActiveYesterday } from "../model/dailySummaryActive";
-import { loadNotificationsEnabled, notifyDailySummary } from "../model/notifications";
+import {
+  canNotifyDailySummary,
+  loadNotificationsEnabled,
+  notifyDailySummary,
+} from "../model/notifications";
 import { isLeadWindow } from "./useBackgroundNotifications";
 
 const POLL_MS = 60_000;
@@ -24,6 +28,8 @@ type SummaryState = {
   // A dispatched summary whose durable records did not all stick. Retried on
   // every poll so a restart does not resend it or open an older cache.
   unsaved: { sentAt: boolean; summary: DailySummary | null } | null;
+  // The gathered summary whose delivery has not succeeded yet.
+  prepared: { summary: DailySummary; cached: boolean; headline: string; at: number } | null;
 };
 
 function reconcile(state: SummaryState) {
@@ -52,21 +58,31 @@ async function checkDailySummary(state: SummaryState, machineId: string | undefi
       !(await isLeadWindow())
     )
       return;
-    if (state.cancelled) return;
-    const summary = await gatherDailySummary(dailySummarySince(now, lastSentAt), now);
-    if (state.cancelled) return;
-    const cached = saveStoredDailySummary(summary) !== false;
-    const totals = machineId ? await getActivityTotals(machineId) : null;
-    if (state.cancelled) return;
-    const headline = withActiveYesterday(
-      summaryHeadline(summary),
-      totals ? yesterdayMinutes(totals) : null,
-      formatActiveMinutes,
-      (value) => t("{p0} active yesterday", { p0: value }),
-    );
-    if (await notifyDailySummary(headline)) {
-      state.deliveredAt = now;
-      const sentSaved = saveDailySummarySentAt(now);
+    // The notification gate (focused window, denied permission) is checked
+    // before any gathering; the summary stays due and is gathered fresh once
+    // it can actually be announced.
+    if (!canNotifyDailySummary() || state.cancelled) return;
+    if (!state.prepared) {
+      const summary = await gatherDailySummary(dailySummarySince(now, lastSentAt), now);
+      if (state.cancelled) return;
+      const cached = saveStoredDailySummary(summary) !== false;
+      const totals = machineId ? await getActivityTotals(machineId) : null;
+      if (state.cancelled) return;
+      const headline = withActiveYesterday(
+        summaryHeadline(summary),
+        totals ? yesterdayMinutes(totals) : null,
+        formatActiveMinutes,
+        (value) => t("{p0} active yesterday", { p0: value }),
+      );
+      state.prepared = { summary, cached, headline, at: now };
+    }
+    // A failed delivery retries this gathered summary instead of probing every
+    // machine again on each poll.
+    const { summary, cached, headline, at } = state.prepared;
+    if (await notifyDailySummary(headline, at)) {
+      state.prepared = null;
+      state.deliveredAt = at;
+      const sentSaved = saveDailySummarySentAt(at);
       if (!sentSaved || !cached) {
         state.unsaved = { sentAt: !sentSaved, summary: cached ? null : summary };
       }
@@ -90,6 +106,7 @@ export function useDailySummary(machineId?: string) {
       running: false,
       deliveredAt: null,
       unsaved: null,
+      prepared: null,
     };
     void checkDailySummary(state, machineId);
     const timer = setInterval(() => void checkDailySummary(state, machineId), POLL_MS);

@@ -35,17 +35,12 @@ for (const theme of ["light", "dark"])
         }
         return panel.screenshot({ path: join(output, `${theme}-${width}-${name}.png`) });
       };
+      // The phone-style call screen drops the input meter: the voice core paints the level.
       await page.evaluate(() => ((window as any).fixtureVoice.audioLevel.current = 0));
-      await expect(panel.getByRole("meter", { name: "Input" })).toHaveAttribute(
-        "aria-valuenow",
-        "0",
-      );
+      await expect(panel.getByRole("meter", { name: "Input" })).toHaveCount(0);
+      await expect(panel.locator('canvas[data-call-art="orb"]')).toBeVisible();
       await capture("full-silent");
       await page.evaluate(() => ((window as any).fixtureVoice.audioLevel.current = 0.8));
-      await expect(panel.getByRole("meter", { name: "Input" })).toHaveAttribute(
-        "aria-valuenow",
-        "80",
-      );
       await capture("full-hearing");
       await panel.getByRole("button", { name: "Reply when I pause", exact: true }).click();
       await expect(page.getByRole("menu")).toHaveCSS("opacity", "1");
@@ -65,7 +60,8 @@ for (const theme of ["light", "dark"])
       await expect(finish).toBeEnabled();
       await page.getByRole("menuitemcheckbox", { name: "Mute speaker", exact: true }).click();
       expect(await page.evaluate(() => (window as any).fixtureVoice.speakerMuted)).toBe(true);
-      await panel.getByRole("button", { name: "Pause mic", exact: true }).click();
+      await panel.getByRole("button", { name: "Mute microphone", exact: true }).click();
+      await expect(panel).toHaveAttribute("data-voice-state", "connected");
       await more.click();
       await expect(finish).toBeDisabled();
       await page.keyboard.press("Escape");
@@ -73,15 +69,12 @@ for (const theme of ["light", "dark"])
       expect(await page.evaluate(() => (window as any).fixtureVoice.connects)).toBe(1);
       expect(await panel.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
       await page.emulateMedia({ reducedMotion: "reduce" });
-      await panel.getByRole("button", { name: "Resume", exact: true }).click();
+      await panel.getByRole("button", { name: "Mute microphone", exact: true }).click();
       await expect(panel).toHaveAttribute("data-voice-state", "listening");
       await capture("compact-reduced-motion");
       await panel.getByRole("button", { name: "Expand voice companion", exact: true }).click();
       await page.evaluate(() => ((window as any).fixtureVoice.audioLevel.current = 0.8));
-      await expect(panel.getByRole("meter", { name: "Input" })).toHaveAttribute(
-        "aria-valuenow",
-        "80",
-      );
+      await expect(panel.getByRole("meter", { name: "Input" })).toHaveCount(0);
       await page.emulateMedia({ reducedMotion: "no-preference" });
       await panel.getByRole("button", { name: "Disconnect voice", exact: true }).click();
       expect(await page.evaluate(() => (window as any).fixtureVoice.stops)).toBe(0);
@@ -102,8 +95,10 @@ for (const theme of ["light", "dark"])
         await frame.locator("main").evaluate((node) => node.scrollWidth <= window.innerWidth),
       ).toBe(true);
       await proof.screenshot({ path: join(output, `${theme}-${width}-floating-compact.png`) });
-      await frame.getByRole("button", { name: "Turn ending", exact: true }).click();
-      await expect(page.getByRole("menu", { name: "Synthetic turn ending menu" })).toBeVisible();
+      const floatingMore = frame.getByRole("button", { name: "More voice options", exact: true });
+      const nativeMenu = page.getByRole("menu", { name: "Synthetic turn ending menu" });
+      await floatingMore.click();
+      await expect(nativeMenu).toBeVisible();
       await proof.screenshot({ path: join(output, `${theme}-${width}-floating-menu.png`) });
       await page.getByRole("button", { name: "Dismiss synthetic menu", exact: true }).click();
       await frame.getByRole("button", { name: "Mute speaker", exact: true }).click();
@@ -116,7 +111,11 @@ for (const theme of ["light", "dark"])
             ),
           ),
       ).toBe(true);
-      await frame.getByRole("button", { name: "Expand voice companion", exact: true }).click();
+      await floatingMore.click();
+      await nativeMenu
+        .getByRole("menuitem", { name: "Expand voice companion", exact: true })
+        .click();
+      await expect(frame.locator("main")).not.toHaveAttribute("data-compact");
       await proof.screenshot({ path: join(output, `${theme}-${width}-floating-full.png`) });
       await frame.locator("body").evaluate(() =>
         (window as any).fixtureOverlay.emit({
@@ -139,7 +138,8 @@ for (const theme of ["light", "dark"])
       await expect(frame.getByRole("dialog", { name: "Voice actions" })).toBeVisible();
       await expect(frame.getByText("Running", { exact: true })).toBeVisible();
       await proof.screenshot({ path: join(output, `${theme}-${width}-floating-activity.png`) });
-      await frame.getByRole("button", { name: "Stop waiting", exact: true }).click();
+      // The accessible name carries the action: "Stop waiting for <details>".
+      await frame.getByRole("button", { name: /^Stop waiting for / }).click();
       expect(
         await frame
           .locator("body")
@@ -156,30 +156,32 @@ for (const theme of ["light", "dark"])
       );
       await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
       await panel.getByRole("button", { name: "Start voice", exact: true }).click();
-      await panel.getByRole("button", { name: "Pause mic", exact: true }).click();
+      await panel.getByRole("button", { name: "Mute microphone", exact: true }).click();
       await expect(panel.getByText(/Hold .* to talk/)).toBeVisible();
       await expect(panel.getByText(/Hold .* to talk/)).not.toContainText("{");
-      await expect(panel.getByText(/Hold .* to talk/)).toContainText("J");
+      await expect(panel.getByText(/Hold .* to talk/)).toContainText("Q");
       await capture("push-to-talk-ready");
       await page.keyboard.down("Control");
       await page.keyboard.down("Shift");
-      await page.keyboard.down("j");
+      await page.keyboard.down("q");
       await expect
         .poll(() => page.evaluate(() => (window as any).fixtureVoice.pushToTalkStarts))
         .toBe(1);
       await capture("push-to-talk-held");
-      await page.keyboard.up("j");
+      await page.keyboard.up("q");
       await page.keyboard.up("Shift");
       await page.keyboard.up("Control");
       expect(await page.evaluate(() => (window as any).fixtureVoice.pushToTalkEnds)).toBe(1);
-      await expect(panel.getByRole("button", { name: "Resume", exact: true })).toBeVisible();
+      await expect(
+        panel.getByRole("button", { name: "Mute microphone", exact: true }),
+      ).toHaveAttribute("aria-pressed", "true");
       await page.evaluate(() => (window as any).fixtureVoice.speech("List projects"));
       // Running voice actions collapse into one trigger that opens the activity list.
       await panel.getByRole("button", { name: /Taking action/ }).click();
       const actions = page.getByRole("dialog", { name: "Voice actions" });
       await expect(actions.getByText("Running", { exact: true })).toBeVisible();
       await capture("activity-running");
-      await actions.getByRole("button", { name: "Stop waiting", exact: true }).click();
+      await actions.getByRole("button", { name: /^Stop waiting for / }).click();
       await expect(
         page.getByText("Result unknown. Check before retrying.", { exact: true }),
       ).toBeVisible();
@@ -192,3 +194,34 @@ for (const theme of ["light", "dark"])
       await expect(actions.getByText("Done", { exact: true })).toBeVisible();
       await capture("activity-returned");
     });
+
+// The Assistant owns identity. An old device persona may still sit in storage; the companion and
+// Voice settings follow the Host profile and open the Assistant for changes.
+test("companion identity follows the Assistant profile, not the legacy device persona", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "bycoda.voice.persona",
+      JSON.stringify({ status: "configured", name: "Legacy name", rules: "Legacy owner rule" }),
+    );
+    (window as any).assistantNavigation = [];
+    window.addEventListener("bycoda:open-assistant", (event) =>
+      (window as any).assistantNavigation.push((event as CustomEvent).detail),
+    );
+  });
+  await page.goto("/tests/browser/voice/voice-visual-styles.html?theme=dark");
+  await expect(page.locator('[data-setting-id="voice-persona"]')).toHaveCount(0);
+  await page.getByRole("button", { name: "Assistant settings", exact: true }).click();
+  expect(await page.evaluate(() => (window as any).assistantNavigation)).toEqual([
+    { tab: "settings" },
+  ]);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+  await expect(
+    page
+      .locator("section[data-voice-state]")
+      .getByRole("heading", { name: "Assistant Arif", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Legacy name")).toHaveCount(0);
+});

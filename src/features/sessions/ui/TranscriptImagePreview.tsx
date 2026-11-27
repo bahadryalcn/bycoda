@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
@@ -6,7 +7,6 @@ import { Check, Copy, ExternalLink, FolderOpen } from "../../../shared/ui/icons"
 import { ImageLightbox } from "../../../shared/ui/ImageLightbox";
 import { MediaToolbarButton } from "../../../shared/ui/MediaToolbar";
 import { Modal } from "../../../shared/ui/Modal";
-import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { lazySurface } from "../../../shared/ui/lazySurface";
@@ -17,7 +17,7 @@ import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
 import { resolveFileOpenRequest } from "../../files/public/fileIndex";
 import { sniffDocumentImageMime } from "../../files/public/filePreviewMetadata";
 import { mediaKind } from "../../files/public/mediaPreview";
-import { REVEAL_LABEL } from "../../files/public/explorerMenuItems";
+import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 
 /** Image formats a transcript file click previews in a dialog before any tab opens. */
 const PREVIEW_IMAGE = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp)$/i;
@@ -99,8 +99,7 @@ function TranscriptVideoPreview({
         if (!cancelled) setSource({ path: resolved });
       },
       (reason: unknown) => {
-        if (!cancelled)
-          setSource({ error: reason instanceof Error ? reason.message : String(reason) });
+        if (!cancelled) setSource({ error: errorText(reason) });
       },
     );
     return () => {
@@ -115,7 +114,7 @@ function TranscriptVideoPreview({
       size="xl"
       fitViewport
       expandable
-      className="h-[min(760px,85dvh)]"
+      height="tall"
       toolbar={
         <MediaToolbarButton
           label={t("Open in new tab")}
@@ -134,19 +133,18 @@ function TranscriptVideoPreview({
         ) : "path" in source ? (
           <MediaView path={source.path} />
         ) : (
-          <div className="flex flex-col gap-2 p-3">
-            <InlineError>
-              {t("Could not read {p0}: {p1}", { p0: basename(path), p1: source.error })}
-            </InlineError>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setSource(undefined);
-                setAttempt((value) => value + 1);
+          <div className="p-3">
+            <InlineError
+              retry={{
+                label: t("Retry"),
+                onRetry: () => {
+                  setSource(undefined);
+                  setAttempt((value) => value + 1);
+                },
               }}
             >
-              {t("Retry")}
-            </Button>
+              {t("Could not read {p0}: {p1}", { p0: basename(path), p1: source.error })}
+            </InlineError>
           </div>
         )}
       </div>
@@ -184,7 +182,7 @@ async function loadTranscriptImage(
     setState({ status: "ready", url: load.created });
   } catch (reason) {
     if (load.cancelled) return;
-    const detail = reason instanceof Error ? reason.message : String(reason);
+    const detail = errorText(reason);
     setState({ status: "error", file, detail });
   }
 }
@@ -223,7 +221,11 @@ export function TranscriptImagePreview({
   const remote = resolved.startsWith(REMOTE_PATH_PREFIX) || !!cwd?.startsWith(REMOTE_PATH_PREFIX);
   const localRevealPath = useLocalExplorerPath(resolved);
   const canReveal = !remote || (resolved.startsWith(REMOTE_PATH_PREFIX) && !!localRevealPath);
-  const revealLabel = t(REVEAL_LABEL);
+  const revealLabel = IS_MAC
+    ? t("Reveal in Finder")
+    : IS_WIN
+      ? t("Reveal in File Explorer")
+      : t("Open containing folder");
   const name = basename(path);
 
   const actions = (

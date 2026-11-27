@@ -1,15 +1,18 @@
 import { Sheet } from "../../../shared/ui/Sheet";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
-import { Badge } from "../../../shared/ui/Badge";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { Disclosure } from "../../../shared/ui/Disclosure";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Tooltip } from "../../../shared/ui/Tooltip";
+import { Check, KeyRound } from "../../../shared/ui/icons";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { ModalActions } from "../../../shared/ui/Modal";
 import { SearchInput } from "../../../shared/ui/SearchInput";
@@ -18,6 +21,7 @@ import type { ServerRecord } from "../model/serverInventory";
 import { refreshServerInventory } from "../model/serverInventory";
 import {
   termiusDuplicate,
+  termiusText,
   termiusNeedsReview,
   type TermiusPreview,
   type TermiusOutcome,
@@ -37,7 +41,7 @@ export function TermiusImportDialog({
   const [profilePath, setProfilePath] = useState("");
   const [importKeys, setImportKeys] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  const [importMessage, setImportMessage] = useState<string>();
   const [outcome, setOutcome] = useState<TermiusOutcome>();
   const pending = useRef(false);
   const ticket = useRef<string | undefined>(undefined);
@@ -55,7 +59,7 @@ export function TermiusImportDialog({
     if (pending.current || (source === "path" && !profilePath.trim())) return;
     pending.current = true;
     setBusy(true);
-    setError(undefined);
+    setImportMessage(undefined);
     try {
       const profile =
         source === "folder"
@@ -90,9 +94,9 @@ export function TermiusImportDialog({
       );
     } catch (cause) {
       if (mounted.current)
-        setError(
+        setImportMessage(
           typeof cause === "string"
-            ? cause
+            ? termiusText(cause)
             : t("Could not read Termius. Close Termius and try again."),
         );
     } finally {
@@ -100,11 +104,18 @@ export function TermiusImportDialog({
       if (mounted.current) setBusy(false);
     }
   };
+  const scanDefaultLocation = useEffectEvent(() => {
+    void scan("automatic");
+  });
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- scans the external Termius store once when the dialog opens
+  useEffect(() => {
+    scanDefaultLocation();
+  }, []);
   const apply = async () => {
     if (pending.current || !preview || !selected.size) return;
     pending.current = true;
     setBusy(true);
-    setError(undefined);
+    setImportMessage(undefined);
     try {
       const result = await invoke<TermiusOutcome>("termius_import_apply", {
         ticket: preview.ticket,
@@ -119,8 +130,10 @@ export function TermiusImportDialog({
       }
     } catch (cause) {
       if (mounted.current)
-        setError(
-          typeof cause === "string" ? cause : t("Could not import Termius records. Try again."),
+        setImportMessage(
+          typeof cause === "string"
+            ? termiusText(cause)
+            : t("Could not import Termius records. Try again."),
         );
     } finally {
       pending.current = false;
@@ -143,7 +156,7 @@ export function TermiusImportDialog({
   return (
     <Sheet
       title={t("Import from Termius")}
-      size="48rem"
+      size="lg"
       onClose={() => {
         if (!pending.current) onClose();
       }}
@@ -153,7 +166,12 @@ export function TermiusImportDialog({
             {outcome ? t("Done") : t("Cancel")}
           </Button>
           {preview && !outcome ? (
-            <Button loading={busy} disabled={busy || !selected.size} onClick={() => void apply()}>
+            <Button
+              loading={busy}
+              disabled={busy || !selected.size}
+              disabledReason={selected.size ? undefined : t("Select at least one entry.")}
+              onClick={() => void apply()}
+            >
               {t("Import selected ({p0})", { p0: selected.size })}
             </Button>
           ) : null}
@@ -161,47 +179,49 @@ export function TermiusImportDialog({
       }
     >
       <div className="flex min-h-0 flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="secondary"
-            loading={busy && !preview}
-            disabled={busy}
-            onClick={() => void scan("automatic")}
-          >
-            {t("Scan this computer")}
-          </Button>
-          <Button variant="ghost" disabled={busy} onClick={() => void scan("folder")}>
-            {t("Choose profile folder")}
-          </Button>
-        </div>
-        <form
-          className="flex flex-wrap items-end gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void scan("path");
-          }}
-        >
-          <TextField
-            label={t("Termius profile path")}
-            fieldClassName="min-w-0 flex-1 basis-64"
-            value={profilePath}
-            onChange={(event) => setProfilePath(event.target.value)}
-            placeholder="~/Library/Application Support/Termius"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            disabled={busy}
-          />
-          <Button type="submit" variant="secondary" disabled={busy || !profilePath.trim()}>
-            {t("Scan profile folder")}
-          </Button>
-        </form>
-        {!preview ? (
-          <Text as="p" size="body" tone="muted">
-            {t("Read local Termius records without changing Termius data.")}
-          </Text>
+        {busy && !preview && !importMessage ? (
+          <LoadingText>{t("Scanning this computer…")}</LoadingText>
         ) : null}
-        {error ? <Alert tone="danger">{t(error)}</Alert> : null}
+        <Disclosure summary={t("Other location…")} size="sm" defaultOpen={!!importMessage}>
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="secondary" disabled={busy} onClick={() => void scan("automatic")}>
+                {t("Scan this computer")}
+              </Button>
+              <Button variant="ghost" disabled={busy} onClick={() => void scan("folder")}>
+                {t("Choose profile folder")}
+              </Button>
+            </div>
+            <form
+              className="flex flex-wrap items-end gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void scan("path");
+              }}
+            >
+              <TextField
+                label={t("Termius profile path")}
+                fieldClassName="min-w-0 flex-1 basis-64"
+                value={profilePath}
+                onChange={(event) => setProfilePath(event.target.value)}
+                placeholder="~/Library/Application Support/Termius"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                disabled={busy}
+              />
+              <Button
+                type="submit"
+                variant="secondary"
+                disabled={busy || !profilePath.trim()}
+                disabledReason={busy ? t("Wait for the current action to finish.") : undefined}
+              >
+                {t("Scan profile folder")}
+              </Button>
+            </form>
+          </div>
+        </Disclosure>
+        {importMessage ? <Alert tone="danger">{importMessage}</Alert> : null}
         {outcome ? (
           <Alert tone="success">
             {t("Imported {p0} servers. Skipped {p1} existing records. Saved {p2} SSH keys.", {
@@ -226,9 +246,6 @@ export function TermiusImportDialog({
                 size="body"
                 className="flex items-center gap-2"
               />
-              <Text tone="muted" role="status">
-                {t("{p0} of {p1} selected", { p0: selected.size, p1: preview.hosts.length })}
-              </Text>
             </div>
             <SearchInput
               value={query}
@@ -247,8 +264,18 @@ export function TermiusImportDialog({
                   <div key={host.sourceId} className="flex items-start gap-3 py-3">
                     <Checkbox
                       aria-label={t("Import {p0}", { p0: host.name })}
+                      aria-description={duplicate ? t("Already in Servers") : undefined}
                       className="mt-1 shrink-0"
                       disabled={busy || duplicate || review}
+                      disabledReason={
+                        busy
+                          ? t("Wait for the current action to finish.")
+                          : duplicate
+                            ? t("Already in Servers")
+                            : review
+                              ? t("Review this record in Termius before importing it.")
+                              : undefined
+                      }
                       checked={selected.has(host.sourceId)}
                       onChange={(event) => {
                         const checked = event.target.checked;
@@ -272,11 +299,13 @@ export function TermiusImportDialog({
                           {host.name}
                         </Text>
                         {duplicate ? (
-                          <Badge size="sm" tone="info">
-                            {t("Already in Servers")}
-                          </Badge>
+                          <Tooltip label={t("Already in Servers")}>
+                            <Check aria-hidden className="icon-sm" tone="success" />
+                          </Tooltip>
                         ) : host.hasKey ? (
-                          <Badge size="sm">{t("SSH key available")}</Badge>
+                          <Tooltip label={t("SSH key available")}>
+                            <KeyRound aria-hidden className="icon-sm" tone="muted" />
+                          </Tooltip>
                         ) : null}
                       </div>
                       <Text wrap="anywhere" as="p" tone="muted">
@@ -300,7 +329,7 @@ export function TermiusImportDialog({
                           className="mt-1 list-inside list-disc"
                         >
                           {host.warnings.map((warning, i) => (
-                            <li key={i}>{t(warning)}</li>
+                            <li key={i}>{termiusText(warning)}</li>
                           ))}
                         </Text>
                       ) : null}
@@ -327,18 +356,11 @@ export function TermiusImportDialog({
                 className="flex items-center gap-2"
               />
             ) : null}
-            <Text as="div" tone="muted">
-              <p>
-                {t(
-                  "Names, addresses, users, ports, groups and tags. Existing records are preserved.",
-                )}
-              </p>
-              {preview.warnings.map((warning, i) => (
-                <p key={i} className="mt-1">
-                  {t(warning)}
-                </p>
-              ))}
-            </Text>
+            {preview.warnings.map((warning, i) => (
+              <Alert key={i} tone="warning">
+                {termiusText(warning)}
+              </Alert>
+            ))}
           </>
         ) : null}
       </div>

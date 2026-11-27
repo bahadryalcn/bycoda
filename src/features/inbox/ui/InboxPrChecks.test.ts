@@ -81,19 +81,6 @@ const render = (element: React.ReactElement) => {
   return container;
 };
 
-/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
-async function tooltipText(element: HTMLElement): Promise<string> {
-  await act(async () => {
-    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
-    await new Promise((resolve) => setTimeout(resolve, 520));
-  });
-  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
-  await act(async () => {
-    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
-  });
-  return text;
-}
-
 const buttonByLabel = (label: string) =>
   container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
 const rowToggle = (name: string) =>
@@ -329,7 +316,7 @@ it("keeps expanded evidence while polling a pending job and shows new steps", as
   await act(async () => rowToggle("Windows")!.click());
   await act(async () =>
     Array.from(container.querySelectorAll("button"))
-      .find((button) => button.textContent?.includes("Show 1 more annotations"))!
+      .find((button) => button.textContent?.includes("Show 1 more annotation"))!
       .click(),
   );
   const steps = stepsDetails();
@@ -542,7 +529,9 @@ it("offers a retry after a load error and refreshes on demand", async () => {
       onRefresh,
     }),
   );
-  expect(failed.querySelector('[role="alert"]')?.textContent).toBe("rate limited");
+  expect(failed.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not load the checks.",
+  );
   const retry = buttonByLabel("Retry loading checks");
   expect(retry).not.toBeNull();
   await act(async () => {
@@ -575,7 +564,7 @@ it("marks kept results as out of date after a failed refresh", () => {
       onRefresh: () => {},
     }),
   );
-  expect(kept.querySelector('[role="alert"]')?.textContent).toContain("rate limited");
+  expect(kept.querySelector('[role="alert"]')?.textContent).not.toContain("rate limited");
   expect(kept.querySelector('[role="alert"]')?.textContent).toContain("out of date");
   expect(kept.textContent).toContain("ci/build");
 });
@@ -599,7 +588,6 @@ it("names the per-state counts on the tab for color-blind-safe reading", async (
   const button = tab.querySelector<HTMLButtonElement>('button[role="tab"]');
   expect(button?.getAttribute("aria-label")).toBe("Checks: 2 failed, 1 passed");
   expect(button?.getAttribute("title")).toBeNull();
-  expect(await tooltipText(button!)).toBe("Checks: 2 failed, 1 passed");
   expect(button?.textContent).toContain("Checks");
   expect(button?.textContent).toContain("2");
 
@@ -811,9 +799,10 @@ it("an allowed failure stays failed and the synthetic pipeline SHA shows separat
   );
   expect(markup.textContent).toContain("Optional checks failed");
   expect(markup.textContent).toContain("Failure allowed");
-  expect(markup.textContent).toContain("Pipeline commit");
-  expect(markup.textContent).toContain("merge-result");
-  expect(markup.textContent).toContain("source-head");
+  expect(markup.textContent).toContain("Pipeline commit merge-r, source commit source-");
+  expect(markup.textContent?.split("source-")).toHaveLength(2);
+  expect(markup.textContent).not.toContain("merge-result");
+  expect(markup.textContent).not.toContain("source-head");
   expect(markup.textContent).not.toContain("Checks passed");
   expect(markup.querySelector('[aria-label="Open ci/build check"]')).not.toBeNull();
 });

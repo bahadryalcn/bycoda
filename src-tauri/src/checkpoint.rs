@@ -12,7 +12,7 @@ use tauri::{AppHandle, Manager, State};
 use crate::fs::GitDiffStats;
 use crate::fs::{
     expand_home, git_checked, git_cmd, git_cmd_output, git_diff_files_for, git_output, path_to_js,
-    resolve_repo_path, GitChangedFile, GitDiffIndex, MAX_TEXT_FILE_BYTES,
+    resolve_repo_path, resolve_scratch_cwd, GitChangedFile, GitDiffIndex, MAX_TEXT_FILE_BYTES,
 };
 pub(crate) mod file_revert;
 pub(crate) mod turn;
@@ -156,12 +156,19 @@ impl CheckpointStore {
         deadline: Option<Instant>,
         operation: impl FnOnce(&Self) -> Result<T, String>,
     ) -> Result<T, String> {
+        let run = || {
+            // First-turn capture can precede provider launch. Create reserved
+            // scratch folders under mutation authority before gate resolution.
+            for cwd in cwds {
+                resolve_scratch_cwd(cwd.trim())?;
+            }
+            self.exclusive_read_until(session_id, cwds, deadline, operation)
+        };
         match &self.authority {
             Some(gate) => {
                 let mut completed = None;
                 let guarded = gate.guarded(session_id, "native-checkpoint", || {
-                    completed =
-                        Some(self.exclusive_read_until(session_id, cwds, deadline, operation)?);
+                    completed = Some(run()?);
                     Ok(())
                 });
                 if let Some(value) = completed {
@@ -174,7 +181,7 @@ impl CheckpointStore {
                     Err("Checkpoint operation did not complete".into())
                 }
             }
-            None => self.exclusive_read_until(session_id, cwds, deadline, operation),
+            None => run(),
         }
     }
 
@@ -466,6 +473,9 @@ impl CheckpointStore {
             return Ok(CheckpointStatus { files: Vec::new() });
         };
         let root = project_root(cwd)?;
+        if manifest.touched.is_disjoint(&manifest.prepared) {
+            return Ok(CheckpointStatus { files: Vec::new() });
+        }
         let mut foreign_touched = self.foreign_touched_paths(cwd, session_id);
         if !self.turn_undo_safe(session_id, cwd)? {
             foreign_touched.extend(manifest.touched.iter().cloned());
@@ -864,8 +874,10 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
             .ok_or("NATIVE_AUTHORITY_STORE_UNAVAILABLE")?
             .authority_execution_gate(),
     );
-    // Only a read-only scan runs before commands are accepted. Settling
-    // interrupted turns runs git, so it stays off the UI thread.
+    // Before commands are accepted, only the sessions marked as having an
+    // active turn are read (see `turn::active_sessions`). Settling them runs
+    // git and retiring settled leases walks the lease list; both stay off the
+    // UI thread.
     let recovery = store.plan_recovery();
     app.manage(store.clone());
     spawn_recovery(recovery);
@@ -2029,6 +2041,39 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
+    fn first_scratch_turn_captures_before_provider_launch() {
+        let Some(home) = crate::fs::isolated_scratch_test_home(
+            "checkpoint::tests::first_scratch_turn_captures_before_provider_launch",
+        ) else {
+            return;
+        };
+        let store = CheckpointStore::new(home.join("checkpoints"));
+        let session_id = "first-turn";
+        let cwd = "~/.bycoda-host/scratch/session-first-turn";
+        let folder = home.join(".bycoda-host/scratch/session-first-turn");
+        assert!(store
+            .coordinated(session_id, &[cwd], |store| store.status(session_id, cwd))
+            .is_err());
+        assert!(!folder.exists());
+
+        store
+            .exclusive_until(
+                session_id,
+                &[cwd],
+                Some(Instant::now() + BEGIN_GATE_WAIT),
+                |store| store.begin_checkpoint_turn(session_id, cwd, "turn", "user", false),
+            )
+            .unwrap();
+        assert!(folder.is_dir());
+        assert!(store.light_turn_active(session_id, "turn").unwrap());
+        let session_dir = store.session_dir(session_id);
+        assert!(session_dir.join("files-baseline-stamps.json").is_file());
+        let manifest = read_manifest(&session_dir).unwrap().unwrap();
+        assert!(same_cwd(&manifest.cwd, cwd));
+        assert!(manifest.files.is_empty());
+    }
+
+    #[test]
     fn authority_fence_blocks_checkpoint_and_recovery_mutations_but_allows_rescue_reads() {
         let root = tmp("authority-fence");
         let native = crate::session_store::SessionStore::open_in_memory().unwrap();
@@ -2255,6 +2300,24 @@ mod tests {
             .iter()
             .map(|file| file.relative.as_str())
             .collect()
+    }
+
+    #[test]
+    fn status_only_checks_foreign_undo_state_for_reviewable_paths() {
+        let repo = tmp("empty-status");
+        let cwd = repo.0.to_string_lossy().into_owned();
+        let (_root, store) = store();
+        store.ensure("s1", &cwd).unwrap();
+        // Foreign lease data gates undoability, which only exists for a reviewable file.
+        std::fs::create_dir_all(&store.leases).unwrap();
+        std::fs::write(store.leases.join("foreign.json"), b"{").unwrap();
+        assert!(store.status("s1", &cwd).unwrap().files.is_empty());
+
+        std::fs::write(repo.0.join("a.txt"), "changed").unwrap();
+        store.capture("s1", &cwd, &["a.txt".into()]).unwrap();
+        assert!(store.status("s1", &cwd).unwrap().files.is_empty());
+        record(&store, "s1", &cwd, &["a.txt"]);
+        assert!(store.status("s1", &cwd).is_err());
     }
 
     fn record(store: &CheckpointStore, id: &str, cwd: &str, paths: &[&str]) {

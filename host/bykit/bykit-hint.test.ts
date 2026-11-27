@@ -35,8 +35,12 @@ afterEach(async () => {
 
 it("adds the instruction block only when bykit resolves", async () => {
   const host = store();
-  expect(await bykitHint(host, async () => "/usr/bin/bykit")).toBe(BYKIT_HINT);
-  expect(BYKIT_HINT).toContain("bykit edit");
+  const hint = await bykitHint(host, async () => "/usr/bin/bykit");
+  expect(hint).toBe(BYKIT_HINT);
+  expect(hint).toContain("Use bykit when available and suitable for the operation.");
+  expect(hint).toContain("Otherwise use a suitable tool, including read-only Python");
+  expect(hint).toContain("including heredocs");
+  expect(hint).toContain("bykit edit");
   resetBykitCache();
   expect(await bykitHint(host, async () => undefined)).toBe("");
 });

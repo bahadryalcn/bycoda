@@ -2,6 +2,7 @@
 import { LOADING_DELAY_MS } from "../../../shared/hooks/useDelayedVisible";
 import { act, createElement, Profiler } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { EditorView } from "@codemirror/view";
@@ -72,6 +73,14 @@ function button(label: string, scope: ParentNode = document): HTMLButtonElement 
   return found!;
 }
 
+/** The list rescans when the window regains focus; there is no manual refresh control. */
+async function refocusWindow() {
+  await act(async () => {
+    window.dispatchEvent(new Event("focus"));
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+  });
+}
+
 async function click(label: string) {
   const target = button(label);
   await act(async () => {
@@ -99,8 +108,12 @@ async function openPreview(label: string) {
   return target;
 }
 
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+const inClient = (node: ReturnType<typeof createElement>) =>
+  createElement(QueryClientProvider, { client: queryClient }, node);
+
 async function render() {
-  await act(async () => root.render(createElement(SkillsPage, { cwd: "D:/repo" })));
+  await act(async () => root.render(inClient(createElement(SkillsPage, { cwd: "D:/repo" }))));
 }
 
 it("keeps Advanced controls outside the single skill scroller", async () => {
@@ -109,9 +122,14 @@ it("keeps Advanced controls outside the single skill scroller", async () => {
   expect(container.querySelectorAll("[data-skill-list]")).toHaveLength(1);
   expect(scroller.querySelector("[data-continuous-list]")).toBeNull();
   expect(scroller.textContent).not.toContain("Skill folders");
-  await chooseFromMenu("More", "Skill folders");
+  await chooseFromMenu("New", "Skill folders");
   const dialog = document.querySelector('[role="dialog"]')!;
-  expect(dialog.textContent).toContain("Disabled skills stay on disk.");
+  expect(dialog.textContent).toContain("D:/repo/.agents/skills");
+  expect(dialog.textContent).not.toContain("Disabled skills stay on disk.");
+  await act(async () =>
+    dialog.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click(),
+  );
+  expect(document.body.textContent).toContain("Disabled skills stay on disk.");
   expect(scroller.contains(dialog)).toBe(false);
   expect(button("Personal guide")).toBeDefined();
 });
@@ -120,10 +138,12 @@ it("reveals skill folders from Settings search and keeps manual dismissal", asyn
   const reveal = async (id: string | null, revealRequest = 0) => {
     await act(async () =>
       root.render(
-        createElement(
-          RevealedSetting.Provider,
-          { value: id },
-          createElement(SkillsPage, { cwd: "D:/repo", revealRequest }),
+        inClient(
+          createElement(
+            RevealedSetting.Provider,
+            { value: id },
+            createElement(SkillsPage, { cwd: "D:/repo", revealRequest }),
+          ),
         ),
       ),
     );
@@ -158,6 +178,20 @@ it("collapses skill groups without creating another scroll owner", async () => {
   expect(group.hidden).toBe(false);
 });
 
+it("unmounts collapsed group rows and remounts them on expand", async () => {
+  await render();
+  const personal = container.querySelector<HTMLButtonElement>(
+    "[data-section-label] button[aria-controls]",
+  )!;
+  const group = document.getElementById(personal.getAttribute("aria-controls")!)!;
+  const rows = group.querySelectorAll("[data-action-primary]").length;
+  expect(rows).toBeGreaterThan(0);
+  await act(async () => personal.click());
+  expect(group.querySelectorAll("[data-action-primary]")).toHaveLength(0);
+  await act(async () => personal.click());
+  expect(group.querySelectorAll("[data-action-primary]")).toHaveLength(rows);
+});
+
 it("retains the shared list scroll position across navigation", async () => {
   await render();
   const list = container.querySelector<HTMLElement>("[data-skill-list]")!;
@@ -179,7 +213,7 @@ it("opens New skill as a dialog without copying the search text into the name", 
   });
   await chooseFromMenu("New", "New skill");
   expect(document.querySelector('[role="dialog"]')).not.toBeNull();
-  expect(document.querySelector<HTMLInputElement>('input[aria-label="Skill name"]')?.value).toBe(
+  expect(document.querySelector<HTMLInputElement>('input[placeholder="skill-name"]')?.value).toBe(
     "",
   );
   await click("Cancel");
@@ -198,7 +232,7 @@ it("keeps policy explanations collapsed without changing owner restrictions", as
       .querySelector('[role="switch"][aria-label="Enable Project guide in bycoda"]')
       ?.getAttribute("aria-checked"),
   ).toBe("false");
-  await chooseFromMenu("More", "Skill folders");
+  await chooseFromMenu("New", "Skill folders");
   expect(
     document.querySelector('[role="dialog"] [data-setting-id="skill-folders"]'),
   ).not.toBeNull();
@@ -286,7 +320,8 @@ describe("Settings skill preview", () => {
     expect(container.querySelector('[aria-label="Skill instructions"]')).not.toBeNull();
     edit("# Draft instructions");
     await click("Other guide");
-    await click("Project guide");
+    // A modified row announces its draft mark in its accessible name.
+    await click("Project guide, Draft");
     expect(container.querySelector(".cm-content")?.textContent).toContain("Draft instructions");
     await click("Preview");
     expect(container.querySelector('[aria-label="Skill preview"] h1')?.textContent).toBe(
@@ -313,13 +348,14 @@ describe("Settings skill preview", () => {
     await click("Project guide");
     edit("---\nname: guide\n---\n\n# Updated instructions\n");
     await click("Save");
-    await click("Save");
+    await click("Saving…");
     expect(invoke.mock.calls.filter(([command]) => command === "write_text_file")).toHaveLength(1);
     await act(async () => pending.resolve());
     expect(disk).toBe("---\nname: guide\n---\n\n# Updated instructions\n");
     expect(container.textContent).not.toContain("Skill saved.");
-    expect(button("Saved").disabled).toBe(true);
-    expect(container.querySelector("footer")?.textContent).not.toContain("Saved");
+    expect(button("Saved").getAttribute("aria-disabled")).toBe("true");
+    // Success shows on the Save control itself, not as a toast or a footer status.
+    expect(container.querySelector("footer")).toBeNull();
     edit("# Another draft");
     expect(button("Save").disabled).toBe(false);
   });
@@ -337,8 +373,12 @@ describe("Settings skill preview", () => {
     });
     await click("Save");
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      failure === "disk changed" ? "changed on disk" : "Access denied",
+      failure === "disk changed" ? "changed on disk" : "Could not save the skill.",
     );
+    if (failure !== "disk changed") {
+      await click("Details: Could not save the skill.");
+      expect(document.body.textContent).toContain("Access denied");
+    }
     expect(container.querySelector(".cm-content")?.textContent).toContain("Keep this draft");
     expect(button("Save").disabled).toBe(false);
     if (failure === "disk changed")
@@ -350,7 +390,10 @@ describe("Settings skill preview", () => {
     await click("Delete Project guide");
     expect(ask).toHaveBeenCalledWith(
       expect.stringContaining("entire folder"),
-      expect.objectContaining({ okLabel: "Delete" }),
+      expect.objectContaining({
+        title: "Delete Project guide from this computer?",
+        okLabel: "Delete",
+      }),
     );
     expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "skill_delete")).toBe(
       false,
@@ -399,7 +442,7 @@ describe("Settings skill preview", () => {
       vi.mocked(invoke).mock.calls.filter(([command]) => command === "skill_delete"),
     ).toHaveLength(1);
     await act(async () => pending.reject(new Error("Access denied")));
-    expect(container.textContent).toContain("Could not delete Project guide. Access denied");
+    expect(container.textContent).toContain("Could not delete Project guide.");
     expect(button("Project guide")).toBeDefined();
     await click("Actions for Project guide");
     expect(button("Delete Project guide").disabled).toBe(false);
@@ -434,16 +477,20 @@ describe("Settings skill preview", () => {
       }
       await openPreview("Project guide");
       const previousText =
-        previousState === "document" ? "Previous document" : "Previous read failed";
+        previousState === "document" ? "Previous document" : "Could not read SKILL.md.";
       expect(container.querySelector('[aria-label="Skill preview"]')?.textContent).toContain(
         previousText,
       );
+      if (previousState === "error") {
+        await click("Details: Could not read SKILL.md.");
+        expect(document.body.textContent).toContain("Previous read failed");
+      }
       vi.mocked(invoke).mockImplementationOnce(() => pending.promise);
       await openPreview("Other guide");
+      expect(document.body.textContent).not.toContain("Previous read failed");
       expect(frames.length).toBeGreaterThan(0);
       for (const frame of frames) {
         expect(frame).not.toContain(previousText);
-        expect(frame).toContain("Loading skill");
       }
       await act(async () => pending.resolve("# Selected document"));
       expect(container.querySelector('[aria-label="Skill preview"] h1')?.textContent).toBe(
@@ -457,7 +504,7 @@ describe("Settings skill preview", () => {
     await click(label);
     const reload = deferred<DiscoveredSkill[]>();
     vi.mocked(invoke).mockImplementationOnce(() => reload.promise);
-    await click("Refresh skills");
+    await refocusWindow();
     // The list stays mounted while it refreshes, so the opener can be kept or replaced.
     await act(async () => reload.resolve(skills));
     const replacement = button(label);
@@ -468,15 +515,19 @@ describe("Settings skill preview", () => {
   it("returns focus to the filter if the preview opener disappears after refresh", async () => {
     await render();
     await openPreview("Project guide");
-    vi.mocked(invoke).mockResolvedValueOnce([skills[2]]);
-    await click("Refresh skills");
+    // Answer the refresh by command: the order of the surrounding Host reads is not the contract.
+    const base = vi.mocked(invoke).getMockImplementation()!;
+    vi.mocked(invoke).mockImplementation(async (command, args) =>
+      command === "list_skills" ? [skills[2]] : base(command, args),
+    );
+    await refocusWindow();
     await click("Close skill preview");
     expect(document.activeElement?.getAttribute("aria-label")).toBe("Filter skills");
   });
 
   it.each([
     { control: "Skill name", preview: true },
-    ...["Project", "Personal", "Cancel", "Create"].flatMap((control) =>
+    ...["Project", "All projects", "Cancel", "Create"].flatMap((control) =>
       [true, false].map((preview) => ({ control, preview })),
     ),
   ])(
@@ -500,9 +551,9 @@ describe("Settings skill preview", () => {
       if (preview) await openPreview("Project guide");
       const previewPanel = container.querySelector('[aria-label="Skill preview"]');
       await chooseFromMenu("New", "New skill");
-      expect(document.activeElement?.getAttribute("aria-label")).toBe("Skill name");
+      expect((document.activeElement as HTMLInputElement | null)?.placeholder).toBe("skill-name");
       if (control !== "Skill name") {
-        const input = document.querySelector<HTMLInputElement>('[aria-label="Skill name"]')!;
+        const input = document.querySelector<HTMLInputElement>('input[placeholder="skill-name"]')!;
         act(() => {
           Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
             input,
@@ -589,7 +640,6 @@ describe("Settings skill preview", () => {
     expect(opener.getAttribute("aria-expanded")).toBe("true");
     await openPreview("Other guide");
     expect(container.querySelector('[aria-label="Skill preview"]')).toBe(panel);
-    expect(panel?.textContent).toContain(skills[2].path);
     expect(button("Project guide").getAttribute("aria-expanded")).toBe("false");
     expect(document.activeElement).toBe(button("Other guide"));
   });
@@ -706,7 +756,8 @@ describe("Settings skill preview", () => {
       await openPreview("Project guide");
       const alert = document.querySelector('[aria-label="Skill preview"] [role="alert"]');
       expect(alert?.textContent).toContain("Could not read SKILL.md");
-      expect(alert?.textContent).toContain(error instanceof Error ? error.message : error);
+      // The raw cause is behind Details, not in the headline (#582).
+      expect(alert?.textContent).not.toContain(error instanceof Error ? error.message : error);
       expect(document.querySelector('[role="status"]')).toBeNull();
       await click("Close skill preview");
       await openPreview("Other guide");
@@ -753,9 +804,6 @@ describe("Settings skill preview", () => {
     await render();
     for (const skill of [skills[0], skills[2]]) {
       await click(skill.name);
-      expect(document.querySelector('[aria-label="Skill preview"]')?.textContent).toContain(
-        skill.path,
-      );
       expect(invoke).toHaveBeenCalledWith("read_text_file", {
         path: skill.path,
       });
@@ -770,7 +818,6 @@ describe("Settings skill preview", () => {
 
     const dialog = document.querySelector('[aria-label="Skill preview"]')!;
     expect(dialog).not.toBeNull();
-    expect(dialog.textContent).toContain(skills[1].path);
     expect(dialog.querySelector("h1")?.textContent).toBe("Full instructions");
     expect(dialog.textContent).toContain("Read everything.");
     expect(dialog.textContent).toContain("Last paragraph.");
@@ -903,7 +950,7 @@ describe("Skills on connected machines", () => {
     await renderLocalProject();
 
     expect(hostCalls).toContainEqual(
-      expect.objectContaining({ command: "list_skills", args: { cwd: "" } }),
+      expect.objectContaining({ command: "list_skills", args: { cwd: "", withStatus: true } }),
     );
     const text = container.textContent ?? "";
     expect(text).toContain("mac-notes");
@@ -959,6 +1006,7 @@ describe("Skills on connected machines", () => {
 
     expect(hostCalls.find((call) => call.machineId === "machine-mac")?.args).toEqual({
       cwd: "/Users/me/shop",
+      withStatus: true,
     });
     expect(container.textContent).toContain("shop-deploy");
     // Missing on two machines: each machine's column offers its own copy.
@@ -1008,6 +1056,28 @@ describe("Skills on connected machines", () => {
       files: [{ path: "SKILL.md", data: b64("# Mac notes") }],
       overwrite: false,
     });
+  });
+
+  it("asks before replacing an existing skill, wording the whole dialog in the interface language", async () => {
+    connect([machine("mac", "Mac mini")], (_env, command) =>
+      command === "list_skills"
+        ? macSkills
+        : { name: "notes", files: [{ path: "SKILL.md", data: b64("# Mac notes") }] },
+    );
+    const connected = vi.mocked(invoke).getMockImplementation()!;
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "skill_import" && !(args as { overwrite: boolean }).overwrite)
+        throw new Error("SKILL_EXISTS:notes");
+      return connected(command, args);
+    });
+    await renderLocalProject();
+    await click("Copy mac-notes to This computer");
+    await act(async () => {});
+
+    expect(ask).toHaveBeenCalledWith(
+      expect.stringContaining("notes"),
+      expect.objectContaining({ title: "Replace skill?", okLabel: "Replace" }),
+    );
   });
 
   it("explains an outdated host in its own alert only", async () => {

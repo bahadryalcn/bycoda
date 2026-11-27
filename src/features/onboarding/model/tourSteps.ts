@@ -1,6 +1,7 @@
 import { t } from "../../../shared/i18n";
 import type { GuideAction } from "./guide";
 import type { UsageGuideTarget } from "./usageGuideTargets";
+import type { TourMascotPose } from "./tourMascot";
 
 /** The real action a step's "Try it" performs before the tour moves on. */
 export type TourTryIt = { label: string; action: GuideAction | "usage-guide" };
@@ -24,6 +25,8 @@ export type TourStepDef = {
   reveal?: GuideAction;
   /** Optional: do the real thing, then continue. */
   tryIt?: TourTryIt;
+  /** The mascot's pose on this card; the tour card picks one when absent. */
+  mascot?: TourMascotPose;
 };
 
 /**
@@ -34,6 +37,7 @@ export function firstRunTourSteps(): TourStepDef[] {
   return [
     {
       id: "projects",
+      mascot: "wave",
       title: t("Your projects"),
       body: t(
         "Open a folder with + in the project rail. Each project keeps its own sessions and changes.",
@@ -43,6 +47,7 @@ export function firstRunTourSteps(): TourStepDef[] {
     },
     {
       id: "new-session",
+      mascot: "point",
       title: t("Start a session"),
       body: t("A session is a conversation with one agent in the current project."),
       targets: ["new-session"],
@@ -50,6 +55,7 @@ export function firstRunTourSteps(): TourStepDef[] {
     },
     {
       id: "composer",
+      mascot: "type",
       title: t("Write the request"),
       body: t(
         "Describe the result you want. Type @ to attach files and / to run commands or skills.",
@@ -58,18 +64,21 @@ export function firstRunTourSteps(): TourStepDef[] {
     },
     {
       id: "model",
+      mascot: "think",
       title: t("Model and reasoning"),
       body: t("Choose the agent, model and how much reasoning it uses under the message box."),
       targets: ["model-controls"],
     },
     {
       id: "access",
+      mascot: "think",
       title: t("Choose access mode"),
       body: t("Pick what the agent may do without asking. A change applies from the next turn."),
       targets: ["access-mode"],
     },
     {
       id: "sidebar",
+      mascot: "point",
       title: t("Sessions, Explorer and Changes"),
       body: t("Switch the sidebar between your sessions, the project files and the changes."),
       targets: ["sidebar-tabs", "files-tab", "changes"],
@@ -78,14 +87,16 @@ export function firstRunTourSteps(): TourStepDef[] {
     },
     {
       id: "changes",
+      mascot: "inspect",
       title: t("Review before you commit"),
       body: t("Changes lists what the agents edited. Read each diff, then commit."),
       targets: ["changes"],
       reveal: "changes",
-      tryIt: { label: t("Open Changes"), action: "changes" },
+      tryIt: { label: t("Open changes"), action: "changes" },
     },
     {
       id: "terminal",
+      mascot: "type",
       title: t("Terminal"),
       body: t("A terminal opens in the project folder, right beside your chats."),
       targets: ["terminal-toggle"],
@@ -93,12 +104,14 @@ export function firstRunTourSteps(): TourStepDef[] {
     },
     {
       id: "tools",
+      mascot: "point",
       title: t("Background work"),
       body: t("Tasks, Automations, Inbox and Notes keep work going while you do something else."),
       targets: ["rail-tools", "rail-tasks", "rail-inbox"],
     },
     {
       id: "settings",
+      mascot: "cheer",
       title: t("Settings and the Guide"),
       body: t(
         "Settings holds every option. The Guide in the View menu repeats this tour and explains each feature.",

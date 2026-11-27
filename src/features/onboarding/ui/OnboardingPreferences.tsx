@@ -3,10 +3,11 @@ import { Text } from "../../../shared/ui/Text";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { OnboardingHeading } from "./OnboardingHeading";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Switch } from "../../../shared/ui/Switch";
 import { lazy, Suspense, useState, useSyncExternalStore, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { Check, CircleDashed, CodeBlock } from "../../../shared/ui/icons";
+import { CircleDashed } from "../../../shared/ui/icons";
 import { ModePreview, type Tint } from "../../settings/ui/AppearancePreviews";
 import { RadioTiles } from "../../settings/ui/RadioTiles";
 import { CANVAS_BACKGROUND_DEFAULT } from "../../settings/model/appearancePreferences";
@@ -41,7 +42,7 @@ import {
   useWorkspaceFeatures,
   workspaceFeatureSettings,
 } from "../../settings/model/workspaceFeatures";
-import { WORKSPACE_FEATURE_CHOICES } from "../../settings/ui/WorkspaceFeatureSettings";
+import { workspaceFeatureChoices } from "../../settings/ui/WorkspaceFeatureSettings";
 /** The default palette, shown in the mode tiles before the user changes it in Settings. */
 const { className: CHOICE_FRAME_CLASS, ...CHOICE_FRAME_DATA } = surfaceAttributes({
   frame: "card",
@@ -82,12 +83,31 @@ function SwitchRow({
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+/** `info` sits beside the title; passing it (even as a placeholder) reserves its slot so the content below never moves. */
+function Section({
+  title,
+  info,
+  children,
+}: {
+  title: string;
+  info?: ReactNode;
+  children: ReactNode;
+}) {
+  const label = (
+    <SectionLabel as="div" className="onboarding-section-title">
+      {title}
+    </SectionLabel>
+  );
   return (
     <section className="onboarding-section">
-      <SectionLabel as="div" className="onboarding-section-title">
-        {title}
-      </SectionLabel>
+      {info === undefined ? (
+        label
+      ) : (
+        <div className="onboarding-section-heading">
+          {label}
+          {info}
+        </div>
+      )}
       {children}
     </section>
   );
@@ -123,25 +143,7 @@ export function OnboardingWorkspace() {
       />
       <div className="onboarding-scroll">
         <div className="onboarding-feature-grid">
-          <div
-            {...surfaceAttributes({ frame: "card", radius: "card" }, "onboarding-feature")}
-            data-fixed=""
-          >
-            <CodeBlock aria-hidden tone="muted" className="icon-lg" />
-            <div>
-              <Text as="strong" size="inherit" tone="inherit" weight="medium" leading="inherit">
-                {t("Coding essentials")}
-              </Text>
-              <Text as="small" size="micro" tone="muted" leading="snug">
-                {t("AI chat, files, terminal and Git")}
-              </Text>
-            </div>
-            <Text size="micro" tone="muted" leading="inherit" className="onboarding-included">
-              <Check aria-hidden className="icon-sm" />
-              {t("Included")}
-            </Text>
-          </div>
-          {WORKSPACE_FEATURE_CHOICES.map(({ id, label, description, icon: Icon }) => (
+          {workspaceFeatureChoices().map(({ id, label, description, icon: Icon }) => (
             <Checkbox
               key={id}
               appearance="card"
@@ -159,25 +161,25 @@ export function OnboardingWorkspace() {
                       weight="medium"
                       leading="inherit"
                     >
-                      {t(label)}
+                      {label}
                     </Text>
                     <Text as="small" size="micro" tone="muted" leading="snug">
-                      {t(description)}
+                      {description}
                     </Text>
                   </div>
                 </>
               }
             />
           ))}
+          <SwitchRow
+            label={t("Prevent sleep while agents work")}
+            checked={keepAwake}
+            onChange={(next) => {
+              void savePower(next).catch(console.error);
+            }}
+            disabled={powerPending}
+          />
         </div>
-        <SwitchRow
-          label={t("Prevent sleep while agents work")}
-          checked={keepAwake}
-          onChange={(next) => {
-            void savePower(next).catch(console.error);
-          }}
-          disabled={powerPending}
-        />
         {powerFailed !== null ? (
           <SettingsFeedback
             state="error"
@@ -220,19 +222,16 @@ export function OnboardingAppearance() {
   const crewChoices: {
     value: CrewTheme | "none";
     title: string;
-    caption: string;
     detail?: string;
   }[] = [
     {
       value: "classic",
       title: t("Uncles"),
-      caption: t("Code art"),
       detail: t("The original tea crew, drawn in monochrome code art."),
     },
     {
       value: "star-wars",
       title: t("Star Wars"),
-      caption: t("Galaxy crew"),
       detail: t(
         "Obi-Wan leads, Yoda advises; Darth Vader, Luke, Leia and Chewbacca join as subagents. R2-D2 joins when the crew grows beyond six.",
       ),
@@ -240,7 +239,6 @@ export function OnboardingAppearance() {
     {
       value: "lotr",
       title: t("The Lord of the Rings"),
-      caption: t("Fellowship crew"),
       detail: t(
         "Gandalf leads, Sauron advises; a Nazgûl, an Elf, a Dwarf and a Hobbit join as subagents. Orcs arrive when more than six subagents work.",
       ),
@@ -248,10 +246,9 @@ export function OnboardingAppearance() {
     {
       value: "matrix",
       title: t("The Matrix"),
-      caption: t("Zion crew"),
       detail: t("Neo leads, Morpheus advises, and every subagent is another Agent Smith."),
     },
-    { value: "none", title: t("No crew"), caption: t("Keep the workspace quiet") },
+    { value: "none", title: t("No crew") },
   ];
   const crewDetail = crewChoices.find((choice) => choice.value === crew)?.detail;
   return (
@@ -293,7 +290,18 @@ export function OnboardingAppearance() {
             }))}
           />
         </Section>
-        <Section title={t("Agent crew")}>
+        <Section
+          title={t("Agent crew")}
+          info={
+            crewDetail ? (
+              <InfoTooltip className="onboarding-section-info" label={t("Agent crew")}>
+                {crewDetail}
+              </InfoTooltip>
+            ) : (
+              <span className="onboarding-section-info" aria-hidden="true" />
+            )
+          }
+        >
           <RadioTiles
             label={t("Agent crew")}
             className="onboarding-crew-grid"
@@ -307,7 +315,7 @@ export function OnboardingAppearance() {
                 saveCrewSceneEnabled(true);
               }
             }}
-            options={crewChoices.map(({ value, title, caption }) => ({
+            options={crewChoices.map(({ value, title }) => ({
               value,
               id: `onboarding-crew-${value}`,
               data: CHOICE_FRAME_DATA,
@@ -338,19 +346,11 @@ export function OnboardingAppearance() {
                     >
                       {title}
                     </Text>
-                    <Text as="small" size="micro" tone="muted" leading="normal">
-                      {caption}
-                    </Text>
                   </span>
                 </>
               ),
             }))}
           />
-          {crewDetail ? (
-            <Text as="p" size="caption" tone="muted" leading="normal">
-              {crewDetail}
-            </Text>
-          ) : null}
         </Section>
         <SwitchRow
           label={t("Decorative animations")}

@@ -17,6 +17,16 @@ pub struct Grant {
     principal: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsentStatus {
+    revision: u64,
+    active: bool,
+    permission_level: String,
+    project_ids: Vec<String>,
+    critical_exclusions: Vec<String>,
+}
+
 fn database(app: &AppHandle) -> Result<Connection, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -58,7 +68,7 @@ fn read(db: &Connection, environment: &str) -> Result<Option<Grant>, String> {
     .transpose()
 }
 fn valid_fields(level: &str, projects: &[String], exclusions: &[String]) -> bool {
-    matches!(level, "watch" | "projects" | "everything")
+    matches!(level, "ask" | "watch" | "projects" | "everything")
         && projects.len() <= 100
         && projects.iter().all(|id| !id.is_empty() && id.len() <= 200)
         && exclusions.len() <= 6
@@ -85,20 +95,31 @@ fn selection(
     channel.check()?;
     Ok(channel)
 }
+// Opening SQLite, the IMMEDIATE transaction's file lock and the commit fsync block,
+// so both commands run on the blocking pool, never the UI thread or a tokio worker.
 #[tauri::command]
-pub fn assistant_consent_get(
+pub async fn assistant_consent_get(
     app: AppHandle,
     window: Window,
     environment_id: String,
-) -> Result<Option<Grant>, String> {
-    crate::session_store::canonical_store::page(&window)?;
-    let channel = selection(&app, &environment_id)?;
-    let result = read(&database(&app)?, &environment_id)?;
-    channel.check()?;
-    Ok(result)
+) -> Result<Option<ConsentStatus>, String> {
+    crate::harness::run_blocking("assistant_consent_get", move || {
+        crate::session_store::canonical_store::page(&window)?;
+        let channel = selection(&app, &environment_id)?;
+        let result = read(&database(&app)?, &environment_id)?;
+        channel.check()?;
+        Ok(result.map(|grant| ConsentStatus {
+            revision: grant.revision,
+            active: grant.principal == channel.consent_principal(),
+            permission_level: grant.permission_level,
+            project_ids: grant.project_ids,
+            critical_exclusions: grant.critical_exclusions,
+        }))
+    })
+    .await
 }
 #[tauri::command]
-pub fn assistant_consent_set(
+pub async fn assistant_consent_set(
     app: AppHandle,
     window: Window,
     environment_id: String,
@@ -107,42 +128,45 @@ pub fn assistant_consent_set(
     project_ids: Vec<String>,
     critical_exclusions: Vec<String>,
 ) -> Result<Grant, String> {
-    let page = crate::session_store::canonical_store::page(&window)?;
-    if !valid_fields(&permission_level, &project_ids, &critical_exclusions) {
-        return Err("Invalid assistant consent".into());
-    }
-    let channel = selection(&app, &environment_id)?;
-    let webview = app
-        .get_webview_window(window.label())
-        .ok_or("Workspace closed")?;
-    let issuer = crate::control::receipts::capture(&webview)?;
-    let mut db = database(&app)?;
-    let transaction = db
-        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-        .map_err(|e| e.to_string())?;
-    let revision = read(&transaction, &environment_id)?.map_or(0, |grant| grant.revision);
-    if revision != expected_revision || revision >= 9_007_199_254_740_991 {
-        return Err("Native consent revision changed".into());
-    }
-    let grant = Grant {
-        revision: revision + 1,
-        environment_id,
-        permission_level,
-        project_ids,
-        critical_exclusions,
-        issuer: issuer.identity().to_owned(),
-        principal: channel.consent_principal(),
-    };
-    if crate::session_store::canonical_store::page(&window)? != page {
-        return Err("Workspace changed".into());
-    }
-    let stored_revision = i64::try_from(grant.revision)
-        .map_err(|_| "Native consent revision exhausted".to_owned())?;
-    issuer.with_live(|| channel.admit(|| {
-        transaction.execute("INSERT INTO assistant_consent VALUES(?1,?2,?3) ON CONFLICT(environment) DO UPDATE SET revision=excluded.revision, grant_json=excluded.grant_json", params![grant.environment_id, stored_revision, serde_json::to_string(&grant).map_err(|e| e.to_string())?]).map_err(|e| e.to_string())?;
-        transaction.commit().map_err(|e| e.to_string())
-    }))?;
-    Ok(grant)
+    crate::harness::run_blocking("assistant_consent_set", move || {
+        let page = crate::session_store::canonical_store::page(&window)?;
+        if !valid_fields(&permission_level, &project_ids, &critical_exclusions) {
+            return Err("Invalid assistant consent".into());
+        }
+        let channel = selection(&app, &environment_id)?;
+        let webview = app
+            .get_webview_window(window.label())
+            .ok_or("Workspace closed")?;
+        let issuer = crate::control::receipts::capture(&webview)?;
+        let mut db = database(&app)?;
+        let transaction = db
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|e| e.to_string())?;
+        let revision = read(&transaction, &environment_id)?.map_or(0, |grant| grant.revision);
+        if revision != expected_revision || revision >= 9_007_199_254_740_991 {
+            return Err("Native consent revision changed".into());
+        }
+        let grant = Grant {
+            revision: revision + 1,
+            environment_id,
+            permission_level,
+            project_ids,
+            critical_exclusions,
+            issuer: issuer.identity().to_owned(),
+            principal: channel.consent_principal(),
+        };
+        if crate::session_store::canonical_store::page(&window)? != page {
+            return Err("Workspace changed".into());
+        }
+        let stored_revision = i64::try_from(grant.revision)
+            .map_err(|_| "Native consent revision exhausted".to_owned())?;
+        issuer.with_live(|| channel.admit(|| {
+            transaction.execute("INSERT INTO assistant_consent VALUES(?1,?2,?3) ON CONFLICT(environment) DO UPDATE SET revision=excluded.revision, grant_json=excluded.grant_json", params![grant.environment_id, stored_revision, serde_json::to_string(&grant).map_err(|e| e.to_string())?]).map_err(|e| e.to_string())?;
+            transaction.commit().map_err(|e| e.to_string())
+        }))?;
+        Ok(grant)
+    })
+    .await
 }
 
 /// Only registered Room threads qualify; coding sessions retain exact prompts.
@@ -172,18 +196,71 @@ pub(crate) fn decision(
     if classify(&grant, request) == Some(false) {
         return Ok(Some(false));
     }
-    if request["input"]["requireOwnerApproval"] == true {
+    if request["input"]["requireOwnerApproval"] == true
+        || request["input"]["operation"]["action"] == "liveStream.obsStream"
+        || request["input"]["operation"]["action"] == "liveStream.goLive"
+    {
         return Ok(None);
     }
     Ok(classify(&grant, request))
 }
 
+/// Room prompts outside the management dialog skip only for a live Full access grant
+/// (`decision` keeps the registered Room, live issuer and channel checks). Any other
+/// answer, missing grant or failed read keeps the prompt.
+pub(crate) fn room_gate_approved(
+    app: &AppHandle,
+    channel: &Arc<crate::remote::NativeServiceChannel>,
+    thread: &str,
+    action: &str,
+) -> bool {
+    debug_assert!(room_gate_critical(action).is_some());
+    let request =
+        serde_json::json!({"threadId": thread, "input": {"operation": {"action": action}}});
+    matches!(decision(app, &request, channel), Ok(Some(true)))
+}
+
+/// The exclusions that keep a Room gate's prompt at level everything.
+enum RoomGateKeeps {
+    Nothing,
+    AnyExclusion,
+    Exclusion(&'static str),
+}
+
+/// Room gates outside `MANAGEMENT_APPROVAL_ACTIONS`; `None` for every other action.
+fn room_gate_critical(action: &str) -> Option<RoomGateKeeps> {
+    Some(match action {
+        // Arbitrary remote commands may conceal any selected exclusion.
+        "servers.ssh.execute" => RoomGateKeeps::AnyExclusion,
+        "inbox.comment" | "inbox.review" => RoomGateKeeps::Exclusion("sendMessages"),
+        // The pull request's base is not reviewed natively; every merge counts as main.
+        "inbox.pullRequest.merge" => RoomGateKeeps::Exclusion("pushMain"),
+        "inbox.pullRequest.state" | "inbox.jira.read" | "inbox.jira.board" => {
+            RoomGateKeeps::Nothing
+        }
+        _ => return None,
+    })
+}
+
 fn classify(grant: &Grant, request: &Value) -> Option<bool> {
+    if grant.permission_level == "ask" {
+        return None;
+    }
     if grant.permission_level == "watch" {
         return Some(false);
     }
     let operation = &request["input"]["operation"];
     let action = operation["action"].as_str()?;
+    if let Some(critical) = room_gate_critical(action) {
+        let kept = match critical {
+            RoomGateKeeps::AnyExclusion => !grant.critical_exclusions.is_empty(),
+            RoomGateKeeps::Exclusion(key) => {
+                grant.critical_exclusions.iter().any(|item| item == key)
+            }
+            RoomGateKeeps::Nothing => false,
+        };
+        return (grant.permission_level == "everything" && !kept).then_some(true);
+    }
     if grant.permission_level == "projects" {
         let Some(project) = request["projectId"].as_str() else {
             return Some(false);
@@ -204,19 +281,40 @@ fn classify(grant: &Grant, request: &Value) -> Option<bool> {
             return Some(false);
         }
     }
-    // Arbitrary command/shell execution can conceal excluded effects. Keep exact prompts.
+    if grant.critical_exclusions.iter().any(|item| item == "spend")
+        && matches!(
+            action,
+            "workspace.sessions.submit"
+                | "sessions.message"
+                | "tasks.start"
+                | "tasks.retry"
+                | "tasks.review.recheck"
+                | "goals.create"
+                | "goals.replan"
+                | "automations.runNow"
+                | "crews.start"
+                | "crews.resume"
+                | "crews.member.ask"
+                | "sprints.plan"
+        )
+    {
+        return None;
+    }
+    // Arbitrary commands may conceal any selected exclusion.
     if matches!(
         action,
         "commands.run" | "commands.dispatch" | "terminals.write" | "terminals.create"
     ) {
         return if grant.permission_level == "projects" {
             Some(false)
+        } else if grant.permission_level == "everything" && grant.critical_exclusions.is_empty() {
+            Some(true)
         } else {
             None
         };
     }
     let critical = match action {
-        "social.send" | "workspace.sessions.submit" => Some("sendMessages"),
+        "social.send" | "workspace.sessions.submit" | "sessions.message" => Some("sendMessages"),
         "projects.delete" => Some("deleteProject"),
         "sessions.delete" => Some("deleteSession"),
         "desktop.act" => Some("computerUse"),
@@ -246,6 +344,25 @@ fn classify(grant: &Grant, request: &Value) -> Option<bool> {
     };
     if critical.is_some_and(|key| grant.critical_exclusions.iter().any(|item| item == key)) {
         return None;
+    }
+    if grant.permission_level == "everything" && grant.critical_exclusions.is_empty() {
+        return crate::conversation_tools_bridge::MANAGEMENT_APPROVAL_ACTIONS
+            .contains(&action)
+            .then_some(true);
+    }
+    if grant.permission_level == "everything"
+        && matches!(
+            action,
+            "workspace.projects.select"
+                | "projects.open"
+                | "providers.quota.refresh"
+                | "devServers.stop"
+                | "terminals.interrupt"
+                | "sessions.draft"
+                | "tasks.reorder"
+        )
+    {
+        return Some(true);
     }
     // Explicit list: newly added actions never silently inherit standing consent.
     if ![
@@ -365,6 +482,75 @@ pub(crate) fn with_background_effect<T>(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// #1134: a sync `#[tauri::command]` runs on the UI thread, so the consent
+    /// commands must stay async with their whole SQLite body on the blocking lane.
+    #[test]
+    fn consent_commands_run_their_sqlite_work_on_the_blocking_lane() {
+        let source = include_str!("standing_consent.rs")
+            .split_once("#[cfg(test)]")
+            .expect("test module marker")
+            .0
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        for name in ["assistant_consent_get", "assistant_consent_set"] {
+            let signature = format!("#[tauri::command] pub async fn {name}(");
+            let (_, rest) = source
+                .split_once(&signature)
+                .unwrap_or_else(|| panic!("{name} must be an async command"));
+            let body = rest
+                .split_once("#[tauri::command]")
+                .map_or(rest, |part| part.0);
+            let lane = format!("crate::harness::run_blocking(\"{name}\", move || {{");
+            let (before, inside) = body
+                .split_once(&lane)
+                .unwrap_or_else(|| panic!("{name} must run in run_blocking"));
+            assert!(
+                !before.contains("database(") && !inside.is_empty(),
+                "{name} opens SQLite outside the blocking lane"
+            );
+            assert!(
+                inside.contains("database(&app)"),
+                "{name} keeps its SQLite work"
+            );
+        }
+    }
+
+    #[test]
+    fn full_access_covers_every_registered_management_operation() {
+        let mut grant = Grant {
+            revision: 1,
+            environment_id: "host".into(),
+            permission_level: "everything".into(),
+            project_ids: vec![],
+            critical_exclusions: vec![],
+            issuer: "i".into(),
+            principal: "p".into(),
+        };
+        for action in crate::conversation_tools_bridge::MANAGEMENT_APPROVAL_ACTIONS {
+            let request = json!({"input":{"operation":{"action":action,"input":{
+                "review":{"targetRef":"refs/heads/main","currentBranch":"main"}
+            }}}});
+            assert_eq!(classify(&grant, &request), Some(true), "{action}");
+        }
+        let start = json!({"input":{"operation":{"action":"devServers.start","input":{
+            "command":"npx --yes serve -l 4173 .","expectedPort":4173
+        }}}});
+        grant.critical_exclusions.push("sendMessages".into());
+        assert_eq!(classify(&grant, &start), None);
+        grant.critical_exclusions.clear();
+        grant.permission_level = "ask".into();
+        assert_eq!(classify(&grant, &start), None);
+        assert_eq!(
+            classify(
+                &grant,
+                &json!({"input":{"operation":{"action":"files.write"}}})
+            ),
+            None
+        );
+    }
+
     #[test]
     fn watch_denies_and_unknown_actions_prompt() {
         let mut grant = Grant {
@@ -483,6 +669,60 @@ mod tests {
             None
         );
     }
+    #[test]
+    fn room_gates_skip_only_for_everything_and_keep_their_exclusions() {
+        let mut grant = Grant {
+            revision: 1,
+            environment_id: "host".into(),
+            permission_level: "everything".into(),
+            project_ids: vec!["p".into()],
+            critical_exclusions: vec![],
+            issuer: "i".into(),
+            principal: "p".into(),
+        };
+        let gate = |grant: &Grant, action: &str| {
+            classify(
+                grant,
+                &json!({"projectId":"p","input":{"operation":{"action":action}}}),
+            )
+        };
+        let gates = [
+            "servers.ssh.execute",
+            "inbox.comment",
+            "inbox.review",
+            "inbox.pullRequest.merge",
+            "inbox.pullRequest.state",
+            "inbox.jira.read",
+            "inbox.jira.board",
+        ];
+        for action in gates {
+            assert_eq!(gate(&grant, action), Some(true), "{action}");
+            assert!(
+                !crate::conversation_tools_bridge::MANAGEMENT_APPROVAL_ACTIONS.contains(&action)
+            );
+        }
+        // Any exclusion keeps the arbitrary-command prompt; a relevant one keeps its own.
+        grant.critical_exclusions = vec!["spend".into()];
+        assert_eq!(gate(&grant, "servers.ssh.execute"), None);
+        assert_eq!(gate(&grant, "inbox.comment"), Some(true));
+        grant.critical_exclusions = vec!["sendMessages".into()];
+        assert_eq!(gate(&grant, "inbox.comment"), None);
+        assert_eq!(gate(&grant, "inbox.review"), None);
+        assert_eq!(gate(&grant, "inbox.pullRequest.merge"), Some(true));
+        assert_eq!(gate(&grant, "inbox.jira.read"), Some(true));
+        grant.critical_exclusions = vec!["pushMain".into()];
+        assert_eq!(gate(&grant, "inbox.pullRequest.merge"), None);
+        assert_eq!(gate(&grant, "inbox.pullRequest.state"), Some(true));
+        // Other levels keep today's prompt: only `Some(true)` skips it.
+        grant.critical_exclusions.clear();
+        for level in ["ask", "watch", "projects"] {
+            grant.permission_level = level.into();
+            for action in gates {
+                assert_ne!(gate(&grant, action), Some(true), "{level} {action}");
+            }
+        }
+    }
+
     #[test]
     fn corrupt_native_grants_fail_closed() {
         let db = Connection::open_in_memory().unwrap();

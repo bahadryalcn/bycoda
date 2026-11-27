@@ -7,3 +7,4 @@ export * from "./activity.ts";
 export * from "./diagnostics.ts";
 export * from "./api.ts";
 export * from "./client.ts";
+export * from "./hostDeviceAccess.ts";

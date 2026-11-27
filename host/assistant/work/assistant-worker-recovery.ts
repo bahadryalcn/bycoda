@@ -5,10 +5,7 @@ import type { HostTask } from "../../../src/features/tasks/model/hostTasks";
 import type { AssistantJob } from "../../../src/shared/model/host-contracts/assistant";
 import { assistantJobProjectIds } from "../../../src/shared/model/assistantProjects";
 import { assertAssistantGoalProjects } from "./assistant-job-scope";
-import {
-  AUTOMATIC_SUBAGENTS,
-  CROSS_SUBAGENTS_KEY,
-} from "../../../src/shared/model/host-contracts/delegation";
+import { withoutHelperSettings } from "../../model-routing/helpers";
 
 export type AssistantRecoverySource = {
   taskId: string;
@@ -59,8 +56,8 @@ export const assistantRecoveryIdentity = (task: HostTask) =>
     harness: task.harness,
     model: task.model,
     providerAccountId: task.providerAccountId,
-    // Task launch adds the Automatic subagents default; a never-launched task must keep the same identity.
-    modelSettings: { [CROSS_SUBAGENTS_KEY]: AUTOMATIC_SUBAGENTS, ...task.modelSettings },
+    // Launch writes the resolved helper policy into the settings; identity is the model's own options.
+    modelSettings: withoutHelperSettings(task.modelSettings),
     runtimeMode: task.runtimeMode,
     prompt: task.prompt,
     branch: task.branch,

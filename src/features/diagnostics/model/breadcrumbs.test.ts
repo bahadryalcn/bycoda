@@ -64,6 +64,13 @@ describe("breadcrumbs", () => {
     expect(rpcErrorCode(new TypeError("x"))).toBe("TypeError");
     expect(rpcErrorCode({ code: "has spaces and a very long text ".repeat(4) })).toBe("error");
     expect(rpcErrorCode("boom")).toBe("string");
+    expect(rpcErrorCode("RPC_WS_DETACHED: Native consumer detached before dispatch")).toBe(
+      "RPC_WS_DETACHED",
+    );
+    expect(rpcErrorCode("Host rejected request: Attachment file is missing on this machine.")).toBe(
+      "ATTACHMENT_MISSING",
+    );
+    expect(rpcErrorCode("RPC_WS_PRIVATE_USER_TEXT: secret")).toBe("string");
   });
 });
 

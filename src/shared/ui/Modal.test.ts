@@ -1,18 +1,36 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { ModalPanel } from "./Modal";
+import { Button } from "./Button";
+import { ModalActions, ModalPanel } from "./Modal";
+import { floatingFrameClassName } from "./NativePopupHost";
 import { Sheet } from "./Sheet";
 
 describe("ModalPanel", () => {
-  it("opts into the floating surface without changing the default", () => {
+  it("uses one opaque ground for default, explicit floating and centered workspace dialogs", () => {
     const props = { title: "Preview", onClose: vi.fn(), children: "Body" };
-    expect(renderToStaticMarkup(createElement(ModalPanel, props))).not.toContain(
-      'data-surface-variant="floating"',
+    for (const surface of [undefined, "floating", "workspace-panel"] as const) {
+      const markup = renderToStaticMarkup(createElement(ModalPanel, { ...props, surface }));
+      expect(markup.match(/popover-backdrop/g)).toHaveLength(1);
+      expect(markup).toContain(floatingFrameClassName);
+    }
+    const docked = renderToStaticMarkup(
+      createElement(ModalPanel, { ...props, surface: "workspace-panel", placement: "end" }),
     );
-    expect(
-      renderToStaticMarkup(createElement(ModalPanel, { ...props, surface: "floating" })),
-    ).toContain('data-surface-variant="floating"');
+    expect(docked).toContain("bg-(--ui-surface-panel)");
+    expect(docked).not.toContain("popover-backdrop");
+  });
+  it("clips the frame and a scroll-less body so nested scrollIntoView cannot shift them", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ModalPanel, {
+        title: "Settings",
+        onClose: vi.fn(),
+        scroll: "none",
+        children: "Body",
+      }),
+    );
+    expect(markup).not.toContain("overflow-hidden");
+    expect(markup.match(/overflow-clip/g)).toHaveLength(2);
   });
   it("names the dialog and close action", () => {
     const markup = renderToStaticMarkup(
@@ -85,7 +103,11 @@ describe("ModalPanel", () => {
       createElement(Sheet, { ...props, modal: false, anchor: "container" }),
     ].map((element) => renderToStaticMarkup(element));
     const header = (markup: string) =>
-      /<header[\s\S]*?<\/header>/.exec(markup)![0].replace(/id="[^"]*"/g, 'id="title"');
+      /<header[\s\S]*?<\/header>/
+        .exec(markup)![0]
+        .replace(/id="[^"]*"/g, 'id="title"')
+        // A non-modal sheet advertises Esc on its close button.
+        .replace(' data-tooltip-owner=""', "");
     const footer = (markup: string) => /<footer[^>]*>/.exec(markup)![0];
     for (const markup of variants) {
       expect(header(markup)).toBe(header(variants[0]));
@@ -107,6 +129,24 @@ describe("ModalPanel", () => {
     const footer = markup.indexOf("<footer");
     expect(scroller).toBeLessThan(footer);
     expect(markup.slice(scroller, footer)).not.toContain("Actions");
+    expect(markup.slice(footer)).toContain("overflow-y-auto");
+  });
+
+  it("can associate the visible blocker directly with its action", () => {
+    const markup = renderToStaticMarkup(
+      createElement(
+        ModalActions,
+        { reason: "Review required", reasonId: "review-blocker" },
+        createElement(
+          Button,
+          { "aria-disabled": true, "aria-describedby": "review-blocker" },
+          "Save",
+        ),
+      ),
+    );
+    expect(markup).toContain('id="review-blocker"');
+    expect(markup).toContain('aria-describedby="review-blocker"');
+    expect(markup.match(/Review required/g)).toHaveLength(1);
   });
 
   it("owns the body padding by default and drops it with padding none or scroll none", () => {
@@ -126,5 +166,36 @@ describe("ModalPanel", () => {
     expect(body({ padding: "none" })).not.toContain("px-4 pt-2 pb-4");
     expect(body({ scroll: "none" })).not.toContain("px-4 pt-2 pb-4");
     expect(body({ scroll: "none", padding: "md" })).toContain("px-4 pt-2 pb-4");
+  });
+});
+
+describe("ModalPanel geometry variants", () => {
+  const props = { title: "Panel", onClose: vi.fn(), children: "Body" };
+  const render = (extra: object) =>
+    renderToStaticMarkup(createElement(ModalPanel, { ...props, ...extra }));
+
+  it("maps height to one working height per name", () => {
+    expect(render({})).not.toContain(" h-[");
+    expect(render({ height: "tall" })).toContain("h-[min(760px,85dvh)]");
+    expect(render({ height: "fill" })).toContain("h-[calc(100dvh-32px)]");
+  });
+
+  it("gives Settings one geometry, the shared frame and a narrow end-edge peek", () => {
+    const standard = render({ size: "settings" });
+    expect(standard).toContain("w-[min(88rem,calc(100vw-24px))]");
+    expect(standard).toContain("h-[min(60rem,calc(100dvh-32px))]");
+    expect(standard).toContain(floatingFrameClassName);
+    expect(standard).not.toContain("--modal-frame-color");
+    const maximized = render({ size: "settings", maximized: true });
+    expect(maximized).toContain("w-[calc(100vw-24px)]");
+    expect(maximized).toContain("h-[calc(100dvh-32px)]");
+    expect(render({ size: "settings", placement: "end" })).toContain("w-[min(380px,100vw)]");
+  });
+
+  it("places the minimal-header close button on the logical end edge", () => {
+    const markup = render({ minimalHeader: true });
+    expect(markup).toContain("inset-e-(--modal-close-inset)");
+    expect(markup).not.toContain("right-3");
+    expect(markup).toContain("--modal-close-clearance");
   });
 });

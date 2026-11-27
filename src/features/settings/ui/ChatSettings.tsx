@@ -1,45 +1,48 @@
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
-import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
+  TRANSCRIPT_ANCHOR_DEFAULT,
   loadTranscriptAnchor,
   subscribeTranscriptAnchor,
-  subscribeTranscriptLayout,
-  loadTranscriptLayout,
   saveTranscriptAnchor,
-  saveTranscriptLayout,
-  type TranscriptLayout,
 } from "../model/appearance";
 import {
+  AUTO_CONTINUE_INTERRUPTED_DEFAULT,
+  MODEL_CONTROLS_DEFAULT,
+  RESUME_AT_RESET_DEFAULT,
   loadAutoContinueInterrupted,
   subscribeAutoContinueInterrupted,
   loadModelControls,
   subscribeModelControls,
   loadResumeAtReset,
   subscribeResumeAtReset,
+  loadUsageLimitFailover,
+  subscribeUsageLimitFailover,
   saveModelControls,
   type ModelControls,
 } from "../model/settings";
+import { DEFAULT_AGENT_DEFAULTS, type UsageLimitFailover } from "../../tasks/public/agentDefaults";
 import { saveAgentDefaultConfirmed } from "../model/agentDefaults";
 import {
-  AdvancedSettings,
   Group,
   Row,
   Segmented,
-  SettingsFeedback,
   Toggle,
+  useConfirmedPreferences,
 } from "../../../shared/ui/settings";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { Button } from "../../../shared/ui/Button";
+import { OPEN_SESSION_IMPORT_EVENT } from "../../sessions/public/importModel";
 import {
+  COMPOSER_SPELLING_DEFAULT,
   loadComposerSpelling,
   saveComposerSpelling,
   useComposerSpelling,
 } from "../model/composerSpelling";
 import { HelperModelsSettings } from "./HelperModelsSettings";
 import { TemplatesSettings } from "./TemplatesSettings";
-import { ConversationDisplaySettings } from "./ConversationDisplaySettings";
-import { AppearanceSaveFeedback, type AppearanceSettings } from "./useAppearanceSettings";
+import { AppearanceSaveFeedback } from "./useAppearanceSettings";
 import "./ChatSettings.css";
 import { VoiceSettings } from "../../voice/ui/VoiceSettings";
 
@@ -52,13 +55,10 @@ export function VoicePage() {
   );
 }
 
-export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
+/** Chat behavior: prompts, spelling, usage limits, interrupted turns, helper models and templates. Its look lives in Appearance > Chat. */
+export function ChatPage() {
   useLocale();
   const spelling = useComposerSpelling();
-  const [transcriptLayout, setTranscriptLayout] = useStoredPreferenceState(
-    loadTranscriptLayout,
-    subscribeTranscriptLayout,
-  );
   const [transcriptAnchor, setTranscriptAnchor] = useStoredPreferenceState(
     loadTranscriptAnchor,
     subscribeTranscriptAnchor,
@@ -67,160 +67,88 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
     loadResumeAtReset,
     subscribeResumeAtReset,
   );
+  const [usageLimitFailover, setUsageLimitFailover] = useStoredPreferenceState(
+    loadUsageLimitFailover,
+    subscribeUsageLimitFailover,
+  );
   const [autoContinue, setAutoContinue] = useStoredPreferenceState(
     loadAutoContinueInterrupted,
     subscribeAutoContinueInterrupted,
   );
-  const [failures, setFailures] = useState<Record<string, () => void>>({});
-  const [pending, setPending] = useState<Record<string, boolean>>({});
-  const commitConfirmed = async (
-    id: string,
-    write: () => boolean | void | Promise<boolean | void>,
-    read: () => unknown,
-    next: unknown,
-    update: () => void,
-  ) => {
-    setPending((current) => ({ ...current, [id]: true }));
-    try {
-      if ((await write()) === false || read() !== next) throw new Error("Preference not persisted");
-      update();
-      setFailures((current) => {
-        const updated = { ...current };
-        delete updated[id];
-        return updated;
-      });
-    } catch {
-      setFailures((current) => ({
-        ...current,
-        [id]: () => {
-          void commitConfirmed(id, write, read, next, update).catch(console.error);
-        },
-      }));
-    } finally {
-      setPending((current) => ({ ...current, [id]: false }));
-    }
-  };
-  const commit = (...args: Parameters<typeof commitConfirmed>) => {
-    void commitConfirmed(...args).catch(console.error);
-  };
-  const feedback = (id: string) =>
-    pending[id] ? (
-      <SettingsFeedback state="loading" immediate>
-        {t("Saving…")}
-      </SettingsFeedback>
-    ) : failures[id] ? (
-      <SettingsFeedback state="error" action={{ label: t("Retry"), onClick: failures[id] }}>
-        {t("Could not save changes")}
-      </SettingsFeedback>
-    ) : undefined;
+  const { commit, pending, feedback } = useConfirmedPreferences();
   const [modelControls, setModelControls] = useStoredPreferenceState(
     loadModelControls,
     subscribeModelControls,
   );
-  const onTranscriptLayout = (next: TranscriptLayout) => {
-    commit(
-      "transcript-layout",
-      () => saveTranscriptLayout(next),
-      loadTranscriptLayout,
-      next,
-      () => setTranscriptLayout(next),
-    );
-  };
   const onTranscriptAnchor = (next: boolean) => {
-    commit(
-      "anchor-prompts",
-      () => saveTranscriptAnchor(next),
-      loadTranscriptAnchor,
-      next,
-      () => setTranscriptAnchor(next),
-    );
+    commit("anchor-prompts", {
+      write: () => saveTranscriptAnchor(next),
+      verify: () => loadTranscriptAnchor() === next,
+      onConfirmed: () => setTranscriptAnchor(next),
+    });
+  };
+  const onComposerSpelling = (next: boolean) => {
+    commit("composer-spelling", {
+      write: () => saveComposerSpelling(next),
+      verify: () => loadComposerSpelling() === next,
+    });
   };
   const onResumeAtReset = (next: boolean) => {
-    commit(
-      "resume-at-reset",
-      () => saveAgentDefaultConfirmed("resumeAtReset", next),
-      loadResumeAtReset,
-      next,
-      () => setResumeAtReset(next),
-    );
+    commit("resume-at-reset", {
+      write: () => saveAgentDefaultConfirmed("resumeAtReset", next),
+      verify: () => loadResumeAtReset() === next,
+      onConfirmed: () => setResumeAtReset(next),
+    });
+  };
+  const onUsageLimitFailover = (next: UsageLimitFailover) => {
+    commit("usage-limit-failover", {
+      write: () => saveAgentDefaultConfirmed("usageLimitFailover", next),
+      verify: () => loadUsageLimitFailover() === next,
+      onConfirmed: () => setUsageLimitFailover(next),
+    });
   };
   const onAutoContinue = (next: boolean) => {
-    commit(
-      "auto-continue-interrupted",
-      () => saveAgentDefaultConfirmed("autoContinueInterrupted", next),
-      loadAutoContinueInterrupted,
-      next,
-      () => setAutoContinue(next),
-    );
+    commit("auto-continue-interrupted", {
+      write: () => saveAgentDefaultConfirmed("autoContinueInterrupted", next),
+      verify: () => loadAutoContinueInterrupted() === next,
+      onConfirmed: () => setAutoContinue(next),
+    });
   };
   const onModelControls = (next: ModelControls) => {
-    commit(
-      "model-controls",
-      () => saveModelControls(next),
-      loadModelControls,
-      next,
-      () => setModelControls(next),
-    );
+    commit("model-controls", {
+      write: () => saveModelControls(next),
+      verify: () => loadModelControls() === next,
+      onConfirmed: () => setModelControls(next),
+    });
   };
   return (
     <div className="chat-settings settings-topics">
       <Group
-        title={t("Conversation view")}
+        title={t("Conversation")}
         layout="full"
-        feedback={
-          <AppearanceSaveFeedback
-            settingIds={[
-              "appearance-preferences",
-              "transcript-layout",
-              "anchor-prompts",
-              "streaming-text-mode",
-            ]}
-          />
-        }
+        feedback={<AppearanceSaveFeedback settingIds={["anchor-prompts"]} />}
       >
-        <ConversationDisplaySettings appearance={appearance} />
-        <Row
-          id="transcript-layout"
-          feedback={feedback("transcript-layout")}
-          label={t("Transcript layout")}
-          description={t("Choose a wider transcript or compact chat bubbles.")}
-        >
-          <Segmented
-            label={t("Transcript layout")}
-            value={transcriptLayout}
-            options={[
-              {
-                value: "full",
-                get label() {
-                  return t("Full width");
-                },
-              },
-              {
-                value: "chat",
-                get label() {
-                  return t("Chat");
-                },
-              },
-            ]}
-            onChange={onTranscriptLayout}
-          />
-        </Row>
         <Row
           id="anchor-prompts"
           feedback={feedback("anchor-prompts")}
           label={t("Anchor prompts to top")}
+          modified={transcriptAnchor !== TRANSCRIPT_ANCHOR_DEFAULT && !pending("anchor-prompts")}
+          onReset={() => onTranscriptAnchor(TRANSCRIPT_ANCHOR_DEFAULT)}
           description={t("Keep your latest prompt at the top while the reply appears below.")}
         >
           <Toggle
             label={t("Anchor prompts to top")}
             on={transcriptAnchor}
             onChange={onTranscriptAnchor}
+            disabled={pending("anchor-prompts")}
           />
         </Row>
         <Row
           id="composer-spelling"
           feedback={feedback("composer-spelling")}
           label={t("Spelling and autocorrect")}
+          modified={spelling !== COMPOSER_SPELLING_DEFAULT && !pending("composer-spelling")}
+          onReset={() => onComposerSpelling(COMPOSER_SPELLING_DEFAULT)}
           description={t(
             "Enable spelling checks and automatic correction where supported by your platform.",
           )}
@@ -228,99 +156,166 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
           <Toggle
             label={t("Spelling and autocorrect")}
             on={spelling}
-            onChange={(next) =>
-              commit(
-                "composer-spelling",
-                () => saveComposerSpelling(next),
-                loadComposerSpelling,
-                next,
-                () => {},
-              )
-            }
+            onChange={onComposerSpelling}
+            disabled={pending("composer-spelling")}
           />
         </Row>
-        <AdvancedSettings
-          title={t("Advanced conversation settings")}
-          defaultOpen={false}
-          settingIds={["resume-at-reset", "auto-continue-interrupted", "model-controls"]}
+        <Row
+          id="resume-at-reset"
+          feedback={feedback("resume-at-reset")}
+          label={t("Resume at reset")}
+          modified={resumeAtReset !== RESUME_AT_RESET_DEFAULT && !pending("resume-at-reset")}
+          onReset={() => onResumeAtReset(RESUME_AT_RESET_DEFAULT)}
+          info={
+            <InfoPopover className="shrink-0">
+              <p>
+                {t(
+                  "When a provider stops a turn at its usage limit, continue the session automatically once the limit resets. You can still cancel it from the notice above the composer.",
+                )}
+              </p>
+              <p>
+                {t(
+                  "Automatic resumption requires the provider to report when its usage limit resets.",
+                )}
+              </p>
+            </InfoPopover>
+          }
         >
-          <Row
-            id="resume-at-reset"
-            feedback={feedback("resume-at-reset")}
+          <Toggle
             label={t("Resume at reset")}
-            description={t("Continue automatically after a provider's usage limit resets.")}
-            info={
-              <InfoPopover className="shrink-0">
-                <p>
-                  {t(
-                    "When a provider stops a turn at its usage limit, continue the session automatically once the limit resets. You can still cancel it from the notice above the composer.",
-                  )}
-                </p>
-                <p>
-                  {t(
-                    "Automatic resumption requires the provider to report when its usage limit resets.",
-                  )}
-                </p>
-              </InfoPopover>
-            }
-          >
-            <Toggle
-              label={t("Resume at reset")}
-              on={resumeAtReset}
-              onChange={onResumeAtReset}
-              disabled={pending["resume-at-reset"]}
-            />
-          </Row>
-          <Row
-            id="auto-continue-interrupted"
-            feedback={feedback("auto-continue-interrupted")}
+            on={resumeAtReset}
+            onChange={onResumeAtReset}
+            disabled={pending("resume-at-reset")}
+          />
+        </Row>
+        <Row
+          id="usage-limit-failover"
+          feedback={feedback("usage-limit-failover")}
+          label={t("At usage limit, continue on")}
+          modified={
+            usageLimitFailover !== DEFAULT_AGENT_DEFAULTS.usageLimitFailover &&
+            !pending("usage-limit-failover")
+          }
+          onReset={() => onUsageLimitFailover(DEFAULT_AGENT_DEFAULTS.usageLimitFailover)}
+          info={
+            <InfoPopover className="shrink-0">
+              <p>
+                {t(
+                  "When a provider stops a chat at its usage limit, continue the same conversation elsewhere instead of waiting for the reset.",
+                )}
+              </p>
+              <p>
+                {t(
+                  "Another account keeps the model and moves to the next signed-in account of the same provider that still has quota. Model order uses the first eligible model in Settings → Models, skipping the limited account.",
+                )}
+              </p>
+              <p>
+                {t(
+                  "The switch shows in the conversation. If nothing is available, the limit notice stays and Resume at reset still applies.",
+                )}
+              </p>
+              <p>
+                {t(
+                  "Saved on this computer. Chats running on another computer follow the setting saved there.",
+                )}
+              </p>
+            </InfoPopover>
+          }
+        >
+          <Segmented
+            label={t("At usage limit, continue on")}
+            value={usageLimitFailover}
+            options={[
+              {
+                value: "off",
+                get label() {
+                  return t("Off");
+                },
+              },
+              {
+                value: "account",
+                get label() {
+                  return t("Another account");
+                },
+              },
+              {
+                value: "order",
+                get label() {
+                  return t("Model order");
+                },
+              },
+            ]}
+            onChange={onUsageLimitFailover}
+            disabled={pending("usage-limit-failover")}
+          />
+        </Row>
+        <Row
+          id="auto-continue-interrupted"
+          feedback={feedback("auto-continue-interrupted")}
+          label={t("Automatically continue interrupted turns")}
+          modified={
+            autoContinue !== AUTO_CONTINUE_INTERRUPTED_DEFAULT &&
+            !pending("auto-continue-interrupted")
+          }
+          onReset={() => onAutoContinue(AUTO_CONTINUE_INTERRUPTED_DEFAULT)}
+          info={
+            <InfoPopover className="shrink-0">
+              <p>
+                {t(
+                  "When {p0} quit in the middle of a turn and the transcript shows it was cut off, send Continue at the next launch. Turns that finished or are still running are never continued, and nothing is sent when you have queued messages. When off, the chat shows an Interrupted - Continue action instead.",
+                  { p0: PRODUCT_IDENTITY.displayName },
+                )}
+              </p>
+            </InfoPopover>
+          }
+        >
+          <Toggle
             label={t("Automatically continue interrupted turns")}
-            description={t("Send Continue at launch when a turn was cut off.")}
-            info={
-              <InfoPopover className="shrink-0">
-                <p>
-                  {t(
-                    "When {p0} quit in the middle of a turn and the transcript shows it was cut off, send Continue at the next launch. Turns that finished or are still running are never continued, and nothing is sent when you have queued messages. When off, the chat shows an Interrupted - Continue action instead.",
-                    { p0: PRODUCT_IDENTITY.displayName },
-                  )}
-                </p>
-              </InfoPopover>
-            }
-          >
-            <Toggle
-              label={t("Automatically continue interrupted turns")}
-              on={autoContinue}
-              onChange={onAutoContinue}
-              disabled={pending["auto-continue-interrupted"]}
-            />
-          </Row>
-          <Row
-            id="model-controls"
-            feedback={feedback("model-controls")}
+            on={autoContinue}
+            onChange={onAutoContinue}
+            disabled={pending("auto-continue-interrupted")}
+          />
+        </Row>
+        <Row
+          id="model-controls"
+          feedback={feedback("model-controls")}
+          label={t("Extras summary")}
+          modified={modelControls !== MODEL_CONTROLS_DEFAULT && !pending("model-controls")}
+          onReset={() => onModelControls(MODEL_CONTROLS_DEFAULT)}
+          description={t("Choose whether Extras also shows your active options.")}
+        >
+          <Segmented
             label={t("Extras summary")}
-            description={t("Choose whether Extras also shows your active options.")}
-          >
-            <Segmented
-              label={t("Extras summary")}
-              value={modelControls}
-              options={[
-                {
-                  value: "menu",
-                  get label() {
-                    return t("Compact");
-                  },
+            value={modelControls}
+            options={[
+              {
+                value: "menu",
+                get label() {
+                  return t("Compact");
                 },
-                {
-                  value: "beside",
-                  get label() {
-                    return t("Show active choices");
-                  },
+              },
+              {
+                value: "beside",
+                get label() {
+                  return t("Show active choices");
                 },
-              ]}
-              onChange={onModelControls}
-            />
-          </Row>
-        </AdvancedSettings>
+              },
+            ]}
+            onChange={onModelControls}
+            disabled={pending("model-controls")}
+          />
+        </Row>
+        <Row
+          id="import-history"
+          label={t("Conversations from other coding agents")}
+          description={t(
+            "Bring in local conversations from Claude Code, Codex, Cursor, Grok, OpenCode, Pi, omp, Hermes, Antigravity and OpenClaw.",
+          )}
+        >
+          <Button onClick={() => window.dispatchEvent(new Event(OPEN_SESSION_IMPORT_EVENT))}>
+            {t("Import history")}
+          </Button>
+        </Row>
       </Group>
 
       <Group title={t("Helper models")} layout="full" persistence={{ mode: "automatic" }}>

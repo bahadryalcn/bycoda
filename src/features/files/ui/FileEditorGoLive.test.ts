@@ -7,6 +7,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FileEditor } from "./FileEditor";
 import { setRemoteCommandRunner } from "../../../platform/tauri/fs";
+import { saveExplorerMapping } from "../../../shared/lib/remoteExplorerPaths";
 import {
   getDomainLanguagePreference,
   getLanguagePreference,
@@ -14,6 +15,7 @@ import {
   setLanguagePreference,
 } from "../../../shared/i18n";
 import { invalidateWatchedFiles } from "../model/fileWatch";
+import { showErrorDetails } from "./errorDetails.test-support";
 
 const bridge = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", async (original) => ({
@@ -146,13 +148,39 @@ describe("HTML Go Live", () => {
       token: "preview-token",
     });
     const folder = [...container.querySelectorAll<HTMLButtonElement>('button, [role="tab"]')].find(
-      (item) => /Reveal in|Open Containing Folder/.test(item.getAttribute("aria-label") ?? ""),
+      (item) => /Reveal in|Open containing folder/.test(item.getAttribute("aria-label") ?? ""),
     );
     expect(folder).toBeDefined();
     await act(async () => folder!.click());
     expect(bridge.invoke).toHaveBeenCalledWith("reveal_path", {
       path: "/repo/store/live-preview.html",
     });
+  });
+
+  it("reveals a mapped remote HTML file locally and browses an unmapped one", async () => {
+    saveExplorerMapping("remote://mac/Users/dev", "Z:/dev");
+    const remote = "remote://mac/Users/dev/site/index.html";
+    await render(remote, false);
+    const reveal = () =>
+      [...container.querySelectorAll<HTMLButtonElement>("button")].find((item) =>
+        /Reveal in|Open containing folder/.test(item.getAttribute("aria-label") ?? ""),
+      );
+    expect(reveal()?.disabled).toBe(false);
+    await act(async () => reveal()!.click());
+    expect(bridge.invoke).toHaveBeenCalledWith("reveal_path", { path: "Z:/dev/site/index.html" });
+
+    const unmapped = "remote://other/Users/dev/site/index.html";
+    const base = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation((command, args) =>
+      command === "browse_dir"
+        ? { path: "remote://other/Users/dev/site", parent: null, entries: [], canOpenFiles: true }
+        : base(command, args),
+    );
+    bridge.invoke.mockClear();
+    await render(unmapped, false);
+    await act(async () => reveal()!.click());
+    expect(bridge.invoke).toHaveBeenCalledWith("browse_dir", { path: unmapped, containing: true });
+    expect(bridge.invoke).not.toHaveBeenCalledWith("reveal_path", expect.anything());
   });
 
   it("refreshes the live view when the agent changes the HTML on disk", async () => {
@@ -206,7 +234,11 @@ describe("HTML Go Live", () => {
     await click();
     expect(disk).toBe("<h1>Changed elsewhere</h1>\r\n");
     expect(opened()).toHaveLength(0);
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("changed on disk");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Couldn’t open Chrome",
+    );
+    await showErrorDetails(container);
+    expect(document.body.textContent).toContain("changed on disk");
   });
 
   it("keeps Chrome closed when saving fails", async () => {
@@ -216,9 +248,13 @@ describe("HTML Go Live", () => {
     await click();
     expect(opened()).toHaveLength(0);
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "Save the file successfully",
+      "Couldn’t open Chrome",
     );
-    expect(container.textContent).toContain("Disk full");
+    await showErrorDetails(container, "Couldn’t open Chrome");
+    expect(document.body.textContent).toContain("Save the file successfully");
+    expect(container.textContent).toContain("Save failed");
+    await showErrorDetails(container, "Save failed");
+    expect(document.body.textContent).toContain("Disk full");
   });
 
   it("shows Chrome errors and allows retry", async () => {
@@ -226,8 +262,10 @@ describe("HTML Go Live", () => {
     chromeError = true;
     await click();
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "Chrome is not installed",
+      "Couldn’t open Chrome",
     );
+    await showErrorDetails(container);
+    expect(document.body.textContent).toContain("Chrome is not installed");
     chromeError = false;
     await click();
     expect(opened()).toHaveLength(2);
@@ -241,7 +279,8 @@ describe("HTML Go Live", () => {
 
   it("disables local Chrome launch for remote HTML", async () => {
     await render("remote://machine/repo/gallery.html");
-    expect(button()?.disabled).toBe(true);
+    expect(button()?.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => button()!.click());
     expect(opened()).toHaveLength(0);
   });
   it("localizes HTML reveal labels after changing language", async () => {
@@ -258,7 +297,7 @@ describe("HTML Go Live", () => {
       const labels = [...container.querySelectorAll("button")].map((action) =>
         action.getAttribute("aria-label"),
       );
-      expect(labels).not.toContain("Open Containing Folder");
+      expect(labels).not.toContain("Open containing folder");
       expect(labels).not.toContain("Reveal in File Explorer");
       expect(labels).not.toContain("Reveal in Finder");
       expect(

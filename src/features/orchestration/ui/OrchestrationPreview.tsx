@@ -1,13 +1,14 @@
+import { errorText } from "../../../shared/lib/errors";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { Text } from "../../../shared/ui/Text";
-import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Surface } from "../../../shared/ui/Surface";
 import { Alert } from "../../../shared/ui/Alert";
-import { BadgeList } from "../../../shared/ui/BadgeList";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Button } from "../../../shared/ui/Button";
 import { TextareaField } from "../../../shared/ui/TextareaField";
@@ -35,8 +36,8 @@ import {
 } from "../../sessions/model/models";
 import { OrchestrationActions } from "./OrchestrationActions";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
-import { Popover } from "../../../shared/ui/Popover";
-import { CircleHelp, MessageMultiple, Play } from "../../../shared/ui/icons";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
+import { MessageMultiple, Play } from "../../../shared/ui/icons";
 
 function AssignmentModel({
   task,
@@ -116,7 +117,7 @@ function AssignmentModel({
             <EmptyState
               size="inline"
               kind="filtered"
-              className="px-2 py-3"
+              inset="row"
               description={t("No matching models")}
             />
           ),
@@ -155,7 +156,7 @@ function AssignmentModel({
           label={t("Assignment models")}
           side="bottom"
           align="start"
-          width={260}
+          size="md"
           maxHeight={320}
           items={items}
           initialActiveId={selected ? choiceId(selected) : undefined}
@@ -177,61 +178,16 @@ function AssignmentModel({
 
 function WorkerHelp() {
   useLocale();
-  const [hovered, setHovered] = useState(false);
-  const [open, setOpen] = useState(false);
-  const anchor = useRef<HTMLButtonElement>(null);
   return (
-    <>
-      <Button
-        iconOnly
-        label={t("What parallel workers means")}
-        variant="ghost"
-        type="button"
-        ref={anchor}
-        aria-label={t("What parallel workers means")}
-        selected={open}
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-        onFocus={() => setHovered(true)}
-        onBlur={() => setHovered(false)}
-        className="shrink-0"
-      >
-        <CircleHelp className="icon-sm" strokeWidth={1.75} />
-      </Button>
-      {(hovered || open) && (
-        <Popover
-          anchor={anchor}
-          side="top"
-          align="start"
-          width={250}
-          onDismiss={() => setOpen(false)}
-          className={`px-2.5 py-2 ${open ? "" : "pointer-events-none"}`}
-        >
-          <Text as="div" size="caption" tone="neutral">
-            {t("How many workers run at once")}
-          </Text>
-          <Text as="div" size="micro" tone="secondary" className="mt-1">
-            {t(
-              "Tasks wait for available workers and for their dependencies to finish. A lower number runs fewer agent sessions at the same time.",
-            )}
-          </Text>
-        </Popover>
+    <InfoTooltip label={t("What parallel workers means")} className="shrink-0">
+      {t(
+        "Tasks wait for available workers and for their dependencies to finish. A lower number runs fewer agent sessions at the same time.",
       )}
-    </>
+    </InfoTooltip>
   );
 }
 
-function InstructionsField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange(value: string): void;
-}) {
+function InstructionsField({ value, onChange }: { value: string; onChange(value: string): void }) {
   useLocale();
   const ref = useRef<HTMLTextAreaElement>(null);
   const lockOverscroll = useLockOverscroll<HTMLTextAreaElement>();
@@ -243,8 +199,7 @@ function InstructionsField({
   }, [value]);
   return (
     <TextareaField
-      hideLabel
-      label=""
+      label={t("Instructions")}
       ref={(el) => {
         ref.current = el;
         lockOverscroll(el);
@@ -252,15 +207,20 @@ function InstructionsField({
       fieldClassName="w-full"
       resize="none"
       className="max-h-40 overscroll-none"
-
       rows={1}
-      aria-label={label}
-
       value={value}
       onChange={(event) => onChange(event.target.value)}
     />
   );
 }
+
+/** Literal `t()` calls, so extraction and key checks see every run status. */
+const RUN_STATUS_LABEL = {
+  active: () => t("Active"),
+  paused: () => t("Paused"),
+  stopped: () => t("Stopped"),
+  finished: () => t("Finished"),
+} as const;
 
 export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boolean }) {
   useLocale();
@@ -276,16 +236,19 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
   );
   const [pending, setPending] = useState(false);
   const inFlight = useRef(false);
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<{ title: string; detail: string }>();
   const [expanded, setExpanded] = useState<string[]>([]);
   const [showAll, setShowAll] = useState(false);
   useEffect(() => {
     if (actions)
       void orchestrator
         .hydrate(proposal.leadId)
-        .catch((reason: unknown) => setError(String(reason)));
+        .catch((reason: unknown) =>
+          setError({ title: t("Could not load orchestration"), detail: errorText(reason) }),
+        );
   }, [actions, proposal.leadId]);
   const editable = proposal.status === "ready" && !run && !pending && !busy && !!actions;
+  const confirmReason = busy ? t("Wait for the current operation to finish") : undefined;
   const planning = proposal.status === "planning";
   const starting = pending || proposal.status === "starting";
   const visible = showAll ? proposal.tasks : proposal.tasks.slice(0, 3);
@@ -297,7 +260,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
     try {
       await fn();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError({ title: t("Could not start orchestration"), detail: errorText(reason) });
     } finally {
       inFlight.current = false;
       setPending(false);
@@ -330,33 +293,20 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
           <Text as="div" size="secondary" tone="neutral" weight="medium" wrap="anywhere">
             {planning ? t("Planning assignments…") : proposal.title}
           </Text>
-          <Text
-            as="div"
-            size="micro"
-            tone="secondary"
-            leading="tight"
-            className="mt-1 flex items-center gap-1.5"
-          >
-            <HarnessIcon harness={proposal.author.harness} className="icon-xs shrink-0" />
-            <Tooltip label={HARNESS_TITLE[proposal.author.harness]} asChild>
-              <Text size="inherit" tone="inherit" truncate>
-                {t("Lead · {p0}", { p0: proposal.author.name })}
-              </Text>
-            </Tooltip>
-            {!!proposal.tasks.length && (
-              <span className="shrink-0">
-                · {proposal.tasks.length} {proposal.tasks.length === 1 ? t("task") : t("tasks")}
-              </span>
-            )}
-          </Text>
+          {!!proposal.tasks.length && (
+            <Text as="div" size="micro" tone="secondary" leading="tight" className="mt-1">
+              {proposal.tasks.length === 1
+                ? t("{p0} task", { p0: 1 })
+                : t("{p0} tasks", { p0: proposal.tasks.length })}
+            </Text>
+          )}
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          {!run && proposal.status === "invalid" && (
+        <div className="ms-auto flex shrink-0 items-center gap-0.5">
+          {!run && proposal.status === "invalid" && actions && (
             <Button
               variant="ghost"
               type="button"
-
-              disabled={busy || !actions}
+              disabled={busy}
               onClick={() => actions?.retry(proposal.leadId, block.id)}
             >
               {t("Try again")}
@@ -367,18 +317,19 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
               variant="primary"
               type="button"
               disabled={!editable}
+              disabledReason={confirmReason}
               loading={starting}
+              loadingLabel={t("Starting…")}
               startIcon={<Play className="icon-xs" strokeWidth={1.75} />}
               onClick={() => void perform(() => actions!.confirm(proposal.leadId, block.id))}
             >
-              {starting ? t("Starting…") : t("Confirm & start")}
+              {t("Confirm & start")}
             </Button>
           )}
           {run && (
             <Button
               variant="ghost"
               type="button"
-
               onClick={() =>
                 actions?.openAgents?.(
                   run.tasks.map((task) => ({
@@ -396,14 +347,8 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
         </div>
       </div>
       {!!proposal.tasks.length && (
-        <ul
-          {...surfaceAttributes(
-            { frame: "pane", edge: "top" },
-            "border-(--ui-tone-neutral-border) py-1",
-          )}
-        >
+        <ul {...surfaceAttributes({ frame: "pane", edge: "top" }, "py-1")}>
           {visible.map((task) => {
-            const index = proposal.tasks.indexOf(task);
             const open = expanded.includes(task.id);
             const taskChoice = proposal.settings.choices.find(
               (choice) => choice.harness === task.harness && choice.model === task.model,
@@ -432,7 +377,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                         open ? prev.filter((id) => id !== task.id) : [...prev, task.id],
                       )
                     }
-                    className="min-w-0 flex-1 text-left"
+                    className="min-w-0 flex-1 text-start"
                   >
                     <OverflowTooltip label={task.title}>
                       <Text
@@ -445,7 +390,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                       </Text>
                     </OverflowTooltip>
                   </Button>
-                  <div className={editable ? "max-w-[60%] min-w-0" : "min-w-0 w-full ps-6"}>
+                  <div className={editable ? "max-w-3/5 min-w-0" : "min-w-0 w-full ps-6"}>
                     {editable ? (
                       <AssignmentModel
                         task={task}
@@ -469,9 +414,6 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                           {taskChoice?.name ?? modelDisplayName(task.model, task.harness)}
                           {taskEffort ? ` · ${taskEffort}` : ""}
                         </Text>
-                        <Text size="inherit" tone="inherit" wrap="anywhere">
-                          {HARNESS_TITLE[task.harness]}
-                        </Text>
                       </Text>
                     )}
                   </div>
@@ -481,43 +423,19 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                     as="div"
                     size="micro"
                     tone="secondary"
-                    className="space-y-2.5 px-3 pb-3 pl-8"
+                    className="space-y-2.5 px-3 pb-3 ps-8"
                   >
                     {editable ? (
                       <>
-                        <div className="block">
-                          <Text
-                            size="micro"
-                            tone="secondary"
-                            leading="tight"
-                            className="mb-1 block"
-                          >
-                            {t("Task")}
-                          </Text>
-                          <TextField
-                            hideLabel
-                            label=""
-                            aria-label={t("Title for task {p0}", { p0: index + 1 })}
-
-                            value={task.title}
-                            onChange={(event) => change(task.id, { title: event.target.value })}
-                          />
-                        </div>
-                        <div className="block">
-                          <Text
-                            size="micro"
-                            tone="secondary"
-                            leading="tight"
-                            className="mb-1 block"
-                          >
-                            {t("Instructions")}
-                          </Text>
-                          <InstructionsField
-                            label={t("Instructions for task {p0}", { p0: index + 1 })}
-                            value={task.prompt}
-                            onChange={(prompt) => change(task.id, { prompt })}
-                          />
-                        </div>
+                        <TextField
+                          label={t("Task")}
+                          value={task.title}
+                          onChange={(event) => change(task.id, { title: event.target.value })}
+                        />
+                        <InstructionsField
+                          value={task.prompt}
+                          onChange={(prompt) => change(task.id, { prompt })}
+                        />
                       </>
                     ) : (
                       <Text
@@ -532,18 +450,17 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                     )}
                     {!!task.dependsOn.length && (
                       <div className="flex min-w-0 items-center gap-1.5">
-                        <span className="shrink-0">{t("After")}</span>
-                        <BadgeList
-                          label={t("After")}
-                          size="xs"
-                          max={2}
-                          className="min-w-0"
-                          items={task.dependsOn.map((id, index) => {
-                            const title =
-                              proposal.tasks.find((entry) => entry.id === id)?.title ?? id;
-                            return { id: `${index}:${title}`, label: title };
+                        <Text size="micro" tone="muted" truncate className="min-w-0">
+                          {t("{p0}: {p1}", {
+                            p0: t("After"),
+                            p1: task.dependsOn
+                              .map(
+                                (id) =>
+                                  proposal.tasks.find((entry) => entry.id === id)?.title ?? id,
+                              )
+                              .join(", "),
                           })}
-                        />
+                        </Text>
                       </div>
                     )}
                   </Text>
@@ -560,16 +477,27 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
           expanded={showAll}
           chevron="start"
           onClick={() => setShowAll(!showAll)}
-          className="w-full text-left"
+          className="w-full text-start"
         >
           {showAll
             ? t("Show fewer tasks")
-            : t(proposal.tasks.length === 4 ? "Show {p0} more task" : "Show {p0} more tasks", {
-                p0: proposal.tasks.length - 3,
-              })}
+            : proposal.tasks.length === 4
+              ? t("Show {p0} more task", { p0: 1 })
+              : t("Show {p0} more tasks", { p0: proposal.tasks.length - 3 })}
         </Button>
       )}
-      {(error || proposal.error) && <Alert tone="danger">{error ?? proposal.error}</Alert>}
+      {error || proposal.error ? (
+        <Alert
+          tone="danger"
+          title={error?.title ?? t("Orchestration failed")}
+          extra={
+            <ErrorDetails
+              title={error?.title ?? t("Orchestration failed")}
+              detail={error?.detail ?? proposal.error ?? ""}
+            />
+          }
+        />
+      ) : null}
       {!planning && (
         <Text
           as="div"
@@ -577,7 +505,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
           tone="secondary"
           {...surfaceAttributes(
             { frame: "pane", edge: "top" },
-            "flex flex-wrap items-center justify-between gap-2 border-(--ui-tone-neutral-border) px-3 py-2",
+            "flex flex-wrap items-center justify-between gap-2 px-3 py-2",
           )}
         >
           <div className="flex items-center gap-1.5">
@@ -602,24 +530,19 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
               </>
             ) : (
               <span>
-                {t(
-                  proposal.settings.maxWorkers === 1
-                    ? "{p0} parallel worker"
-                    : "{p0} parallel workers",
-                  { p0: proposal.settings.maxWorkers },
-                )}
+                {proposal.settings.maxWorkers === 1
+                  ? t("{p0} parallel worker", { p0: 1 })
+                  : t("{p0} parallel workers", { p0: proposal.settings.maxWorkers })}
               </span>
             )}
             <WorkerHelp />
           </div>
           <span>
             {run?.status
-              ? t(run.status.charAt(0).toUpperCase() + run.status.slice(1))
+              ? RUN_STATUS_LABEL[run.status]()
               : proposal.status === "approved"
                 ? t("Approved")
-                : proposal.status === "ready"
-                  ? t("Awaiting confirmation")
-                  : ""}
+                : ""}
           </span>
         </Text>
       )}

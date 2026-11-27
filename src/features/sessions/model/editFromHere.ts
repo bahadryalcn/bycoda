@@ -11,8 +11,10 @@ import { parseRemotePath } from "../../connections/public/remoteProjects";
 import type { Session } from "./session";
 
 export const EDIT_FROM_HERE_CAPABILITY = "sessions.edit-from-here.v1";
-export const EDIT_FROM_HERE_UPDATE_HINT =
-  "Update bycoda Host on this machine to revert session files. You can still rewind and keep changes.";
+const updateHint = () =>
+  t(
+    "Update bycoda Host on this machine to revert session files. You can still rewind and keep changes.",
+  );
 
 export type SessionFilesRevertPlan = {
   authorityGeneration?: number;
@@ -90,7 +92,7 @@ export async function planSessionFilesRevert(
     return retainPlan(plan, captured, route);
   }
   if (!(await machineCapabilities(machine)).includes(EDIT_FROM_HERE_CAPABILITY))
-    return { files: [], unavailable: t(EDIT_FROM_HERE_UPDATE_HINT) };
+    return { files: [], unavailable: updateHint() };
   const plan = await remoteRequest<SessionFilesRevertPlan>(
     machine.id,
     "sessions.files.revertPlan",
@@ -135,7 +137,7 @@ export async function revertSessionFiles(
   };
   if (!machine) return invoke<SessionFilesRevertResult>("session_files_revert", request);
   if (!(await machineCapabilities(machine)).includes(EDIT_FROM_HERE_CAPABILITY))
-    throw new Error(t(EDIT_FROM_HERE_UPDATE_HINT));
+    throw new Error(updateHint());
   return remoteRequest<SessionFilesRevertResult>(
     machine.id,
     "sessions.files.revert",

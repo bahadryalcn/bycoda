@@ -9,16 +9,15 @@ const appVersion = (
 
 const route = "/tests/browser/app-shell/update-footer.html";
 const captureRoot = "temp/verification/2026-10-27-update-footer";
-const nextVersion = "0.6.93";
+const [major, minor, patch] = appVersion.split("-")[0].split(".");
+const nextVersion = `${major}.${minor}.${Number(patch) + 1}`;
 const accountCaptureRoot = "temp/verification/2026-11-11-rail-size-reset";
 const toolsCaptureRoot = "temp/verification/2026-11-13-rail-tools-selection";
 
-test("multi-machine update impact previews retain counts, unknown activity and cancel focus", async ({
-  page,
-}) => {
-  const capture = "temp/verification/multi-machine-update";
+test("update impact previews show active work and preserve cancel focus", async ({ page }) => {
+  const capture = "temp/verification/update-running-work";
   mkdirSync(capture, { recursive: true });
-  for (const kind of ["app", "host", "ssh", "loading", "error"]) {
+  for (const kind of ["idle", "app", "host", "ssh", "loading", "error"]) {
     for (const theme of ["light", "dark"]) {
       for (const width of [1280, 800]) {
         await page.setViewportSize({ width, height: 900 });
@@ -30,25 +29,29 @@ test("multi-machine update impact previews retain counts, unknown activity and c
         const dialog = page.getByRole("dialog");
         await expect(dialog).toBeVisible();
         await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
-        if (kind === "loading" || kind === "error") {
+        if (kind === "idle") {
+          await expect(dialog.getByRole("table")).toHaveCount(0);
+          await expect(dialog).not.toContainText("may be interrupted");
+        } else if (kind === "loading" || kind === "error") {
           await expect(dialog).toContainText(
             kind === "error"
               ? "Machine activity could not be checked."
               : "Checking machine activity…",
           );
-          await expect(dialog).toContainText("Unverified activity may also be interrupted.");
+          if (kind === "error")
+            await expect(dialog).toContainText("Unverified activity may also be interrupted.");
+          else await expect(dialog).not.toContainText("may be interrupted");
         } else {
-          await expect(dialog).toContainText("Work PC");
+          await expect(dialog).toContainText("This computer");
           await expect(dialog).toContainText("Studio Mac");
-          await expect(dialog).toContainText("Unknown");
+          await expect(dialog).not.toContainText("Offline laptop");
           await expect(dialog).toContainText(
             kind === "app" ? "This app restarts" : "Host restarts",
           );
           await expect(dialog).toContainText(
             `Sessions that may be interrupted: ${kind === "app" ? 1 : kind === "host" ? 3 : 2}.`,
           );
-          if (kind !== "app")
-            await expect(dialog).not.toContainText("Unverified activity may also be interrupted.");
+          await expect(dialog).not.toContainText("Unverified activity may also be interrupted.");
         }
         const bounds = await dialog.boundingBox();
         expect(bounds!.x).toBeGreaterThanOrEqual(0);
@@ -89,7 +92,18 @@ test.beforeEach(async ({ page }) => {
                 rid: 1,
                 currentVersion,
                 version: availableVersion,
-                body: "Fixture release notes",
+                body: location.search.includes("long-notes")
+                  ? [
+                      "- The model picker keeps its selection when the list changes size.",
+                      "- Escape closes the Access or Mode menu without closing the model panel.",
+                      "- The app recovers when the Host closes during startup.",
+                      "- Activity labels keep their separators and ellipses.",
+                      "- On Windows, the app relaunches if the WebView2 browser process exits.",
+                      "- Reconnecting restores the selected workspace and its open tabs.",
+                      "- Draft messages stay in the composer when switching conversations.",
+                      "- Keyboard focus returns to the sidebar after closing a dialog.",
+                    ].join("\n")
+                  : "Fixture release notes",
                 rawJson: {},
               };
             if (command === "plugin:opener|open_url") {
@@ -194,7 +208,7 @@ test("installed notice survives reload and reading notes, closes persistently, t
 }) => {
   await page.goto(route);
   const notice = page.getByRole("button", {
-    name: `Updated to ${appVersion} — What's new`,
+    name: `What's new in ${appVersion}`,
     exact: true,
   });
   await expect(notice).toBeVisible();
@@ -209,7 +223,7 @@ test("installed notice survives reload and reading notes, closes persistently, t
   await expect(notice).toHaveCount(0);
   await page.goto(`${route}?install=${nextVersion}`);
   await expect(
-    page.getByRole("button", { name: `Updated to ${nextVersion} — What's new`, exact: true }),
+    page.getByRole("button", { name: `What's new in ${nextVersion}`, exact: true }),
   ).toBeVisible();
 });
 
@@ -263,6 +277,86 @@ test("captures both themes and widths with disabled and pending shared actions",
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.screenshot({ path: `${captureRoot}/footer-dark-1280-normal-motion.png` });
+});
+
+test("installed update stays on one row with a corner dismiss action", async ({ page }) => {
+  const capture = "temp/verification/whats-new-footer";
+  mkdirSync(capture, { recursive: true });
+  writeFileSync(
+    `${capture}/README.md`,
+    "# Installed update notice\n\nChromium account footer with a seeded update, real quick settings, and mocked account and voice state.\n",
+  );
+  // An update that is waiting takes the footer slot of the installed notice, so this row is
+  // measured with no pending update.
+  await page.addInitScript(() => {
+    const internals = (
+      window as unknown as {
+        __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> };
+      }
+    ).__TAURI_INTERNALS__;
+    const invoke = internals.invoke;
+    internals.invoke = (command, args) =>
+      command === "app_update_check" ? Promise.resolve(null) : invoke(command, args);
+  });
+  await page.goto(`${route}?account&installed-notice`);
+  const rail = page.locator("[data-account-fixture-rail]");
+  const footer = rail.locator("[data-sidebar-account-footer]");
+  const notice = footer.getByRole("button", { name: `What's new in ${appVersion}`, exact: true });
+  const dismiss = footer.getByRole("button", { name: "Dismiss update notification" });
+  const settings = footer.getByRole("button", { name: "Settings", exact: true });
+  const voice = footer.getByRole("button", { name: "Talk to Arif", exact: true });
+  const notifications = footer.getByRole("button", { name: "Notifications", exact: true });
+  await expect(notice).toBeVisible();
+  await expect(dismiss).toBeVisible();
+  await expect(voice).toBeVisible();
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const [viewportWidth, railWidth] of [
+      [1280, 380],
+      [800, 280],
+    ]) {
+      await page.setViewportSize({ width: viewportWidth, height: 800 });
+      await rail.evaluate((element, width) => (element.style.inlineSize = `${width}px`), railWidth);
+      await page.mouse.move(viewportWidth - 10, 10);
+      await footer.screenshot({
+        path: `${capture}/${theme}-${viewportWidth}.png`,
+      });
+      await expect(notice).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      const centerY = (box: { y: number; height: number }) => box.y + box.height / 2;
+      const bounds = async () =>
+        Promise.all(
+          [voice, notice, notifications, settings].map(
+            async (button) => (await button.boundingBox())!,
+          ),
+        );
+      const resting = await bounds();
+      for (const box of resting)
+        expect(Math.abs(centerY(box) - centerY(resting[1]))).toBeLessThan(2);
+      const close = (await dismiss.boundingBox())!;
+      const book = (await notice.locator("svg").boundingBox())!;
+      const cross = (await dismiss.locator("svg").boundingBox())!;
+      expect(centerY(cross)).toBeCloseTo(book.y, 0);
+      expect(
+        Math.abs(close.x + close.width / 2 - (resting[1].x + resting[1].width)),
+      ).toBeLessThanOrEqual(2);
+      expect(Math.abs(cross.x + cross.width / 2 - (book.x + book.width))).toBeLessThanOrEqual(4);
+      expect(close.x).toBeGreaterThan(resting[1].x + resting[1].width / 2);
+      await notice.hover();
+      // The icon-only button is named by its label; a tooltip would only repeat it.
+      await expect(page.getByRole("tooltip")).toHaveCount(0);
+      expect(await bounds()).toEqual(resting);
+    }
+  }
+  await expect(notice.locator("svg.lucide-book-open")).toBeVisible();
+  await notice.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("[data-fixture-notes]")).toHaveText(appVersion);
+  await dismiss.click();
+  await expect(notice).toHaveCount(0);
+  await expect(settings).toBeVisible();
 });
 
 test("compact account rail preserves its width, standard targets and action order", async ({
@@ -375,6 +469,45 @@ async function openUpdatePrompt(page: Page) {
   };
 }
 
+test("update dialog shows the start of the notes and a high-contrast download icon", async ({
+  page,
+}) => {
+  await page.addInitScript((version) => {
+    localStorage.removeItem(`bycoda.githubStarPrompt.dismissed.${version}`);
+  }, appVersion);
+  const capture = "temp/verification/update-dialog-refined";
+  mkdirSync(capture, { recursive: true });
+  writeFileSync(
+    `${capture}/README.md`,
+    "# Update dialog\n\nBrowser fixture with mocked native updates.\n",
+  );
+  for (const theme of ["light", "dark"]) {
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 560 });
+      await page.goto(`${route}?account&long-notes`);
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const { dialog, github } = await openUpdatePrompt(page);
+      await dialog.screenshot({ path: `${capture}/${theme}-${width}.png` });
+      const install = dialog.getByRole("button", { name: `Update to ${nextVersion}`, exact: true });
+      await expect(install).toBeInViewport();
+      await expect(github).toBeInViewport();
+      await expect(
+        dialog.getByText("The model picker keeps its selection when the list changes size.", {
+          exact: true,
+        }),
+      ).toBeInViewport();
+      const icon = install.locator("svg");
+      await expect(icon).toBeVisible();
+      expect(await icon.evaluate((element) => getComputedStyle(element).stroke)).toBe(
+        await install.evaluate((element) => getComputedStyle(element).color),
+      );
+    }
+  }
+});
+
 test("update dialog star and dismiss retain separate pointer targets", async ({ page }) => {
   await page.goto(`${route}?account&compact`);
   const { dialog, github, close } = await openUpdatePrompt(page);
@@ -406,7 +539,7 @@ test("update dialog star and dismiss retain separate pointer targets", async ({ 
   await close.click();
   await expect(github).toHaveCount(0);
   await expect(dialog).toBeVisible();
-  await page.getByRole("button", { name: "Later", exact: true }).click();
+  await page.getByRole("button", { name: "Remind me tomorrow", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await page.reload();
   await page.getByRole("button", { name: `Update to ${nextVersion}`, exact: true }).click();
@@ -459,43 +592,25 @@ test.describe("touch footer targets", () => {
   });
 });
 
-test("wide footer reveals the update label without changing rail width", async ({ page }) => {
+test("wide footer opens the update tooltip without moving its actions", async ({ page }) => {
   await page.goto(`${route}?account`);
   const rail = page.locator("[data-account-fixture-rail]");
   const update = page.getByRole("button", { name: `Update to ${nextVersion}`, exact: true });
   await expect(update).toBeVisible();
-  const labelPainted = () =>
-    update.getByText("Update", { exact: true }).evaluate((element) => {
-      let current: Element | null = element;
-      while (current && current.tagName !== "BUTTON") {
-        if (getComputedStyle(current).opacity === "0") return false;
-        current = current.parentElement;
-      }
-      return true;
-    });
-  await expect.poll(labelPainted).toBe(false);
-  const railWidth = (await rail.boundingBox())!.width;
-  const collapsed = (await update.boundingBox())!.width;
+  const actions = await rail.locator("[data-sidebar-account-footer]").getByRole("button").all();
+  expect(actions.length).toBeGreaterThan(1);
+  const bounds = () => Promise.all([rail, ...actions].map((action) => action.boundingBox()));
+  const restingBounds = await bounds();
+  const tooltip = page.getByRole("tooltip").filter({ hasText: `Update to ${nextVersion}` });
   await update.hover();
-  await expect
-    .poll(async () => (await update.boundingBox())!.width)
-    .toBeGreaterThan(collapsed + 20);
-  await expect.poll(labelPainted).toBe(true);
-  expect((await rail.boundingBox())!.width).toBe(railWidth);
-  await update.focus();
+  await expect(tooltip).toBeVisible();
+  expect(await bounds()).toEqual(restingBounds);
   await page.mouse.move(700, 10);
-  await expect
-    .poll(async () => (await update.boundingBox())!.width)
-    .toBeGreaterThan(collapsed + 20);
-  const bounds = (await rail.boundingBox())!;
-  for (const button of await rail
-    .locator("[data-sidebar-account-footer]")
-    .getByRole("button")
-    .all()) {
-    const box = (await button.boundingBox())!;
-    expect(box.x).toBeGreaterThanOrEqual(bounds.x);
-    expect(box.x + box.width).toBeLessThanOrEqual(bounds.x + bounds.width);
-  }
+  await expect(tooltip).toBeHidden();
+  await page.keyboard.press("Tab");
+  await update.focus();
+  await expect(tooltip).toBeVisible();
+  expect(await bounds()).toEqual(restingBounds);
 });
 
 test("captures account rail and footer in both themes and widths", async ({ page }) => {

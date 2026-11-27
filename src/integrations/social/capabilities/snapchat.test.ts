@@ -91,14 +91,13 @@ describe("Snapchat capability map", () => {
   });
   it("opens existing member chats in the browser and nothing else for a member", () => {
     const connected = accountCapabilities(browserMember(), now);
-    for (const operation of ["inbox.read", "message.reply", "poll"]) {
+    for (const operation of ["inbox.read", "message.reply", "message.start", "poll"]) {
       expect(row(connected, operation), operation).toMatchObject({
         status: "available",
         reasonCode: "browser.ready",
       });
     }
     expect(row(connected, "publish").status).toBe("unsupported");
-    expect(row(connected, "message.start").status).toBe("unsupported");
     const disconnected = accountCapabilities(browserMember(false), now);
     expect(row(disconnected, "poll")).toMatchObject({
       status: "pending",

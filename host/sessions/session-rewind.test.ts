@@ -59,8 +59,8 @@ async function fixture(linkedAncestor = false) {
   await turnGit(main, ["add", "."]);
   await turnGit(main, ["commit", "-m", "baseline"]);
   const base = await gitText(main, ["rev-parse", "HEAD"]);
-  await turnGit(main, ["worktree", "add", "-b", "bycoda/s/session", cwd]);
-  await turnGit(main, ["worktree", "add", "-b", "bycoda/s/sibling", sibling]);
+  await turnGit(main, ["worktree", "add", "-b", "by/session", cwd]);
+  await turnGit(main, ["worktree", "add", "-b", "by/sibling", sibling]);
   await writeFile(join(sibling, "source.txt"), "sibling dirty\n");
   await writeFile(join(main, "owner.txt"), "owner untracked\n");
   await mkdir(join(cwd, "cache"));
@@ -72,7 +72,7 @@ async function fixture(linkedAncestor = false) {
     environmentId: "local",
     owner: { kind: "session", id: "session" },
     path: cwd,
-    branchRef: "refs/heads/bycoda/s/session",
+    branchRef: "refs/heads/by/session",
     baseRef: "refs/heads/main",
     baseCommit: base,
     targetBranchRef: "refs/heads/main",

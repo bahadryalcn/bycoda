@@ -1,3 +1,5 @@
+import { LANGUAGES as APP_LANGUAGES } from "../../../shared/i18n/languages";
+
 /** Cloud speech-to-text providers for dictation. Shared by the settings UI and the Host. */
 export type CloudDictationProvider = "openai" | "xai" | "openrouter";
 export const CLOUD_DICTATION_PROVIDERS: readonly CloudDictationProvider[] = [
@@ -11,17 +13,13 @@ export const DICTATION_PROVIDER_NAMES: Record<CloudDictationProvider, string> = 
   openrouter: "OpenRouter",
 };
 
-/** Dictation languages by native name, so each speaker finds their own whatever the interface language. */
-export const DICTATION_LANGUAGES = [
-  ["tr", "Türkçe"],
-  ["en", "English"],
-  ["de", "Deutsch"],
-  ["fr", "Français"],
-  ["es", "Español"],
-  ["pt", "Português"],
-  ["zh", "简体中文"],
-  ["ja", "日本語"],
-] as const;
+/**
+ * Dictation languages by native name, so each speaker finds their own whatever the interface language.
+ * Codes are the primary subtag of each shared language tag (`zh-CN` → `zh`), as saved in settings.
+ */
+export const DICTATION_LANGUAGES: readonly (readonly [string, string])[] = APP_LANGUAGES.map(
+  ({ tag, label }) => [tag.split("-")[0], label] as const,
+);
 
 /**
  * Built-in transcription choices. OpenRouter discovery replaces these in the UI;

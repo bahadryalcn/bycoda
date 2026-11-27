@@ -1,6 +1,13 @@
 import { expect, it } from "vitest";
 import { realtimeSession, voiceInstructions } from "./realtimeVoice";
-import { voiceLanguageCode, voiceLanguageInstructions } from "./voiceLanguage";
+import {
+  voiceLanguageCode,
+  voiceLanguageInstructions,
+} from "../../../shared/model/voice-realtime/voiceLanguage";
+
+it("normalizes the legacy Turkish language setting for provider transcription", () => {
+  expect(voiceLanguageCode("turkish")).toBe("tr");
+});
 
 it("keeps automatic language flexible and omits the transcription lock", () => {
   expect(voiceLanguageInstructions()).toBe("");

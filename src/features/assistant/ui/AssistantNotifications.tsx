@@ -1,15 +1,17 @@
 import { useEffect, useRef } from "react";
 import {
   assistantRequest,
-  refreshAssistantQuietly,
+  latestAssistantSnapshot,
   watchAssistantSnapshot,
   useAssistantSnapshot,
   type AssistantClientState,
 } from "../model/assistantClient";
 import {
   AssistantNotificationDelivery,
+  currentNotification,
   type AssistantNotificationInput,
 } from "../model/assistantNotifications";
+import { msUntilClockTime } from "../model/assistantBriefing";
 import { isLeadWindow } from "../../notifications/hooks/useBackgroundNotifications";
 import { notifyAssistant } from "../../notifications/model/notifications";
 import {
@@ -51,17 +53,7 @@ export function AssistantNotifications() {
     pump.current = new AssistantNotificationDelivery({
       request: assistantRequest,
       lead: isLeadWindow,
-      current: async (id) => {
-        const state = (
-          await assistantRequest({
-            op: "snapshot",
-            limit: 100,
-          })
-        ).snapshot;
-        return state?.profile.enabled && state.profile.setupComplete
-          ? state.notifications?.find((notification) => notification.id === id)
-          : undefined;
-      },
+      current: async (id) => currentNotification(latestAssistantSnapshot(), id),
       storage: notificationStorage(),
       projectPath: async (id) =>
         (await assistantRequest({ op: "projects.list" })).projects?.find(
@@ -94,8 +86,12 @@ export function AssistantNotifications() {
     check(current.current);
     return watchAssistantSnapshot((state) => check(selectDelivery(state)));
   }, []);
+  const ready = snapshot?.profile.enabled === true && snapshot.profile.setupComplete;
+  // Effect reason: the daily-summary schedule and its due-time check. It re-runs when the
+  // Assistant becomes ready, so a late snapshot is picked up without a polling interval (#315).
   useEffect(() => {
     let cancelled = false,
+      timer: ReturnType<typeof setTimeout> | undefined,
       running = false,
       preparedDay = "",
       scheduleKey = "",
@@ -113,8 +109,6 @@ export function AssistantNotifications() {
           scheduleKey = key;
         }
         if (cancelled) return;
-        // Keep notification intake alive when the main webview is in the background.
-        await refreshAssistantQuietly();
         const state = current.current;
         if (!state?.profile.enabled || !state.profile.setupComplete || !loadDailySummaryEnabled())
           return;
@@ -136,9 +130,18 @@ export function AssistantNotifications() {
         if (settingsChanged && !cancelled) {
           settingsChanged = false;
           void check();
-        }
+        } else arm();
       }
     };
+    // Snapshot readiness and settings changes re-check independently of the due-time timer.
+    const arm = () => {
+      clearTimeout(timer);
+      if (cancelled) return;
+      const now = new Date();
+      timer = setTimeout(() => void check(), msUntilClockTime(loadDailySummaryTime(), now));
+    };
+    const onVisibility = () => arm();
+    document.addEventListener("visibilitychange", onVisibility);
     const unsubscribe = subscribeDailySummary(() => {
       settingsChanged = true;
       if (!running) {
@@ -147,12 +150,12 @@ export function AssistantNotifications() {
       }
     });
     void check();
-    const timer = setInterval(() => void check(), 15000);
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
       unsubscribe();
     };
-  }, []);
+  }, [ready]);
   return null;
 }

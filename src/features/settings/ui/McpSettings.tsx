@@ -1,11 +1,11 @@
-import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { pathKey } from "../../../shared/lib/paths";
 import { confirmInApp } from "../../../shared/model/appConfirm";
 import { InlineTextAction } from "../../../shared/ui/ActionHost";
-import { Badge } from "../../../shared/ui/Badge";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { CollectionFooter, ContinuousList } from "../../../shared/ui/ContinuousList";
 import { CollectionRow } from "../../../shared/ui/CollectionRow";
@@ -20,8 +20,12 @@ import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Select as SharedSelect } from "../../../shared/ui/Select";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Surface } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
-import { Globe, Plus, RefreshCw } from "../../../shared/ui/icons";
+import { Globe, MonitorSmartphone, Plus, RefreshCw, Server, Zap } from "../../../shared/ui/icons";
+import { useRemoteMachines } from "../../connections/public/connections";
+import { isLocalSyncMachine } from "../../connections/public/localSync";
+import { parseRemotePath, remoteProjectFor } from "../../connections/public/remoteProjects";
 import type { RecentProject } from "../../projects";
 import { SearchableProjectPicker } from "../../projects/public/SearchableProjectPicker";
 import { useMcpHub } from "../hooks/useMcpHub";
@@ -30,33 +34,29 @@ import {
   isMcpConnected,
   MCP_PROVIDER_LABELS,
   needsMcpSignIn,
+  scopeLabel,
   type McpConnection,
   type McpLoadingPolicy,
 } from "../model/mcp";
 import {
   buildMcpCatalog,
+  mcpEntryLabel,
   mcpEntrySearchText,
   mcpEntryStatus,
   type McpCatalogEntry,
   type McpEntryStatus,
 } from "../model/mcpCatalog";
 import {
+  describeMcpConfigWarnings,
   getCachedMcpSettings,
   invalidateMcpSettings,
   loadMcpSettings,
-  MCP_LOCAL_ONLY_ERROR,
   subscribeMcpSettings,
   type McpServerRow,
   type McpSettingsSnapshot,
 } from "../model/mcpSettingsCache";
-import { ExternalMcpAccess } from "./ExternalMcpAccess";
-import {
-  AddServerModal,
-  PROVIDERS,
-  scopeDescription,
-  scopeLabel,
-  type Provider,
-} from "./McpAddServer";
+import { invokeMcpConfig, type RemoteMcpConfigTarget } from "../model/mcpConfigTarget";
+import { AddServerModal, PROVIDERS, scopeDescription, type Provider } from "./McpAddServer";
 import {
   McpServerDetail,
   sourceLabel,
@@ -95,8 +95,34 @@ export function McpSettings({ cwd, recents = [] }: { cwd: string; recents?: Rece
   const globalOnly = view === "global";
   const [selection, setSelection] = useState({ initialCwd: cwd, project: cwd });
   const project = selection.initialCwd === cwd ? selection.project : cwd;
+  const [globalMachineId, setGlobalMachineId] = useRetainedState("mcp:machine", "");
+  const inventory = useRemoteMachines();
+  const machines = inventory.machines.filter((machine) => !isLocalSyncMachine(machine));
+  const source = parseRemotePath(project);
+  const projectRecord = source ? remoteProjectFor(project) : undefined;
+  const machine = globalOnly
+    ? machines.find((item) => item.id === globalMachineId)
+    : source && machines.find((item) => item.environmentId === source.environmentId);
+  const needsRemote = globalOnly ? globalMachineId !== "" : !!source;
+  const remote = machine
+    ? {
+        machineId: machine.id,
+        environmentId: machine.environmentId,
+        projectId: globalOnly ? undefined : projectRecord?.projectId,
+      }
+    : undefined;
+  const machineName = machine?.name ?? t("This computer");
+  const targetUnavailableTitle =
+    needsRemote && !machine
+      ? t("This computer is no longer available in Connections.")
+      : source && !globalOnly && !projectRecord
+        ? t("Open this project from Connections to manage its MCP servers.")
+        : "";
+  const targetCwd = globalOnly ? "~" : (source?.hostPath ?? project);
+  const remoteMachineId = remote?.machineId;
+  const remoteProjectId = remote?.projectId;
   const projectPicker = (disabled = false) => (
-    <div className="flex min-w-0 flex-wrap items-center gap-2">
+    <div className={styles.scopeControls}>
       <SegmentedControl
         label={t("Scope")}
         value={view}
@@ -106,39 +132,94 @@ export function McpSettings({ cwd, recents = [] }: { cwd: string; recents?: Rece
           { value: "project", label: t("Project"), disabled },
         ]}
       />
-      {!globalOnly ? (
-        <SearchableProjectPicker
-          cwd={project}
-          railCwd={cwd}
-          recents={recents}
-          localOnly
+      {globalOnly ? (
+        <SharedSelect
+          hideLabel
+          label={t("Computer")}
+          value={globalMachineId || "local"}
           disabled={disabled}
-          className="w-fit max-w-full shrink-0"
-          buttonClassName="max-w-full"
-          onSelectProject={(path) => {
-            if (!path.startsWith("remote://")) setSelection({ initialCwd: cwd, project: path });
-          }}
+          options={[
+            {
+              value: "local",
+              label: t("This computer"),
+              icon: <MonitorSmartphone className="icon-sm" />,
+            },
+            ...machines.map((item) => ({
+              value: item.id,
+              label: item.name,
+              icon: <Server className="icon-sm" />,
+            })),
+            ...(globalMachineId && !machine
+              ? [{ value: globalMachineId, label: t("Unavailable machine"), disabled: true }]
+              : []),
+          ]}
+          onValueChange={(id) => setGlobalMachineId(id === "local" ? "" : id)}
         />
-      ) : null}
+      ) : (
+        <>
+          <SearchableProjectPicker
+            cwd={project}
+            railCwd={cwd}
+            recents={recents}
+            chooseLabel={t("Choose project")}
+            disabled={disabled}
+            appearance="filled"
+            className="w-fit max-w-full min-w-0"
+            buttonClassName="max-w-full"
+            onSelectProject={(path) => setSelection({ initialCwd: cwd, project: path })}
+          />
+          <Text size="caption" tone="secondary" className="inline-flex items-center gap-1.5">
+            {needsRemote ? (
+              <Server className="icon-sm" />
+            ) : (
+              <MonitorSmartphone className="icon-sm" />
+            )}
+            {machine?.name ?? (needsRemote ? source?.environmentId : machineName)}
+          </Text>
+        </>
+      )}
     </div>
   );
-  if (project.startsWith("remote://")) {
-    return (
-      <div className="grid min-w-0 gap-8">
-        {projectPicker()}
-        <SettingsFeedback state="warning">{t(MCP_LOCAL_ONLY_ERROR)}</SettingsFeedback>
-      </div>
-    );
-  }
   return (
-    <div className="grid min-w-0 gap-8">
-      <McpConnections
-        key={`${project}:${view}`}
-        cwd={project}
-        globalOnly={globalOnly}
-        projectPicker={projectPicker}
-      />
-      <ExternalMcpAccess cwd={project} />
+    <div className="settings-topics">
+      {targetUnavailableTitle ? (
+        <div
+          className={styles.connections}
+          id="setting-mcp-servers"
+          data-setting-id="mcp-servers"
+          tabIndex={-1}
+        >
+          {projectPicker()}
+          {needsRemote && !machine && inventory.loading ? (
+            <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
+          ) : (
+            <SettingsFeedback
+              state="error"
+              action={{ label: t("Retry"), onClick: inventory.refresh }}
+              extra={inventory.error ? <ErrorDetails detail={inventory.error} /> : undefined}
+            >
+              {inventory.error
+                ? t("Could not load MCP computers and projects.")
+                : targetUnavailableTitle}
+            </SettingsFeedback>
+          )}
+        </div>
+      ) : (
+        <McpConnections
+          key={JSON.stringify([
+            targetCwd,
+            view,
+            remoteMachineId,
+            remote?.environmentId,
+            remoteProjectId,
+          ])}
+          cwd={targetCwd}
+          globalOnly={globalOnly}
+          projectPicker={projectPicker}
+          remote={remote}
+          machineName={machineName}
+        />
+      )}
     </div>
   );
 }
@@ -147,15 +228,19 @@ function McpConnections({
   cwd,
   globalOnly,
   projectPicker,
+  remote,
+  machineName,
 }: {
   cwd: string;
   globalOnly: boolean;
   projectPicker: (disabled?: boolean) => ReactNode;
+  remote?: RemoteMcpConfigTarget;
+  machineName: string;
 }) {
   useLocale();
-  const cached = getCachedMcpSettings(cwd, globalOnly);
+  const cached = getCachedMcpSettings(cwd, globalOnly, remote);
   const [servers, setServers] = useState<McpServerRow[]>(cached?.servers ?? []);
-  const stateKey = `mcp-connections:${pathKey(cwd)}:${globalOnly ? "global" : "project"}`;
+  const stateKey = `mcp-connections:${remote?.machineId ?? "local"}:${pathKey(cwd)}:${globalOnly ? "global" : "project"}`;
   const [providerFilter, setProviderFilter] = useRetainedState<ProviderFilter>(
     `${stateKey}:filter`,
     "all",
@@ -165,47 +250,55 @@ function McpConnections({
     "all",
   );
   const [query, setQuery] = useRetainedState(`${stateKey}:query`, "");
-  const [selected, setSelected] = useState("");
+  const [selected, setSelected] = useState<McpCatalogEntry | null>(null);
   const [actionError, setActionError] = useState("");
   const [loading, setLoading] = useState(!cached);
   const [busy, setBusy] = useState("");
   const busyRef = useRef(false);
   const [error, setError] = useState(cached?.error ?? "");
+  const [configWarnings, setConfigWarnings] = useState(cached?.configWarnings ?? []);
   const [claudeError, setClaudeError] = useState(cached?.claudeError ?? "");
   const [claudeChecking, setClaudeChecking] = useState(cached?.claudeChecking ?? false);
   const [claudePartial, setClaudePartial] = useState(cached?.claudePartial ?? false);
+  const [nativeConfigAvailable, setNativeConfigAvailable] = useState(cached?.nativeConfigAvailable);
   const [addOpen, setAddOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filterAnchor = useRef<HTMLButtonElement>(null);
   const [removeTarget, setRemoveTarget] = useState<McpServerRow | null>(null);
   const [removeScope, setRemoveScope] = useState<Scope>("local");
   const refreshGeneration = useRef(0);
-  const hub = useMcpHub(cwd, globalOnly);
+  const hub = useMcpHub(cwd, globalOnly, remote);
 
   function applySnapshot(snapshot: McpSettingsSnapshot) {
     setServers(snapshot.servers);
     setError(snapshot.error);
+    setConfigWarnings(snapshot.configWarnings ?? []);
     setClaudeError(snapshot.claudeError);
     setClaudeChecking(snapshot.claudeChecking ?? false);
     setClaudePartial(snapshot.claudePartial ?? false);
+    setNativeConfigAvailable(snapshot.nativeConfigAvailable);
     setLoading(false);
   }
 
   // Reason: the shared discovery cache publishes health and Codex auth after the list; mirror it here.
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- subscribes to the shared MCP discovery store for this view
-  useEffect(() => subscribeMcpSettings(cwd, applySnapshot, globalOnly), [cwd, globalOnly]);
+  useEffect(
+    () => subscribeMcpSettings(cwd, applySnapshot, globalOnly, remote),
+    [cwd, globalOnly, remote],
+  );
 
-  async function refresh(force = true) {
+  async function refresh(force = true, checkResult = false) {
     const generation = ++refreshGeneration.current;
-    const previous = getCachedMcpSettings(cwd, globalOnly);
-    if (force) invalidateMcpSettings(cwd);
+    const previous = getCachedMcpSettings(cwd, globalOnly, remote);
+    if (force) invalidateMcpSettings(cwd, remote);
     setLoading(force || !previous);
     const [snapshot] = await Promise.all([
-      loadMcpSettings(cwd, force, { claudeHealth: force, globalOnly }),
+      loadMcpSettings(cwd, force, { claudeHealth: force, globalOnly, remote }),
       force ? hub.refresh() : Promise.resolve(),
     ]);
     if (generation === refreshGeneration.current)
-      applySnapshot(getCachedMcpSettings(cwd, globalOnly) ?? snapshot);
+      applySnapshot(getCachedMcpSettings(cwd, globalOnly, remote) ?? snapshot);
+    if (checkResult && snapshot.error) throw new Error(snapshot.error);
   }
 
   // Reason: read discovery once per view; later reads come from Refresh or a configuration change.
@@ -297,22 +390,31 @@ function McpConnections({
     setEnabled: (server) =>
       run(server, "toggle", async () => {
         if (!canToggle(server)) return;
-        await invoke("mcp_set_enabled", {
-          cwd,
-          provider: server.provider,
-          name: server.name,
-          scope: server.scope,
-          configPath: server.configPath,
-          enabled: server.enabled === false,
-          expectedEnabled: server.enabled !== false,
-          ...(globalOnly ? { globalOnly: true } : {}),
-        });
+        await invokeMcpConfig(
+          "mcp_set_enabled",
+          {
+            cwd,
+            provider: server.provider,
+            name: server.name,
+            scope: server.scope,
+            configPath: server.configPath,
+            enabled: server.enabled === false,
+            expectedEnabled: server.enabled !== false,
+            ...(globalOnly ? { globalOnly: true } : {}),
+          },
+          remote,
+        );
         await refresh();
       }),
     providerSignIn: (server) =>
       run(server, "login", async () => {
         if (!canSignInMcp(server)) return;
-        await invoke("mcp_provider_login", { cwd, provider: server.provider, name: server.name });
+        if (remote) return;
+        await invokeMcpConfig("mcp_provider_login", {
+          cwd,
+          provider: server.provider,
+          name: server.name,
+        });
         await refresh();
       }),
     remove: async (server) => {
@@ -332,7 +434,16 @@ function McpConnections({
       });
       if (!confirmed) return;
       await run(server, "remove", async () => {
-        await invoke("claude_mcp_remove", { cwd, name: server.name, scope: server.scope });
+        await invokeMcpConfig(
+          "claude_mcp_remove",
+          {
+            cwd,
+            name: server.name,
+            scope: server.scope,
+            ...(remote ? { configPath: server.configPath } : {}),
+          },
+          remote,
+        );
         await refresh();
       });
     },
@@ -343,12 +454,15 @@ function McpConnections({
     const hubEntry = entry.hub;
     if (hubEntry?.kind === "http" && hubEntry.oauth !== "signed-in")
       return () => void hub.signIn(hubEntry.name);
+    if (remote) return undefined;
     const row = entry.configs.find((config) => !pendingHealth(config) && needsMcpSignIn(config));
     return row ? () => void actions.providerSignIn(row) : undefined;
   }
 
-  const open = catalog.find((entry) => entry.name === selected);
+  const current = selected && catalog.find((entry) => entry.name === selected.name);
+  const open = current ?? selected;
   const policy = hub.loading?.policy;
+  const checkingServers = loading || (!!remote && hub.pending);
   return (
     <div
       id="setting-mcp-servers"
@@ -357,7 +471,7 @@ function McpConnections({
       className={styles.connections}
     >
       <div className={styles.header}>
-        {projectPicker(busy !== "")}
+        {projectPicker(busy !== "" || hub.saving || !!hub.busy)}
         <div className={styles.actions}>
           <Button
             variant="ghost"
@@ -365,16 +479,37 @@ function McpConnections({
             label={t("Refresh")}
             loading={loading}
             disabled={loading || busy !== ""}
+            disabledReason={t("Wait for the current operation to finish")}
             onClick={() => void refresh()}
           >
             <RefreshCw className="icon-sm" />
           </Button>
-          <Button variant="primary" onClick={() => setAddOpen(true)}>
+          <Button
+            variant="primary"
+            disabled={
+              hub.pending ||
+              (!!remote &&
+                (loading || (!hub.manageServer && (!!error || nativeConfigAvailable === false))))
+            }
+            disabledReason={
+              hub.pending || (!!remote && loading)
+                ? t("Checking servers…")
+                : t("Server settings are unavailable on this computer.")
+            }
+            onClick={() => setAddOpen(true)}
+          >
             <Plus className="icon-sm" />
             <span>{t("Add server")}</span>
           </Button>
         </div>
       </div>
+      {nativeConfigAvailable === false ? (
+        <SettingsFeedback state="warning">
+          {t("Install the updated bycoda desktop app on {p0} to edit provider configuration.", {
+            p0: machineName,
+          })}
+        </SettingsFeedback>
+      ) : null}
       <div className={styles.toolbar}>
         <div className={styles.search}>
           <SearchInput
@@ -406,8 +541,9 @@ function McpConnections({
       {filtersOpen ? (
         <Popover
           anchor={filterAnchor}
-          role="dialog"
+          kind="dialog"
           aria-label={t("Filter MCP servers")}
+          variant="panel"
           width={360}
           onDismiss={() => setFiltersOpen(false)}
         >
@@ -453,6 +589,14 @@ function McpConnections({
           {servers.length ? t("Showing the last successful result.") : undefined}
         </InlineError>
       ) : null}
+      {configWarnings.length ? (
+        <InlineError
+          details={describeMcpConfigWarnings(configWarnings)}
+          retry={{ onRetry: () => void refresh(), pending: loading }}
+        >
+          {t("Some MCP configuration files could not be read, so their servers are not listed.")}
+        </InlineError>
+      ) : null}
       {claudeError ? (
         <InlineError details={claudeError}>
           {t("Claude connection status unavailable.")}
@@ -464,7 +608,7 @@ function McpConnections({
           )}
         </SettingsFeedback>
       ) : null}
-      {loading && catalog.length === 0 ? (
+      {checkingServers && catalog.length === 0 ? (
         <SettingsFeedback state="loading">{t("Checking servers…")}</SettingsFeedback>
       ) : visible.length === 0 ? (
         search || activeFilters ? (
@@ -475,7 +619,8 @@ function McpConnections({
             onReset={resetFilters}
             title={t("No MCP servers match your search.")}
           />
-        ) : (
+        ) : error || configWarnings.length || (!!remote && hub.error) ? null : (
+          // With unreadable files the warning above explains the empty list; "none configured" would be false.
           <EmptyState
             size="inline"
             context="list"
@@ -487,13 +632,13 @@ function McpConnections({
           <Surface variant="card" frame="card" radius="card" padding="none">
             <ContinuousList
               rowAppearance="settings"
-              className={styles.list}
               items={visible}
               itemKey={(entry) => entry.name}
               stateKey={`${stateKey}:${providerFilter}:${statusFilter}`}
               estimateSize={40}
               renderItem={(entry) => {
                 const status = statusOf(entry);
+                const signingIn = !!hub.signingIn && hub.signingIn === entry.hub?.name;
                 const signIn =
                   status === "sign-in" || status === "expired" ? quickSignIn(entry) : undefined;
                 const sources = entry.configs.length
@@ -509,37 +654,46 @@ function McpConnections({
                 return (
                   <CollectionRow
                     key={entry.name}
+                    interactionOpen={signingIn}
                     leading={
                       <StatusDot
                         tone={status === "off" ? "muted" : STATUS_TONE[status]}
                         label={statusLabel(status)}
                       />
                     }
-                    title={entry.name}
+                    title={mcpEntryLabel(entry)}
                     secondary={sources.join(" · ")}
                     trailing={
                       <>
                         {entry.hub?.direct && policy?.mode === "onDemand" ? (
-                          <Badge size="xs" tone="neutral">
+                          <InfoTooltip
+                            label={t("Session startup")}
+                            icon={<Zap aria-hidden className="icon-sm" />}
+                          >
                             {t("Starts with session")}
-                          </Badge>
+                          </InfoTooltip>
                         ) : null}
-                        {statusLabel(status)}
+                        {/* The dot carries the quiet default; only an exception is written. */}
+                        {status === "configured" ? null : statusLabel(status)}
                       </>
                     }
                     action={
-                      signIn ? (
+                      signingIn && hub.cancelSignIn ? (
+                        <InlineTextAction reveal="always" onClick={hub.cancelSignIn}>
+                          {t("Cancel")}
+                        </InlineTextAction>
+                      ) : signIn ? (
                         <InlineTextAction
                           reveal="always"
-                          disabled={actions.locked || !!hub.busy}
+                          disabled={actions.locked || !!hub.busy || !!hub.signingIn}
                           onClick={signIn}
                         >
                           {t("Sign in")}
                         </InlineTextAction>
                       ) : undefined
                     }
-                    onOpen={() => setSelected(entry.name)}
-                    primary={{ "aria-label": t("Open {p0}", { p0: entry.name }) }}
+                    onOpen={() => setSelected(entry)}
+                    primary={{ "aria-label": t("Open {p0}", { p0: mcpEntryLabel(entry) }) }}
                   />
                 );
               }}
@@ -561,7 +715,16 @@ function McpConnections({
       ) : null}
       <Group
         title={t("Session startup")}
-        description={t("Applies to new sessions.")}
+        info={
+          <>
+            <p>{t("Applies to new sessions on {p0}.", { p0: machineName })}</p>
+            <p>
+              {t("When needed: a server starts the first time a session uses one of its tools.")}
+            </p>
+            <p>{t("With every session: all servers start when a session opens.")}</p>
+            <p>{t("Open a server to start just that one with every session.")}</p>
+          </>
+        }
         feedback={
           hub.loading?.corrupt ? (
             <SettingsFeedback state="error">
@@ -575,12 +738,16 @@ function McpConnections({
         <Row
           id="mcp-loading"
           label={t("Start MCP servers")}
-          description={[
-            t("When needed: a server starts the first time a session uses one of its tools."),
-            t("With every session: all servers start when a session opens."),
-            t("Open a server to start just that one with every session."),
-          ].join(" ")}
           disabled={!policy || hub.saving || !!hub.loading?.corrupt}
+          disabledReason={
+            !policy
+              ? t("Wait for the MCP settings to load.")
+              : hub.saving
+                ? t("Saving…")
+                : undefined
+          }
+          modified={!!policy && policy.mode !== "onDemand"}
+          onReset={() => void hub.setMode("onDemand")}
         >
           <SharedSelect
             hideLabel
@@ -601,9 +768,12 @@ function McpConnections({
           status={statusOf(open)}
           cwd={cwd}
           globalOnly={globalOnly}
+          remote={remote}
+          machineName={machineName}
           hub={hub}
           actions={actions}
-          onClose={() => setSelected("")}
+          stale={!current}
+          onClose={() => setSelected(null)}
         />
       ) : null}
       {removeTarget ? (
@@ -615,7 +785,11 @@ function McpConnections({
           }}
           footer={
             <>
-              <Button disabled={busy !== ""} onClick={() => setRemoveTarget(null)}>
+              <Button
+                disabled={busy !== ""}
+                disabledReason={t("Wait for the current operation to finish")}
+                onClick={() => setRemoveTarget(null)}
+              >
                 {t("Cancel")}
               </Button>
               <Button
@@ -623,11 +797,15 @@ function McpConnections({
                 loading={busy !== ""}
                 onClick={() =>
                   void run(removeTarget, "remove", async () => {
-                    await invoke("claude_mcp_remove", {
-                      cwd,
-                      name: removeTarget.name,
-                      scope: removeScope,
-                    });
+                    await invokeMcpConfig(
+                      "claude_mcp_remove",
+                      {
+                        cwd,
+                        name: removeTarget.name,
+                        scope: removeScope,
+                      },
+                      remote,
+                    );
                     setRemoveTarget(null);
                     await refresh();
                   })
@@ -661,11 +839,16 @@ function McpConnections({
       {addOpen ? (
         <AddServerModal
           cwd={cwd}
+          globalOnly={globalOnly}
+          remote={remote}
+          machineName={machineName}
+          manageServer={hub.manageServer}
+          providerAvailable={nativeConfigAvailable !== false && (!remote || !error)}
           initialProvider={
             providerFilter === "all" || providerFilter === "host" ? "claude" : providerFilter
           }
           onClose={() => setAddOpen(false)}
-          onAdded={() => refresh()}
+          onAdded={() => refresh(true, true)}
         />
       ) : null}
     </div>

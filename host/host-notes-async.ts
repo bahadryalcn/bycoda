@@ -2,7 +2,7 @@ import { URL as NodeURL } from "node:url";
 import { Worker } from "node:worker_threads";
 import { AsyncResource } from "node:async_hooks";
 import {
-  desktopDatabasePaths,
+  cachedDesktopDatabasePaths,
   type DesktopMetadataReply,
   type DesktopMetadataRecord,
   type DesktopSnapshotMetaRecord,
@@ -75,11 +75,16 @@ export class AsyncHostNotes implements HostNotesAccess {
   private tail: Promise<void> = Promise.resolve();
   private readonly pending = new Map<number, DispatchedJob>();
   private readonly admission: HostNotesAdmission;
+  declare private readonly paths: () => string[];
+  declare private readonly workerUrl: NodeURL;
+
   constructor(
-    private readonly paths: () => string[] = desktopDatabasePaths,
-    private readonly workerUrl = new NodeURL("./host-notes-worker.mjs", import.meta.url),
+    paths: () => string[] = cachedDesktopDatabasePaths,
+    workerUrl = new NodeURL("./host-notes-worker.mjs", import.meta.url),
     options: HostNotesAdmissionOptions = {},
   ) {
+    this.paths = paths;
+    this.workerUrl = workerUrl;
     this.admission = new HostNotesAdmission(options);
   }
   get admissionStatus() {
@@ -99,9 +104,7 @@ export class AsyncHostNotes implements HostNotesAccess {
     while (this.worker?.failed) await this.worker.exited;
     if (this.worker) return this.worker;
     const worker = new Worker(this.workerUrl, {
-      // Source execution uses Node's own type transformer; the packaged worker
-      // is bundled JavaScript and needs no loader, compiler or source fallback.
-      execArgv: import.meta.url.endsWith(".ts") ? ["--experimental-transform-types"] : [],
+      execArgv: [],
       workerData: this.admission.workerConfiguration,
     });
     let finishExit!: () => void;
@@ -227,7 +230,9 @@ export class AsyncHostNotes implements HostNotesAccess {
                 "[bycoda] desktop read could not confirm its connection closed; restarting its worker",
               );
               owner.failed = true;
-              void worker.terminate();
+              void worker.terminate().catch((error) => {
+                console.warn("[bycoda] could not retire the desktop read worker", error);
+              });
             }
             request.finish();
           }

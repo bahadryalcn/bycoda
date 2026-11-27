@@ -140,8 +140,9 @@ it("persists the key assignment once and reuses the saved server on later connec
     id: existing.id,
     identityFile: "C:/keys/work",
   });
-  expect(choose.disabled).toBe(true);
-  expect(choose.textContent).toContain("Assigned");
+  expect(choose.getAttribute("aria-disabled")).toBe("true");
+  // The assigned key is the pressed one; the control is icon-only.
+  expect(choose.getAttribute("aria-pressed")).toBe("true");
   expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain("Edit SSH server");
   expect(terminalHooks.open).not.toHaveBeenCalled();
   await act(async () =>
@@ -158,8 +159,10 @@ it("persists the key assignment once and reuses the saved server on later connec
   await act(async () => find("Organization").click());
   await act(async () => find("SSH settings").click());
   expect(
-    document.querySelector<HTMLButtonElement>('button[aria-label^="Assign key:"]')?.disabled,
-  ).toBe(true);
+    document
+      .querySelector<HTMLButtonElement>('button[aria-label^="Assign key:"]')
+      ?.getAttribute("aria-disabled"),
+  ).toBe("true");
   expect(
     bridge.invoke.mock.calls.filter(([command]) => command === "server_ssh_identity_set"),
   ).toHaveLength(1);
@@ -218,7 +221,7 @@ it.each(["host", "inherited"])("assigns a persistent key to a %s connection", as
   const choose = document.querySelector<HTMLButtonElement>('button[aria-label^="Assign key:"]')!;
   expect(choose.disabled).toBe(false);
   await act(async () => choose.click());
-  expect(choose.disabled).toBe(true);
+  expect(choose.getAttribute("aria-disabled")).toBe("true");
   expect(choose.getAttribute("aria-pressed")).toBe("true");
   expect(bridge.invoke).toHaveBeenCalledWith("server_ssh_identity_set", {
     id: base.id,
@@ -246,12 +249,15 @@ it("does not replace a saved key when assigning another key fails", async () => 
   await act(async () => find("SSH settings").click());
   const choose = document.querySelector<HTMLButtonElement>('button[aria-label^="Assign key:"]')!;
   await act(async () => choose.click());
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain("Could not save key");
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not assign the SSH key.",
+  );
+  expect(document.querySelector('[role="alert"]')?.textContent).not.toContain("Could not save key");
   expect(choose.disabled).toBe(false);
   expect(choose.getAttribute("aria-pressed")).toBe("false");
   expect(container.textContent).toContain("C:/keys/previous");
 });
-it("offers target-explicit use/edit/skip for a duplicate and cannot import over it", async () => {
+it("opens the saved duplicate or skips it and cannot import over it", async () => {
   const onUse = vi.fn(),
     onEdit = vi.fn(),
     onSkip = vi.fn(),
@@ -273,10 +279,13 @@ it("offers target-explicit use/edit/skip for a duplicate and cannot import over 
     [...container.querySelectorAll("button")].find((button) => button.textContent === label);
   expect(find("Import")).toBeUndefined();
   expect(container.textContent).toContain("Saved identity");
-  await act(async () => find("Use existing")!.click());
-  expect(onUse).toHaveBeenCalledWith(existing);
-  await act(async () => find("Edit existing")!.click());
-  expect(onEdit).toHaveBeenCalledWith(existing);
+  const open = [...container.querySelectorAll("button")].filter(
+    (button) => button.textContent === "Open existing",
+  );
+  expect(open).toHaveLength(1);
+  await act(async () => open[0]!.click());
+  expect(onUse).toHaveBeenCalledExactlyOnceWith(existing);
+  expect(onEdit).not.toHaveBeenCalled();
   await act(async () => find("Skip")!.click());
   expect(onSkip).toHaveBeenCalledOnce();
   expect(onImport).not.toHaveBeenCalled();
@@ -332,10 +341,14 @@ it("previews certificate and ordered jump references before an import choice", a
   expect(container.textContent).toContain("Public SSH certificate file: C:/keys/user-certificate");
   expect(container.textContent).toContain("alice@first:22 → bob@second:2222");
   expect(container.querySelector("details")).toBeNull();
-  expect(container.textContent).toContain(
+  // The jump-host explanation sits behind the info button, not in the layout.
+  expect(container.textContent).not.toContain("Each jump host uses its own identity");
+  const help = container.querySelector<HTMLButtonElement>('button[aria-label="Help"]');
+  expect(help).not.toBeNull();
+  await act(async () => help?.click());
+  expect(document.body.textContent).toContain(
     "Each jump host uses its own identity and host-key verification",
   );
-  expect(container.textContent).toContain("pick keys");
 });
 
 it("offers agent forwarding only with the compatible terminal owner and delegates explicit approval", async () => {
@@ -381,7 +394,8 @@ it("keeps the HTTP route visible in selected-server tools without opening settin
       }),
     ),
   );
-  expect(container.textContent).toContain("HTTP CONNECT: [2001:db8::1]:3128");
+  expect(container.textContent).toContain("HTTP CONNECT");
+  expect(container.textContent).toContain("[2001:db8::1]:3128");
 });
 
 it("opens group defaults explicitly for personal SSH records without treating a legacy label as inheritance", async () => {
@@ -468,14 +482,26 @@ it("deduplicates an import against the effective inherited endpoint while editin
       .find((item) => item.textContent === "SSH settings")!
       .click(),
   );
+  // Import: paste a config; the preview follows once typing pauses (no Preview button).
   await act(async () =>
-    [...document.querySelectorAll("button")]
-      .find((item) => item.textContent === "Preview")!
-      .click(),
+    [...document.querySelectorAll('[role="tab"]')]
+      .find((item) => item.textContent === "Import SSH config")!
+      .dispatchEvent(new MouseEvent("click", { bubbles: true })),
   );
+  const config = document.querySelector<HTMLTextAreaElement>("textarea")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      config,
+      "Host effective-import",
+    );
+    config.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  });
   expect(document.body.textContent).toContain("Saved identity");
   const editExisting = [...document.querySelectorAll("button")].find(
-    (item) => item.textContent === "Edit existing",
+    (item) => item.textContent === "Open existing",
   )!;
   expect(editExisting).toBeTruthy();
   expect(

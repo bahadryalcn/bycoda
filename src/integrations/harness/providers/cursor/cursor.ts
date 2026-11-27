@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import { withTimeout } from "../../../../shared/lib/withTimeout";
 import {
   assertProviderOperation,
@@ -16,6 +17,7 @@ import {
 
 import { killChild } from "../../core/child";
 import { retireProviderEpoch } from "../turnWriter";
+import { providerExitError, pushExitStderrTail } from "../../core/exitDiagnostics";
 import {
   announceSlowProviderStartup,
   PROVIDER_STARTUP_TIMEOUT_MS,
@@ -76,6 +78,7 @@ import {
   taskListFromToolInput,
 } from "../../../../features/sessions/model/taskList";
 import { AcpClient, type AcpHandlers } from "../../core/acp";
+import { ACP_PROMPT_TIMEOUT_MS } from "../../core/acpPromptDeadline";
 import { resolveCursorBinary, spawnChild, watchChild } from "../../core/child";
 import {
   readStoredCursorToolCalls,
@@ -484,11 +487,12 @@ async function ensureStartedLive(input: SendTurnInput): Promise<Live> {
       });
     };
 
+    const stderrTail: string[] = [];
     watchChild(
       handle,
       (line) => acp.pushLine(line),
       (code) => {
-        acp.close(new Error("Cursor CLI exited"));
+        acp.close(providerExitError("Cursor CLI", code, stderrTail));
         if (liveByThread.get(input.sessionId)?.handle === handle)
           liveByThread.delete(input.sessionId);
         const live = liveRef.current;
@@ -503,6 +507,7 @@ async function ensureStartedLive(input: SendTurnInput): Promise<Live> {
           (live?.onEvent ?? input.onEvent)({ type: "session.ended", code });
         }
       },
+      (line) => pushExitStderrTail(stderrTail, line),
     );
 
     await spawnChild(handle, path, ["acp"], input.cwd, undefined, "cursor");
@@ -633,23 +638,40 @@ async function applyModelSelection(
 
   try {
     await setConfigOption(live, live.modelConfigId, base, acp);
-  } catch {
-    await acp
-      .request(
+  } catch (error) {
+    // Transport failures (timeout, exited process) must fail the turn; only a
+    // JSON-RPC rejection may fall back to the legacy model call.
+    if (!(error instanceof JsonRpcResponseError)) throw error;
+    try {
+      await acp.request(
         "session/set_model",
         {
           sessionId: live.acpSessionId,
           modelId: base,
         },
         20_000,
-      )
-      .catch(() => undefined);
+      );
+    } catch (fallbackError) {
+      if (!(fallbackError instanceof JsonRpcResponseError)) throw fallbackError;
+      live.onEvent({
+        type: "status",
+        text: `Cursor could not apply the selected model (${base}); continuing with its current model.`,
+      });
+    }
   }
 
   for (const [settingId, value] of Object.entries(settings)) {
     const configId = resolveSettingConfigId(live.configOptions, settingId);
     if (!configId) continue;
-    await setConfigOption(live, configId, value, acp).catch(() => undefined);
+    try {
+      await setConfigOption(live, configId, value, acp);
+    } catch (error) {
+      if (!(error instanceof JsonRpcResponseError)) throw error;
+      live.onEvent({
+        type: "status",
+        text: `Cursor could not apply the selected ${settingId} setting; continuing with its current setting.`,
+      });
+    }
   }
 }
 
@@ -710,7 +732,7 @@ async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Pro
           sessionId: live.acpSessionId,
           prompt: blocks,
         },
-        0,
+        ACP_PROMPT_TIMEOUT_MS,
         (value, work) => {
           responseScope.work?.finish();
           responseScope.work = work ? retainNativeOutputEventOrigin(work.origin) : null;
@@ -745,7 +767,7 @@ async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Pro
       nativeOutputSink(responseScope.work, settleCursorBackgroundAgents)(live, "failed");
       emitNative({
         type: "session.error",
-        message: error instanceof Error ? error.message : String(error),
+        message: errorText(error),
       });
       throw error;
     }

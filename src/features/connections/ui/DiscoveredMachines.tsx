@@ -5,8 +5,8 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Surface } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
@@ -19,16 +19,18 @@ import {
 } from "../model/machineCandidates";
 import type { AccountPairPlan } from "../model/accountDesktopPairing";
 import { AccountPairDialog } from "./AccountPairDialog";
+import { MACHINE_SEARCH_FROM } from "./machineListSearch";
 import { useDiscoveredMachines } from "./useDiscoveredMachines";
 import type { RemoteMachine } from "../model/protocol";
 
-const SOURCE_LABEL: Record<CandidateSource, string> = {
-  account: "Account",
-  tailscale: "Tailscale",
-  "ssh-config": "SSH config",
-  "known-hosts": "Known hosts",
-  servers: "Servers",
-};
+const sourceLabel = (source: CandidateSource) =>
+  ({
+    account: t("Account"),
+    tailscale: t("Tailscale"),
+    "ssh-config": t("SSH config"),
+    "known-hosts": t("Known hosts"),
+    servers: t("Servers"),
+  })[source];
 
 function MachineIcon({ machine }: { machine: DiscoveredMachine }) {
   if (machine.group === "mobile") return <Smartphone aria-hidden className="icon-md" />;
@@ -40,17 +42,20 @@ function MachineIcon({ machine }: { machine: DiscoveredMachine }) {
 function CandidateRow({
   machine,
   busy,
+  showSource,
   onAdd,
   onPair,
 }: {
   machine: DiscoveredMachine;
   busy: boolean;
+  /** The group label does not already name the source, so the row does. */
+  showSource: boolean;
   onAdd: (plan: SshAddPlan) => void;
   onPair: (plan: AccountPairPlan) => void;
 }) {
   const plan = sshAddPlan(machine);
   const pair = plan ? null : accountPairPlan(machine);
-  const sources = [...new Set(machine.sources.map((source) => t(SOURCE_LABEL[source])))];
+  const sources = [...new Set(machine.sources.map((source) => sourceLabel(source)))];
   if (machine.group === "shared") sources.unshift(t("Shared with you"));
   return (
     <div className="flex items-center gap-3 px-3 py-2">
@@ -59,37 +64,56 @@ function CandidateRow({
         <Text truncate weight="medium" tone="primary">
           {machine.name}
         </Text>
-        <Text truncate size="caption" tone="muted">
-          {sources.join(" · ")}
-        </Text>
+        {showSource ? (
+          <Text truncate size="caption" tone="muted">
+            {sources.join(" · ")}
+          </Text>
+        ) : null}
       </div>
-      {machine.online !== undefined ? (
-        <Badge variant="dot" size="sm" tone={machine.online ? "success" : "neutral"}>
-          {machine.online ? t("Online") : t("Offline")}
+      {machine.online === false ? (
+        <Badge variant="dot" size="sm" tone="neutral">
+          {t("Offline")}
         </Badge>
       ) : null}
-      <div className="flex shrink-0 items-center gap-1">
-        {plan || pair ? null : (
-          <InfoPopover label={t("Why Add is unavailable")} width={280}>
-            <p>{t("This computer has no SSH address to set it up from here yet.")}</p>
-          </InfoPopover>
-        )}
-        <Button
-          stableWidth
-          variant="secondary"
-          disabled={busy || (!plan && !pair)}
-          onClick={() => (plan ? onAdd(plan) : pair && onPair(pair))}
-        >
-          {t("Add")}
-        </Button>
-      </div>
+      <Button
+        stableWidth
+        variant="secondary"
+        disabled={busy || (!plan && !pair)}
+        disabledReason={
+          !plan && !pair
+            ? machine.sources.includes("account")
+              ? t(
+                  "This computer has not published an address another computer can use. Turn on Tailscale or a tunnel there, or add it by its SSH address under Enter address.",
+                )
+              : t("This computer has no SSH address to set it up from here yet.")
+            : busy
+              ? t("Working…")
+              : undefined
+        }
+        onClick={() => (plan ? onAdd(plan) : pair && onPair(pair))}
+      >
+        {t("Add")}
+      </Button>
     </div>
   );
 }
 
-/** Rows shown before Show all; a search always shows every match. */
-const COLLAPSED_ROWS = 5;
 const GROUP_ORDER = { shared: 1, mobile: 2 } as const;
+
+/** Splits rows into sections by shared/phone group, else by their first source, keeping order. */
+function groupBySource(machines: DiscoveredMachine[]) {
+  const groups = new Map<string, DiscoveredMachine[]>();
+  for (const machine of machines) {
+    const label =
+      machine.group === "shared"
+        ? t("Shared with you")
+        : machine.group === "mobile"
+          ? t("Phones")
+          : sourceLabel(machine.sources[0] ?? "account");
+    groups.set(label, [...(groups.get(label) ?? []), machine]);
+  }
+  return [...groups].map(([label, rows]) => ({ label, machines: rows }));
+}
 
 /** Whether a found machine matches the search: name or any of its addresses. */
 function matches(machine: DiscoveredMachine, query: string) {
@@ -109,7 +133,6 @@ export function DiscoveredMachines({
   saved,
   active,
   busy,
-  query = "",
   onAdd,
   onPaired,
 }: {
@@ -117,15 +140,13 @@ export function DiscoveredMachines({
   /** The list is visible; it refreshes only then. */
   active: boolean;
   busy: boolean;
-  /** The page search; rows filter by name and address. */
-  query?: string;
   onAdd: (plan: SshAddPlan) => void;
   /** An account-paired machine was saved; the caller refreshes its machine list. */
   onPaired: () => void;
 }) {
   useLocale();
   const [pairing, setPairing] = useState<AccountPairPlan | null>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [query, setQuery] = useState("");
   const { signIn } = useAccount();
   const { machines, loading, signedOut } = useDiscoveredMachines(saved, active);
   const open = machines
@@ -139,11 +160,22 @@ export function DiscoveredMachines({
     .map(({ machine }) => machine);
   const searching = query.trim() !== "";
   const found = open.filter((machine) => matches(machine, query));
-  const shown = searching || expanded ? found : found.slice(0, COLLAPSED_ROWS);
-  const hidden = found.length - shown.length;
+  const shown = found;
+  const showGroupLabels = groupBySource(shown).length > 1;
   return (
     <section aria-label={t("Available to add")} className="flex flex-col gap-2">
-      <SectionLabel count={found.length || undefined}>{t("Available to add")}</SectionLabel>
+      {/* Search earns its row only once the list is long enough to scan. */}
+      {open.length > MACHINE_SEARCH_FROM || searching ? (
+        <SearchInput
+          standalone
+          appearance="field"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          textSize="secondary"
+          placeholder={t("Search by name or address")}
+          aria-label={t("Search by name or address")}
+        />
+      ) : null}
       {signedOut ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Text tone="muted">{t("Sign in to also find computers on your account.")}</Text>
@@ -152,29 +184,25 @@ export function DiscoveredMachines({
           </Button>
         </div>
       ) : null}
-      {shown.length > 0 ? (
-        <Surface variant="card" padding="none" dividers="card" className="overflow-hidden">
-          {shown.map((machine) => (
-            <CandidateRow
-              key={machine.key}
-              machine={machine}
-              busy={busy}
-              onAdd={onAdd}
-              onPair={setPairing}
-            />
-          ))}
-        </Surface>
-      ) : null}
-      {hidden > 0 ? (
-        <Button variant="ghost" className="self-start" onClick={() => setExpanded(true)}>
-          {t("Show all ({p0})", { p0: found.length })}
-        </Button>
-      ) : null}
-      {expanded && !searching && found.length > COLLAPSED_ROWS ? (
-        <Button variant="ghost" className="self-start" onClick={() => setExpanded(false)}>
-          {t("Show less")}
-        </Button>
-      ) : null}
+      {shown.length > 0
+        ? groupBySource(shown).map(({ label, machines: rows }) => (
+            <div key={label} className="flex flex-col gap-1">
+              {showGroupLabels ? <SectionLabel count={rows.length}>{label}</SectionLabel> : null}
+              <Surface variant="card" padding="none" dividers="card" className="overflow-hidden">
+                {rows.map((machine) => (
+                  <CandidateRow
+                    key={machine.key}
+                    machine={machine}
+                    busy={busy}
+                    showSource={!showGroupLabels}
+                    onAdd={onAdd}
+                    onPair={setPairing}
+                  />
+                ))}
+              </Surface>
+            </div>
+          ))
+        : null}
       {found.length === 0 && loading ? (
         <LoadingText>{t("Looking for machines…")}</LoadingText>
       ) : null}

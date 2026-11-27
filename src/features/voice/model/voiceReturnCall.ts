@@ -3,10 +3,9 @@ import { voiceQuietHours } from "./voiceBriefing";
 
 export const VOICE_RETURN_CALL_DEFAULT_SECONDS = 20;
 
-/** The listening window in milliseconds, clamped to the 5 to 120 second setting range. */
-export function voiceReturnCallWindowMs(seconds: number | undefined): number {
-  const value = Number.isFinite(seconds) ? Math.round(seconds as number) : 20;
-  return Math.min(120, Math.max(5, value)) * 1_000;
+/** The fixed listening window in milliseconds; the owner has no control for it. */
+export function voiceReturnCallWindowMs(): number {
+  return VOICE_RETURN_CALL_DEFAULT_SECONDS * 1_000;
 }
 
 export type VoiceReturnCallState = {

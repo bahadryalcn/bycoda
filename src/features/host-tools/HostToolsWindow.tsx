@@ -18,8 +18,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { HostToolsWindow as HostToolsWindowProps } from "../../app/model/hostToolsWindow";
 import { SessionHostTools } from "./SessionHostTools";
 import { Alert } from "../../shared/ui/Alert";
-import { Button } from "../../shared/ui/Button";
+import { EmptyState } from "../../shared/ui/EmptyState";
+import { ErrorDetails } from "../../shared/ui/ErrorDetails";
 import { Modal } from "../../shared/ui/Modal";
+import { Button } from "../../shared/ui/Button";
 import { LoadingText } from "../../shared/ui/LoadingText";
 import { withTimeout } from "../../shared/lib/withTimeout";
 import {
@@ -27,8 +29,9 @@ import {
   hideReturnedTools,
   RETURN_PRESENTATION_MS,
 } from "./model/toolsReturnPresentation";
+import { Tooltip } from "../../shared/ui/Tooltip";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
-import { Folder, Link2, Pin, PanelRightClose, Wrench } from "../../shared/ui/icons";
+import { Folder, PanelRightClose, Wrench } from "../../shared/ui/icons";
 import { t, useLocale } from "../../shared/i18n/technical";
 import {
   mergeToolsSource,
@@ -58,20 +61,21 @@ const STATUS_TONES: Record<string, BadgeTone> = {
   Idle: "neutral",
 };
 function sessionStatusBadge(status: string | undefined) {
+  const labels: Record<string, string> = {
+    Working: t("Working"),
+    Interrupted: t("Interrupted"),
+    Failed: t("Failed"),
+    Idle: t("Idle"),
+  };
   return status ? (
     <Badge size="xs" tone={STATUS_TONES[status] ?? "neutral"}>
-      {t(status)}
+      {labels[status] ?? status}
     </Badge>
   ) : undefined;
 }
 const paneKey = (pane: ToolsSession) => `${toolsSessionKey(pane)}:${pane.onlyTab ?? "all"}`;
-const FOLLOW_KEY = "bycoda.tools-hub.follow.v1";
-function initialFollow() {
-  try {
-    return localStorage.getItem(FOLLOW_KEY) !== "false";
-  } catch {
-    return true;
-  }
+function sameWindowSet(previous: ReadonlySet<string> | null, next: ReadonlySet<string>) {
+  return !!previous && previous.size === next.size && [...next].every((id) => previous.has(id));
 }
 
 /** Selection changes presentation only; each panel retains its originating composer. */
@@ -90,23 +94,25 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
   }
   const [sources, setSources] = useState<ReadonlyMap<string, ToolsSourceSnapshot>>(new Map());
   const [selected, setSelected] = useState<ToolsSession | null>(props);
-  const [follow, setFollow] = useState(initialFollow);
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
-  const followRef = useRef(follow);
-  followRef.current = follow;
-  const latestSelection = useRef<{ revision: number; session: ToolsSession | null }>({
-    revision: 0,
-    session: props,
-  });
+  const latestSelectionRevision = useRef(0);
   const [retained, setRetained] = useState<ToolsRegistration[]>([
-    { ...props, initialUrl: undefined, id: toolsSessionKey(props), detached: true },
+    {
+      ...props,
+      initialUrl: undefined,
+      id: toolsSessionKey(props),
+      detached: true,
+    },
   ]);
   const retainedRef = useRef(retained);
   retainedRef.current = retained;
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  // The shown error came from the return step, so Try again repeats that step.
+  const [returnFailed, setReturnFailed] = useState(false);
   const returning = useRef(false);
+  const returnAbort = useRef<AbortController | null>(null);
   const windowLifetime = useRef(0);
   const [availableWindows, setAvailableWindows] = useState<ReadonlySet<string> | null>(null);
   const windowLabel = useRef("");
@@ -186,11 +192,14 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
         (epoch < previous.epoch || (epoch === previous.epoch && next.revision <= previous.revision))
       )
         return;
-      sourceRevisions.current.set(next.sourceWindow, { epoch, revision: next.revision });
+      sourceRevisions.current.set(next.sourceWindow, {
+        epoch,
+        revision: next.revision,
+      });
       setSources((previous) => mergeToolsSource(previous, next));
-      if (next.selectionRevision > latestSelection.current.revision) {
-        latestSelection.current = { revision: next.selectionRevision, session: next.active };
-        if (followRef.current) setSelected(next.active);
+      if (next.selectionRevision > latestSelectionRevision.current) {
+        latestSelectionRevision.current = next.selectionRevision;
+        setSelected(next.active);
       }
       setSelected((previous) =>
         previous &&
@@ -344,19 +353,29 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
       void requestToolsSources()
         .then((windows) => {
           if (disposed) return;
-          setAvailableWindows(windows);
-          setSources((previous) => new Map([...previous].filter(([owner]) => windows.has(owner))));
+          setAvailableWindows((previous) =>
+            sameWindowSet(previous, windows) ? previous : windows,
+          );
+          setSources((previous) => {
+            const kept = [...previous].filter(([owner]) => windows.has(owner));
+            return kept.length === previous.size ? previous : new Map(kept);
+          });
         })
         .catch((cause) => {
           if (!disposed) setError(toolsTransferError(cause));
         });
     };
+    const refreshVisible = () => {
+      if (!document.hidden) refresh();
+    };
     window.addEventListener("focus", refresh);
-    const timer = setInterval(refresh, 10000);
+    document.addEventListener("visibilitychange", refreshVisible);
+    const timer = setInterval(refreshVisible, 10000);
     return () => {
       disposed = true;
       clearInterval(timer);
       window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refreshVisible);
     };
   }, []);
   // Mount acknowledgement follows actual domain-view readiness, never window creation.
@@ -401,6 +420,20 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
         onlyTab: selected.onlyTab,
       }
     : null;
+  const sessionTooltip = current
+    ? {
+        label: current.title,
+        details: [
+          toolsProjectName(current),
+          current.cwd,
+          current.worktreeCwd,
+          current.branch,
+          current.model,
+          sessionStatusBadge(current.status),
+        ].filter((value) => value !== undefined),
+        wide: true,
+      }
+    : undefined;
   const retainedPane = current
     ? retained.find((pane) => sameToolsSession(pane, current) && pane.onlyTab === current.onlyTab)
     : undefined;
@@ -409,22 +442,41 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
     !!availableWindows &&
     !availableWindows.has(retainedPane.composerWindow);
   const currentPane = ownerUnavailable ? undefined : retainedPane;
-  const toggleFollow = () => {
-    const next = !follow;
-    setFollow(next);
-    try {
-      localStorage.setItem(FOLLOW_KEY, String(next));
-    } catch {
-      /* Session choice still applies. */
-    }
-    if (next) setSelected(latestSelection.current.session);
+  // Asks the other windows again which of them still own tools, after the owner went away.
+  const checkAgain = () => {
+    setReturnFailed(false);
+    setError("");
+    void requestToolsSources()
+      .then((windows) => setAvailableWindows(windows))
+      .catch((cause) => setError(toolsTransferError(cause)));
   };
+  const returnCancelled = t("Return cancelled.");
+  const returnChanged = t(
+    "Tools changed after an uncertain transfer. Both workspaces retained for review.",
+  );
+  const returnErrorTitle = t("Could not return to conversation");
+  const cancelled = returnFailed && error === returnCancelled;
+  const showReturnDetails = returnFailed && !cancelled && error !== returnChanged;
+  // Cancel and changed-tools are our own translated sentences; anything else is raw cause text.
+  const errorTitle = cancelled
+    ? returnCancelled
+    : returnFailed
+      ? showReturnDetails
+        ? returnErrorTitle
+        : returnChanged
+      : t("Could not complete this in the tools window.");
   const reattach = async () => {
     if (!currentPane?.composerWindow || returning.current) return;
     returning.current = true;
     const lifetime = windowLifetime.current;
+    const abort = new AbortController();
+    returnAbort.current = abort;
+    const assertNotCancelled = () => {
+      if (abort.signal.aborted) throw new Error(returnCancelled);
+    };
     setPending(true);
     setError("");
+    setReturnFailed(false);
     try {
       const session: ToolsSession = {
         ...currentPane,
@@ -437,10 +489,7 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
       const submittedEdits = JSON.stringify(toolsTransferEdits(session, drafts));
       const editFingerprint = await toolsTransferFingerprint(toolsTransferEdits(session, drafts));
       const previous = pendingReturns.current.get(paneKey(currentPane));
-      if (previous && previous.editFingerprint !== editFingerprint)
-        throw new Error(
-          t("Tools changed after an uncertain transfer. Both workspaces retained for review."),
-        );
+      if (previous && previous.editFingerprint !== editFingerprint) throw new Error(returnChanged);
       const operation = previous ?? {
         requestId: crypto.randomUUID(),
         editFingerprint,
@@ -465,6 +514,7 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
           tab: operation.session.onlyTab ?? operation.session.initialTab ?? "devices",
           machine: operation.session.initialMachine ?? "project",
         }),
+        abort.signal,
       );
       const [{ focusSessionWindow }, { remoteSessionOwnershipKey }, { getCurrentWebviewWindow }] =
         await withTimeout(
@@ -476,6 +526,7 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
           RETURN_PRESENTATION_MS,
           t("Return to conversation"),
         );
+      assertNotCancelled();
       const ownershipId = currentPane.cwd.startsWith("remote://")
         ? remoteSessionOwnershipKey(currentPane.cwd, currentPane.sessionId)
         : (currentPane.composerSessionId ?? currentPane.sessionId);
@@ -484,13 +535,14 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
         RETURN_PRESENTATION_MS,
         t("Return to conversation"),
       );
+      assertNotCancelled();
       if (windowLifetime.current !== lifetime) return;
       // Compare synchronously after the last focus/import await; hashing here would reopen the edit race.
       assertToolsReturnUnchanged(
         session,
         views.current.get(paneKey(currentPane)),
         submittedEdits,
-        t("Tools changed after an uncertain transfer. Both workspaces retained for review."),
+        returnChanged,
       );
       await hideReturnedTools(
         getCurrentWebviewWindow(),
@@ -508,8 +560,10 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
       setSelected(null);
     } catch (cause) {
       setError(toolsTransferError(cause));
+      setReturnFailed(true);
     } finally {
       returning.current = false;
+      returnAbort.current = null;
       setPending(false);
     }
   };
@@ -529,71 +583,52 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
           {t("Conversation tools")}
         </Text>
         <div className="tools-hub-identity">
-          <SearchableSelect
-            hideLabel
-            label={t("Tool conversations")}
-            disabled={pending}
-            variant="transparent"
-            value={current ? toolsSessionKey(current) : ""}
-            placeholder={t("Conversation tools")}
-            searchable
-            align="end"
-            options={options.map((session) => ({
-              value: toolsSessionKey(session),
-              label: `${toolsProjectName(session)} · ${session.title}`,
-              description: session.cwd,
-              disabled:
-                !!session.composerWindow &&
-                !!availableWindows &&
-                !availableWindows.has(session.composerWindow),
-              meta: sessionStatusBadge(session.status),
-              icon: <Folder className="icon-sm" aria-hidden />,
-            }))}
-            tooltip={
-              current
-                ? {
-                    label: current.title,
-                    details: [
-                      toolsProjectName(current),
-                      current.cwd,
-                      current.worktreeCwd,
-                      current.branch,
-                      current.model,
-                      sessionStatusBadge(current.status),
-                    ].filter((value) => value !== undefined),
-                    wide: true,
-                  }
-                : undefined
-            }
-            onChange={(key) => {
-              const session = options.find((entry) => toolsSessionKey(entry) === key);
-              if (session) setSelected(session);
-            }}
-          />
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          iconOnly
-          aria-pressed={follow}
-          selected={follow}
-          tone={follow ? "accent" : "neutral"}
-          label={t(follow ? "Follow active conversation" : "Keep this conversation")}
-          disabled={pending}
-          onClick={toggleFollow}
-        >
-          {follow ? (
-            <Link2 className="icon-sm" aria-hidden />
+          {current && options.length === 1 && sessionTooltip ? (
+            <Tooltip {...sessionTooltip} asChild>
+              <Text as="div" tabIndex={0} size="body" truncate>
+                {toolsProjectName(current)} · {current.title}
+              </Text>
+            </Tooltip>
           ) : (
-            <Pin className="icon-sm" aria-hidden />
+            <SearchableSelect
+              hideLabel
+              label={t("Tool conversations")}
+              disabled={pending}
+              variant="transparent"
+              value={current ? toolsSessionKey(current) : ""}
+              placeholder={t("Conversation tools")}
+              searchable={options.length > 5}
+              align="end"
+              options={options.map((session) => ({
+                value: toolsSessionKey(session),
+                label: `${toolsProjectName(session)} · ${session.title}`,
+                description: session.cwd,
+                disabled:
+                  !!session.composerWindow &&
+                  !!availableWindows &&
+                  !availableWindows.has(session.composerWindow),
+                meta: sessionStatusBadge(session.status),
+                icon: <Folder className="icon-sm" aria-hidden />,
+              }))}
+              tooltip={sessionTooltip}
+              onChange={(key) => {
+                const session = options.find((entry) => toolsSessionKey(entry) === key);
+                if (session) setSelected(session);
+              }}
+            />
           )}
-        </Button>
+        </div>
         <Button
           variant="ghost"
           size="sm"
           iconOnly
           label={t("Return to conversation")}
           disabled={!currentPane?.composerWindow || pending}
+          disabledReason={
+            !currentPane?.composerWindow
+              ? t("There is no conversation window to return to.")
+              : undefined
+          }
           loading={pending}
           onClick={() => {
             void reattach().catch((cause) => setError(toolsTransferError(cause)));
@@ -602,7 +637,22 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
           <PanelRightClose className="icon-sm" aria-hidden />
         </Button>
       </header>
-      {error ? <Alert tone="danger">{error}</Alert> : null}
+      {error ? (
+        <Alert
+          tone={cancelled ? "info" : "danger"}
+          title={errorTitle}
+          extra={
+            showReturnDetails || !returnFailed ? (
+              <ErrorDetails title={errorTitle} detail={error} />
+            ) : undefined
+          }
+          action={
+            returnFailed && currentPane?.composerWindow && !pending
+              ? { label: t("Try again"), onClick: () => void reattach() }
+              : undefined
+          }
+        ></Alert>
+      ) : null}
       <div className="tools-hub-body">
         {retained.map((pane) => {
           const active = !!currentPane && paneKey(pane) === paneKey(currentPane);
@@ -627,30 +677,31 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
           );
         })}
         {!currentPane ? (
-          <Text
-            size="caption"
-            tone="secondary"
-            leading="inherit"
-            as="div"
-            className="tools-hub-empty"
-          >
-            {current ? (
-              <Text size="inherit" tone="primary" weight="medium" leading="inherit" as="strong">
-                {toolsProjectName(current)} · {current.title}
-              </Text>
-            ) : null}
-            <span>
-              {t(
-                ownerUnavailable
-                  ? "Conversation tools owner unavailable"
-                  : "No tools in this conversation",
-              )}
-            </span>
-          </Text>
+          <EmptyState
+            context="panel"
+            illustration={ownerUnavailable ? "unreachable" : "no-sessions"}
+            title={
+              ownerUnavailable
+                ? t("Conversation tools owner unavailable")
+                : t("No tools in this conversation")
+            }
+            description={current ? `${toolsProjectName(current)} · ${current.title}` : undefined}
+            showDescription
+            action={ownerUnavailable ? { label: t("Check again"), onClick: checkAgain } : undefined}
+          />
         ) : null}
       </div>
       {pending ? (
-        <Modal title={t("Return to conversation")} closeDisabled onClose={() => {}}>
+        <Modal
+          title={t("Return to conversation")}
+          size="sm"
+          onClose={() => returnAbort.current?.abort()}
+          footer={
+            <Button variant="secondary" onClick={() => returnAbort.current?.abort()}>
+              {t("Cancel")}
+            </Button>
+          }
+        >
           <LoadingText delay={false} />
         </Modal>
       ) : null}

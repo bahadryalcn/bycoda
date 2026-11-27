@@ -87,6 +87,7 @@ async function fixture(generateText?: SocialTextGenerator) {
   const account = async (platform: SocialAccount["platform"] = "x", name = "Account") => {
     const created = await call<SocialAccount>("accounts.create", {
       platform,
+      ...(platform === "x" ? { connection: "oauth", xApiProduct: "pay-per-use" } : {}),
       name,
       accountType: SOCIAL_ACCOUNT_TYPES[platform][0],
       projectIds: [project.id],

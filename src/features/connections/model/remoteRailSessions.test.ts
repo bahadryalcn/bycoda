@@ -1,10 +1,13 @@
 import { expect, it } from "vitest";
+import { TIMEOUTS_BEFORE_UNREACHABLE } from "./remoteHealth";
 import { buildRecentSessions } from "../../sessions/model/recentSessions";
 import { pathKey } from "../../../shared/lib/paths";
 import { workingProjectPaths } from "../../sessions/model/liveAgents";
 import type { HostSessionSummary } from "./protocol";
 import {
   nextRemoteUnseenFinished,
+  railEntryAfterFailure,
+  type RailListEntry,
   railSessions,
   remoteLiveAgents,
   remoteLiveSessionInfos,
@@ -255,4 +258,28 @@ it("ranks issues, interruptions and needs-input above Waiting and ignores expire
   expect(remoteSessionWait({ ...base, wakeSources, issue: "failed" }, 0)).toBeNull();
   expect(remoteSessionWait({ ...base, wakeSources, status: "interrupted" }, 0)).toBeNull();
   expect(remoteLiveAgents([listed({ id: "gone", wakeSources })], new Set(), 100)).toEqual([]);
+});
+
+it("shows a machine's last running state as idle once the machine stops answering", () => {
+  const running = listed({ id: "busy", status: "running", needsInput: true }).session;
+  const fresh = { list: [running], fresh: true, failures: 0 };
+  const refused = railEntryAfterFailure(fresh, new Error("SSH tunnel closed"));
+  expect(refused).toMatchObject({ fresh: false, failures: 1 });
+  expect(refused.list[0]).toMatchObject({ id: "busy", status: "idle", needsInput: false });
+  // A later failure keeps it stale; the entry is only trusted again by a new list.
+  expect(railEntryAfterFailure(refused, new Error("down")).fresh).toBe(false);
+});
+
+it("waits for a run of timeouts before a machine's list stops counting as live", () => {
+  const running = listed({ id: "busy", status: "running" }).session;
+  const timeout = new Error("[RPC_TIMEOUT] request timed out");
+  let entry: RailListEntry = { list: [running], fresh: true, failures: 0 };
+  for (let i = 1; i < TIMEOUTS_BEFORE_UNREACHABLE; i++) {
+    entry = railEntryAfterFailure(entry, timeout);
+    expect(entry.fresh).toBe(true);
+    expect(entry.list[0]?.status).toBe("running");
+  }
+  entry = railEntryAfterFailure(entry, timeout);
+  expect(entry.fresh).toBe(false);
+  expect(entry.list[0]?.status).toBe("idle");
 });

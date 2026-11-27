@@ -94,6 +94,9 @@ const button = (name: string) =>
   [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (element) => element.textContent === name || element.getAttribute("aria-label") === name,
   )!;
+// A blocked control with a reason stays focusable, so it is aria-disabled rather than disabled.
+const blocked = (node: HTMLButtonElement) =>
+  node.disabled || node.getAttribute("aria-disabled") === "true";
 const click = async (name: string) => {
   await act(async () => {
     button(name).click();
@@ -175,7 +178,7 @@ it("keeps Off independent of a pending enrollment and rejects its late response"
         }),
   );
   await click("Enroll conversation");
-  expect(button("Turn off supervision").disabled).toBe(false);
+  expect(blocked(button("Turn off supervision"))).toBe(false);
   await click("Turn off supervision");
   expect(container.textContent).toContain("Manual session supervision is off.");
   expect(mocks.request).toHaveBeenCalledWith(
@@ -184,7 +187,7 @@ it("keeps Off independent of a pending enrollment and rejects its late response"
   );
   await act(() => enroll.resolve({ manual: current }));
   expect(container.textContent).toContain("Manual session supervision is off.");
-  expect(button("Enroll conversation").disabled).toBe(true);
+  expect(blocked(button("Enroll conversation"))).toBe(true);
 });
 it("keeps Off usable while initial candidate loading is pending", async () => {
   const list = deferred<any>();
@@ -205,7 +208,7 @@ it("shows policy conflicts honestly and retains independent Off for refresh and 
   mocks.request.mockRejectedValueOnce(new Error("Policy changed; refresh before retrying."));
   await click("Turn off supervision");
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Policy changed");
-  expect(button("Turn off supervision").disabled).toBe(false);
+  expect(blocked(button("Turn off supervision"))).toBe(false);
   expect(container.textContent).not.toContain("Manual session supervision is off.");
 });
 it("preserves hidden saved scope while editing visible membership without revealing it", async () => {
@@ -252,14 +255,14 @@ it("distinguishes same-name projects by path and saves their exact IDs", async (
 });
 it("requires Chief for enrollment but keeps owner revocation and Off available", async () => {
   await render({ chief: false });
-  expect(button("Enroll conversation").disabled).toBe(true);
-  expect(button("Revoke supervision").disabled).toBe(false);
+  expect(blocked(button("Enroll conversation"))).toBe(true);
+  expect(blocked(button("Revoke supervision"))).toBe(false);
   await click("Revoke supervision");
   expect(mocks.request).toHaveBeenCalledWith(
     { op: "manual.revoke", id: "grant", expectedVersion: 3 },
     "host-a",
   );
-  expect(button("Turn off supervision").disabled).toBe(false);
+  expect(blocked(button("Turn off supervision"))).toBe(false);
 });
 it("removes rows immediately when visibility changes and refuses stale locked-source enrollment", async () => {
   await render();
@@ -290,7 +293,7 @@ it("surfaces rejected navigation locally so Open can be retried", async () => {
   await render({ onOpenSession });
   await click("Open session");
   expect(container.textContent).toContain("Host offline");
-  expect(button("Open session").disabled).toBe(false);
+  expect(blocked(button("Open session"))).toBe(false);
 });
 it("does not silently replace a newer writer's scope while an owner draft is retained", async () => {
   await render({ settings: true });
@@ -345,7 +348,7 @@ it("can turn off while an enabling policy request is pending", async () => {
         }),
   );
   await act(() => container.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
-  expect(button("Turn off supervision").disabled).toBe(false);
+  expect(blocked(button("Turn off supervision"))).toBe(false);
   await click("Turn off supervision");
   await act(() =>
     enabling.resolve({
@@ -356,8 +359,8 @@ it("can turn off while an enabling policy request is pending", async () => {
 });
 it("settles candidate loading under StrictMode effect replay", async () => {
   await act(() => root.render(createElement(StrictMode, null, createElement(Harness))));
-  expect(button("Enroll conversation").disabled).toBe(false);
-  expect(button("Refresh").disabled).toBe(false);
+  expect(blocked(button("Enroll conversation"))).toBe(false);
+  expect(blocked(button("Refresh"))).toBe(false);
 });
 it("does not expose a global enrollment count in a capacity error", async () => {
   await render();
@@ -414,7 +417,7 @@ it("does not adopt a former Host Off acknowledgement into the replacement Host p
     off.resolve({ manual: { ...state(false), policy: { ...state(false).policy, version: 99 } } }),
   );
   expect(container.textContent).not.toContain("Manual session supervision is off.");
-  expect(button("Turn off supervision").disabled).toBe(false);
+  expect(blocked(button("Turn off supervision"))).toBe(false);
   expect(latestController.data?.policy.version).toBe(4);
   expect(mocks.request).toHaveBeenCalledWith(
     expect.objectContaining({ op: "manual.policy", enabled: false }),

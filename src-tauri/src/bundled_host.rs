@@ -15,7 +15,7 @@ use tauri::{AppHandle, Manager};
 use crate::remote_ssh::{bootstrap_script, HostPlatform};
 
 /// Only installed release builds carry the host package.
-const RELEASE_IDENTIFIER: &str = "com.bycoda.desktop";
+pub(crate) const RELEASE_IDENTIFIER: &str = "com.bycoda.desktop";
 /// A deferred upgrade is retried while the app stays open.
 const RETRY_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const MAX_RETRY_INTERVAL: Duration = Duration::from_secs(60 * 60);
@@ -26,6 +26,10 @@ const MAX_RETRY_INTERVAL: Duration = Duration::from_secs(60 * 60);
 pub(crate) const HOST_BOOT_GRACE: Duration = Duration::from_secs(120);
 const HOST_STARTING: &str = "The host is starting.";
 const OTHER_INSTALL: &str = "Another host update is being installed.";
+const WAITING_FOR_SESSIONS: &str = "The host update waits until running sessions finish.";
+/// Machine-readable `reason` of a status deferred for running sessions. The
+/// renderer branches on this value; `message` is display text only.
+const REASON_WAITING_FOR_SESSIONS: &str = "waiting-for-sessions";
 /// Another installer usually finishes within a minute; checking again soon clears
 /// the notice right after it does instead of up to a full retry interval later.
 const OTHER_INSTALL_POLL: Duration = Duration::from_secs(15);
@@ -39,6 +43,11 @@ fn deferred_retry(reason: &str) -> Duration {
     }
 }
 
+/// The machine-readable reason for a deferred status with this display text.
+fn deferred_reason(message: &str) -> Option<String> {
+    (message == WAITING_FOR_SESSIONS).then(|| REASON_WAITING_FOR_SESSIONS.to_string())
+}
+
 #[derive(Default, Deserialize, Serialize)]
 struct RetryState {
     package: String,
@@ -47,9 +56,13 @@ struct RetryState {
 }
 
 fn retry_delay(failures: u32) -> Duration {
-    RETRY_INTERVAL
-        .saturating_mul(1u32 << failures.saturating_sub(1).min(4))
-        .min(MAX_RETRY_INTERVAL)
+    exponential_retry(failures, RETRY_INTERVAL, MAX_RETRY_INTERVAL)
+}
+
+pub(crate) fn exponential_retry(failures: u32, initial: Duration, max: Duration) -> Duration {
+    initial
+        .saturating_mul(1u32 << failures.saturating_sub(1).min(31))
+        .min(max)
 }
 
 fn package_identity(archive: &Path) -> std::io::Result<String> {
@@ -110,7 +123,11 @@ const SCRIPT_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 pub struct BundledHostStatus {
     /// installed | upgraded | current | deferred | failed | unavailable
     pub state: String,
+    /// Display text only; never branch on it. Older renderers ignore `reason`.
     pub message: Option<String>,
+    /// Why a `deferred` state waits: `waiting-for-sessions` while running sessions
+    /// finish. Absent for every other state and deferral.
+    pub reason: Option<String>,
     pub bundled: Option<String>,
     pub installed: Option<String>,
 }
@@ -149,7 +166,7 @@ fn plan(
         // running. Keep the same activity gate as an ordinary upgrade.
         return match busy {
             Ok(false) => Plan::Install,
-            Ok(true) => Plan::Deferred("The host update waits until running sessions finish."),
+            Ok(true) => Plan::Deferred(WAITING_FOR_SESSIONS),
             Err(()) => Plan::Deferred("Could not check whether the host is busy."),
         };
     };
@@ -164,7 +181,7 @@ fn plan(
                 Plan::Repair
             }
         }
-        Ok(true) => Plan::Deferred("The host update waits until running sessions finish."),
+        Ok(true) => Plan::Deferred(WAITING_FOR_SESSIONS),
         Err(()) => Plan::Deferred("Could not check whether the host is busy."),
     }
 }
@@ -386,7 +403,7 @@ fn host_healthy(base: &Path) -> bool {
 }
 
 /// The service may still be starting when the installer returns.
-fn host_healthy_within(base: &Path, limit: Duration) -> bool {
+pub(crate) fn host_healthy_within(base: &Path, limit: Duration) -> bool {
     let deadline = std::time::Instant::now() + limit;
     loop {
         if host_healthy(base) {
@@ -488,6 +505,35 @@ fn host_busy(base: &Path) -> Result<bool, ()> {
         .map_err(|_| ())
 }
 
+pub(crate) fn host_activity(base: &Path) -> Result<crate::host_lifecycle::Activity, ()> {
+    let connection = rusqlite::Connection::open_with_flags(
+        base.join("host.db"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|_| ())?;
+    connection
+        .busy_timeout(Duration::from_millis(250))
+        .map_err(|_| ())?;
+    connection
+        .query_row(
+            "SELECT
+          (SELECT count(*) FROM sessions WHERE status='running'),
+          (SELECT count(*) FROM sessions WHERE shell_running=1),
+          (SELECT count(*) FROM automation_runs WHERE json_extract(value, '$.status')='running')",
+            [],
+            |row| {
+                Ok(crate::host_lifecycle::Activity {
+                    sessions: row.get(0)?,
+                    shells: row.get(1)?,
+                    automations: row.get(2)?,
+                    unknown: false,
+                    running_sessions: Vec::new(),
+                })
+            },
+        )
+        .map_err(|_| ())
+}
+
 // Automatic maintenance may replace an existing install only when no owner
 // holds the profile and no session or shell is running. The owner's exclusive
 // transaction and the host activity read are the gates; the installed files,
@@ -511,6 +557,14 @@ fn admitted_activity(base: &Path, owner_approved: bool) -> Result<bool, ()> {
 
 /// A local update coordinator job for the host that is still in progress.
 pub(crate) fn job_pending(base: &Path) -> bool {
+    pending_job(base, false)
+}
+
+pub(crate) fn job_blocks_app_start(base: &Path) -> bool {
+    pending_job(base, true)
+}
+
+fn pending_job(base: &Path, allow_verification: bool) -> bool {
     let job = base.join("update-jobs").join("host.json");
     let Ok(text) = std::fs::read_to_string(&job) else {
         return false;
@@ -525,6 +579,7 @@ pub(crate) fn job_pending(base: &Path) -> bool {
         .and_then(|time| SystemTime::now().duration_since(time).ok())
         .is_some_and(|age| age < STALE_JOB);
     fresh
+        && !(allow_verification && state == "verifying-app-host")
         && !matches!(
             state.as_str(),
             "installed" | "failed" | "error" | "cancelled" | ""
@@ -554,7 +609,7 @@ fn archive_name() -> Option<&'static str> {
     }
 }
 
-struct InstallLock(PathBuf);
+pub(crate) struct InstallLock(PathBuf);
 
 /// A lock older than this was left by a crashed or killed app. The installer
 /// itself is bounded by `SCRIPT_TIMEOUT`, plus its tree-kill attempt.
@@ -584,7 +639,7 @@ fn process_alive(_pid: u32) -> bool {
 /// Whether an installer lock on disk still belongs to a running installer.
 /// A lock is stale when it is older than `STALE_INSTALL_LOCK` or its recorded
 /// owner process is gone. Unknown states count as held, never as reclaimable.
-fn install_lock_held(path: &Path) -> bool {
+pub(crate) fn install_lock_held(path: &Path) -> bool {
     let modified = match std::fs::metadata(path) {
         Ok(meta) => meta.modified().ok(),
         Err(error) => return error.kind() != std::io::ErrorKind::NotFound,
@@ -612,7 +667,7 @@ pub(crate) fn install_running(base: &Path) -> bool {
 }
 
 impl InstallLock {
-    fn acquire(base: &Path) -> Option<Self> {
+    pub(crate) fn acquire(base: &Path) -> Option<Self> {
         std::fs::create_dir_all(base).ok()?;
         let path = base.join("app-install.lock");
         // One reclaim of a stale lock; a lock that is still held fails closed.
@@ -652,6 +707,8 @@ fn run_installer(
     archive: &Path,
     upgrade: bool,
     repair: bool,
+    app_mode: bool,
+    port: Option<u16>,
     lock: std::sync::Arc<InstallLock>,
 ) -> Result<(), String> {
     let windows = cfg!(windows);
@@ -692,13 +749,14 @@ fn run_installer(
         .env("BYCODA_HOST_ARCHIVE", archive)
         .env("BYCODA_HOST_FORCE_UPGRADE", if upgrade { "1" } else { "0" })
         .env("BYCODA_HOST_REPAIR", if repair { "1" } else { "0" })
+        .env("BYCODA_HOST_NO_SERVICE", if app_mode { "1" } else { "0" })
         // Keep verified package bytes across failed retries and app restarts.
         // Explicit SSH upgrades retain their fresh-extraction semantics.
         .env("BYCODA_HOST_REUSE_PACKAGE", "1")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped());
-    if let Some(port) = running_port(base) {
+    if let Some(port) = port {
         command.env("BYCODA_HOST_PORT", port.to_string());
     }
     #[cfg(windows)]
@@ -707,6 +765,22 @@ fn run_installer(
         command.creation_flags(0x08000000);
     }
     run_with_timeout(command, SCRIPT_TIMEOUT, lock, script)
+}
+
+/// The installer's own message from its stderr. An uncaught PowerShell error
+/// ends in a record (`At <script>:<line> char:<n>`, `+ CategoryInfo ...`,
+/// `+ FullyQualifiedErrorId ...`); the message is the line before it.
+fn installer_error(stderr: &str) -> Option<&str> {
+    let is_record = |line: &str| {
+        line.starts_with('+')
+            || line.starts_with('~')
+            || (line.starts_with("At ") && line.contains(" char:"))
+    };
+    stderr
+        .lines()
+        .map(str::trim)
+        .rev()
+        .find(|line| !line.is_empty() && !is_record(line))
 }
 
 fn run_with_timeout(
@@ -739,10 +813,8 @@ fn run_with_timeout(
                 if status.success() {
                     return Ok(());
                 }
-                let detail = errors.lines().rev().find(|line| !line.trim().is_empty());
-                return Err(detail
+                return Err(installer_error(&errors)
                     .unwrap_or("The host installer failed.")
-                    .trim()
                     .to_string());
             }
             Ok(None) if started.elapsed() > timeout => {
@@ -849,6 +921,7 @@ fn ensure_once(app: &AppHandle, owner_approved: bool) -> Option<Duration> {
             record(BundledHostStatus {
                 state: "deferred".into(),
                 message: Some(OTHER_INSTALL.into()),
+                reason: None,
                 bundled: Some(bundled),
                 installed: installed_version(&base),
             });
@@ -856,18 +929,40 @@ fn ensure_once(app: &AppHandle, owner_approved: bool) -> Option<Duration> {
         return Some(deferred_retry(OTHER_INSTALL));
     };
     let lock = std::sync::Arc::new(lock);
+    let app_mode = match crate::host_lifecycle::mode(&base) {
+        Ok(mode) => mode == crate::host_lifecycle::Mode::App,
+        Err(error) => {
+            record(BundledHostStatus {
+                state: "failed".into(),
+                message: Some(error),
+                ..Default::default()
+            });
+            return Some(RETRY_INTERVAL);
+        }
+    };
     let installed = installed_version(&base);
     let healthy = host_healthy(&base);
     let owner = owner_state(&base);
     let starting = !healthy && owner.starting();
-    let activity = admitted_activity(&base, owner_approved);
+    // A live Host that reports no running work is upgraded without asking, in app and
+    // service mode alike; the installer below stops it only if it is still idle then.
+    let activity = if !owner_approved && owner != OwnerState::Stopped {
+        let activity = crate::host_lifecycle::activity(&base);
+        if activity.unknown {
+            Err(())
+        } else {
+            Ok(activity.count() != 0)
+        }
+    } else {
+        admitted_activity(&base, owner_approved)
+    };
     let job = job_pending(&base);
     let decision = plan(
         installed.as_deref(),
         &bundled,
         activity,
         job,
-        healthy,
+        healthy || (app_mode && base.join("runtime-path").is_file()),
         starting,
     );
     log_decision(&format!(
@@ -876,6 +971,9 @@ fn ensure_once(app: &AppHandle, owner_approved: bool) -> Option<Duration> {
     ));
     let status = |state: &str, message: Option<String>| BundledHostStatus {
         state: state.into(),
+        reason: (state == "deferred")
+            .then(|| message.as_deref().and_then(deferred_reason))
+            .flatten(),
         message,
         bundled: Some(bundled.clone()),
         installed: installed.clone(),
@@ -916,21 +1014,57 @@ fn ensure_once(app: &AppHandle, owner_approved: bool) -> Option<Duration> {
                 ));
                 return Some(delay);
             }
+            // Without the owner's confirmation a live service Host stops only if it is still
+            // idle; the Host decides that itself, so work started after the read is kept.
+            // Only a version upgrade replaces a live service Host unasked; repair keeps asking.
+            if !app_mode && !owner_approved && owner != OwnerState::Stopped {
+                let waiting = match (decision == Plan::Upgrade).then(|| stop_host_if_idle(&base)) {
+                    Some(IdleStop::Stopped) => None,
+                    Some(IdleStop::Busy) => Some(WAITING_FOR_SESSIONS),
+                    Some(IdleStop::Unconfirmed) | None => {
+                        Some("Could not check whether the host is busy.")
+                    }
+                };
+                if let Some(reason) = waiting {
+                    log::info!("bundled host: idle stop declined: {reason}");
+                    record(status("deferred", Some(reason.into())));
+                    return Some(deferred_retry(reason));
+                }
+            }
             let upgrade = decision == Plan::Upgrade;
             let repair = decision == Plan::Repair;
             // An interrupted same-version install may contain the old CLI.
             // Select the verified bundled package for repair, without
             // downgrading a newer installed release. Bootstrap reuses intact
             // extracted bytes on later attempts.
-            let replace = upgrade || (repair && installed.as_deref() == Some(bundled.as_str()));
+            let replace = upgrade
+                || (repair && installed.as_deref() == Some(bundled.as_str()))
+                || (app_mode && installed.is_none() && base.join("runtime-path").is_file());
             log::info!(
                 "bundled host: installer start action={decision:?} replace={replace} repair={repair} installed={installed:?} bundled={bundled}"
             );
-            let result = run_installer(&base, &archive, replace, repair, lock.clone()).and_then(|()| {
+            let port = running_port(&base);
+            let preparation = if app_mode {
+                crate::host_lifecycle::stop_owned(&base, !owner_approved).and_then(|()| {
+                    if owner_verified_stopped(&base) {
+                        Ok(())
+                    } else {
+                        Err("A Host outside this desktop still owns the data directory.".into())
+                    }
+                })
+            } else {
+                Ok(())
+            };
+            let result = preparation.and_then(|()| {
+                run_installer(&base, &archive, replace, repair, app_mode, port, lock.clone())
+            }).and_then(|()| {
+                if app_mode {
+                    crate::host_lifecycle::ensure_child(&base, true, true)?;
+                }
                 if installation_confirmed(
                     installed_version(&base).as_deref(),
                     &bundled,
-                    host_healthy_within(&base, Duration::from_secs(30)),
+                    host_healthy_within(&base, if app_mode { HOST_BOOT_GRACE } else { Duration::from_secs(30) }),
                 ) {
                     Ok(())
                 } else {
@@ -953,6 +1087,7 @@ fn ensure_once(app: &AppHandle, owner_approved: bool) -> Option<Duration> {
                     record(BundledHostStatus {
                         state: if upgrade { "upgraded" } else { "installed" }.into(),
                         message: None,
+                        reason: None,
                         bundled: Some(bundled.clone()),
                         installed: installed_version(&base),
                     });
@@ -991,6 +1126,95 @@ pub fn local_host_bundle_status() -> Option<BundledHostStatus> {
     STATUS.lock().ok().and_then(|slot| slot.clone())
 }
 
+/// Running sessions for the update confirmation. The Host's own answer comes first; when
+/// it cannot give one (slow, refused, or no usable `activity`), its database still names
+/// the running work. The update dialog showed "could not be checked" for an idle Host.
+fn update_session_count(base: &Path) -> Option<u32> {
+    let reason = match probe_lifecycle_status(base) {
+        Err(LifecycleProbeError::Stopped) => return Some(0),
+        Err(LifecycleProbeError::Unconfirmed) => "lifecycle probe unconfirmed",
+        Ok((_, response)) => match response
+            .get("activity")
+            .map(|value| serde_json::from_value::<crate::host_lifecycle::Activity>(value.clone()))
+        {
+            Some(Ok(activity)) if !activity.unknown => return Some(activity.sessions),
+            Some(Ok(_)) => "host reported unknown activity",
+            Some(Err(_)) => "host activity unreadable",
+            None => "host sent no activity",
+        },
+    };
+    match host_activity(base) {
+        Ok(activity) => {
+            log::info!("update activity: {reason}; read the host database instead");
+            Some(activity.sessions)
+        }
+        Err(()) => {
+            log::warn!("update activity unknown: {reason}; host database unreadable");
+            None
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum IdleStop {
+    Stopped,
+    Busy,
+    Unconfirmed,
+}
+
+/// Longest wait for an idle Host to finish its graceful stop before the installer runs.
+const IDLE_STOP_WAIT: Duration = Duration::from_secs(30);
+
+/// Asks the live Host to stop only if it runs no session, shell or automation. The Host
+/// checks and stops in one step, so nothing started after an earlier read is cut off.
+/// Its lifecycle stop exits 0, which no service supervisor restarts.
+fn stop_host_if_idle(base: &Path) -> IdleStop {
+    let Some(state) = std::fs::read_to_string(base.join("running.json"))
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+    else {
+        return IdleStop::Unconfirmed;
+    };
+    let (Some(port), Some(secret)) = (
+        state["port"]
+            .as_u64()
+            .filter(|port| (1..=65535).contains(port)),
+        state["secret"].as_str(),
+    ) else {
+        return IdleStop::Unconfirmed;
+    };
+    match ureq::post(&format!("http://127.0.0.1:{port}/lifecycle"))
+        .timeout(Duration::from_secs(5))
+        .set("Authorization", &format!("Bearer {secret}"))
+        .set("Content-Type", "application/json")
+        .send_string(r#"{"action":"stop","ifIdle":true}"#)
+    {
+        Ok(_) => {}
+        Err(ureq::Error::Status(409, _)) => return IdleStop::Busy,
+        Err(error) => {
+            log::warn!("bundled host: idle stop unconfirmed: {error}");
+            return IdleStop::Unconfirmed;
+        }
+    }
+    let deadline = std::time::Instant::now() + IDLE_STOP_WAIT;
+    while !owner_verified_stopped(base) && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    // The Host accepted the stop; the installer's own service stop finishes a slow drain.
+    IdleStop::Stopped
+}
+
+/// A single authenticated local lifecycle read, including when the old Host is not paired.
+#[tauri::command]
+pub async fn local_host_update_activity() -> Result<Option<u32>, String> {
+    crate::harness::run_blocking("local_host_update_activity", || {
+        Ok(crate::local_host::host_data_dir()
+            .as_deref()
+            .and_then(update_session_count))
+    })
+    .await
+}
+
 /// Updates this computer's host now, from Settings → Machines. The caller
 /// has shown the owner that running sessions and shells are interrupted.
 #[tauri::command]
@@ -1010,15 +1234,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn installer_error_shows_the_message_not_the_powershell_record() {
+        // The update dialog showed "+ FullyQualifiedErrorId : Could not stop ...".
+        let stderr = "The old host did not finish shutting down; service paths were preserved.\r\n\
+            Could not stop the old host service.\r\n\
+            At C:\\Users\\me\\AppData\\Local\\Temp\\bootstrap.ps1:138 char:36\r\n\
+            +     if ($LASTEXITCODE -ne 0) { throw 'Could not stop the old host service.' }\r\n\
+            +                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\r\n    \
+            + CategoryInfo          : OperationStopped: (Could not stop the old host service.:String) [], RuntimeException\r\n    \
+            + FullyQualifiedErrorId : Could not stop the old host service.\r\n\r\n";
+        assert_eq!(
+            installer_error(stderr),
+            Some("Could not stop the old host service.")
+        );
+        assert_eq!(installer_error("plain failure\n"), Some("plain failure"));
+        assert_eq!(installer_error("  \n"), None);
+    }
+
+    #[test]
     fn another_install_is_rechecked_soon_so_its_notice_clears() {
         // The notice stayed up to an hour after the other installer had finished.
         assert_eq!(deferred_retry(OTHER_INSTALL), OTHER_INSTALL_POLL);
         assert!(OTHER_INSTALL_POLL < RETRY_INTERVAL);
         assert_eq!(deferred_retry(HOST_STARTING), HOST_BOOT_GRACE);
+        assert_eq!(deferred_retry(WAITING_FOR_SESSIONS), RETRY_INTERVAL);
         assert_eq!(
-            deferred_retry("The host update waits until running sessions finish."),
-            RETRY_INTERVAL
+            deferred_reason(WAITING_FOR_SESSIONS).as_deref(),
+            Some("waiting-for-sessions")
         );
+        assert_eq!(deferred_reason(OTHER_INSTALL), None);
+        assert_eq!(deferred_reason(HOST_STARTING), None);
         assert!(matches!(
             plan(Some("0.7.8"), "0.7.9", Ok(false), true, true, false),
             Plan::Deferred(OTHER_INSTALL)
@@ -1040,7 +1285,7 @@ mod tests {
     fn missing_version_metadata_does_not_bypass_the_activity_gate() {
         assert_eq!(
             plan(None, "0.6.75", Ok(true), false, false, false),
-            Plan::Deferred("The host update waits until running sessions finish.")
+            Plan::Deferred(WAITING_FOR_SESSIONS)
         );
         assert_eq!(
             plan(None, "0.6.75", Err(()), false, false, false),
@@ -1144,11 +1389,24 @@ mod tests {
             probe_lifecycle_status(&base),
             Err(LifecycleProbeError::Stopped)
         );
+        assert_eq!(update_session_count(&base), Some(0));
         std::fs::write(base.join("running.json"), "{").unwrap();
         assert_eq!(
             probe_lifecycle_status(&base),
             Err(LifecycleProbeError::Unconfirmed)
         );
+        assert_eq!(update_session_count(&base), None);
+        // The update dialog said "could not be checked" while the Host was only slow.
+        let connection = rusqlite::Connection::open(base.join("host.db")).unwrap();
+        connection
+            .execute_batch(
+                "create table sessions (status text, shell_running integer);
+                 create table automation_runs (value text);
+                 insert into sessions values ('running', 0), ('idle', 1);",
+            )
+            .unwrap();
+        assert_eq!(update_session_count(&base), Some(1));
+        drop(connection);
         std::fs::remove_dir_all(base).unwrap();
     }
 
@@ -1249,6 +1507,95 @@ mod tests {
             Plan::Upgrade
         );
         std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn idle_stop_keeps_a_busy_host_and_stops_only_an_idle_one() {
+        use std::io::{Read, Write};
+        // An idle Host asked for a second confirmation after "Install and restart".
+        let base = scratch("idle-stop");
+        assert_eq!(stop_host_if_idle(&base), IdleStop::Unconfirmed);
+        for (status, expected) in [
+            ("409 Conflict", IdleStop::Busy),
+            ("200 OK", IdleStop::Stopped),
+        ] {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            std::fs::write(
+                base.join("running.json"),
+                format!(r#"{{"port":{port},"secret":"test"}}"#),
+            )
+            .unwrap();
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut request = Vec::new();
+                let mut buffer = [0; 512];
+                while !request.ends_with(br#"{"action":"stop","ifIdle":true}"#) {
+                    let count = stream.read(&mut buffer).unwrap();
+                    assert!(count > 0);
+                    request.extend_from_slice(&buffer[..count]);
+                }
+                write!(
+                    stream,
+                    "HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                )
+                .unwrap();
+            });
+            assert_eq!(stop_host_if_idle(&base), expected);
+            server.join().unwrap();
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn update_activity_reads_the_database_when_the_host_answers_without_activity() {
+        use std::io::{Read, Write};
+        // An idle Host answered the probe, yet the update dialog said "could not be checked".
+        let base = scratch("update-activity");
+        let connection = rusqlite::Connection::open(base.join("host.db")).unwrap();
+        connection
+            .execute_batch(
+                "create table sessions (status text, shell_running integer);
+                 create table automation_runs (value text);
+                 insert into sessions values ('running', 0), ('running', 0), ('idle', 0);",
+            )
+            .unwrap();
+        for body in [r#"{"pid":1}"#, r#"{"pid":1,"activity":null}"#] {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            std::fs::write(
+                base.join("running.json"),
+                format!(r#"{{"port":{port},"secret":"test"}}"#),
+            )
+            .unwrap();
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut request = Vec::new();
+                let mut buffer = [0; 512];
+                while !request.ends_with(br#"{"action":"status"}"#) {
+                    let count = stream.read(&mut buffer).unwrap();
+                    assert!(count > 0);
+                    request.extend_from_slice(&buffer[..count]);
+                }
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .unwrap();
+            });
+            assert_eq!(update_session_count(&base), Some(2));
+            server.join().unwrap();
+        }
+        drop(connection);
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

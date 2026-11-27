@@ -14,13 +14,6 @@
   margin-block: 0;
   overflow: clip;
 }
-.zen-phase-body[data-open="true"] > .zen-phase-summary {
-  max-block-size: 7rem;
-}
-.zen-phase-body[data-open="true"] > .zen-phase-summary:has([data-tool-inspection]) {
-  max-block-size: none;
-}
-
 [data-composer] .composer-field {
   min-block-size: calc(2lh + 1.5rem);
 }
@@ -67,6 +60,15 @@
   display: flex;
 }
 
+.composer-steer-icon {
+  display: inline-block;
+  flex: none;
+  /* ui-drift-ignore: surface-style -- Current color fills the icon mask. */
+  background-color: currentColor;
+  mask: url("../../../../public/steer.png") center / contain no-repeat;
+  forced-color-adjust: preserve-parent-color;
+}
+
 .composer-busy-send {
   display: flex;
   align-items: center;
@@ -87,6 +89,8 @@
 }
 
 [data-composer] .composer-controls {
+  /* Keep clipped draft text clear of the controls while the editor scrolls. */
+  margin-block-start: var(--space-3);
   align-items: flex-end;
   column-gap: 0.375rem;
 }
@@ -95,14 +99,49 @@
   row-gap: 0.375rem;
 }
 
+/* Keep actions on one row and let the model name give way first. */
+@container chat-composer (inline-size < 31rem) {
+  [data-composer]:not([data-composer-reading]) .composer-controls {
+    align-items: center;
+    gap: var(--space-1);
+    padding-inline: var(--space-1);
+  }
+
+  [data-composer]:not([data-composer-reading]) .composer-toolbar > div {
+    column-gap: 0;
+    flex-wrap: nowrap;
+  }
+
+  [data-composer]:not([data-composer-reading]) .composer-toolbar > div > * {
+    flex-shrink: 0;
+  }
+
+  [data-composer]:not([data-composer-reading])
+    .composer-toolbar
+    > div
+    > [data-model-picker-presentation] {
+    flex-shrink: 1;
+    min-inline-size: 2rem;
+  }
+
+  [data-composer]:not([data-composer-reading]) .composer-send-controls {
+    align-self: center;
+  }
+}
+
+@container chat-composer (inline-size < 24rem) {
+  .composer-controls {
+    --composer-settings-in-picker: 1;
+  }
+
+  .composer-send-controls [data-composer-stop-optional] {
+    display: none;
+  }
+}
+
 [data-jump-to-bottom] {
   min-inline-size: 2rem;
   min-block-size: 2rem;
-}
-
-.context-meter-popover {
-  padding: 1rem;
-  font-variant-numeric: tabular-nums;
 }
 
 .context-meter-summary {
@@ -139,9 +178,8 @@
   inset: 0;
 }
 
-/* Stepped so the compositor swaps a frame per step, not per vsync (index.css
-   pauses it with the other decorative loops while motion is off or the window
-   is behind another application). */
+/* Stepped so the compositor swaps a frame per step. index.css pauses it
+   when motion is off or the window is hidden. */
 @media (prefers-reduced-motion: no-preference) {
   .context-signal-frame[data-working="true"] .context-speed-bolt {
     animation: context-speed-charge calc(var(--motion-feedback-duration) * 12) steps(6, jump-none)
@@ -153,12 +191,6 @@
   50% {
     transform: scale(1.1);
   }
-}
-
-.context-meter-speed-details {
-  display: grid;
-  gap: 0.375rem;
-  margin-block: 0.75rem;
 }
 
 /* Confirmed-empty context is telemetry, not a command: a bare ring with no
@@ -182,16 +214,20 @@
   block-size: 1rem;
 }
 
-.context-meter-heading,
-.context-meter-tokens {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 0.75rem;
+.context-meter-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.25rem 0.75rem;
 }
 
-.context-meter-tokens > span:first-child {
-  white-space: nowrap;
+.context-meter-percent {
+  grid-area: 1 / 2 / span 2;
+  align-self: center;
+  text-align: end;
+}
+
+.context-meter-capacity {
+  margin-block-start: 0.75rem;
 }
 
 .context-meter-stats,
@@ -199,6 +235,17 @@
 .context-meter-actions {
   margin-block-start: 0.75rem;
   padding-block-start: 0.75rem;
+}
+
+.context-meter-metrics > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.context-meter-metrics dd {
+  text-align: end;
 }
 
 .context-meter-agent-list {
@@ -228,10 +275,6 @@
   white-space: nowrap;
 }
 
-.context-meter-hint {
-  margin-block: 0.5rem 0;
-}
-
 .activity-dock-summary {
   display: flex;
   min-inline-size: 0;
@@ -244,6 +287,13 @@
 }
 .activity-dock {
   container: activity-dock / inline-size;
+}
+
+/* The composer notice stack already scrolls. A nested scroller traps the wheel
+   at its edges while the stack can still be clipping the first or last rows. */
+[data-composer-notices] .activity-dock-list {
+  max-block-size: none;
+  overflow: clip visible;
 }
 /* The dock lists the session's subagents; the composer's own subagent control steps aside. */
 [data-composer]:has([data-dock-subagents]) [data-composer-subagents-trigger] {
@@ -260,7 +310,8 @@
     max-inline-size: 48%;
   }
   .activity-dock-summary {
-    flex-basis: 100%;
+    flex: 1 1 auto;
+    max-inline-size: 100%;
   }
   .activity-dock-summary > span,
   .activity-dock-summary [data-truncate] {
@@ -268,6 +319,24 @@
     overflow: visible;
     overflow-wrap: anywhere;
     text-overflow: clip;
+  }
+  /* The walker claims no width here, so it cannot push the controls to a second row. It uses the
+     free space and, when that is shorter than its path, walks behind the controls. */
+  [data-activity-status-row] {
+    isolation: isolate;
+  }
+  .activity-dock-summary [data-pacing-track] {
+    flex: 1 0 0;
+    inline-size: 0;
+    margin-inline-end: 0;
+    overflow: visible;
+  }
+  .activity-dock-summary [data-pacing-track] > * {
+    position: absolute;
+    z-index: -1;
+    inset-block-start: 0;
+    inset-inline-end: min(0px, calc(100% - 5rem));
+    inline-size: 5rem;
   }
 }
 .activity-dock-clock {

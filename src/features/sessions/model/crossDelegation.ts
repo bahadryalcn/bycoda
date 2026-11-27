@@ -122,13 +122,26 @@ export function imageModelsSetting(input: Pick<DelegationInput, "harnesses">): M
   };
 }
 
-type DelegationChoice = {
-  ref: DelegateModelRef;
-  label: string;
+/** Account and model display details computed by the picker, outside the Host DTO. */
+export type DelegationOption = ModelSetting["options"][number] & {
+  modelLabel?: string;
+  accountLabel?: string;
   accountColor?: string;
+  accountNumber?: number;
+  detail?: string;
+  /** A saved model the catalog no longer offers; it is kept so the saved value stays visible. */
+  unavailable?: boolean;
+};
+
+type DelegationChoice = Omit<DelegationOption, "value"> & {
+  ref: DelegateModelRef;
   /** Provider and model, without the account. */
   name: string;
 };
+
+function subagentModelLabel(harness: HarnessId, name: string): string {
+  return harness === "claude" ? name.replace(/^Claude(?: Code)?\s+/i, "") : name;
+}
 
 /**
  * In a Claude conversation a Claude advisor is Claude Code's built-in advisor
@@ -163,7 +176,22 @@ function builtInAdvisorChoices(
     // A saved ref on another account still selects this row.
     const ref =
       saved?.harness === "claude" && saved.model === choice.ref.model ? saved : choice.ref;
-    return [{ ...choice, ref, label: choice.name, accountColor: undefined }];
+    const active = choices.find(
+      (candidate) =>
+        candidate.ref.harness === "claude" &&
+        (candidate.ref.providerAccountId ?? DEFAULT_PROVIDER_ACCOUNT_ID) ===
+          (input.currentAccountId ?? DEFAULT_PROVIDER_ACCOUNT_ID),
+    );
+    return [
+      {
+        ...choice,
+        ref,
+        label: choice.name,
+        accountColor: active?.accountColor,
+        accountLabel: active?.accountLabel,
+        accountNumber: active?.accountNumber,
+      },
+    ];
   });
 }
 
@@ -184,13 +212,21 @@ export function crossDelegationSettings(input: DelegationInput): ModelSetting[] 
         ...(model.accountId ? { providerAccountId: model.accountId } : {}),
       } satisfies DelegateModelRef,
       label: `${HARNESS_TITLE[harness]} · ${modelChoiceBaseName(model)}${model.accountLabel ? ` · ${model.accountLabel}` : ""}${model.accountId && input.signedOutAccounts?.has(`${harness}:${model.accountId}`) ? ` · ${input.signedOutLabel ?? "Not signed in"}` : ""}`,
+      modelLabel: modelChoiceBaseName(model),
       accountColor: model.accountColor,
+      accountNumber: model.accountNumber,
+      accountLabel: model.accountLabel,
+      detail:
+        model.accountId && input.signedOutAccounts?.has(`${harness}:${model.accountId}`)
+          ? (input.signedOutLabel ?? "Not signed in")
+          : undefined,
       name: `${HARNESS_TITLE[harness]} · ${modelChoiceBaseName(model)}`,
     })),
   );
   const known = new Set(choices.map((choice) => choiceKey(choice.ref)));
   const unavailable = (ref: DelegateModelRef) => ({
     value: refValue(ref),
+    unavailable: true,
     label: input.unavailable(
       `${HARNESS_TITLE[ref.harness]} · ${modelDisplayName(ref.model, ref.harness)}`,
     ),
@@ -219,45 +255,61 @@ export function crossDelegationSettings(input: DelegationInput): ModelSetting[] 
     input.values[CROSS_SUBAGENTS_KEY] === undefined ? legacyRef("subagentModel") : undefined;
   const legacyAdvisor =
     input.values[CROSS_ADVISOR_KEY] === undefined ? legacyRef("advisor") : undefined;
-  const legacyOption = (ref: DelegateModelRef) => {
+  const legacyOption = (ref: DelegateModelRef, subagent = false): DelegationOption => {
     const option =
       ref.harness === "claude" && ref.model !== "default"
         ? CLAUDE_SUBAGENT_SETTINGS[0].options.find((item) => item.value === ref.model)
         : undefined;
+    const modelLabel = option?.label ?? modelDisplayName(ref.model, ref.harness);
+    const compact = subagent ? { modelLabel: subagentModelLabel(ref.harness, modelLabel) } : {};
     // An unknown list never condemns a saved ref; the owning Host validates on send.
     if (input.source.accountsKnown?.(ref.harness) === false)
       return {
         value: refValue(ref),
-        label: `${HARNESS_TITLE[ref.harness]} · ${option?.label ?? modelDisplayName(ref.model, ref.harness)} · ${input.savedAccountLabel ?? "Saved account"}`,
+        label: `${HARNESS_TITLE[ref.harness]} · ${modelLabel} · ${input.savedAccountLabel ?? "Saved account"}`,
+        ...compact,
       };
-    const account = ref.providerAccountId
+    const accountId =
+      ref.providerAccountId ??
+      (subagent && input.accountChoices ? DEFAULT_PROVIDER_ACCOUNT_ID : undefined);
+    const account = accountId
       ? accountModelChoices(
           [
             {
               id: ref.model,
-              harness: "claude",
-              name: option?.label ?? modelDisplayName(ref.model, ref.harness),
+              harness: ref.harness,
+              name: modelLabel,
             },
           ],
           true,
           input.source.accounts,
-        ).find((item) => item.accountId === ref.providerAccountId)
+        ).find((item) => item.accountId === accountId)
       : undefined;
-    if (ref.providerAccountId && !account) return unavailable(ref);
-    return option
-      ? {
-          value: refValue(ref),
-          label: `${HARNESS_TITLE[ref.harness]} · ${option.label}${account?.accountLabel ? ` · ${account.accountLabel}` : ""}${ref.providerAccountId && input.signedOutAccounts?.has(`claude:${ref.providerAccountId}`) ? ` · ${input.signedOutLabel ?? "Not signed in"}` : ""}`,
-          accountColor: account?.accountColor,
-        }
-      : unavailable(ref);
+    const accountIdentity = {
+      accountColor: account?.accountColor,
+      accountNumber: account?.accountNumber,
+      accountLabel: subagent || account?.accountNumber ? account?.accountLabel : undefined,
+    };
+    if (!option || (ref.providerAccountId && !account))
+      return subagent ? { ...unavailable(ref), ...compact, ...accountIdentity } : unavailable(ref);
+    return {
+      value: refValue(ref),
+      label: `${HARNESS_TITLE[ref.harness]} · ${option.label}${account?.accountLabel ? ` · ${account.accountLabel}` : ""}${ref.providerAccountId && input.signedOutAccounts?.has(`claude:${ref.providerAccountId}`) ? ` · ${input.signedOutLabel ?? "Not signed in"}` : ""}`,
+      ...accountIdentity,
+      modelLabel: option.label,
+      ...compact,
+    };
   };
   if (legacySubagent) savedSubagents.push(legacySubagent);
-  const option = (choice: DelegationChoice, saved: DelegateModelRef[]) => ({
+  const option = (choice: DelegationChoice, saved: DelegateModelRef[]): DelegationOption => ({
     // Keep the saved wire value for native selects; normalization is presentation only.
     value: refValue(saved.find((ref) => choiceKey(ref) === choiceKey(choice.ref)) ?? choice.ref),
     label: choice.label,
     accountColor: choice.accountColor,
+    accountNumber: choice.accountNumber,
+    accountLabel: choice.accountNumber ? choice.accountLabel : undefined,
+    modelLabel: choice.modelLabel,
+    detail: choice.detail,
   });
   const subagents: ModelSetting = {
     id: CROSS_SUBAGENTS_KEY,
@@ -267,8 +319,14 @@ export function crossDelegationSettings(input: DelegationInput): ModelSetting[] 
     options: [
       OFF,
       { value: AUTOMATIC_SUBAGENTS, label: "Automatic" },
-      ...choices.map((choice) => option(choice, savedSubagents)),
-      ...savedSubagents.filter((ref) => !known.has(choiceKey(ref))).map((ref) => legacyOption(ref)),
+      ...choices.map((choice) => ({
+        ...option(choice, savedSubagents),
+        modelLabel: subagentModelLabel(choice.ref.harness, choice.modelLabel),
+        accountLabel: choice.accountLabel,
+      })),
+      ...savedSubagents
+        .filter((ref) => !known.has(choiceKey(ref)))
+        .map((ref) => legacyOption(ref, true)),
     ],
   };
   const chosenAdvisor = savedAdvisor ?? legacyAdvisor;
@@ -413,7 +471,11 @@ export function crossDelegationSummary(
     (option) => option.value && delegationOptionSelected(setting, values, option.value),
   );
   if (picked.length === 0) return setting.options[0]?.label ?? OFF.label;
-  return picked.length === 1 ? picked[0].label : `${picked[0].label} +${picked.length - 1}`;
+  const first = picked[0];
+  const label = isSubagentSetting(setting)
+    ? delegationShortLabel(setting, first.value, first.label)
+    : first.label;
+  return picked.length === 1 ? label : `${label} +${picked.length - 1}`;
 }
 
 /**
@@ -421,6 +483,15 @@ export function crossDelegationSummary(
  * provider icon already names it. Pickers keep the full label so same-named models stay apart.
  */
 export function delegationShortLabel(setting: ModelSetting, value: string, label: string): string {
+  const option: DelegationOption | undefined = setting.options.find((item) => item.value === value);
+  if (option?.modelLabel)
+    return [
+      option.modelLabel,
+      option.accountLabel,
+      isSubagentSetting(setting) ? undefined : option.detail,
+    ]
+      .filter(Boolean)
+      .join(" · ");
   const harness = delegationOptionHarness(setting, value);
   const prefix = harness ? `${HARNESS_TITLE[harness]} · ` : "";
   return prefix && label.startsWith(prefix) ? label.slice(prefix.length) : label;

@@ -88,7 +88,7 @@ pub(crate) fn drive(
             }
             Err(error) => {
                 let error = match error {
-                    TokenError::Network => AccountError::offline(),
+                    TokenError::Network(reason) => AccountError::offline_because(reason),
                     TokenError::InvalidGrant => AccountError::new(
                         ErrorKind::Failed,
                         "This sign-in request expired. Start again.",

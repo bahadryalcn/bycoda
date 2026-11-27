@@ -9,7 +9,7 @@
 .root {
   --marker: 1.75rem;
   --halo: 4px;
-  color: var(--color-content);
+  color: var(--foreground);
   font-family: var(--font-body);
   letter-spacing: var(--tracking-body);
 }
@@ -111,7 +111,7 @@
 }
 .item[data-status="current"] .disc {
   box-shadow: inset 0 0 0 1.5px var(--ui-tone-neutral-solid);
-  color: var(--color-content);
+  color: var(--foreground);
 }
 .item[data-status="complete"] .disc {
   background: var(--ui-tone-neutral-solid);
@@ -132,7 +132,7 @@
   position: absolute;
   overflow: hidden;
   border-radius: var(--radius-pill);
-  background: var(--border);
+  background: var(--ui-pane-border);
   pointer-events: none;
 }
 .horizontal .connector {
@@ -186,7 +186,7 @@
 }
 .item[data-status="current"] .label,
 .item[data-status="error"] .label {
-  color: var(--color-content);
+  color: var(--foreground);
 }
 /* Changing text pops out of flow against this box while it leaves, so it must be the positioned parent. */
 .slot {
@@ -202,7 +202,7 @@
   padding-block-start: 2px;
   font-size: var(--ui-font-caption);
   font-weight: 400;
-  line-height: var(--leading-body);
+  line-height: var(--ui-leading-body);
   overflow-wrap: break-word;
 }
 .description {
@@ -218,7 +218,7 @@
 }
 .captionLabel {
   display: block;
-  color: var(--color-content);
+  color: var(--foreground);
   font-size: var(--ui-font-caption);
   font-weight: 500;
   line-height: 1.25rem;
@@ -226,7 +226,7 @@
 
 @media (hover: hover) and (pointer: fine) {
   .head[data-clickable]:hover .label {
-    color: var(--color-content);
+    color: var(--foreground);
   }
   .item[data-status="complete"] .head[data-clickable]:hover .disc {
     background: var(--ui-tone-neutral-solid-hover);

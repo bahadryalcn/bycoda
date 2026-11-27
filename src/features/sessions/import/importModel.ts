@@ -1,5 +1,6 @@
 export { formatImportBytes as formatBytes } from "../../../shared/i18n/format";
 import type { ImportCandidate, ImportProvider } from "../../../platform/tauri/sessionImport";
+import { HARNESS_TITLE, type HarnessId } from "../../../shared/model/harnessIdentity";
 import { isEqualOrInside, pathKey, slash } from "../../../shared/lib/paths";
 
 /** Opens the import dialog from anywhere (rail menu, Settings). */
@@ -11,6 +12,27 @@ export type SessionImportContext = { cwd: string; provider: ImportProvider };
 
 export function requestSessionImport(context: SessionImportContext): void {
   window.dispatchEvent(new CustomEvent(OPEN_SESSION_IMPORT_EVENT, { detail: context }));
+}
+
+export const IMPORT_PROVIDER_LABEL: Record<ImportProvider, string> = {
+  claude: HARNESS_TITLE.claude,
+  codex: HARNESS_TITLE.codex,
+  cursor: HARNESS_TITLE.cursor,
+  grok: HARNESS_TITLE.grok,
+  opencode: HARNESS_TITLE.opencode,
+  pi: HARNESS_TITLE.pi,
+  omp: HARNESS_TITLE.omp,
+  hermes: HARNESS_TITLE.hermes,
+  antigravity: HARNESS_TITLE.antigravity,
+  openclaw: "OpenClaw",
+};
+
+/**
+ * The harness an imported conversation runs on. OpenClaw has no provider of its
+ * own, so its history lands on the generic ACP agent and is never resumed.
+ */
+export function importHarness(provider: ImportProvider): HarnessId {
+  return provider === "openclaw" ? "acp" : provider;
 }
 
 /** Identity of a provider conversation, as the store records it. */

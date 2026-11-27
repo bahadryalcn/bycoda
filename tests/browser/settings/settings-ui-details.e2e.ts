@@ -1,4 +1,38 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`build details keep Copy in the header ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/settings/settings.html?section=policies&theme=${theme}&lang=en&buildDetails=1`,
+      );
+      const details = page.getByTestId("build-identity-details");
+      const header = details.locator("summary");
+      const copy = details.getByRole("button", { name: "Copy build details", exact: true });
+      await header.click();
+      await expect(details).toHaveAttribute("open", "");
+      await expect(details.getByText(/4b9e2169b0bd3864cebb-local/)).toBeVisible();
+      const group = page.getByRole("region", { name: "About", exact: true });
+      await page.mouse.move(0, 0);
+      await group.screenshot({
+        path: `temp/verification/settings-setup-polish/about-${theme}-${width}.png`,
+      });
+      await expect(
+        header.getByRole("button", { name: "Copy build details", exact: true }),
+      ).toBeVisible({ timeout: 1500 });
+      await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+      await copy.click();
+      await expect(details).toHaveAttribute("open", "");
+      await expect
+        .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+        .toContain("4b9e2169b0bd3864cebb-local");
+      await header.click();
+      await expect(details).not.toHaveAttribute("open", "");
+    });
+  }
+}
 
 /** Models is tabbed; provider accounts and the provider picker live under its Providers tab. */
 async function openProvidersTab(page: Page, name = "Providers") {
@@ -28,7 +62,7 @@ test.describe("provider identity touch access", () => {
         const name = row.locator(".provider-account-name");
         await expect(name).toContainText("Aleksandra Wiśniewska-Kowalczyk");
         await expect(name).toHaveCSS("overflow-wrap", "anywhere");
-        await expect(row.getByText("Default account", { exact: true })).toBeVisible();
+        await expect(row.getByRole("img", { name: "Default account", exact: true })).toBeVisible();
         await row.getByRole("button", { name: "Reveal email", exact: true }).tap();
         const email = row.getByRole("button", { name: "Hide email", exact: true });
         await expect(email).toHaveAttribute("aria-pressed", "true");
@@ -38,14 +72,14 @@ test.describe("provider identity touch access", () => {
         await page.screenshot({
           path: `temp/verification/2026-11-13-ui-coherence/providers/account-${theme}-${width}.png`,
         });
-        await page.getByRole("button", { name: "Terminal account profiles", exact: true }).tap();
+        await page.getByRole("button", { name: "Add existing account", exact: true }).tap();
         const profiles = page.getByRole("dialog", {
-          name: "Terminal account profiles",
+          name: "Accounts on this computer",
           exact: true,
         });
         await profiles.getByRole("button", { name: "Find terminal profiles", exact: true }).tap();
         const path = profiles.getByText(
-          "C:\\Users\\Aleksandra.Wisniewska-Kowalczyk\\AppData\\Local\\Northwind Industries Holdings\\research-and-development\\claude-work-profile",
+          "~/AppData/Local/Northwind Industries Holdings/research-and-development/claude-work-profile",
           { exact: true },
         );
         await expect(path).toHaveCSS("overflow-wrap", "anywhere");
@@ -61,8 +95,26 @@ test.describe("provider identity touch access", () => {
             path: `temp/verification/2026-11-13-ui-coherence/providers/profile-${theme}-${width}-${zoom}x.png`,
           });
         }
-        await page.keyboard.press("Escape");
+        await page.evaluate(() => {
+          document.documentElement.style.zoom = "1";
+          window.dispatchEvent(new Event("resize"));
+        });
+        // Adding an existing sign-in asks for its name, kind and colour before saving it.
+        await profiles.getByRole("button", { name: "Add", exact: true }).tap();
         await expect(profiles).toHaveCount(0);
+        const naming = page.getByRole("dialog", { name: "Add existing account", exact: true });
+        await expect(naming.getByRole("textbox", { name: "Account name" })).toHaveValue(
+          "International research and development workspace 🧑🏽‍💻",
+        );
+        await expect(naming.getByRole("button", { name: "Add", exact: true })).toBeEnabled();
+        await naming.evaluate((node) =>
+          Promise.all(node.getAnimations({ subtree: true }).map((animation) => animation.finished)),
+        );
+        await page.screenshot({
+          path: `temp/verification/2026-11-13-ui-coherence/providers/add-existing-${theme}-${width}.png`,
+        });
+        await naming.getByRole("button", { name: "Cancel", exact: true }).tap();
+        await expect(naming).toHaveCount(0);
         await row.getByRole("button", { name: "Hide email", exact: true }).tap();
         await expect(
           row.getByRole("button", { name: "Reveal email", exact: true }),
@@ -171,28 +223,32 @@ for (const theme of ["light", "dark"]) {
     });
   }
 
-  test(`general settings keep short cards fitted to their content: ${theme}`, async ({
-    page,
-  }, info) => {
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.setViewportSize({ width: 1280, height: 900 });
-    // Close to tray is a Windows capability; exercise it deterministically
-    // even when the browser fixture runs on a Linux CI worker.
-    await page.addInitScript(() => {
-      Object.defineProperty(navigator, "platform", { get: () => "Win32" });
+  for (const width of [1280, 800]) {
+    test(`general settings minimize to tray: ${theme} ${width}`, async ({ page }, info) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.setViewportSize({ width, height: 900 });
+      // Exercise the Windows-only control on any browser test worker.
+      await page.addInitScript(() => {
+        Object.defineProperty(navigator, "platform", { get: () => "Win32" });
+      });
+      await page.goto(
+        `/tests/browser/settings/settings.html?section=general&theme=${theme}&lang=en`,
+      );
+      const row = page.locator('[data-setting-id="minimize-to-tray"]');
+      await expect(row).toBeVisible();
+      const card = page
+        .locator(".general-settings > .settings-group > .settings-group-content")
+        .filter({ has: row });
+      const rowBounds = (await row.boundingBox())!;
+      const cardBounds = (await card.boundingBox())!;
+      expect(cardBounds.height - rowBounds.height).toBeLessThan(4);
+      const minimizeToTray = row.getByRole("switch", { name: "Minimize to tray" });
+      await expect(minimizeToTray).not.toBeChecked();
+      await page.screenshot({ path: info.outputPath(`minimize-to-tray-${theme}-${width}.png`) });
+      await minimizeToTray.click();
+      await expect(minimizeToTray).toBeChecked();
     });
-    await page.goto(`/tests/browser/settings/settings.html?section=general&theme=${theme}&lang=en`);
-    const row = page.locator('[data-setting-id="close-to-tray"]');
-    await expect(row).toBeVisible();
-    const card = page
-      .locator(".general-settings > .settings-group > .settings-group-content")
-      .filter({ has: row });
-    const rowBounds = (await row.boundingBox())!;
-    const cardBounds = (await card.boundingBox())!;
-    expect(cardBounds.height - rowBounds.height).toBeLessThan(4);
-    await expect(row.getByRole("switch")).toBeVisible();
-    await page.screenshot({ path: info.outputPath("general-compact-card.png") });
-  });
+  }
 }
 
 for (const theme of ["light", "dark"]) {
@@ -221,7 +277,11 @@ for (const theme of ["light", "dark"]) {
       const modal = page.getByRole("dialog", { name: "Add MCP server", exact: true });
       await expect(modal).toBeVisible();
       await expect(modal.getByText(/Advanced/)).toHaveCount(0);
-      await expect(modal.getByText(/Selected project:/)).toHaveCount(0);
+      const selectedProject = modal.getByText(/Selected project:/);
+      await expect(selectedProject).toBeVisible();
+      await modal.getByRole("button", { name: /^Scope:/ }).click();
+      await page.getByRole("option", { name: "Global", exact: true }).click();
+      await expect(selectedProject).toHaveCount(0);
       await expect(modal.getByRole("button", { name: "Add server", exact: true })).toBeVisible();
       await page.screenshot({ path: `temp/verification/2026-11-10-mcp/add-${theme}-${width}.png` });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
@@ -307,13 +367,18 @@ for (const theme of ["light", "dark"]) {
       await page.goto(
         `/tests/browser/settings/settings.html?section=integrations&collectionMessaging=1&theme=${theme}&lang=en`,
       );
-      await page.getByRole("tab", { name: "Email", exact: true }).click();
-      const panel = page.getByRole("tabpanel", { name: "Email" });
+      await page.getByRole("button", { name: /^Services:/ }).click();
+      await page.getByRole("option", { name: "Email", exact: true }).click();
+      const panel = page.getByRole("region", { name: "Connection", exact: true });
       const account = panel.getByRole("listitem").filter({ hasText: "Work email" });
       await account.getByRole("button", { name: "Edit" }).click();
-      const actions = panel.locator('.integration-actions[data-surface-frame="pane"]');
+      // The save row sits directly under the form fields with the same inset: no divider of its own.
+      const actions = panel
+        .locator(".integration-actions")
+        .filter({ has: page.getByRole("button", { name: /save and test connection/i }) });
       await expect(actions).toBeVisible();
-      await expect(actions).toHaveCSS("border-block-start-width", "1px");
+      await expect(actions.getByRole("button", { name: "Cancel", exact: true })).toBeVisible();
+      await expect(actions).toHaveCSS("border-block-start-width", "0px");
       await actions.scrollIntoViewIfNeeded();
       await panel.screenshot({
         path: info.outputPath(`messaging-actions-${theme}-${width}.png`),
@@ -406,19 +471,6 @@ for (const theme of ["light", "dark"]) {
       );
       expect(width === 800 ? chatEdges.blockColor : chatEdges.inlineColor).toBe(chatEdges.expected);
       await editor.screenshot({ path: info.outputPath(`template-edge-${theme}-${width}.png`) });
-      await page.goto(
-        `/tests/browser/settings/settings.html?section=policies&theme=${theme}&lang=en`,
-      );
-      const reader = page.locator(".policy-reader");
-      await expect(reader).toBeVisible();
-      const policyEdges = await reader.evaluate(edgeValues);
-      expect([policyEdges.block, policyEdges.inline]).toEqual(
-        width === 800 ? ["1px", "0px"] : ["0px", "1px"],
-      );
-      expect(width === 800 ? policyEdges.blockColor : policyEdges.inlineColor).toBe(
-        policyEdges.expected,
-      );
-      await page.screenshot({ path: info.outputPath(`policy-edge-${theme}-${width}.png`) });
     });
   }
 }
@@ -436,6 +488,30 @@ test("appearance sticky mask computed probe", async ({ page }) => {
         shadow: await header.evaluate((node) => getComputedStyle(node).boxShadow),
       }),
     );
+  }
+});
+
+test("provider account dialogs detect legacy Team and default other plans to Personal", async ({
+  page,
+}) => {
+  await page.goto(
+    "/tests/browser/settings/settings.html?section=providers&providersFixture=1&legacyPlanKind=1&theme=dark&lang=en",
+  );
+  await openProvidersTab(page);
+  const selectProvider = (name: RegExp) =>
+    page.locator(".provider-cli-selector").getByRole("button", { name }).click();
+  const edit = page.getByRole("dialog", { name: "Edit account", exact: true });
+  for (const [provider, account, kind] of [
+    [/^Claude Code,/, "Engineering workspace", "Work"],
+    [/^Codex,/, "Studio", "Personal"],
+  ] as const) {
+    await selectProvider(provider);
+    const row = page.locator(".provider-account-row:visible").filter({ hasText: account });
+    await expect(row.getByText(kind, { exact: true })).toBeVisible();
+    await row.getByRole("button", { name: `Actions for ${account}` }).click();
+    await page.getByRole("menuitem", { name: "Edit account" }).click();
+    await expect(edit.getByRole("radio", { name: kind })).toBeChecked();
+    await edit.getByRole("button", { name: "Cancel", exact: true }).click();
   }
 });
 
@@ -481,7 +557,7 @@ for (const theme of ["light", "dark"])
         .click({ position: { x: 10, y: 10 } });
       await expect(savedActions).toHaveCSS("opacity", "1");
       expect(await savedActions.boundingBox()).toEqual(savedBox);
-      await saved.getByRole("button", { name: "Rename" }).focus();
+      await saved.getByRole("button", { name: "More actions", exact: true }).focus();
       await expect(savedActions).toHaveCSS("opacity", "1");
       await saved.screenshot({ path: info.outputPath(`saved-actions-${theme}-${width}.png`) });
       await selected.hover();
@@ -555,105 +631,6 @@ test("appearance selection controls respond to touch", async ({ browser }) => {
   await expect(remove).toHaveCSS("opacity", "1");
   await expect(image).toHaveCSS("box-shadow", /2px/);
   await context.close();
-});
-
-for (const theme of ["light", "dark"])
-  for (const width of [800, 1280]) {
-    test(`settings nested group surface ${theme} ${width}`, async ({ page }, info) => {
-      await page.setViewportSize({ width, height: 900 });
-      await page.goto(`/tests/browser/settings/settings.html?section=chat&theme=${theme}&lang=en`);
-      const advanced = page
-        .locator(".settings-advanced")
-        .filter({ has: page.getByRole("button", { name: "Advanced conversation settings" }) });
-      await expect(advanced).toBeVisible();
-      const toggle = advanced.getByRole("button", { name: "Advanced conversation settings" });
-      await expect(toggle).toHaveCSS("border-top-left-radius", "0px");
-      await toggle.focus();
-      await toggle.press("Space");
-      const data = await advanced.evaluate((node) => {
-        const group = node.closest(".settings-group-content")!;
-        const describe = (element: Element | null) => {
-          if (!element) return null;
-          const s = getComputedStyle(element);
-          return {
-            border: s.borderTopWidth,
-            color: s.borderTopColor,
-            radius: s.borderTopLeftRadius,
-            background: s.backgroundColor,
-            box: element.getBoundingClientRect().toJSON(),
-          };
-        };
-        return {
-          group: describe(group),
-          first: describe(group.firstElementChild),
-          last: describe(group.lastElementChild),
-          advanced: describe(node),
-          row: describe(node.querySelector(".settings-row")),
-        };
-      });
-      expect(data.group?.border).toBe("1px");
-      expect(data.group?.radius).toBe("8px");
-      expect(data.first?.border).toBe("0px");
-      expect(data.first?.radius).toBe("7px");
-      expect(data.advanced?.border).toBe("1px");
-      expect(data.advanced?.radius).toBe("0px");
-      expect(data.row?.border).toBe("1px");
-      expect(data.row?.radius).toBe("0px");
-      console.log("NESTED_BASELINE", JSON.stringify(data));
-      await advanced.screenshot({ path: info.outputPath(`nested-${theme}-${width}.png`) });
-    });
-  }
-
-test("settings email advanced surface computed baseline", async ({ page }, info) => {
-  await page.goto(
-    "/tests/browser/settings/settings.html?section=integrations&collectionMessaging=1&theme=light&lang=en",
-  );
-  await page.getByRole("tab", { name: "Email", exact: true }).click();
-  const panel = page.getByRole("tabpanel", { name: "Email" });
-  await panel
-    .getByRole("listitem")
-    .filter({ hasText: "Work email" })
-    .getByRole("button", { name: "Edit" })
-    .click();
-  const advanced = panel.locator(".settings-advanced");
-  await expect(advanced).toBeVisible();
-  const styles = await advanced.evaluate((node) => {
-    const s = getComputedStyle(node);
-    return {
-      border: s.borderTopWidth,
-      color: s.borderTopColor,
-      radius: s.borderTopLeftRadius,
-      background: s.backgroundColor,
-      parent: node.parentElement?.className,
-    };
-  });
-  expect(styles.border).toBe("1px");
-  // Outside a settings group the disclosure draws its own thin frame with the standard control radius.
-  expect(styles.radius).toBe("8px");
-  console.log("EMAIL_ADVANCED_BASELINE", JSON.stringify(styles));
-  await advanced.screenshot({ path: info.outputPath("email-advanced-baseline.png") });
-});
-
-test("standalone advanced settings retain frame and draft", async ({ page }, info) => {
-  await page.goto(
-    "/tests/browser/settings/settings.html?standaloneAdvancedProbe&theme=light&lang=en",
-  );
-  const advanced = page.locator(".settings-advanced");
-  await expect(advanced).toHaveCSS("border-top-width", "1px");
-  await expect(advanced).toHaveCSS("border-top-left-radius", "8px");
-  await expect(advanced.locator(".settings-row")).toHaveCSS("border-top-width", "1px");
-  const draft = page.getByRole("textbox", { name: "Standalone draft" });
-  await draft.fill("unsaved");
-  const identity = await draft.evaluate((el) => {
-    (window as any).draftElement = el;
-    return true;
-  });
-  expect(identity).toBe(true);
-  await page.getByRole("button", { name: "Standalone advanced" }).click();
-  await page.getByRole("button", { name: "Standalone advanced" }).click();
-  await expect(draft).toHaveValue("unsaved");
-  expect(await draft.evaluate((el) => el === (window as any).draftElement)).toBe(true);
-  await advanced.screenshot({ path: info.outputPath("standalone-advanced.png") });
 });
 
 test("archived collection frame computed baseline", async ({ page }, info) => {
@@ -839,49 +816,71 @@ test("background layer row interaction baseline", async ({ page }) => {
   await expect(toggle).toHaveAttribute("aria-checked", checked === "true" ? "false" : "true");
 });
 
-test("advanced settings toggle surface baseline", async ({ page }) => {
-  await page.goto("/tests/browser/settings/settings.html?section=chat&theme=light&lang=en");
-  const toggle = page.getByRole("button", { name: "Advanced conversation settings" });
-  const read = () =>
-    toggle.evaluate((el) => {
-      const s = getComputedStyle(el);
-      return { radius: s.borderTopLeftRadius, height: s.height, background: s.backgroundColor };
-    });
-  const rest = await read();
-  await toggle.hover();
-  const hover = await read();
-  await toggle.focus();
-  const focus = await read();
-  console.log("ADVANCED_TOGGLE_BASELINE", JSON.stringify({ rest, hover, focus }));
-});
-
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280])
     for (const empty of [false, true]) {
-      test(`provider account divider ${empty ? "empty" : "populated"} ${theme} ${width}`, async ({
+      test(`provider account dialogs ${empty ? "empty" : "populated"} ${theme} ${width}`, async ({
         page,
-      }, info) => {
+      }) => {
         await page.setViewportSize({ width, height: 900 });
         await page.goto(
           `/tests/browser/settings/settings.html?section=providers&providersFixture=1${empty ? "&emptyProvider" : ""}&theme=${theme}&lang=en`,
         );
         await openProvidersTab(page);
+        await page.evaluate(() => {
+          document.documentElement.dataset.canvasBackground = "pure";
+        });
         const group = page.locator("#setting-provider-accounts");
         const body = group.locator(".provider-accounts-body:visible");
         if (empty) await expect(body.locator(".provider-account-empty")).toBeVisible();
         else await expect(body.locator(".provider-account-row")).toHaveCount(1);
-        await group.getByRole("button", { name: "Add account" }).click();
-        const editor = body.locator(".provider-account-editor");
+        const add = group.getByRole("button", { name: "Add account" });
+        await add.click();
+        const editor = page.getByRole("dialog", { name: "Add account", exact: true });
         await expect(editor).toBeVisible();
-        await expect(editor).toHaveCSS("border-top-width", empty ? "0px" : "1px");
-        const draft = editor.getByRole("textbox", { name: /New .* account/ });
+        // A dialog paints its fill on the shared backdrop layer inside the frame.
+        const background = async (dialog: Locator) =>
+          dialog.evaluate(
+            (element) =>
+              getComputedStyle(element.querySelector(".popover-backdrop") ?? element)
+                .backgroundColor,
+          );
+        const addBackground = await background(editor);
+        expect(addBackground).not.toBe("rgba(0, 0, 0, 0)");
+        const draft = editor.getByRole("textbox", { name: "Account name", exact: true });
+        await expect(draft).toBeFocused();
+        await expect(draft).not.toHaveAttribute("aria-invalid", "true");
+        await expect(editor.getByRole("radio")).toHaveCount(2);
+        await expect(editor.getByRole("radio", { name: "Personal" })).toBeChecked();
+        await expect(editor.getByRole("radio", { name: "Work" })).not.toBeChecked();
+        await expect(editor.getByRole("button", { name: "Sign in and add" })).toBeDisabled();
         await draft.fill("Unsaved test account");
-        await expect(draft).toHaveValue("Unsaved test account");
-        await group.screenshot({
-          path: info.outputPath(`provider-${empty ? "empty" : "populated"}-${theme}-${width}.png`),
-        });
+        await expect(editor.getByRole("button", { name: "Sign in and add" })).toBeEnabled();
+        await editor.getByText("Work", { exact: true }).click({ timeout: 5000 });
+        await expect(editor.getByRole("radio", { name: "Work" })).toBeChecked();
+        await expect(editor.getByRole("button", { name: "Sign in and add" })).toBeEnabled();
+        await editor.getByRole("button", { name: /^Color for Unsaved test account:/ }).click();
+        await page.getByRole("button", { name: "Blue", exact: true }).click();
+        await expect(
+          editor.getByRole("button", { name: "Color for Unsaved test account: Blue" }),
+        ).toBeVisible();
+        if (!empty) {
+          await page.screenshot({
+            path: `temp/verification/provider-account-dialog/add-pure-${theme}-${width}.png`,
+          });
+        }
         await editor.getByRole("button", { name: "Cancel" }).click();
         await expect(editor).toHaveCount(0);
+        await expect(add).toBeFocused();
+        if (!empty) {
+          await body.getByRole("button", { name: /^Actions for / }).click();
+          await page.getByRole("menuitem", { name: "Edit account" }).click();
+          const edit = page.getByRole("dialog", { name: "Edit account", exact: true });
+          expect(await background(edit)).toBe(addBackground);
+          await page.screenshot({
+            path: `temp/verification/provider-account-dialog/edit-pure-${theme}-${width}.png`,
+          });
+        }
       });
     }
 
@@ -964,13 +963,13 @@ for (const theme of ["light", "dark"])
       await expect(swatch).toHaveCSS("border-top-width", "2px");
       await expect(swatch).toHaveCSS("border-top-left-radius", "50%");
       const dial = page.getByRole("slider", { name: "Gradient angle", exact: true });
-      await expect(dial).toHaveCSS("width", "32px");
-      await expect(dial).toHaveCSS("border-top-left-radius", "50%");
+      await expect(dial).toHaveCSS("width", "16px");
+      await expect(dial).toHaveCSS("border-top-left-radius", "9999px");
       await page.keyboard.press("Tab");
       await dial.focus();
       expect(await dial.evaluate((el) => el.matches(":focus-visible"))).toBe(true);
-      await expect(dial).toHaveCSS("outline-width", "2px");
-      await expect(dial).toHaveCSS("outline-offset", "2px");
+      await expect(dial).toHaveCSS("outline-width", "1px");
+      await expect(dial).toHaveCSS("outline-offset", "-1px");
       const value = Number(await dial.getAttribute("aria-valuenow"));
       await dial.press("ArrowRight");
       await expect(dial).toHaveAttribute("aria-valuenow", String(value + 1));
@@ -1033,8 +1032,8 @@ for (const theme of ["light", "dark"])
         `/tests/browser/settings/settings.html?section=appearance&theme=${theme}&lang=en`,
       );
       await page.getByRole("tab", { name: "Interface", exact: true }).click();
-      const controls = page.locator(".interface-scrollbar-controls");
-      const rows = controls.locator(":scope > .settings-row");
+      const controls = page.getByRole("region", { name: "Scrollbars", exact: true });
+      const rows = controls.locator(".settings-row");
       await expect(rows).toHaveCount(4);
       await expect(rows.nth(0)).toHaveCSS("border-top-width", "0px");
       for (let i = 1; i < 4; i++) await expect(rows.nth(i)).toHaveCSS("border-top-width", "1px");
@@ -1143,12 +1142,17 @@ for (const theme of ["light", "dark"])
       await page.goto(
         `/tests/browser/settings/settings.html?section=appearance&generatorSuggestions&theme=${theme}&lang=en`,
       );
+      await page.getByRole("button", { name: "Generate with AI", exact: true }).click();
       const suggestion = page
         .getByRole("group", { name: "Suggested themes" })
         .getByRole("button", { name: /Fixture meadow/ });
       await expect(suggestion).toBeVisible();
       await expect(suggestion.locator(".theme-swatch-strip > span")).toHaveCount(4);
       await suggestion.screenshot({ path: info.outputPath(`suggestion-${theme}-${width}.png`) });
+      await page
+        .getByRole("dialog", { name: "Generate with AI", exact: true })
+        .getByRole("button", { name: "Close", exact: true })
+        .click();
       await page.getByRole("button", { name: "Search settings", exact: true }).click();
       const search = page.getByRole("combobox", { name: "Search settings", exact: true });
       await search.fill("Interface font");

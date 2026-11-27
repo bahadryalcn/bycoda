@@ -53,7 +53,14 @@ function rail(onValueChange: (v: string) => void, onKeyDown?: (e: unknown) => vo
     root.render(
       createElement(
         Tabs,
-        { value: "a", onValueChange, orientation: "vertical", variant: "tab", panels: "none" },
+        {
+          value: "a",
+          onValueChange,
+          orientation: "vertical",
+          variant: "tab",
+          panels: "none",
+          children: null,
+        },
         createElement(
           TabList,
           { label: "Providers" },
@@ -97,4 +104,23 @@ it("moves with Up/Down and selects, but leaves Alt+Arrow to the caller", async (
   expect(document.activeElement).toBe(tabs[1]);
   await key(tabs[0], { key: "ArrowDown", altKey: true });
   expect(picked).toEqual(["b"]);
+});
+
+it("carries scroll and inset on the strip instead of caller selectors", async () => {
+  await act(async () =>
+    root.render(
+      createElement(
+        Tabs,
+        { value: "a", onValueChange: vi.fn(), panels: "none", children: null },
+        createElement(
+          TabList,
+          { label: "Sections", scroll: "auto", inset: "sm" },
+          createElement(Tab, { value: "a" }, "A"),
+        ),
+      ),
+    ),
+  );
+  const list = host.querySelector<HTMLElement>('[role="tablist"]')!;
+  expect(list.dataset.scroll).toBe("auto");
+  expect(list.dataset.inset).toBe("sm");
 });

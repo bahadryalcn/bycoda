@@ -1,7 +1,12 @@
 import { parentPort, workerData } from "node:worker_threads";
 import { DatabaseSync, backup } from "node:sqlite";
 
-const db = new DatabaseSync(workerData.path);
+// "reader" workers serve concurrent read-only transactions on the same WAL file; the
+// default worker is the one writer that owns scopes, transactions and cursors.
+const reader = workerData.role === "reader";
+// A reader opens read-only, so no statement can turn `query_only` back off and write.
+const db = new DatabaseSync(workerData.path, { readOnly: reader });
+if (reader) db.exec("PRAGMA busy_timeout=5000; PRAGMA query_only=ON");
 let active;
 let databaseClosed = false;
 let cursorSequence = 0;
@@ -24,8 +29,92 @@ const closeCursors = (owner) => {
     }
 };
 const closed = new Set();
-parentPort.postMessage({ ready: true });
-parentPort.on("message", async ({ id, owner, method, sql, params }) => {
+// A reader only reports whether the file is in WAL mode: without it a reader and the
+// writer would block each other, so the pool stays off.
+parentPort.postMessage(
+  reader
+    ? { ready: true, wal: String(db.prepare("PRAGMA journal_mode").get()?.journal_mode) === "wal" }
+    : { ready: true },
+);
+const readerMessage = ({ id, method, sql, params, begin, name }) => {
+  try {
+    if (method === "end") {
+      // Fire and forget: ends the read snapshot so the WAL can checkpoint past it.
+      if (db.isTransaction) db.exec("ROLLBACK");
+      return;
+    }
+    if (method === "ping") {
+      parentPort.postMessage({ id });
+      return;
+    }
+    if (!Number.isSafeInteger(id) || !Array.isArray(params))
+      throw new Error("Invalid database request.");
+    if (method === "registerFunction") registerFunction(name);
+    else if (method === "get" || method === "all") {
+      // The first statement of a lease opens its transaction, so every statement of one
+      // read scope sees the same snapshot; whatever the previous lease left is ended first.
+      if (begin) {
+        if (db.isTransaction) db.exec("ROLLBACK");
+        db.exec("BEGIN");
+      }
+      const startedAt = performance.now();
+      const value = prepare(sql)[method](...params);
+      parentPort.postMessage({ id, value, ms: performance.now() - startedAt });
+      return;
+    } else throw new Error("Unknown database operation.");
+    parentPort.postMessage({ id });
+  } catch (error) {
+    parentPort.postMessage({
+      id,
+      error: error instanceof Error ? error.message : "Database operation failed.",
+      code: error?.code,
+      errcode: error?.errcode,
+    });
+  }
+};
+const registerFunction = (name) => {
+  if (name !== "social_text_matches") throw new Error("Unknown database function.");
+  db.function(name, { deterministic: true }, (value, query, language) =>
+    String(value ?? "")
+      .toLocaleLowerCase(String(language || "en"))
+      .includes(String(query ?? "").toLocaleLowerCase(String(language || "en")))
+      ? 1
+      : 0,
+  );
+};
+// Selected by `durability` for a critical transaction; `leave` restores the normal level.
+let synchronousRaised = false;
+parentPort.on("message", async (message) => {
+  if (reader) return readerMessage(message);
+  const { id, owner, method, sql, params } = message;
+  // Liveness probe: answered between operations, owns nothing.
+  if (method === "ping") {
+    parentPort.postMessage({ id });
+    return;
+  }
+  // The writer connection's data_version moves only when another connection or process
+  // commits: the store's external-change signal. Answered between statements, owns nothing.
+  if (method === "dataVersion") {
+    try {
+      if (databaseClosed) throw new Error("Database is closed.");
+      parentPort.postMessage({
+        id,
+        value: Number(db.prepare("PRAGMA data_version").get().data_version),
+      });
+    } catch (error) {
+      parentPort.postMessage({
+        id,
+        error: error instanceof Error ? error.message : "Database operation failed.",
+        code: error?.code,
+        errcode: error?.errcode,
+      });
+    }
+    return;
+  }
+  const startedAt = performance.now();
+  // Worker-side execution time, so the owner can tell it apart from queueing and thread hops.
+  const post = (message) =>
+    parentPort.postMessage({ ...message, ms: performance.now() - startedAt });
   try {
     if (!Number.isSafeInteger(id) || typeof owner !== "string" || !Array.isArray(params))
       throw new Error("Invalid database request.");
@@ -39,10 +128,15 @@ parentPort.on("message", async ({ id, owner, method, sql, params }) => {
         active = undefined;
         closed.add(owner);
         if (closed.size > 1024) closed.delete(closed.values().next().value);
-        if (!databaseClosed && db.isTransaction) {
-          db.exec("ROLLBACK");
-          throw new Error("Database owner left an open transaction; it was rolled back.");
+        const abandoned = !databaseClosed && db.isTransaction;
+        if (abandoned) db.exec("ROLLBACK");
+        // An owner that never restored durability must not leave every later write at FULL.
+        if (synchronousRaised && !databaseClosed) {
+          db.exec("PRAGMA synchronous=1");
+          synchronousRaised = false;
         }
+        if (abandoned)
+          throw new Error("Database owner left an open transaction; it was rolled back.");
       } else if (method === "rollbackOpen") {
         if (db.isTransaction) db.exec("ROLLBACK");
       } else if (method === "durability") {
@@ -50,6 +144,7 @@ parentPort.on("message", async ({ id, owner, method, sql, params }) => {
           throw new Error("Critical durability must be selected before a transaction starts.");
         if (params[0] !== 1 && params[0] !== 2) throw new Error("Invalid durability class.");
         db.exec(`PRAGMA synchronous=${params[0]}`);
+        synchronousRaised = params[0] === 2;
       } else if (method === "backup") {
         if (db.isTransaction) throw new Error("Backup requires a settled transaction boundary.");
         if (typeof params[0] !== "string") throw new Error("Invalid backup destination.");
@@ -65,19 +160,12 @@ parentPort.on("message", async ({ id, owner, method, sql, params }) => {
         db.close();
         databaseClosed = true;
       } else if (method === "registerFunction") {
-        if (sql !== "social_text_matches") throw new Error("Unknown database function.");
-        db.function(sql, { deterministic: true }, (value, query, language) =>
-          String(value ?? "")
-            .toLocaleLowerCase(String(language || "en"))
-            .includes(String(query ?? "").toLocaleLowerCase(String(language || "en")))
-            ? 1
-            : 0,
-        );
+        registerFunction(sql);
       } else if (method === "cursorOpen") {
         if (cursors.size >= 16) throw new Error("Too many open database cursors.");
         const cursor = ++cursorSequence;
         cursors.set(cursor, { owner, iterator: db.prepare(sql).iterate(...params) });
-        parentPort.postMessage({ id, value: cursor });
+        post({ id, value: cursor });
         return;
       } else if (method === "cursorNext" || method === "cursorClose") {
         const cursor = cursors.get(params[0]);
@@ -105,7 +193,7 @@ parentPort.on("message", async ({ id, owner, method, sql, params }) => {
                     ? value.byteLength
                     : 8;
           }
-          parentPort.postMessage({ id, value: { rows, done } });
+          post({ id, value: { rows, done } });
           return;
         }
       } else if (method === "batchWrites") {
@@ -150,13 +238,13 @@ parentPort.on("message", async ({ id, owner, method, sql, params }) => {
         }
       } else if (method === "get" || method === "all" || method === "run") {
         const value = prepare(sql)[method](...params);
-        parentPort.postMessage({ id, value });
+        post({ id, value });
         return;
       } else throw new Error("Unknown database operation.");
     }
-    parentPort.postMessage({ id });
+    post({ id });
   } catch (error) {
-    parentPort.postMessage({
+    post({
       id,
       error: error instanceof Error ? error.message : "Database operation failed.",
       code: error?.code,

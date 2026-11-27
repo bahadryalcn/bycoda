@@ -10,6 +10,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
+import { useT } from "../../../i18n";
 import { LAYER } from "../../../lib/layers";
 import { Check, ChevronRight } from "../../icons";
 import { Popover, popupListClassName } from "../../Popover";
@@ -22,7 +23,7 @@ type MenuAction = {
   label: string;
   description?: string;
   shortcut?: string;
-  /** Native tooltip, useful to explain why an item is disabled. */
+  /** Tooltip, useful to explain why an item is disabled. */
   title?: string;
   disabled?: boolean;
   danger?: boolean;
@@ -81,7 +82,7 @@ export function NativeContextMenu({
   ownerId,
   onBack,
   items,
-  ariaLabel = "File actions",
+  ariaLabel,
   header,
   width = MENU_WIDTH,
   side,
@@ -93,6 +94,7 @@ export function NativeContextMenu({
   onMouseEnter,
   onMouseLeave,
 }: ContextMenuProps) {
+  const t = useT();
   const menuId = useId();
   const menuRef = useRef<HTMLDivElement>(null);
   const submenuRef = useRef<HTMLDivElement>(null);
@@ -357,7 +359,7 @@ export function NativeContextMenu({
           </span>
         ) : item.checked ? (
           <span className={slot.trailing} aria-hidden="true">
-            <Check strokeWidth={2.25} />
+            <Check />
           </span>
         ) : item.shortcut ? (
           <span className={`${slot.trailing} ${slot.shortcut}`} aria-hidden="true">
@@ -388,7 +390,7 @@ export function NativeContextMenu({
         data-explorer-menu={menuId}
         role="menu"
         tabIndex={-1}
-        aria-label={ariaLabel}
+        aria-label={ariaLabel ?? t("Actions")}
         aria-activedescendant={`${menuId}-${active}`}
         onKeyDown={onMenuKey}
         onContextMenu={(e) => e.preventDefault()}

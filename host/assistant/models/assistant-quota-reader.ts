@@ -1,16 +1,32 @@
-import type { UsageLimitsReport } from "../../usage/limits-report";
+import {
+  isQuotaProvider,
+  type QuotaTarget,
+  type UsageLimitsReport,
+} from "../../usage/limits-report";
 
 /** A quota reading is trusted for this long; an older sample counts as unknown. */
 export const QUOTA_STALE_MS = 15 * 60_000;
 /** Minimum gap between background refreshes of one provider. */
 export const QUOTA_REFRESH_MS = 5 * 60_000;
+/** Longest the settings status read waits for a first quota sample. */
+export const QUOTA_WARM_TIMEOUT_MS = 8_000;
 
+export type AssistantQuotaUnknownReason =
+  | "noQuota"
+  | "noSample"
+  | "stale"
+  | "noProvider"
+  | "accountUnavailable"
+  | "noWindow";
 export type AssistantQuotaReading =
   | { leftPercent: number; resetsAt?: number; sampledAt: number }
-  | { unknown: true; reason: string };
+  | { unknown: true; reason: AssistantQuotaUnknownReason };
 
-type Provider = "claude" | "codex" | "opencode";
+type Provider = QuotaTarget["provider"];
 type Sample = { sampledAt: number; report: UsageLimitsReport };
+const accountKey = (provider: Provider, account: string) => `${provider}:${account}`;
+const supportsRoutingQuota = (provider: unknown): provider is Provider =>
+  isQuotaProvider(provider) && provider !== "grok";
 
 const normalize = (value: string) => value.trim().toLowerCase().replace(/\s+/g, "-");
 const BOUNDARY = /[-_.:/@ ]/;
@@ -33,7 +49,7 @@ export function quotaModelMatches(cardModel: string, rowModel: string): boolean 
 }
 
 export type AssistantQuotaReaderDeps = {
-  readLimits: () => Promise<UsageLimitsReport>;
+  readLimits: (target: QuotaTarget) => Promise<UsageLimitsReport>;
   now?: () => number;
 };
 
@@ -41,24 +57,23 @@ export type AssistantQuotaReaderDeps = {
  * last sample and refreshes in the background. Percentages are never combined across accounts;
  * within one account the tightest matching window decides. */
 export class AssistantQuotaReader {
-  private readonly samples = new Map<Provider, Sample>();
-  private readonly refreshing = new Map<Provider, Promise<void>>();
-  private readonly attempted = new Map<Provider, number>();
+  private readonly samples = new Map<string, Sample>();
+  private readonly refreshing = new Map<string, Promise<void>>();
+  private readonly attempted = new Map<string, number>();
   constructor(private readonly deps: AssistantQuotaReaderDeps) {}
   private now() {
     return (this.deps.now ?? Date.now)();
   }
 
   reading(harness: string, accountId: string | undefined, model: string): AssistantQuotaReading {
-    if (harness !== "claude" && harness !== "codex" && harness !== "opencode")
-      return { unknown: true, reason: "noQuota" };
-    this.refreshIfStale(harness);
-    const sample = this.samples.get(harness);
+    if (!supportsRoutingQuota(harness)) return { unknown: true, reason: "noQuota" };
+    const account = accountId ?? "default";
+    this.refreshIfStale(harness, account);
+    const sample = this.samples.get(accountKey(harness, account));
     if (!sample) return { unknown: true, reason: "noSample" };
     if (this.now() - sample.sampledAt > QUOTA_STALE_MS) return { unknown: true, reason: "stale" };
     const provider = sample.report.providers.find((entry) => entry.provider === harness);
     if (!provider) return { unknown: true, reason: "noProvider" };
-    const account = accountId ?? "default";
     const status = provider.accounts.find((entry) => entry.id === account);
     if (!status || status.status !== "ok") return { unknown: true, reason: "accountUnavailable" };
     const readings = provider.cards
@@ -76,28 +91,63 @@ export class AssistantQuotaReader {
     };
   }
 
+  /** Bounded warm-up for the settings status read: waits for one refresh when there is no fresh
+   * sample, never longer than `timeoutMs`. Run-start selection must not call it. */
+  async warm(
+    harness: string,
+    timeoutMs = QUOTA_WARM_TIMEOUT_MS,
+    accountId = "default",
+  ): Promise<void> {
+    if (!supportsRoutingQuota(harness)) return;
+    const key = accountKey(harness, accountId);
+    const sample = this.samples.get(key);
+    if (sample && this.now() - sample.sampledAt <= QUOTA_STALE_MS) return;
+    this.refreshIfStale(harness, accountId);
+    const running = this.refreshing.get(key);
+    if (!running) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, timeoutMs);
+    });
+    try {
+      await Promise.race([running.catch(() => undefined), deadline]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   /** Awaitable refresh for tests and warm-up; selection never calls it. */
-  refresh(provider: Provider): Promise<void> {
-    const running = this.refreshing.get(provider);
+  refresh(provider: Provider, accountId = "default"): Promise<void> {
+    const key = accountKey(provider, accountId);
+    const running = this.refreshing.get(key);
     if (running) return running;
-    this.attempted.set(provider, this.now());
+    this.attempted.set(key, this.now());
     const task = this.deps
-      .readLimits()
+      .readLimits({ provider, accountId })
       .then((report) => {
-        // One report covers every provider, so all samples advance together.
-        for (const entry of report.providers)
-          this.samples.set(entry.provider, { sampledAt: report.sampledAt, report });
+        this.samples.set(key, { sampledAt: report.sampledAt, report });
+        for (const entry of report.providers) {
+          for (const account of entry.accounts) {
+            const returnedKey = accountKey(entry.provider, account.id);
+            this.samples.set(returnedKey, {
+              sampledAt: account.observedAt ?? report.sampledAt,
+              report,
+            });
+            if (returnedKey !== key) this.attempted.set(returnedKey, this.now());
+          }
+        }
       })
-      .finally(() => this.refreshing.delete(provider));
-    this.refreshing.set(provider, task);
+      .finally(() => this.refreshing.delete(key));
+    this.refreshing.set(key, task);
     return task;
   }
 
-  private refreshIfStale(provider: Provider) {
-    if (this.refreshing.has(provider)) return;
-    const last = this.attempted.get(provider);
+  private refreshIfStale(provider: Provider, accountId: string) {
+    const key = accountKey(provider, accountId);
+    if (this.refreshing.has(key)) return;
+    const last = this.attempted.get(key);
     if (last !== undefined && this.now() - last < QUOTA_REFRESH_MS) return;
     // A failed read leaves the previous sample to age into unknown.
-    this.refresh(provider).catch(() => undefined);
+    this.refresh(provider, accountId).catch(() => undefined);
   }
 }

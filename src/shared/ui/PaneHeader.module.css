@@ -41,6 +41,26 @@
 .header[data-chrome-inset] {
   padding-inline-start: 0;
 }
+/* A header with an overflow menu is its own query container so secondary actions can give way to it.
+   Only then: inline-size containment drops the content width, so a header sized by its content
+   (absolutely positioned, or a flex item in a row) would collapse and push its actions out of view. */
+.header[data-pane-header-collapsible] {
+  container: pane-header / inline-size;
+}
+.secondary {
+  display: contents;
+}
+.overflow {
+  display: none;
+}
+@container pane-header (max-width: 26rem) {
+  .secondary {
+    display: none;
+  }
+  .overflow {
+    display: contents;
+  }
+}
 .leading,
 .actions,
 .trailing {
@@ -54,6 +74,10 @@
 }
 .actions {
   margin-inline-start: auto;
+}
+.actions[data-shrink] {
+  flex-shrink: 1;
+  min-inline-size: 0;
 }
 .icon {
   display: inline-flex;
@@ -73,8 +97,10 @@
   min-inline-size: 0;
   padding-inline: 0.25rem;
 }
+/* The title gives way first: it shrinks to its ellipsis before any action is squeezed. */
 .title {
   flex: 0 1 auto;
+  min-inline-size: 0;
 }
 .meta {
   flex: 0 1 auto;

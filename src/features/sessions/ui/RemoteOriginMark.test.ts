@@ -34,13 +34,10 @@ it("leaves delegated background work to its parent panel", () => {
   expect(remoteOrigin(child)).toBeUndefined();
 });
 
-it("names the origin and, while running, the background run", () => {
-  expect(renderToString(createElement(RemoteOriginMark, { origin: undefined }))).toBe("");
+it("shows the current computer and announces a background run while it is active", () => {
   const idle = renderToString(createElement(RemoteOriginMark, { origin: "idle" }));
-  expect(idle).toContain("Started from a remote connection");
+  expect(idle).toContain("This computer");
+  expect(idle).not.toContain("Started from a remote connection");
   expect(idle).not.toContain(RUNNING);
   expect(renderToString(createElement(RemoteOriginMark, { origin: "running" }))).toContain(RUNNING);
-  expect(
-    renderToString(createElement(RemoteOriginMark, { origin: "idle", labelled: true })),
-  ).toContain("Remote connection");
 });

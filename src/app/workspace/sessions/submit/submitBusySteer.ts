@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import type { SubmitDeps, SubmitInput, SubmitPreflight } from "./submitTypes";
 
 import { nextQueueStatus } from "../../../../features/connections/model/queueState";
@@ -22,6 +23,7 @@ import { sessionsRef, setSessions } from "../../../../features/sessions/model/se
 import {
   appendSteerUser,
   canSteerHarness,
+  isHarnessSteerReady,
   isLiveHarness,
   steerHarnessTurn,
 } from "../../../../integrations/harness";
@@ -280,7 +282,7 @@ export function steerBusySubmit(
           return queueFollowUp();
         }
         const unknown = error instanceof DeliveryUnknownError;
-        const detail = error instanceof Error ? error.message : String(error);
+        const detail = errorText(error);
         retain(unknown);
         updateDeliveryProgress(sessionId, progress, unknown ? "unknown" : "rejected", detail);
         // onSubmit accepts deferred work immediately. Preserve every refusal,
@@ -329,6 +331,11 @@ export function steerBusySubmit(
       );
       return false;
     }
+    // The provider is still starting (or the turn just ended): Steer would be
+    // refused before any write. Queue the new message directly instead of
+    // showing it as sent and taking it back. Queue rows keep their own path.
+    if (!options?.queuedMessageId && !isHarnessSteerReady(running.harness, sessionId))
+      return queueFollowUp();
     dismissNoticesForContinuedSession(sessionId);
     const visible = displayAttachments(attachments);
     const cards = {

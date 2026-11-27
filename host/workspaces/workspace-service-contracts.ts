@@ -5,6 +5,8 @@ import type {
   TurnGitRecord,
   WorkspaceActivity,
   WorkspaceBootstrapStatus,
+  WorkspaceCreationProgress,
+  WorkspaceCreationStage,
   WorkspaceDevEnvironment,
   WorkspaceMutation,
   WorkspaceOperation,
@@ -153,6 +155,7 @@ export interface WorkspaceRemovalService {
   apply(
     request: WorkspaceRpcRequest<"workspaces.cleanup.apply">,
     authority: WorkspaceOwnerAuthorization | { kind: "retentionScheduler" },
+    assertLease?: () => void,
   ): Promise<WorkspaceRpcResponse<"workspaces.cleanup.apply">>;
   status: WorkspaceRpcHandler<"workspaces.cleanup.status">;
   storageStatus: WorkspaceRpcHandler<"workspaces.storage.status">;
@@ -210,4 +213,28 @@ export interface BuildIdentityManifest {
     mode: string;
   }): Promise<BuildIdentity>;
   read(manifestPath: string): Promise<BuildIdentity | null>;
+}
+
+/** Renames a managed workspace's temporary branch; implemented by the registry (extra to WorkspaceRegistry). */
+export type WorkspaceBranchRenamer = WorkspaceRpcHandler<"workspaces.renameBranch">;
+/** In-memory, TTL-bounded progress of `workspaces.prepare`, keyed by the client's progressId. */
+export interface WorkspaceCreationProgressRegistry {
+  /** Registers a running operation; throws when the id is already running. */
+  create(progressId: string): { signal: AbortSignal };
+  /** Merges stage updates (by stage id) and optionally ends the operation. */
+  update(
+    progressId: string,
+    change: { stages?: WorkspaceCreationStage[]; phase?: WorkspaceCreationProgress["phase"] },
+  ): void;
+  /**
+   * Atomically ends a running operation as done. Returns false when a cancel won first, in which
+   * case the caller must roll back and reject. Exactly one of `complete` and `cancel` wins.
+   */
+  complete(progressId: string, stages?: WorkspaceCreationStage[]): boolean;
+  /** Binds the id to the paired device that starts it; only that owner may read or cancel it. */
+  bindOwner(progressId: string, owner: string): void;
+  /** The current snapshot; throws "Workspace creation progress not found" when unknown, expired or not `owner`'s. */
+  get(progressId: string, owner?: string): WorkspaceCreationProgress;
+  /** Marks cancelled and aborts the signal when still running; idempotent; the snapshot's phase tells who won. */
+  cancel(progressId: string, owner?: string): WorkspaceCreationProgress;
 }

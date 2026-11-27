@@ -3,8 +3,10 @@ import {
   ApprovalDecisionProvider,
   ActivityRow,
   ComposerQuestionForm,
+  SubagentChatComposer,
 } from "../../sessions/public/delegatedRequests";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { remoteSessionFor, useRemoteMachines } from "../model/connections";
 import { remoteProjectFor } from "../model/remoteProjects";
@@ -28,12 +30,15 @@ function SessionRequests({
   child,
   visible,
   renderRequests = true,
+  composer,
   onOpenFile,
   onOpenDiff,
 }: {
   child: Session;
   visible: boolean;
   renderRequests?: boolean;
+  /** Only the selected child renders the standard composer from its Host connection. */
+  composer?: { name: string; parentSessionId?: string };
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (path: string) => void;
 }) {
@@ -95,34 +100,102 @@ function SessionRequests({
         const session = remote.session;
         const onApproval = remote.onApproval;
         const onQuestionReply = remote.onQuestionReply;
-        if (!session || !onApproval || !onQuestionReply) return null;
+        const onSubmit = remote.onSubmit;
+        if (!session) return null;
         const approvals = session.blocks.filter(
           (block) => block.approval && !block.approval.decided,
         );
+        const requests =
+          onApproval && onQuestionReply ? (
+            <ApprovalDecisionProvider session={session} dispatch={onApproval}>
+              {remote.remoteHistoryHasMore ? (
+                <Button
+                  variant="ghost"
+                  loading={remote.remoteHistoryLoading}
+                  onClick={() =>
+                    void Promise.resolve(remote.onLoadRemoteHistory?.()).catch(() => {})
+                  }
+                >
+                  {t("Load earlier messages")}
+                </Button>
+              ) : null}
+              {remote.remoteHistoryError ? (
+                <InlineError details={remote.remoteHistoryError}>
+                  {t("Could not load older messages.")}
+                </InlineError>
+              ) : null}
+              {approvals.map((block) => (
+                <ActivityRow
+                  key={block.id}
+                  block={block}
+                  cwd={session.cwd}
+                  live
+                  onOpenFile={onOpenFile}
+                  onOpenDiff={onOpenDiff}
+                  onApproval={(requestId, decision) => onApproval(session.id, requestId, decision)}
+                />
+              ))}
+              {session.pendingQuestion ? (
+                <ComposerQuestionForm
+                  question={session.pendingQuestion}
+                  draftScope={session.id}
+                  sessionId={session.id}
+                  remote
+                  remoteFeatures={remote.remoteFeatures}
+                  onReply={(requestId, reply) => onQuestionReply(session.id, requestId, reply)}
+                />
+              ) : null}
+            </ApprovalDecisionProvider>
+          ) : null;
         return (
-          <ApprovalDecisionProvider session={session} dispatch={onApproval}>
-            {approvals.map((block) => (
-              <ActivityRow
-                key={block.id}
-                block={block}
-                cwd={session.cwd}
-                live
-                onOpenFile={onOpenFile}
-                onOpenDiff={onOpenDiff}
-                onApproval={(requestId, decision) => onApproval(session.id, requestId, decision)}
-              />
-            ))}
-            {session.pendingQuestion ? (
-              <ComposerQuestionForm
-                question={session.pendingQuestion}
-                draftScope={session.id}
-                sessionId={session.id}
-                remote
+          <>
+            {requests}
+            {composer && visible && onSubmit ? (
+              <SubagentChatComposer
+                name={composer.name}
+                parentSessionId={composer.parentSessionId}
+                session={session}
+                visible={visible}
+                remoteSession
                 remoteFeatures={remote.remoteFeatures}
-                onReply={(requestId, reply) => onQuestionReply(session.id, requestId, reply)}
+                sendBlockedReason={remote.sendBlockedReason}
+                onSubmit={(text, attachments, options) =>
+                  onSubmit(session.id, text, attachments, options)
+                }
+                onStop={remote.onStop ? () => remote.onStop?.(session.id) : undefined}
+                onOpenFile={remote.onOpenFile}
+                onDeleteQueuedMessage={
+                  remote.onDeleteQueuedMessage
+                    ? (id) => remote.onDeleteQueuedMessage?.(session.id, id)
+                    : undefined
+                }
+                onEditQueuedMessage={
+                  remote.onEditQueuedMessage
+                    ? (id, text, attachments) =>
+                        remote.onEditQueuedMessage?.(session.id, id, text, attachments)
+                    : undefined
+                }
+                onQueuedMessageEditingChange={
+                  remote.onQueuedMessageEditingChange
+                    ? (id) => remote.onQueuedMessageEditingChange?.(session.id, id)
+                    : undefined
+                }
+                onReorderQueuedMessages={
+                  remote.onReorderQueuedMessages
+                    ? (ids) => remote.onReorderQueuedMessages?.(session.id, ids)
+                    : undefined
+                }
+                onSteerQueuedMessage={
+                  remote.onSteerQueuedMessage
+                    ? (id) => remote.onSteerQueuedMessage?.(session.id, id)
+                    : undefined
+                }
+                onResumeQueue={
+                  remote.onResumeQueue ? () => remote.onResumeQueue?.(session.id) : undefined
+                }
               />
             ) : null}
-          </ApprovalDecisionProvider>
+          </>
         );
       }}
     />

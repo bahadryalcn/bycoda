@@ -32,6 +32,7 @@ import { isRoomDevServerAction } from "../room/assistant-room-dev-servers";
 import { isRoomTerminalAction } from "../room/assistant-room-terminals";
 import { isRoomBrowserAction } from "../room/assistant-room-browser";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { isLiveStreamConversationTool, isSocialLiveStreamTool } from "../../live-stream/tools";
 import { unwrapRoomNativeResult } from "../native/assistant-native-library-proof";
 
 const projectCaptures = new AsyncLocalStorage<{ open: boolean; projects: Map<string, string> }>();
@@ -47,6 +48,8 @@ export function captureRoomProject(projectId: string, cwd: string) {
 export const hasRoomProjectCapture = (projectId: string) =>
   projectCaptures.getStore()?.projects.has(projectId) === true;
 
+const PROJECT_NOT_VISIBLE =
+  "The target project is not in the desktop's visible project list (removed, archived, in a locked group, or the desktop is offline). Choose a project from the current project list.";
 const accountResultMarker = Symbol("room-account-result");
 export function roomAccountResult(
   value: unknown,
@@ -76,6 +79,8 @@ const targetActions = new Set([
   "sessions.read",
 ]);
 export function roomManagementToolAllowed(family: string, action: string, projectId?: string) {
+  if (family === "conversation" && isLiveStreamConversationTool(action))
+    return !isSocialLiveStreamTool(action) || !!projectId;
   if (
     family === "conversation" &&
     ["remote.grants.list", "remote.call", "remote.result"].includes(action)
@@ -302,7 +307,7 @@ export function createRoomManagementDispatcher(ports: {
       );
     await check();
     if (call.projectId && !(await ports.visibleProject(call.projectId, call.threadId, admission)))
-      throw new Error("The target project is unavailable or locked.");
+      throw new Error(PROJECT_NOT_VISIBLE);
     await check();
     const captured = { open: true, projects: new Map<string, string>() };
     let raw: unknown;
@@ -337,7 +342,7 @@ export function createRoomManagementDispatcher(ports: {
     await check();
     if (call.projectId && !(await ports.visibleProject(call.projectId, call.threadId, admission)))
       throw new Error(
-        "The target project became unavailable or locked; inspect the original operation.",
+        `${PROJECT_NOT_VISIBLE} It changed during the call; inspect the original operation.`,
       );
     await check();
     return {

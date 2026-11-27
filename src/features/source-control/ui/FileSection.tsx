@@ -64,99 +64,95 @@ export function FileSection({
       {/* In a narrow pane the icon group wraps under the title instead of squeezing the title to
           nothing and overlapping the count (the title keeps a readable floor). */}
       <div className={styles.sectionHeader}>
-        <Button
-          size="sm"
-          variant="item"
-          motion="none"
-          type="button"
-          expanded={open}
-          chevron="start"
-          tooltip={title}
-          tooltipWhen="overflow"
-          onClick={onToggle}
-          className="flex min-w-28 flex-1 basis-28 items-center gap-1 text-left"
-        >
-          <Text
-            data-file-section-title
-            size="caption"
-            tone="secondary"
-            weight="medium"
-            truncate
-            className="min-w-0"
+        <div className="min-w-28 flex-1 basis-28">
+          <Button
+            size="sm"
+            variant="item"
+            motion="none"
+            type="button"
+            fullWidth
+            align="start"
+            expanded={open}
+            chevron="start"
+            tooltip={title}
+            tooltipWhen="overflow"
+            onClick={onToggle}
           >
-            {title}
-          </Text>
-          <Text size="caption" tone="secondary" className="ml-1 shrink-0 tabular-nums">
-            {countLabel ?? count}
-          </Text>
-        </Button>
+            <Text
+              data-file-section-title
+              size="caption"
+              tone="secondary"
+              weight="medium"
+              truncate
+              className="min-w-0"
+            >
+              {title}
+            </Text>
+            <Text size="caption" tone="secondary" className="ms-1 shrink-0 tabular-nums">
+              {countLabel ?? count}
+            </Text>
+          </Button>
+        </div>
         <div className={styles.actionSlots}>
-          <div className={styles.actionSlot}>{headerExtra}</div>
-          <div className={styles.actionSlot}>
-            {view && onToggleView ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                motion="none"
-                iconOnly
-                label={view === "tree" ? t("View as List") : t("View as Tree")}
-                onClick={onToggleView}
-              >
-                {view === "tree" ? (
-                  <ListBullet className="icon-sm" strokeWidth={1.75} />
-                ) : (
-                  <FolderTree className="icon-sm" strokeWidth={1.75} />
-                )}
-              </Button>
-            ) : null}
-          </div>
-          <div className={styles.actionSlot}>
-            {overflow.length ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                motion="none"
-                iconOnly
-                label={t("More actions")}
-                onClick={(event) => setMoreAnchor(moreAnchor ? null : event.currentTarget)}
-                aria-haspopup="menu"
-                aria-expanded={!!moreAnchor}
-              >
-                <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
-              </Button>
-            ) : null}
-          </div>
-          <div className={styles.actionSlot}>
-            {direct.map((action) =>
-              action.label ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  motion="none"
-                  key={action.title}
-                  type="button"
-                  tooltip={action.title === action.label ? undefined : action.title}
-                  aria-label={action.title}
-                  onClick={action.onClick}
-                  className="shrink-0"
-                >
-                  {action.label}
-                </Button>
+          {headerExtra}
+          {view && onToggleView ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              motion="none"
+              iconOnly
+              label={view === "tree" ? t("View as List") : t("View as Tree")}
+              onClick={onToggleView}
+            >
+              {view === "tree" ? (
+                <ListBullet className="icon-sm" strokeWidth={1.75} />
               ) : (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  motion="none"
-                  iconOnly
-                  key={action.title}
-                  label={action.title}
-                  onClick={action.onClick}
-                >
-                  {action.icon}
-                </Button>
-              ),
-            )}
-          </div>
+                <FolderTree className="icon-sm" strokeWidth={1.75} />
+              )}
+            </Button>
+          ) : null}
+          {overflow.length ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              motion="none"
+              iconOnly
+              label={t("More actions")}
+              onClick={(event) => setMoreAnchor(moreAnchor ? null : event.currentTarget)}
+              aria-haspopup="menu"
+              aria-expanded={!!moreAnchor}
+            >
+              <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
+            </Button>
+          ) : null}
+          {direct.map((action) =>
+            action.label ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                motion="none"
+                key={action.title}
+                type="button"
+                tooltip={action.title === action.label ? undefined : action.title}
+                aria-label={action.title}
+                onClick={action.onClick}
+              >
+                {action.label}
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="ghost"
+                motion="none"
+                iconOnly
+                key={action.title}
+                label={action.title}
+                onClick={action.onClick}
+              >
+                {action.icon}
+              </Button>
+            ),
+          )}
         </div>
       </div>
       {moreAnchor ? (

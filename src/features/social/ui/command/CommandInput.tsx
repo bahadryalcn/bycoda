@@ -1,5 +1,5 @@
 import { t } from "../../../../shared/i18n";
-import { DisabledReason } from "../common/DisabledReason";
+import { Button } from "../../../../shared/ui/Button";
 import { Sparkles } from "../../../../shared/ui/icons";
 import { PromptField } from "../../../../shared/ui/PromptField";
 
@@ -31,18 +31,16 @@ export function CommandInput({ text, busy, onChange, onSubmit }: CommandInputPro
         surface="raised"
         onChange={(event) => onChange(event.target.value)}
         toolbarTrailing={
-          <DisabledReason
+          <Button
             type="submit"
             variant="primary"
             size="sm"
             startIcon={<Sparkles className="icon-sm" strokeWidth={1.75} aria-hidden />}
             loading={busy}
-            {...(empty
-              ? { disabled: true as const, reason: t("Type what AI should do.") }
-              : { disabled: false as const })}
+            disabled={!text.trim()}
           >
             {t("Plan")}
-          </DisabledReason>
+          </Button>
         }
       />
     </form>

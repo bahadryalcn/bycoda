@@ -4,7 +4,20 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { UsageFooter as QueryComponent } from "./UsageFooter";
 
+vi.mock("../../features/settings/public/useKeybindingShortcut", () => ({
+  useKeybindingShortcut: (command: string) => (command === "Terminal: New" ? "Alt+Shift+T" : null),
+}));
+
 describe("UsageFooter terminal control", () => {
+  it("keeps the overflowing provider strip on one line with a hidden scrollbar", () => {
+    const markup = renderToStaticMarkup(
+      createElement(UsageFooter, { providers: [], onNewTerminal: vi.fn() }),
+    );
+    expect(markup).toContain("data-provider-usage");
+    // The strip stays one line; clipped chips remain reachable by scrolling and keyboard focus.
+    expect(markup).toContain('data-scrollbar="hidden"');
+  });
+
   it("replaces the generic terminal button with the live process control", () => {
     const markup = renderToStaticMarkup(
       createElement(UsageFooter, {
@@ -25,8 +38,9 @@ describe("UsageFooter terminal control", () => {
       }),
     );
 
-    expect(markup).toContain(">npm</span>");
-    expect(markup).not.toContain(">Terminal</span>");
+    // The running process is named by the accessible label; the control is an icon.
+    expect(markup).toContain('aria-label="Hide terminal npm"');
+    expect(markup).not.toContain('aria-label="New Terminal');
     expect(markup.match(/<button/g)).toHaveLength(1);
   });
 

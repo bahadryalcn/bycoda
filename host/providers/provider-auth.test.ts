@@ -3,7 +3,12 @@ const mock = vi.hoisted(() => ({ exec: vi.fn(), launch: vi.fn(), profile: vi.fn(
 vi.mock("../../src/shared/lib/processExecution.node", () => ({ execFileAsync: mock.exec }));
 vi.mock("../process", () => ({ providerLaunch: mock.launch }));
 vi.mock("./provider-accounts", () => ({ providerAccountEnvironment: mock.profile }));
-import { parseProviderAuthStatus, providerAuthStatus } from "./provider-auth";
+import {
+  parseProviderAuthStatus,
+  providerAuthStatus,
+  reusedProviderAuthStatus,
+  SIGNED_IN_REUSE_MS,
+} from "./provider-auth";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -67,5 +72,25 @@ describe("provider authentication discovery", () => {
       expect(parseProviderAuthStatus("claude", false, output, "")).toBe("unknown");
     }
     expect(parseProviderAuthStatus("pi", true, "Logged in using ChatGPT", "")).toBe("unknown");
+  });
+});
+
+describe("reused sign-in checks", () => {
+  afterEach(() => vi.useRealTimers());
+  it("shares one CLI process, reuses only a signed-in answer, and expires it", async () => {
+    vi.useFakeTimers();
+    mock.exec.mockResolvedValue({ stdout: '{"loggedIn":true}', stderr: "" });
+    const [a, b] = await Promise.all([
+      reusedProviderAuthStatus("claude", "claude-reuse"),
+      reusedProviderAuthStatus("claude", "claude-reuse"),
+    ]);
+    expect([a, b]).toEqual(["signedIn", "signedIn"]);
+    expect(await reusedProviderAuthStatus("claude", "claude-reuse")).toBe("signedIn");
+    expect(mock.exec).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(SIGNED_IN_REUSE_MS);
+    mock.exec.mockResolvedValue({ stdout: '{"loggedIn":false}', stderr: "" });
+    expect(await reusedProviderAuthStatus("claude", "claude-reuse")).toBe("signedOut");
+    expect(await reusedProviderAuthStatus("claude", "claude-reuse")).toBe("signedOut");
+    expect(mock.exec).toHaveBeenCalledTimes(3);
   });
 });

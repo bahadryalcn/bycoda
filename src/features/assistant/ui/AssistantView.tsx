@@ -8,7 +8,7 @@ import {
   rebuildClosedRoomPrivacyProjection,
   recoverRoomPrivacyProjection,
   getRoomPrivacyStatus,
-  isRoomPrivacyRecoveryPending,
+  canRebuildRoomPrivacyProjection,
   subscribeRoomPrivacyStatus,
 } from "../../group-lock/model/roomPrivacyProjection";
 import { isAppQuitting } from "../../../app/model/appLifecycle";
@@ -17,6 +17,7 @@ import { useSyncExternalStore } from "react";
 import { AssistantSettings } from "./AssistantSettings";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Heading } from "../../../shared/ui/Heading";
 import { Alert } from "../../../shared/ui/Alert";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
@@ -41,7 +42,7 @@ import { assistantJobVisible } from "../model/assistantJobs";
 import { AssistantSetup } from "./AssistantSetup";
 import styles from "./AssistantView.module.css";
 import shell from "./room/RoomShell.module.css";
-import { type AssistantViewProps } from "./room/assistantRoomHelpers";
+import { type AssistantViewProps, viewLabel } from "./room/assistantRoomHelpers";
 import { RoomNavigation } from "./room/RoomNavigation";
 import { AssistantRoomContext, type AssistantRoom } from "./room/assistantRoomContext";
 import { useAssistantRoomState } from "./room/useAssistantRoomState";
@@ -151,9 +152,11 @@ export function AssistantView(props: AssistantViewProps) {
             : { label: t("Ready"), tone: "success" as const }
     : { label: "", tone: "secondary" as const };
 
-  const sameReadError =
-    Boolean(readError && projectReadError) &&
-    (projectReadError === readError || t(projectReadError) === readError);
+  // With no room content to protect, the privacy failure takes the whole body instead of a banner.
+  const showsRoom = Boolean(snapshot?.profile.setupComplete);
+  const privacyBlocksBody = Boolean(roomPrivacy.error) && !showsRoom;
+  const canRebuildPrivacy = Boolean(roomPrivacy.error) && canRebuildRoomPrivacyProjection();
+  const sameReadError = Boolean(readError && projectReadError) && projectReadError === readError;
 
   return (
     <AssistantRoomContext.Provider value={room}>
@@ -208,21 +211,26 @@ export function AssistantView(props: AssistantViewProps) {
                 <Button
                   variant={snapshot.paused ? "secondary" : "ghost"}
                   tone={snapshot.paused ? "neutral" : "danger"}
-                  label={t(snapshot.paused ? "Resume work" : "Stop everything")}
+                  label={snapshot.paused ? t("Resume work") : t("Stop everything")}
                   startIcon={
                     snapshot.paused ? <Play className="icon-sm" /> : <Square className="icon-sm" />
                   }
                   disabled={snapshot.paused && Boolean(pending)}
+                  disabledReason={
+                    snapshot.paused && pending
+                      ? t("Wait for the current action to finish.")
+                      : undefined
+                  }
                   loading={stopping || pending?.key === "pauseAll"}
                   onClick={() =>
                     snapshot.paused
-                      ? void mutate("pauseAll", t("Updating..."), {
+                      ? void mutate("pauseAll", t("Updating…"), {
                           op: "resumeAll",
                         })
                       : void stopEverything()
                   }
                 >
-                  {t(snapshot.paused ? "Resume" : "Stop")}
+                  {snapshot.paused ? t("Resume") : t("Stop")}
                 </Button>
               </>
             )}
@@ -232,6 +240,9 @@ export function AssistantView(props: AssistantViewProps) {
               label={t("Settings")}
               onClick={() => setSettings(true)}
               disabled={!snapshot}
+              disabledReason={
+                snapshot ? undefined : t("Settings open once the assistant has loaded.")
+              }
             >
               <Settings className="icon-md" />
             </Button>
@@ -281,45 +292,43 @@ export function AssistantView(props: AssistantViewProps) {
             ]}
           />
         )}
-        {roomPrivacy.error && (
+        {roomPrivacy.error && showsRoom && (
           <Alert
             className={shell.notice}
             tone="danger"
             title={t("Room privacy protection could not be confirmed.")}
             action={retryPrivacy ? { label: t("Retry"), onClick: retryPrivacy } : undefined}
             extra={
-              hostBusy ? (
-                <ErrorDetails
-                  title={t("Room privacy protection could not be confirmed.")}
-                  detail={roomPrivacy.error}
-                />
-              ) : undefined
+              <ErrorDetails
+                title={t("Room privacy protection could not be confirmed.")}
+                detail={roomPrivacy.error}
+              />
             }
           >
-            {hostBusy ? t("The Host is busy. Try again in a moment.") : t(roomPrivacy.error)}
+            {hostBusy ? t("The Host is busy. Try again in a moment.") : undefined}
           </Alert>
         )}
-        {roomPrivacy.error &&
-          (roomPrivacy.error === "Privacy lock state is unavailable" ||
-            isRoomPrivacyRecoveryPending()) && (
-            <div className={`${shell.notice} ${shell.noticeBody}`}>
-              <InlineMessage tone="info">
-                {t("Review current project visibility before rebuilding Room privacy protection.")}
-              </InlineMessage>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  void rebuildClosedRoomPrivacyProjection().catch(() => {});
-                }}
-              >
-                {t("Rebuild Room privacy protection")}
-              </Button>
-            </div>
-          )}
-        {readError && (
+        {roomPrivacy.error && showsRoom && canRebuildPrivacy && (
+          <div className={`${shell.notice} ${shell.noticeBody}`}>
+            <InlineMessage tone="info">
+              {t("Review current project visibility before rebuilding Room privacy protection.")}
+            </InlineMessage>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                void rebuildClosedRoomPrivacyProjection().catch(() => {});
+              }}
+            >
+              {t("Rebuild Room privacy protection")}
+            </Button>
+          </div>
+        )}
+        {/* Without a snapshot the failure panel below owns the message and the one Try again. */}
+        {readError && snapshot && (
           <InlineError
             className={shell.notice}
+            details={readError}
             retry={{
               onRetry: () => {
                 void refresh();
@@ -329,36 +338,69 @@ export function AssistantView(props: AssistantViewProps) {
               pending: loading,
             }}
           >
-            {readError}
+            {t("Could not refresh the assistant room.")}
           </InlineError>
         )}
-        {projectReadError && !sameReadError && (
-          <InlineError className={shell.notice} retry={{ onRetry: () => void readProjects() }}>
-            {t(projectReadError)}
+        {projectReadError && !sameReadError && snapshot && (
+          <InlineError
+            className={shell.notice}
+            details={projectReadError}
+            retry={{ onRetry: () => void readProjects() }}
+          >
+            {t("Could not load the project list.")}
           </InlineError>
         )}
         {error?.key.startsWith("navigation:") && (
           <InlineError className={shell.notice}>{error.text}</InlineError>
         )}
-        {!snapshot ? (
-          loading ? (
-            <LoadingText className={shell.empty} delay={false}>
-              {t("Loading...")}
-            </LoadingText>
-          ) : (
-            <FailureState
-              context="panel"
-              className={shell.empty}
-              description={t("Connect to the local Host to open this room.")}
-            />
-          )
-        ) : !snapshot.profile.setupComplete ? (
-          <section className={shell.setupPrompt}>
-            <Heading size="section">{t("Set up your personal assistant")}</Heading>
-            <p>{t("Choose a name, working permissions and a daily budget before starting.")}</p>
-            <Button variant="primary" onClick={() => setSetup(true)}>
-              {t("Set up")}
-            </Button>
+        {!snapshot || !snapshot.profile.setupComplete ? (
+          <section className={shell.stage}>
+            {privacyBlocksBody ? (
+              <FailureState
+                illustration="locked"
+                title={t("Room privacy protection could not be confirmed.")}
+                description={
+                  hostBusy
+                    ? t("The Host is busy. Try again in a moment.")
+                    : t("Your room stays closed until its privacy protection is confirmed.")
+                }
+                error={roomPrivacy.error}
+                onRetry={retryPrivacy}
+                secondaryAction={
+                  canRebuildPrivacy
+                    ? {
+                        label: t("Rebuild Room privacy protection"),
+                        onClick: () => {
+                          void rebuildClosedRoomPrivacyProjection().catch(() => {});
+                        },
+                      }
+                    : undefined
+                }
+              />
+            ) : !snapshot ? (
+              loading ? (
+                <LoadingText delay={false}>{t("Loading…")}</LoadingText>
+              ) : (
+                <FailureState
+                  context="panel"
+                  title={t("Could not open the assistant room")}
+                  description={t("Connect to the local Host to open this room.")}
+                  error={readError || undefined}
+                  onRetry={() => {
+                    void refresh();
+                    if (projectReadError) void readProjects();
+                  }}
+                />
+              )
+            ) : (
+              <EmptyState
+                illustration="chat-empty"
+                title={t("Set up your personal assistant")}
+                description={t("A few quick choices and it is ready to take work.")}
+                showDescription
+                action={{ label: t("Set up"), onClick: () => setSetup(true) }}
+              />
+            )}
           </section>
         ) : (
           <>
@@ -382,12 +424,12 @@ export function AssistantView(props: AssistantViewProps) {
                 className={shell.notice}
                 tone="warning"
                 action={{
-                  label: t(snapshot.profile.autonomy === "chief" ? "Retry review" : "Settings"),
+                  label: snapshot.profile.autonomy === "chief" ? t("Retry review") : t("Settings"),
                   disabled: Boolean(pending),
                   pending: pending?.key === "chief.retry",
                   onClick: () =>
                     snapshot.profile.autonomy === "chief"
-                      ? void mutate("chief.retry", t("Updating..."), {
+                      ? void mutate("chief.retry", t("Updating…"), {
                           op: "chief.retry",
                         })
                       : setSettings(true),
@@ -413,7 +455,7 @@ export function AssistantView(props: AssistantViewProps) {
               id="assistant-content"
               className={styles.content}
               data-view={view}
-              aria-label={t(view)}
+              aria-label={viewLabel(view)}
             >
               {(view === "Today" || view === "Jobs") && snapshot.workHoursActive === false && (
                 <Text

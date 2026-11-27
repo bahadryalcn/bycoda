@@ -8,7 +8,9 @@ import { AudienceScreen } from "./AudienceScreen";
 import {
   asClient,
   bodyText,
+  openErrorDetails,
   buttonByText,
+  isBlocked,
   clickButton,
   clientMock,
   fieldByLabel,
@@ -158,7 +160,7 @@ describe("AudienceScreen collection header", () => {
   it("protects the Commenters list: no rename or delete, and the page says why", async () => {
     render();
     await loaded();
-    open("CommentersAutomatic");
+    open("Commenters");
     await loaded();
     expect(bodyText()).toContain("Filled by the Commenters rule. It cannot be renamed or deleted.");
     expect(buttonByText("Rename")).toBeUndefined();
@@ -250,8 +252,12 @@ describe("AudienceScreen editing a segment", () => {
     act(() => {
       for (const box of document.querySelectorAll<HTMLInputElement>("input[type=checkbox]"))
         if (box.checked) box.click();
+      for (const chip of document.querySelectorAll<HTMLButtonElement>(
+        'button[aria-pressed="true"]',
+      ))
+        chip.click();
     });
-    expect(buttonByText("Save segment")?.disabled).toBe(true);
+    expect(isBlocked(buttonByText("Save segment"))).toBe(true);
     expect(bodyText()).toContain("Add at least one condition.");
     expect(mock.lists.save).not.toHaveBeenCalled();
   });
@@ -358,7 +364,7 @@ describe("AudienceScreen deleting a list", () => {
     await loaded();
     clickButton("Delete");
     await loaded();
-    expect(bodyText()).toContain("Rules are unavailable.");
+    expect(openErrorDetails()).toContain("Rules are unavailable.");
     expect(confirm).not.toHaveBeenCalled();
     expect(mock.lists.delete).not.toHaveBeenCalled();
     expect(buttonByText("Buyers")).toBeDefined();
@@ -374,7 +380,7 @@ describe("AudienceScreen deleting a list", () => {
     await loaded();
     clickButton("Delete");
     await loaded();
-    expect(bodyText()).toContain('The capture rule "X" adds people to this list.');
+    expect(openErrorDetails()).toContain('The capture rule "X" adds people to this list.');
     expect(buttonByText("Buyers")).toBeDefined();
     expect(bodyText()).not.toContain("Deleted Buyers.");
   });

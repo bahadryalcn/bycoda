@@ -3,7 +3,7 @@
 .window {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--ui-space-2, 0.5rem);
 }
 .window[data-side="left"] {
   flex-direction: row-reverse;
@@ -19,7 +19,7 @@
   max-block-size: 640px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 8px;
+  padding: var(--ui-space-2, 0.5rem);
   animation: voice-overlay-side-in var(--motion-duration-standard) var(--motion-ease-standard);
 }
 @keyframes voice-overlay-side-in {
@@ -58,8 +58,8 @@
   display: flex;
   min-inline-size: 0;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px 6px 6px;
+  gap: var(--ui-space-1, 0.25rem);
+  padding: var(--ui-space-2, 0.5rem);
 }
 .panel[data-compact] .header {
   padding-block: 0;
@@ -68,7 +68,6 @@
   flex-shrink: 0;
   /* The wave visual is wider than the square icon button. */
   inline-size: auto;
-  padding-inline: 4px;
   aspect-ratio: auto;
   touch-action: none;
   cursor: grab;
@@ -82,11 +81,11 @@
   max-block-size: 420px;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 2px 14px 12px;
+  padding: 0 var(--ui-space-3, 0.75rem) var(--ui-space-3, 0.75rem);
   user-select: text;
 }
 .feedback {
-  margin-block-start: 12px;
+  margin-block-start: var(--ui-space-3, 0.75rem);
 }
 .feedback > p {
   overflow-wrap: anywhere;
@@ -94,15 +93,14 @@
 .caption {
   margin: 0;
 }
+/* A centred, phone-style dock, like the expanded companion in the app. */
 .actions {
   display: flex;
   align-items: center;
+  justify-content: center;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 10px 14px;
-}
-.actions > :first-child {
-  margin-inline-end: auto;
+  gap: var(--ui-space-2, 0.5rem);
+  padding: var(--ui-space-3, 0.75rem);
 }
 .actions > * {
   flex-shrink: 0;

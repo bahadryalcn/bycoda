@@ -1,8 +1,7 @@
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { describeRemoteError, type RemoteErrorView } from "../../connections/public/remoteFailure";
 import { useRef, useState } from "react";
 import type { AssistantNote } from "../../../shared/model/host-contracts/assistant";
 import { formatNumber, t } from "../../../shared/i18n";
-import { Save, X } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { Tabs, TabList, Tab, TabPanel } from "../../../shared/ui/Tabs";
@@ -46,7 +45,7 @@ export function NoteEditor({
   const [draft, setDraft] = useState(() => controller.value);
   const { title, body } = draft;
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
+  const [problem, setProblem] = useState<RemoteErrorView | null>(null);
   const [previewEditing, setPreviewEditing] = useState(false);
   const editorViewRef = useRef<NoteEditorViewRef["current"]>(null);
   const previewViewRef = useRef<NoteEditorViewRef["current"]>(null);
@@ -63,7 +62,7 @@ export function NoteEditor({
   async function save() {
     if (pending || !title.trim() || tooLong) return;
     setPending(true);
-    setError("");
+    setProblem(null);
     try {
       const save = controller.save(request);
       setDraft(controller.value);
@@ -72,7 +71,7 @@ export function NoteEditor({
       await onSaved();
       onClose();
     } catch (cause) {
-      setError(t(presentRemoteError(cause, { explicit: true })));
+      setProblem(describeRemoteError(cause));
     } finally {
       setPending(false);
     }
@@ -81,7 +80,7 @@ export function NoteEditor({
     <section
       ref={detailRef}
       className={`note-detail ${styles.documentEditor}`}
-      aria-label={t(original ? "Edit note" : "New note")}
+      aria-label={original ? t("Edit note") : t("New note")}
     >
       <div className="note-detail-content">
         <header className="note-detail-header">
@@ -112,26 +111,27 @@ export function NoteEditor({
               }}
             />
             <div className="note-detail-actions">
-              <Button
-                startIcon={<X className="icon-sm" />}
-                variant="ghost"
-                disabled={pending}
-                onClick={onClose}
-              >
+              <Button variant="ghost" disabled={pending} onClick={onClose}>
                 {t("Close")}
               </Button>
               <Button
-                startIcon={<Save className="icon-sm" />}
                 variant="primary"
                 loading={pending}
                 disabled={!title.trim() || tooLong}
+                disabledReason={
+                  tooLong
+                    ? t("Notes can contain up to {p0} characters.", {
+                        p0: formatNumber(MAX_BODY_LENGTH),
+                      })
+                    : undefined
+                }
                 onClick={() => void save()}
               >
                 {t("Save")}
               </Button>
             </div>
           </div>
-          {error && <InlineError>{error}</InlineError>}
+          {problem && <InlineError details={problem.details}>{problem.message}</InlineError>}
           {tooLong && (
             <InlineError>
               {t("Notes can contain up to {p0} characters.", { p0: formatNumber(MAX_BODY_LENGTH) })}

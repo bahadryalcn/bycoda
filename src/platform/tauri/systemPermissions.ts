@@ -1,5 +1,4 @@
-import { invoke, isTauri } from "@tauri-apps/api/core";
-import { listenWindow } from "./listenWindow";
+import { invoke } from "@tauri-apps/api/core";
 
 export type PermissionId =
   | "microphone"
@@ -20,6 +19,7 @@ export type PermissionEntry = {
   state: PermissionState;
   canRequest: boolean;
   canOpenSettings: boolean;
+  /** `restart-required`: switched on in the OS, applied after the app restarts. */
   detail?: string;
 };
 export type SystemPermissionsReport = {
@@ -37,21 +37,19 @@ export async function systemPermissionsStatus(): Promise<SystemPermissionsReport
 export async function requestSystemPermission(id: PermissionId): Promise<PermissionEntry> {
   return invoke<PermissionEntry>("system_permission_request", { id });
 }
-export async function showPermissionHelper(id: PermissionId): Promise<void> {
-  return invoke<void>("system_permission_helper_show", { id });
-}
-export async function closePermissionHelper(): Promise<void> {
-  return invoke<void>("system_permission_helper_close");
+/** Same save-and-confirm run as a manual quit, then relaunch. macOS applies some grants only then. */
+export async function restartToApplyPermission(): Promise<void> {
+  return invoke<void>("request_app_restart");
 }
 export async function revealPermissionApp(): Promise<void> {
-  return invoke<void>("system_permission_helper_reveal_app");
+  return invoke<void>("reveal_permission_app");
 }
-export function listenSystemPermissionsChanged(
-  onChange: (report: SystemPermissionsReport) => void,
-) {
-  return isTauri()
-    ? listenWindow<SystemPermissionsReport>("system-permissions-changed", (event) =>
-        onChange(event.payload),
-      )
-    : () => {};
+export function dragPermissionApp(): Promise<void> {
+  return invoke<void>("drag_permission_app");
+}
+export function showPermissionHelper(id: PermissionId): Promise<number | null> {
+  return invoke<number | null>("show_permission_helper", { id });
+}
+export function closePermissionHelper(generation: number): Promise<void> {
+  return invoke<void>("close_permission_helper", { generation });
 }

@@ -1,10 +1,11 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { act, createElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ProvidersPage, resetRetainedProvidersPage } from "./ProviderSettings";
+import { SettingsSaveBar } from "../../../shared/ui/settings";
 import * as harnessUpdates from "../../providers/model/harnessUpdateActions";
 import {
   DEFAULT_PROVIDER_ACCOUNT_ID,
@@ -50,13 +51,34 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function render() {
+function DraftEditor({ wait }: { wait?: Promise<void> }) {
+  const [dirty, setDirty] = useState(true);
+  const [pending, setPending] = useState(false);
+  return createElement(SettingsSaveBar, {
+    id: "test-editor",
+    title: "Defaults",
+    changes: dirty ? [{ id: "effort", label: "Effort" }] : [],
+    pending,
+    saved: false,
+    onSave: async () => {
+      setPending(true);
+      await wait;
+      setDirty(false);
+      setPending(false);
+      return true;
+    },
+    onDiscard: () => setDirty(false),
+  });
+}
+
+async function render(withPendingChange = false, wait?: Promise<void>) {
   await act(async () =>
     root.render(
       createElement(
         QueryClientProvider,
         { client: queryClient },
         createElement(ProvidersPage, { cwd: "/repo" }),
+        withPendingChange ? createElement(DraftEditor, { wait }) : null,
       ),
     ),
   );
@@ -76,15 +98,19 @@ describe("providers scope inheritance", () => {
       command === "generic_acp_list" ? [] : undefined,
     );
     await render();
+    const providerButton = (name: string) =>
+      Array.from(
+        container.querySelectorAll<HTMLButtonElement>(".provider-cli-selector button"),
+      ).find((button) => button.textContent?.trim().startsWith(name))!;
+    // ACP is not the selected provider yet, so its management is not mounted.
+    expect(container.querySelector("#setting-acp-agents")).toBeNull();
+    await act(async () => providerButton("ACP Agent").click());
     expect(container.querySelectorAll("#setting-acp-agents")).toHaveLength(1);
     const management = container.querySelector<HTMLElement>("#setting-acp-agents")!;
     const panel = management.closest<HTMLElement>(".provider-cli-panel")!;
     expect(panel).not.toBeNull();
     expect(management.closest(".provider-cli-workspace")).not.toBeNull();
-    const providerButton = (name: string) =>
-      Array.from(
-        container.querySelectorAll<HTMLButtonElement>(".provider-cli-selector button"),
-      ).find((button) => button.textContent?.trim().startsWith(name))!;
+    expect(panel.hidden).toBe(false);
     await act(async () => providerButton("Claude Code").click());
     expect(panel.hidden).toBe(true);
     await act(async () => providerButton("ACP Agent").click());
@@ -95,22 +121,110 @@ describe("providers scope inheritance", () => {
   });
 });
 
-it("lists the four Models tabs and keeps provider setup rows mounted across tabs", async () => {
+it("lists the three Models tabs and mounts a provider's setup rows only once it is opened", async () => {
   await render();
   const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
   expect(tabs.map((node) => node.textContent?.trim())).toEqual([
-    "Background work",
-    "Chats",
-    "Subagents",
     "Providers",
+    "Background work",
+    "Defaults",
   ]);
-  const row = container.querySelector('[data-setting-id="cli-path-codex"]')!;
-  expect(row.closest<HTMLElement>("[hidden]")).not.toBeNull();
+  // Only the selected provider's detail is mounted; the others wait until they are opened.
+  expect(container.querySelector('[data-setting-id="cli-path-claude"]')).not.toBeNull();
+  expect(container.querySelector('[data-setting-id="cli-path-codex"]')).toBeNull();
+  expect(container.querySelectorAll('[data-setting-id^="cli-path-"]')).toHaveLength(1);
   await act(async () => tabs.find((node) => node.textContent === "Providers")!.click());
+  await act(async () =>
+    [...container.querySelectorAll<HTMLButtonElement>(".provider-cli-selector button")]
+      .find((button) => button.textContent?.trim().startsWith("Codex"))!
+      .click(),
+  );
+  const row = container.querySelector('[data-setting-id="cli-path-codex"]')!;
+  expect(row).not.toBeNull();
   expect(row.closest("[hidden]")).toBeNull();
-  await act(async () => tabs.find((node) => node.textContent === "Chats")!.click());
+  // Leaving the provider or the tab keeps the opened detail (and its drafts) mounted but hidden.
+  await act(async () =>
+    [...container.querySelectorAll<HTMLButtonElement>(".provider-cli-selector button")]
+      .find((button) => button.textContent?.trim().startsWith("Claude Code"))!
+      .click(),
+  );
   expect(container.querySelector('[data-setting-id="cli-path-codex"]')).toBe(row);
   expect(row.closest<HTMLElement>("[hidden]")).not.toBeNull();
+  await act(async () => tabs.find((node) => node.textContent === "Defaults")!.click());
+  expect(container.querySelector('[data-setting-id="cli-path-codex"]')).toBe(row);
+  expect(row.closest<HTMLElement>("[hidden]")).not.toBeNull();
+  expect(container.querySelectorAll('[data-setting-id^="cli-path-"]')).toHaveLength(2);
+});
+
+it("asks before switching Models tabs while an editor has pending changes", async () => {
+  await render(true);
+  const target = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+    (node) => node.textContent === "Defaults",
+  )!;
+  await act(async () => target.click());
+  expect(target.getAttribute("aria-selected")).toBe("false");
+  expect(document.body.textContent).toContain("Save changes before leaving?");
+  await act(async () =>
+    [...document.querySelectorAll<HTMLButtonElement>("button")]
+      .find((node) => node.textContent === "Keep editing")!
+      .click(),
+  );
+  expect(target.getAttribute("aria-selected")).toBe("false");
+});
+
+it("waits for the save before leaving a Models tab", async () => {
+  let finish!: () => void;
+  const wait = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  await render(true, wait);
+  const target = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+    (node) => node.textContent === "Defaults",
+  )!;
+  await act(async () => target.click());
+  await act(async () =>
+    [...document.querySelectorAll<HTMLButtonElement>("button")]
+      .find((node) => node.textContent === "Save and leave")!
+      .click(),
+  );
+  expect(target.getAttribute("aria-selected")).toBe("false");
+  await act(async () => finish());
+  await vi.waitFor(() => expect(target.getAttribute("aria-selected")).toBe("true"));
+  expect(document.body.textContent).not.toContain("Some changes were not saved.");
+});
+
+it("does not offer discard while a save is committing", async () => {
+  let finish!: () => void;
+  const wait = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  await render(true, wait);
+  await act(async () =>
+    [
+      ...container.querySelectorAll<HTMLButtonElement>(
+        '[data-settings-save-bar="test-editor"] button',
+      ),
+    ]
+      .find((node) => node.textContent === "Save")!
+      .click(),
+  );
+  await act(async () =>
+    [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+      .find((node) => node.textContent === "Defaults")!
+      .click(),
+  );
+  expect(document.body.textContent).not.toContain("Discard and leave");
+  expect(
+    [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (node) => node.textContent === "Save and leave",
+    )!.disabled,
+  ).toBe(true);
+  await act(async () =>
+    [...document.querySelectorAll<HTMLButtonElement>("button")]
+      .find((node) => node.textContent === "Keep editing")!
+      .click(),
+  );
+  await act(async () => finish());
 });
 
 it("validates new account names against the selected provider before sign-in", async () => {
@@ -119,10 +233,11 @@ it("validates new account names against the selected provider before sign-in", a
     (node) => node.textContent?.trim() === "Add account",
   )!;
   await act(async () => add.click());
-  const editor = container.querySelector<HTMLFormElement>('[data-settings-part="account-editor"]')!;
+  const dialog = document.querySelector('[role="dialog"][data-modal-placement]')!;
+  const editor = dialog.querySelector("form")!;
   const input = editor.querySelector("input")!;
   expect(editor.textContent).toContain("Account name");
-  expect(editor.textContent).toContain("Enter an account name");
+  expect(input.getAttribute("aria-invalid")).not.toBe("true");
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
       input,
@@ -131,11 +246,11 @@ it("validates new account names against the selected provider before sign-in", a
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   expect(editor.textContent).toContain("An account with this name already exists");
-  const submit = container.querySelector<HTMLButtonElement>(
+  const submit = dialog.querySelector<HTMLButtonElement>(
     `button[form="${editor.id}"][type="submit"]`,
   )!;
   expect(submit.getAttribute("aria-disabled")).toBe("true");
-  const cancel = [...editor.querySelectorAll<HTMLButtonElement>("button")].find(
+  const cancel = [...dialog.querySelectorAll<HTMLButtonElement>("button")].find(
     (node) => node.textContent === "Cancel",
   )!;
   await act(async () => cancel.click());

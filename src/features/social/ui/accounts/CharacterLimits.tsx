@@ -1,11 +1,10 @@
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
-import { Group, Row } from "../../../../shared/ui/settings";
 import { Select } from "../../../../shared/ui/Select";
-
+import { Button } from "../../../../shared/ui/Button";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { TextField } from "../../../../shared/ui/TextField";
-import { DisabledReason } from "../common/DisabledReason";
 import { PlatformIcon } from "../common/PlatformIcon";
 import {
   SOCIAL_PLATFORMS,
@@ -52,12 +51,9 @@ export function CharacterLimits({ client, policies, onChanged }: CharacterLimits
   // Unsaved edits live here per scope, so switching scope or a saved change elsewhere keeps them.
   const [unsaved, setUnsaved] = useState<Partial<Record<PolicyScope, Drafts>>>({});
   return (
-    <Group
-      title={t("Character limits")}
-      description={t("Leave a field blank to inherit its value.")}
-      action={
+    <div className="social-stack">
+      <div className="social-card-head">
         <Select
-          hideLabel
           label={t("Apply to")}
           value={scope}
           options={[
@@ -70,21 +66,19 @@ export function CharacterLimits({ client, policies, onChanged }: CharacterLimits
           ]}
           onValueChange={(value) => setScope(value as PolicyScope)}
         />
-      }
-    >
-      <Row label={t("Maximum length")} stacked>
-        <LimitFields
-          key={`${scope}:${JSON.stringify(readScope(policies, scope))}`}
-          client={client}
-          policies={policies}
-          scope={scope}
-          unsaved={unsaved[scope]}
-          onUnsavedChange={(drafts) => setUnsaved((current) => ({ ...current, [scope]: drafts }))}
-          onSaved={() => setUnsaved(({ [scope]: _saved, ...rest }) => rest)}
-          onChanged={onChanged}
-        />
-      </Row>
-    </Group>
+        <InfoPopover>{t("Leave a field blank to inherit its value.")}</InfoPopover>
+      </div>
+      <LimitFields
+        key={`${scope}:${JSON.stringify(readScope(policies, scope))}`}
+        client={client}
+        policies={policies}
+        scope={scope}
+        unsaved={unsaved[scope]}
+        onUnsavedChange={(drafts) => setUnsaved((current) => ({ ...current, [scope]: drafts }))}
+        onSaved={() => setUnsaved(({ [scope]: _saved, ...rest }) => rest)}
+        onChanged={onChanged}
+      />
+    </div>
   );
 }
 
@@ -106,8 +100,10 @@ function LimitFields({
   const effective = effectiveForScope(policies, scope);
   const fields = limitFields();
   const [drafts, setDrafts] = useState<Drafts>(() => unsaved ?? draftsOf(stored));
-  const [localError, setLocalError] = useState("");
-  const { error, is, write } = useAccountWrite(t("The limits could not be saved. Try again."));
+  const [localMessage, setLocalMessage] = useState("");
+  const { failureTitle, details, is, write } = useAccountWrite(
+    t("The limits could not be saved. Try again."),
+  );
 
   const edit = (key: LimitKey, value: string) => {
     const next = { ...drafts, [key]: value };
@@ -121,13 +117,13 @@ function LimitFields({
     for (const field of fields) {
       const result = parseCharacterLimit(drafts[field.key]);
       if (!result.ok) {
-        setLocalError(result.message);
+        setLocalMessage(result.message);
         return;
       }
       if (result.value === undefined) delete next[field.key];
       else next[field.key] = result.value;
     }
-    setLocalError("");
+    setLocalMessage("");
     void write("policy.limits", () => savePolicyScope(client, policies, scope, next))
       .then((result) => {
         if (result === undefined) return;
@@ -161,10 +157,16 @@ function LimitFields({
           }}
         />
       ))}
-      <DisabledReason type="submit" variant="secondary" size="sm" loading={is("policy.limits")}>
+      <Button type="submit" variant="secondary" size="sm" loading={is("policy.limits")}>
         {t("Save limits")}
-      </DisabledReason>
-      {localError || error ? <InlineError>{localError || error}</InlineError> : null}
+      </Button>
+      {localMessage ? (
+        <InlineError>{localMessage}</InlineError>
+      ) : failureTitle ? (
+        <InlineError details={details}>
+          {t("The limits could not be saved. Try again.")}
+        </InlineError>
+      ) : null}
     </form>
   );
 }

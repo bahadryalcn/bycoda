@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { boundedSet } from "../../../shared/lib/store";
+import { boundedGet, boundedSet } from "../../../shared/lib/store";
 import { recordInboxSelfActivity } from "./inboxSelfActivity";
 
 export type LinearTeam = {
@@ -68,19 +68,32 @@ const TEAM_IDS_KEY = "bycoda.linearHiddenTeams";
 export const LINEAR_CHANGE_EVENT = "bycoda:linear-change";
 
 const detailsById = new Map<string, LinearIssueDetails>();
+const detailsInflight = new Map<string, Promise<LinearIssueDetails>>();
 const threadById = new Map<string, LinearIssueThread>();
 const threadInflight = new Map<string, Promise<LinearIssueThread>>();
+
+/** Drops cached issue text and supersedes in-flight reads so a token or workspace change never shows the previous account's data. */
+export function clearLinearCache() {
+  detailsById.clear();
+  detailsInflight.clear();
+  threadById.clear();
+  threadInflight.clear();
+}
 
 export function linearConnected(): Promise<LinearStatus> {
   return invoke<LinearStatus>("linear_status");
 }
 
-export function saveLinearToken(token: string): Promise<LinearStatus> {
-  return invoke<LinearStatus>("linear_set_token", { token: token.trim() });
+export async function saveLinearToken(token: string): Promise<LinearStatus> {
+  const status = await invoke<LinearStatus>("linear_set_token", { token: token.trim() });
+  clearLinearCache();
+  return status;
 }
 
-export function disconnectLinear(): Promise<LinearStatus> {
-  return invoke<LinearStatus>("linear_set_token", { token: "" });
+export async function disconnectLinear(): Promise<LinearStatus> {
+  const status = await invoke<LinearStatus>("linear_set_token", { token: "" });
+  clearLinearCache();
+  return status;
 }
 
 export function listLinearTeams(): Promise<LinearTeam[]> {
@@ -113,30 +126,35 @@ export function listLinearIssues(query: {
   });
 }
 
-/** Detail payloads are bounded LRU entries: get refreshes recency, set evicts the oldest past the cap. */
+/** Detail and thread payloads are bounded LRU entries: get refreshes recency, set evicts the oldest past the cap. */
 const DETAILS_CACHE_LIMIT = 128;
-function boundedGet<T>(cache: Map<string, T>, key: string): T | null {
-  if (!cache.has(key)) return null;
-  const value = cache.get(key)!;
-  cache.delete(key);
-  cache.set(key, value);
-  return value;
-}
 
 export function peekLinearIssueDetails(id: string): LinearIssueDetails | null {
   return boundedGet(detailsById, id);
 }
 
 export async function linearIssueDetails(id: string): Promise<LinearIssueDetails> {
-  const details = await invoke<LinearIssueDetails>("linear_issue_details", {
+  const cached = detailsInflight.get(id);
+  if (cached) return cached;
+  const pending = invoke<LinearIssueDetails>("linear_issue_details", {
     id,
-  });
-  boundedSet(detailsById, id, details, DETAILS_CACHE_LIMIT);
-  return details;
+  })
+    .then((details) => {
+      // A cache clear (token change) supersedes this request: skip the write
+      // so a stale completion cannot repopulate the cache.
+      if (detailsInflight.get(id) === pending)
+        boundedSet(detailsById, id, details, DETAILS_CACHE_LIMIT);
+      return details;
+    })
+    .finally(() => {
+      if (detailsInflight.get(id) === pending) detailsInflight.delete(id);
+    });
+  detailsInflight.set(id, pending);
+  return pending;
 }
 
 export function peekLinearIssueThread(id: string): LinearIssueThread | null {
-  return threadById.get(id) ?? null;
+  return boundedGet(threadById, id);
 }
 
 export async function linearIssueThread(
@@ -151,7 +169,10 @@ export async function linearIssueThread(
   if (pending) return pending;
   const promise = invoke<LinearIssueThread>("linear_issue_thread", { id })
     .then((thread) => {
-      threadById.set(id, thread);
+      // A forced refresh, comment or cache clear supersedes this request: skip
+      // the write so a stale completion cannot repopulate the cache.
+      if (threadInflight.get(id) === promise)
+        boundedSet(threadById, id, thread, DETAILS_CACHE_LIMIT);
       return thread;
     })
     .finally(() => {
@@ -189,11 +210,6 @@ export function readHiddenLinearTeamIds(): string[] | null {
   } catch {
     return null;
   }
-}
-
-/** Display fallback only; fetch paths use `requireHiddenLinearTeamIds`. */
-export function loadHiddenLinearTeamIds(): string[] {
-  return readHiddenLinearTeamIds() ?? [];
 }
 
 /** Fails closed so an unreadable saved scope never widens what Linear fetches. */

@@ -25,6 +25,27 @@ import {
 beforeEach(() => localStorage.clear());
 
 describe("project groups", () => {
+  it("keeps a workspace slot when projects appear under remote paths", () => {
+    const first = "remote://windows/G:/first";
+    const second = "remote://windows/G:/second";
+    const ids = new Map([
+      [first, "loc:windows:g:/first"],
+      [second, "loc:windows:g:/second"],
+    ]);
+    expect(
+      orderProjectGroupMembers(
+        [first, second],
+        ["wallet"],
+        ["loc:windows:g:/first", "group:wallet", "loc:windows:g:/second"],
+        (path) => ids.get(path),
+      ),
+    ).toEqual([
+      { kind: "project", id: first },
+      { kind: "group", id: "wallet" },
+      { kind: "project", id: second },
+    ]);
+  });
+
   it("uses only an ordinary group as a workspace parent and ignores stale or cyclic assignments", () => {
     const workspace = {
       id: "wallet",
@@ -240,7 +261,9 @@ describe("linked workspace groups", () => {
     setProjectGroupAssignment("/work/web", "acme");
     linkProjectGroup("acme", "/w.code-workspace", ["/work/web"]);
     unlinkProjectGroup("acme");
-    expect(loadProjectGroups()).toEqual([{ id: "acme", name: "Acme", collapsed: false }]);
+    expect(loadProjectGroups()).toEqual([
+      { id: "acme", name: "Acme", collapsed: false, syncedWorkspace: null },
+    ]);
     expect(loadProjectGroupAssignments()).toEqual({
       [pathKey("/work/web")]: "acme",
     });

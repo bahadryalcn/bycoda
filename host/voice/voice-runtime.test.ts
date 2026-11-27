@@ -77,6 +77,21 @@ it("finds a ready interpreter without waiting for a stalled earlier candidate", 
   expect(spawn.mock.calls.every(([, , options]) => options.windowsHide)).toBe(true);
 });
 
+it("prefers the higher-priority ready interpreter when a later one answers first", async () => {
+  vi.stubEnv("BYCODA_VOICE_PYTHON", "owned-python");
+  const owned = child();
+  spawn.mockImplementation((program: string) =>
+    program === "owned-python"
+      ? owned
+      : child({ python: "system-python", missing: [], ready: true }),
+  );
+  const inspecting = inspectVoiceRuntime({ natural: false });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  owned.stdout.write(JSON.stringify({ python: "owned-python", missing: [], ready: true }));
+  owned.emit("close", 0);
+  expect((await inspecting).python).toBe("owned-python");
+});
+
 it("bounds the entire discovery scan and kills interpreters that do not finish", async () => {
   vi.useFakeTimers();
   const children: ReturnType<typeof child>[] = [];

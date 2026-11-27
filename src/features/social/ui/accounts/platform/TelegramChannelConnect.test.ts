@@ -45,7 +45,12 @@ it("has no token field and connects only the reviewed channel by its opaque revi
   const client = { tokenInspect, tokenConnect } as unknown as SocialClient;
   act(() =>
     root.render(
-      createElement(TelegramChannelConnect, { client, account, disabled: false, onRefresh }),
+      createElement(TelegramChannelConnect, {
+        client,
+        account,
+        disabled: false,
+        onRefresh,
+      }),
     ),
   );
   expect(element.querySelector('input[type="password"]')).toBeNull();
@@ -139,7 +144,10 @@ it("does not mark the channel connected when the Host rejects a stale or mismatc
   const tokenConnect = vi.fn(async () => {
     throw new Error("Channel ownership or posting rights changed");
   });
-  const onRefresh = await inspected({ tokenInspect: vi.fn(async () => review), tokenConnect });
+  const onRefresh = await inspected({
+    tokenInspect: vi.fn(async () => review),
+    tokenConnect,
+  });
   await act(async () => button("Connect reviewed channel")?.click());
   expect(onRefresh).not.toHaveBeenCalled();
   expect(element.textContent).toContain("The channel could not be verified.");
@@ -195,7 +203,10 @@ it("expires an idle review and never connects with it afterwards", async () => {
   try {
     vi.setSystemTime(new Date("2026-11-07T12:00:00Z"));
     const tokenConnect = vi.fn(async () => ({}));
-    const tokenInspect = vi.fn(async () => ({ ...review, expiresAt: Date.now() + 1000 }));
+    const tokenInspect = vi.fn(async () => ({
+      ...review,
+      expiresAt: Date.now() + 1000,
+    }));
     await inspected({ tokenInspect, tokenConnect });
     expect(button("Connect reviewed channel")).toBeTruthy();
     await act(async () => vi.advanceTimersByTime(1001));
@@ -214,7 +225,10 @@ it("refuses a connection whose deadline passed even before the expiry timer ran"
   try {
     vi.setSystemTime(new Date("2026-11-07T12:00:00Z"));
     const tokenConnect = vi.fn(async () => ({}));
-    const tokenInspect = vi.fn(async () => ({ ...review, expiresAt: Date.now() + 1000 }));
+    const tokenInspect = vi.fn(async () => ({
+      ...review,
+      expiresAt: Date.now() + 1000,
+    }));
     const onRefresh = await inspected({ tokenInspect, tokenConnect });
     // The clock moves past the deadline without the timer callback running yet.
     vi.setSystemTime(new Date("2026-11-07T12:00:02Z"));
@@ -242,7 +256,10 @@ it("starts from the connected channel and says Reconnect for an account that is 
 });
 
 it("keeps private messages and monitoring apart from channel publishing in its wording", async () => {
-  await inspected({ tokenInspect: vi.fn(async () => review), tokenConnect: vi.fn() });
+  await inspected({
+    tokenInspect: vi.fn(async () => review),
+    tokenConnect: vi.fn(),
+  });
   expect(element.textContent).toContain(
     "This connection publishes to the reviewed channel. Private messages and channel monitoring stay separate.",
   );
@@ -257,7 +274,10 @@ it("locks the field and the inspection while the Host is offline", () => {
 });
 
 it("drops the reviewed channel when the owner switches to another account", async () => {
-  const client = { tokenInspect: vi.fn(async () => review), tokenConnect: vi.fn(async () => ({})) };
+  const client = {
+    tokenInspect: vi.fn(async () => review),
+    tokenConnect: vi.fn(async () => ({})),
+  };
   mount(client);
   typeTarget("@launch");
   await act(async () => button("Inspect channel and bot")?.click());

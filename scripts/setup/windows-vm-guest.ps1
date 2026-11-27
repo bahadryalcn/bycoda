@@ -31,14 +31,14 @@ function Get-GuestToolManifest {
     # Microsoft fixed bootstrap URL embeds its SHA256; Microsoft Authenticode is
     # additionally mandatory for VS/WebView2. No moving aka.ms installer is run.
     return @(
-        [pscustomobject]@{ id='node'; version='24.22.1'; filename='node-v24.22.1-x64.msi'; sha256='3bda4baf1ee709b33cf920dd633106ddb23951e322bff9c03ec9f64ab8981b01'; url='https://nodejs.org/dist/v24.22.1/node-v24.22.1-x64.msi'; source='https://nodejs.org/dist/v24.22.1/SHASUMS256.txt'; maxBytes=104857600; optional=$false; microsoftSignature=$false }
+        [pscustomobject]@{ id='node'; version='26.13.1'; filename='node-v26.13.1-x64.msi'; sha256='0398ced8446e119478c724d1aa37c5afd6aa1a76fceab12787eb9714c5ed8b45'; url='https://nodejs.org/dist/v26.13.1/node-v26.13.1-x64.msi'; source='https://nodejs.org/dist/v26.13.1/SHASUMS256.txt'; maxBytes=104857600; optional=$false; microsoftSignature=$false }
         [pscustomobject]@{ id='powershell'; version='7.6.9'; filename='PowerShell-7.6.9-win-x64.msi'; sha256='50d33c7494aaf82b987cfd4de3f232d04f91fdd4c0deeca8a669cced3e7cf8f9'; url='https://github.com/PowerShell/PowerShell/releases/download/v7.6.9/PowerShell-7.6.9-win-x64.msi'; source='https://api.github.com/repos/PowerShell/PowerShell/releases/tags/v7.6.9'; maxBytes=209715200; optional=$false; microsoftSignature=$true }
         [pscustomobject]@{ id='git'; version='2.56.0.4'; filename='Git-2.56.0.4-64-bit.exe'; sha256='4961a4a8cc778d8b6e00a5819e5fe4d078b754555aff7aedc2d77a5d74c2de80'; url='https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.4/Git-2.56.0.4-64-bit.exe'; source='https://api.github.com/repos/git-for-windows/git/releases/tags/v2.56.0.windows.4'; maxBytes=125829120; optional=$false; microsoftSignature=$false }
         [pscustomobject]@{ id='msvc'; version='17.14.43'; buildVersion='17.14.37824.6'; filename='vs_BuildTools.exe'; sha256='dbea89df9de387e415075d40d713ecc1a73091d03e81080c3a957101f390f499'; url='https://download.visualstudio.microsoft.com/download/pr/4bc08c27-bd31-470c-9a30-3b62707fbf0f/dbea89df9de387e415075d40d713ecc1a73091d03e81080c3a957101f390f499/vs_BuildTools.exe'; source='https://learn.microsoft.com/en-us/visualstudio/releases/2022/release-history'; maxBytes=16777216; optional=$false; microsoftSignature=$true }
         [pscustomobject]@{ id='rust'; version='1.99.1'; bootstrapVersion='1.29.2'; filename='rustup-init.exe'; sha256='00f139da614dced87d3c3d4121c43eebdac3c1bf8a5ee86b9d80dfd71c8d70fd'; url='https://static.rust-lang.org/rustup/archive/1.29.2/x86_64-pc-windows-msvc/rustup-init.exe'; source='https://static.rust-lang.org/rustup/archive/1.29.2/x86_64-pc-windows-msvc/rustup-init.exe.sha256'; maxBytes=33554432; optional=$false; microsoftSignature=$false }
         [pscustomobject]@{ id='webview2'; version='156.0.4314.50'; filename='MicrosoftEdgeWebView2RuntimeInstallerX64.exe'; sha256='1c401b327fbc7bb9731b4e350a2194f083cbc3ede46508d52e1cae6610a39bea'; url='https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/f699d81e-69ce-4b09-aa07-23ff2713045b/MicrosoftEdgeWebView2RuntimeInstallerX64.exe'; source='https://raw.githubusercontent.com/microsoft/winget-pkgs/master/manifests/m/Microsoft/EdgeWebView2Runtime/156.0.4314.50/Microsoft.EdgeWebView2Runtime.installer.yaml'; maxBytes=314572800; optional=$false; microsoftSignature=$true }
         [pscustomobject]@{ id='python'; version='3.14.10'; filename='python-3.14.10-amd64.exe'; sha256='92480239264744fe0386a1bd8275786fefa126e3129e56a68e22b52c73329965'; url='https://www.python.org/ftp/python/3.14.10/python-3.14.10-amd64.exe'; source='https://www.python.org/downloads/release/python-31410/'; maxBytes=67108864; optional=$true; microsoftSignature=$false }
-        [pscustomobject]@{ id='pnpm'; version='12.15.0'; filename='pnpm-win32-x64.zip'; sha256='84cf69db1be19e95bb4e5bef329291a046f2821b390d87e00f5690809d8a2ed7'; url='https://github.com/pnpm/pnpm/releases/download/v12.15.0/pnpm-win32-x64.zip'; source='https://api.github.com/repos/pnpm/pnpm/releases/tags/v12.15.0'; maxBytes=67108864; optional=$true; microsoftSignature=$false }
+        [pscustomobject]@{ id='pnpm'; version='12.21.0'; filename='pnpm-win32-x64.zip'; sha256='4fb64bb37e46c788309e0fd4ea93beb512546fdc7348121194fb704fbb72c09c'; url='https://github.com/pnpm/pnpm/releases/download/v12.21.0/pnpm-win32-x64.zip'; source='https://api.github.com/repos/pnpm/pnpm/releases/tags/v12.21.0'; maxBytes=67108864; optional=$true; microsoftSignature=$false }
     )
 }
 
@@ -341,7 +341,7 @@ function Normalize-GuestRustProxies([string]$VmUuid, [string]$RunRoot) {
 
 function Get-GuestToolState($Tool) {
     $version = $null; $location = $null
-    $paths = @{node='C:\Program Files\nodejs\node.exe';powershell='C:\Program Files\PowerShell\7\pwsh.exe';git='C:\Program Files\Git\cmd\git.exe';python='C:\Program Files\Python314\python.exe';rust="$CargoHome\bin\rustc.exe";pnpm="$ToolsRoot\pnpm\12.15.0\pnpm.exe"}
+    $paths = @{node='C:\Program Files\nodejs\node.exe';powershell='C:\Program Files\PowerShell\7\pwsh.exe';git='C:\Program Files\Git\cmd\git.exe';python='C:\Program Files\Python314\python.exe';rust="$CargoHome\bin\rustc.exe";pnpm="$ToolsRoot\pnpm\12.21.0\pnpm.exe"}
     if ($paths.ContainsKey($Tool.id)) {
         $location = $paths[$Tool.id]
         if ($Tool.id -eq 'rust' -and (Test-Path -LiteralPath "$CargoHome\bin")) {
@@ -386,7 +386,7 @@ function Get-GuestToolState($Tool) {
 
 function Expand-GuestPnpm([string]$Archive) {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $destination = "$ToolsRoot\pnpm\12.15.0"
+    $destination = "$ToolsRoot\pnpm\12.21.0"
     if (Test-Path -LiteralPath $destination) { throw 'Existing incomplete pnpm destination must be reviewed.' }
     $zip = [IO.Compression.ZipFile]::OpenRead($Archive)
     try {

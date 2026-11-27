@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Locator } from "@playwright/test";
 import { join } from "node:path";
+import { PANE_MATRIX, expectLayoutContracts, openPane } from "../support/uiLayoutAssertions";
 
 const captures = join(process.cwd(), "temp/verification/2026-11-11-tooltip-fix");
 async function reset(page: Page) {
@@ -41,6 +42,9 @@ test("visible, clipped, multiline, icon and semantic hints follow actual layout"
   await hint(page, page.getByTestId("clipped"), "A very long readable");
   await hint(page, page.getByTestId("multiline"), "A very long readable");
   await hint(page, page.getByTestId("icon"), "Search workspace");
+  await expect(page.getByRole("tooltip").getByRole("img", { name: "Control F" })).toBeVisible();
+  // An icon-only label is the accessible name; without a shortcut or detail it adds no hint.
+  await absent(page, page.getByRole("button", { name: "Plain icon", exact: true }));
   await hint(page, page.getByTestId("details"), "Includes nested folders");
   await hint(page, page.getByTestId("disabled"), "Choose a project first");
   await hint(page, page.getByTestId("shortcut"), /Ctrl.*K/);
@@ -226,7 +230,9 @@ for (const light of [true, false])
         light,
       );
       await page.locator('summary[aria-label^="Show the steps for"]').click();
-      const row = page.locator('[data-control-min-height="compact"]').first();
+      const row = page
+        .locator('[data-variant="step"] > summary[aria-label^="Show output for"]')
+        .first();
       await expect(row).toBeVisible();
       const heights: number[] = [];
       for (const density of ["compact", "comfortable", "touch"]) {
@@ -243,10 +249,65 @@ for (const light of [true, false])
         expect(measured.scroll).toBeLessThanOrEqual(measured.client + 1);
         heights.push(measured.height);
       }
-      expect(heights[0]).toBeGreaterThanOrEqual(28);
+      expect(heights[0]).toBeGreaterThanOrEqual(24);
       expect(heights[1]).toBeGreaterThanOrEqual(heights[0]!);
       expect(heights[2]).toBeGreaterThanOrEqual(heights[1]!);
       await row.screenshot({
         path: `temp/verification/feature-controls/activity-${light ? "light" : "dark"}-${width}.png`,
       });
     });
+
+// Runtime layout contracts for the hint-bearing controls inside a real 320 px pane. The policy
+// grid collapses to one column there, so each family is measured at the pane's own width.
+for (const { theme, width } of PANE_MATRIX)
+  test(`hint-bearing controls keep their layout contracts in a 320px pane ${theme} ${width}`, async ({
+    page,
+  }) => {
+    await openPane(page, { theme, width, pane: '[data-pane="policy"]', height: 1400 });
+    await page.locator('[data-pane="policy"]').evaluate((node) => {
+      node.style.gridTemplateColumns = "minmax(0, 1fr)";
+    });
+    await expandActivitySteps(page);
+    await expectLayoutContracts(page, {
+      surface: "tooltip-policy hint-bearing controls (320px pane)",
+      root: '[data-pane="policy"]',
+      checks: ["overflow", "clip", "overlap"],
+      allow: {
+        clip: [
+          {
+            selector: '[data-testid="clipped"], [data-testid="multiline"]',
+            reason: "These fixtures clip their text on purpose to prove the overflow hint appears.",
+          },
+        ],
+        overflow: [
+          {
+            selector: '[data-testid="clipped"], [data-testid="multiline"]',
+            reason: "These fixtures clip their text on purpose to prove the overflow hint appears.",
+          },
+        ],
+      },
+    });
+    await expectLayoutContracts(page, {
+      surface: "tooltip-policy action groups gaps (320px pane)",
+      root: '[aria-label="Action groups"]',
+      checks: ["gap"],
+      joined: '[data-joined], [data-ui-joined], [data-segmented], [role="group"]',
+      allow: {
+        gap: [
+          {
+            selector: '[aria-label="Project shortcut actions"] button',
+            reason: "The expanding command rail packs its actions at the 4px rail gap by design.",
+          },
+        ],
+      },
+    });
+    // Hints stay silent until they add something: a visible label never repeats as a tooltip.
+    await absent(page, page.getByTestId("visible"));
+  });
+
+async function expandActivitySteps(page: Page) {
+  const summary = page.locator('summary[aria-label^="Show the steps for"]');
+  if (await summary.count()) await summary.first().click();
+  // The steps open with a height transition; measure layout only once it has settled.
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+}

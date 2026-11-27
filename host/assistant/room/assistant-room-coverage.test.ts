@@ -5,10 +5,40 @@ import {
 } from "../management/assistant-management-dispatch";
 import { MANAGEMENT_CONVERSATION_TOOLS } from "../../conversation/conversation-management-tools";
 import { voiceToolCatalog } from "../../voice/voice-tools";
+import { assistantRoomMutationAllowed } from "../management/assistant-permissions";
 
 const catalog = voiceToolCatalog();
 
 describe("Room management capability contract", () => {
+  it("discovers Live streaming but reserves Host-wide changes for full Room access", () => {
+    expect(roomManagementToolAllowed("conversation", "liveStream.status")).toBe(true);
+    expect(roomManagementToolAllowed("conversation", "liveStream.obsStream")).toBe(true);
+    expect(roomManagementToolAllowed("conversation", "liveStream.obsCredentials")).toBe(false);
+    expect(roomManagementToolAllowed("conversation", "liveStream.goLive")).toBe(false);
+    expect(roomManagementToolAllowed("conversation", "liveStream.goLive", "project")).toBe(true);
+    const call = {
+      threadId: "thread",
+      requestId: "request",
+      family: "conversation" as const,
+      action: "liveStream.stop",
+      projectId: "project",
+      input: {},
+    };
+    expect(
+      assistantRoomMutationAllowed(
+        { permissionLevel: "projects", permissionProjectIds: ["project"] },
+        call,
+      ),
+    ).toBe(false);
+    expect(assistantRoomMutationAllowed({ permissionLevel: "everything" }, call)).toBe(true);
+    expect(
+      assistantRoomMutationAllowed(
+        { permissionLevel: "watch" },
+        { ...call, action: "liveStream.status" },
+      ),
+    ).toBe(true);
+  });
+
   it("can discover global settings and Servers without a placeholder project", () => {
     const actions = [
       "tools.search",

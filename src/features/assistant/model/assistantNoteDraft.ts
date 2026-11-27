@@ -1,8 +1,10 @@
+import { t } from "../../../shared/i18n";
 import type {
   AssistantNote,
   AssistantRequest,
   AssistantResponse,
 } from "../../../shared/model/host-contracts/assistant";
+import { unconfirmedError } from "./unconfirmedOutcome";
 
 type Intent = {
   id: string;
@@ -104,7 +106,7 @@ export class AssistantNoteDraft {
       this.storage.setItem(`${this.key}:record`, JSON.stringify(this.draft));
     } catch {
       throw new Error(
-        "The note draft could not be saved on this device. Keep this editor open and retry.",
+        t("The note draft could not be saved on this device. Keep this editor open and retry."),
       );
     }
   }
@@ -118,7 +120,7 @@ export class AssistantNoteDraft {
     )
       return Promise.reject(
         new Error(
-          "The original Host could not be verified. Keep this draft and reconnect its original computer.",
+          "The original computer could not be verified. Keep this draft and reconnect that computer.",
         ),
       );
     const retry = Boolean(this.draft.intent);
@@ -141,26 +143,29 @@ export class AssistantNoteDraft {
         const inspected = await request({ op: "notes.get", id: intent.id }, intent.environmentId);
         if (!("note" in inspected))
           throw new Error(
-            "The note save could not be verified. Keep the original draft and retry.",
+            t("The note save could not be verified. Keep the original draft and retry."),
           );
         const prior = inspected.note;
         // Null also covers an owner deleting a committed note after its reply was
         // lost. Native Notes has no creation tombstone receipt; never resurrect it.
         if (!prior)
-          throw new Error(
-            "The note save is uncertain and the note is no longer available. Keep this draft and review Notes before continuing.",
+          throw unconfirmedError(
+            "The note save",
+            "The note is no longer available. Keep this draft and review Notes before continuing.",
           );
         if (prior) {
           if (matches(prior, intent)) return prior;
           if (prior.updatedAt !== intent.expectedUpdatedAt || intent.expectedUpdatedAt === 0)
-            throw new Error("This note changed on the computer. Refresh it before saving.");
+            throw new Error(t("This note changed on the computer. Refresh it before saving."));
         }
       }
       // The exact native create0 / optimistic edit version is rechecked at commit.
       const { environmentId, ...payload } = intent;
       const result = await request({ op: "notes.save", ...payload }, environmentId);
       if (!result.note || !matches(result.note, intent))
-        throw new Error("The note save could not be verified. Keep the original draft and retry.");
+        throw new Error(
+          t("The note save could not be verified. Keep the original draft and retry."),
+        );
       return result.note;
     })().finally(() => {
       this.pending = undefined;

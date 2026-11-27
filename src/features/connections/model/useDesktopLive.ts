@@ -18,6 +18,7 @@ import {
   type DesktopLiveResult,
 } from "./desktopLive";
 import type { DesktopInboxReply } from "../../inbox/model/remoteInbox";
+import { readRemoteInboxList } from "./desktopInboxOperation";
 import { loadRemoteCapabilities, remoteRequest } from "./connections";
 import { isLocalSyncMachine } from "./localSync";
 import { desktopInstanceId } from "./desktopInstance";
@@ -31,6 +32,11 @@ import {
 import type { RemoteMachine } from "./protocol";
 import { buildMobileProjectDirectory } from "../../projects/public/mobileProjectDirectory";
 import { withMobileProjectLogos } from "../../projects/public/mobileProjectLogos";
+import {
+  getRemoteGrantEpoch,
+  runRemoteGroupLockJob,
+  type RemoteGroupLockReply,
+} from "../../group-lock/public/remoteGroupLock";
 import {
   retainedHarnessWriters,
   retireHarnessWriter,
@@ -58,6 +64,8 @@ export function useDesktopLive(
     beat: {} as DesktopLiveBeat,
     inboxResults: new Map<string, DesktopInboxReply>(),
     inboxRunning: new Set<string>(),
+    groupLockResults: new Map<string, RemoteGroupLockReply>(),
+    groupLockRunning: new Set<string>(),
     deletions: {
       results: new Map<string, { id: string; error?: string }>(),
       running: new Set<string>(),
@@ -197,6 +205,12 @@ export function useDesktopLive(
           runLeases: { held: heldRunLeases, answered: noteRunLeases },
           beat,
           deletions: state.current.deletions,
+          groupLock: {
+            results: state.current.groupLockResults,
+            running: state.current.groupLockRunning,
+            epoch: getRemoteGrantEpoch,
+            run: runRemoteGroupLockJob,
+          },
           inbox: {
             jira: async (operation, deadline) =>
               (await import("../../inbox/model/jiraMobileBridge")).executeRemoteJiraBoard(
@@ -204,9 +218,20 @@ export function useDesktopLive(
                 deadline,
               ),
             invoke: (command, args) => invoke(command, args),
-            list: async (projects, query) => {
-              const { listInboxItems } = await import("../../inbox/model/githubTasks");
-              return listInboxItems(projects, query, { force: true });
+            list: async (projects, query, options) => {
+              const { inboxListIsFresh, listInboxItems, peekInboxList } =
+                await import("../../inbox/model/githubTasks");
+              // A cache miss still forces: per-repository reads otherwise reuse any older copy.
+              return readRemoteInboxList(
+                {
+                  fresh: (value, maxAgeMs) =>
+                    inboxListIsFresh(projects, value, Date.now(), maxAgeMs),
+                  peek: (value) => peekInboxList(projects, value),
+                  read: (value) => listInboxItems(projects, value, { force: true }),
+                },
+                query,
+                options,
+              );
             },
             results: inboxResults,
             running: inboxRunning,

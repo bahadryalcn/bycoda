@@ -27,6 +27,7 @@ import {
   DELEGATION_LIMITS,
   DELEGATION_CHAT_ONLY_KEY,
   DELEGATION_PARENT_KEY,
+  DELEGATION_PROVIDER_HISTORY_KEY,
   EFFORT_LEVELS,
   decodeAdvisor,
   decodeDelegationParent,
@@ -37,7 +38,7 @@ import {
   type DelegationParent,
 } from "../../src/shared/model/host-contracts/delegation";
 import { truncateGraphemes } from "../../src/shared/lib/text/truncate";
-import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
+import { elapsedSince, isoTimestamp, monotonicNow } from "../../src/shared/lib/time/timestamps";
 import {
   cancelSessionRun,
   errorMessage,
@@ -53,13 +54,14 @@ import { advisorBrief, subagentBrief, replyBrief } from "./prompts";
 import { modelEffortSetting } from "../../src/features/sessions/model/models";
 import { logWaitMaxTimeoutSeconds } from "../execution/runtime-log-wait";
 import { childModelSettings } from "./child-settings";
-import { CHAT_ONLY_PROVIDERS } from "./child-native";
+import { chatOnlyAvailable } from "./child-native";
 import { delegationBudgetScope, delegationWorkRoot } from "./work-root";
 import { cancelSessionWorkOccurrence } from "../work/session-adapter";
 import { refuseSingleSlotChild } from "./capacity";
 import type { AgentRole } from "./tools";
-import { AgentCommunication } from "./communication";
+import { AgentCommunication, delegationReplyCommandId } from "./communication";
 import { agentMessageDelivery, inspectAgentSession } from "./message-delivery";
+import { limitedDelegates, usageLimitMessage, type DelegationQuota } from "./usage-limits";
 
 export type DelegationDependencies = {
   engine: SessionRunEngine & { store: HostStore };
@@ -75,6 +77,8 @@ export type DelegationDependencies = {
     provider: RemoteProvider,
     accountId?: string,
   ) => Promise<"signedIn" | "signedOut" | "unknown">;
+  /** Provider quota samples. Without them no account counts as at its limit. */
+  quota?: DelegationQuota;
   enqueueParent?: (
     sessionId: string,
     id: string,
@@ -103,6 +107,10 @@ function nextRoundParent(link: string, round: number): string {
 }
 
 const KIND_LABEL: Record<DelegationKind, string> = { subagent: "Subagent", advisor: "Advisor" };
+/** A committed store change re-reads waiting children at most this often. */
+const WAIT_CHANGE_RECHECK_MS = 1000;
+/** Re-reads children this often even without a change signal (missed-wakeup safety net). */
+const WAIT_SAFETY_RECHECK_MS = 5000;
 
 /** Subagents one caller may run at once: fewer for a subagent's own (grandchildren). */
 const subagentLimit = (depth: 0 | 1) =>
@@ -127,7 +135,8 @@ export class ConversationDelegation {
       result: (record) => this.describe(record, async () => undefined),
       deliver: agentMessageDelivery(deps, async (message) => {
         const target = message.target!;
-        const result = await this.reply(
+        let blockId: string | undefined;
+        const result = await this.replyOne(
           { requestId: message.commandId, runId: target.runId, message: message.text },
           {
             sessionId: target.parentSessionId,
@@ -135,8 +144,11 @@ export class ConversationDelegation {
           },
           async () => undefined,
           message.text,
+          undefined,
+          (id) => (blockId = id),
         );
-        return "waiting" in result ? "waiting" : "started";
+        if ("waiting" in result) return "waiting";
+        return blockId ? { delivery: "started" as const, blockId } : "started";
       }),
     });
   }
@@ -214,8 +226,8 @@ export class ConversationDelegation {
       !(options.keepNotifying && record.notifyOnCompletion);
     for (const record of await this.store.list())
       if (stopped(record)) await this.store.patch(record.runId, { communicationClosed: true });
-    const records = (await this.refresh(await this.store.list())).filter(
-      (record) => stopped(record) && record.finishedAt === undefined,
+    const records = (await this.refresh((await this.store.list()).filter(stopped))).filter(
+      (record) => record.finishedAt === undefined,
     );
     await Promise.all(
       records.map(async (record) => {
@@ -306,16 +318,33 @@ export class ConversationDelegation {
       signedOutAccounts,
       defaultAccounts,
     };
-    const subagents = resolveSubagents(session.modelSettings[CROSS_SUBAGENTS_KEY], input);
+    const allowed = resolveSubagents(session.modelSettings[CROSS_SUBAGENTS_KEY], input);
+    // Claude Code's own advisor answers a Claude conversation's Claude pick inside its turn.
+    const allowedAdvisor = nativeAdvisor(session.harness, session.modelSettings)
+      ? undefined
+      : decodeAdvisor(session.modelSettings[CROSS_ADVISOR_KEY]);
+    // A spent account is not offered; the owner's selection itself stays unchanged.
+    const limitedSubagents = await limitedDelegates(this.deps.quota, allowed);
+    const [limitedAdvisor] = await limitedDelegates(
+      this.deps.quota,
+      allowedAdvisor ? [allowedAdvisor] : [],
+    );
+    const spent = new Set(limitedSubagents.map((entry) => delegateRefKey(entry.ref)));
+    const subagents = allowed.filter((ref) => !spent.has(delegateRefKey(ref)));
     return {
       subagents,
+      limitedSubagents,
+      limitedAdvisor,
       ...(session.modelSettings[CROSS_SUBAGENTS_KEY] === AUTOMATIC_SUBAGENTS && !subagents.length
-        ? { automatic: { reason: automaticSubagentEmptyReason(input) } }
+        ? {
+            automatic: {
+              reason: allowed.length
+                ? "all accounts at their usage limit"
+                : automaticSubagentEmptyReason(input),
+            },
+          }
         : {}),
-      // Claude Code's own advisor answers a Claude conversation's Claude pick inside its turn.
-      advisor: nativeAdvisor(session.harness, session.modelSettings)
-        ? undefined
-        : decodeAdvisor(session.modelSettings[CROSS_ADVISOR_KEY]),
+      advisor: limitedAdvisor ? undefined : allowedAdvisor,
     };
   }
 
@@ -339,7 +368,10 @@ export class ConversationDelegation {
   private async options(caller: AgentsCaller) {
     const own = await this.caller(caller);
     const catalog = await this.deps.models(caller.projectId);
-    const { subagents, advisor, automatic } = await this.selected(own.session, catalog);
+    const { subagents, advisor, automatic, limitedSubagents, limitedAdvisor } = await this.selected(
+      own.session,
+      catalog,
+    );
     const running = await this.runningCounts(caller.sessionId);
     const describe = (ref: DelegateModelRef) => {
       const model = this.resolve(ref, catalog);
@@ -350,6 +382,10 @@ export class ConversationDelegation {
         model: ref.model,
         label: model?.name ?? ref.model,
         available: model !== undefined,
+        filesFalse: {
+          available: model !== undefined && chatOnlyAvailable({ ...ref, model: model.id }),
+          repositoryReadIsolation: false,
+        },
         effortLevels: effort?.options.map((option) => option.value) ?? [],
         ...(effort ? { defaultEffort: effort.value } : {}),
       };
@@ -357,6 +393,17 @@ export class ConversationDelegation {
     return {
       subagents: subagents.map((ref) => ({ ...describe(ref), tier: subagentTier(ref.model) })),
       ...(automatic ? { automatic } : {}),
+      // Selected models left out until their account's usage window resets.
+      ...(limitedSubagents.length || limitedAdvisor
+        ? {
+            atUsageLimit: [...limitedSubagents, ...(limitedAdvisor ? [limitedAdvisor] : [])].map(
+              (entry) => ({
+                ref: delegateRefKey(entry.ref),
+                ...(entry.resetsAt === undefined ? {} : { resetsAt: isoTimestamp(entry.resetsAt) }),
+              }),
+            ),
+          }
+        : {}),
       ...(own.session.modelSettings[CROSS_SUBAGENT_MAX_EFFORT_KEY]
         ? { maxEffort: own.session.modelSettings[CROSS_SUBAGENT_MAX_EFFORT_KEY] }
         : {}),
@@ -434,10 +481,30 @@ export class ConversationDelegation {
         throw new Error("Queued delegation caller configuration changed. Submit a new request.");
       }
       const catalog = await this.deps.models(caller.projectId);
-      const { subagents, advisor } = await this.selected(own.session, catalog);
+      const { subagents, advisor, limitedSubagents, limitedAdvisor } = await this.selected(
+        own.session,
+        catalog,
+      );
       const candidates = kind === "advisor" ? (advisor ? [advisor] : []) : subagents;
-      if (!candidates.length)
+      // The Host refuses a spent account instead of switching: the agent must not substitute one.
+      const limited =
+        kind === "advisor" ? (limitedAdvisor ? [limitedAdvisor] : []) : limitedSubagents;
+      const queuedLimit = existing?.pending
+        ? limited.find((entry) => delegateRefKey(entry.ref) === delegateRefKey(existing.model))
+        : undefined;
+      if (queuedLimit) {
+        await this.cancelPending(existing!);
+        throw new Error(usageLimitMessage(queuedLimit));
+      }
+      const requestedLimit =
+        args.model === undefined
+          ? undefined
+          : limited.find((entry) => delegateRefKey(entry.ref) === args.model);
+      if (requestedLimit) throw new Error(usageLimitMessage(requestedLimit));
+      if (!candidates.length) {
+        if (limited.length) throw new Error(usageLimitMessage(limited[0]!));
         throw new Error(`No ${kind} model is selected for this conversation.`);
+      }
       let ref = existing?.pending ? existing.model : candidates[0]!;
       if (
         existing?.pending &&
@@ -463,8 +530,10 @@ export class ConversationDelegation {
       if (args.files !== undefined && typeof args.files !== "boolean")
         throw new Error("Field files must be a boolean.");
       const chatOnly = args.files === false;
-      if (chatOnly && !CHAT_ONLY_PROVIDERS.has(ref.harness))
-        throw new Error("files:false needs a Claude or Codex model; omit it for this model.");
+      if (chatOnly && !chatOnlyAvailable({ ...ref, model: model.id }))
+        throw new Error(
+          "files:false is unavailable for this model; check agents.options before choosing a model.",
+        );
       const runId = existing?.runId ?? randomUUID();
       const rootWorkId =
         existing?.rootWorkId ??
@@ -523,6 +592,13 @@ export class ConversationDelegation {
         ...baseSettings,
         ...lineage,
         ...(chatOnly ? { [DELEGATION_CHAT_ONLY_KEY]: "on" } : {}),
+        ...(ref.harness === "codex" || ref.harness === "claude"
+          ? { [DELEGATION_PROVIDER_HISTORY_KEY]: "ephemeral" }
+          : ref.harness === "pi" || ref.harness === "omp"
+            ? { [DELEGATION_PROVIDER_HISTORY_KEY]: "directory" }
+            : ref.harness === "opencode" && !chatOnly
+              ? { [DELEGATION_PROVIDER_HISTORY_KEY]: "archive" }
+              : {}),
       };
       if (!existing)
         await this.store.add({
@@ -667,6 +743,8 @@ export class ConversationDelegation {
     locate: Locate,
     brief?: string,
     keyParts?: [string, string],
+    /** Learns the user block id of the turn this reply opened, when the Host chose it. */
+    sent?: (blockId: string) => void,
   ) {
     const own = await this.caller(caller);
     if (typeof args.requestId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(args.requestId))
@@ -699,6 +777,10 @@ export class ConversationDelegation {
       if (status.status === "needsInput")
         throw new Error("Answer the approval in the child's own session first.");
       await this.verifySignIn(record.model);
+      if (!brief) {
+        const [spent] = await limitedDelegates(this.deps.quota, [record.model]);
+        if (spent) throw new Error(usageLimitMessage(spent));
+      }
       const running = await this.runningCounts(caller.sessionId);
       const limit =
         record.kind === "subagent" ? subagentLimit(own.depth) : DELEGATION_LIMITS.runningAdvisors;
@@ -715,6 +797,13 @@ export class ConversationDelegation {
       );
       try {
         const child = await this.deps.engine.store.session(record.childSessionId);
+        if (
+          (record.chatOnly || record.modelSettings?.[DELEGATION_CHAT_ONLY_KEY] === "on") &&
+          child.session.cwd !== (await this.store.scratchDir(record.runId))
+        )
+          throw new Error(
+            "Chat-only child no longer uses its scratch folder; cannot resume safely.",
+          );
         const catalog = await this.deps.models(caller.projectId);
         const model = this.resolve(record.model, catalog);
         const previousSettings = record.modelSettings ?? child.session.modelSettings;
@@ -797,14 +886,18 @@ export class ConversationDelegation {
                 "Delegation reply is waiting for Work admission. Retry with the same requestId.",
             );
         } else {
+          // The engine names the send's user block after its command id.
+          const commandId = delegationReplyCommandId(requestKey);
           await this.deps.engine.command({
             type: "send",
-            commandId: `agents_${createHash("sha256").update(requestKey).digest("hex")}:send`,
+            commandId,
             sessionId: record.childSessionId,
             text: brief ?? replyBrief(args.message as string),
             ...(record.kind === "advisor" ? { intent: "plan" as const } : {}),
           });
+          sent?.(commandId);
         }
+        // A Work-admitted continuation's block id belongs to Work; without proof it stays unjoined.
         const latest = await this.deps.engine.store.session(record.childSessionId);
         await this.store.patch(record.runId, {
           childRunId: latest.runId,
@@ -855,12 +948,28 @@ export class ConversationDelegation {
     }
     records = await Promise.all(ids.map((id) => this.owned(id, caller)));
     const started = monotonicNow();
+    // Children report progress through committed session writes, so the store's change
+    // signal wakes this wait. Reads run only after a change (throttled) or on a slow safety tick.
+    const changes = this.deps.engine.store.changes;
+    let readVersion = changes.version;
+    let readAt: number | undefined;
+    let statuses: { status: RunStatus }[] = [];
     for (;;) {
-      records = await Promise.all(records.map((record) => this.follow(record)));
-      const statuses = await Promise.all(records.map((record) => this.statusOf(record)));
+      const changed = changes.version !== readVersion;
+      const age = readAt === undefined ? Infinity : elapsedSince(readAt);
+      if (
+        readAt === undefined ||
+        (changed && age >= WAIT_CHANGE_RECHECK_MS) ||
+        age >= WAIT_SAFETY_RECHECK_MS
+      ) {
+        readVersion = changes.version;
+        readAt = monotonicNow();
+        records = await Promise.all(records.map((record) => this.follow(record)));
+        statuses = await Promise.all(records.map((record) => this.statusOf(record)));
+      }
       const remaining = seconds * 1000 - elapsedSince(started);
       if (statuses.every((status) => status.status !== "running") || remaining <= 0) break;
-      await new Promise((resolve) => setTimeout(resolve, Math.min(1000, remaining)));
+      await changes.wait(Date.now() + remaining, () => false, changes.version);
     }
     const runs = await Promise.all(records.map((record) => this.describe(record, locate)));
     return args.runIds === undefined ? runs[0] : { runs };
@@ -908,17 +1017,18 @@ export class ConversationDelegation {
     }
     // A queued launch has no child session yet; there is nothing to follow.
     if (!record.childSessionId) return record;
-    let child: HostSession;
+    let childRunId: string | undefined;
     try {
-      child = await this.deps.engine.store.session(record.childSessionId);
+      // Only the turn id is compared, so read it from the state row, not the transcript.
+      childRunId = await this.deps.engine.store.sessionRunId(record.childSessionId);
     } catch (error) {
       // A transient read error must not be mistaken for a vanished child: look again later.
       if (!isSessionNotFound(error)) throw error;
       return record;
     }
-    if (!child.runId || child.runId === record.childRunId) return record;
+    if (!childRunId || childRunId === record.childRunId) return record;
     await this.store.patch(record.runId, {
-      childRunId: child.runId,
+      childRunId,
       ownerFollowUp: true,
       finishedAt: undefined,
       status: undefined,
@@ -962,12 +1072,13 @@ export class ConversationDelegation {
   }
 
   private async runningCounts(parentSessionId: string, exceptRunId?: string) {
-    const records = (await this.refresh(await this.store.list())).filter(
+    // Only this parent's rows are refreshed; other conversations' records stay untouched.
+    const own = (await this.store.list()).filter(
+      (record) => record.parentSessionId === parentSessionId,
+    );
+    const records = (await this.refresh(own)).filter(
       (record) =>
-        record.parentSessionId === parentSessionId &&
-        !!record.childSessionId &&
-        record.runId !== exceptRunId &&
-        record.finishedAt === undefined,
+        !!record.childSessionId && record.runId !== exceptRunId && record.finishedAt === undefined,
     );
     return {
       subagent: records.filter((record) => record.kind === "subagent").length,
@@ -990,13 +1101,19 @@ export class ConversationDelegation {
   private async describe(record: DelegationRecord, locate: Locate) {
     record = await this.follow(record);
     const status = await this.statusOf(record);
-    const child = await this.deps.engine.store
-      .session(record.childSessionId)
-      .catch(() => undefined);
-    const reply =
-      child && status.status === "succeeded"
-        ? lastTurnReply(child.session.blocks, { includePlan: true })
-        : "";
+    // Only a succeeded run reports a reply, so any other state never loads the transcript. A
+    // cold transcript is parsed off the writer queue (signalled read) and abandoned if slow.
+    let resultUnavailable = false;
+    const child =
+      status.status === "succeeded"
+        ? await this.deps.engine.store
+            .session(record.childSessionId, AbortSignal.timeout(30_000))
+            .catch(() => {
+              resultUnavailable = true;
+              return undefined;
+            })
+        : undefined;
+    const reply = child ? lastTurnReply(child.session.blocks, { includePlan: true }) : "";
     const result = reply ? truncateGraphemes(reply, DELEGATION_LIMITS.resultGraphemes) : undefined;
     const locator = await locate(record.childSessionId).catch(() => undefined);
     return {
@@ -1009,6 +1126,8 @@ export class ConversationDelegation {
       status: status.status,
       ...(record.ownerFollowUp ? { ownerFollowUp: true } : {}),
       ...(result === undefined ? {} : { result, truncated: result !== reply }),
+      // The run succeeded but its transcript could not be read: not the same as an empty reply.
+      ...(resultUnavailable ? { resultUnavailable: true } : {}),
       ...(status.error ? { error: truncateGraphemes(status.error, 2000) } : {}),
     };
   }

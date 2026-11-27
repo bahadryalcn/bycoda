@@ -13,6 +13,8 @@ export type AppConfirmRequest = {
   body?: ReactNode;
   /** The real action, e.g. "Delete branch". Cancel is always the secondary choice. */
   confirmLabel: string;
+  /** Cancel wording in the same language as the rest of the dialog; defaults to the interface "Cancel". */
+  cancelLabel?: string;
   /** `danger` only when the action destroys data or stops running work. */
   tone: "danger" | "normal";
   /** Legacy alternative wording retained for callers. */

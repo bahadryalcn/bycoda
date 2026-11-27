@@ -27,6 +27,12 @@ export interface ReservationStatistics {
   maxProcess: number;
   maxOwner: number;
 }
+/** Read-only diagnostic row. Carries no handle, slot or release authority. */
+export interface ReservationInfo {
+  kind: "writer" | "closing" | "closed";
+  nativeFormat: string;
+  ageMs: number;
+}
 export interface BoundStore {
   identity(): FileIdentityData;
   tryWriter(): WriterHandle | null;
@@ -41,6 +47,8 @@ export interface BoundStore {
 export interface PhysicalRegistry {
   bindFile(existingPath: string): BoundStore;
   statistics(): ReservationStatistics;
+  /** This owner's live reservations, oldest first. Lists only; never releases. */
+  listReservations(): ReservationInfo[];
 }
 export interface PhysicalStoreAdmission {
   mechanicalAbiVersion(): 2;

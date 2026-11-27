@@ -10,6 +10,7 @@ import {
   type DiagnosticSection,
   type DiagnosticTrigger,
 } from "@bycoda/account-contracts";
+import { bytesToBase64 } from "../../../shared/lib/base64";
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import { isoTimestamp } from "../../../shared/lib/time/timestamps";
 import type { DiagnosticsNative, NativeCrash } from "./diagnosticsNative";
@@ -22,14 +23,22 @@ import {
 import { collectRemoteHostLogs, limitSections, type RemoteHostLogSource } from "./remoteHostLogs";
 import { readRenderError } from "./renderError";
 import { uiLogSnapshot } from "./uiLogBuffer";
+import type { SharingDetails } from "../../data-sharing";
 
-export type DiagnosticSendStatus = "sent" | "rate-limited" | "not-configured" | "failed" | "empty";
+export type DiagnosticSendStatus =
+  | "sent"
+  | "rate-limited"
+  | "not-configured"
+  | "failed"
+  | "empty"
+  | "declined";
 
 export type DiagnosticsIdentity = {
   /** False in builds without the account platform. */
   available: boolean;
   signedIn: boolean;
   email: string | null;
+  accountId?: string | null;
 };
 
 export type DiagnosticsDeps = {
@@ -52,6 +61,8 @@ export type DiagnosticsDeps = {
   /** Deadline for collecting and uploading together. */
   timeoutMs?: number;
   onFailure?: (error: unknown) => unknown;
+  review?: (details: SharingDetails, send: () => Promise<unknown>) => Promise<boolean>;
+  destination?: () => Promise<string | null>;
 };
 
 export type DiagnosticRequest = {
@@ -79,11 +90,7 @@ export async function gzipBase64(text: string): Promise<string | null> {
   if (typeof CompressionStream === "undefined") return null;
   const stream = new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"));
   const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  }
-  return btoa(binary);
+  return bytesToBase64(bytes);
 }
 
 /** The webview's `CompressionStream` first, the native `diagnostics_gzip_base64` second. */
@@ -198,6 +205,7 @@ async function build(deps: DiagnosticsDeps, request: DiagnosticRequest) {
     redact,
   );
   const occurredAt = (dated && isoTimestamp(dated.occurredAt)) || now.toISOString();
+  const note = request.note ? redactDiagnosticText(request.note, redact).trim() : "";
   const body = DiagnosticReportCreate.safeParse({
     trigger: request.trigger,
     occurredAt,
@@ -209,11 +217,11 @@ async function build(deps: DiagnosticsDeps, request: DiagnosticRequest) {
     },
     ...(request.feedbackId ? { feedbackId: request.feedbackId } : {}),
     ...(summary ? { summary } : {}),
-    ...(request.note?.trim() ? { note: request.note.trim().slice(0, 2000) } : {}),
+    ...(note ? { note: note.slice(0, 2000) } : {}),
     sources: composed.sources,
     content: { encoding: "gzip-base64", data: compressed },
   });
-  return body.success ? body.data : ("failed" as const);
+  return body.success ? { body: body.data, text: composed.text } : ("failed" as const);
 }
 
 function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
@@ -233,19 +241,58 @@ export async function sendDiagnosticReport(
   deps: DiagnosticsDeps,
   request: DiagnosticRequest,
 ): Promise<DiagnosticSendStatus> {
-  if (!deps.identity().available) return "not-configured";
+  const identity = deps.identity();
+  if (!identity.available) return "not-configured";
   try {
-    return await withDeadline(
-      (async (): Promise<DiagnosticSendStatus> => {
-        const body = await build(deps, request);
-        if (typeof body === "string") return body;
-        const api = deps.api();
-        if (deps.identity().signedIn) await api.sendDiagnosticReport({ body });
-        else await api.sendAnonymousDiagnosticReport({ body });
-        return "sent";
-      })(),
-      deps.timeoutMs ?? DIAGNOSTIC_DEADLINE_MS,
+    const timeout = deps.timeoutMs ?? DIAGNOSTIC_DEADLINE_MS;
+    const built = await withDeadline(build(deps, request), timeout);
+    if (typeof built === "string") return built;
+    const { body, text } = built;
+    const send = async () => {
+      const current = deps.identity();
+      if (current.signedIn !== identity.signedIn || current.accountId !== identity.accountId) {
+        throw new Error("Diagnostic account changed before upload");
+      }
+      const api = deps.api();
+      return identity.signedIn
+        ? api.sendDiagnosticReport({ body })
+        : api.sendAnonymousDiagnosticReport({ body });
+    };
+    if (!deps.review) {
+      await withDeadline(send(), timeout);
+      return "sent";
+    }
+    const base = await deps.destination?.();
+    if (!base) return "not-configured";
+    const { content, ...metadata } = body;
+    const sent = await deps.review(
+      {
+        kind: "diagnostics",
+        destination:
+          base.replace(/\/+$/, "") +
+          (identity.signedIn ? "/v1/diagnostics/reports" : "/v1/diagnostics/reports/anonymous"),
+        linkedToAccount: identity.signedIn,
+        files: [
+          { name: "diagnostics.log", text },
+          {
+            name: "report.json",
+            text: JSON.stringify(
+              { ...metadata, content: { encoding: content.encoding, file: "diagnostics.log" } },
+              null,
+              2,
+            ),
+          },
+        ],
+      },
+      () => withDeadline(send(), timeout),
     );
+    const current = deps.identity();
+    if (
+      !sent &&
+      (current.signedIn !== identity.signedIn || current.accountId !== identity.accountId)
+    )
+      return "failed";
+    return sent ? "sent" : "declined";
   } catch (error) {
     if (error instanceof AccountApiError && error.code === "rate_limited") return "rate-limited";
     try {

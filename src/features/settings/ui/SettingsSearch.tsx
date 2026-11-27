@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { t, useLocale } from "../../../shared/i18n";
+import { t, useLocale, warmSourceMessages } from "../../../shared/i18n";
 import { ExpandingSearch } from "../../../shared/ui/ExpandingSearch";
 import { searchSettings, type SettingsSectionId } from "../model/settings";
 
@@ -10,15 +10,20 @@ export function SettingsSearch({
   onReveal: (section: SettingsSectionId, settingId: string | null) => void;
 }) {
   const locale = useLocale();
+  const [indexedLocale, setIndexedLocale] = useState<typeof locale | null>(null);
   const [query, setQuery] = useState("");
   const revealFrame = useRef<number | null>(null);
-  const matches = useMemo(() => searchSettings(query), [query, locale]);
+  const ready = indexedLocale === locale;
+  const matches = useMemo(() => (ready ? searchSettings(query) : []), [query, locale, ready]);
   const results = useMemo(
     () =>
       matches.map((result) => ({
         id: `${result.section}:${result.settingId ?? "*"}`,
         title: result.label,
-        meta: result.settingId ? result.sectionLabel : t("Page"),
+        group:
+          result.settingId && result.label !== result.sectionLabel
+            ? result.sectionLabel
+            : undefined,
       })),
     [matches, locale],
   );
@@ -28,6 +33,19 @@ export function SettingsSearch({
     },
     [],
   );
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Warm the shared search index during browser idle time after the language changes.
+  useEffect(() => {
+    const warm = () => {
+      warmSourceMessages();
+      setIndexedLocale(locale);
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      const idle = window.requestIdleCallback(warm, { timeout: 2_000 });
+      return () => window.cancelIdleCallback(idle);
+    }
+    const timeout = window.setTimeout(warm, 0);
+    return () => window.clearTimeout(timeout);
+  }, [locale]);
 
   return (
     <ExpandingSearch
@@ -37,7 +55,7 @@ export function SettingsSearch({
       label={t("Search settings")}
       clearLabel={t("Clear settings search")}
       resultsLabel={t("Settings search results")}
-      emptyLabel={t("No matching settings")}
+      emptyLabel={ready ? t("No matching settings") : t("Loading…")}
       items={[]}
       query={query}
       onQueryChange={setQuery}

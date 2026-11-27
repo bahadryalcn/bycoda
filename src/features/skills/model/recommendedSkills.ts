@@ -1,3 +1,5 @@
+import { getLocale, translateAt } from "../../../shared/i18n/core";
+
 /** Metadata only. Skill content is downloaded from each publisher after owner action. */
 export interface RecommendedSkill {
   readonly id: string;
@@ -9,6 +11,14 @@ export interface RecommendedSkill {
   readonly sourceUrl: string;
   readonly ref: "main";
   readonly note?: string;
+}
+
+/**
+ * Translates a catalogue entry (description, category, note, prerequisite). The entries are
+ * application-owned English keys stored as data, so they cannot be passed to `t()` literally.
+ */
+export function catalogText(key: string): string {
+  return translateAt(getLocale(), key);
 }
 
 /** Ordered by general usefulness, then focused task value; not benchmark scores. */

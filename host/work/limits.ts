@@ -3,11 +3,12 @@ import type { WorkUsageMetric, WorkUsageReading } from "./usage";
 /** Omitted or zero limits explicitly impose no admission constraint. */
 export type WorkCalendarCaps = {
   daily?: { tokens?: number; costUsd?: number };
+  weekly?: { tokens?: number; costUsd?: number };
   monthly?: { tokens?: number; costUsd?: number };
 };
 export type WorkCapWait = {
   code: "workCapReached" | "workUsageUnknown";
-  period: "daily" | "monthly";
+  period: "daily" | "weekly" | "monthly";
   metric: WorkUsageMetric;
   provider?: string;
   accountId?: string;
@@ -24,7 +25,7 @@ export function evaluateWorkCaps(
   usage: WorkUsageReading,
 ): { allowed: boolean; waits: WorkCapWait[] } {
   const waits: WorkCapWait[] = [];
-  for (const period of ["daily", "monthly"] as const) {
+  for (const period of ["daily", "weekly", "monthly"] as const) {
     for (const metric of ["tokens", "costUsd"] as const) {
       const limit = caps[period]?.[metric];
       if (limit === undefined || limit === 0) continue;

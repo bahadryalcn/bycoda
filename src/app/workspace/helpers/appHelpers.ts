@@ -1,3 +1,4 @@
+import { workspaceFailureDetail } from "../../model/workspaceActionError";
 import { type RateLimitProvider } from "../../../features/providers/model/rateLimits";
 import { worktreeFocus } from "../../../features/source-control/model/worktreeFocus";
 import { t } from "../../../shared/i18n";
@@ -59,7 +60,11 @@ export async function revealExistingTool(tool: ToolId, cwd: string): Promise<boo
   try {
     return await routeWindowDestination({ kind: "tool", tool, cwd });
   } catch (cause) {
-    toast.show({ tone: "danger", title: t("Could not open window"), message: String(cause) });
+    toast.show({
+      tone: "danger",
+      title: t("Could not open window"),
+      message: workspaceFailureDetail(cause),
+    });
     return true;
   }
 }

@@ -5,14 +5,17 @@ import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import OnboardingDialog from "../../../src/features/onboarding/ui/OnboardingDialog";
+import { OnboardingHost } from "../../../src/features/onboarding/ui/OnboardingHost";
 import UsageGuideDialog from "../../../src/features/onboarding/ui/UsageGuideDialog";
 import { WorkspaceFeatureGate } from "../../../src/features/settings/ui/WorkspaceFeatureGate";
-import { WORKSPACE_FEATURE_CHOICES } from "../../../src/features/settings/ui/WorkspaceFeatureSettings";
+import { workspaceFeatureChoices } from "../../../src/features/settings/ui/WorkspaceFeatureSettings";
 import {
   applyThemePreference,
   loadThemePreference,
 } from "../../../src/features/settings/model/appearance";
-import { setLanguagePreference, t } from "../../../src/shared/i18n";
+import { setLanguagePreference } from "../../../src/shared/i18n";
+import { Button } from "../../../src/shared/ui/Button";
+import { Sheet } from "../../../src/shared/ui/Sheet";
 import { registerBuiltinHarnesses } from "../../../src/integrations/harness/core/register";
 import { agentDefaultsFixtureCommand } from "../settings/agent-defaults-fixture";
 import "../../../src/styles/index.css";
@@ -25,6 +28,11 @@ if (!new URLSearchParams(location.search).has("providers"))
 mockWindows("main");
 mockIPC(
   (command, args) => {
+    if (command === "plugin:window|is_visible") return true;
+    if (command === "configure_file_access") return "selected-folders";
+    if (command === "account_status" && new URLSearchParams(location.search).has("account")) {
+      return { configured: true, signedIn: false, apiBaseUrl: null, environment: null };
+    }
     const agentDefaults = agentDefaultsFixtureCommand(command, args);
     if (agentDefaults !== undefined) return agentDefaults;
     if (command === "provider_terminal_profiles") {
@@ -70,12 +78,19 @@ mockIPC(
           : "D:/custom/codex.exe";
       }
     }
-    if (
-      command === "remote_machines" ||
-      command === "session_import_keys" ||
-      command === "generic_acp_list"
-    )
-      return [];
+    // The Machines step exists only while a remote machine does; `?noMachines` shows it absent.
+    if (command === "remote_machines")
+      return new URLSearchParams(location.search).has("noMachines")
+        ? []
+        : [
+            {
+              id: "fixture-remote",
+              name: "Build box",
+              endpoint: "http://192.168.1.20:4000",
+              environmentId: "fixture-env",
+            },
+          ];
+    if (command === "session_import_keys" || command === "generic_acp_list") return [];
     if (command === "import_discover") {
       const base = {
         provider: "claude",
@@ -119,11 +134,16 @@ registerBuiltinHarnesses();
 // The optional account and statistics steps lead a real first run; these fixtures cover the
 // workspace steps, so both are recorded as already answered.
 try {
-  localStorage.setItem("bycoda.onboarding.account.v1", "seen");
-  localStorage.setItem(
-    "bycoda.account.anonymousStats.consent.v2",
-    JSON.stringify({ choice: "off", decidedAt: "2026-01-01T00:00:00.000Z" }),
-  );
+  if (!new URLSearchParams(location.search).has("account")) {
+    localStorage.setItem("bycoda.onboarding.account.v1", "seen");
+  }
+  // `?account&statistics` leaves the question unanswered so the statistics step shows.
+  if (!new URLSearchParams(location.search).has("statistics")) {
+    localStorage.setItem(
+      "bycoda.account.anonymousStats.consent.v2",
+      JSON.stringify({ choice: "off", decidedAt: "2026-01-01T00:00:00.000Z" }),
+    );
+  }
 } catch {
   // Without storage the leading steps stay and the specs fail loudly.
 }
@@ -135,7 +155,8 @@ if (new URLSearchParams(location.search).has("highlight")) {
   localStorage.setItem("bycoda.highlights.v1", JSON.stringify({ baseline: "0.0.0", seen: [] }));
 }
 function Fixture() {
-  const [open, setOpen] = useState(true);
+  const offerModal = new URLSearchParams(location.search).has("offerModal");
+  const [open, setOpen] = useState(!offerModal);
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     if (!params.has("agents") && !params.has("projects")) return;
@@ -150,6 +171,20 @@ function Fixture() {
     });
     return () => cancelAnimationFrame(frame);
   }, []);
+  if (offerModal) {
+    return (
+      <main>
+        <Button onClick={() => setOpen(true)}>Open test account</Button>
+        <OnboardingHost
+          context={{ projects: 1, sessions: 0, restored: false, transferred: false }}
+          onImported={() => {}}
+          onOpenProject={() => {}}
+          projectCwd="/fixture"
+        />
+        {open ? <Sheet title="Test account" onClose={() => setOpen(false)} /> : null}
+      </main>
+    );
+  }
   if (new URLSearchParams(location.search).has("highlight")) {
     return (
       <main style={{ padding: 48 }}>
@@ -161,7 +196,12 @@ function Fixture() {
   if (new URLSearchParams(location.search).has("guideHub")) {
     return (
       <main>
-        <GuideHub projectCwd="/fixture" onClose={() => {}} onStartTour={() => {}} />
+        <GuideHub
+          projectCwd="/fixture"
+          onClose={() => {}}
+          onStartTour={() => {}}
+          onShowStep={() => {}}
+        />
       </main>
     );
   }
@@ -209,9 +249,9 @@ function Fixture() {
     <main className="min-h-screen bg-background-base p-5 text-content">
       <button onClick={() => setOpen(true)}>Reopen setup</button>
       <nav aria-label="Fixture tools" className="flex gap-4">
-        {WORKSPACE_FEATURE_CHOICES.map(({ id, label }) => (
+        {workspaceFeatureChoices().map(({ id, label }) => (
           <WorkspaceFeatureGate key={id} id={id}>
-            <button>{t(label)}</button>
+            <button>{label}</button>
           </WorkspaceFeatureGate>
         ))}
       </nav>

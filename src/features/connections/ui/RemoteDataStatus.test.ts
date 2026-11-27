@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { LOADING_DELAY_MS } from "../../../shared/hooks/useDelayedVisible";
 import { RemoteDataStatus } from "./RemoteDataStatus";
+import { ToastRegion, type ToastAnnouncement } from "../../../shared/ui/ToastRegion";
 import type { RemoteDataState } from "../model/remoteDataState";
 
 /** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
@@ -45,7 +46,7 @@ it("puts routine verification in one named refresh action without a banner", asy
   expect(button.title).toBe("");
   expect(await tooltipText(button)).toContain("Last verified");
   expect(button.querySelector("svg")).not.toBeNull();
-  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(document.body.querySelector('[role="alert"]')).toBeNull();
   act(() => button.click());
   expect(onRefresh).toHaveBeenCalledOnce();
 });
@@ -67,7 +68,7 @@ it.each(["ready", "empty", "loading", "refreshing", "stale", "error"] as const)(
     );
     const button = container.querySelector("button");
     expect(button).not.toBeNull();
-    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(document.body.querySelector('[role="alert"]')).toBeNull();
     expect(await tooltipText(button!)).toContain("Office Mac");
     if (phase === "ready") {
       expect(button!.querySelector(".lucide-server")).not.toBeNull();
@@ -100,22 +101,49 @@ it.each(["ready", "empty", "loading", "refreshing", "stale", "error"] as const)(
     );
     if (phase === "loading") {
       // A first load that finishes quickly shows nothing at all.
-      expect(container.querySelectorAll("[data-remote-data-state]")).toHaveLength(0);
+      expect(document.body.querySelectorAll("[data-remote-data-state]")).toHaveLength(0);
       act(() => vi.advanceTimersByTime(LOADING_DELAY_MS));
     }
     vi.useRealTimers();
-    expect(container.querySelectorAll("[data-remote-data-state]")).toHaveLength(1);
-    expect(container.querySelectorAll("button")).toHaveLength(1);
-    const button = container.querySelector("button")!;
-    expect(button.disabled).toBe(phase === "loading" || phase === "refreshing");
-    if (phase === "error") {
-      expect(container.querySelector('[role="alert"]')?.textContent).toContain("Read failed");
-      expect(button.getAttribute("aria-label")).toBe("Retry loading conversation");
-      act(() => button.click());
-      expect(onRefresh).toHaveBeenCalledOnce();
-    }
+    expect(document.body.querySelectorAll("[data-remote-data-state]")).toHaveLength(1);
+    // A notice is a floating card in the shared alert stack, outside the pane.
+    const attention = phase === "error" || phase === "stale";
+    expect(container.querySelectorAll("[data-remote-data-state]")).toHaveLength(attention ? 0 : 1);
+    const button = document.body.querySelector<HTMLButtonElement>(
+      `button[aria-label="${phase === "error" ? "Retry loading conversation" : "Refresh conversation"}"]`,
+    )!;
+    // A busy control explains itself (`aria-disabled` keeps it focusable) instead of going native-disabled.
+    const blocked = button.disabled || button.getAttribute("aria-disabled") === "true";
+    expect(blocked).toBe(phase === "loading" || phase === "refreshing");
+    // The toast button stays short; the data name lives in the aria-label and the copy.
+    if (attention) expect(button.textContent).toBe(phase === "error" ? "Retry" : "Refresh");
+    if (phase === "error")
+      expect(document.body.querySelector("[data-toast-region]")?.textContent).toContain(
+        "Read failed",
+      );
+    act(() => button.click());
+    expect(onRefresh).toHaveBeenCalledTimes(blocked ? 0 : 1);
   },
 );
+
+it("closes a floating notice until its state changes", () => {
+  const render = (state: RemoteDataState) =>
+    act(() =>
+      root.render(
+        createElement(RemoteDataStatus, { state, onRefresh: vi.fn(), presentation: "notice" }),
+      ),
+    );
+  render({ phase: "error", updatedAt: 1000, error: "Read failed" });
+  const close = document.body.querySelector<HTMLButtonElement>(
+    'button[aria-label="Dismiss notice"]',
+  )!;
+  act(() => close.click());
+  expect(document.body.querySelector("[data-remote-data-state]")).toBeNull();
+  render({ phase: "error", updatedAt: 1000, error: "Read failed" });
+  expect(document.body.querySelector("[data-remote-data-state]")).toBeNull();
+  render({ phase: "error", updatedAt: 2000, error: "Another failure" });
+  expect(document.body.querySelector("[data-remote-data-state]")).not.toBeNull();
+});
 
 it("defers to the common connection warning instead of duplicating it", () => {
   act(() =>
@@ -126,7 +154,7 @@ it("defers to the common connection warning instead of duplicating it", () => {
       }),
     ),
   );
-  expect(container.textContent).toBe("");
+  expect(document.body.textContent).toBe("");
 });
 
 it("does not call retained data current while the owning connection is unavailable", async () => {
@@ -152,14 +180,17 @@ it("keeps an independent data error actionable beside a shared connection warnin
   act(() =>
     root.render(
       createElement(RemoteDataStatus, {
-        state: { phase: "error", error: "Host rejected request: Queue storage unavailable" },
+        state: {
+          phase: "error",
+          error: "Host rejected request: SSH connection failed for this operation",
+        },
         connectionIssueHandled: true,
         onRefresh,
       }),
     ),
   );
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-    "Queue storage unavailable",
+  expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
+    "SSH connection failed for this operation",
   );
   act(() => container.querySelector("button")!.click());
   expect(onRefresh).toHaveBeenCalledOnce();
@@ -195,8 +226,8 @@ it("retries a busy machine in the toolbar instead of showing an error", async ()
       ),
     );
     expect(container.querySelector("[data-remote-data-state]")?.tagName).toBe("SPAN");
-    expect(container.textContent).toContain("The machine is busy. Retrying…");
-    expect(container.textContent).not.toContain("Couldn’t refresh");
+    expect(document.body.textContent).toContain("The machine is busy. Retrying…");
+    expect(document.body.textContent).not.toContain("Couldn’t refresh");
     await act(async () => vi.advanceTimersByTime(2_000));
     expect(onRefresh).toHaveBeenCalledOnce();
   } finally {
@@ -204,19 +235,147 @@ it("retries a busy machine in the toolbar instead of showing an error", async ()
   }
 });
 
-it("shows the classified reason after quiet retries and keeps the raw text behind Details", () => {
-  const raw = "Host rejected request: [RPC_TIMEOUT] request timed out";
+it("shows the classified reason after the grace and keeps raw text behind Details", async () => {
+  vi.useFakeTimers();
+  try {
+    const raw = "Host rejected request: [RPC_TIMEOUT] request timed out";
+    act(() =>
+      root.render(
+        createElement(RemoteDataStatus, {
+          state: { phase: "error", error: raw },
+          onRefresh: vi.fn(),
+          disabled: true,
+        }),
+      ),
+    );
+    expect(document.body.querySelector('[role="alert"]')).toBeNull();
+    await act(async () => vi.advanceTimersByTime(3_000));
+    const alert = document.body.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain("This computer is busy right now. Try again in a moment.");
+    expect(alert?.textContent).not.toContain("RPC_TIMEOUT");
+    expect(alert?.textContent).toContain("Details");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("keeps an open conversation's retained data quiet through a declared five-second restart", async () => {
+  vi.useFakeTimers();
+  try {
+    const onRecord = vi.fn();
+    let online = false;
+    const refresh = vi.fn(() =>
+      render(
+        online
+          ? { phase: "ready", updatedAt: 6_000 }
+          : {
+              phase: "stale",
+              updatedAt: 1_000,
+              error: "Machine is unreachable",
+            },
+      ),
+    );
+    const render = (state: RemoteDataState) =>
+      root.render(
+        createElement(
+          "div",
+          null,
+          createElement(ToastRegion, { onRecord }),
+          createElement(RemoteDataStatus, {
+            state,
+            presentation: "indicator",
+            onRefresh: refresh,
+            autoRetry: false,
+          }),
+          createElement(RemoteDataStatus, { state, presentation: "notice", onRefresh: refresh }),
+        ),
+      );
+    act(() => render({ phase: "error", error: "Host is stopping.", updatedAt: 1_000 }));
+    await act(async () => vi.advanceTimersByTimeAsync(2_000));
+    expect(refresh).toHaveBeenCalledOnce();
+    await act(async () => vi.advanceTimersByTimeAsync(3_000));
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    expect(onRecord).not.toHaveBeenCalled();
+    online = true;
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    expect(refresh).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[data-remote-data-state="ready"]')).not.toBeNull();
+    expect(onRecord).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("names the machine and data of a stale notice and keeps separate notices apart", async () => {
+  const { noticeDetailLines } = await import("./RemoteDataStatus");
   act(() =>
     root.render(
-      createElement(RemoteDataStatus, {
-        state: { phase: "error", error: raw },
-        onRefresh: vi.fn(),
-        disabled: true,
-      }),
+      createElement(
+        "div",
+        null,
+        createElement(RemoteDataStatus, {
+          state: { phase: "stale", updatedAt: 1000 },
+          presentation: "notice",
+          machineLabel: "Office Mac",
+          label: "conversation",
+          onRefresh: vi.fn(),
+        }),
+        createElement(RemoteDataStatus, {
+          state: { phase: "stale", updatedAt: 9000 },
+          presentation: "notice",
+          machineLabel: "Office Mac",
+          label: "Jira board",
+          onRefresh: vi.fn(),
+        }),
+      ),
     ),
   );
-  const alert = container.querySelector('[role="alert"]');
-  expect(alert?.textContent).toContain("This computer is busy right now. Try again in a moment.");
-  expect(alert?.textContent).not.toContain("RPC_TIMEOUT");
-  expect(alert?.textContent).toContain("Details");
+  const text = document.body.querySelector("[data-toast-region]")?.textContent ?? "";
+  expect(text).toContain("Showing last loaded conversation.");
+  expect(text).toContain("Showing last loaded Jira board.");
+  expect(text.match(/Office Mac/g)).toHaveLength(2);
+  const details = noticeDetailLines({
+    machine: "Office Mac",
+    data: "conversation",
+    verifiedAt: 1000,
+    reason: "Machine is unreachable",
+  });
+  expect(details).toBe(
+    "machine: Office Mac\ndata: conversation\nlast verified: 1970-01-01T00:00:01.000Z\nreason: Machine is unreachable",
+  );
+});
+
+it("records a sustained stale read's verification time and sanitized reason in history", async () => {
+  vi.useFakeTimers();
+  try {
+    const record = vi.fn<(entry: ToastAnnouncement) => void>();
+    act(() =>
+      root.render(
+        createElement(
+          "div",
+          null,
+          createElement(ToastRegion, { onRecord: record }),
+          createElement(RemoteDataStatus, {
+            state: {
+              phase: "stale",
+              updatedAt: 1000,
+              error: "Host rejected request: [RPC_TIMEOUT] token=private-test-value",
+            },
+            machineLabel: "Office Mac",
+            presentation: "notice",
+            label: "conversation",
+          }),
+        ),
+      ),
+    );
+    expect(record).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTimeAsync(3_000));
+    const entry = record.mock.calls.at(-1)?.[0];
+    expect(entry?.title).toBe("Office Mac");
+    expect(entry?.message).toContain("1970-01-01T00:00:01.000Z");
+    expect(entry?.message).toContain("RPC_TIMEOUT");
+    expect(entry?.message).not.toContain("private-test-value");
+  } finally {
+    vi.useRealTimers();
+  }
 });

@@ -2,18 +2,28 @@ import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import {
   MODEL_ROUTING_MAX_ENTRIES,
   MODEL_ROUTING_MAX_POOLS,
+  type ModelRoutingDelegation,
   type ModelRoutingEntry,
   type ModelRoutingPool,
   type ModelRoutingRole,
   type ModelRoutingScope,
   type ModelRoutingTarget,
 } from "../../../shared/model/host-contracts/model-routing";
-import { EFFORT_LEVELS } from "../../../shared/model/host-contracts/delegation";
+import type { SetupCatalog } from "./smartSetupCatalog";
+import {
+  CROSS_ADVISOR_KEY,
+  CROSS_SUBAGENT_MAX_EFFORT_KEY,
+  CROSS_SUBAGENTS_KEY,
+  EFFORT_LEVELS,
+  encodeSubagents,
+} from "../../../shared/model/host-contracts/delegation";
 import { modelRoutingPoolCycle } from "../../../shared/model/modelRoutingPools";
 import { REMOTE_PROVIDERS } from "../../connections/public/protocol";
 import {
+  DEFAULT_PROVIDER_ACCOUNT_ID,
   providerAccounts,
   supportsProviderAccounts,
+  type ProviderAccountProvider,
 } from "../../providers/public/providerAccounts";
 import {
   defaultModelSettings,
@@ -24,7 +34,7 @@ import {
 import type { ModelSource } from "../../sessions/public/modelSource";
 import { catalogModelFacts, valueScore } from "./modelCatalogFacts";
 import { entrySettings, type OrderDraft } from "./modelRoutingDraft";
-import { inferAccountKind, modelProfile, type ModelProfile } from "./modelProfile";
+import { modelProfile, type ModelProfile } from "./modelProfile";
 
 export type SetupAccount = {
   id?: string;
@@ -39,7 +49,10 @@ export type SetupCandidate = {
   /** The model's reasoning-effort setting and the values it accepts, when it has one. */
   effort?: { id: string; options: string[] };
 };
-export type SetupPoolNames = Record<"smartest" | "balanced" | "fast" | "work" | "personal", string>;
+export type SetupPoolNames = Record<
+  "smartest" | "balanced" | "light" | "work" | "personal",
+  string
+>;
 
 /**
  * A complete setup proposal over the candidate list: candidate indexes in priority order,
@@ -54,6 +67,40 @@ export type SetupPlan = {
 
 const targetKey = (target: ModelRoutingTarget) =>
   JSON.stringify([target.harness, target.providerAccountId ?? "default", target.model]);
+const accountKey = (target: ModelRoutingTarget) =>
+  JSON.stringify([target.harness, target.providerAccountId ?? "default"]);
+
+function setupAccounts(source: ModelSource, harness: ProviderAccountProvider) {
+  return source.accounts === undefined
+    ? source.id
+      ? []
+      : providerAccounts(harness)
+    : (source.accounts[harness] ?? []);
+}
+
+/** One account snapshot per provider, from the same authority as model discovery. */
+export function removedSetupAccount(source: ModelSource) {
+  const known = new Map<ProviderAccountProvider, Set<string>>();
+  return ({
+    harness,
+    providerAccountId,
+  }: Pick<ModelRoutingTarget, "harness" | "providerAccountId">) => {
+    if (
+      !providerAccountId ||
+      providerAccountId === DEFAULT_PROVIDER_ACCOUNT_ID ||
+      !supportsProviderAccounts(harness) ||
+      source.accountsKnown?.(harness) === false ||
+      (source.id && source.accounts === undefined)
+    )
+      return false;
+    let ids = known.get(harness);
+    if (!ids) {
+      ids = new Set(setupAccounts(source, harness).map(({ id }) => id));
+      known.set(harness, ids);
+    }
+    return !ids.has(providerAccountId);
+  };
+}
 
 function poolName(value: string): string {
   let budget = 80;
@@ -64,29 +111,42 @@ function poolName(value: string): string {
 }
 
 /** Every active account x enabled model of the source, with its profile and account kind. */
-export function setupCandidates(source: ModelSource): SetupCandidate[] {
+export function setupCandidates(source: ModelSource, catalog?: SetupCatalog): SetupCandidate[] {
   // Explicit Host sources never read this device's account profiles or visibility preferences.
   const hidden = source.id ? [] : loadHiddenPickerProviders();
   return REMOTE_PROVIDERS.flatMap((harness) => {
     if (!source.available(harness) || hidden.includes(harness)) return [];
-    const models = source
-      .modelsFor(harness)
-      .filter((model) => model.harness === harness && (source.id || isModelEnabled(model.id)));
+    const hostModels = catalog?.models[harness];
+    const models = (
+      hostModels?.length
+        ? hostModels.map((model) => ({ ...model, harness }))
+        : source.modelsFor(harness)
+    ).filter((model) => model.harness === harness && (source.id || isModelEnabled(model.id)));
+    const modelIdentity = (id: string) => {
+      const native = id.replace(new RegExp(`^${harness}:`), "");
+      return harness === "claude" ? native.replace(/^claude-/, "").replace(/\./g, "-") : native;
+    };
+    const concrete = new Set(
+      models
+        .filter((model) => !model.aliasTarget)
+        .map((model) => modelIdentity(model.nativeId ?? model.id)),
+    );
+    const preferred = new Map(
+      models
+        .filter((model) => !model.aliasTarget || !concrete.has(modelIdentity(model.aliasTarget)))
+        .map((model) => [model.id, model]),
+    );
     const accounts = supportsProviderAccounts(harness)
-      ? source.accounts !== undefined
-        ? (source.accounts[harness] ?? [])
-        : source.id
-          ? []
-          : providerAccounts(harness)
+      ? setupAccounts(source, harness)
       : [undefined];
     return accounts.flatMap((account) =>
-      models.map((model): SetupCandidate => {
+      [...preferred.values()].map((model): SetupCandidate => {
         const effort = modelEffortSetting(model);
         const explicit =
           account && "kind" in account
             ? (account.kind as ModelRoutingScope | undefined)
             : undefined;
-        const kind = account ? (explicit ?? inferAccountKind(account.label)) : undefined;
+        const kind = account ? (explicit ?? "personal") : undefined;
         return {
           target: {
             harness,
@@ -129,18 +189,39 @@ export function candidateValue(candidate: SetupCandidate): number {
   return valueScore({ score: 40 + intelligence * 11, inputUsd: usd, outputUsd: usd });
 }
 
+/** Researched capability score, else the profile's estimate on the same 0-100 scale. */
+function candidateScore(candidate: SetupCandidate): number {
+  return (
+    catalogModelFacts(candidate.target.model)?.score ?? 40 + candidate.profile.intelligence * 11
+  );
+}
+
 /**
- * The researched baseline: models capable of unattended work (intelligence 3+) first, each
- * group by benefit per cost, then the default account; stable for equal candidates.
+ * Where a model belongs in the main order. Owner decision 2026-11-17: strong models at a
+ * moderate price (Opus, Sol) do most work; cheaper capable models (Sonnet, Terra) come next;
+ * top-priced models (Fable, Astra) are kept for when those run out; light models come last.
+ */
+export type SetupTier = "workhorse" | "standard" | "premium" | "light";
+const TIER_RANK: Record<SetupTier, number> = { workhorse: 0, standard: 1, premium: 2, light: 3 };
+export function candidateTier(candidate: SetupCandidate): SetupTier {
+  const { intelligence, cost } = candidate.profile;
+  if (intelligence <= 2) return "light";
+  if (intelligence === 3) return "standard";
+  return cost >= 4 ? "premium" : "workhorse";
+}
+
+/**
+ * The researched baseline: tier first, then capability within the tier, cheaper on ties,
+ * then the default account; stable for equal candidates.
  */
 export function baselineOrder(candidates: SetupCandidate[]): number[] {
   return candidates
-    .map((candidate, index) => ({ candidate, index, value: candidateValue(candidate) }))
+    .map((candidate, index) => ({ candidate, index }))
     .sort(
       (a, b) =>
-        Number(b.candidate.profile.intelligence >= 3) -
-          Number(a.candidate.profile.intelligence >= 3) ||
-        b.value - a.value ||
+        TIER_RANK[candidateTier(a.candidate)] - TIER_RANK[candidateTier(b.candidate)] ||
+        candidateScore(b.candidate) - candidateScore(a.candidate) ||
+        a.candidate.profile.cost - b.candidate.profile.cost ||
         Number(isDefaultAccount(b.candidate.target)) -
           Number(isDefaultAccount(a.candidate.target)) ||
         a.index - b.index,
@@ -190,7 +271,7 @@ export function fitsNeed(candidate: SetupCandidate, need: RoleNeed): boolean {
  * The reasoning effort smart setup picks per need: light jobs low, standard jobs medium, heavy
  * jobs high. Smart setup never goes above high; higher levels stay the owner's own choice.
  */
-export type SetupEffort = "low" | "medium" | "high";
+type SetupEffort = NonNullable<ModelRoutingPool["effort"]>;
 const effortRank = (value: string | undefined) => (value ? EFFORT_LEVELS.indexOf(value) : -1);
 const CEILING = effortRank("high");
 
@@ -234,34 +315,33 @@ export function rulePlan(candidates: SetupCandidate[], names: SetupPoolNames): S
   const pick = (include: (candidate: SetupCandidate) => boolean) =>
     order.filter((index) => include(candidates[index]!));
   const smartest = pick((c) => c.profile.intelligence >= 4).sort(
-    (a, b) =>
-      candidates[b]!.profile.intelligence - candidates[a]!.profile.intelligence ||
-      order.indexOf(a) - order.indexOf(b),
+    (a, b) => candidateScore(candidates[b]!) - candidateScore(candidates[a]!),
   );
-  let balanced = pick((c) => c.profile.intelligence >= 3 && c.profile.cost <= 2);
-  if (!balanced.length) balanced = pick((c) => c.profile.intelligence === 3);
-  let fast = pick((c) => c.profile.intelligence <= 2).sort(
+  const balanced = pick((c) => ["workhorse", "standard"].includes(candidateTier(c)));
+  let light = pick((c) => c.profile.intelligence <= 2).sort(
     (a, b) => candidates[a]!.profile.cost - candidates[b]!.profile.cost,
   );
-  if (!fast.length) fast = pick((c) => c.profile.cost === 1 && c.profile.intelligence <= 3);
+  if (!light.length) light = pick((c) => c.profile.cost === 1 && c.profile.intelligence <= 3);
   const withKinds = candidates.some((candidate) => candidate.account?.kind);
   const pools: SetupPlan["pools"] = [
     { name: names.smartest, members: smartest, includes: [] },
     { name: names.balanced, members: balanced, includes: [] },
-    { name: names.fast, members: fast, includes: [] },
+    { name: names.light, members: light, includes: [] },
     ...(withKinds
       ? [
           { name: names.work, members: pick((c) => c.account?.kind !== "personal"), includes: [] },
           { name: names.personal, members: pick((c) => c.account?.kind !== "work"), includes: [] },
         ]
       : []),
-  ].filter((pool) => pool.members.length);
+  ]
+    .filter((pool) => pool.members.length)
+    .map((pool) => ({ ...pool, members: fallbackOrder(candidates, pool.members) }));
   const first = (...choices: string[]) => {
     const name = choices.find((choice) => pools.some((pool) => pool.name === choice));
     return name ? { pool: name } : ("order" as const);
   };
   const preference = {
-    light: [names.fast, names.balanced],
+    light: [names.light, names.balanced],
     standard: [names.balanced, names.smartest],
     heavy: [names.smartest, names.balanced],
   };
@@ -290,7 +370,7 @@ export function enforceRoleNeeds(candidates: SetupCandidate[], plan: SetupPlan):
     }
     return undefined;
   };
-  const orderHead = [...plan.order, ...baselineOrder(candidates)].find(valid);
+  const orderHead = plannedOrder(candidates, plan)[0];
   const heads = plan.pools.flatMap((pool) => {
     const head = headOf(pool.name);
     return head ? [{ name: pool.name, head }] : [];
@@ -323,30 +403,44 @@ export function enforceRoleNeeds(candidates: SetupCandidate[], plan: SetupPlan):
   return { ...plan, roles };
 }
 
-/**
- * Entries per candidate and effort, created on first use. An existing entry is reused when its
- * effort matches; for high, an entry the owner set above high also counts. Others are kept.
- */
+/** Best candidate per provider account and tier in the researched baseline. */
+function fallbackOrder(candidates: SetupCandidate[], order = baselineOrder(candidates)): number[] {
+  const used = new Set<string>();
+  return order.filter((index) => {
+    const candidate = candidates[index]!;
+    const key = `${accountKey(candidate.target)}:${candidateTier(candidate)}`;
+    if (used.has(key)) return false;
+    used.add(key);
+    return true;
+  });
+}
+
+function plannedOrder(candidates: SetupCandidate[], plan: SetupPlan): number[] {
+  const baseline = baselineOrder(candidates);
+  const used = new Set([
+    ...fallbackOrder(candidates, baseline),
+    ...plan.pools.filter((pool) => pool.name.trim()).flatMap((pool) => pool.members),
+  ]);
+  return [...new Set([...plan.order, ...baseline])].filter(
+    (index) =>
+      Number.isInteger(index) && index >= 0 && index < candidates.length && used.has(index),
+  );
+}
+
+/** Reuse one existing row per target, preferring the medium row in legacy orders. */
 function candidateEntries(draft: OrderDraft, candidates: SetupCandidate[]) {
   const entries = [...draft.routing.entries];
   const percentages = { ...draft.percentages };
   const cache = new Map<string, string>();
-  const claimed = new Set<string>();
-  const entryFor = (index: number, effort: SetupEffort) => {
+  const entryFor = (index: number) => {
     const candidate = candidates[index]!;
-    const settings = settingsAtEffort(candidate, effort);
-    const id = candidate.effort?.id;
-    // Levels a model lacks collapse onto one entry; models without effort keep a single entry.
-    const cacheKey = `${index}:${id ? settings[id] : ""}`;
-    const cached = cache.get(cacheKey);
-    if (cached) return cached;
     const key = targetKey(candidate.target);
-    const same = entries.filter((entry) => targetKey(entry) === key && !claimed.has(entry.id));
-    const known =
-      same.find((entry) => !id || entry.modelSettings[id] === settings[id]) ??
-      (id && effort === "high"
-        ? same.find((entry) => effortRank(entry.modelSettings[id]) > CEILING)
-        : undefined);
+    const cached = cache.get(key);
+    if (cached) return cached;
+    const settings = settingsAtEffort(candidate, "medium");
+    const id = candidate.effort?.id;
+    const same = entries.filter((entry) => targetKey(entry) === key);
+    const known = (id && same.find((entry) => entry.modelSettings[id] === settings[id])) || same[0];
     let entryId = known?.id;
     if (!entryId) {
       if (entries.length >= MODEL_ROUTING_MAX_ENTRIES)
@@ -360,10 +454,9 @@ function candidateEntries(draft: OrderDraft, candidates: SetupCandidate[]) {
         modelSettings: entrySettings(settings),
         unknownLimit: "use",
       });
-      percentages[entryId] = "0";
+      percentages[entryId] = "";
     }
-    claimed.add(entryId);
-    cache.set(cacheKey, entryId);
+    cache.set(key, entryId);
     return entryId;
   };
   return { entries, percentages, entryFor };
@@ -373,7 +466,11 @@ function candidateEntries(draft: OrderDraft, candidates: SetupCandidate[]) {
 function planPools(
   current: ModelRoutingPool[],
   plan: SetupPlan,
-  memberIds: (indexes: number[], effort: SetupEffort) => string[],
+  memberIds: (indexes: number[]) => string[],
+  memberEffort: (
+    indexes: number[],
+    effort: SetupEffort,
+  ) => NonNullable<ModelRoutingPool["memberSettings"]>,
 ) {
   let pools = [...current];
   const byName = (name: string) => {
@@ -382,21 +479,25 @@ function planPools(
   };
   const planned = new Map<string, string[]>();
   for (const proposal of plan.pools) {
-    const entryIds = memberIds(proposal.members, poolEffort(plan, proposal.name));
+    const entryIds = memberIds(proposal.members);
     if (!proposal.name.trim() || (!entryIds.length && !proposal.includes.length)) continue;
+    // Each model runs at the effort the group's jobs need, set per model like the editor does.
+    const settings = memberEffort(proposal.members, poolEffort(plan, proposal.name));
+    const memberSettings = Object.keys(settings).length ? { memberSettings: settings } : {};
     const existing = byName(proposal.name);
     if (existing) {
-      const { poolIds: _previous, ...rest } = existing;
-      pools = pools.map((pool) => (pool.id === existing.id ? { ...rest, entryIds } : pool));
+      const { poolIds: _previous, effort: _effort, memberSettings: _settings, ...rest } = existing;
+      pools = pools.map((pool) =>
+        pool.id === existing.id ? { ...rest, entryIds, ...memberSettings } : pool,
+      );
       planned.set(existing.id, proposal.includes);
       continue;
     }
-    if (pools.length >= MODEL_ROUTING_MAX_POOLS)
-      throw new Error("Not enough room for catalog pools. Remove unused pools and try again.");
     const pool: ModelRoutingPool = {
       id: crypto.randomUUID(),
       name: poolName(proposal.name),
       entryIds,
+      ...memberSettings,
     };
     pools.push(pool);
     planned.set(pool.id, proposal.includes);
@@ -410,55 +511,185 @@ function planPools(
     return poolIds.length ? { ...pool, poolIds } : pool;
   });
   // A loop from the plan drops the plan's includes, never the owner's pools.
-  const result = (modelRoutingPoolCycle(included) ? pools : included).filter(
-    (pool) => pool.entryIds.length || pool.poolIds?.length,
-  );
-  return { pools: result, byName };
+  return { pools: modelRoutingPoolCycle(included) ? pools : included, byName };
+}
+
+/** Remove groups with no remaining route, including groups that only include an empty group. */
+function pruneEmptyPools(pools: ModelRoutingPool[]): ModelRoutingPool[] {
+  let remaining = pools;
+  while (true) {
+    const ids = new Set(remaining.map((pool) => pool.id));
+    const next = remaining
+      .map((pool): ModelRoutingPool => {
+        const poolIds = pool.poolIds?.filter((id) => ids.has(id));
+        if (poolIds?.length === pool.poolIds?.length) return pool;
+        const { poolIds: _previous, ...rest } = pool;
+        return poolIds?.length ? { ...rest, poolIds } : rest;
+      })
+      .filter((pool) => pool.entryIds.length || pool.poolIds?.length);
+    if (next.length === remaining.length) return next;
+    remaining = next;
+  }
 }
 
 /**
- * Apply a plan: add every candidate at medium effort in the planned order, create or refill
- * the planned pools by name with entries at each pool's effort, and bind the planned roles.
- * Existing entries keep their ids, limits and settings; pools and roles the plan does not name
- * are untouched.
+ * Apply a plan: add pool members and per-account tier fallbacks at medium effort in the
+ * planned order, create or refill the planned pools by name, and bind the planned roles.
+ * Existing entries keep their ids and limits. Explicitly removed accounts leave the draft
+ * with their group memberships and any bindings to groups that become empty.
  */
 export function applySmartSetup(
   draft: OrderDraft,
   candidates: SetupCandidate[],
   plan: SetupPlan,
+  source: ModelSource,
 ): OrderDraft {
-  const { entries, percentages, entryFor } = candidateEntries(draft, candidates);
-  const memberIds = (indexes: number[], effort: SetupEffort) => [
+  const accountRemoved = removedSetupAccount(source);
+  if (candidates.some(({ target }) => accountRemoved(target)))
+    throw new Error("Provider accounts changed during setup. Try again.");
+  const removed = new Set(draft.routing.entries.filter(accountRemoved).map(({ id }) => id));
+  const { entries, percentages, entryFor } = candidateEntries(
+    {
+      ...draft,
+      routing: {
+        ...draft.routing,
+        entries: draft.routing.entries.filter(({ id }) => !removed.has(id)),
+      },
+    },
+    candidates,
+  );
+  for (const id of removed) delete percentages[id];
+  const memberIds = (indexes: number[]) => [
     ...new Set(
       indexes
         .filter((index) => Number.isInteger(index) && index >= 0 && index < candidates.length)
-        .map((index) => entryFor(index, effort)),
+        .map(entryFor),
     ),
   ];
-  const planned = memberIds([...plan.order, ...baselineOrder(candidates)], "medium");
-  const { pools, byName } = planPools(draft.routing.pools, plan, memberIds);
-  // Pool entries at other efforts follow the medium ones in the main order.
+  const planned = memberIds(plannedOrder(candidates, plan));
+  const updatedPools = draft.routing.pools.map((pool) => {
+    const entryIds = pool.entryIds.filter((id) => !removed.has(id));
+    const { memberSettings, ...rest } = pool;
+    const kept = Object.entries(memberSettings ?? {}).filter(([id]) => !removed.has(id));
+    return {
+      ...rest,
+      entryIds,
+      ...(kept.length ? { memberSettings: Object.fromEntries(kept) } : {}),
+    };
+  });
+  const memberEffort = (indexes: number[], effort: SetupEffort) =>
+    Object.fromEntries(
+      indexes
+        .filter((index) => Number.isInteger(index) && index >= 0 && index < candidates.length)
+        .flatMap((index) => {
+          const candidate = candidates[index]!;
+          const id = candidate.effort?.id;
+          const value = id ? settingsAtEffort(candidate, effort)[id] : undefined;
+          return id && value ? [[entryFor(index), { [id]: value }]] : [];
+        }),
+    );
+  const { pools: proposedPools, byName } = planPools(updatedPools, plan, memberIds, memberEffort);
+  const pools = pruneEmptyPools(proposedPools);
+  if (pools.length > MODEL_ROUTING_MAX_POOLS)
+    throw new Error("Not enough room for catalog pools. Remove unused pools and try again.");
+  const poolIds = new Set(pools.map(({ id }) => id));
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   const sorted = [
     ...planned.map((id) => byId.get(id)!),
     ...entries.filter((entry) => !planned.includes(entry.id)),
   ];
   const roles = { ...draft.routing.roles };
+  for (const role of Object.keys(roles) as ModelRoutingRole[]) {
+    const choice = roles[role];
+    if (choice?.kind === "pool" && !poolIds.has(choice.poolId)) delete roles[role];
+    if (choice?.kind === "fixed" && accountRemoved(choice.target)) delete roles[role];
+  }
   for (const [role, choice] of Object.entries(plan.roles) as [
     ModelRoutingRole,
     SetupPlan["roles"][ModelRoutingRole],
   ][]) {
     if (!choice) continue;
     const pool = choice === "order" ? undefined : byName(choice.pool);
-    if (pool && pools.some((item) => item.id === pool.id))
-      roles[role] = { kind: "pool", poolId: pool.id };
+    if (pool && poolIds.has(pool.id)) roles[role] = { kind: "pool", poolId: pool.id };
     else if (role.startsWith("text.")) roles[role] = { kind: "order" };
     else delete roles[role];
   }
   return {
     ...draft,
     percentages,
-    routing: { ...draft.routing, entries: sorted, pools, roles },
+    routing: {
+      ...draft.routing,
+      entries: sorted.map((entry) => {
+        const modelSettings = withoutSetupAcceleration(entry.modelSettings);
+        return modelSettings === entry.modelSettings ? entry : { ...entry, modelSettings };
+      }),
+      pools,
+      roles,
+      delegation: planDelegation(draft.routing.delegation, candidates),
+    },
+  };
+}
+
+/** Smart Setup uses the standard provider speed for planning and generated routing. */
+export function withoutSetupAcceleration(settings: Record<string, string>): Record<string, string> {
+  const fast = settings.fast !== undefined && settings.fast !== "false";
+  const tier = settings.serviceTier !== undefined && settings.serviceTier !== "default";
+  return fast || tier
+    ? {
+        ...settings,
+        ...(fast ? { fast: "false" } : {}),
+        ...(tier ? { serviceTier: "default" } : {}),
+      }
+    : settings;
+}
+
+/**
+ * Subagents and advisor for every run: the strongest model advises; each provider's best
+ * standard and light model are the subagents, on its default account; subagents are capped at
+ * medium effort. Provider and account overrides of these keys are cleared so the plan applies.
+ * Without candidates for a part, that part keeps its current value.
+ */
+export function planDelegation(
+  current: ModelRoutingDelegation,
+  candidates: SetupCandidate[],
+): ModelRoutingDelegation {
+  const order = baselineOrder(candidates).map((index) => candidates[index]!);
+  const ref = (candidate: SetupCandidate) => ({
+    harness: candidate.target.harness,
+    model: candidate.target.model,
+  });
+  const advisor = order
+    .filter((candidate) => candidate.profile.intelligence >= 4)
+    .sort((a, b) => candidateScore(b) - candidateScore(a))[0];
+  const subagents = new Map<string, ReturnType<typeof ref>>();
+  for (const tier of ["standard", "light"] as const)
+    for (const candidate of order.filter((item) => candidateTier(item) === tier)) {
+      const key = `${candidate.target.harness}:${tier}`;
+      if (!subagents.has(key)) subagents.set(key, ref(candidate));
+    }
+  const refs = [
+    ...new Map([...subagents.values()].map((item) => [JSON.stringify(item), item])).values(),
+  ];
+  const planned: Record<string, string> = {
+    [CROSS_SUBAGENT_MAX_EFFORT_KEY]: "medium",
+    ...(advisor ? { [CROSS_ADVISOR_KEY]: JSON.stringify(ref(advisor)) } : {}),
+    ...(refs.length ? { [CROSS_SUBAGENTS_KEY]: encodeSubagents(refs)! } : {}),
+  };
+  const clear = (settings: Record<string, string>) => {
+    const next = { ...settings };
+    for (const key of Object.keys(planned)) delete next[key];
+    return next;
+  };
+  const layer = <K extends string>(values: Partial<Record<K, Record<string, string>>>) =>
+    Object.fromEntries(
+      Object.entries(values)
+        .map(([id, settings]) => [id, clear(settings as Record<string, string>)] as const)
+        .filter(([, settings]) => Object.keys(settings).length),
+    ) as Partial<Record<K, Record<string, string>>>;
+  return {
+    global: { ...current.global, ...planned },
+    providers: layer(current.providers),
+    accounts: layer(current.accounts) as Record<string, Record<string, string>>,
   };
 }
 

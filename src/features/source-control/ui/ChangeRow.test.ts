@@ -20,6 +20,41 @@ afterEach(async () => {
   vi.clearAllMocks();
 });
 
+it.each(["audio.ts", "routes/clientTp.ts", "utils/clientTp.ts", "routes/getAudioByCaptchaId.ts"])(
+  "keeps consistent file typography and secondary paths for %s",
+  async (relative) => {
+    await act(async () =>
+      root.render(
+        createElement(ChangeRow, {
+          file: {
+            path: `/repo/${relative}`,
+            relative,
+            status: "modified",
+            additions: 1,
+            deletions: 0,
+            staged: false,
+            unstaged: true,
+          },
+          kind: "unstaged",
+          active: false,
+          busy: false,
+          onOpenFile: vi.fn(),
+          onAction: vi.fn(),
+        }),
+      ),
+    );
+    const name = host.querySelector("[data-git-file] [data-truncate]")!;
+    expect(name.getAttribute("data-size")).toBe("secondary");
+    expect(name.getAttribute("data-tone")).toBe("primary");
+    expect(name.getAttribute("data-weight")).toBe("medium");
+    if (relative.includes("/")) {
+      const path = name.nextElementSibling!;
+      expect(path.getAttribute("data-weight")).toBe("regular");
+      expect(path.querySelector('[data-size="caption"][data-tone="secondary"]')).not.toBeNull();
+    }
+  },
+);
+
 it.each(["staged", "unstaged"] as const)(
   "opens deleted %s entries as diffs while keeping physical-file actions disabled",
   async (kind) => {

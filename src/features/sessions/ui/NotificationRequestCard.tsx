@@ -1,43 +1,26 @@
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Text } from "../../../shared/ui/Text";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { motionAttributes } from "../../../shared/ui/Motion";
-import { InlineError } from "../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { ApprovalRequest } from "../../../shared/ui/ApprovalRequest";
-import { Badge } from "../../../shared/ui/Badge";
+import { Timestamp } from "../../../shared/ui/Timestamp";
 import { Button } from "../../../shared/ui/Button";
-import { X } from "../../../shared/ui/icons";
+import { ArrowRight, Chatting, X } from "../../../shared/ui/icons";
 import { useT } from "../../../shared/i18n";
-import { HARNESS_TITLE, sessionDisplayTitle } from "../model/session";
+import { sessionDisplayTitle } from "../model/session";
 import type { ApprovalDispatch } from "./ApprovalDecisionContext";
 import type { Notice } from "./ApprovalToasts";
 import { HarnessIcon } from "./HarnessIcon";
-import { NotificationProjectLabel, NotificationTime } from "./NotificationHistoryItem";
+import { NotificationProjectLabel } from "./NotificationHistoryItem";
 import { hasToolInspection, ToolInspectionPanel } from "./ToolInspectionPanel";
 import { bycodaToolCall } from "../model/bycodaToolCall";
+import { approvalTitle } from "./approvalPresentation";
 import { useApprovalDecisionControl } from "./useApprovalDecisionControl";
 
-/**
- * One pending question or approval, as a floating popup or a row of the sheet's
- * pending card. The body opens the conversation; an approval is decided in
- * place, a question is answered in its conversation.
- */
-export function NotificationRequestCard({
-  notice,
-  occurredAt,
-  onFocusSession,
-  onApproval,
-  onDismiss,
-}: {
-  notice: Notice;
-  /** Shown in the sheet's pending card; floating popups omit it. */
-  occurredAt?: number;
-  onFocusSession: (sessionId: string) => void;
-  onApproval: ApprovalDispatch;
-  onDismiss?: () => void;
-}) {
-  const t = useT();
-  const { session, label, requestId } = notice;
+/** The undecided approval block behind a notice and the exact request it asks to allow. */
+export function noticeApproval({ session, label, requestId }: Notice) {
   const block = session.blocks.find(
     (item) => item.approval?.requestId === requestId && !item.approval.decided,
   );
@@ -47,6 +30,36 @@ export function NotificationRequestCard({
       block.tool?.title ??
       block.text)
     : label;
+  return { block, detail };
+}
+
+/**
+ * One pending question or approval, as a floating popup or a row of the sheet's
+ * pending card. The body and Go open the conversation. A popup decides an
+ * approval in place; a sheet row's Answer opens it in a dialog (`onAnswer`).
+ * A question is answered in its conversation.
+ */
+export function NotificationRequestCard({
+  notice,
+  occurredAt,
+  onFocusSession,
+  onApproval,
+  onDismiss,
+  onAnswer,
+}: {
+  notice: Notice;
+  /** Shown in the sheet's pending card; floating popups omit it. */
+  occurredAt?: number;
+  onFocusSession: (sessionId: string) => void;
+  onApproval: ApprovalDispatch;
+  onDismiss?: () => void;
+  /** Sheet rows open the approval in a dialog instead of deciding it inline. */
+  onAnswer?: (notice: Notice) => void;
+}) {
+  const t = useT();
+  const { session, label, requestId } = notice;
+  const { block, detail } = noticeApproval(notice);
+  const inline = notice.kind === "approval" && !onAnswer;
   const title = sessionDisplayTitle(session.title, session.harness);
   const decision = useApprovalDecisionControl(session, requestId, onApproval);
   return (
@@ -54,11 +67,16 @@ export function NotificationRequestCard({
       as="article"
       variant={onDismiss ? "floating" : "row"}
       {...motionAttributes(
-        { enter: onDismiss ? "down" : undefined, transition: "colors", duration: "standard" },
+        {
+          enter: onDismiss ? "down" : undefined,
+          transition: "colors",
+          duration: "standard",
+        },
         "approval-toast notification-request pointer-events-auto flex-col items-stretch gap-0 overflow-clip",
       )}
-      role="status"
     >
+      {/* The popup announces itself: the card is not a live region, its own text is. */}
+      <LiveText className="sr-only" text={`${title}. ${label}`} />
       <Button
         fullWidth
         variant="item"
@@ -83,7 +101,7 @@ export function NotificationRequestCard({
         </ClampText>
         <ClampText
           as="span"
-          lines={3}
+          lines={1}
           expandable={false}
           size="caption"
           tone="secondary"
@@ -102,15 +120,13 @@ export function NotificationRequestCard({
           variant="ghost"
           type="button"
           onClick={onDismiss}
-          aria-label={t("Dismiss notice")}
           className="notification-popup-dismiss"
           data-no-drag=""
         >
           <X className="icon-sm" />
         </Button>
       ) : null}
-      {/* One footer row: source, harness and time on the left, kind and the
-          decision or the way to answer on the right. */}
+      {/* Source and time share the footer with the action that opens the conversation. */}
       <Text
         as="div"
         size="caption"
@@ -120,44 +136,63 @@ export function NotificationRequestCard({
       >
         <span className="notification-request-source flex min-w-0 items-center gap-2">
           <NotificationProjectLabel cwd={session.cwd} />
-          <span className="flex min-w-0 shrink-0 items-center gap-1.5">
-            <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
-            <Text size="inherit" tone="inherit" truncate>
-              {HARNESS_TITLE[session.harness]}
-            </Text>
-          </span>
-          {occurredAt != null ? <NotificationTime at={occurredAt} /> : null}
+          <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
+          {occurredAt != null ? <Timestamp value={occurredAt} format="relative" /> : null}
         </span>
-        <span
-          className="notification-request-actions flex shrink-0 items-center gap-1"
-          data-no-drag=""
-        >
-          <Badge tone="warning">{notice.kind === "question" ? t("Question") : t("Approval")}</Badge>
-          {notice.kind === "question" ? (
+        {notice.kind === "question" ? (
+          <Button
+            className="ms-auto shrink-0"
+            variant="ghost"
+            size="sm"
+            type="button"
+            startIcon={<Chatting className="icon-sm" />}
+            onClick={() => onFocusSession(session.id)}
+          >
+            {t("Answer")}
+          </Button>
+        ) : onAnswer ? (
+          <span className="ms-auto flex shrink-0 items-center gap-1">
             <Button
               variant="ghost"
               size="sm"
               type="button"
+              startIcon={<ArrowRight className="icon-sm" />}
               onClick={() => onFocusSession(session.id)}
+            >
+              {t("Go")}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              startIcon={<Chatting className="icon-sm" />}
+              onClick={() => onAnswer(notice)}
             >
               {t("Answer")}
             </Button>
-          ) : null}
-        </span>
+          </span>
+        ) : null}
       </Text>
-      {notice.kind === "approval" ? (
+      {inline ? (
         <div className="px-3 pb-2">
           <ApprovalRequest
-            title={t("Needs approval")}
+            title={approvalTitle(block, t)}
+            actions={decision.sessionAction ? [decision.sessionAction] : undefined}
             detail={detail}
             details={
               block && hasToolInspection(block)
-                ? { label: t("Details"), content: <ToolInspectionPanel block={block} /> }
+                ? {
+                    label: t("Details"),
+                    content: <ToolInspectionPanel block={block} />,
+                  }
                 : undefined
             }
             allow={{
               label: t("Allow"),
-              pending: decision.pending && decision.decision === "allow",
+              pending:
+                decision.pending &&
+                !decision.allowForSessionPending &&
+                decision.decision === "allow",
               disabled: decision.blocked,
               onClick: () => void decision.decide("allow"),
             }}
@@ -170,13 +205,13 @@ export function NotificationRequestCard({
           />
         </div>
       ) : null}
-      {notice.kind === "approval" && decision.feedback ? (
+      {inline && decision.feedback ? (
         decision.danger ? (
-          <InlineError className="px-3 pb-2">{decision.feedback}</InlineError>
+          <InlineError inset="row">{decision.feedback}</InlineError>
         ) : (
-          <Text role="status" as="div" size="caption" tone="secondary" className="px-3 pb-2">
+          <InlineMessage tone="neutral" inset="row">
             {decision.feedback}
-          </Text>
+          </InlineMessage>
         )
       ) : null}
     </ActionHost>

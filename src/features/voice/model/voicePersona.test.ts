@@ -7,7 +7,7 @@ import {
   saveVoicePersona,
   voicePersonaInstructions,
 } from "./voicePersona";
-import { buildVoicePrompt } from "./voicePrompt";
+import { buildVoicePrompt } from "../../../shared/model/voice-realtime/voicePrompt";
 import { realtimeSession } from "./realtimeVoice";
 
 describe("voice persona", () => {

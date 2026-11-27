@@ -72,3 +72,55 @@ it("shares unchanged threads across polls, including unchanged timestamps with c
     vi.unstubAllGlobals();
   }
 });
+
+it("retries only the failed accounts and keeps the healthy account's threads", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const accounts: MessagingAccount[] = ["healthy", "broken"].map((id) => ({
+    id,
+    provider: "slack",
+    label: id,
+    identity: "",
+    config: {},
+    connected: true,
+    createdAt: 1,
+    updatedAt: 1,
+  }));
+  const thread = (accountId: string): MessageThread => ({
+    id: `${accountId}-thread`,
+    accountId,
+    provider: "slack",
+    title: accountId,
+    participants: [],
+    preview: "",
+    updatedAt: 2,
+    unread: false,
+  });
+  list.mockReset();
+  list.mockImplementation(async (accountId: string) => {
+    if (accountId === "broken") throw new Error("offline");
+    return [thread(accountId)];
+  });
+  let result!: ReturnType<typeof useMessageThreads>;
+  function Probe() {
+    result = useMessageThreads(accounts, false);
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root.render(createElement(Probe)));
+    expect(result.failures.map(({ account }) => account.id)).toEqual(["broken"]);
+    expect(result.threads.map((item) => item.id)).toEqual(["healthy-thread"]);
+    list.mockClear();
+    list.mockResolvedValue([thread("broken")]);
+    await act(async () => result.refreshAccounts(["broken"]));
+    expect(list.mock.calls.map(([accountId]) => accountId)).toEqual(["broken"]);
+    expect(result.failures).toEqual([]);
+    expect(result.threads.map((item) => item.id).sort()).toEqual([
+      "broken-thread",
+      "healthy-thread",
+    ]);
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});

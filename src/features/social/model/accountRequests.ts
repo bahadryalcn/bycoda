@@ -19,7 +19,9 @@ export type SocialAccountRequest = {
   requestedBy: { provider: string; actorId: string; sessionId?: string };
   status: AccountRequestStatus;
   mode?: AccountRequestMode;
-  /** The browser account record created on approval. */
+  /** Existing LinkedIn account referenced by a reconnect request, before owner approval. */
+  requestedAccountId?: string;
+  /** Account authorized on approval. A reconnect keeps its existing record. */
   accountId?: string;
   createdAt: number;
   updatedAt: number;

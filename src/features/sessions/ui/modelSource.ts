@@ -38,7 +38,10 @@ export const LOCAL_MODEL_SOURCE: ModelSource = {
   probed: hasProbedHarnessAvailability,
   refresh: (harnesses) => {
     void probeHarnessAvailability();
-    void refreshHarnessCatalogs(harnesses);
+    // Codex service tiers can change with account access while the picker is closed.
+    if (harnesses.includes("codex")) void refreshHarnessCatalogs(["codex"], { force: true });
+    const others = harnesses.filter((harness) => harness !== "codex");
+    if (others.length > 0) void refreshHarnessCatalogs(others);
   },
 };
 

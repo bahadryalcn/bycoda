@@ -5,6 +5,7 @@ import { ContextMenu } from "../../../shared/ui/ContextMenu";
 import { Divider } from "../../../shared/ui/Divider";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import type { GitHistoryCommit } from "../../../platform/tauri/fs";
+import { useDiffIndex } from "../hooks/useDiffIndex";
 import {
   saveGitPanelSection,
   useGitPanelSections,
@@ -39,7 +40,7 @@ export function GitPanelSections({
 }: {
   cwd: string;
   enabled: boolean;
-  hasChanges: boolean;
+  hasChanges?: boolean;
   selectedSha?: string;
   onOpenCommit: (commit: GitHistoryCommit, pin?: boolean) => void;
   paneRef: RefObject<HTMLDivElement | null>;
@@ -48,6 +49,7 @@ export function GitPanelSections({
 }) {
   useLocale();
   const shown = useGitPanelSections();
+  const { index } = useDiffIndex(cwd, enabled && !!repositories, true, paneRef);
   const [graphHeight, setGraphHeight] = useState(loadGraphPanelHeight);
   const [graphExpanded, setGraphExpanded] = useState(graphOpen);
   // A drag paints the graph box directly; re-rendering the whole panel every
@@ -63,6 +65,9 @@ export function GitPanelSections({
       saveGraphPanelHeight(max);
     }
   }, [graphHeight, paneRef]);
+
+  // Overview rows can include folders that only contain child repositories.
+  if (repositories && (!index || index.repository === false)) return null;
 
   return (
     <>
@@ -86,7 +91,9 @@ export function GitPanelSections({
           key={cwd}
           cwd={cwd}
           enabled={enabled}
-          hasChanges={hasChanges}
+          hasChanges={
+            hasChanges ?? (!!index && (index.files.length > 0 || !!index.conflicts?.length))
+          }
           onOpenCommit={onOpenCommit}
         />
       ) : null}
@@ -138,7 +145,7 @@ export function GitPanelSections({
   );
 }
 
-const SECTION_LABEL: Record<GitPanelSection, string> = { stashes: "Stashes", graph: "Graph" };
+const SECTIONS: GitPanelSection[] = ["stashes", "graph"];
 
 function isEditable(target: EventTarget | null): boolean {
   return (
@@ -174,10 +181,10 @@ export function usePanelPreferencesMenu({
       y={point.y}
       ariaLabel={t("Source Control")}
       items={[
-        ...(Object.keys(SECTION_LABEL) as GitPanelSection[]).map((section) => ({
+        ...SECTIONS.map((section) => ({
           kind: "item" as const,
           id: section,
-          label: t(SECTION_LABEL[section]),
+          label: section === "stashes" ? t("Stashes") : t("Graph"),
           checked: shown[section],
         })),
         { kind: "sep" as const },
@@ -192,7 +199,7 @@ export function usePanelPreferencesMenu({
       onPick={(id) => {
         setPoint(null);
         if (id === "auto-fetch") onToggleAutoFetch();
-        else if (id in SECTION_LABEL)
+        else if (SECTIONS.includes(id as GitPanelSection))
           saveGitPanelSection(id as GitPanelSection, !shown[id as GitPanelSection]);
       }}
       onClose={() => setPoint(null)}

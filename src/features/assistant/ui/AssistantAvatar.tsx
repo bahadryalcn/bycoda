@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import type { AssistantProfilePatch } from "../../../shared/model/host-contracts/assistant";
 import { t } from "../../../shared/i18n";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
-import { optionalTextAttributes, Text, type TextRoles } from "../../../shared/ui/Text";
+import { optionalTextAttributes, type TextRoles } from "../../../shared/ui/Text";
 import { TextField } from "../../../shared/ui/TextField";
 import {
   ASSISTANT_AVATAR_PRESETS,
   DEFAULT_ASSISTANT_AVATAR,
+  type AssistantAvatarPresetId,
   assistantAvatarGeneratedValue,
   assistantAvatarImageUrl,
   assistantAvatarPresetValue,
@@ -16,6 +17,28 @@ import { loadGeneratedAvatar } from "../model/generatedAvatarCache";
 import { Avatar, type AvatarSize } from "../../../shared/ui/identity/Avatar";
 import { AvatarGenerator } from "./builder/AvatarGenerator";
 import styles from "./AssistantAvatar.module.css";
+
+/** The translated name of a bundled portrait; call it while rendering. */
+function presetLabel(id: AssistantAvatarPresetId): string {
+  switch (id) {
+    case "orb":
+      return t("Orb");
+    case "robot":
+      return t("Robot");
+    case "owl":
+      return t("Owl");
+    case "fox":
+      return t("Fox");
+    case "spark":
+      return t("Spark");
+    case "wave":
+      return t("Wave");
+    case "character":
+      return t("Assistant");
+    case "cat":
+      return t("Cat");
+  }
+}
 
 const DEFAULT_PORTRAIT = assistantAvatarImageUrl(DEFAULT_ASSISTANT_AVATAR);
 
@@ -121,14 +144,12 @@ export function AssistantAvatarMark({
   );
 }
 
-/** Portrait tiles (bundled and AI-generated), a free emoji or initials field and an AI generator; clearing the field returns to the default portrait. */
+/** Settings avatar: portrait tiles (bundled and AI-generated), a free emoji or initials field and an AI generator; clearing the field returns to the default portrait. */
 export function AssistantAvatarPicker({
   value,
-  hideLabel,
   onChange,
 }: {
   value: string | undefined;
-  hideLabel: boolean;
   onChange: (patch: AssistantProfilePatch) => void;
 }) {
   const view = assistantAvatarView(value);
@@ -141,16 +162,16 @@ export function AssistantAvatarPicker({
       <RadioGroup
         variant="tiles"
         label={t("Avatar")}
-        className={styles.tiles}
-        tileClassName={styles.tile}
-        tile={{ shape: "pill", selectionIndicator: "border-ring" }}
+        tileLayout="icon"
+        tile={{ size: "lg", shape: "pill", selectionIndicator: "border-ring" }}
         value={view.kind === "image" ? assistantAvatarPresetValue(view.id) : (current ?? "")}
         onValueChange={(next) => onChange({ avatar: next })}
         options={[
           ...ASSISTANT_AVATAR_PRESETS.map((preset) => ({
             value: assistantAvatarPresetValue(preset.id),
-            ariaLabel: t(preset.label),
-            tooltip: t(preset.label),
+            iconOnly: true,
+            ariaLabel: presetLabel(preset.id),
+            tooltip: presetLabel(preset.id),
             content: (
               <img
                 className={styles.tileImage}
@@ -162,6 +183,7 @@ export function AssistantAvatarPicker({
           })),
           ...generated.map((avatar, index) => ({
             value: avatar,
+            iconOnly: true,
             ariaLabel: t("Generated avatar {p0}", { p0: index + 1 }),
             tooltip: t("Generated avatar {p0}", { p0: index + 1 }),
             content: (
@@ -172,21 +194,16 @@ export function AssistantAvatarPicker({
       />
       <TextField
         label={t("Emoji or initials")}
-        hideLabel={hideLabel}
         value={view.kind === "text" ? view.text : ""}
         maxLength={200}
-        placeholder={t("Emoji or initials")}
         onChange={(event) => onChange({ avatar: event.currentTarget.value })}
       />
-      <div className={styles.generate}>
-        <Text leading="inherit">{t("Generate with AI")}</Text>
-        <AvatarGenerator
-          onGenerated={(avatar) => {
-            setDrawn((list) => (list.includes(avatar) ? list : [...list, avatar]));
-            onChange({ avatar });
-          }}
-        />
-      </div>
+      <AvatarGenerator
+        onGenerated={(avatar) => {
+          setDrawn((list) => (list.includes(avatar) ? list : [...list, avatar]));
+          onChange({ avatar });
+        }}
+      />
     </div>
   );
 }

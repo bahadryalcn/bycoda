@@ -6,6 +6,7 @@ import {
   formatResetDuration,
   formatUsagePercent,
   formatWindowLabel,
+  rateLimitWindowNameWith,
   type ProviderRateLimits,
   type RateLimitWindow,
 } from "../model/rateLimits";
@@ -26,6 +27,26 @@ const STATUS_TONE: Record<AccountStatusTone, BadgeTone> = {
 };
 
 /** Dot + word, e.g. "● Ready" or "● Exhausted back in 31m". */
+/** The account status label in the current language; the model keeps its fixed labels in English. */
+function statusText(label: string): string {
+  switch (label) {
+    case "Checking…":
+      return t("Checking…");
+    case "Ready":
+      return t("Ready");
+    case "Running low":
+      return t("Running low");
+    case "Exhausted":
+      return t("Exhausted");
+    case "Not signed in":
+      return t("Not signed in");
+    case "Usage unavailable":
+      return t("Usage unavailable");
+    default:
+      return label;
+  }
+}
+
 export function AccountStatusLabel({
   status,
   className = "",
@@ -38,6 +59,20 @@ export function AccountStatusLabel({
   /** Text roles of the line: `size` and `truncate` apply to the root, `tone` to the detail text (default muted); the badge keeps its own. */
 } & Pick<TextRoles, "size" | "tone" | "truncate">) {
   useLocale();
+  // A low account shows only its remaining percent, yellow or red, instead of a "Running low" badge.
+  if (status.tone === "low" && status.detail) {
+    return (
+      <Text
+        size={size ?? "inherit"}
+        tone={status.critical ? "danger" : "warning"}
+        weight="medium"
+        truncate={truncate}
+        className={`min-w-0 tabular-nums ${className}`}
+      >
+        {status.detail}
+      </Text>
+    );
+  }
   return (
     <span
       {...optionalTextAttributes(
@@ -46,7 +81,7 @@ export function AccountStatusLabel({
       )}
     >
       <Badge tone={STATUS_TONE[status.tone]} size="sm">
-        {t(status.label)}
+        {statusText(status.label)}
       </Badge>
       {status.detail ? (
         <OverflowTooltip label={status.detail}>
@@ -68,50 +103,36 @@ export function AccountUsageRefresh({ usage }: { usage: AccountUsage }) {
       iconOnly
       label={t("Refresh usage limits")}
       loading={usage.refreshing}
-      disabled={usage.refreshing}
       onClick={usage.refresh}
-      aria-label={t("Refresh usage limits")}
     >
       <RefreshCw className="icon-sm" strokeWidth={1.75} />
     </Button>
   );
 }
 
-/** Titled 5h / weekly / monthly windows an account has data for, titled with `translate`. */
+/** Titled 5-hour / weekly / monthly windows an account has data for, titled with `translate`. */
 export function meterWindowsWith(
   limits: ProviderRateLimits | undefined,
   translate: (message: string, values?: Record<string, unknown>) => string,
 ): { title: string; window: RateLimitWindow }[] {
   return [
-    limits?.session ? { title: "5h", window: limits.session } : null,
-    limits?.weekly ? { title: translate("Weekly"), window: limits.weekly } : null,
-    limits?.monthly ? { title: translate("Monthly"), window: limits.monthly } : null,
+    limits?.session
+      ? { title: rateLimitWindowNameWith("session", translate), window: limits.session }
+      : null,
+    limits?.weekly
+      ? { title: rateLimitWindowNameWith("weekly", translate), window: limits.weekly }
+      : null,
+    limits?.monthly
+      ? { title: rateLimitWindowNameWith("monthly", translate), window: limits.monthly }
+      : null,
   ].filter((entry) => entry != null);
 }
 
-/** Titled 5h / weekly / monthly windows an account has data for. */
+/** Titled 5-hour / weekly / monthly windows an account has data for. */
 export function meterWindows(
   limits: ProviderRateLimits | undefined,
 ): { title: string; window: RateLimitWindow }[] {
-  return [
-    limits?.session ? { title: "5h", window: limits.session } : null,
-    limits?.weekly
-      ? {
-          get title() {
-            return t("Weekly");
-          },
-          window: limits.weekly,
-        }
-      : null,
-    limits?.monthly
-      ? {
-          get title() {
-            return t("Monthly");
-          },
-          window: limits.monthly,
-        }
-      : null,
-  ].filter((entry) => entry != null);
+  return meterWindowsWith(limits, t);
 }
 
 /** Compact 5h / weekly meters for one account row. */
@@ -127,23 +148,19 @@ export function AccountUsageMeters({
 
   if (windows.length === 0) {
     const loading = !limits || limits.status === "idle" || limits.status === "fetching";
+    // The row's status line already explains why there is no data, so nothing reserves its space.
+    if (!loading) return null;
     return (
-      <div className="hidden shrink-0 gap-4 sm:flex">
-        {loading ? (
-          <>
-            <MeterSkeleton />
-            <MeterSkeleton />
-          </>
-        ) : (
-          // The row's status line already explains why there is no data.
-          <span className="w-[19rem]" aria-hidden />
-        )}
+      <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-2">
+        <MeterSkeleton />
+        <MeterSkeleton />
       </div>
     );
   }
 
   return (
-    <div className="hidden shrink-0 gap-4 sm:flex">
+    // Meters wrap below the account name when the row is narrow instead of disappearing.
+    <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-2">
       {windows.map((entry) => (
         <UsageMeter key={entry.title} title={entry.title} window={entry.window} now={now} />
       ))}
@@ -171,20 +188,19 @@ export function UsageMeter({
     window.resetsAt == null
       ? formatWindowLabel(window.windowMinutes)
       : window.resetsAt <= now
-        ? t("reset due")
+        ? t("Resets now")
         : formatResetDuration(window.resetsAt - now);
+  const resetsAtLabel =
+    window.resetsAt == null
+      ? undefined
+      : t("Resets {p0}", {
+          p0: formatDate(window.resetsAt, { dateStyle: "medium", timeStyle: "short" }),
+        });
   return (
-    <Tooltip
-      label={
-        window.resetsAt == null
-          ? undefined
-          : t("Resets {p0}", {
-              p0: formatDate(window.resetsAt, { dateStyle: "medium", timeStyle: "short" }),
-            })
-      }
-      asChild
-    >
-      <div className={className}>
+    <Tooltip label={resetsAtLabel} describe={false} asChild>
+      {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- Focus reveals the exact reset time tooltip for keyboard users. */}
+      <div className={className} tabIndex={resetsAtLabel ? 0 : undefined}>
+        {resetsAtLabel ? <span className="sr-only">{resetsAtLabel}</span> : null}
         <Text as="div" className="flex items-baseline justify-between gap-2">
           <Text size="inherit" tone="secondary" truncate className="min-w-0">
             {title} · <span className="tabular-nums">{reset}</span>
@@ -212,7 +228,11 @@ export function UsageMeter({
           decimals={0}
           tone={pct >= 90 ? "danger" : pct >= 80 ? "warning" : "neutral"}
           className="mt-1.5"
-          label={t(showRemaining ? "{p0} limit remaining" : "{p0} limit used", { p0: title })}
+          label={
+            showRemaining
+              ? t("{p0} limit remaining", { p0: title })
+              : t("{p0} limit used", { p0: title })
+          }
         />
       </div>
     </Tooltip>

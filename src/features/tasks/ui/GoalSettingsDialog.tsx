@@ -1,21 +1,28 @@
-import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Text } from "../../../shared/ui/Text";
-import { useState } from "react";
-import { t, useLocale } from "../../../shared/i18n";
-import { Alert } from "../../../shared/ui/Alert";
+import { useId, useState } from "react";
+import { t, useFormat, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { ClampText } from "../../../shared/ui/ClampText";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
-import { Modal } from "../../../shared/ui/Modal";
+import { Heading } from "../../../shared/ui/Heading";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { Modal, ModalActions, ModalFooter } from "../../../shared/ui/Modal";
 import { NumberField } from "../../../shared/ui/NumberField";
+import { Surface } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
+import { projectDisplayName } from "../../projects/public/projectNames";
+import { ModelLabel } from "../../sessions/public/ModelLabel";
+import { runtimeModeLabel } from "../model/runtimeModeLabel";
 import type { BoardGoal } from "../model/goalClient";
 import type { GoalSettings } from "../model/hostGoals";
-import { AutoMergeField } from "./TaskFormFields";
+import { GoalConcurrencyOption, GoalContinueSwitch, TaskMoreOptions } from "./GoalFormParts";
 import { TaskBudgetControls } from "./TaskBudgetControls";
-import { GoalCheckOption, GoalConcurrencyOption, GoalOption, GoalSection } from "./GoalFormParts";
+import { TaskFormRow } from "./TaskFormFields";
 import type { TaskGoalsController } from "./TaskGoalsController";
-import "./task-goals.css";
+import { TaskModelChoiceLabel } from "./TaskModelChoiceLabel";
+import { TargetChips } from "../../../shared/ui/TargetChips";
 
-/** Operational edits retain the goal's plan and execution identity. */
+/** Operational edits retain the plan and its execution identity. */
 function GoalSettingsForm({
   goal,
   saving,
@@ -32,6 +39,9 @@ function GoalSettingsForm({
   onError: (reason: unknown) => void;
 }) {
   useLocale();
+  const format = useFormat();
+  const formId = useId();
+  const [concurrencyValid, setConcurrencyValid] = useState(true);
   const [settings, setSettings] = useState<GoalSettings>(() => ({
     budget: goal.budget,
     autoMerge: Boolean(goal.autoMerge),
@@ -39,19 +49,19 @@ function GoalSettingsForm({
     maxRunningTasks: goal.maxRunningTasks ?? 0,
     maxRunMinutes: goal.maxRunMinutes,
   }));
-  const valid =
+  const timeLimitValid =
     Number.isInteger(settings.maxRunMinutes) &&
     settings.maxRunMinutes >= 0 &&
     settings.maxRunMinutes <= 10_080;
+  const valid = timeLimitValid && concurrencyValid;
   const update = <K extends keyof GoalSettings>(key: K, value: GoalSettings[K]) =>
     setSettings((current) => ({ ...current, [key]: value }));
   const planning = goal.status === "planning";
   return (
-    <Text
-      as="form"
-      size="secondary"
-      tone="inherit"
+    <form
+      id={formId}
       aria-label={t("Edit epic settings")}
+      aria-busy={saving}
       className="task-form"
       onSubmit={(event) => {
         event.preventDefault();
@@ -59,88 +69,160 @@ function GoalSettingsForm({
       }}
     >
       <div className="task-form-body">
-        <Text as="p" size="inherit" tone="inherit" weight="medium" className="break-words">
-          {goal.title}
-        </Text>
-        <Text as="p" size="micro" tone="secondary" leading="inherit" className="task-form-hint">
-          {t(
-            "Applies to existing unfinished tasks. Delivery requires approval of the reviewed source and target.",
-          )}
-        </Text>
-        <FieldGroup variant="bare" disabled={saving}>
-          <div className="goal-form-sections mt-3 min-w-0">
-            <GoalSection title={t("How it runs")}>
-              <GoalCheckOption
-                title={t("Continue until complete")}
-                description={t(
-                  "Keeps correcting while progress is made; asks for input when needed.",
+        <FieldGroup variant="bare" disabled={saving} inert={saving}>
+          <div className="task-form-fields">
+            <div className="flex min-w-0 items-center gap-1">
+              <Heading size="section" level={3} className="min-w-0 break-words">
+                {goal.title}
+              </Heading>
+              <InfoPopover label={t("About epic settings")}>
+                {t(
+                  "Applies to existing unfinished tasks. Delivery requires approval of the reviewed source and target.",
                 )}
+              </InfoPopover>
+            </div>
+            <ClampText
+              as="p"
+              lines={2}
+              expandable={false}
+              size="caption"
+              tone="secondary"
+              wrap="anywhere"
+            >
+              {goal.prompt}
+            </ClampText>
+            <TargetChips
+              project={
+                goal.projects.length
+                  ? {
+                      value: goal.leadProjectId,
+                      options: [],
+                      currentLabel: goal.projects
+                        .map(({ cwd }) => projectDisplayName(cwd))
+                        .join(" · "),
+                    }
+                  : undefined
+              }
+              model={
+                <Text size="caption" tone="secondary">
+                  {goal.modelChoice && goal.modelChoice.kind !== "fixed" ? (
+                    <TaskModelChoiceLabel choice={goal.modelChoice} machineId={goal.machineId} />
+                  ) : (
+                    <ModelLabel harness={goal.harness} model={goal.model} />
+                  )}
+                </Text>
+              }
+              access={
+                goal.harness !== "fx" ? (
+                  <Text size="caption" tone="secondary">
+                    {runtimeModeLabel(goal.runtimeMode)}
+                  </Text>
+                ) : null
+              }
+            />
+            <Surface
+              frame="pane"
+              radius="row"
+              dividers="pane"
+              padding="sm"
+              className="task-form-rows"
+            >
+              <GoalContinueSwitch
                 checked={settings.continueUntilDone}
                 onChange={(checked) => update("continueUntilDone", checked)}
               />
-              <GoalConcurrencyOption
-                value={settings.maxRunningTasks}
-                onChange={(value) => update("maxRunningTasks", value)}
-              />
-            </GoalSection>
-            <GoalSection title={t("Review and delivery")} framed={false}>
-              <AutoMergeField
-                checked={settings.autoMerge}
-                disabled={goal.isolate === false}
-                onChange={(value) => update("autoMerge", value)}
-              />
-            </GoalSection>
-            <GoalSection title={t("Limits")} framed={false}>
-              <TaskBudgetControls
-                budget={settings.budget}
-                onChange={(budget) => update("budget", budget ?? {})}
-              />
-              <GoalOption
-                title={t("Run limit (minutes)")}
-                description={t(
-                  "Zero disables the run limit. Limits apply to waiting tasks; active tasks keep their current limit. Blocked tasks still require restart.",
-                )}
-                reason={t("Wait for planning to finish before changing the run limit.")}
-                disabled={planning}
+            </Surface>
+            <TaskMoreOptions
+              summary={[
+                timeLimitValid &&
+                  settings.maxRunMinutes > 0 &&
+                  format.formatDuration(settings.maxRunMinutes * 60_000),
+                settings.maxRunningTasks > 0 &&
+                  `${t("Concurrent tasks in this epic")} (${format.formatNumber(settings.maxRunningTasks)})`,
+                settings.budget && Object.values(settings.budget).some(Boolean) && t("Run budget"),
+              ]}
+            >
+              <Surface
+                frame="pane"
+                radius="row"
+                dividers="pane"
+                padding="sm"
+                className="task-form-rows"
               >
-                <NumberField
-                  hideLabel
-                  label={t("Run limit (minutes)")}
-                  disabled={planning}
-                  min={0}
-                  max={10_080}
-                  step={1}
-                  value={Number.isNaN(settings.maxRunMinutes) ? "" : settings.maxRunMinutes}
-                  onChange={(event) =>
-                    update(
-                      "maxRunMinutes",
-                      event.target.value === "" ? NaN : Number(event.target.value),
-                    )
+                <TaskFormRow
+                  label={
+                    <span className="inline-flex items-center gap-1">
+                      {t("Run limit (minutes)")}
+                      <InfoPopover>
+                        {t(
+                          "Zero disables the run limit. Limits apply to waiting tasks; active tasks keep their current limit. Blocked tasks still require restart.",
+                        )}
+                      </InfoPopover>
+                    </span>
                   }
+                >
+                  <NumberField
+                    hideLabel
+                    label={t("Run limit (minutes)")}
+                    disabled={planning}
+                    min={0}
+                    max={10_080}
+                    step={1}
+                    value={Number.isNaN(settings.maxRunMinutes) ? "" : settings.maxRunMinutes}
+                    aria-invalid={!timeLimitValid || undefined}
+                    onChange={(event) => update("maxRunMinutes", event.currentTarget.valueAsNumber)}
+                  />
+                </TaskFormRow>
+                {planning ? (
+                  <InlineMessage tone="info">
+                    {t("Wait for planning to finish before changing the run limit.")}
+                  </InlineMessage>
+                ) : null}
+                <GoalConcurrencyOption
+                  value={settings.maxRunningTasks}
+                  onChange={(value) => update("maxRunningTasks", value)}
+                  onValidityChange={setConcurrencyValid}
                 />
-              </GoalOption>
-            </GoalSection>
+                <TaskBudgetControls
+                  compact
+                  budget={settings.budget}
+                  onChange={(budget) => update("budget", budget ?? {})}
+                />
+              </Surface>
+            </TaskMoreOptions>
           </div>
         </FieldGroup>
-        {error ? (
-          <Alert tone="danger" className="mt-3">
-            {t(error)}
-          </Alert>
-        ) : null}
+        {error ? <InlineError className="mt-3" details={error} /> : null}
       </div>
-      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "task-form-footer")}>
-        <Button variant="ghost" disabled={saving} onClick={onCancel}>
-          {t("Cancel")}
-        </Button>
-        <Button variant="primary" type="submit" loading={saving} disabled={!valid}>
-          {t("Save")}
-        </Button>
-      </div>
-    </Text>
+      <ModalFooter>
+        <ModalActions
+          reason={
+            !timeLimitValid
+              ? t("Enter a run limit between 0 and 10080 minutes.")
+              : !concurrencyValid
+                ? t("Enter a valid task limit.")
+                : undefined
+          }
+        >
+          <Button variant="ghost" disabled={saving} onClick={onCancel}>
+            {t("Cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            type="submit"
+            form={formId}
+            loading={saving}
+            disabled={!valid || saving}
+          >
+            {t("Save")}
+          </Button>
+        </ModalActions>
+      </ModalFooter>
+    </form>
   );
 }
 
-/** Goal settings, edited on the goal's own host without replanning. */
+/** Goal settings are saved on the goal's own Host. */
 export function GoalSettingsDialog({
   goals,
   saving,
@@ -154,11 +236,13 @@ export function GoalSettingsDialog({
       padding="none"
       title={t("Edit epic settings")}
       scroll="none"
+      closeDisabled={saving}
       onClose={() => {
         if (!saving) goals.stopEditing();
       }}
     >
       <GoalSettingsForm
+        key={goals.editing.id}
         goal={goals.editing}
         saving={saving}
         error={goals.settingsError}

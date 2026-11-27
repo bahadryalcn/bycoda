@@ -43,6 +43,10 @@ fn inbox_approval_details(operation: &Value, cwd: &str, thread: &str) -> Result<
             details["review"] = crate::github_review::ReviewInput::approval_details(operation)?
         }
         Some("comment") => details["body"] = operation["body"].clone(),
+        Some("jira-comment-images") => {
+            details["action"] = json!("comment");
+            details["body"] = operation["body"].clone();
+        }
         _ => {
             details["prAction"] = operation["prAction"].clone();
             details["headSha"] = operation["expectedHeadOid"].clone();
@@ -75,6 +79,33 @@ fn mcp_call_approval_message(request: &Value) -> Result<String, String> {
         text("tool", 200)?,
         text("arguments", 2000)?,
     ))
+}
+
+/// Whether a Full access coding session admits this request without a prompt. The Host answers
+/// from its own session record and the owner's exclusions, never from tool input; any other
+/// reply, an older Host's included, keeps the prompt.
+fn session_full_access(
+    request: &Value,
+    issuer: &Arc<crate::remote::NativeServiceChannel>,
+    action: &str,
+) -> Result<bool, String> {
+    let admitted = issuer.project(
+        "conversation.desktop.authorize",
+        json!({"id": request["id"], "action": format!("{action}.permission")}),
+        |reply| Ok(session_full_access_reply(reply)),
+    )?;
+    if admitted {
+        log::info!("{action} admitted by the session's Full access mode");
+    }
+    Ok(admitted)
+}
+
+fn session_full_access_reply(reply: &Value) -> bool {
+    reply.as_object().is_some_and(|reply| {
+        reply.len() == 2
+            && reply.get("authorized") == Some(&Value::Bool(true))
+            && reply.get("fullAccess") == Some(&Value::Bool(true))
+    })
 }
 
 pub(super) fn call(
@@ -138,6 +169,7 @@ pub(super) fn call(
     }
     if action == "management.write.authorize" {
         let (message, operation_hash) = management_approval_message(request)?;
+        let details = management_approval_details(request)?;
         let check = || -> Result<(), String> {
             taken.check()?;
             if !issuer.is_current() {
@@ -168,7 +200,7 @@ pub(super) fn call(
         check()?;
         let approved = match standing {
             Some(approved) => approved,
-            None => crate::control::owner_approval::ask_conversation(
+            None => crate::control::owner_approval::ask_conversation_detailed(
                 app,
                 request,
                 crate::control::owner_approval::Prompt {
@@ -177,6 +209,7 @@ pub(super) fn call(
                     confirm: "Approve this exact operation",
                     cancel: "Cancel",
                 },
+                details,
                 || taken.check(),
             )?,
         };
@@ -187,7 +220,12 @@ pub(super) fn call(
         {
             return Err("Native assistant consent changed".into());
         }
-        return Ok(json!({ "approved": approved, "operationHash": operation_hash }));
+        // The Host receipt records who admitted the operation.
+        return Ok(if approved && standing == Some(true) {
+            json!({ "approved": true, "operationHash": operation_hash, "approvedBy": "standingConsent" })
+        } else {
+            json!({ "approved": approved, "operationHash": operation_hash })
+        });
     }
     if action == "mcp.call.authorize" {
         let message = mcp_call_approval_message(request)?;
@@ -301,17 +339,18 @@ pub(super) fn call(
     if action == "tasks.write.authorize" {
         let operation = &input["operation"];
         let message = task_approval_message(operation)?;
-        let approved = crate::control::owner_approval::ask_conversation(
-            app,
-            request,
-            crate::control::owner_approval::Prompt {
-                title: "bycoda — Task operation approval",
-                message: &(message),
-                confirm: "Approve this operation",
-                cancel: "Cancel",
-            },
-            || taken.check(),
-        )?;
+        let approved = session_full_access(request, issuer, action)?
+            || crate::control::owner_approval::ask_conversation(
+                app,
+                request,
+                crate::control::owner_approval::Prompt {
+                    title: "bycoda — Task operation approval",
+                    message: &(message),
+                    confirm: "Approve this operation",
+                    cancel: "Cancel",
+                },
+                || taken.check(),
+            )?;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|_| "Clock unavailable")?
@@ -323,6 +362,22 @@ pub(super) fn call(
             return Err("Task approval expired".into());
         }
         return Ok(json!({ "approved": approved }));
+    }
+    if action == "inbox.write.authorize"
+        && matches!(
+            input["operation"]["action"].as_str(),
+            Some("jira-board-transition" | "jira-board-move")
+        )
+    {
+        // The desktop board step reviews these changes itself. A Full access coding session
+        // gets a one-use permit for this exact change instead; nothing else is approved here.
+        if input["operation"]["cwd"].as_str() != request["cwd"].as_str()
+            || !session_full_access(request, issuer, action)?
+        {
+            return Ok(json!({"approved": false}));
+        }
+        let permit = crate::jira::board::mobile_board::issue_session_permit(&input["operation"])?;
+        return Ok(json!({"approved": true, "permit": permit}));
     }
     if action == "inbox.write.authorize" {
         // Native-only acknowledgement: the agent cannot supply an approval boolean.
@@ -352,18 +407,22 @@ pub(super) fn call(
         {
             return Err("Inbox approval expired; no operation was submitted".into());
         }
-        let approved = crate::control::owner_approval::ask_conversation_detailed(
-            app,
-            request,
-            crate::control::owner_approval::Prompt {
-                title: "bycoda — Inbox operation approval",
-                message: &(format!("{message}{thread_context}")),
-                confirm: "Approve this operation",
-                cancel: "Cancel",
-            },
-            details,
-            || taken.check(),
-        )?;
+        let issue_permit = (input["operation"]["action"] == "jira-comment-images")
+            .then(|| crate::jira::agent_comment::authorize(app, &input["operation"]))
+            .transpose()?;
+        let approved = session_full_access(request, issuer, action)?
+            || crate::control::owner_approval::ask_conversation_detailed(
+                app,
+                request,
+                crate::control::owner_approval::Prompt {
+                    title: "bycoda — Inbox operation approval",
+                    message: &(format!("{message}{thread_context}")),
+                    confirm: "Approve this operation",
+                    cancel: "Cancel",
+                },
+                details,
+                || taken.check(),
+            )?;
         let at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|_| "Clock unavailable")?
@@ -373,6 +432,11 @@ pub(super) fn call(
             .is_none_or(|deadline| deadline <= at)
         {
             return Err("Inbox approval expired; no operation was submitted".into());
+        }
+        if approved {
+            if let Some(issue_permit) = issue_permit {
+                return Ok(json!({ "approved": true, "permit": issue_permit()? }));
+            }
         }
         if approved && input["operation"]["action"] == "review" {
             // The desktop submit step consumes this instead of asking the owner a second time.
@@ -386,6 +450,24 @@ pub(super) fn call(
 #[cfg(test)]
 mod secret_tests {
     use super::*;
+
+    #[test]
+    fn only_an_exact_host_reply_skips_a_session_prompt() {
+        assert!(session_full_access_reply(
+            &json!({"authorized":true,"fullAccess":true})
+        ));
+        for reply in [
+            json!({"authorized":true}),
+            json!({"authorized":false}),
+            json!({"authorized":true,"fullAccess":false}),
+            json!({"authorized":true,"fullAccess":"true"}),
+            json!({"authorized":false,"fullAccess":true}),
+            json!({"authorized":true,"fullAccess":true,"extra":true}),
+            json!(true),
+        ] {
+            assert!(!session_full_access_reply(&reply), "{reply}");
+        }
+    }
 
     #[test]
     fn room_task_and_crew_controls_can_reach_exact_native_review() {

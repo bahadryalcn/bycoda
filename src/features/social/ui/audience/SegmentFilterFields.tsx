@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
-import { Badge } from "../../../../shared/ui/Badge";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
@@ -16,7 +15,6 @@ import {
   filterSummary,
   interactionLabel,
   stageLabel,
-  stageTone,
   uniqueTags,
 } from "./audienceModel";
 import "./audience.css";
@@ -108,11 +106,11 @@ export function SegmentFilterFields({
   const extra = detailCount(value);
   return (
     <div className="audience-stack">
-      <Text as="p" tone="secondary" className="audience-muted">
-        {summary.length
-          ? t("People who match all of: {p0}.", { p0: summary.join("; ") })
-          : t("No conditions yet. Pick at least one below.")}
-      </Text>
+      {summary.length ? (
+        <Text as="p" tone="secondary" className="audience-muted">
+          {t("People who match all of: {p0}.", { p0: summary.join("; ") })}
+        </Text>
+      ) : null}
       <CheckGroup<SocialPlatform>
         legend={t("Accounts on")}
         disabled={disabled}
@@ -133,14 +131,7 @@ export function SegmentFilterFields({
       <CheckGroup<PersonStage>
         legend={t("Stage is one of")}
         disabled={disabled}
-        options={ALL_STAGES.map((stage) => ({
-          value: stage,
-          label: (
-            <Badge size="sm" tone={stageTone(stage)}>
-              {stageLabel(stage)}
-            </Badge>
-          ),
-        }))}
+        options={ALL_STAGES.map((stage) => ({ value: stage, label: stageLabel(stage) }))}
         selected={value.stages}
         onToggle={(stage) =>
           onChange(withFilterField(value, { stages: toggle(value.stages, stage) }))

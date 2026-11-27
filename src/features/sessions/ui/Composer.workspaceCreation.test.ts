@@ -24,6 +24,13 @@ vi.mock("../../source-control/hooks/useProjectBranches", () => ({
     settled: true,
   }),
 }));
+vi.mock("../../workspaces/model/creationProgress", () => ({
+  useCreationProgress: () => ({
+    phase: "running",
+    stages: [{ id: "checkout", status: "running" }],
+  }),
+  cancelCreation: vi.fn(),
+}));
 vi.mock("../../workspaces/model/workspaceCreation", () => ({
   shortWorkspaceRef: (ref: string) => ref,
   useWorkspaceCreation: (_cwd: string, _active: boolean, choice?: string) => ({
@@ -38,6 +45,15 @@ vi.mock("../../workspaces/model/workspaceCreation", () => ({
 import { Composer } from "./Composer";
 import type { WorkspaceMode } from "../model/session";
 import { setLanguagePreference } from "../../../shared/i18n";
+
+async function rawDetails(scope: ParentNode = document): Promise<string> {
+  const trigger = scope.querySelector<HTMLButtonElement>(
+    '[data-workspace-creation-status] button[aria-haspopup="dialog"]',
+  );
+  if (!trigger) return "";
+  await act(async () => trigger.click());
+  return document.querySelector<HTMLElement>('[role="dialog"]')?.textContent ?? "";
+}
 
 let container: HTMLDivElement;
 let root: Root;
@@ -115,12 +131,14 @@ it.each([false, true])(
     host.status = {
       state: "deferred",
       message: "The host update waits until running sessions finish.",
+      reason: "waiting-for-sessions",
     };
     await draw({ hideTopBar, workspaceMode: "worktree" });
-    expect(container.textContent).toContain(
+    expect(container.textContent).toContain("Could not prepare the workspace.");
+    expect(await rawDetails(container)).toContain(
       "The Host update on this computer is waiting for active sessions to finish and will install automatically.",
     );
-    expect(button("Send")?.disabled).toBe(true);
+    expect(button("Send")?.getAttribute("aria-disabled")).toBe("true");
     expect(button("Send")?.getAttribute("aria-description")).toBe(
       "The Host update on this computer is waiting for active sessions to finish and will install automatically.",
     );
@@ -139,16 +157,16 @@ it.each([
 ])("retains the update requirement without claiming active sessions for %j", async (status) => {
   host.status = status;
   await draw({ workspaceMode: "worktree" });
-  expect(container.textContent).toContain("Your checkout is not used as a fallback.");
   expect(container.textContent).not.toContain("will install automatically");
   expect(button("Use current checkout")).toBeDefined();
-  expect(button("Send")?.disabled).toBe(true);
+  expect(button("Send")?.getAttribute("aria-disabled")).toBe("true");
 });
 
 it("does not describe a local pending update as the remote machine's update", async () => {
   host.status = {
     state: "deferred",
     message: "The host update waits until running sessions finish.",
+    reason: "waiting-for-sessions",
   };
   await draw({
     cwd: "remote://older/repo",
@@ -156,7 +174,7 @@ it("does not describe a local pending update as the remote machine's update", as
     workspaceMode: "worktree",
   });
   expect(container.textContent).not.toContain("will install automatically");
-  expect(button("Send")?.disabled).toBe(true);
+  expect(button("Send")?.getAttribute("aria-disabled")).toBe("true");
 });
 
 it("does not hold Send for an unreadable policy default, only for an explicit worktree choice", async () => {
@@ -170,10 +188,11 @@ it("keeps update recovery available when the owner changes language while the er
   host.status = {
     state: "deferred",
     message: "The host update waits until running sessions finish.",
+    reason: "waiting-for-sessions",
   };
   await draw();
   await act(async () => setLanguagePreference("tr"));
-  expect(container.textContent).toContain("etkin oturumların bitmesini bekliyor");
+  expect(await rawDetails(container)).toContain("etkin oturumların bitmesini bekliyor");
   const useCurrent = button("Geçerli çalışma dizinini kullan");
   expect(useCurrent).toBeDefined();
   await act(async () => useCurrent!.click());
@@ -184,9 +203,38 @@ it("keeps update recovery available when the owner changes language while the er
 it("shows the resolved current default and sends without managed admission", async () => {
   host.defaultMode = "current";
   await draw();
-  expect(button("Workspace Current checkout")).toBeDefined();
+  expect(button("Current checkout")).toBeDefined();
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(button("Send")?.disabled).toBe(false);
   await act(async () => button("Send")!.click());
   expect(submit).toHaveBeenCalledWith("Preserve this draft", [], expect.anything());
+});
+
+it("shows machine and project controls without Git or folder actions in a projectless draft", async () => {
+  const onPlaceInFolder = vi.fn();
+  await draw({
+    cwd: "~",
+    executionCwd: "/scratch/session",
+    initialDraft: "/add-to-folder",
+    machinePicker: () => "This computer",
+    workspaceMode: "worktree",
+    onPlaceInFolder,
+  });
+  const workspace = container.querySelector("[data-composer-workspace-controls]")!;
+  expect(workspace.textContent).toContain("This computer");
+  expect(workspace.querySelector("[data-composer-context]")).not.toBeNull();
+  expect(workspace.textContent).not.toContain("Current checkout");
+  expect(workspace.textContent).not.toContain("main");
+  expect(button("Send")?.disabled).toBe(false);
+  await act(async () => button("Send")!.click());
+  expect(submit).toHaveBeenCalledWith("/add-to-folder", [], expect.anything());
+  expect(onPlaceInFolder).not.toHaveBeenCalled();
+  expect(container.querySelector("[data-session-folder-picker]")).toBeNull();
+});
+
+it("shows the creation progress card while a progress id is set and drops it afterwards", async () => {
+  await draw({ workspaceMode: "worktree", creationProgressId: "p1" });
+  expect(container.querySelector("[data-workspace-creation-progress]")).not.toBeNull();
+  await draw({ workspaceMode: "worktree", creationProgressId: undefined });
+  expect(container.querySelector("[data-workspace-creation-progress]")).toBeNull();
 });

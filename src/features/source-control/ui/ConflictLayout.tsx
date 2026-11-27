@@ -6,6 +6,7 @@ import { minimalSetup } from "codemirror";
 import { presentableDiff } from "@codemirror/merge";
 import { editorSearch } from "../../files/public/editorSearch";
 import { Button } from "../../../shared/ui/Button";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Text } from "../../../shared/ui/Text";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { Tooltip } from "../../../shared/ui/Tooltip";
@@ -20,6 +21,7 @@ import {
   File,
 } from "../../../shared/ui/icons";
 import { openSearchPanel } from "@codemirror/search";
+import { operationLabel } from "../model/commitActions";
 import { mergeResolution, type MergeChoice, type MergeResolution } from "../model/mergeResolution";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
@@ -33,7 +35,7 @@ import {
   findConflictBlocks,
   resolveConflictMarkers,
 } from "../model/conflictMarkers";
-import { applyTextRoles, stepConflict } from "./mergeResultActions";
+import { applyChoiceButton, applyTextRoles, stepConflict } from "./mergeResultActions";
 import { ConflictScrollSync } from "./conflictScrollSync";
 import { useConflictProvenance, type ConflictProvenance } from "./useConflictProvenance";
 import {
@@ -85,14 +87,14 @@ export function conflictSourcesFromMarkers(text: string) {
     ours: {
       text: resolveConflictMarkers(text, "ours"),
       label: labels("oursLabel"),
-      origin: "Current side of conflict markers",
+      origin: t("Current side of conflict markers"),
       highlights: highlights("ours"),
       counterparts: blocks.map((block) => conflictReplacement(text, block, "theirs")),
     },
     theirs: {
       text: resolveConflictMarkers(text, "theirs"),
       label: labels("theirsLabel"),
-      origin: "Incoming side of conflict markers",
+      origin: t("Incoming side of conflict markers"),
       highlights: highlights("theirs"),
       counterparts: blocks.map((block) => conflictReplacement(text, block, "ours")),
     },
@@ -218,7 +220,7 @@ export function ConflictLayout({
       axis={axis}
       reverse={reverse}
       value={sizes[key]}
-      label={t(label)}
+      label={label}
       style={style}
       container={panes}
       onChange={(value) => resize({ [key]: value })}
@@ -294,22 +296,18 @@ export function ConflictLayout({
         actions={
           controls ? (
             <div className="conflict-navigation" role="group" aria-label={t("Merge conflicts")}>
-              <Text
-                as="span"
-                role="status"
+              <LiveText
                 tone={
                   controls.state.regions.every((region) => region.choice !== null)
                     ? "success"
                     : "warning"
                 }
                 className="conflict-progress"
-              >
-                {`${controls.state.active + 1} / ${controls.state.regions.length}`}
-                {" · "}
-                {t("{p0} unresolved", {
-                  p0: controls.state.regions.filter((region) => region.choice === null).length,
-                })}
-              </Text>
+                text={`${controls.state.active + 1} / ${controls.state.regions.length} · ${t(
+                  "{p0} unresolved",
+                  { p0: controls.state.regions.filter((region) => region.choice === null).length },
+                )}`}
+              />
               <Button
                 variant="ghost"
                 size="sm"
@@ -318,6 +316,13 @@ export function ConflictLayout({
                 label={t("Previous conflict")}
                 tooltip={t("Previous conflict (Shift+F7)")}
                 disabled={controls.disabled || controls.state.regions.length < 2}
+                disabledReason={
+                  controls.disabled
+                    ? t("Wait for the current operation to finish")
+                    : controls.state.regions.length < 2
+                      ? t("This file has only one conflict.")
+                      : undefined
+                }
                 onClick={() => controls.select(stepConflict(controls.state, -1))}
               >
                 <ChevronUp className="icon-sm" />
@@ -330,6 +335,13 @@ export function ConflictLayout({
                 label={t("Next conflict")}
                 tooltip={t("Next conflict (F7)")}
                 disabled={controls.disabled || controls.state.regions.length < 2}
+                disabledReason={
+                  controls.disabled
+                    ? t("Wait for the current operation to finish")
+                    : controls.state.regions.length < 2
+                      ? t("This file has only one conflict.")
+                      : undefined
+                }
                 onClick={() => controls.select(stepConflict(controls.state, 1))}
               >
                 <ChevronDown className="icon-sm" />
@@ -342,15 +354,7 @@ export function ConflictLayout({
           <Tooltip label={[provenance.ours.detail, provenance.theirs.detail].join(" ← ")}>
             <Text as="div" tone="muted" className="conflict-provenance">
               <Text as="span" className="conflict-provenance-operation">
-                {t(
-                  provenance.operation === "rebase"
-                    ? "Rebase"
-                    : provenance.operation === "cherry-pick"
-                      ? "Cherry-pick"
-                      : provenance.operation === "revert"
-                        ? "Revert"
-                        : "Merge",
-                )}
+                {operationLabel(provenance.operation ?? "merge")}
               </Text>
               <Text as="strong" size="inherit" tone="primary" weight="medium" truncate>
                 {provenance.ours.label || t("Current")}
@@ -387,9 +391,6 @@ export function ConflictLayout({
             titleAs="div"
             className="conflict-pane-header"
             title={`${t("Resolved output")}${dirty ? " *" : ""}`}
-            meta={
-              <span className="conflict-result-meta">{`${t("Working tree")} · ${t("Editable")}`}</span>
-            }
             actions={resultActions}
           />
           {children}
@@ -414,12 +415,12 @@ export function ConflictLayout({
         />
         {layout === "stacked"
           ? [
-              sash("x", "x", "Resize source panes", {
+              sash("x", "x", t("Resize source panes"), {
                 insetInlineStart: "var(--conflict-x)",
                 insetBlockStart: 0,
                 blockSize: "var(--conflict-y)",
               }),
-              sash("y", "y", "Resize sources and result", {
+              sash("y", "y", t("Resize sources and result"), {
                 insetBlockStart: "var(--conflict-y)",
                 insetInlineStart: 0,
                 inlineSize: "100%",
@@ -427,7 +428,7 @@ export function ConflictLayout({
             ]
           : layout === "columns"
             ? [
-                sash("c1", "x", "Resize current pane", {
+                sash("c1", "x", t("Resize current pane"), {
                   insetInlineStart: "var(--conflict-c1)",
                   insetBlockStart: 0,
                   blockSize: "100%",
@@ -435,7 +436,7 @@ export function ConflictLayout({
                 sash(
                   "c3",
                   "x",
-                  "Resize incoming pane",
+                  t("Resize incoming pane"),
                   {
                     insetInlineStart: "calc(100% - var(--conflict-c3))",
                     insetBlockStart: 0,
@@ -474,7 +475,7 @@ function ConflictSourcePane({
   const controlsRef = useRef(controls);
   controlsRef.current = controls;
   const colorScheme = useColorScheme();
-  const heading = side === "ours" ? "Current" : "Incoming";
+  const heading = side === "ours" ? t("Current") : t("Incoming");
   const identity = provenance?.label
     ? provenance.label
     : source.label.replace(/^([a-f0-9]{7})[a-f0-9]{1,33}(?=\s|$)/i, "$1");
@@ -491,7 +492,7 @@ function ConflictSourcePane({
         EditorState.readOnly.of(true),
         EditorView.editable.of(false),
         EditorView.contentAttributes.of({
-          "aria-label": t(heading),
+          "aria-label": heading,
           tabindex: "0",
           "aria-readonly": "true",
         }),
@@ -583,25 +584,25 @@ function ConflictSourcePane({
         { variant: "workspace-panel", frame: "pane", edge: "all" },
         `conflict-pane conflict-pane-${side}`,
       )}
-      aria-label={t(heading)}
+      aria-label={heading}
     >
       <PaneHeader
         as="header"
         titleAs="div"
         className="conflict-pane-header"
         icon={<span className="conflict-side-dot" />}
-        title={t(heading)}
+        title={heading}
         meta={
           <Tooltip
             asChild
-            label={`${t(source.origin)} · ${t("Read only")} · ${provenance?.detail ?? source.label}`}
+            label={`${source.origin} · ${t("Read only")} · ${provenance?.detail ?? source.label}`}
           >
             <Text
               as="span"
               size="inherit"
               tone="secondary"
               className="conflict-source-identity"
-              data-origin={t(source.origin)}
+              data-origin={source.origin}
             >
               {identity ? (
                 <Text as="strong" size="inherit" tone="primary" weight="medium">
@@ -619,9 +620,12 @@ function ConflictSourcePane({
                 variant="ghost"
                 size="sm"
                 motion="none"
-                label={t(side === "ours" ? "Accept All Current" : "Accept All Incoming")}
+                label={side === "ours" ? t("Accept All Current") : t("Accept All Incoming")}
                 tooltip={t("Accept this side for every conflict in this file")}
                 disabled={controls.disabled}
+                disabledReason={
+                  controls.disabled ? t("Wait for the current operation to finish") : undefined
+                }
                 onClick={() => controls.chooseAll?.(side)}
               >
                 {t("Accept all")}
@@ -676,14 +680,15 @@ class SourceChoiceWidget extends WidgetType {
     );
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "conflict-inline-choice";
+    applyChoiceButton(button);
     button.dataset.mergeChoice = String(this.id);
     const controls = this.controls();
     button.disabled = !controls || !!controls.disabled;
     const choice = controls?.state.regions[this.id]?.choice;
     button.setAttribute("aria-pressed", String(choice === this.side || choice === "both"));
-    button.textContent = t(this.side === "ours" ? "Accept Current" : "Accept Incoming");
-    button.title = t(this.side === "ours" ? "Accept Current (Alt+1)" : "Accept Incoming (Alt+2)");
+    button.textContent = this.side === "ours" ? t("Accept Current") : t("Accept Incoming");
+    button.title =
+      this.side === "ours" ? t("Accept Current (Alt+1)") : t("Accept Incoming (Alt+2)");
     button.setAttribute(
       "aria-label",
       `${button.textContent} · ${t("Conflict {p0} of {p1}", {

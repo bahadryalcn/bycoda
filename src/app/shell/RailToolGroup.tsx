@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
+import { useT } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
 import { ButtonGroup, ButtonGroupSelection } from "../../shared/ui/ButtonGroup";
 import { StatusDot } from "../../shared/ui/StatusDot";
+import "./toolNavigation.css";
 
 export type RailTool = {
   id: string;
@@ -17,10 +19,17 @@ export type RailTool = {
   onOpenContextMenu?: (x: number, y: number) => void;
 };
 
-/** Workspace tools as one joined row of icon buttons; each name lives in its tooltip. */
+/** Workspace tools as one joined group of icon buttons that wraps into rows on a narrow rail (bycoda.css); each name lives in its tooltip. */
 export function RailToolGroup({ label, tools }: { label: string; tools: readonly RailTool[] }) {
+  const t = useT();
   return (
-    <ButtonGroup aria-label={label} surface="navigation" selection="plate" className="w-full">
+    <ButtonGroup
+      aria-label={label}
+      surface="navigation"
+      selection="plate"
+      className="w-full"
+      data-rail-tool-group=""
+    >
       {tools.map((tool) => (
         <Button
           key={tool.id}
@@ -36,6 +45,7 @@ export function RailToolGroup({ label, tools }: { label: string; tools: readonly
           selected={tool.active}
           aria-current={tool.active ? "page" : undefined}
           disabled={!tool.onSelect}
+          disabledReason={!tool.onSelect ? t("Not available yet.") : undefined}
           onClick={tool.onSelect}
           data-usage-guide={tool.guide}
           className="min-w-0 flex-1"
@@ -66,11 +76,7 @@ export function RailToolGroup({ label, tools }: { label: string; tools: readonly
           <span className="relative inline-flex">
             {tool.icon}
             {tool.dot ? (
-              <StatusDot
-                label={tool.dot}
-                aria-hidden
-                className="absolute [inset-inline-end:4px] [inset-block-start:4px]"
-              />
+              <StatusDot label={tool.dot} aria-hidden className="absolute end-1 top-1" />
             ) : null}
           </span>
         </Button>

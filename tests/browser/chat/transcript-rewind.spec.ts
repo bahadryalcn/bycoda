@@ -3,6 +3,58 @@ import { mkdir } from "node:fs/promises";
 
 for (const width of [1280, 800])
   for (const theme of ["light", "dark"]) {
+    test(`Codex catalog recovery at ${width}px ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      const setTheme = () =>
+        page.evaluate(
+          (light) => document.documentElement.classList.toggle("theme-light", light),
+          theme === "light",
+        );
+      const captures = "temp/verification/codex-catalog";
+      await page.goto(
+        "/tests/browser/workspace/workspace-rewind.html?remoteRewind&codexCatalog=retained",
+      );
+      await setTheme();
+      // The second read is the catalog poller's 1 s backoff after the first pending answer; slow WebKit starts need headroom.
+      await expect
+        .poll(
+          () =>
+            page.evaluate(
+              () =>
+                (
+                  window as unknown as { rewindFixtureCalls: { method: string }[] }
+                ).rewindFixtureCalls.filter((call) => call.method === "models.list").length,
+            ),
+          { timeout: 15_000 },
+        )
+        .toBeGreaterThan(1);
+      const picker = page.locator("[data-model-picker-presentation]").first();
+      await picker.click();
+      await expect(page.getByText("Codex fixture", { exact: true }).last()).toBeVisible();
+      // The retained list stays usable; a refresh that only timed out is not an owner-facing failure.
+      await expect(page.getByText("Couldn’t load models from Fixture PC.")).toHaveCount(0);
+      await page.screenshot({ path: `${captures}/retained-${width}-${theme}.png` });
+
+      // The first page keeps polling and re-persists its retained catalog, which would seed the
+      // next page and hide the first failure. Leave it, then clear the store before the next page boots.
+      await page.goto("about:blank");
+      await page.addInitScript(() => localStorage.removeItem("bycoda.remote-models.v1"));
+      await page.goto(
+        "/tests/browser/workspace/workspace-rewind.html?remoteRewind&codexCatalog=first-failure",
+      );
+      await setTheme();
+      await expect(page.getByText("Couldn’t load models from Fixture PC.")).toBeVisible();
+      const retry = page.getByRole("button", { name: "Retry", exact: true }).first();
+      await expect(retry).toBeVisible();
+      await page.screenshot({ path: `${captures}/first-failure-${width}-${theme}.png` });
+      await retry.click();
+      await expect(page.getByText("Couldn’t load models from Fixture PC.")).toHaveCount(0);
+    });
+  }
+
+for (const width of [1280, 800])
+  for (const theme of ["light", "dark"]) {
     test(`jump to latest accepts pointer and keyboard at ${width}px ${theme}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
@@ -24,14 +76,19 @@ for (const width of [1280, 800])
         await expect.poll(distance).toBeGreaterThan(100);
         // WebKit keeps animating a wheel scroll after its first event. Press the button only
         // once the reader's scroll has stopped, so a late wheel frame cannot undo the jump.
+        // One equal pair can be a pause between momentum frames, so require several in a row.
         let previous = -1;
+        let steady = 0;
         await expect
-          .poll(async () => {
-            const now = await distance();
-            const settled = now === previous;
-            previous = now;
-            return settled;
-          })
+          .poll(
+            async () => {
+              const now = await distance();
+              steady = now === previous ? steady + 1 : 0;
+              previous = now;
+              return steady >= 4;
+            },
+            { intervals: [100], timeout: 15_000 },
+          )
           .toBe(true);
       };
       await scrollUp();
@@ -126,7 +183,7 @@ for (const width of [390, 1000]) {
     await page.goto("/tests/browser/chat/transcript.html?rewind", {
       waitUntil: "domcontentloaded",
     });
-    await expect(page.getByText("Stopped by you", { exact: true })).toBeVisible();
+    await expect(page.getByRole("img", { name: "Stopped by you", exact: true })).toBeVisible();
     const wrong = page.locator('[data-prompt-anchor="wrong-request"]');
     const prior = page.locator('[data-prompt-anchor="prior-request"]');
     const actions = wrong.getByRole("button", { name: "Edit from here", exact: true });
@@ -178,7 +235,7 @@ for (const width of [1280, 800])
         animations: "disabled",
       });
       const apply = dialog.getByRole("button", {
-        name: "Rewind conversation and files",
+        name: "Rewind",
         exact: true,
       });
       await apply.focus();
@@ -198,7 +255,7 @@ for (const width of [1280, 800])
         path: `temp/verification/s5/rewind-undo-${width}-${theme}.png`,
         animations: "disabled",
       });
-      await undoDialog.getByRole("button", { name: "Undo rewind", exact: true }).click();
+      await undoDialog.getByRole("button", { name: "Undo", exact: true }).click();
       await expect(page.locator('[data-block="second"]')).toBeVisible();
       const methods = await page.evaluate(() =>
         (
@@ -235,7 +292,7 @@ for (const width of [1280, 800])
         exact: true,
       });
       const apply = dialog.getByRole("button", {
-        name: "Rewind conversation and files",
+        name: "Rewind",
         exact: true,
       });
       await trigger.click();
@@ -245,9 +302,9 @@ for (const width of [1280, 800])
       // Warning notices announce politely (role="status"); only danger uses role="alert".
       await expect(
         dialog.getByRole("status").filter({
-          hasText: "This rewind preview is blocked or expired. Cancel and open a new preview.",
+          hasText: "This rewind preview has expired. Cancel and open a new preview.",
         }),
-      ).toHaveText("This rewind preview is blocked or expired. Cancel and open a new preview.");
+      ).toHaveText("This rewind preview has expired. Cancel and open a new preview.");
       if (testInfo.project.name === "chromium") {
         await mkdir("temp/verification/i3", { recursive: true });
         await page.screenshot({
@@ -288,9 +345,7 @@ test("blocked capture keeps rewind unavailable and cancellation preserves histor
   await page.getByRole("button", { name: "Return before the later change", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("uncaptured source file");
-  await expect(
-    dialog.getByRole("button", { name: "Rewind conversation and files", exact: true }),
-  ).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "Rewind", exact: true })).toBeDisabled();
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(page.locator('[data-block="second"]')).toBeVisible();
 });
@@ -311,7 +366,7 @@ for (const width of [1280, 800])
       await message.getByRole("button", { name: "Edit from here", exact: true }).click();
       const preview = page.getByRole("dialog", { name: "Edit from here?", exact: true });
       await expect(preview).toBeVisible();
-      await preview.getByRole("button", { name: "Revert and keep changes", exact: true }).click();
+      await preview.getByRole("button", { name: "Edit from here", exact: true }).click();
       await expect(message).toHaveCount(0);
       await expect(page.locator("textarea")).toHaveValue("Remove this later change.");
       const methods = await page.evaluate(() =>
@@ -404,8 +459,9 @@ for (const width of [1280, 800])
       const message = page.locator('[data-prompt-anchor="second"]');
       await message.getByRole("button", { name: "Edit from here", exact: true }).click();
       const preview = page.getByRole("dialog", { name: "Edit from here?", exact: true });
-      await expect(preview).toContainText("Session files: 1");
-      await preview.getByRole("button", { name: "Revert files too", exact: true }).click();
+      await preview.getByRole("switch", { name: "Also revert file changes" }).click();
+      await expect(preview).toContainText("Files to revert: 1");
+      await preview.getByRole("button", { name: "Edit from here", exact: true }).click();
       await expect(message).toHaveCount(0);
       await expect(page.locator("textarea")).toHaveValue("Remove this later change.");
       const calls = await page.evaluate(() => (window as any).rewindFixtureCalls);
@@ -425,7 +481,7 @@ test("conversation-only rewind does not require provider retirement", async ({ p
   await message.getByRole("button", { name: "Edit from here", exact: true }).click();
   await page
     .getByRole("dialog")
-    .getByRole("button", { name: "Revert and keep changes", exact: true })
+    .getByRole("button", { name: "Edit from here", exact: true })
     .click();
   await expect(message).toHaveCount(0);
   const methods = await page.evaluate(() =>
@@ -443,10 +499,9 @@ test("older Host permits conversation rewind while disabling only file revert", 
   const message = page.locator('[data-prompt-anchor="second"]');
   await message.getByRole("button", { name: "Edit from here", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Edit from here?", exact: true });
-  const files = dialog.getByRole("button", { name: "Revert files too", exact: true });
-  await expect(files).toBeDisabled();
-  await expect(files).toHaveAttribute("aria-description", /Update bycoda Host/);
-  await dialog.getByRole("button", { name: "Revert and keep changes", exact: true }).click();
+  await expect(dialog.getByRole("switch", { name: "Also revert file changes" })).toBeDisabled();
+  await expect(dialog).toContainText(/Update bycoda Host/);
+  await dialog.getByRole("button", { name: "Edit from here", exact: true }).click();
   await expect(message).toHaveCount(0);
   await expect(page.locator("textarea")).toHaveValue("Remove this later change.");
   const methods = await page.evaluate(() =>

@@ -7,13 +7,16 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TrySendError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub(super) const MAX_BYTES: u64 = 5 * 1024 * 1024;
 const KEEP: usize = 2;
 const QUEUE: usize = 4096;
 const CATEGORY_LIMIT: usize = 48;
 const FLUSH_WAIT: Duration = Duration::from_millis(1500);
+/// After a failed rotation the active file keeps taking lines; the next attempt waits this
+/// long, so a locked file costs one failed attempt per window instead of one per line.
+pub(super) const ROTATE_RETRY: Duration = Duration::from_secs(60);
 
 enum Message {
     Line(String),
@@ -45,6 +48,16 @@ pub(super) struct RotatingFile {
     max: u64,
     file: Option<File>,
     size: u64,
+    /// Earliest time the next size rotation may be attempted after a failed one.
+    retry_at: Option<Instant>,
+}
+
+/// A rename or delete that finds nothing to move is expected; any other failure is real.
+fn ignore_missing(result: std::io::Result<()>) -> std::io::Result<()> {
+    match result {
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        other => other,
+    }
 }
 
 impl RotatingFile {
@@ -54,6 +67,7 @@ impl RotatingFile {
             max,
             file: None,
             size: 0,
+            retry_at: None,
         }
     }
 
@@ -70,30 +84,57 @@ impl RotatingFile {
         Ok(())
     }
 
-    fn rotate(&mut self) {
+    fn rotate(&mut self) -> std::io::Result<()> {
         self.file = None;
-        let _ = std::fs::remove_file(rotated_path(&self.base, KEEP));
+        ignore_missing(std::fs::remove_file(rotated_path(&self.base, KEEP)))?;
         for index in (0..KEEP).rev() {
             // ast-grep-ignore: rust-rename-without-fsync -- rotates closed, already-written log files; not a state replacement.
-            let _ = std::fs::rename(
+            let renamed = std::fs::rename(
                 rotated_path(&self.base, index),
                 rotated_path(&self.base, index + 1),
             );
+            ignore_missing(renamed)?;
         }
+        Ok(())
     }
 
     pub(super) fn write_line(&mut self, line: &str) -> std::io::Result<()> {
+        self.write_line_at(line, Instant::now())
+    }
+
+    /// `now` is injected so the retry window can be tested without sleeping.
+    pub(super) fn write_line_at(&mut self, line: &str, now: Instant) -> std::io::Result<()> {
         if self.file.is_none() {
             self.open()?;
         }
         let bytes = line.len() as u64 + 1;
         if self.size > 0 && self.size + bytes > self.max {
-            self.rotate();
-            self.open()?;
+            let due = match self.retry_at {
+                Some(at) => now >= at,
+                None => true,
+            };
+            if due {
+                match self.rotate() {
+                    Ok(()) => self.retry_at = None,
+                    Err(err) => {
+                        // Only the error kind: the paths would reveal the user's folder layout.
+                        log::warn!(
+                            "log rotation deferred ({:?}); the active file keeps growing until it succeeds",
+                            err.kind()
+                        );
+                        self.retry_at = Some(now + ROTATE_RETRY);
+                    }
+                }
+                // Reopen whether or not rotation happened: a failed rotation leaves the active
+                // file in place and open() re-reads its size, so no line is lost or truncated.
+                self.open()?;
+            }
         }
+        let mut record = Vec::with_capacity(bytes as usize);
+        record.extend_from_slice(line.as_bytes());
+        record.push(b'\n');
         let file = self.file.as_mut().ok_or(std::io::ErrorKind::NotFound)?;
-        file.write_all(line.as_bytes())?;
-        file.write_all(b"\n")?;
+        file.write_all(&record)?;
         self.size += bytes;
         Ok(())
     }
@@ -168,6 +209,13 @@ pub(super) fn level_from_env(value: Option<&str>) -> LevelFilter {
         })
 }
 
+/// The updater plugin logs an error for every unreachable feed. The renderer already reports
+/// the failed check, and `app_update` logs an outage once, so the repeats are dropped here.
+pub(super) fn is_updater_outage_noise(target: &str, message: &str) -> bool {
+    target.starts_with("tauri_plugin_updater")
+        && message.starts_with("update endpoint did not respond with a successful status code")
+}
+
 impl Log for FileLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
         // Dependencies stay at warnings; only this crate follows the configured level.
@@ -179,13 +227,12 @@ impl Log for FileLogger {
         if !self.enabled(record.metadata()) {
             return;
         }
+        let message = record.args().to_string();
+        if is_updater_outage_noise(record.target(), &message) {
+            return;
+        }
         let now = time::OffsetDateTime::now_utc();
-        let mut line = format_line(
-            now,
-            record.level(),
-            record.target(),
-            &record.args().to_string(),
-        );
+        let mut line = format_line(now, record.level(), record.target(), &message);
         if self.echo {
             eprintln!("{line}");
         }

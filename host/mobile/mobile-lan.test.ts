@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createServer, type Server } from "node:http";
+import { deviceProofKeyFromSeed, signDeviceProof } from "../../src/integrations/device-proof";
+import { ClientRequest, createServer, type Server } from "node:http";
 import {
   createCipheriv,
   createDecipheriv,
@@ -11,8 +12,12 @@ import {
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { once } from "node:events";
+import { connect, type Socket } from "node:net";
+import { GATEWAY_ADMISSION } from "../security/gateway-admission";
+import { ownerRpcDeadlineMs } from "../server/owner-rpc";
 import { createLanIdentity } from "./mobile-lan-crypto";
-import { createLanGateway, MobileLanAccess } from "./mobile-lan";
+import { createLanGateway, MobileLanAccess, stablePortCandidates } from "./mobile-lan";
 import { lanContext } from "../../src/integrations/mobile-lan";
 import { MobilePairing } from "./mobile-pairing";
 
@@ -44,6 +49,7 @@ function encryptedLanFetch(
   environmentId: string,
   serverKey: string,
   _random: typeof random,
+  clockOffsetMs = 0,
 ): typeof fetch {
   return async (url, init) => {
     const client = createLanIdentity();
@@ -69,8 +75,11 @@ function encryptedLanFetch(
     const value = JSON.stringify({
       epoch: challenge.epoch,
       path: new URL(String(url)).pathname,
-      time: Date.now(),
+      time: Date.now() + clockOffsetMs,
       token: new Headers(init?.headers).get("Authorization")?.slice(7),
+      ...(new Headers(init?.headers).get("DPoP")
+        ? { proof: new Headers(init?.headers).get("DPoP") }
+        : {}),
       body: init?.body,
     });
     const data = Buffer.concat([
@@ -83,7 +92,10 @@ function encryptedLanFetch(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ version: 1, id, publicKey: client.publicKey, data }),
     });
-    if (!response.ok) throw new Error("Rejected");
+    if (!response.ok) {
+      const failure = await response.json().catch(() => ({}));
+      throw new Error(`Rejected ${response.status} ${failure.code ?? ""}`.trim());
+    }
     const reply = await response.json();
     const bytes = Buffer.from(reply.data, "hex");
     const decipher = createDecipheriv("aes-256-gcm", key("response"), Buffer.alloc(12));
@@ -103,6 +115,7 @@ describe("encrypted mobile LAN access", () => {
     const pairing = new MobilePairing({
       environmentId: "pc",
       hasDeviceHash: () => true,
+      canIssuePairing: () => true,
       issueDevice: () => ({ id: "phone", token: device }),
     });
     const ticket = await pairing.create(owner);
@@ -133,6 +146,7 @@ describe("encrypted mobile LAN access", () => {
       ticket: ticket.ticket,
       claimId: "c".repeat(43),
       deviceName: "My phone",
+      proofKey: deviceProofKeyFromSeed(new Uint8Array(32).fill(4)).publicJwk,
     };
     const redeemed = await encrypted(`${endpoint}/mobile/pairing/redeem`, {
       method: "POST",
@@ -168,6 +182,70 @@ describe("encrypted mobile LAN access", () => {
     expect(calls).toBe(1);
     await pairing.close();
   });
+  it("forwards the client's device proof as the DPoP header and refuses a malformed one", async () => {
+    const seen: Array<string | undefined> = [];
+    const port = await listen(
+      createServer((request, response) => {
+        seen.push(request.headers.dpop as string | undefined);
+        response.end(JSON.stringify({ result: "ok" }));
+      }),
+    );
+    const identity = createLanIdentity();
+    const gateway = createLanGateway(identity, "pc", () => port);
+    const endpoint = `http://127.0.0.1:${await listen(gateway)}`;
+    const encrypted = encryptedLanFetch(fetch, "pc", identity.publicKey, random);
+    const proof = signDeviceProof({
+      seed: new Uint8Array(32).fill(4),
+      token: "b".repeat(43),
+      method: "POST",
+      path: "/rpc",
+      environmentId: "pc",
+    });
+    const call = (headers: Record<string, string>) =>
+      encrypted(`${endpoint}/rpc`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${"b".repeat(43)}`, ...headers },
+        body: JSON.stringify({ method: "projects.list" }),
+      });
+    expect((await call({ DPoP: proof })).status).toBe(200);
+    expect((await call({})).status).toBe(200);
+    expect(seen).toEqual([proof, undefined]);
+    await expect(call({ DPoP: "not a proof" })).rejects.toThrow(/Rejected/);
+    expect(seen).toHaveLength(2);
+  });
+  it.each(["projects.clone", "git.switch", "devices.setup", "workspace.run"])(
+    "preserves the upstream deadline policy for %s",
+    async (method) => {
+      const deadline = ownerRpcDeadlineMs(method, {});
+      const reply = Number.isFinite(deadline)
+        ? { error: "Host stopped waiting.", code: "HOST_RPC_DEADLINE", delivery: "unknown" }
+        : { result: "completed" };
+      const status = Number.isFinite(deadline) ? 504 : 200;
+      const port = await listen(
+        createServer((_request, response) => response.writeHead(status).end(JSON.stringify(reply))),
+      );
+      const identity = createLanIdentity();
+      const gateway = createLanGateway(identity, "pc", () => port);
+      const endpoint = `http://127.0.0.1:${await listen(gateway)}`;
+      const encrypted = encryptedLanFetch(fetch, "pc", identity.publicKey, random);
+      const setTimeout = vi.spyOn(ClientRequest.prototype, "setTimeout");
+      try {
+        const response = await encrypted(`${endpoint}/rpc`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${"b".repeat(43)}` },
+          body: JSON.stringify({ method }),
+        });
+        expect(response.status).toBe(status);
+        expect(await response.json()).toEqual(reply);
+        expect(setTimeout.mock.calls.map(([budget]) => budget)).toEqual(
+          Number.isFinite(deadline) ? [deadline + 30_000] : [],
+        );
+      } finally {
+        setTimeout.mockRestore();
+      }
+    },
+  );
+
   it("rejects raw bearer RPC, browser origins, wrong pins and modified replies", async () => {
     let calls = 0;
     const upstream = createServer((_request, response) => {
@@ -215,6 +293,33 @@ describe("encrypted mobile LAN access", () => {
     await expect(
       encryptedLanFetch(swapped, "pc", identity.publicKey, random)(`${endpoint}/rpc`, init),
     ).rejects.toThrow();
+  });
+  it("names retryable and fixable failures and keeps 403 for authentication", async () => {
+    let mode: "reset" | "huge" | "ok" = "reset";
+    const upstream = createServer((request, response) => {
+      if (mode === "reset") request.socket.destroy();
+      else if (mode === "huge") response.end("x".repeat(16 * 1024 * 1024 + 1));
+      else response.end("{}");
+    });
+    const port = await listen(upstream);
+    const identity = createLanIdentity();
+    const gateway = createLanGateway(identity, "pc", () => port);
+    const endpoint = `http://127.0.0.1:${await listen(gateway)}`;
+    const init = {
+      method: "POST",
+      headers: { Authorization: `Bearer ${"a".repeat(43)}` },
+      body: "{}",
+    };
+    const call = (offset = 0, key = identity.publicKey) =>
+      encryptedLanFetch(fetch, "pc", key, random, offset)(`${endpoint}/rpc`, init);
+    await expect(call()).rejects.toThrow("Rejected 502 upstream-failed");
+    mode = "huge";
+    await expect(call()).rejects.toThrow("Rejected 413 response-too-large");
+    mode = "ok";
+    await expect(call(5 * 60_000)).rejects.toThrow("Rejected 400 clock-skew");
+    await expect(call(-5 * 60_000)).rejects.toThrow("Rejected 400 clock-skew");
+    await expect(call(0, createLanIdentity().publicKey)).rejects.toThrow("Rejected 403");
+    expect((await call()).status).toBe(200);
   });
   it("keeps status read-only and does not bind arbitrary addresses", async () => {
     const folder = await mkdtemp(join(tmpdir(), "bycoda-mobile-lan-"));
@@ -266,7 +371,8 @@ describe("encrypted mobile LAN access", () => {
     const [a, b] = await Promise.all([first.enable(), first.enable()]);
     expect(a).toEqual(b);
     expect(a).toMatchObject({ state: "ready", endpoint: "http://192.168.1.20:43210" });
-    expect(bindings).toEqual([[0, "192.168.1.20"]]);
+    // First enable takes the environment's stable port, not an OS-assigned dynamic one.
+    expect(bindings).toEqual([[stablePortCandidates("pc", 0)[0], "192.168.1.20"]]);
     await first.close();
     const resumed = new MobileLanAccess(
       file,
@@ -347,5 +453,29 @@ describe("encrypted mobile LAN access", () => {
     expect(status.endpoint).toBeUndefined();
     expect(JSON.parse(await readFile(file, "utf8")).port).toBe(43210);
     await access.close();
+  });
+
+  it("answers LAN sockets past the admission cap with 429 instead of dropping them silently", async () => {
+    const gateway = createLanGateway(createLanIdentity(), "pc", () => 1);
+    const port = await listen(gateway);
+    const held: Socket[] = [];
+    try {
+      for (let index = 0; index < GATEWAY_ADMISSION.maxAdmitted; index++) {
+        const accepted = once(gateway, "connection");
+        const socket = connect({ host: "127.0.0.1", port });
+        socket.on("error", () => {});
+        held.push(socket);
+        await accepted;
+      }
+      const refused = connect({ host: "127.0.0.1", port });
+      refused.setEncoding("utf8");
+      refused.on("error", () => {});
+      let text = "";
+      refused.on("data", (chunk: string) => (text += chunk));
+      await once(refused, "close");
+      expect(text).toMatch(/^HTTP\/1\.1 429 Too Many Requests\r\nRetry-After: 1\r\n/);
+    } finally {
+      for (const socket of held) socket.destroy();
+    }
   });
 });

@@ -17,7 +17,13 @@ export interface HttpToolRequest {
   input: Awaited<ReturnType<typeof body>>;
   response: ServerResponse;
   voiceToolLog:
-    | { action: string; requestId: string | null; startedAt: number; outcome: string }
+    | {
+        action: string | null;
+        requestId: string | null;
+        startedAt: number;
+        outcome: string;
+        stage?: string;
+      }
     | undefined;
   voiceDisclosure: HostVoiceToolDisclosure | undefined;
   tokenHash: string;

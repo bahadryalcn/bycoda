@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { ToolPreview } from "../model/session";
 import { FilePreview } from "../../files/public/FilePreview";
 import { Popover } from "../../../shared/ui/Popover";
-import { X } from "../../../shared/ui/icons";
+import { TOOLTIP_DELAY_MS } from "../../../shared/ui/Tooltip";
 
 type Props = {
   preview: ToolPreview;
@@ -49,7 +49,7 @@ export function ToolDiffPreview({
 
   function dismiss(restoreFocus = false) {
     clearTimer();
-    // Restore before closing so focus does not reopen the preview.
+    // Restore before closing so focus returns to the chip the preview belongs to.
     if (restoreFocus && surface.current?.contains(document.activeElement)) {
       trigger.current?.focus();
     }
@@ -72,12 +72,12 @@ export function ToolDiffPreview({
 
   const description =
     status === "pending"
-      ? "Proposed changes"
+      ? t("Proposed changes")
       : status === "rejected"
-        ? "Attempted changes · tool did not complete"
+        ? t("Attempted changes · tool did not complete")
         : preview.contentOnly
-          ? "Written content · previous contents unavailable"
-          : "Change preview";
+          ? t("Written content · previous contents unavailable")
+          : t("Change preview");
 
   return (
     <>
@@ -87,13 +87,12 @@ export function ToolDiffPreview({
         motion="none"
         ref={trigger}
         type="button"
-
         aria-label={
           onOpen
             ? t("Open {p0}", { p0: label })
-            : t(preview.contentOnly ? "Preview written content: {p1}" : "Preview changes: {p1}", {
-                p1: label,
-              })
+            : preview.contentOnly
+              ? t("Preview written content: {p1}", { p1: label })
+              : t("Preview changes: {p1}", { p1: label })
         }
         aria-haspopup="dialog"
         aria-expanded={open}
@@ -102,13 +101,14 @@ export function ToolDiffPreview({
           if (event.pointerType === "touch") return;
           hovered.current = true;
           clearTimer();
-          timer.current = setTimeout(() => setOpen(true), 300);
+          timer.current = setTimeout(() => setOpen(true), TOOLTIP_DELAY_MS);
         }}
         onPointerLeave={() => {
           hovered.current = false;
           scheduleClose();
         }}
-        onFocus={show}
+        // Focus alone never opens the dialog: tabbing through a transcript must not
+        // pop a surface open. Keyboard users open it with ArrowDown (aria-haspopup).
         onBlur={scheduleClose}
         onClick={(event) => {
           event.stopPropagation();
@@ -120,9 +120,10 @@ export function ToolDiffPreview({
           }
         }}
         onKeyDown={(event) => {
-          if (event.key === "ArrowDown" && open) {
+          if (event.key === "ArrowDown") {
             event.preventDefault();
-            surface.current?.focus();
+            if (open) surface.current?.focus();
+            else show();
           } else if (event.key === "Tab" && !event.shiftKey && open) {
             event.preventDefault();
             surface.current?.querySelector<HTMLElement>("button, [tabindex='0']")?.focus();
@@ -136,9 +137,9 @@ export function ToolDiffPreview({
           ref={surface}
           anchor={trigger}
           id={id}
-          role="dialog"
+          kind="dialog"
+          autoFocus={false}
           aria-label={`${description}: ${label}`}
-          tabIndex={-1}
           width={460}
           maxHeight={280}
           className="overflow-auto overscroll-contain"
@@ -151,7 +152,8 @@ export function ToolDiffPreview({
             hovered.current = false;
             scheduleClose();
           }}
-          onFocus={show}
+          // Focus moving inside the open surface only keeps it from closing.
+          onFocus={clearTimer}
           onBlur={scheduleClose}
           onKeyDown={(event) => {
             if (event.key !== "Tab" || !event.shiftKey) return;
@@ -162,20 +164,6 @@ export function ToolDiffPreview({
             }
           }}
         >
-          <div className="flex items-center gap-2 border-b border-(--ui-tone-neutral-border) px-2.5 py-1.5 font-sans text-ui-micro text-(--ui-text-secondary)">
-            <span className="min-w-0 flex-1">{description}</span>
-            <Button
-              iconOnly
-              label={t("Close preview")}
-              variant="ghost"
-              type="button"
-              aria-label={t("Close preview")}
-              className="shrink-0"
-              onClick={() => dismiss(true)}
-            >
-              <X className="icon-xs" />
-            </Button>
-          </div>
           <FilePreview
             preview={preview}
             status={status}

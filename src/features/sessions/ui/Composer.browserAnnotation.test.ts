@@ -106,16 +106,28 @@ it("attaches only to the exact mounted composer, keeps the draft, offers review/
         "Fix spacing",
       ),
     );
-    expect(container.querySelector("textarea")!.value).toBe("Please adjust this [Image 1 · 3 B]");
+    expect(container.querySelector("textarea")!.value).toBe(
+      "Please adjust this [Image 1 · browser-element.jpg · 3 B]",
+    );
     expect(container.textContent).toContain("Inspect browser element");
     expect(container.textContent).toContain("Fix spacing");
     expect(container.querySelector("img[onerror]")).toBeNull();
     expect(submit).not.toHaveBeenCalled();
-    await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[aria-label="Remove browser-element.jpg"]')!
-        .click(),
-    );
+    await act(async () => {
+      container.querySelector("[data-attachment-chip]")!.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 10,
+          clientY: 10,
+        }),
+      );
+    });
+    const remove = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
+    ).find((item) => item.textContent === "Remove browser-element.jpg");
+    expect(remove).toBeDefined();
+    await act(async () => remove!.click());
     expect(container.textContent).not.toContain("Inspect browser element");
     expect(container.querySelector("textarea")!.value).toBe("Please adjust this");
     act(() => root.unmount());

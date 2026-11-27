@@ -2,7 +2,13 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { defaultDecisionConfig, loadDecisionConfig, saveDecisionConfig } from "./decision-config";
+import {
+  DecisionConfigDamagedError,
+  defaultDecisionConfig,
+  loadDecisionConfig,
+  requireDecisionConfig,
+  saveDecisionConfig,
+} from "./decision-config";
 
 let directory: string;
 let path: string;
@@ -71,5 +77,61 @@ describe("decision config state file", () => {
     writeFileSync(path, JSON.stringify(config));
 
     expect((await loadDecisionConfig(path)).damaged).toBe(true);
+  });
+});
+
+describe("decision config damage diagnostics", () => {
+  const SECRET = "sk-live-0123456789-never-in-diagnostics";
+
+  async function damageOf(text: string) {
+    writeFileSync(path, text);
+    const loaded = await loadDecisionConfig(path);
+    if (!loaded.damaged) throw new Error("expected a damaged config");
+    return loaded.damage;
+  }
+
+  it("classifies the failure and keeps file text out of the diagnostics", async () => {
+    expect(await damageOf(`{"apiKey": "${SECRET}"`)).toEqual({
+      reason: "invalid_json",
+      evidenceKept: true,
+    });
+    expect(await damageOf("   ")).toEqual({ reason: "empty", evidenceKept: true });
+  });
+
+  it("names the first invalid field by schema path without values or unknown keys", async () => {
+    const config = defaultDecisionConfig();
+    config.sources.push({
+      id: "src-1",
+      name: "Clef",
+      kind: "local",
+      adapter: "systemone",
+      endpoint: SECRET.repeat(200),
+      status: "ready",
+    });
+    const damage = await damageOf(JSON.stringify(config));
+    expect(damage.reason).toBe("invalid_shape");
+    expect(damage.field).toBe("sources.0.endpoint");
+
+    const unknownKey = await damageOf(
+      JSON.stringify({ ...defaultDecisionConfig(), [SECRET]: true }),
+    );
+    expect(unknownKey).toEqual({ reason: "invalid_shape", evidenceKept: true });
+  });
+
+  it("builds a bounded error message that never contains file content", async () => {
+    const damage = await damageOf(`{"routing": {"${SECRET}": 1}}`);
+    const error = new DecisionConfigDamagedError(damage);
+
+    expect(error.code).toBe("config_damaged");
+    expect(error.message).toContain("Decision model settings are damaged");
+    expect(error.message).not.toContain(SECRET);
+    expect(error.message.length).toBeLessThan(200);
+  });
+
+  it("requireDecisionConfig throws for a damaged file and returns defaults for a missing one", async () => {
+    await expect(requireDecisionConfig(path)).resolves.toEqual(defaultDecisionConfig());
+
+    writeFileSync(path, "{broken");
+    await expect(requireDecisionConfig(path)).rejects.toBeInstanceOf(DecisionConfigDamagedError);
   });
 });

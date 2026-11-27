@@ -1,6 +1,8 @@
 import { TAB_GROUP_COLORS } from "./tabGroupColors";
+import { subscribePreferenceChanges } from "../../../shared/lib/storedSetting";
+import { createObservedSnapshot } from "../../../shared/lib/store";
 import type { Tab } from "../../../app/shell/TitleBar";
-import { projectKey, projectName } from "../../../shared/lib/paths";
+import { isRemoteProjectPath, projectKey, projectName } from "../../../shared/lib/paths";
 import {
   knownProjectPaths,
   notifyProjectPathsChanged,
@@ -308,8 +310,19 @@ export function saveTabGroupCustomColor(project: string, color: string | null): 
 
 /** What each project is shown as: the name the user gave it, else its automatic one. */
 export function loadTabGroupLabels(): Record<string, string> {
+  const automatic = loadAutoTabGroupLabels();
+  for (const [path, label] of Object.entries(automatic)) {
+    // Older remote labels appended a machine hint to the folder name.
+    if (
+      isRemoteProjectPath(path) &&
+      label.startsWith(`${projectName(path)} (`) &&
+      /\)(?: \d+)?$/.test(label)
+    ) {
+      delete automatic[path];
+    }
+  }
   return {
-    ...loadAutoTabGroupLabels(),
+    ...automatic,
     ...loadCustomTabGroupLabels(),
     ...loadWorkspaceProjectNames(),
   };
@@ -363,9 +376,11 @@ export function saveAutoTabGroupLabel(project: string, label: string): void {
 }
 
 export function subscribeTabGroupLabels(onChange: () => void): () => void {
-  if (typeof window === "undefined") return () => {};
-  window.addEventListener(LABELS_CHANGED, onChange);
-  return () => window.removeEventListener(LABELS_CHANGED, onChange);
+  return subscribePreferenceChanges(
+    [LABEL_KEY, AUTO_LABEL_KEY, WORKSPACE_LABEL_KEY],
+    LABELS_CHANGED,
+    onChange,
+  );
 }
 
 function notifyTabGroupLabelsChanged(): void {
@@ -393,6 +408,9 @@ export function loadTabGroupLogos(): Record<string, string> {
   return readRecord(LOGO_KEY);
 }
 
+/** Same record as `loadTabGroupLogos`, parsed once per stored change and shared by every reader. */
+export const getTabGroupLogosSnapshot = cachedRecordReader(LOGO_KEY, loadTabGroupLogos);
+
 export function saveTabGroupLogo(project: string, path: string | null): void {
   const next = loadTabGroupLogos();
   if (!path) delete next[project];
@@ -404,45 +422,15 @@ export function loadTabGroupMascots(): Record<string, string> {
   return readRecord(MASCOT_KEY);
 }
 
-let mascotsRaw: string | null | undefined;
-let mascotsSnapshot: Record<string, string> = {};
-
-/** Same record as `loadTabGroupMascots`, with one identity while the stored value is unchanged. */
-function getTabGroupMascotsSnapshot(): Record<string, string> {
-  migrateProjectAppearanceKeys();
-  let raw: string | null = null;
-  try {
-    raw = localStorage.getItem(MASCOT_KEY);
-  } catch {
-    /* storage unavailable: no mascots */
-  }
-  if (raw !== mascotsRaw) {
-    mascotsRaw = raw;
-    mascotsSnapshot = readRecord(MASCOT_KEY);
-  }
-  return mascotsSnapshot;
-}
-
+const mascotsStore = createObservedSnapshot(
+  cachedRecordReader(MASCOT_KEY, loadTabGroupMascots),
+  (notify) => subscribePreferenceChanges([MASCOT_KEY], TAB_GROUP_LOGOS_CHANGED, notify),
+);
 const NO_MASCOTS: Record<string, string> = {};
-
-function subscribeTabGroupMascots(onChange: () => void): () => void {
-  if (typeof window === "undefined") return () => {};
-  // A picked, cleared or moved mascot announces itself as a logo change; other windows via `storage`.
-  window.addEventListener(TAB_GROUP_LOGOS_CHANGED, onChange);
-  window.addEventListener("storage", onChange);
-  return () => {
-    window.removeEventListener(TAB_GROUP_LOGOS_CHANGED, onChange);
-    window.removeEventListener("storage", onChange);
-  };
-}
 
 /** Reactive `loadTabGroupMascots`. */
 export function useTabGroupMascots(): Record<string, string> {
-  return useSyncExternalStore(
-    subscribeTabGroupMascots,
-    getTabGroupMascotsSnapshot,
-    () => NO_MASCOTS,
-  );
+  return useSyncExternalStore(mascotsStore.subscribe, mascotsStore.getSnapshot, () => NO_MASCOTS);
 }
 
 /** `null` restores the mascot picked from the project's name. */
@@ -549,13 +537,23 @@ export function useResolvedTabGroupLogos(
   overrides?: Record<string, string>,
 ): Record<string, string | null> {
   const key = useSyncExternalStore(
-    subscribeTabGroupMascots,
-    () =>
-      JSON.stringify(
+    mascotsStore.subscribe,
+    () => {
+      const mascots = mascotsStore.getSnapshot();
+      return JSON.stringify(
         Object.fromEntries(
-          projects.map((project) => [project, resolveTabGroupLogo(project, overrides)]),
+          projects.map((project) => [
+            project,
+            resolveTabGroupLogoWith(
+              project,
+              overrides,
+              overrides?.[project] ? null : detectedProjectLogo(project),
+              mascots,
+            ),
+          ]),
         ),
-      ),
+      );
+    },
     () => "{}",
   );
   return JSON.parse(key) as Record<string, string | null>;

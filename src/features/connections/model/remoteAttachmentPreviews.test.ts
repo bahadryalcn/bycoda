@@ -6,6 +6,8 @@ import {
 } from "./remoteAttachmentPreviews";
 import type { HostSession } from "./protocol";
 
+const uploadId = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+
 const snapshot = (): HostSession => ({
   projectId: "project",
   revision: 1,
@@ -25,7 +27,7 @@ const snapshot = (): HostSession => ({
         text: "Look",
         attachments: [
           {
-            id: "image",
+            id: uploadId(1),
             name: "shot.png",
             mimeType: "image/png",
             kind: "image",
@@ -43,7 +45,7 @@ it.each(["report.pdf", "report.xlsx", "report.csv", "demo.mp4"])(
   async (name) => {
     const value = snapshot();
     value.session.blocks[0].attachments![0] = {
-      id: "document",
+      id: uploadId(2),
       name,
       kind: "file",
       mimeType: "application/octet-stream",
@@ -60,7 +62,7 @@ it.each(["report.pdf", "report.xlsx", "report.csv", "demo.mp4"])(
     const ready = await withRemoteAttachmentPreviews(`first-${name}`, bound, undefined, read);
     expect(read).not.toHaveBeenCalled();
     expect(await ready.session.blocks[0].attachments![0].loadPreview!()).toBe(btoa("owner"));
-    expect(read).toHaveBeenCalledWith({ sessionId: "session", id: "document", offset: 0 });
+    expect(read).toHaveBeenCalledWith({ sessionId: "session", id: uploadId(2), offset: 0 });
   },
 );
 
@@ -85,7 +87,7 @@ it("rejects oversized document metadata without invoking the host reader", async
 it("rejects a chunk larger than its declared bytes before base64 decoding", async () => {
   const value = snapshot();
   value.session.blocks[0].attachments![0] = {
-    id: "bad-chunk",
+    id: uploadId(3),
     name: "report.pdf",
     kind: "file",
     mimeType: "application/pdf",
@@ -108,7 +110,7 @@ it("rejects a chunk larger than its declared bytes before base64 decoding", asyn
 it("keeps simultaneous same-named documents isolated by owning machine", async () => {
   const value = snapshot();
   value.session.blocks[0].attachments![0] = {
-    id: "same-file",
+    id: uploadId(4),
     name: "report.pdf",
     kind: "file",
     mimeType: "application/pdf",
@@ -136,7 +138,7 @@ it("downloads generated images through the session chunk reader and reuses them"
       role: "image",
       text: "",
       image: {
-        path: "/host/attachments/uuid",
+        path: `/host/attachments/${uploadId(5)}`,
         name: "result.png",
         mimeType: "image/png",
         size: 3,
@@ -206,6 +208,21 @@ it("asks once for an image the Host answered it does not hold", async () => {
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("preserves legacy metadata and embedded images without requesting an impossible Host read", async () => {
+  const value = snapshot();
+  const file = value.session.blocks[0].attachments![0];
+  file.id = "desktop-local";
+  value.session.blocks[0].attachments!.push({ ...file, id: "pasted", data: btoa("saved") });
+  const read = vi.fn();
+  const bound = await withRemoteAttachmentPreviews("legacy-machine", value, undefined, read);
+  const [missing, saved] = bound.session.blocks[0].attachments!;
+  expect(saved.data).toBe(btoa("saved"));
+  expect(missing.name).toBe(file.name);
+  await expect(missing.loadPreview!()).rejects.toThrow("missing on its machine");
+  expect(await withRemoteAttachmentPreviews("legacy-machine", bound, bound, read)).toBe(bound);
+  expect(read).not.toHaveBeenCalled();
 });
 
 it("settles a snapshot whose only unloaded images are missing on the Host", async () => {
@@ -284,7 +301,7 @@ it("limits concurrent reads and favors recent previews within the byte budget", 
   const template = value.session.blocks[0].attachments![0];
   value.session.blocks[0].attachments = Array.from({ length: 6 }, (_, i) => ({
     ...template,
-    id: `image${i}`,
+    id: uploadId(i + 10),
   }));
   let active = 0;
   let peak = 0;
@@ -299,7 +316,7 @@ it("limits concurrent reads and favors recent previews within the byte budget", 
   const oldData = "already downloaded";
   value.session.blocks[0].attachments = Array.from({ length: 3 }, (_, i) => ({
     ...template,
-    id: `large${i}`,
+    id: uploadId(i + 20),
     size: PREVIEW_BUDGET_BYTES / 2,
     data: oldData,
   }));

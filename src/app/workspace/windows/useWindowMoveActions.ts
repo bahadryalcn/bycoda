@@ -1,4 +1,7 @@
+import { errorText } from "../../../shared/lib/errors";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import {
+  createElement,
   useCallback,
   useEffect,
   type Dispatch,
@@ -151,7 +154,7 @@ export function useWindowMoveActions(deps: WindowMoveActionDeps): {
         toast.show({
           tone: "danger",
           title: t("Could not open the file in a new window. The original editor is still here."),
-          message: error instanceof Error ? error.message : String(error),
+          extra: createElement(ErrorDetails, { detail: errorText(error) }),
         });
       } finally {
         openingFileWindowIds.current.delete(fileId);

@@ -1,0 +1,27 @@
+.card {
+  overflow: hidden;
+}
+
+.label {
+  position: absolute;
+  z-index: 1;
+  /* ui-drift-ignore: spacing-step -- Sits on the code block header's own geometry. */
+  top: 9px;
+  /* ui-drift-ignore: spacing-step -- Sits right of the code block header's file icon. */
+  left: 34px;
+}
+
+/* Header height of a code block, so the body starts where the highlighted code does. */
+.body {
+  /* ui-drift-ignore: spacing-step -- The code block header height. */
+  margin-top: 36px;
+  min-width: 0;
+}
+
+/* The tree sits flat inside the card: the card owns surface and corners. */
+.body > .tree {
+  /* ui-drift-ignore: surface-style -- The JSON/Mermaid viewer drops its own corners inside the card. */
+  border-radius: 0;
+  /* ui-drift-ignore: surface-style -- The JSON/Mermaid viewer drops its own fill inside the card. */
+  background: transparent;
+}

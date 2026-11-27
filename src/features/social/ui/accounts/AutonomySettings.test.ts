@@ -28,7 +28,23 @@ afterEach(() => {
   element.remove();
 });
 
-const account = { id: "a1", name: "Studio", platform: "x" } as unknown as SocialAccount;
+async function tooltipText(target: HTMLElement): Promise<string> {
+  await act(async () => {
+    target.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    target.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
+const account = {
+  id: "a1",
+  name: "Studio",
+  platform: "x",
+} as unknown as SocialAccount;
 const stored: AutonomyPolicy = {
   ...DEFAULT_AUTONOMY,
   accountId: "a1",
@@ -37,11 +53,18 @@ const stored: AutonomyPolicy = {
 };
 
 function fakeClient(
-  patch: { get?: ReturnType<typeof vi.fn>; request?: ReturnType<typeof vi.fn> } = {},
+  patch: {
+    get?: ReturnType<typeof vi.fn>;
+    request?: ReturnType<typeof vi.fn>;
+  } = {},
 ) {
   const get = patch.get ?? vi.fn(async () => stored);
   const request = patch.request ?? vi.fn(async () => stored);
-  return { client: { autonomy: { get }, request } as unknown as SocialClient, get, request };
+  return {
+    client: { autonomy: { get }, request } as unknown as SocialClient,
+    get,
+    request,
+  };
 }
 
 async function render(
@@ -105,7 +128,7 @@ it("reads the policy of this account and starts every action at Suggest only", a
     expect(levelTrigger(label)?.getAttribute("aria-label")).toBe(`${label}: Suggest only`);
   expect(AUTONOMY_ACTIONS.every((action) => stored.levels[action] === "suggest")).toBe(true);
   expect(button("Save autonomy")?.disabled).toBe(true);
-  expect(element.textContent).toContain("No changes to save.");
+  expect(element.textContent).not.toContain("No changes to save.");
 });
 
 it("says plainly when the policy cannot be read and shows no editable levels", async () => {
@@ -158,7 +181,10 @@ it("saves an accepted autonomous level only with the explicit ENABLE_AUTONOMY co
 });
 
 it("does not ask and sends no autonomy confirmation when no level is autonomous", async () => {
-  const saved: AutonomyPolicy = { ...stored, levels: { ...stored.levels, publish: "approve" } };
+  const saved: AutonomyPolicy = {
+    ...stored,
+    levels: { ...stored.levels, publish: "approve" },
+  };
   const { client, request } = fakeClient({ request: vi.fn(async () => saved) });
   await render(client);
   await chooseLevel("Publishing", "Approve each");
@@ -219,7 +245,7 @@ it("keeps the draft and shows the failure when the Host refuses the save", async
   const onChanged = await render(client);
   await chooseLevel("Comments", "Approve each");
   await act(async () => button("Save autonomy")?.click());
-  expect(element.textContent).toContain("The policy changed on another computer.");
+  expect(element.textContent).toContain("The autonomy settings could not be saved. Try again.");
   expect(levelTrigger("Comments")?.getAttribute("aria-label")).toBe("Comments: Approve each");
   expect(onChanged).not.toHaveBeenCalled();
 });
@@ -228,6 +254,9 @@ it("disables every control and says why while the Host is offline", async () => 
   const { client } = fakeClient();
   await render(client, { disabled: true });
   expect(levelTrigger("Publishing")?.disabled).toBe(true);
-  expect(button("Save autonomy")?.disabled).toBe(true);
-  expect(element.textContent).toContain("Connect to this computer to change this account.");
+  // Disabled with a reason stays focusable (aria-disabled) and gives the reason in its tooltip.
+  const save = button("Save autonomy")!;
+  expect(save.getAttribute("aria-disabled")).toBe("true");
+  expect(await tooltipText(save)).toContain("Connect to this computer to change this account.");
+  expect(confirm).not.toHaveBeenCalled();
 });

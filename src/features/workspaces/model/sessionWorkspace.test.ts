@@ -6,6 +6,8 @@ import {
   isNewWorkspaceSession,
   needsSessionWorkspace,
   prepareSessionWorkspace,
+  prepareSessionWorkspaceDetailed,
+  sessionWorktreeSnapshot,
 } from "./sessionWorkspace";
 import {
   getWorkspaceCapabilities,
@@ -13,9 +15,13 @@ import {
   workspaceRequest,
   resolveWorkspaceContext,
 } from "./workspaceClient";
+import { saveAdditionalDirs } from "../../projects/model/additionalDirs";
 import { clearConversation } from "../../sessions/model/clearConversation";
 
+const listWorktrees = vi.hoisted(() => vi.fn());
+vi.mock("../../source-control/public/worktrees", () => ({ listWorktrees }));
 vi.mock("./workspaceClient", () => ({
+  WORKSPACE_CREATION_V2: "workspaces.creation.v2",
   getWorkspaceCapabilities: vi.fn(async () => ["workspaces.policy.v1", "workspaces.managed.v1"]),
   resolveWorkspaceContext: vi.fn(async () => ({
     cwd: "/project",
@@ -127,6 +133,27 @@ it("prepares a new session from project policy using authoritative IDs and a sta
   });
   expect(requests[1]?.[1]).toEqual(requests[0]?.[1]);
   expect(requests[0]?.[1]).not.toHaveProperty("choice");
+});
+
+it("skips managed workspace admission for a new projectless session", async () => {
+  const projectless = newSession("codex", "~");
+  expect(projectless.workspaceMode).toBeUndefined();
+  expect(needsSessionWorkspace(projectless)).toBe(false);
+  await expect(prepareSessionWorkspace(projectless)).resolves.toBeNull();
+  expect(getWorkspaceCapabilities).not.toHaveBeenCalled();
+  expect(workspaceRequest).not.toHaveBeenCalled();
+});
+
+it("ignores restored workspace preparation on a projectless session", async () => {
+  const projectless = newSession("codex", "~");
+  projectless.blocks = [
+    { id: "failed", role: "user", text: "First send", workspacePreparationPending: true },
+  ];
+  expect(needsSessionWorkspace(projectless)).toBe(false);
+  expect(needsSessionWorkspace({ ...projectless, workspaceMode: "worktree" })).toBe(false);
+  await expect(prepareSessionWorkspace(projectless)).resolves.toBeNull();
+  expect(getWorkspaceCapabilities).not.toHaveBeenCalled();
+  expect(workspaceRequest).not.toHaveBeenCalled();
 });
 
 it("keeps established conversations in their existing checkout", async () => {
@@ -292,4 +319,74 @@ it("rejects explicit worktree before preparation if remote managed creation is u
   expect(
     vi.mocked(workspaceRequest).mock.calls.some(([method]) => method === "workspaces.prepare"),
   ).toBe(false);
+});
+
+const repo = (root: string) => ({ worktrees: [{ path: root }] });
+
+it("sends git-repository extras and the remote base to a creation-v2 Host and maps the worktrees", async () => {
+  vi.mocked(getWorkspaceCapabilities).mockResolvedValue([
+    "workspaces.policy.v1",
+    "workspaces.managed.v1",
+    "workspaces.creation.v2",
+  ]);
+  saveAdditionalDirs("/project", ["/project/sub", "/other/api", "/other/notes"]);
+  listWorktrees.mockImplementation(async (dir: string) => {
+    if (dir === "/other/api") return repo("/other/api");
+    throw new Error("fatal: not a git repository");
+  });
+  vi.mocked(workspaceRequest).mockImplementation(async (method) => {
+    if (method === "projects.workspacePolicy.get")
+      return { revision: 1, resolved: { policy, appliedScopes: ["host"] } } as never;
+    return {
+      workspace,
+      operationId: "op",
+      extraWorktrees: { "/other/api": "/worktrees/api" },
+      baseSource: "local",
+    } as never;
+  });
+  const result = await prepareSessionWorkspaceDetailed(
+    { ...session, workspaceMode: "worktree", worktreeBaseRemote: true },
+    true,
+    { progressId: "progress" },
+  );
+  expect(result.extraWorktrees).toEqual({ "/other/api": "/worktrees/api" });
+  expect(result.baseSource).toBe("local");
+  const sent = vi
+    .mocked(workspaceRequest)
+    .mock.calls.find(([method]) => method === "workspaces.prepare")?.[1];
+  expect(sent).toMatchObject({
+    repositories: ["/other/api"],
+    baseFromRemote: true,
+    progressId: "progress",
+  });
+});
+
+it("omits the creation fields on a legacy Host without extras", async () => {
+  await prepareSessionWorkspaceDetailed({ ...session, workspaceMode: "worktree" }, true, {
+    progressId: "progress",
+  });
+  const sent = vi
+    .mocked(workspaceRequest)
+    .mock.calls.find(([method]) => method === "workspaces.prepare")?.[1];
+  expect(sent).not.toHaveProperty("repositories");
+  expect(sent).not.toHaveProperty("baseFromRemote");
+  expect(sent).not.toHaveProperty("progressId");
+});
+
+it("repeats the frozen repositories and slug when the choice or title changes before a retry", async () => {
+  listWorktrees.mockImplementation(async (dir: string) => ({ worktrees: [{ path: dir }] }));
+  saveAdditionalDirs("/project", ["/other"]);
+  const first = { ...session, title: "First title", workspaceMode: "worktree" as const };
+  const snapshot = sessionWorktreeSnapshot(first);
+  expect(snapshot).toEqual({ worktreeRepositories: ["/other"], worktreeSlug: "First title" });
+  // The project's choice and the title change after the timed-out attempt.
+  saveAdditionalDirs("/project", ["/third"]);
+  const retry = { ...first, title: "Renamed", ...snapshot };
+  expect(sessionWorktreeSnapshot(retry)).toEqual(snapshot);
+  await prepareSessionWorkspaceDetailed(retry);
+  expect(workspaceRequest).toHaveBeenCalledWith(
+    "workspaces.prepare",
+    expect.objectContaining({ slug: "First title", repositories: ["/other"] }),
+    expect.anything(),
+  );
 });

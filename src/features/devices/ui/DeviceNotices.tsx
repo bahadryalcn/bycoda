@@ -1,13 +1,14 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { t } from "../../../shared/i18n/technical";
+import { t, useLocale } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Text } from "../../../shared/ui/Text";
 
 /**
- * The one notice slot above the device screen. Several conditions can hold at once; only the
- * most urgent shows: a completed action with a stale screen, then the control-tools setup,
- * then the last device message, then the reason the toolbar is limited.
+ * The notice slot above the device screen. A device error always shows, and stacks above at most
+ * one lower-severity line: a completed action with a stale screen, then the control-tools setup,
+ * then the last informational device message, then the reason the toolbar is limited. The error
+ * stays until its own dismiss action clears it, so a setup or stale-frame line never hides it.
  */
 export function DeviceNotices({
   actionCompleted,
@@ -23,8 +24,12 @@ export function DeviceNotices({
   notice?: { error: boolean; display: string; onDismiss: () => void };
   reason?: string;
 }) {
+  useLocale();
+  const error = notice?.error ? notice : undefined;
+
+  let secondary = null;
   if (actionCompleted)
-    return (
+    secondary = (
       <InlineMessage
         tone="warning"
         action={{
@@ -38,8 +43,8 @@ export function DeviceNotices({
         {t("The screen could not be refreshed. Refresh the frame; do not repeat the action.")}
       </InlineMessage>
     );
-  if (setupControl)
-    return (
+  else if (setupControl)
+    secondary = (
       <Text
         as="div"
         size="caption"
@@ -47,29 +52,31 @@ export function DeviceNotices({
         leading="inherit"
         {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "device-panel-setup-control")}
       >
-        <span>{t("Run setup with control enabled to install the control tools.")}</span>
         <Button
           variant="primary"
           loading={setupControl.pending}
           disabled={setupControl.disabled}
+          disabledReason={t(
+            "Wait for the current device action to finish, or set up the device first.",
+          )}
           onClick={setupControl.onClick}
         >
           {t("Set up device control")}
         </Button>
       </Text>
     );
-  if (notice)
-    return (
+  else if (notice && !notice.error)
+    secondary = (
       <InlineMessage
-        tone={notice.error ? "danger" : "info"}
+        tone="info"
         className="shrink-0"
         action={{ label: t("Dismiss"), onClick: notice.onDismiss }}
       >
         {notice.display}
       </InlineMessage>
     );
-  if (reason)
-    return (
+  else if (reason)
+    secondary = (
       <Text
         as="p"
         size="caption"
@@ -80,5 +87,18 @@ export function DeviceNotices({
         {reason}
       </Text>
     );
-  return null;
+
+  if (!error) return secondary;
+  return (
+    <>
+      <InlineMessage
+        tone="danger"
+        className="shrink-0"
+        action={{ label: t("Dismiss"), onClick: error.onDismiss }}
+      >
+        {error.display}
+      </InlineMessage>
+      {secondary}
+    </>
+  );
 }

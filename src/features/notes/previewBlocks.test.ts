@@ -6,6 +6,36 @@ import {
   replacePreviewBlock,
 } from "./previewBlocks";
 
+it("recognizes only literal single-line paragraphs that need no Markdown or link processing", () => {
+  for (const text of ["Ordinary paragraph.", "İkinci cümle, birkaç kelime!", "هذه فقرة."]) {
+    expect(notePreviewBlocks(text)[0]?.plainParagraph, text).toBe(true);
+  }
+  for (const text of [
+    "# Heading",
+    "1. Item",
+    "- list",
+    "**strong**",
+    "[label][ref]",
+    "www.example.com",
+    "mail@example.com",
+    "a\nb",
+    "line  \nb",
+    "    indented code",
+    "trailing space ",
+    "/tmp/report",
+    "C:\\notes",
+    "bycoda://session/abc",
+    ":codex-file-citation{path='x'}",
+    "&amp;",
+    "<b>html</b>",
+    "~~gone~~",
+    "`code`",
+    "---",
+  ]) {
+    expect(notePreviewBlocks(text)[0]?.plainParagraph, text).toBe(false);
+  }
+});
+
 it("edits only the chosen Markdown block, preserving fences, tables, whitespace and references", () => {
   const body =
     "# Plan\n\nFirst [link][ref].\n\n```ts\nconst x = 1;\n```\n\n| a | b |\n| - | - |\n| c | d |\n\n[ref]: https://example.com\n";

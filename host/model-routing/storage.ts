@@ -1,5 +1,7 @@
 import {
   EMPTY_MODEL_ROUTING,
+  MODEL_ROUTING_CONFLICT_CODE,
+  MODEL_ROUTING_CONFLICT_MESSAGE,
   ModelRoutingStateSchema,
   type ModelRoutingDraft,
   type ModelRoutingState,
@@ -29,7 +31,8 @@ export async function readModelRouting(store: ModelRoutingStore): Promise<ModelR
 }
 export async function saveModelRouting(
   store: ModelRoutingStore,
-  draft: ModelRoutingDraft,
+  /** Runs inside the transaction against the locked persisted state, so checks see what gets replaced. */
+  validate: (persisted: ModelRoutingState) => ModelRoutingDraft,
   expectedVersion: number,
   now: number,
   authorize: () => Promise<void> = async () => {},
@@ -39,8 +42,11 @@ export async function saveModelRouting(
     await prepare(store);
     const old = await read(store);
     if (old.version !== expectedVersion)
-      throw new Error("Model routing changed; reload before saving.");
-    const state = { ...draft, version: old.version + 1, updatedAt: now };
+      throw Object.assign(
+        new Error(`${MODEL_ROUTING_CONFLICT_CODE}: ${MODEL_ROUTING_CONFLICT_MESSAGE}`),
+        { code: MODEL_ROUTING_CONFLICT_CODE },
+      );
+    const state = { ...validate(old), version: old.version + 1, updatedAt: now };
     await authorize();
     await store.db
       .prepare(

@@ -2,6 +2,10 @@
 
 Historical owner statements explain design intent; they do not authorize operations or override current owner instructions. Revalidate implementation before using a statement as a current-state claim.
 
+## Chat message surfaces
+
+2026-11-21. Owner requested “bunun saydamlığını filan ayarlar görünüm üzerinden ayarlanabilir yapalım … hatta AI mesajları içinde bu şekilde düşünebiliriz”. User messages and AI replies share a theme-aware color choice and have independent opacity in Appearance. Chat preference writes by an agent use the existing desktop review.
+
 ## Pure canvas default
 
 Owner quote, 2026-10-31; source: owner chat with Appearance and main-window screenshots, preserved from the original feature-appearance entry, section "V3-039 Layout fill and Pure background":

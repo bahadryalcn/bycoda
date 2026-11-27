@@ -12,7 +12,6 @@ vi.mock("../../connections/public/connections", () => ({ remoteRequest: mocks.re
 vi.mock("../../automations/public/hostMachines", () => ({
   machineCapabilities: mocks.capabilities,
 }));
-vi.mock("../../../shared/hooks/useQueryVisible", () => ({ useQueryVisible: () => true }));
 
 it("keeps equal sprint IDs separate across server owners", () => {
   expect(sprintCatalogKey({ environmentId: "pc" }, { id: "same" })).not.toBe(
@@ -30,6 +29,17 @@ it("reports an unsupported server instead of presenting an empty sprint list as 
   } as RemoteMachine);
   expect(source.error).toContain("Update this server");
   expect(mocks.request).not.toHaveBeenCalled();
+});
+
+it("keeps a passing transport error quiet but unavailable, and shows a real failure's message", async () => {
+  const machine = { id: "mac", environmentId: "mac", name: "Mac" } as RemoteMachine;
+  mocks.capabilities.mockResolvedValue([HOST_SPRINTS]);
+  mocks.request.mockRejectedValueOnce(new Error("[RPC_TIMEOUT] The Host did not answer."));
+  const transient = await readSprintCatalogSource(machine);
+  expect(transient).toMatchObject({ failed: true, error: null });
+  mocks.request.mockRejectedValueOnce(new Error("Host rejected request: Sprint store is locked"));
+  const rejected = await readSprintCatalogSource(machine);
+  expect(rejected).toMatchObject({ failed: true, error: "Sprint store is locked" });
 });
 
 it("publishes servers independently, retains offline answers and discards changed routes", async () => {

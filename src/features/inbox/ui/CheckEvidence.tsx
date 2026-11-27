@@ -29,6 +29,7 @@ export function CheckEvidence({
 }) {
   useLocale();
   const [showAll, setShowAll] = useState(false);
+  const hiddenCount = annotations.length - 5;
   const sources = useMemo<SourceCache>(() => new Map(), [cwd, headOid]);
   return (
     <div className="min-w-0 space-y-3">
@@ -45,9 +46,9 @@ export function CheckEvidence({
       ))}
       {!showAll && annotations.length > 5 ? (
         <Button variant="ghost" type="button" onClick={() => setShowAll(true)}>
-          {t("Show ")}
-          {annotations.length - 5}
-          {t(" more annotations")}
+          {hiddenCount === 1
+            ? t("Show {p0} more annotation", { p0: hiddenCount })
+            : t("Show {p0} more annotations", { p0: hiddenCount })}
         </Button>
       ) : null}
     </div>
@@ -145,10 +146,8 @@ function CheckAnnotation({
               label={t("View {p0} on GitHub", { p0: location })}
               variant="ghost"
               type="button"
-              tooltip={t("View source at the checked commit")}
-              aria-label={t("View {p0} on GitHub", { p0: location })}
               onClick={() => openUrlSafely(fileUrl)}
-              className="-my-1 -mr-1 shrink-0"
+              className="-my-1 -me-1 shrink-0"
             >
               <ExternalLink className="icon-xs" strokeWidth={1.75} />
             </Button>
@@ -180,7 +179,7 @@ function CheckAnnotation({
               <Text
                 size="inherit"
                 tone="secondary"
-                className="w-8 shrink-0 select-none text-right tabular-nums"
+                className="w-8 shrink-0 select-none text-end tabular-nums"
               >
                 {firstLine + index}
               </Text>

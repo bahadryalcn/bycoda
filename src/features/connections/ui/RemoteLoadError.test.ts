@@ -152,7 +152,13 @@ it("shows why a reconnect that really failed did not work", async () => {
     entry.textContent?.includes("Reconnect"),
   );
   await act(async () => button?.click());
-  expect(container.textContent).toContain("Reconnecting failed: SSH timed out");
+  expect(container.textContent).toContain("Reconnecting failed");
+  expect(container.textContent).not.toContain("SSH timed out");
+  const details = [...container.querySelectorAll("button")].find(
+    (entry) => entry.getAttribute("aria-label") === "Details: Reconnecting failed",
+  );
+  await act(async () => details?.click());
+  expect(document.body.textContent).toContain("SSH timed out");
 });
 
 it("shows recovery status without transport error details or retry actions", async () => {
@@ -172,30 +178,61 @@ it("shows recovery status without transport error details or retry actions", asy
   expect(container.querySelectorAll("button")).toHaveLength(0);
 });
 
-it("renders the machine notice as one toast with the raw text behind Details", async () => {
+it("renders the session's machine notice inline with the raw text behind Details", async () => {
   state.shared = false;
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
   await act(async () =>
     root.render(
       createElement(RemoteLoadError, {
         cwd: "env",
         failure: { kind: "unreachable", message: "SSH timed out" },
-        toast: true,
+        compact: true,
         coordinated: false,
       }),
     ),
   );
-  const region = document.querySelector('[data-toast-region="top-center"]');
-  expect(region?.textContent).toContain("Can’t reach Server");
-  expect(region?.textContent).toContain("Reconnect");
-  expect(region?.textContent).not.toContain("SSH timed out");
-  expect(container.textContent).toBe("");
-  vi.unstubAllGlobals();
+  expect(document.querySelector('[data-toast-region="top-center"]')).toBeNull();
+  expect(container.textContent).toContain("Can’t reach Server");
+  expect(container.textContent).toContain("Reconnect");
+  expect(container.textContent).not.toContain("SSH timed out");
+});
+
+it("names a changed Host identity and offers only Review in Connections, never Reconnect", async () => {
+  state.shared = false;
+  await act(async () =>
+    root.render(
+      createElement(RemoteLoadError, {
+        cwd: "env",
+        failure: {
+          kind: "identity",
+          message: "Host identity changed. Add this machine again before continuing.",
+        },
+      }),
+    ),
+  );
+  expect(container.textContent).toContain("Server’s identity changed");
+  expect(container.textContent).not.toContain("Couldn’t load from the machine");
+  const labels = [...container.querySelectorAll("button")].map((entry) => entry.textContent);
+  expect(labels).toContain("Review in Connections");
+  expect(labels.some((label) => label?.includes("Reconnect"))).toBe(false);
+  expect(state.reconnect).not.toHaveBeenCalled();
+});
+
+it("says a busy machine is busy and adds no retry action the failure does not allow", async () => {
+  state.shared = false;
+  await act(async () =>
+    root.render(
+      createElement(RemoteLoadError, {
+        cwd: "env",
+        failure: { kind: "temporary", message: "[RPC_TIMEOUT] read deadline passed" },
+      }),
+    ),
+  );
+  expect(container.textContent).toContain("Server is busy right now");
+  expect(container.textContent).not.toContain("Couldn’t load from the machine");
+  expect(container.textContent).not.toContain("[RPC_TIMEOUT]");
+  expect(
+    [...container.querySelectorAll("button")].some((button) =>
+      button.textContent?.includes("Retry"),
+    ),
+  ).toBe(false);
 });

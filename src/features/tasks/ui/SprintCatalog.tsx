@@ -29,7 +29,12 @@ export function SprintCatalog({
     const index = sources.findIndex(
       (source) => source.machine.environmentId === board.coordinatorEnvironmentId,
     );
-    const current = { machine: board.coordinator, sprints: board.sprints, error: null };
+    const current = {
+      machine: board.coordinator,
+      sprints: board.sprints,
+      failed: false,
+      error: null,
+    };
     if (index < 0) sources.push(current);
     else sources[index] = current;
   }
@@ -50,11 +55,11 @@ export function SprintCatalog({
           catalogKey: sprintCatalogKey(source.machine, sprint),
           serverName: source.machine.name,
           serverEnvironmentId: source.machine.environmentId,
-          unavailable: Boolean(source.error),
+          unavailable: source.failed,
         })),
     );
   const failures = sources.filter(
-    (source) => source.error && (!environmentId || source.machine.environmentId === environmentId),
+    (source) => source.failed && (!environmentId || source.machine.environmentId === environmentId),
   );
   return (
     <>
@@ -73,13 +78,28 @@ export function SprintCatalog({
       ) : catalog.loading ? (
         <SurfaceLoading label={t("Loading sprints…")} />
       ) : !failures.length ? (
-        <EmptyState size="inline" description={t("No sprints match these filters.")} />
+        <EmptyState
+          size="inline"
+          description={
+            projectKey || environmentId ? t("No sprints match these filters.") : t("No sprints yet")
+          }
+        />
       ) : null}
-      {failures.map((source) => (
-        <InlineError key={source.machine.environmentId}>
-          {source.machine.name}: {source.error}
-        </InlineError>
-      ))}
+      {failures.map((source) =>
+        source.error ? (
+          <InlineError
+            key={source.machine.environmentId}
+            details={`${source.machine.name}: ${source.error}`}
+          />
+        ) : null,
+      )}
+      {/* The planning server's own read error shows here unless its catalog read already failed. */}
+      {board.error &&
+      !failures.some(
+        (source) => source.error && source.machine.environmentId === board.coordinatorEnvironmentId,
+      ) ? (
+        <InlineError details={board.error} />
+      ) : null}
     </>
   );
 }

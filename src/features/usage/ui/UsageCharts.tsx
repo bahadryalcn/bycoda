@@ -1,26 +1,36 @@
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { modelDisplayName } from "../../sessions/public/modelDisplayName";
-import { useState } from "react";
-import { formatNumber, getLocale, t, useLocale } from "../../../shared/i18n";
+import { useState, type ReactNode } from "react";
+import { formatDate, formatNumber, getLocale, t, useLocale } from "../../../shared/i18n";
+import { compactNumberDisplay, formatUnambiguousCompact } from "../../../shared/i18n/format";
 import { Button } from "../../../shared/ui/Button";
 import { Text } from "../../../shared/ui/Text";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { SortableDataTable } from "../../../shared/ui/SortableDataTable";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
-import { UsageProviderIdentity } from "./UsageProviderIdentity";
+import { UsageProviderIdentity, usageLabel } from "./UsageProviderIdentity";
 
 import type { UsageMetric, UsageResolution } from "../model/usageAnalytics";
 
-export const metricNames: Record<UsageMetric, string> = {
-  cost: "Estimated cost",
-  tokens: "Total tokens",
-  input: "Uncached input",
-  output: "Output",
-  cacheRead: "Cache read",
-  cacheWrite: "Cache write",
-  duration: "Agent time",
-};
+export function metricName(metric: UsageMetric): string {
+  switch (metric) {
+    case "cost":
+      return t("Estimated cost");
+    case "tokens":
+      return t("Total tokens");
+    case "input":
+      return t("Uncached input");
+    case "output":
+      return t("Output");
+    case "cacheRead":
+      return t("Cache read");
+    case "cacheWrite":
+      return t("Cache write");
+    case "duration":
+      return t("Agent time");
+  }
+}
 export function formatMetric(value: number, metric: UsageMetric): string {
   if (metric === "cost")
     return formatNumber(value, {
@@ -39,10 +49,7 @@ export function formatMetric(value: number, metric: UsageMetric): string {
         ? t("{p0}m", { p0: integer(minutes) })
         : t("{p0}s", { p0: integer(Math.round(value / 1000)) });
   }
-  return formatNumber(value, {
-    notation: "compact",
-    maximumFractionDigits: 1,
-  });
+  return formatUnambiguousCompact(value);
 }
 export function formatUsagePercent(value: number): string {
   return formatNumber(value / 100, {
@@ -54,6 +61,8 @@ export function formatUsagePercent(value: number): string {
 /** Axis space is bounded; tooltips and tables keep the exact formatted value. */
 export function formatMetricTick(value: number, metric: UsageMetric): string {
   if (metric !== "cost") return formatMetric(value, metric);
+  // Currency compact notation ignores the long form, so ambiguous locales add the symbol themselves.
+  if (compactNumberDisplay() === "long") return "$" + formatUnambiguousCompact(value);
   return formatNumber(value, {
     style: "currency",
     currency: "USD",
@@ -62,8 +71,8 @@ export function formatMetricTick(value: number, metric: UsageMetric): string {
   });
 }
 export function formatBucket(at: number, resolution: UsageResolution): string {
-  return new Date(at).toLocaleString(
-    getLocale(),
+  return formatDate(
+    at,
     resolution === "15m" || resolution === "hour"
       ? {
           month: "short",
@@ -81,12 +90,18 @@ export function ContinuousUsageTable({
   metric,
   onSelect,
   stateKey,
+  heading,
+  actions,
 }: {
   rows: (Record<string, unknown> & { key: string; label: string })[];
   caption: string;
   metric: UsageMetric;
   onSelect?: (key: string) => void;
   stateKey?: string;
+  /** Leading content of the single header row (a title), before the record count. */
+  heading?: ReactNode;
+  /** Trailing actions of the header row, before "Show all metrics". */
+  actions?: ReactNode;
 }) {
   useLocale();
   const tableKey = stateKey ?? `usage:${caption}`;
@@ -111,6 +126,20 @@ export function ContinuousUsageTable({
       rows.some((entry) => Number(entry.unpricedTokens ?? entry.unpricedTurns ?? 0) > 0)
     );
   const showShare = rows.some(shareKnown);
+  const allKeys = [
+    "cost",
+    "input",
+    "output",
+    "cacheRead",
+    "cacheWrite",
+    "tokens",
+    ...(metric === "duration" || rows.some((r) => Number(r.duration) > 0) ? ["duration"] : []),
+  ] as UsageMetric[];
+  // The default view omits a column no row has a value for (every cell would read "—").
+  const visibleKeys = [...new Set<UsageMetric>([metric, "cost", "tokens"])].filter(
+    (key) => key === metric || rows.some((row) => available(row, key)),
+  );
+  const columnKeys = allMetrics ? allKeys : visibleKeys;
   const ordered = [...rows].sort((a, b) => {
     const av = a[sort.key],
       bv = b[sort.key];
@@ -129,31 +158,43 @@ export function ContinuousUsageTable({
         : [];
     if (providers.length === 1 && row.label === providers[0])
       return <UsageProviderIdentity provider={providers[0]} />;
+    // Several providers on one row (a project used by both) say nothing about the row itself.
     return (
       <span className="flex min-w-0 items-center gap-2">
-        {providers.map((provider) => (
-          <UsageProviderIdentity key={provider} provider={provider} label="" />
-        ))}
-        <span>{t(row.label)}</span>
+        {providers.length === 1 && (
+          <UsageProviderIdentity key={providers[0]} provider={providers[0]} label="" />
+        )}
+        <span>{usageLabel(row.label)}</span>
       </span>
     );
   };
   return (
     <>
       <div className="usage-section-heading">
-        <Text as="span" leading="inherit" className="usage-muted">
-          {rows.length.toLocaleString(getLocale())} {t("records")}
-        </Text>
-        <Button
-          variant="ghost"
-          aria-expanded={allMetrics}
-          onClick={() => {
-            setAllMetrics(!allMetrics);
-            if (allMetrics) setSort({ key: metric, direction: "desc" });
-          }}
-        >
-          {t(allMetrics ? "Show fewer metrics" : "Show all metrics")}
-        </Button>
+        <div className="flex min-w-0 items-center gap-2">
+          {heading}
+          <Text as="span" leading="inherit" className="usage-muted">
+            {rows.length === 1
+              ? t("1 record")
+              : t("{p0} records", { p0: formatNumber(rows.length) })}
+          </Text>
+        </div>
+        <div className="flex items-center gap-2">
+          {actions}
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-expanded={allMetrics}
+            onClick={() => {
+              setAllMetrics(!allMetrics);
+              // Hiding the extra columns must not leave the table sorted by a column that is gone.
+              if (allMetrics && !visibleKeys.includes(sort.key as UsageMetric))
+                setSort({ key: metric, direction: "desc" });
+            }}
+          >
+            {allMetrics ? t("Show fewer metrics") : t("Show all metrics")}
+          </Button>
+        </div>
       </div>
       <SortableDataTable
         key={tableKey}
@@ -178,23 +219,9 @@ export function ContinuousUsageTable({
                 name(row)
               ),
           },
-          ...(
-            (allMetrics
-              ? [
-                  "cost",
-                  "input",
-                  "output",
-                  "cacheRead",
-                  "cacheWrite",
-                  "tokens",
-                  ...(metric === "duration" || rows.some((r) => Number(r.duration) > 0)
-                    ? ["duration"]
-                    : []),
-                ]
-              : [...new Set([metric, "cost", "tokens"])]) as UsageMetric[]
-          ).map((key) => ({
+          ...columnKeys.map((key) => ({
             key,
-            label: t(metricNames[key]),
+            label: metricName(key),
             numeric: true,
             sortable: true,
             render: (_: unknown, row: Record<string, unknown>) =>
@@ -206,7 +233,7 @@ export function ContinuousUsageTable({
             ? [
                 {
                   key: "share",
-                  label: t("Share"),
+                  label: t("Share of total"),
                   numeric: true,
                   render: (_: unknown, row: Record<string, unknown>) =>
                     shareKnown(row)
@@ -268,11 +295,8 @@ export function UsageDataNotes({
         {pricesUnavailable && (
           <p>{t("OpenRouter prices could not be loaded, so built-in prices are used.")}</p>
         )}
-        {sessionDurationUnavailable ? (
-          <p>
-            {t("Session duration data is unavailable on this app version or could not be read.")}
-          </p>
-        ) : (
+        {/* A failed read of the session logs is reported once, in the notice above the results. */}
+        {sessionDurationUnavailable ? null : (
           <p>
             {t(
               "Agent time sums recorded completed turn intervals and may include waiting. Parallel sessions can exceed wall-clock time.",
@@ -287,11 +311,11 @@ export function UsageDataNotes({
         )}
         <p>{t("Token timestamps have 15-minute precision. End time is exclusive.")}</p>
       </InfoPopover>
-      {unpriced.length > 0 && (
-        <Text as="span" leading="inherit" className="usage-muted">
-          {t("Models without prices")}: {unpriced.length}
-        </Text>
-      )}
+      {/* The trigger never stands alone: a visible name says what the icon opens. */}
+      <Text as="span" leading="inherit" className="usage-muted">
+        {t("Data sources and coverage")}
+        {unpriced.length > 0 && ` · ${t("Models without prices")}: ${unpriced.length}`}
+      </Text>
     </Text>
   );
 }

@@ -128,6 +128,12 @@ describe("resolveClaudeApiModelId", () => {
 });
 
 describe("buildClaudeSpawnArgs", () => {
+  it("only switches native Chrome when a launch has an explicit browser setting", () => {
+    expect(buildClaudeSpawnArgs({ chrome: true })).toContain("--chrome");
+    expect(buildClaudeSpawnArgs({ chrome: false })).toContain("--no-chrome");
+    expect(buildClaudeSpawnArgs({})).not.toContain("--chrome");
+    expect(buildClaudeSpawnArgs({ isolated: true, chrome: true })).not.toContain("--chrome");
+  });
   it("speaks stream-json with stdio permissions like the Agent SDK", () => {
     const args = buildClaudeSpawnArgs({
       model: "claude-sonnet-5",
@@ -162,6 +168,17 @@ describe("buildClaudeSpawnArgs", () => {
     expect(JSON.parse(normal[normal.indexOf("--settings") + 1]).env).toBeUndefined();
   });
 
+  it("restricts workflows when subagents are disabled, pinned, or read-only", () => {
+    for (const input of [
+      { subagentModel: "off" },
+      { subagentModel: "haiku" },
+      { nativeReadOnly: true },
+    ]) {
+      expect(buildClaudeSpawnArgs(input)).toContain("Workflow");
+    }
+    expect(buildClaudeSpawnArgs({ subagentModel: "default" })).not.toContain("Workflow");
+  });
+
   it("only disables hooks for interactive sessions when asked", () => {
     const args = buildClaudeSpawnArgs({ settings: { disableAllHooks: true } });
     const settings = args[args.indexOf("--settings") + 1];
@@ -180,6 +197,18 @@ describe("buildClaudeSpawnArgs", () => {
     const settings = args[args.indexOf("--settings") + 1];
     expect(JSON.parse(settings)).toMatchObject({ disableAllHooks: true });
     expect(args).not.toContain("--permission-prompt-tool");
+  });
+
+  it("pre-allows only the listed rules in isolated sessions and never when unset", () => {
+    expect(buildClaudeSpawnArgs({ isolated: true })).not.toContain("--allowedTools");
+    const args = buildClaudeSpawnArgs({
+      isolated: true,
+      allowedTools: ["WebFetch(domain:artificialanalysis.ai)"],
+    });
+    expect(args[args.indexOf("--allowedTools") + 1]).toBe("WebFetch(domain:artificialanalysis.ai)");
+    expect(args).toContain("--strict-mcp-config");
+    expect(args).not.toContain("--permission-prompt-tool");
+    expect(args).not.toContain("--allow-dangerously-skip-permissions");
   });
 
   it("locks isolated read-only prompts to plan mode", () => {
@@ -1152,6 +1181,30 @@ describe("server tool results", () => {
     expect(serverToolResultsFromAssistant(rec)).toEqual([
       { toolUseId: "srv1", isError: false, text: "ok" },
       { toolUseId: "srv2", isError: true, text: "" },
+    ]);
+  });
+  it("carries the pages a web search returned", () => {
+    const rec = {
+      message: {
+        content: [
+          {
+            type: "web_search_tool_result",
+            tool_use_id: "srv3",
+            content: [
+              { type: "web_search_result", title: "Alpha", url: "https://www.alpha.dev/a" },
+              { type: "web_search_result", title: "Bad", url: "javascript:alert(1)" },
+            ],
+          },
+        ],
+      },
+    };
+    expect(serverToolResultsFromAssistant(rec)).toEqual([
+      {
+        toolUseId: "srv3",
+        isError: false,
+        text: "",
+        sources: [{ title: "Alpha", url: "https://www.alpha.dev/a", domain: "alpha.dev" }],
+      },
     ]);
   });
   it("reads a streamed result block start", () => {

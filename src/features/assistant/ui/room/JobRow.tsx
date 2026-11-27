@@ -1,15 +1,15 @@
-import { Text } from "../../../../shared/ui/Text";
+import { textAttributes } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import type { AssistantJob } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
 import {
-  ActionHost,
   actionContentAttributes,
+  actionHostAttributes,
   InlineAction,
   InlineMoreAction,
   InlineTextAction,
 } from "../../../../shared/ui/ActionHost";
-import { Badge } from "../../../../shared/ui/Badge";
+import { Tooltip } from "../../../../shared/ui/Tooltip";
 import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { DropdownMenu } from "../../../../shared/ui/DropdownMenu";
@@ -22,6 +22,7 @@ import {
   CheckCircle,
   CircleX,
   Clock,
+  Folder,
   Pause,
   Play,
   Square,
@@ -61,19 +62,21 @@ function JobStatusMark({ job }: { job: AssistantJob }) {
   }
   const tone = jobStatusTone(job);
   return (
-    <Text
-      as="span"
-      size="inherit"
-      tone={
-        tone === "success" || tone === "danger" || tone === "warning" || tone === "info"
-          ? tone
-          : "secondary"
-      }
-      leading="inherit"
-      className={styles.mark}
+    <span
+      {...textAttributes(
+        {
+          size: "inherit",
+          tone:
+            tone === "success" || tone === "danger" || tone === "warning" || tone === "info"
+              ? tone
+              : "secondary",
+          leading: "inherit",
+        },
+        styles.mark,
+      )}
     >
       {mark}
-    </Text>
+    </span>
   );
 }
 
@@ -86,8 +89,8 @@ export function JobRow({
   selected,
   selectionMode,
   busy,
-  disabled,
-  error,
+  pending,
+  notice,
   onSelect,
   onDetails,
   onControl,
@@ -100,8 +103,10 @@ export function JobRow({
   /** Another row is selected: every checkbox stays visible. */
   selectionMode: boolean;
   busy: boolean;
-  disabled: boolean;
-  error: string;
+  /** Another Room action is running; the row's controls wait for it. */
+  pending: boolean;
+  /** A message about this row, already written for the owner. */
+  notice: string;
   onSelect: (selected: boolean) => void;
   onDetails: () => void;
   onControl: (action: JobAction) => void;
@@ -113,7 +118,7 @@ export function JobRow({
   const caption = [jobStatusLabel(job), total > 0 ? `${done}/${total}` : ""].filter(Boolean);
   const running = job.status === "running";
   return (
-    <ActionHost className={styles.row} selected={selected}>
+    <div {...actionHostAttributes({ selected }, styles.row)}>
       <Checkbox
         {...motionAttributes({ transition: "opacity", easing: "standard" })}
         {...actionContentAttributes(
@@ -146,54 +151,57 @@ export function JobRow({
             {job.title}
           </Button>
           {projectName && (
-            <Badge size="sm" tone="neutral" truncate className={styles.project}>
-              {projectName}
-            </Badge>
+            <Tooltip asChild label={projectName}>
+              <span role="img" aria-label={t("Project: {p0}", { p0: projectName })}>
+                <Folder className="icon-sm" />
+              </span>
+            </Tooltip>
           )}
         </div>
-        <Text
-          as="div"
-          size="caption"
-          tone="secondary"
-          leading="inherit"
-          className={styles.progressLine}
+        <div
+          {...textAttributes(
+            { size: "caption", tone: "secondary", leading: "inherit" },
+            styles.progressLine,
+          )}
         >
           {running && total > 0 && (
-            <Progress
-              compact
-              aria-label={t("Progress")}
-              value={done}
-              max={total}
-              aria-valuetext={`${done}/${total}`}
-              tone={job.status === "failed" ? "danger" : "accent"}
-            />
+            <div className={styles.progressMeter}>
+              <Progress
+                compact
+                aria-label={t("Progress")}
+                value={done}
+                max={total}
+                aria-valuetext={`${done}/${total}`}
+                tone={job.status === "failed" ? "danger" : "accent"}
+              />
+            </div>
           )}
           <span>{caption.join(" · ")}</span>
-        </Text>
+        </div>
         {job.dispatchState === "unknown" && (
           <InlineError>
             {t("Dispatch status unknown. Check the linked epic before retrying.")}
           </InlineError>
         )}
-        {error && <InlineError>{error}</InlineError>}
+        {notice && <InlineError>{notice}</InlineError>}
       </div>
       <div className={styles.actions}>
         {job.pendingTaskDeletion && (
-          <InlineTextAction disabled={disabled} onClick={() => onControl("keep")}>
+          <InlineTextAction disabled={pending} onClick={() => onControl("keep")}>
             {t("Keep job and tasks")}
           </InlineTextAction>
         )}
         {job.awaitingOwnerRestart && onReviewTasks && (
-          <InlineTextAction disabled={disabled} onClick={onReviewTasks}>
+          <InlineTextAction disabled={pending} onClick={onReviewTasks}>
             {t("Review tasks")}
           </InlineTextAction>
         )}
         {canToggle && (
           <InlineAction
             reveal="always"
-            label={t(job.status === "paused" ? "Resume" : "Pause")}
+            label={job.status === "paused" ? t("Resume") : t("Pause")}
             loading={busy}
-            disabled={disabled}
+            disabled={pending}
             onClick={() => onControl(job.status === "paused" ? "resume" : "pause")}
           >
             {job.status === "paused" ? (
@@ -208,7 +216,7 @@ export function JobRow({
           label={t("Job actions")}
           expanded={Boolean(menu)}
           loading={busy && !canToggle}
-          disabled={disabled}
+          disabled={pending}
           onOpen={setMenu}
         />
       </div>
@@ -241,24 +249,14 @@ export function JobRow({
             ...(job.pendingTaskDeletion
               ? [{ kind: "item" as const, id: "keep", label: t("Keep job and tasks") }]
               : !isFinished
-                ? [
-                    { kind: "item" as const, id: "stop", label: t("Stop job") },
-                    ...(job.awaitingOwnerRestart
-                      ? []
-                      : [
-                          {
-                            kind: "item" as const,
-                            id: job.status === "paused" ? "resume" : "pause",
-                            label: t(job.status === "paused" ? "Resume" : "Pause"),
-                          },
-                        ]),
-                  ]
+                ? // Pause and Resume live on the row's own icon, so the menu does not repeat them.
+                  [{ kind: "item" as const, id: "stop", label: t("Stop job") }]
                 : []),
             { kind: "sep" },
-            { kind: "item", id: "delete", label: t("Delete..."), danger: true },
+            { kind: "item", id: "delete", label: t("Delete…"), danger: true },
           ]}
         />
       )}
-    </ActionHost>
+    </div>
   );
 }

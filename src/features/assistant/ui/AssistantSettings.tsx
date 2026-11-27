@@ -1,11 +1,9 @@
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { describeRemoteError } from "../../connections/public/remoteFailure";
+import { validWorkerContextSettings } from "../../../shared/model/assistantContext";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { invoke } from "@tauri-apps/api/core";
-import {
-  AssistantStandingConsentFields,
-  DEFAULT_CRITICAL_EXCLUSIONS,
-} from "./settings/AssistantStandingConsentFields";
-import { ScrollArea } from "../../../shared/ui/ScrollArea";
+import { AssistantStandingConsentFields } from "./settings/AssistantStandingConsentFields";
+import { scrollAreaAttributes } from "../../../shared/ui/ScrollArea";
 import {
   useCallback,
   useEffect,
@@ -25,16 +23,17 @@ import type { ManualSupervisionController } from "../model/assistantManual";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
-import { TabStrip } from "../../../shared/ui/Tabs";
+import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { InlineError } from "../../../shared/ui/InlineError";
 import {
   RefreshCw,
   Sparkles,
   Shield,
   Lock,
-  Save,
   SlidersHorizontal,
   RotateCcw,
+  Briefcase,
+  UserRound,
 } from "../../../shared/ui/icons";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { AssistantProfileFields, type ProfileSection } from "./AssistantProfileFields";
@@ -44,8 +43,10 @@ import {
   DesktopControlSettings,
   type DesktopControlDraftState,
 } from "../../host-tools/DesktopControlSettings";
-import { AdvancedSettings, Group, Row } from "../../../shared/ui/settings";
+import { Group, Row, SettingsSaveBar, useLeaveGuard } from "../../../shared/ui/settings";
+import { assistantChanges } from "./settings/assistantChanges";
 import { AssistantBuilderDialog } from "./builder/AssistantBuilderDialog";
+import { useLanguageChangeFlow } from "./settings/useLanguageChangeFlow";
 import { ProfileRowsProvider } from "./settings/SettingsProfileRow";
 import { AssistantRetentionField } from "./settings/AssistantUsageSettings";
 import { AssistantScheduleInfo } from "./settings/AssistantScheduleFields";
@@ -58,7 +59,13 @@ import settingsStyles from "./AssistantSettings.module.css";
 import {
   assistantAccessMode,
   assistantAccessPatch,
+  computerPermissionMode,
+  DEFAULT_CRITICAL_EXCLUSIONS,
+  effectiveConsent,
+  nativeConsentFromGrant,
   type AssistantAccessChoice,
+  type NativeConsent,
+  type NativeConsentGrant,
 } from "./settings/assistantAccess";
 import type { FoldersDraftState } from "./settings/folders/useAssistantFolders";
 import { useDefaultWorkerExecution } from "./settings/defaultWorkerExecution";
@@ -69,21 +76,49 @@ type Project = { id?: string; path: string; name: string };
 type SettingsPage = "personal" | "work" | "access" | "advanced";
 type SectionSave = MutableRefObject<(() => Promise<void>) | null>;
 
-const pages = [
-  ["personal", "Personal"],
-  ["work", "Work"],
-  ["access", "Access"],
-  ["advanced", "Advanced"],
-] as const satisfies readonly (readonly [SettingsPage, string])[];
+const pages = () =>
+  [
+    ["personal", t("Personal"), UserRound],
+    ["work", t("Work"), Briefcase],
+    ["access", t("Access"), Shield],
+    ["advanced", t("Advanced"), SlidersHorizontal],
+  ] as const;
+
+function permissionLevelLabel(level: NonNullable<AssistantProfilePatch["permissionLevel"]>) {
+  if (level === "ask") return t("Ask for each operation");
+  if (level === "watch") return t("Watch");
+  if (level === "projects") return t("Selected projects");
+  return t("Everything");
+}
+
+/** What the native app enforces on this device for the selected Host, not the Host mirror. */
+function nativeConsentDescription(native: NativeConsent, changed: boolean) {
+  if (changed) return t("Save to apply the permission you chose on this device.");
+  if (native.state === "loading") return t("Reading the permission saved on this device.");
+  if (native.state === "failed")
+    return t("The permission saved on this device could not be read. Reopen settings.");
+  if (native.state === "missing")
+    return t("No standing permission is saved on this device. Every operation asks first.");
+  if (native.state === "other-credentials")
+    return t(
+      "The saved permission belongs to other Host credentials, so every operation asks first. Renew it on Save to use it again.",
+    );
+  return t(
+    "Standing permission on this device: {p0}. It stays with the selected Host until changed.",
+    { p0: permissionLevelLabel(native.permissionLevel) },
+  );
+}
 
 function RefreshButton({
   onClick,
   loading,
   disabled,
+  disabledReason,
 }: {
   onClick: () => void;
   loading?: boolean;
   disabled?: boolean;
+  disabledReason?: string;
 }) {
   return (
     <Button
@@ -95,6 +130,7 @@ function RefreshButton({
       startIcon={<RefreshCw className="icon-sm" />}
       loading={loading}
       disabled={disabled}
+      disabledReason={disabledReason}
       onClick={onClick}
     />
   );
@@ -126,19 +162,25 @@ export function AssistantSettings({
   const consentRevision = useRef<number | null>(null);
   const consentChanged = useRef(false);
   const [consentDirty, setConsentDirty] = useState(false);
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Loads the native consent revision for this mounted environment and discards results after unmount.
+  const [nativeConsent, setNativeConsent] = useState<NativeConsent>({
+    state: consentEnvironment ? "loading" : "failed",
+  });
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Loads the native consent grant for this mounted environment and discards results after unmount.
   useEffect(() => {
     let current = true;
     consentRevision.current = null;
     if (consentEnvironment) {
-      void invoke<{ revision: number } | null>("assistant_consent_get", {
+      void invoke<NativeConsentGrant | null>("assistant_consent_get", {
         environmentId: consentEnvironment,
       })
         .then((consent) => {
-          if (current) consentRevision.current = consent?.revision ?? 0;
+          if (!current) return;
+          consentRevision.current = consent?.revision ?? 0;
+          setNativeConsent(nativeConsentFromGrant(consent));
         })
         .catch(() => {
-          /* Saving remains blocked until an authoritative native revision is available. */
+          // Saving remains blocked until an authoritative native revision is available.
+          if (current) setNativeConsent({ state: "failed" });
         });
     }
     return () => {
@@ -155,7 +197,7 @@ export function AssistantSettings({
     dirty: false,
     pending: false,
   });
-  const computerAccess = useRef<((mode: "ask" | "full") => void) | null>(null);
+  const computerAccess = useRef<((mode: "ask" | "full", preset?: boolean) => void) | null>(null);
   const foldersAccess = useRef<((runWithoutAsking: boolean) => void) | null>(null);
   const defaultWorker = useDefaultWorkerExecution();
   const access = assistantAccessMode(
@@ -163,14 +205,31 @@ export function AssistantSettings({
     computerState.access,
     foldersState.runWithoutAsking,
     foldersState.allowChangesWithoutAsking,
+    effectiveConsent(nativeConsent, draft, consentDirty),
   );
-  const [leave, setLeave] = useState<"close" | "setup" | null>(null);
+  const { guard, dialog: leaveDialog } = useLeaveGuard();
+  const [formKey, setFormKey] = useState(0);
+  const formRef = useRef<HTMLFormElement>(null);
   const [retention, setRetention] = useState(snapshot.conversationRetentionDays ?? 0);
   const [savedRetention, setSavedRetention] = useState(snapshot.conversationRetentionDays ?? 0);
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
+  const [problem, setProblem] = useState<{ message: string; details?: string } | null>(null);
   const [savedNotice, setSavedNotice] = useState(false);
   const [builderOpen, setBuilderOpen] = useState(false);
+  /** Typed answer the builder opens with (the language-change rewrite request). */
+  const [builderRequest, setBuilderRequest] = useState("");
+  const languageFlow = useLanguageChangeFlow({
+    draft,
+    lastSpoken: snapshot.lastSpokenLanguage,
+    applyLanguage: (language) => {
+      setSavedNotice(false);
+      setDraft((current) => ({ ...current, language }));
+    },
+    startBuilder: (request) => {
+      setBuilderRequest(request);
+      setBuilderOpen(true);
+    },
+  });
   const [customAccessOpen, setCustomAccessOpen] = useState(false);
   const formId = useId();
   const [page, setPage] = useState<SettingsPage>("personal");
@@ -181,12 +240,27 @@ export function AssistantSettings({
   const foldersSave: SectionSave = useRef<(() => Promise<void>) | null>(null);
   /** The computer section status refresh, shown in its title row by this shell. */
   const computerRefresh = useRef<(() => void) | null>(null);
-  const currentPage = pages.find(([id]) => id === page)!;
   const profileDirty =
     consentDirty || JSON.stringify(draft) !== savedDraft || retention !== savedRetention;
   const anyDirty = profileDirty || projectState.dirty || computerState.dirty || foldersState.dirty;
   const busy = pending || projectState.pending || computerState.pending || foldersState.pending;
   const saved = savedNotice && !anyDirty;
+  const changes = anyDirty
+    ? assistantChanges({
+        draft,
+        saved: JSON.parse(savedDraft) as AssistantProfilePatch,
+        retention,
+        savedRetention,
+        consentDirty,
+        sections: {
+          projects: projectState.dirty,
+          computer: computerState.dirty,
+          folders: foldersState.dirty,
+        },
+        setDraft,
+        setRetention,
+      })
+    : [];
   const changeProjectState = useCallback((state: { dirty: boolean; pending: boolean }) => {
     setProjectState(state);
     if (state.dirty) setSavedNotice(false);
@@ -202,12 +276,13 @@ export function AssistantSettings({
   const showPermissionControls = customAccessOpen || access === "custom";
   function chooseAccess(choice: string) {
     if (choice === "custom") {
-      if (!busy && access !== "loading") setCustomAccessOpen(true);
+      if (!busy) setCustomAccessOpen(true);
       return;
     }
     if (
       (choice !== "ask" && choice !== "full") ||
       busy ||
+      access === "loading" ||
       !computerAccess.current ||
       !foldersAccess.current
     )
@@ -216,7 +291,7 @@ export function AssistantSettings({
     const execution =
       draft.execution ?? defaultWorker(next === "full" ? "full-access" : "supervised");
     if (!execution) {
-      setError(t("Choose a worker model before enabling job execution."));
+      setProblem({ message: t("Choose a worker model before enabling job execution.") });
       return;
     }
     setDraft((current) => ({
@@ -224,16 +299,28 @@ export function AssistantSettings({
       ...assistantAccessPatch({ ...current, execution }, next),
     }));
     setCustomAccessOpen(false);
-    computerAccess.current(next);
+    computerAccess.current(next, true);
     foldersAccess.current(next === "full");
-    setError("");
+    // The preset also replaces the native grant on Save: full grants everything, ask drops it.
+    consentChanged.current = true;
+    setConsentDirty(true);
+    setProblem(null);
     setSavedNotice(false);
   }
-  function requestLeave(target: "close" | "setup") {
+  function requestLeave(leave: () => void) {
     if (busy) return;
-    if (anyDirty) setLeave(target);
-    else if (target === "close") onClose();
-    else onSetup();
+    guard(leave);
+  }
+  /** Embedded sections reload their drafts from the Host when the form remounts. */
+  function discard() {
+    languageFlow.clearReview();
+    setDraft(JSON.parse(savedDraft) as AssistantProfilePatch);
+    setRetention(savedRetention);
+    consentChanged.current = false;
+    setConsentDirty(false);
+    setProblem(null);
+    setSavedNotice(false);
+    setFormKey((current) => current + 1);
   }
   async function saveProfile() {
     if (!consentEnvironment || environmentId !== consentEnvironment)
@@ -251,7 +338,7 @@ export function AssistantSettings({
       if (!consentEnvironment) throw new Error(t("Selected Host is unavailable."));
       if (consentRevision.current === null)
         throw new Error(t("Permission is unavailable. Reopen settings before saving permissions."));
-      const consent = await invoke<{ revision: number }>("assistant_consent_set", {
+      const consent = await invoke<NativeConsentGrant>("assistant_consent_set", {
         environmentId: consentEnvironment,
         expectedRevision: consentRevision.current,
         permissionLevel: draft.permissionLevel,
@@ -261,6 +348,7 @@ export function AssistantSettings({
       consentRevision.current = consent.revision;
       consentChanged.current = false;
       setConsentDirty(false);
+      setNativeConsent(nativeConsentFromGrant(consent));
       nativeSaved = true;
     }
     try {
@@ -273,13 +361,13 @@ export function AssistantSettings({
         consentEnvironment,
       );
       if (!result.profile)
-        throw new Error(t("The settings save was not confirmed. Check before retrying."));
+        throw new Error(t("Saving settings could not be confirmed. Check before retrying."));
       version.current = result.profile.version;
       setSavedDraft(JSON.stringify(draft));
     } catch (cause) {
       if (nativeSaved)
         throw new Error(
-          t("Permission saved. Host settings were not confirmed; review before retrying."),
+          t("Permission saved. Host settings could not be confirmed; review before retrying."),
         );
       throw cause;
     }
@@ -292,15 +380,20 @@ export function AssistantSettings({
         consentEnvironment,
       );
       if (retained.ok !== true)
-        throw new Error(t("The retention change was not confirmed. Check before retrying."));
+        throw new Error(t("The retention change could not be confirmed. Check before retrying."));
       setSavedRetention(retention);
     }
   }
   /** Profile, then project scope, computer use, then folders. The first failure stops the chain. */
-  async function save() {
-    if (busy) return;
+  /** True only after every dirty section was acknowledged; the first failure keeps the draft. */
+  async function save(): Promise<boolean> {
+    if (busy) return false;
+    setProblem(null);
+    if (profileDirty && !validWorkerContextSettings(draft)) {
+      setPage("advanced");
+      return false;
+    }
     setPending(true);
-    setError("");
     setSavedNotice(false);
     // Folders show their own save error inline; the footer would repeat it.
     let shownInline = false;
@@ -313,12 +406,14 @@ export function AssistantSettings({
       shownInline = true;
       if (foldersState.dirty) await foldersSave.current?.();
       setSavedNotice(true);
+      return true;
     } catch (cause) {
       if (savingAccess) {
         setPage("access");
         setCustomAccessOpen(true);
       }
-      if (!shownInline) setError(presentRemoteError(cause, { explicit: true }));
+      if (!shownInline) setProblem(describeRemoteError(cause));
+      return false;
     } finally {
       setPending(false);
     }
@@ -330,7 +425,9 @@ export function AssistantSettings({
       observationTasksAvailable={snapshot.capabilities.observationTasks === true}
       section={section}
       value={draft}
+      languageReview={languageFlow.review}
       onChange={(patch) => {
+        if (languageFlow.intercept(patch)) return;
         setSavedNotice(false);
         setDraft((current) => ({ ...current, ...patch }));
       }}
@@ -338,91 +435,36 @@ export function AssistantSettings({
   );
   /** One tab. It stays mounted while hidden so every section keeps its draft. */
   const tab = (id: SettingsPage, children: ReactNode) => (
-    <div
+    <TabPanel
       key={id}
-      className={[settingsStyles.page, id === "access" ? "" : settingsStyles.ownRows]
-        .filter(Boolean)
-        .join(" ")}
+      value={id}
+      keepMounted
+      className={settingsStyles.page}
       data-settings-page={id}
-      hidden={page !== id}
     >
       {children}
-    </div>
+    </TabPanel>
   );
   return (
     <Modal
       padding="none"
       title={
-        snapshot.profile.name ? t("Settings · {p0}", { p0: snapshot.profile.name }) : t("Set up")
+        snapshot.profile.name ? t("Settings for {p0}", { p0: snapshot.profile.name }) : t("Set up")
       }
       onClose={() => {
-        requestLeave("close");
+        requestLeave(onClose);
       }}
+      closeDisabled={busy}
       size="lg"
-      className={settingsStyles.dialog}
+      height="tall"
       scroll="none"
       fitViewport
-      footer={
-        <div className={settingsStyles.footer}>
-          {error && <InlineError>{error}</InlineError>}
-          <div className={settingsStyles.footerRow}>
-            {leave ? (
-              <>
-                <InlineError>{t("Discard unsaved changes?")}</InlineError>
-                <div className={settingsStyles.footerActions}>
-                  <Button key="keep-editing" onClick={() => setLeave(null)}>
-                    {t("Keep editing")}
-                  </Button>
-                  <Button
-                    tone="danger"
-                    disabled={busy}
-                    onClick={() => {
-                      const target = leave;
-                      setLeave(null);
-                      if (target === "close") onClose();
-                      else onSetup();
-                    }}
-                  >
-                    {t("Discard")}
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <>
-                <Button
-                  variant="secondary"
-                  startIcon={<RotateCcw className="icon-sm" />}
-                  disabled={busy}
-                  onClick={() => requestLeave("setup")}
-                >
-                  {t("Quick setup")}
-                </Button>
-                <div className={settingsStyles.footerActions}>
-                  <Button
-                    key="save-profile"
-                    type="submit"
-                    form={formId}
-                    variant="primary"
-                    startIcon={<Save className="icon-sm" />}
-                    aria-label={saved ? t("Saved") : t("Save profile settings")}
-                    loading={pending}
-                    loadingLabel={t("Saving…")}
-                    success={saved}
-                    successLabel={t("Saved")}
-                    disabled={busy || !anyDirty || (profileDirty && !draft.name?.trim())}
-                  >
-                    {t("Save")}
-                  </Button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      }
     >
       <form
+        key={formKey}
+        ref={formRef}
         id={formId}
-        className={settingsStyles.form}
+        {...surfaceAttributes({ variant: "canvas" }, settingsStyles.form)}
         onInvalidCapture={(event) => {
           const field = event.target as HTMLInputElement;
           const section = field.closest<HTMLElement>("[data-settings-page]");
@@ -436,15 +478,7 @@ export function AssistantSettings({
             ancestor && ancestor !== event.currentTarget;
             ancestor = ancestor.parentElement
           ) {
-            if (ancestor.matches('[data-settings-part="advanced"]:not([data-open])')) {
-              const toggle = ancestor.querySelector<HTMLButtonElement>(
-                ':scope > h3 button[aria-expanded="false"]',
-              );
-              if (toggle) {
-                toggle.click();
-                revealed = true;
-              }
-            } else if (ancestor.matches("details:not([open])")) {
+            if (ancestor.matches("details:not([open])")) {
               const toggle = ancestor.querySelector<HTMLElement>(":scope > summary");
               if (toggle) {
                 toggle.click();
@@ -465,95 +499,96 @@ export function AssistantSettings({
           void save();
         }}
       >
-        <div
-          {...surfaceAttributes({ frame: "pane", edge: "block-end" }, settingsStyles.navigation)}
+        <Tabs
+          value={page}
+          responsive
+          onValueChange={(next) => {
+            setPage(next);
+            if (contentRef.current) contentRef.current.scrollTop = 0;
+          }}
         >
-          <TabStrip
-            className={settingsStyles.tabs}
-            label={t("Assistant settings")}
-            value={page}
-            controls={formId + "-content"}
-            onValueChange={(next) => {
-              setPage(next);
-              if (contentRef.current) contentRef.current.scrollTop = 0;
-            }}
-            items={pages.map(([value, label]) => ({ value, label: t(label) }))}
-          />
-        </div>
-        <ScrollArea
-          gutter="stable"
-          id={formId + "-content"}
-          ref={contentRef}
-          className={settingsStyles.content}
-          role="region"
-          aria-label={t(currentPage[1])}
-        >
-          <ProfileRowsProvider value>
-            {tab(
-              "personal",
-              <>
-                <Group
-                  title={t("Identity")}
-                  action={
-                    <Button
-                      type="button"
-                      size="sm"
-                      startIcon={<Sparkles className="icon-sm" />}
-                      tooltip={t("Answer a few questions and AI drafts the profile for you")}
-                      onClick={() => setBuilderOpen(true)}
-                    >
-                      {t("Create with AI")}
-                    </Button>
-                  }
-                >
-                  {profile("identity")}
-                </Group>
-                <Group title={t("Conversation")}>
-                  {profile("language")}
-                  <AdvancedSettings title={t("Personality and conversation")} keepMounted>
+          <div
+            {...surfaceAttributes({ frame: "pane", edge: "block-end" }, settingsStyles.navigation)}
+          >
+            <TabList className={settingsStyles.tabs} label={t("Assistant settings")}>
+              {pages().map(([value, label, Icon]) => (
+                <Tab key={value} value={value} icon={<Icon className="icon-sm" aria-hidden />}>
+                  {label}
+                </Tab>
+              ))}
+            </TabList>
+          </div>
+          <div
+            {...scrollAreaAttributes({ axis: "y", gutter: "stable" }, settingsStyles.content)}
+            ref={contentRef}
+          >
+            <ProfileRowsProvider value>
+              {tab(
+                "personal",
+                <>
+                  <Group
+                    title={t("Identity")}
+                    action={
+                      <Button
+                        type="button"
+                        size="sm"
+                        startIcon={<Sparkles className="icon-sm" />}
+                        onClick={() => {
+                          setBuilderRequest("");
+                          setBuilderOpen(true);
+                        }}
+                      >
+                        {t("Create with AI")}
+                      </Button>
+                    }
+                  >
+                    {profile("identity")}
+                  </Group>
+                  <Group title={t("Conversation")}>
+                    {profile("language")}
                     {profile("personality")}
                     {profile("behavior")}
-                  </AdvancedSettings>
-                </Group>
-              </>,
-            )}
-            {tab(
-              "work",
-              <>
-                <Group title={null}>{profile("budget")}</Group>
-                <Group title={t("Models")}>
-                  <Row
-                    label={t("Assistant models")}
-                    descriptionVisible
-                    description={t("Models and limits follow Settings > Models.")}
-                  >
-                    <Button
-                      type="button"
-                      size="sm"
-                      startIcon={<SlidersHorizontal className="icon-sm" />}
-                      onClick={() => openModelsSettings("roles")}
-                    >
-                      {t("Manage models")}
-                    </Button>
-                  </Row>
-                </Group>
-                <Group title={t("Presence and hours")} info={<AssistantScheduleInfo />}>
-                  {profile("presence")}
-                  <PresenceStatusRow snapshot={snapshot} draft={draft} />
-                </Group>
-                <Group title={null}>
-                  <AdvancedSettings
-                    title={
-                      <>
-                        {t("Notifications")}
-                        {snapshot.capabilities.observationTasks === true ? null : (
-                          <Badge tone="warning" size="xs">
-                            {t("Readiness not confirmed")}
-                          </Badge>
-                        )}
-                      </>
+                  </Group>
+                </>,
+              )}
+              {tab(
+                "work",
+                <>
+                  <Group
+                    title={t("Work limits")}
+                    action={
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="sm"
+                        startIcon={<SlidersHorizontal className="icon-sm" />}
+                        disabled={busy}
+                        onClick={() =>
+                          requestLeave(() => {
+                            onClose();
+                            openModelsSettings("roles");
+                          })
+                        }
+                      >
+                        {t("Manage models")}
+                      </Button>
                     }
-                    keepMounted
+                  >
+                    {profile("budget")}
+                  </Group>
+                  <Group title={t("Presence and hours")} info={<AssistantScheduleInfo />}>
+                    {profile("presence")}
+                    <PresenceStatusRow snapshot={snapshot} draft={draft} />
+                  </Group>
+                  <Group
+                    title={t("Notifications")}
+                    action={
+                      snapshot.capabilities.observationTasks === true ? undefined : (
+                        <Badge tone="warning" size="xs">
+                          {t("Readiness not confirmed")}
+                        </Badge>
+                      )
+                    }
                   >
                     {profile("notifications")}
                     <AssistantTelegramNotifications
@@ -565,195 +600,230 @@ export function AssistantSettings({
                         setDraft((current) => ({ ...current, ...patch }));
                       }}
                     />
-                  </AdvancedSettings>
-                </Group>
-              </>,
-            )}
-            {tab(
-              "access",
-              <>
-                <Group title={t("Access")}>
-                  <AssistantStandingConsentFields
-                    value={draft}
-                    projects={projects}
-                    disabled={busy}
-                    onChange={(patch) => {
-                      consentChanged.current = true;
-                      setConsentDirty(true);
-                      setSavedNotice(false);
-                      setDraft((current) => ({ ...current, ...patch }));
-                    }}
-                  />
-                  {draft.permissionLevel && (
+                  </Group>
+                </>,
+              )}
+              {tab(
+                "access",
+                <>
+                  <Group title={t("Permissions")}>
+                    <AssistantStandingConsentFields
+                      value={draft}
+                      projects={projects}
+                      pending={busy}
+                      onChange={(patch) => {
+                        consentChanged.current = true;
+                        setConsentDirty(true);
+                        setSavedNotice(false);
+                        setDraft((current) => ({ ...current, ...patch }));
+                        // Computer use follows this permission; it has no setting of its own.
+                        computerAccess.current?.(computerPermissionMode({ ...draft, ...patch }));
+                      }}
+                    />
                     <Row
                       label={t("Computer access")}
-                      description={t(
-                        "This permission stays with this installation and the selected Host until changed. Host credential changes ask again.",
-                      )}
+                      descriptionVisible
+                      description={nativeConsentDescription(nativeConsent, consentDirty)}
                     >
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        disabled={busy}
-                        onClick={() => {
-                          consentChanged.current = true;
-                          setConsentDirty(true);
-                          setSavedNotice(false);
-                        }}
-                      >
-                        {t("Renew on Save")}
-                      </Button>
-                    </Row>
-                  )}
-                  <Row
-                    label={t("Advanced access presets")}
-                    description={t(
-                      "Configures existing job, folder and computer permissions. Assistant authority and critical exclusions still apply.",
-                    )}
-                    stacked
-                  >
-                    <SegmentedControl
-                      label={t("Advanced access presets")}
-                      value={access}
-                      onValueChange={chooseAccess}
-                      options={[
-                        {
-                          value: "ask",
-                          label: t("Work and ask"),
-                          icon: <Lock className="icon-sm" />,
-                          disabled: busy || access === "loading",
-                        },
-                        {
-                          value: "full",
-                          label: t("Full access"),
-                          icon: <Shield className="icon-sm" />,
-                          disabled: busy || access === "loading",
-                        },
-                        {
-                          value: "custom",
-                          label: t("Custom"),
-                          icon: <SlidersHorizontal className="icon-sm" />,
-                          disabled: busy || access === "loading",
-                        },
-                      ]}
-                    />
-                  </Row>
-                </Group>
-                {showPermissionControls && (
-                  <Group
-                    title={t("Customize access")}
-                    action={
-                      access !== "custom" ? (
+                      {draft.permissionLevel && (
                         <Button
                           type="button"
-                          size="sm"
                           variant="ghost"
-                          onClick={() => setCustomAccessOpen(false)}
+                          disabled={busy || nativeConsent.state === "loading"}
+                          disabledReason={
+                            nativeConsent.state === "loading"
+                              ? t("Wait for the computer access check to finish.")
+                              : undefined
+                          }
+                          onClick={() => {
+                            consentChanged.current = true;
+                            setConsentDirty(true);
+                            setSavedNotice(false);
+                          }}
                         >
-                          {t("Done")}
+                          {t("Renew on Save")}
                         </Button>
-                      ) : undefined
+                      )}
+                    </Row>
+                    <Row
+                      label={t("Access presets")}
+                      stacked
+                      description={t(
+                        "Configures existing job, folder and computer permissions. Assistant authority and critical exclusions still apply.",
+                      )}
+                    >
+                      <SegmentedControl
+                        label={t("Access presets")}
+                        value={access}
+                        onValueChange={chooseAccess}
+                        options={[
+                          {
+                            value: "ask",
+                            label: t("Work and ask"),
+                            icon: <Lock className="icon-sm" />,
+                            disabled: busy || access === "loading",
+                          },
+                          {
+                            value: "full",
+                            label: t("Full access"),
+                            icon: <Shield className="icon-sm" />,
+                            disabled: busy || access === "loading",
+                          },
+                          {
+                            value: "custom",
+                            label: t("Custom"),
+                            icon: <SlidersHorizontal className="icon-sm" />,
+                            disabled: busy,
+                          },
+                        ]}
+                      />
+                    </Row>
+                  </Group>
+                  {showPermissionControls && (
+                    <Group
+                      title={t("Customize access")}
+                      action={
+                        access !== "custom" ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setCustomAccessOpen(false)}
+                          >
+                            {t("Done")}
+                          </Button>
+                        ) : undefined
+                      }
+                    >
+                      {profile("jobs")}
+                      {draft.execution ? (
+                        profile("permissions")
+                      ) : (
+                        <Row
+                          label={t("Execution permissions")}
+                          descriptionVisible
+                          description={t("Choose a worker model before enabling job execution.")}
+                        />
+                      )}
+                    </Group>
+                  )}
+                  <Group title={t("Folders and commands")}>
+                    <AssistantFoldersSettings
+                      request={assistantRequest}
+                      saveRef={foldersSave}
+                      onDraftStateChange={changeFoldersState}
+                      showPermissionControls={showPermissionControls}
+                      accessRef={foldersAccess}
+                    />
+                  </Group>
+                  <Group
+                    title={t("Computer use")}
+                    action={<RefreshButton onClick={() => computerRefresh.current?.()} />}
+                  >
+                    <DesktopControlSettings
+                      saveRef={computerSave}
+                      refreshRef={computerRefresh}
+                      onDraftStateChange={changeComputerState}
+                      showPermissionControls={showPermissionControls}
+                      accessRef={computerAccess}
+                    />
+                  </Group>
+                  <Group
+                    title={t("Manual session supervision")}
+                    action={
+                      <RefreshButton
+                        onClick={() => void manual.refresh()}
+                        loading={manual.pending === "list"}
+                        disabled={!!manual.pending || manual.stopping}
+                        disabledReason={t("Wait for the current action to finish.")}
+                      />
                     }
                   >
-                    {profile("jobs")}
-                    {/* Contents-only wrapper: gives the permission rows the profile rows' control width. */}
-                    <div className={`${settingsStyles.ownRows} ${settingsStyles.rowsScope}`}>
-                      <Group title={t("Job permissions")}>
-                        {draft.execution ? (
-                          profile("permissions")
-                        ) : (
-                          <Row
-                            label={t("Execution permissions")}
-                            descriptionVisible
-                            description={t("Choose a worker model before enabling job execution.")}
-                          />
-                        )}
-                      </Group>
-                    </div>
-                  </Group>
-                )}
-                <Group title={t("Folders and commands")}>
-                  <AssistantFoldersSettings
-                    request={assistantRequest}
-                    saveRef={foldersSave}
-                    onDraftStateChange={changeFoldersState}
-                    showPermissionControls={showPermissionControls}
-                    accessRef={foldersAccess}
-                  />
-                </Group>
-                <Group
-                  title={t("Computer use")}
-                  action={<RefreshButton onClick={() => computerRefresh.current?.()} />}
-                >
-                  <DesktopControlSettings
-                    saveRef={computerSave}
-                    refreshRef={computerRefresh}
-                    onDraftStateChange={changeComputerState}
-                    showPermissionControls={showPermissionControls}
-                    accessRef={computerAccess}
-                  />
-                </Group>
-                <Group
-                  title={t("Manual session supervision")}
-                  action={
-                    <RefreshButton
-                      onClick={() => void manual.refresh()}
-                      loading={manual.pending === "list"}
-                      disabled={!!manual.pending || manual.stopping}
+                    <ManualSessionSupervision
+                      key={environmentId ?? "unknown"}
+                      controller={manual}
+                      projects={projects}
+                      environmentId={environmentId}
+                      settings
+                      saveRef={projectSave}
+                      onDraftStateChange={changeProjectState}
                     />
-                  }
-                >
-                  <ManualSessionSupervision
-                    key={environmentId ?? "unknown"}
-                    controller={manual}
-                    projects={projects}
-                    environmentId={environmentId}
-                    settings
-                    saveRef={projectSave}
-                    onDraftStateChange={changeProjectState}
-                  />
-                </Group>
-                <Group title={t("Ready for 24/7")}>
-                  <AlwaysOnChecklist
-                    request={assistantRequest}
-                    snapshot={snapshot}
-                    onOpen={(target) => {
-                      if (target === "setup") requestLeave("setup");
-                      else {
-                        setPage(target === "access" ? "access" : "work");
-                        if (target === "access") setCustomAccessOpen(true);
-                        if (contentRef.current) contentRef.current.scrollTop = 0;
-                      }
-                    }}
-                  />
-                </Group>
-              </>,
-            )}
-            {tab(
-              "advanced",
-              <>
-                <Group title={t("Cost and context")} info={<AssistantCostInfo />}>
-                  {profile("cost")}
-                </Group>
-                <Group title={t("Retention and usage")}>
-                  <AssistantRetentionField
-                    value={retention}
-                    disabled={pending}
-                    usage={snapshot.usage}
-                    onChange={(days) => {
-                      setSavedNotice(false);
-                      setRetention(days);
-                    }}
-                  />
-                </Group>
-              </>,
-            )}
-          </ProfileRowsProvider>
-        </ScrollArea>
+                  </Group>
+                  <Group title={t("Ready for 24/7")}>
+                    <AlwaysOnChecklist
+                      request={assistantRequest}
+                      snapshot={snapshot}
+                      onOpen={(target) => {
+                        if (target === "setup") requestLeave(onSetup);
+                        else {
+                          setPage(target === "access" ? "access" : "work");
+                          if (target === "access") setCustomAccessOpen(true);
+                          if (contentRef.current) contentRef.current.scrollTop = 0;
+                        }
+                      }}
+                    />
+                  </Group>
+                </>,
+              )}
+              {tab(
+                "advanced",
+                <>
+                  <Group title={t("Cost and context")} info={<AssistantCostInfo />}>
+                    {profile("cost")}
+                  </Group>
+                  <Group title={t("Retention and usage")}>
+                    <AssistantRetentionField
+                      value={retention}
+                      disabled={pending}
+                      usage={snapshot.usage}
+                      dailyBudget={snapshot.profile.dailyTokenBudget}
+                      onChange={(days) => {
+                        setSavedNotice(false);
+                        setRetention(days);
+                      }}
+                    />
+                  </Group>
+                </>,
+              )}
+            </ProfileRowsProvider>
+          </div>
+        </Tabs>
+        <footer className={settingsStyles.footer}>
+          <SettingsSaveBar
+            id="assistant-settings"
+            title={t("Assistant settings")}
+            changes={changes}
+            pending={busy}
+            saved={saved}
+            canSave={!(profileDirty && !draft.name?.trim())}
+            onDiscard={discard}
+            // Save goes through the form so native validation still reveals the invalid field.
+            onSave={() => {
+              return formRef.current?.reportValidity() ? save() : false;
+            }}
+            leading={
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                startIcon={<RotateCcw className="icon-sm" />}
+                disabled={busy}
+                onClick={() => requestLeave(onSetup)}
+              >
+                {t("Quick setup")}
+              </Button>
+            }
+          >
+            {problem && <InlineError details={problem.details}>{problem.message}</InlineError>}
+          </SettingsSaveBar>
+        </footer>
       </form>
+      {leaveDialog}
+      {languageFlow.dialog}
       {builderOpen && (
         <AssistantBuilderDialog
           current={draft}
+          initialAnswer={builderRequest}
           onClose={() => setBuilderOpen(false)}
           onApply={(patch) => {
             setSavedNotice(false);

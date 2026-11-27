@@ -1,13 +1,16 @@
 export { formatRecentRelative as formatRelative } from "../../../shared/i18n/format";
 import { sessionIssue } from "./sessionIssue";
 import {
+  isListedConversation,
   isUserConversation,
+  sessionBackgroundOwner,
   type DelegationCollectionMetadata,
 } from "../../../shared/model/host-contracts/delegation";
 import { wasTurnInterrupted } from "./inFlight";
 import { sessionActivityAt } from "./sessionActivity";
 import { pathKey } from "../../../shared/lib/paths";
 import { isRemoteProjectPath } from "../../projects/public/recents";
+import { projectlessMachineSession } from "../../connections/public/sessionMachineTarget";
 import { sessionDisplayTitle, sessionNeedsInput, type HarnessId, type Session } from "./session";
 
 /** Minimal shape of a stored session row; `SessionSummary` satisfies it. */
@@ -68,7 +71,7 @@ export type RecentSessionRow = {
 export const PROJECTLESS_CWD = "~";
 
 export function isProjectlessCwd(cwd: string): boolean {
-  return cwd === PROJECTLESS_CWD;
+  return cwd === PROJECTLESS_CWD || !!projectlessMachineSession(cwd);
 }
 
 /** Project keys a recent-sessions list may show: the given projects plus projectless sessions. */
@@ -79,7 +82,7 @@ export function withProjectlessKey(keys: Iterable<string>): Set<string> {
 /** Row counts the header offers. The last one is "All recent". */
 export const RECENT_SESSION_COUNTS = [3, 5, 10, 20, 50] as const;
 export type RecentSessionCount = (typeof RECENT_SESSION_COUNTS)[number];
-export const DEFAULT_RECENT_SESSION_COUNT: RecentSessionCount = 10;
+export const DEFAULT_RECENT_SESSION_COUNT: RecentSessionCount = 3;
 /** Rows returned by the recent-session store query. */
 export const RECENT_SESSION_FETCH_LIMIT = 100;
 
@@ -155,6 +158,7 @@ export function liveSessionInfos(
       interruptionKnown: !session.historyPartial && !session.historyLoading,
       activityAt: sessionActivityAt(session),
       managedBy: session.managedBy,
+      backgroundOwner: sessionBackgroundOwner(session),
     });
   }
   return infos;
@@ -210,7 +214,7 @@ export function buildRecentSessions({
   const liveById = new Map(live.map((info) => [identity(info.cwd, info.id), info]));
   const rows = new Map<string, RecentSessionRow>();
   for (const row of stored) {
-    if (!isUserConversation(row)) continue;
+    if (!isListedConversation(row)) continue;
     const projectless = isProjectlessCwd(row.cwd);
     if (!projectless && !projectKeys.has(pathKey(row.cwd))) continue;
     const info = liveById.get(identity(row.cwd, row.id));
@@ -243,7 +247,7 @@ export function buildRecentSessions({
   // only just started. An idle local one is skipped, since it is either older
   // than the stored window or about to arrive with the next fetch.
   for (const info of live) {
-    if (!isUserConversation(info)) continue;
+    if (!isListedConversation(info)) continue;
     if (rows.has(identity(info.cwd, info.id))) continue;
     if (!isProjectlessCwd(info.cwd) && !projectKeys.has(pathKey(info.cwd))) continue;
     const remote = isRemoteProjectPath(info.cwd);

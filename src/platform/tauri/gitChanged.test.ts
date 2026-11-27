@@ -122,8 +122,40 @@ describe("git change notifications", () => {
     expect(other.listener).not.toHaveBeenCalled();
 
     for (const { stop } of [refs, files, other]) stop();
-    expect(invoke).toHaveBeenCalledWith("git_unwatch", { cwd: "/watched" });
     expect(isGitWatched("/watched")).toBe(false);
+    await settle();
+    expect(invoke).toHaveBeenCalledWith("git_unwatch", { cwd: "/watched" });
+  });
+
+  it("keep a re-acquired watch when the released one was still starting", async () => {
+    const calls: string[] = [];
+    const starts: (() => void)[] = [];
+    vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
+      if (command !== "git_watch" && command !== "git_unwatch") return undefined;
+      calls.push(`${command}:${(args as { cwd: string }).cwd}`);
+      if (command === "git_watch") await new Promise<void>((resolve) => starts.push(resolve));
+    });
+    const first = listen({ cwd: "/racing" });
+    await settle();
+    first.stop();
+    const second = listen({ cwd: "/racing" });
+    await settle();
+    // Only the first start is in flight; the newer one waits its turn.
+    expect(calls).toEqual(["git_watch:/racing"]);
+    starts.shift()!();
+    await settle();
+    // The old release undoes its own start, then the new acquire starts again.
+    expect(calls).toEqual(["git_watch:/racing", "git_unwatch:/racing", "git_watch:/racing"]);
+    expect(isGitWatched("/racing")).toBe(false);
+    starts.shift()!();
+    await settle();
+    expect(isGitWatched("/racing")).toBe(true);
+
+    second.stop();
+    await settle();
+    expect(calls.at(-1)).toBe("git_unwatch:/racing");
+    expect(isGitWatched("/racing")).toBe(false);
+    vi.mocked(invoke).mockImplementation(async () => undefined);
   });
 
   it("leave remote checkouts and failed watches to their own triggers", async () => {

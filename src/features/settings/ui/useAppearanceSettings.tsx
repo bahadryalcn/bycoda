@@ -6,6 +6,7 @@ import {
 } from "../model/backgroundLibrary";
 import { resetInteractionTint } from "../model/interactionTint";
 import { resetWorkingIndicator } from "../model/workingIndicator";
+import { errorText } from "../../../shared/lib/errors";
 import { resetScrollbarStyle } from "../model/scrollbarStyle";
 import {
   saveWorkspaceBackground,
@@ -246,7 +247,10 @@ export function useAppearanceSettings(
     "choose" | "remove" | null
   >(null);
   const chatBackgroundPending = useRef(false);
-  const [chatBackgroundError, setChatBackgroundError] = useState<string | null>(null);
+  const [chatBackgroundError, setChatBackgroundError] = useState<{
+    operation: "choose" | "remove";
+    detail: string;
+  } | null>(null);
   const [uiScale, setUiScale] = useStoredPreferenceState(loadUiScale, subscribeUiScale);
   const [storedCollapsedProjectRailMode, setStoredCollapsedProjectRailMode] =
     useStoredPreferenceState(loadCollapsedProjectRailMode, subscribeCollapsedProjectRailMode);
@@ -389,7 +393,7 @@ export function useAppearanceSettings(
         }
         return path;
       } catch (error) {
-        setChatBackgroundError(error instanceof Error ? error.message : String(error));
+        setChatBackgroundError({ operation: "choose", detail: errorText(error) });
         return null;
       } finally {
         chatBackgroundPending.current = false;
@@ -418,7 +422,7 @@ export function useAppearanceSettings(
       applyChatBackground(null);
       setChatBackgroundPath(null);
     } catch (error) {
-      setChatBackgroundError(error instanceof Error ? error.message : String(error));
+      setChatBackgroundError({ operation: "remove", detail: errorText(error) });
     } finally {
       chatBackgroundPending.current = false;
       setChatBackgroundBusy(false);

@@ -40,14 +40,12 @@ it("names filtered bulk scope and preserves hidden selections", async () => {
       });
     await fill("Alpha");
     expect(container.textContent).toContain("Select all shown");
-    const clear = [...container.querySelectorAll("button")].find(
-      (item) => item.textContent === "Clear shown selection",
-    )!;
-    expect(clear).toBeDefined();
-    await act(async () => clear.click());
+    const toggle = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')[0]!;
+    expect(toggle.checked).toBe(true);
+    await act(async () => toggle.click());
     expect(selected).toEqual(["b", "unknown"]);
     await fill("");
-    expect(container.textContent).toContain("1 of 2 selected");
+    expect(toggle.indeterminate).toBe(true);
   } finally {
     await act(async () => root.unmount());
     container.remove();

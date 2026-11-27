@@ -1,31 +1,36 @@
 import { TaskModelChoiceLabel } from "./TaskModelChoiceLabel";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
-import { Tooltip } from "../../../shared/ui/Tooltip";
-import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
+import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
+import { Surface } from "../../../shared/ui/Surface";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Text } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { InlineAction, InlineMoreAction, ActionHost } from "../../../shared/ui/ActionHost";
-import { BadgeList } from "../../../shared/ui/BadgeList";
+import { ActionHost, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
-import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
-import { MessageSquare, Pencil, Sparkles, Square, Trash2 } from "../../../shared/ui/icons";
-import { Progress } from "../../../shared/ui/Progress";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { MessageSquare, Pencil, Square, Trash2 } from "../../../shared/ui/icons";
+import { Progress } from "../../../shared/ui/Progress";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { type BoardGoal } from "../model/goalClient";
-import { goalProgress } from "../model/hostGoals";
+import { goalProgress, projectGoal } from "../../../shared/model/workProjection";
+import { summaryText } from "../../../shared/model/taskStopSummary";
 import type { BoardTask } from "../model/taskClient";
 import { TaskBudgetUsage } from "./TaskBudgetControls";
+import { RelatedTaskList } from "./RelatedTaskList";
+import { epicTasks } from "../model/taskRelatedWork";
 import { GoalStatusBadge } from "./GoalStatusBadge";
 import { GoalFinalReview } from "./GoalFinalReview";
 import { GoalApprovalBar, GoalPlanSteps } from "./GoalPlanSteps";
+import { MetaLine } from "./TaskStatusLine";
 import "./task-goals.css";
 
-/** One goal above the board: where it stands, how many of its tasks are done,
- * and what the owner can do about it. A plan waiting for approval is shown in
- * full; a plan that failed shows why. */
+/** One epic as a compact card: its title, how many of its tasks are done, one muted line about
+ * where it runs, the planner and an overflow. A plan waiting for approval, a blocked epic and a
+ * failed final acceptance open their details at once so the owner's next step is in view; any
+ * other epic opens them from the chevron. */
 export function GoalCard({
   goal,
   tasks,
@@ -41,6 +46,7 @@ export function GoalCard({
   onRecheckFinal,
   onOpenFinal,
   onSessions,
+  onOpenTask,
 }: {
   goal: BoardGoal;
   /** The tasks on the goal's machine. */
@@ -57,14 +63,22 @@ export function GoalCard({
   onRecheckFinal?: () => void;
   onOpenFinal?: () => void;
   onSessions: () => void;
+  onOpenTask: (task: BoardTask) => void;
 }) {
   useLocale();
   const [menuAnchor, setMenuAnchor] = useState<HTMLButtonElement | null>(null);
+  // The owner's own choice; until then the epic opens when it needs the owner.
+  const [chosenOpen, setChosenOpen] = useState<boolean | null>(null);
   const progress = goalProgress(goal, tasks);
-  const reason = goal.planError ?? goal.error;
+  const planned = epicTasks(goal, tasks);
+  // A blocked epic says what stopped its blocked task, as the task card does.
+  const stop = goal.planError ? undefined : projectGoal(goal, planned).stop;
+  const reason =
+    stop && stop.code !== "unrecorded" ? summaryText(stop) : (goal.planError ?? goal.error);
   const finished = goal.status === "done" || goal.status === "cancelled";
-  const showDetails =
+  const hasDetails =
     !finished ||
+    planned.length > 0 ||
     Boolean(
       goal.budgetUsage ||
       goal.budgetStop ||
@@ -72,8 +86,111 @@ export function GoalCard({
       (goal.finalAcceptance &&
         (goal.finalAcceptance.status === "passed" || goal.finalAcceptance.status === "failed")),
     );
+  const needsOwner =
+    goal.status === "awaiting-approval" ||
+    goal.status === "blocked" ||
+    (goal.status !== "cancelled" &&
+      goal.finalAcceptance != null &&
+      goal.finalAcceptance.status !== "passed");
+  const open = hasDetails && (chosenOpen ?? needsOwner);
+  const canEdit = !finished;
   const canCancel = !finished;
   const canDelete = goal.status !== "planning" && goal.status !== "running";
+  const hasSessions = goal.taskIds.length > 0;
+  const projects = goal.projects.map((project) => project.name).join(", ");
+  const meta = [
+    progress.total > 0 ? (
+      <span key="progress" className="goal-card-progress">
+        <Progress
+          compact
+          aria-label={t("Epic progress")}
+          value={progress.done}
+          max={progress.total}
+          tone={
+            goal.status === "blocked" ? "danger" : goal.status === "done" ? "success" : "neutral"
+          }
+        />
+        <span>{t("{p0}/{p1} done", { p0: progress.done, p1: progress.total })}</span>
+      </span>
+    ) : null,
+    projects ? (
+      <OverflowTooltip key="projects" label={projects}>
+        <Text
+          size="inherit"
+          tone="inherit"
+          leading="inherit"
+          truncate
+          className="goal-card-projects"
+        >
+          {projects}
+        </Text>
+      </OverflowTooltip>
+    ) : null,
+    <Fragment key="model">
+      {goal.modelChoice && goal.modelChoice.kind !== "fixed" ? (
+        <>
+          <TaskModelChoiceLabel choice={goal.modelChoice} machineId={goal.machineId} /> ·{" "}
+        </>
+      ) : null}
+      <ModelLabel harness={goal.harness} model={goal.model} />
+    </Fragment>,
+    goal.machineName,
+    goal.stale && !goal.pendingRefresh ? (
+      <Text key="offline" size="inherit" tone="warning" leading="inherit">
+        {t("Offline")}
+      </Text>
+    ) : null,
+  ].filter(Boolean);
+  const menuItems = [
+    ...(canEdit
+      ? [
+          {
+            kind: "item" as const,
+            id: "edit",
+            label: t("Edit"),
+            icon: <Pencil className="icon-xs" />,
+            disabled: busy || Boolean(goal.stale) || !goal.settingsSupported,
+            description: goal.settingsSupported
+              ? undefined
+              : t("Update the selected host to edit epic settings."),
+          },
+        ]
+      : []),
+    ...(hasSessions
+      ? [
+          {
+            kind: "item" as const,
+            id: "sessions",
+            label: t("Task sessions"),
+            icon: <MessageSquare className="icon-xs" />,
+          },
+        ]
+      : []),
+    ...((canEdit || hasSessions) && (canCancel || canDelete) ? [{ kind: "sep" as const }] : []),
+    ...(canCancel
+      ? [
+          {
+            kind: "item" as const,
+            id: "cancel",
+            label: t("Cancel"),
+            disabled: busy,
+            icon: <Square className="icon-xs" />,
+          },
+        ]
+      : []),
+    ...(canDelete
+      ? [
+          {
+            kind: "item" as const,
+            id: "delete",
+            label: t("Delete"),
+            disabled: busy,
+            danger: true,
+            icon: <Trash2 className="icon-xs" />,
+          },
+        ]
+      : []),
+  ];
   return (
     <Surface
       as="article"
@@ -90,12 +207,6 @@ export function GoalCard({
         pressFeedback={false}
         className="goal-card-head"
       >
-        <span
-          aria-hidden
-          {...surfaceAttributes({ radius: "control", variant: "inset" }, "goal-card-well")}
-        >
-          <Sparkles className="icon-sm" tone="secondary" />
-        </span>
         <div className="goal-card-main">
           <div className="goal-card-title-row">
             <Tooltip label={goal.prompt} asChild>
@@ -103,100 +214,26 @@ export function GoalCard({
                 {goal.title}
               </Heading>
             </Tooltip>
-            <GoalStatusBadge status={goal.status} />
+            {goal.status === "running" || goal.status === "done" ? null : (
+              <GoalStatusBadge status={goal.status} />
+            )}
           </div>
-          <Text as="p" size="caption" tone="secondary">
-            <TaskModelChoiceLabel choice={goal.modelChoice} machineId={goal.machineId} /> ·{" "}
-            <ModelLabel harness={goal.harness} model={goal.model} />
-          </Text>
-          <Text
-            as="div"
-            size="caption"
-            tone="secondary"
-            leading="inherit"
-            className="goal-card-meta"
-          >
-            {progress.total > 0 ? (
-              <span className="goal-card-progress">
-                <Progress
-                  compact
-                  aria-label={t("Epic progress")}
-                  value={progress.done}
-                  max={progress.total}
-                  tone={
-                    goal.status === "blocked"
-                      ? "danger"
-                      : goal.status === "done"
-                        ? "success"
-                        : "neutral"
-                  }
-                />
-                <span>
-                  {progress.done}/{progress.total}
-                  {t(" done")}
-                </span>
-              </span>
-            ) : null}
-            <span className="goal-card-projects">
-              <BadgeList
-                label={t("Projects")}
-                size="xs"
-                className="min-w-0 shrink"
-                items={goal.projects.map((project, index) => ({
-                  id: `${index}:${project.name}`,
-                  label: project.name,
-                }))}
-              />
-            </span>
-            <Text
-              size="inherit"
-              tone="inherit"
-              leading="inherit"
-              truncate
-              className="goal-card-machine"
-            >
-              {t(" · on")} {goal.machineName}
-            </Text>
-            {goal.stale ? (
-              <Text size="inherit" tone="warning" leading="inherit" wrap="anywhere">
-                {t(" (offline, last known)").trim()}
-              </Text>
-            ) : null}
+          <Text as="div" size="caption" tone="muted" leading="inherit" className="goal-card-meta">
+            <MetaLine parts={meta} />
           </Text>
         </div>
         <div className="goal-card-actions">
-          {pending ? <Spinner size="xs" tone="secondary" className="mx-1.5" /> : null}
-          {!finished ? (
-            <InlineAction
-              reveal="always"
-              label={t("Edit epic settings")}
-              disabled={busy || Boolean(goal.stale) || !goal.settingsSupported}
-              tooltip={
-                goal.settingsSupported
-                  ? undefined
-                  : t("Update the selected host to edit epic settings.")
-              }
-              onClick={onEdit}
-            >
-              <Pencil />
-            </InlineAction>
-          ) : null}
+          {pending ? <Spinner size="xs" tone="secondary" delay className="mx-1.5" /> : null}
           {onOpenPlanner ? (
-            <Button variant="ghost" size="sm" startIcon={<MessageSquare />} onClick={onOpenPlanner}>
+            <Button variant="secondary" size="sm" onClick={onOpenPlanner}>
               {t("Open planner")}
             </Button>
           ) : null}
-          {goal.taskIds.length > 0 ? (
-            <Button variant="ghost" size="sm" startIcon={<MessageSquare />} onClick={onSessions}>
-              {t("Task sessions")}
-            </Button>
-          ) : null}
-          {canCancel || canDelete ? (
+          {menuItems.length > 0 ? (
             <InlineMoreAction
               reveal="always"
               label={t("More actions")}
               expanded={menuAnchor !== null}
-              disabled={busy}
               onOpen={setMenuAnchor}
             />
           ) : null}
@@ -205,34 +242,12 @@ export function GoalCard({
               anchor={menuAnchor}
               label={t("More actions")}
               onClose={() => setMenuAnchor(null)}
-              items={[
-                ...(canCancel
-                  ? [
-                      {
-                        kind: "item" as const,
-                        id: "cancel",
-                        label: t("Cancel"),
-                        disabled: busy,
-                        icon: <Square className="icon-xs" />,
-                      },
-                    ]
-                  : []),
-                ...(canDelete
-                  ? [
-                      {
-                        kind: "item" as const,
-                        id: "delete",
-                        label: t("Delete"),
-                        disabled: busy,
-                        danger: true,
-                        icon: <Trash2 className="icon-xs" />,
-                      },
-                    ]
-                  : []),
-              ]}
+              items={menuItems}
               onPick={(id) => {
-                if (busy) return;
-                if (id === "cancel") onCancel();
+                if (id === "sessions") onSessions();
+                else if (busy) return;
+                else if (id === "edit") onEdit();
+                else if (id === "cancel") onCancel();
                 else if (id === "delete") onDelete();
               }}
             />
@@ -240,15 +255,15 @@ export function GoalCard({
         </div>
       </ActionHost>
       {goal.status === "blocked" && reason ? (
-        <Text as="p" size="caption" tone="danger" leading="inherit" className="goal-card-reason">
-          {reason}
-        </Text>
+        <InlineError className="goal-card-reason" details={reason} />
       ) : null}
-      {showDetails ? (
+      {/* Disclosure keeps its body mounted while closed, so a replan draft survives collapsing. */}
+      {hasDetails ? (
         <Disclosure
+          variant="compact"
           summary={t("Details")}
-          size="sm"
-          defaultOpen={!finished}
+          open={open}
+          onOpenChange={setChosenOpen}
           className="goal-card-body"
         >
           <GoalFinalReview
@@ -258,6 +273,7 @@ export function GoalCard({
             onOpenFinal={onOpenFinal}
           />
           <TaskBudgetUsage usage={goal.budgetUsage} stop={goal.budgetStop} budget={goal.budget} />
+          <RelatedTaskList label={t("Tasks")} tasks={planned} onOpen={onOpenTask} />
           <GoalPlanSteps goal={goal} />
           <GoalApprovalBar
             goal={goal}

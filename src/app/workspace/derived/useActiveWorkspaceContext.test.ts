@@ -82,8 +82,9 @@ describe("standalone document workspace context", () => {
           sessions: [],
           sidebarCwd: context.sidebarCwd,
           projectCwd,
+          inboxViewOpen: false,
           activeTabId,
-          projectWorktree: null,
+          projectWorktree: undefined,
           tabWorkspace: (tab) => (tab === documentTab ? null : projectCwd),
           workspaceNavigation: { revision: 0 },
         });
@@ -100,4 +101,37 @@ describe("standalone document workspace context", () => {
       }
     },
   );
+});
+
+it("keeps Inbox tabs scoped to the selected project while a projectless chat remains active", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const root = createRoot(document.createElement("div"));
+  const sessions = [
+    newDefaultSession("/previous"),
+    newDefaultSession("/current"),
+    newDefaultSession("~"),
+  ];
+  const tabs = sessions.map((session) => newTab(session.id));
+  function Harness() {
+    const input = {
+      tabs,
+      sessions,
+      sidebarCwd: "~",
+      projectCwd: "/current",
+      activeTabId: tabs[2].id,
+      projectWorktree: undefined,
+      tabWorkspace: () => null,
+      workspaceNavigation: { revision: 0 },
+      inboxViewOpen: true,
+    };
+    const deck = useWorktreeDeckTabs(input);
+    expect(deck.deckProjectTabs.map((tab) => tab.id)).toEqual([tabs[1].id]);
+    return null;
+  }
+  try {
+    await act(async () => root.render(createElement(Harness)));
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
 });

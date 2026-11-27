@@ -6,6 +6,7 @@ import { Button } from "../../../shared/ui/Button";
 import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { t, useLocale } from "../../../shared/i18n";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { RotateCcw, Star } from "../../../shared/ui/icons";
 import {
@@ -150,7 +151,7 @@ export function QuickModelSelector({
       aria-label={t("Model selector")}
       className="flex min-h-0 flex-col"
       onKeyDown={(event) => {
-        if (event.key === "Escape") {
+        if (event.key === "Escape" && !isImeComposition(event.nativeEvent)) {
           event.preventDefault();
           event.stopPropagation();
           onClose();
@@ -171,11 +172,11 @@ export function QuickModelSelector({
       {showModels ? (
         <>
           <Tabs value={visibleTab} onValueChange={selectTab} fill panels="none">
-            <TabList label={t("Providers")} className="shrink-0 items-center gap-1">
+            <TabList label={t("Providers")} className="shrink-0">
               {tabs.map((id) => {
                 const title = id === "favorites" ? t("Favorites") : HARNESS_TITLE[id];
                 return (
-                  <Tab key={id} value={id} aria-label={title} tooltip={title}>
+                  <Tab key={id} value={id} aria-label={title}>
                     {id === "favorites" ? (
                       <Star
                         className="icon-md"
@@ -210,10 +211,10 @@ export function QuickModelSelector({
                 className="h-60 min-h-0 overflow-y-auto overscroll-none"
                 emptyLabel={
                   query
-                    ? t("No matching models")
+                    ? t("No matches")
                     : visibleTab === "favorites"
                       ? t("No favorite models")
-                      : t("Loading models…")
+                      : t("Loading…")
                 }
                 renderOptionActions={(option) => {
                   const item = models.find((item) => modelRowKey(item) === option.value)!;
@@ -221,9 +222,11 @@ export function QuickModelSelector({
                   return (
                     <InlineAction
                       reveal={favorited ? "always" : "interaction"}
-                      label={t(favorited ? "Remove {p1} from favorites" : "Add {p1} to favorites", {
-                        p1: item.name,
-                      })}
+                      label={
+                        favorited
+                          ? t("Remove {p1} from favorites", { p1: item.name })
+                          : t("Add {p1} to favorites", { p1: item.name })
+                      }
                       onClick={() => {
                         const next = favorited
                           ? favorites.filter((id) => id !== item.id)
@@ -255,7 +258,7 @@ export function QuickModelSelector({
         }}
       >
         <span>{t("Model")}</span>
-        <Text size="inherit" tone="inherit" truncate className="ml-auto">
+        <Text size="inherit" tone="inherit" truncate className="ms-auto">
           {model.name}
         </Text>
       </Button>

@@ -109,6 +109,16 @@ it("masks a conversation in a locked group instead of recording its text", async
   expect(entry.label).toBe("A session in a locked group needs attention");
 });
 
+it("does not log a daily summary the focused window suppressed, and dedupes its retries", async () => {
+  setWindowFocused(true);
+  expect(await notifyDailySummary("Summary")).toBe(false);
+  expect(await logged(0)).toEqual([]);
+  setWindowFocused(false);
+  await notifyDailySummary("Summary", 1_800_000_000_000);
+  await notifyDailySummary("Summary", 1_800_000_000_000);
+  expect(await logged(1)).toHaveLength(1);
+});
+
 it("records background work, the summary, account items and assistant messages with their targets", async () => {
   await notifyBackground({ target: "automations", kind: "finished", message: "Nightly ran" });
   await notifyDailySummary("3 tasks done");
@@ -169,4 +179,133 @@ it("matches the request center on which sessions wait for input", () => {
   expect(new Set(ids)).toEqual(new Set(pendingApprovalNotices(sessions).map((n) => n.sessionId)));
   expect(ids).toEqual(expect.arrayContaining(["plain", "worker"]));
   expect(ids).not.toContain("removed");
+});
+
+it("keeps the turn end time for a failure written after a reconnect, and the announcement time apart", async () => {
+  const endedAt = Date.now() - 3_600_000;
+  const session = {
+    ...finishedSession(),
+    blocks: [
+      {
+        id: "u",
+        role: "user" as const,
+        text: "go",
+        startedAt: endedAt - 60_000,
+        durationMs: 60_000,
+      },
+      { id: "e", role: "system" as const, text: "Crashed", notice: "error" as const },
+    ],
+  };
+  await announceSessionIssue(session, "failed", false);
+  const [entry] = await logged(1);
+  expect(entry.occurredAt).toBe(endedAt);
+  expect(entry.announcedAt).toBeGreaterThan(endedAt);
+});
+
+it("records two different errors of one turn as two entries", async () => {
+  const turn = (id: string, text: string): Session => ({
+    ...finishedSession(),
+    id: "same",
+    blocks: [
+      { id: "u", role: "user", text: "go" },
+      { id, role: "system", text, notice: "error" },
+    ],
+  });
+  await announceSessionIssue(turn("e1", "Rate limited"), "failed", false);
+  await announceSessionIssue(turn("e2", "Disk full"), "failed", false);
+  // The same error block again, even with reworded text, is not a new event.
+  await announceSessionIssue(turn("e2", "Disk is full"), "failed", false);
+  const entries = await logged(2);
+  expect(entries.map((entry) => entry.label).sort()).toEqual(["Disk full", "Rate limited"]);
+});
+
+it("treats a Host summary failure and the opened session's error block as one event", async () => {
+  const blocks = (error: Session["blocks"][number]) => [
+    { id: "turn-1", role: "user" as const, text: "go" },
+    error,
+  ];
+  await announceSessionIssue(
+    {
+      ...finishedSession(),
+      id: "remote",
+      blocks: blocks({ id: "issue", role: "system", text: "Failed", notice: "error" }),
+    },
+    "failed",
+    false,
+    "summary",
+  );
+  await announceSessionIssue(
+    {
+      ...finishedSession(),
+      id: "remote",
+      blocks: blocks({ id: "real", role: "system", text: "Rate limited", notice: "error" }),
+    },
+    "failed",
+    false,
+  );
+  expect(await logged(1)).toHaveLength(1);
+});
+
+it("records only warnings, errors and notices that ask for it, never a transient confirmation", async () => {
+  const { logToastAnnouncement } = await import("./notificationLog");
+  const toast = (id: string, tone: "info" | "success" | "warning" | "danger" | "neutral") => ({
+    id,
+    title: "",
+    message: `Message ${id}`,
+    tone,
+    occurredAt: Date.now(),
+  });
+  logToastAnnouncement(toast("saved", "success"));
+  logToastAnnouncement(toast("copied", "info"));
+  logToastAnnouncement(toast("plain", "neutral"));
+  logToastAnnouncement({ ...toast("kept", "info"), persist: true });
+  logToastAnnouncement({ ...toast("action", "success"), hasAction: true });
+  logToastAnnouncement(toast("warn", "warning"));
+  logToastAnnouncement(toast("fail", "danger"));
+  const entries = await logged(4);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(
+    readNotificationHistory()
+      .map((entry) => [entry.key, entry.kind, entry.tone])
+      .sort(),
+  ).toEqual([
+    ["action", "notice", undefined],
+    ["fail", "failed", "danger"],
+    ["kept", "notice", undefined],
+    ["warn", "notice", "warning"],
+  ]);
+  expect(entries.some((entry) => entry.kind === "background")).toBe(false);
+});
+
+it("folds the same toast repeated five times into one counted row", async () => {
+  const { logToastAnnouncement } = await import("./notificationLog");
+  for (let i = 0; i < 5; i += 1) {
+    logToastAnnouncement({
+      id: `queue-${i}`,
+      title: "Could not load queued messages",
+      message: "Reload the queue",
+      tone: "danger",
+      occurredAt: 1_800_000_000_000 + i * 1000,
+    });
+  }
+  await vi.waitFor(() => expect(readNotificationHistory()[0]?.count).toBe(5));
+  expect(readNotificationHistory()).toHaveLength(1);
+});
+
+it("never shows the same sentence as title and description", async () => {
+  const { logToastAnnouncement, logNotification } = await import("./notificationLog");
+  logToastAnnouncement({
+    id: "t1",
+    title: "",
+    message: "Saved offline",
+    tone: "warning",
+    occurredAt: 5,
+  });
+  logNotification({ kind: "background", key: "b", title: "Same", label: "Same", occurredAt: 6 });
+  const entries = await logged(2);
+  for (const entry of entries) expect(entry.label).not.toBe(entry.title);
+  expect(entries.find((entry) => entry.key === "t1")).toMatchObject({
+    title: "Saved offline",
+    label: "",
+  });
 });

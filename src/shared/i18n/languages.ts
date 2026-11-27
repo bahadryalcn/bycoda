@@ -1,13 +1,16 @@
-/** Shared offline language contract for desktop and mobile. */
+/**
+ * Shared offline language contract for desktop and mobile. `value` is the app locale;
+ * `tag` is the regional tag saved by assistant profiles and interview content.
+ */
 export const LANGUAGES = [
-  { value: "tr", label: "Türkçe" },
-  { value: "en", label: "English" },
-  { value: "de", label: "Deutsch" },
-  { value: "fr", label: "Français" },
-  { value: "es", label: "Español" },
-  { value: "pt", label: "Português" },
-  { value: "zh-CN", label: "简体中文" },
-  { value: "ja", label: "日本語" },
+  { value: "tr", tag: "tr-TR", label: "Türkçe" },
+  { value: "en", tag: "en-US", label: "English" },
+  { value: "de", tag: "de-DE", label: "Deutsch" },
+  { value: "fr", tag: "fr-FR", label: "Français" },
+  { value: "es", tag: "es-ES", label: "Español" },
+  { value: "pt", tag: "pt-PT", label: "Português" },
+  { value: "zh-CN", tag: "zh-CN", label: "简体中文" },
+  { value: "ja", tag: "ja-JP", label: "日本語" },
 ] as const;
 export type Locale = (typeof LANGUAGES)[number]["value"];
 export type LanguagePreference = Locale | "system";

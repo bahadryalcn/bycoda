@@ -63,7 +63,7 @@ describe("mentionTokenAt", () => {
   });
 
   it("ignores emails and mid-word @", () => {
-    expect(mentionTokenAt("nick@example.com", 8)).toBeNull();
+    expect(mentionTokenAt("ada@example.com", 8)).toBeNull();
     expect(mentionTokenAt("a@b", 3)).toBeNull();
   });
 
@@ -220,8 +220,8 @@ describe("fileMentionParts", () => {
     expect(fileMentionParts("ping @nobody.tsx", index.labels)).toEqual([
       { text: "ping @nobody.tsx" },
     ]);
-    expect(fileMentionParts("nick@example.com", index.labels)).toEqual([
-      { text: "nick@example.com" },
+    expect(fileMentionParts("ada@example.com", index.labels)).toEqual([
+      { text: "ada@example.com" },
     ]);
   });
 

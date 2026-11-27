@@ -1,5 +1,5 @@
 import type { Block } from "../model/session";
-import { streamingTextUpdate } from "../model/stableBlocks";
+import { streamingBlockUpdate } from "../model/stableBlocks";
 
 /**
  * The ids of blocks that already had output in a committed frame, so a block
@@ -22,9 +22,9 @@ export class SeenOutput {
   update(blocks: Block[]): void {
     const previous = this.previous;
     this.previous = blocks;
-    const update = previous ? streamingTextUpdate(previous, blocks) : undefined;
+    const update = previous ? streamingBlockUpdate(previous, blocks)?.index : undefined;
     if (update !== undefined && blocks[update]) {
-      // A text-only streaming frame can only add the streamed block's id.
+      // A streaming frame can only add the streamed block's id.
       if (blocks[update].text) this.ids.add(blocks[update].id);
       return;
     }

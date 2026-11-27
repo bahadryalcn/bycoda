@@ -3,6 +3,31 @@ import type { ModelRoutingPool } from "./host-contracts/model-routing";
 type PoolRefs = Pick<ModelRoutingPool, "id" | "entryIds" | "poolIds">;
 
 /**
+ * The settings a pool run applies to one of its models: those of the first pool, in
+ * resolution order, that lists the model itself. Undefined when that pool sets none.
+ */
+export function modelRoutingPoolMemberSettings(
+  pools: readonly Pick<ModelRoutingPool, "id" | "entryIds" | "poolIds" | "memberSettings">[],
+  poolId: string,
+  entryId: string,
+): Record<string, string> | undefined {
+  const byId = new Map(pools.map((pool) => [pool.id, pool]));
+  const visited = new Set<string>();
+  const visit = (id: string): Record<string, string> | undefined | null => {
+    const pool = byId.get(id);
+    if (!pool || visited.has(id)) return null;
+    visited.add(id);
+    if (pool.entryIds.includes(entryId)) return pool.memberSettings?.[entryId];
+    for (const included of pool.poolIds ?? []) {
+      const found = visit(included);
+      if (found !== null) return found;
+    }
+    return null;
+  };
+  return visit(poolId) ?? undefined;
+}
+
+/**
  * The entries a pool resolves to: its own `entryIds` first, then each included pool in order,
  * depth-first. Every entry appears once, at its first position. Unknown and repeated pools
  * are ignored, so a cycle in an unvalidated document still terminates.

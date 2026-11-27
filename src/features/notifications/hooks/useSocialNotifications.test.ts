@@ -7,11 +7,12 @@ import type { SocialWaitingItem } from "../model/socialWaiting";
 const mocks = vi.hoisted(() => ({
   lead: vi.fn(async () => true),
   read: vi.fn(),
+  machine: vi.fn<() => Promise<{ id: string } | undefined>>(async () => ({ id: "m1" })),
   notify: vi.fn(async () => true),
 }));
 vi.mock("./useBackgroundNotifications", () => ({ isLeadWindow: mocks.lead }));
 vi.mock("../model/socialWaitingFeed", () => ({
-  socialMachine: async () => ({ id: "m1" }),
+  socialMachine: mocks.machine,
   readSocialWaiting: mocks.read,
 }));
 vi.mock("../model/notifications", () => ({ notifySocialWaiting: mocks.notify }));
@@ -38,6 +39,7 @@ beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
   mocks.lead.mockResolvedValue(true);
+  mocks.machine.mockResolvedValue({ id: "m1" });
   setSocialWaitingCount(0);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
@@ -80,4 +82,36 @@ it("does not announce from a window that is not the workspace lead or when the H
   await act(async () => vi.advanceTimersByTimeAsync(61_000));
   expect(mocks.notify).not.toHaveBeenCalled();
   expect(loadAnnouncedSocial().size).toBe(0);
+});
+
+it("clears the retained count when the Social Host is unpaired", async () => {
+  mocks.read.mockResolvedValue([waiting("request:1")]);
+  root = createRoot(document.createElement("div"));
+  await act(async () => root!.render(createElement(Watcher)));
+  expect(socialWaitingCount()).toBe(1);
+  mocks.machine.mockResolvedValue(undefined);
+  await act(async () => vi.advanceTimersByTimeAsync(61_000));
+  expect(socialWaitingCount()).toBe(0);
+});
+
+it("keeps the count through a brief outage, then drops it once the Host stays unreadable", async () => {
+  mocks.read.mockResolvedValue([waiting("request:1")]);
+  root = createRoot(document.createElement("div"));
+  await act(async () => root!.render(createElement(Watcher)));
+  expect(socialWaitingCount()).toBe(1);
+  mocks.read.mockResolvedValue(undefined);
+  await act(async () => vi.advanceTimersByTimeAsync(61_000));
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  expect(socialWaitingCount()).toBe(1);
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  expect(socialWaitingCount()).toBe(0);
+  // A successful read restores the count and resets the failure streak.
+  mocks.read.mockResolvedValue([waiting("request:1")]);
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  expect(socialWaitingCount()).toBe(1);
+  mocks.read.mockRejectedValue(new Error("offline"));
+  await act(async () => vi.advanceTimersByTimeAsync(120_000));
+  expect(socialWaitingCount()).toBe(1);
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  expect(socialWaitingCount()).toBe(0);
 });

@@ -9,6 +9,7 @@ import { type NativeLibraryProof } from "../assistant/native/assistant-native-li
 import { AssistantNativeVoiceLeases } from "../assistant/native/assistant-native-voice-leases";
 import { AssistantVisibilityAdmission } from "../assistant/native/assistant-visibility-admission";
 import { AssistantVisibilityFence } from "../assistant/native/assistant-visibility-fence";
+import { organizationPageListsProject } from "../assistant/native/assistant-visible-project";
 import { AssistantWorkspaceOwner } from "../assistant/native/assistant-workspace-owner";
 import {
   AssistantBackgroundEffect,
@@ -766,7 +767,7 @@ export function createAssistantNativeRuntime(
         authorized,
       )) as { items?: Array<{ cwd?: string }>; nextOffset?: number | null };
       if (!Array.isArray(page.items)) return false;
-      if (page.items.some((item) => item.cwd === project.cwd)) return true;
+      if (organizationPageListsProject(page.items, project.cwd)) return true;
       if (page.nextOffset == null || page.nextOffset !== offset + 100) return false;
     }
     return false;

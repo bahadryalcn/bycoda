@@ -2,12 +2,15 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { SessionReview } from "./SessionReview";
+import { SessionReview, useSessionReviewEligibility } from "./SessionReview";
+import { RECORDING_POLL } from "../model/checkpointRecording";
 import { setMarkdownViewMode, useMarkdownMode } from "./MarkdownModeToggle";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
+import { toast } from "../../../shared/ui/ToastRegion";
 
 const mocks = vi.hoisted(() => ({
   status: vi.fn(),
+  reviewSupport: vi.fn(),
   keep: vi.fn(),
   reveal: vi.fn(async () => {}),
   openDefault: vi.fn(async () => {}),
@@ -19,6 +22,10 @@ vi.mock("../model/checkpoint", () => ({
   subscribeReviewChanged: () => () => {},
   keepSessionChanges: mocks.keep,
   undoSessionChanges: vi.fn(),
+}));
+vi.mock("../../connections/public/remoteCapabilities", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../connections/public/remoteCapabilities")>()),
+  useRemoteSupports: mocks.reviewSupport,
 }));
 vi.mock("../../../platform/tauri/fs", () => ({
   basename: (path: string) => path.split("/").pop(),
@@ -44,6 +51,7 @@ const onOpenFile = vi.fn();
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
+  mocks.reviewSupport.mockReturnValue(true);
   mocks.status.mockResolvedValue({
     files: [
       {
@@ -86,63 +94,73 @@ it("keeps the review visible and explains a failed Keep operation", async () => 
   )!;
   await act(async () => keep.click());
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-    "Checkpoint unavailable",
+    "Could not keep session changes.",
   );
   expect(row()).not.toBeNull();
   expect(keep.disabled).toBe(false);
 });
 
 it("shows a retryable status failure even when no file list has arrived", async () => {
-  mocks.status.mockRejectedValueOnce(new Error("Status unavailable"));
-  await act(async () =>
-    root.render(createElement(SessionReview, { sessionId: "other", cwd: "/repo", onOpenDiff })),
-  );
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Status unavailable");
-  expect(container.textContent).toContain("Retry");
+  vi.useFakeTimers();
+  try {
+    const busy = new Error("Checkout is busy in /private/project");
+    mocks.status.mockRejectedValueOnce(busy).mockRejectedValueOnce(busy);
+    await renderRecording("other");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(RECORDING_POLL.baseMs));
+    expect(container.querySelectorAll('[role="alert"]')).toHaveLength(1);
+    expect(container.textContent).toContain("Could not load the changes.");
+    expect(container.textContent).not.toContain("/private/project");
+    const retry = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Retry",
+    )!;
+    await act(async () => retry.click());
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
-it("explains a saved checkpoint failure and refreshes without claiming to recreate it", async () => {
+it("shows a saved checkpoint failure without offering an ineffective refresh", async () => {
   mocks.status.mockRejectedValueOnce(
     new Error("Workspace checkpoint failed: Not a directory (os error 20)"),
   );
   await act(async () =>
     root.render(createElement(SessionReview, { sessionId: "failed", cwd: "/repo", onOpenDiff })),
   );
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("not fully recorded");
-  expect(container.textContent).not.toContain("Retry");
-  const refresh = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Refresh",
-  )!;
-  let resolve: (value: { files: [] }) => void;
-  mocks.status.mockImplementationOnce(
-    () =>
-      new Promise((done) => {
-        resolve = done;
-      }),
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not record this turn's changes.",
   );
-  const calls = mocks.status.mock.calls.length;
-  await act(async () => refresh.click());
-  expect(refresh.getAttribute("aria-busy")).toBe("true");
-  await act(async () => refresh.click());
-  expect(mocks.status).toHaveBeenCalledTimes(calls + 1);
-  await act(async () => resolve!({ files: [] }));
-  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.querySelector("button")).toBeNull();
+});
+
+it("keeps a missing checkout quiet and never displays its path", async () => {
+  mocks.status.mockRejectedValueOnce(new Error("/private/project: Not a directory"));
+  await renderRecording("missing");
+  expect(container.textContent).toBe("");
+});
+
+it("shows a permission failure without offering retry", async () => {
+  mocks.status.mockRejectedValueOnce(new Error("EACCES: /private/project"));
+  await renderRecording("permission");
+  expect(container.textContent).toBe("Could not load the changes.");
+  expect(container.querySelector("button")).toBeNull();
 });
 
 it("retains the saved change list after a failed refresh and requires recovery before mutation", async () => {
-  mocks.status.mockRejectedValueOnce(new Error("Connection unavailable"));
+  mocks.status.mockRejectedValueOnce(new Error("Workspace lock is busy"));
   await act(async () => {
     window.dispatchEvent(new Event("focus"));
     await new Promise((resolve) => setTimeout(resolve, 240));
   });
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-    "Connection unavailable",
+    "Could not load the changes.",
   );
   expect(row()).not.toBeNull();
   const keep = [...container.querySelectorAll("button")].find(
     (button) => button.textContent === "Keep",
   )!;
-  expect(keep.disabled).toBe(true);
+  expect(keep.getAttribute("aria-disabled")).toBe("true");
   const retry = [...container.querySelectorAll("button")].find(
     (button) => button.textContent === "Retry",
   )!;
@@ -172,7 +190,13 @@ it("keeps focus and progress on Keep until its operation settles", async () => {
   expect(document.activeElement).toBe(keep);
   expect(row()).not.toBeNull();
   await act(async () => resolve({ files: [] }));
-  expect(container.querySelector("[data-session-review]")).toBeNull();
+  // Nothing is left to review: the file rows go and a one-line receipt names the choice.
+  expect(row()).toBeNull();
+  expect(
+    container
+      .querySelector("[data-session-review-receipt]")
+      ?.getAttribute("data-session-review-receipt"),
+  ).toBe("kept");
 });
 
 it("automatically refreshes a recording checkpoint without presenting it as an error", async () => {
@@ -219,6 +243,200 @@ it("cancels recording polling when another session is displayed", async () => {
   } finally {
     vi.useRealTimers();
   }
+});
+
+async function renderRecording(sessionId: string) {
+  await act(async () =>
+    root.render(createElement(SessionReview, { sessionId, cwd: "/repo", onOpenDiff })),
+  );
+}
+function stalledAlert() {
+  return [...container.querySelectorAll('[role="status"]')].find((node) =>
+    node.textContent?.includes("Still recording"),
+  );
+}
+function refreshButton() {
+  return [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Refresh",
+  )!;
+}
+
+function ReviewAccessoryFixture({ projectCwd, workCwd }: { projectCwd: string; workCwd: string }) {
+  return useSessionReviewEligibility(projectCwd, workCwd)
+    ? createElement(SessionReview, { sessionId: "settled", cwd: workCwd, onOpenDiff })
+    : null;
+}
+
+it.each([false, true])("skips scratch review whether the directory exists (%s)", async (exists) => {
+  mocks.status.mockClear();
+  if (exists) mocks.status.mockResolvedValueOnce({ files: [] });
+  else mocks.status.mockRejectedValueOnce(new Error("/private/scratch: Not a directory"));
+  try {
+    await act(async () =>
+      root.render(
+        createElement(ReviewAccessoryFixture, {
+          projectCwd: "~",
+          workCwd: "~/.bycoda-host/scratch/session-settled",
+        }),
+      ),
+    );
+    expect(mocks.status).not.toHaveBeenCalled();
+    expect(container.textContent).toBe("");
+  } finally {
+    mocks.status.mockReset();
+  }
+});
+
+it.each([undefined, false, true])(
+  "loads a project checkout only with review support (%s)",
+  async (supported) => {
+    mocks.status.mockClear();
+    mocks.reviewSupport.mockReturnValue(supported);
+    const workCwd = "remote://machine/project-worktree";
+    await act(async () =>
+      root.render(createElement(ReviewAccessoryFixture, { projectCwd: "/project", workCwd })),
+    );
+    expect(mocks.reviewSupport).toHaveBeenCalledWith(workCwd, "sessions.checkpoint-review");
+    if (supported) expect(mocks.status).toHaveBeenCalledWith("settled", workCwd);
+    else expect(mocks.status).not.toHaveBeenCalled();
+  },
+);
+
+it("treats the typed recording code as a wait, not an error", async () => {
+  vi.useFakeTimers();
+  try {
+    mocks.status.mockRejectedValueOnce(new Error("Checkpoint reworded [CHECKPOINT_RECORDING]"));
+    await renderRecording("typed");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.textContent).toContain("Loading changes");
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(container.querySelector("[data-session-review]")).not.toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("backs off, stops after a bounded number of polls and offers an explicit refresh", async () => {
+  vi.useFakeTimers();
+  try {
+    mocks.status.mockRejectedValue(new Error("Workspace checkpoint is still recording this turn"));
+    await renderRecording("stuck");
+    const calls = mocks.status.mock.calls.length;
+    await act(async () => vi.advanceTimersByTimeAsync(999));
+    expect(mocks.status).toHaveBeenCalledTimes(calls);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(mocks.status).toHaveBeenCalledTimes(calls + 1);
+    // The second wait is 2 s, not another second.
+    await act(async () => vi.advanceTimersByTimeAsync(1999));
+    expect(mocks.status).toHaveBeenCalledTimes(calls + 1);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(mocks.status).toHaveBeenCalledTimes(calls + 2);
+
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(mocks.status).toHaveBeenCalledTimes(calls + RECORDING_POLL.maxAttempts);
+    expect(stalledAlert()).toBeDefined();
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.textContent).not.toContain("Loading changes");
+
+    await act(async () => vi.advanceTimersByTimeAsync(120_000));
+    expect(mocks.status).toHaveBeenCalledTimes(calls + RECORDING_POLL.maxAttempts);
+
+    // An explicit refresh starts a new bounded wait.
+    await act(async () => refreshButton().click());
+    expect(mocks.status).toHaveBeenCalledTimes(calls + RECORDING_POLL.maxAttempts + 1);
+    expect(container.textContent).toContain("Loading changes");
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(mocks.status).toHaveBeenCalledTimes(calls + RECORDING_POLL.maxAttempts + 2);
+  } finally {
+    mocks.status.mockReset();
+    vi.useRealTimers();
+  }
+});
+
+it("recovers from a stalled wait when the checkpoint settles", async () => {
+  vi.useFakeTimers();
+  try {
+    mocks.status.mockRejectedValue("Workspace checkpoint is still recording this turn");
+    await renderRecording("recovering");
+    await act(async () => vi.advanceTimersByTimeAsync(120_000));
+    expect(stalledAlert()).toBeDefined();
+    mocks.status.mockReset();
+    mocks.status.mockResolvedValue({
+      files: [
+        {
+          path: "/repo/src/done.ts",
+          relative: "src/done.ts",
+          status: "modified",
+          additions: 1,
+          deletions: 0,
+          exact: true,
+          undoable: true,
+        },
+      ],
+    });
+    await act(async () => refreshButton().click());
+    expect(stalledAlert()).toBeUndefined();
+    expect(container.querySelector("[data-session-review]")).not.toBeNull();
+  } finally {
+    mocks.status.mockReset();
+    vi.useRealTimers();
+  }
+});
+
+it("surfaces a different failure while waiting instead of polling on", async () => {
+  vi.useFakeTimers();
+  try {
+    mocks.status.mockRejectedValueOnce(
+      new Error("Workspace checkpoint is still recording this turn"),
+    );
+    mocks.status.mockRejectedValueOnce(new Error("Status unavailable"));
+    await renderRecording("changes-mind");
+    const calls = mocks.status.mock.calls.length;
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not load the changes.",
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(mocks.status).toHaveBeenCalledTimes(calls + 1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("does not poll while the page is hidden and resumes when it is visible", async () => {
+  vi.useFakeTimers();
+  let hidden = true;
+  Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+  try {
+    mocks.status.mockRejectedValueOnce(
+      new Error("Workspace checkpoint is still recording this turn"),
+    );
+    await renderRecording("hidden");
+    const calls = mocks.status.mock.calls.length;
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+    expect(mocks.status).toHaveBeenCalledTimes(calls);
+    expect(container.textContent).toContain("Loading changes");
+    hidden = false;
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(mocks.status).toHaveBeenCalledTimes(calls + 1);
+    expect(container.querySelector("[data-session-review]")).not.toBeNull();
+  } finally {
+    delete (document as { hidden?: boolean }).hidden;
+    vi.useRealTimers();
+  }
+});
+
+it("explains a failed checkpoint from its typed code without showing the code", async () => {
+  mocks.status.mockRejectedValueOnce(new Error("Disk full [CHECKPOINT_FAILED]"));
+  await renderRecording("typed-failed");
+  const alert = container.querySelector('[role="alert"]');
+  expect(alert?.textContent).toContain("Could not record this turn's changes.");
+  expect(alert?.textContent).not.toContain("Disk full");
+  expect(alert?.textContent).not.toContain("CHECKPOINT_FAILED");
+  expect(refreshButton()).toBeUndefined();
 });
 
 it("discards a status response from a previously displayed session", async () => {
@@ -276,7 +494,7 @@ const revealLabel = IS_MAC
   ? "Reveal in Finder"
   : IS_WIN
     ? "Reveal in File Explorer"
-    : "Open Containing Folder";
+    : "Open containing folder";
 
 it("replaces the browser menu and reveals mixed, non-undoable changes", async () => {
   const menu = openMenu();
@@ -302,8 +520,8 @@ it("opens the actual file in the app", async () => {
   expect(onOpenFile).toHaveBeenCalledWith("/repo/src/main.ts");
 });
 it.each([
-  ["Copy Path", "/repo/src/main.ts"],
-  ["Copy Relative Path", "src/main.ts"],
+  ["Copy path", "/repo/src/main.ts"],
+  ["Copy relative path", "src/main.ts"],
 ])("%s copies the correct path", async (label, path) => {
   const menu = openMenu();
   await act(async () => item(menu, label).click());
@@ -355,17 +573,25 @@ it("keeps reveal available for deleted files and targets the parent", async () =
   });
   await render();
   const menu = openMenu();
-  expect(item(menu, "Open in Default App").disabled).toBe(true);
+  expect(item(menu, "Open in default app").disabled).toBe(true);
   expect(item(menu, revealLabel).disabled).toBe(false);
   await act(async () => item(menu, revealLabel).click());
   expect(mocks.reveal).toHaveBeenCalledWith("/repo/src");
 });
 it("reports native reveal errors", async () => {
-  mocks.reveal.mockRejectedValueOnce(new Error("Folder unavailable"));
-  const menu = openMenu();
-  await act(async () => item(menu, revealLabel).click());
-  expect(mocks.message).not.toHaveBeenCalled();
-  expect(document.body.textContent).toContain("Error: Folder unavailable");
+  const show = vi.spyOn(toast, "show").mockImplementation(() => "");
+  try {
+    mocks.reveal.mockRejectedValueOnce(new Error("Folder unavailable"));
+    const menu = openMenu();
+    await act(async () => item(menu, revealLabel).click());
+    expect(mocks.message).not.toHaveBeenCalled();
+    // One owner: the failure surfaces as a danger toast, not a second inline error.
+    expect(show).toHaveBeenCalledWith(
+      expect.objectContaining({ tone: "danger", message: "Folder unavailable" }),
+    );
+  } finally {
+    show.mockRestore();
+  }
 });
 
 it.each(["md", "html", "png", "svg", "pdf"])(

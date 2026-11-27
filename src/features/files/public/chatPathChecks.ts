@@ -1,2 +1,3 @@
 /** Public files contract; exports stay explicit to preserve load isolation. */
-export { existingChatPath } from "../model/chatPathChecks";
+export { chatPathInfo, existingChatPath } from "../model/chatPathChecks";
+export type { ChatPathInfo } from "../model/chatPathChecks";

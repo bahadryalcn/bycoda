@@ -44,7 +44,16 @@ test("device controls show pending only at the initiating action and recover fro
   await capture.click();
   await expect(capture).toHaveAttribute("aria-busy", "true");
   await fixture(page, "finish", "capture", "Device screenshot exceeds 4 MiB");
-  await expect(page.getByRole("alert")).toContainText("Device screenshot exceeds 4 MiB");
+  await expect(page.getByRole("alert")).toContainText("Device screen unavailable");
+  // The raw reason waits behind the shared Details control.
+  await page
+    .getByRole("alert")
+    .getByRole("button", { name: /^Details/ })
+    .click();
+  await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText(
+    "Device screenshot exceeds 4 MiB",
+  );
+  await page.keyboard.press("Escape");
   await expect(page.getByText("Could not load devices", { exact: true })).toHaveCount(0);
   await expect(capture).toBeEnabled();
   await capture.click();
@@ -84,13 +93,20 @@ test("server details, logs and startup retain local pending feedback and clear f
   await fixture(page, "finish", "devServers.start", "Fixture host is unavailable");
   await expect(start).not.toHaveAttribute("aria-busy", "true");
   await expect(start).toBeEnabled();
-  await expect(page.getByRole("alert")).toContainText("Fixture host is unavailable");
+  await expect(page.getByRole("alert")).toContainText("The server action failed.");
+  await page
+    .getByRole("alert")
+    .getByRole("button", { name: /^Details/ })
+    .click();
+  await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText(
+    "Fixture host is unavailable",
+  );
+  await page.keyboard.press("Escape");
   await expect(page.getByLabel("Server name", { exact: true })).toHaveValue("Second server");
 });
 
-test("device help remains keyboard accessible and preserves input drafts", async ({ page }) => {
+test("device setup guidance stays visible and preserves input drafts", async ({ page }) => {
   await page.goto("/tests/browser/host-tools/operational-tools.html");
-  await page.getByRole("switch", { name: "Allow device control" }).click();
   // The app field lives in its own popover; its draft survives closing and reopening it.
   const chooseApp = page.getByRole("button", { name: "Choose app to open", exact: true });
   await chooseApp.click();
@@ -101,25 +117,22 @@ test("device help remains keyboard accessible and preserves input drafts", async
   const setup = page.getByRole("button", { name: "Setup and access", exact: true });
   await setup.focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("dialog", { name: "Setup and access", exact: true })).toBeVisible();
-  const help = page.getByRole("button", { name: "Help", exact: true });
-  await help.focus();
-  await page.keyboard.press("Enter");
-  await expect(help).toHaveAttribute("aria-expanded", "true");
-  await expect(page.getByText(/Viewing never enables control/)).toBeVisible();
-  // Escape closes one layer: the help first, then the setup panel.
+  const dialog = page.getByRole("dialog", { name: "Setup and access", exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText(/Viewing never enables control/)).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(help).toBeFocused();
-  await page.keyboard.press("Escape");
-  await expect(help).toHaveCount(0);
+  await expect(dialog).toHaveCount(0);
   await chooseApp.click();
   await expect(page.getByLabel("App name or bundle ID", { exact: true })).toHaveValue(
     "com.example.app",
   );
   await page.keyboard.press("Escape");
   await fixture(page, "hold", "press");
-  await page.getByRole("img", { name: "Current device screen" }).click();
-  await expect(page.getByRole("progressbar", { name: "Working on the host…" })).toBeVisible();
+  const screen = page.getByRole("img", { name: "Current device screen" });
+  await screen.click();
+  // Screen gestures are sent like a remote screen: the panel never turns busy while one is held.
+  await expect(page.getByRole("progressbar", { name: "Working on the host…" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Device options", exact: true })).toBeEnabled();
   await fixture(page, "finish", "press");
   await expect(page.getByRole("progressbar", { name: "Working on the host…" })).toHaveCount(0);
 });
@@ -127,7 +140,6 @@ test("device help remains keyboard accessible and preserves input drafts", async
 test("long translated controls fit a narrow panel at increased text scale", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 1000 });
   await page.goto("/tests/browser/host-tools/operational-tools.html?lang=de&theme=light");
-  await page.getByRole("switch", { name: "Gerätesteuerung erlauben" }).click();
   await page.evaluate(() => {
     document.documentElement.style.fontSize = "125%";
   });
@@ -156,7 +168,6 @@ for (const theme of ["light", "dark"]) {
         );
         if (tool === "devices") {
           await expect(page.getByRole("img")).toBeVisible();
-          await page.getByRole("switch", { name: "Allow device control" }).click();
           await page.getByRole("button", { name: "Choose app to open", exact: true }).click();
           await expect(page.getByRole("button", { name: "Open app", exact: true })).toBeVisible();
         } else {

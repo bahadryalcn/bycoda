@@ -17,6 +17,9 @@ import {
   pickImageFiles,
   pickFolders as pickProjectFolders,
   resolveProjectLocation,
+  readProjectImage,
+  prepareLocalFileCopy,
+  setRemoteCommandRunner,
 } from "./fs";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -30,6 +33,104 @@ vi.mock("../../shared/i18n/core", () => ({ t: (text: string) => `translated:${te
 
 const picker = vi.hoisted(() => ({ openFolderPicker: vi.fn() }));
 vi.mock("../../features/projects/ui/openFolderPicker", () => picker);
+
+it("shares a snapshot across callers while allowing either caller to cancel", async () => {
+  const path = "remote://machine/project/video.mp4";
+  const cancel = new AbortController();
+  const progress = vi.fn();
+  let completeRead!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    completeRead = resolve;
+  });
+  const read = vi.fn(async (command: string) => {
+    if (command === "read_file_info") return { size: 1, version: "one" };
+    await waiting;
+    return { offset: 0, length: 1, data: "AA==" };
+  });
+  setRemoteCommandRunner(read);
+  const native = vi.mocked(invoke);
+  native.mockReset().mockImplementation(async (command) => {
+    if (command === "begin_remote_file_copy") return "id";
+    if (command === "finish_remote_file_copy") return "video.mp4";
+    return null;
+  });
+  const closed = prepareLocalFileCopy(path, { signal: cancel.signal });
+  const opened = prepareLocalFileCopy(path, { onProgress: progress });
+  await vi.waitFor(() => expect(progress).toHaveBeenCalledWith(0, 1));
+  cancel.abort();
+  await expect(closed).rejects.toMatchObject({ name: "AbortError" });
+  completeRead();
+  await expect(opened).resolves.toBe("video.mp4");
+  expect(read.mock.calls.filter(([command]) => command === "read_file_chunk")).toHaveLength(1);
+  expect(
+    native.mock.calls.filter(([command]) => command === "begin_remote_file_copy"),
+  ).toHaveLength(1);
+  expect(native).not.toHaveBeenCalledWith("cancel_remote_file_copy", expect.anything());
+});
+
+it("starts a separate transfer for a changed version and cancels the last subscriber", async () => {
+  const path = "remote://machine/project/video.mp4";
+  const old = new AbortController();
+  const current = new AbortController();
+  let version = "one";
+  const read = vi.fn((command: string, _args: unknown) =>
+    command === "read_file_info" ? Promise.resolve({ size: 1, version }) : new Promise(() => {}),
+  );
+  setRemoteCommandRunner(read);
+  const native = vi.mocked(invoke);
+  native
+    .mockReset()
+    .mockImplementation(async (command, args) =>
+      command === "begin_remote_file_copy" ? (args as { key: string }).key : null,
+    );
+  const first = prepareLocalFileCopy(path, { signal: old.signal });
+  await vi.waitFor(() =>
+    expect(read).toHaveBeenCalledWith(
+      "read_file_chunk",
+      expect.objectContaining({ version: "one" }),
+    ),
+  );
+  version = "two";
+  const second = prepareLocalFileCopy(path, { signal: current.signal });
+  await vi.waitFor(() =>
+    expect(read).toHaveBeenCalledWith(
+      "read_file_chunk",
+      expect.objectContaining({ version: "two" }),
+    ),
+  );
+  old.abort();
+  current.abort();
+  await expect(first).rejects.toMatchObject({ name: "AbortError" });
+  await expect(second).rejects.toMatchObject({ name: "AbortError" });
+  await vi.waitFor(() => {
+    for (const version of ["one", "two"]) {
+      expect(native).toHaveBeenCalledWith("cancel_remote_file_copy", {
+        id: JSON.stringify([path, version]),
+      });
+    }
+  });
+});
+
+it("checks remote image metadata before a read and rejects growth in a base64 reply", async () => {
+  const cap = 20 * 1024 * 1024;
+  const root = "remote://machine/project";
+  const path = `${root}/image.png`;
+  const read = vi.fn().mockResolvedValueOnce({ size: cap + 1 });
+  setRemoteCommandRunner(read);
+
+  await expect(readProjectImage(root, "image.png")).rejects.toThrow("Document image exceeds 20 MB");
+  expect(read.mock.calls).toEqual([["read_file_info", { path }]]);
+
+  read.mockClear();
+  read
+    .mockResolvedValueOnce({ size: cap })
+    .mockResolvedValueOnce(Buffer.alloc(cap + 1).toString("base64"));
+  await expect(readProjectImage(root, "image.png")).rejects.toThrow("Document image exceeds 20 MB");
+  expect(read.mock.calls).toEqual([
+    ["read_file_info", { path }],
+    ["read_binary_file", { path }],
+  ]);
+});
 
 it("routes project and session folder requests through the in-app browser", async () => {
   picker.openFolderPicker.mockResolvedValueOnce(["/work/project"]);

@@ -16,10 +16,9 @@ import { presentRemoteError } from "../../connections/public/remoteFailure";
 type CrewState = ReturnType<typeof useProjectCrews>;
 export type BulkFailure = { name: string; reason: string };
 
-/** Profiles the bulk action touches: the selected visible ones, or every visible one when none is selected. */
+/** Profiles the bulk action touches: the selected visible ones. */
 export function bulkTargets<T extends { id: string }>(visible: T[], selected: ReadonlySet<string>) {
-  const chosen = visible.filter((agent) => selected.has(agent.id));
-  return chosen.length ? chosen : visible;
+  return visible.filter((agent) => selected.has(agent.id));
 }
 
 /** Saves each profile with the fixed candidate, one after another; a failure does not stop the rest. */
@@ -36,7 +35,7 @@ export async function applyCandidateToProfiles(
     try {
       await save(
         {
-          ...applyChoice([profile], [], choice)[0]!,
+          ...applyChoice([profile], [profile.id], choice)[0]!,
           ...(candidate ? { candidates: [structuredClone(candidate)] } : {}),
         },
         updatedAt,
@@ -101,8 +100,7 @@ export function CrewLibraryBulkBar({
   return (
     <div className="flex min-w-0 flex-col gap-2 px-3 py-2">
       {/* Select all leads the model bar's row so checkbox, picker and Apply share one line.
-          The bar's own inline confirmation sits below that row and cannot shift the controls.
-          Success is confirmed once, by that inline message; only failures get a banner. */}
+          The list visibly updates on success; only failures get a banner. */}
       <div className="flex min-w-0 flex-wrap items-start gap-2">
         <CrewBulkModelBar
           cwd={cwd}
@@ -112,7 +110,7 @@ export function CrewLibraryBulkBar({
           onApplyChoice={(choice) => apply(undefined, choice).catch(() => false)}
           targetCount={targets.length}
           onApply={(candidate) => apply(candidate).catch(() => false)}
-          disabled={applying || !targets.length}
+          disabled={applying}
           noun="profiles"
           suggested={commonCandidate(targets)}
           leading={
@@ -122,6 +120,7 @@ export function CrewLibraryBulkBar({
                 checked={visible.length > 0 && chosen === visible.length}
                 indeterminate={chosen > 0 && chosen < visible.length}
                 disabled={applying || !visible.length}
+                disabledReason={!visible.length ? t("There are no members to select.") : undefined}
                 onChange={(event) =>
                   onSelectedChange(
                     event.target.checked ? new Set(visible.map((a) => a.id)) : new Set(),
@@ -143,7 +142,7 @@ export function CrewLibraryBulkBar({
       {failures.length ? (
         <Alert tone="danger">
           <p>{t("Updated {p0} profiles, {p1} failed:", { p0: done ?? 0, p1: failures.length })}</p>
-          <ul className="mt-1 list-disc pl-4">
+          <ul className="mt-1 list-disc ps-4">
             {failures.map((failure) => (
               <li key={failure.name} className="break-words [overflow-wrap:anywhere]">
                 {failure.name}: {failure.reason}

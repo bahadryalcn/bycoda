@@ -478,6 +478,89 @@ it.each(["advisor", "subagent"])(
   },
 );
 
+it("opens a Host subagent when its parent has no local display shell", async () => {
+  const child = hostTarget();
+  child.host!.snapshot.session.modelSettings = {
+    delegationParent: JSON.stringify({
+      parentSessionId: "host-parent",
+      runId: "run-1",
+      kind: "subagent",
+      model: "codex",
+      startedAt: 1,
+    }),
+  };
+  const parent = hostTarget();
+  parent.locator = { ...child.locator, sessionId: "host-parent" };
+  parent.host!.snapshot.session.id = "host-parent";
+  mocks.resolve.mockImplementation(async (ref: LocalSessionReference) =>
+    ref.locator.sessionId === "host-parent" ? parent : child,
+  );
+  const ref = { locator: child.locator };
+  await open(ref);
+  const shell = getSessions().find((session) => session.hostBinding?.sessionId === "host-parent")!;
+  const agent = getSessions().find((session) => session.hostBinding?.sessionId === "host-target")!;
+  expect(deps.tabsRef.current.find((tab) => tab.id === active)?.focusedId).toBe(shell.id);
+  expect(consumeViewDelegated(shell.id)).toBe(agent.id);
+  await expect(navigation.resolve(ref)).resolves.toMatchObject({ agentRole: "Subagent" });
+});
+
+it("surfaces a refused session open instead of treating it as success", async () => {
+  vi.mocked(deps.ensureOpenSession).mockResolvedValueOnce(target).mockResolvedValueOnce(null);
+  await expect(open()).rejects.toThrow("unavailable");
+});
+
+it("reuses the verified Native parent of a subagent on this computer's Host", async () => {
+  const child = hostTarget();
+  const host = child.host!;
+  host.machine = { ...host.machine, localHost: true, endpoint: "http://127.0.0.1:7010" };
+  host.snapshot.session.modelSettings = {
+    delegationParent: JSON.stringify({
+      parentSessionId: source.id,
+      runId: "run-1",
+      kind: "subagent",
+      model: "codex",
+      startedAt: 1,
+    }),
+  };
+  mocks.resolve.mockResolvedValueOnce(child);
+  await open({ locator: child.locator });
+  const agent = getSessions().find((session) => session.hostBinding?.sessionId === "host-target")!;
+  expect(mocks.resolve).toHaveBeenCalledTimes(1);
+  expect(deps.tabsRef.current).toHaveLength(1);
+  expect(consumeViewDelegated(source.id)).toBe(agent.id);
+});
+
+it("reports a failed split when the referenced target disappears during loading", async () => {
+  vi.mocked(deps.ensureOpenSession)
+    .mockResolvedValueOnce(target)
+    .mockResolvedValueOnce(source)
+    .mockResolvedValueOnce(null);
+  await expect(open(reference, { beside: true })).rejects.toThrow("unavailable");
+  expect(deps.tabsRef.current).toHaveLength(1);
+});
+
+it("times out a stuck open and ignores a late response", async () => {
+  vi.useFakeTimers();
+  try {
+    let resolve!: (value: ResolvedLocalSession) => void;
+    mocks.resolve.mockReturnValueOnce(
+      new Promise<ResolvedLocalSession>((done) => {
+        resolve = done;
+      }),
+    );
+    const result = expect(navigation.open(reference)).rejects.toThrow("timed out");
+    await vi.advanceTimersByTimeAsync(30_000);
+    await result;
+    resolve(nativeTarget());
+    await Promise.resolve();
+    expect(deps.ensureOpenSession).not.toHaveBeenCalled();
+    await open();
+    expect(deps.tabsRef.current.find((tab) => tab.id === active)?.focusedId).toBe(target.id);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("opens the Native worker's read-only editor and preserves the cited jump until its transcript mounts", async () => {
   target.orchestrationLeadId = source.id;
   target.blocks = [{ id: "user-turn", role: "user", text: "Question" } as never];

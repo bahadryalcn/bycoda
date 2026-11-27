@@ -35,7 +35,10 @@ function clientWith(frame: (accountId: string) => Promise<BrowserViewFrame | nul
   const browserViewInput = vi.fn(
     async (_accountId: string, _event: unknown): Promise<void> => undefined,
   );
-  const client = { browserViewFrame, browserViewInput } as unknown as SocialClient;
+  const client = {
+    browserViewFrame,
+    browserViewInput,
+  } as unknown as SocialClient;
   return { client, browserViewFrame, browserViewInput };
 }
 
@@ -98,7 +101,7 @@ it("says it is connecting until the first frame arrives, then that the view is l
   expect(element.textContent).toContain("Connecting to the browser window…");
   await act(async () => release(FRAME));
   await settle();
-  expect(element.textContent).toContain("Live. Click the page to interact.");
+  expect(element.textContent).not.toContain("Connecting to the browser window…");
   expect(element.querySelector("img")).not.toBeNull();
 });
 
@@ -107,7 +110,7 @@ it("requests frames repeatedly without ever sending input by itself", async () =
   await mount(client);
   await advance(3_000);
   expect(browserViewFrame.mock.calls.length).toBeGreaterThanOrEqual(3);
-  expect(browserViewFrame).toHaveBeenCalledWith("acc");
+  expect(browserViewFrame).toHaveBeenCalledWith("acc", undefined);
   expect(browserViewInput).not.toHaveBeenCalled();
 });
 
@@ -118,12 +121,29 @@ it("shows an unavailable message when frames fail and recovers when the Host ans
     return FRAME;
   });
   await mount(client);
-  expect(element.textContent).toContain("The live view is unavailable. Try again.");
+  expect(element.textContent).toContain("The live view is unavailable.");
   expect(element.querySelector("img")).toBeNull();
   failing = false;
-  await advance(700);
+  // The first failure doubles the wait, so the next read comes after 1400 ms.
+  await advance(1_400);
   expect(browserViewFrame.mock.calls.length).toBeGreaterThanOrEqual(2);
-  expect(element.textContent).toContain("Live. Click the page to interact.");
+  expect(element.textContent).not.toContain("Connecting to the browser window…");
+  expect(button("Try again")).toBeUndefined();
+});
+
+it("offers Retry next to the error, which reads again at once", async () => {
+  let failing = true;
+  const { client, browserViewFrame } = clientWith(async () => {
+    if (failing) throw new Error("offline");
+    return FRAME;
+  });
+  await mount(client);
+  const calls = browserViewFrame.mock.calls.length;
+  failing = false;
+  await act(async () => button("Try again").click());
+  await settle();
+  expect(browserViewFrame.mock.calls.length).toBe(calls + 1);
+  expect(element.textContent).not.toContain("Connecting to the browser window…");
 });
 
 it("stops requesting frames when the panel unmounts", async () => {
@@ -140,20 +160,21 @@ it("restarts the frame requests for the new account when the account changes", a
   const { client, browserViewFrame } = clientWith(async () => FRAME);
   await mount(client, "first");
   await mount(client, "second");
-  expect(browserViewFrame).toHaveBeenCalledWith("second");
+  // #1067 sends an empty frame cursor when opening a different account.
+  expect(browserViewFrame).toHaveBeenCalledWith("second", undefined);
   browserViewFrame.mockClear();
   await advance(1_500);
-  expect(browserViewFrame).not.toHaveBeenCalledWith("first");
-  expect(browserViewFrame).toHaveBeenCalledWith("second");
+  expect(browserViewFrame.mock.calls.map(([accountId]) => accountId)).not.toContain("first");
+  expect(browserViewFrame).toHaveBeenCalledWith("second", undefined);
 });
 
 it("sends typed text once on submit, clears the field and keeps autofill off", async () => {
   const { client, browserViewInput } = clientWith(async () => FRAME);
   await mount(client);
   expect(element.querySelector("form")?.getAttribute("autocomplete")).toBe("off");
-  expect(button("Type").disabled).toBe(true);
+  expect(button("Type into the page").disabled).toBe(true);
   await typeInto("hello there");
-  expect(button("Type").disabled).toBe(false);
+  expect(button("Type into the page").disabled).toBe(false);
   await submit();
   expect(browserViewInput).toHaveBeenCalledExactlyOnceWith("acc", {
     type: "type",
@@ -175,9 +196,9 @@ it("sends Enter and Tab only when the owner presses those buttons", async () => 
   const { client, browserViewInput } = clientWith(async () => FRAME);
   await mount(client);
   expect(browserViewInput).not.toHaveBeenCalled();
-  await act(async () => button("Enter").click());
+  await act(async () => button("Press Enter").click());
   await settle();
-  await act(async () => button("Tab").click());
+  await act(async () => button("Press Tab").click());
   await settle();
   expect(browserViewInput.mock.calls).toEqual([
     ["acc", { type: "key", key: "Enter" }],
@@ -191,9 +212,9 @@ it("keeps the typed text and reports the failure when the input could not be del
   await mount(client);
   await typeInto("keep me");
   await submit();
-  expect(element.textContent).toContain("The live view is unavailable. Try again.");
+  expect(element.textContent).toContain("The live view is unavailable.");
   expect(textInput().value).toBe("keep me");
-  expect(button("Type").disabled).toBe(false);
+  expect(button("Type into the page").disabled).toBe(false);
 });
 
 it("sends no click when the image has no measurable size", async () => {
@@ -203,7 +224,12 @@ it("sends no click when the image has no measurable size", async () => {
   image.getBoundingClientRect = () => ({ left: 0, top: 0, width: 0, height: 0 }) as DOMRect;
   await act(async () => {
     image.dispatchEvent(
-      new MouseEvent("click", { clientX: 5, clientY: 5, detail: 1, bubbles: true }),
+      new MouseEvent("click", {
+        clientX: 5,
+        clientY: 5,
+        detail: 1,
+        bubbles: true,
+      }),
     );
   });
   expect(browserViewInput).not.toHaveBeenCalled();

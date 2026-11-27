@@ -8,7 +8,7 @@ test("hover and wheel scrolling leave keyboard navigation in control", async ({ 
   const first = list.getByRole("option").first();
   await expect(first).toBeVisible();
   const active = await list.getAttribute("aria-activedescendant");
-  await list.getByRole("option").nth(2).getByRole("button").hover();
+  await list.getByRole("option").nth(2).hover();
   await expect(page.getByRole("tooltip")).toHaveCount(0, { timeout: 1500 });
   await page.waitForTimeout(800);
   await expect(page.getByRole("tooltip")).toHaveCount(0);
@@ -66,8 +66,14 @@ for (const theme of ["light", "dark"] as const) {
       expect(bounds!.x).toBeGreaterThanOrEqual(0);
       expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
       const listBounds = await list.boundingBox();
-      const checkbox = await list.getByRole("checkbox").first().boundingBox();
-      expect(checkbox!.x - listBounds!.x).toBeGreaterThanOrEqual(8);
+      // Folders are plain options; the first drawn icon (the folder) must not touch the list edge.
+      const folderIcon = await list
+        .getByRole("option")
+        .first()
+        .locator("svg")
+        .first()
+        .boundingBox();
+      expect(folderIcon!.x - listBounds!.x).toBeGreaterThanOrEqual(8);
       const footer = page.getByRole("button", { name: "New folder", exact: true });
       await expect(footer).toBeInViewport();
       const footerBounds = await footer.boundingBox();

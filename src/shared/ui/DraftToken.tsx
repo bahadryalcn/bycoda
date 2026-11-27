@@ -73,7 +73,7 @@ export function DraftToken({
           {prefix}
           {children}
         </span>
-        <span className={styles.face} aria-hidden="true">
+        <span className={styles.face} aria-hidden="true" data-draft-token-label="">
           {iconSlot}
           <span className={styles.faceLabel}>{label}</span>
         </span>

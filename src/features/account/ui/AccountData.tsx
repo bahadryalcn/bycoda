@@ -10,9 +10,11 @@ import { dateTimeFormat, getLocale, t, useLocale } from "../../../shared/i18n";
 import { formatDays, formatDuration } from "../../../shared/i18n/format";
 import { errorText } from "../../../shared/lib/errors";
 import { Button } from "../../../shared/ui/Button";
-import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Group, Row } from "../../../shared/ui/settings";
+import { AnonymousUsageSetting } from "./AnonymousUsageSetting";
+import { ActivitySharingSetting, SharingNoticeSetting } from "../../data-sharing";
 import { useDataExport, useDataSummary } from "../hooks/useAccountData";
 
 export function retentionLabel(key: RetentionKey): string {
@@ -44,12 +46,12 @@ function StoredData({ summary }: { summary: DataSummary }) {
   const activity = summary.activity;
   return (
     <>
-      <Row label={t("Profile")} descriptionVisible description={kept(summary.retention.profile)}>
+      <Row label={t("Profile")} description={kept(summary.retention.profile)}>
         <Text size="body" tone="muted">
           {t("Name, e-mail, since {p0}", { p0: day(summary.profile.createdAt) })}
         </Text>
       </Row>
-      <Row label={t("Devices")} descriptionVisible description={kept(summary.retention.devices)}>
+      <Row label={t("Devices")} description={kept(summary.retention.devices)}>
         <Text size="body" tone="muted">
           {t("{p0} active, {p1} signed out", {
             p0: summary.devices.active,
@@ -57,11 +59,7 @@ function StoredData({ summary }: { summary: DataSummary }) {
           })}
         </Text>
       </Row>
-      <Row
-        label={t("Active time")}
-        descriptionVisible
-        description={kept(summary.retention.activity)}
-      >
+      <Row label={t("Active time")} description={kept(summary.retention.activity)}>
         <Text size="body" tone="muted">
           {activity.days
             ? t("{p0}, {p1} in total", {
@@ -71,28 +69,22 @@ function StoredData({ summary }: { summary: DataSummary }) {
             : t("Nothing yet")}
         </Text>
       </Row>
-      <Row
-        label={t("Notifications")}
-        descriptionVisible
-        description={kept(summary.retention.notifications)}
-      >
+      <Row label={t("Notifications")} description={kept(summary.retention.notifications)}>
         <Text size="body" tone="muted">
           {t("{p0} in your feed", { p0: summary.notifications.feedItems })}
         </Text>
       </Row>
-      <Row
-        label={t("Support requests")}
-        descriptionVisible
-        description={kept(summary.retention.support)}
-      >
+      <Row label={t("Support requests")} description={kept(summary.retention.support)}>
         <Text size="body" tone="muted">
           {summary.support.tickets}
         </Text>
       </Row>
       {commonRule ? (
-        <Text as="p" size="caption" tone="secondary" className={sectionStyles.retention}>
-          {retentionLabel(commonRule)}
-        </Text>
+        <div className={sectionStyles.retention}>
+          <Text as="p" size="caption" tone="secondary">
+            {retentionLabel(commonRule)}
+          </Text>
+        </div>
       ) : null}
     </>
   );
@@ -113,21 +105,20 @@ function DataExportRow() {
       label={t("Export your data")}
       descriptionVisible
       description={
-        status === "pending"
-          ? t("Preparing your export…")
-          : status === "ready"
-            ? t("Ready. The file holds your profile, devices, active time and settings.")
-            : status === "failed"
-              ? t("The export failed. Try again.")
-              : status === "expired"
-                ? t("The export expired. Request a new one.")
-                : t("A JSON file with everything bycoda stores about your account.")
+        status === "ready"
+          ? t("Ready. The file holds your profile, devices, active time and settings.")
+          : status === "failed"
+            ? t("The export failed. Try again.")
+            : status === "expired"
+              ? t("The export expired. Request a new one.")
+              : undefined
       }
+      info={status ? undefined : t("A JSON file with everything bycoda stores about your account.")}
       feedback={
         error || follow.isError ? (
-          <InlineError>{error || t("Could not check the export.")}</InlineError>
-        ) : save.isSuccess ? (
-          <InlineMessage tone="success">{t("Download started.")}</InlineMessage>
+          <InlineError details={error || undefined}>
+            {error ? t("Could not complete the export request.") : t("Could not check the export.")}
+          </InlineError>
         ) : undefined
       }
     >
@@ -145,6 +136,7 @@ function DataExportRow() {
           variant="secondary"
           size="sm"
           loading={request.isPending || status === "pending"}
+          loadingLabel={t("Preparing your export…")}
           onClick={() => run(() => request.mutateAsync())}
         >
           {t("Request export")}
@@ -177,6 +169,9 @@ export function AccountData() {
     >
       {summary ? <StoredData summary={summary} /> : null}
       <DataExportRow />
+      <AnonymousUsageSetting />
+      <ActivitySharingSetting />
+      <SharingNoticeSetting />
     </Group>
   );
 }

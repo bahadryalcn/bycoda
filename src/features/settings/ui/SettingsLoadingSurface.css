@@ -1,48 +1,82 @@
-/* First-load placeholder for the Settings dialog: fills the dialog body and lets the shared
-   LoadingCard centre the section title, status and row skeleton. */
+/* First-load placeholder for the Settings dialog: a copy of the workbench (rail + content column)
+   that fills the dialog body, so the loaded view replaces it without a jump. */
 .settings-loading {
   display: flex;
   flex: 1 1 0;
   min-block-size: 0;
   min-inline-size: 0;
 }
+/* The shared Skeleton stretches its placeholder slot, so the copy fills the dialog body. */
+.settings-skeleton-shell {
+  display: flex;
+  flex: 1 1 0;
+  block-size: 100%;
+  min-block-size: 0;
+  min-inline-size: 0;
+  overflow: hidden;
+}
+/* Same box as .bycoda-settings-categories. */
+.settings-skeleton-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex-shrink: 0;
+  width: 200px;
+  padding: 12px 8px 24px;
+  overflow: hidden;
+}
+.settings-skeleton-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px;
+}
+.settings-skeleton-account-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-inline-size: 0;
+}
+/* Same column as the page bar and form: centred, capped by --settings-column. */
+.settings-skeleton-content {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-inline-size: 0;
+  max-inline-size: var(--settings-column, 80rem);
+  margin-inline: auto;
+  padding: 16px 32px 24px;
+  /* The dialog's close action sits at the top-right corner; keep the title row clear of it. */
+  padding-inline-end: 3rem;
+  overflow: hidden;
+}
+.settings-skeleton-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-block-size: var(--ui-control-height-compact);
+  margin-block-end: 4px;
+}
+.settings-skeleton-title > :first-child {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+.settings-skeleton-status {
+  min-block-size: 1.5rem;
+  margin-block-end: 16px;
+}
+@media (max-width: 760px) {
+  .settings-skeleton-rail {
+    display: none;
+  }
+  .settings-skeleton-content {
+    padding-inline: 16px 3rem;
+  }
+}
 
 /* In-page placeholder (SettingsPageLoading): holds a page-sized block while first data loads. */
 .settings-page-loading {
   min-block-size: 16rem;
-  padding-block: 8px;
-}
-/* Inside the shared loading delay the shapes keep their box but stay invisible, so warm data
-   never flashes them. */
-.settings-page-loading[data-held] .settings-skeleton-groups {
-  visibility: hidden;
-}
-
-/* Topic copy: heading above a framed group of rows, the loaded page's 32px rhythm and row size. */
-.settings-skeleton-groups {
-  display: flex;
-  flex-direction: column;
-  gap: 32px;
-}
-.settings-skeleton-group {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.settings-skeleton-frame .settings-skeleton-row {
-  padding-inline: 16px;
-}
-.settings-skeleton-row {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  min-block-size: 3.5rem;
-  padding-block: 10px;
-}
-.settings-skeleton-label {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 8px;
-  min-inline-size: 0;
+  padding-block: var(--space-2);
 }

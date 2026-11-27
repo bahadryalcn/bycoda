@@ -16,6 +16,9 @@ pub enum OwnedJobError {
     /// The job emptied, but neither the captured handles nor the notification
     /// census accounted for every process lifetime within the delivery wait.
     CensusIncomplete { waited_ms: u64, census: String },
+    /// A bounded wait ended before the job's processes did (for example a member
+    /// that cannot be terminated). The proof is withheld, never inferred.
+    Timeout { step: &'static str, waited_ms: u64 },
 }
 
 impl std::fmt::Display for OwnedJobError {
@@ -30,6 +33,9 @@ impl std::fmt::Display for OwnedJobError {
                     "census incomplete after {waited_ms} ms ({census})"
                 )
             }
+            Self::Timeout { step, waited_ms } => {
+                write!(formatter, "{step} timed out after {waited_ms} ms")
+            }
         }
     }
 }
@@ -43,10 +49,17 @@ fn api(step: &'static str) -> OwnedJobError {
     }
 }
 fn io_failure(step: &'static str, error: &io::Error) -> OwnedJobError {
-    OwnedJobError::Api {
-        step,
-        code: error.raw_os_error().unwrap_or(0) as u32,
-    }
+    use windows_sys::Win32::Foundation::ERROR_FILE_NOT_FOUND;
+    // std reports a program it could not locate as NotFound without any OS
+    // code; keep that cause as the Win32 code it stands for instead of zero.
+    let code = error
+        .raw_os_error()
+        .map(|code| code as u32)
+        .unwrap_or(match error.kind() {
+            io::ErrorKind::NotFound => ERROR_FILE_NOT_FOUND,
+            _ => 0,
+        });
+    OwnedJobError::Api { step, code }
 }
 fn poisoned() -> OwnedJobError {
     OwnedJobError::State("job owner state poisoned")
@@ -54,6 +67,36 @@ fn poisoned() -> OwnedJobError {
 
 /// How long an emptied job waits for outstanding notification packets.
 const DELIVERY_WAIT: Duration = Duration::from_secs(1);
+
+/// Overall budget for terminating the job and waiting out its members. Past it
+/// the drain reports an unverified result instead of waiting on a member that
+/// cannot be killed (suspended under a debugger, stuck in a driver call).
+const DRAIN_DEADLINE: Duration = Duration::from_secs(10);
+
+/// First process-list buffer size; it grows on ERROR_MORE_DATA.
+const INITIAL_SNAPSHOT_MEMBERS: usize = 64;
+/// Largest process-list buffer (512 KiB) before capture reports a coverage gap.
+const MAX_SNAPSHOT_MEMBERS: usize = 65_536;
+/// Extra room asked for when growing, since members can start between queries.
+const SNAPSHOT_SLACK: usize = 32;
+/// TotalProcesses counts every process the job has ever held, and the settlement
+/// proof needs a handle for each one, so this bounds retained handles per job.
+/// The handles stay on purpose: a held process handle keeps its PID from being
+/// recycled inside the job, which the notification census relies on. Dropping an
+/// exited member's handle early would turn a later PID reuse into Unknown.
+const MAX_LIFETIME_MEMBERS: usize = 16_384;
+
+/// Next process-list buffer size after ERROR_MORE_DATA, or `None` once the
+/// largest buffer was already too small. Always grows, so the retry terminates.
+fn grown_snapshot_capacity(current: usize, assigned: usize) -> Option<usize> {
+    if current >= MAX_SNAPSHOT_MEMBERS {
+        return None;
+    }
+    let wanted = assigned
+        .saturating_add(SNAPSHOT_SLACK)
+        .max(current.saturating_mul(2));
+    Some(wanted.min(MAX_SNAPSHOT_MEMBERS))
+}
 
 enum CaptureFailure {
     Coverage,
@@ -289,12 +332,17 @@ struct WaitedMembers {
 pub struct OwnedProcessJob {
     handle: std::os::windows::io::OwnedHandle,
     notifications: std::sync::Mutex<JobNotifications>,
-    members:
-        std::sync::Mutex<std::collections::HashMap<(u32, u64), std::os::windows::io::OwnedHandle>>,
+    /// Shared so a wait can hold handles without holding this lock.
+    members: std::sync::Mutex<
+        std::collections::HashMap<(u32, u64), std::sync::Arc<std::os::windows::io::OwnedHandle>>,
+    >,
     uncertain: AtomicBool,
     /// First operational failure. It never clears: later successes cannot
     /// restore the observations that failure lost.
     operational_failure: std::sync::OnceLock<OwnedJobError>,
+    /// Test-only capture attempts by PID, including newly observed members.
+    #[cfg(test)]
+    member_opens: std::sync::Mutex<std::collections::HashMap<u32, usize>>,
 }
 #[cfg(windows)]
 impl OwnedProcessJob {
@@ -313,6 +361,8 @@ impl OwnedProcessJob {
             members: std::sync::Mutex::new(std::collections::HashMap::new()),
             uncertain: AtomicBool::new(false),
             operational_failure: std::sync::OnceLock::new(),
+            #[cfg(test)]
+            member_opens: Default::default(),
         })
     }
     fn fail(&self, error: OwnedJobError) {
@@ -435,35 +485,46 @@ impl OwnedProcessJob {
                 },
             },
         };
-        // Capacity of the active-process snapshot buffer, not of the job's lifetime.
-        const MAX_MEMBERS: usize = 64;
-        // TotalProcesses counts every process the job has ever held, and the
-        // settlement proof needs a handle for each one, so this bounds handles
-        // per job rather than concurrent processes.
-        const MAX_LIFETIME_MEMBERS: usize = 4096;
-        // usize storage provides the flexible-array structure's required alignment.
-        let mut storage = vec![0usize; MAX_MEMBERS + 1];
-        if unsafe {
-            QueryInformationJobObject(
-                self.handle.as_raw_handle(),
-                JobObjectBasicProcessIdList,
-                storage.as_mut_ptr().cast(),
-                (storage.len() * std::mem::size_of::<usize>()) as u32,
-                std::ptr::null_mut(),
-            )
-        } == 0
-        {
-            return Err(match unsafe { GetLastError() } {
-                ERROR_MORE_DATA | ERROR_INSUFFICIENT_BUFFER => CaptureFailure::Coverage,
-                code => CaptureFailure::Api(OwnedJobError::Api {
-                    step: "QueryInformationJobObject(process list)",
-                    code,
-                }),
-            });
-        }
+        // The buffer holds the job's active processes, not its lifetime. It grows
+        // when the job has more concurrent members than the current capacity.
+        let mut capacity = INITIAL_SNAPSHOT_MEMBERS;
+        let storage = loop {
+            // usize storage provides the flexible-array structure's required alignment.
+            let mut storage = vec![0usize; capacity + 1];
+            if unsafe {
+                QueryInformationJobObject(
+                    self.handle.as_raw_handle(),
+                    JobObjectBasicProcessIdList,
+                    storage.as_mut_ptr().cast(),
+                    (storage.len() * std::mem::size_of::<usize>()) as u32,
+                    std::ptr::null_mut(),
+                )
+            } != 0
+            {
+                break storage;
+            }
+            match unsafe { GetLastError() } {
+                ERROR_MORE_DATA | ERROR_INSUFFICIENT_BUFFER => {
+                    // A truncated reply still reports how many processes the job holds.
+                    let list =
+                        unsafe { &*storage.as_ptr().cast::<JOBOBJECT_BASIC_PROCESS_ID_LIST>() };
+                    match grown_snapshot_capacity(capacity, list.NumberOfAssignedProcesses as usize)
+                    {
+                        Some(next) => capacity = next,
+                        None => return Err(CaptureFailure::Coverage),
+                    }
+                }
+                code => {
+                    return Err(CaptureFailure::Api(OwnedJobError::Api {
+                        step: "QueryInformationJobObject(process list)",
+                        code,
+                    }))
+                }
+            }
+        };
         let list = unsafe { &*storage.as_ptr().cast::<JOBOBJECT_BASIC_PROCESS_ID_LIST>() };
         let count = list.NumberOfProcessIdsInList as usize;
-        if count > MAX_MEMBERS || list.NumberOfAssignedProcesses as usize != count {
+        if count > capacity || list.NumberOfAssignedProcesses as usize != count {
             return Err(CaptureFailure::Coverage);
         }
         let ids = unsafe { std::slice::from_raw_parts(list.ProcessIdList.as_ptr(), count) };
@@ -471,6 +532,11 @@ impl OwnedProcessJob {
             .members
             .lock()
             .map_err(|_| CaptureFailure::Api(poisoned()))?;
+        // Every captured lifetime keeps its HANDLE for the job's life, which pins
+        // its PID against recycling. A job member never leaves the job, so a PID
+        // already captured is the same lifetime and re-opening it adds no proof.
+        let captured: std::collections::HashSet<u32> =
+            members.keys().map(|&(pid, _)| pid).collect();
         for &pid in ids {
             let pid = u32::try_from(pid).map_err(|_| {
                 CaptureFailure::Api(OwnedJobError::State("member pid out of range"))
@@ -479,6 +545,13 @@ impl OwnedProcessJob {
                 return Err(CaptureFailure::Api(OwnedJobError::State(
                     "reserved member pid",
                 )));
+            }
+            if captured.contains(&pid) {
+                continue;
+            }
+            #[cfg(test)]
+            {
+                *self.member_opens.lock().unwrap().entry(pid).or_default() += 1;
             }
             let raw = unsafe {
                 OpenProcess(
@@ -537,7 +610,7 @@ impl OwnedProcessJob {
                 if members.len() >= MAX_LIFETIME_MEMBERS {
                     return Err(CaptureFailure::Coverage);
                 }
-                members.insert(key, process);
+                members.insert(key, std::sync::Arc::new(process));
             }
         }
         Ok(())
@@ -555,26 +628,48 @@ impl OwnedProcessJob {
             self.fail(api("TerminateJobObject"));
         }
     }
-    fn wait_members(&self) -> Result<WaitedMembers, OwnedJobError> {
+    /// Wait for every captured member until `started + limit`. The members lock
+    /// is released before waiting, so a member that never exits cannot pin it.
+    fn wait_members(
+        &self,
+        started: Instant,
+        limit: Duration,
+    ) -> Result<WaitedMembers, OwnedJobError> {
         use std::os::windows::io::AsRawHandle;
-        let members = self.members.lock().map_err(|_| poisoned())?;
-        for process in members.values() {
-            if unsafe {
+        use windows_sys::Win32::Foundation::{WAIT_OBJECT_0, WAIT_TIMEOUT};
+        let (handles, lifetimes_by_pid) = {
+            let members = self.members.lock().map_err(|_| poisoned())?;
+            let mut lifetimes_by_pid = std::collections::HashMap::new();
+            for &(pid, _) in members.keys() {
+                *lifetimes_by_pid.entry(pid).or_default() += 1;
+            }
+            (
+                members.values().cloned().collect::<Vec<_>>(),
+                lifetimes_by_pid,
+            )
+        };
+        for process in &handles {
+            // Zero remaining time still observes an already-exited member.
+            let remaining = limit.saturating_sub(started.elapsed());
+            let wait_ms = remaining.as_millis().min(u128::from(u32::MAX - 1)) as u32;
+            match unsafe {
                 windows_sys::Win32::System::Threading::WaitForSingleObject(
                     process.as_raw_handle(),
-                    u32::MAX,
+                    wait_ms,
                 )
-            } != 0
-            {
-                return Err(api("WaitForSingleObject(member)"));
+            } {
+                WAIT_OBJECT_0 => {}
+                WAIT_TIMEOUT => {
+                    return Err(OwnedJobError::Timeout {
+                        step: "WaitForSingleObject(member)",
+                        waited_ms: started.elapsed().as_millis() as u64,
+                    })
+                }
+                _ => return Err(api("WaitForSingleObject(member)")),
             }
         }
-        let mut lifetimes_by_pid = std::collections::HashMap::new();
-        for &(pid, _) in members.keys() {
-            *lifetimes_by_pid.entry(pid).or_default() += 1;
-        }
         Ok(WaitedMembers {
-            count: members.len(),
+            count: handles.len(),
             lifetimes_by_pid,
         })
     }
@@ -582,11 +677,18 @@ impl OwnedProcessJob {
         self.drain()?.require_verified()
     }
     pub fn drain(&self) -> Result<JobDrain, OwnedJobError> {
+        self.drain_within(DRAIN_DEADLINE)
+    }
+    /// Terminate and wait until the job is empty, but never past `limit`. A
+    /// member that cannot be terminated ends the drain with an unverified or
+    /// failed result, never a hang and never a proof.
+    fn drain_within(&self, limit: Duration) -> Result<JobDrain, OwnedJobError> {
         use std::os::windows::io::AsRawHandle;
         use windows_sys::Win32::System::JobObjects::{
             JobObjectBasicAccountingInformation, QueryInformationJobObject,
             JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
         };
+        let started = Instant::now();
         let mut delivery_deadline = None;
         loop {
             if let Err(error) = self.observe_notifications(0) {
@@ -606,12 +708,12 @@ impl OwnedProcessJob {
             {
                 let error = api("QueryInformationJobObject(accounting)");
                 self.terminate();
-                let _ = self.wait_members();
+                let _ = self.wait_members(started, limit);
                 return Err(error);
             }
             if accounting.ActiveProcesses == 0 {
                 // Group accounting alone is not the per-process exit event.
-                let members = self.wait_members()?;
+                let members = self.wait_members(started, limit)?;
                 if let Some(error) = self.operational_failure.get() {
                     return Err(error.clone());
                 }
@@ -643,6 +745,19 @@ impl OwnedProcessJob {
                     self.fail(error);
                 }
                 continue;
+            }
+            if started.elapsed() >= limit {
+                // Keep the first concrete failure (for example a refused
+                // TerminateJobObject) over the generic timeout.
+                if let Some(error) = self.operational_failure.get() {
+                    return Err(error.clone());
+                }
+                return Ok(JobDrain {
+                    verified: Err(OwnedJobError::Timeout {
+                        step: "job drain with active processes",
+                        waited_ms: started.elapsed().as_millis() as u64,
+                    }),
+                });
             }
             self.terminate();
             std::thread::sleep(Duration::from_millis(5));
@@ -677,41 +792,66 @@ pub fn create_job() -> io::Result<OwnedHandle> {
 }
 
 pub fn resume_child(pid: u32) -> io::Result<()> {
-    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
-    use windows_sys::Win32::System::{
-        Diagnostics::ToolHelp::{
-            CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
+    use windows_sys::Win32::{
+        Foundation::HANDLE,
+        System::Threading::{
+            OpenProcess, ResumeThread, PROCESS_QUERY_INFORMATION, THREAD_SUSPEND_RESUME,
         },
-        Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME},
     };
-    // Stable Rust does not expose Child's primary-thread handle. The suspended
-    // process has not run user code, so find that thread in the OS snapshot.
+    // ntdll walks only this process's thread list. Stable Rust exposes no
+    // primary-thread handle, and a machine-wide thread snapshot scales with
+    // every thread on the system. The child is ours and unreaped, so its PID is
+    // stable here.
+    #[link(name = "ntdll")]
+    unsafe extern "system" {
+        fn NtGetNextThread(
+            process: HANDLE,
+            thread: HANDLE,
+            desired_access: u32,
+            handle_attributes: u32,
+            flags: u32,
+            new_thread: *mut HANDLE,
+        ) -> i32;
+    }
+    const STATUS_NO_MORE_ENTRIES: i32 = 0x8000_001A_u32 as i32;
     unsafe {
-        let raw = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-        if raw == INVALID_HANDLE_VALUE {
+        let raw = OpenProcess(PROCESS_QUERY_INFORMATION, 0, pid);
+        if raw.is_null() {
             return Err(io::Error::last_os_error());
         }
-        let snapshot = OwnedHandle::from_raw_handle(raw);
-        let mut entry: THREADENTRY32 = std::mem::zeroed();
-        entry.dwSize = std::mem::size_of_val(&entry) as u32;
-        let mut found = Thread32First(snapshot.as_raw_handle(), &mut entry);
-        while found != 0 {
-            if entry.th32OwnerProcessID == pid {
-                let raw = OpenThread(THREAD_SUSPEND_RESUME, 0, entry.th32ThreadID);
-                if raw.is_null() {
-                    return Err(io::Error::last_os_error());
-                }
-                let thread = OwnedHandle::from_raw_handle(raw);
-                if ResumeThread(thread.as_raw_handle()) == u32::MAX {
-                    return Err(io::Error::last_os_error());
-                }
-                return Ok(());
-            }
-            found = Thread32Next(snapshot.as_raw_handle(), &mut entry);
+        let process = OwnedHandle::from_raw_handle(raw);
+        // A null thread starts at the first thread; the suspended child has
+        // only its primary thread, which has not run user code yet.
+        let mut raw: HANDLE = std::ptr::null_mut();
+        let status = NtGetNextThread(
+            process.as_raw_handle(),
+            std::ptr::null_mut(),
+            THREAD_SUSPEND_RESUME,
+            0,
+            0,
+            &mut raw,
+        );
+        if status == STATUS_NO_MORE_ENTRIES {
+            return Err(io::Error::other("Managed child has no primary thread"));
         }
-        Err(io::Error::other("Managed child has no primary thread"))
+        if status != 0 || raw.is_null() {
+            return Err(io::Error::other("Managed child thread lookup failed"));
+        }
+        let thread = OwnedHandle::from_raw_handle(raw);
+        if ResumeThread(thread.as_raw_handle()) == u32::MAX {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
     }
 }
+
+#[cfg(all(test, windows))]
+#[path = "windows_job/resume_tests.rs"]
+mod resume_tests;
+
+#[cfg(all(test, windows))]
+#[path = "windows_job/member_reads_tests.rs"]
+mod member_reads_tests;
 
 #[cfg(test)]
 mod tests {
@@ -762,6 +902,39 @@ mod tests {
                 let mut release = String::new();
                 io::stdin().read_line(&mut release).unwrap();
                 assert_eq!(release.trim(), "release");
+            }
+            Ok("hold") => {
+                // Keep `count` descendants alive at once, so the job really holds
+                // more concurrent members than the first process-list buffer.
+                let count = std::env::var("BYCODA_OWNED_JOB_CHILD_COUNT")
+                    .unwrap()
+                    .parse::<usize>()
+                    .unwrap();
+                let mut held = Vec::with_capacity(count);
+                for _ in 0..count {
+                    held.push(
+                        child_command()
+                            .env("BYCODA_OWNED_JOB_CHILD_MODE", "blocked")
+                            .env_remove("BYCODA_OWNED_JOB_CHILD_COUNT")
+                            .creation_flags(windows_sys::Win32::System::Threading::DETACHED_PROCESS)
+                            .stdin(Stdio::piped())
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .spawn()
+                            .unwrap(),
+                    );
+                }
+                println!("holding {count}");
+                io::stdout().flush().unwrap();
+                let mut release = String::new();
+                io::stdin().read_line(&mut release).unwrap();
+                assert_eq!(release.trim(), "release");
+                for child in &mut held {
+                    child.stdin.take().unwrap().write_all(b"release\n").unwrap();
+                }
+                for child in &mut held {
+                    assert!(child.wait().unwrap().success());
+                }
             }
             _ => {}
         }
@@ -1079,5 +1252,164 @@ mod tests {
             .unwrap()
             .keys()
             .any(|&(pid, _)| pid == dropped));
+    }
+
+    #[test]
+    fn snapshot_buffer_grows_past_the_assigned_count_and_stops_at_its_ceiling() {
+        assert_eq!(grown_snapshot_capacity(64, 70), Some(128));
+        assert_eq!(grown_snapshot_capacity(64, 500), Some(500 + SNAPSHOT_SLACK));
+        assert_eq!(
+            grown_snapshot_capacity(64, usize::MAX),
+            Some(MAX_SNAPSHOT_MEMBERS)
+        );
+        assert_eq!(grown_snapshot_capacity(MAX_SNAPSHOT_MEMBERS, 1), None);
+        // Every retry strictly grows, so the capture loop cannot spin.
+        let mut capacity = INITIAL_SNAPSHOT_MEMBERS;
+        while let Some(next) = grown_snapshot_capacity(capacity, 0) {
+            assert!(next > capacity);
+            capacity = next;
+        }
+        assert_eq!(capacity, MAX_SNAPSHOT_MEMBERS);
+    }
+
+    #[test]
+    fn more_concurrent_members_than_the_first_buffer_are_captured_and_still_verified() {
+        let job = OwnedProcessJob::new().unwrap();
+        let count = INITIAL_SNAPSHOT_MEMBERS + 8;
+        let mut holder = job
+            .spawn(
+                child_command()
+                    .env("BYCODA_OWNED_JOB_CHILD_MODE", "hold")
+                    .env("BYCODA_OWNED_JOB_CHILD_COUNT", count.to_string())
+                    .stdin(Stdio::piped()),
+            )
+            .unwrap();
+        let mut output = BufReader::new(holder.stdout.take().unwrap());
+        let mut line = String::new();
+        loop {
+            line.clear();
+            assert_ne!(
+                output.read_line(&mut line).unwrap(),
+                0,
+                "holder exited early"
+            );
+            if line.contains("holding") {
+                break;
+            }
+        }
+        // Every descendant is alive now: the old 64-entry buffer reported a
+        // coverage gap here and withheld the proof for the whole session.
+        job.observe();
+        assert!(
+            !job.uncertain.load(Ordering::Acquire),
+            "capture reported a gap: {}",
+            census(&job)
+        );
+        assert!(job.operational_failure.get().is_none());
+        assert!(job.members.lock().unwrap().len() > INITIAL_SNAPSHOT_MEMBERS);
+        holder
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(b"release\n")
+            .unwrap();
+        assert!(holder.wait().unwrap().success());
+        assert_verified(&job);
+    }
+
+    #[test]
+    fn member_wait_is_bounded_and_does_not_hold_the_members_lock() {
+        let job = OwnedProcessJob::new().unwrap();
+        let mut member = job
+            .spawn(
+                child_command()
+                    .env("BYCODA_OWNED_JOB_CHILD_MODE", "blocked")
+                    .stdin(Stdio::piped()),
+            )
+            .unwrap();
+        job.observe();
+        let started = Instant::now();
+        std::thread::scope(|scope| {
+            let waiter = scope.spawn(|| job.wait_members(started, Duration::from_millis(1500)));
+            // Give the waiter time to block on the live member, then take the lock.
+            std::thread::sleep(Duration::from_millis(150));
+            assert!(
+                job.members.try_lock().is_ok(),
+                "waiting on a member must not hold the members lock"
+            );
+            assert!(matches!(
+                waiter.join().unwrap(),
+                Err(OwnedJobError::Timeout {
+                    step: "WaitForSingleObject(member)",
+                    ..
+                })
+            ));
+            assert!(started.elapsed() < Duration::from_secs(10));
+        });
+        assert!(member.try_wait().unwrap().is_none(), "member really lived");
+        member
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(b"release\n")
+            .unwrap();
+        assert!(member.wait().unwrap().success());
+        assert_verified(&job);
+    }
+
+    #[test]
+    fn drain_gives_up_at_its_deadline_when_a_member_cannot_be_terminated() {
+        let mut job = OwnedProcessJob::new().unwrap();
+        let mut member = job
+            .spawn(
+                child_command()
+                    .env("BYCODA_OWNED_JOB_CHILD_MODE", "blocked")
+                    .stdin(Stdio::piped()),
+            )
+            .unwrap();
+        // A query-only handle makes TerminateJobObject really fail with access
+        // denied, so the member keeps running exactly like an unkillable one.
+        let restricted = restricted_handle(&job, QUERY_JOB);
+        let original = std::mem::replace(&mut job.handle, restricted);
+        let started = Instant::now();
+        let drained = job.drain_within(Duration::from_millis(300));
+        let restricted = std::mem::replace(&mut job.handle, original);
+        drop(restricted);
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "drain must end at its deadline, not wait on the member"
+        );
+        assert!(member.try_wait().unwrap().is_none(), "member really lived");
+        let failure = drained.as_ref().err();
+        assert!(
+            matches!(
+                failure,
+                Some(OwnedJobError::Api {
+                    step: "TerminateJobObject",
+                    ..
+                })
+            ),
+            "{failure:?}"
+        );
+        member
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(b"release\n")
+            .unwrap();
+        assert!(member.wait().unwrap().success());
+    }
+
+    #[test]
+    fn timeout_error_names_its_step_and_wait() {
+        let error = OwnedJobError::Timeout {
+            step: "job drain with active processes",
+            waited_ms: 10_000,
+        };
+        assert_eq!(
+            error.to_string(),
+            "Owned process job unavailable: job drain with active processes timed out after \
+             10000 ms"
+        );
     }
 }

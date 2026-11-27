@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { deviceProofKeyFromSeed, signDeviceProof } from "../src/integrations/device-proof";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createHash, createHmac, randomBytes } from "node:crypto";
@@ -7,9 +8,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { request } from "node:http";
+import { once } from "node:events";
+import { WebSocket } from "ws";
+import {
+  HOST_SCHEMA_VERSION,
+  WS_SUBPROTOCOL,
+  WS_WIRE_VERSION,
+} from "../src/shared/model/host-contracts";
 import { HostEngine } from "./engine";
 import { HostStore } from "./store";
+import { HostLimits } from "./limits";
 import { createHostServer } from "./server";
+import { MAX_BODY, REQUEST_RECEIVE_TIMEOUT_MS } from "./server/support";
 import { BrowserRuntime } from "./browser/browser-runtime";
 import { DeviceHost } from "./devices/device-host";
 import * as expoGo from "./devices/expo-go";
@@ -24,6 +34,7 @@ import { AsyncHostNotes } from "./host-notes-async";
 import { GenericAcpService } from "./providers/generic-acp";
 import * as accessCenter from "./security/access/access-center";
 import { ConversationDesktopRelay } from "./conversation/conversation-tools";
+import { storeInlineVisual } from "./conversation/inline-visual-store";
 import { DevicePreviews } from "./devices/device-preview";
 import { ProviderInboxBridge } from "./providers/provider-inbox";
 import { VoiceSetupService } from "./voice/voice-setup";
@@ -39,6 +50,8 @@ import { AttachmentOwnership } from "./attachments/attachment-ownership";
 import { SocialService } from "./social/social";
 import * as accountCatalog from "./providers/provider-accounts";
 
+const PAIRED_PROOF_SEED = new Uint8Array(32).fill(9);
+
 const modelProbe = vi.hoisted(() => vi.fn());
 // Model-discovery fixtures never inspect the developer's real account profiles.
 vi.mock("./providers/provider-accounts", async (original) => {
@@ -48,7 +61,8 @@ vi.mock("./providers/provider-accounts", async (original) => {
     hostProviderAccounts: (roots?: string[]) => module.hostProviderAccounts(roots ?? []),
   };
 });
-vi.mock("../src/integrations/harness/providers/codex/codexCatalog", () => ({
+vi.mock("../src/integrations/harness/providers/codex/codexCatalog", async (original) => ({
+  ...(await original<typeof import("../src/integrations/harness/providers/codex/codexCatalog")>()),
   discoverCodexModels: modelProbe,
   refreshCodexCatalog: async () => {},
 }));
@@ -187,6 +201,17 @@ it("exposes safe Host account catalog only to owner model discovery, preserving 
     expect((await s.call("environment.describe")).value.result.methods).toContain(
       "drafts.presence.report",
     );
+    const described = (await s.call("environment.describe")).value.result;
+    expect(described.methods).toEqual(
+      expect.arrayContaining([
+        "projects.groups.unlock",
+        "projects.groups.authorizeHidden",
+        "projects.groups.lock",
+        "projects.groups.setHidden",
+      ]),
+    );
+    // Offered only while a desktop window that can verify the password is beating.
+    expect(described.capabilities).not.toContain("projects.groupLock.remote.v1");
     const created = await s.engine.command({
       type: "create",
       workspaceMode: "current",
@@ -417,8 +442,16 @@ describe("managed workspace owner RPCs", () => {
         })
       ).value.error,
     ).toBeUndefined();
-    const busy = (await s.call("workspaces.get", { workspaceId: workspace.id })).value.result;
-    expect(busy.state).toBe("active");
+    // Heartbeats can respond before their workspace bookkeeping finishes.
+    const busy = await vi.waitFor(
+      async () => {
+        const current = (await s.call("workspaces.get", { workspaceId: workspace.id })).value
+          .result;
+        expect(current.state).toBe("active");
+        return current;
+      },
+      { timeout: 10_000 },
+    );
     expect(busy.lastActivityAt).toBeGreaterThanOrEqual(workspace.lastActivityAt);
     expect(
       (
@@ -437,8 +470,15 @@ describe("managed workspace owner RPCs", () => {
         })
       ).value.error,
     ).toBeUndefined();
-    const idle = (await s.call("workspaces.get", { workspaceId: workspace.id })).value.result;
-    expect(idle.state).toBe("idle");
+    const idle = await vi.waitFor(
+      async () => {
+        const current = (await s.call("workspaces.get", { workspaceId: workspace.id })).value
+          .result;
+        expect(current.state).toBe("idle");
+        return current;
+      },
+      { timeout: 10_000 },
+    );
     const alias = await s.engine.openProject(workspace.path);
     const terminal = {
       id: "workspace-terminal",
@@ -553,7 +593,7 @@ describe("managed workspace owner RPCs", () => {
     expect(closed.value.result.state).toBe("abandoned");
     expect(git("diff", "--", "source.txt")).toContain("unrelated dirty source");
     expect(s.send).not.toHaveBeenCalled();
-  });
+  }, 60_000); // Real Git prepare, resume and cleanup can each wait on child processes.
 });
 
 it("keeps an idle client connection open well past the desktop's 5 s heartbeat", async () => {
@@ -562,6 +602,16 @@ it("keeps an idle client connection open well past the desktop's 5 s heartbeat",
   const s = await setup([]);
   expect(s.server.keepAliveTimeout).toBeGreaterThanOrEqual(30_000);
   expect(s.server.headersTimeout).toBeLessThanOrEqual(s.server.requestTimeout);
+});
+
+it("gives a full-size RPC upload a finite receive deadline on slow remote links", async () => {
+  // A 16 MiB body must arrive within the request deadline at a slow tunnel rate (~93 KB/s
+  // here). The deadline stays finite so stalled clients still release their sockets.
+  const s = await setup([]);
+  expect(s.server.requestTimeout).toBe(REQUEST_RECEIVE_TIMEOUT_MS);
+  expect(Number.isFinite(s.server.requestTimeout)).toBe(true);
+  expect(s.server.requestTimeout).toBeGreaterThanOrEqual(180_000);
+  expect(MAX_BODY / (s.server.requestTimeout / 1000)).toBeLessThanOrEqual(100 * 1024);
 });
 
 it("routes owner crew work deletion through authenticated RPC", async () => {
@@ -1535,6 +1585,19 @@ it("scopes access-center device identity and revocation to authenticated paired 
   const descriptor = (await s.call("environment.describe")).value.result;
   expect(descriptor.capabilities).toContain("host.access.read");
   expect(descriptor.capabilities).toContain("devices.revokeOther");
+  expect(descriptor.capabilities).toContain("devices.paired");
+  const paired = await s.call("devices.paired", {});
+  expect(paired.value.error).toBeUndefined();
+  expect(paired.value.result).toEqual(await s.store.pairedDeviceDetails(s.first.token));
+  expect(paired.value.result.devices[0]).toMatchObject({
+    id: s.first.id,
+    isCurrent: true,
+    pairedAt: expect.any(Number),
+  });
+  expect((await s.call("devices.paired", { extra: true })).value.error).toMatch(/parameters/);
+  for (const params of [null, [], "invalid", 1])
+    expect((await s.call("devices.paired", params)).value.error).toMatch(/parameters/);
+  expect((await s.call("devices.paired", {}, "invalid")).status).toBe(401);
   const read = vi
     .spyOn(accessCenter, "readHostAccess")
     .mockImplementation(async (environmentId, dependencies) => ({
@@ -1549,6 +1612,18 @@ it("scopes access-center device identity and revocation to authenticated paired 
     const report = (await s.call("host.access.read")).value.result;
     expect(report.devices).toHaveLength(2);
     expect(report.devices[0]).toEqual({ id: s.first.id, name: "Laptop", isCurrent: true });
+    const scoped = (await s.call("host.access.read", { includeDevicePermissions: true })).value
+      .result;
+    expect(scoped.devices).toEqual([
+      expect.objectContaining({ id: s.first.id, isLocalDesktop: true, canManageDevices: true }),
+      expect.objectContaining({ id: s.second.id, isLocalDesktop: false, canManageDevices: false }),
+    ]);
+    expect(
+      (await s.call("devices.setManagement", { id: s.second.id, enabled: true })).value.result,
+    ).toEqual({ updated: true });
+    expect(
+      (await s.call("devices.revokeOther", { id: s.first.id }, s.second.token)).value.result,
+    ).toEqual({ revoked: false });
     expect(JSON.stringify(report)).not.toContain(s.second.token);
     expect(JSON.stringify(report)).not.toContain('"hash"');
     expect((await s.call("devices.revokeOther", { id: s.first.id })).value.error).toMatch(
@@ -1559,6 +1634,7 @@ it("scopes access-center device identity and revocation to authenticated paired 
       revoked: true,
     });
     expect((await s.call("host.access.read", {}, s.second.token)).status).toBe(401);
+    expect((await s.call("devices.paired", {}, s.second.token)).status).toBe(401);
     expect((await s.call("host.access.read")).value.result.devices).toHaveLength(1);
     expect(s.send).not.toHaveBeenCalled();
   } finally {
@@ -1844,6 +1920,27 @@ it("joins accepted asynchronous request handlers during resource shutdown", asyn
     await closing;
     expect(drained).toBe(true);
     expect((await s.call("projects.list")).status).toBe(503);
+  } finally {
+    paused.release();
+    paused.read.mockRestore();
+    await request.catch(() => {});
+  }
+});
+
+it("aborts an in-flight request that never settles when resource shutdown begins", async () => {
+  const s = await setup([]);
+  const paused = pauseDesktopMetadata(s.project.id);
+  const request = s.call("sessions.list", { projectId: s.project.id });
+  try {
+    await paused.started;
+    const startedAt = performance.now();
+    const closing = s.server.closeResources();
+    const answer = await request;
+    expect(answer.status).toBe(503);
+    expect(answer.value).toMatchObject({ code: "HOST_STOPPING", delivery: "unknown" });
+    await closing;
+    // The stop grace, not the 45 s hard-exit deadline, bounds the wait.
+    expect(performance.now() - startedAt).toBeLessThan(10_000);
   } finally {
     paused.release();
     paused.read.mockRestore();
@@ -3197,7 +3294,7 @@ async function setup(providers: RemoteProvider[] = ["codex"], includeClaude = fa
     throw error;
   }
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/rpc`;
-  const first = await store.issueDevice("Laptop");
+  const first = await store.issueDevice("Laptop", "desktop", true);
   const second = await store.issueDevice("Other computer");
   const call = async (
     method: string,
@@ -3831,7 +3928,9 @@ describe("shared queued messages", () => {
         });
         expect(published.value.result.consumer).toBe(clientId);
         s.finish();
-        await vi.waitFor(async () => expect(await s.store.sessionStatus(sessionId)).toBe("idle"));
+        await vi.waitFor(async () => expect(await s.store.sessionStatus(sessionId)).toBe("idle"), {
+          timeout: 10_000,
+        });
         // It polls like it always did: still its queue, the host stays out.
         for (let i = 0; i < 4; i++) {
           await vi.advanceTimersByTimeAsync(QUEUE_LEASE_TTL_MS / 5);
@@ -3842,7 +3941,13 @@ describe("shared queued messages", () => {
         expect(s.send).toHaveBeenCalledOnce();
         // It stops (its window closed): after the lease the host sends the row.
         await vi.advanceTimersByTimeAsync(QUEUE_LEASE_TTL_MS + 5_000);
-        await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(2));
+        await vi.waitFor(
+          async () => {
+            await vi.advanceTimersByTimeAsync(100);
+            expect(s.send).toHaveBeenCalledTimes(2);
+          },
+          { timeout: 10_000 },
+        );
         expect(s.turn().text).toBe("send a");
         s.finish();
       } finally {
@@ -3927,7 +4032,8 @@ describe("shared queued messages", () => {
         expect(await scheduler.get("blocked-review-continuation")).toMatchObject({
           status: "verifying",
         });
-        await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(2));
+        // The review is already admitted. Provider dispatch follows asynchronous Host setup.
+        await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(2), { timeout: 10_000 });
         const reviewing = (await scheduler.get("blocked-review-continuation"))!;
         const sessionId = reviewing.reviewer!.sessionId!;
         s.turn().onEvent({
@@ -3991,7 +4097,7 @@ describe("shared queued messages", () => {
     });
 
     it("tells a window its run lease is lost when another side runs the conversation", async () => {
-      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
       try {
         const s = await setup();
         const sessionId = await create(s, "run-lease-lost");
@@ -3999,9 +4105,15 @@ describe("shared queued messages", () => {
         expect((await beat(s, sessionId, "win1", mine.epoch))[sessionId]).toMatchObject({
           epoch: mine.epoch,
         });
-        // Another window runs the conversation after this one's lease ran out.
+        // #1314: a suspend gap alone leaves the original window's activity live.
         vi.setSystemTime(Date.now() + RUN_LEASE_TTL_MS + 30_000);
-        const other = (await acquire(s, sessionId, "desktop:win2")).value.result.lease;
+        expect((await acquire(s, sessionId, "desktop:win2")).value.error).toMatch(/LEASE_HELD/);
+
+        // The window then stays silent while the Host is awake.
+        await vi.advanceTimersByTimeAsync(RUN_LEASE_TTL_MS + 30_000);
+        const acquired = await acquire(s, sessionId, "desktop:win2");
+        expect(acquired.value.error).toBeUndefined();
+        const other = acquired.value.result.lease;
         expect(other.holder).toBe("desktop:win2");
         expect((await beat(s, sessionId, "win1", mine.epoch))[sessionId]).toBeNull();
         expect((await beat(s, sessionId, "win2", other.epoch))[sessionId]).toMatchObject({
@@ -4120,6 +4232,33 @@ describe("shared queued messages", () => {
       s.finish();
     });
 
+    it("runs usage-limit failover from a settled Host turn", async () => {
+      const s = await setup();
+      const sessionId = await create(s, "usage-failover");
+      await new HostLimits(s.store).save({
+        agentDefaults: { usageLimitFailover: "order" },
+        expectedAgentDefaultsVersion: 0,
+      });
+      const sent = await s.call("commands.dispatch", {
+        type: "send",
+        commandId: "usage-failover-send",
+        sessionId,
+        text: "Work",
+      });
+      expect(sent.value.error).toBeUndefined();
+      await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+      s.turn().onEvent({ type: "usage.limited", resetsAt: Date.now() + 3_600_000 });
+      s.finish();
+      // An empty order has nowhere to continue, so this needs no provider account or quota.
+      await vi.waitFor(async () => {
+        const { session } = await s.store.session(sessionId);
+        expect(session.blocks.map((block) => block.text)).toContain(
+          "No model in the model order has quota left. Waiting for the usage limit to reset.",
+        );
+      });
+      expect(s.send).toHaveBeenCalledOnce();
+    });
+
     it("answers the queue and adopted cursors with the host's boot, so a restart resets a client", async () => {
       const first = await setup();
       const second = await setup();
@@ -4177,9 +4316,12 @@ describe("project directory endpoint", () => {
     ).toBe(200);
     const result = (await s.call("projects.directory")).value.result;
     expect(result.groups).toEqual([{ id: "work", name: "Work" }]);
-    expect(
-      result.projects.filter((project: { id: string }) => [one.id, two.id].includes(project.id)),
-    ).toHaveLength(2);
+    // One row per folder; the legacy spelling is folded in and named so phones accept its sessions.
+    const folder = result.projects.filter((project: { id: string }) =>
+      [one.id, two.id].includes(project.id),
+    );
+    expect(folder).toHaveLength(1);
+    expect(folder[0].aliasIds).toEqual([folder[0].id === one.id ? two.id : one.id]);
     expect(JSON.stringify(result)).not.toContain("Private client");
   });
 });
@@ -4331,9 +4473,9 @@ describe("remote host API", () => {
     await s.store.revokeDevice(s.first.id);
     for (const method of methods) expect((await s.call(method, params)).status).toBe(401);
     expect(
-      (await s.call("mobile.pairing.create", { name: "Other desktop phone" }, s.second.token))
-        .status,
-    ).toBe(200);
+      (await s.call("mobile.pairing.create", { name: "Other desktop phone" }, s.second.token)).value
+        .error,
+    ).toContain("Device management permission required");
   });
 
   it("redeems a mobile QR through the narrow public route once and rechecks issuer revocation", async () => {
@@ -4358,6 +4500,7 @@ describe("remote host API", () => {
       ticket: ticket.ticket,
       claimId: randomBytes(32).toString("base64url"),
       deviceName: "Test Android phone",
+      proofKey: deviceProofKeyFromSeed(PAIRED_PROOF_SEED).publicJwk,
     };
     const redeem = async (params = input) => {
       const response = await fetch(new URL("/mobile/pairing/redeem", s.url), {
@@ -4376,7 +4519,24 @@ describe("remote host API", () => {
     ).toBe(before + 1);
     expect(await s.store.authenticated(paired.token)).toBe(true);
     expect(
-      (await s.call("environment.describe", {}, paired.token)).value.result.environmentId,
+      (
+        await s.call(
+          "environment.describe",
+          {},
+          paired.token,
+          {},
+          {
+            // A paired credential is bound to its key: every request carries a proof.
+            DPoP: signDeviceProof({
+              seed: PAIRED_PROOF_SEED,
+              token: paired.token,
+              method: "POST",
+              path: "/rpc",
+              environmentId: s.store.environmentId,
+            }),
+          },
+        )
+      ).value.result.environmentId,
     ).toBe(s.store.environmentId);
     expect(
       (await s.call("mobile.pairing.status", { pairingId: ticket.pairingId })).value.result,
@@ -4390,7 +4550,25 @@ describe("remote host API", () => {
       Number((await s.store.db.prepare("SELECT count(*) AS count FROM devices").get())!.count),
     ).toBe(before);
     // Revoking the issuer does not revoke a phone that was already paired.
-    expect((await s.call("environment.describe", {}, paired.token)).status).toBe(200);
+    expect(
+      (
+        await s.call(
+          "environment.describe",
+          {},
+          paired.token,
+          {},
+          {
+            DPoP: signDeviceProof({
+              seed: PAIRED_PROOF_SEED,
+              token: paired.token,
+              method: "POST",
+              path: "/rpc",
+              environmentId: s.store.environmentId,
+            }),
+          },
+        )
+      ).status,
+    ).toBe(200);
   });
 
   it("returns bounded machine change cursors and command receipt status", async () => {
@@ -4601,6 +4779,78 @@ describe("remote host API", () => {
         })
       ).status,
     ).not.toBe(200);
+  });
+
+  it("serves an existing inline visual only to its owning conversation", async () => {
+    const s = await setup();
+    const create = (commandId: string) =>
+      s.engine.command({
+        type: "create",
+        workspaceMode: "current",
+        commandId,
+        projectId: s.project.id,
+        harness: "codex",
+        model: "codex:test",
+        runtimeMode: "supervised",
+      });
+    const owner = await create("visual-owner");
+    const other = await create("visual-other");
+    const source = { title: "Chart", html: "<p>Stored chart</p>", height: 240 };
+    const ref = await storeInlineVisual(s.directory, source);
+    const before = await s.store.session(owner.sessionId);
+    await s.store.save(
+      {
+        ...before,
+        revision: before.revision + 1,
+        updatedAt: before.updatedAt + 1,
+        session: {
+          ...before.session,
+          blocks: [{ id: "visual", role: "tool", text: "", inlineVisual: ref }],
+        },
+      },
+      { type: "test" },
+    );
+
+    const read = (sessionId: string, id = ref.id) =>
+      s.call("sessions.inlineVisual", { sessionId, id });
+    expect((await read(owner.sessionId)).value.result).toEqual(source);
+    expect((await read(other.sessionId)).status).not.toBe(200);
+    expect((await read(owner.sessionId, "../invalid")).status).not.toBe(200);
+    const socket = new WebSocket(s.url.replace(/^http:(.*)\/rpc$/, "ws:$1/ws"), WS_SUBPROTOCOL, {
+      headers: { Authorization: `Bearer ${s.first.token}` },
+      handshakeTimeout: 3000,
+    });
+    try {
+      await once(socket, "open");
+      const send = async (method: string, params: unknown) => {
+        const response = once(socket, "message");
+        socket.send(JSON.stringify({ jsonrpc: "2.0", id: method, method, params }));
+        const [message] = await response;
+        return JSON.parse(String(message));
+      };
+      expect(
+        await send("connection.hello", {
+          environmentId: s.store.environmentId,
+          supportedWireVersions: [WS_WIRE_VERSION],
+          supportedSchemaVersions: [HOST_SCHEMA_VERSION],
+          clientId: "inline-visual-test",
+          clientKind: "desktop",
+        }),
+      ).toMatchObject({ result: { environmentId: s.store.environmentId } });
+      expect(
+        await send("sessions.inlineVisual", { sessionId: owner.sessionId, id: ref.id }),
+      ).toMatchObject({ result: source });
+      expect(
+        await send("sessions.inlineVisual", { sessionId: other.sessionId, id: ref.id }),
+      ).toHaveProperty("error");
+    } finally {
+      socket.terminate();
+    }
+    writeFileSync(
+      join(s.directory, "inline-visuals", `${ref.id}.json`),
+      JSON.stringify({ ...source, html: "<p>Changed</p>" }),
+    );
+    expect((await read(owner.sessionId)).status).not.toBe(200);
   });
 
   it("accepts a command while a revision long-poll is pending", async () => {
@@ -6156,7 +6406,7 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
       await server.closeResources();
       await engine.close();
       await store.close();
-      rmSync(directory, { recursive: true, force: true });
+      rmSync(directory, { recursive: true, force: true, maxRetries: 5 });
     });
     const sessionId = (
       await engine.command({
@@ -6174,6 +6424,63 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
   const aware = { leaseAware: true };
   const row = (id: string, extra: object = {}) => ({ id, text: id, attachments: [], ...extra });
 
+  it("automatically takes over and drains a stalled desktop-only queue", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    try {
+      const s = await adopted();
+      const sessionId = "desktop-only-queue";
+      const source = await s.store.session(s.sessionId);
+      const snapshot = { ...source, session: { ...source.session, id: sessionId } };
+      vi.spyOn(s.desktop, "projectCwdAsync").mockResolvedValue(snapshot.session.cwd);
+      vi.spyOn(s.desktop, "stampAsync").mockResolvedValue({
+        updatedAt: snapshot.updatedAt,
+        running: false,
+      });
+      vi.spyOn(s.desktop, "snapshotMetaAsync").mockResolvedValue({ ...snapshot, lastUserText: "" });
+      vi.spyOn(s.desktop, "snapshotAsync").mockResolvedValue(snapshot);
+      const params = { sessionId, clientId: "desktop:win1", ...aware };
+      const changed = await s.call("sessions.queue.change", {
+        ...params,
+        before: { messages: [] },
+        after: { messages: [row("queued")], status: "paused" },
+      });
+      expect(changed.error).toBeUndefined();
+      const owned = (await s.call("sessions.queue.lease", params)).result;
+      const activated = await s.call("sessions.queue.change", {
+        ...params,
+        before: { messages: owned.messages, status: "paused" },
+        after: { messages: owned.messages, status: "active" },
+      });
+      expect(activated.result.status).toBe("active");
+      expect(await s.store.sessionAuthority(sessionId)).toBeUndefined();
+      let released = false;
+      for (let waited = 0; waited < 90_000 && !released; waited += 5_000) {
+        await vi.advanceTimersByTimeAsync(5_000);
+        const beat = await s.call("sessions.desktopLive", {
+          clientId: "win1",
+          sessions: [],
+          queueLeases: [{ sessionId, epoch: owned.drain.epoch }],
+        });
+        released = beat.result.queueLeases?.[sessionId] === null;
+      }
+      expect(released).toBe(true);
+      await vi.waitFor(
+        async () => {
+          await vi.advanceTimersByTimeAsync(100);
+          expect(s.send).toHaveBeenCalledOnce();
+        },
+        { timeout: 10_000 },
+      );
+      s.finish();
+      await vi.waitFor(async () => {
+        expect((await s.call("sessions.queue.get", params)).result.messages).toEqual([]);
+        expect(await s.store.sessionStatus(sessionId)).toBe("idle");
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("leaves a queued row that needs a configure alone while the host runs a turn of the adopted conversation", async () => {
     vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
     try {
@@ -6184,7 +6491,7 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
         sessionId: s.sessionId,
         text: "mac turn",
       } as never);
-      await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce(), { timeout: 10_000 });
       await s.call("sessions.queue.change", {
         sessionId: s.sessionId,
         clientId: "remote:mac",
@@ -6235,7 +6542,7 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
         sessionId: s.sessionId,
         text: "mac turn",
       } as never);
-      await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce(), { timeout: 10_000 });
       await s.call("sessions.queue.change", {
         sessionId: s.sessionId,
         clientId: "desktop:win1",
@@ -6279,7 +6586,7 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
         sessionId: s.sessionId,
         text: "mac turn",
       } as never);
-      await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce(), { timeout: 10_000 });
       await s.call("sessions.queue.change", {
         sessionId: s.sessionId,
         clientId: "desktop:win1",
@@ -6295,35 +6602,81 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
         })
       ).result.drain;
       s.finish();
-      await vi.waitFor(async () => {
-        await vi.advanceTimersByTimeAsync(100);
-        expect(await s.store.sessionStatus(s.sessionId)).toBe("idle");
-      });
+      await vi.waitFor(
+        async () => {
+          await vi.advanceTimersByTimeAsync(100);
+          expect(await s.store.sessionStatus(s.sessionId)).toBe("idle");
+        },
+        { timeout: 10_000 },
+      );
       s.send.mockClear();
-      const beat = async (blocked: boolean) =>
+      const idle = await s.store.session(s.sessionId);
+      const desktopUpdatedAt = idle.updatedAt - 1;
+      const desktopCopy = vi.spyOn(s.desktop, "snapshotAsync").mockResolvedValue({
+        ...idle,
+        updatedAt: desktopUpdatedAt,
+        session: { ...idle.session, blocks: idle.session.blocks.slice(0, 1) },
+      });
+      await s.store.save(
+        {
+          ...idle,
+          revision: idle.revision + 1,
+          desktop: { updatedAt: desktopUpdatedAt, revision: idle.revision },
+        },
+        { type: "desktopSeen" },
+      );
+      const stamp = vi.spyOn(s.desktop, "stampAsync").mockResolvedValue({
+        updatedAt: desktopUpdatedAt + 1,
+        running: false,
+      });
+      const beat = async (syncPending?: boolean) =>
         (
           await s.call("sessions.desktopLive", {
             clientId: "win1",
             sessions: [],
             queueLeases: [
-              { sessionId: s.sessionId, epoch: lease.epoch, ...(blocked ? { blocked: true } : {}) },
+              { sessionId: s.sessionId, epoch: lease.epoch, blocked: true, syncPending },
             ],
           })
         ).result.queueLeases?.[s.sessionId];
-      // Blocked for three minutes of beats: the lease stays, the host sends nothing.
-      for (let waited = 0; waited < 180_000; waited += 5_000) {
-        await vi.advanceTimersByTimeAsync(5_000);
-        expect(await beat(true)).toMatchObject({ holder: "desktop:win1", epoch: lease.epoch });
+      // Both a hard block and unseen desktop work keep ownership on the desktop.
+      for (const syncPending of [undefined, true]) {
+        for (let waited = 0; waited < 70_000; waited += 5_000) {
+          await vi.advanceTimersByTimeAsync(5_000);
+          expect(await beat(syncPending)).toMatchObject({
+            holder: "desktop:win1",
+            epoch: lease.epoch,
+          });
+        }
       }
       expect(s.send).not.toHaveBeenCalled();
-      // The conflict is resolved but the window still does not send: after the stall limit the host does.
+      // The mirror is waiting on history already stored on the Host. The Host
+      // can send when the desktop's lease stalls.
+      stamp.mockResolvedValue({ updatedAt: desktopUpdatedAt, running: false });
+      const verified = await s.store.session(s.sessionId);
+      desktopCopy.mockResolvedValueOnce({
+        ...verified,
+        updatedAt: desktopUpdatedAt,
+        session: {
+          ...verified.session,
+          blocks: [{ id: "diverged", role: "user", text: "different" }],
+        },
+      });
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await beat(true)).toMatchObject({ holder: "desktop:win1", epoch: lease.epoch });
       let released = false;
       for (let waited = 0; waited < 90_000 && !released; waited += 5_000) {
         await vi.advanceTimersByTimeAsync(5_000);
-        released = (await beat(false)) === null;
+        released = (await beat(true)) === null;
       }
       expect(released).toBe(true);
-      await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+      await vi.waitFor(
+        async () => {
+          await vi.advanceTimersByTimeAsync(100);
+          expect(s.send).toHaveBeenCalledOnce();
+        },
+        { timeout: 10_000 },
+      );
     } finally {
       vi.useRealTimers();
     }

@@ -1,66 +1,22 @@
-import { useEffect, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { hasActiveModalOverlay } from "../../../shared/ui/overlay";
 import { Toast } from "../../../shared/ui/ToastRegion";
-import {
-  answerContributeLater,
-  answerContributeNever,
-  readContributeState,
-  recordContributeUse,
-  shouldPromptContribute,
-} from "../model/contribute";
 import {
   dismissContributeFlow,
   repositoryFolderName,
-  startContribution,
   useContributeFlow,
 } from "../model/contributeFlow";
 
-const FIRST_DELAY_MS = 20_000;
-const RETRY_MS = 5_000;
-
-/** Waits for the first delay, then for no dialog and a visible window, and shows the prompt. */
-function scheduleContributePrompt(show: () => void): (() => void) | undefined {
-  if (!shouldPromptContribute(readContributeState(), Date.now())) return;
-  let timer = setTimeout(function check() {
-    if (hasActiveModalOverlay() || document.visibilityState !== "visible") {
-      timer = setTimeout(check, RETRY_MS);
-    } else if (shouldPromptContribute(readContributeState(), Date.now())) {
-      show();
-    }
-  }, FIRST_DELAY_MS);
-  return () => clearTimeout(timer);
-}
-
 /**
- * The invitation to contribute, after a week and five days of use, and the progress of the
- * clone-and-open flow (also started from Settings → About). Non-blocking: it waits for dialogs
- * to close and for a visible window, and is hidden when no repository is configured.
+ * Result of the clone-and-open contribution flow, which the user starts from
+ * Settings → About. There is no unsolicited invitation. Hidden when no repository is configured.
  */
 export function ContributePrompt() {
   const t = useT();
   const flow = useContributeFlow();
-  const [shown, setShown] = useState(false);
   const repository = PRODUCT_IDENTITY.repositoryUrl;
-  useEffect(() => {
-    if (!repository) return;
-    recordContributeUse();
-    return scheduleContributePrompt(() => setShown(true));
-  }, [repository]);
 
   if (!repository) return null;
-  if (flow.status === "cloning") {
-    return (
-      <Toast
-        tone="info"
-        title={t("Cloning…")}
-        message={t("Downloading bycoda from GitHub.")}
-        durationMs={null}
-        width="lg"
-      />
-    );
-  }
   if (flow.status === "opened") {
     return (
       <Toast
@@ -88,44 +44,5 @@ export function ContributePrompt() {
       />
     );
   }
-  if (!shown) return null;
-  return (
-    <Toast
-      tone="info"
-      title={t("Want to contribute to bycoda?")}
-      message={t(
-        "bycoda is open source. Clone it, open it as a project and start with CONTRIBUTING.md.",
-      )}
-      durationMs={null}
-      width="lg"
-      actionsPlacement="footer"
-      actions={[
-        {
-          label: t("Clone and open"),
-          onClick: () => {
-            setShown(false);
-            startContribution().catch(() => undefined);
-          },
-        },
-        {
-          label: t("Later"),
-          onClick: () => {
-            answerContributeLater();
-            setShown(false);
-          },
-        },
-        {
-          label: t("No thanks"),
-          onClick: () => {
-            answerContributeNever();
-            setShown(false);
-          },
-        },
-      ]}
-      onDismiss={() => {
-        answerContributeLater();
-        setShown(false);
-      }}
-    />
-  );
+  return null;
 }

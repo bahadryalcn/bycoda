@@ -3,11 +3,6 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-vi.mock("@tauri-apps/plugin-opener", () => ({
-  openUrl: vi.fn(async () => undefined),
-}));
-
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { ComposerHighlight } from "./ComposerHighlight";
 
 let host: HTMLDivElement;
@@ -24,6 +19,29 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
   vi.clearAllMocks();
+});
+
+it("highlights scoped crews, members and notes in the textarea overlay without rewriting the draft", () => {
+  const text =
+    "Ask @crews:audit-source-fixes and @crews:backend-engineer about @notes:plan. @crews:";
+  act(() =>
+    root.render(
+      createElement(ComposerHighlight, {
+        text,
+        mode: null,
+        names: new Set<string>(),
+        skillParts: (text) => [{ text }],
+        mentions: new Map(),
+        mcpTags: [],
+        attachments: [],
+        citations: 0,
+      }),
+    ),
+  );
+  expect(host.textContent).toBe(text);
+  expect(
+    [...host.querySelectorAll("[data-scoped-mention]")].map((node) => node.textContent),
+  ).toEqual(["@crews:audit-source-fixes", "@crews:backend-engineer", "@notes:plan"]);
 });
 
 it("highlights known tracker aliases, repeated refs and more than five tokens without changing draft text", () => {
@@ -64,7 +82,7 @@ it("highlights known tracker aliases, repeated refs and more than five tokens wi
   ).toEqual(tokens);
 });
 
-it("boxes each link with its text intact and opens it from the end badge", () => {
+it("boxes each link with its source intact and marks the destination for the action layer", () => {
   const text = "https://github.com/acme/app/pull/1267 bunu incele, https://example.com.";
   act(() =>
     root.render(
@@ -80,16 +98,38 @@ it("boxes each link with its text intact and opens it from the end badge", () =>
       }),
     ),
   );
-  // The overlay may rearrange a link's own characters, never their count.
-  expect(host.textContent).toHaveLength(text.length);
+  expect(host.textContent).toBe(text);
   const links = [...host.querySelectorAll("[data-composer-link-token]")];
   expect(links.map((link) => link.textContent)).toEqual([
-    "hgithub.com/acme/app/pull/1267ttps:/",
-    "hexample.comttps:/",
+    "https://github.com/acme/app/pull/1267",
+    "https://example.com",
   ]);
-  expect(host.querySelectorAll("[data-composer-link-icon] svg")).toHaveLength(2);
-  act(() => host.querySelectorAll<HTMLElement>("[data-composer-link-open]")[1].click());
-  expect(openUrl).toHaveBeenCalledWith("https://example.com/");
+  expect(links[1].getAttribute("data-reference-value")).toBe("https://example.com/");
+});
+
+it("keeps the attachment and citation tokens inside Markdown emphasis", () => {
+  act(() =>
+    root.render(
+      createElement(ComposerHighlight, {
+        text: "**Look at [image1] and [quote1]**",
+        mode: null,
+        names: new Set<string>(),
+        skillParts: (text) => [{ text }],
+        mentions: new Map(),
+        mcpTags: [],
+        attachments: [
+          { id: "image", kind: "image", name: "photo.png", mimeType: "image/png", size: 1 },
+        ],
+        citations: 1,
+      }),
+    ),
+  );
+  const emphasis = host.querySelector('[data-draft-markdown="strong"]');
+  expect(emphasis?.querySelector('[data-composer-attachment-kind="image"]')).not.toBeNull();
+  expect(emphasis?.querySelector("[data-composer-citation-token]")).not.toBeNull();
+  const source = emphasis!.cloneNode(true) as HTMLElement;
+  source.querySelectorAll('[aria-hidden="true"]').forEach((face) => face.remove());
+  expect(source.textContent).toBe("**Look at [image1] and [quote1]**");
 });
 
 it("decorates recognized skills and MCP references without changing the draft", () => {
@@ -122,74 +162,10 @@ it("decorates recognized skills and MCP references without changing the draft", 
       }),
     ),
   );
-  // Skill chips are the source text itself, at the textarea's size.
-  expect(host.textContent).toBe(text);
+  const source = host.cloneNode(true) as HTMLElement;
+  source.querySelectorAll("[data-draft-token-label]").forEach((face) => face.remove());
+  expect(source.textContent).toBe(text);
   expect(host.querySelectorAll("[data-composer-skill-token]")).toHaveLength(2);
-  expect(host.querySelector("[data-composer-skill-token] svg")).toBeNull();
+  expect(host.querySelectorAll("[data-composer-skill-token] svg")).toHaveLength(2);
   expect(host.querySelector("[data-mcp-tag] svg")).not.toBeNull();
-});
-
-it("shows the link holding the caret in full, so editing lines up with the textarea", () => {
-  const text = "see https://example.com/docs now";
-  const field = document.createElement("textarea");
-  field.value = text;
-  document.body.append(field);
-  const ref = { current: field };
-  const render = () =>
-    act(() =>
-      root.render(
-        createElement(ComposerHighlight, {
-          text,
-          mode: null,
-          names: new Set<string>(),
-          skillParts: (value: string) => [{ text: value }],
-          mentions: new Map(),
-          mcpTags: [],
-          attachments: [],
-          citations: 0,
-          field: ref,
-        }),
-      ),
-    );
-  render();
-  act(() => {
-    field.focus();
-    field.setSelectionRange(10, 10);
-    document.dispatchEvent(new Event("selectionchange"));
-  });
-  expect(host.textContent).toBe(text);
-  expect(host.querySelector("[data-composer-link-open]")).toBeNull();
-  act(() => {
-    field.setSelectionRange(text.length, text.length);
-    document.dispatchEvent(new Event("selectionchange"));
-  });
-  expect(host.querySelector("[data-composer-link-open]")).not.toBeNull();
-  field.remove();
-});
-
-it("shows a link that wraps across lines in source order, so the caret after it lines up", () => {
-  const text = "https://example.com/a/very/long/path?clinicId=1 then more words";
-  const rects = vi.spyOn(HTMLElement.prototype, "getClientRects").mockImplementation(function (
-    this: HTMLElement,
-  ) {
-    const lines = this.hasAttribute("data-composer-link-token") ? 2 : 1;
-    return Array.from({ length: lines }, () => new DOMRect()) as unknown as DOMRectList;
-  });
-  act(() =>
-    root.render(
-      createElement(ComposerHighlight, {
-        text,
-        mode: null,
-        names: new Set<string>(),
-        skillParts: (value: string) => [{ text: value }],
-        mentions: new Map(),
-        mcpTags: [],
-        attachments: [],
-        citations: 0,
-      }),
-    ),
-  );
-  expect(host.textContent).toBe(text);
-  expect(host.querySelector("[data-composer-link-open]")).toBeNull();
-  rects.mockRestore();
 });

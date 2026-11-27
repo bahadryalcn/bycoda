@@ -7,7 +7,6 @@ import { pickFolders } from "../../../../../platform/tauri/fs";
 import { ASSISTANT_FOLDERS_MAX } from "../../../../../shared/model/assistantFolders";
 import { Alert } from "../../../../../shared/ui/Alert";
 import { Button } from "../../../../../shared/ui/Button";
-import { InfoPopover } from "../../../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../../../shared/ui/InlineError";
 import { LoadingText } from "../../../../../shared/ui/LoadingText";
 import { FolderPlus, X } from "../../../../../shared/ui/icons";
@@ -52,9 +51,14 @@ export function AssistantFoldersSettings({
   if (state.loading && !state.saved) return <LoadingText>{t("Loading folders…")}</LoadingText>;
   if (!state.saved)
     return (
-      <InlineError retry={{ onRetry: () => void state.reload(), label: t("Reload") }}>
-        {state.loadError || t("The folder list could not be read.")}
-      </InlineError>
+      <Row label={t("Assistant folders")} stacked>
+        <InlineError
+          details={state.loadError || undefined}
+          retry={{ onRetry: () => void state.reload(), label: t("Reload") }}
+        >
+          {t("The folder list could not be read.")}
+        </InlineError>
+      </Row>
     );
 
   async function add() {
@@ -68,23 +72,20 @@ export function AssistantFoldersSettings({
     <>
       <Row
         label={t("Assistant folders")}
-        description={t(
+        description={
           !showPermissionControls
-            ? "Choose the folders the assistant can use."
+            ? t("Choose the folders the assistant can use.")
             : draft.allowChangesWithoutAsking
-              ? "The assistant can read and change these folders without asking."
-              : "The assistant can read these folders without asking. Changes need your approval.",
-        )}
+              ? t("The assistant can read and change these folders without asking.")
+              : t(
+                  "The assistant can read these folders without asking. Changes need your approval.",
+                )
+        }
         stacked
       >
         <div className={styles.list}>
           {draft.paths.length === 0 && (
-            <EmptyState
-              size="inline"
-              kind="empty"
-              className={styles.empty}
-              description={t("No folders added yet.")}
-            />
+            <EmptyState size="inline" kind="empty" description={t("No folders added yet.")} />
           )}
           {draft.paths.map((path) => (
             <div key={path} {...surfaceAttributes({ separator: "pane-block" }, styles.item)}>
@@ -116,6 +117,11 @@ export function AssistantFoldersSettings({
               size="sm"
               startIcon={<FolderPlus className="icon-sm" />}
               disabled={state.pending || draft.paths.length >= ASSISTANT_FOLDERS_MAX}
+              disabledReason={
+                draft.paths.length >= ASSISTANT_FOLDERS_MAX
+                  ? t("The folder limit is reached. Remove a folder first.")
+                  : undefined
+              }
               onClick={() => void add()}
             >
               {t("Add folder…")}
@@ -135,13 +141,10 @@ export function AssistantFoldersSettings({
           </Row>
           <Row
             label={t("Run commands without asking")}
-            info={
-              <InfoPopover>
-                {t(
-                  "Skip the confirmation for each command the assistant runs in these folders and in your projects.",
-                )}
-              </InfoPopover>
-            }
+            descriptionVisible
+            description={t(
+              "Skip the confirmation for each command the assistant runs in these folders and in your projects.",
+            )}
             feedback={
               draft.runWithoutAsking && !accessRef ? (
                 <Alert tone="warning">
@@ -161,13 +164,14 @@ export function AssistantFoldersSettings({
           </Row>
         </>
       )}
-      {state.error && (
+      {state.problem && (
         <InlineError
+          details={state.problem.details}
           retry={
             state.conflict ? { onRetry: () => void state.reload(), label: t("Reload") } : undefined
           }
         >
-          {state.error}
+          {state.problem.message}
         </InlineError>
       )}
     </>

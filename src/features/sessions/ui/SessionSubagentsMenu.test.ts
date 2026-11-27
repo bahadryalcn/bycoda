@@ -57,4 +57,15 @@ describe("SessionSubagentsMenu", () => {
     act(() => items[1].click());
     expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ blockId: "b" }));
   });
+
+  it("shows model identity and duration while keeping lifecycle in the row's accessible name", () => {
+    render([{ ...row("a", "done"), harness: "claude" }]);
+    act(() => container.querySelector<HTMLElement>("[data-composer-subagents-trigger]")!.click());
+    const item = document.querySelector('[role="menuitem"]');
+    expect(item?.getAttribute("aria-label")).toContain("Agent a, Sonnet, Done");
+    expect(item?.textContent).toContain("Sonnet");
+    expect(item?.textContent).toContain("1m 5s");
+    expect(item?.textContent).not.toContain("Done");
+    expect(item?.querySelector('img[alt=""]')).not.toBeNull();
+  });
 });

@@ -1,6 +1,6 @@
 //! Exact operation names the native management approval dialog may show.
 
-pub(super) const MANAGEMENT_APPROVAL_ACTIONS: &[&str] = &[
+pub(crate) const MANAGEMENT_APPROVAL_ACTIONS: &[&str] = &[
     "workspaces.resume",
     "workspaces.finish",
     "workspaces.close",
@@ -13,6 +13,8 @@ pub(super) const MANAGEMENT_APPROVAL_ACTIONS: &[&str] = &[
     "servers.ssh.save",
     "servers.ssh.remove",
     "social.send",
+    "liveStream.obsStream",
+    "liveStream.goLive",
     "notebook.create",
     "notebook.update",
     "notebook.delete",

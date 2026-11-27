@@ -1,6 +1,7 @@
 import { Facet, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, keymap } from "@codemirror/view";
 import { t } from "../../../shared/i18n/git";
+import { nativeButtonPresentation } from "../../../shared/ui/Button";
 import { textAttributes, type TextRoles } from "../../../shared/ui/Text";
 import {
   mergeResolution,
@@ -21,6 +22,16 @@ export function applyTextRoles(element: HTMLElement, roles: TextRoles, className
     if (value !== undefined) element.setAttribute(name, String(value));
 }
 
+/** Gives a drawn conflict button the shared Button look (secondary, compact) plus the choice hooks. */
+export function applyChoiceButton(element: HTMLButtonElement) {
+  const { className, ...attributes } = nativeButtonPresentation({
+    variant: "secondary",
+    size: "xs",
+  });
+  element.className = `${className} conflict-inline-choice`;
+  for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
+}
+
 /** Mirrors the React busy/disabled gate so drawn widgets update with it. */
 export const mergeActionsDisabled = Facet.define<boolean, boolean>({
   combine: (values) => values.some(Boolean),
@@ -28,12 +39,13 @@ export const mergeActionsDisabled = Facet.define<boolean, boolean>({
 
 type Run = (id: number, choice: MergeChoice) => void;
 
-const CHOICES = [
-  ["ours", "Accept Current", "Accept Current (Alt+1)"],
-  ["theirs", "Accept Incoming", "Accept Incoming (Alt+2)"],
-  ["both", "Accept Both", "Accept Both: current, then incoming (Alt+3)"],
-  ["manual", "Mark as Resolved", "Keep the text below as the resolution (Alt+4)"],
-] as const;
+const choices = () =>
+  [
+    ["ours", t("Accept Current"), t("Accept Current (Alt+1)")],
+    ["theirs", t("Accept Incoming"), t("Accept Incoming (Alt+2)")],
+    ["both", t("Accept Both"), t("Accept Both: current, then incoming (Alt+3)")],
+    ["manual", t("Mark as Resolved"), t("Keep the text below as the resolution (Alt+4)")],
+  ] as const;
 
 export function regionStateLabel(region: MergeRegion) {
   switch (region.choice) {
@@ -107,18 +119,18 @@ class RegionActions extends WidgetType {
     const button = (choice: MergeChoice, text: string, title: string, pressed?: boolean) => {
       const item = document.createElement("button");
       item.type = "button";
-      item.className = "conflict-inline-choice";
-      item.textContent = t(text);
-      item.title = t(title);
+      applyChoiceButton(item);
+      item.textContent = text;
+      item.title = title;
       if (pressed !== undefined) item.setAttribute("aria-pressed", String(pressed));
       item.disabled = this.disabled || (choice === "reset" && !this.resettable);
       item.addEventListener("mousedown", (event) => event.preventDefault());
       item.addEventListener("click", () => this.run(region.id, choice));
       return item;
     };
-    for (const [choice, text, title] of CHOICES)
+    for (const [choice, text, title] of choices())
       root.append(button(choice, text, title, region.choice === choice));
-    root.append(button("reset", "Reset", "Restore the unresolved text"));
+    root.append(button("reset", t("Reset"), t("Restore the unresolved text")));
     return root;
   }
   override ignoreEvent() {

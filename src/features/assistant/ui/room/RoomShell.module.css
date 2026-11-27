@@ -1,6 +1,9 @@
-/* Room shell: header, tab row, notices, status popovers, undo bars and the setup prompt. */
+/* Room shell: header, tab row, notices, status popovers. */
 
+/* The room is the pane: every breakpoint inside it (shell, tabs, Today, Conversations, History,
+   Memory) queries this container, not the window, so an open side panel narrows the layout too. */
 .room {
+  container: assistant-room / inline-size;
   display: flex;
   flex-direction: column;
   block-size: 100%;
@@ -13,15 +16,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--ui-space-3);
   flex: none;
   min-inline-size: 0;
-  padding: 8px 16px;
+  padding: var(--ui-space-2) var(--ui-space-4);
 }
 .identity {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2);
   flex: 1 1 auto;
   min-inline-size: 0;
 }
@@ -38,16 +41,16 @@
   align-items: center;
   flex: none;
   flex-wrap: nowrap;
-  gap: 4px;
+  gap: var(--ui-space-1);
 }
 .presence {
   flex: none;
 }
 
-@media (max-width: 720px) {
+@container assistant-room (max-width: 720px) {
   .header {
     flex-wrap: wrap;
-    padding-inline: 12px;
+    padding-inline: var(--ui-space-3);
   }
   .actions {
     margin-inline-start: auto;
@@ -57,103 +60,61 @@
 /* Tab row: the shared strip sits on a hairline, flush with the header padding. */
 .tabRow {
   flex: none;
-  padding-inline: 12px;
+  padding-inline: var(--ui-space-3);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--ui-space-1);
   overflow-x: auto;
 }
 
 /* Notices between the header and the tabs. */
 .notice {
   flex: none;
-  margin: 0 16px 8px;
+  margin: 0 var(--ui-space-4) var(--ui-space-2);
   min-inline-size: 0;
 }
 .noticeActions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2);
 }
 .noticeBody {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2);
   flex-wrap: wrap;
   min-inline-size: 0;
 }
 .muted {
-  margin: 0 16px 8px;
+  margin: 0 var(--ui-space-4) var(--ui-space-2);
   overflow-wrap: anywhere;
 }
-.empty {
-  margin: 0;
-  padding: 16px;
-}
-
-/* First run: a short prompt on the canvas. */
-.setupPrompt {
-  display: flex;
-  flex-direction: column;
-  align-items: start;
-  gap: 12px;
-  inline-size: 100%;
-  max-inline-size: 560px;
-  margin-inline: auto;
-  padding: 40px 20px;
-}
-.setupPrompt p {
-  margin: 0;
-}
-
-/* Undo bar: a thin frame under the content, message left, actions right. */
-.undo {
-  display: flex;
-  align-items: center;
-  flex: none;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 8px 16px 12px;
-  padding: 4px 4px 4px 12px;
-  min-inline-size: 0;
-}
-.undoText {
-  flex: 1 1 12rem;
-  min-inline-size: 0;
-  overflow: hidden;
-  white-space: nowrap;
-}
-.undoActions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-inline-start: auto;
+/* Body region before the room is usable (loading, failure, first-run setup): centered in the remaining height. */
+.stage {
+  flex: 1 1 auto;
+  display: grid;
+  place-items: center;
+  min-block-size: 0;
+  padding: var(--ui-space-4);
 }
 
 /* Status popovers (assistant status, presence, filter). */
-.popover {
+.statusContent {
   display: grid;
-  gap: 12px;
+  gap: var(--ui-space-3);
   inline-size: min(20rem, calc(100vw - 2rem));
-  padding: 12px;
-}
-.popover p {
-  margin: 0;
-}
-.popover > button {
-  justify-self: start;
 }
 .popoverRow {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2);
   flex-wrap: wrap;
 }
 .filterPanel {
   display: grid;
-  gap: 10px;
+  gap: var(--ui-space-2);
   min-inline-size: 14rem;
-  padding: 12px;
+  padding: var(--ui-space-3);
 }
 .filterActions {
   display: flex;

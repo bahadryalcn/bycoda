@@ -1115,3 +1115,105 @@ describe("owned Parent admission closure", () => {
     owner.release();
   });
 });
+
+describe("stable-key observation", () => {
+  /** A plain record whose deep reads are counted, standing in for a large question payload. */
+  function countedPayload(text: string) {
+    let reads = 0;
+    const payload = new Proxy(
+      { text, items: Array.from({ length: 8 }, (_, index) => ({ index })) },
+      {
+        ownKeys(target) {
+          reads++;
+          return Reflect.ownKeys(target);
+        },
+      },
+    );
+    return { payload, reads: () => reads, reset: () => (reads = 0) };
+  }
+
+  it("does not re-compare an unchanged stable reference yet still sees every other key and replaced values", () => {
+    const registry = new ParentInputRegistry();
+    const heavy = countedPayload("question");
+    let current: unknown = heavy.payload;
+    let draft = "a";
+    const owner = registry.register({
+      sessionId: "root",
+      kind: "session-parent",
+      stableKeys: ["pendingQuestion"],
+      snapshot: () => ({ pendingQuestion: current, draft }),
+    });
+    owner.observe();
+    const close = registry.begin("root", { owner: {}, timeoutMs: 1000 });
+    heavy.reset();
+    owner.observe();
+    owner.observe();
+    expect(heavy.reads()).toBe(0);
+    expect(close.current()).toBe(true);
+    // An unlisted key keeps its per-render comparison, so an unnotified change still revokes.
+    draft = "b";
+    owner.observe();
+    expect(close.current()).toBe(false);
+    close.release();
+    // A replaced reference with equal content is compared once, accepted, then skipped again.
+    const equalCopy = countedPayload("question");
+    current = equalCopy.payload;
+    const second = registry.begin("root", { owner: {}, timeoutMs: 1000 });
+    owner.observe();
+    expect(equalCopy.reads()).toBeGreaterThan(0);
+    expect(second.current()).toBe(true);
+    equalCopy.reset();
+    owner.observe();
+    expect(equalCopy.reads()).toBe(0);
+    // A replaced reference with different content revokes the open closure.
+    current = countedPayload("answered").payload;
+    owner.observe();
+    expect(second.current()).toBe(false);
+    second.release();
+    owner.release();
+    expect(registry.inspect().observedBytes).toBe(0);
+  });
+
+  it("reads a retained capture from the live snapshot, never from the skipped observation", async () => {
+    const registry = new ParentInputRegistry();
+    const stable = { text: "old" };
+    const owner = registry.register({
+      sessionId: "root",
+      kind: "session-parent",
+      stableKeys: ["pendingQuestion"],
+      snapshot: () => ({ pendingQuestion: stable }),
+    });
+    owner.observe();
+    stable.text = "mutated in place despite the declaration";
+    owner.observe();
+    const lease = await registry.capture("root");
+    expect(lease.snapshots[0].snapshot.pendingQuestion).toEqual({
+      text: "mutated in place despite the declaration",
+    });
+    lease.release();
+    owner.release();
+  });
+
+  it("recovers from a held observation failure and keeps stable references from outliving it", () => {
+    const registry = new ParentInputRegistry({ bytes: 2048 });
+    let text = "small";
+    const stable = { value: "kept" };
+    const owner = registry.register({
+      sessionId: "root",
+      kind: "session-parent",
+      stableKeys: ["pendingQuestion"],
+      snapshot: () => ({ pendingQuestion: stable, text }),
+    });
+    owner.observe();
+    text = "large".repeat(1024);
+    owner.changed();
+    owner.observe(true);
+    expect(registry.inspect()).toMatchObject({ failedRecords: 1, incomplete: true });
+    // The same stable reference must not let a failed record skip its retry.
+    text = "small again";
+    owner.observe();
+    expect(registry.inspect()).toMatchObject({ failedRecords: 0, incomplete: false });
+    owner.release();
+    expect(registry.inspect()).toMatchObject({ records: 0, observedBytes: 0 });
+  });
+});

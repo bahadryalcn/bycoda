@@ -5,6 +5,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ProjectRail } from "./ProjectRail";
 import { savePinnedProjects } from "../../features/projects/model/recents";
 import { OPEN_PROJECT_CHANGES_EVENT } from "../../features/projects/model/groupGit";
+import { applyRemoteGroupRecords } from "../../features/sync/model/syncGroups";
+import { applyRemoteProjectRecords } from "../../features/sync/model/syncProjects";
 import {
   loadProjectGroups,
   saveProjectGroups,
@@ -67,6 +69,74 @@ const render = async (cwd = "G:/wallet/api", paths = ["G:/wallet/api", "G:/walle
   );
 const workspaceButton = () =>
   host.querySelector<HTMLButtonElement>('button[aria-label="Open Wallet"]')!;
+
+it("keeps an unavailable remote project within its synced workspace group", async () => {
+  saveProjectGroups([]);
+  const projectId = "loc:windows:g:/wallet/mobile";
+  const rootId = "loc:windows:g:/wallet";
+  const records = [
+    { table: "group", id: "team", rev: 1, value: { id: "team", name: "Firisbe" } },
+    { table: "group", id: "wallet", rev: 2, value: { id: "wallet", name: "Wallet" } },
+    {
+      table: "workspaceLayout",
+      id: "wallet",
+      rev: 3,
+      value: { rootProjectId: rootId, includesRoot: false },
+    },
+    {
+      table: "projectPath",
+      id: projectId,
+      rev: 4,
+      value: { projectId, path: "G:/wallet/mobile", hostEnvironmentId: "windows", archived: false },
+    },
+    { table: "assignment", id: projectId, rev: 5, value: { projectId, groupId: "wallet" } },
+    { table: "assignment", id: rootId, rev: 6, value: { projectId: rootId, groupId: "team" } },
+  ] as const;
+  applyRemoteProjectRecords("fixture", records);
+  applyRemoteGroupRecords("fixture", records);
+  const open = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(ProjectRail, {
+        cwd: "~",
+        recents: [],
+        onSelectProject: select,
+        onOpenProject: vi.fn(),
+        onOpenSyncedProject: open,
+      }),
+    ),
+  );
+  const row = host.querySelector<HTMLButtonElement>(
+    '[data-project-group="team"] [data-project-group="wallet"] button[data-remote-project-id]',
+  )!;
+  expect(row?.getAttribute("data-remote-project-id")).toBe(projectId);
+  await act(async () => row.click());
+  expect(open).toHaveBeenCalledWith(projectId, "mobile");
+});
+
+it.each(["panel", "navigator"] as const)(
+  "opens the No project list from the %s",
+  async (presentation) => {
+    const onOpenNoProject = vi.fn();
+    await act(async () =>
+      root.render(
+        createElement(ProjectRail, {
+          presentation,
+          cwd: "~",
+          recents: [],
+          onSelectProject: select,
+          onOpenProject: vi.fn(),
+          onOpenNoProject,
+        }),
+      ),
+    );
+    const row = host.querySelector<HTMLButtonElement>('button[aria-label="No project"]')!;
+    expect(row.getAttribute("aria-current")).toBe("page");
+    await act(async () => row.click());
+    expect(onOpenNoProject).toHaveBeenCalledOnce();
+    expect(select).not.toHaveBeenCalled();
+  },
+);
 
 it("keeps application chrome on the panel and removes it from the project navigator", async () => {
   await render();
@@ -299,6 +369,40 @@ it("narrows the listed projects by name or group without touching the saved list
   );
   expect(listed()).toEqual([]);
   expect(host.textContent).toContain("No projects found");
+});
+
+it("shows a working nested project on its collapsed group headers and drops it once open", async () => {
+  saveProjectGroups([
+    { id: "team", name: "Team", collapsed: true },
+    {
+      id: "wallet",
+      name: "Wallet",
+      collapsed: true,
+      workspaceFile: "G:/wallet/wallet.code-workspace",
+      workspaceFolders: ["G:/wallet", "G:/wallet/api"],
+    },
+  ]);
+  saveProjectGroupAssignments({ "g:/wallet": "team", "g:/wallet/api": "wallet" });
+  const props = {
+    cwd: "G:/other",
+    recents: [{ path: "G:/wallet/api", openedAt: 1 }],
+    onSelectProject: select,
+    onOpenProject: vi.fn(),
+  };
+  const header = (id: string) =>
+    host.querySelector(`[data-project-group="${id}"] > [data-group-row]`)!;
+  await act(async () =>
+    root.render(createElement(ProjectRail, { ...props, busyPaths: ["G:/wallet/api"] })),
+  );
+  expect(header("team").getAttribute("data-project-working")).toBe("true");
+  expect(header("team").querySelector('[role="img"][aria-label="Working"]')).not.toBeNull();
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('button[aria-label="Team, 1 project, working"]')!.click(),
+  );
+  expect(header("team").hasAttribute("data-project-working")).toBe(false);
+  expect(header("wallet").getAttribute("data-project-working")).toBe("true");
+  await act(async () => root.render(createElement(ProjectRail, { ...props, busyPaths: [] })));
+  expect(header("wallet").hasAttribute("data-project-working")).toBe(false);
 });
 
 it("keeps workspace Changes reachable from the row menu when shortcuts cannot fit", async () => {

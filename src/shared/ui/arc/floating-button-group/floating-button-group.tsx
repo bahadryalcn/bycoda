@@ -16,7 +16,8 @@ import { Button, type ButtonTone, type ButtonProps } from "../../Button";
 import styles from "./floating-button-group.module.css";
 
 export type FloatingButtonGroupVariant = "muted" | "floating";
-export type FloatingButtonGroupSize = "sm" | "md";
+/** `xs` is the smallest row, for actions tucked into a dense panel header such as tool output. */
+export type FloatingButtonGroupSize = "xs" | "sm" | "md";
 export type FloatingButtonGroupOrientation = "horizontal" | "vertical";
 
 /** A composite that owns a menu or popup can own its trigger state while the group owns the button presentation. */
@@ -402,7 +403,7 @@ export function FloatingButtonGroup({
         motion="none"
         tone={tone}
         loading={loading}
-        selected={pressed}
+        pressed={pressed}
         selectionIndicator={selectionIndicator}
         iconOnly={iconOnly}
         label={name}
@@ -419,7 +420,6 @@ export function FloatingButtonGroup({
         aria-label={name}
         aria-haspopup={trigger?.["aria-haspopup"]}
         aria-expanded={trigger?.["aria-expanded"]}
-        aria-pressed={pressed === undefined ? undefined : pressed}
         aria-disabled={disabled || loading || undefined}
         tabIndex={stop === id ? 0 : -1}
         onPointerMove={(event) => {

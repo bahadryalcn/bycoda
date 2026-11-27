@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { UnexpectedScreen } from "./browser-layers/types";
 import { account, fixture, recipe } from "./social-browser-publishing-test-support";
 import { snapchatCollectAudience } from "./social-browser-snapchat-audience";
+import { readSnapchatFriends } from "./social-browser-snapchat-messaging";
 
 const own = () => account("snapchat", "web:snapchat:bycoda");
 const webHome = "https://web.snapchat.com/";
@@ -14,6 +15,26 @@ function recorded(name: string): string {
 }
 
 describe("saved Snapchat web pages (synthetic fixtures)", () => {
+  it("listens only to exact visible rows in the verified partial My Friends view", async () => {
+    const html = `<nav data-testid="chat-list"></nav>
+    <div data-testid="my-profile"><a href="https://www.snapchat.com/add/bycoda">Bycoda</a></div>
+    <div data-testid="my-friends-list" aria-busy="false">
+      <div data-username="Friend_One" data-relationship="friend"></div>
+      <div data-username="friend_one" data-relationship="friend"></div>
+      <div data-username="friend_two" data-relationship="friend"></div>
+      <div data-username="not_a_friend" data-relationship="pending"></div>
+      <div data-username="bycoda" data-relationship="friend"></div>
+      <div hidden data-username="invisible" data-relationship="friend"></div>
+    </div>
+    <div data-username="profile_search_result">outside the list</div>`;
+    const f = fixture(recipe("snapchat"), own(), html, { render: () => html });
+    await expect(readSnapchatFriends(f.ctx, f.ctx.account.platformId)).resolves.toEqual({
+      usernames: ["friend_one", "friend_two"],
+      partial: true,
+    });
+    expect(f.page.click).not.toHaveBeenCalled();
+    expect(f.page.fill).not.toHaveBeenCalled();
+  });
   it("collects existing chat contacts from the visible chat list, once each", async () => {
     const html = recorded("chat-list.html");
     const f = fixture(recipe("snapchat"), own(), html, { render: () => html });

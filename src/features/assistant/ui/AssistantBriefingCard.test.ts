@@ -132,7 +132,7 @@ it("starts output only after Listen and exposes an actual cancellable Stop while
   const p = await render();
   expect(ports.speak).not.toHaveBeenCalled();
   await click("Listen");
-  expect(container.textContent).toContain("This does not open the microphone");
+  expect(container.textContent).toContain("Reading the briefing.");
   await click("Stop listening");
   expect(signal?.aborted).toBe(true);
   await click("Open notes");
@@ -188,11 +188,12 @@ it("offers language settings rather than guessing English when no accepted spoke
   snapshot.profile.language = "auto";
   snapshot.lastSpokenLanguage = null;
   const p = await render();
+  // Listen gives way to the one control that unblocks it.
   expect(
     [...container.querySelectorAll<HTMLButtonElement>("button")].find(
       (button) => button.textContent === "Listen",
-    )?.disabled,
-  ).toBe(true);
+    ),
+  ).toBeUndefined();
   await click("Choose language");
   expect(p.onChooseLanguage).toHaveBeenCalledTimes(1);
   expect(ports.speak).not.toHaveBeenCalled();

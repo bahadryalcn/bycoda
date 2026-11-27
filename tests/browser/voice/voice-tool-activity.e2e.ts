@@ -17,7 +17,7 @@ for (const theme of ["light", "dark"])
       await trigger.focus();
       await page.keyboard.press("Enter");
       const panel = page.getByRole("dialog", { name: "Voice actions" });
-      await expect(panel.getByRole("heading", { name: "Voice actions" })).toBeVisible();
+      await expect(panel).toBeVisible();
       await expect(panel.getByRole("listitem")).toHaveCount(7);
       for (const status of [
         "Running",

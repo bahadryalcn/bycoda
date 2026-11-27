@@ -37,6 +37,10 @@
   line-height: var(--ui-leading-heading);
 }
 
+.text[data-family="mono"] {
+  font-family: var(--font-mono);
+}
+
 .text[data-tone="secondary"] {
   color: var(--ui-text-secondary);
 }
@@ -57,6 +61,9 @@
 }
 .text[data-tone="feature"] {
   color: var(--color-feature);
+}
+.text[data-tone="orchestration"] {
+  color: var(--color-orchestration);
 }
 .text[data-tone="info"] {
   color: var(--ui-tone-info-fg);
@@ -150,6 +157,10 @@
   -webkit-line-clamp: var(--clamp-lines);
   overflow: hidden;
   white-space: normal;
+}
+.text[data-wrap="preserve-lines"] {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .text[data-size="glyph"] {

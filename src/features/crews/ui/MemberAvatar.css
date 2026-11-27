@@ -1,0 +1,32 @@
+/* Shared once for every member portrait, instead of a <style> element inside each active avatar.
+   The class is specific to the eye rects, so the rule cannot reach other SVG content. */
+@keyframes member-avatar-blink {
+  0%,
+  94%,
+  100% {
+    transform: scaleY(1);
+  }
+  97% {
+    transform: scaleY(0.2);
+  }
+}
+
+.member-avatar-eye {
+  transform-box: fill-box;
+  transform-origin: center;
+  /* ui-drift-ignore: feature-motion -- This bespoke SVG blink deforms only the portrait's drawn eye pixels. */
+  animation: member-avatar-blink 4.6s infinite;
+}
+
+/* Stop blinking when decorative motion is off or the window is hidden.
+   The eyes rest open instead of freezing mid-blink, so the portrait still reads as a face. */
+html:is([data-decorative-motion="off"], [data-window-visible="off"]) .member-avatar-eye {
+  animation: none;
+}
+
+/* The OS request is honoured even when the in-app setting does not follow the system. */
+@media (prefers-reduced-motion: reduce) {
+  .member-avatar-eye {
+    animation: none;
+  }
+}

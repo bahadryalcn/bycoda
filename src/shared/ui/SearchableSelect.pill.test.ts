@@ -40,6 +40,34 @@ const key = (element: Element, key: string, composing = false) =>
       }),
     ),
   );
+it.each([
+  ["pill", "h-[var(--ui-control-height-compact)]", "text-ui-caption"],
+  ["row", "h-[var(--ui-control-height-compact)]", "text-ui-caption"],
+  [
+    "panel",
+    "h-[max(var(--ui-control-height-panel),calc(var(--ui-control-height-lg)+var(--space-5)))]",
+    "text-ui-body",
+  ],
+] as const)(
+  "uses density-aware height and semantic text for the %s trigger",
+  (variant, height, textSize) => {
+    act(() =>
+      root.render(
+        createElement(SearchableSelect, {
+          variant,
+          hideLabel: true,
+          label: "Mode",
+          value: "a",
+          options,
+          onChange: vi.fn(),
+        }),
+      ),
+    );
+    const trigger = container.querySelector<HTMLButtonElement>("button[data-select-variant]")!;
+    expect(trigger.classList.contains(height)).toBe(true);
+    expect(trigger.classList.contains(textSize)).toBe(true);
+  },
+);
 it("keeps grouped keyboard navigation, disabled choices and native trigger ref/events", () => {
   const ref = createRef<HTMLButtonElement>(),
     change = vi.fn(),

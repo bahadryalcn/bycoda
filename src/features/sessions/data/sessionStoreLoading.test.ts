@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { claudeShellCommands } from "../../../platform/tauri/fs";
-import { getSession, shouldPersistSession, upsertSession } from "./sessionStore";
+import {
+  getEarlierStoredHistory,
+  getSession,
+  shouldPersistSession,
+  upsertSession,
+} from "./sessionStore";
 import {
   proposalBlock,
   type OrchestrationProposal,
@@ -36,7 +41,12 @@ function record(id: string, blocks: unknown[], harness = "codex") {
 }
 beforeEach(() => {
   vi.useFakeTimers();
-  vi.stubGlobal("window", { setTimeout: (fn: () => void, delay: number) => setTimeout(fn, delay) });
+  vi.stubGlobal(
+    "window",
+    Object.assign(new EventTarget(), {
+      setTimeout: (fn: () => void, delay: number) => setTimeout(fn, delay),
+    }),
+  );
   vi.mocked(invoke).mockReset();
   vi.mocked(claudeShellCommands).mockReset();
 });
@@ -45,6 +55,212 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("progressive stored history", () => {
+  it("reuses the resident tail only after checking its revision, metadata and queue", async () => {
+    const id = "reopen-native-preview";
+    let revision = 7;
+    let title = "Before";
+    let queued = false;
+    let exists = true;
+    const reads: number[] = [];
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "session_get_queue")
+        return (queued ? [{ id: "follow-up", text: "Next message" }] : []) as never;
+      if (command !== "session_get_page") return [] as never;
+      const stampOnly = (args as { before?: number }).before === 0;
+      reads.push(stampOnly ? 0 : 48);
+      if (!exists) return null as never;
+      return {
+        session: {
+          ...record(
+            id,
+            stampOnly ? [] : [{ id: "answer", role: "assistant", text: String(revision) }],
+          ),
+          title,
+          transcriptRevision: revision,
+        },
+        before: stampOnly ? undefined : 100,
+        totalBlocks: 101,
+        revision,
+      } as never;
+    });
+    const first = (await getSession(id, { deferHistory: true }))!;
+    title = "Renamed in another window";
+    queued = true;
+    const reopen = () => getSession(id, { deferHistory: true, cachedPreview: first });
+    const second = await reopen();
+    expect(second?.blocks).toBe(first.blocks);
+    expect(second).toMatchObject({
+      title,
+      queuedMessages: [{ id: "follow-up" }],
+      storedHistory: { before: 100, revision: 7 },
+    });
+    expect(shouldPersistSession(second!)).toBe(false);
+    expect(reads).toEqual([48, 0]);
+    revision++;
+    queued = false;
+    const changed = await reopen();
+    expect(changed?.blocks[0].text).toBe("8");
+    expect(changed?.queuedMessages).toBeUndefined();
+    exists = false;
+    await expect(reopen()).resolves.toBeNull();
+    expect(reads).toEqual([48, 0, 0, 48, 0]);
+  });
+  it("starts the queue read with the first page and restores it once", async () => {
+    const id = "parallel-tail-queue";
+    const page = deferred<unknown>();
+    const queue = [
+      {
+        id: "q1",
+        text: "Keep this attachment",
+        attachments: [
+          {
+            id: "a1",
+            name: "a.txt",
+            path: "/tmp/a.txt",
+            kind: "file",
+            mimeType: "text/plain",
+            size: 8,
+          },
+        ],
+      },
+    ];
+    vi.mocked(invoke).mockImplementation((command) => {
+      if (command === "session_get_page") return page.promise as ReturnType<typeof invoke>;
+      return Promise.resolve(command === "session_get_queue" ? queue : []) as ReturnType<
+        typeof invoke
+      >;
+    });
+    const opening = getSession(id, { deferHistory: true });
+    await vi.advanceTimersByTimeAsync(0);
+    const pendingReads = vi.mocked(invoke).mock.calls.map(([command]) => command);
+    page.resolve({ session: record(id, []), before: 20, totalBlocks: 20, revision: 7 });
+    const tail = await opening;
+    expect(pendingReads).toEqual(expect.arrayContaining(["session_get_page", "session_get_queue"]));
+    expect(pendingReads).not.toContain("inspect_paths");
+    expect(tail?.storedHistory).toEqual({ before: 20, revision: 7 });
+    expect(tail?.queueStatus).toBe("restored");
+    expect(tail?.queuedMessages?.[0]).toMatchObject({
+      id: "q1",
+      attachments: [{ id: "a1", missing: true }],
+    });
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([command]) => command === "session_get_queue"),
+    ).toHaveLength(1);
+  });
+  it("rebinds metadata-only image attachments on both pages of an adopted transcript", async () => {
+    const id = "adopted-images";
+    const machine = {
+      id: "local-host",
+      environmentId: "local-environment",
+      localHost: true,
+      endpoint: "http://127.0.0.1:3776",
+    };
+    const recentImageId = "00000000-0000-4000-8000-000000000001";
+    const olderImageId = "00000000-0000-4000-8000-000000000002";
+    const block = (id: string) => ({
+      id,
+      role: "user",
+      text: "Image attached",
+      attachments: [{ id, name: "image.png", kind: "image", mimeType: "image/png", size: 3 }],
+    });
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "remote_machines")
+        return [{ ...machine, id: "remote-host", localHost: false }, machine] as never;
+      if (command === "remote_request") return { data: "YWJj", offset: 3, size: 3 } as never;
+      if (command !== "session_get_page") return [] as never;
+      const earlier = (args as { before?: number }).before !== undefined;
+      const message = block(earlier ? olderImageId : recentImageId);
+      const image = message.attachments[0]!;
+      return {
+        session: {
+          ...record(id, [
+            {
+              ...message,
+              attachments: [
+                image,
+                { ...image, id: "with-path", path: "/tmp/image.png" },
+                { ...image, id: "other-host", hostEnvironmentId: "other-environment" },
+              ],
+            },
+          ]),
+          adoptedBase: JSON.stringify({ count: 2, chain: "a".repeat(32) }),
+        },
+        before: earlier ? undefined : 1,
+        totalBlocks: 2,
+        revision: 7,
+      } as never;
+    });
+
+    const session = await getSession(id, { deferHistory: true });
+    const earlier = await getEarlierStoredHistory(session!);
+    expect(invoke).not.toHaveBeenCalledWith("remote_request", expect.anything());
+    await expect(session?.blocks[0]?.attachments?.[0]?.loadPreview?.()).resolves.toBe("YWJj");
+    await expect(earlier?.blocks[0]?.attachments?.[0]?.loadPreview?.()).resolves.toBe("YWJj");
+    expect(session?.blocks[0]?.attachments?.[1]?.loadPreview).toBeUndefined();
+    await expect(session?.blocks[0]?.attachments?.[2]?.loadPreview?.()).rejects.toThrow(
+      "owning Host",
+    );
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([command]) => command === "remote_request"),
+    ).toHaveLength(2);
+    for (const attachmentId of [recentImageId, olderImageId])
+      expect(invoke).toHaveBeenCalledWith(
+        "remote_request",
+        expect.objectContaining({
+          machineId: machine.id,
+          expectedEnvironmentId: machine.environmentId,
+          method: "attachments.read",
+          params: { sessionId: id, id: attachmentId, offset: 0 },
+        }),
+      );
+  });
+
+  it("opens with ten recent turns and reads older blocks only on demand", async () => {
+    const id = "on-demand-history";
+    const blocks = Array.from({ length: 64 }, (_, index) => ({
+      id: `block-${index}`,
+      role: index % 2 === 0 ? "user" : "assistant",
+      text: `Message ${index}`,
+      ...(index === 16 ? { orchestrationLeadId: "parent" } : {}),
+    }));
+    vi.mocked(invoke).mockImplementation((command, args) => {
+      if (command === "session_get_page") {
+        const { before, limit } = args as { before?: number; limit: number };
+        const end = before ?? blocks.length;
+        const start = Math.max(0, end - limit);
+        return Promise.resolve({
+          session: record(id, blocks.slice(start, end)),
+          before: start || undefined,
+          totalBlocks: blocks.length,
+          revision: 7,
+        }) as ReturnType<typeof invoke>;
+      }
+      return Promise.resolve([]) as ReturnType<typeof invoke>;
+    });
+    const window = await getSession(id, { deferHistory: true });
+    expect(window?.blocks.map((block) => block.id)).toEqual(
+      blocks.slice(44).map((block) => block.id),
+    );
+    expect(shouldPersistSession(window!)).toBe(false);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([command]) => command === "session_get_page"),
+    ).toEqual([["session_get_page", { sessionId: id, limit: 48 }]]);
+    const page = await getEarlierStoredHistory(window!);
+    expect(invoke).toHaveBeenLastCalledWith("session_get_page", {
+      sessionId: id,
+      before: 44,
+      revision: 7,
+      limit: 80,
+    });
+    expect(page?.cursor.before).toBeUndefined();
+    expect([...page!.blocks, ...window!.blocks].map((block) => block.id)).toEqual(
+      blocks.map((block) => block.id),
+    );
+    const reopened = await getSession(id, { deferHistory: true, cachedPreview: window! });
+    expect(reopened?.orchestrationLeadId).toBe("parent");
+    expect(reopened?.blocks).toBe(window?.blocks);
+  });
   it("recovers a raw plan revision after its proposal context arrives on an earlier page", async () => {
     const proposal: OrchestrationProposal = {
       version: 1,

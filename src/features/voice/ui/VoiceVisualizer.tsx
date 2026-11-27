@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import {
   prefersReducedMotion,
   useAudioFeedbackMotionEnabled,
+  useMotionWindowVisible,
 } from "../../settings/public/decorativeMotion";
 import brandGeometry from "../../../shared/lib/brandGeometry.json";
 import type { VoiceVisual } from "../model/voiceSettings";
@@ -16,7 +17,7 @@ export type VoiceVisualizerProps = {
   level?: { readonly current: number };
   /** `icon` fits inside a button next to a text label. */
   small?: boolean | "icon";
-  /** Settings-only demonstration. Never represents live microphone or playback. */
+  /** Settings-only still demonstration (no animation loop). Never represents live microphone or playback. */
   preview?: boolean;
 };
 
@@ -43,6 +44,7 @@ export function VoiceVisualizer({
   const root = useRef<HTMLSpanElement>(null);
   // The decorative-motion setting stills this like the OS reduce-motion request does.
   const motion = useAudioFeedbackMotionEnabled();
+  const windowVisible = useMotionWindowVisible();
   useEffect(() => {
     const element = root.current;
     if (!element) return;
@@ -182,7 +184,15 @@ export function VoiceVisualizer({
 
     function tick(time: number) {
       frame = undefined;
-      if (disposed || document.hidden || !visible || prefersReducedMotion() || !motion) return;
+      if (
+        disposed ||
+        document.hidden ||
+        !visible ||
+        prefersReducedMotion() ||
+        !motion ||
+        !windowVisible
+      )
+        return;
       // Repaint on the same timestamp stays allowed: callers re-sample the live meter.
       if (time === lastPaint || time - lastPaint >= PAINT_INTERVAL_MS) {
         lastPaint = time;
@@ -196,23 +206,16 @@ export function VoiceVisualizer({
       frame = undefined;
       step = undefined;
       const calm = prefersReducedMotion() || !motion;
-      const running =
-        !disposed && !document.hidden && visible && !calm && (preview || !STATIC_STATES.has(state));
+      const onScreen = !disposed && !document.hidden && visible && windowVisible;
+      const running = onScreen && !calm && !preview && !STATIC_STATES.has(state);
       element!.dataset.animating = String(running);
       paint(1300, true);
       if (running) frame = requestAnimationFrame(tick);
       // Reduced motion keeps an input meter, without decorative time-based motion.
-      if (
-        !disposed &&
-        !document.hidden &&
-        visible &&
-        calm &&
-        !preview &&
-        (state === "listening" || state === "user")
-      )
+      if (onScreen && calm && !preview && (state === "listening" || state === "user"))
         meter = setInterval(() => paint(1300, true), 120);
       // Without decorative motion, connecting steps one dot at a time instead of spinning.
-      if (!disposed && !document.hidden && visible && calm && !preview && state === "connecting") {
+      if (onScreen && calm && !preview && state === "connecting") {
         step = 0;
         paint(1300, true);
         meter = setInterval(() => {
@@ -237,7 +240,7 @@ export function VoiceVisualizer({
       document.removeEventListener("visibilitychange", refresh);
       reduced.removeEventListener("change", refresh);
     };
-  }, [visual, state, level, preview, motion]);
+  }, [visual, state, level, preview, motion, windowVisible]);
 
   return (
     <span

@@ -135,4 +135,32 @@ describe("draftCache persistence hooks", () => {
     clearComposerDraft("w1");
     expect(getComposerWorkMode("w1")).toBeUndefined();
   });
+
+  it("tells presence listeners only when a draft flips between empty and unsent", async () => {
+    // Regression for #985: every keystroke used to notify all presence listeners,
+    // which made each one rescan every open session. Only the flip should reach them.
+    const { clearComposerDraft, setComposerDraftMode, subscribeComposerDraftPresence } =
+      await import("./draftCache");
+    clearComposerDraft("k1");
+    let calls = 0;
+    const stop = subscribeComposerDraftPresence(() => calls++);
+    setComposerDraft("k1", "h");
+    setComposerDraft("k1", "he");
+    setComposerDraft("k1", "hel");
+    setComposerDraftMode("k1", "save");
+    expect(calls).toBe(1);
+    setComposerDraft("k1", "   ");
+    expect(calls).toBe(2);
+    setComposerDraft("k1", "   x");
+    expect(calls).toBe(3);
+    stop();
+  });
+
+  it("does not count whitespace-only text as an unsent draft", async () => {
+    const { clearComposerDraft, hasUnsentComposerDraft } = await import("./draftCache");
+    clearComposerDraft("k2");
+    setComposerDraft("k2", " \n\t ");
+    expect(hasUnsentComposerDraft("k2")).toBe(false);
+    clearComposerDraft("k2");
+  });
 });

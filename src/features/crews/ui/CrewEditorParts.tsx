@@ -1,57 +1,65 @@
-import { Text } from "../../../shared/ui/Text";
+import type { ReactNode } from "react";
 import { t } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
-import { Copy } from "../../../shared/ui/icons";
+import { FailureAlert } from "./FailureAlert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { TextField } from "../../../shared/ui/TextField";
 import type { CrewDefinition } from "../model/crew";
-import type { useProjectCrews } from "../model/crewClient";
-import { CrewDeleteButton } from "./CrewDeleteButton";
 
-/** Crew name, plus where a new crew is available. */
+/**
+ * The editor's top row: the crew look button, the name and the access chip; a new crew also
+ * chooses where it is available.
+ */
 export function CrewEditorHeader({
   draft,
   projectId,
   isNew,
   nameError,
   onChange,
+  look,
+  access,
 }: {
   draft: CrewDefinition;
   projectId: string;
   isNew: boolean;
   nameError?: string;
   onChange: (patch: Partial<CrewDefinition>) => void;
+  /** The look button (`CrewAppearancePicker`). */
+  look: ReactNode;
+  /** The access chip (`CrewAccessRow`). */
+  access: ReactNode;
 }) {
   return (
-    <div className="grid min-w-0 items-end gap-3 @min-[36rem]/crew-editor:grid-cols-[minmax(0,1fr)_auto]">
-      <TextField
-        label={t("Crew name")}
-        placeholder={t("e.g. Mobile app")}
-        value={draft.name}
-        fieldClassName="min-w-0"
-        autoFocus={isNew && !draft.name}
-        error={nameError}
-        onChange={(event) => onChange({ name: event.target.value })}
-      />
+    <div className="flex min-w-0 flex-col gap-3">
+      <div className="flex min-w-0 items-start gap-2">
+        <div className="shrink-0">{look}</div>
+        <TextField
+          label={t("Crew name")}
+          hideLabel
+          placeholder={t("Crew name")}
+          value={draft.name}
+          fieldClassName="min-w-0 flex-1"
+          autoFocus={isNew && !draft.name}
+          error={nameError}
+          onChange={(event) => onChange({ name: event.target.value })}
+        />
+        <div className="shrink-0 empty:hidden">{access}</div>
+      </div>
       {isNew ? (
-        <div className="flex min-w-0 flex-col items-start gap-1">
-          <Text size="body" tone="inherit" weight="medium">
-            {t("Available in")}
-          </Text>
-          <RadioGroup
-            variant="inline"
-            label={t("Available in")}
-            value={draft.projectId ? "project" : "global"}
-            options={[
-              { value: "project", label: t("This project") },
-              { value: "global", label: t("All projects") },
-            ]}
-            onValueChange={(scope) =>
-              onChange({ projectId: scope === "project" ? projectId : undefined })
-            }
-          />
-        </div>
+        <RadioGroup
+          variant="inline"
+          label={t("Available in")}
+          value={draft.projectId ? "project" : "global"}
+          options={[
+            { value: "project", label: t("This project") },
+            { value: "global", label: t("All projects") },
+          ]}
+          onValueChange={(scope) =>
+            onChange({ projectId: scope === "project" ? projectId : undefined })
+          }
+        />
       ) : null}
     </div>
   );
@@ -67,7 +75,7 @@ export function CrewEditorBanners({
   onKeepAsNew,
   onLoadLatest,
 }: {
-  error: string;
+  error: { summary: string; details: string } | null;
   catalogError?: string;
   pending: boolean;
   onRetryCatalog: () => void;
@@ -81,16 +89,14 @@ export function CrewEditorBanners({
       {error ? (
         // A failed action must be seen even when the roster is scrolled far down.
         <div ref={(element) => element?.scrollIntoView({ block: "nearest" })}>
-          <Alert tone="danger">{error}</Alert>
+          <FailureAlert title={error.summary} detail={error.details} />
         </div>
       ) : null}
       {catalogError ? (
-        <Alert tone="warning">
-          {catalogError}
-          <Button variant="ghost" disabled={pending} onClick={onRetryCatalog}>
-            {t("Retry")}
-          </Button>
-        </Alert>
+        <InlineError
+          details={catalogError}
+          retry={{ onRetry: onRetryCatalog, disabled: pending, label: t("Retry") }}
+        />
       ) : null}
       {conflict ? (
         <Alert tone="warning">
@@ -103,53 +109,16 @@ export function CrewEditorBanners({
           </p>
           <div className="flex flex-wrap gap-2">
             <Button onClick={onKeepAsNew}>{t("Keep edits as new crew")}</Button>
-            <Button disabled={!onLoadLatest} onClick={onLoadLatest}>
+            <Button
+              disabled={!onLoadLatest}
+              disabledReason={!onLoadLatest ? t("This crew is no longer available.") : undefined}
+              onClick={onLoadLatest}
+            >
               {t("Discard edits and load latest")}
             </Button>
           </div>
         </Alert>
       ) : null}
     </>
-  );
-}
-
-/** Copy to the other scope and delete, for a stored crew. */
-export function CrewMaintenance({
-  state,
-  crew,
-  copyLabel,
-  pending,
-  onCopy,
-  onPendingChange,
-  onDeleted,
-}: {
-  state: ReturnType<typeof useProjectCrews>;
-  crew: CrewDefinition;
-  copyLabel: string;
-  pending: boolean;
-  onCopy: () => void;
-  onPendingChange: (busy: boolean) => void;
-  onDeleted: () => void;
-}) {
-  return (
-    <div className="flex flex-wrap items-start gap-2">
-      <Button
-        variant="secondary"
-        startIcon={<Copy aria-hidden className="icon-sm" />}
-        disabled={pending}
-        onClick={onCopy}
-      >
-        {copyLabel}
-      </Button>
-      <div className="flex flex-col gap-2 empty:hidden">
-        <CrewDeleteButton
-          state={state}
-          crew={crew}
-          disabled={pending}
-          onPendingChange={onPendingChange}
-          onDeleted={onDeleted}
-        />
-      </div>
-    </div>
   );
 }

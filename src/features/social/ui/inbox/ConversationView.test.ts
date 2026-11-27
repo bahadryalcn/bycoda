@@ -67,8 +67,15 @@ function fakeClient(handlers: Record<string, Handler> = {}) {
     if (!handler) throw new Error(`Unexpected ${action}`);
     return handler(input);
   });
-  const snapshot = vi.fn(async () => ({ accounts: [], pollingEnabled: false, profiles: [] }));
-  const client = { request, snapshot } as unknown as SocialClient;
+  const snapshot = vi.fn(async () => {
+    throw new Error("The Inbox must not read the full workspace snapshot.");
+  });
+  const sectionSnapshot = vi.fn(async (_input: Record<string, unknown>) => ({
+    cursor: "c",
+    unchanged: false,
+    snapshot: { accounts: [], pollingEnabled: false, profiles: [] },
+  }));
+  const client = { request, snapshot, sectionSnapshot } as unknown as SocialClient;
   return {
     client,
     calls,
@@ -158,6 +165,7 @@ it("shows the person's cross-channel timeline when the conversation belongs to a
   const timeline: PersonTimeline = {
     personId: "pe1",
     truncated: true,
+    next: "1000|x1",
     events: [
       {
         id: "x1",
@@ -193,7 +201,7 @@ it("shows the person's cross-channel timeline when the conversation belongs to a
     personId: "pe1",
   });
   expect(element.textContent).toContain("Ana");
-  expect(element.textContent).toContain("Older messages are not shown.");
+  expect(button("Load older messages")).toBeDefined();
 });
 
 it("says so when the timeline cannot be loaded", async () => {
@@ -250,7 +258,7 @@ it("keeps status changes in one menu that offers every status except the current
   await act(async () => statusItem("Mark as Done")!.click());
   await flush();
   expect(fake.writes()).toEqual([
-    { action: "inbox.setStatus", input: { threadId: "t1", status: "done", tags: ["vip"] } },
+    { action: "inbox.setStatus", input: { threadId: "t1", status: "done" } },
   ]);
 });
 
@@ -270,18 +278,29 @@ it("keeps the conversation and shows an error when a status change fails", async
   expect(statusTrigger().disabled).toBe(false);
 });
 
-it("adds a tag on Enter, keeping the current status and the existing tags", async () => {
+it("adds a tag on Enter without replaying the snapshot's status or tag list", async () => {
   const fake = fakeClient();
   await mount(fake.client);
   await typeTag("  lead ");
   await pressEnter();
   expect(fake.writes()).toEqual([
-    {
-      action: "inbox.setStatus",
-      input: { threadId: "t1", status: "unread", tags: ["vip", "lead"] },
-    },
+    { action: "inbox.setStatus", input: { threadId: "t1", addTags: ["lead"] } },
   ]);
   expect(tagInput().value).toBe("");
+});
+
+it("enforces the tag bounds and lets the owner remove a tag at the limit (#664)", async () => {
+  const fake = fakeClient();
+  const tags = ["vip", ...Array.from({ length: 9 }, (_, index) => `tag-${index}`)];
+  await mount(fake.client, { threadId: "t1", item: item({ tags }) });
+  expect(tagInput().maxLength).toBe(40);
+  expect(tagInput().disabled).toBe(true);
+  const remove = element.querySelector<HTMLButtonElement>('button[aria-label="Remove vip"]');
+  expect(remove).not.toBeNull();
+  await act(async () => remove!.click());
+  expect(fake.writes()).toEqual([
+    { action: "inbox.setStatus", input: { threadId: "t1", removeTags: ["vip"] } },
+  ]);
 });
 
 it("does not save a duplicate or blank tag", async () => {
@@ -385,4 +404,69 @@ it("keeps loaded messages but reports and retries a later conversation read fail
   await act(async () => button("Try again")!.click());
   await flush();
   expect(element.textContent).not.toContain("This conversation could not be opened.");
+});
+
+const timelineEvent = (id: string, at: number, text: string): PersonTimeline["events"][number] => ({
+  id,
+  at,
+  text,
+  direction: "inbound",
+  platform: "email",
+  accountId: "mail",
+  kind: "message",
+});
+
+it("loads older messages above the loaded ones and says so at the start of the conversation", async () => {
+  const fake = fakeClient({
+    "inbox.timeline": (input) =>
+      input?.cursor === "2000|x2"
+        ? { personId: "pe1", truncated: false, events: [timelineEvent("x1", 1000, "Older email")] }
+        : {
+            personId: "pe1",
+            truncated: true,
+            next: "2000|x2",
+            events: [timelineEvent("x2", 2000, "Recent reply")],
+          },
+  });
+  await mount(fake.client, { threadId: "t1", item: item({ person: { id: "pe1", name: "Ana" } }) });
+  expect(lineTexts()).toEqual(["Recent reply"]);
+  await act(async () => button("Load older messages")!.click());
+  await flush();
+  expect(lineTexts()).toEqual(["Older email", "Recent reply"]);
+  expect(
+    fake.calls.filter((call) => call.action === "inbox.timeline").map((call) => call.input),
+  ).toEqual([{ personId: "pe1" }, { personId: "pe1", cursor: "2000|x2" }]);
+  expect(button("Load older messages")).toBeUndefined();
+  expect(element.textContent).toContain("No older messages.");
+});
+
+it("keeps the loaded messages and offers a retry when an older page fails", async () => {
+  let failing = true;
+  const fake = fakeClient({
+    "inbox.timeline": (input) => {
+      if (input?.cursor === undefined)
+        return {
+          personId: "pe1",
+          truncated: true,
+          next: "2000|x2",
+          events: [timelineEvent("x2", 2000, "Recent reply")],
+        };
+      if (failing) throw new Error("offline");
+      return {
+        personId: "pe1",
+        truncated: false,
+        events: [timelineEvent("x1", 1000, "Older email")],
+      };
+    },
+  });
+  await mount(fake.client, { threadId: "t1", item: item({ person: { id: "pe1", name: "Ana" } }) });
+  await act(async () => button("Load older messages")!.click());
+  await flush();
+  expect(lineTexts()).toEqual(["Recent reply"]);
+  expect(element.textContent).toContain("Could not load older messages.");
+  failing = false;
+  await act(async () => button("Try again")!.click());
+  await flush();
+  expect(lineTexts()).toEqual(["Older email", "Recent reply"]);
+  expect(element.textContent).not.toContain("Could not load older messages.");
 });

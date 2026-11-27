@@ -1,16 +1,15 @@
-import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
 import { useEffect, useId, useRef, useState } from "react";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 
 type Props = {
   /** The name both projects would show. */
   name: string;
-  /** Location of the project being named, shown so it is clear which one it is. */
-  path: string;
+  /** Accepted for callers that still pass it; the dialog no longer displays the path. */
+  path?: string;
   /** Already applied to the project; cancelling keeps it. */
   suggested: string;
   /** Why a name cannot be used, or null. */
@@ -22,7 +21,6 @@ type Props = {
 /** Asks for another name for a project added under a name the rail already shows. */
 export function ProjectNameConflictDialog({
   name,
-  path,
   suggested,
   validate,
   onConfirm,
@@ -43,17 +41,14 @@ export function ProjectNameConflictDialog({
     <Modal
       size="sm"
       title={t("Rename project")}
-      description={`${t('A project named "')}${name}${t('" already exists. Give this one a different name.')}`}
+      description={t("A project named “{p0}” already exists. Give this one a different name.", {
+        p0: name,
+      })}
       onClose={onCancel}
       footer={
         <ModalActions>
-          <Button
-            type="button"
-            onClick={onCancel}
-            tooltip={t('Keep "{p0}"', { p0: suggested })}
-            variant="ghost"
-          >
-            {t("Cancel")}
+          <Button type="button" onClick={onCancel} variant="ghost">
+            {t("Keep “{p0}”", { p0: suggested })}
           </Button>
           <Button type="submit" form={formId} variant="primary">
             {t("Rename")}
@@ -69,16 +64,11 @@ export function ProjectNameConflictDialog({
           setError(problem);
           if (!problem) onConfirm(value.trim());
         }}
-        className="flex flex-col gap-3 px-4 pt-2 pb-4"
+        className="flex flex-col gap-3 pt-2 pb-4"
       >
-        <Text wrap="anywhere" as="p" size="micro" tone="muted" leading="tight">
-          {path}
-        </Text>
         <TextField
           label={t("Project name")}
-          hideLabel
           ref={input}
-          aria-label={t("Project name")}
           aria-invalid={error ? true : undefined}
           value={value}
           spellCheck={false}
@@ -88,7 +78,7 @@ export function ProjectNameConflictDialog({
             setError(null);
           }}
         />
-        {error ? <Alert tone="danger">{error}</Alert> : null}
+        {error ? <InlineError details={error}>{t("This name cannot be used.")}</InlineError> : null}
       </form>
     </Modal>
   );

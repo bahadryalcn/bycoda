@@ -7,11 +7,14 @@ use tauri::State;
 use crate::dirs_home;
 use crate::fs::expand_home;
 mod config;
+mod config_read;
 #[cfg(test)]
 mod discovery_tests;
 pub(crate) mod enablement;
 #[path = "mcp_jsonc.rs"]
 mod jsonc;
+pub(crate) mod oauth_callback;
+pub(crate) mod remote_config;
 pub(crate) mod server_config;
 use config::write_json_config;
 #[cfg(test)]
@@ -108,8 +111,19 @@ pub async fn mcp_add(
     name: String,
     config: String,
 ) -> Result<(), String> {
-    let (name, server) = server_from_json(&provider, &name, &config)?;
     let binary_path = host.runtime_binary_path(&provider);
+    add(cwd, provider, scope, name, config, binary_path).await
+}
+
+async fn add(
+    cwd: String,
+    provider: String,
+    scope: String,
+    name: String,
+    config: String,
+    binary_path: Option<String>,
+) -> Result<(), String> {
+    let (name, server) = server_from_json(&provider, &name, &config)?;
     tauri::async_runtime::spawn_blocking(move || {
         let home = dirs_home().ok_or("Home directory not found")?;
         let project = expand_home(&cwd);
@@ -384,18 +398,45 @@ pub struct McpConnection {
     enabled: bool,
 }
 
+/// A configuration file that exists but could not be used. Its servers are missing
+/// from the list, which is different from the file configuring none. The message
+/// is a parse or I/O reason and never contains file content.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpConfigWarning {
+    provider: String,
+    scope: String,
+    config_path: String,
+    message: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpDiscovery {
+    connections: Vec<McpConnection>,
+    warnings: Vec<McpConfigWarning>,
+}
+
+impl McpDiscovery {
+    fn warn(&mut self, provider: &str, scope: &str, path: &Path, message: String) {
+        self.warnings.push(McpConfigWarning {
+            provider: provider.into(),
+            scope: scope.into(),
+            config_path: path.to_string_lossy().into_owned(),
+            message,
+        });
+    }
+}
+
 #[tauri::command]
-pub async fn mcp_discover(
-    cwd: String,
-    global_only: Option<bool>,
-) -> Result<Vec<McpConnection>, String> {
+pub async fn mcp_discover(cwd: String, global_only: Option<bool>) -> Result<McpDiscovery, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let home = dirs_home().ok_or("Home directory not found")?;
         let project = expand_home(&cwd);
         let codex_home = std::env::var_os("CODEX_HOME").map(PathBuf::from);
         let desktop_config = claude_desktop_config(Path::new(&home));
         let opencode_config = std::env::var_os("OPENCODE_CONFIG").map(PathBuf::from);
-        discover(
+        discover_with_warnings(
             Path::new(&home),
             (!global_only.unwrap_or(false)).then_some(project.as_path()),
             codex_home.as_deref(),
@@ -414,16 +455,43 @@ fn discover(
     desktop_config: &Path,
     opencode_config: Option<&Path>,
 ) -> Result<Vec<McpConnection>, String> {
-    let mut connections = Vec::new();
+    discover_with_warnings(
+        home,
+        project,
+        codex_home_override,
+        desktop_config,
+        opencode_config,
+    )
+    .map(|found| found.connections)
+}
+
+fn discover_with_warnings(
+    home: &Path,
+    project: Option<&Path>,
+    codex_home_override: Option<&Path>,
+    desktop_config: &Path,
+    opencode_config: Option<&Path>,
+) -> Result<McpDiscovery, String> {
+    let mut found = McpDiscovery::default();
     let claude = home.join(".claude.json");
-    let claude_config = read_json(&claude).unwrap_or_else(|| serde_json::json!({}));
-    let claude_project = project
-        .map(|project| enablement::claude_project_key(&claude_config, &project.to_string_lossy()))
-        .transpose()?;
-    if claude.exists() {
-        let config = &claude_config;
+    let claude_config = match config_read::read_json(&claude, Some(config_read::claude_view)) {
+        Ok(config) => config,
+        Err(message) => {
+            found.warn("claude", "user", &claude, message);
+            None
+        }
+    };
+    // An unreadable file leaves Claude's project opt-outs unknown; servers keep their configured state.
+    let claude_project = match (&claude_config, project) {
+        (Some(config), Some(project)) => Some(enablement::claude_project_key(
+            config,
+            &project.to_string_lossy(),
+        )?),
+        _ => None,
+    };
+    if let Some(config) = &claude_config {
         add_json_servers(
-            &mut connections,
+            &mut found.connections,
             "claude",
             "user",
             &claude,
@@ -431,7 +499,7 @@ fn discover(
         );
         if let Some(claude_project) = &claude_project {
             add_json_servers(
-                &mut connections,
+                &mut found.connections,
                 "claude",
                 "local",
                 &claude,
@@ -443,9 +511,9 @@ fn discover(
         }
     }
     let cursor = home.join(".cursor/mcp.json");
-    add_json_file(&mut connections, "cursor", "user", &cursor, "mcpServers");
+    add_json_file(&mut found, "cursor", "user", &cursor, "mcpServers");
     add_json_file(
-        &mut connections,
+        &mut found,
         "claude_desktop",
         "user",
         desktop_config,
@@ -455,16 +523,11 @@ fn discover(
     let codex_home = codex_home_override
         .map(Path::to_path_buf)
         .unwrap_or_else(|| home.join(".codex"));
-    add_toml_file(
-        &mut connections,
-        "codex",
-        "user",
-        &codex_home.join("config.toml"),
-    );
+    add_toml_servers(&mut found, "codex", "user", &codex_home.join("config.toml"));
 
     for file in ["opencode.json", "opencode.jsonc"] {
         add_json_file(
-            &mut connections,
+            &mut found,
             "opencode",
             "user",
             &home.join(".config/opencode").join(file),
@@ -472,7 +535,7 @@ fn discover(
         );
     }
     if let Some(custom) = opencode_config {
-        add_json_file(&mut connections, "opencode", "user", custom, "mcp");
+        add_json_file(&mut found, "opencode", "user", custom, "mcp");
     }
 
     // Project configuration is inherited from parent directories. Stop at the
@@ -482,21 +545,21 @@ fn discover(
             break;
         }
         add_json_file(
-            &mut connections,
+            &mut found,
             "claude",
             "project",
             &directory.join(".mcp.json"),
             "mcpServers",
         );
         add_json_file(
-            &mut connections,
+            &mut found,
             "cursor",
             "project",
             &directory.join(".cursor/mcp.json"),
             "mcpServers",
         );
-        add_toml_file(
-            &mut connections,
+        add_toml_servers(
+            &mut found,
             "codex",
             "project",
             &directory.join(".codex/config.toml"),
@@ -508,7 +571,7 @@ fn discover(
             ".opencode/opencode.jsonc",
         ] {
             add_json_file(
-                &mut connections,
+                &mut found,
                 "opencode",
                 "project",
                 &directory.join(file),
@@ -520,15 +583,15 @@ fn discover(
         }
     }
     // Claude opt-outs belong to the current project and apply to every scope.
-    for connection in &mut connections {
-        if connection.provider == "claude" {
-            if let Some(claude_project) = &claude_project {
+    if let (Some(claude_config), Some(claude_project)) = (&claude_config, &claude_project) {
+        for connection in &mut found.connections {
+            if connection.provider == "claude" {
                 connection.enabled =
-                    !enablement::claude_disabled(&claude_config, claude_project, &connection.name);
+                    !enablement::claude_disabled(claude_config, claude_project, &connection.name);
             }
         }
     }
-    connections.sort_by(|a, b| {
+    found.connections.sort_by(|a, b| {
         (&a.provider, &a.name, &a.scope, &a.config_path).cmp(&(
             &b.provider,
             &b.name,
@@ -536,18 +599,23 @@ fn discover(
             &b.config_path,
         ))
     });
-    Ok(connections)
+    found
+        .warnings
+        .sort_by(|a, b| (&a.provider, &a.config_path).cmp(&(&b.provider, &b.config_path)));
+    Ok(found)
 }
 
-fn add_json_file(
-    connections: &mut Vec<McpConnection>,
-    provider: &str,
-    scope: &str,
-    path: &Path,
-    key: &str,
-) {
-    if let Some(config) = read_json(path) {
-        add_json_servers(connections, provider, scope, path, config.get(key));
+fn add_json_file(found: &mut McpDiscovery, provider: &str, scope: &str, path: &Path, key: &str) {
+    match config_read::read_json(path, None) {
+        Ok(Some(config)) => add_json_servers(
+            &mut found.connections,
+            provider,
+            scope,
+            path,
+            config.get(key),
+        ),
+        Ok(None) => {}
+        Err(message) => found.warn(provider, scope, path, message),
     }
 }
 
@@ -592,15 +660,37 @@ fn add_json_servers(
     }
 }
 
-fn add_toml_file(connections: &mut Vec<McpConnection>, provider: &str, scope: &str, path: &Path) {
-    let Some(raw) = std::fs::read_to_string(path).ok() else {
-        return;
+fn add_toml_servers(found: &mut McpDiscovery, provider: &str, scope: &str, path: &Path) {
+    if let Err(message) = add_toml_file(&mut found.connections, provider, scope, path) {
+        found.warn(provider, scope, path, message);
+    }
+}
+
+/// A missing file configures nothing; an unreadable or malformed one is an error.
+fn add_toml_file(
+    connections: &mut Vec<McpConnection>,
+    provider: &str,
+    scope: &str,
+    path: &Path,
+) -> Result<(), String> {
+    let raw = match std::fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.to_string()),
     };
-    let Some(config) = toml::from_str::<toml::Value>(&raw).ok() else {
-        return;
-    };
+    // toml's Display quotes the offending line, which may hold a credential: report position only.
+    let config = toml::from_str::<toml::Value>(&raw).map_err(|error| {
+        let line = error.span().map_or(0, |span| {
+            raw.as_bytes()[..span.start.min(raw.len())]
+                .iter()
+                .filter(|byte| **byte == b'\n')
+                .count()
+                + 1
+        });
+        format!("Invalid TOML ({} at line {line})", error.message())
+    })?;
     let Some(servers) = config.get("mcp_servers").and_then(toml::Value::as_table) else {
-        return;
+        return Ok(());
     };
     for (name, entry) in servers {
         connections.push(McpConnection {
@@ -617,6 +707,7 @@ fn add_toml_file(connections: &mut Vec<McpConnection>, provider: &str, scope: &s
             enabled: entry.get("enabled").and_then(toml::Value::as_bool) != Some(false),
         });
     }
+    Ok(())
 }
 
 fn transport(config: &Value) -> &str {
@@ -630,13 +721,6 @@ fn transport(config: &Value) -> &str {
                 "stdio"
             }
         })
-}
-
-fn read_json(path: &Path) -> Option<Value> {
-    let raw = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str(&raw)
-        .or_else(|_| serde_json::from_str(&strip_jsonc(&raw)))
-        .ok()
 }
 
 /// Remove JSONC comments and trailing commas without touching quoted text.
@@ -1386,7 +1470,7 @@ mod tests {
             "[mcp_servers.off]\ncommand = 'node'\nenabled = false\n[mcp_servers.on]\ncommand = 'node'\n",
         ).unwrap();
         let mut found = Vec::new();
-        add_toml_file(&mut found, "codex", "user", &path);
+        add_toml_file(&mut found, "codex", "user", &path).unwrap();
         assert_eq!(found.len(), 2);
         assert!(
             !found

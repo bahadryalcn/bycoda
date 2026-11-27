@@ -27,6 +27,9 @@ export function makeKit(
     policies?: Record<string, AutonomyPolicy>;
     aiActions?: AiAction[];
     call?: (...args: unknown[]) => Promise<unknown>;
+    generateError?: Error;
+    people?: { id: string }[];
+    replyCounts?: { contacted: number; replied: number };
   } = {},
 ) {
   const settings = new Map<string, string>();
@@ -35,11 +38,20 @@ export function makeKit(
     (options.aiActions ?? []).map((item) => [item.id, item]),
   );
   const call = vi.fn(options.call ?? (async () => ({ ok: true })));
-  const generateText = vi.fn(async () => JSON.stringify(options.modelReply ?? { steps: [] }));
+  const generateText = vi.fn(async () => {
+    if (options.generateError) throw options.generateError;
+    return JSON.stringify(options.modelReply ?? { steps: [] });
+  });
   const service = {
     setting: vi.fn(async (key: string) => settings.get(key)),
     setSetting: vi.fn(async (key: string, value: string) => {
       settings.set(key, value);
+    }),
+    settingKeys: vi.fn(async (prefix: string) =>
+      [...settings.keys()].filter((key) => key.startsWith(prefix)),
+    ),
+    deleteSetting: vi.fn(async (key: string) => {
+      settings.delete(key);
     }),
     accounts: vi.fn(async () => options.accounts ?? [account("a1")]),
     access: vi.fn(async (_principal: SocialPrincipal, id: string) => account(id)),
@@ -55,9 +67,14 @@ export function makeKit(
       actions.set(item.id, item);
       return item;
     }),
-    listAiActions: vi.fn(async () => ({ items: [...actions.values()] })),
-    listPeople: vi.fn(async () => ({ items: [] })),
+    listAiActions: vi.fn(async (input?: { since?: number }) => ({
+      items: [...actions.values()].filter(
+        (item) => input?.since === undefined || item.at >= input.since,
+      ),
+    })),
+    listPeople: vi.fn(async () => ({ items: options.people ?? [] })),
     listInteractions: vi.fn(async () => []),
+    replyStats: vi.fn(async () => options.replyCounts ?? { contacted: 0, replied: 0 }),
   };
   const ctx = {
     service,

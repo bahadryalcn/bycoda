@@ -1,8 +1,10 @@
+import { errorText } from "../../../shared/lib/errors";
 import type { FilePaneTab } from "../../workspace/model/layout";
 import { getPtyStatus } from "../../../platform/tauri/pty";
 import { t } from "../../../shared/i18n";
 import { confirmInApp, type AppConfirmRequest } from "../../../shared/model/appConfirm";
 import { terminalTabLabel } from "./terminalTab";
+import type { RemoteCodeRun } from "../runtime/codeTerminalController";
 
 /** Asks the owner; window close passes the native dialog so it cannot hang behind page state. */
 type Confirm = (request: AppConfirmRequest) => Promise<boolean>;
@@ -15,10 +17,18 @@ type RunningTerminal = {
 /** Longest list of terminals spelled out in the dialog; the rest are counted. */
 const LISTED_TERMINALS = 6;
 
-async function runningTerminals(files: FilePaneTab[]): Promise<RunningTerminal[]> {
+async function runningTerminals(
+  files: FilePaneTab[],
+  remoteRuns?: Record<string, RemoteCodeRun>,
+): Promise<RunningTerminal[]> {
   const running: RunningTerminal[] = [];
   for (const file of files) {
     if (!file.terminal) continue;
+    const remote = remoteRuns?.[file.id];
+    if (remote) {
+      if (!remote.controller.canDismiss()) running.push({ file, process: null });
+      continue;
+    }
     try {
       const { foreground, supported } = await getPtyStatus(file.id);
       const process = foreground?.trim();
@@ -26,7 +36,7 @@ async function runningTerminals(files: FilePaneTab[]): Promise<RunningTerminal[]
       else if (supported === false) running.push({ file, process: null });
     } catch (caught: unknown) {
       // The native side drops a session when its shell exits, so this means idle.
-      if (/not running/i.test(caught instanceof Error ? caught.message : String(caught))) continue;
+      if (/not running/i.test(errorText(caught))) continue;
       // Any other failure cannot establish that killing the PTY is safe.
       running.push({ file, process: null });
     }
@@ -40,10 +50,10 @@ async function runningTerminals(files: FilePaneTab[]): Promise<RunningTerminal[]
  */
 export async function confirmCloseTerminal(
   file: FilePaneTab,
-  options: { last?: boolean } = {},
+  options: { last?: boolean; remoteRuns?: Record<string, RemoteCodeRun> } = {},
   confirm: Confirm = confirmInApp,
 ): Promise<boolean> {
-  const running = await runningTerminals([file]);
+  const running = await runningTerminals([file], options.remoteRuns);
   if (running.length > 0) return confirmSingle(running[0], confirm);
   if (!options.last) return true;
   return confirm({
@@ -62,8 +72,9 @@ export async function confirmCloseTerminal(
 export async function confirmCloseTerminals(
   files: FilePaneTab[],
   confirm: Confirm = confirmInApp,
+  remoteRuns?: Record<string, RemoteCodeRun>,
 ): Promise<boolean> {
-  const running = await runningTerminals(files);
+  const running = await runningTerminals(files, remoteRuns);
   if (running.length === 0) return true;
   if (running.length === 1) return confirmSingle(running[0], confirm);
   const unknown = running.some(({ process }) => !process);

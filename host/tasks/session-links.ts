@@ -10,7 +10,7 @@ export interface SessionTaskLink {
 
 export class SessionTaskLinkError extends Error {
   constructor(
-    readonly code: "task-not-found" | "already-linked" | "invalid-id",
+    readonly code: "task-not-found" | "session-not-found" | "already-linked" | "invalid-id",
     message: string,
   ) {
     super(message);
@@ -21,6 +21,8 @@ export class SessionTaskLinkError extends Error {
 export interface SessionTaskLinkPorts {
   /** Existing task storage lookup; links never create or copy a task record. */
   taskExists(taskId: string): Promise<boolean>;
+  /** Existing session lookup (Host-stored or desktop-only); links never name an unknown session. */
+  sessionExists(sessionId: string): Promise<boolean>;
   now(): number;
 }
 
@@ -104,9 +106,13 @@ export class SessionTaskLinks {
   async link(sessionId: string, taskId: string): Promise<SessionTaskLink> {
     if (!validId(sessionId) || !validId(taskId))
       throw new SessionTaskLinkError("invalid-id", "Invalid session or task id");
-    if (!(await this.ports.taskExists(taskId)))
-      throw new SessionTaskLinkError("task-not-found", "Task not found");
-    return this.mutate((links) => {
+    // Both checks run inside the serialized write: a delete cleanup queued before this link has
+    // already removed its record, so the check sees it gone and no orphan link is written.
+    return this.mutate(async (links) => {
+      if (!(await this.ports.taskExists(taskId)))
+        throw new SessionTaskLinkError("task-not-found", "Task not found");
+      if (!(await this.ports.sessionExists(sessionId)))
+        throw new SessionTaskLinkError("session-not-found", "Session not found");
       const existing = links.get(sessionId);
       if (existing?.taskId === taskId) return existing;
       if (existing)
@@ -131,14 +137,23 @@ export class SessionTaskLinks {
     taskExists: (id: string) => boolean | Promise<boolean>,
   ): Promise<number> {
     const links = await this.chain.then(() => this.load());
-    const stale: string[] = [];
-    for (const l of links.values())
-      if (!(await sessionExists(l.sessionId)) || !(await taskExists(l.taskId)))
-        stale.push(l.sessionId);
-    if (!stale.length) return 0;
-    return this.mutate((draft) => {
-      for (const id of stale) draft.delete(id);
-      return stale.length;
+    const isStale = async (l: SessionTaskLink) =>
+      !(await sessionExists(l.sessionId)) || !(await taskExists(l.taskId));
+    const candidates: string[] = [];
+    for (const l of links.values()) if (await isStale(l)) candidates.push(l.sessionId);
+    if (!candidates.length) return 0;
+    // The scan above is a snapshot: a candidate may have been unlinked or relinked to a live task
+    // since, so each one is re-read from the current draft and re-verified before it is dropped.
+    return this.mutate(async (draft) => {
+      let removed = 0;
+      for (const id of candidates) {
+        const current = draft.get(id);
+        if (current && (await isStale(current))) {
+          draft.delete(id);
+          removed += 1;
+        }
+      }
+      return removed;
     });
   }
 }

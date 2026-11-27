@@ -9,7 +9,6 @@ import type {
 import { formatDate, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Heading } from "../../../../shared/ui/Heading";
-import { Surface } from "../../../../shared/ui/Surface";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { deleteNotesInOrder } from "./noteBulkDelete";
 import { matches } from "./assistantRoomHelpers";
@@ -18,7 +17,10 @@ import { useAssistantRoom } from "./assistantRoomContext";
 import { NotesList } from "./NotesList";
 import { NotesReader } from "./NotesReader";
 import { NoteEditor } from "../AssistantNoteEditor";
-import { assistantRequest as ownerRequest } from "../../model/assistantClient";
+import {
+  assistantRequest as ownerRequest,
+  finishAssistantNoteDeletion,
+} from "../../model/assistantClient";
 import styles from "./NotesTab.module.css";
 
 export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
@@ -39,7 +41,7 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
     refresh,
     pending,
     errorFor,
-    empty,
+    setQuery,
   } = room;
 
   const [selectedId, setSelectedId] = useState<string>();
@@ -67,19 +69,28 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
       confirmLabel: t("Delete"),
       onConfirm: async () => {
         const outcome = await deleteNotesInOrder(notes, (note) =>
-          assistantRequest({ op: "notes.delete", id: note.id, expectedUpdatedAt: note.updatedAt }),
+          assistantRequest(
+            { op: "notes.delete", id: note.id, expectedUpdatedAt: note.updatedAt },
+            environmentId,
+            { deferNoteRefresh: true },
+          ),
         );
+        const deleted = notes.slice(0, outcome.deleted);
+        finishAssistantNoteDeletion(environmentId, deleted);
         // Confirmed deletions leave selection even if the next snapshot is delayed.
         setCheckedIds((current) => {
           const next = new Set(current);
-          for (const note of notes.slice(0, outcome.deleted)) next.delete(note.id);
+          for (const note of deleted) next.delete(note.id);
           return next;
         });
         if (outcome.trashIds.length) {
           setUndo({
             id: outcome.trashIds[0]!,
             ids: outcome.trashIds,
-            label: t("{p0} notes", { p0: outcome.trashIds.length }),
+            label:
+              outcome.trashIds.length === 1
+                ? t("{p0} note", { p0: outcome.trashIds.length })
+                : t("{p0} notes", { p0: outcome.trashIds.length }),
             environmentId,
           });
         } else if (outcome.deleted) setUndo(null);
@@ -107,7 +118,9 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
           expectedUpdatedAt: note.updatedAt,
         });
         if (result.ok !== true)
-          throw new Error(t("Note deletion is uncertain. Review the Room before retrying."));
+          throw new Error(
+            t("Note deletion could not be confirmed. Review the Room before retrying."),
+          );
         if (result.trashId?.startsWith("notetrash:")) {
           setDeletedNoteWithoutReceipt(null);
           setUndo({ id: result.trashId, label: note.title, environmentId });
@@ -139,37 +152,25 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
           {dailySummary &&
             dailySummary.environmentId === environmentId &&
             dailySummary.scopeKey === privacy.key && (
-              <Surface variant="card" padding="md" className={styles.summary}>
+              <div
+                {...surfaceAttributes(
+                  { variant: "card", frame: "card", radius: "card" },
+                  styles.summary,
+                )}
+              >
                 {dailySummary.snapshot.briefing && canReadBriefing(dailySummary.snapshot) ? (
                   <>
                     <Heading size="item" level={3}>
                       {t("Daily summary")}
                     </Heading>
-                    <Text
-                      as="p"
-                      size="caption"
-                      tone="muted"
-                      leading="inherit"
-                      className={styles.summaryMeta}
-                    >
-                      {t("Saved daily summary · {p0}", {
-                        p0: formatDate(dailySummary.snapshot.briefing.createdAt, {
-                          dateStyle: "medium",
-                          timeStyle: "short",
-                        }),
-                      })}
-                    </Text>
                     <Text as="p" size="secondary" tone="inherit" leading="normal">
                       {dailySummary.snapshot.briefing.text}
                     </Text>
-                    <Text
-                      as="p"
-                      size="caption"
-                      tone="muted"
-                      leading="inherit"
-                      className={styles.summaryMeta}
-                    >
-                      {t("Today's summary is reused after it is generated.")}
+                    <Text as="p" size="caption" tone="muted" leading="inherit">
+                      {formatDate(dailySummary.snapshot.briefing.createdAt, {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })}
                     </Text>
                   </>
                 ) : (
@@ -179,7 +180,7 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
                     description={t("Nothing new to report.")}
                   />
                 )}
-              </Surface>
+              </div>
             )}
           {!snapshot.capabilities.notes && (
             <Text
@@ -212,6 +213,7 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
                     }
                     checked={allChecked}
                     disabled={visible.length === 0}
+                    disabledReason={t("There are no notes to select.")}
                     indeterminate={visibleChecked > 0 && !allChecked}
                     onChange={(event) => {
                       const value = event.currentTarget.checked;
@@ -234,6 +236,7 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
                         size="sm"
                         tone="danger"
                         disabled={Boolean(pending)}
+                        disabledReason={t("Wait for the current action to finish.")}
                         onClick={() => confirmBulkDelete(checkedNotes)}
                       >
                         {t("Delete")}
@@ -263,7 +266,22 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
           )}
           {snapshot.capabilities.notes &&
             visible.length === 0 &&
-            empty(query ? "No results" : "No notes yet")}
+            (query ? (
+              <EmptyState
+                context="panel"
+                kind="filtered"
+                title={t("No results")}
+                description={t("Try a different search.")}
+                onReset={() => setQuery("")}
+              />
+            ) : (
+              <EmptyState
+                context="panel"
+                kind="empty"
+                title={t("No notes yet")}
+                description={t("Notes the assistant takes and notes you add appear here.")}
+              />
+            ))}
         </section>
       )}
     </>

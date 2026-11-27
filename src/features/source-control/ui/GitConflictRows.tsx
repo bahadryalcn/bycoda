@@ -72,9 +72,17 @@ export function GitConflictRows({
                   hasFile ? t("Open {p0} in the editor", { p0: row.relative }) : row.relative
                 }
                 disabled={!hasFile || disabled}
+                disabledReason={
+                  !hasFile
+                    ? t("This file is not on disk.")
+                    : disabled
+                      ? t("Wait for the current operation to finish")
+                      : undefined
+                }
                 onClick={() => onOpen(row)}
                 onDoubleClick={() => onOpen(row, true)}
-                className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                align="start"
+                className="min-w-0 flex-1"
               >
                 <FileTypeIcon name={name} isDir={false} />
                 <Text
@@ -88,7 +96,7 @@ export function GitConflictRows({
                     {name}
                   </Text>
                   {dir ? (
-                    <Text size="micro" tone="muted" className="ml-1.5">
+                    <Text size="micro" tone="muted" className="ms-1.5">
                       {dir}
                     </Text>
                   ) : null}
@@ -98,7 +106,7 @@ export function GitConflictRows({
                 <InlineAction
                   label={t("Compare")}
                   tooltip={t("Compare the current and incoming versions with the base, read-only")}
-                  disabled={disabled}
+                  disabled={!!busy}
                   onClick={() => onCompare(row)}
                 >
                   <FileDiff className="icon-sm" aria-hidden />
@@ -118,7 +126,7 @@ export function GitConflictRows({
                   size="micro"
                   tone="danger"
                   weight="medium"
-                  className="w-5 shrink-0 text-right font-mono"
+                  className="w-5 shrink-0 text-end font-mono"
                 >
                   {info.letter}
                 </Text>

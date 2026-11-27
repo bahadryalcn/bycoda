@@ -1,9 +1,11 @@
 import { useT } from "../i18n";
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { hexToHsv, hsvToHex, normalizeHex, type Hsv } from "../lib/colorUtils";
@@ -59,11 +61,11 @@ export function ColorSwatchRow({
   return (
     <div className={className ? `${styles.swatchRow} ${className}` : styles.swatchRow}>
       {colors.map((color, index) => {
-        const label = labels?.[index] ?? `Color ${index + 1}`;
+        const label = labels?.[index] ?? t("Color {p0}", { p0: index + 1 });
         const selected =
           customColor == null && (colorIndex === index || (colorIndex == null && index === 0));
         return (
-          <Tooltip key={color} label={label} asChild>
+          <Tooltip key={color} label={label} details={[color]} asChild>
             <button
               type="button"
               aria-label={label}
@@ -82,7 +84,7 @@ export function ColorSwatchRow({
         );
       })}
       {onToggleCustom ? (
-        <Tooltip label={t("Custom color")} asChild>
+        <Tooltip label={t("Custom color")} details={customColor ? [customColor] : []} asChild>
           <button
             type="button"
             aria-label={t("Custom color")}
@@ -121,6 +123,7 @@ export function ColorSwatchRow({
  */
 export function ColorPickerPopover({ value, onChange, disabled = false, readOnly = false }: Props) {
   const t = useT();
+  const planeInstructionsId = useId();
   const [hsv, setHsv] = useState<Hsv>(() => hexToHsv(value));
   const [hexDraft, setHexDraft] = useState(() => normalizeHex(value));
   const currentHsv = useRef(hsv);
@@ -223,6 +226,36 @@ export function ColorPickerPopover({ value, onChange, disabled = false, readOnly
     window.addEventListener("pointercancel", onUp);
   };
 
+  // Saturation and brightness are two sliders over one plane. Arrows move along their own axis (Shift for 10),
+  // PageUp/PageDown move 10 and Home/End jump to the ends. The plane stays the pointer surface.
+  const onAxisKeyDown = (axis: "s" | "v", event: ReactKeyboardEvent<HTMLSpanElement>) => {
+    if (isImeComposition(event.nativeEvent)) return;
+    const step = event.shiftKey ? 10 : 1;
+    const [increaseKey, decreaseKey] =
+      axis === "s" ? ["ArrowRight", "ArrowLeft"] : ["ArrowUp", "ArrowDown"];
+    const delta =
+      event.key === increaseKey
+        ? step
+        : event.key === decreaseKey
+          ? -step
+          : event.key === "PageUp"
+            ? 10
+            : event.key === "PageDown"
+              ? -10
+              : null;
+    if (delta === null && event.key !== "Home" && event.key !== "End") return;
+    event.preventDefault();
+    applyHsv((previous) => ({
+      ...previous,
+      [axis]:
+        event.key === "Home"
+          ? 0
+          : event.key === "End"
+            ? 100
+            : Math.min(100, Math.max(0, previous[axis] + (delta ?? 0))),
+    }));
+  };
+
   const preview = hsvToHex(hsv.h, hsv.s, hsv.v);
   const hueColor = hsvToHex(hsv.h, 100, 100);
   // A half-typed or malformed draft takes the danger frame until it is completed or the field is left.
@@ -236,57 +269,51 @@ export function ColorPickerPopover({ value, onChange, disabled = false, readOnly
     >
       <div
         ref={svRef}
-        role="slider"
-        tabIndex={disabled ? -1 : 0}
-        aria-disabled={disabled || undefined}
-        aria-readonly={readOnly || undefined}
-        aria-label={t("Saturation and brightness")}
-        aria-valuetext={`${Math.round(hsv.s)}%, ${Math.round(hsv.v)}%`}
-        aria-description={t("Use Left/Right for saturation and Up/Down for brightness.")}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(hsv.s)}
         className={styles.plane}
         style={{
           background: `linear-gradient(to top, var(--color-scrim), transparent), linear-gradient(to right, var(--color-on-solid), ${hueColor})`,
         }}
         onPointerDown={onSvPointer}
-        onKeyDown={(event) => {
-          if (
-            isImeComposition(event.nativeEvent) ||
-            !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)
-          )
-            return;
-          event.preventDefault();
-          const step = event.shiftKey ? 10 : 1;
-          applyHsv((previous) => ({
-            ...previous,
-            s: Math.max(
-              0,
-              Math.min(
-                100,
-                previous.s +
-                  (event.key === "ArrowRight" ? step : event.key === "ArrowLeft" ? -step : 0),
-              ),
-            ),
-            v: Math.max(
-              0,
-              Math.min(
-                100,
-                previous.v +
-                  (event.key === "ArrowUp" ? step : event.key === "ArrowDown" ? -step : 0),
-              ),
-            ),
-          }));
-        }}
       >
+        <span id={planeInstructionsId} hidden>
+          {t("Use Left/Right for saturation and Up/Down for brightness.")}
+        </span>
         <span
+          aria-hidden
           className={styles.handle}
           style={{
             left: `${hsv.s}%`,
             top: `${100 - hsv.v}%`,
             background: preview,
           }}
+        />
+        <span
+          role="slider"
+          tabIndex={disabled ? -1 : 0}
+          aria-disabled={disabled || undefined}
+          aria-readonly={readOnly || undefined}
+          aria-label={t("Saturation")}
+          aria-describedby={planeInstructionsId}
+          aria-valuetext={`${Math.round(hsv.s)}%`}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(hsv.s)}
+          className={styles.axis}
+          onKeyDown={(event) => onAxisKeyDown("s", event)}
+        />
+        <span
+          role="slider"
+          tabIndex={disabled ? -1 : 0}
+          aria-disabled={disabled || undefined}
+          aria-readonly={readOnly || undefined}
+          aria-label={t("Brightness")}
+          aria-describedby={planeInstructionsId}
+          aria-valuetext={`${Math.round(hsv.v)}%`}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(hsv.v)}
+          className={styles.axis}
+          onKeyDown={(event) => onAxisKeyDown("v", event)}
         />
       </div>
 

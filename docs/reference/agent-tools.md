@@ -42,7 +42,7 @@ commands and Codex Plan instructions retain their existing behavior. Bridge pres
 means offered transport metadata, not a ready browser/device or authorized external
 action. Workflow guidance is context, never new permission.
 
-`host/bykit/bykit-hint.ts` appends the short `bykit` instruction block (from the bykit
+`host/bykit/bykit-hint.ts` appends the short `bykit` guidance block (from the bykit
 contract) to the Host's per-turn runtime instructions, for every provider and delegated
 children, only when the owner's switch is on and a `bykit` executable resolves on PATH.
 The switch is the Settings > Tools `bykitInstructions` preference, published to the local
@@ -87,17 +87,20 @@ does not prove navigation failed. MCP returns frame bytes as image content rathe
 than duplicating them into metadata text. Request receipts are in-memory and do
 not claim restart durability; inspect browser/panel state after a Host restart.
 
-`browser.resize` changes the leased CSS viewport (240–2560 by 240–2160), invalidates
+`browser.resize` changes the leased CSS viewport (240–3840 by 240–2160), invalidates
 old annotations and requires a new frame. It is not physical-device emulation.
 Runtime coordinates are checked against the actual viewport. Native-size mode
 keeps a narrow viewport at its real width rather than stretching it to the panel.
 
-`browser.recording.start` (leaseId, optional fps 1-10 default 4, maxSeconds 5-300
-default 120) samples the leased browser through the same frame path as `browser.frame`
-into a per-recording folder, one active recording per conversation browser. Frames are
-written to disk as they arrive and dropped rather than queued when capture is slow.
+`browser.recording.start` (leaseId, optional fps 4, 8, 10, 15, 30 or 60 default 4, maxSeconds 5-300
+default 120) records the leased browser from its live screencast (the stream behind
+`browser.frame` long polls, every picture acknowledged) into a per-recording folder, one
+active recording per conversation browser. Frames are written to disk as they arrive, one
+per fps slot (the newest wins), and each is held until the next, so a still page stays
+full length. A browser without a screencast falls back to screenshots, which cannot reach
+these rates.
 `browser.recording.stop` encodes WebM with Playwright's bundled ffmpeg
-(`libvpx-vp9`, deadline 120 s) and deletes the frames; `browser.recording.status`
+(`libvpx-vp9`, deadline 300 s) and deletes the frames; `browser.recording.status`
 reads its state. Recordings stop on maxSeconds, lease loss or browser close, and
 folders older than 24 hours are removed at Host start. Attaching the video to the chat
 is not supported.
@@ -123,6 +126,41 @@ them. A tool cannot exceed the account's autonomy level (`suggest`, `approve`,
 global send stop. Owner-only operations are never tools. These include people
 deletion and export, audience import, autonomy changes, program activation and
 browser workflow methods.
+
+## Live streaming
+
+Use the `liveStream` family in scoped Conversation Tools. MCP names follow the
+standard mapping, for example `conversation_liveStream_status`. These tools act
+on the Host serving the conversation and respect its current grant and crew
+tool profile. Assistant Room writes require its Host-wide permission level.
+External MCP credentials do not expose the family.
+
+- `liveStream.status` and `liveStream.report` read connection, OBS state and
+  session totals. Tool output excludes avatar URLs.
+- `liveStream.start`, `liveStream.demo` and `liveStream.stop` manage the live
+  reader. Read the status before switching channels and check it after the
+  change. Stop ends viewer intake and cancels retries. Read the report after
+  stopping.
+- `liveStream.obsSetup` enables authenticated control of installed OBS.
+  `liveStream.obsStream` with `action: "start"` requires
+  exact Native owner approval. With `action: "stop"` it ends the OBS broadcast.
+  Confirm the stream state in status before retrying or reporting success.
+  The Euler API key and OBS stream credentials are set in the owner UI.
+- `liveStream.liveAccounts` lists the ready Social destinations visible to the
+  conversation's project. Pass one to six of its `accountId` values as
+  `accountIds` to `liveStream.goLive` to go live on all of them at once. The
+  optional `scene` names an existing OBS scene and defaults to the scene OBS
+  shows. Starting requires exact native owner approval listing every account and
+  the scene, the project's Social account grant for each, and current Social
+  policy.
+- Read `liveStream.liveStatus` after starting or stopping. Report any owner
+  step, and never automatically retry an uncertain start. `liveStream.endLive`
+  stops OBS and ends the platform broadcast where supported. Tool responses
+  include status and account identity only. Keep the ingest URL and key in
+  Host custody. Assistant Room needs a Social-granted project to use these
+  four tools.
+
+See the [Live streaming guide](../guides/live-stream.md) for the end-to-end workflow.
 
 ## Optional desktop control
 
@@ -161,7 +199,7 @@ contract is in `src/shared/model/host-contracts/delegation.ts`, and the service 
 `host/delegation/service.ts`.
 
 - `agents.options` takes no input. It returns the selected `subagents` and
-  `advisor` refs with `available`, `effortLevels` and `defaultEffort` when offered, the current `running` counts and `limits`.
+  `advisor` refs with `available`, `filesFalse` (`available` and `repositoryReadIsolation`), `effortLevels` and `defaultEffort` when offered, the current `running` counts and `limits`. Pi checks CLI flags and OpenCode checks for CLI version 2 at launch. Grok and Gemini require an explicitly enabled Host API path, a key, the default account and a supported API model. See the [agent tools guide](../guides/agent-tools.md) for setup. `repositoryReadIsolation` reports whether the Host blocks OS-level reads outside scratch. Unsupported models reject `files: false`.
 - `agents.delegate` takes `requestId`, `title` and `prompt`, plus `model` (a ref
   key from `agents.options`). `model` is required when more than one subagent model
   is selected. The assistant chooses `effort` by the task's difficulty; the closest offered level is used, and omitted uses the model default. It returns at once with the run.

@@ -61,8 +61,13 @@ const own = () => account("reddit", "web:reddit:t2_owner1");
 const SUBMIT = "https://www.reddit.com/r/bycodatest/submit/?type=TEXT";
 const composer = `<textarea name="title"></textarea><div contenteditable="true" name="body"></div><button id="submit-post-button" type="button">Post</button>`;
 const created = JSON.stringify({ data: { createPost: { ok: true, post: { id: "t3_abc123" } } } });
-const published = (title = "Hello", body = "A Bycoda update", author = "t2_owner1") =>
-  `<shreddit-post id="t3_abc123" author-id="${author}" post-title="${title}"><div slot="text-body">${body}</div></shreddit-post>`;
+const published = (
+  title = "Hello",
+  body = "A Bycoda update",
+  author = "t2_owner1",
+  subreddit = "bycodatest",
+) =>
+  `<shreddit-post id="t3_abc123" author-id="${author}" post-title="${title}" subreddit-name="${subreddit}"><div slot="text-body">${body}</div></shreddit-post>`;
 const redditJob = (reddit: Record<string, unknown> = {}, text = "A Bycoda update") =>
   job("publish", { text, reddit: { subreddits: ["bycodatest"], title: "Hello", ...reddit } });
 const meFetch = (inbox: unknown[] = [], extra: Record<string, unknown> = {}) =>
@@ -99,6 +104,12 @@ it("reads the member from the session /api/me.json under a namespaced id", async
 it("recognizes only a response that names exactly one created thing", () => {
   expect(redditCreatedId(created, "t3")).toBe("t3_abc123");
   expect(redditCreatedId(created, "t1")).toBeUndefined();
+  expect(
+    redditCreatedId('{"data":{"createProfilePost":{"ok":true,"post":{"id":"t3_abc123"}}}}', "t3"),
+  ).toBe("t3_abc123");
+  expect(
+    redditCreatedId('{"data":{"createProfilePost":{"ok":false,"post":{"id":"t3_abc123"}}}}', "t3"),
+  ).toBeUndefined();
   expect(redditCreatedId(JSON.stringify({ json: { data: { name: "t3_x1" } } }), "t3")).toBe(
     "t3_x1",
   );
@@ -124,6 +135,126 @@ it("publishes a text post and returns it only after the persisted readback", asy
   expect(f.ctx.markSubmitted).toHaveBeenCalledTimes(1);
 });
 
+it("uses the current Reddit title and submit controls in open shadow roots", async () => {
+  const html =
+    '<post-composer-title></post-composer-title><div contenteditable="true" name="body"></div><r-post-form-submit-button></r-post-form-submit-button>';
+  const f = reddit(html, {
+    response: created,
+    render: (url) => {
+      if (url.includes("/comments/")) return published();
+      queueMicrotask(() => {
+        f.window.document
+          .querySelector("post-composer-title")!
+          .attachShadow({ mode: "open" }).innerHTML =
+          '<textarea name="title" aria-label="Title"></textarea>';
+        f.window.document
+          .querySelector("r-post-form-submit-button")!
+          .attachShadow({ mode: "open" }).innerHTML =
+          '<button id="inner-post-submit-button" type="button">Post</button>';
+      });
+      return html;
+    },
+  });
+  const marked = (selector: string) =>
+    [...f.window.document.querySelectorAll("*")]
+      .map((el) => el.shadowRoot?.querySelector(selector))
+      .find(Boolean) ?? f.window.document.querySelector(selector);
+  vi.mocked(f.page.fill).mockImplementation(async (selector, value) => {
+    const target = marked(selector);
+    if (!target) throw new Error("No marked Reddit editor");
+    target.textContent = value;
+  });
+  vi.mocked(f.page.click).mockImplementation(async (selector) => {
+    if (!marked(selector)) throw new Error("No marked Reddit button");
+  });
+  await expect(redditBrowserRecipe.send(f.ctx, redditJob())).resolves.toMatchObject({
+    platformId: "t3_abc123",
+  });
+  expect(f.ctx.markSubmitted).toHaveBeenCalledOnce();
+});
+
+it.each(["BycodaOwner", "OtherMember"])(
+  "checks a redirected profile composer before writing (%s)",
+  async (member) => {
+    const f = reddit(composer, {
+      response: created,
+      render: (url) =>
+        url.includes("/comments/")
+          ? published().replace(' subreddit-name="bycodatest"', "")
+          : composer,
+    });
+    const navigate = vi.mocked(f.page.goto).getMockImplementation()!;
+    vi.mocked(f.page.goto).mockImplementation(async (url) => {
+      await navigate(url);
+      f.window.location.href = url.includes("/comments/")
+        ? "https://www.reddit.com/user/BycodaOwner/comments/abc123/hello/"
+        : `https://www.reddit.com/user/${member}/submit/`;
+    });
+    const send = redditBrowserRecipe.send(f.ctx, redditJob({ subreddits: ["u_BycodaOwner"] }));
+    if (member === "BycodaOwner") {
+      await expect(send).resolves.toMatchObject({ platformId: "t3_abc123" });
+      expect(f.ctx.markSubmitted).toHaveBeenCalledOnce();
+    } else {
+      await expect(send).rejects.toMatchObject({ code: "denied" });
+      expect(f.page.fill).not.toHaveBeenCalled();
+      expect(f.ctx.markSubmitted).not.toHaveBeenCalled();
+    }
+  },
+);
+
+it.each(["thingid", "thingId"])(
+  "opens the exact profile post's collapsed comment editor and reads the %s receipt",
+  async (attribute) => {
+    const post = '<shreddit-post id="t3_abc123"></shreddit-post>';
+    const closed =
+      '<comment-composer-host><textarea id="innerTextArea"></textarea></comment-composer-host>';
+    const open =
+      '<div name="body" contenteditable="true"></div><button id="comment-composer-submit-button" type="submit">Comment</button>';
+    const saved =
+      '<shreddit-comment thingid="t1_newcomment" author="BycodaOwner" postid="t3_abc123"><details><div slot="comment">Test comment</div></details></shreddit-comment>';
+    const f = reddit(post + closed, {
+      response:
+        '<faceplate-loader name="CreateComment_fixture" src="concat:fixture"></faceplate-loader>' +
+        saved.replace("thingid=", `${attribute}=`),
+      render: (url) => post + (url.includes("/comment/") ? saved : closed),
+      click: (element) => {
+        const root = element.closest("comment-composer-host");
+        if (element.id === "innerTextArea" && root) root.innerHTML = open;
+      },
+    });
+    const navigate = vi.mocked(f.page.goto).getMockImplementation()!;
+    vi.mocked(f.page.goto).mockImplementation(async (url) => {
+      await navigate(url);
+      f.window.location.href = url.replace("/comments/", "/user/BycodaOwner/comments/");
+    });
+    await expect(
+      redditBrowserRecipe.send(
+        f.ctx,
+        job("comment", { postId: "t3_abc123", text: "Test comment" }),
+      ),
+    ).resolves.toMatchObject({ platformId: "t1_newcomment" });
+    expect(f.page.click).toHaveBeenNthCalledWith(1, '[data-bycoda-web-control="comment-expand"]');
+    expect(f.ctx.markSubmitted).toHaveBeenCalledOnce();
+    const [path] = vi.mocked(f.page.watchResponse).mock.calls[0];
+    expect(path.test("/svc/shreddit/t3_abc123/create-comment")).toBe(true);
+    expect(path.test("/svc/shreddit/t3_wrong/create-comment")).toBe(false);
+  },
+);
+
+it("verifies the same actor when Reddit leaves the composer after submitting", async () => {
+  const f = reddit(composer, {
+    response: created,
+    render: (url) => (url.includes("/comments/") ? published() : composer),
+    click: () => {
+      f.window.location.href = "https://www.reddit.com/r/bycodatest/comments/abc123/hello/";
+    },
+  });
+  await expect(redditBrowserRecipe.send(f.ctx, redditJob())).resolves.toMatchObject({
+    platformId: "t3_abc123",
+  });
+  expect(f.ctx.markSubmitted).toHaveBeenCalledOnce();
+});
+
 it("publishes a link post with the link field", async () => {
   const link = "https://example.com/a";
   const html = `<input name="title"><input name="link"><button id="submit-post-button">Post</button>`;
@@ -131,7 +262,7 @@ it("publishes a link post with the link field", async () => {
     response: created,
     render: (url) =>
       url.includes("/comments/")
-        ? `<shreddit-post id="t3_abc123" author-id="t2_owner1" post-title="Hello" content-href="${link}"></shreddit-post>`
+        ? `<shreddit-post id="t3_abc123" author-id="t2_owner1" post-title="Hello" subreddit-name="bycodatest" content-href="${link}"></shreddit-post>`
         : html,
   });
   await expect(
@@ -158,6 +289,39 @@ it("reports uncertain delivery when the post is not found by readback or has ano
     code: "unknown",
   });
 });
+
+it("holds an acknowledged post whose persisted subreddit differs", async () => {
+  const f = reddit(composer, {
+    response: created,
+    render: (url) =>
+      url.includes("/comments/")
+        ? published("Hello", "A Bycoda update", "t2_owner1", "othercommunity")
+        : composer,
+  });
+  await expect(redditBrowserRecipe.send(f.ctx, redditJob())).rejects.toMatchObject({
+    code: "unknown",
+  });
+  expect(f.ctx.markSubmitted).toHaveBeenCalledOnce();
+});
+
+it.each([false, true])(
+  "blocks a different subreddit composer before or after filling (%s)",
+  async (filled) => {
+    const f = reddit(composer, { response: created });
+    const verify = vi.mocked(f.ctx.verifyIdentity).getMockImplementation()!;
+    vi.mocked(f.ctx.verifyIdentity).mockImplementation(async () => {
+      await verify();
+      if (!filled || vi.mocked(f.page.fill).mock.calls.length)
+        f.window.location.href = "https://www.reddit.com/r/othercommunity/submit/?type=TEXT";
+    });
+    await expect(redditBrowserRecipe.send(f.ctx, redditJob())).rejects.toMatchObject({
+      code: "denied",
+    });
+    if (!filled) expect(f.page.fill).not.toHaveBeenCalled();
+    expect(f.ctx.markSubmitted).not.toHaveBeenCalled();
+    expect(f.page.click).not.toHaveBeenCalled();
+  },
+);
 
 it("refuses a required flair the job does not name before anything is submitted", async () => {
   const f = reddit(`<div flair-required></div>${composer}`, { response: created });
@@ -194,14 +358,23 @@ it("refuses to submit when the identity differs and never clicks", async () => {
 });
 
 const commentBox = `<comment-composer-host><div contenteditable="true"></div><button type="submit">Comment</button></comment-composer-host>`;
-const commentRow = (id: string, author: string, text: string, tail = "") =>
-  `<shreddit-comment thingid="${id}" author-id="${author}"><div slot="comment">${text}</div>${tail}</shreddit-comment>`;
+const commentThread = '<shreddit-post id="t3_abc123"></shreddit-post>';
+const commentRow = (
+  id: string,
+  author: string,
+  text: string,
+  tail = "",
+  parent?: string,
+  post = "t3_abc123",
+) =>
+  `<shreddit-comment thingid="${id}" author-id="${author}" postid="${post}"${parent ? ` parentid="${parent}"` : ""}><div slot="comment">${text}</div>${tail}</shreddit-comment>`;
 
 it("comments on a known post and verifies the persisted comment", async () => {
-  const f = reddit(commentBox, {
+  const f = reddit(commentThread + commentBox, {
     response: JSON.stringify({ data: { createComment: { comment: { id: "t1_new1" } } } }),
     render: (url) =>
-      url.includes("/comment/new1") ? commentRow("t1_new1", "t2_owner1", "Thanks") : commentBox,
+      commentThread +
+      (url.includes("/comment/new1") ? commentRow("t1_new1", "t2_owner1", "Thanks") : commentBox),
   });
   await expect(
     redditBrowserRecipe.send(f.ctx, job("comment", { text: "Thanks", postId: "t3_abc123" })),
@@ -213,13 +386,15 @@ it("comments on a known post and verifies the persisted comment", async () => {
 });
 
 it("replies to a known comment inside that comment only", async () => {
-  const thread = `${commentRow("t1_other", "t2_x", "Other", `<button aria-label="Reply">Reply</button>${commentBox}`)}${commentRow("t1_parent", "t2_x", "Question", `<button aria-label="Yanıtla">Yanıtla</button>${commentBox}`)}`;
+  const thread = `${commentThread}${commentRow("t1_other", "t2_x", "Other", `<button aria-label="Reply">Reply</button>${commentBox}`)}${commentRow("t1_parent", "t2_x", "Question", `<button aria-label="Yanıtla">Yanıtla</button>${commentBox}`)}`;
   const f = reddit(thread, {
     response: JSON.stringify({
       json: { errors: [], data: { things: [{ data: { name: "t1_new2" } }] } },
     }),
     render: (url) =>
-      url.includes("/comment/new2") ? commentRow("t1_new2", "t2_owner1", "Answer") : thread,
+      url.includes("/comment/new2")
+        ? commentThread + commentRow("t1_new2", "t2_owner1", "Answer", "", "t1_parent")
+        : thread,
   });
   await expect(
     redditBrowserRecipe.send(
@@ -233,10 +408,13 @@ it("replies to a known comment inside that comment only", async () => {
 });
 
 it("treats a comment without a persisted match as uncertain and rejects unsafe targets", async () => {
-  const f = reddit(commentBox, {
+  const f = reddit(commentThread + commentBox, {
     response: JSON.stringify({ data: { createComment: { comment: { id: "t1_new1" } } } }),
     render: (url) =>
-      url.includes("/comment/new1") ? commentRow("t1_new1", "t2_owner1", "Different") : commentBox,
+      commentThread +
+      (url.includes("/comment/new1")
+        ? commentRow("t1_new1", "t2_owner1", "Different")
+        : commentBox),
   });
   await expect(
     redditBrowserRecipe.send(f.ctx, job("comment", { text: "Thanks", postId: "t3_abc123" })),
@@ -247,6 +425,38 @@ it("treats a comment without a persisted match as uncertain and rejects unsafe t
   await expect(
     redditBrowserRecipe.send(f.ctx, job("message", { text: "hi", threadId: "t4_abc" })),
   ).rejects.toMatchObject({ code: "unsupported" });
+});
+
+it.each([
+  ["another post", "t3_other", "t1_parent"],
+  ["another parent", "t3_abc123", "t1_other"],
+])("holds a reply read back under %s", async (_description, post, parent) => {
+  const thread =
+    commentThread +
+    commentRow("t1_parent", "t2_x", "Question", `<button>Reply</button>${commentBox}`);
+  const f = reddit(thread, {
+    response: JSON.stringify({ data: { createComment: { comment: { id: "t1_new2" } } } }),
+    render: (url) =>
+      url.includes("/comment/new2")
+        ? commentThread + commentRow("t1_new2", "t2_owner1", "Answer", "", parent, post)
+        : thread,
+  });
+  await expect(
+    redditBrowserRecipe.send(
+      f.ctx,
+      job("reply", { text: "Answer", postId: "t1_parent", threadId: "t3_abc123" }),
+    ),
+  ).rejects.toMatchObject({ code: "unknown" });
+  expect(f.ctx.markSubmitted).toHaveBeenCalledOnce();
+});
+
+it("leaves the comment unsent if the visible thread belongs to another post", async () => {
+  const f = reddit('<shreddit-post id="t3_other"></shreddit-post>' + commentBox);
+  await expect(
+    redditBrowserRecipe.send(f.ctx, job("comment", { text: "Thanks", postId: "t3_abc123" })),
+  ).rejects.toMatchObject({ code: "denied" });
+  expect(f.page.fill).not.toHaveBeenCalled();
+  expect(f.ctx.markSubmitted).not.toHaveBeenCalled();
 });
 
 const child = (kind: string, name: string, author: string, at: number, extra = {}) => ({

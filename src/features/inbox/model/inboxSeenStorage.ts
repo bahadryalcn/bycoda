@@ -9,6 +9,10 @@ const validSeed = (value: unknown) =>
   (typeof value === "string" &&
     /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value));
 
+/** A stored seen time, or `undefined` when the record is absent or malformed. */
+const readableTime = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) ? value : undefined;
+
 export type InboxSeenSnapshot = { seeded: boolean; items: Record<string, number> };
 
 let opening: Promise<IDBDatabase> | undefined;
@@ -61,15 +65,8 @@ export async function mergeInboxSeenStorage(snapshot: InboxSeenSnapshot): Promis
     for (const [key, timestamp] of Object.entries(snapshot.items)) {
       const get = items.get(key);
       get.onsuccess = () => {
-        const previous = get.result;
-        if (
-          previous !== undefined &&
-          (typeof previous !== "number" || !Number.isFinite(previous))
-        ) {
-          transaction.abort();
-          return;
-        }
-        items.put(Math.max(previous ?? 0, timestamp), key);
+        // A malformed stored value counts as absent, so this write repairs it.
+        items.put(Math.max(readableTime(get.result) ?? 0, timestamp), key);
       };
     }
     if (snapshot.seeded) {
@@ -147,14 +144,7 @@ export async function seedInboxSeenStorage(items: Record<string, number>): Promi
       for (const [key, timestamp] of Object.entries(items)) {
         const previous = store.get(key);
         previous.onsuccess = () => {
-          if (
-            previous.result !== undefined &&
-            (typeof previous.result !== "number" || !Number.isFinite(previous.result))
-          ) {
-            transaction.abort();
-            return;
-          }
-          store.put(Math.max(previous.result ?? 0, timestamp), key);
+          store.put(Math.max(readableTime(previous.result) ?? 0, timestamp), key);
         };
       }
       meta.put(true, "seeded");
@@ -216,6 +206,54 @@ async function cleanSeedStaging(db: IDBDatabase, active?: string): Promise<void>
   }
 }
 
+/** Read a bounded dense page in bulk. Sparse ranges fall back to exact identities. */
+function readSeenPage(
+  store: IDBObjectStore,
+  keys: readonly string[],
+  values: Map<string, number | undefined>,
+  generation?: string,
+) {
+  const storageKey = (key: string) => (generation ? [generation, key] : key);
+  const merge = (key: string, raw: unknown) => {
+    const value = readableTime(raw);
+    const previous = values.get(key);
+    if (value !== undefined && (previous === undefined || value > previous)) values.set(key, value);
+  };
+  function readExact() {
+    for (const key of keys) {
+      const request = store.get(storageKey(key));
+      request.onsuccess = () => merge(key, request.result);
+    }
+  }
+  if (keys.length < 32) {
+    readExact();
+    return;
+  }
+  const sorted = [...keys].sort();
+  const range = IDBKeyRange.bound(storageKey(sorted[0]!), storageKey(sorted[sorted.length - 1]!));
+  const page = store.getAllKeys(range, keys.length + 1);
+  page.onsuccess = () => {
+    if (page.result.length > keys.length) {
+      readExact();
+      return;
+    }
+    if (!page.result.length) return;
+    // Same range and readonly transaction give both arrays identical key order.
+    const rows = store.getAll(range, keys.length);
+    rows.onsuccess = () => {
+      page.result.forEach((rawKey, index) => {
+        if (
+          generation &&
+          !(Array.isArray(rawKey) && rawKey.length === 2 && rawKey[0] === generation)
+        )
+          return;
+        const key = Array.isArray(rawKey) ? rawKey[1] : rawKey;
+        if (typeof key === "string" && values.has(key)) merge(key, rows.result[index]);
+      });
+    };
+  };
+}
+
 export async function readInboxSeenStorage(
   keys: readonly string[],
 ): Promise<{ seeded: boolean; items: Map<string, number | undefined> }> {
@@ -231,38 +269,10 @@ export async function readInboxSeenStorage(
         transaction.abort();
         return;
       }
-      for (const key of new Set(keys)) {
-        const request = items.get(key);
-        const initial =
-          typeof seeded.result === "string" ? seeds.get([seeded.result, key]) : undefined;
-        let regular: unknown,
-          staged: unknown,
-          regularReady = false,
-          stagedReady = !initial;
-        const update = () => {
-          if (!regularReady || !stagedReady) return;
-          const valuesToMerge = [regular, staged].filter((value) => value !== undefined);
-          if (valuesToMerge.some((value) => typeof value !== "number" || !Number.isFinite(value))) {
-            transaction.abort();
-            return;
-          }
-          const numbers = valuesToMerge.filter(
-            (value): value is number => typeof value === "number",
-          );
-          values.set(key, numbers.length ? Math.max(...numbers) : undefined);
-        };
-        request.onsuccess = () => {
-          regular = request.result;
-          regularReady = true;
-          update();
-        };
-        if (initial)
-          initial.onsuccess = () => {
-            staged = initial.result;
-            stagedReady = true;
-            update();
-          };
-      }
+      const unique = [...new Set(keys)];
+      for (const key of unique) values.set(key, undefined);
+      readSeenPage(items, unique, values);
+      if (typeof seeded.result === "string") readSeenPage(seeds, unique, values, seeded.result);
     };
     transaction.oncomplete = () => {
       if (!validSeed(seeded.result)) reject(new Error("Inbox storage metadata is invalid."));

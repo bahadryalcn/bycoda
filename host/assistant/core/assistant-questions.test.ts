@@ -117,7 +117,7 @@ async function fixture(enabled = true) {
     },
     "owner",
   );
-  const job = (
+  const queued = (
     await assistant.request(
       {
         op: "jobs.create",
@@ -129,6 +129,9 @@ async function fixture(enabled = true) {
       "owner",
     )
   ).job!;
+  // Dispatch runs on the request queue after the RPC; this request queues behind it.
+  await assistant.request({ op: "tick" }, "owner");
+  const job = (await assistant.request({ op: "jobs.get", id: queued.id }, "owner")).job!;
   const created = await engine.command({
       type: "create",
       commandId: "question-worker-create",

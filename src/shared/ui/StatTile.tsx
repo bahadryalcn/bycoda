@@ -10,6 +10,8 @@ export type StatTileProps = {
   value: ReactNode;
   /** Makes the whole tile one action (open what the figure counts). */
   onOpen?: () => void;
+  /** With `onOpen`: the tile is a toggle in a single-select group; sets `aria-pressed` and the selected look. */
+  selected?: boolean;
   /** Extra line under the figure, such as a Meter. */
   children?: ReactNode;
 };
@@ -20,7 +22,7 @@ export type StatTileProps = {
  * @use One headline figure with its label inside StatRow, optionally opening what it counts.
  * @avoid Standalone use outside StatRow, or a figure in running text: Text.
  */
-export function StatTile({ label, value, onOpen, children }: StatTileProps) {
+export function StatTile({ label, value, onOpen, selected, children }: StatTileProps) {
   const body = (
     <>
       <Text size="caption" tone="muted" leading="inherit">
@@ -40,7 +42,14 @@ export function StatTile({ label, value, onOpen, children }: StatTileProps) {
     </>
   );
   return onOpen ? (
-    <Button variant="item" layout="stacked" align="start" className={styles.tile} onClick={onOpen}>
+    <Button
+      variant="item"
+      layout="stacked"
+      align="start"
+      className={styles.tile}
+      onClick={onOpen}
+      pressed={selected}
+    >
       {body}
     </Button>
   ) : (

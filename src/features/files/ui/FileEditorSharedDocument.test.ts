@@ -6,6 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FILE_EDITOR_AUTOSAVE_DELAY_MS, FileEditor } from "./FileEditor";
 import { invalidateWatchedFiles } from "../model/fileWatch";
+import { setRemoteCommandRunner } from "../../../platform/tauri/fs";
 import { sharedUndo } from "../editor/editorSharedHistory";
 
 const bridge = vi.hoisted(() => ({ invoke: vi.fn() }));
@@ -52,13 +53,13 @@ afterEach(async () => {
 });
 
 /** The file's own tab and a second tab on the same file, both mounted. */
-async function renderBoth() {
+async function renderBoth(path = PATH) {
   const editor = (documentId: string) =>
     createElement(
       "div",
       { "data-tab": documentId },
       createElement(FileEditor, {
-        path: PATH,
+        path,
         documentId,
         cwd: "/repo",
         active: false,
@@ -118,4 +119,32 @@ it("shows, saves once and undoes an edit across two tabs of one file", async () 
     expect(tab(id)).not.toMatch(/changed on disk/i);
   }
   expect(onDirtyChange).toHaveBeenLastCalledWith(PATH, false);
+});
+
+it("lets the peer tab check its next save against the version the other tab's save returned", async () => {
+  let stamp = 1;
+  const bases: Array<string | undefined> = [];
+  setRemoteCommandRunner(async (command, args) => {
+    if (command === "read_text_file") return { text: disk, version: `v${stamp}` };
+    if (command === "write_text_file") {
+      const base = args.baseVersion as string | undefined;
+      bases.push(base);
+      if (base !== undefined && base !== `v${stamp}`) throw new Error("FILE_CHANGED: stale");
+      disk = args.content as string;
+      stamp += 1;
+      return { version: `v${stamp}` };
+    }
+    return [];
+  });
+  const remote = "remote://env/repo/index.js";
+  const { file, review } = await renderBoth(remote);
+  act(() => file.dispatch({ changes: { from: 12, insert: " // one" }, userEvent: "input.type" }));
+  await settle();
+  expect(bases).toEqual(["v1"]);
+  // A third process writes; the other tab's next save must be refused, not unchecked.
+  stamp += 1;
+  act(() => review.dispatch({ changes: { from: 0, insert: "x" }, userEvent: "input.type" }));
+  await settle();
+  expect(bases[1]).toBe("v2");
+  expect(disk).not.toContain("x");
 });

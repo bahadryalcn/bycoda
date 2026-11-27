@@ -52,24 +52,48 @@ fall. Suppress one line only, always with a reason.
 
 - `bycoda/app-locale-formatting` (`src/**`)
   - Format dates, times, numbers, byte sizes and durations through the shared helpers so every surface agrees on locale, calendar day and density: formatDate / formatNumber (src/shared/i18n/core.ts), formatRelativeTime / formatBytes / formatDuration (src/shared/i18n/format.ts), dateTimeFormat / relativeTimeFormat (src/shared/lib/intl.ts) or the \<Timestamp> component. Direct toLocale*String / new Intl.*Format calls belong only in those helpers.
+- `bycoda/button-pressed-prop` (`src/**/*.tsx`)
+  - Button with both `selected` and `aria-pressed` sets the ARIA state by hand next to the visual state, and the two can drift apart. Use `pressed` on Button instead: it sets `aria-pressed` and the selected look together (src/shared/ui/Button.tsx).
 - `bycoda/compiler-owns-memo` (`src/shared/ui/**, src/features/sessions/ui/**, src/features/sync/**, src/features/terminal/**, src/features/projects/**, src/features/notifications/**, src/app/shell/**`)
   - The React Compiler compiles the components and hooks of this folder and memoizes values, callbacks and components itself. Drop `useMemo`, `useCallback`, `memo()` and the `"use memo"` directive here: compute the value in render and pass plain functions. If the compiler skips this function (a `[react-compiler]` build warning names it), fix what it cannot prove safe, or keep the hook with `// oxlint-disable-next-line bycoda/compiler-owns-memo -- <why the compiler cannot memoize this>` on the line above.
 - `bycoda/compiler-stays-on` (`src/**`)
   - `"use no memo"` hides code the React Compiler cannot prove safe instead of fixing it. Remove the directive and fix the cause the `[react-compiler]` build warning names (a mutation after render, a ref read in render, state read outside React). The build guard already opts out functions that read state the compiler cannot see. If the opt-out must stay, put `// oxlint-disable-next-line bycoda/compiler-stays-on -- <what the compiler gets wrong here>` on the line above.
+- `bycoda/dialog-single-translator` (`src/**/*.{ts,tsx}`)
+  - A dialog worded with the Git translator (`i18n/git`) keeps the shared default Cancel, which follows the interface language, so title and button end up in different languages. Pass `cancelLabel: t("Cancel")` from the same translator, or word the whole dialog with one translator; confirmGitAction callers outside the Git feature must use the interface translator for every string, so give them their own confirmInApp call.
 - `bycoda/effect-names-its-sync` (`src/**`)
   - Stop and reconsider before adding this effect. Computable from props or state? Compute it in render. A response to a user action? Do it in that handler. Resetting state when a prop changes? Key the component on that prop. Telling a parent or store that a value changed? Do it where the change happens. Reading a value from outside React? Use `useSyncExternalStore` or a store hook. Loading data? Use the query or store that owns it. An effect is right only when it keeps something outside React in step with this component while mounted: a DOM node, listener, timer, observer, native event, connection or a resource held until unmount. Moving the same logic into a ref or store to dodge this rule is not a fix. If the effect does that, name what it keeps in step on the line above: `// oxlint-disable-next-line bycoda/effect-names-its-sync -- <what it syncs with and why>`.
 - `bycoda/grapheme-safe-truncate` (`src/**, host/**`)
   - `slice(0, n)` cuts UTF-16 code units and can leave half of an emoji; native (Rust) JSON parsing then rejects the string. Use `truncateGraphemes(text, n)` from src/shared/lib/text/truncate.ts for user-visible or IPC-bound text.
 - `bycoda/handled-background-promise` (`host/**, packages/**`)
   - A `void`-discarded promise with no rejection handler becomes an unhandled rejection; the Host logs it through guardUnhandledRejections (host/server/support.ts) and marks the service degraded, and the failed work is silently lost. Append `.catch(...)` that logs or reports (a `.finally()` alone does not handle the rejection), pass a rejection handler as the second `then` argument, or await it inside a try/catch (an async IIFE whose body has a try/catch is fine).
+- `bycoda/icon-button-needs-label` (`src/**/*.tsx`)
+  - Icon-only Button has no accessible name. Pass a translated `label` or `aria-label` (it names the button for assistive technology and adds no visible text or tooltip by itself), or give the Button visible text children; an icon child alone does not name it (src/shared/ui/Button.tsx).
+- `bycoda/literal-translation-key` (`src/**/*.ts, src/**/*.tsx`)
+  - Use a literal message in t() so the locale check can extract it. Translate each branch at its declaration and pass values through positional slots.
+- `bycoda/menu-uses-dropdown` (`src/app/**/*.tsx, src/features/**/*.tsx`)
+  - Menus are not built by hand: a Popover holding MenuRow items, or a literal role=menu/menuitem, has no menu role wiring and no arrow-key navigation. Use DropdownMenu from src/shared/ui (items/content) or ContextMenu, which own the role, focus and keyboard behavior.
+- `bycoda/no-raw-error-text` (`src/**/*.ts, src/**/*.tsx`)
+  - Show what happened in a translated title and put raw error text in the shared ErrorDetails, or use the existing describe/present error helpers. See K1.
 - `bycoda/safe-timestamp-render` (`src/**, host/**`)
   - `new Date(value).toISOString()` throws a RangeError on an invalid date and takes the whole React tree down. Use `isoTimestamp(value)` from src/shared/lib/time/timestamps.ts, which returns undefined for invalid input.
+- `bycoda/shared-container-appearance` (`src/features/**/*.tsx, src/app/**/*.tsx`)
+  - Choose the shared variant/prop for appearance; the screen owns only layout, width and scroll. Padding, radius, border, background, shadow, ring, backdrop, glass and text size/colour classes, style keys and paint variables on a shared container, overlay or control fork its look. If no variant fits, add one to the shared component instead of styling the call site, or keep the line with `// oxlint-disable-next-line bycoda/shared-container-appearance -- <why no variant fits>`.
 - `bycoda/shared-formatters-only` (`src/features/**, src/app/**`)
   - Define date, number, byte and duration formatters only in src/shared/i18n. Import the shared formatter instead of defining a local format helper. Preserve existing output through shared options. (Constructing Intl formatters is rule bycoda/app-locale-formatting.)
 - `bycoda/shared-resize-observer` (`src/**`)
   - Every `new ResizeObserver` adds its own observer and callback; a list of measuring rows then runs one per row on each layout. Use `observeResize(element, listener)` from src/shared/lib/observeResize.ts, which shares one observer per window and returns the unsubscribe function for the effect cleanup. If this caller needs observer options the helper lacks, keep it with `// oxlint-disable-next-line bycoda/shared-resize-observer -- <which option and why>` on the line above.
 - `bycoda/suppression-has-reason` (`src/**, host/**, packages/**`)
   - A suppression comment needs a reason so the next reader can tell a justified exception from a silenced defect. Append ` -- <why this line is safe>` in the same comment, for example `// oxlint-disable-next-line no-restricted-imports -- scratch file, not read at startup`.
+- `bycoda/task-state-from-stop-code` (`host/tasks/**, src/features/tasks/**, src/shared/model/**`)
+  - A task's `error` is free text for the owner to read, never for the code to branch on. Read `task.stop?.code` / `task.wait?.code` (src/shared/model/host-contracts/task-stop.ts) and show `taskStopSummary(task)`; a run's cause is `outcome.cause`.
+- `bycoda/toast-needs-tone` (`src/**/*.ts, src/**/*.tsx`)
+  - Toast has no tone, so it falls back to "info" and a failure shows as a neutral notice. Pass tone="danger", "warning", "success" or "info" explicitly (src/shared/ui/ToastRegion.tsx).
+- `bycoda/transcript-ink-roles` (`src/features/sessions/ui/**/*.tsx`)
+  - Transcript text ink must come from the transcript ink roles, not full or global text tokens: `--color-content` flattens the hierarchy (commands, chips and icons read as loud as the emphasis they support), and `--ui-text-secondary` / `--ui-text-muted` do not follow the reading surface. Use `text-(--transcript-ink-emphasis)` for emphasis, `text-(--transcript-ink-body)` for body text, and `text-(--transcript-ink-chrome)` / `text-(--transcript-ink-chrome-active)` for chrome at rest and active. If a full-ink use is real emphasis, keep it with `// oxlint-disable-next-line bycoda/transcript-ink-roles -- <what is emphasized>` on the line above.
+- `bycoda/transcript-row-trigger` (`src/features/sessions/ui/**/*.tsx`)
+  - Transcript rows open and close through `Disclosure variant="step"` (src/shared/ui/Disclosure.tsx), which owns the trigger, `aria-expanded`, the keyboard path and the hit area. A `Button expanded=`, a raw `aria-expanded` element, `InlineAction reveal="interaction"` or an `onClick` on a `div` makes a second trigger that drifts from the step row. Use `<Disclosure variant="step" ...>` instead.
+- `bycoda/translation-slot-names` (`src/**`)
+  - Named placeholders such as "{name}" stay on screen as raw text: the translator only fills positional slots. Use positional slots and pass the values by position: t("Add {p0}", { p0: name }).
 - `bycoda/utf8-child-locale` (`src/**, host/**`)
   - `LC_ALL=C` makes git and grep treat input as single-byte text, so case-insensitive matching of non-ASCII letters (ş, İ, ç, ö) never succeeds and binary detection changes. Use `LC_ALL: "C.UTF-8"` (predictable messages, UTF-8 aware matching).
 - `bycoda/whole-sentence-translation` (`src/**`)
@@ -123,6 +147,8 @@ fall. Suppress one line only, always with a reason.
   - State files written in place are truncated to zero bytes by a crash mid-write. Use writeFileAtomic() / readStateFile() from host/storage/atomic-write.ts for anything the Host reads back at startup. Streaming logs and scratch files may use fs/promises writeFile with an `// oxlint-disable-next-line no-restricted-imports -- <why>` comment.
 - `oxlint/no-restricted-imports`: `node:fs/promises {writeFile}` (`host/**`)
   - State files written in place are truncated to zero bytes by a crash mid-write. Use writeFileAtomic() / readStateFile() from host/storage/atomic-write.ts for anything the Host reads back at startup.
+- `oxlint/no-restricted-imports`: `node:os {networkInterfaces}` (`host/**`)
+  - os.networkInterfaces() is a synchronous adapter query that blocks the Host event loop (~20 ms on Windows, more under load); per-request or per-poll calls froze the Host. Use currentNetworkInterfaces() / networkFingerprint() from host/mobile/mobile-network.ts.
 - `oxlint/no-restricted-properties`: `window.alert` (`src/**, host/**, packages/**`)
   - Native dialogs block the webview and bypass theming and i18n. Use InlineError/Alert/Toast from src/shared/ui.
 - `oxlint/no-restricted-properties`: `window.confirm` (`src/**, host/**, packages/**`)
@@ -175,10 +201,16 @@ fall. Suppress one line only, always with a reason.
 
 - `alert-role-prop` (`src/app, src/features, shared stylesheets`)
   - role= passed to \<Alert> (Alert sets alert/status from its tone)
-- `arbitrary-spacing` (`src/app, src/features, shared stylesheets`)
-  - arbitrary spacing value (p-/m-/gap-/inset-/top-…[Npx]); use the spacing scale or --space-* tokens
+- `arbitrary-spacing` (`CSS and TSX in src/app and src/features (excluding tests)`)
+  - arbitrary fixed spacing or inset in a utility (use the spacing scale or a semantic --ui-space-* token)
+- `arbitrary-ui-token-override` (`TSX in src/app and src/features (excluding tests)`)
+  - a className overrides a shared --ui-* token (use the shared variant or define a semantic role)
 - `arc-var-outside-arc` (`src/app, src/features, shared stylesheets`)
   - Arc-only variable (.bycoda-arc block in arc.css) used outside an Arc root
+- `aria-label-without-role` (`TSX in src/app and src/features (excluding tests)`)
+  - aria-label on a div without a semantic role (use a named semantic element or associate the label with its intended control)
+- `button-manual-pending` (`TSX in src/app and src/features (excluding tests)`)
+  - Button shows its pending state by hand (use loading with loadingLabel instead of a label swap, and startIcon instead of an icon child)
 - `color-base-hue` (`src/app, src/features, shared stylesheets`)
   - raw base hue var in feature CSS (var(--color-accent…)); the text|bg|border-danger… utilities are semantic and allowed
 - `color-base-opacity` (`src/app, src/features, shared stylesheets`)
@@ -193,16 +225,20 @@ fall. Suppress one line only, always with a reason.
   - named import of a shared/ui export whose catalog status is deprecated (use its @instead)
 - `disabled-opacity` (`src/app, src/features, shared stylesheets`)
   - opacity-30..60 used as the disabled state
+- `disabled-without-reason` (`TSX in src/app and src/features (excluding tests)`)
+  - disabled shared action lacks an explanation (use disabledReason or associate its visible explanation)
+- `duplicate-feedback-channel` (`TSX in src/app, src/features, src/shared (excluding tests)`)
+  - one operation or disabled action repeats the same message across feedback channels (keep one visible owner and associate its message with the control when needed)
 - `feature-motion` (`src/app, src/features, shared stylesheets`)
   - motion written in feature code: transition or animation, in CSS or as transition/animate-*/duration-*/ease-*/delay-* classes (use Motion; waiting states are Spinner, LoadingText, Skeleton, WorkingIndicator)
-- `feature-typography` (`src/app, src/features, shared stylesheets`)
-  - type chosen in feature code: font-size, font-weight, line-height, letter-spacing or text color, in CSS or as text-*/font-*/leading-*/tracking-* classes (use Text, including semantic containers; Heading for a title, SectionLabel for a group caption, Code for a literal, OutputBlock for command or log output (leading for line height), DiffStat for added and removed line counts; Timestamp, MiddleTruncate and LiveText take size and tone)
+- `feature-typography` (`CSS and TSX in src/app and src/features (excluding tests)`)
+  - feature typography override in CSS, utility classes or an inline style (use the size and tone roles on Text, Heading, SectionLabel, Code or the shared component that owns the text)
 - `feedback-action-slot` (`src/app, src/features, shared stylesheets`)
   - JSX element or Button passed to action/actions of Alert, InlineMessage, InlineError, Toast, EmptyState or FailureState (pass a structured { label, onClick } object; `extra` is the escape)
 - `fixed-control-size` (`src/app, src/features, shared stylesheets`)
   - height, min-height, square size or padding set on a shared control by class, or height/min-height on a button/input/select/textarea/[role=button] selector (use the control's size prop)
-- `focus-outline-removed` (`src/app, src/features, shared stylesheets`)
-  - outline-none / outline: none in feature code (the focus ring contract lives in arc.css; use data-ui-focus attributes)
+- `focus-outline-removed` (`CSS and TSX in src/app and src/features (excluding tests)`)
+  - feature code removes the focus outline or paints a shared control on pointer focus (use the shared focus-visible and input-modality contract)
 - `font-weight` (`src/app, src/features, shared stylesheets`)
   - font-semibold/font-bold or CSS font-weight above 500 (the type scale uses 400 and 500 only)
 - `hand-rolled-disclosure` (`src/app, src/features, shared stylesheets`)
@@ -218,9 +254,9 @@ fall. Suppress one line only, always with a reason.
 - `icon-stroke-width` (`src/app, src/features, shared stylesheets`)
   - strokeWidth other than 1.75 or 2
 - `inline-help-text` (`TSX in src/app, src/features, src/shared (excluding tests)`)
-  - muted/secondary shared Text or p with a literal t() key over 100 characters directly in a settings Row/Field or following a settings label/heading (move optional help to InfoPopover or the info slot)
-- `inline-style-layout` (`src/app, src/features, shared stylesheets`)
-  - literal layout number in style={{ width/height/margin/padding/top… }} (use classes or tokens)
+  - settings label repeated as description or optional caption beside a field (use the info slot or InfoPopover for distinct optional help)
+- `inline-style-layout` (`TSX in src/app and src/features (excluding tests)`)
+  - literal fixed layout in an inline style (use a semantic spacing token or a responsive layout class)
 - `inline-style-property` (`src/app, src/features, shared stylesheets`)
   - style={{ … }} sets a CSS property directly; an inline style may only carry custom properties (style={{ "--x": value }}) that a class reads
 - `interaction-state` (`src/app, src/features, shared stylesheets`)
@@ -242,45 +278,61 @@ fall. Suppress one line only, always with a reason.
 - `native-message-dialog` (`src/app, src/features, shared stylesheets`)
   - message()/ask()/confirm() from @tauri-apps/plugin-dialog or window.alert() in feature/app code (use ConfirmDialog, Alert or Toast; allowlist: updater install/restart failures, app lifecycle, editor close)
 - `native-title` (`src/app, src/features, shared stylesheets`)
-  - title= tooltip (use tooltip=, Tooltip or OverflowTooltip)
+  - native title hint (remove repeated copy; use Tooltip for a shortcut, reason or detail, or OverflowTooltip to recover clipped text)
 - `nested-card` (`TSX in src/app, src/features, src/shared (excluding tests)`)
   - card Surface or surfaceAttributes({ variant: card }) nested lexically inside another card (use page or inset)
 - `nested-surface` (`TSX in src/app, src/features, src/shared (excluding tests)`)
   - settings Group nested in a Group or card Surface, or a card Surface inside a Group (a Group is already a framed card; flatten to rows or use one container)
-- `one-primary-per-view` (`TSX in src/app, src/features, src/shared (excluding tests)`)
-  - multiple literal primary Buttons in one JSX return (one finding per file; keep one primary action, use secondary for peers)
+- `pane-edge-erased` (`src/app, src/features, shared stylesheets`)
+  - CSS that sets border, border-width or border-color to 0/none/hidden/transparent on a workbench pane root (.bycoda-sidebar, .bycoda-project-rail, .sidebar-pane, .body-glass, [data-side-pane], [data-surface-frame=pane]); the 1px edge between panes is owned by --ui-pane-border, so drop the frame through the Surface edge prop instead
+- `physical-direction-utility` (`TSX in src/features (excluding tests)`)
+  - physical left or right utility in feature UI (use logical start/end utilities)
 - `popover-menu` (`src/app, src/features, shared stylesheets`)
   - Popover with role=menu/listbox (use DropdownMenu/picker)
 - `portal-outside-shared` (`src/app, src/features, shared stylesheets`)
   - floating surface outside canonical shared overlay owners (use Popover, Modal, Sheet or Tooltip)
-- `radius-size` (`src/app, src/features, shared stylesheets`)
-  - literal radius/size: rounded-[…], h-/w-/size-[Npx], CSS border-radius px
+- `radius-size` (`CSS and TSX in src/app and src/features (excluding tests); radius literals in src/shared/ui/arc CSS`)
+  - literal radius or private size (use a shared component size or a semantic radius token)
 - `raw-anchor` (`src/app, src/features, shared stylesheets`)
   - raw \<a href> in feature code (use Link for a real anchor in prose or a chip, Button variant=link for an action, openExternal() from code)
 - `raw-aria-live` (`src/app, src/features, shared stylesheets`)
-  - aria-live= on a DOM element in feature code (use InlineMessage live=, LoadingText, Toast or Alert)
+  - aria-live= in feature code (use InlineMessage live=, LoadingText, Toast or Alert)
 - `raw-native-control` (`src/app, src/features, shared stylesheets`)
   - raw \<button>/\<input>/\<select>/\<textarea> outside src/shared/ui (use Button, TextField, TextareaField, Select/SearchableSelect, Checkbox; ProgressBar for meters, Tabs/SegmentedControl for choices)
 - `role-alert-container` (`src/app, src/features, shared stylesheets`)
   - \<div>/\<small>/\<li>/\<section> role=alert (use the shared inline error)
 - `role-alert-text` (`src/app, src/features, shared stylesheets`)
   - \<p role=alert> / \<span role=alert> (use the shared inline error)
+- `role-status-banner` (`src/app, src/features, shared stylesheets`)
+  - role="status" on a component or tone-styled native container (a hand-built banner: use Alert, InlineMessage, Toast or FailureState)
+- `row-text-badge` (`TSX in src/app and src/features (excluding tests)`)
+  - text tag in a list row (use an accessible icon and disclose optional details on demand)
 - `scrollbar-style` (`src/app, src/features, shared stylesheets`)
   - scrollbar styled in feature code: scrollbar-* properties, ::-webkit-scrollbar or scrollbar-* classes (use ScrollArea)
-- `spacing-step` (`src/app, src/features, shared stylesheets`)
-  - gap, padding or margin with a literal off the spacing scale: a bare px/rem value other than 0, 2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 32, 40 or 48 px, or a Tailwind step other than 0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 8, 10, 12 (var(--space-*) is always allowed)
+- `shared-internal-selector` (`CSS in src/app and src/features, including CSS-module and locally imported global classes applied to shared UI slots (excluding tests)`)
+  - feature CSS selects shared UI internals or restyles a shared control through a locally imported stylesheet (use a public prop or variant, or change the shared owner)
+- `spacing-step` (`CSS and TSX in src/app and src/features (excluding tests)`)
+  - gap, padding, margin or inset off the spacing scale (use a semantic --ui-space-* token for component spacing)
+- `specificity-doubling` (`src/app, src/features, shared stylesheets`)
+  - doubled class selector (.x.x) used to win the cascade; fix the source order or the owning rule instead
 - `surface-style` (`src/app, src/features, shared stylesheets`)
   - surface drawn in feature code, including badge/chip/progress recipes: border, outline, radius, background or shadow (use Surface, Divider, FieldGroup; Badge for chips, ProgressBar for meters)
 - `target-blank` (`src/app, src/features, shared stylesheets`)
   - target="_blank" (the desktop webview does not route it; use openExternal() from src/platform/tauri/openExternal.ts)
 - `text-truncation` (`src/app, src/features, shared stylesheets`)
   - truncation written in feature code: text-overflow, line-clamp, truncate, text-ellipsis (one line: Text truncate; several lines: ClampText, with expandable={false} for a cut without the Show more action; a path or id: MiddleTruncate)
-- `theme-palette-literal` (`src/app, src/features, shared stylesheets`)
-  - themePalette.hex…/rgb…/hsl…/oklch… literal in feature or app code (use a semantic token: a --color-*/--ui-* CSS role or a semantic themePalette role)
+- `theme-palette-literal` (`CSS, TS and TSX in src/app and src/features (excluding tests)`)
+  - literal palette paint in feature code (use a semantic --ui-* or --color-* CSS role or a semantic themePalette role)
 - `tooltip-repeats-label` (`TSX in src/app, src/features, src/shared (excluding tests)`)
-  - tooltip= (or \<Tooltip label>) whose static text equals the visible label of the same control (a hint must add a shortcut, detail or reason; drop it or use tooltipWhen="overflow")
-- `typography` (`src/app, src/features, shared stylesheets`)
-  - literal font size: text-[Npx], text-xs..xl, text-[length:], CSS font-size px
+  - tooltip repeats its visible trigger label or accessible name (remove the repeated hint; keep shortcuts, reasons and details in Tooltip, or use OverflowTooltip to recover clipped text)
+- `transcript-assistant-surface` (`TSX in src/features/sessions/ui (excluding tests)`)
+  - assistant reading surface marked with data-chat-message-surface="assistant"; mark it with data-transcript-reply (the user bubble keeps data-chat-message-surface="user")
+- `transcript-base-ink` (`src/app, src/features, shared stylesheets`)
+  - transcript text color taken from var(--color-content) (or a color-mix of it), or a --transcript-ink-* / --transcript-surface-* token defined outside transcript-surface.css; use a --transcript-ink-* role (body, chrome, chrome-active, emphasis) so the reading surface owns its ink, and define the roles only in transcript-surface.css
+- `transcript-reply-fill` (`TSX in src/features/sessions/ui (excluding tests)`)
+  - background fill or backdrop filter on a transcript element that is not the data-transcript-reply surface; the reply surface owns the fill, so the chrome around it stays transparent
+- `typography` (`CSS in src/shared/ui/arc`)
+  - literal px/rem font-size in Arc CSS (use the shared typography scale)
 - `ui-wrapper-import` (`src/app, src/features, shared stylesheets`)
   - primitive/internal import bypasses shared wrappers (use src/shared/ui/Select, DropdownMenu, Popover, Modal or Tooltip)
 - `undefined-var` (`src/app, src/features, shared stylesheets`)
@@ -302,3 +354,5 @@ fall. Suppress one line only, always with a reason.
   - `app.emit` / `window.emit` broadcasts to every webview (Tauri v2), and a plain JS `listen()` receives even `emit_to` events. For a window-targeted event use `app.emit_to(label, ...)` or `emit_to_focused`, and listen with the window-scoped helper in src/platform/tauri/listenWindow.ts.
 - `rust-rename-without-fsync` (`src-tauri/src/**, packages/**/src/**`)
   - A temp-file + `rename` replacement is only crash-safe when the temp file is `sync_all()`ed before the rename (APFS and NTFS can otherwise leave an empty file after power loss). Write the bytes, call `file.sync_all()`, then rename; on startup, treat an unparsable state file as absent and move it aside instead of failing.
+- `rust-sync-command-blocking-work` (`src-tauri/src/**`)
+  - A sync fn under `#[tauri::command(async)]` runs on a tokio worker (one per core); SQLite under the store lock, a spawned process or `std::fs` work there can stall every other IPC command. Make it `#[tauri::command] pub async fn` and move the body into `crate::harness::run_blocking` (or `run_admitted_blocking` for admitted writes).

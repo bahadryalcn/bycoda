@@ -124,6 +124,15 @@ it("keeps focused-session tools except Room-only actions", () => {
       expect(isRoomOnlyConversationAction(tool.action)).toBe(false);
 });
 
+it("lists focused desktop tools alongside Room operations when both sources are verified", () => {
+  const listed = ids(
+    voiceToolsForScope({ projectId: "project", threadId: "thread", sessionId: "session" }),
+  );
+  expect(listed).toContain("conversation:desktop.click");
+  expect(listed).toContain("conversation:commands.run");
+  expect(listed.filter((id) => id === "conversation:desktop.status")).toHaveLength(1);
+});
+
 it("lists the folder file tools and commands.run for the global thread without a project", () => {
   const listed = voiceToolsForScope({ threadId: "thread" });
   for (const action of ["files.roots", "files.read", "files.write", "commands.run"])

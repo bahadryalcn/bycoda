@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useLockSnapshot } from "../../../features/group-lock/hooks/useGroupLock";
 import { visibleProjects } from "../../../features/group-lock/model/lockState";
 import {
-  lastProjectPath,
   loadRecents,
   looksLikeProject,
   rememberProject,
@@ -20,14 +19,10 @@ export interface ProjectStateDeps {
 /** Current project folder, the recents list and the group-lock filtered view. */
 export function useProjectState({ toolWindow, windowTransfer, resumed }: ProjectStateDeps) {
   const [projectCwd, setProjectCwd] = useState(
-    () =>
-      toolWindow?.cwd ??
-      windowTransfer?.projectCwd ??
-      resumed?.projectCwd ??
-      lastProjectPath() ??
-      "~",
+    () => toolWindow?.cwd ?? windowTransfer?.projectCwd ?? resumed?.projectCwd ?? "~",
   );
   const [recents, setRecents] = useState(loadRecents);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep the persisted recent-project list in sync with a restored workspace.
   useEffect(() => {
     if (!resumed?.projectCwd || !looksLikeProject(resumed.projectCwd)) return;
     let active = true;

@@ -1,10 +1,5 @@
 /* A web link in the draft: boxed in the info tone, apart from attachment tokens. */
 .link {
-  /* The inline padding gives the link room inside its box; the equal and opposite
-     negative margin cancels it, so the link keeps the advance width of its characters
-     and the textarea underneath stays aligned. Block padding changes no line height. */
-  padding-inline: 3px;
-  margin-inline: -3px;
   padding-block: 2px;
   border-radius: var(--ui-radius-control);
   background: var(--ui-tone-info-subtle);
@@ -13,73 +8,114 @@
   -webkit-box-decoration-break: clone;
 }
 
-/* Characters kept only for their width; the textarea underneath still holds them. */
-.hidden {
-  color: transparent;
-}
-
-.linkPrefix {
-  position: relative;
-}
-
-.linkMark {
-  position: absolute;
-  inset-block-start: 50%;
-  inset-inline-end: 1px;
-  display: inline-flex;
-  inline-size: 0.75em;
-  block-size: 0.75em;
-  text-indent: 0;
-  transform: translateY(-50%);
-}
-
-.linkMark > * {
-  inline-size: 100%;
-  block-size: 100%;
-}
-
-/* The scheme's remaining characters reserve the room the open badge sits in. */
-.badge {
-  position: relative;
-  color: transparent;
-}
-
-/* Above the textarea so it can be clicked; the rest of the overlay lets clicks through. */
-.open {
+.referenceLayer {
   position: absolute;
   z-index: 1;
-  top: 50%;
-  left: 50%;
-  display: flex;
-  width: 14px;
-  height: 14px;
-  align-items: center;
-  justify-content: center;
-  transform: translate(-50%, -50%);
-  border-radius: var(--ui-radius-control);
-  color: var(--ui-tone-info-fg);
-  text-indent: 0;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Hit boxes follow the painted source fragments without consuming text layout space. */
+.referenceLayer .referenceHit {
+  position: absolute;
+  min-inline-size: 0;
+  min-block-size: 0;
+  padding: 0;
   cursor: pointer;
   pointer-events: auto;
+  border: 0;
+  border-radius: var(--ui-radius-inset);
+  background: transparent;
 }
 
-.open:hover {
-  background: var(--ui-tone-info-hover);
+.referenceLayer .referenceHit:hover {
+  background: color-mix(in oklch, var(--ui-tone-neutral-fg) 9%, transparent);
 }
 
-.openIcon {
-  width: 12px;
-  height: 12px;
+.referenceLayer .referenceHit:focus-visible {
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: var(--ui-focus-offset);
 }
 
-/* Inline padding offset by an equal negative margin: room inside the fill without moving
-   a character away from the textarea underneath. */
-.skill {
-  padding-inline: 1px;
-  margin-inline: -1px;
-  padding-block: 2px;
-  border-radius: var(--ui-radius-control);
-  background: color-mix(in oklch, currentColor 12%, transparent);
-  box-decoration-break: clone;
+/* Keep glyph advances and the line box aligned with the native textarea. */
+.markdownText[data-draft-markdown="strong"] {
+  -webkit-text-stroke: 0.026em currentColor;
+}
+
+.markdownText[data-draft-markdown="heading"] {
+  color: var(--ui-tone-neutral-fg);
+  -webkit-text-stroke: 0.04em currentColor;
+}
+
+/* CodeMirror measures the styled text itself. The native mirror must keep the
+   textarea's glyph advances, even inside a heading or code span. */
+:global(.cm-editor) .markdownText[data-draft-markdown="heading"] {
+  font-size: var(--ui-font-title);
+}
+
+:global(.cm-editor) .markdownText[data-draft-markdown="code"] {
+  font-family: var(--font-mono);
+  font-size: var(--ui-font-caption);
+}
+
+.markdownText[data-draft-markdown="emphasis"] {
+  font-style: oblique;
+}
+
+.markdownText[data-draft-markdown="strike"] {
+  text-decoration: line-through;
+}
+
+.markdownText[data-draft-markdown="link"] {
+  color: var(--ui-tone-info-fg);
+  text-decoration: underline;
+}
+
+.markdownText[data-draft-markdown="code"] {
+  padding-block: calc(var(--space-1) / 2);
+  background: var(--ui-tone-neutral-subtle);
+  border-radius: var(--ui-radius-inset);
   -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.markdownText[data-draft-markdown="fence"] {
+  background: var(--ui-tone-neutral-subtle);
+}
+
+.markdownText[data-draft-markdown="quote"] {
+  color: var(--ui-text-secondary);
+}
+
+.markdownMarker {
+  position: relative;
+  color: transparent;
+  text-decoration: none;
+}
+
+.markdownMarker[data-editing-mark]:not(:global(.cm-editor:not(.cm-focused)) *) {
+  color: var(--ui-text-muted);
+}
+
+.markdownMarker:is(:not([data-editing-mark]), :global(.cm-editor:not(.cm-focused)) *)::after {
+  content: var(--composer-markdown-glyph, none);
+  position: absolute;
+  inset-inline-start: 0;
+  color: var(--ui-text-secondary);
+}
+
+.markdownMarker[data-draft-markdown="bullet"] {
+  --composer-markdown-glyph: "•";
+}
+
+.markdownMarker[data-draft-markdown="quote-mark"] {
+  --composer-markdown-glyph: "│";
+}
+
+.markdownMarker[data-draft-markdown="task-open"] {
+  --composer-markdown-glyph: "☐";
+}
+
+.markdownMarker[data-draft-markdown="task-done"] {
+  --composer-markdown-glyph: "☑";
 }

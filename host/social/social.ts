@@ -5,8 +5,25 @@ import {
   readSocialRecord,
 } from "./store/social-audience-store";
 import { SOCIAL_ACTION_MODULES } from "./core/social-action-modules";
+import {
+  boundTikTokBusiness,
+  tiktokBusinessSecretId,
+  tiktokLiveSecretId,
+} from "./tiktok/tiktok-actions";
+import { pollTikTokOrganicComments } from "./tiktok/tiktok-organic-inbox";
 import { PROGRAM_OPERATION_FIELDS, socialActionRegistry } from "./core/social-actions";
-import type { AutonomousRequest, SocialServiceApi } from "./core/social-service-api";
+import { instagramDirectHandle, instagramPrivateReplyTarget } from "./inbox/instagram-reply";
+import type { YouTubeRuntime } from "./youtube/youtube-runtime";
+import type {
+  AutonomousRequest,
+  SocialIngestOptions,
+  SocialServiceApi,
+} from "./core/social-service-api";
+import { InstagramMessageMedia, instagramLocalMediaAvailable } from "./inbox/instagram-media";
+import {
+  INSTAGRAM_DIRECT_MEDIA_LIMITS,
+  isInstagramDirectMediaKind,
+} from "../../src/integrations/social/adapters/instagram-direct-media";
 import {
   array,
   exact,
@@ -27,6 +44,7 @@ import {
 } from "./autonomy/autonomy-gate";
 import { recordAiAction, recordAiWrite, recordAutonomousDispatch } from "./autonomy/ai-actions-log";
 import { assertSendable, type SendTarget } from "./autonomy/suppression";
+import { assertInstagramPublicationTargets } from "./execution/instagram-publish-guard";
 import {
   approvalJobFields,
   assertContactSendable,
@@ -40,20 +58,28 @@ import {
   sendWithFallback,
 } from "./execution/social-job-gates";
 import { enabledOAuthPlatform } from "./oauth/registry";
+import { FACEBOOK_PRIVATE_REPLY_WINDOW_MS } from "../../src/integrations/social/adapters/facebook-engagement";
+import { isPermanentRefreshFailure } from "./oauth/refresh-error";
 import { readInboxSettings } from "./inbox/inbox-settings";
 import { holdForHuman, requeueJobForHuman } from "./execution/social-human-review";
 import { osSecretValues } from "../secrets/secret-store";
+import { storeXLiveKey } from "./core/x-live-key";
+import {
+  createSocialLiveService,
+  socialLiveConnectionBinding,
+  type SocialLiveService,
+} from "./core/social-live";
 import type { AiAction } from "../../src/features/social/model/autonomy";
 import type { OutreachChannel } from "../../src/features/social/model/outreach";
 import { eraseSocialContact, optOutContact, upsertSocialContact } from "./contacts/social-contacts";
 import { suggestSocialContactTags } from "./contacts/social-contact-tags";
 import { generateQueuedDraftOnce, ingestEvents } from "./rules/social-ingest";
-import { pollOwnedAccount } from "./inbox/social-polling";
+import { pollFailureDelayMs, pollOwnedAccount } from "./inbox/social-polling";
 import { receiveWebhook } from "./inbox/social-webhooks";
 import { runOutreachTick } from "./outreach/outreach-tick";
 import { forEachAsync, mapAsync } from "../async-collections";
 import { randomUUID, randomBytes, timingSafeEqual, createHmac } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { open } from "node:fs/promises";
 import { SocialMediaCustody } from "./media-custody";
 import { SocialMediaQuarantine } from "./media-quarantine";
 import { SocialJobArchive } from "./social-job-archive";
@@ -112,10 +138,26 @@ import {
   type SocialInbound,
 } from "../../src/integrations/social/adapter";
 import { contentSupport } from "../../src/integrations/social/platformAdapters";
+import {
+  REDDIT_TITLE_LIMIT,
+  redditPayload,
+} from "../../src/integrations/social/adapters/reddit-rules";
+import { parseSnapchatPublishOptions } from "./execution/snapchat-publish-options";
+import {
+  facebookNativeScheduleAt,
+  facebookScheduleTime,
+} from "../../src/integrations/social/adapters/facebook-schedule";
 import { validatePublishingText } from "../../src/integrations/social/publishingFormats";
+import { xPostExtrasIssue, type XPostExtras } from "../../src/integrations/social/x-publish";
+import { parseLinkedInPostFormat } from "./linkedin/linkedin-format-input";
 import { parseTikTokOptions } from "../../src/integrations/social/tiktok";
+import {
+  INSTAGRAM_CAROUSEL_MAX,
+  parseInstagramPublishOptions,
+} from "../../src/integrations/social/adapters/instagram-publish";
 import type { SocialCredentialStore, SocialCredential } from "./social-credentials";
-import { SocialVideoUploads } from "./social-media";
+import { SOCIAL_BUFFERED_VIDEO_BYTES, SocialVideoUploads } from "./social-media";
+import { youtubeDiskUpload } from "./youtube/youtube-upload-source";
 import { mergeDelivery, type WhatsAppReceipt } from "./social-delivery";
 import {
   DEFAULT_SOCIAL_POLICIES,
@@ -219,8 +261,19 @@ const permissions: SocialPermission[] = ["read", "draft", "publish", "reply", "m
 /** Social scheduler cadence: normal while there is work, longer while idle. */
 const SOCIAL_TICK_MS = 5000;
 const SOCIAL_IDLE_TICK_MS = 30_000;
+/** Failed OAuth refreshes back off exponentially from the base to the cap per account. */
+const SOCIAL_REFRESH_RETRY_MS = 30_000;
+const SOCIAL_REFRESH_RETRY_MAX_MS = 15 * 60_000;
+const SOCIAL_AUDIT_RETENTION_MS = 30 * 24 * 60 * 60_000;
+const SOCIAL_AUDIT_PRUNE_IDLE_MS = 60 * 60_000;
+// 5,000 rows held the database queue for 4.8 s on the first post-upgrade run.
+const SOCIAL_AUDIT_PRUNE_BATCH = 500;
+/** Per-account refresh failure state (social_settings `refreshState:<id>`); holds no token. */
+type SocialRefreshState = { failures: number; nextRefreshAt: number; permanent?: true };
 export class SocialService implements SocialServiceApi {
+  snapchatBrowserProfile?: SocialServiceApi["snapchatBrowserProfile"];
   private readonly mediaCustody: SocialMediaCustody;
+  private readonly instagramMedia: InstagramMessageMedia;
   private readonly mediaQuarantine: SocialMediaQuarantine;
   readonly jobArchive: SocialJobArchive;
   readonly audience: SocialAudienceStore;
@@ -538,6 +591,13 @@ export class SocialService implements SocialServiceApi {
   }
   private backgroundEpoch = 0;
   private generationPending?: Promise<boolean>;
+  /** The running outreach tick. One at a time: ticks must never overlap on the same enrollments or quotas. */
+  private outreachPending?: Promise<void>;
+  /** Background poll failures per account. In memory on purpose: a Host restart polls again at once. */
+  private readonly pollBackoff = new Map<
+    string,
+    { failures: number; until: number; epoch: string | undefined }
+  >();
   private readonly pollingPending = new Map<
     string,
     Promise<{
@@ -561,6 +621,10 @@ export class SocialService implements SocialServiceApi {
   readonly ready: Promise<void>;
   /** Host operations registered outside this class; see core/social-action-modules.ts. */
   private readonly actions = socialActionRegistry(SOCIAL_ACTION_MODULES);
+  youtubeBrowser?: YouTubeRuntime["browser"];
+  // TikTok account operations.
+  tiktokBrowser?: import("./social-browser-platforms").PlatformBrowserSessions["runTikTok"];
+  instagramEarnings?: (accountId: string) => Promise<unknown>;
   constructor(
     readonly store: HostStore,
     readonly credentials: SocialCredentialStore,
@@ -576,6 +640,7 @@ export class SocialService implements SocialServiceApi {
     readonly decisionModels?: DecisionService,
   ) {
     this.mediaCustody = new SocialMediaCustody(store, directory);
+    this.instagramMedia = new InstagramMessageMedia(store, this.mediaCustody, directory, this.now);
     this.mediaQuarantine = new SocialMediaQuarantine(store, directory, this.mediaCustody);
     this.jobArchive = new SocialJobArchive(store);
     const audience = (this.audience = new SocialAudienceStore(store));
@@ -647,6 +712,9 @@ export class SocialService implements SocialServiceApi {
                 "tiktok",
                 "snapchat",
                 "facebook",
+                "instagram",
+                "linkedinFormat",
+                "reddit",
               ]);
               const account = await this.get<SocialAccount>("account", variant.accountId);
               await this.assertLength(
@@ -656,15 +724,22 @@ export class SocialService implements SocialServiceApi {
               );
               if (
                 !variant.text?.trim() &&
-                !(account.platform === "snapchat" && variant.snapchat?.target === "story") &&
+                !(account.platform === "reddit" && variant.reddit) &&
                 !(
-                  account.platform === "facebook" &&
-                  variant.facebook?.target === "reel" &&
-                  variant.media.length === 1
-                )
+                  account.platform === "linkedin" &&
+                  (variant.linkedinFormat || variant.media.length)
+                ) &&
+                !(account.platform === "snapchat" && variant.snapchat?.target === "story") &&
+                !(account.platform === "instagram" && variant.media.length > 0) &&
+                !(account.platform === "facebook" && variant.media.length > 0)
               )
                 throw new Error("Enter campaign text.");
-              this.parseMedia(variant.media);
+              this.parseMedia(
+                variant.media,
+                account.platform === "instagram" && account.connection !== "browser",
+              );
+              if (facebookNativeScheduleAt(variant.facebook) !== undefined)
+                throw new Error("Facebook scheduling is supported for one-off campaigns only.");
               if (variant.link) url(variant.link, "link");
               validatePublishingText(account, variant);
               const unsupported = contentSupport(account, { kind: "publish", payload: variant });
@@ -672,9 +747,7 @@ export class SocialService implements SocialServiceApi {
             },
             prepareMedia: async (variant) => {
               const account = await this.get<SocialAccount>("account", variant.accountId);
-              const needsUrl =
-                account.connection !== "browser" &&
-                (account.platform === "instagram" || account.platform === "facebook");
+              const needsUrl = account.connection !== "browser" && account.platform === "instagram";
               return {
                 ...variant,
                 media: await mapAsync(variant.media, async (media) => {
@@ -785,6 +858,9 @@ export class SocialService implements SocialServiceApi {
         ON social_records(kind,json_extract(value,'$.accountId'),json_extract(value,'$.projectId'));
       CREATE INDEX IF NOT EXISTS social_records_inbound_order
         ON social_records(kind,json_extract(value,'$.lastInboundAt') DESC,id DESC);
+      CREATE INDEX IF NOT EXISTS social_drafts_generation_rule_created
+        ON social_records(json_extract(value,'$.generation.ruleId'),json_extract(value,'$.createdAt'))
+        WHERE kind='draft';
       CREATE INDEX IF NOT EXISTS social_jobs_created_order
         ON social_jobs(json_extract(value,'$.createdAt') DESC,scheduled_at DESC,id DESC);
       CREATE INDEX IF NOT EXISTS social_jobs_campaign_status
@@ -871,6 +947,16 @@ export class SocialService implements SocialServiceApi {
         .all(kind)
     ).map((row) => JSON.parse(String(row.value)) as T);
   }
+  // Completed, cancelled and paused plans with no pending job can never act; the 5 s tick skips their parse.
+  private async listRunnablePublishingPlans(): Promise<PublishingPlanRecord[]> {
+    return (
+      await this.store.db
+        .prepare(
+          "SELECT value FROM social_records WHERE kind='publishing-plan' AND (json_extract(value,'$.enabled')=1 OR json_extract(value,'$.pendingJobId') IS NOT NULL) ORDER BY rowid",
+        )
+        .all()
+    ).map((row) => JSON.parse(String(row.value)) as PublishingPlanRecord);
+  }
   async get<T extends Stored>(kind: string, id: string): Promise<T> {
     const row = await this.store.db
       .prepare("SELECT value FROM social_records WHERE kind=? AND id=?")
@@ -898,6 +984,16 @@ export class SocialService implements SocialServiceApi {
         "INSERT INTO social_settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
       )
       .run(key, value);
+    this.wake();
+  }
+  async settingKeys(prefix: string): Promise<string[]> {
+    const rows = await this.store.db
+      .prepare("SELECT key FROM social_settings WHERE substr(key,1,?)=?")
+      .all(prefix.length, prefix);
+    return rows.map((row) => String(row.key));
+  }
+  async deleteSetting(key: string) {
+    await this.store.db.prepare("DELETE FROM social_settings WHERE key=?").run(key);
     this.wake();
   }
   private async changeCredentials<T>(accountId: string, action: () => Promise<T>): Promise<T> {
@@ -1061,8 +1157,57 @@ export class SocialService implements SocialServiceApi {
   forgetBrowserSession?: (accountId: string) => Promise<void>;
   cancelBrowserWorkflow?: (accountId: string) => Promise<void>;
   adapterFor(account: SocialAccount): SocialAdapter {
+    if (account.platform === "x" && account.connection !== "browser" && !account.xApiProduct)
+      throw new SocialPlatformError("unsupported", undefined, { reasonCode: "x.api.paid_product" });
     if (account.connection !== "browser") return this.adapters[account.platform];
     if (!this.browserAdapter) throw new SocialPlatformError("unsupported");
+    // TikTok Business replies take precedence for accounts with a verified Organic grant.
+    if (account.platform === "tiktok") {
+      const browser = this.browserAdapter;
+      return {
+        ...browser,
+        poll: async (target, token, posts, cursor, ownedPosts) => {
+          try {
+            const business = await boundTikTokBusiness(target, this.credentials);
+            if (business) return await pollTikTokOrganicComments(business.api, business.credential);
+          } catch (error) {
+            if (error instanceof SocialPlatformError && error.code === "expired")
+              throw new SocialPlatformError("denied", undefined, {
+                reasonCode: "tiktok.business_reconnect",
+              });
+            throw error;
+          }
+          return browser.poll(target, token, posts, cursor, ownedPosts);
+        },
+        send: async (target, job, token, media, checkpoint, beforeSubmit) => {
+          const { threadId, postId } = job.payload;
+          if (job.kind === "reply" && postId && threadId && job.contactId) {
+            const business = await boundTikTokBusiness(target, this.credentials);
+            if (business) {
+              const { api, credential } = business;
+              const contact = await this.contact(job.contactId);
+              if (!beforeSubmit || contact?.accountId !== target.id)
+                throw new SocialPlatformError("denied");
+              return await api.mutateComment(
+                credential,
+                {
+                  postId,
+                  commentId: threadId,
+                  action: "reply",
+                  text: job.payload.text,
+                },
+                async (comment) => {
+                  if (!comment.username || `web:tiktok:${comment.username}` !== contact.platformId)
+                    throw new SocialPlatformError("denied");
+                  await beforeSubmit();
+                },
+              );
+            }
+          }
+          return browser.send(target, job, token, media, checkpoint, beforeSubmit);
+        },
+      };
+    }
     return this.browserAdapter;
   }
   capability(account: SocialAccount, operation: SocialOperation) {
@@ -1201,6 +1346,38 @@ export class SocialService implements SocialServiceApi {
       throw new Error("Cached operation belongs to another project.");
     if (Array.isArray(record.variants))
       await forEachAsync(record.variants, async (item) => await this.receiptAccess(p, item));
+  }
+  private nextAuditPruneAt = 0;
+  /**
+   * Audit rows are kept for SOCIAL_AUDIT_RETENTION_MS. Before 0.7.16 the owner's own
+   * notification poller (actor "push") audited two read-only lists every 4 s; those rows are
+   * removed whatever their age. Deletes run in batches so one tick never holds the database.
+   */
+  async pruneAuditIfDue(): Promise<number> {
+    const at = performance.now();
+    if (at < this.nextAuditPruneAt) return 0;
+    this.nextAuditPruneAt = at + SOCIAL_AUDIT_PRUNE_IDLE_MS;
+    const reads = [...this.actions].filter(([, spec]) => spec.readOnly).map(([name]) => name);
+    const removed = Number(
+      (
+        await this.store.db
+          .prepare(
+            `DELETE FROM social_audit WHERE rowid IN (SELECT rowid FROM social_audit
+               WHERE json_extract(value,'$.at') < ?
+                  OR (json_extract(value,'$.actorId')='push'
+                      AND json_extract(value,'$.action') IN (SELECT value FROM json_each(?)))
+               LIMIT ?)`,
+          )
+          .run(
+            this.now() - SOCIAL_AUDIT_RETENTION_MS,
+            JSON.stringify(reads),
+            SOCIAL_AUDIT_PRUNE_BATCH,
+          )
+      ).changes,
+    );
+    // A backlog (the first run after an upgrade) continues on the next tick.
+    if (removed >= SOCIAL_AUDIT_PRUNE_BATCH) this.nextAuditPruneAt = at;
+    return removed;
   }
   async audit(
     principal: SocialPrincipal,
@@ -1733,10 +1910,14 @@ export class SocialService implements SocialServiceApi {
             : operationId,
           actorScope: JSON.stringify([principal.actorId, principal.sessionId, action]),
         },
-        () => this.dispatch(principal, action, input, operationId),
+        () => this.dispatch(principal, action, input, operationId, requestId),
       );
       if (principal.assistantAccountId) await this.validate(principal);
-      await this.audit(principal, action, operationId, accountId, "success", result);
+      // The owner reading its own Host is not an audit event. The notification poller
+      // read two lists every 4 s, adding ~1,800 never-pruned rows (and a DB write) an hour.
+      // Agent, session and peer reads stay audited.
+      if (!(principal.kind === "owner" && this.actions.get(action)?.readOnly))
+        await this.audit(principal, action, operationId, accountId, "success", result);
       await recordAiWrite(this.audience, principal, action, accountId, input, this.now());
       if (key)
         await this.store.db
@@ -1775,6 +1956,7 @@ export class SocialService implements SocialServiceApi {
     action: string,
     input: Record<string, unknown>,
     operationId: string,
+    requestId?: string,
   ): Promise<unknown> {
     if (
       p.assistantAccountId &&
@@ -1879,10 +2061,26 @@ export class SocialService implements SocialServiceApi {
         );
       case "accounts.create": {
         this.owner(p);
-        exact(input, ["platform", "name", "accountType", "projectIds", "connection"]);
+        exact(input, [
+          "platform",
+          "name",
+          "accountType",
+          "projectIds",
+          "connection",
+          "xApiProduct",
+        ]);
         if (!(SOCIAL_PLATFORMS as readonly unknown[]).includes(input.platform))
           throw new Error("Unsupported social platform.");
         const platform = input.platform as SocialAccount["platform"];
+        const connection = input.connection ?? (platform === "x" ? "browser" : undefined);
+        const xApiProduct = input.xApiProduct;
+        if (
+          xApiProduct !== undefined &&
+          (platform !== "x" ||
+            connection !== "oauth" ||
+            (xApiProduct !== "pay-per-use" && xApiProduct !== "enterprise"))
+        )
+          throw new Error("Choose a paid X API product for an X OAuth connection.");
         const accountType = input.accountType as SocialAccount["accountType"];
         if (
           input.connection !== undefined &&
@@ -1891,9 +2089,9 @@ export class SocialService implements SocialServiceApi {
           throw new Error("Unsupported social connection type.");
         if (!(SOCIAL_ACCOUNT_TYPES[platform] as readonly string[]).includes(accountType))
           throw new Error("Unsupported social account type.");
-        if (input.connection !== undefined) {
+        if (connection !== undefined) {
           const types =
-            input.connection === "browser"
+            connection === "browser"
               ? SOCIAL_BROWSER_ACCOUNT_TYPES[platform]
               : SOCIAL_API_ACCOUNT_TYPES[platform];
           if (
@@ -1914,15 +2112,32 @@ export class SocialService implements SocialServiceApi {
           scopes: [],
           accessApproved: false,
           connected: false,
-          ...(input.connection
-            ? { connection: input.connection as SocialAccount["connection"] }
-            : {}),
+          ...(connection ? { connection: connection as SocialAccount["connection"] } : {}),
+          ...(xApiProduct ? { xApiProduct } : {}),
           paused: false,
           executorId: this.store.environmentId,
           grants: Object.fromEntries(projects.map((id) => [id, ["read", "draft"]])),
           createdAt: this.now(),
         };
         return await this.put("account", account.id, account);
+      }
+      // X account billing.
+      case "x.api.setProduct": {
+        this.owner(p);
+        exact(input, ["accountId", "product"]);
+        const accountId = str(input.accountId, "account");
+        const product = input.product;
+        if (product !== null && product !== "pay-per-use" && product !== "enterprise")
+          throw new Error("Choose an X API billing product or turn it off.");
+        return await this.changeCredentials(accountId, async () => {
+          const account = await this.access(p, accountId, "read");
+          if (account.platform !== "x" || account.connection === "browser")
+            throw new Error("Choose an X OAuth account.");
+          return await this.put("account", accountId, {
+            ...account,
+            xApiProduct: product ?? undefined,
+          });
+        });
       }
       case "accounts.grants": {
         this.owner(p);
@@ -1975,6 +2190,7 @@ export class SocialService implements SocialServiceApi {
         this.owner(p);
         const account = await this.access(p, str(input.accountId, "account"), "read");
         account.paused = input.paused !== false;
+        this.pollBackoff.delete(account.id);
         return await this.put("account", account.id, account);
       }
       case "accounts.disconnect": {
@@ -1988,6 +2204,12 @@ export class SocialService implements SocialServiceApi {
         await this.changeCredentials(account.id, async () => {
           await this.store.db.checkAuthorization();
           await this.credentials.delete(account.id);
+          await this.clearRefreshState(account.id);
+          // TikTok credentials belong to the same connected account lifecycle.
+          if (account.platform === "tiktok") {
+            await this.credentials.delete(tiktokLiveSecretId(account.id));
+            await this.credentials.delete(tiktokBusinessSecretId(account.id));
+          }
         });
         // Browser cleanup can await a connection holding the browser lock and waiting for credentials.
         // Release the credential lock first; the connection epoch already revokes pending commits.
@@ -2067,6 +2289,7 @@ export class SocialService implements SocialServiceApi {
           campaign,
           targets: await mapAsync(campaign.variants, async (variant) => {
             const account = await this.access(p, variant.accountId, "read");
+            const facebookAt = facebookNativeScheduleAt(variant.facebook);
             const capability = accountCapabilities(account, this.now()).find(
               (cap) => cap.operation === "publish",
             )!;
@@ -2074,10 +2297,15 @@ export class SocialService implements SocialServiceApi {
               accountId: account.id,
               platform: account.platform,
               capability,
-              contentError: contentSupport(account, {
-                kind: "publish",
-                payload: variant,
-              }),
+              contentError:
+                facebookAt !== undefined &&
+                facebookScheduleTime(facebookAt, Math.max(this.now(), variant.scheduledAt)) ===
+                  undefined
+                  ? "Facebook scheduling requires 10 minutes to 75 days after dispatch."
+                  : contentSupport(account, {
+                      kind: "publish",
+                      payload: variant,
+                    }),
               approved: await this.approved(campaign.id, campaign),
             };
           }),
@@ -2385,8 +2613,11 @@ export class SocialService implements SocialServiceApi {
           job.status === "running" ||
           job.preparation?.tiktokPublishId ||
           job.preparation?.youtubeVideoId ||
+          job.preparation?.snapchatMedia?.submittedAt !== undefined ||
+          job.preparation?.youtubeUploadPending ||
           job.preparation?.snapchatMedia?.spotlightId ||
-          job.preparation?.facebookReel?.stage === "submitted"
+          job.preparation?.facebookReel?.stage === "submitted" ||
+          job.preparation?.facebookMedia?.stage === "submitted"
         )
           throw new Error(
             "A dispatched send cannot be recalled. Stop the account to prevent later sends.",
@@ -2421,12 +2652,53 @@ export class SocialService implements SocialServiceApi {
         return await registered.run(
           {
             service: this,
+            environmentId: this.store.environmentId,
             store: this.audience,
             now: this.now,
             principal: p,
             operationId,
+            executorId: this.store.environmentId,
             decisions: this.decisionModels,
             emailSecrets: osSecretValues(this.directory, this.store.environmentId),
+            // YouTube management.
+            youtubeRequestId: requestId,
+            youtube: {
+              environmentId: this.store.environmentId,
+              credentials: this.credentials,
+              browser: this.youtubeBrowser,
+              media: (principal, id) => this.readOwnerMedia(principal, id),
+              assertAuthorized: () => this.store.db.checkAuthorization(),
+            },
+            // TikTok account operations.
+            tiktok: {
+              runBrowser: this.tiktokBrowser,
+              executorId: this.store.environmentId,
+              secrets: this.credentials,
+              storeSecret: async (expected, key, value) => {
+                this.owner(p);
+                await this.changeCredentials(expected.id, async () => {
+                  const current = await this.accountForOAuth(p, expected.id);
+                  if (
+                    !current.connected ||
+                    current.paused ||
+                    current.platform !== "tiktok" ||
+                    current.connection !== expected.connection ||
+                    current.platformId !== expected.platformId ||
+                    current.executorId !== expected.executorId
+                  )
+                    throw new SocialPlatformError("denied");
+                  await this.store.db.checkAuthorization();
+                  await this.credentials.set(key, { accessToken: value });
+                });
+              },
+              avatar: (id) => this.readOwnerMedia(p, id),
+              rename: (account, profile) => this.renameTikTokBrowser(p, account, profile),
+            },
+            instagramEarnings: this.instagramEarnings,
+            facebookLive: {
+              credentials: this.credentials,
+              environmentId: this.store.environmentId,
+            },
           },
           input,
         );
@@ -2696,13 +2968,31 @@ export class SocialService implements SocialServiceApi {
         "status",
         "segmentId",
         "since",
+        "scheduledFrom",
+        "scheduledTo",
       ]);
       const normalized: Record<string, string | number> = {};
       for (const [key, value] of Object.entries(raw)) {
         if (value === "" || value === undefined) continue;
         if (key === "since") normalized[key] = finite(value, "history start date");
+        else if (key === "scheduledFrom" || key === "scheduledTo")
+          normalized[key] = finite(value, "scheduled range", 0, 8.64e15);
         else if (typeof value === "string" && !value.trim()) continue;
         else normalized[key] = str(value, "social filter", 1000);
+      }
+      // A scheduled range is a half-open [from, to) window of epoch milliseconds, and only jobs have one.
+      const hasFrom = normalized.scheduledFrom !== undefined,
+        hasTo = normalized.scheduledTo !== undefined;
+      if (hasFrom || hasTo) {
+        if (collection !== "jobs") throw new Error("Only jobs can be filtered by schedule.");
+        if (
+          !hasFrom ||
+          !hasTo ||
+          !Number.isInteger(normalized.scheduledFrom) ||
+          !Number.isInteger(normalized.scheduledTo) ||
+          (normalized.scheduledFrom as number) >= (normalized.scheduledTo as number)
+        )
+          throw new Error("Invalid scheduled range.");
       }
       filters[collection] = normalized;
     }
@@ -2803,6 +3093,11 @@ export class SocialService implements SocialServiceApi {
       if (filter?.since !== undefined) {
         clauses.push(`json_extract(${alias}.value,'$.createdAt')>=?`);
         values.push(filter.since);
+      }
+      if (collection === "jobs" && filter?.scheduledFrom !== undefined) {
+        // The indexed column is the one the calendar draws by (job.scheduledAt), not createdAt.
+        clauses.push(`${alias}.scheduled_at>=? AND ${alias}.scheduled_at<?`);
+        values.push(filter.scheduledFrom, filter.scheduledTo!);
       }
       if (filter?.status && collection !== "campaigns") {
         clauses.push(`json_extract(${alias}.value,'$.status')=?`);
@@ -2917,9 +3212,12 @@ export class SocialService implements SocialServiceApi {
       );
       snapshot.pages![collection] = { offset, limit, total };
       if (!sections[section].includes(collection)) continue;
+      const scheduledWindow = collection === "jobs" && filters.jobs?.scheduledFrom !== undefined;
       const order =
         collection === "jobs"
-          ? "json_extract(r.value,'$.createdAt') DESC,r.scheduled_at DESC,r.id DESC"
+          ? scheduledWindow
+            ? "r.scheduled_at ASC,r.id ASC"
+            : "json_extract(r.value,'$.createdAt') DESC,r.scheduled_at DESC,r.id DESC"
           : collection === "threads"
             ? "json_extract(r.value,'$.lastInboundAt') DESC,r.id DESC"
             : "r.rowid DESC";
@@ -3441,6 +3739,8 @@ export class SocialService implements SocialServiceApi {
         [variant.text, variant.link].filter(Boolean).join("\n"),
       );
       if (variant.media.length) this.capability(account, "media");
+      if (facebookNativeScheduleAt(variant.facebook) !== undefined)
+        throw new Error("Facebook scheduling is supported for one-off campaigns only.");
       const unsupported = contentSupport(account, { kind: "publish", payload: variant });
       if (unsupported) throw new Error(unsupported);
     }
@@ -3507,7 +3807,7 @@ export class SocialService implements SocialServiceApi {
     return this.publicPublishingPlan(await this.put("publishing-plan", plan.id, plan));
   }
   private async processPublishingPlans() {
-    for (const saved of await this.list<PublishingPlanRecord>("publishing-plan")) {
+    for (const saved of await this.listRunnablePublishingPlans()) {
       let plan = saved;
       if (plan.pendingJobId) {
         const job = await this.job(plan.pendingJobId);
@@ -3599,6 +3899,10 @@ export class SocialService implements SocialServiceApi {
             tiktok: variant.tiktok,
             snapchat: variant.snapchat,
             facebook: variant.facebook,
+            instagram: variant.instagram,
+            ...(variant.x ? { x: variant.x } : {}),
+            linkedinFormat: variant.linkedinFormat,
+            ...(variant.reddit ? { reddit: variant.reddit } : {}),
           },
           ...approvalJobFields(automated, this.now()),
           attempts: 0,
@@ -3644,6 +3948,10 @@ export class SocialService implements SocialServiceApi {
         "tiktok",
         "snapchat",
         "facebook",
+        "instagram",
+        "x",
+        "linkedinFormat",
+        "reddit",
       ]);
       const accountId = str(value.accountId, "account");
       const account = await this.access(p, accountId, "draft");
@@ -3670,79 +3978,56 @@ export class SocialService implements SocialServiceApi {
           typeof value.facebook !== "object" ||
           Array.isArray(value.facebook)
         )
-          throw new Error("Facebook Reel metadata requires an API Page connection.");
+          throw new Error("Facebook publishing options require an API Page connection.");
         const metadata = value.facebook as Record<string, unknown>;
-        exact(metadata, ["target", "durationSeconds", "width", "height", "frameRate"]);
-        if (
-          metadata.target !== "reel" ||
-          ![metadata.durationSeconds, metadata.width, metadata.height, metadata.frameRate].every(
-            (item) => typeof item === "number" && Number.isFinite(item),
-          ) ||
-          Number(metadata.durationSeconds) < 4 ||
-          Number(metadata.durationSeconds) > 60 ||
-          !Number.isInteger(metadata.width) ||
-          !Number.isInteger(metadata.height) ||
-          Number(metadata.width) < 540 ||
-          Number(metadata.height) < 960 ||
-          Number(metadata.width) * 16 !== Number(metadata.height) * 9 ||
-          Number(metadata.frameRate) < 23
-        )
-          throw new Error(
-            "Choose Reel and a 4–60 second vertical MP4 of at least 540 × 960 pixels and 23 fps.",
-          );
-        facebook = {
-          target: "reel",
-          durationSeconds: Number(metadata.durationSeconds),
-          width: Number(metadata.width),
-          height: Number(metadata.height),
-          frameRate: Number(metadata.frameRate),
-        };
+        if (metadata.target === "story") {
+          exact(metadata, ["target"]);
+          facebook = { target: "story" };
+        } else if (metadata.target === "feed" || metadata.target === "video") {
+          exact(metadata, ["target", "scheduledPublishAt"]);
+          const at = metadata.scheduledPublishAt;
+          if (
+            (metadata.target === "feed" || at !== undefined) &&
+            (typeof at !== "number" || !Number.isSafeInteger(at))
+          )
+            throw new Error("Invalid Facebook scheduling options.");
+          facebook =
+            metadata.target === "feed"
+              ? { target: "feed", scheduledPublishAt: at as number }
+              : {
+                  target: "video",
+                  ...(at !== undefined ? { scheduledPublishAt: at as number } : {}),
+                };
+        } else {
+          exact(metadata, ["target", "durationSeconds", "width", "height", "frameRate"]);
+          if (
+            metadata.target !== "reel" ||
+            ![metadata.durationSeconds, metadata.width, metadata.height, metadata.frameRate].every(
+              (item) => typeof item === "number" && Number.isFinite(item),
+            ) ||
+            Number(metadata.durationSeconds) < 4 ||
+            Number(metadata.durationSeconds) > 60 ||
+            !Number.isInteger(metadata.width) ||
+            !Number.isInteger(metadata.height) ||
+            Number(metadata.width) < 540 ||
+            Number(metadata.height) < 960 ||
+            Number(metadata.width) * 16 !== Number(metadata.height) * 9 ||
+            Number(metadata.frameRate) < 23
+          )
+            throw new Error(
+              "Choose Reel and a 4–60 second vertical MP4 of at least 540 × 960 pixels and 23 fps.",
+            );
+          facebook = {
+            target: "reel",
+            durationSeconds: Number(metadata.durationSeconds),
+            width: Number(metadata.width),
+            height: Number(metadata.height),
+            frameRate: Number(metadata.frameRate),
+          };
+        }
       }
-      if (value.snapchat !== undefined) {
-        if (
-          account.platform !== "snapchat" ||
-          account.accountType !== "public_profile" ||
-          !value.snapchat ||
-          typeof value.snapchat !== "object" ||
-          Array.isArray(value.snapchat)
-        )
-          throw new Error("Snapchat publishing metadata requires a Public Profile.");
-        const metadata = value.snapchat as Record<string, unknown>;
-        exact(metadata, ["target", "durationSeconds", "width", "height", "locale"]);
-        if (
-          !["spotlight", "story"].includes(String(metadata.target)) ||
-          ![metadata.durationSeconds, metadata.width, metadata.height].every(
-            (item) => typeof item === "number" && Number.isFinite(item),
-          ) ||
-          Number(metadata.durationSeconds) < (account.connection === "browser" ? 5 : 6) ||
-          Number(metadata.durationSeconds) > 60 ||
-          Number(metadata.width) < 540 ||
-          Number(metadata.height) < 960
-        )
-          throw new Error(
-            account.connection === "browser"
-              ? "Choose Story or Spotlight and a 5–60 second video of at least 540 × 960 pixels."
-              : "Choose Spotlight and a 6–60 second video of at least 540 × 960 pixels.",
-          );
-        if (
-          account.connection !== "browser" &&
-          (metadata.target !== "spotlight" ||
-            typeof metadata.locale !== "string" ||
-            !/^[a-z]{2}_[A-Z]{2}$/.test(metadata.locale))
-        )
-          throw new Error(
-            "Snapchat API publishing requires Spotlight and an explicit locale such as tr_TR.",
-          );
-        snapchat = {
-          target: metadata.target as "spotlight" | "story",
-          durationSeconds: Number(metadata.durationSeconds),
-          width: Number(metadata.width),
-          height: Number(metadata.height),
-          ...(metadata.locale !== undefined
-            ? { locale: str(metadata.locale, "Spotlight locale", 5) }
-            : {}),
-        };
-      }
+      if (value.snapchat !== undefined)
+        snapchat = parseSnapchatPublishOptions(account, value.snapchat);
       if (value.tiktok !== undefined) {
         if (account.platform !== "tiktok")
           throw new Error("TikTok metadata requires a TikTok account.");
@@ -3757,11 +4042,14 @@ export class SocialService implements SocialServiceApi {
         )
           throw new Error("YouTube metadata requires a YouTube channel.");
         const metadata = value.youtube as Record<string, unknown>;
-        exact(metadata, ["title", "privacy", "madeForKids", "containsSyntheticMedia"]);
+        exact(metadata, ["title", "privacy", "madeForKids", "containsSyntheticMedia", "format"]);
         if (
           !["private", "unlisted", "public"].includes(String(metadata.privacy)) ||
           typeof metadata.madeForKids !== "boolean" ||
-          typeof metadata.containsSyntheticMedia !== "boolean"
+          typeof metadata.containsSyntheticMedia !== "boolean" ||
+          (metadata.format !== undefined &&
+            metadata.format !== "video" &&
+            metadata.format !== "short")
         )
           throw new Error(
             "Choose video privacy and explicit audience/synthetic-media declarations.",
@@ -3771,9 +4059,58 @@ export class SocialService implements SocialServiceApi {
           privacy: metadata.privacy as NonNullable<CampaignVariant["youtube"]>["privacy"],
           madeForKids: metadata.madeForKids,
           containsSyntheticMedia: metadata.containsSyntheticMedia,
+          ...(metadata.format !== undefined ? { format: metadata.format } : {}),
         };
       }
-      const media = this.parseMedia(value.media ?? []);
+      const instagramApi = account.platform === "instagram" && account.connection !== "browser";
+      const media = this.parseMedia(value.media ?? [], instagramApi);
+      let instagram: CampaignVariant["instagram"];
+      if (value.instagram !== undefined) {
+        if (!instagramApi) throw new Error("Instagram options require an Instagram API account.");
+        instagram = parseInstagramPublishOptions(value.instagram);
+      }
+      // X publishing options are included in the campaign's approval signature.
+      let x: XPostExtras | undefined;
+      if (value.x !== undefined) {
+        if (account.platform !== "x") throw new Error("X publishing options require an X account.");
+        const issue = xPostExtrasIssue(value.x, media.length);
+        if (issue) throw new Error(issue);
+        x = value.x as XPostExtras;
+      }
+      const xMediaOnly = account.platform === "x" && media.length > 0 && value.text === "";
+      const linkedinFormat =
+        value.linkedinFormat === undefined
+          ? undefined
+          : parseLinkedInPostFormat(value.linkedinFormat);
+      if (linkedinFormat && (account.platform !== "linkedin" || account.connection !== "oauth"))
+        throw new Error("LinkedIn polls and article links require a LinkedIn API connection.");
+      let reddit: CampaignVariant["reddit"];
+      if (value.reddit !== undefined) {
+        if (account.platform !== "reddit")
+          throw new Error("Reddit publishing options require a Reddit account.");
+        if (value.reddit && typeof value.reddit === "object" && !Array.isArray(value.reddit))
+          exact(value.reddit as Record<string, unknown>, [
+            "subreddits",
+            "title",
+            "kind",
+            "flairId",
+          ]);
+        const options = redditPayload({ payload: { reddit: value.reddit } }, true);
+        if ((options.subreddits?.length ?? 0) > 1)
+          throw new Error("Choose one Reddit destination.");
+        if (
+          options.subreddits?.some((name) => name.length > 64) ||
+          (options.title?.length ?? 0) > REDDIT_TITLE_LIMIT
+        )
+          throw new Error("The Reddit destination or title is too long.");
+        const flairId = options.flairId?.trim();
+        reddit = {
+          subreddits: (options.subreddits ?? []).map((name) => name.trim()),
+          title: options.title?.trim() ?? "",
+          kind: options.kind ?? (value.link ? "link" : "self"),
+          ...(flairId ? { flairId } : {}),
+        };
+      }
       const telegramChannelMedia =
         account.platform === "telegram" &&
         account.accountType === "channel" &&
@@ -3782,9 +4119,16 @@ export class SocialService implements SocialServiceApi {
       return {
         accountId,
         text:
+          xMediaOnly ||
+          (reddit && value.text === "") ||
           (snapchat?.target === "story" && value.text === "") ||
-          (facebook?.target === "reel" &&
-            media.length === 1 &&
+          (account.platform === "instagram" && media.length > 0 && value.text === "") ||
+          (account.platform === "linkedin" &&
+            (linkedinFormat || media.length) &&
+            typeof value.text === "string" &&
+            !value.text.trim()) ||
+          (account.platform === "facebook" &&
+            media.length > 0 &&
             typeof value.text === "string" &&
             !value.text.trim()) ||
           (telegramChannelMedia && typeof value.text === "string" && !value.text.trim())
@@ -3798,6 +4142,10 @@ export class SocialService implements SocialServiceApi {
         ...(tiktok ? { tiktok } : {}),
         ...(snapchat ? { snapchat } : {}),
         ...(facebook ? { facebook } : {}),
+        ...(instagram ? { instagram } : {}),
+        ...(x ? { x } : {}),
+        ...(linkedinFormat ? { linkedinFormat } : {}),
+        ...(reddit ? { reddit } : {}),
       };
     });
     if (new Set(variants.map((variant) => variant.accountId)).size !== variants.length)
@@ -3828,13 +4176,25 @@ export class SocialService implements SocialServiceApi {
     };
     return await this.put("campaign", campaign.id, campaign);
   }
-  private parseMedia(raw: unknown): CampaignVariant["media"] {
-    if (!Array.isArray(raw) || raw.length > 4) throw new Error("Use at most four media assets.");
+  private parseMedia(
+    raw: unknown,
+    instagramApi = false,
+    instagramDm = false,
+  ): CampaignVariant["media"] {
+    if (!Array.isArray(raw) || raw.length > (instagramApi ? INSTAGRAM_CAROUSEL_MAX : 4))
+      throw new Error(
+        instagramApi
+          ? `Use at most ${INSTAGRAM_CAROUSEL_MAX} media assets.`
+          : "Use at most four media assets.",
+      );
     return raw.map((item) => {
       if (!item || typeof item !== "object") throw new Error("Invalid media.");
       const media = item as Record<string, unknown>;
       exact(media, ["kind", "url", "uploadId", "alt", "title"]);
-      if (!["image", "video", "document"].includes(String(media.kind)))
+      if (
+        !["image", "video", "document"].includes(String(media.kind)) &&
+        !(instagramDm && media.kind === "audio")
+      )
         throw new Error("Invalid media kind.");
       if (!media.url && !media.uploadId)
         throw new Error("Media needs an HTTPS URL or a host upload.");
@@ -3906,6 +4266,13 @@ export class SocialService implements SocialServiceApi {
       );
       this.capability(account, "publish");
       if (variant.media.length) this.capability(account, "media");
+      const nativeAt = facebookNativeScheduleAt(variant.facebook);
+      if (
+        nativeAt !== undefined &&
+        (automated !== undefined ||
+          facebookScheduleTime(nativeAt, Math.max(this.now(), variant.scheduledAt)) === undefined)
+      )
+        throw new Error("Facebook scheduling requires 10 minutes to 75 days after dispatch.");
       const unsupported = contentSupport(account, {
         kind: "publish",
         payload: variant,
@@ -3938,6 +4305,10 @@ export class SocialService implements SocialServiceApi {
               tiktok: variant.tiktok,
               snapchat: variant.snapchat,
               facebook: variant.facebook,
+              instagram: variant.instagram,
+              ...(variant.x ? { x: variant.x } : {}),
+              linkedinFormat: variant.linkedinFormat,
+              ...(variant.reddit ? { reddit: variant.reddit } : {}),
             },
             ...approvalJobFields(decision, variant.scheduledAt),
             attempts: 0,
@@ -3951,19 +4322,44 @@ export class SocialService implements SocialServiceApi {
     action: string,
     input: Record<string, unknown>,
   ): Promise<SocialDraft> {
-    exact(input, ["accountId", "projectId", "threadId", "contactId", "postId", "text", "factIds"]);
-    const kind: SocialDraft["kind"] = action.startsWith("replies")
-      ? "reply"
-      : action.startsWith("messages")
-        ? "message"
-        : "comment";
+    exact(input, [
+      "accountId",
+      "projectId",
+      "threadId",
+      "contactId",
+      "postId",
+      "text",
+      "factIds",
+      ...(action === "replies.draft" ? ["instagramPrivateReply", "media"] : []),
+    ]);
+    const facebookPrivateReply = ["facebook.privateReplyDraft"].includes(action);
+    const kind: SocialDraft["kind"] =
+      action.startsWith("replies") || facebookPrivateReply
+        ? "reply"
+        : action.startsWith("messages")
+          ? "message"
+          : "comment";
     const thread = input.threadId
       ? await this.accessibleThread(p, str(input.threadId, "thread"))
       : undefined;
     const accountId = thread?.accountId ?? str(input.accountId, "account");
     if (thread && input.accountId && input.accountId !== thread.accountId)
       throw new Error("Reply account must match the thread.");
-    await this.access(p, accountId, "draft");
+    const draftAccount = await this.access(p, accountId, "draft");
+    if (input.instagramPrivateReply !== undefined && input.instagramPrivateReply !== true)
+      throw new Error("Invalid Instagram private reply.");
+    const privateReply = input.instagramPrivateReply === true;
+    if (privateReply) {
+      this.capability(draftAccount, "message.reply");
+      instagramPrivateReplyTarget(draftAccount, thread, this.now());
+    }
+    if (facebookPrivateReply) {
+      if (draftAccount.platform !== "facebook" || thread?.kind !== "comment")
+        throw new Error("Choose a Facebook Page comment.");
+      if (this.now() - thread.lastInboundAt >= FACEBOOK_PRIVATE_REPLY_WINDOW_MS)
+        throw new Error("The Facebook private reply window has closed.");
+      this.capability(draftAccount, "comment.privateReply");
+    }
     const personal =
       !!thread && !thread.projectId && (!!p.assistantAccountId || p.kind === "owner");
     if (p.assistantAccountId && !personal)
@@ -3989,12 +4385,30 @@ export class SocialService implements SocialServiceApi {
     const factIds = array(input.factIds ?? [], "verified facts");
     if (personal && factIds.length) throw new Error("Personal drafts cannot use project facts.");
     if (projectId) await this.facts([projectId], factIds);
+    const instagramDm = draftAccount.platform === "instagram" && thread?.kind === "message";
+    const media = input.media === undefined ? [] : this.parseMedia(input.media, false, instagramDm);
+    if (media.length && (draftAccount.platform !== "instagram" || thread?.kind !== "message"))
+      throw new Error("Instagram attachments require an existing Instagram DM.");
+    const replyText = media.length && input.text === "" ? "" : str(input.text, "draft text");
+    if (media.length) {
+      this.capability(draftAccount, "message.reply");
+      const issue = contentSupport(draftAccount, {
+        kind,
+        payload: { text: replyText, media, recipientId: contact.platformId },
+      });
+      if (issue) throw new Error(issue);
+      if (media[0].uploadId) {
+        this.owner(p);
+        await this.instagramMedia.assertOwned(p.actorId, media[0].uploadId);
+      }
+    }
     const draft: SocialDraft = {
       id: randomUUID(),
       accountId,
       ...(projectId ? { projectId } : {}),
       contactId,
       kind,
+      ...(facebookPrivateReply ? { facebookPrivateReply: true } : {}),
       ...(thread
         ? {
             threadId: thread.id,
@@ -4003,7 +4417,9 @@ export class SocialService implements SocialServiceApi {
           }
         : {}),
       ...(kind === "comment" ? { postId: str(input.postId, "target post", 300) } : {}),
-      text: str(input.text, "draft text"),
+      text: replyText,
+      ...(privateReply ? { instagramPrivateReply: true as const } : {}),
+      ...(media.length ? { media } : {}),
       factIds,
       createdAt: this.now(),
     };
@@ -4011,7 +4427,9 @@ export class SocialService implements SocialServiceApi {
       draft.reviewReason = thread.reviewReason;
     await this.assertLength(
       await this.get<SocialAccount>("account", accountId),
-      kind === "message" || thread?.kind === "message" ? "message" : "comment",
+      privateReply || facebookPrivateReply || kind === "message" || thread?.kind === "message"
+        ? "message"
+        : "comment",
       draft.text,
     );
     return await this.put("draft", draft.id, draft);
@@ -4127,11 +4545,14 @@ export class SocialService implements SocialServiceApi {
       throw new Error(
         "Conversation assignment changed. Create a new draft for the current recipient/project.",
       );
+    const instagramDm = account.platform === "instagram" && thread?.kind === "message";
     const effectiveMedia =
-      input.media !== undefined ? this.parseMedia(input.media) : (draft.media ?? []);
+      input.media !== undefined
+        ? this.parseMedia(input.media, false, instagramDm)
+        : (draft.media ?? []);
     const attachmentOnly =
       account.connection !== "browser" &&
-      ["whatsapp", "telegram"].includes(account.platform) &&
+      ["whatsapp", "telegram", "instagram"].includes(account.platform) &&
       (draft.kind === "message" || thread?.kind === "message") &&
       effectiveMedia.length > 0;
     const text =
@@ -4144,13 +4565,16 @@ export class SocialService implements SocialServiceApi {
     if (draft.projectId) await this.facts([draft.projectId], factIds);
     await this.assertLength(
       account,
-      draft.kind === "message" || thread?.kind === "message" ? "message" : "comment",
+      draft.instagramPrivateReply || draft.kind === "message" || thread?.kind === "message"
+        ? "message"
+        : "comment",
       text,
     );
     draft.text = text;
     {
       const media = effectiveMedia;
-      if (media.length) this.capability(account, "media");
+      if (media.length)
+        this.capability(account, account.platform === "instagram" ? "message.reply" : "media");
       const issue = contentSupport(account, {
         kind: draft.kind,
         payload: {
@@ -4162,6 +4586,10 @@ export class SocialService implements SocialServiceApi {
         },
       });
       if (issue) throw new Error(issue);
+      if (instagramDm && input.media !== undefined && media[0]?.uploadId) {
+        this.owner(p);
+        await this.instagramMedia.assertOwned(p.actorId, media[0].uploadId);
+      }
       if (input.media !== undefined) draft.media = media;
     }
     draft.factIds = factIds;
@@ -4220,6 +4648,7 @@ export class SocialService implements SocialServiceApi {
       draft.accountId !== account.id ||
       (draft.projectId ?? null) !== proposal.projectId ||
       draft.kind !== kind ||
+      draft.facebookPrivateReply ||
       draft.ruleId
     )
       throw new Error("Room social draft source changed.");
@@ -4256,13 +4685,22 @@ export class SocialService implements SocialServiceApi {
         thread.events.filter((event) => event.direction === "inbound").at(-1)?.id
     )
       throw new Error("A newer inbound message arrived. Review a new draft before sending.");
-    const limitKind = kind === "message" || thread?.kind === "message" ? "message" : "comment";
+    const limitKind =
+      draft.instagramPrivateReply || kind === "message" || thread?.kind === "message"
+        ? "message"
+        : "comment";
     await this.assertLength(account, limitKind, draft.text);
     this.eligibility(account, contact, kind, thread, !proposal.projectId);
     const effectivePolicy = await this.policy(account);
     const payload = {
       text: draft.text,
       media: draft.media ?? [],
+      ...(draft.instagramPrivateReply
+        ? { instagramPrivateReply: instagramPrivateReplyTarget(account, thread, this.now()) }
+        : {}),
+      ...(account.platform === "instagram" && !draft.instagramPrivateReply && thread?.replyUntil
+        ? { replyUntil: thread.replyUntil }
+        : {}),
       recipientId:
         thread?.kind === "comment" || (kind === "comment" && account.platform !== "youtube")
           ? undefined
@@ -4280,8 +4718,12 @@ export class SocialService implements SocialServiceApi {
             : thread.platformThreadId
           : draft.postId,
       objectPostId: thread?.platformPostId,
+      ...(account.platform === "instagram" && account.connection === "browser" && kind === "message"
+        ? { instagramRecipientHandle: instagramDirectHandle(contact) }
+        : {}),
     };
-    if (payload.media.length) this.capability(account, "media");
+    if (payload.media.length || draft.instagramPrivateReply)
+      this.capability(account, account.platform === "instagram" ? "message.reply" : "media");
     const unsupported = contentSupport(account, { kind, payload });
     if (unsupported) throw new Error(unsupported);
     if (
@@ -4355,7 +4797,7 @@ export class SocialService implements SocialServiceApi {
         thread: SocialThread | null;
       };
       const key = detail.thread
-        ? `reply:${detail.thread.id}:${detail.thread.events.filter((event) => event.direction === "inbound").at(-1)?.id}`
+        ? `${detail.draft.instagramPrivateReply ? "instagram-private" : "reply"}:${detail.thread.id}:${detail.thread.events.filter((event) => event.direction === "inbound").at(-1)?.id}`
         : `draft:${detail.draft.id}`;
       const previous = await this.queuedJob(key);
       if (previous)
@@ -4440,6 +4882,7 @@ export class SocialService implements SocialServiceApi {
         throw new Error("Personal sends require an owner-reviewed conversation.");
     }
     const account = await this.access(p, draft.accountId, kind);
+    if (draft.facebookPrivateReply) await this.access(p, draft.accountId, "message");
     if (draft.generation && draft.generation.status !== "completed")
       throw new Error("AI draft generation requires completion or review before sending.");
     const covered = Boolean(draft.ruleId) || (await this.approved(draft.id, draft));
@@ -4450,9 +4893,18 @@ export class SocialService implements SocialServiceApi {
     if (draft.projectId && !contact.projectIds.includes(draft.projectId))
       throw new Error("Recipient is not shared with the selected project.");
     const thread = draft.threadId ? await this.accessibleThread(p, draft.threadId) : undefined;
+    const instagramPrivateReply = draft.instagramPrivateReply
+      ? instagramPrivateReplyTarget(account, thread, this.now())
+      : undefined;
+    if (instagramPrivateReply) this.capability(account, "message.reply");
     await this.assertLength(
       account,
-      kind === "message" || thread?.kind === "message" ? "message" : "comment",
+      instagramPrivateReply ||
+        draft.facebookPrivateReply ||
+        kind === "message" ||
+        thread?.kind === "message"
+        ? "message"
+        : "comment",
       draft.text,
     );
     if (
@@ -4461,12 +4913,18 @@ export class SocialService implements SocialServiceApi {
         thread.events.filter((event) => event.direction === "inbound").at(-1)?.id
     )
       throw new Error("A newer inbound message arrived. Review a new draft before sending.");
-    this.eligibility(account, contact, kind, thread, !draft.projectId);
-    await assertContactSendable(this, contact.id, account.platform, kind, thread);
+    this.eligibility(account, contact, kind, thread, !draft.projectId, draft.facebookPrivateReply);
+    await assertContactSendable(
+      this,
+      contact.id,
+      account.platform,
+      instagramPrivateReply || draft.facebookPrivateReply ? "message" : kind,
+      thread,
+    );
     return await this.transaction(async () => {
       // Different drafts/sessions targeting the same inbound event share one lock/key.
       const key = thread
-        ? `reply:${thread.id}:${thread.events.filter((event) => event.direction === "inbound").at(-1)?.id}`
+        ? `${instagramPrivateReply ? "instagram-private" : draft.facebookPrivateReply ? "facebook-private-reply" : "reply"}:${thread.id}:${thread.events.filter((event) => event.direction === "inbound").at(-1)?.id}`
         : `draft:${draft.id}`;
       const previous = await this.queuedJob(key);
       if (previous) return previous;
@@ -4487,7 +4945,8 @@ export class SocialService implements SocialServiceApi {
           text: draft.text,
           media: draft.media ?? [],
           recipientId:
-            thread?.kind === "comment" || (kind === "comment" && account.platform !== "youtube")
+            !draft.facebookPrivateReply &&
+            (thread?.kind === "comment" || (kind === "comment" && account.platform !== "youtube"))
               ? undefined
               : contact.platformId,
           threadId:
@@ -4503,7 +4962,14 @@ export class SocialService implements SocialServiceApi {
                 : thread.platformThreadId
               : draft.postId,
           objectPostId: thread?.platformPostId,
+          ...(account.platform === "instagram" &&
+          account.connection === "browser" &&
+          kind === "message"
+            ? { instagramRecipientHandle: instagramDirectHandle(contact) }
+            : {}),
+          ...(draft.facebookPrivateReply ? { facebookPrivateReply: true } : {}),
           ...(thread?.replyUntil === undefined ? {} : { replyUntil: thread.replyUntil }),
+          ...(instagramPrivateReply ? { instagramPrivateReply } : {}),
         },
         ...approvalJobFields(autonomy, this.now()),
         attempts: 0,
@@ -4517,8 +4983,9 @@ export class SocialService implements SocialServiceApi {
     kind: SocialJob["kind"],
     thread?: SocialThread,
     allowPersonal = false,
+    facebookPrivateReply?: true,
   ) {
-    checkEligibility(this, account, contact, kind, thread, allowPersonal);
+    checkEligibility(this, account, contact, kind, thread, allowPersonal, facebookPrivateReply);
   }
   async upsertContact(p: SocialPrincipal, input: Record<string, unknown>): Promise<SocialContact> {
     return await upsertSocialContact(this, p, input);
@@ -4616,11 +5083,15 @@ export class SocialService implements SocialServiceApi {
     );
   }
   /** Only the platform adapter/signed webhook can call this; never exposed as a session tool. */
-  async ingest(accountId: string, events: SocialInbound[]): Promise<number> {
+  async ingest(
+    accountId: string,
+    events: SocialInbound[],
+    options?: SocialIngestOptions,
+  ): Promise<number> {
     return this.operation(async () => {
       await this.ready;
 
-      return await ingestEvents(this, accountId, events);
+      return await ingestEvents(this, accountId, events, options);
     });
   }
   /** OAuth completion is host-only; a UI/tool cannot submit a token or forge scopes. */
@@ -4734,6 +5205,8 @@ export class SocialService implements SocialServiceApi {
             if (identity.telegramBotId !== undefined)
               account.telegramBotId = identity.telegramBotId;
             account.connected = true;
+            // Reconnecting is the explicit repair for a rejected or backed-off refresh.
+            await this.clearRefreshState(account.id);
             return await this.put("account", account.id, account);
           });
         } catch (error) {
@@ -4767,6 +5240,105 @@ export class SocialService implements SocialServiceApi {
     if (writing && (await this.setting("stopped")) === "true")
       throw new Error("Social automation is stopped.");
     return account;
+  }
+  // X Live custody. Share one vault queue across saves and isolate it from email credentials.
+  private xLiveVault?: ReturnType<typeof osSecretValues>;
+  private instagramEncoderVault?: ReturnType<typeof osSecretValues>;
+  private socialLiveService?: SocialLiveService;
+  private xEncoderVault() {
+    return (this.xLiveVault ??= osSecretValues(
+      join(this.directory, "x-live"),
+      `${this.store.environmentId}.x-live`,
+    ));
+  }
+  /** Private encoder handoff for Live streaming. Neither this API nor its secrets enter Social RPC. */
+  get live(): SocialLiveService {
+    const environmentId = this.store.environmentId;
+    return (this.socialLiveService ??= createSocialLiveService({
+      credentials: this.credentials,
+      instagramVault: () =>
+        (this.instagramEncoderVault ??= osSecretValues(
+          join(this.directory, "instagram-live"),
+          environmentId,
+        )),
+      xVault: () => this.xEncoderVault(),
+      verify: async (principal) => {
+        await this.ready;
+        if (principal.sessionId) await this.verifyPeer?.(principal.sessionId);
+        await this.validate(principal);
+        await this.store.db.checkAuthorization();
+      },
+      context: (principal) => ({
+        principal,
+        environmentId,
+        service: this,
+        store: this.audience,
+        now: this.now,
+        operationId: "live-stream",
+        emailSecrets: osSecretValues(this.directory, environmentId),
+        youtube: {
+          environmentId,
+          credentials: this.credentials,
+          media: (actor, id) => this.readOwnerMedia(actor, id),
+          assertAuthorized: () => this.store.db.checkAuthorization(),
+        },
+        facebookLive: { environmentId, credentials: this.credentials },
+      }),
+    }));
+  }
+  async saveXLiveKey(p: SocialPrincipal, accountId: string, key: unknown, server?: unknown) {
+    await this.ready;
+    this.owner(p);
+    const account = await this.access(p, accountId, "read");
+    if (
+      account.platform !== "x" ||
+      !account.connected ||
+      account.executorId !== this.store.environmentId
+    )
+      throw new Error("Connect the X account on this Host before saving its stream key.");
+    const epoch = await this.setting(`connectionEpoch:${account.id}`);
+    await this.store.db.checkAuthorization();
+    return storeXLiveKey(
+      this.xEncoderVault(),
+      account.id,
+      key,
+      server,
+      socialLiveConnectionBinding(account, epoch),
+    );
+  }
+  // TikTok username updates are committed only after the browser acknowledges the same account.
+  private async renameTikTokBrowser(
+    p: SocialPrincipal,
+    expected: SocialAccount,
+    profile: { platformId: string; name: string },
+  ) {
+    this.owner(p);
+    await this.transaction(async () => {
+      const current = await this.accountForOAuth(p, expected.id);
+      if (
+        current.platform !== "tiktok" ||
+        current.connection !== "browser" ||
+        !current.connected ||
+        current.platformId !== expected.platformId ||
+        current.executorId !== expected.executorId ||
+        !/^web:tiktok:[a-z0-9_.]{2,24}$/.test(profile.platformId)
+      )
+        throw new SocialPlatformError("denied");
+      if (
+        (await this.list<SocialAccount>("account")).some(
+          (other) =>
+            other.id !== current.id &&
+            other.platform === "tiktok" &&
+            other.platformId === profile.platformId,
+        )
+      )
+        throw new SocialPlatformError("denied");
+      await this.put("account", current.id, {
+        ...current,
+        platformId: profile.platformId,
+        name: str(profile.name, "account name", 300),
+      });
+    });
   }
   /** Internal owner connection reviews must be invalidated by an explicit disconnect. */
   async connectionReviewEpoch(p: SocialPrincipal, accountId: string) {
@@ -4830,12 +5402,69 @@ export class SocialService implements SocialServiceApi {
         this.store.db.checkAuthorization(),
       );
       await this.store.db.checkAuthorization();
-      return this.videoUploads.call(p.actorId, input);
+      let youtubeApi = false;
+      if (input.mode === "begin" && input.youtubeAccountId !== undefined) {
+        const account = await this.account(str(input.youtubeAccountId, "YouTube account"));
+        youtubeApi =
+          account.platform === "youtube" &&
+          account.connection !== "browser" &&
+          account.connected &&
+          account.accessApproved &&
+          account.executorId === this.store.environmentId;
+        if (!youtubeApi) throw new Error("Large videos require a YouTube API connection.");
+        this.capability(account, "media");
+      }
+      if (
+        input.instagramAttachmentThreadId !== undefined ||
+        input.instagramAttachmentKind !== undefined
+      ) {
+        const threadId = str(input.instagramAttachmentThreadId, "conversation");
+        const kind = input.instagramAttachmentKind;
+        if (!isInstagramDirectMediaKind(kind))
+          throw new Error("Invalid Instagram attachment type.");
+        if (input.mode === "begin" || input.mode === "finish") {
+          const thread = await this.accessibleThread(p, threadId);
+          const account = await this.access(p, thread.accountId, "reply");
+          if (
+            account.platform !== "instagram" ||
+            account.connection === "browser" ||
+            thread.kind !== "message" ||
+            thread.replyAllowed === false ||
+            (thread.replyUntil ?? 0) <= this.now()
+          )
+            throw new Error("Choose an Instagram API conversation within its reply window.");
+          this.capability(account, "message.reply");
+          if (!instagramLocalMediaAvailable())
+            throw new Error(
+              "This Host needs a public HTTPS media origin for Instagram file delivery.",
+            );
+          if (input.mode === "begin" && Number(input.size) > INSTAGRAM_DIRECT_MEDIA_LIMITS[kind])
+            throw new Error("Instagram attachment exceeds the supported size.");
+        }
+        return this.videoUploads.call(
+          `instagram:${hash(JSON.stringify([p.actorId, threadId, kind]))}`,
+          input,
+          false,
+          (id, bytes) => this.instagramMedia.register(p.actorId, id, kind, bytes),
+        );
+      }
+      return this.videoUploads.call(p.actorId, input, youtubeApi);
     });
+  }
+  async readInstagramAttachment(id: string, query: URLSearchParams) {
+    await this.ready;
+    return this.instagramMedia.serve(id, query);
   }
   private async readMedia(id: string): Promise<Uint8Array> {
     if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("Invalid media ID.");
-    return readFile(join(this.directory, "media", id));
+    const file = await open(join(this.directory, "media", id), "r");
+    try {
+      if ((await file.stat()).size > SOCIAL_BUFFERED_VIDEO_BYTES)
+        throw new SocialPlatformError("unsupported");
+      return await file.readFile();
+    } finally {
+      await file.close();
+    }
   }
   async credentialFor(accountId: string): Promise<SocialCredential | undefined> {
     const initial = await this.credentials.get(accountId);
@@ -4854,8 +5483,9 @@ export class SocialService implements SocialServiceApi {
         credential.expiresAt > this.now() + 60000
       )
         return credential;
-      const account = await this.get<SocialAccount>("account", accountId),
-        before = hash(JSON.stringify(account));
+      const account = await this.get<SocialAccount>("account", accountId);
+      if (account.platform === "x" && account.connection !== "browser" && !account.xApiProduct)
+        return undefined;
       if (
         !account.connected ||
         account.paused ||
@@ -4865,19 +5495,115 @@ export class SocialService implements SocialServiceApi {
         !enabledOAuthPlatform(account.platform)?.refresh
       )
         return credential;
-      const refreshed = await this.refreshCredential!(account, credential).catch(() => {
-        throw new SocialPlatformError("expired");
-      });
-      const current = await this.get<SocialAccount>("account", accountId);
-      if (hash(JSON.stringify(current)) !== before) throw new SocialPlatformError("expired");
+      const failed = await this.refreshState(accountId);
+      if (failed && (failed.permanent || failed.nextRefreshAt > this.now())) {
+        // Known-failing grant: never contact the provider again before its backoff ends
+        // (a permanent rejection waits for the owner to reconnect).
+        if (credential.expiresAt <= this.now()) throw new SocialPlatformError("expired");
+        return credential;
+      }
+      // A request that lost authority must not start a rotation it could not complete.
       await this.store.db.checkAuthorization();
+      const epoch = await this.setting(`connectionEpoch:${accountId}`);
+      let refreshed: SocialCredential;
+      try {
+        refreshed = await this.refreshCredential!(account, credential);
+      } catch (error) {
+        await this.recordRefreshFailure(account, failed, error);
+        throw new SocialPlatformError("expired");
+      }
+      // The provider may have rotated the refresh token, so the old one is already dead:
+      // save the result unless the account or credential generation it was issued for is gone.
+      // Unrelated account edits (policy, name, pause, grants) never discard it.
+      const stored = await this.credentials.get(accountId);
+      if (
+        !stored ||
+        stored.accessToken !== credential.accessToken ||
+        stored.refreshToken !== credential.refreshToken
+      )
+        throw new SocialPlatformError("expired");
+      try {
+        const current = await this.get<SocialAccount>("account", accountId);
+        if (
+          !current.connected ||
+          current.platform !== account.platform ||
+          current.platformId !== account.platformId ||
+          epoch !== (await this.setting(`connectionEpoch:${accountId}`))
+        )
+          throw new SocialPlatformError("expired");
+      } catch (error) {
+        // Only a positive mismatch discards the result. A read that fails (a revoked request
+        // can no longer read the account) leaves the vault generation above as the proof, and
+        // a later disconnect deletes the credential, so the rotated token is kept.
+        if (error instanceof SocialPlatformError) throw error;
+      }
       await this.credentials.set(accountId, refreshed);
-      const latest = await this.get<SocialAccount>("account", accountId);
-      if (hash(JSON.stringify(latest)) !== before) throw new SocialPlatformError("expired");
-      latest.expiresAt = refreshed.expiresAt;
-      await this.put("account", latest.id, latest);
+      try {
+        await this.transaction(async () => {
+          await this.clearRefreshState(accountId);
+          const latest = await this.get<SocialAccount>("account", accountId);
+          latest.expiresAt = refreshed.expiresAt;
+          await this.put("account", latest.id, latest);
+        });
+      } catch {
+        // shortcut: the credential is already saved; a failed account.expiresAt sync only
+        // delays the owner-visible expiry, upgrade when account expiry has its own resync.
+      }
+      await this.store.db.checkAuthorization();
       return refreshed;
     });
+  }
+  private async refreshState(accountId: string): Promise<SocialRefreshState | undefined> {
+    const saved = await this.setting(`refreshState:${accountId}`);
+    if (!saved) return undefined;
+    try {
+      const value = JSON.parse(saved) as Partial<SocialRefreshState>;
+      return Number.isFinite(value.failures) && Number.isFinite(value.nextRefreshAt)
+        ? (value as SocialRefreshState)
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  private async clearRefreshState(accountId: string): Promise<void> {
+    await this.store.db
+      .prepare("DELETE FROM social_settings WHERE key=?")
+      .run(`refreshState:${accountId}`);
+  }
+  /** Backoff keeps a failing provider endpoint from being hit every tick; a permanent
+   * rejection also flips the account to the expired (reconnect) state the owner already sees. */
+  private async recordRefreshFailure(
+    account: SocialAccount,
+    previous: SocialRefreshState | undefined,
+    error: unknown,
+  ): Promise<void> {
+    try {
+      const permanent = isPermanentRefreshFailure(error);
+      const failures = (previous?.failures ?? 0) + 1;
+      const delay = Math.min(
+        SOCIAL_REFRESH_RETRY_MS * 2 ** Math.min(failures - 1, 10),
+        SOCIAL_REFRESH_RETRY_MAX_MS,
+      );
+      const state: SocialRefreshState = {
+        failures,
+        nextRefreshAt: this.now() + delay,
+        ...(permanent ? { permanent: true } : {}),
+      };
+      await this.setSetting(`refreshState:${account.id}`, JSON.stringify(state));
+      if (permanent && !previous?.permanent)
+        await this.transaction(async () => {
+          const latest = await this.get<SocialAccount>("account", account.id);
+          if (
+            !latest.connected ||
+            (latest.expiresAt !== undefined && latest.expiresAt <= this.now())
+          )
+            return;
+          latest.expiresAt = this.now();
+          await this.put("account", latest.id, latest);
+        });
+    } catch {
+      // The caller still reports expired; unrecorded state only means one more attempt.
+    }
   }
   private async publicMediaUrl(id: string): Promise<string> {
     const base = url(process.env.BYCODA_SOCIAL_PUBLIC_MEDIA_BASE_URL, "public media base URL");
@@ -4935,9 +5661,26 @@ export class SocialService implements SocialServiceApi {
     for await (const page of this.jobArchive.jobPages("status='running'", [])) {
       if (epoch !== this.backgroundEpoch) return;
       for (const job of page) {
-        job.status = "review";
-        job.error =
-          "Host restarted during a send. Reconcile the platform result before another send.";
+        // Only the same YouTube upload session or accepted video can be reconciled automatically.
+        const youtubeAccount =
+          job.kind === "publish" &&
+          job.payload.youtube &&
+          (job.preparation?.youtubeUploadPending || job.preparation?.youtubeVideoId)
+            ? await this.get<SocialAccount>("account", job.accountId).catch(() => undefined)
+            : undefined;
+        if (
+          youtubeAccount?.platform === "youtube" &&
+          youtubeAccount.connection !== "browser" &&
+          youtubeAccount.executorId === this.store.environmentId
+        ) {
+          job.status = "queued";
+          job.scheduledAt = this.now();
+          delete job.error;
+        } else {
+          job.status = "review";
+          job.error =
+            "Host restarted during a send. Reconcile the platform result before another send.";
+        }
         await this.writeJob(job);
         if (epoch !== this.backgroundEpoch) return;
       }
@@ -5011,6 +5754,7 @@ export class SocialService implements SocialServiceApi {
   }
   async stop(): Promise<void> {
     this.backgroundEpoch++;
+    this.pollBackoff.clear();
     for (const controller of this.generationControllers.values()) controller.abort();
     clearTimeout(this.timer);
     this.timer = undefined;
@@ -5033,7 +5777,8 @@ export class SocialService implements SocialServiceApi {
         this.activeOperations.size ||
         this.credentialChanges.size ||
         this.pollingPending.size ||
-        this.generationPending
+        this.generationPending ||
+        this.outreachPending
       ) {
         await Promise.allSettled([
           ...this.activeTicks,
@@ -5041,6 +5786,7 @@ export class SocialService implements SocialServiceApi {
           ...this.credentialChanges.values(),
           ...this.pollingPending.values(),
           ...(this.generationPending ? [this.generationPending] : []),
+          ...(this.outreachPending ? [this.outreachPending] : []),
         ]);
       }
       if (this.programsValue)
@@ -5089,9 +5835,15 @@ export class SocialService implements SocialServiceApi {
       await this.jobArchive
         .compactIfDue()
         .catch((error) => console.error("Social job archival failed; retrying later:", error));
+      await this.audience
+        .pruneSpentCountersIfDue(this.now())
+        .catch((error) => console.error("Social counter retention failed; retrying later:", error));
       await this.mediaQuarantine
         .sweepIfDue()
         .catch((error) => console.error("Social media retention failed; retrying later:", error));
+      await this.pruneAuditIfDue().catch((error) =>
+        console.error("Social audit retention failed; retrying later:", error),
+      );
       if ((await this.setting("stopped")) === "true") return;
       // A host that never used social media has nothing to refresh, generate,
       // poll or send: skip the scans this 5 s tick would otherwise repeat.
@@ -5110,26 +5862,51 @@ export class SocialService implements SocialServiceApi {
             account.expiresAt <= this.now() + 60000 &&
             enabledOAuthPlatform(account.platform)?.refresh !== undefined,
         );
-        for (let offset = 0; offset < due.length; offset += 4)
+        // Accounts whose refresh already failed never hold the barrier: a rejected grant waits
+        // for the owner to reconnect, a backed-off one retries beside the tick when its delay ends.
+        const barrier: SocialAccount[] = [];
+        const retrying: SocialAccount[] = [];
+        for (const account of due) {
+          const state = await this.refreshState(account.id);
+          if (!state) barrier.push(account);
+          else if (!state.permanent && state.nextRefreshAt <= this.now()) retrying.push(account);
+        }
+        for (let offset = 0; offset < barrier.length; offset += 4)
           await Promise.allSettled(
-            due
+            barrier
               .slice(offset, offset + 4)
               .map(async (account) => await this.credentialFor(account.id)),
           );
+        for (const account of retrying.slice(0, 4))
+          background.push(this.credentialFor(account.id).catch(() => undefined));
       }
       if (this.disposing || epoch !== this.backgroundEpoch) return;
       await this.programs.tick();
       if (this.disposing || epoch !== this.backgroundEpoch) return;
       await this.processPublishingPlans();
       if (this.disposing || epoch !== this.backgroundEpoch) return;
-      await runOutreachTick({
-        service: this,
-        store: this.audience,
-        now: this.now(),
-        emailSecrets: osSecretValues(this.directory, this.store.environmentId),
-      }).catch((error) =>
-        console.error("Social outreach tick failed; retrying later:", sanitizeSocialError(error)),
-      );
+      // Outreach model calls can run for minutes: it runs beside publishing and drafting, bounded
+      // by its own time budget, and a later tick skips it while this one is still running.
+      if (!this.outreachPending) {
+        const pending = runOutreachTick({
+          service: this,
+          store: this.audience,
+          now: () => this.now(),
+          shouldStop: () => this.disposing || epoch !== this.backgroundEpoch,
+          emailSecrets: osSecretValues(this.directory, this.store.environmentId),
+        })
+          .catch((error) =>
+            console.error(
+              "Social outreach tick failed; retrying later:",
+              sanitizeSocialError(error),
+            ),
+          )
+          .finally(() => {
+            if (this.outreachPending === pending) this.outreachPending = undefined;
+          });
+        this.outreachPending = pending;
+        background.push(pending);
+      }
       if (this.disposing || epoch !== this.backgroundEpoch) return;
       if (!this.generationPending) {
         const pending = this.generateQueuedDraft().finally(() => {
@@ -5150,21 +5927,14 @@ export class SocialService implements SocialServiceApi {
             ) &&
             account.executorId === this.store.environmentId &&
             Number((await this.setting(`pollRate:${account.id}`)) ?? 0) <= this.now() &&
-            !this.pollingPending.has(account.id)
+            !this.pollingPending.has(account.id) &&
+            !(await this.pollBackedOff(account.id))
           ) {
             this.tickActive = true;
             background.push(
-              this.pollAccount(account.id).catch(async () => {
-                await this.setSetting(
-                  `pollRate:${account.id}`,
-                  String(
-                    Math.max(
-                      Number((await this.setting(`pollRate:${account.id}`)) ?? 0),
-                      this.now() + 60000,
-                    ),
-                  ),
-                );
-              }),
+              this.pollAccount(account.id).catch((error) =>
+                this.recordPollFailure(account.id, error),
+              ),
             );
           }
         }
@@ -5302,6 +6072,8 @@ export class SocialService implements SocialServiceApi {
       const check = async () => {
         if (!roomSourceValid()) throw new Error("Room social source lease revoked.");
         const currentAccount = await this.get<SocialAccount>("account", account.id);
+        if (currentAccount.platform === "x" && currentAccount.xApiProduct !== account.xApiProduct)
+          throw new Error("The X API product changed. Review the job again.");
         await assertJobAuthority(this, job, currentAccount);
         if (job.roomSource) {
           const source = job.roomSource;
@@ -5354,7 +6126,16 @@ export class SocialService implements SocialServiceApi {
           currentAccount.connection !== account.connection
         )
           throw new Error("Account connection changed before dispatch.");
-        if (job.payload.media.length) this.capability(currentAccount, "media");
+        if (job.payload.media.length)
+          this.capability(
+            currentAccount,
+            currentAccount.platform === "instagram" &&
+              job.kind === "reply" &&
+              job.payload.recipientId &&
+              !job.payload.postId
+              ? "message.reply"
+              : "media",
+          );
         const mediaIssue = contentSupport(currentAccount, job);
         if (mediaIssue) throw new Error(mediaIssue);
         const replyThread = job.draftId
@@ -5364,6 +6145,7 @@ export class SocialService implements SocialServiceApi {
           job.kind === "publish"
             ? "content"
             : job.kind === "message" ||
+                job.payload.facebookPrivateReply ||
                 (replyThread &&
                   (await this.get<SocialThread>("thread", replyThread)).kind === "message")
               ? "message"
@@ -5484,16 +6266,73 @@ export class SocialService implements SocialServiceApi {
             )
               throw new Error("Daily automatic send limit reached.");
           }
-          await assertContactSendable(this, contact.id, currentAccount.platform, job.kind, thread);
-          this.eligibility(currentAccount, contact, job.kind, thread, !draft.projectId);
-        } else this.capability(currentAccount, "publish");
+          if (draft.instagramPrivateReply || job.payload.instagramPrivateReply) {
+            this.capability(currentAccount, "message.reply");
+            const target = instagramPrivateReplyTarget(currentAccount, thread, this.now());
+            if (
+              !draft.instagramPrivateReply ||
+              !isDeepStrictEqual(target, job.payload.instagramPrivateReply)
+            )
+              throw new Error("Instagram private reply target changed.");
+          }
+          if (job.payload.facebookPrivateReply) {
+            if (
+              !draft.facebookPrivateReply ||
+              draft.text !== job.payload.text ||
+              thread?.platformThreadId !== job.payload.postId ||
+              contact.platformId !== job.payload.recipientId ||
+              (draft.projectId && !currentAccount.grants[draft.projectId]?.includes("message"))
+            )
+              throw new Error("Private reply source or message permission changed.");
+          }
+          await assertContactSendable(
+            this,
+            contact.id,
+            currentAccount.platform,
+            job.payload.instagramPrivateReply || job.payload.facebookPrivateReply
+              ? "message"
+              : job.kind,
+            thread,
+          );
+          this.eligibility(
+            currentAccount,
+            contact,
+            job.kind,
+            thread,
+            !draft.projectId,
+            job.payload.facebookPrivateReply,
+          );
+        } else {
+          this.capability(currentAccount, "publish");
+          if (currentAccount.platform === "instagram")
+            await assertInstagramPublicationTargets(this, currentAccount.id, job.payload.instagram);
+        }
       };
       if (job.sessionId) await this.verifyPeer?.(job.sessionId);
       await check();
       const credential = await this.credentials.get(account.id);
       if (!credential || (credential.expiresAt !== undefined && credential.expiresAt <= this.now()))
         throw new SocialPlatformError("expired");
-      await check(); // Credential lookup yielded; opt-out/stop can have arrived meanwhile.
+      let providerJob = job;
+      const instagramFile =
+        account.platform === "instagram" && job.kind === "reply" ? job.payload.media[0] : undefined;
+      if (instagramFile?.uploadId) {
+        if (!job.draftId)
+          throw new Error("A reviewed reply is required for an Instagram attachment.");
+        const delivery = await this.instagramMedia.grant(
+          job.draftId,
+          instagramFile.uploadId,
+          instagramFile.kind,
+        );
+        providerJob = {
+          ...job,
+          payload: {
+            ...job.payload,
+            media: [{ kind: instagramFile.kind, url: delivery }],
+          },
+        };
+      }
+      await check(); // Credential and attachment lookup yielded; opt-out/stop can have arrived meanwhile.
       await this.transaction(async () => {
         if (!isDeepStrictEqual(await this.job(id), job))
           throw new Error("Job changed before dispatch.");
@@ -5509,7 +6348,7 @@ export class SocialService implements SocialServiceApi {
         async (adapter, target) =>
           await adapter.send(
             target,
-            job,
+            providerJob,
             credential.accessToken,
             async (mediaId) => await this.readMedia(mediaId),
             async (state) => {
@@ -5517,6 +6356,11 @@ export class SocialService implements SocialServiceApi {
               await this.writeJob(job);
             },
             check,
+            target.platform === "youtube" &&
+              target.connection !== "browser" &&
+              job.kind === "publish"
+              ? youtubeDiskUpload(this.directory, this.credentials, target, job)
+              : undefined,
           ),
       );
       if (!result.platformId) throw new SocialPlatformError("unknown");
@@ -5541,13 +6385,14 @@ export class SocialService implements SocialServiceApi {
         const contact = await this.get<SocialContact>("contact", job.contactId);
         contact.history.push({
           operationId: job.operationId,
-          kind: `outbound:${job.kind}`,
+          kind: `outbound:${job.payload.facebookPrivateReply ? "message" : job.kind}`,
           at: this.now(),
           platformId: result.platformId,
         });
         await this.put("contact", contact.id, contact);
         const draft = await this.get<SocialDraft>("draft", job.draftId!);
-        if (draft.threadId) {
+        // Private Messenger text must never appear as a public comment reply.
+        if (draft.threadId && !job.payload.facebookPrivateReply) {
           const thread = await this.get<SocialThread>("thread", draft.threadId);
           thread.events.push({
             id: job.operationId,
@@ -5596,8 +6441,11 @@ export class SocialService implements SocialServiceApi {
           if (
             !job.preparation?.tiktokPublishId &&
             !job.preparation?.youtubeVideoId &&
+            job.preparation?.snapchatMedia?.submittedAt === undefined &&
+            !job.preparation?.youtubeUploadPending &&
             !job.preparation?.snapchatMedia?.spotlightId &&
-            job.preparation?.facebookReel?.stage !== "submitted"
+            job.preparation?.facebookReel?.stage !== "submitted" &&
+            job.preparation?.facebookMedia?.stage !== "submitted"
           )
             delete job.dispatchedAt;
           await this.setSetting(`rate:${account.id}`, String(job.scheduledAt));
@@ -5649,10 +6497,34 @@ export class SocialService implements SocialServiceApi {
       const pending = this.pollAccountOwned(accountId);
       this.pollingPending.set(accountId, pending);
       try {
-        return await pending;
+        const result = await pending;
+        // Any successful poll, including an explicit refresh, ends the background backoff.
+        this.pollBackoff.delete(accountId);
+        return result;
       } finally {
         if (this.pollingPending.get(accountId) === pending) this.pollingPending.delete(accountId);
       }
+    });
+  }
+  /** True while a failed background poll waits out its growing delay. Explicit refresh ignores it. */
+  private async pollBackedOff(accountId: string): Promise<boolean> {
+    const state = this.pollBackoff.get(accountId);
+    if (!state) return false;
+    // A reconnect changes the epoch and ends the wait at once.
+    if (state.epoch !== (await this.setting(`connectionEpoch:${accountId}`))) {
+      this.pollBackoff.delete(accountId);
+      return false;
+    }
+    return state.until > this.now();
+  }
+  private async recordPollFailure(accountId: string, error: unknown): Promise<void> {
+    // A provider rate limit already stored its own retry time in `pollRate`.
+    if (error instanceof SocialPlatformError && error.code === "rate_limit") return;
+    const failures = (this.pollBackoff.get(accountId)?.failures ?? 0) + 1;
+    this.pollBackoff.set(accountId, {
+      failures,
+      until: this.now() + pollFailureDelayMs(failures),
+      epoch: await this.setting(`connectionEpoch:${accountId}`),
     });
   }
   private async pollAccountOwned(accountId: string): Promise<{

@@ -10,22 +10,22 @@
 .threadList {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--ui-space-3);
   min-inline-size: 0;
   min-block-size: 0;
-  padding: 16px 12px;
+  padding: var(--ui-space-4) var(--ui-space-3);
 }
 .listTools {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--ui-space-2);
   flex: none;
   min-inline-size: 0;
 }
 .listSearch {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 .listSearch > :first-child {
@@ -37,30 +37,12 @@
   min-inline-size: 0;
 }
 .threadSkeleton {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 6px 8px;
-}
-.threadSkeletonRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-block-size: 36px;
-}
-.threadSkeletonRow > :first-child {
-  flex: 1 1 auto;
-  max-inline-size: 70%;
-}
-.threadSkeletonRow > :last-child {
-  flex: none;
-  inline-size: 36px;
+  padding: var(--ui-space-2);
 }
 .messageSkeleton {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--ui-space-4);
 }
 .messageSkeleton > * {
   inline-size: min(70%, 28rem);
@@ -71,23 +53,16 @@
 .threads {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--ui-space-1);
   min-block-size: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
-.threadRow {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
-  min-inline-size: 0;
-  text-align: start;
-}
 .threadTop {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2);
+  inline-size: 100%;
   min-inline-size: 0;
 }
 .threadTop > :not(.threadName) {
@@ -102,7 +77,6 @@
 .threadTime {
   flex: none;
   margin-inline-start: auto;
-  font-variant-numeric: tabular-nums;
 }
 
 .transcript {
@@ -115,17 +89,17 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--ui-space-3);
   flex: none;
   min-inline-size: 0;
   min-block-size: 52px;
-  padding: 10px 20px;
+  padding: var(--ui-space-2) var(--ui-space-5);
 }
 .identity {
   display: flex;
   align-items: center;
   flex-wrap: nowrap;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 .threadChip {
@@ -139,7 +113,7 @@
   display: inline-flex;
   align-items: center;
   flex: 0 1 auto;
-  gap: 2px;
+  gap: var(--ui-space-1);
   min-inline-size: 0;
   min-block-size: 28px;
 }
@@ -150,61 +124,86 @@
 .actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--ui-space-1);
   flex: none;
 }
 
 .messages {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--ui-space-3);
   flex: 1;
   min-block-size: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 24px clamp(16px, 4vw, 48px);
+  padding: var(--ui-space-6) clamp(16px, 4vw, 48px);
 }
-.note {
+/* Recover-draft dialog body: picker, preview and the saved date as one stack. */
+.recovery {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-3);
 }
 .detailsList {
-  margin: 4px 0 0;
-  padding-inline-start: 16px;
+  margin: var(--ui-space-1) 0 0;
+  padding-inline-start: var(--ui-space-4);
 }
 .links {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
+  gap: var(--ui-space-1);
 }
 .feedback {
   flex: none;
-  padding: 4px 20px 0;
+  padding: var(--ui-space-1) var(--ui-space-5) 0;
 }
 .composer {
   flex: none;
-  padding: 8px clamp(16px, 4vw, 48px) 16px;
+  padding: var(--ui-space-2) clamp(16px, 4vw, 48px) var(--ui-space-4);
 }
 .composerNote {
-  margin: 0;
-  padding: 0 20px 12px;
+  padding: 0 var(--ui-space-5) var(--ui-space-3);
 }
 .draftError {
   flex: none;
-  padding: 8px 20px;
+  padding: var(--ui-space-2) var(--ui-space-5);
 }
 
-@media (max-width: 900px) {
+.narrowAction {
+  display: none;
+}
+
+@container assistant-room (max-width: 900px) {
   .layout {
     grid-template-columns: 180px minmax(0, 1fr);
   }
   .threadList {
-    padding: 10px;
+    padding: var(--ui-space-3);
   }
   .header,
   .composer {
-    padding-inline: 12px;
+    padding-inline: var(--ui-space-3);
   }
   .messages {
-    padding: 16px 12px;
+    padding: var(--ui-space-4) var(--ui-space-3);
+  }
+}
+
+@container assistant-room (max-width: 540px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .layout:not([data-show-transcript]) > .transcript,
+  .layout[data-show-transcript] > .threadList {
+    display: none;
+  }
+  .narrowAction {
+    display: block;
+    flex: none;
+  }
+  .threadChip {
+    flex: 0 1 auto;
+    min-inline-size: 0;
   }
 }

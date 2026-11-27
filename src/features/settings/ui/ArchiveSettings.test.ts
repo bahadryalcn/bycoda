@@ -4,10 +4,12 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { archiveProject, rememberProject } from "../../projects/model/recents";
-import { formatDate, ArchivePage } from "./ArchiveSettings";
+import { ArchivePage } from "./ArchiveSettings";
 import { formatArchiveDate } from "../../../shared/i18n/format";
+import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import * as lockState from "../../group-lock/model/lockState";
 import * as projectData from "../../projects/model/projectData";
+import { saveTabGroupLabel } from "../../workspace/model/tabGroups";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -57,7 +59,7 @@ it.each(["relocked", "removed", "unavailable"])(
     else localStorage.setItem("bycoda.archivedProjects", change === "removed" ? "[]" : "{broken");
     await act(async () => restoreButton.click());
     expect(restore).not.toHaveBeenCalled();
-    expect(container.textContent).toContain("The operation did not complete");
+    expect(container.textContent).toContain("The project could not be restored.");
   },
 );
 
@@ -87,14 +89,17 @@ it.each(["removed", "unavailable"])(
     localStorage.setItem("bycoda.archivedProjects", change === "removed" ? "[]" : "{broken");
     await act(async () => confirm.click());
     expect(remove).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain("The operation did not complete");
+    const details = document.querySelector<HTMLButtonElement>('button[aria-label^="Details"]')!;
+    await act(async () => details.click());
+    expect([...document.querySelectorAll('[role="dialog"]')].at(-1)?.textContent).toContain(
+      "The operation did not complete",
+    );
   },
 );
 
-it("keeps Archive date formatting aligned with shared i18n formatting", () => {
-  expect(formatDate(0)).toBe("");
-  expect(formatDate(Number.NaN)).toBe("");
-  expect(formatDate(1_782_000_000_000)).toBe(formatArchiveDate(1_782_000_000_000));
+it("renders missing or invalid Archive dates as blank", () => {
+  expect(formatArchiveDate(0)).toBe("");
+  expect(formatArchiveDate(Number.NaN)).toBe("");
 });
 
 it("does not read a failed or pending history load as an empty archive", async () => {
@@ -138,6 +143,29 @@ it("reports unreadable archived-project storage instead of an empty list, then r
   expect(container.textContent).toContain("No archived projects.");
 });
 
+it("refreshes the project archive for its own local storage changes, clear and window focus", async () => {
+  const key = "bycoda.archivedProjects";
+  await act(async () => root.render(createElement(ArchivePage, baseProps)));
+  const change = (key: string | null, storageArea = localStorage) =>
+    act(async () => {
+      window.dispatchEvent(new StorageEvent("storage", { key, storageArea }));
+    });
+  localStorage.setItem(key, JSON.stringify([{ path: "/work/sibling", archivedAt: 1 }]));
+  await change("bycoda.unrelated");
+  await change(key, sessionStorage);
+  expect(container.textContent).toContain("No archived projects.");
+  await change(key);
+  expect(container.textContent).toContain("/work/sibling");
+  localStorage.clear();
+  await change(null);
+  expect(container.textContent).toContain("No archived projects.");
+  localStorage.setItem(key, "{broken");
+  await act(async () => {
+    window.dispatchEvent(new Event("focus"));
+  });
+  expect(container.textContent).toContain("Archived projects could not be read");
+});
+
 it("confirms a project restore from storage rather than from the callback returning", async () => {
   rememberProject("/work/restored");
   archiveProject("/work/restored");
@@ -170,4 +198,83 @@ it("confirms a project restore from storage rather than from the callback return
   await act(async () => button("Restore")!.click());
   expect(container.textContent).not.toContain("could not be restored");
   expect(container.textContent).toContain("No archived projects.");
+});
+
+it("windows a large archive and filters it in place on the same list", async () => {
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return this.hasAttribute("data-index") ? 44 : 480;
+  });
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(640);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(480);
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(640);
+  resetRetainedState();
+  rememberProject("/work/archived");
+  archiveProject("/work/archived");
+  const sessions = Array.from({ length: 400 }, (_, index) => ({
+    id: `s${index}`,
+    cwd: "/work/app",
+    title: `${index < 64 ? "Batch " : ""}${index % 100 === 7 ? "Needle" : "Chat"} ${index}`,
+    harness: "codex" as const,
+    model: "m",
+    runtimeMode: "supervised" as const,
+    createdAt: 1,
+    updatedAt: 1_000 + index,
+    archived: true,
+  }));
+  await act(async () =>
+    root.render(createElement(ArchivePage, { ...baseProps, sessions, sessionsStatus: undefined })),
+  );
+  const conversations = container.querySelector('[data-setting-id="archived-conversations"]')!;
+  const mounted = () => conversations.querySelectorAll("[data-collection-key]").length;
+  expect(mounted()).toBeGreaterThan(0);
+  expect(mounted()).toBeLessThan(60);
+  expect(container.textContent).toContain("Showing 400 of 400 archived conversations");
+
+  const search = container.querySelector<HTMLInputElement>(
+    'input[aria-label="Search archived conversations"]',
+  )!;
+  const reads = vi.spyOn(Storage.prototype, "getItem");
+  const filter = (query: string) =>
+    act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        search,
+        query,
+      );
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  await filter("batch");
+  expect(container.textContent).toContain("Showing 64 of 400 archived conversations");
+  expect(mounted()).toBeGreaterThan(0);
+  expect(mounted()).toBeLessThan(32);
+  await filter(" NEEDLE ");
+  expect(container.textContent).toContain("Showing 4 of 400 archived conversations");
+  expect(mounted()).toBe(4);
+  expect(container.querySelector('[data-collection-key="s7"]')).not.toBeNull();
+  expect(conversations.querySelectorAll("[data-continuous-list]")).toHaveLength(1);
+  expect(reads.mock.calls.map(([key]) => key)).not.toContain("bycoda:tab-group:labels");
+});
+
+it("windows archived projects and filters by an updated project label", async () => {
+  const projects = Array.from({ length: 200 }, (_, index) => ({
+    path: `/work/project-${index}`,
+    archivedAt: index + 1,
+  }));
+  localStorage.setItem("bycoda.archivedProjects", JSON.stringify(projects));
+  await act(async () => root.render(createElement(ArchivePage, baseProps)));
+  const group = container.querySelector('[data-setting-id="archived-projects"]')!;
+  expect(group.querySelectorAll(".settings-collection-row").length).toBeLessThan(60);
+  await act(async () => saveTabGroupLabel("/work/project-188", "Renamed archive"));
+  const search = group.querySelector("input")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      search,
+      "RENAMED",
+    );
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(group.querySelectorAll(".settings-collection-row")).toHaveLength(1);
+  expect(group.textContent).toContain("Renamed archive");
+  expect(group.textContent).toContain("project-188");
 });

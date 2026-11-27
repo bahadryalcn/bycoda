@@ -1,7 +1,7 @@
 import {
   DEFAULT_THRESHOLD,
   type DecisionAnswer,
-  type DecisionErrorCode,
+  type DecisionAnswerErrorCode,
   type DecisionResult,
   type DecisionService,
 } from "../../decision-models/decision-types";
@@ -56,7 +56,8 @@ function readAnswer(
 ):
   | { ok: true; value: string; confidence: number }
   | { ok: false; reason: "unavailable" | "below_threshold" } {
-  const answer: DecisionAnswer | { error: DecisionErrorCode } | undefined = result.answers[key];
+  const answer: DecisionAnswer | { error: DecisionAnswerErrorCode } | undefined =
+    result.answers[key];
   if (!answer || "error" in answer || typeof answer.value !== "string")
     return { ok: false, reason: "unavailable" };
   if (!(answer.confidence >= threshold)) return { ok: false, reason: "below_threshold" };

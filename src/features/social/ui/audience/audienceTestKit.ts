@@ -70,6 +70,15 @@ export function clickButton(text: string): void {
   act(() => button.click());
 }
 
+/** The Host text of a failure. It sits behind the shared Details disclosure of the visible title. */
+export function openErrorDetails(): string {
+  const trigger = document.body.querySelector<HTMLButtonElement>(
+    '[role="alert"] button[aria-haspopup="dialog"]',
+  );
+  act(() => trigger?.click());
+  return document.body.querySelector('[aria-label="Error details"]')?.textContent ?? "";
+}
+
 export function bodyText(): string {
   return document.body.textContent ?? "";
 }
@@ -277,4 +286,9 @@ export function optionLabels(label: string): string[] {
 /** What a shared Select shows as its committed choice. */
 export function selectedLabel(label: string): string {
   return fieldByLabel(label).textContent?.trim() ?? "";
+}
+
+/** A primary that explains why it is blocked (`disabledReason`) stays focusable and is `aria-disabled`, not natively disabled. */
+export function isBlocked(button: HTMLButtonElement | undefined): boolean {
+  return !!button && (button.disabled || button.getAttribute("aria-disabled") === "true");
 }

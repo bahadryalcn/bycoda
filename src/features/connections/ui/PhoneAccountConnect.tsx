@@ -17,6 +17,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { usePhoneApprovalRequest } from "./PhoneApprovalRequest";
 import { createAccountPairingCode } from "../model/accountPairingCode";
 import { remoteRequest } from "../model/connections";
+import { accountDeviceAccess, startAccountDeviceAccess } from "../model/accountDeviceAccess";
 import type { HostDescriptor, RemoteMachine } from "../model/protocol";
 
 const PLATFORM = {
@@ -57,16 +58,15 @@ async function publishedTunnelEndpoint(machine: RemoteMachine): Promise<string |
     false,
     machine.environmentId,
   );
-  return host.mobileRoutes?.find((route) => {
-    try {
-      const url = new URL(route.endpoint);
-      return (
-        !route.lanKey && url.protocol === "https:" && url.hostname.endsWith(".trycloudflare.com")
-      );
-    } catch {
-      return false;
-    }
-  })?.endpoint;
+  if (!host.tunnelRoute) return undefined;
+  try {
+    const url = new URL(host.tunnelRoute);
+    return url.protocol === "https:" && url.hostname.endsWith(".trycloudflare.com")
+      ? host.tunnelRoute
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -79,11 +79,19 @@ export function PhoneAccountConnect() {
   const account = useAccountState();
   const enabled = useSyncExternalStore(subscribePhoneConnect, isPhoneConnectEnabled);
   const deviceId = isSignedIn(account) ? account.deviceId : null;
+  const accessSync = useSyncExternalStore(accountDeviceAccess.subscribe, accountDeviceAccess.load);
   const { confirm, dialog } = usePhoneApprovalRequest();
   const confirmRef = useRef(confirm);
   useLayoutEffect(() => {
     confirmRef.current = confirm;
   }, [confirm]);
+
+  // Keep the enrolled local Host's device access synchronized while this account is active.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- holds the device-access sync for the signed-in device.
+  useEffect(() => {
+    if (!deviceId || (accessSync !== deviceId && accessSync !== `off:${deviceId}`)) return;
+    return startAccountDeviceAccess(deviceId, localMachine, report);
+  }, [accessSync, deviceId]);
 
   useEffect(() => {
     if (!enabled || !deviceId) return;
@@ -119,19 +127,19 @@ export function PhoneAccountConnect() {
           message:
             request.requesterKind === "desktop"
               ? t(
-                  "{computer} ({platform}, your account) wants to connect. Check that the code on that computer is {code}.",
+                  "{p0} ({p1}, your account) wants to connect. Check that the code on that computer is {p2}.",
                   {
-                    computer: request.phoneName,
-                    platform: PLATFORM[request.phonePlatform],
-                    code: pairRequestCode(request),
+                    p0: request.phoneName,
+                    p1: PLATFORM[request.phonePlatform],
+                    p2: pairRequestCode(request),
                   },
                 )
               : t(
-                  "{phone} ({platform}, your account) wants to connect. Check that the code on the phone is {code}.",
+                  "{p0} ({p1}, your account) wants to connect. Check that the code on the phone is {p2}.",
                   {
-                    phone: request.phoneName,
-                    platform: PLATFORM[request.phonePlatform],
-                    code: pairRequestCode(request),
+                    p0: request.phoneName,
+                    p1: PLATFORM[request.phonePlatform],
+                    p2: pairRequestCode(request),
                   },
                 ),
           confirmLabel: t("Allow"),

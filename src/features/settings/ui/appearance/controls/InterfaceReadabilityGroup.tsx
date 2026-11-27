@@ -29,6 +29,7 @@ export function InterfaceReadabilityGroup({ appearance: a }: { appearance: Appea
       <AppearanceContrast appearance={a} />
       <Row
         id="diff-colors"
+        controlWidth="fill"
         label={t("Diff colors")}
         info={t("Choose how added (+) and removed (−) lines are highlighted.")}
         modified={a.diffPalette !== DIFF_PALETTE_DEFAULT}

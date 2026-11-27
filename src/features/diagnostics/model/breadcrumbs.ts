@@ -18,6 +18,20 @@ const CODE = /^[A-Za-z0-9_.:-]{1,48}$/;
 
 /** A short machine-readable reason: an error code, else its class name, never its message. */
 export function rpcErrorCode(error: unknown): string {
+  if (typeof error === "string") {
+    // Native compatibility IPC rejects with text. Only log fixed transport and
+    // storage reasons, since an arbitrary prefix or message can contain user data.
+    if (error === "Machine is unreachable right now: a connection attempt is in progress.")
+      return "SSH_CONNECTING";
+    if (error === "Host rejected request: Attachment file is missing on this machine.")
+      return "ATTACHMENT_MISSING";
+    if (error === "Host rejected request: Invalid attachment ID") return "ATTACHMENT_INVALID_ID";
+    const nativeCode =
+      /^(RPC_WS_(?:DETACHED|DEADLINE|OVERLOAD|CANCELLED|INTERRUPTED|BLOCKED|SCHEMA|UNAVAILABLE|IDENTITY|UNSUPPORTED|DISABLED)):/u.exec(
+        error,
+      );
+    return nativeCode?.[1] ?? "string";
+  }
   if (typeof error === "object" && error !== null) {
     const { code, name } = error as { code?: unknown; name?: unknown };
     for (const candidate of [code, name]) {
@@ -25,7 +39,7 @@ export function rpcErrorCode(error: unknown): string {
       if (typeof text === "string" && CODE.test(text)) return text;
     }
   }
-  return typeof error === "string" ? "string" : "error";
+  return "error";
 }
 
 /**

@@ -9,7 +9,7 @@ export type ForwardStatus = {
   kind?: "local" | "dynamic";
   targetHost: string;
   targetPort: number;
-  state: "starting" | "running" | "stopping" | "unknown" | "failed" | "stopped";
+  state: "starting" | "running" | "reconnecting" | "stopping" | "unknown" | "failed" | "stopped";
   error?: string;
 };
 
@@ -57,6 +57,8 @@ export const forwardRuntimeId = (connectionId: string, ruleId: string) =>
   `${connectionId}:${ruleId}`;
 export const listSshForwards = () => invoke<ForwardStatus[]>("ssh_forward_list");
 export const stopSshForward = (id: string) => invoke<void>("ssh_forward_stop", { id });
+/** Focus or network return: forwards waiting to reconnect try now instead of at their next rung. */
+export const retrySshForwardsNow = () => invoke<void>("ssh_forward_retry_now");
 export function startSshForward(
   connectionId: string,
   rule: ForwardRule,

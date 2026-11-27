@@ -162,6 +162,114 @@ describe("composer draft store", () => {
     ).toEqual({ sessionId: id, draft: null });
     expect(cache.getComposerAttachments(id)).toEqual([]);
   });
+
+  it("reuses a spilled file by content, not by retained bytes, and respills changed bytes", async () => {
+    const id = "spill-by-content";
+    answer([]);
+    await store.hydrateComposerDrafts();
+    let spills = 0;
+    invoke.mockImplementation(async (command: string, args?: any) => {
+      if (command === "write_attachment") return `/owned/${++spills}-${args.name}`;
+      return [];
+    });
+    const image = (data: string) => ({
+      id: "big",
+      name: "content.png",
+      kind: "image" as const,
+      mimeType: "image/png",
+      size: 4_500_001,
+      data,
+    });
+    const rowPath = () =>
+      writes()
+        .filter((write) => write.sessionId === id)
+        .at(-1)?.draft.attachments[0].path;
+    cache.setComposerDraft(id, "first");
+    cache.setComposerAttachments(id, [image("A".repeat(6_000_004))]);
+    await store.flushComposerDrafts();
+    expect(spills).toBe(1);
+    expect(rowPath()).toBe("/owned/1-content.png");
+    // Same bytes in a brand-new string: the live draft owns the only copy, the store keeps none.
+    cache.setComposerAttachments(id, [image(["A".repeat(6_000_000), "AAAA"].join(""))]);
+    cache.setComposerDraft(id, "second");
+    await store.flushComposerDrafts();
+    expect(spills).toBe(1);
+    expect(rowPath()).toBe("/owned/1-content.png");
+    // Same length, one byte different: never reuse the old file.
+    cache.setComposerAttachments(id, [image("A".repeat(6_000_003) + "B")]);
+    await store.flushComposerDrafts();
+    expect(spills).toBe(2);
+    expect(rowPath()).toBe("/owned/2-content.png");
+    cache.clearComposerDraft(id);
+    await store.flushComposerDrafts();
+  });
+
+  it("keeps a produced file across a failed row write and releases it with the cleared draft", async () => {
+    const id = "spill-custody";
+    answer([]);
+    await store.hydrateComposerDrafts();
+    let spills = 0;
+    let failRow = true;
+    invoke.mockImplementation(async (command: string, args?: any) => {
+      if (command === "write_attachment") return `/owned/${++spills}-${args.name}`;
+      if (command === "session_set_draft" && args.sessionId === id && args.draft && failRow)
+        throw new Error("row write failed");
+      return [];
+    });
+    const attachments = [
+      {
+        id: "big",
+        name: "custody.png",
+        kind: "image" as const,
+        mimeType: "image/png",
+        size: 4_500_001,
+        data: "A".repeat(6_000_004),
+      },
+    ];
+    cache.setComposerDraft(id, "keep");
+    cache.setComposerAttachments(id, attachments);
+    await expect(store.flushComposerDrafts()).rejects.toThrow("row write failed");
+    // The file is already produced and owned; the retry must point the row at it.
+    failRow = false;
+    await store.flushComposerDrafts();
+    expect(spills).toBe(1);
+    expect(writes().at(-1)?.draft.attachments[0]).toMatchObject({ path: "/owned/1-custody.png" });
+    // A cleared (deleted-session) draft forgets the file: the same bytes spill again later.
+    cache.clearComposerDraft(id);
+    await store.flushComposerDrafts();
+    cache.setComposerDraft(id, "back");
+    cache.setComposerAttachments(id, attachments);
+    await store.flushComposerDrafts();
+    expect(spills).toBe(2);
+    cache.clearComposerDraft(id);
+    await store.flushComposerDrafts();
+  });
+
+  it("writes the first row of a cleared session again and does not repeat an absent-row clear", async () => {
+    const id = "forgotten-after-clear";
+    answer([]);
+    await store.hydrateComposerDrafts();
+    const rowWrites = () => writes().filter((write) => write.sessionId === id);
+    cache.setComposerDraft(id, "same text");
+    await store.flushComposerDrafts();
+    expect(rowWrites()).toHaveLength(1);
+    cache.clearComposerDraft(id);
+    await store.flushComposerDrafts();
+    expect(rowWrites().at(-1)).toEqual({ sessionId: id, draft: null });
+    expect(rowWrites()).toHaveLength(2);
+    // The row is confirmed gone: another clear has nothing to delete.
+    cache.clearComposerDraft(id);
+    await store.flushComposerDrafts();
+    expect(rowWrites()).toHaveLength(2);
+    // The forgotten bookkeeping must not make an identical new draft look already saved.
+    cache.setComposerDraft(id, "same text");
+    await store.flushComposerDrafts();
+    expect(rowWrites()).toHaveLength(3);
+    expect(rowWrites().at(-1)?.draft).toMatchObject({ text: "same text" });
+    cache.clearComposerDraft(id);
+    await store.flushComposerDrafts();
+  });
+
   it("deletes an obsolete disk draft after a failed startup read and a newer clear", async () => {
     const id = "failed-startup-read";
     let persisted: unknown = { text: "obsolete", attachments: [], mcpTags: [] };
@@ -185,6 +293,36 @@ describe("composer draft store", () => {
     failRead = false;
     await store.hydrateComposerDrafts();
     expect(cache.getComposerDraft(id)).toBeUndefined();
+  });
+
+  it("keeps boot waiting for slow saved drafts and marks them loaded only after the last row", async () => {
+    const id = "slow-startup-read";
+    let finishList!: (rows: unknown[]) => void;
+    invoke.mockImplementation((command: string) =>
+      command === "session_list_drafts"
+        ? new Promise<unknown[]>((resolve) => {
+            finishList = resolve;
+          })
+        : Promise.resolve(null),
+    );
+    let booted = false;
+    const hydration = store.hydrateComposerDrafts().then(() => {
+      booted = true;
+    });
+    // Well past the old 2 s budget: the saved text must not be given up on.
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(booted).toBe(false);
+    expect(store.composerDraftsLoaded()).toBe(false);
+    expect(cache.getComposerDraft(id)).toBeUndefined();
+    finishList([saved(id, { text: "saved before slow disk", attachments: [], mcpTags: [] })]);
+    await hydration;
+    expect(booted).toBe(true);
+    expect(store.composerDraftsLoaded()).toBe(true);
+    expect(cache.getComposerDraft(id)).toBe("saved before slow disk");
+    expect(writes()).toEqual([]);
+    cache.clearComposerDraft(id);
+    answer([]);
+    await store.flushComposerDrafts();
   });
 
   it("does not restore a late attachment check over a newer explicit clear", async () => {
@@ -216,11 +354,10 @@ describe("composer draft store", () => {
     });
     const hydration = store.hydrateComposerDrafts();
     await vi.advanceTimersByTimeAsync(2001);
-    await hydration;
     cache.setComposerDraft(id, "new text");
     cache.clearComposerDraft(id);
     finish([{ path: "/tmp/here.txt", name: "here.txt", size: 1, isDir: false }]);
-    await vi.advanceTimersByTimeAsync(0);
+    await hydration;
     expect(cache.getComposerDraft(id)).toBeUndefined();
     expect(cache.getComposerAttachments(id)).toEqual([]);
     await store.flushComposerDrafts();
@@ -603,7 +740,9 @@ describe("actual composer persistence observation", () => {
     expect(writes().map((write) => write.sessionId)).toEqual(["target-draft"]);
   });
 
-  it("retains a timed-out hydrate producer until its actual attachment check and cache restore settle", async () => {
+  // Hydration has no time budget (boot keeps its loading shell), so a slow attachment check is
+  // waited for, never abandoned; an observation taken meanwhile waits for the same producer.
+  it("holds hydration and a concurrent observation until the actual attachment check and cache restore settle", async () => {
     const inspected = pending<unknown[]>();
     invoke.mockImplementation((command: string) => {
       if (command === "session_list_drafts")
@@ -626,9 +765,12 @@ describe("actual composer persistence observation", () => {
       if (command === "inspect_paths") return inspected.promise;
       return Promise.resolve(null);
     });
-    const hydrating = currentStore.hydrateComposerDrafts();
+    let hydrated = false;
+    const hydrating = currentStore.hydrateComposerDrafts().then(() => {
+      hydrated = true;
+    });
     await vi.advanceTimersByTimeAsync(2001);
-    await hydrating;
+    expect(hydrated).toBe(false);
     let settled = false;
     const observation = begin()
       .observe()
@@ -638,6 +780,7 @@ describe("actual composer persistence observation", () => {
     await Promise.resolve();
     expect(settled).toBe(false);
     inspected.resolve([{ path: "/owned/held.txt" }]);
+    await hydrating;
     await observation;
     expect(currentCache.getComposerDraft("drain-draft")).toBe("late restored");
     expect(currentCache.getComposerAttachments("drain-draft")[0].path).toBe("/owned/held.txt");

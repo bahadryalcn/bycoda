@@ -35,8 +35,10 @@ afterEach(async () => {
 
 const trigger = () => host.querySelector<HTMLButtonElement>("button")!;
 const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
-const inDialog = (text: string) =>
-  [...dialog()!.querySelectorAll("button")].find((entry) => entry.textContent?.includes(text))!;
+const inDialog = (name: string) =>
+  [...dialog()!.querySelectorAll("button")].find(
+    (entry) => entry.getAttribute("aria-label") === name || entry.textContent === name,
+  )!;
 
 it("keeps the raw text out of the layout until Details is opened", async () => {
   await act(async () =>
@@ -76,7 +78,9 @@ it("reports a failed copy instead of claiming success", async () => {
   await act(async () => root.render(createElement(ErrorDetails, { detail: "boom" })));
   await act(async () => trigger().click());
   await act(async () => inDialog("Copy details").click());
-  expect(dialog()?.querySelector('[role="alert"]')?.textContent).toContain("Clipboard blocked");
+  expect(dialog()?.querySelector('[data-copy-state="failed"]')?.getAttribute("aria-label")).toBe(
+    "Copy failed. Try again.",
+  );
 });
 
 it("lets a recovery action close the popover before it opens another surface", async () => {
@@ -129,4 +133,14 @@ it("prefers the plain summary and still offers the raw text", async () => {
   expect(host.querySelector('[role="alert"]')?.textContent).toBe("Could not load. Details");
   await act(async () => trigger().click());
   expect(dialog()?.querySelector("pre")?.textContent).toBe("ECONNRESET");
+});
+
+it("keeps the icon-only copy control in the header row beside the title", async () => {
+  await act(async () => root.render(createElement(ErrorDetails, { detail: "boom" })));
+  await act(async () => trigger().click());
+  const copy = inDialog("Copy details")!;
+  const header = copy.parentElement!;
+  expect(header.textContent).toContain("Technical details");
+  expect(header.className).not.toContain("flex-wrap");
+  expect(copy.textContent?.trim()).toBe("");
 });

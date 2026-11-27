@@ -184,3 +184,15 @@ it("keeps native identity, form data, required validation and clear state after 
   expect(new window.FormData(form).get("q")).toBe("query");
   expect(container.querySelector("button")).not.toBeNull();
 });
+
+it("sets the secondary text size for a framed field, keeps a bare input inheriting, and honors textSize", () => {
+  const sizeOf = (props: Record<string, unknown>) => {
+    act(() => root.render(createElement(SearchInput, props)));
+    return container.querySelector("input")!.getAttribute("data-size");
+  };
+  expect(sizeOf({ appearance: "field" })).toBe("secondary");
+  expect(sizeOf({ appearance: "quiet" })).toBe("secondary");
+  expect(sizeOf({ standalone: true })).toBe("secondary");
+  expect(sizeOf({ appearance: "field", textSize: "body" })).toBe("body");
+  expect(sizeOf({})).toBeNull();
+});

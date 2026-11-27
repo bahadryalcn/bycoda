@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { PoliciesSettings } from "./PoliciesSettings";
 import { POLICIES } from "../model/policies";
 import { searchSettings } from "../model/settings";
+import { RevealedSetting } from "../../../shared/ui/settings";
 
 const language = vi.hoisted(() => ({ locale: "en" }));
 vi.mock("../../../shared/i18n", async (importOriginal) => ({
@@ -29,15 +30,21 @@ afterEach(async () => {
 });
 
 async function openPolicy(id = POLICIES[0].id) {
-  await act(async () => container.querySelector<HTMLButtonElement>(`#setting-${id}`)!.click());
+  await act(async () =>
+    root.render(
+      createElement(RevealedSetting.Provider, { value: id }, createElement(PoliciesSettings)),
+    ),
+  );
 }
 it("opens privacy by default and replaces the inline reader with each full offline document", async () => {
   await act(async () => root.render(createElement(PoliciesSettings)));
   expect(document.querySelector("article")?.textContent).toContain(POLICIES[0].en);
   for (const policy of POLICIES) {
-    expect(container.querySelector(`#setting-${policy.id}`)?.textContent).toContain(policy.title);
     expect(searchSettings(policy.title).some((result) => result.section === "policies")).toBe(true);
     await openPolicy(policy.id);
+    expect(container.querySelector(`#setting-${policy.id}`)?.getAttribute("aria-label")).toBe(
+      policy.title,
+    );
     expect(document.querySelectorAll("article")).toHaveLength(1);
     expect(document.querySelector("article")?.textContent).toContain(policy.en);
     expect(document.querySelector("article")?.lang).toBe("en");
@@ -50,7 +57,7 @@ it("follows Turkish locale while retaining the original MIT license", async () =
   await openPolicy();
   expect(document.querySelector("article")?.lang).toBe("tr");
   expect(document.querySelector("article")?.textContent).toContain(
-    "Hesapla da hesapsız da asla toplanmayanlar",
+    "bycoda neyi toplar, neyi toplamaz",
   );
   await openPolicy("software-license");
   expect(document.querySelector("article")?.lang).toBe("en");
@@ -64,7 +71,7 @@ it("follows Turkish locale while retaining the original MIT license", async () =
 });
 
 it("allows a document language override without changing the app locale", async () => {
-  await act(async () => root.render(createElement(PoliciesSettings)));
+  await openPolicy();
   await act(async () =>
     container
       .querySelector<HTMLButtonElement>("button[aria-label='Policy language: English']")!
@@ -74,7 +81,6 @@ it("allows a document language override without changing the app locale", async 
     option.textContent?.includes("Türkçe"),
   )!;
   await act(async () => turkish.click());
-  await openPolicy();
   expect(document.querySelector("article")?.lang).toBe("tr");
   expect(language.locale).toBe("en");
 });

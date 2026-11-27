@@ -20,6 +20,7 @@ export type ConversationPreviewInput = {
   width?: number;
   height?: number;
   show?: boolean;
+  profile?: string;
 };
 export type ConversationPreviewScope = {
   projectId: string;
@@ -35,6 +36,8 @@ export type PreviewBrowserState = {
   leaseId?: string;
   url?: string | null;
   navigationId?: string;
+  profileId?: string;
+  profiles?: readonly { id: string; name: string }[];
   viewport?: { width: number; height: number };
   data?: string;
   mimeType?: string;
@@ -50,6 +53,7 @@ export type ConversationPreviewPorts = {
   browser(method: string, params: Record<string, unknown>): Promise<PreviewBrowserState>;
   /** Must open the originating conversation's project-Host Browser panel. */
   present(): Promise<PreviewPresentation>;
+  autoShow?: boolean;
   /** Check fresh authority before effects and disclosure, including cached results. */
   authorize(): void | Promise<void>;
 };
@@ -121,6 +125,11 @@ export class ConversationPreviewWorkflow {
         : undefined;
     if (input.show !== undefined && typeof input.show !== "boolean")
       throw new Error("Invalid preview visibility.");
+    if (
+      input.profile !== undefined &&
+      (typeof input.profile !== "string" || !input.profile.trim() || input.profile.length > 60)
+    )
+      throw new Error("Invalid browser profile.");
     const scopeKey = JSON.stringify([
       scope.projectId,
       scope.kind === "assistant-thread"
@@ -130,7 +139,7 @@ export class ConversationPreviewWorkflow {
     ]);
     const key = JSON.stringify([scopeKey, input.requestId]);
     const signature = createHash("sha256")
-      .update(JSON.stringify([url, viewport, input.show !== false]))
+      .update(JSON.stringify([url, viewport, input.show, input.profile]))
       .digest("hex");
     this.expireSettled();
     const previous = this.requests.get(key);
@@ -181,14 +190,18 @@ export class ConversationPreviewWorkflow {
       };
       this.requests.set(key, request);
       const entry = request;
-      const current = this.execute({ ...input, url }, viewport, {
-        ...ports,
-        authorize: async () => {
-          if (this.closed || entry.revoked) throw new Error("Preview authority was revoked.");
-          await entry.authorize();
-          if (this.closed || entry.revoked) throw new Error("Preview authority was revoked.");
+      const current = this.execute(
+        { ...input, url, show: input.show ?? ports.autoShow },
+        viewport,
+        {
+          ...ports,
+          authorize: async () => {
+            if (this.closed || entry.revoked) throw new Error("Preview authority was revoked.");
+            await entry.authorize();
+            if (this.closed || entry.revoked) throw new Error("Preview authority was revoked.");
+          },
         },
-      });
+      );
       entry.value = current;
       void current
         .then((result) => {
@@ -255,13 +268,27 @@ export class ConversationPreviewWorkflow {
     let browser: PreviewBrowserState;
     try {
       browser = await call("status");
+      const availableProfiles = browser.profiles;
       if (!browser.controlling || !browser.leaseId) browser = await call("claim");
       if (!browser.controlling || !browser.leaseId)
         throw new Error("Browser control was not granted. No preview navigation was attempted.");
       const leaseId = browser.leaseId;
       // Same-page requests keep the user's current page state and unsent form inputs.
-      if (!browser.open || browser.url !== input.url)
-        browser = await call("open", { url: input.url, leaseId });
+      const profile = input.profile;
+      const profileMatches =
+        profile === undefined ||
+        (profile === "isolated" ? !browser.profileId : browser.profileId === profile) ||
+        availableProfiles?.some(
+          ({ id, name }) =>
+            id === browser.profileId &&
+            name.normalize("NFKC").toLowerCase() === profile.trim().normalize("NFKC").toLowerCase(),
+        );
+      if (!browser.open || browser.url !== input.url || !profileMatches)
+        browser = await call("open", {
+          url: input.url,
+          leaseId,
+          ...(input.profile !== undefined ? { profile: input.profile } : {}),
+        });
       if (!browser.open) throw new Error("Browser did not confirm an open page.");
       result.evidence.browser = browser;
       if (

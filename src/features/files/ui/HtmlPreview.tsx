@@ -1,4 +1,5 @@
-import { InlineError } from "../../../shared/ui/InlineError";
+import { DocumentMessage } from "./DocumentMessage";
+import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -10,6 +11,9 @@ import { Button } from "../../../shared/ui/Button";
 import { PreviewSelectionMenu } from "./PreviewSelection";
 import { HtmlPreviewSecurityActions } from "./HtmlPreviewSecurityActions";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 
 /** A separate protocol and opaque sandbox keep generated scripts out of the app. */
 export function HtmlPreview({
@@ -80,7 +84,7 @@ export function HtmlPreview({
         close(requestToken);
         if (!cancelled) {
           opening.current = false;
-          setState({ error: String(error) });
+          setState({ error: errorText(error) });
         }
       });
     return () => {
@@ -91,32 +95,33 @@ export function HtmlPreview({
   }, [path, source, active, reload]);
 
   if (!active) return null;
+  const reloadPreview = () => {
+    if (opening.current) return;
+    opening.current = true;
+    setState({});
+    setReload((value) => value + 1);
+  };
   const header = (
     <div
-      className={
-        toolbarTarget
-          ? "flex items-center gap-1"
-          : compact
-            ? "flex min-h-(--ui-control-height-compact) shrink-0 items-center gap-1 border-b border-(--ui-pane-border) bg-(--ui-workspace-reading) px-2 py-1"
-            : "flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center border-b border-(--ui-pane-border) bg-(--ui-workspace-panel) px-3 py-1"
-      }
+      {...(toolbarTarget
+        ? { className: "flex items-center gap-1" }
+        : surfaceAttributes(
+            { frame: "pane", edge: "bottom" },
+            compact
+              ? "flex min-h-(--ui-control-height-compact) shrink-0 items-center gap-1 px-2 py-1"
+              : "flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-1 px-3 py-1",
+          ))}
     >
       {toolbar}
       <HtmlPreviewSecurityActions key={path} path={path} />
       <Button
         variant="ghost"
         size="sm"
-        motion="none"
         {...(compact
           ? { iconOnly: true as const, label: t("Reload preview") }
           : { iconOnly: false as const })}
         loading={!state.url && !state.error}
-        onClick={() => {
-          if (opening.current) return;
-          opening.current = true;
-          setState({});
-          setReload((value) => value + 1);
-        }}
+        onClick={reloadPreview}
       >
         {compact ? <RefreshCw className="icon-sm" /> : t("Reload preview")}
       </Button>
@@ -131,7 +136,14 @@ export function HtmlPreview({
         </OutputBlock>
       ) : null}
       {state.error && !sourceVisible ? (
-        <InlineError className="p-6">{state.error}</InlineError>
+        compact ? (
+          // An embedded card has no room for a full message page: one line, retry beside it.
+          <InlineError inset="row" details={state.error} retry={{ onRetry: reloadPreview }}>
+            {t("Couldn’t preview this file")}
+          </InlineError>
+        ) : (
+          <DocumentMessage title={t("Couldn’t preview this file")} error detail={state.error} />
+        )
       ) : state.url ? (
         <iframe
           ref={frameRef}
@@ -144,9 +156,7 @@ export function HtmlPreview({
           hidden={sourceVisible}
         />
       ) : !sourceVisible ? (
-        <p role="status" className="p-6 text-ui-caption text-[var(--ui-text-muted)]">
-          {t("Opening preview…")}
-        </p>
+        <SurfaceLoading title={t("Opening preview…")} />
       ) : null}
       <PreviewSelectionMenu
         selection={sourceVisible ? null : selection}

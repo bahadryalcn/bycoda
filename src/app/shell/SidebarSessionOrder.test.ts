@@ -3,7 +3,8 @@ import { act, createElement, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { clearComposerDraft, setComposerDraft } from "../../features/sessions/model/draftCache";
-import { formatSessionTitle } from "../../features/sessions/model/session";
+import { formatSessionTitle, HARNESS_TITLE } from "../../features/sessions/model/session";
+import * as reactiveReads from "../../features/sessions/model/reactiveReads";
 import { loadSessionFolders } from "../../features/sessions/model/sessionFolders";
 import { Sidebar } from "./Sidebar";
 
@@ -88,6 +89,83 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+it("updates matching title text without resolving the retained row's model again", async () => {
+  const resolve = vi.spyOn(reactiveReads, "useResolvedModelName");
+  props.sessions = [session("alpha", 100)];
+  render();
+  const select = container.querySelector<HTMLButtonElement>('[data-session-select="alpha"]')!;
+  const title = select.querySelector<HTMLElement>("[data-clamped]")!;
+  const nativeTooltip = title.getAttribute("title");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Search sessions"]')!.click(),
+  );
+  const field = container.querySelector<HTMLInputElement>('input[placeholder="Search…"]')!;
+  async function type(query: string) {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, query);
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+  await type("alp");
+  expect(title.querySelector("[data-match]")?.textContent).toBe("alp");
+  resolve.mockClear();
+  await type("alpha");
+  expect(title.querySelector("[data-match]")?.textContent).toBe("alpha");
+  expect(title.textContent).toBe("Conversation alpha");
+  expect(title.getAttribute("title")).toBe(nativeTooltip);
+  expect(resolve).not.toHaveBeenCalled();
+});
+
+it("resolves only the current provider's model and keeps a handoff without a model on its provider label", async () => {
+  const resolve = vi
+    .spyOn(reactiveReads, "useResolvedModelName")
+    .mockImplementation((harness, model) => (harness ? `${harness}/${model}` : undefined));
+  const base = { ...session("alpha", 100), model: "saved-model" };
+  props.sessions = [base];
+  await act(async () => root.render(createElement(Sidebar, props)));
+  const modelLabel = () =>
+    container.querySelector("[data-session-row-model]")?.getAttribute("aria-label");
+  expect(modelLabel()).toBe("codex/saved-model");
+  const history = {
+    providers: ["codex", "claude"] as ("codex" | "claude")[],
+    activeHarness: "claude" as const,
+  };
+  props.sessions = [{ ...base, providerHistory: history }];
+  await act(async () => root.render(createElement(Sidebar, props)));
+  expect(modelLabel()).toBe(HARNESS_TITLE.claude);
+  resolve.mockClear();
+  props.sessions = [{ ...base, providerHistory: { ...history, activeModel: "submitted-model" } }];
+  await act(async () => root.render(createElement(Sidebar, props)));
+  expect(modelLabel()).toBe("claude/submitted-model");
+  expect(resolve.mock.calls.every(([harness]) => harness === "claude")).toBe(true);
+});
+
+it("only watches scrolling during a pending or open row detail", () => {
+  vi.useFakeTimers();
+  props.sessions = [session("first", 100)];
+  render();
+  const watch = vi.spyOn(document, "addEventListener");
+  props.sessions = [...props.sessions, session("second", 110)];
+  render();
+  const scrollWatches = () =>
+    watch.mock.calls.filter(([name, , capture]) => name === "scroll" && capture === true);
+  expect(scrollWatches()).toHaveLength(0);
+  const row = container.querySelector<HTMLElement>('[data-session-card="second"]')!;
+  const select = row.querySelector<HTMLButtonElement>("[data-session-select]")!;
+  const scroller = container.querySelector<HTMLElement>(".sidebar-session-scroll")!;
+  act(() => row.dispatchEvent(new PointerEvent("pointerover", { bubbles: true })));
+  expect(scrollWatches()).toHaveLength(1);
+  act(() => scroller.dispatchEvent(new Event("scroll")));
+  act(() => vi.advanceTimersByTime(700));
+  expect(select.hasAttribute("aria-describedby")).toBe(false);
+  act(() => select.focus());
+  expect(select.hasAttribute("aria-describedby")).toBe(true);
+  act(() => scroller.dispatchEvent(new Event("scroll")));
+  expect(select.hasAttribute("aria-describedby")).toBe(true);
+  act(() => select.blur());
+  expect(select.hasAttribute("aria-describedby")).toBe(false);
 });
 
 it("moves rows as their status changes and reports the same keyboard order", () => {

@@ -1,7 +1,75 @@
 import { test, expect, type Page, type Locator } from "@playwright/test";
 const fixture = "/tests/browser/sessions/session-tools.html";
 const captures = "temp/verification/2026-11-04-session-tools/hub";
-test("two renderer windows follow focused sessions, retain pin, select manually, clear empty sessions and capture both themes", async ({
+
+async function previewNavigations(page: Page) {
+  return page.evaluate(() => {
+    const { sessionToolsCalls } = window as unknown as {
+      sessionToolsCalls: {
+        cwd: string;
+        method: string;
+        params: Record<string, unknown>;
+        target?: { kind: string };
+      }[];
+    };
+    return sessionToolsCalls
+      .filter(({ method }) => method === "browser.open" || method === "devServers.list")
+      .map(({ cwd, method, params, target }) => ({
+        cwd,
+        method,
+        sessionId: params.sessionId,
+        url: params.url,
+        target: target?.kind ?? "project",
+      }));
+  });
+}
+
+for (const theme of ["light", "dark"]) {
+  test(`remote chat links reach the project Host in docked and detached Browser (${theme})`, async ({
+    context,
+  }) => {
+    const source = await context.newPage();
+    const hub = await context.newPage();
+    await source.goto(`${fixture}?role=source&remote-preview&theme=${theme}`);
+    await hub.goto(`${fixture}?role=hub&remote-preview&theme=${theme}`);
+    const dock = source.locator('.tools-workspace-pane[aria-hidden="false"]');
+    const pane = hub.locator(".tools-hub-pane:not([hidden])");
+    const expected = {
+      cwd: "remote://fixture-mac-env/Users/demo/Studio",
+      method: "browser.open",
+      sessionId: "host-studio",
+      target: "project",
+    };
+    const patientUrl = "http://localhost:3019/patients?view=active#list";
+    await source.bringToFront();
+    await source.getByRole("link", { name: "Open patient panel", exact: true }).click();
+    await expect.poll(() => previewNavigations(source)).toEqual([{ ...expected, url: patientUrl }]);
+    await expect(dock.locator("img.host-browser-frame")).toBeVisible();
+    await source.screenshot({
+      path: `temp/verification/remote-web-preview-audit/docked-${theme}.png`,
+    });
+
+    await dock.getByRole("button", { name: "Open in new window", exact: true }).click();
+    await expect(dock).toHaveCount(0);
+    await expect(pane.locator(".host-browser-bar")).toBeVisible();
+    expect(await previewNavigations(hub)).toEqual([]);
+    await source.bringToFront();
+    await source.getByRole("link", { name: "Open appointments", exact: true }).click();
+    await expect
+      .poll(() => previewNavigations(hub))
+      .toEqual([{ ...expected, url: "http://localhost:3019/appointments" }]);
+    const frame = pane.locator("img.host-browser-frame");
+    await expect(frame).toBeVisible();
+    expect(
+      await frame.evaluate((image) => atob(image.getAttribute("src")!.split(",")[1])),
+    ).toContain("Remote project Host fixture");
+    await hub.screenshot({
+      path: `temp/verification/remote-web-preview-audit/detached-${theme}.png`,
+    });
+  });
+}
+
+test("two renderer windows follow focused sessions, select manually, clear empty sessions and capture both themes", async ({
   context,
 }) => {
   const source = await context.newPage();
@@ -15,19 +83,12 @@ test("two renderer windows follow focused sessions, retain pin, select manually,
   await source.getByRole("button", { name: "Studio", exact: true }).click();
   await expect(identity).toContainText("Studio");
   await hub.bringToFront();
-  await hub.getByRole("button", { name: "Follow active conversation", exact: true }).click();
-  await source.bringToFront();
+  await expect(hub.getByRole("button", { name: "Follow active conversation" })).toHaveCount(0);
   await source.getByRole("button", { name: "Atlas", exact: true }).click();
-  await expect(identity).toContainText("Studio");
-  await hub.bringToFront();
-  await hub.getByRole("button", { name: "Keep this conversation", exact: true }).click();
   await expect(identity).toContainText("Atlas");
   await identity.click();
   await hub.getByRole("option").filter({ hasText: "Studio" }).click();
   await expect(identity).toContainText("Studio");
-  await expect(
-    hub.getByRole("button", { name: "Follow active conversation", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
   await source.bringToFront();
   await source.getByRole("button", { name: "Notes", exact: true }).click();
   await expect(identity).toContainText("Notes");
@@ -104,7 +165,6 @@ test("actual renderer transfers device marks/comments and server/log drafts thro
     await dock.getByRole("button", { name: "Connect devices", exact: true }).click();
   await dock.getByRole("button", { name: "Start emulator", exact: true }).click();
   await expect(dock.getByRole("img", { name: "Current device screen", exact: true })).toBeVisible();
-  await dock.getByRole("switch", { name: "Allow device control", exact: true }).click();
   await dock.getByRole("button", { name: "Device text input", exact: true }).click();
   await source
     .getByRole("textbox", { name: "Text to type on device", exact: true })
@@ -154,9 +214,9 @@ test("actual renderer transfers device marks/comments and server/log drafts thro
     .getByRole("textbox", { name: "Server command", exact: true })
     .fill("pnpm dev -- --port 7007");
   await chooseTool(hub, pane, "Devices");
-  await expect(
-    pane.getByRole("switch", { name: "Allow device control", exact: true }),
-  ).not.toBeChecked();
+  await expect(pane.getByRole("switch", { name: "Allow device control", exact: true })).toHaveCount(
+    0,
+  );
   await pane.getByRole("button", { name: "Mark device screen", exact: true }).click();
   await expect(pane.getByRole("button", { name: "Undo annotation", exact: true })).toBeEnabled();
   await pane.getByRole("button", { name: "Annotation note", exact: true }).click();

@@ -2,7 +2,9 @@ import { Text } from "../../../shared/ui/Text";
 import "./task-form.css";
 import type { ReactNode } from "react";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { InlineMessage } from "../../../shared/ui/InlineError";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { Switch } from "../../../shared/ui/Switch";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Select } from "../../../shared/ui/Select";
 import { t, useLocale } from "../../../shared/i18n";
 import {
@@ -11,7 +13,7 @@ import {
 } from "../../automations/model/machineSnapshot";
 import { useEffect, useState } from "react";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { backgroundMachineFor, hostProjectCwd } from "../../automations/model/hostAutomationClient";
+import { backgroundMachineFor, hostProjectCwd } from "../../automations/public/hostMachines";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import type { RemoteMachine } from "../../connections";
 import type { RecentProject } from "../../projects/public/recents";
@@ -102,6 +104,7 @@ export function useTaskMachineProjects(target: RemoteMachine | undefined, enable
     enabled,
     revision,
   ]);
+  // Synchronize the project list with the selected Host and ignore retired responses.
   useEffect(() => {
     if (!target || !enabled) return;
     let cancelled = false;
@@ -142,9 +145,7 @@ export function ProjectDiscoveryStatus({
   state: ReturnType<typeof useTaskMachineProjects>;
 }) {
   return state.error ? (
-    <InlineMessage tone="warning" live="assertive" retry={{ onRetry: state.retry }}>
-      {state.error}
-    </InlineMessage>
+    <InlineError live="assertive" retry={{ onRetry: state.retry }} details={state.error} />
   ) : state.loading ? (
     <LoadingText>{t("Loading projects…")}</LoadingText>
   ) : null;
@@ -170,29 +171,35 @@ export function TaskFormRow({
           </Text>
         ) : null}
       </span>
-      <span className="task-form-row-control">{children}</span>
+      <div className="task-form-row-control">{children}</div>
     </Text>
   );
 }
 
-export function ContinueUntilDoneField({
+export function TaskFormSwitch({
+  label,
+  help,
   checked,
+  disabled,
   onChange,
 }: {
+  label: string;
+  help?: string;
   checked: boolean;
+  disabled?: boolean;
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <Checkbox
-      className="task-form-row task-form-check"
-      size="secondary"
-      tone="primary"
-      leading="inherit"
-      label={t("Continue until complete")}
-      description={t("Keeps correcting while progress is made; asks for input when needed.")}
-      checked={checked}
-      onChange={(event) => onChange(event.target.checked)}
-    />
+    <TaskFormRow
+      label={
+        <span className="inline-flex items-center gap-1">
+          {label}
+          {help ? <InfoPopover>{help}</InfoPopover> : null}
+        </span>
+      }
+    >
+      <Switch aria-label={label} checked={checked} disabled={disabled} onCheckedChange={onChange} />
+    </TaskFormRow>
   );
 }
 
@@ -246,6 +253,7 @@ export function AutoMergeField({
       description={t("Automatic merge is suspended. Review changes to renew approval.")}
       checked={checked}
       disabled={disabled || !checked}
+      disabledReason={t("Automatic merge is suspended. Review changes to renew approval.")}
       onChange={(event) => {
         if (!event.target.checked) onChange(false);
       }}

@@ -12,6 +12,8 @@ import { loadRemoteCapabilities, remoteRequest } from "./connections";
 import { desktopInstanceId } from "./desktopInstance";
 import { isLocalSyncMachine } from "./localSync";
 import type { RemoteMachine } from "./protocol";
+import { remoteErrorText } from "./remoteFailure";
+import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 
 /**
  * This window's side of the run lease. Just before a turn starts here, the
@@ -25,8 +27,56 @@ export type RunLeaseOutcome =
   | { kind: "granted"; lease: RunLease }
   /** The host does not offer leases, or could not be asked. */
   | { kind: "unavailable" }
-  | { kind: "failed"; text: string }
+  | { kind: "failed"; text: string; queueMayWait?: true }
+  | { kind: "waiting"; text: string }
   | { kind: "held"; text: string };
+
+/** Both the structured refusal and the legacy Host prefix predate a lease grant. */
+function retirementRefusal(error: unknown): "PENDING" | "FAILED" | "UNKNOWN" | undefined {
+  const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+  const prefix =
+    /^(?:(?:RPC_WS_REMOTE|Host rejected(?: request)?):\s*)*(HOST_WRITER_RETIREMENT_(?:PENDING|FAILED)):/.exec(
+      remoteErrorText(error),
+    )?.[1];
+  const refusal =
+    code === "HOST_WRITER_RETIREMENT_PENDING" || code === "HOST_WRITER_RETIREMENT_FAILED"
+      ? code
+      : prefix;
+  if (!refusal) return;
+  if (
+    /The operation outcome is unknown;/.test(remoteErrorText(error)) ||
+    (error &&
+      typeof error === "object" &&
+      (("uncertain" in error && error.uncertain === true) ||
+        ("delivery" in error && error.delivery !== undefined && error.delivery !== "not-sent")))
+  )
+    return "UNKNOWN";
+  return refusal === "HOST_WRITER_RETIREMENT_PENDING" ? "PENDING" : "FAILED";
+}
+
+function preAdmissionWait(error: unknown): boolean {
+  if (error && typeof error === "object") {
+    if (
+      ("uncertain" in error && error.uncertain === true) ||
+      ("delivery" in error && error.delivery !== undefined && error.delivery !== "not-sent")
+    )
+      return false;
+    if (
+      "delivery" in error &&
+      error.delivery === "not-sent" &&
+      "retryable" in error &&
+      error.retryable === true
+    )
+      return true;
+  }
+  // Native reports these exact before-dispatch and Host admission-budget
+  // refusals. HTTP unavailable/deadline errors do not establish that boundary.
+  const text = remoteErrorText(error);
+  return (
+    text === "RPC_WS_UNAVAILABLE: Host connection is unavailable before dispatch" ||
+    text === "RPC_WS_OVERLOAD: Host read capacity is busy; retry later."
+  );
+}
 
 type Transport = <T>(
   machineId: string,
@@ -138,7 +188,7 @@ export async function probeRunLease(): Promise<string | undefined> {
 /** Conversations whose lease is being asked for: a second submit waits for the first. */
 const pending = new Set<string>();
 /** Abandoned transfer requests still own their eventual grant until returned. */
-const retirementWaits = new Map<string, Promise<unknown>>();
+const retirementWaits = new Map<string, { startedAt: number }>();
 export const isRunLeasePending = (sessionId: string): boolean => pending.has(sessionId);
 
 /** Leases this window took, until their turn ends. */
@@ -233,10 +283,14 @@ function trackLease(sessionId: string, lease: RunLease, late = false) {
 export async function acquireRunLease(sessionId: string): Promise<RunLeaseOutcome> {
   const id = runLeaseMachine();
   if (!id) return { kind: "unavailable" };
-  if (retirementWaits.has(sessionId))
+  const guard = retirementWaits.get(sessionId);
+  if (guard)
     return {
       kind: "failed",
       text: "Message not sent: the previous ownership transfer is still pending or unknown. Your message is retained. Sending is allowed again within about two minutes; check the Host connection if this persists.",
+      ...(elapsedSince(guard.startedAt) < RUN_LEASE_UNCERTAIN_GUARD_MS
+        ? { queueMayWait: true }
+        : {}),
     };
   const retirement = machine?.retirement === true;
   pending.add(sessionId);
@@ -280,15 +334,21 @@ export async function acquireRunLease(sessionId: string): Promise<RunLeaseOutcom
             // pending on the Host, but a fresh query cannot reuse a late lease.
             // Handle only the acquire rejection here: a release failure after
             // a grant must remain guarded even if it carries the same code.
-            const text = error instanceof Error ? error.message : String(error);
-            if (isLeaseHeld(error) || /\bHOST_WRITER_RETIREMENT_(?:FAILED|PENDING):/.test(text))
+            const refusal = retirementRefusal(error);
+            if (
+              isLeaseHeld(error) ||
+              refusal === "PENDING" ||
+              refusal === "FAILED" ||
+              (!refusal && preAdmissionWait(error))
+            )
               return;
             throw error;
           },
         );
-        retirementWaits.set(sessionId, cleanup);
+        const wait = { startedAt: monotonicNow() };
+        retirementWaits.set(sessionId, wait);
         const clear = () => {
-          if (retirementWaits.get(sessionId) === cleanup) retirementWaits.delete(sessionId);
+          if (retirementWaits.get(sessionId) === wait) retirementWaits.delete(sessionId);
         };
         void cleanup.then(clear, () => {
           // Uncertain grant/release stays guarded until any late lease has
@@ -299,6 +359,7 @@ export async function acquireRunLease(sessionId: string): Promise<RunLeaseOutcom
         return {
           kind: "failed",
           text: "Message not sent: the previous Host writer's retirement is still unconfirmed. Your message is retained. Check the task or Host connection before continuing.",
+          queueMayWait: true,
         };
       }
       // The grant may still arrive: keep it for the turn that started without it
@@ -313,15 +374,20 @@ export async function acquireRunLease(sessionId: string): Promise<RunLeaseOutcom
       return { kind: "unavailable" };
     }
     if (isLeaseHeld(error)) return { kind: "held", text: leaseHeldText(error) };
-    const text = error instanceof Error ? error.message : String(error);
+    const text = remoteErrorText(error);
     // The Host checks existence before any writer retirement. A conversation it
     // does not know (a brand-new one, or one outside its projects) has no Host
     // writer to hand over, so the turn starts as before.
     if (/\bSession not found on this machine\b/.test(text)) return { kind: "unavailable" };
-    if (/HOST_WRITER_RETIREMENT_(?:FAILED|PENDING)/.test(text) || retirement)
+    const refusal = retirementRefusal(error);
+    if (refusal === "PENDING")
+      return { kind: "waiting", text: "Waiting for the previous run to finish." };
+    if (!refusal && retirement && preAdmissionWait(error))
+      return { kind: "waiting", text: "Waiting for the host to confirm your request." };
+    if (refusal || retirement)
       return {
         kind: "failed",
-        text: `Message not sent: Host writer ownership could not be confirmed. Your message is retained. Check the task repair state or Host connection. ${text}`,
+        text: "Check the conversation on its Host before resuming.",
       };
     // The host is unreachable or does not know leases: start the turn as before.
     return { kind: "unavailable" };

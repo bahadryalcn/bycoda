@@ -19,6 +19,7 @@ import type { Transition } from "motion/react";
 import { ChevronDown } from "../../icons";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./timeline.module.css";
+import { Tooltip } from "../../Tooltip";
 
 export interface TimelineEvent {
   id: string;
@@ -340,14 +341,12 @@ function TimelineRow({
             </span>
             {row.meta && <span className={styles.meta}>{row.meta}</span>}
           </span>
-          <time
-            className={styles.time}
-            dateTime={new Date(row.time).toISOString()}
-            title={timeFull}
-          >
-            <RiseText text={timeLabel} reduced={reduced} />
-            <span className={styles.srOnly}>{timeFull}</span>
-          </time>
+          <Tooltip label={timeFull} asChild>
+            <time className={styles.time} dateTime={new Date(row.time).toISOString()}>
+              <RiseText text={timeLabel} reduced={reduced} />
+              <span className={styles.srOnly}>{timeFull}</span>
+            </time>
+          </Tooltip>
           {row.detail && (
             <motion.span
               className={styles.chevron}

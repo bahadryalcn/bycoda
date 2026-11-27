@@ -6,8 +6,16 @@ export const tiktokOAuth: OAuthPlatformConfig = {
   authorizeUrl: () => "https://www.tiktok.com/v2/auth/authorize/",
   tokenUrl: () => "https://open.tiktokapis.com/v2/oauth/token/",
   scopeSeparator: ",",
+  // TikTok optional scopes must already exist on this Login Kit app.
   extraScopes: (_accountType, current) =>
-    current.includes("user.info.basic") ? [] : ["user.info.basic"],
+    [
+      ...(current.includes("user.info.basic") ? [] : ["user.info.basic"]),
+      ...(process.env.BYCODA_SOCIAL_TIKTOK_PROFILE_APPROVED === "true"
+        ? ["user.info.profile"]
+        : []),
+      ...(process.env.BYCODA_SOCIAL_TIKTOK_STATS_APPROVED === "true" ? ["user.info.stats"] : []),
+      ...(process.env.BYCODA_SOCIAL_TIKTOK_UPLOAD_APPROVED === "true" ? ["video.upload"] : []),
+    ].filter((scope) => !current.includes(scope)),
   clientIdParam: "client_key",
   tokenClientAuth: "body",
   clientSecretRequired: true,

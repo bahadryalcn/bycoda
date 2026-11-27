@@ -13,10 +13,12 @@ import { SocialService } from "./social";
 import { SocialTransport } from "./social-transport";
 import { SocialBrowserWorkflows } from "./social-browser-workflows";
 import {
+  cdpPage,
   XBrowserSessions,
   type PlainBrowserLauncher,
   type BrowserLauncher,
   type BrowserPage,
+  type Cdp,
 } from "./social-browser";
 import { Window } from "happy-dom";
 import {
@@ -121,9 +123,136 @@ const registrationProfile = {
   familyName: "FixtureFamily",
   accountKind: "person" as const,
 };
+
+it.each([true, false])("opens X Chat only for the verified saved account (%s)", async (matched) => {
+  const send = vi.fn(async (method: string, _params?: Record<string, unknown>) => {
+    if (method === "Runtime.evaluate") return { result: { value: true } };
+    if (method === "Network.getCookies")
+      return {
+        cookies: [
+          { name: "auth_token", value: "synthetic" },
+          { name: "twid", value: matched ? "u=123" : "u=999" },
+        ],
+      };
+    return {};
+  });
+  const page = cdpPage({} as Cdp, "x-chat", send as never);
+  const close = vi.fn(async () => {});
+  const probe = vi.fn<BrowserLauncher>(async () => ({
+    page,
+    closed: Promise.resolve(),
+    close,
+  }));
+  const f = await fixture("x", probe);
+  await f.service.connectAccount(
+    f.account.id,
+    {
+      platformId: "123",
+      name: "Fixture",
+      accessApproved: true,
+      connection: "browser",
+      scopes: [],
+    },
+    { accessToken: "browser-session" },
+  );
+  const workflow = await f.begin("inbox");
+  expect(workflow.outcome).toBe("unverified");
+  await until(
+    async () => (await f.status()).workflows[0]?.status === (matched ? "awaiting_owner" : "failed"),
+  );
+  expect(send).toHaveBeenCalledWith("Page.navigate", { url: "https://x.com/home" });
+  expect(send).toHaveBeenCalledWith("Network.getCookies", { urls: ["https://x.com"] });
+  expect(close).toHaveBeenCalledOnce();
+  if (matched) {
+    expect(f.plain).toHaveBeenCalledWith(join(f.directory, f.account.id), "https://x.com/i/chat");
+    await f.manager.cancel(f.service, owner, f.account.id, "another-workflow");
+    expect(f.windows[0]?.close).not.toHaveBeenCalled();
+    await f.manager.cancel(f.service, owner, f.account.id, workflow.id);
+    expect(f.windows[0]?.close).toHaveBeenCalledOnce();
+    expect((await f.status()).workflows[0]?.status).toBe("cancelled");
+  } else {
+    expect(f.plain).not.toHaveBeenCalled();
+  }
+});
+
+it.each(["matched", "different", "redirected"])(
+  "opens Reddit Chat only for the verified saved account (%s)",
+  async (result) => {
+    const page = {
+      goto: vi.fn(async () => {}),
+      evaluate: vi.fn(async (expression: string) =>
+        expression.includes("/api/me.json")
+          ? {
+              platformId:
+                result === "different" ? "web:reddit:t2_other456" : "web:reddit:t2_abc123",
+              name: "Fixture",
+            }
+          : result !== "redirected",
+      ),
+      click: vi.fn(),
+      fill: vi.fn(),
+    };
+    let finish!: () => void;
+    const closed = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const close = vi.fn(async () => finish());
+    const release = vi.fn(async () => {});
+    const probe = vi.fn<BrowserLauncher>(async () => ({
+      page: page as unknown as BrowserPage,
+      closed,
+      close,
+      profileReleased: release,
+    }));
+    const f = await fixture("reddit", probe);
+    await f.service.connectAccount(
+      f.account.id,
+      {
+        platformId: "web:reddit:t2_abc123",
+        name: "Fixture",
+        accessApproved: true,
+        connection: "browser",
+        scopes: [],
+      },
+      { accessToken: "browser-session" },
+    );
+    const workflow = await f.begin("inbox");
+    await until(
+      async () =>
+        (await f.status()).workflows[0]?.status ===
+        (result === "matched" ? "awaiting_owner" : "failed"),
+    );
+    expect(probe).toHaveBeenCalledWith(join(f.directory, f.account.id), false);
+    expect(page.goto.mock.calls).toEqual(
+      result === "different"
+        ? [["https://www.reddit.com/"]]
+        : [["https://www.reddit.com/"], ["https://www.reddit.com/chat/"]],
+    );
+    expect(page.evaluate).toHaveBeenCalledWith(expect.stringContaining("/api/me.json"));
+    expect(page.click).not.toHaveBeenCalled();
+    expect(page.fill).not.toHaveBeenCalled();
+    expect(f.plain).not.toHaveBeenCalled();
+    if (result === "matched") {
+      expect(close).not.toHaveBeenCalled();
+      await f.manager.cancel(f.service, owner, f.account.id, workflow.id);
+      await until(() => release.mock.calls.length === 1);
+      expect((await f.status()).workflows[0]?.outcome).toBe("unverified");
+    }
+    expect(close).toHaveBeenCalledOnce();
+    expect(release).toHaveBeenCalledOnce();
+  },
+);
+
+it("rejects opening Reddit Chat for an unconnected account before launching either window", async () => {
+  const probe = vi.fn<BrowserLauncher>();
+  const f = await fixture("reddit", probe);
+  await expect(f.begin("inbox")).rejects.toThrow("dedicated browser profile");
+  expect(probe).not.toHaveBeenCalled();
+  expect(f.plain).not.toHaveBeenCalled();
+});
 async function registrationFixture(
   waitForLock?: Promise<void>,
-  site?: { platform: "x"; url: string; html: string },
+  site?: { platform: "x" | "reddit"; url: string; html: string },
 ) {
   const window = new Window({ url: site?.url ?? "https://www.linkedin.com/signup" });
   window.document.body.innerHTML =
@@ -197,6 +326,62 @@ async function registrationFixture(
 }
 
 describe("owner registration preparation lifecycle", () => {
+  it("publishes the Reddit rate limit to a signup window that never saw the toast", async () => {
+    const s = await registrationFixture(undefined, {
+      platform: "reddit",
+      url: "https://www.reddit.com/register/",
+      html: '<input name="email" type="email">',
+    });
+    const timing: { name: string; initiatorType: string; responseStatus: number }[] = [];
+    Object.defineProperty(s.window, "performance", {
+      value: { getEntriesByType: () => timing },
+    });
+    await s.begin({});
+    const email = await s.ready();
+    expect(email.registration?.requiredFields).toEqual(["email"]);
+
+    timing.push({
+      name: "https://www.reddit.com/svc/shreddit/account/register_email_verify_initialize",
+      initiatorType: "fetch",
+      responseStatus: 429,
+    });
+    const limited = (await s.f.status()).workflows[0];
+    expect(limited.registration?.step).toBe("rate_limit");
+    expect(limited.updatedAt).toBeGreaterThan(email.updatedAt);
+
+    s.window.document.body.innerHTML =
+      '<h1>Verify your email</h1><input name="code" autocomplete="one-time-code">';
+    expect((await s.f.status()).workflows[0]?.registration?.step).toBe("verification");
+    expect(s.fill).not.toHaveBeenCalled();
+    expect(s.page.click).not.toHaveBeenCalled();
+  });
+
+  it("keeps Reddit's signup limit after the notice disappears until the owner advances", async () => {
+    const s = await registrationFixture(undefined, {
+      platform: "reddit",
+      url: "https://www.reddit.com/register/",
+      html: '<input name="email" type="email"><toaster-lite></toaster-lite>',
+    });
+    const toast = s.window.document.querySelector("toaster-lite")!.attachShadow({ mode: "open" });
+    toast.innerHTML = "<span>Email sign-up limit reached. Try again later.</span>";
+    await s.begin({ email: "automation-owner@example.invalid" });
+    const rateLimited = await s.ready();
+    expect(rateLimited.registration?.step).toBe("rate_limit");
+    expect(s.fill).not.toHaveBeenCalled();
+
+    toast.replaceChildren();
+    const unchanged = (await s.f.status()).workflows[0];
+    expect(unchanged.registration?.step).toBe("rate_limit");
+    expect(unchanged.updatedAt).toBe(rateLimited.updatedAt);
+
+    s.window.document.body.innerHTML =
+      '<h1>Verify your email</h1><input name="code" autocomplete="one-time-code">';
+    const verifiedStep = (await s.f.status()).workflows[0];
+    expect(verifiedStep.registration?.step).toBe("verification");
+    expect(verifiedStep.updatedAt).toBeGreaterThan(rateLimited.updatedAt);
+    expect(s.page.click).not.toHaveBeenCalled();
+  });
+
   it("prepares X's name, email and birthdate in the owner window and stops before Next", async () => {
     const options = (n: number, extra = "") =>
       `<option value="">-</option>${Array.from({ length: n }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("")}${extra}`;
@@ -586,9 +771,12 @@ describe("browser route boundaries", () => {
   ])("rejects arbitrary navigation: %s", (url) => {
     expect(() => socialBrowserUrl("x", "comments", url)).toThrow();
   });
-  it("allows only Reddit's signup route while its recipe has no operations", () => {
+  it("allows fixed Reddit signup and Chat routes", () => {
     expect(socialBrowserUrl("reddit", "signup")).toBe("https://www.reddit.com/register/");
-    for (const intent of ["login", "inbox", "publish"] as const)
+    expect(socialBrowserUrl("reddit", "inbox", "https://example.invalid/")).toBe(
+      "https://www.reddit.com/chat/",
+    );
+    for (const intent of ["login", "publish"] as const)
       expect(() => socialBrowserUrl("reddit", intent)).toThrow();
     expect(() =>
       socialBrowserUrl("reddit", "comments", "https://www.reddit.com/r/a/comments/1/"),

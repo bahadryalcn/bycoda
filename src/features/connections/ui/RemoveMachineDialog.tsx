@@ -1,6 +1,6 @@
-import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Button } from "../../../shared/ui/Button";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
@@ -26,6 +26,10 @@ export function RemoveMachineDialog({
   onCancel: () => void;
   onConfirm: (revoke: boolean) => void;
 }) {
+  // A failure is "reason" + blank line + "cause": the reason is the body, the cause waits behind Details.
+  const [reason, ...rest] = error.split("\n\n");
+  const cause = rest.join("\n\n").trim();
+  const localSync = isLocalSyncMachine(machine);
   return (
     <Modal
       onClose={() => {
@@ -35,13 +39,21 @@ export function RemoveMachineDialog({
       size="md"
       footer={
         <ModalActions>
-          <Button stableWidth type="button" variant="ghost" disabled={revoking} onClick={onCancel}>
+          <Button
+            stableWidth
+            type="button"
+            variant="ghost"
+            disabled={revoking}
+            disabledReason={revoking ? t("Removal is in progress.") : undefined}
+            onClick={onCancel}
+          >
             {t("Cancel")}
           </Button>
           <Button
             stableWidth
             type="button"
-            tone="danger"
+            variant="primary"
+            tone={mode === "revoke" ? "danger" : undefined}
             loading={revoking}
             onClick={() => onConfirm(mode === "revoke")}
           >
@@ -50,22 +62,15 @@ export function RemoveMachineDialog({
         </ModalActions>
       }
     >
-      <Text as="div" tone="muted" leading="relaxed" className="flex flex-col gap-3">
-        {isLocalSyncMachine(machine) ? (
-          <p>
-            {t("Removing this stops syncing projects and groups with the")}{" "}
-            {PRODUCT_IDENTITY.displayName}
-            {t(" on this computer. It is created again automatically the next time")}{" "}
-            {PRODUCT_IDENTITY.displayName}
-            {t(" starts.")}
-          </p>
-        ) : (
-          <p>
-            {t(
-              "This closes this desktop’s connection to the machine. It does not stop the host, and its sessions keep running and stay on that machine. You can add it again later.",
-            )}
-          </p>
-        )}
+      <div className="flex flex-col gap-3">
+        <Text as="p" tone="muted" leading="relaxed">
+          {localSync
+            ? t(
+                "Removing this stops syncing projects and groups with the {p0} on this computer. It is created again automatically the next time {p1} starts.",
+                { p0: PRODUCT_IDENTITY.displayName, p1: PRODUCT_IDENTITY.displayName },
+              )
+            : t("The host and its sessions keep running. You can add it again later.")}
+        </Text>
         <RadioGroup
           label={t("Remove")}
           value={mode}
@@ -79,26 +84,15 @@ export function RemoveMachineDialog({
               ),
               disabled: revoking,
             },
-            {
-              value: "revoke",
-              label: t("Revoke access and remove"),
-              disabled: revoking,
-            },
+            { value: "revoke", label: t("Revoke access and remove"), disabled: revoking },
           ]}
         />
-        <div>
-          <p>
-            {t("To stop the host and turn off its background service, run")}{" "}
-            <Code>{"~/.bycoda-host/bin/bycoda-host service uninstall"}</Code>{" "}
-            {t("on that machine (")}
-            <Code>
-              {"%USERPROFILE%\\.bycoda-host\\bin\\bycoda-host.cmd service uninstall"}
-            </Code>{" "}
-            {t("on Windows). Its sessions and history are kept.")}
-          </p>
-        </div>
-        {error ? <Alert tone="danger">{error}</Alert> : null}
-      </Text>
+        {error ? (
+          <Alert tone="danger" extra={cause ? <ErrorDetails detail={cause} /> : undefined}>
+            {reason}
+          </Alert>
+        ) : null}
+      </div>
     </Modal>
   );
 }

@@ -14,6 +14,8 @@ export const CROSS_SUBAGENT_MAX_EFFORT_KEY = "crossSubagentMaxEffort";
 export const CROSS_ADVISOR_KEY = "crossAdvisor";
 /** Set by the Host on a child session; display linkage only, never authority. */
 export const DELEGATION_PARENT_KEY = "delegationParent";
+/** Host-owned provider history policy for new delegated sessions. */
+export const DELEGATION_PROVIDER_HISTORY_KEY = "delegationProviderHistory";
 /**
  * Set by the Host on a child started with `files: false`: a chat-only run in an empty scratch
  * folder, read-only, without provider memory or skill listing. Only ever narrows the child.
@@ -29,6 +31,11 @@ export const CREW_MEMBER_KEY = "crewMember";
  * (`CrewToolProfile`). The Host narrows that session's Conversation Tools by it.
  */
 export const CREW_TOOLS_KEY = "crewTools";
+/**
+ * Set by the Host when background work (a task, goal, automation, steward or crew) creates a
+ * session. JSON of `BackgroundOwnerSchema`; display only: lists hide the session unless pinned.
+ */
+export const BACKGROUND_OWNER_KEY = "backgroundOwner";
 export const CROSS_DELEGATION_KEYS = [
   CROSS_SUBAGENTS_KEY,
   CROSS_ADVISOR_KEY,
@@ -37,9 +44,11 @@ export const CROSS_DELEGATION_KEYS = [
 const RESERVED_KEYS = new Set<string>([
   ...CROSS_DELEGATION_KEYS,
   DELEGATION_PARENT_KEY,
+  DELEGATION_PROVIDER_HISTORY_KEY,
   DELEGATION_CHAT_ONLY_KEY,
   CREW_MEMBER_KEY,
   CREW_TOOLS_KEY,
+  BACKGROUND_OWNER_KEY,
   IMAGE_MODELS_KEY,
 ]);
 
@@ -82,6 +91,29 @@ export type DelegateModelRef = z.infer<typeof DelegateModelRefSchema>;
 export const DelegationKindSchema = z.enum(["subagent", "advisor"]);
 export type DelegationKind = z.infer<typeof DelegationKindSchema>;
 
+export const DELEGATION_MESSAGES_STREAM = "delegation.messages.stream.v1";
+export const DelegationMessageSchema = z.strictObject({
+  id: z.string(),
+  blockId: z.string().optional(),
+  text: z.string().max(20_000),
+  sender: z.string(),
+  mode: z.enum(["auto", "queue", "steer"]),
+  effectiveMode: z.enum(["queue", "steer"]).optional(),
+  delivery: z.enum([
+    "queued",
+    "sending",
+    "submitted",
+    "accepted",
+    "failed",
+    "cancelled",
+    "unknown",
+  ]),
+  detail: z.string().optional(),
+  createdAt: z.number(),
+});
+export const DelegationMessagesSchema = z.array(DelegationMessageSchema).max(1000);
+export type DelegationMessage = z.infer<typeof DelegationMessageSchema>;
+
 // shortcut: the parent link lives in modelSettings because the native session store
 // has no free field; move it to a session column when that schema next changes.
 export const DelegationParentSchema = z.strictObject({
@@ -113,7 +145,18 @@ export const CrewMemberChildSchema = z.strictObject({
   taskId: z.string().min(1).max(200).optional(),
 });
 export type CrewMemberChild = z.infer<typeof CrewMemberChildSchema>;
-export type DelegationCollectionMetadata = { delegationParent?: DelegationParent | null };
+/** The background work that created a session; Activity and the work card still reach it. */
+export const BackgroundOwnerSchema = z.strictObject({
+  kind: z.enum(["task", "goal", "automation", "steward", "crew"]),
+  id: z.string().min(1).max(300),
+  role: z.enum(["worker", "reviewer", "planner", "finalReview", "coordinator", "member"]),
+});
+export type BackgroundOwner = z.infer<typeof BackgroundOwnerSchema>;
+export type DelegationCollectionMetadata = {
+  delegationParent?: DelegationParent | null;
+  /** Set when background work created the session; lists hide it unless pinned. */
+  backgroundOwner?: BackgroundOwner;
+};
 
 /** Full settings take precedence over a potentially stale collection projection. */
 export function sessionDelegationParent(value: unknown): DelegationParent | undefined {
@@ -130,6 +173,38 @@ export function sessionDelegationParent(value: unknown): DelegationParent | unde
 
 export function isUserConversation(value: unknown): boolean {
   return sessionDelegationParent(value) === undefined;
+}
+
+/** Full settings take precedence over a potentially stale collection projection. */
+export function sessionBackgroundOwner(value: unknown): BackgroundOwner | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  if (record.modelSettings && typeof record.modelSettings === "object")
+    return decodeBackgroundOwner(
+      (record.modelSettings as Record<string, unknown>)[BACKGROUND_OWNER_KEY],
+    );
+  const parsed = BackgroundOwnerSchema.safeParse(record.backgroundOwner);
+  return parsed.success ? parsed.data : undefined;
+}
+
+/** Settings as the producer asked for them: the Host adds its owner stamp when it creates the session. */
+export function withoutBackgroundOwner<T extends Readonly<Record<string, string>> | undefined>(
+  settings: T,
+): T {
+  if (!settings || !(BACKGROUND_OWNER_KEY in settings)) return settings;
+  const { [BACKGROUND_OWNER_KEY]: _owner, ...rest } = settings as Record<string, string>;
+  return rest as T;
+}
+
+/**
+ * Whether a conversation belongs in the owner's session lists, search and restored tabs.
+ * Delegated children and background-work sessions stay out unless the owner pinned the session
+ * or chose to show background sessions. Sessions without an owner stamp (older ones) stay in.
+ */
+export function isListedConversation(value: unknown, showBackground = false): boolean {
+  if (!isUserConversation(value)) return false;
+  if (showBackground || sessionBackgroundOwner(value) === undefined) return true;
+  return (value as { pinned?: unknown }).pinned === true;
 }
 
 function parseJson(value: unknown): unknown {
@@ -211,6 +286,11 @@ export function decodeDelegationParent(value: unknown): DelegationParent | undef
   return result.success ? result.data : undefined;
 }
 
+export function decodeBackgroundOwner(value: unknown): BackgroundOwner | undefined {
+  const result = BackgroundOwnerSchema.safeParse(parseJson(value));
+  return result.success ? result.data : undefined;
+}
+
 export function decodeCrewMemberChild(value: unknown): CrewMemberChild | undefined {
   const result = CrewMemberChildSchema.safeParse(parseJson(value));
   return result.success ? result.data : undefined;
@@ -235,6 +315,8 @@ export function carryCrossDelegation(
   if (advisor) into[CROSS_ADVISOR_KEY] = advisor;
   else if (from[CROSS_ADVISOR_KEY] === "null") into[CROSS_ADVISOR_KEY] = "null";
   if (parent) into[DELEGATION_PARENT_KEY] = JSON.stringify(parent);
+  const owner = decodeBackgroundOwner(from[BACKGROUND_OWNER_KEY]);
+  if (owner) into[BACKGROUND_OWNER_KEY] = JSON.stringify(owner);
   if (from[DELEGATION_CHAT_ONLY_KEY] === "on") into[DELEGATION_CHAT_ONLY_KEY] = "on";
   const images = encodeImageModels(decodeImageModels(from[IMAGE_MODELS_KEY]));
   if (images) into[IMAGE_MODELS_KEY] = images;

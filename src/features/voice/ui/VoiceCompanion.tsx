@@ -17,20 +17,46 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { flushSync } from "react-dom";
 import type { Session } from "../../sessions/public/session";
+import { currentExecutionTools } from "../../sessions/public/commandInspection";
+import { requestToolsUi } from "../../host-tools";
+import { voiceLiveResults } from "../model/voiceLiveWork";
 import { sessionsRef as liveSessions, useSession } from "../../sessions/model/sessionsStore";
 import { Button } from "../../../shared/ui/Button";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { Text } from "../../../shared/ui/Text";
-import { useOverlay } from "../../../shared/ui/overlay";
+import { OverlayParent, useOverlay } from "../../../shared/ui/overlay";
 import { GripVertical } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
 import { voiceError } from "../model/voiceAssistantNotices";
-import { voiceInterruptedTurnNotice } from "../model/voiceInstructions";
+import { VOICE_HOST_STEP_MS, voiceConnectionStep } from "../model/voiceConnectionStep";
+import { voiceInterruptedTurnNotice } from "../../../shared/model/voice-realtime/voiceInstructions";
 import { invalidateFeatureHosts } from "../../connections/model/hostFeatureClient";
 import { useVoiceSessionProgress } from "../model/voiceSessionProgress";
 import { VoiceToolActivity, type VoiceToolActivityEntry } from "../model/voiceToolActivity";
 import { VoiceCompanionView } from "./companion/VoiceCompanionView";
-import { VoiceLauncher, VoiceReturnButton } from "./companion/VoiceLauncher";
+import { VoiceCompanionViewInput, voiceCompanionViewTool } from "../model/voiceCompanionViewTool";
+import { preloadPresentedAnswer, VoiceLiveWorkspace } from "./companion/VoiceLiveWorkspace";
+import {
+  presentedResultProblems,
+  presentVoiceResultTool,
+  VoicePresentedResultSchema,
+  type VoicePresentedActionButton,
+  type VoicePresentedResult,
+} from "../model/voicePresentedResult";
+import {
+  VoicePresentedActionButtonSchema,
+  VoicePresentedViewChanged,
+  voicePresentedActionResponse,
+  voicePresentedRequestKey,
+} from "../model/voicePresentedActions";
+import { describePresentedCatalog, presentedCatalogTool } from "../model/voicePresentedDiscovery";
+import {
+  VoiceLauncher,
+  VoiceReturnButton,
+  type VoiceWakeControls,
+} from "./companion/VoiceLauncher";
 import { useVoiceChatTurns, useVoiceTranscript } from "./companion/useVoiceChatTurns";
 import { voiceJobsNeedReview } from "./companion/voiceJobAutoStart";
 import { useVoicePushToTalk } from "./useVoicePushToTalk";
@@ -39,22 +65,47 @@ import {
   waitForAssistantControlSource,
 } from "../../assistant/model/useAssistantControlSource";
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
-import { elapsedSince } from "../../../shared/lib/time/timestamps";
+import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 import { LocalVoice, type SpeechBinding } from "../model/localVoice";
 import {
   useVoicePresence,
+  useWindowShown,
   readNativeVoicePresence,
   deriveCapturePresence,
   markAcceptedVoiceSpeech,
 } from "../model/voicePresence";
 import { voiceSleepRequested } from "../model/voiceWakePhrase";
 import { shouldSilentlyAcknowledgeVoice, shouldWaitForVoice } from "../model/voiceSpeechPolicy";
-import { classifyVoiceFailure } from "../model/voiceReconnect";
+import {
+  classifyVoiceFailure,
+  voiceLostSpeechNotice,
+  voiceResumeTurns,
+} from "../model/voiceReconnect";
 import { VoiceReconnectScheduler } from "../model/voiceReconnectScheduler";
 import { VoiceCompanionRecovery } from "./companion/VoiceCompanionRecovery";
+import { useVoiceHearing } from "./companion/useVoiceHearing";
 import { voiceStatusText } from "./companion/voiceStatusText";
+import { useVoiceWorkAnnouncements } from "./companion/useVoiceWorkAnnouncements";
+import { useVoiceWorkEntries } from "./companion/useVoiceWorkEntries";
+import { VoiceWorkList } from "./companion/VoiceWorkList";
+import {
+  VOICE_JOB_REVIEW_NO_ANSWER,
+  VOICE_JOB_REVIEW_TIMEOUT_MS,
+  voiceJobReviewClosedUpdate,
+  voiceJobReviewExpiry,
+} from "./companion/voiceJobReviewTimeout";
+import { voiceActionLabel } from "./VoiceToolActivityPanel";
+import { sharedVoiceWorkLedger, type VoiceWorkEntry } from "../model/voiceWorkLedger";
+import { recordVoiceWork, runVoiceWork, voiceWorkCall } from "../model/voiceWorkGuard";
+import { voiceAnnouncementsOpen } from "../model/voiceWorkAnnouncements";
+import {
+  logVoiceDiagnostic,
+  VoiceRecoveryLog,
+  voiceSeededWorkCount,
+} from "../model/voiceRecoveryLog";
 import { useVoiceReturnCall } from "./useVoiceReturnCall";
 import { useVoiceTalkEvent } from "./useVoiceTalkEvent";
+import { revealVoiceTalkWindow } from "../../../platform/tauri/voiceTalkEvent";
 import { RealtimeVoice } from "../model/realtimeVoice";
 import { realtimeSecret, type RealtimeProvider } from "../model/realtimeVoiceClient";
 import {
@@ -73,16 +124,30 @@ import {
 } from "../model/voiceSettings";
 import { VoiceVisualizer } from "./VoiceVisualizer";
 import { VoiceSessionPicker } from "./VoicePanelChoices";
-import { saveVoiceTurnEndChoice, VOICE_TURN_CHOICE_FAILED } from "../model/voiceTurnPolicy";
+import { voiceEngineMessage } from "../model/voiceEngineMessages";
+import { saveVoiceTurnEndChoice, voiceTurnChoiceFailedText } from "../model/voiceTurnPolicy";
 import { createVoiceController } from "../model/voiceController";
 import { converseWithAssistant } from "../model/voiceAssistant";
 import { voiceTools } from "../model/realtimeVoice";
 import { installVoiceApprovalPort } from "./companion/voiceApprovalPort";
 import { voiceJobReceipt, voiceJobsAcceptedSpeech } from "../model/voiceJobReceipt";
-import { voiceTurnProjectPaths, type VoiceWorkspaceProject } from "../model/voiceWorkspaceActions";
+import {
+  voiceTurnProjectPaths,
+  voiceWorkspaceSurface,
+  type VoiceWorkspaceProject,
+} from "../model/voiceWorkspaceActions";
+import { voiceUsageReportOf } from "../model/voiceWorkspaceUsage";
+import type { UsageReport } from "../../usage/public/usageReport";
 import type { useVoiceWorkspaceActions } from "../../../app/workspace/bridges/useVoiceWorkspaceActions";
 import { voiceVisualState } from "../model/voiceVisualState";
 import { voiceWorkText } from "../model/voiceWork";
+import {
+  voiceCarriedWorkSpeech,
+  voiceSessionNeedsProject,
+  voiceSessionOpenSurface,
+  voiceWorkRefusal,
+} from "../model/voiceWorkAdmission";
+import { resolveVoiceProjects, voiceProjectNames } from "../model/voiceProjectNames";
 import {
   closeVoiceOverlay,
   hasNativeWindows,
@@ -105,10 +170,11 @@ import {
   assistantRequest,
   useAssistantSnapshot,
 } from "../../assistant/model/assistantClient";
-import { voiceLanguageCode } from "../model/voiceLanguage";
+import { voiceLanguageCode } from "../../../shared/model/voice-realtime/voiceLanguage";
 import { VoiceThreadTranscript, voiceThreadSeed, voiceThreadSummary } from "../model/voiceThreads";
 import { withVoiceSessionBoundary } from "../model/voiceSessionGap";
 import { VoicePanelResize } from "./companion/VoicePanelResize";
+import { useVoiceLauncherSlot } from "./companion/voiceLauncherSlot";
 import { VoiceCausalGeneration, VoiceContextScopeUnavailable } from "../model/voiceCausalContext";
 import {
   VoiceHistoryBindings,
@@ -139,7 +205,7 @@ import {
   voiceSessionStopTool,
   voiceOwnerPresenceIntent,
 } from "../model/voiceAssistantControls";
-import { VoiceSpokenLanguageWrites } from "../model/voiceSpokenLanguage";
+import { VoiceSpokenLanguageWrites } from "../../../shared/model/voice-realtime/voiceSpokenLanguage";
 import { loadVoiceMemory } from "../model/voiceMemory";
 import {
   parseVoiceChoice,
@@ -159,6 +225,7 @@ import {
   type VoiceJobReviewState,
 } from "../model/voiceJobs";
 import { captureAssistantHostRead } from "../../assistant/model/assistantHostRead";
+import { readStandingConsent } from "../../assistant/public/standingConsent";
 import { voiceAssistantControlChoice } from "../model/voiceAssistantControlChoice";
 import {
   assistantJobProjectIds,
@@ -201,6 +268,7 @@ const speechTarget = Symbol("voiceSpeechTarget");
 type CapturedSpeechBinding = SpeechBinding & { [speechTarget]: SpeechTarget };
 
 export type VoiceCompanionProps = {
+  onWorkspaceOutlet?: (outlet: VoiceWorkspaceOutlet | undefined) => void;
   activeId?: string;
   sessions: Session[];
   onSubmit: (sessionId: string, text: string) => boolean | Promise<boolean>;
@@ -211,7 +279,33 @@ export type VoiceCompanionProps = {
   ensureToolSession?: (projectPath: string) => Promise<string>;
   assistantSession?: Session;
 };
-export function VoiceCompanion(props: VoiceCompanionProps) {
+
+type VoiceWorkDestination =
+  | { kind: "session"; sessionId: string; projectPath: string }
+  | { kind: "tools"; panelId: string; projectPath: string };
+
+export type VoiceWorkspaceOutlet = VoiceWorkDestination & {
+  element: HTMLElement;
+  overlay: symbol | null;
+};
+
+const voiceConversationTools = {
+  name: "workspace.conversation_tools.open",
+  description:
+    "Open the requested bycoda Conversation Tool in the exact project and session. An omitted target uses the session bound to accepted speech. Resolve ambiguous targets first. Set surface project for the normal workspace or voice for the fullscreen right drawer. Omit surface or use auto to follow the current call mode.",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      projectPath: { type: "string", minLength: 1 },
+      sessionId: { type: "string", minLength: 1 },
+      surface: voiceWorkspaceSurface,
+      tab: { type: "string", enum: ["devices", "browser", "servers", "logs", "resources"] },
+    },
+    required: ["tab"],
+  },
+};
+export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: VoiceWakeControls }) {
   const locale = useLocale();
   useSyncExternalStore(subscribeGroupLock, getGroupLockView);
   const { snapshot: assistantSnapshot } = useAssistantSnapshot();
@@ -226,11 +320,46 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   const audioLevel = useRef(0);
   const latest = useRef(props);
   const [open, setOpen] = useState(false);
+  const [fullScreen, setFullScreen] = useState(false);
+  const workPanelToggle = useRef<HTMLButtonElement>(null);
+  const workPanel = useRef<HTMLDivElement>(null);
+  const [workPanelRequest, setWorkPanelRequest] = useState(0);
+  const [workDestination, setWorkDestination] = useState<{
+    revision: number;
+    target: VoiceWorkDestination;
+  }>();
+  const [voiceResultTurn, setVoiceResultTurn] = useState<{ revision: number; since: number }>();
+  const [hiddenResults, setHiddenResults] = useState<number>();
+  // One owner-requested view per call: a new present replaces it, and it outlives follow-up turns.
+  const [presentedResult, setPresentedResult] = useState<{
+    version: number;
+    result: VoicePresentedResult;
+  }>();
+  const presentedVersion = useRef(0);
+  const livePresentedVersion = useRef<number | undefined>(undefined);
+  const presentedOrigin = useRef<
+    { revision: number; generation: number; global: boolean } | undefined
+  >(undefined);
+  const presentedEffectIds = useRef(new Map<string, string>());
+  // The accepted turn's own Usage report; drawn from its data, never from model text.
+  const [usageReport, setUsageReport] = useState<{
+    revision: number;
+    report: UsageReport;
+    lock: ReturnType<typeof getGroupLockView>;
+  }>();
+  const [voiceSubmittedWork, setVoiceSubmittedWork] = useState<{
+    revision: number;
+    sessionId: string;
+    cwd: string;
+    text: string;
+    previousTurnId: string | undefined;
+  }>();
   const [status, setStatus] = useState<
     "idle" | "connecting" | "live" | "reconnecting" | "sleeping" | "ready"
   >("idle");
-  const conversationActive =
-    status === "connecting" || status === "reconnecting" || status === "live" || playback;
+  const liveConversation =
+    status === "connecting" || status === "reconnecting" || status === "live";
+  const conversationActive = liveConversation || playback;
   useEffect(
     () => (conversationActive ? claimVoiceConversationActivity() : undefined),
     [conversationActive],
@@ -279,21 +408,23 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   const briefingAbort = useRef<AbortController | null>(null);
   const generation = useRef(0);
   const pushToTalkHeld = useRef(false);
-  const [hearingInput, setHearingInput] = useState(false);
-  useEffect(() => {
-    if (status !== "live" || muted) {
-      setHearingInput(false);
-      return;
-    }
-    const timer = setInterval(() => setHearingInput(audioLevel.current > 0.04), 120);
-    return () => clearInterval(timer);
-  }, [status, muted]);
   const [message, setMessage] = useState("");
   const [transcript, setTranscript, transcriptTurn] = useVoiceTranscript();
   const [error, setError] = useState("");
   const ownerSpeech = useRef("");
+  /** Per target session ("" is Global): the accepted utterance whose work intent later turns
+   * continue. Kept across turn onset and reconnects (`voiceCarriedWorkSpeech`), cleared when the
+   * conversation closes. Bound to its target so speech for one session never admits work in another. */
+  const carriedWork = useRef(new Map<string, string>());
+  // First tool call of each voice connection: the duplicate guard only covers work started before it.
+  const workConnection = useRef({ epoch: -1, at: 0 });
+  // The app's own record of work voice started; it outlives provider sockets and is re-seeded.
+  const [ledger] = useState(sharedVoiceWorkLedger);
+  const [recoveryLog] = useState(() => new VoiceRecoveryLog());
   /** The owner's last request until a reply to it plays; a reconnect reports it as interrupted. */
   const unansweredTurn = useRef("");
+  /** Captured speech died with its connection before any transcript; ask for it once. */
+  const lostSpeech = useRef(false);
   const spokenLanguage = useRef<VoiceSpokenLanguageWrites | null>(null);
   if (!spokenLanguage.current)
     spokenLanguage.current = new VoiceSpokenLanguageWrites(assistantRequest);
@@ -330,6 +461,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         controlProjects.current = new Map(projects.map((project) => [project.id, project.name]));
         return new Set(projects.map((project) => project.id));
       },
+      // Read fresh at each delete decision so a grant saved in settings applies without a restart.
+      fullAccess: async () => (await readStandingConsent()).fullAccess,
       confirm: async (target) => {
         const ids = target.projectIds ?? (target.projectId ? [target.projectId] : []),
           names = ids.map((id) => controlProjects.current.get(id));
@@ -368,12 +501,10 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         : ownerRuleWrites.current!.retry());
       if (!mounted.current) return;
       const message = result.saved
-        ? t(
-            result.manualTurnEnd
-              ? "Your rule was saved. Choose Finish turn when you are done speaking."
-              : "Your rule was saved.",
-          )
-        : t(result.error ?? "Memory could not be changed.");
+        ? result.manualTurnEnd
+          ? t("Your rule was saved. Choose Finish turn when you are done speaking.")
+          : t("Your rule was saved.")
+        : (result.error ?? t("Memory could not be changed."));
       const canReply = generation.current === epoch && Boolean(client.current);
       setRuleNotice(result.saved && canReply ? "" : message);
       if (canReply) reply(message);
@@ -403,13 +534,12 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           if (generation.current === epoch && turnRevision.current === revision)
             reply(
               t("Availability: {p0}", {
-                p0: t(
+                p0:
                   presenceIntent === "away"
-                    ? "Away"
+                    ? t("Away")
                     : presenceIntent === "dnd"
-                      ? "Do not disturb"
-                      : "Here",
-                ),
+                      ? t("Do not disturb")
+                      : t("Here"),
               }),
             );
         })
@@ -438,7 +568,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         })
         .catch((cause) => {
           if (generation.current === epoch)
-            setError(voiceError(cause, "The stop request could not be confirmed. Check the Room."));
+            setError(
+              voiceError(cause, t("The stop request could not be confirmed. Check the Room.")),
+            );
         });
       return true;
     }
@@ -491,7 +623,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   const [historyNotice, setHistoryNotice] = useState("");
   const [choice, setChoice] = useState<VoiceChoice | null>(null);
   const [jobReview, setJobReview] = useState<VoiceJobReviewState | null>(null);
-  const compact = settings.compact && !choice && !jobReview;
+  const compact = settings.compact && !choice && !jobReview && !fullScreen;
   const pendingJobs = useRef<{
     review: VoiceJobReviewState;
     /** False while jobs start without review; a failed start reveals the review. */
@@ -499,9 +631,36 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     environmentId: string;
     batch: VoiceJobBatch;
     resolve: (value: unknown) => void;
+    /** The tool call was already answered (owner spoke on, the review expired or voice reconnected). */
     released?: boolean;
     wait?: { waitForOwner(): void };
+    /** The owner utterance the jobs were proposed for, recorded with them in the work ledger. */
+    request: string;
+    timer?: ReturnType<typeof setTimeout>;
   } | null>(null);
+  /** A shown review that stays unanswered releases its tool call, like an unanswered question. */
+  function armJobReviewTimer(pending: NonNullable<typeof pendingJobs.current>) {
+    clearTimeout(pending.timer);
+    pending.timer = setTimeout(() => {
+      if (pendingJobs.current !== pending) return;
+      const expiry = voiceJobReviewExpiry(pending.review, pending.released === true);
+      if (expiry === "keep") return;
+      if (expiry === "release") {
+        pending.released = true;
+        pending.resolve({ status: "awaiting_review", reviewId: pending.review.id });
+        return;
+      }
+      pending.resolve(VOICE_JOB_REVIEW_NO_ANSWER);
+      pendingJobs.current = null;
+      setJobReview(null);
+      if (pending.released)
+        announce({
+          id: `review:${pending.review.id}:expired`,
+          data: voiceJobReviewClosedUpdate("expired"),
+          speech: t("The job review expired. No jobs were created."),
+        });
+    }, VOICE_JOB_REVIEW_TIMEOUT_MS);
+  }
   function changeJobReview(rows: VoiceJobDraft[]) {
     const pending = pendingJobs.current;
     if (!pending || pending.review.busy || pending.review.accepted.length || pending.review.error)
@@ -547,6 +706,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         )
         .map((job) => ({ id: job.id, title: job.title, status: job.status })),
     });
+    clearTimeout(pending.timer);
     pendingJobs.current = null;
     setJobReview(null);
   }
@@ -627,21 +787,36 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       );
       if (pendingJobs.current !== pending) return;
       pending.resolve(receipt);
+      clearTimeout(pending.timer);
       pendingJobs.current = null;
       setJobReview(null);
-      if (pending.released) client.current?.speak(voiceJobsAcceptedSpeech(jobs));
+      if (pending.released) {
+        // The tool call that proposed these jobs was already answered (possibly on a closed
+        // connection), so its ledger entry is gone: record the started jobs here and tell the
+        // live session, waiting through a reconnect if needed.
+        const id = ledger.start({
+          tool: "give_jobs",
+          args: { jobs: pending.review.jobs.map((row) => row.id) },
+          request: pending.request,
+        });
+        if (id) ledger.settle(id, receipt);
+        const spoken = voiceJobsAcceptedSpeech(jobs);
+        if (!client.current?.speak(spoken))
+          announce({ id: `review:${pending.review.id}:started`, data: spoken, speech: spoken });
+      }
     } catch (cause) {
       if (pendingJobs.current === pending) {
         pending.review = {
           ...pending.review,
           busy: false,
-          error: voiceError(cause, "Job status is unknown. Check the Room before retrying."),
+          error: voiceError(cause, t("Job status is unknown. Check the Room before retrying.")),
           accepted: pending.batch.accepted.map((job) => job.id),
         };
         // A direct start that fails shows its one coherent error in the review.
         pending.shown = true;
         setJobReview(pending.review);
         pending.wait?.waitForOwner();
+        armJobReviewTimer(pending);
       }
     }
   }
@@ -652,6 +827,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     owner?: NonNullable<Awaited<ReturnType<typeof persistVoiceOwnerChoice>>>;
     presentation?: VoiceOwnerChoicePending;
     answering?: boolean;
+    spoken?: (text: string) => UserQuestionReply | undefined;
   } | null>(null);
   const preparingChoice = useRef(false);
   const transcriptStore = useRef<VoiceThreadTranscript | null>(null);
@@ -692,7 +868,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
                 delivery: "unknown",
                 error: voiceError(
                   cause,
-                  "The answer is unconfirmed. Your original choice is kept.",
+                  t("The answer is unconfirmed. Your original choice is kept."),
                 ),
               },
             });
@@ -767,11 +943,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           prompt: {
             ...pending.choice.prompt,
             delivery: "unknown",
-            error: t(
-              pending.presentation
-                ? "Saving this question is unconfirmed. Retry to verify the original card."
-                : "The answer is unconfirmed. Your original choice is kept.",
-            ),
+            error: pending.presentation
+              ? t("Saving this question is unconfirmed. Retry to verify the original card.")
+              : t("The answer is unconfirmed. Your original choice is kept."),
           },
         });
       }
@@ -817,7 +991,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       releaseChoice();
       return false;
     }
-    const answer = spokenVoiceChoice(pending.choice, text);
+    const answer = pending.spoken ? pending.spoken(text) : spokenVoiceChoice(pending.choice, text);
     if (!answer) {
       releaseChoice();
       return false;
@@ -859,6 +1033,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     const options = {
       turnEndSilence: settings.turnEndSilence,
       allowBargeIn: settings.allowBargeIn,
+      removeFillers: settings.removeFillers,
       manualTurnEnd: settings.manualTurnEnd,
     };
     if (client.current instanceof RealtimeVoice) {
@@ -877,11 +1052,18 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   }, [
     settings.turnEndSilence,
     settings.allowBargeIn,
+    settings.removeFillers,
     settings.manualTurnEnd,
     settings.mode,
     settings.experimentalSemanticVad,
   ]);
-  const detectedPresence = useVoicePresence(open, settings.idleSleepMinutes);
+  // Hidden companion with no live conversation has no consumer that needs a native read;
+  // live capture (safety stop on away) keeps polling even when the page is not shown.
+  const windowShown = useWindowShown();
+  const detectedPresence = useVoicePresence(
+    open && (windowShown || conversationActive),
+    settings.idleSleepMinutes,
+  );
   const [lastAdmittedSpeechAt, setLastAdmittedSpeechAt] = useState<number | null>(null);
   const markAdmittedSpeech = useCallback(
     () => setLastAdmittedSpeechAt(markAcceptedVoiceSpeech()),
@@ -932,7 +1114,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     setPlayback,
     setMessage,
     setError,
-    formatError: (cause) => voiceError(cause, "Voice could not connect."),
+    formatError: (cause) => voiceError(cause, t("Voice could not connect.")),
   });
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
@@ -1024,6 +1206,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   useAssistantControlSource(
     managementCurrent ? managementSource?.threadId : undefined,
     managementCurrent ? managementSource?.environmentId : undefined,
+    "interactive",
+    liveConversation,
   );
   const threadSummary = useRef("");
   const turnHistory = useRef<Promise<VoiceHistory | null> | undefined>(undefined);
@@ -1117,15 +1301,19 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       narration.runtime !== runtime ||
       narration.threadId !== source.threadId ||
       narration.environmentId !== source.environmentId ||
-      status !== "live" ||
       !wanted ||
-      presence !== "active" ||
-      muted ||
-      speakerMuted ||
-      settings.holdAnnouncements ||
-      phase !== "listening"
+      !voiceAnnouncementsOpen({
+        status,
+        presence,
+        muted,
+        speakerMuted,
+        holdAnnouncements: settings.holdAnnouncements,
+        phase,
+      })
     )
       return;
+    // Only OpenAI confirms playback of out-of-band narration.
+    const receipts = realtime?.provider === "openai";
     const abort = new AbortController();
     narrationAbort.current = abort;
     const epoch = generation.current;
@@ -1160,7 +1348,12 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         if (!claimed.narrationClaimed || !event) return;
         let played = false;
         if (current()) {
-          if (runtime instanceof RealtimeVoice) {
+          if (runtime instanceof RealtimeVoice && !receipts) {
+            // No playback receipt exists for this provider: the model relays the claimed text
+            // through the status update path and the event settles as delivery-unknown, never
+            // as played history.
+            runtime.speak(event.text);
+          } else if (runtime instanceof RealtimeVoice) {
             const output = runtime.speakWithReceipt(event.text, event.eventId, abort.signal);
             narrationPlayback.current = output;
             const receipt = await output;
@@ -1217,7 +1410,34 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     speakerMuted,
     settings.holdAnnouncements,
     phase,
+    realtime?.provider,
   ]);
+  const announce = useVoiceWorkAnnouncements({
+    ledger,
+    sessions: props.sessions,
+    jobs: assistantSnapshot?.jobs,
+    open:
+      voiceAnnouncementsOpen({
+        status,
+        presence,
+        muted,
+        speakerMuted,
+        holdAnnouncements: settings.holdAnnouncements,
+        phase,
+        playback,
+      }) &&
+      !choice &&
+      !jobReview,
+    deliver: (update) => {
+      const runtime = client.current;
+      if (!runtime || !voiceDisclosureCurrent()) return false;
+      return runtime instanceof RealtimeVoice
+        ? runtime.speak(update.data)
+        : runtime.speak(update.speech, false);
+    },
+    // A submitted session turn already has its own "Agent turn ended" announcement.
+    skip: (entry) => entry.tool === "submit_work" || !voiceWorkVisible(entry),
+  });
   const sequence = useRef(0);
   const consumedSequence = useRef(0);
   const sideRequest = useRef<AbortController | null>(null);
@@ -1236,6 +1456,306 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     liveSessions.current.find((item) => item.id === id) ??
     latest.current.sessions.find((item) => item.id === id);
   const currentTarget = () => findSession(pinnedRef.current ?? latest.current.activeId);
+  const workTarget = () =>
+    (turnCaptured.current ? turnSessionId.current : currentTarget()?.id) ?? "";
+  const carriedWorkSpeech = () => carriedWork.current.get(workTarget()) ?? "";
+  function carryWork(text: string) {
+    const target = workTarget();
+    const carried = voiceCarriedWorkSpeech(text, carriedWork.current.get(target) ?? "");
+    carriedWork.current.delete(target);
+    if (carried) carriedWork.current.set(target, carried);
+    // Bounded: only the most recent targets can still be continued.
+    while (carriedWork.current.size > 12)
+      carriedWork.current.delete(carriedWork.current.keys().next().value as string);
+  }
+  const canChangeCompanionView = useStableCallback(
+    () => open && status === "live" && turnCaptured.current && voiceDisclosureCurrent(),
+  );
+  const changeCompanionView = useStableCallback((input: Record<string, unknown>) => {
+    if (!canChangeCompanionView()) throw new Error("There is no active voice conversation.");
+    const parsed = VoiceCompanionViewInput.safeParse(input);
+    if (!parsed.success) throw new Error("Choose fullscreen, window or mini.");
+    const { mode } = parsed.data;
+    if (mode === "mini" && (choice || jobReview))
+      throw new Error(
+        "Answer the open question or finish reviewing the jobs before switching to Mini.",
+      );
+    // The next tool in this turn can immediately present into the mounted full-screen view.
+    flushSync(() => {
+      if (mode === "fullscreen") {
+        enterFullScreen();
+      } else {
+        if (detached) dock();
+        setCompact(mode === "mini");
+        exitFullScreen();
+      }
+    });
+    if (
+      mode === "fullscreen"
+        ? panel.current?.hasAttribute("data-full-screen") !== true
+        : !panel.current ||
+          panel.current.hasAttribute("data-full-screen") ||
+          panel.current.hasAttribute("data-compact") !== (mode === "mini")
+    )
+      throw new Error("The requested voice view has not been confirmed.");
+    return { action: voiceCompanionViewTool.name, status: "completed" as const, mode };
+  });
+  const openWorkDestination = useStableCallback(
+    (target: VoiceWorkDestination, revision: number) => {
+      if (revision !== turnRevision.current || !voiceDisclosureCurrent())
+        throw new Error("The voice turn changed before the destination opened.");
+      flushSync(() => {
+        setWorkDestination({ revision, target });
+        setHiddenResults(undefined);
+        setWorkPanelRequest((request) => request + 1);
+      });
+    },
+  );
+  const findMountedDestination = useStableCallback(
+    (attribute: string, id: string, inVoice: boolean, projectPath?: string) => {
+      const root = inVoice ? workPanel.current : document;
+      return Boolean(
+        root &&
+        [...root.querySelectorAll<HTMLElement>(`[${attribute}]`)].some(
+          (element) =>
+            element.getAttribute(attribute) === id &&
+            (!projectPath ||
+              pathKey(element.dataset.sessionProject ?? "") === pathKey(projectPath)) &&
+            (!projectPath ||
+              element.querySelector<HTMLElement>("[data-session-drop]")?.dataset.sessionDrop ===
+                id) &&
+            !element.closest("[hidden], [aria-hidden='true']"),
+        ),
+      );
+    },
+  );
+  const applyWorkspaceSurface = useStableCallback((surface: unknown) => {
+    const inVoice = panel.current?.hasAttribute("data-full-screen") === true;
+    if (surface === "project" && inVoice) flushSync(exitFullScreen);
+    if (surface === "voice" && !inVoice) flushSync(enterFullScreen);
+    return panel.current?.hasAttribute("data-full-screen") === true;
+  });
+  /** The renderer is loaded before the commit, so this checks what the drawer actually painted. */
+  const presentedVersionShown = useStableCallback((version: number) =>
+    Boolean(
+      workPanel.current &&
+      !workPanel.current.hidden &&
+      livePresentedVersion.current === version &&
+      workPanel.current.querySelector(`[data-voice-presented-version="${version}"]`),
+    ),
+  );
+  /**
+   * A presented button is an owner press on a registered action. It runs through the same
+   * workspace executor as a spoken call, with today's authority, locks and approvals, and only
+   * while the view that drew it is still the one on screen.
+   */
+  const runPresentedAction = useStableCallback(
+    async (version: number, button: VoicePresentedActionButton) => {
+      const origin = presentedOrigin.current;
+      const current = () =>
+        Boolean(
+          origin &&
+          status === "live" &&
+          generation.current === origin.generation &&
+          turnRevision.current === origin.revision &&
+          scopeRef.current === origin.global &&
+          voiceDisclosureCurrent() &&
+          presentedVersionShown(version),
+        );
+      if (!origin || !latest.current.workspace || !current())
+        throw new VoicePresentedViewChanged(t("This view changed. Ask for it again."));
+      const {
+        family = "workspace",
+        action,
+        input,
+        projectPath,
+        sessionId,
+        accountId,
+      } = VoicePresentedActionButtonSchema.parse(button);
+      const targets = { projectPath, sessionId, accountId };
+      if (family === "workspace" && Object.values(targets).some((value) => value !== undefined))
+        throw new Error("Put workspace targets in the action input.");
+      const catalog = (await thisController().execute(
+        "app_tools_list",
+        { family, query: action, ...targets },
+        current,
+      )) as {
+        tools: {
+          family: string;
+          action: string;
+          requiresProject?: boolean;
+          inputSchema: { properties?: Record<string, unknown> };
+          annotations?: { readOnlyHint?: boolean };
+        }[];
+      };
+      if (!current())
+        throw new VoicePresentedViewChanged(t("This view changed. Ask for it again."));
+      const tool = catalog.tools.find(
+        (entry) => entry.family === family && entry.action === action,
+      );
+      if (!tool || action === presentVoiceResultTool.name)
+        throw new Error("This action is no longer available.");
+      if (tool.requiresProject && !projectPath)
+        throw new Error("Choose the action's project first.");
+      const workspaceNavigation = [
+        "workspace.sessions.open",
+        "workspace.projects.select",
+        "workspace.views.open",
+        "workspace.views.close",
+        "workspace.usage.open",
+        "workspace.conversation_tools.open",
+        "workspace.voice.set_view",
+      ].includes(action);
+      const declaresRequestId = Object.prototype.hasOwnProperty.call(
+        tool.inputSchema.properties ?? {},
+        "requestId",
+      );
+      const effect =
+        family === "workspace"
+          ? !workspaceNavigation && declaresRequestId
+          : tool.annotations?.readOnlyHint !== true;
+      const key = effect
+        ? voicePresentedRequestKey({ label: button.label, family, action, input, ...targets })
+        : undefined;
+      const requestId = (key && presentedEffectIds.current.get(key)) || crypto.randomUUID();
+      if (key) presentedEffectIds.current.set(key, requestId);
+      const result = await realtimeTool(
+        "app_tool_call",
+        {
+          family,
+          action,
+          requestId,
+          ...targets,
+          input: {
+            ...(family === "workspace" && action === "workspace.sessions.open"
+              ? { surface: "project" }
+              : {}),
+            ...input,
+            ...(family !== "workspace" &&
+            tool.annotations?.readOnlyHint !== true &&
+            input.requestId === undefined &&
+            declaresRequestId
+              ? { requestId }
+              : {}),
+          },
+        },
+        origin.generation,
+        current,
+        undefined,
+        true,
+      );
+      const receipt = result as
+        | {
+            status?: unknown;
+            state?: unknown;
+            error?: unknown;
+            operation?: { state?: unknown; error?: unknown };
+          }
+        | undefined;
+      const outcome = receipt?.operation?.state ?? receipt?.state ?? receipt?.status;
+      const failure = receipt?.error ?? receipt?.operation?.error;
+      if (
+        typeof failure === "string" ||
+        ["failed", "cancelled", "rejected", "refused", "uncertain", "unknown"].includes(
+          String(outcome),
+        )
+      )
+        throw new Error(
+          typeof failure === "string"
+            ? failure
+            : "The action did not return a verified result. Check its status before retrying.",
+        );
+      return voicePresentedActionResponse(
+        outcome,
+        result,
+        current() && !effect && !workspaceNavigation,
+      );
+    },
+  );
+  const openConversationTools = useStableCallback(
+    async (input: Record<string, unknown>, current: () => boolean = () => true) => {
+      const workspace = latest.current.workspace;
+      if (!workspace || !canChangeCompanionView())
+        throw new Error("Conversation Tools are unavailable in this voice turn.");
+      if (
+        Object.keys(input).some(
+          (key) => !["projectPath", "sessionId", "tab", "surface"].includes(key),
+        ) ||
+        (input.projectPath !== undefined && typeof input.projectPath !== "string") ||
+        (input.sessionId !== undefined && typeof input.sessionId !== "string") ||
+        (input.surface !== undefined &&
+          !voiceWorkspaceSurface.enum.includes(String(input.surface))) ||
+        !["devices", "browser", "servers", "logs", "resources"].includes(String(input.tab))
+      )
+        throw new Error("Choose a valid Conversation Tool and target.");
+      const revision = turnRevision.current;
+      const sessionId =
+        typeof input.sessionId === "string" ? input.sessionId : turnSessionId.current;
+      const projectPath =
+        typeof input.projectPath === "string"
+          ? input.projectPath
+          : typeof input.sessionId === "string"
+            ? findSession(sessionId)?.cwd
+            : turnProjectPath.current;
+      if (
+        !sessionId ||
+        !projectPath ||
+        (input.sessionId === undefined && pathKey(projectPath) !== pathKey(turnProjectPath.current))
+      )
+        throw new Error("Which session in that project should show Conversation Tools?");
+      if (!turnAllowedProjectPaths.current.some((path) => pathKey(path) === pathKey(projectPath)))
+        throw new Error("That project is outside this voice turn's scope.");
+      const opened = await workspace.execute("workspace.sessions.open", {
+        sessionId,
+        projectPath,
+        requestId: crypto.randomUUID(),
+      });
+      if (opened.status !== "accepted" && opened.status !== "completed")
+        throw new Error(opened.error ?? "The requested session did not open.");
+      if (
+        !current() ||
+        revision !== turnRevision.current ||
+        !voiceDisclosureCurrent() ||
+        isProjectLocked(projectPath)
+      )
+        throw new Error("The voice turn or project scope changed before the tool opened.");
+      const state = await requestToolsUi(
+        { sessionId, cwd: projectPath, title: findSession(sessionId)?.title ?? sessionId },
+        "ui.tools.open",
+        { tab: input.tab, placement: "right" },
+      );
+      if (!current() || revision !== turnRevision.current || !canChangeCompanionView())
+        return {
+          action: voiceConversationTools.name,
+          status: "accepted" as const,
+          projectPath,
+          sessionId,
+        };
+      const mounted = state.panels.find(
+        (item) =>
+          item.id === state.openedPanelId && item.tab === input.tab && item.mounted && item.visible,
+      );
+      const inVoice = applyWorkspaceSurface(input.surface);
+      if (
+        mounted &&
+        inVoice &&
+        latest.current.onWorkspaceOutlet &&
+        mounted.presentation !== "detached"
+      )
+        openWorkDestination({ kind: "tools", panelId: mounted.id, projectPath }, revision);
+      const confirmed =
+        mounted &&
+        ((mounted.presentation === "detached" &&
+          (input.surface === undefined || input.surface === "auto")) ||
+          findMountedDestination("data-tools-pane-id", mounted.id, inVoice));
+      return {
+        action: voiceConversationTools.name,
+        status: confirmed ? ("completed" as const) : ("accepted" as const),
+        projectPath,
+        sessionId,
+      };
+    },
+  );
   const controller = useRef<ReturnType<typeof createVoiceController> | null>(null);
   if (!controller.current)
     controller.current = createVoiceController(() => ({
@@ -1277,10 +1797,169 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       invalidateCausalContext: async () => {
         await causalGeneration.current?.invalidate("unverified-tool");
       },
-      workspace: latest.current.workspace ?? {
-        tools: [],
-        execute: async () => {
-          throw new Error("Workspace actions are unavailable.");
+      workspace: {
+        tools: [
+          ...(latest.current.workspace?.tools ?? []),
+          ...(canChangeCompanionView() ? [voiceCompanionViewTool] : []),
+          ...(canChangeCompanionView() ? [presentedCatalogTool, presentVoiceResultTool] : []),
+          ...(latest.current.workspace && canChangeCompanionView() ? [voiceConversationTools] : []),
+        ],
+        execute: async (action, input, current = () => true) => {
+          if (!current()) throw new Error("This view changed. Ask for it again.");
+          if (action === presentedCatalogTool.name) {
+            if (!canChangeCompanionView()) throw new Error("There is no active voice turn.");
+            return describePresentedCatalog(input);
+          }
+          if (action === voiceCompanionViewTool.name) return changeCompanionView(input);
+          if (action === voiceConversationTools.name) return openConversationTools(input, current);
+          if (action === presentVoiceResultTool.name) {
+            if (!canChangeCompanionView())
+              throw new Error("There is no active voice turn to show this result in.");
+            const parsed = VoicePresentedResultSchema.safeParse(input);
+            if (!parsed.success)
+              throw new Error(
+                `This result cannot be displayed. ${presentedResultProblems(parsed.error)}`,
+              );
+            const origin = {
+              revision: turnRevision.current,
+              generation: generation.current,
+              global: scopeRef.current,
+            };
+            // Load the renderer first, so the commit below can paint it at once.
+            await preloadPresentedAnswer();
+            if (
+              !canChangeCompanionView() ||
+              origin.revision !== turnRevision.current ||
+              origin.generation !== generation.current ||
+              origin.global !== scopeRef.current
+            )
+              throw new Error("There is no active voice turn to show this result in.");
+            const version = ++presentedVersion.current;
+            flushSync(() => {
+              enterFullScreen();
+              livePresentedVersion.current = version;
+              presentedOrigin.current = origin;
+              presentedEffectIds.current.clear();
+              setPresentedResult({ version, result: parsed.data });
+              setWorkDestination(undefined);
+              setHiddenResults(undefined);
+              setWorkPanelRequest((request) => request + 1);
+            });
+            // Completed only once this exact version is in the drawer the owner can see.
+            const shown = presentedVersionShown(version);
+            return { action, status: shown ? "completed" : "accepted", version, shown };
+          }
+          if (!latest.current.workspace) throw new Error("Workspace actions are unavailable.");
+          if (
+            ["workspace.views.open", "workspace.projects.select", "workspace.usage.open"].includes(
+              action,
+            ) &&
+            canChangeCompanionView()
+          ) {
+            const revision = turnRevision.current;
+            const result = await latest.current.workspace.execute(action, input);
+            if (
+              current() &&
+              revision === turnRevision.current &&
+              voiceDisclosureCurrent() &&
+              panel.current?.hasAttribute("data-full-screen") &&
+              (result.status === "completed" || result.status === "accepted")
+            )
+              applyWorkspaceSurface("project");
+            return result;
+          }
+          if (action === "workspace.sessions.open" && canChangeCompanionView()) {
+            if (
+              input.surface !== undefined &&
+              !voiceWorkspaceSurface.enum.includes(String(input.surface))
+            )
+              throw new Error("Choose the project workspace or fullscreen voice drawer.");
+            const revision = turnRevision.current;
+            const result = await latest.current.workspace.execute(action, input);
+            if (
+              !result.sessionId ||
+              !result.projectPath ||
+              (result.status !== "accepted" && result.status !== "completed")
+            )
+              return result;
+            if (!current() || revision !== turnRevision.current || !canChangeCompanionView())
+              return { ...result, status: "accepted" };
+            const inVoice = applyWorkspaceSurface(
+              voiceSessionOpenSurface(ownerSpeech.current, input.surface),
+            );
+            if (inVoice && latest.current.onWorkspaceOutlet)
+              openWorkDestination(
+                { kind: "session", sessionId: result.sessionId, projectPath: result.projectPath },
+                revision,
+              );
+            return {
+              ...result,
+              status: findMountedDestination(
+                "data-workspace-session-id",
+                result.sessionId,
+                inVoice,
+                result.projectPath,
+              )
+                ? "completed"
+                : "accepted",
+            };
+          }
+          if (action === "workspace.usage.report" && canChangeCompanionView()) {
+            const revision = turnRevision.current;
+            const result = await latest.current.workspace.execute(action, input);
+            const report = voiceUsageReportOf(result);
+            if (!report) return result;
+            // The read is async: a newer turn or an ended call must not receive this report.
+            if (!current() || revision !== turnRevision.current || !canChangeCompanionView())
+              return { ...result, shown: "not-shown" };
+            const inVoice = panel.current?.hasAttribute("data-full-screen") === true;
+            flushSync(() => {
+              setUsageReport({ revision, report, lock: getGroupLockView() });
+              setWorkDestination(undefined);
+              setHiddenResults(undefined);
+              setWorkPanelRequest((request) => request + 1);
+            });
+            // Only a full-screen call has the drawer; elsewhere the report waits for this turn's fullscreen.
+            return {
+              ...result,
+              shown:
+                inVoice && workPanel.current && !workPanel.current.hidden
+                  ? "mounted"
+                  : "waiting-for-fullscreen",
+            };
+          }
+          const submission = action === "workspace.sessions.submit";
+          const creation = action === "workspace.sessions.create" && input.submit === true;
+          const brief = submission ? input.text : creation ? input.prompt : undefined;
+          if (typeof brief !== "string" || !turnCaptured.current)
+            return latest.current.workspace.execute(action, input);
+          const revision = turnRevision.current;
+          const before =
+            submission && typeof input.sessionId === "string"
+              ? findSession(input.sessionId)
+              : undefined;
+          const previousTurnId = before && currentExecutionTools(before.blocks).turnId;
+          const result = await latest.current.workspace.execute(action, input);
+          if (
+            revision === turnRevision.current &&
+            result.status === "accepted" &&
+            result.sessionId &&
+            result.projectPath &&
+            ((submission &&
+              before?.id === result.sessionId &&
+              pathKey(before.cwd) === pathKey(result.projectPath) &&
+              result.accepted === true) ||
+              (creation && result.submitted === true))
+          ) {
+            setVoiceSubmittedWork({
+              revision,
+              sessionId: result.sessionId,
+              cwd: result.projectPath,
+              text: brief.trim(),
+              previousTurnId,
+            });
+          }
+          return result;
         },
       },
       ensureToolSession: latest.current.ensureToolSession,
@@ -1391,7 +2070,11 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   }
   function captureTurn(snapshot: SpeechTarget) {
     turnRevision.current++;
+    ownerSpeech.current = "";
     const revision = turnRevision.current;
+    setVoiceResultTurn({ revision, since: monotonicNow() });
+    setUsageReport(undefined);
+    setVoiceSubmittedWork(undefined);
     const global = snapshot.globalScope ?? scopeRef.current;
     const binding =
       snapshot.historyBinding ??
@@ -1439,9 +2122,19 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     }
     // Store before invoking the callback, including ambiguous failures. Rephrasing
     // or retrying a tool call is not a second user authorization.
+    const revision = turnRevision.current;
+    const previousTurnId = currentExecutionTools(session.blocks).turnId;
     const result = Promise.resolve().then(async () => {
       if (generation.current !== epoch || !active()) return { accepted: false };
       const accepted = await latest.current.onSubmit(session.id, text);
+      if (accepted && generation.current === epoch && active() && turnRevision.current === revision)
+        setVoiceSubmittedWork({
+          revision,
+          sessionId: session.id,
+          cwd: session.cwd,
+          text,
+          previousTurnId,
+        });
       if (generation.current === epoch && accepted)
         jobs.current.set(session.id, {
           sawBusy: Boolean(session.busy),
@@ -1454,6 +2147,11 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     return result;
   }
   function stopCapture(next: typeof status, preserveDrafts = false) {
+    setVoiceResultTurn(undefined);
+    setPresentedResult(undefined);
+    livePresentedVersion.current = undefined;
+    setUsageReport(undefined);
+    setVoiceSubmittedWork(undefined);
     setLastAdmittedSpeechAt(null);
     lastDeliveredAssistant.current = "";
     manualPresenceCapture.current = false;
@@ -1461,7 +2159,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     if (!preserveDrafts) {
       cancelJobReview();
       releaseChoice();
-    }
+    } else if (pendingChoice.current?.spoken) releaseChoice();
     transcriptStore.current?.finish();
     clearTimeout(stableTimer.current);
     reconnect.cancel();
@@ -1482,6 +2180,11 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     setMuted(false);
   }
   function close() {
+    setVoiceResultTurn(undefined);
+    setPresentedResult(undefined);
+    livePresentedVersion.current = undefined;
+    setUsageReport(undefined);
+    setVoiceSubmittedWork(undefined);
     invalidateFeatureHosts();
     setLastAdmittedSpeechAt(null);
     lastDeliveredAssistant.current = "";
@@ -1492,8 +2195,11 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     transcriptStore.current?.finish();
     clearTimeout(stableTimer.current);
     reconnect.reset();
+    recoveryLog.reset();
     recentTurns.current = [];
+    carriedWork.current.clear();
     unansweredTurn.current = "";
+    lostSpeech.current = false;
     generation.current++;
     turnCaptured.current = false;
     sequence.current++;
@@ -1517,7 +2223,6 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     mode: settings.mode,
     speaker: settings.mode === "local" ? undefined : settings.speakers[settings.mode],
     language: languageLock,
-    microphoneId: settings.microphoneId,
   });
   const connected = useRef(connection);
   useEffect(() => {
@@ -1525,12 +2230,38 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     connected.current = connection;
     closeFromEffect();
   }, [connection]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep the live capture on the saved microphone; a switch swaps the stream without ending the call.
+  useEffect(() => {
+    void client.current?.switchMicrophone(settings.microphoneId).catch(() => {});
+  }, [settings.microphoneId]);
   function dismiss() {
     close();
+    setFullScreen(false);
     returnFocus.current = true;
     setOpen(false);
   }
-  useOverlay(panel, false, undefined, open && !detached, undefined, false, true);
+  function exitFullScreen() {
+    setFullScreen(false);
+    compactToggle.current?.focus();
+  }
+  function closeWorkPanel() {
+    setHiddenResults(voiceResultTurn?.revision);
+    workPanelToggle.current?.focus();
+  }
+  const workspaceOverlay = useOverlay(
+    panel,
+    fullScreen,
+    fullScreen
+      ? () => {
+          if (workPanelToggle.current?.getAttribute("aria-expanded") === "true") closeWorkPanel();
+          else exitFullScreen();
+        }
+      : undefined,
+    open && !detached,
+    undefined,
+    false,
+    !fullScreen,
+  );
   useLayoutEffect(() => {
     // The first-run persona dialog owns focus while it is open.
     if (open)
@@ -1558,6 +2289,22 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     },
     [reconnect],
   );
+  /**
+   * Ledger entries follow tool-activity visibility: hidden or locked projects never reach the
+   * model, the list or speech, and entries without a project appear only in Global scope.
+   */
+  function voiceWorkVisible(entry: VoiceWorkEntry) {
+    const current = currentTarget()?.cwd ?? latest.current.projectPath ?? "";
+    if (!entry.projectPath) return scopeRef.current;
+    const path = entry.projectPath;
+    return (
+      !isProjectLocked(path) &&
+      (latest.current.projects ?? [{ path: current }]).some(
+        (project) => pathKey(project.path) === pathKey(path),
+      ) &&
+      (scopeRef.current || pathKey(path) === pathKey(current))
+    );
+  }
   /** `append` continues a streamed reply after the sentences already shown and queued. */
   function voiceDisclosureCurrent() {
     return activeHistoryBinding.current?.current?.() ?? true;
@@ -1567,7 +2314,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     // transcript write. Real source/receipt errors and retry failures stay visible.
     if (cause instanceof VoiceContextScopeUnavailable) return;
     setHistoryNotice(
-      voiceError(cause, "The voice question context could not be verified for saving."),
+      voiceError(cause, t("The voice question context could not be verified for saving.")),
     );
   }
   function interceptSpeech(text: string) {
@@ -1691,8 +2438,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   async function onSpeech(text: string, binding: SpeechBinding, epoch: number) {
     if (generation.current === epoch) {
       const heldReview = pendingJobs.current;
+      const heldProjectChoice = pendingChoice.current?.spoken;
       if (consumeChoice(text)) return;
-      if (heldReview?.released) {
+      if (heldReview?.released || heldProjectChoice) {
         sequence.current++;
         binding = { ...binding, sequence: sequence.current };
         sideRequest.current?.abort();
@@ -1708,6 +2456,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     consumedSequence.current = binding.sequence;
     rememberTurn("user", text);
     ownerSpeech.current = text;
+    carryWork(text);
     let acceptedScope: VoiceHistoryScope | undefined;
     try {
       acceptedScope = (await turnHistory.current)?.scope;
@@ -1947,12 +2696,27 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         const done = "saved" in result ? result.saved : result.forgotten;
         const spoken = done
           ? decision.reply ||
-            t(decision.action === "remember" ? "I'll remember that." : "Forgotten.")
-          : t(("error" in result && result.error) || "Memory could not be changed.");
+            (decision.action === "remember" ? t("I'll remember that.") : t("Forgotten."))
+          : ("error" in result && result.error) || t("Memory could not be changed.");
         reply(spoken, session, false, () => recordResponse({ role: "assistant", text: spoken }));
         return;
       }
       if (decision.action === "submit") {
+        const refusal = voiceWorkRefusal(
+          text,
+          "submit_work",
+          undefined,
+          carriedWorkSpeech(),
+          decision.text ?? text,
+        );
+        if (refusal) {
+          const spoken =
+            refusal.intent === "ambiguous"
+              ? t("What would you like your assistant to do or change?")
+              : t("Select a session and speak again.");
+          reply(spoken, session, false, () => recordResponse({ role: "assistant", text: spoken }));
+          return;
+        }
         const fresh = findSession(session.id);
         if (!fresh || fresh.historyLoading || fresh.historyLoadError || fresh.worktreeRemoved)
           throw new Error(t("The session is not ready for work."));
@@ -1981,11 +2745,22 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         };
         let accepted: boolean;
         try {
-          ({ accepted } = await submitWork(
-            session,
-            brief,
-            epoch,
-            () => !controller.signal.aborted && binding.sequence === sequence.current,
+          // Each local turn is a new owner request, so only the ledger record applies here.
+          ({ accepted } = await recordVoiceWork(
+            ledger,
+            voiceWorkCall(
+              "submit_work",
+              { text: brief },
+              { sessionId: session.id, projectPath: session.cwd },
+            ),
+            carriedWorkSpeech() || text,
+            () =>
+              submitWork(
+                session,
+                brief,
+                epoch,
+                () => !controller.signal.aborted && binding.sequence === sequence.current,
+              ),
           ));
           recordReceipt({ accepted });
         } catch (cause) {
@@ -1995,11 +2770,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         if (generation.current !== epoch) return;
         if (binding.sequence === sequence.current)
           reply(
-            t(
-              accepted
-                ? "Accepted. You can keep talking while the agent works."
-                : "The request was not accepted. Check the session.",
-            ),
+            accepted
+              ? t("Accepted. You can keep talking while the agent works.")
+              : t("The request was not accepted. Check the session."),
             session,
           );
       } else {
@@ -2011,7 +2784,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       }
     } catch (cause) {
       if (!controller.signal.aborted && generation.current === epoch)
-        setError(voiceError(cause, "The voice request failed."));
+        setError(voiceError(cause, t("The voice request failed.")));
     } finally {
       transcriptStore.current?.finish();
       if (sideRequest.current === controller) {
@@ -2025,6 +2798,103 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   function thisController() {
     return controller.current!;
   }
+  async function sessionProjectChoice(
+    args: Record<string, unknown>,
+    live: () => boolean,
+    wait?: { waitForOwner(): void },
+  ): Promise<Record<string, unknown> | undefined> {
+    if (args.family !== "workspace" || args.action !== "workspace.sessions.create") return args;
+    if (pendingChoice.current?.spoken) return;
+    const input = args.input as Record<string, unknown> | undefined;
+    if (
+      !input ||
+      typeof input !== "object" ||
+      Array.isArray(input) ||
+      input.projectPath !== undefined ||
+      !turnCaptured.current ||
+      !turnGlobalScope.current ||
+      !scopeRef.current ||
+      !voiceSessionNeedsProject(ownerSpeech.current)
+    )
+      return args;
+    if (pendingChoice.current || preparingChoice.current || pendingJobs.current) return;
+    const history = activeHistoryBinding.current;
+    const projects = voiceProjectNames(latest.current.projects ?? []).filter(
+      ({ path }) =>
+        turnAllowedProjectPaths.current.some((allowed) => pathKey(allowed) === pathKey(path)) &&
+        !isProjectLocked(path),
+    );
+    if (
+      !history ||
+      !projects.length ||
+      typeof args.requestId !== "string" ||
+      !args.requestId.trim()
+    )
+      throw new Error("A visible project and a stable voice request are required.");
+    const captured = structuredClone(args);
+    const next = parseVoiceChoice({
+      question: t("Choose session project"),
+      options: projects.slice(0, 9).map((project, index) => ({
+        id: String(index + 1),
+        label: truncateGraphemes(project.name || project.path, 200),
+        ...(projects.some((other) => other !== project && other.name === project.name)
+          ? { description: truncateGraphemes(project.path, 500) }
+          : {}),
+      })),
+      kind: "disambiguation",
+      allowCustom: true,
+    });
+    const exactProject = (text: string) => {
+      const match = resolveVoiceProjects(projects, text.trim());
+      return match.match === "exact" && !match.ambiguous ? match.projects[0] : undefined;
+    };
+    setChoice(next);
+    wait?.waitForOwner();
+    const reply = await new Promise<UserQuestionReply>((resolve) => {
+      pendingChoice.current = {
+        choice: next,
+        resolve: (value) => resolve(value as UserQuestionReply),
+        timer: setTimeout(releaseChoice, next.timeoutSec * 1000),
+        spoken: (text) => {
+          const name = text
+            .trim()
+            .replace(/[.!?]+$/g, "")
+            .replace(/^(?:in|use) (?:the )?(?:project )?/i, "")
+            .replace(/ (?:project|projesinde|projesine|projesi)$/i, "");
+          const project = exactProject(name);
+          if (!project) return;
+          const id = String(projects.indexOf(project) + 1);
+          return projects.indexOf(project) < next.prompt.questions[0].options.length
+            ? { kind: "answered", answers: { choice: [id] } }
+            : { kind: "answered", answers: { choice: ["__custom__"] }, custom: { choice: name } };
+        },
+      };
+      playCue("voiceQuestion");
+    });
+    if (
+      reply.kind !== "answered" ||
+      !live() ||
+      !scopeRef.current ||
+      !voiceDisclosureCurrent() ||
+      activeHistoryBinding.current !== history
+    )
+      return;
+    const id = reply.answers.choice?.[0];
+    const path =
+      id === "__custom__"
+        ? exactProject(reply.custom?.choice ?? "")?.path
+        : projects[Number(id) - 1]?.path;
+    if (
+      !path ||
+      isProjectLocked(path) ||
+      !latest.current.projects?.some((project) => pathKey(project.path) === pathKey(path))
+    )
+      return;
+    return {
+      ...captured,
+      input: { ...(captured.input as Record<string, unknown>), projectPath: path },
+    };
+  }
   /** Tools of the cloud companion, with the same readiness checks as local voice. */
   async function realtimeTool(
     name: string,
@@ -2032,35 +2902,69 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     epoch: number,
     active: () => boolean = () => true,
     wait?: { waitForOwner(): void },
+    ownerPressedView = false,
   ) {
     if (generation.current !== epoch || !active() || !voiceDisclosureCurrent())
       return { error: "The voice connection is no longer active." };
     const capturedRevision = turnRevision.current;
+    const acceptedSpeech = ownerSpeech.current;
+    // The carried work utterance survives turn onset and reconnects, so a resumed session that
+    // continues the owner's request is not refused for lack of fresh speech.
+    const carried = carriedWorkSpeech();
+    const refusal = voiceWorkRefusal(
+      acceptedSpeech,
+      name,
+      args.action,
+      carried,
+      name === "submit_work" ? args.text : args.input,
+      args.family,
+      ownerPressedView,
+    );
+    if (refusal) return refusal;
+    // Jobs waiting for review are not started work; a repeat proposal hears about the review.
+    if (name === "give_jobs" && pendingJobs.current)
+      return { status: "awaiting_review", reviewId: pendingJobs.current.review.id };
+    const projectPath = turnProjectPath.current || currentTarget()?.cwd || props.projectPath || "";
+    const call = voiceWorkCall(name, args, {
+      sessionId: turnCaptured.current ? turnSessionId.current : currentTarget()?.id,
+      projectPath,
+    });
+    const request = carried || acceptedSpeech;
+    if (workConnection.current.epoch !== epoch) workConnection.current = { epoch, at: Date.now() };
+    const connectedAt = workConnection.current.at;
     return toolActivity.current!.run(
       {
         name: truncateGraphemes(typeof args.action === "string" ? args.action : name, 100),
         target:
           latest.current.sessions.find((session) => session.id === turnSessionId.current)?.title ||
           t("Global"),
-        projectPath: turnProjectPath.current || currentTarget()?.cwd || props.projectPath || "",
+        projectPath,
         requestId:
           typeof args.requestId === "string" && args.requestId.length <= 300
             ? args.requestId
             : undefined,
       },
-      (observing, waitForOwner) =>
-        performRealtimeTool(
-          name,
-          args,
-          epoch,
-          () => active() && observing() && turnRevision.current === capturedRevision,
-          {
-            waitForOwner: () => {
-              waitForOwner();
-              wait?.waitForOwner();
+      (observing, waitForOwner) => {
+        const perform = () =>
+          performRealtimeTool(
+            name,
+            args,
+            epoch,
+            () => active() && observing() && turnRevision.current === capturedRevision,
+            {
+              waitForOwner: () => {
+                waitForOwner();
+                wait?.waitForOwner();
+              },
+              ownerPressedView,
             },
-          },
-        ),
+          );
+        // The ledger settles from this promise, not from the provider socket. An owner press is a
+        // new authorization, so only model calls meet the duplicate guard.
+        return ownerPressedView
+          ? recordVoiceWork(ledger, call, request, perform)
+          : runVoiceWork(ledger, call, request, perform, connectedAt);
+      },
     );
   }
   async function performRealtimeTool(
@@ -2068,12 +2972,18 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     args: Record<string, unknown>,
     epoch: number,
     active: () => boolean = () => true,
-    wait?: { waitForOwner(): void },
+    wait?: { waitForOwner(): void; ownerPressedView: boolean },
   ) {
     const revision = turnRevision.current;
     const isActive = () => active() && turnRevision.current === revision;
     if (generation.current !== epoch || !isActive() || !voiceDisclosureCurrent())
       return { error: "The voice connection is no longer active." };
+    if (/^(?:conversation|social|runtime_logs|workspace)_/.test(name))
+      return {
+        status: "failed",
+        error:
+          "No operation was dispatched. Invoke discovered tools through app_tool_call, using their family and exact action fields.",
+      };
     if (
       ![
         "present_choices",
@@ -2157,7 +3067,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         error: "",
         accepted: [],
       };
-      // Review is opt-in (profile confirmJobs); otherwise the jobs start below, straight away.
+      // Review only when the profile asks for it or a draft is incomplete; an ambiguous
+      // proposal was already refused by admission.
       const showReview = voiceJobsNeedReview(
         jobs,
         {
@@ -2241,8 +3152,10 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
             },
           ),
           resolve,
+          request: carriedWorkSpeech() || ownerSpeech.current,
         };
-        if (!showReview) void startReviewedJobs(jobs);
+        if (showReview) armJobReviewTimer(pendingJobs.current);
+        else void startReviewedJobs(jobs);
       });
     }
     if (name === "present_choices") {
@@ -2268,11 +3181,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         if (cause instanceof VoiceOwnerChoicePending) presentation = cause;
         if (generation.current === epoch)
           setHistoryNotice(
-            t(
-              presentation
-                ? "Saving this question is unconfirmed. Retry to verify the original card."
-                : "This choice could not be saved in the Room. Keep voice open to answer.",
-            ),
+            presentation
+              ? t("Saving this question is unconfirmed. Retry to verify the original card.")
+              : t("This choice could not be saved in the Room. Keep voice open to answer."),
           );
       } finally {
         preparingChoice.current = false;
@@ -2315,8 +3226,27 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         "composer_attachment",
       ].includes(name)
     ) {
-      const live = () => generation.current === epoch && isActive();
-      const result = await thisController().execute(name, args, live);
+      const live = () => generation.current === epoch && isActive() && voiceDisclosureCurrent();
+      const selected =
+        name === "app_tool_call" ? await sessionProjectChoice(args, live, wait) : args;
+      if (!selected || !live() || !voiceDisclosureCurrent()) return { status: "cancelled" };
+      const result = await thisController().execute(
+        name,
+        selected,
+        () => live() && (selected === args || scopeRef.current),
+        wait?.ownerPressedView,
+      );
+      if (
+        selected !== args &&
+        live() &&
+        canChangeCompanionView() &&
+        result &&
+        typeof result === "object"
+      ) {
+        const created = result as { status?: unknown; sessionId?: unknown; projectPath?: unknown };
+        if (created.status === "accepted" && typeof created.sessionId === "string")
+          applyWorkspaceSurface(voiceSessionOpenSurface(ownerSpeech.current, undefined));
+      }
       // A project this turn created joins its frozen scope; every use still checks visibility.
       const scope = turnAllowedProjectPaths;
       if (turnRevision.current === revision)
@@ -2339,7 +3269,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         throw new Error("Unexpected work brief fields.");
       text = voiceWorkText(args.text);
     } catch (cause) {
-      return { accepted: false, error: voiceError(cause, "The voice work brief is invalid.") };
+      return { accepted: false, error: voiceError(cause, t("The voice work brief is invalid.")) };
     }
     const fresh = findSession(session.id);
     if (!fresh || fresh.historyLoading || fresh.historyLoadError || fresh.worktreeRemoved)
@@ -2349,15 +3279,35 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     // response owner suppresses stale speech; retain the actual delivery receipt.
     return result;
   }
-  function recoverRealtime(provider: RealtimeProvider, reason: string, rotation = false) {
-    // The app log is the only record of why a live voice session dropped.
-    console.warn("[voice] realtime recovering", { provider, reason, rotation });
+  function recoverRealtime(provider: RealtimeProvider, rotation = false, code?: string) {
+    // The app log is the only record of why a live voice session dropped. Reason codes and
+    // state flags only: provider messages and transcripts may contain private text.
+    const dropped = {
+      provider,
+      rotation,
+      code: code ?? "unclassified",
+      speechLost: lostSpeech.current,
+      unansweredTurn: !!unansweredTurn.current,
+    };
+    // Rotation waits for an idle connection, so nothing from it remains to report.
+    if (rotation) {
+      unansweredTurn.current = "";
+      lostSpeech.current = false;
+    }
     invalidateFeatureHosts();
     const wasMuted = mutedRef.current;
     if (presenceRef.current !== "active") {
+      recoveryLog.recovering(dropped, false);
       stopTo("sleeping");
       setError("");
       return;
+    }
+    // The review's tool call dies with this connection. Answer it now; the review stays open and
+    // Start still creates the jobs, records them and tells the next session (startReviewedJobs).
+    const review = pendingJobs.current;
+    if (review && !review.released) {
+      review.released = true;
+      review.resolve({ status: "awaiting_review", reviewId: review.review.id });
     }
     stopCapture("reconnecting", true);
     setMuted(wasMuted);
@@ -2371,10 +3321,11 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       }
       void startRealtime(epoch, provider, true, wasMuted);
     };
+    recoveryLog.recovering(dropped);
     // Slow retries continue until Stop, sleep, a fatal error or the 30 minute cap.
     if (!reconnect.schedule(retry, rotation)) {
       stopCapture("idle");
-      setError(t("Couldn't connect voice. Try again."));
+      setError(t("Couldn’t connect voice. Try again."));
     }
   }
   useEffect(() => {
@@ -2443,6 +3394,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
             return;
           lastDeliveredAssistant.current = pending.text;
           unansweredTurn.current = "";
+          lostSpeech.current = false;
           rememberTurn("assistant", pending.text);
           transcriptStore.current?.finish();
         },
@@ -2452,7 +3404,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         transcript: (text) => {
           if (generation.current === epoch) {
             ownerSpeech.current = text;
+            carryWork(text);
             unansweredTurn.current = text;
+            lostSpeech.current = false;
             void spokenLanguage.current!.record(text).catch(() => {});
             rememberTurn("user", text);
             const history = activeHistoryBinding.current,
@@ -2474,11 +3428,12 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         },
         tool: (name, args, wait) => realtimeTool(name, args, epoch, undefined, wait),
         rotate: () => {
-          if (generation.current === epoch) recoverRealtime(provider, "", true);
+          if (generation.current === epoch) recoverRealtime(provider, true, "rotation");
         },
         diagnostic: (event) => {
-          // Connection metadata only: provider reasons may contain private text.
-          console.info("[voice.connection]", provider, event);
+          // Connection metadata only: provider reasons may contain private text. Every kind goes
+          // to the persisted app log; console.info lines never reach it.
+          logVoiceDiagnostic(provider, event);
         },
         timing: (event) => {
           // Bounded metadata only. This measures scheduled output, not audibility.
@@ -2487,11 +3442,12 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         error: (value, fatal, details) => {
           if (generation.current !== epoch) return;
           if (fatal && details?.recoverable) {
-            recoverRealtime(provider, value);
+            if (details.speechLost) lostSpeech.current = true;
+            recoverRealtime(provider, false, details.code);
             return;
           }
           if (fatal) close();
-          setError(t(value));
+          setError(voiceEngineMessage(value));
         },
       },
       locale.split("-")[0],
@@ -2502,6 +3458,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       {
         turnEndSilence: settings.turnEndSilence,
         allowBargeIn: settings.allowBargeIn,
+        removeFillers: settings.removeFillers,
         manualTurnEnd: settings.manualTurnEnd,
         experimentalSemanticVad:
           provider === "openai" &&
@@ -2519,10 +3476,26 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       capturedHistory?.current?.() !== false &&
       (!connectionScope || connectionScope.current());
     let runtimeRegistrationPending = false;
+    // Every await before the socket is bounded, so "connecting" always ends in live or an error.
+    const step = <T,>(name: string, work: Promise<T>, ms: number, message: string) =>
+      voiceConnectionStep(name, provider, work, ms, message);
+    // Best effort: a stalled step degrades to the fallback instead of failing the connection.
+    const soft = <T,>(name: string, work: Promise<T>, fallback: T) =>
+      step(name, work, VOICE_HOST_STEP_MS, "").catch(() => fallback);
+    const contextStalled = t("Voice could not start: the conversation did not respond.");
     try {
-      const secret = await realtimeSecret(provider);
+      const secret = await step(
+        "secret",
+        realtimeSecret(provider),
+        VOICE_HOST_STEP_MS,
+        t("Voice could not start: the voice key was not issued."),
+      );
       if (generation.current !== epoch) return;
-      const scope = await capturedHistory?.scope?.().catch(() => undefined);
+      const scope = await soft(
+        "scope",
+        capturedHistory?.scope?.() ?? Promise.resolve(undefined),
+        undefined,
+      );
       connectionScope = scope;
       if (generation.current !== epoch) return;
       if (capturedHistory?.current && !capturedHistory.current()) {
@@ -2532,18 +3505,33 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       let seed: import("../../../shared/model/host-contracts/assistant").AssistantMessage[] = [];
       let seededSummary: ReturnType<typeof voiceThreadSummary>;
       try {
-        await transcriptStore.current?.retry();
+        await step(
+          "transcript-retry",
+          Promise.resolve(transcriptStore.current?.retry()),
+          VOICE_HOST_STEP_MS,
+          contextStalled,
+        );
       } catch {
         if (generation.current === epoch) setHistoryNotice(t("Conversation was not saved. Retry."));
       }
       try {
-        const stored = await capturedHistory?.open();
+        const stored = await step(
+          "history-open",
+          Promise.resolve(capturedHistory?.open()),
+          VOICE_HOST_STEP_MS,
+          contextStalled,
+        );
         if (stored && scope?.current()) {
-          const page = await capturedHistory!.request({
-            op: "threads.messages",
-            threadId: stored.thread.id,
-            limit: 6,
-          });
+          const page = await step(
+            "history-seed",
+            capturedHistory!.request({
+              op: "threads.messages",
+              threadId: stored.thread.id,
+              limit: 6,
+            }),
+            VOICE_HOST_STEP_MS,
+            contextStalled,
+          );
           seed =
             page.messages?.filter((message) => voiceHistoryMessageVisible(message, scope)) ?? [];
           if (page.thread?.id === stored.thread.id)
@@ -2553,9 +3541,19 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         if (generation.current === epoch) historyLoadFailed(cause);
       }
       if (generation.current !== epoch || capturedHistory?.current?.() === false) return;
-      const safeTurns = withVoiceSessionBoundary(voiceThreadSeed({ summary: "" }, seed), seed).map(
-        ({ role, text }) => ({ role, text }),
-      );
+      const storedTurns = voiceThreadSeed({ summary: "" }, seed);
+      // A resumed call is the same conversation: restore accepted turns the Host has not
+      // stored yet, within the current scope, and never present it as a first contact.
+      const safeTurns = (
+        reconnecting
+          ? voiceResumeTurns(
+              storedTurns,
+              recentTurns.current.filter(
+                (turn) => scope && voiceHistoryMessageVisible(turn, scope),
+              ),
+            )
+          : withVoiceSessionBoundary(storedTurns, seed)
+      ).map(({ role, text }) => ({ role, text }));
       const causal = new VoiceCausalGeneration(
         seed.map((message) => message.id),
         !!seededSummary,
@@ -2569,35 +3567,60 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       retainCausalGeneration(causal);
       const summary = seededSummary?.text ?? "";
       runtimeRegistrationPending = true;
-      await beginVoiceRuntime(voice, provider === "xai" ? "grok" : "openai");
+      await step(
+        "runtime-register",
+        beginVoiceRuntime(voice, provider === "xai" ? "grok" : "openai"),
+        VOICE_HOST_STEP_MS,
+        t("Voice could not start: the voice runtime did not register."),
+      );
       if (!disclosureCurrent()) {
         closeVoiceRuntimeEvidence(voice, voice.retire());
         return;
       }
       if (!capturedHistory) throw new Error("Voice runtime source unavailable.");
-      const [sourceHistory, sourceEnvironment] = await Promise.all([
-        capturedHistory.open(),
-        capturedHistory.environmentId?.(),
-      ]);
+      const [sourceHistory, sourceEnvironment] = await step(
+        "runtime-source",
+        Promise.all([capturedHistory.open(), capturedHistory.environmentId?.()]),
+        VOICE_HOST_STEP_MS,
+        contextStalled,
+      );
       if (!sourceEnvironment || !disclosureCurrent())
         throw new Error("Voice runtime source unavailable.");
       const { isTauri } = await import("@tauri-apps/api/core");
       if (isTauri())
-        await waitForAssistantControlSource(
-          sourceHistory.thread.id,
-          sourceEnvironment,
-          disclosureCurrent,
+        await step(
+          "control-source",
+          waitForAssistantControlSource(
+            sourceHistory.thread.id,
+            sourceEnvironment,
+            disclosureCurrent,
+          ),
+          VOICE_HOST_STEP_MS,
+          contextStalled,
         );
       if (!disclosureCurrent()) throw new Error("Voice runtime source changed.");
-      await causal.bindRuntimeIdentity(capturedHistory);
+      await step(
+        "runtime-identity",
+        causal.bindRuntimeIdentity(capturedHistory),
+        VOICE_HOST_STEP_MS,
+        contextStalled,
+      );
       if (!disclosureCurrent()) {
         closeVoiceRuntimeEvidence(voice, voice.retire());
         return;
       }
       runtimeRegistrationPending = false;
+      // Local and synchronous: the record of started work never waits on a Host snapshot.
+      const voiceWork = ledger.seed(voiceWorkVisible);
       await voice.connect(secret, safeTurns, {
+        renewSecret: () => realtimeSecret(provider),
         summary,
-        openWork: await assistantControls.current!.openWork(disclosureCurrent),
+        voiceWork,
+        openWork: await soft(
+          "open-work",
+          assistantControls.current!.openWork(disclosureCurrent),
+          "",
+        ),
         disclosureCurrent,
         ...(settings.microphoneId ? { deviceId: settings.microphoneId } : {}),
       });
@@ -2608,14 +3631,27 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       if (generation.current === epoch) {
         if (restoreMuted) voice.mute(true);
         setStatus("live");
+        recoveryLog.live({
+          provider,
+          reconnecting,
+          seededWork: voiceSeededWorkCount(voiceWork),
+        });
+        // A review that outlived the old connection belongs to this session now.
+        if (reconnecting && pendingJobs.current)
+          voice.speak(voiceJobReviewClosedUpdate("reconnected"));
         // A dropped connection must not swallow the owner's request: ask instead of going silent.
-        if (reconnecting && unansweredTurn.current) {
-          voice.speak(voiceInterruptedTurnNotice(unansweredTurn.current));
-          unansweredTurn.current = "";
-        }
+        // The markers clear on a played reply or new speech, so an unheard notice survives a drop.
+        if (reconnecting && (unansweredTurn.current || lostSpeech.current))
+          voice.speak(
+            lostSpeech.current
+              ? voiceLostSpeechNotice(unansweredTurn.current)
+              : voiceInterruptedTurnNotice(unansweredTurn.current),
+          );
         // A brief connection must not replenish an endless retry loop.
         stableTimer.current = setTimeout(() => {
-          if (generation.current === epoch) reconnect.reset();
+          if (generation.current !== epoch) return;
+          reconnect.reset();
+          recoveryLog.reset();
         }, 60_000);
       }
     } catch (cause) {
@@ -2626,16 +3662,16 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       }
       if (runtimeRegistrationPending) {
         close();
-        setError(voiceError(cause, "Voice runtime registration was not confirmed."));
+        setError(voiceError(cause, t("Voice runtime registration was not confirmed.")));
       } else if (classifyVoiceFailure(cause).recoverable)
-        recoverRealtime(provider, voiceError(cause, "Voice could not connect."));
+        recoverRealtime(provider, false, "connect-failed");
       else {
         close();
-        setError(voiceError(cause, "Voice could not connect."));
+        setError(voiceError(cause, t("Voice could not connect.")));
       }
     }
   }
-  async function start() {
+  async function start(wake = false) {
     if (
       client.current ||
       status === "connecting" ||
@@ -2644,11 +3680,14 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       return;
     clearTimeout(stableTimer.current);
     reconnect.reset();
+    recoveryLog.reset();
+    unansweredTurn.current = "";
+    lostSpeech.current = false;
     setMuted(false);
     const epoch = ++generation.current;
     const manualAway =
       assistantSnapshot?.presence?.state === "away" || assistantSnapshot?.presence?.state === "dnd";
-    checkingTalkPresence.current = manualAway;
+    checkingTalkPresence.current = wake || manualAway;
     setStatus("connecting");
     setError("");
     setTranscript("");
@@ -2660,7 +3699,23 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       const selected = currentSpeechTarget(),
         binding = selected.historyBinding!;
       activeHistoryBinding.current = binding;
-      if (manualAway) {
+      if (wake) {
+        const actual = await readNativeVoicePresence(settings.idleSleepMinutes);
+        if (generation.current !== epoch) return;
+        const manual = snapshotRef.current?.presence?.state;
+        if ((actual !== "active" && actual !== "idle") || manual === "away" || manual === "dnd") {
+          stopCapture("ready", true);
+          return;
+        }
+        // The accepted wake phrase is recent speech even when keyboard/mouse are idle.
+        markAdmittedSpeech();
+        setOpen(true);
+        if (detached) dock();
+        void revealVoiceTalkWindow().catch(() =>
+          console.warn("[voice] could not reveal the workspace after wake"),
+        );
+        checkingTalkPresence.current = false;
+      } else if (manualAway) {
         const actual = await readNativeVoicePresence(settings.idleSleepMinutes);
         if (generation.current !== epoch) return;
         checkingTalkPresence.current = false;
@@ -2677,7 +3732,13 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       }
       // Only the profile gates start; a full snapshot would make the Host prove every
       // project referenced by recent Room history before voice could connect.
-      const { profile: currentProfile } = await assistantRequest({ op: "profile.get" });
+      const { profile: currentProfile } = await voiceConnectionStep(
+        "profile",
+        loadVoiceSettings().mode,
+        assistantRequest({ op: "profile.get" }),
+        VOICE_HOST_STEP_MS,
+        t("Voice could not start: the assistant did not respond."),
+      );
       if (generation.current !== epoch) return;
       if (currentProfile && snapshotRef.current)
         snapshotRef.current = { ...snapshotRef.current, profile: currentProfile };
@@ -2694,7 +3755,13 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       threadSummary.current = "";
       recentTurns.current = [];
       try {
-        const stored = await opening;
+        const stored = await voiceConnectionStep(
+          "conversation-open",
+          loadVoiceSettings().mode,
+          opening,
+          VOICE_HOST_STEP_MS,
+          t("Voice could not start: the conversation did not respond."),
+        );
         if (generation.current !== epoch) return;
         transcriptStore.current?.bind(stored.thread, selected.historySessionId, stored.request);
         setHistoryNotice("");
@@ -2718,7 +3785,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     } catch (cause) {
       if (generation.current === epoch) {
         close();
-        setError(voiceError(cause, "Conversation history is unavailable."));
+        setError(voiceError(cause, t("Conversation history is unavailable.")));
       }
       return;
     }
@@ -2772,7 +3839,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         error: (value, fatal) => {
           if (generation.current === epoch) {
             if (fatal) close();
-            setError(t(value));
+            setError(voiceEngineMessage(value));
           }
         },
       },
@@ -2782,6 +3849,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       {
         turnEndSilence: settings.turnEndSilence,
         allowBargeIn: settings.allowBargeIn,
+        removeFillers: settings.removeFillers,
         manualTurnEnd: settings.manualTurnEnd,
         languageLock: voiceLanguageCode(languageLock),
         deviceId: settings.microphoneId,
@@ -2797,7 +3865,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     } catch (cause) {
       if (generation.current !== epoch) return;
       close();
-      setError(voiceError(cause, "Local voice could not start."));
+      setError(voiceError(cause, t("Local voice could not start.")));
     }
   }
   const returnCall = useVoiceReturnCall({
@@ -2816,24 +3884,18 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   });
   useVoiceTalkEvent({
     status,
-    start: () => {
-      setOpen(true);
-      void start();
+    start: (wake) => {
+      if (!wake) setOpen(true);
+      void start(wake);
     },
   });
   const visualState = voiceVisualState({ status, phase, muted, playback, error });
   const sessionProgress = useVoiceSessionProgress(target);
-  const sessionStatusText = t(
-    sessionProgress === "quiet" ? "No recent session updates" : "Session working",
-  );
-  const statusText = voiceStatusText({
-    status,
-    muted,
-    playback,
-    phase,
-    hearingInput,
-    realtime: !!realtime,
-  });
+  const sessionStatusText =
+    sessionProgress === "quiet" ? t("No recent session updates") : t("Session working");
+  // One shared sampler: the panel re-renders when hearing flips, not for each level value. The
+  // detached window mirrors this text, so it keeps sampling while the main window is hidden.
+  const hearingInput = useVoiceHearing(audioLevel, status === "live" && !muted, detached);
   function toggleMute() {
     setLastAdmittedSpeechAt(null);
     client.current?.mute(!muted);
@@ -2883,11 +3945,12 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       client.current?.configureConversation({
         turnEndSilence: next.turnEndSilence,
         allowBargeIn: next.allowBargeIn,
+        removeFillers: next.removeFillers,
         manualTurnEnd: manual,
       });
-      setError((current) => (current === t(VOICE_TURN_CHOICE_FAILED) ? "" : current));
+      setError((current) => (current === voiceTurnChoiceFailedText() ? "" : current));
     } catch {
-      setError(t(VOICE_TURN_CHOICE_FAILED));
+      setError(voiceTurnChoiceFailedText());
     }
   }
   async function popOut(placement: Omit<VoiceOverlayPlacement, "width" | "height">) {
@@ -2903,7 +3966,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       });
       setDetached(true);
     } catch (cause) {
-      setError(voiceError(cause, "The floating voice window could not open."));
+      setError(voiceError(cause, t("The floating voice window could not open.")));
     }
   }
   function dock() {
@@ -2976,6 +4039,130 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
             ),
       )
     : [];
+  const runningTool = [...visibleToolActivities]
+    .reverse()
+    .find((entry) => entry.state === "running");
+  // The overlay window mirrors this text, so it shows the same waiting and tool states.
+  const statusText = voiceStatusText({
+    status,
+    muted,
+    playback,
+    phase,
+    hearingInput,
+    realtime: !!realtime,
+    waitingOwner:
+      choice && bodyVisible ? "question" : jobReview && jobReviewVisible ? "review" : undefined,
+    tool: runningTool
+      ? { name: voiceActionLabel(runningTool.name), target: runningTool.target }
+      : undefined,
+  });
+  const workEntries = useVoiceWorkEntries(ledger);
+  const visibleWork = bodyVisible ? workEntries.filter(voiceWorkVisible) : [];
+  function openWorkSession(entry: VoiceWorkEntry) {
+    const workspace = latest.current.workspace;
+    const sessionId = entry.sessionIds.find((id) => findSession(id));
+    const projectPath = entry.projectPath ?? findSession(sessionId)?.cwd;
+    if (!workspace || !sessionId || !projectPath || !voiceWorkVisible(entry)) {
+      setError(t("That session is no longer available."));
+      return;
+    }
+    void workspace
+      .execute("workspace.sessions.open", {
+        sessionId,
+        projectPath,
+        requestId: crypto.randomUUID(),
+      })
+      .then((result) => {
+        if (result.status === "accepted" || result.status === "completed")
+          applyWorkspaceSurface("project");
+        else setError(t("That session is no longer available."));
+      })
+      .catch((cause) => setError(voiceError(cause, "That session is no longer available.")));
+  }
+  const currentResultTurn =
+    fullScreen && status === "live" && bodyVisible ? voiceResultTurn : undefined;
+  const acceptedWork =
+    currentResultTurn?.revision === voiceSubmittedWork?.revision ? voiceSubmittedWork : undefined;
+  const storedResultSession = useSession(acceptedWork?.sessionId);
+  const resultSession = acceptedWork
+    ? [storedResultSession, ...props.sessions].find(
+        (session) =>
+          session?.id === acceptedWork.sessionId &&
+          pathKey(session.cwd) === pathKey(acceptedWork.cwd),
+      )
+    : undefined;
+  const resultSessionVisible =
+    resultSession &&
+    !isProjectLocked(resultSession.cwd) &&
+    (props.projects ?? [{ path: target?.cwd ?? props.projectPath ?? "" }]).some(
+      (project) => pathKey(project.path) === pathKey(resultSession.cwd),
+    );
+  const resultTurnId = resultSessionVisible
+    ? currentExecutionTools(resultSession.blocks).turnId
+    : undefined;
+  const boundedSession =
+    resultSession &&
+    acceptedWork &&
+    resultTurnId &&
+    resultTurnId !== acceptedWork.previousTurnId &&
+    resultSession.blocks.find((block) => block.id === resultTurnId)?.text.trim() ===
+      acceptedWork.text
+      ? resultSession
+      : undefined;
+  const resultActivities = currentResultTurn
+    ? visibleToolActivities.filter((entry) => entry.startedAt >= currentResultTurn.since)
+    : [];
+  const visiblePresentation =
+    currentResultTurn && presentedResult ? presentedResult.result : undefined;
+  // A lock change after the read hides the report: its figures were filtered under the old lock.
+  const visibleUsage =
+    currentResultTurn &&
+    usageReport?.revision === currentResultTurn.revision &&
+    usageReport.lock === getGroupLockView()
+      ? usageReport.report
+      : undefined;
+  const hasLiveResults = Boolean(
+    visiblePresentation ||
+    visibleUsage ||
+    voiceLiveResults(boundedSession, resultActivities).length,
+  );
+  const visibleDestination =
+    currentResultTurn &&
+    workDestination?.revision === currentResultTurn.revision &&
+    !isProjectLocked(workDestination.target.projectPath) &&
+    !choice &&
+    !jobReview
+      ? workDestination.target
+      : undefined;
+  const hasWorkPanel = hasLiveResults || Boolean(visibleDestination);
+  const workPanelOpen = hasWorkPanel && hiddenResults !== currentResultTurn?.revision;
+  const onWorkspaceOutlet = props.onWorkspaceOutlet;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Publishes the mounted call drawer to the shell's existing pane owners.
+  useLayoutEffect(() => {
+    if (
+      !fullScreen ||
+      !onWorkspaceOutlet ||
+      !visibleDestination ||
+      !workPanelOpen ||
+      !workPanel.current
+    )
+      return;
+    onWorkspaceOutlet({
+      ...visibleDestination,
+      element: workPanel.current,
+      overlay: workspaceOverlay,
+    });
+    return () => onWorkspaceOutlet(undefined);
+  }, [fullScreen, onWorkspaceOutlet, visibleDestination, workPanelOpen, workspaceOverlay]);
+  function enterFullScreen() {
+    if (detached) dock();
+    setOpen(true);
+    setFullScreen(true);
+  }
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Moves DOM focus into the shared overlay after the fullscreen transition.
+  useLayoutEffect(() => {
+    if (fullScreen) compactToggle.current?.focus();
+  }, [fullScreen]);
   useVoiceOverlayHost({
     detached: open && detached,
     level: audioLevel,
@@ -3041,21 +4228,35 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     onPosition: setPosition,
     onPopOut: (placement) => void popOut(placement),
   });
-  const moveLabel = t(
-    canDetach
-      ? "Move voice window. Drag outside the app to float it. Use arrow keys to reposition."
-      : "Move voice window. Use arrow keys to reposition.",
-  );
-  if (open && detached) return <VoiceReturnButton ref={launcher} onReturn={dock} />;
-  if (!open)
-    return (
+  // Where the closed launcher docks; the open panel follows the same footer or rail (styles .panel[data-dock]).
+  const launcherSlot = useVoiceLauncherSlot();
+  const dockMode = launcherSlot
+    ? launcherSlot.hasAttribute("data-compact")
+      ? "rail"
+      : "footer"
+    : undefined;
+  const moveName = t("Move voice window");
+  const moveHint = canDetach
+    ? t("Drag outside the app to float it. Use arrow keys to reposition.")
+    : t("Use arrow keys to reposition.");
+  if (open && detached && !props.wakeControls)
+    return <VoiceReturnButton ref={launcher} onReturn={dock} />;
+  const launcherControl =
+    !open || props.wakeControls ? (
       <VoiceLauncher
         ref={launcher}
         visual={settings.visual}
         name={identity.name}
         avatar={assistantSnapshot?.profile.avatar}
         state={visualState}
+        returnToWindow={open && detached}
+        wakeControls={props.wakeControls}
         onOpen={() => {
+          if (open) {
+            if (detached) dock();
+            else panel.current?.focus();
+            return;
+          }
           try {
             const saved = JSON.parse(localStorage.getItem("bycoda:voice-position") ?? "null") as {
               x?: unknown;
@@ -3074,17 +4275,17 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           setOpen(true);
         }}
       />
-    );
+    ) : null;
+  if (!open || detached) return <>{launcherControl}</>;
   const handle = (
     <Button
       touchTarget="control"
       iconOnly
       variant="ghost"
-      label={moveLabel}
+      label={moveName}
+      aria-description={moveHint}
       className={styles.drag}
-      onDoubleClick={() => {
-        if (compact) setCompact(false);
-      }}
+      stretch={compact}
       data-drag-handle=""
       onKeyDown={panelDrag.onHandleKeyDown}
     >
@@ -3101,7 +4302,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       )}
     </Button>
   );
-  return (
+  const companionPanel = (
     <Text
       as="section"
       size="caption"
@@ -3109,28 +4310,69 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       leading="inherit"
       ref={panel}
       aria-label={t("Voice companion")}
+      role={fullScreen ? "dialog" : undefined}
+      aria-modal={fullScreen || undefined}
       {...surfaceAttributes(
         {
-          variant: "floating",
+          variant: fullScreen ? "opaque-canvas" : "floating",
           frame: detaching ? "focus" : shownError ? "danger" : "pane",
-          radius: compact ? "pill" : "panel",
+          radius: fullScreen ? undefined : compact ? "pill" : "panel",
         },
         styles.panel,
       )}
       data-compact={compact || undefined}
+      data-full-screen={fullScreen || undefined}
+      data-live-call={(fullScreen && status === "live") || undefined}
+      data-work-panel={(fullScreen && workPanelOpen) || undefined}
+      data-dock={dockMode}
       data-detaching={detaching || undefined}
       data-voice-state={visualState}
       tabIndex={-1}
       style={
-        position ? { left: position.x, top: position.y, right: "auto", bottom: "auto" } : undefined
+        position && !fullScreen
+          ? { left: position.x, top: position.y, right: "auto", bottom: "auto" }
+          : undefined
       }
     >
       <VoiceCompanionView
         compact={compact}
         status={status}
-        handle={handle}
-        headerDrag={panelDrag.header}
-        resize={<VoicePanelResize panel={panel} onPosition={setPosition} />}
+        phase={phase}
+        handle={fullScreen ? null : handle}
+        headerDrag={fullScreen ? undefined : panelDrag.header}
+        resize={fullScreen ? null : <VoicePanelResize panel={panel} onPosition={setPosition} />}
+        fullScreen={fullScreen}
+        workPanelRef={workPanel}
+        workPanelRequest={workPanelRequest}
+        workPanelLabel={
+          visibleDestination?.kind === "tools"
+            ? t("Conversation tools")
+            : visibleDestination?.kind === "session"
+              ? t("Sessions")
+              : undefined
+        }
+        workPanelToggleRef={workPanelToggle}
+        onToggleWorkPanel={
+          hasWorkPanel
+            ? workPanelOpen
+              ? closeWorkPanel
+              : () => setHiddenResults(undefined)
+            : undefined
+        }
+        showWorkPanel={fullScreen && workPanelOpen}
+        workPanel={
+          fullScreen && workPanelOpen && !visibleDestination ? (
+            <VoiceLiveWorkspace
+              session={boundedSession}
+              activities={resultActivities}
+              presented={visiblePresentation}
+              presentedVersion={presentedResult?.version}
+              onPresentedAction={runPresentedAction}
+              usageReport={visibleUsage}
+            />
+          ) : null
+        }
+        onToggleFullScreen={fullScreen ? exitFullScreen : enterFullScreen}
         panel={panel}
         sideKey={choice?.id ?? jobReview?.id}
         visualState={visualState}
@@ -3138,7 +4380,6 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         audioLevel={audioLevel}
         title={identity.title}
         name={identity.name}
-        avatar={assistantSnapshot?.profile.avatar}
         scopeTitle={scopeTitle}
         targetTitle={target?.title}
         summary={summary}
@@ -3148,15 +4389,12 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         statusText={statusText}
         sessionStatusText={sessionStatusText}
         startDisabled={!target && !props.workspace}
-        engine={realtime ? realtime.name : t("This computer")}
         privacy={
           realtime
             ? t("Voice runs on {p1}. Audio is sent to the provider while voice is on.", {
                 p1: realtime.name,
               })
-            : t(
-                "Audio is processed on this computer. Replies use the session’s signed-in provider. No API key required.",
-              )
+            : ""
         }
         pushHint={
           status === "live" && muted && pushToTalkBinding
@@ -3165,8 +4403,14 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         }
         workspace={Boolean(props.workspace)}
         globalScope={globalScope}
-        canDetach={canDetach}
+        canDetach={canDetach && !fullScreen}
         toolActivities={visibleToolActivities}
+        voiceWork={
+          <VoiceWorkList
+            entries={visibleWork}
+            onOpenSession={props.workspace ? openWorkSession : undefined}
+          />
+        }
         chatTurns={chatTurns}
         error={shownError}
         onDismissError={() => setError("")}
@@ -3222,9 +4466,11 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
               />
             ) : (
               <div>
-                <p>{t("The selected project is no longer visible.")}</p>
+                <Text as="p" size="inherit" tone="inherit">
+                  {t("The selected project is no longer visible.")}
+                </Text>
                 <Button disabled={jobReview.busy} onClick={cancelJobReview}>
-                  {t("Cancel review")}
+                  {t("Cancel")}
                 </Button>
               </div>
             )
@@ -3256,6 +4502,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           />
         }
         onScopeChange={(value) => {
+          if (scopeRef.current !== value && pendingChoice.current?.spoken) releaseChoice();
           scopeRef.current = value;
           setGlobalScope(value);
           clearHistoryLoadNotice();
@@ -3271,7 +4518,10 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         onStart={() => void start()}
         onClose={close}
         onDismiss={dismiss}
-        onToggleCompact={() => setCompact(!compact)}
+        onToggleCompact={() => {
+          exitFullScreen();
+          setCompact(!compact);
+        }}
         onToggleMute={toggleMute}
         onToggleSpeaker={toggleSpeaker}
         onSilence={() => client.current?.silence()}
@@ -3279,5 +4529,11 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         onManualChange={setManualTurnEnd}
       />
     </Text>
+  );
+  return (
+    <>
+      {launcherControl}
+      <OverlayParent.Provider value={workspaceOverlay}>{companionPanel}</OverlayParent.Provider>
+    </>
   );
 }

@@ -5,8 +5,12 @@ export type ModelSwitchState = {
   harness: HarnessId;
   /** Account label at switch time; providers without accounts leave it out. */
   account?: string;
+  /** Account id at switch time; the row resolves its number and colour from it. Old rows lack it. */
+  accountId?: string;
   /** Model display name at switch time. */
   model: string;
+  /** Effort label at switch time; the row shows it only when it differs from the state before. */
+  effort?: string;
 };
 
 export type ModelSwitchStep = ModelSwitchState & {
@@ -25,7 +29,13 @@ const MAX_STEPS = 50;
 const MAX_LABEL = 200;
 
 export function sameSwitchState(a: ModelSwitchState, b: ModelSwitchState): boolean {
-  return a.harness === b.harness && a.account === b.account && a.model === b.model;
+  return (
+    a.harness === b.harness &&
+    a.account === b.account &&
+    a.accountId === b.accountId &&
+    a.model === b.model &&
+    a.effort === b.effort
+  );
 }
 
 /**
@@ -42,7 +52,11 @@ export function withModelSwitch(
 ): Session {
   let session = input;
   if (!session.blocks.some((block) => block.role === "user")) return session;
-  const step: ModelSwitchStep = { ...stateOf(to), at, ...(to.note ? { note: to.note } : {}) };
+  const step: ModelSwitchStep = {
+    ...stateOf(to),
+    at,
+    ...(to.note ? { note: to.note } : {}),
+  };
   const deferred = lastSwitchIndex(session.blocks);
   const pending = deferred >= 0 ? lastStep(session.blocks[deferred]) : undefined;
   if (pending?.note === "deferred") {
@@ -121,11 +135,15 @@ export function sanitizeModelSwitch(value: unknown): ModelSwitchMeta | undefined
     const model = label(step.model);
     if (!model || typeof step.at !== "number" || !Number.isFinite(step.at)) return [];
     const account = label(step.account);
+    const accountId = label(step.accountId);
+    const effort = label(step.effort);
     return [
       {
         harness: step.harness as HarnessId,
         ...(account ? { account } : {}),
+        ...(accountId ? { accountId } : {}),
         model,
+        ...(effort ? { effort } : {}),
         at: step.at,
         ...(step.note === "deferred" || step.note === "summary" ? { note: step.note } : {}),
       },
@@ -144,7 +162,9 @@ function stateOf(state: ModelSwitchState): ModelSwitchState {
   return {
     harness: state.harness,
     ...(state.account ? { account: state.account } : {}),
+    ...(state.accountId ? { accountId: state.accountId } : {}),
     model: state.model,
+    ...(state.effort ? { effort: state.effort } : {}),
   };
 }
 

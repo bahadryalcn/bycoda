@@ -36,6 +36,10 @@ describe("agent defaults", () => {
       parseAgentDefaults({ streamingTextMode: "adaptive" }, current.agentDefaults),
     ).toMatchObject({ resumeAtReset: false, streamingTextMode: "adaptive" });
   });
+  it("keeps usage limit failover off until the owner picks a target", () => {
+    expect(DEFAULT_AGENT_DEFAULTS.usageLimitFailover).toBe("off");
+    expect(parseAgentDefaults({ usageLimitFailover: "order" }).usageLimitFailover).toBe("order");
+  });
   it.each([
     { resumeAtReset: "true" },
     { keepAwakeHoldAfter: 0 },
@@ -44,6 +48,7 @@ describe("agent defaults", () => {
     { version: Infinity },
     { schemaVersion: 2 },
     { streamingTextMode: "fast" },
+    { usageLimitFailover: "pool" },
   ])("rejects invalid patch %j", (patch) => {
     expect(() => parseAgentDefaults(patch)).toThrow();
   });
@@ -135,5 +140,130 @@ describe("archive capability gating", () => {
       running: async () => false,
     });
     expect(await archive.tick()).toBe(0);
+  });
+});
+
+describe("automatic archive pass budget", () => {
+  const day = 86_400_000;
+  const settings = { ...DEFAULT_AGENT_DEFAULTS, archiveInactiveDays: 7 };
+  type Fake = { id: string; project: string; updatedAt: number; extra?: Record<string, unknown> };
+  function fixture(
+    fakes: Fake[],
+    options: {
+      hang?: string;
+      draft?: (id: string, devices?: string[]) => boolean | undefined;
+      budget?: { deadlineMs?: number; passDeadlineMs?: number };
+    } = {},
+  ) {
+    const archived = new Set<string>();
+    const loaded: string[] = [];
+    const deviceReads: string[] = [];
+    const draftDevices: (string[] | undefined)[] = [];
+    const projects = [...new Set(fakes.map((fake) => fake.project))];
+    const engine = {
+      store: {
+        projects: async () => projects.map((id) => ({ id })),
+        summaries: async (projectId: string) =>
+          fakes
+            .filter((fake) => fake.project === projectId)
+            .map((fake) => ({
+              id: fake.id,
+              status: "idle",
+              updatedAt: fake.updatedAt,
+              archived: archived.has(fake.id),
+              ...fake.extra,
+            })),
+        session: async (id: string) => {
+          loaded.push(id);
+          if (id === options.hang) await new Promise(() => {});
+          const fake = fakes.find((item) => item.id === id)!;
+          return {
+            status: "idle",
+            archived: false,
+            updatedAt: fake.updatedAt,
+            session: { blocks: [], busy: false },
+          };
+        },
+        updateSession: async (id: string) => void archived.add(id),
+      },
+      sessionStoreWrite: (_id: string, work: () => Promise<void>) => work(),
+    };
+    const archive = createDefaultsAutoArchive({
+      engine: engine as never,
+      limits: { settings: async () => ({ agentDefaults: settings }) } as never,
+      queued: async () => false,
+      running: async () => false,
+      draftDevices: async () => {
+        deviceReads.push("read");
+        return ["phone"];
+      },
+      hasUnsentDraft: async (id, _window, devices) => {
+        draftDevices.push(devices);
+        return options.draft ? options.draft(id, devices) : false;
+      },
+      now: () => now,
+      ...options.budget,
+    });
+    return { archive, archived, loaded, deviceReads, draftDevices };
+  }
+  const old = now - 30 * day;
+
+  it("loads no transcript for recent, pinned or unresolved summaries", async () => {
+    const run = fixture([
+      { id: "recent", project: "p", updatedAt: now - 2 * day },
+      { id: "pinned", project: "p", updatedAt: old, extra: { pinned: true } },
+      { id: "asking", project: "p", updatedAt: old, extra: { needsInput: true } },
+      { id: "drafting", project: "p", updatedAt: old, extra: { draft: true } },
+      { id: "stale", project: "p", updatedAt: old },
+    ]);
+    expect(await run.archive.tick()).toBe(1);
+    expect(run.loaded).toEqual(["stale"]);
+    expect([...run.archived]).toEqual(["stale"]);
+  });
+
+  it("shares the pass's device list and refreshes it only before archiving", async () => {
+    const run = fixture(
+      [
+        { id: "a", project: "p", updatedAt: old },
+        { id: "b", project: "p", updatedAt: old },
+        { id: "c", project: "q", updatedAt: old },
+      ],
+      { draft: (id) => (id === "b" ? true : id === "c" ? undefined : false) },
+    );
+    expect(await run.archive.tick()).toBe(1);
+    expect(run.deviceReads).toHaveLength(1);
+    expect(run.draftDevices).toEqual([["phone"], undefined, ["phone"], ["phone"]]);
+    expect([...run.archived]).toEqual(["a"]);
+  });
+
+  it("gives a hung session its own deadline instead of starving later projects", async () => {
+    const run = fixture(
+      [
+        { id: "hung", project: "p", updatedAt: old },
+        { id: "later", project: "q", updatedAt: old },
+      ],
+      { hang: "hung", budget: { deadlineMs: 20, passDeadlineMs: 5_000 } },
+    );
+    await expect(run.archive.tick()).rejects.toThrow(/timed out/);
+    expect([...run.archived]).toEqual(["later"]);
+  });
+
+  it("checks the current paired devices before archiving a session", async () => {
+    const run = fixture([{ id: "stale", project: "p", updatedAt: old }], {
+      draft: (_id, devices) => (devices ? false : true),
+    });
+    expect(await run.archive.tick()).toBe(0);
+    expect([...run.archived]).toEqual([]);
+  });
+
+  it("resumes after the last reached session when the pass budget runs out", async () => {
+    const run = fixture(
+      ["a", "b", "c"].map((id, index) => ({ id, project: `p${index}`, updatedAt: old })),
+      { budget: { passDeadlineMs: 0 } },
+    );
+    expect(await run.archive.tick()).toBe(1);
+    expect(await run.archive.tick()).toBe(1);
+    expect(await run.archive.tick()).toBe(1);
+    expect([...run.archived]).toEqual(["a", "b", "c"]);
   });
 });

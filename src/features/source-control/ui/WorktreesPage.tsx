@@ -1,15 +1,18 @@
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { describeLocalError, presentRemoteError } from "../../connections/public/remoteFailure";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import styles from "./WorktreesPage.module.css";
 import { t, useLocale } from "../../../shared/i18n/git";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { useRemoteSupports } from "../../connections/public/remoteCapabilities";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { WorktreeRow } from "./WorktreeRow";
 import { DeleteWorktreeDialog } from "./DeleteWorktreeDialog";
 import { SearchableProjectPicker } from "../../projects/public/SearchableProjectPicker";
 import { SettingsFeedback } from "../../../shared/ui/settings";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Heading } from "../../../shared/ui/Heading";
 import { Plus, RefreshCw } from "../../../shared/ui/icons";
 import { revealPath } from "../../../platform/tauri/fs";
@@ -25,6 +28,13 @@ import {
   type RemoveWorktree,
   type Worktree,
 } from "../model/worktrees";
+import {
+  checkRemoteWorktreeRemoval,
+  removeRemoteWorktree,
+  reviewRemoteWorktreeRemoval,
+  REMOTE_WORKTREE_REMOVAL,
+  type RemoteWorktreeRemovalReview,
+} from "../model/remoteWorktrees";
 import { WorkspacePolicySettings } from "../../workspaces/ui/WorkspacePolicySettings";
 import type { ManagedWorkspace } from "../../workspaces/model/contracts";
 import {
@@ -70,23 +80,29 @@ export function WorktreesPage({
   const [project, setProject] = useState(cwd === "~" ? (projects[0]?.path ?? "") : cwd);
   const { data, error: loadError, refresh } = useProjectWorktrees(project);
   const rawWorktrees = data?.worktrees.filter((tree) => !tree.isMain) ?? [];
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<{ title: string; details: string }>();
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<Worktree>();
+  const [remoteReview, setRemoteReview] = useState<{
+    project: string;
+    tree: Worktree;
+    review: RemoteWorktreeRemovalReview;
+  }>();
+  const [reviewingPath, setReviewingPath] = useState<string>();
+  const reviewRequest = useRef<object | undefined>(undefined);
   const [refreshing, setRefreshing] = useState(false);
   const removals = useBackgroundRemovals();
   const [revealFailure, setRevealFailure] = useState<{
     path: string;
     message: string;
   }>();
-  // Create, remove and preflight dispatch to this computer; only listing and Reveal
-  // follow a connected machine's path. Keep those actions off for remote projects.
   const remoteProject = project.startsWith(REMOTE_PATH_PREFIX);
+  const remoteRemovalAvailable = useRemoteSupports(project, REMOTE_WORKTREE_REMOVAL) === true;
   const remoteLifecycleNotice = t(
-    "Creating and deleting worktrees runs on this computer, so it is unavailable for a project on a connected machine.",
+    "Deleting worktrees runs on this computer, so it is unavailable for a project on a connected machine.",
   );
   const [managedWorkspaces, setManagedWorkspaces] = useState<ManagedWorkspace[] | null>(null);
-  const [managedLoading, setManagedLoading] = useState(true);
+  const [managedStatus, setManagedStatus] = useState<"loading" | "failed" | "ready">("loading");
   const managedPaths = new Set(managedWorkspaces?.map((workspace) => pathKey(workspace.path)));
   const worktrees = rawWorktrees.filter((tree) => !managedPaths.has(pathKey(tree.path)));
   const revealWorktree = (path: string) => {
@@ -103,8 +119,8 @@ export function WorktreesPage({
         key={project}
         cwd={project}
         onInventory={(inventory) => {
-          setManagedLoading(inventory === null);
-          if (inventory !== null) setManagedWorkspaces(inventory);
+          setManagedStatus(inventory.status);
+          if (inventory.status === "ready") setManagedWorkspaces(inventory.workspaces);
         }}
         renderHeader={(refreshManaged, managedBusy, managedDisabled) => (
           <header className={styles.header}>
@@ -119,9 +135,12 @@ export function WorktreesPage({
                   setProject(path);
                   setError(undefined);
                   setDeleting(undefined);
+                  setRemoteReview(undefined);
+                  reviewRequest.current = undefined;
+                  setReviewingPath(undefined);
                   setRevealFailure(undefined);
                   setManagedWorkspaces(null);
-                  setManagedLoading(true);
+                  setManagedStatus("loading");
                 }}
               />
               <div className={styles.actions}>
@@ -130,12 +149,11 @@ export function WorktreesPage({
                   variant="secondary"
                   motion="none"
                   type="button"
-                  disabled={!data || remoteProject}
-                  tooltip={remoteProject ? remoteLifecycleNotice : undefined}
+                  disabled={!data}
+                  disabledReason={data ? undefined : t("Loading worktrees…")}
                   onClick={() => setCreating(true)}
-                  className="flex items-center gap-1.5"
+                  startIcon={<Plus className="icon-xs" />}
                 >
-                  <Plus className="icon-xs" />
                   {t("Create worktree")}
                 </Button>
                 <Button
@@ -153,6 +171,13 @@ export function WorktreesPage({
                       : undefined
                   }
                   disabled={!project || managedDisabled}
+                  disabledReason={
+                    !project
+                      ? t("Open a project first.")
+                      : managedDisabled
+                        ? t("Wait for the current operation to finish")
+                        : undefined
+                  }
                   loading={refreshing || managedBusy || (!!project && !data && !loadError)}
                   loadingLabel={t("Refreshing…")}
                   onClick={async () => {
@@ -178,13 +203,10 @@ export function WorktreesPage({
                 data-setting-id="worktree-location"
                 className={styles.location}
               >
-                {t("New worktrees are created in ")}{" "}
-                <Text size="inherit" tone="muted">
-                  {prettyCwd(data.defaultRoot)}
-                </Text>
+                {t("New worktrees are created in {p0}", { p0: prettyCwd(data.defaultRoot) })}
               </Text>
             )}
-            {remoteProject && (
+            {remoteProject && !remoteRemovalAvailable && (
               <Text as="p" size="inherit" tone="secondary">
                 {remoteLifecycleNotice}
               </Text>
@@ -195,7 +217,7 @@ export function WorktreesPage({
         policyCollapsed={!boundary}
         hasWorktreeMatches={(query) =>
           !data ||
-          managedLoading ||
+          managedStatus !== "ready" ||
           !!error ||
           !!loadError ||
           worktrees.some((tree) =>
@@ -207,25 +229,38 @@ export function WorktreesPage({
         }
         renderWorktrees={(query) => (
           <>
-            {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
-            {loadError && <SettingsFeedback state="error">{loadError}</SettingsFeedback>}
+            {error && (
+              <SettingsFeedback state="error" extra={<ErrorDetails detail={error.details} />}>
+                {error.title}
+              </SettingsFeedback>
+            )}
+            {loadError && (
+              <SettingsFeedback state="error" extra={<ErrorDetails detail={loadError} />}>
+                {t("Couldn’t load worktrees")}
+              </SettingsFeedback>
+            )}
             {!data && !loadError && (
-              <LoadingText delay={false} className="py-2">
+              <LoadingText delay={false} inset="row">
                 {t("Loading worktrees…")}
               </LoadingText>
             )}
-            {managedLoading && (
-              <Text as="p" size="inherit" tone="secondary" role="status" className={styles.empty}>
-                {t(
-                  "Managed workspaces are loading. Deletion is unavailable until their status is known.",
-                )}
-              </Text>
+            {managedStatus === "loading" && (
+              <LoadingText delay={false} inset="row">
+                {t("Loading managed workspaces…")}
+              </LoadingText>
             )}
-            {data && !worktrees.length && !managedWorkspaces?.length && (
-              <Text as="p" size="inherit" tone="secondary" className={styles.empty}>
-                {t("Create a worktree to work on another branch in a separate folder.")}
-              </Text>
-            )}
+            {data &&
+              managedStatus === "ready" &&
+              !worktrees.length &&
+              !managedWorkspaces?.length && (
+                <EmptyState
+                  size="inline"
+                  inset="row"
+                  description={t(
+                    "Create a worktree to work on another branch in a separate folder.",
+                  )}
+                />
+              )}
             {worktrees
               .filter((tree) =>
                 `${tree.path} ${tree.branch ?? tree.head}`
@@ -252,10 +287,16 @@ export function WorktreesPage({
                 const deleteDisabledReason =
                   warning ??
                   (remoteProject
-                    ? remoteLifecycleNotice
-                    : managedLoading
+                    ? !remoteRemovalAvailable
+                      ? remoteLifecycleNotice
+                      : reviewingPath === tree.path
+                        ? t("Checking worktree removal…")
+                        : undefined
+                    : managedStatus === "loading"
                       ? t("Wait for managed workspaces to load.")
-                      : undefined);
+                      : managedStatus === "failed"
+                        ? t("Deletion is unavailable until Refresh succeeds.")
+                        : undefined);
                 return (
                   <WorktreeRow
                     key={tree.path}
@@ -274,7 +315,41 @@ export function WorktreesPage({
                     onReveal={() => revealWorktree(tree.path)}
                     onDelete={() => {
                       setError(undefined);
-                      setDeleting(tree);
+                      if (!remoteProject) {
+                        if (managedStatus !== "ready") return;
+                        setDeleting(tree);
+                        return;
+                      }
+                      const request = {};
+                      reviewRequest.current = request;
+                      setReviewingPath(tree.path);
+                      void reviewRemoteWorktreeRemoval(project, tree.path)
+                        .then(
+                          (review) => {
+                            if (reviewRequest.current !== request) return;
+                            setRemoteReview({
+                              project,
+                              review,
+                              tree: {
+                                ...tree,
+                                branch: review.branch,
+                                head: review.head,
+                                dirty: !!review.status,
+                                unpushed: review.unpushed,
+                              },
+                            });
+                          },
+                          (failure) => {
+                            if (reviewRequest.current === request)
+                              setError({
+                                title: t("Couldn’t review the worktree for removal"),
+                                details: presentRemoteError(failure, { explicit: true }),
+                              });
+                          },
+                        )
+                        .finally(() => {
+                          if (reviewRequest.current === request) setReviewingPath(undefined);
+                        });
                     }}
                   />
                 );
@@ -294,12 +369,53 @@ export function WorktreesPage({
           onCancel={() => setCreating(false)}
         />
       )}
+      {remoteReview?.project === project && (
+        <DeleteWorktreeDialog
+          cwd={project}
+          tree={remoteReview.tree}
+          sessionCount={remoteReview.review.sessionIds.length}
+          ignoredEntryCount={remoteReview.review.ignoredEntryCount}
+          ignoredEntryPaths={remoteReview.review.ignoredEntryPaths}
+          onRemove={async (cwd, path, force, deleteSessions, deleteBranch) => {
+            checkRemoteWorktreeRemoval(remoteReview.review);
+            try {
+              const removed = await removeRemoteWorktree(
+                cwd,
+                path,
+                remoteReview.review,
+                force && !!(remoteReview.review.status || remoteReview.review.ignoredEntryCount),
+                !deleteSessions,
+                deleteBranch,
+              );
+              if (removed.branchNotice)
+                setError({
+                  title: t("The worktree was removed, but its branch was kept."),
+                  details: removed.branchNotice,
+                });
+            } finally {
+              await refresh();
+            }
+          }}
+          onClose={() => setRemoteReview(undefined)}
+          onDeleted={() => {
+            setRemoteReview(undefined);
+            if (isEqualOrInside(project, remoteReview.tree.path)) {
+              const main = data?.worktrees.find((item) => item.isMain);
+              if (main) setProject(main.path);
+            }
+          }}
+        />
+      )}
       {deleting && (
         <DeleteWorktreeDialog
           cwd={project}
           tree={deleting}
           sessionCount={worktreeSessionIds(deleting, liveSessions).length}
-          onRemove={async (cwd, path, force, deleteSessions) => {
+          onRemove={async (cwd, path, force, deleteSessions, deleteBranch) => {
+            if (managedStatus !== "ready") {
+              throw new Error(t("Deletion is unavailable until Refresh succeeds."));
+            }
+            if (managedPaths.has(pathKey(path))) throw new Error(t("This is a managed workspace."));
             // Check predictable blockers before the dialog closes; nothing is destroyed yet.
             await onCheckRemove(cwd, path, force);
             const tree = deleting;
@@ -309,27 +425,43 @@ export function WorktreesPage({
               try {
                 if (sessionIds.length && deleteSessions) {
                   if (!onDeleteSessions) {
-                    throw new Error("Sessions still use this worktree and could not be deleted.");
+                    throw new Error(
+                      t("Sessions still use this worktree and could not be deleted."),
+                    );
                   }
                   if (!(await onDeleteSessions(sessionIds))) {
                     throw new Error(
-                      "Some sessions could not be deleted, so the worktree was kept.",
+                      t("Some sessions could not be deleted, so the worktree was kept."),
                     );
                   }
                   sessionsDeleted = true;
                 }
-                await onRemove(cwd, path, force, !deleteSessions);
+                const removed = deleteBranch
+                  ? await onRemove(cwd, path, force, !deleteSessions, undefined, true)
+                  : await onRemove(cwd, path, force, !deleteSessions);
+                if (removed?.branchNotice)
+                  setError({
+                    title: t("The worktree was removed, but its branch was kept."),
+                    details: removed.branchNotice,
+                  });
                 if (isEqualOrInside(project, path)) {
                   const main = data?.worktrees.find((item) => item.isMain);
                   if (main) setProject(main.path);
                 }
               } catch (error) {
+                // The cause keeps the redaction and `Error:` stripping of describeLocalError.
                 const failure = sessionsDeleted
                   ? new Error(
-                      `The sessions were deleted, but the worktree was kept. ${String(error)}`,
+                      describeLocalError(
+                        error,
+                        t("The sessions were deleted, but the worktree was kept."),
+                      ),
                     )
                   : error;
-                setError(presentRemoteError(failure, { explicit: true }));
+                setError({
+                  title: t("Couldn’t delete this worktree"),
+                  details: presentRemoteError(failure, { explicit: true }),
+                });
                 throw failure;
               } finally {
                 // The row stays blocked until a fresh listing replaces its saved session IDs.

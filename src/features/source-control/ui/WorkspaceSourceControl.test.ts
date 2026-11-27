@@ -6,7 +6,6 @@ import { WorkspaceSourceControl } from "./WorkspaceSourceControl";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import type { Worktree } from "../model/worktrees";
 import { saveWorkspaceProjectNames } from "../../workspace/model/tabGroups";
-import { OPEN_WORKTREE_MANAGEMENT } from "../model/worktreeManagement";
 
 const { notify, discovery, discover } = vi.hoisted(() => ({
   notify: vi.fn(),
@@ -14,6 +13,7 @@ const { notify, discovery, discover } = vi.hoisted(() => ({
   discovery: {
     modules: {} as Record<string, string[]>,
     error: undefined as string | undefined,
+    limits: {} as Record<string, string>,
     refresh: vi.fn(),
   },
 }));
@@ -46,7 +46,6 @@ vi.mock("../../../shared/ui/SearchableSelect", () => ({
       ),
     ),
 }));
-vi.mock("../hooks/useProjectDiffStats", () => ({ useProjectDiffStats: () => null }));
 vi.mock("./GitPanelSections", () => ({
   GitPanelSections: (props: {
     cwd: string;
@@ -80,41 +79,29 @@ vi.mock("./GitChangesPanel", () => ({
     repository?: {
       name: string;
       expanded?: boolean;
+      nested?: boolean;
+      scope?: { only: boolean; onToggle: () => void };
       onToggle: (value: boolean) => void;
     };
     onOpenFile: (path: string, kind: string) => void;
     onOpenInEditor: (path: string, pin: boolean) => void;
     onOpenAllChanges: (kind: string) => void;
     onOpenCommit: (commit: { sha: string }) => void;
-    checkout?: {
-      label: string;
-      value: string;
-      options: { value: string; title: string }[];
-      onChange: (value: string) => void;
-    };
+    checkout?: { onRefresh: () => void };
   }) =>
     createElement(
       "section",
       {
         "data-cwd": props.cwd,
         "data-compact": !!props.repository,
-        "data-checkout-label": props.checkout?.label,
+        "data-has-checkout": !!props.checkout,
+        "data-nested": !!props.repository?.nested,
+        "data-scope": props.repository?.scope
+          ? props.repository.scope.only
+            ? "only"
+            : "all"
+          : undefined,
       },
-      // The real panel hosts this choice inside its branch picker.
-      props.checkout
-        ? createElement(
-            "select",
-            {
-              "aria-label": "Working copy",
-              value: props.checkout.value,
-              onChange: (event: { target: { value: string } }) =>
-                props.checkout!.onChange(event.target.value),
-            },
-            props.checkout.options.map((option) =>
-              createElement("option", { key: option.value, value: option.value }, option.title),
-            ),
-          )
-        : null,
       createElement(
         "button",
         {
@@ -127,6 +114,7 @@ vi.mock("./GitChangesPanel", () => ({
       createElement("button", { onClick: () => props.onOpenInEditor("same.ts", true) }, "editor"),
       createElement("button", { onClick: () => props.onOpenAllChanges("unstaged") }, "all"),
       createElement("button", { onClick: () => props.onOpenCommit({ sha: "abc" }) }, "commit"),
+      createElement("button", { onClick: () => props.repository?.scope?.onToggle() }, "scope"),
     ),
 }));
 let host: HTMLDivElement;
@@ -141,6 +129,7 @@ beforeEach(() => {
   discover.mockClear();
   discovery.modules = {};
   discovery.error = undefined;
+  discovery.limits = {};
   discovery.refresh.mockClear();
   host = document.createElement("div");
   document.body.append(host);
@@ -386,6 +375,15 @@ it("retains known repositories on a discovery error and offers refresh", async (
   expect(notify).toHaveBeenCalledWith("/wallet/api/core-pack", "checkout");
 });
 
+it("lists repositories found before a size limit and says the scan was limited, not failed", async () => {
+  discovery.modules = { "/wallet/api": ["/wallet/api/core-pack"] };
+  discovery.limits = { "/wallet/api": "entries" };
+  await render();
+  expect(host.querySelectorAll("section")).toHaveLength(3);
+  expect(host.textContent).toContain("(scan limited)");
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+});
+
 it("recognizes Windows submodule paths already registered with different separators and casing", async () => {
   discovery.modules = { "G:\\repo": ["G:/repo/core-pack"] };
   await render(["G:\\repo", "g:\\repo\\CORE-PACK"]);
@@ -408,9 +406,15 @@ const tree = (path: string, extra: Partial<Worktree> = {}): Worktree => ({
 const trees = {
   "/repo": tree("/repo", { isMain: true }),
   "/t/mine": tree("/t/mine", { dirty: true }),
+  "/t/work": tree("/t/work", { dirty: true }),
   "/t/idle": tree("/t/idle"),
+  "/t/idle2": tree("/t/idle2"),
 };
-const renderCheckouts = (cwd = "/t/mine/src", worktrees: Record<string, Worktree> = trees) =>
+const renderCheckouts = (
+  cwd = "/t/mine/src",
+  worktrees: Record<string, Worktree> = trees,
+  focusPath?: string,
+) =>
   act(async () =>
     root.render(
       createElement(WorkspaceSourceControl, {
@@ -418,140 +422,151 @@ const renderCheckouts = (cwd = "/t/mine/src", worktrees: Record<string, Worktree
         paths: Object.keys(worktrees),
         worktrees,
         checkouts: true,
+        focusPath,
         enabled: true,
         onOpen: opened,
       }),
     ),
   );
-it("shows editable checkout sections and discovered child repositories in the all view", async () => {
-  discovery.modules = { "/repo": ["/repo/mobile"], "/t/mine": [], "/t/idle": [] };
+const mounted = () => [...host.querySelectorAll("section")].map((panel) => panel.dataset.cwd);
+const text = (path: string) => host.querySelector<HTMLElement>(`[data-cwd="${path}"]`)!;
+const scopeButton = (path: string) =>
+  [...text(path).querySelectorAll("button")].find((button) => button.textContent === "scope")!;
+const cleanTrees = Object.fromEntries(
+  Object.entries(trees).map(([path, item]) => [path, { ...item, dirty: false }]),
+);
+
+it("has no tabs and no worktree selector in the overview", async () => {
   await renderCheckouts();
-  await choose("");
-  expect([...host.querySelectorAll("section")].map((panel) => panel.dataset.cwd)).toEqual([
-    "/repo",
-    "/repo/mobile",
-    "/t/mine",
-    "/t/idle",
-  ]);
-  expect(discover).toHaveBeenLastCalledWith(Object.keys(trees), true, true);
-  const current = host.querySelector('[data-cwd="/t/mine"] button')!;
-  expect(current.getAttribute("aria-expanded")).toBe("true");
-  const mobile = host.querySelector('[data-cwd="/repo/mobile"]')!;
-  expect(mobile.textContent).toContain("mobile");
-  expect(mobile.querySelector("button")!.getAttribute("aria-expanded")).toBe("false");
-  await act(async () =>
-    [...mobile.querySelectorAll("button")].find((button) => button.textContent === "diff")!.click(),
+  expect(host.querySelector("select")).toBeNull();
+  expect(host.querySelector('[role="tab"]')).toBeNull();
+});
+it("lists only worktrees with uncommitted changes as same-level sections, session first", async () => {
+  await renderCheckouts();
+  // The clean project folder and the clean worktrees live in the header picker, not here.
+  expect(mounted()).toEqual(["/t/mine", "/t/work"]);
+  // Same level: every section sits directly in the overview, with no indent wrapper.
+  for (const section of host.querySelectorAll("section")) {
+    expect(section.parentElement!.parentElement).toBe(
+      host.querySelector("[data-checkout-overview]"),
+    );
+  }
+  expect(host.textContent).not.toContain("With changes");
+  expect(host.textContent).not.toContain("Clean");
+  expect(host.textContent).not.toContain("idle");
+});
+it("opens the first section and leaves the others one click away", async () => {
+  await renderCheckouts();
+  expect(text("/t/mine").querySelector("button")!.getAttribute("aria-expanded")).toBe("true");
+  expect(text("/t/work").querySelector("button")!.getAttribute("aria-expanded")).toBe("false");
+  await act(async () => text("/t/work").querySelector("button")!.click());
+  expect(text("/t/work").querySelector("button")!.getAttribute("aria-expanded")).toBe("true");
+});
+it("runs child-repository discovery only for the listed sections", async () => {
+  await renderCheckouts();
+  expect(discover).toHaveBeenLastCalledWith(["/t/mine", "/t/work"], true, true);
+  for (const call of discover.mock.calls) expect(call[0]).not.toContain("/t/idle");
+});
+it("shows the session worktree when no worktree has uncommitted changes", async () => {
+  await renderCheckouts("/t/mine/src", cleanTrees);
+  expect(mounted()).toEqual(["/t/mine"]);
+});
+it("never counts an unknown state as changes: such a worktree is not a section", async () => {
+  const unknown = Object.fromEntries(
+    Object.entries(trees).map(([path, item]) => [path, { ...item, dirty: null }]),
   );
-  expect(opened).toHaveBeenLastCalledWith({
-    type: "diff",
-    cwd: "/repo/mobile",
-    path: "same.ts",
-    kind: "staged",
-  });
+  await renderCheckouts("/t/mine/src", unknown);
+  expect(mounted()).toEqual(["/t/mine"]);
 });
-it("defaults checkouts mode to the session checkout with the full panel", async () => {
+it("keeps expansion and scroll across remounts of the same session", async () => {
   await renderCheckouts();
-  expect(host.querySelectorAll("section")).toHaveLength(1);
-  expect(host.querySelector("section")!.dataset.cwd).toBe("/t/mine");
-  expect(host.querySelector("section")!.getAttribute("data-compact")).toBe("false");
-  expect(host.querySelector("select")!.value).toBe("/t/mine");
-  await act(async () =>
-    [...host.querySelectorAll("button")].find((b) => b.textContent === "diff")!.click(),
-  );
-  expect(opened.mock.calls[0][0]).toMatchObject({ cwd: "/t/mine" });
-});
-it("falls back to the main folder outside every checkout", async () => {
-  await renderCheckouts("/elsewhere");
-  expect(host.querySelector("section")!.dataset.cwd).toBe("/repo");
-});
-it("independently expands checkout changes and preserves expansion across target selection", async () => {
-  await renderCheckouts();
-  await choose("");
-  expect(host.querySelectorAll("section")).toHaveLength(3);
+  await act(async () => text("/t/work").querySelector("button")!.click());
   const overview = host.querySelector<HTMLElement>("[data-checkout-overview]")!;
   overview.scrollTop = 120;
   overview.dispatchEvent(new Event("scroll"));
-  const toggle = host.querySelector<HTMLButtonElement>('[data-cwd="/t/idle"] button')!;
-  expect(toggle.getAttribute("aria-expanded")).toBe("false");
-  await act(async () => toggle.click());
-  expect(toggle.getAttribute("aria-expanded")).toBe("true");
-  expect(host.querySelector('[data-cwd="/t/mine"] button')!.getAttribute("aria-expanded")).toBe(
-    "true",
-  );
-  await choose("/t/idle");
-  expect(host.querySelector("section")!.dataset.cwd).toBe("/t/idle");
-  await choose("");
-  expect(host.querySelector('[data-cwd="/t/idle"] button')!.getAttribute("aria-expanded")).toBe(
-    "true",
-  );
+  await renderCheckouts(undefined, trees, "/t/idle");
+  expect(mounted()).toEqual(["/t/idle"]);
+  await renderCheckouts();
+  expect(text("/t/work").querySelector("button")!.getAttribute("aria-expanded")).toBe("true");
   expect(host.querySelector<HTMLElement>("[data-checkout-overview]")!.scrollTop).toBe(120);
 });
-it("opens worktree management from the overview without retargeting or deleting a checkout", async () => {
-  const request = vi.fn();
-  window.addEventListener(OPEN_WORKTREE_MANAGEMENT, request);
-  try {
-    await renderCheckouts();
-    await choose("");
-    const buttons = host.querySelectorAll<HTMLButtonElement>('[aria-label="Manage worktrees…"]');
-    expect(buttons).toHaveLength(1);
-    await act(async () => buttons[0].click());
-    expect((request.mock.calls[0][0] as CustomEvent).detail).toEqual({
-      cwd: "/t/mine/src",
-      deletePath: undefined,
-    });
-    expect(host.querySelector("select")!.value).toBe("");
-    expect(opened).not.toHaveBeenCalled();
-  } finally {
-    window.removeEventListener(OPEN_WORKTREE_MANAGEMENT, request);
-  }
-});
-
-it("persists the checkout choice, including all checkouts, across remounts", async () => {
-  await renderCheckouts();
-  await choose("/t/idle");
-  await act(async () => root.unmount());
-  root = createRoot(host);
-  await renderCheckouts();
-  expect(host.querySelector("section")!.dataset.cwd).toBe("/t/idle");
-  await choose("");
-  await act(async () => root.unmount());
-  root = createRoot(host);
-  await renderCheckouts();
-  expect(host.querySelector("[data-checkout-overview]")).not.toBeNull();
-});
-
-it("retains a selected child repository while discovery is pending and falls back only after confirmed removal", async () => {
-  discovery.modules = { "/repo": ["/repo/mobile"] };
-  await renderCheckouts();
-  await choose("/repo/mobile");
-  expect(host.querySelector("section")!.dataset.cwd).toBe("/repo/mobile");
-  await remount();
-  discovery.modules = {};
-  await renderCheckouts();
-  expect(host.querySelector("select")!.value).toBe("/repo/mobile");
-  expect(host.querySelector("section")!.dataset.cwd).toBe("/repo/mobile");
-  discovery.modules = { "/repo": [] };
-  await renderCheckouts();
-  expect(host.querySelector("section")!.dataset.cwd).toBe("/t/mine");
-});
-
-it("merges the checkout choice into the panel for one checkout and keeps the top selector in the overview", async () => {
-  await renderCheckouts();
+it("shows only the focused worktree as one panel with no overview", async () => {
+  await renderCheckouts("/t/mine/src", trees, "/t/idle");
+  expect(mounted()).toEqual(["/t/idle"]);
   const panel = host.querySelector<HTMLElement>("section")!;
-  expect(panel.dataset.checkoutLabel).toBe("mine");
-  // The only selector is the one the panel hosts; no separate top header row.
-  expect(host.querySelectorAll("select")).toHaveLength(1);
-  expect(panel.contains(host.querySelector("select"))).toBe(true);
-  expect(host.querySelector('[aria-label="Manage worktrees…"]')).toBeNull();
-  expect(host.querySelector('[aria-label="Refresh source control"]')).toBeNull();
-  await choose("/t/idle");
-  expect(host.querySelector("section")!.dataset.cwd).toBe("/t/idle");
-  expect(host.querySelector("section")!.dataset.checkoutLabel).toBe("idle");
-
-  await choose("");
-  const top = host.querySelector("select")!;
-  expect(host.querySelector("[data-checkout-overview]")!.contains(top)).toBe(false);
-  expect(top.getAttribute("aria-label")).toBe("Working copy");
-  expect(host.querySelector('[aria-label="Manage worktrees…"]')).not.toBeNull();
-  expect(host.querySelector("[data-checkout-label]")).toBeNull();
+  expect(panel.getAttribute("data-compact")).toBe("false");
+  expect(panel.dataset.hasCheckout).toBe("true");
+  expect(host.querySelector("[data-checkout-overview]")).toBeNull();
+  expect(host.querySelector("select")).toBeNull();
+  expect(discover).toHaveBeenLastCalledWith(["/t/idle"], true, true);
+  await act(async () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "diff")!.click(),
+  );
+  expect(opened.mock.calls[0][0]).toMatchObject({ cwd: "/t/idle" });
+});
+it("treats the project folder as a focus like any worktree", async () => {
+  await renderCheckouts("/t/mine/src", trees, "/repo");
+  expect(mounted()).toEqual(["/repo"]);
+});
+it("lists a focused worktree and its separate repositories as same-level sections", async () => {
+  discovery.modules = { "/t/idle": ["/t/idle/pkg"] };
+  await renderCheckouts("/t/mine/src", trees, "/t/idle");
+  expect(mounted()).toEqual(["/t/idle", "/t/idle/pkg"]);
+  // No indent wrapper for the nested repository: it sits at the root section level.
+  expect(text("/t/idle/pkg").parentElement!.className).toBe(
+    text("/t/idle").parentElement!.className,
+  );
+  expect(text("/t/idle/pkg").parentElement!.parentElement).toBe(
+    text("/t/idle").parentElement!.parentElement,
+  );
+  expect(text("/t/idle/pkg").dataset.nested).toBe("true");
+  expect(text("/t/idle").dataset.nested).toBe("false");
+  expect(host.textContent).not.toContain("Separate repository");
+});
+it("never lists another worktree as a separate repository of the focused one", async () => {
+  // A worktree that lives inside the project folder is found by child discovery too.
+  discovery.modules = { "/repo": ["/repo/mobile", "/t/work", "/t/idle"] };
+  await renderCheckouts("/t/mine/src", trees, "/repo");
+  expect(mounted()).toEqual(["/repo", "/repo/mobile"]);
+  const mobile = text("/repo/mobile");
+  expect(mobile.querySelector("button")!.getAttribute("aria-expanded")).toBe("false");
+  expect(mobile.dataset.nested).toBe("true");
+});
+it("narrows to one repository from its menu, persists it per project and shows all again", async () => {
+  discovery.modules = { "/repo": ["/repo/mobile"] };
+  await renderCheckouts("/t/mine/src", trees, "/repo");
+  expect(text("/repo").dataset.scope).toBe("all");
+  await act(async () => scopeButton("/repo/mobile").click());
+  expect(mounted()).toEqual(["/repo/mobile"]);
+  expect(text("/repo/mobile").dataset.scope).toBe("only");
+  expect(localStorage.getItem("bycoda.sourceControl.onlyRepository.v1:/repo")).toBe("/repo/mobile");
+  // The choice survives a remount.
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  resetRetainedState();
+  await renderCheckouts("/t/mine/src", trees, "/repo");
+  expect(mounted()).toEqual(["/repo/mobile"]);
+  await act(async () => scopeButton("/repo/mobile").click());
+  expect(mounted()).toEqual(["/repo", "/repo/mobile"]);
+  expect(localStorage.getItem("bycoda.sourceControl.onlyRepository.v1:/repo")).toBeNull();
+});
+it("offers the single-repository toggle only when there are several sections", async () => {
+  await renderCheckouts("/t/mine/src", trees, "/t/idle");
+  expect(text("/t/idle").dataset.scope).toBeUndefined();
+});
+it("falls back to the overview when the focused worktree left the list", async () => {
+  await renderCheckouts("/t/mine/src", trees, "/t/gone");
+  expect(host.querySelector("[data-checkout-overview]")).not.toBeNull();
+  expect(mounted()).toEqual(["/t/mine", "/t/work"]);
+});
+it("falls back to the project folder outside every worktree", async () => {
+  await renderCheckouts("/elsewhere", cleanTrees);
+  expect(mounted()).toEqual(["/repo"]);
+});
+it("drops the retired per-session checkout choices once", async () => {
+  localStorage.setItem("bycoda.sourceControl.checkout.v1:/t/mine", "/t/idle");
+  await renderCheckouts();
+  expect(localStorage.getItem("bycoda.sourceControl.checkout.v1:/t/mine")).toBeNull();
+  // The stored choice no longer retargets the panel.
+  expect(mounted()).toEqual(["/t/mine", "/t/work"]);
 });

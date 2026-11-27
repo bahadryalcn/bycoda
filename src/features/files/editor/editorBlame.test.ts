@@ -21,6 +21,7 @@ function open(doc: string, onOpenCommit = vi.fn()): EditorView {
 
 afterEach(() => {
   for (const view of views.splice(0)) view.destroy();
+  vi.useRealTimers();
 });
 
 function entry(line: number, sha: string, author = "Ann"): GitBlameLine {
@@ -133,9 +134,18 @@ describe("editorBlame", () => {
   it("shows the hover card with sha, author, date and subject", async () => {
     const view = open(doc);
     await load(view, view.state.doc, blame);
+    vi.useFakeTimers();
     const first = view.dom.querySelector(".cm-blameCommit") as HTMLElement;
     first.dispatchEvent(new MouseEvent("mouseenter"));
+    vi.advanceTimersByTime(449);
+    expect(document.body.querySelector(".cm-blameCard")).toBeNull();
+    vi.advanceTimersByTime(1);
     const card = document.body.querySelector(".cm-blameCard");
+    expect(card?.getAttribute("data-surface-variant")).toBe("floating");
+    expect(card?.getAttribute("data-surface-radius")).toBe("popup");
+    expect(card?.getAttribute("data-surface-elevation")).toBe("floating");
+    expect(card?.querySelector(".cm-blameCardSha")?.getAttribute("data-tone")).toBe("muted");
+    expect(card?.querySelector(".cm-blameCardDate")?.getAttribute("data-tone")).toBe("secondary");
     expect(card?.textContent).toContain("aaaaaaa");
     expect(card?.textContent).toContain("Ann");
     expect(card?.textContent).toContain(`commit ${A}`);

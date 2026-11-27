@@ -2,21 +2,21 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { Badge } from "../../../shared/ui/Badge";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Button } from "../../../shared/ui/Button";
 import { ActionHost } from "../../../shared/ui/ActionHost";
-import { Bot } from "../../../shared/ui/icons";
+import { ArrowDownCircle, Bot, Star } from "../../../shared/ui/icons";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { HARNESS_TITLE, type HarnessId } from "../../sessions/model/session";
 import { Toggle } from "../../../shared/ui/settings";
-import type { ProviderAuthState, ProviderAuthTone } from "./providerStatus";
+import type { ProviderAuthState } from "./providerStatus";
 import { useGrokSignInState } from "./providerStatus";
 
-/** Ink of the auth line: a warning for a sign-in or quota problem, danger when exhausted. */
-function authMetaTone(tone: ProviderAuthTone | undefined) {
-  if (tone === "exhausted") return "danger";
+/** Ink of the auth line: a warning for a sign-in or quota problem, danger when exhausted or critically low. */
+function authMetaTone(auth: ProviderAuthState | null) {
+  const tone = auth?.tone;
+  if (tone === "exhausted" || (tone === "low" && auth?.critical)) return "danger";
   if (tone === "signedOut" || tone === "low") return "warning";
   return "secondary";
 }
@@ -42,7 +42,10 @@ export function providerMetaLine(entry: ProviderListEntry, probed: boolean): str
   if (!probed) return t("Checking CLI…");
   if (!entry.available) return entry.harness === "acp" ? t("Add provider") : t("Not installed");
   if (entry.accountSummary && (entry.auth?.tone === "low" || entry.auth?.tone === "exhausted")) {
-    return `${entry.accountSummary}, ${entry.auth.label}`;
+    // A single account's summary is already its auth label; say each status once.
+    return entry.accountSummary.includes(entry.auth.label)
+      ? entry.accountSummary
+      : `${entry.accountSummary}, ${entry.auth.label}`;
   }
   return entry.accountSummary ?? entry.auth?.label ?? "";
 }
@@ -54,7 +57,6 @@ function ProviderListItem({
   disabled,
   onSelect,
   onPickerVisible,
-  onSetup,
 }: {
   entry: ProviderListEntry;
   probed: boolean;
@@ -62,7 +64,6 @@ function ProviderListItem({
   disabled: boolean;
   onSelect: (harness: HarnessId) => void;
   onPickerVisible: (harness: HarnessId, visible: boolean) => void;
-  onSetup: (harness: HarnessId) => void;
 }) {
   const { harness, available } = entry;
   const title = HARNESS_TITLE[harness];
@@ -81,6 +82,7 @@ function ProviderListItem({
         controlHeight="auto"
         padding={{ block: "xl", inline: "md" }}
         disabled={disabled}
+        disabledReason={t("Wait for the current action to finish.")}
         className="provider-cli-option"
         tooltip={title}
         tooltipWhen="overflow"
@@ -112,21 +114,21 @@ function ProviderListItem({
               {title}
             </Text>
             {entry.isDefault ? (
-              <Badge size="xs" tone="neutral" className="shrink-0">
-                {t("Default")}
-              </Badge>
+              <Tooltip label={t("Default provider")}>
+                <Star className="icon-xs shrink-0" tone="warning" fill="currentColor" aria-hidden />
+              </Tooltip>
             ) : null}
             {entry.updateAvailable ? (
-              <Badge size="xs" tone="warning" className="shrink-0">
-                {t("Update available")}
-              </Badge>
+              <Tooltip label={t("Update available")}>
+                <ArrowDownCircle className="icon-xs shrink-0" tone="accent" aria-hidden />
+              </Tooltip>
             ) : null}
           </Text>
           {meta ? (
             <Text
               as="span"
               size="caption"
-              tone={authMetaTone(entry.auth?.tone)}
+              tone={authMetaTone(entry.auth)}
               leading="snug"
               truncate
               className="provider-cli-option-meta"
@@ -137,28 +139,14 @@ function ProviderListItem({
         </span>
       </Button>
       {available ? (
-        <Tooltip label={t("Show {p0} in the model picker", { p0: title })}>
-          <span className="provider-cli-item-action" data-action-inline>
-            <Toggle
-              label={t("Show {p0} in the model picker", { p0: title })}
-              on={entry.inPicker}
-              onChange={(visible) => onPickerVisible(harness, visible)}
-              disabled={entry.pickerLocked || disabled}
-            />
-          </span>
-        </Tooltip>
-      ) : probed && harness !== "acp" ? (
-        <Button
-          size="sm"
-          variant="ghost"
-          className="provider-cli-item-action"
-          data-action-inline
-          disabled={disabled}
-          aria-label={t("Set up {p0}", { p0: title })}
-          onClick={() => onSetup(harness)}
-        >
-          {t("Set up")}
-        </Button>
+        <span className="provider-cli-item-action" data-action-inline>
+          <Toggle
+            label={t("Show {p0} in the model picker", { p0: title })}
+            on={entry.inPicker}
+            onChange={(visible) => onPickerVisible(harness, visible)}
+            disabled={entry.pickerLocked || disabled}
+          />
+        </span>
       ) : null}
     </ActionHost>
   );
@@ -175,7 +163,6 @@ export function ProviderList({
   disabled,
   onSelect,
   onPickerVisible,
-  onSetup,
 }: {
   entries: ProviderListEntry[];
   active: HarnessId | null;
@@ -183,7 +170,8 @@ export function ProviderList({
   disabled: boolean;
   onSelect: (harness: HarnessId) => void;
   onPickerVisible: (harness: HarnessId, visible: boolean) => void;
-  onSetup: (harness: HarnessId) => void;
+  /** Unused: selecting a missing provider opens its setup in the detail pane. */
+  onSetup?: (harness: HarnessId) => void;
 }) {
   useLocale();
   const grokAuth = useGrokSignInState(
@@ -206,7 +194,6 @@ export function ProviderList({
       disabled={disabled}
       onSelect={onSelect}
       onPickerVisible={onPickerVisible}
-      onSetup={onSetup}
     />
   );
   return (

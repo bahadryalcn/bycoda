@@ -13,6 +13,7 @@ mod assistant_server_observation;
 pub(crate) mod assistant_session_observation;
 #[path = "assistant/standing_consent.rs"]
 mod assistant_standing_consent;
+mod attachment_export;
 mod automations;
 mod azure_devops;
 pub mod build_info;
@@ -46,6 +47,7 @@ mod gitlab;
 mod handoff_history;
 mod harness;
 mod harness_updates;
+mod host_lifecycle;
 mod host_ws;
 mod html_preview;
 mod inbox_media;
@@ -63,6 +65,8 @@ mod macos;
 #[cfg(target_os = "macos")]
 mod macos_background;
 mod mcp;
+pub use mcp::remote_config::maybe_run as maybe_run_mcp_config_helper;
+mod local_browser_preview;
 mod menu;
 mod messaging;
 mod mobile_pty;
@@ -146,6 +150,7 @@ mod sync_owner;
 mod system_permissions;
 mod terminal_completion;
 mod terminal_profiles;
+mod termius_command;
 mod termius_import;
 mod termius_keys;
 mod termius_reader;
@@ -156,6 +161,7 @@ mod turn_probe;
 mod turn_steps;
 mod voice_overlay;
 mod webview_args;
+mod webview_recovery;
 mod window;
 mod window_fullscreen;
 mod window_glass_state;
@@ -455,6 +461,7 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(session_links::init())
         .plugin(native_window_lifecycle::init())
+        .plugin(webview_recovery::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
@@ -485,6 +492,7 @@ pub fn run() {
         .manage(ssh_execution::SshExecutionReviews::default())
         .manage(std::sync::Arc::new(ssh_execution::SshExecutions::default()))
         .manage(window_transfer::WindowTransferState::new())
+        .manage(native_workspace::editor_buffers::EditorBuffers::default())
         .manage(session_store::window_barrier::WindowBarrier::new())
         .on_page_load(|webview, payload| {
             native_window_lifecycle::on_page_load(webview, payload);
@@ -510,6 +518,7 @@ pub fn run() {
                 remote_routes::init(&directory);
             }
             remote_routes::watch_better_routes(app.handle().clone());
+            remote_files::sweep_in_background(app.handle().clone());
             file_access::init(app.handle())?;
             package_smoke::prepare(app.handle())?;
             session_store::init(app.handle())?;
@@ -518,6 +527,7 @@ pub fn run() {
             reminders::init(app.handle());
             // Keep this computer's host in step with the desktop it shipped with.
             if !package_smoke::active() {
+                host_lifecycle::start(app.handle());
                 bundled_host::start(app.handle());
             }
             conversation_tools_bridge::start_desktop_relay(app.handle().clone());
@@ -526,7 +536,7 @@ pub fn run() {
             tray::install(app.handle())?;
             desktop_shortcut::init(app.handle())?;
             if !package_smoke::active() {
-                desktop_control_window::init(app.handle()).map_err(std::io::Error::other)?;
+                desktop_control_window::init(app.handle());
                 assistant_presence::init(app.handle()).map_err(std::io::Error::other)?;
             }
             #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -560,6 +570,12 @@ pub fn run() {
             |_context, request, responder| html_preview::respond_async(request, responder),
         )
         .invoke_handler(tauri::generate_handler![
+            local_browser_preview::local_browser_preview_open,
+            local_browser_preview::local_browser_preview_layout,
+            local_browser_preview::local_browser_preview_navigate,
+            local_browser_preview::local_browser_preview_reload,
+            local_browser_preview::local_browser_preview_location,
+            local_browser_preview::local_browser_preview_close,
             package_smoke::package_smoke_dom_proof,
             build_info::build_identity,
             native_authority_checkpoint::native_renderer_checkpoint,
@@ -577,16 +593,11 @@ pub fn run() {
             worktrees::managed_worktree_removal_plan,
             worktrees::managed_worktree_removal_apply,
             native_workspace::managed_workspace_buffers,
-            native_workspace::managed_workspace_buffer_recovery_list,
-            native_workspace::managed_workspace_buffer_recovery_read,
-            native_workspace::managed_workspace_buffer_recovery_status,
-            native_workspace::managed_workspace_host_buffer_recovery_list,
-            native_workspace::managed_workspace_host_buffer_recovery_read,
-            native_workspace::managed_workspace_host_buffer_recovery_status,
             native_editor_drafts::native_editor_draft_put,
             native_editor_drafts::native_editor_draft_open,
             native_editor_drafts::native_editor_draft_read_current,
             native_editor_drafts::native_editor_draft_read_recovery,
+            native_editor_drafts::native_editor_draft_hide_recovery,
             native_editor_drafts::native_editor_draft_inventory,
             native_editor_drafts::native_editor_draft_clear_saved,
             remote::remote_machines,
@@ -616,6 +627,7 @@ pub fn run() {
             ssh_forward::ssh_forward_start,
             ssh_forward::ssh_forward_stop,
             ssh_forward::ssh_forward_list,
+            ssh_forward::ssh_forward_retry_now,
             ssh_security::ssh_config_preview,
             ssh_configuration::ssh_group_defaults_list,
             ssh_configuration::ssh_group_defaults_save,
@@ -644,9 +656,13 @@ pub fn run() {
             remote::remote_connect,
             inline_visual::inline_visual_read,
             local_host::local_host_connect,
+            local_host::local_host_reconnect,
             local_host::local_host_status,
             local_host::local_host_start,
+            host_lifecycle::switch::local_host_mode,
+            host_lifecycle::switch::local_host_set_mode,
             bundled_host::local_host_bundle_status,
+            bundled_host::local_host_update_activity,
             bundled_host::local_host_bundle_update,
             generic_acp::generic_acp_list,
             generic_acp::generic_acp_save,
@@ -659,6 +675,9 @@ pub fn run() {
             remote::remote_disconnect,
             remote::remote_close_connection,
             remote::remote_request,
+            remote::browser_frames::remote_browser_frames_open,
+            remote::browser_frames::remote_browser_frames_read,
+            remote::browser_frames::remote_browser_frames_close,
             remote::assistant_native_send,
             remote::assistant_native_finish,
             remote::assistant_native_reconcile,
@@ -669,6 +688,8 @@ pub fn run() {
             remote::host_connection_bulk,
             remote::dev_access::remote_dev_server_url,
             remote::folder_access::remote_open_live_folder,
+            remote::folder_access::remote_media_url,
+            remote::folder_access::remote_media_release,
             remote_files::begin_remote_file_copy,
             remote_files::cached_remote_file_copy,
             remote_files::append_remote_file_copy,
@@ -724,6 +745,7 @@ pub fn run() {
             social_bridge::harness_social_bridge,
             runtime_logs_bridge::harness_runtime_logs_bridge,
             conversation_tools_bridge::harness_conversation_tools_bridge,
+            conversation_tools_bridge::ssh_execution::server_ssh_session_activity,
             default_cwd,
             home_dir,
             path_environment,
@@ -732,9 +754,10 @@ pub fn run() {
             presence::get_user_presence,
             system_permissions::system_permissions_status,
             system_permissions::system_permission_request,
-            system_permissions::helper_window::system_permission_helper_show,
-            system_permissions::helper_window::system_permission_helper_close,
-            system_permissions::helper_window::system_permission_helper_reveal_app,
+            system_permissions::reveal_permission_app,
+            system_permissions::drag_permission_app,
+            system_permissions::show_permission_helper,
+            system_permissions::close_permission_helper,
             notifications::notification_permission,
             notifications::assistant_notification_capability,
             notifications::request_notification_permission,
@@ -774,10 +797,13 @@ pub fn run() {
             file_access::revoke_file_access,
             file_access::get_file_access_mode,
             file_access::configure_file_access,
+            file_access::get_file_access_recoveries,
+            file_access::dismiss_file_access_recovery,
             fs::open_path_with_default_app,
             fs::claude_sessions,
             session_transfer::provider_transfer_session,
             fs::list_dir,
+            fs::list_dir_stamp,
             fs::list_project_files,
             fs::git_diff_stats,
             fs::git_diff_index,
@@ -827,6 +853,7 @@ pub fn run() {
             fs::git_github_pr_checks,
             fs::git_github_check_details,
             inbox_media::fetch_inbox_media,
+            inbox_media::cancel_inbox_media,
             gitlab::checks::gitlab_pr_checks,
             gitlab::checks::gitlab_check_details,
             gitlab::checks::gitlab_list_projects,
@@ -877,6 +904,7 @@ pub fn run() {
             jira::jira_issue_details,
             jira::jira_issue_thread,
             jira::jira_issue_comment,
+            jira::agent_comment::jira_agent_comment_with_images,
             jira::comments::jira_issue_attachment,
             jira::board::jira_list_boards,
             jira::board::jira_board_configuration,
@@ -954,6 +982,7 @@ pub fn run() {
             fs::clone_repo,
             fs::read_file_preview,
             fs::stat_files,
+            fs::list_windows_drives,
             fs::inspect_paths,
             fs::read_file_base64,
             fs::read_attachment_chunk,
@@ -969,6 +998,7 @@ pub fn run() {
             fs::question_attachment::retain_question_attachment,
             fs::question_attachment::release_question_attachment,
             fs::save_generated_image,
+            attachment_export::save_file_copy,
             fs::delete_generated_images,
             fs::large_text::read_text_file,
             fs::large_text::read_text_file_slice,
@@ -995,9 +1025,14 @@ pub fn run() {
             harness::harness_resolve_configured,
             harness::harness_runtime_binary_paths,
             harness::harness_resolve_claude,
+            harness::claude_workflow::harness_claude_workflow_artifacts,
+            harness::claude_workflow::harness_claude_workflow_resolve,
             harness::claude_mcp_list,
             harness::codex_mcp_list,
             mcp::mcp_discover,
+            mcp::oauth_callback::mcp_oauth_callback_bind,
+            mcp::oauth_callback::mcp_oauth_callback_wait,
+            mcp::oauth_callback::mcp_oauth_callback_cancel,
             mcp::enablement::mcp_set_enabled,
             mcp::mcp_add,
             mcp::server_config::mcp_server_config_read,
@@ -1029,6 +1064,7 @@ pub fn run() {
             harness::harness_exec,
             harness::harness_auth_status,
             harness::harness_prepare_text_workspace,
+            harness::harness_remove_text_workspace,
             harness::harness_read_task_output,
             harness::run_shell_command,
             terminal_profiles::terminal_profiles,
@@ -1038,6 +1074,7 @@ pub fn run() {
             harness_updates::harness_latest_version,
             harness_updates::harness_update_check_claim,
             harness_updates::harness_update,
+            harness_updates::harness_update_cancel,
             harness::provider_account_remove,
             account_identity::provider_account_identity,
             account::commands::account_status,
@@ -1063,6 +1100,7 @@ pub fn run() {
             session_store::usage::session_worked_ms,
             provider_usage::provider_model_prices,
             pty::pty_spawn,
+            pty::desktop_worktree_removal_lease,
             pty::command::pty_spawn_command,
             pty::pty_write,
             pty::pty_resize,
@@ -1076,6 +1114,7 @@ pub fn run() {
             session_import::import_discover,
             session_import::import_read_claude,
             session_import::import_read_codex,
+            session_import::import_read_entries,
             session_import::import_placeholder_dir,
             session_store::session_upsert,
             sync_owner::sync_cycle_begin,
@@ -1108,6 +1147,8 @@ pub fn run() {
             session_store::session_import,
             session_store::session_import_keys,
             session_store::session_list_by_project,
+            session_store::project_sessions::session_ids_by_project,
+            session_store::project_sessions::session_delete_by_project,
             session_store::session_rebase_project,
             session_store::session_list_linked,
             session_store::session_list_recent,
@@ -1185,6 +1226,7 @@ pub fn run() {
             desktop_control_window::desktop_control_indicator_stop,
             desktop_control_window::desktop_control_indicator_dismiss,
             desktop_control_window::desktop_control_indicator_fit,
+            desktop_control_window::desktop_control_indicator_watch,
             #[cfg(target_os = "macos")]
             menu::autosave_set_enabled,
             open_new_window,
@@ -1198,6 +1240,7 @@ pub fn run() {
             window::quit_commit_dialog,
             window::quit_ready,
             window::quit_finalization::request_app_restart,
+            window::quit_finalization::request_app_quit,
             window_glass_state::set_window_glass_enabled,
             window_fullscreen::set_window_fullscreen,
             voice_overlay::voice_overlay_open,
@@ -1205,6 +1248,7 @@ pub fn run() {
             voice_overlay::voice_overlay_nudge,
             voice_overlay::voice_overlay_room,
             voice_overlay::voice_overlay_close,
+            voice_system_speech::voice_system_speech,
             voice_overlay::voice_overlay_show_owner,
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             quick_composer::quick_composer_set_enabled,
@@ -1303,6 +1347,10 @@ pub fn run() {
                 .into_iter()
                 .find(|window| window.label() == label)
             {
+                #[cfg(windows)]
+                if workspace.is_visible().unwrap_or(false) {
+                    tray::windows::revealed(handle, &label);
+                }
                 let _ = window::ensure_window_reachable(&workspace);
             }
         }
@@ -1312,14 +1360,24 @@ pub fn run() {
             ..
         } => {
             voice_overlay::window_destroyed(handle, &label);
+            local_browser_preview::detach_window(&label);
             window_transfer::window_closed(handle, &label);
             handle
                 .state::<remote::RemoteConnections>()
                 .detach_window(&label);
             ssh_window_lifecycle::close(&label);
-            handle
+            // Detach under the lock here; each reap waits for its ssh child to die,
+            // so it runs off the event loop. Exit joins this reaper.
+            let forwards = handle
                 .state::<ssh_forward::SshForwards>()
-                .kill_window(&label);
+                .detach_window(&label);
+            if !forwards.is_empty() {
+                spawn_tracked_reap(handle, move |handle| {
+                    handle
+                        .state::<ssh_forward::SshForwards>()
+                        .reap_detached(forwards);
+                });
+            }
             ssh_sftp::kill_window(&label);
             handle
                 .state::<ssh_http_proxy_credentials::HttpProxyCredentials>()
@@ -1395,41 +1453,56 @@ pub fn run() {
             window::request_quit(handle);
         }
         tauri::RunEvent::Exit => {
-            diagnostics::clear_recovered_on_exit();
-            diagnostics::flush_logs();
-            assistant_presence::shutdown(handle);
-            conversation_tools_bridge::shutdown_ssh_executions();
-            if handle
-                .try_state::<desktop_control_window::State>()
-                .is_some()
-            {
-                desktop_control_window::shutdown(handle);
-            }
-            if let Some(host) = handle.try_state::<harness::HarnessHost>() {
-                host.shutdown_provider_output();
-            }
-            native_authority_runtime::shutdown(handle);
-            let _ = native_workspace::retire_buffers(handle);
-            ssh_window_lifecycle::shutdown();
-            if let Some(state) = handle.try_state::<keep_awake::KeepAwakeState>() {
-                state.shutdown();
-            }
-            ssh_sftp::shutdown();
-            handle
-                .state::<ssh_http_proxy_credentials::HttpProxyCredentials>()
-                .shutdown();
-            handle
-                .state::<std::sync::Arc<ssh_execution::SshExecutions>>()
-                .shutdown();
-            handle.state::<ssh_forward::SshForwards>().kill_all();
-            handle
-                .state::<ssh_agent_forwarding::AgentForwardingReviews>()
-                .kill_all();
-            handle.state::<remote::RemoteConnections>().shutdown();
-            finish_reaping_on_exit(handle);
+            // Teardown and child reaping run off the event loop under one deadline,
+            // so a wedged ssh child, lock or remote teardown cannot freeze quit.
+            let (teardown_app, reap_app) = (handle.clone(), handle.clone());
+            window::exit_shutdown::run_bounded(
+                move || teardown_on_exit(&teardown_app),
+                move || finish_reaping_on_exit(&reap_app),
+            );
         }
         _ => {}
     });
+}
+
+/// The ordered exit teardown, run on one thread by `window::exit_shutdown`. The
+/// order matters: provider output and the native authority stop before the native
+/// buffers retire, and buffer retirement needs the Host transport, so
+/// `RemoteConnections::shutdown` stays last.
+fn teardown_on_exit(handle: &tauri::AppHandle) {
+    diagnostics::clear_recovered_on_exit();
+    diagnostics::flush_logs();
+    assistant_presence::shutdown(handle);
+    conversation_tools_bridge::stop_desktop_relay();
+    conversation_tools_bridge::shutdown_ssh_executions();
+    if handle
+        .try_state::<desktop_control_window::State>()
+        .is_some()
+    {
+        desktop_control_window::shutdown(handle);
+    }
+    if let Some(host) = handle.try_state::<harness::HarnessHost>() {
+        host.shutdown_provider_output();
+    }
+    native_authority_runtime::shutdown(handle);
+    ssh_window_lifecycle::shutdown();
+    if let Some(state) = handle.try_state::<keep_awake::KeepAwakeState>() {
+        state.shutdown();
+    }
+    ssh_sftp::shutdown();
+    handle
+        .state::<ssh_http_proxy_credentials::HttpProxyCredentials>()
+        .shutdown();
+    handle
+        .state::<std::sync::Arc<ssh_execution::SshExecutions>>()
+        .shutdown();
+    handle
+        .state::<ssh_forward::SshForwards>()
+        .kill_all_within(ssh_forward::EXIT_REAP_BUDGET);
+    handle
+        .state::<ssh_agent_forwarding::AgentForwardingReviews>()
+        .kill_all();
+    handle.state::<remote::RemoteConnections>().shutdown();
 }
 
 /// Kills every harness and terminal child. Blocks on taskkill, so callers
@@ -1457,21 +1530,14 @@ pub(crate) fn spawn_tracked_reap(
     }
 }
 
-/// Exit must reap children before the process ends, but a wedged taskkill
-/// must not hang quit. The kills and the join of background reapers share one
-/// deadline; past it the process exits and the OS drops what is left.
+/// Exit must reap children before the process ends: kills every harness and
+/// terminal child, then joins the background reapers. `window::exit_shutdown`
+/// runs it under the exit deadline, so a wedged taskkill cannot hang quit.
 fn finish_reaping_on_exit(handle: &tauri::AppHandle) {
-    const EXIT_REAP_DEADLINE: std::time::Duration = std::time::Duration::from_secs(3);
-    let (done, finished) = std::sync::mpsc::channel();
-    let app = handle.clone();
-    std::thread::spawn(move || {
-        reap_harness_children(&app);
-        if let Some(host) = app.try_state::<pty::PtyHost>() {
-            host.join_reapers();
-        }
-        let _ = done.send(());
-    });
-    let _ = finished.recv_timeout(EXIT_REAP_DEADLINE);
+    reap_harness_children(handle);
+    if let Some(host) = handle.try_state::<pty::PtyHost>() {
+        host.join_reapers();
+    }
 }
 
 #[cfg(all(debug_assertions, target_os = "macos"))]
@@ -1482,6 +1548,9 @@ pub fn ensure_macos_dev_bundle() {
 #[cfg(any(target_os = "linux", test))]
 #[path = "voice/media_origin.rs"]
 mod voice_media_origin;
+
+#[path = "voice/system_speech.rs"]
+mod voice_system_speech;
 
 #[cfg(test)]
 mod tests {

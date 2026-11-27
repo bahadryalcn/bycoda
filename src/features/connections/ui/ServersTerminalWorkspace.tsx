@@ -1,5 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useContext, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
   registerSshWorkspaceUi,
   type SshWorkspaceUiOwner,
@@ -7,19 +7,20 @@ import {
 } from "../model/sshMobileWorkspaceControl";
 import { invoke } from "@tauri-apps/api/core";
 import { TerminalView } from "../../terminal/ui/TerminalView";
-import { ToolHeader } from "../../../app/shell/ToolNavigation";
+import { ToolHeader, ToolNavigationContext } from "../../../app/shell/ToolNavigation";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { Button } from "../../../shared/ui/Button";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
-import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { confirmCloseTerminal } from "../../terminal/model/terminalClose";
 import { ArrowLeft, Terminal, X } from "../../../shared/ui/icons";
-import { Badge, StatusBadge } from "../../../shared/ui/Badge";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n";
 import type { ServerRecord, SshEndpoint } from "../model/serverInventory";
+import { errorText } from "../../../shared/lib/errors";
+import { sanitizeConnectionError } from "../model/remoteConnection";
 import { serverTerminalRestoreState } from "../model/serverTerminalRestoreState";
 import { ServerTerminalRestoreControls } from "./ServerTerminalRestoreControls";
 import { SshConfigurationConnectReview } from "./SshConfigurationConnectReview";
@@ -27,7 +28,8 @@ import { useSshHttpProxyApproval } from "./useSshHttpProxyApproval";
 import { SshRunbookQueue } from "./SshRunbookQueue";
 import { requestSshStartupReviews } from "../model/sshRunbookQueue";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { ServerTerminalSession } from "./ServerTerminalSession";
+import { ServerTerminalSession, ServerTerminalStatus } from "./ServerTerminalSession";
+import { ServerTerminalAgent } from "./ServerTerminalAgent";
 import { TerminalContext, type SshTerminalOpenResult } from "./serversTerminalContext";
 
 export {
@@ -47,6 +49,8 @@ export function ServersTerminalWorkspace({
   visible?: boolean;
 }) {
   useLocale();
+  const navigation = useContext(ToolNavigationContext);
+  const windowControls = !IS_MAC ? <WindowControls /> : null;
   const proxyApproval = useSshHttpProxyApproval();
   const startupNotified = useRef(new Set<string>());
   const mounted = useRef(true);
@@ -71,7 +75,7 @@ export function ServersTerminalWorkspace({
   const [active, setActive] = useState<string | null>(null);
   const closingRef = useRef(new Set<string>());
   const [closing, setClosing] = useState<Set<string>>(new Set());
-  const [closeError, setCloseError] = useState("");
+  const [closeNotice, setCloseNotice] = useState<{ title: string; details?: string }>();
   const removeTerminal = (id: string) => {
     const snapshot = terminalSnapshot.current;
     const index = snapshot.findIndex((value) => value.id === id);
@@ -100,7 +104,7 @@ export function ServersTerminalWorkspace({
     if (!terminal) return;
     closingRef.current.add(id);
     setClosing(new Set(closingRef.current));
-    setCloseError("");
+    setCloseNotice(undefined);
     try {
       const ended = terminal.lifecycle === "exited" || terminal.lifecycle === "closed";
       if (
@@ -110,7 +114,10 @@ export function ServersTerminalWorkspace({
         return;
       removeTerminal(id);
     } catch (reason) {
-      setCloseError(String(reason));
+      setCloseNotice({
+        title: t("Could not close the terminal."),
+        details: sanitizeConnectionError(errorText(reason)),
+      });
     } finally {
       closingRef.current.delete(id);
       setClosing(new Set(closingRef.current));
@@ -149,7 +156,7 @@ export function ServersTerminalWorkspace({
   // Never replace an open review: a mobile one owns the phone's resolve callback and busy lock.
   const requestConfigurationReview = (next: NonNullable<typeof configurationReview>) => {
     if (configurationRef.current || mobileReviewBusy.current) {
-      setCloseError(t("Finish the open SSH review first."));
+      setCloseNotice({ title: t("Finish the open SSH review first.") });
       return false;
     }
     setConfigurationReview((configurationRef.current = next));
@@ -261,7 +268,9 @@ export function ServersTerminalWorkspace({
     server: ServerRecord,
     replacingPendingId?: string,
     expectedConfigurationDigest?: string,
-    shellIntegration: "auto" | "bash" | "zsh" | "powershell" = "auto",
+    shellIntegration: "auto" | "bash" | "zsh" | "powershell" | undefined = server.machine
+      ? undefined
+      : "auto",
     name = server.name,
     startupEligible = !replacingPendingId,
     mobile?: { resourceId: string; valid: () => boolean; authorize: () => Promise<boolean> },
@@ -277,10 +286,7 @@ export function ServersTerminalWorkspace({
       {
         id,
         restoreId,
-        name:
-          shellIntegration && shellIntegration !== "auto"
-            ? `${name} · ${shellIntegration === "powershell" ? "PowerShell 7" : shellIntegration === "zsh" ? "Zsh" : "Bash"}`
-            : name,
+        name,
         server,
         expectedConfigurationDigest,
         shellIntegration,
@@ -306,7 +312,7 @@ export function ServersTerminalWorkspace({
           resolve("cancelled");
       });
     else {
-      setCloseError("");
+      setCloseNotice(undefined);
       return (await launch(server, replacingPendingId)) ? "accepted" : "cancelled";
     }
   };
@@ -317,7 +323,8 @@ export function ServersTerminalWorkspace({
         open,
         forwardAgent: async (server, reviewId) => {
           const id = `ssh-agent:${crypto.randomUUID()}`;
-          const approval = authorizeProxy(id, server, undefined, "auto");
+          const shellIntegration = server.machine ? undefined : "auto";
+          const approval = authorizeProxy(id, server, undefined, shellIntegration);
           const httpProxyTicketId = approval ? await approval : undefined;
           if (httpProxyTicketId === null) return;
           // Approval and this tab are ephemeral. Restore can only open an ordinary session.
@@ -329,7 +336,7 @@ export function ServersTerminalWorkspace({
               name: server.name,
               server,
               agentForwardingReviewId: reviewId,
-              shellIntegration: "auto",
+              shellIntegration,
               startupEligible: true,
               httpProxyTicketId,
             },
@@ -375,7 +382,11 @@ export function ServersTerminalWorkspace({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {proxyApproval.dialog}
         <SshRunbookQueue openRequest={reviewQueueRequest} />
-        {closeError ? <InlineError className="px-3 py-1">{closeError}</InlineError> : null}
+        {closeNotice ? (
+          <InlineError inset="row" details={closeNotice.details}>
+            {closeNotice.title}
+          </InlineError>
+        ) : null}
         <div
           id="servers-inventory-content"
           tabIndex={-1}
@@ -390,10 +401,16 @@ export function ServersTerminalWorkspace({
             className={active ? "flex min-h-0 min-w-0 flex-1 flex-col" : "hidden"}
             inert={!active ? true : undefined}
           >
+            {/* The tool navigation (when present) is the only title row; the tab strip below names each terminal. */}
+            {navigation?.active ? (
+              <PaneHeader dragRegion trailing={windowControls}>
+                <ToolHeader>{null}</ToolHeader>
+              </PaneHeader>
+            ) : null}
             <div
               {...surfaceAttributes(
-                { frame: "pane", edge: "bottom" },
-                "flex h-10 min-w-0 shrink-0 items-center",
+                { frame: "pane", edge: "bottom", variant: "workspace-panel" },
+                "flex shrink-0 items-start gap-1 px-2 py-1",
               )}
             >
               <Button
@@ -405,107 +422,70 @@ export function ServersTerminalWorkspace({
               >
                 <ArrowLeft className="icon-sm" />
               </Button>
-              <ToolHeader>
-                <Text
-                  as="div"
-                  size="body"
-                  tone="inherit"
-                  className="flex min-w-0 items-center gap-2 px-3"
-                >
-                  <Terminal aria-hidden className="icon-sm shrink-0" tone="secondary" />
-                  <Text size="inherit" tone="inherit" truncate>
-                    {terminals.find((terminal) => terminal.id === active)?.name ??
-                      t("SSH terminal")}
-                  </Text>
-                  <Badge tone="neutral" size="sm">
-                    SSH
-                  </Badge>
-                </Text>
-              </ToolHeader>
-              {!IS_MAC ? <WindowControls /> : null}
-            </div>
-            <Tabs
-              value={active ?? ""}
-              onValueChange={(id) => {
-                const next = terminals.find((item) => item.id === id);
-                if (!next) return;
-                setActive(next.id);
-                serverTerminalRestoreState.activate(next.restoreId);
-              }}
-            >
-              <TabList
-                {...surfaceAttributes(
-                  { frame: "pane", edge: "bottom", variant: "workspace-panel" },
-                  "flex shrink-0 gap-1 overflow-x-auto px-2 py-1",
-                )}
-                label={t("SSH terminals")}
+              <Tabs
+                value={active ?? ""}
+                onValueChange={(id) => {
+                  const next = terminals.find((item) => item.id === id);
+                  if (!next) return;
+                  setActive(next.id);
+                  serverTerminalRestoreState.activate(next.restoreId);
+                }}
               >
-                {terminals.map((terminal) => (
-                  <ActionHost
-                    key={terminal.id}
-                    selected={active === terminal.id}
-                    data-server-terminal-tab
-                    className="flex min-w-28 max-w-64 shrink-0 items-center"
-                    onAuxClick={(event) => {
-                      if (event.button !== 1) return;
-                      event.preventDefault();
-                      void requestClose(terminal.id);
-                    }}
-                  >
-                    <Tab
-                      value={terminal.id}
-                      tone="neutral"
-                      fullWidth
-                      className="min-w-0 flex-1"
-                      tooltip={terminal.name}
-                      tooltipWhen="overflow"
-                      id={`tab-${terminal.id}`}
-                      controls={`panel-${terminal.id}`}
-                      onKeyDown={(event) => {
-                        if (event.key !== "Delete") return;
+                <TabList className="min-w-0 flex-1" scroll="wrap" label={t("SSH terminals")}>
+                  {terminals.map((terminal) => (
+                    <ActionHost
+                      key={terminal.id}
+                      selected={active === terminal.id}
+                      data-server-terminal-tab
+                      className="flex min-w-28 max-w-64 shrink-0 items-center"
+                      onAuxClick={(event) => {
+                        if (event.button !== 1) return;
                         event.preventDefault();
                         void requestClose(terminal.id);
                       }}
                     >
-                      <Terminal aria-hidden className="icon-sm shrink-0" />
-                      <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
-                        {terminal.name}
-                      </Text>
-                      {!terminal.lifecycle ? (
-                        <WorkingIndicator label={t("Opening…")} />
-                      ) : terminal.lifecycle === "failed" ? (
-                        <StatusBadge status="failed" size="xs" />
-                      ) : (
-                        <Text tone="muted">
-                          {t(
-                            terminal.lifecycle === "opened-on-computer"
-                              ? "Running"
-                              : terminal.lifecycle === "exited"
-                                ? "Terminal closed"
-                                : "Closed",
-                          )}
-                        </Text>
-                      )}
-                    </Tab>
-                    <InlineAction
-                      reveal="always"
-                      motion="none"
-                      loading={closing.has(terminal.id)}
-                      label={`${t("Close terminal")}: ${terminal.name}`}
-                      onClick={() => void requestClose(terminal.id)}
-                      onAuxClick={(event) => {
-                        if (event.button === 1) {
+                      <Tab
+                        value={terminal.id}
+                        tone="neutral"
+                        fullWidth
+                        className="min-w-0 flex-1"
+                        tooltip={terminal.name}
+                        tooltipWhen="overflow"
+                        id={`tab-${terminal.id}`}
+                        controls={`panel-${terminal.id}`}
+                        onKeyDown={(event) => {
+                          if (event.key !== "Delete") return;
                           event.preventDefault();
                           void requestClose(terminal.id);
-                        }
-                      }}
-                    >
-                      <X className="icon-xs" />
-                    </InlineAction>
-                  </ActionHost>
-                ))}
-              </TabList>
-            </Tabs>
+                        }}
+                      >
+                        <Terminal aria-hidden className="icon-sm shrink-0" />
+                        <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+                          {terminal.name}
+                        </Text>
+                        <ServerTerminalStatus lifecycle={terminal.lifecycle} />
+                      </Tab>
+                      <InlineAction
+                        reveal="always"
+                        motion="none"
+                        loading={closing.has(terminal.id)}
+                        label={`${t("Close terminal")}: ${terminal.name}`}
+                        onClick={() => void requestClose(terminal.id)}
+                        onAuxClick={(event) => {
+                          if (event.button === 1) {
+                            event.preventDefault();
+                            void requestClose(terminal.id);
+                          }
+                        }}
+                      >
+                        <X className="icon-xs" />
+                      </InlineAction>
+                    </ActionHost>
+                  ))}
+                </TabList>
+              </Tabs>
+              {navigation?.active ? null : windowControls}
+            </div>
             {terminals.map((terminal) => (
               <div
                 key={terminal.id}
@@ -516,180 +496,194 @@ export function ServersTerminalWorkspace({
                   active === terminal.id ? "flex min-h-0 min-w-0 flex-1 flex-col" : "hidden"
                 }
               >
-                {terminal.keyGenerationPath ? (
-                  <Text wrap="anywhere" as="p" tone="muted" className="shrink-0 px-3 py-2">
-                    {t("Identity file")}: {terminal.keyGenerationPath}
-                  </Text>
-                ) : null}
-                <ServerTerminalSession
-                  name={terminal.name}
-                  lifecycle={terminal.lifecycle}
-                  keyGenerationPath={terminal.keyGenerationPath}
-                  target={terminal.server?.machine?.ssh?.target}
-                  port={terminal.server?.machine?.ssh?.port}
-                  identityFile={terminal.server?.machine?.ssh?.identityFile}
-                  endpoint={
-                    terminal.endpoint ??
-                    terminal.server?.effectiveSshEndpoint ??
-                    terminal.server?.sshEndpoint
+                <ServerTerminalAgent
+                  visible={visible && active === terminal.id}
+                  target={
+                    terminal.keyGenerationPath
+                      ? undefined
+                      : {
+                          terminalId: terminal.id,
+                          serverId: terminal.server?.id,
+                          name: terminal.name,
+                        }
                   }
                 >
-                  {(fontSize, onFontSizeChange, lineHeight) => (
-                    <TerminalView
-                      fontSize={fontSize}
-                      onFontSizeChange={onFontSizeChange}
-                      lineHeight={lineHeight}
-                      id={terminal.id}
-                      cwd=""
-                      onReturnToServers={() => setActive(null)}
-                      onReconnect={
-                        terminal.server && !terminal.agentForwardingReviewId
-                          ? async () => {
-                              // Resolve current policy and request fresh approvals. A reconnect
-                              // creates a raw PTY, never reuses input, tickets or startup scripts.
-                              const servers = await invoke<ServerRecord[]>("server_inventory_list");
-                              const server = servers.find(
-                                (item) => item.id === terminal.server!.id,
-                              );
-                              if (!server) throw new Error(t("Server not found"));
-                              if (server.metadata.sshInheritance)
-                                requestConfigurationReview({ server, startupEligible: false });
-                              else
-                                await launch(
-                                  server,
-                                  undefined,
-                                  undefined,
-                                  undefined,
-                                  server.name,
-                                  false,
-                                );
-                            }
-                          : terminal.endpoint
-                            ? async () => {
-                                const id = `ssh-quick:${crypto.randomUUID()}`;
-                                const endpoint = { ...terminal.endpoint! };
-                                const approval = authorizeProxy(
-                                  id,
-                                  undefined,
-                                  endpoint,
-                                  terminal.shellIntegration,
-                                );
-                                const httpProxyTicketId = approval ? await approval : undefined;
-                                if (httpProxyTicketId === null) return;
-                                setTerminals((previous) => [
-                                  ...previous,
-                                  {
-                                    id,
-                                    restoreId: crypto.randomUUID(),
-                                    name: terminal.name,
-                                    endpoint,
-                                    shellIntegration: terminal.shellIntegration,
-                                    httpProxyTicketId,
-                                  },
-                                ]);
-                                setActive(id);
-                              }
-                            : undefined
-                      }
-                      sshConnectionId={terminal.server?.id}
-                      canStart={terminal.mobileValid}
-                      authorizeStart={terminal.mobileAuthorize}
-                      onLifecycle={(state) => {
-                        if (mounted.current)
-                          setTerminals((previous) =>
-                            previous.map((value) =>
-                              value.id === terminal.id ? { ...value, lifecycle: state } : value,
-                            ),
-                          );
-                        const entry = mobileResources.current.get(terminal.id);
-                        if (!entry) return;
-                        entry.state = state;
-                        entry.notify(state);
-                        if (
-                          state === "opened-on-computer" ||
-                          state === "failed" ||
-                          state === "closed"
-                        ) {
-                          entry.finishOpen?.(state === "opened-on-computer");
-                          entry.finishOpen = undefined;
-                        }
-                        if (state === "closed") entry.closed?.();
-                        if (state === "failed") entry.closeFailed?.();
-                      }}
-                      sshEndpoint={terminal.endpoint}
-                      shellIntegration={terminal.shellIntegration}
-                      agentForwardingReviewId={terminal.agentForwardingReviewId}
-                      expectedConfigurationDigest={terminal.expectedConfigurationDigest}
-                      httpProxyTicketId={terminal.httpProxyTicketId}
-                      onStartupReview={
-                        terminal.server
-                          ? async () => {
-                              await requestSshStartupReviews(terminal.server!.id);
-                              setReviewQueueRequest((value) => value + 1);
-                            }
-                          : undefined
-                      }
-                      onSshPromptReady={
-                        terminal.server && terminal.startupEligible
-                          ? () => {
-                              if (startupNotified.current.has(terminal.id)) return;
-                              startupNotified.current.add(terminal.id);
-                              void requestSshStartupReviews(terminal.server!.id);
-                            }
-                          : undefined
-                      }
-                      onEnableShellIntegration={
-                        !terminal.keyGenerationPath &&
-                        (!terminal.shellIntegration || terminal.shellIntegration === "auto")
-                          ? async (shell = "bash") => {
-                              if (terminal.server?.metadata.sshInheritance) {
-                                requestConfigurationReview({
-                                  server: terminal.server,
-                                  shellIntegration: shell,
-                                  startupEligible: terminal.startupEligible,
-                                  name: terminal.name,
-                                });
-                                return;
-                              }
-                              const id = `ssh-${shell}:${crypto.randomUUID()}`;
-                              const approval = authorizeProxy(
-                                id,
-                                terminal.server,
-                                terminal.endpoint,
-                                shell,
-                              );
-                              const httpProxyTicketId = approval ? await approval : undefined;
-                              if (httpProxyTicketId === null) return;
-                              const restoreId = crypto.randomUUID();
-                              if (terminal.server)
-                                serverTerminalRestoreState.add({
-                                  tabId: restoreId,
-                                  serverId: terminal.server.id,
-                                });
-                              setTerminals((previous) => [
-                                ...previous,
-                                {
-                                  id,
-                                  restoreId,
-                                  name: `${terminal.name} · ${shell === "powershell" ? "PowerShell 7" : shell === "zsh" ? "Zsh" : "Bash"}`,
-                                  server: terminal.server,
-                                  endpoint: terminal.endpoint
-                                    ? { ...terminal.endpoint }
-                                    : undefined,
-                                  shellIntegration: shell,
-                                  httpProxyTicketId,
-                                  startupEligible: terminal.startupEligible,
-                                },
-                              ]);
-                              setActive(id);
-                            }
-                          : undefined
-                      }
+                  {(actions, onSendToAgent, onSendToHost) => (
+                    <ServerTerminalSession
+                      actions={actions}
                       keyGenerationPath={terminal.keyGenerationPath}
-                      active={visible && active === terminal.id}
-                    />
+                      target={terminal.server?.machine?.ssh?.target}
+                      port={terminal.server?.machine?.ssh?.port}
+                      identityFile={terminal.server?.machine?.ssh?.identityFile}
+                      endpoint={
+                        terminal.endpoint ??
+                        terminal.server?.effectiveSshEndpoint ??
+                        terminal.server?.sshEndpoint
+                      }
+                    >
+                      {(fontSize, onFontSizeChange, lineHeight, toolbarTarget) => (
+                        <TerminalView
+                          toolbarTarget={toolbarTarget}
+                          sshConnectionName={terminal.server?.name}
+                          onSendToAgent={onSendToAgent}
+                          onSendToHost={onSendToHost}
+                          fontSize={fontSize}
+                          onFontSizeChange={onFontSizeChange}
+                          lineHeight={lineHeight}
+                          id={terminal.id}
+                          cwd=""
+                          onReturnToServers={() => setActive(null)}
+                          onReconnect={
+                            terminal.server && !terminal.agentForwardingReviewId
+                              ? async () => {
+                                  // Resolve current policy and request fresh approvals. A reconnect
+                                  // creates a raw PTY, never reuses input, tickets or startup scripts.
+                                  const servers =
+                                    await invoke<ServerRecord[]>("server_inventory_list");
+                                  const server = servers.find(
+                                    (item) => item.id === terminal.server!.id,
+                                  );
+                                  if (!server) throw new Error(t("Server not found"));
+                                  if (server.metadata.sshInheritance)
+                                    requestConfigurationReview({ server, startupEligible: false });
+                                  else
+                                    await launch(
+                                      server,
+                                      undefined,
+                                      undefined,
+                                      undefined,
+                                      server.name,
+                                      false,
+                                    );
+                                }
+                              : terminal.endpoint
+                                ? async () => {
+                                    const id = `ssh-quick:${crypto.randomUUID()}`;
+                                    const endpoint = { ...terminal.endpoint! };
+                                    const approval = authorizeProxy(
+                                      id,
+                                      undefined,
+                                      endpoint,
+                                      terminal.shellIntegration,
+                                    );
+                                    const httpProxyTicketId = approval ? await approval : undefined;
+                                    if (httpProxyTicketId === null) return;
+                                    setTerminals((previous) => [
+                                      ...previous,
+                                      {
+                                        id,
+                                        restoreId: crypto.randomUUID(),
+                                        name: terminal.name,
+                                        endpoint,
+                                        shellIntegration: terminal.shellIntegration,
+                                        httpProxyTicketId,
+                                      },
+                                    ]);
+                                    setActive(id);
+                                  }
+                                : undefined
+                          }
+                          sshConnectionId={terminal.server?.id}
+                          canStart={terminal.mobileValid}
+                          authorizeStart={terminal.mobileAuthorize}
+                          onLifecycle={(state) => {
+                            if (mounted.current)
+                              setTerminals((previous) =>
+                                previous.map((value) =>
+                                  value.id === terminal.id ? { ...value, lifecycle: state } : value,
+                                ),
+                              );
+                            const entry = mobileResources.current.get(terminal.id);
+                            if (!entry) return;
+                            entry.state = state;
+                            entry.notify(state);
+                            if (
+                              state === "opened-on-computer" ||
+                              state === "failed" ||
+                              state === "closed"
+                            ) {
+                              entry.finishOpen?.(state === "opened-on-computer");
+                              entry.finishOpen = undefined;
+                            }
+                            if (state === "closed") entry.closed?.();
+                            if (state === "failed") entry.closeFailed?.();
+                          }}
+                          sshEndpoint={terminal.endpoint}
+                          shellIntegration={terminal.shellIntegration}
+                          agentForwardingReviewId={terminal.agentForwardingReviewId}
+                          expectedConfigurationDigest={terminal.expectedConfigurationDigest}
+                          httpProxyTicketId={terminal.httpProxyTicketId}
+                          onStartupReview={
+                            terminal.server
+                              ? async () => {
+                                  await requestSshStartupReviews(terminal.server!.id);
+                                  setReviewQueueRequest((value) => value + 1);
+                                }
+                              : undefined
+                          }
+                          onSshPromptReady={
+                            terminal.server && terminal.startupEligible
+                              ? () => {
+                                  if (startupNotified.current.has(terminal.id)) return;
+                                  startupNotified.current.add(terminal.id);
+                                  void requestSshStartupReviews(terminal.server!.id);
+                                }
+                              : undefined
+                          }
+                          onEnableShellIntegration={
+                            !terminal.keyGenerationPath &&
+                            (!terminal.shellIntegration || terminal.shellIntegration === "auto")
+                              ? async (shell = "bash") => {
+                                  if (terminal.server?.metadata.sshInheritance) {
+                                    requestConfigurationReview({
+                                      server: terminal.server,
+                                      shellIntegration: shell,
+                                      startupEligible: terminal.startupEligible,
+                                      name: terminal.name,
+                                    });
+                                    return;
+                                  }
+                                  const id = `ssh-${shell}:${crypto.randomUUID()}`;
+                                  const approval = authorizeProxy(
+                                    id,
+                                    terminal.server,
+                                    terminal.endpoint,
+                                    shell,
+                                  );
+                                  const httpProxyTicketId = approval ? await approval : undefined;
+                                  if (httpProxyTicketId === null) return;
+                                  const restoreId = crypto.randomUUID();
+                                  if (terminal.server)
+                                    serverTerminalRestoreState.add({
+                                      tabId: restoreId,
+                                      serverId: terminal.server.id,
+                                    });
+                                  setTerminals((previous) => [
+                                    ...previous,
+                                    {
+                                      id,
+                                      restoreId,
+                                      name: terminal.name,
+                                      server: terminal.server,
+                                      endpoint: terminal.endpoint
+                                        ? { ...terminal.endpoint }
+                                        : undefined,
+                                      shellIntegration: shell,
+                                      httpProxyTicketId,
+                                      startupEligible: terminal.startupEligible,
+                                    },
+                                  ]);
+                                  setActive(id);
+                                }
+                              : undefined
+                          }
+                          keyGenerationPath={terminal.keyGenerationPath}
+                          active={visible && active === terminal.id}
+                        />
+                      )}
+                    </ServerTerminalSession>
                   )}
-                </ServerTerminalSession>
+                </ServerTerminalAgent>
               </div>
             ))}
           </section>
@@ -725,7 +719,11 @@ export function ServersTerminalWorkspace({
                 (reason) => {
                   mobile?.resolve(false);
                   configurationReview.handoff?.reject(reason);
-                  if (!configurationReview.handoff) setCloseError(String(reason));
+                  if (!configurationReview.handoff)
+                    setCloseNotice({
+                      title: t("Could not open the SSH connection."),
+                      details: sanitizeConnectionError(errorText(reason)),
+                    });
                 },
               );
               setConfigurationReview(undefined);

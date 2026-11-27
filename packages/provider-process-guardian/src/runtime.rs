@@ -1,7 +1,8 @@
 //! One provider per guardian. Only its supervisor owns the original Child;
 //! control admission never takes the provider stdin writer's IO lock.
 use crate::protocol::{
-    self, Binding, GuardianReply, ParentCommand, Refusal, Retirement, StartFailure, Stream, VERSION,
+    self, Binding, GuardianReply, ParentCommand, Refusal, Retirement, StartDetail, StartFailure,
+    Stream, VERSION,
 };
 use std::io::{self, BufRead, Read, Write};
 use std::process::{Child, ChildStdin, Command, ExitStatus, Stdio};
@@ -9,11 +10,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
-#[cfg(not(windows))]
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 const WRITE_QUEUE_CAPACITY: usize = 32;
+/// How long a leader may outlive its stop request before the supervisor stops
+/// waiting for its exit status.
+const STOP_DEADLINE: Duration = Duration::from_secs(10);
+/// How long unverified retirement waits for provider I/O threads to finish.
+const WORKER_JOIN_DEADLINE: Duration = Duration::from_secs(10);
 
 /// The provider must never inherit the parent's private control endpoints.
 /// Its three data pipes are installed separately by Command before execution.
@@ -77,15 +82,18 @@ struct Control {
     admission: Mutex<Admission>,
     stopping: AtomicBool,
     uncertain: AtomicBool,
+    /// Wakes the supervisor out of its blocking wait. One pending wake is enough.
+    wake: SyncSender<()>,
 }
 impl Control {
-    fn new(sender: SyncSender<WriteWork>) -> Self {
+    fn new(sender: SyncSender<WriteWork>, wake: SyncSender<()>) -> Self {
         Self {
             admission: Mutex::new(Admission {
                 sender: Some(sender),
             }),
             stopping: AtomicBool::new(false),
             uncertain: AtomicBool::new(false),
+            wake,
         }
     }
     fn stop(&self) {
@@ -96,6 +104,8 @@ impl Control {
         });
         self.stopping.store(true, Ordering::Release);
         admission.sender.take();
+        // A Full wake already pending will still reach the supervisor after this flag.
+        let _ = self.wake.try_send(());
     }
     fn admit(&self, work: WriteWork) -> Result<(), Refusal> {
         let admission = self.admission.lock().map_err(|_| Refusal::Stopping)?;
@@ -113,28 +123,49 @@ struct Original {
     #[cfg(windows)]
     job: crate::windows_job::OwnedProcessJob,
 }
+/// Win32 failure of the owning job, reduced to the bounded wire detail.
+#[cfg(windows)]
+fn job_detail(error: &crate::windows_job::OwnedJobError) -> StartDetail {
+    use crate::windows_job::OwnedJobError;
+    match error {
+        OwnedJobError::Api { step, code } => {
+            let code = i32::try_from(*code).ok().filter(|code| *code != 0);
+            let kind = code.map_or(io::ErrorKind::Other, |code| {
+                io::Error::from_raw_os_error(code).kind()
+            });
+            StartDetail::new(step, &format!("{kind:?}"), code)
+        }
+        OwnedJobError::State(reason) => StartDetail::new(reason, "Other", None),
+        other => StartDetail::new(&other.to_string(), "Other", None),
+    }
+}
+
 impl Original {
-    fn spawn(command: &mut Command) -> io::Result<Self> {
+    /// Failure keeps the failing step and OS error, never a path or message.
+    fn spawn(command: &mut Command) -> Result<Self, StartDetail> {
         #[cfg(windows)]
         {
-            let job = crate::windows_job::OwnedProcessJob::new()
-                .map_err(|_| io::Error::other("Provider owner unavailable"))?;
-            let child = job
-                .spawn(command)
-                .map_err(|_| io::Error::other("Provider startup unavailable"))?;
+            let job = crate::windows_job::OwnedProcessJob::new().map_err(|e| job_detail(&e))?;
+            let child = job.spawn(command).map_err(|e| job_detail(&e))?;
             Ok(Self { child, job })
         }
         #[cfg(not(windows))]
         {
+            use std::os::unix::process::CommandExt;
+            // The provider leads its own process group on every Unix, so one
+            // group signal reaches the shells and servers it started. A
+            // descendant that calls setsid/setpgid leaves the group; that is
+            // why retirement stays unsupported off Windows rather than verified.
+            command.process_group(0);
             #[cfg(target_os = "linux")]
             {
-                use std::os::unix::process::CommandExt;
                 let parent = unsafe { libc::getpid() };
                 unsafe {
                     command.pre_exec(move || {
-                        if libc::setpgid(0, 0) != 0
-                            || libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0
-                        {
+                        // Linux only: the kernel kills the provider if this
+                        // guardian dies. macOS has no equivalent; there the
+                        // control-pipe EOF path in `run` retires the group.
+                        if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
                             return Err(io::Error::last_os_error());
                         }
                         if libc::getppid() != parent {
@@ -144,13 +175,18 @@ impl Original {
                     });
                 }
             }
-            command.spawn().map(|child| Self { child })
+            command
+                .spawn()
+                .map(|child| Self { child })
+                .map_err(|error| StartDetail::from_io("spawn", &error))
         }
     }
     fn stop(&mut self, uncertain: &AtomicBool) {
         #[cfg(windows)]
         self.job.terminate();
-        #[cfg(target_os = "linux")]
+        // The group id is the leader's pid. The leader is still unreaped here
+        // (the supervisor only reaps after stop), so its pid cannot be reused.
+        #[cfg(unix)]
         if unsafe { libc::kill(-(self.child.id() as libc::pid_t), libc::SIGKILL) } != 0 {
             uncertain.store(true, Ordering::Release);
         }
@@ -308,9 +344,48 @@ fn write_provider<W: Write>(
     Ok(())
 }
 
+/// Blocks until the leader exits, without reaping it: `WNOWAIT` keeps its pid and
+/// process-group id owned by this guardian until the supervisor's `try_wait` reaps it.
+#[cfg(unix)]
+fn await_exit(pid: u32) -> io::Result<()> {
+    loop {
+        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        let result = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                pid as libc::id_t,
+                &mut info,
+                libc::WEXITED | libc::WNOWAIT,
+            )
+        };
+        if result == 0 {
+            return Ok(());
+        }
+        let error = io::Error::last_os_error();
+        if error.kind() != io::ErrorKind::Interrupted {
+            return Err(error);
+        }
+    }
+}
+
+/// Blocks until the exit waiter or a stop request wakes the supervisor. After a
+/// stop, the wait is capped by the stop deadline so the loop can give up.
+#[cfg(unix)]
+fn wait_for_wake(wake: &Receiver<()>, stopped_at: Option<Instant>) {
+    match stopped_at {
+        Some(at) => {
+            let _ = wake.recv_timeout(STOP_DEADLINE.saturating_sub(at.elapsed()));
+        }
+        None => {
+            let _ = wake.recv();
+        }
+    }
+}
+
 fn supervise<W: Write + Send + 'static>(
     mut original: Original,
     receiver: Receiver<WriteWork>,
+    wake: Receiver<()>,
     output: Arc<Output<W>>,
     binding: Binding,
     control: Arc<Control>,
@@ -375,20 +450,57 @@ fn supervise<W: Write + Send + 'static>(
             control_failure(&control);
         }
     }
-    let mut stopped = false;
+    #[cfg(windows)]
+    let _ = &wake;
+    #[cfg(unix)]
+    let waiter_failed = Arc::new(AtomicBool::new(false));
+    #[cfg(unix)]
+    {
+        let (pid, failed, exit_wake) = (
+            original.child.id(),
+            waiter_failed.clone(),
+            control.wake.clone(),
+        );
+        let spawned = thread::Builder::new()
+            .name("provider-guardian-exit".into())
+            .spawn(move || {
+                if await_exit(pid).is_err() {
+                    failed.store(true, Ordering::Release);
+                }
+                let _ = exit_wake.try_send(());
+            });
+        if spawned.is_err() {
+            control_failure(&control);
+        }
+    }
+    let mut stopped_at: Option<Instant> = None;
     let status: Option<ExitStatus> = loop {
         original.observe();
-        if !stopped && control.stopping.load(Ordering::Acquire) {
+        if stopped_at.is_none() && control.stopping.load(Ordering::Acquire) {
             original.stop(&control.uncertain);
-            stopped = true;
+            stopped_at = Some(Instant::now());
+        }
+        // A leader that survives its stop request must not hold this supervisor
+        // (and the session's Settled receipt) forever. Report no exit status:
+        // retirement is then Unknown, never Verified, and drain still runs.
+        if stopped_at.is_some_and(|at| deadline_passed(at, STOP_DEADLINE)) {
+            control.uncertain.store(true, Ordering::Release);
+            break None;
         }
         match original.child.try_wait() {
             Ok(Some(status)) => break Some(status),
             Ok(None) => {
                 #[cfg(windows)]
                 original.job.wait_for_activity(50);
-                #[cfg(not(windows))]
-                thread::sleep(Duration::from_millis(5));
+                #[cfg(unix)]
+                {
+                    if waiter_failed.load(Ordering::Acquire) {
+                        // Lost exit wait: same owner-loss path as a failed try_wait.
+                        control.uncertain.store(true, Ordering::Release);
+                        break original.child.wait().ok();
+                    }
+                    wait_for_wake(&wake, stopped_at);
+                }
             }
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
             Err(_) => {
@@ -411,11 +523,21 @@ fn supervise<W: Write + Send + 'static>(
     let mut retirement = original.drain();
     // Physical containment proof is independent of the parent output pipe. A
     // lost parent may break transport while the owned kernel job still drains.
-    crate::build_receipt::publish_if_verified(build_receipt, retirement, status.is_some());
-    for worker in workers {
-        if !matches!(worker.join(), Ok(Ok(()))) {
-            control.uncertain.store(true, Ordering::Release);
-        }
+    // A receipt that cannot be written leaves the parent without proof: report
+    // Unknown instead of a Verified retirement the parent cannot confirm.
+    if crate::build_receipt::publish_if_verified(build_receipt, retirement, status.is_some())
+        .is_err()
+    {
+        retirement = Retirement::Unknown;
+    }
+    // A verified drain means the job is empty, so every pipe holder is gone and
+    // each join returns. An unknown drain or a lost exit status can leave a
+    // survivor holding the pipes: bound the wait and report Unknown instead of
+    // blocking Settled. Normal exits keep the unbounded join so slow parents
+    // still receive every output byte.
+    let bounded = status.is_none() || retirement == Retirement::Unknown;
+    if !join_workers(workers, bounded.then_some(WORKER_JOIN_DEADLINE)) {
+        control.uncertain.store(true, Ordering::Release);
     }
     if status.is_none() || control.uncertain.load(Ordering::Acquire) {
         retirement = Retirement::Unknown;
@@ -430,6 +552,32 @@ fn supervise<W: Write + Send + 'static>(
     });
 }
 
+/// Join every worker; `false` if one failed or, with a limit, did not finish in
+/// time. Unfinished workers are detached: they end when their pipe closes or the
+/// guardian exits after parent EOF.
+fn join_workers(workers: Vec<JoinHandle<io::Result<()>>>, limit: Option<Duration>) -> bool {
+    let started = Instant::now();
+    let mut clean = true;
+    for worker in workers {
+        if let Some(limit) = limit {
+            while !worker.is_finished() {
+                if deadline_passed(started, limit) {
+                    return false;
+                }
+                thread::sleep(Duration::from_millis(5));
+            }
+        }
+        if !matches!(worker.join(), Ok(Ok(()))) {
+            clean = false;
+        }
+    }
+    clean
+}
+
+fn deadline_passed(started: Instant, limit: Duration) -> bool {
+    started.elapsed() >= limit
+}
+
 fn control_failure(control: &Control) {
     control.uncertain.store(true, Ordering::Release);
     control.stop();
@@ -440,12 +588,14 @@ fn not_started<W: Write>(
     guardian_id: &str,
     parent_id: Option<String>,
     reason: StartFailure,
+    detail: Option<StartDetail>,
 ) -> io::Result<()> {
     output.emit(GuardianReply::Failed {
         version: VERSION,
         guardian_id: guardian_id.into(),
         parent_id: parent_id.clone(),
         reason,
+        detail,
     })?;
     output.emit(GuardianReply::Settled {
         version: VERSION,
@@ -470,12 +620,13 @@ fn start<W: Write + Send + 'static>(
         .stderr(Stdio::piped());
     let original = match Original::spawn(&mut command) {
         Ok(original) => original,
-        Err(_) => {
+        Err(detail) => {
             not_started(
                 &output,
                 guardian_id,
                 Some(parent_id),
                 StartFailure::SpawnFailed,
+                Some(detail),
             )?;
             return Ok(None);
         }
@@ -487,7 +638,8 @@ fn start<W: Write + Send + 'static>(
         owner_id: Uuid::new_v4().to_string(),
     };
     let (sender, receiver) = mpsc::sync_channel(WRITE_QUEUE_CAPACITY);
-    let control = Arc::new(Control::new(sender));
+    let (wake_sender, wake) = mpsc::sync_channel(1);
+    let control = Arc::new(Control::new(sender, wake_sender));
     let started = output.emit(GuardianReply::Started {
         version: VERSION,
         guardian_id: binding.guardian_id.clone(),
@@ -497,12 +649,20 @@ fn start<W: Write + Send + 'static>(
     });
     if let Err(error) = started {
         control_failure(&control);
-        supervise(original, receiver, output, binding, control, build_receipt);
+        supervise(
+            original,
+            receiver,
+            wake,
+            output,
+            binding,
+            control,
+            build_receipt,
+        );
         return Err(error);
     }
     // Retain a second owner of the slot until the supervisor actually takes it.
     // A failed thread spawn cannot drop a still-running Child without cleanup.
-    let slot = Arc::new(Mutex::new(Some((original, receiver))));
+    let slot = Arc::new(Mutex::new(Some((original, receiver, wake))));
     let (thread_slot, thread_output, thread_binding, thread_control) = (
         slot.clone(),
         output.clone(),
@@ -517,10 +677,11 @@ fn start<W: Write + Send + 'static>(
                 .lock()
                 .unwrap_or_else(|error| error.into_inner())
                 .take();
-            if let Some((original, receiver)) = owned {
+            if let Some((original, receiver, wake)) = owned {
                 supervise(
                     original,
                     receiver,
+                    wake,
                     thread_output,
                     thread_binding,
                     thread_control,
@@ -537,12 +698,20 @@ fn start<W: Write + Send + 'static>(
         })),
         Err(_) => {
             control_failure(&control);
-            if let Some((original, receiver)) = slot
+            if let Some((original, receiver, wake)) = slot
                 .lock()
                 .unwrap_or_else(|error| error.into_inner())
                 .take()
             {
-                supervise(original, receiver, output, binding, control, build_receipt);
+                supervise(
+                    original,
+                    receiver,
+                    wake,
+                    output,
+                    binding,
+                    control,
+                    build_receipt,
+                );
             }
             Ok(None)
         }
@@ -598,7 +767,13 @@ pub fn run<W: Write + Send + 'static>(input: &mut impl BufRead, writer: W) -> io
             }
             Err(error) => {
                 if !attempted {
-                    let _ = not_started(&output, &guardian_id, None, StartFailure::InvalidStart);
+                    let _ = not_started(
+                        &output,
+                        &guardian_id,
+                        None,
+                        StartFailure::InvalidStart,
+                        None,
+                    );
                 }
                 break Err(error);
             }
@@ -620,6 +795,7 @@ pub fn run<W: Write + Send + 'static>(input: &mut impl BufRead, writer: W) -> io
                         guardian_id: guardian_id.clone(),
                         parent_id: Some(parent_id),
                         reason: StartFailure::InvalidStart,
+                        detail: None,
                     })
                 } else {
                     attempted = true;
@@ -635,6 +811,7 @@ pub fn run<W: Write + Send + 'static>(input: &mut impl BufRead, writer: W) -> io
                             &guardian_id,
                             Some(parent_id),
                             StartFailure::InvalidStart,
+                            None,
                         )
                     } else if platform == "unsupported" {
                         not_started(
@@ -642,6 +819,7 @@ pub fn run<W: Write + Send + 'static>(input: &mut impl BufRead, writer: W) -> io
                             &guardian_id,
                             Some(parent_id),
                             StartFailure::Unsupported,
+                            None,
                         )
                     } else {
                         let mut process = Command::new(command);
@@ -717,4 +895,76 @@ pub fn run<W: Write + Send + 'static>(input: &mut impl BufRead, writer: W) -> io
         ));
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deadline_passes_only_after_its_limit() {
+        let started = Instant::now();
+        assert!(!deadline_passed(started, Duration::from_secs(3600)));
+        assert!(deadline_passed(started, Duration::ZERO));
+    }
+
+    #[test]
+    fn bounded_join_gives_up_on_a_worker_that_never_finishes() {
+        let (release, blocked) = mpsc::channel::<()>();
+        let stuck: JoinHandle<io::Result<()>> = thread::spawn(move || {
+            let _ = blocked.recv();
+            Ok(())
+        });
+        let started = Instant::now();
+        assert!(!join_workers(vec![stuck], Some(Duration::from_millis(60))));
+        assert!(started.elapsed() < Duration::from_secs(5));
+        // The detached worker still ends once its blocker is released.
+        drop(release);
+    }
+
+    #[test]
+    fn bounded_join_accepts_finished_workers_and_reports_failed_ones() {
+        let done: JoinHandle<io::Result<()>> = thread::spawn(|| Ok(()));
+        assert!(join_workers(vec![done], Some(Duration::from_secs(5))));
+        let failed: JoinHandle<io::Result<()>> = thread::spawn(|| Err(io::Error::other("x")));
+        assert!(!join_workers(vec![failed], Some(Duration::from_secs(5))));
+        let unbounded: JoinHandle<io::Result<()>> = thread::spawn(|| Ok(()));
+        assert!(join_workers(vec![unbounded], None));
+    }
+
+    #[test]
+    fn stop_wakes_the_supervisor_instead_of_waiting_for_a_poll() {
+        let (sender, _receiver) = mpsc::sync_channel(WRITE_QUEUE_CAPACITY);
+        let (wake_sender, wake) = mpsc::sync_channel(1);
+        let control = Control::new(sender, wake_sender);
+        control.stop();
+        assert!(wake.recv_timeout(Duration::from_secs(5)).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn exit_wait_returns_without_reaping_the_leader() {
+        let mut child = Command::new("/bin/sh")
+            .args(["-c", "exit 0"])
+            .spawn()
+            .unwrap();
+        await_exit(child.id()).unwrap();
+        // WNOWAIT left the exited leader unreaped, so try_wait still reaps it.
+        assert!(child.try_wait().unwrap().is_some());
+    }
+
+    #[test]
+    fn start_detail_keeps_kind_and_os_code_without_message_text() {
+        let error = io::Error::from_raw_os_error(2);
+        let detail = StartDetail::from_io("spawn", &error);
+        assert_eq!(detail.step, "spawn");
+        assert_eq!(detail.kind, "NotFound");
+        assert_eq!(detail.code, Some(2));
+        let other = StartDetail::from_io("spawn", &io::Error::other(r"secret path C:\x"));
+        assert_eq!(other.kind, "Other");
+        assert_eq!(other.code, None);
+        let long = StartDetail::new(&"s".repeat(500), &"k".repeat(500), None);
+        assert_eq!(long.step.len(), protocol::MAX_DETAIL_TEXT);
+        assert_eq!(long.kind.len(), protocol::MAX_DETAIL_TEXT);
+    }
 }

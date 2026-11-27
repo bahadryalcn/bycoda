@@ -1,10 +1,10 @@
 import { TabDirtyDot } from "../../../shared/ui/TabLabel";
-import { Button } from "../../../shared/ui/Button";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { useT, type t } from "../../../shared/i18n";
-import { CircleAlert, GitCompare, GripVertical, Terminal, X } from "../../../shared/ui/icons";
+import { CircleAlert, GitCompare, Terminal, X } from "../../../shared/ui/icons";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { copyText } from "../../../platform/tauri/clipboard";
@@ -88,11 +88,12 @@ type SurfaceTabMenu = {
   fileId: string;
 };
 
-const REVEAL_LABEL = IS_MAC
-  ? "Reveal in Finder"
-  : IS_WIN
-    ? "Reveal in File Explorer"
-    : "Open Containing Folder";
+/** Literal `t()` calls per platform, so the locale extractor sees every key. */
+function revealLabel(translate: typeof t): string {
+  if (IS_MAC) return translate("Reveal in Finder");
+  if (IS_WIN) return translate("Reveal in File Explorer");
+  return translate("Open containing folder");
+}
 
 export function surfaceTabMenuItems(
   translate: typeof t,
@@ -109,7 +110,7 @@ export function surfaceTabMenuItems(
           kind: "item",
           id: "move-left",
           get label() {
-            return translate("Move Left");
+            return translate("Move left");
           },
           disabled: !sides.left,
         },
@@ -117,7 +118,7 @@ export function surfaceTabMenuItems(
           kind: "item",
           id: "move-right",
           get label() {
-            return translate("Move Right");
+            return translate("Move right");
           },
           disabled: !sides.right,
         },
@@ -135,7 +136,7 @@ export function surfaceTabMenuItems(
     kind: "item",
     id: "close-others",
     get label() {
-      return translate("Close Others");
+      return translate("Close others");
     },
     disabled: !canCloseOthers,
   };
@@ -146,7 +147,7 @@ export function surfaceTabMenuItems(
       kind: "item",
       id: "close-right",
       get label() {
-        return translate("Close Tabs to the Right");
+        return translate("Close tabs to the right");
       },
       disabled: !sides.right,
     },
@@ -154,7 +155,7 @@ export function surfaceTabMenuItems(
       kind: "item",
       id: "close-left",
       get label() {
-        return translate("Close Tabs to the Left");
+        return translate("Close tabs to the left");
       },
       disabled: !sides.left,
     },
@@ -170,7 +171,7 @@ export function surfaceTabMenuItems(
             kind: "item" as const,
             id: "new-window",
             get label() {
-              return translate("Open in New Window");
+              return translate("Open in new window");
             },
             disabled: newWindow.dirty,
             description: newWindow.dirty ? translate("Save the file first") : undefined,
@@ -184,7 +185,7 @@ export function surfaceTabMenuItems(
             kind: "item" as const,
             id: "open-default",
             get label() {
-              return translate("Open in Default App");
+              return translate("Open in default app");
             },
           },
         ]
@@ -192,27 +193,27 @@ export function surfaceTabMenuItems(
     ...(isRemoteProjectPath(file.path)
       ? [{ kind: "item" as const, id: "open-copy", label: translate("Open local copy") }]
       : []),
-    { kind: "item" as const, id: "reveal", label: translate(REVEAL_LABEL) },
+    { kind: "item" as const, id: "reveal", label: revealLabel(translate) },
     { kind: "sep" as const },
     {
       kind: "item",
       id: "copy-path",
       get label() {
-        return translate("Copy Path");
+        return translate("Copy path");
       },
     },
     {
       kind: "item",
       id: "copy-relative-path",
       get label() {
-        return translate("Copy Relative Path");
+        return translate("Copy relative path");
       },
     },
     {
       kind: "item",
       id: "copy-name",
       get label() {
-        return translate("Copy File Name");
+        return translate("Copy file name");
       },
     },
     { kind: "sep" },
@@ -345,7 +346,7 @@ export function SurfaceTabs({
   paneId,
   onMoveFile,
   onPaneDragStart,
-  label = "Open files",
+  label,
   trailing,
 }: Props) {
   "use memo";
@@ -557,12 +558,9 @@ export function SurfaceTabs({
     void action.catch((error) => {
       console.error(`Failed to run file-tab action ${id}:`, error);
       setFileActionError(
-        t(
-          id === "open-default"
-            ? "Could not open the file in its default app: {p0}"
-            : "Could not complete the file action: {p0}",
-          { p0: String(error) },
-        ),
+        id === "open-default"
+          ? t("Could not open the file in its default app: {p0}", { p0: String(error) })
+          : t("Could not complete the file action: {p0}", { p0: String(error) }),
       );
     });
   };
@@ -582,29 +580,9 @@ export function SurfaceTabs({
         <TabList
           ref={lockOverscroll}
           data-surface-pane-id={paneId}
-          label={label}
-          className="scrollbar-none flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto overscroll-none pr-1"
+          label={label ?? t("Open files")}
+          className="scrollbar-none flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto overscroll-none pe-1"
         >
-          {onPaneDragStart ? (
-            <Button
-              iconOnly
-              variant="ghost"
-              size="sm"
-              motion="none"
-              type="button"
-              label={t("Drag to reorder pane")}
-              tabIndex={-1}
-              className="w-5 shrink-0 cursor-grab touch-none active:cursor-grabbing"
-              onPointerDown={(event) => {
-                if (event.button !== 0) return;
-                event.preventDefault();
-                event.stopPropagation();
-                onPaneDragStart(event);
-              }}
-            >
-              <GripVertical className="icon-sm" strokeWidth={1.75} />
-            </Button>
-          ) : null}
           {displayed.map((entry) => {
             const file = entry.item;
             const closing = entry.closing;
@@ -667,7 +645,13 @@ export function SurfaceTabs({
                 externalDrop.tabPosition ? (
                   <span
                     data-file-tab-drop={externalDrop.tabPosition}
-                    className={`pointer-events-none absolute inset-y-0 z-1 w-(--ui-drop-line-size) rounded-full ${externalDrop.tabPosition === "before" ? "start-0" : "end-0"} ${externalDrop.invalid ? "bg-(--ui-drop-blocked)" : "bg-(--ui-drop-line)"}`}
+                    {...surfaceAttributes(
+                      {
+                        radius: "pill",
+                        variant: externalDrop.invalid ? "drop-blocked" : "drop-line",
+                      },
+                      `pointer-events-none absolute inset-y-0 z-1 w-(--ui-drop-line-size) ${externalDrop.tabPosition === "before" ? "start-0" : "end-0"}`,
+                    )}
                   />
                 ) : null}
                 <Tab
@@ -736,22 +720,18 @@ export function SurfaceTabs({
                     onSelectFile(file.id);
                   }}
                   onDoubleClick={() => onPinFile?.(file.id)}
-                  className={`relative flex min-w-0 flex-1 cursor-default pe-7 items-center gap-1.5 self-center `}
+                  className="relative flex min-w-0 flex-1 cursor-default items-center gap-1.5 self-center pe-7"
                 >
                   {terminal ? (
                     <Terminal className="icon-sm shrink-0" strokeWidth={1.75} />
                   ) : agent ? (
-                    <HarnessIcon harness={agent.harness} className="size-3.5 shrink-0" />
+                    <HarnessIcon harness={agent.harness} className="icon-sm shrink-0" />
                   ) : changes || commit || review ? (
                     <GitCompare className="icon-sm shrink-0" strokeWidth={1.75} />
                   ) : (
                     <FileTypeIcon name={iconName} isDir={false} size="sm" />
                   )}
-                  <TabLabel
-                    className={`flex-1 ${file.preview ? "italic" : ""} ${errors ? "text-(--ui-tone-danger-fg)" : ""}`}
-                  >
-                    {label}
-                  </TabLabel>
+                  <TabLabel className={`flex-1 ${file.preview ? "italic" : ""}`}>{label}</TabLabel>
                   {errors ? (
                     <CircleAlert
                       aria-hidden
@@ -764,7 +744,6 @@ export function SurfaceTabs({
                   label={t("Close {p0}", { p0: label })}
                   motion="none"
                   type="button"
-                  aria-label={t("Close {p0}", { p0: label })}
                   data-no-drag
                   tabIndex={-1}
                   onPointerDown={(event) => event.stopPropagation()}
@@ -830,7 +809,7 @@ export function SurfaceTabs({
         />
       ) : null}
       {fileActionError ? (
-        <FileActionError message={fileActionError} onDismiss={() => setFileActionError(null)} />
+        <FileActionError details={fileActionError} onDismiss={() => setFileActionError(null)} />
       ) : null}
     </PaneHeader>
   );

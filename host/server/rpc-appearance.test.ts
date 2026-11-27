@@ -1,19 +1,28 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { beforeEach, expect, it, vi } from "vitest";
+import type { OwnerRpcRequest } from "./owner-rpc-context";
 
 const design = vi.hoisted(() => ({
   create: vi.fn(),
   cancel: vi.fn(),
 }));
+const generate = vi.hoisted(() => vi.fn());
 vi.mock("../appearance/create-design", () => ({
   createAppearanceDesign: design.create,
   cancelAppearanceDesign: design.cancel,
 }));
-import { handleAppearanceRpc } from "./rpc-appearance";
+vi.mock("../appearance/background-image", () => ({ generateAppearanceBackgroundImage: generate }));
+vi.mock("../appearance/background-suggestions", () => ({ generateBackgroundSuggestion: vi.fn() }));
+vi.mock("../appearance/theme-suggestions", () => ({ generateThemeSuggestions: generate }));
 
-type Request = Parameters<typeof handleAppearanceRpc>[1];
-const request = (method: string, params: Record<string, unknown>, extra: Partial<Request> = {}) =>
+const { handleAppearanceRpc } = await import("./rpc-appearance");
+
+const designRequest = (
+  method: string,
+  params: Record<string, unknown>,
+  extra: Partial<OwnerRpcRequest> = {},
+) =>
   ({
     input: { method },
     params,
@@ -22,8 +31,9 @@ const request = (method: string, params: Record<string, unknown>, extra: Partial
     pollState: { revoked: false },
     response: new EventEmitter(),
     closing: false,
+    domainContext: {},
     ...extra,
-  }) as unknown as Request;
+  }) as unknown as OwnerRpcRequest;
 const createParams = () => ({
   requestId: randomUUID(),
   kind: "scene",
@@ -31,6 +41,10 @@ const createParams = () => ({
   harness: "claude",
   model: "sonnet",
 });
+
+function request(method: string, tokenHash: string, params: Record<string, unknown>) {
+  return { input: { method }, tokenHash, params, domainContext: {} } as unknown as OwnerRpcRequest;
+}
 
 beforeEach(() => {
   design.create.mockReset();
@@ -40,7 +54,7 @@ beforeEach(() => {
 it("dispatches createDesign with the validated params, owner and an abort signal", async () => {
   const params = createParams();
   design.create.mockResolvedValue({ kind: "scene", name: "Lake" });
-  const rpc = request("appearance.createDesign", params);
+  const rpc = designRequest("appearance.createDesign", params);
   await handleAppearanceRpc({}, rpc);
   expect(rpc.result).toEqual({ kind: "scene", name: "Lake" });
   expect(design.create).toHaveBeenCalledWith(
@@ -54,7 +68,7 @@ it("dispatches createDesign with the validated params, owner and an abort signal
 
 it("rejects invalid createDesign params before any provider work", async () => {
   await expect(
-    handleAppearanceRpc({}, request("appearance.createDesign", { requestId: "nope" })),
+    handleAppearanceRpc({}, designRequest("appearance.createDesign", { requestId: "nope" })),
   ).rejects.toThrow();
   expect(design.create).not.toHaveBeenCalled();
 });
@@ -69,7 +83,7 @@ it("aborts the creation when the response closes or authority is revoked", async
       );
     },
   );
-  const closed = request("appearance.createDesign", createParams());
+  const closed = designRequest("appearance.createDesign", createParams());
   const pendingClose = expect(handleAppearanceRpc({}, closed)).rejects.toThrow("disconnected");
   await vi.waitFor(() => expect(signals).toHaveLength(1));
   closed.response.emit("close");
@@ -78,7 +92,7 @@ it("aborts the creation when the response closes or authority is revoked", async
 
   vi.useFakeTimers();
   try {
-    const revoked = request("appearance.createDesign", createParams());
+    const revoked = designRequest("appearance.createDesign", createParams());
     const pendingRevoke = expect(handleAppearanceRpc({}, revoked)).rejects.toThrow("disconnected");
     revoked.pollState.revoked = true;
     await vi.advanceTimersByTimeAsync(600);
@@ -92,8 +106,51 @@ it("aborts the creation when the response closes or authority is revoked", async
 it("dispatches cancelDesign with the request id and owner", async () => {
   const requestId = randomUUID();
   design.cancel.mockReturnValue({ cancelled: true });
-  const rpc = request("appearance.cancelDesign", { requestId });
+  const rpc = designRequest("appearance.cancelDesign", { requestId });
   await handleAppearanceRpc({}, rpc);
   expect(design.cancel).toHaveBeenCalledWith(requestId, "owner-hash");
   expect(rpc.result).toEqual({ cancelled: true });
+});
+
+it("scopes cancellation to one active generation and its initiating credential", async () => {
+  generate.mockImplementation(
+    (_params: unknown, _adapter: unknown, signal: AbortSignal) =>
+      new Promise((_, reject) =>
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true }),
+      ),
+  );
+  const first = randomUUID();
+  const second = randomUUID();
+  const firstImage = handleAppearanceRpc(
+    null,
+    request("appearance.backgroundImage", "owner", {
+      generationId: first,
+      prompt: "Forest",
+      provider: "codex",
+    }),
+  );
+  const secondImage = handleAppearanceRpc(
+    null,
+    request("appearance.themeSuggestions", "owner", {
+      generationId: second,
+      prompt: "Ocean",
+      harness: "codex",
+      model: "auto",
+    }),
+  );
+  const firstStopped = expect(firstImage).rejects.toMatchObject({ name: "AbortError" });
+  const secondStopped = expect(secondImage).rejects.toMatchObject({ name: "AbortError" });
+  const cancel = async (generationId: string, tokenHash = "owner") => {
+    const rpc = request("appearance.cancelGeneration", tokenHash, { generationId });
+    await handleAppearanceRpc(null, rpc);
+    return rpc.result;
+  };
+  await expect(cancel(first, "other")).resolves.toEqual({ cancelled: false });
+  expect(generate.mock.calls[0][2].aborted).toBe(false);
+  await expect(cancel(first)).resolves.toEqual({ cancelled: true });
+  await firstStopped;
+  expect(generate.mock.calls[1][2].aborted).toBe(false);
+  await expect(cancel(first)).resolves.toEqual({ cancelled: false });
+  await expect(cancel(second)).resolves.toEqual({ cancelled: true });
+  await secondStopped;
 });

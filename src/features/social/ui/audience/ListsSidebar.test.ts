@@ -88,8 +88,10 @@ describe("ListsSidebar", () => {
     renderSidebar();
     const buttons = Array.from(document.querySelectorAll("button"));
     const commentersButton = buttons.find((item) => item.textContent?.includes("Commenters"));
-    expect(commentersButton?.textContent).toContain("Automatic");
-    expect(buttonByText("Buyers")?.textContent).not.toContain("Automatic");
+    // The automatic mark is the row's tooltip, not a text tag.
+    expect(commentersButton?.hasAttribute("data-tooltip-owner")).toBe(true);
+    expect(commentersButton?.textContent).not.toContain("Automatic");
+    expect(buttonByText("Buyers")?.hasAttribute("data-tooltip-owner")).toBe(false);
   });
 
   it("offers the two creation actions as named icon buttons in their section headings", () => {

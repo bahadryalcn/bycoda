@@ -4,13 +4,41 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Surface } from "../../../shared/ui/Surface";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
-import { useState, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { AgentMarkdown } from "../../sessions/public/AgentMarkdown";
+import { taskWorkspaceState } from "../../workspaces/public/taskWorkspaceState";
 import type { HostTask, TaskOwnerNotice } from "../model/hostTasks";
-import { finishedOwnerNotices, type TaskStatusLine } from "../model/taskStatusLine";
+import { finishedOwnerNotices, taskStatusLine, type TaskStatusLine } from "../model/taskStatusLine";
+
+/** The parts of a muted meta line joined by a middle dot. The caller leaves out empty parts. */
+export function MetaLine({ parts }: { parts: readonly ReactNode[] }) {
+  return parts.map((part, index) => (
+    <Fragment key={index}>
+      {index > 0 ? " · " : null}
+      {part}
+    </Fragment>
+  ));
+}
+
+/** The sentence for a suspended automatic merge. Rows, cards and the detail panel say it once,
+ * through the status line; nothing else repeats it. */
+export function renewedApprovalDetail(): string {
+  return t("Automatic merge is suspended. Review changes to renew approval.");
+}
+
+/**
+ * The one owner-facing state of a task for rows, cards and the detail panel: `taskStatusLine`,
+ * except that a suspended automatic merge asks for a renewed review instead of a plain state.
+ */
+export function taskDisplayStatus(task: HostTask): TaskStatusLine {
+  const status = taskStatusLine(task);
+  return taskWorkspaceState(task).needsRenewedApproval && !task.mergeError
+    ? { ...status, label: t("Review changes"), detail: renewedApprovalDetail() }
+    : status;
+}
 
 /** The task's one-line state: tone glyph, label and a clamped reason. With
  * `onOpen`, the whole line opens the full details. */

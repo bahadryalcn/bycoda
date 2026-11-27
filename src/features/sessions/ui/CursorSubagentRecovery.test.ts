@@ -83,13 +83,13 @@ it("reopens a saved Cursor placeholder as a named, expandable subagent with a st
       ),
     );
     const button = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Show Review ACP routing\'s work"]',
+      'summary[aria-label="Show Review ACP routing\'s work"]',
     );
     expect(button).not.toBeNull();
     // The run's state line carries the step count; the model sits beside the name in the row.
     const stateLine = container.querySelector<HTMLElement>("[data-subagent-state]");
     expect(stateLine).not.toBeNull();
-    expect(stateLine!.textContent).toContain("1 step");
+    expect(stateLine!.textContent).toMatch(/^Done.*1$/);
     expect(button!.parentElement!.textContent).toContain("Grok 4.6");
     expect(
       sanitizeSessionForPersist(session!).blocks.find((block) => block.tool?.callId === "call-1")

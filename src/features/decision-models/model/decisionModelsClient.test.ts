@@ -28,6 +28,9 @@ const CASES: Case[] = [
   ["decisionModels.local.recommend", (c, p) => c.local.recommend(p)],
   ["decisionModels.local.plan", (c, p) => c.local.plan(p)],
   ["decisionModels.local.install", (c, p) => c.local.install(p)],
+  ["decisionModels.local.installStart", (c, p) => c.local.installStart(p)],
+  ["decisionModels.local.installProgress", (c, p) => c.local.installProgress(p)],
+  ["decisionModels.local.cancelInstall", (c, p) => c.local.cancelInstall(p)],
   ["decisionModels.local.start", (c, p) => c.local.start(p)],
   ["decisionModels.local.stop", (c, p) => c.local.stop(p)],
   ["decisionModels.local.uninstall", (c, p) => c.local.uninstall(p)],
@@ -50,6 +53,17 @@ describe("decisionModelsClient wrappers", () => {
     await call(client, params);
     expect(remoteRequest).toHaveBeenCalledTimes(1);
     expect(remoteRequest).toHaveBeenCalledWith("m1", method, params);
+  });
+
+  it("offers install progress and cancel only when the Host advertises the capability", async () => {
+    const client = decisionModelsClient("m1");
+    remoteRequest.mockResolvedValueOnce({ capabilities: ["decisionModels.install.v1"] });
+    await expect(client.local.installSupported()).resolves.toBe(true);
+    expect(remoteRequest).toHaveBeenCalledWith("m1", "environment.describe", {});
+    remoteRequest.mockResolvedValueOnce({ capabilities: ["decisionModels.v1"] });
+    await expect(client.local.installSupported()).resolves.toBe(false);
+    remoteRequest.mockResolvedValueOnce({});
+    await expect(client.local.installSupported()).resolves.toBe(false);
   });
 
   it("covers every method in the shared Host contract exactly once", () => {

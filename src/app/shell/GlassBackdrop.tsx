@@ -1,22 +1,15 @@
 import type { Ref } from "react";
+import { PopupBackdrop } from "../../shared/ui/Popover";
 
 /**
- * Keep glass beside the interactive content, inside a positioned, isolated
- * frame. Neither this layer nor its ancestors should animate: backdrop-filter
- * already handles compositing without translateZ/backface-visibility hints.
+ * Shell adapter for the shared opaque backdrop.
  */
 export function GlassBackdrop({
-  className = "popover-backdrop",
+  className,
   ref,
 }: {
   className?: string;
   ref?: Ref<HTMLDivElement>;
 }) {
-  return (
-    <div
-      ref={ref}
-      aria-hidden="true"
-      className={`pointer-events-none absolute inset-0 z-0 [border-radius:inherit] backdrop-blur-xl ${className}`}
-    />
-  );
+  return <PopupBackdrop ref={ref} className={className} />;
 }

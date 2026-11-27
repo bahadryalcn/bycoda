@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { UpdateImpact } from "./UpdateImpact";
+import { hostRestartConsequences } from "./hostRestartConsequences";
 import { t, useLocale } from "../../../shared/i18n";
 import { ConfirmDialog, type ConfirmRequest } from "../../../shared/ui/ConfirmDialog";
 import { updateBundledHostNow, useBundledHostStatus } from "../model/bundledHostStatus";
@@ -49,14 +50,7 @@ export function LocalHostVersionPrompt({
           title: t("Update this computer's host now?"),
           body: <UpdateImpact target="local-host" />,
           message: versions,
-          consequences: [
-            sameVersion,
-            {
-              tone: "warning",
-              content: t("Running sessions and shells on this computer are interrupted."),
-            },
-            { content: t("Session history is kept.") },
-          ],
+          consequences: [sameVersion, ...hostRestartConsequences()],
           confirmLabel: t("Stop and update"),
           danger: true,
           cancelLabel: t("Not now"),
@@ -65,7 +59,7 @@ export function LocalHostVersionPrompt({
             const result = await updateBundledHostNow();
             if (result?.state === "failed" || result?.state === "deferred")
               throw new Error(
-                t(result.message ?? "The host on this computer could not be updated."),
+                result.message ?? t("The host on this computer could not be updated."),
               );
           },
         };

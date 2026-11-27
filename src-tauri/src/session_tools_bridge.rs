@@ -26,22 +26,84 @@ const NORMAL_LIMIT: usize = 12;
 pub(crate) const OPTIONAL_HOST_BUDGET: Duration = Duration::from_millis(2_500);
 const OPTIONAL_HOST_BACKOFF: Duration = Duration::from_secs(30);
 
-fn optional_host_unhealthy_until() -> &'static Mutex<Option<std::time::Instant>> {
-    static UNTIL: OnceLock<Mutex<Option<std::time::Instant>>> = OnceLock::new();
-    UNTIL.get_or_init(|| Mutex::new(None))
+#[derive(Default)]
+struct OptionalHostHealth {
+    until: Option<std::time::Instant>,
+    recovered_at: Option<std::time::Instant>,
+    next_probe: Option<std::time::Instant>,
+    last_probe_success: Option<std::time::Instant>,
+}
+
+impl OptionalHostHealth {
+    fn reserve_probe(&mut self, now: std::time::Instant) -> Option<std::time::Instant> {
+        if self.next_probe.is_some_and(|next| now < next) {
+            return None;
+        }
+        self.next_probe = Some(now + Duration::from_secs(5));
+        Some(now + OPTIONAL_HOST_BUDGET)
+    }
+
+    fn note(
+        &mut self,
+        deadline: std::time::Instant,
+        now: std::time::Instant,
+        ok: bool,
+        refusing: bool,
+    ) {
+        if self
+            .recovered_at
+            .is_some_and(|recovered| deadline - OPTIONAL_HOST_BUDGET < recovered)
+        {
+            return;
+        }
+        if ok {
+            self.until = None;
+            self.recovered_at = Some(now);
+        } else if exhausted_by_accepted_call(now, deadline, refusing) {
+            if !self.until.is_some_and(|until| until > now) {
+                log::warn!("[session tools] Host did not answer an optional tool request in time; skipping Host tools for {} s", OPTIONAL_HOST_BACKOFF.as_secs());
+            }
+            self.until = Some(now + OPTIONAL_HOST_BACKOFF);
+        }
+    }
+}
+
+fn optional_host_health() -> &'static Mutex<OptionalHostHealth> {
+    static HEALTH: OnceLock<Mutex<OptionalHostHealth>> = OnceLock::new();
+    HEALTH.get_or_init(|| Mutex::new(OptionalHostHealth::default()))
 }
 
 /// Deadline for one optional Host call, or `None` while the Host is in its
 /// unhealthy back-off (callers continue without the optional tools).
 pub(crate) fn optional_host_deadline() -> Option<std::time::Instant> {
     let now = std::time::Instant::now();
-    let until = *optional_host_unhealthy_until()
+    let health = optional_host_health()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if until.is_some_and(|until| now < until) {
+    if health.until.is_some_and(|until| now < until) {
         return None;
     }
     Some(now + OPTIONAL_HOST_BUDGET)
+}
+
+/// A single authenticated, read-only recovery probe per interval, including during backoff.
+pub(crate) fn optional_host_recovery_deadline() -> Option<std::time::Instant> {
+    let now = std::time::Instant::now();
+    let mut health = optional_host_health()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    health.reserve_probe(now)
+}
+
+pub(crate) fn optional_host_recent_recovery() -> bool {
+    let now = std::time::Instant::now();
+    let health = optional_host_health()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    health
+        .last_probe_success
+        .is_some_and(|recovered| now.duration_since(recovered) < Duration::from_secs(5))
+        && !health.until.is_some_and(|until| now < until)
 }
 
 /// A failure that used up its whole budget means the Host accepted the call
@@ -49,20 +111,29 @@ pub(crate) fn optional_host_deadline() -> Option<std::time::Instant> {
 /// and neither does a budget spent waiting for a refusing local Host to listen.
 pub(crate) fn note_optional_host_outcome(deadline: std::time::Instant, ok: bool) {
     let now = std::time::Instant::now();
-    let mut until = optional_host_unhealthy_until()
+    let mut health = optional_host_health()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if ok {
-        *until = None;
-    } else if exhausted_by_accepted_call(now, deadline, crate::remote::local_host_refusing()) {
-        if !until.is_some_and(|until| until > now) {
-            log::warn!(
-                "[session tools] Host did not answer an optional tool request in time; skipping Host tools for {} s",
-                OPTIONAL_HOST_BACKOFF.as_secs()
-            );
-        }
-        *until = Some(now + OPTIONAL_HOST_BACKOFF);
+    health.note(deadline, now, ok, crate::remote::local_host_refusing());
+}
+
+/// Recovery probes must not extend backoff when the Host remains unavailable.
+pub(crate) fn note_optional_host_recovery(deadline: std::time::Instant, ok: bool) {
+    if !ok {
+        return;
     }
+    let now = std::time::Instant::now();
+    let mut health = optional_host_health()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if health
+        .recovered_at
+        .is_some_and(|recovered| deadline - OPTIONAL_HOST_BUDGET < recovered)
+    {
+        return;
+    }
+    health.note(deadline, now, true, false);
+    health.last_probe_success = Some(now);
 }
 
 /// A refusing Host never accepted the call, however long the caller waited
@@ -861,6 +932,41 @@ fn serve(mut socket: TcpStream, port: u16, registry: &Mutex<Registry>) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn recovery_fences_old_timed_out_requests() {
+        use super::*;
+        let start = std::time::Instant::now();
+        let old_deadline = start + OPTIONAL_HOST_BUDGET;
+        let recovered = start + Duration::from_secs(3);
+        let recovery_deadline = recovered + OPTIONAL_HOST_BUDGET;
+        let mut health = OptionalHostHealth::default();
+        health.note(old_deadline, old_deadline, false, false);
+        assert!(health.until.is_some());
+        assert!(health.reserve_probe(recovered).is_some());
+        assert!(health
+            .reserve_probe(recovered + Duration::from_secs(1))
+            .is_none());
+        assert!(health
+            .reserve_probe(recovered + Duration::from_secs(5))
+            .is_some());
+        health.note(
+            recovery_deadline,
+            recovered + Duration::from_millis(1),
+            true,
+            false,
+        );
+        assert!(health.until.is_none());
+        health.note(
+            old_deadline,
+            recovered + Duration::from_secs(1),
+            false,
+            false,
+        );
+        assert!(health.until.is_none());
+        let new_deadline = recovered + Duration::from_secs(2) + OPTIONAL_HOST_BUDGET;
+        health.note(new_deadline, new_deadline, false, false);
+        assert!(health.until.is_some());
+    }
     use super::*;
     use std::sync::atomic::AtomicUsize;
     use std::thread;

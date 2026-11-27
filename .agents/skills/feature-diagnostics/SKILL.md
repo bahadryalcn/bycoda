@@ -41,7 +41,7 @@ own implementation of the same contract.
 
 ## Focused checks
 
-- `pnpm exec vitest run src/features/diagnostics src/features/account`, `pnpm exec tsc-rs --noEmit --fast`.
+- `pnpm exec vitest run src/features/diagnostics src/features/account`, `pnpm exec tsrs --noEmit --fast`.
 - `cargo test --lib -- diagnostics` in `src-tauri/` for the native side.
 
 ## References

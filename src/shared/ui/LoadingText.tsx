@@ -1,6 +1,7 @@
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import { useDelayedVisible } from "../hooks/useDelayedVisible";
 import { useT } from "../i18n";
+import { stateInsetClass, type StateInset } from "./Notice";
 import { Spinner } from "./Spinner";
 import { optionalTextAttributes, type TextSize, type TextTone, type TextRoles } from "./Text";
 import styles from "./LoadingText.module.css";
@@ -17,6 +18,11 @@ export type LoadingTextProps = Omit<ComponentPropsWithoutRef<"div">, "children" 
    * `fill`: centres the line in the region it replaces, for Suspense fallbacks and pane bodies.
    */
   layout?: "inline" | "fill";
+  /**
+   * Inner spacing on the Surface padding scale: `none` (default for `inline`), `row` (8/12, default for
+   * `fill`), `panel` (12/16).
+   */
+  inset?: StateInset;
   /**
    * Hold the line back (see `LOADING_DELAY_MS`) so work that finishes quickly never flashes a
    * loader. While waiting, `inline` renders nothing (no reserved gap that would collapse again) and
@@ -45,6 +51,7 @@ export function LoadingText({
   children,
   description,
   layout = "inline",
+  inset,
   delay,
   className,
   style,
@@ -69,7 +76,8 @@ export function LoadingText({
         { size: size ?? (weight ? "inherit" : undefined), tone, weight, leading },
         [
           `${Component === "span" ? "inline-flex" : "flex"} min-w-0 items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)`,
-          layout === "fill" ? "h-full min-h-0 justify-center p-3" : "",
+          layout === "fill" ? "h-full min-h-0 justify-center" : "",
+          stateInsetClass(inset ?? (layout === "fill" ? "row" : "none")),
           held ? styles.held : "",
           className,
         ]

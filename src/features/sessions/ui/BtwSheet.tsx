@@ -1,7 +1,7 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { BtwStatusDot } from "./BtwStatusDot";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { Sheet } from "../../../shared/ui/Sheet";
@@ -9,7 +9,7 @@ import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { useT } from "../../../shared/i18n";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Plus, RefreshCw, X } from "../../../shared/ui/icons";
+import { Plus, X } from "../../../shared/ui/icons";
 
 import { Composer } from "./Composer";
 import {
@@ -38,6 +38,7 @@ import {
   type HarnessId,
 } from "../model/session";
 import { compactQuestion } from "../model/btwQuestion";
+import { presentBtwThreadErrorWith } from "../model/btwError";
 
 type Options = {
   parentSessionId?: string;
@@ -89,6 +90,8 @@ function tabHarnessFor(
   );
 }
 
+/** The panel rises from the pane bottom, at most 32rem tall, and leaves the pane top (clamped 18%) visible. */
+const BTW_SHEET_SIZE = "min(32rem, calc(100% - clamp(2.5rem, 18%, 12rem)))";
 const NO_MESSAGES: BtwMessage[] = [];
 const NO_BLOCKS: Block[] = [];
 
@@ -524,82 +527,62 @@ export function BtwSheet({
       scroll="none"
       title={t("By-the-way conversations")}
       escapeScope="[data-session-drop]"
-      className="btw-sheet"
+      size={BTW_SHEET_SIZE}
       bodyClassName="font-sans"
       bodyText={{ size: "body" }}
       onClose={btw.close}
-      header={
-        <div
-          {...surfaceAttributes(
-            { frame: "pane", edge: "bottom" },
-            "flex h-11 shrink-0 items-center gap-1  border-(--ui-tone-neutral-border) pr-2 pl-2.5",
-          )}
-        >
-          <Tabs value={activeTabId ?? ""} onValueChange={btw.selectTab} panels="none">
-            <TabList
-              label={t("Side questions")}
-              scrollbar="hidden"
-              className="min-w-0 flex-1 overflow-x-auto"
-            >
-              {tabs.map((tab) => {
-                const selected = tab.id === activeTabId;
-                const label = compactQuestion(tab.question);
-                return (
-                  <ActionHost
-                    key={tab.id}
-                    selected={selected}
-                    {...surfaceAttributes(
-                      { radius: "row" },
-                      "flex max-w-[15rem] shrink-0 items-center",
-                    )}
-                  >
-                    <Tab value={tab.id} tooltip={tab.question} className="min-w-0">
-                      {tab.status ? <BtwStatusDot status={tab.status} /> : null}
-                      <Text size="inherit" tone="inherit" truncate>
-                        {label}
-                      </Text>
-                    </Tab>
-                    <InlineAction
-                      className="mr-1 shrink-0"
-                      tabIndex={selected ? 0 : -1}
-                      label={
-                        tab.thread ? t("Delete “{p0}”", { p0: label }) : t("Discard new question")
-                      }
-                      type="button"
-                      tooltip={tab.thread ? t("Delete") : t("Discard")}
-                      onClick={() => btw.closeTab(tab)}
-                    >
-                      <X className="icon-xs" strokeWidth={1.75} />
-                    </InlineAction>
-                  </ActionHost>
-                );
-              })}
-            </TabList>
-          </Tabs>
-          {btw.canStartDraft ? (
-            <Button
-              iconOnly
-              label={t("New side question")}
-              variant="ghost"
-              type="button"
-              onClick={btw.startDraft}
-              className="shrink-0"
-            >
-              <Plus className="icon-sm" strokeWidth={1.75} />
-            </Button>
-          ) : null}
+      closeLabel={t("Back to the conversation")}
+      headerActions={
+        btw.canStartDraft ? (
           <Button
             iconOnly
-            label={t("Back to the conversation")}
+            label={t("New side question")}
             variant="ghost"
             type="button"
-            shortcut="Esc"
-            onClick={btw.close}
-            className="shrink-0"
+            onClick={btw.startDraft}
           >
-            <ChevronDown className="icon-md" strokeWidth={1.75} />
+            <Plus className="icon-sm" strokeWidth={1.75} />
           </Button>
-        </div>
+        ) : null
+      }
+      tabs={
+        <Tabs value={activeTabId ?? ""} onValueChange={btw.selectTab} panels="none">
+          <TabList
+            label={t("Side questions")}
+            scrollbar="hidden"
+            className="min-w-0 flex-1 overflow-x-auto"
+          >
+            {tabs.map((tab) => {
+              const selected = tab.id === activeTabId;
+              const label = compactQuestion(tab.question);
+              return (
+                <ActionHost
+                  key={tab.id}
+                  selected={selected}
+                  {...surfaceAttributes({ radius: "row" }, "flex max-w-60 shrink-0 items-center")}
+                >
+                  <Tab value={tab.id} tooltip={tab.question} className="min-w-0">
+                    {tab.status ? <BtwStatusDot status={tab.status} /> : null}
+                    <Text size="inherit" tone="inherit" truncate>
+                      {label}
+                    </Text>
+                  </Tab>
+                  <InlineAction
+                    className="me-1 shrink-0"
+                    tabIndex={selected ? 0 : -1}
+                    label={
+                      tab.thread ? t("Delete “{p0}”", { p0: label }) : t("Discard new question")
+                    }
+                    type="button"
+                    onClick={() => btw.closeTab(tab)}
+                  >
+                    <X className="icon-xs" strokeWidth={1.75} />
+                  </InlineAction>
+                </ActionHost>
+              );
+            })}
+          </TabList>
+        </Tabs>
       }
     >
       <div className="min-h-0 flex-1">
@@ -620,23 +603,9 @@ export function BtwSheet({
       </div>
       {persisted?.status === "error" ? (
         <div className="shrink-0 px-5 pb-3">
-          <Alert tone="danger">
-            <div className="min-w-0">
-              <Text as="div" size="caption" tone="danger" weight="medium">
-                {t("Couldn’t finish")}
-              </Text>
-              <Text as="div" tone="danger" leading="normal" className="mt-1">
-                {persisted.error ||
-                  t("{p0} could not answer this side question.", {
-                    p0: HARNESS_TITLE[harness],
-                  })}
-              </Text>
-            </div>
-            <Button variant="ghost" type="button" onClick={btw.retry} className="shrink-0">
-              <RefreshCw className="icon-xs" strokeWidth={1.75} />
-              {t("Retry")}
-            </Button>
-          </Alert>
+          <InlineError retry={{ onRetry: btw.retry, label: t("Retry") }}>
+            {presentBtwThreadErrorWith(persisted, HARNESS_TITLE[harness], t)}
+          </InlineError>
         </div>
       ) : null}
 
@@ -661,7 +630,7 @@ export function BtwSheet({
             hideBranchPicker
             hideTopBar
             placeholder={t("Ask a side question…")}
-            inputAriaLabel="By-the-way question"
+            inputAriaLabel={t("Side question")}
             allowedModelHarnesses={[harness]}
             initialDraft={btw.seed.text}
             onDraftChange={btw.changeDraft}

@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import type { HostGoal } from "../../tasks/model/hostGoals";
 import {
   ASSISTANT_PRESENCE_FRESH_MS,
@@ -30,7 +31,7 @@ export type AssistantApprovalTarget = AssistantGoalApprovalTarget | AssistantSes
 
 async function goals(owner: AssistantHostRead) {
   const result = await owner.goals();
-  if (!Array.isArray(result)) throw new Error("The Host returned no epic list.");
+  if (!Array.isArray(result)) throw new Error(t("The Host returned no epic list."));
   return result;
 }
 function goalTarget(
@@ -74,7 +75,7 @@ async function sessionTarget(
     !record.runId ||
     !Number.isSafeInteger(block.approval.requestId)
   )
-    throw new Error("The pending approval has no current execution identity.");
+    throw new Error(t("The pending approval has no current execution identity."));
   return {
     kind: "session",
     environmentId: owner.environmentId,
@@ -149,7 +150,7 @@ export async function verifyAssistantApproval(
 ) {
   const owner = captured ?? (await captureAssistantHostRead(target.environmentId));
   if (owner.environmentId !== target.environmentId)
-    throw new Error("The approval's Host changed. Check again.");
+    throw new Error(t("The approval's Host changed. Check again."));
   const job = jobs.find(
     (job) =>
       job.kind !== "quick" &&
@@ -160,19 +161,19 @@ export async function verifyAssistantApproval(
       job.goalId === `assistant-${job.id}`,
   );
   if (!job || ["cancelled", "done"].includes(job.status))
-    throw new Error("The linked job changed. Check approvals again.");
+    throw new Error(t("The linked job changed. Check approvals again."));
   if (target.kind === "goal") {
     if (
       !sameAssistantProjectSet(target.projectIds ?? [target.projectId], assistantJobProjectIds(job))
     )
-      throw new Error("The linked job changed. Check approvals again.");
+      throw new Error(t("The linked job changed. Check approvals again."));
     const current = (await goals(owner)).find((goal) => goal.id === target.goalId);
     const next = current ? goalTarget(current, job, target.environmentId) : undefined;
     if (!next || next.updatedAt !== target.updatedAt || next.planIdentity !== target.planIdentity)
-      throw new Error("The pending plan changed. Check approvals again.");
+      throw new Error(t("The pending plan changed. Check approvals again."));
   } else {
     if (!job.sessionIds.includes(target.sessionId))
-      throw new Error("The approval no longer belongs to this job.");
+      throw new Error(t("The approval no longer belongs to this job."));
     const next = await sessionTarget(target.sessionId, job, owner);
     if (
       !next ||
@@ -183,7 +184,7 @@ export async function verifyAssistantApproval(
       next.runId !== target.runId ||
       next.authorityGeneration !== target.authorityGeneration
     )
-      throw new Error("The pending approval changed. Check again.");
+      throw new Error(t("The pending approval changed. Check again."));
   }
 }
 
@@ -203,4 +204,27 @@ export function assistantPresenceState(
       ? snapshot.presence.state
       : (snapshot.effectivePresence ?? (detected === "locked" ? "away" : detected));
   return { detected, effective, automaticUpdatedAt: fresh ? automatic?.updatedAt : undefined };
+}
+
+/**
+ * Milliseconds until the automatic reading's freshness changes (#315): it becomes fresh at its
+ * own timestamp and stale `ASSISTANT_PRESENCE_FRESH_MS` later. `undefined` when no boundary is
+ * ahead, so an idle chip needs no timer at all.
+ */
+export function assistantPresenceRecheckDelay(
+  automatic: AssistantSnapshot["automaticPresence"],
+  now: number,
+) {
+  if (!automatic?.supported) return undefined;
+  if (automatic.updatedAt > now) return automatic.updatedAt - now;
+  const staleIn = automatic.updatedAt + ASSISTANT_PRESENCE_FRESH_MS - now;
+  return staleIn >= 0 ? staleIn + 1 : undefined;
+}
+
+/** Milliseconds from `now` to the next local `HH:MM` (today if still ahead, otherwise tomorrow). */
+export function msUntilClockTime(time: string, now: Date) {
+  const target = new Date(now);
+  target.setHours(Number(time.slice(0, 2)), Number(time.slice(3, 5)), 0, 0);
+  if (target.getTime() <= now.getTime()) target.setDate(target.getDate() + 1);
+  return target.getTime() - now.getTime();
 }

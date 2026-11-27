@@ -705,6 +705,33 @@ describe("campaign dispatch fairness", () => {
       spy.mockRestore();
     }
   });
+  it("skips the published-ID history query only for an adapter that ignores it, keeping the cursor", async () => {
+    const s = await fixture();
+    const account = await s.account();
+    const campaign = await s.campaign([account]);
+    const [job] = await s.call<SocialJob[]>("campaigns.schedule", { id: campaign.id });
+    await s.call("inbox.polling", { enabled: false });
+    await s.enable();
+    await s.social.tick();
+    expect(s.send).toHaveBeenCalledOnce();
+    // Control: an adapter without the flag still receives the complete pending list.
+    s.poll.mockResolvedValueOnce({ events: [], cursor: "c1" });
+    await s.social.pollAccount(account.id);
+    expect(s.poll.mock.calls[0][2]).toEqual([`post-${job.id}`]);
+    s.adapters.x.ignoresPublishedPosts = true;
+    const prepare = vi.spyOn(s.store.db, "prepare");
+    cleanups.push(() => {
+      prepare.mockRestore();
+    });
+    s.clock.value += 60_000;
+    await s.social.pollAccount(account.id);
+    expect(s.poll.mock.calls[1][2]).toEqual([]);
+    expect(s.poll.mock.calls[1][3]).toBe("c1");
+    expect(s.poll.mock.calls[1][4]).toBeUndefined();
+    expect(
+      prepare.mock.calls.filter(([sql]) => sql.includes("AS platform_id FROM social_jobs")),
+    ).toHaveLength(0);
+  });
   it("admits newly due work on another tick while generation is waiting", async () => {
     const s = await fixture();
     const account = await s.account();
@@ -772,6 +799,51 @@ describe("campaign dispatch fairness", () => {
       release();
       await Promise.all([first, second]);
     }
+  });
+  it("backs off failed background polls exponentially without blocking an explicit refresh", async () => {
+    const s = await fixture();
+    const account = await s.account();
+    await s.enable();
+    await s.call("inbox.polling", { enabled: true });
+    s.poll.mockRejectedValue(new Error("provider outage"));
+    const calls = () => s.poll.mock.calls.length;
+    await s.social.tick();
+    expect(calls()).toBe(1);
+    // First failure waits one minute: nothing is polled inside it, one poll after it.
+    s.clock.value += 30_000;
+    await s.social.tick();
+    expect(calls()).toBe(1);
+    s.clock.value += 30_000;
+    await s.social.tick();
+    expect(calls()).toBe(2);
+    // Second failure doubles the wait.
+    s.clock.value += 60_000;
+    await s.social.tick();
+    expect(calls()).toBe(2);
+    s.clock.value += 60_000;
+    await s.social.tick();
+    expect(calls()).toBe(3);
+    // The owner's refresh is never held back by the backoff, and its success ends it.
+    s.poll.mockReset();
+    s.poll.mockResolvedValueOnce({ events: [] });
+    await expect(s.social.pollAccount(account.id)).resolves.toEqual({ ingested: 0 });
+    expect(calls()).toBe(1);
+  });
+  it("lets an unpause end a failed poll's backoff at once", async () => {
+    const s = await fixture();
+    const account = await s.account();
+    await s.enable();
+    await s.call("inbox.polling", { enabled: true });
+    s.poll.mockRejectedValue(new Error("revoked token"));
+    await s.social.tick();
+    s.clock.value += 60_000;
+    await s.social.tick();
+    expect(s.poll).toHaveBeenCalledTimes(2);
+    // Two failures wait two minutes; an unpause does not.
+    await s.call("accounts.pause", { accountId: account.id, paused: true });
+    await s.call("accounts.pause", { accountId: account.id, paused: false });
+    await s.social.tick();
+    expect(s.poll).toHaveBeenCalledTimes(3);
   });
   it("preserves the credential rotation preflight before dispatch", async () => {
     const s = await fixture();
@@ -958,6 +1030,72 @@ describe("campaign dispatch publication grants", () => {
   );
 });
 describe("reviewed campaign approval", () => {
+  it("keeps the Reddit post destination and title in the reviewed campaign and queued job", async () => {
+    const s = await fixture();
+    const account = await s.account("reddit");
+    const reddit = { subreddits: ["bycodatest"], title: "Release notes", kind: "self" };
+    const input = {
+      name: "Reddit update",
+      projectIds: [s.a.id],
+      variants: [{ accountId: account.id, text: "First post", reddit }],
+    };
+    const campaign = await s.call<SocialCampaign>("campaigns.create", input);
+    expect(campaign.variants[0]?.reddit).toEqual(reddit);
+    const preview = await s.call<{ campaign: SocialCampaign }>("campaigns.preview", {
+      id: campaign.id,
+    });
+    expect(preview.campaign.variants[0]?.reddit).toEqual(reddit);
+    await s.call("campaigns.approveReviewed", {
+      id: campaign.id,
+      expectedRevision: campaign.revision,
+    });
+    await s.call("campaigns.schedule", { id: campaign.id });
+    expect((await s.social.snapshot(owner)).jobs[0]?.payload.reddit).toEqual(reddit);
+    const incomplete = await s.call<SocialCampaign>("campaigns.create", {
+      ...input,
+      variants: [
+        { ...input.variants[0], reddit: { ...reddit, title: "", flairId: "Draft flair" } },
+      ],
+    });
+    expect(incomplete.variants[0]?.reddit).toEqual({
+      ...reddit,
+      title: "",
+      flairId: "Draft flair",
+    });
+    const incompletePreview = await s.call<{ targets: { contentError?: string }[] }>(
+      "campaigns.preview",
+      { id: incomplete.id },
+    );
+    expect(incompletePreview.targets[0]?.contentError).toMatch(/Reddit destination and a title/);
+    await expect(
+      s.call("campaigns.create", {
+        ...input,
+        variants: [{ ...input.variants[0], reddit: { ...reddit, subreddits: ["one", "two"] } }],
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("keeps X publishing options in preview and the exact scheduled job", async () => {
+    const s = await fixture();
+    const account = await s.account("x");
+    const x = { communityId: "789", thread: ["Second post", "Third post"] };
+    const campaign = await s.call<SocialCampaign>("campaigns.create", {
+      name: "Community thread",
+      projectIds: [s.a.id],
+      variants: [{ accountId: account.id, text: "First post", x }],
+    });
+    const preview = await s.call<{ campaign: SocialCampaign }>("campaigns.preview", {
+      id: campaign.id,
+    });
+    expect(preview.campaign.variants[0]?.x).toEqual(x);
+    await s.call("campaigns.approveReviewed", {
+      id: campaign.id,
+      expectedRevision: campaign.revision,
+    });
+    await s.call("campaigns.schedule", { id: campaign.id });
+    expect((await s.social.snapshot(owner)).jobs[0]?.payload.x).toEqual(x);
+  });
+
   async function draft(s: Awaited<ReturnType<typeof fixture>>) {
     const account = await s.account();
     return await s.call<SocialCampaign>("campaigns.create", {
@@ -1045,7 +1183,10 @@ describe("reviewed campaign approval", () => {
       expect(generate).toHaveBeenCalledTimes(1);
       expect(s.send).toHaveBeenCalledTimes(1);
       s.clock.value = Date.parse("2026-11-04T08:01:00Z");
+      const list = vi.spyOn(s.social, "list");
       await s.thread(account, "second-ai", "release");
+      expect(list).not.toHaveBeenCalledWith("draft");
+      list.mockRestore();
       await s.social.tick();
       expect(generate).toHaveBeenCalledTimes(1);
       expect(s.send).toHaveBeenCalledTimes(1);
@@ -1251,7 +1392,7 @@ describe("Room reviewed Social send", () => {
         allowed,
         proposal.requestId,
         qualify,
-      )) as { state: string; result: SocialJob };
+      )) as unknown as { state: string; result: SocialJob };
       expect(result).toMatchObject({
         state: "completed",
         result: {
@@ -1407,6 +1548,25 @@ describe("reviewed draft approval", () => {
 describe("durable owner-approved publishing plans", () => {
   const current = async (s: Awaited<ReturnType<typeof fixture>>, id: string) =>
     (await s.call<SocialPublishingPlan[]>("publishing-plans.list")).find((plan) => plan.id === id)!;
+  it("tick selects only enabled or job-pending plans, never a paused record without a job", async () => {
+    const s = await fixture();
+    const account = await s.account();
+    const campaign = await s.campaign([account]);
+    await createPlan(s, account, [campaign]);
+    const prepare = vi.spyOn(s.store.db, "prepare");
+    await s.enable();
+    await s.social.tick();
+    const plansQueries = prepare.mock.calls
+      .map(([sql]) => String(sql))
+      .filter((sql) => sql.includes("'publishing-plan'"));
+    expect(plansQueries.length).toBeGreaterThan(0);
+    for (const sql of plansQueries) {
+      expect(sql).toContain("json_extract(value,'$.enabled')=1");
+      expect(sql).toContain("json_extract(value,'$.pendingJobId') IS NOT NULL");
+    }
+    expect(s.send).not.toHaveBeenCalled();
+    prepare.mockRestore();
+  });
   it("saves paused; only the owner can activate the exact reviewed revision and approved content", async () => {
     const s = await fixture();
     const account = await s.account();
@@ -1777,7 +1937,7 @@ describe("social workspace performance and authorization", () => {
       expect(thread.hasInbound).toBe(true);
     }
     expect(response.snapshot!.contacts[0].history).toHaveLength(5);
-    expect(response.snapshot!.related!.contacts[0].history).toHaveLength(5);
+    expect(response.snapshot!.related!.contacts![0].history).toHaveLength(5);
     expect(Buffer.byteLength(JSON.stringify(response))).toBeLessThan(30000);
     const detail = await s.call<SocialThread>("thread.page", { id: source.id });
     expect(detail.events).toHaveLength(20);
@@ -1861,6 +2021,146 @@ describe("social workspace performance and authorization", () => {
     expect(accounts.threads).toEqual([]);
     expect(accounts.contacts).toEqual([]);
     expect(accounts.pages!.threads!.total).toBe(186);
+  });
+  it("loads a scheduled window by schedule time, not creation order, inside the principal's scope", async () => {
+    const s = await fixture();
+    const account = await s.account();
+    const campaign = await s.campaign([account]);
+    const insertJob = s.store.db.prepare("INSERT INTO social_jobs VALUES (?,?,?,?,?,?)");
+    const seed = async (
+      id: string,
+      scheduledAt: number,
+      createdAt: number,
+      patch: Partial<SocialJob> = {},
+    ) => {
+      const job: SocialJob = {
+        id,
+        dedupeKey: id,
+        operationId: id,
+        actorId: "owner",
+        provider: "owner",
+        accountId: account.id,
+        projectIds: [s.a.id],
+        campaignId: campaign.id,
+        kind: "publish",
+        payload: { text: id, media: [] },
+        status: "queued",
+        scheduledAt,
+        createdAt,
+        attempts: 0,
+        ...patch,
+      };
+      await insertJob.run(
+        job.id,
+        job.dedupeKey,
+        job.accountId,
+        job.status,
+        job.scheduledAt,
+        JSON.stringify(job),
+      );
+    };
+    const from = 2_000_000;
+    const to = 3_000_000;
+    // 150 jobs created later but scheduled elsewhere push the oldest-created target past a creation page.
+    for (let index = 0; index < 150; index++)
+      await seed(`outside-${index}`, 9_000_000 + index, 10_000 + index);
+    await seed("target", from + 5, 1);
+    await seed("window-start", from, 2);
+    await seed("window-end", to, 3);
+    await seed("just-before", from - 1, 4);
+    await seed("reply", from + 10, 5, { kind: "reply" });
+    await seed("other-project", from + 20, 6, { projectIds: [s.b.id] });
+    const principal = (await s.session()).principal;
+    const query = {
+      section: "campaigns",
+      projectId: s.a.id,
+      limit: 100,
+      filters: { jobs: { kind: "publish", scheduledFrom: from, scheduledTo: to } },
+    };
+
+    const creationPage = await s.social.workspaceSnapshot(principal, {
+      section: "campaigns",
+      projectId: s.a.id,
+      limit: 100,
+    });
+    expect(creationPage.snapshot!.jobs.map((job) => job.id)).not.toContain("target");
+
+    const inWindow = await s.social.workspaceSnapshot(principal, query);
+    // Ascending schedule order; the start is inclusive, the end exclusive; no reply, no other project.
+    expect(inWindow.snapshot!.jobs.map((job) => job.id)).toEqual(["window-start", "target"]);
+    expect(inWindow.snapshot!.pages!.jobs).toEqual({ offset: 0, limit: 100, total: 2 });
+    expect(inWindow.snapshot!.filters!.jobs).toEqual(query.filters.jobs);
+    expect(inWindow.snapshot!.related!.campaigns!.map((row) => row.id)).toContain(campaign.id);
+    // Counts describe the whole scope, not the window.
+    expect(
+      Object.values(inWindow.snapshot!.jobCounts!).reduce((sum, count) => sum + count, 0),
+    ).toBe(creationPage.snapshot!.pages!.jobs!.total);
+
+    // A different window is a different cursor, so a cached week is never reused for the next one.
+    const next = await s.social.workspaceSnapshot(principal, {
+      ...query,
+      cursor: inWindow.cursor,
+      filters: { jobs: { kind: "publish", scheduledFrom: to, scheduledTo: to + 1 } },
+    });
+    expect(next.unchanged).toBe(false);
+    expect(next.snapshot!.jobs.map((job) => job.id)).toEqual(["window-end"]);
+
+    // Paging inside a window keeps schedule order and does not repeat rows.
+    const firstPage = await s.social.workspaceSnapshot(principal, { ...query, limit: 1 });
+    const secondPage = await s.social.workspaceSnapshot(principal, {
+      ...query,
+      limit: 1,
+      offsets: { jobs: 1 },
+    });
+    expect(firstPage.snapshot!.jobs.map((job) => job.id)).toEqual(["window-start"]);
+    expect(secondPage.snapshot!.jobs.map((job) => job.id)).toEqual(["target"]);
+
+    // The owner sees the other project's job only without a project; the project filter still scopes it.
+    const ownerAll = await s.social.workspaceSnapshot(owner, {
+      section: "campaigns",
+      filters: query.filters,
+    });
+    expect(ownerAll.snapshot!.jobs.map((job) => job.id)).toEqual([
+      "window-start",
+      "target",
+      "other-project",
+    ]);
+    const other = (await s.session(s.b.id)).principal;
+    expect(
+      (
+        await s.social.workspaceSnapshot(other, {
+          section: "campaigns",
+          projectId: s.b.id,
+          filters: query.filters,
+        })
+      ).snapshot!.jobs.map((job) => job.id),
+    ).not.toContain("target");
+  });
+  it("rejects malformed scheduled windows and windows on collections without a schedule", async () => {
+    const s = await fixture();
+    const principal = (await s.session()).principal;
+    const jobs = (value: Record<string, unknown>) =>
+      s.social.workspaceSnapshot(principal, { section: "campaigns", filters: { jobs: value } });
+    await expect(jobs({ scheduledFrom: 10 })).rejects.toThrow("Invalid scheduled range.");
+    await expect(jobs({ scheduledTo: 10 })).rejects.toThrow("Invalid scheduled range.");
+    await expect(jobs({ scheduledFrom: 10, scheduledTo: 10 })).rejects.toThrow(
+      "Invalid scheduled range.",
+    );
+    await expect(jobs({ scheduledFrom: 20, scheduledTo: 10 })).rejects.toThrow(
+      "Invalid scheduled range.",
+    );
+    await expect(jobs({ scheduledFrom: 1.5, scheduledTo: 10 })).rejects.toThrow(
+      "Invalid scheduled range.",
+    );
+    await expect(jobs({ scheduledFrom: -1, scheduledTo: 10 })).rejects.toThrow(
+      "Invalid scheduled range.",
+    );
+    await expect(
+      s.social.workspaceSnapshot(principal, {
+        section: "campaigns",
+        filters: { campaigns: { scheduledFrom: 1, scheduledTo: 2 } },
+      }),
+    ).rejects.toThrow("Only jobs can be filtered by schedule.");
   });
   it("binds cursors to current principal/grants for LinkedIn threads like any platform", async () => {
     const s = await fixture();
@@ -1991,7 +2291,7 @@ describe("social workspace performance and authorization", () => {
     expect(searched.snapshot!.threads[0].id).toBe(source.id);
     expect(searched.snapshot!.threads[0].events[0].text).not.toContain("Historical needle");
     expect(searched.snapshot!.contacts).toEqual([]);
-    expect(searched.snapshot!.related!.contacts.map((row) => row.id)).toContain(contact.id);
+    expect(searched.snapshot!.related!.contacts!.map((row) => row.id)).toContain(contact.id);
     const segment = await s.call<{
       id: string;
     }>("segments.create", {
@@ -2380,6 +2680,7 @@ describe("Merkezi sosyal servis", () => {
         eventId: "other-recipient",
         threadId: "conversation-1",
         contactId: "different-recipient",
+        contactName: "Different recipient",
         kind: "message",
         text: "Hello",
         at: ++s.clock.value,
@@ -3161,6 +3462,40 @@ describe("Merkezi sosyal servis", () => {
     await expect(s.call("replies.send", { id: draft.id })).rejects.toThrow("permit replies");
     expect(s.send).not.toHaveBeenCalled();
   });
+  // Regression: the owner's notification poller read two lists every 4 s and each read
+  // added a never-pruned audit row (~1,800 rows an hour on a real Host).
+  it("does not audit the owner's read-only calls but still audits session reads", async () => {
+    const s = await fixture();
+    const session = await s.session();
+    const reads = async () =>
+      (await s.store.db.prepare("SELECT value FROM social_audit").all())
+        .map((row) => JSON.parse(String(row.value)))
+        .filter((log) => log.action === "browser.needsHuman.list");
+    for (let index = 0; index < 3; index++) await s.call("browser.needsHuman.list", {}, owner);
+    expect(await reads()).toHaveLength(0);
+    await s.call("browser.needsHuman.list", {}, session.principal);
+    expect(await reads()).toMatchObject([{ sessionId: session.principal.sessionId }]);
+  });
+
+  it("prunes expired audit rows and the poller's legacy read rows in batches", async () => {
+    const s = await fixture();
+    const now = (s.social as unknown as { now(): number }).now();
+    const insert = s.store.db.prepare("INSERT INTO social_audit VALUES (?,?)");
+    const row = (id: string, actorId: string, action: string, at: number) =>
+      insert.run(id, JSON.stringify({ operationId: id, actorId, action, at, outcome: "success" }));
+    await row("old", "device:a", "campaigns.schedule", now - 31 * 24 * 60 * 60_000);
+    await row("push-read", "push", "browser.needsHuman.list", now);
+    await row("push-write", "push", "campaigns.schedule", now);
+    await row("device-read", "device:a", "browser.needsHuman.list", now);
+    const removed = await s.social.pruneAuditIfDue();
+    expect(removed).toBe(2);
+    const left = await s.store.db.prepare("SELECT operation_id FROM social_audit").all();
+    expect(left.map((entry) => entry.operation_id).sort()).toEqual(["device-read", "push-write"]);
+    // Not due again within the hour.
+    await row("push-read-2", "push", "browser.needsHuman.list", now);
+    expect(await s.social.pruneAuditIfDue()).toBe(0);
+  });
+
   it("identity forgery and idempotent repeats create a separate audit record with verified targets", async () => {
     const s = await fixture();
     const account = await s.account();

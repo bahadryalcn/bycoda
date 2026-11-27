@@ -1,11 +1,7 @@
-import type { ComponentProps, Dispatch, SetStateAction } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import { lazySurface } from "../../../shared/ui/lazySurface";
 import type { useProjectCrews } from "../model/crewClient";
 import type { CrewDialog } from "./crewMenuItems";
-import { CrewManagementDialog } from "./CrewSessions";
-
-/** Opens a crew's coordinator or work session; the host supplies it. */
-export type OpenCrewSession = NonNullable<ComponentProps<typeof CrewManagementDialog>["onOpen"]>;
 
 const CrewDeleteDialog = lazySurface(async () => ({
   default: (await import("./CrewDialogs")).CrewDeleteDialog,
@@ -23,13 +19,11 @@ export function CrewDialogHost({
   state,
   dialog,
   setDialog,
-  onOpenSession,
 }: {
   cwd: string;
   state: ReturnType<typeof useProjectCrews>;
   dialog: CrewDialog | null;
   setDialog: Dispatch<SetStateAction<CrewDialog | null>>;
-  onOpenSession?: OpenCrewSession;
 }) {
   const data = state.data;
   const deleting =
@@ -38,28 +32,13 @@ export function CrewDialogHost({
       : undefined;
   return (
     <>
-      {dialog?.kind === "work" ? (
-        <CrewManagementDialog
-          cwd={cwd}
-          state={state}
-          definitionId={dialog.crewId}
-          onOpen={onOpenSession}
-          onClose={() => setDialog(null)}
-        />
-      ) : null}
       {dialog?.kind === "edit" ? (
         <CrewEditDialog
           cwd={cwd}
           crewId={dialog.crewId}
           createScope={dialog.createScope}
           copyOf={dialog.copyOf}
-          initialPage={dialog.initialPage}
-          onStart={(definitionId) => setDialog({ kind: "start", definitionId })}
-          onClose={() =>
-            setDialog(
-              dialog.returnToStart ? { kind: "start", definitionId: dialog.returnToStart } : null,
-            )
-          }
+          onClose={() => setDialog(null)}
         />
       ) : null}
       {dialog?.kind === "start" ? (
@@ -67,8 +46,6 @@ export function CrewDialogHost({
           cwd={cwd}
           state={state}
           definitionId={dialog.definitionId}
-          onOpen={onOpenSession}
-          onEdit={(crewId) => setDialog({ kind: "edit", crewId, returnToStart: crewId })}
           onClose={() => setDialog(null)}
         />
       ) : null}

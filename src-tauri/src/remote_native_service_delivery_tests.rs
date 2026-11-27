@@ -1,6 +1,6 @@
 use super::*;
 use crate::host_ws::native_profile::NativeProfileBroker;
-use crate::host_ws::tests::{accept, hello, next, restored_connection, result, Server};
+use crate::host_ws::tests::{accept, hello, next, restored_connection, result, try_next, Server};
 use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::mpsc;
@@ -34,6 +34,7 @@ impl Fixture {
             token: "secret-native-token".into(),
             ssh: None,
             local_host: true,
+            proof_seed: None,
         };
         write(
             &root.join("connections.json"),
@@ -83,7 +84,10 @@ impl Fixture {
             delivery_supported: self.modern,
             delivery_ack_supported: self.acks,
             delivery_epochs_supported: self.epochs,
+            delivery_epoch_gaps_supported: false,
             bounded_format_supported: false,
+            delivery_admission_supported: false,
+            desktop_take_wait_supported: false,
             journal: Some(JournalAccess::fixture(store.clone())),
             delivery_cursor: Mutex::new(None),
             delivery_ack_cursor: Mutex::new(None),
@@ -104,6 +108,13 @@ impl Fixture {
         Arc::get_mut(self.channel.as_mut().unwrap())
             .unwrap()
             .delivery_ack_supported = true;
+    }
+
+    fn enable_admission(&mut self) {
+        self.enable_acks();
+        Arc::get_mut(self.channel.as_mut().unwrap())
+            .unwrap()
+            .delivery_admission_supported = true;
     }
 
     fn enable_epochs(&mut self) {
@@ -157,15 +168,213 @@ fn retired_receipt(params: &Value) -> Value {
     value
 }
 
+fn reconcile_remote_acks(
+    channel: &Arc<NativeServiceChannel>,
+    deadline: Instant,
+) -> Result<usize, String> {
+    reconcile_remote_acks_noting(channel, deadline, &mut None)
+}
+
 const EPOCH_OPEN: &str = "native.delivery.epochs.open";
 const EPOCH_STATUS: &str = "native.delivery.epochs.status";
 const EPOCH_COMPACT: &str = "native.delivery.epochs.compact";
 const EPOCH_CLOSE: &str = "native.delivery.epochs.close";
 const EPOCH_OWNER: &str = "22222222-2222-4222-8222-222222222222";
 
+#[test]
+fn v2_service_applies_and_closes_after_legacy_buffer_original() {
+    let (done, finished) = mpsc::channel();
+    let (send_identity, identity) = mpsc::channel::<Value>();
+    let server = serve(move |listener| async move {
+        let mut socket = accept(&listener).await;
+        hello(
+            &mut socket,
+            &[
+                EPOCH_OPEN,
+                epoch_wire::GAP_RESOLVE,
+                EPOCH_COMPACT,
+                EPOCH_CLOSE,
+                "native.services.delivery.apply",
+                "native.services.delivery.ack",
+            ],
+            "host.1",
+        )
+        .await;
+        let open = next(&mut socket).await;
+        assert_eq!(open["method"], EPOCH_OPEN);
+        let open_id = open["params"]["openId"].clone();
+        result(&mut socket, &open, epoch_description(&open_id, 0, 1)).await;
+        let gap = next(&mut socket).await;
+        assert_eq!(gap["method"], epoch_wire::GAP_RESOLVE);
+        let mut proof = identity.recv_timeout(FIXTURE_WAIT).unwrap();
+        assert_eq!(gap["params"], proof);
+        proof["outcome"] = json!("abandoned");
+        result(&mut socket, &gap, proof).await;
+        let compact = next(&mut socket).await;
+        assert_eq!(compact["method"], EPOCH_COMPACT);
+        assert_eq!(compact["params"]["through"], 1);
+        result(&mut socket, &compact, epoch_description(&open_id, 1, 1)).await;
+        let apply = next(&mut socket).await;
+        assert_eq!(apply["method"], "native.services.delivery.apply");
+        let binding = &apply["params"];
+        assert_eq!(binding["originalId"], format!("nd2:{EPOCH_OWNER}:1:2"));
+        result(
+            &mut socket,
+            &apply,
+            recorded(binding, json!({"accepted":true})),
+        )
+        .await;
+        let ack = next(&mut socket).await;
+        assert_eq!(ack["method"], "native.services.delivery.ack");
+        assert_eq!(ack["params"]["originalId"], binding["originalId"]);
+        result(&mut socket, &ack, retired_receipt(&ack["params"])).await;
+        let compact = next(&mut socket).await;
+        assert_eq!(compact["method"], EPOCH_COMPACT);
+        assert_eq!(compact["params"]["expectedThrough"], 1);
+        assert_eq!(compact["params"]["through"], 2);
+        result(&mut socket, &compact, epoch_description(&open_id, 2, 2)).await;
+        let close = next(&mut socket).await;
+        assert_eq!(close["method"], EPOCH_CLOSE);
+        let mut closed = epoch_description(&open_id, 2, 2);
+        closed["closed"] = json!(true);
+        result(&mut socket, &close, closed).await;
+        finish_after(finished).await;
+    });
+    let mut fixture = Fixture::new(&server.endpoint, true);
+    fixture.enable_epochs();
+    let route = ws_fingerprint(&fixture.machine);
+    let open_id = epoch_wire::open_params(fixture.store(), &route).unwrap()["openId"].clone();
+    let description = epoch_wire::description(&epoch_description(&open_id, 0, 0)).unwrap();
+    let epoch = journal::epochs::bind(fixture.store(), &route, &description).unwrap();
+    let original =
+        journal::epochs::prepare_legacy_buffer(fixture.store(), "old-buffer", &route, "{}", &epoch)
+            .unwrap();
+    let original = journal::mark_possible(fixture.store(), &original).unwrap();
+    journal::record_result(fixture.store(), &original, r#"{"recorded":true}"#).unwrap();
+    send_identity
+        .send(epoch_wire::gap_params(&original).unwrap())
+        .unwrap();
+    fixture.reopen();
+    Arc::get_mut(fixture.channel.as_mut().unwrap())
+        .unwrap()
+        .delivery_epoch_gaps_supported = true;
+    fixture
+        .channel()
+        .request(
+            "conversation.desktop.finish",
+            json!({"id":"after-buffer","result":{}}),
+        )
+        .unwrap()
+        .project(|value| {
+            assert_eq!(value, &json!({"accepted":true}));
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(
+        retained_count(fixture.store(), "native_delivery_originals"),
+        0
+    );
+    let close = epoch_call(
+        fixture.channel(),
+        EPOCH_CLOSE,
+        json!({"ownerId":EPOCH_OWNER,"generation":1,"expectedThrough":2,"through":2}),
+        Instant::now() + FIXTURE_WAIT,
+    )
+    .unwrap();
+    assert!(
+        commit_epoch(fixture.channel(), &close)
+            .unwrap()
+            .description()
+            .closed
+    );
+    done.send(()).unwrap();
+}
+
 fn epoch_description(open_id: &Value, through: u64, high_water: u64) -> Value {
     json!({"version":2,"openId":open_id,"ownerId":EPOCH_OWNER,"generation":1,
         "through":through,"highWater":high_water,"closed":false})
+}
+
+#[test]
+fn v2_reopen_fences_missing_original_before_compacting_its_slot() {
+    let (done, finished) = mpsc::channel();
+    let (send_identity, identity) = mpsc::channel::<Value>();
+    let server = serve(move |listener| async move {
+        let mut socket = accept(&listener).await;
+        hello(
+            &mut socket,
+            &[EPOCH_OPEN, EPOCH_COMPACT, epoch_wire::GAP_RESOLVE],
+            "host.1",
+        )
+        .await;
+        let open = next(&mut socket).await;
+        assert_eq!(open["method"], EPOCH_OPEN);
+        let open_id = open["params"]["openId"].clone();
+        result(&mut socket, &open, epoch_description(&open_id, 0, 0)).await;
+        let gap = next(&mut socket).await;
+        assert_eq!(gap["method"], epoch_wire::GAP_RESOLVE);
+        let expected = identity.recv_timeout(FIXTURE_WAIT).unwrap();
+        assert_eq!(gap["params"], expected);
+        let mut invalid_proof = expected.clone();
+        invalid_proof["outcome"] = json!("not_admitted");
+        invalid_proof["sequence"] = json!(2);
+        result(&mut socket, &gap, invalid_proof).await;
+        let reopen = next(&mut socket).await;
+        assert_eq!(reopen["method"], EPOCH_OPEN);
+        assert_eq!(reopen["params"]["openId"], open_id);
+        result(&mut socket, &reopen, epoch_description(&open_id, 0, 0)).await;
+        let gap = next(&mut socket).await;
+        assert_eq!(gap["method"], epoch_wire::GAP_RESOLVE);
+        assert_eq!(gap["params"], expected);
+        let mut proof = expected;
+        proof["outcome"] = json!("not_admitted");
+        result(&mut socket, &gap, proof).await;
+        let compact = next(&mut socket).await;
+        assert_eq!(compact["method"], EPOCH_COMPACT);
+        assert_eq!(compact["params"]["through"], 1);
+        result(&mut socket, &compact, epoch_description(&open_id, 1, 1)).await;
+        finish_after(finished).await;
+    });
+    let mut fixture = Fixture::new(&server.endpoint, true);
+    fixture.enable_epochs();
+    let route = ws_fingerprint(&fixture.machine);
+    let open_id = epoch_wire::open_params(fixture.store(), &route).unwrap()["openId"].clone();
+    let description = epoch_wire::description(&epoch_description(&open_id, 0, 0)).unwrap();
+    let epoch = journal::epochs::bind(fixture.store(), &route, &description).unwrap();
+    let original = journal::epochs::prepare(
+        fixture.store(),
+        "abandoned-original",
+        &route,
+        "native.services.conversation.desktop.finish",
+        "{}",
+        &epoch,
+    )
+    .unwrap();
+    journal::mark_possible(fixture.store(), &original).unwrap();
+    send_identity
+        .send(epoch_wire::gap_params(&original).unwrap())
+        .unwrap();
+    fixture.reopen();
+    Arc::get_mut(fixture.channel.as_mut().unwrap())
+        .unwrap()
+        .delivery_epoch_gaps_supported = true;
+    let epoch = ensure_epoch(fixture.channel(), Instant::now() + FIXTURE_WAIT).unwrap();
+    assert_eq!(epoch.through(), 0);
+    assert_eq!(
+        retained_count(fixture.store(), "native_delivery_originals"),
+        1
+    );
+    let epoch = ensure_epoch(fixture.channel(), Instant::now() + FIXTURE_WAIT).unwrap();
+    assert_eq!(epoch.through(), 1);
+    assert_eq!(
+        retained_count(fixture.store(), "native_delivery_originals"),
+        0
+    );
+    assert_eq!(
+        retained_count(fixture.store(), "native_delivery_semantic_retirements"),
+        0
+    );
+    done.send(()).unwrap();
 }
 
 fn retained_count(store: &SessionStore, table: &str) -> i64 {
@@ -988,6 +1197,58 @@ fn restored_format_reconciliation_discards_terminal_orphan_without_recreating_co
         )
         .unwrap();
     assert_eq!(row, ("acknowledged".into(), None, None));
+    done.send(()).unwrap();
+}
+
+#[test]
+fn restored_finish_reconciliation_consumes_an_orphaned_result_once() {
+    // Repro: a finish recorded by an earlier runtime whose relay caller was gone stayed
+    // `recorded` forever and held the epoch prefix (live slots 12180/12181).
+    let (done, finished) = mpsc::channel();
+    let server = serve(move |listener| async move {
+        let mut first = accept(&listener).await;
+        let methods = [
+            "native.services.delivery.apply",
+            "native.services.delivery.status",
+        ];
+        hello(&mut first, &methods, "host.1").await;
+        let apply = next(&mut first).await;
+        let identity = apply["params"].clone();
+        result(
+            &mut first,
+            &apply,
+            recorded(&identity, json!({"accepted":true})),
+        )
+        .await;
+        let mut second = accept(&listener).await;
+        hello(&mut second, &methods, "host.1").await;
+        let status = next(&mut second).await;
+        assert_eq!(status["method"], "native.services.delivery.status");
+        assert_eq!(status["params"]["originalId"], identity["originalId"]);
+        result(
+            &mut second,
+            &status,
+            recorded(&status["params"], json!({"accepted":true})),
+        )
+        .await;
+        finish_after(finished).await;
+    });
+    let mut fixture = Fixture::new(&server.endpoint, true);
+    let reply = fixture
+        .channel()
+        .request(
+            "conversation.desktop.finish",
+            json!({"id":"orphan-finish","result":"x"}),
+        )
+        .unwrap();
+    drop(reply);
+    assert_eq!(fixture.pending()[0].phase(), Phase::Recorded);
+    fixture.reopen();
+    assert_eq!(
+        reconcile_pending(fixture.channel(), Instant::now() + FIXTURE_WAIT).unwrap(),
+        1
+    );
+    assert!(fixture.pending().is_empty());
     done.send(()).unwrap();
 }
 
@@ -1905,21 +2166,17 @@ fn chunked_result_ack_uses_consumed_canonical_json_not_raw_source_digest() {
     done.send(()).unwrap();
 }
 
-fn seed_consumed(fixture: &Fixture, index: usize, method: &str) -> Original {
+fn seed_consumed(fixture: &Fixture, index: usize) -> Original {
     let prepared = journal::prepare(
         fixture.store(),
         &format!("consumed-{index}"),
         &ws_fingerprint(&fixture.machine),
-        method,
+        "native.services.conversation.desktop.finish",
         &format!(r#"{{"id":"consumed-{index}"}}"#),
     )
     .unwrap();
     let possible = journal::mark_possible(fixture.store(), &prepared).unwrap();
-    let result = if method == "native.buffers.update" {
-        json!({"acknowledged":true})
-    } else {
-        json!({"accepted":true})
-    };
+    let result = json!({"accepted":true});
     let recorded = journal::record_result(
         fixture.store(),
         &possible,
@@ -1933,7 +2190,7 @@ fn seed_consumed(fixture: &Fixture, index: usize, method: &str) -> Original {
 }
 
 #[test]
-fn ack_deadline_midpage_advances_only_attempted_rows_and_skips_buffer_kind() {
+fn ack_deadline_midpage_advances_only_attempted_rows() {
     let (ids_tx, ids_rx) = mpsc::channel::<Vec<String>>();
     let (hold, held) = mpsc::channel();
     let (locked, wait_locked) = mpsc::channel();
@@ -1962,21 +2219,12 @@ fn ack_deadline_midpage_advances_only_attempted_rows_and_skips_buffer_kind() {
     });
     let mut fixture = Fixture::new(&server.endpoint, true);
     fixture.enable_acks();
-    for index in 0..5 {
-        seed_consumed(
-            &fixture,
-            index,
-            if index == 4 {
-                "native.buffers.update"
-            } else {
-                "native.services.conversation.desktop.finish"
-            },
-        );
+    for index in 0..4 {
+        seed_consumed(&fixture, index);
     }
     let all = fixture.remote_acks();
     let ids = all
         .iter()
-        .filter(|original| original.method() != "native.buffers.update")
         .map(|original| original.id().to_owned())
         .collect::<Vec<_>>();
     let second_service = all
@@ -2017,9 +2265,7 @@ fn ack_deadline_midpage_advances_only_attempted_rows_and_skips_buffer_kind() {
         reconcile_remote_acks(fixture.channel(), Instant::now() + FIXTURE_WAIT).unwrap(),
         3
     );
-    let remaining = fixture.remote_acks();
-    assert_eq!(remaining.len(), 1);
-    assert_eq!(remaining[0].method(), "native.buffers.update");
+    assert!(fixture.remote_acks().is_empty());
     done.send(()).unwrap();
 }
 
@@ -2062,7 +2308,7 @@ fn remote_ack_rejects_retired_caller_and_replaced_saved_issuer_before_dispatch()
         });
         let mut fixture = Fixture::new(&server.endpoint, true);
         fixture.enable_acks();
-        let original = seed_consumed(&fixture, 0, "native.services.conversation.desktop.finish");
+        let original = seed_consumed(&fixture, 0);
         let reply = fixture
             .channel()
             .wire(
@@ -2321,4 +2567,135 @@ fn unavailable_format_result_requires_qualified_host_and_exact_original_binding(
         );
         done.send(()).unwrap();
     }
+}
+
+#[test]
+fn admission_acknowledgement_reads_the_typed_result_by_original_id_without_reapplying() {
+    let params = json!({"id":"original-relay","result":{"value":"original result"}});
+    let (done, finished) = mpsc::channel();
+    let server = serve(move |listener| async move {
+        let mut connection = accept(&listener).await;
+        hello(
+            &mut connection,
+            &[
+                "native.services.delivery.apply",
+                "native.services.delivery.status",
+            ],
+            "host.1",
+        )
+        .await;
+        let apply = next(&mut connection).await;
+        assert_eq!(apply["method"], "native.services.delivery.apply");
+        assert_eq!(apply["params"]["acknowledge"], "admission");
+        // Durable admission only: no business result is claimed.
+        let accepted = json!({"state":"accepted","originalId":apply["params"]["originalId"],
+            "sha256":apply["params"]["sha256"],"byteLength":apply["params"]["byteLength"],
+            "target":apply["params"]["target"]});
+        result(&mut connection, &apply, accepted.clone()).await;
+        // Still running on the Host: the next read is accepted again, then recorded.
+        for answer in [
+            accepted,
+            recorded(&apply["params"], json!({"accepted":true})),
+        ] {
+            let status = next(&mut connection).await;
+            assert_eq!(status["method"], "native.services.delivery.status");
+            assert_eq!(status["params"]["acknowledge"], "admission");
+            for field in ["originalId", "sha256", "byteLength", "target"] {
+                assert_eq!(status["params"][field], apply["params"][field]);
+            }
+            result(&mut connection, &status, answer).await;
+        }
+        finish_after(finished).await;
+    });
+    let mut fixture = Fixture::new(&server.endpoint, true);
+    fixture.enable_admission();
+    let reply = fixture
+        .channel()
+        .request("conversation.desktop.finish", params)
+        .unwrap();
+    assert_eq!(fixture.pending()[0].phase(), Phase::Recorded);
+    reply
+        .project(|value| {
+            assert_eq!(value, &json!({"accepted":true}));
+            Ok(())
+        })
+        .unwrap();
+    assert!(fixture.pending().is_empty());
+    done.send(()).unwrap();
+}
+
+#[test]
+fn admission_acknowledgement_that_never_settles_stays_unconfirmed_and_is_not_reapplied() {
+    let raw = r#"{"id":"original-relay","result":{"value":"original result"}}"#;
+    let (done, finished) = mpsc::channel();
+    let server = serve(move |listener| async move {
+        let mut connection = accept(&listener).await;
+        hello(
+            &mut connection,
+            &[
+                "native.services.delivery.apply",
+                "native.services.delivery.status",
+            ],
+            "host.1",
+        )
+        .await;
+        let apply = next(&mut connection).await;
+        assert_eq!(apply["method"], "native.services.delivery.apply");
+        assert_eq!(apply["params"]["acknowledge"], "admission");
+        let accepted = json!({"state":"accepted","originalId":apply["params"]["originalId"],
+            "sha256":apply["params"]["sha256"],"byteLength":apply["params"]["byteLength"],
+            "target":apply["params"]["target"]});
+        result(&mut connection, &apply, accepted.clone()).await;
+        // The Host never settles: answer every poll until the caller stops asking.
+        let mut polled = false;
+        while let Ok(Some(message)) =
+            tokio::time::timeout(Duration::from_secs(3), try_next(&mut connection)).await
+        {
+            assert_eq!(message["method"], "native.services.delivery.status");
+            assert_eq!(message["params"]["acknowledge"], "admission");
+            polled = true;
+            result(&mut connection, &message, accepted.clone()).await;
+        }
+        assert!(polled, "the accepted original was never polled");
+        finish_after(finished).await;
+    });
+    let mut fixture = Fixture::new(&server.endpoint, true);
+    fixture.enable_admission();
+    let original = journal::prepare(
+        fixture.store(),
+        "unsettled-original",
+        &ws_fingerprint(&fixture.machine),
+        "native.services.conversation.desktop.finish",
+        raw,
+    )
+    .unwrap();
+    let possible = mark_possible(fixture.channel(), &original).unwrap();
+    let mut wrapper = status_params(&possible);
+    wrapper["paramsJson"] = json!(raw);
+    wrapper["acknowledge"] = json!("admission");
+    let reply = fixture
+        .channel()
+        .wire(
+            "native.services.delivery.apply",
+            wrapper,
+            Instant::now() + FIXTURE_WAIT,
+        )
+        .unwrap();
+    assert_eq!(reply.value["state"], "accepted");
+    // Start the short observation budget after the fixture confirms admission.
+    // A slow handshake or local FULL transaction cannot test the wrong phase.
+    let error = settle_accepted(
+        fixture.channel(),
+        &possible,
+        reply,
+        Instant::now() + Duration::from_secs(1),
+    )
+    .err()
+    .expect("an unsettled original must not report a result");
+    assert!(
+        error.contains("NATIVE_SERVICE_DELIVERY_UNCONFIRMED"),
+        "{error}"
+    );
+    assert_eq!(fixture.pending()[0].phase(), Phase::Possible);
+    done.send(()).unwrap();
 }

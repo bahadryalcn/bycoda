@@ -5,6 +5,7 @@ import {
   type ProviderAccountIdentity,
 } from "./providerAccountIdentity";
 import { removeProviderAccountCredentials } from "./providerAccountCredentials";
+import { ProviderAccountError } from "./providerAccountError";
 import { clearCachedRateLimits } from "./rateLimitsCache";
 
 export function sameSignedInIdentity(
@@ -23,13 +24,21 @@ export function sameSignedInIdentity(
 export async function assertUniqueProviderAccount(account: ProviderAccount): Promise<void> {
   const identity = await readProviderAccountIdentity(account.provider, account.id);
   if (!identity?.email?.trim())
-    throw new Error("Could not verify the signed-in account. Please try again.");
+    throw new ProviderAccountError(
+      "identityUnverified",
+      "Could not verify the signed-in account. Please try again.",
+    );
   const existing = providerAccounts(account.provider).filter((entry) => entry.id !== account.id);
   const identities = await Promise.all(
     existing.map((entry) => readProviderAccountIdentity(entry.provider, entry.id)),
   );
   const duplicate = existing.find((_, index) => sameSignedInIdentity(identity, identities[index]));
-  if (duplicate) throw new Error(`This account is already added as “${duplicate.label}”.`);
+  if (duplicate)
+    throw new ProviderAccountError(
+      "duplicate",
+      `This account is already added as “${duplicate.label}”.`,
+      { label: duplicate.label },
+    );
 }
 
 const registering = new Set<string>();
@@ -41,7 +50,10 @@ export async function registerProviderAccount(
 ): Promise<void> {
   signal?.throwIfAborted();
   if (registering.has(account.provider))
-    throw new Error("An account sign-in is already in progress for this provider.");
+    throw new ProviderAccountError(
+      "registrationInProgress",
+      "An account sign-in is already in progress for this provider.",
+    );
   registering.add(account.provider);
   try {
     if (typeof navigator !== "undefined" && navigator.locks) {
@@ -70,8 +82,10 @@ async function register(account: ProviderAccount, signal?: AbortSignal): Promise
     try {
       await removeProviderAccountCredentials(account.provider, account.id);
     } catch {
-      throw new Error(
+      throw new ProviderAccountError(
+        "cleanupFailed",
         `${error instanceof Error ? error.message : "Could not add account"} Temporary profile cleanup failed; retry before adding another account.`,
+        { cause: error },
       );
     } finally {
       clearCachedRateLimits(account.provider, account.id);

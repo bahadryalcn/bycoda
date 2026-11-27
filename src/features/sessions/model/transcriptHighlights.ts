@@ -18,6 +18,7 @@ const BLOCK_ELEMENTS = new Set([
 ]);
 
 let highlightOwner: symbol | null = null;
+let paintedMatches: Range[] | null = null;
 
 function transcriptSearchPattern(query: string, flags: string): RegExp | null {
   const needle = query.trim();
@@ -47,6 +48,35 @@ export function transcriptMutationNeedsRepaint(records: MutationRecord[], query:
   return false;
 }
 
+function* itemWordRanges(item: HTMLElement, pattern: RegExp): Generator<Range> {
+  const content = item.querySelectorAll<HTMLElement>("[data-selectable-agent-response]");
+  const roots = content.length ? [...content] : [item];
+  for (const contentRoot of roots) {
+    for (const run of textRuns(contentRoot)) {
+      for (const hit of run.text.matchAll(pattern)) {
+        const range = toRange(run, hit.index, hit.index + hit[0].length, item.ownerDocument);
+        if (range) yield range;
+      }
+    }
+  }
+}
+
+/** Navigation only needs the first matching word in the selected result. */
+export function currentTranscriptRange(
+  root: HTMLElement,
+  query: string,
+  exclude?: Element,
+): Range | null {
+  const item = root.querySelector<HTMLElement>(
+    '[data-transcript-search-item][data-transcript-search-current="true"]',
+  );
+  if (!item || exclude?.contains(item)) return null;
+  const pattern = transcriptSearchPattern(query, "giu");
+  if (!pattern) return null;
+  for (const range of itemWordRanges(item, pattern)) return range;
+  return null;
+}
+
 export function transcriptWordRanges(
   root: HTMLElement,
   query: string,
@@ -59,18 +89,11 @@ export function transcriptWordRanges(
 
   for (const item of root.querySelectorAll<HTMLElement>("[data-transcript-search-item]")) {
     if (exclude?.contains(item)) continue;
-    const content = item.querySelectorAll<HTMLElement>("[data-selectable-agent-response]");
-    const roots = content.length ? [...content] : [item];
-    for (const contentRoot of roots) {
-      for (const run of textRuns(contentRoot)) {
-        for (const hit of run.text.matchAll(pattern)) {
-          if (hit.index === undefined || !hit[0]) continue;
-          const range = toRange(run, hit.index, hit.index + hit[0].length, root.ownerDocument);
-          if (!range) continue;
-          matches.push(range);
-          if (!current && item.dataset.transcriptSearchCurrent === "true") current = range;
-          if (matches.length >= MATCH_CAP) return { matches, current };
-        }
+    for (const range of itemWordRanges(item, pattern)) {
+      matches.push(range);
+      if (!current && item.dataset.transcriptSearchCurrent === "true") current = range;
+      if (matches.length >= MATCH_CAP) {
+        return { matches, current: current ?? currentTranscriptRange(root, query, exclude) };
       }
     }
   }
@@ -83,12 +106,11 @@ export function paintTranscriptHighlights(
   current: Range | null,
 ): void {
   if (typeof CSS === "undefined" || !("highlights" in CSS)) return;
-  if (highlightOwner !== owner) {
-    CSS.highlights.delete(MATCH_HIGHLIGHT);
-    CSS.highlights.delete(CURRENT_HIGHLIGHT);
+  if (highlightOwner !== owner || paintedMatches !== ranges) {
+    CSS.highlights.set(MATCH_HIGHLIGHT, new Highlight(...ranges));
+    paintedMatches = ranges;
+    highlightOwner = owner;
   }
-  highlightOwner = owner;
-  CSS.highlights.set(MATCH_HIGHLIGHT, new Highlight(...ranges));
   if (current) CSS.highlights.set(CURRENT_HIGHLIGHT, new Highlight(current));
   else CSS.highlights.delete(CURRENT_HIGHLIGHT);
 }
@@ -100,6 +122,7 @@ export function clearTranscriptHighlights(owner: symbol): void {
     CSS.highlights.delete(CURRENT_HIGHLIGHT);
   }
   highlightOwner = null;
+  paintedMatches = null;
 }
 
 type Segment = { node: Text; from: number; to: number };

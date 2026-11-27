@@ -91,6 +91,9 @@ it("shares the expanded voice core and conversation while preserving header keyb
     transcript: "Do not duplicate this snapshot",
   });
   expect(host.querySelectorAll("[data-spoke]")).toHaveLength(40);
+  // The native window is transparent, so the panel must paint an opaque floating fill:
+  // the card fill is transparent on most canvases and let the desktop show through.
+  expect(host.querySelector("main")?.getAttribute("data-surface-variant")).toBe("floating");
   expect(host.querySelectorAll('[role="listitem"]')).toHaveLength(3);
   expect(host.textContent).not.toContain("Do not duplicate this snapshot");
   expect(host.querySelector("header button[aria-label^='Move voice']")).toBeNull();
@@ -107,8 +110,14 @@ it("shares the expanded voice core and conversation while preserving header keyb
       .dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })),
   );
   expect(calls.filter((call) => call.cmd === "voice_overlay_nudge")).toHaveLength(moves);
-  await show({ visualState: "muted", chatTurns: [] });
-  expect(host.querySelector('[data-state="muted"]')).not.toBeNull();
+  await show({
+    visualState: "connected",
+    statusText: "Connected · Microphone off",
+    muted: true,
+    chatTurns: [],
+  });
+  expect(host.querySelector('[data-state="connected"]')).not.toBeNull();
+  expect(host.textContent).toContain("Connected · Microphone off");
   expect(host.querySelectorAll('[role="listitem"]')).toHaveLength(0);
 });
 
@@ -142,4 +151,57 @@ it("keeps the question inside the window when the screen has no room beside it",
   await show({ choice });
   expect(host.querySelector("aside")).toBeNull();
   expect(host.querySelector("main")?.textContent).toContain("Which folder?");
+});
+
+const unreachable = "The app window did not receive that. Return to the app and try again.";
+
+it("shows a failure when a command cannot reach the owner window", async () => {
+  const { emitTo } = await import("@tauri-apps/api/event");
+  await act(async () => root.render(createElement(VoiceOverlayWindow, { owner: "main" })));
+  await show({});
+  expect(host.textContent).not.toContain(unreachable);
+  vi.mocked(emitTo).mockRejectedValue(new Error("window gone"));
+  const disconnect = [...host.querySelectorAll("button")].find(
+    (button) => button.getAttribute("aria-label") === "Disconnect voice",
+  )!;
+  await act(async () => disconnect.click());
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(unreachable);
+  vi.mocked(emitTo).mockResolvedValue(undefined);
+});
+
+it("keeps a question answerable and says so when the answer cannot be delivered", async () => {
+  const { emitTo } = await import("@tauri-apps/api/event");
+  room = { left: 100, right: 100 };
+  await act(async () => root.render(createElement(VoiceOverlayWindow, { owner: "main" })));
+  await show({ choice });
+  vi.mocked(emitTo).mockRejectedValue(new Error("window gone"));
+  const option = host.querySelector<HTMLElement>('input[type="radio"]')!;
+  await act(async () => option.click());
+  const send = [...host.querySelectorAll("button")].find((b) => b.textContent === "Send answer")!;
+  await act(async () => send.click());
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(host.textContent).toContain(unreachable);
+  expect(host.textContent).toContain("Answer was not sent. Your answer is kept; try again.");
+  vi.mocked(emitTo).mockResolvedValue(undefined);
+});
+
+it("keeps the compact pill to icon-only microphone, speaker and End plus one More menu", async () => {
+  const { saveVoiceSettings, loadVoiceSettings } = await import("../model/voiceSettings");
+  saveVoiceSettings({ ...loadVoiceSettings(), compact: true });
+  await act(async () => root.render(createElement(VoiceOverlayWindow, { owner: "main" })));
+  await show({ visualState: "listening", name: "Arif", title: "Voice companion" });
+  const header = host.querySelector("header")!;
+  const names = [...header.querySelectorAll("button")].map(
+    (button) => button.getAttribute("aria-label") ?? button.textContent?.trim(),
+  );
+  expect(names).toEqual([
+    "Move voice window",
+    "Mute microphone",
+    "Mute speaker",
+    "Disconnect voice",
+    "More voice options",
+  ]);
+  expect(header.textContent).not.toContain("End call");
 });

@@ -26,6 +26,11 @@ export type HostStreamSnapshot =
       baseRevision?: number;
       sourceEpoch?: string;
       data: JsonValue;
+      /**
+       * The loader's one serialization of `data`, already schema-checked. Used only when its
+       * wire is this exact `data` object; otherwise `data` is validated and captured here.
+       */
+      capture?: NormalizedJsonWire;
     }
   | { kind: "unchanged"; revision: number; sourceEpoch?: string };
 export type HostStreamLoadContext = {
@@ -39,9 +44,15 @@ export type HostStreamConsumer = {
   principalId: string;
   authorized: () => Promise<boolean>;
   executionAuthorized?: () => Promise<boolean>;
-  send: (event: SubscriptionEvent) => boolean;
-  sendNormalized?: (capture: NormalizedJsonWire) => boolean;
+  send: (event: SubscriptionEvent, essential?: boolean) => HostStreamSend;
+  sendNormalized?: (capture: NormalizedJsonWire, essential?: boolean) => HostStreamSend;
 };
+/**
+ * `false`: the connection is gone. `"slow"`: the socket queue refused this frame while the
+ * connection is alive, so only this subscription sheds and resyncs. `essential` frames
+ * (resync, close) are tiny and may use the transport's control reserve.
+ */
+export type HostStreamSend = boolean | "slow";
 type Event = Omit<SubscriptionEvent["params"], "subscriptionId">;
 type Retained = { event: Event; bytes: number; at: number };
 // One physical load. `held` is its logical read slot. An abandoned load keeps
@@ -49,6 +60,27 @@ type Retained = { event: Event; bytes: number; at: number };
 type Read = { connectionId: string; held: boolean; abandoned: boolean; settled: boolean };
 // Physical loads may exceed the logical read cap by this much while abandoned loads drain.
 const abandonedReadAllowance = 4;
+// Consecutive failed reads a stream absorbs before its consumers must resync.
+const maxQuietStreamFailures = 3;
+const streamRetryBaseMs = 500;
+const streamRetryMaxMs = 30_000;
+/** Data no retry can fix; consumers resync at once. */
+class StreamResyncRequired extends Error {}
+/**
+ * The resource a target reads, without its wire-form options (`tail`, `delta`), so an
+ * invalidation of the plain target also reaches the compact-form streams of it.
+ */
+function streamResource(target: HostStreamTarget): string {
+  const {
+    tail: _tail,
+    delta: _delta,
+    ...resource
+  } = target as HostStreamTarget & {
+    tail?: true;
+    delta?: true;
+  };
+  return JSON.stringify(resource);
+}
 type Consumer = {
   owner: HostStreamConsumer;
   id: string;
@@ -58,6 +90,9 @@ type Consumer = {
   ack: number;
   pending: Map<number, number>;
   bytes: number;
+  // Resuming from a cursor: retained events go out as acknowledgements free
+  // the window, so a gap longer than the window resumes instead of resyncing.
+  replaying: boolean;
 };
 type Stream = {
   key: string;
@@ -79,6 +114,10 @@ type Stream = {
   reading?: AbortController;
   readingBaseline?: boolean;
   refreshAt?: number;
+  failures: number;
+  // Connection whose authorization could not be verified on the last read; the next
+  // read prefers another consumer's connection so one reader cannot stall the stream.
+  avoidConnection?: string;
   consumers: Map<string, Consumer>;
 };
 
@@ -119,8 +158,7 @@ export class HostSubscriptionHub {
       ) => Promise<HostStreamSnapshot | null>;
       now?: () => number;
       limits?: Partial<
-        Pick<
-          typeof WS_LIMITS,
+        Record<
           | "maxSubscriptionsPerSocket"
           | "maxSubscriptionsPerHost"
           | "maxUnacknowledgedEvents"
@@ -129,7 +167,8 @@ export class HostSubscriptionHub {
           | "maxReplayBytes"
           | "maxReplayAgeMs"
           | "maxHostReplayBytes"
-          | "streamChunkBytes"
+          | "streamChunkBytes",
+          number
         >
       >;
       maxConcurrentReads?: number;
@@ -191,6 +230,7 @@ export class HostSubscriptionHub {
         dirty: true,
         deleted: false,
         forceSnapshot: true,
+        failures: 0,
         consumers: new Map(),
       };
       this.streams.set(key, stream);
@@ -204,6 +244,7 @@ export class HostSubscriptionHub {
       ack: 0,
       pending: new Map(),
       bytes: 0,
+      replaying: false,
     };
     stream.touched = this.now();
     stream.consumers.set(identity, consumer);
@@ -238,6 +279,8 @@ export class HostSubscriptionHub {
         consumer.bytes -= bytes;
       }
     stream.touched = this.now();
+    if (consumer.replaying && consumer.active) this.replay(stream, consumer);
+    if (stream.target.kind === "deviceVideo") this.schedule();
     return true;
   }
 
@@ -258,7 +301,7 @@ export class HostSubscriptionHub {
 
   invalidate(target?: HostStreamTarget): void {
     for (const stream of this.streams.values())
-      if (!target || JSON.stringify(stream.target) === JSON.stringify(target)) {
+      if (!target || streamResource(stream.target) === streamResource(target)) {
         // Ordinary commits only wake a new read. Discarding every in-flight read
         // under unrelated token traffic would starve otherwise healthy streams.
         if (!stream.deleted) stream.dirty = true;
@@ -269,13 +312,13 @@ export class HostSubscriptionHub {
   /** Call only after a committed deletion/privacy invalidation; late loads cannot republish. */
   forget(target: HostStreamTarget): void {
     for (const stream of this.streams.values())
-      if (JSON.stringify(stream.target) === JSON.stringify(target)) this.tombstone(stream);
+      if (streamResource(stream.target) === streamResource(target)) this.tombstone(stream);
   }
 
   /** Privacy/deletion within a collection invalidates its replay without deleting the collection. */
   resnapshot(target: HostStreamTarget): void {
     for (const stream of this.streams.values()) {
-      if (stream.deleted || JSON.stringify(stream.target) !== JSON.stringify(target)) continue;
+      if (stream.deleted || streamResource(stream.target) !== streamResource(target)) continue;
       stream.generation++;
       stream.reading?.abort();
       this.bytes -= stream.bytes;
@@ -330,9 +373,8 @@ export class HostSubscriptionHub {
     ) {
       consumer.ack = consumer.sent = cursor.sequence;
       consumer.needsSnapshot = false;
-      for (const retained of stream.events)
-        if (retained.event.cursor.sequence > cursor.sequence)
-          this.deliver(stream, consumer, retained.event);
+      consumer.replaying = true;
+      this.replay(stream, consumer);
     } else {
       if (cursor) this.deliver(stream, consumer, this.event(stream, "resync-required"));
       const last = stream.events.at(-1);
@@ -356,8 +398,48 @@ export class HostSubscriptionHub {
     };
   }
 
-  private deliver(stream: Stream, consumer: Consumer, event: Event): void {
+  // Sends retained events after the consumer's cursor while its window has room.
+  // A full window waits for the next acknowledgement; a cursor that retention has
+  // passed (or a window that cannot hold even one event) still needs a resync.
+  private replay(stream: Stream, consumer: Consumer): void {
+    for (const retained of stream.events) {
+      if (!consumer.active || this.stopped) return;
+      const sequence = retained.event.cursor.sequence;
+      if (sequence <= consumer.sent) continue;
+      if (sequence !== consumer.sent + 1) break;
+      if (!this.deliver(stream, consumer, retained.event, true)) return;
+    }
     if (!consumer.active || this.stopped) return;
+    if (consumer.sent < stream.sequence) this.overflow(stream, consumer);
+    // Leave paced delivery once the replay is caught up and fully applied.
+    else if (!consumer.pending.size) consumer.replaying = false;
+  }
+
+  private overflow(stream: Stream, consumer: Consumer): void {
+    this.send(
+      consumer,
+      {
+        jsonrpc: "2.0",
+        method: "subscription.event",
+        params: {
+          subscriptionId: consumer.id,
+          streamId: stream.id,
+          cursor: { epoch: stream.epoch, sequence: consumer.sent },
+          kind: "resync-required",
+        },
+      },
+      undefined,
+      true,
+    );
+    consumer.active = false;
+    consumer.replaying = false;
+    consumer.pending.clear();
+    consumer.bytes = 0;
+  }
+
+  /** Returns false only when a paced delivery must wait for window room. */
+  private deliver(stream: Stream, consumer: Consumer, event: Event, paced = false): boolean {
+    if (!consumer.active || this.stopped) return true;
     const message: SubscriptionEvent = {
       jsonrpc: "2.0",
       method: "subscription.event",
@@ -375,49 +457,48 @@ export class HostSubscriptionHub {
     );
     const bytes = readNormalizedJsonWire(normalized).byteLength;
     if (event.kind === "snapshot" || event.kind === "delta") {
-      if (event.kind === "delta" && consumer.needsSnapshot) return;
-      if (event.cursor.sequence <= consumer.sent) return;
+      if (event.kind === "delta" && consumer.needsSnapshot) return true;
+      if (event.cursor.sequence <= consumer.sent) return true;
       if (
         consumer.pending.size >= this.limits.maxUnacknowledgedEvents ||
         consumer.bytes + bytes > this.limits.maxSubscriptionWindowBytes
       ) {
-        this.send(consumer, {
-          jsonrpc: "2.0",
-          method: "subscription.event",
-          params: {
-            subscriptionId: consumer.id,
-            streamId: stream.id,
-            cursor: { epoch: stream.epoch, sequence: consumer.sent },
-            kind: "resync-required",
-          },
-        });
-        consumer.active = false;
-        consumer.pending.clear();
-        consumer.bytes = 0;
-        return;
+        if (paced && consumer.pending.size) return false;
+        this.overflow(stream, consumer);
+        return true;
       }
       consumer.pending.set(event.cursor.sequence, bytes);
       consumer.bytes += bytes;
       consumer.sent = event.cursor.sequence;
       if (event.kind === "snapshot") consumer.needsSnapshot = false;
     }
-    if (!this.send(consumer, message, normalized)) consumer.active = false;
+    const essential = event.kind === "resync-required" || event.kind === "closed";
+    const sent = this.send(consumer, message, normalized, essential);
+    if (sent === "slow") {
+      // Only this subscription lags; it resyncs while the socket and its siblings stay up.
+      this.overflow(stream, consumer);
+      return true;
+    }
+    if (!sent) consumer.active = false;
+    return true;
   }
 
   private send(
     consumer: Consumer,
     message: SubscriptionEvent,
     normalized?: NormalizedJsonWire,
-  ): boolean {
+    essential = false,
+  ): HostStreamSend {
     try {
       if (normalized && consumer.owner.sendNormalized)
-        return consumer.owner.sendNormalized(normalized);
+        return consumer.owner.sendNormalized(normalized, essential);
       // Compatibility consumers receive their own wire copy, so mutation cannot
       // corrupt retained bytes or the next consumer's validation view.
       return consumer.owner.send(
         normalized
           ? (JSON.parse(readNormalizedJsonWire(normalized).serialized) as SubscriptionEvent)
           : message,
+        essential,
       );
     } catch {
       return false;
@@ -447,11 +528,20 @@ export class HostSubscriptionHub {
           ![...stream.consumers.values()].some((consumer) => consumer.active)
         )
           continue;
-        const owner = [...stream.consumers.values()].find(
+        const eligible = [...stream.consumers.values()].filter(
           (consumer) =>
             consumer.active &&
+            (stream.target.kind !== "deviceVideo" ||
+              !consumer.pending.size ||
+              (consumer.pending.size < Math.min(4, this.limits.maxUnacknowledgedEvents) &&
+                consumer.bytes + this.limits.streamChunkBytes <=
+                  this.limits.maxSubscriptionWindowBytes)) &&
             (this.connectionReads.get(consumer.owner.connectionId) ?? 0) <
               (this.options.maxConcurrentReadsPerConnection ?? 2),
+        );
+        const owner = (
+          eligible.find((consumer) => consumer.owner.connectionId !== stream.avoidConnection) ??
+          eligible[0]
         )?.owner;
         if (!owner) continue;
         const delay = (stream.refreshAt ?? 0) - Date.now();
@@ -465,7 +555,8 @@ export class HostSubscriptionHub {
           }
           continue;
         }
-        stream.refreshAt = Date.now() + 250;
+        // Video waits on recorder bytes; ordinary invalidations coalesce for 250 ms.
+        stream.refreshAt = stream.target.kind === "deviceVideo" ? undefined : Date.now() + 250;
         this.reads++;
         this.connectionReads.set(
           owner.connectionId,
@@ -487,11 +578,7 @@ export class HostSubscriptionHub {
         const generation = stream.generation;
         const deadline = setTimeout(() => {
           controller.abort();
-          if (this.stopped || stream.deleted || generation !== stream.generation) return;
-          for (const consumer of stream.consumers.values()) {
-            this.deliver(stream, consumer, this.event(stream, "resync-required"));
-            consumer.active = false;
-          }
+          this.failed(stream, generation, false);
         }, this.limits.defaultResponseTimeoutMs);
         deadline.unref();
         void this.refresh(stream, generation, controller, owner).finally(() => {
@@ -538,6 +625,20 @@ export class HostSubscriptionHub {
     controller: AbortController,
     owner: HostStreamConsumer,
   ): Promise<void> {
+    // Records why the reading owner's own authorization failed, so a failure of the
+    // reader is not charged to the consumers that share the stream.
+    let ownerFault: "denied" | "unavailable" | undefined;
+    const readerAuthorized = owner.executionAuthorized ?? owner.authorized;
+    const ownerAuthorized = async () => {
+      try {
+        const allowed = await readerAuthorized();
+        if (!allowed) ownerFault = "denied";
+        return allowed;
+      } catch (error) {
+        ownerFault = "unavailable";
+        throw error;
+      }
+    };
     try {
       const live = [...stream.consumers.values()].filter((consumer) => consumer.active);
       if (!stream.consumers.size || this.stopped || controller.signal.aborted) return;
@@ -557,7 +658,7 @@ export class HostSubscriptionHub {
           forceSnapshot,
           revision: forceSnapshot ? undefined : stream.revision,
           sourceEpoch: forceSnapshot ? undefined : stream.sourceEpoch,
-          authorized: owner.executionAuthorized ?? owner.authorized,
+          authorized: ownerAuthorized,
         },
       );
       if (
@@ -570,10 +671,20 @@ export class HostSubscriptionHub {
       // Check each consumer once, after the asynchronous load. This also checks
       // unchanged refreshes and rejects revocation during a protected read.
       const authorized = new Set<Consumer>();
-      for (const consumer of live) {
-        if (await consumer.owner.authorized()) authorized.add(consumer);
-        else this.detach(consumer.owner.connectionId);
-      }
+      await Promise.all(
+        live.map(async (consumer) => {
+          let allowed: boolean;
+          try {
+            allowed = await consumer.owner.authorized();
+          } catch {
+            // An unverifiable consumer resyncs alone; the others keep this snapshot.
+            if (consumer.active) this.overflow(stream, consumer);
+            return;
+          }
+          if (allowed) authorized.add(consumer);
+          else this.detach(consumer.owner.connectionId);
+        }),
+      );
       if (
         !stream.consumers.size ||
         this.stopped ||
@@ -586,6 +697,8 @@ export class HostSubscriptionHub {
         this.tombstone(stream);
         return;
       }
+      // The next recorder read starts after acknowledgement frees the delivery window.
+      if (stream.target.kind === "deviceVideo") stream.dirty = true;
       if (snapshot.kind === "unchanged") {
         if (forceSnapshot || snapshot.revision !== stream.revision)
           throw new Error("A fresh stream baseline is required.");
@@ -593,11 +706,14 @@ export class HostSubscriptionHub {
       }
       if (snapshot.kind === "delta" && (forceSnapshot || snapshot.baseRevision !== stream.revision))
         throw new Error("Stream delta does not follow its committed baseline.");
-      const dataCapture = normalizeJsonWire(JsonValueSchema.parse(snapshot.data));
+      const dataCapture =
+        snapshot.capture && readNormalizedJsonWire(snapshot.capture).wire === snapshot.data
+          ? snapshot.capture
+          : normalizeJsonWire(JsonValueSchema.parse(snapshot.data));
       const dataWire = readNormalizedJsonWire(dataCapture);
       const text = dataWire.serialized;
       if (dataWire.byteLength + 1024 > this.limits.streamChunkBytes)
-        throw new Error("Stream snapshot requires a bounded bulk descriptor.");
+        throw new StreamResyncRequired("Stream snapshot requires a bounded bulk descriptor.");
       const fingerprint = createHash("sha256").update(text).digest("hex");
       if (
         !forceSnapshot &&
@@ -630,23 +746,52 @@ export class HostSubscriptionHub {
       stream.fingerprint = fingerprint;
       stream.revision = revision;
       stream.sourceEpoch = snapshot.sourceEpoch;
+      stream.failures = 0;
+      stream.avoidConnection = undefined;
       stream.touched = this.now();
       this.prune();
       for (const consumer of stream.consumers.values()) {
         if (!authorized.has(consumer)) continue;
         if (this.stopped || stream.deleted || generation !== stream.generation) return;
-        this.deliver(stream, consumer, event);
+        // A resuming consumer takes the new event in order, after its retained backlog.
+        if (consumer.replaying) this.replay(stream, consumer);
+        else this.deliver(stream, consumer, event);
       }
-    } catch {
-      if (!this.stopped && !stream.deleted && generation === stream.generation) {
-        stream.forceSnapshot = true;
-        stream.dirty = true;
-        for (const consumer of stream.consumers.values()) {
-          this.deliver(stream, consumer, this.event(stream, "resync-required"));
-          consumer.active = false;
+    } catch (error) {
+      // An aborted read was already settled by whoever aborted it (deadline,
+      // deletion, resnapshot or the last consumer leaving).
+      if (controller.signal.aborted) return;
+      if (ownerFault === "denied") {
+        // A revoked reader leaves alone; the other consumers are not charged for it.
+        this.detach(owner.connectionId);
+        if (!this.stopped && !stream.deleted && generation === stream.generation) {
+          stream.forceSnapshot = true;
+          stream.dirty = true;
         }
+        return;
       }
+      if (ownerFault === "unavailable") stream.avoidConnection = owner.connectionId;
+      this.failed(stream, generation, error instanceof StreamResyncRequired);
     }
+  }
+
+  // A failed read retries a fresh baseline with backoff while consumers stay
+  // live; only repeated failures, or data no retry can fix, cost a resync.
+  private failed(stream: Stream, generation: number, terminal: boolean): void {
+    if (this.stopped || stream.deleted || generation !== stream.generation) return;
+    stream.forceSnapshot = true;
+    stream.dirty = true;
+    stream.failures++;
+    stream.refreshAt =
+      Date.now() + Math.min(streamRetryMaxMs, streamRetryBaseMs * 2 ** (stream.failures - 1));
+    if (!terminal && stream.failures < maxQuietStreamFailures) return;
+    for (const consumer of stream.consumers.values()) {
+      this.deliver(stream, consumer, this.event(stream, "resync-required"));
+      consumer.active = false;
+    }
+    // The failed streak ended with these consumers; later subscribers get a fresh one.
+    stream.failures = 0;
+    stream.avoidConnection = undefined;
   }
 
   private tombstone(stream: Stream): void {
@@ -676,7 +821,10 @@ export class HostSubscriptionHub {
     if (!entry) return false;
     entry.consumer.active = false;
     entry.stream.consumers.delete(identity);
-    if (!entry.stream.consumers.size) entry.stream.reading?.abort();
+    if (!entry.stream.consumers.size) {
+      entry.stream.reading?.abort();
+      if (entry.stream.target.kind === "deviceVideo") this.drop(entry.stream);
+    }
     entry.stream.touched = this.now();
     this.subscriptions.delete(identity);
     return true;

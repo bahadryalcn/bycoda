@@ -11,7 +11,6 @@ it("fills ordered bars, retains long accessible labels and supports keyboard sel
   const root = createRoot(node);
   const change = vi.fn();
   const options = [
-    { value: "", label: "Automatic inherited from global settings", icon: createElement("svg") },
     { value: "low", label: "Low" },
     { value: "high", label: "A very long translated high effort label" },
     { value: "ultra", label: "Ultra" },
@@ -31,29 +30,23 @@ it("fills ordered bars, retains long accessible labels and supports keyboard sel
   try {
     await render("high");
     const radios = [...node.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
-    expect(radios).toHaveLength(4);
+    expect(radios).toHaveLength(3);
     expect(radios.map((radio) => radio.getAttribute("aria-label"))).toEqual(
       options.map((option) => option.label),
     );
-    expect(radios.map((radio) => radio.hasAttribute("data-filled"))).toEqual([
-      false,
-      true,
-      true,
-      false,
-    ]);
+    expect(radios.map((radio) => radio.hasAttribute("data-filled"))).toEqual([true, true, false]);
     expect(radios.every((radio) => radio.textContent === "")).toBe(true);
-    expect(node.textContent).toContain(options[2].label);
+    expect(node.textContent).toContain(options[1].label);
+    expect(node.querySelector('[role="switch"]')).toBeNull();
     await act(async () =>
-      radios[2].dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })),
+      radios[1].dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })),
     );
     expect(change).toHaveBeenLastCalledWith("ultra");
-    expect(document.activeElement).toBe(radios[3]);
+    expect(document.activeElement).toBe(radios[2]);
     await act(async () => radios[0].click());
-    expect(change).toHaveBeenLastCalledWith("");
-    await render("");
-    expect(node.querySelectorAll("[data-filled]")).toHaveLength(0);
-    expect(node.textContent).toContain(options[0].label);
+    expect(change).toHaveBeenLastCalledWith("low");
     await render("", true);
+    expect(node.querySelectorAll("[data-filled]")).toHaveLength(0);
     expect(
       [...node.querySelectorAll<HTMLButtonElement>('[role="radio"]')].every(
         (radio) => radio.disabled,
@@ -97,41 +90,69 @@ it("can drop the visible label when a row already names the scale", async () => 
   }
 });
 
-it("fills muted bars up to the inherited level while the inheriting choice is selected", async () => {
+it("leads with an Automatic switch: bars dim to the inherited level, a bar or the switch leaves it", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const node = document.createElement("div");
   document.body.append(node);
   const root = createRoot(node);
+  const change = vi.fn();
+  const automaticChange = vi.fn();
   const options = [
-    { value: "", label: "Bycoda defaults (Medium)", icon: createElement("svg") },
     { value: "low", label: "Low" },
     { value: "medium", label: "Medium" },
     { value: "high", label: "High" },
   ];
-  const render = (value: string) =>
+  const render = (value: string, inheritedValue?: string) =>
     act(async () =>
       root.render(
         createElement(EffortScale, {
           options,
           value,
-          inheritedValue: "medium",
+          inheritedValue,
+          automatic: { on: !value, onChange: automaticChange },
           label: "Effort",
-          onValueChange: vi.fn(),
+          onValueChange: change,
         }),
       ),
     );
+  const flags = (attr: string) =>
+    [...node.querySelectorAll('[role="radio"]')].map((radio) => radio.hasAttribute(attr));
+  const toggle = () => node.querySelector<HTMLButtonElement>('[role="switch"]')!;
   try {
+    await render("", "medium");
+    expect(toggle().getAttribute("aria-checked")).toBe("true");
+    expect(toggle().textContent).toContain("Automatic");
+    expect(node.querySelector("[data-automatic]")).not.toBeNull();
+    expect(flags("data-filled")).toEqual([true, true, false]);
+    expect(flags("data-inherited")).toEqual([true, true, false]);
+    expect(node.querySelector('[role="radio"][aria-checked="true"]')).toBeNull();
+    expect(node.textContent).toContain("Medium");
+    // A bar while Automatic is on turns it off by choosing that level.
+    await act(async () => node.querySelectorAll<HTMLButtonElement>('[role="radio"]')[2].click());
+    expect(change).toHaveBeenLastCalledWith("high");
+    // Switching Automatic off lands on the inherited level.
+    await act(async () => toggle().click());
+    expect(change).toHaveBeenLastCalledWith("medium");
+    expect(automaticChange).not.toHaveBeenCalled();
+
+    await render("high", "medium");
+    expect(toggle().getAttribute("aria-checked")).toBe("false");
+    expect(node.querySelector("[data-automatic]")).toBeNull();
+    expect(flags("data-filled")).toEqual([true, true, true]);
+    expect(flags("data-inherited")).toEqual([false, false, false]);
+    expect(
+      node.querySelector('[aria-checked="true"][role="radio"]')?.getAttribute("aria-label"),
+    ).toBe("High");
+    // Switching Automatic on hands clearing the level to the caller.
+    await act(async () => toggle().click());
+    expect(automaticChange).toHaveBeenLastCalledWith(true);
+
+    // Without an inherited level, leaving Automatic starts in the middle of the scale.
     await render("");
-    const flags = (attr: string) =>
-      [...node.querySelectorAll('[role="radio"]')].map((radio) => radio.hasAttribute(attr));
-    expect(flags("data-filled")).toEqual([false, true, true, false]);
-    expect(flags("data-inherited")).toEqual([false, true, true, false]);
-    expect(node.querySelector('[aria-checked="true"]')?.getAttribute("aria-label")).toBe(
-      options[0].label,
-    );
-    await render("high");
-    expect(flags("data-filled")).toEqual([false, true, true, true]);
-    expect(flags("data-inherited")).toEqual([false, false, false, false]);
+    expect(node.textContent).not.toContain("·");
+    expect(flags("data-filled")).toEqual([false, false, false]);
+    await act(async () => toggle().click());
+    expect(change).toHaveBeenLastCalledWith("medium");
   } finally {
     await act(async () => root.unmount());
     node.remove();

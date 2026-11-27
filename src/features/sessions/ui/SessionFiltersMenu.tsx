@@ -7,11 +7,13 @@ import {
 import {
   DEFAULT_SESSION_SIDEBAR_FILTERS,
   hasActiveSessionFilters,
+  type GlobalSessionListView,
   type SessionSidebarFilters,
   type SessionTimeFilter,
 } from "../model/sessionFilters";
 import { HARNESS_TITLE, type HarnessId } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
+import { ArrowDown, CircleDot, FolderTree } from "../../../shared/ui/icons";
 import { useAssistantIdentity } from "../../assistant/model/assistantClient";
 import {
   type SessionListDensity,
@@ -19,8 +21,7 @@ import {
   updateSessionListDisplay,
   useSessionListDisplay,
 } from "../model/sessionListDisplay";
-
-const MENU_WIDTH = 228;
+import { OPEN_SESSION_IMPORT_EVENT } from "../import/importModel";
 
 type Props = {
   x: number;
@@ -34,6 +35,8 @@ type Props = {
   settled?: boolean;
   allowedTimeFilters?: readonly SessionTimeFilter[];
   defaultFilters?: SessionSidebarFilters;
+  listView?: GlobalSessionListView;
+  onListViewChange?: (view: GlobalSessionListView) => void;
 };
 
 const DENSITY_OPTIONS: { id: SessionListDensity; label: string }[] = [
@@ -95,11 +98,11 @@ export function SessionFiltersMenu({
   settled = false,
   allowedTimeFilters,
   defaultFilters = DEFAULT_SESSION_SIDEBAR_FILTERS,
+  listView,
+  onListViewChange,
 }: Props) {
   const t = useT();
   const hiddenHarnesses = new Set(filters.hiddenHarnesses);
-  // View options are not filters: they never mark the trigger active or clear.
-  const display = useSessionListDisplay();
 
   const toggleHarness = (harness: HarnessId) => {
     const next = new Set(hiddenHarnesses);
@@ -121,10 +124,8 @@ export function SessionFiltersMenu({
 
   const toggleArchived = () => {
     onChange({ ...filters, showArchived: !filters.showArchived });
-    onClose();
   };
 
-  const onPatchDisplay = (patch: Partial<SessionListDisplay>) => updateSessionListDisplay(patch);
   const managedName = useManagedFilterLabel(local);
   const check = (
     id: string,
@@ -143,24 +144,66 @@ export function SessionFiltersMenu({
     (option) => !allowedTimeFilters || allowedTimeFilters.includes(option.id),
   );
   const items: DropdownMenuItem[] = [
-    toggle(
-      check("archived", t("Archived"), filters.showArchived, { closeOnSelect: true }),
-      toggleArchived,
-    ),
-    ...(settled
+    ...(listView && onListViewChange
       ? [
           toggle(
-            check("settled", t("Settled"), filters.showSettled, { closeOnSelect: true }),
-            () => {
-              onChange({ ...filters, showSettled: !filters.showSettled });
-              onClose();
-            },
+            check("group:project", t("Group by project"), listView.groupBy === "project", {
+              icon: <FolderTree className="icon-xs" />,
+            }),
+            () =>
+              onListViewChange({
+                ...listView,
+                groupBy: listView.groupBy === "project" ? "none" : "project",
+              }),
           ),
+          toggle(
+            check("group:state", t("Group by state"), listView.groupBy === "state", {
+              icon: <CircleDot className="icon-xs" />,
+            }),
+            () =>
+              onListViewChange({
+                ...listView,
+                groupBy: listView.groupBy === "state" ? "none" : "state",
+              }),
+          ),
+          {
+            kind: "item" as const,
+            id: "sort",
+            label: t("Sort"),
+            icon: <ArrowDown className="icon-xs" />,
+            submenu: [
+              toggle(radio("sort:newest", t("Newest first"), listView.sort === "newest"), () =>
+                onListViewChange({ ...listView, sort: "newest" }),
+              ),
+              toggle(radio("sort:oldest", t("Oldest first"), listView.sort === "oldest"), () =>
+                onListViewChange({ ...listView, sort: "oldest" }),
+              ),
+            ],
+          },
+          { kind: "sep" as const },
         ]
       : []),
-    toggle(check("managed", managedName, filters.assistantManaged), () =>
-      onChange({ ...filters, assistantManaged: !filters.assistantManaged }),
-    ),
+    {
+      kind: "group",
+      id: "show",
+      label: t("Show"),
+      items: [
+        toggle(check("archived", t("Archived"), filters.showArchived), toggleArchived),
+        ...(settled
+          ? [
+              toggle(check("settled", t("Settled"), filters.showSettled), () =>
+                onChange({ ...filters, showSettled: !filters.showSettled }),
+              ),
+            ]
+          : []),
+        toggle(check("managed", managedName, filters.assistantManaged), () =>
+          onChange({ ...filters, assistantManaged: !filters.assistantManaged }),
+        ),
+        toggle(check("background", t("Show background sessions"), filters.showBackground), () =>
+          onChange({ ...filters, showBackground: !filters.showBackground }),
+        ),
+      ],
+    },
     {
       kind: "group",
       id: "status",
@@ -185,37 +228,23 @@ export function SessionFiltersMenu({
         ),
       ),
     },
-    {
-      kind: "group",
-      id: "provider",
-      label: t("Provider"),
-      items: harnesses.map((harness) =>
-        toggle(
-          check(`harness:${harness}`, HARNESS_TITLE[harness], !hiddenHarnesses.has(harness), {
-            icon: <HarnessIcon harness={harness} className="size-3.5 shrink-0" />,
-          }),
-          () => toggleHarness(harness),
-        ),
-      ),
-    },
-    {
-      kind: "group",
-      id: "view",
-      label: t("View"),
-      items: [
-        ...DENSITY_OPTIONS.map((option) =>
-          toggle(radio(`density:${option.id}`, option.label, display.density === option.id), () =>
-            onPatchDisplay({ density: option.id }),
-          ),
-        ),
-        toggle(check("showModel", t("Show model"), display.showModel), () =>
-          onPatchDisplay({ showModel: !display.showModel }),
-        ),
-        toggle(check("showBranch", t("Show branch"), display.showBranch), () =>
-          onPatchDisplay({ showBranch: !display.showBranch }),
-        ),
-      ],
-    },
+    ...(harnesses.length > 1 || harnesses.some((harness) => hiddenHarnesses.has(harness))
+      ? [
+          {
+            kind: "group" as const,
+            id: "provider",
+            label: t("Provider"),
+            items: harnesses.map((harness) =>
+              toggle(
+                check(`harness:${harness}`, HARNESS_TITLE[harness], !hiddenHarnesses.has(harness), {
+                  icon: <HarnessIcon harness={harness} className="size-3.5 shrink-0" />,
+                }),
+                () => toggleHarness(harness),
+              ),
+            ),
+          },
+        ]
+      : []),
   ];
   if (hasActiveSessionFilters(filters, defaultFilters.time)) {
     items.push(
@@ -231,11 +260,69 @@ export function SessionFiltersMenu({
       anchor={{ x, y }}
       label={t("Filter sessions")}
       items={items}
-      width={MENU_WIDTH}
-      gap={0}
-      maxHeight={600}
+      size="sm"
       closeOnSelect={false}
       onPick={(id) => actions[id]?.()}
+      onClose={onClose}
+    />
+  );
+}
+
+export function SessionViewMenu({
+  x,
+  y,
+  onClose,
+  canImport = false,
+}: Pick<Props, "x" | "y" | "onClose"> & { canImport?: boolean }) {
+  const t = useT();
+  const display = useSessionListDisplay();
+  const fields = [
+    { id: "showModel" as const, label: t("Show model") },
+    { id: "showBranch" as const, label: t("Show branch") },
+  ];
+  return (
+    <DropdownMenu
+      anchor={{ x, y }}
+      label={t("View")}
+      size="sm"
+      items={[
+        ...DENSITY_OPTIONS.map(({ id, label }): DropdownMenuAction => ({
+          kind: "item",
+          id,
+          label,
+          checked: display.density === id,
+          selectionRole: "radio",
+        })),
+        { kind: "sep" },
+        ...fields.map(({ id, label }): DropdownMenuAction => ({
+          kind: "item",
+          id,
+          label,
+          checked: display[id],
+        })),
+        ...(canImport
+          ? [
+              { kind: "sep" as const },
+              { kind: "item" as const, id: "import", label: t("Import history") },
+            ]
+          : []),
+      ]}
+      closeOnSelect={false}
+      onPick={(id) => {
+        if (id === "import") {
+          onClose();
+          window.dispatchEvent(new Event(OPEN_SESSION_IMPORT_EVENT));
+          return;
+        }
+        const density = DENSITY_OPTIONS.find((option) => option.id === id)?.id;
+        const field = fields.find((option) => option.id === id)?.id;
+        const change: Partial<SessionListDisplay> | undefined = density
+          ? { density }
+          : field
+            ? { [field]: !display[field] }
+            : undefined;
+        if (change) updateSessionListDisplay(change);
+      }}
       onClose={onClose}
     />
   );

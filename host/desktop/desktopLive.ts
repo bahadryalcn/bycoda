@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { dedicatedWorktreeVerifier } from "./headless-worktree";
 import { requestedByName, type DesktopCommand } from "./desktopCommand";
 import type { PreparedDesktop } from "../domains/commands/service";
 export type { PreparedDesktop } from "../domains/commands/service";
@@ -12,6 +13,7 @@ import {
 } from "../../src/features/connections/model/projectAppearance";
 import type { Block, Session } from "../../src/features/sessions/model/session";
 import type {
+  DesktopConcealedGroups,
   DesktopProjectDirectory,
   HostCommand,
   HostProject,
@@ -19,14 +21,25 @@ import type {
 } from "../../src/features/connections/model/protocol";
 import { canonicalHostPath, hostProjectId } from "../../src/features/sync/model/syncProjectId";
 import { RUN_LEASE_TTL_MS } from "../../src/features/sync/model/runLease";
+import { AwakeClock } from "../../src/shared/lib/time/awakeClock";
 import { createDedupedWarn } from "../diagnostics/log-dedupe";
 import { createLogger } from "../diagnostics/logger";
+import {
+  DesktopGroupLock,
+  NO_GROUP_ACCESS,
+  type GroupAccess,
+} from "../group-lock/desktop-group-lock";
 
 const log = createLogger("host.desktop.live");
 
 /** Past this without a heartbeat, the desktop app is gone (closed or crashed)
  * and none of its sessions is running. */
 export const DESKTOP_BEAT_STALE_MS = 20_000;
+/**
+ * A desktop silent this long no longer blocks a clean, non-forced worktree removal on an
+ * unattended Host (it may only be reconnecting before that). See `withRemovalLease`.
+ */
+export const DESKTOP_UNATTENDED_GRACE_MS = 2 * 60_000;
 const MAX_PENDING_BLOCKS = 50;
 const MAX_COMMANDS = 100;
 const MAX_COMMAND_RECEIPTS = 500;
@@ -42,6 +55,14 @@ export const DESKTOP_WRITER_STALE_MS = 60_000;
 export const DESKTOP_STORED_RUNNING_MS = 75_000;
 /** A window silent after reporting a session busy still runs it this long: its run lease's life. */
 export const DESKTOP_SILENT_BUSY_MS = RUN_LEASE_TTL_MS;
+/** Attended removal requires every desktop grant to confirm it checked open editors. */
+export const REQUIRE_DESKTOP_EDITOR_CHECK = true;
+const EDITORS_REFUSED =
+  "Save or close unsaved files under this worktree in the desktop before removing it.";
+const DESKTOP_UPDATE_REQUIRED = "Update the desktop app to remove worktrees from this Host.";
+
+/** What one desktop answered to a removal-lease request. */
+type RemovalLeaseResult = { granted: boolean; checks: string[]; reason?: string };
 
 export type { DesktopCommand };
 
@@ -140,12 +161,67 @@ export function parseDesktopProjectDirectory(input: unknown): DesktopProjectDire
       ...(project.pinned === true ? { pinned: true } : {}),
     });
   }
+  const concealed = parseConcealedGroups(value.concealed);
   return {
     version: 1,
     groups,
     projects,
     excludedPaths: value.excludedPaths,
     excludedGroupIds: value.excludedGroupIds,
+    ...(concealed ? { concealed } : {}),
+  };
+}
+
+/** Malformed concealed data is dropped whole: nothing is revealed from a doubtful snapshot. */
+function parseConcealedGroups(input: unknown): DesktopConcealedGroups | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return;
+  const raw = input as { locked?: unknown; hidden?: unknown };
+  if (!Array.isArray(raw.locked) || !Array.isArray(raw.hidden)) return;
+  if (raw.locked.length > 10000 || raw.hidden.length > 10000) return;
+  const parents = new Map<string, string>();
+  const groups: unknown[] = [];
+  const projects: unknown[] = [];
+  for (const entry of raw.locked) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return;
+    const { parentId, projects: rows, ...group } = entry as Record<string, unknown>;
+    if (!Array.isArray(rows) || typeof group.id !== "string") return;
+    if (typeof parentId === "string" && parentId.length <= 200) parents.set(group.id, parentId);
+    groups.push(group);
+    for (const row of rows)
+      projects.push(row && typeof row === "object" ? { ...row, groupId: group.id } : row);
+  }
+  // The same validation as the visible directory: ids, paths, appearance and budgets.
+  const parsed = parseDesktopProjectDirectory({
+    version: 1,
+    projects,
+    groups,
+    excludedPaths: [],
+    excludedGroupIds: [],
+  });
+  if (!parsed) return;
+  const hidden: DesktopConcealedGroups["hidden"] = [];
+  for (const entry of raw.hidden) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return;
+    const group = entry as Record<string, unknown>;
+    if (
+      typeof group.id !== "string" ||
+      !group.id.trim() ||
+      group.id.length > 200 ||
+      typeof group.name !== "string" ||
+      !group.name.trim() ||
+      group.name.length > 1000
+    )
+      return;
+    const color = projectIdentityColor(group.color);
+    hidden.push({ id: group.id, name: group.name, ...(color ? { color } : {}) });
+  }
+  return {
+    locked: parsed.groups.map((group) => ({
+      ...group,
+      ...(parents.has(group.id) ? { parentId: parents.get(group.id)! } : {}),
+      projects: parsed.projects.filter((project) => project.groupId === group.id),
+    })),
+    hidden,
   };
 }
 
@@ -155,7 +231,169 @@ export function parseDesktopProjectDirectory(input: unknown): DesktopProjectDire
  * calls in (`sessions.desktopLive`); the host can't reach it otherwise.
  */
 export class DesktopLive {
+  private removalPages = new Map<string, string | undefined>();
+  get headlessRemovalConfigured(): boolean {
+    return !!this.verifyHeadless && !this.removalPages.size;
+  }
+  private removalJobs = new Map<
+    string,
+    {
+      id: string;
+      clientId: string;
+      pageToken?: string;
+      path?: string;
+      until: number;
+      reply?: (result: RemovalLeaseResult) => void;
+    }
+  >();
+
+  removalLeaseBeat(input: Record<string, unknown>) {
+    const clientId = input.clientId;
+    const now = Date.now();
+    const replies = Array.isArray(input.removalLeaseReplies)
+      ? input.removalLeaseReplies
+          .slice(0, 100)
+          .filter((entry) => typeof entry?.id === "string" && entry.id.length <= 36)
+      : [];
+    const acked = replies
+      .map((entry) => entry.id as string)
+      .filter(
+        (id) =>
+          this.removalJobs.has(JSON.stringify([id, clientId])) ||
+          ![...this.removalJobs.values()].some((job) => job.id === id),
+      );
+    const jobs: { id: string; clientId: string; path?: string }[] = [];
+    for (const [key, job] of this.removalJobs) {
+      const { id } = job;
+      if (job.until <= now) {
+        this.removalJobs.delete(key);
+        continue;
+      }
+      if (job.clientId !== clientId || (job.path && job.pageToken !== input.pageToken)) continue;
+      const result = replies.find((entry) => entry.id === id && entry.release === !job.path);
+      if (result) {
+        job.reply?.({
+          granted: result.granted === true,
+          // Extra fields are optional: an older desktop sends neither.
+          checks: Array.isArray(result.checks)
+            ? result.checks.filter((check: unknown): check is string => typeof check === "string")
+            : [],
+          ...(typeof result.reason === "string" ? { reason: result.reason.slice(0, 40) } : {}),
+        });
+        if (!job.path) this.removalJobs.delete(key);
+      } else if (!job.path || job.reply) {
+        jobs.push({ id, clientId: job.clientId, path: job.path });
+      }
+    }
+    return { jobs, acked };
+  }
+
+  async withRemovalLease<T>(
+    id: string,
+    path: string,
+    run: (assertLease: () => void) => Promise<T>,
+    project?: () => Promise<string>,
+    options?: { unattended?: boolean },
+  ): Promise<T> {
+    const clients = [...this.removalPages.keys()];
+    const pages = new Map(clients.map((client) => [client, this.removalPages.get(client)]));
+    const unavailable =
+      "Cannot verify native terminal usage. Reconnect the execution Host desktop and retry.";
+    if (!clients.length && this.verifyHeadless && project) {
+      await this.verifyHeadless(path, await project());
+      const assertDedicated = () => {
+        if (this.removalPages.size) throw new Error(unavailable);
+      };
+      assertDedicated();
+      return run(assertDedicated);
+    }
+    // Unattended Host: no desktop is alive and none was seen within
+    // the grace period, so nobody can hold native terminals here. Only a caller that proved a
+    // non-forced, clean removal opts in; Git's own non-forced refusal stays the backstop. A
+    // desktop that appears during the removal revokes it through the assert callback.
+    if (options?.unattended && this.noDesktopWithinGrace(clients)) {
+      const assertUnattended = () => {
+        if ([...this.removalPages.keys()].some((client) => this.clientAlive(client)))
+          throw new Error(unavailable);
+      };
+      assertUnattended();
+      return run(assertUnattended);
+    }
+    if (!clients.length || clients.some((client) => !this.clientAlive(client)))
+      throw new Error(unavailable);
+    if (clients.includes("legacy")) throw new Error(unavailable);
+    const startedAt = performance.now();
+    const until = Date.now() + 15_000;
+    try {
+      const results = await Promise.all(
+        clients.map(
+          (clientId) =>
+            new Promise<RemovalLeaseResult>((resolve) => {
+              const key = JSON.stringify([id, clientId]);
+              const pageToken = pages.get(clientId);
+              const timeout = setTimeout(() => resolve({ granted: false, checks: [] }), 15_000);
+              const job = {
+                id,
+                clientId,
+                pageToken,
+                path,
+                until,
+                reply: (result: RemovalLeaseResult) => {
+                  clearTimeout(timeout);
+                  this.removalJobs.set(key, { id, clientId, pageToken, path, until });
+                  resolve(result);
+                },
+              };
+              this.removalJobs.set(key, job);
+            }),
+        ),
+      );
+      if (performance.now() - startedAt >= 15_000) throw new Error(unavailable);
+      if (results.some((result) => !result.granted && result.reason === "editors"))
+        throw new Error(EDITORS_REFUSED);
+      if (!results.every((result) => result.granted)) throw new Error(unavailable);
+      if (this.requireEditorChecks && !results.every((result) => result.checks.includes("editors")))
+        throw new Error(DESKTOP_UPDATE_REQUIRED);
+      const assertLease = () => {
+        // Leave 150 seconds for a started mutation to finish within the native TTL.
+        if (
+          performance.now() - startedAt >= 450_000 ||
+          clients.some(
+            (client) =>
+              !this.clientAlive(client) || pages.get(client) !== this.removalPages.get(client),
+          ) ||
+          this.removalPages.size !== clients.length
+        )
+          throw new Error(unavailable);
+      };
+      assertLease();
+      return await run(assertLease);
+    } finally {
+      for (const clientId of clients)
+        this.removalJobs.set(JSON.stringify([id, clientId]), {
+          id,
+          clientId,
+          until: Date.now() + 600_000,
+        });
+    }
+  }
+
   private clients = new Map<string, number>();
+  /** A desktop connected before a Host restart reconnects within seconds: the grace runs from start too. */
+  private startedAwake: number;
+  /** Last beat per desktop client; unlike `clients` it survives stale expiry, for the unattended grace. */
+  private removalSeen = new Map<string, number>();
+  private noDesktopWithinGrace(clients: readonly string[]): boolean {
+    return (
+      this.awake() - this.startedAwake > DESKTOP_UNATTENDED_GRACE_MS &&
+      clients.every(
+        (client) =>
+          !this.clientAlive(client) &&
+          this.awake() - (this.removalSeen.get(client) ?? Number.NEGATIVE_INFINITY) >
+            DESKTOP_UNATTENDED_GRACE_MS,
+      )
+    );
+  }
   private sessions = new Map<string, LiveSession>();
   private commands: (DesktopCommand & { queuedAt: number })[] = [];
   private readonly durablePending = new Map<string, PreparedDesktop>();
@@ -178,6 +416,7 @@ export class DesktopLive {
   onSourceChange?: (sessionIds: string[]) => void;
   /** A window's project directory projection changed or its window stopped answering. */
   onDirectoryChange?: () => void;
+  onRemovalHeartbeat?: () => void;
   /** A window reported a conversation busy (each beat while it runs). */
   onBusy?: (sessionId: string, clientId: string) => void;
   /** A conversation a window ran is no longer busy there (`idle`), or the window stopped answering (`gone`). */
@@ -199,7 +438,40 @@ export class DesktopLive {
         { sessionId },
       ),
   });
-  constructor(private readonly now: () => number = Date.now) {}
+  /** Remote unlock requests for the desktop renderer, and the grants phones earned. */
+  readonly groupLock: DesktopGroupLock;
+  /**
+   * Window liveness (heartbeats, directory snapshots, writers, silent busy marks) is measured on
+   * this clock, which skips the time the Host machine slept: after waking, no window is stale
+   * just because the whole machine was suspended, and a window that really went quiet still
+   * expires one window length after. Revisions and command retention stay on the wall clock.
+   */
+  private readonly clock: AwakeClock;
+  declare private readonly now: () => number;
+  declare private readonly watchSuspension: boolean;
+  /**
+   * `watchSuspension` starts the clock's own sampling with the first heartbeat. It defaults on only
+   * for the real wall clock: a test clock is moved by hand and would read as one long sleep.
+   */
+  declare private readonly verifyHeadless: ReturnType<typeof dedicatedWorktreeVerifier>;
+  declare private readonly requireEditorChecks: boolean;
+
+  constructor(
+    now: () => number = Date.now,
+    watchSuspension: boolean = now === Date.now,
+    verifyHeadless = dedicatedWorktreeVerifier(),
+    requireEditorChecks: boolean = REQUIRE_DESKTOP_EDITOR_CHECK,
+  ) {
+    this.now = now;
+    this.watchSuspension = watchSuspension;
+    this.verifyHeadless = verifyHeadless;
+    this.requireEditorChecks = requireEditorChecks;
+    this.clock = new AwakeClock(now);
+    this.startedAwake = this.clock.now();
+    this.groupLock = new DesktopGroupLock(now);
+    // A grant given or ended changes what a phone sees of the directory.
+    this.groupLock.onChange = () => this.onDirectoryChange?.();
+  }
 
   /** Only running state, including heartbeat/stored-mark expiry, influences
    * list metadata. Prompt text changes must not reread SQLite list rows. */
@@ -210,13 +482,19 @@ export class DesktopLive {
     return states;
   }
 
+  /** Liveness time: wall time without the spans the Host machine slept. */
+  private awake(): number {
+    return this.clock.now();
+  }
+
   private reclaimCommands(): void {
     const now = this.now();
+    const awake = this.awake();
     this.commands = this.commands.filter((command) => {
       const owner = this.sessions.get(command.sessionId)?.clientId;
       const heartbeat = owner ? this.clients.get(owner) : undefined;
       return (
-        (heartbeat !== undefined && now - heartbeat <= DESKTOP_BEAT_STALE_MS) ||
+        (heartbeat !== undefined && awake - heartbeat <= DESKTOP_BEAT_STALE_MS) ||
         now - command.queuedAt < DESKTOP_COMMAND_RETAIN_MS
       );
     });
@@ -232,12 +510,18 @@ export class DesktopLive {
     return this.lastChange;
   }
 
-  beat(input: unknown): { commands: DesktopCommand[]; projectDirectoryRevision?: string } {
+  beat(input: unknown): {
+    commands: DesktopCommand[];
+    projectDirectoryRevision?: string;
+    groupLock: ReturnType<DesktopGroupLock["beat"]>;
+    removalLease: ReturnType<DesktopLive["removalLeaseBeat"]>;
+  } {
     const value =
       input && typeof input === "object" && !Array.isArray(input)
         ? (input as Record<string, unknown>)
         : {};
     if (!Array.isArray(value.sessions)) throw new Error("Invalid desktop sessions");
+    if (this.watchSuspension) this.clock.start();
     const clientId =
       typeof value.clientId === "string" && value.clientId ? value.clientId : "legacy";
     const pageToken =
@@ -256,24 +540,24 @@ export class DesktopLive {
       directoryChanged =
         JSON.stringify(this.directories.get(clientId)?.value) !== JSON.stringify(projection);
       this.directories.set(clientId, {
-        at: this.now(),
+        at: this.awake(),
         value: projection,
         revision: projection ? revision : undefined,
       });
     } else if (revision) {
       const previous = this.directories.get(clientId);
-      if (previous?.value && previous.revision === revision) previous.at = this.now();
+      if (previous?.value && previous.revision === revision) previous.at = this.awake();
     }
     const acked = new Set(Array.isArray(value.acked) ? value.acked.map(String) : []);
     const writers = value.writers as { version?: number; sessionIds?: unknown } | undefined;
     if (writers?.version === 1 && Array.isArray(writers.sessionIds))
       this.writerClients.set(clientId, {
         sessions: new Set(writers.sessionIds.filter((id): id is string => typeof id === "string")),
-        at: this.now(),
+        at: this.awake(),
       });
     else {
       const known = this.writerClients.get(clientId);
-      if (known) known.at = this.now();
+      if (known) known.at = this.awake();
     }
     this.pruneWriterClients();
     for (const id of acked) {
@@ -405,11 +689,14 @@ export class DesktopLive {
       (command) =>
         !acked.has(command.id) || this.sessions.get(command.sessionId)?.clientId !== clientId,
     );
-    this.clients.set(clientId, this.now());
+    this.clients.set(clientId, this.awake());
+    this.removalPages.set(clientId, pageToken);
+    this.removalSeen.set(clientId, this.awake());
     this.storedSince.clear();
     for (const [id, beatAt] of this.clients) {
-      if (this.now() - beatAt <= DESKTOP_BEAT_STALE_MS) continue;
+      if (this.awake() - beatAt <= DESKTOP_BEAT_STALE_MS) continue;
       this.clients.delete(id);
+      // Heartbeat expiry is not proof that native PTYs have exited.
       if (this.directories.delete(id)) directoryChanged = true;
       for (const [sessionId, session] of this.sessions)
         if (session.clientId === id) {
@@ -425,7 +712,10 @@ export class DesktopLive {
     if (sourceChangedIds.size) this.onSourceChange?.([...sourceChangedIds]);
     if (changedIds.size) this.onChange?.([...changedIds]);
     if (directoryChanged) this.onDirectoryChange?.();
+    this.onRemovalHeartbeat?.();
     return {
+      groupLock: this.groupLock.beat(clientId, value.groupLock),
+      removalLease: this.removalLeaseBeat(value),
       ...(revision && this.directories.get(clientId)?.revision === revision
         ? { projectDirectoryRevision: revision }
         : {}),
@@ -444,13 +734,28 @@ export class DesktopLive {
     };
   }
 
+  /**
+   * Which desktop snapshots `projectDirectory` still counts. It moves when a snapshot crosses
+   * the stale threshold, the one directory change no beat or commit announces.
+   */
+  freshDirectoryClients(): string {
+    return JSON.stringify(
+      [...this.directories]
+        .filter(([, snapshot]) => this.awake() - snapshot.at <= DESKTOP_BEAT_STALE_MS)
+        .map(([clientId]) => clientId)
+        .sort(),
+    );
+  }
+
   /** Never substitute raw sync records when a desktop privacy snapshot is absent. */
   projectDirectory(
     registered: readonly HostProject[],
     environmentId: string,
+    /** What the calling phone earned; without it only open groups show, as for any caller. */
+    access: GroupAccess = NO_GROUP_ACCESS,
   ): HostProjectDirectory {
     const snapshots = [...this.directories.values()]
-      .filter((snapshot) => this.now() - snapshot.at <= DESKTOP_BEAT_STALE_MS)
+      .filter((snapshot) => this.awake() - snapshot.at <= DESKTOP_BEAT_STALE_MS)
       .sort((a, b) => b.at - a.at);
     if (!snapshots.length || snapshots.some((snapshot) => !snapshot.value))
       return { version: 1, privacyReady: false, groups: [], projects: [] };
@@ -475,6 +780,12 @@ export class DesktopLive {
         if (!paths.has(key)) paths.set(key, project);
       }
     }
+    const concealed = this.concealedView(valid, excludedGroups, access);
+    for (const group of concealed.opened) groups.set(group.id, group);
+    for (const project of concealed.projects) {
+      const key = directoryPathKey(project.cwd);
+      if (!paths.has(key)) paths.set(key, project);
+    }
     const projects: HostProjectDirectory["projects"] = [];
     const registeredByPath = new Map<string, HostProject[]>();
     for (const project of registered) {
@@ -486,8 +797,24 @@ export class DesktopLive {
     for (const [key, projection] of paths) {
       const matches = registeredByPath.get(key) ?? [];
       if (matches.length) {
-        for (const project of matches)
-          projects.push({ ...project, ...projection, cwd: project.cwd, registered: true });
+        // One entry per folder: legacy rows spelling the same path differently stay in
+        // the store (their sessions reference them) but are not listed twice. Prefer the
+        // row spelled exactly like the desktop, then the lowest id; the session list
+        // merges the other rows' sessions into the listed one.
+        const project = [...matches].sort(
+          (a, b) =>
+            Number(b.cwd === projection.cwd) - Number(a.cwd === projection.cwd) ||
+            a.id.localeCompare(b.id),
+        )[0];
+        // Sessions of the folded rows still carry their own id; phones accept them through this list.
+        const aliasIds = matches.filter((row) => row.id !== project.id).map((row) => row.id);
+        projects.push({
+          ...project,
+          ...projection,
+          cwd: project.cwd,
+          registered: true,
+          ...(aliasIds.length ? { aliasIds } : {}),
+        });
       } else
         projects.push({
           ...projection,
@@ -495,12 +822,62 @@ export class DesktopLive {
           registered: false,
         });
     }
-    return { version: 1, privacyReady: true, groups: [...groups.values()], projects };
+    return {
+      version: 1,
+      privacyReady: true,
+      groups: [...groups.values()],
+      projects,
+      ...(concealed.locked.length ? { lockedGroups: concealed.locked } : {}),
+      ...(access.hiddenList ? { hiddenGroups: concealed.hidden } : {}),
+    };
+  }
+
+  /**
+   * Locked groups by name, opened where this device holds a grant (a nested group is
+   * reachable only through an open parent), and hidden group names for a device that
+   * passed the hidden-list password. Hidden groups never reveal their projects.
+   */
+  private concealedView(
+    snapshots: readonly DesktopProjectDirectory[],
+    excludedGroups: ReadonlySet<string>,
+    access: GroupAccess,
+  ) {
+    const locked = new Map<string, DesktopConcealedGroups["locked"][number]>();
+    const hidden = new Map<string, DesktopConcealedGroups["hidden"][number]>();
+    for (const snapshot of snapshots) {
+      for (const group of snapshot.concealed?.locked ?? [])
+        if (excludedGroups.has(group.id) && !locked.has(group.id)) locked.set(group.id, group);
+      for (const group of snapshot.concealed?.hidden ?? [])
+        if (excludedGroups.has(group.id) && !hidden.has(group.id)) hidden.set(group.id, group);
+    }
+    const reachable = (group: DesktopConcealedGroups["locked"][number], depth = 0): boolean => {
+      const parent = group.parentId ? locked.get(group.parentId) : undefined;
+      if (!parent) return true;
+      return depth < 32 && access.groupIds.has(parent.id) && reachable(parent, depth + 1);
+    };
+    const stubs: NonNullable<HostProjectDirectory["lockedGroups"]> = [];
+    const opened: DesktopProjectDirectory["groups"] = [];
+    const projects: DesktopProjectDirectory["projects"] = [];
+    for (const entry of locked.values()) {
+      if (!reachable(entry)) continue;
+      const { parentId: _parentId, projects: rows, ...group } = entry;
+      if (access.groupIds.has(entry.id)) {
+        opened.push(group);
+        projects.push(...rows);
+      } else
+        stubs.push({
+          id: group.id,
+          name: group.name,
+          ...(group.color ? { color: group.color } : {}),
+          ...(group.appearance ? { appearance: group.appearance } : {}),
+        });
+    }
+    return { locked: stubs, opened, projects, hidden: [...hidden.values()] };
   }
 
   private clientAlive(clientId: string): boolean {
     const beatAt = this.clients.get(clientId);
-    return beatAt !== undefined && this.now() - beatAt <= DESKTOP_BEAT_STALE_MS;
+    return beatAt !== undefined && this.awake() - beatAt <= DESKTOP_BEAT_STALE_MS;
   }
 
   /** Whether the desktop reports itself alive; undefined if it never has
@@ -521,11 +898,11 @@ export class DesktopLive {
       }
       // No app has beat since this host started: the mark is all there is. It is
       // believed for a while; a crashed app leaves it behind for good.
-      const since = this.storedSince.get(id) ?? this.now();
+      const since = this.storedSince.get(id) ?? this.awake();
       this.storedSince.set(id, since);
       while (this.storedSince.size > 512)
         this.storedSince.delete(this.storedSince.keys().next().value!);
-      if (this.now() - since < DESKTOP_STORED_RUNNING_MS) return true;
+      if (this.awake() - since < DESKTOP_STORED_RUNNING_MS) return true;
       this.warnExpiredStored(id);
       return false;
     }
@@ -537,11 +914,13 @@ export class DesktopLive {
   nextStoredExpiry(): number | undefined {
     if (this.alive() !== undefined) return undefined;
     let earliest: number | undefined;
+    const awake = this.awake();
     for (const since of this.storedSince.values()) {
       const at = since + DESKTOP_STORED_RUNNING_MS;
-      if (at > this.now()) earliest = Math.min(earliest ?? at, at);
+      if (at > awake) earliest = Math.min(earliest ?? at, at);
     }
-    return earliest;
+    // The caller schedules on the wall clock.
+    return earliest === undefined ? undefined : this.clock.toWall(earliest);
   }
 
   /** The window that reports `id` busy right now, if it is alive. */
@@ -561,14 +940,14 @@ export class DesktopLive {
     if (live) return live;
     const last = this.lastBusyBeat.get(id);
     if (!last || this.clientAlive(last.clientId)) return undefined;
-    if (this.now() - last.at <= DESKTOP_SILENT_BUSY_MS) return last.clientId;
+    if (this.awake() - last.at <= DESKTOP_SILENT_BUSY_MS) return last.clientId;
     this.lastBusyBeat.delete(id);
     return undefined;
   }
 
   private noteBusyBeat(id: string, clientId: string): void {
     this.lastBusyBeat.delete(id);
-    this.lastBusyBeat.set(id, { clientId, at: this.now() });
+    this.lastBusyBeat.set(id, { clientId, at: this.awake() });
     while (this.lastBusyBeat.size > 1024)
       this.lastBusyBeat.delete(this.lastBusyBeat.keys().next().value!);
   }
@@ -581,7 +960,7 @@ export class DesktopLive {
   /** A client silent past the stale window cannot hold a writer any more. */
   private pruneWriterClients(): void {
     for (const [clientId, known] of this.writerClients)
-      if (this.now() - known.at > DESKTOP_WRITER_STALE_MS) this.writerClients.delete(clientId);
+      if (this.awake() - known.at > DESKTOP_WRITER_STALE_MS) this.writerClients.delete(clientId);
   }
 
   /** Before Host continuation, every live window that holds this session's writer must release it.

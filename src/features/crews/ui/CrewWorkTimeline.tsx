@@ -1,14 +1,10 @@
-import { Text } from "../../../shared/ui/Text";
-import { useState } from "react";
-import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { formatNumber, t, useLocale } from "../../../shared/i18n";
-import { formatDuration, formatUsageTokens } from "../../../shared/i18n/format";
+import { t, useLocale } from "../../../shared/i18n";
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
-import { Button } from "../../../shared/ui/Button";
+import { Disclosure } from "../../../shared/ui/Disclosure";
+import { Text } from "../../../shared/ui/Text";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import type { CrewRunView } from "../model/crewClient";
 import { crewRunTimeline, type CrewTimelineEvent } from "../model/crewTimeline";
-import type { CrewUsage } from "../model/crewUsage";
 import { teamTraits } from "../model/memberAvatars";
 import { MemberAvatar } from "./MemberAvatar";
 
@@ -45,68 +41,43 @@ export function crewTimelineText(event: CrewTimelineEvent): string {
   }
 }
 
-/** Duration, tokens and cost on one line; unknown parts are left out. */
-export function crewUsageText(usage: CrewUsage): string {
-  const parts: string[] = [];
-  if (usage.durationMs !== undefined) parts.push(formatDuration(usage.durationMs));
-  if (usage.tokens !== undefined)
-    parts.push(
-      t(usage.tokensExact ? "{p0} tokens" : "At least {p0} tokens", {
-        p0: formatUsageTokens(usage.tokens),
-      }),
-    );
-  if (usage.costUsd !== undefined)
-    parts.push(formatNumber(usage.costUsd, { style: "currency", currency: "USD" }));
-  return parts.join(" · ");
-}
-
-const RECENT = 5;
-
-/** What happened in this work, oldest first: the latest few events, the rest on request. */
+/** What happened in this work, oldest first, one disclosure away from the current state. */
 export function CrewWorkTimeline({ run }: { run: CrewRunView }) {
   useLocale();
-  const [all, setAll] = useState(false);
   const events = crewRunTimeline(run);
   const looks = teamTraits(run.definition.agents);
   const names = new Map(run.definition.agents.map((agent) => [agent.id, agent.name]));
-  const shown = all ? events : events.slice(-RECENT);
   if (!events.length) return null;
   return (
     <div className="mt-4">
-      <div className="flex items-center justify-between gap-2">
-        <SectionLabel as="h4">{t("Timeline")}</SectionLabel>
-        {events.length > RECENT ? (
-          <Button variant="link" size="sm" onClick={() => setAll((value) => !value)}>
-            {all ? t("Show less") : t("Show all ({p0})", { p0: events.length })}
-          </Button>
-        ) : null}
-      </div>
-      <ol aria-label={t("Timeline")} className="mt-1.5 flex flex-col gap-1.5">
-        {shown.map((event) => {
-          const traits = event.memberId ? looks.get(event.memberId) : undefined;
-          const who = event.memberId ? names.get(event.memberId) : undefined;
-          return (
-            <li key={event.id} className="flex min-w-0 items-start gap-2">
-              {traits ? (
-                <MemberAvatar traits={traits} size={20} label={who} className="shrink-0" />
-              ) : (
-                <span aria-hidden="true" className="size-5 shrink-0" />
-              )}
-              <Text
-                size="secondary"
-                tone="inherit"
-                className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]"
-              >
-                {crewTimelineText(event)}
-              </Text>
-              <Text tone="muted" className="shrink-0">
-                {event.approximate ? "~" : null}
-                <Timestamp value={event.at} />
-              </Text>
-            </li>
-          );
-        })}
-      </ol>
+      <Disclosure summary={t("History")} count={events.length}>
+        <ol aria-label={t("History")} className="flex flex-col gap-1.5">
+          {events.map((event) => {
+            const traits = event.memberId ? looks.get(event.memberId) : undefined;
+            const who = event.memberId ? names.get(event.memberId) : undefined;
+            return (
+              <li key={event.id} className="flex min-w-0 items-start gap-2">
+                {traits ? (
+                  <MemberAvatar traits={traits} size={20} label={who} className="shrink-0" />
+                ) : (
+                  <span aria-hidden="true" className="size-5 shrink-0" />
+                )}
+                <Text
+                  size="secondary"
+                  tone="inherit"
+                  className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]"
+                >
+                  {crewTimelineText(event)}
+                </Text>
+                <Text tone="muted" className="shrink-0">
+                  {event.approximate ? "~" : null}
+                  <Timestamp value={event.at} />
+                </Text>
+              </li>
+            );
+          })}
+        </ol>
+      </Disclosure>
     </div>
   );
 }

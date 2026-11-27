@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import {
   queueProviderOperation,
   assertProviderOperation,
@@ -11,7 +12,9 @@ import {
 } from "../turnWriter";
 
 import { killChild } from "../../core/child";
+import { retryAtField, retryAtFromTimestamp } from "../../core/retryAt";
 import { withSlowStartupNotice } from "../../core/providerStartupStatus";
+import { compactionFailedText } from "../../core/providerNotices";
 import {
   createProviderRetirementLedger,
   ProviderRetirementError,
@@ -30,10 +33,11 @@ import {
 import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import { TurnLatch } from "../../../../shared/lib/turnLatch";
 import { TurnNotReadyError } from "../../core/types";
+import { leanContext } from "../../core/nativeToolLimits";
 import { nativeSessionCapability } from "../../core/controlTurn";
 import {
-  COMPACTED_TEXT,
-  COMPACTING_TEXT,
+  compactedText,
+  compactingText,
   COMPACTION_STATUS_KEY,
 } from "../../../../features/sessions/model/compactionStatus";
 import { modelContextWindow, nativeModelId } from "../../../../features/sessions/model/models";
@@ -47,7 +51,6 @@ import {
 import {
   closeHarnessSse,
   execChild,
-  freeHarnessPort,
   resolveOpenCodeBinary,
   spawnChild,
   watchChild,
@@ -188,6 +191,7 @@ function retainWireRetirement(
 }
 
 type Live = {
+  archiveDelegateHistory: boolean;
   operation?: object;
   /** v2 uses an external service and owns no child process. */
   handle?: ChildProcessHandle;
@@ -198,6 +202,7 @@ type Live = {
   openCodeSessionId: string;
   autoCompact?: string;
   cwd: string;
+  chatOnly: boolean;
   runtimeMode: RuntimeMode;
   planning: boolean;
   onEvent: (event: HarnessEvent) => void;
@@ -274,6 +279,10 @@ export async function sendOpenCodeTurn(input: SendTurnInput): Promise<void> {
   const hostControlRun = input.operationContext?.hostControlRun;
 
   try {
+    if (leanContext(input.modelSettings) && typeof input.chatOnlyHistory !== "string")
+      throw new Error("OpenCode chat-only history is unavailable for this session.");
+    if (leanContext(input.modelSettings) && socialAcpSessions.has(input.sessionId))
+      throw new Error("OpenCode chat-only generation cannot adopt an existing ACP session.");
     const original = liveByThread.get(input.sessionId) ?? startingByThread.get(input.sessionId);
     if (original) {
       captureHttpOperation(original, input.operationContext);
@@ -286,7 +295,9 @@ export async function sendOpenCodeTurn(input: SendTurnInput): Promise<void> {
       async () => {
         // The shared v2 service has no per-session child environment. Its documented
         // private ACP process preserves the session-scoped social grant instead.
-        const program = await socialAcpProgram(input);
+        const program = leanContext(input.modelSettings)
+          ? undefined
+          : await socialAcpProgram(input);
         if (program) return sendGenericAcpTurn(input, program);
         let live: Live;
         try {
@@ -306,11 +317,12 @@ export async function sendOpenCodeTurn(input: SendTurnInput): Promise<void> {
           if (live.handle) beginProviderOperation(input.operationContext, live.handle);
           live.onEvent = input.onEvent;
           live.planning = input.intent === "plan";
-          await applySessionPolicy(live, input, client);
+          if (!live.chatOnly) await applySessionPolicy(live, input, client);
           live.cancelled = false;
           live.muteUpdates = false;
           try {
-            await runTurn(live, input, client);
+            if (live.chatOnly) await runChatOnlyTurn(live, input, client);
+            else await runTurn(live, input, client);
           } catch (error) {
             if (live.cancelled) return;
             throw error;
@@ -332,6 +344,8 @@ export async function compactOpenCodeContext(input: CompactContextInput): Promis
   const hostControlRun = input.operationContext?.hostControlRun;
 
   try {
+    if (leanContext(input.modelSettings))
+      throw new Error("OpenCode chat-only generation does not support provider compaction.");
     const original = liveByThread.get(input.sessionId) ?? startingByThread.get(input.sessionId);
     if (original) {
       captureHttpOperation(original, input.operationContext);
@@ -393,6 +407,8 @@ export async function rewindOpenCodeLastTurn(
   const hostControlRun = input.operationContext?.hostControlRun;
 
   try {
+    if (leanContext(input.modelSettings))
+      throw new Error("OpenCode chat-only generation does not support provider rewind.");
     const original = liveByThread.get(input.sessionId) ?? startingByThread.get(input.sessionId);
     if (original) {
       captureHttpOperation(original, input.operationContext);
@@ -469,6 +485,11 @@ async function latestOpenCodeUserMessageId(live: Live, client = live.client): Pr
 
 export async function steerOpenCodeTurn(input: SteerTurnInput): Promise<void> {
   assertProviderOperation(input.operationContext);
+
+  if (leanContext(input.modelSettings))
+    throw new TurnNotReadyError(
+      "OpenCode chat-only generation cannot be steered; wait or stop the turn.",
+    );
 
   input = { ...input };
   const hostRun = input.operationContext?.hostRun;
@@ -775,6 +796,8 @@ async function ensureLive(
   if (
     existing &&
     existing.cwd === input.cwd &&
+    existing.archiveDelegateHistory === (input.archiveDelegateHistory === true) &&
+    existing.chatOnly === leanContext(input.modelSettings) &&
     existing.autoCompact === input.modelSettings?.autoCompact
   ) {
     if (existing.handle) observeProviderProcess(input, existing.handle);
@@ -797,6 +820,8 @@ async function ensureLive(
     const { path } = await resolveOpenCodeBinaryImpl();
     checkStartup();
     const generation = await assertOpenCodeVersion(path, input.cwd);
+    if (leanContext(input.modelSettings) && generation !== "v2")
+      throw new Error("OpenCode chat-only generation requires OpenCode 2.");
     const autoCompact = input.modelSettings?.autoCompact;
     if (generation === "v2" && (autoCompact === "on" || autoCompact === "off")) {
       throw new Error(
@@ -832,7 +857,8 @@ async function ensureLive(
     }
 
     const resume = resumeByThread.get(input.sessionId);
-    const canResume = resume != null && resume.cwd === input.cwd;
+    const canResume =
+      resume != null && resume.cwd === input.cwd && !leanContext(input.modelSettings);
     if (resume && resume.cwd !== input.cwd) {
       resumeByThread.delete(input.sessionId);
     }
@@ -880,11 +906,12 @@ async function ensureLive(
         },
       );
 
-      const port = await freeHarnessPort();
+      // Port 0: opencode binds the ephemeral port itself and prints it, which
+      // observeUrl reads. A probed port could be taken before serve binds it.
       await spawnChild(
         handle,
         path,
-        ["serve", `--hostname=127.0.0.1`, `--port=${port}`],
+        ["serve", `--hostname=127.0.0.1`, `--port=0`],
         input.cwd,
         undefined,
         "opencode",
@@ -921,7 +948,10 @@ async function ensureLive(
       bootstrapClient,
       {
         resume: canResume ? resume : undefined,
-        permission: openCodeTurnRules(input),
+        archiveDelegateHistory: input.archiveDelegateHistory,
+        permission: leanContext(input.modelSettings)
+          ? [{ permission: "*", pattern: "*", action: "deny" }]
+          : openCodeTurnRules(input),
         cwd: input.cwd,
       },
       hostControlRun
@@ -938,15 +968,24 @@ async function ensureLive(
       birthControlClient,
     });
     checkStartup();
-    if (canResume) {
-      const recoveryClient = hostRun ? client.withHostRun(hostRun, openCodeSession.id) : client;
-      await repairUnsupportedFileTurn(recoveryClient, openCodeSession.id).catch((error: unknown) =>
-        console.debug("[bycoda] opencode attachment recovery", error),
-      );
+    if (input.archiveDelegateHistory || canResume) {
+      const sessionClient = hostRun ? client.withHostRun(hostRun, openCodeSession.id) : client;
+      if (input.archiveDelegateHistory) {
+        // Retain the exact session after a failed acknowledgement so retry does not create another.
+        resumeByThread.set(input.sessionId, { sessionId: openCodeSession.id, cwd: input.cwd });
+        await sessionClient.archiveDelegatedSession(openCodeSession);
+        checkStartup();
+      }
+      if (canResume) {
+        await repairUnsupportedFileTurn(sessionClient, openCodeSession.id).catch((error: unknown) =>
+          console.debug("[bycoda] opencode attachment recovery", error),
+        );
+      }
     }
 
     checkStartup();
     const live: Live = {
+      archiveDelegateHistory: input.archiveDelegateHistory === true,
       operation: input.operationContext?.operation,
       handle: startup.handle,
       client,
@@ -955,6 +994,7 @@ async function ensureLive(
       openCodeSessionId: openCodeSession.id,
       autoCompact,
       cwd: input.cwd,
+      chatOnly: leanContext(input.modelSettings),
       runtimeMode: input.runtimeMode,
       planning: input.intent === "plan",
       onEvent: input.onEvent,
@@ -1006,7 +1046,7 @@ async function ensureLive(
             nativeOutputSink(work, () =>
               live.onEvent({
                 type: "session.error",
-                message: `Could not route OpenCode event: ${error instanceof Error ? error.message : String(error)}`,
+                message: `Could not route OpenCode event: ${errorText(error)}`,
               }),
             )();
             nativeOutputSink(work, finishActiveTurn)(live);
@@ -1064,6 +1104,7 @@ async function resolveSession(
   client: OpenCodeClient,
   input: {
     resume?: Resume;
+    archiveDelegateHistory?: boolean;
     permission: OpenCodePermissionRule[];
     cwd: string;
   },
@@ -1073,6 +1114,9 @@ async function resolveSession(
   if (input.resume) {
     try {
       const adopted = await client.getSession(input.resume.sessionId);
+      if (input.archiveDelegateHistory && adopted?.id !== input.resume.sessionId) {
+        throw new Error("OpenCode returned a different session for the delegated history.");
+      }
       if (!adopted.directory || sameDirectory(adopted.directory, input.cwd)) {
         await client.updateSession(adopted.id, { permission });
         return adopted;
@@ -1081,7 +1125,10 @@ async function resolveSession(
       await client.updateSession(forked.id, { permission });
       return forked;
     } catch (error) {
-      if (!isOpenCodeNotFound(error) && !isHttpNotFound(error) && !isEmptySessionFork(error))
+      if (
+        input.archiveDelegateHistory ||
+        (!isOpenCodeNotFound(error) && !isHttpNotFound(error) && !isEmptySessionFork(error))
+      )
         throw error;
     }
   }
@@ -1135,13 +1182,53 @@ async function runTurn(live: Live, input: SendTurnInput, client = live.client): 
     if (live.cancelled) return;
     live.onEvent({
       type: "session.error",
-      message: error instanceof Error ? error.message : String(error),
+      message: errorText(error),
     });
     throw error;
   } finally {
     live.awaitedInbox = null;
     live.turnDone = null;
     live.turnFailed = null;
+  }
+}
+
+async function runChatOnlyTurn(
+  live: Live,
+  input: SendTurnInput,
+  client: OpenCodeClient,
+): Promise<void> {
+  const model = parseOpenCodeModelSlug(nativeModelId(input.model));
+  if (!model) throw new Error("OpenCode models use provider/model ids.");
+  if (input.attachments?.length)
+    throw new Error("OpenCode chat-only generation does not support attachments.");
+  const history = input.chatOnlyHistory;
+  if (typeof history !== "string")
+    throw new Error("OpenCode chat-only history is unavailable for this session.");
+  const prompt = history ? `${history}\n\nCurrent user message:\n${input.text}` : input.text;
+  if (new TextEncoder().encode(prompt).length > 1024 * 1024)
+    throw new Error("OpenCode chat-only conversation exceeds the generation limit.");
+  live.activeTurn = true;
+  try {
+    const result = await client.prompt({
+      sessionID: live.openCodeSessionId,
+      model,
+      variant: input.modelSettings?.variant,
+      parts: [{ type: "text", text: prompt }],
+      timeoutMs: COMPACTION_TIMEOUT_MS,
+    });
+    if (live.cancelled || live.muteUpdates) return;
+    const text = (result.parts ?? [])
+      .map((part) => {
+        const record = asRecord(part);
+        return record?.type === "text" ? (stringField(record, "text") ?? "") : "";
+      })
+      .join("");
+    if (!text) throw new Error("OpenCode returned empty output.");
+    input.onAccepted?.();
+    live.onEvent({ type: "message.delta", text });
+    live.onEvent({ type: "message.completed" });
+  } finally {
+    live.activeTurn = false;
   }
 }
 
@@ -1476,20 +1563,20 @@ async function handleEvent(live: Live, event: Record<string, unknown>): Promise<
             type: "status",
             key: COMPACTION_STATUS_KEY,
             running: true,
-            text: COMPACTING_TEXT,
+            text: compactingText(),
           });
         } else if (type === "session.compaction.ended") {
           emitNative({
             type: "status",
             key: COMPACTION_STATUS_KEY,
             running: false,
-            text: COMPACTED_TEXT,
+            text: compactedText(),
           });
         } else if (type === "session.compaction.failed") {
           emitNative({ type: "status", key: COMPACTION_STATUS_KEY, running: false, text: "" });
           // A manual compaction reports its failure as the turn error instead.
           if (live.awaitedInbox?.kind !== "compaction") {
-            emitNative({ type: "status", text: "Could not compact context" });
+            emitNative({ type: "status", text: compactionFailedText() });
           }
         }
       }
@@ -1655,7 +1742,12 @@ async function handleEvent(live: Live, event: Record<string, unknown>): Promise<
         const statusType = stringField(status, "type");
         if (statusType === "retry") {
           const message = stringField(status, "message");
-          if (message) emitNative({ type: "status", text: message });
+          if (message)
+            emitNative({
+              type: "status",
+              text: message,
+              ...retryAtField(retryAtFromTimestamp(status?.next, Date.now())),
+            });
           break;
         }
         if (statusType === "idle" && live.activeTurn) {

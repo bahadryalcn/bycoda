@@ -6,7 +6,7 @@ import {
   FolderOpen,
   FolderPlus,
   FolderTree,
-  Internet,
+  Server,
   Pencil,
   Pin,
   PinOff,
@@ -27,7 +27,7 @@ export const REVEAL_LABEL = IS_MAC
   ? "Reveal in Finder"
   : IS_WIN
     ? "Reveal in File Explorer"
-    : "Open Containing Folder";
+    : "Open containing folder";
 
 /** What the Machine item shows for a remote project: the machine and its connection, as plain text. */
 type MachineMenuStatus = {
@@ -91,38 +91,9 @@ export function projectMenuExtraItems(
       icon: FolderTree,
       submenu: groupSubmenu,
     },
-    ...(canAddDirs || canRenameFolder
-      ? [
-          {
-            id: "folders",
-            get label() {
-              return t("Folders");
-            },
-            icon: FolderPlus,
-            submenu: [
-              ...(canRenameFolder
-                ? [
-                    {
-                      kind: "item" as const,
-                      id: "rename-folder",
-                      label: t("Rename folder…"),
-                      icon: <Pencil className="icon-sm" strokeWidth={1.75} />,
-                    },
-                  ]
-                : []),
-              ...(canAddDirs
-                ? [
-                    {
-                      kind: "item" as const,
-                      id: "additional-dirs",
-                      label: t("Additional folders…"),
-                      icon: <FolderPlus className="icon-sm" strokeWidth={1.75} />,
-                    },
-                  ]
-                : []),
-            ],
-          },
-        ]
+    ...(canRenameFolder ? [{ id: "rename-folder", label: t("Rename folder…"), icon: Pencil }] : []),
+    ...(canAddDirs
+      ? [{ id: "additional-dirs", label: t("Additional folders…"), icon: FolderPlus }]
       : []),
     ...(machine
       ? [
@@ -131,8 +102,7 @@ export function projectMenuExtraItems(
             get label() {
               return t("Machine");
             },
-            description: machine.description,
-            icon: Internet,
+            icon: Server,
             submenu: [
               {
                 kind: "item" as const,
@@ -162,42 +132,34 @@ export function projectMenuExtraItems(
           },
         ]),
     { id: "reveal", label: REVEAL_LABEL, icon: FolderOpen },
-    {
-      id: "external-editor",
-      get label() {
-        return t("Open in editor");
-      },
-      icon: AppWindow,
-      disabled: externalEditors === null,
-      submenu:
-        externalEditors === null
-          ? [
-              {
-                kind: "item",
-                id: "external-editor:loading",
-                get label() {
-                  return t("Looking for editors…");
-                },
-                disabled: true,
-              },
-            ]
-          : externalEditors.length > 0
-            ? externalEditors.map((editor) => ({
-                kind: "item" as const,
-                id: `external-editor:${editor.id}`,
-                label: editor.name,
-              }))
-            : [
-                {
-                  kind: "item",
-                  id: "external-editor:none",
-                  get label() {
-                    return t("No supported editors found");
-                  },
-                  disabled: true,
-                },
-              ],
-    },
+    ...(externalEditors === null
+      ? []
+      : [
+          {
+            id: "external-editor",
+            get label() {
+              return t("Open in editor");
+            },
+            icon: AppWindow,
+            submenu:
+              externalEditors.length > 0
+                ? externalEditors.map((editor) => ({
+                    kind: "item" as const,
+                    id: `external-editor:${editor.id}`,
+                    label: editor.name,
+                  }))
+                : [
+                    {
+                      kind: "item" as const,
+                      id: "external-editor:none",
+                      get label() {
+                        return t("No supported editors found");
+                      },
+                      disabled: true,
+                    },
+                  ],
+          },
+        ]),
     {
       id: "notifications-mute",
       get label() {

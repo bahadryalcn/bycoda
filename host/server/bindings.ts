@@ -88,8 +88,11 @@ import { HostBulkTransfers } from "../transport/http/bulk";
 import { HostSubscriptionHub } from "../transport/ws/subscriptions";
 import { ExternalTunnels } from "../tunnels/tunnels";
 import { VoiceCloudCredentials } from "../voice/voice-cloud-credentials";
+import type { LiveStreamService } from "../live-stream/service";
 import { LocalVoiceService } from "../voice/voice-local";
 import { VoiceSetupService } from "../voice/voice-setup";
+import type { VoiceCallSettingsStore } from "../voice/voice-call-settings";
+import type { VoiceRealtimeRelays } from "../voice/voice-realtime-relay";
 import type { ApprovalRegistry } from "../approvals/approval-registry";
 import type { PushNotifications } from "../push/push-service";
 import type { PushDeviceStore } from "../push/push-store";
@@ -145,6 +148,7 @@ export interface ServerBindings {
   featureDirectory: ReturnType<typeof createDevicesRuntime>["featureDirectory"];
   devServers: DevServersService;
   server: ReturnType<typeof createHttpRuntime>["server"];
+  tunnelIngress: ReturnType<typeof createHttpRuntime>["tunnelIngress"];
   assertHostMayRun: Awaited<ReturnType<typeof createSessionQueueRuntime>>["assertHostMayRun"];
   providers: RemoteProvider[];
   refresh: Awaited<ReturnType<typeof createSessionQueueRuntime>>["refresh"];
@@ -209,7 +213,7 @@ export interface ServerBindings {
   environmentService: ReturnType<typeof createEnvironmentRuntime>["environmentService"];
   persistenceService: ReturnType<typeof createNativeRuntime>["persistenceService"];
   tunnels: ReturnType<typeof createMobileRuntime>["tunnels"];
-  mobileAccess: ReturnType<typeof createMobileRuntime>["mobileAccess"];
+  mobileTailnet: MobileLanAccess;
   featureClaims: ReturnType<typeof createWorkspacesRuntime>["featureClaims"];
   projectsService: ReturnType<typeof createSessionServicesRuntime>["projectsService"];
   workspacePolicy: ReturnType<typeof createWorkspacesRuntime>["workspacePolicy"];
@@ -298,7 +302,6 @@ export interface ServerBindings {
   nativeServiceUploads: ReturnType<typeof createNativeRuntime>["nativeServiceUploads"];
   nativeServicesService: ReturnType<typeof createNativeRuntime>["nativeServicesService"];
   modelsService: ReturnType<typeof createNativeRuntime>["modelsService"];
-  nativeBufferUploads: ReturnType<typeof createNativeRuntime>["nativeBufferUploads"];
   nativeWorkspacesService: ReturnType<typeof createNativeRuntime>["nativeWorkspacesService"];
   crewOperation: ReturnType<typeof createNativeRuntime>["crewOperation"];
   sessionService: ReturnType<typeof createSessionServicesRuntime>["sessionService"];
@@ -344,10 +347,13 @@ export interface ServerBindings {
   voiceCloud: VoiceCloudCredentials;
   localVoice: LocalVoiceService;
   voiceSetup: VoiceSetupService;
+  voiceCallSettings: VoiceCallSettingsStore;
+  voiceRelays: VoiceRealtimeRelays;
   pushDevices: PushDeviceStore;
   pushNotifications: PushNotifications;
   approvals: ApprovalRegistry;
   decisionModels: DecisionModelsService;
+  liveStream: LiveStreamService;
   accountPlatform: AccountPlatformRuntime;
   catalogs: ModelCatalogCache;
   handoffHistory: HandoffHistoryStore;
@@ -377,6 +383,7 @@ export interface ServerBindings {
   crewsService: ReturnType<typeof createNativeRuntime>["crewsService"];
   bindQuestionUpload: ReturnType<typeof createSessionServicesRuntime>["bindQuestionUpload"];
   mobileIngressSecret: ReturnType<typeof createMobileRuntime>["mobileIngressSecret"];
+  deviceProofGate: ReturnType<typeof createMobileRuntime>["deviceProofGate"];
   subscriptionHub: HostSubscriptionHub;
   bulkTransfers: HostBulkTransfers;
   closing: ReturnType<typeof createHttpRuntime>["closing"];

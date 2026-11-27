@@ -1,5 +1,5 @@
 import { readdir } from "node:fs/promises";
-import { execFileAsync } from "../../src/shared/lib/processExecution.node";
+import { hostGitExec } from "./git-exec-pool";
 import { hostGitStarts } from "./git-start-gate";
 
 /** A project opened on a new folder starts as a repository. Only an empty folder
@@ -10,13 +10,16 @@ export async function initializeEmptyProjectRepository(path: string) {
   try {
     if ((await readdir(path)).length) return;
     await hostGitStarts.enter();
-    const plain = await execFileAsync("git", ["rev-parse", "--is-inside-work-tree"], options).then(
-      () => false,
-      (error: { stderr?: unknown }) => /not a git repository/i.test(String(error?.stderr ?? error)),
-    );
+    const plain = await hostGitExec
+      .exec("git", ["rev-parse", "--is-inside-work-tree"], options)
+      .then(
+        () => false,
+        (error: { stderr?: unknown }) =>
+          /not a git repository/i.test(String(error?.stderr ?? error)),
+      );
     if (!plain) return;
     await hostGitStarts.enter();
-    await execFileAsync("git", ["init", "--quiet"], options);
+    await hostGitExec.exec("git", ["init", "--quiet"], options);
   } catch {
     // The folder still opens; source control offers to initialize it.
   }

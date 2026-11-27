@@ -2,10 +2,14 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
     matches!(
         method,
         "social.request"
+            | "modelRouting.catalogFacts"
             | "modelRouting.get"
             | "modelRouting.resolve"
             | "modelRouting.save"
             | "modelRouting.status"
+            | "usage.planShare.read"
+            | "usage.quota.read"
+            | "usage.rows.read"
             | "assistant.request"
             | "assistant.ownerActive"
             | "approvals.mirror"
@@ -15,6 +19,9 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "desktop.request"
             | "desktop.helper.request"
             | "workspaces.prepare"
+            | "workspaces.prepare.status"
+            | "workspaces.prepare.cancel"
+            | "workspaces.renameBranch"
             | "workspaces.get"
             | "workspaces.list"
             | "workspaces.resume"
@@ -67,6 +74,7 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "social.oauth.begin"
             | "social.oauth.status"
             | "social.oauth.select"
+            | "social.x.liveKey.store"
             | "social.token.connect"
             | "social.token.inspect"
             | "social.tiktok.creator"
@@ -76,6 +84,17 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "social.browser.profile.read"
             | "social.browser.profile.update"
             | "social.browser.profile.follow"
+            // Instagram owner operations use exact names.
+            | "social.browser.instagram.recipient"
+            | "social.browser.instagram.live"
+            | "social.browser.instagram.post"
+            | "social.browser.instagram.followers"
+            | "social.browser.instagram.follow"
+            | "social.browser.instagram.mentions"
+            | "social.browser.instagram.comment-like"
+            | "social.browser.instagram.earnings"
+            | "social.browser.instagram.highlights"
+            | "social.browser.instagram.highlight-change"
             | "social.browser.workflow.begin"
             | "social.browser.workflow.status"
             | "social.browser.workflow.cancel"
@@ -85,7 +104,12 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "social.browser.registration.reconcile"
             | "social.browser.view.frame"
             | "social.browser.view.input"
+            | "social.browser.linkedin.analytics.profile"
+            | "social.browser.linkedin.manage"
             | "social.monitoring.status"
+            // Facebook owner requests still pass through Host admission.
+            | "social.browser.facebook.monetization"
+            | "social.facebook.live.encoder"
             | "social.media.upload"
             | "social.media.claim"
             | "social.media.transfer"
@@ -98,6 +122,9 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "browser.resize"
             | "browser.release"
             | "browser.status"
+            | "browser.profiles.list"
+            | "browser.profiles.sources"
+            | "browser.profiles.update"
             | "browser.setup"
             | "browser.annotation.start"
             | "browser.annotation.hover"
@@ -117,6 +144,7 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "terminals.create"
             | "terminals.read"
             | "terminals.write"
+            | "terminals.resize"
             | "terminals.interrupt"
             | "terminals.close"
             | "runtimeLogs.read"
@@ -126,6 +154,12 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "runtimeLogs.monitors.stop"
             | "resources.read"
             | "diagnostics.logs.read"
+            | "ollama.status"
+            | "ollama.start"
+            | "ollama.pull.start"
+            | "ollama.pull.cancel"
+            | "ollama.port.set"
+            | "ollama.opencode.save"
             | "devices.status"
             | "devices.preflight"
             | "devices.preview"
@@ -134,9 +168,15 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "devices.start"
             | "devices.stop"
             | "devices.list"
+            | "devices.paired"
+            | "devices.revokeOther"
+            | "devices.setManagement"
+            | "devices.applyRecovery"
+            | "host.access.read"
             | "devices.boot"
             | "devices.capture"
             | "devices.stream"
+            | "devices.touch"
             | "devices.control.status"
             | "devices.control.claim"
             | "devices.control.release"
@@ -151,15 +191,26 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "tunnels.start"
             | "tunnels.stop"
             | "tunnels.credential"
+            | "tunnels.phones"
+            | "devices.bindProofKey"
             | "mobile.pairing.create"
             | "mobile.pairing.status"
             | "mobile.pairing.cancel"
             | "machine.changes"
             | "commands.status"
             | "projects.list"
+            | "workItems.search"
+            | "workItems.get"
             | "mcp.hub.loading.get"
+            | "mcp.hub.servers"
+            | "mcp.config.call"
+            | "mcp.projectCredentials.status"
+            | "mcp.projectCredentials.set"
+            | "mcp.projectCredentials.clear"
             | "mcp.hub.loading.set"
             | "mcp.oauth.start"
+            | "mcp.oauth.complete"
+            | "mcp.oauth.cancel"
             | "mcp.oauth.status"
             | "mcp.oauth.signOut"
             | "mcp.tokens.create"
@@ -176,6 +227,7 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "appearance.backgroundImage"
             | "appearance.createDesign"
             | "appearance.cancelDesign"
+            | "appearance.cancelGeneration"
             | "assistant.builder.interview"
             | "assistant.builder.avatarGenerate"
             | "assistant.builder.avatarRead"
@@ -189,6 +241,7 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "sessions.page"
             | "sessions.sideQuestion"
             | "sessions.block"
+            | "sessions.inlineVisual"
             | "sessions.workedTime"
             | "sessions.syncChunk"
             | "sessions.adopted"
@@ -214,6 +267,8 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "git.createBranch"
             | "git.worktrees"
             | "git.worktreeCreate"
+            | "git.worktreeRemovalReview"
+            | "git.worktreeRemove"
             | "files.read"
             | "files.list"
             | "files.index"
@@ -238,6 +293,7 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "automations.delete"
             | "automations.runs"
             | "automations.runNow"
+            | "automations.decide"
             | "crews.active.list"
             | "crews.member.ask"
             | "crews.list"
@@ -248,6 +304,7 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "crews.deleteRun"
             | "crews.agent.save"
             | "crews.agent.delete"
+            | "crews.agent.group.update"
             | "crews.pools.list"
             | "crews.pools.save"
             | "crews.pools.delete"
@@ -267,6 +324,7 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "tasks.snapshotWithCursor"
             | "tasks.events"
             | "tasks.preflight"
+            | "tasks.helpers"
             | "tasks.evaluation.save"
             | "tasks.save"
             | "tasks.move"
@@ -303,6 +361,19 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "stewards.runNow"
             | "stewards.decline"
             | "decisionModels.catalog.get"
+            | "liveStream.status"
+            | "liveStream.start"
+            | "liveStream.stop"
+            | "liveStream.demo"
+            | "liveStream.report"
+            | "liveStream.obsSetup"
+            | "liveStream.obsStream"
+            | "liveStream.obsCredentials"
+            | "liveStream.eulerKey"
+            | "liveStream.live.accounts"
+            | "liveStream.live.status"
+            | "liveStream.live.start"
+            | "liveStream.live.stop"
             | "decisionModels.decide"
             | "decisionModels.discovery.results"
             | "decisionModels.discovery.scan"
@@ -315,6 +386,9 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "decisionModels.local.recommend"
             | "decisionModels.local.plan"
             | "decisionModels.local.install"
+            | "decisionModels.local.installStart"
+            | "decisionModels.local.installProgress"
+            | "decisionModels.local.cancelInstall"
             | "decisionModels.local.start"
             | "decisionModels.local.stop"
             | "decisionModels.local.uninstall"
@@ -329,6 +403,10 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "secrets.input.list"
             | "secrets.input.answer"
             | "drafts.presence.report"
+            | "projects.groups.unlock"
+            | "projects.groups.authorizeHidden"
+            | "projects.groups.lock"
+            | "projects.groups.setHidden"
             | "secrets.owner.revoke"
             | "sessions.lifecycle.get"
             | "sessions.lifecycle.list"
@@ -362,9 +440,54 @@ pub(super) fn decision_model_key_allowed(
         || local_host
 }
 
+pub(super) fn live_stream_method_allowed(method: &str, local_host: bool) -> bool {
+    !matches!(
+        method,
+        "liveStream.eulerKey"
+            | "liveStream.obsCredentials"
+            | "liveStream.live.accounts"
+            | "liveStream.live.status"
+            | "liveStream.live.start"
+            | "liveStream.live.stop"
+    ) || local_host
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{decision_model_key_allowed, supported_remote_method};
+    use super::{decision_model_key_allowed, live_stream_method_allowed, supported_remote_method};
+
+    #[test]
+    fn live_stream_admits_exact_names_and_keeps_sensitive_operations_local() {
+        for method in [
+            "liveStream.eulerKey",
+            "liveStream.obsCredentials",
+            "liveStream.live.accounts",
+            "liveStream.live.status",
+            "liveStream.live.start",
+            "liveStream.live.stop",
+        ] {
+            assert!(supported_remote_method(method));
+            assert!(!live_stream_method_allowed(method, false));
+            assert!(live_stream_method_allowed(method, true));
+        }
+        for method in [
+            "liveStream.status",
+            "liveStream.obsStream",
+            "liveStream.report",
+        ] {
+            assert!(supported_remote_method(method));
+            assert!(live_stream_method_allowed(method, false));
+        }
+        assert!(!supported_remote_method("liveStream.anything"));
+        assert!(!supported_remote_method("liveStream.live.anything"));
+    }
+
+    #[test]
+    fn plan_share_read_is_allowed_by_the_native_bridge() {
+        assert!(supported_remote_method("usage.planShare.read"));
+        assert!(supported_remote_method("usage.quota.read"));
+        assert!(!supported_remote_method("usage.planShare.write"));
+    }
 
     #[test]
     fn every_manifest_appearance_method_is_admitted() {
@@ -422,5 +545,29 @@ mod tests {
         }
         assert!(!supported_remote_method("social.media.releaseAll"));
         assert!(!supported_remote_method("social.media.claim.anything"));
+    }
+
+    #[test]
+    fn instagram_management_only_forwards_named_operations() {
+        for method in [
+            "social.browser.instagram.recipient",
+            "social.browser.instagram.live",
+            "social.browser.instagram.post",
+            "social.browser.instagram.followers",
+            "social.browser.instagram.follow",
+            "social.browser.instagram.mentions",
+            "social.browser.instagram.comment-like",
+            "social.browser.instagram.earnings",
+            "social.browser.instagram.highlights",
+            "social.browser.instagram.highlight-change",
+        ] {
+            assert!(supported_remote_method(method));
+        }
+        assert!(!supported_remote_method(
+            "social.browser.instagram.stream-key"
+        ));
+        assert!(!supported_remote_method(
+            "social.browser.instagram.recipient.anything"
+        ));
     }
 }

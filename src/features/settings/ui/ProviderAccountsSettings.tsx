@@ -3,11 +3,9 @@ import { ActionHost } from "../../../shared/ui/ActionHost";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
 import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
-import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
-import { Modal } from "../../../shared/ui/Modal";
 import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
-import { MoreHorizontal, Plus } from "../../../shared/ui/icons";
+import { MoreHorizontal, Plus, Star } from "../../../shared/ui/icons";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 
@@ -18,9 +16,11 @@ import { HARNESS_TITLE, type HarnessId } from "../../sessions";
 import {
   newProviderAccount,
   providerAccounts,
+  providerAccountsStorageRevision,
   PROVIDER_ACCOUNT_PROVIDERS,
   removeProviderAccount,
   editProviderAccount,
+  saveTerminalProviderAccount,
   setDefaultProviderAccount,
   DEFAULT_PROVIDER_ACCOUNT_ID,
   isTerminalProviderAccount,
@@ -30,7 +30,7 @@ import {
   supportsProviderAccounts,
   isSharedCliAccountProvider,
   SHARED_CLI_ACCOUNT_PROVIDERS,
-} from "../../providers/model/providerAccounts";
+} from "../../providers/public/providerAccounts";
 import {
   removeProviderAccountCredentials,
   signOutProviderAccountCredentials,
@@ -40,9 +40,14 @@ import {
   registerProviderAccount,
 } from "../../providers/model/providerAccountRegistration";
 import {
+  ProviderAccountError,
+  providerAccountErrorText,
+  safeProviderAccountDetail,
+  type ProviderAccountAction,
+} from "../../providers/public/providerAccountError";
+import {
   duplicateAccountSignIns,
   identityKey,
-  identityOrganizationTag,
   useProviderAccountIdentities,
 } from "../../providers/model/providerAccountIdentity";
 import { ProviderAccountSubtitle } from "../../providers/ui/ProviderAccountSubtitle";
@@ -52,8 +57,8 @@ import { exhaustedExplanation } from "../../providers/ui/providerStatus";
 
 import {
   accountStatus,
+  usageRenewalPending,
   accountUsageKey,
-  needsProviderLogin,
   providerAccountSignedOut,
   useProviderAccountUsage,
 } from "../../providers/model/accountUsage";
@@ -63,8 +68,8 @@ import { AccountStatusLabel, AccountUsageRefresh } from "../../providers/ui/Prov
 
 import { AntigravityAccountSettings } from "./AntigravityAccountSettings";
 import { AccountKindTag, SharedCliAccountCard } from "./SharedCliAccountCard";
-import { TerminalProfileDiscovery } from "./TerminalProfileDiscovery";
-import { ProviderAccountEditor, type AccountEditor } from "./ProviderAccountEditor";
+import { TerminalProfileDiscovery, type TerminalProfile } from "./TerminalProfileDiscovery";
+import { ProviderAccountDialog, type AccountEditor } from "../../providers/public/accountIdentity";
 import { Button } from "../../../shared/ui/Button";
 import {
   hasProbedHarnessAvailability,
@@ -79,31 +84,33 @@ const SETTINGS_HARNESSES: readonly HarnessId[] = [
   ...SHARED_CLI_ACCOUNT_PROVIDERS,
 ];
 
-/** Serialized account list: changes whenever any provider's accounts change in this or another window. */
-const providerAccountsSnapshot = () =>
-  JSON.stringify(PROVIDER_ACCOUNT_PROVIDERS.flatMap(providerAccounts));
-
 export function ProviderAccountsSettings({
   harness,
+  visible = true,
   onBusyChange,
   onStandaloneSignIn,
 }: {
   harness?: HarnessId;
+  visible?: boolean;
   onBusyChange?: (busy: boolean) => void;
   onStandaloneSignIn?: (provider: HarnessId | null) => void;
 }) {
   useLocale();
   const accountsRevision = useSyncExternalStore(
     subscribeProviderAccounts,
-    providerAccountsSnapshot,
-    providerAccountsSnapshot,
+    providerAccountsStorageRevision,
+    providerAccountsStorageRevision,
   );
   // Local refreshes cover sign-in and removal results the account list itself does not show.
   const [refreshes, setVersion] = useState(0);
   const version = `${refreshes}|${accountsRevision}`;
   const [editor, setEditorState] = useState<AccountEditor | null>(null);
   const [working, setWorking] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // The failure is kept as an error plus its action and presented at render, so a language
+  // change retranslates an open banner and the error's code is never flattened to text early.
+  const [error, setError] = useState<{ error: unknown; action: ProviderAccountAction } | null>(
+    null,
+  );
   const [confirmRemove, setConfirmRemove] = useState<ProviderAccount | null>(null);
   // The overflow menu and the colour popover share the row's menu button as their anchor.
   const [menu, setMenu] = useState<{
@@ -115,7 +122,6 @@ export function ProviderAccountsSettings({
     anchor: HTMLElement;
   } | null>(null);
   const busy = useRef(false);
-  const pendingAccount = useRef<ProviderAccount | null>(null);
   const registrationAbort = useRef<AbortController | null>(null);
   const editorOpen = useRef(false);
   const addTrigger = useRef<HTMLButtonElement | null>(null);
@@ -145,7 +151,10 @@ export function ProviderAccountsSettings({
       registrationAbort.current.abort();
       return;
     }
-    if (!busy.current) setEditor(null);
+    if (!busy.current) {
+      setError(null);
+      setEditor(null);
+    }
   };
 
   const supportedHarness = !harness || SETTINGS_HARNESSES.includes(harness);
@@ -168,9 +177,31 @@ export function ProviderAccountsSettings({
   const startAdd = (provider: ProviderAccountProvider, trigger: HTMLButtonElement) => {
     if (busy.current) return;
     addTrigger.current = trigger;
-    pendingAccount.current = null;
     setError(null);
-    setEditor({ provider, label: "" });
+    setEditor({
+      provider,
+      accountId: newProviderAccount(provider, "").id,
+      label: "",
+      kind: "personal",
+      adding: true,
+    });
+  };
+
+  // Folders named by a generated id or the generic default title make poor account names.
+  const startAddExisting = (profile: TerminalProfile, trigger: HTMLButtonElement | null) => {
+    if (busy.current) return;
+    addTrigger.current = trigger;
+    setError(null);
+    const generic =
+      profile.label === "Terminal account" || /^account-[0-9a-f-]{36}$/i.test(profile.label);
+    setEditor({
+      provider: profile.provider,
+      accountId: profile.id,
+      label: generic ? "" : profile.label,
+      kind: "personal",
+      adding: true,
+      existing: { identity: profile.identity ?? null },
+    });
   };
 
   const startRename = (account: ProviderAccount) => {
@@ -181,39 +212,49 @@ export function ProviderAccountsSettings({
       accountId: account.id,
       label: account.label,
       color: account.color,
-      kind: account.kind,
+      kind: account.kind ?? "personal",
     });
   };
 
   const submitEditor = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     // Shared CLI sign-ins save from their own card; this list owns profiles only.
-    if (!editor || !editor.label.trim() || !supportsProviderAccounts(editor.provider)) return;
+    if (!editor?.kind || !editor.label.trim() || !supportsProviderAccounts(editor.provider)) return;
     const provider = editor.provider;
-    const key = editor.accountId
-      ? `rename:${editor.provider}:${editor.accountId}`
-      : `add:${editor.provider}`;
+    const key = editor.adding ? `add:${provider}` : `rename:${provider}:${editor.accountId}`;
     if (!begin(key)) return;
     try {
-      if (editor.accountId) {
+      if (editor.existing) {
+        saveTerminalProviderAccount({
+          id: editor.accountId,
+          provider,
+          label: editor.label.trim(),
+          kind: editor.kind,
+          color: editor.color,
+        });
+      } else if (!editor.adding) {
         if (!editProviderAccount(provider, editor.accountId, editor))
-          throw new Error("Account no longer exists");
+          throw new ProviderAccountError("accountMissing", "Account no longer exists");
       } else {
-        const account = pendingAccount.current ?? newProviderAccount(provider, editor.label);
-        account.label = editor.label;
-        pendingAccount.current = account;
         const controller = new AbortController();
         registrationAbort.current = controller;
-        await registerProviderAccount(account, controller.signal);
-        pendingAccount.current = null;
+        await registerProviderAccount(
+          {
+            id: editor.accountId,
+            provider,
+            label: editor.label,
+            kind: editor.kind,
+            color: editor.color,
+          },
+          controller.signal,
+        );
       }
       setEditor(null);
     } catch (caught) {
       if (caught instanceof Error && caught.name === "AbortError") {
-        pendingAccount.current = null;
         setEditor(null);
       } else {
-        setError(caught instanceof Error ? caught.message : "Could not save this account");
+        setError({ error: caught, action: "save" });
       }
     } finally {
       registrationAbort.current = null;
@@ -239,13 +280,15 @@ export function ProviderAccountsSettings({
       clearCachedRateLimits(account.provider, account.id);
       if (account.provider === "grok") void refreshStandaloneCatalog("grok");
       const limits = await loadRateLimits(account.provider, account.id, true);
-      if (needsProviderLogin(limits)) {
-        throw new Error(
+      if (providerAccountSignedOut(limits)) {
+        throw new ProviderAccountError(
+          "signInUnverified",
           limits.error || `${HARNESS_TITLE[account.provider]} sign-in could not be verified`,
+          { harness: account.provider, detail: safeProviderAccountDetail(limits.error) },
         );
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not complete sign-in");
+      setError({ error: caught, action: "signIn" });
     } finally {
       setVersion((value) => value + 1);
       finish();
@@ -280,7 +323,7 @@ export function ProviderAccountsSettings({
         setEditor(null);
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not remove this account");
+      setError({ error: caught, action: "remove" });
     } finally {
       finish();
     }
@@ -291,7 +334,7 @@ export function ProviderAccountsSettings({
     try {
       setDefaultProviderAccount(account.provider, account.id);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not set default account");
+      setError({ error: caught, action: "makeDefault" });
     } finally {
       finish();
     }
@@ -304,7 +347,7 @@ export function ProviderAccountsSettings({
       onStandaloneSignIn?.(provider);
       await refreshStandaloneCatalog(provider);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not complete sign-in");
+      setError({ error: caught, action: "signIn" });
     } finally {
       finish();
     }
@@ -343,12 +386,14 @@ export function ProviderAccountsSettings({
   return (
     <div hidden={!supportedHarness}>
       {/* First child: a hidden sibling before it would still add the stack gap. */}
-      {sharedCliHarness ? <SharedCliAccountCard provider={sharedCliHarness} /> : null}
+      {sharedCliHarness ? (
+        <SharedCliAccountCard provider={sharedCliHarness} visible={visible} />
+      ) : null}
       <div hidden={Boolean(sharedCliHarness)}>
         <Group
           id="provider-accounts"
           layout="full"
-          title={t(harness === "cursor" ? "Sign in" : "Accounts")}
+          title={harness === "cursor" ? t("Sign in") : t("Accounts")}
           action={
             accountProvider ? (
               <div
@@ -358,11 +403,18 @@ export function ProviderAccountsSettings({
                 <Button
                   size="sm"
                   disabled={Boolean(working)}
+                  disabledReason={t("Wait for the current operation to finish")}
                   onClick={(event) => startAdd(accountProvider, event.currentTarget)}
                 >
                   <Plus className="icon-sm" strokeWidth={1.75} aria-hidden />
                   {t("Add account")}
                 </Button>
+                <TerminalProfileDiscovery
+                  key={accountProvider}
+                  provider={accountProvider}
+                  disabled={Boolean(working)}
+                  onAdd={startAddExisting}
+                />
                 <AccountUsageRefresh
                   usage={{
                     ...usage,
@@ -373,19 +425,19 @@ export function ProviderAccountsSettings({
                     },
                   }}
                 />
-                <TerminalProfileDiscovery
-                  key={accountProvider}
-                  provider={accountProvider}
-                  disabled={Boolean(working)}
-                />
               </div>
             ) : undefined
           }
-          feedback={error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : undefined}
+          feedback={
+            error && !editor ? (
+              <SettingsFeedback state="error">
+                {providerAccountErrorText(error.error, error.action)}
+              </SettingsFeedback>
+            ) : undefined
+          }
         >
           {PROVIDER_ACCOUNT_PROVIDERS.map((provider) => {
             const accounts = providerAccounts(provider);
-            const adding = editor?.provider === provider && !editor.accountId;
             const duplicates = duplicateAccountSignIns(accounts, identities);
             return (
               <div
@@ -406,16 +458,10 @@ export function ProviderAccountsSettings({
                     autoDefaultLabel ||
                     account.label === "Default" ||
                     account.label === t("Default");
-                  const editing = editor?.provider === provider && editor.accountId === account.id;
                   const removing = working === `remove:${provider}:${account.id}`;
                   const signingIn = working === `signin:${provider}:${account.id}`;
                   const identity = identities[identityKey(account)];
-                  const orgTag =
-                    account.kind === "personal"
-                      ? t("Personal")
-                      : account.kind === "work"
-                        ? t("Work")
-                        : identityOrganizationTag(identity);
+                  const work = account.kind === "work";
                   const limits = usage.usage[accountUsageKey(account)];
                   const signedOut = Boolean(limits && canSignIn(limits));
                   const duplicateOf = duplicates[identityKey(account)];
@@ -423,34 +469,7 @@ export function ProviderAccountsSettings({
                   const exhausted = !signedOut && status.tone === "exhausted";
                   const menuOpen =
                     menu?.account.id === account.id && menu.account.provider === provider;
-                  return editing ? (
-                    <Modal
-                      key={account.id}
-                      size="sm"
-                      title={t("Edit account")}
-                      onClose={cancelEditor}
-                    >
-                      <ProviderAccountEditor
-                        key={account.id}
-                        editor={editor}
-                        identity={identity}
-                        existingLabels={accounts
-                          .filter((other) => other.id !== account.id)
-                          .map((other) => other.label)}
-                        working={Boolean(working)}
-                        onLabel={(label) =>
-                          setEditorState((current) => (current ? { ...current, label } : current))
-                        }
-                        onMetadata={(metadata) =>
-                          setEditorState((current) =>
-                            current ? { ...current, ...metadata } : current,
-                          )
-                        }
-                        onCancel={cancelEditor}
-                        onSubmit={submitEditor}
-                      />
-                    </Modal>
-                  ) : (
+                  return (
                     <ActionHost
                       key={account.id}
                       variant="settings"
@@ -472,9 +491,11 @@ export function ProviderAccountsSettings({
                             {displayLabel}
                           </Text>
                           {account.isDefault && !defaultNamed ? (
-                            <Badge size="xs" className="shrink-0">
-                              {t("Default account")}
-                            </Badge>
+                            <Star
+                              role="img"
+                              aria-label={t("Default account")}
+                              className="icon-sm"
+                            />
                           ) : null}
                         </div>
                         <Text
@@ -496,15 +517,7 @@ export function ProviderAccountsSettings({
                             tone="secondary"
                             wrap
                           />
-                          {orgTag ? (
-                            <AccountKindTag
-                              tag={orgTag}
-                              work={
-                                account.kind === "work" ||
-                                (account.kind !== "personal" && orgTag !== t("Personal"))
-                              }
-                            />
-                          ) : null}
+                          <AccountKindTag tag={work ? t("Work") : t("Personal")} work={work} />
                         </Text>
                         {exhausted ? (
                           <Text
@@ -527,35 +540,35 @@ export function ProviderAccountsSettings({
                             className="provider-account-note"
                             role="note"
                           >
-                            {t("Same sign-in as ")}
-                            {duplicateOf.label}
-                            {t(". Remove this account if you do not need it separately.")}
+                            {t(
+                              "Same sign-in as {p0}. Remove this account if you do not need it separately.",
+                              {
+                                p0: duplicateOf.label,
+                              },
+                            )}
                           </Text>
                         ) : null}
                       </div>
                       <div className="provider-account-status">
-                        {signedOut ? (
-                          <Badge size="sm" tone="warning" className="shrink-0">
-                            {t("Signed out")}
-                          </Badge>
-                        ) : (
-                          <AccountStatusLabel status={status} className="shrink-0" />
+                        {signedOut || usageRenewalPending(limits) ? null : (
+                          <AccountStatusLabel status={status} size="caption" />
                         )}
                       </div>
                       <div className="provider-account-actions">
                         {signingIn || !limits || canSignIn(limits) ? (
                           <Button
-                            reserveLabels={[t("Signing in…")]}
                             size="sm"
                             variant="secondary"
                             loading={signingIn}
+                            loadingLabel={t("Signing in…")}
                             disabled={Boolean(working)}
+                            disabledReason={t("Wait for the current operation to finish")}
                             aria-label={t("Sign in to {p0}", {
                               p0: account.label,
                             })}
                             onClick={() => void signInAccount(account)}
                           >
-                            {signingIn ? t("Signing in…") : t("Sign in")}
+                            {t("Sign in")}
                           </Button>
                         ) : null}
                         <Button
@@ -563,11 +576,11 @@ export function ProviderAccountsSettings({
                           variant="ghost"
                           iconOnly
                           label={t("Actions for {p0}", { p0: account.label })}
-                          tooltip={t("Account actions")}
                           aria-haspopup="menu"
                           aria-expanded={menuOpen}
                           loading={removing}
                           disabled={Boolean(working)}
+                          disabledReason={t("Wait for the current operation to finish")}
                           onClick={(event) => {
                             const anchor = event.currentTarget;
                             setMenu((current) =>
@@ -593,18 +606,6 @@ export function ProviderAccountsSettings({
                     description={t("No accounts. Add an account to sign in.")}
                   />
                 ) : null}
-                {adding && editor ? (
-                  <ProviderAccountEditor
-                    editor={editor}
-                    existingLabels={accounts.map((account) => account.label)}
-                    working={Boolean(working)}
-                    onLabel={(label) =>
-                      setEditorState((current) => (current ? { ...current, label } : current))
-                    }
-                    onCancel={cancelEditor}
-                    onSubmit={submitEditor}
-                  />
-                ) : null}
               </div>
             );
           })}
@@ -617,16 +618,17 @@ export function ProviderAccountsSettings({
               ) : (
                 <>
                   <Button
-                    reserveLabels={[t("Signing in…")]}
                     variant="secondary"
                     disabled={Boolean(working)}
+                    disabledReason={t("Wait for the current operation to finish")}
                     loading={working === `signin:${standaloneHarness}`}
+                    loadingLabel={t("Signing in…")}
                     aria-label={t("Sign in to {p0}", {
                       p0: HARNESS_TITLE[standaloneHarness],
                     })}
                     onClick={() => void signInStandaloneProvider(standaloneHarness)}
                   >
-                    {working === `signin:${standaloneHarness}` ? t("Signing in…") : t("Sign in")}
+                    {t("Sign in")}
                   </Button>
                 </>
               )}
@@ -637,6 +639,37 @@ export function ProviderAccountsSettings({
       <div hidden={harness !== "antigravity"}>
         <AntigravityAccountSettings embedded />
       </div>
+      {visible && editor && supportsProviderAccounts(editor.provider) ? (
+        <ProviderAccountDialog
+          editor={editor}
+          identity={
+            editor.existing
+              ? editor.existing.identity
+              : editor.adding
+                ? null
+                : identities[
+                    identityKey({
+                      provider: editor.provider,
+                      id: editor.accountId,
+                      label: editor.label,
+                    })
+                  ]
+          }
+          existingLabels={providerAccounts(editor.provider)
+            .filter((account) => account.id !== editor.accountId)
+            .map((account) => account.label)}
+          working={Boolean(working)}
+          submitError={error ? providerAccountErrorText(error.error, error.action) : undefined}
+          onLabel={(label) =>
+            setEditorState((current) => (current ? { ...current, label } : current))
+          }
+          onMetadata={(metadata) =>
+            setEditorState((current) => (current ? { ...current, ...metadata } : current))
+          }
+          onCancel={cancelEditor}
+          onSubmit={submitEditor}
+        />
+      ) : null}
       {menu ? (
         <DropdownMenu
           anchor={menu.anchor}

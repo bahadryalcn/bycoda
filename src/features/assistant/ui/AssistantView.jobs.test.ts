@@ -386,11 +386,11 @@ it("reports an unconfirmed activity read as an error with retry, not as an empty
   await click("Job actions");
   await click("Details");
   await flush();
-  expect(document.body.textContent).toContain("Job activity could not be confirmed. Retry.");
+  expect(document.body.textContent).toContain("Could not load job details.");
   expect(document.body.textContent).not.toContain("No activity yet");
   expect(
     [...document.querySelectorAll("button")].some(
-      (button) => button.textContent?.trim() === "Retry",
+      (button) => button.textContent?.trim() === "Try again",
     ),
   ).toBe(true);
 });

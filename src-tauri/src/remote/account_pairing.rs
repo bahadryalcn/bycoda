@@ -32,16 +32,23 @@ fn verify_identity(origin: &str, environment_id: &str, ticket: &str) -> Result<(
     if descriptor.get("environmentId").and_then(Value::as_str) != Some(environment_id) {
         return Err("This address belongs to a different computer".into());
     }
-    host_proof::verify(origin, environment_id, ticket, "pairing")
+    host_proof::verify(origin, environment_id, ticket, "pairing", IDENTITY_TIMEOUT)
 }
 
-fn redeem_body(environment_id: &str, ticket: &str, claim_id: &str, device_name: &str) -> Value {
+fn redeem_body(
+    environment_id: &str,
+    ticket: &str,
+    claim_id: &str,
+    device_name: &str,
+    proof_key: &Value,
+) -> Value {
     json!({
         "version": 1,
         "environmentId": environment_id,
         "ticket": ticket,
         "claimId": claim_id,
         "deviceName": device_name.chars().take(100).collect::<String>(),
+        "proofKey": proof_key,
     })
 }
 
@@ -66,11 +73,14 @@ fn redeem(
     ticket: &str,
     claim_id: &str,
     device_name: &str,
+    proof_key: &Value,
 ) -> Result<String, String> {
     let response = agent(REDEEM_TIMEOUT)
         .post(&format!("{origin}/mobile/pairing/redeem"))
         .set("Content-Type", "application/json")
-        .send_string(&redeem_body(environment_id, ticket, claim_id, device_name).to_string())
+        .send_string(
+            &redeem_body(environment_id, ticket, claim_id, device_name, proof_key).to_string(),
+        )
         .map_err(|_| "This computer refused the pairing. Try again.")?;
     let reply: Value = serde_json::from_reader(response.into_reader().take(MAX_BODY_BYTES))
         .map_err(|_| "Invalid pairing response")?;
@@ -103,7 +113,16 @@ pub async fn remote_pair_account(
                 last = error;
                 continue;
             }
-            let token = redeem(origin, &environment_id, &ticket, &claim_id, &device_name)?;
+            // The credential is issued bound to a key generated here.
+            let key = PairingKey::new(device_proof::generate_seed()?, &environment_id);
+            let token = redeem(
+                origin,
+                &environment_id,
+                &ticket,
+                &claim_id,
+                &device_name,
+                &device_proof::public_jwk(&key.seed)?,
+            )?;
             let state = app.state::<RemoteConnections>();
             let machine = connect_host(
                 app.clone(),
@@ -112,13 +131,19 @@ pub async fn remote_pair_account(
                 origin.clone(),
                 token.clone(),
                 false,
+                Some(key),
             )?;
             if machine.environment_id != environment_id {
                 return Err("Host identity changed".into());
             }
             for other in origins.iter().skip(index + 1) {
-                if crate::remote_routes::verify_account_endpoint(other, &environment_id, &token)
-                    .is_ok()
+                if crate::remote_routes::verify_account_endpoint(
+                    other,
+                    &environment_id,
+                    &token,
+                    crate::remote_routes::IDENTITY_BUDGET,
+                )
+                .is_ok()
                 {
                     crate::remote_routes::learn_account_endpoint(&environment_id, other.clone());
                     break;
@@ -154,7 +179,14 @@ mod tests {
 
     #[test]
     fn redeem_body_carries_the_protocol_fields() {
-        let body = redeem_body("env-1", "ticket", "claim", "Laptop");
+        let body = redeem_body(
+            "env-1",
+            "ticket",
+            "claim",
+            "Laptop",
+            &json!({"kty":"OKP","crv":"Ed25519","x":"key"}),
+        );
+        assert_eq!(body["proofKey"]["crv"], "Ed25519");
         assert_eq!(body["version"], 1);
         assert_eq!(body["environmentId"], "env-1");
         assert_eq!(body["ticket"], "ticket");

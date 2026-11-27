@@ -1,7 +1,9 @@
+import { Button } from "../../../../shared/ui/Button";
 import { InlineError } from "../../../../shared/ui/InlineError";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 
@@ -12,7 +14,6 @@ import type { HostProject } from "../../../connections/public/protocol";
 import type { SocialAccount, SocialRule } from "../../model/social";
 import type { RuleSimplifySuggestion } from "../../model/socialSuggestions";
 import type { SocialClient } from "../../model/socialClient";
-import { DisabledReason, gateProps, type ActionGate } from "../common/DisabledReason";
 import { useAccountWrite } from "./useAccountWrite";
 import "./accounts.css";
 
@@ -44,22 +45,29 @@ function triggerText(trigger: SocialRule["trigger"]): string {
  */
 export function ReplyRules({ client, account, projects, disabled }: ReplyRulesProps) {
   const [rules, setRules] = useState<SocialRule[]>();
-  const [loadError, setLoadError] = useState("");
+  const [loadProblem, setLoadProblem] = useState<{ title: string; details?: string }>();
   const [attempt, setAttempt] = useState(0);
   const [proposal, setProposal] = useState<RuleSimplifySuggestion>();
-  const { error, is, write } = useAccountWrite(t("The rule could not be changed. Try again."));
+  const { failureTitle, details, is, write } = useAccountWrite(
+    t("The rule could not be changed. Try again."),
+  );
   const confirmation = useConfirm();
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Reads this account's reply rules from the Host; `alive` drops a read that settles after the account changed.
   useEffect(() => {
     let alive = true;
     client.sectionSnapshot({ section: "rules" }).then(
       (response) => {
         if (!alive) return;
-        setLoadError("");
+        setLoadProblem(undefined);
         setRules((response.snapshot?.rules ?? []).filter((rule) => rule.accountId === account.id));
       },
-      () => {
-        if (alive) setLoadError(t("The reply rules could not be read. Try again."));
+      (reason) => {
+        if (alive)
+          setLoadProblem({
+            title: t("The reply rules could not be read. Try again."),
+            details: presentRemoteError(reason, { explicit: true }),
+          });
       },
     );
     return () => {
@@ -67,20 +75,14 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
     };
   }, [account.id, attempt, client]);
 
-  const reload = useCallback(() => setAttempt((value) => value + 1), []);
+  const reload = () => setAttempt((value) => value + 1);
   const projectId = rules?.[0]?.projectId ?? projects[0]?.id;
-  const emptyMessage = t("No reply rules for this account yet.");
-  const reviewGate: ActionGate = disabled
-    ? { disabled: true, disabledReason: t("Connect to this computer to change this account.") }
-    : is("simplify")
-      ? { disabled: true, disabledReason: t("Working…") }
-      : !rules
-        ? { disabled: true, disabledReason: t("Loading…") }
-        : !rules.length
-          ? { disabled: true, disabledReason: emptyMessage }
-          : !projectId
-            ? { disabled: true, disabledReason: t("Choose a project first.") }
-            : { disabled: false };
+  // Only prerequisites the owner cannot see are explained; working and loading are visible.
+  const reviewReason = disabled
+    ? t("Connect to this computer to change this account.")
+    : !projectId
+      ? t("Choose a project first.")
+      : undefined;
 
   const setEnabled = (rule: SocialRule, enabled: boolean) => {
     if (enabled && rule.mode === "automatic") {
@@ -130,26 +132,34 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
       {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
       aria-label={t("Reply rules")}
     >
-      <div className="social-card-head">
-        <DisabledReason
-          variant="secondary"
-          size="sm"
-          loading={is("simplify")}
-          onClick={review}
-          {...gateProps(reviewGate)}
-        >
-          {t("Review rules with AI")}
-        </DisabledReason>
-      </div>
-      {loadError ? (
-        <InlineError retry={{ onRetry: reload, label: t("Try again") }}>{loadError}</InlineError>
+      {rules?.length ? (
+        <div className="social-card-head">
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={is("simplify")}
+            onClick={review}
+            disabled={!!reviewReason}
+            disabledReason={reviewReason}
+          >
+            {t("Review rules with AI")}
+          </Button>
+        </div>
       ) : null}
-      {rules?.length === 0 && reviewGate.disabled && reviewGate.disabledReason !== emptyMessage ? (
+      {loadProblem ? (
+        <InlineError
+          details={loadProblem.details}
+          retry={{ onRetry: reload, label: t("Try again") }}
+        >
+          {loadProblem.title}
+        </InlineError>
+      ) : null}
+      {rules?.length === 0 ? (
         <EmptyState
           size="inline"
           kind="empty"
           className="social-muted"
-          description={emptyMessage}
+          description={t("No reply rules for this account yet.")}
         />
       ) : null}
       {rules?.map((rule) => (
@@ -172,9 +182,6 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
       ))}
       {proposal ? (
         <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}>
-          <Text as="p" tone="muted" leading="snug" className="social-card-description">
-            {t("AI suggests these narrower rules. Nothing changes until you edit a rule.")}
-          </Text>
           {proposal.proposals.length ? (
             <ul>
               {proposal.proposals.map((item) => (
@@ -187,13 +194,13 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
             <EmptyState size="inline" description={t("No rule needs narrowing.")} />
           )}
           {proposal.notes.map((note) => (
-            <Text key={note} as="p" tone="muted" leading="snug" className="social-muted">
+            <Text key={note} as="p" size="secondary" tone="muted">
               {note}
             </Text>
           ))}
         </div>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       {confirmation.dialog}
     </section>
   );

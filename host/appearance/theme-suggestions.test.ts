@@ -73,7 +73,7 @@ describe("theme suggestion Host command", () => {
     const { suggestions } = await generateThemeSuggestions(params, async () => reply);
     expect(suggestions[0]).toMatchObject({
       typography: { codeSize: 13, terminalSize: 15 },
-      interface: { contrast: 100 },
+      interface: { contrast: 115 },
       image: { emptyOpacity: 30, sessionOpacity: 15, blur: 12 },
     });
   });

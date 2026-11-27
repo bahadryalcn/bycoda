@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { boundedSet } from "../../../shared/lib/store";
+import { boundedGet, boundedSet } from "../../../shared/lib/store";
 import { recordInboxSelfActivity } from "./inboxSelfActivity";
 import { normalizeProjectPath } from "../../projects/model/recents";
 
@@ -69,20 +69,14 @@ export const GITLAB_CHANGE_EVENT = "bycoda:gitlab-change";
 
 const repoByPath = new Map<string, string>();
 const detailsByKey = new Map<string, GitlabWorkItemDetails>();
+const detailsInflight = new Map<string, Promise<GitlabWorkItemDetails>>();
 const threadByKey = new Map<string, GitlabWorkItemThread>();
 const threadInflight = new Map<string, Promise<GitlabWorkItemThread>>();
 const diffByKey = new Map<string, GitlabMrDiff>();
 const diffInflight = new Map<string, Promise<GitlabMrDiff>>();
 
-/** Detail and diff payloads are bounded LRU entries: get refreshes recency, set evicts the oldest past the cap. */
+/** Detail, thread and diff payloads are bounded LRU entries: get refreshes recency, set evicts the oldest past the cap. */
 const DETAILS_CACHE_LIMIT = 128;
-function boundedGet<T>(cache: Map<string, T>, key: string): T | null {
-  if (!cache.has(key)) return null;
-  const value = cache.get(key)!;
-  cache.delete(key);
-  cache.set(key, value);
-  return value;
-}
 
 /** Patches can be megabytes, so the diff cache is also bounded by their total size. */
 const DIFF_CACHE_MAX_CHARS = 8_000_000;
@@ -104,6 +98,7 @@ function itemKey(repo: string, kind: GitlabKind, number: number): string {
 export function clearGitlabCache() {
   repoByPath.clear();
   detailsByKey.clear();
+  detailsInflight.clear();
   threadByKey.clear();
   threadInflight.clear();
   diffByKey.clear();
@@ -184,13 +179,26 @@ export async function gitlabWorkItemDetails(
   kind: GitlabKind,
   number: number,
 ): Promise<GitlabWorkItemDetails> {
-  const details = await invoke<GitlabWorkItemDetails>("gitlab_work_item_details", {
+  const key = itemKey(repo, kind, number);
+  const cached = detailsInflight.get(key);
+  if (cached) return cached;
+  const pending = invoke<GitlabWorkItemDetails>("gitlab_work_item_details", {
     repo,
     kind,
     number,
-  });
-  boundedSet(detailsByKey, itemKey(repo, kind, number), details, DETAILS_CACHE_LIMIT);
-  return details;
+  })
+    .then((details) => {
+      // A cache clear (e.g. reconnect) supersedes this request: skip the
+      // write so a stale completion cannot repopulate the cache.
+      if (detailsInflight.get(key) === pending)
+        boundedSet(detailsByKey, key, details, DETAILS_CACHE_LIMIT);
+      return details;
+    })
+    .finally(() => {
+      if (detailsInflight.get(key) === pending) detailsInflight.delete(key);
+    });
+  detailsInflight.set(key, pending);
+  return pending;
 }
 
 export function peekGitlabWorkItemThread(
@@ -198,7 +206,7 @@ export function peekGitlabWorkItemThread(
   kind: GitlabKind,
   number: number,
 ): GitlabWorkItemThread | null {
-  return threadByKey.get(itemKey(repo, kind, number)) ?? null;
+  return boundedGet(threadByKey, itemKey(repo, kind, number));
 }
 
 export async function gitlabWorkItemThread(
@@ -220,7 +228,10 @@ export async function gitlabWorkItemThread(
     number,
   })
     .then((thread) => {
-      threadByKey.set(key, thread);
+      // A forced refresh, comment or cache clear supersedes this request: skip
+      // the write so a stale completion cannot repopulate the cache.
+      if (threadInflight.get(key) === pending)
+        boundedSet(threadByKey, key, thread, DETAILS_CACHE_LIMIT);
       return thread;
     })
     .finally(() => {
@@ -259,8 +270,11 @@ export async function gitlabMrDiff(repo: string, number: number): Promise<Gitlab
   if (cached) return cached;
   const pending = invoke<GitlabMrDiff>("gitlab_mr_diff", { repo, number })
     .then((diff) => {
-      boundedSet(diffByKey, key, diff, DETAILS_CACHE_LIMIT);
-      trimDiffCache(diffByKey);
+      // Same staleness guard as the thread cache above.
+      if (diffInflight.get(key) === pending) {
+        boundedSet(diffByKey, key, diff, DETAILS_CACHE_LIMIT);
+        trimDiffCache(diffByKey);
+      }
       return diff;
     })
     .finally(() => {

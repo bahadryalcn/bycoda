@@ -3,7 +3,6 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
-import { registerAppConfirmHost, type AppConfirmRequest } from "../../shared/model/appConfirm";
 import { SessionGroupListRow } from "./SessionFolderListRows";
 
 const cleanups: (() => void)[] = [];
@@ -72,23 +71,10 @@ it("deletes every listed settled session through the delete owner", () => {
   expect(view.onArchiveAll).not.toHaveBeenCalled();
 });
 
-it("archives every listed settled session only after confirmation", async () => {
-  const requests: AppConfirmRequest[] = [];
-  let answer = false;
-  cleanups.push(
-    registerAppConfirmHost(async (request) => {
-      requests.push(request);
-      return answer;
-    }),
-  );
+it("archives every listed settled session immediately", () => {
   const view = render("settled", [session("a"), session("b")]);
   view.openMenu();
-  await act(async () => view.item("Archive all")!.click());
-  expect(requests[0]).toMatchObject({ title: "Archive 2 settled sessions?", tone: "normal" });
-  expect(view.onArchiveAll).not.toHaveBeenCalled();
-  answer = true;
-  view.openMenu();
-  await act(async () => view.item("Archive all")!.click());
+  act(() => view.item("Archive all")!.click());
   expect(view.onArchiveAll).toHaveBeenCalledWith(["a", "b"]);
 });
 

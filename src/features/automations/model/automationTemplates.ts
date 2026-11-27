@@ -1,7 +1,8 @@
+import { t } from "../../../shared/i18n";
 import type { AutomationScheduleKind, AutomationTriggerKind } from "./automations";
 
-// English source strings are catalog keys. Translate at render/draft creation time,
-// so changing the application language also updates the gallery without rewriting data.
+// Category ids only; the labels are translated where they are shown. The gallery itself is built
+// by `automationTemplates()`, so changing the application language also updates it.
 export const AUTOMATION_TEMPLATE_CATEGORIES = [
   { id: "all", label: "All" },
   { id: "popular", label: "Popular" },
@@ -48,163 +49,194 @@ export type AutomationTemplate = {
   triggerLabel: string;
 };
 
-export const AUTOMATION_TEMPLATES: AutomationTemplate[] = [
-  {
-    id: "project-scan",
-    category: "tasks",
-    popular: true,
-    icon: "search",
-    name: "Project scan",
-    description: "Inspect a project and propose work for the task board.",
-    prompt: "Inspect the project and propose the next useful work.",
-    trigger: { kind: "time", event: "weekdays", scheduleKind: "weekdays", time: "09:00" },
-    triggerLabel: "Weekdays at 09:00",
-  },
-  ...(
-    [
+/**
+ * The gallery in the current language; build it per use so a language change shows at once. The
+ * agent instructions (`prompt`) stay as written: the model answers in the user's language.
+ */
+export function automationTemplates(): AutomationTemplate[] {
+  return [
+    {
+      id: "project-scan",
+      category: "tasks",
+      popular: true,
+      icon: "search",
+      name: t("Project scan"),
+      description: t("Inspect a project and propose work for the task board."),
+      prompt: "Inspect the project and propose the next useful work.",
+      trigger: { kind: "time", event: "weekdays", scheduleKind: "weekdays", time: "09:00" },
+      triggerLabel: "Weekdays at 09:00",
+    },
+    ...(
       [
-        "task-intake",
-        "tasks",
-        "inbox",
-        "Review new tasks",
-        "Clarify new tasks, identify dependencies and suggest acceptance checks without starting work.",
-        "tasks",
-        "task_created",
-        "Task created",
-      ],
+        [
+          "task-intake",
+          "tasks",
+          "inbox",
+          t("Review new tasks"),
+          t(
+            "Clarify new tasks, identify dependencies and suggest acceptance checks without starting work.",
+          ),
+          "tasks",
+          "task_created",
+          "Task created",
+        ],
+        [
+          "task-handoff",
+          "tasks",
+          "check",
+          t("Summarize completed tasks"),
+          t(
+            "Summarize completed work and its checks, then suggest follow-up tasks without creating duplicates.",
+          ),
+          "tasks",
+          "task_completed",
+          "Task completed",
+        ],
+        [
+          "task-blockers",
+          "tasks",
+          "alert",
+          t("Explain blocked tasks"),
+          t(
+            "Read the blocked task and its session, explain the blocker and propose a recovery step without restarting it.",
+          ),
+          "tasks",
+          "task_blocked",
+          "Task blocked",
+        ],
+        [
+          "task-review",
+          "tasks",
+          "search",
+          t("Prepare task reviews"),
+          t(
+            "Gather the task diff and check results into a review checklist. Leave approval and merge to the owner.",
+          ),
+          "tasks",
+          "task_review",
+          "Task ready for review",
+        ],
+        [
+          "social-messages",
+          "social",
+          "inbox",
+          t("Triage incoming messages"),
+          t(
+            "Read the incoming message with social tools, check account policy and prepare a reply draft for owner review. Do not send.",
+          ),
+          "social",
+          "message_received",
+          "Message received",
+        ],
+        [
+          "social-comments",
+          "social",
+          "note",
+          t("Draft comment replies"),
+          t(
+            "Read the incoming comment, check account policy and draft a helpful reply in the sender's language. Do not publish.",
+          ),
+          "social",
+          "comment_received",
+          "Comment received",
+        ],
+      ] as const
+    ).map(
+      ([id, category, icon, name, description, kind, event, triggerLabel]): AutomationTemplate => ({
+        id,
+        category,
+        icon,
+        name,
+        description,
+        prompt: description,
+        trigger: { kind, event },
+        triggerLabel,
+      }),
+    ),
+    ...(
       [
-        "task-handoff",
-        "tasks",
-        "check",
-        "Summarize completed tasks",
-        "Summarize completed work and its checks, then suggest follow-up tasks without creating duplicates.",
-        "tasks",
-        "task_completed",
-        "Task completed",
-      ],
-      [
-        "task-blockers",
-        "tasks",
-        "alert",
-        "Explain blocked tasks",
-        "Read the blocked task and its session, explain the blocker and propose a recovery step without restarting it.",
-        "tasks",
-        "task_blocked",
-        "Task blocked",
-      ],
-      [
-        "task-review",
-        "tasks",
-        "search",
-        "Prepare task reviews",
-        "Gather the task diff and check results into a review checklist. Leave approval and merge to the owner.",
-        "tasks",
-        "task_review",
-        "Task ready for review",
-      ],
-      [
-        "social-messages",
-        "social",
-        "inbox",
-        "Triage incoming messages",
-        "Read the incoming message with social tools, check account policy and prepare a reply draft for owner review. Do not send.",
-        "social",
-        "message_received",
-        "Message received",
-      ],
-      [
-        "social-comments",
-        "social",
-        "note",
-        "Draft comment replies",
-        "Read the incoming comment, check account policy and draft a helpful reply in the sender's language. Do not publish.",
-        "social",
-        "comment_received",
-        "Comment received",
-      ],
-    ] as const
-  ).map(
-    ([id, category, icon, name, description, kind, event, triggerLabel]): AutomationTemplate => ({
+        [
+          "social-calendar",
+          "social",
+          "note",
+          t("Plan social content"),
+          t(
+            "Review approved project facts and propose a weekly content calendar with drafts. Do not publish or change sending permissions.",
+          ),
+        ],
+        [
+          "social-health",
+          "social",
+          "gauge",
+          t("Check social account health"),
+          t(
+            "Check connected accounts, permissions, failed jobs and pending reviews. Report recovery actions without changing policy.",
+          ),
+        ],
+        [
+          "daily-task-brief",
+          "tasks",
+          "file",
+          t("Daily task briefing"),
+          t(
+            "Summarize queued, running, blocked and review tasks with their next actions. Do not start or merge tasks.",
+          ),
+        ],
+        [
+          "weekly-plan",
+          "planning",
+          "note",
+          t("Plan the week"),
+          t(
+            "Review open tasks and recent automation results, then propose a realistic weekly plan for owner review.",
+          ),
+        ],
+        [
+          "automation-health",
+          "planning",
+          "gauge",
+          t("Review automation health"),
+          t(
+            "Review automation failures, missed runs and limits. Suggest changes without deleting automations or enabling paused ones.",
+          ),
+        ],
+        [
+          "research-brief",
+          "planning",
+          "search",
+          t("Prepare a research brief"),
+          t(
+            "Research the topics in the project notes, cite original sources and summarize findings in the user's language.",
+          ),
+        ],
+      ] as const
+    ).map(([id, category, icon, name, description]): AutomationTemplate => ({
       id,
       category,
       icon,
       name,
       description,
       prompt: description,
-      trigger: { kind, event },
-      triggerLabel,
-    }),
-  ),
-  ...(
-    [
-      [
-        "social-calendar",
-        "social",
-        "note",
-        "Plan social content",
-        "Review approved project facts and propose a weekly content calendar with drafts. Do not publish or change sending permissions.",
-      ],
-      [
-        "social-health",
-        "social",
-        "gauge",
-        "Check social account health",
-        "Check connected accounts, permissions, failed jobs and pending reviews. Report recovery actions without changing policy.",
-      ],
-      [
-        "daily-task-brief",
-        "tasks",
-        "file",
-        "Daily task briefing",
-        "Summarize queued, running, blocked and review tasks with their next actions. Do not start or merge tasks.",
-      ],
-      [
-        "weekly-plan",
-        "planning",
-        "note",
-        "Plan the week",
-        "Review open tasks and recent automation results, then propose a realistic weekly plan for owner review.",
-      ],
-      [
-        "automation-health",
-        "planning",
-        "gauge",
-        "Review automation health",
-        "Review automation failures, missed runs and limits. Suggest changes without deleting automations or enabling paused ones.",
-      ],
-      [
-        "research-brief",
-        "planning",
-        "search",
-        "Prepare a research brief",
-        "Research the topics in the project notes, cite original sources and summarize findings in the user's language.",
-      ],
-    ] as const
-  ).map(([id, category, icon, name, description]): AutomationTemplate => ({
-    id,
-    category,
-    icon,
-    name,
-    description,
-    prompt: description,
-    trigger: { kind: "time", event: "weekdays", scheduleKind: "weekdays", time: "09:00" },
-    triggerLabel: "Weekdays at 09:00",
-  })),
-  {
-    id: "find-critical-bugs",
-    category: "review",
-    popular: true,
-    icon: "alert",
-    name: "Find critical bugs",
-    description: "Analyze recent commits for high-severity correctness bugs and submit safe fixes",
-    trigger: {
-      kind: "time",
-      event: "weekdays",
-      scheduleKind: "weekdays",
-      time: "09:00",
-    },
-    triggerLabel: "Weekdays at 09:00",
-    prompt: `Review recent git history in this repo for high-severity correctness bugs.
+      trigger: { kind: "time", event: "weekdays", scheduleKind: "weekdays", time: "09:00" },
+      triggerLabel: "Weekdays at 09:00",
+    })),
+    {
+      id: "find-critical-bugs",
+      category: "review",
+      popular: true,
+      icon: "alert",
+      name: t("Find critical bugs"),
+      description: t(
+        "Analyze recent commits for high-severity correctness bugs and submit safe fixes",
+      ),
+      trigger: {
+        kind: "time",
+        event: "weekdays",
+        scheduleKind: "weekdays",
+        time: "09:00",
+      },
+      triggerLabel: "Weekdays at 09:00",
+      prompt: `Review recent git history in this repo for high-severity correctness bugs.
 
 Focus on:
 - Logic errors, race conditions, and data loss
@@ -214,24 +246,25 @@ Focus on:
 Only report issues you can validate from the current code. If a fix is clearly safe and local, implement it. Skip style nits and speculative issues.
 
 At the end, summarize what you found, what you changed, and anything that still needs a human.`,
-  },
-  {
-    id: "scan-vulnerabilities",
-    category: "security",
-    popular: true,
-    icon: "search",
-    name: "Scan codebase for vulnerabilities",
-    description:
-      "Review the full repository on a schedule and alert on validated high-impact security issues",
-    trigger: {
-      kind: "time",
-      event: "weekly",
-      scheduleKind: "weekly",
-      time: "10:00",
-      dayOfWeek: 1,
     },
-    triggerLabel: "Monday at 10:00",
-    prompt: `Perform a security review of this repository.
+    {
+      id: "scan-vulnerabilities",
+      category: "security",
+      popular: true,
+      icon: "search",
+      name: t("Scan codebase for vulnerabilities"),
+      description: t(
+        "Review the full repository on a schedule and alert on validated high-impact security issues",
+      ),
+      trigger: {
+        kind: "time",
+        event: "weekly",
+        scheduleKind: "weekly",
+        time: "10:00",
+        dayOfWeek: 1,
+      },
+      triggerLabel: "Monday at 10:00",
+      prompt: `Perform a security review of this repository.
 
 Look for:
 - Injection, XSS, SSRF, and auth/authz bypasses
@@ -240,24 +273,25 @@ Look for:
 - Dependency or config issues that meaningfully increase risk
 
 Only report issues you can validate with concrete evidence. Do not invent CVEs. Rank findings by impact and include the file path, why it is exploitable, and a recommended fix. Implement safe, local remediations when the change is clearly correct.`,
-  },
-  {
-    id: "generate-docs",
-    category: "research",
-    popular: true,
-    icon: "file",
-    name: "Generate docs",
-    description:
-      "Create and update developer documentation for recently changed or under-documented code",
-    trigger: {
-      kind: "time",
-      event: "weekly",
-      scheduleKind: "weekly",
-      time: "09:00",
-      dayOfWeek: 1,
     },
-    triggerLabel: "Monday at 09:00",
-    prompt: `Update developer documentation for this repo based on recent changes.
+    {
+      id: "generate-docs",
+      category: "research",
+      popular: true,
+      icon: "file",
+      name: t("Generate docs"),
+      description: t(
+        "Create and update developer documentation for recently changed or under-documented code",
+      ),
+      trigger: {
+        kind: "time",
+        event: "weekly",
+        scheduleKind: "weekly",
+        time: "09:00",
+        dayOfWeek: 1,
+      },
+      triggerLabel: "Monday at 09:00",
+      prompt: `Update developer documentation for this repo based on recent changes.
 
 - Find APIs, modules, and workflows that are new, renamed, or under-documented
 - Prefer editing existing docs over creating new files
@@ -265,23 +299,24 @@ Only report issues you can validate with concrete evidence. Do not invent CVEs. 
 - Include setup, how to run, and the main entry points if those are missing
 
 Open a concise summary of what docs you changed and why.`,
-  },
-  {
-    id: "add-test-coverage",
-    category: "review",
-    popular: true,
-    icon: "check",
-    name: "Add test coverage",
-    description:
-      "Review recent changes and add tests for high-risk logic that lacks adequate coverage",
-    trigger: {
-      kind: "time",
-      event: "weekdays",
-      scheduleKind: "weekdays",
-      time: "11:00",
     },
-    triggerLabel: "Weekdays at 11:00",
-    prompt: `Look at recent commits and add tests for high-risk logic that is missing coverage.
+    {
+      id: "add-test-coverage",
+      category: "review",
+      popular: true,
+      icon: "check",
+      name: t("Add test coverage"),
+      description: t(
+        "Review recent changes and add tests for high-risk logic that lacks adequate coverage",
+      ),
+      trigger: {
+        kind: "time",
+        event: "weekdays",
+        scheduleKind: "weekdays",
+        time: "11:00",
+      },
+      triggerLabel: "Weekdays at 11:00",
+      prompt: `Look at recent commits and add tests for high-risk logic that is missing coverage.
 
 - Prefer the project's existing test runner and style
 - Target correctness, edge cases, and regressions — not coverage for its own sake
@@ -289,20 +324,21 @@ Open a concise summary of what docs you changed and why.`,
 - Run the relevant tests and fix anything you break
 
 Summarize which tests you added and which gaps remain.`,
-  },
-  {
-    id: "review-pull-requests",
-    category: "review",
-    icon: "pr",
-    name: "Review pull requests",
-    description:
-      "When a pull request is opened, review the diff for bugs, regressions, and missing tests",
-    trigger: {
-      kind: "github",
-      event: "pull_request_opened",
     },
-    triggerLabel: "Pull request opened",
-    prompt: `Review the newly opened pull request.
+    {
+      id: "review-pull-requests",
+      category: "review",
+      icon: "pr",
+      name: t("Review pull requests"),
+      description: t(
+        "When a pull request is opened, review the diff for bugs, regressions, and missing tests",
+      ),
+      trigger: {
+        kind: "github",
+        event: "pull_request_opened",
+      },
+      triggerLabel: "Pull request opened",
+      prompt: `Review the newly opened pull request.
 
 Check for:
 - Correctness bugs and regressions
@@ -311,39 +347,41 @@ Check for:
 - API / contract breakage
 
 Leave a structured review: blockers first, then suggestions. Do not nitpick formatting. If the change is good, say so briefly and note residual risk.`,
-  },
-  {
-    id: "review-draft-prs",
-    category: "review",
-    icon: "pr",
-    name: "Review draft PRs",
-    description:
-      "Give early feedback when a draft pull request is opened so issues are caught before review",
-    trigger: {
-      kind: "github",
-      event: "draft_opened",
     },
-    triggerLabel: "Draft opened",
-    prompt: `A draft pull request was opened. Give early, high-signal feedback.
+    {
+      id: "review-draft-prs",
+      category: "review",
+      icon: "pr",
+      name: t("Review draft PRs"),
+      description: t(
+        "Give early feedback when a draft pull request is opened so issues are caught before review",
+      ),
+      trigger: {
+        kind: "github",
+        event: "draft_opened",
+      },
+      triggerLabel: "Draft opened",
+      prompt: `A draft pull request was opened. Give early, high-signal feedback.
 
 Focus on direction, missing tests, and likely bugs — not polish. Call out anything that will be expensive to change later. Keep the review short and specific to the diff.`,
-  },
-  {
-    id: "dependency-audit",
-    category: "security",
-    icon: "lock",
-    name: "Audit dependencies",
-    description:
-      "Check lockfiles and manifests for vulnerable, abandoned, or unexpectedly upgraded packages",
-    trigger: {
-      kind: "time",
-      event: "weekly",
-      scheduleKind: "weekly",
-      time: "09:30",
-      dayOfWeek: 1,
     },
-    triggerLabel: "Monday at 09:30",
-    prompt: `Audit this repo's dependencies.
+    {
+      id: "dependency-audit",
+      category: "security",
+      icon: "lock",
+      name: t("Audit dependencies"),
+      description: t(
+        "Check lockfiles and manifests for vulnerable, abandoned, or unexpectedly upgraded packages",
+      ),
+      trigger: {
+        kind: "time",
+        event: "weekly",
+        scheduleKind: "weekly",
+        time: "09:30",
+        dayOfWeek: 1,
+      },
+      triggerLabel: "Monday at 09:30",
+      prompt: `Audit this repo's dependencies.
 
 - Inspect lockfiles and package manifests for vulnerable, unused, or unexpectedly upgraded packages
 - Confirm findings against the project's current tooling (npm, cargo, etc.)
@@ -351,77 +389,81 @@ Focus on direction, missing tests, and likely bugs — not polish. Call out anyt
 - Do not bump majors unless the current version is unsafe and the upgrade is clearly required
 
 Report what is risky, what you changed, and what still needs a human.`,
-  },
-  {
-    id: "secret-scan",
-    category: "security",
-    icon: "lock",
-    name: "Scan for secrets",
-    description:
-      "Search the working tree and recent history for committed credentials, tokens, and keys",
-    trigger: {
-      kind: "time",
-      event: "weekly",
-      scheduleKind: "weekly",
-      time: "09:30",
-      dayOfWeek: 1,
     },
-    triggerLabel: "Monday at 09:30",
-    prompt: `Scan the working tree and recent git history for secrets.
+    {
+      id: "secret-scan",
+      category: "security",
+      icon: "lock",
+      name: t("Scan for secrets"),
+      description: t(
+        "Search the working tree and recent history for committed credentials, tokens, and keys",
+      ),
+      trigger: {
+        kind: "time",
+        event: "weekly",
+        scheduleKind: "weekly",
+        time: "09:30",
+        dayOfWeek: 1,
+      },
+      triggerLabel: "Monday at 09:30",
+      prompt: `Scan the working tree and recent git history for secrets.
 
 Look for API keys, tokens, private keys, .env files, and credentials in config. If you find a real secret, do not echo the full value. Report the file and a redacted snippet, explain why it is sensitive, and recommend rotation plus a git-history cleanup if it was committed.`,
-  },
-  {
-    id: "triage-github-issues",
-    category: "incidents",
-    icon: "inbox",
-    name: "Triage GitHub issues",
-    description:
-      "When a GitHub issue is opened, inspect the repo and add a concrete reproduction or next step",
-    trigger: {
-      kind: "github",
-      event: "issue_opened",
     },
-    triggerLabel: "Issue opened",
-    prompt: `A new GitHub issue was opened. Triage it against this repo.
+    {
+      id: "triage-github-issues",
+      category: "incidents",
+      icon: "inbox",
+      name: t("Triage GitHub issues"),
+      description: t(
+        "When a GitHub issue is opened, inspect the repo and add a concrete reproduction or next step",
+      ),
+      trigger: {
+        kind: "github",
+        event: "issue_opened",
+      },
+      triggerLabel: "Issue opened",
+      prompt: `A new GitHub issue was opened. Triage it against this repo.
 
 - Reproduce or locate the relevant code if the report is specific enough
 - Label the severity in your summary (blocker / bug / request / unclear)
 - Add a concrete next step: file paths, likely cause, or the missing information
 - Do not implement a large fix unless the issue is clearly a small, validated bug`,
-  },
-  {
-    id: "triage-new-issues",
-    category: "incidents",
-    icon: "inbox",
-    name: "Triage new issues",
-    description:
-      "When a Linear issue is created, inspect the repo and add a concrete reproduction or next step",
-    trigger: {
-      kind: "linear",
-      event: "issue_created",
     },
-    triggerLabel: "Issue created",
-    prompt: `A new Linear issue was created. Triage it against this repo.
+    {
+      id: "triage-new-issues",
+      category: "incidents",
+      icon: "inbox",
+      name: t("Triage new issues"),
+      description: t(
+        "When a Linear issue is created, inspect the repo and add a concrete reproduction or next step",
+      ),
+      trigger: {
+        kind: "linear",
+        event: "issue_created",
+      },
+      triggerLabel: "Issue created",
+      prompt: `A new Linear issue was created. Triage it against this repo.
 
 - Reproduce or locate the relevant code if the report is specific enough
 - Label the severity in your summary (blocker / bug / request / unclear)
 - Add a concrete next step: file paths, likely cause, or the missing information
 - Do not implement a large fix unless the issue is clearly a small, validated bug`,
-  },
-  {
-    id: "autofix-github-issues",
-    category: "incidents",
-    icon: "check",
-    name: "Auto-fix GitHub issues",
-    description:
-      "When a GitHub issue is opened, validate and reproduce it, then push a fix to an autofix/issue-<number> branch for you to review",
-    trigger: {
-      kind: "github",
-      event: "issue_opened",
     },
-    triggerLabel: "Issue opened",
-    prompt: `A new GitHub issue was opened (details appended below). Work fully autonomously: nobody is watching this session. Decide whether it is a real, reproducible bug. If it is, fix it and push a branch for review. If it is not, stop.
+    {
+      id: "autofix-github-issues",
+      category: "incidents",
+      icon: "check",
+      name: t("Auto-fix GitHub issues"),
+      description: t(
+        "When a GitHub issue is opened, validate and reproduce it, then push a fix to an autofix/issue-<number> branch for you to review",
+      ),
+      trigger: {
+        kind: "github",
+        event: "issue_opened",
+      },
+      triggerLabel: "Issue opened",
+      prompt: `A new GitHub issue was opened (details appended below). Work fully autonomously: nobody is watching this session. Decide whether it is a real, reproducible bug. If it is, fix it and push a branch for review. If it is not, stop.
 
 Throughout, <n> is the issue number and <repo> is the owner/name in the issue URL.
 
@@ -471,22 +513,23 @@ Fix: files changed, one line each
 Verification: commands run and results
 Branch: autofix/issue-<n>
 Suggested PR title and body: ...`,
-  },
-  {
-    id: "failing-ci-watch",
-    category: "incidents",
-    icon: "alert",
-    name: "Watch failing checks",
-    description:
-      "On a weekday morning, run the project's tests and diagnose anything that is already red",
-    trigger: {
-      kind: "time",
-      event: "weekdays",
-      scheduleKind: "weekdays",
-      time: "08:30",
     },
-    triggerLabel: "Weekdays at 08:30",
-    prompt: `Run the project's existing test / lint / typecheck commands.
+    {
+      id: "failing-ci-watch",
+      category: "incidents",
+      icon: "alert",
+      name: t("Watch failing checks"),
+      description: t(
+        "On a weekday morning, run the project's tests and diagnose anything that is already red",
+      ),
+      trigger: {
+        kind: "time",
+        event: "weekdays",
+        scheduleKind: "weekdays",
+        time: "08:30",
+      },
+      triggerLabel: "Weekdays at 08:30",
+      prompt: `Run the project's existing test / lint / typecheck commands.
 
 If something fails:
 - Identify the first real failure, not the cascade
@@ -494,41 +537,42 @@ If something fails:
 - Otherwise write a short diagnosis with the command, the error, and the suspected file
 
 Do not add new test infrastructure. Do not "fix" flakes by weakening assertions.`,
-  },
-  {
-    id: "weekly-changelog",
-    category: "research",
-    icon: "note",
-    name: "Weekly changelog",
-    description: "Summarize the week's commits into a changelog humans can actually read",
-    trigger: {
-      kind: "time",
-      event: "weekly",
-      scheduleKind: "weekly",
-      time: "16:00",
-      dayOfWeek: 5,
     },
-    triggerLabel: "Friday at 16:00",
-    prompt: `Write a concise changelog for this repo covering the last 7 days of commits.
+    {
+      id: "weekly-changelog",
+      category: "research",
+      icon: "note",
+      name: t("Weekly changelog"),
+      description: t("Summarize the week's commits into a changelog humans can actually read"),
+      trigger: {
+        kind: "time",
+        event: "weekly",
+        scheduleKind: "weekly",
+        time: "16:00",
+        dayOfWeek: 5,
+      },
+      triggerLabel: "Friday at 16:00",
+      prompt: `Write a concise changelog for this repo covering the last 7 days of commits.
 
 Group by user-facing changes, fixes, and internal work. Skip noise (formatting, lockfile-only, merge commits). Use the project's existing changelog or docs style if one exists; otherwise write a short markdown summary. Do not invent features that are not in the commits.`,
-  },
-  {
-    id: "repo-health",
-    category: "environment",
-    icon: "gauge",
-    name: "Repo health check",
-    description:
-      "Inspect the working tree, stale branches, and obvious project-setup drift on a schedule",
-    trigger: {
-      kind: "time",
-      event: "weekly",
-      scheduleKind: "weekly",
-      time: "09:00",
-      dayOfWeek: 1,
     },
-    triggerLabel: "Monday at 09:00",
-    prompt: `Do a repo health check.
+    {
+      id: "repo-health",
+      category: "environment",
+      icon: "gauge",
+      name: t("Repo health check"),
+      description: t(
+        "Inspect the working tree, stale branches, and obvious project-setup drift on a schedule",
+      ),
+      trigger: {
+        kind: "time",
+        event: "weekly",
+        scheduleKind: "weekly",
+        time: "09:00",
+        dayOfWeek: 1,
+      },
+      triggerLabel: "Monday at 09:00",
+      prompt: `Do a repo health check.
 
 - Working tree cleanliness and leftover build artifacts that should be gitignored
 - README / setup instructions that no longer match the project
@@ -536,33 +580,33 @@ Group by user-facing changes, fixes, and internal work. Skip noise (formatting, 
 - Stale or broken scripts in package.json / Makefile / justfile
 
 Fix the small, clearly correct issues. Report the rest with file paths. Do not do a broad refactor.`,
-  },
-  {
-    id: "install-doctor",
-    category: "environment",
-    icon: "terminal",
-    name: "Environment doctor",
-    description: "Verify the project still installs and boots from a clean working copy",
-    trigger: {
-      kind: "time",
-      event: "weekly",
-      scheduleKind: "weekly",
-      time: "10:00",
-      dayOfWeek: 1,
     },
-    triggerLabel: "Monday at 10:00",
-    prompt: `Verify this project still sets up cleanly.
+    {
+      id: "install-doctor",
+      category: "environment",
+      icon: "terminal",
+      name: t("Environment doctor"),
+      description: t("Verify the project still installs and boots from a clean working copy"),
+      trigger: {
+        kind: "time",
+        event: "weekly",
+        scheduleKind: "weekly",
+        time: "10:00",
+        dayOfWeek: 1,
+      },
+      triggerLabel: "Monday at 10:00",
+      prompt: `Verify this project still sets up cleanly.
 
 Follow the README / documented install steps as closely as possible. Note any missing prerequisites, broken scripts, or docs that don't match reality. Fix small doc or script issues. Do not change application architecture.
 
 End with a pass/fail and the exact commands you ran.`,
-  },
-];
+    },
+  ];
+}
 
 export function templatesForCategory(category: AutomationTemplateCategoryId): AutomationTemplate[] {
-  if (category === "all") return AUTOMATION_TEMPLATES;
-  if (category === "popular") {
-    return AUTOMATION_TEMPLATES.filter((template) => template.popular);
-  }
-  return AUTOMATION_TEMPLATES.filter((template) => template.category === category);
+  const all = automationTemplates();
+  if (category === "all") return all;
+  if (category === "popular") return all.filter((template) => template.popular);
+  return all.filter((template) => template.category === category);
 }

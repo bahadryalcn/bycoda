@@ -1,4 +1,4 @@
-import { t } from "../../../shared/i18n";
+import { formatDate, t } from "../../../shared/i18n";
 import { notificationMuteLabel } from "./notificationMuteLabel";
 import {
   isProjectMuted,
@@ -42,7 +42,7 @@ export function notificationMuteActions(now = new Date(Date.now())) {
     const label = presetLabel(action.id, hours);
     if (action.milliseconds == null) return { ...action, label };
     const until = new Date(now.getTime() + action.milliseconds);
-    const time = `${until.getHours()}:${String(until.getMinutes()).padStart(2, "0")}`;
+    const time = formatDate(until, { hour: "numeric", minute: "2-digit" });
     const when =
       until.toDateString() === now.toDateString() ? time : t("Tomorrow, {p0}", { p0: time });
     return { ...action, label: t("{p0} ({p1})", { p0: label, p1: when }) };

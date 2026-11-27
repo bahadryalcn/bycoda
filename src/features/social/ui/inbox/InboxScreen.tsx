@@ -1,22 +1,24 @@
+import type { InboxItem } from "./inboxTypes";
 import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import { t, useLocale } from "../../../../shared/i18n";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { Button } from "../../../../shared/ui/Button";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
-import { FailureState } from "../../../../shared/ui/FailureState";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { socialQueryScope } from "../../model/socialQuery";
 import { Switch } from "../../../../shared/ui/Switch";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import type { SocialScreenProps } from "../shell/screens";
 import { inboxApi } from "./inboxApi";
+import { matchesInboxText } from "./inboxRefresh";
 import { InboxFilters } from "./InboxFilters";
 import { InboxList } from "./InboxList";
 import { UnreadableNotice } from "./InboxNotices";
 import { ConversationView } from "./ConversationView";
 import type { InboxFilterState } from "./inboxTypes";
-import { useInboxInvalidate, useInboxList, useInboxSnapshot } from "./useInboxData";
+import { useInboxAccounts, useInboxInvalidate, useInboxList } from "./useInboxData";
+import { SnapchatNewChat } from "./SnapchatNewChat";
 import "./inbox.css";
 
 const NO_FILTER: InboxFilterState = { status: "all", accountId: "", query: "" };
@@ -32,13 +34,14 @@ export function InboxScreen(props: SocialScreenProps) {
   return <HostInboxScreen key={socialQueryScope(props.client).join(":")} {...props} />;
 }
 
-function HostInboxScreen({ client, active, target, onNavigate }: SocialScreenProps) {
+function HostInboxScreen({ client, projectId, active, target, onNavigate }: SocialScreenProps) {
   useLocale();
   const api = inboxApi(client);
   const invalidate = useInboxInvalidate(client);
-  const snapshot = useInboxSnapshot(client, active);
+  const snapshot = useInboxAccounts(client, active);
   const [filter, setFilter] = useState<InboxFilterState>(NO_FILTER);
   const [chosen, setChosen] = useState<string | undefined>(() => targetThreadId(target));
+  const [pinnedItem, setPinnedItem] = useState<InboxItem>();
   const [lastTarget, setLastTarget] = useState(target);
   // Retained screens receive navigation occurrences without remounting reply drafts.
   if (target !== lastTarget) {
@@ -46,7 +49,8 @@ function HostInboxScreen({ client, active, target, onNavigate }: SocialScreenPro
     const threadId = targetThreadId(target);
     if (threadId) setChosen(threadId);
   }
-  const [settingsError, setSettingsError] = useState("");
+  /** A translated sentence about the last failed settings or check action; empty when none failed. */
+  const [settingsProblem, setSettingsProblem] = useState("");
   const [checking, setChecking] = useState(false);
   const [savingRefresh, setSavingRefresh] = useState(false);
 
@@ -55,23 +59,58 @@ function HostInboxScreen({ client, active, target, onNavigate }: SocialScreenPro
     enabled: active,
     refresh: active && autoRefresh === true,
   });
-  const items = list.data?.pages.flatMap((page) => page.items) ?? [];
+  const loadedItems = list.data?.pages.flatMap((page) => page.items) ?? [];
+  const needle = filter.query.trim().toLocaleLowerCase();
+  // Preview the Host's unified text match over already loaded rows until its full search returns.
+  const items =
+    list.isPlaceholderData && needle
+      ? loadedItems.filter((item) => matchesInboxText(item, needle))
+      : loadedItems;
   const unreadable = list.data?.pages[0]?.unreadable ?? [];
   const accounts = snapshot.data?.accounts ?? [];
+  const snapchatMembers = projectId
+    ? accounts.filter(
+        (account) =>
+          account.platform === "snapchat" &&
+          account.accountType === "member" &&
+          account.connection === "browser" &&
+          !account.paused &&
+          account.grants[projectId]?.includes("draft") &&
+          account.grants[projectId]?.includes("message") &&
+          snapshot.data?.capabilities[account.id]?.some(
+            (row) => row.operation === "message.start" && row.status === "available",
+          ),
+      )
+    : [];
   const names = Object.fromEntries(accounts.map((account) => [account.id, account.name]));
   const accountOptions = accounts.map((account) => ({ value: account.id, label: account.name }));
-  const selectedId = chosen ?? items[0]?.threadId;
-  const selectedItem = items.find((item) => item.threadId === selectedId);
+  const selectedId = chosen;
   const filtered = filter.status !== "all" || filter.accountId !== "" || filter.query.trim() !== "";
+  const listedItem = loadedItems.find((item) => item.threadId === selectedId);
+  const selectedItem = listedItem ?? (pinnedItem?.threadId === selectedId ? pinnedItem : undefined);
+  // The list is only trusted to say a conversation is gone once every page is loaded and no
+  // refresh is in flight; a not-yet-listed navigation target is kept until it has been seen.
+  const listSettled =
+    list.isSuccess && !list.isPlaceholderData && !list.isFetching && !list.hasNextPage;
+  // Selection is pinned in state, so a refresh that reorders rows never swaps the open
+  // conversation. It only moves when nothing is open yet or the open one left the list.
+  if (selectedId === undefined) {
+    if (items[0]) setChosen(items[0].threadId);
+  } else if (listedItem) {
+    if (pinnedItem !== listedItem) setPinnedItem(listedItem);
+  } else if (!filtered && listSettled && pinnedItem?.threadId === selectedId) {
+    setPinnedItem(undefined);
+    setChosen(items[0]?.threadId);
+  }
 
   const toggleAutoRefresh = async (next: boolean) => {
     setSavingRefresh(true);
-    setSettingsError("");
+    setSettingsProblem("");
     try {
       await api.setAutoRefresh(next);
-      await invalidate();
+      await invalidate({ reference: true });
     } catch {
-      setSettingsError(t("Could not change auto-refresh. Try again."));
+      setSettingsProblem(t("Could not change auto-refresh. Try again."));
     } finally {
       setSavingRefresh(false);
     }
@@ -80,7 +119,7 @@ function HostInboxScreen({ client, active, target, onNavigate }: SocialScreenPro
   // Asks each connected account for new activity, then reloads the list. Failures are counted, not hidden.
   const checkNow = async () => {
     setChecking(true);
-    setSettingsError("");
+    setSettingsProblem("");
     try {
       const results = await Promise.allSettled(
         accounts
@@ -88,8 +127,8 @@ function HostInboxScreen({ client, active, target, onNavigate }: SocialScreenPro
           .map((account) => client.request("inbox.sync", { accountId: account.id })),
       );
       if (results.some((result) => result.status === "rejected"))
-        setSettingsError(t("Some accounts could not be checked. Open an account to see why."));
-      await invalidate();
+        setSettingsProblem(t("Some accounts could not be checked. Open an account to see why."));
+      await invalidate({ reference: true });
     } finally {
       setChecking(false);
     }
@@ -97,15 +136,12 @@ function HostInboxScreen({ client, active, target, onNavigate }: SocialScreenPro
 
   return (
     <section className="inbox-screen" aria-label={t("Inbox")}>
-      {settingsError ? <InlineError>{settingsError}</InlineError> : null}
-      {unreadable.length > 0 ? (
-        <div className="inbox-account-failures">
-          <UnreadableNotice accounts={unreadable} names={names} />
-          <Button variant="secondary" size="sm" onClick={() => onNavigate("accounts")}>
-            {t("Manage accounts")}
-          </Button>
-        </div>
-      ) : null}
+      {settingsProblem ? <InlineError>{settingsProblem}</InlineError> : null}
+      <UnreadableNotice
+        accounts={unreadable}
+        names={names}
+        action={{ label: t("Manage accounts"), onClick: () => onNavigate("accounts") }}
+      />
       <InboxFilters value={filter} accounts={accountOptions} onChange={setFilter}>
         <Text
           as="div"
@@ -123,24 +159,32 @@ function HostInboxScreen({ client, active, target, onNavigate }: SocialScreenPro
             onCheckedChange={(next) => void toggleAutoRefresh(next).catch(() => undefined)}
           />
         </Text>
-        <Button
-          variant="secondary"
-          size="sm"
-          loading={checking}
-          loadingLabel={t("Checking…")}
-          disabled={!accounts.some((account) => account.connected)}
-          disabledReason={
-            !accounts.some((account) => account.connected)
-              ? t("Connect an account first.")
-              : undefined
-          }
-          onClick={() =>
-            void checkNow().catch(() => setSettingsError(t("Could not load the inbox. Try again.")))
-          }
-        >
-          {t("Check now")}
-        </Button>
+        {accounts.some((account) => account.connected) ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={checking}
+            loadingLabel={t("Checking…")}
+            onClick={() =>
+              void checkNow().catch(() =>
+                setSettingsProblem(t("Could not load the inbox. Try again.")),
+              )
+            }
+          >
+            {t("Check now")}
+          </Button>
+        ) : null}
       </InboxFilters>
+
+      {projectId && (
+        <SnapchatNewChat
+          key={projectId}
+          client={client}
+          accounts={snapchatMembers}
+          projectId={projectId}
+          enabled={snapshot.data?.sendingEnabled === true}
+        />
+      )}
 
       {snapshot.isError ? (
         <InlineError
@@ -171,48 +215,55 @@ function HostInboxScreen({ client, active, target, onNavigate }: SocialScreenPro
 
       <div className="inbox-body">
         <div className="inbox-column">
-          {!list.isPending && items.length === 0 && !list.isError && !snapshot.isError ? (
+          {!list.isPending &&
+          !list.isPlaceholderData &&
+          items.length === 0 &&
+          !list.isError &&
+          !snapshot.isError ? (
             snapshot.isPending ? (
-              <LoadingText>{t("Loading accounts…")}</LoadingText>
+              <LoadingText layout="fill">{t("Loading accounts…")}</LoadingText>
             ) : accounts.length === 0 ? (
               <EmptyState
                 kind="empty"
+                context="panel"
+                illustration="connect-computer"
+                title={t("No accounts yet")}
                 description={t("Add an account to read messages and comments.")}
                 action={{ label: t("Add account"), onClick: () => onNavigate("accounts") }}
               />
             ) : filtered ? (
               <EmptyState
                 kind="filtered"
+                context="panel"
                 description={t("No conversations match these filters.")}
                 onReset={() => setFilter(NO_FILTER)}
                 resetLabel={t("Clear filters")}
               />
-            ) : unreadable.length > 0 ? (
-              <FailureState
+            ) : unreadable.length === 0 && !accounts.some((account) => account.connected) ? (
+              <EmptyState
+                kind="empty"
                 context="panel"
-                description={t(
-                  "Messages are unavailable for these accounts. Review their connection and inbox support.",
-                )}
-                action={{ label: t("Manage accounts"), onClick: () => onNavigate("accounts") }}
-              />
-            ) : !accounts.some((account) => account.connected) ? (
-              <FailureState
-                context="panel"
+                illustration="connect-computer"
+                title={t("No account connected")}
                 description={t("Connect an account to check for new conversations.")}
                 action={{ label: t("Manage accounts"), onClick: () => onNavigate("accounts") }}
               />
             ) : (
               <EmptyState
                 kind="empty"
-                description={t("No conversations yet. New messages and comments appear here.")}
+                context="panel"
+                illustration="chat-empty"
+                title={t("No conversations yet")}
+                description={t("New messages and comments appear here.")}
               />
             )
           ) : (
             <InboxList
               items={items}
               selectedId={selectedId}
-              loading={list.isPending}
-              hasMore={list.hasNextPage}
+              stateKey={[...socialQueryScope(client), filter.accountId, filter.status].join(":")}
+              loading={list.isPending || (list.isPlaceholderData && !items.length)}
+              hasMore={!list.isPlaceholderData && list.hasNextPage}
               loadingMore={list.isFetchingNextPage}
               onSelect={setChosen}
               onMore={() => void list.fetchNextPage().catch(() => undefined)}

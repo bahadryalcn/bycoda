@@ -8,13 +8,12 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { bridgeQueryEvents } from "../../shared/lib/queryClient";
 import { useDismissPopover } from "../../shared/hooks/useDismissPopover";
-import { useLocale, useT } from "../../shared/i18n";
+import { useT } from "../../shared/i18n";
 import { Terminal } from "../../shared/ui/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import { Popover } from "../../shared/ui/Popover";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
-import { Tooltip } from "../../shared/ui/Tooltip";
 import {
   consumeClaudeLimitReset,
   consumeCodexRateLimitResetCredit,
@@ -35,14 +34,13 @@ import {
   type HarnessId,
 } from "../../features/sessions/model/session";
 import { loginHarness, supportsHarnessLogin } from "../../integrations/harness/core/auth";
-import {
-  runningTerminalChipLabel,
-  type RunningTerminal,
-} from "../../features/terminal/model/terminalTab";
-import { MOD } from "../../platform/tauri/platform";
+import { registerProviderAccount } from "../../features/providers/model/providerAccountRegistration";
+import { type RunningTerminal } from "../../features/terminal/model/terminalTab";
+import { useKeybindingShortcut } from "../../features/settings/public/useKeybindingShortcut";
 import { ConversationToolsButton } from "../../features/host-tools/ConversationToolsButton";
 import type { ConversationTools } from "../../features/host-tools/SessionHostTools";
 import { UsageProviderChip } from "./UsageProviderChip";
+import { WorkingIndicator } from "../../shared/ui/WorkingIndicator";
 import {
   saveUsageDisplayAccount,
   useUsageDisplayAccount,
@@ -55,14 +53,13 @@ import {
   type ProviderSignInState,
 } from "../../features/sessions/ui/ProviderSignInPanel";
 import {
-  newProviderAccount,
   providerAccountExistsIn,
-  saveProviderAccount,
   defaultProviderAccountIdIn,
   sessionProviderAccountIdIn,
   type ProviderAccountProvider,
 } from "../../features/providers/model/providerAccounts";
 import { useProviderAccounts } from "../../features/providers/model/useProviderAccounts";
+import { providerAccountErrorText } from "../../features/providers/public/providerAccountError";
 import { surfaceAttributes } from "../../shared/ui/Surface";
 
 export type UsageFooterSession = {
@@ -78,7 +75,6 @@ export function UsageFooter({
   embedded = false,
   providers,
   session,
-  project,
   terminals = [],
   terminalOpen = false,
   onToggleTerminal,
@@ -94,7 +90,6 @@ export function UsageFooter({
   embedded?: boolean;
   providers: RateLimitProvider[];
   session?: UsageFooterSession;
-  project?: string;
   terminals?: RunningTerminal[];
   terminalOpen?: boolean;
   onToggleTerminal?: (fileId: string) => void;
@@ -108,10 +103,13 @@ export function UsageFooter({
   onManageAccounts?: (provider: ProviderAccountProvider) => void;
 }) {
   const t = useT();
-  const wantClaude = providers.includes("claude");
-  const wantCodex = providers.includes("codex");
-  const wantOpencode = providers.includes("opencode");
-  const wantGrok = providers.includes("grok");
+  // The live binding (user overrides included), so the hint matches what the shortcut does.
+  const terminalShortcut = useKeybindingShortcut("Terminal: New");
+  const showStandardUsage = session?.harness !== "pi";
+  const wantClaude = showStandardUsage && providers.includes("claude");
+  const wantCodex = showStandardUsage && providers.includes("codex");
+  const wantOpencode = showStandardUsage && providers.includes("opencode");
+  const wantGrok = showStandardUsage && providers.includes("grok");
   // One shared minute clock (paused while hidden); countdowns show whole minutes.
   const now = useMinuteNow();
   const [refreshing, setRefreshing] = useState(false);
@@ -224,37 +222,40 @@ export function UsageFooter({
     [],
   );
 
-  const reconnectProvider = useCallback(async (provider: RateLimitProvider, accountId: string) => {
-    while (inflight.current) await inflight.current;
-    setRefreshing(true);
-    const operation = (async () => {
-      try {
-        await (accountId === "default"
-          ? loginHarness(provider)
-          : loginHarness(provider, accountId));
-        const value = await loadRateLimits(provider, accountId, true);
-        if (value.status !== "ok") {
-          throw new Error(
-            value.error || `${HARNESS_TITLE[provider]} sign-in could not be verified`,
+  const reconnectProvider = useCallback(
+    async (provider: RateLimitProvider, accountId: string) => {
+      while (inflight.current) await inflight.current;
+      setRefreshing(true);
+      const operation = (async () => {
+        try {
+          await (accountId === "default"
+            ? loginHarness(provider)
+            : loginHarness(provider, accountId));
+          const value = await loadRateLimits(provider, accountId, true);
+          if (value.status !== "ok") {
+            throw new Error(
+              value.error || `${HARNESS_TITLE[provider]} sign-in could not be verified`,
+            );
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : t("Could not complete sign-in");
+          setCachedRateLimits(
+            provider,
+            accountId,
+            errorRateLimits(provider, message, getCachedRateLimits(provider, accountId)),
           );
+          throw error;
         }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Could not complete sign-in";
-        setCachedRateLimits(
-          provider,
-          accountId,
-          errorRateLimits(provider, message, getCachedRateLimits(provider, accountId)),
-        );
-        throw error;
-      }
-    })();
-    const tracked = operation.finally(() => {
-      inflight.current = null;
-      setRefreshing(false);
-    });
-    inflight.current = tracked.catch(() => undefined);
-    await tracked;
-  }, []);
+      })();
+      const tracked = operation.finally(() => {
+        inflight.current = null;
+        setRefreshing(false);
+      });
+      inflight.current = tracked.catch(() => undefined);
+      await tracked;
+    },
+    [t],
+  );
 
   const reconnectClaude = useCallback(
     () => reconnectProvider("claude", claudeAccountId),
@@ -273,17 +274,6 @@ export function UsageFooter({
     [onSelectAccount],
   );
 
-  const addAccount = useCallback(
-    async (provider: ProviderAccountProvider, label: string) => {
-      const account = newProviderAccount(provider, label);
-      await loginHarness(provider, account.id);
-      saveProviderAccount(account);
-      selectAccount(provider, account.id);
-      return account;
-    },
-    [selectAccount],
-  );
-
   const showOpencodeChip = wantOpencode && opencode.status !== "unavailable";
   const showGrokChip = wantGrok && grok.status !== "unavailable";
   const showUsage = wantClaude || wantCodex || showOpencodeChip || showGrokChip;
@@ -296,11 +286,11 @@ export function UsageFooter({
     : (onNewTerminal ?? onShowTerminal);
   const ariaLabel =
     showUsage || session?.harness === "pi"
-      ? "Provider usage"
+      ? t("Provider usage")
       : showTerminals || showTerminalButton
-        ? "Terminals"
+        ? t("Terminals")
         : session
-          ? "Session"
+          ? t("Session")
           : undefined;
 
   return (
@@ -314,14 +304,15 @@ export function UsageFooter({
         `@container/usage flex h-(--ui-control-height-compact) min-w-0 items-center gap-1 ${embedded ? "flex-1" : "shrink-0 px-1.5"}`,
       )}
     >
+      {/* The row stays one line. Clipped chips remain reachable by scrolling and keyboard focus. */}
       <ScrollArea
-        axis="both"
+        axis="x"
         scrollbar="hidden"
         data-provider-usage
         className="flex min-w-0 flex-1 items-center gap-1 overscroll-x-contain"
       >
         {session?.harness === "pi" ? (
-          <PiUsage key={`${session.id}:${session.model}`} model={session.model} now={now} />
+          <PiUsage model={session.model} now={now} />
         ) : showUsage ? (
           <>
             {wantClaude ? (
@@ -333,7 +324,7 @@ export function UsageFooter({
                 accountId={claudeAccountId}
                 onSelectUsageAccount={(accountId) => saveUsageDisplayAccount("claude", accountId)}
                 onSelectAccount={(accountId) => selectAccount("claude", accountId)}
-                onAddAccount={(label) => addAccount("claude", label)}
+                onAddAccount={registerProviderAccount}
                 onManageAccounts={onManageAccounts ? () => onManageAccounts("claude") : undefined}
                 onConsumeReset={(creditId) => consumeReset("claude", claudeAccountId, creditId)}
                 onReconnect={reconnectClaude}
@@ -348,12 +339,11 @@ export function UsageFooter({
                 limits={codex}
                 usageOnly
                 now={now}
-                project={project}
                 accounts={codexAccounts}
                 accountId={codexAccountId}
                 onSelectUsageAccount={(accountId) => saveUsageDisplayAccount("codex", accountId)}
                 onSelectAccount={(accountId) => selectAccount("codex", accountId)}
-                onAddAccount={(label) => addAccount("codex", label)}
+                onAddAccount={registerProviderAccount}
                 onManageAccounts={onManageAccounts ? () => onManageAccounts("codex") : undefined}
                 onConsumeReset={(creditId) => consumeReset("codex", codexAccountId, creditId)}
                 onReconnect={reconnectCodex}
@@ -367,7 +357,6 @@ export function UsageFooter({
               <UsageProviderChip
                 limits={opencode}
                 now={now}
-                project={project}
                 refreshing={refreshing}
                 onRefresh={() => refresh("opencode")}
               />
@@ -376,7 +365,6 @@ export function UsageFooter({
               <UsageProviderChip
                 limits={grok}
                 now={now}
-                project={project}
                 refreshing={refreshing}
                 onRefresh={() => refresh("grok")}
               />
@@ -400,7 +388,7 @@ export function UsageFooter({
               iconOnly
               label={terminalLabel}
               shortcut={
-                !projectTerminalActive && !terminalUnavailableReason ? MOD + "+`" : undefined
+                !projectTerminalActive && !terminalUnavailableReason ? terminalShortcut : undefined
               }
               variant="ghost"
               motion="none"
@@ -418,17 +406,6 @@ export function UsageFooter({
         </div>
       ) : null}
     </Text>
-  );
-}
-
-function TerminalLiveMark() {
-  useLocale();
-  return (
-    <span className="terminal-live shrink-0" aria-hidden>
-      <span className="terminal-live-bar" />
-      <span className="terminal-live-bar" />
-      <span className="terminal-live-bar" />
-    </span>
   );
 }
 
@@ -455,19 +432,17 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
       setOpen(false);
       setLoginState("complete");
     } catch (error) {
-      setLoginError(error instanceof Error ? error.message : "Could not complete sign-in");
+      setLoginError(providerAccountErrorText(error, "signIn"));
       setLoginState("error");
     }
   };
 
   if (!canLogin) {
     return (
-      <Tooltip label={HARNESS_TITLE[session.harness]}>
-        <span className="inline-flex min-w-0 items-center gap-1.5 whitespace-nowrap">
-          <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
-          <span>{HARNESS_LABEL[session.harness]}</span>
-        </span>
-      </Tooltip>
+      <span className="inline-flex min-w-0 items-center gap-1.5 whitespace-nowrap">
+        <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
+        <span>{HARNESS_LABEL[session.harness]}</span>
+      </span>
     );
   }
 
@@ -483,14 +458,13 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
         aria-label={t("{p0} sign-in required", { p0: HARNESS_TITLE[session.harness] })}
         aria-expanded={open}
         aria-haspopup="dialog"
-        tooltip={t("{p0} sign-in required", { p0: HARNESS_TITLE[session.harness] })}
         onClick={() => setOpen((value) => !value)}
       >
         <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
         <span>{HARNESS_LABEL[session.harness]}</span>
         {authRequired ? (
           <Text size="caption" tone="warning">
-            {t("sign in")}
+            {t("Sign in")}
           </Text>
         ) : null}
       </Button>
@@ -501,15 +475,14 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
           align="start"
           gap={7}
           width={300}
-          autoFocus
           onDismiss={dismiss}
-          role="dialog"
+          kind="dialog"
           aria-label={t("{p0} sign-in", { p0: HARNESS_TITLE[session.harness] })}
-          tabIndex={-1}
         >
           <Text as="div" size="inherit" tone="primary">
             <ProviderSignInPanel
               harness={session.harness}
+              accountId={session.providerAccountId}
               state={loginState}
               error={loginError}
               onSignIn={() => void signIn()}
@@ -533,17 +506,16 @@ function RunningTerminalChip({
   const t = useT();
   const root = useRef<HTMLButtonElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const label = runningTerminalChipLabel(terminals);
   const many = terminals.length > 1;
-  const details = terminals.map((terminal) => `"${terminal.process}" in ${terminal.label}`);
+  const details = terminals.map((terminal) => terminal.label);
   const ariaLabel =
     terminals.length === 1
       ? panelOpen
-        ? `Hide ${terminals[0]?.process}`
-        : `Show ${terminals[0]?.process}`
+        ? t("Hide terminal {p0}", { p0: terminals[0]?.process ?? "" })
+        : t("Show terminal {p0}", { p0: terminals[0]?.process ?? "" })
       : panelOpen
-        ? "Hide running terminals"
-        : `${terminals.length} terminals are running processes`;
+        ? t("Hide running terminals")
+        : t("Running terminals");
 
   const toggle = (fileId: string) => {
     setMenuOpen(false);
@@ -573,8 +545,7 @@ function RunningTerminalChip({
           setMenuOpen((value) => !value);
         }}
       >
-        <TerminalLiveMark />
-        <span className="sr-only">{label}</span>
+        <WorkingIndicator className="shrink-0" />
       </Button>
       {menuOpen && many && !panelOpen ? (
         <DropdownMenu
@@ -582,7 +553,7 @@ function RunningTerminalChip({
           label={t("Running terminals")}
           side="top"
           align="end"
-          width={192}
+          size="sm"
           items={terminals.map((terminal) => ({
             kind: "item" as const,
             id: terminal.id,

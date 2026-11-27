@@ -24,8 +24,14 @@ async function open(page: Page, query = "") {
   await page.keyboard.press("Enter");
   await expect(dialog(page)).toBeVisible();
   await expect(dialog(page)).toHaveAccessibleDescription(
-    'Rewind chat to before this message. Your prompt returns to the composer; "Revert files too" undoes your edits.',
+    "The chat returns to before this message. Your prompt returns to the composer.",
   );
+}
+async function revertFiles(page: Page) {
+  await dialog(page).getByRole("switch", { name: "Also revert file changes" }).click();
+}
+async function confirm(page: Page) {
+  await dialog(page).getByRole("button", { name: "Edit from here", exact: true }).click();
 }
 async function restored(page: Page) {
   await expect(dialog(page)).toHaveCount(0);
@@ -38,7 +44,14 @@ async function restored(page: Page) {
   expect(
     await composer.evaluate((field) => ({ start: field.selectionStart, end: field.selectionEnd })),
   ).toEqual({ start: prompt.length, end: prompt.length });
-  await expect(page.getByRole("button", { name: "Remove report.csv", exact: true })).toBeVisible();
+  await page
+    .locator("[data-composer] [data-attachment-chip]")
+    .filter({ hasText: "report.csv" })
+    .click({ button: "right" });
+  await expect(
+    page.getByRole("menuitem", { name: "Remove report.csv", exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
   expect((await fixture(page)).events).toEqual({ rewinds: 1, sends: 0 });
 }
 
@@ -47,10 +60,10 @@ for (const worktree of [false, true]) {
     page,
   }) => {
     await open(page, worktree ? "worktree" : "");
-    await expect(dialog(page)).toContainText("Session files: 2");
-    await dialog(page)
-      .getByRole("button", { name: "Revert and keep changes", exact: true })
-      .click();
+    await expect(
+      dialog(page).getByRole("switch", { name: "Also revert file changes" }),
+    ).not.toBeChecked();
+    await dialog(page).getByRole("button", { name: "Edit from here", exact: true }).click();
     await restored(page);
     expect((await fixture(page)).calls.map((call) => call.command)).toEqual([
       "session_files_revert_plan",
@@ -62,9 +75,9 @@ test("revert files reports reverted paths and protected conflicts before restori
   page,
 }) => {
   await open(page, "conflicts&worktree");
-  await expect(dialog(page)).toContainText("Session files: 3");
+  await revertFiles(page);
   await expect(dialog(page)).toContainText("src/shared.ts: Changed by another session");
-  await dialog(page).getByRole("button", { name: "Revert files too", exact: true }).click();
+  await confirm(page);
   await restored(page);
   await expect(page.getByText("src/answer.ts", { exact: false })).toBeVisible();
   await expect(page.getByText("src/new-file.ts", { exact: false })).toBeVisible();
@@ -97,36 +110,35 @@ test("unavailable history disables file revert with its reason and permits keep 
   page,
 }) => {
   await open(page, "unavailable");
-  const files = dialog(page).getByRole("button", { name: "Revert files too", exact: true });
-  await expect(files).toBeDisabled();
-  await expect(files).toHaveAttribute(
-    "aria-description",
-    "File history for this older message is unavailable.",
-  );
+  await expect(
+    dialog(page).getByRole("switch", { name: "Also revert file changes" }),
+  ).toBeDisabled();
   await expect(dialog(page)).toContainText("File history for this older message is unavailable.");
-  await dialog(page).getByRole("button", { name: "Revert and keep changes", exact: true }).click();
+  await confirm(page);
   await restored(page);
 });
 
 test("file error remains inline and retry restores the conversation once", async ({ page }) => {
   await open(page, "failRevert");
-  await dialog(page).getByRole("button", { name: "Revert files too", exact: true }).click();
-  await expect(dialog(page).getByRole("alert")).toContainText("File restoration failed");
+  await revertFiles(page);
+  await confirm(page);
+  await expect(dialog(page).getByRole("alert")).toContainText("Couldn’t rewind");
+  await dialog(page).getByRole("button", { name: "Details: Couldn’t rewind", exact: true }).click();
+  await expect(page.getByText("File restoration failed")).toBeVisible();
   await expect(message(page)).toBeVisible();
   expect((await fixture(page)).events.rewinds).toBe(0);
-  await dialog(page).getByRole("button", { name: "Revert files too", exact: true }).click();
+  await confirm(page);
   await restored(page);
 });
 
 test("pending state stays inside the clicked button and prevents duplicates", async ({ page }) => {
   await open(page, "slowRevert");
-  await dialog(page).getByRole("button", { name: "Revert files too", exact: true }).click();
+  await revertFiles(page);
+  await confirm(page);
   await expect(
     dialog(page).getByRole("button", { name: "Reverting files…", exact: true }),
   ).toHaveAttribute("aria-busy", "true");
-  await expect(
-    dialog(page).getByRole("button", { name: "Revert and keep changes", exact: true }),
-  ).toBeDisabled();
+  await expect(dialog(page).getByRole("button", { name: "Cancel", exact: true })).toBeDisabled();
   await page.evaluate(() =>
     (
       window as unknown as { editFixture: { releaseRevert: () => void } }
@@ -142,15 +154,21 @@ test("conversation retry preserves successful file restoration and does not appl
   page,
 }) => {
   await open(page, "failConversation&conflicts");
-  await dialog(page).getByRole("button", { name: "Revert files too", exact: true }).click();
-  await expect(dialog(page).getByRole("alert")).toHaveText(
-    "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.",
-  );
+  await revertFiles(page);
+  await confirm(page);
+  await expect(dialog(page).getByRole("alert")).toContainText("Couldn’t rewind");
+  await dialog(page).getByRole("button", { name: "Details: Couldn’t rewind", exact: true }).click();
+  await expect(
+    page.getByText(
+      "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.",
+    ),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(message(page)).toBeVisible();
   expect(
     (await fixture(page)).calls.filter((call) => call.command === "session_files_revert"),
   ).toHaveLength(1);
-  await dialog(page).getByRole("button", { name: "Revert files too", exact: true }).click();
+  await confirm(page);
   await restored(page);
   expect(
     (await fixture(page)).calls.filter((call) => call.command === "session_files_revert"),
@@ -212,7 +230,9 @@ for (const width of [1280, 800])
         animations: "disabled",
       });
       await page.keyboard.press("Enter");
-      await expect(dialog(page)).toContainText("Session files: 3");
+      await expect(
+        dialog(page).getByRole("switch", { name: "Also revert file changes" }),
+      ).not.toBeChecked();
       await page.screenshot({
         path: `temp/verification/v94w2/dialog-${width}-${theme}.png`,
         animations: "disabled",
@@ -248,7 +268,12 @@ for (const history of [false, true]) {
         const composer = page.locator("textarea");
         await expect(composer).toHaveValue("[image1] explain this screen");
         await expect(composer).toBeFocused();
-        await expect(page.getByRole("button", { name: /Remove image\.png/ })).toBeVisible();
+        await page
+          .locator('[data-composer] [data-attachment-chip][data-attachment-kind="image"]')
+          .getByRole("button", { name: "Open image.png full screen", exact: true })
+          .press("Shift+F10");
+        await expect(page.getByRole("menuitem", { name: "Remove image.png" })).toBeVisible();
+        await page.keyboard.press("Escape");
         if (history) await expect(page.locator('[data-prompt-anchor="first"]')).toBeVisible();
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
           true,

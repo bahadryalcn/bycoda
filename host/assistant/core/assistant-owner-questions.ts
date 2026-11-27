@@ -38,6 +38,16 @@ export type AssistantOwnerProposalSource = {
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const pending = (question: AssistantOwnerQuestion) =>
   question.status === "open" || question.status === "snoozed";
+// Each status is an index range ending at LIMIT 40, so the list never sorts the whole history.
+// Pending decisions (group 0) sort ahead of resolved history (group 1).
+const PENDING_STATUSES = ["open", "snoozed"];
+const RESOLVED_STATUSES = ["answered", "cancelled", "superseded"];
+const LIST_SQL = `SELECT value FROM (${[...PENDING_STATUSES, ...RESOLVED_STATUSES]
+  .map(
+    (status) =>
+      `SELECT * FROM (SELECT ${PENDING_STATUSES.includes(status) ? 0 : 1} AS g,value,json_extract(value,'$.updatedAt') AS u,id FROM assistant_owner_questions WHERE json_extract(value,'$.status')='${status}' ORDER BY u DESC,id DESC LIMIT 40)`,
+  )
+  .join(" UNION ALL ")}) ORDER BY g,u DESC,id DESC LIMIT 40`;
 
 /** Decisions are durable data. This service has no Engine, approval or tool ports. */
 export class HostAssistantOwnerQuestions {
@@ -52,7 +62,7 @@ export class HostAssistantOwnerQuestions {
     this.ready = store.ready
       .then(() =>
         store.db.exec(
-          `CREATE TABLE IF NOT EXISTS assistant_owner_questions(id TEXT PRIMARY KEY,job_id TEXT NOT NULL,request_id TEXT NOT NULL,fingerprint TEXT NOT NULL,value TEXT NOT NULL,source TEXT,UNIQUE(job_id,request_id));CREATE TABLE IF NOT EXISTS assistant_owner_question_receipts(question_id TEXT NOT NULL,request_id TEXT NOT NULL,fingerprint TEXT NOT NULL,value TEXT NOT NULL,PRIMARY KEY(question_id,request_id));`,
+          `CREATE TABLE IF NOT EXISTS assistant_owner_questions(id TEXT PRIMARY KEY,job_id TEXT NOT NULL,request_id TEXT NOT NULL,fingerprint TEXT NOT NULL,value TEXT NOT NULL,source TEXT,UNIQUE(job_id,request_id));CREATE TABLE IF NOT EXISTS assistant_owner_question_receipts(question_id TEXT NOT NULL,request_id TEXT NOT NULL,fingerprint TEXT NOT NULL,value TEXT NOT NULL,PRIMARY KEY(question_id,request_id));CREATE INDEX IF NOT EXISTS assistant_owner_questions_status_updated ON assistant_owner_questions(json_extract(value,'$.status'),json_extract(value,'$.updatedAt'),id);`,
         ),
       )
       .then(() => undefined);
@@ -252,13 +262,13 @@ export class HostAssistantOwnerQuestions {
   }
   async list(): Promise<AssistantOwnerQuestion[]> {
     await this.ready;
-    const rows = await this.store.db
-      .prepare(
-        "SELECT value FROM assistant_owner_questions ORDER BY CASE WHEN json_extract(value,'$.status') IN ('open','snoozed') THEN 0 ELSE 1 END,json_extract(value,'$.updatedAt') DESC,id LIMIT 40",
-      )
-      .all();
+    const rows = await this.store.db.prepare(LIST_SQL).all();
+    // Resolved history keeps its stored fields; only pending decisions need a live source check.
     return Promise.all(
-      rows.map((row) => this.output(AssistantOwnerQuestionSchema.parse(JSON.parse(row.value)))),
+      rows.map((row) => {
+        const question = AssistantOwnerQuestionSchema.parse(JSON.parse(row.value));
+        return pending(question) ? this.output(question) : question;
+      }),
     );
   }
   async dueSnoozed(): Promise<AssistantOwnerQuestion[]> {

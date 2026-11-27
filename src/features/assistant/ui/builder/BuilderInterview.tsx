@@ -1,4 +1,4 @@
-import { Text } from "../../../../shared/ui/Text";
+import { Text, textAttributes } from "../../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
@@ -29,6 +29,7 @@ export function BuilderInterview({
   draft,
   onDraftChange,
   disabled = false,
+  disabledReason,
   controls,
 }: {
   transcript: readonly AssistantBuilderTurn[];
@@ -40,6 +41,8 @@ export function BuilderInterview({
   draft: string;
   onDraftChange: (text: string) => void;
   disabled?: boolean;
+  /** Why answering is blocked while `disabled` is set. */
+  disabledReason?: string;
   controls?: ReactNode;
 }) {
   const end = useRef<HTMLDivElement>(null);
@@ -68,7 +71,7 @@ export function BuilderInterview({
     }
   };
   return (
-    <Text as="div" size="inherit" tone="inherit" leading="normal" className={styles.stage}>
+    <div {...textAttributes({ size: "inherit", tone: "inherit", leading: "normal" }, styles.stage)}>
       {controls && <div className={styles.interviewControls}>{controls}</div>}
       <div className={styles.chat} role="log" aria-label={t("Interview")}>
         {transcript.map((turn, index) => (
@@ -94,10 +97,10 @@ export function BuilderInterview({
         <div ref={end} />
       </div>
       {failure !== null ? (
-        <InlineError retry={{ onRetry }}>
+        // One friendly line; the provider's raw failure sits behind Details.
+        <InlineError retry={{ onRetry }} details={failure}>
           {[
             t("That did not go through."),
-            failure,
             SIGNED_OUT.test(failure)
               ? t(
                   "Choose a signed-in account in the model picker, or sign in to the provider again.",
@@ -114,11 +117,13 @@ export function BuilderInterview({
             <Button
               key={option}
               size="sm"
+              variant="secondary"
               type="button"
               tooltip={option}
               tooltipWhen="overflow"
               tooltipWide
               disabled={disabled}
+              disabledReason={disabled ? disabledReason : undefined}
               onClick={() => send(option)}
             >
               {option}
@@ -134,7 +139,6 @@ export function BuilderInterview({
         maxRows={6}
         value={draft}
         maxLength={BUILDER_MAX_TURN_TEXT}
-        placeholder={t("Tell me in your own words")}
         onChange={(event) => onDraftChange(event.currentTarget.value)}
         onKeyDown={onKeyDown}
         toolbarTrailing={
@@ -145,10 +149,11 @@ export function BuilderInterview({
             label={t("Send answer")}
             startIcon={<ArrowUp className="icon-sm" />}
             disabled={!text || busy || disabled}
+            disabledReason={disabled ? disabledReason : undefined}
             onClick={() => send(text)}
           />
         }
       />
-    </Text>
+    </div>
   );
 }

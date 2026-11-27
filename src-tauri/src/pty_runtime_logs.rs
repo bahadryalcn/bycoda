@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender};
-use std::sync::{Arc, OnceLock};
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, Weak};
 use std::time::{Duration, Instant};
 use tauri::AppHandle;
 
@@ -269,12 +269,8 @@ fn forward_logs(
         packet_sequence += 1;
         let _ = result;
     };
-    loop {
-        let first = match receiver.recv_timeout(Duration::from_secs(1)) {
-            Ok(first) => first,
-            Err(RecvTimeoutError::Timeout) => continue,
-            Err(RecvTimeoutError::Disconnected) => break,
-        };
+    // Blocks until output or teardown, so an idle terminal wakes nothing.
+    while let Ok(first) = receiver.recv() {
         if !service.is_current() {
             return;
         }
@@ -324,43 +320,158 @@ fn forward_logs(
 const DEMAND_RETRY: Duration = Duration::from_secs(2);
 const DEMAND_MAX: Duration = Duration::from_secs(10);
 
-/// Sleeps `span` in one-second steps; false once the terminal's sender is gone.
-fn sleep_while_alive(capture: &std::sync::Weak<AtomicBool>, span: Duration) -> bool {
-    let end = Instant::now() + span;
-    loop {
-        if capture.strong_count() == 0 {
-            return false;
+/// A terminal waiting for its project's demand answer. Its capture flag is held
+/// weakly, so a closed terminal is pruned and no longer asked about.
+struct DemandTerminal {
+    cwd: String,
+    terminal_id: String,
+    capture: Weak<AtomicBool>,
+}
+
+/// When a project's demand is next asked, and the backoff that set that time.
+struct DemandSchedule {
+    next: Instant,
+    interval: Duration,
+}
+
+/// The demand schedule for every open terminal. The Host answers per project,
+/// so one question serves all of a project's terminals. This is pure bookkeeping:
+/// no thread or Host call lives here, so its backoff and teardown rules stay testable.
+#[derive(Default)]
+struct DemandBook {
+    terminals: Vec<DemandTerminal>,
+    projects: Vec<(String, DemandSchedule)>,
+}
+
+impl DemandBook {
+    fn register(&mut self, cwd: &str, terminal_id: &str, capture: Weak<AtomicBool>, now: Instant) {
+        self.terminals.push(DemandTerminal {
+            cwd: cwd.to_owned(),
+            terminal_id: terminal_id.to_owned(),
+            capture,
+        });
+        if !self.projects.iter().any(|(project, _)| project == cwd) {
+            let schedule = DemandSchedule {
+                next: now,
+                interval: Duration::ZERO,
+            };
+            self.projects.push((cwd.to_owned(), schedule));
         }
-        let left = end.saturating_duration_since(Instant::now());
-        if left.is_zero() {
-            return true;
+    }
+
+    /// Drops closed terminals, then the projects that no longer have one.
+    fn prune(&mut self) {
+        self.terminals
+            .retain(|terminal| terminal.capture.strong_count() > 0);
+        let terminals = &self.terminals;
+        self.projects
+            .retain(|(cwd, _)| terminals.iter().any(|terminal| &terminal.cwd == cwd));
+    }
+
+    /// The time until the next project is due; `None` once no terminal is open.
+    fn next_wait(&self, now: Instant) -> Option<Duration> {
+        self.projects
+            .iter()
+            .map(|(_, schedule)| schedule.next.saturating_duration_since(now))
+            .min()
+    }
+
+    /// The projects due now, each with one of its terminals to ask the Host through.
+    fn due(&self, now: Instant) -> Vec<(String, String)> {
+        self.projects
+            .iter()
+            .filter(|(_, schedule)| schedule.next <= now)
+            .filter_map(|(cwd, _)| {
+                self.terminals
+                    .iter()
+                    .find(|terminal| &terminal.cwd == cwd)
+                    .map(|terminal| (cwd.clone(), terminal.terminal_id.clone()))
+            })
+            .collect()
+    }
+
+    /// Applies a project's answer to its open terminals and sets when it is asked next.
+    /// An error keeps the previous answer and retries sooner.
+    fn answer(&mut self, cwd: &str, result: Result<bool, String>, now: Instant) {
+        let Some((_, schedule)) = self.projects.iter_mut().find(|(project, _)| project == cwd)
+        else {
+            return;
+        };
+        schedule.interval = match &result {
+            Ok(_) => (schedule.interval * 2).clamp(DEMAND_RETRY, DEMAND_MAX),
+            Err(_) => DEMAND_RETRY,
+        };
+        schedule.next = now + schedule.interval;
+        if let Ok(enabled) = result {
+            for terminal in self.terminals.iter().filter(|terminal| terminal.cwd == cwd) {
+                if let Some(capture) = terminal.capture.upgrade() {
+                    capture.store(enabled, Ordering::Release);
+                }
+            }
         }
-        std::thread::sleep(left.min(Duration::from_secs(1)));
     }
 }
 
-/// Runs off the forwarding path, so a slow Host answer never stalls output.
-/// An error keeps the previous answer and retries sooner.
-fn poll_demand(
-    service: &impl LogService,
-    capture: std::sync::Weak<AtomicBool>,
-    cwd: &str,
-    terminal_id: &str,
-) {
-    let mut interval = Duration::ZERO;
+struct DemandShared {
+    book: Mutex<DemandBook>,
+    changed: Condvar,
+}
+
+fn lock_book(shared: &DemandShared) -> MutexGuard<'_, DemandBook> {
+    shared
+        .book
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Registers a terminal with the one shared demand watcher, which starts on first use.
+fn watch_demand(app: &AppHandle, cwd: &str, terminal_id: &str, capture: &Arc<AtomicBool>) {
+    static SHARED: OnceLock<Arc<DemandShared>> = OnceLock::new();
+    let shared = SHARED.get_or_init(|| {
+        let shared = Arc::new(DemandShared {
+            book: Mutex::default(),
+            changed: Condvar::new(),
+        });
+        let (watcher, app) = (shared.clone(), app.clone());
+        std::thread::spawn(move || demand_loop(&app, &watcher));
+        shared
+    });
+    lock_book(shared).register(cwd, terminal_id, Arc::downgrade(capture), Instant::now());
+    shared.changed.notify_all();
+}
+
+/// The single thread that asks the Host about capture demand. It sleeps until the
+/// next project is due and waits without a timeout while no terminal is open.
+/// Off the forwarding path, so a slow Host answer never stalls output.
+fn demand_loop(app: &AppHandle, shared: &DemandShared) {
     loop {
-        if !sleep_while_alive(&capture, interval) {
-            return;
-        }
-        let Some(value) = capture.upgrade() else {
-            return;
-        };
-        match service.demand(cwd, terminal_id) {
-            Ok(enabled) => {
-                value.store(enabled, Ordering::Release);
-                interval = (interval * 2).clamp(DEMAND_RETRY, DEMAND_MAX);
+        let due = {
+            let mut book = lock_book(shared);
+            loop {
+                book.prune();
+                let now = Instant::now();
+                match book.next_wait(now) {
+                    None => {
+                        book = shared
+                            .changed
+                            .wait(book)
+                            .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    }
+                    Some(wait) if wait.is_zero() => break book.due(now),
+                    Some(wait) => {
+                        let (guard, _) = shared
+                            .changed
+                            .wait_timeout(book, wait)
+                            .unwrap_or_else(|poisoned| poisoned.into_inner());
+                        book = guard;
+                    }
+                }
             }
-            Err(_) => interval = DEMAND_RETRY,
+        };
+        for (cwd, terminal_id) in due {
+            let answer = crate::remote::NativeServiceChannel::connect(app)
+                .and_then(|channel| channel.demand(&cwd, &terminal_id));
+            lock_book(shared).answer(&cwd, answer, Instant::now());
         }
     }
 }
@@ -375,17 +486,7 @@ impl TerminalLogSender {
         let worker_sequence = sequence.clone();
         let cwd = cwd.to_string_lossy().into_owned();
         let terminal_id = uuid::Uuid::new_v4().to_string();
-        let poll_app = app.clone();
-        let poll_cwd = cwd.clone();
-        let poll_terminal_id = terminal_id.clone();
-        let poll_capture = Arc::downgrade(&capture);
-        std::thread::spawn(move || {
-            let service = PinnedLogService {
-                selected: OnceLock::new(),
-                select: || crate::remote::NativeServiceChannel::connect(&poll_app),
-            };
-            poll_demand(&service, poll_capture, &poll_cwd, &poll_terminal_id);
-        });
+        watch_demand(&app, &cwd, &terminal_id, &capture);
         let (exit, exit_report) = sync_channel::<Option<ExitFacts>>(1);
         std::thread::spawn(move || {
             // Selection stays off the PTY reader and may recover from Host
@@ -727,6 +828,86 @@ $ "
         assert!(dropped);
         let (kept, _) = filter.filter(b"[?1049lafter");
         assert_eq!(kept, b"after");
+    }
+
+    #[test]
+    fn one_demand_answer_serves_every_terminal_of_its_project() {
+        let now = Instant::now();
+        let a = Arc::new(AtomicBool::new(false));
+        let b = Arc::new(AtomicBool::new(false));
+        let other = Arc::new(AtomicBool::new(false));
+        let mut book = DemandBook::default();
+        book.register("/app", "a", Arc::downgrade(&a), now);
+        book.register("/app", "b", Arc::downgrade(&b), now);
+        book.register("/other", "c", Arc::downgrade(&other), now);
+        assert_eq!(
+            book.due(now),
+            vec![
+                ("/app".to_string(), "a".to_string()),
+                ("/other".to_string(), "c".to_string())
+            ],
+            "one question per project, not per terminal"
+        );
+        book.answer("/app", Ok(true), now);
+        assert!(a.load(Ordering::Acquire));
+        assert!(b.load(Ordering::Acquire));
+        assert!(!other.load(Ordering::Acquire));
+        assert_eq!(book.due(now), vec![("/other".to_string(), "c".to_string())]);
+    }
+
+    #[test]
+    fn steady_answers_back_off_to_the_cap_and_errors_retry_sooner() {
+        let base = Instant::now();
+        let capture = Arc::new(AtomicBool::new(false));
+        let mut book = DemandBook::default();
+        book.register("/app", "a", Arc::downgrade(&capture), base);
+        let mut now = base;
+        let mut waits = Vec::new();
+        for _ in 0..4 {
+            book.answer("/app", Ok(false), now);
+            let wait = book.next_wait(now).unwrap();
+            waits.push(wait);
+            now += wait;
+        }
+        assert_eq!(
+            waits,
+            [2, 4, 8, 10].map(Duration::from_secs).to_vec(),
+            "steady answers stretch to the ten second cap"
+        );
+        book.answer("/app", Err("Host is starting".into()), now);
+        assert_eq!(book.next_wait(now), Some(DEMAND_RETRY));
+        assert!(
+            !capture.load(Ordering::Acquire),
+            "an error keeps the last answer"
+        );
+    }
+
+    #[test]
+    fn closed_terminals_are_pruned_and_an_empty_book_waits_without_timeout() {
+        let now = Instant::now();
+        let kept = Arc::new(AtomicBool::new(false));
+        let closed = Arc::new(AtomicBool::new(false));
+        let mut book = DemandBook::default();
+        book.register("/app", "kept", Arc::downgrade(&kept), now);
+        book.register("/app", "closed", Arc::downgrade(&closed), now);
+        drop(closed);
+        book.prune();
+        assert_eq!(
+            book.terminals.len(),
+            1,
+            "the project keeps its live terminal"
+        );
+        assert_eq!(
+            book.due(now),
+            vec![("/app".to_string(), "kept".to_string())]
+        );
+        drop(kept);
+        book.prune();
+        assert!(
+            book.next_wait(now).is_none(),
+            "no open terminal means no wakeup"
+        );
+        assert!(book.due(now).is_empty());
     }
 
     #[test]

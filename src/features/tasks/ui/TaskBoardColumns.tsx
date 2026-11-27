@@ -1,47 +1,20 @@
-import { actionDragAttributes } from "../../../shared/ui/ActionHost";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
-import type { BadgeTone } from "../../../shared/ui/Badge";
 import { LiveText } from "../../../shared/ui/LiveText";
-import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { Text } from "../../../shared/ui/Text";
-import { StatusDot } from "../../../shared/ui/StatusDot";
-import { type BoardTask, taskTimeLabel } from "../model/taskClient";
-import { canMoveTask, TASK_COLUMNS, taskColumn, type TaskColumn } from "../model/hostTasks";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
+import { type BoardTask } from "../model/taskClient";
+import { TASK_COLUMNS, type TaskColumn } from "../model/hostTasks";
 import { t, useLocale } from "../../../shared/i18n";
-import { type ComponentProps, type ReactNode, useState } from "react";
+import { type ComponentProps, type ReactNode, useMemo, useState } from "react";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { taskSessionIds } from "../model/backgroundSession";
-import { TaskCard } from "./TaskBoardCard";
+import type { TaskCard } from "./TaskBoardCard";
+import { TaskBoardColumn } from "./TaskBoardColumn";
+import { columnLabel } from "../model/taskColumnLabel";
+import { createTaskBoardDrag, taskCardKey, useTaskBoardDrag } from "./taskBoardDrag";
 import "./task-board.css";
 
-export const COLUMN_LABELS: Record<TaskColumn, string> = {
-  todo: "To do",
-  queued: "Queued",
-  running: "Running",
-  review: "Review",
-  done: "Done",
-  blocked: "Blocked",
-};
-
-const COLUMN_EMPTY: Record<TaskColumn, string> = {
-  todo: "Nothing to do yet",
-  queued: "Nothing waiting",
-  running: "Nothing running",
-  review: "Nothing to review",
-  done: "Nothing done yet",
-  blocked: "Nothing blocked",
-};
-const COLUMN_TONES: Partial<Record<TaskColumn, BadgeTone>> = {
-  queued: "info",
-  running: "accent",
-  review: "warning",
-  done: "success",
-  blocked: "danger",
-};
-
 /** The board's columns: cards grouped by status, with drag and drop between and
- * within them. Which card is being dragged, and over which column, is this
- * view's own state; every move goes to the board owner through `onTaskDrop`. */
+ * within them. Which card is being dragged, and over which column, lives in a small
+ * drag store the lanes and cards subscribe to; every move goes to the board owner
+ * through `onTaskDrop`. */
 export function TaskBoardColumns({
   tasks,
   visibleTasks,
@@ -76,6 +49,7 @@ export function TaskBoardColumns({
     project: string;
     goal?: string;
     waitingFor: string[];
+    helperFailure?: string;
   };
   planningLabel: (task: BoardTask) => string;
   actionsFor: ComponentProps<typeof TaskCard>["actionsFor"];
@@ -85,22 +59,22 @@ export function TaskBoardColumns({
   empty: ReactNode;
 }) {
   useLocale();
-  const [draggedKey, setDraggedKey] = useState<string | null>(null);
-  const [dropColumn, setDropColumn] = useState<TaskColumn | null>(null);
-  // The card a reorder would land before; cleared with every other drag cue.
-  const [dropBeforeKey, setDropBeforeKey] = useState<string | null>(null);
-  const endDrag = () => {
-    setDraggedKey(null);
-    setDropColumn(null);
-    setDropBeforeKey(null);
-  };
-  const dropTask = (task: BoardTask, column: TaskColumn, before?: BoardTask) => {
-    endDrag();
+  const [drag] = useState(createTaskBoardDrag);
+  // Only drag start and end re-render the board; `dragover` cues stay in the lanes and cards.
+  const draggedKey = useTaskBoardDrag(drag, (state) => state.draggedKey);
+  // One index per task list change, so every drag event resolves its task without a scan.
+  const tasksByKey = useMemo(
+    () => new Map(visibleTasks.map((task) => [taskCardKey(task), task])),
+    [visibleTasks],
+  );
+  const findTask = useStableCallback((key: string | null) =>
+    key ? tasksByKey.get(key) : undefined,
+  );
+  const dropTask = useStableCallback((task: BoardTask, column: TaskColumn, before?: BoardTask) => {
+    drag.end();
     void onTaskDrop(task, column, before);
-  };
-  const draggedTask = draggedKey
-    ? visibleTasks.find((task) => `${task.machineId}:${task.id}` === draggedKey)
-    : undefined;
+  });
+  const draggedTask = findTask(draggedKey);
   return (
     <>
       <LiveText
@@ -124,7 +98,7 @@ export function TaskBoardColumns({
               { value: "all", label: t("All") },
               ...TASK_COLUMNS.map((status) => ({
                 value: status,
-                label: `${t(COLUMN_LABELS[status])} · ${columns.get(status)!.length}`,
+                label: `${columnLabel(status)} · ${columns.get(status)!.length}`,
               })),
             ]}
             onChange={(value) => onCompactColumnChange(value as TaskColumn | "all")}
@@ -136,178 +110,29 @@ export function TaskBoardColumns({
         <div
           className="task-board-columns"
           data-single-column={compactColumn !== "all" || undefined}
+          data-dragging={draggedKey !== null || undefined}
         >
-          {TASK_COLUMNS.map((status) => {
-            const column = columns.get(status)!;
-            const frame = surfaceAttributes(
-              { variant: "card", frame: "card", radius: "card" },
-              "bycoda-task-column flex min-h-0 min-w-0 flex-col",
-            );
-            return (
-              <section
-                key={status}
-                aria-label={t(COLUMN_LABELS[status])}
-                data-task-column={status}
-                data-empty={column.length === 0 || undefined}
-                data-compact-selected={
-                  compactColumn === "all" || compactColumn === status || undefined
-                }
-                data-drop-active={dropColumn === status || undefined}
-                onDragOver={(event) => {
-                  const dragged = visibleTasks.find(
-                    (task) => `${task.machineId}:${task.id}` === draggedKey,
-                  );
-                  if (
-                    dragged &&
-                    ((taskColumn(dragged.status) === status &&
-                      dragged.workspaceControlsSupported &&
-                      (status === "todo" || status === "queued")) ||
-                      canMoveTask(
-                        dragged.status,
-                        status,
-                        dragged.crewRunId ?? dragged.crewDefinitionId,
-                      ))
-                  ) {
-                    event.preventDefault();
-                    setDropColumn(status);
-                    setDropBeforeKey(null);
-                    event.dataTransfer.dropEffect = "move";
-                  }
-                }}
-                onDragLeave={(event) => {
-                  if (!event.currentTarget.contains(event.relatedTarget as Node)) {
-                    setDropColumn(null);
-                    setDropBeforeKey(null);
-                  }
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  const dragged = visibleTasks.find(
-                    (task) => `${task.machineId}:${task.id}` === draggedKey,
-                  );
-                  if (dragged) dropTask(dragged, status);
-                }}
-                {...frame}
-                {...actionDragAttributes({ target: dropColumn === status }, frame.className)}
-              >
-                <SectionLabel
-                  as="h2"
-                  {...surfaceAttributes({ frame: "none" }, "shrink-0 px-3")}
-                  count={column.length}
-                  icon={
-                    COLUMN_TONES[status] ? (
-                      <StatusDot
-                        tone={COLUMN_TONES[status]}
-                        label={t(COLUMN_LABELS[status])}
-                        aria-hidden
-                      />
-                    ) : undefined
-                  }
-                >
-                  {t(COLUMN_LABELS[status])}
-                </SectionLabel>
-                <ul>
-                  {column.map((task) => (
-                    <li
-                      key={`${task.machineId}:${task.id}`}
-                      draggable={
-                        !acting &&
-                        !task.stale &&
-                        (task.status === "todo" ||
-                          task.status === "queued" ||
-                          TASK_COLUMNS.some((column) =>
-                            canMoveTask(
-                              task.status,
-                              column,
-                              task.crewRunId ?? task.crewDefinitionId,
-                            ),
-                          ))
-                      }
-                      {...actionDragAttributes({
-                        dragging: draggedKey === `${task.machineId}:${task.id}`,
-                        before: dropBeforeKey === `${task.machineId}:${task.id}`,
-                      })}
-                      data-dragging={draggedKey === `${task.machineId}:${task.id}` || undefined}
-                      data-drop-before={
-                        dropBeforeKey === `${task.machineId}:${task.id}` ? true : undefined
-                      }
-                      onDragOver={(event) => {
-                        // A reorder inside the column marks the card it would land before.
-                        const key = `${task.machineId}:${task.id}`;
-                        if (
-                          draggedTask &&
-                          key !== draggedKey &&
-                          taskColumn(draggedTask.status) === status &&
-                          draggedTask.workspaceControlsSupported &&
-                          (status === "todo" || status === "queued")
-                        ) {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          event.dataTransfer.dropEffect = "move";
-                          setDropColumn(status);
-                          setDropBeforeKey(key);
-                        }
-                      }}
-                      onDragStart={(event) => {
-                        if ((event.target as Element).closest("button,input,textarea,select")) {
-                          event.preventDefault();
-                          return;
-                        }
-                        const key = `${task.machineId}:${task.id}`;
-                        event.dataTransfer.setData("application/x-bycoda-task", key);
-                        event.dataTransfer.effectAllowed = "move";
-                        setDraggedKey(key);
-                      }}
-                      onDragEnd={endDrag}
-                      onDrop={(event) => {
-                        const dragged = visibleTasks.find(
-                          (item) => `${item.machineId}:${item.id}` === draggedKey,
-                        );
-                        if (dragged && taskColumn(dragged.status) === status) {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          dropTask(dragged, status, task);
-                        }
-                      }}
-                    >
-                      <TaskCard
-                        task={task}
-                        timeLabel={taskTimeLabel(task, now)}
-                        project={taskContext(task).project}
-                        goal={taskContext(task).goal}
-                        planning={planningLabel(task)}
-                        waitingForText={JSON.stringify(taskContext(task).waitingFor)}
-                        actionsFor={actionsFor}
-                        busy={acting != null || bulkBusy}
-                        openingState={JSON.stringify(
-                          [taskSessionIds(task).worker, taskSessionIds(task).review].map(
-                            (id) =>
-                              !!id && openingSessions.has(JSON.stringify([task.machineId, id])),
-                          ),
-                        )}
-                        orderKey={orders.get(task.machineId + ":" + task.id) ?? ""}
-                        selected={task.machineId + ":" + task.id === selectedKey}
-                        onOpen={onOpen}
-                      />
-                    </li>
-                  ))}
-                  {column.length === 0 && visibleTasks.length > 0 ? (
-                    <li>
-                      <Text
-                        as="p"
-                        size="caption"
-                        tone="muted"
-                        leading="inherit"
-                        className="task-column-empty"
-                      >
-                        {t(COLUMN_EMPTY[status])}
-                      </Text>
-                    </li>
-                  ) : null}
-                </ul>
-              </section>
-            );
-          })}
+          {TASK_COLUMNS.map((status) => (
+            <TaskBoardColumn
+              key={status}
+              status={status}
+              column={columns.get(status)!}
+              compactSelected={compactColumn === "all" || compactColumn === status}
+              drag={drag}
+              findTask={findTask}
+              onDropTask={dropTask}
+              now={now}
+              acting={acting}
+              bulkBusy={bulkBusy}
+              selectedKey={selectedKey}
+              openingSessions={openingSessions}
+              orders={orders}
+              taskContext={taskContext}
+              planningLabel={planningLabel}
+              actionsFor={actionsFor}
+              onOpen={onOpen}
+            />
+          ))}
         </div>
       ) : null}
     </>

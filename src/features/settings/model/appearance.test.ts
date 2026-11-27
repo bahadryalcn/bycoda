@@ -337,9 +337,9 @@ describe("theme preference setting", () => {
     Reflect.deleteProperty(globalThis, "window");
   });
 
-  it("defaults to dark", () => {
-    expect(THEME_PREFERENCE_DEFAULT).toBe("dark");
-    expect(loadThemePreference()).toBe("dark");
+  it("defaults to following the system", () => {
+    expect(THEME_PREFERENCE_DEFAULT).toBe("system");
+    expect(loadThemePreference()).toBe("system");
   });
 
   it("persists each preference", () => {

@@ -16,29 +16,13 @@ import { appearanceRules } from "./ui-drift-appearance.mjs";
 // The appearance ownership rules have their own tests (ui-drift-appearance.test.mjs).
 const notAppearance = (rule) => !(rule in appearanceRules);
 
-test("view primary guard counts files, separates returns and mutually exclusive branches", () => {
-  const file = "src/features/demo/View.tsx";
-  const primary = '<Button variant="primary" />';
-  const count = (source) =>
-    rulesOf(file, source).filter((rule) => rule === "one-primary-per-view").length;
-  assert.equal(count(`function View() { return <>${primary}${primary}${primary}</>; }`), 1);
-  assert.equal(count(`const View = () => <>${primary}${primary}</>;`), 1);
-  assert.equal(count(`function View() { if (open) return ${primary}; return ${primary}; }`), 0);
-  assert.equal(count(`const View = () => open ? ${primary} : ${primary};`), 0);
-  assert.equal(count(`const View = () => ${primary} || ${primary};`), 0);
-  assert.equal(count(`const View = () => <>{open ? ${primary} : ${primary}}${primary}</>;`), 1);
-  assert.equal(count(`const First = () => ${primary}; const Second = () => ${primary};`), 0);
-  assert.equal(count(`const View = () => <>{items.map(() => ${primary})}${primary}</>;`), 0);
-  assert.equal(
-    count(`// return <>${primary}${primary}</>\nconst sample = '${primary}${primary}';`),
-    0,
-  );
-  assert.equal(count(`const View = () => <>${primary}<Button variant={kind} /></>;`), 0);
-  assert.equal(
-    count(
-      `const View = () => (\n// ui-drift-ignore: one-primary-per-view -- independent actions\n<>${primary}${primary}</>);`,
+test("primary actions are no longer counted lexically across independent groups", () => {
+  assert.deepEqual(
+    rulesOf(
+      "src/features/demo/View.tsx",
+      'const View = () => <><Group><Button variant="primary" /></Group><Group><Button variant="primary" /></Group></>;',
     ),
-    0,
+    [],
   );
 });
 
@@ -113,12 +97,109 @@ test("tooltip guard flags hints that only restate the visible label", () => {
   assert.equal(count('<Button tooltip="Delete" tooltipDetails={[name]}>Delete</Button>'), 0);
   assert.equal(count('<Button tooltip="Delete" tooltipWhen="overflow">Delete</Button>'), 0);
   assert.equal(count('<Tooltip label="Copy" shortcut="Mod+C"><Button>Copy</Button></Tooltip>'), 0);
+  assert.equal(count('<Button tooltip="Copy" shortcut="Mod+C">Copy</Button>'), 0);
+  assert.equal(
+    count(
+      'import { Button as Action } from "@/shared/ui/Button"; <Action tooltip="Copy" children="Copy" />;',
+    ),
+    1,
+  );
+  assert.equal(
+    count(
+      'import { Tooltip as Hint } from "@/shared/ui/Tooltip"; const View = ({ label }) => <Hint label={label}><Button><span>{label}</span></Button></Hint>;',
+    ),
+    1,
+  );
+  assert.equal(
+    count("const View = ({ label }) => <Button tooltip={label}><span>{label}</span></Button>;"),
+    1,
+  );
+  for (const source of [
+    "const View = ({ label }) => <Button iconOnly aria-label={label} tooltip={label}><svg /></Button>;",
+    'const View = ({ label }) => <Button tooltip={label}><span className="sr-only md:inline">{label}</span></Button>;',
+    'const View = ({ label }) => <Button tooltip={label}><span className="truncate">{label}</span></Button>;',
+    '<Tooltip label="Copy"><Button><Text truncate>Copy</Text></Button></Tooltip>',
+    '<Tooltip label="Copy"><Button>Copy link</Button></Tooltip>',
+    '<Button tooltip="Copy">{ready ? "Copy" : "Wait"}</Button>',
+  ])
+    assert.equal(count(source), 0, source);
   assert.equal(
     count(
       '{/* ui-drift-ignore: tooltip-repeats-label -- clipped label */}\n<Button tooltip="Delete">Delete</Button>',
     ),
     0,
   );
+});
+
+test("feedback guard requires one bound failure or matching footer reason", () => {
+  const imports = [
+    'import { useState } from "react";',
+    'import { Alert as Banner } from "@/shared/ui/Alert";',
+    'import { InlineError as ErrorLine } from "@/shared/ui/InlineError";',
+    'import { Toast, toast as notifications } from "@/shared/ui/ToastRegion";',
+    'import { ModalActions as Actions } from "@/shared/ui/Modal";',
+    'import { Button as Action } from "@/shared/ui/Button";',
+  ].join("\n");
+  const findings = (source) => {
+    const file = "src/features/demo/View.tsx";
+    const text = `${imports}\n${source}`;
+    return scanFile(file, text, collectDefinitions(new Map([[file, text]]))).filter(
+      (item) => item.rule === "duplicate-feedback-channel",
+    );
+  };
+  for (const [source, line] of [
+    [
+      `const View = ({ failure }) => <>
+  <ErrorLine>{failure}</ErrorLine>
+  <Banner>{failure}</Banner>
+  <Toast message={failure} />
+</>;`,
+      "<Banner>{failure}</Banner>",
+    ],
+    [
+      `const View = ({ reason }) => <Actions reason={reason}>
+  <Action
+    disabledReason={reason}
+  />
+</Actions>;`,
+      "disabledReason={reason}",
+    ],
+    [
+      `const View = () => <Actions reason={t("Required")}><Action disabledReason={t("Required")} /></Actions>;`,
+      "disabledReason",
+    ],
+    [
+      `function View() {
+  const [error, setError] = useState(null);
+  function onRetry() {
+    try { retry(); } catch (failure) {
+      setError(failure);
+      notifications.show({
+        message: failure,
+      });
+    }
+  }
+  return <ErrorLine>{error}</ErrorLine>;
+}`,
+      "message: failure",
+    ],
+  ]) {
+    const result = findings(source);
+    assert.equal(result.length, 1, source);
+    assert.ok(result[0].text.includes(line), source);
+  }
+  for (const source of [
+    "const View = ({ failure }) => retrying ? <ErrorLine>{failure}</ErrorLine> : <Banner>{failure}</Banner>;",
+    "const View = ({ failure }) => <>{retrying && <ErrorLine>{failure}</ErrorLine>}{!retrying && <Banner>{failure}</Banner>}</>;",
+    'const View = () => <><ErrorLine>{t("Retry failed")}</ErrorLine><Banner>{t("Retry failed")}</Banner></>;',
+    "const View = ({ failure, detail }) => <><ErrorLine>{failure}</ErrorLine><Banner>{detail}</Banner><Toast historyMessage={failure} /></>;",
+    "const View = ({ reason }) => <Actions reason={reason}>{confirming && <Action disabledReason={reason} />}</Actions>;",
+    "const View = ({ reason }) => <Actions reason={reason}><Action {...props} disabledReason={reason} /></Actions>;",
+    'function View() { const [error, setError] = useState(null); function retryA() { setError(t("Retry failed")); } function retryB() { notifications.show({message: t("Retry failed")}); } return <ErrorLine>{error}</ErrorLine>; }',
+    "function View({ failure }) { const [error, setError] = useState(null); function retryA() { setError(failure); } function retryB() { notifications.show({message: failure}); } return <ErrorLine>{error}</ErrorLine>; }",
+    "function View({ failure }) { const [error, setError] = useState(null); function retry() { setError(failure); anotherOperation(); notifications.show({message: failure}); } return <ErrorLine>{error}</ErrorLine>; }",
+  ])
+    assert.deepEqual(findings(source), [], source);
 });
 
 test("hover reveal guard requires a matching visibility property and independent keyboard path", () => {
@@ -328,7 +409,10 @@ test("only counts above the baseline fail, per file and rule", (t) => {
   write("src/features/demo/A.tsx", '<p className="text-xs" />\n');
   write(
     baselineFile,
-    JSON.stringify({ schemaVersion: 1, counts: { "src/features/demo/A.tsx": { typography: 1 } } }),
+    JSON.stringify({
+      schemaVersion: 1,
+      counts: { "src/features/demo/A.tsx": { "feature-typography": 1 } },
+    }),
   );
   assert.equal(checkUiDrift({ root }).success, true);
   const added = new Map([["src/features/demo/A.tsx", '<p className="text-xs text-[13px]" />\n']]);
@@ -336,9 +420,10 @@ test("only counts above the baseline fail, per file and rule", (t) => {
   assert.equal(result.success, false);
   assert.deepEqual(
     result.regressions.map(({ rule, baseline, count }) => [rule, baseline, count]),
-    [["typography", 1, 2]],
+    [["feature-typography", 1, 2]],
   );
-  const fixed = new Map([["src/features/demo/A.tsx", '<p className="text-ui-caption" />\n']]);
+  // Feature typography now comes from Text roles, so the fix carries no type class at all.
+  const fixed = new Map([["src/features/demo/A.tsx", "<p />\n"]]);
   assert.equal(checkUiDrift({ root, overrides: fixed }).improvements.length, 1);
 });
 
@@ -348,9 +433,8 @@ test("view guards use existing per-file regression and improvement budgets", (t)
   const file = "src/shared/demo/View.tsx";
   mkdirSync(dirname(join(root, file)), { recursive: true });
   mkdirSync(dirname(join(root, baselineFile)), { recursive: true });
-  const primary = '<Button variant="primary" />';
   const fixtures = [
-    ["one-primary-per-view", `const View = () => <>${primary}${primary}</>;`],
+    ["tooltip-repeats-label", '<Button tooltip="Save">Save</Button>'],
     ["nested-card", '<Surface variant="card"><Surface variant="card" /></Surface>'],
     ["hover-only-reveal", '<div className="opacity-0 hover:opacity-100" />'],
   ];
@@ -753,11 +837,10 @@ test("px and motion literal rules also cover Arc CSS modules", () => {
   assert.deepEqual(rulesOf(file, ".a { transition: opacity var(--motion-duration-fast); }"), []);
 });
 
-test("inline help guard limits findings to long translated secondary text directly below settings labels", () => {
+test("inline help guard flags exact repetition in known settings slots", () => {
   const imports =
-    'import { Row as SettingRow } from "./settingsControls"; import { Text as Copy } from "../../shared/ui/Text"; import { Field } from "../../shared/ui/Field"; import { Heading } from "../../shared/ui/Heading"; import { InfoPopover } from "../../shared/ui/InfoPopover";';
-  const long = "x".repeat(101);
-  const help = `<Copy tone="secondary">{t("${long}")}</Copy>`;
+    'import { Group, Row as SettingRow } from "@/shared/ui/settings"; import { Text as Copy } from "@/shared/ui/Text"; import { Field } from "@/shared/ui/Field"; import { InfoPopover } from "@/shared/ui/InfoPopover";';
+  const help = '<Copy tone="secondary">{t("Mode")}</Copy>';
   const count = (source) =>
     rulesOf("src/features/demo/View.tsx", imports + source).filter(
       (rule) => rule === "inline-help-text",
@@ -765,34 +848,551 @@ test("inline help guard limits findings to long translated secondary text direct
   for (const source of [
     `<SettingRow label="Mode">${help}</SettingRow>`,
     `<Field label="Mode">${help}</Field>`,
-    `<><Heading>Mode</Heading>${help}</>`,
-    `<><h3>Mode</h3><p tone="muted">{t("${long}")}</p></>`,
-    `<><SettingRow label="Mode" />${help}</>`,
-    `<Field label="Mode"><Copy tone={"muted"}>{t('${long}')}</Copy></Field>`,
+    '<Group title={t("Mode")} description={t("Mode")} />',
+    '<SettingRow label="Mode" description="Mode" />',
+    "const View = ({ label }) => <Field label={label} description={label} />;",
   ])
     assert.equal(count(source), 1, source);
   for (const source of [
-    `<Field label="Mode"><Copy tone="muted">{t("${"x".repeat(100)}")}</Copy></Field>`,
+    `<Field label="Mode" description="${"Distinct detail ".repeat(12)}" />`,
+    '<Field label="Mode" error="Mode" />',
+    '<Field label="Mode" description={t("Changing mode restarts existing jobs.")} />',
     `<div>${help}</div>`,
     `<Field label="Mode"><div>${help}</div></Field>`,
-    `<Field label="Mode"><Copy tone="danger">{t("${long}")}</Copy></Field>`,
-    `<Field label="Mode"><Copy tone="muted">{t(key)}</Copy></Field>`,
-    `<Field label="Mode"><Copy tone="muted">${long}</Copy></Field>`,
+    '<Field label="Mode"><Copy tone="danger">{t("Mode")}</Copy></Field>',
+    '<Field label="Mode"><Copy tone="muted">{t(key)}</Copy></Field>',
     `<Field label="Mode"><InfoPopover>${help}</InfoPopover></Field>`,
-    `<InfoPopover><Field label="Mode">${help}</Field></InfoPopover>`,
-    `<Field info={<><Heading>Mode</Heading>${help}</>} />`,
-    `<Field><div slot="info"><Heading>Mode</Heading>${help}</div></Field>`,
-    `<><Heading>Mode</Heading><Button />${help}</>`,
+    `<SettingRow label="Mode" info={${help}} />`,
+    `<><h3>Mode</h3>${help}</>`,
     `<OtherRow>${help}</OtherRow>`,
-    `<Field><Copy tone="muted">{t()}</Copy></Field>`,
-    `<Field><Text tone="secondary">{t("${long}")}</Text></Field>`,
+    `<OtherRow label="Mode" description="Mode" />`,
+    '<Field {...props} label="Mode" description="Mode" />',
     `const example = ${JSON.stringify(`<Field>${help}</Field>`)};`,
   ])
     assert.equal(count(source), 0, source);
   assert.equal(
     count(
-      `<Field>\n{/* ui-drift-ignore: inline-help-text -- required consequence */}\n${help}</Field>`,
+      `<Field label="Mode">\n{/* ui-drift-ignore: inline-help-text -- required consequence */}\n${help}</Field>`,
     ),
     0,
   );
+});
+
+test("shared-internal-selector flags feature CSS that reaches into shared component internals", () => {
+  const file = "src/features/demo/Demo.css";
+  const flagged = (selector) =>
+    rulesOf(file, `${selector} { display: flex; }`).includes("shared-internal-selector");
+  for (const selector of [
+    ".a .modal-panel > div:last-child",
+    ".popover-open .x",
+    ".popover",
+    ":global(.settings-row) .x",
+    ".settings-group-content > :first-child",
+    '.nav [role="tablist"]',
+    ".nav [role=tab]",
+    "[data-slot='button']",
+    "[data-button-size] svg",
+    "[data-pane-header-heading]",
+    ".x .bycoda-arc-select",
+  ])
+    assert.ok(flagged(selector), selector);
+  for (const selector of [
+    ".settings-card",
+    ".popover-menu-demo",
+    ".my-modal",
+    ".bycoda-arc .x",
+    ".x > div:last-child",
+    "[data-wide] .nav",
+  ])
+    assert.ok(!flagged(selector), selector);
+  // Shared and test code answer other rules; token-owning shared CSS is not feature CSS.
+  assert.ok(!rulesOf("src/shared/ui/Demo.module.css", ".modal-panel { gap: 0; }").length);
+  assert.ok(
+    !rulesOf(
+      file,
+      "/* ui-drift-ignore: shared-internal-selector -- legacy */\n.modal-panel { gap: 0; }",
+    ).includes("shared-internal-selector"),
+  );
+});
+
+test("shared CSS-module slots report each visual declaration once", () => {
+  const file = "src/features/demo/View.module.css";
+  const tsxFile = "src/features/demo/View.tsx";
+  const source = [
+    'import { Button as Action } from "@/shared/ui/Button";',
+    'import { Modal as Dialog } from "@/shared/ui/Modal";',
+    'import { Button as Local } from "./Local";',
+    'import styles from "./View.module.css";',
+    'import other from "@/features/demo/Other.module.css";',
+    "const dialogClass = styles.panel;",
+    'const View = () => <><Action className={cn(styles.action, ready && styles["quiet"])} />',
+    "<Dialog panelClassName={dialogClass} />",
+    "<Local className={styles.local} />",
+    "<Action className={compose(styles.unresolved)} />",
+    "<Action className={other.action} /></>;",
+  ].join("\n");
+  const css = [
+    ".action {",
+    "  @apply flex min-w-0 mx-2;",
+    "  margin-inline: 8px;",
+    "  max-inline-size: 100%;",
+    "  &:hover {",
+    "    background: var(--ui-surface);",
+    "  }",
+    "  @media (width > 600px) {",
+    "    padding-inline: 8px;",
+    "  }",
+    "}",
+    ".quiet {",
+    "  @apply font-medium;",
+    "}",
+    ".panel :global(.modal-panel) {",
+    "  padding: 8px;",
+    "}",
+    ".panel :global(.vendor-owned) {",
+    "  box-shadow: 0 0 0 1px currentColor;",
+    "}",
+    ".local, .unresolved, :global(.action), [data-name='.action'] { padding: 8px; }",
+  ].join("\n");
+  const other = "src/features/demo/Other.module.css";
+  const definitions = collectDefinitions(
+    new Map([
+      [tsxFile, source],
+      [file, css],
+      [other, ".action { padding: 8px; }"],
+      ["src/styles/index.css", ":root { --ui-surface: white; }"],
+    ]),
+  );
+  assert.deepEqual(
+    scanFile(file, css, definitions).map(({ rule, line }) => [rule, line]),
+    [15, 6, 9, 13, 19].map((line) => ["shared-internal-selector", line]),
+  );
+  assert.deepEqual(
+    scanFile(other, ".action { padding: 8px; }", definitions).map(({ rule }) => rule),
+    ["shared-internal-selector"],
+  );
+  const unrelated = "src/features/demo/Unrelated.module.css";
+  assert.deepEqual(scanFile(unrelated, ".action { padding: 8px; }", definitions), []);
+});
+
+test("specificity-doubling flags .x.x and leaves distinct compound classes alone", () => {
+  const file = "src/features/demo/Demo.module.css";
+  const flagged = (selector) =>
+    rulesOf(file, `${selector} { gap: 0; }`).includes("specificity-doubling");
+  assert.ok(flagged(".row.row"));
+  assert.ok(flagged(".a .row.row > .b"));
+  assert.ok(flagged(".row-x.row-x:hover"));
+  assert.ok(!flagged(".row.rowTwo"));
+  assert.ok(!flagged(".row.row-x"));
+  assert.ok(!flagged(".a.b"));
+  assert.ok(!flagged(".row .row"));
+});
+
+test("feature typography replaces the generic typography scanner and preserves Arc ownership", () => {
+  const found = (file, source) =>
+    scanFile(file, source, collectDefinitions(new Map([[file, source]]))).map(({ rule }) => rule);
+  const file = "src/features/demo/Demo.module.css";
+  assert.deepEqual(found(file, ".a { font-size: 0.6875rem; line-height: 1.45; }"), [
+    "feature-typography",
+    "feature-typography",
+  ]);
+  assert.deepEqual(found(file, ".a { font-size: inherit; line-height: normal; }"), []);
+  assert.deepEqual(found("src/features/demo/Demo.tsx", '<Text className="text-[0.75rem]" />'), [
+    "feature-typography",
+  ]);
+});
+
+test("radius-size reads rem lengths and preserves semantic or zero values", () => {
+  const file = "src/features/demo/Demo.module.css";
+  assert.ok(rulesOf(file, ".a { border-radius: 0.5rem; }").includes("radius-size"));
+  assert.ok(rulesOf(file, ".a { border-top-left-radius: 1rem 2px; }").includes("radius-size"));
+  assert.ok(!rulesOf(file, ".a { border-radius: 0; }").includes("radius-size"));
+  assert.ok(!rulesOf(file, ".a { border-radius: var(--ui-radius-card); }").includes("radius-size"));
+  assert.ok(
+    rulesOf("src/features/demo/Demo.tsx", '<i className="h-[2rem] w-[10px]" />').includes(
+      "radius-size",
+    ),
+  );
+});
+
+test("transcript-base-ink owns the --transcript-ink-* and --transcript-surface-* definitions", () => {
+  const ink = (file, text) => rulesOf(file, text).includes("transcript-base-ink");
+  const roles = ".a { --transcript-ink-body: var(--ui-text-secondary); }";
+  assert.ok(ink("src/features/sessions/ui/Transcript.css", roles));
+  assert.ok(
+    ink(
+      "src/styles/index.css",
+      `${indexCss}
+:root { --transcript-surface-fill: red; }`,
+    ),
+  );
+  assert.ok(!ink("src/styles/transcript-surface.css", `:root { --transcript-ink-body: red; }`));
+});
+
+test("transcript-assistant-surface and transcript-reply-fill guard the transcript surface", () => {
+  const file = "src/features/sessions/ui/AgentTranscriptActivity.tsx";
+  const rules = (text, name = file) => rulesOf(name, text);
+  assert.ok(
+    rules('<div data-chat-message-surface="assistant">x</div>').includes(
+      "transcript-assistant-surface",
+    ),
+  );
+  assert.ok(
+    !rules('<div data-chat-message-surface="user">x</div>').includes(
+      "transcript-assistant-surface",
+    ),
+  );
+  assert.ok(
+    rules('<div className="p-2 bg-(--ui-surface)">x</div>').includes("transcript-reply-fill"),
+  );
+  assert.ok(rules('<div className="backdrop-blur-sm">x</div>').includes("transcript-reply-fill"));
+  assert.ok(
+    !rules('<div data-transcript-reply className="bg-(--ui-surface)">x</div>').includes(
+      "transcript-reply-fill",
+    ),
+  );
+  assert.ok(!rules('<div className="bg-transparent">x</div>').includes("transcript-reply-fill"));
+  assert.ok(
+    !rules('<div className="bg-(--ui-surface)">x</div>', "src/features/chat/ui/X.tsx").includes(
+      "transcript-reply-fill",
+    ),
+  );
+});
+
+test("transcript-base-ink flags content-base text color in transcript CSS only", () => {
+  const sessions = "src/features/sessions/ui/Transcript.css";
+  const ink = (file, text) => rulesOf(file, text).includes("transcript-base-ink");
+  assert.ok(ink(sessions, ".a { color: var(--color-content); }"));
+  assert.ok(
+    ink(sessions, ".a { color: color-mix(in srgb, var(--color-content) 70%, transparent); }"),
+  );
+  assert.ok(!ink(sessions, ".a { color: var(--ui-text-secondary); }"));
+  assert.ok(!ink(sessions, ".a { border-color: var(--color-content); }"));
+  assert.ok(!ink("src/features/files/ui/Files.css", ".a { color: var(--color-content); }"));
+  const styles = "src/styles/index.css";
+  const sheet = (selector) => `${indexCss}\n${selector} { color: var(--color-content); }`;
+  for (const selector of [
+    ".agent-markdown p",
+    '[data-chat-message-surface="user"]',
+    ".transcript-row",
+  ])
+    assert.ok(ink(styles, sheet(selector)), selector);
+  assert.ok(!ink(styles, sheet(".sidebar-title")));
+  assert.ok(
+    !ink(styles, `${indexCss}\n:root { --x: var(--color-content); color: var(--color-content); }`),
+  );
+});
+
+test("role-status-banner flags tone-styled status regions only", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "bycoda-ui-status-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const file = "src/features/demo/A.tsx";
+  mkdirSync(dirname(join(root, file)), { recursive: true });
+  mkdirSync(join(root, "src/styles"), { recursive: true });
+  writeFileSync(join(root, "src/styles/arc.css"), arcCss);
+  writeFileSync(
+    join(root, file),
+    [
+      '<div role="status" className="rounded text-(--ui-tone-danger-fg)" />',
+      '<p role="status" className={styles.notice} />',
+      '<span role="status" className="sr-only" />',
+      '<div role="status" aria-live="polite" />',
+      '<div className="text-(--ui-tone-danger-fg)" />',
+      "",
+    ].join("\n"),
+  );
+  mkdirSync(dirname(join(root, baselineFile)), { recursive: true });
+  writeFileSync(join(root, baselineFile), JSON.stringify({ schemaVersion: 1, counts: {} }));
+  const result = checkUiDrift({ root });
+  assert.deepEqual(
+    result.regressions
+      .filter(({ rule }) => rule === "role-status-banner")
+      .map(({ baseline, count }) => [baseline, count]),
+    [[0, 2]],
+  );
+});
+
+test("pane-edge-erased flags CSS that hides the edge between workbench panes", () => {
+  const file = "src/features/demo/Demo.css";
+  const flagged = (css) => rulesOf(file, css).includes("pane-edge-erased");
+  assert.ok(flagged(".bycoda-sidebar { border-inline-end-color: transparent; }"));
+  assert.ok(flagged(".bycoda-project-rail { border-right: none; }"));
+  assert.ok(flagged('[data-side-pane="workspace"] { border-inline-end-width: 0; }'));
+  assert.ok(flagged('.x [data-surface-frame="pane"] { border: 0; }'));
+  assert.ok(!flagged(".bycoda-sidebar { border-inline-end-color: var(--ui-pane-border); }"));
+  assert.ok(!flagged(".card { border-right: none; }"));
+  assert.ok(!flagged(".bycoda-sidebar { background: transparent; }"));
+});
+
+test("disabled shared controls accept a reason or an explained restriction", () => {
+  const imports =
+    'import { Button as Action, Checkbox, Row, InlineAction, InlineMessage } from "@/shared/ui";';
+  const count = (jsx) =>
+    rulesOf("src/features/demo/View.tsx", imports + jsx).filter(
+      (rule) => rule === "disabled-without-reason",
+    ).length;
+  assert.equal(
+    count("<><Action disabled /><Row disabled /><Checkbox disabled /><InlineAction disabled /></>"),
+    4,
+  );
+  assert.equal(count('<Action disabled disabledReason={t("Offline")} />'), 0);
+  assert.equal(count('<Action disabled aria-describedby="blocked" />'), 0);
+  assert.equal(count("<Action disabled={loading} />"), 0);
+  assert.equal(count("<Action disabled={!draft.trim()} />"), 0);
+  assert.equal(count("<Action disabled={false} />"), 0);
+  assert.equal(
+    count(
+      "const View = ({ blocked }) => <><Action disabled={blocked} />{blocked && <InlineMessage>Offline</InlineMessage>}</>;",
+    ),
+    0,
+  );
+  assert.equal(
+    count(
+      "const View = ({ blocked, other }) => <><Action disabled={blocked} />{other && <InlineMessage>Offline</InlineMessage>}</>;",
+    ),
+    1,
+  );
+});
+
+test("view guards cover component live regions and generic div naming", () => {
+  const focus = (source) =>
+    rulesOf("src/features/demo/View.tsx", source).filter((rule) =>
+      ["role-status-banner", "raw-aria-live", "aria-label-without-role"].includes(rule),
+    );
+  assert.deepEqual(
+    focus('<><Text role={"status"} /><Badge aria-live="polite" /><Disclosure role="status" /></>'),
+    ["role-status-banner", "role-status-banner", "raw-aria-live"],
+  );
+  assert.deepEqual(
+    focus(
+      '<><div aria-label="Loading" /><div role="group" aria-label="Options" /><nav aria-label="Tools" /></>',
+    ),
+    ["aria-label-without-role"],
+  );
+});
+
+test("tooltip aria-labels and paired gate branches use matching text only", () => {
+  const imports = 'import { Button } from "@/shared/ui/Button";';
+  const count = (rule, source) =>
+    rulesOf("src/features/demo/View.tsx", imports + source).filter((finding) => finding === rule)
+      .length;
+  assert.equal(
+    count(
+      "tooltip-repeats-label",
+      '<Button tooltip="Delete" aria-label="Delete"><Icon /></Button>',
+    ),
+    1,
+  );
+  assert.equal(
+    count(
+      "tooltip-repeats-label",
+      '<Tooltip label="Delete"><Button aria-label="Delete"><Icon /></Button></Tooltip>',
+    ),
+    1,
+  );
+  assert.equal(
+    count(
+      "tooltip-repeats-label",
+      'const View = ({ busy }) => <Button tooltip={busy ? "Wait" : "Ready"}>{busy ? "Wait" : "Ready"}</Button>;',
+    ),
+    1,
+  );
+  assert.equal(
+    count(
+      "tooltip-repeats-label",
+      'const View = ({ busy, other }) => <Button tooltip={busy ? "Wait" : "Ready"}>{other ? "Wait" : "Ready"}</Button>;',
+    ),
+    0,
+  );
+  assert.equal(
+    count(
+      "duplicate-feedback-channel",
+      'const View = ({ busy }) => { const gate = { disabledReason: busy ? "Checking" : "Connect" }; return <Button {...gate}>{busy ? "Checking" : "Connect"}</Button>; };',
+    ),
+    1,
+  );
+  assert.equal(
+    count(
+      "button-manual-pending",
+      'const View = ({ saving }) => <Button loading={saving}>{saving ? t("Saving…") : t("Save")}</Button>;',
+    ),
+    1,
+  );
+  assert.equal(
+    count(
+      "button-manual-pending",
+      'const View = ({ busy }) => <Button loading={busy}><Play className="icon-sm" />{t("Start")}</Button>;',
+    ),
+    1,
+  );
+  assert.equal(
+    count(
+      "button-manual-pending",
+      'const View = ({ busy, open }) => <><Button loading={busy} loadingLabel={t("Starting…")} startIcon={<Play />}>{t("Start")}</Button><Button>{open ? t("Rename…") : t("Open…")}</Button><Button iconOnly label="Run" loading={busy}><Play /></Button><Button variant="item" loading={busy}><Play />{t("Crew")}</Button></>;',
+    ),
+    0,
+  );
+  const adapter = 'import { gateProps, DisabledReason } from "../social/ui/common/DisabledReason";';
+  const view =
+    'const View = ({ connected, busy }) => <DisabledReason {...gateProps(connected ? { disabled: false } : { disabled: true, disabledReason: busy ? t("Checking") : t("Unavailable") })}>{connected ? t("Ready") : busy ? t("Checking") : t("Offline")}</DisabledReason>;';
+  assert.equal(count("duplicate-feedback-channel", adapter + view), 1);
+  assert.equal(
+    count(
+      "duplicate-feedback-channel",
+      adapter +
+        view.replace('busy ? t("Checking") : t("Offline")', 'busy ? t("Offline") : t("Checking")'),
+    ),
+    0,
+  );
+});
+
+test("optional field captions and hint paragraphs use the info control", () => {
+  const imports = 'import { Text, TextField, InfoPopover } from "@/shared/ui";';
+  const count = (source) =>
+    rulesOf("src/features/demo/View.tsx", imports + source).filter(
+      (rule) => rule === "inline-help-text",
+    ).length;
+  assert.equal(
+    count('<div><TextField /><Text variant="caption">Look under Settings.</Text></div>'),
+    1,
+  );
+  assert.equal(count('<div><p className="onboarding-hint">Optional guide.</p></div>'), 1);
+  assert.equal(
+    count('<div><TextField info={help} /><Text tone="secondary">Look under Settings.</Text></div>'),
+    0,
+  );
+  assert.equal(
+    count(
+      '<div><TextField /><InfoPopover /><Text tone="secondary">Look under Settings.</Text></div>',
+    ),
+    0,
+  );
+  assert.equal(
+    count('<div><TextField /><Text tone="warning">Connecting changes your key.</Text></div>'),
+    0,
+  );
+  assert.equal(count('<div><Text tone="secondary">Account costs vary by plan.</Text></div>'), 0);
+  assert.equal(count('<div><TextField /><Text tone="secondary">{requiredStatus}</Text></div>'), 0);
+  assert.equal(
+    count(
+      '<div>{connected ? <Text>Connected</Text> : <Text size="caption">Paste a key from LinkedIn Live.</Text>}<form /></div>',
+    ),
+    1,
+  );
+  assert.equal(
+    count(
+      '<div><TextField /><Text size="caption" tone="secondary">X charges per returned item and per write.</Text></div>',
+    ),
+    0,
+  );
+  assert.equal(
+    count(
+      '<div><TextField /><Text size="caption">{t(secure ? "HTTPS verifies the certificate." : "HTTP requires approval.")}</Text></div>',
+    ),
+    0,
+  );
+});
+
+test("row badges distinguish written tags from icons and counts", () => {
+  const imports = 'import { Badge, BadgeList, ListRow } from "@/shared/ui";';
+  const count = (source) =>
+    rulesOf("src/features/demo/View.tsx", imports + source).filter(
+      (rule) => rule === "row-text-badge",
+    ).length;
+  assert.equal(count('<ListRow><Badge>{t("Active")}</Badge></ListRow>'), 1);
+  assert.equal(count("<tr><td><Badge>Inbox</Badge></td></tr>"), 1);
+  assert.equal(count("<ListRow trailing={<BadgeList items={tags} />} />"), 1);
+  assert.equal(
+    count("<ListRow><Badge>12+</Badge><Badge icon={Icon} /><Badge>{count}</Badge></ListRow>"),
+    0,
+  );
+  assert.equal(count("<section><Badge>Active</Badge></section>"), 0);
+});
+
+test("feature class literals reject physical direction and local token overrides", () => {
+  const findings = (file, source) =>
+    rulesOf(file, source).filter((rule) =>
+      ["physical-direction-utility", "arbitrary-ui-token-override"].includes(rule),
+    );
+  const feature = "src/features/demo/View.tsx";
+  for (const utility of ["ml-2", "mr-2", "pl-2", "pr-2", "text-left", "text-right", "md:-ml-2"])
+    assert.deepEqual(findings(feature, '<div className="' + utility + '" />'), [
+      "physical-direction-utility",
+    ]);
+  assert.deepEqual(
+    findings(feature, '<div className={cn("ms-2", show && "hover:[--ui-text-strong:red]")} />'),
+    ["arbitrary-ui-token-override"],
+  );
+  assert.deepEqual(
+    findings(feature, '<div className="text-start me-2 ps-2 text-(--ui-text-strong)" />'),
+    [],
+  );
+  assert.deepEqual(
+    findings("src/app/demo/View.tsx", '<div className="ml-2" data-example="[--ui-ink:red]" />'),
+    [],
+  );
+});
+
+test("native title covers shared TreeRow aliases and preserves semantic titles", () => {
+  const source =
+    'import { TreeRow as Item } from "@/shared/ui/TreeRow"; <><Item title={path} /><Item title="" /><Modal title="Dialog" /><iframe title="Preview" /></>;';
+  assert.equal(
+    rulesOf("src/features/demo/View.tsx", source).filter((rule) => rule === "native-title").length,
+    1,
+  );
+});
+
+test("local stylesheets distinguish fillable shared slots from control styling", () => {
+  const view = "src/features/demo/View.tsx";
+  const file = "src/features/demo/view.css";
+  const source =
+    'import "./view.css"; import { Surface, Text, Button } from "@/shared/ui"; <><Surface className="fill-panel" /><Button className="fixed-button" /><Text className="counter" /></>;';
+  const css = [
+    ".fill-panel { height: 100%; border-radius: 8px; }",
+    ".fixed-button { height: 100%; }",
+    ".counter { font-variant-numeric: tabular-nums; }",
+    ".other { font-variant-numeric: tabular-nums; }",
+  ].join("\n");
+  assert.deepEqual(
+    scanFile(
+      file,
+      css,
+      collectDefinitions(
+        new Map([
+          [view, source],
+          [file, css],
+        ]),
+      ),
+    ).map(({ rule, line }) => [rule, line]),
+    [
+      ["shared-internal-selector", 1],
+      ["shared-internal-selector", 2],
+      ["shared-internal-selector", 3],
+      ["feature-typography", 4],
+    ],
+  );
+});
+
+test("focus-dependent paint skipping is allowed and focus paint is still checked", () => {
+  const source = [
+    ".row:focus-within { content-visibility: auto; contain-intrinsic-block-size: 28px; }",
+    ".row button:focus { outline: 2px solid var(--ui-focus-ring); }",
+  ].join("\n");
+  assert.deepEqual(
+    rulesOf("src/features/demo/view.css", source).filter((rule) =>
+      ["interaction-state", "focus-outline-removed"].includes(rule),
+    ),
+    ["focus-outline-removed"],
+  );
+});
+
+test("palette literals stay checked outside the exact art modules", () => {
+  const colors = "const pigments = [themePalette.hexff0000, themePalette.hex00ff00];";
+  const found = (file) =>
+    rulesOf("src/features/sessions/ui/" + file, colors).filter(
+      (rule) => rule === "theme-palette-literal",
+    ).length;
+  for (const name of ["crewCharacters", "crewEnvironment", "crewCodeSign", "crewCodeColor"])
+    assert.equal(found(name + ".ts"), 0);
+  assert.equal(found("crewMixedView.ts"), 2);
 });

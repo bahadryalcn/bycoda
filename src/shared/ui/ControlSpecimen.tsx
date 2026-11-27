@@ -100,9 +100,7 @@ function StateMatrix({ layout }: { layout: ControlMatrixLayout }) {
           <Button variant="primary">{t("Save")}</Button>
         </Cell>
         <Cell state="selected">
-          <Button selected aria-pressed="true">
-            {t("Selected")}
-          </Button>
+          <Button pressed>{t("Selected")}</Button>
         </Cell>
         <Cell state="disabled">
           <Button disabled>{t("Unavailable")}</Button>
@@ -807,9 +805,7 @@ export function ControlSpecimen({
         </div>
       )}
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <Button selected aria-pressed="true">
-          {t("Selected")}
-        </Button>
+        <Button pressed>{t("Selected")}</Button>
         <Button disabled>{t("Unavailable")}</Button>
         <Button loading loadingLabel={t("Saving…")}>
           {t("Save")}

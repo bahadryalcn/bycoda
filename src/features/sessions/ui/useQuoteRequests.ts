@@ -9,6 +9,7 @@ import {
   type SetStateAction,
 } from "react";
 import type { ParentAdmission, ParentInputHandle } from "../data/parentInputClosure";
+import { flushSessionQuotes, receiveSessionQuotes } from "../model/targetedChatQuote";
 import {
   acknowledgeQuoteRequest,
   ADD_TO_CHAT_EVENT,
@@ -55,6 +56,7 @@ export function useQuoteRequests(
   rootParentRef: RefObject<ParentInputHandle | null>,
   /** Only the pane that should receive the event listens for it. */
   listening: boolean,
+  targetedSessionId?: string,
 ) {
   const [quoteRequest, setQuoteRequest] = useState<QuoteRequest>();
   const quoteRequestId = useRef(0);
@@ -89,7 +91,17 @@ export function useQuoteRequests(
       rootParent: rootParentRef.current,
       setQuoteRequest,
     });
+    if (targetedSessionId) flushSessionQuotes(targetedSessionId);
   };
+
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Bind terminal selections to this composer and replay text queued while its pane mounted.
+  useEffect(() => {
+    if (!targetedSessionId) return;
+    return receiveSessionQuotes(
+      targetedSessionId,
+      (text) => quoteAdmissions.current.size === 0 && addSelectionToChat(text),
+    );
+  }, [targetedSessionId, addSelectionToChat]);
 
   useEffect(() => {
     if (!listening) return;

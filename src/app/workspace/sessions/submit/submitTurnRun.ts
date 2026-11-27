@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import type { SubmitDeps, SubmitInput, SubmitPreflight, SubmitSetup } from "./submitTypes";
 import { createSubmitTurnEvents } from "./submitTurnEvents";
 import { runSubmitDispatch } from "./submitTurnDispatch";
@@ -7,6 +8,7 @@ import {
   completeOrchestrationProposal,
   withOrchestrationProposal,
 } from "../../../../features/orchestration/model/orchestrationPlan";
+import { saveSessionExtraWorktrees } from "../../../../features/projects/public/additionalDirs";
 import { invalidateProjectLocation } from "../../../../features/projects/model/projectLocation";
 import {
   endActiveSubmit,
@@ -27,7 +29,12 @@ import {
   holdQueueAfterFailedTurn,
 } from "../../../../features/sessions/model/messageQueue";
 import { sessionsRef, setSessions } from "../../../../features/sessions/model/sessionsStore";
-import { prepareSessionWorkspaceDetailed } from "../../../../features/workspaces/model/sessionWorkspace";
+import { renameFirstSendBranch } from "../../../../features/workspaces/model/branchRename";
+import { newCreationProgressId } from "../../../../features/workspaces/model/creationProgress";
+import {
+  prepareSessionWorkspaceDetailed,
+  sessionWorktreeSnapshot,
+} from "../../../../features/workspaces/model/sessionWorkspace";
 import {
   forgetHarnessSession,
   isLiveHarness,
@@ -51,8 +58,34 @@ export function startSubmittedTurn(
   void (async () => {
     let workCwd = initialWorkCwd;
     if (createDraftWorktree) {
-      const { workspace, outcome } = await prepareSessionWorkspaceDetailed(current);
+      // The progress card polls this id while the Host creates the worktrees.
+      const progressId = newCreationProgressId();
+      // Freeze the repositories and slug so a retry after a timeout repeats the same request.
+      const snapshot = sessionWorktreeSnapshot(current);
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId
+            ? { ...session, ...snapshot, worktreeProgressId: progressId }
+            : session,
+        ),
+      );
+      // A failure fails the send before the session is bound; a retry recovers the same
+      // workspace and its extra worktrees through the Host's idempotency key.
+      const { workspace, outcome, extraWorktrees } = await prepareSessionWorkspaceDetailed(
+        { ...current, ...snapshot },
+        true,
+        { progressId },
+      ).finally(() => {
+        setSessions((prev) =>
+          prev.map((session) =>
+            session.id === sessionId && session.worktreeProgressId === progressId
+              ? { ...session, worktreeProgressId: undefined }
+              : session,
+          ),
+        );
+      });
       if (turnGen.current.get(sessionId) !== gen) return;
+      if (workspace) saveSessionExtraWorktrees(sessionId, extraWorktrees);
       workCwd = workspace?.path ?? initialWorkCwd;
       workspacePins.current.set(sessionId, currentWorkspace(current.cwd));
       if (turn.proposalDraft) turn.proposalDraft = { ...turn.proposalDraft, checkoutCwd: workCwd };
@@ -82,12 +115,38 @@ export function startSubmittedTurn(
                     : block,
                 ),
                 worktreeBase: undefined,
+                worktreeRepositories: undefined,
+                worktreeSlug: undefined,
                 worktreePreparing: undefined,
               }
             : session,
         ),
       );
       notifyReviewChanged(sessionId);
+      if (workspace) {
+        // In parallel with the turn; failure keeps the temporary name. Host-run sessions are
+        // renamed by the Host engine.
+        void renameFirstSendBranch({ session: current, workspace, prompt: text }).then(
+          (renamed) => {
+            if (!renamed) return;
+            setSessions((prev) =>
+              prev.map((session) =>
+                session.id === sessionId && session.workspaceId === workspace.id
+                  ? {
+                      ...session,
+                      branch: renamed.branch,
+                      // The rename bumped the workspace revision; later mutations expect it.
+                      ...(renamed.revision !== undefined
+                        ? { workspaceRevision: renamed.revision }
+                        : {}),
+                    }
+                  : session,
+              ),
+            );
+          },
+          (error: unknown) => console.warn("App operation failed", error),
+        );
+      }
     }
     launchTitleGeneration(workCwd);
     if (turnGen.current.get(sessionId) !== gen) return;
@@ -195,7 +254,7 @@ export function startSubmittedTurn(
       turn.controlOutcome = {
         status: "failed",
         text: turn.controlText,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorText(error),
       };
       if (turnGen.current.get(sessionId) === gen) {
         enqueueHarnessEvent(sessionId, {

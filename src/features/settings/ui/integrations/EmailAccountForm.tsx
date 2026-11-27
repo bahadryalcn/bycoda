@@ -8,7 +8,7 @@ import { PasswordField } from "../../../../shared/ui/PasswordField";
 import { Select } from "../../../../shared/ui/Select";
 import { TextField } from "../../../../shared/ui/TextField";
 import { ExternalLink } from "../../../../shared/ui/icons";
-import { AdvancedSettings, Row, Toggle } from "../../../../shared/ui/settings";
+import { Row, Toggle } from "../../../../shared/ui/settings";
 import {
   APP_PASSWORD_PAGES,
   applyEmailPreset,
@@ -151,8 +151,18 @@ export function EmailAccountForm({ account, onSaved, onCancel, onSavingChange }:
       ) : null}
       {server("imap")}
       {server("smtp")}
-      <Row stacked label={t("Username")} info={t("Leave empty to sign in with the email address.")}>
+      <Row stacked label={t("Username")}>
         {field("username", t("Username"), t("Same as the email address"), true)}
+      </Row>
+      <Row stacked label={t("Display name")}>
+        <TextField
+          label={t("Display name")}
+          hideLabel
+          value={draft.displayName}
+          onChange={(event) => set("displayName", event.target.value)}
+          autoComplete="name"
+          disabled={saving}
+        />
       </Row>
       {microsoft ? (
         <Row
@@ -200,15 +210,6 @@ export function EmailAccountForm({ account, onSaved, onCancel, onSavingChange }:
             placeholder="name@example.com"
             autoComplete="email"
             spellCheck={false}
-            disabled={saving}
-          />
-          <TextField
-            label={t("Display name")}
-            aria-label={t("Display name")}
-            value={draft.displayName}
-            onChange={(event) => set("displayName", event.target.value)}
-            placeholder={t("Name shown to recipients")}
-            autoComplete="name"
             disabled={saving}
           />
           {draft.auth !== "password" ? null : (
@@ -284,7 +285,6 @@ export function EmailAccountForm({ account, onSaved, onCancel, onSavingChange }:
             fallback={
               googleChoice
                 ? {
-                    hint: t("Can't sign in with Google?"),
                     action: t("Use an app password instead"),
                     onSelect: () => set("auth", "password"),
                   }
@@ -301,17 +301,7 @@ export function EmailAccountForm({ account, onSaved, onCancel, onSavingChange }:
           />
         </Row>
       ) : null}
-      {draft.preset === "custom" ? (
-        serverRows
-      ) : (
-        <AdvancedSettings
-          title={googleChoice ? t("Advanced") : t("Server settings")}
-          defaultOpen={false}
-          keepMounted
-        >
-          {serverRows}
-        </AdvancedSettings>
-      )}
+      {serverRows}
       <AccountFormActions
         saving={saving}
         error={error}

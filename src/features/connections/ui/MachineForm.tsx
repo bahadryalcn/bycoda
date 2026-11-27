@@ -1,16 +1,14 @@
 import { Code } from "../../../shared/ui/Code";
-import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
-import { Heading } from "../../../shared/ui/Heading";
-import { Badge } from "../../../shared/ui/Badge";
+import { useId } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { ModalActions } from "../../../shared/ui/Modal";
+import { ModalActions, ModalFooter } from "../../../shared/ui/Modal";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { PasswordField } from "../../../shared/ui/PasswordField";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
-import { Surface } from "../../../shared/ui/Surface";
 import { TextField } from "../../../shared/ui/TextField";
 import { t } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -39,31 +37,10 @@ function SshHelp({ editing }: { editing: boolean }) {
   return (
     <InfoPopover label={t("Connection help")} width={360}>
       <p>
-        {editing
-          ? t("Changes apply to this machine. To connect a different computer, choose Add machine.")
-          : t(
-              "Connect a different computer with its own SSH address. Existing machines stay saved.",
-            )}
-      </p>
-      <p>
         {t("A hostname works too, such as a Mac's Bonjour name (")}
         <Code>{"user@MacBook-Pro.local"}</Code>
         {t(") or an alias from")} <Code>{"~/.ssh/config"}</Code>
         {t(". Then the address does not need editing when the IP changes.")}
-      </p>
-      <p>
-        {t(
-          "Optional fallback for this same machine, such as its Tailscale address. If the first address cannot connect,",
-        )}{" "}
-        {PRODUCT_IDENTITY.displayName}
-        {t(
-          " automatically tries this one. Both addresses stay saved and use the same SSH port. The other address is checked against this machine's known host key.",
-        )}
-      </p>
-      <p>
-        {t(
-          "Enable SSH on the target computer and make sure this computer can reach it with your SSH key or password. Sign in to the agent provider on the target computer before running agents.",
-        )}
       </p>
       {editing ? (
         <p>
@@ -72,23 +49,19 @@ function SshHelp({ editing }: { editing: boolean }) {
           )}
         </p>
       ) : (
-        <>
-          <p>
-            {PRODUCT_IDENTITY.displayName}
-            {t(
-              " installs and starts its background host, then connects securely. Your SSH keys and config are used automatically. Enable SSH on the host and sign in to Codex or Claude Code there. On Windows and Mac, keep the host’s desktop account signed in and the machine awake. Locking the desktop is fine.",
-            )}
-          </p>
-          <p>
-            {t(
-              "On Linux, setup installs a systemd user service and turns on lingering for your account (",
-            )}
-            <Code>{"loginctl enable-linger"}</Code>
-            {t(
-              "), so the host and your other user services keep running after you log out. The host keeps running until you stop it on that machine; removing it here only disconnects this desktop.",
-            )}
-          </p>
-        </>
+        <p>
+          {PRODUCT_IDENTITY.displayName}
+          {t(
+            " installs and starts its background host, then connects securely. Your SSH keys and config are used automatically. Enable SSH on the host and sign in to Codex or Claude Code there. On Windows and Mac, keep the host’s desktop account signed in and the machine awake. Locking the desktop is fine.",
+          )}{" "}
+          {t(
+            "On Linux, setup installs a systemd user service and turns on lingering for your account (",
+          )}
+          <Code>{"loginctl enable-linger"}</Code>
+          {t(
+            "), so the host and your other user services keep running after you log out. The host keeps running until you stop it on that machine; removing it here only disconnects this desktop.",
+          )}
+        </p>
       )}
     </InfoPopover>
   );
@@ -127,14 +100,11 @@ function SshFields({
             stableWidth
             type="button"
             disabled={busy}
-            tooltip={t("Fills the address. Nothing is saved or tested until you save.")}
             onClick={() => onChange({ target: suggestion })}
             variant="secondary"
             align="start"
           >
-            {t("Use ")}
-            {suggestion}
-            {t(" instead of the IP")}
+            {t("Use {p0} instead of the IP", { p0: suggestion })}
           </Button>
         )}
       </div>
@@ -159,9 +129,6 @@ function SshFields({
           value={draft.remotePort}
           onChange={(event) => onChange({ remotePort: event.target.value })}
           label={t("Host port")}
-          description={t(
-            "The Host service port on this machine, separate from the SSH port. Saving reconnects to this port without changing the service. Reconnects keep this value.",
-          )}
           fieldClassName="min-w-0 flex-1"
         />
       ) : null}
@@ -182,7 +149,7 @@ function SshFields({
           label={t("Other address (optional)")}
           fieldClassName="min-w-0 flex-1"
         />
-        <div className="max-w-40">
+        <div className="max-w-56">
           <NumberField
             disabled={busy}
             min={1}
@@ -230,109 +197,118 @@ export function MachineForm({
   onTokenChange: (token: string) => void;
   busy: boolean;
   error: string;
-  saveLabel: string;
+  saveLabel: "Save" | "Save and reconnect";
   onSubmit: () => void;
   onCancel: () => void;
 }) {
+  const formId = useId();
+  // A failure is "reason" + blank line + "cause": the cause waits behind Details.
+  const [errorReason = "", ...errorRest] = error.split("\n\n");
+  const errorCause = errorRest.join("\n\n").trim();
   const ssh = Boolean(editing) || method === "ssh";
-  const title = editing ? t("Edit {p0}", { p0: editing.name }) : t("Add a new machine");
+  const title = editing ? t("Edit {p0}", { p0: editing.name }) : t("Add a computer");
+  const editAction = saveLabel === "Save" ? t("Save") : t("Save and reconnect");
+  const actions = (
+    <ModalActions inline={!editing}>
+      <Button stableWidth type="button" disabled={busy} onClick={onCancel} variant="ghost">
+        {t("Cancel")}
+      </Button>
+      <Button
+        loading={busy}
+        loadingLabel={editing ? t("Saving…") : t("Connecting…")}
+        disabled={busy || (ssh ? !draft.target.trim() : !url.trim() || !token)}
+        disabledReason={
+          busy
+            ? undefined
+            : ssh && !draft.target.trim()
+              ? t("Enter an SSH target")
+              : !ssh && !url.trim()
+                ? t("Enter the Host URL")
+                : !ssh && !token
+                  ? t("Enter the device token")
+                  : undefined
+        }
+        variant="primary"
+        type="submit"
+        form={formId}
+      >
+        {editing ? editAction : t("Connect")}
+      </Button>
+    </ModalActions>
+  );
   return (
     <form
       key={editing?.id ?? "new-machine"}
+      id={formId}
       aria-label={title}
+      className="flex flex-col gap-4"
       onSubmit={(event) => {
         event.preventDefault();
         onSubmit();
       }}
     >
-      <Surface variant="card" padding="lg" className="flex flex-col gap-4">
-        <div className="flex items-center justify-between gap-2">
-          <Heading size="item">{title}</Heading>
-          {ssh ? (
-            <div className="flex items-center gap-1">
-              <Badge size="sm">{"SSH"}</Badge>
-              <SshHelp editing={Boolean(editing)} />
-            </div>
-          ) : null}
-        </div>
-        {!editing ? (
-          <div className="flex">
-            <RadioGroup
-              variant="inline"
-              label={t("Connection method")}
-              disabled={busy}
-              value={method}
-              onValueChange={(next) => onMethodChange(next === "url" ? "url" : "ssh")}
-              options={[
-                { value: "ssh", label: t("SSH") },
-                { value: "url", label: t("Host URL") },
-              ]}
-            />
-          </div>
-        ) : null}
-        <Text as="p" tone="muted">
-          {editing
-            ? saveLabel === "Save"
-              ? t("Saving changes the machine name without reconnecting.")
-              : t("Saving reconnects this machine with the updated address.")
-            : ssh
-              ? t("Installs bycoda Host over SSH so you can run agents on this machine.")
-              : t("Enter the host URL and a device token issued by that host.")}
-        </Text>
-        {ssh ? (
-          <SshFields
-            draft={draft}
-            editing={Boolean(editing)}
-            busy={busy}
-            suggestion={suggestion}
-            onChange={onDraftChange}
+      {!editing ? (
+        <div className="flex items-center justify-between gap-3">
+          {/* In a dialog the method choice already says SSH; its help ends the row, apart from the toggle. */}
+          <RadioGroup
+            variant="inline"
+            label={t("Connection method")}
+            disabled={busy}
+            value={method}
+            onValueChange={(next) => onMethodChange(next === "url" ? "url" : "ssh")}
+            options={[
+              { value: "ssh", label: t("SSH") },
+              { value: "url", label: t("Host URL") },
+            ]}
           />
-        ) : (
-          <>
-            <TextField
-              required
-              disabled={busy}
-              type="url"
-              autoComplete="url"
-              spellCheck={false}
-              value={url}
-              onChange={(event) => onUrlChange(event.target.value)}
-              label={t("Host URL")}
-              fieldClassName="min-w-0 flex-1"
-            />
-            <PasswordField
-              label={t("Device token")}
-              required
-              disabled={busy}
-              autoComplete="off"
-              value={token}
-              onChange={(event) => onTokenChange(event.target.value)}
-            />
-          </>
-        )}
-        {error && <Alert tone="danger">{error}</Alert>}
-        <ModalActions inline>
-          <Button stableWidth type="button" disabled={busy} onClick={onCancel} variant="secondary">
-            {t("Cancel")}
-          </Button>
-          <Button
-            stableWidth
-            reserveLabels={[t("Saving…"), t("Connecting…")]}
-            loading={busy}
-            disabled={busy || (ssh ? !draft.target.trim() : !url.trim() || !token)}
-            variant="primary"
-            type="submit"
-          >
-            {editing
-              ? busy
-                ? t("Saving…")
-                : t(saveLabel)
-              : busy
-                ? t("Connecting…")
-                : t("Connect")}
-          </Button>
-        </ModalActions>
-      </Surface>
+          {ssh ? <SshHelp editing={false} /> : null}
+        </div>
+      ) : null}
+      {editing ? (
+        <div className="flex justify-end">
+          <SshHelp editing />
+        </div>
+      ) : null}
+      {ssh ? (
+        <SshFields
+          draft={draft}
+          editing={Boolean(editing)}
+          busy={busy}
+          suggestion={suggestion}
+          onChange={onDraftChange}
+        />
+      ) : (
+        <>
+          <TextField
+            required
+            disabled={busy}
+            type="url"
+            autoComplete="url"
+            spellCheck={false}
+            value={url}
+            onChange={(event) => onUrlChange(event.target.value)}
+            label={t("Host URL")}
+            fieldClassName="min-w-0 flex-1"
+          />
+          <PasswordField
+            label={t("Device token")}
+            required
+            disabled={busy}
+            autoComplete="off"
+            value={token}
+            onChange={(event) => onTokenChange(event.target.value)}
+          />
+        </>
+      )}
+      {error && (
+        <Alert
+          tone="danger"
+          extra={errorCause ? <ErrorDetails title={errorReason} detail={errorCause} /> : undefined}
+        >
+          {errorReason}
+        </Alert>
+      )}
+      {editing ? <ModalFooter>{actions}</ModalFooter> : actions}
     </form>
   );
 }

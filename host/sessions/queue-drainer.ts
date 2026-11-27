@@ -331,15 +331,16 @@ export function queueRowCommands(
 ): Record<string, unknown>[] {
   const commandId = `queue-drain:${sessionId}:${row.id}`;
   const commands: Record<string, unknown>[] = [];
+  // A row's account applies only when it switches provider. On the same provider the
+  // conversation's current account wins: the owner may have switched after a usage limit.
+  const switchesProvider = !!row.modelTarget && row.modelTarget.harness !== session.harness;
   if (
     row.modelTarget &&
-    (!sameQueuedModelTarget(row.modelTarget, {
+    !sameQueuedModelTarget(row.modelTarget, {
       harness: session.harness as never,
       model: session.model,
       modelSettings: session.modelSettings as never,
-    }) ||
-      (row.modelTarget.providerAccountId !== undefined &&
-        row.modelTarget.providerAccountId !== session.providerAccountId))
+    })
   )
     commands.push({
       type: "configure",
@@ -348,8 +349,8 @@ export function queueRowCommands(
       harness: row.modelTarget.harness,
       model: row.modelTarget.model,
       modelSettings: row.modelTarget.modelSettings,
-      // A row without its own account keeps the session account.
-      ...(row.modelTarget.providerAccountId !== undefined
+      // A row without its own account, or on the same provider, keeps the session account.
+      ...(switchesProvider && row.modelTarget.providerAccountId !== undefined
         ? { providerAccountId: row.modelTarget.providerAccountId }
         : {}),
       runtimeMode: session.runtimeMode,

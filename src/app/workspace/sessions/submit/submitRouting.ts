@@ -1,7 +1,7 @@
 import type { SubmitDeps, SubmitInput } from "./submitTypes";
 import { hostSessionBinding } from "../../../../features/connections/model/sessionExecutionBinding";
 
-import { remoteProjectFor } from "../../../../features/connections/model/remoteProjects";
+import { remoteSessionProject } from "../../../../features/connections/model/sessionMachineTarget";
 import { remoteSessionActions } from "../../../../features/connections/model/remoteSessionActions";
 import {
   sharedLocalQueueClaiming,
@@ -9,6 +9,7 @@ import {
 } from "../../../../features/connections/model/useSharedLocalQueues";
 import { sessionsRef } from "../../../../features/sessions/model/sessionsStore";
 import { t } from "../../../../shared/i18n";
+import { toast } from "../../../../shared/ui/ToastRegion";
 import { showSubmitNotice } from "./submitNotice";
 import { prepareSubmitPreflight } from "./submitPreflight";
 import { queueWhileStarting } from "./submitStarting";
@@ -76,6 +77,26 @@ export function routeSubmitSession(
   const loading = sessionsRef.current.find(
     (session) => session.id === sessionId && session.historyLoading,
   );
+  if (loading?.storedHistory && ctx.ensureSessionHistoryForExecution) {
+    const unavailable = () => {
+      const error = t("Earlier messages could not be loaded.");
+      options?.onSendRejected?.();
+      options?.onSettled?.({ status: "failed", text: "", error });
+      toast.show({ tone: "warning", message: error });
+      return false;
+    };
+    const generation = turnGen.current.get(sessionId);
+    return ctx.ensureSessionHistoryForExecution(sessionId).then(async (ready) => {
+      if (!ready) return unavailable();
+      if (turnGen.current.get(sessionId) !== generation) {
+        options?.onSendRejected?.();
+        return false;
+      }
+      const accepted = await getSubmitSessionRef().current(sessionId, text, attachments, options);
+      if (!accepted) options?.onSendRejected?.();
+      return accepted;
+    }, unavailable);
+  }
   if (loading)
     return refuse(
       loading.historyLoadError
@@ -83,7 +104,7 @@ export function routeSubmitSession(
         : t("This conversation is still loading. Send again in a moment."),
     );
   const remote = sessionsRef.current.find((session) => session.id === sessionId);
-  if (remote && (hostSessionBinding(remote) || remoteProjectFor(remote.cwd))) {
+  if (remote && (hostSessionBinding(remote) || remoteSessionProject(remote))) {
     const actions = remoteSessionActions(sessionId);
     if (!actions)
       return refuse(

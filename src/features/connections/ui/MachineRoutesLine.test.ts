@@ -55,6 +55,11 @@ const answer = (routes: unknown) => (command: string) =>
   Promise.resolve(command === "remote_machine_route_check" ? CHECKS : routes);
 const row = (address: string) =>
   container.querySelector(`[data-route="${address}"]`)?.textContent ?? "";
+/** The status marks of a row: icons whose accessible name is the status. */
+const marks = (address: string) =>
+  [...container.querySelectorAll(`[data-route="${address}"] [role="img"]`)].map((mark) =>
+    mark.getAttribute("aria-label"),
+  );
 
 it("explains failed route reads and retries without claiming an empty route store", async () => {
   invoke.mockRejectedValue(new Error("Host unavailable"));
@@ -118,12 +123,13 @@ it("lists every address with its kind, source, whether it responds and the one i
   });
   expect(invoke).toHaveBeenCalledWith("remote_machine_route_check", { target: machine.ssh });
   expect(row("100.97.82.0")).toContain("Tailscale · SSH address");
-  expect(row("100.97.82.0")).toContain("No response");
+  expect(marks("100.97.82.0")).toContain("No response");
   expect(row("192.168.2.145")).toContain("Home network · Other address");
-  expect(row("192.168.2.145")).toContain("In use");
-  expect(row("192.168.2.145")).toContain("Responds");
+  expect(marks("192.168.2.145")).toContain("In use");
+  // Only problems and the address in use carry a mark; a healthy or switched-off row stays quiet.
+  expect(marks("192.168.2.145")).not.toContain("Responds");
   expect(row("10.0.0.4")).toContain("Found by the host");
-  expect(row("192.168.95.2")).toContain("Off");
+  expect(row("192.168.95.2")).not.toContain("Off");
   // Only addresses the host found can be turned off; the owner edits the other two.
   expect(container.querySelectorAll('[role="switch"]')).toHaveLength(2);
   expect(container.querySelector('[data-route="192.168.2.145"] [role="switch"]')).toBeNull();
@@ -159,10 +165,40 @@ it("saves a turned-off address without moving the rows", async () => {
   expect(order()).toEqual(before);
 });
 
-it("shows only the saved other address when the desktop cannot answer", async () => {
-  invoke.mockRejectedValue(new Error("no desktop"));
+it("shows the shared error message and keeps the confirmed setting when saving fails", async () => {
+  invoke.mockImplementation(answer(ROUTES));
   await render();
-  expect(container.textContent).toBe("Other address · me@192.168.2.145");
+  invoke.mockRejectedValue(new Error("Could not save the route preference"));
+  const toggle = container.querySelector<HTMLButtonElement>(
+    '[data-route="10.0.0.4"] [role="switch"]',
+  )!;
+  await act(async () => toggle.click());
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not change this address.",
+  );
+  expect(container.querySelector('[role="alert"]')?.textContent).not.toContain(
+    "Could not save the route preference",
+  );
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+});
+
+it("shows only the saved other address when the desktop lacks the route command", async () => {
+  invoke.mockImplementation((command: string) =>
+    command === "remote_machine_routes"
+      ? Promise.reject("Command remote_machine_routes not found")
+      : Promise.resolve([]),
+  );
+  await render();
+  expect(container.textContent).toBe("Other address: me@192.168.2.145");
+  expect(container.textContent).not.toContain("could not be loaded");
+  expect(container.querySelector("button")).toBeNull();
+});
+
+it("reports a real read failure whose text merely mentions a missing address", async () => {
+  invoke.mockRejectedValue(new Error("SSH config entry not found for no desktop box"));
+  await render();
+  expect(container.textContent).toContain("Addresses could not be loaded.");
+  expect(container.textContent).toContain("Retry");
 });
 
 it("lists an account Quick Tunnel as a Tunnel route found automatically, and marks it in use", async () => {
@@ -177,8 +213,8 @@ it("lists an account Quick Tunnel as a Tunnel route found automatically, and mar
   invoke.mockImplementation(answer(withTunnel));
   await render();
   expect(row("calm-river.trycloudflare.com")).toContain("Tunnel · Found automatically");
-  expect(row("calm-river.trycloudflare.com")).toContain("In use");
-  expect(row("192.168.2.145")).not.toContain("In use");
+  expect(marks("calm-river.trycloudflare.com")).toContain("In use");
+  expect(marks("192.168.2.145")).not.toContain("In use");
   // What the account taught cannot be switched off; the host's own addresses keep their switches.
   expect(
     container.querySelector('[data-route="calm-river.trycloudflare.com"] [role="switch"]'),

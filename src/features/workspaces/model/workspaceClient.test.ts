@@ -9,6 +9,7 @@ import {
   resolveWorkspaceContext,
   workspaceRequest,
   WorkspaceCapabilityError,
+  WorkspaceProjectRequiredError,
 } from "./workspaceClient";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -32,6 +33,12 @@ beforeEach(() => {
     "workspaces.policy.v1",
     "workspaces.delivery.v1",
   ]);
+});
+
+it.each(["", "  ", "~"])("rejects projectless paths before querying the Host (%j)", async (cwd) => {
+  await expect(resolveWorkspaceContext(cwd)).rejects.toBeInstanceOf(WorkspaceProjectRequiredError);
+  expect(invoke).not.toHaveBeenCalled();
+  expect(hostProjectFor).not.toHaveBeenCalled();
 });
 
 it("resolves real host IDs and sends owner writes over authenticated transport", async () => {

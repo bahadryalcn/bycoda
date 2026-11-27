@@ -149,12 +149,12 @@ export const scenarios: Record<string, Scenario> = {
   tasksBoard: {
     url: "/tests/browser/render-budget/tasks.html?sprintSeed",
     prepare: async (page) => {
-      // The populated board is the Backlog tab across all projects; the toolbar New task lives there only.
-      await page.getByRole("tab", { name: "Backlog", exact: true }).click({ timeout: 120_000 });
-      // Project scope lives in the toolbar's Scope popover.
+      // The populated board is the Tasks tab across all projects; the toolbar New task lives there only.
+      await page.getByRole("tab", { name: "Tasks", exact: true }).click({ timeout: 120_000 });
+      // Project scope lives in the toolbar's Filter popover.
       await page
         .locator("header.task-board-toolbar")
-        .getByRole("button", { name: "Scope", exact: true })
+        .getByRole("button", { name: "Filter", exact: true })
         .click();
       await page.getByRole("button", { name: /^Project:/ }).click();
       await page.getByRole("option", { name: "All projects", exact: true }).click();

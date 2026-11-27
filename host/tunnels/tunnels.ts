@@ -8,6 +8,7 @@ import {
   TUNNEL_PROVIDERS,
   TUNNEL_ISSUES,
   TunnelError,
+  tailscaleApprovalUrl,
   tunnelActive,
   tunnelLocalUrl,
   tunnelPublicUrl,
@@ -16,7 +17,9 @@ import {
   type TunnelProvider,
   type TunnelStart,
 } from "../../src/integrations/external-tunnels";
+import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
 import { OsSocialCredentials, type SocialCredentialStore } from "../social/social-credentials";
+import { availableFunnelPort, readServeConfig } from "./tailscale-funnel";
 import { startTunnelGuardian, type OwnedTunnelProcess } from "./tunnel-process";
 import {
   probeTunnelOrigin,
@@ -29,12 +32,21 @@ import {
 type Dependencies = {
   credentials: SocialCredentialStore;
   executable: (provider: TunnelProvider) => Promise<string | undefined>;
-  install: () => Promise<string>;
+  install: (signal: AbortSignal) => Promise<string>;
   probe: (url: string) => Promise<boolean>;
+  /** The Funnel port the user's Serve/Funnel configuration leaves free. */
+  funnelPort: (program: string) => Promise<number | undefined>;
   launch: (command: TunnelCommand, emit: (event: TunnelEvent) => void) => OwnedTunnelProcess;
+  /** Loopback ports a dev-server tunnel may never expose (the Host's own listener). */
+  reservedPorts: () => string[];
 };
 const MAX_RECORDS = 32;
 const MAX_ACTIVE = 4;
+/** Automatic Host access checks every 5 s but starts a tunnel at most this often, doubling to the cap. */
+const AUTOMATIC_RETRY_MS = 5_000;
+const AUTOMATIC_MAX_RETRY_MS = 300_000;
+/** A tunnel ready this long resets the backoff. */
+const AUTOMATIC_STABLE_MS = 60_000;
 
 function tunnelCredentials(directory: string, environmentId: string): SocialCredentialStore {
   const vault = new OsSocialCredentials(directory, `${environmentId}.tunnels`);
@@ -109,17 +121,27 @@ async function pruneCorruptCopies(directory: string): Promise<void> {
     await rm(join(directory, name), { force: true });
 }
 
+/** A start whose CLI download runs outside the control lane; its identity fences the launch. */
+type PendingInstall = { abort: AbortController };
+
 /** Host-owned control lane. A manifest contains no tokens or reusable PID authority. */
 export class ExternalTunnels {
   private records: ExternalTunnel[] = [];
   private owned = new Map<string, OwnedTunnelProcess>();
+  /** Records still preparing their CLI. They are stoppable but own no process yet. */
+  private pending = new Map<string, PendingInstall>();
+  private installTail: Promise<unknown> = Promise.resolve();
   private queue: Promise<unknown> = Promise.resolve();
   private initialization?: Promise<void>;
   private initialized = false;
   private closing = false;
   private repair?: TunnelRepair;
   private automaticHostAccess = false;
+  private phonesOverPublic = false;
   private automaticTimer?: ReturnType<typeof setTimeout>;
+  private automaticFailures = 0;
+  private automaticNotBefore = 0;
+  private automaticReadySince?: number;
   private readonly dependencies: Dependencies;
 
   constructor(
@@ -131,8 +153,10 @@ export class ExternalTunnels {
     this.dependencies = {
       credentials: tunnelCredentials(join(directory, "credentials"), environmentId),
       executable: tunnelExecutable,
-      install: () => installCloudflared(join(directory, "bin")),
+      install: (signal) => installCloudflared(join(directory, "bin"), signal),
       probe: probeTunnelOrigin,
+      funnelPort: async (program) => availableFunnelPort(await readServeConfig(program)),
+      reservedPorts: () => [],
       launch: startTunnelGuardian,
       ...dependencies,
     };
@@ -142,6 +166,29 @@ export class ExternalTunnels {
     const task = this.queue.then(operation, operation);
     this.queue = task.catch(() => {});
     return task;
+  }
+
+  /** A record that holds a process or is still preparing one. */
+  private active(id: string): boolean {
+    return this.owned.has(id) || this.pending.has(id);
+  }
+
+  /** Runs outside the control lane, one download at a time so a cancelled one unwinds first. */
+  private installCli(signal: AbortSignal): Promise<string> {
+    const run = this.installTail.then(() => {
+      signal.throwIfAborted();
+      return this.dependencies.install(signal);
+    });
+    this.installTail = run.catch(() => {});
+    return run;
+  }
+
+  private cancelPending(record: ExternalTunnel, install: PendingInstall): void {
+    this.pending.delete(record.id);
+    install.abort.abort();
+    record.state = "stopped";
+    delete record.issue;
+    delete record.publicUrl;
   }
 
   private async initialize(): Promise<void> {
@@ -157,6 +204,16 @@ export class ExternalTunnels {
         });
         if (setting.status === "corrupt") throw new Error("Invalid automatic tunnel setting");
         this.automaticHostAccess = setting.value ?? false;
+        // Never on by default; damaged or unreadable state counts as off until the owner sets it.
+        this.phonesOverPublic = await readStateFile(join(this.directory, "phones.json"), (text) => {
+          const value = JSON.parse(text);
+          if (value.environmentId !== this.environmentId || typeof value.enabled !== "boolean")
+            throw new Error("Invalid public phone setting");
+          return value.enabled as boolean;
+        }).then(
+          (phones) => phones.status === "ok" && phones.value === true,
+          () => false,
+        );
       } catch {
         throw new TunnelError("storage-unavailable");
       }
@@ -190,14 +247,37 @@ export class ExternalTunnels {
   private async reconcileAutomatic(): Promise<void> {
     if (this.closing || !this.automaticHostAccess) return;
     // Unknown retirement retains ownership and blocks a replacement.
-    if (
-      this.records.some(
-        (record) =>
-          record.provider === "cloudflare" && record.target === "host" && this.owned.has(record.id),
-      )
-    )
+    const owned = this.records.find(
+      (record) =>
+        record.provider === "cloudflare" && record.target === "host" && this.active(record.id),
+    );
+    if (owned) {
+      if (owned.state !== "ready") this.automaticReadySince = undefined;
+      else {
+        this.automaticReadySince ??= monotonicNow();
+        // A tunnel that stayed up proves the last failures are over.
+        if (elapsedSince(this.automaticReadySince) >= AUTOMATIC_STABLE_MS)
+          this.resetAutomaticBackoff();
+      }
       return;
-    await this.start({ provider: "cloudflare", target: "host" });
+    }
+    this.automaticReadySince = undefined;
+    if (monotonicNow() < this.automaticNotBefore) return;
+    // Every attempt that has not yet proven stable widens the wait: 5 s, 10 s ... 5 min.
+    this.automaticFailures++;
+    this.automaticNotBefore =
+      monotonicNow() +
+      Math.min(AUTOMATIC_RETRY_MS * 2 ** (this.automaticFailures - 1), AUTOMATIC_MAX_RETRY_MS);
+    const attempt = await this.start({ provider: "cloudflare", target: "host" });
+    // Without the CLI each retry would run the installer again; wait the longest time.
+    if (attempt.issue === "cli-missing")
+      this.automaticNotBefore = monotonicNow() + AUTOMATIC_MAX_RETRY_MS;
+  }
+
+  private resetAutomaticBackoff(): void {
+    this.automaticFailures = 0;
+    this.automaticNotBefore = 0;
+    this.automaticReadySince = undefined;
   }
 
   private async setAutomatic(enabled: boolean): Promise<void> {
@@ -210,7 +290,47 @@ export class ExternalTunnels {
       { mode: 0o600 },
     );
     this.automaticHostAccess = enabled;
+    // The owner acted: start over instead of waiting out an earlier backoff.
+    this.resetAutomaticBackoff();
     this.scheduleAutomatic();
+  }
+
+  /** Whether phones may connect through public tunnels. Read at request time by the ingress. */
+  allowsPhonesOverPublic(): boolean {
+    return this.phonesOverPublic;
+  }
+
+  /** Owner-only. Writes first, so a failed write leaves the setting unchanged. */
+  setPhonesOverPublic(input: Record<string, unknown>): Promise<{ phonesOverPublic: boolean }> {
+    return this.serialized(async () => {
+      await this.initialize();
+      if (typeof input.enabled !== "boolean") throw new TunnelError("invalid-target");
+      try {
+        await writeFileAtomic(
+          join(this.directory, "phones.json"),
+          JSON.stringify({ environmentId: this.environmentId, enabled: input.enabled }),
+          { mode: 0o600 },
+        );
+      } catch {
+        throw new TunnelError("storage-unavailable");
+      }
+      this.phonesOverPublic = input.enabled;
+      return { phonesOverPublic: this.phonesOverPublic };
+    });
+  }
+
+  /** Live public Host addresses a phone may use; none unless the owner allowed it. */
+  publicPhoneUrls(): string[] {
+    if (!this.phonesOverPublic) return [];
+    return this.records
+      .filter(
+        (record) =>
+          record.target === "host" &&
+          record.state === "ready" &&
+          this.owned.has(record.id) &&
+          record.publicUrl?.startsWith("https://"),
+      )
+      .map((record) => record.publicUrl!);
   }
 
   /** Only a live, owned Host tunnel may be advertised. */
@@ -338,7 +458,7 @@ export class ExternalTunnels {
       const providers = await Promise.all(
         TUNNEL_PROVIDERS.map(async (provider) => {
           const installed = !!(await this.dependencies.executable(provider).catch(() => undefined));
-          if (provider === "cloudflare")
+          if (provider !== "ngrok")
             return { provider, installed, credential: "not-required" as const };
           try {
             const credential = await this.dependencies.credentials.get("ngrok");
@@ -354,10 +474,11 @@ export class ExternalTunnels {
       );
       return {
         automaticHostAccess: this.automaticHostAccess,
+        phonesOverPublic: this.phonesOverPublic,
         environmentId: this.environmentId,
         hostLocalUrl: tunnelLocalUrl(this.hostUrl()),
         providers,
-        tunnels: this.records.map((record) => ({ ...record, canStop: this.owned.has(record.id) })),
+        tunnels: this.records.map((record) => ({ ...record, canStop: this.active(record.id) })),
         publicReachability: "unverified",
         ...(this.repair ? { repair: { ...this.repair } } : {}),
       };
@@ -382,85 +503,146 @@ export class ExternalTunnels {
     });
   }
 
-  start(input: Record<string, unknown> | TunnelStart): Promise<ExternalTunnel> {
-    return this.serialized(async () => {
-      await this.initialize();
-      if (this.closing) throw new TunnelError("process-error");
-      if (
-        !TUNNEL_PROVIDERS.includes(input.provider as TunnelProvider) ||
-        !["host", "dev-server"].includes(String(input.target))
-      )
+  /** The CLI download runs between two lane turns, so status and stop stay responsive meanwhile. */
+  async start(input: Record<string, unknown> | TunnelStart): Promise<ExternalTunnel> {
+    const begun = await this.serialized(() => this.begin(input));
+    if (!begun.install) return begun.record;
+    const { record, install } = begun;
+    let program: string | undefined;
+    try {
+      program = await this.installCli(install.abort.signal);
+    } catch {
+      // A failed or cancelled download leaves no program; finish decides which it was.
+    }
+    return this.serialized(() => this.finish(record, install, program));
+  }
+
+  /** Lane turn two: launch only if this exact preparation is still the live one. */
+  private async finish(
+    record: ExternalTunnel,
+    install: PendingInstall,
+    program: string | undefined,
+  ): Promise<ExternalTunnel> {
+    // Stopped or closed during the download: the stopper already recorded the outcome.
+    if (this.pending.get(record.id) !== install) return { ...record };
+    if (this.closing) {
+      this.cancelPending(record, install);
+      return { ...record };
+    }
+    this.pending.delete(record.id);
+    return this.launchRecord(record, program);
+  }
+
+  private async failRecord(
+    record: ExternalTunnel,
+    issue: ExternalTunnel["issue"],
+  ): Promise<ExternalTunnel> {
+    record.state = "error";
+    record.issue = issue;
+    await this.persist();
+    return { ...record };
+  }
+
+  private async begin(
+    input: Record<string, unknown> | TunnelStart,
+  ): Promise<{ record: ExternalTunnel; install?: PendingInstall }> {
+    await this.initialize();
+    if (this.closing) throw new TunnelError("process-error");
+    if (
+      !TUNNEL_PROVIDERS.includes(input.provider as TunnelProvider) ||
+      !["host", "dev-server"].includes(String(input.target))
+    )
+      throw new TunnelError("invalid-target");
+    const provider = input.provider as TunnelProvider;
+    const target = input.target as TunnelStart["target"];
+    // Funnel publishes this Host only; a dev server is never put on the internet through it.
+    if (provider === "tailscale" && target !== "host") throw new TunnelError("invalid-target");
+    if (input.automatic !== undefined) {
+      if (input.automatic !== true || provider !== "cloudflare" || target !== "host")
         throw new TunnelError("invalid-target");
-      const provider = input.provider as TunnelProvider;
-      const target = input.target as TunnelStart["target"];
-      if (input.automatic !== undefined) {
-        if (input.automatic !== true || provider !== "cloudflare" || target !== "host")
-          throw new TunnelError("invalid-target");
-      }
-      const host = tunnelLocalUrl(this.hostUrl());
-      const localUrl = target === "host" ? host : tunnelLocalUrl(input.localUrl);
-      if (
-        target === "host" &&
-        input.localUrl !== undefined &&
-        tunnelLocalUrl(input.localUrl) !== host
-      )
-        throw new TunnelError("invalid-target");
-      const hostPort = new URL(host).port || "80";
-      const localPort = new URL(localUrl).port || (localUrl.startsWith("https:") ? "443" : "80");
-      if (target === "dev-server" && localPort === hostPort)
-        throw new TunnelError("host-target-required");
-      if (input.automatic === true) await this.setAutomatic(true);
-      const existing = this.records.find(
-        (record) =>
-          this.owned.has(record.id) &&
-          record.provider === provider &&
-          record.target === target &&
-          record.localUrl === localUrl,
-      );
-      if (existing) return { ...existing };
-      if (this.owned.size >= MAX_ACTIVE) throw new TunnelError("process-error");
-      const record: ExternalTunnel = {
-        id: randomUUID(),
-        provider,
-        target,
-        localUrl,
-        state: "starting",
-        startedAt: Date.now(),
-      };
-      while (this.records.length >= MAX_RECORDS) {
-        const removable = this.records.findIndex((entry) => !this.owned.has(entry.id));
-        if (removable < 0) throw new TunnelError("process-error");
-        this.records.splice(removable, 1);
-      }
-      this.records.push(record);
-      const fail = async (issue: ExternalTunnel["issue"]) => {
-        record.state = "error";
-        record.issue = issue;
-        await this.persist();
-        return { ...record };
-      };
-      let program: string | undefined;
+    }
+    const host = tunnelLocalUrl(this.hostUrl());
+    const localUrl = target === "host" ? host : tunnelLocalUrl(input.localUrl);
+    if (
+      target === "host" &&
+      input.localUrl !== undefined &&
+      tunnelLocalUrl(input.localUrl) !== host
+    )
+      throw new TunnelError("invalid-target");
+    const hostPort = new URL(host).port || "80";
+    const localPort = new URL(localUrl).port || (localUrl.startsWith("https:") ? "443" : "80");
+    if (
+      target === "dev-server" &&
+      (localPort === hostPort || this.dependencies.reservedPorts().includes(localPort))
+    )
+      throw new TunnelError("host-target-required");
+    if (input.automatic === true) await this.setAutomatic(true);
+    // A start still preparing its CLI counts: a second request joins it, never a second download.
+    const existing = this.records.find(
+      (record) =>
+        this.active(record.id) &&
+        record.provider === provider &&
+        record.target === target &&
+        record.localUrl === localUrl,
+    );
+    if (existing) return { record: { ...existing } };
+    if (this.owned.size + this.pending.size >= MAX_ACTIVE) throw new TunnelError("process-error");
+    const record: ExternalTunnel = {
+      id: randomUUID(),
+      provider,
+      target,
+      localUrl,
+      state: "starting",
+      startedAt: Date.now(),
+    };
+    while (this.records.length >= MAX_RECORDS) {
+      const removable = this.records.findIndex((entry) => !this.active(entry.id));
+      if (removable < 0) throw new TunnelError("process-error");
+      this.records.splice(removable, 1);
+    }
+    this.records.push(record);
+    let program: string | undefined;
+    try {
+      program = await this.dependencies.executable(provider);
+    } catch {
+      return { record: await this.failRecord(record, "cli-missing") };
+    }
+    if (!program && provider === "cloudflare") {
+      // Release the lane: status and stop must not wait for the download.
+      const install: PendingInstall = { abort: new AbortController() };
+      this.pending.set(record.id, install);
+      return { record, install };
+    }
+    return { record: await this.launchRecord(record, program) };
+  }
+
+  /** Lane work shared by both start turns: credential, origin probe, config, launch. */
+  private async launchRecord(
+    record: ExternalTunnel,
+    program: string | undefined,
+  ): Promise<ExternalTunnel> {
+    const { provider, localUrl } = record;
+    if (!program) return this.failRecord(record, "cli-missing");
+    let token: string | undefined;
+    if (provider === "ngrok") {
       try {
-        program = await this.dependencies.executable(provider);
-        if (!program && provider === "cloudflare") program = await this.dependencies.install();
+        token = (await this.dependencies.credentials.get("ngrok"))?.accessToken;
       } catch {
-        return fail("cli-missing");
+        return this.failRecord(record, "credential-store-unavailable");
       }
-      if (!program) return fail("cli-missing");
-      let token: string | undefined;
-      if (provider === "ngrok") {
-        try {
-          token = (await this.dependencies.credentials.get("ngrok"))?.accessToken;
-        } catch {
-          return fail("credential-store-unavailable");
-        }
-        if (!token) return fail("credential-missing");
-      }
-      if (!(await this.dependencies.probe(localUrl).catch(() => false)))
-        return fail("origin-unreachable");
-      const config = join(this.directory, `${provider}.yml`);
-      try {
-        // Configs isolate global CLI settings and contain no credentials.
+      if (!token) return this.failRecord(record, "credential-missing");
+    }
+    if (!(await this.dependencies.probe(localUrl).catch(() => false)))
+      return this.failRecord(record, "origin-unreachable");
+    let funnelPort: number | undefined;
+    if (provider === "tailscale") {
+      funnelPort = await this.dependencies.funnelPort(program).catch(() => undefined);
+      if (!funnelPort) return this.failRecord(record, "connection-failed");
+    }
+    const config = join(this.directory, `${provider}.yml`);
+    try {
+      // Configs isolate global CLI settings and contain no credentials.
+      if (provider !== "tailscale")
         await writeFile(
           config,
           provider === "ngrok"
@@ -468,32 +650,31 @@ export class ExternalTunnels {
             : "{}\n",
           { mode: 0o600 },
         );
-        await this.persist();
-      } catch {
-        return fail("storage-unavailable");
-      }
-      try {
-        const child = this.dependencies.launch(
-          tunnelCommand(provider, program, localUrl, config, token),
-          (event) => {
-            void this.serialized(() => this.event(record.id, event)).catch(() => {
-              // Fail closed if recording state becomes impossible.
-              record.state = "error";
-              record.issue = "storage-unavailable";
-              delete record.publicUrl;
-              void this.owned
-                .get(record.id)
-                ?.stop()
-                .catch(() => {});
-            });
-          },
-        );
-        this.owned.set(record.id, child);
-      } catch {
-        return fail("process-error");
-      }
-      return { ...record };
-    });
+      await this.persist();
+    } catch {
+      return this.failRecord(record, "storage-unavailable");
+    }
+    try {
+      const child = this.dependencies.launch(
+        tunnelCommand(provider, program, localUrl, config, token, funnelPort),
+        (event) => {
+          void this.serialized(() => this.event(record.id, event)).catch(() => {
+            // Fail closed if recording state becomes impossible.
+            record.state = "error";
+            record.issue = "storage-unavailable";
+            delete record.publicUrl;
+            void this.owned
+              .get(record.id)
+              ?.stop()
+              .catch(() => {});
+          });
+        },
+      );
+      this.owned.set(record.id, child);
+    } catch {
+      return this.failRecord(record, "process-error");
+    }
+    return { ...record };
   }
 
   private async event(id: string, event: TunnelEvent): Promise<void> {
@@ -507,6 +688,11 @@ export class ExternalTunnels {
     } else if (event.type === "error" && record.state !== "stopping") {
       record.state = "error";
       record.issue ??= TUNNEL_ISSUES.includes(event.issue) ? event.issue : "process-error";
+      const approvalUrl =
+        record.issue === "approval-required" && typeof event.approvalUrl === "string"
+          ? tailscaleApprovalUrl(event.approvalUrl)
+          : undefined;
+      if (approvalUrl) record.approvalUrl = approvalUrl;
       delete record.publicUrl;
       // Do not await here: exit events also use the serialized control lane.
       void this.owned
@@ -540,7 +726,7 @@ export class ExternalTunnels {
         await this.setAutomatic(false);
         const active = this.records.find(
           (entry) =>
-            entry.provider === "cloudflare" && entry.target === "host" && this.owned.has(entry.id),
+            entry.provider === "cloudflare" && entry.target === "host" && this.active(entry.id),
         );
         if (active) input = { ...input, id: active.id };
         else
@@ -557,6 +743,13 @@ export class ExternalTunnels {
       if (!record) throw new TunnelError("invalid-target");
       if (record.provider === "cloudflare" && record.target === "host" && this.automaticHostAccess)
         await this.setAutomatic(false);
+      const preparing = this.pending.get(record.id);
+      if (preparing) {
+        // No process exists yet: cancelling the preparation fences the launch.
+        this.cancelPending(record, preparing);
+        await this.persist();
+        return { ...record };
+      }
       const child = this.owned.get(record.id);
       if (!child) return { ...record }; // Restarted records convey no authority to kill.
       record.state = "stopping";
@@ -581,6 +774,14 @@ export class ExternalTunnels {
     this.closing = true;
     clearTimeout(this.automaticTimer);
     return this.serialized(async () => {
+      for (const [id, install] of Array.from(this.pending)) {
+        const record = this.records.find((entry) => entry.id === id);
+        if (record) this.cancelPending(record, install);
+        else {
+          this.pending.delete(id);
+          install.abort.abort();
+        }
+      }
       for (const [id, child] of this.owned) {
         const record = this.records.find((entry) => entry.id === id)!;
         delete record.publicUrl;

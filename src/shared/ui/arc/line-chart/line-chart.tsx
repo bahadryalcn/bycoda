@@ -28,6 +28,8 @@ import {
   type MotionValue,
 } from "motion/react";
 import { motionTokens } from "../lib/motion-tokens";
+import { useStableCallback } from "../../../hooks/useStableCallback";
+import { useHoverIntent } from "../../Tooltip";
 import styles from "./line-chart.module.css";
 
 export interface LineChartSeries {
@@ -42,7 +44,7 @@ export interface LineChartSeries {
   /** Stroke pattern, so series differ by more than color. Overrides `dashed`. When omitted, a chart with several series
    *  and no explicit `dashed` assigns solid, dashed, then dotted in series order. */
   pattern?: "solid" | "dash" | "dot";
-  /** Fills the area under the line with a faint tint of its color. Defaults to true for the first series. */
+  /** Fills the area under the line. Defaults to a neutral fill for the first series only; `true` tints the fill with this series' own color (translucent, so overlapping series stay readable), `false` draws none. */
   area?: boolean;
 }
 
@@ -380,12 +382,10 @@ export function LineChart({
   const scale = { min: useMotionValue(steady.min), max: useMotionValue(steady.max) };
 
   // Scrubbing: a new range lets go of the crosshair.
-  const [active, setActive] = useState<number | null>(null);
-  const [seenSignature, setSeenSignature] = useState(signature);
-  if (seenSignature !== signature) {
-    setSeenSignature(signature);
-    setActive(null);
-  }
+  const { anchor: active, close, scheduleOpen } = useHoverIntent<number>();
+  const resetActive = useStableCallback(close);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- cancels the hover-intent timer and reading when the chart range changes
+  useLayoutEffect(() => resetActive(), [signature, resetActive]);
   const index = active === null || empty ? null : Math.min(active, last);
   const scrubbing = index !== null;
 
@@ -610,9 +610,9 @@ export function LineChart({
     return clamp(Math.round(((clientX - rect.left) / rect.width) * last), 0, last);
   };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "Escape" && scrubbing) {
-      event.preventDefault();
-      setActive(null);
+    if (event.key === "Escape") {
+      if (scrubbing) event.preventDefault();
+      close();
       return;
     }
     const from = index ?? last + 1,
@@ -631,16 +631,17 @@ export function LineChart({
     )[event.key];
     if (next === undefined || empty) return;
     event.preventDefault();
-    setActive(clamp(next, 0, last));
+    scheduleOpen(clamp(next, 0, last), 0);
   };
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (empty) return;
     if (event.pointerType !== "mouse") event.currentTarget.setPointerCapture?.(event.pointerId);
-    setActive(pointAt(event.clientX));
+    scheduleOpen(pointAt(event.clientX), 0);
   };
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    if (!empty && (event.pointerType === "mouse" || event.buttons))
-      setActive(pointAt(event.clientX));
+    if (empty) return;
+    if (event.buttons) scheduleOpen(pointAt(event.clientX), 0);
+    else if (event.pointerType === "mouse") scheduleOpen(pointAt(event.clientX));
   };
 
   const format = (value: number, line: LineChartSeries) =>
@@ -708,17 +709,17 @@ export function LineChart({
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={(event) => {
-            if (event.pointerType !== "mouse") setActive(null);
+            if (event.pointerType !== "mouse") close();
           }}
-          onPointerCancel={() => setActive(null)}
+          onPointerCancel={close}
           onPointerLeave={(event) => {
-            if (event.pointerType === "mouse") setActive(null);
+            if (event.pointerType === "mouse") close();
           }}
           onKeyDown={onKeyDown}
-          onBlur={() => setActive(null)}
+          onBlur={close}
           onFocus={(event) => {
             if (event.currentTarget.matches(":focus-visible") && !empty)
-              setActive((current) => current ?? last);
+              scheduleOpen(active ?? last, 0);
           }}
         >
           <svg
@@ -763,6 +764,7 @@ export function LineChart({
                         else areas.current.delete(line.key);
                       }}
                       className={styles.area}
+                      data-tint={line.area === true || undefined}
                     />
                   )}
                   <path

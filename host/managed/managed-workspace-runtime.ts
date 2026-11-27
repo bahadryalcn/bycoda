@@ -19,14 +19,16 @@ import {
   createExecutionActivityReservations,
   createWorkspaceRemovalService,
   retentionSourceClean,
+  type WorkspaceCleanupDependencies,
 } from "../workspace-cleanup";
 import {
   createWorkspaceRetentionScheduler,
   measureWorkspaceStorage,
   workspaceRetentionEligibility,
 } from "../workspaces/workspace-retention";
-import { managedWorkspaceRoot } from "../git/git-worktrees";
+import { deleteStaleFetchRefs, managedWorkspaceRoot } from "../git/git-worktrees";
 import { hostGitRepositoryKey } from "../git/git-mutations";
+import { setManagedBranchRegistry } from "../git/git-actions";
 import { GitTurnHistory, gitText } from "../git/turn-git-history";
 import { HostBranchDeliveryService } from "../git/branch-delivery";
 import { GhRuntime } from "../git/gh-runtime";
@@ -34,7 +36,7 @@ import { WorkspaceBootstrapService } from "../workspaces/workspace-bootstrap";
 import { createManagedNativeTurns } from "./managed-native-turns";
 import { createManagedNativeRewind } from "./managed-native-rewind";
 import { createManagedNativeActivity } from "./managed-native-activity";
-import { createNativeBufferPersistence } from "../native-buffer/native-buffer-persistence-factory";
+import { removeRetiredNativeBufferFiles } from "../storage/retired-native-buffer-cleanup";
 import { createExactGitRewindPolicy } from "../git/exact-git-rewind";
 
 export { workspacePathKey } from "../workspaces/workspace-paths";
@@ -48,6 +50,9 @@ export function createManagedWorkspaceRuntime(
   engine: HostEngine,
   options: {
     probe?(workspace: ManagedWorkspace): Promise<WorkspaceActivity[]>;
+    withRemovalLease?: WorkspaceCleanupDependencies["withRemovalLease"];
+    deferRemovalRecovery?(operationId: string): void;
+    retryDeferredRemovals?(): Promise<void>;
     artifactPending?(workspaceId: string, completedDeliveryOperationId?: string): Promise<boolean>;
     canReconcileActivity?(activity: WorkspaceActivity): Promise<boolean>;
     afterNativeReceiptSaved?(): Promise<void>;
@@ -56,6 +61,11 @@ export function createManagedWorkspaceRuntime(
   const root = join(dirname(store.attachmentDir), "managed-workspaces");
   const exactGitRewind = createExactGitRewindPolicy(root);
   const policy = createWorkspacePolicyResolver(store);
+  setManagedBranchRegistry(async (cwd, branchRef) =>
+    (await store.managedWorkspaces({ repositoryId: await hostGitRepositoryKey(cwd) })).some(
+      (workspace) => workspace.branchRef === branchRef,
+    ),
+  );
   let started = false;
   const startupRecovery = new AsyncLocalStorage<boolean>();
   const authorities = new Set<WorkspaceOwnerAuthorization>();
@@ -88,10 +98,8 @@ export function createManagedWorkspaceRuntime(
           }
         }),
     );
-  const probe = async (workspaceId: string) => [
-    ...((await options.probe?.(await get(workspaceId))) ?? []),
-    ...(await nativeActivity.probe(workspaceId)),
-  ];
+  const probe = async (workspaceId: string) =>
+    (await options.probe?.(await get(workspaceId))) ?? [];
   const pending = async (workspaceId: string, except?: string) => {
     const candidate = except ? await store.workspaceOperation(except) : null;
     const completedDelivery =
@@ -170,6 +178,12 @@ export function createManagedWorkspaceRuntime(
     assertWritable,
     authorizeOwner: async (owner) => authorized(owner),
     isActive: async (workspace) => (await activity.list(workspace.id)).length > 0,
+    // The owning session's own provider activity (its running first turn and branch-naming
+    // job) must not block the rename that turn itself asks for.
+    isActiveForRename: async (workspace) =>
+      (await activity.list(workspace.id)).some(
+        (entry) => !(entry.kind === "provider" && entry.ownerId === workspace.owner.id),
+      ),
     canRetireMissing: async (workspace) =>
       (await activity.list(workspace.id)).every((entry) => entry.kind === "editor"),
     verifyReservation: (request) => activity.verifyReservation(request),
@@ -219,7 +233,6 @@ export function createManagedWorkspaceRuntime(
   };
   const history = new GitTurnHistory({ root, workspace });
   const nativeActivity = createManagedNativeActivity({
-    bufferPersistence: createNativeBufferPersistence(store),
     exactGitRewindEnabled: exactGitRewind.enabled,
     root,
     workspace,
@@ -270,9 +283,11 @@ export function createManagedWorkspaceRuntime(
   const currentPolicy = async (value: ManagedWorkspace) => (await policy.resolve(value)).policy;
   const removal = createWorkspaceRemovalService({
     assertAuthorized: () => store.db.checkAuthorization(),
+    withRemovalLease: options.withRemovalLease,
     recoveryBookkeeping: (work) => store.db.runRecoveryBookkeeping(work),
     registry,
     reservations: activity,
+    siblings: (value) => store.workspaceSiblings({ workspaceId: value.id, committedOnly: true }),
     location: async (value) => ({
       projectCwd: (await store.project(value.projectId)).cwd,
       managedRoot: dirname(value.path),
@@ -289,6 +304,7 @@ export function createManagedWorkspaceRuntime(
     policy: currentPolicy,
     removal,
     sourceClean: (workspace) => retentionSourceClean(workspace.path),
+    retryDeferredRemovals: options.retryDeferredRemovals,
     onError: () => console.warn("Managed workspace retention is pending"),
   });
   for (const action of ["finish", "close"] as const) {
@@ -340,6 +356,7 @@ export function createManagedWorkspaceRuntime(
         throw new Error("Session managed workspace identity changed");
       return { workspaceId: id, path: registered.path };
     },
+    renameBranch: (request) => registry.renameBranch(request),
     prepareWorkspaceForCreate: async (request) => {
       const resolved = await policy.resolve({
         projectId: request.projectId,
@@ -492,49 +509,102 @@ export function createManagedWorkspaceRuntime(
         return registry.retarget(request, owner);
       },
     },
-    async recover(reconcileDelivery?: (workspaceId: string) => Promise<unknown>) {
+    /** `step` times each named step; boot passes a phase timer, other callers run plain. */
+    async recover(
+      reconcileDelivery?: (workspaceId: string) => Promise<unknown>,
+      step: <T>(name: string, work: () => Promise<T>) => Promise<T> = (_name, work) => work(),
+    ) {
       const initialStartup = !started;
-      // Actual process-startup data migration completes before server admission
-      // or managed writes. It never reconstructs Native actors or freshness.
-      if (initialStartup) await nativeActivity.initializeBufferRetention();
       // Settle only unfenced prior Host turns. The AsyncLocal scope admits startup
       // normalization without exposing managed writes to any transport or caller.
-      if (initialStartup) await startupRecovery.run(true, () => engine.recoverManagedStartup());
-      for (const operation of await registry.listOperations())
-        if (
-          operation.phase !== "complete" ||
-          (operation.kind === "rewind" && !(operation as { finalized?: boolean }).finalized)
-        )
-          await activity.reconcilePreviousActivities({
-            workspaceId: operation.workspaceId,
-            operationId: operation.id,
-          });
-      const reconciled = await activity.reconcilePreviousActivities();
-      for (const blocked of reconciled.blocked)
-        console.warn(
-          `Workspace activity ${blocked.activityId} from a previous Host run was kept: ${blocked.reason}`,
+      if (initialStartup)
+        await step("startup-turns", () =>
+          startupRecovery.run(true, () => engine.recoverManagedStartup()),
         );
-      const results = (await exactGitRewind.enabled()) ? await rewind.recoverPending() : [];
-      for (const operation of await registry.listOperations()) {
-        if (operation.kind === "rewind") continue;
-        try {
-          if (operation.kind === "create" && operation.phase !== "complete")
-            await registry.recoverCreate(operation.id);
-          else if (operation.kind === "delivery") {
-            if (operation.phase !== "complete") await delivery.recover(operation.id);
-            await reconcileDelivery?.(operation.workspaceId);
-          } else if (operation.kind === "removal" && operation.phase !== "complete")
-            await removal.recover(operation.id);
-        } catch (error) {
-          results.push({
-            operationId: operation.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
+      await step("activities", async () => {
+        for (const operation of await registry.listOperations())
+          if (
+            operation.phase !== "complete" ||
+            (operation.kind === "rewind" && !(operation as { finalized?: boolean }).finalized)
+          )
+            await activity.reconcilePreviousActivities({
+              workspaceId: operation.workspaceId,
+              operationId: operation.id,
+            });
+        const reconciled = await activity.reconcilePreviousActivities();
+        for (const blocked of reconciled.blocked)
+          console.warn(
+            `Workspace activity ${blocked.activityId} from a previous Host run was kept: ${blocked.reason}`,
+          );
+      });
+      const results = await step("rewind", async () =>
+        (await exactGitRewind.enabled()) ? await rewind.recoverPending() : [],
+      );
+      if (initialStartup)
+        await step("fetch-refs", async () => {
+          // Best effort and isolated per repository: a crash can leave fetch landing refs behind.
+          const repositories = new Set<string>();
+          for (const project of await store.projects()) repositories.add(project.cwd);
+          for (const workspace of await list())
+            for (const sibling of await store.workspaceSiblings({
+              workspaceId: workspace.id,
+              committedOnly: true,
+            }))
+              repositories.add(sibling.repository);
+          for (const repository of repositories)
+            await deleteStaleFetchRefs(repository).catch(() => undefined);
+        });
+      // Before the operation loop: a crash mid-rename must settle before anything reads branches.
+      await step("branch-renames", () => registry.recoverBranchRenames());
+      await step("operations", async () => {
+        for (const operation of await registry.listOperations()) {
+          if (operation.kind === "rewind") continue;
+          try {
+            if (
+              operation.kind === "create" &&
+              operation.phase === "blocked" &&
+              // Classification failure keeps the ordinary recovery below.
+              (await registry
+                .abandonUnmaterializedCreate(operation.workspaceId, false)
+                .catch(() => null))
+            ) {
+              // Nothing reached Git, so a retry only repeats the failed creation under the
+              // repository's Git lock and held the Host's listen for every boot. It stays
+              // recorded and fenced until its owner retries the request or cleans it up.
+              const error = `Workspace creation is blocked until its owner retries or cleans it up: ${operation.error?.message ?? "materialization failed"}`;
+              console.warn(`Workspace creation ${operation.id} was kept: ${error}`);
+              results.push({ operationId: operation.id, error });
+            } else if (operation.kind === "create" && operation.phase !== "complete")
+              await registry.recoverCreate(operation.id);
+            else if (operation.kind === "delivery") {
+              if (operation.phase !== "complete") await delivery.recover(operation.id);
+              await reconcileDelivery?.(operation.workspaceId);
+            } else if (operation.kind === "removal" && operation.phase !== "complete")
+              await removal.recover(operation.id);
+          } catch (error) {
+            if (initialStartup && operation.kind === "removal")
+              options.deferRemovalRecovery?.(operation.id);
+            results.push({
+              operationId: operation.id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
         }
-      }
-      await activity.recoverOrphanReservations();
+      });
+      // One indexed query, not a receipt probe per completed creation.
+      await step("sibling-journal", () => registry.recoverSiblings());
+      await step("orphan-reservations", () => activity.recoverOrphanReservations());
+      // One-time removal of the retired native buffer directories; failures log and retry
+      // on the next start, never blocking boot.
+      if (initialStartup)
+        await step("retired-native-buffer-files", () =>
+          removeRetiredNativeBufferFiles(dirname(store.attachmentDir), root),
+        );
       started = true;
-      if (initialStartup) await startupRecovery.run(true, () => engine.recoverManagedStartup());
+      if (initialStartup)
+        await step("startup-turns-final", () =>
+          startupRecovery.run(true, () => engine.recoverManagedStartup()),
+        );
       return results;
     },
     async prepareBootstrap(request: Parameters<typeof bootstrap.prepare>[0]) {

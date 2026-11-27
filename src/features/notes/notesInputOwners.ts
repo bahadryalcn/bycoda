@@ -14,6 +14,7 @@ import {
 import { copyNativeCaptureData, isNativeCaptureObject } from "../../shared/lib/native-capture-json";
 
 export type NoteInputWork = NativeInputWork;
+type SizedInput = { text: string; bytes: number };
 type Port = {
   key: string;
   generation: number;
@@ -21,6 +22,8 @@ type Port = {
   controls: NativeInputControls;
   acknowledgedDraft?: { raw: unknown; value: unknown };
   retainedBytes: number;
+  sizedInput?: SizedInput;
+  previousSizedInput?: SizedInput;
   blocked: boolean;
 };
 export const NOTE_PRIVATE_INPUT_LIMITS = Object.freeze({ records: 64, bytes: 64 * 1024 * 1024 });
@@ -41,6 +44,14 @@ const privateEncoder = new TextEncoder();
 export function canRetainNoteInputText(observer: NativeInputObserver | undefined, text: string) {
   const actual = observer && observerOwners.get(observer);
   return actual ? actual.owner.canRetainText(actual.key, text) : true;
+}
+/**
+ * The same admission as `canRetainNoteInputText` for a CodeMirror document whose exact UTF-8 size
+ * the editor already tracks, so no keystroke has to serialize or encode the whole document.
+ */
+export function canRetainNoteInputBytes(observer: NativeInputObserver | undefined, bytes: number) {
+  const actual = observer && observerOwners.get(observer);
+  return actual ? actual.owner.canRetainBytes(actual.key, bytes) : true;
 }
 const normalizeViewText = (text: string) => text.replace(/\r\n?/g, "\n");
 function privateText(snapshot: Record<string, unknown>): string | null {
@@ -349,11 +360,17 @@ export class NoteInputOwner {
         : undefined;
     if (this.retiring && !inherited) return null;
     if (!inherited) {
-      for (const port of this.ports.values()) {
+      const ports = [...this.ports.values()];
+      // The preview range can still reflect the previous render while the source
+      // editor's change schedules its save. Reuse the exact size of that projection.
+      const source = ports.find((port) => port.key === "source");
+      const sourceSize = source?.sizedInput;
+      const previousSourceSize = source?.previousSizedInput;
+      for (const port of ports) {
         if (
           port.blocked ||
-          [...this.ports.values()].filter((entry) => entry.key === port.key).length !== 1 ||
-          !this.reserveInput(port, privateText(port.read().snapshot) ?? "")
+          ports.filter((entry) => entry.key === port.key).length !== 1 ||
+          !this.reserveSnapshot(port, port.read().snapshot, sourceSize, previousSourceSize)
         )
           return null;
       }
@@ -465,6 +482,8 @@ export class NoteInputOwner {
       unapplied = unappliedInput(port.key, value.snapshot, this.read(), port);
       if (!unapplied) return;
       snapshot = copyNativeCaptureData(value.snapshot);
+      // A live editor's size hint is not part of the retained input.
+      delete snapshot.textBytes;
       coverage = copyNativeCaptureData(value.missingCoverage ?? []);
     } catch {
       snapshot = { unavailable: true, retainedInputStatus: "unreadable" };
@@ -485,28 +504,68 @@ export class NoteInputOwner {
     this.retainedCoverage.set(retainedKey, coverage);
   }
   canRetainText(key: string, text: string) {
-    if (!this.allowed()) return false;
+    const port = this.admissionPort(key);
+    return !!port && this.reserveInput(port, text);
+  }
+  /** Admission for a text-editor port (no tag/inline-edit source) from its exact UTF-8 size. */
+  canRetainBytes(key: string, textBytes: number) {
+    const port = this.admissionPort(key);
+    return !!port && this.reserveBytes(port, textBytes, undefined);
+  }
+  private admissionPort(key: string) {
+    if (!this.allowed()) return undefined;
     const matching = [...this.ports.values()].filter((entry) => entry.key === key);
     if (matching.length !== 1) {
       this.budgetError = true;
       notifyPrivateInputs();
-      return false;
+      return undefined;
     }
-    const port = matching[0];
-    return this.reserveInput(port, text);
+    return matching[0];
   }
   private reserveInput(port: Port, text: string) {
-    let snapshot: Record<string, unknown>;
+    let source: unknown;
     try {
-      snapshot = port.read().snapshot;
+      source = port.read().snapshot.source;
     } catch {
-      snapshot = {};
+      source = undefined;
     }
-    const small =
-      snapshot.source === "tag-input" || snapshot.source === "inline-edit" || port.key === "title";
-    const textBytes = privateEncoder.encode(text).byteLength;
-    const requested =
-      (snapshot.source === "tag-input" ? 1280 * 1024 : 8192) + textBytes * (small ? 8 : 3);
+    return this.reserveBytes(port, privateEncoder.encode(text).byteLength, source);
+  }
+  /** Admission from a snapshot already in hand, using the editor's tracked size when it has one. */
+  private reserveSnapshot(
+    port: Port,
+    snapshot: Record<string, unknown>,
+    sourceSize?: SizedInput,
+    previousSourceSize?: SizedInput,
+  ) {
+    const text = privateText(snapshot) ?? "";
+    const tracked =
+      snapshot.inputKind === "codemirror" && typeof snapshot.textBytes === "number"
+        ? snapshot.textBytes
+        : snapshot.inputKind === "preview-range"
+          ? [sourceSize, previousSourceSize].find((sized) => sized?.text === text)?.bytes
+          : undefined;
+    const bytes = tracked ?? privateEncoder.encode(text).byteLength;
+    if (!this.reserveBytes(port, bytes, snapshot.source)) return false;
+    if (port.key === "source" && port.sizedInput?.text !== text) {
+      port.previousSizedInput = port.sizedInput;
+      port.sizedInput = { text, bytes };
+    }
+    return true;
+  }
+  private reserveBytes(port: Port, textBytes: number, source: unknown) {
+    const small = source === "tag-input" || source === "inline-edit" || port.key === "title";
+    const requested = (source === "tag-input" ? 1280 * 1024 : 8192) + textBytes * (small ? 8 : 3);
+    // A document within the reservation this port already holds was admitted against the shared
+    // totals then, and every other admission counts that reservation, so the aggregate scan
+    // below could not change its answer.
+    if (
+      textBytes <= (small ? 1024 * 1024 : 8 * 1024 * 1024) &&
+      requested <= port.retainedBytes &&
+      !port.blocked &&
+      !this.budgetError
+    )
+      return true;
     const usage = [...allOwners].map((owner) => owner.budgetUsage());
     const bytes = usage.reduce((sum, entry) => sum + entry.bytes, 0) - port.retainedBytes;
     const records =
@@ -769,20 +828,22 @@ export class NoteInputOwner {
               }
             }
             this.ports.set(generation, port);
-            let initialText = "";
+            let initial: Record<string, unknown> | undefined;
             try {
-              initialText = privateText(read().snapshot) ?? "";
+              initial = read().snapshot;
             } catch {
               /* failed read stays held */
             }
-            port.blocked = !this.reserveInput(port, initialText);
+            port.blocked = !(initial
+              ? this.reserveSnapshot(port, initial)
+              : this.reserveInput(port, ""));
             if ((this.closed() || port.blocked) && controls.canClose()) controls.close(true);
           });
           const observed = () => {
             try {
               const snapshot = read().snapshot;
               unappliedInput(key, snapshot, this.read(), port);
-              this.reserveInput(port, privateText(snapshot) ?? "");
+              this.reserveSnapshot(port, snapshot);
             } catch {
               /* A failed real read stays unknown. */
             }
@@ -814,8 +875,7 @@ export class NoteInputOwner {
                 notifyPrivateInputs();
                 return null;
               }
-              if (!parent && !this.reserveInput(port, privateText(read().snapshot) ?? ""))
-                return null;
+              if (!parent && !this.reserveSnapshot(port, read().snapshot)) return null;
               return this.operation(kind, parent);
             },
             unregister: () => {
@@ -900,9 +960,6 @@ export function noteInputWorkError(owner: NoteInputOwner = noteActivityOwner()) 
 export function noteWorkOwner(work: NativeInputWork) {
   const scope = tickets.get(work);
   return scope && !scope.finished && !scope.requestedDone ? scope.owner : undefined;
-}
-export function notesInputAllowed() {
-  return noteActivityOwner().allowed();
 }
 
 function samePublicationValue(value: unknown, snapshot: unknown): boolean {

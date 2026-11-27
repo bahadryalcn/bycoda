@@ -100,14 +100,17 @@ describe("media limits per platform", () => {
     expect(mediaProblems("instagram", five.slice(0, 4))).toEqual([]);
   });
 
-  it("asks TikTok and YouTube for exactly one video, never two or a video with an image", () => {
-    for (const platform of ["tiktok", "youtube"] as const) {
-      expect(mediaProblems(platform, [video(), video({}, "v2")])).toEqual([
-        "Attach exactly one video.",
-      ]);
-      expect(mediaProblems(platform, [video(), image("a")])).toEqual(["Attach exactly one video."]);
-      expect(mediaProblems(platform, [video()])).toEqual([]);
-    }
+  it("allows a TikTok carousel, keeps YouTube video-only, and rejects mixed attachments", () => {
+    expect(mediaProblems("youtube", [video(), video({}, "v2")])).toEqual([
+      "Attach exactly one video.",
+    ]);
+    expect(mediaProblems("youtube", [video(), image("a")])).toEqual(["Attach exactly one video."]);
+    expect(mediaProblems("youtube", [video()])).toEqual([]);
+    expect(mediaProblems("tiktok", [video(), image("a")])).toEqual([
+      "Attach one video or up to four TikTok photos.",
+    ]);
+    expect(mediaProblems("tiktok", [image("a"), image("b")])).toEqual([]);
+    expect(mediaProblems("tiktok", [video()])).toEqual([]);
   });
 
   it("has no attachment rule of its own for the other platforms", () => {
@@ -216,6 +219,12 @@ describe("TikTok rules", () => {
     ).toEqual(["Confirm the TikTok content consent."]);
   });
 
+  it("names the post when a TikTok photo is missing its visibility selection", () => {
+    expect(tiktokProblems({ mediaType: "photo", consent: true }, [image("a")])).toEqual([
+      "Choose who can see this post",
+    ]);
+  });
+
   it("allows a video exactly as long as the creator limit and rejects one second more", () => {
     const options = { privacy: "SELF_ONLY", consent: true };
     expect(tiktokProblems(options, [video({ durationSeconds: 60 })], creator)).toEqual([]);
@@ -257,10 +266,12 @@ describe("YouTube and Reddit boundaries", () => {
   });
 
   it("accepts subreddits of 3 to 21 letters, numbers and underscores, trimmed", () => {
-    const connected = ["Reddit posting is not connected to the Host yet."];
-    expect(redditProblems({ subreddit: "abc", flair: "" })).toEqual(connected);
-    expect(redditProblems({ subreddit: "a".repeat(21), flair: "" })).toEqual(connected);
-    expect(redditProblems({ subreddit: " launches ", flair: "" })).toEqual(connected);
+    expect(redditProblems({ subreddit: "abc", flair: "", title: "Update" })).toEqual([]);
+    expect(redditProblems({ subreddit: "a".repeat(21), flair: "", title: "Update" })).toEqual([]);
+    expect(redditProblems({ subreddit: " launches ", flair: "", title: "Update" })).toEqual([]);
+    expect(
+      redditProblems({ subreddit: "u_a-" + "b".repeat(18), flair: "", title: "Update" }),
+    ).toEqual([]);
     for (const subreddit of ["ab", "a".repeat(22), "r/launches", "my-sub", ""])
       expect(redditProblems({ subreddit, flair: "" })[0]).toContain("Choose one subreddit");
   });
@@ -387,7 +398,7 @@ describe("draftProblems per account", () => {
     expect(draftProblems(input(draft, [tt]))).toEqual([]);
   });
 
-  it("keeps a Reddit post blocked even when the subreddit is valid", () => {
+  it("keeps a Reddit post blocked when only the subreddit is filled", () => {
     const reddit = account({ id: "r1", platform: "reddit" });
     expect(
       draftProblems(
@@ -395,7 +406,7 @@ describe("draftProblems per account", () => {
       ),
     ).toEqual([
       {
-        text: "Reddit · reddit account: Reddit posting is not connected to the Host yet.",
+        text: "Reddit · reddit account: Enter a title.",
         accountId: "r1",
       },
     ]);

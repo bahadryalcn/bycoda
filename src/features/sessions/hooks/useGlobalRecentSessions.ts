@@ -1,4 +1,4 @@
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { useGracedFailure } from "../../connections/public/transientFailure";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   finalizeRecentSessionPages,
@@ -7,11 +7,20 @@ import {
   type SessionSummary,
 } from "../data/sessionStore";
 import type { Session } from "../model/session";
-import { buildGlobalRecentSessions, GLOBAL_RECENT_WINDOW_MS } from "../model/globalRecentSessions";
+import {
+  GLOBAL_RECENT_WINDOW_MS,
+  mergeGlobalRecentSessions,
+  withinGlobalRecentWindow,
+} from "../model/globalRecentSessions";
 import { isRemoteProjectPath } from "../../projects/public/recents";
+import { pathKey } from "../../../shared/lib/paths";
+import { remoteSessionFor } from "../../connections/public/connections";
 import { t } from "../../../shared/i18n";
 import { useStableValue } from "../../../shared/hooks/useStableValue";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
+
+const NO_ROWS: SessionSummary[] = [];
+const NO_PROJECTS: readonly string[] = [];
 
 // Summaries contain only small wire metadata, never transcript bodies. Compare
 // nested metadata too: updatedAt alone does not cover pin or provider changes.
@@ -50,6 +59,8 @@ export function useGlobalRecentSessions(
   sessions: readonly Session[],
   enabled: boolean,
   allowedProjectKeys: ReadonlySet<string>,
+  remoteRows: readonly SessionSummary[] = NO_ROWS,
+  freshRemoteProjects: readonly string[] = NO_PROJECTS,
 ): {
   rows: SessionSummary[];
   loading: boolean;
@@ -59,33 +70,50 @@ export function useGlobalRecentSessions(
 } {
   const [stored, setStored] = useState<SessionSummary[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ cause: unknown } | null>(null);
   const [clock, setClock] = useState(() => Date.now());
   const loaded = useRef(false);
   const running = useRef<Promise<void> | null>(null);
   const refreshRun = useRef<(() => void) | null>(null);
   const refresh = useCallback(() => refreshRun.current?.(), []);
-  const projectedRows = useMemo(
-    () => buildGlobalRecentSessions(stored, history, sessions, allowedProjectKeys, clock),
-    [stored, history, sessions, allowedProjectKeys, clock],
-  );
+  const freshKeys = useMemo(() => new Set(freshRemoteProjects.map(pathKey)), [freshRemoteProjects]);
+  // Only the open panel reads the rows, so a closed one builds nothing: tool starts and status
+  // changes in any open session would otherwise re-merge all history and rescan every live
+  // transcript. Opening builds from the current inputs in the same render.
+  const merged = useMemo(() => {
+    if (!enabled) return NO_ROWS;
+    const listedByProject = new Map<string, Set<string>>();
+    for (const row of remoteRows) {
+      const key = pathKey(row.cwd);
+      const ids = listedByProject.get(key) ?? new Set<string>();
+      ids.add(row.id);
+      listedByProject.set(key, ids);
+    }
+    const keep = (row: { cwd: string; id: string }) => {
+      if (!isRemoteProjectPath(row.cwd)) return true;
+      const key = pathKey(row.cwd);
+      return (
+        !freshKeys.has(key) && !listedByProject.get(key)?.has(remoteSessionFor(row.id) ?? row.id)
+      );
+    };
+    return mergeGlobalRecentSessions(
+      stored.filter(keep),
+      [...history.filter(keep), ...remoteRows],
+      sessions.filter(keep),
+      allowedProjectKeys,
+    );
+  }, [enabled, stored, history, sessions, allowedProjectKeys, remoteRows, freshKeys]);
+  const projectedRows = useMemo(() => withinGlobalRecentWindow(merged, clock), [merged, clock]);
   const rows = useStableValue(projectedRows, sameRecentRows);
   const updateClock = useStableCallback(() => {
     const now = Date.now();
-    if (
-      !sameRecentRows(
-        rows,
-        buildGlobalRecentSessions(stored, history, sessions, allowedProjectKeys, now),
-      )
-    ) {
-      setClock(now);
-    }
+    if (!sameRecentRows(rows, withinGlobalRecentWindow(merged, now))) setClock(now);
   });
   const publishStored = useStableCallback((next: SessionSummary[]) => {
     if (!sameRecentRows(stored, next)) setStored(next);
   });
-  const publishError = useStableCallback((next: string | null) => {
-    if (error !== next) setError(next);
+  const clearFailure = useStableCallback(() => {
+    if (failure) setFailure(null);
   });
   const publishLoading = useStableCallback((next: boolean) => {
     if (loading !== next) setLoading(next);
@@ -175,7 +203,7 @@ export function useGlobalRecentSessions(
                 } while (cursor);
                 if (!cancelled) {
                   publishStored(finalizeRecentSessionPages(collected, since));
-                  publishError(null);
+                  clearFailure();
                   loaded.current = true;
                 }
                 return;
@@ -183,10 +211,9 @@ export function useGlobalRecentSessions(
                 if (cancelled) return;
                 if (String(reason).includes("RECENT_SESSIONS_CHANGED")) {
                   if (attempt < 2) continue;
-                  publishError(t("Recent sessions changed while loading. Retry shortly."));
+                  setFailure({ cause: t("Recent sessions changed while loading. Retry shortly.") });
                 } else {
-                  const message = presentRemoteError(reason);
-                  if (message) publishError(message);
+                  setFailure({ cause: reason });
                 }
                 return;
               }
@@ -202,8 +229,7 @@ export function useGlobalRecentSessions(
         };
         void start().catch((reason: unknown) => {
           if (!cancelled) {
-            const message = presentRemoteError(reason);
-            if (message) publishError(message);
+            setFailure({ cause: reason });
             publishLoading(false);
           }
         });
@@ -219,12 +245,17 @@ export function useGlobalRecentSessions(
       cancelRun();
       refreshRun.current = null;
     };
-  }, [enabled, historyKey, publishStored, publishError, publishLoading]);
+  }, [enabled, historyKey, publishStored, clearFailure, publishLoading]);
   const remoteHistoryLimited = useMemo(
-    () => [...allowedProjectKeys].some(isRemoteProjectPath),
-    [allowedProjectKeys],
+    () => [...allowedProjectKeys].some((key) => isRemoteProjectPath(key) && !freshKeys.has(key)),
+    [allowedProjectKeys, freshKeys],
   );
-  const visibleLoading = enabled && loading;
+  const { visibleError, pending } = useGracedFailure({
+    error: enabled ? failure?.cause : undefined,
+    retry: refresh,
+  });
+  const visibleLoading = enabled && (loading || pending);
+  const error = visibleError ?? null;
   return useMemo(
     () => ({ rows, loading: visibleLoading, error, remoteHistoryLimited, refresh }),
     [rows, visibleLoading, error, remoteHistoryLimited, refresh],

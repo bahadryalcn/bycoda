@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { ResourceDiagnostics } from "./resource-diagnostics";
+import { RESOURCE_SAMPLE_LIMIT } from "../../src/shared/diagnostics/resourceSampleLimit";
 
 it("samples only on demand, coalesces requests and bounds history in count and bytes", () => {
   let now = 10_000;
@@ -11,7 +12,7 @@ it("samples only on demand, coalesces requests and bounds history in count and b
     diagnostics.read("device-a");
   }
   const value = diagnostics.read("device-a");
-  expect(value.samples).toHaveLength(60);
+  expect(value.samples).toHaveLength(RESOURCE_SAMPLE_LIMIT);
   expect(Buffer.byteLength(JSON.stringify(value))).toBeLessThan(64 * 1024);
   expect(value.childProcessesIncluded).toBe(false);
   expect(JSON.stringify(value)).not.toContain("device-a");

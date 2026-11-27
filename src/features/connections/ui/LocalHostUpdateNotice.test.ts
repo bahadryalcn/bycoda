@@ -53,6 +53,7 @@ it("explains a deferred host update with both versions and the reason", async ()
   status.value = {
     state: "deferred",
     message: "The host update waits until running sessions finish.",
+    reason: "waiting-for-sessions",
     bundled: "0.5.54",
     installed: "0.5.53",
   };
@@ -60,7 +61,10 @@ it("explains a deferred host update with both versions and the reason", async ()
   expect(text).toContain("A host update is waiting.");
   expect(text).toContain("0.5.53");
   expect(text).toContain("0.5.54");
-  expect(text).toContain("running sessions finish");
+  // The Host's own sentence is behind Details.
+  expect(text).not.toContain("running sessions finish");
+  await act(async () => button("Details")!.click());
+  expect(document.body.textContent).toContain("running sessions finish");
 });
 
 const BUSY = "Could not check whether the host is busy.";
@@ -115,8 +119,10 @@ it("reports a failed update", async () => {
   status.value = { state: "failed", message: "Disk full", bundled: "2", installed: "1" };
   const text = (await render()).textContent ?? "";
   expect(text).toContain("could not be updated");
-  expect(text).toContain("Disk full");
+  expect(text).not.toContain("Disk full");
   expect(text).toContain("1");
+  await act(async () => button("Details")!.click());
+  expect(document.body.textContent).toContain("Disk full");
 });
 
 it("stays silent when the host is current or was just updated", async () => {

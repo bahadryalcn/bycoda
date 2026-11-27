@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { expectLayoutContracts } from "../support/uiLayoutAssertions";
 
 // Fixture evidence for the shared popup stack (Popover, Modal, ConfirmDialog,
 // tooltip). Memory-only page: no Host, clipboard, account or preference action.
@@ -152,7 +153,8 @@ test.describe("modal surface and hierarchy", () => {
         const surface = await bg(page, '[role="dialog"] > .popover-backdrop');
         expect(surface).not.toBe(workbench);
         expect(surface).toBe(popover);
-        if (theme === "light") expect(surface).toBe(await rootBg(page, "--ui-surface-raised"));
+        // Every in-window floating surface shares one theme glass over a blur of the pane.
+        if (theme === "light") expect(surface).toBe(await rootBg(page, "--ui-floating-glass"));
         // A readable boundary at rest: the frame keeps the stroke role.
         const border = await dialog.evaluate((el) => {
           const style = getComputedStyle(el);
@@ -358,7 +360,7 @@ test.describe("tooltip", () => {
     }
     await setup(page, "dark");
     await page.getByTestId("open-modal-sm").click();
-    await page.getByRole("button", { name: "Close" }).focus();
+    await page.getByTestId("dialog-hint-icon").focus();
     await page.keyboard.press("Tab");
     await page.keyboard.press("Shift+Tab");
     await expect(page.getByRole("tooltip")).toBeVisible();
@@ -560,7 +562,7 @@ test.describe("filters", () => {
     await expect(host).toHaveAttribute("data-filter-active", "");
     await expect(trigger).toHaveText("1");
     await shot(page, "filters-git-active", "light", "1280");
-    await panel.getByRole("button", { name: "Reset filter", exact: true }).click();
+    await panel.getByRole("button", { name: "Reset", exact: true }).click();
     await expect(host).not.toHaveAttribute("data-filter-active");
     await page.keyboard.press("Escape");
     await expect(panel).toHaveCount(0);
@@ -583,4 +585,48 @@ test.describe("native popup host routing (fixture-provided host element)", () =>
     await expect(host.getByRole("dialog", { name: "Native dialog" })).toBeVisible();
     expect(await page.locator("body > div > [role='dialog']").count()).toBe(0);
   });
+});
+
+// Runtime layout contracts for the overlay frames: every Modal size and the Sheet keep their
+// content, footer actions and controls inside the frame, reachable and unclipped, in both themes at
+// both window sizes, including after the window shrinks while the overlay is open.
+test.describe("overlay frame layout contracts", () => {
+  for (const theme of THEMES)
+    for (const [width, height] of SIZES)
+      for (const scene of ["modal-sm", "modal-md", "modal-lg", "sheet"]) {
+        test(`${scene} keeps its layout contracts ${theme} ${width}`, async ({ page }) => {
+          await setup(page, theme, width, height);
+          await page.getByTestId(`open-${scene}`).click();
+          const dialog = page.getByRole("dialog");
+          await expect(dialog).toBeVisible();
+          const surface = `overlay-popups ${scene} (${theme} ${width}x${height})`;
+          await expectLayoutContracts(page, {
+            surface,
+            root: '[role="dialog"]',
+            // The modal body is a scroll host by design; only its parts may scroll, not the frame.
+            allow: {},
+          });
+          // The frame itself stays inside the window, measured after its entrance settles.
+          await dialog.evaluate((element) =>
+            Promise.all(
+              element.getAnimations({ subtree: true }).map((animation) => animation.finished),
+            ),
+          );
+          const box = (await dialog.boundingBox())!;
+          expect(box.x, `${surface} left edge`).toBeGreaterThanOrEqual(-1);
+          expect(box.y, `${surface} top edge`).toBeGreaterThanOrEqual(-1);
+          expect(box.x + box.width, `${surface} right edge`).toBeLessThanOrEqual(width + 1);
+          expect(box.y + box.height, `${surface} bottom edge`).toBeLessThanOrEqual(height + 1);
+          // Shrinking the window with the overlay open must not break the contracts.
+          await page.setViewportSize({ width: 800, height: 480 });
+          await expectLayoutContracts(page, {
+            surface: `${surface} after shrink`,
+            root: '[role="dialog"]',
+          });
+          // The last footer action stays reachable by keyboard.
+          const lastAction = dialog.locator("button:visible").last();
+          await lastAction.scrollIntoViewIfNeeded();
+          await expect(lastAction).toBeInViewport();
+        });
+      }
 });

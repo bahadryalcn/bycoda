@@ -6,6 +6,7 @@ import type {
   InboxReplyOptions,
   InboxSettings,
   InboxStatus,
+  InboxTagReceipt,
   InboxUnifiedResult,
   PersonTimeline,
 } from "./inboxTypes";
@@ -55,14 +56,18 @@ export function inboxApi(client: SocialClient) {
         limit: INBOX_PAGE_SIZE,
       }),
     thread: (threadId: string) => call<SocialThread>("thread.read", { id: threadId }),
-    timeline: (personId: string) => call<PersonTimeline>("inbox.timeline", { personId }),
+    timeline: (personId: string, cursor?: string) =>
+      call<PersonTimeline>("inbox.timeline", { personId, ...(cursor ? { cursor } : {}) }),
     replyOptions: (threadId: string) => call<InboxReplyOptions>("inbox.replyOptions", { threadId }),
-    setStatus: (threadId: string, status: InboxStatus, tags?: string[]) =>
-      call<unknown>(
-        "inbox.setStatus",
-        { threadId, status, ...(tags ? { tags } : {}) },
-        newRequestId(),
-      ),
+    /** Sends only the status: the Host keeps the stored tags, so a stale list snapshot is never replayed. */
+    setStatus: (threadId: string, status: InboxStatus) =>
+      call<unknown>("inbox.setStatus", { threadId, status }, newRequestId()),
+    /** Adds one tag against the Host's stored status and tags; sends no status or tag list. */
+    addTag: (threadId: string, tag: string) =>
+      call<InboxTagReceipt>("inbox.setStatus", { threadId, addTags: [tag] }, newRequestId()),
+    /** Removes one tag against the Host's stored status and tags; sends no status or tag list. */
+    removeTag: (threadId: string, tag: string) =>
+      call<InboxTagReceipt>("inbox.setStatus", { threadId, removeTags: [tag] }, newRequestId()),
     suggest: (threadId: string, factIds: string[]) =>
       call<{ text: string; factIds: string[] }>("replies.suggest", { threadId, factIds }),
     setAutoRefresh: (autoRefresh: boolean) =>

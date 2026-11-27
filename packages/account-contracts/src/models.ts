@@ -174,6 +174,32 @@ export const AnonymousPing = z.strictObject({
 });
 export type AnonymousPing = z.infer<typeof AnonymousPing>;
 
+/** Completed UTC days of opt-in Bycoda desktop usage. Costs use millionths of a USD. */
+export const AnonymousUsage = z.strictObject({
+  installId: z.uuid(),
+  days: z
+    .array(
+      z
+        .strictObject({
+          date: LocalDate,
+          tokens: z.number().int().min(1).max(10_000_000_000),
+          estimatedUsdMicros: z.number().int().min(0).max(10_000_000_000),
+          pricedTurns: z.number().int().min(0).max(50_000),
+          unpricedTurns: z.number().int().min(0).max(50_000),
+        })
+        .refine(
+          (day) =>
+            day.pricedTurns + day.unpricedTurns > 0 &&
+            day.pricedTurns + day.unpricedTurns <= 50_000 &&
+            (day.pricedTurns > 0 || day.estimatedUsdMicros === 0),
+        ),
+    )
+    .min(1)
+    .max(7)
+    .refine((days) => new Set(days.map((day) => day.date)).size === days.length),
+});
+export type AnonymousUsage = z.infer<typeof AnonymousUsage>;
+
 export const DataExportRequest = z.strictObject({ format: z.literal("json").default("json") });
 export type DataExportRequest = z.input<typeof DataExportRequest>;
 export const DataExport = z.object({
@@ -330,14 +356,22 @@ function isPrivateIpv4(host: string): boolean {
   if (parts.length !== 4 || parts.some((p) => !/^(0|[1-9]\d{0,2})$/.test(p) || Number(p) > 255))
     return false;
   const [a, b] = parts.map(Number) as [number, number];
-  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+  // RFC1918, or Tailscale's 100.64.0.0/10: reachable only on the home network or the tailnet.
+  return (
+    a === 10 ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 100 && b >= 64 && b <= 127)
+  );
 }
 
-/** `https` origin, or `http` RFC1918 origin that carries a `lanKey`. No credentials, path or query. */
+/** `https` origin, or `http` private-network or tailnet origin that carries a `lanKey`. No credentials, path or query. */
 export const ConnectRoute = z
   .strictObject({
     endpoint: z.string().max(256),
     lanKey: LAN_KEY.optional(),
+    /** A public tunnel address (https only): reachable from the internet, guarded by the device credential alone. */
+    public: z.literal(true).optional(),
   })
   .refine(({ endpoint, lanKey }) => {
     let url: URL;

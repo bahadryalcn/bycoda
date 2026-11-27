@@ -14,7 +14,11 @@ vi.mock("../../../sessions/public/ModelPicker", async () => {
       harness: string;
       model: string;
       allowedHarnesses?: readonly string[];
-      inheritChoice?: { label: string; selected: boolean; onSelect: () => void };
+      inheritChoice?: {
+        label: string;
+        selected: boolean;
+        onSelect: () => void;
+      };
       onChange: (harness: string, model: string) => void;
     }) =>
       h(
@@ -64,7 +68,10 @@ const policies: SocialPolicies = {
     maxCommentCharacters: 120,
   },
   platforms: {
-    youtube: { agent: { provider: "codex", model: "yt-model" }, maxCommentCharacters: 90 },
+    youtube: {
+      agent: { provider: "codex", model: "yt-model" },
+      maxCommentCharacters: 90,
+    },
   },
 };
 
@@ -126,7 +133,10 @@ it("lets a platform follow the all-accounts model again without losing its other
   expect(agent().value).toBe("codex");
   await pickAgent("");
   expect(request).toHaveBeenCalledExactlyOnceWith("policy.saveReviewed", {
-    policies: { ...policies, platforms: { youtube: { maxCommentCharacters: 90 } } },
+    policies: {
+      ...policies,
+      platforms: { youtube: { maxCommentCharacters: 90 } },
+    },
     expectedPolicies: policies,
     confirm: "UPDATE_SOCIAL_POLICY",
   });
@@ -152,7 +162,10 @@ it("names the model and keeps the limits when the all-accounts model is cleared"
   expect(model().value).toBe("owner-model");
   await pickAgent("");
   const [, input] = request.mock.calls[0] as unknown as [string, { policies: SocialPolicies }];
-  expect(input.policies.global).toEqual({ maxContentCharacters: 500, maxCommentCharacters: 120 });
+  expect(input.policies.global).toEqual({
+    maxContentCharacters: 500,
+    maxCommentCharacters: 120,
+  });
   expect(input.policies.platforms).toEqual(policies.platforms);
 });
 
@@ -163,14 +176,13 @@ it("shows the failure and does not refresh when the Host refuses the model", asy
   const onChanged = mount(request);
   await chooseScope("X");
   await pickAgent("codex");
-  expect(element.textContent).toContain("The settings changed on another computer.");
+  expect(element.textContent).toContain("The AI model could not be saved. Try again.");
   expect(onChanged).not.toHaveBeenCalled();
 });
 
 it("says a platform with no model of its own uses the all-accounts one", async () => {
   mount(vi.fn());
   await chooseScope("X");
-  expect(element.textContent).toContain("AI uses this model to write replies, plans and reports.");
   expect(agent().value).toBe("");
   expect(element.textContent).toContain("Use the all-accounts model");
 });

@@ -2,7 +2,6 @@ import { useRef, useState, type ReactNode } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
-import { InlineMessage } from "../../../shared/ui/InlineError";
 import type { ModelRoutingItemChoice } from "../../../shared/model/host-contracts/model-routing";
 import { ModelChoiceField } from "../../model-routing/public/choice";
 import { openModelsSettings } from "../../settings/public/modelsSettingsLink";
@@ -39,7 +38,6 @@ export function CrewBulkModelBar({
 }) {
   const [chosen, setChosen] = useState<CrewCandidate>();
   const [choice, setChoice] = useState<ModelRoutingItemChoice>({ kind: "fixed" });
-  const [applied, setApplied] = useState(false);
   const [pending, setPending] = useState(false);
   const applying = useRef(false);
   const first = catalogModels(catalog)[0];
@@ -52,13 +50,11 @@ export function CrewBulkModelBar({
       return;
     applying.current = true;
     setPending(true);
-    setApplied(false);
     try {
-      const result =
-        choice.kind === "fixed"
-          ? candidate && (await onApply(candidate))
-          : await onApplyChoice?.(choice);
-      setApplied(result !== false);
+      // A model choice is editable and the roster visibly updates, so it applies at once.
+      if (choice.kind === "fixed") {
+        if (candidate) await onApply(candidate);
+      } else await onApplyChoice?.(choice);
     } catch {
       /* Caller owns failure feedback. */
     } finally {
@@ -76,30 +72,27 @@ export function CrewBulkModelBar({
             routingRole="crew.member"
             allowDefault
             value={choice}
-            onChange={(next) => {
-              setChoice(next);
-              setApplied(false);
-            }}
+            onChange={setChoice}
             machineId={machineId}
             supported={supported && !!onApplyChoice}
             disabled={disabled || pending}
             onManage={() => openModelsSettings("order")}
-            fixed={
-              <MemberModelPicker
-                cwd={cwd}
-                value={candidate}
-                onChange={(next) => {
-                  setChosen(next);
-                  setApplied(false);
-                }}
-              />
-            }
+            fixed={<MemberModelPicker cwd={cwd} value={candidate} onChange={setChosen} />}
           />
           <Button
             variant="secondary"
             loading={pending}
             disabled={
               disabled || pending || !targetCount || (choice.kind === "fixed" && !candidate)
+            }
+            disabledReason={
+              !targetCount
+                ? noun === "members"
+                  ? t("Select at least one member first.")
+                  : t("Select at least one profile first.")
+                : choice.kind === "fixed" && !candidate
+                  ? t("Choose a model first.")
+                  : undefined
             }
             onClick={() => {
               void apply();
@@ -115,7 +108,6 @@ export function CrewBulkModelBar({
           </Button>
         </div>
       </FieldGroup>
-      {applied ? <InlineMessage tone="success">{t("Model choice applied.")}</InlineMessage> : null}
     </div>
   );
 }

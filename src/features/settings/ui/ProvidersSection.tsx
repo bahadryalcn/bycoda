@@ -24,7 +24,7 @@ export function ProvidersSection({
   return (
     <>
       <div hidden={activePage !== "providers"}>
-        <ProvidersPageGate cwd={cwd} recents={recents} />
+        <ProvidersPageGate cwd={cwd} recents={recents} visible={activePage === "providers"} />
       </div>
       <div hidden={activePage !== "usage"}>{usageVisited ? <UsagePage /> : null}</div>
     </>

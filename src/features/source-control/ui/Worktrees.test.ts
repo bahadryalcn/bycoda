@@ -13,7 +13,8 @@ vi.mock("../../workspaces/model/workspaceClient", async (original) => ({
     environmentId: "fixture-env",
     machineId: "fixture-machine",
   }),
-  getWorkspaceCapabilities: async () => [],
+  getWorkspaceCapabilities: vi.fn(),
+  workspaceRequest: vi.fn(),
 }));
 
 vi.mock("../model/worktrees", async (original) => ({
@@ -30,6 +31,7 @@ vi.mock("../hooks/useProjectBranches", () => ({
       branches: [{ name: "main", remote: null, current: true }],
     },
     settled: true,
+    unreachable: false,
   })),
 }));
 vi.mock("../../../platform/tauri/fs", async (original) => ({
@@ -72,6 +74,7 @@ import { FolderTree, GitBranch } from "../../../shared/ui/icons";
 import { DeleteWorktreeDialog } from "./DeleteWorktreeDialog";
 import { DeleteSessionDialog } from "../../sessions/ui/DeleteSessionDialog";
 import { WorktreesPage } from "./WorktreesPage";
+import { getWorkspaceCapabilities, workspaceRequest } from "../../workspaces/model/workspaceClient";
 
 // Deletion is an inline row action; a reasoned disabled state stays focusable (aria-disabled).
 function worktreeDelete(scope: ParentNode, selector: string): HTMLButtonElement | null {
@@ -99,6 +102,7 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
+  vi.mocked(getWorkspaceCapabilities).mockResolvedValue([]);
   vi.mocked(checkWorktreeRemoval).mockResolvedValue(undefined);
   vi.mocked(useProjectBranchesState).mockReturnValue({
     branches: {
@@ -107,6 +111,7 @@ beforeEach(() => {
       branches: [{ name: "main", remote: null, current: true }],
     },
     settled: true,
+    unreachable: false,
   });
   vi.mocked(listWorktrees).mockResolvedValue({
     worktrees: [{ ...tree, path: "/repo", branch: "main", isMain: true }, tree],
@@ -137,7 +142,7 @@ async function tooltipText(element: HTMLElement): Promise<string> {
   return text;
 }
 
-/** Visible text of the highlighted working copy option; a fully shown path is not repeated in a hint. */
+/** Visible text of the highlighted working copy option: branch and detail (the path is its hint). */
 function highlightedPath(): string | null {
   const option = document.querySelector<HTMLElement>('[data-active][role="option"]');
   return option?.textContent ?? null;
@@ -177,6 +182,49 @@ it("keeps worktree deletion locked until completion and allows retry after failu
   expect(onDeleted).toHaveBeenCalledOnce();
 });
 
+it("offers branch deletion unchecked by default and disables it for unpushed commits", async () => {
+  const onRemove = vi.fn(async () => {});
+  await act(async () =>
+    root.render(
+      createElement(DeleteWorktreeDialog, {
+        cwd: "/repo",
+        tree,
+        onRemove,
+        onDeleted: vi.fn(),
+        onClose: vi.fn(),
+      }),
+    ),
+  );
+  const box = document.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+  expect(box.checked).toBe(false);
+  expect(box.disabled).toBe(true);
+  expect(document.body.textContent).toContain("Also delete branch feature");
+  expect(document.body.textContent).toContain("It has unpushed commits.");
+  await act(async () => button("Delete worktree").click());
+  expect(onRemove).toHaveBeenCalledExactlyOnceWith("/repo", tree.path, true, false);
+});
+
+it("passes deleteBranch when the checkbox is checked on a pushed branch", async () => {
+  const onRemove = vi.fn(async () => {});
+  await act(async () =>
+    root.render(
+      createElement(DeleteWorktreeDialog, {
+        cwd: "/repo",
+        tree: { ...tree, unpushed: 0 },
+        onRemove,
+        onDeleted: vi.fn(),
+        onClose: vi.fn(),
+      }),
+    ),
+  );
+  const box = document.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+  expect(box.disabled).toBe(false);
+  await act(async () => box.click());
+  expect(box.checked).toBe(true);
+  await act(async () => button("Delete worktree").click());
+  expect(onRemove).toHaveBeenCalledExactlyOnceWith("/repo", tree.path, true, false, true);
+});
+
 it("keeps worktree creation pending until its async completion callback settles", async () => {
   let finish!: () => void;
   const onCreated = vi.fn(
@@ -209,9 +257,9 @@ it("keeps worktree creation pending until its async completion callback settles"
   );
   expect(createWorktree).toHaveBeenCalledWith("/repo", "feature", "HEAD", false);
   expect(onCreated).toHaveBeenCalledWith(tree);
-  expect(button("Create worktree").getAttribute("aria-disabled")).toBe("true");
+  expect(button("Create").getAttribute("aria-disabled")).toBe("true");
   await act(async () => finish());
-  expect(button("Create worktree").getAttribute("aria-disabled")).toBeNull();
+  expect(button("Create").getAttribute("aria-disabled")).toBeNull();
 });
 
 const type = (input: HTMLInputElement, value: string) => {
@@ -235,10 +283,10 @@ const result = (branch = "feature"): Worktrees => ({
 });
 
 it("builds temporary and generated worktree branch names", () => {
-  expect(temporaryWorktreeBranchName("12345678-90ab-cdef-1234-567890abcdef")).toBe("mc/12345678");
-  expect(namedWorktreeBranch("feature/faster-worktrees")).toBe("mc/feature/faster-worktrees");
-  expect(namedWorktreeBranch("bycoda/already-prefixed")).toBe("mc/already-prefixed");
-  expect(namedWorktreeBranch("mc/already-short")).toBe("mc/already-short");
+  expect(temporaryWorktreeBranchName("12345678-90ab-cdef-1234-567890abcdef")).toBe("by/12345678");
+  expect(namedWorktreeBranch("feature/faster-worktrees")).toBe("by/feature/faster-worktrees");
+  expect(namedWorktreeBranch("bycoda/already-prefixed")).toBe("by/already-prefixed");
+  expect(namedWorktreeBranch("mc/already-short")).toBe("by/already-short");
   expect(namedWorktreeBranch("  ")).toBeNull();
 });
 
@@ -257,27 +305,19 @@ it("selects a draft workspace without opening the creation dialog", async () => 
     ),
   );
 
-  await act(async () =>
-    container
-      .querySelector<HTMLButtonElement>('[aria-label="Workspace Current checkout"]')!
-      .click(),
-  );
-  await act(async () => button("New worktree").click());
+  await act(async () => button("Current checkout").click());
+  // Mode rows carry a one-line description after the title.
+  const newWorktree = [...document.querySelectorAll<HTMLElement>('[role="option"], button')].find(
+    (node) => node.textContent?.startsWith("New worktree"),
+  )!;
+  await act(async () => newWorktree.click());
 
   expect(onModeChange).toHaveBeenCalledWith("worktree", "main");
   expect(document.querySelector('[aria-label="Create worktree"]')).toBeNull();
-  // The shortcut shows as key caps after the tooltip title.
-  expect(
-    await tooltipText(
-      container.querySelector<HTMLElement>('[aria-label="Workspace Current checkout"]')!,
-    ),
-  ).toBe(`Workspace: Current checkout${WORKSPACE_MODE_SHORTCUT.replaceAll("+", "")}`);
-
-  await act(async () =>
-    container
-      .querySelector<HTMLButtonElement>('[aria-label="Workspace Current checkout"]')!
-      .click(),
+  expect(await tooltipText(button("Current checkout"))).toBe(
+    `Workspace${WORKSPACE_MODE_SHORTCUT.replaceAll("+", "")}`,
   );
+  await act(async () => button("Current checkout").click());
   const settings = document.querySelector<HTMLButtonElement>(
     '[aria-label="Open worktree settings"]',
   )!;
@@ -303,19 +343,16 @@ it("selects an existing worktree from the draft workspace menu", async () => {
     ),
   );
 
-  await act(async () =>
-    container
-      .querySelector<HTMLButtonElement>('[aria-label="Workspace Current checkout"]')!
-      .click(),
-  );
+  await act(async () => button("Current checkout").click());
   const existingWorktree = button("Existing worktree…");
   expect(existingWorktree).not.toBeNull();
-  await act(async () =>
-    existingWorktree.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })),
-  );
+  await act(async () => existingWorktree.click());
 
   expect(document.querySelector('[aria-label="Existing worktrees"]')).not.toBeNull();
-  expect(existingWorktree.getAttribute("aria-expanded")).toBe("true");
+  // The row is a role="option", so only aria-controls links it to the open flyout.
+  expect(existingWorktree.getAttribute("aria-controls")).toBe(
+    document.querySelector('[aria-label="Existing worktrees"][role="listbox"]')?.id,
+  );
   expect(listWorktrees).toHaveBeenCalledWith("/existing-worktree-picker");
   const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find((item) =>
     item.textContent?.includes(tree.path),
@@ -348,6 +385,7 @@ it("keeps the selected worktree base visible beside the workspace mode", async (
       ],
     },
     settled: true,
+    unreachable: false,
   });
   await act(async () =>
     root.render(
@@ -395,7 +433,9 @@ it("keeps the settings rows mounted through focus refreshes and failures", async
   expect(button("Create worktree").disabled).toBe(false);
   await act(async () => request.reject(new Error("Git unavailable")));
   expect(container.querySelector('[aria-label="Reveal feature"]')).toBe(reveal);
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Git unavailable");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Couldn’t load worktrees",
+  );
   expect(container.textContent).toContain("Deletion is unavailable until Refresh succeeds.");
   expect(unavailable(worktreeDelete(container, '[aria-label="Delete feature"]'))).toBe(true);
   expect(
@@ -421,11 +461,11 @@ it("reopens the picker with cached rows while revalidating", async () => {
   vi.mocked(listWorktrees).mockReturnValue(request.promise);
   await act(async () => trigger.click());
   expect(document.querySelectorAll('[role="option"]')).toHaveLength(2);
-  expect(document.body.textContent).not.toContain("Loading working copies");
+  expect(document.body.textContent).not.toContain("Loading worktrees");
   await act(async () => trigger.click());
   await act(async () => trigger.click());
   expect(document.querySelectorAll('[role="option"]')).toHaveLength(2);
-  expect(document.body.textContent).not.toContain("Loading working copies");
+  expect(document.body.textContent).not.toContain("Loading worktrees");
   await act(async () => request.resolve(result("updated")));
   expect(document.querySelector('[role="option"]')?.textContent).toContain("updated");
 });
@@ -441,19 +481,25 @@ it.each(["/repo", tree.path])(
     await act(async () => trigger.click());
     const selected = document.querySelector<HTMLElement>('[role="option"][aria-selected="true"]')!;
     const other = document.querySelector<HTMLElement>('[role="option"][aria-selected="false"]')!;
-    expect(selected.textContent).toContain(executionCwd);
+    expect(selected.textContent).toContain(executionCwd === "/repo" ? "main" : "feature");
     expect(selected.hasAttribute("data-active")).toBe(true);
     expect(other.hasAttribute("data-active")).toBe(false);
-    await act(async () => other.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
+    await act(async () =>
+      other.dispatchEvent(
+        new PointerEvent("pointermove", {
+          bubbles: true,
+          clientX: 12,
+          clientY: 34,
+        }),
+      ),
+    );
     expect(other.hasAttribute("data-active")).toBe(true);
     await act(async () => trigger.click());
     await act(async () => trigger.click());
     expect(
       document.querySelector('[role="option"][aria-selected="true"]')?.hasAttribute("data-active"),
     ).toBe(true);
-    const search = document.querySelector<HTMLInputElement>(
-      '[aria-label="Search working copies"]',
-    )!;
+    const search = document.querySelector<HTMLInputElement>('[aria-label="Search worktrees"]')!;
     await act(async () =>
       search.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
     );
@@ -485,17 +531,17 @@ it("highlights the current worktree after a cold load and keeps navigation throu
   expect(
     document.querySelector('[role="option"][aria-selected="true"]')?.hasAttribute("data-active"),
   ).toBe(true);
-  const search = document.querySelector<HTMLInputElement>('[aria-label="Search working copies"]')!;
+  const search = document.querySelector<HTMLInputElement>('[aria-label="Search worktrees"]')!;
   await act(async () =>
     search.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })),
   );
-  expect(highlightedPath()).toContain(main.path);
+  expect(highlightedPath()).toContain("main");
   vi.mocked(listWorktrees).mockResolvedValue({
     ...result(),
     worktrees: [tree, main],
   });
   await act(async () => notifyGitChanged());
-  expect(highlightedPath()).toContain(main.path);
+  expect(highlightedPath()).toContain("main");
 });
 
 it("highlights search results and restores the current worktree when search is cleared", async () => {
@@ -509,9 +555,9 @@ it("highlights search results and restores the current worktree when search is c
     ),
   );
   await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
-  const search = document.querySelector<HTMLInputElement>('[aria-label="Search working copies"]')!;
+  const search = document.querySelector<HTMLInputElement>('[aria-label="Search worktrees"]')!;
   await act(async () => type(search, "main"));
-  expect(highlightedPath()).toContain("/repo");
+  expect(highlightedPath()).toContain("main");
   await act(async () => type(search, "no matches"));
   expect(document.querySelector('[data-active][role="option"]')).toBeNull();
   await act(async () => type(search, ""));
@@ -534,6 +580,7 @@ it.each([
         branches: [{ name: "main", remote: null, current: current === "main" }],
       },
       settled: true,
+      unreachable: false,
     });
     await act(async () =>
       root.render(
@@ -546,9 +593,10 @@ it.each([
     );
     const trigger = container.querySelector<HTMLButtonElement>("button")!;
     expect(trigger.classList.contains("-ml-1.5")).toBe(false);
-    expect(trigger.getAttribute("data-button-variant")).toBe("ghost");
+    expect(trigger.getAttribute("data-button-variant")).toBe("chip");
     expect(trigger.getAttribute("data-button-hierarchy")).toBe("ghost");
-    expect(trigger.textContent?.includes("Worktree")).toBe(executionCwd !== "/repo");
+    // The trigger names the checkout by its icon; no "Worktree" text badge.
+    expect(trigger.textContent?.includes("Worktree")).toBe(false);
     expect(trigger.querySelector("svg")?.outerHTML).toBe(
       renderToStaticMarkup(
         createElement(executionCwd === "/repo" ? GitBranch : FolderTree, {
@@ -558,24 +606,20 @@ it.each([
     );
     await act(async () => trigger.click());
     const options = document.querySelectorAll('[role="option"]');
-    for (const [index, Icon] of [GitBranch, FolderTree].entries()) {
-      expect(
-        options[index].querySelector(
-          index === 0 ? "svg.lucide-git-branch" : "svg.lucide-folder-tree",
-        )?.outerHTML,
-      ).toBe(
+    // Every worktree row has the one branch icon, and no second worktree icon.
+    for (const option of options) {
+      expect(option.querySelectorAll("svg.lucide-git-branch")).toHaveLength(1);
+      expect(option.querySelector("svg.lucide-folder-tree")).toBeNull();
+      expect(option.querySelector("svg.lucide-git-branch")?.outerHTML).toBe(
         renderToStaticMarkup(
-          createElement(Icon, {
-            className: "icon-sm shrink-0",
-            tone: "secondary",
-          }),
+          createElement(GitBranch, { className: "icon-sm shrink-0", tone: "secondary" }),
         ),
       );
     }
-    expect(button("Switch branch in this working copy…").querySelector("svg")?.outerHTML).toBe(
+    expect(button("Switch branch in this worktree…").querySelector("svg")?.outerHTML).toBe(
       renderToStaticMarkup(createElement(GitBranch, { className: "icon-sm" })),
     );
-    await act(async () => button("Switch branch in this working copy…").click());
+    await act(async () => button("Switch branch in this worktree…").click());
     const branchTrigger = container.querySelector<HTMLButtonElement>("button")!;
     expect(document.querySelector('[aria-label="Branch picker"]')).not.toBeNull();
     expect(branchTrigger.className).toBe(trigger.className);
@@ -585,7 +629,7 @@ it.each([
 
     await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
     const restored = container.querySelector<HTMLButtonElement>("button")!;
-    expect(restored.getAttribute("aria-label")).toBe("Choose working copy");
+    expect(restored.getAttribute("aria-label")).toBe("Choose worktree");
     expect(restored.innerHTML).toBe(trigger.innerHTML);
     expect(restored.className).toBe(trigger.className);
   },
@@ -610,7 +654,7 @@ it("caps the picker height without forcing short lists to fill it", async () => 
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, LOADING_DELAY_MS + 50));
   });
-  expect(menu.textContent).toContain("Loading working copies");
+  expect(menu.textContent).toContain("Loading worktrees");
   expect(listWorktrees).toHaveBeenCalledTimes(1);
   await act(async () => request.resolve(result()));
   expect(menu.style.height).toBe("");
@@ -618,7 +662,7 @@ it("caps the picker height without forcing short lists to fill it", async () => 
   expect(menu.querySelector('[role="listbox"]')?.parentElement?.className).toContain(
     "overflow-y-auto",
   );
-  expect(menu.textContent).not.toContain("Loading working copies");
+  expect(menu.textContent).not.toContain("Loading worktrees");
 });
 
 it("uses the shared project picker without leaking late worktree responses", async () => {
@@ -646,11 +690,12 @@ it("uses the shared project picker without leaking late worktree responses", asy
   const refresh = container.querySelector<HTMLButtonElement>(
     '[aria-label="Refresh worktrees"], [aria-label="Refreshing…"]',
   )!;
-  expect(await tooltipText(refresh)).toBe("Refresh worktrees");
+  // The accessible name is the label; a tooltip would only repeat it.
+  expect(await tooltipText(refresh)).toBe("");
   expect(refresh.getAttribute("data-button-variant")).toBe("ghost");
   expect(create.getAttribute("data-button-variant")).toBe("secondary");
   await act(async () => picker.click());
-  expect(document.querySelector('input[placeholder="Search projects..."]')).not.toBeNull();
+  expect(document.querySelector('input[placeholder="Search projects…"]')).not.toBeNull();
   const secondProject = [
     ...document.querySelectorAll<HTMLButtonElement>('[aria-label="Project picker"] button'),
   ].find((item) => item.textContent?.includes("second-project"))!;
@@ -669,8 +714,17 @@ it("searches worktrees by branch and folder, and clears an empty result without 
     ...result(),
     worktrees: [
       { ...tree, path: "/repo", branch: "main", isMain: true },
-      { ...tree, path: "/repo-worktrees/alpha-folder", branch: "feature/alpha" },
-      { ...tree, path: "/repo-worktrees/beta-folder", branch: "fix/beta", missing: true },
+      {
+        ...tree,
+        path: "/repo-worktrees/alpha-folder",
+        branch: "feature/alpha",
+      },
+      {
+        ...tree,
+        path: "/repo-worktrees/beta-folder",
+        branch: "fix/beta",
+        missing: true,
+      },
     ],
   });
   const onRemove = vi.fn();
@@ -684,9 +738,7 @@ it("searches worktrees by branch and folder, and clears an empty result without 
   expect(worktreeDelete(container, '[aria-label="Delete feature/alpha"]')).not.toBeNull();
   await act(async () => type(search, "beta-folder"));
   expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(1);
-  expect(
-    container.querySelector<HTMLButtonElement>('[aria-label="Reveal fix/beta"]')!.disabled,
-  ).toBe(true);
+  expect(unavailable(worktreeDelete(container, '[aria-label="Reveal fix/beta"]'))).toBe(true);
   await act(async () => type(search, "no-matching-worktree"));
   expect(
     [...container.querySelectorAll('[role="status"]')].some((status) =>
@@ -697,6 +749,28 @@ it("searches worktrees by branch and folder, and clears an empty result without 
   expect(search.value).toBe("");
   expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(2);
   expect(onRemove).not.toHaveBeenCalled();
+});
+
+it("blocks local deletion after an inventory failure and re-enables it after Retry", async () => {
+  vi.mocked(getWorkspaceCapabilities).mockResolvedValue(["workspaces.managed.v1"]);
+  vi.mocked(workspaceRequest)
+    .mockRejectedValueOnce(new Error("Inventory read failed"))
+    .mockResolvedValueOnce([]);
+  const onRemove = vi.fn();
+  await act(async () =>
+    root.render(createElement(WorktreesPage, { cwd: "/inventory-retry", onRemove })),
+  );
+  const deleteAction = () => worktreeDelete(container, '[aria-label="Delete feature"]');
+  expect(container.textContent).toContain("Data has not been verified.");
+  expect(container.textContent).not.toContain("Loading managed workspaces…");
+  expect(unavailable(deleteAction())).toBe(true);
+  await act(async () => deleteAction()!.click());
+  expect(button("Delete worktree")).toBeUndefined();
+  expect(onRemove).not.toHaveBeenCalled();
+
+  await act(async () => button("Retry").click());
+  expect(container.textContent).not.toContain("Data has not been verified.");
+  expect(unavailable(deleteAction())).toBe(false);
 });
 
 it("keeps full worktree identity visible without revealing or deleting the folder", async () => {
@@ -751,12 +825,12 @@ it("selects an existing working copy without checking out a branch", async () =>
     ),
   );
   await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
-  expect(document.body.textContent).not.toContain("Another working copy opens a new session.");
+  expect(document.body.textContent).not.toContain("Another worktree opens a new session.");
   const option = document.querySelectorAll<HTMLButtonElement>('[role="option"]')[1];
   await act(async () => option.click());
   expect(onSelect).toHaveBeenCalledWith(tree);
   expect(gitCheckout).not.toHaveBeenCalled();
-  expect(document.querySelector('[aria-label="Search working copies"]')).toBeNull();
+  expect(document.querySelector('[aria-label="Search worktrees"]')).toBeNull();
 });
 
 it("explains that a started session opens another working copy in a new session", async () => {
@@ -772,7 +846,22 @@ it("explains that a started session opens another working copy in a new session"
     ),
   );
   await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
-  expect(document.body.textContent).toContain("Another working copy opens a new session.");
+  const hint = document.querySelector<HTMLElement>('[role="img"][aria-label="Worktrees"]')!;
+  expect(hint.tabIndex).toBe(0);
+  await act(async () => hint.click());
+  expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+  vi.useFakeTimers();
+  try {
+    await act(async () => {
+      hint.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(
+      "Another worktree opens a new session.",
+    );
+  } finally {
+    vi.useRealTimers();
+  }
   await act(async () => document.querySelector<HTMLButtonElement>('[role="option"]')!.click());
   expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ path: "/repo", isMain: true }));
   expect(gitCheckout).not.toHaveBeenCalled();
@@ -782,6 +871,7 @@ it("can return to the main working copy after a worktree is deleted externally",
   vi.mocked(useProjectBranchesState).mockReturnValue({
     branches: null,
     settled: true,
+    unreachable: true,
   });
   const onSelect = vi.fn(async () => {});
   await act(async () =>
@@ -833,6 +923,28 @@ it("shows session and local-change consequences before removing a worktree", asy
   await act(async () => remove.click());
   expect(onRemove).toHaveBeenLastCalledWith("/repo", tree.path, true, true);
   expect(onDeleted).toHaveBeenCalledOnce();
+});
+
+it("shows ignored local data before confirming removal of a clean worktree", async () => {
+  const onRemove = vi.fn().mockResolvedValue(undefined);
+  await act(async () =>
+    root.render(
+      createElement(DeleteWorktreeDialog, {
+        cwd: "/repo",
+        tree: { ...tree, dirty: false },
+        ignoredEntryCount: 12,
+        ignoredEntryPaths: [".env"],
+        onRemove,
+        onDeleted: vi.fn(),
+        onClose: vi.fn(),
+      }),
+    ),
+  );
+  expect(document.body.textContent).toContain("Ignored entries that will be deleted: 12");
+  expect(document.body.textContent).toContain(".env");
+  expect(onRemove).not.toHaveBeenCalled();
+  await act(async () => button("Delete worktree").click());
+  expect(onRemove).toHaveBeenCalledWith("/repo", tree.path, true, false);
 });
 
 it("offers cascade deletion for a session-linked worktree but not the main copy", async () => {
@@ -936,9 +1048,15 @@ it("reports partial completion if worktree removal fails after successful prefli
   await act(async () => document.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
   await act(async () => button("Delete worktree and session").click());
   expect(onDeleteSessions).toHaveBeenCalledOnce();
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
-    "The sessions were deleted, but the worktree was kept.",
+  await act(async () =>
+    [...document.querySelectorAll("button")]
+      .find((node) => node.textContent === "Details")!
+      .click(),
   );
+  const alert = document.body.textContent ?? "";
+  expect(alert).toContain("The sessions were deleted, but the worktree was kept.");
+  // Regression for #757: the cause is appended without the raw `Error:` prefix.
+  expect(alert).not.toContain("Error:");
 });
 
 it.each(["partial", "rejected", "worktree", "refresh"] as const)(
@@ -1025,7 +1143,10 @@ it.each([false, true])(
     if (deleteWorktree) await act(async () => checkbox.click());
     await act(async () => button("Delete session").click());
     expect(onClose).toHaveBeenCalledOnce();
-    expect(onClose).toHaveBeenLastCalledWith({ confirmed: true, deleteWorktree });
+    expect(onClose).toHaveBeenLastCalledWith({
+      confirmed: true,
+      deleteWorktree,
+    });
   },
 );
 
@@ -1041,6 +1162,7 @@ it("uses searchable custom selects in the create worktree dialog", async () => {
       ],
     },
     settled: true,
+    unreachable: false,
   });
   const onCancel = vi.fn();
   await act(async () =>
@@ -1055,20 +1177,14 @@ it("uses searchable custom selects in the create worktree dialog", async () => {
   );
 
   expect(document.querySelector("select")).toBeNull();
-  const branchType = document.querySelector<HTMLButtonElement>('[aria-label^="Branch type:"]')!;
-  await act(async () => branchType.click());
-  let search = document.querySelector<HTMLInputElement>('input[placeholder="Search options…"]')!;
-  await act(async () => {
-    type(search, "existing");
-  });
-  expect(document.querySelectorAll('[role="option"]')).toHaveLength(1);
-  await act(async () =>
-    search.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
-  );
+  const branchType = (label: string) =>
+    [...document.querySelectorAll<HTMLElement>('[role="radio"]')].find(
+      (option) => option.textContent === label,
+    )!;
+  await act(async () => branchType("Existing branch").click());
+  let search: HTMLInputElement;
 
-  const existingBranch = document.querySelector<HTMLButtonElement>(
-    '[aria-label^="Existing branch:"]',
-  )!;
+  const existingBranch = document.querySelector<HTMLButtonElement>('[aria-label^="Branch:"]')!;
   expect(existingBranch.textContent).toContain("Choose a branch…");
   await act(async () => existingBranch.click());
   search = document.querySelector<HTMLInputElement>('input[placeholder="Search local branches…"]')!;
@@ -1082,14 +1198,7 @@ it("uses searchable custom selects in the create worktree dialog", async () => {
   );
   expect(existingBranch.textContent).toContain("feature/search");
 
-  await act(async () => branchType.click());
-  search = document.querySelector<HTMLInputElement>('input[placeholder="Search options…"]')!;
-  await act(async () => {
-    type(search, "new");
-  });
-  await act(async () =>
-    search.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
-  );
+  await act(async () => branchType("New branch").click());
   const startFrom = document.querySelector<HTMLButtonElement>('[aria-label^="Start from:"]')!;
   await act(async () => startFrom.click());
   search = document.querySelector<HTMLInputElement>(
@@ -1156,8 +1265,11 @@ it("shows no selected branch after removal even when the old path has a branch a
   expect(trigger.disabled).toBe(false);
   await act(async () => trigger.click());
   expect(document.querySelector('[aria-selected="true"]')).toBeNull();
-  expect(document.body.textContent).not.toContain("Another working copy opens a new session.");
-  expect(button("Switch branch in this working copy…").disabled).toBe(true);
+  expect(document.body.textContent).toContain(
+    "This session’s worktree was deleted. Select a worktree to continue.",
+  );
+  expect(document.body.textContent).not.toContain("Another worktree opens a new session.");
+  expect(button("Switch branch in this worktree…").getAttribute("aria-disabled")).toBe("true");
   await act(async () => document.querySelector<HTMLButtonElement>('[role="option"]')!.click());
   expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ path: "/repo" }));
 });
@@ -1167,7 +1279,12 @@ it("keeps a Reveal failure on its worktree row with a local retry", async () => 
     .mockRejectedValueOnce(new Error("no file manager"))
     .mockResolvedValueOnce(undefined);
   await act(async () =>
-    root.render(createElement(WorktreesPage, { cwd: "/reveal-failure", onRemove: vi.fn() })),
+    root.render(
+      createElement(WorktreesPage, {
+        cwd: "/reveal-failure",
+        onRemove: vi.fn(),
+      }),
+    ),
   );
   const row = container.querySelector('[role="listitem"]')!;
   await act(async () =>
@@ -1178,7 +1295,9 @@ it("keeps a Reveal failure on its worktree row with a local retry", async () => 
   // The failure is not hoisted into a page-level error above the collection.
   expect([...container.querySelectorAll('[role="alert"]')]).toHaveLength(1);
   await act(async () =>
-    [...failure.querySelectorAll("button")].find((node) => node.textContent === "Retry")!.click(),
+    [...failure.querySelectorAll("button")]
+      .find((node) => node.textContent === "Try again")!
+      .click(),
   );
   expect(revealPath).toHaveBeenCalledTimes(2);
   expect(row.querySelector('[role="alert"]')).toBeNull();
@@ -1193,19 +1312,64 @@ it("shows unknown publication separately from a clean working tree", async () =>
     root.render(createElement(WorktreesPage, { cwd: "/publication", onRemove: vi.fn() })),
   );
   const row = container.querySelector('[role="listitem"]')!;
-  expect(row.textContent).toContain("Clean");
-  expect(row.textContent).toContain("Publication unknown");
+  expect(row.textContent).not.toContain("Clean");
+  // The unknown state has no badge of its own, but it is never presented as clean.
 });
 
-it("keeps create and delete off for a project on a connected machine", async () => {
+it("creates on the owning Host but keeps delete off for a project on a connected machine", async () => {
   await act(async () =>
-    root.render(createElement(WorktreesPage, { cwd: "remote://machine/repo", onRemove: vi.fn() })),
+    root.render(
+      createElement(WorktreesPage, {
+        cwd: "remote://machine/repo",
+        onRemove: vi.fn(),
+      }),
+    ),
   );
   expect(container.textContent).toContain("unavailable for a project on a connected machine");
-  expect(button("Create worktree").disabled).toBe(true);
+  expect(container.textContent).not.toContain("Creating and deleting");
+  expect(button("Create worktree").disabled).toBe(false);
   expect(unavailable(worktreeDelete(container, '[aria-label="Delete feature"]'))).toBe(true);
   // Listing and Reveal still follow the machine that owns the path.
   expect(
     container.querySelector<HTMLButtonElement>('[aria-label="Reveal feature"]')!.disabled,
   ).toBe(false);
+});
+
+it("lists worktrees as the sidebar picker does: changes first, then main and clean, missing hidden", async () => {
+  const main = {
+    ...tree,
+    path: "/parity",
+    branch: "main",
+    isMain: true,
+    dirty: false,
+    unpushed: 0,
+  };
+  const clean = {
+    ...tree,
+    path: "/parity-clean",
+    branch: "clean",
+    dirty: false,
+    unpushed: 0,
+  };
+  const gone = { ...tree, path: "/parity-gone", branch: "gone", missing: true };
+  vi.mocked(listWorktrees).mockResolvedValue({
+    ...result(),
+    worktrees: [clean, gone, tree, main],
+  });
+  await act(async () =>
+    root.render(
+      createElement(WorktreePicker, {
+        cwd: "/parity",
+        executionCwd: "/parity",
+        onSelect: vi.fn(),
+      }),
+    ),
+  );
+  await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+  const rows = [...document.querySelectorAll('[role="option"]')].map((node) => node.textContent);
+  expect(rows).toHaveLength(3);
+  // Work first (uncommitted changes lead), then the project folder, then clean ones.
+  expect(rows[0]).toContain("feature");
+  expect(rows[1]).toContain("main");
+  expect(rows[2]).toContain("clean");
 });

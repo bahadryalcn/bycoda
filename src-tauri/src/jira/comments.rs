@@ -1,9 +1,9 @@
 use super::*;
 use base64::Engine;
 
-const IMAGE_LIMIT: usize = 10 * 1024 * 1024;
+pub(super) const IMAGE_LIMIT: usize = 10 * 1024 * 1024;
 
-fn image_bytes(name: &str, mime_type: &str, data_base64: &str) -> Result<Vec<u8>, String> {
+pub(super) fn validate_image_name(name: &str) -> Result<(), String> {
     if name.is_empty()
         || name.len() > 255
         || name
@@ -12,27 +12,35 @@ fn image_bytes(name: &str, mime_type: &str, data_base64: &str) -> Result<Vec<u8>
     {
         return Err("Invalid image filename".into());
     }
+    Ok(())
+}
+
+fn image_bytes(name: &str, mime_type: &str, data_base64: &str) -> Result<Vec<u8>, String> {
+    validate_image_name(name)?;
     if data_base64.len() > IMAGE_LIMIT.div_ceil(3) * 4 {
         return Err("Image exceeds 10 MB".into());
     }
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(data_base64)
         .map_err(|_| "Invalid image data".to_string())?;
+    if image_mime_type(&bytes)? != mime_type {
+        return Err("Image content does not match its file type".into());
+    }
+    Ok(bytes)
+}
+
+pub(super) fn image_mime_type(bytes: &[u8]) -> Result<&'static str, String> {
     if bytes.is_empty() || bytes.len() > IMAGE_LIMIT {
         return Err("Image must be between 1 byte and 10 MB".into());
     }
-    let format = image::guess_format(&bytes).map_err(|_| "Unsupported image data".to_string())?;
-    let expected = match format {
+    let format = image::guess_format(bytes).map_err(|_| "Unsupported image data".to_string())?;
+    Ok(match format {
         image::ImageFormat::Png => "image/png",
         image::ImageFormat::Jpeg => "image/jpeg",
         image::ImageFormat::Gif => "image/gif",
         image::ImageFormat::WebP => "image/webp",
         _ => return Err("Use PNG, JPEG, GIF or WebP images".into()),
-    };
-    if mime_type != expected {
-        return Err("Image content does not match its file type".into());
-    }
-    Ok(bytes)
+    })
 }
 
 fn multipart_image(name: &str, mime_type: &str, bytes: &[u8], boundary: &str) -> Vec<u8> {
@@ -58,6 +66,27 @@ fn attachment_request(config: &JiraConfig, key: &str, boundary: &str) -> ureq::R
         )
 }
 
+pub(super) fn upload_image(
+    config: &JiraConfig,
+    key: &str,
+    name: &str,
+    mime_type: &str,
+    bytes: &[u8],
+) -> Result<Value, String> {
+    let boundary = format!("bycoda-{}", uuid::Uuid::new_v4());
+    let body = multipart_image(name, mime_type, bytes, &boundary);
+    let result = attachment_request(config, key, &boundary).send_bytes(&body);
+    let data = read_jira_response(result)?;
+    let id = data
+        .get(0)
+        .and_then(|value| string_field(value, "id"))
+        .unwrap_or_default();
+    if id.is_empty() || !id.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err("Jira did not return an attachment receipt".into());
+    }
+    Ok(json!({ "id": id, "url": format!("{}/rest/api/3/attachment/content/{id}", config.site) }))
+}
+
 #[tauri::command]
 pub async fn jira_issue_attachment(
     app: AppHandle,
@@ -70,16 +99,10 @@ pub async fn jira_issue_attachment(
         let config = require_config(&app)?;
         let key = require_issue_key(&key)?;
         let bytes = image_bytes(&name, &mime_type, &data_base64)?;
-        let boundary = format!("bycoda-{}", uuid::Uuid::new_v4());
-        let body = multipart_image(&name, &mime_type, &bytes, &boundary);
-        let result = attachment_request(&config, key, &boundary).send_bytes(&body);
-        let data = read_jira_response(result)?;
-        let id = data.get(0).and_then(|value| string_field(value, "id")).unwrap_or_default();
-        if id.is_empty() || !id.bytes().all(|byte| byte.is_ascii_digit()) {
-            return Err("Jira did not return an attachment receipt".into());
-        }
-        Ok(json!({ "id": id, "url": format!("{}/rest/api/3/attachment/content/{id}", config.site) }))
-    }).await.map_err(|error| error.to_string())?
+        upload_image(&config, key, &name, &mime_type, &bytes)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 /// The webview is untrusted: accept only the bounded ADF subset emitted by our editor.

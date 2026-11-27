@@ -27,6 +27,9 @@ vi.mock("./sections/TypographySection", () => ({
     );
   },
 }));
+vi.mock("./sections/ChatSection", () => ({
+  ChatSection: () => createElement("div", { id: "setting-transcript-preset" }, "Chat setting"),
+}));
 vi.mock("./sections/MotionSection", () => ({
   MotionSection: () => createElement("div", { id: "setting-tab-animations" }, "Motion setting"),
 }));
@@ -60,9 +63,9 @@ afterEach(() => {
   container.remove();
 });
 
-it("renders five sections and keeps hidden controls mounted across tab switches", () => {
+it("renders six sections and keeps hidden controls mounted across tab switches", () => {
   render();
-  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(5);
+  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(6);
   act(() => tab("Typography").click());
   const input = container.querySelector<HTMLButtonElement>("#setting-terminal-font")!;
   act(() => input.click());

@@ -15,6 +15,7 @@ pub(super) fn login(
     if !workdir.is_dir() {
         return Err("Project directory does not exist".into());
     }
+    let _reservation = crate::worktree_lifecycle::reserve_spawn(&workdir)?;
     let pair = portable_pty::native_pty_system()
         .openpty(portable_pty::PtySize::default())
         .map_err(|_| "Could not prepare the MCP sign-in terminal".to_string())?;

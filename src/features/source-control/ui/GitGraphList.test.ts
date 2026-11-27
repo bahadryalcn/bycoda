@@ -98,3 +98,71 @@ it.each<GraphVariant>(["compact", "wide", "workspace"])(
     }
   },
 );
+
+// Regression for #1242: the relative-time labels use the shared hidden-aware minute
+// clock, so a hidden window keeps no timer and the first visible moment catches up.
+it("ticks relative times on the shared minute clock and keeps no timer while hidden", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  const start = new Date("2026-01-01T12:00:10Z").getTime();
+  vi.setSystemTime(start);
+  const sha = "a";
+  const items: GraphListItem[] = [
+    {
+      commit: {
+        sha,
+        shortSha: sha,
+        subject: sha,
+        author: "Ada",
+        timestamp: start / 1000,
+        parents: [],
+        head: false,
+        refs: [],
+      },
+      row: { sha, parentIds: [], kind: "node", inputSwimlanes: [], outputSwimlanes: [], refs: [] },
+    },
+  ];
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const hidden = vi.spyOn(document, "hidden", "get");
+  try {
+    hidden.mockReturnValue(false);
+    await act(async () =>
+      root.render(
+        createElement(GitGraphList, {
+          variant: "wide",
+          items,
+          plain: false,
+          hasMore: false,
+          suspendHover: false,
+          onLoadMore: () => {},
+          onOpen: () => {},
+          onMenu: () => {},
+        }),
+      ),
+    );
+    const label = () => container.querySelector("button.git-history-item")!.textContent;
+    const before = label();
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    await act(async () => vi.advanceTimersByTime(10 * 60_000));
+    expect(label()).not.toBe(before);
+
+    hidden.mockReturnValue(true);
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    expect(vi.getTimerCount()).toBe(0);
+    const stale = label();
+    await act(async () => vi.advanceTimersByTime(30 * 60_000));
+    expect(label()).toBe(stale);
+
+    hidden.mockReturnValue(false);
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    expect(label()).not.toBe(stale);
+  } finally {
+    hidden.mockRestore();
+    await act(async () => root.unmount());
+    container.remove();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});

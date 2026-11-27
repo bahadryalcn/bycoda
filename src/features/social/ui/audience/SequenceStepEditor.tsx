@@ -1,4 +1,4 @@
-import { Text } from "../../../../shared/ui/Text";
+import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
@@ -10,7 +10,6 @@ import { TextField } from "../../../../shared/ui/TextField";
 import { TextareaField } from "../../../../shared/ui/TextareaField";
 import type { EmailAccount, OutreachChannel } from "../../model/outreach";
 import { ChannelIcon } from "./ChannelIcon";
-import { LabeledSelect } from "./LabeledSelect";
 import { channelLabel } from "./audienceModel";
 import { useTouched } from "./formFooter";
 
@@ -101,7 +100,7 @@ export function SequenceStepEditor({
           />
         </div>
         {isEmail ? (
-          <LabeledSelect
+          <Select
             label={t("Send from")}
             value={step.accountId}
             disabled={disabled || !emailAccounts.length}
@@ -112,7 +111,7 @@ export function SequenceStepEditor({
                 label: `${account.name} <${account.from}>`,
               })),
             ]}
-            onChange={(accountId) => onChange({ ...step, accountId })}
+            onValueChange={(accountId) => onChange({ ...step, accountId })}
           />
         ) : null}
         <TextareaField
@@ -144,6 +143,7 @@ export function SequenceStepEditor({
               variant="ghost"
               size="sm"
               disabled={disabled}
+              disabledReason={disabled ? t("Wait for the current action to finish.") : undefined}
               onClick={() =>
                 onChange({
                   ...step,
@@ -156,15 +156,9 @@ export function SequenceStepEditor({
           </div>
         ))}
         {isEmail && selectedEmail && !selectedEmail.unsubscribeUrl ? (
-          <Text
-            as="p"
-            size="secondary"
-            tone="warning"
-            leading="inherit"
-            className="audience-warning"
-          >
+          <InlineMessage tone="warning" live="off">
             {t("Email steps need an unsubscribe link. Add one to this email account first.")}
-          </Text>
+          </InlineMessage>
         ) : null}
         <div className="audience-row audience-between">
           <span className="audience-row">
@@ -173,6 +167,11 @@ export function SequenceStepEditor({
               size="sm"
               startIcon={<Plus className="icon-sm" aria-hidden="true" />}
               disabled={disabled || step.variants.length >= 4}
+              disabledReason={
+                step.variants.length >= 4
+                  ? t("A step can have at most 4 variants.")
+                  : t("Wait for the current action to finish.")
+              }
               onClick={() =>
                 onChange({
                   ...step,
@@ -192,7 +191,14 @@ export function SequenceStepEditor({
               onCheckedChange={(personalize) => onChange({ ...step, personalize })}
             />
           </span>
-          <Button variant="ghost" size="sm" tone="danger" disabled={disabled} onClick={onRemove}>
+          <Button
+            variant="ghost"
+            size="sm"
+            tone="danger"
+            disabled={disabled}
+            disabledReason={disabled ? t("Wait for the current action to finish.") : undefined}
+            onClick={onRemove}
+          >
             {t("Remove step")}
           </Button>
         </div>

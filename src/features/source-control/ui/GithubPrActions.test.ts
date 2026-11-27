@@ -10,6 +10,7 @@ vi.mock("../../inbox/model/githubTasks", async (original) => ({
 
 import { githubPrAction, type GithubWorkItem, type InboxItem } from "../../inbox/model/githubTasks";
 import { GithubPrActions } from "../../inbox/ui/InboxView";
+import { openErrorDetails } from "../../sessions/ui/errorDetails.fixture";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -102,7 +103,7 @@ describe("GitHub pull request actions", () => {
     expect(dialog.textContent).toContain(
       "from “feature/inbox” will be combined into one commit on “main”",
     );
-    expect(dialog.textContent).toContain(`Reviewed head: ${reviewedHeadOid}`);
+    expect(dialog.textContent).toContain(`Reviewed head: ${reviewedHeadOid.slice(0, 7)}`);
 
     await act(async () => {
       [...dialog.querySelectorAll("button")]
@@ -162,9 +163,16 @@ describe("GitHub pull request actions", () => {
     });
 
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "You do not have permission to close this pull request",
+      "Could not complete this action.",
     );
     expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(openErrorDetails(container)).toContain(
+      "You do not have permission to close this pull request",
+    );
+    // Close the Details popover again so the next confirmation is the only dialog.
+    act(() =>
+      container.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')?.click(),
+    );
     expect(githubPrAction).toHaveBeenCalledExactlyOnceWith(
       "/tmp/web",
       "acme/web",

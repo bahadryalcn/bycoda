@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { invoke } from "@tauri-apps/api/core";
 import { remoteRequest } from "../../connections/public/connections";
 import { parseRemotePath } from "../../connections/public/remoteProjects";
@@ -5,6 +6,7 @@ import { isLocalSyncMachine } from "../../connections/public/localSync";
 import type { HostProject, RemoteMachine } from "../../connections";
 import { NativeAutomationMigrationSchema } from "../../../shared/model/host-contracts/automations";
 import type { z } from "zod";
+import { writeHostAutomation } from "./hostAutomationClient";
 import type { Automation } from "./automations";
 import type { HostAutomation } from "./hostAutomations";
 
@@ -53,7 +55,7 @@ async function migrate(
     } catch (error) {
       result.blocked.push({
         automationId: receipt.automationId,
-        reason: error instanceof Error ? error.message : String(error),
+        reason: errorText(error),
       });
     }
   }
@@ -96,15 +98,17 @@ async function migrate(
       };
       // A committed native receipt can still need its original prepared Host import
       // after a lost response. Prepared replay never downgrades committed Host state.
-      const imported = await remoteRequest<HostAutomation>(
-        machine.id,
-        "automations.save",
-        {
-          automation: { ...payload, nativeMigration: { ...receipt, phase: "prepared" } },
-        },
-        false,
-        true,
-        machine.environmentId,
+      const imported = await writeHostAutomation(machine.id, () =>
+        remoteRequest<HostAutomation>(
+          machine.id,
+          "automations.save",
+          {
+            automation: { ...payload, nativeMigration: { ...receipt, phase: "prepared" } },
+          },
+          false,
+          true,
+          machine.environmentId,
+        ),
       );
       if (receipt.phase !== "committed")
         receipt = await invoke<NativeAutomationMigrationReceipt>("automations_host_commit", {
@@ -113,19 +117,21 @@ async function migrate(
           targetHostId: machine.environmentId,
           hostAutomationId: imported.id,
         });
-      await remoteRequest(
-        machine.id,
-        "automations.save",
-        { automation: { ...payload, nativeMigration: receipt } },
-        false,
-        true,
-        machine.environmentId,
+      await writeHostAutomation(machine.id, () =>
+        remoteRequest(
+          machine.id,
+          "automations.save",
+          { automation: { ...payload, nativeMigration: receipt } },
+          false,
+          true,
+          machine.environmentId,
+        ),
       );
       result.migrated.push(source.id);
     } catch (error) {
       result.blocked.push({
         automationId: source.id,
-        reason: error instanceof Error ? error.message : String(error),
+        reason: errorText(error),
       });
     }
   }

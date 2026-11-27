@@ -13,6 +13,7 @@ export const BATCHED = new Set<string>([
   "tool.updated",
   "agent.step",
   "status",
+  "context",
 ]);
 
 /** One provider event waiting for its session's operation turn. */

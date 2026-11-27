@@ -16,6 +16,38 @@ beforeEach(() => {
   windows.label = "main";
   windows.live = ["main"];
 });
+it("drops an idle empty scope from memory and reloads its ledger for the next caller", async () => {
+  const request = vi.fn(async () => ({ claims: [] }));
+  const holder = attachmentOwnershipScope("machine-evict", "host", "owner-evict", request);
+  await holder.retry();
+  const reopened = attachmentOwnershipScope("machine-evict", "host", "owner-evict", request);
+  expect(reopened).not.toBe(holder);
+  await holder.acquire("draft", ["file"]);
+  // The old holder still writes through the shared ledger, so the new instance sees its claim.
+  expect(reopened.claimId("file")).toBe(holder.claimId("file"));
+  expect(reopened.claimId("file")).toBeDefined();
+});
+it("keeps a scope whose upload job is still active", async () => {
+  const request = vi.fn(async () => ({ claims: [] }));
+  const scope = attachmentOwnershipScope("machine-active-job", "host", "owner-active-job", request);
+  scope.beginJob("submit:turn");
+  await scope.retry();
+  expect(attachmentOwnershipScope("machine-active-job", "host", "owner-active-job", request)).toBe(
+    scope,
+  );
+  scope.finishJob("submit:turn");
+  await scope.retry();
+  expect(
+    attachmentOwnershipScope("machine-active-job", "host", "owner-active-job", request),
+  ).not.toBe(scope);
+});
+it("keeps a scope that still holds references", async () => {
+  const request = vi.fn(async () => ({ claims: [] }));
+  const scope = attachmentOwnershipScope("machine-held", "host", "owner-held", request);
+  await scope.acquire("draft", ["file"]);
+  await scope.retry();
+  expect(attachmentOwnershipScope("machine-held", "host", "owner-held", request)).toBe(scope);
+});
 it("retains shared IDs until all durable draft and queue sources are removed", async () => {
   const request = vi.fn(async () => ({ claims: [] }));
   const scope = new AttachmentOwnership("owner", "host", request);

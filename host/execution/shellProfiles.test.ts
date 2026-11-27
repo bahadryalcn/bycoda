@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import {
   choicePath,
   chosenProfileId,
@@ -85,6 +85,31 @@ describe("host shell profiles", () => {
 
     writeFileSync(path, JSON.stringify({ profile: "uninstalled-shell" }));
     expect(resolveShellProfile(path)?.id).toBe(fallback);
+  });
+
+  it("reuses shell detection between commands until the environment or saved choice changes", () => {
+    const path = join(scratch(), "choice.json");
+    const first = resolveShellProfile(path);
+    // The same object means no new PATH walk or file reads for the second command.
+    expect(resolveShellProfile(path)).toBe(first);
+
+    const savedPath = process.env.PATH;
+    process.env.PATH = `${savedPath ?? ""}${delimiter}${scratch()}`;
+    try {
+      expect(resolveShellProfile(path)).not.toBe(first);
+    } finally {
+      process.env.PATH = savedPath;
+    }
+
+    const profiles = detectShellProfiles();
+    const other = profiles.at(-1)!;
+    // The desktop app saves the choice without going through this module.
+    writeFileSync(path, JSON.stringify({ profile: other.id }));
+    expect(resolveShellProfile(path)?.id).toBe(other.id);
+    writeFileSync(path, JSON.stringify({ profile: "uninstalled-shell-long" }));
+    expect(resolveShellProfile(path)?.id).toBe(
+      listShellProfiles(join(scratch(), "none")).defaultId,
+    );
   });
 
   it("refuses a shell this machine does not have", () => {

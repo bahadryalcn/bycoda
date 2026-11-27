@@ -1,8 +1,9 @@
 import { boundedSet, createStore } from "../../../shared/lib/store";
 import { logOwnerRequest } from "./notificationLog";
+import { ownerRequestSource, type OwnerRequestSource } from "./ownerRequestSource";
 
 /** A masked request for one secret. The owner's text is never kept in this store. */
-export type OwnerSecretInput = {
+export type OwnerSecretInput = OwnerRequestSource & {
   id: string;
   sessionId?: string;
   title: string;
@@ -39,7 +40,13 @@ export const ownerSecretInputsSnapshot = () => requests;
 
 /** Resolves with the owner's text, or `null` when cancelled, expired or the source was revoked. */
 export function requestOwnerSecretInput(
-  payload: { id: string; sessionId?: unknown; input: Record<string, unknown> },
+  payload: {
+    id: string;
+    sessionId?: unknown;
+    threadId?: unknown;
+    cwd?: unknown;
+    input: Record<string, unknown>;
+  },
   allowed: () => boolean = () => true,
   subscribeRevocation: (listener: () => void) => () => void = () => () => {},
 ): Promise<string | null> {
@@ -74,6 +81,7 @@ export function requestOwnerSecretInput(
   const request: OwnerSecretInput = {
     id: payload.id,
     sessionId: payload.sessionId as string | undefined,
+    ...ownerRequestSource(payload),
     title: input.title as string,
     message: input.message as string,
     fieldLabel: input.fieldLabel as string,

@@ -98,7 +98,7 @@ pub(in crate::checkpoint) fn publish(
     cwd: &str,
 ) -> Result<bool, String> {
     let own_name = name(session, turn);
-    let canonical = std::fs::canonicalize(cwd).map_err(|e| e.to_string())?;
+    let canonical = std::fs::canonicalize(project_root(cwd)?).map_err(|e| e.to_string())?;
     let mut own = Lease {
         owner: "native".into(),
         session_id: session.into(),
@@ -142,6 +142,15 @@ pub(super) fn sessions(root: &Path, owner: &str, cwd: &str) -> Result<Vec<String
         .into_iter()
         .filter(|(_, lease)| lease.owner == owner && overlap(cwd, &lease.cwd))
         .map(|(_, lease)| lease.session_id)
+        .collect())
+}
+/// Native leases as (session, turn, checkout). Startup recovery retires the
+/// leases of settled turns from this short list instead of walking every session.
+pub(super) fn native_turns(root: &Path) -> Result<Vec<(String, String, String)>, String> {
+    Ok(read(root)?
+        .into_iter()
+        .filter(|(_, lease)| lease.owner == "native")
+        .map(|(_, lease)| (lease.session_id, lease.turn_id, lease.cwd))
         .collect())
 }
 pub(in crate::checkpoint) fn release(root: &Path, session: &str, turn: &str) -> Result<(), String> {

@@ -1,9 +1,12 @@
+import { useState } from "react";
 import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { Switch } from "../../../shared/ui/Switch";
 import type { SessionFilesRevertPlan } from "../model/editFromHere";
 
 export type EditFromHereMode = "keep" | "files";
@@ -26,16 +29,19 @@ export function EditFromHereDialog({
   onConfirm,
 }: EditFromHereDialogProps) {
   const t = useT();
+  const [revertFiles, setRevertFiles] = useState(false);
   const unavailable = planLoading
     ? t("Checking session file history…")
     : (plan?.unavailable ?? (!plan ? t("Session file history is unavailable.") : undefined));
   const conflicts = plan?.files.filter((file) => file.conflict) ?? [];
+  const mode: EditFromHereMode = revertFiles && !unavailable ? "files" : "keep";
+  const reverting = revertFiles && !unavailable ? plan!.files.length - conflicts.length : 0;
 
   return (
     <Modal
       title={t("Edit from here?")}
       description={t(
-        'Rewind chat to before this message. Your prompt and attachments return to the composer. "Revert files too" also undoes your own edits.',
+        "The chat returns to before this message. Your prompt returns to the composer.",
       )}
       size="md"
       onClose={() => {
@@ -47,62 +53,55 @@ export function EditFromHereDialog({
             {t("Cancel")}
           </Button>
           <Button
-            tone="danger"
-            disabled={!!pending || !!unavailable}
-            disabledReason={unavailable}
-            loading={pending === "files"}
-            loadingLabel={t("Reverting files…")}
-            onClick={() => {
-              if (!unavailable && !pending) onConfirm("files");
-            }}
-          >
-            {t("Revert files too")}
-          </Button>
-          <Button
             variant="primary"
-            disabled={!!pending}
-            loading={pending === "keep"}
-            loadingLabel={t("Rewinding…")}
-            onClick={() => onConfirm("keep")}
+            loading={!!pending}
+            loadingLabel={pending === "files" ? t("Reverting files…") : t("Rewinding…")}
+            onClick={() => onConfirm(mode)}
           >
-            {t("Revert and keep changes")}
+            {t("Edit from here")}
           </Button>
         </ModalActions>
       }
     >
       <div className="flex min-w-0 flex-col gap-4">
+        <Switch
+          label={t("Also revert file changes")}
+          checked={revertFiles && !unavailable}
+          disabled={!!pending || !!unavailable}
+          onCheckedChange={setRevertFiles}
+        />
         {planLoading ? (
-          <Text as="p" role="status" size="body" tone="inherit">
-            {t("Checking session file history…")}
-          </Text>
-        ) : plan && !plan.unavailable ? (
-          <Text as="div" size="body" tone="inherit" className="flex min-w-0 flex-col gap-2">
-            <p>{t("Session files: {p0}", { p0: plan.files.length })}</p>
-            {conflicts.length ? (
-              <div className="flex min-w-0 flex-col gap-1">
-                <InlineMessage tone="warning" live="off">
-                  {t("These files will be skipped because they changed:")}
-                </InlineMessage>
-                <ul className="flex max-h-40 min-w-0 flex-col gap-1 overflow-y-auto">
-                  {conflicts.map((file) => (
-                    <li key={file.path} className="break-words [overflow-wrap:anywhere]">
-                      <Code>{file.path}</Code>
-                      {": "}
-                      <Text as="span" size="inherit" tone="inherit">
-                        {file.conflict}
-                      </Text>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-          </Text>
-        ) : (
+          <LoadingText delay={false} size="body" tone="inherit">
+            {unavailable}
+          </LoadingText>
+        ) : unavailable ? (
           <Text as="p" size="body" tone="inherit">
             {unavailable}
           </Text>
-        )}
-        {error ? <InlineError>{error}</InlineError> : null}
+        ) : revertFiles ? (
+          <Text as="p" size="body" tone="inherit">
+            {t("Files to revert: {p0}", { p0: reverting })}
+          </Text>
+        ) : null}
+        {revertFiles && !unavailable && conflicts.length ? (
+          <div className="flex min-w-0 flex-col gap-1">
+            <InlineMessage tone="warning" live="off">
+              {t("These files will be skipped because they changed:")}
+            </InlineMessage>
+            <ul className="flex max-h-40 min-w-0 flex-col gap-1 overflow-y-auto">
+              {conflicts.map((file) => (
+                <li key={file.path} className="break-words [overflow-wrap:anywhere]">
+                  <Code>{file.path}</Code>
+                  {": "}
+                  <Text as="span" size="inherit" tone="inherit">
+                    {file.conflict}
+                  </Text>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {error ? <InlineError details={error}>{t("Couldn’t rewind")}</InlineError> : null}
       </div>
     </Modal>
   );

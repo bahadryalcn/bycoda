@@ -70,9 +70,10 @@ Read only the section affected by the change. UI owners are in [source owners](s
 ## Desktop control
 
 - Desktop observations grant only volatile same-caller snapshot refs. The
-  owner-only permission mode (ask, auto, full; `desktop-control-permission.ts`)
-  decides whether the exact operation goes through the native dialog; voice and
-  Room tools cannot write it. Headed input additionally requires saved
+  owner-only permission mode (ask, full; `desktop-control-permission.ts`)
+  decides whether the exact operation goes through the native dialog. Only the
+  Assistant access settings write it (`computerPermissionMode`); voice and
+  Room tools cannot. Headed input additionally requires saved
   physical-input consent, and current presence outside full access.
   Lock, failed presence and revoked authority fail closed. Stop fences queued
   configuration, resume and input; only a newer explicit Resume can re-enable.
@@ -85,6 +86,9 @@ Read only the section affected by the change. UI owners are in [source owners](s
 - Room notebook uses canonical Notes storage and exact native review; projectless
   account grants are separate, versioned and default denied. Retain provenance
   through provider calls, reply persistence, history and speech delivery.
+
+- The snapshot's action history is best-effort: it discloses a bounded set of Room/project sources
+  within a time budget and gives way alone, so one silent desktop never fails the whole snapshot.
 
 - Observation journal coverage is source-specific, bounded and metadata-only.
   Cursor acknowledgement follows authorized delivery; gaps require resnapshot.

@@ -1,5 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useEffect, useId, useRef } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
@@ -21,7 +22,7 @@ export function DeliveryReviewChoice({
   focusRequest,
   onChoose,
 }: {
-  text: string;
+  text?: string;
   working: boolean;
   /** The provider has not answered yet: it may still deliver the message. */
   lateSettlement?: boolean;
@@ -32,30 +33,40 @@ export function DeliveryReviewChoice({
   const t = useT();
   const first = useRef<HTMLButtonElement>(null);
   const warning = useId();
+  const retryHint = t(
+    "Check the conversation first. Sending again duplicates a message that was delivered. Keeping it queued pauses the queue and does not resend it.",
+  );
   useEffect(() => {
     if (focusRequest > 0) first.current?.focus();
   }, [focusRequest]);
   return (
-    <div className="mt-1" data-delivery-review>
-      <div className="flex flex-wrap items-center gap-1">
+    <div className="mt-1.5" data-delivery-review>
+      {text ? (
         <OverflowTooltip label={text}>
           <Text
+            as="div"
             size="caption"
-            tone="inherit"
+            tone="secondary"
             truncate
-            className="min-w-0 max-w-full flex-1 basis-40"
+            {...surfaceAttributes(
+              { frame: "card", radius: "control" },
+              "min-w-0 max-w-full px-2.5 py-1.5",
+            )}
           >
             {text}
           </Text>
         </OverflowTooltip>
+      ) : null}
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <Button
           ref={first}
           size="sm"
           variant="secondary"
           disabled={working}
+          disabledReason={t("Wait for the current action to finish.")}
           onClick={() => onChoose("delivered")}
         >
-          {t("Already delivered")}
+          {t("Mark as delivered")}
         </Button>
         <Button
           size="sm"
@@ -66,10 +77,22 @@ export function DeliveryReviewChoice({
         >
           {t("Send again")}
         </Button>
-        <Button size="sm" variant="ghost" disabled={working} onClick={() => onChoose("keep")}>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={working}
+          disabledReason={t("Wait for the current action to finish.")}
+          onClick={() => onChoose("keep")}
+        >
           {t("Keep queued, pause")}
         </Button>
-        <Button size="sm" variant="ghost" disabled={working} onClick={() => onChoose("discard")}>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={working}
+          disabledReason={t("Wait for the current action to finish.")}
+          onClick={() => onChoose("discard")}
+        >
           {t("Discard")}
         </Button>
       </div>
@@ -77,17 +100,15 @@ export function DeliveryReviewChoice({
         id={warning}
         as="p"
         size="caption"
-        tone="inherit"
-        className="mt-0.5"
+        tone={lateSettlement ? "warning" : "inherit"}
+        className={lateSettlement ? "mt-1.5" : "sr-only"}
         data-delivery-review-warning
       >
         {lateSettlement
           ? t(
               "The provider has not answered yet and may still deliver this message. Sending it again could duplicate it. Wait, or stop the turn.",
             )
-          : t(
-              "Check the conversation first. Sending again duplicates a message that was delivered. Keeping it queued pauses the queue and does not resend it.",
-            )}
+          : retryHint}
       </Text>
     </div>
   );

@@ -17,7 +17,10 @@ for (const theme of ["dark", "light"]) {
       await expect(settings).toBeVisible();
       await expect(page.getByText(/Model set in Settings/)).toHaveCount(0);
       const boxes = await Promise.all([grouping, settings].map((button) => button.boundingBox()));
-      expect(new Set(boxes.map((box) => Math.round(box!.y))).size).toBe(1);
+      // One row: the controls differ in height, so compare their vertical centres. Linux font
+      // metrics shift a centre by up to half a pixel more than Windows.
+      const centres = boxes.map((box) => box!.y + box!.height / 2);
+      expect(Math.abs(centres[0] - centres[1])).toBeLessThanOrEqual(4);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
@@ -87,7 +90,11 @@ for (const theme of ["dark", "light"]) {
       const editor = page.getByRole("textbox", { name: "Skill instructions", exact: true });
       await expect(editor).toBeVisible();
       await editor.fill("---\nname: arc\n---\n\n# Edited instructions\n");
-      await expect(page.getByText("Unsaved changes", { exact: true })).toBeVisible();
+      // A draft shows as an enabled Save beside Discard changes.
+      await expect(
+        page.getByRole("button", { name: "Discard changes", exact: true }),
+      ).toBeVisible();
+      await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
       await page.getByRole("button", { name: "Save", exact: true }).click();
       await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
       await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeDisabled();
@@ -129,7 +136,7 @@ for (const theme of ["dark", "light"]) {
       }
       mkdirSync("temp/verification/skills-workspace", { recursive: true });
       await page.screenshot({ path: `temp/verification/skills-workspace/${theme}-${width}.png` });
-      await page.getByRole("button", { name: "Close skill preview" }).click();
+      await page.getByRole("button", { name: /^(Close skill preview|Back)$/ }).click();
       await expect(page.getByRole("searchbox", { name: "Filter skills" })).toBeVisible();
       expect(errors).toEqual([]);
     });
@@ -154,9 +161,6 @@ for (const theme of ["light", "dark"])
       await expect(saved).toBeVisible();
       await expect(saved).toBeDisabled();
       await expect(page.getByText("Skill saved.", { exact: true })).toHaveCount(0);
-      await expect(
-        page.getByRole("complementary", { name: "Skill preview" }).locator("footer"),
-      ).not.toContainText("Saved");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
@@ -192,12 +196,12 @@ for (const theme of ["dark", "light"]) {
       await expect(
         page.getByRole("button", { name: "Copy arc to tailm", exact: true }),
       ).toHaveCount(0);
-      await page.getByRole("button", { name: "skill-2", exact: true }).click();
+      await page.getByRole("button", { name: "skill-2, Off", exact: true }).click();
       await page.getByRole("tab", { name: "Machines", exact: true }).click();
       const machines = page.getByRole("list", { name: "Machines", exact: true });
       await expect(machines).toContainText("Not installed");
       await page.screenshot({ path: `${dir}/machines-${theme}-${width}.png` });
-      await page.getByRole("button", { name: "Close skill preview" }).click();
+      await page.getByRole("button", { name: /^(Close skill preview|Back)$/ }).click();
 
       await page.getByRole("button", { name: "New", exact: true }).click();
       await page.getByRole("menuitem", { name: "Discover skills", exact: true }).click();

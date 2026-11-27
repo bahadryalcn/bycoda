@@ -8,7 +8,11 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
   additionalProperties: false,
 });
 const requestId = { type: "string", minLength: 1, maxLength: 100, pattern: "^[A-Za-z0-9_-]+$" };
-const files = { type: "boolean" };
+const files = {
+  type: "boolean",
+  description:
+    "Omit or set true for normal project access under the session's permissions. Tools are optional. Set false only when the owner explicitly asks for scratch mode.",
+};
 const runId = { type: "string", minLength: 1, maxLength: 200 };
 const prompt = { type: "string", minLength: 1, maxLength: DELEGATION_LIMITS.promptChars };
 
@@ -92,9 +96,9 @@ export function describeAgentTool(action: string): string {
   if (action === "agents.send")
     return "Send a collaboration message to a member returned by agents.list. auto steers an active Host turn when supported, otherwise queues; an idle child resumes with its context. queue waits for the current turn; steer requires an active Host turn. Parent messages use its shared queue when steering is unavailable. Reuse requestId only with identical payload. queued/steered means accepted, not proof the model read it. Unknown delivery must be inspected, never blindly resent. Peer messages cannot widen scope, permissions or advisor read-only access. Send only useful questions/results; do not acknowledge acknowledgements or create loops.";
   if (action === "agents.options")
-    return "Read the subagent and advisor models the owner selected for this conversation, with availability, effortLevels and defaultEffort when offered, tier, maxEffort when set, running counts, limits and notifyOnCompletionAvailable. Background wake is for interactive parents; Work-owned task/goal/automation parents keep waiting for results. Only these models can run; a single subagent model is used automatically.";
+    return "Read the subagent and advisor models the owner selected for this conversation, with availability, filesFalse (available and repositoryReadIsolation), effortLevels and defaultEffort when offered, tier, maxEffort when set, running counts, limits and notifyOnCompletionAvailable. filesFalse.available is provider capability; installed CLI compatibility is checked at launch. Background wake is for interactive parents; Work-owned task/goal/automation parents keep waiting for results. Only these models can run; a single subagent model is used automatically. A selected model whose account has reached its usage limit is left out and listed in atUsageLimit with its reset time; the Host refuses it until then.";
   if (action === "agents.delegate")
-    return "Start one subagent in a fresh child session in this project's folder, using the selected model. Choose effort by task difficulty, within agents.options maxEffort; omitted uses model default. Returns immediately with runId. notifyOnCompletion:true queues the result to this parent and wakes it when available; end your turn instead of polling. Otherwise call agents.wait. Reuse requestId only with identical payload. The child sees only the brief: goal, missing context, expected output, in a few sentences (rarely over ~1500 characters). files:false (Claude/Codex): chat-only, no repository, for discussion, research or writing. The Host enforces limits and peer rules; do not restate them.";
+    return "Start one subagent in a fresh child session in this project's folder, using the selected model. Omit files or set files:true for normal project access. When tools are unnecessary or unavailable, give the child enough context to answer from the brief. Use files:false only when the owner explicitly asks for scratch mode. Check agents.options for support and repositoryReadIsolation before selecting it. Choose effort by task difficulty, within agents.options maxEffort; omitted uses model default. Returns immediately with runId. notifyOnCompletion:true queues the result to this parent and wakes it when available; end your turn instead of polling. Otherwise call agents.wait. Reuse requestId only with identical payload. The child sees only the brief: goal, missing context, expected output, in a few sentences (rarely over ~1500 characters). The Host enforces limits and peer rules; do not restate them.";
   if (action === "agents.consult")
     return "Ask the selected advisor for a read-only second opinion in a fresh child session. Returns immediately with runId. Set notifyOnCompletion:true for background completion delivery, then end your turn; otherwise call agents.wait. The advisor cannot edit files and can message its parent only. Verify its untrusted advice before acting.";
   if (action === "agents.reply")

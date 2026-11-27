@@ -62,9 +62,7 @@ async function assertSettingsGeometry(dialog: Locator, region: Locator) {
     .last();
   await lastControl.scrollIntoViewIfNeeded();
   const box = (await lastControl.boundingBox())!;
-  const footer = (await dialog
-    .getByRole("button", { name: "Save profile settings", exact: true })
-    .boundingBox())!;
+  const footer = (await dialog.getByRole("button", { name: "Save", exact: true }).boundingBox())!;
   const regionBox = (await region.boundingBox())!;
   expect(box.y).toBeGreaterThanOrEqual(regionBox.y - 1);
   expect(box.y + box.height).toBeLessThanOrEqual(regionBox.y + regionBox.height + 1);
@@ -86,19 +84,17 @@ for (const [theme, width] of [
   ["dark", 560],
 ] as const)
   test(`assistant settings compact row containment ${theme} ${width}`, async ({ page }) => {
-    const directory = "temp/verification/assistant-settings-layout-20261113/after";
+    const directory = "temp/verification/assistant-settings-simplify/assistant";
     await mkdir(directory, { recursive: true });
     await page.setViewportSize({ width, height: 900 });
     await page.goto(
-      `/tests/browser/assistant/assistant-room.html?real-controls&desktop&manual&settings-layout&theme=${theme}`,
+      `/tests/browser/assistant/assistant-room.html?real-controls&desktop&manual&native-consent&settings-layout&theme=${theme}`,
     );
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     const dialog = page.getByRole("dialog").first();
     for (const tab of ["Personal", "Work", "Access", "Advanced"]) {
       await dialog.getByRole("tab", { name: tab, exact: true }).click();
-      const region = dialog
-        .locator('[data-axis="y"]')
-        .and(dialog.getByRole("region", { name: tab, exact: true }));
+      const region = dialog.getByRole("tabpanel", { name: tab, exact: true });
       const capture = async (state: string) => {
         await page.mouse.move(0, 0);
         await expect(page.getByRole("tooltip")).toHaveCount(0);
@@ -109,7 +105,6 @@ for (const [theme, width] of [
       };
       await capture("top");
       if (tab === "Personal") {
-        await dialog.getByRole("button", { name: "Avatar", exact: true }).click();
         const avatarField = await dialog
           .getByRole("textbox", { name: "Emoji or initials", exact: true })
           .boundingBox();
@@ -121,12 +116,6 @@ for (const [theme, width] of [
           .getByRole("button", { name: "Generate avatar", exact: true })
           .scrollIntoViewIfNeeded();
         await capture("avatar");
-        await dialog
-          .getByRole("button", { name: "Personality and conversation", exact: true })
-          .click();
-      } else if (tab === "Work") {
-        await dialog.getByRole("button", { name: "Inactivity and recovery", exact: true }).click();
-        await dialog.getByRole("button", { name: /^Notifications/ }).click();
       } else if (tab === "Access") {
         await dialog.getByRole("radio", { name: "Full access", exact: true }).click();
         await expect(
@@ -148,7 +137,6 @@ for (const [theme, width] of [
         await expect(
           dialog.getByText(/International-Platform-Development/, { exact: false }).first(),
         ).toBeVisible();
-        await dialog.getByRole("button", { name: "Custom helper", exact: true }).click();
         await dialog
           .getByRole("textbox", { name: "Helper file", exact: true })
           .fill(
@@ -159,9 +147,6 @@ for (const [theme, width] of [
           .scrollIntoViewIfNeeded();
         await capture("helper");
         await dialog.locator("summary").filter({ hasText: "All checks" }).click();
-      } else {
-        await dialog.getByRole("button", { name: "Supervisor limits", exact: true }).click();
-        await dialog.getByRole("button", { name: "Worker context limits", exact: true }).click();
       }
       await assertSettingsGeometry(dialog, region);
       await capture("expanded-bottom");
@@ -232,10 +217,14 @@ for (const theme of ["light", "dark"])
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
           true,
         );
-        // The discard confirmation replaces the footer's Save with Keep editing and Discard.
+        // The shared leave dialog exposes Keep editing while the assistant is inert.
+        const actionDialog =
+          name === "unsaved-close"
+            ? page.getByRole("dialog", { name: tr("Save changes before leaving?"), exact: true })
+            : dialog;
         await expect(
-          dialog.getByRole("button", {
-            name: tr(name === "unsaved-close" ? "Keep editing" : "Save profile settings"),
+          actionDialog.getByRole("button", {
+            name: tr(name === "unsaved-close" ? "Keep editing" : "Save"),
             exact: true,
           }),
         ).toBeVisible();
@@ -258,12 +247,6 @@ for (const theme of ["light", "dark"])
         .fill("Settings fixture");
       await capture("personal");
       await sectionCapture("Identity", "identity");
-      const conversation = dialog.getByRole("button", {
-        name: tr("Personality and conversation"),
-        exact: true,
-      });
-      await expect(conversation).toBeVisible();
-      await conversation.click();
       await sectionCapture("Personality", "personality");
       await sectionCapture("Conversation", "conversation");
 
@@ -308,7 +291,6 @@ for (const theme of ["light", "dark"])
         name: tr("Helper file"),
         exact: true,
       });
-      await expect(helperPath).toBeHidden();
       await expect(
         dialog.getByRole("switch", { name: tr("Enable computer use"), exact: true }),
       ).not.toBeChecked();
@@ -320,16 +302,14 @@ for (const theme of ["light", "dark"])
         dialog.getByRole("button", { name: tr("Stop computer use"), exact: true }),
       ).toHaveCount(0);
       await capture("computer");
-      await dialog.getByRole("button", { name: tr("Custom helper"), exact: true }).click();
       await expect(helperPath).toBeVisible();
       await helperPath.scrollIntoViewIfNeeded();
       await capture("computer-helper-expanded");
       await sectionCapture("Computer use", "computer-all");
 
       await tab("Advanced").click();
-      await dialog.getByRole("button", { name: tr("Supervisor limits"), exact: true }).click();
       await dialog
-        .getByRole("spinbutton", { name: tr("Review reservation"), exact: true })
+        .getByRole("spinbutton", { name: tr("Reserve per review"), exact: true })
         .fill("9000");
       await dialog
         .getByRole("spinbutton", {
@@ -356,17 +336,17 @@ for (const theme of ["light", "dark"])
       ).toEqual(writesBefore);
       await tab("Advanced").click();
       const reservation = dialog.getByRole("spinbutton", {
-        name: tr("Review reservation"),
+        name: tr("Reserve per review"),
         exact: true,
       });
       await reservation.fill("1");
       await tab("Personal").click();
-      await dialog.getByRole("button", { name: tr("Save profile settings"), exact: true }).click();
+      await dialog.getByRole("button", { name: tr("Save"), exact: true }).click();
       await expect(tab("Advanced")).toHaveAttribute("aria-selected", "true");
       await expect(reservation).toBeVisible();
       expect((await requests(page)).filter((r) => r.input.op === "profile.update")).toHaveLength(0);
       await reservation.fill("9000");
-      await dialog.getByRole("button", { name: tr("Save profile settings"), exact: true }).click();
+      await dialog.getByRole("button", { name: tr("Save"), exact: true }).click();
       await expect(dialog.getByRole("button", { name: tr("Saved"), exact: true })).toBeVisible();
       expect(await page.evaluate(() => (window as any).__setupProfile)).toMatchObject({
         name: "Settings fixture",
@@ -386,22 +366,27 @@ for (const theme of ["light", "dark"])
       });
       await unsavedAddress.fill("Retained unsaved address");
       await dialog.getByRole("button", { name: tr("Close"), exact: true }).click();
-      await expect(dialog.getByText(tr("Discard unsaved changes?"), { exact: true })).toBeVisible();
+      const leaveGuard = page.getByRole("dialog", {
+        name: tr("Save changes before leaving?"),
+        exact: true,
+      });
+      await expect(leaveGuard).toBeVisible();
       await capture("unsaved-close");
       const profileWritesBeforeKeepEditing = (await requests(page)).filter(
         (request) => request.input.op === "profile.update",
       );
-      await dialog.getByRole("button", { name: tr("Keep editing"), exact: true }).click();
-      await expect(
-        dialog.getByRole("button", { name: tr("Keep editing"), exact: true }),
-      ).toHaveCount(0);
+      await leaveGuard.getByRole("button", { name: tr("Keep editing"), exact: true }).click();
+      await expect(leaveGuard).toHaveCount(0);
       await expect(dialog).toBeVisible();
       await expect(unsavedAddress).toHaveValue("Retained unsaved address");
       expect(
         (await requests(page)).filter((request) => request.input.op === "profile.update"),
       ).toEqual(profileWritesBeforeKeepEditing);
       await dialog.getByRole("button", { name: tr("Close"), exact: true }).click();
-      const discard = dialog.getByRole("button", { name: tr("Discard"), exact: true });
+      const discard = leaveGuard.getByRole("button", {
+        name: tr("Discard and leave"),
+        exact: true,
+      });
       await expect(discard).toBeVisible();
       await discard.click();
       await expect(dialog).toHaveCount(0);
@@ -423,15 +408,13 @@ for (const theme of ["light", "dark"])
         .getByRole("textbox", { name: "Assistant name", exact: true })
         .fill("Arif updated");
       await dialog.getByRole("tab", { name: "Work", exact: true }).click();
-      await dialog.getByRole("button", { name: "Save profile settings", exact: true }).click();
+      await dialog.getByRole("button", { name: "Save", exact: true }).click();
       const saved = dialog.getByRole("button", { name: "Saved", exact: true });
       await expect(saved).toBeVisible();
       await expect(saved).toBeDisabled();
       await expect(saved).toHaveText("Saved");
       await expect(dialog.getByText("Profile settings saved.", { exact: true })).toHaveCount(0);
-      await expect(
-        dialog.getByRole("button", { name: "Save profile settings", exact: true }),
-      ).toHaveCount(0);
+      await expect(dialog.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
@@ -443,9 +426,7 @@ for (const theme of ["light", "dark"])
       await dialog
         .getByRole("textbox", { name: "Assistant name", exact: true })
         .fill("Updated Arif");
-      await expect(
-        dialog.getByRole("button", { name: "Save profile settings", exact: true }),
-      ).toBeEnabled();
+      await expect(dialog.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
       await expect(saved).toHaveCount(0);
     });
 
@@ -462,23 +443,21 @@ for (const theme of ["light", "dark"])
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       const dialog = page.getByRole("dialog").first();
       await dialog.getByRole("tab", { name: "Work", exact: true }).click();
-      const models = dialog
-        .locator("section")
-        .filter({ has: page.getByRole("heading", { name: "Models", exact: true }) })
-        .first();
-      await expect(models.locator("fieldset")).toHaveCount(0);
+      const models = dialog.getByRole("button", { name: "Manage models", exact: true });
+      await expect(models).toHaveCount(1);
+      await expect(dialog.getByRole("heading", { name: "Models", exact: true })).toHaveCount(0);
+      await models.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: join(poolOutput, `pool-${theme}-${width}.png`),
+        animations: "disabled",
+      });
       await page.evaluate(() => {
         window.addEventListener("bycoda:open-models-settings", (event) => {
           (window as any).__openedModelsTab = (event as CustomEvent).detail;
         });
       });
-      await models.getByRole("button", { name: "Manage models", exact: true }).click();
+      await models.click();
       expect(await page.evaluate(() => (window as any).__openedModelsTab)).toBe("roles");
-      await models.scrollIntoViewIfNeeded();
-      await models.screenshot({
-        path: join(poolOutput, `pool-${theme}-${width}.png`),
-        animations: "disabled",
-      });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );

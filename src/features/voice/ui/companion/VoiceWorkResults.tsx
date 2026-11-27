@@ -1,0 +1,226 @@
+import { createLibrary, defineComponent, Renderer } from "@openuidev/react-lang";
+import { createContext, useContext, type ReactNode } from "react";
+import { z } from "zod";
+import { formatNumber, useT } from "../../../../shared/i18n";
+import { DiffStat } from "../../../../shared/ui/DiffStat";
+import { Heading } from "../../../../shared/ui/Heading";
+import { StatRow, StatTile } from "../../../../shared/ui/StatTile";
+import { StatusText } from "../../../../shared/ui/StatusText";
+import { Text } from "../../../../shared/ui/Text";
+import type {
+  VoiceLiveAction,
+  VoiceLiveResult,
+  VoiceLiveResultStatus,
+} from "../../model/voiceLiveWork";
+import { voiceActionLabel } from "../VoiceToolActivityPanel";
+
+const status = z.enum(["done", "failed", "interrupted"]);
+const count = z.number().int().nonnegative();
+
+const ActionsContext = createContext<readonly VoiceLiveAction[]>([]);
+
+function ResultStatus({ value }: { value: VoiceLiveResultStatus }) {
+  const t = useT();
+  if (value === "done") return <StatusText tone="done">{t("Completed")}</StatusText>;
+  if (value === "failed") return <StatusText tone="failed">{t("Failed")}</StatusText>;
+  return <StatusText tone="needs-you">{t("Unknown")}</StatusText>;
+}
+
+function ResultSection({
+  title,
+  value,
+  children,
+}: {
+  title: string;
+  value: VoiceLiveResultStatus;
+  children?: ReactNode;
+}) {
+  return (
+    <section aria-label={title} className="grid min-w-0 content-start gap-2">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <Heading as="h3" size="heading" lines={1}>
+          {title}
+        </Heading>
+        <ResultStatus value={value} />
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** The result views are shared with the presented answer, which draws the observed result itself. */
+export function TestResultBody(props: {
+  status: VoiceLiveResultStatus;
+  passed: number;
+  failed: number;
+  skipped: number;
+}) {
+  const t = useT();
+  const title = t("Test run");
+  return (
+    <ResultSection title={title} value={props.status}>
+      {props.passed + props.failed + props.skipped > 0 ? (
+        <StatRow label={title}>
+          <StatTile label={t("Passed")} value={formatNumber(props.passed)} />
+          <StatTile label={t("Failed")} value={formatNumber(props.failed)} />
+          {props.skipped > 0 ? (
+            <StatTile label={t("Skipped")} value={formatNumber(props.skipped)} />
+          ) : null}
+        </StatRow>
+      ) : null}
+    </ResultSection>
+  );
+}
+
+const TestResult = defineComponent({
+  name: "TestResult",
+  description: "Latest test run with its reported counts.",
+  props: z.object({ status, passed: count, failed: count, skipped: count }),
+  component: ({ props }) => <TestResultBody {...props} />,
+});
+
+export function CheckResultBody(props: {
+  kind: "build" | "checks";
+  status: VoiceLiveResultStatus;
+}) {
+  const t = useT();
+  return (
+    <ResultSection title={props.kind === "build" ? t("Build") : t("Checks")} value={props.status} />
+  );
+}
+
+const CheckResult = defineComponent({
+  name: "CheckResult",
+  description: "Latest build or check outcome.",
+  props: z.object({ kind: z.enum(["build", "checks"]), status }),
+  component: ({ props }) => <CheckResultBody {...props} />,
+});
+
+export function ChangeResultBody(props: { files: number; additions: number; deletions: number }) {
+  const t = useT();
+  return (
+    <ResultSection title={t("Changes")} value="done">
+      <StatRow label={t("Changes")}>
+        <StatTile label={t("Files")} value={formatNumber(props.files)} />
+      </StatRow>
+      <DiffStat additions={props.additions} deletions={props.deletions} />
+    </ResultSection>
+  );
+}
+
+const ChangeResult = defineComponent({
+  name: "ChangeResult",
+  description: "Size of the latest reported Git change.",
+  props: z.object({ files: count, additions: count, deletions: count }),
+  component: ({ props }) => <ChangeResultBody {...props} />,
+});
+
+export function FailedCommandsBody(props: { count: number }) {
+  const t = useT();
+  return (
+    <ResultSection title={t("Commands")} value="failed">
+      <StatRow label={t("Commands")}>
+        <StatTile label={t("Failed")} value={formatNumber(props.count)} />
+      </StatRow>
+    </ResultSection>
+  );
+}
+
+const FailedCommands = defineComponent({
+  name: "FailedCommands",
+  description: "Number of unrecognized commands still failed in this turn.",
+  props: z.object({ count }),
+  component: ({ props }) => <FailedCommandsBody {...props} />,
+});
+
+export function VoiceActionsBody({
+  status: value,
+  actions,
+}: {
+  status: VoiceLiveResultStatus;
+  actions: readonly VoiceLiveAction[];
+}) {
+  const t = useT();
+  return (
+    <ResultSection title={t("Voice actions")} value={value}>
+      <ul className="grid min-w-0 gap-1">
+        {actions.map((action) => (
+          <li key={action.id} className="flex min-w-0 items-center justify-between gap-2">
+            <Text as="span" truncate>
+              {voiceActionLabel(action.name)}
+            </Text>
+            <ResultStatus value={action.status} />
+          </li>
+        ))}
+      </ul>
+    </ResultSection>
+  );
+}
+
+const VoiceActions = defineComponent({
+  name: "VoiceActions",
+  description: "Settled voice tool calls, newest first.",
+  props: z.object({ status }),
+  component: function VoiceActionsView({ props }) {
+    const actions = useContext(ActionsContext);
+    return <VoiceActionsBody status={props.status} actions={actions} />;
+  },
+});
+
+const LiveResults = defineComponent({
+  name: "LiveResults",
+  description: "Responsive grid of observed results.",
+  props: z.object({
+    results: z
+      .array(
+        z.union([
+          TestResult.ref,
+          CheckResult.ref,
+          ChangeResult.ref,
+          FailedCommands.ref,
+          VoiceActions.ref,
+        ]),
+      )
+      .min(1),
+  }),
+  component: ({ props, renderNode }) => (
+    <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))] gap-4">
+      {renderNode(props.results)}
+    </div>
+  ),
+});
+
+const library = createLibrary({
+  components: [LiveResults, TestResult, CheckResult, ChangeResult, FailedCommands, VoiceActions],
+  root: "LiveResults",
+});
+
+function statement(result: VoiceLiveResult) {
+  switch (result.kind) {
+    case "tests":
+      return `TestResult("${status.parse(result.status)}", ${count.parse(result.passed)}, ${count.parse(result.failed)}, ${count.parse(result.skipped)})`;
+    case "build":
+    case "checks":
+      return `CheckResult("${result.kind}", "${status.parse(result.status)}")`;
+    case "changes":
+      return `ChangeResult(${count.parse(result.files)}, ${count.parse(result.additions)}, ${count.parse(result.deletions)})`;
+    case "commands":
+      return `FailedCommands(${count.parse(result.count)})`;
+    case "actions":
+      return `VoiceActions("${status.parse(result.status)}")`;
+  }
+}
+
+/** Only enums and integers enter the OpenUI program. Action names stay in React context. */
+export function VoiceWorkResults({ results }: { results: readonly VoiceLiveResult[] }) {
+  if (!results.length) return null;
+  const actions = results.find((result) => result.kind === "actions")?.actions ?? [];
+  return (
+    <ActionsContext.Provider value={actions}>
+      <Renderer
+        library={library}
+        response={`root = LiveResults([${results.map(statement).join(", ")}])`}
+      />
+    </ActionsContext.Provider>
+  );
+}

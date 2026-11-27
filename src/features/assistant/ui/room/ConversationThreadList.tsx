@@ -2,12 +2,12 @@ import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
 import { formatDate, t } from "../../../../shared/i18n";
 import { formatRelativeTime } from "../../../../shared/i18n/format";
-import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { Plus } from "../../../../shared/ui/icons";
+import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { SearchableSelect } from "../../../../shared/ui/SearchableSelect";
 import { SearchInput } from "../../../../shared/ui/SearchInput";
-import { Skeleton } from "../../../../shared/ui/Skeleton";
+import { SkeletonList } from "../../../../shared/ui/SkeletonList";
 import { Select } from "../../../../shared/ui/Select";
 import { useAssistantRoom } from "./assistantRoomContext";
 import styles from "./Conversation.module.css";
@@ -25,9 +25,11 @@ function threadTime(at: number) {
 export function ConversationThreadList({
   c,
   onFailure,
+  onShowTranscript,
 }: {
   c: ConversationContext;
   onFailure: (cause: unknown) => void;
+  onShowTranscript: () => void;
 }) {
   const { setQuery } = useAssistantRoom();
   const {
@@ -50,6 +52,12 @@ export function ConversationThreadList({
     (a, b) =>
       Number(Boolean(a.projectId)) - Number(Boolean(b.projectId)) || b.updatedAt - a.updatedAt,
   );
+  const openDisabledReason =
+    scope !== "global" && !project
+      ? t("Select a project to open a conversation.")
+      : scope === "session" && !sessionId
+        ? t("Select a session to open a conversation.")
+        : undefined;
   return (
     <aside
       {...surfaceAttributes({ frame: "pane", edge: "inline-end" }, styles.threadList)}
@@ -62,10 +70,10 @@ export function ConversationThreadList({
           value={scope}
           disabled={clearing}
           options={[
-            ["global", "Global"],
-            ["project", "Project"],
-            ["session", "Session focus"],
-          ].map(([value, label]) => ({ value, label: t(label) }))}
+            { value: "global", label: t("Global") },
+            { value: "project", label: t("Project") },
+            { value: "session", label: t("Session focus") },
+          ]}
           onValueChange={setScope}
         />
         {scope !== "global" && (
@@ -94,61 +102,65 @@ export function ConversationThreadList({
           <Button
             iconOnly
             label={t("Open conversation")}
-            disabled={
-              pending ||
-              clearing ||
-              summaryRefreshing ||
-              (scope !== "global" && !project) ||
-              (scope === "session" && !sessionId)
-            }
-            onClick={() => void open().catch(onFailure)}
+            disabled={pending || clearing || summaryRefreshing || !!openDisabledReason}
+            disabledReason={openDisabledReason}
+            onClick={() => void open(onShowTranscript).catch(onFailure)}
           >
             <Plus className="icon-sm" />
           </Button>
         </div>
+        {query.trim() && (
+          <div className={styles.narrowAction}>
+            <Button variant="secondary" onClick={onShowTranscript}>
+              {t("Show search results")}
+            </Button>
+          </div>
+        )}
       </div>
       <div className={styles.threads}>
         {!threads.length && pending && (
           <div className={styles.threadSkeleton}>
-            {[0, 1, 2, 3].map((row) => (
-              <div key={row} className={styles.threadSkeletonRow}>
-                <Skeleton inline width="100%" aria-hidden />
-                <Skeleton inline width="2.25rem" aria-hidden />
-              </div>
-            ))}
+            <SkeletonList rows={4} lines={1} trailing="text" density="compact" seed={3} />
           </div>
+        )}
+        {!threads.length && !pending && (
+          <EmptyState size="inline" description={t("No conversations yet.")} />
         )}
         {threads.map((thread) => {
           const projectName = thread.projectId
             ? (projects.find((item) => (item.id ?? item.path) === thread.projectId)?.name ??
               thread.projectId)
             : "";
+          const scopeName = projectName || t("Global");
           return (
             <Button
               key={thread.id}
               variant="item"
               selected={threadId === thread.id}
               disabled={clearing || summaryRefreshing}
-              onClick={() => setThreadId(thread.id)}
+              disabledReason={t("Wait for the current action to finish.")}
+              onClick={() => {
+                setThreadId(thread.id);
+                onShowTranscript();
+              }}
             >
-              <span className={styles.threadRow}>
-                <span className={styles.threadTop}>
-                  <Text
-                    as="span"
-                    size="body"
-                    tone="inherit"
-                    weight="medium"
-                    leading="inherit"
-                    truncate
-                    className={styles.threadName}
-                  >
-                    {projectName || t("Global")}
-                  </Text>
-                  {thread.projectId && <Badge size="xs">{t("Project")}</Badge>}
-                  <Text size="micro" tone="muted" leading="inherit" className={styles.threadTime}>
-                    {threadTime(thread.updatedAt)}
-                  </Text>
-                </span>
+              <span className={styles.threadTop}>
+                <Text
+                  as="span"
+                  size="body"
+                  tone="inherit"
+                  weight="medium"
+                  leading="inherit"
+                  truncate
+                  className={styles.threadName}
+                >
+                  {thread.purpose === "job-planning"
+                    ? t("Job planning · {p0}", { p0: scopeName })
+                    : scopeName}
+                </Text>
+                <Text size="micro" tone="muted" leading="inherit" className={styles.threadTime}>
+                  {threadTime(thread.updatedAt)}
+                </Text>
               </span>
             </Button>
           );

@@ -101,9 +101,6 @@
     color: var(--foreground);
   }
 }
-.clear:focus-visible {
-  --focus-outline-offset: 1px;
-}
 .hint {
   color: var(--text-muted);
   font-size: var(--text-xs);
@@ -142,11 +139,25 @@
 .choice[aria-disabled="true"] {
   cursor: not-allowed;
 }
+.choice[aria-disabled="true"][data-highlighted]:not(:disabled) {
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: calc(-1 * var(--ui-focus-width));
+  opacity: 1;
+}
 .choiceCheck {
   composes: check from "../../ListRow.module.css";
 }
 .choiceIcon {
   composes: icon from "../../ListRow.module.css";
+}
+/* A composite glyph (provider mark plus account badge) widens the slot instead of painting over
+   the label; a lone glyph keeps the 16px slot. Doubled to outrank the composed fixed width. */
+.choiceIcon.choiceIcon {
+  inline-size: auto;
+  min-inline-size: var(--ui-icon-md);
+}
+.choiceIcon.choiceIcon > :is(svg, img) {
+  inline-size: var(--ui-icon-md);
 }
 .choiceBody {
   min-inline-size: 0;

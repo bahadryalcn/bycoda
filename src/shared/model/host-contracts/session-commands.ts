@@ -123,6 +123,8 @@ export const SendCommandSchema = z.strictObject({
   secondOpinion: SecondOpinionSchema.optional(),
   noteCard: NoteComposerCardSchema.optional(),
   expectedPlanText: text.optional(),
+  /** Extra Host folders the session may also use; replaces the session's list. Host validates paths. */
+  additionalDirs: z.array(text).max(16).optional(),
 });
 export const DraftCommandSchema = z.strictObject({
   ...commandBase,
@@ -245,6 +247,7 @@ export const CommandDispatchParamsSchema = z.discriminatedUnion("type", [
     requestId: SafeCounterSchema,
     approvalOccurrenceId: z.string().regex(WIRE_UUID_V4_PATTERN).optional(),
     decision: z.enum(["allow", "deny"]),
+    allowForSession: z.literal(true).optional(),
   }),
   z.strictObject({
     ...commandBase,

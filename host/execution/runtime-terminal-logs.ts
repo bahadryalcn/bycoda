@@ -1,6 +1,9 @@
 import { StringDecoder } from "node:string_decoder";
 import { RuntimeLogLineRedactor, RuntimeLogsService } from "./runtime-logs";
-import type { RuntimeLogSource } from "../../src/features/host-tools/runtimeLogTypes";
+import type {
+  RuntimeLogLevel,
+  RuntimeLogSource,
+} from "../../src/features/host-tools/runtimeLogTypes";
 
 type Stream = {
   redactor: RuntimeLogLineRedactor;
@@ -10,8 +13,23 @@ type Stream = {
   line: string;
   skipLine: boolean;
   truncated: boolean;
+  /** A `\r` was seen; it ends the line only when `\n` follows, else it redraws the line. */
+  carriageReturn: boolean;
   escape: "text" | "escape" | "csi" | "osc" | "oscEnd";
 };
+
+/** Severity of a line; `error` and `warn` lines are the durable diagnostics. */
+function levelOf(message: string): RuntimeLogLevel {
+  if (
+    /\b(?:error|fatal|exception|EADDRINUSE)\b|^\s*(?:TypeError|ReferenceError|SyntaxError):/i.test(
+      message,
+    )
+  )
+    return "error";
+  if (/\b(?:warn(?:ing)?|deprecated|deprecation)\b/i.test(message)) return "warn";
+  if (/^\s*\[?debug\b/i.test(message)) return "debug";
+  return "info";
+}
 
 type ExitFacts = { exitCode?: number; signal?: string };
 
@@ -117,6 +135,7 @@ export class RuntimeTerminalLogs {
         line: "",
         skipLine: false,
         truncated: false,
+        carriageReturn: false,
         escape: "text",
       };
       this.streams.set(key, stream);
@@ -140,6 +159,7 @@ export class RuntimeTerminalLogs {
       stream.decoder = new StringDecoder("utf8");
       stream.line = "";
       stream.skipLine = true;
+      stream.carriageReturn = false;
       stream.escape = "text";
     }
     stream.sequence = Number(sequence);
@@ -170,25 +190,29 @@ export class RuntimeTerminalLogs {
   private emit(stream: Stream) {
     const message = stream.redactor.redact(stream.line);
     if (!stream.skipLine && message.trim()) {
-      const level =
-        /\b(?:error|fatal|exception|EADDRINUSE)\b|^\s*(?:TypeError|ReferenceError|SyntaxError):/i.test(
-          message,
-        )
-          ? "error"
-          : /\b(?:warn(?:ing)?|deprecated|deprecation)\b/i.test(message)
-            ? "warn"
-            : /^\s*\[?debug\b/i.test(message)
-              ? "debug"
-              : "info";
       this.logs.add(stream.source, {
         timestamp: Date.now(),
-        level,
+        level: levelOf(message),
         message: message + (stream.truncated ? "… [truncated]" : ""),
         details: { stream: "pty" },
       });
     }
     stream.line = "";
     stream.skipLine = false;
+    stream.truncated = false;
+  }
+
+  /** A carriage return followed by visible output redraws the line in place. Only the
+   * final state is logged, so a diagnostic that the redraw replaces is logged first. */
+  private redraw(stream: Stream) {
+    const level = levelOf(stream.line);
+    if (level === "error" || level === "warn") {
+      this.emit(stream);
+      return;
+    }
+    // Still feed the redactor, so a PEM marker in the replaced text keeps its state.
+    stream.redactor.redact(stream.line);
+    stream.line = "";
     stream.truncated = false;
   }
 
@@ -204,6 +228,10 @@ export class RuntimeTerminalLogs {
         const match = lineBreak.exec(text);
         const index = match ? match.index : text.length;
         const segment = text.slice(start, index);
+        if (segment && stream.carriageReturn) {
+          this.redraw(stream);
+          stream.carriageReturn = false;
+        }
         const room = Math.max(0, 8192 - stream.line.length);
         stream.line += segment.slice(0, room);
         const overflow = segment.slice(room);
@@ -212,7 +240,11 @@ export class RuntimeTerminalLogs {
           stream.truncated = true;
         }
         if (index === text.length) break;
-        this.emit(stream);
+        if (text[index] === "\r") stream.carriageReturn = true;
+        else {
+          this.emit(stream);
+          stream.carriageReturn = false;
+        }
         start = index + 1;
       }
       return;
@@ -239,11 +271,20 @@ export class RuntimeTerminalLogs {
         stream.escape = "escape";
         continue;
       }
-      if (char === "\n" || char === "\r") {
+      if (char === "\r") {
+        stream.carriageReturn = true;
+        continue;
+      }
+      if (char === "\n") {
         this.emit(stream);
+        stream.carriageReturn = false;
         continue;
       }
       if (char < " " && char !== "\t") continue;
+      if (stream.carriageReturn) {
+        this.redraw(stream);
+        stream.carriageReturn = false;
+      }
       if (stream.line.length < 8192) stream.line += char;
       else {
         stream.redactor.observeOverflow(char, stream.line);

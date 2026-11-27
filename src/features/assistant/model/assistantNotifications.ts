@@ -29,6 +29,13 @@ export type AssistantNotificationInput = {
     Record<string, unknown>)[];
 };
 
+/** The full notification from an already-polled snapshot; delivery never requests a snapshot per notification. */
+export function currentNotification(snapshot: AssistantSnapshot | null | undefined, id: string) {
+  return snapshot?.profile.enabled && snapshot.profile.setupComplete
+    ? snapshot.notifications?.find((notification) => notification.id === id)
+    : undefined;
+}
+
 export class AssistantNotificationDelivery {
   private delivered = new Set<string>();
   private running = false;

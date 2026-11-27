@@ -8,6 +8,7 @@ import { openFolderPicker } from "./openFolderPicker";
 const fs = vi.hoisted(() => ({
   homeDir: vi.fn(),
   listDir: vi.fn(),
+  listWindowsDrives: vi.fn(),
   statFiles: vi.fn(),
   createPath: vi.fn(),
   openPathWithDefaultApp: vi.fn(),
@@ -67,6 +68,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(() => {});
   fs.homeDir.mockResolvedValue("C:/Users/me");
+  fs.listWindowsDrives.mockResolvedValue(["C:/", "G:/"]);
   fs.statFiles.mockResolvedValue([
     { path: "C:/", isDir: true },
     { path: "G:/", isDir: true },
@@ -103,6 +105,11 @@ function button(label: string) {
     (item) => item.textContent === label,
   )!;
 }
+function option(label: string) {
+  return [...container.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (item) => item.textContent === label,
+  )!;
+}
 async function click(label: string) {
   await act(async () => button(label).click());
 }
@@ -128,7 +135,7 @@ describe("project folder browser", () => {
     const target = list.getAttribute("aria-activedescendant");
     const scroll = vi.mocked(HTMLElement.prototype.scrollIntoView);
     scroll.mockClear();
-    const notes = button("Notes");
+    const notes = option("Notes");
     await act(async () => {
       notes.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
     });
@@ -142,17 +149,25 @@ describe("project folder browser", () => {
   });
 
   it("filters growing folder lists without losing selected paths and opens the filtered keyboard target", async () => {
+    // The filter field appears once the listing is long enough to need it.
+    const many = Array.from({ length: 14 }, (_, index) => ({
+      name: `Extra ${index}`,
+      path: `C:/Users/me/Extra ${index}`,
+      isDir: true,
+      ignored: false,
+    }));
+    fs.listDir.mockImplementation(async (path) =>
+      path === "C:/Users/me" ? [...folders, ...many] : [],
+    );
     await render(true);
-    const selected = container.querySelector<HTMLInputElement>('[aria-label="Select Projects"]')!;
-    await act(async () => selected.click());
+    await act(async () => option("Projects").click());
     type("Search folders", "note");
     expect(container.querySelectorAll('[role="option"]')).toHaveLength(1);
     expect(container.querySelector('[role="option"]')?.textContent).toContain("Notes");
     await key("Enter");
     expect(fs.listDir).toHaveBeenLastCalledWith("C:/Users/me/Notes");
-    expect(container.querySelector<HTMLInputElement>('[aria-label="Search folders"]')?.value).toBe(
-      "",
-    );
+    // The query resets in the new folder; its short listing needs no filter field again.
+    expect(container.querySelector('[aria-label="Search folders"]')).toBeNull();
     await click("Add (1)");
     expect(onPick).toHaveBeenCalledWith(["C:/Users/me/Projects"]);
   });
@@ -212,21 +227,24 @@ describe("project folder browser", () => {
     expect(onPick).toHaveBeenCalledWith(["C:/Users/me/Projects", "C:/Users/me/Notes"]);
   });
 
+  const isBlocked = (el: HTMLElement) =>
+    (el as HTMLButtonElement).disabled || el.getAttribute("aria-disabled") === "true";
+
   it("prevents adding a directory whose listing failed and supports recovery", async () => {
     fs.listDir.mockRejectedValueOnce(new Error("Access denied"));
     await render();
-    expect(button("Add").disabled).toBe(true);
+    expect(isBlocked(button("Add"))).toBe(true);
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("Access denied");
-    await click("Retry");
-    expect(button("Add").disabled).toBe(false);
+    await click("Try again");
+    expect(isBlocked(button("Add"))).toBe(false);
   });
 
   it("retries failed home discovery instead of refreshing an unknown directory", async () => {
     fs.homeDir.mockRejectedValueOnce(new Error("Home unavailable"));
     await render();
-    expect(button("Add").disabled).toBe(true);
+    expect(isBlocked(button("Add"))).toBe(true);
     expect(fs.listDir).not.toHaveBeenCalled();
-    await click("Retry");
+    await click("Try again");
     expect(fs.homeDir).toHaveBeenCalledTimes(2);
     expect(fs.listDir).toHaveBeenCalledWith("C:/Users/me");
     expect(button("Add").disabled).toBe(false);
@@ -253,7 +271,7 @@ describe("project folder browser", () => {
     );
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("Already exists");
     expect(onPick).not.toHaveBeenCalled();
-    expect(button("Retry")).toBeUndefined();
+    expect(button("Try again")).toBeUndefined();
     expect(container.querySelector<HTMLInputElement>('[aria-label="New folder name"]')?.value).toBe(
       "Existing",
     );
@@ -300,5 +318,67 @@ describe("project folder browser", () => {
     await act(async () => close.click());
     expect(await result).toEqual([]);
     expect(document.body.children.length).toBe(before);
+  });
+
+  it("keeps the previous listing visible while the next one loads", async () => {
+    await render();
+    let resolveNext!: (items: typeof folders) => void;
+    fs.listDir.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveNext = resolve;
+        }),
+    );
+    await act(async () => option("Notes").click());
+    const list = container.querySelector('[role="listbox"]')!;
+    expect(list.querySelectorAll('[role="option"]')).toHaveLength(2);
+    expect(list.textContent).not.toContain("Loading folders");
+    // The status line waits a short delay before it shows (LoadingText), so poll for it.
+    await vi.waitFor(() => expect(container.textContent).toContain("Loading folders"));
+    await act(async () => resolveNext([]));
+    expect(list.querySelectorAll('[role="option"]')).toHaveLength(0);
+    expect(container.textContent).toContain("No subfolders");
+  });
+
+  it("keeps folder options free of nested interactive controls", async () => {
+    await render(true);
+    const items = [...container.querySelectorAll('[role="option"]')];
+    expect(items).toHaveLength(2);
+    for (const item of items) expect(item.querySelector("button, input")).toBeNull();
+  });
+
+  it("mounts only a window of a long folder listing", async () => {
+    // happy-dom has no layout: give the list a viewport and each row a height so the window measures.
+    const sized = (element: HTMLElement) => (element.getAttribute("role") === "listbox" ? 320 : 32);
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return sized(this);
+    });
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return sized(this);
+    });
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return new DOMRect(0, 0, 280, sized(this));
+    });
+    fs.listDir.mockImplementation(async (path) =>
+      path === "C:/Users/me"
+        ? Array.from({ length: 500 }, (_, index) => ({
+            name: `Folder ${index}`,
+            path: `C:/Users/me/Folder ${index}`,
+            isDir: true,
+            ignored: false,
+          }))
+        : [],
+    );
+    await render();
+    const items = container.querySelectorAll('[role="option"]');
+    expect(items.length).toBeGreaterThan(0);
+    expect(items.length).toBeLessThan(500);
+    expect(items[0]?.getAttribute("aria-setsize")).toBe("500");
   });
 });

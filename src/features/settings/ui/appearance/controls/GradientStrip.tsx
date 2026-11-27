@@ -4,7 +4,6 @@ import { t } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { ColorPickerPopover } from "../../../../../shared/ui/ColorPickerPopover";
 import { Popover } from "../../../../../shared/ui/Popover";
-import { Text } from "../../../../../shared/ui/Text";
 import { SegmentedControl } from "../../../../../shared/ui/SegmentedControl";
 import { workspaceBackgroundImage } from "../../../../../shared/theme/workspaceBackground";
 import {
@@ -13,10 +12,21 @@ import {
 } from "../../../model/workspaceBackground";
 import { backgroundGradientChange } from "../../../model/backgroundGradient";
 import { Row, Slider } from "../../../../../shared/ui/settings";
-import { AngleDial } from "./AngleDial";
 import { BackgroundGenerator } from "./BackgroundGenerator";
 import { generatorSession } from "./themeGeneratorSession";
 import styles from "./GradientStrip.module.css";
+
+/** Names of the built-in gradient presets, one literal per preset id. */
+function presetNames(): Record<string, string> {
+  return {
+    aurora: t("Aurora"),
+    ocean: t("Ocean"),
+    dusk: t("Dusk"),
+    forest: t("Forest"),
+    ember: t("Ember"),
+    rose: t("Rose"),
+  };
+}
 
 function ColorStop({
   index,
@@ -61,7 +71,7 @@ function ColorStop({
           width={248}
           flow="scroll"
           onDismiss={() => setOpen(false)}
-          className="px-2 pb-2"
+          variant="compact"
         >
           <ColorPickerPopover value={color} onChange={onChange} />
         </Popover>
@@ -106,6 +116,7 @@ export function GradientStrip({
     },
     [],
   );
+  const presetLabels = presetNames();
   const angleLocked = value.style !== "linear";
   return (
     <div className={styles.editor}>
@@ -127,47 +138,28 @@ export function GradientStrip({
         ))}
       </div>
       <div className={styles.controlRow}>
-        <div className={styles.typeGroup}>
-          <Text as="span" tone="muted" leading="inherit" className={styles.label}>
-            {t("Type")}
-          </Text>
-          <SegmentedControl
-            label={t("Gradient type")}
-            value={value.style}
-            options={[
-              { value: "linear", label: t("Linear") },
-              { value: "radial", label: t("Radial") },
-              { value: "solid", label: t("Solid") },
-            ]}
-            onValueChange={(style) => edit({ style: style as WorkspaceBackground["style"] })}
-          />
-        </div>
-        <div className={styles.angleGroup}>
-          <Text as="span" tone="muted" leading="inherit" className={styles.label}>
-            {t("Angle")}
-          </Text>
-          <div className={styles.dialOnly}>
-            <AngleDial
-              value={value.angle}
-              disabled={angleLocked}
-              onChange={(angle) => edit({ angle })}
-            />
-          </div>
+        <SegmentedControl
+          label={t("Gradient type")}
+          value={value.style}
+          options={[
+            { value: "linear", label: t("Linear") },
+            { value: "radial", label: t("Radial") },
+            { value: "solid", label: t("Solid") },
+          ]}
+          onValueChange={(style) => edit({ style: style as WorkspaceBackground["style"] })}
+        />
+        {angleLocked ? null : (
           <Slider
-            label={t("Gradient angle slider")}
+            label={t("Gradient angle")}
             value={value.angle}
             display={`${value.angle}°`}
             min={0}
             max={360}
             onChange={(angle) => edit({ angle })}
-            disabled={angleLocked}
           />
-        </div>
+        )}
       </div>
       <div className={styles.presetRow}>
-        <Text as="span" tone="muted" leading="inherit" className={styles.label}>
-          {t("Presets")}
-        </Text>
         <div className={styles.presets} aria-label={t("Background preset")}>
           {WORKSPACE_BACKGROUND_PRESETS.map((preset) => (
             <Button
@@ -191,7 +183,7 @@ export function GradientStrip({
                 edit({ enabled: true, style, colors, angle, strength });
               }}
             >
-              {t(preset.label)}
+              {presetLabels[preset.id] ?? preset.label}
             </Button>
           ))}
         </div>

@@ -1,15 +1,11 @@
 import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { Text } from "../../../shared/ui/Text";
-import { useRef, useState } from "react";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import { Button } from "../../../shared/ui/Button";
-import { Badge } from "../../../shared/ui/Badge";
-import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
-import { MoreHorizontal } from "../../../shared/ui/icons";
 import { TextField } from "../../../shared/ui/TextField";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { LiveText } from "../../../shared/ui/LiveText";
 import { Modal } from "../../../shared/ui/Modal";
+import { StatusText } from "../../../shared/ui/StatusText";
 import { t } from "../../../shared/i18n";
 import { SettingsFeedback } from "../../../shared/ui/settings";
 import type { VoiceSettings as Preferences } from "../model/voiceSettings";
@@ -26,22 +22,20 @@ export function VoiceSetupRow({
   settings: Preferences;
   change: (patch: Partial<Preferences>) => void;
 }) {
-  const [moreOpen, setMoreOpen] = useState(false);
-  const moreAnchor = useRef<HTMLButtonElement>(null);
   const { installing, busy, ready, visibleError, pythonMissing, message, detail } = setup;
   const paths: [PathKey, string, string][] = [
-    ["python", "Python", "voice-python"],
-    ["whisperPath", "Speech recognition model", "voice-whisper"],
+    ["python", t("Python"), "voice-python"],
+    ["whisperPath", t("Speech recognition model"), "voice-whisper"],
     // Only VoxCPM2 uses a model folder the owner can choose.
     ...(settings.natural && settings.engine === "voxcpm2"
-      ? [["ttsPath", "Natural voice model", "voice-tts"] as [PathKey, string, string]]
+      ? [["ttsPath", t("Natural voice model"), "voice-tts"] as [PathKey, string, string]]
       : []),
   ];
   return (
     <>
       <Row
         id="voice-setup"
-        label={settings.enabled ? t("Voice setup") : t("Dictation setup")}
+        label={t("Setup")}
         description={setup.setupHint}
         feedback={
           setup.setupError ? (
@@ -49,13 +43,16 @@ export function VoiceSetupRow({
           ) : undefined
         }
       >
-        <Badge
-          tone={
-            setup.setupError ? "danger" : ready ? "success" : setup.working ? "info" : "warning"
-          }
-        >
-          <LiveText text={setup.setupError ? t("Needs attention") : message} />
-        </Badge>
+        {/* A failed check says so once, in the feedback line; every other state is one status word. */}
+        {setup.setupError ? null : ready ? (
+          <StatusText tone="done">{t("Ready")}</StatusText>
+        ) : installing ? (
+          <StatusText tone="running">{message}</StatusText>
+        ) : setup.working ? (
+          <StatusText tone="running">{t("Checking…")}</StatusText>
+        ) : (
+          <StatusText tone="needs-you">{t("Setup needed")}</StatusText>
+        )}
         {detail ? (
           <InfoPopover label={t("Technical details")}>
             <Text as="p" size="caption" tone="secondary" leading="normal" className={styles.detail}>
@@ -66,8 +63,10 @@ export function VoiceSetupRow({
         {!installing ? (
           <>
             {pythonMissing ? (
+              // One primary per state: without Python the only next step is Get Python.
               <Button
-                variant="primary"
+                variant="secondary"
+                size="sm"
                 onClick={() =>
                   void openExternal("https://www.python.org/downloads/release/python-31210/").catch(
                     (cause) => {
@@ -82,18 +81,19 @@ export function VoiceSetupRow({
                 {t("Get Python")}
               </Button>
             ) : !ready && !visibleError ? (
-              <Button variant="primary" onClick={() => setup.install()}>
+              <Button variant="secondary" size="sm" onClick={() => setup.install()}>
                 {t("Install")}
               </Button>
             ) : null}
             {setup.gpuUpgrade ? (
-              <Button variant="secondary" onClick={() => setup.install()}>
+              <Button variant="secondary" size="sm" onClick={() => setup.install()}>
                 {t("Install GPU support")}
               </Button>
             ) : null}
             {visibleError ? (
               <Button
-                variant="ghost"
+                variant="secondary"
+                size="sm"
                 onClick={() => {
                   setup.resetJob();
                   setup.check();
@@ -103,93 +103,48 @@ export function VoiceSetupRow({
                 {t("Try again")}
               </Button>
             ) : null}
-            <Button
-              ref={moreAnchor}
-              variant="ghost"
-              size="sm"
-              iconOnly
-              label={t("More voice setup actions")}
-              aria-haspopup="menu"
-              aria-expanded={moreOpen}
-              onClick={() => setMoreOpen((open) => !open)}
-            >
-              <MoreHorizontal aria-hidden className="icon-sm" />
-            </Button>
-            {moreOpen ? (
-              <DropdownMenu
-                anchor={moreAnchor}
-                label={t("More voice setup actions")}
-                items={[
-                  { kind: "item", id: "locate", label: t("Locate existing") },
-                  ...((ready || pythonMissing) && !visibleError
-                    ? [
-                        {
-                          kind: "item" as const,
-                          id: "check",
-                          label: t("Check again"),
-                          disabled: busy,
-                        },
-                      ]
-                    : []),
-                ]}
-                onClose={() => setMoreOpen(false)}
-                onPick={(id) => {
-                  setMoreOpen(false);
-                  if (id === "locate") setup.setLocating(true);
-                  else {
-                    setup.resetJob();
-                    setup.check();
-                  }
-                }}
-              />
+            {/* Python and the models are autodetected; pointing at them is for a setup that is not ready. */}
+            {!ready || visibleError ? (
+              <Button variant="secondary" size="sm" onClick={() => setup.setLocating(true)}>
+                {t("Locate files")}
+              </Button>
             ) : null}
           </>
         ) : null}
       </Row>
       {setup.locating ? (
-        <Modal
-          title={t("Locate voice files")}
-          size="md"
-          onClose={setup.closeLocate}
-          footer={
-            <Button variant="secondary" onClick={setup.closeLocate}>
-              {t("Done")}
-            </Button>
-          }
-        >
+        <Modal title={t("Locate voice files")} size="md" onClose={setup.closeLocate}>
           <div className={styles.locations}>
             {paths.map(([key, label, id]) => (
-              <div className={styles.fieldRow} key={key}>
-                <Row id={id} label={t(label)}>
-                  <div className={styles.path}>
-                    <TextField
-                      label={t(label)}
-                      hideLabel
-                      aria-label={t(label)}
-                      value={settings[key]}
-                      placeholder={t("Automatic detection")}
-                      onChange={(event) => {
-                        setup.resetJob();
-                        change({ [key]: event.target.value });
-                      }}
-                    />
-                    <Button
-                      disabled={installing || setup.browsing !== null}
-                      loading={setup.browsing === key}
-                      onClick={() => setup.browse(key)}
-                    >
-                      {t("Browse")}
-                    </Button>
-                  </div>
-                </Row>
-              </div>
+              <Row key={key} id={id} label={label} stacked>
+                <div className={styles.path}>
+                  <TextField
+                    label={label}
+                    hideLabel
+                    value={settings[key]}
+                    placeholder={t("Automatic detection")}
+                    onChange={(event) => {
+                      setup.resetJob();
+                      change({ [key]: event.target.value });
+                    }}
+                  />
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={installing || setup.browsing !== null}
+                    disabledReason={
+                      installing
+                        ? t("Wait for the installation to finish.")
+                        : t("Wait for the open file dialog to close.")
+                    }
+                    loading={setup.browsing === key}
+                    onClick={() => setup.browse(key)}
+                  >
+                    {t("Browse")}
+                  </Button>
+                </div>
+              </Row>
             ))}
-            <Text as="p" size="caption" tone="secondary" leading="normal" className={styles.hint}>
-              {t("Leave a location empty to find it automatically.")}
-            </Text>
-            {visibleError ? (
-              <SettingsFeedback state="error">{visibleError.message}</SettingsFeedback>
-            ) : null}
           </div>
         </Modal>
       ) : null}

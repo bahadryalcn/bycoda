@@ -63,7 +63,7 @@ it("blocks duplicate picks while pending and keeps errors retryable", async () =
     ),
   );
   const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find((el) =>
-    el.textContent?.includes("/current"),
+    el.textContent?.includes("current"),
   )!;
   await act(async () => {
     option.click();
@@ -73,7 +73,10 @@ it("blocks duplicate picks while pending and keeps errors retryable", async () =
   expect(option.disabled).toBe(true);
   expect(onClose).not.toHaveBeenCalled();
   await act(async () => reject(new Error("Project unavailable")));
-  expect(document.body.textContent).toContain("Project unavailable");
+  // The raw reason sits behind Details; the row leads with the summary.
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not create session.",
+  );
   expect(option.disabled).toBe(false);
   expect(onClose).not.toHaveBeenCalled();
   await act(async () => option.click());
@@ -95,6 +98,7 @@ it("lists No project first, picks the ~ sentinel and filters it with the search"
   );
   const options = () => [...document.querySelectorAll<HTMLElement>('[role="option"]')];
   expect(options()[0]?.textContent).toContain("No project");
+  expect(options()[1]?.textContent).toContain("current");
   expect(document.body.textContent).not.toContain("No projects yet");
   await act(async () => options()[0]!.click());
   expect(onPick).toHaveBeenCalledExactlyOnceWith("~");

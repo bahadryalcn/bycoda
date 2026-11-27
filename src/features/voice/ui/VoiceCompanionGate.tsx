@@ -6,7 +6,7 @@ import { assistantRequest, useAssistantSnapshot } from "../../assistant/model/as
 import { migrateVoiceOwnerMemory } from "../model/voiceHostMemory";
 import { AssistantSetup } from "../../assistant/ui/AssistantSetup";
 import { useVoiceSettings } from "../model/voiceSettings";
-import { VoiceWake } from "./VoiceWake";
+import { useVoiceWake } from "./useVoiceWake";
 import type { VoiceCompanionProps } from "./VoiceCompanion";
 import { VoiceLauncherFrame } from "./companion/VoiceLauncher";
 import { useVoiceLauncherSlot } from "./companion/voiceLauncherSlot";
@@ -35,8 +35,8 @@ export function VoiceCompanionGate(props: VoiceCompanionProps) {
           <Button
             iconOnly
             variant={slot ? "ghost" : undefined}
-            label={t(error ? "Retry" : "Set up voice")}
-            tooltip={error || t("Set up voice")}
+            label={error ? t("Retry") : t("Set up voice")}
+            tooltip={error || undefined}
             loading={loading}
             onClick={() => (snapshot ? setSetup(true) : void refresh())}
           >
@@ -48,19 +48,31 @@ export function VoiceCompanionGate(props: VoiceCompanionProps) {
     );
   return (
     <>
-      <Suspense fallback={null}>
-        {/* Navigation updates future speech targets without remounting the audio owner. */}
-        <Companion {...props} />
-      </Suspense>
-      {settings.wakeEnabled ? (
-        <VoiceWake
-          settings={settings}
-          profile={snapshot.profile}
-          manualPresence={snapshot.presence?.state}
-          onSetup={() => setSetup(true)}
-        />
-      ) : null}
+      <ReadyCompanion
+        companion={props}
+        wakeInput={{
+          settings,
+          profile: snapshot.profile,
+          manualPresence: snapshot.presence?.state,
+        }}
+      />
       {setup ? <AssistantSetup voice onClose={() => setSetup(false)} /> : null}
     </>
+  );
+}
+
+function ReadyCompanion({
+  companion,
+  wakeInput,
+}: {
+  companion: VoiceCompanionProps;
+  wakeInput: Parameters<typeof useVoiceWake>[0];
+}) {
+  const wake = useVoiceWake(wakeInput);
+  return (
+    <Suspense fallback={null}>
+      {/* Navigation updates future speech targets without remounting the audio owner. */}
+      <Companion {...companion} wakeControls={wake} />
+    </Suspense>
   );
 }

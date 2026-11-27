@@ -17,8 +17,89 @@ export type XProfileState = {
   bannerUrl?: string;
 };
 
-export const SOCIAL_BROWSER_INTENTS = ["login", "signup", "inbox", "publish", "comments"] as const;
+export const SOCIAL_BROWSER_INTENTS = [
+  "login",
+  "signup",
+  "inbox",
+  "publish",
+  "comments",
+  // Instagram owner-assisted workflows.
+  "instagram-professional",
+  "instagram-profile",
+  "instagram-highlights",
+  "instagram-monetization",
+  "instagram-live",
+] as const;
+// Facebook browser profile fields are scoped to the verified Page or personal actor.
+export type FacebookProfileDetail = "work" | "school" | "college" | "currentCity" | "hometown";
+export type FacebookPersonalName = { first: string; middle: string; last: string };
+export type FacebookBrowserProfilePatch = XProfilePatch & {
+  username?: string;
+  detail?: { field: FacebookProfileDetail; value: string; current?: string };
+  websiteUpdate?: { current: string; value: string };
+  personalName?: FacebookPersonalName;
+  introDetail?: { label: string; visible: boolean };
+};
+
 export type SocialBrowserIntent = (typeof SOCIAL_BROWSER_INTENTS)[number];
+// Instagram browser operations.
+export type InstagramProfilePatch = Pick<
+  XProfilePatch,
+  "name" | "bio" | "website" | "avatarUploadId"
+> & { username?: string };
+export type InstagramProfileState = XProfileState & { username?: string };
+export type InstagramPostChange =
+  | { action: "caption"; postUrl: string; caption: string; confirm: "EDIT_INSTAGRAM_CAPTION" }
+  | { action: "delete"; postUrl: string; confirm: "DELETE_INSTAGRAM_POST" };
+export type InstagramPostDeletion = "review" | "deleted";
+export type InstagramPostChangeResult = {
+  postUrl: string;
+  changed: boolean;
+  deletion?: InstagramPostDeletion;
+};
+export type InstagramRecipient = { handle: string; platformId: string };
+export type InstagramFollowerSample = {
+  followers: { username: string }[];
+  partial: true;
+};
+export type InstagramFollowChange = {
+  handle: string;
+  follow: boolean;
+  confirm: "FOLLOW_INSTAGRAM_ACCOUNT" | "UNFOLLOW_INSTAGRAM_ACCOUNT";
+};
+export type InstagramFollowResult = {
+  handle: string;
+  following: boolean;
+  requested: boolean;
+  changed: boolean;
+};
+export type InstagramBrowserMentions = {
+  mentions: { url: string; username?: string; text: string; at?: number }[];
+  coverage: "visible_notifications";
+};
+export type InstagramCommentLike = {
+  postId: string;
+  commentId: string;
+  confirm: "LIKE_INSTAGRAM_COMMENT";
+};
+export type InstagramEarningsKind = "total" | "estimated" | "available" | "pending" | "last";
+export type InstagramEarnings = {
+  values: { kind: InstagramEarningsKind; amount: string }[];
+  observedAt: number;
+};
+export type InstagramHighlight = { id: string; name: string };
+export type InstagramHighlights = { items: InstagramHighlight[]; partial: boolean };
+export type InstagramHighlightChange =
+  | { action: "create"; name: string; storyIds: string[]; confirm: "CREATE_INSTAGRAM_HIGHLIGHT" }
+  | {
+      action: "edit";
+      id: string;
+      expectedName: string;
+      name: string;
+      storyIds?: string[];
+      confirm: "EDIT_INSTAGRAM_HIGHLIGHT";
+    }
+  | { action: "delete"; id: string; expectedName: string; confirm: "DELETE_INSTAGRAM_HIGHLIGHT" };
 export type SocialRegistrationField =
   | "email"
   | "displayName"
@@ -26,14 +107,24 @@ export type SocialRegistrationField =
   | "givenName"
   | "familyName"
   | "birthdate"
-  | "category";
+  | "category"
+  | "phone"
+  | "bio";
 export type SocialRegistrationProfile = Partial<Record<SocialRegistrationField, string>> & {
   accountKind?: "brand" | "person";
 };
 export type SocialRegistrationBlocker = "password" | "verification" | "terms" | "challenge";
 export type SocialRegistrationProgress = {
   status: "ready" | "needs_fields" | "awaiting_owner" | "unsupported" | "changed";
-  step: "method" | "profile" | "birthdate" | SocialRegistrationBlocker | "admin_setup" | "unknown";
+  step:
+    | "method"
+    | "profile"
+    | "birthdate"
+    | SocialRegistrationBlocker
+    | "admin_setup"
+    | "rate_limit"
+    | "network_blocked"
+    | "unknown";
   blockers: SocialRegistrationBlocker[];
   requiredFields: SocialRegistrationField[];
   filledFields: SocialRegistrationField[];
@@ -113,6 +204,22 @@ export const SOCIAL_BROWSER_LABELS: Record<SocialBrowserIntent, string> = {
   get comments() {
     return t("Open comments");
   },
+  // Instagram owner-assisted workflows.
+  get "instagram-professional"() {
+    return t("Switch to professional account");
+  },
+  get "instagram-profile"() {
+    return t("Open Instagram profile settings");
+  },
+  get "instagram-highlights"() {
+    return t("Manage Instagram Highlights");
+  },
+  get "instagram-monetization"() {
+    return t("Open Instagram monetization");
+  },
+  get "instagram-live"() {
+    return t("Open Instagram Live Producer");
+  },
 };
 
 type Site = {
@@ -126,7 +233,7 @@ export const SOCIAL_BROWSER_SITES: Record<SocialPlatform, Site> = {
     routes: {
       login: "https://x.com/login",
       signup: "https://x.com/i/flow/signup",
-      inbox: "https://x.com/messages",
+      inbox: "https://x.com/i/chat",
       publish: "https://x.com/compose/post",
     },
   },
@@ -137,6 +244,12 @@ export const SOCIAL_BROWSER_SITES: Record<SocialPlatform, Site> = {
       signup: "https://www.instagram.com/accounts/emailsignup/",
       inbox: "https://www.instagram.com/direct/inbox/",
       publish: "https://www.instagram.com/",
+      // Instagram owner-assisted workflows.
+      "instagram-professional": "https://www.instagram.com/accounts/edit/",
+      "instagram-profile": "https://www.instagram.com/accounts/edit/",
+      "instagram-highlights": "https://www.instagram.com/",
+      "instagram-monetization": "https://www.instagram.com/",
+      "instagram-live": "https://www.instagram.com/",
     },
   },
   facebook: {
@@ -190,10 +303,12 @@ export const SOCIAL_BROWSER_SITES: Record<SocialPlatform, Site> = {
     origins: ["https://web.telegram.org"],
     routes: { login: "https://web.telegram.org/", inbox: "https://web.telegram.org/" },
   },
-  // reddit: owner-assisted signup only; no login, inbox or publish route is allowed yet
   reddit: {
     origins: ["https://www.reddit.com"],
-    routes: { signup: "https://www.reddit.com/register/" },
+    routes: {
+      signup: "https://www.reddit.com/register/",
+      inbox: "https://www.reddit.com/chat/",
+    },
   },
 };
 

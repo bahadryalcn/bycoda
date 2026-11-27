@@ -1,12 +1,13 @@
 import { type Session } from "../../../features/sessions/model/session";
-import { type MutableRefObject, useEffect } from "react";
+import { type MutableRefObject, useEffect, useSyncExternalStore } from "react";
 import { type Submit } from "../helpers/types";
-import { isRecoverySessionHeld } from "../../../features/workspace/model/sessionRecovery";
 import { CONTINUE_PROMPT, canAutoContinue } from "../../../features/sessions/model/inFlight";
 import { isLiveHarness } from "../../../integrations/harness";
 import {
+  autoContinueVersion,
   claimAutoContinue,
   isAutoContinueDue,
+  subscribeAutoContinue,
 } from "../../../features/sessions/model/autoContinue";
 export interface AutoContinueDeps {
   sessions: Session[];
@@ -26,12 +27,13 @@ export function useAutoContinue({
   movingSessionIds,
   onSubmit,
 }: AutoContinueDeps): void {
+  // The launch check can finish after first paint while the Host starts.
+  useSyncExternalStore(subscribeAutoContinue, autoContinueVersion);
   const autoContinueKey = sessions
     .filter(
       (session) =>
         !windowTransferPending &&
         !movingSessionIds.current.has(session.id) &&
-        !isRecoverySessionHeld(session.id) &&
         canAutoContinue(session) &&
         isLiveHarness(session.harness) &&
         isAutoContinueDue(session.id),
@@ -51,7 +53,6 @@ export function useAutoContinue({
           !session ||
           windowTransferPendingRef.current ||
           movingSessionIds.current.has(id) ||
-          isRecoverySessionHeld(id) ||
           !canAutoContinue(session) ||
           !isLiveHarness(session.harness) ||
           !claimAutoContinue(id)

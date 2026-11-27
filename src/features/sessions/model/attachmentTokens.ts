@@ -29,11 +29,12 @@ export type TokenMatch = {
 
 export type TextSegment =
   | { text: string }
-  | { token: string; label: string; attachment: Attachment };
+  | { token: string; label: string; attachment: Attachment; fullName?: true };
 
 // Candidates only; a match counts when it equals an expected token. `quote` tokens
 // name chat citations (citationTokens.ts) and share this matcher.
-const TOKEN = /\[[^[\]\n]{1,48}\]/g;
+const TOKEN = /\[(?:Image|File): [^[\]\r\n]{1,256}; ref=[\w-]{1,100}\]|\[[^[\]\r\n]+\]/g;
+const NAMED_REFERENCE = /\[(Image|File): ([^[\]\r\n]{1,256}); ref=([\w-]{1,100})\]/g;
 /** A token glued to a word is an index expression (`arr[image1]`), not a reference. */
 const WORD_CHAR = /[\p{L}\p{N}_$]/u;
 
@@ -41,7 +42,7 @@ function kindOf(file: Pick<Attachment, "kind">): TokenKind {
   return file.kind === "image" ? "image" : "file";
 }
 
-type TokenFile = Pick<Attachment, "kind" | "size">;
+type TokenFile = Pick<Attachment, "kind" | "size"> & Partial<Pick<Attachment, "id" | "name">>;
 const NBSP = "\u00a0";
 
 /** One token per attachment, in attachment order. */
@@ -56,6 +57,42 @@ export function attachmentTokens(files: TokenFile[]): string[] {
     if (size) words.push("·", size.replace(" ", NBSP));
     return `[${words.join(NBSP)}]`;
   });
+}
+
+/** The draft carries each filename's width in the textarea's own line layout. */
+export function attachmentDraftTokens(files: TokenFile[]): string[] {
+  return attachmentTokens(files).map((token, index) => {
+    const name = files[index].name;
+    if (!name) return token;
+    // Keep filenames literal to draft Markdown, skill, link and mention scanners.
+    const sourceName = name.replace(/[[\]\r\n/$@`*_~<>]/g, (character) =>
+      character === "\r" || character === "\n"
+        ? " "
+        : String.fromCharCode(character.charCodeAt(0) + 0xfee0),
+    );
+    const size = token.indexOf(`${NBSP}·`);
+    const at = size < 0 ? token.length - 1 : size;
+    return `${token.slice(0, at)}${NBSP}·${NBSP}${sourceName}${token.slice(at)}`;
+  });
+}
+
+/** Restored short references expand only when their attachment is available. */
+export function expandAttachmentDraftTokens(text: string, files: TokenFile[]): string {
+  const matches = findTokens(text, files);
+  if (matches.length === 0) return text;
+  const drafts = attachmentDraftTokens(files);
+  return rewriteTokenMatches(text, matches, (match) => drafts[match.index]);
+}
+
+/** Keep the existing reference spelling at the delivery boundary. */
+export function compactAttachmentDraftTokens(text: string, files: TokenFile[]): string {
+  const matches = findTokens(text, files);
+  if (matches.length === 0) return text;
+  const drafts = attachmentDraftTokens(files);
+  const compact = attachmentTokens(files);
+  return rewriteTokenMatches(text, matches, (match) =>
+    match.token === drafts[match.index] ? compact[match.index] : match.token,
+  );
 }
 
 /** The pre-size `[image1]` form, recognized in older messages and drafts. */
@@ -79,9 +116,38 @@ export function tokenLabel(token: string): string {
  * A token for a number no attachment has, one inside a code span or fenced
  * block, and one glued to a preceding word are ordinary text.
  */
-export function findTokens(text: string, files: TokenFile[]): TokenMatch[] {
+export function findTokens(
+  text: string,
+  files: TokenFile[],
+  code?: readonly (readonly [number, number])[],
+): TokenMatch[] {
   if (!files.length) return [];
-  return findTokenMatches(text, attachmentTokens(files), legacyAttachmentTokens(files));
+  const named = new Map<string, number>();
+  if (text.includes("; ref=")) {
+    const byId = new Map<string, number>();
+    files.forEach((file, index) => {
+      if (!file.id) return;
+      const kind = kindOf(file);
+      byId.set(`${kind}:${file.id}`, index);
+    });
+    for (const [raw, kind, , id] of text.matchAll(NAMED_REFERENCE)) {
+      const type = kind.toLowerCase();
+      const prefix = `${type}_`;
+      const index =
+        byId.get(`${type}:${id}`) ??
+        (id.startsWith(prefix) ? byId.get(`${type}:${id.slice(prefix.length)}`) : undefined);
+      if (index !== undefined) named.set(raw, index);
+    }
+  }
+  const drafts = attachmentDraftTokens(files);
+  drafts.forEach((token, index) => named.set(token, index));
+  return findTokenMatches(
+    text,
+    attachmentTokens(files),
+    legacyAttachmentTokens(files),
+    named,
+    code,
+  );
 }
 
 /** Occurrences of the exact `tokens` (or same-index `aliases`) in `text`; `index` is the token's place in `tokens`. */
@@ -89,26 +155,25 @@ export function findTokenMatches(
   text: string,
   tokens: readonly string[],
   aliases: readonly string[] = [],
+  named?: ReadonlyMap<string, number>,
+  /** Code ranges the caller already knows; omitted, they are parsed from `text`. */
+  knownCode?: readonly (readonly [number, number])[],
 ): TokenMatch[] {
   if (!tokens.length || !text.includes("[")) return [];
   const indexByToken = new Map(aliases.map((token, index) => [token, index]));
   tokens.forEach((token, index) => indexByToken.set(token, index));
-  const code: [number, number][] = [];
-  markdownParser.parse(text).iterate({
-    enter(node) {
-      if (["InlineCode", "FencedCode", "CodeBlock"].includes(node.name)) {
-        code.push([node.from, node.to]);
-        return false;
-      }
-    },
-  });
   const matches: TokenMatch[] = [];
   for (const match of text.matchAll(TOKEN)) {
-    const index = indexByToken.get(match[0]);
+    const index = named?.get(match[0]) ?? indexByToken.get(match[0]);
     if (index === undefined) continue;
     const start = match.index;
-    if (start > 0 && WORD_CHAR.test(text[start - 1])) continue;
-    if (code.some(([from, to]) => start >= from && start < to)) continue;
+    if (
+      start > 0 &&
+      WORD_CHAR.test(text[start - 1]) &&
+      !named?.has(match[0]) &&
+      !match[0].includes(NBSP)
+    )
+      continue;
     matches.push({
       start,
       end: start + match[0].length,
@@ -116,7 +181,54 @@ export function findTokenMatches(
       index,
     });
   }
-  return matches;
+  return outsideMarkdownCode(text, matches, knownCode);
+}
+
+function outsideMarkdownCode(
+  text: string,
+  matches: TokenMatch[],
+  knownCode?: readonly (readonly [number, number])[],
+) {
+  const last = matches[matches.length - 1];
+  if (!last) return matches;
+  // Markdown code must start with a backtick, a tilde fence or four columns of indentation.
+  // Anything after the final candidate cannot open a code region around an earlier token.
+  if (!knownCode && !/[`~\t\r]| {4}/.test(text.slice(0, last.start))) return matches;
+  const code = knownCode ?? codeRanges(text);
+  return code.length
+    ? matches.filter((match) => !code.some(([from, to]) => match.start >= from && match.start < to))
+    : matches;
+}
+
+/** Named references without an owning attachment can still show their filename in the draft. */
+export function splitNamedAttachmentReferences(
+  text: string,
+  knownCode?: readonly (readonly [number, number])[],
+) {
+  const parts: ({ text: string } | { token: string; name: string })[] = [];
+  const code = knownCode ?? codeRanges(text);
+  let start = 0;
+  for (const match of text.matchAll(NAMED_REFERENCE)) {
+    if (code.some(([from, to]) => match.index >= from && match.index < to)) continue;
+    if (start < match.index) parts.push({ text: text.slice(start, match.index) });
+    parts.push({ token: match[0], name: match[2] });
+    start = match.index + match[0].length;
+  }
+  if (start < text.length) parts.push({ text: text.slice(start) });
+  return parts;
+}
+
+function codeRanges(text: string): [number, number][] {
+  const ranges: [number, number][] = [];
+  markdownParser.parse(text).iterate({
+    enter(node) {
+      if (["InlineCode", "FencedCode", "CodeBlock"].includes(node.name)) {
+        ranges.push([node.from, node.to]);
+        return false;
+      }
+    },
+  });
+  return ranges;
 }
 
 /** The text with every token that refers to one of `files` taken out. */
@@ -127,13 +239,18 @@ export function stripAttachmentTokens(text: string, files: TokenFile[]): string 
 /** The text cut into plain runs and the tokens that name an attachment. */
 export function splitAttachmentTokens(text: string, files: Attachment[]): TextSegment[] {
   const segments: TextSegment[] = [];
+  const matches = findTokens(text, files);
+  const display = matches.length ? attachmentDraftTokens(files) : [];
   let at = 0;
-  for (const match of findTokens(text, files)) {
+  for (const match of matches) {
     if (match.start > at) segments.push({ text: text.slice(at, match.start) });
     segments.push({
       token: match.token,
       label: tokenLabel(match.token),
       attachment: files[match.index],
+      ...(match.token === display[match.index] && files[match.index].name
+        ? { fullName: true }
+        : {}),
     });
     at = match.end;
   }
@@ -168,7 +285,7 @@ export function insertAtSelection(
 
 /** The tokens `incoming` gets when appended to `existing`, space separated. */
 export function tokensForIncoming(existing: TokenFile[], incoming: TokenFile[]): string {
-  return attachmentTokens([...existing, ...incoming])
+  return attachmentDraftTokens([...existing, ...incoming])
     .slice(existing.length)
     .join(" ");
 }
@@ -185,10 +302,14 @@ export function removeAttachmentFromText(
   removedIndex: number,
 ): string {
   if (removedIndex < 0 || removedIndex >= files.length) return text;
-  const after = attachmentTokens(files.filter((_, i) => i !== removedIndex));
+  const retained = files.filter((_, i) => i !== removedIndex);
+  const after = attachmentTokens(retained);
+  const priorDrafts = attachmentDraftTokens(files);
+  const nextDrafts = attachmentDraftTokens(retained);
   return rewriteTokens(text, files, (match) => {
     if (match.index === removedIndex) return "";
-    return after[match.index > removedIndex ? match.index - 1 : match.index];
+    const index = match.index > removedIndex ? match.index - 1 : match.index;
+    return match.token === priorDrafts[match.index] ? nextDrafts[index] : after[index];
   });
 }
 
@@ -205,10 +326,14 @@ export function attachmentsDroppedByEdit(
   files: TokenFile[],
 ): number[] {
   if (before === after) return [];
+  // Even a formerly valid reference that becomes literal text keeps its attachment as long
+  // as its spelling survives. Most edits therefore need no Markdown parse on either draft.
+  const missing = findTokens(before, files, []).filter((match) => !after.includes(match.token));
+  const removed = outsideMarkdownCode(before, missing);
+  if (removed.length === 0) return [];
+  const retained = new Set(findTokens(after, files).map((match) => match.index));
   const dropped = new Set<number>();
-  for (const match of findTokens(before, files)) {
-    if (!after.includes(match.token)) dropped.add(match.index);
-  }
+  for (const match of removed) if (!retained.has(match.index)) dropped.add(match.index);
   return [...dropped];
 }
 
@@ -227,8 +352,12 @@ export function deleteTokenAtCaret(
   /** Recognized non-bracket references, already parsed by their owning feature. */
   ranges: readonly { start: number; end: number }[] = [],
 ): { text: string; caret: number } | null {
-  const hit = [...findTokens(text, files), ...findTokenMatches(text, extra), ...ranges].find(
-    (match) => (direction === "back" ? match.end === caret : match.start === caret),
+  const touchesBracket = direction === "back" ? text[caret - 1] === "]" : text[caret] === "[";
+  const candidates = touchesBracket
+    ? [...findTokens(text, files), ...findTokenMatches(text, extra), ...ranges]
+    : ranges;
+  const hit = candidates.find((match) =>
+    direction === "back" ? match.end === caret : match.start === caret,
   );
   if (!hit) return null;
   const doubled = text[hit.start - 1] === " " && text[hit.end] === " ";

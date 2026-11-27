@@ -12,7 +12,7 @@ import { Portal } from "../../../shared/ui/Portal";
 import { PresentationVisibility } from "./presentationVisibility";
 import type { Block } from "../model/session";
 import { hasPendingApproval } from "../model/session";
-import { streamingTextUpdate } from "../model/stableBlocks";
+import { streamingBlockUpdate } from "../model/stableBlocks";
 
 export const TRANSCRIPT_IDLE_TTL_MS = 3 * 60 * 1000;
 export const TRANSCRIPT_WARM_COUNT = 2;
@@ -94,14 +94,14 @@ function blockWeight(block: Block): number {
   return weight;
 }
 
-/** The single block a streamed-text frame changed between two arrays, if that is all. */
+/** The single block a streaming frame changed between two arrays, if that is all. */
 function streamedIndex(previous: readonly Block[] | undefined, next: readonly Block[]) {
   if (!previous || previous === next || previous.length !== next.length) return undefined;
-  return streamingTextUpdate(previous as Block[], next as Block[]);
+  return streamingBlockUpdate(previous as Block[], next as Block[])?.index;
 }
 
 /**
- * Estimated retained size. A streamed frame only changes one block's text, so
+ * Estimated retained size. A streamed frame only changes one block, so
  * with the previous array it costs one block instead of the whole transcript.
  */
 export function transcriptPoolWeight(

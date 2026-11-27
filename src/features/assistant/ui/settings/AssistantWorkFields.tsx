@@ -5,8 +5,7 @@ import {
 } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
 import { InlineError } from "../../../../shared/ui/InlineError";
-import { InfoPopover } from "../../../../shared/ui/InfoPopover";
-import { Text } from "../../../../shared/ui/Text";
+import { InfoTooltip } from "../../../../shared/ui/InfoPopover";
 import { AssistantPresetNumber } from "../AssistantProfileControls";
 import { ProfileSelect } from "./ProfileControls";
 import { ExecutionPermissionPicker } from "./ExecutionPermissionPicker";
@@ -29,7 +28,7 @@ export function AssistantWorkFields({
   part: "jobs" | "budget" | "permissions";
 }) {
   const rows = useProfileRows();
-  const [workerModelError, setWorkerModelError] = useState("");
+  const [workerModelProblem, setWorkerModelProblem] = useState("");
   const defaultWorker = useDefaultWorkerExecution();
   const budgetHelp = t(
     "Covers chat and voice replies, supervisor reviews and the jobs the assistant starts. Your own sessions are not counted. At 80% it only reports; at 100% it pauses. Minimum 20,000.",
@@ -38,14 +37,14 @@ export function AssistantWorkFields({
     if ((next === "jobs" || next === "chief") && !value.execution) {
       const execution = defaultWorker();
       if (!execution) {
-        setWorkerModelError(t("Choose a worker model before enabling job execution."));
+        setWorkerModelProblem(t("Choose a worker model before enabling job execution."));
         return;
       }
-      setWorkerModelError("");
+      setWorkerModelProblem("");
       onChange({ autonomy: next, execution });
       return;
     }
-    setWorkerModelError("");
+    setWorkerModelProblem("");
     onChange({ autonomy: next as AssistantProfilePatch["autonomy"] });
   }
   if (part === "budget")
@@ -54,14 +53,9 @@ export function AssistantWorkFields({
         label={t("Daily token budget")}
         value={value.dailyTokenBudget}
         min={ASSISTANT_MIN_DAILY_TOKEN_BUDGET}
-        description={rows ? undefined : budgetHelp}
         info={
           rows ? (
-            <InfoPopover label={t("About daily token budget")}>
-              <Text as="p" size="secondary">
-                {budgetHelp}
-              </Text>
-            </InfoPopover>
+            <InfoTooltip label={t("About daily token budget")}>{budgetHelp}</InfoTooltip>
           ) : undefined
         }
         max={1_000_000_000}
@@ -88,24 +82,24 @@ export function AssistantWorkFields({
   return (
     <>
       <ProfileSelect
-        label="Autonomy"
-        hint="Report only observes; the other modes start work."
+        label={t("Autonomy")}
+        hint={t("Report only observes; the other modes start work.")}
         value={String(value.autonomy ?? "")}
         options={[
-          ["report", "Report only"],
-          ["jobs", "Run jobs"],
-          ["chief", "Supervise assigned jobs"],
+          ["report", t("Report only")],
+          ["jobs", t("Run jobs")],
+          ["chief", t("Supervise assigned jobs")],
         ]}
         onValueChange={changeAutonomy}
       />
       <ProfileSelect
-        label="Plan approval"
-        hint="Big jobs: four or more tasks or several projects."
+        label={t("Plan approval")}
+        hint={t("Big jobs: four or more tasks or several projects.")}
         value={String(value.planApproval ?? "")}
         options={[
-          ["always", "Always"],
-          ["large", "Big jobs only"],
-          ["never", "Never"],
+          ["always", t("Always")],
+          ["large", t("Big jobs only")],
+          ["never", t("Never")],
         ]}
         onValueChange={(planApproval) =>
           onChange({ planApproval: planApproval as AssistantProfilePatch["planApproval"] })
@@ -143,7 +137,9 @@ export function AssistantWorkFields({
           }
         />
       )}
-      {workerModelError && <InlineError className={styles.wide}>{workerModelError}</InlineError>}
+      {workerModelProblem && (
+        <InlineError className={styles.wide}>{workerModelProblem}</InlineError>
+      )}
     </>
   );
 }

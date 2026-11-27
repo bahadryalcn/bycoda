@@ -188,6 +188,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -195,6 +196,70 @@ async function mount() {
   await act(async () => root.render(createElement(Harness)));
   await until(() => !latest.board.pending && latest.board.tasks.length > 0);
 }
+
+describe("transient task-board reads", () => {
+  const advance = (time: number) => act(async () => void (await vi.advanceTimersByTimeAsync(time)));
+
+  it("keeps the board quiet during a five-second declared local Host restart", async () => {
+    world.machines = [{ ...machine("a"), localHost: true, endpoint: "http://127.0.0.1:3776" }];
+    await mount();
+    vi.useFakeTimers();
+    const stopping = Object.assign(new Error("Host is stopping."), { code: "HOST_STOPPING" });
+    mocks.listTasks.mockImplementation(async () => [
+      {
+        ...result("a", [{ ...world.tasks.a[0], stale: true }]),
+        status: "error",
+        stale: true,
+        failure: stopping,
+      },
+    ]);
+
+    await act(async () => latest.refresh());
+    await advance(2_000);
+    await advance(3_000);
+
+    expect(latest.board.pending).toBe(true);
+    expect(latest.board.notice).toBeFalsy();
+    expect(latest.board.error).toBeUndefined();
+    expect(latest.board.taskError).toBeFalsy();
+    expect(latest.board.tasks[0]).toMatchObject({ stale: true, pendingRefresh: true });
+
+    mocks.listTasks.mockResolvedValue([result("a", [task("t1", "a", "Updated after restart")])]);
+    await advance(1_100);
+    expect(latest.board.pending).toBe(false);
+    expect(latest.board.tasks[0].title).toBe("Updated after restart");
+    expect(latest.board.error).toBeUndefined();
+  });
+
+  it("shows a long outage after three seconds, recovers, and shows permission errors immediately", async () => {
+    await mount();
+    vi.useFakeTimers();
+    const refused = Object.assign(new Error("Host unavailable"), { code: "RPC_WS_UNAVAILABLE" });
+    mocks.listTasks.mockResolvedValue([
+      { ...result<BoardTask>("a", []), status: "error", failure: refused },
+    ]);
+
+    await act(async () => latest.refresh());
+    await advance(2_000);
+    await advance(999);
+    expect(latest.board.error).toBeUndefined();
+    await advance(1);
+    expect(latest.board.error).toContain("Waiting for the connection");
+    await advance(3_000);
+    await advance(4_001);
+    expect(latest.board.error).toContain("Waiting for the connection");
+
+    mocks.listTasks.mockResolvedValue([result("a", [world.tasks.a[0]])]);
+    await advance(3_999);
+    expect(latest.board.error).toBeUndefined();
+
+    mocks.listTasks.mockResolvedValue([
+      { ...result<BoardTask>("a", []), status: "error", failure: new Error("Permission denied") },
+    ]);
+    await act(async () => latest.refresh());
+    expect(latest.board.error).toContain("Permission denied");
+  });
+});
 
 /** Starts a board refresh whose read of `kind` stays in flight. */
 async function refreshWithHeldRead(kind: keyof typeof holds) {

@@ -1,5 +1,5 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Text } from "../../../shared/ui/Text";
+import { Text, textAttributes } from "../../../shared/ui/Text";
 import type { AssistantJob } from "../../../shared/model/host-contracts/assistant";
 import { formatNumber, t } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
@@ -12,7 +12,7 @@ import { Meter, type MeterTone } from "../../../shared/ui/Meter";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { StatusText } from "../../../shared/ui/StatusText";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
-import { ExternalLink, MessageSquare } from "../../../shared/ui/icons";
+import { ExternalLink } from "../../../shared/ui/icons";
 import {
   workerContextAction,
   type WorkerContextSettings,
@@ -63,7 +63,7 @@ export function AssistantSessions({
   }
   const filtered = Boolean(query.trim() || filter);
   return (
-    <section className={sessionStyles.panel} aria-label={t("Job sessions")}>
+    <section className={sessionStyles.panel}>
       <SectionLabel as="h2" count={entries.length}>
         {t("Job sessions")}
       </SectionLabel>
@@ -98,13 +98,13 @@ export function AssistantSessions({
         <EmptyState
           context="panel"
           kind={filtered ? "filtered" : "empty"}
-          icon={filtered ? undefined : <MessageSquare className="icon-md" aria-hidden="true" />}
-          title={t(filtered ? "No matching sessions" : "No sessions from assistant jobs yet")}
-          description={t(
+          illustration={filtered ? "search-empty" : "no-sessions"}
+          title={filtered ? t("No matching sessions") : t("No sessions from assistant jobs yet")}
+          description={
             filtered
-              ? "Try a different search or clear the filters."
-              : "Sessions that assistant jobs start appear here with their context usage.",
-          )}
+              ? t("Try a different search or clear the filters.")
+              : t("Sessions that assistant jobs start appear here with their context usage.")
+          }
           resetLabel={t("Clear filters")}
           onReset={filtered ? onReset : undefined}
           action={!filtered && onJobs ? { label: t("View jobs"), onClick: onJobs } : undefined}
@@ -171,7 +171,7 @@ function ManagedSessionRow({
         : status === "idle"
           ? t("Idle")
           : loading
-            ? t("Loading...")
+            ? t("Loading…")
             : t("Unknown");
   return (
     <ActionHost
@@ -188,10 +188,8 @@ function ManagedSessionRow({
                 {record?.session.title || id}
               </Text>
               {model && (
-                <Text
-                  size="micro"
-                  leading="inherit"
-                  className={sessionStyles.model}
+                <span
+                  {...textAttributes({ size: "micro", leading: "inherit" }, sessionStyles.model)}
                   data-session-model
                 >
                   <HarnessIcon harness={model.harness} size="xs" />
@@ -204,7 +202,7 @@ function ManagedSessionRow({
                   >
                     {model.name}
                   </Text>
-                </Text>
+                </span>
               )}
             </span>
             {!current && (
@@ -228,9 +226,10 @@ function ManagedSessionRow({
         {error && (
           <InlineError
             {...surfaceAttributes({ frame: "pane", edge: "block-end" }, styles.feedback)}
+            details={error}
             retry={{ onRetry: () => void refresh(), pending: loading }}
           >
-            {t(error)}
+            {t("Could not load this session.")}
           </InlineError>
         )}
       </div>
@@ -243,12 +242,11 @@ function ManagedSessionRow({
           />
         ) : (
           <>
-            <Text
-              as="div"
-              size="caption"
-              tone="secondary"
-              leading="inherit"
-              className={sessionStyles.meterHead}
+            <div
+              {...textAttributes(
+                { size: "caption", tone: "secondary", leading: "inherit" },
+                sessionStyles.meterHead,
+              )}
             >
               <span>{t("Context usage")}</span>
               {percent !== null && (
@@ -258,12 +256,11 @@ function ManagedSessionRow({
                   tone={tone === "danger" || tone === "warning" ? tone : "secondary"}
                   weight="medium"
                   leading="inherit"
-                  className={sessionStyles.percent}
                 >
                   {formatNumber(percent / 100, { style: "percent" })}
                 </Text>
               )}
-            </Text>
+            </div>
             <Meter
               label={t("Context usage")}
               value={percent}

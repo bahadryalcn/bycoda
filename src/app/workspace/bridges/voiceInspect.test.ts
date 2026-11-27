@@ -76,6 +76,7 @@ describe("voice workspace inspect tools", () => {
       status: "completed",
       view: "settings",
       section: "mcp",
+      current: { view: "unknown", mounted: false },
     });
     expect(calls).toEqual([
       [
@@ -84,6 +85,151 @@ describe("voice workspace inspect tools", () => {
         { view: "settings", section: "mcp" },
       ],
     ]);
+  });
+
+  it("opens Settings then closes it through the same navigator with the calling conversation", async () => {
+    const screen = { view: "conversation" as string, section: undefined as string | undefined };
+    const calls: Array<[unknown, string, unknown]> = [];
+    unregister = registerAppUiControl(async (owner, action, input) => {
+      calls.push([owner, action, input]);
+      if (action === "ui.workspace.open") {
+        screen.view = (input as { view: string }).view;
+        screen.section = (input as { section?: string }).section;
+      }
+      if (action === "ui.workspace.close") {
+        screen.view = "conversation";
+        screen.section = undefined;
+      }
+      return { view: screen.view, section: screen.section, mounted: true };
+    });
+    const session = { id: "first", cwd: "/project", title: "First" } as Session;
+    const inspect = createVoiceInspectPorts(() => ({
+      projects: [{ path: "/project" }],
+      sessions: [session],
+      projectPath: "/project",
+      activeId: "first",
+    }));
+    const { execute } = setup(inspect);
+    const opened = await execute("workspace.views.open", { view: "settings", section: "voice" });
+    expect(opened).toMatchObject({
+      status: "completed",
+      current: { view: "settings", section: "voice", mounted: true },
+    });
+    const closed = await execute("workspace.views.close", { view: "settings" });
+    expect(closed).toMatchObject({
+      status: "completed",
+      view: "settings",
+      current: { view: "conversation", mounted: true },
+    });
+    expect(await execute("workspace.views.status", {})).toMatchObject({
+      status: "completed",
+      current: { view: "conversation" },
+    });
+    expect(calls.map(([, action, input]) => [action, input])).toEqual([
+      ["ui.workspace.open", { view: "settings", section: "voice" }],
+      ["ui.workspace.close", { view: "settings" }],
+      ["ui.workspace.status", {}],
+    ]);
+    expect(calls.every(([owner]) => (owner as { sessionId: string }).sessionId === "first")).toBe(
+      true,
+    );
+  });
+
+  it("navigates the Room window by project without inventing a conversation identity", async () => {
+    const calls: Array<[Record<string, unknown>, string]> = [];
+    unregister = registerAppUiControl(async (owner, action) => {
+      calls.push([owner as unknown as Record<string, unknown>, action]);
+      return { view: "tasks", mounted: true };
+    });
+    const inspect = createVoiceInspectPorts(() => ({
+      projects: [{ path: "/project" }],
+      sessions: [],
+      projectPath: "/project",
+    }));
+    const { execute } = setup(inspect);
+    expect(await execute("workspace.views.open", { view: "tasks" })).toMatchObject({
+      status: "completed",
+      current: { view: "tasks", mounted: true },
+    });
+    expect(await execute("workspace.views.close", { view: "tasks" })).toMatchObject({
+      status: "completed",
+    });
+    expect(calls).toEqual([
+      [{ cwd: "/project", window: true, title: "Voice navigation" }, "ui.workspace.open"],
+      [{ cwd: "/project", window: true, title: "Voice navigation" }, "ui.workspace.close"],
+    ]);
+    expect(calls.some(([owner]) => "sessionId" in owner)).toBe(false);
+  });
+
+  it("refuses window navigation without an unlocked visible project", async () => {
+    const calls = vi.fn(async () => ({}));
+    unregister = registerAppUiControl(calls);
+    const inspect = createVoiceInspectPorts(() => ({
+      projects: [{ path: "/project" }],
+      sessions: [],
+      projectPath: "/locked",
+    }));
+    const { execute } = setup(inspect);
+    expect((await execute("workspace.views.open", { view: "tasks" })).status).toBe("rejected");
+    expect((await execute("workspace.views.close", { view: "tasks" })).status).toBe("rejected");
+    expect(calls).not.toHaveBeenCalled();
+  });
+
+  it("opens global views in the projectless Room but never a project view or locked project", async () => {
+    const calls: unknown[][] = [];
+    unregister = registerAppUiControl(async (...args) => {
+      calls.push(args);
+      return {};
+    });
+    const inspect = createVoiceInspectPorts(() => ({
+      projects: [{ path: "/unlocked" }],
+      sessions: [],
+      projectPath: "/locked",
+    }));
+    const { execute } = setup(inspect);
+    expect(
+      await execute("workspace.views.open", { view: "settings", section: "voice" }),
+    ).toMatchObject({
+      status: "completed",
+      view: "settings",
+    });
+    expect(calls).toEqual([
+      [
+        { global: true, title: "Voice navigation" },
+        "ui.workspace.open",
+        { view: "settings", section: "voice" },
+      ],
+    ]);
+    expect((await execute("workspace.views.open", { view: "crews" })).status).toBe("rejected");
+    expect((await execute("workspace.views.close", { view: "tasks" })).status).toBe("rejected");
+    expect(calls).toHaveLength(1);
+  });
+
+  it("never closes a conversation as a view and rejects closing unknown views", async () => {
+    const close = vi.fn(async () => ({}));
+    const { execute } = setup({ close });
+    expect((await execute("workspace.views.close", { view: "conversation" })).status).toBe(
+      "rejected",
+    );
+    expect((await execute("workspace.views.close", { view: "files" })).status).toBe("rejected");
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it("background reads never navigate, close or change the visible screen", async () => {
+    const navigate = vi.fn();
+    const close = vi.fn();
+    const search = vi.fn(async () => ({ hits: [] }));
+    const today = vi.fn(async () => ({ data: null }));
+    const mcp = vi.fn(async () => ({ servers: [] }));
+    const { execute } = setup({ navigate, close, search, today, mcp });
+    await execute("workspace.search.query", { query: "match" });
+    await execute("workspace.today.read", {});
+    await execute("workspace.mcp.status", {});
+    expect(search).toHaveBeenCalled();
+    expect(today).toHaveBeenCalled();
+    expect(mcp).toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(close).not.toHaveBeenCalled();
   });
 
   it("refuses navigation from a locked or missing source conversation", async () => {

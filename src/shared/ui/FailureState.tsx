@@ -1,3 +1,4 @@
+import { errorText } from "../lib/errors";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useLocale, useT } from "../i18n";
 import {
@@ -6,11 +7,11 @@ import {
 } from "./arc/empty-state/empty-state";
 import { InlineError } from "./InlineError";
 import { NoticeButton, type NoticeAction } from "./Notice";
-import { CircleAlert } from "./icons";
 import { Button } from "./Button";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import styles from "./FailureState.module.css";
 import { useConnectionErrorShownCentrally } from "./connectionErrorGate";
+import { StateIllustration, type IllustrationName } from "./StateIllustration";
 
 const moduleLoadFailures = new WeakSet<object>();
 
@@ -30,7 +31,7 @@ export function isModuleLoadError(error: unknown): boolean {
     moduleLoadFailures.has(error)
   )
     return true;
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorText(error);
   return /failed to fetch dynamically imported module|importing a module script failed|error loading dynamically imported module|loading (?:chunk|css chunk) .+ failed|outdated optimize dep/i.test(
     message,
   );
@@ -52,9 +53,12 @@ export const FAILURE_PREVIEW_CHARS = 8000;
  * Alert-role recovery surface for a region or whole screen that failed to load: title, one sentence,
  * Try again (promise-aware, blocks double press), structured `action` / `secondaryAction` and a
  * Show/Copy details area for the error text (preview capped, copy always complete). `fullScreen`
- * makes the title an h1. Inline form is an InlineError with the same structured actions.
+ * makes the title an h1. The block form is one centered column led by the pixel-guide mascot
+ * (`illustration`, default "error"; `false` drops it) sized 144 px (page, default) or 96 px
+ * (`context="panel"`). It fills the free space of its parent and centres in it: the parent must
+ * give it the remaining height (flex column / grid with `min-block-size: 0`). Inline form is an InlineError with the same structured actions.
  * @group feedback
- * @use Replaces EmptyState kind="unavailable". An unavailable pane, route or app boot. Optional error adds copyable diagnostics; promise-aware retry blocks double activation.
+ * @use Replaces EmptyState kind="unavailable". An unavailable pane, route or app boot. Optional error adds copyable diagnostics; promise-aware retry blocks double activation. Block failures show the "error" mascot by default (`illustration` picks another scene or `false` drops it).
  * @replaces EmptyState
  * @avoid Nothing to show or filtered list: EmptyState. Inline failure: InlineError. One-line message: InlineError. Boxed notice with a title: Alert. Never a Button in `action`.
  * @action Pass `action={{ label, onClick }}` and `onRetry`; the component renders them.
@@ -69,7 +73,8 @@ export function FailureState({
   secondaryAction,
   fullScreen = false,
   brand,
-  context = "panel",
+  illustration = "error",
+  context,
   size = "block",
   action,
   extra,
@@ -88,6 +93,7 @@ export function FailureState({
   onRetry?: () => void | Promise<unknown>;
   /** Marks a retry the caller already runs, for example one started elsewhere. */
   retrying?: boolean;
+  /** Omit for the shared "Try again" wording, the same label InlineError uses. */
   retryLabel?: string;
   /** Another recovery step (Open settings), rendered by the component. */
   action?: NoticeAction;
@@ -97,6 +103,8 @@ export function FailureState({
   fullScreen?: boolean;
   /** Decorative identity shown above the message, outside the alert, for a whole-app failure. */
   brand?: ReactNode;
+  /** Pixel-guide scene above the title of a block failure; `false` drops it. */
+  illustration?: IllustrationName | false;
 }) {
   // Subscribed locale reads keep this component compilable; module t()/formatNumber are not reactive.
   const t = useT();
@@ -108,7 +116,7 @@ export function FailureState({
   const [retryPending, setRetryPending] = useState(false);
   const retryGuard = useRef(false);
   const preview = useRef<HTMLPreElement>(null);
-  const full = error instanceof Error ? error.message : String(error ?? "");
+  const full = errorText(error ?? "");
   const copyFeedback = useCopyFeedback({ resetKeys: [title, full] });
   const copy = copyFeedback.status;
   const truncated = full.length > FAILURE_PREVIEW_CHARS;
@@ -155,7 +163,7 @@ export function FailureState({
     selection.addRange(range);
   }, [copy]);
 
-  const retryText = retryLabel ?? t("Retry");
+  const retryText = retryLabel ?? t("Try again");
   // The central connection notice explains an unreachable machine once, with its own Reconnect.
   if (shownCentrally) return null;
   if (size === "inline") {
@@ -189,10 +197,15 @@ export function FailureState({
         descriptionText={descriptionText}
         title={title}
         description={description}
-        context={context}
+        context={context ?? "panel"}
         role={role ?? "alert"}
         data-kind="unavailable"
-        icon={icon === undefined ? <CircleAlert aria-hidden /> : icon}
+        icon={
+          icon ??
+          (illustration ? (
+            <StateIllustration name={illustration} size={context === "page" ? "page" : "panel"} />
+          ) : undefined)
+        }
         className={["bycoda-arc", className].filter(Boolean).join(" ")}
         action={
           action || secondaryAction || extra || onRetry ? (
@@ -201,9 +214,14 @@ export function FailureState({
               {secondaryAction ? <NoticeButton action={secondaryAction} /> : null}
               {extra}
               {onRetry ? (
-                <NoticeButton
-                  action={{ label: retryText, onClick: () => void retry(), pending: retryBusy }}
-                />
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={retryBusy}
+                  onClick={() => void retry()}
+                >
+                  {retryText}
+                </Button>
               ) : null}
             </>
           ) : undefined
@@ -220,39 +238,62 @@ export function FailureState({
     >
       <div className={styles.content}>
         {brand}
+        {illustration ? (
+          <StateIllustration name={illustration} size={context === "panel" ? "panel" : "page"} />
+        ) : null}
         <div className={styles.message} role="alert">
-          <Heading id={titleId} className={styles.title}>
-            {title}
-          </Heading>
+          <div className={styles.heading}>
+            {icon}
+            <Heading id={titleId} className={styles.title}>
+              {title}
+            </Heading>
+          </div>
           <p className={styles.description}>{description}</p>
         </div>
         <div className={styles.actions}>
           {onRetry ? (
             <Button
               variant="primary"
+              size="sm"
               motion="none"
               loading={retryBusy || undefined}
               onClick={() => void retry()}
             >
-              {retryLabel ?? t("Try again")}
+              {retryText}
             </Button>
           ) : null}
           {action ? <NoticeButton action={action} /> : null}
           {secondaryAction ? <NoticeButton action={secondaryAction} /> : null}
           {extra}
-          <Button
-            variant="ghost"
-            motion="none"
-            aria-expanded={details}
-            aria-controls={detailsId}
-            onClick={() => setDetails(!details)}
-          >
-            {details ? t("Hide details") : t("Show details")}
-          </Button>
+          {error !== undefined ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              motion="none"
+              aria-expanded={details}
+              aria-controls={detailsId}
+              onClick={() => setDetails(!details)}
+            >
+              {details ? t("Hide details") : t("Show details")}
+            </Button>
+          ) : null}
         </div>
-        {details && (
+        {error !== undefined && details && (
           <div id={detailsId} className={styles.details}>
+            <div className={styles.detailsHeader}>
+              <span className={styles.detailsLabel}>{t("Technical details")}</span>
+              <Button
+                variant="secondary"
+                size="sm"
+                motion="none"
+                onClick={() => void copyDetails()}
+                loading={copy === "pending" || undefined}
+              >
+                {copy === "copied" ? t("Copied") : t("Copy details")}
+              </Button>
+            </div>
             <pre ref={preview} tabIndex={0} aria-label={t("Error details")}>
+              {/* oxlint-disable-next-line bycoda/no-raw-error-text -- this is the shared Details view the rule points to */}
               {shown}
             </pre>
             {truncated && !showAll ? (
@@ -263,23 +304,14 @@ export function FailureState({
                 })}
               </p>
             ) : null}
-            <div className={styles.actions}>
-              <Button
-                motion="none"
-                onClick={() => void copyDetails()}
-                loading={copy === "pending" || undefined}
-              >
-                {copy === "copied" ? t("Copied") : t("Copy details")}
-              </Button>
-              {/* Always mounted so the polite live region exists before its text changes. */}
-              <span role="status" className={styles.copyStatus} data-state={copy}>
-                {copy === "failed" ? (
-                  t("Could not copy. Select the details and copy them manually.")
-                ) : copy === "copied" ? (
-                  <span className="sr-only">{t("Copied")}</span>
-                ) : null}
-              </span>
-            </div>
+            {/* Always mounted so the polite live region exists before its text changes. */}
+            <span role="status" className={styles.copyStatus} data-state={copy}>
+              {copy === "failed" ? (
+                t("Could not copy. Select the details and copy them manually.")
+              ) : copy === "copied" ? (
+                <span className="sr-only">{t("Copied")}</span>
+              ) : null}
+            </span>
           </div>
         )}
       </div>

@@ -1,25 +1,24 @@
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { NotificationRequestCount } from "./NotificationRequestCount";
+import { NotificationBell } from "../../../shared/ui/NotificationBell";
+import { Portal } from "../../../shared/ui/Portal";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Motion } from "../../../shared/ui/Motion";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
-import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Surface } from "../../../shared/ui/Surface";
 import { Divider } from "../../../shared/ui/Divider";
 import { Switch } from "../../../shared/ui/Switch";
-import { Text } from "../../../shared/ui/Text";
 import { Popover } from "../../../shared/ui/Popover";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { Sheet } from "../../../shared/ui/Sheet";
-import { LiveText } from "../../../shared/ui/LiveText";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { Badge } from "../../../shared/ui/Badge";
 import { ToastCard, ToastSlot, useAutoDismiss } from "../../../shared/ui/ToastRegion";
 import { useT } from "../../../shared/i18n";
-import { Bell, BellOff, Settings } from "../../../shared/ui/icons";
+import { useToday } from "../../../shared/ui/useToday";
+import { CheckCheck, Settings } from "../../../shared/ui/icons";
 import {
   Fragment,
+  type ComponentType,
   useEffect,
   useId,
   useLayoutEffect,
@@ -39,21 +38,25 @@ import { useProjectNotificationPreferences } from "../../notifications/hooks/use
 import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
 import { getGroupLockView } from "../../group-lock/model/groupLock";
-import { LOCKED_NOTIFICATION_TEXT } from "../../notifications/model/attention";
 import type { ApprovalDispatch } from "./ApprovalDecisionContext";
 import type { PendingApprovalNotice } from "../../notifications/model/approvalToast";
 import { LAYER } from "../../../shared/lib/layers";
+import { BACKGROUND_NOTIFICATION_TARGETS } from "../../notifications/model/notifications";
 import type { Session } from "../model/session";
-import { HistoryItem } from "./NotificationHistoryItem";
+import { HistoryItem, NotificationProjectIconContext } from "./NotificationHistoryItem";
+import { NotificationApprovalDialog } from "./NotificationApprovalDialog";
 import { NotificationRequestCard } from "./NotificationRequestCard";
 import { OwnerRequestRow } from "./OwnerRequestRow";
 import { useOwnerNotifications, type OwnerRequestRow as OwnerRow } from "./useOwnerNotifications";
 import {
   historyOccurrenceIds,
-  MAX_NOTIFICATION_HISTORY,
-  countUnseenNotifications,
+  groupHistoryByDay,
+  isHistoryUnread,
   markNotificationsSeen,
+  hasOwnerApprovalChat,
   notificationKey,
+  presentOwnerApproval,
+  reopenOwnerApproval,
   useNotificationHistory,
   useNotificationSeenAt,
   type NotificationHistoryEntry,
@@ -61,15 +64,21 @@ import {
 import "./notification-sheet.css";
 import {
   LocalHostDownNotice,
+  LocalHostRevokedNotice,
   useLocalHostDownNotice,
 } from "../../connections/public/LocalHostDownNotice";
+import { useRevokedLocalMachine } from "../../connections/public/localHostService";
 
 export type Notice = PendingApprovalNotice & { session: Session };
 type Props = {
+  triggerTarget?: HTMLElement | null;
   notices: Notice[];
   popupNotices?: Notice[];
-  onFocusSession: (sessionId: string) => void;
+  /** `false` means the conversation could not open (closed, locked, or owned elsewhere). */
+  onFocusSession: (sessionId: string) => void | Promise<boolean>;
   onApproval: ApprovalDispatch;
+  /** The rail's project icon beside each request's project name; the app shell owns that identity. */
+  projectIcon?: ComponentType<{ cwd: string }>;
   /**
    * Opens a conversation recorded in history, which may no longer be open.
    * `false` or a rejection means it is unavailable. Without it, only history
@@ -133,6 +142,7 @@ function eligibleNoticeKeys(
 }
 
 export function ApprovalToasts({
+  triggerTarget,
   notices,
   popupNotices = notices,
   onFocusSession,
@@ -140,16 +150,17 @@ export function ApprovalToasts({
   onOpenHistorySession,
   onOpenBackground,
   onOpenSettings,
+  projectIcon,
 }: Props) {
   const t = useT();
+  const currentDay = useToday();
   const localHostNotice = useLocalHostDownNotice();
+  const revokedLocalMachine = useRevokedLocalMachine();
   useProjectNotificationPreferences();
   const lock = useLockSnapshot();
   const ownerRequests = useOwnerNotifications();
   const [expanded, setExpanded] = useState(false);
   const seenAt = useNotificationSeenAt();
-  // The marker from before the sheet opened: rows newer than it show "New" while the sheet stays open.
-  const [newSince, setNewSince] = useState<number | null>(null);
   const {
     history,
     unavailable: historyUnavailable,
@@ -158,9 +169,11 @@ export function ApprovalToasts({
     reload: reloadHistory,
     clear,
     remove: removeHistoryEntry,
+    markRead: markHistoryRead,
   } = useNotificationHistory(notices);
   const [popupsEnabled, setPopupsEnabled] = useState(readPopupsEnabled);
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
+  const [answering, setAnswering] = useState<string>();
   const [occurred, setOccurred] = useState<ReadonlyMap<string, number>>(() => new Map());
   const trigger = useRef<HTMLButtonElement>(null);
   const [optionsAnchor, setOptionsAnchor] = useState<HTMLButtonElement | null>(null);
@@ -190,22 +203,26 @@ export function ApprovalToasts({
     setDismissed(new Set([...dismissed].filter((key) => liveKeys.has(key))));
   }
   const count =
-    open.length + ownerRequests.length + (hasLocked ? 1 : 0) + (localHostNotice.visible ? 1 : 0);
+    open.length +
+    ownerRequests.length +
+    (hasLocked ? 1 : 0) +
+    (localHostNotice.visible ? 1 : 0) +
+    (revokedLocalMachine ? 1 : 0);
   const liveRequests = new Set(notices.map(noticeKey));
   const historyIds = historyOccurrenceIds(visibleHistory);
   // A request that is still pending is answered in the pending card, so Recent skips it.
   const recent = visibleHistory
     .map((entry, index) => ({ entry, id: historyIds[index] }))
     .filter(({ entry }) => !liveRequests.has(entry.key));
-  const unseen = expanded
-    ? 0
-    : countUnseenNotifications(
-        recent.map(({ entry }) => entry),
-        seenAt,
-      );
-  const badgeCount = count + unseen;
-  const newCount =
-    newSince === null ? 0 : recent.filter(({ entry }) => entry.occurredAt > newSince).length;
+  // Rows stay unread until the owner marks them read; looking at the sheet does not.
+  const unreadCount = recent.filter(({ entry }) => isHistoryUnread(entry, seenAt)).length;
+  const badgeCount = count + unreadCount;
+  // Today follows the local midnight through the shared clock store, not a render-time read.
+  const { today, earlier } = groupHistoryByDay(
+    recent,
+    ({ entry }) => entry.occurredAt,
+    currentDay?.getTime() ?? 0,
+  );
   // Project preferences and the project catalog live in browser storage, so React reads them
   // through their stores.
   const eligibleKeys: string[] = JSON.parse(
@@ -219,14 +236,8 @@ export function ApprovalToasts({
   const dismiss = (key: string) => setDismissed((previous) => new Set([...previous, key]));
   const dismissAll = () =>
     setDismissed(new Set([...dismissed, ...notices.map(noticeKey), "locked"]));
-  const openPanel = () => {
-    setNewSince(seenAt);
-    markNotificationsSeen();
-    setExpanded(true);
-  };
-  // Arrivals watched while the sheet was open must not badge once it closes.
+  const openPanel = () => setExpanded(true);
   const hidePanel = () => {
-    markNotificationsSeen();
     setOptionsAnchor(null);
     setExpanded(false);
   };
@@ -234,11 +245,47 @@ export function ApprovalToasts({
     hidePanel();
     trigger.current?.focus();
   };
-  // A conversation answers its own request; otherwise the shared confirmation is already open.
+  const ownerApprovalId = (row: OwnerRow) =>
+    row.key.startsWith("owner:") ? row.key.slice("owner:".length) : undefined;
+  // The row and Go take the owner to whoever asked: the conversation (switching to its project),
+  // whose chat card answers the request, or the Assistant Room. When the conversation cannot open
+  // or shows no card (a worker, a hidden pane), or nothing names a source, the request returns to
+  // the shared dialog, so the row always leads somewhere the owner can answer.
   const openOwnerRequest = (row: OwnerRow) => {
     hidePanel();
-    if (row.sessionId) onFocusSession(row.sessionId);
+    const approvalId = ownerApprovalId(row);
+    const reopen = () => approvalId && reopenOwnerApproval(approvalId);
+    const sessionId = row.sessionId;
+    if (!sessionId) {
+      if (row.threadId) return void onOpenBackground?.(BACKGROUND_NOTIFICATION_TARGETS.assistant);
+      return void reopen();
+    }
+    void Promise.resolve(onFocusSession(sessionId)).then((opened) => {
+      if (opened === false) {
+        // Recorded so a conversation that would not open can be traced in the app log.
+        console.warn("Owner request conversation did not open", sessionId);
+        return void reopen();
+      }
+      // The opened chat registers its card in an effect after the next paint.
+      requestAnimationFrame(() => {
+        if (!hasOwnerApprovalChat(sessionId)) reopen();
+      });
+    }, reopen);
   };
+  // Answer opens the shared dialog on this request, wherever the owner is.
+  const answerOwnerRequest = (row: OwnerRow) => {
+    const approvalId = ownerApprovalId(row);
+    hidePanel();
+    if (approvalId) presentOwnerApproval(approvalId);
+  };
+  // The dialog lives outside the sheet, so closing the sheet keeps it open.
+  const answerNotice = (notice: Notice) => {
+    hidePanel();
+    setAnswering(noticeKey(notice));
+  };
+  // A locked group hides the request, so its dialog closes too and does not reopen later.
+  const answeringNotice = open.find((notice) => noticeKey(notice) === answering);
+  if (answering && !answeringNotice) setAnswering(undefined);
   const focusSession = (id: string) => {
     const notice = notices.find((item) => item.sessionId === id);
     if (notice) dismiss(noticeKey(notice));
@@ -287,9 +334,17 @@ export function ApprovalToasts({
     ...(localHostNotice.visible
       ? [{ key: "local-host", node: <LocalHostDownNotice notice={localHostNotice} /> }]
       : []),
+    ...(revokedLocalMachine
+      ? [
+          {
+            key: "local-host-revoked",
+            node: <LocalHostRevokedNotice machine={revokedLocalMachine} />,
+          },
+        ]
+      : []),
     ...ownerRequests.map((row) => ({
       key: row.key,
-      node: <OwnerRequestRow row={row} onOpen={openOwnerRequest} />,
+      node: <OwnerRequestRow row={row} onOpen={openOwnerRequest} onAnswer={answerOwnerRequest} />,
     })),
     ...open.map((notice) => ({
       key: noticeKey(notice),
@@ -299,104 +354,84 @@ export function ApprovalToasts({
           occurredAt={occurred.get(noticeKey(notice))}
           onFocusSession={focusSession}
           onApproval={onApproval}
+          onAnswer={answerNotice}
         />
       ),
     })),
     ...(hasLocked ? [{ key: "locked", node: <LockedNotice /> }] : []),
   ];
+  const bell = (
+    <NotificationBell
+      label={t("Notifications")}
+      muted={!popupsEnabled}
+      iconSize={triggerTarget ? "md" : "sm"}
+      count={badgeCount}
+      tone={count > 0 ? "warning" : "accent"}
+      countId={`${panelId}-count`}
+      ref={trigger}
+      aria-expanded={expanded}
+      aria-controls={expanded ? panelId : undefined}
+      onClick={() => {
+        setOptionsAnchor(null);
+        if (expanded) hidePanel();
+        else openPanel();
+      }}
+    />
+  );
   return (
-    <>
-      <Button
-        iconOnly
-        label={t("Notifications")}
-        variant="ghost"
-        motion="none"
-        size="sm"
-        className="relative"
-        ref={trigger}
-        type="button"
-        aria-label={t("Notifications")}
-        aria-describedby={badgeCount > 0 ? `${panelId}-count` : undefined}
-        aria-expanded={expanded}
-        aria-controls={expanded ? panelId : undefined}
-        onClick={() => {
-          setOptionsAnchor(null);
-          if (expanded) hidePanel();
-          else openPanel();
-        }}
-      >
-        <span className="relative inline-flex shrink-0">
-          {popupsEnabled ? <Bell className="icon-sm" /> : <BellOff className="icon-sm" />}
-          {badgeCount > 0 ? (
-            <NotificationRequestCount
-              id={`${panelId}-count`}
-              count={badgeCount}
-              tone={count > 0 ? "warning" : "accent"}
-            />
-          ) : null}
-        </span>
-      </Button>
+    <NotificationProjectIconContext value={projectIcon ?? null}>
+      {triggerTarget ? <Portal target={triggerTarget}>{bell}</Portal> : bell}
       {expanded ? (
         <Sheet
           padding="none"
           modal={false}
           anchor="viewport"
           side="end"
-          size="420px"
+          size="sm"
           inset={{ top: 40, bottom: 32 }}
           layer={LAYER.toast}
           ignore={trigger}
           title={t("Notifications")}
           closeLabel={t("Close")}
-          className="notification-sheet"
           initialFocus="button"
           scroll="none"
           onClose={closePanel}
           headerActions={
-            <Button
-              iconOnly
-              size="sm"
-              label={t("Notification options")}
-              variant="ghost"
-              aria-expanded={Boolean(optionsAnchor)}
-              aria-controls={optionsAnchor ? `${panelId}-options` : undefined}
-              onClick={(event) => setOptionsAnchor(optionsAnchor ? null : event.currentTarget)}
-            >
-              {popupsEnabled ? <Settings className="icon-sm" /> : <BellOff className="icon-sm" />}
-            </Button>
-          }
-          headerBelow={
-            <div className="notification-history-toolbar">
-              <Text className="notification-summary" truncate>
-                <LiveText
-                  text={
-                    count > 0
-                      ? t("{p0} waiting for your answer", { p0: count })
-                      : newCount > 0
-                        ? t("{p0} new", { p0: newCount })
-                        : ""
-                  }
-                />
-              </Text>
-              {history.length > 0 ? (
-                <ConfirmMorph
-                  label={t("Clear all")}
-                  prompt={t("Clear history?")}
-                  confirmLabel={t("Clear")}
-                  onConfirm={clearHistory}
-                />
+            <>
+              {unreadCount > 0 ? (
+                <Button
+                  iconOnly
+                  label={t("Mark all read")}
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  onClick={() => markNotificationsSeen()}
+                >
+                  <CheckCheck aria-hidden className="icon-sm" />
+                </Button>
               ) : null}
-            </div>
+              <Button
+                iconOnly
+                size="sm"
+                label={t("Notification options")}
+                variant="ghost"
+                aria-expanded={Boolean(optionsAnchor)}
+                aria-controls={optionsAnchor ? `${panelId}-options` : undefined}
+                onClick={(event) => setOptionsAnchor(optionsAnchor ? null : event.currentTarget)}
+              >
+                <Settings className="icon-sm" />
+              </Button>
+            </>
           }
         >
           {optionsAnchor ? (
             <Popover
               id={`${panelId}-options`}
               anchor={optionsAnchor}
-              layer={LAYER.toastPopover}
               role="region"
               aria-label={t("Notification options")}
-              className="notification-options bycoda-arc"
+              variant="panel"
+              className="flex flex-col gap-0.5"
               width={292}
               flow="scroll"
               onDismiss={(reason) => {
@@ -404,7 +439,11 @@ export function ApprovalToasts({
                 if (reason === "escape") optionsAnchor.focus();
               }}
             >
+              {/* One row geometry: every option shares the item inset, the track sits at the end. */}
               <Switch
+                className="w-full"
+                padding={{ inline: "md", block: "sm" }}
+                labelPosition="start"
                 label={t("Show request popups")}
                 checked={popupsEnabled}
                 onCheckedChange={(enabled) => {
@@ -416,13 +455,20 @@ export function ApprovalToasts({
                   }
                 }}
               />
-              <Button variant="item" fullWidth type="button" onClick={dismissAll}>
+              <Button
+                variant="item"
+                fullWidth
+                padding={{ inline: "md" }}
+                type="button"
+                onClick={dismissAll}
+              >
                 {t("Hide all popups")}
               </Button>
               {onOpenSettings ? (
                 <Button
                   variant="item"
                   fullWidth
+                  padding={{ inline: "md" }}
                   type="button"
                   onClick={() => {
                     hidePanel();
@@ -432,11 +478,19 @@ export function ApprovalToasts({
                   {t("All notification settings…")}
                 </Button>
               ) : null}
-              <InfoPopover>
-                {t("Only the latest {p0} notifications are kept on this device.", {
-                  p0: MAX_NOTIFICATION_HISTORY,
-                })}
-              </InfoPopover>
+              {history.length > 0 ? (
+                <>
+                  <Divider decorative />
+                  <div className="flex min-h-8 items-center">
+                    <ConfirmMorph
+                      label={t("Clear all")}
+                      prompt={t("Clear history?")}
+                      confirmLabel={t("Clear")}
+                      onConfirm={clearHistory}
+                    />
+                  </div>
+                </>
+              ) : null}
             </Popover>
           ) : null}
           <ScrollArea
@@ -446,41 +500,21 @@ export function ApprovalToasts({
             className="notification-sheet-list"
           >
             {historyUnavailable ? (
-              <div className="notification-history-status">
-                <Alert tone="warning">
-                  {t("Notification history could not be read. Showing what this window has.")}
-                </Alert>
-                <Button variant="ghost" size="sm" type="button" onClick={reloadHistory}>
-                  {t("Retry")}
-                </Button>
-              </div>
+              <Alert tone="warning" action={{ label: t("Retry"), onClick: reloadHistory }}>
+                {t("Notification history could not be read. Showing what this window has.")}
+              </Alert>
             ) : null}
             {clearError ? (
-              <div className="notification-history-status">
-                <Alert tone="danger">
-                  {t("Notification history could not be cleared. Nothing was removed.")}
-                </Alert>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  type="button"
-                  loading={clearing}
-                  onClick={() => void clear()}
-                >
-                  {t("Retry")}
-                </Button>
-              </div>
+              <Alert
+                tone="danger"
+                action={{ label: t("Retry"), onClick: () => void clear(), pending: clearing }}
+              >
+                {t("Notification history could not be cleared. Nothing was removed.")}
+              </Alert>
             ) : null}
             {count > 0 ? (
               <>
-                <SectionLabel
-                  className="notification-section-label"
-                  actions={
-                    <Badge variant="count" tone="warning" size="xs">
-                      {count}
-                    </Badge>
-                  }
-                >
+                <SectionLabel className="notification-section-label">
                   {t("Waiting for you")}
                 </SectionLabel>
                 <Surface variant="card" padding="none" className="notification-pending-card">
@@ -493,28 +527,32 @@ export function ApprovalToasts({
                 </Surface>
               </>
             ) : null}
-            {count > 0 && recent.length > 0 ? (
-              <SectionLabel className="notification-section-label">{t("Recent")}</SectionLabel>
-            ) : null}
-            <div className="notification-sheet-items">
-              {recent.map(({ entry, id }) => (
-                <HistoryItem
-                  key={id}
-                  entry={entry}
-                  isNew={newSince !== null && entry.occurredAt > newSince}
-                  canOpen={canOpenHistory(entry)}
-                  onOpen={openHistorySession}
-                  onRemove={removeHistoryEntry}
-                />
-              ))}
-              {visibleHistory.length < history.length ? <LockedNotice /> : null}
-            </div>
+            {[
+              { key: "today", label: t("Today"), rows: today },
+              { key: "earlier", label: t("Earlier"), rows: earlier },
+            ].map((group) =>
+              group.rows.length > 0 ? (
+                <Fragment key={group.key}>
+                  <SectionLabel className="notification-section-label">{group.label}</SectionLabel>
+                  <div className="notification-sheet-items">
+                    {group.rows.map(({ entry, id }) => (
+                      <HistoryItem
+                        key={id}
+                        entry={entry}
+                        unread={isHistoryUnread(entry, seenAt)}
+                        canOpen={canOpenHistory(entry)}
+                        onOpen={openHistorySession}
+                        onRemove={removeHistoryEntry}
+                        onMarkRead={markHistoryRead}
+                      />
+                    ))}
+                  </div>
+                </Fragment>
+              ) : null,
+            )}
+            {visibleHistory.length < history.length ? <LockedNotice /> : null}
             {count === 0 && recent.length === 0 && !historyUnavailable ? (
-              <EmptyState
-                context="list"
-                icon={<Bell className="size-6" aria-hidden />}
-                title={t("All clear")}
-              />
+              <EmptyState size="inline" context="list" description={t("All clear")} />
             ) : null}
           </ScrollArea>
         </Sheet>
@@ -541,7 +579,17 @@ export function ApprovalToasts({
           </div>
         </ToastSlot>
       ) : null}
-    </>
+      {/* A decided or withdrawn approval leaves the notices, which closes its dialog. */}
+      {answeringNotice ? (
+        <NotificationApprovalDialog
+          key={answering}
+          notice={answeringNotice}
+          onFocusSession={focusSession}
+          onApproval={onApproval}
+          onClose={() => setAnswering(undefined)}
+        />
+      ) : null}
+    </NotificationProjectIconContext>
   );
 }
 
@@ -552,7 +600,7 @@ function LockedNotice({ onDismiss }: { onDismiss?: () => void }) {
       <ToastCard
         className="approval-toast"
         tone="warning"
-        message={t(LOCKED_NOTIFICATION_TEXT)}
+        message={t("A session in a locked group needs attention")}
         durationMs={onDismiss ? POPUP_DURATION : null}
         onDismiss={onDismiss}
       />

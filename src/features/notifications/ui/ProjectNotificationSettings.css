@@ -15,13 +15,13 @@
 }
 
 .project-notification-item[data-nested-project] {
-  padding-inline-start: 1rem;
+  padding-inline-start: var(--ui-space-4);
 }
 
 .project-notification-item-heading {
   flex-wrap: nowrap;
   min-block-size: 0;
-  padding: 2px 8px 2px 4px;
+  padding: var(--ui-space-1) var(--ui-space-2) var(--ui-space-1) var(--ui-space-1);
 }
 
 .project-notification-item-heading > :first-child {
@@ -31,9 +31,9 @@
 
 .project-notification-trigger {
   min-inline-size: 0;
-  min-block-size: 2.25rem;
+  min-block-size: var(--ui-control-height);
   flex: 1;
-  gap: 10px;
+  gap: var(--ui-space-2);
 }
 
 .project-notification-name {
@@ -46,36 +46,27 @@
 }
 
 .project-notification-error {
-  padding: 0 8px 8px;
+  padding: 0 var(--ui-space-2) var(--ui-space-2);
 }
 
 .project-notification-categories {
-  margin: 0 8px 8px 40px;
-  padding: 4px 12px;
+  margin: 0 var(--ui-space-2) var(--ui-space-2) var(--ui-space-10);
+  padding: var(--ui-space-1) var(--ui-space-3);
 }
 
 .project-notification-category-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
-  column-gap: 32px;
+  column-gap: var(--ui-space-8);
 }
 
 .project-notification-category {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-block-size: 2.25rem;
-  gap: 16px;
+  min-block-size: var(--ui-control-height);
+  gap: var(--ui-space-4);
   cursor: pointer;
-}
-
-.project-notification-mute-hint {
-  grid-column: 1 / -1;
-  padding-block: 8px;
-}
-
-.project-notification-footnote {
-  margin-block-start: 8px;
 }
 
 @container notifications (width < 36rem) {
@@ -83,6 +74,6 @@
     flex-wrap: wrap;
   }
   .project-notification-categories {
-    margin-inline-start: 8px;
+    margin-inline-start: var(--ui-space-2);
   }
 }

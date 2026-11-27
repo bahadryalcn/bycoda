@@ -2,6 +2,12 @@ import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import { sameProjectPath } from "../../projects/public/recents";
 import type { TodayData } from "../../today";
 import type { VoiceWorkspaceProject, VoiceWorkspaceResult } from "./voiceWorkspaceActions";
+import {
+  isVoiceUsageAction,
+  runVoiceUsage,
+  voiceUsageTools,
+  type VoiceUsageDeps,
+} from "./voiceWorkspaceUsage";
 
 /** Renderer-side navigation and bounded reads. Nothing here selects, opens or sends work. */
 export type VoiceInspectSearchHit = {
@@ -24,8 +30,10 @@ export type VoiceInspectMcpRow = {
 };
 
 export type VoiceWorkspaceInspectDeps = {
-  /** Drives the existing `ui.workspace.open` navigator with exact ids; changes nothing else. */
-  navigate?: (view: string, section?: string) => Promise<void>;
+  /** Drives the existing `ui.workspace.open|close|status` navigator with exact ids; changes nothing else. */
+  navigate?: (view: string, section?: string) => Promise<unknown>;
+  close?: (view: string) => Promise<unknown>;
+  status?: () => Promise<unknown>;
   search?: (
     query: string,
     limit: number,
@@ -36,12 +44,24 @@ export type VoiceWorkspaceInspectDeps = {
     error?: string;
     partial?: boolean;
   }>;
+  /** Read-only Usage report and dashboard navigation; see `voiceWorkspaceUsage.ts`. */
+  usage?: VoiceUsageDeps;
 };
 
 export const VOICE_SEARCH_MAX = 20;
 export const VOICE_TODAY_MAX = 30;
 export const VOICE_MCP_MAX = 100;
 const DEADLINE_MS = 8000;
+
+/** The screen a navigation read reports: view id, settings section when open, and mount state. */
+export function voiceViewState(value: unknown) {
+  const state = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return {
+    view: typeof state.view === "string" ? state.view : "unknown",
+    ...(typeof state.section === "string" ? { section: state.section } : {}),
+    mounted: state.mounted === true,
+  };
+}
 
 const unavailable = (): never => {
   throw new Error("This workspace action is not available in the current window.");
@@ -71,12 +91,24 @@ export function createVoiceInspect(registry: {
   const tools = [
     [
       "workspace.views.open",
-      "Navigate this window to an application view and, for settings, one section. Navigation only: never changes a setting, sends work or opens a locked project. Unknown values are rejected with the allowed list.",
+      "Open an application view in this window and, for settings, one section. Use workspace.views.close to close it and workspace.views.status to read the current screen. Navigation only: never changes a setting, sends work or opens a locked project. Without an unlocked project, only settings, search, inbox and assistant open. Unknown values are rejected with the allowed list.",
       {
         view: { type: "string", enum: [...registry.views] },
         section: { type: "string", enum: [...registry.sections] },
       },
       ["view"],
+    ],
+    [
+      "workspace.views.close",
+      "Close an application view that is open (settings, search, inbox, notes, servers, automations, tasks, social, crews, assistant, conversation-tools) and return to the conversation. Closing a view that is not open changes nothing. Conversations are closed with workspace.sessions.close, not here. Navigation only: never changes a setting or sends work.",
+      { view: { type: "string", enum: [...registry.views] } },
+      ["view"],
+    ],
+    [
+      "workspace.views.status",
+      "Read which application view is on screen now: its view id, the settings section when settings is open, and whether it is mounted. Reading changes nothing.",
+      {},
+      [],
     ],
     [
       "workspace.search.query",
@@ -117,6 +149,8 @@ export function createVoiceInspect(registry: {
     ctx: { projects: readonly VoiceWorkspaceProject[]; deps: VoiceWorkspaceInspectDeps },
   ): Promise<VoiceWorkspaceResult> {
     const { deps } = ctx;
+    if (isVoiceUsageAction(action))
+      return runVoiceUsage(action, args, { projects: ctx.projects, deps: deps.usage ?? {} });
     if (action === "workspace.views.open") {
       const view = args.view;
       if (typeof view !== "string" || !registry.views.includes(view))
@@ -129,13 +163,27 @@ export function createVoiceInspect(registry: {
             `Unknown settings section. Allowed sections: ${registry.sections.join(", ")}.`,
           );
       }
-      await (deps.navigate ?? unavailable)(view, section as string | undefined);
+      const state = await (deps.navigate ?? unavailable)(view, section as string | undefined);
       return {
         action,
         status: "completed",
         view,
         ...(typeof section === "string" ? { section } : {}),
+        current: voiceViewState(state),
       };
+    }
+    if (action === "workspace.views.close") {
+      const view = args.view;
+      if (typeof view !== "string" || !registry.views.includes(view))
+        throw new Error(`Unknown view. Allowed views: ${registry.views.join(", ")}.`);
+      if (view === "conversation")
+        throw new Error("A conversation is not closed as a view. Use workspace.sessions.close.");
+      const state = await (deps.close ?? unavailable)(view);
+      return { action, status: "completed", view, current: voiceViewState(state) };
+    }
+    if (action === "workspace.views.status") {
+      const state = await (deps.status ?? unavailable)();
+      return { action, status: "completed", current: voiceViewState(state) };
     }
     if (action === "workspace.search.query") {
       const query = typeof args.query === "string" ? args.query.trim() : "";
@@ -239,5 +287,10 @@ export function createVoiceInspect(registry: {
     throw new Error("Unknown workspace action.");
   }
 
-  return { tools, run, handles: (action: string) => tools.some((tool) => tool.name === action) };
+  const allTools = [...tools, ...voiceUsageTools];
+  return {
+    tools: allTools,
+    run,
+    handles: (action: string) => allTools.some((tool) => tool.name === action),
+  };
 }

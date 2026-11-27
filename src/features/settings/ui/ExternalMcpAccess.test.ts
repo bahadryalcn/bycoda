@@ -8,6 +8,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: mock.invoke }));
 vi.mock("../../connections/model/connections", () => ({ remoteRequest: mock.remote }));
 vi.mock("../../connections/model/localSync", () => ({ isLocalSyncMachine: () => true }));
 import { ExternalMcpAccess } from "./ExternalMcpAccess";
+import { formatDate } from "../../../shared/i18n";
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -85,3 +86,65 @@ it.each(["rejection", "false-result"])(
     }
   },
 );
+
+it("shows translated tool group labels, keeps unknown ids, and formats expiry with the shared formatter", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const expiresAt = Date.UTC(2030, 0, 15, 12, 30);
+  mock.invoke.mockImplementation(async (command) => {
+    if (command !== "remote_machines") throw new Error("Unexpected native call: " + command);
+    return [
+      {
+        id: "synthetic-host",
+        endpoint: "http://127.0.0.1:1",
+        environmentId: "synthetic",
+        name: "Fixture",
+      },
+    ];
+  });
+  mock.remote.mockImplementation(async (_id, method) => {
+    if (method === "projects.list") return [{ id: "p", name: "Fixture", cwd: "/fixture" }];
+    if (method === "mcp.tokens.list")
+      return {
+        tokens: [
+          {
+            id: "g",
+            name: "Synthetic grant",
+            projectId: "p",
+            scopes: { conversation: ["read"], "runtime-logs": ["read"], "legacy-group": ["write"] },
+            createdAt: 1,
+            expiresAt,
+          },
+        ],
+      };
+    throw new Error("Unexpected RPC: " + method);
+  });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(createElement(ExternalMcpAccess, { cwd: "/fixture" })));
+    const text = container.textContent ?? "";
+    const scopeNames = [...container.querySelectorAll('[role="img"][aria-label]')].map((icon) =>
+      icon.getAttribute("aria-label"),
+    );
+    expect(scopeNames).toContain("Scope: Conversation: Read");
+    expect(scopeNames).toContain("Scope: Runtime logs: Read");
+    expect(scopeNames).toContain("Scope: legacy-group: Write");
+    expect(scopeNames).not.toContain("Scope: conversation: Read");
+    expect(text).toContain(
+      `Expires: ${formatDate(expiresAt, { dateStyle: "medium", timeStyle: "short" })}`,
+    );
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    mock.remote.mockClear();
+  }
+});

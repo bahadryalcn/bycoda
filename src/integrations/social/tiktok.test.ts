@@ -85,6 +85,12 @@ function fixture() {
   };
 }
 describe("TikTok Direct Post", () => {
+  it("reports desktop Stories as unsupported before it accepts a publication draft", () => {
+    expect(() => parseTikTokOptions({ ...options, mediaType: "story" })).toThrow(
+      expect.objectContaining({ detail: { reasonCode: "tiktok.stories_mobile_only" } }),
+    );
+  });
+
   const photoJob = (): SocialJob => ({
     ...job(),
     payload: {

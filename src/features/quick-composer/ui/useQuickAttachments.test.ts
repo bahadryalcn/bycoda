@@ -103,6 +103,66 @@ it("pastes an image into a portable file while retaining its thumbnail", async (
   expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview");
 });
 
+it("writes just the available slot when several files are pasted into an almost full draft", async () => {
+  vi.mocked(pickFiles).mockResolvedValue(Array.from({ length: 19 }, (_, i) => `/tmp/${i}.txt`));
+  await act(async () => {
+    await api.chooseFiles();
+  });
+  expect(api.files).toHaveLength(19);
+  await act(async () => {
+    api.onPaste({
+      clipboardData: { files: ["a.txt", "b.txt", "c.txt"].map((name) => new File(["a"], name)) },
+      preventDefault: vi.fn(),
+    } as never);
+    await vi.waitFor(() =>
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({ title: expect.stringContaining("20") }),
+      ),
+    );
+  });
+  expect(api.files).toHaveLength(20);
+  expect(vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === "write_attachment")).toHaveLength(
+    1,
+  );
+});
+
+it.each([false, true])(
+  "shows a long plain paste only as an attachment (draft edited: %s)",
+  async (editDraft) => {
+    const write = Promise.withResolvers<string>();
+    const invokeOriginal = vi.mocked(invoke).getMockImplementation()!;
+    vi.mocked(invoke).mockImplementation((command, args) =>
+      command === "write_attachment" ? write.promise : invokeOriginal(command, args),
+    );
+    const field = document.createElement("textarea");
+    container.append(field);
+    field.value = "before replace after";
+    field.setSelectionRange(7, 14);
+    const text = "pasted source ".repeat(800);
+    const preventDefault = vi.fn();
+    const expected = editDraft ? /^revised \[.+\] draft$/ : /^before \[.+\] after$/;
+    await act(async () => {
+      api.onPaste({
+        target: field,
+        clipboardData: {
+          files: [],
+          getData: (type: string) => (type === "text/plain" ? text : ""),
+        },
+        preventDefault,
+      } as never);
+      expect(field.value).toBe("before replace after");
+      if (editDraft) {
+        field.value = "revised draft";
+        field.setSelectionRange(0, 7);
+      }
+      write.resolve("/tmp/Pasted text.txt");
+      await vi.waitFor(() => expect(field.value).toMatch(expected));
+    });
+    expect(preventDefault).toHaveBeenCalled();
+    expect(api.files).toMatchObject([{ name: "Pasted text.txt", size: text.length }]);
+  },
+);
+
 it("attaches a copied file instead of leaving its URI in the prompt", async () => {
   clipboardPaths = ["/tmp/image.png"];
   const preventDefault = vi.fn();
@@ -309,8 +369,27 @@ it("attaches a screenshot and preserves the draft on cancellation or failure", a
     await api.takeScreenshot();
   });
   expect(api.files).toHaveLength(1);
-  expect(onError).toHaveBeenLastCalledWith("Capture failed");
+  expect(onError).toHaveBeenLastCalledWith({
+    title: "Could not read attachments.",
+    message: "Capture failed",
+  });
   expect(api.loading).toBe(false);
+});
+
+it("reports a screen-recording block as a recoverable notice and keeps the draft", async () => {
+  await act(async () => {
+    await api.takeScreenshot();
+  });
+  const kept = api.files;
+  vi.mocked(invoke).mockRejectedValueOnce("screen-recording-permission-required");
+  await act(async () => {
+    await api.takeScreenshot();
+  });
+  expect(api.files).toEqual(kept);
+  expect(onError).toHaveBeenLastCalledWith({
+    title: "Screenshots need Screen Recording access. Review access to set it up, then try again.",
+    recovery: "screen-recording",
+  });
 });
 
 it("retains attachments when switching to an unsupported provider", async () => {
@@ -357,16 +436,18 @@ it("shows a recoverable error when persisting a pasted image fails", async () =>
       preventDefault: vi.fn(),
     } as never);
     await vi.waitFor(() => {
-      expect(onError).toHaveBeenLastCalledWith(
-        "Could not attach pasted.png: Disk full. Paste or attach the file again.",
-      );
+      expect(onError).toHaveBeenLastCalledWith({
+        title: "Could not read attachments.",
+        message: "Could not attach pasted.png: Disk full. Paste or attach the file again.",
+      });
       expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview");
     });
   });
   expect(api.files).toEqual([]);
-  expect(onError).toHaveBeenLastCalledWith(
-    "Could not attach pasted.png: Disk full. Paste or attach the file again.",
-  );
+  expect(onError).toHaveBeenLastCalledWith({
+    title: "Could not read attachments.",
+    message: "Could not attach pasted.png: Disk full. Paste or attach the file again.",
+  });
   expect(api.loading).toBe(false);
   expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview");
 });

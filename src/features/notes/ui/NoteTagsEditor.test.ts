@@ -58,7 +58,7 @@ it("assigns library and ready tags without losing custom draft input", async () 
   expect(changed).toHaveBeenLastCalledWith(["existing", "shared", "todo"]);
 });
 
-it("disables ready-tag assignment at the note tag limit", async () => {
+it("hides ready-tag assignment at the note tag limit", async () => {
   await act(async () =>
     root.render(
       createElement(NoteTagsEditor, {
@@ -67,7 +67,6 @@ it("disables ready-tag assignment at the note tag limit", async () => {
       }),
     ),
   );
-  expect(
-    container.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.disabled,
-  ).toBe(true);
+  // At the limit the ready-tag trigger is hidden rather than disabled without a reason.
+  expect(container.querySelector('button[aria-haspopup="dialog"]')).toBeNull();
 });

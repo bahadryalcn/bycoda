@@ -7,6 +7,8 @@ import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Modal } from "../../../shared/ui/Modal";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { Badge } from "../../../shared/ui/Badge";
 import { refreshSshRunbookQueue, useSshRunbookQueue } from "../model/sshRunbookQueue";
 import {
   dismissSshRunbookIntent,
@@ -14,6 +16,8 @@ import {
   type SshRunbookIntent,
 } from "../model/sshRunbooks";
 import type { ServerRecord } from "../model/serverInventory";
+import { errorText } from "../../../shared/lib/errors";
+import { sanitizeConnectionError } from "../model/remoteConnection";
 import { SshRunbooks } from "./SshRunbooks";
 
 export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
@@ -35,12 +39,28 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
   }>();
   const mounted = useRef(false);
   const operationPending = useRef(false);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- guards native operation completions against updates after the queue unmounts
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
     };
   }, []);
+  const [names, setNames] = useState<Record<string, string>>({});
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- reads native runbook names when the queue opens
+  useEffect(() => {
+    if (!open) return;
+    let current = true;
+    listSshRunbooks().then(
+      (profiles) => {
+        if (current) setNames(Object.fromEntries(profiles.map((entry) => [entry.id, entry.name])));
+      },
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [open]);
   const operation = async (action: () => Promise<void>) => {
     if (operationPending.current) return;
     operationPending.current = true;
@@ -49,7 +69,7 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
     try {
       await action();
     } catch (reason) {
-      if (mounted.current) setError(String(reason));
+      if (mounted.current) setError(sanitizeConnectionError(errorText(reason)));
     } finally {
       operationPending.current = false;
       if (mounted.current) setBusy(false);
@@ -58,34 +78,45 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
   return (
     <>
       {queue.intents.length || queue.error || review?.runId ? (
-        <Text
-          as="div"
-          tone="inherit"
-          {...surfaceAttributes(
-            { frame: "pane", edge: "bottom" },
-            "flex shrink-0 items-center justify-end gap-2 px-3 py-1",
-          )}
-        >
+        <div className="flex shrink-0 items-center justify-end px-3 py-1">
           <Button variant="ghost" onClick={() => setOpen(true)}>
             {t("SSH reviews")}
-            {!queue.error || queue.intents.length ? ` · ${queue.intents.length}` : ""}
+            {!queue.error || queue.intents.length ? (
+              <Badge variant="count" size="xs" tone="warning">
+                {queue.intents.length}
+              </Badge>
+            ) : null}
           </Button>
-        </Text>
+        </div>
       ) : null}
       {open && !reviewOpen ? (
         <Modal title={t("SSH reviews")} onClose={() => setOpen(false)} size="md">
           <div className="flex min-w-0 flex-col gap-2">
-            {error || queue.error ? <Alert tone="danger">{error || queue.error}</Alert> : null}
-            <div className="flex justify-end gap-2">
-              {review?.runId ? (
+            {error || queue.error ? (
+              <Alert
+                tone="danger"
+                action={
+                  error
+                    ? undefined
+                    : { label: t("Retry"), onClick: () => void operation(refreshSshRunbookQueue) }
+                }
+                extra={
+                  <ErrorDetails
+                    title={t("Could not update the SSH review queue.")}
+                    detail={error || queue.error}
+                  />
+                }
+              >
+                {t("Could not update the SSH review queue.")}
+              </Alert>
+            ) : null}
+            {review?.runId ? (
+              <div className="flex justify-end">
                 <Button disabled={busy} onClick={() => setReviewOpen(true)}>
                   {t("Last execution")}
                 </Button>
-              ) : null}
-              <Button disabled={busy} onClick={() => void operation(refreshSshRunbookQueue)}>
-                {t("Refresh")}
-              </Button>
-            </div>
+              </div>
+            ) : null}
             {queue.intents.map((intent) => (
               <Text
                 key={intent.id}
@@ -97,8 +128,8 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
                 )}
               >
                 <span className="min-w-0 break-all">
-                  {t(intent.trigger === "startup" ? "Startup" : "Scheduled")} ·{" "}
-                  {intent.automationId} · r{intent.revision}
+                  {intent.trigger === "startup" ? t("Startup") : t("Scheduled")} ·{" "}
+                  {names[intent.automationId] ?? intent.automationId} · r{intent.revision}
                 </span>
                 <div className="flex gap-2">
                   <Button

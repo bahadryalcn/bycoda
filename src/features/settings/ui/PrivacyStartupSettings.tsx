@@ -1,11 +1,17 @@
 import { useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { DIAGNOSTIC_RETENTION_DAYS } from "@bycoda/account-contracts";
 import {
-  isAnonymousStatsEnabled,
-  setAnonymousStatsEnabled,
-  subscribeAnonymousStats,
+  AnonymousUsageSetting,
+  getStatisticsMode,
+  setStatisticsMode,
+  statsDisclosure,
+  subscribeStatisticsMode,
 } from "../../account";
+import {
+  ActivitySharingSetting,
+  SharingModeSelect,
+  SharingNoticeSetting,
+} from "../../data-sharing";
 import { DiagnosticsSharingSetting } from "../../diagnostics";
 import {
   useGroupLock,
@@ -13,7 +19,12 @@ import {
   PrivacyStorageError,
 } from "../../group-lock/public/privacySettings";
 import { Group, Row, Toggle, SettingsFeedback } from "../../../shared/ui/settings";
-import { saveMaskEmails, useMaskEmails, useMaskEmailsSaved } from "../model/displayPrefs";
+import {
+  MASK_EMAILS_DEFAULT,
+  saveMaskEmails,
+  useMaskEmails,
+  useMaskEmailsSaved,
+} from "../model/displayPrefs";
 import { FileAccessSettings } from "./FileAccessSettings";
 import "../../group-lock/ui/GroupPrivacy.css";
 
@@ -23,7 +34,7 @@ export function PrivacyStartupSettings() {
   const privacy = useGroupLock();
   const maskEmails = useMaskEmails();
   const maskSaved = useMaskEmailsSaved();
-  const statsOn = useSyncExternalStore(subscribeAnonymousStats, isAnonymousStatsEnabled);
+  const statisticsMode = useSyncExternalStore(subscribeStatisticsMode, getStatisticsMode);
   // The choice applies now; the next-launch promise holds only once it is stored.
   const startSaved = !privacy.unsavedOptions?.includes("startInPrivacyMode");
   const saveStart = (on: boolean) => {
@@ -31,11 +42,10 @@ export function PrivacyStartupSettings() {
   };
   return (
     <>
-      <Group title={t("Privacy")} scope={t("Applies to this computer.")}>
+      <Group title={t("Privacy")}>
         <Row
           id="start-in-privacy-mode"
           label={t("Start in privacy mode")}
-          description={t("Hide your workspace on the next launch.")}
           feedback={
             privacy.storageAvailable === false ? (
               <PrivacyStorageError />
@@ -67,6 +77,8 @@ export function PrivacyStartupSettings() {
           description={t(
             "Blur account emails in Settings and the usage popover until you click one, so they stay out of screenshots.",
           )}
+          modified={maskEmails !== MASK_EMAILS_DEFAULT}
+          onReset={() => saveMaskEmails(MASK_EMAILS_DEFAULT)}
           feedback={
             maskSaved ? undefined : (
               <SettingsFeedback
@@ -85,26 +97,18 @@ export function PrivacyStartupSettings() {
         <Row
           id="anonymous-statistics"
           label={t("Share anonymous usage statistics")}
-          descriptionVisible
-          description={t(
-            "Once a day bycoda sends the app version and operating system with a random install id. Never your sessions, prompts, code or file names. Off by default.",
-          )}
+          description={statsDisclosure()}
         >
-          <Toggle
+          <SharingModeSelect
             label={t("Share anonymous usage statistics")}
-            on={statsOn}
-            onChange={setAnonymousStatsEnabled}
+            value={statisticsMode}
+            change={setStatisticsMode}
           />
         </Row>
-        <Row
-          label={t("Share diagnostic logs")}
-          description={t(
-            "Diagnostic logs are the app and Host logs, with secrets, e-mail addresses and your user name removed on this computer. They never include your conversations, prompts or code. They are kept {p0} days.",
-            { p0: DIAGNOSTIC_RETENTION_DAYS },
-          )}
-        >
-          <DiagnosticsSharingSetting />
-        </Row>
+        <AnonymousUsageSetting />
+        <ActivitySharingSetting />
+        <SharingNoticeSetting />
+        <DiagnosticsSharingSetting />
       </Group>
       <FileAccessSettings />
     </>

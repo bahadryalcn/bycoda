@@ -7,14 +7,31 @@ import type { SocialClient } from "../../model/socialClient";
 import { SignupAccountDialog } from "./SignupAccountDialog";
 
 vi.mock("../../../../shared/ui/Modal", () => ({
-  Modal: (props: { title: string; children: ReactNode; footer: ReactNode }) =>
+  Modal: (props: {
+    title: string;
+    closeDisabled?: boolean;
+    children: ReactNode;
+    footer: ReactNode;
+  }) =>
     createElement(
       "div",
       { role: "dialog", "aria-label": props.title },
+      createElement("button", {
+        disabled: props.closeDisabled,
+        "aria-label": "Close dialog",
+      }),
       props.children,
       props.footer,
     ),
   ModalActions: (props: { children: ReactNode }) => createElement("div", null, props.children),
+}));
+
+vi.mock("../../../../shared/ui/DatePicker", () => ({
+  DatePicker: (props: { label: string; max?: string }) =>
+    createElement("input", {
+      "aria-label": props.label,
+      "data-max": props.max,
+    }),
 }));
 
 let element: HTMLDivElement, root: Root;
@@ -55,7 +72,11 @@ function setup(begin: SocialBrowserWorkflow = flow(), existingAccountId?: string
     request: vi.fn(async () => ({ id: "acc-1" })),
     browserWorkflowBegin: vi.fn(async () => begin),
     browserRegistrationAdvance: vi.fn(async () => flow({ updatedAt: 11 })),
-    browserWorkflowStatus: vi.fn(async () => ({ available: true, reason: "", workflows: [] })),
+    browserWorkflowStatus: vi.fn(async () => ({
+      available: true,
+      reason: "",
+      workflows: [],
+    })),
     browserWorkflowCancel: vi.fn(async () => undefined),
   };
   const onClose = vi.fn();
@@ -64,7 +85,7 @@ function setup(begin: SocialBrowserWorkflow = flow(), existingAccountId?: string
     root.render(
       createElement(SignupAccountDialog, {
         client: client as unknown as SocialClient,
-        platform: "reddit",
+        platform: begin.platform,
         accountType: "member",
         initialName: "Launch",
         projectIds: ["p1"],
@@ -99,6 +120,42 @@ const submit = () =>
       ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   });
 
+it.each([
+  ["reddit", "rate_limit", "Reddit reached its email sign-up limit. Try again later."],
+  [
+    "reddit",
+    "network_blocked",
+    "Reddit blocked browser access for network security. Try again later.",
+  ],
+  ["tiktok", "rate_limit", "TikTok reached its sign-up attempt limit. Try again later."],
+] as const)(
+  "shows %s's %s warning and keeps the stop action available",
+  async (platform, step, message) => {
+    const { client } = setup(
+      flow({
+        platform,
+        registration: {
+          status: "awaiting_owner",
+          step,
+          blockers: [],
+          requiredFields: [],
+          filledFields: ["email"],
+          canAdvance: false,
+          message,
+        },
+      }),
+    );
+    await submit();
+    expect(element.querySelector('[role="status"][data-tone="warning"]')?.textContent).toBe(
+      message,
+    );
+    expect(element.textContent).not.toContain("Waiting for you");
+    expect(button("Continue")).toBeUndefined();
+    expect(button("Stop signup")?.disabled).toBe(false);
+    expect(client.browserRegistrationAdvance).not.toHaveBeenCalled();
+  },
+);
+
 it("creates the browser account, opens signup without secrets and shows the owner steps", async () => {
   const { client } = setup();
   await submit();
@@ -116,6 +173,10 @@ it("creates the browser account, opens signup without secrets and shows the owne
   expect(element.textContent).toContain("Enter the verification code");
   expect(element.textContent).toContain("Solve the security check");
   expect(element.querySelector('input[type="password"]')).toBeNull();
+  expect(element.querySelector<HTMLButtonElement>('[aria-label="Close dialog"]')?.disabled).toBe(
+    true,
+  );
+  expect(button("Stop signup")?.disabled).toBe(false);
 });
 
 it("collects only the required fields, keeps the draft and advances with them", async () => {
@@ -123,7 +184,7 @@ it("collects only the required fields, keeps the draft and advances with them", 
   await submit();
   expect(field("Email address")).toBeTruthy();
   expect(field("Username")).toBeTruthy();
-  expect(button("Continue")?.disabled).toBe(true);
+  expect(button("Continue")?.getAttribute("aria-disabled")).toBe("true");
   type("Email address", "ada@example.com");
   type("Username", "ada_l");
   expect(field("Email address").value).toBe("ada@example.com");
@@ -133,6 +194,52 @@ it("collects only the required fields, keeps the draft and advances with them", 
     email: "ada@example.com",
     username: "ada_l",
   });
+});
+
+it("shows the next action in the platform window without opening Details", async () => {
+  const message = "Choose a sign-up method in X, then select Continue here.";
+  setup(
+    flow({
+      platform: "x",
+      registration: {
+        status: "awaiting_owner",
+        step: "method",
+        blockers: [],
+        requiredFields: [],
+        filledFields: [],
+        canAdvance: false,
+        message,
+      },
+    }),
+  );
+  await submit();
+  expect(element.textContent).toContain(message);
+  expect(button("Continue")?.disabled).toBe(false);
+});
+
+it("names only the observed provider action when the Host reports verification", async () => {
+  const { client } = setup(
+    flow({
+      registration: {
+        status: "awaiting_owner",
+        step: "verification",
+        blockers: ["verification"],
+        requiredFields: [],
+        filledFields: ["email"],
+        canAdvance: false,
+        message:
+          "This step requires a password, verification or agreement action in the platform window. Resume afterwards; registration remains unverified.",
+      },
+    }),
+  );
+  await submit();
+  expect(element.textContent).toContain(
+    "Complete the steps below in the platform window. Then select Continue here.",
+  );
+  expect(element.textContent).toContain("Enter the verification code");
+  expect(element.textContent).not.toMatch(/password|agreement|Accept the terms/i);
+  expect(button("Continue")?.disabled).toBe(false);
+  expect(client.browserRegistrationAdvance).not.toHaveBeenCalled();
 });
 
 it("hands over to the account sign-in once the window is closed", async () => {
@@ -163,7 +270,13 @@ it("shows the Host failure and keeps the name when signup cannot start", async (
   const { client, onCreated } = setup();
   client.browserWorkflowBegin.mockRejectedValueOnce(new Error("Chrome or Edge is unavailable."));
   await submit();
-  expect(element.textContent).toContain("Chrome or Edge is unavailable.");
+  const alert = element.querySelector('[role="alert"]');
+  expect(alert?.textContent).toContain("The signup could not be started. Try again.");
+  expect(document.body.textContent).not.toContain("Chrome or Edge is unavailable.");
+  act(() => alert?.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')?.click());
+  expect(document.body.querySelector('[aria-label="Error details"]')?.textContent).toBe(
+    "Chrome or Edge is unavailable.",
+  );
   expect(field("Name").value).toBe("Launch");
   expect(onCreated).not.toHaveBeenCalled();
 });
@@ -179,4 +292,36 @@ it("opens signup for an account the Host already created without creating anothe
     undefined,
     expect.anything(),
   );
+});
+
+// Regression for #569: the birth date ceiling is the owner's local calendar day, not the UTC day,
+// so it holds in both directions from UTC (east after local midnight, west in the evening).
+const birthdateMax = async (local: Date) => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(local);
+  try {
+    setup(
+      {
+        ...flow(),
+        registration: {
+          ...flow().registration!,
+          requiredFields: ["birthdate"],
+          blockers: [],
+        },
+      },
+      "acc-9",
+    );
+    await submit();
+    return element.querySelector("input[data-max]")?.getAttribute("data-max");
+  } finally {
+    vi.useRealTimers();
+  }
+};
+
+it("bounds the birth date by the owner's local day just after local midnight", async () => {
+  expect(await birthdateMax(new Date(2026, 10, 19, 0, 30))).toBe("2026-11-19");
+});
+
+it("bounds the birth date by the owner's local day late in the local evening", async () => {
+  expect(await birthdateMax(new Date(2026, 10, 19, 23, 30))).toBe("2026-11-19");
 });

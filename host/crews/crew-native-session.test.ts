@@ -48,6 +48,10 @@ async function fixture() {
     ready: Promise.resolve(),
     admissionClosed: false,
     list: vi.fn(async () => rows),
+    get: vi.fn(async (id: string) => rows.find((row) => row.id === id)),
+    listCrewRun: vi.fn(async (runId: string, projectId: string) =>
+      rows.filter((row) => row.crewRunId === runId && row.projectId === projectId),
+    ),
     tick: vi.fn(async () => undefined),
     save: vi.fn(async (value: HostTask) => {
       rows.push({ ...value, status: "queued", updatedAt: 1 });
@@ -411,7 +415,7 @@ it("validates task Crew definitions inside SQL admission without reading native 
   await f.store.db.scope(() =>
     runner.validate({
       projectId: f.project.id,
-      crewDefinitionId: f.saved.id,
+      executor: { kind: "crew", crewDefinitionId: f.saved.id },
     } as Parameters<typeof runner.validate>[0]),
   );
   expect(f.session).not.toHaveBeenCalled();

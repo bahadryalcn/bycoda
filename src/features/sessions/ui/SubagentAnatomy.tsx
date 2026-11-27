@@ -6,10 +6,8 @@ import { StatusDot } from "../../../shared/ui/StatusDot";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { t as translate, useT } from "../../../shared/i18n";
 import { createContext, useContext } from "react";
+import { Bot } from "../../../shared/ui/icons";
 import { HarnessIcon } from "../../../shared/ui/identity/HarnessIcon";
-import type { CrewMemberChild } from "../../../shared/model/host-contracts/delegation";
-import { MemberAvatar, memberTraits } from "../../crews/public/mentions";
-import { ProjectMascot } from "../../projects/public/ProjectMascot";
 import { blockLifecycle, type DockAgentStatus } from "../model/activityDock";
 import { useModelIdentity } from "../model/modelHooks";
 import type { AgentStep, Block, HarnessId } from "../model/session";
@@ -22,6 +20,7 @@ import {
 } from "../model/transcriptActivity";
 import { AgentClock } from "./AgentClock";
 import { AgentMarkdown } from "./AgentMarkdown";
+import { ModelAccountNumber, type ModelAccountIdentity } from "./ModelAccountIdentity";
 
 /**
  * One anatomy for a delegated run, wherever it is shown: identity row (owned by
@@ -33,7 +32,7 @@ import { AgentMarkdown } from "./AgentMarkdown";
 type Translate = ReturnType<typeof useT>;
 
 /** Same lifecycle rule as the dock (`blockLifecycle`), worded for a run. */
-function lifecycleLabel(lifecycle: DockAgentStatus, t: Translate): string {
+export function lifecycleLabel(lifecycle: DockAgentStatus, t: Translate): string {
   switch (lifecycle) {
     case "stopped":
       return t("Stopped by you");
@@ -52,50 +51,32 @@ function lifecycleLabel(lifecycle: DockAgentStatus, t: Translate): string {
 export const RunHarness = createContext<HarnessId | undefined>(undefined);
 
 /**
- * A run's marks: the mascot, hashed off its name so the same agent keeps the
- * same face, and the provider that runs it.
+ * A run's mark: the provider that runs it, with the account's number on its corner when the
+ * provider has several accounts.
  */
 export function SubagentMarks({
-  name,
   harness,
   model,
-  active = false,
-  failed = false,
-  member,
+  account,
+  className,
 }: {
-  name: string;
-  /** A Crew member's run shows the member's portrait instead of the hashed mascot. */
-  member?: CrewMemberChild;
   harness?: HarnessId;
   /** Model id; names the provider when `harness` is not known. */
   model?: string;
-  active?: boolean;
-  failed?: boolean;
+  account?: ModelAccountIdentity;
+  className?: string;
 }) {
   const turnHarness = useContext(RunHarness);
   const modelHarness = useModelIdentity(model)?.harness;
   const provider = harness ?? modelHarness ?? turnHarness;
   return (
-    <span className="flex shrink-0 items-center gap-1" aria-hidden="true">
-      {member ? (
-        <MemberAvatar
-          traits={memberTraits({
-            id: member.sourceId ?? member.id,
-            source: member.sourceId ? { id: member.sourceId } : undefined,
-            avatar: member.avatar as Parameters<typeof memberTraits>[0]["avatar"],
-          })}
-          size={16}
-          active={active}
-        />
+    <span className={className} aria-hidden="true" data-subagent-provider={provider}>
+      {provider ? (
+        <HarnessIcon harness={provider} className="size-6 shrink-0" />
       ) : (
-        <ProjectMascot
-          project={name}
-          active={active}
-          tone={failed ? "danger" : "secondary"}
-          className="size-3.5 shrink-0"
-        />
+        <Bot className="size-6 shrink-0" />
       )}
-      {provider ? <HarnessIcon harness={provider} size="sm" /> : null}
+      <ModelAccountNumber account={account} className="absolute -end-1.5 -top-1" />
     </span>
   );
 }
@@ -136,6 +117,7 @@ export function SubagentStateLine({
   steps,
   model,
   inline = false,
+  needsInput = false,
   className = "",
 }: {
   block: Block;
@@ -143,12 +125,15 @@ export function SubagentStateLine({
   steps: AgentStep[];
   model?: string;
   inline?: boolean;
+  /** The run waits on the user (the dock's `needsInput`); shown only while it is running. */
+  needsInput?: boolean;
   className?: string;
 }) {
   const t = useT();
   const run = block.agentRun;
   const lifecycle = blockLifecycle(block, busy);
   const running = lifecycle === "running";
+  const waiting = running && needsInput;
   const failed = toolCallState(block) === "rejected";
   const summary = lifecycle === "stopped" ? "" : subagentStatusLine(block, steps);
   const identity = [run?.agentType, model].filter(Boolean).join(" · ");
@@ -164,22 +149,24 @@ export function SubagentStateLine({
         size="xs"
         appearance="subtle"
         tone={
-          failed
-            ? "danger"
-            : running
-              ? "accent"
-              : lifecycle === "interrupted" || lifecycle === "stopped"
-                ? "warning"
-                : "success"
+          waiting
+            ? "warning"
+            : failed
+              ? "danger"
+              : running
+                ? "accent"
+                : lifecycle === "interrupted" || lifecycle === "stopped"
+                  ? "warning"
+                  : "success"
         }
-        icon={running ? <StatusDot label={t("Running")} aria-hidden /> : undefined}
+        icon={running && !waiting ? <StatusDot label={t("Running")} aria-hidden /> : undefined}
       >
-        {lifecycleLabel(lifecycle, t)}
+        {waiting ? t("Needs input") : lifecycleLabel(lifecycle, t)}
       </Badge>
       {run?.round && run.round > 1 ? (
-        <Badge size="xs" appearance="subtle" tone="neutral">
+        <Text size="inherit" tone="muted">
           {t("Round {p0}", { p0: run.round })}
-        </Badge>
+        </Text>
       ) : null}
       <AgentClock startedAt={run?.startedAt} endedAt={run?.endedAt} live={running} />
       {identity || visibleSummary ? (

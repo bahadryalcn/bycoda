@@ -1,5 +1,9 @@
 import { applyHarnessEvent } from "../../../integrations/harness/core/apply";
 import { replayClaudeSession } from "../../../integrations/harness/providers/claude/claude";
+import {
+  claudeWorkflowReferences,
+  loadClaudeWorkflowArtifacts,
+} from "../../../integrations/harness/providers/claude/claudeWorkflowArtifacts";
 import { sessionWorkCwd, type Attachment, type Block, type Session } from "./session";
 
 /** The thread a conversation was picked for, as it looked when the picker opened. */
@@ -92,6 +96,43 @@ export function buildImportedSession(input: {
     providerSessionId: input.providerSessionId,
     ...(input.providerAccountId ? { providerAccountId: input.providerAccountId } : {}),
   };
+}
+
+/** Add workflow trails to an isolated replay before its session is persisted. */
+export async function hydrateImportedClaudeWorkflows(input: {
+  session: Session;
+  transcript: string;
+  cwd: string;
+  providerSessionId: string;
+  providerAccountId?: string;
+}): Promise<Session> {
+  let session = input.session;
+  for (const reference of claudeWorkflowReferences(input.transcript)) {
+    const parent = session.blocks.find((block) => block.tool?.callId === reference.callId);
+    if (!parent) continue;
+    if (reference.status)
+      session = applyHarnessEvent(session, {
+        type: "tool.updated",
+        callId: reference.callId,
+        status: reference.status,
+      });
+    try {
+      await loadClaudeWorkflowArtifacts({
+        cwd: input.cwd,
+        providerAccountId: input.providerAccountId,
+        providerSessionId: input.providerSessionId,
+        runId: reference.runId,
+        callId: reference.callId,
+        status: reference.status === "completed" ? "completed" : "interrupted",
+        onEvent: (event) => {
+          session = applyHarnessEvent(session, event);
+        },
+      });
+    } catch {
+      /* Missing provider artifacts must not prevent importing the conversation. */
+    }
+  }
+  return session;
 }
 
 function appendPrompt(

@@ -2,10 +2,6 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("../../shared/lib/productIdentity", () => ({
-  PRODUCT_IDENTITY: { displayName: "Test Product", logoSrc: "/test-product.svg" },
-}));
-
 import { UpdateRailCard } from "./UpdateRailCard";
 
 describe("UpdateRailCard", () => {
@@ -19,10 +15,22 @@ describe("UpdateRailCard", () => {
     );
 
     expect(markup).toContain('role="status"');
-    expect(markup).toContain('src="/test-product.svg"');
-    expect(markup).not.toContain("bycoda.png");
-    expect(markup).toContain("Updated to 0.1.25");
-    expect(markup).toContain("What&#x27;s new");
+    expect(markup).toContain("What&#x27;s new in 0.1.25");
+    expect(markup).toContain('aria-label="Dismiss update notification"');
+  });
+
+  it("shows an icon action with its dismiss control in the compact rail", () => {
+    const markup = renderToStaticMarkup(
+      createElement(UpdateRailCard, {
+        update: { version: "0.1.25" },
+        inline: true,
+        onOpen: vi.fn(),
+        onDismiss: vi.fn(),
+      }),
+    );
+
+    expect(markup).toContain('aria-label="What&#x27;s new in 0.1.25"');
+    expect(markup).not.toContain("data-button-reveal-label");
     expect(markup).toContain('aria-label="Dismiss update notification"');
   });
 

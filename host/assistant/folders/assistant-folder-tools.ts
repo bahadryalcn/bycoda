@@ -81,6 +81,8 @@ type Entry = {
   signature: string;
   handle: RunningCommand;
   settledAt?: number;
+  /** Resolves once the run settled and its final receipt was written (or failed loudly). */
+  settled?: Promise<void>;
 };
 
 /** A chosen folder may be a whole drive or the home folder; system and credential folders inside
@@ -127,6 +129,8 @@ const summary = (snapshot: CommandSnapshot) => ({
  * reported, never retried. */
 export function createAssistantFolderTools(ports: FolderToolPorts) {
   const ledger = new Map<string, Entry>();
+  /** Set by Host shutdown: no command may start afterwards. */
+  let closed = false;
   const inlineWaitMs = ports.inlineWaitMs ?? 20_000;
   const start = ports.start ?? startCommand;
 
@@ -216,6 +220,7 @@ export function createAssistantFolderTools(ports: FolderToolPorts) {
         )
           throw new Error("Too many Assistant commands are running; wait for one or cancel it.");
         if (!(await authorized())) throw new Error("Assistant command authority revoked.");
+        if (closed) throw new Error("The Host is shutting down; the command was not started.");
         const handle = start({
           command,
           ...(mode === "direct" ? { args: rest.args as string[] } : {}),
@@ -226,7 +231,7 @@ export function createAssistantFolderTools(ports: FolderToolPorts) {
         const key = runKey(principal, requestId);
         const entry: Entry = { signature: sha(["commands.run", args]), handle };
         ledger.set(key, entry);
-        handle.done
+        entry.settled = handle.done
           .then(async (snapshot) => {
             entry.settledAt = monotonicNow();
             await ports.saveReceipt(key, {
@@ -397,7 +402,22 @@ export function createAssistantFolderTools(ports: FolderToolPorts) {
     );
   }
 
+  /** Cancels every command this tool started and still runs, then waits until each process tree
+   * is stopped and its final receipt ("cancelled", "timed-out" or "failed") is written. Policy is
+   * untouched: only started commands are affected, and later runs follow the usual grants. */
+  const stopAll = async () => {
+    const running = [...ledger.values()].filter((entry) => entry.settledAt === undefined);
+    for (const entry of running) entry.handle.cancel();
+    await Promise.allSettled(running.map((entry) => entry.settled ?? entry.handle.done));
+  };
+
   return {
+    stopAll,
+    /** Host shutdown: refuses later starts, then stops what still runs. Idempotent. */
+    async close() {
+      closed = true;
+      await stopAll();
+    },
     /** Callers inject `requestId` for writes and runs; discovery and reads need none. */
     async call(
       action: string,

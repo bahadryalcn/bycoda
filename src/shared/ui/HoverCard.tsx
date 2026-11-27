@@ -7,22 +7,24 @@ import {
   type ReactNode,
 } from "react";
 import { useStableCallback } from "../hooks/useStableCallback";
-import type { PopoverAlign, PopoverSide } from "../lib/popover";
-import { Popover } from "./Popover";
-import {
-  HOVER_CARD_CLOSE_MS,
-  HOVER_CARD_OPEN_MS,
-  TOOLTIP_WARM_MS,
-  tooltipAnchor,
-  useHoverIntent,
-} from "./Tooltip";
+import type { PopoverAlign, PopoverSide, PopoverSize } from "../lib/popover";
+import { Popover, type PopoverFlow, type PopoverVariant } from "./Popover";
+import { HOVER_CARD_CLOSE_MS, TOOLTIP_DELAY_MS, tooltipAnchor, useHoverIntent } from "./Tooltip";
 
 export type HoverCardOptions = {
   side?: PopoverSide;
   align?: PopoverAlign;
   /** Card width in px. Defaults to the content's own width. */
   width?: number;
-  /** Pointer rest time before opening. Default {@link HOVER_CARD_OPEN_MS} (300 ms). */
+  /** A named popup width (see Popover `size`); use instead of `width` for shared widths. */
+  size?: PopoverSize;
+  /** Height bound in px; the card scrolls past it (or the viewport room, when smaller). */
+  maxHeight?: number;
+  /** `"scroll"` when the card can outgrow its bound: the pointer may cross into it, so wheel and touch must reach it. */
+  flow?: PopoverFlow;
+  /** Paint the card with the opaque Popover backdrop. */
+  solid?: boolean;
+  /** Pointer dwell time on each trigger. Default {@link TOOLTIP_DELAY_MS} (450 ms). */
   openDelay?: number;
   /** Grace period after the pointer leaves the trigger or card. Default {@link HOVER_CARD_CLOSE_MS} (150 ms). */
   closeDelay?: number;
@@ -30,7 +32,9 @@ export type HoverCardOptions = {
   disabled?: boolean;
   /** Fires when the card opens or closes. */
   onOpenChange?: (open: boolean) => void;
-  /** Classes for the card content. Default `max-w-80 p-3`. */
+  /** Content inset by purpose (see Popover `variant`). Default `"panel"`; `null` for a card whose content owns its inset. */
+  variant?: PopoverVariant | null;
+  /** Layout classes for the card content (grid, gap, max width), never padding or a frame. */
   className?: string;
   /** Accessible name for the card surface. */
   "aria-label"?: string;
@@ -49,7 +53,7 @@ export type HoverCardTriggerProps = {
  * (row, chip, avatar) and render `card(content)` next to it; it portals and adds no box.
  * Use the `HoverCard` component to wrap a single trigger instead.
  *
- * - Opens after the pointer rests 300 ms (at once within 250 ms of another card closing),
+ * - Opens after the pointer stays on each trigger for 450 ms,
  *   or at once on keyboard focus (`:focus-visible`). Touch never opens it.
  * - The pointer can cross into the card: leaving the trigger or the card closes after
  *   150 ms, and entering either again cancels the close. Focus inside the card keeps it open.
@@ -65,18 +69,21 @@ export function useHoverCard({
   side = "bottom",
   align = "start",
   width,
-  openDelay = HOVER_CARD_OPEN_MS,
+  size,
+  maxHeight,
+  flow,
+  solid,
+  openDelay = TOOLTIP_DELAY_MS,
   closeDelay = HOVER_CARD_CLOSE_MS,
   disabled = false,
   onOpenChange,
-  className = "max-w-80 p-3",
+  variant = "panel",
+  className = "max-w-80",
   "aria-label": ariaLabel,
 }: HoverCardOptions = {}) {
   const intent = useHoverIntent({
-    group: "hover-card",
     openDelay,
     closeDelay,
-    warmMs: TOOLTIP_WARM_MS,
   });
   const surface = useRef<HTMLDivElement | null>(null);
   const anchor = intent.anchor;
@@ -128,6 +135,11 @@ export function useHoverCard({
         side={side}
         align={align}
         width={width}
+        size={size}
+        maxHeight={maxHeight}
+        flow={flow}
+        solid={solid}
+        variant={variant ?? undefined}
         restoreFocus={false}
         aria-label={ariaLabel}
         data-hover-card=""

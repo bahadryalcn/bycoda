@@ -1,18 +1,7 @@
-//! macOS permission helper: a small always-on-top card docked to the bottom of
-//! System Settings while the owner grants a permission.
-//!
-//! The card ("Drag bycoda into the list above") is `permission-helper.html`.
-//! A native thread follows the Settings window, shows the card only while
-//! Settings (or the card) is frontmost, and polls the grant every second. When
-//! the grant arrives it closes the card, brings bycoda back and emits
-//! `system-permissions-changed`. Windows and Linux have no settings window to
-//! dock to; the in-app setup sheet polls instead, so the commands are no-ops.
+//! Keeps a permission card next to System Settings on macOS.
 
-use super::PermissionId;
-use tauri::AppHandle;
-
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-const LABEL: &str = "permission-helper";
+#[cfg(target_os = "macos")]
+pub(super) use mac::{close, owns, show};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Bounds {
@@ -22,81 +11,53 @@ struct Bounds {
     height: f64,
 }
 
-const HELPER_HEIGHT: f64 = 140.0;
-const SETTINGS_SIDEBAR: f64 = 216.0;
-const INSET: f64 = 16.0;
+const WIDTH: f64 = 320.0;
+const HEIGHT: f64 = 144.0;
+const GAP: f64 = 12.0;
 
-/// Centre the card over the Settings content pane, bottom-aligned.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn settings_helper_bounds(settings: Bounds) -> Bounds {
-    let content = settings.width - SETTINGS_SIDEBAR;
-    let width = 560.0_f64.min(content - INSET * 2.0);
-    Bounds {
-        x: (settings.x + SETTINGS_SIDEBAR + (content - width) / 2.0).round(),
-        y: (settings.y + settings.height - HELPER_HEIGHT - INSET).round(),
-        width: width.round(),
-        height: HELPER_HEIGHT,
+fn settings_helper_bounds(settings: Bounds, work_area: Bounds) -> Option<Bounds> {
+    let min_x = work_area.x + GAP;
+    let min_y = work_area.y + GAP;
+    let max_x = work_area.x + work_area.width - WIDTH - GAP;
+    let max_y = work_area.y + work_area.height - HEIGHT - GAP;
+    if min_x > max_x || min_y > max_y {
+        return None;
     }
-}
 
-/// The running `.app` bundle for an executable at `X.app/Contents/MacOS/bin`.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn bundle_path(executable: &std::path::Path) -> Option<std::path::PathBuf> {
-    let macos = executable.parent()?;
-    let contents = macos.parent()?;
-    let bundle = contents.parent()?;
-    let is_bundle = macos.file_name()? == "MacOS"
-        && contents.file_name()? == "Contents"
-        && bundle.extension()? == "app";
-    is_bundle.then(|| bundle.to_path_buf())
-}
-
-#[tauri::command(async)]
-pub async fn system_permission_helper_show(app: AppHandle, id: PermissionId) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    return mac::show(app, id);
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (app, id);
-        Ok(())
-    }
-}
-
-#[tauri::command]
-pub fn system_permission_helper_close(app: AppHandle) {
-    #[cfg(target_os = "macos")]
-    mac::close(&app);
-    #[cfg(not(target_os = "macos"))]
-    let _ = app;
-}
-
-#[tauri::command(async)]
-pub async fn system_permission_helper_reveal_app(app: AppHandle) -> Result<(), String> {
-    let _ = app;
-    #[cfg(target_os = "macos")]
-    return mac::reveal_app();
-    #[cfg(not(target_os = "macos"))]
-    Ok(())
+    let x = (settings.x + (settings.width - WIDTH) / 2.0).clamp(min_x, max_x);
+    let y = (settings.y + (settings.height - HEIGHT) / 2.0).clamp(min_y, max_y);
+    [
+        (x, settings.y + settings.height + GAP),
+        (settings.x + settings.width + GAP, y),
+        (settings.x - WIDTH - GAP, y),
+        (x, settings.y - HEIGHT - GAP),
+    ]
+    .into_iter()
+    .find(|&(x, y)| (min_x..=max_x).contains(&x) && (min_y..=max_y).contains(&y))
+    .map(|(x, y)| Bounds {
+        x,
+        y,
+        width: WIDTH,
+        height: HEIGHT,
+    })
 }
 
 #[cfg(target_os = "macos")]
 mod mac {
-    use super::{bundle_path, settings_helper_bounds, Bounds, LABEL};
+    use super::{settings_helper_bounds, Bounds, HEIGHT, WIDTH};
     use crate::system_permissions::{
-        entry, pane_name, status_report, PermissionId, PermissionState, CHANGED_EVENT,
+        entry, pane_name, PermissionId, PermissionState, RESTART_REQUIRED,
     };
     use objc2::msg_send;
-    use objc2::runtime::{AnyClass, AnyObject, Bool};
-    use objc2_foundation::NSString;
+    use objc2::runtime::{AnyClass, AnyObject};
+    use objc2_app_kit::NSScreen;
+    use objc2_foundation::{MainThreadMarker, NSPoint, NSRect, NSSize, NSString};
     use std::ffi::c_void;
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::Duration;
-    use tauri::{
-        AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder,
-    };
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::time::{Duration, Instant};
+    use tauri::{AppHandle, Manager, WebviewWindow};
 
-    /// Bumped by every show/close; a tracking thread stops when it changes.
-    static GENERATION: AtomicU64 = AtomicU64::new(0);
+    static GENERATION: AtomicU32 = AtomicU32::new(0);
 
     #[repr(C)]
     #[derive(Default)]
@@ -200,172 +161,173 @@ mod mac {
         })
     }
 
-    pub fn close(app: &AppHandle) {
-        GENERATION.fetch_add(1, Ordering::SeqCst);
-        if let Some(window) = app.get_webview_window(LABEL) {
+    fn label(generation: u32) -> String {
+        format!("permission-helper-{generation}")
+    }
+
+    pub(in crate::system_permissions) fn owns(window: &WebviewWindow) -> bool {
+        window.label() == label(GENERATION.load(Ordering::SeqCst))
+    }
+
+    pub(in crate::system_permissions) fn close(app: &AppHandle, generation: u32) {
+        if let Some(window) = app.get_webview_window(&label(generation)) {
             let _ = window.close();
         }
     }
 
-    fn finish(app: &AppHandle) {
-        close(app);
-        if let Some(main) = app.get_webview_window("main") {
-            let _ = main.show();
-            let _ = main.unminimize();
-            let _ = main.set_focus();
-        }
-        let _ = app.emit_to("main", CHANGED_EVENT, status_report());
+    fn settled(id: PermissionId) -> bool {
+        let current = entry(id);
+        current.state == PermissionState::Granted
+            || current.detail.as_deref() == Some(RESTART_REQUIRED)
     }
 
-    pub fn show(app: AppHandle, id: PermissionId) -> Result<(), String> {
-        close(&app);
-        if entry(id).state == PermissionState::Granted {
-            return Ok(());
+    pub(in crate::system_permissions) fn show(
+        app: AppHandle,
+        id: PermissionId,
+    ) -> Result<Option<u32>, String> {
+        match id {
+            PermissionId::Accessibility
+            | PermissionId::ScreenRecording
+            | PermissionId::FullDiskAccess => {}
+            _ => return Ok(None),
         }
-        let generation = GENERATION.load(Ordering::SeqCst);
+        let previous = GENERATION.fetch_add(1, Ordering::SeqCst);
+        let generation = previous.wrapping_add(1);
+        close(&app, previous);
+        if settled(id) {
+            return Ok(None);
+        }
+
+        // Each opening owns its window. An old close can finish after a new open.
         let url = format!("permission-helper.html?permission={}", pane_name(id));
-        // CG window bounds and Tauri logical positions share a top-left origin
-        // in display points, including negative coordinates on other displays.
-        crate::webview_args::inherit_main_browser_args(
-            &app,
-            WebviewWindowBuilder::new(&app, LABEL, WebviewUrl::App(url.into())),
-        )
-        .title(&app.package_info().name)
-        .inner_size(560.0, super::HELPER_HEIGHT)
-        .resizable(false)
-        .maximizable(false)
-        .minimizable(false)
-        .decorations(false)
-        .transparent(true)
-        .shadow(false)
-        .always_on_top(true)
-        .visible_on_all_workspaces(true)
-        .skip_taskbar(true)
-        .focused(false)
-        .visible(false)
-        .build()
-        .map_err(|error| error.to_string())?;
-        std::thread::spawn(move || track(app, id, generation));
-        Ok(())
+        let window = crate::webview_args::new_app_window(&app, &label(generation), url)
+            .title(&app.package_info().name)
+            .inner_size(WIDTH, HEIGHT)
+            .resizable(false)
+            .maximizable(false)
+            .minimizable(false)
+            .decorations(false)
+            .transparent(true)
+            .shadow(false)
+            .always_on_top(true)
+            .visible_on_all_workspaces(true)
+            .skip_taskbar(true)
+            .accept_first_mouse(true)
+            .focused(false)
+            .visible(false)
+            .build()
+            .map_err(|error| error.to_string())?;
+        std::thread::spawn(move || track(app, window, id, generation));
+        Ok(Some(generation))
     }
 
-    /// Follows System Settings until the grant arrives, Settings closes or a
-    /// newer show/close replaces this helper.
-    fn track(app: AppHandle, id: PermissionId, generation: u64) {
+    fn place(window: &WebviewWindow, settings: Bounds) -> Option<()> {
+        let screens = NSScreen::screens(MainThreadMarker::new()?);
+        let primary_top = screens.firstObject()?.frame().size.height;
+        let x = settings.x + settings.width / 2.0;
+        let y = primary_top - (settings.y + settings.height / 2.0);
+        let screen = screens.iter().find(|screen| {
+            let frame = screen.frame();
+            (frame.origin.x..frame.origin.x + frame.size.width).contains(&x)
+                && (frame.origin.y..frame.origin.y + frame.size.height).contains(&y)
+        })?;
+        let visible = screen.visibleFrame();
+        let bounds = settings_helper_bounds(
+            settings,
+            Bounds {
+                x: visible.origin.x,
+                y: primary_top - (visible.origin.y + visible.size.height),
+                width: visible.size.width,
+                height: visible.size.height,
+            },
+        )?;
+        let native_window = crate::macos::ns_window(window)?;
+        let frame = NSRect::new(
+            NSPoint::new(bounds.x, primary_top - (bounds.y + bounds.height)),
+            NSSize::new(bounds.width, bounds.height),
+        );
+        native_window.setFrame_display(frame, false);
+        if !native_window.isVisible() {
+            native_window.orderFrontRegardless();
+        }
+        Some(())
+    }
+
+    fn track(app: AppHandle, window: WebviewWindow, id: PermissionId, generation: u32) {
+        let start = Instant::now();
         let mut seen_settings = false;
         let mut tick: u64 = 0;
-        loop {
-            if GENERATION.load(Ordering::SeqCst) != generation {
-                return;
-            }
-            let Some(window) = app.get_webview_window(LABEL) else {
-                return;
-            };
-            if tick.is_multiple_of(2) && entry(id).state == PermissionState::Granted {
-                finish(&app);
-                return;
+        while GENERATION.load(Ordering::SeqCst) == generation
+            && app.get_webview_window(window.label()).is_some()
+        {
+            if tick.is_multiple_of(2) && settled(id) {
+                break;
             }
             let settings = settings_window();
-            let frontmost = settings.as_ref().is_some_and(|s| s.frontmost);
-            match settings {
-                Some(settings) if frontmost || window.is_focused().unwrap_or(false) => {
-                    seen_settings = true;
-                    let bounds = settings_helper_bounds(settings.bounds);
-                    let _ = window.set_size(LogicalSize::new(bounds.width, bounds.height));
-                    let _ = window.set_position(LogicalPosition::new(bounds.x, bounds.y));
-                    if !window.is_visible().unwrap_or(false) {
-                        let _ = window.show();
-                    }
-                }
-                Some(_) => {
-                    seen_settings = true;
-                    let _ = window.hide();
-                }
-                None if seen_settings => {
-                    // The owner closed System Settings; the card has no anchor.
-                    close(&app);
+            if settings.is_none() && (seen_settings || start.elapsed() >= Duration::from_secs(10)) {
+                break;
+            }
+            seen_settings |= settings.is_some();
+            let current = window.clone();
+            let _ = app.run_on_main_thread(move || {
+                if GENERATION.load(Ordering::SeqCst) != generation
+                    || current
+                        .app_handle()
+                        .get_webview_window(current.label())
+                        .is_none()
+                {
                     return;
                 }
-                None => {
-                    let _ = window.hide();
+                let placed = settings
+                    .filter(|settings| settings.frontmost || current.is_focused().unwrap_or(false))
+                    .and_then(|settings| place(&current, settings.bounds));
+                if placed.is_none() {
+                    let _ = current.hide();
                 }
-            }
+            });
             tick = tick.wrapping_add(1);
-            std::thread::sleep(Duration::from_millis(if frontmost { 500 } else { 1000 }));
+            std::thread::sleep(Duration::from_millis(400));
         }
-    }
-
-    /// Reveals the running bundle in Finder so the owner can drag it into the
-    /// System Settings list.
-    // shortcut: reveal-only, no native drag of the bundle from the webview;
-    // upgrade with an NSDraggingSession from the helper's NSView if owners ask.
-    pub fn reveal_app() -> Result<(), String> {
-        let executable = std::env::current_exe().map_err(|error| error.to_string())?;
-        let bundle = bundle_path(&executable)
-            .ok_or_else(|| "bycoda is not running from an app bundle.".to_string())?;
-        let workspace =
-            AnyClass::get(c"NSWorkspace").ok_or_else(|| "Finder is unavailable.".to_string())?;
-        let revealed = objc2::rc::autoreleasepool(|_| unsafe {
-            // SAFETY: NSWorkspace class and instance methods with NSString
-            // arguments that live until the call returns.
-            let path = NSString::from_str(&bundle.to_string_lossy());
-            let root = NSString::from_str("");
-            let shared: *mut AnyObject = msg_send![workspace, sharedWorkspace];
-            let ok: Bool = msg_send![shared, selectFile: &*path, inFileViewerRootedAtPath: &*root];
-            ok.as_bool()
-        });
-        if revealed {
-            Ok(())
-        } else {
-            Err("Could not reveal bycoda in Finder.".into())
-        }
+        close(&app, generation);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
+
+    fn rect(x: f64, y: f64, width: f64, height: f64) -> Bounds {
+        Bounds {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
 
     #[test]
-    fn helper_centres_in_content_and_aligns_to_bottom() {
+    fn docks_below_then_to_the_side_without_covering_settings() {
+        let screen = rect(0.0, 25.0, 1440.0, 855.0);
         assert_eq!(
-            settings_helper_bounds(Bounds {
-                x: 100.0,
-                y: 50.0,
-                width: 1000.0,
-                height: 700.0
-            }),
-            Bounds {
-                x: 428.0,
-                y: 594.0,
-                width: 560.0,
-                height: 140.0
-            }
+            settings_helper_bounds(rect(220.0, 120.0, 860.0, 510.0), screen),
+            Some(rect(490.0, 642.0, WIDTH, HEIGHT))
         );
         assert_eq!(
-            settings_helper_bounds(Bounds {
-                x: -500.0,
-                y: -100.0,
-                width: 500.0,
-                height: 350.0
-            }),
-            Bounds {
-                x: -268.0,
-                y: 94.0,
-                width: 252.0,
-                height: 140.0
-            }
+            settings_helper_bounds(rect(180.0, 25.0, 800.0, 855.0), screen),
+            Some(rect(992.0, 380.5, WIDTH, HEIGHT))
         );
     }
 
     #[test]
-    fn finds_the_app_bundle_of_the_executable() {
+    fn stays_on_the_settings_display_and_hides_if_there_is_no_room() {
+        let screen = rect(-1440.0, 25.0, 1440.0, 855.0);
         assert_eq!(
-            bundle_path(Path::new("/Applications/bycoda.app/Contents/MacOS/bycoda")),
-            Some(Path::new("/Applications/bycoda.app").to_path_buf())
+            settings_helper_bounds(rect(-1070.0, 25.0, 1050.0, 855.0), screen),
+            Some(rect(-1402.0, 380.5, WIDTH, HEIGHT))
         );
-        assert_eq!(bundle_path(Path::new("/usr/local/bin/bycoda")), None);
-        assert_eq!(bundle_path(Path::new("/tmp/Contents/MacOS/bycoda")), None);
+        assert_eq!(
+            settings_helper_bounds(rect(-1430.0, 30.0, 1420.0, 840.0), screen),
+            None
+        );
     }
 }

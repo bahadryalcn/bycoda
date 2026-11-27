@@ -8,7 +8,7 @@ import { createCodeArtPainter } from "./crewCodeArt";
 const state = vi.hoisted(() => ({ enabled: true, paint: vi.fn(), dispose: vi.fn() }));
 vi.mock("../../settings/model/decorativeMotion", () => ({
   useDecorativeMotionEnabled: () => state.enabled,
-  useWindowHasFocus: () => true,
+  useMotionWindowVisible: () => true,
 }));
 vi.mock("./crewCodeArt", () => ({
   CODE_WIDTH: 1040,

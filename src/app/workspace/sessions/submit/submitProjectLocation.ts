@@ -1,4 +1,8 @@
 import type { SubmitDeps, SubmitInput, SubmitPreflight } from "./submitTypes";
+import {
+  QueueRunLeaseBlockedError,
+  QueueRunLeasePendingError,
+} from "../../../../features/connections/model/sharedQueue";
 
 import { synchronizeProjectLocation } from "../../../../features/projects/model/projectLocation";
 import { looksLikeProject } from "../../../../features/projects/model/recents";
@@ -83,18 +87,34 @@ export function gateProjectLocation(
       );
       return true;
     };
-    return submitAfterProjectSync({
+    let queueWait: QueueRunLeasePendingError | QueueRunLeaseBlockedError | undefined;
+    const acceptance = submitAfterProjectSync({
       cwd: current.cwd,
       sync,
       isCurrent: preparationIsCurrent,
       applyLocationChange: applyProjectLocationChange,
       submit: async () => {
         releasePreparation();
-        const accepted = await submitAfterProjectSyncRef.current(sessionId, text, attachments, {
-          ...options,
-          projectLocationReady: true,
-          onSendRejected: recoverUnstarted,
-        });
+        let accepted: boolean;
+        try {
+          accepted = await submitAfterProjectSyncRef.current(sessionId, text, attachments, {
+            ...options,
+            projectLocationReady: true,
+            onSendRejected: recoverUnstarted,
+          });
+        } catch (error) {
+          if (
+            !(
+              error instanceof QueueRunLeasePendingError ||
+              error instanceof QueueRunLeaseBlockedError
+            )
+          )
+            throw error;
+          // The nested send takes a new generation once the folder is ready.
+          // Its queue result belongs to the row after project preparation settles.
+          queueWait = error;
+          return false;
+        }
         if (!accepted) {
           editedResend?.reject();
           options?.onSettled?.({
@@ -122,6 +142,10 @@ export function gateProjectLocation(
           error: message,
         });
       },
+    });
+    return acceptance.then((accepted) => {
+      if (queueWait) throw queueWait;
+      return accepted;
     });
   }
 }

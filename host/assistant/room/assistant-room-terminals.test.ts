@@ -11,18 +11,26 @@ function setup() {
   let output = (_text: string) => {};
   let exit = (_code: number | null) => {};
   const process = { write: vi.fn(async (_data: string) => {}), stop: vi.fn(async () => exit(0)) };
+  const launch = (
+    _profile: unknown,
+    _cwd: string,
+    onOutput: (text: string) => void,
+    onExit: (code: number | null) => void,
+  ) => {
+    output = onOutput;
+    exit = onExit;
+    return process;
+  };
   const host = new HostTerminals(
-    (_profile, _cwd, onOutput, onExit) => {
-      output = onOutput;
-      exit = onExit;
-      return process;
-    },
+    launch,
     () => ({
       profiles: [{ id: "sh", name: "Shell", path: "/shell", kind: "sh" }],
       defaultId: "sh",
       chosenId: null,
     }),
     async (root) => root,
+    undefined,
+    (profile, cwd, _size, onOutput, onExit) => launch(profile, cwd, onOutput, onExit),
   );
   hosts.push(host);
   const receipts = new Map<string, ManagementReceipt>();
@@ -47,7 +55,7 @@ function setup() {
   return { tools, principal, process, output: (value: string) => output(value) };
 }
 const qualify = <T>(effect: () => Promise<T>) => effect();
-it("keeps pipe terminals scoped to the exact Room and device", async () => {
+it("keeps PTY terminals scoped to the exact Room and device", async () => {
   const f = setup();
   const created = (await f.tools.call(
     "terminals.create",
@@ -56,7 +64,7 @@ it("keeps pipe terminals scoped to the exact Room and device", async () => {
     async () => true,
     qualify,
   )) as { result: { id: string; transport: string } };
-  expect(created.result.transport).toBe("pipe");
+  expect(created.result.transport).toBe("pty");
   f.output("hello");
   const read = (await f.tools.call(
     "terminals.read",
@@ -66,7 +74,7 @@ it("keeps pipe terminals scoped to the exact Room and device", async () => {
     qualify,
   )) as { output: string; transport: string };
   expect(read.output).toBe("hello");
-  expect(read.transport).toBe("pipe");
+  expect(read.transport).toBe("pty");
   const other = { ...f.principal, deviceHash: "b".repeat(64) };
   expect(
     (
@@ -133,7 +141,7 @@ it("retains an uncertain input receipt and never writes it twice", async () => {
   ).toBe("uncertain");
 });
 
-it("keeps the qualified effect pending until the pipe write settles", async () => {
+it("keeps the qualified effect pending until the terminal write settles", async () => {
   const f = setup();
   const created = (await f.tools.call(
     "terminals.create",
@@ -169,7 +177,7 @@ it("keeps the qualified effect pending until the pipe write settles", async () =
   expect(await pending).toMatchObject({
     state: "accepted",
     receiptState: "completed",
-    result: { delivery: "pipe-written", commandCompletion: "unobserved", transport: "pipe" },
+    result: { delivery: "pty-written", commandCompletion: "unobserved", transport: "pty" },
   });
   expect(holding).toBe(false);
   expect(

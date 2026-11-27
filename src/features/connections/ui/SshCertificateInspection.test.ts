@@ -56,7 +56,7 @@ it("rejects late results even if the path changes back and blocks duplicate/savi
   await act(async () => resolve(metadata));
   expect(container.textContent).not.toContain("SHA256:public");
   await render("public-one", true);
-  expect(container.querySelector("button")?.disabled).toBe(true);
+  expect(container.querySelector("button")?.getAttribute("aria-disabled")).toBe("true");
 });
 it("shows only a generic recoverable error, never the native rejection contents", async () => {
   vi.mocked(inspectSshCertificate).mockRejectedValue(new Error("secret-native-path-or-data"));

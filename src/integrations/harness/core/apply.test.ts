@@ -18,6 +18,38 @@ import { planComposerSwitch, withHarnessChoice } from "../../../features/session
 
 let now = 0;
 
+it("keeps late Workflow subagent steps under their owning call without ending current prose", () => {
+  const before: Session = {
+    ...newSession("claude", "/repo"),
+    blocks: [
+      { id: "workflow", role: "tool", text: "Workflow", tool: { callId: "workflow-call" } },
+      { id: "next-user", role: "user", text: "Next task" },
+      { id: "prose", role: "assistant", text: "Current stream", streaming: true },
+    ],
+  };
+  const workflow = { callId: "workflow-call", phase: "Review" };
+  const status = {
+    type: "tool.updated",
+    callId: "workflow-child",
+    kind: "agent",
+    title: "Reviewer",
+    status: "completed",
+    workflow,
+  } as const;
+  const step = {
+    type: "agent.step",
+    callId: "workflow-child",
+    stepId: "report",
+    kind: "message",
+    text: "Done",
+  } as const;
+  const after = applyHarnessEvents(before, [status, step, status]);
+  expect(after.blocks).toHaveLength(4);
+  expect(after.blocks[1].agentRun).toMatchObject({ workflow, steps: [{ id: "report" }] });
+  expect(after.blocks[3]).toBe(before.blocks[2]);
+  expect(applyHarnessEvent(before, { ...status, workflow: { callId: "unrelated" } })).toBe(before);
+});
+
 it("retains cumulative provider metrics on the root turn without changing a clarification reply's author", () => {
   const root = {
       id: "metrics-root",
@@ -490,6 +522,58 @@ describe("streamed markdown", () => {
     ]);
   });
 
+  it("reserves the original image block through intervening reply text and delivery", () => {
+    const start = { type: "image.generationStarted", itemId: "image_1", aspectRatio: 0.8 } as const;
+    const running = applyHarnessEvent(newSession("codex", "/tmp"), start);
+    expect(applyHarnessEvent(running, start)).toBe(running);
+    expect(sanitizeSessionForPersist(running).blocks).toEqual(running.blocks);
+    const reply = applyHarnessEvent(running, { type: "message.delta", text: "Here it comes." });
+    const result = {
+      type: "image.generated",
+      itemId: "image_1",
+      path: "/tmp/image.png",
+      name: "image",
+      mimeType: "image/png",
+      size: 8,
+    } as const;
+    const finished = applyHarnessEvent(reply, result);
+    expect(finished.blocks).toMatchObject([
+      {
+        id: running.blocks[0].id,
+        role: "image",
+        imageGeneration: { itemId: "image_1", aspectRatio: 0.8, status: "completed" },
+        image: { path: result.path },
+      },
+      { role: "assistant", text: "Here it comes.", streaming: true },
+    ]);
+    expect(changedBlocks(reply.blocks, finished.blocks)?.get(running.blocks[0].id)).toBe(
+      finished.blocks[0],
+    );
+    expect(applyHarnessEvent(finished, result)).toBe(finished);
+  });
+
+  it("settles only the matching failed image and stops any pending images when the turn stops", () => {
+    const running = applyHarnessEvents(newSession("codex", "/tmp"), [
+      { type: "image.generationStarted", itemId: "first" },
+      { type: "image.generationStarted", itemId: "second" },
+    ]);
+    const failed = applyHarnessEvent(running, {
+      type: "image.generationEnded",
+      itemId: "first",
+      status: "failed",
+    });
+    expect(failed.blocks.map((block) => block.imageGeneration?.status)).toEqual([
+      "failed",
+      "running",
+    ]);
+    expect(stopStreaming(failed).blocks.map((block) => block.imageGeneration?.status)).toEqual([
+      "failed",
+      "stopped",
+    ]);
+    const turnError = applyHarnessEvent(failed, { type: "session.error", message: "Turn failed" });
+    expect(turnError.blocks[1].imageGeneration?.status).toBe("failed");
+  });
+
   it("does not double an assistant block when a completed snapshot repeats it", () => {
     let session = newSession("claude", "/tmp");
     session = applyHarnessEvent(session, {
@@ -671,6 +755,26 @@ describe("streamed markdown", () => {
 });
 
 describe("appendSteerUser", () => {
+  it("continues the open assistant message through steer and starts fresh after completion", () => {
+    let session = appendUser(newSession("codex", "/tmp"), "Start");
+    session = applyHarnessEvent(session, { type: "message.delta", text: "Mes" });
+    const original = session.blocks[1].id;
+    session = appendSteerUser(session, "First steer");
+    session = appendSteerUser(session, "Second steer");
+    session = applyHarnessEvent(session, { type: "message.delta", text: "ajları aldım." });
+    session = applyHarnessEvent(session, { type: "message.completed" });
+    session = applyHarnessEvent(session, { type: "message.delta", text: "A separate answer." });
+
+    expect(session.blocks.map((block) => block.text)).toEqual([
+      "Start",
+      "Mesajları aldım.",
+      "First steer",
+      "Second steer",
+      "A separate answer.",
+    ]);
+    expect(session.blocks[1]).toMatchObject({ id: original, streaming: false });
+  });
+
   it("appends a user message without sealing an in-flight assistant block", () => {
     let session = appendUser(newSession("cursor", "/tmp"), "build it");
     session = applyHarnessEvent(session, {

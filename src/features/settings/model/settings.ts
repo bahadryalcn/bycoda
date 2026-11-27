@@ -33,13 +33,14 @@ import {
   shortcutTokens,
 } from "../../quick-composer/model/quickComposerShortcut";
 import { readFlag, writeFlag } from "./storageFlags";
+import { keybindingCommandLabel, keybindingWhenLabel } from "./keybindingLabels";
 import { DESKTOP_STOP_COMMAND, DESKTOP_TALK_ROW, requireGlobal } from "./desktopStopKeybinding";
 import { APPEARANCE_SETTINGS_INDEX } from "./appearanceSettingsIndex";
 import { PRIVACY_SETTINGS_INDEX } from "./privacySettingsIndex";
 import { GENERAL_SETTINGS_INDEX } from "./generalSettingsIndex";
 import { TERMINAL_SETTINGS_INDEX } from "./terminalSettingsIndex";
 import {
-  INTEGRATIONS_CONTROL_LABELS,
+  integrationsControlLabels,
   INTEGRATIONS_SETTINGS_INDEX,
 } from "./integrationsSettingsIndex";
 const SECTION_KEY = "bycoda.settingsSection";
@@ -65,6 +66,7 @@ export type SettingsSectionId =
   | "chat"
   | "voice"
   | "providers"
+  | "decisionModels"
   | "usage"
   | "models"
   | "work"
@@ -117,7 +119,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "notifications",
-    group: "app",
+    group: "conversation",
     get label() {
       return t("Notifications");
     },
@@ -128,7 +130,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "permissions",
-    group: "app",
+    group: "privacy",
     get label() {
       return t("Permissions");
     },
@@ -150,7 +152,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "groupLock",
-    group: "app",
+    group: "privacy",
     get label() {
       return t("Privacy and security");
     },
@@ -164,9 +166,9 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "workspace",
-    group: "code",
+    group: "workspace",
     get label() {
-      return t("Workspace");
+      return t("Files and folders");
     },
     get description() {
       return t("Workspace tools, file tabs and editing.");
@@ -175,7 +177,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "terminal",
-    group: "code",
+    group: "workspace",
     get label() {
       return t("Terminal");
     },
@@ -188,7 +190,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     id: "connections",
     group: "connections",
     get label() {
-      return t("Connections");
+      return t("Computers");
     },
     get description() {
       return t("Manage your computers, phone access, and tunnels.");
@@ -197,7 +199,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "worktrees",
-    group: "code",
+    group: "workspace",
     get label() {
       return t("Source Control");
     },
@@ -211,7 +213,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     id: "integrations",
     group: "connections",
     get label() {
-      return t("Integrations");
+      return t("Services");
     },
     get description() {
       return t("Connect the services {p0} reads from and replies through.", {
@@ -219,7 +221,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       });
     },
     keywords:
-      "inbox github gitlab azure devops jira atlassian linear slack discord teams email gmail outlook hotmail yahoo icloud imap smtp connect token integration",
+      "inbox github gitlab azure devops jira atlassian linear slack discord teams email gmail outlook hotmail yahoo icloud imap smtp connect token integrations",
   },
   {
     id: "archive",
@@ -234,7 +236,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "chat",
-    group: "app",
+    group: "conversation",
     get label() {
       return t("Chat");
     },
@@ -245,7 +247,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "voice",
-    group: "app",
+    group: "conversation",
     get label() {
       return t("Voice assistant");
     },
@@ -257,9 +259,9 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "providers",
-    group: "agents",
+    group: "models",
     get label() {
-      return t("Models");
+      return t("Accounts and defaults");
     },
     get description() {
       return t(
@@ -270,8 +272,22 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "providers account sign in login model harness claude codex cli default hooks background work order groups pools assignments roles limits subagents delegation",
   },
   {
+    id: "decisionModels",
+    group: "models",
+    get label() {
+      return t("Decision support");
+    },
+    get description() {
+      return t(
+        "Local and connected models that decide small things for the app, such as routing and privacy scans.",
+      );
+    },
+    keywords:
+      "decision models local model ollama gguf clef classifier routing threshold scan privacy",
+  },
+  {
     id: "usage",
-    group: "agents",
+    group: "models",
     get label() {
       return t("Usage & limits");
     },
@@ -305,15 +321,15 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   SECRETS_SECTION,
   {
     id: "policies",
-    group: "about",
+    group: "help",
     get label() {
-      return t("Policies");
+      return t("Help and About");
     },
     get description() {
       return t("Privacy, terms of use, third-party services and software license.");
     },
     keywords:
-      "privacy policy terms legal license data deletion tracking gizlilik politika koşullar lisans veri silme takip",
+      "help about guide feedback setup diagnostics privacy policy policies terms legal license data deletion tracking gizlilik politika koşullar lisans veri silme takip",
   },
 ];
 
@@ -436,6 +452,15 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "technical language terminal developer file editor teknik dil geliştirici",
   },
   {
+    id: "remote-media",
+    section: "connections",
+    get label() {
+      return t("Remote media");
+    },
+    keywords:
+      "video audio stream play download data saver connected machine remote file uzak medya izle indir veri tasarrufu",
+  },
+  {
     id: "hidden-project-groups",
     section: "groupLock",
     get label() {
@@ -502,7 +527,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "external-mcp-access",
-    section: "mcp",
+    section: "groupLock",
     get label() {
       return t("External MCP access");
     },
@@ -600,11 +625,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "import-history",
-    section: "general",
+    section: "chat",
     get label() {
       return t("Import history");
     },
-    keywords: "history conversations terminal resume migrate existing claude codex",
+    keywords:
+      "history conversations terminal resume migrate existing claude codex cursor grok opencode pi omp hermes antigravity openclaw",
   },
   {
     id: "sounds",
@@ -633,29 +659,29 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   ...[
     {
       id: "workspace-tasks",
-      label: "Tasks",
+      label: () => t("Tasks"),
       keywords: "tasks workspace navigation show hide görev",
     },
     {
       id: "workspace-automations",
-      label: "Automations",
+      label: () => t("Automations"),
       keywords: "automations workspace navigation show hide otomasyon",
     },
     {
       id: "workspace-inbox",
-      label: "Inbox",
+      label: () => t("Inbox"),
       keywords: "inbox workspace navigation show hide gelen kutusu",
     },
     {
       id: "workspace-social",
-      label: "Social Media",
+      label: () => t("Social Media"),
       keywords: "social media workspace navigation show hide sosyal medya",
     },
   ].map((item) => ({
     id: item.id,
     section: "workspace" as const,
     get label() {
-      return t(item.label);
+      return item.label();
     },
     keywords: item.keywords,
   })),
@@ -663,7 +689,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     ? [
         {
           id: "quick-composer",
-          section: "workspace" as const,
+          section: "keybindings" as const,
           get label() {
             return t("Quick composer");
           },
@@ -673,7 +699,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     : []),
   {
     id: "usage-guide",
-    section: "general",
+    section: "policies",
     get label() {
       return t("Usage guide");
     },
@@ -681,7 +707,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "send-feedback",
-    section: "general",
+    section: "policies",
     get label() {
       return t("Send feedback");
     },
@@ -689,7 +715,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "star-github",
-    section: "general",
+    section: "policies",
     get label() {
       return t("Star on GitHub");
     },
@@ -697,7 +723,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "contribute",
-    section: "general",
+    section: "policies",
     get label() {
       return t("Contribute to bycoda");
     },
@@ -713,11 +739,11 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "exact-git-rewind",
-    section: "workspace",
+    section: "worktrees",
     get label() {
-      return t("Exact Git rewind (experimental)");
+      return t("Exact Git rewind");
     },
-    keywords: "experimental exact git rewind snapshot managed worktree host capture turn",
+    keywords: "exact git rewind snapshot managed worktree host capture turn",
   },
   {
     id: "file-tabs",
@@ -729,7 +755,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "streaming-text-mode",
-    section: "chat",
+    section: "appearance",
     get label() {
       return t("Streaming text animation");
     },
@@ -755,18 +781,18 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   ...(IS_WIN
     ? [
         {
-          id: "close-to-tray",
+          id: "minimize-to-tray",
           section: "general" as const,
           get label() {
-            return t("Close to tray");
+            return t("Minimize to tray");
           },
-          keywords: "minimize background quit exit window taskbar windows",
+          keywords: "minimize close tray background quit exit window taskbar windows",
         },
       ]
     : []),
   {
     id: "chat-width",
-    section: "chat",
+    section: "appearance",
     get label() {
       return t("Chat width");
     },
@@ -774,7 +800,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "code-word-wrap",
-    section: "chat",
+    section: "appearance",
     get label() {
       return t("Word wrap");
     },
@@ -820,7 +846,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "transcript-layout",
-    section: "chat",
+    section: "appearance",
     get label() {
       return t("Transcript layout");
     },
@@ -830,17 +856,9 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     id: "dictation-enabled",
     section: "voice",
     get label() {
-      return t("Enable dictation");
+      return t("Dictation");
     },
     keywords: "dictate dictation speech to text microphone diktate dikte yazdır mikrofon",
-  },
-  {
-    id: "speech-microphone",
-    section: "voice",
-    get label() {
-      return t("Microphone access");
-    },
-    keywords: "microphone permission privacy macos windows linux mikrofon izin",
   },
   {
     id: "voice-microphone-input",
@@ -848,15 +866,8 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     get label() {
       return t("Microphone");
     },
-    keywords: "input device usb default mikrofon cihaz giriş",
-  },
-  {
-    id: "voice-microphone-recording",
-    section: "voice",
-    get label() {
-      return t("Test microphone");
-    },
-    keywords: "record playback listen test microphone kayıt dinle mikrofon",
+    keywords:
+      "input device usb default permission privacy test record playback listen mikrofon cihaz giriş izin kayıt dinle",
   },
   {
     id: "dictation-shortcut-mode",
@@ -878,7 +889,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     id: "dictation-cleanup",
     section: "voice",
     get label() {
-      return t("Clean up dictated text");
+      return t("Clean up text with Codex");
     },
     keywords:
       "dictation cleanup punctuation model translate correction dikte düzelt noktalama çeviri",
@@ -887,7 +898,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     id: "dictation-local-models",
     section: "voice",
     get label() {
-      return t("Local transcription models");
+      return t("Manage models");
     },
     keywords: "dictation whisper model download delete test local dikte model indir sil yerel",
   },
@@ -895,10 +906,18 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     id: "voice-companion",
     section: "voice",
     get label() {
-      return t("Voice companion");
+      return t("Voice assistant");
     },
     keywords:
       "voice speech microphone whisper voxcpm python models ses konuşma mikrofon sesli model kurulum",
+  },
+  {
+    id: "voice-wake",
+    section: "voice",
+    get label() {
+      return t("Wake and sleep phrases");
+    },
+    keywords: "wake up wake word wake phrase voice activation uyandırma komutu uyandırma sözcüğü",
   },
   {
     id: "anchor-prompts",
@@ -924,6 +943,15 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       return t("Resume at reset");
     },
     keywords: "usage limit rate limit continue automatically wait",
+  },
+  {
+    id: "usage-limit-failover",
+    section: "chat",
+    get label() {
+      return t("At usage limit, continue on");
+    },
+    keywords:
+      "usage limit rate limit failover switch account model order pool fallback limit dolunca hesap değiştir",
   },
   {
     id: "auto-continue-interrupted",
@@ -996,7 +1024,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "decision-models",
-    section: "providers",
+    section: "decisionModels",
     get label() {
       return t("Decision models");
     },
@@ -1052,180 +1080,184 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     },
     keywords: "mute resume sounds banners reminders categories",
   },
-  {
-    id: "show-archived",
-    section: "archive",
-    get label() {
-      return t("Show archived in the sidebar");
-    },
-    keywords: "hidden conversations list",
-  },
   ...[
     {
       id: "file-access-permissions",
       section: "groupLock",
-      label: "Advanced: file access and agent permissions",
+      label: () => t("Advanced: file access and agent permissions"),
       keywords: "file access permission approval rules native consent dosya erişim izin onay",
     },
     {
       id: "worktree-location",
       section: "worktrees",
-      label: "Advanced: worktree location and deletion",
+      label: () => t("Advanced: worktree location and deletion"),
       keywords: "worktree folder path location delete root konum klasör yol silme",
     },
     {
       id: "archived-projects",
       section: "archive",
-      label: "Archived projects",
+      label: () => t("Archived projects"),
       keywords: "restore delete archived project geri yükle sil arşiv proje",
     },
     {
       id: "archived-conversations",
       section: "archive",
-      label: "Archived conversations",
+      label: () => t("Archived conversations"),
       keywords: "restore delete archived conversation session geri yükle sil arşiv sohbet oturum",
     },
     {
       id: "keep-awake-duration",
       section: "general",
-      label: "After agents finish",
+      label: () => t("After agents finish"),
       keywords: "sleep awake duration hold minutes uyku süre",
     },
     {
       id: "policy-language",
       section: "policies",
-      label: "Policy language",
+      label: () => t("Policy language"),
       keywords: "documents language offline english turkish politika belge dil",
     },
     {
       id: "theme-palettes",
       section: "appearance",
-      label: "Theme palettes",
+      label: () => t("Theme palettes"),
       keywords: "theme palette colors preset tint lightness accent tema palet renk hazır",
     },
     {
       id: "saved-themes",
       section: "appearance",
-      label: "Saved themes",
+      label: () => t("Saved themes"),
       keywords: "save look appearance preset custom theme name restore tema kaydet görünüm",
     },
     {
       id: "background-library",
       section: "appearance",
-      label: "Background image library",
+      label: () => t("Background image library"),
       keywords: "images generated history gallery wallpaper saved again kütüphane görsel arka plan",
     },
     {
       id: "getting-started",
-      section: "general",
-      label: "Getting started",
+      section: "policies",
+      label: () => t("Getting started"),
       keywords: "setup onboarding guide help kurulum başlangıç",
     },
     {
       id: "group-lock-startup",
       section: "groupLock",
-      label: "Lock on startup",
+      label: () => t("Lock on startup"),
       keywords: "privacy password launch gizlilik parola başlangıç",
     },
     {
       id: "group-lock-idle",
       section: "groupLock",
-      label: "Lock when idle",
+      label: () => t("Lock when idle"),
       keywords: "inactivity timeout password boşta süre parola",
     },
     {
       id: "group-unlock-together",
       section: "groupLock",
-      label: "Unlock groups together",
+      label: () => t("Unlock groups together"),
       keywords: "unlock all password gruplar kilit birlikte",
     },
     {
       id: "acp-agents",
       section: "providers",
-      label: "ACP agents",
+      label: () => t("ACP agents"),
       keywords: "generic executable command agent id name acp ajan çalıştırılabilir",
     },
     {
       id: "acp-advanced",
       section: "providers",
-      label: "ACP arguments, environment and model context",
+      label: () => t("ACP arguments, environment and model context"),
       keywords:
         "json arguments environment authentication context tokens argüman ortam kimlik bağlam",
     },
     {
       id: "acp-registry",
       section: "providers",
-      label: "Browse ACP Registry",
+      label: () => t("Browse ACP Registry"),
       keywords: "registry install discover acp katalog keşfet kur",
+    },
+    {
+      id: "ollama-models",
+      section: "providers",
+      label: () => t("Local models (Ollama)"),
+      keywords: "ollama local model opencode offline download pull yerel model indir",
+    },
+    {
+      id: "ollama-port",
+      section: "providers",
+      label: () => t("Ollama port"),
+      keywords: "ollama port address host OLLAMA_HOST 11434 adres",
     },
     {
       id: "account-limits",
       section: "usage",
-      label: "Provider account limit",
+      label: () => t("Provider account limit"),
       keywords: "quota weekly session reset account limits kota hafta oturum hesap sınır",
     },
     {
       id: "cost-overview",
       section: "usage",
-      label: "Cost by project and day",
+      label: () => t("Cost by project and day"),
       keywords:
         "range cost tokens input output cache api estimates dates project model provider maliyet gün tarih aralık tahmin token",
     },
     {
       id: "terminal-account-profiles",
       section: "providers",
-      label: "Terminal account profiles",
+      label: () => t("Add existing account"),
       keywords:
-        "discover connect directory folder cli sign in profile terminal hesap profil klasör keşfet",
+        "existing import discover connect directory folder cli sign in profile terminal mevcut hesap profil klasör keşfet",
     },
     {
       id: "code-theme",
       section: "appearance",
-      label: "Code theme",
+      label: () => t("Code theme"),
       keywords: "syntax highlighting github dark dracula code theme kod tema renk",
     },
     {
       id: "code-font-size",
       section: "appearance",
-      label: "Code font size",
+      label: () => t("Code font size"),
       keywords: "code text size px kod yazı boyut",
     },
     {
       id: "terminal-font",
       section: "appearance",
-      label: "Terminal font",
+      label: () => t("Terminal font"),
       keywords:
         "terminal font family typeface yazı tipi monospace cascadia jetbrains same as code font",
     },
     {
       id: "terminal-font-size",
       section: "appearance",
-      label: "Terminal font size",
+      label: () => t("Terminal font size"),
       keywords: "terminal zoom ctrl wheel size büyüt küçült tekerlek boyut",
     },
     {
       id: "terminal-font-weight",
       section: "appearance",
-      label: "Terminal font weight",
+      label: () => t("Terminal font weight"),
       keywords: "terminal weight bold regular medium kalınlık stil",
     },
     {
       id: "terminal-line-height",
       section: "appearance",
-      label: "Terminal line spacing",
+      label: () => t("Terminal line spacing"),
       keywords: "terminal line height spacing satır aralık",
     },
     {
       id: "skill-folders",
       section: "skills",
-      label: "Advanced: catalog visibility and skill folders",
+      label: () => t("Advanced: catalog visibility and skill folders"),
       keywords: "skills personal project folders hidden catalog beceri kişisel proje klasör gizli",
     },
   ].map((item) => ({
     id: item.id,
     section: item.section as SettingsSectionId,
     get label() {
-      return t(item.label);
+      return item.label();
     },
     keywords: item.keywords,
   })),
@@ -1233,10 +1265,10 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     id: "terminal-account-profiles-codex",
     section: "providers",
     get label() {
-      return `Codex · ${t("Terminal account profiles")}`;
+      return `Codex · ${t("Add existing account")}`;
     },
     keywords:
-      "codex discover connect directory folder cli sign in profile terminal hesap profil klasör keşfet",
+      "codex existing import discover connect directory folder cli sign in profile terminal mevcut hesap profil klasör keşfet",
   },
   ...HARNESSES.map((harness) => ({
     id: `cli-path-${harness}`,
@@ -1247,23 +1279,31 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: `${harness} ${HARNESS_TITLE[harness]} executable binary path install cli yol kurulum`,
   })),
   ...[
-    { id: "finished", label: "Agent finished", keywords: "finished complete done ajan tamamlandı" },
-    { id: "input", label: "Needs your input", keywords: "approval question input onay soru" },
+    {
+      id: "finished",
+      label: () => t("Agent finished"),
+      keywords: "finished complete done ajan tamamlandı",
+    },
+    {
+      id: "input",
+      label: () => t("Needs your input"),
+      keywords: "approval question input onay soru",
+    },
     {
       id: "failed",
-      label: "Failed or usage limit",
+      label: () => t("Failed or usage limit"),
       keywords: "failure error quota limit hata sınır",
     },
     {
       id: "taskbar",
-      label: "Taskbar badge and flash",
+      label: () => t("Taskbar badge and flash"),
       keywords: "windows badge flash taskbar rozet görev çubuğu",
     },
   ].map((item) => ({
     id: `notification-event-${item.id}`,
     section: "notifications" as const,
     get label() {
-      return t(item.label);
+      return item.label();
     },
     keywords: item.keywords,
   })),
@@ -1286,9 +1326,10 @@ export function settingsSectionForAnchor(
   section: SettingsSectionId | undefined,
   anchor?: string | null,
 ): SettingsSectionId | undefined {
+  if (anchor?.startsWith("keybinding-")) return "keybindings";
   const target =
     (anchor && SETTINGS_INDEX.find((entry) => entry.id === anchor)?.section) || section;
-  return target === "models" || target === "work"
+  return target === "models" || target === "work" || target === "bykit"
     ? "providers"
     : target === "inbox"
       ? "integrations"
@@ -1297,97 +1338,121 @@ export function settingsSectionForAnchor(
         : target;
 }
 
+/** Default anchor for historical section-only links. */
+export function settingsAnchorForSection(section: SettingsSectionId | undefined): string | null {
+  if (section === "models") return "models-chat";
+  if (section === "work") return "models-order";
+  return toolSettingsAnchorForSection(section);
+}
+
 /** Shared with shortcut rows so search uses the same stable anchor. */
 export const keybindingSettingId = (command: string) => `keybinding-${encodeURIComponent(command)}`;
 
+/** Retain the reveal target when a setting is consolidated into an existing row. */
+export function settingsRevealAnchor(anchor: string | null): string | null {
+  if (anchor === "quick-composer") return keybindingSettingId("App: Quick Composer");
+  if (anchor === "show-archived") return "archived-conversations";
+  return anchor;
+}
+
 /** Labels of controls inside a group target, searched in both UI and source language. */
-const SETTINGS_CONTROL_LABELS: Record<string, readonly string[]> = {
-  "git-generation-default": ["Default generation model"],
-  theme: ["Theme and colors", "System", "Light", "Dark"],
-  "theme-palettes": ["Blue", "Violet", "Pink", "Red", "Orange", "Green"],
-  "canvas-background": ["Pure", "Tinted"],
-  "file-access": ["File access", "Change file access"],
-  "file-access-permissions": ["File access"],
-  "import-history": ["Import Claude Code and Codex sessions"],
-  "file-tabs": ["Beside chat", "Top bar"],
-  "collapsed-project-rail": ["Icon rail", "Hidden"],
-  "session-list": [
-    "Row density",
-    "Compact",
-    "Standard",
-    "Detailed",
-    "Show model",
-    "Show branch",
-    "Group after holding",
-  ],
-  "diff-colors": ["Red & green", "Blue & orange", "Blue & orange · stronger"],
-  "chat-width": ["Comfortable", "Wide", "Full width"],
-  "interface-font": ["System default"],
-  "transcript-layout": ["Full width", "Chat"],
-  "composer-spelling": ["Queue", "Steer"],
-  "model-controls": [
-    "Compact",
-    "Show active choices",
-    "Advanced conversation settings",
-    "Continuation and model options",
-  ],
-  "streaming-text-mode": ["Paced (default)", "Immediate with adaptive fade"],
-  "crew-growth": ["Color with context", "Grow with context"],
-  "chat-background": ["Empty only", "All sessions"],
-  "live-background": ["Neural tree", "Latent face", "Thought weaver", "ASCII mask"],
-  "format-on-save": ["Editor", "Advanced editor settings"],
-  "diff-view": ["Editor", "Unified", "Code review"],
-  "models-delegation": ["Subagents", "Advisor", "Subagent max effort", "Image models"],
-  "agent-clis": [
-    "Agent CLIs",
-    "Model",
-    "Default provider",
-    "Default model",
-    "Effort",
-    "Permissions",
-    "Default extras",
-    "Show in picker",
-    "Apply defaults to",
-    "Global",
-  ],
-  "provider-accounts": [
-    "Accounts",
-    "Default account",
-    "Provider CLI profile",
-    "Shared CLI profile",
-    "Isolated profile",
-  ],
-  "acp-agents": ["Agent id", "Name", "Executable path"],
-  "acp-advanced": [
-    "Arguments (JSON array)",
-    "Environment (JSON object; blank preserves stored values)",
-    "ACP authentication method id (optional)",
-    "Context window tokens (optional)",
-  ],
-  "prompt-templates": ["Template name", "Template trigger", "Template text"],
-  "cost-overview": ["Cost range", "Estimated cost", "Input", "Output", "Cache"],
-  "daily-summary": ["Daily summary time"],
-  "terminal-available-shells": ["Advanced terminal settings", "This computer · Available shells"],
-  "group-lock-options": ["Advanced: automatic locking"],
-  "claude-hooks": ["Advanced provider options"],
-  "archived-projects": ["Restore", "Delete"],
-  "archived-conversations": ["Restore", "Delete"],
-  "project-notifications": [
-    "Mute",
-    "Reminders",
-    "Pull requests / Merge requests",
-    "Issues and Linear tasks",
-    "Agent approvals and questions",
-    "Agent failures and usage limits",
-  ],
-  ...INTEGRATIONS_CONTROL_LABELS,
-  "group-lock-password": [
-    "Change password…",
-    "Remove password…",
-    "Forgot password…",
-    "Set lock password…",
-  ],
-};
+function settingsControlLabels(): Record<string, readonly string[]> {
+  return {
+    "git-generation-default": [t("Default generation model")],
+    theme: [t("Theme and colors"), t("System"), t("Light"), t("Dark")],
+    "theme-palettes": [t("Blue"), t("Violet"), t("Pink"), t("Red"), t("Orange"), t("Green")],
+    "canvas-background": [t("Pure"), t("Tinted")],
+    "file-access": [t("File access"), t("Change file access")],
+    "file-access-permissions": [t("File access")],
+    "import-history": [t("Import sessions from other coding agents")],
+    "file-tabs": [t("Beside chat"), t("Top bar")],
+    "collapsed-project-rail": [t("Icon rail"), t("Hidden")],
+    "session-list": [
+      t("Row density"),
+      t("Compact"),
+      t("Standard"),
+      t("Detailed"),
+      t("Show model"),
+      t("Show branch"),
+      t("Group after holding"),
+    ],
+    "diff-colors": [t("Red & green"), t("Blue & orange"), t("Blue & orange · stronger")],
+    "chat-width": [t("Comfortable"), t("Wide"), t("Full width")],
+    "interface-font": [t("System default")],
+    "transcript-layout": [t("Full width"), t("Chat")],
+    "composer-spelling": [t("Queue"), t("Steer")],
+    "model-controls": [
+      t("Compact"),
+      t("Show active choices"),
+      t("Advanced conversation settings"),
+      t("Continuation and model options"),
+    ],
+    "streaming-text-mode": [t("Paced (default)"), t("Immediate with adaptive fade")],
+    "crew-growth": [t("Color with context"), t("Grow with context")],
+    "chat-background": [t("Empty only"), t("All sessions")],
+    "live-background": [t("Neural tree"), t("Latent face"), t("Thought weaver"), t("ASCII mask")],
+    "format-on-save": [t("Editor"), t("Advanced editor settings")],
+    "diff-view": [t("Editor"), t("Unified"), t("Code review")],
+    "models-delegation": [
+      t("Subagents"),
+      t("Advisor"),
+      t("Subagent max effort"),
+      t("Image models"),
+    ],
+    "agent-clis": [
+      t("Agent CLIs"),
+      t("Model"),
+      t("Default provider"),
+      t("Default model"),
+      t("Effort"),
+      t("Permissions"),
+      t("Default extras"),
+      t("Show in picker"),
+      t("Apply defaults to"),
+      t("Global"),
+    ],
+    "provider-accounts": [
+      t("Accounts"),
+      t("Default account"),
+      t("Provider CLI profile"),
+      t("Shared CLI profile"),
+      t("Isolated profile"),
+    ],
+    "acp-agents": [t("Agent id"), t("Name"), t("Executable path")],
+    "acp-advanced": [
+      t("Arguments (JSON array)"),
+      t("Environment (JSON object; blank preserves stored values)"),
+      t("ACP authentication method id (optional)"),
+      t("Context window tokens (optional)"),
+    ],
+    "prompt-templates": [t("Template name"), t("Template trigger"), t("Template text")],
+    "cost-overview": [t("Cost range"), t("Estimated cost"), t("Input"), t("Output"), t("Cache")],
+    "daily-summary": [t("Daily summary time")],
+    "terminal-available-shells": [
+      t("Advanced terminal settings"),
+      t("This computer · Available shells"),
+    ],
+    "group-lock-options": [t("Advanced: automatic locking")],
+    "claude-hooks": [t("Advanced provider options")],
+    "archived-projects": [t("Restore"), t("Delete")],
+    "archived-conversations": [t("Restore"), t("Delete")],
+    "project-notifications": [
+      t("Mute"),
+      t("Reminders"),
+      t("Pull requests / Merge requests"),
+      t("Issues and Linear tasks"),
+      t("Agent approvals and questions"),
+      t("Agent failures and usage limits"),
+    ],
+    ...integrationsControlLabels(),
+    "group-lock-password": [
+      t("Change password…"),
+      t("Remove password…"),
+      t("Forgot password…"),
+      ")Set lock password…",
+    ],
+  };
+}
 
 /** Ranks a label/keyword pair against a lowercased needle; `null` means no match. */
 function matchScore(needle: string, label: string, keywords?: string): number | null {
@@ -1399,8 +1464,17 @@ function matchScore(needle: string, label: string, keywords?: string): number | 
   return null;
 }
 
+/**
+ * Upper bound on search results. The search panel scrolls, so every match up to this cap stays
+ * reachable; a short query such as "e" can match hundreds of rows, which keeps work bounded.
+ */
+export const SETTINGS_SEARCH_LIMIT = 50;
+
 /** Individual settings first, then whole sections, so a row wins its own name. */
-export function searchSettings(query: string, limit = 8): SettingsSearchResult[] {
+export function searchSettings(
+  query: string,
+  limit = SETTINGS_SEARCH_LIMIT,
+): SettingsSearchResult[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return [];
   const scored: { score: number; result: SettingsSearchResult }[] = [];
@@ -1410,17 +1484,18 @@ export function searchSettings(query: string, limit = 8): SettingsSearchResult[]
     ...currentKeybindings().map((row) => ({
       id: keybindingSettingId(row.command),
       section: "keybindings" as const,
-      label: t(row.command),
-      keywords: `${row.command} ${row.keys ?? ""} ${t(row.when)} ${row.when}`,
+      label: keybindingCommandLabel(row.command),
+      keywords: `${row.command} ${row.keys ?? ""} ${keybindingWhenLabel(row.when)} ${row.when}`,
     })),
   ];
+  const controlLabels = settingsControlLabels();
   for (const entry of entries) {
     const controls = entry.id.startsWith("cli-path-")
-      ? ["CLI path and installation", "Executable path", "Installation help"]
-      : (SETTINGS_CONTROL_LABELS[entry.id] ?? []);
+      ? [t("CLI path and installation"), t("Executable path"), t("Installation help")]
+      : (controlLabels[entry.id] ?? []);
     const scores = [
       matchScore(needle, entry.label, entry.keywords),
-      ...controls.map((label) => matchScore(needle, t(label))),
+      ...controls.map((label) => matchScore(needle, label)),
     ].filter((score): score is number => score != null);
     if (scores.length === 0) continue;
     const score = Math.min(...scores);
@@ -1477,6 +1552,7 @@ export function isSettingsSectionId(value: unknown): value is SettingsSectionId 
   return (
     value === "models" ||
     value === "work" ||
+    value === "inbox" ||
     !!toolSettingsTabForSection(value) ||
     SETTINGS_SECTIONS.some((section) => section.id === value)
   );
@@ -1769,9 +1845,9 @@ export function saveLiveAgentsEnabled(value: boolean) {
 
 export const subscribeLiveAgentsEnabled = liveAgentsEnabledSetting.subscribe;
 
-const CLOSE_TO_TRAY_KEY = "bycoda.closeToTray";
+const MINIMIZE_TO_TRAY_KEY = "bycoda.minimizeToTray";
 
-export const KEEP_AWAKE_DEFAULT = false;
+export const KEEP_AWAKE_DEFAULT = true;
 export const KEEP_AWAKE_CHANGE_EVENT = "bycoda:keep-awake-change";
 
 export function loadKeepAwakeEnabled(): boolean {
@@ -1904,20 +1980,21 @@ export function subscribeKeepAwakeHoldAfter(onChange: () => void): () => void {
   return subscribeAgentDefaults(onChange);
 }
 
-export const CLOSE_TO_TRAY_DEFAULT = true;
+export const MINIMIZE_TO_TRAY_DEFAULT = false;
 
-export function loadCloseToTray(): boolean {
-  // Close to tray is Windows-only: nowhere else installs a tray icon.
+export function loadMinimizeToTray(): boolean {
+  // This preference controls the Windows workbench's minimize button.
   if (!IS_WIN) return false;
-  return readFlag(CLOSE_TO_TRAY_KEY) ?? CLOSE_TO_TRAY_DEFAULT;
+  return readFlag(MINIMIZE_TO_TRAY_KEY) ?? MINIMIZE_TO_TRAY_DEFAULT;
 }
 
-export function saveCloseToTray(value: boolean) {
-  writeFlag(CLOSE_TO_TRAY_KEY, value);
-  if (typeof window !== "undefined") window.dispatchEvent(new Event("bycoda:close-to-tray-change"));
+export function saveMinimizeToTray(value: boolean) {
+  writeFlag(MINIMIZE_TO_TRAY_KEY, value);
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new Event("bycoda:minimize-to-tray-change"));
 }
-export const subscribeCloseToTray = (onChange: () => void) =>
-  subscribePreferenceChanges([CLOSE_TO_TRAY_KEY], "bycoda:close-to-tray-change", onChange);
+export const subscribeMinimizeToTray = (onChange: () => void) =>
+  subscribePreferenceChanges([MINIMIZE_TO_TRAY_KEY], "bycoda:minimize-to-tray-change", onChange);
 
 const CREW_SCENE_ENABLED_KEY = "bycoda.crewSceneEnabled";
 
@@ -2074,6 +2151,10 @@ export function saveResumeAtReset(value: boolean) {
   return saveAgentDefault("resumeAtReset", value);
 }
 
+/** Where a chat continues when its provider stops it at a usage limit; `off` keeps waiting. */
+export const loadUsageLimitFailover = () => loadAgentDefault("usageLimitFailover");
+export const subscribeUsageLimitFailover = subscribeAgentDefaults;
+
 const FORMAT_ON_SAVE_KEY = "bycoda.formatOnSave";
 const FORMAT_ON_SAVE_CHANGE_EVENT = "bycoda:format-on-save-change";
 
@@ -2127,25 +2208,12 @@ export function subscribeAutosave(onStoreChange: () => void) {
   };
 }
 
-const CLAUDE_HOOKS_KEY = "bycoda.claudeHooks";
-
-export const CLAUDE_HOOKS_DEFAULT = true;
-
-const claudeHooksSetting = storedFlag(
-  CLAUDE_HOOKS_KEY,
+export {
   CLAUDE_HOOKS_DEFAULT,
-  "bycoda:claude-hooks-change",
-  true,
-);
-export const subscribeClaudeHooks = claudeHooksSetting.subscribe;
-
-export function loadClaudeHooks(): boolean {
-  return claudeHooksSetting.load() ?? CLAUDE_HOOKS_DEFAULT;
-}
-
-export function saveClaudeHooks(value: boolean) {
-  claudeHooksSetting.save(value);
-}
+  loadClaudeHooks,
+  saveClaudeHooks,
+  subscribeClaudeHooks,
+} from "./claudeHooksSetting";
 
 const CTRL = IS_MAC ? "⌃" : "Ctrl+";
 
@@ -2177,6 +2245,7 @@ export const KEYBINDINGS: KeybindingRow[] = [
   { command: "App: Open Tasks", keys: `${MOD}${SHIFT}Y`, when: "Always" },
   { command: "App: Open Automations", keys: `${MOD}${SHIFT}U`, when: "Always" },
   { command: "App: Open Crews", keys: `${MOD}${SHIFT}E`, when: "Always" },
+  { command: "App: Focus Approval Requests", keys: `${MOD}${SHIFT}J`, when: "Always" },
   ...(IS_MAC || IS_WIN
     ? [
         {
@@ -2287,6 +2356,10 @@ export const KEYBINDINGS: KeybindingRow[] = [
   { command: "Pane: Focus Right", keys: `${MOD}${ALT}→`, when: "Always" },
   { command: "Pane: Focus Up", keys: `${MOD}${ALT}↑`, when: "Always" },
   { command: "Pane: Focus Down", keys: `${MOD}${ALT}↓`, when: "Always" },
+  { command: "Pane: Move Left", keys: `${MOD}${ALT}${SHIFT}←`, when: "workspaceFocus" },
+  { command: "Pane: Move Right", keys: `${MOD}${ALT}${SHIFT}→`, when: "workspaceFocus" },
+  { command: "Pane: Move Up", keys: `${MOD}${ALT}${SHIFT}↑`, when: "workspaceFocus" },
+  { command: "Pane: Move Down", keys: `${MOD}${ALT}${SHIFT}↓`, when: "workspaceFocus" },
   { command: "Terminal: New", keys: `${MOD}\``, when: "Always" },
   { command: "Terminal: New Tab", keys: `${MOD}${SHIFT}\``, when: "Always" },
   { command: "Terminal: Toggle Dock", keys: `${MOD}J`, when: "Always" },
@@ -2589,10 +2662,10 @@ export function filterKeybindings(rows: KeybindingRow[], query: string): Keybind
   return rows.filter(
     (row) =>
       row.command.toLowerCase().includes(needle) ||
-      t(row.command).toLowerCase().includes(needle) ||
+      keybindingCommandLabel(row.command).toLowerCase().includes(needle) ||
       row.keys.toLowerCase().includes(needle) ||
       row.when.toLowerCase().includes(needle) ||
-      t(row.when).toLowerCase().includes(needle),
+      keybindingWhenLabel(row.when).toLowerCase().includes(needle),
   );
 }
 

@@ -16,7 +16,7 @@ Own the Host-wide routing document and run-start resolution in `host/model-routi
 - The renderer bootstrap also binds live catalog/account reads to `src/integrations/harness/core/automaticSubagents.ts`; the harness layer must not import feature stores. Preview reads remain live and `agents.options` remains authoritative.
 - UI/public entries: `src/features/model-routing/public/`; query ownership in `src/features/model-routing/model/`.
 - Smart setup: `model/smartSetup*.ts`, `model/modelProfile.ts` and the researched table `model/modelCatalogFacts.ts` under `src/features/model-routing/`; the order action edits the existing draft.
-- Settings composition: `src/features/settings/ui/ProviderSettings.tsx` (tabs in `src/features/settings/model/providerSettingsTabs.ts`) renders `src/features/settings/ui/models/ModelsPage.tsx` with `view: "work" | "chat" | "delegation"`. User names: Who uses what, All models (Next badge), Groups, Work limits.
+- Settings composition: `src/features/settings/ui/models/ModelsPage.tsx` over one draft and one Save; tabs and files in [settings composition](references/surfaces.md).
 
 ## Workflow
 
@@ -31,11 +31,14 @@ Own the Host-wide routing document and run-start resolution in `host/model-routi
 - Empty order resolves to `notConfigured`; callers keep their stored model. Items without a routing choice remain fixed.
 - All skipped entries resolve to `noEligibleEntry`; work waits until `nextResetAt` when known. Never turn exhausted eligibility into the stored-model fallback.
 - Unbound `text.*` roles retain each helper's cheap automatic model selection. Explicit role bindings override that behavior.
-- Pools contain ordered references to main-order entries and to other pools, never independent copies of models or limits; included pools flatten depth-first and deduped, and cycles are rejected. Running and historical snapshots keep their concrete models.
-- Smart setup is owner-triggered and plans the order, pools and every role binding in one draft edit. It keeps entry ids, account identities, limits and settings, refills pools with the planned names and leaves other pools alone. The AI plan starts from the researched benefit-per-cost baseline in `model/modelCatalogFacts.ts`; any invalid or missing answer falls back to the deterministic rule plan. `ROLE_NEED` in `model/smartSetup.ts` classes every role as light, standard or heavy, and `enforceRoleNeeds` moves an AI binding whose pool does not suit that need. Entries are created per candidate and effort (`poolEffort`: light-only pools low, any heavy role high, else medium; the order medium) and never above high; an owner entry above high is reused for high pools. Save through the existing version-bound transaction, never during discovery.
-- Scope filtering: a run with a project folder skips entries whose account kind is the other scope (`otherScope`); untagged accounts are shared and fixed choices are never filtered.
-- Delegation layers apply global, then provider, then account, then item. Subagents, advisor, effort ceiling and image models live separately from order-entry model settings.
-- Saves are owner-only and use `expectedVersion`; stale saves retain drafts and require reconciliation. Reading capability or showing a control grants no write authority.
+- Pools flatten entry and pool references depth-first with deduplication; cycles are rejected. A pool's `memberSettings` (effort, speed) override entry settings for models it lists; nested members use their own pool's. An older pool-wide `effort` moves into `memberSettings` on editor load.
+- Smart setup uses the known Host catalog, preferring concrete IDs over duplicate aliases. Both planners add pool members and account tier fallbacks at medium when supported, preserving existing rows. The rule plan and Plan with AI (`baselineOrder`, then rule fallback) update the order, pools, roles and global delegation in one draft.
+- Live facts: `host/model-routing/catalog-facts.ts` (OpenRouter) to `model/liveCatalogFacts.ts`; known families keep the table's score.
+- Order entries move within their work, personal or shared group (`groupEntriesByKind`). `enforceRoleNeeds` checks AI bindings against `ROLE_NEED`. Smart setup refills same-named pools at low for light-only roles, high for any heavy role, and medium otherwise. Save via the version-bound transaction.
+- Scope filtering: a run with a project folder skips entries whose account kind is the other scope (`otherScope`). Known provider accounts without a saved kind are Personal. Entries without a resolvable account can remain shared, and fixed choices are never filtered.
+- Helper policy and the recorded `resolved` choice follow [work executor](../feature-tasks-goals/references/work-executor.md); `resolveHelpers` may only narrow the settings layers.
+- Delegation layers apply global, then provider, then account, then item, apart from entry settings. Only Defaults edits them; saves drop values equal to inherited ones.
+- Saves are owner-only and use `expectedVersion`; stale saves retain drafts and require reconciliation. The Host marks a stale `expectedVersion` with `MODEL_ROUTING_CONFLICT`; clients accept that code or the exact legacy message (`isRoutingSaveConflict`), only for the routing save, never by matching "version" or "changed". Reading capability or showing a control grants no write authority.
 - Hosts without `models.routing.v1` retain fixed model behavior; unavailable reads must not masquerade as an authoritative empty order.
 
 ## Focused checks

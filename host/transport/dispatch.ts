@@ -58,6 +58,8 @@ export type HostDispatchContext = {
   /** Grant check independent of socket attachment for already admitted work. */
   executionAuthorized?: () => boolean | Promise<boolean>;
   signal?: AbortSignal;
+  /** `monotonicNow()` instant the transport received the request. */
+  ingressAt?: number;
   exposeQueueAttachments?: HostDomainContext["exposeQueueAttachments"];
   retargetTask?: HostDomainContext["retargetTask"];
   devServerAccess?: HostDomainContext["devServerAccess"];
@@ -79,6 +81,7 @@ export type HostServices = {
     describe: (
       params: EnvironmentDescribeParams,
       options?: EnvironmentReadOptions,
+      caller?: { principalId?: string },
     ) => Promise<unknown>;
   };
   projects: {
@@ -206,6 +209,7 @@ export function createHostDispatcher(services: HostServices) {
             ? context.signal
             : options.signal,
         closing: () => !!options.signal?.aborted,
+        ingressAt: context.ingressAt,
         exposeQueueAttachments: context.exposeQueueAttachments,
         retargetTask: context.retargetTask,
         devServerAccess: context.devServerAccess,
@@ -221,7 +225,9 @@ export function createHostDispatcher(services: HostServices) {
           operations.has(method)
             ? operations.get(method)!(params, domainContext)
             : method === "environment.describe"
-              ? services.environment.describe(params, options)
+              ? services.environment.describe(params, options, {
+                  principalId: context.principal.id,
+                })
               : services.projects.list(options, domainContext);
         const result = await waitForRead(
           () => (context.trackWork ? context.trackWork(read) : read()),

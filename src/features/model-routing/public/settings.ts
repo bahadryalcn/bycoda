@@ -1,9 +1,9 @@
-/** The two Settings > Models tabs this feature owns. */
+/** Settings > Models > Background work, owned by this feature. */
 export { ModelOrderSettings } from "../ui/order/ModelOrderSettings";
-export { ModelRolesSettings } from "../ui/roles/ModelRolesSettings";
 
 export { useRetainedTransaction, retainedTransactionValue } from "../model/retainedTransaction";
 export { syncProjectKinds } from "../model/projectKindsSync";
+export { createProjectKindsSender } from "../model/projectKindsSender";
 
 export { modelProfile, inferAccountKind } from "../model/modelProfile";
 export type { ModelProfile } from "../model/modelProfile";

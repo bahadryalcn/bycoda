@@ -5,6 +5,7 @@ import type { DevicePreviews } from "../devices/device-preview";
 import type { HostStore } from "../store";
 import { validateConversationTool } from "../conversation/conversation-tools";
 import { HostDomainAuthorizationError } from "../domains/context";
+import { NATIVE_DEVICES_RPC_SCHEMAS } from "../../src/shared/model/host-contracts/native-devices";
 import type { NativeDeviceOwnerPorts } from "../domains/native-devices/ports";
 import type {
   DeviceAction,
@@ -192,8 +193,16 @@ export function bindNativeDevicesOwner(
           )
             effectAdmitted?.();
           if (method === "devices.status") result = await host.status(effect);
-          else if (method === "devices.list") result = await host.list(effect);
-          else if (method === "devices.preflight")
+          else if (method === "devices.list") {
+            const listed = await host.list(effect);
+            const held = await host.control.holders();
+            result = {
+              ...listed,
+              devices: listed.devices.map((device) =>
+                held.has(device.id) ? { ...device, heldBy: held.get(device.id) } : device,
+              ),
+            };
+          } else if (method === "devices.preflight")
             result = await host.preflight(params.deviceId as string | undefined, effect);
           else if (method === "devices.start") result = await host.start(effect);
           else if (method === "devices.setup") {
@@ -208,7 +217,9 @@ export function bindNativeDevicesOwner(
           else if (method === "devices.boot")
             result = await host.boot(String(params.deviceId ?? ""), effect);
           else if (method === "devices.capture")
-            result = await host.capture(String(params.deviceId ?? ""), effect);
+            result = await host.capture(String(params.deviceId ?? ""), effect, {
+              maxEdge: params.maxEdge as number | undefined,
+            });
           else if (method === "devices.stream")
             // Viewing only: a failed read has no unknown outcome, so it is never
             // marked admitted and its DEVICE_STREAM_UNSUPPORTED text reaches the caller.
@@ -217,7 +228,26 @@ export function bindNativeDevicesOwner(
               params.cursor as number | undefined,
               effect,
             );
-          else if (method === "devices.control.status")
+          else if (method === "devices.touch") {
+            const { deviceId, leaseId, touch } =
+              NATIVE_DEVICES_RPC_SCHEMAS[method].params.parse(params);
+            const owner = `paired:${principal}`;
+            result = await host.control.touch(deviceId, owner, leaseId, async () => {
+              const leasedEffect = {
+                authorized: async () => {
+                  if (!(await authorized())) return false;
+                  try {
+                    await host.control.assert(deviceId, owner, leaseId);
+                    return true;
+                  } catch {
+                    return false;
+                  }
+                },
+              };
+              await host.sendTouch(deviceId, leaseId, touch, leasedEffect, effectAdmitted);
+              return { accepted: true };
+            });
+          } else if (method === "devices.control.status")
             result = await host.control.status(String(params.deviceId));
           else if (method === "devices.inspect") {
             const deviceId = String(params.deviceId),
@@ -237,20 +267,32 @@ export function bindNativeDevicesOwner(
             await host.control.assert(deviceId, owner, leaseId);
             result = await host.inspect(deviceId, `${owner}:${leaseId}`, leasedEffect);
           } else if (method === "devices.control.claim") {
-            result = await host.control.claim(
+            const owner = `paired:${principal}`;
+            const lease = await host.control.claim(
               String(params.deviceId),
-              `paired:${principal}`,
+              owner,
               String(params.requestId ?? ""),
               authorized,
             );
             effectAdmitted?.();
+            result = lease;
+            void host
+              .prepareTouch(lease.deviceId, lease.leaseId, {
+                authorized: async () => {
+                  if (!(await authorized())) return false;
+                  await host.control.assert(lease.deviceId, owner, lease.leaseId);
+                  return true;
+                },
+              })
+              .catch(() => {});
           } else if (method === "devices.control.release") {
-            result = await host.control.release(
-              String(params.deviceId),
-              `paired:${principal}`,
-              String(params.leaseId ?? ""),
-            );
-            effectAdmitted?.();
+            const deviceId = String(params.deviceId);
+            const leaseId = String(params.leaseId ?? "");
+            result = await host.control.release(deviceId, `paired:${principal}`, leaseId, () => {
+              effectAdmitted?.();
+              // Queue cancellation before handing off the lease. Recovery can outlast this RPC.
+              void host.releaseTouch(deviceId, leaseId).catch(() => {});
+            });
           } else if (method === "devices.control.renew") {
             result = await host.control.renew(
               String(params.deviceId),

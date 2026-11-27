@@ -16,6 +16,7 @@ let heldApprovalWrite: (() => Promise<void>) | null = null;
 const spawned: unknown[][] = [];
 let onLine: ((line: string) => void) | undefined;
 let onExit: ((code: number | null) => void) | undefined;
+let onStderr: ((line: string) => void) | undefined;
 let queueAgent: ((message: Record<string, unknown>) => void) | null = null;
 
 beforeEach(() => {
@@ -30,9 +31,15 @@ vi.mock("../../core/child", () =>
     },
     killChild: async () => undefined,
     unwatchChild: () => undefined,
-    watchChild: (_id: string, line: (l: string) => void, exit: (c: number | null) => void) => {
+    watchChild: (
+      _id: string,
+      line: (l: string) => void,
+      exit: (c: number | null) => void,
+      stderr?: (l: string) => void,
+    ) => {
       onLine = line;
       onExit = exit;
+      onStderr = stderr;
     },
     writeChild: async (_id: string, line: string) => {
       sent.push(line);
@@ -43,8 +50,14 @@ vi.mock("../../core/child", () =>
   }),
 );
 
-const { compactGrokContext, sendGrokTurn, respondGrokApproval, stopGrokSession, cancelGrokTurn } =
-  await import("./grok");
+const {
+  bindGrokSession,
+  compactGrokContext,
+  sendGrokTurn,
+  respondGrokApproval,
+  stopGrokSession,
+  cancelGrokTurn,
+} = await import("./grok");
 import type { HarnessEvent } from "../../core/types";
 
 function reply(id: number, result: unknown) {
@@ -79,15 +92,20 @@ const initResult = {
   },
 };
 
-async function handshake() {
+async function handshake(
+  setup: Record<string, unknown> = {},
+  method = "session/new",
+  protocolVersion = 1,
+) {
   await waitFor(() => parse().some((m) => m.method === "initialize"), "initialize");
-  reply(parse().find((m) => m.method === "initialize")!.id, initResult);
+  reply(parse().find((m) => m.method === "initialize")!.id, { ...initResult, protocolVersion });
   await waitFor(() => parse().some((m) => m.method === "authenticate"), "authenticate");
   reply(parse().find((m) => m.method === "authenticate")!.id, {});
-  await waitFor(() => parse().some((m) => m.method === "session/new"), "session/new");
-  reply(parse().find((m) => m.method === "session/new")!.id, {
+  await waitFor(() => parse().some((m) => m.method === method), method);
+  reply(parse().find((m) => m.method === method)!.id, {
     sessionId: "S1",
     models: { currentModelId: "grok-4.6" },
+    ...setup,
   });
 }
 
@@ -95,6 +113,24 @@ describe("grok live turn sequence", () => {
   beforeEach(() => {
     sent.length = 0;
     heldApprovalWrite = null;
+  });
+
+  it("refuses files:false before spawning or sending any ACP request", async () => {
+    const before = spawned.length;
+    await expect(
+      sendGrokTurn({
+        sessionId: "grok-no-tools",
+        cwd: "/scratch/run",
+        model: "grok:grok-4.6",
+        runtimeMode: "supervised",
+        modelSettings: { leanContext: "on" },
+        text: "discuss",
+        attachments: [],
+        onEvent: () => undefined,
+      }),
+    ).rejects.toThrow("cannot disable configured plugins and MCP servers");
+    expect(spawned).toHaveLength(before);
+    expect(sent).toHaveLength(0);
   });
 
   it.each([false, true])(
@@ -213,8 +249,8 @@ describe("grok live turn sequence", () => {
     const turn = sendGrokTurn({
       sessionId: "t1",
       cwd: "/repo",
-      model: "grok:grok-4.6",
-      modelSettings: { effort: "high" },
+      model: "grok:grok-4.7",
+      modelSettings: { effort: "medium" },
       runtimeMode: "supervised",
       text: "hey",
       attachments: [
@@ -230,10 +266,9 @@ describe("grok live turn sequence", () => {
       onAccepted,
       onEvent: (e) => events.push(e),
     });
-    await handshake();
-    await waitFor(() => parse().some((m) => m.method === "session/set_mode"), "set_mode");
-    reply(parse().find((m) => m.method === "session/set_mode")!.id, {});
+    await handshake({ models: { currentModelId: "grok-4.7" } });
     await waitFor(() => parse().some((m) => m.method === "session/prompt"), "prompt");
+    expect(parse().some((m) => m.method === "session/set_mode")).toBe(false);
     const promptRequest = parse().find((m) => m.method === "session/prompt")!;
     expect(promptRequest.params.prompt).toEqual([
       {
@@ -252,6 +287,126 @@ describe("grok live turn sequence", () => {
     expect(events.some((e) => e.type === "session.providerBound")).toBe(true);
     expect(parse().some((m) => m.method === "authenticate")).toBe(true);
     await stopGrokSession("t1");
+  });
+
+  describe("control requests before the prompt", () => {
+    const secret = "sk-abcdef1234567890abcdef";
+    const turnInput = (sessionId: string, model: string, effort?: string) => ({
+      sessionId,
+      cwd: "/repo",
+      model,
+      modelSettings: effort ? { effort } : undefined,
+      runtimeMode: "supervised" as const,
+      text: "hey",
+      attachments: [],
+      onEvent: () => undefined,
+    });
+    const rpcError = (id: number, code: number, message: string) =>
+      onLine!(JSON.stringify({ jsonrpc: "2.0", id, error: { code, message } }));
+
+    it.each([["set_model", "grok:grok-4.7", undefined]])(
+      "fails the turn when %s is rejected instead of running misconfigured",
+      async (method, model, effort) => {
+        const turn = sendGrokTurn(turnInput(`grok-reject-${method}`, model, effort));
+        const outcome = turn.then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+        await handshake();
+        await waitFor(() => parse().some((m) => m.method === `session/${method}`), method);
+        rpcError(
+          parse().find((m) => m.method === `session/${method}`)!.id,
+          -32602,
+          `invalid value, api_key=${secret}`,
+        );
+        const error = (await outcome) as Error & { code?: number };
+        expect(error).toBeInstanceOf(Error);
+        expect(error.code).toBe(-32602);
+        expect(error.message).toContain(`${method} rejected: invalid value`);
+        expect(error.message).not.toContain(secret);
+        expect(parse().some((m) => m.method === "session/prompt")).toBe(false);
+        await stopGrokSession(`grok-reject-${method}`);
+      },
+    );
+
+    it.each([["set_model", "grok:grok-4.7", undefined]])(
+      "still runs the turn when %s is not implemented (-32601)",
+      async (method, model, effort) => {
+        const turn = sendGrokTurn(turnInput(`grok-missing-${method}`, model, effort));
+        await handshake();
+        await waitFor(() => parse().some((m) => m.method === `session/${method}`), method);
+        rpcError(
+          parse().find((m) => m.method === `session/${method}`)!.id,
+          -32601,
+          "Method not found",
+        );
+        await waitFor(() => parse().some((m) => m.method === "session/prompt"), "prompt");
+        reply(parse().find((m) => m.method === "session/prompt")!.id, { stopReason: "end_turn" });
+        await turn;
+        await stopGrokSession(`grok-missing-${method}`);
+      },
+    );
+
+    it.each(["current", "applied", "unadvertised", "rejected", "session error"])(
+      "handles resumed medium effort when %s",
+      async (scenario) => {
+        const thread = `grok-resume-${scenario}`;
+        bindGrokSession(thread, "S1", "/repo");
+        const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+        const turn = sendGrokTurn(turnInput(thread, "grok:grok-4.7", "medium"));
+        const outcome = turn.catch((error: unknown) => error);
+        try {
+          await handshake(
+            {
+              models: { currentModelId: "grok-4.7" },
+              modes: { currentModeId: "ask", availableModes: [{ id: "ask" }] },
+              configOptions: [
+                {
+                  type: "select",
+                  category: "thought_level",
+                  id: "thinking",
+                  currentValue: scenario === "current" ? "medium" : "low",
+                  options: [{ value: scenario === "unadvertised" ? "low" : "medium" }],
+                },
+              ],
+            },
+            "session/resume",
+            2,
+          );
+          const control = () => parse().find((m) => m.method === "session/set_config_option");
+          if (["applied", "rejected", "session error"].includes(scenario)) {
+            await waitFor(() => !!control(), "effort control");
+            expect(control()?.params).toEqual({
+              sessionId: "S1",
+              configId: "thinking",
+              value: "medium",
+            });
+            if (scenario === "applied") reply(control()!.id, {});
+            else rpcError(control()!.id, scenario === "rejected" ? -32602 : -32000, scenario);
+          }
+          if (scenario === "session error") {
+            expect(await outcome).toMatchObject({
+              code: -32000,
+              message: "grok set_config_option rejected: session error",
+            });
+            expect(parse().some((m) => m.method === "session/prompt")).toBe(false);
+          } else {
+            await waitFor(() => parse().some((m) => m.method === "session/prompt"), "prompt");
+            reply(parse().find((m) => m.method === "session/prompt")!.id, {
+              stopReason: "end_turn",
+            });
+            await turn;
+          }
+          expect(parse().some((m) => m.method === "session/set_mode")).toBe(false);
+          expect(warning).toHaveBeenCalledTimes(
+            ["unadvertised", "rejected"].includes(scenario) ? 1 : 0,
+          );
+        } finally {
+          warning.mockRestore();
+          await stopGrokSession(thread);
+        }
+      },
+    );
   });
 
   it("runs the selected account's Grok profile", async () => {
@@ -395,6 +550,36 @@ describe("grok live turn sequence", () => {
     expect(turn2Events.some((e) => e.type === "session.ended")).toBe(true);
     expect(turn1Events.some((e) => e.type === "session.ended")).toBe(false);
     await stopGrokSession("t3");
+  });
+
+  it("fails the in-flight turn with the exit code and a bounded, redacted stderr tail", async () => {
+    const turn = sendGrokTurn({
+      sessionId: "t-exit-diagnostics",
+      cwd: "/repo",
+      model: "grok:grok-4.6",
+      runtimeMode: "supervised",
+      text: "hey",
+      attachments: [],
+      onEvent: () => undefined,
+    });
+    const failed = turn.catch((error: unknown) => error as Error);
+    await handshake();
+    await waitFor(() => parse().some((m) => m.method === "session/prompt"), "prompt");
+    // Windows pseudo-terminal output: colors and CRLF line ends.
+    for (const line of ["one", "two", "\u001b[1mthree\u001b[0m\r\n", `four ${"x".repeat(900)}`])
+      onStderr!(line);
+    onStderr!("config: api_key=sk-live-0123456789abcdef0123");
+    onExit!(7);
+    const message = ((await failed) as Error).message;
+    const lines = message.split("\n");
+    expect(lines[0]).toBe("Grok Build exited (exit code 7):");
+    expect(lines.slice(1)).toHaveLength(3);
+    expect(lines[1]).toBe("three");
+    expect(lines[2]).toMatch(/^four x+/);
+    expect(lines[2].length).toBeLessThanOrEqual(300);
+    expect(lines[3]).toBe("config: api_key=…");
+    expect(message).not.toContain("sk-live");
+    await stopGrokSession("t-exit-diagnostics");
   });
 
   it("compacts with Grok's ACP extension instead of a slash-command prompt", async () => {
@@ -778,3 +963,48 @@ it.each([true, false])(
     }
   },
 );
+
+it("keeps a Grok turn pending past the former 30 minute wall-clock cap", async () => {
+  sent.length = 0;
+  heldApprovalWrite = null;
+  const events: HarnessEvent[] = [];
+  vi.useFakeTimers();
+  try {
+    const waitForMethod = async (method: string) => {
+      for (let i = 0; i < 200; i++) {
+        const found = parse().find((m) => m.method === method);
+        if (found) return found;
+        await vi.advanceTimersByTimeAsync(5);
+      }
+      throw new Error(`timed out waiting for ${method}`);
+    };
+    const turn = sendGrokTurn({
+      sessionId: "deadline-grok",
+      cwd: "/repo",
+      model: "grok:grok-4.6",
+      runtimeMode: "supervised",
+      text: "long run",
+      attachments: [],
+      onEvent: (event) => events.push(event),
+    });
+    const outcome = turn.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    reply((await waitForMethod("initialize")).id, initResult);
+    reply((await waitForMethod("authenticate")).id, {});
+    reply((await waitForMethod("session/new")).id, {
+      sessionId: "S1",
+      models: { currentModelId: "grok-4.6" },
+    });
+    const prompt = await waitForMethod("session/prompt");
+    await vi.advanceTimersByTimeAsync(31 * 60_000);
+    reply(prompt.id, { stopReason: "end_turn" });
+    expect(await outcome).toBeUndefined();
+    expect(events.some((event) => event.type === "session.error")).toBe(false);
+    expect(events).toContainEqual({ type: "message.completed" });
+  } finally {
+    vi.useRealTimers();
+    await stopGrokSession("deadline-grok");
+  }
+});

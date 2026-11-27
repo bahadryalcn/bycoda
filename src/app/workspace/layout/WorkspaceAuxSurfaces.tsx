@@ -8,6 +8,7 @@ import { requestTranscriptJump } from "../../../features/sessions/model/transcri
 import type { Session } from "../../../features/sessions/model/session";
 import type { OpenFileFn } from "../../../features/search/model/search";
 import type { InboxSessionPortal } from "../../../features/inbox/ui/InboxDiscussionPanel";
+import type { ServerSessionPortal } from "../bridges/useServerAgentPanel";
 import { LiveSearchView } from "./LiveSearchView";
 import type { WorkspaceSessionPaneProps } from "./WorkspaceMainArea";
 
@@ -47,6 +48,9 @@ export interface WorkspaceAuxSurfacesProps {
   >;
   socialSessionPortal?: InboxSessionPortal | null;
   socialVisible?: boolean;
+  serverSessionIds?: readonly string[];
+  serverSessionPortal?: ServerSessionPortal | null;
+  serversVisible?: boolean;
   composerFocused: boolean;
   composerFocusToken: number;
   sessionPaneProps: WorkspaceSessionPaneProps;
@@ -78,6 +82,9 @@ function WorkspaceAuxSurfacesComponent({
   socialWorkspaceTargets = {},
   socialSessionPortal,
   socialVisible = false,
+  serverSessionIds = [],
+  serverSessionPortal,
+  serversVisible = false,
   composerFocused,
   composerFocusToken,
   sessionPaneProps,
@@ -110,13 +117,24 @@ function WorkspaceAuxSurfacesComponent({
       ) : null}
       <div className="hidden" aria-hidden>
         {sessions
-          .filter((session) => session.inboxAsk || socialSessionIds.includes(session.id))
+          .filter(
+            (session) =>
+              session.inboxAsk ||
+              socialSessionIds.includes(session.id) ||
+              serverSessionIds.includes(session.id),
+          )
           .map((session) => {
             const social = socialSessionIds.includes(session.id);
-            const portal = social ? socialSessionPortal : inboxAskPortal;
+            const server = serverSessionIds.includes(session.id);
+            const portal = server
+              ? serverSessionPortal
+              : social
+                ? socialSessionPortal
+                : inboxAskPortal;
             const dockVisible =
-              (social ? socialVisible : inboxViewOpen) && portal?.sessionId === session.id;
-            const workspace = social ? socialWorkspaceTargets[session.id] : undefined;
+              (server ? serversVisible : social ? socialVisible : inboxViewOpen) &&
+              portal?.sessionId === session.id;
+            const workspace = social || server ? socialWorkspaceTargets[session.id] : undefined;
             const visible = dockVisible || !!workspace?.visible;
             return (
               <SessionSurface key={session.id} host={dockVisible ? portal?.host : workspace?.host}>
@@ -124,6 +142,15 @@ function WorkspaceAuxSurfacesComponent({
                   {...sessionPaneProps}
                   session={session}
                   embedded={social}
+                  hideSessionToolbar={server && dockVisible}
+                  hideProjectPicker={
+                    server && dockVisible ? true : sessionPaneProps.hideProjectPicker
+                  }
+                  sshActivityServerId={
+                    server && dockVisible ? serverSessionPortal?.serverId : undefined
+                  }
+                  addToChatTarget={server ? false : undefined}
+                  receiveTargetedQuotes={server && visible}
                   visible={visible}
                   focused={dockVisible || !!workspace?.focused}
                   inSplit={dockVisible ? false : (workspace?.inSplit ?? false)}

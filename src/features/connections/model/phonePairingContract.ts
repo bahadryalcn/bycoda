@@ -1,5 +1,5 @@
 import type { MobileAccessStatus } from "../../../integrations/mobile-access";
-import { isLanAddress, isLanKey } from "../../../integrations/mobile-lan";
+import { isLanKey, isPrivateRouteAddress } from "../../../integrations/mobile-lan";
 import {
   mobilePairingEndpoint,
   parseMobilePairingCode,
@@ -11,16 +11,7 @@ import type {
   PhonePairingStatus,
 } from "./phonePairingTypes";
 
-const accessStates = new Set([
-  "ready",
-  "setup-required",
-  "install-required",
-  "sign-in-required",
-  "offline",
-  "approval-required",
-  "permission-required",
-  "unavailable",
-]);
+const accessStates = new Set(["ready", "setup-required", "unavailable"]);
 const pairingStates = new Set(["pending", "paired", "expired", "cancelled"]);
 
 export class InvalidPhonePairingResponse extends Error {
@@ -36,26 +27,6 @@ function record(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-/** Approval links are application-owned Tailscale HTTPS pages, never RPC commands. */
-export function phoneApprovalUrl(value: unknown): string | undefined {
-  if (typeof value !== "string" || value.length > 2_048) return undefined;
-  try {
-    const url = new URL(value);
-    if (
-      url.protocol === "https:" &&
-      url.hostname === "login.tailscale.com" &&
-      !url.username &&
-      !url.password &&
-      !url.port
-    ) {
-      return url.href;
-    }
-  } catch {
-    // An untrusted approval URL is omitted from the renderer.
-  }
-  return undefined;
-}
-
 export function readMobileAccessStatus(value: unknown): MobileAccessStatus {
   const input = record(value);
   if (typeof input.state !== "string" || !accessStates.has(input.state)) {
@@ -64,10 +35,9 @@ export function readMobileAccessStatus(value: unknown): MobileAccessStatus {
   let endpoint: string | undefined;
   if (input.mode !== undefined && input.mode !== "lan" && input.mode !== "tailscale")
     throw new InvalidPhonePairingResponse();
-  if (input.lanKey !== undefined && (!isLanKey(input.lanKey) || input.mode !== "lan"))
+  if (input.lanKey !== undefined && (!isLanKey(input.lanKey) || input.mode === undefined))
     throw new InvalidPhonePairingResponse();
-  if (input.mode === "lan" && input.state === "ready" && !isLanKey(input.lanKey))
-    throw new InvalidPhonePairingResponse();
+  if (input.state === "ready" && !isLanKey(input.lanKey)) throw new InvalidPhonePairingResponse();
   if (input.state === "ready") {
     if (typeof input.endpoint !== "string") throw new InvalidPhonePairingResponse();
     try {
@@ -83,19 +53,35 @@ export function readMobileAccessStatus(value: unknown): MobileAccessStatus {
     ...(Array.isArray(input.addresses)
       ? {
           addresses: input.addresses
-            .filter((value): value is string => typeof value === "string" && isLanAddress(value))
+            .filter(
+              (value): value is string => typeof value === "string" && isPrivateRouteAddress(value),
+            )
             .slice(0, 32),
         }
       : {}),
     ...(endpoint ? { endpoint } : {}),
+    ...(input.addressInterfaces && typeof input.addressInterfaces === "object"
+      ? {
+          addressInterfaces: Object.fromEntries(
+            Object.entries(input.addressInterfaces)
+              .filter(
+                (entry): entry is [string, string] =>
+                  isPrivateRouteAddress(entry[0]) &&
+                  typeof entry[1] === "string" &&
+                  entry[1].length <= 256,
+              )
+              .slice(0, 32),
+          ),
+        }
+      : {}),
+    ...(typeof input.networkHint === "string" && input.networkHint.length <= 500
+      ? { networkHint: input.networkHint }
+      : {}),
     ...(typeof input.reason === "string" && input.reason.length <= 500
       ? { reason: input.reason }
       : {}),
     ...(typeof input.machineName === "string" && input.machineName.length <= 120
       ? { machineName: input.machineName.trim() }
-      : {}),
-    ...(phoneApprovalUrl(input.approvalUrl)
-      ? { approvalUrl: phoneApprovalUrl(input.approvalUrl) }
       : {}),
   };
 }
@@ -139,6 +125,7 @@ export function readPhonePairingStatus(value: unknown): PhonePairingStatus {
 export function phonePairingError(error: unknown): PhonePairingError {
   if (error instanceof InvalidPhonePairingResponse) return "invalid-response";
   const message = String(error);
+  if (message.includes("Device management permission required")) return "management-required";
   if (/unknown method|not supported|unsupported method|method not found/i.test(message)) {
     return "host-update";
   }

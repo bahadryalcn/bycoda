@@ -6,7 +6,7 @@ import { ProviderDefaultExtras } from "./ProviderDefaultExtras";
 import { CLAUDE_COMPACT_SETTINGS } from "../../sessions/model/claudeCompact";
 import { encodeAdvisor } from "../../../shared/model/host-contracts/delegation";
 
-it("keeps the saved threshold while inherited auto-compaction is off", () => {
+it("hides the window while inherited auto-compaction is off and keeps its saved value", () => {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -20,7 +20,6 @@ it("keeps the saved threshold while inherited auto-compaction is off", () => {
           harness: "claude",
           inheritedDefaults: { extras: { autoCompact } },
           scopeDefaults: { extras: { autoCompactWindow: "500000" } },
-          projectScope: true,
           resetLabel: "Use global default",
           onSessionDefaultsChange: change,
         }),
@@ -30,13 +29,13 @@ it("keeps the saved threshold while inherited auto-compaction is off", () => {
   const threshold = () =>
     container.querySelector<HTMLButtonElement>(
       '[aria-label^="Claude Code default Auto-compact window:"]',
-    )!;
-  expect(threshold().disabled).toBe(true);
-  expect(threshold().textContent).toContain("500K");
+    );
+  expect(threshold()).toBeNull();
   expect(change).not.toHaveBeenCalled();
   render("on");
-  expect(threshold().disabled).toBe(false);
-  expect(threshold().textContent).toContain("500K");
+  expect(threshold()!.textContent).toContain("500K tokens");
+  // One row holds both: the window sits beside the mode, not in a row of its own.
+  expect(container.querySelectorAll('[data-settings-part="row"]')).toHaveLength(1);
   const off =
     container.querySelector<HTMLButtonElement>('[role="radio"][aria-label="Off"]') ??
     Array.from(container.querySelectorAll<HTMLButtonElement>('[role="radio"]')).find(
@@ -76,14 +75,13 @@ it("shows saved legacy advisor Off ahead of inherited product defaults and reset
         ],
         harness: "claude",
         scopeDefaults: { extras: { advisor: "off" } },
-        projectScope: false,
         inheritedDefaults: { extras: { crossAdvisor: advisor } },
         resetLabel: "Use global default",
         onSessionDefaultsChange: change,
       }),
     ),
   );
-  expect(container.textContent).toContain("Off");
+  expect(container.querySelector('[role="switch"]')!.getAttribute("aria-checked")).toBe("false");
   const reset = container.querySelector<HTMLButtonElement>('[aria-label="Use global default"]');
   expect(reset).not.toBeNull();
   act(() => reset!.click());
@@ -93,9 +91,9 @@ it("shows saved legacy advisor Off ahead of inherited product defaults and reset
   vi.unstubAllGlobals();
 });
 
-it.each([false, true])(
-  "shows inherited product advisor without saving it (scoped: %s)",
-  (projectScope) => {
+it.each(["Reset to automatic", "Use Bycoda defaults"])(
+  "shows inherited product advisor without saving it (reset: %s)",
+  (resetLabel) => {
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
@@ -119,9 +117,8 @@ it.each([false, true])(
           ],
           harness: "codex",
           scopeDefaults: {},
-          projectScope,
           inheritedDefaults: { extras: { crossAdvisor: advisor } },
-          resetLabel: "Use global default",
+          resetLabel,
           onSessionDefaultsChange: change,
         }),
       ),
@@ -135,11 +132,12 @@ it.each([false, true])(
   },
 );
 
-it("persists advisor Off and removes legacy advisor on selection", () => {
+it("persists advisor Off and removes legacy advisor when the switch turns off", () => {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   const change = vi.fn();
+  const advisor = encodeAdvisor({ harness: "claude", model: "claude:opus" })!;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   act(() =>
     root.render(
@@ -149,28 +147,25 @@ it("persists advisor Off and removes legacy advisor on selection", () => {
             id: "crossAdvisor",
             label: "Advisor",
             kind: "select",
-            value: "",
-            options: [{ value: "", label: "Off" }],
+            // The legacy "opus" value resolves to this advisor.
+            value: advisor,
+            options: [
+              { value: "", label: "Off" },
+              { value: advisor, label: "Claude Code · Opus" },
+            ],
           },
         ],
         harness: "claude",
         scopeDefaults: { extras: { advisor: "opus" } },
-        projectScope: true,
         inheritedDefaults: {},
         resetLabel: "Use global default",
         onSessionDefaultsChange: change,
       }),
     ),
   );
-  act(() =>
-    container
-      .querySelector<HTMLButtonElement>('[aria-label^="Claude Code default Advisor"]')!
-      .click(),
-  );
-  const off = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
-    (node) => node.textContent?.trim() === "Off",
-  )!;
-  act(() => off.click());
+  const toggle = container.querySelector<HTMLButtonElement>('[role="switch"]')!;
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  act(() => toggle.click());
   expect(change).toHaveBeenCalledWith({ extras: { crossAdvisor: "null" } });
   act(() => root.unmount());
   container.remove();
@@ -201,7 +196,6 @@ it("shows Fast as keyboard accessible scale and keeps explicit Off", () => {
         scopeDefaults: { extras: { fast: "false" } },
         inheritedDefaults: { extras: { fast: "true" } },
         onSessionDefaultsChange: change,
-        projectScope: true,
         resetLabel: "Use global default",
       }),
     ),
@@ -226,7 +220,6 @@ it("edits the subagent ceiling as a draft without changing the main effort", () 
         harness: "claude",
         scopeDefaults: { effort: "low", extras: { crossSubagentMaxEffort: "high" } },
         inheritedDefaults: { extras: { crossSubagentMaxEffort: "max" } },
-        projectScope: false,
         resetLabel: "Reset",
         onSessionDefaultsChange: change,
         extras: [
@@ -280,7 +273,6 @@ it("offers Automatic / Custom / Off for unset subagent defaults", () => {
       createElement(ProviderDefaultExtras, {
         harness: "codex",
         scopeDefaults: {},
-        projectScope: false,
         resetLabel: "Reset",
         onSessionDefaultsChange: change,
         extras: [
@@ -328,7 +320,6 @@ it.each([undefined, "auto", "[]"])(
               effort: "low",
               extras: value === undefined ? {} : { crossSubagents: value },
             },
-            projectScope: true,
             resetLabel: "Reset",
             onSessionDefaultsChange: change,
             extras: [
@@ -410,7 +401,6 @@ it.each(["auto", "[]", JSON.stringify([{ harness: "codex", model: "codex:test" }
             harness: "claude",
             scopeDefaults: { extras: saved },
             inheritedDefaults: { extras: { crossSubagents: inherited } },
-            projectScope: true,
             resetLabel: "Reset subagents",
             onSessionDefaultsChange: change,
             extras,
@@ -444,7 +434,6 @@ it("offers one Automatic entry without redundant wand decoration in extras", () 
         createElement(ProviderDefaultExtras, {
           harness: "claude",
           scopeDefaults: {},
-          projectScope: false,
           resetLabel: "Reset",
           onSessionDefaultsChange: vi.fn(),
           extras: [
@@ -488,7 +477,6 @@ it("turns Automatic off when a ceiling bar is chosen", () => {
       createElement(ProviderDefaultExtras, {
         harness: "claude",
         scopeDefaults: { extras: {} },
-        projectScope: false,
         resetLabel: "Reset",
         onSessionDefaultsChange: change,
         extras: [
@@ -516,4 +504,227 @@ it("turns Automatic off when a ceiling bar is chosen", () => {
   act(() => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+});
+
+it("reads the inherited auto-compact segment as Default (On), not a second On", () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  act(() =>
+    root.render(
+      createElement(ProviderDefaultExtras, {
+        extras: CLAUDE_COMPACT_SETTINGS,
+        harness: "claude",
+        inheritedDefaults: { extras: { autoCompact: "on" } },
+        scopeDefaults: {},
+        resetLabel: "Use global default",
+        onSessionDefaultsChange: vi.fn(),
+      }),
+    ),
+  );
+  const labels = Array.from(container.querySelectorAll('[role="radio"]')).map(
+    (button) => button.textContent,
+  );
+  expect(labels).toEqual(["Default (On)", "On", "Off"]);
+  act(() => root.unmount());
+  container.remove();
+  vi.unstubAllGlobals();
+});
+
+it("names an unavailable inherited advisor in the select label without a separate badge", () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const advisor = encodeAdvisor({ harness: "claude", model: "claude:opus" })!;
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  act(() =>
+    root.render(
+      createElement(ProviderDefaultExtras, {
+        extras: [
+          {
+            id: "crossAdvisor",
+            label: "Advisor",
+            kind: "select",
+            value: "",
+            options: [
+              { value: "", label: "Off" },
+              { value: advisor, label: "Unavailable: Claude Code · Opus" },
+            ],
+          },
+        ],
+        harness: "claude",
+        scopeDefaults: {},
+        inheritedDefaults: { extras: { crossAdvisor: advisor } },
+        resetLabel: "Use Bycoda defaults",
+        onSessionDefaultsChange: vi.fn(),
+      }),
+    ),
+  );
+  const select = container.querySelector<HTMLButtonElement>(
+    '[aria-haspopup="dialog"][aria-label^="Advisor model"]',
+  )!;
+  // The unavailable state is carried by the option's own label; no label-parsing badge is added.
+  expect(select.textContent).toContain("Unavailable: Claude Code · Opus");
+  expect(container.querySelectorAll('[data-tone="warning"]')).toHaveLength(0);
+  act(() => root.unmount());
+  container.remove();
+  vi.unstubAllGlobals();
+});
+
+function mount(props: Partial<Parameters<typeof ProviderDefaultExtras>[0]>) {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const change = vi.fn();
+  const render = (next: Partial<Parameters<typeof ProviderDefaultExtras>[0]> = {}) =>
+    act(() =>
+      root.render(
+        createElement(ProviderDefaultExtras, {
+          extras: [],
+          harness: "codex",
+          scopeDefaults: {},
+          resetLabel: "Reset",
+          onSessionDefaultsChange: change,
+          ...props,
+          ...next,
+        }),
+      ),
+    );
+  render();
+  const radios = () =>
+    [...container.querySelectorAll<HTMLButtonElement>('[role="radio"]')].map(
+      (node) => node.textContent,
+    );
+  const done = () => {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  };
+  return { container, change, render, radios, done };
+}
+
+const tiers = (...values: [string, string][]) => [
+  {
+    id: "serviceTier",
+    label: "Service tier",
+    kind: "select" as const,
+    value: "default",
+    options: values.map(([value, label]) => ({ value, label })),
+  },
+];
+
+it("offers every service tier with its own name, as segments while they fit", () => {
+  const view = mount({
+    extras: tiers(["default", "Standard"], ["priority", "Fast"], ["ultrafast", "Ultrafast"]),
+  });
+  try {
+    expect(view.container.textContent).toContain("Service tier");
+    expect(view.radios()).toEqual(["Automatic", "Standard", "Fast", "Ultrafast"]);
+    act(() =>
+      [...view.container.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
+        .find((node) => node.textContent === "Ultrafast")!
+        .click(),
+    );
+    expect(view.change).toHaveBeenLastCalledWith({ extras: { serviceTier: "ultrafast" } });
+  } finally {
+    view.done();
+  }
+});
+
+it("uses a select when the tiers do not fit one segmented row", () => {
+  const view = mount({
+    extras: tiers(
+      ["default", "Standard"],
+      ["flex", "Flex"],
+      ["priority", "Fast"],
+      ["ultrafast", "Ultrafast"],
+    ),
+  });
+  try {
+    expect(view.radios()).toEqual([]);
+    const trigger = view.container.querySelector<HTMLButtonElement>(
+      '[aria-label^="Codex default Service tier"]',
+    )!;
+    act(() => trigger.click());
+    expect(
+      [...document.querySelectorAll('[role="option"]')].map((node) => node.textContent?.trim()),
+    ).toEqual(["Automatic", "Standard", "Flex", "Fast", "Ultrafast"]);
+  } finally {
+    view.done();
+  }
+});
+
+it("keeps a saved Claude default auto-compact visible and offers the window beside it", () => {
+  const view = mount({
+    extras: CLAUDE_COMPACT_SETTINGS,
+    harness: "claude",
+    scopeDefaults: { extras: { autoCompact: "default" } },
+  });
+  try {
+    expect(view.radios()).toEqual(["Automatic", "Claude default", "On", "Off"]);
+    expect(
+      view.container.querySelector('[aria-label^="Claude Code default Auto-compact window:"]'),
+    ).not.toBeNull();
+    act(() => view.container.querySelector<HTMLButtonElement>('[aria-label="Reset"]')!.click());
+    expect(view.change).toHaveBeenLastCalledWith({ extras: {} });
+  } finally {
+    view.done();
+  }
+});
+
+it("turns image models off and back to Automatic", () => {
+  const images = [
+    {
+      id: "imageModels",
+      label: "Image models",
+      kind: "select" as const,
+      value: "",
+      options: [
+        { value: "", label: "Automatic" },
+        { value: "codex", label: "Codex ImageGen" },
+        { value: "antigravity", label: "Nano Banana (Antigravity)" },
+      ],
+    },
+  ];
+  const view = mount({ extras: images });
+  try {
+    const segment = (label: string) =>
+      [...view.container.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
+        (node) => node.textContent === label,
+      )!;
+    expect(view.radios()).toEqual(["Automatic", "Custom", "Off"]);
+    act(() => segment("Off").click());
+    expect(view.change).toHaveBeenLastCalledWith({ extras: { imageModels: "[]" } });
+    view.render({ scopeDefaults: { extras: { imageModels: "[]" } } });
+    act(() => segment("Automatic").click());
+    expect(view.change).toHaveBeenLastCalledWith({ extras: {} });
+  } finally {
+    view.done();
+  }
+});
+
+it("explains an unavailable advisor below the row and how to fix it", () => {
+  const advisor = encodeAdvisor({ harness: "opencode", model: "opencode:sonnet" })!;
+  const { container, done } = mount({
+    harness: "claude",
+    extras: [
+      {
+        id: "crossAdvisor",
+        label: "Advisor",
+        kind: "select",
+        value: "",
+        options: [
+          { value: "", label: "Off" },
+          { value: advisor, label: "Unavailable: OpenCode · Claude Sonnet 5", unavailable: true },
+        ],
+      } as Parameters<typeof ProviderDefaultExtras>[0]["extras"][number],
+    ],
+    scopeDefaults: { extras: { crossAdvisor: advisor } },
+  });
+  expect(container.textContent).toContain(
+    "This advisor model is unavailable, so the advisor is not used.",
+  );
+  done();
 });

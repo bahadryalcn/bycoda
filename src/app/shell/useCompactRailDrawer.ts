@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { shouldHandleGlobalEscape } from "../../shared/ui/overlay";
 
 /**
  * The sidebar drawer beside the compact project rail. With the sidebar
@@ -83,7 +84,7 @@ export function useCompactRailDrawer({
   useEffect(() => {
     if (!drawerVisible) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (!shouldHandleGlobalEscape(event)) return;
       setDrawerOpen(false);
     };
     // The rail's own shortcuts toggle the drawer, and menus opened from it

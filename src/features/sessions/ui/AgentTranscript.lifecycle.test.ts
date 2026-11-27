@@ -62,15 +62,15 @@ it("refreshes every historical Edit from here action when idle eligibility chang
     );
   await renderEligibility(false);
   expect(buttons()).toHaveLength(3);
-  expect(buttons().every((button) => button.disabled)).toBe(true);
+  expect(buttons().every((button) => button.getAttribute("aria-disabled") === "true")).toBe(true);
   // No block identity, busy state or action callback changes: only a completed
   // preparation/permission check makes the existing messages rewindable.
   await renderEligibility(true);
-  expect(buttons().every((button) => !button.disabled)).toBe(true);
+  expect(buttons().every((button) => button.getAttribute("aria-disabled") !== "true")).toBe(true);
   await act(async () => buttons()[1].click());
   expect(onRewindMessage).toHaveBeenCalledExactlyOnceWith(blocks[2], "edit");
   await renderEligibility(false);
-  expect(buttons().every((button) => button.disabled)).toBe(true);
+  expect(buttons().every((button) => button.getAttribute("aria-disabled") === "true")).toBe(true);
 });
 
 it("reveals a remote page whose callback resolves before its blocks reach React", async () => {
@@ -91,10 +91,9 @@ it("reveals a remote page whose callback resolves before its blocks reach React"
       }),
     ),
   );
-  const button = [...host.querySelectorAll("button")].find(
-    (item) => item.textContent === "Load earlier messages",
-  )!;
-  act(() => button.click());
+  const scroller = host.querySelector<HTMLElement>(".agent-transcript")!;
+  act(() => scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -40, bubbles: true })));
+  expect(load).toHaveBeenCalledOnce();
   await act(async () => resolve(20));
   const older: Block[] = Array.from({ length: 20 }, (_, index) => ({
     id: `older-${index}`,
@@ -167,10 +166,10 @@ it("holds pending follow-ups and prevents send or removal while delivery is acti
   );
   const send = host.querySelector<HTMLButtonElement>('[aria-label="Send draft"]')!;
   const remove = host.querySelector<HTMLButtonElement>('[aria-label="Remove draft"]')!;
-  expect(send.disabled).toBe(true);
-  expect(remove.disabled).toBe(true);
+  expect(send.getAttribute("aria-disabled")).toBe("true");
+  expect(remove.getAttribute("aria-disabled")).toBe("true");
   expect(await tooltipText(send)).toContain("still being delivered");
-  expect(host.querySelector('[role="status"]')?.textContent).toContain("Sending...");
+  expect(host.querySelector('[role="status"]')?.textContent).toContain("Sending…");
   await act(async () => {
     send.click();
     remove.click();
@@ -203,8 +202,8 @@ it.each(["undelivered", "uncertain"] as const)(
     await act(async () => render(true));
     const send = host.querySelector<HTMLButtonElement>('[aria-label="Send draft"]')!;
     const remove = host.querySelector<HTMLButtonElement>('[aria-label="Remove draft"]')!;
-    expect(send.disabled).toBe(true);
-    expect(remove.disabled).toBe(true);
+    expect(send.getAttribute("aria-disabled")).toBe("true");
+    expect(remove.getAttribute("aria-disabled")).toBe("true");
     await act(async () => {
       send.click();
       remove.click();
@@ -212,8 +211,8 @@ it.each(["undelivered", "uncertain"] as const)(
     expect(onSendDraft).not.toHaveBeenCalled();
     expect(onRemoveDraft).not.toHaveBeenCalled();
     await act(async () => render(false));
-    expect(send.disabled).toBe(false);
-    expect(remove.disabled).toBe(false);
+    expect(send.getAttribute("aria-disabled")).not.toBe("true");
+    expect(remove.getAttribute("aria-disabled")).not.toBe("true");
     if (followUpDelivery === "uncertain") {
       expect(host.querySelector('[role="status"]')?.textContent).toContain(
         "May have been delivered",
@@ -241,7 +240,7 @@ it("keeps ordinary draft controls available during a running turn", async () => 
     ),
   );
   const send = host.querySelector<HTMLButtonElement>('[aria-label="Send draft"]')!;
-  expect(send.disabled).toBe(false);
+  expect(send.getAttribute("aria-disabled")).not.toBe("true");
   expect(host.querySelector<HTMLButtonElement>('[aria-label="Remove draft"]')!.disabled).toBe(
     false,
   );

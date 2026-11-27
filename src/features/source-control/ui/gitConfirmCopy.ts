@@ -1,38 +1,79 @@
 import { t } from "../../../shared/i18n/git";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import type { GitConfirmation } from "../model/gitConfirmation";
 
-/** Confirmation copy for destructive Git panel actions, as [message, confirm label]. */
-export function discardSelectedCopy(count: number): [string, string] {
-  return [
-    t(
-      "Discard changes in {p0} selected files? Untracked files will be deleted. This cannot be undone.",
-      { p0: count },
-    ),
-    t("Discard"),
-  ];
+/** Confirmation copy for destructive Git panel actions, ready for `confirmGitAction`. */
+export function discardSelectedCopy(count: number): GitConfirmation {
+  return {
+    title: t("Discard changes in {p0} selected files?", { p0: count }),
+    message: t("Untracked files will be deleted. This cannot be undone."),
+    confirmLabel: t("Discard"),
+  };
 }
 
 export function discardUnstagedCopy(
   count: number,
   onlyName: string | undefined,
   untrackedOnly: boolean,
-): [string, string] {
-  return [
-    untrackedOnly
-      ? t("Delete untracked file {p0}?", { p0: onlyName })
-      : count === 1 && onlyName
-        ? t("Discard changes in {p0}? This cannot be undone.", { p0: onlyName })
-        : t("Discard all unstaged changes in {p0} files? This cannot be undone.", { p0: count }),
-    untrackedOnly ? t("Delete") : t("Discard"),
-  ];
+): GitConfirmation {
+  const message = t("This cannot be undone.");
+  if (untrackedOnly) {
+    return {
+      title: t("Delete untracked file {p0}?", { p0: onlyName }),
+      message,
+      confirmLabel: t("Delete"),
+    };
+  }
+  return {
+    title:
+      count === 1 && onlyName
+        ? t("Discard changes in {p0}?", { p0: onlyName })
+        : t("Discard all unstaged changes in {p0} files?", { p0: count }),
+    message,
+    confirmLabel: t("Discard"),
+  };
 }
 
-export function amendPushedCopy(): [string, string] {
-  return [
-    t(
-      "Amend a commit that is already pushed? {p0} cannot push the result. You will need a force push from the terminal.",
-      { p0: PRODUCT_IDENTITY.displayName },
-    ),
-    t("Amend"),
-  ];
+export function amendPushedCopy(): GitConfirmation {
+  return {
+    title: t("Amend a commit that is already pushed?"),
+    message: t("{p0} cannot push the result. You will need a force push from the terminal.", {
+      p0: PRODUCT_IDENTITY.displayName,
+    }),
+    confirmLabel: t("Amend"),
+  };
+}
+
+export function trustRepositoryCopy(cwd: string): GitConfirmation {
+  return {
+    title: t("Trust Git repository at {p0}?", { p0: cwd }),
+    message: t("This adds only this path to Git safe.directory."),
+    confirmLabel: t("Trust this repository"),
+    tone: "normal",
+  };
+}
+
+export function defaultBranchCopy(kind: "push" | "pr", branch: string): GitConfirmation {
+  return {
+    title:
+      kind === "pr"
+        ? t('Create a pull request from default branch "{p0}"?', { p0: branch })
+        : t('Push to default branch "{p0}"?', { p0: branch }),
+    confirmLabel: kind === "pr" ? t("Create pull request") : t("Push"),
+    tone: "normal",
+  };
+}
+
+export function discardConflictCopy(): GitConfirmation {
+  return {
+    title: t("Discard the unsaved conflict resolution?"),
+    confirmLabel: t("Discard"),
+  };
+}
+
+export function deleteRemoteBranchCopy(ref: string): GitConfirmation {
+  return {
+    title: t("Delete {p0} from the remote?", { p0: ref }),
+    confirmLabel: t("Delete"),
+  };
 }

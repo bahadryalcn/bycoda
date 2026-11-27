@@ -1,6 +1,8 @@
 import "./SheetGridView.css";
 import type { CSSProperties } from "react";
 import { Text } from "../../../shared/ui/Text";
+import { Badge } from "../../../shared/ui/Badge";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale } from "../../../shared/i18n/technical";
@@ -83,24 +85,32 @@ export function SheetGridView({
       }
     >
       {grid.truncated ? (
-        <Text
-          as="div"
-          size="micro"
-          tone="secondary"
-          {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "shrink-0 px-3 py-1")}
+        <div
+          {...surfaceAttributes(
+            { frame: "pane", edge: "bottom" },
+            "flex shrink-0 items-center gap-1.5 px-3 py-1",
+          )}
         >
-          {t("Showing the first ")}
-          {format.formatNumber(grid.rowCount, { maximumFractionDigits: 0 })}
-          {t(" of")} {format.formatNumber(grid.totalRows, { maximumFractionDigits: 0 })}
-          {t(" rows and")} {format.formatNumber(grid.columns.length, { maximumFractionDigits: 0 })}
-          {t(" of")} {format.formatNumber(grid.totalColumns, { maximumFractionDigits: 0 })}
-          {t(" columns.")}
-          {grid.budgetLimited
-            ? t(
-                " Cell/text preview budget reached; some values are omitted or shortened. Open the original file to see all values.",
-              )
-            : ""}
-        </Text>
+          <Badge size="sm" tone="neutral">
+            {t("{p0} of {p1} rows", {
+              p0: format.formatNumber(grid.rowCount, { maximumFractionDigits: 0 }),
+              p1: format.formatNumber(grid.totalRows, { maximumFractionDigits: 0 }),
+            })}
+          </Badge>
+          <InfoPopover label={t("Preview limits")}>
+            <Text as="p" size="caption" tone="secondary">
+              {t("Showing {p0} of {p1} columns.", {
+                p0: format.formatNumber(grid.columns.length, { maximumFractionDigits: 0 }),
+                p1: format.formatNumber(grid.totalColumns, { maximumFractionDigits: 0 }),
+              })}
+              {grid.budgetLimited
+                ? ` ${t(
+                    "Cell/text preview budget reached; some values are omitted or shortened. Open the original file to see all values.",
+                  )}`
+                : ""}
+            </Text>
+          </InfoPopover>
+        </div>
       ) : null}
       <div
         ref={scrollRef}
@@ -175,14 +185,8 @@ export function SheetGridView({
               aria-label={t("Row")}
               {...surfaceAttributes(
                 { frame: "pane", edge: "right", variant: "canvas" },
-                "sticky left-0 z-1 shrink-0 [width:var(--layout-width)]",
+                "sticky left-0 z-1 shrink-0 [width:var(--document-row-header-width)]",
               )}
-              style={
-                {
-                  "--layout-width":
-                    rowHeaderWidth === undefined ? undefined : rowHeaderWidth + "px",
-                } as CSSProperties
-              }
             />
             {grid.columns.map((label, column) => (
               <div
@@ -191,13 +195,8 @@ export function SheetGridView({
                 aria-colindex={column + 2}
                 {...surfaceAttributes(
                   { frame: "pane", edge: "right" },
-                  "shrink-0 text-center [width:var(--layout-width)]",
+                  "shrink-0 text-center [width:var(--document-column-width)]",
                 )}
-                style={
-                  {
-                    "--layout-width": columnWidth === undefined ? undefined : columnWidth + "px",
-                  } as CSSProperties
-                }
               >
                 {label}
               </div>

@@ -1,8 +1,10 @@
 import type { HostSession } from "./protocol";
 import type { Attachment } from "../../sessions";
+import { HOST_ATTACHMENT_ID } from "../../../shared/model/hostAttachmentId";
 
 type Chunk = { data: string; offset: number; size: number };
 type PreviewRead = (params: { sessionId: string; id: string; offset: number }) => Promise<Chunk>;
+type AttachmentSource = Pick<Attachment, "id" | "size" | "path"> & { storageId?: string | null };
 const downloads = new Map<string, Promise<string>>();
 export const PREVIEW_BUDGET_BYTES = 40 * 1024 * 1024;
 const MAX_PREVIEWS = 32;
@@ -13,11 +15,12 @@ const missingOnHost = new Set<string>();
 const MISSING_ON_HOST = "Attachment file is missing on its machine.";
 
 /** The Host refused the read because the file is absent there (the Host's
- * `ATTACHMENT_MISSING_MESSAGE` refusal, which the native layer forwards as text). A transport
- * or transient Host failure never matches. */
+ * `ATTACHMENT_MISSING_MESSAGE` refusal, which the native layer forwards as text), or because the
+ * id is not one it stores files under ("Invalid attachment ID": an older or desktop-local id that
+ * is refused on every try). A transport or transient Host failure never matches. */
 export function attachmentMissingOnHost(error: unknown): boolean {
   const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
-  return /attachment file is missing on this machine/i.test(message);
+  return /attachment file is missing on this machine|invalid attachment id/i.test(message);
 }
 let activeDownloads = 0;
 const waiting: Array<() => void> = [];
@@ -38,15 +41,20 @@ async function limitedDownload(run: () => Promise<string>): Promise<string> {
   }
 }
 
-function downloadKey(
-  machine: string,
-  session: string,
-  file: { id: string; size: number; path?: string },
-): string {
+function downloadKey(machine: string, session: string, file: AttachmentSource): string {
   return JSON.stringify([machine, session, file.id, file.size, file.path]);
 }
 
-function canPreview(file: Attachment): boolean {
+function hostMayHaveBytes(file: AttachmentSource): boolean {
+  // Generated images are read by block ID. A hidden source path leaves the storage ID unknown.
+  return file.storageId === null || HOST_ATTACHMENT_ID.test(file.storageId ?? file.id);
+}
+
+function generatedSource<T extends Pick<AttachmentSource, "size" | "path">>(id: string, image: T) {
+  return { ...image, id, storageId: image.path ? image.path.split(/[\\/]/).pop() : null };
+}
+
+export function canPreview(file: Attachment): boolean {
   return (
     file.kind === "image" &&
     Number.isSafeInteger(file.size) &&
@@ -55,15 +63,16 @@ function canPreview(file: Attachment): boolean {
   );
 }
 
-async function downloadPreview(
+export async function downloadPreview(
   machineId: string,
   sessionId: string,
-  file: Attachment,
+  file: AttachmentSource,
   read: PreviewRead,
   manual = false,
 ): Promise<string> {
   if (!Number.isSafeInteger(file.size) || file.size < 0 || file.size > MAX_ATTACHMENT_PREVIEW_BYTES)
     throw new Error("File is too large to preview (maximum 25 MB).");
+  if (!hostMayHaveBytes(file)) throw new Error(MISSING_ON_HOST);
   const key = downloadKey(machineId, sessionId, file);
   if (missingOnHost.has(key)) throw new Error(MISSING_ON_HOST);
   if (!manual && (failures.get(key)?.retryAt ?? 0) > Date.now())
@@ -119,20 +128,24 @@ export function bindRemoteAttachmentReaders(
   snapshot: HostSession,
   read: PreviewRead,
 ): HostSession {
+  const sessionId = snapshot.session.id;
+  const load = (file: AttachmentSource) => () =>
+    downloadPreview(machineId, sessionId, file, read, true);
   let changed = false;
   const blocks = snapshot.session.blocks.map((block) => {
-    if (!block.attachments?.length) return block;
     let blockChanged = false;
-    const attachments = block.attachments.map((file) => {
-      if (file.kind === "image" || file.mimeType === "inode/directory" || file.loadPreview)
-        return file;
-      changed = blockChanged = true;
-      return {
-        ...file,
-        loadPreview: () => downloadPreview(machineId, snapshot.session.id, file, read, true),
-      };
+    const attachments = block.attachments?.map((file) => {
+      if (file.mimeType === "inode/directory" || file.loadPreview) return file;
+      blockChanged = true;
+      return { ...file, loadPreview: load(file) };
     });
-    return blockChanged ? { ...block, attachments } : block;
+    const image =
+      block.image && !block.image.loadPreview
+        ? { ...block.image, loadPreview: load(generatedSource(block.id, block.image)) }
+        : block.image;
+    if (!blockChanged && image === block.image) return block;
+    changed = true;
+    return { ...block, attachments, image };
   });
   return changed ? { ...snapshot, session: { ...snapshot.session, blocks } } : snapshot;
 }
@@ -162,7 +175,7 @@ async function attachmentPreviews(
   let bytes = 0;
   for (const block of [...snapshot.session.blocks].reverse()) {
     for (const file of [...(block.attachments ?? [])].reverse()) {
-      if (!canPreview(file) || file.previewUrl) continue;
+      if (!canPreview(file) || file.previewUrl || !hostMayHaveBytes(file)) continue;
       if (selected.has(file.id)) continue;
       if (selected.size >= MAX_PREVIEWS || bytes + file.size > PREVIEW_BUDGET_BYTES) continue;
       selected.add(file.id);
@@ -175,6 +188,7 @@ async function attachmentPreviews(
       if (!block.attachments?.length) return block;
       const attachments = await Promise.all(
         block.attachments.map(async (file) => {
+          if (!hostMayHaveBytes(file)) return file;
           if (file.kind === "image" && !file.previewUrl && !selected.has(file.id)) {
             if (!canPreview(file)) return file;
             if (!file.data && file.loadPreview) return file;
@@ -252,7 +266,7 @@ export async function withRemoteAttachmentPreviews(
           ...block,
           attachments: [
             ...(block.attachments ?? []),
-            { ...block.image, id: block.id, kind: "image" as const },
+            { ...generatedSource(block.id, block.image), kind: "image" as const },
           ],
         };
         normalizedBlocks.set(block, normalized);

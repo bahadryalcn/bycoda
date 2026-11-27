@@ -2,21 +2,22 @@ import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { type ReactNode, useState } from "react";
 import { t } from "../../../shared/i18n";
-import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { Check, RotateCcw } from "../../../shared/ui/icons";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import type { BoardGoal } from "../model/goalClient";
-import { projectDisplayName } from "../../projects/public/projectNames";
+import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import "./task-goals.css";
 
 /** The plan a goal proposes, one numbered step per task with its project and dependencies. */
 export function GoalPlanSteps({ goal }: { goal: BoardGoal }) {
+  const projectLabels = useProjectLabels();
   if (goal.status !== "awaiting-approval" || !goal.plan) return null;
   const tasks = goal.plan.tasks;
   const projectOf = (id: string | undefined, path: string) =>
-    goal.projects.find((project) => project.id === id)?.name ?? projectDisplayName(path);
+    goal.projects.find((project) => project.id === id)?.name ??
+    projectDisplayNameFrom(path, projectLabels);
   const titleOf = (key: string) => tasks.find((task) => task.key === key)?.title ?? key;
   return (
     <div className="grid min-w-0 gap-1">
@@ -41,22 +42,14 @@ export function GoalPlanSteps({ goal }: { goal: BoardGoal }) {
                   {task.title}
                 </Text>
                 <Text size="micro" tone="secondary" leading="inherit" className="goal-plan-meta">
-                  {t("in ")}
-                  {projectOf(task.projectId, task.project)}
+                  {t("in {p0}", { p0: projectOf(task.projectId, task.project) })}
                 </Text>
                 {task.dependsOn.length ? (
                   <Text size="micro" tone="secondary" leading="inherit" className="goal-plan-meta">
-                    <span className="shrink-0">{t("· after ")}</span>
-                    <BadgeList
-                      label={t("After")}
-                      size="xs"
-                      max={2}
-                      className="min-w-0"
-                      items={task.dependsOn.map((key, position) => {
-                        const title = titleOf(key);
-                        return { id: `${position}:${title}`, label: title };
-                      })}
-                    />
+                    <span className="shrink-0">{t("After")}</span>
+                    <Text size="inherit" tone="inherit" truncate className="min-w-0">
+                      {task.dependsOn.map((key) => titleOf(key)).join(", ")}
+                    </Text>
                   </Text>
                 ) : null}
               </span>

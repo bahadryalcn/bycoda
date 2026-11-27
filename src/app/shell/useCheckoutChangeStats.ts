@@ -1,109 +1,89 @@
 import { useMemo } from "react";
 import { useT } from "../../shared/i18n";
 import { useT as useGitT } from "../../shared/i18n/git";
-import {
-  useProjectDiffStats,
-  useProjectsDiffStats,
-} from "../../features/source-control/hooks/useProjectDiffStats";
+import { useChangeTotals } from "../../features/source-control/hooks/useChangeTotals";
+import { changeSectionRoots } from "../../features/source-control/model/worktreeScope";
 import { useProjectWorktrees } from "../../features/source-control/hooks/useProjectWorktrees";
-import { useGitSubmodules } from "../../features/source-control/hooks/useGitSubmodules";
 import {
+  checkoutStateKey,
   checkoutTitleWith,
-  checkoutRepositoryPaths,
   folderName,
-  checkoutSelectionScope,
-  loadCheckoutSelection,
-  resolveCheckoutSelection,
+  followedCheckoutRepository,
   sessionCheckout,
 } from "../../features/source-control/model/checkoutSelection";
+import { useRetainedState } from "../../shared/hooks/useRetainedState";
+import type { WorktreeFocus } from "../../features/source-control/model/worktreeFocus";
 import type { Worktree } from "../../features/source-control/model/worktrees";
 import { sameProjectPath } from "../../features/projects/model/recents";
-import { useRetainedState } from "../../shared/hooks/useRetainedState";
 import type { ChangeScope } from "./ChangesTabTooltip";
 
 /**
- * Changes tab totals. They follow the checkout the panel is showing: the stored
- * checkout choice, or every checkout when the user picked the overview.
+ * Changes tab totals of one repository. A focused sidebar header shows that worktree; under
+ * "All worktrees" the badge follows the repository the panel's Graph follows ("Auto"): the
+ * Graph choice, else the row last used, else the first worktree with changes.
+ *
+ * Deliberately no repository discovery here: All worktrees is the default, and
+ * walking every worktree's tree for child repositories queued 20+ scans on the
+ * Host at startup. Totals are plain per-worktree diff stats; the Changes panel
+ * discovers child repositories only for a worktree that is opened.
  */
 export function useCheckoutChangeStats({
   gitRoot,
   repositoryPaths,
+  focus,
   active,
 }: {
   gitRoot: string;
-  /** Workspace repositories; the checkout scope only applies without them. */
+  /** Workspace repositories; the worktree scope only applies without them. */
   repositoryPaths: readonly string[] | undefined;
+  /** The sidebar header's worktree; undefined means All worktrees. */
+  focus: WorktreeFocus | undefined;
   /** The panel is visible and the sidebar available. */
   active: boolean;
 }) {
   const t = useT();
   const gitT = useGitT();
-  const checkoutScopeEnabled = active && !repositoryPaths?.length;
-  const { data: checkoutTrees } = useProjectWorktrees(gitRoot, checkoutScopeEnabled);
-  const checkoutScope = useMemo(() => {
+  const scopeEnabled = active && !repositoryPaths?.length;
+  const { data: worktreeData } = useProjectWorktrees(gitRoot, scopeEnabled);
+  const worktrees = useMemo(() => {
     const trees: Worktree[] = [];
-    for (const tree of checkoutTrees?.worktrees ?? []) {
+    for (const tree of worktreeData?.worktrees ?? []) {
       if (tree.missing || tree.prunable) continue;
       if (trees.some((entry) => sameProjectPath(entry.path, tree.path))) continue;
       trees.push(tree);
     }
     return trees.length > 1 ? trees : null;
-  }, [checkoutTrees]);
-  const checkoutPaths = useMemo(
-    () => checkoutScope?.map((tree) => tree.path) ?? [],
-    [checkoutScope],
-  );
-  const checkoutSelectionKey = checkoutSelectionScope(gitRoot, checkoutPaths);
-  const [storedCheckout] = useRetainedState<string | null>(
-    `source-control:checkouts:${checkoutSelectionKey}:selected`,
-    () => loadCheckoutSelection(checkoutSelectionKey),
-  );
-  const { modules, error: discoveryError } = useGitSubmodules(
-    checkoutPaths,
-    checkoutScopeEnabled,
-    true,
-  );
-  const repositoryTargets = checkoutRepositoryPaths(checkoutPaths, modules);
-  const selectedCheckout = checkoutScope
-    ? resolveCheckoutSelection(
-        storedCheckout,
-        gitRoot,
-        checkoutPaths,
-        Object.fromEntries(checkoutScope.map((tree) => [tree.path, tree])),
-        modules,
-      )
-    : null;
-  const allCheckouts = selectedCheckout === "";
-  const statsRoot = selectedCheckout ? selectedCheckout : gitRoot;
-  const singleStats = useProjectDiffStats(statsRoot, active && !allCheckouts);
-  const allStats = useProjectsDiffStats(
-    allCheckouts ? repositoryTargets : [],
-    active && allCheckouts,
-  );
-  const changeStats = allCheckouts
-    ? discoveryError ||
-      checkoutPaths.some((path) => modules[path] === undefined) ||
-      allStats.length !== repositoryTargets.length ||
-      allStats.some((stats) => !stats)
-      ? null
-      : allStats.reduce<{ files: number; additions: number; deletions: number }>(
-          (total, stats) =>
-            stats
-              ? {
-                  files: total.files + stats.files,
-                  additions: total.additions + stats.additions,
-                  deletions: total.deletions + stats.deletions,
-                }
-              : total,
-          { files: 0, additions: 0, deletions: 0 },
+  }, [worktreeData]);
+  const paths = useMemo(() => worktrees?.map((tree) => tree.path) ?? [], [worktrees]);
+  const focusedTree =
+    worktrees && focus
+      ? worktrees.find((tree) => sameProjectPath(tree.path, focus.path))
+      : undefined;
+  // The panel's Graph choice and last-used row, shared through retained state.
+  const stateKey = checkoutStateKey(gitRoot, paths);
+  const [graphChoice] = useRetainedState(`${stateKey}:sections`, "");
+  const [lastUsed] = useRetainedState(`${stateKey}:last-used`, "");
+  // A focus that is not listed (deleted, still loading) follows the panel instead.
+  const followed =
+    worktrees && !focusedTree
+      ? followedCheckoutRepository(changeSectionRoots(worktrees, gitRoot), paths, [
+          graphChoice,
+          lastUsed,
+        ])
+      : undefined;
+  // The badge counts the whole worktree the followed repository belongs to.
+  const tree =
+    focusedTree ??
+    (followed
+      ? worktrees?.find((entry) =>
+          sameProjectPath(entry.path, sessionCheckout(followed, paths) ?? followed),
         )
-    : singleStats;
+      : undefined);
+  const totals = useChangeTotals([tree?.path ?? gitRoot], active);
+  const changeStats = totals.ready ? totals.stats : null;
   const changeScope = ((): ChangeScope | null => {
-    if (!checkoutScope) return null;
-    if (allCheckouts) return { title: t("All checkouts") };
-    const tree = checkoutScope.find((entry) => sameProjectPath(entry.path, selectedCheckout ?? ""));
-    if (!tree) return selectedCheckout ? { title: folderName(selectedCheckout) } : null;
-    const own = sessionCheckout(gitRoot, checkoutPaths);
+    if (!tree) return null;
+    const own = sessionCheckout(gitRoot, paths);
     return {
       title: checkoutTitleWith(tree, gitT),
       folder: folderName(tree.path),

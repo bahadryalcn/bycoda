@@ -10,7 +10,12 @@ import type { HostTasks } from "../tasks/tasks";
 import type { HostGoals } from "../goals/goals";
 import type { HostAutomations } from "../automations/automations";
 import type { RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
-import { normalizeConversationTaskConfiguration } from "./conversation-task-tools";
+import {
+  conversationWorkChoices,
+  normalizeConversationTaskConfiguration,
+} from "./conversation-task-tools";
+import { createWork, type WorkExecution } from "../tasks/work-request";
+import type { WorkOrigin } from "../../src/features/tasks/model/hostTasks";
 import type { DelegatedRoomPrincipal } from "../assistant/room/assistant-room-delegation";
 import {
   assertPoolExecution,
@@ -112,7 +117,16 @@ export class ConversationThreadWorkTools {
     private readonly store: HostStore,
     private readonly tasks: Pick<
       HostTasks,
-      "list" | "save" | "startTask" | "move" | "delete" | "transfer" | "recheckReview" | "reorder"
+      | "ready"
+      | "list"
+      | "get"
+      | "save"
+      | "startTask"
+      | "move"
+      | "delete"
+      | "transfer"
+      | "recheckReview"
+      | "reorder"
     >,
     private readonly goals: Pick<
       HostGoals,
@@ -126,7 +140,14 @@ export class ConversationThreadWorkTools {
     readonly pool: ModelPoolSource,
     /** Observation-only: lets the assistant report on work its thread started. */
     private readonly trackWork?: (item: ThreadWorkTrack) => Promise<void>,
+    /** The owner's assistant profile plan-approval setting; unreadable counts as not "never". */
+    private readonly planApproval?: () => Promise<"always" | "large" | "never">,
   ) {}
+
+  /** True only when the owner's assistant profile says goals need no plan approval. */
+  private async plansUnapproved() {
+    return (await this.planApproval?.().catch(() => undefined)) === "never";
+  }
 
   private async track(
     action: string,
@@ -182,7 +203,10 @@ export class ConversationThreadWorkTools {
     const execution =
       action === "tasks.create" ? await this.resolveExecution(input.execution) : undefined;
     if (!(await authorized())) throw new Error("Delegated Room authority revoked.");
-    const result = await this.execute(action, input, principal.projectId, id, current, execution);
+    const result = await this.execute(action, input, principal.projectId, id, current, execution, {
+      kind: "room",
+      sessionId: principal.threadId,
+    });
     if (!(await authorized())) throw new Error("Delegated Room authority revoked.");
     return result ?? { status: "completed", action, targetId: id };
   }
@@ -349,7 +373,10 @@ export class ConversationThreadWorkTools {
       const execution = creating ? await this.resolveExecution(input.execution) : undefined;
       if (execution && execution.poolRowId !== reviewedExecution?.poolRowId)
         throw new Error("The assistant's model pool changed during approval. Review again.");
-      return this.execute(action, input, principal.projectId, id, current, execution);
+      return this.execute(action, input, principal.projectId, id, current, execution, {
+        kind: "voice",
+        sessionId: principal.threadId,
+      });
     });
     await check();
     await this.track(action, principal, id, current, input);
@@ -378,26 +405,41 @@ export class ConversationThreadWorkTools {
     projectId: string,
     id: string,
     current: unknown,
-    execution?: PoolExecution,
+    execution: PoolExecution | undefined,
+    origin: WorkOrigin,
   ): Promise<unknown> {
     const exec = execution ? executionFields(execution) : {};
     if (action.startsWith("tasks.")) {
       const task = current as Awaited<ReturnType<HostTasks["list"]>>[number] | undefined;
-      if (action === "tasks.create")
-        return this.tasks.save({
-          ...normalizeConversationTaskConfiguration(input, id, projectId, await this.tasks.list()),
-          ...exec,
-          expectedAbsent: true,
-          id,
-          projectId,
-          title: input.title,
-          prompt: input.prompt,
-          status: input.status === "queued" ? "queued" : "todo",
-          review: true,
-          autoMerge: false,
-          continueUntilDone: false,
-          maxRunMinutes: 0,
-        });
+      if (action === "tasks.create") {
+        const choices = conversationWorkChoices(input);
+        if (choices.useSessionModel)
+          throw new Error("useSessionModel needs a coding session; Room and voice use settings.");
+        return createWork(
+          { store: this.store, tasks: this.tasks },
+          {
+            id,
+            projectId,
+            request: String(input.prompt),
+            title: String(input.title),
+            source: origin,
+            executor: choices.executor,
+            helpers: choices.helpers,
+            // Use settings; the reviewed pool model above is only the fallback target.
+            execution: exec as WorkExecution,
+            options: {
+              ...normalizeConversationTaskConfiguration(
+                input,
+                id,
+                projectId,
+                await this.tasks.list(),
+              ),
+              status: input.status === "queued" ? "queued" : "todo",
+            },
+          },
+          { requestId: id },
+        );
+      }
       if (action === "tasks.reorder") {
         await this.tasks.reorder((current as Task[]).map((item) => item.id));
         return { status: "completed", action, targetId: id };
@@ -433,7 +475,9 @@ export class ConversationThreadWorkTools {
       });
     }
     if (action.startsWith("goals.")) {
-      if (action === "goals.create")
+      if (action === "goals.create") {
+        // Same derivation as the assistant job runtime: only planApproval "never" drops both steps.
+        const unapproved = await this.plansUnapproved();
         return this.goals.create({
           ...exec,
           expectedAbsent: true,
@@ -445,12 +489,14 @@ export class ConversationThreadWorkTools {
           ...(input.isolate === undefined ? {} : { isolate: input.isolate }),
           autoMerge: false,
           continueUntilDone: false,
-          approvePlan: true,
-          manualStart: true,
+          approvePlan: !unapproved,
+          manualStart: !unapproved,
+          ...(unapproved ? { planApprovalPolicy: "never" as const } : {}),
           finalReview: true,
           verifyDefaults: { review: true },
           maxRunMinutes: 0,
         });
+      }
       const goal = current as Awaited<ReturnType<HostGoals["list"]>>[number];
       if (action === "goals.cancel") return this.goals.cancel(id);
       if (action === "goals.delete") {
@@ -458,7 +504,9 @@ export class ConversationThreadWorkTools {
           throw new Error("Cancel this goal before deletion.");
         return this.goals.delete(id);
       }
-      if (goal.autoMerge || goal.continueUntilDone || !goal.approvePlan || !goal.manualStart)
+      // Plan approval and manual start are required on a goal only while the profile asks for them.
+      const gated = !(await this.plansUnapproved()) && (!goal.approvePlan || !goal.manualStart);
+      if (goal.autoMerge || goal.continueUntilDone || gated)
         throw new Error("Use the owner UI for this goal's execution policy.");
       if (action === "goals.replan") return this.goals.replan(id, input.feedback, goal);
       return this.goals.update(

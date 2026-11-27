@@ -49,9 +49,19 @@ const BAR_STACK_MAX_PX = 330;
 const BAR_STACK_PANE_SHARE = 0.75;
 const SCROLLER = ".agent-transcript";
 const TURN = ".transcript-turn";
-const ANCHOR = "[data-prompt-anchor]";
+// Delegation notices use their own attribute: `data-prompt-anchor` also starts the sent-prompt rise.
+const ANCHOR = "[data-prompt-anchor], [data-outline-anchor]";
 
 type Hover = { id: string; el: HTMLElement };
+type StackLayout = {
+  count: number;
+  newestId: string | null;
+  activeId: string | null;
+  firstBarId: string;
+  lastBarId: string;
+  budget: number;
+  stack: ReturnType<typeof barStack>;
+};
 
 type Props = {
   blocks: Block[];
@@ -83,6 +93,7 @@ export const PromptOutline = memo(function PromptOutline({
   const prompts = promptBlocks(blocks);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [stackBudget, setStackBudget] = useState(BAR_STACK_MAX_PX);
+  const [lastLayout, setLastLayout] = useState<StackLayout | null>(null);
   const [hover, setHover] = useState<Hover | null>(null);
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -121,7 +132,7 @@ export const PromptOutline = memo(function PromptOutline({
     }
     const anchors: OutlineAnchor[] = [];
     for (const el of scroller.querySelectorAll<HTMLElement>(ANCHOR)) {
-      const id = el.dataset.promptAnchor;
+      const id = el.dataset.promptAnchor ?? el.dataset.outlineAnchor;
       if (id) anchors.push({ id, ...promptBand(el, viewport) });
     }
     setActiveId(
@@ -145,7 +156,9 @@ export const PromptOutline = memo(function PromptOutline({
     const observer = new ResizeObserver(schedule);
     observer.observe(scroller);
     // Content growth moves the anchors without a scroll event.
-    if (scroller.firstElementChild) observer.observe(scroller.firstElementChild);
+    const content =
+      scroller.querySelector("[data-transcript-content]") ?? scroller.firstElementChild;
+    if (content) observer.observe(content);
     schedule();
     return () => {
       scroller.removeEventListener("scroll", schedule);
@@ -227,7 +240,8 @@ export const PromptOutline = memo(function PromptOutline({
     // The transcript scrolls to the bottom on each streaming update until a
     // wheel-up event occurs. Send one, so the jump stays.
     scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 }));
-    const selector = `[data-prompt-anchor="${CSS.escape(id)}"]`;
+    const escaped = CSS.escape(id);
+    const selector = `[data-prompt-anchor="${escaped}"], [data-outline-anchor="${escaped}"]`;
     let anchor = scroller.querySelector<HTMLElement>(selector);
     if (!anchor && revealBlock?.(id)) {
       anchor = scroller.querySelector<HTMLElement>(selector);
@@ -292,12 +306,26 @@ export const PromptOutline = memo(function PromptOutline({
       <DropdownMenu
         anchor={menuAnchor}
         label={menuLabel}
-        width={320}
+        size="lg"
         maxHeight={360}
-        items={prompts.map((prompt) => ({
+        density="compact"
+        windowed
+        initialActiveId={activeId ?? undefined}
+        // Numbered single-line rows: the list scans like a table of contents, the current turn checked.
+        items={prompts.map((prompt, index) => ({
           kind: "item" as const,
           id: prompt.id,
           label: promptLabel(prompt),
+          icon: (
+            <Text size="caption" tone="muted" className="tabular-nums">
+              {index + 1}
+            </Text>
+          ),
+          content: (
+            <Text size="inherit" truncate className="min-w-0 flex-1">
+              {promptLabel(prompt)}
+            </Text>
+          ),
           selectionRole: "radio" as const,
           checked: prompt.id === activeId,
         }))}
@@ -309,7 +337,34 @@ export const PromptOutline = memo(function PromptOutline({
   if (prompts.length < MIN_PROMPTS) return null;
 
   const activeIndex = prompts.findIndex((prompt) => prompt.id === activeId);
-  const stack = barStack(prompts.length, activeIndex >= 0 ? activeIndex : null, stackBudget);
+  // Keep bar positions stable while history is prepended around the same visible prompt.
+  const offset = prompts.length - (lastLayout?.count ?? 0);
+  const retained =
+    lastLayout &&
+    offset >= 0 &&
+    lastLayout.newestId === lastId &&
+    lastLayout.activeId === activeId &&
+    lastLayout.budget === stackBudget &&
+    prompts[lastLayout.stack.start + offset]?.id === lastLayout.firstBarId &&
+    prompts[lastLayout.stack.end - 1 + offset]?.id === lastLayout.lastBarId;
+  const stack = retained
+    ? {
+        start: lastLayout.stack.start + offset,
+        end: lastLayout.stack.end + offset,
+        gap: lastLayout.stack.gap,
+      }
+    : barStack(prompts.length, activeIndex >= 0 ? activeIndex : null, stackBudget);
+  if (!retained || offset !== 0) {
+    setLastLayout({
+      count: prompts.length,
+      newestId: lastId,
+      activeId,
+      firstBarId: prompts[stack.start].id,
+      lastBarId: prompts[stack.end - 1].id,
+      budget: stackBudget,
+      stack,
+    });
+  }
   const bars = prompts.slice(stack.start, stack.end);
   const hoverIndex = hover ? bars.findIndex((bar) => bar.id === hover.id) : -1;
   // One tab stop for the whole rail. Arrow keys walk it from there.
@@ -345,7 +400,6 @@ export const PromptOutline = memo(function PromptOutline({
         onMouseLeave={leaveRail}
         onBlur={blurRail}
         onKeyDown={onKeyDown}
-        // z-30: in-pane overlay above the transcript; no in-pane layer scale exists, so the literal stays.
         className="absolute top-1/2 right-4 z-(--layer-pane-sheet) flex -translate-y-1/2 flex-col items-end w-(--outline-width) max-h-(--outline-max-height) @max-[58rem]:hidden"
       >
         {bars.map((prompt, index) => {
@@ -406,7 +460,8 @@ export const PromptOutline = memo(function PromptOutline({
             solid
             onDismiss={close}
             aria-label={t("Prompt preview")}
-            className="pointer-events-none flex flex-col gap-1 p-3 font-sans"
+            variant="panel"
+            className="pointer-events-none flex flex-col gap-1 font-sans"
           >
             <Text as="p" size="body" tone="primary" weight="medium" leading="snug" truncate>
               {preview.title}

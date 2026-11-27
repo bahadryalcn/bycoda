@@ -3,7 +3,7 @@ import { registerHooks } from "node:module";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-// Node source runs need extension resolution for the existing TS module graph.
+// Node strips the source graph's types. The hook only resolves extensionless imports.
 // esbuild resolves and embeds these modules in the packaged .mjs worker.
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -46,6 +46,7 @@ const notes = new HostNotes(
 notes.onDelete = (note) => {
   deletedNote = note;
 };
+const retrySignal = new Int32Array(new SharedArrayBuffer(4));
 const methods = new Set([
   "list",
   "get",
@@ -124,6 +125,7 @@ parentPort.on(
             undefined,
             undefined,
             (path, options) => databaseFactory.open(path, options),
+            (ms) => Atomics.wait(retrySignal, 0, 0, ms),
           );
           desktopPlatform = platform;
         }

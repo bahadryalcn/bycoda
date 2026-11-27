@@ -32,9 +32,17 @@ vi.mock("../../../shared/ui/Alert", () => ({
         : null,
     ),
 }));
-vi.mock("../../../shared/ui/Modal", () => ({
-  Modal: ({ children, title }: { children: ReactNode; title: string }) =>
-    createElement("div", { role: "dialog", "aria-label": title }, children),
+vi.mock("../../../shared/ui/Modal", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../shared/ui/Modal")>()),
+  Modal: ({
+    children,
+    title,
+    footer,
+  }: {
+    children: ReactNode;
+    title: string;
+    footer?: ReactNode;
+  }) => createElement("div", { role: "dialog", "aria-label": title }, children, footer),
 }));
 const local: RemoteMachine = {
   id: "local",
@@ -68,6 +76,7 @@ const overview = (machine = local): TunnelOverview => ({
   providers: [
     { provider: "cloudflare", installed: true, credential: "not-required" },
     { provider: "ngrok", installed: true, credential: "missing" },
+    { provider: "tailscale", installed: true, credential: "not-required" },
   ],
   tunnels: [info],
 });
@@ -128,18 +137,18 @@ async function render() {
   );
 }
 function button(text: string) {
-  const value = [...container.querySelectorAll("button")].find(
-    (b) => !b.closest("[hidden]") && b.textContent === text,
-  );
+  const value = [...container.querySelectorAll("button")].find((b) => b.textContent === text);
   if (!value) throw new Error(`Missing ${text}`);
   return value;
 }
+/** Opens the share dialog of the first computer (This computer) from the header action. */
+async function openShare() {
+  await act(async () => button("Create link").click());
+}
 async function choose(label: string, value: string) {
-  const group = [...container.querySelectorAll("fieldset")].find(
-    (fieldset) =>
-      !fieldset.closest("[hidden]") && fieldset.querySelector("legend")?.textContent === label,
+  const radio = container.querySelector<HTMLButtonElement>(
+    `[role="radiogroup"][aria-label="${label}"] [role="radio"][aria-label="${value}"]`,
   );
-  const radio = group?.querySelector<HTMLInputElement>(`input[type="radio"][value="${value}"]`);
   if (radio) {
     await act(async () => radio.click());
     return;
@@ -154,13 +163,24 @@ async function choose(label: string, value: string) {
   await act(async () => option.click());
 }
 
-it("defaults automatic Host access off and saves both switch changes to the selected Host", async () => {
+it("only enables automatic Host access when Start sharing is submitted", async () => {
   await render();
-  expect(container.querySelector('[role="switch"]')).toBeNull();
-  await choose("Tunnel target", "host");
-  const toggle = container.querySelector<HTMLButtonElement>('[role="switch"]')!;
-  expect(toggle.getAttribute("aria-checked")).toBe("false");
+  await openShare();
+  expect(container.querySelector('input[type="checkbox"]')).toBeNull();
+  await choose("Tunnel target", "bycoda host");
+  const toggle = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+  expect(toggle.checked).toBe(false);
   await act(async () => toggle.click());
+  expect(toggle.checked).toBe(true);
+  expect(vi.mocked(remoteRequest).mock.calls.some(([, method]) => method === "tunnels.start")).toBe(
+    false,
+  );
+  await act(async () => button("Cancel").click());
+  await openShare();
+  const reopened = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+  expect(reopened.checked).toBe(false);
+  await act(async () => reopened.click());
+  await act(async () => button("Share").click());
   expect(remoteRequest).toHaveBeenCalledWith(
     "local",
     "tunnels.start",
@@ -172,23 +192,17 @@ it("defaults automatic Host access off and saves both switch changes to the sele
     false,
     true,
   );
-  expect(toggle.getAttribute("aria-checked")).toBe("true");
-  await act(async () => toggle.click());
-  expect(remoteRequest).toHaveBeenCalledWith(
-    "local",
-    "tunnels.stop",
-    { automatic: true },
-    false,
-    true,
-  );
-  expect(toggle.getAttribute("aria-checked")).toBe("false");
+  expect(
+    vi.mocked(remoteRequest).mock.calls.filter(([, method]) => method === "tunnels.start"),
+  ).toHaveLength(1);
 });
 
 it("hides automatic access for an older Host that cannot persist the setting", async () => {
   delete current.automaticHostAccess;
   await render();
-  await choose("Tunnel target", "host");
-  expect(container.querySelector('[role="switch"]')).toBeNull();
+  await openShare();
+  await choose("Tunnel target", "bycoda host");
+  expect(container.querySelector('input[type="checkbox"]')).toBeNull();
   expect(remoteRequest).not.toHaveBeenCalledWith(
     "local",
     "tunnels.start",
@@ -196,6 +210,36 @@ it("hides automatic access for an older Host that cannot persist the setting", a
     false,
     true,
   );
+});
+
+it("starts a one-time Cloudflare Host tunnel when automatic restart is unchecked", async () => {
+  await render();
+  await openShare();
+  await choose("Tunnel target", "bycoda host");
+  await act(async () => button("Share").click());
+  expect(remoteRequest).toHaveBeenCalledWith(
+    "local",
+    "tunnels.start",
+    { provider: "cloudflare", target: "host" },
+    false,
+    true,
+  );
+});
+
+it("can explicitly stop automatic Host access even without an active link", async () => {
+  current = { ...current, automaticHostAccess: true, tunnels: [] };
+  await render();
+  await openShare();
+  await choose("Tunnel target", "bycoda host");
+  await act(async () => button("Stop automatic Host access").click());
+  expect(remoteRequest).toHaveBeenCalledWith(
+    "local",
+    "tunnels.stop",
+    { automatic: true },
+    false,
+    true,
+  );
+  expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(false);
 });
 
 it("keeps a rejected token for retry and clears it only after acknowledged save", async () => {
@@ -206,6 +250,7 @@ it("keeps a rejected token for retry and clears it only after acknowledged save"
     return original(...args);
   });
   await render();
+  await openShare();
   await choose("Tunnel provider", "ngrok");
   const field = container.querySelector<HTMLInputElement>('input[type="password"]')!;
   await act(async () => {
@@ -241,11 +286,10 @@ it("retains separate machine drafts and binds delayed token completion to its ow
       : original(...args),
   );
   await render();
+  await openShare();
   await choose("Tunnel provider", "ngrok");
-  const field = () =>
-    [...container.querySelectorAll<HTMLInputElement>('input[type="password"]')].find(
-      (item) => !item.closest("[hidden]"),
-    )!;
+  // Only the dialog of the computer being shared from is mounted.
+  const field = () => container.querySelector<HTMLInputElement>('input[type="password"]')!;
   const fill = (value: string) =>
     act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
@@ -261,7 +305,6 @@ it("retains separate machine drafts and binds delayed token completion to its ow
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
   expect(field().disabled).toBe(true);
-  expect(container.querySelector<HTMLInputElement>('input[value="host"]')!.disabled).toBe(true);
   expect(button("Save token securely").getAttribute("aria-busy")).toBe("true");
   await choose("Computer", "Home Mac");
   await choose("Tunnel provider", "ngrok");
@@ -286,13 +329,25 @@ it("retains separate machine drafts and binds delayed token completion to its ow
 
 it("separates dev and host targets and routes host start to the selected computer", async () => {
   await render();
+  await openShare();
+  expect(container.querySelector('[role="dialog"]')?.getAttribute("aria-label")).toBe(
+    "Create link",
+  );
   await choose("Computer", "Home Mac");
-  await choose("Tunnel target", "host");
-  const field = [...container.querySelectorAll("input")].find(
-    (input) => !input.closest("[hidden]") && input.readOnly,
-  )!;
+  await choose("Tunnel target", "bycoda host");
+  const field = [...container.querySelectorAll("input")].find((input) => input.readOnly)!;
   expect(field.value).toBe("http://127.0.0.1:3777");
-  await act(async () => button("Start tunnel").click());
+  expect(container.textContent).not.toContain(
+    "Host access keeps device authentication and pairing.",
+  );
+  // The full public-access text sits behind the info affordance.
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Public access"]')!.click(),
+  );
+  expect(document.body.textContent).toContain(
+    "Host access keeps device authentication and pairing.",
+  );
+  await act(async () => button("Share").click());
   expect(remoteRequest).toHaveBeenCalledWith(
     "remote",
     "tunnels.start",
@@ -300,7 +355,8 @@ it("separates dev and host targets and routes host start to the selected compute
     false,
     true,
   );
-  expect(container.textContent).toContain("Host access keeps device authentication and pairing.");
+  // A started tunnel closes the dialog; its link shows in the list.
+  expect(container.querySelector('[role="dialog"][aria-label="Create link"]')).toBeNull();
 });
 
 it("copies the public URL, shows a QR and removes sharing actions after stop", async () => {
@@ -312,16 +368,20 @@ it("copies the public URL, shows a QR and removes sharing actions after stop", a
   expect(container.querySelector('[role="dialog"] svg title')?.textContent).toBe("Tunnel URL");
   await act(async () => button("Stop tunnel").click());
   expect(remoteRequest).toHaveBeenCalledWith("local", "tunnels.stop", { id: info.id }, false, true);
-  expect(container.textContent).not.toContain("Copy URL");
-  expect(container.textContent).toContain("Stopped");
+  // The first group is This computer; Home Mac's own link stays connected.
+  const groups = container.querySelectorAll('[aria-label="Tunnel status"]');
+  expect(groups[0].textContent).not.toContain("Copy URL");
+  expect(groups[0].textContent).toContain("Stopped");
+  expect(groups[1].textContent).toContain("Copy URL");
 });
 
 it("shows missing dependencies and locked credentials and never renders secret diagnostic text", async () => {
   current.providers[0].installed = false;
   current.providers[1].credential = "unavailable";
   await render();
+  await openShare();
   expect(container.textContent).not.toContain("Install cloudflared on This computer");
-  expect(button("Start tunnel").disabled).toBe(false);
+  expect(button("Share").disabled).toBe(false);
   await choose("Tunnel provider", "ngrok");
   expect(container.textContent).toContain("secure credential store is unavailable");
   expect(container.querySelector('input[type="password"]')).not.toBeNull();
@@ -330,25 +390,32 @@ it("shows missing dependencies and locked credentials and never renders secret d
     container.querySelector<HTMLButtonElement>('button[aria-label="Check again"]')!.click(),
   );
   expect(container.textContent).not.toContain("private-token");
-  expect(container.textContent).not.toContain("Copy URL");
+  // This computer's link loses its sharing actions while its status cannot be read.
+  expect(container.querySelector('[aria-label="Tunnel status"]')!.textContent).not.toContain(
+    "Copy URL",
+  );
   expect(container.textContent).toContain("selected computer could not be reached");
 });
 
-it("uses the existing owner-issued pairing ticket with the host tunnel endpoint", async () => {
+it("says a host tunnel is for other computers and never offers phone pairing", async () => {
   current.tunnels[0] = { ...info, target: "host", localUrl: "http://127.0.0.1:3776" };
   await render();
-  await act(async () => button("Connect your phone").click());
-  // The tunnel row already asked to connect a phone, so the dialog goes straight to the QR.
-  expect(remoteRequest).toHaveBeenCalledWith("local", "mobile.pairing.create", {}, false, true);
-  expect(container.querySelector('[role="dialog"]')?.textContent).not.toContain("Local network");
-  expect(container.querySelector('[role="dialog"] svg title')?.textContent).toBe(
-    "Scan this code in bycoda on your phone",
-  );
-  // The encoded ticket binds this URL and environment; no reusable device credential is generated in the renderer.
-  expect(container.textContent).not.toContain("A".repeat(43));
+  expect(container.textContent).toContain("Public internet");
+  expect(container.textContent).toContain("Phones use a tunnel only when you allow it");
+  expect(container.textContent).not.toContain("Connect your phone");
 });
 
-it("ignores a previous computer's late status after the selection changes", async () => {
+it("groups links under a heading per computer, This computer first", async () => {
+  await render();
+  const headings = [...container.querySelectorAll("h3")].map((heading) => heading.textContent);
+  expect(headings).toHaveLength(2);
+  expect(headings[0]).toContain("This computer");
+  expect(headings[1]).toContain("Home Mac");
+  expect(container.querySelectorAll('[aria-label="Tunnel status"]')).toHaveLength(2);
+  expect(container.querySelector("h2")?.textContent).toContain("Shared links");
+});
+
+it("keeps each computer's late status under its own group", async () => {
   let resolve!: (value: TunnelOverview) => void;
   vi.mocked(remoteRequest).mockReturnValueOnce(
     new Promise((r) => {
@@ -356,12 +423,14 @@ it("ignores a previous computer's late status after the selection changes", asyn
     }),
   );
   await render();
-  await choose("Computer", "Home Mac");
+  expect(container.querySelectorAll('[aria-label="Tunnel status"]')).toHaveLength(1);
   await act(async () =>
-    resolve({ ...overview(), tunnels: [{ ...info, publicUrl: "https://old.trycloudflare.com" }] }),
+    resolve({ ...overview(), tunnels: [{ ...info, publicUrl: "https://late.trycloudflare.com" }] }),
   );
-  expect(container.textContent).not.toContain("old.trycloudflare.com");
-  expect(container.textContent).toContain("Home Mac");
+  const groups = container.querySelectorAll('[aria-label="Tunnel status"]');
+  expect(groups).toHaveLength(2);
+  expect(groups[0].textContent).toContain("late.trycloudflare.com");
+  expect(groups[1].textContent).not.toContain("late.trycloudflare.com");
 });
 
 it("shows a dismissible notice after the Host repaired damaged tunnel state", async () => {
@@ -380,13 +449,19 @@ it("does not show the repair notice when the Host reports no repair", async () =
   expect(container.textContent).not.toContain("could not be recovered");
 });
 
-it("lists no empty-state line and one setup popover in the Sharing form", async () => {
+it("shows the empty state with a Share action and one setup popover in the dialog", async () => {
   current = { ...overview(), tunnels: [] };
+  vi.mocked(remoteRequest).mockImplementation(async (machineId, method) => {
+    if (method === "tunnels.status")
+      return machineId === "local" ? current : { ...overview(remote), tunnels: [] };
+    throw new Error("unexpected method");
+  });
   await render();
-  expect(container.textContent).not.toContain("No tunnels on this computer.");
+  expect(container.textContent).toContain("No shared links");
   expect(container.querySelector('[aria-label="Tunnel status"]')).toBeNull();
+  expect(container.querySelector('[aria-label="Tunnel setup"]')).toBeNull();
+  await openShare();
   expect(container.querySelector('[aria-label="Tunnel setup"]')).not.toBeNull();
-  expect(container.querySelector('[aria-label="Cloudflare"]')).toBeNull();
   expect(
     container.querySelectorAll("button[aria-label$=' setup'], button[aria-label='Tunnel setup']"),
   ).toHaveLength(1);
@@ -400,10 +475,47 @@ it.each([false, true])(
       failed ? Promise.reject(new Error("Host disconnected")) : new Promise(() => {}),
     );
     await render();
+    await openShare();
     expect(container.textContent).not.toContain("CLI needed");
     await choose("Tunnel provider", "ngrok");
     expect(container.textContent).not.toContain("needs a valid authtoken");
-    expect(button("Start tunnel").disabled).toBe(true);
+    // The footer states the reason once; the button itself is simply disabled.
+    expect(button("Share").disabled).toBe(true);
     if (failed) expect(container.textContent).toContain("could not be reached");
   },
 );
+
+it("offers Tailscale Funnel as a public host-only provider and warns about public reach", async () => {
+  await render();
+  await openShare();
+  expect(container.textContent).toContain("Anyone on the internet can reach the address");
+  await choose("Tunnel provider", "Tailscale Funnel (public)");
+  await act(async () => button("Share").click());
+  expect(remoteRequest).toHaveBeenCalledWith(
+    "local",
+    "tunnels.start",
+    { provider: "tailscale", target: "host" },
+    false,
+    true,
+  );
+});
+
+it("shows the approval page action only for a validated Tailscale approval URL", async () => {
+  const funnel = {
+    ...info,
+    provider: "tailscale" as const,
+    target: "host" as const,
+    localUrl: "http://127.0.0.1:3776",
+    state: "error" as const,
+    issue: "approval-required" as const,
+    publicUrl: undefined,
+    canStop: false,
+  };
+  current.tunnels[0] = { ...funnel, approvalUrl: "https://login.tailscale.com/f/funnel?node=n1" };
+  await render();
+  expect(container.textContent).toContain("Funnel is not enabled");
+  expect(container.textContent).toContain("Open approval page");
+  current.tunnels[0] = { ...funnel, approvalUrl: "https://evil.example/f/funnel" };
+  await act(async () => vi.advanceTimersByTimeAsync(3_100));
+  expect(container.textContent).not.toContain("Open approval page");
+});

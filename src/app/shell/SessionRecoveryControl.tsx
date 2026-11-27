@@ -1,169 +1,148 @@
-import { Text } from "../../shared/ui/Text";
 import { Badge } from "../../shared/ui/Badge";
 import { Button } from "../../shared/ui/Button";
 import { InlineError } from "../../shared/ui/InlineError";
-import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
+import { Popover } from "../../shared/ui/Popover";
+import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { useT } from "../../shared/i18n";
-import { useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
-import { Trash2, RotateCcw } from "../../shared/ui/icons";
-import { RAIL_SECTION_HEADER, RAIL_SECTION_LABEL } from "./useRailSections";
+import { useRef, useState, useSyncExternalStore } from "react";
+import { RotateCcw } from "../../shared/ui/icons";
 import {
   getRecoverySaveFailure,
   subscribeRecoverySaveFailure,
 } from "../../features/workspace/model/sessionRecovery";
-import "./session-recovery.css";
-
-/** Whether the clear failed; never rejects. */
-async function clearFailed(onClear: () => Promise<void>): Promise<boolean> {
-  try {
-    await onClear();
-    return false;
-  } catch {
-    return true;
-  }
-}
-
-/** Runs `task`, then `settle` even when the task rejects; the rejection still propagates. */
-async function settleAfter(task: () => Promise<void>, settle: () => void): Promise<void> {
-  try {
-    await task();
-  } finally {
-    settle();
-  }
-}
 
 export function SessionRecoveryControl({
   count,
   onOpen,
   onClear,
-  allowEmpty = false,
   includeFiles = false,
 }: {
   count: number;
   onOpen: () => void;
   onClear?: () => Promise<void>;
-  allowEmpty?: boolean;
   includeFiles?: boolean;
 }) {
   const t = useT();
+  const anchor = useRef<HTMLButtonElement>(null);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState(false);
+  const [clearError, setClearError] = useState(false);
   const pendingRef = useRef(false);
   const saveFailure = useSyncExternalStore(
     subscribeRecoverySaveFailure,
     getRecoverySaveFailure,
     getRecoverySaveFailure,
   );
-  if (!count && !saveFailure && !allowEmpty) return null;
+  if (!count && !saveFailure && !clearError && !pending) return null;
+
   const label = includeFiles ? t("Recovered work") : t("Recovered sessions");
-  const clearLabel = includeFiles ? t("Clear conversation recovery list") : t("Clear list");
-  const clear = async () => {
-    if (!onClear || pendingRef.current) return;
-    pendingRef.current = true;
-    setPending(true);
-    setError(false);
-    if (await clearFailed(onClear)) setError(true);
+  const clearLabel = t("Dismiss recovered sessions");
+  const problem = saveFailure
+    ? t("Recovery dismissal was not saved.")
+    : clearError
+      ? t("Could not update the recovery list. Try again.")
+      : undefined;
+  const canClear = !!onClear && count > 0;
+  const showOptions = optionsOpen && (canClear || !!problem);
+  const endPending = () => {
     pendingRef.current = false;
     setPending(false);
   };
+  const clear = async () => {
+    if (!onClear || pendingRef.current) return;
+    setOptionsOpen(false);
+    pendingRef.current = true;
+    setPending(true);
+    setClearError(false);
+    await Promise.resolve()
+      .then(onClear)
+      .catch(() => {
+        setClearError(true);
+        setOptionsOpen(true);
+      })
+      .finally(endPending);
+  };
+  const retrySave = async () => {
+    if (!saveFailure || pendingRef.current) return;
+    pendingRef.current = true;
+    setPending(true);
+    await Promise.resolve()
+      .then(() => saveFailure.retry())
+      .then(() => setOptionsOpen(false))
+      .finally(endPending);
+  };
+
   return (
-    <ActionHost
-      data-rail-section-header
-      className={`recovery-rail-row ${RAIL_SECTION_HEADER}`}
-      aria-busy={pending}
-      style={{ "--recovery-count-width": `${String(count).length}ch` } as CSSProperties}
-    >
+    <>
       <Button
-        data-rail-section-primary
-        variant="item"
+        ref={anchor}
+        data-recovery-control
+        variant="ghost"
+        tone={problem ? "danger" : undefined}
         motion="none"
-        size="sm"
-        type="button"
-        tooltip={`${label} (${count})`}
-        tooltipWhen={count > 99 ? "always" : "overflow"}
-        tooltipSide="right"
-        aria-label={`${label} (${count})`}
-        className={`recovery-rail-control flex min-w-0 flex-1 items-center justify-start ${RAIL_SECTION_LABEL}`}
-        disabled={pending}
-        onClick={onOpen}
+        iconOnly
+        label={`${label} (${count})`}
+        badge={
+          count > 0 ? (
+            <Badge variant="count" size="xs" leading="none">
+              {count}
+            </Badge>
+          ) : undefined
+        }
+        aria-haspopup="dialog"
+        aria-expanded={canClear || problem ? showOptions : undefined}
+        loading={pending}
+        onClick={() => {
+          if (problem && !count) setOptionsOpen((open) => !open);
+          else {
+            setOptionsOpen(false);
+            onOpen();
+          }
+        }}
+        onContextMenu={(event) => {
+          if (!canClear && !problem) return;
+          event.preventDefault();
+          setOptionsOpen(true);
+        }}
+        onKeyDown={(event) => {
+          if (!canClear && !problem) return;
+          if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+          event.preventDefault();
+          setOptionsOpen(true);
+        }}
       >
-        <span data-rail-section-mark aria-hidden="true">
-          <RotateCcw className="icon-sm shrink-0" />
-        </span>
-        <Text
-          data-rail-section-text
-          size="inherit"
-          tone="inherit"
-          truncate
-          className="recovery-rail-label min-w-0 flex-1 @max-[140px]/rail:hidden [[data-compact-project-rail]_&]:hidden"
-        >
-          {label}
-        </Text>
-        {count > 0 ? (
-          <>
-            <Badge
-              variant="count"
-              size="sm"
-              className="recovery-rail-number ms-auto"
-              aria-hidden="true"
-            >
-              {count}
-            </Badge>
-            {/* A label-less rail has no room for a number beside the icon, so it keeps the corner badge. */}
-            <Badge
-              variant="count"
-              size="sm"
-              tone="accent"
-              appearance="subtle"
-              max={99}
-              className="recovery-rail-count"
-              aria-hidden="true"
-            >
-              {count}
-            </Badge>
-          </>
-        ) : null}
+        <RotateCcw className="icon-md" aria-hidden />
       </Button>
-      {onClear && count > 0 ? (
-        <InlineAction
-          label={clearLabel}
-          motion="none"
-          type="button"
-          className="recovery-rail-clear recovery-remove"
-          reveal={pending || error ? "always" : "interaction"}
-          loading={pending}
-          onClick={() => void clear()}
+      {showOptions && !problem && canClear ? (
+        <DropdownMenu
+          anchor={anchor}
+          label={label}
+          side="top"
+          align="end"
+          items={[{ kind: "item", id: "dismiss", label: clearLabel }]}
+          onClose={() => setOptionsOpen(false)}
+          onPick={() => void clear().catch(console.error)}
+        />
+      ) : null}
+      {showOptions && problem ? (
+        <Popover
+          anchor={anchor}
+          kind="dialog"
+          aria-label={label}
+          side="top"
+          align="end"
+          onDismiss={() => setOptionsOpen(false)}
         >
-          <Trash2 className="icon-sm" aria-hidden="true" />
-        </InlineAction>
+          <InlineError
+            retry={{
+              pending,
+              onRetry: () => void (saveFailure ? retrySave() : clear()).catch(console.error),
+            }}
+          >
+            {problem}
+          </InlineError>
+        </Popover>
       ) : null}
-      {error ? (
-        <InlineError className="recovery-rail-error">
-          {t("Could not update the recovery list. Try again.")}
-        </InlineError>
-      ) : null}
-      {saveFailure ? (
-        <InlineError
-          className="recovery-rail-error"
-          retry={{
-            pending,
-            onRetry: async () => {
-              if (pendingRef.current) return;
-              pendingRef.current = true;
-              setPending(true);
-              await settleAfter(
-                () => saveFailure.retry(),
-                () => {
-                  pendingRef.current = false;
-                  setPending(false);
-                },
-              );
-            },
-          }}
-        >
-          {t("Recovery dismissal was not saved.")}
-        </InlineError>
-      ) : null}
-    </ActionHost>
+    </>
   );
 }

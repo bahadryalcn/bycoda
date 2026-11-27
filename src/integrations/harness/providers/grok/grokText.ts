@@ -20,7 +20,16 @@ import {
   watchChild,
   type ChildProcessHandle,
 } from "../../core/child";
-import { grokAuthMethodId, grokEffort, grokTextSpawnArgs, TEXT_MODEL } from "./grokProtocol";
+import { ignoreMissingControlMethod } from "../../core/acpControlRejection";
+import {
+  applyGrokEffort,
+  currentModelId,
+  grokAuthMethodId,
+  grokEffort,
+  grokEffortControl,
+  grokTextSpawnArgs,
+  TEXT_MODEL,
+} from "./grokProtocol";
 import { abortTextPromptRace } from "../../core/abortTextPrompt";
 import { mergeStream } from "../../core/streamText";
 import type { HarnessEvent, HarnessOperationContext } from "../../core/types";
@@ -307,7 +316,7 @@ async function startLive(
         .request("authenticate", { methodId, _meta: { headless: true } }, REQUEST_TIMEOUT_MS)
         .catch(() => undefined);
     }
-    await openSession(session, writer, cwd, model, modelSettings);
+    await openSession(session, writer, cwd, model, init, modelSettings);
     if (starting !== textProcess || session.closed) throw new Error("Grok text startup cancelled");
     live = session;
     return session;
@@ -339,6 +348,7 @@ async function openSession(
   writer: AcpWriterView,
   cwd: string,
   model: string,
+  init: unknown,
   modelSettings?: Record<string, string>,
 ): Promise<void> {
   const setup = await writer.request<{ sessionId?: string }>(
@@ -350,19 +360,22 @@ async function openSession(
   if (!acpSessionId) throw new Error("Grok Build did not return a session id");
   session.acpSessionId = acpSessionId;
 
-  await writer
-    .request("session/set_model", { sessionId: acpSessionId, modelId: model }, REQUEST_TIMEOUT_MS)
-    .catch(() => undefined);
-  await writer
-    .request(
-      "session/set_mode",
-      {
-        sessionId: acpSessionId,
-        modeId: grokEffort(modelSettings) ?? "low",
-      },
-      REQUEST_TIMEOUT_MS,
-    )
-    .catch(() => undefined);
+  let effortSetup: unknown = setup;
+  if (currentModelId(setup) !== model) {
+    const result = await writer
+      .request("session/set_model", { sessionId: acpSessionId, modelId: model }, REQUEST_TIMEOUT_MS)
+      .catch((error: unknown) => ignoreMissingControlMethod("grok", "set_model", error));
+    if (result) effortSetup = result;
+  }
+  const control = grokEffortControl(init, effortSetup, model, setup);
+  await applyGrokEffort(
+    writer,
+    acpSessionId,
+    control,
+    control.current ?? (model === TEXT_MODEL ? "low" : undefined),
+    grokEffort(modelSettings),
+    REQUEST_TIMEOUT_MS,
+  );
 
   session.cwd = cwd;
   session.model = model;

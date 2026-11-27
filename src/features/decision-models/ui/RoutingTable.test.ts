@@ -2,6 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
+import { saveAllPending } from "../../../shared/ui/settings";
 import { RoutingTable } from "./RoutingTable";
 import { SourceOrderPicker } from "./SourceOrderPicker";
 import { setInputValue } from "./decisionTestDom";
@@ -17,8 +18,16 @@ it("distinguishes a source search miss and clears only the search", async () => 
         createElement(SourceOrderPicker, {
           label: "Fallback",
           value: ["source"],
+          // Search appears only for a long list of sources.
           sources: [
             { id: "source", name: "Alpha", kind: "local", adapter: "systemone", status: "ready" },
+            ...Array.from({ length: 8 }, (_, index) => ({
+              id: `extra-${index}`,
+              name: `Extra ${index}`,
+              kind: "local" as const,
+              adapter: "systemone" as const,
+              status: "ready" as const,
+            })),
           ],
           disabled: false,
           onChange: change,
@@ -184,7 +193,7 @@ it("keeps automatic tasks compact until customization is requested", async () =>
       ),
     );
     expect(container.querySelector('input[inputmode="decimal"]')).toBeNull();
-    expect(container.textContent).not.toContain("Save routing");
+    expect(container.textContent).not.toContain("unsaved change");
     expect(container.textContent).toContain("Automatic: local models first");
     await act(async () =>
       [...container.querySelectorAll("button")].find((b) => b.textContent === "Customize")!.click(),
@@ -220,7 +229,7 @@ it("retains routing edits when privacy returns equivalent saved routing and disc
       root.render(createElement(RoutingTable, { ...props, routing: structuredClone(routing) })),
     );
     expect(input.value).toBe("0.8");
-    expect(container.textContent).toContain("1 unsaved changes");
+    expect(container.textContent).toContain("1 unsaved change");
     await act(async () =>
       [...container.querySelectorAll("button")].find((b) => b.textContent === "Discard")!.click(),
     );
@@ -317,3 +326,55 @@ it("resets a custom task without changing other task routes", async () => {
     container.remove();
   }
 });
+
+it.each([
+  { outcome: "the Host acknowledges", reject: false, acknowledged: true },
+  { outcome: "the Host rejects", reject: true, acknowledged: false },
+])(
+  "Save and leave acknowledges the routing only when $outcome the save",
+  async ({ reject, acknowledged }) => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const onSave = reject
+      ? vi.fn().mockRejectedValue(new Error("Host unavailable"))
+      : vi.fn().mockResolvedValue(undefined);
+    try {
+      await act(async () =>
+        root.render(
+          createElement(RoutingTable, {
+            routing: { generic: { sourceIds: ["source"], threshold: 0.9 } },
+            sources: [],
+            busy: false,
+            onSave,
+          }),
+        ),
+      );
+      await act(async () =>
+        [...container.querySelectorAll<HTMLButtonElement>("button")]
+          .find((button) => button.textContent === "Customize")!
+          .click(),
+      );
+      const field = container.querySelector<HTMLInputElement>('input[inputmode="decimal"]')!;
+      setInputValue(field, "0.8");
+      let result: boolean | undefined;
+      await act(async () => {
+        result = await saveAllPending();
+      });
+      expect(onSave).toHaveBeenCalledOnce();
+      expect(result).toBe(acknowledged);
+      if (!acknowledged) {
+        // A rejected save keeps the owner's draft and leaves Save available for a retry.
+        expect(field.value).toBe("0.8");
+        expect(
+          [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+            (button) => button.textContent === "Save routing",
+          )?.disabled,
+        ).toBe(false);
+      }
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  },
+);

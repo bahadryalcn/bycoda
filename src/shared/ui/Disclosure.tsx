@@ -29,17 +29,25 @@ export type DisclosureProps = Omit<ComponentPropsWithRef<"details">, "children" 
   count?: number | null;
   /** Accessible context for the count, such as "4 conversations". */
   countLabel?: string;
+  /** Largest count shown as a number; above it the badge reads `max+`. Defaults to 99; the accessible name keeps the real number. */
+  countMax?: number;
   /** Controlled open state; pair with `onOpenChange`. */
   open?: boolean;
   /** Initial open state when uncontrolled. */
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
   /**
-   * `plain` inline text-level, `row` list-row height, `card` framed like `Surface variant="card"`,
-   * `step` one 24px line for a transcript step: the whole row toggles, the label may lead with an
-   * icon, the body opens below. Mount the body only while `open` to keep long lists cheap.
+   * `plain` inline text-level, `compact` for quiet form detail, `row` list-row height,
+   * `card` framed like `Surface variant="card"`,
+   * `step` one transcript line (24px, follows density): the whole row toggles (icon, label, gaps,
+   * chevron), the chevron is always visible in the chrome ink and turns when open, hover washes the
+   * row but an open row keeps no wash, the body opens below. Hover and focus stay within the row.
+   * Put at most two icon
+   * buttons in `summaryActions` (open in panel, stop); they act alone and never toggle. Use
+   * `chevron="end"` and `collapsible={false}` for a row with nothing to open. Mount the body only
+   * while `open` to keep long lists cheap.
    */
-  variant?: "plain" | "row" | "card" | "step";
+  variant?: "plain" | "compact" | "row" | "card" | "step";
   /** Accessible name for the summary row when the visible label is truncated or an icon. */
   summaryLabel?: string;
   size?: "sm" | "md";
@@ -52,11 +60,19 @@ export type DisclosureProps = Omit<ComponentPropsWithRef<"details">, "children" 
   leading?: TextRoles["leading"];
   /** Side of the summary row that carries the chevron. */
   chevron?: "start" | "end";
+  /**
+   * `false` renders the same row geometry as a static `div`: no chevron, no toggle, no body.
+   * For a row with nothing to open (a tool step without a result, a live status line); `role` and
+   * `aria-live` pass through. `open`, `name`, `ref` and `bodyDividers` are ignored.
+   */
+  collapsible?: boolean;
   /** Shared `name` makes sibling disclosures exclusive (native accordion). */
   name?: string;
   children?: ReactNode;
   /** Hairlines between the existing body children; no wrapper or mount change. */
   bodyDividers?: SurfaceAppearance["dividers"];
+  /** The summary text changes while work runs and is announced politely (a status row, an activity fold). A static row (`collapsible={false}`) becomes a status region; an openable one sets `aria-live="polite"`. Never hand-write `role`/`aria-live` on a Disclosure. */
+  live?: boolean;
 };
 
 /**
@@ -77,24 +93,31 @@ export function Disclosure({
   summaryActions,
   count,
   countLabel,
+  countMax,
   open,
   defaultOpen,
   onOpenChange,
   variant = "plain",
   summaryLabel,
-  size = "md",
-  textSize,
-  tone,
+  size: sizeProp,
+  textSize: textSizeProp,
+  tone: toneProp,
   weight,
   leading,
   chevron = "start",
+  collapsible = true,
   name,
   className,
   children,
   bodyDividers,
+  live,
   ref,
   ...props
 }: DisclosureProps) {
+  const compact = variant === "compact";
+  const size = sizeProp ?? (compact ? "sm" : "md");
+  const textSize = textSizeProp ?? (compact ? "caption" : undefined);
+  const tone = toneProp ?? (compact ? "muted" : undefined);
   const innerRef = useRef<HTMLDetailsElement | null>(null);
   const controlled = open !== undefined;
   const [, reassert] = useState(0);
@@ -128,9 +151,49 @@ export function Disclosure({
     </span>
   );
 
+  const labelNode = (
+    <span
+      {...optionalTextAttributes(
+        { size: textSize ?? (weight ? "inherit" : undefined), tone, weight, leading },
+        styles.label,
+      )}
+    >
+      {summary}
+    </span>
+  );
+  const countNode = hasCount ? (
+    <Badge variant="count" size="xs" label={countLabel} max={countMax} className={styles.count}>
+      {count}
+    </Badge>
+  ) : null;
+  const actionsNode =
+    summaryActions != null ? (
+      <span className={styles.actions} data-no-drag="" data-disclosure-actions="">
+        {summaryActions}
+      </span>
+    ) : null;
+
+  if (!collapsible) {
+    return (
+      <div
+        {...(props as ComponentPropsWithRef<"div">)}
+        role={live ? "status" : props.role}
+        aria-label={summaryLabel}
+        data-variant={variant}
+        data-size={size}
+        className={[styles.static, className].filter(Boolean).join(" ")}
+      >
+        {labelNode}
+        {countNode}
+        {actionsNode}
+      </div>
+    );
+  }
+
   return (
     <details
       {...props}
+      aria-live={live ? "polite" : props["aria-live"]}
       ref={setRef}
       name={name}
       open={controlled ? open : defaultOpen}
@@ -158,24 +221,9 @@ export function Disclosure({
         aria-controls={controlled ? bodyId : undefined}
       >
         {chevron === "start" ? mark : null}
-        <span
-          {...optionalTextAttributes(
-            { size: textSize ?? (weight ? "inherit" : undefined), tone, weight, leading },
-            styles.label,
-          )}
-        >
-          {summary}
-        </span>
-        {hasCount ? (
-          <Badge variant="count" size="xs" label={countLabel} className={styles.count}>
-            {count}
-          </Badge>
-        ) : null}
-        {summaryActions != null ? (
-          <span className={styles.actions} data-no-drag="" data-disclosure-actions="">
-            {summaryActions}
-          </span>
-        ) : null}
+        {labelNode}
+        {countNode}
+        {actionsNode}
         {chevron === "end" ? mark : null}
       </summary>
       <div id={bodyId} {...surfaceAttributes({ dividers: bodyDividers }, styles.body)}>

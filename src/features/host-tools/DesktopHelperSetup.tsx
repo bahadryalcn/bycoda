@@ -1,3 +1,4 @@
+import { errorText } from "../../shared/lib/errors";
 import { useEffect, useRef, useState } from "react";
 import { t } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
@@ -6,6 +7,7 @@ import { desktopHelperRequest } from "./desktopControlClient";
 import type { DesktopHelperResponse } from "../../shared/model/host-contracts/desktop-helper";
 import { InlineError } from "../../shared/ui/InlineError";
 import { Badge } from "../../shared/ui/Badge";
+import { LiveText } from "../../shared/ui/LiveText";
 import type { DesktopDriver } from "../../shared/model/host-contracts/desktop-control";
 
 type VerifiedHelper = NonNullable<DesktopHelperResponse["helper"]>;
@@ -65,9 +67,16 @@ export function DesktopHelperSetup({
     onReadyChange?.(!!helper);
   }, [onReadyChange, helper]);
   useEffect(() => {
+    // Status reads chain on a timer that stops while the window is hidden; returning to the window reads at once.
     let cancelled = false,
-      reading = false;
-    const read = async () => {
+      reading = false,
+      failures = 0,
+      timer: number | undefined;
+    function schedule(delay: number) {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(tick, delay);
+    }
+    async function read() {
       if (reading) return;
       reading = true;
       try {
@@ -76,20 +85,33 @@ export function DesktopHelperSetup({
           ...(driver === "agent-desktop" ? {} : { driver }),
         });
         if (!cancelled) {
+          failures = 0;
           setState(next);
           setError("");
         }
       } catch (cause) {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+        if (!cancelled) {
+          failures += 1;
+          setError(errorText(cause));
+        }
       } finally {
         reading = false;
+        // Repeated failures back off from 2 s to 30 s instead of waking the window every 2 s.
+        if (!cancelled) schedule(Math.min(2000 * 2 ** failures, 30000));
       }
+    }
+    function tick() {
+      if (!document.hidden) void read();
+    }
+    const onVisible = () => {
+      if (!document.hidden) void read();
     };
     void read();
-    const timer = setInterval(() => void read(), 2000);
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [driver]);
   async function act(op: "prepare" | "cancel") {
@@ -99,7 +121,7 @@ export function DesktopHelperSetup({
     try {
       setState(await desktopHelperRequest({ op, ...driverField }));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorText(cause));
     } finally {
       setPending(false);
     }
@@ -138,28 +160,42 @@ export function DesktopHelperSetup({
     <Row
       label={t("Helper")}
       description={t("Helper readiness is separate from OS access and running computer use.")}
-      feedback={message ? <InlineError>{message}</InlineError> : undefined}
+      feedback={
+        message ? (
+          <InlineError details={message}>{t("Could not prepare the helper.")}</InlineError>
+        ) : undefined
+      }
     >
       <Badge
-        role="status"
         appearance="subtle"
         tone={preparing ? "info" : helper ? "success" : failed ? "danger" : "neutral"}
       >
         {label}
       </Badge>
+      <LiveText className="sr-only" text={label} />
       {preparing ? (
         <Button type="button" loading={pending} onClick={() => void act("cancel")}>
           {t("Stop preparation")}
         </Button>
       ) : helper ? (
         selectedPath !== helper.binaryPath && (
-          <Button type="button" disabled={disabled} onClick={() => onUse(helper)}>
+          <Button
+            type="button"
+            disabled={disabled}
+            disabledReason={t("Wait for the current operation to finish")}
+            onClick={() => onUse(helper)}
+          >
             {t("Use verified helper")}
           </Button>
         )
       ) : (
         (state || message) && (
-          <Button type="button" disabled={disabled} onClick={() => void act("prepare")}>
+          <Button
+            type="button"
+            disabled={disabled}
+            disabledReason={t("Wait for the current operation to finish")}
+            onClick={() => void act("prepare")}
+          >
             {t("Retry")}
           </Button>
         )

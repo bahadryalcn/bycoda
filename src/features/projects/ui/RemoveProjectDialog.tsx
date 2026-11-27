@@ -6,8 +6,13 @@ import { projectSessionCount } from "../model/projectData";
 import { useProjectConfirmDialog } from "../hooks/useProjectConfirmDialog";
 import { Alert } from "../../../shared/ui/Alert";
 import type { ConfirmRequest } from "../../../shared/ui/ConfirmDialog";
-import { InlineError } from "../../../shared/ui/InlineError";
+import { RemoteActionError } from "../../connections/public/RemoteActionError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import {
+  describeLocalError,
+  describeRemoteError,
+  type RemoteErrorView,
+} from "../../connections/public/remoteFailure";
 
 type Props = {
   name: string;
@@ -32,7 +37,7 @@ export function RemoveProjectDialog({
 }: Props) {
   const t = useT();
   const [sessions, setSessions] = useState<number | null>(null);
-  const [countError, setCountError] = useState<string | null>(null);
+  const [countError, setCountError] = useState<RemoteErrorView | null>(null);
   const [revision, setRevision] = useState(0);
 
   useEffect(() => {
@@ -44,7 +49,7 @@ export function RemoveProjectDialog({
         if (!cancelled) setSessions(counts.reduce((sum, count) => sum + count, 0));
       },
       (reason: unknown) => {
-        if (!cancelled) setCountError(reason instanceof Error ? reason.message : String(reason));
+        if (!cancelled) setCountError(describeRemoteError(reason));
       },
     );
     return () => {
@@ -54,16 +59,16 @@ export function RemoveProjectDialog({
 
   const request: ConfirmRequest = {
     title: t("Delete {p0}", { p0: name }),
+    // The saved-session count below is the one statement about deleted sessions.
     message: paths
-      ? t(
-          "All conversations for the selected projects will be deleted. The projects leave the sidebar. Their folders on disk stay put.",
-        )
+      ? t("The projects leave the sidebar. Their folders on disk stay put.")
       : t(
-          "All conversations for this project will be deleted. It also leaves the sidebar. The folder on disk stays put, and opening it again brings the project back empty.",
+          "The project leaves the sidebar. The folder on disk stays put, and opening it again brings the project back empty.",
         ),
     confirmLabel: t("Delete"),
     pendingLabel: t("Deleting…"),
-    confirmDisabled: Boolean(confirmDisabled) || sessions == null || countError != null,
+    // The count is informational: deleting does not wait for it, only a failed count blocks.
+    confirmDisabled: Boolean(confirmDisabled) || countError != null,
     consequences:
       sessions != null && sessions > 0
         ? [
@@ -71,8 +76,8 @@ export function RemoveProjectDialog({
               tone: "danger",
               content:
                 sessions === 1
-                  ? t("1 saved conversation will be removed.")
-                  : t("{p0} saved conversations will be removed.", { p0: sessions }),
+                  ? t("1 saved session will be removed.")
+                  : t("{p0} saved sessions will be removed.", { p0: sessions }),
             },
           ]
         : undefined,
@@ -88,9 +93,11 @@ export function RemoveProjectDialog({
     body: (
       <>
         {countError ? (
-          <InlineError retry={{ onRetry: () => setRevision((value) => value + 1) }}>
-            {countError}
-          </InlineError>
+          <RemoteActionError
+            title={t("Couldn’t count the saved sessions")}
+            error={countError}
+            action={{ label: t("Try again"), onClick: () => setRevision((value) => value + 1) }}
+          />
         ) : sessions == null ? (
           <LoadingText>{t("Loading…")}</LoadingText>
         ) : null}
@@ -108,7 +115,9 @@ export function RemoveProjectDialog({
         await onConfirm();
       } catch (reason) {
         setRevision((value) => value + 1);
-        throw reason;
+        throw new Error(describeLocalError(reason, t("Couldn’t delete this project.")), {
+          cause: reason,
+        });
       }
     },
   };

@@ -155,12 +155,22 @@ describe("ContentEditorFields media gate", () => {
 });
 
 describe("ContentEditorFields accounts", () => {
-  it("disables an account without draft access and says why, but never traps a chosen one", () => {
+  it("disables an account without draft access and says why, but never traps a chosen one", async () => {
     const noAccess = account("li1", "linkedin", "Studio LinkedIn", {});
     const snapshot = snapshotOf([x, noAccess]);
     render({}, { snapshot });
     expect(accountBox("Studio LinkedIn")?.disabled).toBe(true);
-    expect(element.textContent).toContain(
+    // The reason is the checkbox's accessible description, never visible text.
+    const described = accountBox("Studio LinkedIn")?.getAttribute("aria-describedby");
+    const description = described ? element.querySelector(`[id="${described}"]`) : null;
+    expect(description?.className).toContain("sr-only");
+    expect(description?.textContent).toContain("No access to this project");
+    const reason = element.querySelector<HTMLButtonElement>(
+      'button[aria-label="Studio LinkedIn: Help"]',
+    );
+    expect(reason).toBeTruthy();
+    await act(async () => reason!.click());
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
       "No access to this project. Grant it in Accounts & Settings.",
     );
     expect(accountBox("Studio X")?.disabled).toBe(false);

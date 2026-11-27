@@ -15,6 +15,8 @@ export type { ProjectProviderSettings, ProviderSessionDefaults } from "./model/p
 export type { PromptTemplate } from "./model/promptTemplates";
 export type { QueueActionResult, QueueRemoval } from "./model/queueAction";
 export type { LiveSessionInfo } from "./model/recentSessions";
+export type * as projectlessApi from "./public/projectless";
+export type * as catalogTextApi from "./public/catalogText";
 export type {
   AdoptedDivergence,
   Attachment,
@@ -55,6 +57,7 @@ export { HARNESSES, HARNESS_TITLE } from "../../shared/model/harnessIdentity";
 export type { SessionProviderHistory } from "./model/sessionProviderHistory";
 export type { AssistantSessionManagement } from "./model/session";
 export type * as dataComposerDraftStoreApi from "./public/composerDraftStore";
+export type * as composerMentionsApi from "./public/composerMentions";
 export type * as dataPersistenceDrainApi from "./public/persistenceDrain";
 export type * as dataSessionStoreApi from "./public/sessionStore";
 export type * as hooksUseTranscriptSelectionApi from "./public/useTranscriptSelection";
@@ -63,6 +66,7 @@ export type * as modelRemoteActivityNoticeApi from "./public/remoteActivityNotic
 export type * as uiRemoteActivityNoticesApi from "./public/RemoteActivityNotices";
 export type * as modelApprovalIntentsApi from "./public/approvalIntents";
 export type * as modelAttachmentsApi from "./public/attachments";
+export type * as modelAttachmentFailureApi from "./public/attachmentFailure";
 export type * as modelAutoContinueApi from "./public/autoContinue";
 export type * as modelCheckpointApi from "./public/checkpoint";
 export type * as modelClaudeAdvisorApi from "./public/claudeAdvisor";
@@ -85,6 +89,7 @@ export type * as modelQuestionDraftsApi from "./public/questionDrafts";
 export type * as modelQueuedMessageEditApi from "./public/queuedMessageEdit";
 export type * as modelQueuePersistenceApi from "./public/queuePersistence";
 export type * as modelQuoteDraftApi from "./public/quoteDraft";
+export type * as modelCommandInspectionApi from "./public/commandInspection";
 export type * as modelSessionApi from "./public/session";
 export type * as modelSessionActivityApi from "./public/sessionActivity";
 export type * as modelSessionFiltersApi from "./public/sessionFilters";

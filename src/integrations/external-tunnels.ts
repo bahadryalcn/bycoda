@@ -1,4 +1,4 @@
-export const TUNNEL_PROVIDERS = ["ngrok", "cloudflare"] as const;
+export const TUNNEL_PROVIDERS = ["ngrok", "cloudflare", "tailscale"] as const;
 export type TunnelProvider = (typeof TUNNEL_PROVIDERS)[number];
 export type TunnelTarget = "dev-server" | "host";
 export type TunnelState = "starting" | "ready" | "stopping" | "stopped" | "error" | "interrupted";
@@ -9,6 +9,7 @@ export const TUNNEL_ISSUES = [
   "invalid-target",
   "host-target-required",
   "origin-unreachable",
+  "approval-required",
   "connection-failed",
   "startup-timeout",
   "unexpected-exit",
@@ -33,6 +34,8 @@ export type ExternalTunnel = {
   state: TunnelState;
   publicUrl?: string;
   issue?: TunnelIssue;
+  /** With `approval-required`: the validated Tailscale admin page that enables Funnel. */
+  approvalUrl?: string;
   startedAt: number;
   /** Live host ownership, derived for status only; never restored from disk. */
   canStop?: boolean;
@@ -46,6 +49,8 @@ export type TunnelProviderStatus = {
 export type TunnelRepair = { repaired: true; dropped: number };
 export type TunnelOverview = {
   automaticHostAccess?: boolean;
+  /** Opt-in: phones may use the public tunnels. Off unless the owner turned it on. */
+  phonesOverPublic?: boolean;
   environmentId: string;
   hostLocalUrl: string;
   providers: TunnelProviderStatus[];
@@ -93,6 +98,9 @@ export function tunnelLocalUrl(value: unknown): string {
   }
 }
 
+/** Ports Tailscale Funnel can listen on, in the order the Host tries them. */
+export const FUNNEL_PORTS = [443, 8443, 10000] as const;
+
 /** Only credential-free provider URLs are accepted from untrusted CLI output. */
 export function tunnelPublicUrl(provider: TunnelProvider, value: unknown): string | undefined {
   if (typeof value !== "string" || value.length > 1024) return;
@@ -101,11 +109,17 @@ export function tunnelPublicUrl(provider: TunnelProvider, value: unknown): strin
     const suffix =
       provider === "cloudflare"
         ? /^[a-z0-9]+(?:-[a-z0-9]+)*\.trycloudflare\.com$/
-        : /^[a-z0-9-]+\.(?:ngrok-free\.app|ngrok-free\.dev|ngrok\.app|ngrok\.dev|ngrok\.io)$/;
+        : provider === "tailscale"
+          ? /^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.ts\.net$/
+          : /^[a-z0-9-]+\.(?:ngrok-free\.app|ngrok-free\.dev|ngrok\.app|ngrok\.dev|ngrok\.io)$/;
+    const portAllowed =
+      provider === "tailscale"
+        ? !url.port || FUNNEL_PORTS.some((port) => String(port) === url.port)
+        : !url.port;
     if (
       url.protocol === "https:" &&
       suffix.test(url.hostname) &&
-      !url.port &&
+      portAllowed &&
       !url.username &&
       !url.password &&
       !url.search &&
@@ -116,6 +130,25 @@ export function tunnelPublicUrl(provider: TunnelProvider, value: unknown): strin
   } catch {
     /* Never display arbitrary diagnostic links. */
   }
+}
+
+/** Process output is untrusted: only the Tailscale admin host may be opened for approval. */
+export function tailscaleApprovalUrl(output: string): string | undefined {
+  for (const candidate of output.match(/https:\/\/[^\s<>"']+/g) ?? []) {
+    try {
+      const url = new URL(candidate);
+      if (
+        url.hostname === "login.tailscale.com" &&
+        !url.username &&
+        !url.password &&
+        url.port === ""
+      )
+        return url.href;
+    } catch {
+      /* Untrusted process output is never passed to an external opener. */
+    }
+  }
+  return undefined;
 }
 
 export function tunnelActive(state: TunnelState): boolean {

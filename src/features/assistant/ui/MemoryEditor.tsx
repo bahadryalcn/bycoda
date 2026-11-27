@@ -1,10 +1,9 @@
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { describeRemoteError } from "../../connections/public/remoteFailure";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useId, useRef, useState } from "react";
 import type { AssistantMemory } from "../../../shared/model/host-contracts/assistant";
 import { assistantRequest } from "../model/assistantClient";
 import { t } from "../../../shared/i18n";
-import { Save, X } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Select } from "../../../shared/ui/Select";
@@ -32,12 +31,12 @@ export function MemoryEditor({
   const currentDraft = useRef({ text, kind, scope, terms });
   currentDraft.current = { text, kind, scope, terms };
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
+  const [problem, setProblem] = useState<{ message: string; details?: string } | null>(null);
   const formId = useId();
   async function save() {
     if (pending) return;
     setPending(true);
-    setError("");
+    setProblem(null);
     try {
       const result = await assistantRequest({
         op: "memory.save",
@@ -54,7 +53,7 @@ export function MemoryEditor({
           .filter(Boolean),
       });
       if (!result.memory)
-        throw new Error(t("The memory save was not confirmed. Keep this draft and retry."));
+        throw new Error(t("The memory save could not be confirmed. Keep this draft and retry."));
       setOriginal(result.memory);
       const current = currentDraft.current;
       if (
@@ -65,34 +64,30 @@ export function MemoryEditor({
       )
         onClose();
     } catch (cause) {
-      setError(presentRemoteError(cause, { explicit: true }));
+      setProblem(describeRemoteError(cause));
     } finally {
       setPending(false);
     }
   }
   return (
     <Modal
-      title={t(original ? "Edit memory" : "Add memory")}
+      title={original ? t("Edit memory") : t("Add memory")}
       onClose={() => {
         if (!pending) onClose();
       }}
       size="md"
       fitViewport
-      footerStart={error ? <InlineError>{error}</InlineError> : undefined}
+      footerStart={
+        problem ? <InlineError details={problem.details}>{problem.message}</InlineError> : undefined
+      }
       footer={
         <ModalActions>
-          <Button
-            startIcon={<X className="icon-sm" />}
-            variant="ghost"
-            disabled={pending}
-            onClick={onClose}
-          >
+          <Button variant="ghost" disabled={pending} onClick={onClose}>
             {t("Cancel")}
           </Button>
           <Button
             type="submit"
             form={formId}
-            startIcon={<Save className="icon-sm" />}
             variant="primary"
             loading={pending}
             disabled={!text.trim()}
@@ -123,20 +118,20 @@ export function MemoryEditor({
             label={t("Kind")}
             value={kind}
             options={[
-              ["rule", "Rules"],
-              ["profile", "About me"],
-              ["fact", "Learned"],
-            ].map(([value, label]) => ({ value, label: t(label) }))}
+              { value: "rule", label: t("Rules") },
+              { value: "profile", label: t("About me") },
+              { value: "fact", label: t("Learned") },
+            ]}
             onValueChange={(value) => setKind(value as typeof kind)}
           />
           <Select
             label={t("Scope")}
             value={scope}
             options={[
-              ["all", "Everywhere"],
-              ["voice", "Voice only"],
-              ["sessions", "Coding sessions only"],
-            ].map(([value, label]) => ({ value, label: t(label) }))}
+              { value: "all", label: t("Everywhere") },
+              { value: "voice", label: t("Voice only") },
+              { value: "sessions", label: t("Coding sessions only") },
+            ]}
             onValueChange={(value) => setScope(value as typeof scope)}
           />
         </div>
@@ -147,6 +142,7 @@ export function MemoryEditor({
         >
           <TextField
             label={t("Forbidden words")}
+            hideLabel
             description={t(
               "Optional, separated by commas. Text outputs are checked before delivery.",
             )}

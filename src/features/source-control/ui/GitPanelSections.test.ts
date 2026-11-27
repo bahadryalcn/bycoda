@@ -2,6 +2,7 @@
 import { act, createElement, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { loadAutoFetch, saveAutoFetch, subscribeAutoFetch } from "../model/autoFetch";
 import { saveGitPanelSection, type SectionRepositoryChoice } from "../model/panelSections";
 
 vi.mock("../../../shared/ui/SearchableSelect", () => ({
@@ -20,6 +21,10 @@ vi.mock("../../../shared/ui/SearchableSelect", () => ({
         createElement("option", { key: option.value, value: option.value }, option.label),
       ),
     ),
+}));
+
+vi.mock("../hooks/useDiffIndex", () => ({
+  useDiffIndex: () => ({ index: { repository: true, files: [] } }),
 }));
 
 vi.mock("./GitStashSection", () => ({
@@ -44,6 +49,23 @@ import { GitPanelSections, usePanelPreferencesMenu } from "./GitPanelSections";
 let host: HTMLDivElement;
 let root: Root;
 const toggleAutoFetch = vi.fn();
+
+it("shares a saved auto fetch preference with every subscribed panel", () => {
+  const previous = loadAutoFetch();
+  const first = vi.fn(() => loadAutoFetch());
+  const second = vi.fn(() => loadAutoFetch());
+  const unsubscribeFirst = subscribeAutoFetch(first);
+  const unsubscribeSecond = subscribeAutoFetch(second);
+  try {
+    expect(saveAutoFetch(!previous)).toBe(true);
+    expect(first).toHaveReturnedWith(!previous);
+    expect(second).toHaveReturnedWith(!previous);
+  } finally {
+    unsubscribeFirst();
+    unsubscribeSecond();
+    saveAutoFetch(previous);
+  }
+});
 
 function Panel({ repositories }: { repositories?: SectionRepositoryChoice }) {
   const pane = useRef<HTMLDivElement>(null);
@@ -159,8 +181,9 @@ it("offers a standalone repository selector only when Stashes is shown without G
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
   expect(onChange).toHaveBeenCalledWith("/mobile");
-  saveGitPanelSection("stashes", false);
-  saveGitPanelSection("graph", false);
-  await act(async () => root.render(createElement(Panel, { repositories })));
+  await act(async () => {
+    saveGitPanelSection("stashes", false);
+    root.render(createElement(Panel, { repositories }));
+  });
   expect(host.querySelector("select")).toBeNull();
 });

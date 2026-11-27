@@ -1,117 +1,43 @@
-import { Text } from "../../../shared/ui/Text";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
-import { Heading } from "../../../shared/ui/Heading";
-import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { InlineError } from "../../../shared/ui/InlineError";
-import { LoadingText } from "../../../shared/ui/LoadingText";
-import { Timestamp } from "../../../shared/ui/Timestamp";
-import { UsageMeter } from "../../../shared/ui/UsageMeter";
-import {
-  useRateLimitQuery,
-  loadRateLimits,
-  formatResetCountdown,
-  formatWindowLabel,
-} from "../../providers/public/rateLimitsCache";
+import { useRateLimitQuery, loadRateLimits } from "../../providers/public/rateLimitsCache";
 import { useShowRemainingUsage } from "../../settings/public/settings";
-import { HarnessIcon } from "../../sessions/public/HarnessIcon";
+import {
+  accountDisplayLabel,
+  providerAccountColorValue,
+  providerAccounts,
+  type ProviderAccount,
+} from "../../providers/public/providerAccounts";
+import { UsageAccountRow } from "./UsageAccountRow";
+
+const GROK_DEFAULT_ACCOUNT: ProviderAccount = {
+  id: "default",
+  provider: "grok",
+  label: "Default account",
+};
 
 /** Grok exposes one CLI login, not isolated provider-account profiles. */
 export function GrokLimits({ refresh }: { refresh: number }) {
   useLocale();
   const limits = useRateLimitQuery("grok", "default", true);
-  const [initialNow] = useState(Date.now);
-  const now = useMinuteNow(true) || initialNow;
   const showRemaining = useShowRemainingUsage();
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Sync the shared Grok quota cache with the parent refresh generation.
   useEffect(() => {
     if (refresh > 0) void loadRateLimits("grok", "default", true);
   }, [refresh]);
-  const loading = limits.status === "idle" || limits.status === "fetching";
-  const windows = (["session", "weekly", "monthly"] as const).flatMap((kind) =>
-    limits[kind] ? [{ kind, window: limits[kind]! }] : [],
-  );
+  // The history legend colours the same stored account, so the bar and its legend dot match.
+  const account = providerAccounts("grok").find((a) => a.id === "default") ?? GROK_DEFAULT_ACCOUNT;
+  const name = accountDisplayLabel(account, [account]);
   return (
-    <section className="usage-account" aria-label="Grok" aria-busy={loading}>
-      <div className="usage-account-heading">
-        <Heading size="item" level={3} className="inline-flex items-center gap-2">
-          <HarnessIcon harness="grok" className="icon-sm" />
-          Grok
-        </Heading>
-        {limits.updatedAt > 0 ? (
-          <Text size="caption" tone="muted" leading="inherit" className="usage-account-observed">
-            <span className="sr-only">{t("Last observed")}: </span>
-            <Timestamp value={limits.updatedAt} format="relative" />
-          </Text>
-        ) : null}
-      </div>
-      <div className="usage-quota-list">
-        {windows.map(({ kind, window }) => {
-          const windowLabel =
-            kind === "weekly"
-              ? t("Weekly")
-              : kind === "monthly"
-                ? t("Monthly")
-                : window.windowMinutes === 300
-                  ? t("5 hours")
-                  : `${t("Session")} · ${formatWindowLabel(window.windowMinutes)}`;
-          return (
-            <div className="usage-quota" key={kind}>
-              <Text
-                as="div"
-                size="caption"
-                tone="inherit"
-                leading="inherit"
-                className="usage-quota-heading"
-              >
-                <SectionLabel as="h4" classNames={{ label: "usage-quota-title" }}>
-                  {windowLabel}
-                  <Text size="inherit" tone="muted" weight="regular" className="usage-quota-reset">
-                    {window.resetsAt == null ? (
-                      t("Reset time unavailable")
-                    ) : (
-                      <>
-                        {formatResetCountdown(window.resetsAt - now)}
-                        <br />
-                        <Timestamp
-                          value={window.resetsAt}
-                          format="datetime-seconds"
-                          tooltip={false}
-                        />
-                      </>
-                    )}
-                  </Text>
-                </SectionLabel>
-                <Text as="p" size="inherit" tone="secondary">
-                  <Text as="strong" size="body" tone="primary" weight="medium" leading="inherit">
-                    {Math.round(showRemaining ? 100 - window.usedPercent : window.usedPercent)}%
-                  </Text>
-                  <span>{showRemaining ? t("left") : t("used")}</span>
-                </Text>
-              </Text>
-              <UsageMeter
-                label={`Grok · ${windowLabel} · ${showRemaining ? t("left") : t("used")}`}
-                segments={[{ id: "used", label: t("used"), value: window.usedPercent }]}
-                limit={100}
-                unit="%"
-                decimals={0}
-                compact
-                showLegend={false}
-                showRemaining={showRemaining}
-              />
-            </div>
-          );
-        })}
-      </div>
-      {loading ? <LoadingText>{t("Loading usage…")}</LoadingText> : null}
-      {limits.error ? (
-        <InlineError
-          retry={{ onRetry: () => void loadRateLimits("grok", "default", true), pending: loading }}
-        >
-          {limits.error}
-        </InlineError>
-      ) : null}
-    </section>
+    <UsageAccountRow
+      provider="grok"
+      account={account}
+      name={name}
+      limits={limits}
+      showRemaining={showRemaining}
+      color={providerAccountColorValue(account)}
+      retryLabel={`${t("Retry")}: ${name}`}
+      onRetry={() => void loadRateLimits("grok", "default", true)}
+    />
   );
 }

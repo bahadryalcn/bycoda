@@ -9,91 +9,13 @@
   --ui-island-border: color-mix(in srgb, var(--palette-solidInk) 12%, var(--palette-scrim));
   --bycoda-panel: var(--ui-surface-panel);
   --bycoda-raised: var(--ui-surface-raised);
+  --ui-crew-stage-surface: var(--palette-canvasPureDark);
+  --ui-crew-stage-ink: var(--palette-solidInk);
   --bycoda-brass-muted: var(--palette-hex7e8795);
-}
-.bycoda-workspace-heading {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 16px;
-  padding: 14px 20px;
-  border-bottom: 1px solid var(--color-stroke);
-}
-.bycoda-heading-mark {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  place-items: center;
-  color: var(--color-accent);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
-  border-radius: 3px;
-  background: var(--bycoda-raised);
-}
-.bycoda-workspace-heading h1 {
-  font-size: 18px;
-  font-weight: 500;
-  letter-spacing: -0.025em;
-  line-height: 1.25;
-}
-.bycoda-workspace-heading p {
-  margin-top: 5px;
-  font-size: 12px;
-  color: var(--ui-text-secondary);
-}
-.bycoda-heading-count {
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
-  color: var(--ui-text-secondary);
-  font-size: 12px;
-}
-.bycoda-heading-count strong {
-  font-size: 20px;
-  font-weight: 500;
-  color: var(--color-accent);
-  font-variant-numeric: tabular-nums;
 }
 .bycoda-settings-content > header {
   padding-bottom: 8px;
   margin-bottom: 8px;
-}
-.bycoda-page-eyebrow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 20px;
-  font-size: 12px;
-  color: var(--color-accent);
-}
-.bycoda-page-eyebrow img {
-  width: 28px;
-  height: 28px;
-  object-fit: contain;
-}
-@media (max-height: 600px) {
-  .bycoda-workspace-heading {
-    padding-block: 12px;
-  }
-  .bycoda-workspace-heading p {
-    display: none;
-  }
-}
-@media (max-width: 600px) {
-  .bycoda-workspace-heading {
-    padding-inline: 16px;
-    gap: 10px;
-  }
-  .bycoda-workspace-heading h1 {
-    font-size: 18px;
-  }
-  .bycoda-workspace-heading p {
-    font-size: 11px;
-  }
-  .bycoda-heading-mark {
-    width: 36px;
-    height: 36px;
-  }
 }
 .bycoda-titlebar {
   background: var(--ui-navigation-chrome);
@@ -111,93 +33,47 @@
 .bycoda-sidebar.body-glass {
   background: var(--ui-surface-panel);
 }
-.bycoda-rail-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 7px 6px 10px;
-  color: var(--color-content);
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: -0.025em;
-}
-/* Mark plus outlined wordmark; both stay legible on screen shares at every rail width. */
-.bycoda-rail-lockup {
+/* Title bar identity: the mark, plus the outlined wordmark while the project rail is expanded. */
+.bycoda-title-lockup {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
-.bycoda-rail-mark {
+.bycoda-title-mark {
   width: 24px;
   height: 24px;
   flex: none;
   object-fit: contain;
 }
 /* The 280x56 artwork carries side padding; cover-cropping keeps only the lettering. */
-.bycoda-rail-wordmark {
+.bycoda-title-wordmark {
   width: 58px;
   height: 14px;
   flex: none;
   object-fit: cover;
 }
-/* Windows: the column copy only fills in what the title row drops at narrow widths. */
-@container rail (width >= 200px) {
-  .bycoda-rail-brand--narrow-only {
+/* The global Search is a full field while the title bar has room. Below that it is its icon,
+   and the wordmark steps aside before the tabs run out of space. */
+.bycoda-titlebar {
+  container: titlebar / inline-size;
+}
+.bycoda-title-search {
+  inline-size: 13rem;
+}
+@container titlebar (inline-size < 960px) {
+  .bycoda-title-search {
+    inline-size: auto;
+  }
+  [data-title-search-label],
+  [data-title-search-shortcut] {
     display: none;
   }
 }
-@container rail (width >= 140px) {
-  .bycoda-rail-brand--narrow-only .bycoda-rail-lockup {
+@container titlebar (inline-size < 720px) {
+  .bycoda-title-wordmark {
     display: none;
   }
-}
-/* Back and Forward yield to the lockup before Search does; the panel toggle always stays. */
-@container rail (width < 240px) {
-  .bycoda-rail-visit-nav button:not(:last-child) {
-    display: none;
-  }
-}
-/* Settings has no Search or panel toggle; its Back/Forward pair yields whole below 200px. */
-@container rail (width < 200px) {
-  .bycoda-rail-visit-nav--settings {
-    display: none;
-  }
-}
-/* The column row (macOS, Windows narrow fallback) fits lockup and Search from 140px. */
-.bycoda-rail-brand.bycoda-rail-brand--column {
-  gap: 6px;
-}
-@container rail (width < 200px) {
-  .bycoda-rail-brand--title .bycoda-rail-search-slot {
-    display: none;
-  }
-}
-@container rail (width < 140px) {
-  .bycoda-rail-brand--title {
-    display: none;
-  }
-  /* Icon-only rail: the centered mark alone above an icon-only Search. */
-  .bycoda-rail-brand--column {
-    flex-direction: column;
-    justify-content: center;
-    gap: 6px;
-    padding-inline: 4px;
-  }
-  .bycoda-rail-brand--column .bycoda-rail-wordmark {
-    display: none;
-  }
-  .bycoda-rail-brand--column .bycoda-rail-search-slot {
-    width: 100%;
-    flex: none;
-  }
-}
-.bycoda-rail-brand button > svg {
-  width: 14px;
-  height: 14px;
-}
-.bycoda-rail-brand button > span {
-  font-size: 12px;
 }
 .bycoda-project-rail button,
 .bycoda-sidebar button {
@@ -210,7 +86,11 @@
 /* Selection is one calm shared fill with full-strength text; rows, tabs and
    project cards never grow a decorative edge stripe. */
 .bycoda-sidebar [aria-selected="true"],
-.bycoda-project-rail [aria-current]:not(.project-reorder-item *):not([data-live-agent-card]) {
+.bycoda-project-rail
+  [aria-current]:not(.project-reorder-item *):not(
+    [data-live-agent-card],
+    [data-rail-section-primary]
+  ) {
   box-shadow: none;
   background: var(--ui-surface-selected);
   color: var(--color-content);
@@ -244,18 +124,28 @@
 .bycoda-boot-brand {
   margin-bottom: 8px;
 }
-.theme-light .bycoda-brand-lettering {
-  filter: none;
+/* First React frame under the HTML splash: transparent, so the themed ground shows through, and the
+   72px mark centred alone exactly as `#boot-logo` is. The slow-start details hang below it and never push it. */
+.bycoda-boot-loading {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-block-size: 100vh;
+  color: var(--color-content);
 }
-html:not(.theme-light) img[src="/brand/bycoda/mark-light.svg"],
-html:not(.theme-light) .bycoda-brand-lettering {
-  filter: brightness(0) invert(1);
+.bycoda-boot-loading > img {
+  inline-size: 72px;
+  block-size: 72px;
+  object-fit: contain;
 }
-html:not(.theme-light) img[src="/brand/bycoda/mark-black.svg"] {
-  content: url("/brand/bycoda/mark-white.svg");
-}
-html:not(.theme-light) img[src="/brand/bycoda/mark-small-black.svg"] {
-  content: url("/brand/bycoda/mark-small-white.svg");
+.bycoda-boot-loading-details {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: calc(50% + 36px + 12px);
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  text-align: center;
 }
 .bycoda-task-brief h1 {
   font-size: clamp(26px, 3.2vw, 42px);
@@ -276,32 +166,28 @@ html:not(.theme-light) img[src="/brand/bycoda/mark-small-black.svg"] {
    at rest, on hover and while typing. The caret and the toolbar controls' own
    keyboard focus carry focus; the box never repaints or grows a frame. It is a quiet
    focus group (data-ui-focus-quiet, arc.css), so the shared field ring skips it.
-   A question docked on the composer shares that surface so both read as one pane. */
-html [data-composer-box],
-html [data-composer-box]:hover,
-html [data-composer-box]:focus-within,
-html [data-composer] > [data-question-form] > form {
-  border-radius: 12px;
+   A question docked on the composer shares that surface so both read as one pane.
+   The radius is the popup role, so it follows the same token as the other floating panes. */
+/* The box is also a floating Surface (`.surface[data-variant="floating"]`, 0,2,0), so the box
+   selector carries `html` and its focus-group marker to keep the composer fill over that variant. */
+html [data-composer-box][data-ui-focus-group],
+[data-composer] > [data-question-form] > form {
+  border-radius: var(--ui-radius-popup);
   border-color: var(--ui-composer-border);
   background: var(--ui-composer-surface);
   box-shadow: var(--ui-composer-shadow);
 }
+.chat-pane-background [data-composer-box][data-ui-focus-group],
+.chat-pane-background [data-composer] > [data-question-form] > form {
+  background: var(--ui-chat-glass-fill, var(--ui-composer-surface));
+  box-shadow: var(--ui-chat-glass-edge, none);
+  -webkit-backdrop-filter: var(--ui-chat-glass-filter, none);
+  backdrop-filter: var(--ui-chat-glass-filter, none);
+}
+
 /* Operation boundaries retain their meaning independently of ordinary focus. */
 html [data-composer-box][data-composer-editing] {
   border-color: var(--ui-tone-accent-border);
-}
-.bycoda-title-settle {
-  animation: bycoda-title-settle var(--motion-surface-duration) var(--motion-ease-out) both;
-}
-@keyframes bycoda-title-settle {
-  from {
-    opacity: 0.65;
-    transform: translateY(2px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 /* Project code-art icons: a solid tinted silhouette with a crisp edge keeps
    the shape readable at 12-14px; the code-glyph texture sits on top. Dark
@@ -358,71 +244,19 @@ html.theme-light .project-sigil {
     opacity: 0.88;
   }
 }
-.bycoda-welcome {
-  position: absolute;
-  z-index: var(--layer-pane-sheet);
-  top: 48px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 10px 16px;
-  border: 1px solid var(--ui-pane-border);
-  border-radius: var(--ui-radius-popup);
-  background: var(--ui-surface-floating);
-  box-shadow: var(--ui-elevation-floating);
-  color: var(--color-content);
-  font-size: 12px;
-  white-space: nowrap;
-  animation: bycoda-welcome calc(var(--motion-duration-scene) * 0.64) var(--motion-ease-standard)
-    both;
-}
-.bycoda-welcome-icon {
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-  object-fit: contain;
-}
-@keyframes bycoda-welcome {
-  0% {
-    opacity: 0;
-    margin-top: -4px;
-  }
-  15%,
-  80% {
-    opacity: 1;
-    margin-top: 0;
-  }
-  100% {
-    opacity: 0;
-  }
-}
 @media (prefers-reduced-motion: reduce) {
-  .bycoda-title-settle,
-  .bycoda-sigil-active,
-  .bycoda-welcome {
+  .bycoda-sigil-active {
     animation: none;
   }
 }
 
-/* Compact project tools above a separate project ledger. */
-.bycoda-workbench-tag {
-  display: flex;
-  align-items: center;
-  padding: 0 11px;
-  border-right: 1px solid var(--color-stroke);
-  font: 10px var(--font-mono);
-  letter-spacing: 0.08em;
-  color: var(--ui-text-secondary);
-}
 /* Tools share the rail ground: no card, no rule; spacing separates them. */
 .bycoda-rail-tools {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding: 2px 7px 4px;
-  margin-block-end: 4px;
+  padding: 2px 7px var(--space-1);
+  margin-block-end: var(--space-1);
 }
 /* Settings sits at the rail's bottom edge, below the update and repository footers. */
 .bycoda-rail-tools--footer {
@@ -444,8 +278,25 @@ html.theme-light .project-sigil {
     block-size: 1px;
   }
 }
-/* Active agents follow workspace tools and disappear when none are visible. */
+/* Above the icon rail the joined tools wrap onto rows of at least 28px targets instead of
+   squeezing seven icons into one line. Each tool is a grid cell; the plate selection draws no
+   dividers, so a wrapped row needs no seam. Usage footer keeps its own layout. */
+@container rail (width > 140px) {
+  .bycoda-rail-tools:not(.bycoda-rail-tools--footer) > [data-button-group="joined"] {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(28px, 1fr));
+  }
+}
+/* A rail too narrow for one row splits the tools into two even rows (set by RailToolGroup)
+   instead of leaving a single orphan icon on the second row. */
+@container rail (140px < width < 220px) {
+  .bycoda-rail-tools:not(.bycoda-rail-tools--footer) > [data-button-group="joined"] {
+    grid-template-columns: repeat(var(--rail-tool-columns, 4), 1fr);
+  }
+}
+/* Activity has its own space below the project ledger. */
 .bycoda-rail-status {
+  border-block-start: 1px solid var(--ui-pane-border);
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -455,15 +306,15 @@ html.theme-light .project-sigil {
   display: none;
 }
 .bycoda-project-ledger {
-  padding-top: 4px;
+  padding-top: var(--space-1);
   scrollbar-gutter: stable;
 }
 .bycoda-sidebar {
   background: var(--ui-surface-panel);
 }
 .bycoda-workspace-tabs {
-  min-height: 32px;
-  height: 32px;
+  /* Compact keeps 32px; Touch grows with the density-aware tab buttons instead of clipping them. */
+  min-height: max(32px, var(--ui-control-height-compact));
   padding-inline: 6px;
   background: var(--ui-navigation-panel);
 }
@@ -520,9 +371,30 @@ html.theme-light .project-sigil {
     display: inline-flex;
   }
 }
-@container workspace-tab (inline-size < 184px) {
+@container workspace-tab (inline-size < 152px) {
   [data-workspace-tab-churn] .workspace-tab-content {
     display: none;
+  }
+}
+/* Reserve space for the counts. A caption that cannot fit moves as a whole
+   below the clipped first line, including when translations grow. */
+@container workspace-tab (inline-size >= 152px) {
+  [data-workspace-tab-churn] .workspace-tab-stats {
+    flex-shrink: 0;
+  }
+  [data-workspace-tab-churn] .workspace-tab-content {
+    flex-wrap: wrap;
+    align-content: start;
+    max-block-size: 1lh;
+    overflow: clip;
+  }
+  [data-workspace-tab-churn] .workspace-tab-content::before {
+    content: "";
+    block-size: 1lh;
+  }
+  [data-workspace-tab-churn] .workspace-tab-label {
+    flex: none;
+    line-height: inherit;
   }
 }
 /* Churn without a file count (binary, mode-only) is a presence dot until the churn fits. */
@@ -547,67 +419,34 @@ html.theme-light .project-sigil {
   border-bottom: 1px solid var(--ui-pane-border);
 }
 /* Keep the same native controls on the highest visible chrome row. */
-[data-workspace-chrome]:has(> [data-workspace-menubar]) {
+:is([data-workspace-chrome], [data-window-chrome]):has(> [data-workspace-menubar]) {
   position: relative;
   --workspace-menu-height: var(--ui-control-height-compact);
 }
-[data-workspace-chrome]:has(> .bycoda-titlebar [data-window-controls]) > [data-workspace-menubar] {
+:is([data-workspace-chrome], [data-window-chrome]):has(> .bycoda-titlebar [data-window-controls])
+  > [data-workspace-menubar] {
   padding-inline-end: calc(7.5rem + 1px);
 }
-[data-workspace-chrome]:has(> [data-workspace-menubar]) > .bycoda-titlebar [data-window-controls] {
+:is([data-workspace-chrome], [data-window-chrome]):has(> [data-workspace-menubar])
+  > .bycoda-titlebar
+  [data-window-controls] {
   position: absolute;
   inset-block-start: 0;
   inset-inline-end: 0;
   block-size: var(--workspace-menu-height);
 }
 .bycoda-settings-return {
-  margin: 4px 8px;
+  margin: var(--space-1) 8px;
   padding: 8px;
   font-size: 11px;
   text-align: left;
   color: var(--ui-text-secondary);
   border: 1px solid var(--color-stroke);
 }
-@container rail (width < 140px) {
-  .bycoda-workbench-tag {
-    display: none;
-  }
-}
-/* Short windows hand the brand row's height to the scrolling project ledger. */
+/* Short windows hand spare height to the scrolling project ledger. */
 @media (max-height: 720px) {
-  .bycoda-rail-brand {
-    padding-block: 6px 4px;
-  }
   .bycoda-project-ledger {
-    padding-top: 4px;
-  }
-}
-.bycoda-project-rail > [data-tauri-drag-region] {
-  height: calc(var(--ui-control-height-compact) + 0.5rem);
-}
-.bycoda-rail-brand.bycoda-rail-brand--title {
-  min-inline-size: 0;
-  flex: 1;
-  gap: 4px;
-  padding-block: 0;
-  padding-inline: 7px 0;
-}
-.bycoda-rail-search-slot {
-  container: rail-search / inline-size;
-  min-inline-size: var(--ui-control-height-sm);
-}
-@container rail-search (inline-size < 110px) {
-  [data-rail-search-label],
-  [data-rail-search-shortcut] {
-    display: none;
-  }
-  [data-rail-search] {
-    justify-content: center;
-  }
-}
-@container rail (width < 340px) {
-  .bycoda-rail-brand--title [data-rail-search-shortcut] {
-    display: none;
+    padding-top: var(--space-1);
   }
 }
 .bycoda-rail-tools > button {
@@ -637,16 +476,6 @@ html[data-performance-no-blur] {
 
 /* Appearance swatches: each option paints its sample from fixed palette entries, not the active
    theme, so every card shows its own colors. */
-.code-theme-swatch[data-swatch="github"] {
-  --swatch-1: var(--palette-hexff7b72);
-  --swatch-2: var(--palette-hexa5d6ff);
-  --swatch-3: var(--palette-hexd2a8ff);
-}
-.code-theme-swatch[data-swatch="dracula"] {
-  --swatch-1: var(--palette-hexff79c6);
-  --swatch-2: var(--palette-hexf1fa8c);
-  --swatch-3: var(--palette-hex50fa7b);
-}
 .diff-swatch[data-palette="default"] {
   --swatch-add: var(--palette-hex10b981);
   --swatch-del: var(--palette-hexf43f5e);

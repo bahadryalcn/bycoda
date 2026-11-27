@@ -36,6 +36,74 @@ import {
 } from "./codexLive.testSupport";
 
 describe("codex live turn sequence", () => {
+  it("sends no delegated prompt if Codex did not confirm ephemeral history", async () => {
+    const sessionId = "codex-private-delegate-unconfirmed";
+    const turn = sendCodexTurn({
+      sessionId,
+      cwd: "/repo",
+      model: "codex:gpt-5.4",
+      runtimeMode: "supervised",
+      privateDelegateHistory: true,
+      text: "private task",
+      onEvent: () => undefined,
+    });
+    const rejected = expect(turn).rejects.toThrow("Codex did not confirm private session storage.");
+    await waitFor(() => parse().some((entry) => entry.method === "initialize"), "initialize");
+    reply(parse().find((entry) => entry.method === "initialize")!.id as number, {});
+    await waitFor(() => parse().some((entry) => entry.method === "thread/start"), "thread/start");
+    reply(parse().find((entry) => entry.method === "thread/start")!.id as number, {
+      thread: { id: "thr_shared", ephemeral: false },
+    });
+    await rejected;
+    expect(parse().some((entry) => entry.method === "turn/start")).toBe(false);
+  });
+
+  it("uses ephemeral delegated storage and only replays Bycoda history after a cold start", async () => {
+    const sessionId = "codex-private-delegate";
+    const saved = "Saved transcript: the first result was 73.";
+    const options = { privateDelegateHistory: true, privateDelegateReplay: saved };
+    const started = await startTurn(sessionId, options);
+    expect(parse().find((entry) => entry.method === "thread/start")?.params).toMatchObject({
+      ephemeral: true,
+    });
+    const first = parse().find((entry) => entry.method === "turn/start");
+    expect(first?.params).toMatchObject({
+      input: [{ type: "text", text: expect.stringContaining(saved) }],
+    });
+    notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_1", status: "completed" } });
+    await started.turn;
+    expect(started.events).not.toContainEqual(
+      expect.objectContaining({ type: "session.providerBound" }),
+    );
+
+    sent.length = 0;
+    const warm = sendCodexTurn({
+      ...options,
+      sessionId,
+      cwd: "/repo",
+      model: "codex:gpt-5.4",
+      runtimeMode: "supervised",
+      text: "warm turn",
+      onEvent: () => undefined,
+    });
+    await waitFor(() => parse().some((entry) => entry.method === "turn/start"), "warm turn");
+    const warmRequest = parse().find((entry) => entry.method === "turn/start")!;
+    expect(warmRequest.params).toMatchObject({ input: [{ type: "text", text: "warm turn" }] });
+    reply(warmRequest.id as number, { turn: { id: "turn_2" } });
+    notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_2", status: "completed" } });
+    await warm;
+
+    await stopCodexSession(sessionId);
+    sent.length = 0;
+    const cold = await startTurn(sessionId, { ...options, resume: true, expectResume: false });
+    expect(parse().some((entry) => entry.method === "thread/resume")).toBe(false);
+    expect(parse().find((entry) => entry.method === "turn/start")?.params).toMatchObject({
+      input: [{ type: "text", text: expect.stringContaining(saved) }],
+    });
+    notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_1", status: "completed" } });
+    await cold.turn;
+  });
+
   it("applies compaction thresholds on start and resume, and restores provider defaults", async () => {
     const sessionId = "codex-compact-window";
     for (const [index, autoCompactWindow] of ["150000", "200000", "default"].entries()) {
@@ -272,6 +340,50 @@ describe("codex live turn sequence", () => {
     ).toHaveLength(1);
     // Explicit fixture teardown can join the retained failed physical ledger;
     // the transfer hook itself must never select a replacement by session ID.
+    await stopCodexSession(sessionId);
+  });
+
+  it("joins verified natural exit of the exact settled writer", async () => {
+    const sessionId = "codex-original-natural-exit";
+    const context = Object.freeze({ operation: Object.freeze({}) });
+    const { turn } = await startTurn(sessionId, { operationContext: context });
+    notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_1", status: "completed" } });
+    await turn;
+    const original = processConstructions.created.find(
+      (process) => process.sessionId === sessionId,
+    );
+    let release!: () => void;
+    killChild.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    onExit?.(0);
+    let retired = false;
+    const retirement = retireOriginalCodexWriter(sessionId, context).then(() => {
+      retired = true;
+    });
+    void retirement.catch(() => {});
+    await waitFor(() => !!release, "exact exited construction settlement");
+    expect(retired).toBe(false);
+    release();
+    await retirement;
+    expect(
+      processConstructions.operations
+        .filter((operation) => operation.kind === "kill")
+        .map((operation) => operation.handle),
+    ).toEqual([original]);
+    sent.length = 0;
+    const replacement = await startTurn(sessionId, { expectResume: true });
+    await expect(retireOriginalCodexWriter(sessionId, context)).rejects.toMatchObject({
+      reason: "original_unverified",
+    });
+    expect(
+      processConstructions.operations.filter((operation) => operation.kind === "kill"),
+    ).toHaveLength(1);
+    notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_1", status: "completed" } });
+    await replacement.turn;
     await stopCodexSession(sessionId);
   });
 
@@ -792,6 +904,13 @@ describe("codex live turn sequence", () => {
   it("materializes image generations before completing the turn", async () => {
     const { events, turn } = await startTurn("codex-live");
 
+    notify("item/started", {
+      item: { id: "image_1", type: "imageGeneration", size: "1024x1280" },
+    });
+    const started = { type: "image.generationStarted", itemId: "image_1", aspectRatio: 0.8 };
+    expect(events).toContainEqual(started);
+    expect(saveGeneratedImage).not.toHaveBeenCalled();
+
     notify("item/completed", {
       item: {
         id: "image_1",
@@ -819,12 +938,43 @@ describe("codex live turn sequence", () => {
     expect(events.reduce(applyHarnessEvent, newSession("codex", "/repo")).blocks).toMatchObject([
       {
         role: "image",
+        imageGeneration: { status: "completed", aspectRatio: 0.8 },
         image: {
           path: "/app-data/generated-images/image.png",
           mimeType: "image/png",
         },
       },
     ]);
+  });
+
+  it("settles an unfinished image when Codex interrupts the turn", async () => {
+    const { events, turn } = await startTurn("codex-live");
+    notify("item/started", { item: { id: "image_1", type: "imageGeneration" } });
+    notify("turn/completed", { turn: { id: "turn_1", status: "interrupted" } });
+    await turn;
+
+    expect(events.filter((event) => event.type.startsWith("image."))).toEqual([
+      { type: "image.generationStarted", itemId: "image_1" },
+      { type: "image.generationEnded", itemId: "image_1", status: "stopped" },
+    ]);
+  });
+
+  it("replaces the pending image with a failure if saving the result fails", async () => {
+    saveGeneratedImage.mockRejectedValueOnce(new Error("disk full"));
+    const { events, turn } = await startTurn("codex-live");
+    notify("item/started", { item: { id: "image_1", type: "imageGeneration" } });
+    notify("item/completed", {
+      item: { id: "image_1", type: "imageGeneration", result: "aW1hZ2U=" },
+    });
+    notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
+    await turn;
+
+    expect(events).toContainEqual({
+      type: "image.generationEnded",
+      itemId: "image_1",
+      status: "failed",
+    });
+    expect(events.some(({ type }) => type === "session.error")).toBe(false);
   });
 
   it("keeps later notifications ordered after delayed image materialization", async () => {
@@ -2886,6 +3036,14 @@ describe("codex subagents", () => {
         agentsStates: { thr_child: { status: "running" } },
       },
     });
+    notify("item/started", {
+      threadId: "thr_child",
+      item: { id: "child_image", type: "imageGeneration" },
+    });
+    notify("item/started", {
+      threadId: "thr_child",
+      item: { id: "unfinished_child_image", type: "imageGeneration" },
+    });
     notify("item/completed", {
       threadId: "thr_child",
       item: {
@@ -2901,6 +3059,12 @@ describe("codex subagents", () => {
     notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
     await turn;
 
+    expect(events).toContainEqual({ type: "image.generationStarted", itemId: "child_image" });
+    expect(events).toContainEqual({
+      type: "image.generationEnded",
+      itemId: "unfinished_child_image",
+      status: "failed",
+    });
     expect(events).toContainEqual({
       type: "image.generated",
       itemId: "child_image",

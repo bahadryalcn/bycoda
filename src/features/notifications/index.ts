@@ -1,11 +1,22 @@
-export { ownerApprovalsSnapshot, subscribeOwnerApprovals } from "./model/ownerApprovals";
+export {
+  hasOwnerApprovalChat,
+  ownerApprovalsSnapshot,
+  presentOwnerApproval,
+  reopenOwnerApproval,
+  subscribeOwnerApprovals,
+} from "./model/ownerApprovals";
 export {
   ownerSecretInputsSnapshot,
   subscribeOwnerSecretInputs,
   type OwnerSecretInput,
 } from "./model/ownerSecretInputs";
 export { logOwnerRequest } from "./model/notificationLog";
-export { OwnerApprovalChat, OwnerApprovalInbox } from "./ui/OwnerApprovalRequests";
+export { ownerPromptTitle } from "./model/ownerPromptLabels";
+export {
+  OwnerApprovalChat,
+  OwnerApprovalInbox,
+  ownerRequestTitle,
+} from "./ui/OwnerApprovalRequests";
 export { useServerNotifications } from "./hooks/useServerNotifications";
 export { useOwnerApprovalMirror } from "./hooks/useOwnerApprovalMirror";
 export {
@@ -20,6 +31,7 @@ export {
   notificationKey,
   type NotificationHistoryEntry,
 } from "./model/notificationHistory";
+export { groupHistoryByDay, historyTone, isHistoryUnread } from "./model/notificationRows";
 export { useNotificationSeenAt } from "./hooks/useNotificationSeen";
 export { markNotificationsSeen, countUnseenNotifications } from "./model/notificationSeen";
 export {

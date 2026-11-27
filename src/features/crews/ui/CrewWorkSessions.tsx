@@ -5,7 +5,6 @@ import { useMemo, type ReactNode } from "react";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Eye } from "../../../shared/ui/icons";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import type { HostModelCatalog } from "../../connections/model/protocol";
 import { taskSessionIds } from "../../tasks/model/backgroundSession";
@@ -25,10 +24,11 @@ import { roleLabel } from "./CrewMemberForm";
 import { CrewModelTag } from "./CrewModelTag";
 import { CrewRoleIcon } from "./CrewRoleIcon";
 
-export function crewSessionCount(run: CrewRunView) {
+/** Distinct conversations of the work; the lead's is left out when it is already shown inline. */
+export function crewSessionCount(run: CrewRunView, coordinatorInline = false) {
   return new Set(
     [
-      run.coordinatorSessionId,
+      coordinatorInline ? undefined : run.coordinatorSessionId,
       ...run.tasks.flatMap((task) => Object.values(taskSessionIds(task))),
     ].filter(Boolean),
   ).size;
@@ -45,6 +45,7 @@ function SessionRow({
   status,
   working,
   disabled,
+  disabledReason,
   loading,
   title,
   details,
@@ -62,6 +63,8 @@ function SessionRow({
   status?: ReactNode;
   working?: boolean;
   disabled: boolean;
+  /** Why the row cannot open; omit while it is only busy. */
+  disabledReason?: string;
   loading: boolean;
   title?: string;
   details?: readonly ReactNode[];
@@ -73,10 +76,11 @@ function SessionRow({
       motion="none"
       className="w-full min-w-0"
       disabled={disabled}
+      disabledReason={disabledReason}
       loading={loading}
       onClick={onClick}
-      tooltip={title ?? t("View conversation")}
-      tooltipWhen={title ? "overflow" : "always"}
+      tooltip={title}
+      tooltipWhen="overflow"
       tooltipDetails={details}
     >
       {traits ? (
@@ -109,7 +113,6 @@ function SessionRow({
           {status ? <span>{status}</span> : null}
         </Text>
       ) : null}
-      <Eye aria-hidden="true" className="icon-sm shrink-0" tone="muted" />
     </Button>
   );
 }
@@ -126,6 +129,7 @@ export function CrewWorkSessions({
   canOpen,
   pending,
   pendingAction,
+  coordinatorInline = false,
   onOpen,
 }: {
   run: CrewRunView;
@@ -133,6 +137,8 @@ export function CrewWorkSessions({
   canOpen: boolean;
   pending: boolean;
   pendingAction: string | null;
+  /** The lead's conversation is rendered inline above this list, so it is not listed again. */
+  coordinatorInline?: boolean;
   onOpen: (id: string, source?: string) => void;
 }) {
   useLocale();
@@ -143,9 +149,11 @@ export function CrewWorkSessions({
   const reviewerName = reviewer?.name.trim() || roleLabel("reviewer");
   const same = (name: string, role: CrewRole) =>
     name.trim().toLocaleLowerCase() === roleLabel(role).toLocaleLowerCase();
+  const showCoordinator = !(coordinatorInline && run.coordinatorSessionId);
+  if (!showCoordinator && !run.tasks.length) return null;
   return (
     <>
-      {crewSessionCount(run) > 1 ? (
+      {crewSessionCount(run, !showCoordinator) > 1 ? (
         <SectionLabel as="h4" className="pb-1 pt-4">
           {t("Sessions")}
         </SectionLabel>
@@ -153,39 +161,48 @@ export function CrewWorkSessions({
         <div className="pt-3" />
       )}
       <div role="list" aria-label={t("Sessions")} className="flex min-w-0 flex-col gap-0">
-        <div role="listitem">
-          <SessionRow
-            role="coordinator"
-            traits={coordinator && looks.get(coordinator.id)}
-            name={coordinatorName}
-            roleText={same(coordinatorName, "coordinator") ? undefined : roleLabel("coordinator")}
-            model={
-              run.coordinatorCandidate || coordinator ? (
-                <CrewModelTag
-                  catalog={catalog}
-                  candidate={run.coordinatorCandidate}
-                  agent={coordinator}
-                  className="shrink-0"
-                />
-              ) : undefined
-            }
-            working={run.coordinatorStatus === "running"}
-            status={
-              !run.coordinatorSessionId
-                ? t("Session unavailable")
-                : run.coordinatorStatus === "running"
-                  ? t("Working")
-                  : run.coordinatorStatus === "interrupted"
-                    ? t("Interrupted")
+        {showCoordinator ? (
+          <div role="listitem">
+            <SessionRow
+              role="coordinator"
+              traits={coordinator && looks.get(coordinator.id)}
+              name={coordinatorName}
+              roleText={same(coordinatorName, "coordinator") ? undefined : roleLabel("coordinator")}
+              model={
+                run.coordinatorCandidate || coordinator ? (
+                  <CrewModelTag
+                    catalog={catalog}
+                    candidate={run.coordinatorCandidate}
+                    agent={coordinator}
+                    className="shrink-0"
+                  />
+                ) : undefined
+              }
+              working={run.coordinatorStatus === "running"}
+              status={
+                !run.coordinatorSessionId
+                  ? t("Session unavailable")
+                  : run.coordinatorStatus === "running"
+                    ? t("Working")
+                    : run.coordinatorStatus === "interrupted"
+                      ? t("Interrupted")
+                      : undefined
+              }
+              disabled={!run.coordinatorSessionId || !canOpen || pending}
+              disabledReason={
+                !run.coordinatorSessionId
+                  ? t("Session unavailable")
+                  : !canOpen
+                    ? t("Opening sessions is not available here.")
                     : undefined
-            }
-            disabled={!run.coordinatorSessionId || !canOpen || pending}
-            loading={pendingAction === "open:coordinator"}
-            onClick={() =>
-              run.coordinatorSessionId && onOpen(run.coordinatorSessionId, "coordinator")
-            }
-          />
-        </div>
+              }
+              loading={pendingAction === "open:coordinator"}
+              onClick={() =>
+                run.coordinatorSessionId && onOpen(run.coordinatorSessionId, "coordinator")
+              }
+            />
+          </div>
+        ) : null}
         {run.tasks.map((task) => {
           const assignment = run.assignments.find((item) => item.taskId === task.id);
           const agent = crewRunMember(run, assignment?.memberId);
@@ -208,6 +225,13 @@ export function CrewWorkSessions({
                 working={task.status === "running"}
                 status={crewTaskStatusLabel(task.status)}
                 disabled={!ids.worker || !canOpen || pending}
+                disabledReason={
+                  !ids.worker
+                    ? t("Session unavailable")
+                    : !canOpen
+                      ? t("Opening sessions is not available here.")
+                      : undefined
+                }
                 loading={pendingAction === `open:worker:${task.id}`}
                 title={task.title}
                 details={[
@@ -235,6 +259,9 @@ export function CrewWorkSessions({
                   working={review.current}
                   status={crewReviewLabel(review.state)}
                   disabled={!canOpen || pending}
+                  disabledReason={
+                    !canOpen ? t("Opening sessions is not available here.") : undefined
+                  }
                   loading={pendingAction === `open:review:${task.id}`}
                   title={task.title}
                   onClick={() => onOpen(ids.review!, `review:${task.id}`)}

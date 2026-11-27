@@ -283,6 +283,16 @@ if (params.has("rich")) {
     },
   ];
 }
+// More than six crews: the Teams filter and the cards/list switch appear only for a long list.
+if (params.has("manyCrews"))
+  definitions = [
+    ...definitions,
+    ...Array.from({ length: 7 }, (_, index) => ({
+      ...definition,
+      id: `extra-${index}`,
+      name: `Extra crew ${index + 1}`,
+    })),
+  ];
 // Realistic recent times for the work list (fixture data; ordering is unchanged).
 const baseTime = Date.now() - 3 * 60 * 60_000;
 const at = (minutes: number) => baseTime + minutes * 60_000;
@@ -292,9 +302,25 @@ let savedTasks: Record<string, unknown>[] = [];
 const taskSaveIds: string[] = [];
 let starts = 0;
 let groupFailure = false;
+let groupUpdateCalls = 0;
 let copyFailure = false;
 const agentSaveCounts: Record<string, number> = {};
 if (params.has("groupRetry")) agents = agents.map((agent) => ({ ...agent, groups: ["UI"] }));
+// The library's search, group filter and group menu appear only for a long library (more than six).
+if (params.has("longLibrary"))
+  agents = [
+    ...agents,
+    ...["Ada", "Ben", "Cleo", "Dev", "Eli"].map((name) => ({
+      id: `lib-extra-${name.toLowerCase()}`,
+      name: `${name} (filler)`,
+      role: "specialist" as const,
+      selection: "fixed" as const,
+      instructions: "Fills the library so its list controls appear",
+      candidates: [candidate],
+      groups: params.has("groupRetry") ? ["UI"] : ["Filler"],
+      updatedAt: 1,
+    })),
+  ];
 let opens = 0;
 const startReceipts = new Map<string, { id: string; coordinatorSessionId: string }>();
 const startRequestIds: string[] = [];
@@ -348,8 +374,15 @@ let runs = [
         reviewer: params.has("reviewingAgain")
           ? { sessionId: "current-review-session" }
           : undefined,
-        error: params.has("blocked")
-          ? "The design asset is unavailable. Keep the existing layout draft and select a replacement before retrying this task."
+        stop: params.has("blocked")
+          ? {
+              code: "run_failed",
+              message:
+                "The design asset is unavailable, so select a replacement before retrying this task.",
+              actor: "host",
+              nextAction: "retry",
+              at: at(2),
+            }
           : undefined,
         sessionId: "ui-session",
         verification: {
@@ -531,7 +564,9 @@ mockIPC(async (command, args) => {
             ...(params.has("noTools") ? [] : ["crews.tools.v1"]),
             ...(params.has("rich") ? ["crews.active.v1", "crews.model-pools.v1"] : []),
             ...(params.has("noIdentity") ? [] : ["crews.identity.v1"]),
-            ...(params.get("legacy") ? [] : ["crews.agent-groups.v1", "crews.run-delete.v1"]),
+            ...(params.get("legacy")
+              ? []
+              : ["crews.agent-groups.v1", "crews.agent-group-update.v1", "crews.run-delete.v1"]),
           ],
           environmentId: "fixture",
         };
@@ -545,8 +580,10 @@ mockIPC(async (command, args) => {
           extra: Record<string, unknown>,
         ) => ({
           runId: "run",
-          projectId: "project",
-          projectName: "Fixture",
+          // `activeElsewhere`: the working members belong to another project, which the Work tab
+          // lists above this project's own work.
+          projectId: params.has("activeElsewhere") ? "elsewhere" : "project",
+          projectName: params.has("activeElsewhere") ? "Elsewhere" : "Fixture",
           definitionId: "crew",
           definitionName: "Website Crew",
           runStatus: "active",
@@ -587,6 +624,9 @@ mockIPC(async (command, args) => {
       case "projects.list":
         return [
           { id: "project", cwd, name: "Fixture" },
+          ...(params.has("activeElsewhere")
+            ? [{ id: "elsewhere", cwd: "C:/elsewhere", name: "Elsewhere" }]
+            : []),
           ...(params.has("longProjects")
             ? [
                 {
@@ -708,10 +748,6 @@ mockIPC(async (command, args) => {
       case "crews.agent.save": {
         const input = p.agent as SavedCrewAgent;
         agentSaveCounts[input.id] = (agentSaveCounts[input.id] ?? 0) + 1;
-        if (params.has("groupRetry") && input.id === "lib-api" && !groupFailure) {
-          groupFailure = true;
-          throw new Error("Second profile unavailable. Retry group update.");
-        }
         const previous = agents.find((a) => a.id === input.id);
         if (previous && previous.updatedAt !== p.expectedUpdatedAt)
           throw new Error("Agent changed. Reload before saving");
@@ -726,6 +762,34 @@ mockIPC(async (command, args) => {
       case "crews.agent.delete":
         agents = agents.filter((a) => a.id !== p.agentId);
         return { deleted: true };
+      case "crews.agent.group.update": {
+        // Mirrors the Host: validate everything first, then move every member or none.
+        groupUpdateCalls += 1;
+        if (params.has("groupRetry") && !groupFailure) {
+          groupFailure = true;
+          throw new Error("Group update unavailable. Retry group update.");
+        }
+        const group = p.group as string;
+        const rename = p.rename as string | undefined;
+        const members = p.members as { agentId: string; expectedUpdatedAt: number }[];
+        const current = agents.filter((a) => a.groups?.includes(group));
+        if (
+          current.length !== members.length ||
+          current.some(
+            (a) => members.find((m) => m.agentId === a.id)?.expectedUpdatedAt !== a.updatedAt,
+          )
+        )
+          throw new Error("Group changed. Reload before saving");
+        if (rename && agents.some((a) => a.groups?.includes(rename)))
+          throw new Error(`A group named ${rename} already exists`);
+        agents = agents.map((a) => {
+          if (!a.groups?.includes(group)) return a;
+          const groups = a.groups.flatMap((g) => (g !== group ? [g] : rename ? [rename] : []));
+          const { groups: _previous, ...rest } = a;
+          return { ...rest, ...(groups.length ? { groups } : {}), updatedAt: a.updatedAt + 1 };
+        });
+        return { updated: current.length };
+      }
       case "crews.delete":
         definitions = definitions.filter((d) => d.id !== p.definitionId);
         return { deleted: true };
@@ -823,6 +887,7 @@ Object.assign(window, {
     runs: runs.map((run) => ({ id: run.id, status: run.status })),
     agents: agents.map((agent) => ({ id: agent.id, groups: agent.groups })),
     agentSaveCounts,
+    groupUpdateCalls,
   }),
   simulateRunUpdate: (id: string) => {
     const next = Math.max(...runs.map((run) => run.updatedAt)) + 1;
@@ -892,7 +957,7 @@ function Fixture() {
           hidden={params.has("work-model")}
           className="w-80 max-w-full shrink-0 border-e border-(--ui-tone-neutral-border)"
         >
-          <CrewSidebar cwd={cwd} onOpen={openSession} onManagedChange={() => {}} />
+          <CrewSidebar cwd={cwd} onManagedChange={() => {}} />
         </aside>
         <div className="min-w-0 flex-1 p-4" style={{ flexBasis: "24rem" }}>
           <Button variant="ghost" onClick={() => setView("page")}>

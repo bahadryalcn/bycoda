@@ -1,4 +1,118 @@
 #[test]
+fn window_list_outlives_stream_detach_and_closes_with_its_window() {
+    use crate::host_ws::tests::{accept, hello, next, result, Server};
+    let (seen, received) = std::sync::mpsc::sync_channel(1);
+    let (respond, response) = tokio::sync::oneshot::channel();
+    let server = Server::spawn(move |listener| async move {
+        let mut socket = accept(&listener).await;
+        hello(&mut socket, &["sessions.list"], "host.1").await;
+        let first = next(&mut socket).await;
+        seen.send(()).unwrap();
+        response.await.unwrap();
+        result(&mut socket, &first, serde_json::json!([])).await;
+        let _second = next(&mut socket).await;
+        seen.send(()).unwrap();
+        // Allow the real window-close path to cancel this pending read.
+        use futures_util::StreamExt;
+        while socket.next().await.is_some() {}
+    });
+    let state = super::RemoteConnections::default();
+    let route = server.route();
+    let label = "main";
+    let hold = |method| {
+        state
+            .window_lists
+            .begin(&state.ws, "machine.1", label, method)
+    };
+    let first_hold = hold("sessions.list").unwrap();
+    let second_hold = hold("projects.list").unwrap();
+    let owner = first_hold.owner.clone();
+    assert_eq!(owner, second_hold.owner);
+    assert!(hold("commands.dispatch").is_none());
+    state
+        .ws
+        .attach(&route, label, std::sync::Arc::new(|_| {}))
+        .unwrap();
+    let list = || {
+        state
+            .ws
+            .begin_request(
+                &route,
+                &owner,
+                "sessions.list",
+                serde_json::json!({"projectId":"p"}),
+                Default::default(),
+            )
+            .unwrap()
+    };
+    let one = list();
+    received
+        .recv_timeout(std::time::Duration::from_secs(3))
+        .unwrap();
+    state
+        .window_lists
+        .detach_stream(&state.ws, "machine.1", label);
+    respond.send(()).unwrap();
+    assert_eq!(one.wait().unwrap().result, serde_json::json!([]));
+    drop(first_hold);
+    let two = list();
+    received
+        .recv_timeout(std::time::Duration::from_secs(3))
+        .unwrap();
+    state.detach_window(label);
+    assert!(two.wait().is_err());
+}
+
+#[test]
+fn window_list_retires_its_socket_after_detach_and_last_read() {
+    use crate::host_ws::tests::{accept, hello, next, result, Server};
+    use futures_util::StreamExt;
+    let (closed, received) = std::sync::mpsc::channel();
+    let server = Server::spawn(move |listener| async move {
+        let mut socket = accept(&listener).await;
+        hello(&mut socket, &["sessions.list"], "host.1").await;
+        let request = next(&mut socket).await;
+        result(&mut socket, &request, serde_json::json!([])).await;
+        while matches!(socket.next().await, Some(Ok(frame)) if !frame.is_close()) {}
+        let _ = closed.send(());
+    });
+    let state = super::RemoteConnections::default();
+    let hold = |method| {
+        state
+            .window_lists
+            .begin(&state.ws, "machine.1", "main", method)
+            .unwrap()
+    };
+    let one = hold("sessions.list");
+    let two = hold("projects.list");
+    let route = server.route();
+    state
+        .ws
+        .attach(&route, "main", std::sync::Arc::new(|_| {}))
+        .unwrap();
+    let reply = state
+        .ws
+        .request(
+            &route,
+            &one.owner,
+            "sessions.list",
+            serde_json::json!({"projectId":"p"}),
+            Default::default(),
+        )
+        .unwrap();
+    state
+        .window_lists
+        .detach_stream(&state.ws, "machine.1", "main");
+    drop(one);
+    assert!(reply.disclose().is_ok());
+    assert!(received.try_recv().is_err());
+    drop(two);
+    received
+        .recv_timeout(std::time::Duration::from_secs(3))
+        .unwrap();
+}
+
+#[test]
 fn search_replace_rpc_deadline_outlasts_per_file_publication() {
     assert_eq!(
         super::rpc_timeout(
@@ -175,6 +289,27 @@ fn device_http_outcomes_preserve_admitted_uncertainty_without_reclassifying_deni
         ),
         ("devices.status", 401, unknown.to_vec(), 0, "auth"),
         (
+            "projects.list",
+            401,
+            br#"{"error":"Device credential is invalid or revoked"}"#.to_vec(),
+            0,
+            "auth",
+        ),
+        (
+            "sessions.queue.get",
+            403,
+            br#"{"error":"Unsupported request origin or route"}"#.to_vec(),
+            0,
+            "route",
+        ),
+        (
+            "devices.setup",
+            403,
+            br#"{"error":"Unsupported request origin or route"}"#.to_vec(),
+            0,
+            "route",
+        ),
+        (
             "devices.preview.mobile.status",
             400,
             unknown.to_vec(),
@@ -306,6 +441,17 @@ fn device_http_outcomes_preserve_admitted_uncertainty_without_reclassifying_deni
             expected == "auth",
             "{method}/{status}: {error}"
         );
+        assert_eq!(
+            error.contains("[RPC_ROUTE_REJECTED]"),
+            expected == "route",
+            "{method}/{status}: {error}"
+        );
+        if expected == "auth" {
+            assert!(
+                error.contains("pair it again") && !error.contains("access scope"),
+                "{error}"
+            );
+        }
         if expected == "rejected" {
             assert!(error.starts_with("Host rejected request:"), "{error}");
         }
@@ -376,6 +522,7 @@ fn oversized_canonical_writes_select_http_before_dispatch_and_keep_body_identiti
         token: "paired-owner".into(),
         ssh: None,
         local_host: false,
+        proof_seed: None,
     };
     let requests = [
         (
@@ -488,6 +635,7 @@ fn ws_capability_is_bound_to_authenticated_identity_and_native_route() {
         token: "native-token".into(),
         ssh: None,
         local_host: false,
+        proof_seed: None,
     };
     assert!(!state.ws_enabled(&machine));
     state.observe_ws_capability(
@@ -520,6 +668,7 @@ fn old_http_host_without_ws_capability_stays_on_compatibility_transport() {
         token: "native-token".into(),
         ssh: None,
         local_host: false,
+        proof_seed: None,
     };
     state.observe_ws_capability(
         &machine,
@@ -540,6 +689,7 @@ fn authenticated_subset_ws_capabilities_are_recognized_from_the_native_registry(
         token: "native-token".into(),
         ssh: None,
         local_host: false,
+        proof_seed: None,
     };
     for capability in [
         "transport.ws.sessions.v2",
@@ -579,6 +729,7 @@ fn unknown_subset_discovery_keeps_http_without_opening_or_reconnecting_a_socket(
         token: "native-token".into(),
         ssh: None,
         local_host: false,
+        proof_seed: None,
     };
     let state = super::RemoteConnections::default();
     for capabilities in [
@@ -658,6 +809,33 @@ fn ambiguous_or_authorization_failures_never_replay_a_command() {
         });
         assert_eq!(result.unwrap_err(), error);
         assert_eq!(deliveries, 1, "{error}");
+    }
+}
+
+#[test]
+fn a_tunnel_host_refusal_keeps_an_ambiguous_request_outcome_unknown() {
+    let reset = "The host request did not complete [RPC_HOST_UNAVAILABLE] (commands.dispatch). Reconnect before retrying an action; its outcome is unknown.";
+    for ambiguous in [
+        reset,
+        "The host request did not complete [RPC_TIMEOUT] (commands.dispatch).",
+        "The host request did not complete [RPC_PROTOCOL] (commands.dispatch).",
+        "The host request did not complete [RPC_CONNECTION_INTERRUPTED] (commands.dispatch).",
+    ] {
+        let message = super::host_not_running_failure(ambiguous);
+        assert!(
+            message.starts_with("Host is not running on the machine."),
+            "{message}"
+        );
+        assert!(message.contains("its outcome is unknown"), "{message}");
+    }
+    for unsent in [
+        "The host request did not complete [RPC_DNS] (commands.dispatch).",
+        "The host request did not complete [RPC_PROXY] (commands.dispatch).",
+    ] {
+        assert_eq!(
+            super::host_not_running_failure(unsent),
+            "Host is not running on the machine. Start bycoda Host there, then reconnect."
+        );
     }
 }
 
@@ -838,9 +1016,16 @@ fn crew_work_operations_are_forwarded() {
 #[test]
 fn host_tools_methods_are_allowed_but_unknown_methods_are_not() {
     for method in [
+        "mcp.config.call",
+        "mcp.projectCredentials.status",
+        "mcp.projectCredentials.set",
+        "mcp.projectCredentials.clear",
         "mcp.hub.loading.get",
+        "mcp.hub.servers",
         "mcp.hub.loading.set",
         "mcp.oauth.start",
+        "mcp.oauth.complete",
+        "mcp.oauth.cancel",
         "mcp.oauth.status",
         "mcp.oauth.signOut",
         "mcp.tokens.create",
@@ -874,6 +1059,7 @@ fn host_tools_methods_are_allowed_but_unknown_methods_are_not() {
         "terminals.create",
         "terminals.read",
         "terminals.write",
+        "terminals.resize",
         "terminals.interrupt",
         "terminals.close",
         "runtimeLogs.read",
@@ -887,6 +1073,9 @@ fn host_tools_methods_are_allowed_but_unknown_methods_are_not() {
         "devices.start",
         "devices.stop",
         "devices.list",
+        "devices.paired",
+        "devices.revokeOther",
+        "host.access.read",
         "devices.boot",
         "devices.capture",
         "devices.action",
@@ -897,6 +1086,8 @@ fn host_tools_methods_are_allowed_but_unknown_methods_are_not() {
         "tunnels.start",
         "tunnels.stop",
         "tunnels.credential",
+        "tunnels.phones",
+        "devices.bindProofKey",
         "mobile.pairing.create",
         "mobile.pairing.status",
         "mobile.pairing.cancel",
@@ -909,7 +1100,6 @@ fn host_tools_methods_are_allowed_but_unknown_methods_are_not() {
     assert!(!super::supported_remote_method("removed.feature"));
     assert!(!super::supported_remote_method("devices.exec"));
     assert!(!super::supported_remote_method("terminals.exec"));
-    assert!(!super::supported_remote_method("terminals.resize"));
     assert!(!super::supported_remote_method("removed.pr-feature"));
     assert!(!super::supported_remote_method("resources.delete"));
     assert!(!super::supported_remote_method("mobile.pairing.redeem"));
@@ -1020,7 +1210,7 @@ fn assistant_and_desktop_owner_routes_are_finite_and_not_shared_reads() {
     }
     assert_eq!(
         rpc_timeout("assistant.request", &json!({"op":"threads.send"})),
-        std::time::Duration::from_secs(120)
+        std::time::Duration::from_secs(160)
     );
     assert_eq!(
         rpc_timeout("assistant.request", &json!({"op":"snapshot"})),
@@ -1067,6 +1257,11 @@ fn voice_rpc_methods_are_bounded_and_model_loading_has_time_to_finish() {
     assert!(!supported_remote_method("voice.local.exec"));
     assert!(!supported_remote_method("voice.tools.exec"));
     assert!(rpc_timeout("voice.tools.call", &json!({})) >= Duration::from_secs(250));
+    // A held desktop take waits up to 25 s on the Host; the client must outlast that hold.
+    assert!(
+        rpc_timeout("conversation.desktop.take", &json!({"waitMs": 25000}))
+            > Duration::from_secs(25)
+    );
     assert!(rpc_timeout("assistant.builder.avatarGenerate", &json!({})) > Duration::from_secs(240));
     assert!(rpc_timeout("assistant.builder.interview", &json!({})) > Duration::from_secs(100));
     assert!(rpc_timeout("voice.local.start", &json!({})) >= Duration::from_secs(180));
@@ -1134,6 +1329,40 @@ fn git_actions_outlast_the_hosts_network_limit_and_others_keep_the_default() {
     );
 }
 
+/// Over HTTP the desktop must wait at least as long as the contract lets the Host work, or it
+/// reports a timeout for a call the Host completes. Every method whose contract deadline
+/// exceeds the default is checked against the generated manifest.
+#[test]
+fn http_deadlines_outlast_every_long_contract_deadline() {
+    let manifest: Value = serde_json::from_str(include_str!(
+        "../../../src/shared/model/host-contracts/generated/manifest.json"
+    ))
+    .unwrap();
+    let methods = manifest["methods"].as_object().unwrap();
+    let mut checked = 0;
+    for (method, entry) in methods {
+        let contract =
+            std::time::Duration::from_millis(entry["responseTimeoutMs"].as_u64().unwrap());
+        if contract <= DEFAULT_RPC_TIMEOUT {
+            continue;
+        }
+        checked += 1;
+        // Only an assistant thread send waits for a reply; its other operations answer at once
+        // and keep the default so a hung Host cannot hold a native worker.
+        let params = if method == "assistant.request" {
+            json!({"op": "threads.send"})
+        } else {
+            json!({})
+        };
+        let http = rpc_timeout(method, &params);
+        assert!(
+            http >= contract,
+            "{method}: HTTP {http:?} < contract {contract:?}"
+        );
+    }
+    assert!(checked >= 20, "{checked}");
+}
+
 #[test]
 fn model_catalog_outlasts_provider_discovery() {
     assert!(rpc_timeout("models.list", &json!({})) > std::time::Duration::from_secs(45));
@@ -1155,7 +1384,6 @@ fn conversation_tools_outlast_host_setup_and_device_operations() {
     for method in [
         "devices.status",
         "devices.list",
-        "devices.capture",
         "devices.stop",
         "resources.read",
         "devices.exec",
@@ -1340,11 +1568,15 @@ fn a_slow_host_does_not_look_like_a_dead_tunnel() {
 #[test]
 fn session_managed_owner_rpc_allowlist_excludes_trusted_native_protocol() {
     for method in [
+        "modelRouting.catalogFacts",
         "modelRouting.get",
         "modelRouting.resolve",
         "modelRouting.save",
         "modelRouting.status",
         "workspaces.prepare",
+        "workspaces.prepare.status",
+        "workspaces.prepare.cancel",
+        "workspaces.renameBranch",
         "workspaces.get",
         "workspaces.list",
         "workspaces.resume",
@@ -1555,14 +1787,23 @@ fn desktop_forwards_supported_host_operations() {
         "social.browser.availability",
         "social.browser.begin",
         "social.browser.status",
+        "social.browser.linkedin.analytics.profile",
+        "social.browser.linkedin.manage",
         "social.token.connect",
         "social.tiktok.creator",
+        "social.browser.facebook.monetization",
+        "social.facebook.live.encoder",
     ] {
         assert!(supported_remote_method(method), "{method}");
     }
     assert!(!supported_remote_method("git.arbitrary"));
     assert!(!supported_remote_method("social.browser.cookies"));
-    for method in ["attachments.claim", "attachments.release"] {
+    for method in [
+        "attachments.claim",
+        "attachments.release",
+        "social.browser.facebook.monetization",
+        "social.facebook.live.encoder",
+    ] {
         assert!(!super::shareable_remote_read(
             method,
             &serde_json::json!({})
@@ -1630,7 +1871,10 @@ fn retries_on_another_port_only_for_unreachable_hosts() {
         "Host identity changed: this address answers as a different machine."
     ));
     assert!(!port_may_have_moved(
-        "This host uses an incompatible protocol version"
+        crate::remote::protocol::OLDER_HOST_MESSAGE
+    ));
+    assert!(!port_may_have_moved(
+        crate::remote::protocol::NEWER_HOST_MESSAGE
     ));
 }
 
@@ -1646,7 +1890,7 @@ fn reads_the_port_from_connection_info() {
 }
 
 #[test]
-fn native_recovery_rejects_identical_repair_and_saved_route_replacement() {
+fn native_workspace_rejects_identical_repair_and_saved_route_replacement() {
     let temporary = std::env::temp_dir().canonicalize().unwrap();
     let root = temporary.join(format!("bycoda-recovery-route-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir(&root).unwrap();
@@ -1660,40 +1904,48 @@ fn native_recovery_rejects_identical_repair_and_saved_route_replacement() {
         token: "fixture-owner".into(),
         ssh: None,
         local_host: true,
+        proof_seed: None,
     };
     write(&path, std::slice::from_ref(&machine)).unwrap();
-    let transport = NativeWorkspaceTransport {
-        workspace: None,
+    let transport = NativeRecoverySelection {
+        store: state.store.clone(),
+        routes: state.recovery_routes.clone(),
+        path: path.clone(),
         machine: machine.clone(),
-        recovery: Some(RecoveryRoute {
-            revision: state.recovery_routes.capture().unwrap(),
+        pin: RecoveryRoute {
+            revision: state.recovery_routes.capture(&machine.id).unwrap(),
             selected_endpoint: machine.endpoint.clone(),
-        }),
+        },
     };
-    transport.assert_recovery_saved(&state, &path).unwrap();
+    transport.with_current(|| Ok(())).unwrap();
+    // Another machine's reconnect or reroute never retires this selection.
+    state.invalidate_ws("unrelated-machine");
+    transport.with_current(|| Ok(())).unwrap();
     let mut changed = machine.clone();
     changed.token = "replaced-fixture-owner".into();
     write(&path, &[changed]).unwrap();
-    assert!(transport.assert_recovery_saved(&state, &path).is_err());
+    assert!(transport.with_current(|| Ok(())).is_err());
     write(&path, std::slice::from_ref(&machine)).unwrap();
-    transport.assert_recovery_saved(&state, &path).unwrap();
+    transport.with_current(|| Ok(())).unwrap();
     {
         let _guard = state.store.lock().unwrap();
         disconnect_saved_machine(&state, &path, &machine.id).unwrap();
         write(&path, std::slice::from_ref(&machine)).unwrap();
     }
-    assert!(transport.assert_recovery_saved(&state, &path).is_err());
-    let fresh = NativeWorkspaceTransport {
-        workspace: None,
+    assert!(transport.with_current(|| Ok(())).is_err());
+    let fresh = NativeRecoverySelection {
+        store: state.store.clone(),
+        routes: state.recovery_routes.clone(),
+        path: path.clone(),
         machine: machine.clone(),
-        recovery: Some(RecoveryRoute {
-            revision: state.recovery_routes.capture().unwrap(),
+        pin: RecoveryRoute {
+            revision: state.recovery_routes.capture(&machine.id).unwrap(),
             selected_endpoint: machine.endpoint.clone(),
-        }),
+        },
     };
-    fresh.assert_recovery_saved(&state, &path).unwrap();
+    fresh.with_current(|| Ok(())).unwrap();
     state.recovery_routes.close();
-    assert!(fresh.assert_recovery_saved(&state, &path).is_err());
+    assert!(fresh.with_current(|| Ok(())).is_err());
     assert_eq!(
         root.canonicalize().unwrap().parent(),
         Some(temporary.as_path())
@@ -1706,107 +1958,22 @@ fn native_recovery_rejects_identical_repair_and_saved_route_replacement() {
 }
 
 #[test]
-fn native_recovery_retires_an_actual_in_flight_http_read_before_disclosure() {
-    use std::io::{BufRead, BufReader};
-    use std::{net::TcpListener, sync::mpsc, thread, time::Duration};
-    let temporary = std::env::temp_dir().canonicalize().unwrap();
-    let root = temporary.join(format!("bycoda-recovery-inflight-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir(&root).unwrap();
-    let path = root.join("connections.json");
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let state = Arc::new(RemoteConnections::default());
-    let machine = StoredMachine {
-        id: "local-recovery".into(),
-        name: "Local".into(),
-        endpoint: format!("http://{}", listener.local_addr().unwrap()),
-        environment_id: "env".into(),
-        token: "fixture-owner".into(),
-        ssh: None,
-        local_host: true,
-    };
-    write(&path, std::slice::from_ref(&machine)).unwrap();
-    let transport = NativeWorkspaceTransport {
-        workspace: None,
-        machine: machine.clone(),
-        recovery: Some(RecoveryRoute {
-            revision: state.recovery_routes.capture().unwrap(),
-            selected_endpoint: machine.endpoint.clone(),
-        }),
-    };
-    let (seen_tx, seen_rx) = mpsc::sync_channel(1);
-    let (release_tx, release_rx) = mpsc::sync_channel(1);
-    let server = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
-        let mut reader = BufReader::new(stream.try_clone().unwrap());
-        let mut size = 0;
-        loop {
-            let mut line = String::new();
-            assert!(reader.read_line(&mut line).unwrap() > 0);
-            if line == "\r\n" {
-                break;
-            }
-            if line.to_ascii_lowercase().starts_with("content-length:") {
-                size = line
-                    .split(':')
-                    .nth(1)
-                    .unwrap()
-                    .trim()
-                    .parse::<usize>()
-                    .unwrap();
-            }
-        }
-        let mut body = vec![0; size];
-        reader.read_exact(&mut body).unwrap();
-        assert_eq!(
-            serde_json::from_slice::<Value>(&body).unwrap()["method"],
-            "native.buffers.recovery.read"
-        );
-        seen_tx.send(()).unwrap();
-        release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
-        let body = r#"{"result":{"oldRouteSecret":"must-not-return"}}"#;
-        write!(
-            stream,
-            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        )
-        .unwrap();
-        stream.flush().unwrap();
-    });
-    let calling = {
-        let state = state.clone();
-        let path = path.clone();
-        thread::spawn(move || {
-            transport.call_recovery_saved(
-                &state,
-                &path,
-                "native.buffers.recovery.read",
-                json!({"reportId":"fixture"}),
-            )
-        })
-    };
-    seen_rx.recv_timeout(Duration::from_secs(5)).unwrap();
-    {
-        let _guard = state.store.lock().unwrap();
-        disconnect_saved_machine(&state, &path, &machine.id).unwrap();
-        write(&path, std::slice::from_ref(&machine)).unwrap();
-    }
-    release_tx.send(()).unwrap();
-    let error = calling.join().unwrap().unwrap_err();
-    assert!(!error.contains("must-not-return"));
-    assert!(error.contains("retired"));
-    server.join().unwrap();
-    assert_eq!(
-        root.canonicalize().unwrap().parent(),
-        Some(temporary.as_path())
-    );
-    assert!(!std::fs::symlink_metadata(&root)
-        .unwrap()
-        .file_type()
-        .is_symlink());
-    std::fs::remove_dir_all(root).unwrap();
+fn recovery_routes_retire_one_machine_and_close_retires_all() {
+    let routes = RecoveryRoutes::default();
+    let (first, second) = (routes.capture("a").unwrap(), routes.capture("b").unwrap());
+    routes.retire("a");
+    assert!(!routes.current("a", first));
+    assert!(routes.current("b", second));
+    // A retired machine gets a new revision, never an earlier one again.
+    let renewed = routes.capture("a").unwrap();
+    assert_ne!(renewed, first);
+    assert!(routes.current("a", renewed));
+    // Retiring a machine nobody pinned yet leaves the others alone.
+    routes.retire("never-seen");
+    assert!(routes.current("a", renewed) && routes.current("b", second));
+    routes.close();
+    assert!(routes.capture("a").is_err() && routes.capture("b").is_err());
+    assert!(!routes.current("b", second));
 }
 
 #[test]
@@ -1819,6 +1986,7 @@ fn only_automatic_loopback_links_count_as_local_sync() {
         token: "secret-token".into(),
         ssh: None,
         local_host: false,
+        proof_seed: None,
     };
     let name = "This computer (local sync)";
     assert!(is_local_sync(&local("http://127.0.0.1:3774"), name));
@@ -1931,6 +2099,7 @@ fn saved(id: &str, target: &str) -> StoredMachine {
             host_key_alias: None,
             identity_file: None,
         }),
+        proof_seed: None,
     }
 }
 
@@ -2098,10 +2267,15 @@ fn legacy_host_writes_preserve_ssh_only_records_and_organization() {
     let mut host = serde_json::to_value(saved("host", "owner@host")).unwrap();
     host["metadata"] =
         json!({"group":"Work","tags":[],"favorite":false,"forwards":[{"id":"rule"}]});
-    write_store_values(&path, &[host, ssh.clone()]).unwrap();
+    write_store_values_inner(&path, &[host, ssh.clone()]).unwrap();
+    assert!(credential_store::has_legacy_tokens(
+        &read_store_values(&path).unwrap()
+    ));
+    write_protected_store(&path, None).unwrap();
     let mut hosts = read(&path).unwrap();
     assert_eq!(hosts.len(), 1);
     assert_eq!(hosts[0].id, "host");
+    assert_eq!(hosts[0].token, "secret-token");
     hosts[0].name = "Renamed".into();
     write(&path, &hosts).unwrap();
     let records = read_store_values(&path).unwrap();
@@ -2113,7 +2287,10 @@ fn legacy_host_writes_preserve_ssh_only_records_and_organization() {
     assert_eq!(host["metadata"]["group"], "Work");
     assert_eq!(host["metadata"]["forwards"][0]["id"], "rule");
     assert_eq!(host["environmentId"], "env-host");
-    assert_eq!(host["token"], "secret-token");
+    assert!(credential_store::has_sealed_tokens(std::slice::from_ref(
+        host
+    )));
+    assert_eq!(read(&path).unwrap()[0].token, "secret-token");
     write(&path, &[]).unwrap();
     assert_eq!(read_store_values(&path).unwrap(), vec![ssh]);
     let _ = std::fs::remove_file(path);
@@ -2152,6 +2329,7 @@ fn public_machine_metadata_never_contains_the_token() {
         token: "secret".into(),
         ssh: None,
         local_host: false,
+        proof_seed: None,
     };
     let value = serde_json::to_string(&stored.public()).unwrap();
     assert!(!value.contains("secret"));
@@ -2165,6 +2343,16 @@ fn host_refusal_over_ws_settles_like_the_http_refusal() {
     assert_eq!(
         super::native_ws_failure(refusal),
         "Host rejected request: LEASE_HELD: busy"
+    );
+}
+
+#[test]
+fn retryable_read_replies_keep_their_retry_marker() {
+    let mut refusal = WsFailure::local("RPC_WS_REMOTE", "Request cancelled.");
+    refusal.retryable = true;
+    assert_eq!(
+        super::native_ws_failure(refusal),
+        "Host rejected request: [RPC_WS_RETRYABLE] Request cancelled."
     );
 }
 
@@ -2226,4 +2414,173 @@ fn http_fallback_is_allowed_only_when_the_request_was_not_sent() {
             "{code}"
         );
     }
+}
+
+fn local_link_record(id: &str, environment_id: &str, token: &str) -> StoredMachine {
+    StoredMachine {
+        id: id.into(),
+        name: "This computer (local sync)".into(),
+        endpoint: "http://127.0.0.1:3774".into(),
+        environment_id: environment_id.into(),
+        token: token.into(),
+        ssh: None,
+        local_host: true,
+        proof_seed: None,
+    }
+}
+
+const LOCAL_NAME: &str = "This computer (local sync)";
+
+#[test]
+fn a_repaired_local_pairing_replaces_the_token_and_keeps_the_machine_id() {
+    let mut machines = vec![
+        saved("mac", "me@192.168.1.5"),
+        local_link_record("local", "env-1", "old-token"),
+    ];
+    let repaired = apply_local_repair(
+        &mut machines,
+        "local",
+        "env-1",
+        "new-token",
+        None,
+        LOCAL_NAME,
+    )
+    .unwrap();
+    assert_eq!(repaired.id, "local");
+    assert_eq!(repaired.token, "new-token");
+    assert_eq!(machines.len(), 2);
+    assert_eq!(
+        machines.iter().find(|m| m.id == "local").unwrap().token,
+        "new-token"
+    );
+}
+
+#[test]
+fn a_repair_that_reaches_another_host_replaces_the_record() {
+    let mut machines = vec![local_link_record("local", "env-1", "old-token")];
+    let repaired = apply_local_repair(
+        &mut machines,
+        "local",
+        "env-2",
+        "new-token",
+        None,
+        LOCAL_NAME,
+    )
+    .unwrap();
+    assert_ne!(repaired.id, "local");
+    assert_eq!(repaired.environment_id, "env-2");
+    assert!(repaired.local_host);
+    assert_eq!(machines.len(), 1);
+    assert_eq!(machines[0].id, repaired.id);
+}
+
+#[test]
+fn non_local_and_ssh_machines_are_never_repaired() {
+    let mut remote = local_link_record("remote", "env-r", "old-token");
+    remote.name = "Office".into();
+    remote.local_host = false;
+    remote.endpoint = "http://192.168.1.5:3774".into();
+    let mut machines = vec![saved("mac", "me@127.0.0.1"), remote];
+    let before = serde_json::to_value(&machines).unwrap();
+    for id in ["mac", "remote", "missing"] {
+        assert!(
+            apply_local_repair(&mut machines, id, "env-r", "new-token", None, LOCAL_NAME).is_err()
+        );
+    }
+    assert_eq!(serde_json::to_value(&machines).unwrap(), before);
+}
+
+fn http_reply(status: &str, headers: &str, body: &str) -> String {
+    format!(
+        "HTTP/1.1 {status}
+{headers}Content-Type: application/json
+Content-Length: {}
+
+{body}",
+        body.len()
+    )
+}
+
+/// One HTTP exchange: the raw request head is sent back to the test, then `reply` is written.
+fn serve_once(reply: String) -> (String, std::sync::mpsc::Receiver<String>) {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let (sent, received) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buffer = vec![0u8; 8192];
+        let mut length = 0;
+        // The head is complete at the blank line; the body is not needed.
+        while !buffer[..length]
+            .windows(4)
+            .any(|window| window == b"\r\n\r\n")
+        {
+            let read = stream.read(&mut buffer[length..]).unwrap();
+            if read == 0 {
+                break;
+            }
+            length += read;
+        }
+        sent.send(String::from_utf8_lossy(&buffer[..length]).into_owned())
+            .unwrap();
+        stream.write_all(reply.as_bytes()).unwrap();
+    });
+    (endpoint, received)
+}
+
+#[test]
+fn a_credential_with_a_key_signs_its_http_request_for_that_machine() {
+    let (endpoint, received) = serve_once(http_reply("200 OK", "", "{\"result\":{}}"));
+    let token = "signed-http-fixture-token";
+    let _signing = super::device_proof::PendingProof::new(token, "env-signed", [7u8; 32]);
+    super::rpc(
+        &endpoint,
+        token,
+        Some("env-signed"),
+        "projects.list",
+        serde_json::json!({}),
+    )
+    .unwrap();
+    let head = received.recv().unwrap();
+    let proof = head
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("dpop: ")
+                .or_else(|| line.strip_prefix("DPoP: "))
+        })
+        .expect("the request carries a proof");
+    assert_eq!(proof.split('.').count(), 3);
+    use base64::Engine as _;
+    let claims = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(proof.split('.').nth(1).unwrap())
+        .unwrap();
+    let claims: serde_json::Value = serde_json::from_slice(&claims).unwrap();
+    assert_eq!(claims["htm"], "POST");
+    assert_eq!(claims["htu"], "/rpc");
+    assert_eq!(claims["eid"], "env-signed");
+}
+
+#[test]
+fn an_unbound_credential_sends_no_proof_and_a_proof_refusal_asks_for_a_private_re_pair() {
+    let (endpoint, received) = serve_once(http_reply(
+        "401 Unauthorized",
+        "X-Bycoda-Auth-Stage: proof
+",
+        "{\"error\":\"Device proof is missing or invalid\",\"reason\":\"proof-required\"}",
+    ));
+    let error = super::rpc(
+        &endpoint,
+        "unbound-http-fixture-token",
+        Some("env-unbound"),
+        "environment.describe",
+        serde_json::json!({}),
+    )
+    .unwrap_err();
+    assert!(!received.recv().unwrap().to_lowercase().contains("dpop:"));
+    assert!(
+        error.contains("[RPC_AUTHORIZATION] [RPC_PROOF_REQUIRED]"),
+        "{error}"
+    );
+    assert!(error.contains("private connection"), "{error}");
 }

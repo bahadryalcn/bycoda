@@ -1,3 +1,4 @@
+import { isProjectlessScope, PROJECTLESS_SCOPE } from "./sessions/projectless-scope";
 import { sessionWidgetContext } from "./sessions/session-widget-context";
 import { sessionMetadataUpdate, type SessionMetadataPatch } from "./sessions/session-metadata";
 import {
@@ -8,6 +9,7 @@ import {
 } from "./sessions/session-attention";
 import {
   decodeDelegationParent,
+  sessionBackgroundOwner,
   DELEGATION_PARENT_KEY,
 } from "../src/shared/model/host-contracts/delegation";
 import { checkpointWrites } from "./storage/checkpoint-writes";
@@ -30,6 +32,7 @@ import {
   readCommandReceipt,
   readWorkspaceReceipt,
 } from "./storage/command-receipt-retention";
+import type { StoredCommandReceipt } from "./domains/commands/service";
 import {
   initializeWorkspaceSessionProbe,
   startupSessionStates,
@@ -55,11 +58,13 @@ import {
   type HostSnapshotManifest,
 } from "./storage/snapshots";
 import { normalizeProjectPath } from "./desktop/project-path";
+import type { DeviceProofBinding } from "./security/device-proof";
 import { isSessionErrorBlock, sessionIssue } from "../src/features/sessions/model/sessionIssue";
-import { StoreDatabase, type StoreStatement } from "./store-db";
+import { StoreDatabase } from "./store-db";
 import { initializeNativeDeliveryStore } from "./native-delivery/native-delivery-store";
 import { randomUUID, createHash, randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import type {
   CommandReceipt,
   HostProject,
@@ -87,7 +92,30 @@ import { replaceControlCharacters } from "../src/shared/lib/controlCharacters";
 import type { DesktopCommandAcceptance } from "./domains/commands/service";
 export type { DesktopCommandAcceptance } from "./domains/commands/service";
 export { blockRevisions } from "./sessions/block-revisions";
-const CACHED_SESSIONS = 32;
+// A machine can register over a hundred projects, and the phone reads them all every few seconds;
+// the row budget below bounds memory, so this count must not evict projects a poll still needs.
+/** `model` is "" for the provider default; only its absence marks a summary written before the field existed. */
+const hasCurrentSummaryFields = (cached: HostSessionSummary): boolean =>
+  typeof cached.model === "string" &&
+  cached.needsInput !== undefined &&
+  cached.providerSessionId !== undefined &&
+  cached.providerHistory !== undefined &&
+  cached.delegationParent !== undefined &&
+  cached.unread !== undefined;
+const SUMMARY_PROJECTS = 512;
+const SUMMARY_ROWS = 100000;
+// The 64 MiB weight budget in `remember` bounds memory. At 32 entries, listing one parent's
+// subagent runs (30 children on a real Host) evicted the working set on every poll, and each
+// miss re-parsed a snapshot or started a read helper process (a measured Host stall source).
+const CACHED_SESSIONS = 128;
+type SummaryEntry = {
+  version: number;
+  external: number;
+  rows: Map<string, HostSessionSummary>;
+  /** Stored summary JSON each row was read from or written as; a row without one is reparsed. */
+  raw: Map<string, string>;
+  sorted?: HostSessionSummary[];
+};
 // Original request signatures compact after a week. Compact fences (the replay answer) are
 // deleted only after their request id leaves the replay horizon (see command-receipt-retention).
 const RECEIPT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -226,17 +254,46 @@ function patchBlockIndex(previous: Block[], blocks: Block[], changes?: BlockChan
   return false;
 }
 /** Cache invalidation only; the permanent authority journal remains the proof. */
+/** What a paired device credential may do beyond authentication; see `deviceAuthority`. */
+export type DeviceAuthority = {
+  kind?: "phone" | "desktop";
+  localDesktop: boolean;
+  /** The client key this credential is bound to; absent for devices paired before proofs. */
+  binding?: DeviceProofBinding;
+};
+
 export type HostAuthorityChange = Readonly<{
   sessionId: string;
   authorityGeneration: number;
   phase: "host-active" | "aborted";
   projectId?: string;
 }>;
+
+type SessionStateMetadata = Pick<
+  HostSession,
+  "projectId" | "revision" | "status" | "authorityGeneration" | "createdAt"
+> & { desktop: boolean };
+
+function stateMetadataOf(value: HostSession): SessionStateMetadata {
+  return {
+    projectId: value.projectId,
+    revision: value.revision,
+    status: value.status,
+    desktop: value.desktop != null,
+    authorityGeneration: value.authorityGeneration,
+    createdAt: value.createdAt ?? value.updatedAt,
+  };
+}
+
 export class HostStore {
   private readonly desktopCommandInstance = randomUUID();
   private readonly authorityContexts = new AsyncLocalStorage<ReadonlyMap<string, number>>();
   assertAuthority(sessionId: string, expectedGeneration?: number): Promise<boolean> {
     return this.db.scope(() => assertHostAuthority(this.db, sessionId, expectedGeneration));
+  }
+  /** Fence check for pure reads: answers from the latest committed head beside the writer queue. */
+  assertAuthorityRead(sessionId: string, expectedGeneration?: number): Promise<boolean> {
+    return this.db.readScope(() => assertHostAuthority(this.db, sessionId, expectedGeneration));
   }
   private async sessionWrite<T>(
     sessionId: string,
@@ -300,19 +357,25 @@ export class HostStore {
   private closePromise?: Promise<void>;
   environmentId = "";
   readonly attachmentDir: string;
+  /**
+   * The database, its SQLite sidecars and the attachment folder. Only SQLite may open the database
+   * files: a plain open and close of one in this process drops every POSIX lock SQLite holds on it,
+   * and another process can then rebuild the WAL index under a live mapping (SIGBUS).
+   */
+  readonly ownedPaths: readonly string[];
   // This process is the only session writer, so recently used snapshots are
   // served from memory instead of re-parsing whole transcripts. Callers must
   // treat returned values as immutable.
   private cache = new Map<string, HostSession>();
   private cacheWeights = new Map<string, number>();
-  private stateMetadata = new Map<
-    string,
-    { revision: number; status: HostSession["status"]; desktop: boolean }
-  >();
+  private stateMetadata = new Map<string, SessionStateMetadata>();
   private receiptWrites = 0;
   // token -> data_version at the moment its device row was last seen.
   private authCache = new Map<string, { version: number; expires: number }>();
+  private deviceLastSeen = new Map<string, number>();
   private pendingBefore?: Map<string, PendingWrite | undefined>;
+  /** Values taken from `pending` whose checkpoint has not committed yet. */
+  private readonly flushing = new Map<string, HostSession>();
   private snapshotPending(id: string): void {
     if (!this.pendingBefore || this.pendingBefore.has(id)) return;
     const entry = this.pending.get(id);
@@ -327,6 +390,8 @@ export class HostStore {
   // Kept apart from the LRU cache so eviction can never drop unwritten data.
   private pending = new Map<string, PendingWrite>();
   private inTransaction = false;
+  /** Bumped when a transaction's scope is abandoned; stale runs then leave shared state alone. */
+  private transactionEpoch = 0;
   private readonly transactionEffects = new TransactionEffects();
   private flushedInTransaction: PendingWrite[] = [];
   /** Snapshot upserts issued so far; lets tests count checkpoints. */
@@ -343,6 +408,8 @@ export class HostStore {
     else this.committedChangeVersion++;
   }
   readonly changes = new ChangeSignal();
+  /** Moves only when a project is registered; list reads reuse the registry until then. */
+  projectRegistryVersion = 0;
   captureSnapshot(destination: string): Promise<HostSnapshotManifest> {
     return captureHostSnapshot({
       database: this.db,
@@ -425,15 +492,50 @@ export class HostStore {
   }
   private projectVersions = new Map<string, number>();
   readonly versions = new SessionChangeVersions();
-  private summaryRows = new Map<
-    string,
-    {
-      version: number;
-      external: number;
-      rows: Map<string, HostSessionSummary>;
-      sorted?: HostSessionSummary[];
-    }
-  >();
+  private summaryRows = new Map<string, SummaryEntry>();
+  /** Total cached rows, kept in step with `summaryRows` so eviction never rescans the cache. */
+  private summaryRowCount = 0;
+  private setSummaryRows(projectId: string, entry: SummaryEntry): void {
+    this.dropSummaryRows(projectId);
+    this.summaryRows.set(projectId, entry);
+    this.summaryRowCount += entry.rows.size;
+  }
+  private dropSummaryRows(projectId: string): void {
+    const entry = this.summaryRows.get(projectId);
+    if (!entry) return;
+    this.summaryRows.delete(projectId);
+    this.summaryRowCount -= entry.rows.size;
+  }
+  private clearSummaryRows(): void {
+    this.summaryRows.clear();
+    this.summaryRowCount = 0;
+  }
+  /** A summary is derived from every block of its session; one save derives it once. */
+  private readonly summaryMemo = new WeakMap<HostSession, HostSessionSummary>();
+  private summaryOf(value: HostSession): HostSessionSummary {
+    let derived = this.summaryMemo.get(value);
+    if (!derived) this.summaryMemo.set(value, (derived = summary(value)));
+    return derived;
+  }
+  /**
+   * Committed saves whose cached summary row still waits for its patch, per project. A list
+   * served without the database overlays them; the patch used to be ordered before every
+   * read by the writer queue, and the cache is now read beside it.
+   */
+  private readonly unpatchedSummaries = new Map<string, Map<string, HostSession>>();
+  /** Counts committed saves, so a list read from SQLite is not cached across one it may miss. */
+  private summarySaves = 0;
+  private expectSummaryPatch(value: HostSession): void {
+    this.summarySaves++;
+    let project = this.unpatchedSummaries.get(value.projectId);
+    if (!project) this.unpatchedSummaries.set(value.projectId, (project = new Map()));
+    project.set(value.session.id, value);
+  }
+  private settleSummaryPatch(value: HostSession): void {
+    const project = this.unpatchedSummaries.get(value.projectId);
+    if (project?.get(value.session.id) === value) project.delete(value.session.id);
+    if (project && !project.size) this.unpatchedSummaries.delete(value.projectId);
+  }
   /** Patch one streamed row instead of reparsing the project's entire history. */
   private async savedSummary(value: HostSession): Promise<void> {
     if (this.closePromise) return;
@@ -441,7 +543,13 @@ export class HostStore {
       await assertHostAuthority(this.db, value.session.id, value.authorityGeneration);
     if (this.inTransaction) {
       this.afterCommit(() => {
-        if (!this.closePromise) return this.db.scope(() => this.savedSummary(value));
+        // Registered in the tick that publishes the commit: a list served from the cache
+        // overlays this save until the queued patch below has applied it.
+        this.expectSummaryPatch(value);
+        if (this.closePromise) return this.settleSummaryPatch(value);
+        return this.db
+          .scope(() => this.savedSummary(value))
+          .finally(() => this.settleSummaryPatch(value));
       });
       return;
     }
@@ -453,10 +561,13 @@ export class HostStore {
       entry.version + step !== this.projectVersion(value.projectId) ||
       entry.external !== (await this.dataVersion())
     ) {
-      this.summaryRows.delete(value.projectId);
+      this.dropSummaryRows(value.projectId);
       return;
     }
-    entry.rows.set(value.session.id, summary(value));
+    const before = entry.rows.size;
+    entry.rows.set(value.session.id, this.summaryOf(value));
+    entry.raw.delete(value.session.id);
+    this.summaryRowCount += entry.rows.size - before;
     entry.version = this.projectVersion(value.projectId);
     entry.sorted = undefined;
   }
@@ -504,6 +615,10 @@ export class HostStore {
   constructor(path: string) {
     this.sessionReadPath = path;
     this.attachmentDir = join(dirname(path), "attachments");
+    this.ownedPaths =
+      path === ":memory:"
+        ? [this.attachmentDir]
+        : [path, `${path}-wal`, `${path}-shm`, `${path}-journal`, this.attachmentDir];
     this.db = new StoreDatabase(path);
     this.db.onMutation = (sql) => this.externalMutation(sql);
     this.db.onMutationFault = () => {
@@ -511,16 +626,47 @@ export class HostStore {
       this.dropCaches();
     };
     this.db.onCommit = (effect) => this.afterCommit(effect);
+    this.db.onScopeAbandoned = () => this.resetAbandonedTransaction();
     this.ready = this.db
-      .storeScope(async () => {
-        await assertProfileNotStaged(dirname(path));
-        await this.initialize();
-      })
+      .storeScope(
+        async () => {
+          await assertProfileNotStaged(dirname(path));
+          await this.initialize();
+        },
+        // Migrations of a large profile are legitimately long; nothing else runs before them.
+        { deadlineMs: Infinity },
+      )
       .catch((error) => {
         this.db.fail(error);
         throw error;
       });
     void this.ready.catch(() => undefined);
+  }
+  /** A transaction callback never settled and its scope was released: the SQL rollback
+   * happens on owner leave, so only the in-memory transaction state is reset here. */
+  private resetAbandonedTransaction(): void {
+    this.transactionEpoch++;
+    const pendingBefore = this.pendingBefore;
+    this.pendingBefore = undefined;
+    this.inTransaction = false;
+    this.flushing.clear();
+    this.transactionChanges = 0;
+    this.transactionProjectChanges.clear();
+    this.versions.clearPending();
+    this.versions.forgetListed();
+    this.cache.clear();
+    this.clearSummaryRows();
+    this.cacheWeights.clear();
+    this.stateMetadata.clear();
+    this.clearAuthCache();
+    this.transactionEffects.commit = [];
+    this.flushedInTransaction = [];
+    for (const [id, entry] of pendingBefore ?? []) {
+      clearTimeout(this.pending.get(id)?.timer);
+      this.pending.delete(id);
+      if (entry) this.restore(entry);
+    }
+    this.transactionEffects.rolledBack();
   }
   private externalMutation(sql: string): void {
     if (
@@ -542,7 +688,7 @@ export class HostStore {
   private dropCaches(): void {
     this.cache.clear();
     this.cacheWeights.clear();
-    this.summaryRows.clear();
+    this.clearSummaryRows();
     this.stateMetadata.clear();
     this.versions.forgetListed();
     this.bumpChangeVersion();
@@ -563,6 +709,7 @@ export class HostStore {
         BEGIN SELECT RAISE(ABORT, 'Session was deleted; start a new conversation.'); END;
       CREATE TABLE IF NOT EXISTS session_journal (session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE, revision INTEGER NOT NULL, metadata TEXT NOT NULL, block_ids TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS session_journal_blocks (session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, block_id TEXT NOT NULL, revision INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(session_id,block_id));
+      CREATE TABLE IF NOT EXISTS conversation_image_budget (session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE, used INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS receipts (id TEXT PRIMARY KEY, signature TEXT NOT NULL, receipt TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS session_pin_receipts (operation_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, project_id TEXT NOT NULL, request_hash TEXT NOT NULL, result TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS desktop_command_delivery (
@@ -573,6 +720,7 @@ export class HostStore {
       );
       CREATE TABLE IF NOT EXISTS events (session_id TEXT NOT NULL REFERENCES sessions(id), revision INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(session_id, revision));
       CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, hash TEXT NOT NULL UNIQUE);
+      CREATE TABLE IF NOT EXISTS device_recovery_receipts (id TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS sync_records (table_name TEXT NOT NULL, id TEXT NOT NULL, value TEXT, rev INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (table_name, id));`);
     await initializeNativeDeliveryStore(this.db);
     // Additive, host-local records: deleting a conversation or project must not
@@ -587,10 +735,20 @@ export class HostStore {
         UNIQUE(repository_id, branch_ref)
       );
       CREATE INDEX IF NOT EXISTS managed_workspaces_project ON managed_workspaces(project_id, environment_id);
+      CREATE INDEX IF NOT EXISTS managed_workspaces_owner ON managed_workspaces(owner_kind, owner_id);
       CREATE TABLE IF NOT EXISTS workspace_operations (
         id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, kind TEXT NOT NULL,
         idempotency_key TEXT NOT NULL, phase TEXT NOT NULL, payload TEXT NOT NULL,
         UNIQUE(workspace_id, kind, idempotency_key)
+      );
+      CREATE TABLE IF NOT EXISTS workspace_siblings (
+        operation_id TEXT NOT NULL, path TEXT NOT NULL, workspace_id TEXT NOT NULL,
+        repository TEXT NOT NULL, branch TEXT NOT NULL, base_commit TEXT, committed INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY(operation_id, path)
+      );
+      CREATE INDEX IF NOT EXISTS workspace_siblings_workspace ON workspace_siblings(workspace_id);
+      CREATE TABLE IF NOT EXISTS workspace_branch_renames (
+        workspace_id TEXT PRIMARY KEY, old_branch TEXT NOT NULL, new_branch TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS workspace_mutation_receipts (
         scope TEXT NOT NULL, idempotency_key TEXT NOT NULL, signature TEXT NOT NULL,
@@ -619,6 +777,21 @@ export class HostStore {
         payload TEXT NOT NULL
       );
     `);
+    const deviceColumns = await this.db.prepare("PRAGMA table_info(devices)").all();
+    if (!deviceColumns.some((column) => column.name === "kind")) {
+      await this.db.exec(`BEGIN;
+        ALTER TABLE devices ADD COLUMN kind TEXT;
+        ALTER TABLE devices ADD COLUMN paired_at INTEGER;
+        ALTER TABLE devices ADD COLUMN last_seen_at INTEGER;
+        COMMIT;`);
+    }
+    if (!deviceColumns.some((column) => column.name === "management"))
+      await this.db.exec("ALTER TABLE devices ADD COLUMN management INTEGER NOT NULL DEFAULT 0");
+    // The client key a credential is bound to (device proof-of-possession).
+    if (!deviceColumns.some((column) => column.name === "proof_jkt"))
+      await this.db.exec("ALTER TABLE devices ADD COLUMN proof_jkt TEXT");
+    if (!deviceColumns.some((column) => column.name === "proof_x"))
+      await this.db.exec("ALTER TABLE devices ADD COLUMN proof_x TEXT");
     const columns = await this.db.prepare("PRAGMA table_info(sessions)").all();
     if (!columns.some((column) => column.name === "summary"))
       await this.db.exec("ALTER TABLE sessions ADD COLUMN summary TEXT");
@@ -709,9 +882,10 @@ export class HostStore {
   /** Narrow mirror of the `sessions` columns that checkpoints change. The
    * `sessions` row holds the multi-MB snapshot, and SQLite rewrites a whole
    * row (and its overflow pages) whenever any column in it changes, so
-   * streaming checkpoints only touch this table. Hard saves write both, which
-   * keeps the `sessions` columns reasonably current for an older host binary
-   * after a rollback. Existing columns are never dropped or renamed. */
+   * streaming checkpoints only touch this table. Hard saves write `sessions`
+   * and session_state_update mirrors them here, which keeps the `sessions`
+   * columns reasonably current for an older host binary after a rollback.
+   * Existing columns are never dropped or renamed. */
   private async migrateSessionState(): Promise<void> {
     await this.db.exec(`CREATE TABLE IF NOT EXISTS session_state (
       id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
@@ -729,11 +903,20 @@ export class HostStore {
     );
     CREATE INDEX IF NOT EXISTS session_state_project ON session_state(project_id);
     CREATE INDEX IF NOT EXISTS session_state_project_recent ON session_state(project_id, updated_at DESC, id);
+    CREATE INDEX IF NOT EXISTS session_state_running ON session_state(status) WHERE status='running';
     CREATE INDEX IF NOT EXISTS session_state_workspace_probe ON session_state(json_extract(summary, '$.workspaceId')) WHERE json_valid(summary);
     CREATE INDEX IF NOT EXISTS session_state_worktree_probe ON session_state(json_extract(summary, '$.worktreeCwd')) WHERE json_valid(summary) AND json_extract(summary, '$.worktreeCwd') IS NOT NULL;`);
     await initializeWorkspaceSessionProbe(this.db);
     // An older host binary only knows `sessions`; these keep the side table
-    // current when it writes there after a rollback.
+    // current when it writes there after a rollback. The update trigger covers
+    // every column a save changes, so saves write `sessions` only.
+    const sessionStateUpdate = `CREATE TRIGGER session_state_update AFTER UPDATE OF snapshot, project_id, summary, revision, updated_at, status, has_desktop, provider_session_id, harness, session_cwd, shell_running ON sessions BEGIN
+      UPDATE session_state SET project_id=NEW.project_id, summary=NEW.summary, revision=NEW.revision, updated_at=NEW.updated_at, status=NEW.status,
+        has_desktop=COALESCE(NEW.has_desktop, 0), desktop_updated_at=json_extract(NEW.snapshot, '$.desktop.updatedAt'),
+        provider_session_id=NEW.provider_session_id, harness=NEW.harness,
+        session_cwd=NEW.session_cwd, shell_running=COALESCE(NEW.shell_running, 0)
+      WHERE id=NEW.id;
+    END;`;
     await this.db
       .exec(`CREATE TRIGGER IF NOT EXISTS session_state_insert AFTER INSERT ON sessions BEGIN
       INSERT OR REPLACE INTO session_state
@@ -741,13 +924,23 @@ export class HostStore {
       VALUES (NEW.id, NEW.project_id, NEW.summary, NEW.revision, NEW.updated_at, NEW.status, COALESCE(NEW.has_desktop, 0),
         json_extract(NEW.snapshot, '$.desktop.updatedAt'),
         NEW.provider_session_id, NEW.harness, NEW.session_cwd, COALESCE(NEW.shell_running, 0));
-    END;
-    CREATE TRIGGER IF NOT EXISTS session_state_update AFTER UPDATE OF summary, revision, updated_at, status, has_desktop, provider_session_id, harness, session_cwd, shell_running ON sessions BEGIN
-      UPDATE session_state SET summary=NEW.summary, revision=NEW.revision, updated_at=NEW.updated_at, status=NEW.status,
-        has_desktop=COALESCE(NEW.has_desktop, 0), provider_session_id=NEW.provider_session_id, harness=NEW.harness,
-        session_cwd=NEW.session_cwd, shell_running=COALESCE(NEW.shell_running, 0)
-      WHERE id=NEW.id;
     END;`);
+    // CREATE TRIGGER IF NOT EXISTS would keep an older definition, so replace it
+    // once. The backfill runs in the same transaction, so a crash cannot leave
+    // the new trigger without the rows it was meant to correct.
+    const installedUpdate = await this.db
+      .prepare("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='session_state_update'")
+      .get();
+    if (!String(installedUpdate?.sql ?? "").includes("desktop_updated_at")) {
+      await this.db.exec(`BEGIN;
+        DROP TRIGGER IF EXISTS session_state_update;
+        ${sessionStateUpdate}
+        UPDATE session_state SET
+          project_id = (SELECT project_id FROM sessions WHERE sessions.id = session_state.id),
+          desktop_updated_at = (SELECT json_extract(snapshot, '$.desktop.updatedAt') FROM sessions WHERE sessions.id = session_state.id)
+        WHERE id IN (SELECT id FROM sessions);
+        COMMIT;`);
+    }
     // Idempotent: also adopts rows added while the triggers did not exist.
     await this.db.exec(`INSERT OR IGNORE INTO session_state
       (id, project_id, summary, revision, updated_at, status, has_desktop, desktop_updated_at, provider_session_id, harness, session_cwd, shell_running)
@@ -756,80 +949,100 @@ export class HostStore {
         provider_session_id, harness, session_cwd, shell_running
       FROM sessions WHERE id NOT IN (SELECT id FROM session_state)`);
   }
+  /**
+   * `admitBefore` is the caller's original ingress deadline (`monotonicNow()` instant). It is
+   * enforced at every point before BEGIN — the FIFO queue, scope entry and the durability
+   * selection — so an expired request throws `StoreAdmissionExpiredError` having written
+   * nothing. It never interrupts a transaction that already began.
+   */
   async transaction<T>(
     fn: () => T | Promise<T>,
     durability?: "critical" | "checkpoint",
+    options?: { admitBefore?: number },
   ): Promise<T> {
-    return this.db.scope(() => {
-      if (this.inTransaction) {
-        // Unspecified nested calls inherit the outer durability; explicit critical stays strict.
-        if (durability === "critical") this.db.assertCriticalScope();
-        return Promise.resolve().then(fn);
-      }
-      const run = async () => {
-        await this.db.exec("BEGIN IMMEDIATE");
-        const mutationVersion = this.db.dataMutationVersion;
-        const pendingBefore = new Map<string, PendingWrite | undefined>();
-        this.pendingBefore = pendingBefore;
-        this.inTransaction = true;
-        this.transactionChanges = 0;
-        this.transactionProjectChanges.clear();
-        this.versions.clearPending();
-        this.flushedInTransaction = [];
-        try {
-          const value = await fn();
-          await this.db.exec("COMMIT");
-          this.committedChangeVersion += this.transactionChanges;
-          for (const [id, count] of this.transactionProjectChanges)
-            this.projectVersions.set(id, (this.projectVersions.get(id) ?? 0) + count);
-          const changed = this.transactionProjectChanges.size > 0 || this.versions.pendingChanged;
-          this.versions.commit();
-          this.pendingBefore = undefined;
-          this.inTransaction = false;
-          this.transactionChanges = 0;
-          this.transactionProjectChanges.clear();
-          this.flushedInTransaction = [];
-          const effects = this.transactionEffects.committed();
-          this.db.outsideScope(() => {
-            if (this.db.dataMutationVersion !== mutationVersion) this.publishChanges();
-            try {
-              if (changed) this.changes.notify();
-            } catch (error) {
-              console.error("Committed change notification failed:", error);
-            }
-            for (const effect of effects) dispatchCommittedEffect(effect);
-          });
-          return value;
-        } catch (error) {
-          this.pendingBefore = undefined;
-          this.inTransaction = false;
+    const admitBefore = options?.admitBefore;
+    this.db.assertAdmissionOpen(admitBefore);
+    return this.db.scope(
+      () => {
+        if (this.inTransaction) {
+          // Unspecified nested calls inherit the outer durability; explicit critical stays strict.
+          if (durability === "critical") this.db.assertCriticalScope();
+          return Promise.resolve().then(fn);
+        }
+        this.db.assertAdmissionOpen(admitBefore);
+        const run = async () => {
+          // Each run owns the shared transaction state only while its epoch is current; an
+          // abandoned run that resumes later must not touch what the next holder built.
+          const epoch = this.transactionEpoch;
+          this.db.assertAdmissionOpen(admitBefore);
+          await this.db.exec("BEGIN IMMEDIATE");
+          const mutationVersion = this.db.dataMutationVersion;
+          const pendingBefore = new Map<string, PendingWrite | undefined>();
+          this.pendingBefore = pendingBefore;
+          this.inTransaction = true;
           this.transactionChanges = 0;
           this.transactionProjectChanges.clear();
           this.versions.clearPending();
-          this.versions.forgetListed();
-          this.cache.clear();
-          this.summaryRows.clear();
-          this.cacheWeights.clear();
-          this.stateMetadata.clear();
-          this.clearAuthCache();
-          this.transactionEffects.commit = [];
           this.flushedInTransaction = [];
-          for (const [id, entry] of pendingBefore) {
-            clearTimeout(this.pending.get(id)?.timer);
-            this.pending.delete(id);
-            if (entry) this.restore(entry);
-          }
           try {
-            await this.db.exec("ROLLBACK");
-          } catch (rollbackError) {
-            console.error("Could not roll back host transaction:", rollbackError);
+            const value = await fn();
+            await this.db.exec("COMMIT");
+            if (epoch !== this.transactionEpoch) throw new Error("Transaction was abandoned.");
+            this.committedChangeVersion += this.transactionChanges;
+            for (const [id, count] of this.transactionProjectChanges)
+              this.projectVersions.set(id, (this.projectVersions.get(id) ?? 0) + count);
+            const changed = this.transactionProjectChanges.size > 0 || this.versions.pendingChanged;
+            this.versions.commit();
+            this.pendingBefore = undefined;
+            this.inTransaction = false;
+            this.transactionChanges = 0;
+            this.transactionProjectChanges.clear();
+            this.flushedInTransaction = [];
+            const effects = this.transactionEffects.committed();
+            this.db.outsideScope(() => {
+              if (this.db.dataMutationVersion !== mutationVersion) this.publishChanges();
+              try {
+                if (changed) this.changes.notify();
+              } catch (error) {
+                console.error("Committed change notification failed:", error);
+              }
+              for (const effect of effects) dispatchCommittedEffect(effect);
+            });
+            return value;
+          } catch (error) {
+            if (epoch !== this.transactionEpoch) throw error;
+            this.pendingBefore = undefined;
+            this.inTransaction = false;
+            this.transactionChanges = 0;
+            this.transactionProjectChanges.clear();
+            this.versions.clearPending();
+            this.versions.forgetListed();
+            this.cache.clear();
+            this.clearSummaryRows();
+            this.cacheWeights.clear();
+            this.stateMetadata.clear();
+            this.clearAuthCache();
+            this.transactionEffects.commit = [];
+            this.flushedInTransaction = [];
+            for (const [id, entry] of pendingBefore) {
+              clearTimeout(this.pending.get(id)?.timer);
+              this.pending.delete(id);
+              if (entry) this.restore(entry);
+            }
+            try {
+              await this.db.exec("ROLLBACK");
+            } catch (rollbackError) {
+              console.error("Could not roll back host transaction:", rollbackError);
+            }
+            this.transactionEffects.rolledBack();
+            throw error;
           }
-          this.transactionEffects.rolledBack();
-          throw error;
-        }
-      };
-      return durability !== "checkpoint" ? this.db.durableScope(run) : run();
-    });
+        };
+        return durability !== "checkpoint" ? this.db.durableScope(run) : run();
+      },
+      undefined,
+      { admitBefore },
+    );
   }
   /** Derived readers may use uncommitted rows, but must not publish them in a
    * revision cache: a rollback followed by another write can reuse a revision. */
@@ -849,6 +1062,31 @@ export class HostStore {
       });
     }
   }
+  /** Counts one generated image against a conversation's budget. The check and the increment share
+   * one transaction, and the row cascades with its session. Returns undefined when the budget is spent. */
+  reserveConversationImage(sessionId: string, limit: number): Promise<number | undefined> {
+    return this.transaction(async () => {
+      const row = await this.db
+        .prepare("SELECT used FROM conversation_image_budget WHERE session_id=?")
+        .get(sessionId);
+      const used = row ? Number(row.used) : 0;
+      if (used >= limit) return undefined;
+      await this.db
+        .prepare(
+          "INSERT INTO conversation_image_budget (session_id, used) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET used=excluded.used",
+        )
+        .run(sessionId, used + 1);
+      return used + 1;
+    });
+  }
+  conversationImagesUsed(sessionId: string): Promise<number> {
+    return this.db.storeScope(async () => {
+      const row = await this.db
+        .prepare("SELECT used FROM conversation_image_budget WHERE session_id=?")
+        .get(sessionId);
+      return row ? Number(row.used) : 0;
+    });
+  }
   async managedWorkspace(id: string): Promise<ManagedWorkspace | null> {
     return this.db.storeScope(async () => {
       const row = await this.db
@@ -857,11 +1095,156 @@ export class HostStore {
       return row ? JSON.parse(String(row.payload)) : null;
     });
   }
+  /** Sibling (extra-repository) worktrees of a creation. `committed` flips with the prepare result,
+   * so an uncommitted row is a rollback candidate after a crash. */
+  async saveWorkspaceSibling(record: {
+    operationId: string;
+    workspaceId: string;
+    repository: string;
+    path: string;
+    branch: string;
+    base?: string;
+  }): Promise<void> {
+    return this.db.storeScope(async () => {
+      await this.db.checkAuthorization();
+      await this.db
+        .prepare(
+          `INSERT INTO workspace_siblings (operation_id, path, workspace_id, repository, branch, base_commit, committed)
+           VALUES (?, ?, ?, ?, ?, ?, 0)
+           ON CONFLICT(operation_id, path) DO UPDATE SET repository=excluded.repository, branch=excluded.branch, base_commit=excluded.base_commit`,
+        )
+        .run(
+          record.operationId,
+          record.path,
+          record.workspaceId,
+          record.repository,
+          record.branch,
+          record.base ?? null,
+        );
+    });
+  }
+  /** `operationId` lists only the rows still uncommitted (the rollback candidates of that attempt). */
+  async workspaceSiblings(
+    filter: { operationId: string } | { workspaceId: string; committedOnly: true },
+  ): Promise<{ repository: string; path: string; branch: string; base?: string }[]> {
+    return this.db.storeScope(async () => {
+      const rows =
+        "operationId" in filter
+          ? await this.db
+              .prepare(
+                "SELECT repository, path, branch, base_commit FROM workspace_siblings WHERE operation_id=? AND committed=0 ORDER BY rowid",
+              )
+              .all(filter.operationId)
+          : await this.db
+              .prepare(
+                "SELECT repository, path, branch, base_commit FROM workspace_siblings WHERE workspace_id=? AND committed=1 ORDER BY rowid",
+              )
+              .all(filter.workspaceId);
+      return rows.map((row) => ({
+        repository: String(row.repository),
+        path: String(row.path),
+        branch: String(row.branch),
+        ...(row.base_commit ? { base: String(row.base_commit) } : {}),
+      }));
+    });
+  }
+  /** Follows a branch rename in the workspace's committed sibling rows. */
+  async renameWorkspaceSiblingBranches(workspaceId: string, from: string, to: string) {
+    return this.db.storeScope(async () => {
+      await this.db.checkAuthorization();
+      await this.db
+        .prepare("UPDATE workspace_siblings SET branch=? WHERE workspace_id=? AND branch=?")
+        .run(to, workspaceId, from);
+    });
+  }
+  /** Whether any journal row of the operation is already committed. */
+  async hasCommittedSiblings(operationId: string): Promise<boolean> {
+    return this.db.storeScope(
+      async () =>
+        !!(await this.db
+          .prepare("SELECT 1 AS one FROM workspace_siblings WHERE operation_id=? AND committed=1")
+          .get(operationId)),
+    );
+  }
+  async deleteWorkspaceSibling(operationId: string, path: string): Promise<void> {
+    return this.db.storeScope(async () => {
+      await this.db.checkAuthorization();
+      await this.db
+        .prepare("DELETE FROM workspace_siblings WHERE operation_id=? AND path=?")
+        .run(operationId, path);
+    });
+  }
+  async commitWorkspaceSiblings(operationId: string): Promise<void> {
+    return this.db.storeScope(async () => {
+      await this.db.checkAuthorization();
+      await this.db
+        .prepare("UPDATE workspace_siblings SET committed=1 WHERE operation_id=?")
+        .run(operationId);
+    });
+  }
+  /** Operations that journaled siblings but never committed their prepare result. */
+  async uncommittedSiblingOperations(): Promise<string[]> {
+    return this.db.storeScope(async () =>
+      (
+        await this.db
+          .prepare("SELECT DISTINCT operation_id FROM workspace_siblings WHERE committed=0")
+          .all()
+      ).map((row) => String(row.operation_id)),
+    );
+  }
+  /** Durable intent of a branch rename: written before Git runs, cleared with the registry update. */
+  async saveWorkspaceBranchRename(workspaceId: string, from: string, to: string): Promise<void> {
+    return this.db.storeScope(async () => {
+      await this.db.checkAuthorization();
+      await this.db
+        .prepare(
+          `INSERT INTO workspace_branch_renames (workspace_id, old_branch, new_branch) VALUES (?, ?, ?)
+           ON CONFLICT(workspace_id) DO UPDATE SET old_branch=excluded.old_branch, new_branch=excluded.new_branch`,
+        )
+        .run(workspaceId, from, to);
+    });
+  }
+  async pendingWorkspaceBranchRenames(): Promise<
+    { workspaceId: string; from: string; to: string }[]
+  > {
+    return this.db.storeScope(async () =>
+      (await this.db.prepare("SELECT * FROM workspace_branch_renames").all()).map((row) => ({
+        workspaceId: String(row.workspace_id),
+        from: String(row.old_branch),
+        to: String(row.new_branch),
+      })),
+    );
+  }
+  async clearWorkspaceBranchRename(workspaceId: string): Promise<void> {
+    return this.db.storeScope(async () => {
+      await this.db.checkAuthorization();
+      await this.db
+        .prepare("DELETE FROM workspace_branch_renames WHERE workspace_id=?")
+        .run(workspaceId);
+    });
+  }
+  /** Forgets a workspace whose creation was rolled back, so its writer can create a fresh one.
+   * Only for records no one else has seen: the operation journals go with it. */
+  async discardRolledBackWorkspace(workspaceId: string): Promise<void> {
+    return this.db.storeScope(async () => {
+      await this.db.checkAuthorization();
+      await this.db
+        .prepare("DELETE FROM workspace_operations WHERE workspace_id=?")
+        .run(workspaceId);
+      await this.db.prepare("DELETE FROM workspace_siblings WHERE workspace_id=?").run(workspaceId);
+      await this.db
+        .prepare("DELETE FROM workspace_branch_renames WHERE workspace_id=?")
+        .run(workspaceId);
+      await this.db.prepare("DELETE FROM managed_workspaces WHERE id=?").run(workspaceId);
+    });
+  }
   async managedWorkspaces(
     filter: {
       projectId?: string;
       repositoryId?: string;
       environmentId?: string;
+      ownerKind?: string;
+      ownerId?: string;
       states?: WorkspaceState[];
     } = {},
   ): Promise<ManagedWorkspace[]> {
@@ -872,6 +1255,8 @@ export class HostStore {
         ["project_id", filter.projectId],
         ["repository_id", filter.repositoryId],
         ["environment_id", filter.environmentId],
+        ["owner_kind", filter.ownerKind],
+        ["owner_id", filter.ownerId],
       ])
         if (value !== undefined) {
           clauses.push(`${column}=?`);
@@ -917,7 +1302,7 @@ export class HostStore {
   async updateManagedWorkspace(
     workspace: ManagedWorkspace,
     expectedRevision: number,
-    options: { retarget?: boolean } = {},
+    options: { retarget?: boolean; renameBranch?: boolean } = {},
   ): Promise<void> {
     return this.db.storeScope(async () => {
       const previous = await this.managedWorkspace(workspace.id);
@@ -935,7 +1320,8 @@ export class HostStore {
         "environmentId",
         "owner",
         "path",
-        "branchRef",
+        // Only the temporary-branch rename may change the branch identity.
+        ...(options.renameBranch ? [] : (["branchRef"] as const)),
         "baseRef",
         "baseCommit",
       ] as const)
@@ -1314,20 +1700,56 @@ export class HostStore {
     });
   }
   async project(id: string): Promise<HostProject> {
-    return this.db.storeScope(async () => {
-      const row = await this.db.prepare("SELECT * FROM projects WHERE id=?").get(id);
+    return this.db.readScope(async () => {
+      // The reserved row exists for the foreign key; project, Git and path features
+      // all resolve through here and must never see it.
+      const row = isProjectlessScope(id)
+        ? undefined
+        : await this.db.prepare("SELECT * FROM projects WHERE id=?").get(id);
       if (!row) throw new Error("Project is not registered on this machine");
       return row as unknown as HostProject;
     });
   }
   async projects(): Promise<HostProject[]> {
-    return this.db.storeScope(async () => {
+    return this.db.readScope(async () => {
       return (await this.db
-        .prepare("SELECT * FROM projects ORDER BY name")
-        .all()) as unknown as HostProject[];
+        .prepare("SELECT * FROM projects WHERE id<>? ORDER BY name")
+        .all(PROJECTLESS_SCOPE.id)) as unknown as HostProject[];
     });
   }
+  /** Only session creation in the reserved scope may call this. */
+  async ensureProjectlessScope(): Promise<HostProject> {
+    return this.db.storeScope(async () => {
+      await this.db
+        .prepare("INSERT OR IGNORE INTO projects VALUES (?, ?, ?)")
+        .run(PROJECTLESS_SCOPE.id, PROJECTLESS_SCOPE.cwd, PROJECTLESS_SCOPE.name);
+      return PROJECTLESS_SCOPE;
+    });
+  }
+  /**
+   * Pure reads of stored and unwritten session state beside the writer queue, on one committed
+   * snapshot. The unwritten (not yet flushed) sessions are captured before the snapshot, so a
+   * flush that commits meanwhile still shows its newer value. While a transaction holds
+   * uncommitted in-memory state the read waits behind it instead, like a writer scope.
+   * Inside a writer scope it runs there and sees that scope's own writes.
+   */
+  readScope<T>(work: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    if (this.db.ownsScope || this.readStates.getStore()) return this.db.readScope(work, signal);
+    if (this.inTransaction) return this.db.storeScope(work, undefined);
+    return this.readStates.run({ pending: new Map(this.pending) }, () =>
+      this.db.readScope(work, signal),
+    );
+  }
+  private readonly readStates = new AsyncLocalStorage<{
+    pending: ReadonlyMap<string, PendingWrite>;
+  }>();
+  /** Unwritten sessions this read works from: the captured set inside a read scope, else the live one. */
+  private get readPending(): ReadonlyMap<string, PendingWrite> {
+    return this.readStates.getStore()?.pending ?? this.pending;
+  }
   async addProject(cwd: string, name: string): Promise<HostProject> {
+    if (cwd.trim().toLowerCase() === PROJECTLESS_SCOPE.cwd)
+      throw new Error("This location is reserved for sessions without a project");
     return this.db.storeScope(async () => {
       // Use the same filesystem identity as desktop session discovery. Legacy
       // spellings remain registered so their sessions and feature data stay valid.
@@ -1339,7 +1761,10 @@ export class HostStore {
       await this.db
         .prepare("INSERT OR IGNORE INTO projects VALUES (?, ?, ?)")
         .run(randomUUID(), cwd, name);
-      this.afterCommit(() => this.changes.notify());
+      this.afterCommit(() => {
+        this.projectRegistryVersion++;
+        this.changes.notify();
+      });
       return (await this.db
         .prepare("SELECT * FROM projects WHERE cwd=?")
         .get(cwd)) as unknown as HostProject;
@@ -1432,8 +1857,12 @@ export class HostStore {
     return this.remember(value);
   }
   /** Cold cancellable reads parse outside the SQL queue; see `prefetchColdSession`. */
-  private prefetchCold(id: string, signal: AbortSignal): Promise<void> {
-    return prefetchColdSession({
+  private async cancellableSessionRead<T>(
+    id: string,
+    signal: AbortSignal,
+    work: () => Promise<T>,
+  ): Promise<T> {
+    const oversized = await prefetchColdSession({
       id,
       signal,
       path: this.sessionReadPath,
@@ -1442,12 +1871,12 @@ export class HostStore {
       resident: (key) => this.pending.has(key) || this.cache.has(key),
       admit: (value) => this.remember(value),
     });
+    // A transcript over the child's reply budget is parsed in the queue, as an
+    // unsignalled read is; the signal still cancels the queued work.
+    return oversized ? this.db.scope(work, signal) : this.withReadCancellation(signal, work);
   }
   async session(id: string, signal?: AbortSignal): Promise<HostSession> {
-    if (signal)
-      return this.prefetchCold(id, signal).then(() =>
-        this.withReadCancellation(signal, () => this.session(id)),
-      );
+    if (signal) return this.cancellableSessionRead(id, signal, () => this.session(id));
     return this.db.storeScope(async () => {
       const value = await this.find(id);
       if (!value) throw new Error("Session not found on this machine");
@@ -1473,6 +1902,24 @@ export class HostStore {
       const row = await this.db.prepare("SELECT status FROM session_state WHERE id=?").get(id);
       if (!row) throw sessionNotFound();
       return String(row.status);
+    });
+  }
+  /** Latest turn id of a session from its state row; never loads or parses the transcript. */
+  async sessionRunId(id: string): Promise<string | undefined> {
+    return this.db.storeScope(async () => {
+      const pending = this.pending.get(id);
+      if (pending) return pending.value.runId;
+      // Legacy rows without a summary fall back to the snapshot inside SQLite.
+      const row = await this.db
+        .prepare(
+          `SELECT CASE WHEN summary IS NULL THEN
+            (SELECT json_extract(snapshot, '$.runId') FROM sessions WHERE sessions.id=session_state.id)
+            ELSE json_extract(summary, '$.runId') END AS run_id
+          FROM session_state WHERE id=?`,
+        )
+        .get(id);
+      if (!row) throw sessionNotFound();
+      return typeof row.run_id === "string" && row.run_id ? row.run_id : undefined;
     });
   }
   /** Fresh durable or pending identity for deferred startup binding. */
@@ -1515,7 +1962,98 @@ export class HostStore {
         : undefined;
     });
   }
+  /**
+   * Session summaries of one project. A cached list is served without the database; a miss
+   * reads the stored rows on a read connection beside the writer. Only rows that must be
+   * rebuilt and written back (legacy projections) take the writer queue.
+   */
   async summaries(projectId: string): Promise<HostSessionSummary[]> {
+    if (this.db.ownsScope || this.inTransaction) return this.summariesLocked(projectId);
+    // Everything the cache is keyed by is read before the snapshot: a later change moves
+    // one of these, so rows older than their key are never cached.
+    const outermost = !this.readStates.getStore();
+    const external = await this.db.dataVersion();
+    const version = this.projectVersion(projectId);
+    const mutations = this.db.dataMutationVersion;
+    const saves = this.summarySaves;
+    const entry = this.summaryRows.get(projectId);
+    // A nested read keeps its outer scope's snapshot; the live cache may already be newer.
+    if (
+      outermost &&
+      !this.inTransaction &&
+      entry?.version === version &&
+      entry.external === external
+    ) {
+      const unpatched = this.unpatchedSummaries.get(projectId);
+      if (!unpatched?.size) {
+        entry.sorted ??= [...entry.rows.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+        return entry.sorted.slice();
+      }
+      const rows = new Map(entry.rows);
+      for (const [id, value] of unpatched) rows.set(id, this.summaryOf(value));
+      return [...rows.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+    }
+    const read = () => this.readStoredSummaries(projectId, entry);
+    const stored = outermost ? await this.readScope(read) : await read();
+    if (!stored) return this.summariesLocked(projectId);
+    const { list, raws } = stored;
+    list.sort((a, b) => b.updatedAt - a.updatedAt);
+    // Only a read that owned its snapshot is cached, and only when nothing the store knows
+    // moved while it ran; a nested read began its snapshot before these stamps.
+    const externalAfter = outermost ? await this.db.dataVersion() : undefined;
+    if (
+      outermost &&
+      !this.inTransaction &&
+      list.length <= SUMMARY_ROWS &&
+      version === this.projectVersion(projectId) &&
+      mutations === this.db.dataMutationVersion &&
+      saves === this.summarySaves &&
+      external === externalAfter
+    ) {
+      this.setSummaryRows(projectId, {
+        version,
+        external,
+        rows: new Map(list.map((item) => [item.id, item])),
+        raw: raws,
+        sorted: list,
+      });
+      while (this.summaryRows.size > SUMMARY_PROJECTS || this.summaryRowCount > SUMMARY_ROWS)
+        this.dropSummaryRows(this.summaryRows.keys().next().value!);
+    }
+    return list.slice();
+  }
+  /** Current summaries of the stored rows, or `undefined` when any row needs rebuilding. */
+  private async readStoredSummaries(
+    projectId: string,
+    entry: SummaryEntry | undefined,
+  ): Promise<{ list: HostSessionSummary[]; raws: Map<string, string> } | undefined> {
+    const unwritten = this.readPending;
+    const rows = await this.db
+      .prepare("SELECT id, revision, summary FROM session_state WHERE project_id=?")
+      .all(projectId);
+    const list: HostSessionSummary[] = [];
+    const raws = new Map<string, string>();
+    for (const row of rows) {
+      const id = String(row.id);
+      const pending = unwritten.get(id);
+      if (pending) {
+        if (pending.value.authorityGeneration !== undefined)
+          await assertHostAuthority(this.db, id, pending.value.authorityGeneration);
+        list.push(this.summaryOf(pending.value));
+        continue;
+      }
+      const stored = row.summary == null ? undefined : String(row.summary);
+      // An unchanged stored summary reuses the parsed copy the cache already holds.
+      const reused =
+        stored !== undefined && entry?.raw.get(id) === stored ? entry.rows.get(id) : undefined;
+      const cached = reused ?? (stored ? (JSON.parse(stored) as HostSessionSummary) : undefined);
+      if (!cached || !hasCurrentSummaryFields(cached)) return undefined;
+      raws.set(id, stored!);
+      list.push(cached);
+    }
+    return { list, raws };
+  }
+  private async summariesLocked(projectId: string): Promise<HostSessionSummary[]> {
     return this.db.storeScope(async () => {
       const external = await this.dataVersion();
       const version = this.projectVersion(projectId);
@@ -1532,43 +2070,41 @@ export class HostStore {
         .prepare("SELECT id, revision, summary FROM session_state WHERE project_id=?")
         .all(projectId);
       const list: HostSessionSummary[] = [];
+      const raws = new Map<string, string>();
       let refreshComplete = true;
       // Bound concurrent transcript reads and write legacy projections in small CAS batches.
       for (let offset = 0; offset < rows.length; offset += 32) {
         const updates: { id: string; revision: number; old: string | null; value: string }[] = [];
         const batch = await Promise.all(
           rows.slice(offset, offset + 32).map(async (row) => {
-            const unwritten = this.pending.get(String(row.id));
+            const id = String(row.id);
+            const unwritten = this.pending.get(id);
             if (unwritten) {
               if (unwritten.value.authorityGeneration !== undefined)
-                await assertHostAuthority(
-                  this.db,
-                  String(row.id),
-                  unwritten.value.authorityGeneration,
-                );
+                await assertHostAuthority(this.db, id, unwritten.value.authorityGeneration);
               return summary(unwritten.value);
             }
-            const cached = row.summary
-              ? (JSON.parse(String(row.summary)) as HostSessionSummary)
-              : undefined;
-            // `model` is "" for the provider default; only its absence marks a summary
-            // written before the field existed.
-            if (
-              typeof cached?.model === "string" &&
-              cached.needsInput !== undefined &&
-              cached.providerSessionId !== undefined &&
-              cached.providerHistory !== undefined &&
-              cached.delegationParent !== undefined &&
-              cached.unread !== undefined
-            )
+            const stored = row.summary == null ? undefined : String(row.summary);
+            // An unchanged stored summary reuses the parsed copy the cache already holds.
+            const reused =
+              stored !== undefined && entry?.raw.get(id) === stored
+                ? entry?.rows.get(id)
+                : undefined;
+            const cached =
+              reused ?? (stored ? (JSON.parse(stored) as HostSessionSummary) : undefined);
+            if (cached && hasCurrentSummaryFields(cached)) {
+              if (stored !== undefined) raws.set(id, stored);
               return cached;
-            const fresh = summary(await this.session(String(row.id)));
+            }
+            const fresh = summary(await this.session(id));
+            const value = JSON.stringify(fresh);
             updates.push({
-              id: String(row.id),
+              id,
               revision: Number(row.revision),
-              old: row.summary == null ? null : String(row.summary),
-              value: JSON.stringify(fresh),
+              old: stored ?? null,
+              value,
             });
+            raws.set(id, value);
             return fresh;
           }),
         );
@@ -1595,22 +2131,19 @@ export class HostStore {
       if (
         !this.inTransaction &&
         refreshComplete &&
-        list.length <= 100000 &&
+        list.length <= SUMMARY_ROWS &&
         version === this.projectVersion(projectId) &&
         external === (await this.dataVersion())
       ) {
-        this.summaryRows.delete(projectId);
-        this.summaryRows.set(projectId, {
+        this.setSummaryRows(projectId, {
           version,
           external,
           rows: new Map(list.map((item) => [item.id, item])),
+          raw: raws,
           sorted: list,
         });
-        while (
-          this.summaryRows.size > 16 ||
-          [...this.summaryRows.values()].reduce((count, item) => count + item.rows.size, 0) > 100000
-        )
-          this.summaryRows.delete(this.summaryRows.keys().next().value!);
+        while (this.summaryRows.size > SUMMARY_PROJECTS || this.summaryRowCount > SUMMARY_ROWS)
+          this.dropSummaryRows(this.summaryRows.keys().next().value!);
       }
       return list.slice();
     });
@@ -1628,29 +2161,64 @@ export class HostStore {
       return false;
     });
   }
-  async sync(id: string, revision?: number, signal?: AbortSignal): Promise<SessionSync> {
+  /** Exact run identities for admission, with unwritten state taking precedence. */
+  async runningSessionRuns(): Promise<{ sessionId: string; projectId: string; runId: string }[]> {
+    return this.db.storeScope(async () => {
+      // Only legacy rows without a summary need to extract the ID from the snapshot in SQLite.
+      const rows = await this.db
+        .prepare(
+          `SELECT id, project_id, CASE WHEN summary IS NULL THEN
+            (SELECT json_extract(snapshot, '$.runId') FROM sessions WHERE sessions.id=st.id)
+            ELSE json_extract(summary, '$.runId') END AS run_id
+          FROM session_state st WHERE status='running'`,
+        )
+        .all();
+      const runs: { sessionId: string; projectId: string; runId: string }[] = [];
+      for (const row of rows) {
+        const sessionId = String(row.id);
+        if (!this.pending.has(sessionId) && typeof row.run_id === "string" && row.run_id)
+          runs.push({ sessionId, projectId: String(row.project_id), runId: row.run_id });
+      }
+      for (const [sessionId, { value }] of this.pending) {
+        if (value.status === "running" && value.runId)
+          runs.push({ sessionId, projectId: value.projectId, runId: value.runId });
+      }
+      return runs;
+    });
+  }
+  /** The session and its sync answer from one writer admission, so both describe one revision. */
+  async sessionSync(
+    id: string,
+    revision?: number,
+    signal?: AbortSignal,
+  ): Promise<{ current: HostSession; sync: SessionSync }> {
     if (signal)
-      return this.prefetchCold(id, signal).then(() =>
-        this.withReadCancellation(signal, () => this.sync(id, revision)),
-      );
+      return this.cancellableSessionRead(id, signal, () => this.sessionSync(id, revision));
     return this.db.storeScope(async () => {
       const value = await this.session(id);
+      if (revision === value.revision)
+        return { current: value, sync: { kind: "unchanged", revision } };
       const { blockRevisions, ...snapshot } = value;
-      if (revision === value.revision) return { kind: "unchanged", revision };
       if (revision === undefined || revision > value.revision || !blockRevisions)
-        return { kind: "snapshot", value: snapshot };
+        return { current: value, sync: { kind: "snapshot", value: snapshot } };
       const {
         session: { blocks, ...session },
         ...rest
       } = snapshot;
       return {
-        kind: "delta",
-        base: revision,
-        value: { ...rest, session },
-        blockIds: blocks.map((block) => block.id),
-        blocks: blocks.filter((block) => (blockRevisions[block.id] ?? value.revision) > revision),
+        current: value,
+        sync: {
+          kind: "delta",
+          base: revision,
+          value: { ...rest, session },
+          blockIds: blocks.map((block) => block.id),
+          blocks: blocks.filter((block) => (blockRevisions[block.id] ?? value.revision) > revision),
+        },
       };
     });
+  }
+  async sync(id: string, revision?: number, signal?: AbortSignal): Promise<SessionSync> {
+    return (await this.sessionSync(id, revision, signal)).sync;
   }
   /** Sessions taken over from this machine's desktop app, without parsing
    * their transcripts. */
@@ -1666,7 +2234,7 @@ export class HostStore {
       desktopUpdatedAt: number;
     }[]
   > {
-    return this.db.storeScope(async () => {
+    return this.readScope(async () => {
       const rows = new Map(
         (
           await this.db
@@ -1691,7 +2259,7 @@ export class HostStore {
           },
         ]),
       );
-      for (const [id, { value }] of this.pending) {
+      for (const [id, { value }] of this.readPending) {
         if (projectId !== undefined && value.projectId !== projectId) {
           rows.delete(id);
           continue;
@@ -1862,59 +2430,63 @@ export class HostStore {
       return (await this.sessionStateMetadata(id))?.revision;
     });
   }
-  async sessionStateMetadata(
-    id: string,
-  ): Promise<{ revision: number; status: HostSession["status"]; desktop: boolean } | undefined> {
+  async sessionStateMetadata(id: string): Promise<SessionStateMetadata | undefined> {
     return this.db.storeScope(async () => {
-      const pending = this.pending.get(id)?.value;
-      if (pending)
-        return {
-          revision: pending.revision,
-          status: pending.status,
-          desktop: pending.desktop != null,
-        };
-      const cached = this.cache.get(id);
-      if (cached)
-        return {
-          revision: cached.revision,
-          status: cached.status,
-          desktop: cached.desktop != null,
-        };
+      const resident = this.pending.get(id)?.value ?? this.cache.get(id);
+      if (resident) return stateMetadataOf(resident);
       const known = this.stateMetadata.get(id);
       if (known) {
         this.stateMetadata.delete(id);
         this.stateMetadata.set(id, known);
         return known;
       }
-      const row = await this.db
-        .prepare("SELECT revision,status,has_desktop FROM session_state WHERE id=?")
-        .get(id);
-      if (!row) return undefined;
-      const value = {
-        revision: Number(row.revision),
-        status: row.status as HostSession["status"],
-        desktop: !!Number(row.has_desktop),
-      };
-      this.rememberStateMetadata(id, value);
+      const value = await this.storedStateMetadata(id);
+      if (value) this.rememberStateMetadata(id, value);
       return value;
     });
   }
-  private rememberStateMetadata(
-    id: string,
-    value: { revision: number; status: HostSession["status"]; desktop: boolean },
-  ) {
+  /**
+   * Metadata for pure session reads, beside the writer queue. It answers with the state before
+   * an open transaction, and keeps an unwritten value visible until its checkpoint commits.
+   * Decisions that must follow queued writes use `sessionStateMetadata`.
+   */
+  async sessionReadMetadata(id: string): Promise<SessionStateMetadata | undefined> {
+    if (this.db.ownsScope) return this.sessionStateMetadata(id);
+    const unwritten = this.pendingBefore?.has(id)
+      ? this.pendingBefore.get(id)?.value
+      : (this.flushing.get(id) ?? this.pending.get(id)?.value);
+    return this.db.readScope(() =>
+      unwritten ? stateMetadataOf(unwritten) : this.storedStateMetadata(id),
+    );
+  }
+  private async storedStateMetadata(id: string): Promise<SessionStateMetadata | undefined> {
+    const row = await this.db
+      .prepare(
+        `SELECT project_id, revision, status, has_desktop,
+          json_extract(summary, '$.authorityGeneration') AS authority_generation,
+          COALESCE(json_extract(summary, '$.createdAt'), updated_at) AS created_at
+        FROM session_state WHERE id=?`,
+      )
+      .get(id);
+    if (!row) return undefined;
+    return {
+      projectId: String(row.project_id),
+      revision: Number(row.revision),
+      status: row.status as HostSession["status"],
+      desktop: !!Number(row.has_desktop),
+      authorityGeneration:
+        row.authority_generation == null ? undefined : Number(row.authority_generation),
+      createdAt: row.created_at == null ? undefined : Number(row.created_at),
+    };
+  }
+  private rememberStateMetadata(id: string, value: SessionStateMetadata) {
     this.stateMetadata.delete(id);
     this.stateMetadata.set(id, value);
     while (this.stateMetadata.size > 4096)
       this.stateMetadata.delete(this.stateMetadata.keys().next().value!);
   }
   private updateStateMetadata(value: HostSession) {
-    const update = () =>
-      this.rememberStateMetadata(value.session.id, {
-        revision: value.revision,
-        status: value.status,
-        desktop: value.desktop != null,
-      });
+    const update = () => this.rememberStateMetadata(value.session.id, stateMetadataOf(value));
     if (this.inTransaction) this.transactionEffects.commit.push(update);
     else update();
   }
@@ -1955,7 +2527,8 @@ export class HostStore {
                       );
                 if (position === undefined) continue;
                 const block = blocks[position];
-                if (block.author && JSON.stringify(block.author) !== JSON.stringify(author))
+                // By value, not by key order: native storage writes the same author sorted.
+                if (block.author && !isDeepStrictEqual(block.author, author))
                   throw new Error("Host message authorship cannot be replaced.");
                 if (block.author) continue;
                 if (!provenanceChanged) blocks = blocks.slice();
@@ -2004,6 +2577,8 @@ export class HostStore {
                   accepted,
                   previous,
                   (event as { type?: string } | null)?.type === "session.metadata",
+                  options.blockChanges,
+                  previousIndex?.positions,
                 ),
                 ...(authorityGeneration === undefined ? {} : { authorityGeneration }),
                 // Older snapshots have no creation time. Preserve their last recorded
@@ -2099,6 +2674,7 @@ export class HostStore {
   private async flushPending(id: string): Promise<void> {
     const entry = this.take(id);
     if (!entry) return;
+    this.flushing.set(id, entry.value);
     try {
       await this.writeJournal(entry.value, entry.events, entry);
     } catch (error) {
@@ -2107,6 +2683,8 @@ export class HostStore {
       entry.unwritable = isStorageConstraintFailure(error);
       this.restore(entry);
       throw error;
+    } finally {
+      this.flushing.delete(id);
     }
     // The aggregate counts each block independently (a conservative estimate
     // even with shared children). Reserve space for array and revision keys.
@@ -2171,7 +2749,8 @@ export class HostStore {
     value: HostSession,
     rows: { revision: number; event: unknown }[],
   ): Promise<void> {
-    // Both tables store the same summary: build and serialize it once per save.
+    // session_state mirrors this row through session_state_update, so the save
+    // writes `sessions` alone and the summary is serialized once.
     const summaryJson = JSON.stringify(summary(value));
     const run = async () => {
       await this.db
@@ -2192,25 +2771,6 @@ export class HostStore {
           value.revision,
           value.updatedAt,
           value.status,
-          value.session.providerSessionId || null,
-          value.session.harness ?? null,
-          value.session.cwd ?? null,
-          indexBlocks(value.session.blocks).root.shell > 0 ? 1 : 0,
-        );
-      await this.db
-        .prepare(
-          `INSERT INTO session_state (id, project_id, summary, revision, updated_at, status, has_desktop, desktop_updated_at, provider_session_id, harness, session_cwd, shell_running) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id, summary=excluded.summary, revision=excluded.revision, updated_at=excluded.updated_at, status=excluded.status, has_desktop=excluded.has_desktop, desktop_updated_at=excluded.desktop_updated_at, provider_session_id=excluded.provider_session_id, harness=excluded.harness, session_cwd=excluded.session_cwd, shell_running=excluded.shell_running`,
-        )
-        .run(
-          value.session.id,
-          value.projectId,
-          summaryJson,
-          value.revision,
-          value.updatedAt,
-          value.status,
-          value.desktop == null ? 0 : 1,
-          value.desktop?.updatedAt ?? null,
           value.session.providerSessionId || null,
           value.session.harness ?? null,
           value.session.cwd ?? null,
@@ -2530,6 +3090,7 @@ export class HostStore {
         this.cache.delete(id);
         this.transactionEffects.commit.push(() => {
           this.stateMetadata.delete(id);
+          this.versions.retire(id);
         });
         this.bumpChangeVersion();
         this.touchProject(projectId);
@@ -2560,11 +3121,54 @@ export class HostStore {
   }
   async receiptStatus(
     id: string,
-    options: { admit?: boolean } = {},
-  ): Promise<CommandReceipt | undefined> {
-    return this.db.storeScope(() => readCommandReceipt(this.db, id, undefined, options));
+    options: { admit?: boolean; includeSteer?: boolean } = {},
+  ): Promise<StoredCommandReceipt | undefined> {
+    return this.db.storeScope(async () => {
+      const receipt = await readCommandReceipt(this.db, id, undefined, options);
+      if (
+        !options.includeSteer ||
+        options.admit ||
+        !receipt ||
+        receipt.steer ||
+        receipt.runId ||
+        !receipt.sessionId
+      )
+        return receipt;
+      // Older Hosts recorded admission alone. A retained follow-up draft still carries
+      // authoritative delivery evidence even though its receipt lacks a steer marker.
+      const command = await this.db
+        .prepare(
+          "SELECT json_extract(payload,'$.command.type') AS kind,json_extract(payload,'$.command.runId') AS runId FROM events WHERE session_id=? AND revision=? AND json_extract(payload,'$.command.commandId')=?",
+        )
+        .get(receipt.sessionId, receipt.revision, id);
+      if (command) {
+        if (command.kind === "steer" && typeof command.runId === "string")
+          receipt.steer = { runId: command.runId };
+        return receipt;
+      }
+      const session = await this.find(receipt.sessionId);
+      const block = session?.session.blocks.find((item) => item.id === id);
+      if (block?.followUpDelivery) receipt.steer = { runId: session?.runId ?? id };
+      return receipt;
+    });
   }
-  async recordReceipt(signature: string, receipt: CommandReceipt): Promise<void> {
+  async bindSteerClaim(id: string, token: string): Promise<void> {
+    this.db.assertCriticalScope();
+    await this.db
+      .prepare("UPDATE receipts SET receipt=json_set(receipt,'$.steer.claimToken',?) WHERE id=?")
+      .run(token, id);
+  }
+  async settleSteerReceipt(id: string, outcome: "delivered" | "not_delivered"): Promise<void> {
+    this.db.assertCriticalScope();
+    for (const table of ["receipts", "compact_command_receipts"]) {
+      await this.db
+        .prepare(
+          `UPDATE ${table} SET receipt=json_set(receipt,'$.steer.outcome',?) WHERE id=? AND json_type(receipt,'$.steer')='object' AND json_type(receipt,'$.steer.outcome') IS NULL`,
+        )
+        .run(outcome, id);
+    }
+  }
+  async recordReceipt(signature: string, receipt: StoredCommandReceipt): Promise<void> {
     return this.db.storeScope(() =>
       this.transaction(async () => {
         this.db.assertCriticalScope();
@@ -2780,11 +3384,29 @@ export class HostStore {
       return { events: rows, revision: snapshot.revision };
     });
   }
-  async issueDevice(name: string): Promise<{ id: string; token: string }> {
+  async issueDevice(
+    name: string,
+    kind?: "phone" | "desktop",
+    localDesktop = false,
+    proofKey?: DeviceProofBinding,
+  ): Promise<{ id: string; token: string }> {
     return this.db.storeScope(async () => {
       const id = randomUUID();
       const token = randomBytes(32).toString("base64url");
-      await this.db.prepare("INSERT INTO devices VALUES (?, ?, ?)").run(id, name, this.hash(token));
+      await this.db
+        .prepare(
+          "INSERT INTO devices (id, name, hash, kind, paired_at, management, proof_jkt, proof_x) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          id,
+          name,
+          this.hash(token),
+          kind ?? null,
+          Date.now(),
+          localDesktop ? 2 : 0,
+          proofKey?.jkt ?? null,
+          proofKey?.x ?? null,
+        );
       return { id, token };
     });
   }
@@ -2819,25 +3441,108 @@ export class HostStore {
       };
     });
   }
+  /** Additive credential inventory; pairedDevices keeps its released mobile shape. */
+  async pairedDeviceDetails(currentToken: string): Promise<{
+    devices: {
+      id: string;
+      name: string;
+      isCurrent: boolean;
+      kind?: "phone" | "desktop";
+      pairedAt?: number;
+      lastSeenAt?: number;
+      canManageDevices: boolean;
+      isLocalDesktop: boolean;
+    }[];
+    devicesTruncated: boolean;
+  }> {
+    return this.db.storeScope(async () => {
+      const paired = await this.pairedDevices(currentToken);
+      const rows = await this.db
+        .prepare(
+          "SELECT id, kind, paired_at, last_seen_at, management FROM devices ORDER BY (hash=?) DESC, id LIMIT 256",
+        )
+        .all(this.hash(currentToken));
+      const metadata = new Map(rows.map((row) => [String(row.id), row]));
+      return {
+        ...paired,
+        devices: paired.devices.map((device) => {
+          const row = metadata.get(device.id);
+          return {
+            ...device,
+            canManageDevices: Number(row?.management) > 0,
+            isLocalDesktop: Number(row?.management) === 2,
+            ...(row?.kind === "phone" || row?.kind === "desktop" ? { kind: row.kind } : {}),
+            ...(typeof row?.paired_at === "number" &&
+            Number.isSafeInteger(row.paired_at) &&
+            row.paired_at >= 0
+              ? { pairedAt: row.paired_at }
+              : {}),
+            ...(typeof row?.last_seen_at === "number" &&
+            Number.isSafeInteger(row.last_seen_at) &&
+            row.last_seen_at >= 0
+              ? { lastSeenAt: row.last_seen_at }
+              : {}),
+          };
+        }),
+      };
+    });
+  }
+  async setDeviceManagement(id: string, currentToken: string, enabled: boolean): Promise<boolean> {
+    return this.changeOtherDevice(id, currentToken, enabled ? 1 : 0);
+  }
+  async applyDeviceRecovery(
+    request: { requestId: string; deviceId: string; management: boolean | null },
+    currentToken: string,
+  ): Promise<void> {
+    await this.transaction(async () => {
+      const caller = await this.db
+        .prepare("SELECT management FROM devices WHERE hash=?")
+        .get(this.hash(currentToken));
+      if (Number(caller?.management) !== 2) throw new Error("Local desktop permission required");
+      const receipt = await this.db
+        .prepare("INSERT OR IGNORE INTO device_recovery_receipts (id) VALUES (?)")
+        .run(request.requestId);
+      if (!receipt.changes) return;
+      await this.changeOtherDevice(
+        request.deviceId,
+        currentToken,
+        request.management === null ? undefined : Number(request.management),
+      );
+    }, "critical");
+  }
   /** The current device has a separate explicit revoke-self flow. */
   async revokeOtherDevice(id: string, currentToken: string): Promise<boolean> {
+    return this.changeOtherDevice(id, currentToken);
+  }
+  private async changeOtherDevice(
+    id: string,
+    currentToken: string,
+    management?: number,
+  ): Promise<boolean> {
     return this.db.storeScope(async () => {
       const hash = this.hash(currentToken);
-      const caller = await this.db.prepare("SELECT id FROM devices WHERE hash=?").get(hash);
+      const caller = await this.db
+        .prepare("SELECT id, management FROM devices WHERE hash=?")
+        .get(hash);
       if (!caller) throw new Error("Device authorization was revoked");
       if (caller.id === id) throw new Error("Use the revoke-self action for this device");
-      this.clearAuthCache();
-      return (
-        Number(
-          (
-            await this.db
-              .prepare(
-                "DELETE FROM devices WHERE id=? AND hash<>? AND EXISTS (SELECT 1 FROM devices WHERE hash=?)",
-              )
-              .run(id, hash, hash)
-          ).changes,
-        ) > 0
-      );
+      if (!Number(caller.management)) throw new Error("Device management permission required");
+      const target = "WHERE id=? AND hash<>? AND management<>2";
+      if (management === undefined) {
+        this.clearAuthCache();
+        const result = await this.db
+          .prepare(
+            `DELETE FROM devices ${target} AND EXISTS (SELECT 1 FROM devices WHERE hash=? AND management>0)`,
+          )
+          .run(id, hash, hash);
+        return Number(result.changes) > 0;
+      }
+      const result = await this.db
+        .prepare(
+          `UPDATE devices SET management=? ${target} AND EXISTS (SELECT 1 FROM devices WHERE hash=? AND management>0)`,
+        )
+        .run(management, id, hash, hash);
+      return Number(result.changes) > 0;
     });
   }
   /** Lets a desktop revoke only the credential it is using. */
@@ -2853,6 +3558,42 @@ export class HostStore {
   }
   /** Positive credentials are cached for 1.5s. Local authorization changes
    * invalidate immediately; external SQLite changes are checked at expiry. */
+  async authenticateIncomingDevice(token: string): Promise<boolean> {
+    const cached = this.authCache.get(token);
+    if (!cached || cached.expires > Date.now()) return this.authenticated(token);
+    // Only the initial HTTP check uses its own committed snapshot. Cold credentials and
+    // checks inside an operation keep their existing writer/transaction ordering.
+    const expires = Date.now() + 1500;
+    const hash = this.hash(token);
+    const row = await this.db.readScope(() =>
+      this.db.prepare("SELECT id FROM devices WHERE hash=?").get(hash),
+    );
+    if (this.authCache.get(token) !== cached || Date.now() >= expires)
+      return this.authenticated(token);
+    if (!row) {
+      this.authCache.delete(token);
+      return false;
+    }
+    cached.expires = expires;
+    // Presence is best effort. The indexed UPDATE cannot recreate a revoked device.
+    void this.noteDeviceSeen(hash).catch(() => undefined);
+    return true;
+  }
+
+  private async noteDeviceSeen(hash: string): Promise<void> {
+    const now = Date.now();
+    const previous = this.deviceLastSeen.get(hash);
+    if (previous !== undefined && now - previous < 60_000) return;
+    this.deviceLastSeen.set(hash, now);
+    while (this.deviceLastSeen.size > 256)
+      this.deviceLastSeen.delete(this.deviceLastSeen.keys().next().value!);
+    try {
+      await this.db.prepare("UPDATE devices SET last_seen_at=? WHERE hash=?").run(now, hash);
+    } catch {
+      // Activity metadata is best effort; valid credentials still authenticate.
+    }
+  }
+
   async authenticated(token: string): Promise<boolean> {
     const cached = this.authCache.get(token);
     if (cached && cached.expires > Date.now()) return true;
@@ -2864,10 +3605,10 @@ export class HostStore {
         return true;
       }
       this.authCache.delete(token);
-      const known = !!(await this.db
-        .prepare("SELECT id FROM devices WHERE hash=?")
-        .get(this.hash(token)));
+      const hash = this.hash(token);
+      const known = !!(await this.db.prepare("SELECT id FROM devices WHERE hash=?").get(hash));
       if (known) {
+        await this.noteDeviceSeen(hash);
         this.authCache.set(token, { version, expires: Date.now() + 1500 });
         while (this.authCache.size > 256)
           this.authCache.delete(this.authCache.keys().next().value!);
@@ -2875,10 +3616,54 @@ export class HostStore {
       return known;
     });
   }
-  private dataVersionStatement?: StoreStatement;
-  private async dataVersion(): Promise<number> {
-    this.dataVersionStatement ??= this.db.prepare("PRAGMA data_version");
-    return Number((await this.dataVersionStatement.get())?.data_version);
+  /**
+   * What a paired device credential may do beyond authentication. Authority comes from the
+   * credential, never from the socket address: every forwarder (local-network listener,
+   * tunnel, SSH) reaches the Host from loopback. Unknown and revoked credentials have none.
+   */
+  async deviceAuthority(token: string): Promise<DeviceAuthority | undefined> {
+    return this.deviceAuthorityByHash(this.hash(token));
+  }
+  /** Same as `deviceAuthority` for a principal id, which is the credential's SHA-256 hash. */
+  async deviceAuthorityByHash(hash: string): Promise<DeviceAuthority | undefined> {
+    // A read on every request: it must not take a writer admission.
+    const row = await this.db.readScope(() =>
+      this.db
+        .prepare("SELECT kind, management, proof_jkt, proof_x FROM devices WHERE hash=?")
+        .get(hash),
+    );
+    if (!row) return undefined;
+    return {
+      ...(row.kind === "phone" || row.kind === "desktop" ? { kind: row.kind } : {}),
+      localDesktop: Number(row.management) === 2,
+      ...(typeof row.proof_jkt === "string" && typeof row.proof_x === "string"
+        ? { binding: { jkt: row.proof_jkt, x: row.proof_x } }
+        : {}),
+    };
+  }
+  /**
+   * Binds an unbound credential to a client key, once. The same key again is a no-op; another
+   * key never replaces the first, and a revoked credential is `unknown`.
+   */
+  async bindDeviceProofKey(
+    token: string,
+    key: DeviceProofBinding,
+  ): Promise<"bound" | "same" | "different" | "unknown"> {
+    return this.db.storeScope(async () => {
+      const hash = this.hash(token);
+      const row = await this.db.prepare("SELECT proof_jkt FROM devices WHERE hash=?").get(hash);
+      if (!row) return "unknown";
+      if (typeof row.proof_jkt === "string")
+        return row.proof_jkt === key.jkt ? "same" : "different";
+      const changed = await this.db
+        .prepare("UPDATE devices SET proof_jkt=?, proof_x=? WHERE hash=? AND proof_jkt IS NULL")
+        .run(key.jkt, key.x, hash);
+      return Number(changed.changes) > 0 ? "bound" : "different";
+    });
+  }
+  /** Moves only when another connection or process committed; read without a queue scope. */
+  private dataVersion(): Promise<number> {
+    return this.db.dataVersion();
   }
   private hash(token: string): string {
     return createHash("sha256").update(token).digest("hex");
@@ -2890,6 +3675,7 @@ export class HostStore {
     this.authorityListeners.clear();
     this.authorizationListeners.clear();
     this.authCache.clear();
+    this.deviceLastSeen.clear();
     void this.sessionReadProcesses.close().catch(() => undefined);
     const closing = this.db.close(() => this.flushAll());
     if (this.db.ownsScope) return closing;
@@ -2923,6 +3709,9 @@ export function summary(value: HostSession): HostSessionSummary {
     delegationParent:
       decodeDelegationParent(value.session.modelSettings?.[DELEGATION_PARENT_KEY]) ?? null,
     draft: root.draft > 0,
+    ...(sessionBackgroundOwner(value.session)
+      ? { backgroundOwner: sessionBackgroundOwner(value.session) }
+      : {}),
     ...(value.session.orchestrationLeadId
       ? { orchestrationLeadId: value.session.orchestrationLeadId }
       : {}),

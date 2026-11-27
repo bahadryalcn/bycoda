@@ -3,24 +3,36 @@ import { useState } from "react";
 import { useSocialPending } from "../../hooks/useSocialPending";
 
 /**
- * One write at a time for a settings card: which action is pending, and the plain error of the
- * last failed write. The Host's own message is shown when it gave one; otherwise `failure`.
+ * One write at a time for a settings card: which action is pending and the last failed write.
+ * `failureTitle` is the translated `failure` title (empty when nothing failed, or when the machine
+ * connection failure is already shown centrally); `details` is the Host's own text when it gave
+ * one. Render both: `<InlineError details={details}>{failureTitle}</InlineError>`. `setError` replaces
+ * the title with a caller-owned sentence and drops the details.
  */
 export function useAccountWrite(failure: string) {
   const pending = useSocialPending();
-  const [error, setError] = useState("");
+  const [state, setState] = useState<{ error: string; details?: string }>({
+    error: "",
+  });
+  const setError = (error: string) => setState({ error });
   const write = async <T>(key: string, work: () => Promise<T>): Promise<T | undefined> => {
-    setError("");
+    setState({ error: "" });
     try {
       return await pending.run(key, work);
     } catch (cause) {
-      setError(
+      const raw =
         cause instanceof Error && cause.message
           ? presentRemoteError(cause, { explicit: true })
-          : failure,
-      );
+          : undefined;
+      setState({ error: raw === "" ? "" : failure, details: raw || undefined });
       return undefined;
     }
   };
-  return { error, setError, is: pending.is, write };
+  return {
+    failureTitle: state.error,
+    details: state.details,
+    setError,
+    is: pending.is,
+    write,
+  };
 }

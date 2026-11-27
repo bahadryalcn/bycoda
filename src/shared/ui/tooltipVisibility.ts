@@ -22,6 +22,8 @@ export function inspectTooltipAnchor(anchor: HTMLElement): {
     const style = getComputedStyle(element);
     if (
       element.hidden ||
+      // Decorative copies of visible text (the working sweep) are neither text nor overflow.
+      element.hasAttribute("data-tooltip-ignore") ||
       style.display === "none" ||
       style.visibility === "hidden" ||
       style.visibility === "collapse" ||

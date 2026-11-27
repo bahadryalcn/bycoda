@@ -3,7 +3,7 @@ import { t } from "../../../../shared/i18n";
 import { Surface } from "../../../../shared/ui/Surface";
 import { PlatformMark } from "../common/PlatformIcon";
 import type { SocialAccount, SocialPolicies } from "../../model/social";
-import { withUtm, type ContentDraft } from "./contentDraft";
+import { withUtm, xPostExtras, type ContentDraft } from "./contentDraft";
 import { characterCount, characterLimit, type Problem } from "./contentRules";
 
 export type PlatformPreviewsProps = {
@@ -15,13 +15,24 @@ export type PlatformPreviewsProps = {
 
 /** One card per selected account, side by side: its text, count against the limit and its problems. */
 export function PlatformPreviews({ accounts, draft, policies, problems }: PlatformPreviewsProps) {
-  if (!accounts.length) return null;
   const text = draft.text.trim();
+  // Nothing to preview until there is text, media or platform content; the gate already says what is missing.
+  const hasPlatformContent = accounts.some((account) => {
+    const options = draft.platform[account.id];
+    return !!(options?.reddit?.title?.trim() || options?.linkedinFormat || options?.x);
+  });
+  if (!accounts.length || (!text && !draft.media.length && !hasPlatformContent)) return null;
   const link = withUtm(draft.link, draft.utm);
   return (
     <section className="content-previews" aria-label={t("Previews")}>
       {accounts.map((account) => {
         const reel = draft.platform[account.id]?.facebook?.target === "reel";
+        const x = account.platform === "x" ? xPostExtras(draft.platform[account.id]?.x) : undefined;
+        const linkedinFormat =
+          account.platform === "linkedin" ? draft.platform[account.id]?.linkedinFormat : undefined;
+        const reddit =
+          account.platform === "reddit" ? draft.platform[account.id]?.reddit : undefined;
+        const redditTarget = reddit?.subreddit.trim();
         const limit = characterLimit(account, policies, { reel, hasMedia: draft.media.length > 0 });
         const count = characterCount(account, text, link);
         const over = limit !== undefined && count > limit;
@@ -37,26 +48,69 @@ export function PlatformPreviews({ accounts, draft, policies, problems }: Platfo
           >
             <header className="content-preview-head">
               <PlatformMark platform={account.platform} size="sm" />
-              <strong>{account.name}</strong>
+              <Text weight="medium">{account.name}</Text>
             </header>
-            <Text
-              as="p"
-              size="body"
-              tone="inherit"
-              leading="inherit"
-              className="content-preview-text"
-            >
-              {text || t("Your post text appears here.")}
-            </Text>
-            {draft.media.length ? (
+            {redditTarget ? (
+              <Text as="p" size="caption" tone="muted" className="content-preview-text">
+                {/^u_/i.test(redditTarget) ? `u/${redditTarget.slice(2)}` : `r/${redditTarget}`}
+              </Text>
+            ) : null}
+            {reddit?.title?.trim() ? (
+              <Text as="p" size="body" weight="medium" className="content-preview-text">
+                {reddit.title.trim()}
+              </Text>
+            ) : null}
+            {text ? (
               <Text
                 as="p"
-                size="caption"
-                tone="muted"
+                size="body"
+                tone="inherit"
                 leading="inherit"
-                className="content-preview-note"
+                className="content-preview-text"
               >
-                {t("{p0} attachments", { p0: draft.media.length })}
+                {text}
+              </Text>
+            ) : null}
+            {x?.quotePostId ? (
+              <Text as="p" size="caption" tone="muted" className="content-preview-text">
+                {t("Quote post ID")} {x.quotePostId}
+              </Text>
+            ) : null}
+            {x?.communityId ? (
+              <Text as="p" size="caption" tone="muted" className="content-preview-text">
+                {t("Community ID")} {x.communityId}
+              </Text>
+            ) : null}
+            {x?.poll ? (
+              <>
+                <Text as="p" size="caption" tone="muted" className="content-preview-text">
+                  {t("Poll duration (minutes)")} {x.poll.durationMinutes}
+                </Text>
+                <Text as="p" size="body" className="content-preview-text">
+                  {x.poll.options.join("\n")}
+                </Text>
+              </>
+            ) : null}
+            {x?.thread?.map((post, index) => (
+              <div key={index}>
+                <Text as="p" size="caption" tone="muted" className="content-preview-text">
+                  {t("Thread post {p0}", { p0: index + 2 })}
+                </Text>
+                <Text as="p" size="body" className="content-preview-text">
+                  {post}
+                </Text>
+              </div>
+            ))}
+            {linkedinFormat?.kind === "poll" ? (
+              <Text as="p" size="secondary" leading="inherit" tone="inherit">
+                {[linkedinFormat.question, ...linkedinFormat.options].filter(Boolean).join(" · ")}
+              </Text>
+            ) : null}
+            {linkedinFormat?.kind === "article" ? (
+              <Text as="p" size="secondary" leading="inherit" tone="inherit">
+                {[linkedinFormat.title, linkedinFormat.source, linkedinFormat.description]
+                  .filter(Boolean)
+                  .join(" · ")}
               </Text>
             ) : null}
             <Text

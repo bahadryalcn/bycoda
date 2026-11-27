@@ -20,3 +20,16 @@ Owner request, 2026-11-12:
 The library editor autosaves silently: no Save button, no saved/unsaved/saving
 text; failures, conflicts and recovery still show. The header "..." popover shows
 details only; deletion stays in the library context menu and selection mode.
+
+Owner request, 2026-11-19:
+
+> aşağıda saved yazıyor karşısında save yazıyor
+
+The session dock keeps manual Save in the action bar and omits routine autosave
+status. The Save control shows pending work, and errors still offer recovery.
+
+# Note name follows the first heading
+
+Owner decision, 2026-11-22: "notun adı = metnin ilk başlığı" (translated: the note's name is the first heading of its text).
+
+When the body has a level-one heading outside code fences, `upsertNote` stores its text as the name, and renaming in the title field rewrites that heading, so the two always match. A body without one keeps its stored name (older notes keep theirs); the first-line fallback applies only to blank names.

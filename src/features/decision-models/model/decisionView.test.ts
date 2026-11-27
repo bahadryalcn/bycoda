@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_ROUTE_THRESHOLD,
+  candidateKindLabel,
   candidateSourceInput,
   clampName,
   cleanRouting,
@@ -10,6 +11,17 @@ import {
   setRouteSources,
   setRouteThreshold,
 } from "./decisionView";
+
+describe("candidateKindLabel", () => {
+  it("names the Host instead of this computer for a key found on a remote target", () => {
+    expect(candidateKindLabel("api_key", "Remote A")).toContain("Remote A");
+    expect(candidateKindLabel("api_key", "Remote A")).not.toContain("this computer");
+  });
+
+  it("names this computer for a key found locally", () => {
+    expect(candidateKindLabel("api_key")).toBe("Key found on this computer");
+  });
+});
 
 describe("endpointError", () => {
   it("accepts http and https addresses", () => {

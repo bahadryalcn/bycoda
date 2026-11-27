@@ -1,6 +1,4 @@
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
-import { Code } from "../../../shared/ui/Code";
 import { useT } from "../../../shared/i18n";
 import { useEffect, useId, useState } from "react";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -11,16 +9,18 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Select } from "../../../shared/ui/Select";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { projectActionPresetIO } from "../model/projectActionCatalog";
-import { Alert } from "../../../shared/ui/Alert";
+import { RemoteActionError } from "../../connections/public/RemoteActionError";
+import type { RemoteErrorView } from "../../connections/public/remoteFailure";
 import { Field } from "../../../shared/ui/Field";
-import { LiveText } from "../../../shared/ui/LiveText";
-import { InlineMessage } from "../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { Check, CodeBlock, Globe, Play, Terminal, Wrench } from "../../../shared/ui/icons";
 import { prettyCwd } from "../../../shared/lib/paths";
 import {
-  quickComposerShortcutLabel,
-  shortcutFromKeyEvent,
+  recorderShortcutFromStored,
+  storedShortcutFromRecorder,
 } from "../../quick-composer/model/quickComposerShortcut";
+import { IS_MAC } from "../../../platform/tauri/platform";
+import { ShortcutRecorder } from "../../../shared/ui/ShortcutRecorder";
 import {
   ACTION_ICONS,
   projectActionShortcutError,
@@ -39,13 +39,6 @@ const icons = {
   globe: Globe,
   wrench: Wrench,
 };
-const labels = {
-  play: "Run",
-  terminal: "Terminal",
-  code: "Code",
-  globe: "Web",
-  wrench: "Build",
-};
 const examples = [
   {
     name: "Dev server",
@@ -63,6 +56,7 @@ const examples = [
   },
 ];
 const CHIP_LIMIT = 4;
+const shortcutPlatform = IS_MAC ? "mac" : "other";
 
 export function ProjectActionDialog({
   action,
@@ -78,7 +72,7 @@ export function ProjectActionDialog({
   actions: ProjectAction[];
   cwd: string;
   editing: boolean;
-  error: string;
+  error: RemoteErrorView | null;
   onSave: (action: ProjectAction) => boolean | void;
   onDelete: () => void;
   onClose: () => void;
@@ -107,13 +101,26 @@ export function ProjectActionDialog({
       live = false;
     };
   }, [cwd, editing]);
+  const iconLabels: Record<ProjectAction["icon"], string> = {
+    play: t("Run"),
+    terminal: t("Terminal"),
+    code: t("Code"),
+    globe: t("Web"),
+    wrench: t("Build"),
+  };
+  const exampleNames: Record<string, string> = {
+    "Dev server": t("Dev server"),
+    "Run tests": t("Run tests"),
+    "Build project": t("Build project"),
+  };
+  const presetName = (name: string) => (detected.length ? name : (exampleNames[name] ?? name));
   const added = new Set(actions.map((item) => item.command.trim()));
   const chips = detected.length ? detected.slice(0, CHIP_LIMIT) : examples;
   const more = detected.slice(CHIP_LIMIT);
   const applyPreset = ({ name, command, icon, url, devServer }: (typeof chips)[number]) =>
     setDraft({
       ...draft,
-      name: detected.length ? name : t(name),
+      name: presetName(name),
       command,
       icon,
       url,
@@ -122,7 +129,7 @@ export function ProjectActionDialog({
     });
   const formId = useId();
   const shortcutError = projectActionShortcutError(draft.shortcut, actions, draft.id);
-  const missing = !draft.name.trim()
+  const fieldBlock = !draft.name.trim()
     ? t("Enter a name for this action.")
     : draft.devServer && !draft.command.trim()
       ? t("Enter a command to start the development server.")
@@ -132,7 +139,12 @@ export function ProjectActionDialog({
           ? t("Use an HTTP or HTTPS address.")
           : !draft.command.trim() && !draft.openUrlOnRun
             ? t("Enable the web address option so this action has something to run.")
-            : shortcutError;
+            : undefined;
+  const missing = fieldBlock ?? shortcutError;
+  // The reason shows once, in the footer, and only after the user has typed something. The
+  // shortcut error is shown at the recorder instead.
+  const touched = Boolean(draft.name || draft.command || draft.url);
+  const footerReason = touched ? fieldBlock : undefined;
   return (
     <Modal
       title={editing ? t("Edit action") : t("Add action")}
@@ -147,9 +159,9 @@ export function ProjectActionDialog({
         ) : undefined
       }
       footer={
-        <ModalActions>
+        <ModalActions reason={footerReason || undefined}>
           <Button type="button" variant="secondary" onClick={onClose}>
-            {t(editing ? "Cancel" : "Close")}
+            {t("Cancel")}
           </Button>
           <Button type="submit" form={formId} disabled={Boolean(missing)} variant="primary">
             {t("Save action")}
@@ -187,7 +199,7 @@ export function ProjectActionDialog({
         <div className="space-y-3">
           {!editing ? (
             <div className="flex flex-wrap items-center gap-1.5">
-              <Text size="caption" tone="muted" className="mr-1">
+              <Text size="caption" tone="muted" className="me-1">
                 {detected.length
                   ? t("Scripts from {p0}", { p0: detected[0].source })
                   : t("Examples")}
@@ -198,9 +210,14 @@ export function ProjectActionDialog({
                   key={preset.name}
                   variant="secondary"
                   disabled={added.has(preset.command.trim())}
+                  disabledReason={
+                    added.has(preset.command.trim())
+                      ? t("This script is already added.")
+                      : undefined
+                  }
                   aria-label={
                     added.has(preset.command.trim())
-                      ? `${detected.length ? preset.name : t(preset.name)}: ${t("Added")}`
+                      ? `${presetName(preset.name)}: ${t("Added")}`
                       : undefined
                   }
                   tooltip={detected.length ? preset.command : undefined}
@@ -209,7 +226,7 @@ export function ProjectActionDialog({
                   {added.has(preset.command.trim()) ? (
                     <Check className="icon-sm" aria-hidden="true" />
                   ) : null}
-                  {detected.length ? preset.name : t(preset.name)}
+                  {presetName(preset.name)}
                 </Button>
               ))}
               {more.length ? (
@@ -233,30 +250,6 @@ export function ProjectActionDialog({
               ) : null}
             </div>
           ) : null}
-          {!editing && actions.length ? (
-            <Text as="section" aria-label={t("Project actions")} className="space-y-1">
-              <Text as="p" size="caption" tone="muted">
-                {t("Saved")}
-              </Text>
-              <Text as="ul" className="max-h-24 space-y-1 overflow-y-auto">
-                {actions.map((saved) => (
-                  <Text
-                    as="li"
-                    key={saved.id}
-                    className="flex min-w-0 items-center gap-3"
-                    size="secondary"
-                  >
-                    <Text truncate className="min-w-0 flex-1">
-                      {saved.name}
-                    </Text>
-                    <Text size="caption" tone="muted" truncate className="min-w-0 flex-1">
-                      <Code>{saved.command || saved.url}</Code>
-                    </Text>
-                  </Text>
-                ))}
-              </Text>
-            </Text>
-          ) : null}
           <Field label={t("Name")}>
             {(control) => (
               <div className="flex gap-2">
@@ -268,7 +261,7 @@ export function ProjectActionDialog({
                     const Choice = icons[icon];
                     return {
                       value: icon,
-                      label: t(labels[icon]),
+                      label: iconLabels[icon],
                       icon: <Choice className="size-4" aria-hidden="true" />,
                     };
                   })}
@@ -304,34 +297,25 @@ export function ProjectActionDialog({
             onChange={(event) => setDraft({ ...draft, command: event.target.value })}
           />
           <div className="grid gap-3 sm:grid-cols-2">
-            <Tooltip label={t("Backspace clears the shortcut.")}>
-              <TextField
-                label={t("Keybinding")}
-                readOnly
-
-                placeholder={t("Click here and press a shortcut")}
-                value={draft.shortcut ? quickComposerShortcutLabel(draft.shortcut) : ""}
-                aria-invalid={Boolean(shortcutError)}
-                onKeyDown={(event) => {
-                  if (event.key === "Tab") return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  if (event.key === "Backspace" || event.key === "Delete") {
-                    setDraft({ ...draft, shortcut: "" });
-                    setShortcutHint("");
-                    return;
-                  }
-                  const value = shortcutFromKeyEvent(event);
-                  if (value) {
-                    setDraft({ ...draft, shortcut: value });
-                    setShortcutHint("");
-                  } else if (!["Control", "Meta", "Alt", "Shift"].includes(event.key))
-                    setShortcutHint(t("Include Ctrl, Alt or Command with another key."));
-                }}
-              />
-            </Tooltip>
+            {/* Capture starts only from a press or Enter/Space on the recorder, so Escape and Tab keep their dialog behavior elsewhere. */}
+            <ShortcutRecorder
+              label={t("Keybinding")}
+              platform={shortcutPlatform}
+              placeholder={t("Click here and press a shortcut")}
+              description={t("Del disables · Esc cancels")}
+              value={recorderShortcutFromStored(draft.shortcut, shortcutPlatform)}
+              onValueChange={(value) => {
+                const stored = value ? storedShortcutFromRecorder(value, shortcutPlatform) : "";
+                if (stored === null) {
+                  setShortcutHint(t("Include Ctrl, Alt or Command with another key."));
+                  return;
+                }
+                setDraft({ ...draft, shortcut: stored });
+                setShortcutHint("");
+              }}
+            />
             <TextField
-              label={`${t("Web address")} ${t("(optional)")}`}
+              label={t("Web address")}
               type="url"
               placeholder="http://localhost:5173"
               value={draft.url}
@@ -339,8 +323,10 @@ export function ProjectActionDialog({
               aria-invalid={!validActionUrl(draft.url)}
             />
           </div>
-          {shortcutError || shortcutHint ? (
-            <InlineMessage tone="warning">{shortcutError || shortcutHint}</InlineMessage>
+          {shortcutError ? (
+            <InlineError details={shortcutError}>{t("This shortcut cannot be used.")}</InlineError>
+          ) : shortcutHint ? (
+            <InlineMessage tone="warning">{shortcutHint}</InlineMessage>
           ) : null}
           <div className="space-y-2.5">
             <Checkbox
@@ -348,7 +334,6 @@ export function ProjectActionDialog({
               checked={draft.devServer}
               onChange={(event) => setDraft({ ...draft, devServer: event.target.checked })}
               label={t("Manage as development server")}
-              description={t("Track server status and logs.")}
             />
             {!draft.devServer ? (
               <Checkbox
@@ -357,16 +342,10 @@ export function ProjectActionDialog({
                 disabled={!draft.url.trim()}
                 onChange={(event) => setDraft({ ...draft, openUrlOnRun: event.target.checked })}
                 label={t("Open web address when this action runs")}
-                description={t("Opens immediately; a dev server may still be starting.")}
               />
             ) : null}
           </div>
-          {error ? <Alert tone="danger">{error}</Alert> : null}
-          {missing ? (
-            <Text as="p" size="caption" tone="muted">
-              <LiveText text={missing} />
-            </Text>
-          ) : null}
+          {error ? <RemoteActionError error={error} /> : null}
         </div>
       </form>
     </Modal>

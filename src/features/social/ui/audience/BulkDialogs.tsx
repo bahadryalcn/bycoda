@@ -1,5 +1,6 @@
-import { Text } from "../../../../shared/ui/Text";
-import { useEffect, useState } from "react";
+import { redactDiagnosticText } from "@bycoda/account-contracts";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
+import { useEffect, useId, useState } from "react";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
@@ -8,8 +9,8 @@ import { TextField } from "../../../../shared/ui/TextField";
 import type { SocialList, SocialPerson } from "../../model/audience";
 import type { Sequence } from "../../model/outreach";
 import type { SocialClient } from "../../model/socialClient";
-import { DisabledReason } from "../common/DisabledReason";
-import { LabeledSelect } from "./LabeledSelect";
+import { Select } from "../../../../shared/ui/Select";
+import { AudienceReportList } from "./AudienceReportList";
 import { addTag, addToList, addToSequence, type BulkResult } from "./audienceBulk";
 import { errorMessage } from "./audienceModel";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
@@ -19,7 +20,7 @@ export type BulkAction = "list" | "tag" | "sequence";
 export type BulkDialogProps = {
   client: SocialClient;
   action: BulkAction;
-  people: readonly Pick<SocialPerson, "id" | "tags">[];
+  people: readonly Pick<SocialPerson, "id" | "name" | "tags">[];
   lists: readonly SocialList[];
   onClose: () => void;
   /** Called after the action ran, so the table can reload. */
@@ -53,9 +54,11 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
   const [sequences, setSequences] = useState<Sequence[]>([]);
   const [tag, setTag] = useState("");
   const [running, setRunning] = useState(false);
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<{ title: string; details: string }>();
   const [result, setResult] = useState<BulkResult>();
 
+  const reasonId = useId();
+  // Load sequence choices for this dialog and ignore results after close.
   useEffect(() => {
     if (action !== "sequence") return;
     let active = true;
@@ -65,7 +68,7 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
         if (active) setSequences(listResult.items);
       })
       .catch((err: unknown) => {
-        if (active) setError(errorMessage(err));
+        if (active) setError({ title: t("Could not read sequences."), details: errorMessage(err) });
       });
     return () => {
       active = false;
@@ -80,7 +83,6 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
         : action === "sequence" && !sequenceId
           ? t("Choose a sequence.")
           : undefined;
-  const runState = reason ? { disabled: true as const, reason } : { disabled: false as const };
 
   async function run() {
     if (reason) return;
@@ -100,7 +102,10 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
       }
       onDone();
     } catch (err) {
-      setError(presentRemoteError(err, { explicit: true }));
+      setError({
+        title: t("Could not update the selected people."),
+        details: presentRemoteError(err, { explicit: true }),
+      });
     } finally {
       setRunning(false);
     }
@@ -113,28 +118,33 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
       onClose={() => {
         if (!running) onClose();
       }}
-      footerStart={error ? <InlineError>{error}</InlineError> : undefined}
+      footerStart={
+        error ? (
+          <InlineError details={redactDiagnosticText(error.details)}>{error.title}</InlineError>
+        ) : undefined
+      }
       footer={
-        <ModalActions>
+        <ModalActions reason={result ? undefined : reason} reasonId={reasonId}>
           <Button variant="ghost" disabled={running} onClick={onClose}>
             {result ? t("Done") : t("Cancel")}
           </Button>
           {!result ? (
-            <DisabledReason
+            <Button
               variant="primary"
               loading={running}
-              {...runState}
+              aria-disabled={!!reason || undefined}
+              aria-describedby={reason ? reasonId : undefined}
               onClick={() => void run().catch(() => undefined)}
             >
               {titleOf(action)}
-            </DisabledReason>
+            </Button>
           ) : null}
         </ModalActions>
       }
     >
       <div className="audience-stack">
         {action === "list" ? (
-          <LabeledSelect
+          <Select
             label={t("List")}
             value={listId}
             disabled={running}
@@ -145,7 +155,7 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
                 label: list.name,
               })),
             ]}
-            onChange={setListId}
+            onValueChange={setListId}
           />
         ) : null}
         {action === "tag" ? (
@@ -157,8 +167,8 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
           />
         ) : null}
         {action === "sequence" ? (
-          <>
-            <LabeledSelect
+          <div className="audience-row">
+            <Select
               label={t("Sequence")}
               value={sequenceId}
               disabled={running}
@@ -169,27 +179,34 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
                   label: sequence.name,
                 })),
               ]}
-              onChange={setSequenceId}
+              onValueChange={setSequenceId}
             />
-            <Text as="p" size="caption" tone="muted" leading="inherit" className="audience-muted">
+            <InfoPopover>
               {t(
                 "The sequence runs for its own list, so the selected people are added to that list.",
               )}
-            </Text>
-          </>
+            </InfoPopover>
+          </div>
         ) : null}
         {result ? (
           <section aria-label={t("Result")} className="audience-stack">
             <InlineMessage tone={result.failed.length ? "warning" : "success"}>
               {summaryOf(result)}
             </InlineMessage>
-            {result.failed.length ? (
-              <ul className="audience-list">
-                {result.failed.slice(0, 20).map((item) => (
-                  <li key={item.personId}>{item.reason}</li>
-                ))}
-              </ul>
-            ) : null}
+            <AudienceReportList
+              items={result.failed}
+              renderRow={(item) => {
+                const name = people.find((person) => person.id === item.personId)?.name;
+                return (
+                  <li key={item.personId}>
+                    <InlineError details={redactDiagnosticText(item.reason)}>
+                      {t("{p0}: {p1}", { p0: name ?? item.personId, p1: t("Failed") })}
+                    </InlineError>
+                  </li>
+                );
+              }}
+              overflowLabel={(p0) => t("And {p0} more could not be updated.", { p0 })}
+            />
           </section>
         ) : null}
       </div>

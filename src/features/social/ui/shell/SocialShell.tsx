@@ -140,12 +140,12 @@ export function SocialShell({
           onAiStateChange={workspace.setAiStopped}
         />
       </Header>
-      {workspace.error ? (
+      {workspace.problem ? (
         <InlineError retry={{ onRetry: workspace.retry, label: t("Try again") }}>
-          {workspace.error}
+          {workspace.problem}
         </InlineError>
       ) : null}
-      {!workspace.error && offline ? (
+      {!workspace.problem && offline ? (
         <InlineMessage tone="warning" retry={{ onRetry: workspace.retry, label: t("Try again") }}>
           {shell.unreachable
             ? t("Could not reach this computer.")

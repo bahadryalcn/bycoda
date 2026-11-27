@@ -6,6 +6,7 @@ import {
   hslToHex,
   normalizeThemeSuggestion,
   parseThemeSuggestions,
+  RANDOM_LOOK_COUNT,
   randomThemeSuggestions,
   suggestionSwatches,
 } from "./themeSuggestions";
@@ -73,19 +74,27 @@ describe("accent contrast", () => {
 });
 
 describe("randomThemeSuggestions", () => {
-  it("spreads three hues a third of the wheel apart with muted saturation", () => {
-    const values = [0.25, 0.5, 0.5];
-    let index = 0;
-    const random = () => values[index++ % values.length]!;
-    const suggestions = randomThemeSuggestions(random);
-    expect(suggestions).toHaveLength(3);
-    const hues = suggestions.map((item) => item.hue);
-    expect(hues[1]! - hues[0]!).toBe(120);
-    expect(hues[2]! - hues[1]!).toBe(120);
-    for (const suggestion of suggestions) {
-      expect(suggestion.saturation).toBeGreaterThanOrEqual(10);
-      expect(suggestion.saturation).toBeLessThanOrEqual(40);
-      expect(solidAccentPair(suggestion.accent, "auto").ratio).toBeGreaterThanOrEqual(4.5);
+  it("rolls six distinct looks spread about the wheel with readable accents", () => {
+    for (const seed of [0.1, 0.5, 0.9]) {
+      let state = seed;
+      const random = () => {
+        state = (state * 9301 + 0.49297) % 1;
+        return state;
+      };
+      const suggestions = randomThemeSuggestions(random);
+      expect(suggestions).toHaveLength(RANDOM_LOOK_COUNT);
+      expect(new Set(suggestions.map((item) => item.name)).size).toBe(RANDOM_LOOK_COUNT);
+      const hues = suggestions.map((item) => item.hue).sort((a, b) => a - b);
+      // Jitter stays within a quarter step, so neighbours never collapse onto one hue.
+      for (let index = 1; index < hues.length; index++)
+        expect(hues[index]! - hues[index - 1]!).toBeGreaterThanOrEqual(25);
+      for (const suggestion of suggestions) {
+        expect(suggestion.saturation).toBeGreaterThanOrEqual(8);
+        expect(suggestion.saturation).toBeLessThanOrEqual(45);
+        expect(suggestion.darkLightness).toBeGreaterThanOrEqual(2);
+        expect(suggestion.darkLightness).toBeLessThanOrEqual(12);
+        expect(solidAccentPair(suggestion.accent, "auto").ratio).toBeGreaterThanOrEqual(4.5);
+      }
     }
   });
 });

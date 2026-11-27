@@ -1,17 +1,18 @@
 import { PickerListRoot } from "../../../shared/ui/picker/PickerList";
 import { isSkillGroupPickerItem } from "../model/skillGroupPicker";
 import { Text } from "../../../shared/ui/Text";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Alert } from "../../../shared/ui/Alert";
-import { RadioGroup } from "../../../shared/ui/RadioGroup";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { LiveText } from "../../../shared/ui/LiveText";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { ListRow } from "../../../shared/ui/ListRow";
-import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { skillPickerDescription, skillScopeLabel } from "../model/skillPickerLabels";
 import { t, useLocale } from "../../../shared/i18n";
-import { Plus } from "../../../shared/ui/icons";
+import { File, Plus, SkillGroupIcon, SkillIcon, Terminal } from "../../../shared/ui/icons";
 import {
   Fragment,
   useEffect,
@@ -44,12 +45,19 @@ type Props = {
   showCreate?: boolean;
   error?: string | null;
   busy?: boolean;
+  /** Id of the listbox; rows derive their ids from it so an owning field can reference the active row. */
+  listId?: string;
   onActive: (index: number) => void;
   onPick: (skill: Skill) => void;
   onStartCreate: () => void;
   onCancelCreate: () => void;
   onCreate: (name: string, scope: "project" | "user") => void;
 };
+
+/** Stable id of the row at `index`, for `aria-activedescendant` on the owning field. */
+export function skillOptionId(listId: string, index: number): string {
+  return `${listId}-option-${index}`;
+}
 
 export function SkillPicker({
   parentSessionId,
@@ -63,6 +71,7 @@ export function SkillPicker({
   showCreate = true,
   error,
   busy,
+  listId,
   onActive,
   onPick,
   onStartCreate,
@@ -71,10 +80,7 @@ export function SkillPicker({
 }: Props) {
   useLocale();
   return (
-    <div
-      data-skill-picker
-      {...surfaceAttributes(compact ? {} : { radius: "card", frame: "card" }, "overflow-hidden")}
-    >
+    <div data-skill-picker className="flex min-h-0 flex-col">
       {creating ? (
         <CreateSkillForm
           parentSessionId={parentSessionId}
@@ -87,27 +93,29 @@ export function SkillPicker({
         />
       ) : (
         <>
-          <SkillList
+          <SkillPickerList
             skills={skills}
             prefix={prefix}
             query={query}
             active={active}
             compact={compact}
+            listId={listId}
             onActive={onActive}
             onPick={onPick}
           />
           {showCreate ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={onStartCreate}
-              className="flex w-full items-center gap-2"
-            >
-              <Plus className="icon-sm shrink-0" strokeWidth={1.75} />
-              {t("New skill")}
-            </Button>
+            <div className="flex shrink-0 justify-end px-3 pb-2 pt-1">
+              <Button
+                variant="secondary"
+                size="sm"
+                type="button"
+                startIcon={<Plus />}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={onStartCreate}
+              >
+                {t("New skill")}
+              </Button>
+            </div>
           ) : null}
         </>
       )}
@@ -115,12 +123,13 @@ export function SkillPicker({
   );
 }
 
-function SkillList({
+function SkillPickerList({
   skills,
   prefix,
   query,
   active,
   compact,
+  listId,
   onActive,
   onPick,
 }: {
@@ -129,6 +138,7 @@ function SkillList({
   query: string;
   active: number;
   compact?: boolean;
+  listId?: string;
   onActive: (index: number) => void;
   onPick: (skill: Skill) => void;
 }) {
@@ -142,6 +152,7 @@ function SkillList({
     pointer.current.allow = false;
   }, [skills]);
 
+  // Keep the selected result visible when ranking changes without changing its index.
   useEffect(() => {
     if (fromPointer.current) {
       fromPointer.current = false;
@@ -149,7 +160,7 @@ function SkillList({
     }
     pointer.current.allow = false;
     activeRef.current?.scrollIntoView({ block: "nearest" });
-  }, [active]);
+  }, [active, skills]);
 
   const onListMouseMove = (e: ReactMouseEvent<HTMLDivElement>) => {
     if (e.clientX === pointer.current.x && e.clientY === pointer.current.y) {
@@ -164,13 +175,16 @@ function SkillList({
     onActive(index);
   };
 
+  // The source badge only tells rows apart when more than one source is listed.
+  const showSource = new Set(skills.map((skill) => skillScopeLabel(skill))).size > 1;
+
   if (skills.length === 0) {
     return (
       <EmptyState
         size="inline"
         kind={query.trim() ? "filtered" : "empty"}
         description={query.trim() ? t("No matching commands or skills") : t("No commands yet")}
-        className="px-3 py-2.5"
+        inset="row"
       />
     );
   }
@@ -178,22 +192,25 @@ function SkillList({
   return (
     <PickerListRoot
       ref={lockOverscroll}
-
+      id={listId}
       label={t("Commands and skills")}
       onMouseMove={onListMouseMove}
-      className={`${compact ? "max-h-48" : "max-h-[min(240px,40vh)]"} overflow-y-auto overscroll-none px-1 py-1`}
+      className={`${compact ? "max-h-48" : "max-h-[min(240px,40vh)]"} min-h-0 overflow-y-auto overscroll-none px-1 py-1`}
     >
       {skills.map((skill, index) => {
+        const group = isSkillGroupPickerItem(skill) ? skill : null;
         const highlighted = index === active;
+        const description = group ? group.members.join(", ") : skillPickerDescription(skill);
+        const section = sectionOf(skill);
+        const showHeading =
+          !query.trim() && section !== (index > 0 ? sectionOf(skills[index - 1]) : "commands");
         return (
           <Fragment
             key={
-              isSkillGroupPickerItem(skill)
-                ? `group:${skill.groupId}`
-                : `${skill.kind}:${skill.source}:${skill.invocation}`
+              group ? `group:${group.groupId}` : `${skill.kind}:${skill.source}:${skill.invocation}`
             }
           >
-            {sectionOf(skill) !== (index > 0 ? sectionOf(skills[index - 1]) : "commands") ? (
+            {showHeading ? (
               <Text
                 as="p"
                 size="caption"
@@ -201,51 +218,71 @@ function SkillList({
                 weight="medium"
                 className="px-2 pb-0.5 pt-1.5"
               >
-                {SECTION_HEADINGS[sectionOf(skill)]()}
+                {SECTION_HEADINGS[section]()}
               </Text>
             ) : null}
             <ListRow
-              className={compact ? undefined : "flex-col items-start justify-center"}
-              data-has-description={compact ? undefined : ""}
+              data-has-description={!compact && description ? "" : undefined}
               ref={highlighted ? activeRef : undefined}
+              id={listId ? skillOptionId(listId, index) : undefined}
               role="option"
               aria-selected={highlighted}
               active={highlighted}
+              icon={
+                group ? (
+                  <SkillGroupIcon />
+                ) : skill.kind === "file" ||
+                  (skill.kind === "native" && skill.origin === "skill") ? (
+                  <SkillIcon />
+                ) : skill.kind === "template" ? (
+                  <File />
+                ) : (
+                  <Terminal />
+                )
+              }
               onMouseDown={(e) => e.preventDefault()}
               onMouseEnter={() => onRowEnter(index)}
               onClick={() => onPick(skill)}
             >
-              <span className="flex min-w-0 w-full items-baseline gap-2">
-                <Text size="secondary" tone="inherit" truncate>
-                  {prefix}
-                  {skill.invocation}
-                </Text>
-                <Text size="caption" tone="secondary" className="shrink-0">
-                  {isSkillGroupPickerItem(skill)
-                    ? t("{p0} skills", { p0: skill.memberCount })
-                    : scopeLabel(skill)}
-                </Text>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="flex min-w-0 items-baseline justify-between gap-2">
+                  <Text size="secondary" tone="inherit" weight="medium" truncate>
+                    {prefix}
+                    {skill.invocation}
+                  </Text>
+                  {showSource || group ? (
+                    <Text size="caption" tone="secondary" className="shrink-0">
+                      {group ? t("{p0} skills", { p0: group.memberCount }) : skillScopeLabel(skill)}
+                    </Text>
+                  ) : null}
+                </span>
+                {!compact && description ? (
+                  <ClampText
+                    as="span"
+                    lines={group ? 1 : 2}
+                    expandable={false}
+                    size="caption"
+                    tone="secondary"
+                  >
+                    {description}
+                  </ClampText>
+                ) : null}
+                {!compact &&
+                skill.kind === "native" &&
+                (skill.inputHint || skill.subcommands?.length) ? (
+                  <ClampText
+                    as="span"
+                    lines={2}
+                    expandable={false}
+                    size="caption"
+                    tone="secondary"
+                    leading="inherit"
+                  >
+                    {skill.inputHint ||
+                      skill.subcommands?.map((sub) => sub.usage || sub.name).join(" · ")}
+                  </ClampText>
+                ) : null}
               </span>
-              {!compact && skill.description ? (
-                <ClampText as="span" lines={2} expandable={false} size="caption" tone="secondary">
-                  {skill.description}
-                </ClampText>
-              ) : null}
-              {!compact &&
-              skill.kind === "native" &&
-              (skill.inputHint || skill.subcommands?.length) ? (
-                <ClampText
-                  as="span"
-                  lines={2}
-                  expandable={false}
-                  size="caption"
-                  tone="secondary"
-                  leading="inherit"
-                >
-                  {skill.inputHint ||
-                    skill.subcommands?.map((sub) => sub.usage || sub.name).join(" · ")}
-                </ClampText>
-              ) : null}
             </ListRow>
           </Fragment>
         );
@@ -254,14 +291,15 @@ function SkillList({
   );
 }
 
-/** Shared starter-skill form for the composer picker and Settings. */
+/**
+ * Shared starter-skill form. `inline` sits in the composer picker (padded, monospace name);
+ * `dialog` fills a modal body that already pads its content.
+ */
 export function CreateSkillForm({
   parentSessionId,
   query,
   cwd,
-  monospace = true,
-  showScopeHelp = false,
-  className = "px-2.5 py-2",
+  variant = "inline",
   error,
   busy,
   onCancel,
@@ -270,9 +308,7 @@ export function CreateSkillForm({
   parentSessionId?: string;
   query: string;
   cwd: string;
-  monospace?: boolean;
-  showScopeHelp?: boolean;
-  className?: string;
+  variant?: "inline" | "dialog";
   error?: string | null;
   busy?: boolean;
   onCancel: () => void;
@@ -344,19 +380,20 @@ export function CreateSkillForm({
         parentInput();
         onCancel();
       }}
-      className={className}
+      className={variant === "inline" ? "px-2.5 py-2" : undefined}
     >
-      <Text as="p" size="micro" tone="secondary" className="mb-2">
-        {t("Writes a starter SKILL.md you can edit.")}
-      </Text>
       <TextField
-        monospace={monospace}
+        monospace={variant === "inline"}
         label={t("Skill name")}
         ref={input}
         value={name}
         spellCheck={false}
         placeholder={t("skill-name")}
-        aria-label={t("Skill name")}
+        error={
+          !error && name.trim() && !valid
+            ? t("Use lowercase letters, numbers, and hyphens.")
+            : undefined
+        }
         disabled={busy}
         readOnly={parentClosed}
         onChange={(e) => {
@@ -364,54 +401,36 @@ export function CreateSkillForm({
         }}
       />
       {parentClosed ? (
-        <Text as="p" size="micro" tone="secondary" role="status" className="mb-2">
-          {t("Preparing session checkpoint. Your draft is kept.")}
-        </Text>
-      ) : null}
-      <RadioGroup
-        compact
-        label={t("Scope")}
-        value={scope}
-        disabled={busy || parentClosed}
-        onValueChange={(value) => {
-          if (parentInput.canMutate()) setScope(value as "project" | "user");
-        }}
-        options={[
-          {
-            value: "project",
-            label: t("Project"),
-            description: ".agents/skills",
-            disabled: !project,
-          },
-          {
-            value: "user",
-            label: t("Personal"),
-            description: "~/.agents/skills",
-          },
-        ]}
-      />
-      {showScopeHelp ? (
-        <Text
-          as="p"
-          size="caption"
+        <LiveText
+          size="micro"
           tone="secondary"
-          className="[margin-block-end:0.5rem] break-all"
-        >
-          {project && scope === "project"
-            ? t("Creates a starter in {p0}.agents/skills. Edit SKILL.md after creation.", {
-                p0: `${cwd.replace(/[\\/]+$/, "")}/`,
-              })
-            : t("Creates a starter in ~/.agents/skills on this computer.")}
-          {!project ? ` ${t("Open a local project to enable project scope.")}` : ""}
-        </Text>
+          className="mb-2 block"
+          text={t("Preparing session checkpoint. Your draft is kept.")}
+        />
+      ) : null}
+      {/* Without a local project the skill can only go to all projects, so there is nothing to choose. */}
+      {project ? (
+        <SegmentedControl
+          label={t("Scope")}
+          value={scope}
+          onValueChange={(value) => {
+            if (busy || parentClosed || !parentInput.canMutate()) return;
+            setScope(value as "project" | "user");
+          }}
+          options={[
+            { value: "project", label: t("Project") },
+            { value: "user", label: t("All projects") },
+          ]}
+        />
       ) : null}
       {error ? (
-        <Alert tone="danger">{error}</Alert>
-      ) : !name.trim() || valid ? null : (
-        <Text as="p" size="caption" tone="secondary" className="mb-2">
-          {t("Use lowercase letters, numbers, and hyphens.")}
-        </Text>
-      )}
+        <Alert
+          tone="danger"
+          extra={<ErrorDetails detail={error} title={t("Could not create the skill.")} />}
+        >
+          {t("Could not create the skill.")}
+        </Alert>
+      ) : null}
       <div className="flex items-center justify-end gap-1">
         <Button
           variant="ghost"
@@ -425,8 +444,22 @@ export function CreateSkillForm({
         >
           {t("Cancel")}
         </Button>
-        <Button variant="ghost" size="sm" type="submit" disabled={!valid || busy || parentClosed}>
-          {busy ? t("Creating…") : t("Create")}
+        <Button
+          variant="primary"
+          size="sm"
+          type="submit"
+          loading={busy}
+          loadingLabel={t("Creating…")}
+          disabled={!valid || busy || parentClosed}
+          disabledReason={
+            parentClosed
+              ? t("Preparing session checkpoint. Your draft is kept.")
+              : !valid
+                ? t("Enter a valid skill name first.")
+                : undefined
+          }
+        >
+          {t("Create")}
         </Button>
       </div>
     </form>
@@ -444,15 +477,4 @@ const SECTION_HEADINGS: Record<PickerSection, () => string> = {
 function sectionOf(skill: Skill): PickerSection {
   if (skill.kind !== "template") return "commands";
   return isSkillGroupPickerItem(skill) ? "groups" : "templates";
-}
-
-function scopeLabel(skill: Skill): string {
-  if (skill.kind === "native") {
-    return skill.origin ? `${skill.source} · ${skill.origin}` : skill.source;
-  }
-  if (skill.kind === "builtin") return PRODUCT_IDENTITY.displayName;
-  if (skill.kind === "template") return "template";
-  if (skill.scope === "user") return "personal";
-  if (skill.source !== "agents" && skill.source !== "bycoda") return skill.source;
-  return "project";
 }

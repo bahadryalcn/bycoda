@@ -18,6 +18,98 @@ afterEach(() => {
     rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
+it("manages Hub servers at machine and project scope without provider configuration", async () => {
+  const machine = tempDir();
+  const project = tempDir();
+  const other = tempDir();
+  const secrets = new Map<string, string>();
+  const hub = new McpHub({
+    dataDir: machine,
+    inventory: async () => [],
+    policy: async () => ({ version: 1, mode: "always", direct: [] }),
+    projectCredentialValues: {
+      get: async (key) => secrets.get(key),
+      set: async (key, value) => {
+        secrets.set(key, value);
+      },
+      delete: async (key) => {
+        secrets.delete(key);
+      },
+    },
+  });
+  const authorize = vi.fn(async () => {});
+  const name = "service";
+  const config = { url: "https://one.example/mcp" };
+  const added = await hub.manageServer({ action: "add", name, config }, undefined, authorize);
+  if (!("revision" in added)) throw new Error("Expected a server.");
+  const [machineEntry] = await hub.inventory();
+  expect(machineEntry).toMatchObject({
+    kind: "http",
+    url: config.url,
+    aliases: [],
+    managed: { name, scope: "user" },
+  });
+  expect((await hub.inventory(other))[0]?.name).toBe(machineEntry.name);
+  expect((await hub.publication("http://host", other)).servers).toEqual([]);
+  await hub.setProjectCredentials(undefined, machineEntry.name, { Authorization: "machine" });
+  await hub.setProjectCredentials(project, machineEntry.name, { Authorization: "project" });
+  expect((await hub.projectCredentialsFor(project, machineEntry))?.values).toEqual({
+    authorization: "Bearer project",
+  });
+  expect((await hub.projectCredentialsFor(other, machineEntry))?.values).toEqual({
+    authorization: "Bearer machine",
+  });
+  await hub.manageServer(
+    { action: "add", name, config: { command: "fixture", args: ["--stdio"] } },
+    project,
+    authorize,
+  );
+  expect(await hub.inventory(project)).toEqual([
+    expect.objectContaining({
+      kind: "stdio",
+      command: "fixture",
+      managed: expect.objectContaining({ scope: "project" }),
+    }),
+  ]);
+  expect((await hub.publication("http://host", project)).servers).toEqual([
+    expect.objectContaining({ kind: "stdio", mode: "perSession" }),
+  ]);
+  const disabled = await hub.manageServer(
+    { action: "setEnabled", name, revision: added.revision, enabled: false },
+    undefined,
+    authorize,
+  );
+  if (!("revision" in disabled)) throw new Error("Expected a server.");
+  expect(await hub.inventory(other)).toEqual([]);
+  expect((await hub.inventory(other, true))[0]?.managed?.enabled).toBe(false);
+  await expect(
+    hub.manageServer({ action: "remove", name, revision: added.revision }, undefined, authorize),
+  ).rejects.toThrow("changed");
+  const updated = await hub.manageServer(
+    {
+      action: "update",
+      name,
+      revision: disabled.revision,
+      config: { url: "https://two.example/mcp" },
+    },
+    undefined,
+    authorize,
+  );
+  if (!("revision" in updated)) throw new Error("Expected a server.");
+  expect((await hub.inventory(undefined, true))[0]).toMatchObject({
+    name: machineEntry.name,
+    url: "https://two.example/mcp",
+  });
+  await hub.manageServer(
+    { action: "remove", name, revision: updated.revision },
+    undefined,
+    authorize,
+  );
+  expect(await hub.inventory(undefined, true)).toEqual([]);
+  expect(await hub.inventory(project)).toHaveLength(1);
+  expect(authorize).toHaveBeenCalledTimes(5);
+});
+
 const definition = (
   name: string,
   dir: string,
@@ -74,6 +166,72 @@ const hubWith = (
   });
 
 describe("MCP hub children", () => {
+  it.skipIf(process.platform !== "win32")(
+    "persists credentials in the Windows vault without touching provider config",
+    async () => {
+      const dir = tempDir();
+      const config = join(dir, "config.toml");
+      const original = '[mcp_servers.dokploy]\ncommand = "node"\n';
+      writeFileSync(config, original);
+      const defs = [definition("dokploy", dir)];
+      const token = "private-fixture-value";
+      const hub = hubWith(dir, defs);
+      await hub.setProjectCredentials(dir, "dokploy", { DOKPLOY_API_KEY: token });
+      hub.shutdown();
+      expect(readFileSync(config, "utf8")).toBe(original);
+      const encrypted = join(dir, "mcp-hub", "project-credentials", "vault", "tokens.enc");
+      expect(readFileSync(encrypted).includes(Buffer.from(token))).toBe(false);
+      const reopened = hubWith(dir, defs);
+      await expect(reopened.projectCredentialStatus(dir, "dokploy")).resolves.toEqual({
+        kind: "stdio",
+        configured: true,
+      });
+      await reopened.clearProjectCredentials(dir, "dokploy");
+      expect((await reopened.projectCredentialStatus(dir, "dokploy")).configured).toBe(false);
+      reopened.shutdown();
+    },
+  );
+
+  it("launches an inherited shared stdio server with the selected project's credentials", async () => {
+    const dir = tempDir();
+    const other = tempDir();
+    const values = new Map<string, string>();
+    const defs = [definition("dokploy", dir, { FAKE_MCP_PROJECT_TOKEN: "provider-value" })];
+    const options = {
+      projectCredentialValues: {
+        get: async (ref: string) => values.get(ref),
+        set: async (ref: string, value: string) => {
+          values.set(ref, value);
+        },
+        delete: async (ref: string) => {
+          values.delete(ref);
+        },
+      },
+    };
+    const writer = hubWith(dir, defs, options);
+    await writer.setProjectCredentials(dir, "dokploy", { FAKE_MCP_PROJECT_TOKEN: "first-value" });
+    await writer.setProjectCredentials(other, "dokploy", {
+      FAKE_MCP_PROJECT_TOKEN: "second-value",
+    });
+    writer.shutdown();
+    const hub = hubWith(dir, defs, options);
+    const readToken = async (cwd?: string) =>
+      (await hub.serve("dokploy", "same-session", call("", "project-env"), cwd))?.result.content[0]
+        .text;
+    try {
+      expect(await readToken(dir)).toBe("first-value");
+      expect(await readToken(other)).toBe("second-value");
+      expect(await readToken()).toBe("provider-value");
+      await hub.setProjectCredentials(dir, "dokploy", { FAKE_MCP_PROJECT_TOKEN: "updated-value" });
+      expect(await readToken(dir)).toBe("updated-value");
+      await hub.clearProjectCredentials(dir, "dokploy");
+      expect(await readToken(dir)).toBe("provider-value");
+      expect(await readToken(other)).toBe("second-value");
+    } finally {
+      hub.shutdown();
+    }
+  });
+
   it("fills the cache once, then serves initialize and tools/list without starting a child", async () => {
     const dir = tempDir();
     const defs = [definition("fake-a", dir)];

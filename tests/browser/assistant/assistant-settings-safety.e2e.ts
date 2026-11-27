@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const translations = JSON.parse(
   await readFile(new URL("../../../src/shared/i18n/locales/tr.json", import.meta.url), "utf8"),
@@ -12,12 +12,22 @@ async function requests(page: Page) {
 }
 async function openSettings(page: Page, extra = "") {
   await page.goto(
-    `/tests/browser/assistant/assistant-room.html?real-controls&desktop&manual&lang=tr${extra}`,
+    `/tests/browser/assistant/assistant-room.html?real-controls&desktop&manual&native-consent&lang=tr${extra}`,
   );
   await page.getByRole("button", { name: tr("Settings"), exact: true }).click();
   const dialog = page.getByRole("dialog").first();
   await dialog.getByRole("tab", { name: tr("Access"), exact: true }).click();
   return dialog;
+}
+/** The alert owns one plain sentence; the raw Host text sits behind its Details link. */
+async function expectStatusUnavailable(page: Page, section: Locator) {
+  const alert = section.getByRole("alert");
+  await expect(alert).toContainText(tr("Desktop control could not complete this."));
+  await alert.getByRole("button", { name: new RegExp(`^${tr("Details")}`) }).click();
+  await expect(page.getByLabel(tr("Error details"), { exact: true })).toContainText(
+    "Desktop status unavailable",
+  );
+  await page.keyboard.press("Escape");
 }
 for (const state of ["disabled", "enabled-idle", "active", "stopped", "unavailable"] as const)
   test(`computer settings only read state on open: ${state}`, async ({ page }) => {
@@ -42,7 +52,7 @@ for (const state of ["disabled", "enabled-idle", "active", "stopped", "unavailab
     const unavailable = state === "unavailable";
     if (unavailable) {
       // A failed status read leaves no stale state: the error shows and no control is offered.
-      await expect(computer.getByRole("alert")).toContainText("Desktop status unavailable");
+      await expectStatusUnavailable(page, computer);
       await expect(toggle).toHaveCount(0);
       await expect(stop).toHaveCount(0);
     } else {
@@ -61,7 +71,7 @@ for (const state of ["disabled", "enabled-idle", "active", "stopped", "unavailab
           (window as any).__desktopStatusFailure = true;
         });
         await computer.getByRole("button", { name: tr("Refresh"), exact: true }).click();
-        await expect(computer.getByRole("alert")).toContainText("Desktop status unavailable");
+        await expectStatusUnavailable(page, computer);
         await expect(computer.getByText(tr("Running"), { exact: true })).toHaveCount(0);
       }
     }
@@ -98,12 +108,14 @@ test("single save writes the profile and the computer draft together", async ({ 
   await page.evaluate(() => {
     (window as any).__desktopHoldConfigure = true;
   });
-  const save = dialog.locator("button[type=submit][form]");
+  const save = dialog.getByRole("button", { name: tr("Save"), exact: true });
   await save.click();
-  await expect(save).toBeDisabled();
-  await dialog.getByRole("button", { name: tr("Close"), exact: true }).click();
+  await expect(dialog.getByRole("button", { name: tr("Saving…"), exact: true })).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: tr("Close"), exact: true })).toBeDisabled();
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByText(tr("Discard unsaved changes?"), { exact: true })).toHaveCount(0);
+  await expect(dialog.getByText(tr("Save changes before leaving?"), { exact: true })).toHaveCount(
+    0,
+  );
   await expect(dialog.getByRole("button", { name: tr("Quick setup"), exact: true })).toBeDisabled();
   await page.evaluate(() => (window as any).__desktopConfigureRelease());
   await expect(toggle).toHaveAttribute("aria-checked", "true");

@@ -19,7 +19,6 @@ function render(props: Partial<Parameters<typeof WorkspaceManagedRow>[0]> = {}) 
     createElement(WorkspaceManagedRow, {
       workspace,
       title: "Provider settings parity",
-      reviewDisabled: false,
       pinning: false,
       onReview: () => undefined,
       onReveal: () => undefined,
@@ -37,9 +36,9 @@ it("shows the folder and branch caption only when the title differs from the bra
   expect(render({ title: "bycoda/s/branch-a" })).not.toContain("bycoda/s/branch-a · ");
 });
 
-it("marks a missing folder with a warning chip", () => {
-  expect(render()).not.toContain("Missing folder");
-  expect(render({ missing: true })).toContain("Missing folder");
+it("adds a keyboard-focusable status icon only for a missing folder", () => {
+  expect(render()).not.toContain('role="img" aria-label="Folder"');
+  expect(render({ missing: true })).toContain('role="img" aria-label="Folder" tabindex="0"');
 });
 
 it("adds the relative cleanup time to the caption when cleanup is scheduled", () => {
@@ -65,7 +64,7 @@ it("puts every row action inline instead of behind a menu", () => {
 
 it("shows background removal on the row and blocks its actions", () => {
   const html = render({ removing: true });
-  expect(html).toContain("Removing directory…");
+  expect(html).toContain('role="img" aria-label="Directory removal" tabindex="0"');
   expect(html).toMatch(
     /aria-label="Delete directory"[^>]*aria-disabled="true"|aria-disabled="true"[^>]*aria-label="Delete directory"/,
   );

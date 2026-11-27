@@ -9,7 +9,7 @@ export function ComposerAction({
   hasValue,
   allowBusySubmit = true,
   label: labelProp,
-  busyLabel,
+  followUpAction,
   blockedReason,
   onSend,
   onQueue,
@@ -26,7 +26,7 @@ export function ComposerAction({
   allowBusySubmit?: boolean;
   label?: string;
   /** Describes the existing follow-up route without changing send behavior. */
-  busyLabel?: string;
+  followUpAction?: "queue" | "steer";
   /** Shown instead of the label while Send cannot reach its destination. */
   blockedReason?: string;
   onSend: () => void;
@@ -40,6 +40,8 @@ export function ComposerAction({
 }) {
   const t = useT();
   const label = labelProp ?? t("Send");
+  const busyLabel =
+    followUpAction && (followUpAction === "steer" ? t("Steer") : t("Queue message"));
   if (disabled && !busy && !submitting) {
     return (
       <Button
@@ -47,22 +49,23 @@ export function ComposerAction({
         tone="accent"
         motion="none"
         iconOnly
-        label={blockedReason ? `${label}. ${blockedReason}` : label}
-        tooltip={blockedReason}
+        label={label}
         shortcut={blockedReason ? null : "Enter"}
-        aria-description={blockedReason}
         disabled
+        disabledReason={blockedReason}
       >
         <ArrowUp className="icon-sm" strokeWidth={2} />
       </Button>
     );
   }
   if (busy) {
+    const queueIsPrimary = followUpAction === "queue";
+    const showFollowUp = (hasValue && allowBusySubmit && !disabled) || !!submitting;
     return (
       <>
-        {(hasValue && allowBusySubmit && !disabled) || submitting ? (
+        {showFollowUp ? (
           <>
-            {onQueue ? (
+            {onQueue && !queueIsPrimary ? (
               <Button
                 motion="none"
                 iconOnly
@@ -73,6 +76,7 @@ export function ComposerAction({
                 loading={submitting === "queue"}
                 loadingLabel={t("Sending…")}
                 disabled={submitting === "send"}
+                disabledReason={t("Wait for the current action to finish.")}
                 onClick={onQueue}
               >
                 <ListEnd className="icon-sm" strokeWidth={1.75} />
@@ -83,13 +87,23 @@ export function ComposerAction({
               tone="accent"
               motion="none"
               iconOnly={!busyLabel}
-              label={label}
-              shortcut="Enter"
-              aria-description={busyLabel}
-              loading={submitting === "send"}
+              label={queueIsPrimary ? (busyLabel ?? label) : label}
+              shortcut={
+                queueIsPrimary && onQueue && queueShortcut ? `Enter / ${queueShortcut}` : "Enter"
+              }
+              aria-description={queueIsPrimary ? undefined : busyLabel}
+              data-usage-guide={queueIsPrimary ? "queue-button" : undefined}
+              loading={queueIsPrimary ? !!submitting : submitting === "send"}
               loadingLabel={t("Sending…")}
-              disabled={submitting === "queue"}
-              startIcon={busyLabel ? <ArrowUp className="icon-sm" strokeWidth={2} /> : undefined}
+              disabled={!queueIsPrimary && submitting === "queue"}
+              disabledReason={t("Wait for the current action to finish.")}
+              startIcon={
+                followUpAction === "steer" ? (
+                  <span className="composer-steer-icon icon-sm" aria-hidden="true" />
+                ) : busyLabel ? (
+                  <ListEnd className="icon-sm" strokeWidth={1.75} />
+                ) : undefined
+              }
               onClick={onSend}
             >
               {busyLabel ? (
@@ -108,6 +122,11 @@ export function ComposerAction({
           label={t("Stop")}
           shortcut={stopShortcut}
           data-usage-guide="stop-button"
+          data-composer-stop-optional={
+            showFollowUp && hasValue && onQueue && !queueIsPrimary && !submitting && !stopping
+              ? ""
+              : undefined
+          }
           loading={stopping}
           loadingLabel={t("Stopping…")}
           onClick={onStop}
@@ -118,22 +137,44 @@ export function ComposerAction({
     );
   }
 
+  const sendDisabled = (!hasValue && !submitting) || submitting === "queue";
   return (
-    <Button
-      variant="primary"
-      tone="accent"
-      motion="none"
-      iconOnly
-      label={blockedReason ? `${label}. ${blockedReason}` : label}
-      tooltip={blockedReason}
-      shortcut={blockedReason ? null : "Enter"}
-      disabled={!hasValue && !submitting}
-      loading={submitting !== null}
-      loadingLabel={t("Sending…")}
-      onClick={onSend}
-      aria-description={blockedReason}
-    >
-      <ArrowUp className="icon-sm" strokeWidth={2} />
-    </Button>
+    <>
+      {/* After the turn, delegated subagents may still run: Queue waits for them. */}
+      {onQueue && hasValue ? (
+        <Button
+          motion="none"
+          iconOnly
+          label={t("Queue message")}
+          tooltip={t("Queue message for when the subagents finish")}
+          shortcut={queueShortcut}
+          data-usage-guide="queue-button"
+          loading={submitting === "queue"}
+          loadingLabel={t("Sending…")}
+          disabled={submitting === "send"}
+          disabledReason={t("Wait for the current action to finish.")}
+          onClick={onQueue}
+        >
+          <ListEnd className="icon-sm" strokeWidth={1.75} />
+        </Button>
+      ) : null}
+      <Button
+        variant="primary"
+        tone="accent"
+        motion="none"
+        iconOnly
+        label={label}
+        tooltip={sendDisabled ? undefined : blockedReason}
+        shortcut={blockedReason ? null : "Enter"}
+        disabled={sendDisabled}
+        disabledReason={sendDisabled ? blockedReason : undefined}
+        loading={submitting === "send"}
+        loadingLabel={t("Sending…")}
+        onClick={onSend}
+        aria-description={sendDisabled ? undefined : blockedReason}
+      >
+        <ArrowUp className="icon-sm" strokeWidth={2} />
+      </Button>
+    </>
   );
 }

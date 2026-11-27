@@ -1,6 +1,6 @@
 .briefing {
   display: grid;
-  gap: 10px;
+  gap: var(--ui-space-3);
   min-inline-size: 0;
 }
 
@@ -9,7 +9,7 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 
@@ -29,14 +29,6 @@
   overflow-wrap: anywhere;
 }
 
-.languageHint {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  min-inline-size: 0;
-}
-
 .approvals {
   display: grid;
   min-inline-size: 0;
@@ -47,8 +39,8 @@
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px 16px;
-  padding-block: 10px;
+  gap: var(--ui-space-2) var(--ui-space-4);
+  padding-block: var(--ui-space-3);
   min-inline-size: 0;
 }
 
@@ -60,13 +52,13 @@
 .sections {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
-  gap: 12px 24px;
+  gap: var(--ui-space-3) var(--ui-space-6);
   min-inline-size: 0;
 }
 
 .section {
   display: grid;
-  gap: 4px;
+  gap: var(--ui-space-1);
   align-content: start;
   min-inline-size: 0;
 }
@@ -81,8 +73,5 @@
 }
 
 .item {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
   overflow-wrap: anywhere;
 }

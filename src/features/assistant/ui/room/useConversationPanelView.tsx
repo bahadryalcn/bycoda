@@ -1,9 +1,11 @@
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { errorText } from "../../../../shared/lib/errors";
 import type { AssistantMessage } from "../../../../shared/model/host-contracts/assistant";
 import { formatDate, t, useLocale } from "../../../../shared/i18n";
+import { useStableCallback } from "../../../../shared/hooks/useStableCallback";
 import { visibleAssistantMessages } from "../../model/assistantPrivacy";
-import { conversationMessageItem } from "./ConversationMessage";
+import { createMessageProjection } from "./conversationMessageProjection";
 import type { ConversationPanelProps, ConversationPanelState } from "./useConversationPanelState";
 import type { ConversationPanelMessagesState } from "./useConversationPanelMessages";
 import type { ConversationPanelSendState } from "./useConversationPanelSend";
@@ -49,12 +51,17 @@ export function useConversationPanelView(
   const [search, setSearch] = useState<{
     query: string;
     results: AssistantMessage[];
-    settled: boolean;
+    error?: string;
   } | null>(null);
+  const [searchAttempt, setSearchAttempt] = useState(0);
   const searchActive = query.trim() !== "";
   const searchCurrent = search?.query === query ? search : null;
   const searchResults = searchActive ? (searchCurrent?.results ?? []) : null;
-  const searching = searchActive && !searchCurrent?.settled;
+  const searching = searchActive && !searchCurrent;
+  const retrySearch = () => {
+    setSearch(null);
+    setSearchAttempt((attempt) => attempt + 1);
+  };
   const dropSearchResults = (keep: (message: AssistantMessage) => boolean) =>
     setSearch((current) =>
       current ? { ...current, results: current.results.filter(keep) } : current,
@@ -69,7 +76,7 @@ export function useConversationPanelView(
         "Move all messages in this conversation to Recently deleted for seven days. The saved summary and your unsent draft stay available.",
       ),
       confirmLabel: t("Clear all messages"),
-      pendingLabel: t("Clearing..."),
+      pendingLabel: t("Clearing…"),
       onConfirm: async () => {
         if (!threadVisible(target.id)) return;
         if (clearingRef.current) return;
@@ -84,7 +91,9 @@ export function useConversationPanelView(
             expectedVersion: target.version,
           });
           if (result.thread?.id !== target.id)
-            throw new Error(t("The conversation clear was not confirmed. Check before retrying."));
+            throw new Error(
+              t("The conversation clear could not be confirmed. Check before retrying."),
+            );
           mergeThread(result.thread, target.id, environmentId);
           setMessages((current) => ({ ...current, [target.id]: [] }));
           setHasMore((current) => ({ ...current, [target.id]: false }));
@@ -92,10 +101,12 @@ export function useConversationPanelView(
         } finally {
           clearingRef.current = false;
           setClearing(false);
+          if (query.trim()) retrySearch();
         }
       },
     });
   }
+  // Debounce the current query and ignore replies superseded by query changes or clear.
   useEffect(() => {
     if (!query.trim()) return;
     let cancelled = false;
@@ -104,26 +115,18 @@ export function useConversationPanelView(
       void assistantRequest({ op: "conversations.search", query, limit: 100 })
         .then((result) => {
           if (!cancelled && epoch === searchEpoch.current)
-            setSearch({ query, results: result.messages ?? [], settled: false });
+            setSearch({ query, results: result.messages ?? [] });
         })
         .catch((cause) => {
-          const message = presentRemoteError(cause);
-          if (!cancelled && epoch === searchEpoch.current && message) setError(message);
-        })
-        .finally(() => {
-          if (!cancelled)
-            setSearch((current) =>
-              current?.query === query
-                ? { ...current, settled: true }
-                : { query, results: [], settled: true },
-            );
+          if (!cancelled && epoch === searchEpoch.current)
+            setSearch({ query, results: [], error: errorText(cause) });
         });
     }, 300);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [assistantRequest, query, searchAttempt, searchEpoch]);
   const currentMessages = searchResults ?? messages[threadId] ?? emptyAssistantMessages;
   const visible = useMemo(
     () => visibleAssistantMessages(currentMessages, source, privacy),
@@ -156,60 +159,59 @@ export function useConversationPanelView(
       history.current.scrollTop = history.current.scrollHeight;
   }, [threadId, query, lastMessageId]);
   const time = (timestamp: number) => formatDate(timestamp, { hour: "2-digit", minute: "2-digit" });
-  const deleteMessage = (message: AssistantMessage) =>
-    setConfirm({
-      title: t("Delete message?"),
-      message: message.text,
-      confirmLabel: t("Delete"),
-      onConfirm: async () => {
-        if (!messageVisible(message)) return;
-        await assistantRequest({
-          op: "messages.delete",
-          id: message.id,
-          expectedVersion: message.version,
-        });
-        setMessages((current) => ({
-          ...current,
-          [message.threadId]: (current[message.threadId] ?? []).filter(
-            (item) => item.id !== message.id,
-          ),
-        }));
-        dropSearchResults((item) => item.id !== message.id);
-      },
-    });
-  const messageElements = useMemo(
-    () =>
-      visible.map((message) =>
-        conversationMessageItem({
-          message,
-          authorName: snapshot.profile.name,
-          jobs: snapshot.jobs,
-          clearing,
-          onOpenSession,
-          onJob,
-          onDelete: deleteMessage,
-        }),
+  // A deleted message moves to Recently deleted, so it runs at once; a failure shows in the panel error slot.
+  const deleteMessage = async (message: AssistantMessage) => {
+    if (!messageVisible(message)) return;
+    try {
+      await assistantRequest({
+        op: "messages.delete",
+        id: message.id,
+        expectedVersion: message.version,
+      });
+    } catch (cause) {
+      const failure = presentRemoteError(cause, { explicit: true });
+      if (failure) setError(failure);
+      return;
+    }
+    setMessages((current) => ({
+      ...current,
+      [message.threadId]: (current[message.threadId] ?? []).filter(
+        (item) => item.id !== message.id,
       ),
-    [
-      visible,
-      locale,
-      clearing,
-      snapshot.profile.name,
-      snapshot.jobs,
-      onOpenSession,
-      onJob,
-      privacy.key,
-      environmentId,
-      assistantRequest,
-    ],
+    }));
+    dropSearchResults((item) => item.id !== message.id);
+  };
+  // Handlers keep one identity so a changed closure never rebuilds every message item.
+  const openSession = useStableCallback(onOpenSession);
+  const openJob = useStableCallback(onJob);
+  const removeMessage = useStableCallback(deleteMessage);
+  const jobsById = useMemo(
+    () => new Map(snapshot.jobs.map((job) => [job.id, { id: job.id, title: job.title }])),
+    [snapshot.jobs],
   );
+  const [project] = useState(createMessageProjection);
+  const messageElements = project(visible, jobsById, {
+    authorName: snapshot.profile.name,
+    locale,
+    clearing,
+    onOpenSession: openSession,
+    onJob: openJob,
+    onDelete: removeMessage,
+  });
+  // Keeps the reader at the end while measured rows replace estimates in the windowed list.
+  const keepEnd = () => {
+    if (!query && followMessages.current && history.current)
+      history.current.scrollTop = history.current.scrollHeight;
+  };
   const threadLabel = currentThread?.projectId
     ? (projects.find((project) => (project.id ?? project.path) === currentThread.projectId)?.name ??
       currentThread.projectId)
-    : t("Global");
+    : "";
 
   return {
     searchResults,
+    searchError: searchActive ? searchCurrent?.error : undefined,
+    retrySearch,
     searching,
     clearConversation,
     currentMessages,
@@ -225,6 +227,7 @@ export function useConversationPanelView(
     lastMessageId,
     time,
     messageElements,
+    keepEnd,
     threadLabel,
   };
 }

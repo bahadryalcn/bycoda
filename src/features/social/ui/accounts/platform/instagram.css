@@ -1,0 +1,83 @@
+/* Instagram tools: a section strip over panels that read first, then act. Semantic tokens only. */
+.instagram-tools {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-inline-size: 0;
+}
+
+.instagram-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+.instagram-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+
+.instagram-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+.instagram-grid > [data-wide] {
+  grid-column: 1 / -1;
+}
+
+.instagram-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.instagram-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-inline-size: 0;
+  padding-block: var(--space-3);
+}
+
+.instagram-row:first-child {
+  padding-block-start: 0;
+}
+
+.instagram-row:last-child > [data-orientation] {
+  display: none;
+}
+
+.instagram-row-text {
+  overflow-wrap: anywhere;
+}
+
+.instagram-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* One queued change: title, details and actions read as separated groups. */
+.instagram-request {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+
+.instagram-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}

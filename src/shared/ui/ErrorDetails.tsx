@@ -1,10 +1,12 @@
 import { useId, useRef, useState, type ReactNode } from "react";
-import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import { useT } from "../i18n";
 import { truncateGraphemes } from "../lib/text/truncate";
 import { Button } from "./Button";
-import { InlineMessage } from "./InlineError";
+import { CopyButton } from "./CopyButton";
+import { ChevronDown } from "./icons";
+import { OutputBlock } from "./OutputBlock";
 import { Popover } from "./Popover";
+import { Text } from "./Text";
 
 /**
  * "Details" link that opens a dialog Popover with the complete technical error text (selectable,
@@ -24,7 +26,7 @@ export function ErrorDetails({
   label,
   actions,
   children,
-  width = 420,
+  width = 360,
   className,
 }: {
   /** The complete technical text. Shown as written and copied in full. */
@@ -45,7 +47,6 @@ export function ErrorDetails({
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
   const contentId = useId();
-  const copy = useCopyFeedback({ resetKeys: [detail] });
   const text = label ?? t("Details");
   const name = title ? `${text}: ${title}` : text;
   const close = () => setOpen(false);
@@ -64,39 +65,45 @@ export function ErrorDetails({
         onClick={() => setOpen((current) => !current)}
       >
         {text}
+        <ChevronDown className="ms-0.5 inline size-3 align-middle" aria-hidden="true" />
       </Button>
       {open ? (
         <Popover
           id={contentId}
           anchor={anchor}
           width={width}
+          maxHeight={320}
+          align="end"
           kind="dialog"
           aria-label={name}
           tabIndex={-1}
           flow="scroll"
+          solid
           onDismiss={close}
-          className="flex flex-col gap-2 p-3 text-ui-secondary text-(--ui-text-secondary)"
+          variant="panel"
+          className="flex flex-col gap-[var(--space-2)]"
         >
-          {children}
-          <pre
-            aria-label={t("Error details")}
-            className="m-0 min-w-0 font-mono text-ui-caption wrap-anywhere whitespace-pre-wrap text-content select-text"
-          >
-            {detail}
-          </pre>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
+          <div className="flex items-center justify-between gap-[var(--space-2)]">
+            <Text size="secondary" tone="primary" weight="medium" truncate className="min-w-0">
+              {t("Technical details")}
+            </Text>
+            <CopyButton
               type="button"
-              variant="secondary"
+              iconOnly
               size="sm"
-              loading={copy.pending}
-              onClick={() => copy.copy(() => navigator.clipboard.writeText(detail))}
-            >
-              {copy.copied ? t("Copied") : t("Copy details")}
-            </Button>
-            {actions?.(close)}
+              className="shrink-0"
+              label={t("Copy details")}
+              resetKeys={[detail]}
+              onCopy={() => navigator.clipboard.writeText(detail)}
+            />
           </div>
-          {copy.failed ? <InlineMessage tone="danger">{copy.error}</InlineMessage> : null}
+          {children}
+          <OutputBlock aria-label={t("Error details")} frame="filled" className="shrink-0">
+            {detail}
+          </OutputBlock>
+          {actions ? (
+            <div className="flex flex-wrap items-center gap-[var(--space-2)]">{actions(close)}</div>
+          ) : null}
         </Popover>
       ) : null}
     </>

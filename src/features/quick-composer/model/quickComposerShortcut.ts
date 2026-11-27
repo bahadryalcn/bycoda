@@ -1,4 +1,10 @@
 import { IS_MAC } from "../../../platform/tauri/platform";
+import {
+  keyId,
+  normalizeShortcut,
+  splitShortcut,
+  type Platform,
+} from "../../../shared/ui/shortcut";
 
 /** The same spelling is accepted by tauri-plugin-global-shortcut. */
 export const QUICK_COMPOSER_DEFAULT_SHORTCUT = IS_MAC
@@ -94,6 +100,49 @@ export function shortcutFromKeyEvent(
   ].filter(Boolean);
   if (!event.metaKey && !event.ctrlKey && !event.altKey) return null;
   return [...modifiers, event.code].join("+");
+}
+
+const RECORDER_MODIFIERS: Record<string, string> = {
+  Command: "meta",
+  Control: "ctrl",
+  Option: "alt",
+  Shift: "shift",
+};
+
+/** A stored chord (`Control+KeyK`) in the shared recorder's spelling (`mod+k`), or null when it has none. */
+export function recorderShortcutFromStored(value: string, platform: Platform): string | null {
+  const parts = value.split("+");
+  const code = parts.pop();
+  const key = code && supportedCode(code) ? keyId({ code, key: code }) : null;
+  const mods = parts.map((part) => RECORDER_MODIFIERS[part]);
+  if (!key || mods.some((mod) => !mod)) return null;
+  return normalizeShortcut([...mods, key].join("+"), platform);
+}
+
+function codeForRecorderKey(key: string): string | null {
+  if (/^[a-z]$/.test(key)) return `Key${key.toUpperCase()}`;
+  if (/^[0-9]$/.test(key)) return `Digit${key}`;
+  if (/^f\d{1,2}$/.test(key)) return supportedCode(key.toUpperCase()) ? key.toUpperCase() : null;
+  return Object.keys(SYMBOLS).find((code) => keyId({ code, key: code }) === key) ?? null;
+}
+
+/**
+ * A chord the shared recorder produced (`mod+k`) in the stored spelling (`Control+KeyK`), or null when it has no stored form
+ * (no Command, Control or Option, or a key the stored form does not support).
+ * shortcut: a numpad digit is stored as its top-row digit, since the stored form has no numpad codes.
+ */
+export function storedShortcutFromRecorder(value: string, platform: Platform): string | null {
+  const { mods, key } = splitShortcut(normalizeShortcut(value, platform));
+  const code = codeForRecorderKey(key);
+  if (!code) return null;
+  const mac = platform === "mac";
+  const modifiers = [
+    (mac ? mods.has("mod") : mods.has("meta")) && "Command",
+    (mac ? mods.has("ctrl") : mods.has("mod")) && "Control",
+    mods.has("alt") && "Option",
+    mods.has("shift") && "Shift",
+  ].filter(Boolean);
+  return canonicalShortcut([...modifiers, code].join("+"));
 }
 
 function codeLabel(code: string): string {

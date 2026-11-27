@@ -1,5 +1,6 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ACTIONS, EVENTS, Joyride, STATUS, type EventData, type Step } from "react-joyride";
 import { t, useLocale } from "../../../shared/i18n";
@@ -10,7 +11,7 @@ import { MessageSquare, Check } from "../../../shared/ui/icons";
 import { UsageGuideTooltip } from "./UsageGuideTooltip";
 import { GuideShortcuts } from "./GuideShortcuts";
 import { findUsageGuideTarget } from "../model/usageGuideTargets";
-import { TOUR_FLOATING, TOUR_OPTIONS, tourLocale, useTourArrowKeys } from "./tourRunner";
+import { COMPACT_TOUR_OPTIONS, TOUR_FLOATING, tourLocale, useTourArrowKeys } from "./tourRunner";
 import { runGuideAction, setGuideStepDone, type GuideAction } from "../model/guide";
 import { guideMissingHelp, guideTopics } from "../model/guideTopics";
 import { tourPlan } from "../model/guideTours";
@@ -101,7 +102,7 @@ export default function UsageGuideDialog({
       content: (
         <Text
           as="section"
-          size="title"
+          size="body"
           tone="inherit"
           weight="regular"
           leading="inherit"
@@ -125,9 +126,10 @@ export default function UsageGuideDialog({
               tone="secondary"
               leading="inherit"
               className="usage-guide-missing"
-              role="status"
             >
-              <p>{help.reason}</p>
+              <p>
+                <LiveText text={help.reason} />
+              </p>
               <div className="usage-guide-missing-actions">
                 <Button
                   variant="secondary"
@@ -214,7 +216,7 @@ export default function UsageGuideDialog({
         onEvent={onEvent}
         tooltipComponent={UsageGuideTooltip}
         floatingOptions={TOUR_FLOATING}
-        options={TOUR_OPTIONS}
+        options={COMPACT_TOUR_OPTIONS}
         locale={tourLocale()}
       />
     </div>

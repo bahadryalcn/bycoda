@@ -4,6 +4,7 @@ import {
   applyStreamSync,
   HOST_PROTOCOL_VERSION,
   protocolMismatchMessage,
+  requestPartialSync,
   requireHostDescriptor,
   sessionReferenceKey,
   type HostSession,
@@ -211,4 +212,49 @@ it("rebases a tail stream's partial delta onto the window the client holds", () 
   expect(() =>
     applyStreamSync(windowed(["w2"], 4, 3), streamDelta(["w2", "w3"], 4, ["w3"])),
   ).toThrow("base");
+});
+
+it("partial sync asks with the first loaded id and resends the full window after a snapshot", async () => {
+  const loaded: HostSession = {
+    ...known,
+    history: { before: 0, revision: 4, totalBlocks: 3 },
+    session: {
+      ...known.session,
+      blocks: [
+        { id: "a", role: "user", text: "a" },
+        { id: "b", role: "assistant", text: "b" },
+        { id: "c", role: "assistant", text: "c" },
+      ],
+    },
+  };
+  const sent: string[][] = [];
+  const unchanged = await requestPartialSync(loaded, async (ids) => {
+    sent.push(ids);
+    return { kind: "unchanged", revision: 4 };
+  });
+  expect(unchanged).toEqual({ kind: "unchanged", revision: 4 });
+  expect(sent).toEqual([["a"]]);
+
+  sent.length = 0;
+  await requestPartialSync(loaded, async (ids) => {
+    sent.push(ids);
+    return ids.length === 1
+      ? { kind: "snapshot", value: loaded }
+      : { kind: "unchanged", revision: 4 };
+  });
+  expect(sent).toEqual([["a"], ["a", "b", "c"]]);
+});
+
+it("partial sync does not resend a one-block window after a snapshot", async () => {
+  const single: HostSession = {
+    ...known,
+    history: { before: 0, revision: 4, totalBlocks: 1 },
+    session: { ...known.session, blocks: [{ id: "a", role: "user", text: "a" }] },
+  };
+  const sent: string[][] = [];
+  await requestPartialSync(single, async (ids) => {
+    sent.push(ids);
+    return { kind: "snapshot", value: single };
+  });
+  expect(sent).toEqual([["a"]]);
 });

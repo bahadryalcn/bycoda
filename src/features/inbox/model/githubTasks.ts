@@ -1,12 +1,15 @@
+import { errorText } from "../../../shared/lib/errors";
 import { fetchJiraInboxPage, type JiraListContinuation } from "./jiraInboxPage";
 import type { GithubStatus } from "./githubStatus";
+import { t } from "../../../shared/i18n";
 import { formatGithubRelativeTime as formatRelativeTime } from "../../../shared/i18n/format";
 import { invoke } from "@tauri-apps/api/core";
 import { createStore } from "../../../shared/lib/store";
-import { githubRead } from "./githubReadGate";
+import { githubRead, resetGithubReadBlock } from "./githubReadGate";
 import { clearGithubRepositories, discoverGithubRepositories } from "./githubRepositories";
 export { githubRepo, githubRepositories } from "./githubRepositories";
 import { pathKey } from "../../../shared/lib/paths";
+import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 import { INBOX_VISIBLE_POLL_MS } from "./inboxPolling";
 import { clearKnownInboxItems } from "./inboxSeen";
 import {
@@ -178,6 +181,11 @@ export type InboxQuery = Omit<GithubWorkItemQuery, "kind"> & {
   jiraStatuses?: string[];
   /** Background callers explicitly opt out of Jira network reads. */
   jiraEnabled?: boolean;
+  /**
+   * Read only these providers (a paired phone asking for one source). Unset reads every
+   * connected provider; the others are not contacted at all instead of read and dropped.
+   */
+  onlyProviders?: readonly InboxProvider[];
 };
 
 export type InboxProviderErrors = Partial<Record<InboxProvider, string>>;
@@ -300,12 +308,12 @@ const fetchedAt = new Map<string, number>();
 const ITEM_CACHE_LIMIT = 128;
 function freshEnough(key: string, maxAgeMs?: number) {
   const at = fetchedAt.get(key);
-  return maxAgeMs != null && at != null && Date.now() - at < maxAgeMs;
+  return maxAgeMs != null && at != null && elapsedSince(at) < maxAgeMs;
 }
 function remember<T>(cache: Map<string, T>, key: string, value: T, namespace: string) {
   cache.delete(key);
   cache.set(key, value);
-  fetchedAt.set(`${namespace}:${key}`, Date.now());
+  fetchedAt.set(`${namespace}:${key}`, monotonicNow());
   while (cache.size > ITEM_CACHE_LIMIT) {
     const oldest = cache.keys().next().value!;
     cache.delete(oldest);
@@ -382,7 +390,7 @@ export function inboxListCacheKey(
   // it never serves or overwrites the unscoped list.
   const teams = scopeKey(query.linearHiddenTeamIds ?? readHiddenLinearTeamIds());
   const jiraProjects = scopeKey(query.jiraHiddenProjectIds ?? readHiddenJiraProjectIds());
-  return `${query.assignedToMe ? 1 : 0}:${query.state}:${paths}:${teams}:${jiraProjects}:${query.search.trim()}:${[...(query.githubKinds ?? ["issue", "pr"])].sort().join(",")}:${query.jiraEnabled === false ? "no-jira" : "jira"}:${JSON.stringify([query.jiraAssignees ?? [], query.jiraUnassigned ?? false, query.jiraStatuses ?? []])}`;
+  return `${query.assignedToMe ? 1 : 0}:${query.state}:${paths}:${teams}:${jiraProjects}:${query.search.trim()}:${[...(query.githubKinds ?? ["issue", "pr"])].sort().join(",")}:${query.jiraEnabled === false ? "no-jira" : "jira"}:${JSON.stringify([query.jiraAssignees ?? [], query.jiraUnassigned ?? false, query.jiraStatuses ?? []])}${query.onlyProviders ? `:only=${[...new Set(query.onlyProviders)].sort().join(",")}` : ""}`;
 }
 
 function scopeKey(ids: readonly string[] | null): string {
@@ -414,13 +422,6 @@ export function cacheInboxContinuation(
   if (current) inboxListCaches.set(key, { ...current, ...result });
 }
 
-export function peekInboxItems(
-  projects: readonly { path: string }[],
-  query: InboxQuery,
-): InboxItem[] | null {
-  return peekInboxList(projects, query)?.items ?? null;
-}
-
 export function inboxListIsFresh(
   projects: readonly { path: string }[],
   query: InboxQuery,
@@ -440,8 +441,12 @@ export function inboxListFetchedAt(
   return inboxListCaches.get(inboxListCacheKey(projects, query))?.fetchedAt ?? 0;
 }
 
-export function githubStatus(): Promise<GithubStatus> {
-  return invoke<GithubStatus>("git_github_status");
+export async function githubStatus(): Promise<GithubStatus> {
+  const status = await invoke<GithubStatus>("git_github_status");
+  // Signed out: the next sign-in may be another account with its own quota, so an old pause
+  // no longer applies. The status read only reports state; no credential is touched.
+  if (!status.connected) resetGithubReadBlock("local");
+  return status;
 }
 
 /** Whether the active GitHub CLI account has starred Bycoda. */
@@ -469,7 +474,7 @@ export function listGithubWorkItems(
     query.search.trim(),
   ]);
   const cached = githubLists.get(key);
-  if (!options?.force && cached && Date.now() - cached.at < INBOX_CACHE_FRESH_MS)
+  if (!options?.force && cached && elapsedSince(cached.at) < INBOX_CACHE_FRESH_MS)
     return Promise.resolve(cached.items);
   const pending = githubListsInflight.get(key);
   if (pending) return pending;
@@ -486,7 +491,7 @@ export function listGithubWorkItems(
     .then((items) => {
       if (generation === inboxCacheGeneration) {
         githubLists.delete(key);
-        githubLists.set(key, { items, at: Date.now() });
+        githubLists.set(key, { items, at: monotonicNow() });
         while (githubLists.size > 128) githubLists.delete(githubLists.keys().next().value!);
       }
       return items;
@@ -822,11 +827,11 @@ function keepPrRowAfterRefreshFailure(
 export function githubReviewDecisionLabel(decision: string): string {
   switch (decision.trim().toUpperCase()) {
     case "APPROVED":
-      return "Approved";
+      return t("Approved");
     case "CHANGES_REQUESTED":
-      return "Changes requested";
+      return t("Changes requested");
     case "REVIEW_REQUIRED":
-      return "Review required";
+      return t("Review required");
     default:
       return "";
   }
@@ -835,13 +840,13 @@ export function githubReviewDecisionLabel(decision: string): string {
 export function githubReviewStateLabel(state: string): string {
   switch (state.trim().toUpperCase()) {
     case "APPROVED":
-      return "Approved";
+      return t("Approved");
     case "CHANGES_REQUESTED":
-      return "Requested changes";
+      return t("Requested changes");
     case "DISMISSED":
-      return "Dismissed";
+      return t("Dismissed");
     case "COMMENTED":
-      return "Commented";
+      return t("Commented");
     default:
       return "";
   }
@@ -851,26 +856,26 @@ export function gitlabAttentionLabel(reason: string): string {
   const action = reason.trim().toLowerCase();
   switch (action) {
     case "assigned":
-      return "Assigned to you";
+      return t("Assigned to you");
     case "mentioned":
     case "directly_addressed":
-      return "Mentioned you";
+      return t("Mentioned you");
     case "review_requested":
-      return "Review requested";
+      return t("Review requested");
     case "review_submitted":
-      return "Review submitted";
+      return t("Review submitted");
     case "approval_required":
-      return "Approval required";
+      return t("Approval required");
     case "build_failed":
-      return "Pipeline failed";
+      return t("Pipeline failed");
     case "unmergeable":
-      return "Cannot be merged";
+      return t("Cannot be merged");
     case "merge_train_removed":
-      return "Removed from merge train";
+      return t("Removed from merge train");
     case "member_access_requested":
-      return "Access requested";
+      return t("Access requested");
     case "marked":
-      return "Added to your to-dos";
+      return t("Added to your to-dos");
     default:
       return action
         .split("_")
@@ -1171,12 +1176,19 @@ async function fetchInboxItems(
     limited?: boolean;
     sources?: Map<string, GithubInboxSource>;
   };
+  const only = query.onlyProviders;
+  const skipped = async (): Promise<ProviderRead> => ({ items: [] });
+  const scoped = (provider: InboxProvider, work: () => Promise<ProviderRead>) =>
+    !only || only.includes(provider) ? work : skipped;
   const jobs: [InboxProvider, () => Promise<ProviderRead>][] = [
-    ["github", fetchGithub],
-    ["linear", fetchLinear],
-    ["jira", fetchJira],
-    ["gitlab", () => fetchRepositoryProvider("gitlab", gitlabConnected)],
-    ["azuredevops", () => fetchRepositoryProvider("azuredevops", azureDevOpsConnected)],
+    ["github", scoped("github", fetchGithub)],
+    ["linear", scoped("linear", fetchLinear)],
+    ["jira", scoped("jira", fetchJira)],
+    ["gitlab", scoped("gitlab", () => fetchRepositoryProvider("gitlab", gitlabConnected))],
+    [
+      "azuredevops",
+      scoped("azuredevops", () => fetchRepositoryProvider("azuredevops", azureDevOpsConnected)),
+    ],
   ];
   const ready = new Map<InboxProvider, ProviderRead>();
   const previous = peekInboxList(projects, query);
@@ -1388,7 +1400,7 @@ export function collectInboxResults(
 }
 
 function inboxErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return errorText(error);
 }
 
 export function inboxIdentityKey(item: {
@@ -1456,10 +1468,6 @@ export function sortInboxItems(items: InboxItem[]): InboxItem[] {
 
 export function inboxItemKey(item: InboxItem): string {
   return `${item.provider}:${inboxIdentityKey(item)}`;
-}
-
-export function githubWorkItemKey(item: GithubWorkItem): string {
-  return `${item.repo}:${item.kind}:${item.number}`;
 }
 
 export function inboxItemStatus(item: {

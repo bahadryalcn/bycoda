@@ -422,6 +422,19 @@ it("prefers the actual captured session for project desktop input and never foll
   expect(mock.call.mock.calls[0][0]).toEqual({ cwd: "/a", sessionId: "a", threadId: "thread" });
 });
 
+it("discovers both Room and focused-session tools from the captured project scope", async () => {
+  const f = setup();
+  f.ports.getScope = () => "project";
+  f.ports.getThreadId = () => "thread";
+  f.controller.captureTurn();
+  f.state.active = "b";
+  await f.controller.execute("app_tools_list", { category: "conversation:desktop" });
+  expect(mock.discover).toHaveBeenCalledExactlyOnceWith(
+    { cwd: "/a", sessionId: "a", threadId: "thread" },
+    { category: "conversation:desktop" },
+  );
+});
+
 it("uses an independent management session and preserves queued receipts", async () => {
   const { controller, source } = setup();
   const args = {
@@ -729,4 +742,33 @@ it("passes a request ID only to workspace actions whose schema accepts it", asyn
     ["workspace.sessions.list", { projectPath: "/a" }],
     ["workspace.sessions.create", { projectPath: "/a", requestId: "create-session" }],
   ]);
+});
+it("binds an optional workspace projectPath to the project only outside Global scope", async () => {
+  const { controller, ports, workspace } = setup();
+  workspace.tools.push({
+    name: "workspace.usage.report",
+    description: "Usage",
+    parameters: { type: "object", properties: { period: {}, projectPath: {} } },
+  } as never);
+  const call = (requestId: string, input: Record<string, unknown> = { period: "month-to-date" }) =>
+    controller.execute("app_tool_call", {
+      family: "workspace",
+      action: "workspace.usage.report",
+      input,
+      requestId,
+    });
+  await call("global");
+  expect(workspace.execute).toHaveBeenLastCalledWith("workspace.usage.report", {
+    period: "month-to-date",
+  });
+  ports.getScope = () => "project";
+  controller.captureTurn();
+  await call("project");
+  expect(workspace.execute).toHaveBeenLastCalledWith("workspace.usage.report", {
+    projectPath: "/a",
+    period: "month-to-date",
+  });
+  await expect(call("other", { period: "month-to-date", projectPath: "/b" })).rejects.toThrow(
+    "another project",
+  );
 });

@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { expectErrorDetails } from "../errorDetails.test-support";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -13,6 +14,15 @@ import type { MessagingAccount } from "../../../messaging";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(async () => undefined) }));
+
+// Raw error text sits behind the Details popover; open it and read the dialog it shows.
+async function detailsText() {
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+  if (!trigger) return "";
+  await act(async () => trigger.click());
+  // The Details popover opens last, above any enclosing dialog.
+  return [...document.querySelectorAll('[role="dialog"]')].at(-1)?.textContent ?? "";
+}
 
 let container: HTMLDivElement;
 let root: Root;
@@ -79,7 +89,7 @@ it("retains account and new-account drafts while switching and locks pending sav
     throw new Error(`Unexpected command: ${command}`);
   });
   await act(async () => root.render(createElement(EmailAccountsSettings)));
-  expect(container.textContent).toContain("Configured");
+  expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(2);
   const edit = async (index: number) => {
     const row = container.querySelectorAll('[role="listitem"]')[index]!;
     await act(async () =>
@@ -90,12 +100,23 @@ it("retains account and new-account drafts while switching and locks pending sav
     [...container.querySelectorAll<HTMLInputElement>('input[aria-label="Display name"]')].find(
       (item) => !item.closest("[hidden]"),
     )!;
-  const name = async (value: string) =>
+  // Display name lives under the form's collapsed Advanced section; its drafts stay mounted.
+  const openAdvanced = () =>
     act(async () => {
+      for (const toggle of container.querySelectorAll<HTMLButtonElement>(
+        'button[aria-expanded="false"]',
+      ))
+        if (toggle.textContent?.trim() === "Advanced" && !toggle.closest("[hidden]"))
+          toggle.click();
+    });
+  const name = async (value: string) => {
+    await openAdvanced();
+    await act(async () => {
       const field = visibleInput();
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, value);
       field.dispatchEvent(new Event("input", { bubbles: true }));
     });
+  };
   await edit(0);
   await name("Draft A");
   await edit(1);
@@ -112,10 +133,10 @@ it("retains account and new-account drafts while switching and locks pending sav
   await click("Save and test connection");
   expect(
     [...container.querySelectorAll<HTMLButtonElement>('[role="listitem"] button')].every(
-      (item) => item.disabled,
+      (item) => item.disabled || item.getAttribute("aria-disabled") === "true",
     ),
   ).toBe(true);
-  expect(button("Add account")?.disabled).toBe(true);
+  expect(button("Add account")?.getAttribute("aria-disabled")).toBe("true");
   await act(async () => finish(account()));
   await edit(1);
   expect(visibleInput().value).toBe("Draft B");
@@ -132,7 +153,6 @@ it("applies a late form completion only to its original account", async () => {
     root.render(
       createElement(MessagingAccountsCard, {
         provider: "email",
-        emptyLabel: "No accounts",
         addLabel: "Add",
         describe: (value) => value.identity,
         Form,
@@ -152,7 +172,7 @@ it("applies a late form completion only to its original account", async () => {
   await act(async () => callbacks.get("acct-2")!.onSavingChange!(false));
   expect(
     [...container.querySelectorAll<HTMLButtonElement>('[role="listitem"] button')].every(
-      (item) => item.disabled,
+      (item) => item.disabled || item.getAttribute("aria-disabled") === "true",
     ),
   ).toBe(true);
   await act(async () => callbacks.get("acct-1")!.onSavingChange!(false));
@@ -184,12 +204,13 @@ it("keeps a rejected email draft, then lists the verified account", async () => 
     throw new Error(`Unexpected command: ${command} ${JSON.stringify(args)}`);
   });
   await act(async () => root.render(createElement(EmailAccountsSettings)));
-  expect(container.textContent).toContain("No email accounts connected yet.");
+  // With no account the add form opens directly instead of an empty message.
+  expect(input("Email address")).not.toBeNull();
   await toggle("Use an app password instead");
   await fill("Email address", "owner@example.com");
   await fill("Password or app password", "app-password-fixture");
   await click("Save and test connection");
-  expect(container.textContent).toContain("IMAP login failed");
+  expect(await detailsText()).toContain("IMAP login failed");
   expect(input("Password or app password").value).toBe("app-password-fixture");
 
   reject = false;
@@ -201,7 +222,7 @@ it("keeps a rejected email draft, then lists the verified account", async () => 
   expect(save[1]![1]).toMatchObject({
     input: { provider: "email", secret: { password: "app-password-fixture" } },
   });
-  expect(container.textContent).toContain("Connected as owner@example.com.");
+  expect(container.querySelector('[role="listitem"]')?.textContent).toContain("owner@example.com");
   expect(container.querySelector('input[aria-label="Password or app password"]')).toBeNull();
   expect(button("Add account")).toBeDefined();
 });
@@ -266,11 +287,15 @@ it("offers the app password when Google sign-in is refused", async () => {
   });
   vi.useFakeTimers();
   await act(async () => root.render(createElement(EmailAccountsSettings)));
-  expect(container.textContent).toContain("Can't sign in with Google?");
+  // The app password fallback is offered only after the browser sign-in fails.
+  expect(button("Use an app password instead")).toBeUndefined();
   await click("Sign in with Google");
   await act(async () => vi.advanceTimersByTimeAsync(1500));
-  expect(container.textContent).toContain("Google refused this sign-in.");
-  expect(container.textContent).not.toContain("Can't sign in with Google?");
+  await expectErrorDetails(
+    container,
+    "Sign-in was declined in the browser.",
+    "Google refused this sign-in.",
+  );
   await click("Use an app password instead");
   expect(input("Password or app password")).not.toBeNull();
   expect(button("Sign in with Google")).toBeUndefined();
@@ -313,7 +338,7 @@ it("saves Slack after browser sign-in and cancels a pending sign-in on unmount",
 it("does not read a failed account list as no accounts", async () => {
   vi.mocked(invoke).mockRejectedValue(new Error("Native unavailable"));
   await act(async () => root.render(createElement(EmailAccountsSettings)));
-  expect(container.textContent).toContain("Native unavailable");
+  await expectErrorDetails(container, "Could not load messaging accounts.", "Native unavailable");
   expect(container.textContent).not.toContain("No email accounts connected yet.");
   expect(container.querySelector('input[aria-label="Email address"]')).toBeNull();
 });
@@ -367,7 +392,8 @@ it("shows a sign-in start failure inline and stops", async () => {
   });
   await act(async () => root.render(createElement(TeamsSettings)));
   await click("Sign in with Microsoft");
-  expect(container.textContent).toContain("needs an app registration");
+  expect(container.textContent).toContain("Microsoft sign-in could not start.");
+  expect(await detailsText()).toContain("needs an app registration");
   expect(
     vi.mocked(invoke).mock.calls.some(([command]) => command === "messaging_microsoft_device_poll"),
   ).toBe(false);

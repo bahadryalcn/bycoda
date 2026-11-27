@@ -1,8 +1,10 @@
-import { createHash, randomUUID } from "node:crypto";
-import { lstat, readFile, readlink, mkdtemp, writeFile, rm } from "node:fs/promises";
+import { createHash, randomUUID, type Hash } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { lstat, readlink, mkdtemp, writeFile, rm } from "node:fs/promises";
+import { StringDecoder } from "node:string_decoder";
 import { join, relative, isAbsolute } from "node:path";
 import { tmpdir } from "node:os";
-import { execFileAsync } from "../../src/shared/lib/processExecution.node";
+import { hostGitExec } from "./git-exec-pool";
 import { hostGitRepositoryKey, withHostGitMutation } from "./git-mutations";
 import type { GhRuntime } from "./gh-runtime";
 import type {
@@ -92,7 +94,13 @@ const options = (cwd: string) => ({
   },
 });
 async function git(cwd: string, args: string[]): Promise<string> {
-  return (await execFileAsync("git", args, { ...options(cwd), encoding: "utf8" })).stdout;
+  return (
+    await hostGitExec.exec("git", args, {
+      ...options(cwd),
+      encoding: "utf8",
+      lane: ["push", "fetch", "ls-remote"].includes(args[0]) ? "network" : "default",
+    })
+  ).stdout;
 }
 const hash = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
 const lines = (value: string) => value.trim().split("\n").filter(Boolean);
@@ -110,28 +118,74 @@ function dirtyPaths(status: string): string[] {
   }
   return [...new Set(result)];
 }
+const STDERR_DETAIL_BYTES = 2048;
+/** Feeds a git command's stdout into `digest` as it streams, so a large diff never has to fit
+ * in a buffer. Text is decoded like the former buffered read, so fingerprints are unchanged.
+ * Any failure (exit code, deadline, spawn) rejects; the caller discards the half-fed digest. */
+async function streamGitInto(cwd: string, args: string[], digest: Hash): Promise<void> {
+  const { timeout, env } = options(cwd);
+  const decoder = new StringDecoder("utf8");
+  const errorDecoder = new StringDecoder("utf8");
+  let stderr = "";
+  await hostGitExec
+    .exec("git", args, {
+      cwd,
+      timeout,
+      env,
+      onOutput: (stream, chunk) => {
+        if (stream === "stdout") digest.update(decoder.write(chunk));
+        else if (stderr.length < STDERR_DETAIL_BYTES)
+          stderr += errorDecoder.write(chunk).slice(0, STDERR_DETAIL_BYTES - stderr.length);
+      },
+    })
+    .catch((error: Error & { code?: number | string | null; killed?: boolean }) => {
+      stderr += errorDecoder.end().slice(0, STDERR_DETAIL_BYTES - stderr.length);
+      const reason =
+        error.killed || error.code === "ETIMEDOUT"
+          ? `timed out after ${timeout / 1000} seconds`
+          : typeof error.code === "number" || error.code === null
+            ? `exited with code ${error.code}`
+            : `failed to start (${error.message})`;
+      throw new Error(
+        `Delivery could not fingerprint the checkout: \`git ${args[0]}\` ${reason}. Nothing was changed.${stderr.trim() ? ` ${stderr.trim()}` : ""}`,
+      );
+    });
+  digest.update(decoder.end());
+}
+/** Hashes a file's bytes in bounded chunks; a large untracked file is never held in memory. */
+async function streamFileInto(path: string, digest: Hash): Promise<void> {
+  for await (const chunk of createReadStream(path)) digest.update(chunk as Buffer);
+}
 /** Includes bytes, index stages and rename endpoints; status text alone misses same-status edits. */
 async function snapshot(cwd: string, protectedPaths: string[] = []) {
-  const [status, index, diff] = await Promise.all([
-    git(cwd, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
-    git(cwd, ["ls-files", "--stage", "-z"]),
-    git(cwd, ["diff", "--binary", "--no-ext-diff", "--no-textconv"]),
-  ]);
   // Do not inventory caches wholesale; ignored files that delivery would replace
   // still count as owner data and must block an overlapping merge.
-  const ignored = protectedPaths.length
-    ? await git(cwd, [
-        "ls-files",
-        "--others",
-        "--ignored",
-        "--exclude-standard",
-        "-z",
-        "--",
-        ...protectedPaths,
-      ])
-    : "";
+  const [status, index, ignored] = await Promise.all([
+    git(cwd, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
+    git(cwd, ["ls-files", "--stage", "-z"]),
+    protectedPaths.length
+      ? git(cwd, [
+          "ls-files",
+          "--others",
+          "--ignored",
+          "--exclude-standard",
+          "-z",
+          "--",
+          ...protectedPaths,
+        ])
+      : "",
+  ]).catch((error: unknown) => {
+    if ((error as { code?: unknown }).code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER")
+      throw new Error(
+        "Delivery could not fingerprint the checkout: it lists too many changed paths. Nothing was changed.",
+      );
+    throw error;
+  });
   const paths = [...new Set([...dirtyPaths(status), ...ignored.split("\0").filter(Boolean)])];
-  const digest = createHash("sha256").update(status).update(index).update(diff).update(ignored);
+  // Digest order (status, index, diff, ignored, then per-path content) is the fingerprint's identity.
+  const digest = createHash("sha256").update(status).update(index);
+  await streamGitInto(cwd, ["diff", "--binary", "--no-ext-diff", "--no-textconv"], digest);
+  digest.update(ignored);
   for (const path of paths.slice().sort()) {
     const absolute = join(cwd, path);
     const rel = relative(cwd, absolute);
@@ -144,7 +198,7 @@ async function snapshot(cwd: string, protectedPaths: string[] = []) {
     });
     if (!info) digest.update("missing");
     else if (info.isSymbolicLink()) digest.update(await readlink(absolute));
-    else if (info.isFile()) digest.update(await readFile(absolute));
+    else if (info.isFile()) await streamFileInto(absolute, digest);
     else digest.update(`other:${info.mode}`);
   }
   return { status, paths, fingerprint: digest.digest("hex") };
@@ -268,9 +322,11 @@ export class HostBranchDeliveryService implements BranchDeliveryService {
       };
       if (evidence.checks.some((check) => check.status === "failed"))
         blockers.push("Verification checks failed");
+      const planLifetimeMs = this.dependencies.planLifetimeMs ?? 300_000;
       const common = {
         token: randomUUID(),
-        expiresAt: this.now() + (this.dependencies.planLifetimeMs ?? 300_000),
+        expiresAt: this.now() + planLifetimeMs,
+        expiresInMs: planLifetimeMs,
         workspaceId: workspace.id,
         expectedRevision: workspace.revision,
         sourceBranchRef: workspace.branchRef,

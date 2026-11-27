@@ -35,12 +35,18 @@ export type WorkUsageReading = {
   provider?: string;
   accountId?: string;
   daily: WorkUsageBucket;
+  weekly: WorkUsageBucket;
   monthly: WorkUsageBucket;
 };
 
-/** Host-local calendar, matching HostLimits; Date handles DST and month length. */
+/**
+ * Host-local calendar, matching HostLimits; Date handles DST and month length.
+ * The weekly window is the Host-local ISO week: it starts Monday 00:00 and resets the next
+ * Monday 00:00 (same local-midnight rule as the daily window, so DST weeks are 167 or 169 hours).
+ */
 export function workUsageWindows(now: number): {
   daily: WorkUsageWindow;
+  weekly: WorkUsageWindow;
   monthly: WorkUsageWindow;
 } {
   if (!Number.isFinite(now)) throw new Error("Invalid Work usage clock.");
@@ -48,12 +54,17 @@ export function workUsageWindows(now: number): {
   day.setHours(0, 0, 0, 0);
   const nextDay = new Date(day);
   nextDay.setDate(nextDay.getDate() + 1);
+  const week = new Date(day);
+  week.setDate(week.getDate() - ((week.getDay() + 6) % 7));
+  const nextWeek = new Date(week);
+  nextWeek.setDate(nextWeek.getDate() + 7);
   const month = new Date(day);
   month.setDate(1);
   const nextMonth = new Date(month);
   nextMonth.setMonth(nextMonth.getMonth() + 1);
   return {
     daily: { start: day.getTime(), nextResetAt: nextDay.getTime() },
+    weekly: { start: week.getTime(), nextResetAt: nextWeek.getTime() },
     monthly: { start: month.getTime(), nextResetAt: nextMonth.getTime() },
   };
 }
@@ -135,6 +146,7 @@ export function aggregateWorkUsage(
     provider: options.provider,
     accountId: options.accountId,
     daily: bucket(windows.daily),
+    weekly: bucket(windows.weekly),
     monthly: bucket(windows.monthly),
   };
 }
@@ -149,7 +161,17 @@ export async function readWorkUsage(
   options: Parameters<typeof aggregateWorkUsage>[1],
 ): Promise<WorkUsageReading> {
   await budgets.sync();
-  const rows = await store.db.prepare("SELECT value FROM task_run_budget_ledger").all();
+  // A sealed run that settled before the earliest window starts cannot overlap any window, so
+  // only open runs and runs settled inside the monthly/weekly span are read. Runs with an
+  // invalid interval are never sealed and stay open, so they keep reporting.
+  const windows = workUsageWindows(options.now);
+  const since = Math.min(windows.weekly.start, windows.monthly.start);
+  const rows = await store.db
+    .prepare(
+      `SELECT value FROM task_run_budget_ledger WHERE sealed_settled_at IS NULL
+       UNION ALL SELECT value FROM task_run_budget_ledger WHERE sealed_settled_at>=?`,
+    )
+    .all(since);
   const runs = rows.map((row) => JSON.parse(String(row.value)) as WorkUsageRun);
   for (const run of runs) {
     if (run.provider && run.accountId) continue;

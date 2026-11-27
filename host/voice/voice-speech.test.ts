@@ -96,6 +96,45 @@ it("speaks through ElevenLabs without a Python worker and requires a stored key"
   expect(request.mock.calls[2][1]?.signal?.aborted).toBe(false);
 });
 
+const flush = () => new Promise((resolve) => setTimeout(resolve, 10));
+it("stops a slow local consumer with an explicit error instead of a silent expiry", async () => {
+  const child = worker();
+  service = new VoiceSpeechService();
+  const loading = service.start({ python: "python", ttsPath: "models" });
+  child.stdout.write('{"ready":true}\n');
+  await loading;
+  const { id } = service.speak("one", "Merhaba");
+  const write = vi.spyOn(child.stdin, "write");
+  for (let i = 0; i < 411; i++)
+    child.stdout.write(JSON.stringify({ id, audio: "AAAA", sampleRate: 48000 }) + "\n");
+  await flush();
+  expect(write).toHaveBeenCalledWith(JSON.stringify({ cancel: id }) + "\n");
+  // Queued audio is dropped: the reader sees the reason, never a stale chunk.
+  expect(await service.next("one", id)).toEqual({
+    done: true,
+    error: "Speech playback fell behind and was stopped. Try again.",
+  });
+  await expect(service.next("one", id)).rejects.toThrow("expired");
+});
+
+it("bounds queued audio by size, not only by chunk count", async () => {
+  const child = worker();
+  service = new VoiceSpeechService();
+  const loading = service.start({ python: "python", ttsPath: "models" });
+  child.stdout.write('{"ready":true}\n');
+  await loading;
+  const { id } = service.speak("one", "Merhaba");
+  // Each line stays under the per-line limit, but 40 of them exceed the audio budget.
+  const audio = "A".repeat(262_000);
+  for (let i = 0; i < 40; i++)
+    child.stdout.write(JSON.stringify({ id, audio, sampleRate: 48000 }) + "\n");
+  await flush();
+  expect(await service.next("one", id)).toEqual({
+    done: true,
+    error: "Speech playback fell behind and was stopped. Try again.",
+  });
+});
+
 it("reports ElevenLabs failures as a final chunk without leaking details", async () => {
   service = new VoiceSpeechService({
     cloudKey: async () => "key",

@@ -65,16 +65,26 @@ export default function GuidedTour({
   const ended = useRef(false);
   const navigation = useRef(0);
   const shown = useRef(false);
+  /** The settle timer that walks on after a "Try it" action; cleared whenever the tour moves on. */
+  const tryItTimer = useRef<number | null>(null);
   const latest = useRef({ steps, projectCwd, notesEnabled, onStepShown, onEnd, currentId });
   // Handlers and the async walk read the newest props and card without re-subscribing.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Mirrors the newest props into the ref the async tour walk reads.
   useLayoutEffect(() => {
     latest.current = { steps, projectCwd, notesEnabled, onStepShown, onEnd, currentId };
   });
+
+  const cancelTryIt = () => {
+    if (tryItTimer.current === null) return;
+    window.clearTimeout(tryItTimer.current);
+    tryItTimer.current = null;
+  };
 
   const end = (outcome: GuidedTourOutcome) => {
     if (ended.current) return;
     ended.current = true;
     navigation.current++;
+    cancelTryIt();
     latest.current.onEnd(outcome);
   };
 
@@ -90,6 +100,8 @@ export default function GuidedTour({
       if (token !== navigation.current || ended.current) return;
       if (target) {
         if (target !== "centered") target.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+        // Moving to another card supersedes a pending "Try it" walk; re-showing this card does not.
+        if (step.id !== latest.current.currentId) cancelTryIt();
         shown.current = true;
         setDropped(remaining);
         setCurrentId(step.id);
@@ -107,13 +119,19 @@ export default function GuidedTour({
   const indexOfCurrent = () =>
     latest.current.steps.findIndex((step) => step.id === latest.current.currentId);
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Runs the tour walk while mounted and cancels its timers and late steps on unmount.
   useEffect(() => {
+    // Set on every mount: StrictMode replays this effect after the cleanup below marked the tour ended.
+    ended.current = false;
     const start = Math.max(
       0,
       steps.findIndex((step) => step.id === startStepId),
     );
     void go(start, 1, new Set());
     return () => {
+      // Unmounted by any route (project switch, Guide, another overlay): late walks must not run.
+      ended.current = true;
+      cancelTryIt();
       navigation.current++;
     };
     // The tour starts once; later changes of `steps` only update the card text.
@@ -140,7 +158,10 @@ export default function GuidedTour({
     }
     runGuideAction(action);
     const following = indexOfCurrent() + 1;
-    window.setTimeout(() => {
+    cancelTryIt();
+    if (ended.current) return;
+    tryItTimer.current = window.setTimeout(() => {
+      tryItTimer.current = null;
       if (!ended.current) void go(following, 1, dropped);
     }, TRY_IT_SETTLE_MS);
   };
@@ -155,7 +176,7 @@ export default function GuidedTour({
     target: step.targets.length > 0 ? () => findUsageGuideTarget(step.targets) : document.body,
     placement: step.targets.length > 0 ? "auto" : "center",
     title: step.title,
-    data: { compact: true },
+    data: { compact: true, mascot: step.mascot },
     content: (
       <Text
         as="div"

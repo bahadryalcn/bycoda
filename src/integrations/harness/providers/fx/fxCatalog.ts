@@ -1,5 +1,5 @@
 import { homeDir } from "../../../../platform/tauri/fs";
-import { setHarnessModels } from "../../../../features/sessions/model/models";
+import { applyProbedCatalog } from "../../core/catalogProbe";
 import { execChild, resolveFxBinary } from "../../core/child";
 import { mergeFxCatalogModels, modelFromFxStatusOutput, modelsFromFxOutput } from "./fxProtocol";
 
@@ -8,12 +8,7 @@ let inflight: Promise<void> | null = null;
 export function refreshFxCatalog(): Promise<void> {
   if (inflight) return inflight;
   inflight = discoverFxModels()
-    .then((models) => {
-      if (models.length > 0) setHarnessModels("fx", models);
-    })
-    .catch((error: unknown) => {
-      console.debug("[bycoda] fx catalog", error);
-    })
+    .then((models) => applyProbedCatalog("fx", models))
     .finally(() => {
       inflight = null;
     });

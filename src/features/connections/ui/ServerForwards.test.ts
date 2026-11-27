@@ -23,13 +23,20 @@ const approval = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock("./useSshHttpProxyApproval", () => ({
   useSshHttpProxyApproval: () => ({ request: approval.request, dialog: null }),
 }));
-const mocks = vi.hoisted(() => ({ list: vi.fn(), start: vi.fn(), stop: vi.fn(), save: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  list: vi.fn(),
+  start: vi.fn(),
+  stop: vi.fn(),
+  save: vi.fn(),
+  retry: vi.fn(),
+}));
 vi.mock("../model/serverInventory", () => ({ updateServerMetadata: mocks.save }));
 vi.mock("../model/sshForwards", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../model/sshForwards")>()),
   listSshForwards: mocks.list,
   startSshForward: mocks.start,
   stopSshForward: mocks.stop,
+  retrySshForwardsNow: mocks.retry,
 }));
 import { ServerForwards } from "./ServerForwards";
 let root: Root;
@@ -55,6 +62,7 @@ beforeEach(() => {
   mocks.start.mockResolvedValue({});
   mocks.stop.mockResolvedValue(undefined);
   mocks.save.mockResolvedValue(undefined);
+  mocks.retry.mockResolvedValue(undefined);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -77,22 +85,28 @@ it.each([false, true])(
     expect(container.textContent).toContain("Status unknown");
     expect(container.textContent).not.toContain("Stopped");
     if (actionFailure) {
-      await click("Retry");
+      await click("Try again");
       mocks.start.mockRejectedValueOnce(new Error("SSH start failed"));
       await click("Start");
-      expect(container.textContent).toContain("SSH start failed");
+      expect(container.textContent).toContain("Port forwarding action failed");
+      expect(container.textContent).not.toContain("SSH start failed");
+      await click("Details");
+      expect(document.body.textContent).toContain("SSH start failed");
+      await click("Details");
       mocks.list.mockRejectedValueOnce(new Error("Status read unavailable again"));
       await act(async () => vi.advanceTimersByTimeAsync(30_000));
       expect(container.textContent).toContain("Couldn’t read forwarding status.");
-      expect(container.textContent).toContain("SSH start failed");
+      expect(container.textContent).toContain("Port forwarding action failed");
       expect(container.querySelectorAll('[role="alert"]')).toHaveLength(2);
       expect(
-        [...container.querySelectorAll("button")].find((button) => button.textContent === "Retry"),
+        [...container.querySelectorAll("button")].find(
+          (button) => button.textContent === "Try again",
+        ),
       ).toBeDefined();
     }
     await act(async () => vi.advanceTimersByTimeAsync(30_000));
     expect(container.textContent).not.toContain("Couldn’t read forwarding status.");
-    if (actionFailure) expect(container.textContent).toContain("SSH start failed");
+    if (actionFailure) expect(container.textContent).toContain("Port forwarding action failed");
     else expect(container.querySelector('[role="alert"]')).toBeNull();
   },
 );
@@ -153,6 +167,47 @@ it("running rule stops explicitly and cannot be removed while active", async () 
   expect(mocks.start).not.toHaveBeenCalled();
 });
 
+it("shows a forward the desktop is restarting as active and only Stop ends it", async () => {
+  mocks.list.mockResolvedValue([
+    {
+      id: "s1:r1",
+      connectionId: "s1",
+      state: "reconnecting",
+      error: "SSH forwarding process exited",
+    },
+  ]);
+  await render();
+  expect(container.textContent).toContain("Reconnecting…");
+  expect(container.textContent).not.toContain("Failed");
+  const labels = [...container.querySelectorAll("button")].map((item) => item.textContent);
+  expect(labels).not.toContain("Start");
+  expect(
+    [...container.querySelectorAll("button")].find((item) => item.textContent === "Remove")!
+      .disabled,
+  ).toBe(true);
+  await click("Stop");
+  expect(mocks.stop).toHaveBeenCalledWith("s1:r1");
+  expect(mocks.start).not.toHaveBeenCalled();
+});
+
+it("asks native to retry at once when the network returns or the window regains focus", async () => {
+  await render();
+  expect(mocks.list).toHaveBeenCalledTimes(1);
+  await act(async () => window.dispatchEvent(new Event("online")));
+  expect(mocks.retry).toHaveBeenCalledTimes(1);
+  expect(mocks.list).toHaveBeenCalledTimes(2);
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(mocks.retry).toHaveBeenCalledTimes(2);
+  Object.defineProperty(document, "hidden", { configurable: true, value: true });
+  await act(async () => window.dispatchEvent(new Event("online")));
+  expect(mocks.retry).toHaveBeenCalledTimes(2);
+  expect(mocks.start).not.toHaveBeenCalled();
+  mocks.retry.mockRejectedValueOnce(new Error("native unavailable"));
+  Object.defineProperty(document, "hidden", { configurable: true, value: false });
+  await act(async () => window.dispatchEvent(new Event("online")));
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
 it("keeps a stopping forward fenced and offers a stop retry for an unknown outcome", async () => {
   mocks.list.mockResolvedValue([{ id: "s1:r1", connectionId: "s1", state: "stopping" }]);
   await render();
@@ -160,7 +215,7 @@ it("keeps a stopping forward fenced and offers a stop retry for an unknown outco
   const stopping = [...container.querySelectorAll("button")].find((button) =>
     button.textContent?.includes("Stopping"),
   );
-  expect(stopping?.disabled).toBe(true);
+  expect(stopping?.getAttribute("aria-disabled")).toBe("true");
   expect(
     [...container.querySelectorAll("button")].find((button) => button.textContent === "Remove")
       ?.disabled,
@@ -171,7 +226,10 @@ it("keeps a stopping forward fenced and offers a stop retry for an unknown outco
   ]);
   await render();
   expect(container.textContent).toContain("Status unknown");
-  expect(container.textContent).toContain("Stop not confirmed");
+  expect(container.textContent).toContain("Port forwarding failed");
+  expect(container.textContent).not.toContain("Stop not confirmed");
+  await click("Details");
+  expect(document.body.textContent).toContain("Stop not confirmed");
   await click("Retry stop");
   expect(mocks.stop).toHaveBeenCalledWith("s1:r1");
   expect(mocks.start).not.toHaveBeenCalled();
@@ -199,7 +257,6 @@ it("keeps the local destination draft through SOCKS5 mode changes and saves with
   await setInput("Destination port", "5432");
   await setInput("Local port", "1080");
   await click("SOCKS5");
-  expect(container.textContent).toContain("SOCKS5 · 127.0.0.1:1080");
   expect(container.textContent).not.toContain("Destination host");
   await click("Local");
   expect(

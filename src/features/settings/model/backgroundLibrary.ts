@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createStore } from "../../../shared/lib/store";
@@ -128,7 +129,7 @@ export function useBackgroundLibrary(): {
             ...current,
             loaded: true,
             loading: false,
-            error: cause instanceof Error ? cause.message : String(cause),
+            error: errorText(cause),
           }));
       },
     );

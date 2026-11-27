@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
 import type { DesktopControlGuard } from "../../../features/connections/model/desktopLive";
 import {
@@ -21,8 +22,13 @@ import { hasActiveSubmit } from "../../../features/sessions/model/activeSubmits"
 import { notifyReviewChanged } from "../../../features/sessions/model/checkpoint";
 import { sessionWorkCwd, type Session } from "../../../features/sessions/model/session";
 import { remoteSessionActions } from "../../../features/connections/model/remoteSessionActions";
-import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
-import { cancelAdoptedTurn } from "../../../features/connections/model/adoptedSessionCommands";
+import { remoteSessionProject } from "../../../features/connections/model/sessionMachineTarget";
+import {
+  cancelAdoptedTurn,
+  isAdoptedTurnStopping,
+} from "../../../features/connections/model/adoptedSessionCommands";
+import { t } from "../../../shared/i18n";
+import { toast } from "../../../shared/ui/ToastRegion";
 import {
   deferUnhandledEscape,
   focusedBusyAgentSessionId,
@@ -69,14 +75,14 @@ export function useSessionStop(deps: SessionStopDeps) {
       // Crew conversations are stopped from Crews only.
       if (refuseCrewManagedSession(sessionId)) return;
       const remote = sessionsRef.current.find((s) => s.id === sessionId);
-      if (current && remote && (hostSessionBinding(remote) || remoteProjectFor(remote.cwd))) return;
+      if (current && remote && (hostSessionBinding(remote) || remoteSessionProject(remote))) return;
       // A remote desktop command has no original orchestration receipt. Hold it
       // rather than retargeting an orchestrator that appeared after the heartbeat.
       if (current && !managed && orchestrator.forSession(sessionId)) {
         if (current.stopOrchestration) void current.stopOrchestration().catch(console.error);
         return;
       }
-      if (remote && (hostSessionBinding(remote) || remoteProjectFor(remote.cwd))) {
+      if (remote && (hostSessionBinding(remote) || remoteSessionProject(remote))) {
         remoteSessionActions(sessionId)?.stop();
         return;
       }
@@ -89,6 +95,9 @@ export function useSessionStop(deps: SessionStopDeps) {
       }
       const session = sessionsRef.current.find((s) => s.id === sessionId);
       if (session?.continuingElsewhere && !session.busy) {
+        if (isAdoptedTurnStopping(sessionId)) return;
+        const toastId = `adopted-stop:${sessionId}`;
+        toast.dismiss(toastId);
         // There is no local runner to retire, but in-flight attachment preparation
         // still belongs to this generation and must not send after Stop.
         turnGen.current.set(sessionId, (turnGen.current.get(sessionId) ?? 0) + 1);
@@ -107,24 +116,19 @@ export function useSessionStop(deps: SessionStopDeps) {
           session.adoptedAuthorityGeneration,
         ).catch((error) => {
           if (turnGen.current.get(sessionId) !== stoppingGeneration) return;
-          setSessions((prev) =>
-            prev.map((entry) =>
-              entry.id === sessionId
-                ? {
-                    ...entry,
-                    blocks: [
-                      ...entry.blocks.filter((block) => block.id !== `stop-error:${sessionId}`),
-                      {
-                        id: `stop-error:${sessionId}`,
-                        role: "system" as const,
-                        notice: "error" as const,
-                        text: `Stop failed: ${error instanceof Error ? error.message : String(error)}. Try Stop again.`,
-                      },
-                    ],
-                  }
-                : entry,
-            ),
-          );
+          const latest = sessionsRef.current.find((entry) => entry.id === sessionId);
+          if (
+            !latest?.continuingElsewhere ||
+            latest.busy ||
+            latest.adoptedRunId !== session.adoptedRunId ||
+            latest.adoptedAuthorityGeneration !== session.adoptedAuthorityGeneration
+          )
+            return;
+          toast.show({
+            id: toastId,
+            tone: "warning",
+            title: t("Could not stop the turn: {p0}", { p0: errorText(error) }),
+          });
         });
         return;
       }
@@ -170,8 +174,7 @@ export function useSessionStop(deps: SessionStopDeps) {
           }
           const failure = cancellations.find((result) => result.status === "rejected");
           if (failure?.status === "rejected") {
-            const detail =
-              failure.reason instanceof Error ? failure.reason.message : String(failure.reason);
+            const detail = errorText(failure.reason);
             setSessions((prev) =>
               prev.map((s) =>
                 s.id === sessionId
@@ -292,7 +295,7 @@ export function useSessionStop(deps: SessionStopDeps) {
         !session ||
         session.continuingElsewhere ||
         hostSessionBinding(session) ||
-        remoteProjectFor(session.cwd) ||
+        remoteSessionProject(session) ||
         orchestrator.forSession(sessionId)
       )
         throw new Error("Session stop owner is unavailable in this window.");

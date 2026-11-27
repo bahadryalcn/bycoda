@@ -6,7 +6,7 @@
 .grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px 20px;
+  gap: var(--ui-space-3) var(--ui-space-5);
   align-items: start;
   min-inline-size: 0;
 }
@@ -23,17 +23,14 @@
 .switchCell {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--ui-space-2);
   min-block-size: 3.5rem;
   min-inline-size: 0;
-}
-.muted {
-  white-space: nowrap;
 }
 .range {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--ui-space-2);
   min-block-size: 3.5rem;
   min-inline-size: 0;
 }
@@ -49,12 +46,9 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 10px;
-  margin-block-start: -6px;
+  gap: var(--ui-space-2) var(--ui-space-3);
+  margin-block-start: calc(-1 * var(--ui-space-2));
   min-inline-size: 0;
-}
-.hintRow > p {
-  margin: 0;
 }
 
 /* Settings dialog: the range and its switch share the row's control column. */
@@ -63,14 +57,14 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 12px;
+  gap: var(--ui-space-3);
   inline-size: 100%;
   min-inline-size: 0;
 }
 .rangeRow {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--ui-space-2);
   flex: 1 1 14rem;
   min-inline-size: 0;
 }
@@ -81,4 +75,8 @@
 .rangeRow > .muted {
   flex: 1 1 auto;
   text-align: end;
+}
+.muted {
+  margin: 0;
+  white-space: nowrap;
 }

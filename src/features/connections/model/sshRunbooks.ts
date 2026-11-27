@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { t } from "../../../shared/i18n";
 import type { SshEndpoint } from "./serverInventory";
 import type { SshRuntimeConfiguration } from "./sshGroupDefaults";
 
@@ -186,21 +187,28 @@ export const cancelSshRunbook = (runId: string, serverId?: string) =>
   invoke<void>("ssh_runbook_cancel", { runId, ...(serverId ? { serverId } : {}) });
 
 export function sshRunReasonMessage(reason: string): string {
-  const labels: Record<string, string> = {
-    interrupted_after_restart:
-      "Execution status was recovered after restart. Check the target before another run.",
-    persistence_failed: "Status could not be saved. Verify remote state before another run.",
-    cancelled_before_start: "Cancelled before starting this target.",
-    preparation_failed: "SSH setup failed. Review the target configuration.",
-    spawn_failed: "SSH could not start. Check local SSH availability.",
-    remote_outcome_unknown: "Remote outcome is unknown. Check the target before another run.",
-    process_observation_failed: "SSH status was lost. Check the target before another run.",
-    cancel_requested_remote_outcome_unknown:
-      "Local SSH was stopped. The remote script may still be running.",
-    timeout_remote_outcome_unknown:
-      "The timeout stopped local SSH. The remote script may still be running.",
-  };
-  return labels[reason] ?? "Remote outcome is unknown. Check the target before another run.";
+  switch (reason) {
+    case "interrupted_after_restart":
+      return t(
+        "Execution status was recovered after restart. Check the target before another run.",
+      );
+    case "persistence_failed":
+      return t("Status could not be saved. Verify remote state before another run.");
+    case "cancelled_before_start":
+      return t("Cancelled before starting this target.");
+    case "preparation_failed":
+      return t("SSH setup failed. Review the target configuration.");
+    case "spawn_failed":
+      return t("SSH could not start. Check local SSH availability.");
+    case "process_observation_failed":
+      return t("SSH status was lost. Check the target before another run.");
+    case "cancel_requested_remote_outcome_unknown":
+      return t("Local SSH was stopped. The remote script may still be running.");
+    case "timeout_remote_outcome_unknown":
+      return t("The timeout stopped local SSH. The remote script may still be running.");
+    default:
+      return t("Remote outcome is unknown. Check the target before another run.");
+  }
 }
 
 export type SshRunbookIntent = {

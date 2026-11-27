@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import { spawn } from "node:child_process";
 import {
   chmod,
   link,
@@ -12,10 +11,11 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
-import { execFileAsync } from "../../src/shared/lib/processExecution.node";
+import { basename, dirname, join, relative, resolve } from "node:path";
+import { hostGitExec } from "../git/git-exec-pool";
 import { safeGitPath } from "../workspaces/workspace";
 import { writeFileAtomic } from "../storage/atomic-write";
+import { createRevertGuardSession, type RevertFileGuard } from "./session-file-revert-guard";
 import { pathKey } from "../../src/shared/lib/paths";
 import { IdentifierSchema } from "../../src/shared/model/host-contracts/schemas";
 import type { HarnessFileChange } from "../../src/integrations/harness/core/types";
@@ -187,112 +187,6 @@ export function reverseProviderUpdate(current: string, diff: string): string {
   return before.join("");
 }
 
-// Node's Windows file handles always share writes. A short-lived hidden helper
-// supplies mandatory deny-write and deny-directory-rename handles for revert only.
-// Requests travel as JSON on stdin, never interpolated into executable text.
-const WINDOWS_GUARD = `
-$ErrorActionPreference = 'Stop'
-[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
-[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
-Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-using Microsoft.Win32.SafeHandles;
-public static class RevertGuard {
-  [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
-  public static extern SafeFileHandle CreateFile(string path, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
-}
-'@
-$request = [Console]::In.ReadLine() | ConvertFrom-Json
-$held = [Collections.Generic.List[IDisposable]]::new()
-try {
-  foreach ($directory in $request.directories) {
-    $handle = [RevertGuard]::CreateFile($directory, 0x81, 3, [IntPtr]::Zero, 3, 0x02200000, [IntPtr]::Zero)
-    if ($handle.IsInvalid) { throw 'A parent directory is busy or unavailable' }
-    $held.Add($handle)
-    if (([IO.File]::GetAttributes($directory) -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'A parent is a linked directory' }
-  }
-  if ([IO.File]::Exists($request.path)) {
-    $held.Add([IO.File]::Open($request.path, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::Read -bor [IO.FileShare]::Delete)))
-  }
-  [Console]::Out.WriteLine('READY')
-  [Console]::Out.Flush()
-  [void][Console]::In.ReadLine()
-} finally {
-  foreach ($handle in $held) { $handle.Dispose() }
-}
-`;
-export async function acquireRevertFileGuard(cwd: string, abs: string) {
-  if (process.platform !== "win32") return { check() {}, async release() {} };
-  const directories: string[] = [];
-  let parent = dirname(abs);
-  for (;;) {
-    directories.unshift(parent);
-    if (parent === cwd) break;
-    const next = dirname(parent);
-    if (next === parent) throw new Error("Path is outside the checkout");
-    parent = next;
-  }
-  const child = spawn(
-    "powershell.exe",
-    ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", WINDOWS_GUARD],
-    { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] },
-  );
-  let closed = false;
-  let detail = "";
-  const completion = new Promise<void>((resolve) =>
-    child.once("close", () => {
-      closed = true;
-      resolve();
-    }),
-  );
-  child.stderr.on("data", (bytes) => {
-    if (detail.length < 4000) detail += String(bytes);
-  });
-  child.stdin.on("error", () => {});
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        child.kill();
-        reject(new Error("File guard timed out"));
-      }, 15_000);
-      const finish = (error?: Error) => {
-        clearTimeout(timeout);
-        if (error) reject(error);
-        else resolve();
-      };
-      let output = "";
-      child.stdout.on("data", (bytes) => {
-        output += String(bytes);
-        if (output.includes("READY")) finish();
-      });
-      child.once("error", (error) => finish(error));
-      child.once("close", () =>
-        finish(
-          new Error(
-            "File is open for writing or its directory is busy" +
-              (detail ? `: ${detail.trim()}` : ""),
-          ),
-        ),
-      );
-      child.stdin.write(JSON.stringify({ directories, path: abs }) + "\n");
-    });
-  } catch (error) {
-    child.stdin.end();
-    await completion;
-    throw error;
-  }
-  return {
-    check() {
-      if (closed) throw new Error("File guard exited during revert");
-    },
-    async release() {
-      child.stdin.end("\n");
-      await completion;
-    },
-  };
-}
-
 /** Reject every symlink component (including links within the checkout), nested
  * repositories, and hard links. Restoring an alias must never modify another path. */
 async function filePath(cwd: string, path: string) {
@@ -348,7 +242,44 @@ export class SessionFileRevert {
     private root: string,
     private budget = MAX_HISTORY,
     private readonly authority?: FileRevertAuthority,
+    /** Host storage (database files and folders) that a workspace may contain; never captured. */
+    private readonly hostOwned: readonly string[] = [],
   ) {}
+  private hostOwnedCanonical?: Promise<string[]>;
+  /** Canonical Host-owned paths; a sidecar that does not exist yet resolves by its folder. */
+  private ownedPaths(): Promise<string[]> {
+    this.hostOwnedCanonical ??= Promise.all(
+      [this.root, ...this.hostOwned].map((path) =>
+        realpath(path).catch(() =>
+          realpath(dirname(path)).then(
+            (folder) => join(folder, basename(path)),
+            () => resolve(path),
+          ),
+        ),
+      ),
+    );
+    return this.hostOwnedCanonical;
+  }
+  /** True for a workspace path that is, or lies inside, the Host's own storage. */
+  async isHostOwned(cwd: string, path: string): Promise<boolean> {
+    const key = pathKey(join(cwd, path));
+    return (await this.ownedPaths()).some((owned) => {
+      const root = pathKey(owned);
+      return key === root || key.startsWith(`${root}/`);
+    });
+  }
+  /** Host-owned paths inside `cwd`, relative with forward slashes (for Git pathspec excludes). */
+  async hostOwnedWithin(cwd: string): Promise<string[]> {
+    const base = pathKey(cwd);
+    return (await this.ownedPaths())
+      .filter((owned) => pathKey(owned).startsWith(`${base}/`))
+      .map((owned) => relative(cwd, owned).replace(/\\/g, "/"));
+  }
+  private async withoutHostOwned(cwd: string, paths: string[]): Promise<string[]> {
+    const kept: string[] = [];
+    for (const path of paths) if (!(await this.isHostOwned(cwd, path))) kept.push(path);
+    return kept;
+  }
   private path(session: string) {
     return join(this.root, validId(session), "file-history.json");
   }
@@ -634,8 +565,10 @@ export class SessionFileRevert {
     await this.writeIndex(session, history.cwd, entries, previous);
   }
   private async paths(cwd: string): Promise<string[]> {
+    // A workspace inside the Host's own storage has nothing to capture.
+    if (await this.isHostOwned(cwd, "")) return [];
     try {
-      const result = await execFileAsync(
+      const result = await hostGitExec.exec(
         "git",
         ["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "."],
         {
@@ -646,15 +579,17 @@ export class SessionFileRevert {
           timeout: 15_000,
         },
       );
-      return [...new Set(result.stdout.split("\0").filter(Boolean))];
+      return this.withoutHostOwned(cwd, [...new Set(result.stdout.split("\0").filter(Boolean))]);
     } catch (error) {
       if (!String((error as { stderr?: string }).stderr).includes("not a git repository"))
         throw error;
       const paths: string[] = [];
+      const owned = new Set((await this.ownedPaths()).map(pathKey));
       const walk = async (dir: string) => {
         for (const entry of await readdir(dir, { withFileTypes: true })) {
           if ([".git", "node_modules", "temp", "target"].includes(entry.name)) continue;
           const path = join(dir, entry.name);
+          if (entry.isDirectory() && owned.has(pathKey(path))) continue;
           if (entry.isFile()) paths.push(relative(cwd, path).replace(/\\/g, "/"));
           else if (entry.isDirectory()) {
             if (
@@ -670,7 +605,7 @@ export class SessionFileRevert {
         }
       };
       await walk(cwd);
-      return paths;
+      return this.withoutHostOwned(cwd, paths);
     }
   }
   async begin(session: string, cwd: string, turnId: string, userBlockId = turnId) {
@@ -732,6 +667,8 @@ export class SessionFileRevert {
     if (!active || active.turn.id !== turnId || active.cwd !== (await realpath(cwd))) return;
     for (const path of paths) {
       const normalized = relative(active.cwd, await filePath(active.cwd, path)).replace(/\\/g, "/");
+      // Host storage is never read here, even when a provider names it.
+      if (await this.isHostOwned(active.cwd, normalized)) continue;
       const before = await image(active.cwd, normalized);
       if (active.claimed.has(normalized) && !same(active.claimed.get(normalized)!, before))
         active.conflicts.add(normalized);
@@ -743,6 +680,7 @@ export class SessionFileRevert {
     if (!active || active.turn.id !== turnId || active.cwd !== (await realpath(cwd))) return;
     for (const path of paths) {
       const normalized = relative(active.cwd, await filePath(active.cwd, path)).replace(/\\/g, "/");
+      if (await this.isHostOwned(active.cwd, normalized)) continue;
       active.claimed.set(normalized, await image(active.cwd, normalized));
     }
   }
@@ -777,6 +715,7 @@ export class SessionFileRevert {
           /\\/g,
           "/",
         );
+        if (await this.isHostOwned(active.cwd, path)) continue;
         if (
           typeof change.contents !== "string" ||
           Buffer.byteLength(change.contents) > MAX_FILE ||
@@ -810,7 +749,7 @@ export class SessionFileRevert {
             // overwritten one, so absence there cannot authorize deletion.
             let knownNonIgnored = false;
             try {
-              await execFileAsync("git", ["check-ignore", "-q", "--no-index", "--", path], {
+              await hostGitExec.exec("git", ["check-ignore", "-q", "--no-index", "--", path], {
                 cwd: active.cwd,
                 windowsHide: true,
                 encoding: "utf8",
@@ -958,6 +897,8 @@ export class SessionFileRevert {
     return { files, unavailable };
   }
   private async conflict(cwd: string, path: string, revision: FileRevision) {
+    // History recorded before this guard can name Host storage; it is never read or restored.
+    if (await this.isHostOwned(cwd, path)) return "Host storage is never reverted";
     if (revision.conflict) return revision.conflict;
     try {
       if (!same(await image(cwd, path), revision.after)) return "File changed outside this session";
@@ -1038,82 +979,88 @@ export class SessionFileRevert {
       throw new Error("File revert preview changed; review it again before reverting files");
     const result = { reverted: [] as string[], skipped: [] as { path: string; reason: string }[] };
     let authorityFailure: FileRevertAuthorityError | undefined;
-    for (const [path, revision] of selection.files) {
-      let rescue: string | undefined;
-      let staged: string | undefined;
-      let guard: Awaited<ReturnType<typeof acquireRevertFileGuard>> | undefined;
-      try {
-        const conflict = await this.conflict(cwd, path, revision);
-        if (conflict) throw new Error(conflict);
-        let abs = await filePath(cwd, path);
-        await assertFileRevertAuthority(this.authority, session, generation);
-        await mkdir(dirname(abs), { recursive: true });
-        guard = await acquireRevertFileGuard(cwd, abs);
-        guard.check();
-        if (revision.before) {
+    // One guard helper serves every file of this revert (one process start on Windows).
+    const guards = createRevertGuardSession(cwd);
+    try {
+      for (const [path, revision] of selection.files) {
+        let rescue: string | undefined;
+        let staged: string | undefined;
+        let guard: RevertFileGuard | undefined;
+        try {
+          const conflict = await this.conflict(cwd, path, revision);
+          if (conflict) throw new Error(conflict);
+          let abs = await filePath(cwd, path);
           await assertFileRevertAuthority(this.authority, session, generation);
-          staged = join(dirname(abs), `.bycoda-restore-${randomUUID()}`);
-          await writeFile(staged, Buffer.from(revision.before.raw, "base64"), { flag: "wx" });
-          if (process.platform !== "win32") await chmod(staged, revision.before.mode);
-        }
-        // Revalidate after asynchronous preparation. Atomically take possession of
-        // the current directory entry, then validate the captured contents again.
-        abs = await filePath(cwd, path);
-        const again = await this.conflict(cwd, path, revision);
-        if (again) throw new Error(again);
-        guard.check();
-        if (revision.after) {
-          const rescuePath = join(dirname(abs), `.bycoda-rescue-${randomUUID()}`);
+          await mkdir(dirname(abs), { recursive: true });
+          guard = await guards.acquire(abs);
+          guard.check();
+          if (revision.before) {
+            await assertFileRevertAuthority(this.authority, session, generation);
+            staged = join(dirname(abs), `.bycoda-restore-${randomUUID()}`);
+            await writeFile(staged, Buffer.from(revision.before.raw, "base64"), { flag: "wx" });
+            if (process.platform !== "win32") await chmod(staged, revision.before.mode);
+          }
+          // Revalidate after asynchronous preparation. Atomically take possession of
+          // the current directory entry, then validate the captured contents again.
+          abs = await filePath(cwd, path);
+          const again = await this.conflict(cwd, path, revision);
+          if (again) throw new Error(again);
+          guard.check();
+          if (revision.after) {
+            const rescuePath = join(dirname(abs), `.bycoda-rescue-${randomUUID()}`);
+            await assertFileRevertAuthority(this.authority, session, generation);
+            await rename(abs, rescuePath);
+            rescue = rescuePath;
+            const held = await image(cwd, relative(cwd, rescue));
+            if (!same(held, revision.after)) throw new Error("File changed during revert");
+          }
+          // link is exclusive: never replace a new file written during this window.
+          guard.check();
+          await filePath(cwd, path);
           await assertFileRevertAuthority(this.authority, session, generation);
-          await rename(abs, rescuePath);
-          rescue = rescuePath;
-          const held = await image(cwd, relative(cwd, rescue));
-          if (!same(held, revision.after)) throw new Error("File changed during revert");
-        }
-        // link is exclusive: never replace a new file written during this window.
-        guard.check();
-        await filePath(cwd, path);
-        await assertFileRevertAuthority(this.authority, session, generation);
-        if (staged) await link(staged, abs);
-        else if (
-          await lstat(abs).then(
-            () => true,
-            (e: NodeJS.ErrnoException) => {
-              if (e.code === "ENOENT") return false;
-              throw e;
-            },
+          if (staged) await link(staged, abs);
+          else if (
+            await lstat(abs).then(
+              () => true,
+              (e: NodeJS.ErrnoException) => {
+                if (e.code === "ENOENT") return false;
+                throw e;
+              },
+            )
           )
-        )
-          throw new Error("File changed during revert");
-        if (rescue) {
-          await rm(rescue);
-          rescue = undefined;
-        }
-        result.reverted.push(path);
-        onReverted?.(path, revision.before);
-      } catch (error) {
-        let reason = message(error);
-        if (rescue) {
-          try {
-            await link(rescue, await filePath(cwd, path));
+            throw new Error("File changed during revert");
+          if (rescue) {
             await rm(rescue);
-          } catch {
-            reason += `; original preserved at ${rescue}`;
+            rescue = undefined;
+          }
+          result.reverted.push(path);
+          onReverted?.(path, revision.before);
+        } catch (error) {
+          let reason = message(error);
+          if (rescue) {
+            try {
+              await link(rescue, await filePath(cwd, path));
+              await rm(rescue);
+            } catch {
+              reason += `; original preserved at ${rescue}`;
+            }
+          }
+          if (error instanceof FileRevertAuthorityError) {
+            authorityFailure = new FileRevertAuthorityError(reason);
+            result.skipped.push({ path, reason });
+            break;
+          }
+          result.skipped.push({ path, reason });
+        } finally {
+          try {
+            if (staged) await rm(staged, { force: true });
+          } finally {
+            await guard?.release();
           }
         }
-        if (error instanceof FileRevertAuthorityError) {
-          authorityFailure = new FileRevertAuthorityError(reason);
-          result.skipped.push({ path, reason });
-          break;
-        }
-        result.skipped.push({ path, reason });
-      } finally {
-        try {
-          if (staged) await rm(staged, { force: true });
-        } finally {
-          await guard?.release();
-        }
       }
+    } finally {
+      await guards.close();
     }
     // Remove only successfully reverted paths from the selected turns. Retain
     // skipped history so a later retry can explain the same conflict honestly.

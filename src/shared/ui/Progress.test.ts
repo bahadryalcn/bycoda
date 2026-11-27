@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -98,15 +99,31 @@ describe("shared title and status renderers", () => {
     }
   });
 
-  it("keeps pane title semantics while sharing item typography", () => {
+  it("keeps pane title semantics while using shared section typography", () => {
     const pane = render(
       createElement(PaneHeader, { title: "Files", titleAs: "div", titleId: "files" }),
     );
     expect(pane.querySelector("#files")?.tagName).toBe("DIV");
-    expect(pane.querySelector("#files")?.getAttribute("data-size")).toBe("item");
+    expect(pane.querySelector("#files")?.getAttribute("data-size")).toBe("section");
     const panel = render(createElement(PanelHeader, { title: "Settings", titleId: "settings" }));
     expect(panel.querySelector("#settings")?.tagName).toBe("H2");
     expect(panel.querySelector("#settings")?.getAttribute("data-size")).toBe("page");
+  });
+
+  it("makes only a pane header with an overflow menu a size container", () => {
+    // Size containment drops the content width: a plain header sized by its content (the tools
+    // dock overlays it absolutely) would collapse and push its close button out of view.
+    const plain = render(createElement(PaneHeader, { title: "Tools", actions: "Close" }));
+    expect(plain.firstElementChild?.hasAttribute("data-pane-header-collapsible")).toBe(false);
+    const collapsible = render(
+      createElement(PaneHeader, { title: "Workspace", actions: "Close", overflow: "More" }),
+    );
+    expect(collapsible.firstElementChild?.hasAttribute("data-pane-header-collapsible")).toBe(true);
+    const css = readFileSync("src/shared/ui/PaneHeader.module.css", "utf8");
+    const containers = Array.from(css.matchAll(/([^{}/]+)\{[^{}]*\bcontainer:/g), (match) =>
+      match[1].trim(),
+    );
+    expect(containers).toEqual([".header[data-pane-header-collapsible]"]);
   });
 
   it("uses the shared capped count in section structure", () => {

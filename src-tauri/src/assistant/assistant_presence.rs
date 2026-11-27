@@ -4,13 +4,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
+    Arc, Condvar, Mutex,
 };
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
 const EVENT: &str = "assistant_presence_state";
 const DEADLINE: Duration = Duration::from_secs(4);
+const HEARTBEAT: Duration = Duration::from_secs(5);
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Choice {
@@ -99,7 +100,6 @@ impl Core {
         if generation != self.generation {
             return;
         }
-        self.view.revision += 1;
         match result {
             Ok(status) => {
                 self.view.status = Some(status);
@@ -119,6 +119,14 @@ impl Core {
             }
         }
     }
+    /// Bumps the revision only when the view moved, so an unchanged heartbeat is not a new state.
+    fn commit(&mut self, before: &View) -> bool {
+        let changed = self.view != *before;
+        if changed {
+            self.view.revision += 1;
+        }
+        changed
+    }
 }
 #[derive(Default)]
 struct Owned {
@@ -129,6 +137,19 @@ struct Owned {
 struct State {
     owned: Mutex<Owned>,
     running: AtomicBool,
+    // Shutdown clears `running` under `stop` and notifies `wake`, so the heartbeat exits at once.
+    stop: Mutex<()>,
+    wake: Condvar,
+}
+
+impl State {
+    fn stop_heartbeat(&self) {
+        {
+            let _guard = self.stop.lock().unwrap_or_else(|error| error.into_inner());
+            self.running.store(false, Ordering::Release);
+        }
+        self.wake.notify_all();
+    }
 }
 fn publish(app: &AppHandle) {
     let Some(state) = app.try_state::<State>() else {
@@ -177,11 +198,12 @@ fn refresh(app: &AppHandle) -> Result<View, String> {
         NativeServiceChannel::connect_until(app, Some(Instant::now() + DEADLINE))
     });
     let result = source.as_ref().map_err(Clone::clone).and_then(read);
-    let view = {
+    let (view, changed) = {
         let mut owned = state
             .owned
             .lock()
             .map_err(|_| "Availability is unavailable")?;
+        let before = owned.core.view.clone();
         if owned.core.generation == generation {
             if let Ok(source) = source {
                 if !owned
@@ -199,9 +221,12 @@ fn refresh(app: &AppHandle) -> Result<View, String> {
             }
             owned.core.finish(generation, result, false);
         }
-        owned.core.view.clone()
+        let changed = owned.core.commit(&before);
+        (owned.core.view.clone(), changed)
     };
-    publish(app);
+    if changed {
+        publish(app);
+    }
     Ok(view)
 }
 pub(crate) fn init(app: &AppHandle) -> Result<(), String> {
@@ -213,14 +238,7 @@ pub(crate) fn init(app: &AppHandle) -> Result<(), String> {
         .spawn(move || {
             let _ = refresh(&app);
             let mut last_connect = Instant::now();
-            let mut ticks = 0;
-            while app.state::<State>().running.load(Ordering::Acquire) {
-                std::thread::sleep(Duration::from_millis(250));
-                ticks += 1;
-                if ticks < 20 {
-                    continue;
-                }
-                ticks = 0;
+            while wait_heartbeat(&app) {
                 let current = {
                     let state = app.state::<State>();
                     let Ok(owned) = state.owned.lock() else {
@@ -238,10 +256,15 @@ pub(crate) fn init(app: &AppHandle) -> Result<(), String> {
                 match current.1 {
                     Some(source) => {
                         let result = read(&source);
+                        let mut changed = false;
                         if let Ok(mut owned) = app.state::<State>().owned.lock() {
+                            let before = owned.core.view.clone();
                             owned.core.finish(current.0, result, false);
+                            changed = owned.core.commit(&before);
                         }
-                        publish(&app);
+                        if changed {
+                            publish(&app);
+                        }
                     }
                     // The Host was not up at start or restarted (every local update does):
                     // reconnect so the mark does not stay Offline until a menu opens. The new
@@ -263,9 +286,18 @@ const RECONNECT_EVERY: Duration = Duration::from_secs(15);
 fn heartbeat_reconnects(write_error: bool, since_last: Duration) -> bool {
     !write_error && since_last >= RECONNECT_EVERY
 }
+/// Sleeps one full heartbeat; returns false once shutdown has cleared the running flag.
+fn wait_heartbeat(app: &AppHandle) -> bool {
+    let state = app.state::<State>();
+    let guard = state.stop.lock().unwrap_or_else(|error| error.into_inner());
+    let _ = state
+        .wake
+        .wait_timeout_while(guard, HEARTBEAT, |_| state.running.load(Ordering::Acquire));
+    state.running.load(Ordering::Acquire)
+}
 pub(crate) fn shutdown(app: &AppHandle) {
     if let Some(state) = app.try_state::<State>() {
-        state.running.store(false, Ordering::Release);
+        state.stop_heartbeat();
     }
 }
 fn viewer(window: &WebviewWindow) -> Result<(), String> {
@@ -349,7 +381,9 @@ pub(crate) async fn set_captured(
             .owned
             .lock()
             .map_err(|_| "Availability is unavailable")?;
+        let before = owned.core.view.clone();
         owned.core.finish(generation, result, true);
+        owned.core.commit(&before);
         owned.core.view.clone()
     };
     publish(&app);
@@ -461,10 +495,68 @@ mod tests {
         assert_eq!(idle.selected(), None);
     }
     #[test]
+    fn unchanged_heartbeat_is_not_a_new_revision() {
+        let mut core = ready();
+        let before = core.view.clone();
+        let same = core.view.status.clone().unwrap();
+        core.finish(core.generation, Ok(same), false);
+        assert!(!core.commit(&before));
+        assert_eq!(core.view, before);
+    }
+    #[test]
+    fn repeated_offline_read_is_not_republished() {
+        let mut core = ready();
+        core.finish(core.generation, Err("timeout".into()), false);
+        let before = core.view.clone();
+        core.finish(core.generation, Err("timeout".into()), false);
+        assert!(!core.commit(&before));
+        assert_eq!(core.view.revision, before.revision);
+    }
+    #[test]
+    fn changed_heartbeat_bumps_revision_once() {
+        let mut core = ready();
+        let before = core.view.clone();
+        core.finish(
+            core.generation,
+            Ok(Status {
+                state: Presence::Away,
+                setup_complete: true,
+                assistant_name: Some("Arif".into()),
+                choice: None,
+            }),
+            false,
+        );
+        assert!(core.commit(&before));
+        assert_eq!(core.view.revision, before.revision + 1);
+    }
+    #[test]
     fn heartbeat_reconnects_lost_source_but_not_over_unconfirmed_write() {
         assert!(heartbeat_reconnects(false, RECONNECT_EVERY));
         assert!(!heartbeat_reconnects(false, Duration::from_secs(5)));
         assert!(!heartbeat_reconnects(true, Duration::from_secs(60)));
+    }
+
+    #[test]
+    fn shutdown_wakes_a_waiting_heartbeat() {
+        let state = State::default();
+        state.running.store(true, Ordering::Release);
+        std::thread::scope(|scope| {
+            let (waiting, ready) = std::sync::mpsc::channel();
+            let state = &state;
+            let waiter = scope.spawn(move || {
+                let guard = state.stop.lock().unwrap();
+                waiting.send(()).unwrap();
+                let (_guard, result) = state
+                    .wake
+                    .wait_timeout_while(guard, HEARTBEAT, |_| state.running.load(Ordering::Acquire))
+                    .unwrap();
+                assert!(!result.timed_out());
+                assert!(!state.running.load(Ordering::Acquire));
+            });
+            ready.recv().unwrap();
+            state.stop_heartbeat();
+            waiter.join().unwrap();
+        });
     }
     #[test]
     fn strict_status_and_finite_choices() {

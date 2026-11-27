@@ -1,23 +1,35 @@
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { PickerList, PopoverSearchHeader, usePickerList } from "../../../shared/ui/picker";
-import { useT } from "../../../shared/i18n";
-import { useRef, useState } from "react";
-import { basename, pickFolders } from "../../../platform/tauri/fs";
-import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
-import { pathKey, prettyCwd } from "../../../shared/lib/paths";
-import { Folder, Plus } from "../../../shared/ui/icons";
-import { Popover } from "../../../shared/ui/Popover";
 import {
+  PickerFooter,
+  PickerList,
+  PopoverSearchHeader,
+  usePickerList,
+} from "../../../shared/ui/picker";
+import { useT, type t as Translate } from "../../../shared/i18n";
+import { useRef, useState, useSyncExternalStore } from "react";
+import { basename, pickFolders } from "../../../platform/tauri/fs";
+import { pathKey, prettyCwd } from "../../../shared/lib/paths";
+import { Folder, Plus, RotateCcw } from "../../../shared/ui/icons";
+import { Popover } from "../../../shared/ui/Popover";
+import { useRemoteMachines } from "../../connections/public/connections";
+import { pickFolderOnMachine } from "../../connections/public/machineFolderPick";
+import { parseRemotePath, useRemoteProjectsOn } from "../../connections/public/remoteProjects";
+import {
+  MAX_PROJECT_REPOSITORIES,
   additionalDirsForSession,
+  addProjectFolder,
   loadAdditionalDirs,
+  loadProjectRepositoryChoice,
+  saveProjectRepositoryChoice,
   saveSessionAdditionalDirs,
   useSessionAdditionalDirs,
 } from "../../projects/public/additionalDirs";
 import {
   isLocalProject,
   loadRecents,
+  subscribeProjectPathsChanged,
   useRecents,
   type RecentProject,
 } from "../../projects/public/recents";
@@ -54,50 +66,53 @@ function candidatesFrom(
 }
 
 type FolderPick = {
-  choosingProject: boolean;
-  sessionId: string;
-  project: string;
+  t: typeof Translate;
+  /** Title of the native folder dialog. */
+  title: string;
+  /** Where the picked folders are kept: the session's folders, or the project's list in worktree mode. */
+  target: { sessionId: string; project: string; worktreeMode: boolean };
   pickingRef: { current: boolean };
   setPicking: (picking: boolean) => void;
-  setError: (message: string | undefined) => void;
+  setProblem: (message: string | undefined) => void;
   setOpen: (open: boolean) => void;
-  changeProject: (path: string) => void;
 };
+
+/** Records picked folders in the session, or in the project's own list when repositories are chosen. */
+function appendPicked(target: FolderPick["target"], paths: readonly string[]): void {
+  const { sessionId, project, worktreeMode } = target;
+  if (!worktreeMode) {
+    // Read again after the native dialog: another window may have changed the selection.
+    saveSessionAdditionalDirs(sessionId, project, [
+      ...additionalDirsForSession(sessionId, project),
+      ...paths,
+    ]);
+    return;
+  }
+  for (const path of paths) addProjectFolder(project, path);
+}
 
 /** The native folder dialog and what follows; outside the component so its `try` stays out of render code. */
 async function pickSessionFolders({
-  choosingProject,
-  sessionId,
-  project,
+  t,
+  title,
+  target,
   pickingRef,
   setPicking,
-  setError,
+  setProblem,
   setOpen,
-  changeProject,
 }: FolderPick): Promise<void> {
   try {
-    const selected = await pickFolders(
-      choosingProject ? "Choose session project" : "Add folders to this session",
-      !choosingProject,
-    );
+    const selected = await pickFolders(title, true);
     if (selected.length === 0) return;
     if (selected.some((path) => !isLocalProject(path))) {
-      setError("Choose a local project folder rather than your home or drive root.");
+      setProblem(t("Choose a local project folder rather than your home or drive root."));
       setOpen(true);
       return;
     }
-    if (choosingProject) {
-      changeProject(selected[0]!);
-    } else {
-      // Read again after the native dialog: another window may have changed the selection.
-      saveSessionAdditionalDirs(sessionId, project, [
-        ...additionalDirsForSession(sessionId, project),
-        ...selected,
-      ]);
-      setOpen(true);
-    }
+    appendPicked(target, selected);
+    setOpen(true);
   } catch {
-    setError("Could not open the folder picker. Please try again.");
+    setProblem(t("Could not open the folder picker. Please try again."));
     setOpen(true);
   } finally {
     pickingRef.current = false;
@@ -105,10 +120,44 @@ async function pickSessionFolders({
   }
 }
 
+/** The folder browser of the session's machine; it registers the folder as a project there. */
+async function pickRemoteSessionFolder({
+  t,
+  machineId,
+  target,
+  pickingRef,
+  setPicking,
+  setProblem,
+  setOpen,
+}: FolderPick & { machineId: string }): Promise<void> {
+  try {
+    const key = await pickFolderOnMachine({ kind: "remote", machineId });
+    if (key) appendPicked(target, [key]);
+    setOpen(true);
+  } catch {
+    setProblem(t("Could not open the folder picker. Please try again."));
+    setOpen(true);
+  } finally {
+    pickingRef.current = false;
+    setPicking(false);
+  }
+}
+
+const DIR_PREFIX = "dir:";
+
+/** Repositories in the label: all, none or a count of the project's folders. */
+function repositoriesLabel(t: typeof Translate, chosen: number, total: number): string {
+  if (total === 0) return t("Repositories");
+  if (chosen === 0) return t("No repositories");
+  if (chosen === total) return t("All repositories");
+  return t("{p0} repositories", { p0: chosen });
+}
+
 /**
- * The working folder is always included; extra folders are scoped to this session.
- * @use Session-only folder selection plus native folder browsing, using shared picker primitives.
- * @avoid Plain project selection: SearchableSelect.
+ * The session's folders chip. In a new worktree it lists the project's folders as repositories
+ * (each gets its own worktree); otherwise it lists the other folders the session also works in.
+ * @use Choosing the other folders a session works in, and adding folders to the project.
+ * @avoid Choosing the project: SearchableProjectPicker. Plain selection: SearchableSelect.
  * @replaces Local folder option rows and search field.
  */
 export function SessionDirsPicker({
@@ -116,7 +165,7 @@ export function SessionDirsPicker({
   project,
   workingDirectory = project,
   recents,
-  onProjectChange,
+  worktreeMode = false,
   enabled = true,
   onClose,
 }: {
@@ -124,147 +173,182 @@ export function SessionDirsPicker({
   project: string;
   workingDirectory?: string;
   recents?: readonly RecentProject[];
-  onProjectChange?: (path: string) => void;
+  /** A new worktree is chosen: the chip picks the repositories that each get one. */
+  worktreeMode?: boolean;
   enabled?: boolean;
   onClose?: () => void;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<"folders" | "project">("folders");
   const [query, setQuery] = useState("");
   const [picking, setPicking] = useState(false);
   const pickingRef = useRef(false);
-  const [error, setError] = useState<string>();
+  const [problem, setProblem] = useState<string>();
+  const disabledReason = enabled ? undefined : t("Folders cannot be changed right now.");
   const root = useRef<HTMLDivElement>(null);
   const { overridden, dirs, projectDirs } = useSessionAdditionalDirs(sessionId, project);
+  // The remembered repository choice is stored beside the folder list and changes with it.
+  const choiceText = useSyncExternalStore(
+    subscribeProjectPathsChanged,
+    () => JSON.stringify(loadProjectRepositoryChoice(project)),
+    () => "[]",
+  );
+  const chosenRepos = JSON.parse(choiceText) as string[];
+  const chosenKeys = new Set(chosenRepos.map(pathKey));
   const storedRecents = useRecents();
-  const extras = dirs.filter((path) => pathKey(path) !== pathKey(workingDirectory));
-  const effective = uniquePaths([workingDirectory, ...extras]);
-  const effectiveKeys = new Set(effective.map(pathKey));
+  // A session on another machine picks among that machine's projects and folders.
+  const remoteOwner = parseRemotePath(project);
+  const rememberedRemote = useRemoteProjectsOn(remoteOwner?.environmentId);
+  const { machines } = useRemoteMachines(!!remoteOwner);
+  const machineId = remoteOwner
+    ? machines.find((machine) => machine.environmentId === remoteOwner.environmentId)?.id
+    : undefined;
+  const shown = (path: string) => parseRemotePath(path)?.hostPath ?? prettyCwd(path);
+  const isFixed = (path: string) =>
+    pathKey(path) === pathKey(project) || pathKey(path) === pathKey(workingDirectory);
+  const extras = dirs.filter((path) => !isFixed(path));
+  const extraKeys = new Set(extras.map(pathKey));
   const candidates = uniquePaths([
-    workingDirectory,
+    project,
     ...extras,
-    ...candidatesFrom(project, projectDirs, recents ?? storedRecents),
+    ...(remoteOwner
+      ? rememberedRemote.map((remote) => remote.key)
+      : candidatesFrom(project, projectDirs, recents ?? storedRecents)),
   ]);
   const needle = query.trim().toLocaleLowerCase();
-  const matching = candidates.filter(
-    (path) =>
-      path.toLocaleLowerCase().includes(needle) &&
-      (mode === "project" ||
-        pathKey(path) !== pathKey(project) ||
-        pathKey(path) === pathKey(workingDirectory)),
-  );
-  const label =
-    effective.length === 1
-      ? basename(workingDirectory) || prettyCwd(workingDirectory)
-      : `${effective.length} folders`;
-  const browserLabel = IS_MAC ? "Finder" : IS_WIN ? "Explorer" : "file manager";
+  const matching = candidates.filter((path) => path.toLocaleLowerCase().includes(needle));
+  const worktreeMatching = worktreeMode
+    ? projectDirs.filter((path) => path.toLocaleLowerCase().includes(needle))
+    : matching;
+  const name = (path: string) => basename(shown(path)) || shown(path);
+  const label = worktreeMode
+    ? repositoriesLabel(t, chosenRepos.length, projectDirs.length)
+    : extras.length > 0
+      ? t("Also work in +{p0}", { p0: extras.length })
+      : t("Also work in");
 
   const toggle = (path: string) => {
-    if (pathKey(path) === pathKey(workingDirectory)) return;
-    const next = effectiveKeys.has(pathKey(path))
+    if (worktreeMode) {
+      if (chosenKeys.has(pathKey(path)))
+        saveProjectRepositoryChoice(
+          project,
+          chosenRepos.filter((dir) => pathKey(dir) !== pathKey(path)),
+        );
+      else if (chosenRepos.length < MAX_PROJECT_REPOSITORIES)
+        saveProjectRepositoryChoice(project, [...chosenRepos, path]);
+      return;
+    }
+    const next = extraKeys.has(pathKey(path))
       ? extras.filter((dir) => pathKey(dir) !== pathKey(path))
       : [...extras, path];
     saveSessionAdditionalDirs(sessionId, project, next);
   };
+  const selectRepositories = (all: boolean) =>
+    saveProjectRepositoryChoice(project, all ? projectDirs.slice(0, MAX_PROJECT_REPOSITORIES) : []);
+  const target = { sessionId, project, worktreeMode };
+  const pickTitle = worktreeMode
+    ? t("Add folders to this project")
+    : t("Add folders to this session");
 
   const dismiss = (restore: boolean) => {
     setOpen(false);
     if (restore) onClose?.();
   };
 
-  const changeProject = (path: string) => {
-    if (!enabled || !onProjectChange) return;
-    dismiss(true);
-    onProjectChange(path);
-  };
-
   const browse = async () => {
     if (pickingRef.current || !enabled) return;
     pickingRef.current = true;
-    const choosingProject = mode === "project";
     setPicking(true);
-    setError(undefined);
+    setProblem(undefined);
+    if (remoteOwner) {
+      await pickRemoteSessionFolder({
+        t,
+        title: pickTitle,
+        target,
+        machineId: machineId ?? "",
+        pickingRef,
+        setPicking,
+        setProblem,
+        setOpen,
+      });
+      return;
+    }
     await pickSessionFolders({
-      choosingProject,
-      sessionId,
-      project,
+      t,
+      title: pickTitle,
+      target,
       pickingRef,
       setPicking,
-      setError,
+      setProblem,
       setOpen,
-      changeProject,
     });
   };
 
-  const options = matching.map((path) => ({
-    value: pathKey(path),
-    title: basename(path) || prettyCwd(path),
+  const blocked = picking || !enabled;
+  const rowText = (path: string) => ({
+    title: name(path),
     description: (
       <Text size="micro" tone="inherit">
-        {prettyCwd(path)}
+        {shown(path)}
       </Text>
     ),
     icon: <Folder className="icon-sm" />,
-    meta:
-      mode === "project"
-        ? pathKey(path) === pathKey(project)
-          ? t("Current")
-          : undefined
-        : pathKey(path) === pathKey(workingDirectory)
-          ? t("Working folder")
-          : undefined,
-    disabled:
-      picking ||
-      !enabled ||
-      pathKey(path) === pathKey(mode === "project" ? project : workingDirectory),
-  }));
-  const choose = (key: string) => {
-    const path = matching.find((path) => pathKey(path) === key);
-    if (!path || picking || !enabled) return;
-    if (mode === "project") changeProject(path);
-    else toggle(path);
+  });
+  const listed = worktreeMatching;
+  const options = listed
+    .filter((path) => worktreeMode || !isFixed(path))
+    .map((path) => ({
+      ...rowText(path),
+      value: DIR_PREFIX + pathKey(path),
+      group: worktreeMode ? undefined : t("Also work in"),
+      disabled:
+        blocked ||
+        (worktreeMode &&
+          !chosenKeys.has(pathKey(path)) &&
+          chosenRepos.length >= MAX_PROJECT_REPOSITORIES),
+    }));
+  const choose = (value: string) => {
+    if (blocked) return;
+    const path = listed.find((item) => DIR_PREFIX + pathKey(item) === value);
+    if (path) toggle(path);
   };
   const list = usePickerList({
     options,
-    resetKey: `${open}:${mode}:${query}`,
-    ...(mode === "folders"
-      ? {
-          multiple: true as const,
-          value: [...effectiveKeys],
-          onChange: (_values: string[], option: { value: string }) => choose(option.value),
-        }
-      : { value: pathKey(project), onChange: choose }),
+    resetKey: `${open}:${query}`,
+    multiple: true as const,
+    value: (worktreeMode ? chosenRepos : extras).map((path) => DIR_PREFIX + pathKey(path)),
+    onChange: (_values: string[], option: { value: string }) => choose(option.value),
   });
 
   return (
-    <div ref={root} className="relative shrink-0">
+    <div ref={root} className="relative min-w-0 max-w-40">
       <Button
-        variant="ghost"
+        variant="chip"
         type="button"
-        tooltip={effective.map(prettyCwd).join("\n")}
-        aria-label={t("Folders for this session")}
+        tooltip={(worktreeMode ? chosenRepos : [project, ...extras]).map(shown).join("\n")}
+        aria-label={
+          worktreeMode ? t("Repositories for this session") : t("Folders for this session")
+        }
         aria-expanded={open}
         aria-haspopup="dialog"
         disabled={!enabled}
+        disabledReason={disabledReason}
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => {
           if (open) dismiss(true);
           else {
-            setMode("folders");
             setQuery("");
-            setError(undefined);
+            setProblem(undefined);
             setOpen(true);
           }
         }}
-        className="max-w-40"
       >
         <Folder
           className="icon-sm shrink-0"
-          tone={overridden ? "accent" : undefined}
+          tone={overridden && !worktreeMode ? "accent" : undefined}
           strokeWidth={1.75}
         />
-        <Text data-session-dirs-label size="micro" tone="inherit" truncate className="min-w-0">
+        <Text data-session-dirs-label size="inherit" tone="inherit" truncate>
           {label}
         </Text>
       </Button>
@@ -273,81 +357,86 @@ export function SessionDirsPicker({
           anchor={root}
           side="top"
           minWidth={320}
-          autoFocus
           onDismiss={(reason) => dismiss(reason === "escape")}
-          role="dialog"
+          kind="dialog"
           aria-label={
-            mode === "project" ? t("Change session project") : t("Folders for this session")
+            worktreeMode ? t("Repositories for this session") : t("Folders for this session")
           }
-          tabIndex={-1}
           className="flex min-h-0 flex-col"
         >
-          <div className="flex items-center justify-between gap-2 px-2 pb-1 pt-0.5">
-            <Text as="p" weight="medium">
-              {mode === "project" ? t("Change project") : t("Folders for this session")}
+          {worktreeMode ? (
+            <Text as="p" size="caption" tone="secondary" className="px-3 pt-2">
+              {t("Each gets its own worktree on the session's branch")}
             </Text>
-            {onProjectChange ? (
-              <Button
-                variant="ghost"
-                type="button"
-                disabled={picking || !enabled}
-                onClick={() => {
-                  setMode(mode === "folders" ? "project" : "folders");
-                  setQuery("");
-                  setError(undefined);
-                }}
-              >
-                {mode === "folders" ? t("Change project…") : t("Back")}
-              </Button>
-            ) : null}
-          </div>
+          ) : null}
           <PopoverSearchHeader
             type="search"
-            label={t("Search projects and folders")}
-            placeholder={t("Search projects and folders…")}
+            label={t("Search folders")}
+            placeholder={t("Search folders…")}
             value={query}
             onValueChange={setQuery}
             {...list.searchProps}
           />
           <PickerList
-            label={mode === "project" ? t("Change session project") : t("Folders for this session")}
+            label={
+              worktreeMode ? t("Repositories for this session") : t("Folders for this session")
+            }
             controller={list}
             density="sm"
             emptyLabel={t("No matching folders")}
             className="max-h-64"
           />
-          <Button
-            variant="ghost"
-            type="button"
-            disabled={picking || !enabled}
-            onClick={() => void browse()}
-            loading={picking}
-            startIcon={<Plus className="icon-sm shrink-0" />}
-            className="mt-1 text-left"
-          >
-            {picking ? t("Choosing folders…") : t("Choose from {p0}…", { p0: browserLabel })}
-          </Button>
-          {error ? <Alert tone="danger">{error}</Alert> : null}
-          <div className="flex items-center gap-2 px-2 pb-0.5 pt-1.5">
-            <Text as="p" size="micro" tone="secondary" className="min-w-0 flex-1">
-              {mode === "project"
-                ? t("Existing conversations open a new session in the chosen project.")
-                : overridden
-                  ? t("Extra folders apply to this session from the next message.")
-                  : t("Working folder included. Extra folders follow the project setting.")}
-            </Text>
-            {overridden && mode === "folders" ? (
+          {problem ? <Alert tone="danger">{problem}</Alert> : null}
+          <PickerFooter align="start">
+            {!remoteOwner || machineId ? (
               <Button
                 variant="ghost"
                 type="button"
-                disabled={picking || !enabled}
-                onClick={() => saveSessionAdditionalDirs(sessionId, project, null)}
-                className="shrink-0"
+                disabled={blocked}
+                disabledReason={disabledReason}
+                onClick={() => void browse()}
+                loading={picking}
+                startIcon={<Plus className="icon-sm" />}
               >
-                {t("Reset")}
+                {t("Add folder…")}
               </Button>
             ) : null}
-          </div>
+            {worktreeMode ? (
+              <>
+                <Button
+                  variant="ghost"
+                  type="button"
+                  disabled={blocked || projectDirs.length === 0}
+                  disabledReason={blocked ? undefined : t("No folders to select.")}
+                  onClick={() => selectRepositories(true)}
+                >
+                  {t("Select all")}
+                </Button>
+                <Button
+                  variant="ghost"
+                  type="button"
+                  disabled={blocked || chosenRepos.length === 0}
+                  disabledReason={blocked ? undefined : t("No folders are selected.")}
+                  onClick={() => selectRepositories(false)}
+                >
+                  {t("Select none")}
+                </Button>
+              </>
+            ) : null}
+            {overridden && !worktreeMode ? (
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Reset")}
+                type="button"
+                disabled={blocked}
+                disabledReason={disabledReason}
+                onClick={() => saveSessionAdditionalDirs(sessionId, project, null)}
+              >
+                <RotateCcw className="icon-sm" />
+              </Button>
+            ) : null}
+          </PickerFooter>
         </Popover>
       ) : null}
     </div>

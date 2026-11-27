@@ -7,6 +7,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 use sha2::{Digest, Sha256};
 
 pub(crate) mod epochs;
+#[path = "native_delivery/usage.rs"]
+mod usage;
 
 pub(crate) const MAX_PARAMS_BYTES: usize = 16 * 1024 * 1024;
 pub(crate) const MAX_RESULT_BYTES: usize = 32 * 1024 * 1024;
@@ -15,7 +17,9 @@ const MAX_FORMAT_ACTIVE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ACTIVE_BYTES: usize = 128 * 1024 * 1024;
 const MAX_ACTIVE_ROWS: usize = 256;
 const MAX_ROWS: usize = 65_536;
-const MAX_PAGE: usize = 32;
+const LEGACY_BUFFER: &str = "native.buffers.update";
+const LEGACY_BUFFER_BUDGET: usize = 64 * 1024;
+pub(crate) const MAX_PAGE: usize = 32;
 const MAX_KEY_BYTES: usize = 2048;
 const MAX_SAFE: i64 = 9_007_199_254_740_991;
 
@@ -128,6 +132,10 @@ impl Original {
     pub(crate) fn can_dispatch(&self) -> bool {
         self.phase == Phase::Prepared && self.created_instance == self.runtime.to_string()
     }
+    /// Created by an earlier app runtime, so no consumer of this process waits for it.
+    pub(crate) fn is_from_earlier_runtime(&self) -> bool {
+        self.created_instance != self.runtime.to_string()
+    }
 }
 
 pub(crate) struct PendingPage {
@@ -185,7 +193,7 @@ fn digest(value: &str) -> String {
 }
 fn result_budget(method: &str) -> Result<usize, String> {
     match method {
-        "native.buffers.update" | "native.services.conversation.desktop.finish" => Ok(64 * 1024),
+        "native.services.conversation.desktop.finish" => Ok(64 * 1024),
         "native.services.workspace.format" => Ok(MAX_RESULT_BYTES),
         _ => Err("NATIVE_DELIVERY_METHOD: unsupported original request method".into()),
     }
@@ -205,6 +213,13 @@ fn validate_json(value: &str, maximum: usize, object: bool) -> Result<(), String
     }
     Ok(())
 }
+
+const PHASE_GUARD: &str = "CREATE TRIGGER IF NOT EXISTS native_delivery_phase_guard BEFORE UPDATE OF phase,revision ON native_delivery_originals
+      WHEN NEW.revision!=OLD.revision+1 OR NOT(
+        (OLD.phase='prepared' AND NEW.phase='possible') OR
+        (OLD.phase='possible' AND NEW.phase IN ('prepared','recorded')) OR
+        (OLD.phase='recorded' AND NEW.phase='acknowledged'))
+      BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_INVALID_TRANSITION'); END;";
 
 fn schema(conn: &Connection) -> Result<(), String> {
     epochs::check_structure(conn)?;
@@ -235,12 +250,6 @@ fn schema(conn: &Connection) -> Result<(), String> {
       ON native_delivery_originals BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_IMMUTABLE'); END;
     CREATE TRIGGER IF NOT EXISTS native_delivery_no_delete BEFORE DELETE ON native_delivery_originals
       BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_RETAINED'); END;
-    CREATE TRIGGER IF NOT EXISTS native_delivery_phase_guard BEFORE UPDATE OF phase,revision ON native_delivery_originals
-      WHEN NEW.revision!=OLD.revision+1 OR NOT(
-        (OLD.phase='prepared' AND NEW.phase='possible') OR
-        (OLD.phase='possible' AND NEW.phase IN ('prepared','recorded')) OR
-        (OLD.phase='recorded' AND NEW.phase='acknowledged'))
-      BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_INVALID_TRANSITION'); END;
     CREATE TRIGGER IF NOT EXISTS native_delivery_params_immutable BEFORE UPDATE OF params_json ON native_delivery_originals
       WHEN NOT(OLD.params_json IS NEW.params_json OR (NEW.phase='acknowledged' AND NEW.params_json IS NULL))
       BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_IMMUTABLE'); END;
@@ -266,7 +275,7 @@ fn schema(conn: &Connection) -> Result<(), String> {
       WHEN EXISTS(SELECT 1 FROM native_delivery_unavailable_results WHERE original_id=NEW.original_id) AND NEW.phase!='possible'
       BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_RESULT_UNAVAILABLE'); END;")
       .map_err(|e| e.to_string())?;
-    Ok(())
+    conn.execute_batch(PHASE_GUARD).map_err(|e| e.to_string())
 }
 
 fn exists(conn: &Connection) -> Result<bool, String> {
@@ -319,7 +328,8 @@ fn checked_record(
     let params_length: Option<i64> = row.get(14)?;
     let result_length: Option<i64> = row.get(15)?;
     let budget = record.result_budget;
-    if !valid_budget(&record.method, budget)
+    if !(valid_budget(&record.method, budget)
+        || (record.method == LEGACY_BUFFER && budget == LEGACY_BUFFER_BUDGET))
         || record.rowid <= 0
         || !original_id(&record.id)
         || !uuid(&record.created_instance)
@@ -358,16 +368,24 @@ fn read(
     runtime: uuid::Uuid,
     connection: usize,
 ) -> Result<Option<Original>, String> {
-    let record = conn
-        .query_row(&format!("{SELECT} WHERE original_id=?1"), [id], |r| {
-            checked_record(r, runtime, connection)
-        })
-        .optional()
-        .map_err(|_| invalid())?;
+    let record = read_record(conn, id, runtime, connection)?;
     if let Some(record) = &record {
         epochs::validate_original(conn, record)?;
     }
     Ok(record)
+}
+
+fn read_record(
+    conn: &Connection,
+    id: &str,
+    runtime: uuid::Uuid,
+    connection: usize,
+) -> Result<Option<Original>, String> {
+    conn.query_row(&format!("{SELECT} WHERE original_id=?1"), [id], |r| {
+        checked_record(r, runtime, connection)
+    })
+    .optional()
+    .map_err(|_| invalid())
 }
 fn same(a: &Original, b: &Original) -> bool {
     a.id == b.id
@@ -439,6 +457,7 @@ pub(crate) fn prepare_with_budget(
     prepare_inputs(semantic_key, route_fingerprint, method, params_json)?;
     write(store, |conn| {
         schema(conn)?;
+        retire_legacy_buffers(conn)?;
         prepare_tx(
             conn,
             store,
@@ -474,13 +493,16 @@ fn prepare_tx(
     allocate: impl FnOnce(&Connection) -> Result<String, String>,
 ) -> Result<Original, String> {
     require_full(conn)?;
-    if !valid_budget(method, budget) {
+    if !(valid_budget(method, budget)
+        || (cfg!(test) && method == LEGACY_BUFFER && budget == LEGACY_BUFFER_BUDGET))
+    {
         return Err(invalid());
     }
     let hash = digest(params_json);
     let ids = identity(conn)?;
     epochs::check_semantic(
         conn,
+        store.native_instance_id(),
         &ids,
         semantic_key,
         route_fingerprint,
@@ -507,48 +529,25 @@ fn prepare_tx(
         }
         return Ok(record);
     }
-    let counts = |conn: &Connection| -> Result<(i64, i64, i64), String> {
-        // Independent bounded lanes prevent uncertain formatter work and
-        // unconfirmed buffer snapshots from using control capacity, so a relay
-        // finish is never starved by them. Legacy 32 MiB reservations retain
-        // their original allowance; only a qualified Host may use the smaller
-        // format lane.
-        conn.query_row("SELECT (SELECT COUNT(*) FROM native_delivery_originals),COALESCE(SUM(CASE WHEN EXISTS(SELECT 1 FROM native_delivery_unavailable_results u WHERE u.original_id=native_delivery_originals.original_id) THEN 0 ELSE 1 END),0),COALESCE(SUM(payload_bytes+CASE WHEN EXISTS(SELECT 1 FROM native_delivery_unavailable_results u WHERE u.original_id=native_delivery_originals.original_id) THEN 0 ELSE result_budget END),0) FROM native_delivery_originals WHERE phase!='acknowledged' AND CASE WHEN ?1='native.services.workspace.format' THEN method=?1 AND result_budget=?2 WHEN ?1=?3 THEN method=?3 ELSE method NOT IN('native.services.workspace.format',?3) END",params![method,budget as i64,BUFFER_UPDATE],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(|e|e.to_string())
-    };
-    let full = |(rows, active, bytes): (i64, i64, i64)| {
-        rows < 0
-            || active < 0
-            || bytes < 0
-            || rows as usize >= MAX_ROWS
-            || active as usize >= MAX_ACTIVE_ROWS
-            || (bytes as usize)
-                .checked_add(params_json.len())
-                .and_then(|n| n.checked_add(budget))
-                .is_none_or(|n| {
-                    n > if method == "native.services.workspace.format"
-                        && budget == FORMAT_RESULT_BYTES
-                    {
-                        MAX_FORMAT_ACTIVE_BYTES
-                    } else {
-                        MAX_ACTIVE_BYTES
-                    }
-                })
-    };
-    let mut usage = counts(conn)?;
-    if full(usage) && method == BUFFER_UPDATE {
-        // A buffer report is a complete idempotent snapshot and the new one
-        // supersedes every earlier recorded outcome (the Host already holds
-        // each result). Retire those locally rather than wedging the queue;
-        // the same route first, then any route.
-        for route in [Some(route_fingerprint), None] {
-            retire_recorded_buffers_tx(conn, store, route, false);
-            usage = counts(conn)?;
-            if !full(usage) {
-                break;
-            }
-        }
-    }
-    if full(usage) {
+    usage::initialize(conn)?;
+    let (rows, active, bytes) = usage::read(conn, method, budget)?;
+    if rows < 0
+        || active < 0
+        || bytes < 0
+        || rows as usize >= MAX_ROWS
+        || active as usize >= MAX_ACTIVE_ROWS
+        || (bytes as usize)
+            .checked_add(params_json.len())
+            .and_then(|n| n.checked_add(budget))
+            .is_none_or(|n| {
+                n > if method == "native.services.workspace.format" && budget == FORMAT_RESULT_BYTES
+                {
+                    MAX_FORMAT_ACTIVE_BYTES
+                } else {
+                    MAX_ACTIVE_BYTES
+                }
+            })
+    {
         return Err(capacity());
     }
     let id = allocate(conn)?;
@@ -556,66 +555,55 @@ fn prepare_tx(
     read(conn, &id, store.native_instance_id(), connection)?.ok_or_else(invalid)
 }
 
-const BUFFER_UPDATE: &str = "native.buffers.update";
-
-/// Best-effort local retirement of recorded `native.buffers.update` originals
-/// (recorded to acknowledged, which releases their active reservation). Only
-/// the superseded snapshot journal entry is retired, never a newer report's
-/// freshness. Caller holds the FULL projection transaction. Returns the count.
-fn retire_recorded_buffers_tx(
-    conn: &Connection,
-    store: &SessionStore,
-    route: Option<&str>,
-    previous_runs_only: bool,
-) -> usize {
-    let connection = (conn as *const Connection) as usize;
-    let runtime = store.native_instance_id();
-    let ids: Vec<String> = (|| -> rusqlite::Result<Vec<String>> {
-        let mut statement = conn.prepare(
-            "SELECT original_id FROM native_delivery_originals WHERE phase='recorded' AND method=?1
-             AND (?2 IS NULL OR route_fingerprint=?2) AND (?3=0 OR created_instance!=?4) ORDER BY rowid LIMIT 512",
-        )?;
-        let rows = statement.query_map(
-            params![BUFFER_UPDATE, route, previous_runs_only as i64, runtime.to_string()],
-            |r| r.get::<_, String>(0),
-        )?;
-        rows.collect()
-    })()
-    .unwrap_or_default();
-    let mut retired = 0;
-    for id in ids {
-        if let Ok(Some(record)) = read(conn, &id, runtime, connection) {
-            if acknowledge_tx(conn, &record).is_ok() {
-                retired += 1;
-            }
-        }
+/// Abandon obsolete requests without manufacturing a remote ACK. Existing gap
+/// evidence stays intact. Other v2 slots retain their exact allocation and wire
+/// identity until the Host confirms abandonment or a never-admitted fence.
+fn retire_legacy_buffers(conn: &Connection) -> Result<(), String> {
+    require_full(conn)?;
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS native_delivery_legacy_buffer_pending
+         ON native_delivery_originals(original_id)
+         WHERE method='native.buffers.update' AND phase!='acknowledged'",
+    )
+    .map_err(|error| error.to_string())?;
+    let has_gaps = epochs::has_gap_table(conn)?;
+    let filter = if has_gaps {
+        "AND NOT EXISTS (SELECT 1 FROM native_delivery_epoch_gaps g WHERE g.original_id=o.original_id)"
+    } else {
+        ""
+    };
+    let pending = format!(
+        "FROM native_delivery_originals o
+        WHERE o.method=?1 AND o.phase!='acknowledged' {filter}"
+    );
+    let found: bool = conn
+        .query_row(
+            &format!("SELECT EXISTS(SELECT 1 {pending})"),
+            [LEGACY_BUFFER],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if !found {
+        return Ok(());
     }
-    retired
-}
 
-/// Startup/first-report cleanup: recorded buffer snapshots left by previous
-/// runs (or dead windows) can never be confirmed again and only consume the
-/// active-row budget. Best effort; a failure never blocks reporting.
-pub(crate) fn retire_stale_buffer_originals(store: &SessionStore) -> Result<usize, String> {
-    {
-        let conn = store.lock_conn()?;
-        if !exists(&conn)? {
-            return Ok(0);
-        }
-        let stale: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM native_delivery_originals WHERE phase='recorded' AND method=?1 AND created_instance!=?2",
-                params![BUFFER_UPDATE, store.native_instance_id().to_string()],
-                |r| r.get(0),
-            )
-            .map_err(|e| e.to_string())?;
-        if stale == 0 {
-            return Ok(0);
-        }
-    }
-    write(store, |conn| {
-        Ok(retire_recorded_buffers_tx(conn, store, None, true))
-    })
+    // Restore the original phase guard in this same FULL transaction. A buffer
+    // without a recorded outcome gets a local-only abandonment marker.
+    conn.execute_batch("DROP TRIGGER native_delivery_phase_guard")
+        .map_err(|error| error.to_string())?;
+    const ABANDONED: &str = r#"{"abandoned":true}"#;
+    conn.execute(
+        &format!(
+            "UPDATE native_delivery_originals SET
+            phase='acknowledged', revision=revision+1, params_json=NULL, result_json=NULL,
+            result_sha256=COALESCE(result_sha256,?2), result_bytes=COALESCE(result_bytes,?3)
+            WHERE original_id IN (SELECT o.original_id {pending})"
+        ),
+        params![LEGACY_BUFFER, digest(ABANDONED), ABANDONED.len() as i64],
+    )
+    .map_err(|error| error.to_string())?;
+    conn.execute_batch(PHASE_GUARD)
+        .map_err(|error| error.to_string())
 }
 
 fn change_phase(
@@ -694,12 +682,14 @@ fn load_bytes(conn: &Connection, original: &Original, result: bool) -> Result<St
     Ok(value)
 }
 
+#[cfg(test)]
 pub(crate) fn params_json(store: &SessionStore, original: &Original) -> Result<String, String> {
     check_runtime(store, original)?;
     let conn = store.lock_conn()?;
     let record = current(&conn, original)?;
     load_bytes(&conn, &record, false)
 }
+#[cfg(test)]
 #[cfg(test)]
 pub(crate) fn result_json(
     store: &SessionStore,
@@ -717,6 +707,7 @@ pub(crate) fn result_json(
     load_bytes(&conn, &record, true).map(Some)
 }
 
+#[cfg(test)]
 #[cfg(test)]
 pub(crate) fn record_result(
     store: &SessionStore,
@@ -883,6 +874,47 @@ fn remote_acked(conn: &Connection, original: &Original) -> Result<bool, String> 
     }
 }
 
+/// The original just past an open epoch's prefix when it is consumed locally but its remote
+/// ACK is missing. The paged ACK retry walks thousands of rows, so a timed-out ACK of this one
+/// slot otherwise waits a whole lap of the pager while the prefix it blocks cannot compact.
+pub(crate) fn unacked_prefix_blocker(
+    store: &SessionStore,
+    route_fingerprint: &str,
+) -> Result<Option<Original>, String> {
+    let connection = pin(store)?;
+    let conn = store.lock_conn()?;
+    let epochs: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='native_delivery_epochs')",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if !epochs || !exists(&conn)? {
+        return Ok(None);
+    }
+    let head: Option<(String, i64, i64)> = conn
+        .query_row(
+            "SELECT owner_id,generation,local_through+1 FROM native_delivery_epochs
+             WHERE route_fingerprint=?1 AND closed=0 AND local_through<high_water ORDER BY local_through LIMIT 1",
+            [route_fingerprint],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let Some((owner, generation, sequence)) = head else {
+        return Ok(None);
+    };
+    let id = format!("nd2:{owner}:{generation}:{sequence}");
+    let Some(record) = read(&conn, &id, store.native_instance_id(), connection)? else {
+        return Ok(None);
+    };
+    if record.phase != Phase::Acknowledged || remote_acked(&conn, &record)? {
+        return Ok(None);
+    }
+    Ok(Some(record))
+}
+
 /// Reload an exact original after its local ACK committed. A pre-ACK metadata
 /// handle cannot itself authorize retirement; the actual current row must agree.
 pub(crate) fn remote_ack_candidate(
@@ -972,7 +1004,7 @@ pub(crate) fn pending_remote_acks(
     let mut rowids = conn
         .prepare(&format!(
             "SELECT rowid FROM native_delivery_originals WHERE source_store_id=?1 AND source_profile_id=?2
-        AND route_fingerprint=?3 AND phase='acknowledged' AND rowid>?4 {filter}
+        AND route_fingerprint=?3 AND phase='acknowledged' AND method!='{LEGACY_BUFFER}' AND rowid>?4 {filter}
         ORDER BY rowid LIMIT ?5"
         ))
         .map_err(|error| error.to_string())?
@@ -999,6 +1031,7 @@ pub(crate) fn pending_remote_acks(
         .prepare(&format!("{SELECT} WHERE rowid=?1"))
         .map_err(|error| error.to_string())?;
     let mut originals = Vec::with_capacity(rowids.len());
+    let mut validator = epochs::PageValidator::new(&conn);
     for rowid in rowids {
         // Keep storage/SQL execution errors distinct from malformed metadata.
         // The actual Store writer remains held throughout both reads.
@@ -1008,7 +1041,7 @@ pub(crate) fn pending_remote_acks(
             })
             .map_err(|error| error.to_string())?;
         if let Ok(record) = record {
-            if epochs::validate_original(&conn, &record).is_err() {
+            if validator.check(&record).is_err() {
                 continue;
             }
             originals.push(record);
@@ -1032,13 +1065,85 @@ pub(crate) fn pending(
     }
     let connection = pin(store)?;
     store.with_read_conn(|conn| {
-        if !exists(conn)? { return Ok(PendingPage{originals:vec![],next:None}); }
-        let ids=identity(conn)?;
-        let mut statement=conn.prepare(&format!("{SELECT} WHERE source_store_id=?1 AND source_profile_id=?2 AND route_fingerprint=?3 AND phase!='acknowledged' AND original_id>?4 ORDER BY original_id LIMIT ?5")).map_err(|e|e.to_string())?;
-        let mut records=statement.query_map(params![ids.0,ids.1,route_fingerprint,after_id.unwrap_or(""),(limit+1) as i64],|r|checked_record(r,store.native_instance_id(),connection)).map_err(|_|invalid())?.collect::<rusqlite::Result<Vec<_>>>().map_err(|_|invalid())?;
-        for record in &records { epochs::validate_original(conn, record)?; }
-        let next=if records.len()>limit { records.truncate(limit); records.last().map(|r|r.id.clone()) } else { None };
-        Ok(PendingPage{originals:records,next})
+        // One snapshot for the page: on the separate reader the writer commits between
+        // statements, and an epoch validated across a commit sees its high water move.
+        let snapshot = conn.is_autocommit();
+        if snapshot {
+            conn.execute_batch("BEGIN").map_err(|e| e.to_string())?;
+        }
+        let page = pending_page(store, conn, connection, route_fingerprint, after_id, limit);
+        if snapshot {
+            conn.execute_batch("COMMIT").map_err(|e| e.to_string())?;
+        }
+        page
+    })
+}
+
+fn pending_page(
+    store: &SessionStore,
+    conn: &Connection,
+    connection: usize,
+    route_fingerprint: &str,
+    after_id: Option<&str>,
+    limit: usize,
+) -> Result<PendingPage, String> {
+    if !exists(conn)? {
+        return Ok(PendingPage {
+            originals: vec![],
+            next: None,
+        });
+    }
+    let ids = identity(conn)?;
+    let mut statement=conn.prepare(&format!("{SELECT} WHERE source_store_id=?1 AND source_profile_id=?2 AND route_fingerprint=?3 AND phase!='acknowledged' AND method!='{LEGACY_BUFFER}' AND original_id>?4 ORDER BY original_id LIMIT ?5")).map_err(|e|e.to_string())?;
+    let rows = statement
+        .query_map(
+            params![
+                ids.0,
+                ids.1,
+                route_fingerprint,
+                after_id.unwrap_or(""),
+                (limit + 1) as i64
+            ],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    checked_record(r, store.native_instance_id(), connection),
+                ))
+            },
+        )
+        .map_err(|_| invalid())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|_| invalid())?;
+    let next = (rows.len() > limit).then(|| rows[limit - 1].0.clone());
+    // Like `pending_remote_acks`: a record that fails verification stays held unchanged and
+    // is skipped, so one damaged row can never stop recovery of every row after it.
+    let mut records = Vec::with_capacity(limit);
+    let mut validator = epochs::PageValidator::new(conn);
+    for (id, record) in rows.into_iter().take(limit) {
+        match record
+            .map_err(|_| invalid())
+            .and_then(|record| validator.check(&record).map(|()| record))
+        {
+            Ok(record) => records.push(record),
+            Err(error) => {
+                // Once per original and process: maintenance revisits it every pass.
+                static LOGGED: std::sync::Mutex<std::collections::BTreeSet<String>> =
+                    std::sync::Mutex::new(std::collections::BTreeSet::new());
+                if LOGGED
+                    .lock()
+                    .is_ok_and(|mut logged| logged.len() < 256 && logged.insert(id.clone()))
+                {
+                    log::warn!(
+                        "Native delivery original {} is held: {error}",
+                        id.rsplit(':').next().unwrap_or_default()
+                    );
+                }
+            }
+        }
+    }
+    Ok(PendingPage {
+        originals: records,
+        next,
     })
 }
 

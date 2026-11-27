@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { StoreDatabase } from "../store-db";
-import type { CommandReceipt } from "../../src/features/connections/model/protocol";
+import type { StoredCommandReceipt } from "../domains/commands/service";
 import { requestIssuedAt } from "../../src/shared/lib/id/requestId";
 import {
   REQUEST_EXPIRED_ERROR_CODE,
@@ -99,8 +99,8 @@ export async function readCommandReceipt(
   db: StoreDatabase,
   id: string,
   signature?: string,
-  options: { admit?: boolean; now?: number } = {},
-): Promise<CommandReceipt | undefined> {
+  options: { admit?: boolean; now?: number; includeSteer?: boolean } = {},
+): Promise<StoredCommandReceipt | undefined> {
   if (await db.prepare("SELECT id FROM desktop_command_delivery WHERE id=?").get(id)) {
     if (signature !== undefined) throw new Error("Command ID belongs to a desktop control.");
     return undefined;
@@ -121,7 +121,9 @@ export async function readCommandReceipt(
     (full ? full.signature !== signature : compact!.signature_hash !== signatureHash(signature))
   )
     throw new Error("Command ID was already used with a different payload");
-  return JSON.parse(String(row.receipt)) as CommandReceipt;
+  const receipt = JSON.parse(String(row.receipt)) as StoredCommandReceipt;
+  if (!options.includeSteer) delete receipt.steer;
+  return receipt;
 }
 
 /** Caller holds the critical writer transaction. No pending effects or response bytes are removed. */
@@ -132,42 +134,50 @@ export async function compactCommandReceipts(db: StoreDatabase, cutoff: number):
     WHERE created_at < ? AND NOT EXISTS (SELECT 1 FROM desktop_command_delivery d WHERE d.id=receipts.id)
     ORDER BY created_at LIMIT 512`)
     .all(cutoff);
-  for (const row of rows) {
-    const issuedAt = requestIssuedAt(String(row.id)) ?? null;
-    await db
-      .prepare(
-        "INSERT INTO compact_command_receipts(id,signature_hash,receipt,created_at,issued_at) VALUES(?,?,?,?,?)",
-      )
-      .run(
-        String(row.id),
-        signatureHash(String(row.signature)),
-        String(row.receipt),
-        Number(row.created_at),
-        issuedAt,
-      );
-    await db.prepare("DELETE FROM receipts WHERE id=?").run(String(row.id));
+  // Batched per table: one statement prepared per table, rows bound in a savepoint inside the
+  // caller's critical transaction, so a failure rolls back the whole compaction.
+  if (rows.length) {
+    await db.runMany(
+      "INSERT INTO compact_command_receipts(id,signature_hash,receipt,created_at,issued_at) VALUES(?,?,?,?,?)",
+      rows.map((row) => {
+        const id = String(row.id);
+        return [
+          id,
+          signatureHash(String(row.signature)),
+          String(row.receipt),
+          Number(row.created_at),
+          requestIssuedAt(id) ?? null,
+        ];
+      }),
+    );
+    await db.runMany(
+      "DELETE FROM receipts WHERE id=?",
+      rows.map((row) => [String(row.id)]),
+    );
   }
   const workspaceRows = await db
     .prepare(`SELECT scope,idempotency_key,signature,response,created_at
     FROM workspace_mutation_receipts WHERE created_at < ? ORDER BY created_at LIMIT 512`)
     .all(cutoff);
-  for (const row of workspaceRows) {
-    const issuedAt = requestIssuedAt(String(row.idempotency_key)) ?? null;
-    await db
-      .prepare(
-        "INSERT INTO compact_workspace_receipts(scope,idempotency_key,signature_hash,response,created_at,issued_at) VALUES(?,?,?,?,?,?)",
-      )
-      .run(
-        String(row.scope),
-        String(row.idempotency_key),
-        signatureHash(String(row.signature)),
-        String(row.response),
-        Number(row.created_at),
-        issuedAt,
-      );
-    await db
-      .prepare("DELETE FROM workspace_mutation_receipts WHERE scope=? AND idempotency_key=?")
-      .run(String(row.scope), String(row.idempotency_key));
+  if (workspaceRows.length) {
+    await db.runMany(
+      "INSERT INTO compact_workspace_receipts(scope,idempotency_key,signature_hash,response,created_at,issued_at) VALUES(?,?,?,?,?,?)",
+      workspaceRows.map((row) => {
+        const key = String(row.idempotency_key);
+        return [
+          String(row.scope),
+          key,
+          signatureHash(String(row.signature)),
+          String(row.response),
+          Number(row.created_at),
+          requestIssuedAt(key) ?? null,
+        ];
+      }),
+    );
+    await db.runMany(
+      "DELETE FROM workspace_mutation_receipts WHERE scope=? AND idempotency_key=?",
+      workspaceRows.map((row) => [String(row.scope), String(row.idempotency_key)]),
+    );
   }
 }
 

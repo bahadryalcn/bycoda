@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   clearRuntimeLogs,
   createRuntimeLogsBuffer,
@@ -81,6 +81,20 @@ describe("runtime log view buffer", () => {
     ).toEqual([3]);
   });
 
+  it("appends without rebuilding retained entries and sorts out-of-order or repeated rows", () => {
+    const first = mergeRuntimeLogs(createRuntimeLogsBuffer(), snapshot([entry(1), entry(2)]));
+    const next = mergeRuntimeLogs(first, snapshot([entry(4), entry(3), entry(4), entry(2)]));
+    expect(next.entries.map((value) => value.cursor)).toEqual([1, 2, 3, 4]);
+    expect(next.entries[0]).toBe(first.entries[0]);
+    expect(mergeRuntimeLogs(next, snapshot([entry(3), entry(4)])).entries).toBe(next.entries);
+  });
+
+  it("still merges a row that lands inside the retained range", () => {
+    const first = mergeRuntimeLogs(createRuntimeLogsBuffer(), snapshot([entry(1), entry(3)], 3));
+    const next = mergeRuntimeLogs(first, snapshot([entry(2), entry(3), entry(4)], 4));
+    expect(next.entries.map((value) => value.cursor)).toEqual([1, 2, 3, 4]);
+  });
+
   it("does not resurrect cleared entries when a host replays its retained page", () => {
     const initial = mergeRuntimeLogs(createRuntimeLogsBuffer(), snapshot([entry(1), entry(2)], 8));
     const cleared = clearRuntimeLogs(initial);
@@ -101,6 +115,19 @@ describe("runtime log view buffer", () => {
     expect(
       mergeRuntimeLogs(restarted, snapshot([entry(1), entry(2), entry(3)])).entries,
     ).toHaveLength(3);
+  });
+
+  it("serializes details only when the other searchable fields do not match", () => {
+    const toJSON = vi.fn(() => ({ requestId: "nested-value" }));
+    const rows = [
+      entry(1, { stack: "at loadProfile", location: { file: "profiles.ts" }, details: { toJSON } }),
+    ];
+    for (const search of ["FETCH ACCOUNT", "loadprofile", "profiles.ts"]) {
+      expect(filterRuntimeLogs(rows, { search })).toHaveLength(1);
+    }
+    expect(toJSON).not.toHaveBeenCalled();
+    expect(filterRuntimeLogs(rows, { search: "nested-value" })).toHaveLength(1);
+    expect(toJSON).toHaveBeenCalledTimes(1);
   });
 
   it("filters nested values, stack frames and levels without advancing the stored cursor", () => {

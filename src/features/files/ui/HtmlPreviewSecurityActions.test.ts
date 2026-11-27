@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { HtmlPreview } from "./HtmlPreview";
+import { showErrorDetails } from "./errorDetails.test-support";
 
 const native = vi.hoisted(() => ({ open: vi.fn(), invoke: vi.fn() }));
 vi.mock("../../../platform/tauri/fs", () => ({ openPathWithDefaultApp: native.open }));
@@ -47,7 +48,9 @@ it("opens a saved file only after explicit action and preserves the live frame o
     });
     expect(native.open).toHaveBeenCalledExactlyOnceWith("/project/example.html");
     expect(host.querySelector("iframe")).toBe(frame);
-    expect(host.textContent).toContain("OS opener unavailable");
+    expect(host.textContent).toContain("Couldn’t open the saved file");
+    await showErrorDetails(host);
+    expect(document.body.textContent).toContain("OS opener unavailable");
   } finally {
     await act(async () => root.unmount());
     host.remove();

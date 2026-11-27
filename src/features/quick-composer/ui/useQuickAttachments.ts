@@ -13,26 +13,38 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   attachmentsFromFiles,
   attachmentsFromPaths,
+  attachmentDraftTokens,
+  beginAttachmentRead,
+  type AttachmentReadCapacity,
+  capturePastedTextAttachment,
   filesFromClipboard,
   MAX_ATTACHMENTS,
+  MAX_EMBED_BYTES,
+  mergeAttachments,
   pickAttachments,
   retainAttachmentPickerSelection,
+  insertPastedTextReference,
   revokeAttachment,
-  MAX_EMBED_BYTES,
-} from "../../sessions/model/attachments";
+} from "../../sessions/public/attachments";
 import {
   attachmentDropVerdict,
   type AttachmentDropBlock,
 } from "../../sessions/model/attachmentDrop";
+import { collectSkippedAttachments } from "../../sessions/model/attachmentSkips";
 import { t } from "../../../shared/i18n";
 import { harnessSupportsAttachments, type Attachment } from "../../sessions/model/session";
 import {
+  clipboardTextWithAttachments,
   isFileReferenceText,
-  nativeClipboardAttachments,
+  messageFromClipboard,
   readClipboardFilePaths,
   readClipboardImage,
 } from "../../../platform/tauri/clipboard";
-import { captureFailureMessage } from "../model/screenCaptureAccess";
+import { captureNotice, type QuickNotice } from "../model/screenCaptureAccess";
+import {
+  AttachmentFailureError,
+  selectionExceedsCapacity,
+} from "../../sessions/public/attachmentFailure";
 import { storeQuickAttachments } from "../model/quickAttachments";
 import type { QuickComposerOwner, QuickPreparation } from "../model/quickComposerClosure";
 import { captureDraft, dropPastedText, insertRestoredText } from "../../../shared/lib/draftRestore";
@@ -43,6 +55,7 @@ import {
   type ExternalDropPointer,
 } from "../../../shared/lib/externalDrop";
 import { useExternalDropFeedback } from "../../../shared/hooks/useExternalDropFeedback";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 
 async function releaseCaptures(files: Attachment[]) {
   const paths = files.flatMap((file) => (file.path ? [file.path] : []));
@@ -71,7 +84,7 @@ function localPreparation(): QuickPreparation {
 
 export function useQuickAttachments(
   supported: boolean,
-  onError: (message: string | null) => void,
+  onError: (notice: QuickNotice | null) => void,
   onAdded?: (added: Attachment[], previous: Attachment[]) => void,
   owner?: QuickComposerOwner,
   /** The element that receives drops; it carries the shared drop mark. */
@@ -93,6 +106,15 @@ export function useQuickAttachments(
     onAddedRef.current = onAdded;
   }, [supported, onAdded]);
   const currentFiles = () => owner?.draft().attachments ?? filesRef.current;
+  const withPathCapacity = useStableCallback(
+    async (read: (capacity: AttachmentReadCapacity) => Promise<Attachment[]>) => {
+      const capacity = beginAttachmentRead(currentFiles, new Set());
+      const files = await read(capacity);
+      const message = capacity.notice();
+      if (message && alive.current) onError({ title: message });
+      return files;
+    },
+  );
   const updateFiles = (next: Attachment[]) => {
     filesRef.current = next;
     if (owner) owner.update((draft) => ({ ...draft, attachments: next }));
@@ -131,6 +153,7 @@ export function useQuickAttachments(
       captureEarly = false,
       /** Wait behind a pending read instead of dropping this one; for pastes that already hold their files. */
       queued = false,
+      restorePaste?: (additions: Attachment[], attachments: Attachment[]) => boolean,
     ): Promise<void> => {
       const queue = queueRef.current;
       if (
@@ -167,7 +190,8 @@ export function useQuickAttachments(
         });
         if ((!alive.current && !owner) || !isSupported()) {
           if (owner)
-            throw new Error(
+            throw new AttachmentFailureError(
+              "provider-changed",
               "The attachment's provider changed; its accepted selection is retained.",
             );
           incoming.forEach(revokeAttachment);
@@ -193,7 +217,7 @@ export function useQuickAttachments(
             before.length + picked.length >= MAX_ATTACHMENTS &&
             alive.current
           )
-            onError(t("You can attach up to {p0} files.", { p0: MAX_ATTACHMENTS }));
+            onError({ title: t("You can attach up to {p0} files.", { p0: MAX_ATTACHMENTS }) });
           return picked;
         });
         const stored = await accepted.stage("stored", () =>
@@ -201,7 +225,10 @@ export function useQuickAttachments(
         );
         if ((!alive.current && !owner) || !isSupported()) {
           if (owner)
-            throw new Error("The attachment's provider changed; its accepted bytes are retained.");
+            throw new AttachmentFailureError(
+              "provider-changed",
+              "The attachment's provider changed; its accepted bytes are retained.",
+            );
           stored.forEach(revokeAttachment);
           return;
         }
@@ -211,8 +238,10 @@ export function useQuickAttachments(
             (file) =>
               !before.some((item) => item.id === file.id || (item.path && item.path === file.path)),
           );
-          updateFiles([...before, ...additions]);
-          if (additions.length) onAddedRef.current?.(additions, before);
+          const attachments = [...before, ...additions];
+          updateFiles(attachments);
+          if (additions.length && !restorePaste?.(additions, attachments))
+            onAddedRef.current?.(additions, before);
         });
       };
       const actual = owner ? owner.prepare(operation) : operation(localPreparation());
@@ -220,7 +249,7 @@ export function useQuickAttachments(
         () => undefined,
         (reason: unknown) => {
           if (!owner) incoming.forEach(revokeAttachment);
-          if (alive.current) onError(captureFailureMessage(reason));
+          if (alive.current) onError(captureNotice(reason));
         },
       );
       queue.tail = settled;
@@ -279,7 +308,7 @@ export function useQuickAttachments(
           hideDrop();
           nativeDropAt.current = Date.now();
           const paths = [...payload.paths];
-          void collect(() => attachmentsFromPaths(paths));
+          void collect(() => withPathCapacity((capacity) => attachmentsFromPaths(paths, capacity)));
         } else {
           if (payload.type === "enter") nativeCount = payload.paths?.length ?? 0;
           showDropRef.current(nativeCount, { position: payload.position });
@@ -294,37 +323,59 @@ export function useQuickAttachments(
       disposed = true;
       stop?.();
     };
-  }, [collect, hideDrop]);
+  }, [collect, hideDrop, withPathCapacity]);
 
-  const readFiles = (input: File[], accepted: QuickPreparation, overflow = false) => {
-    const selected = input.slice(0, MAX_ATTACHMENTS);
-    return Promise.allSettled(
-      selected.map((file, index) =>
-        accepted.stage(`file:${index}`, () => attachmentsFromFiles([file])),
-      ),
-    ).then((results) => {
+  const readFiles = async (selected: File[], accepted: QuickPreparation, overflow = false) => {
+    const skips = collectSkippedAttachments();
+    const incoming: Attachment[] = [];
+    let start = 0;
+    while (start < selected.length) {
+      const room = MAX_ATTACHMENTS - mergeAttachments(currentFiles(), incoming).length;
+      if (room === 0) break;
+      // A skipped or duplicate file leaves a slot for the next wave. Durable stage
+      // keys keep the original input index when the window owner retries this job.
+      const batch = selected.slice(start, start + room);
+      const results = await Promise.allSettled(
+        batch.map((file, index) =>
+          accepted.stage(`file:${start + index}`, () =>
+            attachmentsFromFiles([file], { onSkipped: skips.onSkipped }),
+          ),
+        ),
+      );
       const failed = results.find((result) => result.status === "rejected");
       if (failed?.status === "rejected") throw failed.reason;
-      if (overflow && alive.current)
-        onError(t("You can attach up to {p0} files.", { p0: MAX_ATTACHMENTS }));
-      return results.flatMap((result) => (result as PromiseFulfilledResult<Attachment[]>).value);
-    });
+      for (const result of results)
+        if (result.status === "fulfilled") incoming.push(...result.value);
+      start += batch.length;
+    }
+    const message = [
+      overflow || start < selected.length
+        ? t("You can attach up to {p0} files.", { p0: MAX_ATTACHMENTS })
+        : null,
+      skips.notice(),
+    ]
+      .filter(Boolean)
+      .join(" ");
+    if (message && alive.current) onError({ title: message });
+    return incoming;
   };
-  const clipboard = async (text: string, accepted: QuickPreparation) => {
-    if (!owner) return nativeClipboardAttachments(text);
+  const clipboard = async (text: string, accepted: QuickPreparation, previous?: Promise<void>) => {
     const paths = await accepted.once("clipboard-paths", async () => {
       const selected = await readClipboardFilePaths();
-      if (
-        selected.length > 4096 ||
-        selected.reduce((size, path) => size + path.length * 2, 0) > 1024 * 1024
-      )
-        throw new Error("The clipboard selection exceeds retained attachment capacity.");
+      if (selectionExceedsCapacity(selected))
+        throw new AttachmentFailureError(
+          "selection-too-large",
+          "The clipboard selection exceeds retained attachment capacity.",
+        );
       return Object.freeze([...selected]);
     });
     if (paths.length) {
+      await previous;
       const chosen = paths.slice(0, MAX_ATTACHMENTS);
-      const files = await attachmentsFromPaths(chosen);
-      if (!files.length)
+      const capacity = beginAttachmentRead(currentFiles, new Set());
+      const files = await attachmentsFromPaths(chosen, capacity);
+      const limit = capacity.notice();
+      if (!files.length && !limit)
         throw new Error(t("Nothing to attach. The file may have been moved, renamed, or deleted."));
       return {
         files,
@@ -336,47 +387,103 @@ export function useQuickAttachments(
                 p2: MAX_ATTACHMENTS,
               }),
             }
-          : {}),
+          : limit
+            ? { warning: limit }
+            : {}),
       };
     }
     if (text) return { files: [] };
-    try {
-      const file = await accepted.once("clipboard-image", async () => {
-        const selected = await readClipboardImage();
-        if (selected.size > MAX_EMBED_BYTES)
-          throw new Error("The clipboard image exceeds retained attachment capacity.");
-        return selected;
-      });
-      return { files: await readFiles([file], accepted) };
-    } catch (error) {
-      if (error instanceof Error && error.message === "The clipboard does not contain an image.")
-        return { files: [] };
-      throw error;
-    }
+    if (currentFiles().length >= MAX_ATTACHMENTS)
+      return { files: [], warning: t("You can attach up to {p0} files.", { p0: MAX_ATTACHMENTS }) };
+    const file = await accepted.once("clipboard-image", async () => {
+      const selected = await readClipboardImage();
+      if (selected && selected.size > MAX_EMBED_BYTES)
+        throw new AttachmentFailureError(
+          "image-too-large",
+          "The clipboard image exceeds retained attachment capacity.",
+        );
+      return selected;
+    });
+    await previous;
+    return { files: file ? await readFiles([file], accepted) : [] };
   };
   const onPaste = (event: ClipboardEvent) => {
     if (!canMutate()) {
       event.preventDefault();
       return;
     }
-    const pasted = filesFromClipboard(event.clipboardData);
+    const message = messageFromClipboard(event.clipboardData);
+    const pasted = message?.files ?? filesFromClipboard(event.clipboardData);
     if (pasted.length) {
       if (!supported) return;
       event.preventDefault();
+      const captured = message ? captureDraft(event.target) : null;
+      if (captured && message?.text) insertRestoredText(captured, message.text);
+      const pasteEnd = captured ? captured.start + (message?.text.length ?? 0) : 0;
+      const expected = captured?.field.value;
       const selected = pasted.slice(0, MAX_ATTACHMENTS);
       const overflow = selected.length < pasted.length;
-      void collect((accepted) => readFiles(selected, accepted, overflow), false, true);
+      void collect(
+        (accepted) => readFiles(selected, accepted, overflow),
+        false,
+        true,
+        (additions, attachments) => {
+          if (!message || !captured || !captured.field.isConnected) return false;
+          if (captured.field.value !== expected) return false;
+          const restored = clipboardTextWithAttachments(message, additions, attachments);
+          if (restored === undefined) return false;
+          insertRestoredText(
+            {
+              ...captured,
+              value: captured.field.value,
+              end: message.text ? pasteEnd : captured.end,
+            },
+            restored,
+          );
+          return true;
+        },
+      );
       return;
     }
     if (!supported) return;
     const text = event.clipboardData.getData("text/plain");
+    const paste =
+      !message && !isFileReferenceText(text)
+        ? capturePastedTextAttachment(event.target, text)
+        : undefined;
+    if (paste) {
+      event.preventDefault();
+      const field = paste.field;
+      void collect(
+        (accepted) => readFiles([paste.file], accepted),
+        false,
+        true,
+        (additions, attachments) => {
+          const index = attachments.indexOf(additions[0]);
+          if (!field.isConnected || index < 0) return true;
+          const range = paste.range(field.value);
+          const edit = insertPastedTextReference(
+            field.value,
+            range,
+            attachmentDraftTokens(attachments)[index],
+          );
+          insertRestoredText(
+            { field, value: field.value, ...range },
+            edit.text.slice(range.start, edit.caret),
+          );
+          return true;
+        },
+      );
+      return;
+    }
     if (text && !isFileReferenceText(text)) return;
     if (!canCollect()) {
       if (!text) {
         event.preventDefault();
+        const previous = queueRef.current.tail;
         void collect(async (accepted) => {
-          const result = await clipboard("", accepted);
-          if (result.warning && alive.current) onError(result.warning);
+          const result = await clipboard("", accepted, previous);
+          if (result.warning && alive.current) onError({ title: result.warning });
           return result.files;
         }, true);
       }
@@ -387,8 +494,8 @@ export function useQuickAttachments(
     void collect(async (accepted) => {
       const result = await clipboard(text, accepted);
       accepted.apply(() => {
-        if (result.warning && alive.current) onError(result.warning);
-        if (result.files.length) {
+        if (result.warning && alive.current) onError({ title: result.warning });
+        if (result.files.length || result.warning) {
           if (captured) dropPastedText(captured, text);
         } else if (captured) insertRestoredText(captured, text);
       });
@@ -461,16 +568,27 @@ export function useQuickAttachments(
     chooseFiles: () => {
       const selection = retainAttachmentPickerSelection();
       return collect((accepted) =>
-        pickAttachments({ read: () => accepted.once("picker-selection", selection.read) }),
+        withPathCapacity((capacity) =>
+          pickAttachments(
+            { read: () => accepted.once("picker-selection", selection.read) },
+            capacity,
+          ),
+        ),
       );
     },
     takeScreenshot: () => {
       let captured: string | null = null;
       return collect(async (accepted) => {
+        if (currentFiles().length >= MAX_ATTACHMENTS) {
+          if (alive.current)
+            onError({ title: t("You can attach up to {p0} files.", { p0: MAX_ATTACHMENTS }) });
+          return [];
+        }
         captured = await accepted.once("screen-selection", () =>
           invoke<string | null>("quick_composer_capture"),
         );
-        return captured ? attachmentsFromPaths([captured]) : [];
+        const path = captured;
+        return path ? withPathCapacity((capacity) => attachmentsFromPaths([path], capacity)) : [];
       }).then(async () => {
         if (!owner && captured && !currentFiles().some((file) => file.path === captured))
           await releaseCaptures([{ path: captured } as Attachment]).catch(() => {});

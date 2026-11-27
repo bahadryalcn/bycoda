@@ -91,19 +91,10 @@ export function PickerShell({
                 event.preventDefault();
                 show();
               }
-              if (
-                !disabled &&
-                !readOnly &&
-                canClear &&
-                (event.key === "Delete" || event.key === "Backspace")
-              ) {
-                event.preventDefault();
-                onClear?.();
-              }
             }}
           >
             <span id={valueId} className={styles.value} data-placeholder={!shown || undefined}>
-              {shown || placeholder || t("Choose a date")}
+              {shown || placeholder || (timeOnly ? t("Choose a time") : t("Choose a date"))}
             </span>
             {timeOnly ? (
               <Clock className="size-(--ui-icon-sm)" aria-hidden="true" />
@@ -121,7 +112,9 @@ export function PickerShell({
               align="start"
               gap={4}
               layer={layer}
-              solid
+              // Re-measure the preferred editor width when a viewport clamp is lifted.
+              minWidth={0}
+              flow="scroll"
               className={styles.popover}
               onDismiss={(reason) => (reason === "escape" ? close() : setOpen(false))}
             >

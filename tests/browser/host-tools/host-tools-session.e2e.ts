@@ -64,17 +64,14 @@ for (const theme of ["dark", "light"])
       expect(await browserCalls()).toBe(before);
       await selectTool(page, "Host browser");
       await expect(page.locator("img.host-browser-frame")).toBeVisible();
-      await expect(page.getByRole("button", { name: "Control active", exact: true })).toBeVisible();
+      await expect(page.locator("img.host-browser-frame")).toHaveAttribute("tabindex", "0");
       await page.screenshot({
         path: `temp/verification/2026-11-04-session-tools/control-${theme}-${width}.png`,
         animations: "disabled",
       });
-      await page.getByRole("button", { name: "Control active", exact: true }).click();
-      await expect(page.getByRole("button", { name: "View only", exact: true })).toBeVisible();
-      await page.screenshot({
-        path: `temp/verification/2026-11-04-session-tools/view-only-${theme}-${width}.png`,
-        animations: "disabled",
-      });
+      await expect(page.getByRole("button", { name: "Control active", exact: true })).toHaveCount(
+        0,
+      );
       expect(errors).toEqual([]);
     });
   }

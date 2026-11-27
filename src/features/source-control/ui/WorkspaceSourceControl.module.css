@@ -6,8 +6,3 @@
   margin-block-start: 8px;
   padding-block-start: 4px;
 }
-
-.nested {
-  margin-inline-start: 12px;
-  min-inline-size: 0;
-}

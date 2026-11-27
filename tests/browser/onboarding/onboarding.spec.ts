@@ -2,6 +2,68 @@ import { expect, test } from "@playwright/test";
 const fixture = "/tests/browser/onboarding/onboarding.html";
 const captures = "temp/verification/2026-10-22-provider-add-ux/browser";
 
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`welcome offer yields to an account sheet ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`${fixture}?offerModal&theme=${theme}`);
+      const offer = page.locator("[data-tour-offer-start]");
+      const opener = page.getByRole("button", { name: "Open test account" });
+      await expect(offer).toBeVisible();
+      await opener.click();
+      const sheet = page.getByRole("dialog", { name: "Test account" });
+      await expect(sheet).toBeVisible();
+      await expect(offer).toHaveCount(0);
+      await page.screenshot({
+        path: `temp/verification/social-platform-acceptance/tour-account-sheet-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await sheet.getByRole("button", { name: "Close", exact: true }).click();
+      await expect(offer).toBeVisible();
+      await expect(opener).toBeFocused();
+      await page.getByRole("button", { name: "Later", exact: true }).click();
+      await expect(offer).toHaveCount(0);
+    });
+  }
+}
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`setup illustrations follow motion preferences ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      await page.addInitScript(() => {
+        localStorage.setItem("bycoda.decorativeMotion.v1", "true");
+      });
+      await page.goto(`${fixture}?account=1&theme=${theme}`);
+      const dialog = page.getByRole("dialog");
+      const illustration = dialog.locator(".onboarding-illustrated-step img");
+      const checkScene = async (asset: string) => {
+        await expect(illustration).toHaveAttribute("src", new RegExp(`${asset}[.-]`));
+        await expect(illustration).not.toHaveAttribute("src", /-still/);
+        await expect
+          .poll(() => illustration.evaluate((node: HTMLImageElement) => node.naturalWidth))
+          .toBeGreaterThan(0);
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await expect(illustration).toHaveAttribute("src", new RegExp(`${asset}-still[.-]`));
+        await expect
+          .poll(() => illustration.evaluate((node: HTMLImageElement) => node.naturalWidth))
+          .toBeGreaterThan(0);
+        await expect(illustration).toBeInViewport();
+        await dialog.screenshot({
+          path: `temp/verification/settings-setup-polish/${asset}-${theme}-${width}.png`,
+        });
+        await page.emulateMedia({ reducedMotion: "no-preference" });
+      };
+      await expect(dialog.getByRole("heading", { name: "Sign in", level: 3 })).toBeVisible();
+      await checkScene("guide-tip");
+      await dialog.getByRole("button", { name: /\d\s*Machines/ }).click();
+      await expect(dialog.getByRole("button", { name: /Manage connections/ })).toBeVisible();
+      await checkScene("connect-computer");
+    });
+  }
+}
+
 test("saves workspace and appearance choices, finishes directly and can reopen", async ({
   page,
 }) => {
@@ -41,7 +103,8 @@ test("saves workspace and appearance choices, finishes directly and can reopen",
   await dialog.getByRole("button", { name: /4\s*Machines/ }).click();
   await expect(dialog.getByRole("button", { name: /Manage connections/ })).toBeVisible();
   await dialog.getByRole("button", { name: /5\s*Projects/ }).click();
-  await dialog.getByRole("button", { name: "Finish setup" }).click();
+  // Nothing is selected, so the primary Import action is disabled and Skip import finishes setup.
+  await dialog.getByRole("button", { name: "Skip import" }).click();
   await expect(page.getByText("Workspace ready")).toBeVisible();
   await expect(
     page
@@ -71,14 +134,14 @@ test("finds existing accounts, links another profile and lets the user choose a 
   const codex = page
     .locator(".onboarding-agent")
     .filter({ has: page.getByRole("switch", { name: "Use Codex", exact: true }) });
-  await expect(claude.getByRole("status")).toHaveText("Signed in");
+  await expect(claude.locator(".onboarding-agent-status")).toHaveText("Signed in");
   await expect(
     claude.getByRole("button", { name: "Sign in to Claude Code", exact: true }),
   ).toHaveCount(0);
-  await expect(codex.getByRole("status")).toHaveText("Not signed in");
+  await expect(codex.locator(".onboarding-agent-status")).toHaveText("Not signed in");
   await expect(codex.getByRole("button", { name: "Sign in to Codex", exact: true })).toBeEnabled();
   await claude.getByRole("button", { name: "More options for Claude Code", exact: true }).click();
-  await page.getByRole("button", { name: "Terminal account profiles", exact: true }).click();
+  await page.getByRole("button", { name: "Add existing account", exact: true }).click();
   await expect(page.getByText("D:/profiles/claude", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Use account", exact: true }).click();
   await expect
@@ -94,7 +157,7 @@ test("finds existing accounts, links another profile and lets the user choose a 
   // Escape closes one layer at a time: the profiles popover, then the provider's options.
   await page.keyboard.press("Escape");
   await expect(
-    page.getByRole("dialog", { name: "Terminal account profiles", exact: true }),
+    page.getByRole("dialog", { name: "Accounts on this computer", exact: true }),
   ).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(
@@ -168,7 +231,16 @@ test("adds only the chosen missing provider after validation and keeps it on res
   await expect(add.getByRole("button", { name: "Add provider", exact: true })).toBeDisabled();
   await add.getByRole("textbox", { name: "CLI path", exact: true }).fill("D:/invalid.exe");
   await add.getByRole("button", { name: "Add provider", exact: true }).click();
-  await expect(add.getByRole("alert")).toContainText("Selected file is not a provider CLI");
+  await expect(add.getByRole("alert")).toContainText("Could not inspect the CLI executable.");
+  // The raw reason sits behind the shared Details control.
+  await add
+    .getByRole("alert")
+    .getByRole("button", { name: /^Details/ })
+    .click();
+  await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText(
+    "Selected file is not a provider CLI",
+  );
+  await page.keyboard.press("Escape");
   await expect(page.locator(".onboarding-agent")).toHaveCount(2);
   await add.getByRole("button", { name: "Choose executable", exact: true }).click();
   await expect(add.getByRole("textbox", { name: "CLI path", exact: true })).toHaveValue(
@@ -181,7 +253,9 @@ test("adds only the chosen missing provider after validation and keeps it on res
   const cursor = page
     .locator(".onboarding-agent")
     .filter({ has: page.getByRole("switch", { name: "Use Cursor", exact: true }) });
-  await expect(cursor.getByRole("status")).toHaveText("CLI path saved · restart required");
+  await expect(cursor.locator(".onboarding-agent-status")).toHaveText(
+    "CLI path saved · restart required",
+  );
   await expect(cursor.getByRole("button", { name: "Sign in to Cursor", exact: true })).toHaveCount(
     0,
   );
@@ -303,10 +377,45 @@ for (const theme of ["light", "dark"])
       );
       const ring = page.locator(".guide-hub-ring").first();
       await expect(ring).toHaveCSS("border-top-width", "1px");
+      await expect(page.getByRole("button", { name: "Show me" }).first()).toBeVisible();
       await page.screenshot({
         animations: "disabled",
-        path: `temp/verification/feature-controls/guide-hub-${theme}-${width}.png`,
+        path: `temp/verification/guide-wiki/steps-${theme}-${width}.png`,
       });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`guide wiki search and article ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`${fixture}?guideHub&theme=${theme}`);
+      // The topic panel no longer links out; the Wiki tab is the way to the full articles.
+      const wiki = page.getByRole("tab", { name: "Wiki" });
+      await wiki.click();
+      await expect(wiki).toHaveAttribute("aria-selected", "true");
+      await page.getByRole("button", { name: /Projects and workbench/ }).click();
+      await expect(page.getByRole("heading", { name: "Projects and workbench" })).toBeVisible();
+      const search = page.getByRole("searchbox", { name: "Search" });
+      await search.fill("coordinator specialist");
+      await expect(page.getByRole("heading", { name: "Crews and delegation" })).toBeVisible();
+      await expect(page.getByRole("article").getByRole("list")).toHaveCSS(
+        "list-style-type",
+        "decimal",
+      );
+      await expect(page.getByRole("link", { name: "Open in browser" })).toHaveAttribute(
+        "href",
+        "https://bycoda.codes/guide/crews",
+      );
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/guide-wiki/wiki-${theme}-${width}.png`,
+      });
+      await search.fill("no article matches this sentence");
+      await expect(page.getByText("No results", { exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Clear search", exact: true }).last().click();
+      await expect(page.getByRole("heading", { name: "Projects and workbench" })).toBeVisible();
+      await page.getByRole("tab", { name: "Steps" }).click();
+      await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
     });
 
 for (const theme of ["light", "dark"])
@@ -450,4 +559,11 @@ test.describe("coarse onboarding controls", () => {
       path: "temp/verification/onboarding-controls/coarse-appearance-dark-800.png",
     });
   });
+});
+
+test("the Machines step appears only while a remote machine exists", async ({ page }) => {
+  await page.goto(`${fixture}?noMachines`);
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("button", { name: /4\s*Projects/ })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /Machines/ })).toHaveCount(0);
 });

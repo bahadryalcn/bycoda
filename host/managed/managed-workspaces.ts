@@ -6,24 +6,54 @@ import {
   canonicalWorkspacePath,
   workspacePathKey,
 } from "../workspaces/workspace-paths";
-import { hostGitRepositoryKey, withHostGitMutation } from "../git/git-mutations";
+import {
+  hostGitRepositoryKey,
+  withHostGitMutation,
+  withHostGitMutations,
+} from "../git/git-mutations";
+import { stat } from "node:fs/promises";
 import { runGitText } from "../../src/shared/lib/processExecution.node";
 import {
+  fetchRemoteBase,
   managedWorkspaceBase,
-  managedWorkspaceNames,
   managedWorkspaceRoot,
   materializeManagedWorkspace,
+  rollbackExtraWorktree,
+  rollbackManagedWorkspaceGit,
+  validateExtraRepository,
+  type ExtraWorktreeRecord,
 } from "../git/git-worktrees";
+import {
+  managedWorkspaceNames,
+  markManagedWorkspaceBranch,
+  reconcileBranchRenames,
+  renameManagedWorkspaceBranch,
+  type RenameManagedWorkspaceContext,
+} from "./workspace-branch-naming";
+import {
+  WorkspaceCreationCancelled,
+  createCreationRun,
+  createExtraWorktrees,
+  outcomeUnknown,
+  type CreationRun,
+  type ExtraRepository,
+} from "./workspace-creation";
+import { workspaceCreationProgress } from "./workspace-creation-progress";
 import { projectRepositoryIdentity } from "../workspaces/workspace-policy";
 import { entryMissing } from "../workspaces/workspace-cleanup-paths";
 import type { HostStore } from "../store";
+import { loadSiblingJournal, siblingJournalWriter } from "./workspace-sibling-journal";
+import { WORKSPACE_CREATION_MAX_REPOSITORIES } from "../workspaces/workspace-contracts";
 import type {
   ManagedWorkspace,
+  WorkspaceBaseSource,
   WorkspaceCreateOperation,
   WorkspaceMutation,
   WorkspaceOwner,
 } from "../workspaces/workspace-contracts";
 import type {
+  WorkspaceBranchRenamer,
+  WorkspaceCreationProgressRegistry,
   WorkspaceOwnerAuthorization,
   WorkspacePolicyResolver,
   WorkspaceRegistry,
@@ -32,6 +62,8 @@ import type { WorkspaceRpcRequest } from "../workspaces/workspace-rpc-contracts"
 
 type Options = {
   isActive?: (workspace: ManagedWorkspace) => Promise<boolean>;
+  /** Like `isActive`, but the owner's own turn and branch-naming job do not count (rename only). */
+  isActiveForRename?: (workspace: ManagedWorkspace) => Promise<boolean>;
   /** Close may retire an absent directory's record while retaining editor recovery.
    * Must reject every non-editor activity; this never authorizes filesystem cleanup. */
   canRetireMissing?: (workspace: ManagedWorkspace) => Promise<boolean>;
@@ -42,7 +74,12 @@ type Options = {
   /** External ingress fence; reservation-proven recovery updates intentionally bypass it. */
   assertWritable?: (workspaceId: string) => Promise<void>;
   authorizeOwner?: (owner: WorkspaceOwnerAuthorization) => Promise<boolean>;
+  /** Progress and cancel registry for `workspaces.prepare`; defaults to the Host-wide one. */
+  creationProgress?: WorkspaceCreationProgressRegistry;
 };
+
+type PreparedResult = Awaited<ReturnType<WorkspaceRegistry["prepare"]>>;
+const ROLLED_BACK = { rolledBack: true } as const;
 
 export function createManagedWorkspaceRegistry(
   store: HostStore,
@@ -52,6 +89,10 @@ export function createManagedWorkspaceRegistry(
   touchActivity(workspaceId: string): Promise<void>;
   touchOwnerActivity(owner: WorkspaceOwner): Promise<void>;
   recoverCreate(operationId: string): Promise<ManagedWorkspace>;
+  /** Startup: removes sibling worktrees of completed creations that never recorded their result. */
+  recoverSiblings(): Promise<void>;
+  /** Startup: finishes or reverts a branch rename a crash interrupted. */
+  recoverBranchRenames(): Promise<void>;
   abandonUnmaterializedCreate(
     workspaceId: string,
     apply: boolean,
@@ -64,6 +105,7 @@ export function createManagedWorkspaceRegistry(
     request: WorkspaceMutation & { targetBranchRef: string; targetDirectory: string },
     owner: WorkspaceOwnerAuthorization,
   ): Promise<ManagedWorkspace>;
+  renameBranch: WorkspaceBranchRenamer;
 } {
   const required = async (id: string) => {
     const workspace = await store.managedWorkspace(id);
@@ -91,7 +133,12 @@ export function createManagedWorkspaceRegistry(
     for (const claim of await store.workspaceFeatureClaims({ workspaceId: id }))
       await store.deleteWorkspaceFeatureClaim(claim.id, id);
   };
-  const complete = async (operation: WorkspaceCreateOperation, cwd: string, creating: boolean) => {
+  const complete = async (
+    operation: WorkspaceCreateOperation,
+    cwd: string,
+    creating: boolean,
+    run?: CreationRun,
+  ) => {
     if (operation.phase === "complete") {
       const receipt = await store.workspaceReceipt<ManagedWorkspace>(
         "workspace.materialized",
@@ -99,12 +146,29 @@ export function createManagedWorkspaceRegistry(
         { operationId: operation.id },
       );
       if (!receipt) throw new Error("Workspace creation completion receipt missing");
-      return receipt;
+      // The receipt is frozen at completion; a rename since then moved the branch on.
+      const current = await store.managedWorkspace(operation.workspaceId);
+      return current && current.branchRef !== receipt.branchRef
+        ? { ...receipt, branchRef: current.branchRef, revision: current.revision }
+        : receipt;
     }
     let op = operation;
     try {
       await options.beforeMaterialize?.(op.plannedWorkspace);
-      await materializeManagedWorkspace(cwd, op.plannedWorkspace, creating);
+      if (run) {
+        run.check();
+        run.stage("checkout", "running");
+        run.gitReached = true;
+      }
+      await materializeManagedWorkspace(cwd, op.plannedWorkspace, creating, {
+        signal: run?.signal,
+      });
+      // Idempotent: whichever attempt or recovery materialized the branch also marks it.
+      await markManagedWorkspaceBranch(cwd, op.plannedWorkspace.branchRef, op.workspaceId);
+      if (run) {
+        run.gitReached = false;
+        run.checkout(0, 100);
+      }
       await store.transaction(async () => {
         const current = await required(op.workspaceId);
         revision(current, op.expectedRevision);
@@ -161,7 +225,51 @@ export function createManagedWorkspaceRegistry(
     }
   };
 
+  const renameContext = (): RenameManagedWorkspaceContext => ({
+    store,
+    isActive: options.isActiveForRename ?? options.isActive,
+    siblings: async (workspace) =>
+      store.workspaceSiblings({ workspaceId: workspace.id, committedOnly: true }),
+  });
+
   const registry: ReturnType<typeof createManagedWorkspaceRegistry> = {
+    async recoverSiblings() {
+      // Each row is isolated: a failure (repository gone, file lock, timeout) never aborts boot.
+      for (const operationId of await store.uncommittedSiblingOperations()) {
+        try {
+          const operation = await store.workspaceOperation(operationId);
+          // An unfinished creation keeps its journal for the retry that recovers it.
+          if (operation?.kind === "create" && operation.phase !== "complete") continue;
+          // A reported creation (result receipt) is never rolled back; only its leftovers are dropped.
+          const reported = !!(await store.workspaceReceipt(
+            "workspace.prepare.result",
+            operationId,
+            { operationId },
+          ));
+          for (const record of (await loadSiblingJournal(store, operationId)).reverse())
+            try {
+              if (!reported) await rollbackExtraWorktree(record);
+              await store.deleteWorkspaceSibling(operationId, record.path);
+            } catch (error) {
+              const gone = await stat(record.repository).then(
+                () => false,
+                () => true,
+              );
+              // A repository that no longer exists has nothing left to roll back.
+              if (gone) await store.deleteWorkspaceSibling(operationId, record.path);
+              else
+                console.warn(
+                  `Sibling worktree ${record.path} stays journaled: ${error instanceof Error ? error.message : String(error)}`,
+                );
+            }
+        } catch (error) {
+          console.warn(
+            `Sibling recovery of operation ${operationId} failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+    },
+    recoverBranchRenames: () => reconcileBranchRenames(renameContext()),
     async recoverCreate(operationId) {
       const stored = await store.workspaceOperation(operationId);
       if (!stored || stored.kind !== "create")
@@ -219,164 +327,8 @@ export function createManagedWorkspaceRegistry(
         return complete(operation, project.cwd, creating);
       });
     },
-    async prepare(request) {
-      if (
-        !request.environmentId?.trim() ||
-        !request.idempotencyKey?.trim() ||
-        !request.owner?.id?.trim() ||
-        !["session", "task", "automationRun", "stewardRun"].includes(request.owner.kind)
-      )
-        throw new Error("Invalid workspace creation identity");
-      const project = await store.project(request.projectId);
-      const repositoryId = await projectRepositoryIdentity(store, request.projectId);
-      return withHostGitMutation(project.cwd, async () => {
-        const scope = `workspace.prepare:${repositoryId}:${request.environmentId}`;
-        const existing = await store.workspaceReceipt<{ operationId: string }>(
-          scope,
-          request.idempotencyKey,
-          request,
-          { admit: true },
-        );
-        if (existing) {
-          const op = await store.workspaceOperation(existing.operationId);
-          if (!op || op.kind !== "create") throw new Error("Workspace creation journal missing");
-          return { workspace: await complete(op, project.cwd, true), operationId: op.id };
-        }
-        const resolved = (
-          await policy.resolve({
-            projectId: request.projectId,
-            environmentId: request.environmentId,
-            choice: request.choice,
-          })
-        ).policy;
-        if (resolved.defaultMode === "current")
-          throw new Error(
-            "Current checkout is an explicit exception; managed preparation requires worktree mode",
-          );
-        let baseRef = request.baseRef ?? resolved.integrationBranchRef;
-        let baseCommit: string;
-        let targetBranchRef = resolved.integrationBranchRef;
-        let targetDirectory: string | undefined;
-        if (request.source !== undefined) {
-          if (request.baseRef !== undefined || request.dependency !== undefined)
-            throw new Error("Selected source cannot be combined with another base or dependency");
-          const source = request.source;
-          if (
-            !source ||
-            typeof source.directory !== "string" ||
-            !isAbsolute(source.directory) ||
-            typeof source.branchRef !== "string" ||
-            !source.branchRef.startsWith("refs/heads/") ||
-            typeof source.baseCommit !== "string" ||
-            !/^[a-f0-9]{40,64}$/i.test(source.baseCommit)
-          )
-            throw new Error(
-              "Selected source requires an absolute checkout, full branch ref and committed SHA",
-            );
-          const directory = await canonicalWorkspacePath(source.directory);
-          if ((await hostGitRepositoryKey(directory)) !== repositoryId)
-            throw new Error("Selected source belongs to a different repository");
-          const git = (args: string[]) =>
-            runGitText(args, {
-              cwd: directory,
-              windowsHide: true,
-              timeout: 30_000,
-              env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
-            });
-          await git(["check-ref-format", source.branchRef]);
-          if ((await git(["symbolic-ref", "--quiet", "HEAD"])).trim() !== source.branchRef)
-            throw new Error("Selected source checkout is not on the requested target branch");
-          const registered = (await git(["worktree", "list", "--porcelain", "-z"]))
-            .split("\0\0")
-            .some((record) => {
-              const fields = record.split("\0");
-              return (
-                fields.some((line) => {
-                  if (!line.startsWith("worktree ")) return false;
-                  return workspacePathKey(line.slice(9)) === workspacePathKey(directory);
-                }) && fields.includes(`branch ${source.branchRef}`)
-              );
-            });
-          if (!registered) throw new Error("Selected source is not a registered target checkout");
-          baseCommit = await managedWorkspaceBase(project.cwd, source.baseCommit);
-          if ((await git(["rev-parse", "--verify", "HEAD^{commit}"])).trim() !== baseCommit)
-            throw new Error("Selected source commit changed; resolve the lead checkout again");
-          baseRef = source.branchRef;
-          targetBranchRef = source.branchRef;
-          targetDirectory = directory;
-        } else if (request.dependency) {
-          const dependency = await required(request.dependency.workspaceId);
-          if (
-            dependency.repositoryId !== repositoryId ||
-            dependency.environmentId !== request.environmentId
-          )
-            throw new Error("Dependency belongs to a different repository or environment");
-          if (!/^[a-f0-9]{40,64}$/i.test(request.dependency.commit))
-            throw new Error("Dependency must be a committed SHA");
-          baseCommit = await managedWorkspaceBase(project.cwd, request.dependency.commit);
-          baseRef = dependency.branchRef;
-          // The caller cannot label an unrelated object as this dependency's committed result.
-          const { execFileAsync } = await import("../../src/shared/lib/processExecution.node");
-          await execFileAsync(
-            "git",
-            ["merge-base", "--is-ancestor", baseCommit, dependency.branchRef],
-            { cwd: project.cwd, windowsHide: true, timeout: 10_000 },
-          );
-        } else baseCommit = await managedWorkspaceBase(project.cwd, baseRef);
-        const id = randomUUID();
-        const names = managedWorkspaceNames(request.owner, request.slug, id);
-        const root = await managedWorkspaceRoot(project.cwd, resolved.root);
-        const workspace: ManagedWorkspace = {
-          id,
-          repositoryId,
-          projectId: request.projectId,
-          environmentId: request.environmentId,
-          owner: request.owner,
-          path: join(root, names.directory),
-          branchRef: `refs/heads/${names.branch}`,
-          baseRef,
-          baseCommit,
-          targetBranchRef,
-          ...(targetDirectory ? { targetDirectory } : {}),
-          state: "idle",
-          directoryState: "blocked",
-          revision: 0,
-          lastActivityAt: Date.now(),
-          pinned: resolved.pinned,
-          ...(request.featureKey ? { featureKey: request.featureKey } : {}),
-        };
-        const op: WorkspaceCreateOperation = {
-          id: randomUUID(),
-          kind: "create",
-          phase: "registered",
-          workspaceId: id,
-          expectedRevision: 0,
-          idempotencyKey: request.idempotencyKey,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          plannedWorkspace: workspace,
-        };
-        await store.transaction(async () => {
-          const existingOwner = (
-            await store.managedWorkspaces({ repositoryId, environmentId: request.environmentId })
-          ).find(
-            (entry) =>
-              entry.owner.kind === request.owner.kind && entry.owner.id === request.owner.id,
-          );
-          if (existingOwner)
-            throw Object.assign(
-              new Error("This writer already owns a managed workspace; resume that workspace"),
-              { code: "WORKSPACE_OWNER_CONFLICT", workspaceId: existingOwner.id },
-            );
-          await store.insertManagedWorkspace(workspace);
-          await store.saveWorkspaceOperation(op, null);
-          await store.saveWorkspaceReceipt(scope, request.idempotencyKey, request, {
-            operationId: op.id,
-          });
-        });
-        return { workspace: await complete(op, project.cwd, true), operationId: op.id };
-      });
-    },
+    prepare: (request) => prepareWorkspace(request),
+    renameBranch: (request) => renameManagedWorkspaceBranch(renameContext(), request),
     async get({ workspaceId }) {
       return store.managedWorkspace(workspaceId);
     },
@@ -580,9 +532,14 @@ export function createManagedWorkspaceRegistry(
             timeout: 30_000,
             env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
           });
+        // Only `--quiet`'s exit 1 means "no such ref"; a timeout or any other failure is
+        // unknown and must reach the caller, which then keeps the ordinary recovery.
         const branch = await git(["rev-parse", "--verify", "--quiet", workspace.branchRef]).then(
           () => true,
-          () => false,
+          (error: { code?: unknown; killed?: boolean }) => {
+            if (error.code === 1 && !error.killed) return false;
+            throw error;
+          },
         );
         const registrations = (await git(["worktree", "list", "--porcelain", "-z"])).split("\0");
         const pathKey = workspacePathKey(workspace.path);
@@ -649,18 +606,399 @@ export function createManagedWorkspaceRegistry(
       });
     },
     async touchOwnerActivity(owner) {
-      for (const workspace of await store.managedWorkspaces()) {
+      for (const workspace of await store.managedWorkspaces({
+        ownerKind: owner.kind,
+        ownerId: owner.id,
+      })) {
         // A blocked or removed directory has no activity to record; its owner keeps
         // heartbeating, so touching it would only fail on every beat.
-        if (
-          workspace.owner.kind === owner.kind &&
-          workspace.owner.id === owner.id &&
-          workspace.directoryState === "present"
-        )
-          await registry.touchActivity(workspace.id);
+        if (workspace.directoryState === "present") await registry.touchActivity(workspace.id);
       }
     },
   };
+  async function prepareWorkspace(
+    request: WorkspaceRpcRequest<"workspaces.prepare">,
+  ): Promise<PreparedResult> {
+    if (
+      !request.environmentId?.trim() ||
+      !request.idempotencyKey?.trim() ||
+      !request.owner?.id?.trim() ||
+      !["session", "task", "automationRun", "stewardRun"].includes(request.owner.kind)
+    )
+      throw new Error("Invalid workspace creation identity");
+    const progressId =
+      typeof request.progressId === "string" && request.progressId.trim()
+        ? request.progressId.trim()
+        : undefined;
+    const run = createCreationRun(
+      options.creationProgress ?? workspaceCreationProgress,
+      progressId,
+    );
+    try {
+      const result = await prepareCreation(request, run);
+      // Paths that created nothing (a replayed result) never sealed; a lost cancel race is moot.
+      run.seal();
+      return result;
+    } catch (error) {
+      run.finish("failed");
+      throw error;
+    }
+  }
+  const repositoryList = (request: WorkspaceRpcRequest<"workspaces.prepare">): string[] => {
+    const list = request.repositories ?? [];
+    if (!Array.isArray(list) || list.some((entry) => typeof entry !== "string"))
+      throw new Error("Repositories must be a list of folders");
+    if (new Set(list).size > WORKSPACE_CREATION_MAX_REPOSITORIES)
+      throw new Error(
+        `At most ${WORKSPACE_CREATION_MAX_REPOSITORIES} repositories can join a worktree session`,
+      );
+    return [...new Set(list)];
+  };
+  async function prepareCreation(
+    request: WorkspaceRpcRequest<"workspaces.prepare">,
+    run: CreationRun,
+  ): Promise<PreparedResult> {
+    const requested = repositoryList(request);
+    // The progress id is a client handle, not part of what the idempotency key binds.
+    const bound = { ...request };
+    delete bound.progressId;
+    if (request.baseFromRemote && (request.source !== undefined || request.dependency))
+      throw new Error("Remote start cannot be combined with a selected source or dependency");
+    if (request.baseFromRemote !== undefined && typeof request.baseFromRemote !== "boolean")
+      throw new Error("baseFromRemote must be a boolean");
+    const project = await store.project(request.projectId);
+    const repositoryId = await projectRepositoryIdentity(store, request.projectId);
+    const extras: ExtraRepository[] = [];
+    for (const requestedDirectory of requested) {
+      const valid = await validateExtraRepository(project.cwd, repositoryId, requestedDirectory);
+      if (extras.some((entry) => entry.directory === valid.directory))
+        throw new Error(`Repository listed twice: ${requestedDirectory}`);
+      extras.push({ requested: requestedDirectory, directory: valid.directory });
+    }
+    run.total = extras.length + 1;
+    // Every repository gate of this creation, in one canonical order shared with rename.
+    return withHostGitMutations(
+      [project.cwd, ...extras.map((entry) => entry.directory)],
+      async () => {
+        run.check();
+        const baseScope = `workspace.prepare:${repositoryId}:${request.environmentId}`;
+        // A rolled-back attempt released its key: the retry gets a fresh receipt generation.
+        let scope = baseScope;
+        for (
+          let generation = 1;
+          await store.workspaceReceipt(
+            "workspace.prepare.rolledback",
+            `${scope}|${request.idempotencyKey}`,
+            ROLLED_BACK,
+          );
+          generation++
+        )
+          scope = `${baseScope}#${generation}`;
+        const existing = await store.workspaceReceipt<{ operationId: string }>(
+          scope,
+          request.idempotencyKey,
+          bound,
+          { admit: true },
+        );
+        const resolved = (
+          await policy.resolve({
+            projectId: request.projectId,
+            environmentId: request.environmentId,
+            choice: request.choice,
+          })
+        ).policy;
+        if (resolved.defaultMode === "current")
+          throw new Error(
+            "Current checkout is an explicit exception; managed preparation requires worktree mode",
+          );
+        const finishRun = async (
+          operation: WorkspaceCreateOperation,
+          workspace: ManagedWorkspace,
+          journal: ExtraWorktreeRecord[],
+        ): Promise<PreparedResult> => {
+          const saved = await store.workspaceReceipt<Record<string, string>>(
+            "workspace.prepare.result",
+            operation.id,
+            { operationId: operation.id },
+          );
+          const plan = await store.workspaceReceipt<{ baseSource: WorkspaceBaseSource }>(
+            "workspace.prepare.plan",
+            operation.id,
+            { operationId: operation.id },
+          );
+          const baseSource = plan?.baseSource ?? "local";
+          // Idempotent on every prepare, retry and recovery: a missing marker would fail guards open.
+          await markManagedWorkspaceBranch(project.cwd, workspace.branchRef, workspace.id);
+          if (saved) {
+            for (const record of await store.workspaceSiblings({
+              workspaceId: workspace.id,
+              committedOnly: true,
+            }))
+              await markManagedWorkspaceBranch(
+                record.repository,
+                record.branch,
+                workspace.id,
+                "sibling",
+              );
+            return { workspace, operationId: operation.id, extraWorktrees: saved, baseSource };
+          }
+          run.check();
+          run.gitReached = true;
+          const extraWorktrees = extras.length
+            ? await createExtraWorktrees({
+                repositories: extras,
+                workspace,
+                configuredRoot: resolved.root,
+                fromRemote: request.baseFromRemote === true,
+                run,
+                journal,
+                persist: siblingJournalWriter(store, operation.id, workspace.id),
+              })
+            : {};
+          run.gitReached = false;
+          // Success is claimed atomically against a cancel; a lost race rolls everything back.
+          if (!run.seal()) throw new WorkspaceCreationCancelled();
+          await store.transaction(async () => {
+            await store.saveWorkspaceReceipt(
+              "workspace.prepare.result",
+              operation.id,
+              { operationId: operation.id },
+              extraWorktrees,
+            );
+            await store.commitWorkspaceSiblings(operation.id);
+          });
+          return { workspace, operationId: operation.id, extraWorktrees, baseSource };
+        };
+        // Removes what this call created. Reused, retried and pre-existing worktrees stay.
+        const rollback = async (
+          operation: WorkspaceCreateOperation,
+          journal: ExtraWorktreeRecord[],
+          primaryCreated: boolean,
+        ) => {
+          const problems: string[] = [];
+          for (const record of journal.slice().reverse())
+            await rollbackExtraWorktree(record).then(
+              () => store.deleteWorkspaceSibling(operation.id, record.path),
+              (error) => problems.push(error instanceof Error ? error.message : String(error)),
+            );
+          if (primaryCreated && !problems.length) {
+            try {
+              const live = await store.managedWorkspace(operation.workspaceId);
+              if (live && (await options.isActive?.(live)))
+                throw new Error("the workspace is in use");
+              // Another operation (a resume after an owner conflict) means someone already uses it.
+              if (
+                (await store.workspaceOperations(operation.workspaceId)).some(
+                  (o) => o.id !== operation.id,
+                )
+              )
+                throw new Error("the workspace has other operations");
+              await rollbackManagedWorkspaceGit(project.cwd, operation.plannedWorkspace);
+              await store.transaction(async () => {
+                await releaseClaims(operation.workspaceId);
+                await store.discardRolledBackWorkspace(operation.workspaceId);
+                await store.saveWorkspaceReceipt(
+                  "workspace.prepare.rolledback",
+                  `${scope}|${request.idempotencyKey}`,
+                  ROLLED_BACK,
+                  ROLLED_BACK,
+                );
+              });
+            } catch (error) {
+              problems.push(error instanceof Error ? error.message : String(error));
+            }
+          }
+          if (problems.length)
+            throw new Error(
+              `Workspace creation failed and cleanup is incomplete; close the workspace to retry: ${problems.join("; ")}`,
+            );
+        };
+        const guarded = async (
+          operation: WorkspaceCreateOperation,
+          primaryCreated: boolean,
+          step: (journal: ExtraWorktreeRecord[]) => Promise<PreparedResult>,
+        ) => {
+          // Siblings a crashed earlier attempt of this operation made belong to the rollback too.
+          const journal = await loadSiblingJournal(store, operation.id);
+          try {
+            return await step(journal);
+          } catch (error) {
+            const cancelled = run.signal?.aborted === true;
+            if (!cancelled && !(run.gitReached && !outcomeUnknown(error))) throw error;
+            // Whatever was already reported to a caller is never rolled back by a later attempt.
+            if (
+              (await store.workspaceReceipt("workspace.prepare.result", operation.id, {
+                operationId: operation.id,
+              })) ||
+              (await store.hasCommittedSiblings(operation.id))
+            )
+              throw cancelled ? new WorkspaceCreationCancelled() : error;
+            await rollback(operation, journal, primaryCreated);
+            throw cancelled ? new WorkspaceCreationCancelled() : error;
+          }
+        };
+        if (existing) {
+          const op = await store.workspaceOperation(existing.operationId);
+          if (!op || op.kind !== "create") throw new Error("Workspace creation journal missing");
+          run.stage("fetch", "skipped");
+          // An earlier attempt's workspace was never reported to anyone (no result receipt), so a
+          // definite failure or cancel here removes it too instead of stranding the owner.
+          return guarded(op, true, async (journal) =>
+            finishRun(op, await complete(op, project.cwd, true, run), journal),
+          );
+        }
+        let baseRef = request.baseRef ?? resolved.integrationBranchRef;
+        let baseCommit: string;
+        let targetBranchRef = resolved.integrationBranchRef;
+        let targetDirectory: string | undefined;
+        if (request.source !== undefined) {
+          if (request.baseRef !== undefined || request.dependency !== undefined)
+            throw new Error("Selected source cannot be combined with another base or dependency");
+          const source = request.source;
+          if (
+            !source ||
+            typeof source.directory !== "string" ||
+            !isAbsolute(source.directory) ||
+            typeof source.branchRef !== "string" ||
+            !source.branchRef.startsWith("refs/heads/") ||
+            typeof source.baseCommit !== "string" ||
+            !/^[a-f0-9]{40,64}$/i.test(source.baseCommit)
+          )
+            throw new Error(
+              "Selected source requires an absolute checkout, full branch ref and committed SHA",
+            );
+          const directory = await canonicalWorkspacePath(source.directory);
+          if ((await hostGitRepositoryKey(directory)) !== repositoryId)
+            throw new Error("Selected source belongs to a different repository");
+          const git = (args: string[]) =>
+            runGitText(args, {
+              cwd: directory,
+              windowsHide: true,
+              timeout: 30_000,
+              env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
+            });
+          await git(["check-ref-format", source.branchRef]);
+          if ((await git(["symbolic-ref", "--quiet", "HEAD"])).trim() !== source.branchRef)
+            throw new Error("Selected source checkout is not on the requested target branch");
+          const registered = (await git(["worktree", "list", "--porcelain", "-z"]))
+            .split("\0\0")
+            .some((record) => {
+              const fields = record.split("\0");
+              return (
+                fields.some((line) => {
+                  if (!line.startsWith("worktree ")) return false;
+                  return workspacePathKey(line.slice(9)) === workspacePathKey(directory);
+                }) && fields.includes(`branch ${source.branchRef}`)
+              );
+            });
+          if (!registered) throw new Error("Selected source is not a registered target checkout");
+          baseCommit = await managedWorkspaceBase(project.cwd, source.baseCommit);
+          if ((await git(["rev-parse", "--verify", "HEAD^{commit}"])).trim() !== baseCommit)
+            throw new Error("Selected source commit changed; resolve the lead checkout again");
+          baseRef = source.branchRef;
+          targetBranchRef = source.branchRef;
+          targetDirectory = directory;
+        } else if (request.dependency) {
+          const dependency = await required(request.dependency.workspaceId);
+          if (
+            dependency.repositoryId !== repositoryId ||
+            dependency.environmentId !== request.environmentId
+          )
+            throw new Error("Dependency belongs to a different repository or environment");
+          if (!/^[a-f0-9]{40,64}$/i.test(request.dependency.commit))
+            throw new Error("Dependency must be a committed SHA");
+          baseCommit = await managedWorkspaceBase(project.cwd, request.dependency.commit);
+          baseRef = dependency.branchRef;
+          // The caller cannot label an unrelated object as this dependency's committed result.
+          const { hostGitExec } = await import("../git/git-exec-pool");
+          await hostGitExec.exec(
+            "git",
+            ["merge-base", "--is-ancestor", baseCommit, dependency.branchRef],
+            { cwd: project.cwd, windowsHide: true, timeout: 10_000 },
+          );
+        } else baseCommit = await managedWorkspaceBase(project.cwd, baseRef);
+        let baseSource: WorkspaceBaseSource = "local";
+        if (request.baseFromRemote) {
+          run.stage("fetch", "running");
+          const branch = /^[a-f0-9]{40,64}$/i.test(baseRef)
+            ? null
+            : baseRef.replace(/^refs\/heads\//, "");
+          const fetched = branch
+            ? await fetchRemoteBase(project.cwd, branch, run.signal).catch((error) => {
+                run.check();
+                throw error;
+              })
+            : null;
+          if (fetched) {
+            baseCommit = fetched;
+            baseSource = "remote";
+            run.stage("fetch", "done");
+          } else run.stage("fetch", "skipped");
+        } else run.stage("fetch", "skipped");
+        run.check();
+        const id = randomUUID();
+        const names = managedWorkspaceNames(request.owner, request.slug, id);
+        const root = await managedWorkspaceRoot(project.cwd, resolved.root);
+        const workspace: ManagedWorkspace = {
+          id,
+          repositoryId,
+          projectId: request.projectId,
+          environmentId: request.environmentId,
+          owner: request.owner,
+          path: join(root, names.directory),
+          branchRef: `refs/heads/${names.branch}`,
+          baseRef,
+          baseCommit,
+          targetBranchRef,
+          ...(targetDirectory ? { targetDirectory } : {}),
+          state: "idle",
+          directoryState: "blocked",
+          revision: 0,
+          lastActivityAt: Date.now(),
+          pinned: resolved.pinned,
+          ...(request.featureKey ? { featureKey: request.featureKey } : {}),
+        };
+        const op: WorkspaceCreateOperation = {
+          id: randomUUID(),
+          kind: "create",
+          phase: "registered",
+          workspaceId: id,
+          expectedRevision: 0,
+          idempotencyKey: request.idempotencyKey,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          plannedWorkspace: workspace,
+        };
+        await store.transaction(async () => {
+          const existingOwner = (
+            await store.managedWorkspaces({ repositoryId, environmentId: request.environmentId })
+          ).find(
+            (entry) =>
+              entry.owner.kind === request.owner.kind && entry.owner.id === request.owner.id,
+          );
+          if (existingOwner)
+            throw Object.assign(
+              new Error("This writer already owns a managed workspace; resume that workspace"),
+              { code: "WORKSPACE_OWNER_CONFLICT", workspaceId: existingOwner.id },
+            );
+          await store.insertManagedWorkspace(workspace);
+          await store.saveWorkspaceOperation(op, null);
+          await store.saveWorkspaceReceipt(scope, request.idempotencyKey, bound, {
+            operationId: op.id,
+          });
+          await store.saveWorkspaceReceipt(
+            "workspace.prepare.plan",
+            op.id,
+            { operationId: op.id },
+            { baseSource },
+          );
+        });
+        return guarded(op, true, async (journal) =>
+          finishRun(op, await complete(op, project.cwd, true, run), journal),
+        );
+      },
+    );
+  }
   async function transition(
     request: WorkspaceRpcRequest<"workspaces.finish">,
     state: "finished" | "abandoned",

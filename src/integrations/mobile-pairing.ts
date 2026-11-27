@@ -1,4 +1,5 @@
-import { isLanAddress, isLanKey } from "./mobile-lan";
+import type { DeviceProofJwk } from "./device-proof";
+import { isLanKey, isPrivateRouteAddress } from "./mobile-lan";
 
 /** Shared, credential-free contract for the desktop-to-phone pairing QR. */
 export const MOBILE_PAIRING_VERSION = 1 as const;
@@ -20,6 +21,16 @@ export type MobilePairingTicket = Pick<
   MobilePairingCode,
   "ticket" | "expiresAt" | "environmentId"
 > & { pairingId: string };
+/** The redemption body sent to `/mobile/pairing/redeem` (the phone listener sends the same). */
+export type MobilePairingRedeemInput = {
+  version: typeof MOBILE_PAIRING_VERSION;
+  environmentId: string;
+  ticket: string;
+  claimId: string;
+  deviceName?: string;
+  /** Public key the new credential is bound to; the private key never leaves the client. */
+  proofKey: DeviceProofJwk;
+};
 export type MobilePairingStatus = {
   state: "pending" | "paired" | "expired" | "cancelled";
   deviceName?: string;
@@ -48,12 +59,12 @@ export function mobilePairingEndpoint(value: string, lanKey?: string): string {
   }
   if (
     lanKey !== undefined &&
-    (!isLanKey(lanKey) || url.protocol !== "http:" || !isLanAddress(url.hostname))
+    (!isLanKey(lanKey) || url.protocol !== "http:" || !isPrivateRouteAddress(url.hostname))
   )
     throw new MobilePairingCodeError("insecure-endpoint");
   if (
     url.protocol !== "https:" &&
-    !(url.protocol === "http:" && isLanAddress(url.hostname) && isLanKey(lanKey))
+    !(url.protocol === "http:" && isPrivateRouteAddress(url.hostname) && isLanKey(lanKey))
   )
     throw new MobilePairingCodeError("insecure-endpoint");
   if (

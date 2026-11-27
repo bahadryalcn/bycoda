@@ -1,4 +1,4 @@
-import { expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ConversationThreadWorkTools } from "./conversation-thread-work-tools";
 import type { HostStore } from "../store";
 import type { HostTasks } from "../tasks/tasks";
@@ -30,6 +30,7 @@ function fixture(source = pool) {
   let records: Array<Record<string, unknown>> = [];
   const store = {
     project: vi.fn(async () => ({ id: "p", cwd: "/repo" })),
+    transaction: async (work: () => unknown) => work(),
     db: {
       prepare: (sql: string) => ({
         get: async (key: string) => (receipts.has(key) ? { value: receipts.get(key) } : undefined),
@@ -45,6 +46,7 @@ function fixture(source = pool) {
   } as unknown as HostStore;
   const tasks = {
     list: vi.fn(async () => records),
+    get: vi.fn(async (id: string) => records.find((item) => item.id === id)),
     save: vi.fn(async (input) => {
       const task = { ...input, updatedAt: 2 };
       records.push(task);
@@ -73,7 +75,10 @@ function fixture(source = pool) {
     approved: true,
     operationHash: operation.operationHash,
   }));
-  const service = (track?: ConstructorParameters<typeof ConversationThreadWorkTools>[6]) =>
+  const service = (
+    track?: ConstructorParameters<typeof ConversationThreadWorkTools>[6],
+    planApproval?: ConstructorParameters<typeof ConversationThreadWorkTools>[7],
+  ) =>
     new ConversationThreadWorkTools(
       store,
       tasks as unknown as HostTasks,
@@ -82,6 +87,7 @@ function fixture(source = pool) {
       approve,
       async () => source,
       track,
+      planApproval,
     );
   const principal = {
     kind: "assistant-thread",
@@ -509,4 +515,77 @@ it("tasks.create preserves the selected non-default provider account", async () 
   expect(f.tasks.save).toHaveBeenCalledWith(
     expect.objectContaining({ providerAccountId: "work", model: "gpt" }),
   );
+});
+
+describe("goals.create plan approval follows the assistant profile", () => {
+  const create = (
+    f: ReturnType<typeof fixture>,
+    planApproval?: () => Promise<"always" | "large" | "never">,
+    requestId = "g-plan",
+  ) =>
+    f
+      .service(undefined, planApproval)
+      .call(
+        "goals.create",
+        { title: "Goal", prompt: "Do", execution: input.execution, goalId: "goal" },
+        f.principal,
+        f.authorized,
+        requestId,
+      );
+
+  it("drops plan approval and manual start only for never, keeping delivery flags", async () => {
+    const f = fixture();
+    await create(f, async () => "never");
+    expect(f.approve).toHaveBeenCalledOnce();
+    expect(f.goals.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        approvePlan: false,
+        manualStart: false,
+        planApprovalPolicy: "never",
+        autoMerge: false,
+        continueUntilDone: false,
+      }),
+    );
+  });
+
+  it.each(["large", "always"] as const)("keeps both gates for %s", async (policy) => {
+    const f = fixture();
+    await create(f, async () => policy);
+    expect(f.goals.create).toHaveBeenCalledWith(
+      expect.objectContaining({ approvePlan: true, manualStart: true }),
+    );
+  });
+
+  it("keeps both gates when the profile is unreadable or not wired", async () => {
+    const f = fixture();
+    await create(f, async () => Promise.reject(new Error("down")), "g-a");
+    await create(f, undefined, "g-b");
+    for (const [call] of f.goals.create.mock.calls)
+      expect(call).toMatchObject({ approvePlan: true, manualStart: true });
+  });
+
+  it("allows update of a goal without plan gates only under never", async () => {
+    const goal = {
+      id: "goal",
+      projectIds: ["p"],
+      approvePlan: false,
+      manualStart: false,
+      updatedAt: 5,
+    };
+    const f = fixture();
+    f.goals.list.mockResolvedValue([goal]);
+    const update = (policy: "large" | "never", requestId: string) =>
+      f
+        .service(undefined, async () => policy)
+        .call(
+          "goals.update",
+          { goalId: "goal", maxRunMinutes: 20 },
+          f.principal,
+          f.authorized,
+          requestId,
+        );
+    await expect(update("large", "u-1")).rejects.toThrow("owner UI");
+    await update("never", "u-2");
+    expect(f.goals.update).toHaveBeenCalledOnce();
+  });
 });

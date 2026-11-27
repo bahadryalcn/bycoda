@@ -10,6 +10,15 @@ const READ_ACTION =
 
 /** Names that do not change state. Everything else is a write and is recorded for AI principals. */
 export function isWriteAction(action: string): boolean {
+  if (action === "instagram.insights" || action === "instagram.mentions") return false;
+  if (
+    ["linkedin.analytics", "linkedin.accounts.setupStatus", "linkedin.creator.handoff"].includes(
+      action,
+    )
+  )
+    return false;
+  // Facebook Live comment pagination is read-only.
+  if (action === "facebook.live.comments") return false;
   return !READ_ACTION.test(action);
 }
 
@@ -64,7 +73,7 @@ export function newAiAction(input: {
 
 export async function listAiActions(
   store: SocialAudienceStore,
-  input: { cursor?: string; accountId?: string; limit?: number } = {},
+  input: { cursor?: string; accountId?: string; since?: number; limit?: number } = {},
 ) {
   return await store.listAiActions(input);
 }

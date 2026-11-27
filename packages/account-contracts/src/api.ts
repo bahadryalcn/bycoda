@@ -7,6 +7,12 @@
  */
 import { z } from "zod";
 import {
+  HostDeviceAccessChange,
+  HostDeviceAccessReport,
+  HostDeviceAccessRequest,
+  HostDeviceAccessSync,
+} from "./hostDeviceAccess.ts";
+import {
   ActivityDaysUpload,
   ActivitySummary,
   ActivitySummaryQuery,
@@ -22,6 +28,7 @@ import {
   SecurityActivityQuery,
   AnnouncementList,
   AnonymousPing,
+  AnonymousUsage,
   ComputerList,
   ConnectInfoUpdate,
   PairRequestCreate,
@@ -74,6 +81,34 @@ function route<const R extends RouteDefinition>(definition: R): R {
 }
 
 export const ACCOUNT_API = {
+  listHostDeviceAccess: route({
+    method: "GET",
+    path: "/v1/host-device-access",
+    auth: "user",
+    response: z.object({ items: z.array(HostDeviceAccessReport) }),
+  }),
+  syncHostDeviceAccess: route({
+    method: "PUT",
+    path: "/v1/host-device-access/:id",
+    auth: "user",
+    body: HostDeviceAccessSync,
+    response: z.object({ pending: z.array(HostDeviceAccessRequest).max(256) }),
+  }),
+  changeHostDeviceAccess: route({
+    method: "POST",
+    path: "/v1/host-device-access/:id",
+    auth: "user",
+    body: HostDeviceAccessChange.extend({
+      environmentId: HostDeviceAccessSync.shape.environmentId,
+    }),
+    response: null,
+  }),
+  disableHostDeviceAccess: route({
+    method: "DELETE",
+    path: "/v1/host-device-access/:id",
+    auth: "user",
+    response: null,
+  }),
   getMe: route({ method: "GET", path: "/v1/me", auth: "user", response: AccountContext }),
   updateProfile: route({
     method: "PATCH",
@@ -339,6 +374,13 @@ export const ACCOUNT_API = {
     path: "/v1/anonymous/ping",
     auth: "none",
     body: AnonymousPing,
+    response: null,
+  }),
+  anonymousUsage: route({
+    method: "POST",
+    path: "/v1/anonymous/usage",
+    auth: "none",
+    body: AnonymousUsage,
     response: null,
   }),
 } as const;

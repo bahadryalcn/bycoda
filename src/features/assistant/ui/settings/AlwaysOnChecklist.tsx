@@ -7,8 +7,7 @@ import { Badge, type BadgeTone } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { RefreshCw } from "../../../../shared/ui/icons";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
-import { InfoPopover } from "../../../../shared/ui/InfoPopover";
-import { Text } from "../../../../shared/ui/Text";
+import { InfoTooltip } from "../../../../shared/ui/InfoPopover";
 import { Row } from "../../../../shared/ui/settings";
 import {
   deriveAlwaysOnItems,
@@ -18,19 +17,33 @@ import {
 } from "../../model/assistantAlwaysOn";
 import type { assistantRequest } from "../../model/assistantClient";
 
-const STATE: Record<AlwaysOnState, { label: string; tone: BadgeTone }> = {
-  done: { label: "Ready", tone: "success" },
-  todo: { label: "Not set", tone: "warning" },
-  unknown: { label: "Unknown", tone: "neutral" },
-  unsupported: { label: "Not supported", tone: "neutral" },
-  review: { label: "Review", tone: "info" },
-};
-const WHERE: Record<AlwaysOnTarget, string> = {
-  access: "Access",
-  setup: "Quick setup",
-  work: "Work",
-  schedule: "Work",
-};
+/** The badge tone and translated label of a checklist state; call it while rendering. */
+function stateBadge(state: AlwaysOnState): { label: string; tone: BadgeTone } {
+  switch (state) {
+    case "done":
+      return { label: t("Ready"), tone: "success" };
+    case "todo":
+      return { label: t("Not set"), tone: "warning" };
+    case "unknown":
+      return { label: t("Unknown"), tone: "neutral" };
+    case "unsupported":
+      return { label: t("Not supported"), tone: "neutral" };
+    case "review":
+      return { label: t("Review"), tone: "info" };
+  }
+}
+/** The translated Settings location an item lives in. */
+function whereLabel(target: AlwaysOnTarget): string {
+  switch (target) {
+    case "access":
+      return t("Access");
+    case "setup":
+      return t("Quick setup");
+    case "work":
+    case "schedule":
+      return t("Work");
+  }
+}
 
 /**
  * "Ready for 24/7": reads the saved settings and shows what still stops the assistant working around
@@ -93,28 +106,22 @@ export function AlwaysOnChecklist({
       description={
         item.state !== "done"
           ? item.target && !onOpen
-            ? `${item.detail} ${t("Settings · {p0}", { p0: t(WHERE[item.target]) })}`
+            ? `${item.detail} ${t("Settings · {p0}", { p0: whereLabel(item.target) })}`
             : item.detail
           : undefined
       }
       info={
         item.state === "done" && item.detail ? (
-          <InfoPopover label={item.label}>
-            <Text as="p" size="secondary">
-              {item.target && !onOpen && item.state !== "done"
-                ? `${item.detail} ${t("Settings · {p0}", { p0: t(WHERE[item.target]) })}`
-                : item.detail || undefined}
-            </Text>
-          </InfoPopover>
+          <InfoTooltip label={item.label}>{item.detail}</InfoTooltip>
         ) : undefined
       }
     >
-      <Badge tone={STATE[item.state].tone} size="xs">
-        {t(STATE[item.state].label)}
+      <Badge tone={stateBadge(item.state).tone} size="xs">
+        {stateBadge(item.state).label}
       </Badge>
       {item.target && onOpen && item.state !== "done" && (
         <Button type="button" size="sm" onClick={() => onOpen(item.target!)}>
-          {t(item.target === "setup" ? "Quick setup" : "Open settings")}
+          {item.target === "setup" ? t("Quick setup") : t("Open settings")}
         </Button>
       )}
     </Row>

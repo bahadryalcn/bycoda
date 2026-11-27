@@ -7,14 +7,26 @@ import { TimeDistribution, UsageTrend } from "./UsageVisualizations";
 import { zeroUsage, type UsageSample } from "../model/usageAnalytics";
 import { usageProviderLabel } from "./UsageProviderIdentity";
 
-const chartData = vi.hoisted(() => ({ labels: [] as string[] }));
+const chartData = vi.hoisted(() => ({
+  labels: [] as string[],
+  onActiveChange: undefined as
+    | ((index: number | null, datum: { key: string } | null) => void)
+    | undefined,
+}));
 vi.mock("../../../shared/ui/Charts", () => ({
   ActivityHeatmap: () => null,
   BarChart: () => null,
   HeatScale: () => null,
   DonutChart: () => null,
-  LineChart: ({ data }: { data: { label: string }[] }) => {
+  LineChart: ({
+    data,
+    onActiveChange,
+  }: {
+    data: { label: string }[];
+    onActiveChange: typeof chartData.onActiveChange;
+  }) => {
     chartData.labels = data.map((point) => point.label);
+    chartData.onActiveChange = onActiveChange;
     return null;
   },
 }));
@@ -27,6 +39,7 @@ vi.mock("../../../shared/ui/Button", () => ({
     iconOnly: _iconOnly,
     motion: _motion,
     label,
+    disabledReason,
     ...props
   }: any) => {
     void _tooltip;
@@ -38,6 +51,7 @@ vi.mock("../../../shared/ui/Button", () => ({
       {
         ...props,
         "aria-label": props["aria-label"] ?? label,
+        "data-disabled-reason": disabledReason,
         "data-details": tooltipDetails
           ?.map((node: any) => (typeof node === "string" ? node : renderToStaticMarkup(node)))
           .join(" "),
@@ -101,6 +115,8 @@ it("exposes actual provider model and project on hour hover", async () => {
       projectLabel: "Demo",
       group: "",
       groupLabel: "",
+      machine: "local",
+      machineLabel: "This machine",
       priced: true,
       cost: 12,
     },
@@ -111,6 +127,55 @@ it("exposes actual provider model and project on hour hover", async () => {
   expect(host.querySelectorAll('[role="gridcell"]')[14].getAttribute("data-details")).toContain(
     "Demo",
   );
+});
+it("mounts the trend table only while its disclosure is open", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const start = new Date(2026, 10, 4).getTime();
+  const values = { ...zeroUsage(), cost: 12 };
+  const buckets = [0, 1].map((index) => ({
+    ...values,
+    key: String(index),
+    start: start + index * 86400000,
+    end: start + (index + 1) * 86400000,
+    series: { codex: values },
+  }));
+  const series = [
+    { ...values, key: "codex", label: "codex", unpricedTokens: 0, logSamples: 1, timedSamples: 0 },
+  ];
+  try {
+    await act(async () =>
+      root.render(
+        createElement(UsageTrend, {
+          buckets,
+          series,
+          metric: "cost",
+          resolution: "day",
+          percent: false,
+          colors: new Map(),
+          onSelect: vi.fn(),
+        }),
+      ),
+    );
+    const details = host.querySelector("details")!;
+    expect(details.open).toBe(false);
+    expect(host.querySelector("tbody")).toBeNull();
+    await act(async () => {
+      details.open = true;
+      details.dispatchEvent(new Event("toggle"));
+    });
+    expect(host.querySelectorAll("tbody tr")).toHaveLength(2);
+    await act(async () => {
+      details.open = false;
+      details.dispatchEvent(new Event("toggle"));
+    });
+    expect(host.querySelector("tbody")).toBeNull();
+  } finally {
+    act(() => root.unmount());
+    host.remove();
+  }
 });
 it("uses canonical provider titles and preserves unknown identities", () => {
   expect(usageProviderLabel("codex")).toBe("Codex");
@@ -130,6 +195,8 @@ it("keeps unpriced usage visible without reporting a zero cost", async () => {
     projectLabel: "Demo",
     group: "",
     groupLabel: "",
+    machine: "local",
+    machineLabel: "This machine",
     priced: false,
     tokens: 100,
   };
@@ -185,4 +252,67 @@ it("updates cached trend date labels when language changes with identical data",
     host.remove();
     await setLanguagePreference("en");
   }
+});
+
+function dayBucket(index: number) {
+  const values = { ...zeroUsage(), cost: 12 };
+  const start = new Date(2026, 10, 4).getTime() + index * 86400000;
+  return { ...values, key: String(index), start, end: start + 86400000, series: { codex: values } };
+}
+async function renderTrend(onSelect: (window: { start: number; end: number }) => void) {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  cleanup = () => {
+    act(() => root.unmount());
+    host.remove();
+  };
+  const series = [
+    {
+      ...zeroUsage(),
+      cost: 12,
+      key: "codex",
+      label: "codex",
+      unpricedTokens: 0,
+      logSamples: 1,
+      timedSamples: 0,
+    },
+  ];
+  await act(async () =>
+    root.render(
+      createElement(UsageTrend, {
+        buckets: [dayBucket(0), dayBucket(1)],
+        series,
+        metric: "cost",
+        resolution: "day",
+        percent: false,
+        colors: new Map(),
+        onSelect,
+      }),
+    ),
+  );
+  return host;
+}
+/** The chart's wrapper: clicking it (or Enter inside it) selects the active point's interval. */
+function chartArea(host: HTMLElement) {
+  return host.querySelector<HTMLElement>('[data-usage-chart="trend"] > div:not([class])')!;
+}
+it("has no select-interval button and clears the target when the chart reports no active point", async () => {
+  const onSelect = vi.fn();
+  const host = await renderTrend(onSelect);
+  expect([...host.querySelectorAll("button")].map((button) => button.textContent)).not.toContain(
+    "Select interval",
+  );
+  await act(async () => chartData.onActiveChange?.(1, { key: "1" }));
+  await act(async () => chartData.onActiveChange?.(null, null));
+  await act(async () => chartArea(host).click());
+  expect(onSelect).not.toHaveBeenCalled();
+});
+it("applies the bucket the chart reports when the chart is clicked", async () => {
+  const onSelect = vi.fn();
+  const host = await renderTrend(onSelect);
+  await act(async () => chartData.onActiveChange?.(1, { key: "1" }));
+  await act(async () => chartArea(host).click());
+  expect(onSelect).toHaveBeenCalledWith({ start: dayBucket(1).start, end: dayBucket(1).end });
 });

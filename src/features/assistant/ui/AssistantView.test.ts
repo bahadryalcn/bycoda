@@ -9,7 +9,7 @@ import {
 } from "../../../shared/model/host-contracts/assistant";
 
 const mock = vi.hoisted(() => ({
-  environmentId: "room-fixture",
+  environmentId: "room-fixture" as string | null,
   automations: [] as any[],
   snapshot: null as AssistantSnapshot | null,
   request: vi.fn(),
@@ -122,6 +122,14 @@ afterEach(async () => {
   vi.useRealTimers();
   Reflect.deleteProperty(navigator, "locks");
 });
+// #784: drafts are written by a debounced writer; pagehide flushes it so a test can read storage now.
+function flushDrafts() {
+  window.dispatchEvent(new Event("pagehide"));
+}
+// #789: a long conversation is windowed, so this counts only the mounted message rows.
+function mountedMessages() {
+  return container.querySelectorAll("[data-message-id]").length;
+}
 async function render(props: Parameters<typeof AssistantView>[0] = {}) {
   if (!root) {
     container = document.createElement("div");
@@ -142,12 +150,106 @@ async function render(props: Parameters<typeof AssistantView>[0] = {}) {
     ),
   );
 }
+it("reuses a cold project read only for its verified Host", async () => {
+  mock.environmentId = null;
+  await render();
+  const reads = () => mock.request.mock.calls.filter(([request]) => request.op === "projects.list");
+  expect(reads()).toHaveLength(1);
+  mock.environmentId = "room-fixture";
+  await render();
+  expect(reads()).toHaveLength(1);
+  mock.environmentId = "replacement-host";
+  await render();
+  expect(reads()).toHaveLength(2);
+});
+
+function memory(id: string, text: string): AssistantSnapshot["memory"][number] {
+  return {
+    id,
+    text,
+    kind: "fact",
+    active: true,
+    version: 1,
+    scope: "all",
+    source: "typed",
+    quote: "",
+    forbiddenTerms: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
+async function enterMemoryQuery(query: string) {
+  const input = container.querySelector<HTMLInputElement>('input[type="search"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, query);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+it("keeps matching memory rows during typing and discards them on a Host change", async () => {
+  const base = mock.request.getMockImplementation()!;
+  mock.request.mockImplementation((input) =>
+    input.op === "memory.search"
+      ? Promise.resolve({
+          entries: [memory("keep", "Shared agenda"), memory("remove", "Shared dates")],
+        })
+      : base(input),
+  );
+  await render({ initialTab: "memory" });
+  vi.useFakeTimers();
+  await enterMemoryQuery("shared");
+  await act(async () => vi.advanceTimersByTimeAsync(300));
+  const keep = container.querySelector("#assistant-memory-keep");
+  expect(keep).not.toBeNull();
+  expect(container.querySelector("#assistant-memory-remove")).not.toBeNull();
+  await enterMemoryQuery("SHARED A");
+  expect(container.querySelector("#assistant-memory-keep")).toBe(keep);
+  expect(container.querySelector("#assistant-memory-remove")).toBeNull();
+  mock.environmentId = "replacement-host";
+  await render({ initialTab: "memory" });
+  expect(container.querySelector("#assistant-memory-keep")).toBeNull();
+});
+
+it("rechecks the snapshot Host when cold discovery finishes on another computer", async () => {
+  mock.environmentId = null;
+  let discovered!: (result: { projects: never[] }) => void;
+  const base = mock.request.getMockImplementation()!;
+  mock.request.mockImplementationOnce((input) =>
+    input.op === "projects.list"
+      ? new Promise((resolve) => {
+          discovered = resolve;
+        })
+      : base(input),
+  );
+  await render();
+  mock.environmentId = "other-host";
+  await render();
+  await act(async () => discovered({ projects: [] }));
+  expect(mock.request.mock.calls.filter(([input]) => input.op === "projects.list")).toHaveLength(2);
+});
+
+it("limits local memory previews when a broader query also matches the loaded snapshot", async () => {
+  mock.snapshot!.memory = Array.from({ length: 80 }, (_, i) => memory("local" + i, "Common local"));
+  const previous = Array.from({ length: 80 }, (_, i) => memory("remote" + i, "Common remote"));
+  const base = mock.request.getMockImplementation()!;
+  mock.request.mockImplementation((input) =>
+    input.op === "memory.search" ? Promise.resolve({ entries: previous }) : base(input),
+  );
+  await render({ initialTab: "memory" });
+  vi.useFakeTimers();
+  await enterMemoryQuery("common remote");
+  await act(async () => vi.advanceTimersByTimeAsync(300));
+  await enterMemoryQuery("common");
+  expect(container.querySelectorAll("[id^=assistant-memory-]")).toHaveLength(100);
+});
+
 it("keeps background privacy qualification out of the Room layout", async () => {
   mock.roomPrivacy = { pending: true, error: null };
   await render();
-  expect(container.textContent).not.toContain("Confirming Room privacy protection...");
+  expect(container.textContent).not.toContain("Confirming Room privacy protection…");
   await click("Assistant status");
-  expect(document.body.textContent).toContain("Confirming Room privacy protection...");
+  expect(document.body.textContent).toContain("Confirming Room privacy protection…");
 });
 
 it("opens Room at its global conversation even when a coding project is selected", async () => {
@@ -207,7 +309,9 @@ it("keeps one compact identity and reveals health metadata only on owner request
   expect(container.textContent).not.toContain("Last checked:");
   expect(container.textContent).not.toContain("Work tracking continues while voice is off.");
   await click("Assistant status");
-  expect(document.body.textContent).toContain("Work tracking continues while voice is off.");
+  expect(document.body.textContent).toContain("Last checked");
+  // The work state lives in the header chip; the status popover does not repeat it.
+  expect(document.body.textContent).not.toContain("Work tracking continues while voice is off.");
   expect(
     mock.request.mock.calls.some(
       ([input]) => !["projects.list", "snapshot", "manual.list"].includes(input.op),
@@ -253,10 +357,11 @@ it("keeps the confirmed availability while the owner's presence change is pendin
       : base(input),
   );
   await render();
+  // The announcement is a LiveText status region whose text carries the state.
   const presence = () =>
-    document
-      .querySelector('[role="status"][aria-label^="Current availability"]')
-      ?.getAttribute("aria-label");
+    [...document.querySelectorAll('[role="status"]')]
+      .find((node) => node.textContent?.startsWith("Current availability"))
+      ?.textContent?.toString();
   await click("Assistant status");
   expect(presence()).toContain("Here");
   await click("I'm back");
@@ -463,11 +568,17 @@ it("shows recorded actions with their transcript and hides the whole row when a 
   await act(async () => sourceThread.click());
   expect(container.textContent).toContain("Accepted owner request with recorded activity");
   expect(container.querySelector("details summary")?.textContent).toContain("Recorded actions");
-  expect(container.textContent).toContain("Get tasks");
-  expect(container.textContent).toContain("accepted-job");
+  expect(container.textContent).toContain("Get task");
+  // #794: a linked job missing from the snapshot shows a localized label, never its raw id.
+  const jobsSummary = [...container.querySelectorAll("details summary")].find((summary) =>
+    summary.textContent?.includes("Jobs"),
+  ) as HTMLElement;
+  await act(async () => jobsSummary.click());
+  expect(container.textContent).toContain("Job unavailable");
+  expect(container.textContent).not.toContain("accepted-job");
   await render({ initialTab: "conversations", projectPath: "/one", visibleProjectPaths: ["/one"] });
   expect(container.textContent).not.toContain("Accepted owner request with recorded activity");
-  expect(container.textContent).not.toContain("Get tasks");
+  expect(container.textContent).not.toContain("Get task");
   expect(container.textContent).not.toContain("accepted-job");
 });
 it("keeps global emergency-stop uncertainty visible without leaking a hidden source after a lock", async () => {
@@ -501,7 +612,7 @@ it("gates an unconfigured core and keeps execution controls unavailable", async 
   mock.snapshot!.profile.setupComplete = false;
   mock.snapshot!.profile.name = "";
   await render();
-  expect(container.textContent).toContain("Choose a name, working permissions and a daily budget");
+  expect(container.textContent).not.toContain("Choose a name, working permissions");
   expect(container.querySelector('[role="tablist"]')).toBeNull();
   expect(mock.request.mock.calls.some(([input]) => input.op === "jobs.create")).toBe(false);
 });
@@ -544,6 +655,7 @@ it("reviews multiline jobs and retains the failed request with its original idem
     .map(([input]) => input);
   expect(retried).toHaveLength(3);
   expect(retried[2]).toEqual(attempts[1]);
+  flushDrafts();
   expect(localStorage.getItem("bycoda.assistant.job-draft")).toBe("");
 });
 
@@ -662,7 +774,7 @@ it("restores the composite trash identity after deleting a job", async () => {
   mock.snapshot!.jobs = [job()];
   await render();
   await click("Job actions");
-  await click("Delete...");
+  await click("Delete…");
   await click("Delete job only");
   expect(container.textContent).toContain("Deleted");
   await click("Undo");
@@ -705,7 +817,7 @@ it("defaults to job-only deletion while showing every canonical task beyond the 
   );
   await render({ initialTab: "jobs" });
   await click("Job actions");
-  await click("Delete...");
+  await click("Delete…");
   expect(document.body.textContent).toContain("Another canonical task");
   const check = document.querySelector<HTMLInputElement>('[role="dialog"] input[type="checkbox"]')!;
   expect(check.checked).toBe(false);
@@ -757,7 +869,7 @@ it("freezes selected task scope after an uncertain deletion and Keeps the actual
   });
   await render({ initialTab: "jobs" });
   await click("Job actions");
-  await click("Delete...");
+  await click("Delete…");
   const check = document.querySelector<HTMLInputElement>('[role="dialog"] input[type="checkbox"]')!;
   await act(async () => check.click());
   await click("Delete job and tasks");
@@ -856,7 +968,9 @@ it("coalesces conversation draft writes while keeping current input", async () =
       : base(input, environment),
   );
   const textarea = await renderConversationDraft();
-  expect(container.querySelectorAll("[data-message-id]")).toHaveLength(100);
+  // #789: the long conversation is windowed, so fewer than all 100 rows are mounted.
+  expect(mountedMessages()).toBeGreaterThan(0);
+  expect(mountedMessages()).toBeLessThan(100);
   const writes = vi.spyOn(localStorage, "setItem");
   const project = vi.spyOn(privacyModel, "projectAssistantSnapshot");
   const messages = vi.spyOn(privacyModel, "visibleAssistantMessages");
@@ -1103,7 +1217,7 @@ it("clears the captured complete conversation while retaining its unsent draft a
   });
   await render({ initialTab: "conversations" });
   await click("Conversation actions");
-  await click("Clear conversation...");
+  await click("Clear conversation…");
   expect(document.body.textContent).toContain("Move all messages in this conversation");
   await click("Clear all messages");
   expect(mock.request).toHaveBeenCalledWith(
@@ -1183,7 +1297,7 @@ it("refreshes summaries only explicitly and keeps a lost ACK nonce through retry
     await new Promise((resolve) => setTimeout(resolve, 500));
   });
   expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(
-    "Summary refresh was not confirmed.",
+    "Summary refresh could not be confirmed.",
   );
   expect(container.textContent).toContain("Summary unavailable");
   expect(container.textContent).not.toContain("Sensitive upstream");
@@ -1307,10 +1421,10 @@ it("retains the chosen retention draft after failure and retries with the acknow
   await render({ initialTab: "settings" });
   await click("Keep conversation messages: Forever");
   await click("30 days");
-  await click("Save profile settings");
+  await click("Save");
   expect(document.body.textContent).toContain("Retention save unavailable");
   expect(document.body.textContent).toContain("30 days");
-  await click("Save profile settings");
+  await click("Save");
   expect(
     mock.request.mock.calls
       .filter(([input]) => input.op === "profile.update")
@@ -1454,9 +1568,7 @@ it.each([true, false])(
         [...document.querySelectorAll("button")].some((button) => button.textContent === "Undo"),
       ).toBe(false);
       await click("Recently deleted");
-      expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
-        "Deleted records are kept for seven days",
-      );
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Recently deleted");
     }
     expect(mock.request).not.toHaveBeenCalledWith({
       op: "trash.restore",
@@ -1557,7 +1669,7 @@ it("preserves explicit assistant role providers and nullable inheritance in sett
   await render({ initialTab: "settings" });
   // Save is disabled until the draft changes; this edit leaves the role patch unchanged.
   await click("Allow profanity");
-  await click("Save profile settings");
+  await click("Save");
   expect(mock.request).toHaveBeenCalledWith(
     expect.objectContaining({
       op: "profile.update",
@@ -1588,7 +1700,7 @@ it("submits every existing policy field from Settings without forwarding profile
   expect(mock.request.mock.calls.some(([input]) => input.op === "profile.update")).toBe(false);
   // Save is disabled until the draft changes; this toggle leaves the policy fields under test intact.
   await click("Allow profanity");
-  await click("Save profile settings");
+  await click("Save");
   const [input, environment] = mock.request.mock.calls.find(
     ([input]) => input.op === "profile.update",
   )!;
@@ -1635,7 +1747,7 @@ it("saves edited overnight hours to the bound Host and shows that exact range af
     await act(async () => option.click());
   }
   expect(mock.request.mock.calls.some(([input]) => input.op === "profile.update")).toBe(false);
-  await click("Save profile settings");
+  await click("Save");
   expect(mock.snapshot!.profile).toMatchObject({ activeStart: 22, activeEnd: 6, version: 4 });
   expect(document.querySelector('button[aria-label="Work hours start: 22:00"]')).toBeTruthy();
   expect(document.querySelector('button[aria-label="Work hours end: 06:00"]')).toBeTruthy();
@@ -1766,7 +1878,7 @@ it("keeps the settings source across profile-to-retention awaits while emergency
   await render({ initialTab: "settings" });
   await click("Keep conversation messages: Forever");
   await click("30 days");
-  await click("Save profile settings");
+  await click("Save");
   mock.environmentId = "replacement";
   await render({ initialTab: "settings" });
   await click("Stop everything");
@@ -1801,7 +1913,7 @@ it("parks a legacy attempted job review without a captured Host and preserves it
   await render();
   await click("Review jobs");
   await click("Check and retry");
-  expect(document.body.textContent).toContain("original Host could not be verified");
+  expect(document.body.textContent).toContain("original computer could not be verified");
   expect(mock.request.mock.calls.some(([input]) => input.op === "jobs.create")).toBe(false);
   expect(JSON.parse(localStorage.getItem("bycoda.assistant.job-review")!).rows[0].key).toBe(
     "stable-key",
@@ -1977,8 +2089,19 @@ it("offers the unconfigured setup budget without saving and saves rules before e
     (button) => button.textContent?.trim() === "Start",
   )!;
   expect(start.disabled).toBe(false);
-  expect(document.body.textContent).toContain((1_000_000).toLocaleString());
+  // The one-screen setup shows no budget field; an unconfigured budget gets the setup default.
+  expect(document.body.textContent).not.toContain((1_000_000).toLocaleString());
   expect(mock.request.mock.calls.some(([input]) => input.op === "profile.update")).toBe(false);
+  await click("Start");
+  expect(mock.request).toHaveBeenCalledWith(
+    expect.objectContaining({
+      op: "profile.update",
+      patch: expect.objectContaining({ setupComplete: true, dailyTokenBudget: 1_000_000 }),
+    }),
+    "room-fixture",
+  );
+  mock.close.mockClear();
+  mock.request.mockClear();
   await act(async () => root!.unmount());
   root = undefined;
   container.remove();
@@ -2005,7 +2128,6 @@ it("offers the unconfigured setup budget without saving and saves rules before e
     }),
     "room-fixture",
   );
-  await click("Done"); // The optional "Ready for 24/7" checklist follows a successful Start.
   expect(mock.close).toHaveBeenCalledOnce();
 });
 it("saves project priority through its captured Host and preserves exact uncertain replans", async () => {
@@ -2088,6 +2210,9 @@ it("keeps replan input editable and blocks dispatch while local storage is unava
     );
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
   });
+  // #784: typing only schedules the write; pagehide flushes it and surfaces the storage failure.
+  flushDrafts();
+  await act(async () => {});
   expect(textarea.value).toBe("Keep this feedback");
   expect(document.body.textContent).toContain("Could not save this draft");
   await click("Replan");
@@ -2123,6 +2248,9 @@ it("keeps priority selection and blocks dispatch until its intent can be saved",
   expect(option).toBeTruthy();
   await act(async () => option.click());
   expect(document.querySelector('[aria-label="Priority: High"]')).toBeTruthy();
+  // #784: the write is debounced; pagehide flushes it and surfaces the storage failure.
+  flushDrafts();
+  await act(async () => {});
   expect(document.body.textContent).toContain("Could not save this draft");
   await click("Save");
   expect(mock.request.mock.calls.filter(([input]) => input.op === "jobs.priority")).toHaveLength(0);
@@ -2143,8 +2271,8 @@ it("opens project goal and task links through the canonical job source and exclu
   const review = vi.fn(async () => {});
   await render({ initialTab: "jobs", onReviewJobTasks: review });
   await click(original.title);
-  await click(original.goalId);
-  await click(original.taskIds[0]);
+  await click(`Epic: ${original.title}`);
+  await click("Review tasks");
   expect(review).toHaveBeenCalledTimes(2);
   expect(review).toHaveBeenLastCalledWith({
     jobId: original.id,
@@ -2207,8 +2335,8 @@ it("shows the cached daily summary with its timestamp and suppresses hidden cont
     "Yesterday or another return briefing must not appear",
   );
   expect(mock.request.mock.calls.some(([input]) => input.op === "snapshot")).toBe(false);
-  expect(document.body.textContent).toContain("Saved daily summary");
-  expect(document.body.textContent).toContain("Today's summary is reused");
+  expect(document.body.textContent).toContain("Daily summary");
+  expect(document.body.textContent).not.toContain("Today's summary is reused");
   expect(mock.request.mock.calls.some(([input]) => input.op === "notes.save")).toBe(false);
   await render({ initialTab: "notes", visibleProjectPaths: [] });
   expect(document.body.textContent).not.toContain("Exact canonical daily summary");
@@ -2225,9 +2353,10 @@ it("shows only measured worker cache counters and percentage coverage", async ()
   };
   await render({ initialTab: "settings" });
   expect(document.body.textContent).toContain("Some usage is unavailable.");
+  expect(document.body.textContent).not.toContain("Cache read tokens: 120");
+  await click("Usage details");
   expect(document.body.textContent).toContain("Cache read tokens: 120");
   expect(document.body.textContent).toContain("Mean reported cache hit: 25%");
-  await click("About usage");
   expect(document.body.textContent).toContain("Partial cache usage");
   expect(document.body.textContent).toContain("Cache write tokens: Unavailable");
   expect(document.body.textContent).toContain("2 of 4 worker turns measured");
@@ -2303,7 +2432,7 @@ it("keeps a daily summary request bound to its source after a Host change", asyn
       .filter(([input]) => input.op === "snapshot")
       .every(([, env]) => env === "room-fixture"),
   ).toBe(true);
-  expect(document.body.textContent).not.toContain("Saved daily summary");
+  expect(document.body.textContent).not.toContain("Exact canonical daily summary");
 });
 it("does not let a late closed priority dialog erase a newer retained replan draft", async () => {
   const original = job();
@@ -2349,7 +2478,7 @@ it("does not fall back to a mutable global briefing when the daily receipt is mi
   };
   await render({ initialTab: "notes" });
   await click("Summarize today");
-  expect(document.body.textContent).toContain("Daily summary was not confirmed");
+  expect(document.body.textContent).toContain("Daily summary could not be confirmed");
   expect(document.body.textContent).not.toContain("Wrong global briefing");
   expect(mock.request.mock.calls.some(([input]) => input.op === "snapshot")).toBe(false);
 });
@@ -2391,13 +2520,62 @@ it("pages timestamp siblings using the exact oldest loaded message identity", as
     return { messages: Array.from({ length: 100 }, (_, i) => message(i)) };
   });
   await render({ initialTab: "conversations" });
-  expect(container.querySelectorAll("[data-message-id]")).toHaveLength(100);
+  // #789: a long conversation mounts only a window of rows (the first ones without layout).
+  expect(mountedMessages()).toBeGreaterThan(0);
+  expect(mountedMessages()).toBeLessThan(100);
+  expect(container.textContent).toContain("Timestamp sibling 100");
   await click("Load earlier messages");
-  expect(container.querySelectorAll("[data-message-id]")).toHaveLength(200);
-  expect(container.textContent).toContain("Timestamp sibling 0");
-  expect(container.textContent).toContain("Timestamp sibling 199");
+  expect(
+    mock.request.mock.calls.filter(
+      ([input]) => input.op === "threads.messages" && input.beforeId === "canonical-100",
+    ),
+  ).toHaveLength(1);
+  expect(mountedMessages()).toBeGreaterThan(0);
+  expect(mountedMessages()).toBeLessThan(200);
   const texts = [...container.querySelectorAll("[data-message-id]")].map((row) => row.textContent);
-  expect(new Set(texts).size).toBe(200);
+  expect(new Set(texts).size).toBe(texts.length);
+});
+
+it("retries a failed conversation search and only pages history outside search", async () => {
+  const thread = summaryThread();
+  mock.snapshot!.threads = [thread];
+  const messages = Array.from({ length: 100 }, (_, id) => ({
+    id: `search-history-${id}`,
+    threadId: thread.id,
+    role: "user" as const,
+    via: "text" as const,
+    text: "History",
+    jobIds: [],
+    version: 1,
+    createdAt: id,
+    updatedAt: id,
+  }));
+  const queries: string[] = [];
+  const base = mock.request.getMockImplementation()!;
+  mock.request.mockImplementation(async (input, env) => {
+    if (input.op === "threads.messages") return { messages };
+    if (input.op !== "conversations.search") return base(input, env);
+    queries.push(input.query);
+    if (queries.length === 1) throw new Error("Search index unavailable.");
+    return { messages: [] };
+  });
+  await render({ initialTab: "conversations" });
+  expect(container.textContent).toContain("Load earlier messages");
+  vi.useFakeTimers();
+  await enterMemoryQuery("weekly update");
+  expect(container.textContent).not.toContain("Load earlier messages");
+  await act(async () => vi.advanceTimersByTimeAsync(300));
+  expect(container.textContent).toContain("Could not search conversations.");
+  expect(container.textContent).not.toContain("Search index unavailable.");
+  expect(container.textContent).not.toContain("No results");
+
+  await click("Try again");
+  await act(async () => vi.advanceTimersByTimeAsync(300));
+  expect(queries).toEqual(["weekly update", "weekly update"]);
+  expect(container.textContent).toContain("No results");
+  expect(container.textContent).not.toContain("Could not search conversations.");
+  await click("Reset filters");
+  expect(container.textContent).toContain("Load earlier messages");
 });
 it("keeps loaded history after a cursor error and retries the same canonical zero-timestamp cursor", async () => {
   const thread = {
@@ -2439,13 +2617,14 @@ it("keeps loaded history after a cursor error and retries the same canonical zer
   });
   await render({ initialTab: "conversations" });
   await click("Load earlier messages");
-  expect(container.querySelectorAll("[data-message-id]")).toHaveLength(100);
+  // #789: only a window of rows is mounted, so assert history stays loaded rather than all 100 rows.
+  expect(mountedMessages()).toBeGreaterThan(0);
   expect(container.textContent).toContain("Retained history 0");
   expect(container.textContent).toContain("history cursor changed");
   await click("Load earlier messages");
   expect(olderCalls).toBe(2);
-  expect(container.querySelectorAll("[data-message-id]")).toHaveLength(100);
-  expect(container.textContent).toContain("Retained history 99");
+  expect(mountedMessages()).toBeGreaterThan(0);
+  expect(container.textContent).toContain("Retained history 0");
 });
 
 it("shows the default portrait, a chosen avatar or the name initial in the header and a labelled Stop control that resumes when paused", async () => {

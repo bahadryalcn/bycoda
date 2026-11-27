@@ -10,14 +10,19 @@ import {
   type ModelRoutingRole,
 } from "../../../shared/model/host-contracts/model-routing";
 
-/** Capability and fresh-draft initialization run even while agent settings are collapsed. */
+/** Initialize a fresh draft from the selected Host's routing capability. */
 export function useTaskModelRouting(
   machine: RemoteMachine | undefined,
   newItem: boolean,
   value: ModelRoutingItemChoice | undefined,
 ) {
   const capability = useQuery({
-    queryKey: ["task-model-routing-capability", machine?.id, machine?.endpoint],
+    queryKey: [
+      "task-model-routing-capability",
+      machine?.id,
+      machine?.endpoint,
+      machine?.environmentId,
+    ],
     enabled: !!machine,
     queryFn: () => machineCapabilities(machine!),
     retry: false,
@@ -40,13 +45,18 @@ export function TaskModelChoiceField({
   onChange,
   supported,
   fixed,
+  fixedLabel,
+  disabled,
 }: {
-  machine?: RemoteMachine;
+  machine?: Pick<RemoteMachine, "id">;
   routingRole: ModelRoutingRole;
   value?: ModelRoutingItemChoice;
   onChange: (choice: ModelRoutingItemChoice) => void;
   supported: boolean;
   fixed: ReactNode;
+  /** Supplying the fixed identity opts into the compact model-routing chip. */
+  fixedLabel?: ReactNode;
+  disabled?: boolean;
 }) {
   return (
     <ModelChoiceField
@@ -57,6 +67,8 @@ export function TaskModelChoiceField({
       onChange={onChange}
       allowDefault
       fixed={fixed}
+      disabled={disabled}
+      {...(fixedLabel === undefined ? {} : { presentation: "chip" as const, fixedLabel })}
       onManage={() => openModelsSettings("roles")}
     />
   );

@@ -1,46 +1,37 @@
+import { Surface } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
-import { ChevronRight } from "../../../shared/ui/icons";
-import { HARNESS_TITLE, type SecondOpinionMeta } from "../model/session";
-import { HarnessIcon } from "./HarnessIcon";
+import { Replace, Eye } from "../../../shared/ui/icons";
+import type { SecondOpinionMeta } from "../model/session";
+import { HandoffFileCount, HarnessRoute } from "./HarnessRoute";
 
 type Props = {
   card: SecondOpinionMeta;
 };
 
+/** The route card inside a user bubble: title, from > to, file count. */
 export function SecondOpinionCard({ card }: Props) {
   const t = useT();
-  const files =
-    card.files != null && card.files > 0
-      ? t(card.files === 1 ? "{p0} file" : "{p0} files", { p0: card.files })
-      : null;
+  const handoff = card.kind === "handoff";
+  const Icon = handoff ? Replace : Eye;
 
   return (
-    <div className="min-w-0 font-sans">
-      <Text as="div" size="secondary" tone="neutral" weight="medium" leading="snug">
-        {card.kind === "handoff" ? t("Handoff") : t("Second opinion")}
-      </Text>
+    <Surface variant="card" padding="sm" className="grid min-w-0 gap-1 font-sans">
       <Text
         as="div"
-        size="micro"
-        tone="secondary"
-        className="mt-1 flex min-w-0 items-center gap-1.5"
+        size="secondary"
+        tone="inherit"
+        weight="medium"
+        leading="snug"
+        className="flex items-center gap-1.5 text-(--transcript-ink-emphasis)"
       >
-        <HarnessIcon harness={card.from} className="size-3 shrink-0" />
-        <Text size="inherit" tone="inherit" truncate>
-          {HARNESS_TITLE[card.from]}
-        </Text>
-        <ChevronRight className="icon-xs shrink-0" tone="secondary" strokeWidth={1.75} />
-        <HarnessIcon harness={card.to} className="size-3 shrink-0" />
-        <Text size="inherit" tone="inherit" truncate>
-          {HARNESS_TITLE[card.to]}
-        </Text>
+        <Icon className="icon-sm shrink-0 text-(--transcript-ink-chrome)" aria-hidden />
+        {handoff ? t("Handoff") : t("Second opinion")}
       </Text>
-      {files ? (
-        <Text as="div" size="micro" tone="secondary" className="mt-1">
-          {files}
-        </Text>
-      ) : null}
-    </div>
+      <Text as="div" size="micro" tone="secondary" className="min-w-0">
+        <HarnessRoute from={card.from} to={card.to} />
+      </Text>
+      <HandoffFileCount files={card.files} />
+    </Surface>
   );
 }

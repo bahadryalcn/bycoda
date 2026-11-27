@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatCitation } from "./chatCitation";
 import { chatCitationRange, highlightChatCitation } from "./chatCitationHighlight";
 
@@ -15,6 +15,7 @@ const citation: ChatCitation = {
 };
 afterEach(() => {
   document.body.replaceChildren();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 function source(session = "session", text = "same and <strong>same</strong>") {
@@ -55,5 +56,95 @@ describe("chat citation source identity", () => {
   it("never navigates away when an already mounted source changed", () => {
     source("session", "different same and same");
     expect(highlightChatCitation(citation, { navigate: true })).toBe(false);
+  });
+});
+
+const HIGHLIGHT_NAME = "bycoda-chat-citation";
+class FakeHighlight {
+  readonly range: Range;
+  constructor(range: Range) {
+    this.range = range;
+  }
+}
+function mountSession(): HTMLElement {
+  document.body.innerHTML = '<div data-chat-citation-session="session"></div>';
+  return document.body.firstElementChild as HTMLElement;
+}
+function revealSource(root: HTMLElement, html = "same and <strong>same</strong>") {
+  root.innerHTML = `<div data-selectable-agent-response="block">${html}</div>`;
+}
+describe("late-revealed chat citation highlight", () => {
+  let highlights: Map<string, unknown>;
+  beforeEach(() => {
+    vi.useFakeTimers();
+    highlights = new Map();
+    vi.stubGlobal("CSS", { highlights });
+    vi.stubGlobal("Highlight", FakeHighlight);
+  });
+  it("keeps a source revealed after the unavailable timeout highlighted for its full duration", async () => {
+    const root = mountSession();
+    const unavailable = vi.fn();
+    expect(highlightChatCitation(citation, { navigate: true, onUnavailable: unavailable })).toBe(
+      true,
+    );
+    await vi.advanceTimersByTimeAsync(2000);
+    revealSource(root);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(highlights.has(HIGHLIGHT_NAME)).toBe(true);
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(highlights.has(HIGHLIGHT_NAME)).toBe(true);
+    expect(unavailable).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(299);
+    expect(highlights.has(HIGHLIGHT_NAME)).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(highlights.has(HIGHLIGHT_NAME)).toBe(false);
+  });
+  it("reports unavailable and clears when the source never appears", async () => {
+    mountSession();
+    const unavailable = vi.fn();
+    expect(highlightChatCitation(citation, { navigate: true, onUnavailable: unavailable })).toBe(
+      true,
+    );
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(unavailable).toHaveBeenCalledOnce();
+    expect(highlights.has(HIGHLIGHT_NAME)).toBe(false);
+  });
+  it("does not paint or report a late source whose snapshot changed", async () => {
+    const root = mountSession();
+    const unavailable = vi.fn();
+    highlightChatCitation(citation, { navigate: true, onUnavailable: unavailable });
+    await vi.advanceTimersByTimeAsync(2000);
+    revealSource(root, "changed same and same");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(highlights.size).toBe(0);
+    expect(unavailable).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(highlights.size).toBe(0);
+    expect(unavailable).toHaveBeenCalledOnce();
+  });
+  it("cancels a superseded pending request so its late reveal neither paints nor reports", async () => {
+    const root = mountSession();
+    const stale = vi.fn();
+    highlightChatCitation(citation, { navigate: true, onUnavailable: stale });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(highlightChatCitation(citation)).toBe(false);
+    revealSource(root);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(highlights.size).toBe(0);
+    expect(stale).not.toHaveBeenCalled();
+  });
+  it("lets a newer highlight outlive the superseded request's expiry timer", async () => {
+    const root = mountSession();
+    const stale = vi.fn();
+    highlightChatCitation(citation, { navigate: true, onUnavailable: stale });
+    await vi.advanceTimersByTimeAsync(1000);
+    revealSource(root);
+    expect(highlightChatCitation(citation)).toBe(true);
+    await vi.advanceTimersByTimeAsync(1600);
+    expect(highlights.has(HIGHLIGHT_NAME)).toBe(true);
+    expect(stale).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(highlights.has(HIGHLIGHT_NAME)).toBe(false);
   });
 });

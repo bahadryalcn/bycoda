@@ -24,21 +24,18 @@ export function SubmodulePointer({
   const stage = file.unstaged;
   const label = stage ? t("Pointer changed") : t("Pointer staged");
   return (
-    // A narrow panel keeps the submodule's name readable: the badge drops to its icon.
+    // Icon only: the submodule's name stays readable at any panel width.
     <span className="flex shrink-0 items-center">
       <Button
         variant="ghost"
         size="sm"
+        iconOnly
         tone="warning"
-        className="gap-1"
-        aria-label={label}
-        onClick={onOpen}
+        label={label}
         tooltip={t("Open the pointer change in {p0}", { p0: parent })}
+        onClick={onOpen}
       >
-        <GitCommitVertical aria-hidden className="icon-xs" />
-        <span aria-hidden className="hidden @min-[26rem]/changes:inline">
-          {label}
-        </span>
+        <GitCommitVertical aria-hidden className="icon-sm" />
       </Button>
       <Button
         variant="ghost"

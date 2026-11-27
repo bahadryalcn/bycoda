@@ -1,5 +1,5 @@
 "use client";
-import { OverflowTooltip } from "../../Tooltip";
+import { OverflowTooltip, Tooltip } from "../../Tooltip";
 import { debounce } from "es-toolkit";
 import { SearchInput, SearchInputGroup } from "../../SearchInput";
 
@@ -56,8 +56,12 @@ export interface JsonViewerProps {
   onQueryChange?: (query: string) => void;
   /** Children shown per page in a long array or object. Defaults to 50. */
   pageSize?: number;
-  /** Show copy value and copy path actions. Defaults to true. */
+  /** Show copy value and copy path actions on the hovered or focused row. Defaults to true. */
   copyable?: boolean;
+  /** Offer copy on the root row. Turn it off when the surrounding card already copies the whole document. Defaults to true. */
+  copyRoot?: boolean;
+  /** Show the search field and the expand and collapse buttons. Turn it off for small payloads. Defaults to true. */
+  toolbar?: boolean;
   writeText?: (text: string) => Promise<void>;
   onCopy?: (detail: JsonViewerCopyDetail) => void;
   /** Called when a row becomes the current one. */
@@ -228,8 +232,7 @@ function Highlight({ text, needle, current }: { text: string; needle: string; cu
 
 type CopyState = "idle" | "done" | "error";
 /**
- * Icon-only copy action built on the shared Button. A row action is the compact inline variant; the path bar uses a regular
- * ghost icon Button. The glyph swaps in place, so the button never changes width.
+ * Icon-only copy action built on the shared InlineAction. A row action is the compact inline variant. The glyph swaps in place, so the button never changes width.
  */
 function CopyButton({
   label,
@@ -237,14 +240,12 @@ function CopyButton({
   onCopy,
   reduced,
   className,
-  focusable = false,
 }: {
   label: string;
   icon: ReactNode;
   onCopy: () => Promise<void>;
   reduced: boolean;
   className?: string;
-  focusable?: boolean;
 }) {
   const t = useT();
   const [state, setState] = useState<CopyState>("idle");
@@ -291,25 +292,6 @@ function CopyButton({
       </motion.span>
     </AnimatePresence>
   );
-  if (focusable)
-    return (
-      <Button
-        variant="ghost"
-        size="sm"
-        iconOnly
-        motion="none"
-        label={name}
-        title={label}
-        className={className}
-        data-state={state}
-        onClick={(event) => {
-          event.stopPropagation();
-          void run();
-        }}
-      >
-        {body}
-      </Button>
-    );
   return (
     <InlineAction
       reveal="always"
@@ -351,6 +333,8 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
     onQueryChange,
     pageSize = 50,
     copyable = true,
+    copyRoot = true,
+    toolbar = true,
     writeText,
     onCopy,
     onSelect,
@@ -387,7 +371,12 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
   const [queryInternal, setQueryInternal] = useState(defaultQuery);
   const query = queryProp ?? queryInternal;
   const [needle, setNeedle] = useState(() => query.trim().toLowerCase());
-  const searchIndex = useMemo(() => indexJson(data, rootName), [data, rootName]);
+  const searching = needle !== "";
+  // Indexing walks every node, so it waits for the first settled query and is dropped when the query clears.
+  const searchIndex = useMemo(
+    () => (searching ? indexJson(data, rootName) : null),
+    [data, rootName, searching],
+  );
   const updateNeedle = useMemo(() => debounce(setNeedle, 150), []);
   useEffect(() => {
     updateNeedle(query.trim().toLowerCase());
@@ -398,7 +387,7 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
     onQueryChange?.(next);
   };
   const search = useMemo<SearchResult | null>(
-    () => (needle ? searchJson(searchIndex, needle) : null),
+    () => (searchIndex && needle ? searchJson(searchIndex, needle) : null),
     [searchIndex, needle],
   );
   const [closedWhileSearching, setClosedWhileSearching] = useState<{
@@ -615,9 +604,10 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
   const copy = async (row: Row, kind: "value" | "path") => {
     const text = kind === "path" ? row.id : copyText(row.value, row.type);
     const write = writeText ?? writeClipboard;
-    const copied = t(kind === "path" ? "Copied path: {p0}" : "Copied value: {p0}", {
-      p0: row.id,
-    });
+    const copied =
+      kind === "path"
+        ? t("Copied path: {p0}", { p0: row.id })
+        : t("Copied value: {p0}", { p0: row.id });
     const notify = () => onCopy?.({ kind, path: row.id, text });
     try {
       await write(text);
@@ -726,6 +716,10 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
     }
   };
 
+  // The root row's value is the whole document and its path is just the root name, so it only offers copy when asked.
+  const rowCopyable = (row: Row) =>
+    copyable && row.kind === "node" && (copyRoot || row.id !== rootName);
+
   const heightStyle = {
     "--json-max-height": typeof maxHeight === "number" ? `${maxHeight}px` : maxHeight,
   } as CSSProperties;
@@ -759,7 +753,7 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
       className={[styles.root, className].filter(Boolean).join(" ")}
       style={heightStyle}
     >
-      {searchable || rows.length > 1 ? (
+      {toolbar && (searchable || rows.length > 1) ? (
         <div className={styles.toolbar}>
           {searchable ? (
             <SearchInputGroup
@@ -880,7 +874,7 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
                   aria-label={describe(row)}
                   className={styles.row}
                   data-kind={row.kind}
-                  data-copyable={(copyable && row.kind === "node") || undefined}
+                  data-copyable={rowCopyable(row) || undefined}
                   data-active={isActive || undefined}
                   style={{ "--level": row.level - 1 } as CSSProperties}
                   initial={{ height: 0, opacity: 0, overflow: "hidden" }}
@@ -933,22 +927,26 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
                         >
                           {branch ? <ChevronRight /> : null}
                         </span>
-                        <span
-                          className={typeof row.name === "number" ? styles.index : styles.key}
-                          title={
+                        <Tooltip
+                          asChild
+                          label={
                             typeof row.name === "string" && row.name.length > 24
                               ? row.name
                               : undefined
                           }
                         >
-                          {row.name === null ? (
-                            rootName
-                          ) : typeof row.name === "number" ? (
-                            row.name
-                          ) : (
-                            <Highlight text={row.name} needle={mark} current={isCurrentMatch} />
-                          )}
-                        </span>
+                          <span
+                            className={typeof row.name === "number" ? styles.index : styles.key}
+                          >
+                            {row.name === null ? (
+                              rootName
+                            ) : typeof row.name === "number" ? (
+                              row.name
+                            ) : (
+                              <Highlight text={row.name} needle={mark} current={isCurrentMatch} />
+                            )}
+                          </span>
+                        </Tooltip>
                         <span className={styles.colon} aria-hidden="true">
                           {row.name === null && branch ? "" : ":"}
                         </span>
@@ -967,48 +965,51 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
                             <span className={styles.countLabel}>{countLabel(row, t)}</span>
                           </span>
                         ) : (
-                          <span
-                            className={styles.value}
-                            data-type={row.type}
-                            title={
+                          <Tooltip
+                            asChild
+                            label={
                               row.type === "string" && (row.value as string).length > 40
                                 ? (row.value as string)
                                 : undefined
                             }
                           >
-                            {row.type === "string" ? (
-                              <>
-                                &quot;
+                            <span className={styles.value} data-type={row.type}>
+                              {row.type === "string" ? (
+                                <>
+                                  &quot;
+                                  <Highlight
+                                    text={row.value as string}
+                                    needle={mark}
+                                    current={isCurrentMatch}
+                                  />
+                                  &quot;
+                                </>
+                              ) : (
                                 <Highlight
-                                  text={row.value as string}
+                                  text={primitiveText(row.value, row.type)}
                                   needle={mark}
                                   current={isCurrentMatch}
                                 />
-                                &quot;
-                              </>
-                            ) : (
-                              <Highlight
-                                text={primitiveText(row.value, row.type)}
-                                needle={mark}
-                                current={isCurrentMatch}
-                              />
-                            )}
-                          </span>
+                              )}
+                            </span>
+                          </Tooltip>
                         )}
-                        {copyable ? (
+                        {rowCopyable(row) ? (
                           <span className={styles.actions}>
                             <CopyButton
-                              label="Copy value"
+                              label={t("Copy value")}
                               icon={<Copy aria-hidden="true" />}
                               reduced={reduced}
                               onCopy={() => copy(row, "value")}
                             />
-                            <CopyButton
-                              label="Copy path"
-                              icon={<Link2 aria-hidden="true" />}
-                              reduced={reduced}
-                              onCopy={() => copy(row, "path")}
-                            />
+                            {row.id !== rootName ? (
+                              <CopyButton
+                                label={t("Copy path")}
+                                icon={<Link2 aria-hidden="true" />}
+                                reduced={reduced}
+                                onCopy={() => copy(row, "path")}
+                              />
+                            ) : null}
                           </span>
                         ) : null}
                       </>
@@ -1037,16 +1038,6 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
                 : activeRow.type
               : "page"}
           </span>
-          {copyable && activeRow.kind === "node" ? (
-            <CopyButton
-              key={activeRow.id}
-              focusable
-              label="Copy path"
-              icon={<Copy aria-hidden="true" />}
-              reduced={reduced}
-              onCopy={() => copy(activeRow, "path")}
-            />
-          ) : null}
         </div>
       ) : null}
       <span className={styles.srOnly} role="status">

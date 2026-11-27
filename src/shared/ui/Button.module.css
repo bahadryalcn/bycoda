@@ -46,6 +46,16 @@
     align-self: stretch;
     aspect-ratio: auto;
   }
+  .control[data-button-variant="caption"] {
+    align-self: stretch;
+    flex: none;
+    inline-size: var(--ui-space-10);
+    block-size: auto;
+    min-block-size: 0;
+    padding: 0;
+    aspect-ratio: auto;
+    border-radius: 0;
+  }
   .control.link {
     padding-inline: var(--space-1);
   }
@@ -57,6 +67,7 @@
     font: inherit;
     vertical-align: baseline;
     white-space: inherit;
+    overflow-wrap: anywhere;
     text-decoration: underline;
     text-underline-offset: 0.15em;
   }
@@ -83,6 +94,9 @@
   }
   .control.item {
     inline-size: 100%;
+  }
+  .control.item > .trailing {
+    margin-inline-start: auto;
   }
   /* Structural defaults describe an unaligned control. An explicit `align`, or the
      migrated `text-left`, is stronger than an item's start or a tab's center. */
@@ -262,6 +276,38 @@
 .nativeContent {
   gap: var(--space-2);
 }
+
+.control[data-button-badged] {
+  position: relative;
+}
+.badge {
+  /* flex: the slot is exactly the badge's height, not a line box that pushes it below the corner. */
+  display: flex;
+  position: absolute;
+  inset-block-start: calc(-1 * var(--ui-space-1));
+  inset-inline-end: calc(-1 * var(--ui-space-1));
+  pointer-events: none;
+}
+.trailing {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+
+@container pane-header (inline-size <= 26rem) {
+  .control[data-button-collapse-label] {
+    padding-inline: var(--ui-space-2);
+  }
+  .control[data-button-collapse-label] .label {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: clip;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    contain: size;
+  }
+}
 /* An icon stays in place while a toolbar action reveals its label. */
 .control[data-button-reveal-label] {
   --button-reveal-height: var(--control-height-sm);
@@ -278,25 +324,16 @@
   --button-reveal-height: var(--control-height-lg);
   --button-icon-size: var(--ui-icon-lg);
 }
+/* The control's box never changes on hover, focus or open, so neighbouring controls stay
+   put under the pointer. With a precise pointer the label lives in the tooltip (hover and
+   keyboard focus); touch has no hover, so the label is always shown and the width is static. */
 .control[data-button-reveal-label] > .nativeContent {
   display: inline-grid;
   grid-template-columns: var(--button-icon-size) minmax(0, 0fr);
   gap: 0;
-  transition:
-    grid-template-columns var(--duration-fast) var(--ease-standard),
-    gap var(--duration-fast) var(--ease-standard);
 }
 .control[data-button-reveal-label] .label {
   opacity: 0;
-  transition: opacity var(--duration-fast) var(--ease-standard);
-}
-.control[data-button-reveal-label]:is(:hover, :focus-visible, [aria-expanded="true"])
-  > .nativeContent {
-  grid-template-columns: var(--button-icon-size) minmax(0, 1fr);
-  gap: var(--space-2);
-}
-.control[data-button-reveal-label]:is(:hover, :focus-visible, [aria-expanded="true"]) .label {
-  opacity: 1;
 }
 @media (hover: none), (pointer: coarse) {
   .control[data-button-reveal-label] > .nativeContent {
@@ -305,12 +342,6 @@
   }
   .control[data-button-reveal-label] .label {
     opacity: 1;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .control[data-button-reveal-label] > .nativeContent,
-  .control[data-button-reveal-label] .label {
-    transition: none;
   }
 }
 /* A text label never paints outside its control: in a bounded container the control
@@ -422,6 +453,25 @@
   ) {
   color: var(--text-secondary);
 }
+/* Inside an assistant reply a neutral quiet button reads the chrome ink role. */
+:global([data-transcript-reply])
+  .control[data-button-tone="neutral"]:is(
+    [data-button-hierarchy="ghost"],
+    [data-button-hierarchy="link"],
+    [data-button-hierarchy="item"],
+    [data-button-hierarchy="tab"]
+  ):not([data-button-selected], :disabled, [aria-disabled="true"]) {
+  color: var(--ui-quiet-chrome-ink, var(--text-secondary));
+}
+:global([data-transcript-reply])
+  .control[data-button-tone="neutral"]:is(
+    [data-button-hierarchy="ghost"],
+    [data-button-hierarchy="link"],
+    [data-button-hierarchy="item"],
+    [data-button-hierarchy="tab"]
+  ):is(:hover, :focus-visible):not([data-button-selected], :disabled, [aria-disabled="true"]) {
+  color: var(--ui-quiet-chrome-active-ink, var(--foreground));
+}
 .control[data-button-selected][data-button-tone="neutral"] {
   background: var(--ui-surface-selected);
   color: var(--foreground);
@@ -439,6 +489,13 @@
     border-color: var(--button-border);
     opacity: 1;
     box-shadow: none;
+  }
+  .control[data-button-variant="caption"][data-button-tone="danger"]:hover:not(
+      [aria-disabled="true"]
+    ) {
+    color: var(--ui-tone-danger-on-solid);
+    background: var(--ui-tone-danger-solid);
+    border-color: var(--ui-tone-danger-solid);
   }
   .control[data-button-hierarchy="primary"]:hover:not([aria-disabled="true"]) {
     background: var(--button-solid-hover);
@@ -710,7 +767,7 @@
    keeps its own typography, hover/pressed/selected/disabled/loading presentation and
    keyboard focus. A divider replaces the per-segment border, so the group is exactly
    one control tall and every state stays readable on its own segment. */
-:global([data-button-group="joined"]) > .control[data-button-tone][data-button-hierarchy] {
+:global([data-button-group="joined"]) > .control:where([data-button-tone][data-button-hierarchy]) {
   align-self: stretch;
   border-width: 0;
   border-radius: 0;
@@ -776,6 +833,12 @@
 .label[data-label-reserved] {
   text-align: center;
 }
+/* Beside a start icon the text hugs the icon; a wider reserved label trails as space
+   instead of opening a gap between icon and text. */
+.icon + .label[data-label-reserved],
+.progressIcon + .label[data-label-reserved] {
+  text-align: start;
+}
 /* Confirmed check overlays the label start; the success ghost reserves the same inset. */
 .stableLabel[data-confirm-icon],
 .labelGhost[data-reserve-icon] {
@@ -791,7 +854,8 @@
   display: inline-flex;
   transform: translateY(-50%);
 }
-.confirmIcon > svg {
+.confirmIcon > svg,
+.confirmIcon > .pendingSpinner {
   inline-size: var(--button-icon-size);
   block-size: var(--button-icon-size);
 }
@@ -966,4 +1030,24 @@
 }
 .control[data-button-text-decoration="rest-underline"]:hover {
   text-decoration: none;
+}
+/* Chip: icon plus a readable value (machine, project, checkout, branch, model). Plain at
+   rest like a ghost; compact inline padding, secondary type, value truncates first. */
+@layer components {
+  .control[data-button-variant="chip"] {
+    min-block-size: var(--ui-control-height-compact);
+    padding-inline: var(--space-2);
+    gap: var(--space-1);
+    font-size: var(--ui-font-secondary);
+    font-weight: 400;
+  }
+}
+.control[data-button-variant="chip"][data-button-tone="neutral"] {
+  color: var(--ui-text-secondary);
+}
+/* Rail section headers share one fill across disclosure, navigation and menu controls. */
+:global([data-section-label][data-action-host][data-compact-rail])
+  .control[data-button-hierarchy][data-button-tone] {
+  background: transparent;
+  border-color: transparent;
 }

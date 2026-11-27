@@ -15,6 +15,7 @@ import {
   type SessionRunEngine,
   type SessionRunSpec,
 } from "../sessions/sessionRuns";
+import { withoutBackgroundOwner } from "../../src/shared/model/host-contracts/delegation";
 import { HostWork } from "./service";
 import { HostTaskBudgets, type BudgetRunRegistration } from "../tasks/task-budgets";
 import { readModelRouting } from "../model-routing/storage";
@@ -285,12 +286,7 @@ export class SessionWorkAdapter {
           if (observed.state === "unknown") throw new Error("Work retirement is unknown.");
           await cancelSessionRun(this.engine, receipt);
         },
-        externalRunning: async () =>
-          (await store.sessions()).flatMap((run) =>
-            run.status === "running" && run.runId
-              ? [{ sessionId: run.session.id, runId: run.runId, projectId: run.projectId }]
-              : [],
-          ),
+        externalRunning: () => store.runningSessionRuns(),
       },
       limits,
       now,
@@ -318,7 +314,7 @@ export class SessionWorkAdapter {
       session.providerAccountId !== spec.providerAccountId ||
       (spec.workspaceId !== undefined && session.workspaceId !== spec.workspaceId) ||
       (spec.worktreeCwd !== undefined && session.worktreeCwd !== spec.worktreeCwd) ||
-      !isDeepStrictEqual(session.modelSettings, spec.modelSettings)
+      !isDeepStrictEqual(withoutBackgroundOwner(session.modelSettings), spec.modelSettings)
     )
       throw new Error("Work prepared session changed or is active.");
     return receipt.sessionId;

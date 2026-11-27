@@ -16,6 +16,15 @@ Email and Slack accounts marked **Configured** have stored credentials. This lab
 
 Jira token entry offers the shared show/hide control. When searching Jira projects, boards or Linear teams, **Select all shown** and **Clear shown selection** affect only matching rows; hidden selections stay selected.
 
+## GitHub issues and pull requests
+
+Open **Inbox**, select **GitHub**, then choose **Issues** or **Pull requests** above
+the search field. Each list keeps its own selected item and scroll position while
+the window stays open. Use **List view** to choose **Compact** for single-line
+titles or **Comfortable** for longer titles and visible labels. Turn off
+**Side by side** in the same menu to use the full width for the list. Select a
+row to open its details and use **Back** to return.
+
 ## Inbox attachments
 
 Jira, GitHub, GitLab, Azure DevOps and Linear comment drafts offer **Source**, **Split** and **Preview**. Split shows the
@@ -38,12 +47,19 @@ Jira issue details include the issue's full attachment collection, including fil
 mentioned only by filename in the description. Azure DevOps work item details include
 attached-file relations. GitLab upload links resolve against the current project.
 
-Jira Inbox list filters support multiple assignees, **Assigned to me**, **Unassigned**,
-and multiple actual workflow statuses under **Board status**. Assignees and statuses
-come from loaded issues in visible projects. Assignment choices are combined with OR;
-workflow statuses are combined with the existing Open/Closed, Time and Projects filters.
-Assignment and workflow selections narrow Jira's server query before its result limit.
-Selections persist with Inbox filters and **Clear filters** resets them.
+An Inbox row preview opens after the pointer stays on the row for 450 ms. Keyboard
+focus opens the preview immediately.
+
+In Jira Inbox, select the current status in an issue’s detail to change it from the
+list or board. The available actions follow the issue’s Jira workflow.
+
+Jira Inbox shares filters across the list, **Kanban** and **Backlog & sprints**.
+Assignment matches any selected person, **Assigned to me** or **Unassigned**.
+**Workflow status** matches exact Jira statuses. **Status category** selects open
+or closed issues. **Updated** filters loaded issues by update time. **Projects**
+sets the Jira project scope for Inbox. Jira applies assignment and workflow before
+paging. Click the filter count to inspect your choices or use **Reset filters** to clear them.
+Inbox discovers assignees and workflow statuses from loaded issues in visible projects.
 Selections that are temporarily absent from discovery remain selected when other
 scope choices change. A provider still loading does not show an empty collection
 because a different provider finished first. Jira boards keep **Load more issues**
@@ -99,6 +115,11 @@ Change **Agent working folder** in an issue to save an explicit choice for that
 issue. It survives reopening and takes precedence over every default. These choices
 use the same local settings storage as Jira scope preferences and do not change Jira
 access or agent permissions.
+
+To include screenshots in an agent's Jira comment, save the images in the
+session's working folder and ask the agent to post them with its comment. The
+desktop approval lists the Jira issue and file paths. Up to four PNG, JPEG, GIF or
+WebP images can be attached per comment, with a combined limit of 10 MiB.
 
 ## Email
 
@@ -184,6 +205,9 @@ Connected tracker items can be referenced in drafts with `@alias:ref`. Jira acce
 `@ado:12`. Sending includes available item context without changing the draft token;
 an unavailable lookup does not prevent sending. See [chat references](chat-artifacts-and-connected-files.md#reference-tracker-work-items)
 for reference limits and sent-message behavior.
+
+For a project on a connected machine, GitHub suggestions and references such as
+`#123` use that machine’s registered repository and GitHub CLI sign-in.
 
 Jira key prefixes and numeric queries use Jira Cloud's issue picker, then load up to
 20 existing issues in picker order. Exact keys also retain their direct lookup;

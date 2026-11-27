@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Block } from "../model/session";
 import {
   MAX_TRANSCRIPT_WINDOW_TURNS,
+  pageRemainder,
   runRemoteLoad,
   useTranscriptPaging,
 } from "./useTranscriptPaging";
@@ -13,6 +14,8 @@ let root: Root;
 let host: HTMLDivElement;
 let api: ReturnType<typeof useTranscriptPaging>;
 let scroller: HTMLDivElement;
+/** The number of turns each committed render showed. */
+let shown: number[] = [];
 const history = (count: number, start = 0): Block[][] =>
   Array.from({ length: count }, (_, i) => [
     { id: `u-${start + i}`, role: "user", text: `Question ${start + i}` },
@@ -34,7 +37,7 @@ function Harness({
   const prepend = useRef<number | null>(null);
   api = useTranscriptPaging({
     turns,
-    blockCount: turns.length,
+    blockCount: turns.reduce((count, turn) => count + turn.length, 0),
     openWork: {},
     scroller: scroll,
     stickToBottom: stick,
@@ -43,11 +46,22 @@ function Harness({
     remoteHistoryHasMore: more,
     onLoadRemoteHistory: load,
   });
+  shown.push(api.visibleTurns.length);
   return createElement(
     "div",
     { ref: scroll, "data-scroll": true },
     api.visibleTurns.map((turn) =>
-      createElement("div", { key: turn[0].id, "data-transcript-turn": turn[0].id }, turn[0].text),
+      createElement(
+        "div",
+        { key: turn[0].id, "data-transcript-turn": turn[0].id },
+        turn.map((block) =>
+          createElement(
+            "div",
+            { key: block.id, "data-transcript-virtual-block-id": block.id },
+            block.text,
+          ),
+        ),
+      ),
     ),
   );
 }
@@ -63,6 +77,11 @@ beforeEach(() => {
     this: HTMLElement,
   ) {
     const parent = this.parentElement;
+    if (this.hasAttribute("data-transcript-virtual-block-id")) {
+      const top =
+        parent!.getBoundingClientRect().top + Array.from(parent!.children).indexOf(this) * 20;
+      return new DOMRect(0, top, 500, 20);
+    }
     const top = this.hasAttribute("data-transcript-turn")
       ? Array.from(parent!.children).indexOf(this) * 100 - parent!.scrollTop
       : 0;
@@ -72,9 +91,32 @@ beforeEach(() => {
   document.body.append(host);
   root = createRoot(host);
 });
+
+it("keeps a message in place when earlier history changes the first turn key", async () => {
+  let finish!: (added: number) => void;
+  const load = () =>
+    new Promise<number>((resolve) => {
+      finish = resolve;
+    });
+  const current = history(10, 20);
+  render(current, load, true, false);
+  scroller.scrollTop = 0;
+  const rowTop = () =>
+    scroller.querySelector('[data-transcript-virtual-block-id="u-20"]')!.getBoundingClientRect()
+      .top;
+  const before = rowTop();
+  act(() => api.onHistoryScroll(0, true));
+  await act(async () => {
+    const expanded = [[history(1, 19)[0][0], ...current[0]], ...current.slice(1)];
+    root.render(createElement(Harness, { turns: expanded, more: false, follow: false }));
+    finish(1);
+  });
+  expect(rowTop()).toBe(before);
+});
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -87,6 +129,31 @@ function render(
   act(() => root.render(createElement(Harness, { turns, load, more, follow })));
   scroller = host.firstElementChild as HTMLDivElement;
 }
+
+it("loads one earlier page on upward reader input and keeps the reading position", async () => {
+  let finish!: (added: number) => void;
+  const load = vi.fn(
+    () =>
+      new Promise<number>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  render(history(10, 20), load, true, false);
+  scroller.scrollTop = 120;
+  act(() => api.onHistoryScroll(400, false, false));
+  act(() => api.onHistoryScroll(120, false, false));
+  expect(load).not.toHaveBeenCalled();
+  act(() => api.onHistoryScroll(120, true));
+  act(() => api.onHistoryScroll(120, true));
+  expect(load).toHaveBeenCalledOnce();
+  const visible = () => scroller.querySelector<HTMLElement>('[data-transcript-turn="u-21"]');
+  const offset = visible()!.getBoundingClientRect().top;
+  await act(async () => {
+    root.render(createElement(Harness, { turns: history(30), load, more: false, follow: false }));
+    finish(20);
+  });
+  expect(visible()!.getBoundingClientRect().top).toBe(offset);
+});
 
 it("bounds repeated earlier/newer paging and preserves an overlapping turn's viewport offset", async () => {
   render(history(1000));
@@ -102,6 +169,79 @@ it("bounds repeated earlier/newer paging and preserves an overlapping turn's vie
   for (let page = 0; page < 50; page++) act(() => api.loadNewer());
   expect(api.lastVisibleTurn).toBe(1000);
   expect(api.visibleTurns.length).toBeLessThanOrEqual(MAX_TRANSCRIPT_WINDOW_TURNS);
+});
+
+it("mounts an earlier page in two commits and ends on the same window as one commit", async () => {
+  render(history(100));
+  scroller.scrollTop = 0;
+  const first = api.firstVisibleTurn;
+  const count = api.visibleTurns.length;
+  const id = api.visibleTurns[0][0].id;
+  shown = [];
+  await act(() => api.loadEarlier());
+  expect(shown).toContain(count + 8);
+  expect(shown.at(-1)).toBe(count + 20);
+  expect(api.firstVisibleTurn).toBe(first - 20);
+  expect(
+    scroller.querySelector(`[data-transcript-turn="${id}"]`)!.getBoundingClientRect().top,
+  ).toBe(0);
+});
+
+it("drops the rest of an earlier page when the reader navigates before it is mounted", async () => {
+  render(history(100));
+  act(() => api.revealBlock("u-50"));
+  await act(async () => {
+    void api.loadEarlier();
+    api.jumpLatest();
+  });
+  expect(api.lastVisibleTurn).toBe(100);
+  expect(api.visibleTurns.length).toBe(20);
+});
+
+it("applies the rest of a page only to the navigation and session that began it", () => {
+  const current = { firstId: "u-1", offset: 0, count: 28, tail: false };
+  const full = { firstId: "u-1", offset: 0, count: 40, tail: false };
+  const rest = { window: full, navigation: 3, sessionId: "a" };
+  expect(pageRemainder(current, rest, { navigation: 3, sessionId: "a" })).toBe(full);
+  // A reveal that needed no window move still counts as a navigation.
+  expect(pageRemainder(current, rest, { navigation: 4, sessionId: "a" })).toBe(current);
+  expect(pageRemainder(current, rest, { navigation: 3, sessionId: "b" })).toBe(current);
+});
+
+it("does not align a reveal that moved nothing to the anchor of an earlier page", async () => {
+  render(history(100), undefined, false, false);
+  scroller.scrollTop = 0;
+  const shownId = api.visibleTurns[0][0].id;
+  await act(async () => {
+    void api.loadEarlier();
+    // Already in the window: the reveal moves nothing but ends the page's navigation.
+    api.revealBlock(shownId);
+  });
+  // Without a live anchor the prepend keeps the distance from the bottom, as any prepend does.
+  expect(scroller.scrollTop).toBe(scroller.scrollHeight - scroller.clientHeight);
+  expect(api.visibleTurns.length).toBe(28);
+});
+
+it("keeps a remote page's reading position and finishes the full page", async () => {
+  let finish!: (added: number) => void;
+  const load = () =>
+    new Promise<number>((resolve) => {
+      finish = resolve;
+    });
+  render(history(10, 20), load, true, false);
+  scroller.scrollTop = 120;
+  act(() => api.onHistoryScroll(120, true));
+  const row = () => scroller.querySelector<HTMLElement>('[data-transcript-turn="u-21"]')!;
+  const offset = row().getBoundingClientRect().top;
+  shown = [];
+  await act(async () => {
+    root.render(createElement(Harness, { turns: history(30), load, more: false, follow: false }));
+    finish(20);
+  });
+  expect(shown).toContain(18);
+  expect(api.visibleTurns.length).toBe(30);
+  expect(api.visibleTurns[0][0].id).toBe("u-0");
+  expect(row().getBoundingClientRect().top).toBe(offset);
 });
 
 it("recenters any reveal without mounting intervening saved turns and returns to live tail", () => {
@@ -120,6 +260,17 @@ it("recenters any reveal without mounting intervening saved turns and returns to
   act(() => api.jumpLatest());
   expect(api.lastVisibleTurn).toBe(10_000);
   expect(scroller.children.length).toBe(20);
+});
+
+it("mounts the distant search target promptly and leaves every later turn reachable", () => {
+  render(history(5000));
+  act(() => expect(api.revealBlock("u-2000", true)).toBe(true));
+  expect(scroller.querySelector('[data-transcript-turn="u-2000"]')).not.toBeNull();
+  expect(api.visibleTurnCount).toBeLessThanOrEqual(8);
+  const next = api.lastVisibleTurn;
+  act(() => api.loadNewer());
+  expect(api.firstVisibleTurn).toBeLessThanOrEqual(next);
+  expect(api.lastVisibleTurn).toBeGreaterThan(next);
 });
 
 it("retains exact historical IDs when saved history prepends or live output appends", () => {
@@ -186,20 +337,53 @@ it("leaves the scroll position alone when a turn is appended while the reader is
   expect(scroller.scrollTop).toBe(50);
 });
 
-it.each([
-  ["a dropped link", new Error("RPC_WS_INTERRUPTED: Host connection was interrupted"), null],
-  ["a real failure", new Error("Session history is unreadable"), "Session history is unreadable"],
-])("reports %s to the paging error only when it is not transient", async (_name, error, shown) => {
-  const setPagingError = vi.fn();
+it("passes the original failure to the grace policy without changing the window", async () => {
+  const error = new Error("RPC_WS_INTERRUPTED: Host connection was interrupted");
+  const setPagingFailure = vi.fn();
+  const apply = vi.fn();
   const loadingRef = { current: true };
   await runRemoteLoad({
     load: () => Promise.reject(error),
     stale: () => false,
-    apply: () => {},
+    apply,
     loadingRef,
     setPagingLoading: () => {},
-    setPagingError,
+    setPagingFailure,
   });
-  expect(setPagingError).toHaveBeenCalledWith(shown);
+  expect(setPagingFailure).toHaveBeenCalledWith(error);
+  expect(apply).not.toHaveBeenCalled();
   expect(loadingRef.current).toBe(false);
+});
+
+it("retries a transient paging rejection quietly", async () => {
+  vi.useFakeTimers();
+  const load = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("RPC_WS_INTERRUPTED: Host connection was interrupted"))
+    .mockResolvedValueOnce(0);
+  render(history(10), load, true);
+  await act(() => api.loadEarlier());
+  expect(api.pagingError).toBeNull();
+  expect(api.pagingLoading).toBe(true);
+  await act(async () => vi.advanceTimersByTimeAsync(2_000));
+  expect(load).toHaveBeenCalledTimes(2);
+  expect(api.pagingError).toBeNull();
+  expect(api.pagingLoading).toBe(false);
+});
+
+it.each([
+  ["adds nothing (it failed and said so itself)", 0, false],
+  ["adds blocks", 20, true],
+  ["reports no count", undefined, true],
+])("moves the window only when the remote load %s", async (_name, added, moved) => {
+  const apply = vi.fn();
+  await runRemoteLoad({
+    load: () => Promise.resolve(added),
+    stale: () => false,
+    apply,
+    loadingRef: { current: true },
+    setPagingLoading: () => {},
+    setPagingFailure: () => {},
+  });
+  expect(apply).toHaveBeenCalledTimes(moved ? 1 : 0);
 });

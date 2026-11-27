@@ -195,3 +195,53 @@ describe("useTurnScrollAnchor width changes", () => {
     expect(turnObservations()).toBe(before + 1);
   });
 });
+
+describe("useTurnScrollAnchor class mutations", () => {
+  const contain = () => {
+    turn.style.contentVisibility = "auto";
+    turn.style.containIntrinsicBlockSize = "100px";
+  };
+
+  it("keeps a settled turn contained when its class list is rewritten with the same names", async () => {
+    turn.className = "transcript-turn a b";
+    await settleMutations();
+    contain();
+    const before = observed.filter((node) => node === turn).length;
+
+    turn.className = "transcript-turn b a";
+    turn.className = "transcript-turn a b";
+    await settleMutations();
+
+    expect(turn.style.contentVisibility).toBe("auto");
+    expect(turn.style.containIntrinsicBlockSize).toBe("100px");
+    expect(observed.filter((node) => node === turn).length).toBe(before);
+  });
+
+  it("re-measures a settled turn when a class name is added inside it", async () => {
+    const child = document.createElement("span");
+    turn.append(child);
+    await settleMutations();
+    contain();
+    const before = observed.filter((node) => node === turn).length;
+
+    child.className = "fold-open";
+    await settleMutations();
+
+    expect(turn.style.contentVisibility).toBe("");
+    expect(turn.style.containIntrinsicBlockSize).toBe("");
+    expect(observed.filter((node) => node === turn).length).toBe(before + 1);
+  });
+
+  it("re-measures a settled turn when a class name is removed inside it", async () => {
+    const child = document.createElement("span");
+    child.className = "line-clamp-4";
+    turn.append(child);
+    await settleMutations();
+    contain();
+
+    child.className = "";
+    await settleMutations();
+
+    expect(turn.style.contentVisibility).toBe("");
+  });
+});

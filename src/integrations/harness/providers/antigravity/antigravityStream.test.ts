@@ -312,6 +312,24 @@ describe("antigravity stream-json transport", () => {
     );
   });
 
+  it.each([
+    "gemini-4-carbon-high",
+    "gemini-4-argon-medium",
+    "gemini-4-neon-xhigh",
+    "gemini-4-hydrogen-xhigh",
+    "orchestrator-neon",
+    "orchestrator-carbon",
+    "orchestrator-argon",
+  ])("launches the selected native model %s and retains it across turns", async (nativeId) => {
+    const model = `antigravity:${nativeId}`;
+    await send(turn("one", { model }).input);
+    await send(turn("two", { model }).input);
+    expect(host.spawns).toHaveLength(1);
+    const args = host.spawns[0].args;
+    expect(args[args.indexOf("--model") + 1]).toBe(nativeId);
+    expect(args).not.toContain("--effort");
+  });
+
   it("passes every additional folder as its own --add-dir", async () => {
     setAdditionalDirsResolver(() => ["C:\\one", "C:\\two"]);
     await send(turn("a").input);

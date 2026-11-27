@@ -39,8 +39,8 @@ it("renders only Host-managed metadata and updates the chosen name without creat
     await act(async () =>
       root.render(createElement(AssistantManagedBadge, { management, compact: true })),
     );
-    expect(container.querySelector('[aria-label="Managed by Ayşe"]')).not.toBeNull();
-    expect(container.querySelector("svg")).not.toBeNull();
+    const mark = container.querySelector('[role="img"][aria-label="Managed by Ayşe"]');
+    expect(mark?.querySelector('.icon-xs[aria-hidden="true"]')).toBeTruthy();
     identity.read.mockClear();
     await act(async () =>
       root.render(

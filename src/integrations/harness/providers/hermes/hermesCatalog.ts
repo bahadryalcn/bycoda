@@ -1,11 +1,11 @@
 import { killChild } from "../../core/child";
 import {
-  assertOptionalProviderProbeError,
   createProviderRetirementLedger,
   withProviderRetirement,
 } from "../../core/providerRetirement";
+import { applyProbedCatalog } from "../../core/catalogProbe";
 import { homeDir } from "../../../../platform/tauri/fs";
-import { setHarnessModels, type AgentModel } from "../../../../features/sessions/model/models";
+import type { AgentModel } from "../../../../features/sessions/model/models";
 import { AcpClient } from "../../core/acp";
 import {
   createChildProcessHandle,
@@ -26,13 +26,7 @@ let inflight: Promise<void> | null = null;
 export function refreshHermesCatalog(): Promise<void> {
   if (inflight) return inflight;
   inflight = discoverHermesModels()
-    .then((models) => {
-      if (models.length > 0) setHarnessModels("hermes", models);
-    })
-    .catch((error: unknown) => {
-      assertOptionalProviderProbeError(error);
-      console.debug("[bycoda] hermes catalog", error);
-    })
+    .then((models) => applyProbedCatalog("hermes", models))
     .finally(() => {
       inflight = null;
     });

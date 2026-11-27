@@ -16,6 +16,7 @@ import { reportBootProjectState } from "../../model/bootDiagnostics";
 import { newTerminalCwd } from "../../../features/terminal/model/terminalTab";
 import { remoteTabCwd } from "../../../features/connections/model/connections";
 import {
+  parseRemotePath,
   remotePath,
   remoteProjectFor,
   remoteSessionGitCwd,
@@ -73,7 +74,7 @@ export function useActiveWorkspaceContext(
   useEffect(() => {
     reportBootProjectState({ activeTabId: reportedTabId, projectCwd, sidebarCwd });
   }, [reportedTabId, projectCwd, sidebarCwd]);
-  const sidebarCwdKey = sidebarCwd && sidebarCwd !== "~" ? normalizeProjectPath(sidebarCwd) : null;
+  const sidebarCwdKey = sidebarCwd ? normalizeProjectPath(sidebarCwd) : null;
   const historyFailed = sidebarCwdKey != null && historyErrorCwd === sidebarCwdKey;
   // True from the very first frame that shows a project we have never listed,
   // so the sidebar can stay blank instead of flashing "No sessions yet".
@@ -86,6 +87,7 @@ export function useActiveWorkspaceContext(
     fallback: sidebarCwd,
   });
   const remoteFilesProject = remoteProjectFor(sidebarCwd);
+  const remoteTerminalProject = remoteFilesProject ?? parseRemotePath(sidebarCwd);
   const remoteCheckout = remoteFilesProject ? remoteTabCwd(sidebarCwd, active?.id) : undefined;
   const filesCwd = remoteFilesProject
     ? isRemoteProjectPath(gitCwd)
@@ -111,7 +113,14 @@ export function useActiveWorkspaceContext(
     historyFailed,
     historyPending,
     gitCwd,
-    terminalCwd,
+    terminalCwd: remoteTerminalProject
+      ? remoteSessionGitCwd(
+          { environmentId: remoteTerminalProject.environmentId, cwd: sidebarCwd },
+          terminalCwd,
+          sidebarCwd,
+          remoteCheckout,
+        )
+      : terminalCwd,
     filesCwd,
     gitCwdRef,
   };

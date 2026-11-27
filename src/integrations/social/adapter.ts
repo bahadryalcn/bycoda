@@ -5,12 +5,31 @@ import type {
   SocialMonitorChannel,
   Capability,
   SocialMedia,
-  SocialOperation,
+  BaseSocialOperation as SocialOperation,
+  SocialPermission,
 } from "../../features/social/model/social";
 import type { CaptureSource, CollectedPerson } from "./audience-types";
+// LinkedIn operations.
+import type {
+  LinkedInAnalyticsQuery,
+  LinkedInAnalyticsResult,
+} from "./adapters/linkedin-analytics";
+import type { LinkedInManagementAction } from "./adapters/linkedin-manage";
+import type { LinkedInLiveCommentsPage } from "./live-linkedin";
+// End LinkedIn operations.
 import { META_RATE_LIMIT_CODES } from "./meta-codes";
+import type { InstagramInsightInput, InstagramInsightResult } from "./adapters/instagram-insights";
+import type { CommentAction } from "./adapters/meta-extended";
+import type { YouTubeUploadAccess } from "./youtube-upload";
 
-export type { Capability, SocialAccount, SocialJob, SocialMedia, SocialOperation };
+export type {
+  Capability,
+  SocialAccount,
+  SocialJob,
+  SocialMedia,
+  SocialOperation,
+  SocialPermission,
+};
 
 /** WhatsApp Cloud API throughput codes on graph.facebook.com. Unverified: from general knowledge, not re-checked live. */
 const WHATSAPP_RATE_LIMIT_CODES: readonly number[] = [80007, 130429, 131056];
@@ -86,14 +105,40 @@ export type SocialInbound = {
   postId?: string;
   optedOut?: boolean;
   replyAllowed?: boolean;
+  instagramSource?: "live_comment";
 };
 export type SocialOwnedPostPage = (after?: string) => Promise<{
   posts: string[];
   next?: string;
 }>;
 export interface SocialAdapter {
+  // LinkedIn operations.
+  linkedinAnalytics?(
+    account: SocialAccount,
+    token: string,
+    query: LinkedInAnalyticsQuery,
+  ): Promise<LinkedInAnalyticsResult>;
+  linkedinLiveComments?(
+    account: SocialAccount,
+    token: string,
+    eventId: string,
+    offset: number,
+  ): Promise<LinkedInLiveCommentsPage>;
+  linkedinManage?(
+    account: SocialAccount,
+    token: string,
+    action: LinkedInManagementAction,
+    beforeSubmit: () => Promise<void>,
+  ): Promise<SocialSendResult>;
+  // End LinkedIn operations.
   /** Fetch bounded owned-publication pages only when the pending scan drains. */
   ownedPostPages?: true;
+  /**
+   * `poll` never reads its `posts` argument, so the host skips loading the published-ID history.
+   * Set only where the adapter provably ignores the list; an adapter that reads it (the browser
+   * adapters do) leaves this unset and keeps receiving the complete pending list.
+   */
+  ignoresPublishedPosts?: true;
   creatorInfo?(
     account: SocialAccount,
     token: string,
@@ -106,6 +151,8 @@ export interface SocialAdapter {
     checkpoint?: (state: NonNullable<SocialJob["preparation"]>) => void | Promise<void>,
     /** Long browser flows must revalidate Stop, policy and grants immediately before submitting. */
     beforeSubmit?: () => Promise<void>,
+    // YouTube uses a disk reader and Host-only resumable session custody.
+    youtubeUpload?: YouTubeUploadAccess,
   ): Promise<SocialSendResult>;
   poll(
     account: SocialAccount,
@@ -124,7 +171,16 @@ export interface SocialAdapter {
     token: string,
   ): Promise<SocialSendResult | undefined>;
   /** Optional operations below are opened per platform by capabilities/<platform>.ts (4E). */
-  deletePost?(account: SocialAccount, token: string, platformId: string): Promise<void>;
+  /** Managed Facebook Page operations use the same Graph version and transport as publishing. */
+  facebook?: ReturnType<
+    typeof import("./adapters/facebook-page-operations").createFacebookPageOperations
+  >;
+  deletePost?(
+    account: SocialAccount,
+    token: string,
+    platformId: string,
+    beforeSubmit?: () => Promise<void>,
+  ): Promise<void>;
   listPosts?(
     account: SocialAccount,
     token: string,
@@ -146,6 +202,18 @@ export interface SocialAdapter {
   ): Promise<
     Record<string, { views?: number; likes?: number; comments?: number; shares?: number }>
   >;
+  // Instagram Login account, media and moderation operations.
+  instagramInsights?(
+    account: SocialAccount,
+    token: string,
+    input?: InstagramInsightInput,
+  ): Promise<InstagramInsightResult>;
+  instagramCommentAction?(
+    account: SocialAccount,
+    token: string,
+    commentId: string,
+    action: CommentAction,
+  ): Promise<void>;
   getProfile?(
     account: SocialAccount,
     token: string,
@@ -204,12 +272,59 @@ function requestTimeout(
   return Math.min(15 * 60_000, minimum + Math.ceil(bytes / (128 * 1024)) * 1000);
 }
 
+export function isSnapchatPermissionError(code: unknown): boolean {
+  return (
+    typeof code === "string" &&
+    /^(?:AUTHORIZATION_PERMISSION_DENIED|AUTHORIZATION_ERROR|PERMISSION_(?:DENIED|ERROR)|INSUFFICIENT_(?:PERMISSIONS|SCOPE)|ACCESS_DENIED|FORBIDDEN|UNAUTHORIZED)$/.test(
+      code,
+    )
+  );
+}
+
+// Snapchat Public Profile API reports some actionable errors in JSON even on HTTP 200.
+function snapchatResponseError(value: { error_code?: unknown } | null | undefined) {
+  if (isSnapchatPermissionError(value?.error_code)) throw new SocialPlatformError("denied");
+  switch (value?.error_code) {
+    case "VALIDATION_ERROR_CAPTIONS_NOT_ALLOWED":
+    case "VALIDATION_ERROR_LINK_STICKER_REQUIRES_OVERLAY":
+      throw new SocialPlatformError("denied");
+    case "MEDIA_POSTING_ALREADY_IN_PROGRESS":
+      throw new SocialPlatformError("unknown");
+  }
+}
+
 /** Requests never follow redirects or return platform error bodies containing secrets. */
 export class SocialHttp {
   constructor(
     private readonly fetcher: typeof fetch = fetch,
     private readonly now = Date.now,
   ) {}
+  // TikTok: the upload URL is validated by transferTikTokVideo and carries its own credential.
+  async tiktokUploadChunk(
+    signedUrl: string,
+    mime: string,
+    bytes: Uint8Array,
+    range: { start: number; end: number; total: number },
+  ): Promise<number> {
+    try {
+      const response = await this.fetcher(signedUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Type": mime,
+          "Content-Length": String(bytes.byteLength),
+          "Content-Range": `bytes ${range.start}-${range.end - 1}/${range.total}`,
+        },
+        body: bytes as BodyInit,
+        redirect: "error",
+        signal: AbortSignal.timeout(requestTimeout(bytes)),
+      });
+      await response.body?.cancel().catch(() => {});
+      return response.status;
+    } catch {
+      throw new SocialPlatformError("unknown");
+    }
+  }
+
   /** Bot tokens occur in Telegram paths. Never expose fetch errors or response bodies. */
   async telegram(
     method:
@@ -265,7 +380,7 @@ export class SocialHttp {
     url: string,
     token: string,
     options: RequestInit = {},
-  ): Promise<{ value: Record<string, any>; headers: Headers }> {
+  ): Promise<{ value: Record<string, any>; headers: Headers; youtubeIncomplete?: true }> {
     const parsed = new URL(url);
     if (
       parsed.protocol !== "https:" ||
@@ -275,20 +390,35 @@ export class SocialHttp {
         "api.x.com",
         "graph.instagram.com",
         "graph.facebook.com",
+        "graph-video.facebook.com",
         "api.linkedin.com",
         "www.googleapis.com",
         "open.tiktokapis.com",
         "businessapi.snapchat.com",
         "oauth.reddit.com",
-      ].includes(parsed.hostname)
+        // YouTube channel reports.
+        "youtubeanalytics.googleapis.com",
+      ].includes(parsed.hostname) ||
+      (parsed.hostname === "graph-video.facebook.com" &&
+        (parsed.port ||
+          parsed.search ||
+          parsed.hash ||
+          options.method !== "POST" ||
+          !/^\/v\d{1,3}\.\d{1,2}\/[1-9]\d{0,24}\/videos$/.test(parsed.pathname)))
     )
       throw new SocialPlatformError("denied");
+    // YouTube returns 308 without a redirect for incomplete chunk transfers.
+    const youtubeTransfer =
+      parsed.origin === "https://www.googleapis.com" &&
+      parsed.pathname === "/upload/youtube/v3/videos" &&
+      parsed.searchParams.has("upload_id") &&
+      options.method === "PUT";
     let response: Response;
     try {
       response = await this.fetcher(url, {
         ...options,
         headers: { Authorization: `Bearer ${token}`, ...options.headers },
-        redirect: "error",
+        redirect: youtubeTransfer ? "manual" : "error",
         signal: AbortSignal.timeout(
           requestTimeout(
             options.body,
@@ -301,6 +431,15 @@ export class SocialHttp {
       });
     } catch {
       throw new SocialPlatformError("unknown");
+    }
+    // Google resumable YouTube video upload responses.
+    if (youtubeTransfer) {
+      if (response.status === 308 && !response.headers.has("location"))
+        return { value: {}, headers: response.headers, youtubeIncomplete: true };
+      if (response.status === 404 || response.status === 410)
+        throw new SocialPlatformError("unknown", undefined, {
+          reasonCode: "youtube_upload_session_expired",
+        });
     }
     if (response.status === 401) throw new SocialPlatformError("expired");
     if (response.status === 403) {
@@ -329,6 +468,17 @@ export class SocialHttp {
           );
         if (reasons.includes("commentsDisabled"))
           throw new SocialPlatformError("comments_disabled");
+        // YouTube Live activation is an owner step in YouTube.
+        if (
+          parsed.pathname.startsWith("/youtube/v3/live") &&
+          reasons.some((reason: string) =>
+            ["liveStreamingNotEnabled", "livePermissionBlocked"].includes(reason),
+          )
+        )
+          throw new SocialPlatformError("needs_human", undefined, {
+            reasonCode: "youtube_live_not_enabled",
+            url: "https://www.youtube.com/features",
+          });
       }
       throw new SocialPlatformError("denied");
     }
@@ -336,12 +486,28 @@ export class SocialHttp {
       throw new SocialPlatformError("rate_limit", retryAfter(response.headers, this.now()));
     if (response.status >= 500) throw new SocialPlatformError("unknown");
     if (!response.ok) {
-      if (["graph.instagram.com", "graph.facebook.com"].includes(parsed.hostname)) {
+      if (parsed.hostname === "businessapi.snapchat.com")
+        snapchatResponseError(await response.json().catch(() => undefined));
+      if (
+        ["graph.instagram.com", "graph.facebook.com", "graph-video.facebook.com"].includes(
+          parsed.hostname,
+        )
+      ) {
         // Meta frequently returns auth/permission errors as HTTP 400. Inspect
         // numeric codes only; never expose its error message or trace payload.
         const value = await response.json().catch(() => ({}));
         const code = Number(value?.error?.code);
         if ([102, 190].includes(code)) throw new SocialPlatformError("expired");
+        // Instagram reports below-threshold Story insights with permission code 10.
+        if (
+          parsed.hostname === "graph.instagram.com" &&
+          parsed.pathname.endsWith("/insights") &&
+          code === 10 &&
+          /^(?:\(#10\) )?Not enough viewers for the media to show insights\.?$/i.test(
+            String(value?.error?.message),
+          )
+        )
+          throw new SocialPlatformError("rejected");
         if (code === 10 || (code >= 200 && code <= 299)) throw new SocialPlatformError("denied");
         if (META_RATE_LIMIT_CODES.includes(code) || WHATSAPP_RATE_LIMIT_CODES.includes(code))
           throw new SocialPlatformError("rate_limit", retryAfter(response.headers, this.now()));
@@ -375,6 +541,8 @@ export class SocialHttp {
       if (value?.error?.code === "rate_limit_exceeded")
         throw new SocialPlatformError("rate_limit", retryAfter(response.headers, this.now()));
     }
+    if (parsed.hostname === "businessapi.snapchat.com" && value?.request_status === "ERROR")
+      snapchatResponseError(value);
     if (
       (value.error && !(parsed.hostname === "open.tiktokapis.com" && value.error.code === "ok")) ||
       value.errors?.length ||
@@ -487,11 +655,12 @@ export class SocialHttp {
   /** Returns the part ETag, which a multipart upload needs for its finalize call. */
   async uploadLinkedInImage(
     url: string,
-    token: string,
+    token: string | undefined,
     bytes: Uint8Array,
   ): Promise<{ etag?: string }> {
-    const parsed = new URL(url);
+    const parsed = URL.parse(url);
     if (
+      !parsed ||
       parsed.protocol !== "https:" ||
       parsed.hostname !== "www.linkedin.com" ||
       parsed.port ||
@@ -505,7 +674,7 @@ export class SocialHttp {
       response = await this.fetcher(url, {
         method: "PUT",
         headers: {
-          Authorization: `Bearer ${token}`,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
           "Content-Type": "application/octet-stream",
         },
         body: new Uint8Array(bytes),

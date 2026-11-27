@@ -22,17 +22,8 @@
   min-inline-size: 0;
   padding-block-start: 12px;
 }
-.provider-cli-section {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  min-inline-size: 0;
-}
 .provider-cli-section[hidden],
 .provider-cli-container[hidden] {
-  display: none;
-}
-#setting-harness-updates > .settings-group-content:empty {
   display: none;
 }
 
@@ -62,13 +53,11 @@
    while the detail column scrolls, and scrolls on its own only when taller than the window. */
 .provider-cli-selector {
   position: sticky;
-  /* Below the sticky page bar (its padding plus a compact-height title line), so rows never
-     slide under it. */
-  inset-block-start: calc(var(--ui-control-height-compact) + 32px);
+  inset-block-start: var(--settings-page-bar-height);
   display: grid;
   gap: 2px;
   min-inline-size: 0;
-  max-block-size: calc(100vh - var(--ui-control-height-compact) - 6rem);
+  max-block-size: calc(100vh - var(--settings-page-bar-height) - 6rem);
   overflow-y: auto;
   align-content: start;
 }
@@ -123,31 +112,26 @@
   padding-block-start: 8px;
 }
 
-/* Detail column: header, Status, Accounts, then the selected provider's panel. The column gap is
-   the only space between groups; a group's own leading padding would double it. */
+/* Detail column: header, Status, Accounts, then the selected provider's panel. Groups space
+   themselves through the shared `settings-topics` rhythm. */
 .provider-cli-detail {
   align-self: stretch;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
   min-inline-size: 0;
   padding-inline-start: 20px;
 }
-.provider-cli-panel,
-.provider-cli-card {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  min-inline-size: 0;
-}
-:is(.provider-cli-detail, .provider-cli-panel, .provider-cli-card) > .settings-group {
-  padding-block-start: 0;
-}
-.provider-cli-panel[hidden],
-.provider-cli-card[hidden] {
+.provider-cli-panel[hidden] {
   display: none;
 }
 /* The icon, name and meta share one row and one baseline. */
+/* The provider's name with its CLI version and actions across the same row. */
+.provider-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  min-inline-size: 0;
+}
 .provider-detail-header {
   display: flex;
   align-items: center;
@@ -165,7 +149,7 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: var(--ui-space-2, 0.5rem);
 }
 .provider-status-checked {
   white-space: nowrap;
@@ -183,6 +167,12 @@
   z-index: 1;
   padding: 8px 16px;
 }
+/* Long catalogs scroll inside the box so a ~1000px-tall window shows the whole Models group without page scroll. */
+.provider-models-list {
+  max-block-size: clamp(15rem, 35dvh, 32rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .provider-model-name {
   display: inline-flex;
   align-items: center;
@@ -190,27 +180,26 @@
   min-inline-size: 0;
 }
 .provider-models-source {
-  padding: 10px 16px;
+  padding: var(--ui-row-inset-block) var(--ui-row-inset-inline);
 }
 .provider-models-source:empty {
   display: none;
 }
 
 /* Accounts: rows share the settings row padding and hairlines. */
-#setting-provider-accounts > .settings-group-content {
-  overflow: clip;
-}
 .provider-accounts-body[hidden] {
   display: none;
 }
+.provider-accounts-body {
+  overflow: clip;
+}
 .provider-account-row,
-.provider-account-editor,
 .provider-account-empty {
   display: flex;
   align-items: center;
   gap: 12px;
   min-inline-size: 0;
-  padding: 10px 16px;
+  padding: var(--ui-row-inset-block) var(--ui-row-inset-inline);
 }
 .provider-account-empty {
   margin: 0;
@@ -249,10 +238,6 @@
   flex-shrink: 0;
   align-items: center;
   gap: 4px;
-}
-.provider-account-editor > [data-provider-account-editor-field] {
-  min-inline-size: 0;
-  flex: 1 1 0;
 }
 .provider-antigravity-box {
   overflow: hidden;
@@ -294,20 +279,15 @@
   }
 }
 
-/* Metadata edits wrap as a compact form at narrow widths. */
-.provider-account-editor {
-  flex-wrap: wrap;
-}
-.provider-account-editor > .flex-wrap {
-  flex-basis: 100%;
-}
-
 /* Compact inventory: action column never wraps. Hide freshness before versions. */
-.provider-inventory {
+.provider-cli-status {
+  display: grid;
+  gap: 6px;
   min-inline-size: 0;
 }
-.provider-inventory-name {
+.provider-cli-status-line {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   min-inline-size: 0;
@@ -317,12 +297,6 @@
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
-}
-.provider-inventory-inline-version {
-  display: none;
-}
-.provider-inventory-heading {
-  margin: 12px 8px 4px;
 }
 /* Badges wrap under a narrow row instead of squeezing the provider name to nothing. */
 .provider-cli-option-name {
@@ -334,12 +308,6 @@
 }
 .provider-cli-add .provider-cli-item {
   inline-size: 100%;
-}
-.provider-account-dialog-editor {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-inline-size: 0;
 }
 
 .provider-account-status {

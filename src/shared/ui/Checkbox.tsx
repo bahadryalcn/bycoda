@@ -8,6 +8,7 @@ import {
 } from "react";
 import styles from "./Checkbox.module.css";
 import { controlPaddingStyle, type ControlPadding } from "./Button";
+import { useTooltip } from "./Tooltip";
 import { optionalTextAttributes, type TextSize, type TextTone, type TextRoles } from "./Text";
 
 export type CheckboxProps = Omit<ComponentPropsWithRef<"input">, "type" | "size"> & {
@@ -28,6 +29,8 @@ export type CheckboxProps = Omit<ComponentPropsWithRef<"input">, "type" | "size"
   padding?: ControlPadding;
   /** Card choices own their checked frame/fill; row choices only share the hover layer. Native input and label semantics stay intact. */
   appearance?: "card" | "row";
+  /** Why the checkbox is unavailable while `disabled`: shown as a tooltip on the row (or box) and exposed to assistive tech. Skip it when a visible explanation sits next to the control. */
+  disabledReason?: string;
 };
 
 /**
@@ -77,27 +80,36 @@ export function Checkbox({
   padding,
   appearance,
   interactionTone,
+  disabledReason,
   ...props
 }: CheckboxProps) {
   const input = useRef<HTMLInputElement>(null);
   const descriptionId = useId();
+  const reasonId = useId();
   useImperativeHandle(ref, () => input.current!);
   useLayoutEffect(() => {
     if (input.current) input.current.indeterminate = indeterminate;
   }, [indeterminate]);
+  const trimmedReason = disabledReason?.trim() || undefined;
+  const reason = props.disabled ? trimmedReason : undefined;
+  const hint = useTooltip({ label: reason, describe: false });
   const hasLabel = label !== undefined && label !== null && label !== false;
+  const hintOnControl = !hasLabel && reason;
   const hasDescription = hasLabel && description !== undefined && description !== null;
+  const describedByParts = [
+    props["aria-describedby"],
+    hasDescription ? descriptionId : undefined,
+    reason ? reasonId : undefined,
+  ].filter(Boolean);
+  const describedBy = describedByParts.length > 0 ? describedByParts.join(" ") : undefined;
   const control = (
     <input
       {...props}
       type="checkbox"
       ref={input}
       aria-checked={indeterminate ? "mixed" : props["aria-checked"]}
-      aria-describedby={
-        hasDescription
-          ? [props["aria-describedby"], descriptionId].filter(Boolean).join(" ")
-          : props["aria-describedby"]
-      }
+      {...(hintOnControl ? hint.trigger : {})}
+      aria-describedby={describedBy}
       className={[
         "bycoda-arc bycoda-arc-checkbox",
         styles.checkbox,
@@ -108,30 +120,48 @@ export function Checkbox({
         .join(" ")}
     />
   );
-  if (!hasLabel) return control;
+  // The reason is a sibling of the control, never inside the label, so it stays out of the accessible name.
+  const reasonNode = reason ? (
+    <span id={reasonId} className="sr-only">
+      {reason}
+    </span>
+  ) : null;
+  if (!hasLabel)
+    return (
+      <>
+        {control}
+        {reasonNode}
+        {hint.tooltip}
+      </>
+    );
   return (
-    <label
-      {...optionalTextAttributes(
-        { size: size ?? (weight ? "inherit" : undefined), tone, weight, leading },
-        [styles.row, className].filter(Boolean).join(" "),
-      )}
-      data-checkbox-row=""
-      data-choice-appearance={appearance}
-      data-interaction-tone={interactionTone}
-      style={controlPaddingStyle(padding)}
-      data-disabled={props.disabled ? "" : undefined}
-    >
-      {control}
-      {hasDescription ? (
-        <span className={styles.text}>
-          <span className={styles.label}>{label}</span>
-          <span id={descriptionId} className={styles.description}>
-            {description}
+    <>
+      <label
+        {...(reason ? hint.trigger : {})}
+        {...optionalTextAttributes(
+          { size: size ?? (weight ? "inherit" : undefined), tone, weight, leading },
+          [styles.row, className].filter(Boolean).join(" "),
+        )}
+        data-checkbox-row=""
+        data-choice-appearance={appearance}
+        data-interaction-tone={interactionTone}
+        style={controlPaddingStyle(padding)}
+        data-disabled={props.disabled ? "" : undefined}
+      >
+        {control}
+        {hasDescription ? (
+          <span className={styles.text}>
+            <span className={styles.label}>{label}</span>
+            <span id={descriptionId} className={styles.description}>
+              {description}
+            </span>
           </span>
-        </span>
-      ) : (
-        label
-      )}
-    </label>
+        ) : (
+          label
+        )}
+        {hint.tooltip}
+      </label>
+      {reasonNode}
+    </>
   );
 }

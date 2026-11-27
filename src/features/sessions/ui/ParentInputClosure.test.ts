@@ -17,6 +17,7 @@ import {
 import { QuestionForm } from "./QuestionForm";
 import { QueuedMessageEditDialog } from "./QueuedMessageEditDialog";
 import { Composer } from "./Composer";
+import { openErrorDetails } from "./errorDetails.fixture";
 import { beginComposerClosure, type MountedComposerClosure } from "../data/composerClosure";
 import {
   beginNativeProducerInputClosure,
@@ -137,6 +138,17 @@ afterEach(async () => {
   document.documentElement.style.removeProperty("--motion-reorder-duration");
 });
 
+async function chooseUpload() {
+  await act(async () =>
+    document.body.querySelector<HTMLButtonElement>('[aria-label="Add files or skills"]')!.click(),
+  );
+  await act(async () =>
+    [...document.body.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+      .find((item) => item.textContent?.includes("Upload file"))!
+      .click(),
+  );
+}
+
 it("closes actual question edits/reply/cache writes and preserves authoritative discard", async () => {
   const reply = vi.fn();
   await act(async () =>
@@ -209,9 +221,10 @@ it("gates real queue save and picker admission while Escape/cancel remains usabl
       }),
     ),
   );
-  await act(async () =>
-    document.body.querySelector<HTMLButtonElement>('[aria-label="Add files or images"]')!.click(),
-  );
+  const add = document.body.querySelector<HTMLButtonElement>('[aria-label="Add files or skills"]')!;
+  expect(add.disabled || add.getAttribute("aria-disabled") === "true").toBe(true);
+  await act(async () => add.click());
+  expect(document.body.querySelector('[role="menuitem"]')).toBeNull();
   expect(save).not.toHaveBeenCalled();
   expect(ports.picker).not.toHaveBeenCalled();
   const cancelButton = [...document.body.querySelectorAll<HTMLButtonElement>("button")].find(
@@ -243,9 +256,7 @@ it("keeps a real pre-close queue attachment read owned through actual result app
       }),
     ),
   );
-  await act(async () =>
-    document.body.querySelector<HTMLButtonElement>('[aria-label="Add files or images"]')!.click(),
-  );
+  await chooseUpload();
   settleJobs.push(() => finish([]));
   const close = await closeInputs();
   let settled = false;
@@ -520,9 +531,7 @@ it("never applies an old queue read into a reused component with a foreign root/
       }),
     ),
   );
-  await act(async () =>
-    document.body.querySelector<HTMLButtonElement>('[aria-label="Add files or images"]')!.click(),
-  );
+  await chooseUpload();
   const old = await closeInputs();
   const foreignId = `${id}:foreign`;
   await act(async () =>
@@ -835,7 +844,9 @@ it.each([
   },
 );
 
-it("holds an actual typed pending Composer React commit instead of masking the next changed snapshot", async () => {
+// #962: live draft text stays out of SessionPane render state, so a typed edit has no pending
+// React commit to hold; the closure reads it from the native input at capture time.
+it("captures an actual typed Composer draft from the native input without a pending React commit", async () => {
   await pane();
   const field = container.querySelector("textarea")!;
   let closed!: ParentInputClosure;
@@ -849,8 +860,12 @@ it("holds an actual typed pending Composer React commit instead of masking the n
     inputClosures.push(closed);
   });
   expect(field.value).toBe("  typed pending  ");
-  expect(closed.current()).toBe(false);
-  await expect(closed.capture()).rejects.toThrow();
+  expect(closed.current()).toBe(true);
+  const captured = await closed.capture();
+  expect(captured.snapshots.find((entry) => entry.kind === "session-parent")?.snapshot.draft).toBe(
+    "  typed pending  ",
+  );
+  captured.release();
   await act(async () => closed.release());
   expect(field.value).toBe("  typed pending  ");
 });
@@ -921,7 +936,7 @@ it("retains an unknown original Send without turning Raw draft recovery into pro
   rawClosures.push({ close: raw, owner });
   await act(async () => read.finish());
   expect(dispatched).toHaveBeenCalledOnce();
-  expect(container.textContent).toContain("fixture lost provider disposition");
+  expect(openErrorDetails(container)).toContain("fixture lost provider disposition");
   const retained = await captureParentInputs(id);
   expect(
     retained.snapshots.some(
@@ -1363,9 +1378,7 @@ it("keeps an actual queue attachment preparation owned after retirement until it
     ),
   );
   const before = await captureParentInputs(id);
-  await act(async () =>
-    document.body.querySelector<HTMLButtonElement>('[aria-label="Add files or images"]')!.click(),
-  );
+  await chooseUpload();
   expect(before.current()).toBe(false);
   await act(async () => root.render(null));
   const pending = await captureParentInputs(id);
@@ -1402,9 +1415,7 @@ it("retains the original queue save after a callback dispatches then throws with
     (item) => item.textContent?.trim() === "Save",
   )!;
   await act(async () => button.click());
-  expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
-    "reply lost after dispatch",
-  );
+  expect(openErrorDetails(document.body)).toContain("reply lost after dispatch");
   expect(document.body.querySelector("textarea")!.value).toBe("  original queue input  ");
   expect(save).toHaveBeenCalledTimes(1);
   expect(dispatched).toHaveLength(1);

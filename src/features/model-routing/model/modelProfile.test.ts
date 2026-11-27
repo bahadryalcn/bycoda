@@ -69,5 +69,5 @@ it("profiles catalog ids with harness and vendor prefixes from the researched ta
     estimated: false,
   });
   expect(modelProfile("opencode", "opencode:opencode/glm-5.3").cost).toBe(1);
-  expect(modelProfile("codex", "codex:gpt-6-luna").intelligence).toBe(2);
+  expect(modelProfile("codex", "codex:gpt-6-luna").intelligence).toBe(1);
 });

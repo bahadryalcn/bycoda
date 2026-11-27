@@ -375,6 +375,209 @@ test("custom background sandbox denies network, self navigation, bridge and pare
   expect(attempted).toEqual([]);
 });
 
+for (const theme of ["dark", "light"])
+  for (const width of [1280, 800, 390]) {
+    test(`browser profiles and viewport presets ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto(
+        `/tests/browser/settings/settings.html?section=tools&theme=${theme}&lang=en&browserProfiles`,
+      );
+      const grant = page.getByRole("switch", { name: "Allow agents to use Work" });
+      await expect(grant).not.toBeChecked();
+      await grant.click();
+      await expect(grant).toBeChecked();
+      const profile = page
+        .locator('[data-setting-id="browser-default-profile"]')
+        .getByRole("button");
+      await profile.click();
+      await page.getByRole("option", { name: "Work", exact: true }).click();
+      await expect(profile).toContainText("Work");
+      const development = page.getByRole("button", { name: /^Development browser profile:/ });
+      await expect(development).toContainText("Isolated");
+      await development.focus();
+      await development.press("Enter");
+      await page.getByRole("option", { name: "Work", exact: true }).click();
+      await expect(development).toContainText("Work");
+      await profile.click();
+      await page.getByRole("option", { name: "Isolated", exact: true }).click();
+      await expect(profile).toContainText("Isolated");
+      await expect(development).toContainText("Work");
+      const viewport = page.getByRole("button", { name: /^Default viewport:/ });
+      await viewport.click();
+      for (const label of ["1K (1024 × 576)", "2K (2560 × 1440)", "4K (3840 × 2160)"])
+        await expect(page.getByRole("option", { name: label, exact: true })).toBeVisible();
+      await page.getByRole("option", { name: "4K (3840 × 2160)", exact: true }).click();
+      await expect(viewport).toContainText("4K (3840 × 2160)");
+      const directory = "temp/verification/browser-profiles";
+      mkdirSync(directory, { recursive: true });
+      await page.screenshot({ path: `${directory}/profile-routing-${theme}-${width}.png` });
+    });
+  }
+
+for (const theme of ["dark", "light"])
+  for (const width of [1280, 800]) {
+    test(`transcript view appearance controls ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/settings/settings.html?section=appearance&theme=${theme}&lang=en`,
+      );
+      await page.getByRole("button", { name: "Search settings", exact: true }).click();
+      const search = page.getByRole("combobox", { name: "Search settings", exact: true });
+      await search.fill("Surface opacity");
+      await expect(page.getByRole("option").first()).toContainText("Surface opacity");
+      await search.press("Enter");
+      const user = page.getByRole("slider", { name: "Your message opacity" });
+      const reply = page.getByRole("slider", { name: "Surface opacity" });
+      const preview = page.locator("[data-transcript-preview]");
+      const neutral = page
+        .locator('[data-setting-id="chat-message-color"]')
+        .getByRole("radio", { name: "Neutral", exact: true });
+      await expect(user).toHaveAttribute("aria-valuenow", "42");
+      await expect(reply).toHaveAttribute("aria-valuenow", "90");
+      await preview.scrollIntoViewIfNeeded();
+      if (process.env.CHAT_MESSAGE_APPEARANCE_CAPTURE) {
+        const directory = "temp/verification/chat-message-appearance";
+        mkdirSync(directory, { recursive: true });
+        await page.screenshot({ path: `${directory}/settings-${theme}-${width}.png` });
+      }
+      await user.press("End");
+      await reply.press("Home");
+      await neutral.click();
+      await expect(page.locator("html")).toHaveAttribute("data-chat-message-color", "neutral");
+      await expect(preview).toHaveAttribute("data-chat-message-color", "neutral");
+      await expect(preview).toHaveAttribute("data-transcript-surface", "reply");
+      await expect(reply).toHaveAttribute("aria-valuenow", "0");
+      await expect(user).toHaveAttribute("aria-valuenow", "100");
+      await page.reload();
+      await page
+        .locator(".appearance-settings")
+        .getByRole("tab", { name: "Chat", exact: true })
+        .click();
+      await expect(user).toHaveAttribute("aria-valuenow", "100");
+      await expect(reply).toHaveAttribute("aria-valuenow", "0");
+      await expect(neutral).toBeChecked();
+      await page
+        .locator('[data-setting-id="user-message-opacity"]')
+        .getByRole("button", { name: "Restore default" })
+        .click();
+      await expect(user).toHaveAttribute("aria-valuenow", "42");
+      await expect(reply).toHaveAttribute("aria-valuenow", "0");
+    });
+  }
+
+for (const theme of ["dark", "light"])
+  for (const width of [1280, 800]) {
+    test(`appearance image review and replacement: ${theme} ${width}`, async ({ page }, info) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/settings/settings.html?section=appearance&theme=${theme}&lang=en&appearanceImageReview`,
+      );
+      await page.getByRole("button", { name: "Generate with AI", exact: true }).click();
+      const card = page
+        .locator(".theme-suggestion-card")
+        .filter({ has: page.getByRole("button", { name: "Apply Meadow" }) });
+      const activeImage = () =>
+        page.evaluate(() => localStorage.getItem("bycoda.chatBackgroundLibraryId.v1"));
+      await card.getByRole("button", { name: "Generate image" }).click();
+      await card.getByRole("button", { name: "Preview Meadow" }).click();
+      const preview = page.getByRole("dialog", { name: "Image preview: Meadow" });
+      await expect(preview.getByRole("img")).toBeVisible();
+      expect(await activeImage()).toBeNull();
+      await page.screenshot({
+        path: info.outputPath(`appearance-image-preview-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+      await preview.getByRole("button", { name: "Change image" }).click();
+      await expect(preview).toHaveCount(0);
+      await page.getByRole("button", { name: "Recent activity", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Preview Meadow" })).toHaveCount(2);
+      expect(await activeImage()).toBeNull();
+      await page.screenshot({
+        path: info.outputPath(`appearance-image-cards-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+      await card.getByRole("button", { name: "Use image" }).click();
+      await expect.poll(activeImage).toBe("/fixture/image-2.png");
+      await expect(card.getByRole("button", { name: "In use" })).toBeVisible();
+    });
+  }
+
+for (const theme of ["dark", "light"])
+  for (const width of [1280, 800]) {
+    test(`appearance generation tracks concurrent drawings: ${theme} ${width}`, async ({
+      page,
+    }, info) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/settings/settings.html?section=appearance&theme=${theme}&lang=en&appearanceGeneration`,
+      );
+      const launcher = page.getByRole("button", { name: "Generate with AI", exact: true });
+      const dialog = page.getByRole("dialog", { name: "Generate with AI", exact: true });
+      const colorScheme = page.getByText("Color scheme", { exact: true });
+      const schemeY = (await colorScheme.boundingBox())?.y;
+      expect(schemeY).toBeDefined();
+      await expect(page.getByRole("textbox", { name: "Describe a theme" })).toHaveCount(0);
+      await launcher.click();
+      await expect(dialog.getByRole("textbox", { name: "Describe a theme" })).toBeFocused();
+      await page.getByRole("button", { name: "Apply Meadow" }).click();
+      await page
+        .getByRole("textbox", { name: "Describe a theme" })
+        .fill("Midnight blue with mountain silhouettes");
+      const generate = page.getByRole("button", { name: "Generate themes", exact: true });
+      await expect(generate).toBeEnabled();
+      await generate.click();
+      await page.getByRole("button", { name: "Apply Alpine" }).click();
+      const activity = dialog.getByRole("group", { name: "Generation", exact: true });
+      await expect(activity.getByRole("button", { name: "Cancel Meadow" })).toBeVisible();
+      await expect(activity.getByRole("button", { name: "Cancel Alpine" })).toBeVisible();
+      await activity.getByRole("button", { name: "Cancel Meadow" }).click();
+      await expect(activity.getByText("Cancelled", { exact: true })).toBeVisible();
+      await expect(activity.getByRole("button", { name: "Cancel Alpine" })).toBeVisible();
+      await page.screenshot({
+        path: info.outputPath(`appearance-ai-dialog-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+      await dialog.getByRole("button", { name: "Close", exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(launcher).toHaveAttribute("aria-description", "1 running");
+      expect((await colorScheme.boundingBox())!.y).toBeCloseTo(schemeY!, 0);
+      await openAppearanceTab(page, "Background");
+      await expect(launcher).toHaveAttribute("aria-description", "1 running");
+      await openAppearanceTab(page, "Theme");
+      await page.screenshot({
+        path: info.outputPath(`appearance-ai-minimized-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+      await launcher.click();
+      await expect(dialog.getByRole("textbox", { name: "Describe a theme" })).toHaveValue(
+        "Midnight blue with mountain silhouettes",
+      );
+      await expect(activity.getByRole("button", { name: "Cancel Alpine" })).toBeVisible();
+      await dialog.getByRole("button", { name: "Close", exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(launcher).toHaveAttribute("aria-description", "1 running");
+      await page.evaluate(() =>
+        window.dispatchEvent(new Event("fixture-complete-appearance-drawings")),
+      );
+      await expect(launcher).toHaveAttribute("aria-description", "Ready");
+      // The tab strip scrolls when the launcher and tabs outgrow the toolbar (wider Linux fonts at
+      // 800px): the last tab must stay reachable, not necessarily visible without scrolling.
+      const motionTab = page.getByRole("tab", { name: "Motion", exact: true });
+      await motionTab.scrollIntoViewIfNeeded();
+      // Fractional layout can leave a subpixel at the scroll container's edge.
+      await expect(motionTab).toBeInViewport({ ratio: 0.99 });
+      await motionTab.click({ trial: true });
+      await page.screenshot({
+        path: info.outputPath(`appearance-ai-closed-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+      await launcher.click();
+      await expect(dialog.getByRole("button", { name: "Preview Alpine" })).toBeVisible();
+    });
+  }
+
 /** Appearance is tabbed; every tab stays mounted but only the selected one is visible. */
 async function openAppearanceTab(page: Page, name: string) {
   await page.getByRole("tab", { name, exact: true }).click();
@@ -426,7 +629,7 @@ for (const theme of ["dark", "light"])
       await expect.poll(async () => (await stored()).angle).not.toBe(initial);
       const angle = (await stored()).angle;
       await type.getByRole("radio", { name: "Radial", exact: true }).click();
-      await expect(dial).toHaveAttribute("aria-disabled", "true");
+      await expect(dial).toHaveCount(0);
       expect((await stored()).angle).toBe(angle);
       await type.getByRole("radio", { name: "Linear", exact: true }).click();
       await group.getByRole("button", { name: "Color 1", exact: true }).click();
@@ -599,6 +802,10 @@ for (const theme of ["light", "dark"])
       const duration = general
         .locator('[data-setting-id="keep-awake-duration"]')
         .getByRole("button", { name: /^Stay awake after an agent ends:/ });
+      // Keeping the machine awake is on by default; turning it off disables its dependents.
+      await expect(awake).toBeChecked();
+      await expect(screen).toBeEnabled();
+      await awake.click();
       await expect(screen).toBeDisabled();
       await expect(duration).toBeDisabled();
       await awake.focus();
@@ -625,12 +832,15 @@ for (const theme of ["light", "dark"])
       await expect(general.locator('[data-setting-id="technical-language"]')).toContainText(
         "Follow application language",
       );
-      // The header help states automatic saving once; groups no longer repeat it.
       await expect(general.getByText("Changes save automatically", { exact: true })).toHaveCount(0);
-      await page.getByRole("button", { name: "About this page", exact: true }).click();
-      await expect(page.getByText("Changes save automatically", { exact: true })).toHaveCount(1);
+      const restoreDefaults = page.getByRole("button", { name: "Restore defaults", exact: true });
+      await restoreDefaults.press("Enter");
+      await expect(
+        page.getByRole("dialog", { name: "Restore defaults", exact: true }),
+      ).toBeVisible();
       await page.keyboard.press("Escape");
-      await expect(general.locator(".general-about-value")).toBeVisible();
+      await expect(restoreDefaults).toBeFocused();
+      await expect(general.locator(".general-version")).toBeVisible();
       const overflows = await general.evaluate((root) =>
         [
           ...root.querySelectorAll(
@@ -655,22 +865,78 @@ for (const theme of ["light", "dark"])
     });
   }
 
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`appearance dialog header aligns its actions: ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/settings/settings.html?dialog=1&section=appearance&theme=${theme}&lang=en`,
+      );
+      await page.getByTestId("open-settings").click();
+      const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
+      await dialog.getByRole("tab", { name: "Background", exact: true }).click();
+      const evidence = "temp/verification/settings-header";
+      mkdirSync(evidence, { recursive: true });
+      await dialog.screenshot({ path: `${evidence}/appearance-${theme}-${width}.png` });
+
+      const close = (await dialog
+        .getByRole("button", { name: "Close", exact: true })
+        .boundingBox())!;
+      for (const name of [
+        "Search settings",
+        "Preview in app",
+        "Reset all appearance settings",
+        "Maximize",
+      ]) {
+        const action = await dialog.getByRole("button", { name, exact: true }).boundingBox();
+        expect(action, name).not.toBeNull();
+        expect(
+          Math.abs(action!.y + action!.height / 2 - close.y - close.height / 2),
+          name,
+        ).toBeLessThanOrEqual(1);
+      }
+      const maximize = (await dialog
+        .getByRole("button", { name: "Maximize", exact: true })
+        .boundingBox())!;
+      expect(close.x - maximize.x - maximize.width).toBeLessThanOrEqual(8);
+      await expect(
+        dialog.getByRole("button", { name: "About this page", exact: true }),
+      ).toHaveCount(0);
+      const reset = dialog.getByRole("button", {
+        name: "Reset all appearance settings",
+        exact: true,
+      });
+      await reset.press("Enter");
+      const confirmation = page.getByRole("dialog", { name: "Restore defaults", exact: true });
+      await expect(confirmation).toBeVisible();
+      await confirmation.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(reset).toBeFocused();
+      await expect(dialog.getByRole("tab", { name: "Background", selected: true })).toBeVisible();
+    });
+  }
+}
+
 test("appearance topics stay visible and support search into nested controls", async ({
   page,
 }, testInfo) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/settings/settings.html?section=appearance&theme=dark&lang=en");
   const topics = page.getByRole("tablist", { name: "Appearance", exact: true }).getByRole("tab");
-  await expect(topics).toHaveCount(5);
+  await expect(topics).toHaveCount(6);
   await page.screenshot({ path: testInfo.outputPath("appearance-overview-dark.png") });
-  await page.getByRole("button", { name: "About this page", exact: true }).click();
-  await expect(page.getByText("Changes save automatically", { exact: true })).toBeVisible();
-  await page.keyboard.press("Escape");
   await openAppearanceTab(page, "Typography");
   await expect(page.locator('[data-setting-id="code-font-size"]')).toBeVisible();
-  await expect(
-    page.locator(".appearance-settings details, .appearance-settings summary"),
-  ).toHaveCount(0);
+  // No setting is a collapsed section; the Transcript preview's sample step row is the only disclosure.
+  await expect
+    .poll(() =>
+      page
+        .locator(".appearance-settings details, .appearance-settings summary")
+        .evaluateAll(
+          (nodes) => nodes.filter((node) => !node.closest("[data-transcript-preview]")).length,
+        ),
+    )
+    .toBe(0);
 
   await page.getByRole("button", { name: "Search settings", exact: true }).click();
   await page
@@ -699,7 +965,7 @@ test("appearance topics stay visible and support search into nested controls", a
   await page.goto("/tests/browser/settings/settings.html?section=appearance&theme=light&lang=tr");
   await expect(
     page.getByRole("tablist", { name: "Görünüm", exact: true }).getByRole("tab"),
-  ).toHaveCount(5);
+  ).toHaveCount(6);
   await page.screenshot({ path: testInfo.outputPath("appearance-overview-light-tr.png") });
 });
 
@@ -752,7 +1018,6 @@ test("elastic appearance adjustments retain bounds, persistence and light-mode g
   // Glass is off by default off Linux; the sliders only act while it is on.
   const glass = page.getByRole("switch", { name: "Glass", exact: true });
   if (!(await glass.isChecked())) await glass.click();
-  await expect(page.locator("details.settings-advanced")).toHaveCount(0);
   const opacity = page
     .locator('[data-setting-id="sidebar-opacity"]')
     .getByRole("slider", { name: "Sidebar opacity", exact: true });
@@ -769,7 +1034,6 @@ test("elastic appearance adjustments retain bounds, persistence and light-mode g
   });
   await page.reload();
   await openBackgroundLayer(page, "Glass");
-  await expect(page.locator("details.settings-advanced")).toHaveCount(0);
   await expect(opacity).toHaveAttribute("aria-valuenow", "99");
   const blur = page
     .locator('[data-setting-id="blur"]')
@@ -781,7 +1045,6 @@ test("elastic appearance adjustments retain bounds, persistence and light-mode g
   );
   await page.goto("/tests/browser/settings/settings.html?section=appearance&theme=light&lang=en");
   await openBackgroundLayer(page, "Glass");
-  await expect(page.locator("details.settings-advanced")).toHaveCount(0);
   await expect(opacity).toHaveAttribute("aria-disabled", "true");
   await expect(blur).toHaveAttribute("aria-disabled", "true");
   await page.setViewportSize({ width: 390, height: 900 });
@@ -856,7 +1119,12 @@ for (const theme of ["light", "dark"])
       await expect(recorder).toContainText("Q");
       await recorder.click();
       await page.keyboard.press("Control+k");
-      await expect(page.getByRole("alert")).toContainText("Already used");
+      const conflict = page.getByRole("alert");
+      await expect(conflict).toContainText("Could not save shortcut");
+      // The conflicting owner is the cause, which opens from the alert's Details action.
+      await conflict.getByRole("button", { name: "Details" }).click();
+      await expect(page.getByText(/Already used by/).first()).toBeVisible();
+      await page.keyboard.press("Escape");
       await expect(recorder).toContainText("Q");
       const recorderBounds = (await recorder.boundingBox())!;
       const resetBounds = (await page
@@ -925,10 +1193,8 @@ for (const theme of ["light", "dark"])
       await page.screenshot({
         path: `temp/verification/2026-10-15-keybindings/${theme}-${width}.png`,
       });
-      await page.getByRole("button", { name: "Shortcut help", exact: true }).click();
-      await expect(page.getByRole("dialog", { name: "Shortcut help" })).toBeVisible();
-      await page.keyboard.press("Escape");
-      await expect(page.getByRole("button", { name: "Shortcut help", exact: true })).toBeFocused();
+      // The recording rules are no longer explained by an inline help popover.
+      await expect(page.getByRole("button", { name: "Shortcut help", exact: true })).toHaveCount(0);
     });
   }
 const languages = ["en", "tr", "de", "fr", "es", "pt", "zh-CN", "ja"];
@@ -1015,11 +1281,11 @@ test("category keyboard navigation retains focus and search opens an advanced co
   await expect(target.locator("xpath=ancestor::details")).toHaveCount(0);
   await page.getByRole("button", { name: "Search settings", exact: true }).click();
   const search = page.getByRole("combobox", { name: "Search settings", exact: true });
-  await search.fill("Codex · Terminal account profiles");
+  await search.fill("Codex · Add existing account");
   await expect(page.getByRole("option").first()).toContainText("Codex");
   await search.press("Enter");
   const terminalProfiles = page.getByRole("dialog", {
-    name: "Terminal account profiles",
+    name: "Accounts on this computer",
     exact: true,
   });
   await expect(terminalProfiles).toBeVisible();
@@ -1030,7 +1296,7 @@ test("category keyboard navigation retains focus and search opens an advanced co
   await page.keyboard.press("Escape");
   await expect(terminalProfiles).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Terminal account profiles", exact: true }),
+    page.getByRole("button", { name: "Add existing account", exact: true }),
   ).toBeFocused();
   await expect(page.getByRole("button", { name: "Search settings", exact: true })).toBeVisible();
 });
@@ -1040,14 +1306,14 @@ test("automatic settings preserve values and dependent controls after reopening 
 }) => {
   await page.goto("/tests/browser/settings/settings.html");
   const toggle = page.locator('[data-setting-id="keep-awake"] [role="switch"]');
-  await expect(toggle).toHaveAttribute("aria-checked", "false");
-  await toggle.click();
   await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
   await page.getByRole("button", { name: "Back to workspace" }).click();
   await page.getByRole("button", { name: "Reopen settings" }).click();
-  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
   await page.reload();
-  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
   await page.getByRole("tab", { name: "Notifications", exact: true }).click();
   const summary = page.getByRole("switch", { name: "Daily summary", exact: true });
   await expect(summary).toBeDisabled();
@@ -1110,7 +1376,6 @@ for (const lang of languages)
               : page.locator(".bycoda-settings-categories").getByRole("tab", { selected: true }),
           ).toBeVisible();
           await expect(page.locator(".bycoda-settings-panel")).toBeVisible();
-          await expect(page.locator("details.settings-advanced")).toHaveCount(0);
           await page.waitForTimeout(100);
           const overflow = await page.locator(".bycoda-settings-panel").evaluate((panel) => {
             const bounds = panel.getBoundingClientRect();

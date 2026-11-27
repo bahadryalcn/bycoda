@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { expect, test, type Page, type Locator } from "@playwright/test";
 
 const captures = join(process.cwd(), "temp/verification/2026-10-24-voice-setup");
+const recoveryCaptures = join(process.cwd(), "temp/verification/voice-setup-recovery");
 
 async function assertVoiceRows(region: Locator) {
   const problems = await region.evaluate((root) => {
@@ -48,6 +49,10 @@ async function assertVoiceRows(region: Locator) {
   expect(problems).toEqual([]);
 }
 
+/** The one-word status in the Setup row. */
+const setupStatus = (group: Locator, text: string) =>
+  group.locator('[data-setting-id="voice-setup"]').getByText(text, { exact: true });
+
 for (const [theme, width] of [
   ["light", 1280],
   ["dark", 1280],
@@ -59,7 +64,7 @@ for (const [theme, width] of [
     page,
   }) => {
     const region = await openVoice(page, "ready", theme, width);
-    const output = join(process.cwd(), "temp/verification/voice-settings-layout-20261113/after");
+    const output = join(process.cwd(), "temp/verification/assistant-settings-simplify/voice");
     await mkdir(output, { recursive: true });
     const capture = async (name: string) => {
       await page.mouse.move(0, 0);
@@ -68,22 +73,33 @@ for (const [theme, width] of [
         animations: "disabled",
       });
     };
-    await expect(region.getByText("Voice is ready", { exact: true })).toBeVisible();
+    await expect(setupStatus(region, "Ready")).toBeVisible();
     await assertVoiceRows(region);
     await capture("top");
-    await region.locator('[data-setting-id="voice-persona"]').scrollIntoViewIfNeeded();
-    await capture("bottom");
-    for (const title of [
-      "Voice options",
-      "Dictation options",
-      "Sleep and wake",
-      "Appearance and voice style",
-    ])
-      await region.getByRole("button", { name: new RegExp(`^${title}`) }).click();
+    // The Assistant owns identity: Voice settings has no persona, style dialog or appearance fold.
+    await expect(region.locator('[data-setting-id="voice-persona"]')).toHaveCount(0);
+    await expect(region.locator('[data-setting-id="voice-style"]')).toHaveCount(0);
+    await expect(region.getByRole("button", { name: "Customize", exact: true })).toHaveCount(0);
+    await expect(
+      region.getByRole("button", { name: "Appearance and voice style", exact: true }),
+    ).toHaveCount(0);
+    const wake = region.locator('[data-setting-id="voice-wake"]').getByRole("switch");
+    const wakeField = region.locator('[data-setting-id="voice-wake-phrase"]').getByRole("textbox");
+    // Rare choices are shown in place: no More options fold; the phrase field follows its switch.
+    await expect(wake).toBeVisible();
+    await expect(wakeField).not.toBeVisible();
+    await wake.check();
+    await wakeField.fill("Hey Arif");
+    await wakeField.press("Enter");
+    await expect(wakeField).toHaveValue("Hey Arif");
+    await wakeField.scrollIntoViewIfNeeded();
+    await capture("wake-phrase");
+    await wake.uncheck();
+    await expect(wakeField).not.toBeVisible();
     await assertVoiceRows(region);
     for (const [name, id] of [
       ["engine-expanded", "voice-device"],
-      ["dictation-expanded", "dictation-engine"],
+      ["dictation-expanded", "dictation-language"],
       ["conversation-expanded", "voice-idle-sleep"],
       ["appearance-expanded", "voice-visual-style"],
     ]) {
@@ -115,21 +131,29 @@ for (const [theme, width] of [
     await capture("grok-speaker-picker");
     await page.keyboard.press("Escape");
     await region.getByRole("radio", { name: "OpenAI Realtime", exact: true }).click();
-    await region.getByText("Advanced turn detection", { exact: true }).click();
+    // The turn-detection consent stays visible without a nested disclosure.
     await assertVoiceRows(region);
     await region.locator('[data-setting-id="voice-semantic-vad"]').scrollIntoViewIfNeeded();
+    await expect(
+      region
+        .locator('[data-setting-id="voice-semantic-vad"]')
+        .getByText(/Sends live microphone audio to OpenAI/),
+    ).toBeVisible();
     await capture("openai-turn-detection");
     const experimental = region.getByRole("switch", {
       name: "Experimental OpenAI turn detection",
       exact: true,
     });
-    const manual = region.getByRole("switch", { name: "I decide when my turn ends", exact: true });
+    const turnEnd = region.getByRole("button", { name: /^Wait before replying:/ });
     await expect(experimental).not.toBeChecked();
-    await manual.check();
+    await turnEnd.click();
+    await page.getByRole("option", { name: "I end my turn", exact: true }).click();
     await expect(experimental).toBeDisabled();
     await region.locator('[data-setting-id="voice-semantic-vad"]').scrollIntoViewIfNeeded();
     await capture("openai-manual-disabled");
-    await manual.uncheck();
+    await turnEnd.click();
+    await page.getByRole("option", { name: "Natural pause", exact: true }).click();
+    await expect(experimental).toBeEnabled();
     await experimental.check();
     await expect(experimental).toBeChecked();
     expect(
@@ -155,7 +179,7 @@ for (const [theme, width] of [
       dialog.getByRole("switch", { name: "Physical input", exact: true }),
     ).not.toBeVisible();
     await capture("assistant-access");
-    const footer = dialog.getByRole("button", { name: "Save profile settings", exact: true });
+    const footer = dialog.getByRole("button", { name: "Save", exact: true });
     await expect(footer).toBeVisible();
     const checks = dialog.locator("summary").filter({ hasText: "All checks" });
     await checks.scrollIntoViewIfNeeded();
@@ -173,14 +197,21 @@ for (const [theme, width] of [
   });
 }
 
-async function openVoice(page: Page, fixture: string, theme = "dark", width = 1280, lang = "en") {
+async function openVoice(
+  page: Page,
+  fixture: string,
+  theme = "dark",
+  width = 1280,
+  lang = "en",
+  enabled = true,
+) {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.setViewportSize({ width, height: 900 });
-  await page.addInitScript(() => {
+  await page.addInitScript((enabled) => {
     localStorage.setItem(
       "bycoda.voice",
       JSON.stringify({
-        enabled: true,
+        enabled,
         natural: true,
         dictationEnabled: true,
         python: "",
@@ -188,7 +219,7 @@ async function openVoice(page: Page, fixture: string, theme = "dark", width = 12
         ttsPath: "",
       }),
     );
-  });
+  }, enabled);
   await page.goto(
     `/tests/browser/settings/settings.html?section=voice&voice=${fixture}&theme=${theme}&lang=${lang}`,
   );
@@ -198,37 +229,70 @@ async function openVoice(page: Page, fixture: string, theme = "dark", width = 12
     .filter({ has: page.locator('[data-setting-id="voice-companion"]') });
 }
 
+test("settings search takes wake up to voice activation", async ({ page }) => {
+  const region = await openVoice(page, "ready");
+  await page.getByRole("button", { name: "Search settings", exact: true }).click();
+  const search = page.getByRole("combobox", { name: "Search settings", exact: true });
+  await search.fill("wake up");
+  await expect(page.getByRole("option").first()).toContainText("Wake and sleep phrases");
+  await search.press("Enter");
+  await expect(region.locator('[data-setting-id="voice-wake"]').getByRole("switch")).toBeFocused();
+});
+
+test("settings search for wake phrases explains that voice must be on", async ({ page }) => {
+  const region = await openVoice(page, "ready", "dark", 1280, "en", false);
+  await page.getByRole("button", { name: "Search settings", exact: true }).click();
+  const search = page.getByRole("combobox", { name: "Search settings", exact: true });
+  await search.fill("wake up");
+  await expect(page.getByRole("option").first()).toContainText("Wake and sleep phrases");
+  await search.press("Enter");
+  const row = region.locator('[data-setting-id="voice-wake"]');
+  await expect(row).toContainText("Turn on voice to use wake and sleep phrases.");
+  // Nothing can be switched on from the explanation, and no microphone is opened.
+  await expect(row.getByRole("switch")).toHaveCount(0);
+  await expect(region.locator('[data-setting-id="voice-wake-phrase"]')).toHaveCount(0);
+});
+
 for (const theme of ["light", "dark"]) {
-  for (const width of [390, 1280]) {
-    test(`voice setup keeps install direct and existing files in its action menu: ${theme} ${width}`, async ({
+  for (const width of [390, 800, 1280]) {
+    test(`voice setup keeps install and find actions visible: ${theme} ${width}`, async ({
       page,
     }, testInfo) => {
       const group = await openVoice(page, "missing", theme, width);
-      await expect(group.getByText("Voice setup is needed", { exact: true })).toBeVisible();
+      await expect(setupStatus(group, "Setup needed")).toBeVisible();
       await expect(group.getByRole("button", { name: "Install", exact: true })).toBeVisible();
-      const more = group.getByRole("button", { name: "More voice setup actions", exact: true });
-      await expect(more).toBeVisible();
-      await more.click();
+      // Locate files is one visible action, not a one-item menu.
+      const locate = group.getByRole("button", { name: "Locate files", exact: true });
+      await expect(locate).toBeVisible();
       await expect(
-        page.getByRole("menuitem", { name: "Locate existing", exact: true }),
-      ).toBeVisible();
-      await page.keyboard.press("Escape");
+        group.getByRole("button", { name: "More voice setup actions", exact: true }),
+      ).toHaveCount(0);
       await expect(group).not.toContainText("faster-whisper");
       await expect(group).not.toContainText("pip install");
       await expect(group).not.toContainText("Missing:");
       // Existing-file paths live in the Locate dialog; the setup group itself has no text fields.
       await expect(
-        group.getByRole("group", { name: "Voice setup", exact: true }).getByRole("textbox"),
+        group.getByRole("group", { name: "Setup", exact: true }).getByRole("textbox"),
       ).toHaveCount(0);
       await group.scrollIntoViewIfNeeded();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
-      await mkdir(captures, { recursive: true });
+      await mkdir(recoveryCaptures, { recursive: true });
       const status = page
         .locator(".settings-group")
         .filter({ has: page.locator('[data-setting-id="voice-companion"]') });
-      await status.screenshot({ path: testInfo.outputPath(`voice-missing-${theme}-${width}.png`) });
+      await status.screenshot({
+        path: join(recoveryCaptures, `voice-missing-${theme}-${width}.png`),
+      });
+      await locate.click();
+      const dialog = page.getByRole("dialog", { name: "Locate voice files", exact: true });
+      await expect(dialog.getByRole("textbox", { name: "Python", exact: true })).toBeVisible();
+      await expect(dialog.getByRole("button", { name: "Automatic detection" })).toHaveCount(0);
+      await dialog.screenshot({
+        path: join(recoveryCaptures, `voice-locate-${theme}-${width}.png`),
+      });
+      await page.keyboard.press("Escape");
       const bounds = await status.boundingBox();
       await testInfo.attach("setup-bounds", {
         body: JSON.stringify({ theme, width, height: bounds!.height }),
@@ -237,12 +301,8 @@ for (const theme of ["light", "dark"]) {
       // Core controls stay visible; optional processing and visual controls unfold below.
       expect(bounds!.height).toBeLessThan(width < 600 ? 1040 : 680);
       const saved = await page.evaluate(() => localStorage.getItem("bycoda.voice"));
-      await expect(
-        group.getByRole("switch", { name: "I decide when my turn ends", exact: true }),
-      ).toBeVisible();
+      await expect(group.getByRole("button", { name: /^Wait before replying:/ })).toBeVisible();
       await expect(group.getByRole("switch", { name: "Memory", exact: true })).toBeVisible();
-      await group.getByText("Appearance and voice style", { exact: true }).click();
-      await group.getByText("Voice options", { exact: true }).click();
       await expect(
         group.getByRole("radiogroup", { name: "Visual style", exact: true }),
       ).toBeVisible();
@@ -263,13 +323,48 @@ for (const theme of ["light", "dark"]) {
   }
 }
 
+for (const [theme, width] of [
+  ["light", 1280],
+  ["dark", 800],
+] as const)
+  test(`memory routes to the Assistant and its device switch stays saved: ${theme} ${width}`, async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      (window as any).assistantNavigation = [];
+      window.addEventListener("bycoda:open-assistant", (event) =>
+        (window as any).assistantNavigation.push((event as CustomEvent).detail),
+      );
+    });
+    const region = await openVoice(page, "ready", theme, width);
+    const row = region.locator('[data-setting-id="voice-memory"]');
+    await row.getByRole("button", { name: /^\d+ notes?$/ }).click();
+    expect((await page.evaluate(() => (window as any).assistantNavigation)).at(-1)).toEqual({
+      tab: "memory",
+    });
+    // Notes are managed in the Assistant; Voice settings opens no memory dialog of its own.
+    await expect(page.getByRole("dialog", { name: "Companion memory", exact: true })).toHaveCount(
+      0,
+    );
+    await row.getByRole("switch", { name: "Memory", exact: true }).click();
+    expect(
+      await page.evaluate(() => JSON.parse(localStorage.getItem("bycoda.voice.memory")!).enabled),
+    ).toBe(false);
+    await page.reload();
+    await expect(
+      page
+        .locator('[data-setting-id="voice-memory"]')
+        .getByRole("switch", { name: "Memory", exact: true }),
+    ).not.toBeChecked();
+  });
+
 test("voice install finishes in place using a simulated job", async ({ page }) => {
   const group = await openVoice(page, "missing");
   await group.getByRole("button", { name: "Install", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => sessionStorage.getItem("fixture-voice-install-request")))
     .not.toBeNull();
-  await expect(group.getByText("Voice is ready", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(setupStatus(group, "Ready")).toBeVisible({ timeout: 15_000 });
   await expect(group.getByRole("button", { name: "Install", exact: true })).toHaveCount(0);
   await expect
     .poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("bycoda.voice")!).python))
@@ -281,15 +376,15 @@ test("voice install finishes in place using a simulated job", async ({ page }) =
 test("stalled detection keeps Install available and ends with a retry", async ({ page }) => {
   // The Voice page also has an unrelated model-list retry; the setup retry lives in the Voice setup group.
   const group = (await openVoice(page, "stalled", "dark", 390)).getByRole("group", {
-    name: "Voice setup",
+    name: "Setup",
     exact: true,
   });
-  await expect(group.getByText("Checking voice setup…", { exact: true })).toBeVisible();
+  await expect(group.getByText("Checking…", { exact: true })).toBeVisible();
   await expect(group.getByRole("button", { name: "Install", exact: true })).toBeVisible();
   await expect(group.getByRole("button", { name: "Try again", exact: true })).toBeVisible({
     timeout: 25_000,
   });
-  await expect(group.getByText("Checking voice setup…", { exact: true })).toHaveCount(0);
+  await expect(group.getByText("Checking…", { exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
@@ -297,13 +392,16 @@ test("voice locations are optional, keyboard accessible and return focus", async
   const group = await openVoice(page, "missing", "dark", 390);
   await group.getByRole("button", { name: /^Reply voice:/ }).click();
   await page.getByRole("option", { name: "High quality (VoxCPM2)", exact: true }).click();
-  const locate = group.getByRole("button", { name: "More voice setup actions", exact: true });
+  const locate = group.getByRole("button", { name: "Locate files", exact: true });
   await locate.focus();
-  await page.keyboard.press("Enter");
-  await page.getByRole("menuitem", { name: "Locate existing", exact: true }).focus();
   await page.keyboard.press("Enter");
   const dialog = page.getByRole("dialog", { name: "Locate voice files", exact: true });
   await expect(dialog).toBeVisible();
+  // Empty fields mean automatic detection; the dialog has no extra reset button.
+  await expect(dialog.getByRole("textbox", { name: "Python", exact: true })).toHaveAttribute(
+    "placeholder",
+    "Automatic detection",
+  );
   await expect(dialog.getByRole("textbox", { name: "Python", exact: true })).toBeVisible();
   await expect(
     dialog.getByRole("textbox", { name: "Speech recognition model", exact: true }),
@@ -339,25 +437,17 @@ test("an ongoing installation resumes with progress and prevents duplicate actio
     group.getByText("You can leave this page. Setup will continue.", { exact: true }),
   ).toBeVisible();
   await expect(group.getByRole("button", { name: "Install", exact: true })).toHaveCount(0);
-  await expect(
-    group.getByRole("button", { name: "More voice setup actions", exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    group.getByRole("switch", { name: "Enable voice companion", exact: true }),
-  ).toBeDisabled();
+  await expect(group.getByRole("button", { name: "Locate files", exact: true })).toHaveCount(0);
+  await expect(group.getByRole("switch", { name: "Voice assistant", exact: true })).toBeDisabled();
   await mkdir(captures, { recursive: true });
   await group.screenshot({ path: join(captures, "voice-installing-light-390.png") });
 });
 
 test("Turkish voice setup keeps the same simple actions at a narrow width", async ({ page }) => {
   const group = await openVoice(page, "missing", "dark", 390, "tr");
-  await expect(
-    group.getByText("Sesli konuşma için kurulum gerekli", { exact: true }),
-  ).toBeVisible();
+  await expect(setupStatus(group, "Kurulum gerekli")).toBeVisible();
   await expect(group.getByRole("button", { name: "Kur", exact: true })).toBeVisible();
-  await group.getByRole("button", { name: "Diğer ses kurulumu eylemleri", exact: true }).click();
-  await expect(page.getByRole("menuitem", { name: "Yerini göster", exact: true })).toBeVisible();
-  await page.keyboard.press("Escape");
+  await expect(group.getByRole("button", { name: "Dosyaları seç", exact: true })).toBeVisible();
   await expect(group).not.toContainText("faster-whisper");
   await expect(group).not.toContainText("pip install");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -368,14 +458,14 @@ test("Turkish voice setup keeps the same simple actions at a narrow width", asyn
 for (const theme of ["light", "dark"]) {
   test(`voice processing choice and GPU upgrade offer: ${theme}`, async ({ page }) => {
     const group = await openVoice(page, "cpu-only", theme);
-    await expect(group.getByText("Voice is ready", { exact: true })).toBeVisible();
+    await expect(setupStatus(group, "Ready")).toBeVisible();
     // The default Natural voice (Supertonic) runs on the CPU: no GPU offer.
     await expect(
       group.getByRole("button", { name: "Install GPU support", exact: true }),
     ).toHaveCount(0);
     await group.getByRole("button", { name: /^Reply voice:/ }).click();
     await page.getByRole("option", { name: "High quality (VoxCPM2)", exact: true }).click();
-    await expect(group.getByText("Voice is ready", { exact: true })).toBeVisible();
+    await expect(setupStatus(group, "Ready")).toBeVisible();
     await expect(group.getByText("NVIDIA GeForce RTX 4070", { exact: false })).toBeVisible();
     await expect(
       group.getByRole("button", { name: "Install GPU support", exact: true }),
@@ -384,7 +474,6 @@ for (const theme of ["light", "dark"]) {
     const gpuCaptures = join(process.cwd(), "temp/verification/2026-10-31-voice-gpu");
     await mkdir(gpuCaptures, { recursive: true });
     await group.screenshot({ path: join(gpuCaptures, `voice-gpu-offer-${theme}-1280.png`) });
-    await group.getByText("Voice options", { exact: true }).click();
     await group.getByRole("radio", { name: "CPU", exact: true }).click();
     await expect(
       group.getByRole("button", { name: "Install GPU support", exact: true }),

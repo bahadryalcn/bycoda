@@ -1,8 +1,13 @@
+import { errorText } from "../../../shared/lib/errors";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { Heading } from "../../../shared/ui/Heading";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { PasswordField } from "../../../shared/ui/PasswordField";
 import { t, useLocale } from "../../../shared/i18n";
@@ -10,46 +15,25 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { hostFeatureRequest } from "../../connections/model/hostFeatureClient";
 import { parseRemotePath } from "../../connections/model/remoteProjects";
+import { knownRemoteMachine, useRemoteMachines } from "../../connections/model/connections";
 import { refreshGenericAcpCatalog } from "../../../integrations/harness/providers/generic-acp/genericAcpAdapter";
 import { probeHarnessAvailability } from "../../../integrations/harness/core/availability";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { RefreshCw } from "../../../shared/ui/icons";
 import { Surface } from "../../../shared/ui/Surface";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
-import { AdvancedSettings, Group, settingDomId } from "../../../shared/ui/settings";
+import { Group, settingDomId } from "../../../shared/ui/settings";
 import type { AcpRegistryEntry, GenericAcpConfig, GenericAcpSummary } from "../model/genericAcp";
 
-function Field({
-  label,
-  hint,
-  wide,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  wide?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <Text
-      as="div"
-      size="caption"
-      tone="secondary"
-      weight="medium"
-      className={`flex min-w-0 flex-col gap-1 ${wide ? "sm:col-span-2" : ""}`}
-    >
-      <span>{label}</span>
-      {children}
-      {hint ? (
-        <Text size="micro" tone="secondary" weight="regular" leading="snug">
-          {hint}
-        </Text>
-      ) : null}
-    </Text>
-  );
-}
+// Stable keys: each operation's label is translated at render time, never looked up dynamically.
+type BusyKind = "" | "reload" | "registry" | "saving" | "removing" | "installing";
+type StatusKind = "" | "draft" | "saved";
+/** The action whose failure the settings show: a busy action, the first load or an install cancel. */
+type FailedAction = BusyKind | "load" | "cancel";
 
 export function GenericAcpSettings({
   cwd = "",
@@ -104,14 +88,9 @@ function AcpSettingsShell({
           "flex flex-wrap items-center justify-between gap-2 px-3 py-2",
         )}
       >
-        <div className="min-w-0">
-          <Text as="p" size="caption" tone="secondary" leading="snug">
-            {scope}
-          </Text>
-          <Text as="p" size="caption" tone="secondary">
-            {t("Changes require saving")}
-          </Text>
-        </div>
+        <Text as="p" size="caption" tone="secondary" leading="snug" className="min-w-0">
+          {scope}
+        </Text>
         {action}
       </div>
       {children}
@@ -144,14 +123,19 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
     setEnvText("");
     setDraftDirty(false);
   };
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState("");
+  const [failure, setFailure] = useState<{ action: FailedAction; detail: string } | null>(null);
+  const error = failure?.detail ?? "";
+  const [busy, setBusy] = useState<BusyKind>("");
   const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState<StatusKind>("");
   const remote = parseRemotePath(cwd);
+  // Subscribes to the machine list so the name resolves once it loads; the
+  // scope line shows the name, never the environment id.
+  useRemoteMachines(Boolean(remote));
+  const remoteName = remote ? knownRemoteMachine(remote.environmentId)?.name : undefined;
   const scope = remote
-    ? t("Target machine: remote host {p0}. ACP configuration and credentials stay on that host.", {
-        p0: remote.environmentId,
+    ? t("Target machine: {p0}. ACP configuration and credentials stay on that host.", {
+        p0: remoteName || t("Remote host"),
       })
     : t("Target machine: this machine. ACP configuration and credentials stay here.");
   const request = <T,>(command: string, params: Record<string, unknown> = {}) =>
@@ -159,12 +143,14 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
       ? parseRemotePath(cwd)
         ? hostFeatureRequest<T>(cwd, "generic-acp-v1", command, params)
         : invoke<T>(command, params)
-      : Promise.reject(new Error("ACP settings closed before the request completed."));
+      : Promise.reject(new Error(t("ACP settings closed before the request completed.")));
   async function reload() {
     const result = await request<GenericAcpSummary[]>("generic_acp_list");
     if (!activeRef.current) return;
     if (!Array.isArray(result))
-      throw new Error("ACP configuration is unavailable on this machine. Update its app or host.");
+      throw new Error(
+        t("ACP configuration is unavailable on this machine. Update its app or host."),
+      );
     setConfigs(result);
   }
   useEffect(() => {
@@ -176,12 +162,12 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
         if (cancelled) return;
         if (!Array.isArray(result))
           throw new Error(
-            "ACP configuration is unavailable on this machine. Update its app or host.",
+            t("ACP configuration is unavailable on this machine. Update its app or host."),
           );
         setConfigs(result);
       })
       .catch((reason) => {
-        if (!cancelled) setError(String(reason));
+        if (!cancelled) setFailure({ action: "load", detail: errorText(reason) });
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -191,14 +177,14 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
       activeRef.current = false;
     };
   }, [cwd]);
-  async function run(label: string, action: () => Promise<void>, confirm = false) {
+  async function run(label: BusyKind, action: () => Promise<void>, confirm = false) {
     if (!activeRef.current || busyRef.current || loading) {
       if (confirm)
-        throw new Error("ACP operation is unavailable while another request is pending.");
+        throw new Error(t("ACP operation is unavailable while another request is pending."));
       return;
     }
     busyRef.current = true;
-    setError("");
+    setFailure(null);
     setStatus("");
     setBusy(label);
     let completed = false;
@@ -215,7 +201,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
       }
     } catch (reason) {
       if (activeRef.current) {
-        setError(reason instanceof Error ? reason.message : String(reason));
+        setFailure({ action: label, detail: errorText(reason) });
       }
       // A confirmation owns its failure state. A refresh failure after the
       // mutation completed remains a list error, not a failed deletion.
@@ -233,17 +219,43 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
     }
   }
   const editing = configs.some((config) => config.id === form.id);
-  const openAgentForm = () => {
-    const root = formDisclosureRef.current;
-    const input = root?.querySelector<HTMLInputElement>("input");
-    if (input) input.focus();
-    else {
-      root?.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')?.click();
-      requestAnimationFrame(() => {
-        if (activeRef.current) root?.querySelector<HTMLInputElement>("input")?.focus();
-      });
+  const busyLabel = () => {
+    switch (busy) {
+      case "installing":
+        return t("Installing {p0}…", { p0: installingId });
+      case "saving":
+        return t("Saving…");
+      case "removing":
+        return t("Removing…");
+      case "registry":
+        return t("Loading ACP registry…");
+      default:
+        return t("Loading ACP agents…");
     }
   };
+  const failureTitle = () => {
+    switch (failure?.action) {
+      case "load":
+        return t("Could not load the ACP agents.");
+      case "registry":
+        return t("Could not load the ACP registry.");
+      case "saving":
+        return t("Could not save the ACP agent.");
+      case "removing":
+        return t("Could not remove the ACP agent.");
+      case "installing":
+        return t("Could not install the ACP agent.");
+      case "cancel":
+        return t("Could not cancel the installation.");
+      default:
+        return t("Could not reload the ACP agents.");
+    }
+  };
+  const statusLabel = () =>
+    status === "draft"
+      ? t("Save or cancel the current agent draft before opening another.")
+      : t("ACP agent saved on the target machine.");
+  const openAgentForm = () => formDisclosureRef.current?.querySelector("input")?.focus();
   const toggleRegistry = (open: boolean) => {
     if (loading || !activeRef.current || busyRef.current) return;
     if (!open) {
@@ -252,7 +264,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
     }
     setRegistryOpen(true);
     setRegistryState("loading");
-    void run("Loading registry", async () => {
+    void run("registry", async () => {
       try {
         const entries = await request<AcpRegistryEntry[]>("generic_acp_registry", {
           refresh: true,
@@ -260,7 +272,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
         if (!activeRef.current) return;
         if (!Array.isArray(entries)) {
           throw new Error(
-            "ACP configuration is unavailable on this machine. Update its app or host.",
+            t("ACP configuration is unavailable on this machine. Update its app or host."),
           );
         }
         setRegistry(entries);
@@ -281,7 +293,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
       if (activeRef.current) {
         cancelingInstallRef.current = "";
         setCancelingInstallId("");
-        setError(reason instanceof Error ? reason.message : String(reason));
+        setFailure({ action: "cancel", detail: errorText(reason) });
       }
     }
   };
@@ -306,28 +318,31 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
             </Button>
             <Button
               className="shrink-0"
+              iconOnly
+              label={t("Reload agents")}
+              startIcon={<RefreshCw className="icon-sm" />}
               disabled={loading || !!busy}
-              onClick={() => void run("Loading agents…", async () => {})}
-            >
-              {t("Reload agents")}
-            </Button>
+              onClick={() => void run("reload", async () => {})}
+            />
           </div>
         }
       >
-        {loading || busy || status || (!configs.length && !error) ? (
-          <Alert tone="info">
-            {loading
-              ? t("Loading ACP agents…")
-              : busy
-                ? installingId
-                  ? t("Installing {p0}…", { p0: installingId })
-                  : t(busy)
-                : status
-                  ? t(status)
-                  : t("No ACP agents configured. Use Add agent or browse the registry.")}
-          </Alert>
-        ) : null}
-        {error && <Alert tone="danger">{error}</Alert>}
+        <div data-acp-status className="flex min-h-8 min-w-0 items-center px-3 py-1">
+          {loading || busy ? (
+            <LoadingText delay={false} className="min-w-0">
+              {loading ? t("Loading ACP agents…") : busyLabel()}
+            </LoadingText>
+          ) : status ? (
+            <InlineMessage tone="info">{statusLabel()}</InlineMessage>
+          ) : null}
+        </div>
+        {error && (
+          <Alert
+            tone="danger"
+            title={failureTitle()}
+            extra={<ErrorDetails detail={error} title={failureTitle()} />}
+          />
+        )}
         {configs.map((config) => (
           <div
             key={config.id}
@@ -344,8 +359,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
               </OverflowTooltip>
               <OverflowTooltip label={config.command}>
                 <Text as="div" size="caption" tone="secondary" truncate>
-                  {config.command} · {config.envKeys.length}
-                  {t(" environment values")}
+                  {config.command} · {t("{p0} environment values", { p0: config.envKeys.length })}
                 </Text>
               </OverflowTooltip>
             </div>
@@ -355,7 +369,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                 disabled={loading || !!busy}
                 onClick={() => {
                   if (draftDirty) {
-                    setStatus("Save or cancel the current agent draft before opening another.");
+                    setStatus("draft");
                     openAgentForm();
                     return;
                   }
@@ -379,193 +393,165 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                   doneLabel={t("Removed")}
                   disabled={loading || !!busy}
                   onConfirm={() =>
-                    run("Removing", () => request("generic_acp_remove", { id: config.id }), true)
+                    run("removing", () => request("generic_acp_remove", { id: config.id }), true)
                   }
                 />
               </span>
             </div>
           </div>
         ))}
+        {!loading && !error && !configs.length ? (
+          <EmptyState
+            size="inline"
+            kind="empty"
+            inset="row"
+            descriptionText={{ size: "micro" }}
+            description={t("No ACP agents configured. Use Add agent or browse the registry.")}
+          />
+        ) : null}
         <div id="acp-agent-form-disclosure" ref={formDisclosureRef}>
-          <AdvancedSettings
+          <Heading size="item" level={3} tone="secondary" className="px-3 pt-3">
+            {editing ? t("Edit agent") : t("Add agent")}
+          </Heading>
+          <form
             key={`${formRevision}:${editing ? form.id : "new"}`}
-            title={editing ? t("Edit agent") : t("Add agent")}
-            defaultOpen
-            settingIds={["acp-advanced"]}
-          >
-            <form
-              className="grid gap-x-3 gap-y-3 px-3 pb-3 pt-2 sm:grid-cols-2"
-              onChange={() => {
-                setDraftDirty(true);
-                setStatus("");
-              }}
-              onSubmit={(event) => {
-                event.preventDefault();
-                void run("Saving", async () => {
-                  const args = JSON.parse(argsText);
-                  const env = envText.trim() ? JSON.parse(envText) : undefined;
-                  await request("generic_acp_save", {
-                    config: { ...form, args, ...(env ? { env } : {}) },
-                  });
-                  if (!activeRef.current) return;
-                  setStatus("ACP agent saved on the target machine.");
-                  setFormRevision((revision) => revision + 1);
-                  resetForm();
+            className="grid gap-x-3 gap-y-3 px-3 pb-3 pt-2 sm:grid-cols-2"
+            onChange={() => {
+              setDraftDirty(true);
+              setStatus("");
+            }}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void run("saving", async () => {
+                const args = JSON.parse(argsText);
+                const env = envText.trim() ? JSON.parse(envText) : undefined;
+                await request("generic_acp_save", {
+                  config: { ...form, args, ...(env ? { env } : {}) },
                 });
-              }}
-            >
-              <Text
-                as="p"
-                size="micro"
-                tone="secondary"
-                weight="regular"
-                leading="snug"
-                className="sm:col-span-2"
-              >
+                if (!activeRef.current) return;
+                setStatus("saved");
+                setFormRevision((revision) => revision + 1);
+                resetForm();
+              });
+            }}
+          >
+            <TextField
+              label={t("Agent id")}
+              fieldClassName="w-full"
+              disabled={loading || !!busy}
+              value={form.id}
+              required
+              pattern="[a-z0-9][a-z0-9._-]*"
+              spellCheck={false}
+              placeholder="my-agent"
+              onChange={(event) => setForm({ ...form, id: event.target.value })}
+            />
+            <TextField
+              label={t("Name")}
+              fieldClassName="w-full"
+              disabled={loading || !!busy}
+              value={form.name}
+              required
+              onChange={(event) => setForm({ ...form, name: event.target.value })}
+            />
+            <div className="flex items-end gap-2 sm:col-span-2">
+              <TextField
+                label={t("Executable path")}
+                fieldClassName="w-full"
+                disabled={loading || !!busy}
+                monospace
+                value={form.command}
+                required
+                spellCheck={false}
+                onChange={(event) => setForm({ ...form, command: event.target.value })}
+              />
+              <InfoPopover className="shrink-0">
                 {t(
                   "Configure an executable on the session's machine. Credentials and environment values stay on that machine. Arguments are a JSON array; commands are launched without a shell.",
                 )}
-              </Text>
-              <Field label={t("Agent id")}>
+              </InfoPopover>
+            </div>
+            <div className="sm:col-span-2">
+              <div
+                id="setting-acp-advanced"
+                data-setting-id="acp-advanced"
+                className="grid gap-x-3 gap-y-3 py-3 sm:grid-cols-2"
+              >
+                <div className="sm:col-span-2">
+                  <TextareaField
+                    label={t("Arguments (JSON array)")}
+                    disabled={loading || !!busy}
+                    monospace
+                    minRows={3}
+                    value={argsText}
+                    spellCheck={false}
+                    onChange={(event) => setArgsText(event.target.value)}
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <PasswordField
+                    label={t("Environment (JSON object; blank preserves stored values)")}
+                    fieldClassName="w-full"
+                    disabled={loading || !!busy}
+                    autoComplete="off"
+                    monospace
+                    value={envText}
+                    spellCheck={false}
+                    onChange={(event) => setEnvText(event.target.value)}
+                  />
+                </div>
                 <TextField
-                  label={t("Agent id")}
-                  hideLabel
+                  label={t("ACP authentication method id (optional)")}
                   fieldClassName="w-full"
                   disabled={loading || !!busy}
-                  value={form.id}
-                  required
-                  pattern="[a-z0-9][a-z0-9._-]*"
+                  value={form.authMethodId ?? ""}
                   spellCheck={false}
-                  placeholder="my-agent"
-                  onChange={(event) => setForm({ ...form, id: event.target.value })}
+                  onChange={(event) =>
+                    setForm({ ...form, authMethodId: event.target.value || undefined })
+                  }
                 />
-              </Field>
-              <Field label={t("Name")}>
-                <TextField
-                  label={t("Name")}
-                  hideLabel
+                <NumberField
+                  label={t("Context window tokens (optional)")}
                   fieldClassName="w-full"
                   disabled={loading || !!busy}
-                  value={form.name}
-                  required
-                  onChange={(event) => setForm({ ...form, name: event.target.value })}
+                  min={1024}
+                  value={form.contextWindow ?? ""}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      contextWindow: event.target.value ? Number(event.target.value) : undefined,
+                    })
+                  }
                 />
-              </Field>
-              <Field wide label={t("Executable path")}>
-                <TextField
-                  label={t("Executable path")}
-                  hideLabel
-                  fieldClassName="w-full"
-                  disabled={loading || !!busy}
-                  monospace
-                  value={form.command}
-                  required
-                  spellCheck={false}
-                  onChange={(event) => setForm({ ...form, command: event.target.value })}
-                />
-              </Field>
-              <div className="sm:col-span-2">
-                <AdvancedSettings
-                  key={editing ? form.id : "new"}
-                  title={t("ACP arguments, environment and model context")}
-                  defaultOpen
-                  settingIds={["acp-advanced"]}
-                >
-                  <div
-                    id="setting-acp-advanced"
-                    data-setting-id="acp-advanced"
-                    className="grid gap-x-3 gap-y-3 py-3 sm:grid-cols-2"
-                  >
-                    <Field wide label={t("Arguments (JSON array)")}>
-                      <TextareaField
-                        label={t("Arguments (JSON array)")}
-                        hideLabel
-                        disabled={loading || !!busy}
-                        aria-label={t("Arguments (JSON array)")}
-                        monospace
-                        minRows={3}
-                        value={argsText}
-                        spellCheck={false}
-                        onChange={(event) => setArgsText(event.target.value)}
-                      />
-                    </Field>
-                    <Field
-                      wide
-                      label={t("Environment (JSON object; blank preserves stored values)")}
-                    >
-                      <PasswordField
-                        label={t("Environment (JSON object; blank preserves stored values)")}
-                        hideLabel
-                        fieldClassName="w-full"
-                        disabled={loading || !!busy}
-
-                        autoComplete="off"
-                        monospace
-                        value={envText}
-                        spellCheck={false}
-                        onChange={(event) => setEnvText(event.target.value)}
-                      />
-                    </Field>
-                    <Field label={t("ACP authentication method id (optional)")}>
-                      <TextField
-                        label={t("ACP authentication method id (optional)")}
-                        hideLabel
-                        fieldClassName="w-full"
-                        disabled={loading || !!busy}
-                        value={form.authMethodId ?? ""}
-                        spellCheck={false}
-                        onChange={(event) =>
-                          setForm({ ...form, authMethodId: event.target.value || undefined })
-                        }
-                      />
-                    </Field>
-                    <Field label={t("Context window tokens (optional)")}>
-                      <NumberField
-                        label={t("Context window tokens (optional)")}
-                        hideLabel
-                        fieldClassName="w-full"
-                        disabled={loading || !!busy}
-
-                        min={1024}
-                        value={form.contextWindow ?? ""}
-                        onChange={(event) =>
-                          setForm({
-                            ...form,
-                            contextWindow: event.target.value
-                              ? Number(event.target.value)
-                              : undefined,
-                          })
-                        }
-                      />
-                    </Field>
-                  </div>
-                </AdvancedSettings>
               </div>
-              <div className="flex items-center gap-2 sm:col-span-2">
-                <Button className="shrink-0" disabled={loading || !!busy} type="submit">
-                  {busy === "Saving" ? t("Saving…") : t("Save agent")}
-                </Button>
-                <Button
-                  className="shrink-0"
-                  disabled={loading || !!busy}
-                  onClick={() => {
-                    resetForm();
-                    setFormRevision((revision) => revision + 1);
-                  }}
-                >
-                  {t("Cancel")}
-                </Button>
-              </div>
-            </form>
-          </AdvancedSettings>
+            </div>
+            <div className="flex items-center gap-2 sm:col-span-2">
+              <Button
+                className="shrink-0"
+                loading={busy === "saving"}
+                loadingLabel={t("Saving…")}
+                disabled={loading || !!busy}
+                type="submit"
+              >
+                {t("Save agent")}
+              </Button>
+              <Button
+                className="shrink-0"
+                disabled={loading || !!busy}
+                onClick={() => {
+                  resetForm();
+                  setFormRevision((revision) => revision + 1);
+                }}
+              >
+                {t("Cancel")}
+              </Button>
+            </div>
+          </form>
         </div>
         <div
           id="setting-acp-registry"
           data-setting-id="acp-registry"
-          {...surfaceAttributes(
-            { frame: "pane", edge: "top" },
-            "border-(--ui-tone-neutral-border)",
-          )}
+          {...surfaceAttributes({ frame: "pane", edge: "top" })}
         >
           <Disclosure
             variant="row"
@@ -576,21 +562,17 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
           >
             <div
               id="setting-acp-registry-results"
-              {...surfaceAttributes(
-                { frame: "pane", edge: "top" },
-                "border-(--ui-tone-neutral-border)",
-              )}
+              {...surfaceAttributes({ frame: "pane", edge: "top" })}
             >
-              <Text as="p" size="micro" tone="secondary" className="px-3 pt-2">
-                {t("Install compatible ACP agents from the registry.")}
-              </Text>
               <Text as="p" size="caption" tone="secondary" leading="snug" className="px-3 py-2">
                 {t(
                   "Install downloads an exact package version into isolated host storage and may run package installation scripts. Binary and Python distributions can be configured as local commands.",
                 )}
               </Text>
               {registryState === "loading" ? (
-                <Alert tone="info">{t("Loading ACP registry…")}</Alert>
+                <LoadingText delay={false} inset="row">
+                  {t("Loading ACP registry…")}
+                </LoadingText>
               ) : registryState === "error" ? null : registryState === "loaded" &&
                 registry.length > 0 ? (
                 <div {...surfaceAttributes({ dividers: "pane" })}>
@@ -628,7 +610,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                             onClick={() => {
                               if (!activeRef.current || busyRef.current || loading) return;
                               setInstallingId(entry.id);
-                              void run(t("Installing {p0}…", { p0: entry.id }), () =>
+                              void run("installing", () =>
                                 request("generic_acp_install", {
                                   id: entry.id,
                                   version: entry.version,
@@ -636,21 +618,18 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                               );
                             }}
                           >
-                            {t("Install ")}
-                            {entry.package}
+                            {t("Install {p0}", { p0: entry.package })}
                           </Button>
                         ) : null}
                         {installingId === entry.id ? (
                           <Button
                             className="shrink-0"
                             tone="danger"
-                            disabled={cancelingInstallId === entry.id}
                             loading={cancelingInstallId === entry.id}
+                            loadingLabel={t("Stopping installation…")}
                             onClick={() => void cancelInstallation(entry.id)}
                           >
-                            {cancelingInstallId === entry.id
-                              ? t("Stopping installation…")
-                              : t("Stop installation")}
+                            {t("Stop installation")}
                           </Button>
                         ) : null}
                       </div>
@@ -661,7 +640,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                 <EmptyState
                   size="inline"
                   kind="empty"
-                  className="px-3 pb-2"
+                  inset="row"
                   descriptionText={{ size: "micro" }}
                   description={t("No ACP registry entries found.")}
                 />

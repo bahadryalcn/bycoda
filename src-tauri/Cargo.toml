@@ -3,7 +3,7 @@ name = "bycoda"
 version.workspace = true
 edition.workspace = true
 description = "bycoda — collaborative agent workspace"
-authors = ["Nick"]
+authors = ["bahadryalcn"]
 repository = "https://github.com/bahadryalcn/bycoda"
 homepage = "https://github.com/bahadryalcn/bycoda"
 license.workspace = true
@@ -19,6 +19,7 @@ tauri-build = { version = "2", features = [] }
 bycoda-physical-store-admission = { path = "../packages/physical-store-admission" }
 bycoda-provider-process-guardian = { path = "../packages/provider-process-guardian" }
 tauri = { version = "2", features = ["protocol-asset", "macos-private-api", "tray-icon"] }
+wry = { version = "0.57", default-features = false }
 tauri-plugin-opener = "2"
 tauri-plugin-deep-link = "2"
 open = "5.4.1"
@@ -45,7 +46,14 @@ tauri-plugin-fs = "2"
 rusqlite = { version = "0.40.2", features = ["bundled", "hooks", "blob"], default-features = false }
 ureq = { version = "2.12.1", default-features = false, features = ["tls", "gzip"] }
 webpki-roots = "=1.0.9"
-tokio = { version = "=1.54.1", features = ["rt", "net", "sync", "time", "macros"] }
+tokio = { version = "=1.54.1", features = [
+  "rt",
+  "rt-multi-thread",
+  "net",
+  "sync",
+  "time",
+  "macros",
+] }
 tokio-tungstenite = { version = "=0.30.0", default-features = false, features = [
   "connect",
   "handshake",
@@ -77,11 +85,17 @@ log = "0.4"
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
-tauri = { version = "2", features = ["macos-private-api", "protocol-asset", "tray-icon"] }
+tauri = { version = "2", features = [
+  "macos-private-api",
+  "protocol-asset",
+  "tray-icon",
+  "unstable",
+] }
 portable-pty = { version = "0.9", path = "../vendor/portable-pty" }
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_Networking_WinSock",
+  "Win32_NetworkManagement_IpHelper",
   "Win32_Security",
   "Win32_Security_Credentials",
   "Win32_Security_Authorization",
@@ -101,8 +115,16 @@ windows-sys = { version = "0.61", features = [
   "Win32_UI_Shell",
 ] }
 tauri-winrt-notification = "0.8"
-# WinRT toast settings (Windows.UI.Notifications) to read the per-app block.
-windows = { version = "0.62", features = ["UI_Notifications"] }
+# WinRT toast settings (Windows.UI.Notifications) to read the per-app block, and the
+# system voice rendered to WAV (Windows.Media.SpeechSynthesis) for a chosen audio output.
+windows = { version = "0.62", features = [
+  "Media_Core",
+  "Media_SpeechSynthesis",
+  "Storage_Streams",
+  "UI_Notifications",
+] }
+# WebView2 ProcessFailed handler; already in the tree through tauri-runtime-wry.
+webview2-com = "0.39"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6.2"
@@ -113,6 +135,9 @@ objc2-app-kit = { version = "0.3", features = [
   "NSColor",
   "NSControl",
   "NSDockTile",
+  "NSDragging",
+  "NSDraggingItem",
+  "NSDraggingSession",
   "NSEvent",
   "NSGraphics",
   "NSImage",
@@ -129,6 +154,7 @@ objc2-app-kit = { version = "0.3", features = [
   "NSView",
   "NSVisualEffectView",
   "NSWindow",
+  "NSWorkspace",
   "objc2-core-foundation",
 ] }
 objc2-foundation = { version = "0.3", features = ["NSGeometry", "NSError", "NSString"] }

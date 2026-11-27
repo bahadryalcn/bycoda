@@ -24,11 +24,15 @@ it("rejects invalid allocation sizes without poisoning the shared budget", async
   const pool = new PdfRasterBudget();
   const signal = new AbortController().signal;
   for (const pixels of [NaN, Infinity, -1, 0, 1.5]) {
-    await expect(pool.reserve(pixels, signal)).rejects.toThrow("Invalid PDF raster allocation");
+    await expect(pool.reserve(pixels, signal)).rejects.toMatchObject({
+      problem: { reason: "invalidRasterSize" },
+    });
   }
   expect(pool.pixels).toBe(0);
   for (const width of [NaN, Infinity, 0, -1])
-    expect(() => pdfRasterSize(width, 800, 2)).toThrow("Invalid PDF page dimensions");
+    expect(() => pdfRasterSize(width, 800, 2)).toThrow(
+      expect.objectContaining({ problem: { reason: "invalidPageSize" } }),
+    );
 });
 it("bounds concurrent canvases, resumes waiters and cancels queued allocations", async () => {
   const pool = new PdfRasterBudget();

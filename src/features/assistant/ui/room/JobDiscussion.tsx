@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { useEffect, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
@@ -7,7 +8,6 @@ import { Button } from "../../../../shared/ui/Button";
 import { Text } from "../../../../shared/ui/Text";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
-import { ScrollArea } from "../../../../shared/ui/ScrollArea";
 import { CheckList, RefreshCw } from "../../../../shared/ui/icons";
 import { MessageTimeline } from "../../../../shared/ui/MessageTimeline";
 import { AssistantChatComposer, assistantChatItem } from "./AssistantChat";
@@ -55,11 +55,11 @@ function JobDiscussionSource() {
           result.thread?.purpose !== "job-planning" ||
           (result.thread.projectId ?? "") !== projectId
         )
-          throw new Error("The job discussion could not be opened.");
+          throw new Error(t("The job discussion could not be opened."));
         setThread(result.thread);
       })
       .catch((cause: unknown) => {
-        if (active) setError(cause instanceof Error ? cause.message : String(cause));
+        if (active) setError(errorText(cause));
       });
     return () => {
       active = false;
@@ -67,12 +67,12 @@ function JobDiscussionSource() {
   }, [request, environmentId, projectId, attempt]);
   if (error)
     return (
-      <InlineError retry={{ onRetry: () => setAttempt((value) => value + 1), label: t("Retry") }}>
-        {t(error)}
+      <InlineError details={error} retry={{ onRetry: () => setAttempt((value) => value + 1) }}>
+        {t("The job discussion could not be opened.")}
       </InlineError>
     );
   if (!thread || !room.snapshot || !room.canonicalSnapshot)
-    return <LoadingText>{t("Opening job discussion...")}</LoadingText>;
+    return <LoadingText>{t("Opening job discussion…")}</LoadingText>;
   return <JobDiscussionConversation thread={thread} />;
 }
 
@@ -108,14 +108,14 @@ function JobDiscussionConversation({ thread }: { thread: AssistantThread }) {
   const canReview =
     latest?.role === "assistant" &&
     !c.pending &&
-    !c.error &&
+    !c.notice &&
     !draft.trim() &&
     !c.draftSaveError &&
     !c.requestKey.current[c.threadId];
   return (
     <section className={styles.discussion}>
       {!!c.visible.length && (
-        <ScrollArea
+        <div
           className={styles.discussionTranscript}
           ref={c.history}
           onScroll={(event) => c.onHistoryScroll(event.currentTarget)}
@@ -140,37 +140,45 @@ function JobDiscussionConversation({ thread }: { thread: AssistantThread }) {
               }),
             )}
           />
-        </ScrollArea>
+        </div>
       )}
-      {c.error && (
+      {c.notice ? (
         <InlineError
           retry={{ label: t("Check conversation"), onRetry: () => void c.checkConversation() }}
         >
-          {c.error}
+          {c.notice}
         </InlineError>
+      ) : (
+        c.draftSaveError && (
+          <InlineError retry={{ label: t("Recover draft"), onRetry: () => c.openDraftRecovery() }}>
+            {t("The draft could not be saved.")}
+          </InlineError>
+        )
       )}
-      {c.draftSaveError && (
-        <InlineError retry={{ label: t("Recover draft"), onRetry: () => c.openDraftRecovery() }}>
-          {t("The draft could not be saved.")}
-        </InlineError>
+      {c.supported ? (
+        <AssistantChatComposer
+          label={t("Discuss a job")}
+          placeholder={t("What should this job achieve?")}
+          value={draft}
+          pending={c.pending}
+          disabled={!c.threadVisible(c.threadId)}
+          readOnly={!ready}
+          sendDisabled={c.clearing || !!c.requestKey.current[c.threadId]}
+          onValueChange={(value) => {
+            if (room.isAppQuitting()) return;
+            const saved = c.nativeDrafts.current.get(c.threadId);
+            if (native && saved && saved.environmentId === room.environmentId)
+              saved.desired = value;
+            c.draftsRef.current = { ...c.draftsRef.current, [c.threadId]: value };
+            c.setDrafts((current) => ({ ...current, [c.threadId]: value }));
+          }}
+          onSend={() => void c.send().catch(fail)}
+        />
+      ) : (
+        <Text size="caption" tone="secondary">
+          {t("Conversation replies are unavailable on this Host.")}
+        </Text>
       )}
-      <AssistantChatComposer
-        label={t("Discuss a job")}
-        placeholder={t("What should this job achieve?")}
-        value={draft}
-        pending={c.pending}
-        disabled={!c.threadVisible(c.threadId)}
-        readOnly={!ready}
-        sendDisabled={!c.supported || c.clearing || !!c.requestKey.current[c.threadId]}
-        onValueChange={(value) => {
-          if (room.isAppQuitting()) return;
-          const saved = c.nativeDrafts.current.get(c.threadId);
-          if (native && saved && saved.environmentId === room.environmentId) saved.desired = value;
-          c.draftsRef.current = { ...c.draftsRef.current, [c.threadId]: value };
-          c.setDrafts((current) => ({ ...current, [c.threadId]: value }));
-        }}
-        onSend={() => void c.send().catch(fail)}
-      />
       {!!c.visible.length && (
         <div className={styles.discussionActions}>
           <Button
@@ -187,6 +195,11 @@ function JobDiscussionConversation({ thread }: { thread: AssistantThread }) {
               variant="primary"
               startIcon={<CheckList className="icon-sm" />}
               disabled={!canReview || !!room.pending}
+              disabledReason={
+                room.pending || c.pending
+                  ? t("Wait for the current action to finish.")
+                  : t("Review once the assistant has replied and nothing is left to send.")
+              }
               onClick={() => {
                 if (!canReview) return;
                 try {
@@ -202,11 +215,6 @@ function JobDiscussionConversation({ thread }: { thread: AssistantThread }) {
             </Button>
           )}
         </div>
-      )}
-      {!c.supported && (
-        <Text size="caption" tone="secondary">
-          {t("Conversation replies are unavailable on this Host.")}
-        </Text>
       )}
       <ConversationDraftRecovery c={c} />
     </section>

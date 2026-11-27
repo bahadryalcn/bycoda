@@ -1,12 +1,5 @@
 /* Hallmark · shape: app screen · genre: modern-minimal · theme: existing bycoda tokens · v2.0.0 */
 /* Pre-emit critique: hierarchy uses primary row titles and secondary previews; restrained status glyphs replace icon tiles. */
-.notification-trigger-count {
-  position: absolute;
-  inset-block-start: -10px;
-  inset-inline-end: -4px;
-  pointer-events: none;
-}
-
 /* The sheet frame, placement, header and entrance are the shared Sheet; this class
    only scopes the flat row anatomy below. */
 .notification-sheet-list {
@@ -53,37 +46,22 @@
   /* A readable minimum: the row wraps before the source name collapses. */
   flex: 1 1 7rem;
 }
+/* Project, conversation and time share one line with the actions; the names truncate. */
 .notification-request-footer {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 .notification-request-source {
-  flex: 1 1 16rem;
-  flex-wrap: wrap;
+  flex: 1 1 0;
+  flex-wrap: nowrap;
 }
-.notification-request-footer .notification-request-actions {
-  margin-inline-start: auto;
+.notification-request-source .notification-project {
+  flex: 0 1 auto;
+  max-inline-size: 45%;
 }
 .notification-popup-dismiss {
   position: absolute;
   inset-block-start: 4px;
   inset-inline-end: 4px;
-}
-.notification-history-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px 8px;
-}
-.notification-history-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 8px 8px;
-}
-.notification-history-status > :first-child {
-  flex: 1;
-  min-inline-size: 0;
 }
 .notification-section-label {
   padding-inline: 10px;
@@ -95,46 +73,48 @@
   overflow: clip;
 }
 .notification-history-item {
+  position: relative;
   flex-direction: column;
   align-items: stretch;
   gap: 0;
 }
-/* A quiet status glyph leaves the full content width for the title and preview. */
+/* Leading slot (severity icon or unread dot), text, then the tabular time. */
 .notification-row-toggle {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
+  grid-template-columns: 14px minmax(0, 1fr) auto;
   align-items: start;
   justify-content: stretch;
-  gap: 12px;
+  gap: 8px;
   block-size: auto;
-  padding: 12px;
+  padding: 8px;
   text-align: start;
   white-space: normal;
 }
 .notification-history-icon {
-  justify-self: center;
-  margin-block-start: 2px;
+  display: grid;
+  place-items: center;
+  block-size: 18px;
 }
 .notification-history-text {
   display: flex;
   flex-direction: column;
   min-inline-size: 0;
-  gap: 4px;
+  gap: 2px;
 }
-.notification-history-head {
+.notification-history-titleline {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  align-items: baseline;
+  gap: 4px;
   min-inline-size: 0;
 }
 .notification-history-title {
   min-inline-size: 0;
   overflow-wrap: anywhere;
 }
-.notification-new-dot {
+.notification-history-count {
   flex: none;
-  align-self: start;
-  margin-block-start: 6px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .notification-history-preview[data-lines][data-size],
 .notification-history-label {
@@ -142,33 +122,39 @@
   white-space: pre-wrap;
 }
 .notification-history-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   min-inline-size: 0;
 }
-.notification-history-meta .notification-project {
-  flex: 0 1 auto;
-}
-.notification-history-kind {
-  flex: none;
-  white-space: nowrap;
-}
 .notification-history-time {
-  flex: none;
-  margin-inline-start: auto;
+  min-inline-size: 44px;
+  text-align: end;
   white-space: nowrap;
 }
-/* Same columns as the row, so the details line up under the text, past the icon. */
+/* The row's own actions take the time's place while the row is hovered or focused. */
+.notification-history-actions-inline {
+  position: absolute;
+  inset-block-start: var(--ui-space-1);
+  inset-inline-end: 6px;
+  display: flex;
+  align-items: center;
+}
+/* Same columns as the row, so the details line up under the text. */
 .notification-history-details {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
-  gap: 8px 12px;
-  padding: 0 12px 12px;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 6px 8px;
+  padding: 0 8px 8px;
 }
 .notification-history-details > * {
   grid-column: 2;
   margin: 0;
+}
+.notification-history-arrivals {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 .notification-history-path {
   overflow-wrap: anywhere;
@@ -178,10 +164,4 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 8px;
-}
-.notification-options {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
 }

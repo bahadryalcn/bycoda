@@ -446,9 +446,9 @@ it("edits name color and kind without changing profile identity or default", () 
   expect(providerAccounts("codex")[0].kind).toBe("work");
   expect(sessionProviderAccountId("codex", { providerAccountId: original.id })).toBe(original.id);
   expect(editProviderAccount("codex", original.id, { label: "Personal" })).toBe(true);
-  expect(providerAccounts("codex")[0].kind).toBeUndefined();
+  expect(providerAccounts("codex")[0].kind).toBe("work");
 });
-it("leaves migration-free metadata absent and rejects invalid edits", () => {
+it("leaves legacy kind unset for detection without rewriting storage and rejects invalid edits", () => {
   const original = providerAccounts("claude");
   expect(original[0].kind).toBeUndefined();
   expect(localStorage.getItem("bycoda.providerAccounts.v2")).toBeNull();
@@ -465,6 +465,7 @@ describe("shared CLI accounts", () => {
       id: DEFAULT_PROVIDER_ACCOUNT_ID,
       provider: "opencode",
       label: "",
+      kind: "personal",
     });
   });
 
@@ -484,7 +485,7 @@ describe("shared CLI accounts", () => {
     expect(sharedCliAccount("opencode").label).toBe("");
     expect(changed).toHaveBeenCalledTimes(2);
     saveSharedCliAccount({ provider: "antigravity", kind: undefined });
-    expect(sharedCliAccount("antigravity").kind).toBeUndefined();
+    expect(sharedCliAccount("antigravity").kind).toBe("work");
   });
 
   it("ignores malformed shared account storage", () => {
@@ -496,6 +497,7 @@ describe("shared CLI accounts", () => {
       id: DEFAULT_PROVIDER_ACCOUNT_ID,
       provider: "opencode",
       label: "",
+      kind: "personal",
     });
   });
 });

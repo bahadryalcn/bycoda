@@ -1,19 +1,29 @@
 import { InlineError } from "../../../../shared/ui/InlineError";
+import { ErrorDetails } from "../../../../shared/ui/ErrorDetails";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { formatDate, t } from "../../../../shared/i18n";
 import { truncateGraphemes } from "../../../../shared/lib/text/truncate";
-import { Heading } from "../../../../shared/ui/Heading";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
-import { ActivityRow } from "../common/ActivityRow";
+import { ActivityRow, type ActivityKind } from "../common/ActivityRow";
 import { TechnicalDetails } from "../common/TechnicalDetails";
 import type { StatusTextStatus } from "../common/StatusText";
+import { CollectionFooter } from "../../../../shared/ui/ContinuousList";
 import type { AiAction } from "../../model/autonomy";
 import type { SocialAccount, SocialJob } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
+import {
+  appendUnique,
+  mergeActivity,
+  readActions,
+  readJobs,
+  type LoadedHistory,
+} from "./activityHistoryModel";
 import { useAccountWrite } from "./useAccountWrite";
+import { useRequestToken } from "./useRequestToken";
 import "./accounts.css";
 
 export type ActivityHistoryProps = {
@@ -21,8 +31,6 @@ export type ActivityHistoryProps = {
   accounts: SocialAccount[];
   projectId?: string;
 };
-
-const JOB_LIMIT = 20;
 
 function jobKindText(kind: SocialJob["kind"]): string {
   switch (kind) {
@@ -34,6 +42,20 @@ function jobKindText(kind: SocialJob["kind"]): string {
       return t("Direct messages");
     case "comment":
       return t("Comments");
+  }
+}
+
+/** Glyph kind for a job; comments have no dedicated glyph and fall back to "other". */
+function jobActivityKind(kind: SocialJob["kind"]): ActivityKind {
+  switch (kind) {
+    case "publish":
+      return "publish";
+    case "reply":
+      return "reply";
+    case "message":
+      return "message";
+    case "comment":
+      return "other";
   }
 }
 
@@ -70,36 +92,46 @@ function aiStatus(status: AiAction["status"]): StatusTextStatus {
  * AI actions can be undone only when the Host recorded an inverse.
  */
 export function ActivityHistory({ client, accounts, projectId }: ActivityHistoryProps) {
-  const [jobs, setJobs] = useState<SocialJob[]>([]);
-  const [actions, setActions] = useState<AiAction[]>([]);
+  const [history, setHistory] = useState<LoadedHistory>({
+    jobs: [],
+    actions: [],
+  });
   const [settled, setSettled] = useState<object>();
-  const [loadError, setLoadError] = useState("");
+  const [loadProblem, setLoadProblem] = useState<{ title: string; details?: string }>();
+  // Both are keyed by the request they belong to, so a reload or scope change drops them.
+  const [moreLoading, setMoreLoading] = useState<object>();
+  const [moreFailed, setMoreFailed] = useState<object>();
   const [attempt, setAttempt] = useState(0);
-  const { error, write } = useAccountWrite(t("The action could not be undone. Try again."));
+  const { failureTitle, details, write } = useAccountWrite(
+    t("The action could not be undone. Try again."),
+  );
 
   // A new request object marks every reload as pending until its read settles.
-  const request = useMemo(() => ({}), [attempt, client, projectId]);
+  const request = useRequestToken([attempt, client, projectId]);
   const loading = settled !== request;
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Reads the Host job and AI action history for this request; `alive` drops a read that settles after a reload or scope change.
   useEffect(() => {
     let alive = true;
-    Promise.all([
-      client.sectionSnapshot({
-        section: "history",
-        limit: JOB_LIMIT,
-        ...(projectId ? { projectId } : {}),
-      }),
-      client.ai.actions({}),
-    ])
+    Promise.all([readJobs(client, projectId), readActions(client)])
       .then(
-        ([response, page]) => {
+        ([jobPage, actionPage]) => {
           if (!alive) return;
-          setJobs((response.snapshot?.jobs ?? []).slice(0, JOB_LIMIT));
-          setActions(page.items);
-          setLoadError("");
+          setHistory({
+            request,
+            jobs: jobPage.jobs,
+            jobsNext: jobPage.next,
+            actions: actionPage.items,
+            actionsNext: actionPage.next,
+          });
+          setLoadProblem(undefined);
         },
-        () => {
-          if (alive) setLoadError(t("The activity could not be read. Try again."));
+        (reason) => {
+          if (alive)
+            setLoadProblem({
+              title: t("The activity could not be read. Try again."),
+              details: presentRemoteError(reason, { explicit: true }),
+            });
         },
       )
       .finally(() => {
@@ -110,26 +142,67 @@ export function ActivityHistory({ client, accounts, projectId }: ActivityHistory
     };
   }, [request, client, projectId]);
 
-  const reload = useCallback(() => setAttempt((value) => value + 1), []);
+  const reload = () => setAttempt((value) => value + 1);
+  const loadMore = () => {
+    if (history.request !== request || moreLoading === request) return;
+    const { jobsNext, actionsNext } = history;
+    setMoreLoading(request);
+    setMoreFailed(undefined);
+    Promise.all([
+      jobsNext === undefined ? undefined : readJobs(client, projectId, jobsNext),
+      actionsNext === undefined ? undefined : readActions(client, actionsNext),
+    ])
+      .then(
+        ([jobPage, actionPage]) =>
+          // A reload or scope change in the meantime replaced the history this page continues.
+          setHistory((current) =>
+            current.request === request
+              ? {
+                  request,
+                  jobs: jobPage ? appendUnique(current.jobs, jobPage.jobs) : current.jobs,
+                  jobsNext: jobPage ? jobPage.next : current.jobsNext,
+                  actions: actionPage
+                    ? appendUnique(current.actions, actionPage.items)
+                    : current.actions,
+                  actionsNext: actionPage ? actionPage.next : current.actionsNext,
+                }
+              : current,
+          ),
+        () => setMoreFailed(request),
+      )
+      .finally(() => setMoreLoading((current) => (current === request ? undefined : current)));
+  };
+  const { entries, held } = mergeActivity(
+    history.jobs,
+    history.actions,
+    history.jobsNext !== undefined,
+    history.actionsNext !== undefined,
+  );
+  const hasMore = history.jobsNext !== undefined || history.actionsNext !== undefined || held > 0;
   const nameOf = (accountId: string) =>
-    accounts.find((account) => account.id === accountId)?.name ?? "";
+    accounts.find((account) => account.id === accountId)?.name ?? t("Removed account");
 
   return (
     <section
       {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
       aria-label={t("Activity")}
     >
-      <Heading size="item">{t("Activity")}</Heading>
-      {loadError ? (
-        <InlineError retry={{ onRetry: reload, label: t("Try again") }}>{loadError}</InlineError>
+      {loadProblem ? (
+        <InlineError
+          details={loadProblem.details}
+          retry={{ onRetry: reload, label: t("Try again") }}
+        >
+          {loadProblem.title}
+        </InlineError>
+      ) : failureTitle ? (
+        <InlineError details={details}>{failureTitle}</InlineError>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
-      {loading && !jobs.length && !actions.length ? (
+      {loading && !entries.length ? (
         <LoadingText delay={false} className="social-muted">
           {t("Loading…")}
         </LoadingText>
       ) : null}
-      {!loading && !jobs.length && !actions.length && !loadError ? (
+      {!loading && !entries.length && !hasMore && !loadProblem ? (
         <EmptyState
           size="inline"
           kind="empty"
@@ -137,62 +210,88 @@ export function ActivityHistory({ client, accounts, projectId }: ActivityHistory
           description={t("Nothing has been sent or changed yet.")}
         />
       ) : null}
-      {jobs.map((job) => (
-        <div key={job.id}>
+      {entries.map((entry) => {
+        if (entry.kind === "job") {
+          const { job } = entry;
+          return (
+            <div key={`job:${job.id}`}>
+              <ActivityRow
+                title={`${jobKindText(job.kind)} · ${nameOf(job.accountId)}`}
+                time={formatDate(job.createdAt, {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                })}
+                status={job.status}
+                kind={jobActivityKind(job.kind)}
+                details={
+                  <>
+                    <p>{truncateGraphemes(job.payload.text, 160)}</p>
+                    {job.status === "review" ? (
+                      <InlineMessage tone="warning" live="off">
+                        {reviewReasonText(job.reviewReason)}
+                      </InlineMessage>
+                    ) : null}
+                    {job.error ? (
+                      <ErrorDetails
+                        detail={job.error}
+                        title={`${jobKindText(job.kind)} · ${nameOf(job.accountId)}`}
+                      />
+                    ) : null}
+                  </>
+                }
+              />
+            </div>
+          );
+        }
+        const { action } = entry;
+        return (
           <ActivityRow
-            title={`${jobKindText(job.kind)} · ${nameOf(job.accountId)}`}
-            time={formatDate(job.createdAt, { dateStyle: "medium", timeStyle: "short" })}
-            status={job.status}
+            key={`action:${action.id}`}
+            title={action.summary}
+            time={formatDate(action.at, {
+              dateStyle: "medium",
+              timeStyle: "short",
+            })}
+            status={aiStatus(action.status)}
+            kind="other"
             details={
               <>
-                <p>{truncateGraphemes(job.payload.text, 160)}</p>
-                {job.error ? (
-                  <TechnicalDetails>
-                    <p>{job.error}</p>
-                  </TechnicalDetails>
-                ) : null}
+                <TechnicalDetails>
+                  <p>{action.action}</p>
+                  {action.reason ? <p>{action.reason}</p> : null}
+                </TechnicalDetails>
               </>
             }
+            undo={
+              action.undo
+                ? {
+                    onUndo: () =>
+                      void write(`undo:${action.id}`, () => client.ai.undo(action.id))
+                        .then((result) => result !== undefined && reload())
+                        .catch(() => undefined),
+                    ...(action.status === "undone"
+                      ? { blockedReason: t("Already undone.") }
+                      : action.status !== "done"
+                        ? {
+                            blockedReason: t("Only finished actions can be undone."),
+                          }
+                        : {}),
+                  }
+                : undefined
+            }
           />
-          {job.status === "review" ? (
-            <InlineMessage tone="warning" live="off" className="social-history-held-reason">
-              {reviewReasonText(job.reviewReason)}
-            </InlineMessage>
-          ) : null}
-        </div>
-      ))}
-      {actions.map((action) => (
-        <ActivityRow
-          key={action.id}
-          title={action.summary}
-          time={formatDate(action.at, { dateStyle: "medium", timeStyle: "short" })}
-          status={aiStatus(action.status)}
-          details={
-            <>
-              {action.undo ? null : <p>{t("This action cannot be undone.")}</p>}
-              <TechnicalDetails>
-                <p>{action.action}</p>
-                {action.reason ? <p>{action.reason}</p> : null}
-              </TechnicalDetails>
-            </>
-          }
-          undo={
-            action.undo
-              ? {
-                  onUndo: () =>
-                    void write(`undo:${action.id}`, () => client.ai.undo(action.id))
-                      .then((result) => result !== undefined && reload())
-                      .catch(() => undefined),
-                  ...(action.status === "undone"
-                    ? { blockedReason: t("Already undone.") }
-                    : action.status !== "done"
-                      ? { blockedReason: t("Only finished actions can be undone.") }
-                      : {}),
-                }
-              : undefined
-          }
+        );
+      })}
+      {history.request === request && hasMore ? (
+        <CollectionFooter
+          hasMore
+          loading={moreLoading === request}
+          error={moreFailed === request ? t("The activity could not be read. Try again.") : null}
+          partial={t("More activity is available. Load more to include older entries.")}
+          onLoadMore={loadMore}
+          onRetry={loadMore}
         />
-      ))}
+      ) : null}
     </section>
   );
 }

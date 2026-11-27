@@ -1,4 +1,4 @@
-import type { ComponentPropsWithRef, ReactNode } from "react";
+import type { ComponentPropsWithRef, CSSProperties, ReactNode } from "react";
 import styles from "./Meter.module.css";
 
 export type MeterTone = "neutral" | "accent" | "success" | "info" | "warning" | "danger";
@@ -16,6 +16,8 @@ export type MeterProps = Omit<ComponentPropsWithRef<"div">, "children" | "role">
   danger?: number;
   /** Tone below the thresholds. Default `neutral` (secondary ink). */
   tone?: MeterTone;
+  /** Fill from a chart series palette. Threshold meters use their semantic tones. */
+  color?: string;
   /** Linear bars are always 4px thick; ring: 16px / 24px. Default `sm`. */
   size?: "sm" | "md";
   /** Accessible name. Use `aria-labelledby` instead when a visible label names it. */
@@ -58,11 +60,13 @@ export function Meter({
   warning,
   danger,
   tone,
+  color,
   size = "sm",
   label,
   valueText,
   children,
   className,
+  style,
   ...props
 }: MeterProps) {
   const span = max - min;
@@ -84,6 +88,10 @@ export function Meter({
     "aria-valuetext": known ? (valueText ?? props["aria-valuetext"]) : undefined,
     "data-tone": meterTone(value, { warning, danger, tone }),
     "data-size": size,
+    style:
+      color && warning === undefined && danger === undefined
+        ? ({ ...style, "--meter-series-color": color } as CSSProperties)
+        : style,
   };
   if (variant === "ring")
     return (

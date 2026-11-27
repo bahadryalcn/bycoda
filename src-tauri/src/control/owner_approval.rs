@@ -12,6 +12,15 @@ pub(crate) struct Prompt<'a> {
     pub cancel: &'a str,
 }
 
+/// Where a request came from, so the owner can open the conversation or Room that asked.
+/// Display and navigation only: authority stays with the source window and its checks.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Source<'a> {
+    pub session: Option<&'a str>,
+    pub thread: Option<&'a str>,
+    pub cwd: Option<&'a str>,
+}
+
 /// What the webview shows: a yes/no approval, or a masked input whose reply is the owner's text.
 #[derive(Clone, Copy)]
 pub(crate) enum ApprovalChannel<'a> {
@@ -20,7 +29,7 @@ pub(crate) enum ApprovalChannel<'a> {
 }
 
 pub(crate) fn ask_window(app: &AppHandle, window: &WebviewWindow, prompt: Prompt<'_>) -> bool {
-    ask(app, window, None, prompt, || Ok(())).unwrap_or(false)
+    ask(app, window, Source::default(), prompt, || Ok(())).unwrap_or(false)
 }
 pub(crate) fn ask_window_checked(
     app: &AppHandle,
@@ -28,22 +37,44 @@ pub(crate) fn ask_window_checked(
     prompt: Prompt<'_>,
     check: impl Fn() -> Result<(), String>,
 ) -> bool {
-    ask(app, window, None, prompt, check).unwrap_or(false)
+    ask(app, window, Source::default(), prompt, check).unwrap_or(false)
+}
+/// Like `ask_window_checked` for a Room operation: the request names its Room and project.
+pub(crate) fn ask_room_checked(
+    app: &AppHandle,
+    window: &WebviewWindow,
+    thread: &str,
+    cwd: &str,
+    prompt: Prompt<'_>,
+    check: impl Fn() -> Result<(), String>,
+) -> bool {
+    let source = Source {
+        thread: Some(thread),
+        cwd: Some(cwd),
+        ..Source::default()
+    };
+    ask(app, window, source, prompt, check).unwrap_or(false)
 }
 
 pub(crate) fn ask_focused(app: &AppHandle, prompt: Prompt<'_>) -> bool {
     ask_focused_result(app, prompt).unwrap_or(false)
 }
+/// The application's own consent questions: the message is prose for the owner, not an exact
+/// operation to inspect, so the webview shows it as text instead of on the code ground.
 pub(crate) fn ask_focused_result(app: &AppHandle, prompt: Prompt<'_>) -> Result<bool, String> {
     let windows = crate::window::workspace_windows(app);
     let focused = windows.iter().find(|w| w.is_focused().unwrap_or(false));
     let window = focused.or_else(|| (windows.len() == 1).then(|| &windows[0]));
-    ask(
+    ask_as(
         app,
         window.ok_or("Approval source window unavailable")?,
-        None,
+        Source::default(),
+        ApprovalChannel::Approval,
         prompt,
+        json!({ "presentation": "text" }),
+        None,
         || Ok(()),
+        decision,
     )
 }
 
@@ -131,10 +162,11 @@ fn ask_conversation_as<T>(
     ask_as(
         app,
         &window,
-        session,
+        conversation_source(request),
         channel,
         prompt,
         details,
+        room_operation_id(request),
         || {
             check()?;
             let now = SystemTime::now()
@@ -154,20 +186,46 @@ fn ask_conversation_as<T>(
     )
 }
 
+/// The conversation that asked, or the Room when no conversation did, and the project it acts on.
+fn conversation_source(request: &Value) -> Source<'_> {
+    let session = request["sessionId"].as_str();
+    Source {
+        session,
+        thread: if session.is_some() {
+            None
+        } else {
+            request["threadId"].as_str()
+        },
+        cwd: request["cwd"].as_str(),
+    }
+}
+
+fn room_operation_id(request: &Value) -> Option<&str> {
+    if request["threadId"].as_str().is_none() || request["sessionId"].as_str().is_some() {
+        return None;
+    }
+    let input = &request["input"];
+    input["operation"]["input"]["requestId"]
+        .as_str()
+        .or_else(|| input["requestId"].as_str())
+        .or_else(|| input["operationId"].as_str())
+}
+
 fn ask(
     app: &AppHandle,
     window: &WebviewWindow,
-    session: Option<&str>,
+    source: Source<'_>,
     prompt: Prompt<'_>,
     check: impl Fn() -> Result<(), String>,
 ) -> Result<bool, String> {
     ask_as(
         app,
         window,
-        session,
+        source,
         ApprovalChannel::Approval,
         prompt,
         Value::Null,
+        None,
         check,
         decision,
     )
@@ -176,10 +234,11 @@ fn ask(
 fn ask_as<T>(
     app: &AppHandle,
     window: &WebviewWindow,
-    session: Option<&str>,
+    source: Source<'_>,
     channel: ApprovalChannel<'_>,
     prompt: Prompt<'_>,
     details: Value,
+    operation_id: Option<&str>,
     check: impl Fn() -> Result<(), String>,
     decode: impl Fn(&Value) -> Result<T, String>,
 ) -> Result<T, String> {
@@ -223,11 +282,15 @@ fn ask_as<T>(
         if !details.is_null() {
             input["details"] = details;
         }
+        if let Some(operation_id) = operation_id {
+            input["operationId"] = json!(operation_id);
+        }
         if let ApprovalChannel::Secret { field } = channel {
             input["fieldLabel"] = json!(field);
         }
         let event = json!({
-            "id":id, "namespace":namespace, "action":action, "sessionId":session, "input":input,
+            "id":id, "namespace":namespace, "action":action, "sessionId":source.session,
+            "threadId":source.thread, "cwd":source.cwd, "input":input,
         });
         let last_offer = std::cell::Cell::new(Instant::now() - Duration::from_secs(2));
         wait_for_decision(
@@ -313,6 +376,33 @@ fn secret_decision(value: &Value) -> Result<Option<String>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn names_the_conversation_or_else_the_room_that_asked() {
+        let coding = json!({ "sessionId": "s1", "threadId": "room", "cwd": "/repo" });
+        let source = conversation_source(&coding);
+        assert_eq!(
+            (source.session, source.thread, source.cwd),
+            (Some("s1"), None, Some("/repo"))
+        );
+        let room = json!({ "threadId": "room", "cwd": "/repo" });
+        let source = conversation_source(&room);
+        assert_eq!(
+            (source.session, source.thread, source.cwd),
+            (None, Some("room"), Some("/repo"))
+        );
+    }
+    #[test]
+    fn reports_the_reviewed_room_effect_id_instead_of_the_approval_id() {
+        let request = json!({
+            "id": "native-approval",
+            "threadId": "room",
+            "input": { "operation": { "input": { "requestId": "crew-save" } } }
+        });
+        assert_eq!(room_operation_id(&request), Some("crew-save"));
+        let mut coding_approval = request;
+        coding_approval["sessionId"] = json!("unrelated-session");
+        assert_eq!(room_operation_id(&coding_approval), None);
+    }
     #[test]
     fn exact_decisions_only_and_revocation_wins_over_a_queued_yes() {
         assert_eq!(decision(&json!({"ok":true,"result":true})), Ok(true));

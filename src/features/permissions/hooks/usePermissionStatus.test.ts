@@ -4,15 +4,9 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 const native = vi.hoisted(() => ({
   read: vi.fn(),
-  listener: undefined as undefined | ((report: unknown) => void),
-  dispose: vi.fn(),
 }));
 vi.mock("../../../platform/tauri/systemPermissions", () => ({
   systemPermissionsStatus: native.read,
-  listenSystemPermissionsChanged: (listener: (report: unknown) => void) => {
-    native.listener = listener;
-    return native.dispose;
-  },
 }));
 vi.mock("../../../shared/i18n", () => ({ t: (s: string) => s }));
 import { usePermissionStatus } from "./usePermissionStatus";
@@ -29,7 +23,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-it("reads on mount and focus, clears stale grants on error, accepts native changes and disposes", async () => {
+it("reads on mount and focus, clears stale grants on error and detaches on unmount", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   native.read.mockResolvedValue(report("granted"));
   const root = createRoot(document.createElement("div"));
@@ -44,13 +38,101 @@ it("reads on mount and focus, clears stale grants on error, accepts native chang
   await act(async () => window.dispatchEvent(new Event("focus")));
   expect(current.entries[0].state).toBe("unknown");
   expect(current.failed).toBe(true);
-  await act(async () => native.listener?.(report("denied")));
+  native.read.mockResolvedValue(report("denied"));
+  await act(async () => window.dispatchEvent(new Event("focus")));
   expect(current.entries[0].state).toBe("denied");
   act(() => root.unmount());
-  expect(native.dispose).toHaveBeenCalledOnce();
+  native.read.mockClear();
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(native.read).not.toHaveBeenCalled();
 });
 
-it("polls only during setup and ignores a late read after a newer event", async () => {
+it("shares one report and one focus read across consumers", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const listen = vi.spyOn(window, "addEventListener");
+  native.read.mockResolvedValue(report("granted"));
+  const root = createRoot(document.createElement("div"));
+  const seen: ReturnType<typeof usePermissionStatus>[] = [];
+  function Probe({ index }: { index: number }) {
+    seen[index] = usePermissionStatus(["microphone"]);
+    return null;
+  }
+  await act(async () =>
+    root.render(
+      createElement(
+        "div",
+        null,
+        [0, 1, 2, 3, 4, 5, 6].map((i) => createElement(Probe, { key: i, index: i })),
+      ),
+    ),
+  );
+  expect(native.read).toHaveBeenCalledTimes(1);
+  expect(listen.mock.calls.filter(([type]) => (type as string) === "focus")).toHaveLength(1);
+  expect(seen.every((row) => row.entries[0].state === "granted")).toBe(true);
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(native.read).toHaveBeenCalledTimes(2);
+  // A failed read flips every consumer together and never keeps a stale grant.
+  native.read.mockRejectedValue(new Error("command unavailable"));
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(seen.every((row) => row.failed && row.entries[0].state === "unknown")).toBe(true);
+  act(() => root.unmount());
+  listen.mockRestore();
+});
+
+it("joins a current focus read but an explicit recheck always reads again", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  native.read.mockResolvedValue(report("denied"));
+  const root = createRoot(document.createElement("div"));
+  let current!: ReturnType<typeof usePermissionStatus>;
+  function Probe() {
+    current = usePermissionStatus(["microphone"]);
+    return null;
+  }
+  await act(async () => root.render(createElement(Probe)));
+  const pending: ((value: unknown) => void)[] = [];
+  native.read.mockImplementation(() => new Promise((done) => pending.push(done)));
+  await act(async () => {
+    window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new Event("focus"));
+  });
+  expect(native.read).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    void current.refresh();
+  });
+  expect(native.read).toHaveBeenCalledTimes(3);
+  // The older probe started before the recheck must not overwrite its result.
+  await act(async () => pending[1](report("granted")));
+  await act(async () => pending[0](report("denied")));
+  expect(current.entries[0].state).toBe("granted");
+  act(() => root.unmount());
+});
+
+it("pauses the setup poll while the window is hidden and reads once when it shows again (#603)", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  native.read.mockResolvedValue(report("denied"));
+  const root = createRoot(document.createElement("div"));
+  function Probe() {
+    usePermissionStatus(["microphone"], true);
+    return null;
+  }
+  let hidden = false;
+  const visibility = vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+  try {
+    await act(async () => root.render(createElement(Probe)));
+    native.read.mockClear();
+    hidden = true;
+    await act(async () => vi.advanceTimersByTime(5000));
+    expect(native.read).not.toHaveBeenCalled();
+    hidden = false;
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    expect(native.read).toHaveBeenCalledTimes(1);
+    act(() => root.unmount());
+  } finally {
+    visibility.mockRestore();
+  }
+});
+it("polls only during setup and stops when the dialog closes", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
   native.read.mockResolvedValue(report("denied"));
@@ -64,17 +146,10 @@ it("polls only during setup and ignores a late read after a newer event", async 
   await act(async () => vi.advanceTimersByTime(2000));
   expect(native.read).toHaveBeenCalledTimes(1);
   await act(async () => root.render(createElement(Probe, { open: true })));
-  let resolve!: (value: unknown) => void;
-  native.read.mockImplementation(
-    () =>
-      new Promise((done) => {
-        resolve = done;
-      }),
-  );
+  native.read.mockResolvedValue(report("granted"));
   await act(async () => vi.advanceTimersByTime(1000));
-  await act(async () => native.listener?.(report("granted")));
-  await act(async () => resolve(report("denied")));
   expect(current.entries[0].state).toBe("granted");
-  act(() => root.unmount());
+  await act(async () => root.render(createElement(Probe, { open: false })));
   expect(vi.getTimerCount()).toBe(0);
+  act(() => root.unmount());
 });

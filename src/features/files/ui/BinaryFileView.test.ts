@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { showErrorDetails } from "./errorDetails.test-support";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BinaryFileView } from "./BinaryFileView";
 
@@ -85,8 +86,10 @@ describe("BinaryFileView image copy", () => {
     expect(document.activeElement).toBe(copy);
     await act(async () => reject(new Error("Clipboard unavailable")));
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "Clipboard unavailable",
+      "Couldn’t copy the file",
     );
+    await showErrorDetails(container);
+    expect(document.body.textContent).toContain("Clipboard unavailable");
     await act(async () => copy.click());
     expect(actions.copyFileToClipboard).toHaveBeenCalledTimes(2);
     expect(container.querySelector('[role="alert"]')).toBeNull();
@@ -113,8 +116,10 @@ describe("BinaryFileView image copy", () => {
     expect(reveal.getAttribute("aria-busy")).toBe("true");
     await act(async () => reject(new Error("File manager unavailable")));
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "File manager unavailable",
+      "Couldn’t open the file location",
     );
+    await showErrorDetails(container);
+    expect(document.body.textContent).toContain("File manager unavailable");
     await act(async () => reveal.click());
     expect(actions.reveal).toHaveBeenCalledTimes(2);
   });
@@ -133,7 +138,7 @@ describe("BinaryFileView image copy", () => {
     expect(event.defaultPrevented).toBe(true);
     const menu = document.querySelector<HTMLElement>('[role="menu"][aria-label="Image actions"]')!;
     const copy = Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(
-      (button) => button.textContent === "Copy Original File",
+      (button) => button.textContent === "Copy original file",
     )!;
 
     await act(async () => copy.click());

@@ -1,0 +1,42 @@
+.mount:empty {
+  display: none;
+}
+
+.mount :global(.cm-editor.cm-focused) {
+  /* ui-drift-ignore: surface-style -- The shared composer focus group owns focus. Reset CodeMirror's nested dotted ring. */
+  outline: revert;
+}
+
+.mount :global(.cm-scroller) {
+  max-block-size: var(--composer-draft-max-height);
+  overflow: auto;
+  font-family: var(--font-sans);
+}
+
+:global([data-composer-reading]) .mount :global(.cm-scroller) {
+  max-block-size: clamp(68px, 20vh, 132px);
+}
+
+.mount :global(.cm-editor .cm-content) {
+  min-block-size: 4.25rem;
+  padding: 0.75rem;
+  caret-color: var(--color-content);
+  font-family: var(--font-sans);
+  /* ui-drift-ignore: feature-typography -- Use the enclosing shared Text size instead of the code editor zoom. */
+  font-size: inherit;
+}
+
+:global([data-composer-reading]) .mount :global(.cm-content) {
+  min-block-size: 2.875rem;
+}
+
+.mount :global(.cm-line) {
+  padding: 0;
+  /* ui-drift-ignore: feature-typography -- CodeMirror owns the line nodes and shares this line height with its caret geometry. */
+  line-height: 1.65;
+}
+
+.mount :global(.cm-placeholder) {
+  /* ui-drift-ignore: feature-typography -- CodeMirror owns the placeholder node. Use the native editor's placeholder ink. */
+  color: var(--ui-text-muted);
+}

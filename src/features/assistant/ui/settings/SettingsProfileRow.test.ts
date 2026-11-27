@@ -67,13 +67,10 @@ it("renders profile controls as settings rows when the dialog turns rows on", as
   expect(groups).toEqual(["Tone", "Allow profanity"]);
   expect(container.textContent).not.toContain("One short line.");
   expect(container.textContent).not.toContain("Style only.");
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('button[aria-label="Tone: Help"]')!.click(),
-  );
-  expect(document.body.textContent).toContain("One short line.");
-  await act(async () =>
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
-  );
+  const hint = container.querySelector<HTMLElement>('[role="img"][aria-label="Tone"]')!;
+  expect(hint.tabIndex).toBe(0);
+  await act(async () => hint.click());
+  expect(document.body.querySelector('[role="dialog"]')).toBeNull();
   // The row owns the visible label, so the control keeps it only as its accessible name.
   expect(container.querySelector('button[aria-label^="Tone:"]')).toBeTruthy();
   const toggle = container.querySelector<HTMLButtonElement>(

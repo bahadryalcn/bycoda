@@ -19,6 +19,16 @@ export function isDefaultQueueChord(event: {
 }
 
 /**
+ * Whether a pressed queue chord consumes the key (preventDefault + stop). A Tab
+ * chord only takes the key while it really queues; otherwise Shift+Tab must keep
+ * moving focus backwards out of the composer. A rebound non-Tab chord (for
+ * example Alt+Enter) is always consumed so it cannot fall through to Enter-send.
+ */
+export function queueChordConsumesKey(event: { key: string }, applies: boolean): boolean {
+  return applies || event.key !== "Tab";
+}
+
+/**
  * Whether the queue shortcut should act on this key press. It only takes the
  * key over while a turn is genuinely running and there is a message to queue;
  * in every other state the press is left alone, so Shift+Tab keeps moving focus
@@ -29,6 +39,8 @@ export function queueShortcutApplies(input: {
   busy: boolean;
   /** Only background commands keep the turn open; the agent has yielded. */
   backgroundOnly: boolean;
+  /** The turn has ended but delegated subagents still run: a queued message waits for them. */
+  subagentsRunning?: boolean;
   allowBusySubmit: boolean;
   disabled: boolean;
   popupOpen: boolean;
@@ -36,7 +48,7 @@ export function queueShortcutApplies(input: {
   text: string;
   attachmentCount: number;
 }): boolean {
-  if (!input.busy || !input.allowBusySubmit) return false;
+  if (input.busy ? !input.allowBusySubmit : !input.subagentsRunning) return false;
   if (input.disabled || input.popupOpen || input.draftMode) {
     return false;
   }

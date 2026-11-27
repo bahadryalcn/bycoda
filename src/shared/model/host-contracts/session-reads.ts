@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { HostRpcMethodDefinition } from "./methods";
-import { DelegationParentSchema } from "./delegation";
+import { BackgroundOwnerSchema, DelegationParentSchema } from "./delegation";
 import { IdentifierSchema, JsonObjectSchema, SafeCounterSchema } from "./schemas";
 import { SessionProviderSchema, SessionRuntimeModeSchema } from "./session-commands";
 
@@ -35,6 +35,10 @@ export const SessionsBlockParamsSchema = z.strictObject({
   sessionId: IdentifierSchema,
   blockId: z.string(),
   revision: SafeCounterSchema,
+});
+export const SessionsInlineVisualParamsSchema = z.strictObject({
+  sessionId: IdentifierSchema,
+  id: z.string().min(64).max(64),
 });
 export const SessionReferenceLocatorSchema = z.discriminatedUnion("kind", [
   z.strictObject({
@@ -138,6 +142,7 @@ export const SessionSummarySchema = z.strictObject({
   ...metadata,
   id: IdentifierSchema,
   delegationParent: DelegationParentSchema.nullable().optional(),
+  backgroundOwner: BackgroundOwnerSchema.optional(),
   title: z.string(),
   harness: SessionProviderSchema,
   providerHistory: z
@@ -253,6 +258,7 @@ export function sessionReadMethods(
     "sessions.syncChunk": sessionRead(SessionsSyncChunkParamsSchema, SessionsSyncChunkResultSchema),
     "sessions.get": sessionRead(SessionsGetParamsSchema, SessionViewSchema.nullable()),
     "sessions.block": sessionRead(SessionsBlockParamsSchema),
+    "sessions.inlineVisual": sessionRead(SessionsInlineVisualParamsSchema),
     "sessions.workedTime": sessionRead(SessionsWorkedTimeParamsSchema, SessionWorkedTimeSchema),
   };
 }

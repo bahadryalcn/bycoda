@@ -12,7 +12,7 @@ vi.mock("../../../shared/ui/SegmentedControl", () => ({
       ),
     ),
 }));
-import { ActivitySources } from "./ActivitySources";
+import { ActivitySources, activitySourceNote } from "./ActivitySources";
 it("names the direct machine scope without excluding its connected Hosts", () => {
   const overview: ActivityOverview = {
     source: "machines",
@@ -35,6 +35,7 @@ it("names the direct machine scope without excluding its connected Hosts", () =>
   };
   const html = renderToStaticMarkup(createElement(ActivitySources, { overview }));
   expect(html).toContain('data-value="machines">Machines');
-  expect(html).toContain("This machine + 1 connected machine");
+  expect(html).not.toContain("connected machine");
+  expect(activitySourceNote(overview)).toBe("This machine + 1 connected machine");
   expect(html).toContain("Unavailable");
 });

@@ -18,9 +18,13 @@ export function ProjectGitChangeRow({
   const format = useFormat();
   const files =
     change.files > 0
-      ? t(change.files === 1 ? "{p0} file" : "{p0} files", {
-          p0: format.formatNumber(change.files, { maximumFractionDigits: 0 }),
-        })
+      ? change.files === 1
+        ? t("{p0} file", {
+            p0: format.formatNumber(change.files, { maximumFractionDigits: 0 }),
+          })
+        : t("{p0} files", {
+            p0: format.formatNumber(change.files, { maximumFractionDigits: 0 }),
+          })
       : "";
   return (
     <Text

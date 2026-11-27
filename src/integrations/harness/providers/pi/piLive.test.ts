@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   request: vi.fn(),
   resolveBinary: vi.fn(),
   spawnChild: vi.fn(),
+  execChild: vi.fn(),
   killChild: vi.fn(),
   acquireHarnessBridge: vi.fn(),
   inspectHarnessBinary: vi.fn(),
@@ -24,6 +25,7 @@ vi.mock("../../core/child", () =>
     resolveOmpBinary: mocks.resolveBinary,
     resolvePiBinary: mocks.resolveBinary,
     spawnChild: mocks.spawnChild,
+    execChild: mocks.execChild,
     unwatchChild: vi.fn(),
     watchChild: vi.fn(),
     writeChild: vi.fn(),
@@ -100,6 +102,7 @@ describe("Pi live session", () => {
     mocks.request.mockReset();
     mocks.resolveBinary.mockReset();
     mocks.spawnChild.mockReset();
+    mocks.execChild.mockReset();
     mocks.killChild.mockReset();
     mocks.frames.length = 0;
     mocks.resolveBinary.mockResolvedValue({ path: "/fake/pi" });
@@ -121,6 +124,165 @@ describe("Pi live session", () => {
       }
       return { data: {} };
     });
+  });
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "creates and cold-resumes a $label delegate in its private directory",
+    async (flavor) => {
+      const sessionId = `private-${flavor.id}`;
+      const input = {
+        sessionId,
+        cwd: "/repo",
+        model: `${flavor.id}:default`,
+        runtimeMode: "supervised" as const,
+        delegateHistoryDirectory: "/private/agent",
+        onEvent: () => undefined,
+      };
+      await compactContext(flavor, input);
+      expect(mocks.spawnChild.mock.calls[0][2]).toEqual(
+        expect.arrayContaining(["--session-dir", "/private/agent"]),
+      );
+      expect(mocks.spawnChild.mock.calls[0][2]).not.toContain(flavor.resumeFlag);
+      await forgetSession(flavor, sessionId);
+      bindSession(flavor, sessionId, "pi_session", "/repo");
+      await compactContext(flavor, input);
+      expect(mocks.spawnChild.mock.calls[1][2]).toEqual(
+        expect.arrayContaining([
+          "--session-dir",
+          "/private/agent",
+          flavor.resumeFlag,
+          "pi_session",
+        ]),
+      );
+      expect(mocks.spawnChild.mock.calls[1][3]).toBe("/repo");
+      await forgetSession(flavor, sessionId);
+    },
+  );
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "refuses a replacement for a missing private $label session",
+    async (flavor) => {
+      const sessionId = `private-missing-${flavor.id}`;
+      bindSession(flavor, sessionId, "missing-session", "/repo");
+      mocks.request.mockRejectedValueOnce(new Error("Missing private session"));
+      await expect(
+        compactContext(flavor, {
+          sessionId,
+          cwd: "/repo",
+          model: `${flavor.id}:default`,
+          runtimeMode: "supervised",
+          delegateHistoryDirectory: "/private/agent",
+          onEvent: () => undefined,
+        }),
+      ).rejects.toThrow("Missing private session");
+      expect(mocks.spawnChild).toHaveBeenCalledOnce();
+      await forgetSession(flavor, sessionId);
+    },
+  );
+
+  it("rejects history that a provider opens outside the requested directory", async () => {
+    mocks.request.mockResolvedValueOnce({
+      data: { sessionId: "pi_session", sessionFile: "/shared/history/pi_session.jsonl" },
+    });
+    await expect(
+      compactPiContext({
+        sessionId: "private-escaped-path",
+        cwd: "/repo",
+        model: "pi:default",
+        runtimeMode: "supervised",
+        delegateHistoryDirectory: "/private/agent",
+        onEvent: () => undefined,
+      }),
+    ).rejects.toThrow("outside the delegated history directory");
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects an older Pi before starting a process or sending a prompt", async () => {
+    mocks.execChild.mockResolvedValue("--no-tools --no-extensions --help");
+    await expect(
+      sendPiTurn({
+        sessionId: "pi-chat-old",
+        cwd: "/scratch/run",
+        model: "pi:default",
+        runtimeMode: "supervised",
+        text: "test",
+        attachments: [],
+        modelSettings: { leanContext: "on" },
+        onEvent: () => undefined,
+      }),
+    ).rejects.toThrow("cannot enforce chat-only");
+    expect(mocks.execChild).toHaveBeenCalledWith(
+      "/fake/pi",
+      ["--no-extensions", "--no-mcp", "--no-approve", "--help"],
+      "/scratch/run",
+      "pi",
+      null,
+      "utility",
+    );
+    expect(mocks.spawnChild).not.toHaveBeenCalled();
+    expect(mocks.request).not.toHaveBeenCalled();
+  });
+
+  it("keeps scratch restrictions when resuming and never retries unrestricted", async () => {
+    mocks.execChild.mockResolvedValue(
+      "--no-tools --no-extensions --no-mcp --no-skills --no-prompt-templates --no-context-files --no-approve --system-prompt --session-dir --session",
+    );
+    bindSession(PI_FLAVOR, "pi-chat-resume", "native-session", "/scratch/run");
+    mocks.request.mockRejectedValueOnce(new Error("Resume failed"));
+    await expect(
+      compactContext(PI_FLAVOR, {
+        sessionId: "pi-chat-resume",
+        cwd: "/scratch/run",
+        model: "pi:default",
+        runtimeMode: "supervised",
+        modelSettings: { leanContext: "on" },
+        onEvent: () => undefined,
+      }),
+    ).rejects.toThrow("Resume failed");
+    expect(mocks.spawnChild).toHaveBeenCalledTimes(1);
+    expect(mocks.spawnChild.mock.calls[0][2]).toEqual(
+      expect.arrayContaining([
+        "--no-tools",
+        "--no-mcp",
+        "--session",
+        "native-session",
+        "--session-dir",
+        "/scratch/run/.bycoda-pi-sessions",
+      ]),
+    );
+    expect(mocks.spawnChild.mock.calls[0][3]).toBe("/scratch/run");
+  });
+
+  it("starts a fresh tool-free Pi session in scratch before prompting", async () => {
+    mocks.execChild.mockResolvedValue(
+      "--no-tools --no-extensions --no-mcp --no-skills --no-prompt-templates --no-context-files --no-approve --system-prompt --session-dir --session",
+    );
+    const turn = sendPiTurn({
+      sessionId: "pi-chat-fresh",
+      cwd: "/scratch/fresh",
+      model: "pi:default",
+      runtimeMode: "supervised",
+      text: "discuss",
+      attachments: [],
+      modelSettings: { leanContext: "on" },
+      onEvent: () => undefined,
+    });
+    await vi.waitFor(() =>
+      expect(mocks.request.mock.calls.some(([command]) => command.type === "prompt")).toBe(true),
+    );
+    expect(mocks.spawnChild.mock.calls[0][2]).toEqual(
+      expect.arrayContaining([
+        "--no-tools",
+        "--no-extensions",
+        "--no-mcp",
+        "--session-dir",
+        "/scratch/fresh/.bycoda-pi-sessions",
+      ]),
+    );
+    expect(mocks.spawnChild.mock.calls[0][3]).toBe("/scratch/fresh");
+    mocks.frames.at(-1)!({ type: "agent_end" });
+    await turn;
+    await stopPiSession("pi-chat-fresh");
   });
 
   it("applies omp compaction per session and resumes without an override on Default", async () => {

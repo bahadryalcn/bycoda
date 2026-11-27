@@ -30,7 +30,7 @@ async function fixture() {
     environmentId: "host",
     owner: { kind: "session", id: "session" },
     path: root,
-    branchRef: "refs/heads/bycoda/s/test",
+    branchRef: "refs/heads/by/test",
     baseRef: "refs/heads/main",
     baseCommit: "a".repeat(40),
     targetBranchRef: "refs/heads/main",

@@ -10,7 +10,7 @@ export function facebookCapabilities(): PlatformCapabilities {
     ),
     media: r(
       ["pages_manage_posts", "pages_read_engagement"],
-      "Up to four HTTPS images on a managed Page, including ordered multiple-image posts and alternative text. Explicit Reels accept one uploaded vertical MP4 up to 64 MiB with metadata and exact publication verification. Ordinary Page videos and Stories are not implemented.",
+      "Managed Page images, video, Reels and Stories. Format limits depend on the destination.",
     ),
     "comments.read": r(
       ["pages_read_engagement", "pages_read_user_content"],
@@ -52,13 +52,53 @@ export function facebookCapabilities(): PlatformCapabilities {
       delete: r(["pages_manage_posts"], "Deletes a managed Page post through the Graph API."),
       analytics: r(
         ["pages_read_engagement", "read_insights"],
-        "Basic post impressions and engagement counts. Metric names are unverified against live Graph; a metric Meta rejects fails the read.",
+        "Page media views and unique viewers, plus post media views and engagement counts.",
       ),
       "audience.collect": r(
         ["pages_read_engagement", "pages_read_user_content"],
         "Commenters and reactors on one selected managed post. Direct-message senders also need pages_messaging.",
       ),
+      // Facebook Page operations
+      "profile.read": r(
+        ["pages_read_engagement"],
+        "Managed Page details and follower and like counts.",
+      ),
+      "profile.update": r(
+        ["pages_manage_metadata", "business_management"],
+        "Owner-managed Page information and photos.",
+      ),
+      "post.edit": r(
+        ["pages_manage_posts", "pages_read_engagement"],
+        "Edit text on a managed Page post.",
+      ),
+      "post.schedule": r(
+        ["pages_manage_posts", "pages_read_engagement"],
+        "Native scheduling for supported Page posts and videos.",
+      ),
+      "comment.moderate": r(
+        ["pages_manage_engagement", "pages_read_user_content"],
+        "Moderate comments on managed Page content.",
+      ),
+      "comment.privateReply": r(
+        ["pages_messaging", "pages_read_user_content"],
+        "One Messenger reply to an eligible Page comment within seven days.",
+      ),
+      "mentions.read": r(
+        ["pages_read_user_content", "pages_show_list"],
+        "Read posts that tag this Page, subject to Meta access.",
+      ),
+      "live.read": r(
+        ["pages_read_engagement", "pages_read_user_content"],
+        "Read Page live video receipts and comments.",
+      ),
+      "live.transmit": r(
+        ["pages_manage_posts", "publish_video"],
+        "Owner-managed live streams on eligible Pages.",
+      ),
     },
-    browser: {},
+    browser: {
+      "profile.read": "Read profile photos from the verified Facebook actor.",
+      "profile.update": "Owner-confirmed edits to the verified Facebook Page or personal profile.",
+    },
   };
 }

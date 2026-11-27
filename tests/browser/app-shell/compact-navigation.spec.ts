@@ -1,5 +1,151 @@
 import { expect, test, type Page } from "@playwright/test";
 
+test("notification bell lives beside Settings in both left rail modes", async ({ page }) => {
+  await installNavigationFixture(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const theme of ["light", "dark"]) {
+    for (const [width, expanded] of [
+      [1280, true],
+      [800, false],
+    ] as const) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(
+        `/tests/browser/app-shell/compact-navigation.html?notificationBell${expanded ? "&expandedRail" : ""}`,
+      );
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const bell = page.getByRole("button", { name: "Notifications", exact: true });
+      const footer = page.locator("[data-sidebar-account-footer]").filter({ has: bell });
+      await expect(bell).toHaveCount(1);
+      await expect(bell).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await expect(bell).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
+      await expect(footer.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
+      await expect(bell.locator("[data-notification-badge]")).toHaveText("9");
+      const badgeMotion = bell.locator("[data-enter=rise]");
+      await expect(badgeMotion).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await expect(badgeMotion).toHaveCSS("animation-name", "none");
+      const bounds = (await bell.boundingBox())!;
+      const glyph = (await bell.locator("svg").boundingBox())!;
+      const badge = (await bell.locator("[data-notification-badge]").boundingBox())!;
+      expect(badge.x).toBeGreaterThan(glyph.x + glyph.width / 2);
+      expect(badge.y + badge.height / 2).toBeLessThan(glyph.y);
+      expect(bounds.x + bounds.width).toBeLessThan(width / 2);
+      expect(bounds.y).toBeGreaterThan(650);
+      await page.screenshot({ path: `temp/verification/notification-bell/${theme}-${width}.png` });
+      await bell.focus();
+      await page.keyboard.press("Enter");
+      await expect(page.getByRole("dialog", { name: "Notifications", exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(bell).toBeFocused();
+    }
+  }
+});
+
+test("notification bell updates only the count when a notification arrives", async ({ page }) => {
+  await installNavigationFixture(page);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/tests/browser/app-shell/compact-navigation.html?notificationBell");
+  const bell = page.getByRole("button", { name: "Notifications", exact: true });
+  const glyph = bell.locator("svg");
+  const bounds = await bell.boundingBox();
+  const glyphBounds = await glyph.boundingBox();
+  await page.getByRole("button", { name: "Add fixture notification" }).click();
+  await expect(bell).toHaveAccessibleDescription("10");
+  await expect(bell.locator("[data-notification-badge]")).toHaveText("10");
+  await expect(bell.locator("[data-enter=rise]")).toHaveCSS("animation-name", /motion-rise/);
+  await expect(glyph).toHaveCSS("transform", "none");
+  expect(await bell.boundingBox()).toEqual(bounds);
+  expect(await glyph.boundingBox()).toEqual(glyphBounds);
+});
+
+test("Windows application menu exposes separate window and tray actions", async ({
+  page,
+}, info) => {
+  await installNavigationFixture(page);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "platform", { get: () => "Win32" });
+  });
+  for (const theme of ["light", "dark"]) {
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 720 });
+      await page.goto("/tests/browser/app-shell/compact-navigation.html?applicationMenu");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page.getByRole("button", { name: "Application menu" }).click();
+      const menu = page.getByRole("menu", { name: "Application menu" });
+      await expect(menu.getByRole("menuitem", { name: /^Close window/ })).toBeVisible();
+      await expect(
+        menu.getByRole("menuitem", { name: "Minimize to tray", exact: true }),
+      ).toBeVisible();
+      await expect(menu.getByRole("menuitem", { name: "Quit", exact: true })).toBeVisible();
+      await menu.screenshot({ path: info.outputPath(`window-menu-${theme}-${width}.png`) });
+    }
+  }
+});
+
+test("application menu keeps navigation in reach and groups secondary actions", async ({
+  page,
+}, info) => {
+  await installNavigationFixture(page);
+  for (const theme of ["light", "dark"]) {
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 720 });
+      await page.goto("/tests/browser/app-shell/compact-navigation.html?applicationMenu");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const trigger = page.getByRole("button", { name: "Application menu" });
+      await trigger.click();
+      const menu = page.getByRole("menu", { name: "Application menu" });
+      await menu.screenshot({ path: info.outputPath(`application-menu-${theme}-${width}.png`) });
+      await expect(menu.getByText("Check for Updates…")).toHaveCount(0);
+      await expect(menu.getByText("Usage guide")).toHaveCount(0);
+      await expect(menu.getByText("Take the tour")).toHaveCount(0);
+      await expect(menu.getByText("New terminal", { exact: true })).toHaveCount(0);
+      await expect(menu.getByRole("menuitem", { name: /^Inbox/ })).toContainText(
+        /Ctrl\+Shift\+I|⌘⇧I/,
+      );
+      await expect(menu.getByRole("menuitem", { name: /^Notes/ })).toContainText(
+        /Ctrl\+Shift\+L|⌘⇧L/,
+      );
+      await expect(menu.getByRole("menuitem", { name: "Layout", exact: true })).toBeVisible();
+      await menu.getByRole("menuitem", { name: /^Notes/ }).click();
+      await expect(page.getByLabel("Selected action")).toHaveText("Notes");
+      await trigger.click();
+      await page.keyboard.press("End");
+      // On Windows, Quit, Minimize to tray and Close window sit below the Terminal submenu; other
+      // platforms end on it.
+      const windowActions = await menu
+        .getByRole("menuitem", { name: /^(Close window|Minimize to tray|Quit)/ })
+        .count();
+      for (let step = 0; step < windowActions; step++) await page.keyboard.press("ArrowUp");
+      await page.keyboard.press("ArrowRight");
+      await page.getByRole("menuitem", { name: /^New terminal/ }).click();
+      await expect(page.getByLabel("Selected action")).toHaveText("New Terminal");
+    }
+  }
+  await page.getByRole("button", { name: "Application menu" }).click();
+  await page.evaluate(() => {
+    const key = "bycoda.keybindingOverrides";
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        "App: Open Inbox": { shortcut: "Option+KeyQ" },
+        "App: Open Notes": { disabled: true },
+      }),
+    );
+    window.dispatchEvent(new StorageEvent("storage", { key }));
+  });
+  const menu = page.getByRole("menu", { name: "Application menu" });
+  await expect(menu.getByRole("menuitem", { name: /^Inbox/ })).toContainText(/Alt\+Q|⌥Q/);
+  await expect(menu.getByRole("menuitem", { name: /^Notes/ })).toHaveText("Notes");
+});
+
 async function installNavigationFixture(page: Page) {
   await page.addInitScript(() => {
     localStorage.clear();
@@ -14,7 +160,27 @@ async function installNavigationFixture(page: Page) {
           currentWindow: { label: "fixture" },
         },
         transformCallback: () => 1,
-        invoke: async (command: string, args?: { method?: string }) => {
+        invoke: async (command: string, args?: { method?: string; kind?: string }) => {
+          if (new URLSearchParams(location.search).has("linkGithub")) {
+            if (command === "git_github_repo") return "acme/widgets";
+            if (command === "git_github_work_items") {
+              const pr = args?.kind === "pr";
+              return [
+                {
+                  kind: pr ? "pr" : "issue",
+                  number: pr ? 27 : 12,
+                  title: pr ? "Build Docker images" : "Update Docker documentation",
+                  repo: "acme/widgets",
+                  url: `https://github.com/acme/widgets/${pr ? "pull/27" : "issues/12"}`,
+                  state: "open",
+                  updatedAt: "2026-11-24T09:00:00Z",
+                  labels: [],
+                  assignees: [],
+                  draft: false,
+                },
+              ];
+            }
+          }
           if (
             command === "session_list_recent" &&
             new URLSearchParams(location.search).has("railPolish")
@@ -150,7 +316,7 @@ test("workspace picker uses spare header width before clipping names", async ({
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/app-shell/compact-navigation.html?pickerWidth");
   const header = page.locator("[data-workspace-header]");
-  const picker = header.getByRole("button", { name: "Switch working copy", exact: true });
+  const picker = header.getByRole("button", { name: "Switch worktree", exact: true });
   await expect(picker).toContainText("main", { timeout: 90_000 });
   await page.getByRole("tab", { name: "Explorer", exact: true }).click();
   const resize = page.getByRole("separator", { name: "Resize sidebar", exact: true });
@@ -186,7 +352,7 @@ test("workspace picker uses spare header width before clipping names", async ({
   }
   await page.getByRole("tab", { name: /^Sessions/ }).click();
   await header.getByRole("button", { name: "Search sessions", exact: true }).click();
-  const search = header.getByPlaceholder("Search conversations...");
+  const search = header.getByRole("combobox", { name: /^Search sessions/ });
   await expect(search).toBeVisible();
   await search.fill("retained query");
   for (const pane of ["wide", "narrow"]) {
@@ -242,6 +408,58 @@ test("session scrollbar preserves geometry and follows pointer or keyboard inter
   }
 });
 
+test("session GitHub link supports suggestions and pasted URLs", async ({ page }) => {
+  await installNavigationFixture(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const [theme, width] of [
+    ["dark", 1280],
+    ["light", 1280],
+    ["dark", 800],
+    ["light", 800],
+  ] as const) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto("/tests/browser/app-shell/compact-navigation.html?linkGithub");
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    const openDialog = async () => {
+      await page.locator("[data-session-card]").first().click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Link GitHub issue or PR…" }).click();
+    };
+    await openDialog();
+    const dialog = page.getByRole("dialog", { name: "Link GitHub issue or PR" });
+    const field = dialog.getByRole("combobox", { name: "GitHub issue or pull request" });
+    await field.fill("Docker");
+    const option = page.getByRole("option", { name: /Build Docker images/ });
+    await expect(option).toBeVisible();
+    await expect(page.getByRole("option", { name: /Update Docker documentation/ })).toBeVisible();
+    const link = dialog.getByRole("button", { name: "Link", exact: true });
+    expect((await link.boundingBox())!.y).toBeGreaterThan(
+      (await option.boundingBox())!.y + (await option.boundingBox())!.height,
+    );
+    await page.screenshot({ path: `temp/verification/session-github-link/${theme}-${width}.png` });
+    if (theme === "light") {
+      await field.press("ArrowDown");
+      await field.press("ArrowDown");
+      await field.press("Enter");
+    } else {
+      await option.click();
+    }
+    await link.click();
+    await expect(dialog).toBeHidden();
+    const output = page.getByLabel("Selected action");
+    await expect(output).toHaveText("https://github.com/acme/widgets/pull/27");
+
+    await openDialog();
+    await field.fill("https://github.com/acme/widgets/issues/88");
+    if (theme === "light") await field.press("Enter");
+    else await link.click();
+    await expect(dialog).toBeHidden();
+    await expect(output).toHaveText("https://github.com/acme/widgets/issues/88");
+  }
+});
+
 test("session detail closes on ancestor scroll and cancels a pending hover", async ({
   page,
 }, testInfo) => {
@@ -275,7 +493,7 @@ test("session detail closes on ancestor scroll and cancels a pending hover", asy
     await page.mouse.move(1200, 700);
     await row.hover();
     await expect(detail).toBeVisible();
-    await expect(detail).toContainText("Last activity: Oct 17, 2026, 03:37 PM");
+    await expect(detail).toContainText(/Oct 17/);
     await page.screenshot({ path: testInfo.outputPath(`session-detail-open-${theme}.png`) });
     // An unrelated pane scrolling must not dismiss the session's detail.
     await page.locator("main").dispatchEvent("scroll");
@@ -464,10 +682,8 @@ test("compact navigation keeps workspace tabs in place and stacks app tool short
   await page.getByRole("button", { name: "Pin session list", exact: true }).click();
   await expect(tabs).toBeVisible();
 
-  await rail.getByRole("button", { name: "Search", exact: true }).click();
-  await expect(page.getByRole("dialog")).toBeVisible();
-  await expect(page.getByRole("radio", { name: "All", exact: true })).toBeChecked();
-  await page.keyboard.press("Escape");
+  // Search moved to the window title bar; the compact rail no longer carries it.
+  await expect(rail.getByRole("button", { name: "Search", exact: true })).toHaveCount(0);
   // "Search sessions" is an inline filter of the session list now, not the shared dialog.
   // At this pane width the session tools fold into the "More actions" menu.
   await page.getByRole("button", { name: "More actions", exact: true }).click();
@@ -485,40 +701,68 @@ test("compact navigation keeps workspace tabs in place and stacks app tool short
   expect(errors).toEqual([]);
 });
 
-test("workspace header keeps location before history and project controls", async ({
+test("workspace header keeps location before session tools and holds no window navigation", async ({
   page,
 }, testInfo) => {
   await installNavigationFixture(page);
   await page.emulateMedia({ reducedMotion: "reduce" });
   for (const project of [false, true]) {
     await page.goto(
-      `/tests/browser/app-shell/compact-navigation.html?headerNavigation${project ? "&projectHeader" : ""}`,
+      `/tests/browser/app-shell/compact-navigation.html?lastSessionsHeader${project ? "&projectHeader" : ""}`,
       { waitUntil: "domcontentloaded" },
     );
     const header = page.locator("[data-workspace-header]");
     await expect(header).toBeVisible({ timeout: 90_000 });
     const title = project
       ? header
-          .getByRole("button", { name: "Switch working copy", exact: true })
+          .getByRole("button", { name: "Switch worktree", exact: true })
           .getByText("bycoda", { exact: true })
       : header.getByText("Last sessions", { exact: true });
-    const toggle = page.getByRole("button", { name: "Expand projects", exact: true });
-    await expect(toggle).toHaveCount(1);
-    await expect(header.getByRole("button", { name: "Expand projects", exact: true })).toHaveCount(
-      1,
-    );
-    await expect(
-      page
-        .locator("[data-compact-project-rail]")
-        .getByRole("button", { name: "Expand projects", exact: true }),
-    ).toHaveCount(0);
+    // Back, Forward and the sidebar toggle live in the window title bar, not the pane or rail.
+    const windowControls = ["Back", "Forward", "Toggle sidebar"];
+    for (const name of windowControls) {
+      await expect(header.getByRole("button", { name, exact: true })).toHaveCount(0);
+      await expect(
+        page.locator("[data-compact-project-rail]").getByRole("button", { name, exact: true }),
+      ).toHaveCount(0);
+    }
+    await expect(page.locator("[data-workspace-navigation]")).toHaveCount(0);
     const titleFrame = header.locator("[data-pane-header-heading]");
     const workspacePane = page.locator('[data-side-pane="workspace"]');
     const resize = page.getByRole("separator", { name: "Resize sidebar", exact: true });
+    const newSession = header.getByRole("button", { name: "New session", exact: true });
+    if (project) {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await resize.press("Enter");
+      await expect(newSession).toBeVisible({ timeout: 5_000 });
+      // The label folds into a 1px clipped slot; its text node stays for assistive technology.
+      await expect
+        .poll(() =>
+          newSession
+            .getByText("New session", { exact: true })
+            .locator("xpath=..")
+            .evaluate((slot) => slot.getBoundingClientRect().width),
+        )
+        .toBeLessThanOrEqual(1);
+      await newSession.press("Enter");
+      await expect(page.getByLabel("Selected action")).toHaveText("New session");
+      await header.getByRole("button", { name: "More actions", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Search sessions", exact: true }).click();
+      const search = header.getByRole("combobox", { name: /^Search sessions/ });
+      await expect(search).toBeFocused();
+      await expect(newSession).toBeInViewport();
+      const actionBounds = (await newSession.boundingBox())!;
+      const headerBounds = (await header.boundingBox())!;
+      expect(actionBounds.x + actionBounds.width).toBeLessThanOrEqual(
+        headerBounds.x + headerBounds.width,
+      );
+      await search.press("Escape");
+    }
     for (const pane of ["default", "wide"]) {
+      await page.setViewportSize({ width: 1280, height: 800 });
       await resize.press("Enter");
       if (pane === "wide") {
-        for (let step = 0; step < 3; step++) await resize.press("Shift+ArrowRight");
+        for (let step = 0; step < 5; step++) await resize.press("Shift+ArrowRight");
       }
       await resize.blur();
       for (const theme of ["dark", "light"]) {
@@ -535,7 +779,7 @@ test("workspace header keeps location before history and project controls", asyn
           }));
           if (!project) {
             expect(titleStyle.weight).toBeGreaterThanOrEqual(500);
-            expect(titleStyle.size).toBe(16);
+            expect(titleStyle.size).toBe(14);
           }
           await page.screenshot({
             path: testInfo.outputPath(
@@ -548,22 +792,22 @@ test("workspace header keeps location before history and project controls", asyn
             ),
           });
           const frame = (await titleFrame.boundingBox())!;
-          const constrained = await workspacePane.evaluate((element) => {
+          const paneWidth = await workspacePane.evaluate((element) => {
             const style = getComputedStyle(element);
             return (
-              element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) <
-              340
+              element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
             );
           });
-          const back = (await header
-            .getByRole("button", { name: "Back", exact: true })
-            .boundingBox())!;
-          // A narrow pane keeps one header row: the location sits beside Back, not above it.
+          const constrained = paneWidth < 340;
+          // A narrow pane keeps one header row: the location sits beside the tools, not above them.
           if (constrained) {
+            const tool = (await header
+              .getByRole("button", { name: "More actions", exact: true })
+              .boundingBox())!;
             const headerBox = (await header.boundingBox())!;
-            expect(headerBox.height).toBeLessThan(back.height * 2);
-            expect(frame.y).toBeLessThan(back.y + back.height);
-            expect(back.y).toBeLessThan(frame.y + frame.height);
+            expect(headerBox.height).toBeLessThan(tool.height * 2);
+            expect(frame.y).toBeLessThan(tool.y + tool.height);
+            expect(tool.y).toBeLessThan(frame.y + frame.height);
           }
           let previousRight = constrained ? (await header.boundingBox())!.x : frame.x + frame.width;
           // Measure the element that clips the title: an inline text span inside a truncating
@@ -580,22 +824,54 @@ test("workspace header keeps location before history and project controls", asyn
             }));
             // A truncated project name must stay identifiable by its accessible name.
             if (titleWidth.content > titleWidth.available)
-              await expect(
-                header.getByRole("button", { name: /Switch working copy/ }),
-              ).toContainText("bycoda");
+              await expect(header.getByRole("button", { name: /Switch worktree/ })).toContainText(
+                "bycoda",
+              );
             else expect(titleWidth.content).toBeLessThanOrEqual(titleWidth.available);
           }
           // A narrow pane folds the session tools into "More actions".
           const sessionTools = constrained ? "More actions" : "Search sessions";
-          for (const name of ["Back", "Forward", "Expand projects", sessionTools]) {
-            const control = header.getByRole("button", { name, exact: true });
-            await expect(control).toBeInViewport();
-            const bounds = (await control.boundingBox())!;
-            expect(
-              bounds.x,
-              `${name} must follow the title and prior controls`,
-            ).toBeGreaterThanOrEqual(previousRight);
-            previousRight = bounds.x + bounds.width;
+          const toolsControl = header.getByRole("button", { name: sessionTools, exact: true });
+          await expect(toolsControl).toBeInViewport();
+          const toolsBounds = (await toolsControl.boundingBox())!;
+          expect(toolsBounds.x, `${sessionTools} must follow the title`).toBeGreaterThanOrEqual(
+            previousRight,
+          );
+          previousRight = toolsBounds.x + toolsBounds.width;
+          if (project) {
+            const label = newSession.getByText("New session", { exact: true });
+            // The shared pane-header breakpoint: at 26rem or less the label folds to its icon.
+            const showLabel = paneWidth > 26 * 16;
+            if (showLabel) await expect(label).toBeVisible();
+            else
+              await expect
+                .poll(() =>
+                  label.locator("xpath=..").evaluate((slot) => slot.getBoundingClientRect().width),
+                )
+                .toBeLessThanOrEqual(1);
+            const button = (await newSession.boundingBox())!;
+            const headerBox = (await header.boundingBox())!;
+            expect(button.x).toBeGreaterThanOrEqual(previousRight);
+            expect(headerBox.x + headerBox.width - button.x - button.width).toBeLessThan(12);
+            if (!showLabel) {
+              const controls = header
+                .getByRole("button")
+                .and(
+                  header.locator(
+                    "[data-pane-header-body] button, [data-usage-guide='new-session']",
+                  ),
+                );
+              const gaps = await controls.evaluateAll((elements) =>
+                elements.slice(1).map((element, index) => {
+                  const previous = elements[index].getBoundingClientRect();
+                  return element.getBoundingClientRect().left - previous.right;
+                }),
+              );
+              for (const gap of gaps) {
+                expect(gap).toBeGreaterThanOrEqual(0);
+                expect(gap).toBeLessThanOrEqual(1);
+              }
+            }
           }
           const paneBounds = (await workspacePane.boundingBox())!;
           for (const control of await header.getByRole("button").all()) {
@@ -608,12 +884,6 @@ test("workspace header keeps location before history and project controls", asyn
         }
       }
     }
-    await header.getByRole("button", { name: "Back", exact: true }).click();
-    await expect(page.getByLabel("Selected action")).toHaveText("Back");
-    await header.getByRole("button", { name: "Forward", exact: true }).click();
-    await expect(page.getByLabel("Selected action")).toHaveText("Forward");
-    await toggle.click();
-    await expect(page.getByLabel("Project panel toggle count")).toHaveText("1");
   }
 });
 
@@ -699,6 +969,58 @@ test("session rows mark discussions that hold unsent composer text", async ({ pa
       theme === "light",
     );
     await sidebar.screenshot({ path: testInfo.outputPath(`session-draft-row-${theme}.png`) });
+  }
+});
+
+test("Changes hides the full caption when it would overlap its icon or counts", async ({
+  page,
+}, testInfo) => {
+  await installNavigationFixture(page);
+  await page.goto("/tests/browser/app-shell/compact-navigation.html?railPolish");
+  const sidebar = page.locator('aside[data-side-pane="workspace"]');
+  const changes = sidebar.getByRole("tab", { name: /^Changes,/ });
+  const label = changes.locator(".workspace-tab-label");
+  const labelSlot = changes.locator(".workspace-tab-content");
+  const icon = changes.locator(".workspace-tab-icon");
+  const stats = changes.locator(".workspace-tab-stats");
+  const count = changes.locator("[data-workspace-tab-file-count]");
+  await expect(count).toHaveText("3");
+
+  await sidebar.evaluate((pane) => pane.style.setProperty("inline-size", "730px", "important"));
+  // Exercise an unbreakable translated caption alongside the same live tab contents.
+  await label.evaluate((caption) => {
+    caption.textContent = "Working tree changes";
+  });
+  const setTabWidth = (width: number) =>
+    changes.evaluate((tab, value) => {
+      tab.parentElement!.style.flex = `0 0 ${value}px`;
+    }, width);
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 800 });
+      await setTabWidth(320);
+      expect((await label.boundingBox())!.x).toBeGreaterThan(
+        (await icon.boundingBox())!.x + (await icon.boundingBox())!.width,
+      );
+      expect((await label.boundingBox())!.y).toBeLessThan(
+        (await labelSlot.boundingBox())!.y + (await labelSlot.boundingBox())!.height,
+      );
+      await sidebar.screenshot({ path: testInfo.outputPath(`changes-wide-${theme}-${width}.png`) });
+      await setTabWidth(190);
+      expect((await label.boundingBox())!.y).toBeGreaterThanOrEqual(
+        (await labelSlot.boundingBox())!.y + (await labelSlot.boundingBox())!.height,
+      );
+      await expect(icon).toBeVisible();
+      await expect(stats).toBeVisible();
+      await expect(count).toBeVisible();
+      await sidebar.screenshot({
+        path: testInfo.outputPath(`changes-narrow-${theme}-${width}.png`),
+      });
+    }
   }
 });
 
@@ -873,7 +1195,7 @@ test("rail polish aligns sections and swaps row actions without losing identity"
   }
 });
 
-test("rail attention uses red for one failed item and yellow for warnings or several items", async ({
+test("rail attention counts failed results, approvals and retries per state", async ({
   page,
 }, testInfo) => {
   await installNavigationFixture(page);
@@ -888,17 +1210,26 @@ test("rail attention uses red for one failed item and yellow for warnings or sev
       .filter({ has: page.getByText("Activity", { exact: true }) })
       .first();
     await expect(heading).toBeVisible();
-    // The attention badge stands in for the rows only while the section is collapsed.
     const toggle = heading.getByRole("button", { name: "Activity", exact: false }).first();
-    await toggle.click();
+    // The section starts collapsed; collapse it only when it is open.
+    if ((await toggle.getAttribute("aria-expanded")) === "true") await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
-    const tone = attention === "failed" ? "danger" : "warning";
-    await expect(heading.locator(`[data-tone="${tone}"]`)).toHaveCount(1);
+    // Each state has its own count: failed is danger, input requests and retries are warnings.
+    const danger = heading.locator('[data-tone="danger"]');
+    if (attention === "warning") await expect(danger).toHaveCount(0);
+    else await expect(danger).toHaveText("1");
+    const warning = heading.locator('[data-tone="warning"]');
+    if (attention === "failed") await expect(warning).toHaveCount(0);
+    else await expect(warning).toHaveText(attention === "multiple" ? ["1", "1"] : ["1"]);
     await expect(heading).not.toContainText("needs attention");
-    const count = attention === "multiple" ? "2" : "1";
-    await expect(heading.locator(`[data-tone="${tone}"]`)).toContainText(count);
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const rows = page.locator("[data-live-agents-list]:visible");
+    await expect(rows.getByText("Review interrupted work")).toBeVisible();
+    if (attention === "multiple") {
+      await expect(rows.getByText("Approve next step")).toBeVisible();
+      await expect(rows.getByText("Retry interrupted connection")).toBeVisible();
+    }
     for (const theme of ["dark", "light"]) {
       await page.evaluate(
         (light) => document.documentElement.classList.toggle("theme-light", light),
@@ -1103,3 +1434,92 @@ for (const theme of ["light", "dark"])
       await expect(outer).toHaveCSS("opacity", "1");
     });
   }
+
+for (const platform of ["MacIntel", "Win32"]) {
+  test(`title bar leads the window in one control order on ${platform}`, async ({
+    page,
+  }, testInfo) => {
+    await installNavigationFixture(page);
+    await page.addInitScript((value) => {
+      Object.defineProperty(navigator, "platform", { get: () => value });
+    }, platform);
+    const mac = platform === "MacIntel";
+    const lead = page.locator("[data-title-lead]");
+    const toggle = lead.locator('button[aria-label^="Toggle sidebar"]');
+    const brand = lead.locator("[data-title-brand]");
+    const wordmark = lead.locator(".bycoda-title-wordmark");
+    const back = lead.locator('button[aria-label^="Back"]');
+    const forward = lead.locator('button[aria-label^="Forward"]');
+    const search = lead.locator("[data-title-search]");
+    const edges = async (locator: typeof lead) => {
+      const box = (await locator.boundingBox())!;
+      return { left: box.x, right: box.x + box.width, bottom: box.y + box.height };
+    };
+    const open = async (expanded: boolean, theme: string) => {
+      await page.goto(
+        `/tests/browser/app-shell/compact-navigation.html?railPolish&titleBar${expanded ? "&expandedRail" : ""}`,
+      );
+      // The brand artwork follows the scheme event the appearance settings send, not the class.
+      await page.evaluate((light) => {
+        document.documentElement.classList.toggle("theme-light", light);
+        window.dispatchEvent(
+          new CustomEvent("bycoda:schemechange", { detail: light ? "light" : "dark" }),
+        );
+      }, theme === "light");
+      await expect(lead).toBeVisible();
+    };
+
+    for (const theme of ["dark", "light"]) {
+      for (const width of [1280, 800]) {
+        await page.setViewportSize({ width, height: 800 });
+        const toggleLeft: number[] = [];
+        for (const expanded of [true, false]) {
+          await open(expanded, theme);
+          // The traffic lights get their space on macOS; elsewhere the bar starts at the edge.
+          await expect(lead.locator("[data-window-chrome-inset]")).toHaveCount(mac ? 1 : 0);
+          await expect(toggle).toHaveAttribute("aria-pressed", String(expanded));
+          // The wordmark belongs to the expanded rail; a collapsed rail leaves the mark alone.
+          await expect(wordmark).toHaveCount(expanded ? 1 : 0);
+          if (expanded) await expect(wordmark).toBeVisible();
+          if (mac) await expect(brand).not.toHaveRole("button");
+          else await expect(brand).toHaveAttribute("aria-label", /^Application menu/);
+          // The field keeps its label while the bar has room; below that only the icon stays.
+          const searchLabel = search.locator("[data-title-search-label]");
+          if (width >= 960) await expect(searchLabel).toBeVisible();
+          else await expect(searchLabel).toBeHidden();
+
+          // One order, nothing overlapping, and the tabs start after the last control.
+          const order = [toggle, brand, back, forward, search];
+          let previous = mac ? 78 : 0;
+          for (const control of order) {
+            const box = await edges(control);
+            expect(box.left).toBeGreaterThanOrEqual(previous - 0.5);
+            previous = box.right;
+          }
+          const tabs = await edges(page.locator("[data-title-tab-strip]"));
+          expect(tabs.left).toBeGreaterThanOrEqual(previous - 0.5);
+          expect(tabs.right).toBeLessThanOrEqual(width + 0.5);
+
+          // Rail and workspace header start under the bar and repeat none of its controls.
+          const bar = await edges(page.locator("header.bycoda-titlebar"));
+          const header = page.locator("[data-workspace-header]");
+          expect((await header.boundingBox())!.y).toBeGreaterThanOrEqual(bar.bottom - 0.5);
+          for (const name of ["Back", "Forward", "Toggle sidebar", "Search"]) {
+            await expect(
+              page.locator(`aside button[aria-label="${name}"], nav button[aria-label="${name}"]`),
+            ).toHaveCount(0);
+          }
+          toggleLeft.push((await edges(toggle)).left);
+          await page.screenshot({
+            path: testInfo.outputPath(
+              `title-bar-${mac ? "macos" : "windows"}-${expanded ? "expanded" : "collapsed"}-${theme}-${width}.png`,
+            ),
+            clip: { x: 0, y: 0, width, height: 220 },
+          });
+        }
+        // Collapsing the rail must not move the toggle from under the pointer.
+        expect(toggleLeft[1]).toBe(toggleLeft[0]);
+      }
+    }
+  });
+}

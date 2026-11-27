@@ -859,7 +859,7 @@ test("text fields keep focus on one border with pointer and keyboard", async ({
                     const css = getComputedStyle(node);
                     return {
                       outline: css.outlineStyle,
-                      ring: /0px 0px 0px 2px/.test(css.boxShadow) === keyboard,
+                      ring: /0px 0px 0px 1px/.test(css.boxShadow) === keyboard,
                       border: css.borderTopColor === before,
                     };
                   },
@@ -888,13 +888,50 @@ test("text fields keep focus on one border with pointer and keyboard", async ({
       await expect(region.getByLabel("Disabled focus textarea", { exact: true })).toBeDisabled();
       const button = region.getByRole("button", { name: "After focus fields" });
       await button.focus();
-      await expect(button).toHaveCSS("outline-offset", "-2px");
+      await expect(button).toHaveCSS("outline-width", "1px");
+      await expect(button).toHaveCSS("outline-offset", "-1px");
       await region.getByLabel("Commit message", { exact: true }).click();
       await region.screenshot({
         path: testInfo.outputPath(`field-focus-${width}-${light ? "light" : "dark"}.png`),
       });
     }
   }
+});
+
+test("cards and radio options draw a one-pixel keyboard focus outline", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/tests/browser/shared-ui/arc-controls.html");
+  const region = page.getByRole("region", { name: "Field focus", exact: true });
+  const card = region.locator('[aria-label="Focus card"]');
+  const radio = region.getByRole("radio", { name: "Anywhere (Tailscale)" });
+  const radioFrame = radio.locator("..");
+
+  for (const width of [800, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const light of [false, true]) {
+      await page.evaluate((enabled) => {
+        document.documentElement.classList.toggle("theme-light", enabled);
+      }, light);
+      await card.focus();
+      await page.keyboard.press("Escape");
+      await expect(card).toHaveCSS("outline-width", "1px");
+      await region.screenshot({
+        path: testInfo.outputPath(`focus-card-${width}-${light ? "light" : "dark"}.png`),
+      });
+
+      await radio.focus();
+      await page.keyboard.press("Home");
+      await expect(radioFrame).toHaveCSS("outline-width", "1px");
+      await expect(card).toHaveCSS("outline-style", "none");
+      await region.screenshot({
+        path: testInfo.outputPath(`focus-radio-${width}-${light ? "light" : "dark"}.png`),
+      });
+    }
+  }
+
+  await page.emulateMedia({ forcedColors: "active" });
+  await expect(radioFrame).toHaveCSS("outline-width", "2px");
 });
 
 test("shared button API preserves geometry, popup anchors, direct rows and busy keyboard guards", async ({
@@ -1001,9 +1038,8 @@ test("pending quiet actions preserve hierarchy, geometry and keyboard focus", as
           await expect(action).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
           await expect(action).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
           if (index === 1) {
-            // The label keeps its width and accessible name beneath a centered spinner.
-            await expect(action.locator(":scope > span").first()).toHaveCSS("opacity", "0");
-            await expect(action.locator(':scope > span[aria-hidden="true"]')).toBeVisible();
+            // A text action keeps its label readable beside a start spinner while pending.
+            await expect(action.locator(":scope > span").first()).toHaveCSS("opacity", "1");
             await expect(action).toContainText("Quiet native action");
             await expect(action).toHaveAccessibleName("Quiet native action");
           }
@@ -1736,8 +1772,8 @@ test.describe("shared control state matrix", () => {
       .getByRole("button", { name: "Disabled action", exact: true })
       .evaluate((node) => (node as HTMLElement).click());
     await expect(count).toHaveText("1");
-    // The loading text action keeps its name while pending.
-    await expect(page.getByTestId("matrix-loading-text")).toContainText("Loading action");
+    // The loading text action shows its pending text beside the spinner.
+    await expect(page.getByTestId("matrix-loading-text")).toContainText("Saving…");
     const pressed = page.getByRole("button", { name: "Selected action", exact: true });
     await pressed.click();
     await expect(pressed).toHaveAttribute("aria-pressed", "true");
@@ -2110,7 +2146,8 @@ test.describe("shared control state matrix", () => {
     const big = triggerOf(page, "Big list");
     await expect(big).toContainText("refs/heads/feature/branch-250");
     await big.click();
-    await expect(page.getByRole("option")).toHaveCount(500);
+    await expect(page.getByRole("option").first()).toHaveAttribute("aria-setsize", "500");
+    await expect.poll(() => page.getByRole("option").count()).toBeLessThan(64);
     await expect(page.getByRole("dialog").locator("input").first()).toBeFocused();
     await page.keyboard.type("branch-499");
     await expect(page.getByRole("option")).toHaveCount(1);
@@ -2469,7 +2506,7 @@ test.describe("shared control state matrix", () => {
       Math.abs(groupBox!.height - firstBox!.height),
       "group is exactly one Button tall",
     ).toBeLessThanOrEqual(1);
-    await expect(review.getByRole("button", { name: "Request changes" })).toBeDisabled();
+    await expect(review.getByRole("button", { name: "Changes" })).toBeDisabled();
     await expect(review.getByRole("button", { name: /^Merg/ })).toHaveAttribute(
       "aria-busy",
       "true",

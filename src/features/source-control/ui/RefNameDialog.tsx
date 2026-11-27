@@ -6,7 +6,8 @@ import { Modal, ModalActions } from "../../../shared/ui/Modal";
 
 type Props = {
   title: string;
-  description: string;
+  /** Only when it adds a fact the title and field do not already state. */
+  description?: string;
   label: string;
   placeholder: string;
   submitLabel: string;
@@ -71,21 +72,12 @@ export function RefNameDialog({
         if (!busy) onCancel();
       }}
       footer={
-        <ModalActions>
-          <Button
-            size="sm"
-            variant="ghost"
-            motion="none"
-            type="button"
-            disabled={busy}
-            onClick={onCancel}
-          >
+        <ModalActions reason={complete ? undefined : t("Fill in every field.")}>
+          <Button variant="ghost" type="button" disabled={busy} onClick={onCancel}>
             {t("Cancel")}
           </Button>
           <Button
-            size="sm"
             variant="primary"
-            motion="none"
             type="submit"
             form={formId}
             loading={busy}

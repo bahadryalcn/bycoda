@@ -15,10 +15,18 @@ import { nextQueueStatus } from "./queueState";
 import {
   QueueDeferredError,
   QueueNotReadyError,
+  QueueRunLeaseBlockedError,
+  QueueRunLeasePendingError,
   sameQueueValue,
   SHARED_QUEUE_CAPABILITY,
 } from "./sharedQueue";
 import { desktopQueueClientId, SharedQueueClient } from "./sharedQueueClient";
+import { sweepOrphanQueuePayloads } from "./sharedQueuePayloads";
+import {
+  refreshLiveDesktopInstances,
+  setQueueStorageOwner,
+  sweepQueueStorage,
+} from "./sharedQueueStorage";
 import {
   type Entry,
   takeQueue,
@@ -38,6 +46,7 @@ import {
   updateDeliveryProgress,
 } from "../../sessions/public/deliveryProgress";
 import { DeliveryUnknownError } from "../../../shared/lib/deliveryUnknown";
+import { TimeoutError, withTimeout } from "../../../shared/lib/withTimeout";
 import { LOCAL_HOST_REACHABLE_EVENT } from "./hostWake";
 import { hasInlineQueueAttachments, storeInlineQueueAttachments } from "./queuedAttachmentStorage";
 
@@ -61,6 +70,8 @@ export function useLocalSharedQueueClient(sessionId: string) {
 const IDLE_SYNC_MS = 60_000;
 /** Retry of a queue whose last look failed while the host is reachable: it doubles up to the safety pass. */
 const ERROR_RETRY_MS = 1_500;
+/** How long the dispatcher waits for one queue's Host request before it moves on to the next queue. */
+export const QUEUE_SYNC_DEADLINE_MS = 20_000;
 /** How long a claimed send may wait for the provider before Resume gives up on it. */
 export const HUNG_CLAIM_MS = 30_000;
 /** Queues another computer changed, to be read at once even if idle or hidden. */
@@ -86,26 +97,29 @@ const inThisWindow = (id: string): boolean =>
 export function heldSharedQueueLeases(): {
   sessionId: string;
   epoch: number;
-  /** This window holds the lease but cannot send now: the host must not wait for it. */
+  /** The window cannot send. Older Hosts treat every such report as a hard block. */
   blocked?: true;
+  syncPending?: true;
 }[] {
   return [...localQueues.entries()].flatMap(([id, entry]) => {
     const lease = inThisWindow(id) ? entry.client.heldLease() : undefined;
-    return lease
-      ? [{ ...lease, ...(drainBlocked(id, entry) ? { blocked: true as const } : {}) }]
-      : [];
+    if (!lease) return [];
+    const session = windowSessions ? sessionById(windowSessions(), id) : undefined;
+    if (lateSettlementPossible(id) || entry.client.snapshot().recovery)
+      return [{ ...lease, blocked: true as const }];
+    if (session?.adoptedSyncConflict)
+      return [
+        {
+          ...lease,
+          blocked: true as const,
+          ...(mirrorSyncPending(session) ? { syncPending: true as const } : {}),
+        },
+      ];
+    return [lease];
   });
 }
-/**
- * The lease is held but the head cannot go out from this window: the adopted
- * conversation diverged from the host copy, an unconfirmed delivery is under
- * review, or a late provider answer is still possible. The host must not send it
- * in this window's place either.
- */
-function drainBlocked(id: string, entry: Entry): boolean {
-  const session = windowSessions ? sessionById(windowSessions(), id) : undefined;
-  const state = entry.client.snapshot();
-  return !!session?.adoptedSyncConflict || lateSettlementPossible(id) || !!state.recovery;
+function mirrorSyncPending(session: Session): boolean {
+  return !!session.adoptedSyncConflict && !session.adoptedDivergence;
 }
 /** The host's answer to the heartbeat: a lease that was lost is looked at again at once. */
 export function noteSharedQueueLeases(
@@ -188,6 +202,9 @@ export async function submitSharedLocalQueue(
   let transientHold = false;
   let handedOver = false;
   let caughtDeferred = false;
+  /** Nothing reached the provider and the send could not start: a wait, not a rejection. */
+  let waiting = false;
+  let queueOnly = false;
   try {
     entry.publish();
     if (steer) {
@@ -262,6 +279,12 @@ export async function submitSharedLocalQueue(
   } catch (caught) {
     let error: unknown = caught;
     failure = String(error).replace(/^Error: /, "");
+    if (error instanceof QueueRunLeaseBlockedError || error instanceof QueueRunLeasePendingError) {
+      failure = error.message;
+      uncertain = false;
+      queueOnly = true;
+      waiting = error instanceof QueueRunLeasePendingError;
+    }
     if (error instanceof QueueNotReadyError) {
       // A typed pre-write wait can occur after claiming too (the old turn ended).
       // Release the claim, retain the row and preserve active/user-paused status.
@@ -271,12 +294,12 @@ export async function submitSharedLocalQueue(
     }
     // Nothing reached the provider: a host that could not be asked or a queue
     // another computer changed is a coordination wait, not a failed delivery.
-    if (
-      !handedOver &&
-      !(error instanceof DeliveryUnknownError) &&
-      !(error instanceof QueueNotReadyError)
-    )
-      error = new QueueNotReadyError(failure);
+    if (!handedOver && !(error instanceof DeliveryUnknownError)) {
+      waiting = !caughtDeferred;
+      // The claim (if any) goes back as it was: a wait never holds the queue.
+      transientHold = true;
+      if (!(error instanceof QueueNotReadyError)) error = new QueueNotReadyError(failure);
+    }
     if (error instanceof DeliveryUnknownError && token) {
       const heldToken = token;
       failure = t(
@@ -335,7 +358,8 @@ export async function submitSharedLocalQueue(
         }
       });
     }
-    if (!(error instanceof QueueNotReadyError)) console.warn("Shared queued send is held", error);
+    if (!queueOnly && !(error instanceof QueueNotReadyError))
+      console.warn("Shared queued send is held", error);
     throw error;
   } finally {
     if (token && !uncertain) {
@@ -364,13 +388,15 @@ export async function submitSharedLocalQueue(
     // meanwhile, the lease expiry timer.
     entry.nextIdleSyncAt = 0;
     runTick?.();
-    if (transientHold && caughtDeferred) clearDeliveryProgress(sessionId, progress);
+    if (transientHold && caughtDeferred && !queueOnly) clearDeliveryProgress(sessionId, progress);
     else
       updateDeliveryProgress(
         sessionId,
         progress,
-        accepted ? "accepted" : uncertain ? "unknown" : "rejected",
+        accepted ? "accepted" : uncertain ? "unknown" : waiting ? "waiting" : "rejected",
         failure,
+        false,
+        queueOnly,
       );
   }
 }
@@ -566,6 +592,43 @@ export function useSharedLocalQueues(
         if (!sessionById(sessionsRef.current, id)) unshared.delete(id);
       if (pruned) notifyQueues();
     };
+    /** Queues whose Host request outlived the deadline and is still running. Its client
+     * keeps owning it (a second request would join it), so the dispatcher leaves the
+     * queue alone until it settles, then looks at it again. */
+    const stalled = new Map<string, Promise<void>>();
+    /** One queue's Host request, waited for at most the deadline; a failure is logged, never dropped. */
+    const bounded = async (
+      id: string,
+      entry: Entry,
+      work: Promise<void>,
+      label: string,
+    ): Promise<"settled" | "failed" | "stalled"> => {
+      try {
+        await withTimeout(work, QUEUE_SYNC_DEADLINE_MS, label);
+        return "settled";
+      } catch (error) {
+        if (!(error instanceof TimeoutError)) {
+          // The client already holds the queue with this reason; the retry backoff reads it.
+          console.warn(`${label} failed`, error);
+          return "failed";
+        }
+        console.warn(error.message);
+        entry.client.noteStalled(
+          "The Host did not answer in time. The queue waits for its answer.",
+        );
+        const late: Promise<void> = work
+          .catch(() => {})
+          .then(() => {
+            if (stalled.get(id) === late) stalled.delete(id);
+            if (stopped) return;
+            // A late answer is applied by the next look, never by this old pass.
+            woken.add(id);
+            runTick?.();
+          });
+        stalled.set(id, late);
+        return "stalled";
+      }
+    };
     const tick = async () => {
       if (running) {
         again = true;
@@ -620,9 +683,19 @@ export function useSharedLocalQueues(
         const candidates = wokenNow.size
           ? [...changed, ...syncOrder(sessionsRef.current).filter((s) => !wokenNow.has(s.id))]
           : syncOrder(sessionsRef.current);
-        for (const session of candidates) {
+        /** A request outlived its deadline: the rest of the pass goes to a fresh one (the stalled
+         * queue is skipped there) with the wakes and passes this one had still to serve. */
+        const stopAfterStall = (index: number) => {
+          for (const later of candidates.slice(index + 1))
+            if (wokenNow.has(later.id)) woken.add(later.id);
+          if (forceAll) safety = true;
+          if (catchingUp) catchUp = true;
+          again = true;
+        };
+        for (const [index, session] of candidates.entries()) {
           if (stopped) return;
           if (!queueEligible(session)) continue;
+          if (stalled.has(session.id)) continue;
           let entry = localQueues.get(session.id);
           const justChanged = wokenNow.has(session.id);
           if (justChanged && entry) entry.nextIdleSyncAt = 0;
@@ -663,6 +736,15 @@ export function useSharedLocalQueues(
               session.id,
               desktopQueueClientId,
             );
+            client.allowAutomaticLease = () => {
+              const latest = sessionById(sessionsRef.current, session.id);
+              return (
+                !!latest &&
+                (!mirrorSyncPending(latest) ||
+                  lateSettlementPossible(session.id) ||
+                  !!client.snapshot().recovery)
+              );
+            };
             entry = {
               client,
               observed: fields(session),
@@ -708,9 +790,7 @@ export function useSharedLocalQueues(
               current.observed = queue;
               setQueueHoldReason(
                 session.id,
-                queue.status === "paused"
-                  ? (latest.queue.holdReason ?? (latest.notice ? t(latest.notice) : undefined))
-                  : undefined,
+                queue.status === "paused" ? (latest.queue.holdReason ?? latest.notice) : undefined,
               );
               // Becoming able to send changes no queue field, yet the dispatcher must look again.
               const ready = client.canDrain() && !lateSettlementPossible(session.id);
@@ -782,7 +862,16 @@ export function useSharedLocalQueues(
             entry.nextIdleSyncAt = Date.now() + IDLE_SYNC_MS;
             if (!entry.client.snapshot().loaded) {
               entry.observed = fields(session);
-              await entry.client.initialize(entry.observed);
+              const first = await bounded(
+                session.id,
+                entry,
+                entry.client.initialize(entry.observed),
+                "Shared queue load",
+              );
+              if (first === "stalled") {
+                stopAfterStall(index);
+                break;
+              }
               if (entry.client.absent() && !entry.claiming) {
                 localQueues.delete(session.id);
                 owned.delete(session.id);
@@ -801,10 +890,17 @@ export function useSharedLocalQueues(
               continue;
             }
             entry.publish();
-            try {
-              await entry.client.sync();
-            } catch {}
+            const synced = await bounded(
+              session.id,
+              entry,
+              entry.client.sync(),
+              "Shared queue sync",
+            );
             entry.apply();
+            if (synced === "stalled") {
+              stopAfterStall(index);
+              break;
+            }
           }
         }
       } catch (error) {
@@ -861,9 +957,19 @@ export function useSharedLocalQueues(
       }
     };
     window.addEventListener("pagehide", releaseAll);
+    // Saved records of closed windows and gone conversations are cleaned once, on the
+    // first idle pass (conversations have loaded by then); a full store runs the same
+    // sweep on demand. It rides the idle interval so an idle window keeps one timer.
+    let swept = false;
     const timer = setInterval(() => {
       safety = true;
       void tick();
+      if (swept) return;
+      swept = true;
+      void refreshLiveDesktopInstances(desktopQueueClientId)
+        .then(() => sweepQueueStorage())
+        .then(() => sweepOrphanQueuePayloads())
+        .catch((error) => console.warn("Saved queue cleanup failed", error));
     }, IDLE_SYNC_MS);
     runTick = () => void tick();
     // Back on screen, focused, or the host reachable again: catch up at once.
@@ -906,6 +1012,10 @@ export function useSharedLocalQueues(
       if (attention) void tick();
     });
     void tick();
+    setQueueStorageOwner({
+      hasSession: (id) => !sessionsRef.current.length || !!sessionById(sessionsRef.current, id),
+      clientId: desktopQueueClientId,
+    });
     return () => {
       stopped = true;
       window.removeEventListener("pagehide", releaseAll);

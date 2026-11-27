@@ -29,6 +29,9 @@ const button = (label: string) =>
   [...host.querySelectorAll<HTMLButtonElement>("button")].find(
     (node) => node.textContent?.trim() === label,
   )!;
+// A blocked control with a reason stays focusable, so it is aria-disabled rather than disabled.
+const blocked = (node: HTMLButtonElement) =>
+  node.disabled || node.getAttribute("aria-disabled") === "true";
 const source = () =>
   EditorView.findFromDOM(host.querySelector("[data-note-editor] .cm-editor") as HTMLElement)!;
 
@@ -103,9 +106,7 @@ it("freezes both source and document editing after an uncertain save without dis
   expect(editor.state.readOnly).toBe(true);
   expect(onClose).not.toHaveBeenCalled();
   await act(async () => button("Document").click());
-  await act(async () =>
-    host.querySelector<HTMLButtonElement>('[aria-label="Edit note block"]')!.click(),
-  );
+  await act(async () => host.querySelector<HTMLButtonElement>("[data-note-block-edit]")!.click());
   expect(host.querySelector("[data-note-preview] .cm-editor")).toBeNull();
   expect(
     JSON.parse(localStorage.getItem("bycoda.assistant.note-draft:editor-note:record")!).intent.body,
@@ -137,7 +138,7 @@ it("keeps an oversized pasted draft recoverable and blocks save", async () => {
   await act(async () =>
     editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: body } }),
   );
-  expect(button("Save").disabled).toBe(true);
+  expect(blocked(button("Save"))).toBe(true);
   expect(host.textContent).toContain("Notes can contain up to 100,000 characters.");
   expect(
     JSON.parse(localStorage.getItem("bycoda.assistant.note-draft:editor-note:record")!).body,

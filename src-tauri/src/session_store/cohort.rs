@@ -415,6 +415,19 @@ fn interrupted_json(bytes: &[u8]) -> bool {
     serde_json::from_slice::<serde_json::Value>(prefix).is_err_and(|error| error.is_eof())
 }
 
+/// `.bycoda-writers-<sha256 hex>-recovery`, as `recovery_directory` names it.
+fn recovery_registry_name(name: &std::ffi::OsStr) -> bool {
+    name.to_str()
+        .and_then(|name| name.strip_prefix(".bycoda-writers-"))
+        .and_then(|name| name.strip_suffix("-recovery"))
+        .is_some_and(|hash| {
+            hash.len() == 64
+                && hash
+                    .bytes()
+                    .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+        })
+}
+
 #[cfg(test)]
 fn crash_checkpoint(stage: &str) {
     if std::env::var("BYCODA_COHORT_CRASH_STAGE").as_deref() == Ok(stage) {
@@ -588,33 +601,95 @@ impl RegisteredConnection {
         Ok(file)
     }
 
-    pub(crate) fn recovery_lease_state(&self, id: &str) -> Result<LeaseState, String> {
-        let id = uuid::Uuid::parse_str(id).map_err(|_| "Invalid recovery lease identity")?;
-        let file = os::safe_file(
-            &self.recovery_directory()?.join(id.to_string()),
-            false,
-            false,
-        )?;
+    /// Recovery directories of the other writer registries beside this one.
+    /// A database keeps its path but not always its registry: the registry
+    /// hashes the physical file id, and macOS renumbers a volume's `st_dev`
+    /// at boot, so the next run registers the same file under a new hash while
+    /// earlier runs' leases stay behind in the older directory. Links and
+    /// names that are not registry hashes are never consulted.
+    fn older_recovery_directories(current: &Path) -> Result<Vec<PathBuf>, String> {
+        let parent = current.parent().ok_or("Recovery lease path invalid")?;
+        let mut directories = Vec::new();
+        for entry in
+            std::fs::read_dir(parent).map_err(|_| "Recovery lease registries are unavailable")?
+        {
+            let entry = entry.map_err(|_| "Recovery lease registries are unavailable")?;
+            let name = entry.file_name();
+            if Some(name.as_os_str()) == current.file_name() || !recovery_registry_name(&name) {
+                continue;
+            }
+            let path = entry.path();
+            if os::plain_directory(&path)? {
+                directories.push(path);
+            }
+        }
+        directories.sort();
+        Ok(directories)
+    }
+
+    /// `None` only when the lease file is definitely absent from `directory`.
+    fn lease_in(directory: &Path, id: &str) -> Result<Option<LeaseState>, String> {
+        let Some(file) = os::existing_file(&directory.join(id))? else {
+            return Ok(None);
+        };
         match file.try_lock() {
-            Ok(()) => Ok(LeaseState::Unleased),
-            Err(TryLockError::WouldBlock) => Ok(LeaseState::Live),
+            Ok(()) => Ok(Some(LeaseState::Unleased)),
+            Err(TryLockError::WouldBlock) => Ok(Some(LeaseState::Live)),
             Err(_) => Err("Recovery lease state is unknown".into()),
         }
     }
+
+    /// A lease is a fresh file named by its process's v4 instance id, locked
+    /// for that store's lifetime and never deleted, so its lock state is the
+    /// proof wherever it lies. One absent from the current registry is looked
+    /// up in older registries of the same directory; absent everywhere, or
+    /// any failure other than a definite absence, stays unknown.
+    pub(crate) fn recovery_lease_state(&self, id: &str) -> Result<LeaseState, String> {
+        let id = uuid::Uuid::parse_str(id)
+            .map_err(|_| "Invalid recovery lease identity")?
+            .to_string();
+        let current = self.recovery_directory()?;
+        if let Some(state) = Self::lease_in(&current, &id)? {
+            return Ok(state);
+        }
+        let mut found = false;
+        for directory in Self::older_recovery_directories(&current)? {
+            match Self::lease_in(&directory, &id)? {
+                Some(LeaseState::Live) => return Ok(LeaseState::Live),
+                Some(LeaseState::Unleased) => found = true,
+                None => {}
+            }
+        }
+        if found {
+            Ok(LeaseState::Unleased)
+        } else {
+            Err("Recovery lease is unknown".into())
+        }
+    }
     /// True when any app process other than `own` still holds its recovery
-    /// lease. Every native process writing canonical claims holds one.
+    /// lease, in this registry or an older one of the same directory. Every
+    /// native process writing canonical claims holds one.
     pub(crate) fn other_recovery_lease_live(&self, own: &str) -> Result<bool, String> {
-        let entries = std::fs::read_dir(self.recovery_directory()?)
-            .map_err(|_| "Recovery lease directory is unavailable")?;
-        for entry in entries {
-            let name = entry
-                .map_err(|_| "Recovery lease directory is unavailable")?
-                .file_name();
-            let Some(id) = name.to_str().filter(|id| uuid::Uuid::parse_str(id).is_ok()) else {
-                continue;
-            };
-            if id != own && self.recovery_lease_state(id)? == LeaseState::Live {
-                return Ok(true);
+        let current = self.recovery_directory()?;
+        let older = Self::older_recovery_directories(&current)?;
+        for directory in std::iter::once(&current).chain(&older) {
+            let entries = std::fs::read_dir(directory)
+                .map_err(|_| "Recovery lease directory is unavailable")?;
+            for entry in entries {
+                let name = entry
+                    .map_err(|_| "Recovery lease directory is unavailable")?
+                    .file_name();
+                let Some(id) = name.to_str().filter(|id| uuid::Uuid::parse_str(id).is_ok()) else {
+                    continue;
+                };
+                if id == own {
+                    continue;
+                }
+                match Self::lease_in(directory, id)? {
+                    Some(LeaseState::Live) => return Ok(true),
+                    Some(LeaseState::Unleased) => {}
+                    None => return Err("Recovery lease changed while it was inspected".into()),
+                }
             }
         }
         Ok(false)
@@ -649,6 +724,7 @@ impl RegisteredConnection {
         if self.registration.is_some() {
             self.verify_connection(&replacement)?;
         }
+        super::native_delivery::epochs::invalidate_connection_audit(&self.connection)?;
         Ok(std::mem::replace(&mut self.connection, replacement))
     }
     pub(super) fn verify_connection(&self, connection: &Connection) -> Result<(), String> {

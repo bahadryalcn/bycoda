@@ -60,9 +60,20 @@ export function checksumFor(checksums: string, file: string): string | undefined
   return undefined;
 }
 
-type ExecOptions = { cwd?: string; env?: NodeJS.ProcessEnv; timeout: number; maxBuffer?: number };
+type ExecOptions = {
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
+  timeout: number;
+  maxBuffer?: number;
+  signal?: AbortSignal;
+};
 /** Per-call limits; publication commands need longer than status reads. */
-export type GhRunLimits = { timeoutMs?: number; maxBuffer?: number };
+export type GhRunLimits = {
+  timeoutMs?: number;
+  maxBuffer?: number;
+  signal?: AbortSignal;
+  allowInstall?: boolean;
+};
 export type GhExec = (file: string, args: string[], options: ExecOptions) => Promise<string>;
 
 export type GhRuntimeOptions = {
@@ -88,6 +99,11 @@ const defaultExec: GhExec = async (file, args, options) =>
   ).stdout;
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
+const isFile = (path: string) =>
+  stat(path).then(
+    (entry) => entry.isFile(),
+    () => false,
+  );
 
 /**
  * GitHub CLI for bycoda: a gh already on this computer wins, otherwise a pinned official copy
@@ -159,19 +175,39 @@ export class GhRuntime {
     return [...new Set([...pathDirectories, ...common])];
   }
 
+  private async addWindowsGitPath(env: NodeJS.ProcessEnv): Promise<void> {
+    const pathKeys = Object.keys(env)
+      .filter((key) => key.toUpperCase() === "PATH")
+      .sort();
+    const path = env[pathKeys[0] ?? "PATH"] ?? "";
+    for (const directory of path.split(";").filter(Boolean)) {
+      if (await isFile(join(directory.replace(/^"|"$/g, ""), "git.exe"))) return;
+    }
+
+    // gh locates git through its own PATH even when the Host can launch git directly.
+    const installRoots = [
+      env.ProgramW6432,
+      env.ProgramFiles ?? "C:\\Program Files",
+      env["ProgramFiles(x86)"],
+      env.LOCALAPPDATA && join(env.LOCALAPPDATA, "Programs"),
+    ];
+    for (const root of new Set(installRoots)) {
+      if (!root) continue;
+      const directory = join(root, "Git", "cmd");
+      if (!(await isFile(join(directory, "git.exe")))) continue;
+      for (const key of pathKeys) delete env[key];
+      env.PATH = [path, directory].filter(Boolean).join(";");
+      return;
+    }
+  }
+
   /** Every usable gh on this computer, in preference order: PATH and install folders, then the managed copy. */
   private async candidates(): Promise<string[]> {
     const name = this.platform === "win32" ? "gh.exe" : "gh";
     const found: string[] = [];
     for (const directory of this.searchDirectories()) {
       const candidate = join(directory, name);
-      if (
-        await stat(candidate).then(
-          (entry) => entry.isFile(),
-          () => false,
-        )
-      )
-        found.push(candidate);
+      if (await isFile(candidate)) found.push(candidate);
     }
     const managed = await this.managedInstalled();
     if (managed) found.push(managed);
@@ -180,16 +216,24 @@ export class GhRuntime {
 
   /** Hidden, deadline-bound gh invocation; the first use waits for the one-time install. */
   async run(cwd: string, args: string[], limits: GhRunLimits = {}): Promise<string> {
+    limits.signal?.throwIfAborted();
     const found = await this.candidates();
+    limits.signal?.throwIfAborted();
+    if (!found.length && limits.allowInstall === false)
+      throw new Error("No GitHub CLI is available");
     const binary = found[0] ?? (await this.waitForInstall());
+    limits.signal?.throwIfAborted();
     const env = await this.credentials(
       binary,
       found.filter((candidate) => candidate !== binary),
+      limits.signal,
     );
+    limits.signal?.throwIfAborted();
     return await this.exec(binary, args, {
       cwd,
       env,
       timeout: limits.timeoutMs ?? COMMAND_TIMEOUT_MS,
+      ...(limits.signal ? { signal: limits.signal } : {}),
       ...(limits.maxBuffer ? { maxBuffer: limits.maxBuffer } : {}),
     });
   }
@@ -215,20 +259,28 @@ export class GhRuntime {
   }
 
   /** Auth is gh's own sign-in. If this gh is signed out, reuse a token from another gh here. */
-  private async credentials(binary: string, others: string[]): Promise<NodeJS.ProcessEnv> {
+  private async credentials(
+    binary: string,
+    others: string[],
+    signal?: AbortSignal,
+  ): Promise<NodeJS.ProcessEnv> {
     const cached = this.authCache.get(binary);
     if (cached && cached.until > Date.now()) {
       if (cached.error) throw new Error(cached.error);
       return cached.env!;
     }
     const base = { ...this.env, GH_PROMPT_DISABLED: "1", GIT_TERMINAL_PROMPT: "0" };
+    if (this.platform === "win32") await this.addWindowsGitPath(base);
+    signal?.throwIfAborted();
     const signedIn = await this.exec(binary, ["auth", "status", "--active", "--hostname", HOST], {
       env: base,
       timeout: PROBE_TIMEOUT_MS,
+      ...(signal ? { signal } : {}),
     }).then(
       () => true,
       () => false,
     );
+    signal?.throwIfAborted();
     let entry: { env?: NodeJS.ProcessEnv; error?: string };
     if (signedIn) entry = { env: base };
     else {
@@ -237,10 +289,12 @@ export class GhRuntime {
         token = await this.exec(other, ["auth", "token", "--hostname", HOST], {
           env: base,
           timeout: PROBE_TIMEOUT_MS,
+          ...(signal ? { signal } : {}),
         }).then(
           (output) => output.trim(),
           () => "",
         );
+        signal?.throwIfAborted();
         if (token) break;
       }
       entry = token ? { env: { ...base, GH_TOKEN: token } } : { error: this.signInMessage(binary) };

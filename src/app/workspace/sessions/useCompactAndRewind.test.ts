@@ -124,6 +124,7 @@ beforeEach(async () => {
     lastBoundProvider: { current: new Map([["session", "provider-before-rewind"]]) },
     lastPersistedUserBlock: { current: new Map([["session", "selected-user"]]) },
     persistSession: vi.fn(),
+    ensureSessionHistoryForExecution: vi.fn(async () => true),
   };
   function Harness() {
     actions = useCompactAndRewind(deps);

@@ -10,8 +10,11 @@ export const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 const nativeEmbeddedInputs = new Set([
   "src/shared/model/host-contracts/generated/manifest.json",
   "src/features/social/model/socialClient.ts",
+  "src/features/connections/model/protocol.ts",
+  "src/shared/model/host-contracts/response-limit.ts",
   "src/integrations/harness/core/nativeOutputDelivery.fixture.json",
   "host/windows-acl.ps1",
+  "host/service/registration.ps1",
   "host/git/gh-runtime.ts",
   "public/brand/bycoda/logo-horizontal-black.svg",
 ]);

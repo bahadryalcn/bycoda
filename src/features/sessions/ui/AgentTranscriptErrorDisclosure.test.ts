@@ -10,6 +10,12 @@ let root: Root;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  // Reduced motion: a closing row unmounts its body at once instead of waiting for the collapse.
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -30,7 +36,7 @@ afterEach(() => {
 });
 
 describe("tool error disclosure", () => {
-  it("shows the error summary and keeps the raw output collapsed until its failed row is clicked", () => {
+  it("opens a failed command's output by itself and lets the reader close it", () => {
     const blocks: Block[] = [
       { id: "user", role: "user", text: "Start the app" },
       {
@@ -40,34 +46,31 @@ describe("tool error disclosure", () => {
         tool: {
           kind: "shell",
           status: "failed",
-          detail: "Error: listen EPERM\n    at Server.setupListenHandle",
+          detail:
+            "\u001b[?9001h\u001b]0;pwsh.exe\u0007\r\nError: listen EPERM\n    at Server.setupListenHandle",
         },
       },
     ];
 
     act(() => root.render(createElement(AgentTranscript, { blocks, busy: true })));
 
-    const trigger = container.querySelector<HTMLButtonElement>(
-      'button[aria-label^="Show error details for"]',
+    // A failed command opens its output by itself; terminal control sequences stay stripped.
+    const trigger = container.querySelector<HTMLElement>(
+      'summary[aria-label^="Hide error details for"]',
     );
     expect(trigger).not.toBeNull();
-    expect(trigger?.getAttribute("aria-expanded")).toBe("false");
-    expect(container.textContent).toContain("Error: listen EPERM");
-    expect(container.textContent).not.toContain("Server.setupListenHandle");
-
-    const failedRow = container.querySelector<HTMLElement>('[aria-label^="Failed tool call:"]');
-    const message = Array.from(failedRow?.querySelectorAll("span") ?? []).find((element) =>
-      element.textContent?.includes("npm run dev"),
-    );
-    expect(message).not.toBeNull();
-
-    act(() => message?.click());
     expect(trigger?.getAttribute("aria-expanded")).toBe("true");
+    expect(container.textContent).toContain("Error: listen EPERM");
     expect(container.textContent).toContain("Server.setupListenHandle");
+    expect(container.textContent).not.toContain("pwsh.exe");
+    expect(container.textContent).not.toContain("");
 
+    // The reader's toggle wins over the automatic opening.
     act(() => trigger?.click());
     expect(trigger?.getAttribute("aria-expanded")).toBe("false");
     expect(container.textContent).not.toContain("Server.setupListenHandle");
+    act(() => trigger?.click());
+    expect(trigger?.getAttribute("aria-expanded")).toBe("true");
   });
 });
 
@@ -90,18 +93,27 @@ describe("Bycoda CLI disclosure", () => {
     act(() => root.render(createElement(AgentTranscript, { blocks, busy: true })));
 
     const row = container.querySelector<HTMLElement>('[data-bycoda-tool-call="notes.list"]');
-    const trigger = row?.querySelector<HTMLButtonElement>(
-      'button[aria-label="Show output for bycoda: List notes"]',
+    const trigger = row?.querySelector<HTMLElement>(
+      'summary[aria-label="Show output for bycoda: List notes"]',
     );
     expect(trigger?.getAttribute("aria-expanded")).toBe("false");
     expect(row?.querySelector("pre")).toBeNull();
     expect(row?.textContent).toContain("Ranbycoda app notes.list");
-    expect(row?.querySelector('img[src="/brand/bycoda/mark-black.svg"]')).not.toBeNull();
+    expect(
+      row?.querySelector(
+        'img[src="/brand/bycoda/mark-black.svg"], img[src="/brand/bycoda/mark-white.svg"]',
+      ),
+    ).not.toBeNull();
     expect(container.textContent).not.toContain("Contents/MacOS/bycoda");
     expect(container.textContent).not.toContain('"title":"Ideas"');
     act(() => trigger?.click());
     expect(trigger?.getAttribute("aria-expanded")).toBe("true");
-    act(() => row?.querySelector<HTMLButtonElement>('button[aria-label="Expand all"]')?.click());
+    // A small payload has no expand-all control; open its collapsed branches row by row.
+    for (let pass = 0; pass < 4; pass += 1) {
+      const next = row?.querySelector<HTMLElement>('[role="treeitem"][aria-expanded="false"]');
+      if (!next) break;
+      act(() => next.click());
+    }
     expect(row?.textContent).toContain("Ideas");
   });
 
@@ -117,8 +129,8 @@ describe("Bycoda CLI disclosure", () => {
     ];
     act(() => root.render(createElement(AgentTranscript, { blocks, busy: true })));
 
-    const trigger = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Show error details for bycoda: List notes"]',
+    const trigger = container.querySelector<HTMLElement>(
+      'summary[aria-label="Show error details for bycoda: List notes"]',
     );
     expect(trigger?.getAttribute("aria-expanded")).toBe("false");
     const count = () => (container.textContent ?? "").split("Connection refused").length - 1;
@@ -147,11 +159,7 @@ describe("tool output inspection", () => {
       },
     ];
     act(() => root.render(createElement(AgentTranscript, { blocks, busy: true })));
-    act(() =>
-      container
-        .querySelector<HTMLButtonElement>('button[aria-label^="Show error details for"]')!
-        .click(),
-    );
+    // The failed row is already open.
     const sections = Array.from(container.querySelectorAll("[data-tool-inspection] section"));
     expect(sections[0].querySelector("h4")?.textContent).toBe("Error");
     expect(sections[0].textContent).toContain("Tests failed: assertion mismatch");
@@ -166,14 +174,16 @@ describe("tool output inspection", () => {
         id: "tool",
         role: "tool",
         text: "Run pnpm build",
-        tool: { kind: "shell", status: "completed", detail: "Build succeeded: output-marker" },
+        tool: {
+          kind: "shell",
+          status: "completed",
+          detail: "Build succeeded: output-marker",
+        },
       },
     ];
     act(() => root.render(createElement(AgentTranscript, { blocks, busy: true })));
     expect(container.querySelector("[data-tool-inspection]")).toBeNull();
-    const trigger = container.querySelector<HTMLButtonElement>(
-      'button[aria-label^="Show output for"]',
-    );
+    const trigger = container.querySelector<HTMLElement>('summary[aria-label^="Show output for"]');
     expect(trigger).not.toBeNull();
     act(() => trigger?.click());
     expect(container.querySelector("[data-tool-inspection]")?.textContent).toContain(
@@ -202,16 +212,18 @@ describe("tool output inspection", () => {
             path: "src/App.tsx",
             contentOnly: true,
             lines: [{ kind: "context", text: "short preview" }],
-            inspection: { kind: "content", text: "full code\nlast-line-marker", truncated: true },
+            inspection: {
+              kind: "content",
+              text: "full code\nlast-line-marker",
+              truncated: true,
+            },
           },
         },
       },
     ];
     act(() => root.render(createElement(AgentTranscript, { blocks, busy: true, onOpenFile })));
     expect(container.textContent).not.toContain("last-line-marker");
-    const trigger = container.querySelector<HTMLButtonElement>(
-      'button[aria-label^="Show changes for"]',
-    );
+    const trigger = container.querySelector<HTMLElement>('summary[aria-label^="Show changes for"]');
     act(() => trigger?.click());
     expect(container.querySelector("[data-tool-inspection]")?.textContent).toContain(
       "last-line-marker",

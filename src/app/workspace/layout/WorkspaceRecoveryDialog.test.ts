@@ -15,7 +15,6 @@ vi.mock("../../shell/SessionRecoveryPanel", () => ({
 vi.mock("./EditorDraftRecoverySection", () => ({
   EditorDraftRecoverySection: () => "Retained file drafts",
 }));
-vi.mock("./BufferRecoveryReports", () => ({ BufferRecoveryReports: () => "Earlier reports" }));
 
 type Props = ComponentProps<typeof WorkspaceRecoveryDialog>;
 let root: Root;
@@ -34,18 +33,23 @@ afterEach(async () => {
   host.remove();
   vi.unstubAllGlobals();
 });
-const render = (pending: boolean, reports = false) =>
+const render = (pending: boolean, sessions = false) =>
   act(async () =>
     root.render(
       createElement(WorkspaceRecoveryDialog, {
         sessions: [],
         remoteSessions: [],
-        recovery: null,
+        recovery: sessions
+          ? ({
+              workspace: { sessions: [{ id: "s1" }] },
+            } as unknown as NonNullable<Props["recovery"]>)
+          : null,
+        editorDraftRecords: sessions
+          ? ([{}] as unknown as NonNullable<Props["editorDraftRecords"]>)
+          : [],
         onClose,
         onOpen: async () => {},
         onRemove: async () => {},
-        canInspectLegacyReports: () => reports,
-        getLegacyReportPrivacySnapshot: reports ? () => "visible" : undefined,
         // Only the recovery-shell boundary is exercised; file storage/actions stay mocked.
         editorDraftRecovery: {
           available: true,
@@ -59,26 +63,28 @@ it.each(["file", "conversation"])(
   "disables Close while %s recovery is pending and restores it afterwards",
   async (kind) => {
     state.chatPending = kind === "conversation";
-    await render(kind === "file");
+    // Conversation recovery needs a workspace with sessions; file recovery stands alone.
+    await render(kind === "file", kind === "conversation");
     const close = () => document.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!;
     expect(close().disabled).toBe(true);
     await act(async () => close().click());
     expect(onClose).not.toHaveBeenCalled();
     state.chatPending = false;
-    await render(false);
+    await render(false, kind === "conversation");
     expect(close().disabled).toBe(false);
     await act(async () => close().click());
     expect(onClose).toHaveBeenCalledOnce();
   },
 );
 
-it("names the sole recovery section without referencing an absent tab", async () => {
+it("shows the sole recovery section without a one-tab landmark", async () => {
   await render(false);
   expect(document.querySelector('[role="tablist"]')).toBeNull();
   const section = document.getElementById("workspace-recovery-panel-files")!;
   expect(section.getAttribute("aria-labelledby")).toBeNull();
-  expect(section.getAttribute("role")).toBe("region");
-  expect(section.getAttribute("aria-label")).toBe("File drafts");
+  // One section is not a tab set or a landmark: the dialog title names it.
+  expect(section.getAttribute("role")).toBeNull();
+  expect(section.getAttribute("aria-label")).toBeNull();
   expect(section.textContent).toContain("Retained file drafts");
 });
 
@@ -87,7 +93,7 @@ it("preserves tab and panel naming when multiple recovery kinds are available", 
   const panel = document.querySelector('[role="tabpanel"]')!;
   const label = document.getElementById(panel.getAttribute("aria-labelledby")!);
   expect(label?.getAttribute("role")).toBe("tab");
-  expect(label?.textContent).toBe("File drafts0");
+  expect(label?.textContent).toBe("Sessions");
   expect(label?.getAttribute("aria-controls")).toBe(panel.id);
   expect(panel.hasAttribute("aria-label")).toBe(false);
 });

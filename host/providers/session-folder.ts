@@ -1,7 +1,17 @@
-import { mkdir } from "node:fs/promises";
+import { lstat, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { readStateFile } from "../storage/atomic-write";
+
+const SCRATCH_PREFIX = "~/.bycoda-host/scratch/session-";
+
+export function isSessionScratchCwd(cwd: string): boolean {
+  return cwd.startsWith(SCRATCH_PREFIX);
+}
+
+export function sessionScratchCwd(key: string): string {
+  return `${SCRATCH_PREFIX}${key}`;
+}
 
 /** Shared with the desktop app on this machine (`set_session_folder`). */
 export function sessionFolderPath(home = homedir()): string {
@@ -24,14 +34,24 @@ function parseFolder(text: string): string | undefined {
 }
 
 /**
- * Where a session without a project (stored cwd exactly `~`) runs: the configured folder,
- * created when missing, else the home folder. Any other cwd, including `~/x`, is returned
- * unchanged for `expandHome`.
+ * Create and resolve the reserved per-session scratch path, or resolve bare `~`
+ * to the legacy configured folder. Other paths go through the caller's normal resolver.
  */
 export async function resolveSessionCwd(
   cwd: string,
   home = homedir(),
 ): Promise<string | undefined> {
+  if (isSessionScratchCwd(cwd)) {
+    const id = cwd.slice(SCRATCH_PREFIX.length);
+    if (!/^[A-Za-z0-9_-]{1,180}$/u.test(id)) throw new Error("Invalid session scratch directory");
+    const root = join(home, ".bycoda-host", "scratch");
+    const path = join(root, `session-${id}`);
+    await mkdir(root, { recursive: true });
+    if (!(await lstat(root)).isDirectory()) throw new Error("Invalid session scratch root");
+    await mkdir(path, { recursive: true });
+    if (!(await lstat(path)).isDirectory()) throw new Error("Invalid session scratch directory");
+    return path;
+  }
   if (cwd !== "~") return undefined;
   const state = await readStateFile(sessionFolderPath(home), parseFolder, {
     quarantine: false,

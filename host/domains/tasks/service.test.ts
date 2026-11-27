@@ -13,6 +13,7 @@ afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close();
 });
 async function fixture() {
+  const helpers = vi.fn(async (_taskId: string | undefined, _failedOnly: boolean) => []);
   const root = await mkdtemp(join(tmpdir(), "bycoda-tasks-domain-"));
   cleanup.push(() => rm(root, { recursive: true, force: true }));
   const store = new HostStore(join(root, "host.db"));
@@ -39,6 +40,7 @@ async function fixture() {
     project: (id) => store.project(id),
     withAuthorization: (authorized, work) => store.db.withAuthorization(authorized, work),
     tasks,
+    helpers,
     retarget: () => Promise.reject(new Error("Workspace owner fixture is unavailable")),
   });
   const input = {
@@ -54,7 +56,7 @@ async function fixture() {
     isolate: false,
     review: false,
   };
-  return { store, tasks, service, context, input, send };
+  return { store, tasks, service, context, input, send, helpers };
 }
 it("delegates real task persistence and coherent snapshot/events without starting a provider", async () => {
   const f = await fixture();
@@ -121,4 +123,15 @@ it("retains owner transition rules and strict versus legacy outer parameters", a
   });
   await expect(f.service.list({}, f.context)).rejects.toThrow("revoked");
   expect(f.send).not.toHaveBeenCalled();
+});
+it("reads a task's helpers, or every failed helper when no task is named", async () => {
+  const f = await fixture();
+  await f.service.helpers({ taskId: "task" }, f.context);
+  // The owner transport validates in legacy mode, which turns an absent id into "".
+  await f.service.helpers({ failedOnly: true }, f.context, { legacy: true });
+  expect(f.helpers.mock.calls).toEqual([
+    ["task", false],
+    [undefined, true],
+  ]);
+  await expect(f.service.helpers({ taskId: 3 }, f.context)).rejects.toThrow();
 });

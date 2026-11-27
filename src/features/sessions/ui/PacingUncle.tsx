@@ -1,7 +1,7 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import {
   useDecorativeMotionEnabled,
-  useWindowHasFocus,
+  useMotionWindowVisible,
 } from "../../settings/public/decorativeMotion";
 import { loadCrewTheme, subscribeCrewTheme } from "../../settings/public/settings";
 import { drawPacingUncle } from "./pacingUncleArt";
@@ -25,15 +25,22 @@ export function PacingUncle({ visible = true }: { visible?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const elapsed = useRef(0);
   const motion = useDecorativeMotionEnabled();
-  // Behind another application the walker holds its pose, like the other canvas loops.
-  const focused = useWindowHasFocus();
+  const windowVisible = useMotionWindowVisible();
   const theme = useSyncExternalStore(subscribeCrewTheme, loadCrewTheme, loadCrewTheme);
   const workerEnabled = useSyncExternalStore(
     subscribeCanvasWorkerEnabled,
     workerSnapshot,
     workerSnapshot,
   );
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Synchronize canvas paint and timer with motion, focus, visibility and crew theme.
+  // The renderer outlives pauses: gates are read by the long-lived effect below, never its deps.
+  const gates = useRef({ motion, windowVisible, visible, theme });
+  const sync = useRef<(() => void) | null>(null);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Hands the latest motion, window and element visibility and crew theme to the live walker, which only re-arms its timer and repaints.
+  useEffect(() => {
+    gates.current = { motion, windowVisible, visible, theme };
+    sync.current?.();
+  }, [motion, windowVisible, visible, theme]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Owns the canvas, worker host and observers for as long as the renderer kind stays the same; disposes them on change or unmount.
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
@@ -48,8 +55,8 @@ export function PacingUncle({ visible = true }: { visible?: boolean }) {
     const height = 32;
     const paint = () =>
       worker
-        ? worker.draw({ width, height, elapsed: elapsed.current, theme })
-        : drawPacingUncle(ctx, width, height, elapsed.current, theme);
+        ? worker.draw({ width, height, elapsed: elapsed.current, theme: gates.current.theme })
+        : drawPacingUncle(ctx, width, height, elapsed.current, gates.current.theme);
     // A 12 Hz timer, not a per-vsync frame chain: the pixel art only changes 12 times a
     // second, and unchanged frames (pauses, idle beads) do not touch the canvas at all.
     const tick = () => {
@@ -77,7 +84,8 @@ export function PacingUncle({ visible = true }: { visible?: boolean }) {
         }
       }
       paint();
-      if (motion && focused && visible && intersects && width > 0) {
+      const { motion, windowVisible, visible } = gates.current;
+      if (motion && windowVisible && visible && intersects && width > 0) {
         last = performance.now();
         timer = setTimeout(tick, FRAME_MS);
       }
@@ -97,7 +105,9 @@ export function PacingUncle({ visible = true }: { visible?: boolean }) {
     resize?.observe(canvas);
     window.addEventListener("resize", update);
     update();
+    sync.current = update;
     return () => {
+      sync.current = null;
       if (timer !== null) clearTimeout(timer);
       intersection?.disconnect();
       resize?.disconnect();
@@ -105,7 +115,7 @@ export function PacingUncle({ visible = true }: { visible?: boolean }) {
       worker?.dispose();
       window.removeEventListener("resize", update);
     };
-  }, [motion, focused, visible, theme, workerEnabled]);
+  }, [workerEnabled]);
   const canvas = (
     <canvas
       ref={ref}

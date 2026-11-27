@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { useEffect, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import {
@@ -25,24 +26,24 @@ export function TaskAccountPicker({
 }) {
   const t = useT();
   const [, refresh] = useState(0);
+  // Refresh the warning when the local provider account catalog changes.
   useEffect(() => subscribeProviderAccounts(() => refresh((version) => version + 1)), []);
   if (!supportsProviderAccounts(harness)) return null;
   if (!local)
-    return (
+    // The host's default account is the unremarkable case and says nothing.
+    return accountId && accountId !== "default" ? (
       <Text size="caption" tone="secondary" className="task-account-context">
-        {accountId && accountId !== "default"
-          ? t("Account selected on the host")
-          : t("Host default account")}
+        {t("Account selected on the host")}
       </Text>
-    );
+    ) : null;
   const missing =
     accountId !== undefined &&
     accountId !== "default" &&
     !providerAccounts(harness).some((account) => account.id === accountId);
   if (!missing) return null;
   return (
-    <Text size="caption" tone="warning" role="status" className="task-account-context">
+    <InlineMessage tone="warning" className="task-account-context">
       {t("Unavailable account")}
-    </Text>
+    </InlineMessage>
   );
 }

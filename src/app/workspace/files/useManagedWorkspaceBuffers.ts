@@ -5,7 +5,6 @@ import { isFilesystemTab, type FilePaneTab } from "../../../features/workspace/m
 
 type BufferState = { path: string; dirty: boolean };
 
-const BUFFER_KEEPALIVE_MS = 25_000;
 /** Untitled and relative-path tabs cannot name a workspace file; native skips them too. */
 const ABSOLUTE_PATH = /^(?:[A-Za-z]:[\\/]|\\\\|\/)/;
 
@@ -52,15 +51,8 @@ export function useManagedWorkspaceBuffers(
     [files, dirtyIds],
   );
   useEffect(() => {
-    const send = () => {
-      // Failed/unsupported transport remains unknown to the native/Host gate.
-      void report(JSON.parse(snapshot) as BufferState[]).catch(() => undefined);
-    };
-    // Reported on every change; the repeat only keeps an unchanged report fresh, because the
-    // native gate treats a report older than 45 s as stale (buffer_reports.rs).
-    send();
-    const timer = window.setInterval(send, BUFFER_KEEPALIVE_MS);
-    return () => window.clearInterval(timer);
+    // Syncs the desktop's in-memory editor registry; a failed report is retried by the next change.
+    void report(JSON.parse(snapshot) as BufferState[]).catch(() => undefined);
   }, [report, snapshot]);
   // Unmount is not evidence that editor contents were saved or a process exited.
 }

@@ -4,6 +4,8 @@ import { Button } from "../../../shared/ui/Button";
 import { useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
+import { PickerList } from "../../../shared/ui/picker";
+import { Spinner } from "../../../shared/ui/Spinner";
 import { type ProviderAccountProvider } from "../../providers/model/providerAccounts";
 import { useProviderAccounts } from "../../providers/public/useProviderAccounts";
 import { AccountColorDot } from "../../providers/ui/AccountColorDot";
@@ -25,7 +27,7 @@ export function ProviderAccountRecoveryDialog({
   const [busy, setBusy] = useState(false);
   const [pendingAccount, setPendingAccount] = useState<string | null>(null);
   const selecting = useRef(false);
-  const [error, setError] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
   const select = (accountId: string) =>
     selectAccount(accountId, {
       onSelect,
@@ -33,40 +35,36 @@ export function ProviderAccountRecoveryDialog({
       selecting,
       setPendingAccount,
       setBusy,
-      setError,
-      failure: t(
-        "The account could not be switched. The conversation shows the reason; try again.",
-      ),
+      setProblem,
+      message: t("The account could not be changed. Try again."),
     });
   return (
-    <Modal title={t("Continue with another account")} size="sm" onClose={onClose}>
-      <div className="space-y-2">
-        {accounts.map((account) => (
-          <Button
-            fullWidth
-            variant="item"
-            key={account.id}
-            type="button"
-            disabled={busy}
-            loading={pendingAccount === account.id}
-            className="w-full text-left"
-            onClick={() => void select(account.id)}
-          >
-            <AccountColorDot account={account} />
-            <span>{account.label}</span>
-          </Button>
-        ))}
-        {error ? <Alert tone="danger">{error}</Alert> : null}
-        <Button
-          variant="ghost"
-          type="button"
-          disabled={busy}
-
-          onClick={onManage}
-        >
-          {t("Accounts")}
+    <Modal
+      title={t("Continue with another account")}
+      size="sm"
+      onClose={onClose}
+      footer={
+        <Button variant="ghost" type="button" disabled={busy} onClick={onManage}>
+          {t("Manage accounts")}
         </Button>
-      </div>
+      }
+    >
+      <PickerList
+        label={t("Accounts")}
+        options={accounts.map((account) => ({
+          value: account.id,
+          title: account.label,
+          icon: <AccountColorDot account={account} />,
+          trailing: pendingAccount === account.id ? <Spinner aria-busy="true" /> : undefined,
+        }))}
+        value={null}
+        disabled={busy}
+        checkPlacement="none"
+        emptyLabel={t("No accounts. Add an account to sign in.")}
+        listHeight="standard"
+        onChange={(accountId: string) => void select(accountId)}
+      />
+      {problem ? <Alert tone="danger">{problem}</Alert> : null}
     </Modal>
   );
 }
@@ -77,23 +75,23 @@ type SelectAccountDeps = {
   selecting: { current: boolean };
   setPendingAccount: (accountId: string | null) => void;
   setBusy: (busy: boolean) => void;
-  setError: (error: string | null) => void;
-  failure: string;
+  setProblem: (error: string | null) => void;
+  message: string;
 };
 
 // Module level: the compiler cannot lower a try/finally inside a component.
 async function selectAccount(accountId: string, deps: SelectAccountDeps) {
-  const { onSelect, onClose, selecting, setPendingAccount, setBusy, setError, failure } = deps;
+  const { onSelect, onClose, selecting, setPendingAccount, setBusy, setProblem, message } = deps;
   if (selecting.current) return;
   selecting.current = true;
   setPendingAccount(accountId);
   setBusy(true);
-  setError(null);
+  setProblem(null);
   try {
     if (await onSelect(accountId)) onClose();
-    else setError(failure);
+    else setProblem(message);
   } catch (reason) {
-    setError(presentRemoteError(reason, { explicit: true }));
+    setProblem(presentRemoteError(reason, { explicit: true }));
   } finally {
     selecting.current = false;
     setPendingAccount(null);

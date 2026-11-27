@@ -1,15 +1,15 @@
 .setup {
   display: grid;
-  gap: 16px;
+  gap: var(--ui-space-4);
   min-inline-size: 0;
   container-type: inline-size;
 }
 
-/* Fields in one column; two columns once the dialog has room for a pair. */
+/* Voice setup fields in one column; two columns once the dialog has room for a pair. */
 .grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 16px 20px;
+  gap: var(--ui-space-4) var(--ui-space-5);
   align-items: start;
   min-inline-size: 0;
 }
@@ -19,41 +19,12 @@
   }
 }
 
-.context {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px 16px;
-}
-
-.content,
-.review {
+.content {
   display: grid;
-  gap: 16px;
+  gap: var(--ui-space-4);
   min-inline-size: 0;
-}
-
-.feedback {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 
 .muted {
   margin: 0;
-}
-
-.rules {
-  white-space: pre-wrap;
-}
-
-/* The step's purpose, under the progress bar and above its fields. */
-.intro {
-  margin: 0;
-}
-
-/* "Set up with AI" sits above the manual fields, not stretched across the step. */
-.aiStart {
-  justify-self: start;
 }

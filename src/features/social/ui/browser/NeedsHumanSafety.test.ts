@@ -47,7 +47,11 @@ function waiting(
 function clientWith(items: NeedsHumanItem[]) {
   const list = vi.fn(async () => ({ items }));
   const resolve = vi.fn(async () => undefined);
-  const browserViewFrame = vi.fn(async () => ({ jpegBase64: "QUFB", width: 10, height: 10 }));
+  const browserViewFrame = vi.fn(async (_accountId: string, _cursor?: unknown) => ({
+    jpegBase64: "QUFB",
+    width: 10,
+    height: 10,
+  }));
   const browserViewInput = vi.fn(async () => undefined);
   const client = {
     browser: { needsHuman: { list, resolve } },
@@ -218,8 +222,9 @@ it("opens the live view for the chosen account only, without resolving or sendin
   await act(async () => buttons("Open live view")[1]!.click());
   await settle();
   expect(element.querySelector('section[aria-label="Live browser view"]')).not.toBeNull();
-  expect(browserViewFrame).toHaveBeenCalledWith("acc-two");
-  expect(browserViewFrame).not.toHaveBeenCalledWith("acc-one");
+  // #1067 starts the chosen account without a frame cursor.
+  expect(browserViewFrame).toHaveBeenCalledWith("acc-two", undefined);
+  expect(browserViewFrame.mock.calls.map(([accountId]) => accountId)).not.toContain("acc-one");
   expect(resolve).not.toHaveBeenCalled();
   expect(browserViewInput).not.toHaveBeenCalled();
 });

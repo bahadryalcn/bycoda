@@ -21,6 +21,12 @@ it("preserves domain search ranking and reveals only after the launcher has clos
   });
   let nextFrame = 0;
   const frames = new Map<number, FrameRequestCallback>();
+  let warmSearch: IdleRequestCallback | undefined;
+  vi.stubGlobal("requestIdleCallback", (callback: IdleRequestCallback) => {
+    warmSearch = callback;
+    return 1;
+  });
+  vi.stubGlobal("cancelIdleCallback", vi.fn());
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
     frames.set(++nextFrame, callback);
     return nextFrame;
@@ -43,9 +49,20 @@ it("preserves domain search ranking and reveals only after the launcher has clos
       );
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
+    expect(document.querySelectorAll('[role="option"]')).toHaveLength(0);
+    expect(document.body.textContent).toContain("Loading…");
+    await act(async () => warmSearch?.({ didTimeout: false, timeRemaining: () => 10 }));
     const options = [...document.querySelectorAll('[role="option"]')];
     expect(options).toHaveLength(expected.length);
     options.forEach((option, index) => expect(option.textContent).toContain(expected[index].label));
+    // The page name heads each group once instead of repeating on every row.
+    expect(document.querySelectorAll('[role="group"]')).toHaveLength(
+      new Set(
+        expected
+          .filter((result) => result.settingId && result.label !== result.sectionLabel)
+          .map((result) => result.sectionLabel),
+      ).size,
+    );
     await act(async () =>
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
     );

@@ -230,7 +230,7 @@ it("remembers recently active projects after their visible session unsubscribes"
   rail();
 });
 
-it("discards an in-flight pre-recovery poll and requests a snapshot without starting a second poll", async () => {
+it("supersedes a held pre-recovery poll at once and discards its late result without moving the cursor", async () => {
   vi.useFakeTimers();
   bindMachineEnvironment("snapshot", "snapshot-env");
   const finishes: ((value: unknown) => void)[] = [];
@@ -249,10 +249,9 @@ it("discards an in-flight pre-recovery poll and requests a snapshot without star
   await vi.advanceTimersByTimeAsync(0);
   notifyRemoteRecovered("unrelated-env");
   notifyRemoteRecovered("snapshot-env");
-  expect(remoteRequest).toHaveBeenCalledTimes(1);
-  finishes[0]({ instanceId: "old", sessions: [], projects: [], reset: false });
   await vi.advanceTimersByTimeAsync(0);
-  expect(listener).not.toHaveBeenCalled();
+  // The snapshot poll starts while the old one is still held.
+  expect(remoteRequest).toHaveBeenCalledTimes(2);
   expect(remoteRequest).toHaveBeenLastCalledWith(
     "snapshot",
     "machine.changes",
@@ -261,7 +260,48 @@ it("discards an in-flight pre-recovery poll and requests a snapshot without star
       projects: [{ projectId: "p" }],
     }),
   );
+  expect(vi.mocked(remoteRequest).mock.calls[1][2]).not.toHaveProperty("instanceId");
+  // The abandoned poll settles late: nothing is delivered, no third poll starts and
+  // it neither adopts its host instance nor ends the new poll's ownership.
+  finishes[0]({ instanceId: "stale", sessions: [], projects: [], reset: false });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(listener).not.toHaveBeenCalled();
+  expect(remoteRequest).toHaveBeenCalledTimes(2);
   finishes[1]({ instanceId: "new", sessions: [], projects: [], reset: false });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(listener).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ reset: true }));
+  await vi.advanceTimersByTimeAsync(100);
+  expect(remoteRequest).toHaveBeenCalledTimes(3);
+  expect(vi.mocked(remoteRequest).mock.calls[2][2]).toMatchObject({ instanceId: "new" });
+  stop();
+});
+
+it("ignores a late failure of a superseded poll", async () => {
+  vi.useFakeTimers();
+  bindMachineEnvironment("superseded", "superseded-env");
+  const settles: { resolve(value: unknown): void; reject(error: unknown): void }[] = [];
+  vi.mocked(remoteRequest).mockReset();
+  vi.mocked(remoteRequest).mockImplementation(
+    () => new Promise((resolve, reject) => settles.push({ resolve, reject })),
+  );
+  const listener = vi.fn();
+  const onError = vi.fn();
+  const stop = subscribeRemoteMachineChannel(
+    "superseded",
+    { sessions: [{ sessionId: "s", revision: 10 }] },
+    listener,
+    onError,
+  );
+  await vi.advanceTimersByTimeAsync(0);
+  notifyRemoteRecovered("superseded-env");
+  await vi.advanceTimersByTimeAsync(0);
+  expect(remoteRequest).toHaveBeenCalledTimes(2);
+  settles[0].reject(new Error("held poll dropped"));
+  await vi.advanceTimersByTimeAsync(60_000);
+  // No error surfaced, no failure back-off and no extra poll while the new one is held.
+  expect(onError).not.toHaveBeenCalled();
+  expect(remoteRequest).toHaveBeenCalledTimes(2);
+  settles[1].resolve({ instanceId: "new", sessions: [], projects: [], reset: false });
   await vi.advanceTimersByTimeAsync(0);
   expect(listener).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ reset: true }));
   stop();
@@ -534,6 +574,8 @@ function nativeFixture(machineId: string) {
     data: unknown,
     sequence = 1,
     eventKind: "snapshot" | "delta" = "snapshot",
+    /** Event revisions, when the data is not a session delta. */
+    revisions?: { revision?: number; baseRevision?: number },
   ) => {
     const open = calls("subscriptions.open").findLast(([, params]) => {
       const target = (
@@ -543,7 +585,9 @@ function nativeFixture(machineId: string) {
     });
     const subscriptionId = (open?.[1] as { subscriptionId: string })?.subscriptionId ?? "missing";
     const delta =
-      eventKind === "delta" ? (data as { base: number; value: { revision: number } }) : undefined;
+      eventKind === "delta" && !revisions
+        ? (data as { base: number; value: { revision: number } })
+        : undefined;
     listener?.({
       kind: "subscription",
       environmentId,
@@ -556,7 +600,7 @@ function nativeFixture(machineId: string) {
           streamId: `stream-${subscriptionId}`,
           cursor: { epoch: "epoch", sequence },
           kind: eventKind,
-          ...(delta ? { baseRevision: delta.base, revision: delta.value.revision } : {}),
+          ...(delta ? { baseRevision: delta.base, revision: delta.value.revision } : revisions),
           data,
         },
       },
@@ -806,6 +850,108 @@ it.each([false, true])(
     (console.warn as unknown as { mockRestore(): void }).mockRestore();
   },
 );
+
+it("re-arms WebSocket after a fallback on a bounded doubling timer and keeps HTTP until then", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  vi.spyOn(Math, "random").mockReturnValue(0.5); // no back-off jitter
+  const { port } = nativeFixture("ws-rearm");
+  vi.mocked(port.attach).mockImplementation(async () => true); // connecting forever
+  vi.mocked(remoteRequest).mockImplementation(() => new Promise(() => {}));
+  const errors = vi.fn();
+  const stop = subscribeRemoteMachineChannel(
+    "ws-rearm",
+    { projects: [{ projectId: "p" }] },
+    vi.fn(),
+    errors,
+  );
+  await flushNative();
+  await vi.advanceTimersByTimeAsync(33_000); // fell back after about 6 s; first retry due at about 36 s
+  expect(createTauriHostConnection).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(5_000);
+  await flushNative();
+  expect(createTauriHostConnection).toHaveBeenCalledTimes(2);
+  // The retry fell back again: the next wait doubled to 60 s rather than repeating 30 s.
+  await vi.advanceTimersByTimeAsync(57_000);
+  expect(createTauriHostConnection).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(13_000);
+  await flushNative();
+  expect(createTauriHostConnection).toHaveBeenCalledTimes(3);
+  expect(errors).not.toHaveBeenCalled();
+  stop();
+  (console.warn as unknown as { mockRestore(): void }).mockRestore();
+  vi.mocked(Math.random).mockRestore();
+});
+
+it("returns to WebSocket once a retry finds the Host ready", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  vi.spyOn(Math, "random").mockReturnValue(0.5);
+  const { port, calls } = nativeFixture("ws-recover");
+  const ready = vi.mocked(port.attach).getMockImplementation()!;
+  vi.mocked(port.attach).mockImplementation(async () => true); // first route never becomes ready
+  vi.mocked(remoteRequest).mockImplementation(() => new Promise(() => {}));
+  const stop = subscribeRemoteMachineChannel(
+    "ws-recover",
+    { projects: [{ projectId: "p" }] },
+    vi.fn(),
+  );
+  await flushNative();
+  await vi.advanceTimersByTimeAsync(10_000);
+  expect(calls("subscriptions.open")).toHaveLength(0);
+  vi.mocked(port.attach).mockImplementation(ready);
+  await vi.advanceTimersByTimeAsync(30_000);
+  await flushNative();
+  expect(calls("subscriptions.open").length).toBeGreaterThan(0);
+  stop();
+  (console.warn as unknown as { mockRestore(): void }).mockRestore();
+  vi.mocked(Math.random).mockRestore();
+});
+
+it("re-arms WebSocket at once when the network returns but not on a window focus", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  const { port } = nativeFixture("ws-online");
+  vi.mocked(port.attach).mockImplementation(async () => true);
+  vi.mocked(remoteRequest).mockImplementation(() => new Promise(() => {}));
+  const stop = subscribeRemoteMachineChannel(
+    "ws-online",
+    { projects: [{ projectId: "p" }] },
+    vi.fn(),
+  );
+  await flushNative();
+  await vi.advanceTimersByTimeAsync(10_000); // fallback to HTTP
+  expect(createTauriHostConnection).toHaveBeenCalledTimes(1);
+  window.dispatchEvent(new Event("focus"));
+  await vi.advanceTimersByTimeAsync(0);
+  await flushNative();
+  expect(createTauriHostConnection).toHaveBeenCalledTimes(1);
+  window.dispatchEvent(new Event("online"));
+  await vi.advanceTimersByTimeAsync(0);
+  await flushNative();
+  expect(createTauriHostConnection).toHaveBeenCalledTimes(2);
+  stop();
+  (console.warn as unknown as { mockRestore(): void }).mockRestore();
+});
+
+it("stops the WebSocket retry timer with the last subscriber", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  const { port } = nativeFixture("ws-rearm-stop");
+  vi.mocked(port.attach).mockImplementation(async () => true);
+  vi.mocked(remoteRequest).mockImplementation(() => new Promise(() => {}));
+  const stop = subscribeRemoteMachineChannel(
+    "ws-rearm-stop",
+    { projects: [{ projectId: "p" }] },
+    vi.fn(),
+  );
+  await flushNative();
+  await vi.advanceTimersByTimeAsync(10_000);
+  stop();
+  await vi.advanceTimersByTimeAsync(600_000);
+  expect(createTauriHostConnection).toHaveBeenCalledTimes(1);
+  (console.warn as unknown as { mockRestore(): void }).mockRestore();
+});
 
 it("shares route acquisition with unary callers and releases only the final native owner", async () => {
   const { port } = nativeFixture("ws-unary");
@@ -1072,5 +1218,82 @@ it("keeps the other WebSocket streams when one consumer fails with a non-transpo
   await flushNative();
   expect(calls("subscriptions.ack").length).toBeGreaterThan(0);
   expect(port.detach).not.toHaveBeenCalled();
+  stop();
+});
+
+it("opens a project delta stream only on a capable host and rebuilds the full list", async () => {
+  const { emit, calls } = nativeFixture("ws-project-delta");
+  vi.mocked(cachedRemoteCapabilities).mockReturnValue([
+    "transport.ws.sessions.v2",
+    "transport.ws.bulk.v2",
+    "transport.ws.projects.delta.v1",
+  ]);
+  const row = (id: string, updatedAt: number, title = id) => ({
+    id,
+    projectId: "p",
+    revision: 1,
+    status: "idle" as const,
+    updatedAt,
+    title,
+    harness: "codex" as const,
+  });
+  const listener = vi.fn();
+  const errors = vi.fn();
+  const stop = subscribeRemoteMachineChannel(
+    "ws-project-delta",
+    { projects: [{ projectId: "p" }] },
+    listener,
+    errors,
+  );
+  await flushNative();
+  expect(calls("subscriptions.open")[0]?.[1]).toMatchObject({
+    target: { kind: "project", projectId: "p", delta: true },
+  });
+  emit(
+    "project",
+    "p",
+    { etag: "e1", sessions: [row("a", 3), row("b", 2), row("c", 1)] },
+    1,
+    "snapshot",
+    {
+      revision: 7,
+    },
+  );
+  await flushNative();
+  // "c" streams to the front, "b" is deleted.
+  emit(
+    "project",
+    "p",
+    { etag: "e2", sessions: [row("c", 9, "streaming")], removed: ["b"], head: ["c"] },
+    2,
+    "delta",
+    { baseRevision: 7, revision: 8 },
+  );
+  await flushNative();
+  expect(errors).not.toHaveBeenCalled();
+  expect(calls("subscriptions.ack")).toHaveLength(2);
+  expect(listener.mock.calls[1]![0].projects).toEqual([
+    { projectId: "p", etag: "e2", sessions: [row("c", 9, "streaming"), row("a", 3)] },
+  ]);
+  // A delta against a list this receiver does not hold asks for a fresh snapshot instead of guessing.
+  emit("project", "p", { etag: "e3", sessions: [] }, 3, "delta", { baseRevision: 5, revision: 9 });
+  await flushNative();
+  expect(listener).toHaveBeenCalledTimes(2);
+  expect(calls("subscriptions.ack")).toHaveLength(2);
+  expect(calls("subscriptions.open").length).toBeGreaterThan(1);
+  stop();
+});
+
+it("keeps the plain project snapshot stream on a host without project deltas", async () => {
+  const { calls } = nativeFixture("ws-project-plain");
+  const stop = subscribeRemoteMachineChannel(
+    "ws-project-plain",
+    { projects: [{ projectId: "p" }] },
+    vi.fn(),
+  );
+  await flushNative();
+  const open = calls("subscriptions.open")[0]?.[1];
+  expect(open).toMatchObject({ target: { kind: "project", projectId: "p" } });
+  expect(open).not.toMatchObject({ target: { delta: true } });
   stop();
 });

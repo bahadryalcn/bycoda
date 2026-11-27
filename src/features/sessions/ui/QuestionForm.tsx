@@ -23,8 +23,8 @@ import {
 } from "../model/attachments";
 import { questionTransportHeld, runQuestionAttachmentEffect } from "../model/questionAttachments";
 import { useT } from "../../../shared/i18n";
-import { usePresentationVisible } from "./presentationVisibility";
-import { useEffect, useLayoutEffect, useId, useRef, useState } from "react";
+import { usePresentationNow } from "./AgentClock";
+import { useLayoutEffect, useId, useRef, useState } from "react";
 import { ChevronLeft, FilePlus, MessageSquare } from "../../../shared/ui/icons";
 import { questionDraftKey, type QuestionDraft } from "../model/questionDrafts";
 import {
@@ -47,6 +47,8 @@ type Props = {
   dismissEntirePrompt?: boolean;
   /** Share the composer's background when this question is docked above it. */
   docked?: boolean;
+  /** The composer's notice stack already announces the checkpoint; do not repeat it here. */
+  checkpointNoticeOwned?: boolean;
   attachmentsSupported?: boolean;
   remote?: boolean;
   onReply: (requestId: number, reply: UserQuestionReply) => void;
@@ -82,6 +84,7 @@ function QuestionFormContent({
   docked = false,
   attachmentsSupported = true,
   remote = false,
+  checkpointNoticeOwned,
   onReply,
   onInteraction,
 }: Props) {
@@ -106,8 +109,8 @@ function QuestionFormContent({
   } = useQuestionFormDraft(prompt, draftScope, parentSessionId);
   const { step, answers, custom } = draft;
   const statusId = useId();
-  const [now, setNow] = useState(Date.now);
-  const visible = usePresentationVisible();
+  // Countdown label only; auto-resolve and interaction checks run on the host's deadline.
+  const now = usePresentationNow(prompt.autoResolveAt != null);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [readingAttachments, setReadingAttachments] = useState(false);
   const attachmentFlight = useRef(false);
@@ -129,13 +132,6 @@ function QuestionFormContent({
     prompt.delivery,
   );
   const held = transportHeld || !reserved || readingAttachments || recovery.blocked;
-
-  useEffect(() => {
-    if (prompt.autoResolveAt == null || !visible) return;
-    setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [prompt.requestId, prompt.autoResolveAt, visible]);
 
   const interact = () => {
     if (!reserved || !reservation.current?.current() || !parentChanged.canMutate()) return;
@@ -399,14 +395,10 @@ function QuestionFormContent({
           if (!canAttach || !pasted.length) return;
           event.preventDefault();
           event.stopPropagation();
-          readAttachments(async () => {
-            const attached = await attachmentsFromFiles(pasted, {
-              persistBlobs: false,
-            });
-            if (attached.length !== pasted.length)
-              throw new Error(t("Some files could not be attached. Try attaching them again."));
-            return attached;
-          });
+          // Valid files attach; blobs left out are named by the reader's notice.
+          readAttachments((onSkipped) =>
+            attachmentsFromFiles(pasted, { persistBlobs: false, onSkipped }),
+          );
         }}
         onSubmit={(event) => {
           event.preventDefault();
@@ -415,47 +407,46 @@ function QuestionFormContent({
       >
         {/* Without a separate heading the question itself sits beside the icon; the field
             legend still names the group for assistive technology. */}
-        <Text
-          as="div"
-          size="inherit"
-          tone={title ? "secondary" : "neutral"}
-          className={styles.context}
-          data-prompt={title ? undefined : ""}
-        >
-          <MessageSquare className="icon-sm shrink-0" tone="secondary" aria-hidden />
-          {title ? (
-            <Text
-              as="span"
-              size="caption"
-              tone="inherit"
-              weight="medium"
-              leading="inherit"
-              className={styles.contextTitle}
-              tracking="normal"
-            >
-              {title}
-            </Text>
-          ) : (
-            <Text
-              size="body"
-              tone="inherit"
-              weight="medium"
-              leading="normal"
-              className={styles.contextPrompt}
+        <Text as="div" size="inherit" tone="inherit" className="text-(--transcript-ink-emphasis)">
+          <div className={styles.context} data-prompt={title ? undefined : ""}>
+            <MessageSquare
+              className="icon-sm shrink-0 text-(--transcript-ink-chrome)"
               aria-hidden
-            >
-              {question.prompt}
-            </Text>
-          )}
-          {total > 1 ? (
-            <LiveText
-              className={styles.progress}
-              size="caption"
-              tone="secondary"
-              leading="inherit"
-              text={`${index + 1} / ${total}`}
             />
-          ) : null}
+            {title ? (
+              <Text
+                as="span"
+                size="body"
+                tone="inherit"
+                weight="medium"
+                leading="inherit"
+                className={styles.contextTitle}
+                tracking="normal"
+              >
+                {title}
+              </Text>
+            ) : (
+              <Text
+                size="body"
+                tone="inherit"
+                weight="medium"
+                leading="normal"
+                className={styles.contextPrompt}
+                aria-hidden
+              >
+                {question.prompt}
+              </Text>
+            )}
+            {total > 1 ? (
+              <LiveText
+                className={`${styles.progress} tabular-nums text-(--transcript-ink-chrome)`}
+                size="caption"
+                tone="inherit"
+                leading="inherit"
+                text={`${index + 1} / ${total}`}
+              />
+            ) : null}
+          </div>
         </Text>
         <FieldGroup variant="bare" disabled={sending}>
           <div className={styles.body} data-inline-prompt={title ? undefined : ""}>
@@ -472,6 +463,7 @@ function QuestionFormContent({
                 }))
               }
               locked={held}
+              lockedReason={t("Wait for the current action to finish.")}
               onSelect={(optionId) =>
                 updateDraft((current) => ({
                   ...current,
@@ -492,17 +484,39 @@ function QuestionFormContent({
                 if (mounted.current) parentChanged();
               }}
             />
-            {canAttach && files.length ? (
-              <div className={styles.attachments} aria-label={t("Attachments")}>
-                <QuestionAttachmentList
-                  files={files}
-                  held={held}
-                  questionId={question.id}
-                  update={updateDraft}
-                  busy={setReadingAttachments}
-                  error={setAttachmentError}
-                  flight={attachmentFlight}
-                />
+            {canAttach ? (
+              <div className={styles.attachmentArea}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  startIcon={<FilePlus />}
+                  disabled={held || files.length >= MAX_ATTACHMENTS}
+                  disabledReason={
+                    held
+                      ? t("Wait for the current action to finish.")
+                      : t("You can attach up to {p0} files.", {
+                          p0: MAX_ATTACHMENTS,
+                        })
+                  }
+                  loading={readingAttachments}
+                  onClick={() => readAttachments(() => pickAttachments())}
+                >
+                  {t("Attach files")}
+                </Button>
+                {files.length ? (
+                  <div className={styles.attachments} aria-label={t("Attachments")}>
+                    <QuestionAttachmentList
+                      files={files}
+                      held={held}
+                      questionId={question.id}
+                      update={updateDraft}
+                      busy={setReadingAttachments}
+                      error={setAttachmentError}
+                      flight={attachmentFlight}
+                    />
+                  </div>
+                ) : null}
               </div>
             ) : null}
             <QuestionAttachmentError
@@ -512,40 +526,26 @@ function QuestionFormContent({
             />
           </div>
         </FieldGroup>
-        <div
-          {...surfaceAttributes({ variant: "inset", frame: "pane", edge: "top" }, styles.footer)}
-        >
-          {canAttach ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              iconOnly
-              label={t("Attach files")}
-              startIcon={<FilePlus />}
-              disabled={held || files.length >= MAX_ATTACHMENTS}
-              loading={readingAttachments}
-              onClick={() => readAttachments(() => pickAttachments())}
-            />
-          ) : null}
+        <div className={styles.footer}>
           <div className={styles.feedback}>
-            {parentClosed ? (
+            {parentClosed && !checkpointNoticeOwned ? (
               <LiveText text={t("Preparing session checkpoint. Your draft is kept.")} />
             ) : null}
             {capacityMessage ? <InlineError>{capacityMessage}</InlineError> : null}
             {status ? (
               <Text
-                as="p"
+                as="div"
                 size="caption"
                 tone={failed ? "danger" : "secondary"}
                 leading="normal"
                 role={failed || uncertain ? "alert" : "status"}
-                className={styles.status}
                 id={statusId}
                 data-error={failed ? "true" : undefined}
               >
-                {StatusIcon ? <StatusIcon className="icon-sm shrink-0" aria-hidden /> : null}
-                <span>{status}</span>
+                <p className={styles.status}>
+                  {StatusIcon ? <StatusIcon className="icon-sm shrink-0" aria-hidden /> : null}
+                  <span>{status}</span>
+                </p>
               </Text>
             ) : null}
             {prompt.autoResolveAt != null && !transportHeld ? (
@@ -587,6 +587,7 @@ function QuestionFormContent({
                 type="button"
                 className="shrink-0"
                 disabled={held}
+                disabledReason={t("Wait for the current action to finish.")}
                 startIcon={<ChevronLeft />}
                 onClick={() => updateDraft((current) => ({ ...current, step: index - 1 }))}
               >
@@ -600,8 +601,14 @@ function QuestionFormContent({
               disabled={!ready || held}
               loading={sending && !dismissing}
               loadingLabel={pendingLabel}
-              startIcon={<SubmitIcon />}
-              reserveLabels={[t("Sending answer…"), t("Send again"), t("Connection issue")]}
+              startIcon={last || held ? <SubmitIcon /> : undefined}
+              endIcon={!last && !held ? <SubmitIcon /> : undefined}
+              stableWidth={last || held}
+              reserveLabels={
+                last || held
+                  ? [t("Sending answer…"), t("Send again"), t("Connection issue")]
+                  : undefined
+              }
               aria-describedby={status ? statusId : undefined}
             >
               {submitLabel}

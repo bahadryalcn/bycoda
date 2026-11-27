@@ -14,6 +14,7 @@ import {
   isModelPoolConversationTool,
 } from "../conversation/conversation-model-pool-source";
 import { isManagementAction } from "../conversation/conversation-management-tools";
+import { THREAD_CREW_WRITES } from "../conversation/conversation-thread-crew-tools";
 import { isDesktopControlConversationTool } from "../conversation/conversation-desktop-control-tools";
 import { managedDiscoveryResult, managedMcpCatalog } from "../mcp/mcp-http";
 import { serializedResponse } from "../sync/sync-transfer";
@@ -66,6 +67,14 @@ export async function handleVoiceTools(
     | "voiceBrowserOwner"
   >,
 ) {
+  if (request.input.method === "voice.tools.call")
+    request.voiceToolLog = {
+      action: null,
+      requestId: null,
+      startedAt: monotonicNow(),
+      outcome: "response",
+      stage: "native-owner-check",
+    };
   // Voice is an owner-started desktop surface, never an escalation route
   // for a provider, social peer or browser-origin request.
   if (
@@ -107,17 +116,16 @@ export async function handleVoiceTools(
     request.response.end(JSON.stringify({ result: { tools } }));
     return true;
   }
+  const log = request.voiceToolLog!;
+  log.stage = "validate-call";
   const call = parseVoiceToolCall(request.params);
-  request.voiceToolLog = {
-    action: call.action,
-    requestId: call.requestId ?? null,
-    startedAt: monotonicNow(),
-    outcome: "response",
-  };
+  log.action = call.action;
+  log.requestId = call.requestId ?? null;
   console.info("Voice tool started", {
-    action: request.voiceToolLog.action,
-    requestId: request.voiceToolLog.requestId,
+    action: log.action,
+    requestId: log.requestId,
   });
+  log.stage = "causal-context";
   if (call.causalContextId) {
     request.voiceDisclosure = new HostVoiceToolDisclosure(
       {
@@ -135,6 +143,7 @@ export async function handleVoiceTools(
       void request.voiceDisclosure?.fail().catch(() => undefined);
     });
   }
+  log.stage = "dispatch";
   if (
     !call.projectId &&
     (call.family === "social" ||
@@ -556,7 +565,12 @@ export async function handleVoiceTools(
       projectId: call.projectId,
       family: call.family,
       action: call.action,
-      input: call.input,
+      input:
+        call.family === "conversation" &&
+        THREAD_CREW_WRITES.has(call.action) &&
+        call.input.operationId === undefined
+          ? { ...call.input, operationId: requestId }
+          : call.input,
       requestId,
     };
     request.voiceDisclosure?.bind({
@@ -565,11 +579,13 @@ export async function handleVoiceTools(
       family: call.family,
       action: call.action,
     });
+    log.stage = "room-operation";
     const output = await dependencies.assistantPorts.roomManagement!(qualifiedCall, {
       environmentId: dependencies.engine.store.environmentId,
       deviceHash: request.tokenHash,
       authorized,
     });
+    log.stage = "project-result-disclosure";
     request.voiceDisclosure?.bindProjectProofs(output.contributorProjects ?? []);
     await dependencies.withRoomProjectScope(qualifiedCall, authorized, async () => {
       if (
@@ -577,6 +593,7 @@ export async function handleVoiceTools(
         (await dependencies.engine.store.project(call.projectId!)).cwd !== output.source.projectCwd
       )
         throw new Error("Voice project identity changed before disclosure.");
+      log.stage = "writing-result";
       await request.endResult(output.value, async () => {
         if (!(await authorized())) throw new Error("Native owner authority revoked.");
       });

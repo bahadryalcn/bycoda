@@ -17,7 +17,6 @@
 .size::before {
   content: attr(data-size);
   font-size: 0.85em;
-  color: var(--ui-text-secondary);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }

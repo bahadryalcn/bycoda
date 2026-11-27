@@ -84,24 +84,34 @@ export function GitCommitActions({
     ? (index.upstream ?? `${index.remote ?? "origin"}/${index.branch ?? "HEAD"}`)
     : "";
   const syncTitle = syncing
-    ? "Synchronizing Changes..."
+    ? t("Synchronizing Changes…")
     : canPublish
       ? index?.branch
-        ? `Publish Branch "${index.branch}"`
-        : "Publish Branch"
+        ? t('Publish Branch "{p0}"', { p0: index.branch })
+        : t("Publish Branch")
       : behind > 0 && ahead > 0
-        ? `Pull ${behind} and push ${ahead} commits between ${dest}`
+        ? t("Pull {p0} and push {p1} commits between {p2}", { p0: behind, p1: ahead, p2: dest })
         : behind > 0
-          ? `Pull ${behind} commit${behind === 1 ? "" : "s"} from ${dest}`
-          : `Push ${ahead} commit${ahead === 1 ? "" : "s"} to ${dest}`;
+          ? behind === 1
+            ? t("Pull {p0} commit from {p1}", { p0: behind, p1: dest })
+            : t("Pull {p0} commits from {p1}", { p0: behind, p1: dest })
+          : ahead === 1
+            ? t("Push {p0} commit to {p1}", { p0: ahead, p1: dest })
+            : t("Push {p0} commits to {p1}", { p0: ahead, p1: dest });
   const syncDetail = `${syncTitle}${canPublish || !index?.upstream ? ` · ${dest}` : ""}`;
   const syncLabel = canPublish
     ? t("Publish Branch")
-    : t(behind > 0 && ahead > 0 ? "Sync Changes" : behind > 0 ? "Pull" : "Push");
+    : behind > 0 && ahead > 0
+      ? t("Sync changes")
+      : behind > 0
+        ? t("Pull")
+        : t("Push");
   const createTitle = index?.defaultBranch
-    ? `Create a pull request into ${index.defaultBranch}`
-    : "Create pull request";
-  const viewTitle = pr?.title ? `View PR #${pr.number}: ${pr.title}` : "View pull request";
+    ? t("Create a pull request into {p0}", { p0: index.defaultBranch })
+    : t("Create pull request");
+  const viewTitle = pr?.title
+    ? t("View PR #{p0}: {p1}", { p0: pr.number, p1: pr.title })
+    : t("View pull request");
   const viewLabel = pr?.number ? t("View PR #{p0}", { p0: pr.number }) : t("View PR");
   const showSync = hasRemote && !!index && (canPublish || canSync || syncing);
   // A permanently disabled Create PR is noise: offer it only when it can run.
@@ -126,16 +136,13 @@ export function GitCommitActions({
   // the leading icon names a one-way direction, so only a two-way sync repeats arrows.
   const twoWay = ahead > 0 && behind > 0;
   const countLabel = (count: number, incoming: boolean) =>
-    t(
-      incoming
-        ? count === 1
-          ? "{p0} incoming commit"
-          : "{p0} incoming commits"
-        : count === 1
-          ? "{p0} unpushed commit"
-          : "{p0} unpushed commits",
-      { p0: count },
-    );
+    incoming
+      ? count === 1
+        ? t("{p0} incoming commit", { p0: count })
+        : t("{p0} incoming commits", { p0: count })
+      : count === 1
+        ? t("{p0} unpushed commit", { p0: count })
+        : t("{p0} unpushed commits", { p0: count });
   const syncCounts =
     canPublish || (ahead === 0 && behind === 0) ? null : (
       <Text
@@ -207,11 +214,11 @@ export function GitCommitActions({
             }
           : {
               variant: "primary" as const,
-              label: committing ? (pending ?? busyLabel(busy ?? "")) : commitLabel,
+              label: commitLabel,
               title: undefined,
               disabled: !canCommit,
               loading: committing,
-              loadingLabel: undefined,
+              loadingLabel: pending ?? busyLabel(busy ?? ""),
               icon: <Check className="icon-sm" strokeWidth={2} />,
               trailing: null,
               onClick: () => onCommit(false),
@@ -303,13 +310,14 @@ export function GitCommitActions({
   if (!directSync) return split;
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-      <div className="min-w-[8rem] flex-1">{split}</div>
+      <div className="min-w-32 flex-1">{split}</div>
       <Button
         variant="secondary"
         size="sm"
         className="min-w-0 max-w-full"
-        tooltip={syncDetail}
+        tooltip={dest}
         disabled={syncDisabled}
+        disabledReason={syncDisabled ? t("Wait for the current operation to finish") : undefined}
         loading={syncing}
         loadingLabel={t("Syncing…")}
         startIcon={syncIcon}

@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { SyncTransfers } from "./sync-transfer";
 import type { SessionSync } from "../../src/features/connections/model/protocol";
 
@@ -90,4 +90,53 @@ it("lets a lost last piece be read again but nothing else", () => {
   expect(transfers.chunk("session", response.transfer, lastOffset).data).toBe(pieces.at(-1));
   expect(() => transfers.chunk("session", response.transfer, 0)).toThrow("expired");
   expect(() => transfers.chunk("session", response.transfer, lastOffset)).toThrow("expired");
+});
+
+it("never evicts a transfer that is still being downloaded for another device", () => {
+  let now = 1_000_000;
+  const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+  try {
+    const transfers = new SyncTransfers({ inline: 64, chunk: 4096 });
+    const active = Array.from({ length: 8 }, () =>
+      transfers.respond("session", sync("x".repeat(9000))),
+    );
+    for (const response of active) {
+      if (response.kind !== "chunked") throw new Error("Expected a transfer");
+      transfers.chunk("session", response.transfer, 0);
+    }
+    // All eight slots are mid-download: a new admission must wait, not evict a reader.
+    expect(() => transfers.respond("other", sync("y".repeat(9000)))).toThrow("busy");
+    for (const response of active) {
+      if (response.kind !== "chunked") throw new Error("Expected a transfer");
+      expect(transfers.chunk("session", response.transfer, 2730).data.length).toBeGreaterThan(0);
+    }
+    // Once the readers go idle, the oldest idle transfer yields its slot as before.
+    now += 31_000;
+    const late = transfers.respond("other", sync("y".repeat(9000)));
+    if (late.kind !== "chunked") throw new Error("Expected a transfer");
+    const first = active[0];
+    if (first.kind !== "chunked") throw new Error("Expected a transfer");
+    expect(() => transfers.chunk("session", first.transfer, 2730)).toThrow("expired");
+  } finally {
+    clock.mockRestore();
+  }
+});
+
+it("reports busy instead of evicting an active download to fit the byte budget", () => {
+  const clock = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+  try {
+    const transfers = new SyncTransfers({
+      inline: 64,
+      chunk: 256,
+      maxUnits: 4096,
+      cacheBytes: 4096,
+    });
+    const first = transfers.respond("session", sync("x".repeat(1000)));
+    if (first.kind !== "chunked") throw new Error("Expected a transfer");
+    transfers.chunk("session", first.transfer, 0);
+    expect(() => transfers.respond("other", sync("y".repeat(1000)))).toThrow("busy");
+    expect(transfers.chunk("session", first.transfer, 256).data.length).toBeGreaterThan(0);
+  } finally {
+    clock.mockRestore();
+  }
 });

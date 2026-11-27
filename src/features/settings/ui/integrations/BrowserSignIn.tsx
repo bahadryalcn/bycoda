@@ -1,4 +1,4 @@
-import { Text } from "../../../../shared/ui/Text";
+import { ErrorDetails } from "../../../../shared/ui/ErrorDetails";
 import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../../shared/i18n";
 import { useStableCallback } from "../../../../shared/hooks/useStableCallback";
@@ -24,10 +24,10 @@ type Phase =
   | { kind: "starting" }
   | { kind: "waiting"; start: BrowserSignInStart }
   | { kind: "done"; identity: string }
-  | { kind: "failed"; message: string };
+  | { kind: "failed"; title: string; detail?: string };
 
-/** Another way to connect, offered under the sign-in and again when sign-in fails. */
-export type SignInFallback = { hint: string; action: string; onSelect: () => void };
+/** Another way to connect when browser sign-in fails. */
+export type SignInFallback = { action: string; onSelect: () => void };
 
 const signInLabel = (purpose: BrowserSignInPurpose) =>
   purpose === "google" ? t("Sign in with Google") : t("Sign in with Slack");
@@ -87,10 +87,10 @@ export function BrowserSignIn({
     const lifetimeMs = Math.max(1, start.expiresIn) * 1000;
     let timer: number | undefined;
     const live = () => generation === request.current;
-    const fail = (message: string) => {
+    const fail = (title: string, detail?: string) => {
       if (!live()) return;
       pending.current = null;
-      setPhase({ kind: "failed", message });
+      setPhase({ kind: "failed", title, detail });
     };
     const tick = async () => {
       try {
@@ -102,11 +102,11 @@ export function BrowserSignIn({
           setPhase({ kind: "done", identity });
           signedInCallback(start.handle, identity);
         } else if (result.status === "expired") {
-          fail(result.error || t("The sign-in request expired. Start sign-in again."));
+          fail(t("The sign-in request expired. Start sign-in again."), result.error);
         } else if (result.status === "denied") {
-          fail(result.error || t("Sign-in was declined in the browser."));
+          fail(t("Sign-in was declined in the browser."), result.error);
         } else if (result.status === "failed") {
-          fail(result.error || t("Sign-in failed. Start sign-in again."));
+          fail(t("Sign-in failed. Start sign-in again."), result.error);
         } else if (elapsedSince(startedAt) >= lifetimeMs) {
           release(start.handle);
           fail(t("The sign-in request expired. Start sign-in again."));
@@ -115,7 +115,7 @@ export function BrowserSignIn({
         }
       } catch (err: unknown) {
         release(start.handle);
-        fail(errorText(err));
+        fail(t("Could not check browser sign-in."), errorText(err));
       }
     };
     const schedule = () => {
@@ -130,7 +130,11 @@ export function BrowserSignIn({
       if (generation !== request.current) return;
       release(start.handle);
       pending.current = null;
-      setPhase({ kind: "failed", message: errorText(err) });
+      setPhase({
+        kind: "failed",
+        title: t("Could not open the sign-in page."),
+        detail: errorText(err),
+      });
     });
   };
 
@@ -150,7 +154,12 @@ export function BrowserSignIn({
       setPhase({ kind: "waiting", start });
       openBrowser(start, generation);
     } catch (err: unknown) {
-      if (generation === request.current) setPhase({ kind: "failed", message: errorText(err) });
+      if (generation === request.current)
+        setPhase({
+          kind: "failed",
+          title: t("Could not start browser sign-in."),
+          detail: errorText(err),
+        });
     }
   };
 
@@ -160,18 +169,6 @@ export function BrowserSignIn({
     pending.current = null;
     setPhase({ kind: "idle" });
   };
-
-  const fallbackAction = fallback ? (
-    <Button variant="link" onClick={fallback.onSelect}>
-      {fallback.action}
-    </Button>
-  ) : null;
-  const fallbackLine =
-    fallback && phase.kind !== "failed" ? (
-      <Text as="p" size="caption" tone="secondary">
-        {fallback.hint} {fallbackAction}
-      </Text>
-    ) : null;
 
   if (phase.kind === "waiting") {
     const { start } = phase;
@@ -187,7 +184,6 @@ export function BrowserSignIn({
           </Button>
           <Button onClick={cancel}>{t("Cancel")}</Button>
         </div>
-        {fallbackLine}
       </div>
     );
   }
@@ -198,18 +194,15 @@ export function BrowserSignIn({
         <Button
           variant={signedIn || phase.kind === "done" ? "secondary" : "primary"}
           stableWidth
-          reserveLabels={[t("Starting sign-in…")]}
           loading={phase.kind === "starting"}
+          loadingLabel={t("Starting sign-in…")}
           disabled={disabled}
+          disabledReason={t("Wait for the current operation to finish")}
           onClick={() => {
             begin().catch(() => undefined);
           }}
         >
-          {phase.kind === "starting"
-            ? t("Starting sign-in…")
-            : signedIn || phase.kind === "done"
-              ? t("Sign in again")
-              : signInLabel(purpose)}
+          {signedIn || phase.kind === "done" ? t("Sign in again") : signInLabel(purpose)}
         </Button>
       </div>
       {phase.kind === "done" && phase.identity ? (
@@ -220,12 +213,12 @@ export function BrowserSignIn({
       {phase.kind === "failed" ? (
         <SettingsFeedback
           state="error"
+          extra={phase.detail ? <ErrorDetails detail={phase.detail} /> : undefined}
           action={fallback ? { label: fallback.action, onClick: fallback.onSelect } : undefined}
         >
-          {phase.message}
+          {phase.title}
         </SettingsFeedback>
       ) : null}
-      {fallbackLine}
     </div>
   );
 }

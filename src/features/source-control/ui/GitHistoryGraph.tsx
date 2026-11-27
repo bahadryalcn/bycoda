@@ -14,7 +14,7 @@ import { pathKey } from "../../../shared/lib/paths";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { useDeferredValue, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { GitBranch, Maximize2, Search, RefreshCw } from "../../../shared/ui/icons";
+import { GitBranch, Maximize2, Search } from "../../../shared/ui/icons";
 import {
   gitCheckoutCommit,
   gitCherryPick,
@@ -61,8 +61,6 @@ type Props = {
 
 import { EMPTY_HISTORY_FILTERS, matchesHistoryFilters } from "../model/gitHistoryFilters";
 
-const HISTORY_PAGE = 200;
-
 export function GitHistoryGraph({
   cwd,
   enabled,
@@ -79,7 +77,6 @@ export function GitHistoryGraph({
   const stateKey = `git-history:${pathKey(cwd)}`;
   const [showAll, setShowAll] = useRetainedState(`${stateKey}:all`, false);
   const [fullShowAll, setFullShowAll] = useRetainedState(`${stateKey}:full-all`, true);
-  const [limit, setLimit] = useRetainedState(`${stateKey}:limit:${showAll}`, HISTORY_PAGE);
   const [searchOpen, setSearchOpen] = useRetainedState(`${stateKey}:search`, false);
   const [query, setQuery] = useRetainedState(`${stateKey}:query`, "");
   const deferredQuery = useDeferredValue(query);
@@ -93,11 +90,10 @@ export function GitHistoryGraph({
   const [commitMode, setCommitMode] = useState<"changes" | "blame">("changes");
   const [resolutionDirty, setResolutionDirty] = useState(false);
   const [resolutionReset, setResolutionReset] = useState(0);
-  const { commits, failure, loading, error, refresh } = useGitHistory(
+  const { commits, hasMore, loadMore, failure, loading, error, refresh } = useGitHistory(
     cwd,
     enabled && (expanded || fullOpen),
     actions && (fullOpen ? fullShowAll : showAll),
-    limit,
   );
   const [busy] = useGitPanelState(cwd, "busy");
   const rows = useMemo(() => layoutGitGraph(commits), [commits]);
@@ -116,7 +112,6 @@ export function GitHistoryGraph({
         return row ? [{ commit, row }] : [];
       });
   }, [commits, deferredQuery, searching, rowBySha, columnsActive, columnFilters]);
-  const hasMore = commits.length >= limit;
 
   const [menu, setMenu] = useState<{
     x: number;
@@ -145,18 +140,12 @@ export function GitHistoryGraph({
     if (!actions || busy || !(await discardResolution())) return;
     try {
       await withGitOperation(cwd, "Updating repository…", action);
-      setGitFeedback(cwd, {
-        kind: "success",
-        get title() {
-          return t("Git operation complete");
-        },
-      });
     } catch (error) {
       if (fullOpen) setFullCommit(null);
       setGitFeedback(cwd, {
         kind: "error",
         get title() {
-          return t("Git operation failed");
+          return t("Couldn’t update the repository");
         },
         detail: errorText(error),
       });
@@ -297,28 +286,18 @@ export function GitHistoryGraph({
   const list = (variant: "compact" | "workspace") => {
     const empty =
       !cwd || cwd === "~" ? (
-        <EmptyState
-          size="inline"
-          kind="empty"
-          className="px-3"
-          description={t("No project folder")}
-        />
+        <EmptyState size="inline" kind="empty" inset="row" description={t("No project folder")} />
       ) : commits.length === 0 ? (
         loading ? (
-          <GitLoading text="Loading commit graph…" />
+          <GitLoading text={t("Loading commit graph…")} />
         ) : error || failure ? undefined : ( // The failure notice above the list already explains it; no second failure state here.
-          <EmptyState
-            size="inline"
-            kind="empty"
-            className="px-3"
-            description={t("No commits yet")}
-          />
+          <EmptyState size="inline" kind="empty" inset="row" description={t("No commits yet")} />
         )
       ) : items.length === 0 ? (
         <EmptyState
           size="inline"
           kind="filtered"
-          className="px-3"
+          inset="row"
           description={
             <>
               {t("No matching commits in the ")}
@@ -339,7 +318,7 @@ export function GitHistoryGraph({
         hasMore={hasMore && !loading && !error && !failure}
         empty={empty}
         suspendHover={menu !== null}
-        onLoadMore={() => setLimit((value) => value + HISTORY_PAGE)}
+        onLoadMore={loadMore}
         onOpen={(commit, pin) => {
           if (variant === "workspace") void selectFullCommit(commit);
           else onOpenCommit(commit, pin);
@@ -377,7 +356,7 @@ export function GitHistoryGraph({
       width={264}
       header={
         <Text as="div" size="caption" tone="secondary" className="px-2 py-1.5">
-          <Code className="mr-2">{menu.commit.shortSha}</Code>
+          <Code className="me-2">{menu.commit.shortSha}</Code>
           <Text as="span" size="inherit" tone="primary" truncate className="block">
             {menu.commit.subject}
           </Text>
@@ -425,19 +404,6 @@ export function GitHistoryGraph({
             ) : null}
             {expanded ? (
               <>
-                <Button
-                  size="sm"
-                  iconOnly
-                  label={t("Refresh commit graph")}
-                  variant="ghost"
-                  motion="none"
-                  type="button"
-                  loading={loading}
-                  loadingLabel={t("Refreshing…")}
-                  onClick={refresh}
-                >
-                  <RefreshCw className="icon-sm" />
-                </Button>
                 {showAllButton}
                 <Button
                   size="sm"
@@ -490,27 +456,11 @@ export function GitHistoryGraph({
       {expanded ? list("compact") : null}
       {fullOpen ? (
         <GitGraphDialog
-          title={t("Commit Graph")}
+          title={t("Commit graph")}
           expandable
           onClose={() => void closeFull()}
           toolbar={
             <>
-              <Button
-                size="sm"
-                iconOnly
-                label={t("Refresh full commit graph")}
-                variant="ghost"
-                motion="none"
-                type="button"
-                loading={loading}
-                loadingLabel={t("Refreshing…")}
-                onClick={() => {
-                  refresh();
-                  notifyGitChanged(cwd, "refs");
-                }}
-              >
-                <RefreshCw className="icon-sm" />
-              </Button>
               {repositories ? (
                 <div className={graphLayout.repository}>
                   <SearchableSelect
@@ -542,7 +492,7 @@ export function GitHistoryGraph({
             </>
           }
         >
-          <Suspense fallback={<GitLoading text="Loading commit graph…" />}>
+          <Suspense fallback={<GitLoading text={t("Loading commit graph…")} />}>
             <GitGraphWorkspace
               key={`${cwd}:${resolutionReset}`}
               cwd={cwd}
@@ -551,6 +501,13 @@ export function GitHistoryGraph({
               onCommitMode={setCommitMode}
               onCommit={(commit) => void selectFullCommit(commit)}
               onDirty={setResolutionDirty}
+              openCommit={{
+                has: (sha) => rowBySha.has(sha),
+                open: (sha) => {
+                  const target = commits.find((candidate) => candidate.sha === sha);
+                  if (target) void selectFullCommit(target);
+                },
+              }}
               onBranch={(commit) => {
                 setNamingError(null);
                 setNaming({ kind: "branch", commit });
@@ -565,16 +522,9 @@ export function GitHistoryGraph({
       {naming ? (
         <RefNameDialog
           title={naming.kind === "branch" ? t("New branch") : t("New tag")}
-          description={
-            naming.kind === "branch"
-              ? t("Create and check out a branch at {p0}.", {
-                  p0: naming.commit.shortSha,
-                })
-              : t("Create a tag at {p0}.", { p0: naming.commit.shortSha })
-          }
           label={naming.kind === "branch" ? t("Branch name") : t("Tag name")}
-          placeholder={naming.kind === "branch" ? t("feature/my-branch") : "v1.0.0"}
-          submitLabel="Create"
+          placeholder={naming.kind === "branch" ? t("feature/my-branch") : t("v1.0.0")}
+          submitLabel={t("Create")}
           busy={namingBusy || !!busy}
           error={namingError}
           onSubmit={(name) => void submitName(name)}

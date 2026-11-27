@@ -13,6 +13,7 @@ import {
   subscribeInlineBlame,
 } from "../../settings/public/settings";
 import { displayPath } from "../../../shared/lib/paths";
+import { UserRound } from "../../../shared/ui/icons";
 
 /** The inline blame preference, shared by every open editor. */
 export function useInlineBlame(): boolean {
@@ -56,18 +57,16 @@ export function InlineBlameToggle({ reason }: { reason: string | null }) {
     <Button
       size="sm"
       variant="ghost"
-      motion="none"
-      type="button"
-      tooltip={reason ?? t("Show git blame for each line")}
-      aria-label={t("Git blame")}
-      aria-pressed={on}
+      iconOnly
+      label={t("Git blame")}
+      pressed={on}
       disabled={reason !== null}
+      disabledReason={reason ?? undefined}
       // Keep the caret where it is in the editor.
       onMouseDown={(event) => event.preventDefault()}
       onClick={() => saveInlineBlame(!on)}
-      className={"ml-2 shrink-0"}
     >
-      {t("Blame")}
+      <UserRound className="icon-sm" strokeWidth={1.75} />
     </Button>
   );
 }

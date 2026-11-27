@@ -191,8 +191,10 @@ export class ApprovalRegistry {
       if (entry.deadline > at || entry.status === "expired") continue;
       if (entry.status === "pending" || (entry.decidedBy === "phone" && !entry.applied))
         this.expire(entry);
-      entry.endedAt ??= at;
-      this.touch(entry);
+      else if (entry.endedAt === undefined) {
+        entry.endedAt = at;
+        this.touch(entry);
+      }
     }
   }
 

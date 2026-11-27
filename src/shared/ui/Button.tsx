@@ -27,7 +27,13 @@ import arcStyles from "./arc/button/button.module.css";
 import styles from "./Button.module.css";
 
 export type { ButtonSize } from "./arc/button/button";
-export type ButtonVariant = Exclude<ArcButtonVariant, "danger"> | "link" | "item" | "tab";
+export type ButtonVariant =
+  | Exclude<ArcButtonVariant, "danger">
+  | "link"
+  | "item"
+  | "tab"
+  | "chip"
+  | "caption";
 export type ButtonShape = "default" | "pill";
 export type ButtonTone = "neutral" | "accent" | "info" | "success" | "warning" | "danger";
 
@@ -103,6 +109,8 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
     | "subtle-ring"
     | "border-ring";
   loading?: boolean;
+  /** Translated pending text ("Updating…"). A text action shows it beside the spinner, in place
+   *  of the label, so the progress never needs a sibling badge; its width is reserved up front. */
   loadingLabel?: string;
   /** Confirmed by the operation owner; clear when the draft or target changes. Pending wins. */
   success?: boolean;
@@ -116,12 +124,15 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
   reserveLabels?: readonly string[];
   /** Translated hint shown in the shared Tooltip on hover and keyboard focus (never a native
    *  `title`). An explicit `title` takes precedence; `title=""` means no tooltip at all, for a
-   *  Button that an outer `Tooltip` already describes. Icon-only buttons fall back to `label`. */
+   *  Button that an outer `Tooltip` already describes. An icon-only `label` is the accessible
+   *  name only; it appears in a hint just with `shortcut`, `tooltipDetails` or `revealLabel`. */
   tooltip?: string;
   /** Show repeated text only when clipped/hidden. Extra details and missing shortcuts stay available. */
   tooltipWhen?: "always" | "overflow";
   /** Muted lines under the tooltip title (path, counts, state). */
   tooltipDetails?: readonly ReactNode[];
+  /** Use the row-detail frame for structured object metadata. */
+  tooltipVariant?: "detail";
   /** Tooltip placement. Default `bottom`. */
   tooltipSide?: PopoverSide;
   tooltipAlign?: PopoverAlign;
@@ -141,7 +152,15 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
   disabledReason?: string;
   startIcon?: ReactNode;
   endIcon?: ReactNode;
-  /** Keep the start icon visible and reveal the text on hover/focus. Use with motion="none" in a bounded toolbar. */
+  /** Visual badge anchored to the control. Include meaningful counts in the accessible label. */
+  badge?: ReactNode;
+  /** Non-interactive content after the label and end icon. Item buttons align it to the end. */
+  trailing?: ReactNode;
+  /** Hide the visible label in a narrow pane header. Supply a leading icon and a text label. */
+  collapseLabel?: "container";
+  /** Icon-only box with a precise pointer, label shown in the tooltip (hover and focus) so the
+   *  control never resizes or displaces neighbours; on touch the label is always visible.
+   *  Needs `label`. Use with motion="none" in a bounded toolbar. */
   revealLabel?: boolean;
   fullWidth?: boolean;
   /** Disable label/press motion for controls that require a stable, direct DOM layout. */
@@ -233,11 +252,12 @@ export function nativeButtonPresentation({
 const isTrue = (value: unknown) => value === true || value === "true";
 
 /**
- * The one action control: variants `primary`, `secondary` (default), `ghost`, `link`, `item` and `tab`, with tone, size, icons, `loading` and `pressed` toggle state. It owns focus ring, hit area, tooltip (`tooltip`, `shortcut`, `disabledReason`), stable width across label changes and long-press.
- * Icon-only buttons need `iconOnly` and a `label`.
+ * The one action control: variants `primary`, `secondary` (default), `ghost`, `link`, `item`, `tab` and `chip` (quiet compact icon plus readable value for machine, project, checkout, branch and model pickers: no border or fill until hover), with tone, size, icons, `loading` and `pressed` toggle state. It owns focus ring, hit area, tooltip (`tooltip`, `shortcut`, `disabledReason`), stable width across label changes and long-press.
+ * Icon-only buttons need `iconOnly` and a `label` (accessible name; no tooltip unless `tooltip`, `shortcut` or `tooltipDetails` is passed).
+ * While `loading`, a text action shows a start spinner beside its label, or beside `loadingLabel` ("Saving…") when given; its width is reserved at rest. The pending action is the progress indicator: show no separate saving notice, badge or card for it.
  * For confirmed async results, set `success` and translated `successLabel`; the action owns its check, label and announcement. At rest the button shows only its label (no reserved icon slot); the confirmed width, check included, is reserved inside the label. Clear success when its draft or target changes.
  * @group actions
- * @use Any click that runs an action, opens something or navigates. Use padding roles and reserveEndAction for row geometry; controlHeight and controlMinHeight preserve content and density.
+ * @use Any click that runs an action, opens something or navigates. Use variant="chip" for a compact icon and readable value. Give icon-only actions an accessible name and reserve tooltips for shortcuts, reasons or details. Use padding roles and reserveEndAction for row geometry; controlHeight and controlMinHeight preserve content and density.
  * Default is variant="secondary" size="sm"; toolbar and icon-only actions pass variant="ghost", a destructive action is tone="danger". Size md has one caller and lg none: use sm or xs.
  * @avoid Choosing between modes: SegmentedControl or RadioGroup. Navigation to an external page: Button variant="link" with openExternal. Icon action inside a row/tab host: InlineAction. Joined related actions: ButtonGroup.
  */
@@ -270,6 +290,7 @@ export function Button({
   tooltip,
   tooltipWhen = "always",
   tooltipDetails,
+  tooltipVariant,
   tooltipSide = "bottom",
   tooltipAlign,
   tooltipWide,
@@ -278,6 +299,9 @@ export function Button({
   disabledReason,
   startIcon,
   endIcon,
+  badge,
+  trailing,
+  collapseLabel,
   revealLabel = false,
   fullWidth = false,
   motion = "auto",
@@ -315,15 +339,37 @@ export function Button({
 }: ButtonProps) {
   const loading = loadingProp ?? false;
   const confirmed = success && !!successLabel && !loading;
-  const contentLabel = confirmed ? successLabel : children;
+  // A text action keeps saying what it does while pending (Arc ActionButton): the spinner takes
+  // the start slot and the label, or the pending text ("Saving…") when given, stays readable.
+  // Only icon-only, item, tab, media and composite-content actions fall back to a centered spinner.
+  const canShowPending =
+    loadingProp !== undefined &&
+    !iconOnly &&
+    variant !== "item" &&
+    variant !== "tab" &&
+    layout !== "media" &&
+    (loadingLabel != null || typeof children === "string" || typeof children === "number");
+  const pendingText = loading && canShowPending;
+  const pendingLabel = loadingLabel ?? children;
+  const contentLabel = pendingText ? pendingLabel : confirmed ? successLabel : children;
   // With a start icon the check replaces it in the same slot. Without one nothing is reserved
   // at rest: the check overlays the start of the label, inside the width the success ghost
   // reserves (icon included), so completion never shifts neighbouring actions.
   const overlayCheck = confirmed && startIcon == null;
+  const overlaySpinner = pendingText && startIcon == null;
   const leadingIcon = confirmed && startIcon != null ? <Check className="icon-sm" /> : startIcon;
+  const canCollapseLabel = collapseLabel === "container" && startIcon != null && !iconOnly;
   const [announcerMounted, setAnnouncerMounted] = useState(false);
   if (confirmed && !announcerMounted) setAnnouncerMounted(true);
-  const reservedLabels = successLabel ? [...(reserveLabels ?? []), successLabel] : reserveLabels;
+  const stateLabels = [
+    ...(successLabel ? [successLabel] : []),
+    // Reserve the pending text with its spinner up front so pressing never widens the action.
+    ...(canShowPending && startIcon == null ? [String(pendingLabel)] : []),
+    ...(canShowPending && startIcon != null && loadingLabel ? [loadingLabel] : []),
+  ];
+  const reservedLabels = stateLabels.length
+    ? [...(reserveLabels ?? []), ...stateLabels]
+    : reserveLabels;
   const labelMeasure = useRef<HTMLSpanElement>(null);
   const [labelWidth, setLabelWidth] = useState(0);
   const reserveLabel = stableWidth ?? (loadingProp !== undefined || !!reservedLabels?.length);
@@ -336,7 +382,11 @@ export function Button({
     const node = labelMeasure.current;
     if (!reserveLabel || !node) return;
     const measure = () => {
-      const width = node.getBoundingClientRect().width;
+      // Under CSS zoom the rect is in zoomed pixels while min-inline-size is in local ones, so
+      // feeding it back unscaled doubles the reservation on every observer tick.
+      const rect = node.getBoundingClientRect().width;
+      const zoom = node.offsetWidth ? Math.round((rect / node.offsetWidth) * 20) / 20 : 1;
+      const width = rect / (zoom || 1);
       setLabelWidth((previous) => Math.max(previous, width));
     };
     measure();
@@ -358,7 +408,8 @@ export function Button({
   };
   useEffect(() => () => void clearLongPress(), []);
   const insetText = inset === "text";
-  const hierarchy = variant;
+  // Chips and window caption controls use ghost interaction roles.
+  const hierarchy = variant === "chip" || variant === "caption" ? "ghost" : variant;
   const resolvedTone: ButtonTone = tone ?? "neutral";
   const structural = variant === "item" || variant === "tab";
   // A text action with a start icon swaps that icon for the spinner in the same slot.
@@ -370,8 +421,11 @@ export function Button({
     !iconOnly &&
     !structural &&
     layout !== "media";
+  // Only an action that cannot show its pending text hides the label under a centered spinner.
+  const centeredSpinner = loading && !inlineProgress && !pendingText;
   const native =
     structural ||
+    variant === "caption" ||
     variant === "link" ||
     motion === "none" ||
     !!(
@@ -435,12 +489,16 @@ export function Button({
       if (swallow(event)) return;
       handler?.(event);
     };
-  // Tooltip: one shared hint for `title`, `tooltip`, the icon-only `label` and `shortcut`.
-  // `title=""` is an explicit "no tooltip" (an outer Tooltip owns the hint).
+  // Tooltip: one shared hint for `title`, `tooltip` and `shortcut`. The accessible name
+  // (`label`) is separate: an icon-only button shows a hint only when the caller adds a
+  // tooltip, shortcut or details (the shortcut hint then leads with the label), or reveals
+  // its label. `title=""` is an explicit "no tooltip" (an outer Tooltip owns the hint).
   const suppressed = props.title === "";
   const tooltipText = suppressed
     ? undefined
-    : props.title || tooltip || (iconOnly ? label : undefined);
+    : props.title ||
+      tooltip ||
+      (revealLabel || (iconOnly && (shortcut || tooltipDetails?.length)) ? label : undefined);
   const reason = explained && !suppressed ? disabledReason : undefined;
   const hintLabel = tooltipText ?? reason;
   const hintDetails = suppressed
@@ -456,6 +514,7 @@ export function Button({
     shortcut: hintShortcut,
     side: tooltipSide,
     align: tooltipAlign,
+    variant: tooltipVariant,
     wide: tooltipWide,
     describe: false,
   });
@@ -519,6 +578,8 @@ export function Button({
     "data-control-height": controlHeight,
     "data-control-min-height": controlMinHeight,
     "data-button-reveal-label": revealLabel || undefined,
+    "data-button-collapse-label": canCollapseLabel || undefined,
+    "data-button-badged": badge != null || undefined,
     // Any explicit alignment is authoritative over structural (item/tab) defaults.
     "data-button-align": align,
     // Not `data-size`/`data-tone`: the control owns those roles through its own attributes.
@@ -709,11 +770,15 @@ export function Button({
           <span
             ref={labelMeasure}
             className={styles.stableLabel}
-            data-confirm-icon={overlayCheck || undefined}
+            data-confirm-icon={overlayCheck || overlaySpinner || undefined}
           >
             {overlayCheck ? (
               <span className={styles.confirmIcon} aria-hidden="true">
                 <Check className="icon-sm" />
+              </span>
+            ) : overlaySpinner ? (
+              <span className={styles.confirmIcon} aria-hidden="true">
+                <span className={`${arcStyles.spinner} ${styles.pendingSpinner}`} />
               </span>
             ) : null}
             {contentLabel}
@@ -723,11 +788,13 @@ export function Button({
               key={index}
               className={styles.labelGhost}
               data-reserve={text}
-              data-reserve-icon={startIcon == null && text === successLabel ? "" : undefined}
+              data-reserve-icon={startIcon == null && stateLabels.includes(text) ? "" : undefined}
               aria-hidden="true"
             />
           ))}
         </span>
+      ) : canCollapseLabel ? (
+        <span className={styles.label}>{contentLabel}</span>
       ) : (
         contentLabel
       )}
@@ -743,6 +810,7 @@ export function Button({
           )}
         </span>
       ) : null}
+      {trailing != null ? <span className={styles.trailing}>{trailing}</span> : null}
     </>
   );
   const withHint = (control: ReactNode) => (
@@ -754,6 +822,12 @@ export function Button({
       ) : null}
     </>
   );
+  const badgeSlot =
+    badge == null ? null : (
+      <span className={styles.badge} aria-hidden="true">
+        {badge}
+      </span>
+    );
   if (native) {
     return withHint(
       <button
@@ -774,7 +848,7 @@ export function Button({
             className={[
               arcStyles.labelSlot,
               styles.nativeContent,
-              loading && !inlineProgress ? arcStyles.loadingLabel : "",
+              centeredSpinner ? arcStyles.loadingLabel : "",
             ]
               .filter(Boolean)
               .join(" ")}
@@ -782,7 +856,7 @@ export function Button({
             {content}
           </span>
         )}
-        {loading && !inlineProgress ? (
+        {centeredSpinner ? (
           <span
             className={structural ? styles.structuralLoader : arcStyles.loader}
             aria-hidden="true"
@@ -790,6 +864,7 @@ export function Button({
             <span className={arcStyles.spinner} />
           </span>
         ) : null}
+        {badgeSlot}
       </button>,
     );
   }
@@ -798,7 +873,8 @@ export function Button({
       {...attributes}
       variant={arcVariant}
       size={size}
-      loading={loading && !inlineProgress}
+      loading={centeredSpinner}
+      overlay={badgeSlot}
       className={controlClasses}
     >
       {content}

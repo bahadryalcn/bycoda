@@ -12,7 +12,6 @@ import { Popover } from "../../../shared/ui/Popover";
 import { ModelExtrasPanel, useModelExtrasSummary } from "./ModelExtras";
 import { ModelBrowser, type ModelBrowserProps } from "./ModelBrowser";
 
-const MODEL_MENU_WIDTH = 310;
 const SUBMENU_OVERLAP = -4;
 const PROVIDER_TAB_SIZE = 32;
 const PROVIDER_TAB_GAP = 4;
@@ -25,6 +24,8 @@ export type ModelFlyoutExtras = {
   values: Record<string, string>;
   onSettingsChange: (values: Record<string, string>) => void;
   disabled?: boolean;
+  /** Translated reason the extras are locked. */
+  disabledReason?: string;
 };
 
 export function ModelFlyout({
@@ -55,10 +56,11 @@ export function ModelFlyout({
       anchor={anchor}
       side={side}
       gap={side === "right" ? SUBMENU_OVERLAP : undefined}
-      width={MODEL_MENU_WIDTH}
+      size="lg"
       maxHeight={menuHeight + 2}
       layer={LAYER.submenu}
-      role="dialog"
+      kind="dialog"
+      autoFocus={false}
       aria-label={t("Models")}
       onDismiss={(reason) => {
         // Escape steps back from Extras before it closes the picker.
@@ -96,7 +98,7 @@ function ExtrasEntry({ extras, onOpen }: { extras: ModelFlyoutExtras; onOpen: ()
       data-model-extras-entry
       onMouseDown={(event) => event.preventDefault()}
       onClick={onOpen}
-      className="shrink-0 text-left"
+      className="shrink-0 text-start"
     >
       <SlidersHorizontal className="icon-sm shrink-0" strokeWidth={1.75} />
       <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
@@ -132,6 +134,7 @@ function ExtrasView({ extras, onBack }: { extras: ModelFlyoutExtras; onBack: () 
         values={extras.values}
         onSettingsChange={extras.onSettingsChange}
         disabled={extras.disabled}
+        disabledReason={extras.disabledReason}
         title={`${HARNESS_TITLE[extras.harness]} · ${name}`}
         leading={
           <Button
@@ -141,7 +144,7 @@ function ExtrasView({ extras, onBack }: { extras: ModelFlyoutExtras; onBack: () 
             type="button"
             aria-label={t("Back")}
             onClick={onBack}
-            className="-ml-1 shrink-0"
+            className="-ms-1 shrink-0"
           >
             <ArrowLeft className="icon-sm" strokeWidth={1.75} />
           </Button>

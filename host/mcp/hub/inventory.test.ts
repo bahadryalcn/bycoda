@@ -319,6 +319,19 @@ describe("project-scoped sources", () => {
       join(project, ".codex", "config.toml"),
       '[mcp_servers.codex-proj]\ncommand = "node"\nargs = ["cx.mjs"]\n',
     );
+    writeFileSync(
+      join(project, "opencode.jsonc"),
+      `{
+      // Same endpoint and alias, independent project authentication.
+      "mcp": {
+        "remote-http": {
+          "type": "remote",
+          "url": "https://r.test/mcp",
+          "headers": { "authorization": "Bearer project", },
+        },
+      },
+    }`,
+    );
     // Windows matches project keys case-insensitively and with either slash style.
     const key =
       process.platform === "win32" ? project.split("\\").join("/").toUpperCase() : project;
@@ -336,6 +349,10 @@ describe("project-scoped sources", () => {
     expect(withProject["shared-name"]).toMatchObject({ kind: "http", source: "claude-project" });
     expect(withProject["claude-proj"].source).toBe("claude-project");
     expect(withProject["codex-proj"].source).toBe("codex-project");
+    expect(withProject["remote-http-project"]).toMatchObject({
+      source: "opencode-project",
+      headers: { authorization: "Bearer project" },
+    });
     // Same name, different launch than the global codex `dokploy`: suffixed, not replaced.
     expect(withProject["dokploy-project"]).toMatchObject({
       source: "claude-project",
@@ -354,6 +371,7 @@ describe("project-scoped sources", () => {
     expect(globalOnly["proj-only"]).toBeUndefined();
     expect(globalOnly["claude-proj"]).toBeUndefined();
     expect(globalOnly["codex-proj"]).toBeUndefined();
+    expect(globalOnly["remote-http-project"]).toBeUndefined();
     expect(globalOnly["dokploy"].sources).toEqual(["codex"]);
   });
 

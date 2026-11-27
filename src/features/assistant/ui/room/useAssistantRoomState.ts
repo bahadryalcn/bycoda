@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { useEffect, useRef, useState } from "react";
 import type {
@@ -29,6 +30,7 @@ import {
   type AssistantJobDraft,
 } from "../../model/assistantJobs";
 import { captureAssistantHostRead } from "../../model/assistantHostRead";
+import { createLocalDraftWriter } from "../../model/assistantLocalDraft";
 import {
   tabs,
   jobIntentsKey,
@@ -43,6 +45,36 @@ import {
   type JobDraft,
 } from "./assistantRoomHelpers";
 const actionError = (cause: unknown) => presentRemoteError(cause, { explicit: true });
+
+async function loadRoomProjects(expectedEnvironmentId?: string) {
+  const owner = await captureAssistantHostRead(expectedEnvironmentId);
+  return { environmentId: owner.environmentId, projects: await owner.projects() };
+}
+
+// Match the Host's SQLite lower() for memory text, including its ASCII-only case folding.
+function foldMemoryText(text: string) {
+  return text.replace(/[A-Z]+/g, (word) => word.toLowerCase());
+}
+
+const MEMORY_SEARCH_LIMIT = 100;
+
+function previewMemoryMatches(
+  query: string,
+  previous: AssistantMemory[] = [],
+  loaded: AssistantMemory[] = [],
+) {
+  const needle = foldMemoryText(query);
+  const matches = new Map<string, AssistantMemory>();
+  for (const entries of [previous, loaded]) {
+    for (const entry of entries) {
+      if (!matches.has(entry.id) && foldMemoryText(entry.text).includes(needle)) {
+        matches.set(entry.id, entry);
+        if (matches.size === MEMORY_SEARCH_LIMIT) return [...matches.values()];
+      }
+    }
+  }
+  return [...matches.values()];
+}
 
 export type AssistantRoomCore = ReturnType<typeof useAssistantRoomState>;
 
@@ -64,14 +96,20 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
     refresh,
   } = useAssistantSnapshot();
   const environmentId = snapshotEnvironmentId ?? undefined;
-  const assistantRequest: OwnerRequest = (input, expectedEnvironmentId = environmentId) => {
+  const assistantRequest: OwnerRequest = (
+    input,
+    expectedEnvironmentId = environmentId,
+    options,
+  ) => {
     if (!expectedEnvironmentId)
       return Promise.reject(
         new Error(
-          "The original Host could not be verified. Keep this draft and reconnect its original computer.",
+          "The original computer could not be verified. Keep this draft and reconnect that computer.",
         ),
       );
-    return ownerRequest(input, expectedEnvironmentId);
+    return options
+      ? ownerRequest(input, expectedEnvironmentId, options)
+      : ownerRequest(input, expectedEnvironmentId);
   };
   const [hostProjectRead, setHostProjectRead] = useState<{
     environmentId: string | undefined;
@@ -80,29 +118,41 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
   const hostProjects = hostProjectRead?.projects ?? null;
   const [projectReadError, setProjectReadError] = useState("");
   const projectReadEpoch = useRef(0);
-  function fetchProjects() {
+  const projectEnvironmentId = props.environmentId ?? environmentId;
+  const initialProjectRead = useRef<ReturnType<typeof loadRoomProjects> | null>(null);
+  function fetchProjects(reuseInitial: boolean) {
     const epoch = ++projectReadEpoch.current;
-    return captureAssistantHostRead(props.environmentId ?? environmentId)
-      .then(async (owner) => ({ owner, result: await owner.projects() }))
-      .then(
-        ({ owner, result }) => {
-          if (epoch === projectReadEpoch.current) {
-            setHostProjectRead({ environmentId: owner.environmentId, projects: result });
-            setProjectReadError("");
-          }
-        },
-        (cause: unknown) => {
-          if (epoch === projectReadEpoch.current)
-            setProjectReadError(cause instanceof Error ? cause.message : String(cause));
-        },
-      );
+    const initial = reuseInitial && initialProjectRead.current;
+    const read =
+      initial && projectEnvironmentId
+        ? initial.then(
+            (result) =>
+              result.environmentId === projectEnvironmentId
+                ? result
+                : loadRoomProjects(projectEnvironmentId),
+            () => loadRoomProjects(projectEnvironmentId),
+          )
+        : loadRoomProjects(projectEnvironmentId);
+    initialProjectRead.current = environmentId ? null : read;
+    return read.then(
+      (result) => {
+        if (epoch === projectReadEpoch.current) {
+          setHostProjectRead(result);
+          setProjectReadError("");
+        }
+      },
+      (cause: unknown) => {
+        if (epoch === projectReadEpoch.current) setProjectReadError(errorText(cause));
+      },
+    );
   }
   function readProjects() {
     setProjectReadError("");
-    return fetchProjects();
+    return fetchProjects(false);
   }
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Bind the project inventory to the captured Host, including initial discovery before its snapshot.
   useEffect(() => {
-    fetchProjects().catch(() => undefined); // -- failures are reported by its own rejection handler
+    fetchProjects(true).catch(() => undefined); // -- failures are reported by its own rejection handler
     return () => {
       projectReadEpoch.current++;
     };
@@ -187,7 +237,7 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
   } | null>(null);
   const error =
     errorState?.scopeKey === privacy.key
-      ? { ...errorState, text: t(errorState.text) }
+      ? errorState
       : errorState?.key === "pauseAll"
         ? {
             ...errorState,
@@ -237,17 +287,24 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
   const jobBatch = useRef<AssistantJobBatch | null>(null);
   const [jobReviewFrozen, setJobReviewFrozen] = useState(false);
   const jobReviewEnvironment = useRef<string | undefined>(undefined);
+  const [jobReviewWriter] = useState(() => createLocalDraftWriter("bycoda.assistant.job-review"));
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Attach the review writer's page lifecycle listener and flush on unmount.
+  useEffect(() => jobReviewWriter.attach(), [jobReviewWriter]);
   useEffect(() => {
-    if (jobReview && !jobReviewFrozen)
-      try {
-        localStorage.setItem(
-          "bycoda.assistant.job-review",
-          JSON.stringify({ source: jobText, rows: jobReview, frozen: false }),
-        );
-      } catch {
-        /* Save validates durable intent before dispatch. */
-      }
-  }, [jobReview, jobText, jobReviewFrozen]);
+    // A frozen review is a durable intent written before dispatch; a pending unfrozen write must not replace it.
+    if (jobReviewFrozen) {
+      jobReviewWriter.cancel();
+      return;
+    }
+    // Dialog closed: store the last reviewed rows now instead of waiting for the debounce.
+    if (!jobReview) {
+      jobReviewWriter.flush();
+      return;
+    }
+    jobReviewWriter.schedule(() =>
+      JSON.stringify({ source: jobText, rows: jobReview, frozen: false }),
+    );
+  }, [jobReview, jobText, jobReviewFrozen, jobReviewWriter]);
   const jobIntents = useRef<Record<string, string>>(readJobIntents() ?? {});
   useEffect(() => {
     // Another window wrote the map: refresh the in-memory copy so new keys are reused here.
@@ -307,38 +364,53 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
   const [memorySearch, setMemorySearch] = useState<{
     query: string;
     results: AssistantMemory[];
-    settled: boolean;
+    scopeKey: string;
+    source: AssistantMemory[] | undefined;
+    error?: string;
   } | null>(null);
+  const memorySource = snapshot?.memory;
+  const scopedSearch =
+    memorySearch?.scopeKey === privacy.key && memorySearch.source === memorySource
+      ? memorySearch
+      : null;
   const memorySearchActive = view === "Memory" && query.trim() !== "";
-  const memorySearchCurrent = memorySearch?.query === query ? memorySearch : null;
-  const memoryResults = memorySearchActive ? (memorySearchCurrent?.results ?? []) : null;
-  const memorySearching = memorySearchActive && !memorySearchCurrent?.settled;
+  const memorySearchCurrent = scopedSearch?.query === query ? scopedSearch : null;
+  const memoryResults = memorySearchActive
+    ? (memorySearchCurrent?.results ??
+      previewMemoryMatches(query, scopedSearch?.results, memorySource))
+    : null;
+  const memorySearching = memorySearchActive && !memorySearchCurrent;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Reconcile visible memory matches with the current Host's full search after typing settles.
   useEffect(() => {
     if (view !== "Memory" || !query.trim()) return;
     let cancelled = false;
     const timer = setTimeout(() => {
-      void assistantRequest({ op: "memory.search", query, limit: 100 })
+      void assistantRequest({ op: "memory.search", query, limit: MEMORY_SEARCH_LIMIT })
         .then((result) => {
-          if (!cancelled) setMemorySearch({ query, results: result.entries ?? [], settled: false });
+          if (!cancelled)
+            setMemorySearch({
+              query,
+              results: result.entries ?? [],
+              scopeKey: privacy.key,
+              source: memorySource,
+            });
         })
         .catch((cause) => {
-          const text = presentRemoteError(cause);
-          if (!cancelled && text) setError({ key: "memory.search", text });
-        })
-        .finally(() => {
           if (!cancelled)
-            setMemorySearch((current) =>
-              current?.query === query
-                ? { ...current, settled: true }
-                : { query, results: [], settled: true },
-            );
+            setMemorySearch({
+              query,
+              results: [],
+              scopeKey: privacy.key,
+              source: memorySource,
+              error: presentRemoteError(cause),
+            });
         });
     }, 300);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [view, query, snapshot?.memory]);
+  }, [view, query, memorySource, privacy.key]);
   const memoryEntries = memoryResults ?? snapshot?.memory ?? [];
   const [memoryEdit, setMemoryEdit] = useState<AssistantMemory | "new" | null>(null);
   const [noteEdit, setNoteEdit] = useState<AssistantNote | "new" | null>(null);
@@ -351,13 +423,13 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
   const currentProject = projects.find((project) => project.path === props.projectPath);
   const defaultProjectId = currentProject?.id ?? currentProject?.path ?? "";
 
+  const [jobDraftWriter] = useState(() => createLocalDraftWriter("bycoda.assistant.job-draft"));
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Attach the draft writer's page lifecycle listener and flush on unmount.
+  useEffect(() => jobDraftWriter.attach(), [jobDraftWriter]);
   useEffect(() => {
-    try {
-      localStorage.setItem("bycoda.assistant.job-draft", jobText);
-    } catch {
-      /* The in-memory draft remains available. */
-    }
-  }, [jobText]);
+    // Typing only records the value; the shared debounce writes it, and close or pagehide flushes it.
+    jobDraftWriter.schedule(() => jobText);
+  }, [jobText, jobDraftWriter]);
   const [appliedNavigation, setAppliedNavigation] = useState<{
     tab: string | undefined;
     token: unknown;
@@ -422,7 +494,7 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
   }
   const onOpenSession = props.onOpenSession
     ? (id: string, sourceEnvironmentId = props.environmentId ?? environmentId) => {
-        run(`navigation:${id}`, t("Opening session..."), async () => {
+        run(`navigation:${id}`, t("Opening session…"), async () => {
           if (sourceEnvironmentId) await props.onOpenSession!(id, sourceEnvironmentId);
           else await props.onOpenSession!(id);
         });
@@ -430,7 +502,7 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
     : undefined;
 
   function returnToAssistant() {
-    run("presence.return", t("Preparing briefing..."), async () => {
+    run("presence.return", t("Preparing briefing…"), async () => {
       setReturnMessage("");
       await assistantRequest({ op: "presence.set", state: "present" });
       const now = new Date();
@@ -520,6 +592,7 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
     jobBatch,
     jobReviewFrozen,
     setJobReviewFrozen,
+    jobReviewWriter,
     jobReviewEnvironment,
     jobIntents,
     jobKey,
@@ -528,6 +601,7 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
     visibleDraft,
     updateJobDraft,
     memoryResults,
+    memorySearchError: memorySearchActive ? memorySearchCurrent?.error : undefined,
     memorySearching,
     memoryEntries,
     memoryEdit,

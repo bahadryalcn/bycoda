@@ -8,6 +8,8 @@ import {
 import { invalidateWatchedFiles } from "../../files/public/fileWatch";
 import { isRemoteProjectPath } from "../../projects/public/recents";
 import { remotePollDue, reportRemoteLoad } from "../../connections/public/remoteHealth";
+import { useMachineAvailability } from "../../connections/public/machineAvailability";
+import { useGracedFailure } from "../../connections/public/transientFailure";
 import { sameConflicts } from "../model/conflictSection";
 import { gitPanelRuntime } from "../model/gitPanelState";
 import {
@@ -21,7 +23,7 @@ import {
   GIT_PANEL_ENTRY_FRESH_MS,
   GIT_PANEL_FOCUS_FRESH_MS,
 } from "../model/gitRefreshPolicy";
-import { applyProjectDiffStats } from "./useProjectDiffStats";
+import { applyProjectIndexStats } from "./useProjectDiffStats";
 
 const indexByCwd = new CheckoutCache<string, GitDiffIndex>();
 
@@ -39,13 +41,13 @@ export function announceGitChange(cwd: string, scope: GitChangeScope, hint: GitC
 
 export function useDiffIndex(
   cwd: string,
-  enabled: boolean,
+  wanted: boolean,
   polling: boolean,
   panel: RefObject<HTMLDivElement | null>,
 ): {
   index: GitDiffIndex | null;
   reload: () => void;
-  showOptimistic: (next: GitDiffIndex) => void;
+  showOptimistic: (next: GitDiffIndex, options?: { publishStats: boolean }) => void;
   error: string | null;
   loading: boolean;
   /** The read on entry or explicit refresh has not answered yet; a cached index may be stale. */
@@ -54,12 +56,16 @@ export function useDiffIndex(
   // A remote project keeps its last good index when a load fails; the failure
   // is shown by `ChangedFiles`.
   const remote = isRemoteProjectPath(cwd);
-  const [index, setIndex] = useState<GitDiffIndex | null>(() => cachedIndex(cwd));
+  // A machine that cannot be asked gets no reads; they start once it is available again.
+  const available = useMachineAvailability(cwd).available;
+  const enabled = wanted && available;
+  const [index, setIndex] = useState<GitDiffIndex | null>(() => peekDiffIndex(cwd));
   const [nonce, setNonce] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ cwd: string; cause: unknown } | null>(null);
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(enabled);
   const handledRefresh = useRef({ cwd, nonce: 0 });
+  const retryRun = useRef<(() => Promise<void>) | null>(null);
   const failedRead = useRef<{ cwd: string; at: number } | null>(null);
   const indexRef = useRef(index);
   useLayoutEffect(() => {
@@ -80,21 +86,24 @@ export function useDiffIndex(
     setNonce((value) => value + 1);
   }, []);
   const showOptimistic = useCallback(
-    (next: GitDiffIndex) => {
+    (next: GitDiffIndex, options?: { publishStats: boolean }) => {
       holdRef.current = true;
       indexByCwd.set(cwd, next);
       indexRef.current = next;
       setIndex(next);
+      if (options?.publishStats) applyProjectIndexStats(cwd, next);
     },
     [cwd],
   );
 
   useEffect(() => {
     if (!enabled || !cwd || cwd === "~") {
+      // The read that met the outage failed; its retry backoff must not delay the recovery read.
+      if (!available) failedRead.current = null;
       return;
     }
     const releaseCache = indexByCwd.retain(cwd);
-    const cached = cachedIndex(cwd);
+    const cached = peekDiffIndex(cwd);
     if (cached && !sameIndex(indexRef.current, cached)) {
       indexRef.current = cached;
       setIndex(cached);
@@ -126,20 +135,12 @@ export function useDiffIndex(
         });
         if (cancelled || holdRef.current) return;
         failedRead.current = null;
-        setError(null);
+        setFailure(null);
         if (remote) reportRemoteLoad(cwd, "changes");
         const prev = indexRef.current;
         const announced = announcedRef.current;
         announcedRef.current = false;
-        applyProjectDiffStats(
-          cwd,
-          {
-            files: next.files.length + (next.conflicts?.length ?? 0),
-            additions: next.additions,
-            deletions: next.deletions,
-          },
-          peekFullGitIndex(cwd)?.at,
-        );
+        applyProjectIndexStats(cwd, next, peekFullGitIndex(cwd)?.at);
         if (sameIndex(prev, next)) return;
         indexByCwd.set(cwd, next);
         indexRef.current = next;
@@ -162,11 +163,8 @@ export function useDiffIndex(
       } catch (error) {
         if (cancelled) return;
         failedRead.current = { cwd, at: Date.now() };
-        if (remote) {
-          reportRemoteLoad(cwd, "changes", error);
-        } else {
-          setError(error instanceof Error ? error.message : String(error));
-        }
+        setFailure({ cwd, cause: error });
+        if (remote) reportRemoteLoad(cwd, "changes", error);
       } finally {
         if (!cancelled) setLoading(false);
         inFlight = false;
@@ -177,6 +175,7 @@ export function useDiffIndex(
       }
     };
 
+    retryRun.current = () => load(true);
     const explicitRefresh =
       handledRefresh.current.cwd === cwd && handledRefresh.current.nonce !== nonce;
     handledRefresh.current = { cwd, nonce };
@@ -222,6 +221,7 @@ export function useDiffIndex(
     );
     return () => {
       cancelled = true;
+      retryRun.current = null;
       pane?.removeEventListener("focusin", onPanelFocus);
       pane?.removeEventListener("pointerdown", onPanelInteraction);
       window.clearInterval(timer);
@@ -230,9 +230,24 @@ export function useDiffIndex(
       unsubGit();
       releaseCache();
     };
-  }, [cwd, enabled, nonce, remote, polling, panel]);
+  }, [cwd, enabled, available, nonce, remote, polling, panel]);
 
-  return { index, reload, showOptimistic, error, loading, checking: enabled && checking };
+  const { visibleError, pending } = useGracedFailure({
+    error: enabled && failure?.cwd === cwd ? failure.cause : undefined,
+    retry: () => {
+      if (!document.hidden && !holdRef.current && !gitPanelRuntime(cwd).state.busy)
+        return retryRun.current?.();
+    },
+    scope: cwd,
+  });
+  return {
+    index,
+    reload,
+    showOptimistic,
+    error: visibleError ?? null,
+    loading: loading || (pending && !index),
+    checking: enabled && checking,
+  };
 }
 
 /** Whether HEAD, its branch and its upstream counts are unchanged. */
@@ -249,7 +264,7 @@ function sameRefs(prev: GitDiffIndex, next: GitDiffIndex): boolean {
   );
 }
 
-function cachedIndex(cwd: string | undefined): GitDiffIndex | null {
+export function peekDiffIndex(cwd: string | undefined): GitDiffIndex | null {
   if (!cwd || cwd === "~") return null;
   return indexByCwd.get(cwd) ?? null;
 }
@@ -291,6 +306,7 @@ function changedFilePaths(prev: GitDiffIndex, next: GitDiffIndex): string[] {
 function sameIndex(prev: GitDiffIndex | null, next: GitDiffIndex): boolean {
   if (!prev) return false;
   if (
+    prev.repository !== next.repository ||
     prev.branch !== next.branch ||
     prev.head !== next.head ||
     prev.additions !== next.additions ||

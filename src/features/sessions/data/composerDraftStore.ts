@@ -7,6 +7,7 @@ import {
   subscribeComposerDrafts,
   setComposerDraftSnapshot,
 } from "../model/draftCache";
+import { draftFingerprint } from "../model/draftFingerprint";
 import {
   droppedAttachmentsNotice,
   composerDraftBytes,
@@ -37,21 +38,24 @@ import {
  */
 
 export const DRAFT_WRITE_DELAY_MS = 500;
-/** Boot waits for the saved drafts no longer than this; a slow store costs the drafts, not the launch. */
-const HYDRATE_TIMEOUT_MS = 2_000;
-
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 type ScheduledDraft = { wake(): void; promise: Promise<void> };
 const scheduled = new Map<string, ScheduledDraft>();
 const dirty = new Set<string>();
 const inFlight = new Map<string, Promise<void>>();
-/** What was last sent for each session, so an unchanged draft is not written twice. */
+/**
+ * What was last sent for each session, so an unchanged draft is not written twice.
+ * A fingerprint, never the payload: a row can carry megabytes of inline bytes.
+ */
 const written = new Map<string, string | null>();
-/** Reuse produced files across autosaves without replacing the live draft. */
-const spilled = new Map<string, Map<string, { data: string; path: string }>>();
+/**
+ * Reuse produced files across autosaves. Keeps the owned path (custody of the
+ * spilled file) and a fingerprint of its bytes, never the bytes themselves.
+ */
+const spilled = new Map<string, Map<string, { fingerprint: string; path: string }>>();
 /** A successful listing establishes absence; a failed read leaves it unknown. */
 let listedSessions: Set<string> | null = null;
-/** True only once every saved draft is in the cache. A timeout leaves it false. */
+/** True only once every saved draft is in the cache. A failed read leaves it false. */
 let draftsLoaded = false;
 const loadState = createStore();
 export const subscribeComposerDraftLoadState = loadState.subscribe;
@@ -100,11 +104,13 @@ async function payloadFor(sessionId: string, snapshot: ComposerDraft): Promise<s
     spilled.delete(sessionId);
     return null;
   }
-  const files = spilled.get(sessionId) ?? new Map<string, { data: string; path: string }>();
-  spilled.set(sessionId, files);
+  const files = spilled.get(sessionId) ?? new Map<string, { fingerprint: string; path: string }>();
   for (const id of files.keys()) {
     if (!snapshot.attachments.some((file) => file.id === id)) files.delete(id);
   }
+  // Keep the map only while it holds a produced file, so a draft without spills costs nothing.
+  if (files.size > 0) spilled.set(sessionId, files);
+  else spilled.delete(sessionId);
   // The serializer identifies inline bytes that do not fit the native row.
   // Spill those before persisting; a failed spill rejects the write and keeps
   // the live draft dirty for retry, never claiming that missing bytes were saved.
@@ -114,13 +120,15 @@ async function payloadFor(sessionId: string, snapshot: ComposerDraft): Promise<s
       attachments.push(file);
       continue;
     }
+    const fingerprint = draftFingerprint(file.data);
     let produced = files.get(file.id);
-    if (produced?.data !== file.data) {
+    if (produced?.fingerprint !== fingerprint) {
       const path = await invoke<string>("write_attachment", { name: file.name, data: file.data });
       if (typeof path !== "string" || !path)
         throw new Error(`Could not preserve draft attachment: ${file.name}.`);
-      produced = { data: file.data, path };
+      produced = { fingerprint, path };
       files.set(file.id, produced);
+      spilled.set(sessionId, files);
     }
     attachments.push({ ...file, path: produced.path, data: undefined, missing: undefined });
   }
@@ -131,6 +139,20 @@ async function payloadFor(sessionId: string, snapshot: ComposerDraft): Promise<s
     );
   }
   return draft ? JSON.stringify(draft) : null;
+}
+
+const payloadFingerprint = (payload: string | null): string | null =>
+  payload === null ? null : draftFingerprint(payload);
+
+/**
+ * The row is known absent after a confirmed clear, so the per-session entry
+ * is dropped instead of lingering for every conversation ever drafted in. The
+ * listing records the absence; without a successful listing the entry stays.
+ */
+function forgetClearedRow(sessionId: string): void {
+  if (!listedSessions) return;
+  written.delete(sessionId);
+  listedSessions.delete(sessionId);
 }
 
 const failedDrafts = new Set<string>();
@@ -154,12 +176,13 @@ function write(sessionId: string, parent?: PersistenceWork): Promise<void> {
         const snapshot = composerDraftOf(sessionId);
         const pending = (async () => {
           const payload = await payloadFor(sessionId, snapshot);
+          const fingerprint = payloadFingerprint(payload);
           const baseline = written.has(sessionId)
             ? written.get(sessionId)
             : listedSessions && !listedSessions.has(sessionId)
               ? null
               : undefined;
-          if (baseline === payload && !failedDrafts.has(sessionId)) {
+          if (baseline === fingerprint && !failedDrafts.has(sessionId)) {
             notifyPersisted(sessionId, snapshot);
             if (sameDraft(snapshot, composerDraftOf(sessionId))) dirty.delete(sessionId);
             return;
@@ -170,7 +193,8 @@ function write(sessionId: string, parent?: PersistenceWork): Promise<void> {
           });
           work.confirmRecovery();
           failedDrafts.delete(sessionId);
-          written.set(sessionId, payload);
+          written.set(sessionId, fingerprint);
+          if (fingerprint === null) forgetClearedRow(sessionId);
           notifyPersisted(sessionId, snapshot);
           if (sameDraft(snapshot, composerDraftOf(sessionId))) dirty.delete(sessionId);
         })();
@@ -352,22 +376,19 @@ export async function hydrateComposerDrafts(): Promise<void> {
     listedSessions = null;
     setDraftsLoaded(false);
     try {
-      const timeout = new Promise<null>((resolve) =>
-        setTimeout(() => resolve(null), HYDRATE_TIMEOUT_MS),
+      // No time budget: boot keeps its loading shell (with retry) until the saved
+      // drafts are in the cache. Resolving early would mount composers on empty
+      // drafts and leave `draftsLoaded` false for the life of the window.
+      const rows = await draftPersistence.run(
+        "profile",
+        "draft-list",
+        async (read) => {
+          const result = await invoke<unknown>("session_list_drafts");
+          read.confirmRecovery();
+          return result;
+        },
+        { parent: work },
       );
-      const rows = await Promise.race([
-        draftPersistence.run(
-          "profile",
-          "draft-list",
-          async (read) => {
-            const result = await invoke<unknown>("session_list_drafts");
-            read.confirmRecovery();
-            return result;
-          },
-          { parent: work },
-        ),
-        timeout,
-      ]);
       if (Array.isArray(rows)) {
         listedSessions = new Set(
           rows.flatMap((row) =>
@@ -376,12 +397,9 @@ export async function hydrateComposerDrafts(): Promise<void> {
               : [],
           ),
         );
-        const finished = await Promise.race([
-          Promise.all(rows.map((row) => hydrateRow(row, startedAt, work))).then(() => true),
-          timeout,
-        ]);
-        setDraftsLoaded(finished === true);
-        if (draftsLoaded) work.confirmRecovery();
+        await Promise.all(rows.map((row) => hydrateRow(row, startedAt, work)));
+        setDraftsLoaded(true);
+        work.confirmRecovery();
       }
     } catch (error) {
       work.fail(error);
@@ -426,7 +444,7 @@ async function hydrateRow(
         } else {
           // What is on disk is what was just loaded; the next change replaces it.
           const persistable = persistableDraft(composerDraftOf(sessionId));
-          if (persistable) written.set(sessionId, JSON.stringify(persistable));
+          if (persistable) written.set(sessionId, draftFingerprint(JSON.stringify(persistable)));
         }
       }
       work.confirmRecovery();

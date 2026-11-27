@@ -92,15 +92,18 @@ async function fixture() {
       quietEnd: 0,
     },
   });
-  const job = (
-      await owner({
-        op: "jobs.create",
-        title: "Approval task",
-        request: "Preserve the existing assigned result",
-        projectId: project.id,
-        idempotencyKey: "approval-job",
-      })
-    ).job!,
+  const queued = (
+    await owner({
+      op: "jobs.create",
+      title: "Approval task",
+      request: "Preserve the existing assigned result",
+      projectId: project.id,
+      idempotencyKey: "approval-job",
+    })
+  ).job!;
+  // Dispatch runs on the request queue after the RPC; this request queues behind it.
+  await owner({ op: "tick" });
+  const job = (await owner({ op: "jobs.get", id: queued.id })).job!,
     goalId = `assistant-${job.id}`;
   const sessionId = (
       await engine.command({

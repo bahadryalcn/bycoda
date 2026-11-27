@@ -74,6 +74,20 @@
 .avatar:empty::before {
   content: attr(data-initial);
 }
-.core:is([data-state="off"], [data-state="muted"]) .avatar {
+.callOrb {
+  display: block;
+  flex: none;
+  inline-size: min(var(--voice-core-stage-size, 260px), 74%);
+  block-size: auto;
+  aspect-ratio: 1;
+  pointer-events: none;
+}
+.callOrb[data-expanded] {
+  inline-size: min(var(--voice-core-stage-size), 100%);
+}
+.callOrb[data-size="strip"] {
+  inline-size: var(--ui-control-height-lg);
+}
+.core[data-state="muted"] .avatar {
   opacity: 0.6;
 }

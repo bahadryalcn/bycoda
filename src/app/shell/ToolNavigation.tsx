@@ -11,9 +11,10 @@ import {
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  AppWindow,
   Bot,
+  CircleDot,
   DashboardSquare,
+  ExternalLink,
   Globe,
   Inbox,
   StickyNote,
@@ -27,7 +28,7 @@ import { useT } from "../../shared/i18n";
 import { TOOL_IDS, type WorkspaceToolId } from "../model/toolWindows";
 import { routeWindowDestination } from "../model/windowNavigation";
 import { Button } from "../../shared/ui/Button";
-import { ErrorDetails, fitsOneLine } from "../../shared/ui/ErrorDetails";
+import { ErrorDetails } from "../../shared/ui/ErrorDetails";
 import { Tab, TabList, Tabs } from "../../shared/ui/Tabs";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
 import { useSshRunbookQueue } from "../../features/connections/model/sshRunbookQueue";
@@ -65,29 +66,21 @@ export const ToolNavigationContext = createContext<{
   onSelect: (tool: WorkspaceToolId) => void;
 } | null>(null);
 
+/** The mounted Servers workspace owns opening its reviews dialog. */
+export const OpenSshReviewsContext = createContext<(() => void) | undefined>(undefined);
+
 export function ToolHeader({ children }: { children: ReactNode }) {
   const navigation = useContext(ToolNavigationContext);
   return navigation?.active ? <ToolNavigation /> : children;
 }
 
-const labels = {
-  servers: "Servers",
-  social: "Social Media",
-  tasks: "Tasks",
-  automations: "Automations",
-  crews: "Crews",
-  inbox: "Inbox",
-  notes: "Notes",
-  "conversation-tools": "Conversation tools",
-  terminal: "Terminal",
-  assistant: "Set up",
-};
 const icons = {
   servers: Server,
   social: Globe,
   tasks: DashboardSquare,
   automations: Zap,
   crews: Bot,
+  "live-stream": CircleDot,
   inbox: Inbox,
   notes: StickyNote,
   "conversation-tools": Wrench,
@@ -147,9 +140,22 @@ async function openToolWindow(
 export function ToolNavigation() {
   const t = useT();
   const assistant = useAssistantIdentity();
-  const label = (tool: WorkspaceToolId) =>
-    tool === "assistant" ? assistant.room : t(labels[tool]);
+  const labels: Record<WorkspaceToolId, string> = {
+    servers: t("Servers"),
+    social: t("Social Media"),
+    tasks: t("Tasks"),
+    automations: t("Automations"),
+    crews: t("Crews"),
+    "live-stream": t("Live streaming"),
+    inbox: t("Inbox"),
+    notes: t("Notes"),
+    "conversation-tools": t("Conversation tools"),
+    terminal: t("Terminal"),
+    assistant: assistant.room,
+  };
+  const label = (tool: WorkspaceToolId) => labels[tool];
   const sshReviews = useSshRunbookQueue();
+  const openSshReviews = useContext(OpenSshReviewsContext);
   const navigation = useContext(ToolNavigationContext);
   const [opening, setOpening] = useState<"single" | "grouped" | null>(null);
   const openingRef = useRef(false);
@@ -163,6 +169,9 @@ export function ToolNavigation() {
     }
   }, [navigation?.active]);
   if (!navigation?.active) return null;
+  const sshReviewCount = sshReviews.intents.length;
+  const actionableSshReviews =
+    navigation.active === "servers" && openSshReviews && sshReviewCount > 0;
   const tools: WorkspaceToolId[] =
     navigation.grouped === false
       ? [navigation.active]
@@ -173,8 +182,8 @@ export function ToolNavigation() {
               ? navigation.notesEnabled
               : id === "servers"
                 ? navigation.includeServers || navigation.active === "servers"
-                : id === "crews"
-                  ? navigation.includeCrews || navigation.active === "crews"
+                : id === "crews" || id === "live-stream"
+                  ? navigation.includeCrews || navigation.active === id
                   : id === "conversation-tools" || id === "assistant"
                     ? navigation.includeAuxiliaryTools
                     : true,
@@ -233,7 +242,7 @@ export function ToolNavigation() {
           navigation.onSelect(tool);
         }}
       >
-        <TabList className="tool-tabs" label={t("Workspace tools")}>
+        <TabList className="tool-tabs" scroll="auto" label={t("Workspace tools")}>
           {tools.map((tool) => {
             const Icon = icons[tool];
             return (
@@ -250,14 +259,14 @@ export function ToolNavigation() {
               >
                 <Icon className="icon-sm shrink-0" aria-hidden />
                 <span>{label(tool)}</span>
-                {tool === "servers" && sshReviews.intents.length ? (
+                {tool === "servers" && sshReviewCount > 0 && !actionableSshReviews ? (
                   <Badge
                     variant="count"
                     size="xs"
                     tone="warning"
                     aria-label={t("Pending SSH reviews")}
                   >
-                    {sshReviews.intents.length}
+                    {sshReviewCount}
                   </Badge>
                 ) : null}
               </Tab>
@@ -265,8 +274,22 @@ export function ToolNavigation() {
           })}
         </TabList>
       </Tabs>
-      {navigation.active === "crews" ? null : (
+      {navigation.active === "crews" || navigation.active === "live-stream" ? null : (
         <div className="tool-window-actions">
+          {actionableSshReviews ? (
+            <Button
+              variant="ghost"
+              motion="none"
+              aria-label={t("Pending SSH reviews")}
+              aria-haspopup="dialog"
+              data-tauri-drag-region="false"
+              onClick={openSshReviews}
+            >
+              <Badge variant="count" size="xs" tone="warning" aria-hidden>
+                {sshReviewCount}
+              </Badge>
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             motion="none"
@@ -274,16 +297,18 @@ export function ToolNavigation() {
             label={t("Open in new window")}
             data-tauri-drag-region="false"
             disabled={opening !== null}
+            disabledReason={t("A window is opening")}
             loading={opening === "single"}
             onClick={() => void open(false)}
           >
-            <AppWindow className="icon-sm" aria-hidden />
+            <ExternalLink className="icon-sm" aria-hidden />
           </Button>
           <Button
             variant="ghost"
             motion="none"
             data-tauri-drag-region="false"
             disabled={opening !== null}
+            disabledReason={t("A window is opening")}
             loading={opening === "grouped"}
             startIcon={<DashboardSquare className="icon-sm" aria-hidden />}
             onClick={() => void open(true)}
@@ -297,16 +322,8 @@ export function ToolNavigation() {
       )}
       {error ? (
         <Alert tone="danger" data-tauri-drag-region="false">
-          {fitsOneLine(error) ? (
-            <span>
-              {t("Could not open window")}: {error}
-            </span>
-          ) : (
-            <>
-              <span>{t("Could not open window")}</span>
-              <ErrorDetails title={t("Could not open window")} detail={error} />
-            </>
-          )}
+          <span>{t("Could not open window")}</span>
+          <ErrorDetails title={t("Could not open window")} detail={error} />
           <Button variant="ghost" motion="none" onClick={() => setError("")}>
             {t("Dismiss")}
           </Button>

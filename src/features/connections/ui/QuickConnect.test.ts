@@ -56,12 +56,16 @@ it("previews an endpoint and only connects explicitly without creating a saved r
   const close = vi.fn();
   await act(async () => root.render(createElement(QuickConnect, { onClose: close })));
   expect(callbacks.quick).not.toHaveBeenCalled();
-  await field("Host", "example.invalid");
+  await field("Hostname", "example.invalid");
   await field("SSH user", "alice");
   await field("SSH port", "2200");
-  expect(document.querySelector('[aria-label="Endpoint preview"]')?.textContent).toContain(
-    "alice@example.invalid:2200",
-  );
+  // The endpoint is previewed as the placeholder of the (still empty) Name field.
+  const nameLabel = [...document.querySelectorAll("label")].find(
+    (entry) => entry.textContent?.replace("*", "").trim() === "Name",
+  )!;
+  expect(
+    (document.getElementById(nameLabel.htmlFor) as HTMLInputElement).getAttribute("placeholder"),
+  ).toBe("alice@example.invalid:2200");
   await submit();
   expect(saveSshConnection).not.toHaveBeenCalled();
   expect(callbacks.quick).toHaveBeenCalledExactlyOnceWith(
@@ -88,7 +92,7 @@ it("saves only by explicit opt-in and connects through the resulting canonical I
   vi.mocked(saveSshConnection).mockResolvedValue(saved);
   await act(async () => root.render(createElement(QuickConnect, { onClose: vi.fn() })));
   await field("Name", "Preview host");
-  await field("Host", "example.invalid");
+  await field("Hostname", "example.invalid");
   const saveOption = [...document.querySelectorAll("label")]
     .find((label) => label.textContent?.trim() === "Save connection")!
     .querySelector<HTMLInputElement>('input[type="checkbox"]')!;
@@ -101,7 +105,7 @@ it("saves only by explicit opt-in and connects through the resulting canonical I
 it("retains an unfinished endpoint draft while closing and reopening, without connecting on restore", async () => {
   const render = () => root.render(createElement(QuickConnect, { onClose: vi.fn() }));
   await act(async () => render());
-  await field("Host", "draft.invalid");
+  await field("Hostname", "draft.invalid");
   await act(async () => root.render(null));
   await act(async () => render());
   expect(
@@ -112,7 +116,7 @@ it("retains an unfinished endpoint draft while closing and reopening, without co
 });
 it("rejects unsafe endpoints instead of connecting or saving", async () => {
   await act(async () => root.render(createElement(QuickConnect, { onClose: vi.fn() })));
-  await field("Host", "-oProxyCommand=anything");
+  await field("Hostname", "-oProxyCommand=anything");
   await submit();
   expect(callbacks.quick).not.toHaveBeenCalled();
   expect(saveSshConnection).not.toHaveBeenCalled();
@@ -134,7 +138,7 @@ it.each(["cancelled", "error", "accepted"])(
     const close = vi.fn();
     const render = () => root.render(createElement(QuickConnect, { onClose: close }));
     await act(async () => render());
-    await field("Host", "retained.example");
+    await field("Hostname", "retained.example");
     await submit();
     expect(close).not.toHaveBeenCalled();
     expect(
@@ -144,7 +148,15 @@ it.each(["cancelled", "error", "accepted"])(
       outcome === "error" ? fail(new Error("Tab admission failed")) : complete(outcome),
     );
     expect(close).toHaveBeenCalledTimes(outcome === "accepted" ? 1 : 0);
-    if (outcome === "error") expect(document.body.textContent).toContain("Tab admission failed");
+    if (outcome === "error") {
+      expect(document.body.textContent).toContain("Couldn’t open this SSH connection.");
+      await act(async () =>
+        [...document.querySelectorAll("button")]
+          .find((button) => button.textContent === "Details")!
+          .click(),
+      );
+      expect(document.body.textContent).toContain("Tab admission failed");
+    }
     await act(async () => root.render(null));
     await act(async () => render());
     expect(
@@ -167,7 +179,7 @@ it("reuses the confirmed saved record when a cancelled handoff is retried after 
   const render = () => root.render(createElement(QuickConnect, { onClose: close }));
   await act(async () => render());
   await field("Name", saved.name);
-  await field("Host", "retry.example");
+  await field("Hostname", "retry.example");
   const saveOption = [...document.querySelectorAll("label")]
     .find((label) => label.textContent?.trim() === "Save connection")!
     .querySelector<HTMLInputElement>('input[type="checkbox"]')!;

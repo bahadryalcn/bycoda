@@ -19,8 +19,9 @@ export type SettingsFeedbackProps = {
   presentation?: "quiet" | "surface" | "inset";
   /**
    * `state="loading"` waits for the shared loading delay and renders nothing before it, so a quick
-   * load never flashes. Set `immediate` for feedback on a user's own action (saving, a request
-   * they started), which must respond at once.
+   * load or save never flashes. A pressed action shows its own progress (Button `loading` with
+   * `loadingLabel`), not this. Set `immediate` only for a request the user started whose control
+   * cannot show progress and that must respond at once.
    */
   immediate?: boolean;
 };

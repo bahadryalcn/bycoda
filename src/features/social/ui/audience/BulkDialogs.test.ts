@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { createElement } from "react";
+import { act, createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Sequence } from "../../model/outreach";
 import { BulkDialog, type BulkDialogProps } from "./BulkDialogs";
@@ -33,8 +33,8 @@ afterEach(() => {
 });
 
 const people = [
-  { id: "p1", tags: ["vip"] },
-  { id: "p2", tags: [] },
+  { id: "p1", name: "Ada Lovelace", tags: ["vip"] },
+  { id: "p2", name: "Grace Hopper", tags: [] },
 ];
 
 const sequence = {
@@ -74,7 +74,7 @@ describe("BulkDialog list", () => {
   it("explains that a list must be chosen when no static list exists", async () => {
     renderDialog(clientMock(), { lists: [SEGMENT_LIST] });
     await flush();
-    expect(buttonByText("Add to list")?.disabled).toBe(true);
+    expect(buttonByText("Add to list")?.getAttribute("aria-disabled")).toBe("true");
     expect(bodyText()).toContain("Choose a list.");
   });
 
@@ -103,6 +103,15 @@ describe("BulkDialog list", () => {
     await flush();
     clickButton("Add to list");
     await flush();
+    expect(bodyText()).toContain("Could not update the selected people.");
+    expect(bodyText()).not.toContain("List is read only.");
+    act(() =>
+      document
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="Details: Could not update the selected people."]',
+        )!
+        .click(),
+    );
     expect(bodyText()).toContain("List is read only.");
     expect(props.onDone).not.toHaveBeenCalled();
     expect(buttonByText("Add to list")).toBeTruthy();
@@ -134,7 +143,7 @@ describe("BulkDialog tag", () => {
     const mock = clientMock();
     renderDialog(mock, { action: "tag" });
     await flush();
-    expect(buttonByText("Add a tag")?.disabled).toBe(true);
+    expect(buttonByText("Add a tag")?.getAttribute("aria-disabled")).toBe("true");
     setFieldValue(fieldByLabel("Tag"), "  lead  ");
     clickButton("Add a tag");
     await flush();
@@ -147,12 +156,49 @@ describe("BulkDialog tag", () => {
 
   it("does not add a tag the person already has twice", async () => {
     const mock = clientMock();
-    renderDialog(mock, { action: "tag", people: [{ id: "p1", tags: ["vip"] }] });
+    renderDialog(mock, {
+      action: "tag",
+      people: [{ id: "p1", name: "Ada Lovelace", tags: ["vip"] }],
+    });
     await flush();
     setFieldValue(fieldByLabel("Tag"), "vip");
     clickButton("Add a tag");
     await flush();
     expect(mock.people.update).toHaveBeenCalledWith({ personId: "p1", patch: { tags: ["vip"] } });
+  });
+});
+
+describe("BulkDialog failure report", () => {
+  it("names each failed person and counts the failures past the display limit", async () => {
+    const many = Array.from({ length: 22 }, (_, index) => ({
+      id: `p${index}`,
+      name: `Person ${index}`,
+      tags: [],
+    }));
+    const mock = clientMock({
+      people: {
+        ...clientMock().people,
+        update: vi.fn(async () => {
+          throw new Error("Not allowed");
+        }),
+      },
+    });
+    renderDialog(mock, { action: "tag", people: many });
+    await flush();
+    setFieldValue(fieldByLabel("Tag"), "lead");
+    clickButton("Add a tag");
+    await flush();
+    expect(bodyText()).toContain("Person 0: Failed");
+    expect(bodyText()).toContain("Person 19: Failed");
+    expect(bodyText()).not.toContain("Person 20: Failed");
+    expect(bodyText()).not.toContain("Not allowed");
+    act(() =>
+      document
+        .querySelector<HTMLButtonElement>('button[aria-label="Details: Person 0: Failed"]')!
+        .click(),
+    );
+    expect(bodyText()).toContain("Not allowed");
+    expect(bodyText()).toContain("And 2 more could not be updated.");
   });
 });
 
@@ -163,6 +209,7 @@ describe("BulkDialog sequence", () => {
     });
     renderDialog(mock, { action: "sequence" });
     await flush();
+    act(() => document.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click());
     expect(bodyText()).toContain("so the selected people are added to that list");
     pickOption("Sequence", "Spring follow-up");
     clickButton("Add to sequence");
@@ -181,7 +228,16 @@ describe("BulkDialog sequence", () => {
     });
     renderDialog(mock, { action: "sequence" });
     await flush();
+    expect(bodyText()).toContain("Could not read sequences.");
+    expect(bodyText()).not.toContain("Sequences are unavailable.");
+    act(() =>
+      document
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="Details: Could not read sequences."]',
+        )!
+        .click(),
+    );
     expect(bodyText()).toContain("Sequences are unavailable.");
-    expect(buttonByText("Add to sequence")?.disabled).toBe(true);
+    expect(buttonByText("Add to sequence")?.getAttribute("aria-disabled")).toBe("true");
   });
 });

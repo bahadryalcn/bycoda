@@ -177,6 +177,20 @@ it("keeps arbitrary and noncanonical method strings out of the fixed metric inve
   expect(result.limits.registeredMetrics).toBeLessThanOrEqual(MAX_METRICS);
 });
 
+it("registers every static label with headroom left for new ones", () => {
+  // The last labels of the static inventory are dropped silently once it outgrows the cap.
+  const last = [
+    "desktopLive.queueLeases.fallback",
+    "desktopLive.hostPush.fallback",
+    "mcp.ext.idleStop",
+  ];
+  for (const name of last) recordDuration(name, 1);
+  const result = perfMetrics.snapshot();
+  const names = new Set(result.metrics.map((entry) => entry.name));
+  for (const name of last) expect(names.has(name), name).toBe(true);
+  expect(result.limits.registeredMetrics).toBeLessThan(MAX_METRICS);
+});
+
 it("keeps the desktop heartbeat part names in the static allowlist", () => {
   const parts = [
     "desktopLive.poll",
@@ -216,6 +230,18 @@ it("exposes completed dispatches and MCP scopes through authenticated resources.
     const counts = () =>
       new Map(perfMetrics.snapshot().metrics.map((entry) => [entry.name, entry.count]));
     const before = counts();
+    const sync = await call("sync.pull", { sinceRev: 0, paginated: true });
+    expect(sync.status).toBe(200);
+    expect(sync.value.result).toMatchObject({
+      records: [],
+      timings: {
+        receiveToAdmitMs: expect.any(Number),
+        dbWaitMs: expect.any(Number),
+        handlerMs: expect.any(Number),
+        serializationMs: expect.any(Number),
+        loopMaxRecentMs: expect.any(Number),
+      },
+    });
     expect((await call("mcp.tokens.list")).status).toBe(200); // J2 early return
     expect(
       (await call("files.list", { projectId: "private-project", content: "private-content" }))
@@ -235,6 +261,7 @@ it("exposes completed dispatches and MCP scopes through authenticated resources.
     );
     for (const name of [
       "mcp.tokens.list",
+      "sync.pull",
       "files.list",
       "other",
       "mcp.social",

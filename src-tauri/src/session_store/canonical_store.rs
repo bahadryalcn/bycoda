@@ -8,6 +8,7 @@ use tauri::{Emitter, Manager};
 const MAX_SAFE_COUNTER: i64 = 9_007_199_254_740_991;
 
 use super::SessionStore;
+mod operations;
 mod orphans;
 
 pub(super) fn ensure_schema(db: &Connection) -> rusqlite::Result<()> {
@@ -330,7 +331,7 @@ pub async fn assistant_draft_backup_list(
     let app = window.app_handle().clone();
     crate::harness::run_blocking("assistant_draft_backup_list", move || {
         let store = app.state::<SessionStore>();
-        let db = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let db = store.lock_conn()?;
         if page(&window)? != captured { return Err("CANONICAL_PAGE_STALE".into()); }
         let tx = rusqlite::Transaction::new_unchecked(&db, TransactionBehavior::Deferred).map_err(|e| e.to_string())?;
         let revision: i64 = tx.query_row("SELECT COALESCE((SELECT revision FROM canonical_legacy_revisions WHERE scope=?1 AND key=?2),0)", params![ASSISTANT_DRAFT_SCOPE,key], |row| row.get(0)).map_err(|e| e.to_string())?;
@@ -360,7 +361,7 @@ pub async fn assistant_draft_backup_read(
     let app = window.app_handle().clone();
     crate::harness::run_blocking("assistant_draft_backup_read", move || {
         let store = app.state::<SessionStore>();
-        let db = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let db = store.lock_conn()?;
         if page(&window)? != captured { return Err("CANONICAL_PAGE_STALE".into()); }
         let bytes: i64 = db.query_row("SELECT octet_length(raw) FROM canonical_legacy_raw WHERE scope=?1 AND key=?2 AND hash=?3", params![ASSISTANT_DRAFT_SCOPE,key,hash], |row| row.get(0)).map_err(|_| "Draft backup is unavailable")?;
         if bytes > 16 * 1024 * 1024 { return Err("Draft backup is too large to open; its original bytes remain preserved".into()); }
@@ -404,7 +405,7 @@ pub(crate) fn register_assistant_preparation(
             return Err("CANONICAL_PAGE_STALE".into());
         }
         let store = window.app_handle().state::<SessionStore>();
-        let db = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let db = store.lock_conn()?;
         durable(&db, || {
             let tx = rusqlite::Transaction::new_unchecked(&db, TransactionBehavior::Immediate)
                 .map_err(|e| e.to_string())?;
@@ -471,7 +472,7 @@ pub(crate) fn prepare_assistant_send(
             return Err("CANONICAL_PAGE_STALE".into());
         }
         let store = window.app_handle().state::<SessionStore>();
-        let db = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let db = store.lock_conn()?;
         durable(&db, || {
             let tx = rusqlite::Transaction::new_unchecked(&db, TransactionBehavior::Immediate)
                 .map_err(|e| e.to_string())?;
@@ -565,7 +566,7 @@ pub(crate) fn assistant_send_route(
 ) -> Result<AssistantNativeRoute, String> {
     validate(key)?;
     let store = window.app_handle().state::<SessionStore>();
-    let db = store.conn.lock().map_err(|_| "Session store is locked")?;
+    let db = store.lock_conn()?;
     let row: Option<SendRouteRow> = db.query_row(
         "SELECT r.operation_id,r.machine_id,r.environment_id,r.route_fingerprint,r.route_generation,r.host_instance,r.intent,r.intent_version,r.proof FROM assistant_native_send_routes r JOIN canonical_claims c ON c.scope=?1 AND c.key=r.key AND c.operation_id=r.operation_id WHERE r.key=?2",
         params![ASSISTANT_SEND_SCOPE,key], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?)),
@@ -613,7 +614,7 @@ pub(crate) fn assistant_send_settled(
     validate(key)?;
     validate(operation_id)?;
     let store = window.app_handle().state::<SessionStore>();
-    let db = store.conn.lock().map_err(|_| "Session store is locked")?;
+    let db = store.lock_conn()?;
     db.query_row("SELECT EXISTS(SELECT 1 FROM assistant_native_send_routes r JOIN canonical_claim_settlements s ON s.scope=?1 AND s.key=r.key AND s.operation_id=r.operation_id WHERE r.key=?2 AND r.operation_id=?3 AND (?4 IS NULL OR r.request_key=?4) AND r.proof IS NOT NULL)",
         params![ASSISTANT_SEND_SCOPE,key,operation_id,request_key], |row| row.get(0)).map_err(|e| e.to_string())
 }
@@ -628,7 +629,7 @@ pub(crate) fn assistant_send_not_sent(
     validate(operation_id)?;
     validate(request_key)?;
     let store = window.app_handle().state::<SessionStore>();
-    let db = store.conn.lock().map_err(|_| "Session store is locked")?;
+    let db = store.lock_conn()?;
     db.query_row("SELECT EXISTS(SELECT 1 FROM assistant_native_preparations a JOIN canonical_claim_settlements s ON s.scope=?1 AND s.key=a.key AND s.operation_id=a.operation_id WHERE a.key=?2 AND a.operation_id=?3 AND a.request_key=?4 AND a.cancelled=1)", params![ASSISTANT_SEND_SCOPE,key,operation_id,request_key], |row| row.get(0)).map_err(|e| e.to_string())
 }
 
@@ -647,7 +648,7 @@ pub(crate) fn release_prepared_assistant(
             return Err("CANONICAL_PAGE_STALE".into());
         }
         let store = window.app_handle().state::<SessionStore>();
-        let db = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let db = store.lock_conn()?;
         durable(&db, || {
             let tx = rusqlite::Transaction::new_unchecked(&db, TransactionBehavior::Immediate)
                 .map_err(|e| e.to_string())?;
@@ -708,7 +709,7 @@ pub(crate) fn record_assistant_proof(
             return Err("CANONICAL_PAGE_STALE".into());
         }
         let store = window.app_handle().state::<SessionStore>();
-        let db = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let db = store.lock_conn()?;
         durable(&db, || {
             let tx = rusqlite::Transaction::new_unchecked(&db, TransactionBehavior::Immediate)
                 .map_err(|e| e.to_string())?;
@@ -740,7 +741,7 @@ pub(crate) fn complete_assistant_send(
             return Err("CANONICAL_PAGE_STALE".into());
         }
         let store = window.app_handle().state::<SessionStore>();
-        let db = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let db = store.lock_conn()?;
         let result = durable(&db, || {
             let tx = rusqlite::Transaction::new_unchecked(&db, TransactionBehavior::Immediate)
                 .map_err(|e| e.to_string())?;
@@ -889,7 +890,7 @@ pub(crate) fn admit_session_effect(
     }
     let admission = admit(window, &capability.page_token)?;
     let store = app.state::<SessionStore>();
-    let db = store.conn.lock().map_err(|_| "Session store is locked")?;
+    let db = store.lock_conn()?;
     if page(window)? != capability.page_token {
         return Err("CANONICAL_PAGE_STALE".into());
     }
@@ -930,7 +931,7 @@ pub async fn canonical_store_get(
 
         validate(&scope)?;
         validate(&key)?;
-        let db = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let db = store.lock_conn()?;
         if page(&window)? != captured_page {
             return Err("Canonical owner page has changed".into());
         }
@@ -950,7 +951,7 @@ pub async fn canonical_store_receipt(
     let app = window.app_handle().clone();
     crate::harness::run_blocking("canonical_store_receipt", move || {
         let store = app.state::<SessionStore>();
-        let db = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let db = store.lock_conn()?;
         if page(&window)? != captured {
             return Err("CANONICAL_PAGE_STALE".into());
         }
@@ -988,7 +989,7 @@ pub async fn canonical_store_legacy_list(
     let app = window.app_handle().clone();
     crate::harness::run_blocking("canonical_store_legacy_list", move || {
         let store = app.state::<SessionStore>();
-        let db = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let db = store.lock_conn()?;
         if page(&window)? != captured { return Err("CANONICAL_PAGE_STALE".into()); }
         let mut statement = db.prepare("SELECT hash,raw FROM canonical_legacy_raw WHERE scope=?1 AND key=?2 AND (?3 IS NULL OR hash>?3) ORDER BY hash LIMIT ?4").map_err(|e| e.to_string())?;
         let rows = statement.query_map(params![scope,key,after_hash,limit as i64], |row| Ok(LegacySource { hash: row.get(0)?, raw: row.get(1)? })).map_err(|e| e.to_string())?;
@@ -1012,7 +1013,7 @@ pub async fn canonical_store_read(
     let app = window.app_handle().clone();
     crate::harness::run_blocking("canonical_store_read", move || {
         let store = app.state::<SessionStore>();
-        let db = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let db = store.lock_conn()?;
         if page(&window)? != captured {
             return Err("Canonical owner page has changed".into());
         }
@@ -1055,7 +1056,7 @@ pub async fn canonical_store_list(
     validate(&scope)?;
     if let Some(ref key) = after { validate(key)?; }
     if limit == 0 || limit > 512 { return Err("Canonical list limit must be between 1 and 512".into()); }
-    let db = store.conn.lock().map_err(|_| "Session store is locked")?;
+    let db = store.lock_conn()?;
     if page(&window)? != captured_page { return Err("Canonical owner page has changed".into()); }
     let tx = rusqlite::Transaction::new_unchecked(&db, TransactionBehavior::Deferred).map_err(|e| e.to_string())?;
     let revision: i64 = tx.query_row("SELECT COALESCE((SELECT revision FROM canonical_revisions WHERE scope=?1),0)",params![scope],|r| r.get(0)).map_err(|e| e.to_string())?;
@@ -1098,7 +1099,7 @@ pub async fn canonical_store_list_bounded(
     let app = window.app_handle().clone();
     crate::harness::run_blocking("canonical_store_list_bounded", move || {
         let store = app.state::<SessionStore>();
-        let db = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let db = store.lock_conn()?;
         if page(&window)? != captured { return Err("CANONICAL_PAGE_STALE".into()); }
         let tx = rusqlite::Transaction::new_unchecked(&db, TransactionBehavior::Deferred).map_err(|e| e.to_string())?;
         let revision: i64 = tx.query_row("SELECT COALESCE((SELECT revision FROM canonical_revisions WHERE scope=?1),0)", params![scope], |r| r.get(0)).map_err(|e| e.to_string())?;
@@ -1172,7 +1173,7 @@ pub async fn outbox_export_oversize(
         if destination.exists() { return Err("Choose an unused file name; no existing file was changed".into()); }
         let db_path = {
             let store = app.state::<SessionStore>();
-            let db = store.conn.lock().map_err(|_| "Session store is locked")?;
+            let db = store.lock_conn()?;
             db.path().filter(|path| !path.is_empty()).ok_or("Saved request export is unavailable for this store")?.to_owned()
         };
         let db = Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX).map_err(|_| "Cannot open saved request evidence")?;
@@ -1243,7 +1244,7 @@ pub async fn canonical_store_transaction(
     let request = format!("sha256:{:x}", Sha256::digest(request_raw.as_bytes()));
     let result = crate::native_window_lifecycle::persistence_write(&window, || {
         let page_retired = retired_page_check()?;
-        let db = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let db = store.lock_conn()?;
         if page(&window)? != captured { return Err("Canonical owner page has changed".into()); }
         durable(&db, || {
         let tx = rusqlite::Transaction::new_unchecked(&db, TransactionBehavior::Immediate).map_err(|e| e.to_string())?;
@@ -1308,6 +1309,7 @@ pub async fn canonical_store_transaction(
         }).collect() };
         let result = serde_json::to_string(&compact).map_err(|e| e.to_string())?;
         tx.execute("INSERT INTO canonical_operations(scope,operation_id,request,result,window,page) VALUES(?1,?2,?3,?4,?5,?6)",params![scope,operation_id,request,result,window.label(),captured]).map_err(|e| e.to_string())?;
+        operations::reclaim(&tx,&scope,operations::RETAINED_PER_SCOPE)?;
         tx.commit().map_err(|e| e.to_string())?; Ok(outcome)
         })
     });
@@ -1341,7 +1343,7 @@ pub async fn canonical_store_claim(
     validate(&scope)?; validate(&key)?; validate(&operation_id)?; let captured = captured_page.clone();
     crate::native_window_lifecycle::persistence_write(&window, || {
         let page_retired = retired_page_check()?;
-        let db = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let db = store.lock_conn()?;
         if page(&window)? != captured { return Err("Canonical owner page has changed".into()); }
         durable(&db, || {
         let tx = rusqlite::Transaction::new_unchecked(&db, TransactionBehavior::Immediate).map_err(|e| e.to_string())?;
@@ -1379,7 +1381,7 @@ pub async fn canonical_store_settle(
 
     validate(&scope)?; validate(&key)?; validate(&operation_id)?; let captured = captured_page.clone();
     binding_quiescent(&app, &scope, &key, || crate::native_window_lifecycle::persistence_write(&window, || {
-        let db = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let db = store.lock_conn()?;
         if page(&window)? != captured { return Err("Canonical owner page has changed".into()); }
         durable(&db, || {
         let tx = rusqlite::Transaction::new_unchecked(&db, TransactionBehavior::Immediate).map_err(|e| e.to_string())?;
@@ -1419,7 +1421,7 @@ pub async fn canonical_store_mark_submitted(
         let _admission = admission;
         crate::native_window_lifecycle::persistence_write(&window, || {
             let store = app.state::<SessionStore>();
-            let db = store.conn.lock().map_err(|_| "Session store is locked")?;
+            let db = store.lock_conn()?;
             if page(&window)? != captured { return Err("Canonical owner page has changed".into()); }
             durable(&db, || {
                 let tx = rusqlite::Transaction::new_unchecked(&db, TransactionBehavior::Immediate).map_err(|e| e.to_string())?;
@@ -1458,7 +1460,7 @@ pub async fn canonical_store_recover(
             let entries = admissions().lock().map_err(|_| "CANONICAL_ADMISSION_UNAVAILABLE")?;
             if page(&window)? != captured { return Err("CANONICAL_PAGE_STALE".into()); }
             let store = app.state::<SessionStore>();
-            let db = store.conn.lock().map_err(|_| "Session store is locked")?;
+            let db = store.lock_conn()?;
             durable(&db, || {
                 let tx = rusqlite::Transaction::new_unchecked(&db, TransactionBehavior::Immediate).map_err(|e| e.to_string())?;
                 let prior: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM canonical_claim_recoveries WHERE scope=?1 AND key=?2 AND operation_id=?3)",params![scope,key,operation_id],|r| r.get(0)).map_err(|e| e.to_string())?;

@@ -6,7 +6,7 @@
 .layout {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: var(--ui-space-6);
   max-inline-size: 72rem;
   min-inline-size: 0;
 }
@@ -16,7 +16,7 @@
   min-inline-size: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--ui-space-2);
 }
 /* Thin outline frame for the supervision status row and its enrolled conversations. */
 .frame {
@@ -24,14 +24,15 @@
   min-inline-size: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--ui-space-2);
+  padding: var(--ui-space-3);
 }
 /* Settings-style status row: title, badge and one-line description left, actions right. */
 .statusRow {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px 16px;
+  gap: var(--ui-space-2) var(--ui-space-4);
   min-inline-size: 0;
 }
 .statusText {
@@ -49,9 +50,9 @@
 .groupHead {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
-  padding: 8px 8px 4px;
+  padding: var(--ui-space-2) var(--ui-space-2) var(--ui-space-1);
 }
 .groupTitle {
   min-inline-size: 0;
@@ -76,16 +77,16 @@
   align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 /* One session per row (text | context meter | status | open). Every row is its own grid, so the context and status tracks are fixed widths: columns line up whatever the badge text. */
 .jobRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 14rem 10rem 1.5rem;
+  grid-template-columns: minmax(0, 1fr) 14rem 10rem auto;
   align-items: center;
-  gap: 4px 16px;
-  padding: 10px 8px;
+  gap: var(--ui-space-1) var(--ui-space-4);
+  padding: var(--ui-space-3) var(--ui-space-2);
   min-block-size: 3.5rem;
   min-inline-size: 0;
 }
@@ -114,7 +115,7 @@
 .model {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--ui-space-1);
   min-inline-size: 0;
 }
 .modelName {
@@ -123,17 +124,14 @@
 .jobMeter {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--ui-space-1);
   min-inline-size: 0;
 }
 .meterHead {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
-}
-.percent {
-  font-variant-numeric: tabular-nums;
+  gap: var(--ui-space-2);
 }
 .jobStatus {
   display: flex;
@@ -144,7 +142,7 @@
   min-inline-size: 0;
 }
 .indicator {
-  margin-inline-end: 4px;
+  margin-inline-end: var(--ui-space-1);
 }
 .muted {
   margin: 0;
@@ -152,7 +150,7 @@
 }
 @container (max-width: 640px) {
   .jobRow {
-    grid-template-columns: minmax(0, 1fr) 10rem 1.5rem;
+    grid-template-columns: minmax(0, 1fr) 10rem auto;
   }
   .jobMeter {
     grid-column: 1 / -1;

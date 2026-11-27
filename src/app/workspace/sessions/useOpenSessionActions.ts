@@ -1,3 +1,4 @@
+import { workspaceFailureDetail } from "../../model/workspaceActionError";
 import { reserveSessionWindow } from "../../model/sessionWindowOwnership";
 import {
   useCallback,
@@ -235,7 +236,11 @@ export function useOpenSessionActions({
         release = await reserveSessionWindow([session.id], inspectedWorkerId);
       } catch (error) {
         if (options?.privacyToken) throw error;
-        toast.show({ tone: "warning", message: String(error) });
+        toast.show({
+          tone: "warning",
+          title: t("Could not open this conversation"),
+          message: workspaceFailureDetail(error),
+        });
         return false;
       }
       if (!release) {
@@ -321,49 +326,55 @@ export function useOpenSessionActions({
 
   /** Open several history sessions together as a grid in one new tab. */
   const onOpenSessionsSideBySide = useCallback(
-    async (sessionIds: string[], options?: { isCurrent?: () => boolean }) => {
+    async (
+      sessionIds: string[],
+      options?: { isCurrent?: () => boolean; requireAll?: boolean },
+    ): Promise<boolean> => {
       const wanted = [...new Set(sessionIds)];
       if (wanted.length > SIDE_BY_SIDE_LIMIT) {
         toast.show({
           tone: "warning",
-          message: t("Select at most {p0} conversations to open side by side.", {
+          message: t("Select at most {p0} sessions to open side by side.", {
             p0: SIDE_BY_SIDE_LIMIT,
           }),
         });
-        return;
+        return false;
       }
-      if (wanted.length === 0) return;
+      if (wanted.length === 0) return false;
       workspaceNavigation.cancel();
       const request = ++openRequest.current;
       const navigationCurrent = workspaceNavigation.captureRequest?.() ?? (() => true);
       const isCurrent = () => navigationCurrent() && options?.isCurrent?.() !== false;
       const loaded = await Promise.all(wanted.map((id) => ensureOpenSession(id)));
-      if (request !== openRequest.current || !isCurrent()) return;
+      if (request !== openRequest.current || !isCurrent()) return false;
       const opened = loaded.filter(
         (session): session is Session =>
           !!session && !session.inboxAsk && !delegationParentOf(session),
       );
-      if (opened.length === 0) return;
+      if (!opened.length || (options?.requireAll && opened.length !== wanted.length)) return false;
       if (opened.length === 1) {
-        await onSelectHistorySession(opened[0].id, options);
-        return;
+        return onSelectHistorySession(opened[0].id, options);
       }
       let release: Awaited<ReturnType<typeof reserveSessionWindow>>;
       try {
         release = await reserveSessionWindow(opened.map((session) => session.id));
       } catch (error) {
-        toast.show({ tone: "warning", message: String(error) });
-        return;
+        toast.show({
+          tone: "warning",
+          title: t("Could not open these conversations side by side"),
+          message: workspaceFailureDetail(error),
+        });
+        return false;
       }
-      if (!release) return;
+      if (!release) return false;
       let retained = false;
       try {
-        if (request !== openRequest.current || !isCurrent()) return;
+        if (request !== openRequest.current || !isCurrent()) return false;
         const plan = planOpenSessionsSideBySide({
           tabs: tabsRef.current,
           sessionIds: opened.map((session) => session.id),
         });
-        if (!plan) return;
+        if (!plan) return false;
         const cwd = opened[0].cwd;
         const next = insertBesideActive(plan.tabs, plan.tab, cwd);
         tabsRef.current = next;
@@ -373,6 +384,7 @@ export function useOpenSessionActions({
         followProject(cwd);
         setComposerFocused(true);
         retained = true;
+        return true;
       } finally {
         await release(retained).catch((error) =>
           console.error("Conversation ownership release failed", error),

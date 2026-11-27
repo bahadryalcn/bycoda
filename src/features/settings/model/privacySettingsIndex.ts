@@ -30,4 +30,28 @@ export const PRIVACY_SETTINGS_INDEX: SettingsEntry[] = [
     },
     keywords: "privacy anonymous statistics usage telemetry analytics install id stats share",
   },
+  {
+    id: "anonymous-token-totals",
+    section: "groupLock",
+    get label() {
+      return t("Share anonymous token totals");
+    },
+    keywords: "privacy anonymous usage telemetry analytics API cost USD maliyet izin",
+  },
+  {
+    id: "activity-sharing",
+    section: "groupLock",
+    get label() {
+      return t("Share active time");
+    },
+    keywords: "privacy data sharing activity sync active minutes permission süre izin",
+  },
+  {
+    id: "data-sharing-receipts",
+    section: "groupLock",
+    get label() {
+      return t("Data sharing receipts");
+    },
+    keywords: "privacy data sharing notification sent destination gönderim bildirim",
+  },
 ];

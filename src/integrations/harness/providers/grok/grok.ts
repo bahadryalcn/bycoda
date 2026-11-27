@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import {
   assertProviderOperation,
   observeProviderProcess,
@@ -15,6 +16,7 @@ import {
 
 import { killChild } from "../../core/child";
 import { retireProviderEpoch } from "../turnWriter";
+import { savedConversationUnavailableText } from "../../core/providerNotices";
 import {
   announceSlowProviderStartup,
   PROVIDER_STARTUP_TIMEOUT_MS,
@@ -50,16 +52,26 @@ import { nativeModelIdWithSettings } from "../../../../features/sessions/model/m
 import { AcpSubagents } from "../../core/acpSubagents";
 import type { RuntimeMode } from "../../../../features/sessions/model/session";
 import { AcpClient, type AcpHandlers } from "../../core/acp";
+import { ACP_PROMPT_TIMEOUT_MS } from "../../core/acpPromptDeadline";
+import {
+  providerExitError,
+  pushExitStderrTail,
+  redactExitStderrLine,
+} from "../../core/exitDiagnostics";
+import { ignoreMissingControlMethod } from "../../core/acpControlRejection";
 import { reportAcpStopReason } from "../../core/acpStopReason";
 import { JsonRpcResponseError } from "../../core/jsonRpc";
 import { resolveGrokBinary, spawnChild, watchChild } from "../../core/child";
+import { leanContext } from "../../core/nativeToolLimits";
 import {
-  AUTH_HELP,
+  grokAuthHelp,
   askQuestionResponse,
   askQuestionsFromAcp,
   asRecord,
   contextWindowFromSetup,
   currentModelId,
+  applyGrokEffort,
+  grokEffortControl,
   eventsFromAcpUpdate,
   grokAuthError,
   grokAuthMethodId,
@@ -102,6 +114,10 @@ type Live = {
   /** Account profile (GROK_HOME) the process runs under. */
   accountId: string;
   modelId: string;
+  effortControl: ReturnType<typeof grokEffortControl>;
+  effort?: string;
+  init: unknown;
+  setup: unknown;
   contextWindow?: number;
   muteUpdates: boolean;
   cancelled: boolean;
@@ -126,7 +142,8 @@ const INIT_TIMEOUT_MS = PROVIDER_STARTUP_TIMEOUT_MS;
 const AUTH_TIMEOUT_MS = 15_000;
 const SESSION_TIMEOUT_MS = 45_000;
 const CONTROL_TIMEOUT_MS = 15_000;
-const PROMPT_TIMEOUT_MS = 30 * 60_000;
+// Compaction is a control call, not a turn: keep its own bounded deadline.
+const COMPACT_TIMEOUT_MS = 30 * 60_000;
 
 const CLIENT_CAPABILITIES = {
   fs: { readTextFile: false, writeTextFile: false },
@@ -241,7 +258,7 @@ export async function compactGrokContext(input: CompactContextInput): Promise<vo
           await acp.request(
             "_x.ai/compact_conversation",
             { sessionId: live.acpSessionId },
-            PROMPT_TIMEOUT_MS,
+            COMPACT_TIMEOUT_MS,
           );
         } catch (error) {
           if (live.cancelled) return;
@@ -415,6 +432,12 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
 async function ensureStartedLive(input: HarnessSessionInput): Promise<Live> {
   assertProviderOperation(input.operationContext);
 
+  // ACP has no documented switch that suppresses configured plugins and MCP servers.
+  if (leanContext(input.modelSettings))
+    throw new Error(
+      "Grok files:false is unavailable: its ACP launch cannot disable configured plugins and MCP servers.",
+    );
+
   const want = grokSpawnShape(input);
   const accountId = input.providerAccountId ?? "default";
   const existing = liveByThread.get(input.sessionId);
@@ -485,21 +508,23 @@ async function ensureStartedLive(input: HarnessSessionInput): Promise<Live> {
       (liveRef.current?.onEvent ?? input.onEvent)(event);
     };
 
+    const stderrTail: string[] = [];
     watchChild(
       handle,
       (line) => acp.pushLine(line),
       (code) => {
-        acp.close(new Error("Grok Build exited"));
+        acp.close(providerExitError("Grok Build", code, stderrTail));
         if (liveByThread.get(input.sessionId)?.handle === handle)
           liveByThread.delete(input.sessionId);
         emit({ type: "session.ended", code });
       },
       (line) => {
-        console.debug("[bycoda] grok stderr", line);
+        pushExitStderrTail(stderrTail, line);
+        console.debug("[bycoda] grok stderr", redactExitStderrLine(line));
         if (/not authenticated|Authentication required|XAI_API_KEY/i.test(line)) {
           emit({
             type: "session.error",
-            message: `${line.trim()}\n\n${AUTH_HELP}`,
+            message: `${redactExitStderrLine(line)}\n\n${grokAuthHelp()}`,
           });
         }
       },
@@ -585,7 +610,7 @@ async function ensureStartedLive(input: HarnessSessionInput): Promise<Live> {
           resumeByThread.delete(input.sessionId);
           input.onEvent({
             type: "status",
-            text: "The saved provider conversation is unavailable. Starting a new session; the app will restore conversation context.",
+            text: savedConversationUnavailableText(),
           });
         } finally {
           muteGate.current = false;
@@ -609,6 +634,9 @@ async function ensureStartedLive(input: HarnessSessionInput): Promise<Live> {
 
     if (startingByThread.get(input.sessionId) !== startup)
       throw new Error("Provider startup cancelled");
+    const modelId =
+      currentModelId(setup) ?? nativeModelIdWithSettings(input.model, input.modelSettings);
+    const effortControl = grokEffortControl(init, setup, modelId);
     const live: Live = {
       operation: input.operationContext?.operation,
       handle,
@@ -617,7 +645,11 @@ async function ensureStartedLive(input: HarnessSessionInput): Promise<Live> {
       acp,
       acpSessionId,
       cwd: input.cwd,
-      modelId: currentModelId(setup) ?? nativeModelIdWithSettings(input.model, input.modelSettings),
+      modelId,
+      init,
+      setup,
+      effortControl,
+      effort: effortControl.current ?? (didLoad ? undefined : grokEffort(input.modelSettings)),
       contextWindow: contextWindowFromSetup(setup) ?? contextWindowFromSetup(init),
       muteUpdates: didLoad,
       cancelled: false,
@@ -661,25 +693,25 @@ async function applyModelSelection(
         { sessionId: live.acpSessionId, modelId: base },
         CONTROL_TIMEOUT_MS,
       )
-      .then(() => {
+      .then((result) => {
         live.modelId = base;
+        const updated = grokEffortControl(live.init, result, base, live.setup);
+        live.effortControl = updated;
+        live.effort = updated.current;
       })
       .catch((error: unknown) => {
-        ignoreUnsupportedControl("set_model", error);
+        ignoreMissingControlMethod("grok", "set_model", error);
       });
   }
 
-  const effort = grokEffort(input.modelSettings);
-  if (!effort) return;
-  await acp
-    .request(
-      "session/set_mode",
-      { sessionId: live.acpSessionId, modeId: effort },
-      CONTROL_TIMEOUT_MS,
-    )
-    .catch((error: unknown) => {
-      ignoreUnsupportedControl("set_mode", error);
-    });
+  live.effort = await applyGrokEffort(
+    acp,
+    live.acpSessionId,
+    live.effortControl,
+    live.effort,
+    grokEffort(input.modelSettings),
+    CONTROL_TIMEOUT_MS,
+  );
 }
 
 async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Promise<void> {
@@ -696,7 +728,7 @@ async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Pro
           sessionId: live.acpSessionId,
           prompt: blocks,
         },
-        PROMPT_TIMEOUT_MS,
+        ACP_PROMPT_TIMEOUT_MS,
         (value, work) => {
           responseScope.work?.finish();
           responseScope.work = work ? retainNativeOutputEventOrigin(work.origin) : null;
@@ -711,11 +743,11 @@ async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Pro
       reportAcpStopReason(result, emitNative);
     } catch (error) {
       if (live.cancelled) return;
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = errorText(error);
       emitNative({
         type: "session.error",
         message: /auth|login|credential|api key|XAI_API_KEY/i.test(detail)
-          ? `${detail.trim()}\n\n${AUTH_HELP}`
+          ? `${detail.trim()}\n\n${grokAuthHelp()}`
           : detail,
       });
       throw error;
@@ -723,12 +755,6 @@ async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Pro
   } finally {
     responseScope.work?.finish();
   }
-}
-
-function ignoreUnsupportedControl(method: string, error: unknown): void {
-  console.debug(`[bycoda] grok ${method} failed`, error);
-  const detail = error instanceof Error ? error.message : String(error);
-  if (/timed out|not running|exited|closed|pipe/i.test(detail)) throw error;
 }
 
 function handleNotification(live: Live, method: string, params: unknown) {

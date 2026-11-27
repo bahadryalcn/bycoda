@@ -17,6 +17,7 @@ import type { HostSession } from "../../connections/model/protocol";
 import { rememberNotificationProjects } from "../../notifications/model/notificationProjects";
 import type { ApprovalDispatch } from "./ApprovalDecisionContext";
 import { createApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence";
+import { CLAUDE_WORKSPACE_GLOB } from "../../../shared/model/sessionApprovalGrant";
 
 it("recaptures a global rendered request when its owner registers and then commits its actual source", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -104,6 +105,92 @@ it("recaptures a global rendered request when its owner registers and then commi
     expect(approve).toHaveBeenCalledExactlyOnceWith(852, "allow", occurrenceId);
     expect(allow().disabled).toBe(true);
     expect(document.body.textContent).toContain("Waiting for confirmation");
+  } finally {
+    act(() => {
+      root.unmount();
+      release();
+    });
+    node.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("offers session consent in a tool toast only with the verified Host source", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const node = document.createElement("div");
+  document.body.append(node);
+  const root = createRoot(node);
+  const session = newSession("claude", "G:/session-approval-source");
+  session.hostBinding = {
+    kind: "local-host",
+    machineId: "grant-machine",
+    environmentId: "grant-environment",
+    projectId: "grant-project",
+    sessionId: "grant-session",
+    authorityGeneration: null,
+    created: true,
+  };
+  const occurrenceId = createApprovalOccurrenceId();
+  session.blocks = [
+    {
+      id: "grant-block",
+      role: "approval",
+      text: "Glob **/*.ts",
+      approval: { requestId: 854, occurrenceId, sessionApprovalScope: CLAUDE_WORKSPACE_GLOB },
+    },
+  ];
+  const snapshot: HostSession = {
+    projectId: "grant-project",
+    revision: 4,
+    updatedAt: 1,
+    status: "running",
+    executionOwner: "desktop",
+    runId: "grant-run",
+    session: { ...session, id: "grant-session" },
+  };
+  const approve = vi.fn();
+  const actions = {
+    approve,
+    approvalOccurrenceSupported: true,
+    sessionApprovalGrantsSupported: true,
+    approvalSource: () => ({ session, snapshot }),
+  } as unknown as Parameters<typeof registerRemoteSessionActions>[1];
+  const release = registerRemoteSessionActions(session.id, actions);
+  const dispatch: ApprovalDispatch = (_id, id, decision, expected, scoped) =>
+    submitApprovalIntent(session, id, decision, expected, () => session, scoped);
+  rememberNotificationProjects([
+    {
+      id: "grant-project",
+      kind: "repository",
+      name: "Grant source",
+      detail: "synthetic",
+      paths: [session.cwd],
+    },
+  ]);
+  const always = () =>
+    [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Always allow this session",
+    );
+  try {
+    act(() =>
+      root.render(
+        createElement(ApprovalToasts, {
+          notices: [
+            { session, sessionId: session.id, kind: "approval", label: "Glob", requestId: 854 },
+          ],
+          onFocusSession: vi.fn(),
+          onApproval: dispatch,
+        }),
+      ),
+    );
+    expect(always()).toBeUndefined();
+    act(() => {
+      snapshot.executionOwner = "host";
+      publishRemoteSessionActionSource(session.id, actions);
+    });
+    expect(always()).toBeDefined();
+    await act(async () => always()!.click());
+    expect(approve).toHaveBeenCalledExactlyOnceWith(854, "allow", occurrenceId, true);
   } finally {
     act(() => {
       root.unmount();

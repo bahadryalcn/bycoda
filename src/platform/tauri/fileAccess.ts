@@ -14,3 +14,21 @@ export function configureFileAccess(review = false): Promise<FileAccessMode> {
     ? invoke<FileAccessMode>("configure_file_access", { review, language: getLocale() })
     : Promise.resolve("selected-folders");
 }
+
+export type FileAccessRecovery = {
+  id: string;
+  /** Which saved file was corrupt: the access mode or the folder grants. */
+  kind: "mode" | "grants";
+  /** Local path of the preserved corrupt copy; it is evidence and is never deleted. */
+  quarantine: string;
+};
+
+export function getFileAccessRecoveries(): Promise<FileAccessRecovery[]> {
+  return isTauri()
+    ? invoke<FileAccessRecovery[]>("get_file_access_recoveries")
+    : Promise.resolve([]);
+}
+
+export function dismissFileAccessRecovery(id: string): Promise<void> {
+  return isTauri() ? invoke<void>("dismiss_file_access_recovery", { id }) : Promise.resolve();
+}

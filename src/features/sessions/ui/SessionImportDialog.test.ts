@@ -126,6 +126,26 @@ afterEach(async () => {
 });
 
 describe("SessionImportDialog", () => {
+  it("keeps the prompt recoverable and lets metadata size to its contents", async () => {
+    await render();
+    const row = [...document.querySelectorAll("li")].find((item) =>
+      item.textContent?.includes("Fix the login bug"),
+    )!;
+
+    const prompt = [...row.querySelectorAll("[data-tooltip-owner]")].find(
+      (item) => item.textContent === "Fix the login bug",
+    );
+    expect(prompt?.hasAttribute("data-truncate")).toBe(true);
+    expect(prompt?.classList.contains("flex-1")).toBe(true);
+    const metadata = [...row.querySelectorAll(".whitespace-nowrap")];
+    expect(metadata).toHaveLength(2);
+    expect(row.closest("ul")?.classList.contains("@container/import-rows")).toBe(true);
+    expect(metadata[1].classList.contains("@max-[480px]/import-rows:hidden")).toBe(true);
+    for (const value of metadata) {
+      expect([...value.classList].some((token) => token.startsWith("w-"))).toBe(false);
+    }
+  });
+
   it("opens /resume import scoped to its provider and folder", async () => {
     const scoped = candidate({
       provider: "codex",
@@ -149,8 +169,9 @@ describe("SessionImportDialog", () => {
     expect(text()).not.toContain("Fix the login bug");
     expect(text()).not.toContain("Explain the schema");
     expect(text()).toContain("1 conversation in 1 folder will be imported");
-    expect(buttonWith("Codex").getAttribute("aria-pressed")).toBe("true");
-    expect(buttonWith("Claude Code").getAttribute("aria-pressed")).toBe("false");
+    // Its provider's group is open; the other provider's group stays closed.
+    expect(buttonWith("Codex").getAttribute("aria-expanded")).toBe("true");
+    expect(buttonWith("Claude Code").getAttribute("aria-expanded")).toBe("false");
   });
   it("lists conversations by folder, hiding automation runs by default", async () => {
     await render();
@@ -177,7 +198,7 @@ describe("SessionImportDialog", () => {
     expect(text()).toContain("1 conversation in 1 folder will be imported");
   });
 
-  it("filters by provider and by root folder", async () => {
+  it("groups by provider and filters by root folder", async () => {
     await render();
     await act(async () => buttonWith("Missing folders (1)").click());
     expect(text()).toContain("Explain the schema");
@@ -189,8 +210,46 @@ describe("SessionImportDialog", () => {
     );
     expect(text()).toContain("Fix the login bug");
     expect(text()).not.toContain("Explain the schema");
+    // Closing a provider group hides its conversations without filtering them out.
     await act(async () => buttonWith("Claude Code").click());
-    expect(text()).toContain("Nothing matches these filters.");
+    expect(text()).not.toContain("Fix the login bug");
+    expect(text()).toContain("1 conversation in 1 folder will be imported");
+  });
+
+  it("lists every provider with conversations as its own group", async () => {
+    invoke.mockImplementation(async (command: string) => {
+      if (command === "import_discover")
+        return {
+          candidates: [
+            ...candidates,
+            candidate({
+              provider: "opencode",
+              providerSessionId: "ses_1",
+              firstPrompt: "Add a test",
+            }),
+            candidate({
+              provider: "openclaw",
+              providerSessionId: "s1",
+              resumable: false,
+              firstPrompt: "Plan my week",
+            }),
+          ],
+          filesScanned: 5,
+          filesSkipped: 0,
+          elapsedMs: 5,
+        };
+      if (command === "session_import_keys") return [];
+      return undefined;
+    });
+    await render();
+    for (const label of ["Claude Code", "Codex", "OpenCode", "OpenClaw"]) {
+      expect(buttonWith(label)).toBeTruthy();
+    }
+    // With more than two providers the groups start closed, selection intact.
+    expect(text()).not.toContain("Add a test");
+    expect(text()).toContain("3 conversations in 1 folder will be imported");
+    await act(async () => buttonWith("OpenCode").click());
+    expect(text()).toContain("Add a test");
   });
 
   it("clears the common search field through the native event path without losing discovery candidates", async () => {
@@ -216,7 +275,7 @@ describe("SessionImportDialog", () => {
     // Missing folders start unselected; choose that group explicitly.
     await act(async () =>
       document
-        .querySelector<HTMLInputElement>('input[aria-label="Select all missing folders"]')!
+        .querySelector<HTMLInputElement>('input[aria-label="Select all missing Codex folders"]')!
         .click(),
     );
     const importButton = [...document.querySelectorAll("button")].find((b) =>

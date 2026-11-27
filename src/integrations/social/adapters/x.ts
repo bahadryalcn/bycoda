@@ -8,34 +8,13 @@ import {
 } from "../adapter";
 import type { CaptureSource, CollectedPerson, InteractionKind } from "../audience-types";
 import { xPostWeight } from "../publishingFormats";
+import { xPostExtrasIssue, X_POST_WEIGHT_LIMIT } from "../x-publish";
 import { uploadXMedia } from "../xMedia";
 import { at, id, requireId, text } from "./common";
+import { xDmRequest, xSendDm } from "./x-dm";
+import { sendXThread } from "./x-thread";
 
-/** X standard post weight limit (see docs: weighted URLs and emoji count as in publishingFormats). */
-export const X_POST_WEIGHT_LIMIT = 280;
-
-/**
- * X-only post extras: quote and native poll. The job payload has no `x` field yet, so the
- * send path reads it defensively. shortcut: remove the cast when SocialJob.payload gains `x`.
- */
-export type XPostExtras = {
-  quotePostId?: string;
-  poll?: { options: string[]; durationMinutes: number };
-};
-
-export function xPostExtrasIssue(extras: XPostExtras): string | undefined {
-  if (extras.quotePostId !== undefined && !/^\d{1,25}$/.test(extras.quotePostId))
-    return "quotePostId must be a numeric post ID.";
-  if (extras.poll) {
-    const { options, durationMinutes } = extras.poll;
-    if (options.length < 2 || options.length > 4) return "An X poll needs two to four options.";
-    if (options.some((option) => option.trim().length < 1 || option.length > 25))
-      return "Each X poll option must be 1 to 25 characters.";
-    if (!Number.isInteger(durationMinutes) || durationMinutes < 5 || durationMinutes > 10080)
-      return "An X poll lasts 5 minutes to 7 days.";
-  }
-  return undefined;
-}
+export { xPostExtrasIssue, X_POST_WEIGHT_LIMIT } from "../x-publish";
 
 /**
  * Pause learned from X rate-limit headers or 429 responses, keyed by account and endpoint
@@ -45,7 +24,7 @@ const pauses = new Map<string, number>();
 const pauseKey = (accountId: string, method: string, url: string) =>
   `${accountId}|${method}|${new URL(url).pathname.replace(/\/\d+(?=\/|$)/g, "/:id")}`;
 
-async function xCall(
+export async function xCall(
   http: SocialHttp,
   account: Pick<SocialAccount, "id">,
   url: string,
@@ -76,10 +55,14 @@ async function xCall(
   }
 }
 
-const xGet = (http: SocialHttp, account: Pick<SocialAccount, "id">, url: string, token: string) =>
-  xCall(http, account, url, token);
+export const xGet = (
+  http: SocialHttp,
+  account: Pick<SocialAccount, "id">,
+  url: string,
+  token: string,
+) => xCall(http, account, url, token);
 
-const xJson = (
+export const xJson = (
   http: SocialHttp,
   account: Pick<SocialAccount, "id">,
   url: string,
@@ -205,42 +188,69 @@ const personFrom = (
 
 export function createXAdapter(http: SocialHttp): SocialAdapter {
   return {
+    ignoresPublishedPosts: true,
     async send(account, job, token, media, checkpoint, beforeSubmit) {
-      if (xPostWeight(text(job)) > X_POST_WEIGHT_LIMIT) throw new SocialPlatformError("rejected");
-      const extras = ((job.payload as unknown as { x?: XPostExtras }).x ?? {}) as XPostExtras;
-      if (xPostExtrasIssue(extras)) throw new SocialPlatformError("rejected");
       const message =
         job.kind === "message" ||
         (job.kind === "reply" && !!job.payload.recipientId && !job.payload.postId);
-      const mediaIds = await uploadXMedia(http, job, token, media, message, checkpoint);
+      const extras = job.payload.x ?? {};
       if (
-        job.kind === "message" ||
-        (job.kind === "reply" && job.payload.recipientId && !job.payload.postId)
-      ) {
-        const path = job.payload.threadId
-          ? `dm_conversations/${id(job.payload.threadId)}/messages`
-          : `dm_conversations/with/${id(job.payload.recipientId)}/messages`;
-        await beforeSubmit?.();
-        const { value } = await xJson(http, account, `https://api.x.com/2/${path}`, token, {
-          text: text(job),
-          ...(mediaIds.length ? { attachments: [{ media_id: mediaIds[0] }] } : {}),
-        });
-        return { platformId: requireId(value.data?.dm_event_id) };
-      }
-      if (extras.poll && mediaIds.length) throw new SocialPlatformError("rejected");
-      await beforeSubmit?.();
-      const { value } = await xJson(http, account, "https://api.x.com/2/tweets", token, {
-        text: text(job),
+        (!message && xPostWeight(text(job)) > X_POST_WEIGHT_LIMIT) ||
+        (job.payload.x !== undefined &&
+          (job.kind !== "publish" || xPostExtrasIssue(job.payload.x, job.payload.media.length)))
+      )
+        throw new SocialPlatformError("rejected");
+      if (extras.quotePostId && account.xApiProduct !== "enterprise")
+        throw new SocialPlatformError("unsupported");
+      const thread = job.preparation?.xThread;
+      if (extras.thread && (!checkpoint || thread?.submitting))
+        throw new SocialPlatformError("unknown");
+      const dm = message ? xDmRequest(job) : undefined;
+      const previousPostId = job.payload.postId ? xPostId(job.payload.postId) : undefined;
+      const mediaIds = thread?.postIds.length
+        ? []
+        : await uploadXMedia(http, job, token, media, message, checkpoint);
+      if (dm)
+        return xSendDm(
+          dm,
+          mediaIds,
+          (url, body) => xJson(http, account, url, token, body),
+          beforeSubmit,
+        );
+      const firstPost = {
         ...(mediaIds.length ? { media: { media_ids: mediaIds } } : {}),
-        ...(job.payload.postId ? { reply: { in_reply_to_tweet_id: job.payload.postId } } : {}),
         ...(extras.quotePostId ? { quote_tweet_id: extras.quotePostId } : {}),
         ...(extras.poll
           ? {
               poll: { options: extras.poll.options, duration_minutes: extras.poll.durationMinutes },
             }
           : {}),
-      });
-      const platformId = requireId(value.data?.id);
+      };
+      const createPost = async (content: string, previousId?: string) => {
+        const { value } = await xJson(http, account, "https://api.x.com/2/tweets", token, {
+          text: content,
+          ...(previousId ? { reply: { in_reply_to_tweet_id: previousId } } : {}),
+          ...(!previousId || !extras.thread ? firstPost : {}),
+          ...(extras.communityId ? { community_id: extras.communityId } : {}),
+        });
+        const platformId = value.data?.id;
+        if (typeof platformId !== "string" || !/^\d{1,25}$/.test(platformId))
+          throw new SocialPlatformError("unknown");
+        return platformId;
+      };
+      let platformId: string;
+      if (extras.thread) {
+        platformId = await sendXThread(
+          job,
+          [text(job), ...extras.thread],
+          createPost,
+          checkpoint,
+          beforeSubmit,
+        );
+      } else {
+        await beforeSubmit?.();
+        platformId = await createPost(text(job), previousPostId);
+      }
       return {
         platformId,
         url: `https://x.com/i/status/${id(platformId)}`,
@@ -421,57 +431,4 @@ export function createXAdapter(http: SocialHttp): SocialAdapter {
       }
     },
   };
-}
-
-/** Likes, reposts and bookmarks. Not in the adapter contract or capability table yet; no caller uses them. */
-export async function xLikePost(
-  http: SocialHttp,
-  account: SocialAccount,
-  token: string,
-  postId: string,
-) {
-  const { value } = await xJson(
-    http,
-    account,
-    `https://api.x.com/2/users/${xPostId(account.platformId)}/likes`,
-    token,
-    {
-      tweet_id: xPostId(postId),
-    },
-  );
-  if (value.data?.liked !== true) throw new SocialPlatformError("unknown");
-}
-export async function xRepostPost(
-  http: SocialHttp,
-  account: SocialAccount,
-  token: string,
-  postId: string,
-) {
-  const { value } = await xJson(
-    http,
-    account,
-    `https://api.x.com/2/users/${xPostId(account.platformId)}/retweets`,
-    token,
-    {
-      tweet_id: xPostId(postId),
-    },
-  );
-  if (value.data?.retweeted !== true) throw new SocialPlatformError("unknown");
-}
-export async function xBookmarkPost(
-  http: SocialHttp,
-  account: SocialAccount,
-  token: string,
-  postId: string,
-) {
-  const { value } = await xJson(
-    http,
-    account,
-    `https://api.x.com/2/users/${xPostId(account.platformId)}/bookmarks`,
-    token,
-    {
-      tweet_id: xPostId(postId),
-    },
-  );
-  if (value.data?.bookmarked !== true) throw new SocialPlatformError("unknown");
 }

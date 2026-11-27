@@ -18,6 +18,13 @@ vi.mock("../../../features/files/editor/editorFindBridge", () => ({
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => undefined) }));
 const fullscreen = vi.hoisted(() => vi.fn(async () => true));
 vi.mock("../../../platform/tauri/fullscreen", () => ({ setNativeFullscreen: fullscreen }));
+const platform = vi.hoisted(() => ({ isMac: false }));
+vi.mock("../../../platform/tauri/platform", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../platform/tauri/platform")>()),
+  get IS_MAC() {
+    return platform.isMac;
+  },
+}));
 
 let root: Root;
 let container: HTMLDivElement;
@@ -59,12 +66,14 @@ it("lets terminal find and command assistance receive their shortcuts before the
 });
 
 beforeEach(async () => {
+  platform.isMac = false;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
   fullscreen.mockClear();
   deps = {
     actions: ref({
       onArrangeActiveTab: vi.fn(),
+      onMovePaneDir: vi.fn(),
       onOpenInbox: vi.fn(),
       onOpenNotes: vi.fn(),
       onOpenTasks: vi.fn(),
@@ -141,6 +150,101 @@ it.each(["ctrlKey", "metaKey"] as const)(
   },
 );
 
+function pressInTerminal(init: KeyboardEventInit) {
+  const terminal = document.createElement("div");
+  terminal.className = "bycoda-terminal";
+  const input = document.createElement("textarea");
+  terminal.append(input);
+  container.append(terminal);
+  const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+  // Happy DOM reports AltGraph whenever Alt is held. Model it independently.
+  const getModifierState = event.getModifierState.bind(event);
+  vi.spyOn(event, "getModifierState").mockImplementation((key) =>
+    key === "AltGraph" ? Boolean(init.modifierAltGraph) : getModifierState(key),
+  );
+  input.dispatchEvent(event);
+  terminal.remove();
+  return event;
+}
+
+it.each([
+  { key: "@", code: "KeyQ" },
+  { key: "{", code: "Digit7", shiftKey: true },
+  { key: "[", code: "Digit8" },
+  { key: "]", code: "Digit9" },
+  { key: "}", code: "Digit0", shiftKey: true },
+  { key: "€", code: "KeyE" },
+  { key: "Dead", code: "KeyU" },
+])(
+  "keeps macOS Option input $key ahead of a recorded workspace shortcut in the terminal",
+  (init) => {
+    platform.isMac = true;
+    saveKeybindingOverride("App: Go to File", {
+      shortcut: `Option+${init.shiftKey ? "Shift+" : ""}${init.code}`,
+    });
+    expect(pressInTerminal({ ...init, altKey: true }).defaultPrevented).toBe(false);
+    expect(deps.actions.current.onGoToFile).not.toHaveBeenCalled();
+    expect(press({ ...init, altKey: true }).defaultPrevented).toBe(true);
+  },
+);
+
+it("keeps AltGr text ahead of Ctrl+Alt workspace chords in the terminal", () => {
+  saveKeybindingOverride("App: Go to File", { shortcut: "Control+Option+KeyQ" });
+  const chord = { key: "@", code: "KeyQ", ctrlKey: true, altKey: true };
+  expect(pressInTerminal({ ...chord, modifierAltGraph: true }).defaultPrevented).toBe(false);
+  expect(deps.actions.current.onGoToFile).not.toHaveBeenCalled();
+  expect(pressInTerminal({ ...chord, key: "q" }).defaultPrevented).toBe(true);
+  expect(deps.actions.current.onGoToFile).toHaveBeenCalledOnce();
+});
+
+it.each(["w", "d", "t", "n", "b", "p", "o", "j", "k"])(
+  "leaves plain Ctrl+%s to the focused terminal instead of the app chord",
+  (letter) => {
+    const actions = deps.actions.current as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    for (const name of [
+      "onClosePane",
+      "onSplit",
+      "onNewTerminalTab",
+      "onToggleSidebar",
+      "onToggleProjectTerminal",
+      "pickProject",
+      "onOpenSearch",
+    ])
+      actions[name] = vi.fn();
+    const event = pressInTerminal({
+      key: letter,
+      code: `Key${letter.toUpperCase()}`,
+      ctrlKey: true,
+    });
+    expect(event.defaultPrevented).toBe(false);
+    for (const action of Object.values(actions)) expect(action).not.toHaveBeenCalled();
+  },
+);
+
+it("keeps app and emergency chords reachable from a terminal", () => {
+  const actions = deps.actions.current as unknown as Record<string, ReturnType<typeof vi.fn>>;
+  actions.onNext = vi.fn();
+  expect(pressInTerminal({ key: "Tab", code: "Tab", ctrlKey: true }).defaultPrevented).toBe(true);
+  expect(actions.onNext).toHaveBeenCalledOnce();
+  expect(
+    pressInTerminal({ key: "P", code: "KeyP", ctrlKey: true, shiftKey: true }).defaultPrevented,
+  ).toBe(true);
+  expect(actions.onOpenCommandPalette).toHaveBeenCalledOnce();
+  deps.nativeFullscreenRef.current = true;
+  expect(pressInTerminal({ key: "Escape", code: "Escape" }).defaultPrevented).toBe(true);
+  expect(fullscreen).toHaveBeenCalledWith(false);
+  // Outside a terminal the same plain chord keeps its app meaning.
+  expect(press({ key: "p", code: "KeyP", ctrlKey: true }).defaultPrevented).toBe(true);
+  expect(actions.onGoToFile).toHaveBeenCalledOnce();
+});
+
+it("still honours a Ctrl+letter chord the owner recorded for an app command from a terminal", () => {
+  saveKeybindingOverride("App: Go to File", { shortcut: "Control+KeyG" });
+  const event = pressInTerminal({ key: "g", code: "KeyG", ctrlKey: true });
+  expect(event.defaultPrevented).toBe(true);
+  expect(deps.actions.current.onGoToFile).toHaveBeenCalledOnce();
+});
+
 it("opens a directly assigned settings section and respects a disabled binding", () => {
   saveKeybindingOverride("Settings: Connections", { shortcut: "Option+KeyQ" });
   const event = press({ key: "q", code: "KeyQ", altKey: true });
@@ -178,6 +282,50 @@ it("opens a session on Ctrl+N and routes Ctrl+Alt+N to notes", () => {
   expect(deps.actions.current.onNew).toHaveBeenCalledOnce();
 });
 
+it.each([
+  ["onNew", { key: "t", code: "KeyT", ctrlKey: true }],
+  ["onClosePane", { key: "w", code: "KeyW", ctrlKey: true }],
+  ["onCloseAllTabs", { key: "W", code: "KeyW", ctrlKey: true, shiftKey: true }],
+  ["onCloseOtherTabs", { key: "t", code: "KeyT", ctrlKey: true, altKey: true }],
+  ["onSplit", { key: "d", code: "KeyD", ctrlKey: true }],
+  ["onNewTerminal", { key: "`", code: "Backquote", ctrlKey: true }],
+  ["onToggleProjectTerminal", { key: "j", code: "KeyJ", ctrlKey: true }],
+  ["onActivate", { key: "2", code: "Digit2", ctrlKey: true }],
+  ["onToggleSidebar", { key: "b", code: "KeyB", ctrlKey: true }],
+] as const)("runs %s once per press and ignores a held key", (handler, init) => {
+  const actions = deps.actions.current as unknown as Record<string, ReturnType<typeof vi.fn>>;
+  actions[handler] = vi.fn();
+  expect(press(init).defaultPrevented).toBe(true);
+  expect(actions[handler]).toHaveBeenCalledOnce();
+  // Auto-repeat keeps the browser/native default suppressed but never re-runs it.
+  for (let i = 0; i < 5; i++) expect(press({ ...init, repeat: true }).defaultPrevented).toBe(true);
+  expect(actions[handler]).toHaveBeenCalledOnce();
+});
+
+it("ignores a held key for a recorded one-shot tab binding but still repeats navigation", () => {
+  const actions = deps.actions.current as unknown as Record<string, ReturnType<typeof vi.fn>>;
+  actions.onClosePane = vi.fn();
+  actions.onNext = vi.fn();
+  actions.onFocusDir = vi.fn();
+  saveKeybindingOverride("Pane: Close", { shortcut: "Option+KeyQ" });
+  press({ key: "q", code: "KeyQ", altKey: true });
+  press({ key: "q", code: "KeyQ", altKey: true, repeat: true });
+  expect(actions.onClosePane).toHaveBeenCalledOnce();
+  for (let i = 0; i < 3; i++) {
+    press({ key: "Tab", code: "Tab", ctrlKey: true, repeat: i > 0 });
+    press({ key: "ArrowLeft", code: "ArrowLeft", ctrlKey: true, altKey: true, repeat: i > 0 });
+  }
+  expect(actions.onNext).toHaveBeenCalledTimes(3);
+  expect(actions.onFocusDir).toHaveBeenCalledTimes(3);
+});
+
+it("opens an app surface once per press", () => {
+  const chord = { key: "i", code: "KeyI", ctrlKey: true, shiftKey: true };
+  press(chord);
+  expect(press({ ...chord, repeat: true }).defaultPrevented).toBe(true);
+  expect(deps.actions.current.onOpenInbox).toHaveBeenCalledOnce();
+});
+
 it.each(Object.entries(LAYOUT_SHORTCUTS))(
   "dispatches %s only in the workspace",
   (command, preset) => {
@@ -203,6 +351,29 @@ it("keeps workspace layout and editor find shortcuts out of Servers", () => {
   expect(editorFind).not.toHaveBeenCalled();
 });
 
+it("docks the focused pane by keyboard while preserving ordinary composer navigation", () => {
+  const composer = document.createElement("textarea");
+  container.append(composer);
+  composer.focus();
+  const send = (init: KeyboardEventInit) => {
+    const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+    composer.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+  const arrow = { key: "ArrowLeft", code: "ArrowLeft" };
+  const dock = { ...arrow, ctrlKey: true, altKey: true, shiftKey: true };
+  expect(send({ ...arrow, altKey: true })).toBe(false);
+  expect(send(dock)).toBe(true);
+  expect(send({ ...dock, repeat: true })).toBe(true);
+  expect(send({ ...dock, isComposing: true })).toBe(false);
+  expect(deps.actions.current.onMovePaneDir).toHaveBeenCalledExactlyOnceWith("left");
+
+  saveKeybindingOverride("Pane: Move Left", { shortcut: "Option+KeyQ" });
+  expect(send(dock)).toBe(false);
+  expect(send({ key: "q", code: "KeyQ", altKey: true })).toBe(true);
+  expect(deps.actions.current.onMovePaneDir).toHaveBeenCalledTimes(2);
+});
+
 it.each([
   ["i", "onOpenInbox"],
   ["l", "onOpenNotes"],
@@ -213,6 +384,51 @@ it.each([
     press({ key, code: `Key${key.toUpperCase()}`, ctrlKey: true, shiftKey: true }).defaultPrevented,
   ).toBe(true);
   expect(deps.actions.current[handler]).toHaveBeenCalledOnce();
+});
+
+it("reaches an approval popup from inside a Modal without deciding it or closing the dialog", async () => {
+  const close = vi.fn();
+  const decide = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(
+        "div",
+        null,
+        createElement(Listener),
+        createElement(Modal, {
+          title: "Edit",
+          onClose: close,
+          children: createElement("input", { "aria-label": "Name" }),
+        }),
+      ),
+    ),
+  );
+  const field = document.querySelector<HTMLInputElement>('input[aria-label="Name"]')!;
+  field.focus();
+  const region = document.createElement("div");
+  region.dataset.toastRegion = "top-center";
+  region.innerHTML =
+    '<article class="notification-request"><button>Open session</button><button>Allow</button><button>Deny</button></article>';
+  const [open, allow, deny] = [...region.querySelectorAll("button")];
+  for (const button of [allow, deny]) button.addEventListener("click", decide);
+  document.body.append(region);
+  const chord = { key: "j", code: "KeyJ", ctrlKey: true, shiftKey: true };
+  expect(press(chord).defaultPrevented).toBe(true);
+  // Focus lands on the safe control, never on a decision, and nothing is decided.
+  expect(document.activeElement).toBe(open);
+  expect(decide).not.toHaveBeenCalled();
+  expect(region.closest("[inert]")).toBeNull();
+  // Escape hands focus back to the dialog's field without closing the dialog.
+  open.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+  );
+  expect(document.activeElement).toBe(field);
+  expect(close).not.toHaveBeenCalled();
+  // A disabled chord does nothing.
+  saveKeybindingOverride("App: Focus Approval Requests", { disabled: true });
+  expect(press(chord).defaultPrevented).toBe(false);
+  expect(document.activeElement).toBe(field);
+  region.remove();
 });
 
 it("lets a real Modal own workspace chords and resumes them after dismissal", async () => {

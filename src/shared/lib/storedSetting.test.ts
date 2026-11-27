@@ -60,4 +60,27 @@ describe("createStoredSetting", () => {
     expect(() => setting.save(false)).not.toThrow();
     expect(setting.load()).toBe(true);
   });
+  it("reports failed writes and does not broadcast the unsaved value", () => {
+    const setting = storedFlag("test", false, "setting:test", true);
+    setting.save(true);
+    const listener = vi.fn();
+    const stop = setting.subscribe(listener);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("quota");
+    });
+    expect(setting.save(false)).toBe(false);
+    expect(setting.save(false)).toBe(false);
+    expect(listener).not.toHaveBeenCalled();
+    expect(setting.load()).toBe(true);
+    stop();
+  });
+  it("reports successful writes and broadcasts them", () => {
+    const setting = storedFlag("test", false, "setting:test");
+    const listener = vi.fn();
+    const stop = setting.subscribe(listener);
+    expect(setting.save(true)).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+    stop();
+  });
 });

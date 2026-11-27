@@ -60,7 +60,14 @@ export function WorkItemMentionCard({
   }, [token, cwd, lookup.done]);
   const item = lookup.item;
   return (
-    <Popover anchor={anchor} side="top" align="start" width={340} onDismiss={onDismiss}>
+    <Popover
+      anchor={anchor}
+      side="top"
+      align="start"
+      width={340}
+      variant="panel"
+      onDismiss={onDismiss}
+    >
       <div className={styles.card}>
         <div className={styles.heading}>
           {mention ? (
@@ -112,10 +119,12 @@ export function WorkItemMentionCard({
             {t("This work item was not found in your connected trackers.")}
           </Text>
         ) : (
-          <Text as="p" size="caption" tone="secondary" className={styles.pending}>
+          <div className={styles.pending}>
             <Spinner size="xs" />
-            {t("Looking up work item…")}
-          </Text>
+            <Text as="p" size="caption" tone="secondary">
+              {t("Looking up work item…")}
+            </Text>
+          </div>
         )}
       </div>
     </Popover>

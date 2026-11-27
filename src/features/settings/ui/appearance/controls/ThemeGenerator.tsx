@@ -1,11 +1,13 @@
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { useThemeGeneratorModel } from "./useThemeGeneratorModel";
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
+import { ErrorDetails } from "../../../../../shared/ui/ErrorDetails";
 import { Button } from "../../../../../shared/ui/Button";
-import { Spinner } from "../../../../../shared/ui/Spinner";
 import { ImageLightbox } from "../../../../../shared/ui/ImageLightbox";
-import { Dices, Maximize2 } from "../../../../../shared/ui/icons";
+import { Check, Dices, RefreshCw, Sparkles } from "../../../../../shared/ui/icons";
+import { MediaToolbarButton } from "../../../../../shared/ui/MediaToolbar";
+import { Divider } from "../../../../../shared/ui/Divider";
 import { randomThemePrompt } from "../../../model/themePromptIdeas";
 import { Text } from "../../../../../shared/ui/Text";
 import { TextField } from "../../../../../shared/ui/TextField";
@@ -15,6 +17,8 @@ import { DesignStudioButton } from "./DesignStudioButton";
 import {
   addBackgroundLibraryImage,
   libraryImageSrc,
+  loadCurrentLibraryImageId,
+  subscribeBackgroundLibrary,
   type BackgroundLibraryImage,
 } from "../../../model/backgroundLibrary";
 import {
@@ -25,8 +29,14 @@ import {
   type ThemeSuggestionArea,
 } from "../../../model/themeSuggestions";
 import { SettingsFeedback } from "../../../../../shared/ui/settings";
-import { SaveLookButton } from "./SaveLookButton";
 import { ImageProviderButton } from "./ImageProviderButton";
+import { ThemeGenerationActivity } from "./ThemeGenerationActivity";
+import {
+  beginGenerationJob,
+  isActiveGeneration,
+  readGenerationJobs,
+  useGenerationJobs,
+} from "./themeGenerationJobs";
 import { applyDrawnImageTuning, applyThemeSuggestion } from "./applyThemeSuggestion";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import {
@@ -34,8 +44,14 @@ import {
   requestThemeSuggestions,
   themeSuggestionFailureDetail,
   type BackgroundImageProvider,
+  type ThemeSuggestionParams,
 } from "./themeSuggestionRequest";
-import { generatorSession, readGeneratorValue, useGeneratorState } from "./themeGeneratorSession";
+import {
+  generatorSession,
+  readGeneratorValue,
+  useGeneratorState,
+  writeGeneratorValue,
+} from "./themeGeneratorSession";
 import "./ThemeControls.css";
 import { isImeComposition } from "../../../../../shared/lib/keyboard";
 
@@ -49,9 +65,9 @@ export type ChipImage =
  * What choosing a chip does with its image: a drawing in flight is applied when it lands ("wait"),
  * a finished one is reused ("apply"), and a missing or failed one is drawn ("draw").
  */
-export function chipImageAction(image: ChipImage | undefined): "wait" | "apply" | "draw" {
+export function chipImageAction(image: ChipImage | undefined): "wait" | "review" | "draw" {
   if (image?.status === "loading") return "wait";
-  if (image?.status === "done") return "apply";
+  if (image?.status === "done") return "review";
   return "draw";
 }
 
@@ -71,21 +87,26 @@ const areaLabel = (area: ThemeSuggestionArea) => {
 };
 
 /**
- * One compact toolbar: describe a theme (or roll a prompt), or roll colors at random; choosing a
- * suggestion chip applies it at once. Image generation is a separate explicit action.
+ * Choosing a suggestion applies its appearance; generated images stay available for review.
  */
 export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings }) {
   useLocale();
-  const [preview, setPreview] = useState<{ image: BackgroundLibraryImage; name: string } | null>(
-    null,
+  const [preview, setPreview] = useState<{
+    image: BackgroundLibraryImage;
+    name: string;
+    candidate?: { suggestion: ThemeSuggestion; index: number; batch: number };
+  } | null>(null);
+  const [applyingImage, setApplyingImage] = useGeneratorState<string | null>("applyingImage", null);
+  const currentImageId = useSyncExternalStore(
+    subscribeBackgroundLibrary,
+    loadCurrentLibraryImageId,
   );
   // Everything below survives closing Settings (see themeGeneratorSession.ts).
   const [prompt, setPrompt] = useGeneratorState("prompt", "");
   const [choice] = useThemeGeneratorModel();
   const [suggestions, setSuggestions] = useGeneratorState<ThemeSuggestion[]>("suggestions", []);
-  const [busy, setBusy] = useGeneratorState("busy", false);
-  /** `null` while nothing failed; otherwise the Host's reason, or "" when it gave none. */
-  const [failure, setFailure] = useGeneratorState<string | null>("failure", null);
+  const jobs = useGenerationJobs();
+  const busy = jobs.some((job) => job.kind === "themes" && isActiveGeneration(job));
   const [withImage, setWithImage] = useGeneratorState("withImage", false);
   const [, setLookName] = useGeneratorState("selectedLookName", "");
   const [imageProvider, setImageProvider] = useGeneratorState<BackgroundImageProvider>(
@@ -98,9 +119,6 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
     "chipImages",
     {},
   );
-  const [retryTarget, setRetryTarget] = useGeneratorState<
-    { suggestion: ThemeSuggestion; index: number } | undefined
-  >("retryTarget", undefined);
   const [selectedIndex, setSelectedIndex] = useGeneratorState<number | null>("selectedIndex", null);
   /** Counters live in the session (not refs) so work that finishes after closing still checks them. */
   const session = generatorSession;
@@ -109,39 +127,31 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
   const available = canRunHarnessTextPrompt(choice.harness);
   const trimmed = prompt.trim();
 
-  const generate = async () => {
-    if (!trimmed || !available || busy) return;
-    const version = session.nextEpoch();
-    setBusy(true);
-    setFailure(null);
+  const generate = async (params: ThemeSuggestionParams) => {
+    if (readGenerationJobs().some((job) => job.kind === "themes" && isActiveGeneration(job)))
+      return;
+    const job = beginGenerationJob({ kind: "themes", name: params.prompt }, () =>
+      startGenerate(params),
+    );
     try {
-      const next = await requestThemeSuggestions({
-        prompt: trimmed,
-        harness: choice.harness,
-        model: choice.model,
-        modelSettings: choice.modelSettings,
-        providerAccountId: choice.providerAccountId,
-      });
-      if (version !== session.epoch()) return;
+      const next = await requestThemeSuggestions(params, job.generation);
+      if (!(await job.acceptResult())) return;
       if (next.length === 0) throw new Error(t("The model returned no usable theme."));
       resetChips();
+      writeGeneratorValue("suggestionPrompt", params.prompt, "");
       setSuggestions(next);
+      job.done();
     } catch (error) {
-      if (version === session.epoch()) {
-        setFailure(themeSuggestionFailureDetail(error));
-      }
-    } finally {
-      if (version === session.epoch()) setBusy(false);
+      if (await job.acceptResult()) job.fail(error);
     }
   };
 
   const resetChips = () => {
     session.bumpBatch();
-    session.select(null);
+    session.invalidateImageIntent();
     setSelectedIndex(null);
     setChipImages({});
     setImageFailure(null);
-    setRetryTarget(undefined);
   };
 
   /** Puts a drawn library image in place and tunes it so text stays readable. */
@@ -153,81 +163,97 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
       libraryId: image.id,
       isCurrent: () => intent === session.imageIntent(),
     });
-    if (intent !== session.imageIntent()) return;
+    if (intent !== session.imageIntent()) return false;
     if (!stored) throw new Error(t("Could not use the generated image."));
-    if (intent === session.imageIntent()) applyDrawnImageTuning(live, suggestion);
+    applyDrawnImageTuning(live, suggestion);
+    return true;
   };
 
-  /**
-   * Each chip draws its own image once. Every finished image stays on its chip and in the library,
-   * so owners can explicitly use a finished image later.
-   */
-  const drawImage = async (suggestion: ThemeSuggestion, index: number) => {
-    const owner = session.batch();
-    const mark = (image: ChipImage) => {
-      if (owner === session.batch()) setChipImages((current) => ({ ...current, [index]: image }));
-    };
-    if (
-      readGeneratorValue<Record<number, ChipImage>>("chipImages", {})[index]?.status === "loading"
-    )
-      return;
-    mark({ status: "loading" });
+  const applyCandidate = (image: BackgroundLibraryImage, suggestion: ThemeSuggestion) => {
+    if (readGeneratorValue("applyingImage", null) !== null || appearance.chatBackgroundBusy) return;
+    setImageFailure(null);
+    setApplyingImage(image.id);
+    applyImage(image, suggestion)
+      .then((applied) => {
+        if (applied) setPreview((current) => (current?.image.id === image.id ? null : current));
+      })
+      .finally(() => setApplyingImage(null))
+      .catch((error: unknown) =>
+        setImageFailure(
+          themeSuggestionFailureDetail(error) || t("Could not use the generated image."),
+        ),
+      );
+  };
+
+  const isDrawing = (index: number, batch: number, requests = readGenerationJobs()) =>
+    requests.some(
+      (job) =>
+        job.kind === "image" &&
+        job.batch === batch &&
+        job.index === index &&
+        isActiveGeneration(job),
+    );
+
+  /** Keep the last candidate on its card until a replacement has been saved to the library. */
+  const drawImage = async (
+    suggestion: ThemeSuggestion,
+    index: number,
+    batch: number,
+    imagePrompt: string,
+    provider: BackgroundImageProvider,
+  ) => {
+    if (isDrawing(index, batch)) return;
+    const job = beginGenerationJob(
+      { kind: "image", name: suggestion.name, provider, batch, index },
+      () => startImage(suggestion, index, batch, imagePrompt, provider),
+    );
+    let image: BackgroundLibraryImage;
     try {
-      const imagePrompt =
-        suggestion.imagePrompt ?? `${trimmed || suggestion.name}, ${suggestion.accent}`;
-      const path = await requestBackgroundImage({
-        prompt: imagePrompt,
-        provider: imageProvider,
-      });
-      const image = await addBackgroundLibraryImage(path, {
+      const path = await requestBackgroundImage({ prompt: imagePrompt, provider }, job.generation);
+      if (!(await job.acceptResult())) return;
+      job.saving();
+      image = await addBackgroundLibraryImage(path, {
         source: "generated",
         prompt: imagePrompt,
       });
-      if (owner !== session.batch()) return;
-      mark({ status: "done", image });
-      // The chosen look waits for its drawing; a chip drawn in the background only keeps it.
-      if (session.selected() === index)
-        await applyImage(image, suggestion).catch((error: unknown) =>
-          setImageFailure(themeSuggestionFailureDetail(error)),
-        );
     } catch (error) {
-      if (owner !== session.batch()) return;
-      mark({ status: "error", detail: themeSuggestionFailureDetail(error) });
-      if (session.selected() === index) {
-        setRetryTarget({ suggestion, index });
-        setImageFailure(themeSuggestionFailureDetail(error));
-      }
+      if (await job.acceptResult()) job.fail(error);
+      return;
     }
+    job.done(image);
+    if (batch !== session.batch()) return;
+    setChipImages((current) => ({ ...current, [index]: { status: "done", image } }));
   };
 
-  const startImage = (suggestion: ThemeSuggestion, index: number) => {
+  const startImage = (
+    suggestion: ThemeSuggestion,
+    index: number,
+    batch = session.batch(),
+    imagePrompt = suggestion.imagePrompt ??
+      `${readGeneratorValue("suggestionPrompt", "") || suggestion.name}, ${suggestion.accent}`,
+    provider = imageProvider,
+  ) => {
     setImageFailure(null);
-    setRetryTarget(undefined);
-    // drawImage() reports its own failures; the handler only keeps an unexpected one visible.
-    drawImage(suggestion, index).catch((error: unknown) =>
+    drawImage(suggestion, index, batch, imagePrompt, provider).catch((error: unknown) =>
       setImageFailure(themeSuggestionFailureDetail(error)),
     );
   };
 
-  /**
-   * Applies the whole look. Its image follows: a finished drawing is used, one in flight is used
-   * when it lands, image mode draws one, and otherwise the previous look's image is removed.
-   */
+  /** Apply the theme now and leave its optional image for explicit review. */
   const choose = (suggestion: ThemeSuggestion, index: number) => {
     session.invalidateImageIntent();
-    applyThemeSuggestion(appearance, suggestion);
+    const image: ChipImage | undefined = isDrawing(index, session.batch())
+      ? { status: "loading" }
+      : readGeneratorValue<Record<number, ChipImage>>("chipImages", {})[index];
+    const action = chipImageAction(image);
+    applyThemeSuggestion(appearance, suggestion, {
+      deferImageTuning: withImage || action !== "draw",
+    });
     setLookName(suggestion.name);
     session.select(index);
     setSelectedIndex(index);
     setImageFailure(null);
-    setRetryTarget(undefined);
-    const image = chipImages[index];
-    const action = chipImageAction(image);
-    if (action === "apply" && image?.status === "done") {
-      applyImage(image.image, suggestion).catch((error: unknown) =>
-        setImageFailure(themeSuggestionFailureDetail(error)),
-      );
-    } else if (action === "draw" && withImage) {
+    if (action === "draw" && withImage) {
       startImage(suggestion, index);
     } else if (action === "draw" && appearance.chatBackgroundPath) {
       appearance
@@ -239,194 +265,293 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
   const random = () => {
     const next = randomThemeSuggestions();
     resetChips();
+    writeGeneratorValue("suggestionPrompt", "", "");
     setSuggestions(next);
-    setFailure(null);
     const first = next[0];
     if (first) choose(first, 0);
   };
 
-  // generate() reports its own failures; the handler only keeps an unexpected one from going unhandled.
-  const startGenerate = () => {
-    generate().catch((error: unknown) => setFailure(themeSuggestionFailureDetail(error)));
+  const startGenerate = (params: ThemeSuggestionParams) => {
+    generate(params).catch((error: unknown) =>
+      setImageFailure(themeSuggestionFailureDetail(error)),
+    );
+  };
+
+  const submit = () => {
+    if (!trimmed || !available) return;
+    startGenerate({
+      prompt: trimmed,
+      harness: choice.harness,
+      model: choice.model,
+      modelSettings: choice.modelSettings,
+      providerAccountId: choice.providerAccountId,
+    });
   };
 
   const rollPrompt = () => setPrompt(randomThemePrompt(prompt));
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter" && !isImeComposition(event.nativeEvent)) startGenerate();
+    if (event.key === "Enter" && !isImeComposition(event.nativeEvent)) submit();
   };
 
-  const dismiss = () => {
-    setFailure(null);
-    setImageFailure(null);
-  };
-  const detail = failure ?? imageFailure ?? "";
-  const signedOut = /authenticat|log ?in|credential|expired|unauthori/i.test(detail);
-  const failureFeedback =
-    failure !== null || imageFailure !== null ? (
-      <SettingsFeedback
-        state="error"
-        onDismiss={dismiss}
-        action={
-          failure === null && retryTarget
-            ? {
-                label: t("Retry"),
-                onClick: () => startImage(retryTarget.suggestion, retryTarget.index),
-              }
-            : undefined
-        }
-      >
-        {[
-          failure !== null
-            ? t("Theme generation failed.")
-            : t("Background image generation failed."),
-          failure ?? imageFailure,
-          signedOut
-            ? failure !== null
-              ? t("Pick a signed-in account in the model picker, or sign in to the provider again.")
-              : t("Check the selected image provider and sign in again.")
-            : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-      </SettingsFeedback>
-    ) : selectedIndex !== null && chipImages[selectedIndex]?.status === "loading" ? (
-      <SettingsFeedback state="loading" immediate>
-        {t("Drawing a background image…")}
-      </SettingsFeedback>
-    ) : null;
+  const batch = session.batch();
+  const previewCandidate = preview?.candidate?.batch === batch ? preview?.candidate : undefined;
+  const applying = applyingImage !== null || appearance.chatBackgroundBusy;
+  const currentImageIds = new Set(
+    Object.values(chipImages).flatMap((image) => (image.status === "done" ? [image.image.id] : [])),
+  );
 
   return (
     <div className="theme-generator">
-      <div className="theme-generator-bar">
+      <div className="theme-generator-compose">
         <div className="theme-generator-prompt">
           <TextField
             fieldClassName="theme-generator-input"
-            fieldVariant="compact"
             label={t("Describe a theme")}
             value={prompt}
             placeholder={t("For example “midnight ocean” or “warm kiln”")}
             onChange={(event) => setPrompt(event.target.value)}
             onKeyDown={onKeyDown}
+            endAdornment={
+              <Button
+                iconOnly
+                label={t("Random prompt")}
+                size="sm"
+                variant="ghost"
+                onClick={rollPrompt}
+              >
+                <Dices />
+              </Button>
+            }
           />
-          <Button
-            iconOnly
-            label={t("Random prompt")}
-            size="sm"
-            variant="ghost"
-            onClick={rollPrompt}
-          >
-            <Dices />
-          </Button>
         </div>
-        <AppearanceModelPicker />
-        <div className="theme-generator-actions">
-          <ImageProviderButton
-            value={withImage ? imageProvider : "none"}
-            onChange={(value) => {
-              if (value === "none") session.invalidateImageIntent();
-              setWithImage(value !== "none");
-              if (value !== "none") setImageProvider(value);
-            }}
-          />
-          <SaveLookButton appearance={appearance} />
-          <DesignStudioButton appearance={appearance} kind="image" label={t("Create background")} />
-          <DesignStudioButton appearance={appearance} label={t("Saved designs")} />
-          <Button size="sm" tooltip={t("Roll a random palette without a model")} onClick={random}>
-            {t("Random look")}
-          </Button>
+        <div className="theme-generator-bar">
+          <div className="theme-generator-config">
+            <AppearanceModelPicker />
+            <ImageProviderButton
+              value={withImage ? imageProvider : "none"}
+              onChange={(value) => {
+                if (value === "none") session.invalidateImageIntent();
+                setWithImage(value !== "none");
+                if (value !== "none") setImageProvider(value);
+              }}
+            />
+            <DesignStudioButton
+              appearance={appearance}
+              kind="image"
+              label={t("Create background")}
+            />
+            <DesignStudioButton appearance={appearance} label={t("Saved designs")} />
+          </div>
           <Button
             variant="primary"
             tone="accent"
             size="sm"
             loading={busy}
-            loadingLabel={t("Generating…")}
-            disabled={!trimmed || !available}
+            disabled={!trimmed || !available || busy}
             disabledReason={
               available
                 ? undefined
                 : t("Choose a model that supports text actions to generate a theme.")
             }
-            onClick={startGenerate}
+            startIcon={<Sparkles />}
+            onClick={submit}
           >
             {t("Generate themes")}
           </Button>
         </div>
       </div>
+      <Divider />
+      <div className="theme-generator-looks-head">
+        <Text weight="medium">{t("Looks")}</Text>
+        <Button
+          size="sm"
+          startIcon={<Dices />}
+          tooltip={t("Roll six random looks without a model")}
+          onClick={random}
+        >
+          {t("Shuffle looks")}
+        </Button>
+      </div>
+      {suggestions.length === 0 ? (
+        <Text size="secondary" tone="secondary">
+          {t("Shuffle for six random looks, or describe one above and generate.")}
+        </Text>
+      ) : null}
       {suggestions.length > 0 ? (
         <div className="theme-suggestions" role="group" aria-label={t("Suggested themes")}>
           {suggestions.map((suggestion, index) => {
             const [canvas, surface, line, accent] = suggestionSwatches(suggestion);
             const image = chipImages[index];
+            const drawing = isDrawing(index, batch, jobs);
+            const inUse = image?.status === "done" && currentImageId === image.image.id;
             const areas = suggestionAreas(suggestion).map(areaLabel);
 
             return (
-              <div key={`${suggestion.name}-${index}`} className="theme-suggestion-card">
-                <Button
-                  size="sm"
-                  variant="item"
-                  className="theme-suggestion"
-                  pressed={selectedIndex === index}
-                  aria-label={t("Apply {p1}", { p1: suggestion.name })}
-                  tooltip={t("Changes: {p1}", { p1: areas.join(", ") })}
-                  onClick={() => choose(suggestion, index)}
-                >
-                  <span className="theme-swatch-strip" aria-hidden="true">
-                    <span
-                      {...surfaceAttributes({ variant: "user-color" })}
-                      style={{ "--surface-user-color": canvas } as React.CSSProperties}
-                    />
-                    <span
-                      {...surfaceAttributes({ variant: "user-color" })}
-                      style={{ "--surface-user-color": surface } as React.CSSProperties}
-                    />
-                    <span
-                      {...surfaceAttributes({ variant: "user-color" })}
-                      style={{ "--surface-user-color": line } as React.CSSProperties}
-                    />
-                    <span
-                      {...surfaceAttributes({ variant: "user-color" })}
-                      style={{ "--surface-user-color": accent } as React.CSSProperties}
-                    />
-                  </span>
-                  {image && image.status !== "error" ? (
-                    <span className="theme-suggestion-thumb" aria-hidden="true">
-                      {image.status === "loading" ? (
-                        <Spinner size="xs" />
-                      ) : (
-                        <img
-                          src={libraryImageSrc(image.image)}
-                          alt=""
-                          decoding="async"
-                          draggable={false}
-                        />
-                      )}
-                    </span>
-                  ) : null}
-                  <Text truncate>{suggestion.name}</Text>
-                </Button>
-                {image?.status === "done" ? (
+              <div
+                key={`${suggestion.name}-${index}`}
+                className="theme-suggestion-card"
+                role="group"
+                aria-label={suggestion.name}
+              >
+                <div className="theme-suggestion-heading">
                   <Button
-                    iconOnly
                     size="sm"
-                    variant="ghost"
-                    label={t("Preview {p0}", { p0: suggestion.name })}
-                    onClick={() => setPreview({ image: image.image, name: suggestion.name })}
+                    variant="item"
+                    className="theme-suggestion"
+                    pressed={selectedIndex === index}
+                    aria-label={t("Apply {p1}", { p1: suggestion.name })}
+                    tooltip={t("Changes: {p1}", { p1: areas.join(", ") })}
+                    onClick={() => choose(suggestion, index)}
                   >
-                    <Maximize2 />
+                    <span className="theme-swatch-strip" aria-hidden="true">
+                      <span
+                        {...surfaceAttributes({ variant: "user-color" })}
+                        style={{ "--surface-user-color": canvas } as React.CSSProperties}
+                      />
+                      <span
+                        {...surfaceAttributes({ variant: "user-color" })}
+                        style={{ "--surface-user-color": surface } as React.CSSProperties}
+                      />
+                      <span
+                        {...surfaceAttributes({ variant: "user-color" })}
+                        style={{ "--surface-user-color": line } as React.CSSProperties}
+                      />
+                      <span
+                        {...surfaceAttributes({ variant: "user-color" })}
+                        style={{ "--surface-user-color": accent } as React.CSSProperties}
+                      />
+                    </span>
+                    <Text truncate>{suggestion.name}</Text>
                   </Button>
+                  {image?.status === "done" ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="theme-suggestion-preview"
+                      aria-label={t("Preview {p0}", { p0: suggestion.name })}
+                      onClick={() => {
+                        setImageFailure(null);
+                        setPreview({
+                          image: image.image,
+                          name: suggestion.name,
+                          candidate: { suggestion, index, batch },
+                        });
+                      }}
+                    >
+                      {t("Preview")}
+                    </Button>
+                  ) : null}
+                </div>
+                {image?.status === "done" ? (
+                  <img
+                    className="theme-suggestion-image"
+                    src={libraryImageSrc(image.image)}
+                    alt=""
+                    decoding="async"
+                    draggable={false}
+                  />
+                ) : null}
+                {image?.status === "done" ? (
+                  <div className="theme-suggestion-image-actions">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={drawing}
+                      disabledReason={t("Wait for the current operation to finish")}
+                      onClick={() => startImage(suggestion, index)}
+                    >
+                      {t("Change image")}
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={applying || inUse}
+                      disabledReason={
+                        inUse
+                          ? t("This image is already in use.")
+                          : t("Wait for the current operation to finish")
+                      }
+                      loading={applyingImage === image.image.id}
+                      onClick={() => applyCandidate(image.image, suggestion)}
+                    >
+                      {inUse ? t("In use") : t("Use image")}
+                    </Button>
+                  </div>
+                ) : withImage ? (
+                  <div className="theme-suggestion-image-actions">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={drawing}
+                      disabledReason={t("Wait for the current operation to finish")}
+                      onClick={() => startImage(suggestion, index)}
+                    >
+                      {t("Generate image")}
+                    </Button>
+                  </div>
                 ) : null}
               </div>
             );
           })}
         </div>
       ) : null}
-      {failureFeedback}
+      {imageFailure !== null ? (
+        <SettingsFeedback
+          state="error"
+          onDismiss={() => setImageFailure(null)}
+          extra={
+            imageFailure ? (
+              <ErrorDetails title={t("Could not use the generated image.")} detail={imageFailure} />
+            ) : undefined
+          }
+        >
+          {t("Could not use the generated image.")}
+        </SettingsFeedback>
+      ) : null}
+      {suggestions.length > 0 && jobs.length > 0 ? <Divider /> : null}
+      <ThemeGenerationActivity
+        jobs={jobs}
+        currentImageIds={currentImageIds}
+        onPreview={(image, job) => {
+          const suggestion = job.batch === batch ? suggestions[job.index] : undefined;
+          setImageFailure(null);
+          setPreview({
+            image,
+            name: job.name,
+            candidate: suggestion ? { suggestion, index: job.index, batch } : undefined,
+          });
+        }}
+      />
       {preview ? (
         <ImageLightbox
           src={libraryImageSrc(preview.image)}
           alt={preview.name}
+          notice={imageFailure ?? undefined}
           onClose={() => setPreview(null)}
+          actions={
+            previewCandidate ? (
+              <>
+                <MediaToolbarButton
+                  label={t("Change image")}
+                  disabled={isDrawing(previewCandidate.index, batch, jobs)}
+                  onClick={() => {
+                    startImage(previewCandidate.suggestion, previewCandidate.index);
+                    setPreview(null);
+                  }}
+                >
+                  <RefreshCw className="icon-sm" />
+                </MediaToolbarButton>
+                <MediaToolbarButton
+                  label={currentImageId === preview.image.id ? t("In use") : t("Use image")}
+                  disabled={applying || currentImageId === preview.image.id}
+                  loading={applyingImage === preview.image.id}
+                  onClick={() => applyCandidate(preview.image, previewCandidate.suggestion)}
+                >
+                  <Check className="icon-sm" />
+                </MediaToolbarButton>
+              </>
+            ) : undefined
+          }
         />
       ) : null}
     </div>

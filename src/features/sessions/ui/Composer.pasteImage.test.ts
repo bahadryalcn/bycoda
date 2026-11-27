@@ -2,8 +2,9 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { MAX_ATTACHMENTS } from "../model/attachments";
+import { MAX_ATTACHMENTS, MAX_EMBED_BYTES } from "../model/attachments";
 import { Composer } from "./Composer";
+import { openErrorDetails } from "./errorDetails.fixture";
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 
@@ -74,9 +75,12 @@ function paste(target: HTMLTextAreaElement, text = "") {
 }
 
 /** Wait for the async clipboard read and the attachments it adds. */
-/** Every chip renders a `Remove <name>` control. */
 function chipCount() {
-  return container.querySelectorAll('[aria-label^="Remove "]').length;
+  return container.querySelectorAll("[data-attachment-chip]").length;
+}
+
+function detail() {
+  return openErrorDetails(container);
 }
 
 function alert() {
@@ -116,7 +120,11 @@ async function waitForAlert() {
 
 async function send() {
   await act(async () =>
-    container.querySelector<HTMLButtonElement>('button[aria-label="Send"]')!.click(),
+    container
+      .querySelector<HTMLButtonElement>(
+        'button[aria-label="Send"], button[aria-label="Queue message"]',
+      )!
+      .click(),
   );
 }
 
@@ -176,8 +184,8 @@ it("shows failed audio paste writes, cancels a waiting Send, and retains text fo
   await send();
   await act(async () => fail(new Error("disk full")));
   await waitForAlert();
-  expect(alert()).toContain("recording.wav");
-  expect(alert()).toContain("disk full");
+  expect(detail()).toContain("recording.wav");
+  expect(detail()).toContain("disk full");
   expect(field.value).toBe("keep this draft");
   expect(submit).not.toHaveBeenCalled();
   invoke.mockResolvedValue("/tmp/recording.wav");
@@ -258,7 +266,7 @@ it("takes a file URI back out when the webview inserted it and the file attached
 
   expect(event.defaultPrevented).toBe(true);
   // The URI is gone; the file is referenced by its token instead.
-  expect(field.value).toBe("keep [File 1 · 4 KB]");
+  expect(field.value).toBe("keep [File 1 · report.pdf · 4 KB]");
 });
 
 it("sends a screenshot that is still being read when the turn is sent", async () => {
@@ -360,7 +368,7 @@ it.each(["button", "keyboard", "parent"])(
     release();
     await waitForAttachments(1);
     expect(submit).not.toHaveBeenCalled();
-    expect(field.value).toBe("keep for review [Image 1 · 8 B]");
+    expect(field.value).toBe("keep for review [Image 1 · clipboard-image.png · 8 B]");
     await send();
     expect(submit).toHaveBeenCalledOnce();
     expect(submit.mock.calls[0][1]).toHaveLength(1);
@@ -527,7 +535,7 @@ it("reports a copy that holds nothing attachable", async () => {
   paste(render(), "file:///home/dev/.DS_Store");
   await waitForAlert();
 
-  expect(alert()).toBe("Nothing to attach. The file may have been moved, renamed, or deleted.");
+  expect(detail()).toBe("Nothing to attach. The file may have been moved, renamed, or deleted.");
 });
 
 it("attaches what fits and says how many copies it left out", async () => {
@@ -582,11 +590,85 @@ it("reports a clipboard it could not read instead of trying the image", async ()
   const event = paste(render(), "file:///home/dev/report.pdf");
   await waitForAlert();
 
-  expect(alert()).toBe("The clipboard could not be read on this system.");
+  expect(detail()).toBe("The clipboard could not be read on this system.");
   // A failed read must not be mistaken for an empty clipboard.
   expect(invoke).not.toHaveBeenCalledWith("clipboard_image");
   // The URI is still withheld, so the error is what the user is left with.
   expect(event.defaultPrevented).toBe(true);
+});
+
+it("pastes valid files beside an oversized one and names the file left out", async () => {
+  const field = render("keep this draft");
+  const huge = new File(["x"], "backup.zip", { type: "application/zip" });
+  Object.defineProperty(huge, "size", { value: MAX_EMBED_BYTES + 1 });
+  const event = new Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "clipboardData", {
+    value: {
+      getData: () => "",
+      files: [huge, new File(["notes"], "notes.txt", { type: "text/plain" })],
+      items: [],
+    },
+  });
+  act(() => {
+    field.dispatchEvent(event);
+  });
+  await waitForAttachments(1);
+
+  expect(alert()).toBe("backup.zip is larger than 20 MB and was not attached.");
+  expect(field.value).toContain("keep this draft");
+  expect(invoke).not.toHaveBeenCalledWith(
+    "write_attachment",
+    expect.objectContaining({ name: "backup.zip" }),
+  );
+  // The valid sibling and the draft still send.
+  await send();
+  expect(submit.mock.calls[0][1]).toMatchObject([{ name: "notes.txt" }]);
+});
+
+it("explains an all-oversized paste instead of attaching nothing silently", async () => {
+  const field = render();
+  const huge = new File(["x"], "backup.zip", { type: "application/zip" });
+  Object.defineProperty(huge, "size", { value: MAX_EMBED_BYTES + 1 });
+  const event = new Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "clipboardData", {
+    value: { getData: () => "", files: [huge], items: [] },
+  });
+  act(() => {
+    field.dispatchEvent(event);
+  });
+  await waitForAlert();
+
+  expect(alert()).toBe("backup.zip is larger than 20 MB and was not attached.");
+  expect(chipCount()).toBe(0);
+});
+
+it("reserves the final slot across overlapping pastes before reading or writing more blobs", async () => {
+  const field = render("keep draft");
+  clipboardPaths = Array.from({ length: MAX_ATTACHMENTS - 1 }, (_, i) => `/repo/seed-${i}.txt`);
+  paste(field);
+  await waitForAttachments(MAX_ATTACHMENTS - 1);
+  const pasteBlobs = (prefix: string) => {
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", {
+      value: {
+        getData: () => "",
+        items: [],
+        files: [1, 2].map((i) => new File(["ok"], prefix + i + ".txt")),
+      },
+    });
+    field.dispatchEvent(event);
+  };
+  act(() => {
+    pasteBlobs("first");
+    pasteBlobs("second");
+  });
+  await waitForAttachments(MAX_ATTACHMENTS);
+  await settle();
+  act(() => pasteBlobs("full"));
+  await waitForAlert();
+  await settle();
+  expect(invoke.mock.calls.filter(([cmd]) => cmd === "write_attachment")).toHaveLength(1);
+  expect(alert()).toContain("0 of 2");
 });
 
 it("reports why a clipboard image could not be attached", async () => {
@@ -599,6 +681,6 @@ it("reports why a clipboard image could not be attached", async () => {
   paste(render());
   await waitForAlert();
 
-  expect(alert()).toBe("Clipboard image is too large to attach (maximum 20 MB).");
+  expect(detail()).toBe("Clipboard image is too large to attach (maximum 20 MB).");
   expect(container.querySelector('[aria-label^="Open clipboard-image"]')).toBeNull();
 });

@@ -74,7 +74,7 @@ it("uses the same selected row anatomy in short, searchable and embedded lists",
   expect(embedded.getAttribute("aria-selected")).toBe("true");
 });
 
-it("keeps rich descriptions accessible, skips disabled values and commits multiple choices", async () => {
+it("exposes a disabled reason without allowing the option to be selected", async () => {
   const onChange = vi.fn();
   await act(async () =>
     root.render(
@@ -98,10 +98,8 @@ it("keeps rich descriptions accessible, skips disabled values and commits multip
   );
   const list = container.querySelector('[role="listbox"]')!;
   const rows = container.querySelectorAll<HTMLButtonElement>('[role="option"]');
-  expect(rows[1].disabled).toBe(true);
-  expect(document.getElementById(rows[1].getAttribute("aria-describedby")!)?.textContent).toContain(
-    "Offline",
-  );
+  expect(rows[1].getAttribute("aria-disabled")).toBe("true");
+  expect(rows[1].getAttribute("aria-describedby")).toBeNull();
   expect(document.getElementById(rows[2].getAttribute("aria-describedby")!)?.textContent).toBe(
     "Provider details",
   );
@@ -110,6 +108,14 @@ it("keeps rich descriptions accessible, skips disabled values and commits multip
       new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }),
     ),
   );
+  expect(list.getAttribute("aria-activedescendant")).toBe(rows[1].id);
+  expect(document.getElementById(rows[1].getAttribute("aria-describedby")!)?.textContent).toContain(
+    "Offline",
+  );
+  await key(list, "Enter");
+  await act(async () => rows[1].click());
+  expect(onChange).not.toHaveBeenCalled();
+  await key(list, "ArrowDown");
   await act(async () =>
     list.dispatchEvent(
       new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
@@ -303,6 +309,84 @@ it("movement pointer mode ignores entry and repeated stationary coordinates afte
   await key(container.querySelector('[role="listbox"]')!, "ArrowUp");
   await move();
   expect(rows[0].hasAttribute("data-active")).toBe(true);
+});
+
+const moveAt = (row: Element, clientX: number, clientY: number) =>
+  act(async () =>
+    row.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX, clientY })),
+  );
+
+it("keeps the keyboard highlight by default when scrolling slides a row under a resting pointer", async () => {
+  await act(async () =>
+    root.render(
+      createElement(PickerList, {
+        label: "Choices",
+        options: choices,
+        value: "a",
+        onChange: vi.fn(),
+      }),
+    ),
+  );
+  const rows = container.querySelectorAll('[role="option"]');
+  await act(async () => rows[1].dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
+  expect(rows[0].hasAttribute("data-active")).toBe(true);
+  await moveAt(rows[0], 10, 20);
+  await key(container.querySelector('[role="listbox"]')!, "ArrowDown");
+  expect(rows[1].hasAttribute("data-active")).toBe(true);
+  // The scroll re-dispatches pointer events at the unchanged coordinates onto the row now under it.
+  await moveAt(rows[0], 10, 20);
+  expect(rows[1].hasAttribute("data-active")).toBe(true);
+  // A real pointer move, even within the same row, still takes the highlight.
+  await moveAt(rows[0], 10, 24);
+  expect(rows[0].hasAttribute("data-active")).toBe(true);
+});
+
+it("shares the pointer guard across rows so a stationary pointer cannot highlight a different row", async () => {
+  await act(async () =>
+    root.render(
+      createElement(PickerList, {
+        label: "Choices",
+        options: choices,
+        value: "a",
+        onChange: vi.fn(),
+      }),
+    ),
+  );
+  const rows = container.querySelectorAll('[role="option"]');
+  await moveAt(rows[0], 10, 20);
+  await moveAt(rows[1], 10, 20);
+  expect(rows[1].hasAttribute("data-active")).toBe(false);
+  expect(rows[0].hasAttribute("data-active")).toBe(true);
+  await moveAt(rows[1], 11, 20);
+  expect(rows[1].hasAttribute("data-active")).toBe(true);
+});
+
+it("keeps the keyboard highlight in a searchable select while a resting pointer sees rows scroll under it", async () => {
+  const options = [
+    { value: "a", label: "Alpha" },
+    { value: "b", label: "Beta" },
+    { value: "c", label: "Gamma" },
+  ];
+  await act(async () =>
+    root.render(
+      createElement(SearchableSelect, {
+        label: "Searchable",
+        value: "a",
+        options,
+        searchable: false,
+        onChange: vi.fn(),
+      }),
+    ),
+  );
+  await act(async () => container.querySelector("button")!.click());
+  const rows = document.querySelectorAll('[role="option"]');
+  await moveAt(rows[0], 5, 5);
+  await key(document.querySelector('[role="listbox"]')!, "ArrowDown");
+  expect(rows[1].hasAttribute("data-active")).toBe(true);
+  await moveAt(rows[0], 5, 5);
+  expect(rows[1].hasAttribute("data-active")).toBe(true);
+  await moveAt(rows[2], 5, 9);
+  expect(rows[2].hasAttribute("data-active")).toBe(true);
 });
 
 it("keeps the external editor and native list ref while a caller controls active IDs", async () => {

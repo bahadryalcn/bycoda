@@ -12,9 +12,6 @@ const LAST_PING_KEY = "bycoda.account.anonymousStats.lastPing";
 const INSTALL_ID_KEY = "bycoda.account.installId";
 const CHANGE_EVENT = "bycoda:anonymous-stats-change";
 
-/** The reminder stops after this many dismissals; statistics then stay off. */
-export const MAX_STATS_PROMPTS = 3;
-
 const NOT_ASKED: StatsConsent = { choice: null, decidedAt: null };
 
 function parseConsent(raw: string): StatsConsent {
@@ -102,9 +99,9 @@ export function recordStatsPromptShown(): void {
   writeText(PROMPT_KEY, String(statsPromptCount() + 1));
 }
 
-/** One-time prompt for users who were never asked: until answered, at most three launches. */
+/** Ask once and leave statistics off until the owner opts in. */
 export function shouldPromptForStats(): boolean {
-  return getStatsChoice() === null && statsPromptCount() < MAX_STATS_PROMPTS;
+  return getStatsChoice() === null && statsPromptCount() === 0;
 }
 
 export const getLastPingDate = (): string | null => readText(LAST_PING_KEY);

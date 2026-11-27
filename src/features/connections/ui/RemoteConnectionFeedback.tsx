@@ -18,8 +18,10 @@ import {
 } from "../model/remoteFailure";
 import { setConnectionErrorGate } from "../../../shared/ui/connectionErrorGate";
 import { parseRemotePath } from "../model/remoteProjects";
-import { readRemoteDownSince, useRemoteOutages } from "../model/remoteHealth";
+import { readRemoteDownSince } from "../model/remoteHealth";
+import { formatDate, t, useLocale } from "../../../shared/i18n";
 import { useRemoteConnection } from "../model/useRemoteConnection";
+import { useMachineFocus } from "../hooks/useMachineFocus";
 import {
   loadRemoteAutoReconnect,
   subscribeRemoteAutoReconnect,
@@ -34,8 +36,9 @@ type Registration = { environmentId: string; failure?: RemoteFailure };
 type Feedback = {
   entries: ReadonlyMap<symbol, Registration>;
   register(key: symbol, value?: Registration): void;
-  owners: ReadonlySet<symbol>;
-  registerOwner(key: symbol, mounted: boolean): void;
+  /** Mounted notice outlets, each for one machine, in mount order. */
+  owners: ReadonlyMap<symbol, string>;
+  registerOwner(key: symbol, environmentId?: string): void;
 };
 const FeedbackContext = createContext<Feedback | null>(null);
 const environmentOf = (value?: string) =>
@@ -46,7 +49,7 @@ const environmentOf = (value?: string) =>
 /** Own presentation only. Native connection state, admission and recovery stay unchanged. */
 export function RemoteConnectionFeedbackProvider({ children }: { children: ReactNode }) {
   const [entries, setEntries] = useState<ReadonlyMap<symbol, Registration>>(() => new Map());
-  const [owners, setOwners] = useState<ReadonlySet<symbol>>(() => new Set());
+  const [owners, setOwners] = useState<ReadonlyMap<symbol, string>>(() => new Map());
   const register = useCallback((key: symbol, value?: Registration) => {
     setEntries((previous) => {
       if (!value && !previous.has(key)) return previous;
@@ -56,11 +59,11 @@ export function RemoteConnectionFeedbackProvider({ children }: { children: React
       return next;
     });
   }, []);
-  const registerOwner = useCallback((key: symbol, mounted: boolean) => {
+  const registerOwner = useCallback((key: symbol, environmentId?: string) => {
     setOwners((previous) => {
-      if (previous.has(key) === mounted) return previous;
-      const next = new Set(previous);
-      if (mounted) next.add(key);
+      if (previous.get(key) === environmentId) return previous;
+      const next = new Map(previous);
+      if (environmentId) next.set(key, environmentId);
       else next.delete(key);
       return next;
     });
@@ -72,7 +75,10 @@ export function RemoteConnectionFeedbackProvider({ children }: { children: React
   return <FeedbackContext.Provider value={feedback}>{children}</FeedbackContext.Provider>;
 }
 
-/** A pane hands machine-wide failures to the mounted workspace owner, never operation errors. */
+const hasOwner = (feedback: Feedback | null, environmentId?: string) =>
+  !!feedback && !!environmentId && [...feedback.owners.values()].includes(environmentId);
+
+/** A pane hands machine-wide failures to its machine's mounted session notice, never operation errors. */
 export function useRemoteConnectionFeedback(
   cwdOrEnvironmentId?: string,
   failure?: RemoteFailure,
@@ -91,40 +97,45 @@ export function useRemoteConnectionFeedback(
     });
     return () => register(key);
   }, [register, key, environmentId, kind, message]);
-  return !!feedback?.owners.size && !!environmentId && (!failure || isConnectionFailure(failure));
+  return hasOwner(feedback, environmentId) && (!failure || isConnectionFailure(failure));
 }
 
-/** Place once in the workspace shell; each affected machine gets one notice in the shared
- * top-center toast stack. Mounted consumers determine the relevant machines. */
-export function RemoteConnectionNotices() {
+/**
+ * Place once in a remote session, above its composer: the machine's one connection notice, shown
+ * only there. A machine with no open session raises nothing anywhere else; other panes of the same
+ * machine leave their connection failures to this notice while it is mounted.
+ */
+export function RemoteConnectionNotice({
+  cwdOrEnvironmentId,
+  stale = false,
+}: {
+  cwdOrEnvironmentId: string;
+  stale?: boolean;
+}) {
   const feedback = useContext(FeedbackContext);
-  const [ownerKey] = useState(() => Symbol("remote-connection-notices"));
+  const environmentId = environmentOf(cwdOrEnvironmentId);
+  const [ownerKey] = useState(() => Symbol("remote-connection-notice"));
   const registerOwner = feedback?.registerOwner;
-  const outages = useRemoteOutages();
+  // An open session is work in this machine: check and redial it at the full pace.
+  useMachineFocus(environmentId);
   useLayoutEffect(() => {
-    if (!registerOwner) return;
-    registerOwner(ownerKey, true);
-    return () => registerOwner(ownerKey, false);
-  }, [registerOwner, ownerKey]);
-  // A provider without this mounted presentation owner must not hide pane errors.
-  // If shell composition briefly mounts two outlets, only the first presents.
-  if (feedback?.owners.values().next().value !== ownerKey) return null;
-  const machines = new Map<string, RemoteFailure | undefined>();
-  for (const { environmentId, failure } of feedback?.entries.values() ?? []) {
-    const previous = machines.get(environmentId);
-    if (
-      !machines.has(environmentId) ||
-      (failure &&
-        (!previous || (previous.kind === "unreachable" && failure.kind !== "unreachable")))
-    )
-      machines.set(environmentId, failure ?? previous);
+    if (!registerOwner || !environmentId) return;
+    registerOwner(ownerKey, environmentId);
+    return () => registerOwner(ownerKey);
+  }, [registerOwner, ownerKey, environmentId]);
+  if (!environmentId) return null;
+  // Two sessions of one machine side by side: only the first mounted presents.
+  if (feedback) {
+    const first = [...feedback.owners].find(([, id]) => id === environmentId)?.[0];
+    if (first !== ownerKey) return null;
   }
-  // Machines in an outage get their one notice even with no pane mounted for them.
-  for (const environmentId of outages)
-    if (!machines.has(environmentId)) machines.set(environmentId, undefined);
-  return [...machines].map(([environmentId, failure]) => (
-    <MachineConnectionNotice key={environmentId} environmentId={environmentId} failure={failure} />
-  ));
+  let failure: RemoteFailure | undefined;
+  for (const entry of feedback?.entries.values() ?? []) {
+    if (entry.environmentId !== environmentId || !entry.failure) continue;
+    if (!failure || (failure.kind === "unreachable" && entry.failure.kind !== "unreachable"))
+      failure = entry.failure;
+  }
+  return <MachineConnectionNotice environmentId={environmentId} failure={failure} stale={stale} />;
 }
 
 /** An unreachable failure must name the remote link, not a bare socket error of a local command. */
@@ -138,8 +149,9 @@ const isCentralConnectionError = (error: unknown) => {
 let visibleNotices = 0;
 
 /**
- * While at least one machine notice is on screen, shared failure components leave its connection
- * errors to it. A quiet or dismissed notice installs nothing, so panes keep explaining themselves.
+ * While at least one machine notice is on screen or in its quiet window, shared failure components
+ * leave its connection errors to it: a blip while loading or reconnecting flashes nothing, and an
+ * outage that lasts gets the notice. A dismissed notice installs nothing, so panes explain again.
  */
 function useConnectionGateWhileVisible(visible: boolean) {
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- counts visible notices into the module-level shared UI error gate, released on hide or unmount
@@ -157,11 +169,14 @@ function useConnectionGateWhileVisible(visible: boolean) {
 function MachineConnectionNotice({
   environmentId,
   failure,
+  stale,
 }: {
   environmentId: string;
   failure?: RemoteFailure;
+  stale: boolean;
 }) {
-  const { status, error, reconnecting } = useRemoteConnection(environmentId);
+  useLocale();
+  const { status, error, reconnecting, lastSeen } = useRemoteConnection(environmentId);
   const autoReconnect = useSyncExternalStore(
     subscribeRemoteAutoReconnect,
     loadRemoteAutoReconnect,
@@ -222,7 +237,7 @@ function MachineConnectionNotice({
     !reconnecting &&
     (firstFailureAt === undefined || now < firstFailureAt + TRANSIENT_NOTICE_DELAY_MS);
   const visible = active && !(dismissed && transient) && !quiet;
-  useConnectionGateWhileVisible(visible);
+  useConnectionGateWhileVisible(active && !(dismissed && transient));
   if (!visible) return null;
   const recovering =
     transient &&
@@ -243,14 +258,23 @@ function MachineConnectionNotice({
     message: error ?? failure?.message ?? "",
   };
   const displayedFailure = hardState ? currentFailure : (failure ?? currentFailure);
+  const since =
+    lastSeen && displayedFailure.kind === "unreachable"
+      ? t(" Last connected at {p0}.", {
+          p0: formatDate(lastSeen, { hour: "2-digit", minute: "2-digit" }),
+        })
+      : "";
   return (
-    <RemoteLoadError
-      cwd={environmentId}
-      failure={displayedFailure}
-      toast
-      coordinated={false}
-      recovering={recovering}
-      onDismiss={transient && !recovering ? () => setDismissed(true) : undefined}
-    />
+    <div className="shrink-0 px-2 py-1">
+      <RemoteLoadError
+        cwd={environmentId}
+        failure={{ ...displayedFailure, message: `${displayedFailure.message}${since}` }}
+        compact
+        stale={stale}
+        coordinated={false}
+        recovering={recovering}
+        onDismiss={transient && !recovering ? () => setDismissed(true) : undefined}
+      />
+    </div>
   );
 }

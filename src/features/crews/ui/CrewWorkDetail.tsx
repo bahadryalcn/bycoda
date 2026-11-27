@@ -1,31 +1,31 @@
 import { Text } from "../../../shared/ui/Text";
-import { useState } from "react";
+import { taskStopText } from "../../../shared/model/taskStopSummary";
 import { Heading } from "../../../shared/ui/Heading";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { Pause, Play, Square, Trash2 } from "../../../shared/ui/icons";
 import type { HostModelCatalog } from "../../connections/model/protocol";
-import { CREW_LIST_MESSAGE_LIMIT, type CrewDefinition } from "../model/crew";
+import type { CrewDefinition } from "../model/crew";
 import type { CrewRunView } from "../model/crewClient";
+import type { CrewActionError } from "../model/crewActionError";
+import { FailureAlert } from "./FailureAlert";
 import {
   crewActivityKnown,
   crewCanStop,
   crewHasRunningWork,
-  crewMessageMayBeClipped,
   crewProgressLabel,
   crewRequestInfo,
 } from "../model/crewPresentation";
 import { crewRunTitle } from "../model/crewRoster";
-import { composerDefaultMember } from "../model/crewComposer";
 import { CrewWorkOwnerActions, type CrewOwnerTools } from "./CrewWorkOwnerActions";
 import { CrewWorkSessions } from "./CrewWorkSessions";
 import { CrewWorkSummary } from "./CrewWorkSummary";
+import { CrewWorkTimeline } from "./CrewWorkTimeline";
 import { CrewWorkTeam } from "./CrewWorkTeam";
-import { CrewWorkTimeline, crewUsageText } from "./CrewWorkTimeline";
-import { crewRunUsage } from "../model/crewUsage";
-import { CrewWorkBadges, CrewWorkUpdated } from "./CrewWorkState";
+import { CrewWorkBadges } from "./CrewWorkState";
 
 /** Selected work: state, request, decisions and blockers, controls, conversations and team. */
 export function CrewWorkDetail({
@@ -37,6 +37,7 @@ export function CrewWorkDetail({
   error,
   canOpen,
   canDelete,
+  coordinatorInline = false,
   stopRequested = false,
   ownerTools,
   onOpen,
@@ -51,9 +52,11 @@ export function CrewWorkDetail({
   pending: boolean;
   pendingAction: string | null;
   /** The last failed action on this work, shown beside the controls that caused it. */
-  error?: string;
+  error?: CrewActionError;
   canOpen: boolean;
   canDelete: boolean;
+  /** The lead's conversation is already shown inline above, so its session row is left out. */
+  coordinatorInline?: boolean;
   /** The owner stopped this work in this dialog; the lead may still be cancelling. */
   stopRequested?: boolean;
   /** Host access for the owner actions; without it they stay hidden. */
@@ -66,8 +69,6 @@ export function CrewWorkDetail({
   useLocale();
   const { confirm, dialog } = useConfirm();
   const title = crewRunTitle(run);
-  const [target, setTarget] = useState(() => composerDefaultMember(run));
-  const spent = crewUsageText(crewRunUsage(run).total);
   const requests = run.messages.filter((message) => !message.resolvedAt);
   const blocked = run.tasks.filter((task) => task.status === "blocked");
   const awaiting =
@@ -82,17 +83,10 @@ export function CrewWorkDetail({
     crewActivityKnown(run) &&
     !running &&
     !run.tasks.some((task) => task.status === "queued");
-  // The running action is named next to its controls, not only by a spinner.
+  // The pressed buttons carry their own pending label; only a stop already sent (button hidden)
+  // keeps a line naming it while the cancellation settles.
   const pendingText =
-    pendingAction === `pause:${run.id}`
-      ? run.status === "paused"
-        ? t("Resuming…")
-        : t("Pausing…")
-      : pendingAction === `stop:${run.id}` || (stopping && running)
-        ? t("Stopping…")
-        : pendingAction === `delete:${run.id}`
-          ? t("Deleting…")
-          : "";
+    stopping && running && pendingAction !== `stop:${run.id}` ? t("Stopping…") : "";
   const openCoordinator = (key: string) => ({
     label: key.startsWith("answer:") ? t("Answer") : t("Open session"),
     disabled: !run.coordinatorSessionId || !canOpen || pending,
@@ -111,16 +105,13 @@ export function CrewWorkDetail({
         </Heading>
         {run.status !== "finished" ? (
           <div className="flex shrink-0 flex-wrap items-center gap-1">
-            {pendingText ? (
-              <Text role="status" className="me-1">
-                {pendingText}
-              </Text>
-            ) : null}
+            {pendingText ? <LiveText text={pendingText} className="me-1" /> : null}
             <Button
               variant={run.status === "paused" ? "primary" : "secondary"}
               size="sm"
               disabled={pending}
               loading={pendingAction === `pause:${run.id}`}
+              loadingLabel={run.status === "paused" ? t("Resuming…") : t("Pausing…")}
               label={run.status === "paused" ? t("Resume work") : t("Pause new assignments")}
               startIcon={
                 run.status === "paused" ? (
@@ -140,9 +131,9 @@ export function CrewWorkDetail({
                 size="sm"
                 disabled={pending}
                 loading={pendingAction === `stop:${run.id}`}
+                loadingLabel={t("Stopping…")}
                 startIcon={<Square className="icon-sm" />}
                 label={t("Stop work")}
-                tooltip={t("Stop work and cancel running assignments")}
                 onClick={() =>
                   void confirm({
                     title: t("Stop work"),
@@ -162,14 +153,12 @@ export function CrewWorkDetail({
       <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
         <CrewWorkBadges run={run} size="md" />
         <Text className="tabular-nums">{crewProgressLabel(run)}</Text>
-        <CrewWorkUpdated value={run.updatedAt} />
-        {spent && run.status !== "finished" ? <Text className="tabular-nums">{spent}</Text> : null}
       </div>
       {request.kind === "full" && request.text !== title ? (
         <Text
           as="p"
           size="secondary"
-          className="mt-2 max-h-32 max-w-[46rem] overflow-y-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
+          className="mt-2 max-h-32 max-w-184 overflow-y-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
         >
           {request.text}
         </Text>
@@ -183,13 +172,6 @@ export function CrewWorkDetail({
               <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
                 {t("Needs decision: {p0}", { p0: message.text })}
               </p>
-              {crewMessageMayBeClipped(message.text) ? (
-                <Text as="p" tone="inherit" className="mt-1">
-                  {t("Showing the first {p0} characters of this message.", {
-                    p0: CREW_LIST_MESSAGE_LIMIT,
-                  })}
-                </Text>
-              ) : null}
             </Alert>
           ))}
           {awaiting.map((task) => (
@@ -202,7 +184,7 @@ export function CrewWorkDetail({
           {blocked.map((task) => (
             <Alert key={task.id} tone="danger">
               <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                {t("Blocked: {p0}", { p0: task.error ?? task.title })}
+                {t("Blocked: {p0}", { p0: taskStopText(task) ?? task.title })}
               </p>
             </Alert>
           ))}
@@ -210,12 +192,12 @@ export function CrewWorkDetail({
       ) : null}
       {error ? (
         <div className="pt-3">
-          <Alert tone="danger">{error}</Alert>
+          <FailureAlert title={error.title} detail={error.detail} />
         </div>
       ) : null}
       {run.error ? (
         <div className="pt-3">
-          <Alert tone="warning">{run.error}</Alert>
+          <FailureAlert tone="warning" title={t("Work stopped with an error")} detail={run.error} />
         </div>
       ) : null}
       <CrewWorkSessions
@@ -224,23 +206,11 @@ export function CrewWorkDetail({
         canOpen={canOpen}
         pending={pending}
         pendingAction={pendingAction}
+        coordinatorInline={coordinatorInline}
         onOpen={onOpen}
       />
-      <CrewWorkTeam
-        run={run}
-        catalog={catalog}
-        savedCrew={savedCrew}
-        pickedId={target}
-        onPick={ownerTools && run.status !== "finished" ? setTarget : undefined}
-      />
-      {ownerTools ? (
-        <CrewWorkOwnerActions
-          run={run}
-          tools={ownerTools}
-          memberId={target}
-          onMemberChange={setTarget}
-        />
-      ) : null}
+      <CrewWorkTeam run={run} savedCrew={savedCrew} />
+      {ownerTools ? <CrewWorkOwnerActions run={run} tools={ownerTools} /> : null}
       <CrewWorkTimeline run={run} />
       {canDelete ? (
         <div className="mt-5">
@@ -250,6 +220,7 @@ export function CrewWorkDetail({
             size="sm"
             disabled={pending || !canRemove}
             loading={pendingAction === `delete:${run.id}`}
+            loadingLabel={t("Deleting…")}
             startIcon={<Trash2 className="icon-sm" />}
             disabledReason={canRemove ? undefined : t("Stop work before deleting it.")}
             onClick={() =>

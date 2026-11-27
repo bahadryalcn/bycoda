@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { InfoPopover } from "./InfoPopover";
+import { InfoPopover, InfoTooltip } from "./InfoPopover";
 
 let root: Root;
 let host: HTMLDivElement;
@@ -35,23 +35,50 @@ async function render(props: { label?: string; width?: number } = {}) {
   );
 }
 
-it("names the icon-only trigger, announces it as a dialog opener and keeps help closed", async () => {
+it("names the dialog opener and keeps hover free of a duplicate label tooltip", async () => {
   await render({ label: "About limits" });
   expect(trigger().getAttribute("aria-label")).toBe("About limits");
-  // The name doubles as the shared tooltip on hover/focus; no native title bubble.
   expect(trigger().hasAttribute("title")).toBe(false);
+  expect(trigger().hasAttribute("data-tooltip-owner")).toBe(false);
   await act(async () => {
-    trigger().dispatchEvent(new Event("pointerover", { bubbles: true }));
+    trigger().dispatchEvent(
+      new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }),
+    );
     await new Promise((resolve) => setTimeout(resolve, 520));
   });
-  expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("About limits");
+  expect(document.querySelector('[role="tooltip"]')).toBeNull();
   await act(async () => {
-    trigger().dispatchEvent(new Event("pointerout", { bubbles: true }));
+    trigger().dispatchEvent(
+      new PointerEvent("pointerout", { bubbles: true, pointerType: "mouse" }),
+    );
   });
   expect(trigger().getAttribute("aria-haspopup")).toBe("dialog");
   expect(trigger().getAttribute("aria-expanded")).toBe("false");
   expect(trigger().hasAttribute("aria-controls")).toBe(false);
   expect(dialog()).toBeNull();
+});
+
+it("shows the explanation once on hover and leaves clicks passive", async () => {
+  await act(async () =>
+    root.render(
+      createElement(InfoTooltip, { label: "About limits", children: "Limits apply to new runs." }),
+    ),
+  );
+  const glyph = host.querySelector<HTMLElement>('[role="img"]')!;
+  expect(glyph.getAttribute("aria-label")).toBe("About limits");
+  expect(glyph.tabIndex).toBe(0);
+  await act(async () => {
+    glyph.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const tip = document.querySelector<HTMLElement>('[role="tooltip"]')!;
+  expect(tip.textContent).toBe("Limits apply to new runs.");
+  expect(glyph.getAttribute("aria-describedby")).toBe(tip.id);
+  await act(async () => {
+    glyph.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "mouse" }));
+    glyph.click();
+  });
+  expect(document.querySelector('[role="tooltip"], [role="dialog"]')).toBeNull();
 });
 
 it("falls back to a translated Help name when none is supplied", async () => {

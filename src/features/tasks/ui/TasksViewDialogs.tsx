@@ -1,8 +1,14 @@
 import { Text } from "../../../shared/ui/Text";
-import type { ReactNode } from "react";
-import { formatDate, useT } from "../../../shared/i18n";
+import { useRef, useState } from "react";
+import { useFormat, useT } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Button } from "../../../shared/ui/Button";
+import { CopyButton } from "../../../shared/ui/CopyButton";
+import { Disclosure } from "../../../shared/ui/Disclosure";
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { Popover } from "../../../shared/ui/Popover";
+import { TriangleAlert } from "../../../shared/ui/icons";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { LocalHostStartButton } from "../../connections/public/LocalHostDownNotice";
 import type { BoardTask } from "../model/taskClient";
@@ -28,54 +34,96 @@ export function TaskMetricsDialog({
   );
 }
 
-export function TaskBoardStatusDialog({
-  missingNotice,
-  error,
+export type TaskBoardProblemProps = {
+  label: string;
+  message: string;
+  details?: string | null;
+  updatedAt?: number | null;
+  hostStopped: boolean;
+  retrying: boolean;
+  onRetry: () => void;
+};
+
+export function TaskBoardProblem({
+  label,
+  message,
+  details,
   updatedAt,
   hostStopped,
-  onClose,
+  retrying,
   onRetry,
-  onStartError,
-}: {
-  missingNotice: string | null | undefined;
-  /** The task action error, or the board's data error. */
-  error: string | null | undefined;
-  updatedAt: number | null | undefined;
-  hostStopped: boolean;
-  onClose: () => void;
-  onRetry: () => void;
-  onStartError: (message: string | undefined) => void;
-}) {
+}: TaskBoardProblemProps) {
   const t = useT();
+  const { formatDate } = useFormat();
+  const trigger = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const [startError, setStartError] = useState<string>();
   return (
-    <Modal title={t("Task board status")} onClose={onClose}>
-      <Text
-        as="div"
-        size="secondary"
-        tone="inherit"
-        leading="inherit"
-        className="task-board-status-details"
+    <>
+      <Button
+        ref={trigger}
+        type="button"
+        variant="chip"
+        tone="warning"
+        size="sm"
+        startIcon={<TriangleAlert className="icon-sm" />}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
       >
-        {missingNotice ? <p>{missingNotice}</p> : null}
-        {error ? <p>{error}</p> : <p>{t("Up to date")}</p>}
-        {updatedAt ? (
-          <Text
-            as="p"
-            size="caption"
-            tone="secondary"
-            leading="inherit"
-            className="task-status-meta"
-          >
-            {t("Last verified {p0}", {
-              p0: formatDate(updatedAt, { dateStyle: "medium", timeStyle: "short" }),
-            })}
+        {label}
+      </Button>
+      {open ? (
+        <Popover
+          anchor={trigger}
+          kind="dialog"
+          aria-label={label}
+          width={320}
+          variant="panel"
+          flow="scroll"
+          onDismiss={() => setOpen(false)}
+          className="task-board-status-details"
+        >
+          <Text as="p" wrap="anywhere">
+            {message}
           </Text>
-        ) : null}
-        {hostStopped ? (
-          <LocalHostStartButton onStarted={onRetry} onError={(message) => onStartError(message)} />
-        ) : null}
-      </Text>
-    </Modal>
+          <Text as="p" size="caption" tone="secondary">
+            {updatedAt
+              ? t("Last verified {p0}", {
+                  p0: formatDate(updatedAt, { dateStyle: "medium", timeStyle: "short" }),
+                })
+              : t("No verified task data yet.")}
+          </Text>
+          <div className="task-status-actions">
+            <Button variant="primary" size="sm" loading={retrying} onClick={onRetry}>
+              {t("Retry")}
+            </Button>
+            {hostStopped ? (
+              <LocalHostStartButton onStarted={onRetry} onError={setStartError} />
+            ) : null}
+          </div>
+          {startError ? (
+            <Alert
+              tone="danger"
+              title={t("Could not start the local Host.")}
+              extra={
+                <ErrorDetails title={t("Could not start the local Host.")} detail={startError} />
+              }
+            />
+          ) : null}
+          {details ? (
+            <Disclosure variant="compact" summary={t("Technical details")}>
+              <div className="task-board-status-details">
+                <CopyButton size="sm" label={t("Copy")} text={details} resetKeys={[details]} />
+                <OutputBlock aria-label={t("Error details")} frame="filled" size="caption">
+                  {details}
+                </OutputBlock>
+              </div>
+            </Disclosure>
+          ) : null}
+        </Popover>
+      ) : null}
+    </>
   );
 }
 
@@ -86,7 +134,7 @@ export function TaskDeliveryDialog({
   acting,
   busy,
   valid,
-  error,
+  notice,
   onChange,
   onBusyChange,
   onChecksChange,
@@ -99,7 +147,8 @@ export function TaskDeliveryDialog({
   acting: boolean;
   busy: boolean;
   valid: boolean;
-  error: ReactNode;
+  /** The Host or form sentence for the last failed save; already written for the owner. */
+  notice: string | null;
   onChange: (workspace?: TaskWorkspace) => void;
   onBusyChange: (busy: boolean) => void;
   onChecksChange: (patch: Partial<WorkspaceChecks>) => void;
@@ -107,6 +156,11 @@ export function TaskDeliveryDialog({
   onSave: () => void;
 }) {
   const t = useT();
+  const blockedReason = busy
+    ? t("Wait for the checks to finish.")
+    : !valid
+      ? t("Check the delivery target.")
+      : undefined;
   return (
     <Modal
       title={t("Choose delivery target")}
@@ -115,7 +169,7 @@ export function TaskDeliveryDialog({
         if (!acting) onClose();
       }}
       footer={
-        <ModalActions>
+        <ModalActions reason={blockedReason}>
           <Button variant="ghost" type="button" disabled={acting} onClick={onClose}>
             {t("Cancel")}
           </Button>
@@ -123,7 +177,7 @@ export function TaskDeliveryDialog({
             variant="primary"
             type="button"
             loading={acting}
-            disabled={acting || busy || !valid}
+            disabled={acting || !!blockedReason}
             onClick={onSave}
           >
             {t("Save delivery target")}
@@ -137,7 +191,7 @@ export function TaskDeliveryDialog({
             "The completed task stays on its branch. Pending tasks in this epic and project will use the selected integration worktree.",
           )}
         </Text>
-        {error ? <Alert tone="danger">{error}</Alert> : null}
+        {notice ? <Alert tone="danger">{notice}</Alert> : null}
         <TaskWorkspacePicker
           machine={machine}
           cwd={task.cwd}

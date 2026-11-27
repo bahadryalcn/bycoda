@@ -10,8 +10,8 @@ import {
 } from "../../../features/sessions/model/session";
 import { type setSessions } from "../../../features/sessions/model/sessionsStore";
 import {
-  COMPACTED_TEXT,
-  COMPACTING_TEXT,
+  compactedText,
+  compactingText,
   COMPACTION_STATUS_KEY,
 } from "../../../features/sessions/model/compactionStatus";
 import {
@@ -24,7 +24,7 @@ import {
 } from "../../../integrations/harness";
 import { type EditedResendCoordinator } from "../../../features/sessions/model/editLastTurn";
 import { type orchestrator } from "../../../features/orchestration/model/orchestration";
-import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
+import { remoteSessionProject } from "../../../features/connections/model/sessionMachineTarget";
 import { remoteSessionActions } from "../../../features/connections/model/remoteSessionActions";
 import { syncDockBadge } from "../../../features/notifications/model/dockBadge";
 import { operatorEnabledInThread } from "../../../features/sessions/model/operatorCommand";
@@ -39,6 +39,7 @@ import {
 } from "../../../features/sessions/model/conversationRewind";
 import { shouldPersistSession, upsertSession } from "../../../features/sessions/data/sessionStore";
 import { flushSync } from "react-dom";
+import { toast } from "../../../shared/ui/ToastRegion";
 import { notifyReviewChanged } from "../../../features/sessions/model/checkpoint";
 import {
   applyWorkspaceRewind,
@@ -64,6 +65,7 @@ export interface CompactAndRewindDeps {
   lastBoundProvider: MutableRefObject<Map<string, string>>;
   lastPersistedUserBlock: MutableRefObject<Map<string, string>>;
   persistSession: (session: Session | undefined) => void;
+  ensureSessionHistoryForExecution: (sessionId: string) => Promise<boolean>;
 }
 
 /** Why a rewind from this message is refused, in words for the person. */
@@ -101,6 +103,7 @@ export function useCompactAndRewind({
   lastBoundProvider,
   lastPersistedUserBlock,
   persistSession,
+  ensureSessionHistoryForExecution,
 }: CompactAndRewindDeps) {
   const say = useCallback(
     (sessionId: string, text: string) => {
@@ -109,10 +112,10 @@ export function useCompactAndRewind({
     },
     [enqueueHarnessEvent, flushHarnessEvents],
   );
-  const onCompactContext = useCallback(
+  const compactContext = useCallback(
     (sessionId: string) => {
       const current = sessionsRef.current.find((session) => session.id === sessionId);
-      if (current && (hostSessionBinding(current) || remoteProjectFor(current.cwd))) {
+      if (current && (hostSessionBinding(current) || remoteSessionProject(current))) {
         if (remoteSessionActions(sessionId)?.compact()) return true;
         say(
           sessionId,
@@ -161,7 +164,7 @@ export function useCompactAndRewind({
                 type: "status",
                 key: COMPACTION_STATUS_KEY,
                 running: true,
-                text: COMPACTING_TEXT,
+                text: compactingText(),
               },
             )
           : session,
@@ -200,7 +203,7 @@ export function useCompactAndRewind({
             type: "status",
             key: COMPACTION_STATUS_KEY,
             running: false,
-            text: COMPACTED_TEXT,
+            text: compactedText(),
           });
         } catch (error: unknown) {
           if (turnGen.current.get(sessionId) !== gen) return;
@@ -227,6 +230,21 @@ export function useCompactAndRewind({
     },
     [enqueueHarnessEvent, flushHarnessEvents, say],
   );
+  const onCompactContext = useCallback(
+    (sessionId: string) => {
+      const current = sessionsRef.current.find((session) => session.id === sessionId);
+      if (!current?.storedHistory) return compactContext(sessionId);
+      const failed = () => {
+        toast.show({ tone: "warning", message: t("Earlier messages could not be loaded.") });
+        return false;
+      };
+      return ensureSessionHistoryForExecution(sessionId).then(
+        (ready) => (ready ? compactContext(sessionId) : failed()),
+        failed,
+      );
+    },
+    [compactContext, ensureSessionHistoryForExecution, sessionsRef],
+  );
 
   const reconcileManaged = useCallback((sessionId: string, next: Session) => {
     turnGen.current.set(sessionId, (turnGen.current.get(sessionId) ?? 0) + 1);
@@ -247,7 +265,7 @@ export function useCompactAndRewind({
         !current ||
         current.workspaceId !== workspaceId ||
         hostSessionBinding(current) ||
-        remoteProjectFor(current.cwd) ||
+        remoteSessionProject(current) ||
         current.busy ||
         windowTransferPendingRef.current ||
         movingSessionIds.current.has(sessionId) ||
@@ -304,6 +322,14 @@ export function useCompactAndRewind({
 
   const onRewindMessage = useCallback(
     async (sessionId: string, blockId: string): Promise<boolean> => {
+      const original = sessionsRef.current.find((session) => session.id === sessionId);
+      if (
+        original?.storedHistory &&
+        !(await ensureSessionHistoryForExecution(sessionId).catch(() => false))
+      ) {
+        toast.show({ tone: "warning", message: t("Earlier messages could not be loaded.") });
+        return false;
+      }
       if (
         windowTransferPendingRef.current ||
         movingSessionIds.current.has(sessionId) ||
@@ -324,7 +350,7 @@ export function useCompactAndRewind({
         say(sessionId, rewindRefusalReason(snapshot, submissionError));
         return false;
       }
-      if (hostSessionBinding(snapshot) || remoteProjectFor(snapshot.cwd)) {
+      if (hostSessionBinding(snapshot) || remoteSessionProject(snapshot)) {
         if (await remoteSessionActions(sessionId)?.rewind(blockId)) return true;
         say(
           sessionId,
@@ -407,7 +433,14 @@ export function useCompactAndRewind({
         editedResends.finish(sessionId, editToken);
       }
     },
-    [editedResends, enqueueHarnessEvent, flushHarnessEvents, persistSession, say],
+    [
+      editedResends,
+      enqueueHarnessEvent,
+      ensureSessionHistoryForExecution,
+      flushHarnessEvents,
+      persistSession,
+      say,
+    ],
   );
   return { onCompactContext, onRewindMessage };
 }

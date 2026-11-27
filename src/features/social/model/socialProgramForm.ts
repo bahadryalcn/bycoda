@@ -3,14 +3,23 @@ import type { HostProject } from "../../connections/model/protocol";
 import type { CampaignVariant, SocialSnapshot } from "./social";
 import type { ProgramConfig, SocialProgram } from "./socialProgram";
 
-/** Display labels of the approvable generation steps. */
-export const PROGRAM_STEP_LABELS: Record<string, string> = {
-  text: "Text",
-  image: "Image",
-  adaptation: "Platform adaptation",
-  schedule: "Schedule",
-  publish: "Final publication",
-};
+/** The translated name of an approval step; an unknown step shows its id. */
+export function programStepLabel(step: string): string {
+  switch (step) {
+    case "text":
+      return t("Text");
+    case "image":
+      return t("Image");
+    case "adaptation":
+      return t("Platform adaptation");
+    case "schedule":
+      return t("Schedule");
+    case "publish":
+      return t("Final publication");
+    default:
+      return step;
+  }
+}
 
 /** Section labels used when a suggested configuration is reviewed field by field. */
 export const PROGRAM_SUGGESTION_FIELD_LABELS: Record<string, string> = {
@@ -131,27 +140,25 @@ export function summarizeProgramSuggestion(
         ? `${value.textAgent.provider} · ${value.textAgent.model || t("Use project defaults")}`
         : t("Use project defaults");
     case "image":
-      return `${t(value.image.mode === "none" ? "No media" : value.image.mode === "generate" ? "Generate image" : "Existing media")} · ${value.image.aspectRatio}\n${value.image.mode === "generate" ? `${value.image.provider} · ${value.image.model || t("Use project defaults")}` : mediaSummary(value.image.media)}`;
+      return `${value.image.mode === "none" ? t("No media") : value.image.mode === "generate" ? t("Generate image") : t("Existing media")} · ${value.image.aspectRatio}\n${value.image.mode === "generate" ? `${value.image.provider} · ${value.image.model || t("Use project defaults")}` : mediaSummary(value.image.media)}`;
     case "schedule":
-      return `${scheduleDate(value.schedule.startsAt)} · ${value.schedule.timeZone}\n${t("Days")}: ${value.schedule.days.map((day) => dateTimeFormat(locale, { weekday: "short", timeZone: "UTC" }).format(Date.UTC(2024, 0, day))).join(", ")}\n${value.schedule.mode === "times" ? value.schedule.times.join(", ") : value.schedule.mode === "frequency" ? `${value.schedule.frequency} / ${t(value.schedule.period === "day" ? "Day" : "Week")}` : `${value.schedule.minIntervalMinutes}–${value.schedule.maxIntervalMinutes} ${t("Minutes")}`} · ${value.schedule.startTime}–${value.schedule.endTime}${value.schedule.endsAt ? `\n${t("End date")}: ${scheduleDate(value.schedule.endsAt)}` : ""}`;
+      return `${scheduleDate(value.schedule.startsAt)} · ${value.schedule.timeZone}\n${t("Days")}: ${value.schedule.days.map((day) => dateTimeFormat(locale, { weekday: "short", timeZone: "UTC" }).format(Date.UTC(2024, 0, day))).join(", ")}\n${value.schedule.mode === "times" ? value.schedule.times.join(", ") : value.schedule.mode === "frequency" ? `${value.schedule.frequency} / ${value.schedule.period === "day" ? t("Day") : t("Week")}` : `${value.schedule.minIntervalMinutes}–${value.schedule.maxIntervalMinutes} ${t("Minutes")}`} · ${value.schedule.startTime}–${value.schedule.endTime}${value.schedule.endsAt ? `\n${t("End date")}: ${scheduleDate(value.schedule.endsAt)}` : ""}`;
     case "limits":
       return `${t("Daily posts")}: ${value.limits.dailyPosts} · ${t("Daily generations")}: ${value.limits.dailyGenerations}\n${t("Total generations")}: ${value.limits.totalGenerations} · ${t("Image generations")}: ${value.limits.maxImageGenerations}`;
     case "totalPosts":
       return value.totalPosts === null ? t("Unlimited") : String(value.totalPosts);
     case "strategy":
-      return t(
-        value.strategy === "unique"
-          ? "New content for each post"
-          : value.strategy === "repeat"
-            ? "Repeat approved content"
-            : "Rotate approved content pool",
-      );
+      return value.strategy === "unique"
+        ? t("New content for each post")
+        : value.strategy === "repeat"
+          ? t("Repeat approved content")
+          : t("Rotate approved content pool");
     case "poolCampaignIds":
       return value.poolCampaignIds
         .map((id) => snapshot.campaigns.find((campaign) => campaign.id === id)?.name ?? id)
         .join(", ");
     case "approval":
-      return `${t(value.approval.mode === "approved" ? "Approved" : value.approval.mode === "semi" ? "Semi-approved: first sample and plan" : "Automatic")} · ${value.approval.steps.map((step) => t(PROGRAM_STEP_LABELS[step] ?? step)).join(", ")}`;
+      return `${value.approval.mode === "approved" ? t("Approved") : value.approval.mode === "semi" ? t("Semi-approved: first sample and plan") : t("Automatic")} · ${value.approval.steps.map(programStepLabel).join(", ")}`;
     case "mediaOverrides":
       return Object.entries(value.mediaOverrides ?? {})
         .map(([id, media]) => `${accountNames([id])}: ${mediaSummary(media)}`)

@@ -8,9 +8,14 @@ const mock = vi.hoisted(() => ({
   remote: vi.fn(),
   catalog: vi.fn(),
   probe: vi.fn(),
+  machine: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mock.invoke }));
 vi.mock("../../connections/model/hostFeatureClient", () => ({ hostFeatureRequest: mock.remote }));
+vi.mock("../../connections/model/connections", () => ({
+  knownRemoteMachine: mock.machine,
+  useRemoteMachines: () => ({ machines: [], loaded: true, loading: false, refresh: () => {} }),
+}));
 vi.mock("../../../integrations/harness/providers/generic-acp/genericAcpAdapter", () => ({
   refreshGenericAcpCatalog: mock.catalog,
 }));
@@ -36,6 +41,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mock.invoke.mockResolvedValue([config]);
   mock.remote.mockResolvedValue([config]);
+  mock.machine.mockReturnValue(undefined);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -57,11 +63,10 @@ function button(text: string) {
 it("keeps every advanced value when editing and saves on the selected host without overwriting stored environment", async () => {
   const cwd = "remote://host-one/project";
   await render(cwd);
-  expect(container.textContent).toContain("remote host host-one");
+  expect(container.textContent).toContain("Target machine: Remote host.");
+  expect(container.textContent).not.toContain("host-one");
   act(() => button("Edit").click());
-  expect(
-    container.querySelector("#acp-agent-form-disclosure section")?.getAttribute("aria-labelledby"),
-  ).toBeTruthy();
+  expect(container.querySelector("#acp-agent-form-disclosure h3")?.textContent).toBe("Edit agent");
   expect([...container.querySelectorAll("input")].map((input) => input.value)).toEqual([
     config.id,
     config.name,
@@ -100,10 +105,14 @@ it("retains the form after a failed save and allows retry", async () => {
       .querySelector("form")!
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Host save failed");
-  expect(
-    container.querySelector("#acp-agent-form-disclosure section")?.getAttribute("aria-labelledby"),
-  ).toBeTruthy();
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not save the ACP agent.",
+  );
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label^="Details:"]')!.click(),
+  );
+  expect(document.body.textContent).toContain("Host save failed");
+  expect(container.querySelector("#acp-agent-form-disclosure h3")?.textContent).toBe("Edit agent");
   expect(container.querySelector("input")?.value).toBe(config.id);
   expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false);
   expect(container.textContent).not.toContain("ACP agent saved on the target machine.");
@@ -137,18 +146,37 @@ it("does not show an empty list before loading finishes or replace a new machine
   expect(button("Save agent").disabled).toBe(true);
   await render("remote://new-host/project");
   await act(async () => resolveOld([config]));
-  expect(container.textContent).toContain("remote host new-host");
+  expect(container.textContent).toContain("Target machine: Remote host.");
+  expect(container.textContent).not.toContain("new-host");
   expect(container.textContent).toContain("No ACP agents configured");
   expect(container.textContent).not.toContain(config.name);
 });
 
-it("reveals a collapsed agent form without discarding its draft", async () => {
+it("names the remote machine in the scope line instead of its environment id", async () => {
+  mock.machine.mockImplementation((environmentId: string) =>
+    environmentId === "host-one" ? { name: "Studio Mac" } : undefined,
+  );
+  await render("remote://host-one/project");
+  expect(container.textContent).toContain("Target machine: Studio Mac.");
+  expect(container.textContent).not.toContain("host-one");
+});
+
+it("shows a load failure in details without a raw Error prefix", async () => {
+  mock.invoke.mockRejectedValue(new Error("Host offline"));
+  await render();
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not load the ACP agents.",
+  );
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label^="Details:"]')!.click(),
+  );
+  expect(document.body.textContent).toContain("Host offline");
+  expect(document.body.textContent).not.toContain("Error: Host offline");
+});
+
+it("keeps the agent form draft and focuses its first field when adding", async () => {
   await render();
   act(() => button("Edit").click());
-  const disclosure = () =>
-    container.querySelector<HTMLButtonElement>("#acp-agent-form-disclosure button[aria-expanded]")!;
-  act(() => disclosure().click());
-  expect(container.querySelector("#acp-agent-form-disclosure input")).toBeNull();
   await act(async () => {
     button("Add agent").click();
     await new Promise((resolve) => requestAnimationFrame(resolve));
@@ -185,10 +213,16 @@ it.each([false, true])(
         await act(async () => reject(new Error("Remove failed")));
         expect(container.querySelector('[data-state="error"]')).not.toBeNull();
         expect(container.querySelector('[data-state="done"]')).toBeNull();
-        expect(container.textContent).toContain("Remove failed");
+        await act(async () =>
+          container.querySelector<HTMLButtonElement>('[aria-label^="Details:"]')!.click(),
+        );
+        expect(document.body.textContent).toContain("Remove failed");
       } else {
         expect(container.querySelector('[data-state="done"]')?.textContent).toContain("Removed");
-        expect(container.textContent).toContain("List refresh failed");
+        await act(async () =>
+          container.querySelector<HTMLButtonElement>('[aria-label^="Details:"]')!.click(),
+        );
+        expect(document.body.textContent).toContain("List refresh failed");
       }
     } finally {
       clock.mockRestore();
@@ -242,4 +276,27 @@ it("retains install cancellation across a language change for the original opera
       await setLanguagePreference("en");
     });
   }
+});
+
+it("keeps the status line mounted through a reload so the agent list does not move", async () => {
+  await render();
+  const status = container.querySelector<HTMLElement>("[data-acp-status]")!;
+  let finish!: (value: (typeof config)[]) => void;
+  mock.invoke.mockImplementation((command) =>
+    command === "generic_acp_list"
+      ? new Promise<(typeof config)[]>((resolve) => {
+          finish = resolve;
+        })
+      : Promise.resolve([config]),
+  );
+  // The reload request starts after the (empty) action settles, so let that microtask run.
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Reload agents"]')!.click(),
+  );
+  expect(container.querySelector("[data-acp-status]")).toBe(status);
+  expect(status.textContent).toContain("Loading ACP agents…");
+  await act(async () => finish([config]));
+  expect(container.querySelector("[data-acp-status]")).toBe(status);
+  expect(status.textContent).toBe("");
+  expect(container.textContent).toContain(config.name);
 });

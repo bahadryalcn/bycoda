@@ -15,11 +15,8 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import { execFileAsync } from "../../src/shared/lib/processExecution.node";
 import { HostCheckpoints } from "../checkpoints/checkpoints";
-import {
-  acquireRevertFileGuard,
-  reverseProviderUpdate,
-  SessionFileRevert,
-} from "./session-file-revert";
+import { reverseProviderUpdate, SessionFileRevert } from "./session-file-revert";
+import { acquireRevertFileGuard, createRevertGuardSession } from "./session-file-revert-guard";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -58,6 +55,40 @@ async function fixture(gitRepo = true) {
   };
 }
 describe("session message file revert", () => {
+  it.each([false, true])(
+    "never captures or reverts the Host's own database files inside a workspace (git: %s)",
+    async (gitRepo) => {
+      // CI macOS: a non-Git workspace that held the active host.db had its -shm read and closed
+      // by turn history, which drops the POSIX locks SQLite holds on it in this process.
+      const f = await fixture(gitRepo);
+      const db = join(f.cwd, "host.db");
+      const checkpoints = new HostCheckpoints(
+        join(f.cwd, "checkpoints"),
+        undefined,
+        async () => {},
+        [db, `${db}-wal`, `${db}-shm`, `${db}-journal`, join(f.cwd, "attachments")],
+      );
+      await mkdir(join(f.cwd, "attachments"));
+      for (const name of ["host.db", "host.db-wal", "host.db-shm", "attachments/blob", "data.db"])
+        await f.write(name, `${name} before\n`);
+      await checkpoints.beginFilesTurn("s", f.cwd, "run-one", "one");
+      for (const name of ["host.db", "host.db-wal", "host.db-shm", "attachments/blob", "data.db"])
+        await f.write(name, `${name} after\n`);
+      await checkpoints.finishFilesTurn("s", f.cwd, "run-one");
+      const plan = await checkpoints.filesRevertPlan("s", f.cwd, "one");
+      // A user's own database stays ordinary workspace content.
+      expect(plan.files.map((file) => file.path).sort()).toEqual(["data.db"]);
+      expect(await checkpoints.filesRevert("s", f.cwd, "one")).toEqual({
+        reverted: ["data.db"],
+        skipped: [],
+      });
+      expect(await f.read("data.db")).toBe("data.db before\n");
+      for (const name of ["host.db", "host.db-wal", "host.db-shm", "attachments/blob"])
+        expect(await f.read(name)).toBe(`${name} after\n`);
+    },
+    60_000,
+  );
+
   it("retains and reverts queued-message history using its opaque RPC block ID", async () => {
     const f = await fixture();
     const messageId = "queue-drain:session:row";
@@ -340,6 +371,33 @@ describe("session message file revert", () => {
         await guard.release();
       }
       await rename(join(f.cwd, "dir"), join(f.cwd, "renamed"));
+    },
+  );
+  it.runIf(process.platform === "win32")(
+    "serves several files from one guard helper and survives a busy file",
+    async () => {
+      const f = await fixture();
+      const busy = join(f.cwd, "busy.txt");
+      const other = join(f.cwd, "other.txt");
+      await writeFile(busy, "current\n");
+      await writeFile(other, "current\n");
+      const guards = createRevertGuardSession(f.cwd);
+      const writer = await open(busy, "r+");
+      try {
+        await expect(guards.acquire(busy)).rejects.toThrow(/open for writing/);
+        const guard = await guards.acquire(other);
+        await expect(open(other, "r+")).rejects.toThrow();
+        await guard.release();
+        await (await open(other, "r+")).close();
+        await writer.close();
+        const again = await guards.acquire(busy);
+        again.check();
+        await again.release();
+        await (await open(busy, "r+")).close();
+      } finally {
+        await writer.close().catch(() => {});
+        await guards.close();
+      }
     },
   );
   it("never deletes an existing ignored file with missing pre-edit evidence", async () => {

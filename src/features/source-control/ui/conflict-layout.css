@@ -106,11 +106,6 @@
     display: none;
   }
 }
-@container conflict-pane (inline-size < 520px) {
-  .conflict-result-meta {
-    display: none;
-  }
-}
 
 .conflict-source-editor {
   flex: 1;
@@ -171,28 +166,11 @@
   margin-inline-end: 0.5rem;
   overflow-wrap: anywhere;
 }
-.conflict-inline-choice {
-  padding: 0 0.375rem;
-  border-radius: var(--ui-radius-control);
-  color: inherit;
-  background: transparent;
-  line-height: 1.25rem;
-  cursor: pointer;
-}
-.conflict-inline-choice:active {
-  background: var(--ui-surface-pressed);
-}
+/* Geometry, hover, focus and disabled come from the shared Button presentation; only the
+   accepted state is local. */
 .conflict-inline-choice[aria-pressed="true"] {
   background: var(--ui-surface-selected);
   color: var(--color-content);
-}
-.conflict-inline-choice:disabled {
-  color: var(--ui-text-disabled);
-  cursor: default;
-}
-.conflict-inline-choice:focus-visible {
-  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
-  outline-offset: var(--ui-focus-offset);
 }
 /* Source bars carry their side's ink; a pressed source shows it was accepted. */
 .conflict-source-actions {
@@ -203,11 +181,6 @@
 }
 .conflict-source-actions .conflict-inline-choice[aria-pressed="true"]::before {
   content: "✓ ";
-}
-@media (hover: hover) and (pointer: fine) {
-  .conflict-inline-choice:not(:disabled):hover {
-    background: var(--ui-surface-hover);
-  }
 }
 
 /* The whole-file fallback result reads like the editor beside it. */

@@ -1,3 +1,4 @@
+import { pickAddMenuItem } from "./servers-add-menu";
 import { expect, test } from "@playwright/test";
 
 for (const theme of ["light", "dark"]) {
@@ -8,7 +9,7 @@ for (const theme of ["light", "dark"]) {
       const errors: string[] = [];
       page.on("pageerror", (error) => errors.push(error.message));
       await page.goto(
-        `/tests/browser/terminal/servers.html?sshFixture&sshKeys&filesFixture&terminalWorkspace&identityColorFixture&groupFixture&inheritedFixture&serversRedesign&theme=${theme}`,
+        `/tests/browser/terminal/servers.html?sshFixture&sshKeys&filesFixture&terminalWorkspace&identityColorFixture&groupFixture&inheritedFixture&serversRedesign&detailLongKey&theme=${theme}`,
       );
       const folder = "temp/verification/2026-11-14-servers-six";
       const capture = async (name: string) => {
@@ -21,16 +22,28 @@ for (const theme of ["light", "dark"]) {
         });
       };
       const inventory = page.getByRole("list", { name: "Servers", exact: true });
-      await expect(inventory.getByRole("button", { name: /^Existing SSH target/ })).toBeVisible();
+      await expect(
+        inventory.getByRole("button", { name: /^(SSH )?Existing SSH target/ }),
+      ).toBeVisible();
       await capture("catalog-list");
       await page.getByRole("radio", { name: "Card view", exact: true }).click();
       await capture("catalog-cards");
       await page.getByRole("button", { name: /^Legacy display label/ }).click();
       await expect(inventory.locator("[data-server-row]")).toHaveCount(1);
       await capture("catalog-group");
-      await inventory.getByRole("button", { name: /^Existing SSH target/ }).click();
+      await inventory.getByRole("button", { name: /^(SSH )?Existing SSH target/ }).click();
       const details = page.getByRole("region", { name: "Server details", exact: true });
       await expect(details).toBeVisible();
+      const credentials = details.getByRole("region", { name: "Credentials" });
+      const key = credentials.locator("dd").filter({ hasText: "long-identity-filename" });
+      await expect(key).toBeVisible();
+      const chooseKey = credentials.getByRole("button", { name: "Choose SSH key", exact: true });
+      for (const content of [key, chooseKey]) {
+        expect(
+          await content.evaluate((element) => element.scrollWidth <= element.clientWidth),
+        ).toBe(true);
+        await expect(content).toBeInViewport();
+      }
       await capture("connection");
       for (const [tab, name] of [
         ["Port forwarding", "forwards"],
@@ -56,15 +69,14 @@ for (const theme of ["light", "dark"]) {
       ).toHaveValue("C:/keys/unfinished");
       await capture("identity-draft");
       await details.getByRole("button", { name: "Cancel", exact: true }).click();
-      await details.getByRole("tab", { name: "Organization", exact: true }).click();
       await details.getByRole("button", { name: "SSH group settings", exact: true }).click();
-      const group = page.getByRole("dialog", { name: "SSH group settings", exact: true });
+      const group = page.getByRole("dialog", { name: /^SSH group settings/ });
       await group.getByRole("button", { name: "Edit group", exact: true }).click();
-      const defaults = group.locator('[aria-label="Group defaults"]');
+      const defaults = page.getByRole("dialog", { name: /^Group defaults/ });
       await defaults.scrollIntoViewIfNeeded();
       await capture("group-defaults");
       await defaults.locator("summary").filter({ hasText: "Remote environment" }).click();
-      await group
+      await defaults
         .getByRole("textbox", { name: "Variable name 1", exact: true })
         .scrollIntoViewIfNeeded();
       await capture("group-environment");
@@ -76,16 +88,15 @@ for (const theme of ["light", "dark"]) {
       const files = page.getByRole("dialog", { name: "SFTP files", exact: true });
       await expect(files).toBeVisible();
       await capture("sftp-empty");
-      await files.getByRole("button", { name: "Open", exact: true }).click();
       await expect(files.getByText("README.md", { exact: true })).toBeVisible();
       await capture("sftp-files");
       await page.keyboard.press("Escape");
       await details.getByRole("button", { name: "Close server details", exact: true }).click();
-      await page.getByRole("button", { name: "SSH settings", exact: true }).click();
+      await pickAddMenuItem(page, "SSH settings");
       const settings = page.getByRole("dialog", { name: "SSH settings", exact: true });
       await expect(settings.getByText("id_ed25519_work", { exact: true })).toBeVisible();
       await capture("ssh-keys");
-      await settings.getByRole("tab", { name: "Known hosts", exact: true }).click();
+      await settings.getByRole("tab", { name: /^Known hosts/ }).click();
       await expect(settings.getByText("deploy.example.invalid", { exact: true })).toBeVisible();
       await capture("known-hosts");
       await settings
@@ -108,7 +119,7 @@ for (const theme of ["light", "dark"]) {
       await editor.locator("summary").filter({ hasText: "Advanced SSH settings" }).click();
       await capture("add-server-advanced");
       await editor.getByRole("button", { name: "Cancel", exact: true }).click();
-      await page.getByRole("button", { name: "Quick connect", exact: true }).click();
+      await pickAddMenuItem(page, "Quick connect");
       const quick = page.getByRole("dialog", { name: "Quick connect", exact: true });
       await expect(quick.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
       await expect(quick.getByRole("textbox", { name: "Name", exact: true })).not.toHaveAttribute(
@@ -127,13 +138,9 @@ for (const theme of ["light", "dark"]) {
       const calls = await page.evaluate(() => (window as any).serversFixtureCalls as string[]);
       expect(
         calls.filter((command) =>
-          [
-            "server_metadata_update",
-            "server_ssh_save",
-            "ssh_terminal_spawn",
-            "ssh_forward_start",
-            "sftp_upload",
-          ].includes(command),
+          ["server_ssh_save", "ssh_terminal_spawn", "ssh_forward_start", "sftp_upload"].includes(
+            command,
+          ),
         ),
       ).toEqual([]);
     });
@@ -150,7 +157,7 @@ for (const theme of ["light", "dark"]) {
       );
       const folder = "temp/verification/2026-10-19-servers-complete";
       await page.screenshot({ path: `${folder}/inventory-${theme}-${width}.png` });
-      await page.getByRole("button", { name: "SSH settings", exact: true }).click();
+      await pickAddMenuItem(page, "SSH settings");
       const ssh = page.getByRole("dialog", { name: "SSH settings", exact: true });
       await ssh.getByRole("tab", { name: "Import SSH config", exact: true }).click();
       await ssh
@@ -165,7 +172,7 @@ for (const theme of ["light", "dark"]) {
       await page.keyboard.press("Escape");
       await page
         .getByRole("list", { name: "Servers" })
-        .getByRole("button", { name: /^Existing SSH target/ })
+        .getByRole("button", { name: /^(SSH )?Existing SSH target/ })
         .click();
       const details = page.getByRole("region", { name: "Server details", exact: true });
       const nav = details.getByRole("tablist", { name: "Server tools", exact: true });
@@ -175,14 +182,17 @@ for (const theme of ["light", "dark"]) {
       await details.getByRole("spinbutton", { name: "Local port", exact: true }).fill("8088");
       await nav.getByRole("tab", { name: "Automation", exact: true }).click();
       const commands = details.getByRole("region", { name: "Saved SSH commands", exact: true });
-      await commands.getByRole("textbox", { name: "Name", exact: true }).fill("Unfinished command");
+      const commandName = commands.getByRole("textbox", { name: "Name (optional)", exact: true });
+      await commandName.fill("Unfinished command");
       await commands.getByRole("textbox", { name: "Command preview", exact: true }).fill("pwd");
       await nav.getByRole("tab", { name: "Organization", exact: true }).click();
+      // The group saves itself when the field is left (the new group chip then shifts the inventory),
+      // so leave it first; the unsaved command and forwarding drafts must still survive.
       await details.getByRole("combobox", { name: "Group", exact: true }).fill("Unfinished group");
+      await details.getByRole("combobox", { name: "Group", exact: true }).blur();
+      await expect(page.getByRole("button", { name: /^Unfinished group/ })).toBeVisible();
       await nav.getByRole("tab", { name: "Automation", exact: true }).click();
-      await expect(commands.getByRole("textbox", { name: "Name", exact: true })).toHaveValue(
-        "Unfinished command",
-      );
+      await expect(commandName).toHaveValue("Unfinished command");
       await page.screenshot({ path: `${folder}/commands-${theme}-${width}.png` });
       await nav.getByRole("tab", { name: "Port forwarding", exact: true }).click();
       await expect(
@@ -196,10 +206,6 @@ for (const theme of ["light", "dark"]) {
       await page.screenshot({ path: `${folder}/connection-${theme}-${width}.png` });
       await details.getByRole("button", { name: "Files", exact: true }).click();
       const files = page.getByRole("dialog", { name: "SFTP files", exact: true });
-      await expect(
-        files.getByText("Open a directory to browse files.", { exact: true }),
-      ).toBeVisible();
-      await files.getByRole("button", { name: "Open", exact: true }).click();
       await files.getByRole("textbox", { name: "Search remote files", exact: true }).fill("README");
       await expect(files.getByText("README.md", { exact: true })).toBeVisible();
       await expect(files.getByRole("button", { name: "deployments", exact: true })).toHaveCount(0);
@@ -210,13 +216,9 @@ for (const theme of ["light", "dark"]) {
       const calls = await page.evaluate(() => (window as any).serversFixtureCalls);
       expect(
         calls.some((command: string) =>
-          [
-            "server_metadata_update",
-            "server_ssh_save",
-            "ssh_terminal_spawn",
-            "ssh_forward_start",
-            "pty_write",
-          ].includes(command),
+          ["server_ssh_save", "ssh_terminal_spawn", "ssh_forward_start", "pty_write"].includes(
+            command,
+          ),
         ),
       ).toBe(false);
     });
@@ -226,7 +228,7 @@ for (const theme of ["light", "dark"]) {
 test("SSH management is reachable before any server exists", async ({ page }) => {
   await page.goto("/tests/browser/terminal/servers.html?emptyServers&sshKeys");
   await expect(page.getByRole("list", { name: "Servers" }).getByRole("button")).toHaveCount(0);
-  await page.getByRole("button", { name: "SSH settings", exact: true }).click();
+  await pickAddMenuItem(page, "SSH settings");
   const dialog = page.getByRole("dialog", { name: "SSH settings", exact: true });
   await expect(dialog.getByText("id_ed25519_work", { exact: true })).toBeVisible();
   await dialog.getByRole("tab", { name: "Import SSH config", exact: true }).click();

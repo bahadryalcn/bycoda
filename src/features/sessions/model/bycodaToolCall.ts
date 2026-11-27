@@ -7,6 +7,22 @@ export type BycodaToolCall = {
   command: string;
 };
 
+/** Delegation results can place, hide or replace transcript cards as their output arrives. */
+export function delegationToolKind(
+  block: Block,
+): "delegate" | "wait" | "reply" | "consult" | undefined {
+  if (block.role !== "tool") return undefined;
+  for (const value of [block.tool?.title, block.tool?.preview?.title, block.text]) {
+    const kind = value
+      ?.trim()
+      .match(/(?:^|[:_.])agents[_.](delegate|wait|reply|consult)$/i)?.[1]
+      .toLowerCase();
+    if (kind === "delegate" || kind === "wait" || kind === "reply" || kind === "consult")
+      return kind;
+  }
+  return undefined;
+}
+
 const ACTION_LABELS: Record<string, string> = {
   "models.list": "List models",
   "sessions.list": "List sessions",
@@ -26,7 +42,15 @@ const ACTION_LABELS: Record<string, string> = {
   "agents.reply": "Continue a session",
   "agents.wait": "Wait for a subagent",
   "agents.cancel": "Cancel a subagent",
+  "agents.list": "Subagents",
+  "agents.send": "Send message",
 };
+
+/** Known MCP titles from the Bycoda conversation server. Keep other tool names intact. */
+export function bycodaConversationLabel(title: string | undefined): string | undefined {
+  const match = title?.match(/^bycoda-conversation:(?:conversation_)?agents[_.](\w+)$/);
+  return match ? ACTION_LABELS[`agents.${match[1]}`] : undefined;
+}
 
 /** Conservatively parse one shell invocation; compound commands use the shell row. */
 function shellWords(command: string): string[] | undefined {

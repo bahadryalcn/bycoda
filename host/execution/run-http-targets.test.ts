@@ -216,6 +216,25 @@ it("allows only known original cleanup and never lets A regain a session claimed
     () => {},
   );
   await abort.complete({ status: 204, body: "" });
+  const prepareInterrupt = (query: string) => {
+    const request = f.request("POST", "/api/session/session_1/interrupt");
+    return f.registry.prepare(
+      cleanup,
+      control,
+      controlScope,
+      hint,
+      { ...request, url: `${request.url}&${query}` },
+      async () => {
+        throw new Error("no verification");
+      },
+      () => {},
+      () => {},
+    );
+  };
+  await expect(prepareInterrupt("resume=true")).rejects.toThrow(/Cleanup may only/);
+  await expect(prepareInterrupt("resume=false&resume=true")).rejects.toThrow(/Cleanup may only/);
+  const interrupt = await prepareInterrupt("resume=false");
+  await interrupt.complete({ status: 204, body: "" });
   const b = Object.freeze({}) as HostRunHandle,
     bScope = { ...f.scope, identity: Object.freeze({}) };
   const next = await f.registry.bind(f.registry.capture(f.baseUrl), b, bScope, hint);

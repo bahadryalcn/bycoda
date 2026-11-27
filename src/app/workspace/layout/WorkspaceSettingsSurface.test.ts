@@ -29,13 +29,20 @@ vi.mock("../../../features/source-control/ui/QuickDeleteWorktreeDialog", () => (
 vi.mock("../../../shared/ui/Modal", () => ({
   Modal: ({
     children,
-    className,
+    size,
+    maximized,
     title,
   }: {
     children: React.ReactNode;
-    className?: string;
+    size?: string;
+    maximized?: boolean;
     title?: string;
-  }) => createElement("div", { "data-modal": title, className }, children),
+  }) =>
+    createElement(
+      "div",
+      { "data-modal": title, "data-size": size, "data-maximized": String(maximized) },
+      children,
+    ),
 }));
 vi.mock("../../../shared/i18n/git", () => ({ t: (key: string) => key, useLocale: () => "en" }));
 vi.mock("../surfaces/lazySurfaces", () => ({
@@ -127,16 +134,16 @@ it("shows Settings in the shared Modal with maximize and no duplicate window chr
     createElement(WorkspaceSettingsSurface, settingsProps("dialog")),
   );
   expect(html).toContain('data-modal="Settings"');
-  expect(html).toContain("bycoda-settings-dialog");
   // Every page shares one dialog geometry; only maximize changes it.
-  expect(html).toContain('data-settings-dialog-mode="standard"');
+  expect(html).toContain('data-size="settings"');
+  expect(html).toContain('data-maximized="false"');
   const shown = view.mock.calls[0][0] as Record<string, unknown>;
   expect(shown.embedded).toBe(true);
   expect(shown.maximized).toBe(false);
   expect(typeof shown.onToggleMaximize).toBe("function");
 });
 
-it("keeps the dialog title and section visible while the Settings view is still loading", () => {
+it("keeps the dialog title visible and shows one placeholder while the Settings view is still loading", () => {
   loading.promise = new Promise<never>(() => {});
   const html = renderToStaticMarkup(
     createElement(WorkspaceSettingsSurface, {
@@ -144,9 +151,10 @@ it("keeps the dialog title and section visible while the Settings view is still 
       settingsSection: "appearance",
     } as WorkspaceSettingsSurfaceProps),
   );
-  // The Modal (title and close action) is already mounted; the placeholder names the section.
+  // The Modal (title and close action) is already mounted. The placeholder shows only shapes; the
+  // delayed status that names the section is covered by SettingsLoadingSurface.test.ts.
   expect(html).toContain('data-modal="Settings"');
   expect(html).toContain("data-settings-loading");
-  expect(html).toContain("Appearance");
+  expect(html).not.toContain("Appearance");
   expect(view).not.toHaveBeenCalled();
 });

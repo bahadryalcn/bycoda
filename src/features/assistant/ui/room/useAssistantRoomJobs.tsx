@@ -1,5 +1,5 @@
-import { presentRemoteError } from "../../../connections/public/remoteFailure";
-import { Text } from "../../../../shared/ui/Text";
+import { describeRemoteError } from "../../../connections/public/remoteFailure";
+import { Text, textAttributes } from "../../../../shared/ui/Text";
 import type {
   AssistantJob,
   AssistantRequest,
@@ -53,6 +53,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
     jobBatch,
     jobReviewFrozen,
     setJobReviewFrozen,
+    jobReviewWriter,
     jobReviewEnvironment,
     jobIntents,
     defaultProjectId,
@@ -69,7 +70,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
   function control(job: AssistantJob, action: "pause" | "resume" | "stop" | "delete" | "keep") {
     if (!assistantJobVisible(job, canSeeProject)) return;
     if (action === "keep") {
-      run(job.id, t("Keeping job and tasks..."), async () => {
+      run(job.id, t("Keeping job and tasks…"), async () => {
         const result = await assistantRequest({
           op: "jobs.deleteAbort",
           id: job.id,
@@ -85,15 +86,15 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
           JSON.stringify(assistantJobProjectIds(result.job)) !==
             JSON.stringify(assistantJobProjectIds(job))
         )
-          throw new Error("Job status is unknown. Check the Room before retrying.");
+          throw new Error(t("Job status is unknown. Check the Room before retrying."));
       });
       return;
     }
     if (action === "delete") {
-      run(`deleteReview:${job.id}`, t("Loading..."), async () => {
+      run(`deleteReview:${job.id}`, t("Loading…"), async () => {
         const sourcePrivacy = privacy.key;
         let review: ReturnType<typeof verifiedAssistantJobDeleteReview>,
-          reviewError = "";
+          reviewProblem: ReturnType<typeof describeRemoteError> | null = null;
         if (job.kind !== "quick" && job.goalId) {
           try {
             const response = await assistantRequest({
@@ -104,10 +105,12 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
             review = verifiedAssistantJobDeleteReview(job, response.deleteReview, canSeeProject);
             if (!review)
               throw new Error(
-                "The task deletion scope could not be verified. You can still delete only the job.",
+                t(
+                  "The task deletion scope could not be verified. You can still delete only the job.",
+                ),
               );
           } catch (cause) {
-            reviewError = presentRemoteError(cause, { explicit: true });
+            reviewProblem = describeRemoteError(cause);
           }
         }
         if (
@@ -120,7 +123,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
           title: t("Delete job?"),
           message: job.title,
           confirmLabel: (state) =>
-            t(state.acknowledged ? "Delete job and tasks" : "Delete job only"),
+            state.acknowledged ? t("Delete job and tasks") : t("Delete job only"),
           acknowledge: review
             ? {
                 label: t("Also delete the reviewed tasks"),
@@ -135,7 +138,9 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
                   p0: review.tasks.length,
                 })}
               </p>
-              <Text as="ul" tone="inherit" leading="inherit" className={jobStyles.deleteTasks}>
+              <ul
+                {...textAttributes({ tone: "inherit", leading: "inherit" }, jobStyles.deleteTasks)}
+              >
                 {review.tasks.map((task) => (
                   <li key={task.id}>
                     <Text
@@ -150,20 +155,19 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
                     <span>· {projectName(task.projectId)}</span>
                   </li>
                 ))}
-              </Text>
+              </ul>
             </>
-          ) : reviewError ? (
-            <InlineError>{t(reviewError)}</InlineError>
+          ) : reviewProblem ? (
+            <InlineError details={reviewProblem.details}>{reviewProblem.message}</InlineError>
           ) : undefined,
           consequences: (state) => [
-            t(
-              state.acknowledged
-                ? "The job and reviewed task metadata stop first and move to Recently deleted. Sessions, branches, worktrees and working files remain."
-                : job.kind === "quick"
-                  ? "Deleting this job keeps its saved note or automation."
-                  : "The job stops first. Tasks, sessions, worktrees and changes remain.",
-            ),
-            t("You can restore this job from Recently deleted for seven days."),
+            state.acknowledged
+              ? t(
+                  "The job and reviewed task metadata stop first and move to Recently deleted. Sessions, branches, worktrees and working files remain.",
+                )
+              : job.kind === "quick"
+                ? t("Deleting this job keeps its saved note or automation.")
+                : t("The job stops first. Tasks, sessions, worktrees and changes remain."),
             ...(state.acknowledged
               ? [
                   t(
@@ -174,10 +178,12 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
           ],
           onConfirm: async ({ acknowledged }) => {
             if (!assistantJobVisible(job, canSeeProject))
-              throw new Error("The selected project is no longer visible.");
+              throw new Error(t("The selected project is no longer visible."));
             if (acknowledged && !verifiedAssistantJobDeleteReview(job, review, canSeeProject))
               throw new Error(
-                "The task deletion scope could not be verified. You can still delete only the job.",
+                t(
+                  "The task deletion scope could not be verified. You can still delete only the job.",
+                ),
               );
             const input: Extract<AssistantRequest, { op: "jobs.control" }> = {
               op: "jobs.control",
@@ -188,7 +194,9 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
             };
             if (frozenInput && JSON.stringify(input) !== JSON.stringify(frozenInput))
               throw new Error(
-                "The deletion is pending. Keep its original task selection while checking its status.",
+                t(
+                  "The deletion is pending. Keep its original task selection while checking its status.",
+                ),
               );
             frozenInput ??= input;
             try {
@@ -201,7 +209,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
                 JSON.stringify(assistantJobProjectIds(result.job)) !==
                   JSON.stringify(assistantJobProjectIds(job))
               )
-                throw new Error("Job status is unknown. Check the Room before retrying.");
+                throw new Error(t("Job status is unknown. Check the Room before retrying."));
             } catch (cause) {
               await refresh();
               throw cause;
@@ -219,7 +227,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
     } else
       mutate(
         job.id,
-        t(action === "stop" ? "Stopping..." : action === "pause" ? "Pausing..." : "Resuming..."),
+        action === "stop" ? t("Stopping…") : action === "pause" ? t("Pausing…") : t("Resuming…"),
         {
           op: "jobs.control",
           id: job.id,
@@ -229,7 +237,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
       );
   }
   function reviewJobTasks(job: AssistantJob) {
-    run(`tasks:${job.id}`, t("Loading..."), async () => {
+    run(`tasks:${job.id}`, t("Loading…"), async () => {
       if (
         job.kind === "quick" ||
         !job.goalId ||
@@ -237,7 +245,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
         !assistantJobVisible(job, canSeeProject) ||
         !props.onReviewJobTasks
       )
-        throw new Error("The selected project is no longer visible.");
+        throw new Error(t("The selected project is no longer visible."));
       await props.onReviewJobTasks({
         jobId: job.id,
         goalId: job.goalId,
@@ -283,7 +291,8 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
     } catch {
       /* Review the retained source text. */
     }
-    if (conflictingBatch) throw new Error("Job status is unknown. Check the Room before retrying.");
+    if (conflictingBatch)
+      throw new Error(t("Job status is unknown. Check the Room before retrying."));
     return {
       rows: (single ? [source] : source.split(/\r?\n/))
         .filter((request) => request.trim())
@@ -321,7 +330,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
       jobBatch.current = new AssistantJobBatch(async (request) => {
         if (request.op === "jobs.create") {
           if (request.kind !== "quick" && !assistantJobVisible(request, canSeeProject))
-            throw new Error("The selected project is no longer visible.");
+            throw new Error(t("The selected project is no longer visible."));
           if (
             request.kind === "quick" &&
             (request.quickAction.kind === "note"
@@ -337,11 +346,15 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
         }
         if (!sourceEnvironment)
           throw new Error(
-            "The original Host could not be verified. Keep this draft and reconnect its original computer.",
+            t(
+              "The original computer could not be verified. Keep this draft and reconnect that computer.",
+            ),
           );
         return ownerRequest(request, sourceEnvironment);
       });
-    const result = await run("jobs.create", t("Starting jobs..."), async () => {
+    const result = await run("jobs.create", t("Starting jobs…"), async () => {
+      // The frozen record below is the durable intent; a pending unfrozen write must not overwrite it.
+      jobReviewWriter.cancel();
       localStorage.setItem(
         "bycoda.assistant.job-review",
         JSON.stringify({
@@ -353,14 +366,17 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
       );
       if (!sourceEnvironment)
         throw new Error(
-          "The original Host could not be verified. Keep this draft and reconnect its original computer.",
+          t(
+            "The original computer could not be verified. Keep this draft and reconnect that computer.",
+          ),
         );
-      if (!rows.every(visibleDraft)) throw new Error("The selected project is no longer visible.");
+      if (!rows.every(visibleDraft))
+        throw new Error(t("The selected project is no longer visible."));
       await jobBatch.current!.start(rows.map(reviewedDraft));
       await refresh();
     });
     if (result) {
-      localStorage.removeItem("bycoda.assistant.job-review");
+      jobReviewWriter.clear();
       commitJobIntents(jobIntents, (intents) => {
         for (const draft of rows) delete intents[reviewIntent(draft)];
       });
@@ -392,7 +408,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
         confirmLabel: t("Delete"),
         onConfirm: execute,
       });
-    else run("bulk", t("Stopping..."), execute);
+    else run("bulk", t("Stopping…"), execute);
   }
   const openJob = snapshot?.jobs.find((job) => job.id === detail);
   const visibleSelectedCount = snapshot?.jobs.filter((job) => selected.has(job.id)).length ?? 0;
@@ -425,11 +441,6 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
     t("Project unavailable");
   const errorFor = (key: string) =>
     error?.key === key ? <InlineError className={styles.error}>{error.text}</InlineError> : null;
-  const empty = (text: string) => (
-    <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.empty}>
-      {t(text)}
-    </Text>
-  );
   function clearHistory() {
     setConfirm({
       title: t("Clear history?"),
@@ -457,7 +468,6 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
     allJobs,
     projectName,
     errorFor,
-    empty,
     clearHistory,
   };
 }

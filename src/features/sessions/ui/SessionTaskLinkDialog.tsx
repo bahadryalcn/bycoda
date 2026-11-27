@@ -33,7 +33,7 @@ export function SessionTaskLinkDialog({
   const t = useT();
   const [taskId, setTaskId] = useState(linkedTaskId ?? "");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  const [problem, setProblem] = useState<string>();
   const inFlight = useRef(false);
   const mounted = useRef(false);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Synchronizes pending callback ownership with this mounted dialog, so an old completion cannot close a newer draft.
@@ -48,7 +48,7 @@ export function SessionTaskLinkDialog({
     if (inFlight.current || !mounted.current) return;
     inFlight.current = true;
     setBusy(true);
-    setError(undefined);
+    setProblem(undefined);
     let request: Promise<void>;
     try {
       request = Promise.resolve(work());
@@ -61,7 +61,7 @@ export function SessionTaskLinkDialog({
       })
       .catch((cause: unknown) => {
         if (mounted.current)
-          setError(
+          setProblem(
             cause instanceof Error
               ? presentRemoteError(cause, { explicit: true })
               : t("Could not update the task link."),
@@ -98,6 +98,7 @@ export function SessionTaskLinkDialog({
               variant="primary"
               loading={busy}
               disabled={!taskId}
+              disabledReason={t("Choose a task")}
               onClick={() => void run(() => onLink(taskId))}
             >
               {t("Link")}
@@ -123,7 +124,7 @@ export function SessionTaskLinkDialog({
             emptyLabel={t("No tasks")}
           />
         )}
-        {error && <Alert tone="danger">{error}</Alert>}
+        {problem && <Alert tone="danger">{problem}</Alert>}
       </div>
     </Modal>
   );

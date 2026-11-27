@@ -5,7 +5,7 @@ import { expect, it, vi } from "vitest";
 import { ADD_TO_CHAT_EVENT } from "../../sessions/model/quoteDraft";
 import { PreviewSelection } from "./PreviewSelection";
 
-it("offers Markdown selection near the text, adds its path to chat and dismisses on scroll", async () => {
+it("offers Markdown selection near the text, adds its path to chat and follows the text on scroll", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);
@@ -48,8 +48,9 @@ it("offers Markdown selection near the text, adds its path to chat and dismisses
       mode: "quote",
     });
     await select();
+    // Page scroll moves the menu with the still-selected text; only losing the text dismisses it.
     await act(async () => window.dispatchEvent(new Event("scroll")));
-    expect(document.querySelector('[role="toolbar"]')).toBeNull();
+    expect(document.querySelector('[role="toolbar"]')).not.toBeNull();
   } finally {
     await act(async () => root.unmount());
     window.removeEventListener(ADD_TO_CHAT_EVENT, onAdd);

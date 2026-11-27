@@ -5,7 +5,7 @@ import {
 } from "../../../shared/model/host-contracts/delegation";
 import { sessionIssue } from "./sessionIssue";
 import { delegationParentOf, isDelegatedChildOf } from "./delegatedAgents";
-import { sessionWait, type SessionWait } from "./sessionWait";
+import { sessionWait, waitStillWorking, type SessionWait } from "./sessionWait";
 import { executionUserIndex } from "./executionTurn";
 import { composeToolTitle } from "../../../integrations/harness/core/preview";
 import { displayPath } from "../../../shared/lib/paths";
@@ -21,6 +21,8 @@ import {
 export type LiveAgent = {
   /** Set only for a summary owned by another app window. */
   ownerWindowLabel?: string;
+  /** The row uses the Host session id and its remote project as the open target. */
+  listedRemote?: true;
   id: string;
   cwd: string;
   title: string;
@@ -33,7 +35,10 @@ export type LiveAgent = {
   inputKind?: "approval" | "question";
   done: boolean;
   issue?: "retrying" | "failed";
-  /** The agent yielded but work it started still runs; not counted as working. */
+  /**
+   * The turn ended and only delegated children or wake sources hold it; not counted as
+   * working. The turn's own subagents and commands count as working.
+   */
   waiting?: SessionWait;
 };
 
@@ -82,11 +87,6 @@ export function liveAgentsFromSessions(
     )
     .map(({ session, wait }) => toLiveAgent(session, unseenFinishedIds.has(session.id), wait))
     .sort(compareLiveAgents);
-}
-
-/** Keep the rail card up while a working or unseen-finished chat is not the open session. */
-export function shouldShowLiveAgents(agents: LiveAgent[], activeSessionId?: string): boolean {
-  return agents.some((agent) => agent.id !== activeSessionId);
 }
 
 /** Project activity includes host-owned turns, but excludes finished or waiting chats. */
@@ -140,7 +140,10 @@ function toLiveAgent(
         ? "approval"
         : undefined,
     done,
-    waiting: wait && !done && !issue && !pending && !pendingQuestion ? wait : undefined,
+    waiting:
+      wait && !waitStillWorking(wait) && !done && !issue && !pending && !pendingQuestion
+        ? wait
+        : undefined,
   };
 }
 

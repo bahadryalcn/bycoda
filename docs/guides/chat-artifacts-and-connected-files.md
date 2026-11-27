@@ -1,10 +1,39 @@
 # Inspect chat output and connected-machine files
 
+The session composer and its docked question form let the chat background show through their theme
+fill. Reduced transparency and forced colors use a solid fill.
+
+Markdown formatting appears in the chat composer as you type, including drafts with inline
+attachments and links. Move the caret onto a Markdown marker to see and edit it. **Clear text**
+empties the text field and keeps attached files and quotes. Use the editor's Undo shortcut to
+restore the text. Long drafts grow
+up to 224 px before scrolling inside the writing area. Sent messages
+display Markdown. Click a long message to read it in the chat, or use **Expand** to open it in a
+dialog with the same formatting. **Copy message** and **Save as note** use the original Markdown.
+
+In a live reply, text inside a code fence is immediately available to select and copy.
+Syntax colors appear as the fence closes or the reply finishes.
+
+When Codex generates an inline image, a placeholder reserves its space in the conversation.
+The finished image opens in the same frame. Select it for a full-screen preview, or use Save
+beside the image details. A failed or stopped generation shows its status in place.
+
+Drafts with a very long unbroken line use the native text field so the caret stays visible
+while typing. The draft keeps its text and attachment references.
+**Copy message** includes file and image attachments, including those loaded from a connected machine or reopened from a saved conversation.
+If an attachment cannot be read, copying fails with its file name in **Details** and keeps the previous clipboard contents.
+If copying fails, press **Copy message** again to retry or open **Details** for the reason.
+Pasting into a Bycoda draft restores the text, files and inline attachment references in place, including in Quick Composer and the queue editor.
+Each draft holds up to 20 attachments. When a selection exceeds the remaining space, the composer attaches the files that fit and reports the limit.
+Copied folders appear as paths at their original inline position or after the message if they had no inline reference.
+You can also copy or cut a selection containing attachment references in the chat composer.
+Undoing a cut restores the text and its attachments. Other apps can paste the plain message text.
+
 Markdown replies and document previews up to 131,072 characters parse without a background worker. Longer content, including 1 MiB documents, parses in a background worker. Documents with many blocks fill in progressively while the rendering indicator remains visible; completed blocks stay selectable. If parsing fails, the complete source text remains visible with a warning. Closing the failed preview allows a fresh worker attempt when another preview opens.
 
 When Host delegation is unavailable for a turn, the conversation notice uses your app language. Automatic without an effort ceiling permits built-in subagents; otherwise subagents remain limited to your selected models and effort ceiling. Model-facing fallback guidance stays in English.
 
-Tool rows keep the conversation compact. Use **Changes** beside an edit or the output chevron beside a command to inspect its saved code, patch, or result. Expanded text can be selected and copied. A failed call shows its error before any earlier output.
+Tool rows keep the conversation compact. Long command lines end in an ellipsis. Select the command row or its output chevron to inspect the saved command and result. Use **Changes** beside an edit to inspect its saved code or patch. Expanded text can be selected and copied. A failed command opens its output by itself; close it to hide it again. Edit rows show the number of added and removed lines. In the command inspector, an edit's diff switches between **Unified** and **Split**; Split needs a wide enough inspector and diffs of up to 1,200 lines. A failed call shows its error before any earlier output. The summary skips terminal control codes so startup sequences do not hide the error text.
 
 Command details and Copy preserve retained output indentation, blank output and final line breaks. A log containing the failure message remains available alongside the error. If loading full output from a connected machine fails, its summary stays visible and **Retry** requests the same revision again.
 
@@ -12,22 +41,45 @@ Repeated Stop clicks share one pending request per target. After its unconfirmed
 
 Subagent rows show the latest status, elapsed time and step counts beside the name, before the disclosure arrow. Previous status labels and counter values are replaced immediately. Completed runs use the success color, failed runs use the danger color, interrupted or stopped runs use the warning color, and running agents use the accent color. Failed-step counts appear in red; a failed step does not mean the entire run failed.
 
-Operator is hidden from the composer mode menu and command suggestions, including
-Quick Composer. Typing `/operator` still works, and existing Operator-enabled
-conversations keep their access.
+Two or three subagents show as cards in a row. Select a card's title to open that run's work below the cards. A failed card shows its reason and opens itself. One subagent keeps its own row, and more than three show as aligned rows under a counter of how many are done.
 
-In narrow chat panes, the access selector shows its mode icon instead of its label.
-The same access menu and keyboard controls remain available.
+In local chats, choose Operator from the Mode menu or type `/operator`.
+
+In wide chat panes, use the composer toolbar to change Access or Mode. In narrow panes,
+both controls move to the bottom of the model panel's **Settings** tab so the toolbar stays
+on one row. Click the active mode icon in the composer to turn that mode off.
+
+In narrow chat panes, Queue and Steer take priority while you have a draft. Use your Stop
+shortcut to interrupt the turn while keeping the draft. Stop is visible again when the draft is empty.
+
+When this computer's Host is running the conversation, Stop stays pending until
+the Host reports that the targeted turn ended or the confirmation wait expires.
+If the outcome is still uncertain, a notification lets you know you can try again.
+After you press Stop on a running turn, the conversation shows **You stopped this turn** with **Continue** when the session can resume.
+
+## Composer mentions
+
+Type `@` for connected trackers, crews, notes, members, folders and files.
+Choose Jira or GitHub to search that tracker. Type `@notes:` to search and
+reference a note, or `@crews:` to find a crew or member. Sending a crew or
+member mention delegates work through the existing project permissions.
+Complete references are highlighted in the draft and sent message. You can
+still edit or copy the reference text.
+Backspace after a reference or Delete before it removes the whole reference.
+
+## Pasted text
+
+When you paste 8,000 or more characters into a desktop chat that supports attachments, Bycoda prepares a UTF-8 file and shows a **Pasted text** card in the draft. Open the card to read the text, remove it from the draft, or use **Download** on the sent card to save a copy. A save failure shows an error and leaves the draft as it was before pasting.
 
 ## Image attachments
 
 Recognized skills, attached images and files, quotes, file references and MCP
 references show compact inline tokens with leading type icons while composing.
-Quick Composer uses the same skill, attachment and link treatment. Tracker
-references retain their Jira, GitHub, GitLab or other provider mark; web links
-show a link icon or a recognized provider mark. These decorations preserve the
-original draft text, selection and copied references. Sent skills retain their
-skill icon alongside attachment and tracker identities.
+Tracker references retain their Jira, GitHub, GitLab or other provider mark.
+Web links are compact in the inline chat editor. Quick Composer and other native
+text fields highlight the full URL so following text stays aligned with the caret.
+These decorations preserve the original draft text, selection and copied references.
+Sent skills retain their skill icon alongside attachment and tracker identities.
 
 Draft attachment tokens show a type icon and ordinal, with the original `[imageN]`
 or `[fileN]` text preserved for copying and sending.
@@ -45,9 +97,9 @@ If the full-screen image fails, **Retry** reloads it from its owning Host or sav
 file instead of reusing an expired temporary preview URL.
 
 Pasted images are saved before they are accepted as attachments, so their file
-reference survives closing and reopening the app. If an older message saved only
-image metadata without a file reference, attach the original image again; its
-name and size cannot restore the missing picture.
+reference survives closing and reopening the app. Synced conversation history
+can reopen an image by its attachment ID when the Host still has the file. If
+the file is gone, attach the original image again.
 
 ## Visual explanations
 
@@ -59,13 +111,14 @@ The side panel can be resized while you continue using the conversation. Close
 it or press Escape to return to the inline view. Switching to source and back
 keeps the current preview running; reloading starts the example again.
 
-Visuals are saved with the conversation. They cannot access your files, the
+Visuals reopen with the conversation on desktop, including conversations on a
+connected Host that supports visual reads. They cannot access your files, the
 network or application actions. A visual is an explanation or prototype, not an
 implemented change to your project. Unsupported clients retain the source result.
 
 ## Quote and translate selected text
 
-Select text in a message to open actions beside the selection. **Copy** copies the excerpt. **Reprompt** is available only for your own messages; translation remains available on replies too.
+Select text in a message to open actions beside the selection. The menu uses frosted glass when blur is available. **Copy** copies the excerpt. **Reprompt** is available only for your own messages; translation remains available on replies too.
 
 Selection actions stay on one row. In a narrow window, scroll the action row horizontally or use its arrow keys to reach the remaining actions.
 
@@ -73,19 +126,27 @@ Use **Add citation** to attach the excerpt to your next message, with an optiona
 
 Hover or focus a reference to briefly highlight its exact source without scrolling. Click it to return to the source in the current conversation. If the source has changed or is unavailable, the saved quote remains readable; an equal phrase in another message is never substituted. The information control on a sent reference shows its full excerpt and comment.
 
-Translation previews keep model selection, cancellation and retry. After applying a translation, the compact **Original text / Translation** control switches the displayed version. **Copy** copies that version. **Close translation** dismisses the control without deleting the translation or changing saved message text.
+Translation previews keep model selection, cancellation and retry. After applying a translation, the **Translation view** control switches between **Original text** and **Translation**. With the transcript focused, press **↑** for the original or **↓** for the translation. **Copy** copies the displayed version. **Close translation** dismisses the control and keeps the applied translation and saved message text.
 
 These details describe the tool call at that point in the conversation. They do not reread the current file and present it as historical output. New code details are bounded to keep long conversations responsive; subagent history has a shared retention budget. When only an older shortened preview remains, the viewer says so.
+
+Completed turns list their recorded file edits below the reply. Repeated edits to the same file appear on one row with combined line counts when available. Select a file to open its diff or file view. The list stays with the conversation after reload.
 
 ## Working and follow-up messages
 
 While a turn is open, **Queue message** or **Shift+Tab** saves your message for
 after that turn finishes, including while the AI waits for background commands.
+When there is nothing to queue, Shift+Tab moves focus back out of the composer.
 **Steer** sends a follow-up to the current turn instead. If a server or watcher
 keeps the turn open, queued messages keep waiting; use the queued row's **Steer**
-action to send one immediately. Each queued row shows its saved model, account and
+action to send one immediately. After the turn, while subagents it delegated still
+run, **Queue message** and **Shift+Tab** stay available: queued messages show
+"Sends when the subagents finish" and go out once the last one ends, while plain
+Send still starts a new turn at once. Each queued row shows its saved model, account and
 reasoning effort beside the provider icon. The drag handle stays visible for a
 single message, but reordering is disabled until another message is queued.
+Long queues reveal more rows as you scroll. Use **Show more** to reach the next
+group from the keyboard.
 Remove takes a message out immediately. A small **Message removed · Undo** notice
 below the queue restores its text, attachments, saved target and original position.
 The notice closes after five seconds; keyboard focus or a pending/failed restore
@@ -94,7 +155,25 @@ keeps the recovery action available. Removing several messages gives each its ow
 If the provider refuses a queued follow-up before accepting it, the message returns
 to the queue without a turn-specific delegation notice in the conversation.
 
-When the AI asks a question with a free-text answer, use **Attach files**, paste copied files or images, or drop files onto the question card. Attached items appear below the answer; remove an item before sending if needed. You can send files without adding text. Unfinished attachments stay with that question when you leave and return, and failed delivery keeps them for retry.
+Claude can accept a follow-up in the same Host turn once its running CLI reports
+command lifecycle events. While the CLI is getting ready, the composer keeps the
+message queued. Explicitly choosing **Queue message** always waits for dispatch.
+
+For shared queues, the project's Host can send the next message when a desktop
+window stops making progress and the Host verifies the conversation is ready.
+If the window is catching up on Host history, the Host can take over once it
+verifies it already has the window's saved history. Conflicting histories and
+unconfirmed deliveries wait for your review. On a held queue row, **Send again**
+replaces **Steer**. Check the conversation before retrying. Use the row's trash
+button to remove the saved copy, or leave it queued. Retry stays disabled while
+the provider can still answer.
+
+When the previous run is still closing, the queue shows that wait beside the
+message and retries an active queue when it can. If the Host needs you to check
+the conversation before it can resume safely, the queue keeps the message and
+shows that next step beside **Resume**.
+
+When the AI asks a question with a free-text answer, use **Attach files** below the answer, paste copied files or images, or drop files onto the question card. Attached items appear beside the file action, separate from the delivery status and navigation; remove an item before sending if needed. You can send files without adding text. Unfinished attachments stay with that question when you leave and return, and failed delivery keeps them for retry.
 
 Question attachments are saved as files on the computer running the conversation. The AI receives file references and reads them with its tools. Structured forms that require exact typed values do not accept attachments in those fields.
 
@@ -142,6 +221,11 @@ the composer or paused queue. Retry is hidden for that admission error so it
 cannot resend an earlier conversation message. Recover the retained input after
 the Host connection and ownership transfer are confirmed.
 
+The composer shows the short model name beside the provider icon. If there are
+multiple accounts, the account number appears on the icon and the account name
+appears in the tooltip. In a narrow chat pane, the model, access, mode and Add
+controls sit close together beside the send controls when there is room.
+
 When a usage limit stops a conversation, use **Switch account**, **Switch model**
 or the reset controls in its usage-limit notice. The generic failed-turn Retry
 stays hidden while this notice is active. Repeated reports of the same Claude
@@ -150,8 +234,10 @@ own errors in the conversation history.
 
 HTTP failures and structured provider responses show a short message in the
 conversation. Open **Technical details** to read or copy the complete original
-response, including its status, request identity and diagnostics. Plain errors
-keep their original explanation.
+response, including its status, request identity and diagnostics. Queue notices
+with diagnostics use **Details**. The copy button at the top of either panel
+copies the full text, including any lines you need to scroll to read. Plain
+errors keep their original explanation.
 
 ## Documents, tables, and media
 
@@ -165,33 +251,62 @@ behavior. In the composer and queue editor, caret movement and selections treat 
 resolved reference as a whole. A missing or unavailable preview never removes the
 attachment.
 
-Web links you type or paste in the composer are boxed in their own color without the
-`https://` prefix, with an open icon at the end that opens the link in your browser.
-Move the caret into a link to see and edit it in full; the message keeps the full link.
+Click a draft link to open it in your browser. Tab moves from the desktop message
+field to its reference actions. Enter opens the focused reference. With a link
+focused, F2 shows its full address for editing.
 
-Click a chat attachment or a generated file link to open it. PDF, Word, Excel, CSV, and TSV use document/table viewers. Video and audio use native playback controls. Codec support depends on the operating system; the default-app action is available when a file path can be opened on this computer.
+In the desktop composer, attachment references and file cards show the complete
+filename. Attachment cards appear above the draft, and inline references stay
+where they were inserted. Image cards show the file size below the thumbnail.
+Click a card or an inline reference to open the preview. Right-click the card or
+the open preview for copy and save actions. Hover over or focus a card to show
+its Remove button. You can also remove the attachment from the card's menu or
+focus its inline reference and press Delete.
+A long filename wraps when the composer is narrow. Click a skill
+for its description, or a skill group to see its members. Skill icons replace the
+invocation prefix in the display. The draft keeps the original invocation.
+
+Click a chat attachment or a generated file link to open it. PDF, Word, Excel, CSV, and TSV use document/table viewers. Video and audio open with their own playback controls. Codec support depends on the operating system; the default-app action is available when a file path can be opened on this computer.
+
+Video and audio files on this computer play inline in the conversation: an assistant reply that links, embeds or names one as a code path shows a player above it, and a video or audio file you attach shows a player above its card in your sent message. Attachments read from a connected machine keep their card and open in the media dialog.
+
+An inline audio file shows a compact card with play/pause, a waveform, the time, **Open** and **Download**. Click the waveform to seek, or focus it and use the arrow keys to move 5 seconds, Page Up and Page Down to move 50 seconds, and Home and End to jump to the start or end. An inline video has quiet controls of its own: play/pause, a seek bar, the time, mute and volume, and fullscreen. Only one player plays at a time; starting one pauses the other.
+
+A complete JSON code block in a reply opens as a tree with a **Tree** and **Raw** switch. JSON that is invalid, still arriving or very large stays raw. A Mermaid block has a **Diagram** and **Source** switch and draws the diagram once the block is complete.
+
+On desktop, use **Download** on a file attachment card to choose where to save a copy. The action also works with formats such as ZIP that the conversation does not preview. Attachment copies are limited to 20 MiB.
 
 CSV and TSV file tabs offer **Preview** and **Source**. Switching views retains source edits. The preview displays the saved file; unsaved changes remain in Source. Delimited values are displayed as text, without evaluating formulas.
 
-Document previews are limited to 25 MiB. Connected project files are checked before downloading. Large media uses a local authorized file or an on-demand disk copy instead of keeping the whole video in JavaScript memory. Session attachment previews use the session's authorized reader and have a 25 MiB limit.
+Document previews are limited to 25 MiB. Connected project files are checked before downloading. Large media uses a local authorized file or an on-demand disk copy instead of keeping the whole video in JavaScript memory. The owning Host serves session attachment previews up to 20 MiB through the session's authorized reader.
 
 ## Files on another computer
 
 Every connected path retains its owning machine. Windows drive paths, macOS/Linux paths, and network paths are never interpreted as a local path merely because they have the same spelling.
 
-- **Open local copy** downloads a snapshot and opens it on this computer. Changes to that copy do not sync to the connected machine.
+- **Open local copy** downloads a snapshot and opens it on this computer. Changes to that copy do not sync to the connected machine. Copies are cached for reuse; when the cache is full the least recently used ones are removed automatically, and copies unused for 30 days are removed at startup. A copy you edited, or one opened within the last hour, is kept.
 - Existing shared or mounted folders can be configured under **Shared folder settings**. The mapping is local to the viewing computer and applies to subfolders. Opening a mapped file accesses that shared original.
 - **Open live folder (read-only)** uses the saved bycoda connection to expose a temporary folder to this computer's file manager. It supports browsing and opening; writes are rejected. The OS must provide its WebDAV client. An unavailable OS client produces an actionable error and leaves the shared-folder and copy alternatives available.
 
 Only folders and files inside projects/worktrees already authorized on the owning host can be read through bycoda. Browsing metadata outside those roots does not grant file access. Temporary native-folder access is private to loopback, expires, and does not publish a share or change OS services.
 
+If another Git client moves a linked worktree or replaces it with a separate repository, the Host checks its current Git registration before opening or saving files at the old path.
+
 Local downloads are limited to 1 GiB per file and four simultaneous transfers. The cache is bounded to 4 GiB. Unchanged cached snapshots can be reused; edited copies are preserved. A file changing during transfer causes a retryable failure rather than opening inconsistent bytes.
 
 ## Open a remote development website
 
-Use **Open in this computer's browser** in Development servers, or click a matching development URL in the remote conversation. bycoda resolves the conversation's machine and project, finds the registered running server, and verifies its process identity before creating a private local browser address. Refresh Development servers when a process restarts.
+Desktop chat labels private development links with the computer's saved name, for example **Office PC · localhost:3000/patients**.
+
+On desktop, use **Open in this computer's browser** in Development servers, or click a matching development URL in a user or assistant message in the remote conversation. bycoda resolves the conversation's machine and project, finds the registered running server, and verifies its process identity before creating a private local browser address. Refresh Development servers when a process restarts.
 
 HTTP requests and WebSocket connections use the paired host connection. No public tunnel is created. Remote HTTPS sites open in the owning host's browser preview. Ordinary public URLs continue to open normally.
+
+On mobile, tap a `localhost` link in the original conversation or its composer. When the computer supports phone tunnels and the phone does (iOS 17 or later, or an Android WebView with proxy support), the page opens on the phone itself. It runs in a private in-app browser, and only its bytes travel to the computer's development server over the paired connection. The address bar still shows `localhost`. The server must be an HTTP development server that this project started. The toolbar offers **Open in Host Browser** for anything else.
+
+Otherwise, the conversation's Browser opens with that address. Use the browser's existing control action and **Go** to load the page on the owning computer. The phone then displays that browser's view through the paired connection.
+
+**Data saver** (Settings, default **Auto**: on over mobile data) loads chat images only on tap. It streams the Host Browser at lower quality and blocks images and media in the phone browser.
 
 The HTTP bridge accepts fixed-length request bodies; streaming/chunked request bodies are rejected. Custom private DNS names are not automatically classified from arbitrary chat links; choose the registered endpoint in Development servers. Opening a file or server never silently falls back to a different machine.
 

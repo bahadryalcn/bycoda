@@ -9,6 +9,7 @@ import {
 import { InboxNotificationMenu } from "../../../app/shell/sidebarSurfaces";
 import { ProjectRail } from "../../../app/shell/ProjectRail";
 import { invoke } from "@tauri-apps/api/core";
+import { formatDate } from "../../../shared/i18n";
 import { rememberNotificationProjects } from "../../notifications/model/notificationProjects";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -157,7 +158,8 @@ it("shows persisted mute status on the project and in its reopened menu", async 
     ),
   );
   const resume = button("Resume notifications");
-  expect(resume.textContent).toContain("Muted until resumed");
+  // The action is named by its own label; the status is not repeated inside it.
+  expect(resume.textContent).not.toContain("Muted until resumed");
   const menu = resume.closest('[role="menu"]')!;
   expect(menu.firstElementChild).toBe(resume);
   expect(resume.nextElementSibling?.getAttribute("role")).toBe("separator");
@@ -181,7 +183,7 @@ it("shows persisted mute status on the project and in its reopened menu", async 
   );
   const timedIndicator = container.querySelector('[role="img"][aria-label^="Muted until "]');
   expect(timedIndicator?.getAttribute("aria-label")).toBe(
-    `Muted until ${new Date(2030, 0, 15, 16, 30).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`,
+    `Muted until ${formatDate(until, { dateStyle: "medium", timeStyle: "short" })}`,
   );
   await act(async () =>
     project.dispatchEvent(
@@ -191,9 +193,9 @@ it("shows persisted mute status on the project and in its reopened menu", async 
       }),
     ),
   );
-  expect(button("Resume notifications").textContent).toContain(
-    timedIndicator!.getAttribute("aria-label"),
-  );
+  // The status is on the row and its indicator; the action itself is not repeated with it.
+  expect(button("Resume notifications").textContent).not.toContain("Muted until");
+  expect(button("Resume notifications")).toBeDefined();
   await act(async () => vi.advanceTimersByTimeAsync(1000));
   expect(container.querySelector('[role="img"][aria-label^="Muted until "]')).toBeNull();
   expect(button("Mute notifications").textContent).not.toContain("Muted until");

@@ -12,11 +12,29 @@ import { validateConversationTool } from "../conversation/conversation-tools";
 import { registerRoomManagement } from "./assistant-room-management";
 import { createRoomObservationRuntime } from "./assistant-room-observation";
 import type { ServerBindings } from "./bindings";
+
+/**
+ * One capture per Room and project. A snapshot's action history repeats the same pair for
+ * every row, and each capture is a sequential desktop round trip (12 rows took 15–22 s).
+ */
+export function roomDisclosureTargets(scopes: { threadId: string; projects: string[] }[]) {
+  const seen = new Set<string>();
+  const targets: { threadId: string; projectId: string }[] = [];
+  for (const { threadId, projects } of scopes)
+    for (const projectId of projects) {
+      const key = JSON.stringify([threadId, projectId]);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      targets.push({ threadId, projectId });
+    }
+  return targets;
+}
 export function createAssistantRoomRuntime(
   dependencies: Pick<
     ServerBindings,
     | "engine"
     | "conversationDesktop"
+    | "liveStream"
     | "conversationDesktopControl"
     | "roomResourceReceipts"
     | "social"
@@ -204,17 +222,24 @@ export function createAssistantRoomRuntime(
       throw new Error("Room response source scope is too large.");
     const authorized = async () => {
       if (admission.signal?.aborted || !(await admission.authorized())) return false;
-      for (const scope of scopes) {
-        const thread = await dependencies.assistant.threadBinding(scope.threadId);
-        if (
-          !thread ||
-          thread.id !== scope.threadId ||
-          (thread.projectId && scope.projects.some((id) => id !== thread.projectId)) ||
-          (thread.projectId && scope.accounts.length)
-        )
-          return false;
-      }
-      return true;
+      return dependencies.engine.store.db.readScope(async () => {
+        const threads = new Map<string, { id: string; projectId?: string }>();
+        for (const scope of scopes) {
+          let thread = threads.get(scope.threadId);
+          if (!thread) {
+            const binding = await dependencies.assistant.threadBinding(scope.threadId);
+            if (!binding || binding.id !== scope.threadId) return false;
+            thread = binding;
+            threads.set(scope.threadId, binding);
+          }
+          if (
+            thread.projectId &&
+            (scope.projects.some((id) => id !== thread.projectId) || scope.accounts.length)
+          )
+            return false;
+        }
+        return true;
+      });
     };
     if (!(await authorized())) throw new Error("Room response authority is unavailable.");
     const nativeProofs = mergeNativeLibraryProofs(
@@ -239,66 +264,56 @@ export function createAssistantRoomRuntime(
         ]),
       )
       .digest("hex");
-    const captures: Array<{
-      envelope: unknown;
-      expected: import("../assistant/native/assistant-visibility-admission").ExpectedVisibilityCapture;
-    }> = [];
-    const nativeCaptures: Array<{
-      envelope: unknown;
-      expected: {
-        environmentId: string;
-        threadId: string;
-        relayId: string;
-        requestId: string;
-        operationHash: string;
-      };
-    }> = [];
+    const captures: import("../assistant/native/assistant-visibility-admission").ExpectedVisibilityCapture[] =
+      [];
+    // Each proof is verified as it arrives: a capture is one desktop round trip, and a long run of
+    // them must not age the first proof out before the Host looks at it.
+    const collected = dependencies.visibilityAdmission.collect(authorized);
+    let nativeCaptures = 0;
     for (const proof of nativeProofs) {
       const captured = (await dependencies.conversationDesktop.callAssistantThread(
         "privacy.account.capture",
         { requestId, operationHash },
         { threadId: proof.threadId, environmentId: dependencies.engine.store.environmentId },
         authorized,
+        { signal: admission.signal },
       )) as { relayId: string; envelope: unknown };
-      nativeCaptures.push({
-        envelope: captured.envelope,
-        expected: {
-          environmentId: dependencies.engine.store.environmentId,
-          threadId: proof.threadId,
-          requestId,
-          operationHash,
-          relayId: captured.relayId,
-        },
+      await collected.account(captured.envelope, {
+        environmentId: dependencies.engine.store.environmentId,
+        threadId: proof.threadId,
+        requestId,
+        operationHash,
+        relayId: captured.relayId,
       });
+      nativeCaptures += 1;
     }
-    for (const scope of scopes)
-      for (const projectId of scope.projects) {
-        const project = await dependencies.engine.store.project(projectId);
-        const captured = (await dependencies.conversationDesktop.callAssistantThread(
-          "privacy.scope.capture",
-          { action: "room.disclosure", requestId, operationHash },
-          {
-            threadId: scope.threadId,
-            environmentId: dependencies.engine.store.environmentId,
-            projectId,
-            targetProjectCwd: project.cwd,
-          },
-          authorized,
-        )) as { relayId: string; envelope: unknown };
-        captures.push({
-          envelope: captured.envelope,
-          expected: {
-            environmentId: dependencies.engine.store.environmentId,
-            threadId: scope.threadId,
-            projectId,
-            targetCwd: project.cwd,
-            action: "room.disclosure",
-            requestId,
-            operationHash,
-            relayId: captured.relayId,
-          },
-        });
-      }
+    for (const { threadId, projectId } of roomDisclosureTargets(scopes)) {
+      const project = await dependencies.engine.store.project(projectId);
+      const captured = (await dependencies.conversationDesktop.callAssistantThread(
+        "privacy.scope.capture",
+        { action: "room.disclosure", requestId, operationHash },
+        {
+          threadId,
+          environmentId: dependencies.engine.store.environmentId,
+          projectId,
+          targetProjectCwd: project.cwd,
+        },
+        authorized,
+        { signal: admission.signal },
+      )) as { relayId: string; envelope: unknown };
+      const expected = {
+        environmentId: dependencies.engine.store.environmentId,
+        threadId,
+        projectId,
+        targetCwd: project.cwd,
+        action: "room.disclosure",
+        requestId,
+        operationHash,
+        relayId: captured.relayId,
+      };
+      await collected.project(captured.envelope, expected);
+      captures.push(expected);
+    }
     const accountScopes = scopes.filter((scope) => scope.accounts.length);
     const holdAccounts = (index: number, valid: () => boolean): ReturnType<typeof effect> => {
       if (!valid()) throw new Error("Room response scope changed.");
@@ -311,41 +326,35 @@ export function createAssistantRoomRuntime(
         (accountValid) => holdAccounts(index + 1, () => valid() && accountValid()),
       );
     };
-    if (!captures.length && !nativeCaptures.length) return holdAccounts(0, () => true);
+    if (!captures.length && !nativeCaptures) return holdAccounts(0, () => true);
     const proofs = scopes.flatMap((scope) => {
       const expected = [...(scope.projectProofs ?? [])];
       if (expected.some((proof) => !scope.projects.includes(proof.projectId)))
         throw new Error("Room response contains an unqualified project source.");
-      for (const item of captures.filter((item) => item.expected.threadId === scope.threadId)) {
-        const found = expected.filter((proof) => proof.projectId === item.expected.projectId);
-        if (found.some((proof) => proof.cwd !== item.expected.targetCwd))
+      for (const item of captures.filter((item) => item.threadId === scope.threadId)) {
+        const found = expected.filter((proof) => proof.projectId === item.projectId);
+        if (found.some((proof) => proof.cwd !== item.targetCwd))
           throw new Error("Room project identity changed before response disclosure.");
-        if (!found.length)
-          expected.push({ projectId: item.expected.projectId, cwd: item.expected.targetCwd });
+        if (!found.length) expected.push({ projectId: item.projectId, cwd: item.targetCwd });
       }
       return expected;
     });
-    return dependencies.visibilityAdmission.withCaptures(
-      captures,
-      authorized,
-      (valid, identity) => {
-        if (
-          nativeProofs.some(
-            (proof) =>
-              proof.installationId !== identity.installationId ||
-              proof.issuer !== identity.issuer ||
-              proof.registryRevision !== identity.registryRevision ||
-              proof.visibilityEpoch !== identity.visibilityEpoch ||
-              proof.policyGeneration !== identity.policyGeneration,
-          )
+    return collected.run((valid, identity) => {
+      if (
+        nativeProofs.some(
+          (proof) =>
+            proof.installationId !== identity.installationId ||
+            proof.issuer !== identity.issuer ||
+            proof.registryRevision !== identity.registryRevision ||
+            proof.visibilityEpoch !== identity.visibilityEpoch ||
+            proof.policyGeneration !== identity.policyGeneration,
         )
-          throw new Error("Native library response privacy changed.");
-        return dependencies.engine.store.withProjectIdentityRead(proofs, (identityValid) =>
-          holdAccounts(0, () => valid() && identityValid()),
-        );
-      },
-      nativeCaptures,
-    );
+      )
+        throw new Error("Native library response privacy changed.");
+      return dependencies.engine.store.withProjectIdentityRead(proofs, (identityValid) =>
+        holdAccounts(0, () => valid() && identityValid()),
+      );
+    });
   };
   dependencies.assistantPorts.roomNativeProofsValid = async (proofs, admission) => {
     try {
@@ -479,5 +488,11 @@ export function createAssistantRoomRuntime(
     executeRoomObservation,
     roomInbox,
   });
-  return { roomRemote, roomInbox, roomSocialSend, executeRoomSocialSend, executeRoomObservation };
+  return {
+    roomRemote,
+    roomInbox,
+    roomSocialSend,
+    executeRoomSocialSend,
+    executeRoomObservation,
+  };
 }

@@ -5,7 +5,9 @@
   .surface {
     display: grid;
     place-items: safe center;
-    flex: 1;
+    place-self: stretch;
+    flex: 1 1 auto;
+    align-self: stretch;
     min-inline-size: 0;
     min-block-size: 0;
     overflow: auto;
@@ -15,13 +17,23 @@
     block-size: 100dvh;
   }
   .content {
-    display: grid;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     gap: var(--space-5);
-    inline-size: min(100%, 32rem);
+    inline-size: min(100%, 28rem);
     min-inline-size: 0;
+    text-align: center;
   }
   .message {
     display: grid;
+    gap: var(--space-2);
+    min-inline-size: 0;
+  }
+  .heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
     gap: var(--space-2);
     min-inline-size: 0;
   }
@@ -29,12 +41,23 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
+    justify-content: center;
     gap: var(--space-2);
   }
   .details {
     display: grid;
-    gap: var(--space-2);
+    inline-size: 100%;
     min-inline-size: 0;
+    overflow: hidden;
+    text-align: start;
+  }
+  .detailsHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    min-inline-size: 0;
+    padding: var(--space-2) var(--space-3) var(--space-2) var(--space-5);
   }
 }
 
@@ -62,7 +85,17 @@
 }
 
 .details {
+  border: 1px solid var(--color-stroke);
+  border-radius: var(--radius-control);
+  background: var(--ui-surface-muted);
   font-size: var(--ui-font-caption);
+}
+
+.detailsLabel {
+  min-inline-size: 0;
+  color: var(--ui-text-secondary);
+  font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
 .details pre {
@@ -72,9 +105,7 @@
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  border: 1px solid var(--color-stroke);
-  border-radius: var(--radius-control);
-  background: var(--ui-surface-muted);
+  border-block-start: 1px solid var(--color-stroke);
   font-family: var(--font-mono);
   font-size: inherit;
   user-select: text;
@@ -83,6 +114,7 @@
 /* The preview note states plainly that the text above is partial. */
 .meta {
   margin: 0;
+  padding: var(--space-2) var(--space-5);
   color: var(--ui-text-muted);
   font-size: var(--ui-font-caption);
   line-height: var(--ui-leading-caption);
@@ -90,8 +122,12 @@
 
 .copyStatus {
   min-inline-size: 0;
+  padding: 0 var(--space-5);
   color: var(--ui-tone-danger-fg);
   font-size: var(--ui-font-caption);
   line-height: var(--ui-leading-caption);
   overflow-wrap: anywhere;
+}
+.copyStatus[data-state="failed"] {
+  padding-block: var(--space-2);
 }

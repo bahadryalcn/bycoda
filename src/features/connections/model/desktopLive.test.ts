@@ -18,8 +18,13 @@ import {
 } from "./desktopLive";
 
 const native = vi.hoisted(() => ({
+  invoke: vi.fn(),
   approve: vi.fn(),
   adapter: { respondApproval: vi.fn() },
+}));
+vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tauri-apps/api/core")>()),
+  invoke: native.invoke,
 }));
 vi.mock("../../../integrations/harness", () => ({
   getHarness: () => native.adapter,
@@ -29,8 +34,49 @@ vi.mock("../../../integrations/harness", () => ({
   },
 }));
 beforeEach(() => {
+  native.invoke.mockReset();
   native.approve.mockClear();
   native.adapter = { respondApproval: vi.fn() };
+});
+
+it("applies removal lease jobs for this desktop and replies through the heartbeat", async () => {
+  native.invoke.mockResolvedValue(undefined);
+  const clientId = "desktop";
+  const id = "lease";
+  const request = vi
+    .fn<Parameters<typeof runDesktopLiveTick>[0]["request"]>()
+    .mockResolvedValueOnce({
+      removalLease: {
+        jobs: [
+          { id: "other", clientId: "other", path: "/wrong" },
+          { id, clientId, path: "/worktree" },
+        ],
+        acked: [],
+      },
+    })
+    .mockResolvedValueOnce({ removalLease: { jobs: [{ id, clientId }], acked: [id] } })
+    .mockResolvedValueOnce({ removalLease: { jobs: [], acked: [id] } });
+  const deps = {
+    clientId,
+    request,
+    sessions: () => [],
+    handlers: { stop: vi.fn(), approve: vi.fn(), answer: vi.fn() },
+    handled: new Set<string>(),
+    unacked: new Set<string>(),
+  };
+  await runDesktopLiveTick(deps);
+  await runDesktopLiveTick(deps);
+  await runDesktopLiveTick(deps);
+  expect(native.invoke.mock.calls).toEqual([
+    ["desktop_worktree_removal_lease", { clientId, leaseId: id, path: "/worktree" }],
+    ["desktop_worktree_removal_lease", { clientId, leaseId: id, path: null }],
+  ]);
+  expect(request.mock.calls[1]?.[0].removalLeaseReplies).toEqual([
+    { id, granted: true, release: false, checks: ["editors"] },
+  ]);
+  expect(request.mock.calls[2]?.[0].removalLeaseReplies).toEqual([
+    { id, granted: true, release: true },
+  ]);
 });
 
 it("dispatches review context and inline review batches through the finite native bridge", async () => {
@@ -1381,6 +1427,46 @@ describe("desktop live memoization and idle cadence", () => {
     expect(request).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps beating every tick for a while after a phone's inbox job, then idles again", async () => {
+    let now = 1_000;
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce({
+        inbox: { jobs: [{ id: "job", operation: { action: "providers" } }] },
+      })
+      .mockResolvedValue({ inbox: { acked: ["job"] } });
+    const inbox = {
+      invoke: vi.fn().mockResolvedValue({ connected: true }),
+      list: vi.fn(),
+      results: new Map(),
+      running: new Set<string>(),
+    };
+    const deps = {
+      request,
+      sessions: () => [session({ id: "idle" })],
+      handlers: { stop: vi.fn(), approve: vi.fn(), answer: vi.fn() },
+      unacked: new Set<string>(),
+      handled: new Set<string>(),
+      beat: {} as { inboxActiveUntil?: number },
+      inbox,
+      now: () => now,
+    };
+    await runDesktopLiveTick(deps);
+    await vi.waitFor(() => expect(inbox.running.size).toBe(0));
+    // The reply goes out, then the following idle ticks still beat for the browsing phone.
+    for (let tick = 0; tick < 4; tick++) {
+      now += 1_500;
+      await runDesktopLiveTick(deps);
+    }
+    expect(request).toHaveBeenCalledTimes(5);
+    now = (deps.beat.inboxActiveUntil ?? 0) + 1;
+    await runDesktopLiveTick(deps);
+    const settled = request.mock.calls.length;
+    now += 1_500;
+    await runDesktopLiveTick(deps);
+    expect(request).toHaveBeenCalledTimes(settled);
+  });
+
   it("goes back to every tick as soon as a session is busy or an ack is pending", async () => {
     const request = vi.fn().mockResolvedValue({});
     let busy = false;
@@ -1407,4 +1493,88 @@ describe("desktop live memoization and idle cadence", () => {
     expect(request).toHaveBeenCalledTimes(4);
     expect(request.mock.calls[3][0].acked).toEqual(["c1"]);
   });
+});
+
+describe("phone group unlock relay", () => {
+  type TickDeps = Parameters<typeof runDesktopLiveTick>[0];
+  type GroupLockDeps = NonNullable<TickDeps["groupLock"]>;
+  const runner = (run: GroupLockDeps["run"]): GroupLockDeps => ({
+    results: new Map(),
+    running: new Set<string>(),
+    epoch: () => "nonce:3",
+    run,
+  });
+  const tick = (groupLock: GroupLockDeps, request: ReturnType<typeof vi.fn>) =>
+    runDesktopLiveTick({
+      request: request as TickDeps["request"],
+      sessions: () => [],
+      groupLock,
+      handlers: { stop: vi.fn(), approve: vi.fn(), answer: vi.fn() },
+      unacked: new Set<string>(),
+      handled: new Set<string>(),
+    });
+
+  it("runs a job once, reports only its verdict and the epoch, and drops it when acknowledged", async () => {
+    const job = { id: "g1", kind: "unlock", groupId: "private", password: "pw" };
+    const run = vi.fn(async () => ({ id: "g1", result: "wrong", retryAfterMs: 5 }) as never);
+    const groupLock = runner(run);
+    const request = vi.fn().mockResolvedValue({ groupLock: { jobs: [job], acked: [] } });
+    await tick(groupLock, request);
+    await tick(groupLock, request);
+    expect(run).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(groupLock.results.get("g1")).toMatchObject({ result: "wrong" }));
+    request.mockResolvedValue({ groupLock: { jobs: [], acked: ["g1"] } });
+    await tick(groupLock, request);
+    expect(request.mock.calls.at(-1)?.[0].groupLock).toEqual({
+      version: 1,
+      epoch: "nonce:3",
+      replies: [{ id: "g1", result: "wrong", retryAfterMs: 5 }],
+    });
+    expect(groupLock.results.size).toBe(0);
+    expect(JSON.stringify(request.mock.calls)).not.toContain('"password"');
+  });
+
+  it("answers a crashed job as failed instead of leaving the phone waiting", async () => {
+    const job = { id: "g2", kind: "authorizeHidden", password: "pw" };
+    const groupLock = runner(async () => {
+      throw new Error("storage");
+    });
+    await tick(groupLock, vi.fn().mockResolvedValue({ groupLock: { jobs: [job] } }));
+    await vi.waitFor(() =>
+      expect(groupLock.results.get("g2")).toEqual({ id: "g2", error: "failed" }),
+    );
+  });
+});
+
+it("forwards the editors refusal reason and checks, and a plain refusal without a reason", async () => {
+  native.invoke
+    .mockRejectedValueOnce("editors: Save or close unsaved files.")
+    .mockRejectedValueOnce("Stop active terminals and agents before removing the worktree.");
+  const clientId = "desktop";
+  const request = vi
+    .fn<Parameters<typeof runDesktopLiveTick>[0]["request"]>()
+    .mockResolvedValueOnce({
+      removalLease: {
+        jobs: [
+          { id: "a", clientId, path: "/a" },
+          { id: "b", clientId, path: "/b" },
+        ],
+        acked: [],
+      },
+    })
+    .mockResolvedValueOnce({ removalLease: { jobs: [], acked: ["a", "b"] } });
+  const deps = {
+    clientId,
+    request,
+    sessions: () => [],
+    handlers: { stop: vi.fn(), approve: vi.fn(), answer: vi.fn() },
+    handled: new Set<string>(),
+    unacked: new Set<string>(),
+  };
+  await runDesktopLiveTick(deps);
+  await runDesktopLiveTick(deps);
+  expect(request.mock.calls[1]?.[0].removalLeaseReplies).toEqual([
+    { id: "a", granted: false, release: false, checks: ["editors"], reason: "editors" },
+    { id: "b", granted: false, release: false, checks: ["editors"] },
+  ]);
 });

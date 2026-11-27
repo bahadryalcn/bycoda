@@ -12,6 +12,7 @@ import type {
   BrowserRecipe,
   BrowserRecipeContext,
 } from "./social-browser-recipe";
+import { SEND_LABELS, ariaLabelSelectors } from "./browser/ui-labels";
 
 export type MessagingPlatform = "whatsapp" | "telegram";
 type Platform = MessagingPlatform;
@@ -259,8 +260,7 @@ const editors = {
     '#column-center .chat.active .input-message-input[contenteditable="true"], #column-center .chat.active .chat-input [contenteditable="true"][role="textbox"]',
 };
 const submitters = {
-  whatsapp:
-    '#main footer [data-testid="compose-btn-send"], #main footer [data-testid="send"], #main footer button[aria-label="Send"], #main footer button[aria-label="Gönder"]',
+  whatsapp: `#main footer [data-testid="compose-btn-send"], #main footer [data-testid="send"], ${ariaLabelSelectors("#main footer button", SEND_LABELS)}`,
   telegram: "#column-center .chat.active .btn-send:not(.is-hidden):not([disabled])",
 };
 
@@ -307,7 +307,7 @@ async function attach(
   if (text) await page.fill(caption, text);
   const submit =
     platform === "whatsapp"
-      ? '[data-testid="media-editor"] [data-testid="send"], [role="dialog"] button[aria-label="Send"], [role="dialog"] button[aria-label="Gönder"]'
+      ? `[data-testid="media-editor"] [data-testid="send"], ${ariaLabelSelectors('[role="dialog"] button', SEND_LABELS)}`
       : ".popup-send-photo .btn-primary.btn-color-primary";
   return { submit, editor: caption };
 }

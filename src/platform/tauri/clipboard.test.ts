@@ -1,6 +1,13 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
-import { copyMessage, copyText, messageFilesFromClipboard } from "./clipboard";
+import {
+  clipboardTextWithAttachments,
+  copyMessage,
+  copyText,
+  messageFilesFromClipboard,
+  messageFromClipboard,
+  readClipboardImage,
+} from "./clipboard";
 import { invoke } from "@tauri-apps/api/core";
 import {
   MAX_EMBED_BYTES,
@@ -14,10 +21,46 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 afterEach(() => vi.restoreAllMocks());
 
+function requireCompleteClipboardWrite() {
+  const write = navigator.clipboard.write.bind(navigator.clipboard);
+  vi.spyOn(navigator.clipboard, "write").mockImplementation(async (items) => {
+    // Happy DOM normally stores the items before resolving their representations.
+    await Promise.all(items.flatMap((item) => item.types.map((type) => item.getType(type))));
+    await write(items);
+  });
+}
+
+it("reads an empty clipboard as no image rather than as a failure", async () => {
+  vi.mocked(invoke).mockRejectedValueOnce("The clipboard does not contain an image.");
+  await expect(readClipboardImage()).resolves.toBeNull();
+  vi.mocked(invoke).mockResolvedValueOnce(new ArrayBuffer(0));
+  await expect(readClipboardImage()).resolves.toBeNull();
+});
+
+it("reports a real clipboard read failure instead of treating it as empty", async () => {
+  vi.mocked(invoke).mockRejectedValueOnce("Pasteboard is locked");
+  await expect(readClipboardImage()).rejects.toThrow("Pasteboard is locked");
+});
+
+it("returns clipboard bytes as a PNG file", async () => {
+  vi.mocked(invoke).mockResolvedValueOnce(new Uint8Array([137, 80, 78, 71]).buffer);
+  const file = await readClipboardImage();
+  expect(file?.name).toBe("clipboard-image.png");
+  expect(file?.type).toBe("image/png");
+  expect(file?.size).toBe(4);
+});
+
 it("copies lazy remote images and documents through their authorized readers", async () => {
   vi.mocked(invoke).mockClear();
-  const write = vi.spyOn(navigator.clipboard, "write").mockResolvedValue();
-  const imageReader = vi.fn(async () => btoa("remote image"));
+  let userGesture = true;
+  const write = vi.spyOn(navigator.clipboard, "write").mockImplementation(async ([item]) => {
+    if (!userGesture) throw new DOMException("Clipboard write denied", "NotAllowedError");
+    await Promise.all(item.types.map((type) => item.getType(type)));
+  });
+  const imageReader = vi.fn(async () => {
+    userGesture = false;
+    return btoa("remote image");
+  });
   const documentReader = vi.fn(async () => btoa("remote document"));
   await copyMessage("Remote files", [
     {
@@ -42,7 +85,10 @@ it("copies lazy remote images and documents through their authorized readers", a
   expect(imageReader).toHaveBeenCalledOnce();
   expect(documentReader).toHaveBeenCalledOnce();
   expect(invoke).not.toHaveBeenCalled();
-  const html = await (await write.mock.calls[0][0][0].getType("text/html")).text();
+  const item = write.mock.calls[0][0][0];
+  expect(await (await item.getType("text/plain")).text()).toBe("Remote files");
+  expect(item.types).toEqual(["text/plain", "text/html"]);
+  const html = await (await item.getType("text/html")).text();
   const pasted = messageFilesFromClipboard({ getData: () => html });
   expect(await Promise.all(pasted!.map((file) => file.text()))).toEqual([
     "remote image",
@@ -54,8 +100,8 @@ it.each(["image", "file"] as const)(
   "preserves the clipboard and exposes a failed lazy %s read without a local fallback",
   async (kind) => {
     await navigator.clipboard.writeText("Previous clipboard");
+    requireCompleteClipboardWrite();
     vi.mocked(invoke).mockClear();
-    const write = vi.spyOn(navigator.clipboard, "write").mockResolvedValue();
     const reader = vi.fn(async () => {
       throw new Error("Remote owner disconnected");
     });
@@ -74,7 +120,6 @@ it.each(["image", "file"] as const)(
     ).rejects.toThrow("Could not copy remote.bin: Remote owner disconnected");
     expect(reader).toHaveBeenCalledOnce();
     expect(invoke).not.toHaveBeenCalled();
-    expect(write).not.toHaveBeenCalled();
     expect(await navigator.clipboard.readText()).toBe("Previous clipboard");
   },
 );
@@ -93,14 +138,13 @@ function zeroFile(size: number, id: string) {
 
 it("rejects valid individual files above the combined 20 MiB budget before replacing the clipboard", async () => {
   await navigator.clipboard.writeText("Previous clipboard");
-  const write = vi.spyOn(navigator.clipboard, "write").mockResolvedValue();
+  requireCompleteClipboardWrite();
   await expect(
     copyMessage("Large pair", [
       zeroFile(MAX_EMBED_BYTES / 2 + 1, "first"),
       zeroFile(MAX_EMBED_BYTES / 2 + 1, "second"),
     ]),
   ).rejects.toThrow("combined 20 MB clipboard limit");
-  expect(write).not.toHaveBeenCalled();
   expect(await navigator.clipboard.readText()).toBe("Previous clipboard");
 });
 
@@ -116,15 +160,16 @@ it("round trips multiple files exactly at the combined 20 MiB budget", async () 
   // Encodes 20 MiB of file data; allow headroom when the full suite runs in parallel.
 }, 20_000);
 
-it("rejects too many copied files before touching the clipboard", async () => {
-  const write = vi.spyOn(navigator.clipboard, "write").mockResolvedValue();
+it("rejects too many copied files without replacing the clipboard", async () => {
+  await navigator.clipboard.writeText("Previous clipboard");
+  requireCompleteClipboardWrite();
   await expect(
     copyMessage(
       "Files",
       Array.from({ length: MAX_ATTACHMENTS + 1 }, (_, i) => zeroFile(0, `${i}`)),
     ),
   ).rejects.toThrow(`up to ${MAX_ATTACHMENTS} files`);
-  expect(write).not.toHaveBeenCalled();
+  expect(await navigator.clipboard.readText()).toBe("Previous clipboard");
 });
 
 it("uses the native text clipboard if WebView permissions reject a long copy", async () => {
@@ -138,6 +183,22 @@ it("uses the native text clipboard if WebView permissions reject a long copy", a
     expect(document.querySelector("textarea")).toBeNull();
   } finally {
     delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+  }
+});
+
+it("falls back to the native clipboard when the WebView write never settles", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(navigator.clipboard, "writeText").mockReturnValue(new Promise<void>(() => {}));
+  vi.mocked(invoke).mockResolvedValue(undefined);
+  Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {}, configurable: true });
+  try {
+    const copied = copyText("stuck");
+    await vi.advanceTimersByTimeAsync(1500);
+    await copied;
+    expect(invoke).toHaveBeenCalledWith("copy_text_to_clipboard", { text: "stuck" });
+  } finally {
+    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+    vi.useRealTimers();
   }
 });
 
@@ -172,7 +233,7 @@ it("cleans up failed legacy copying and preserves focus and text selection", asy
   }
 });
 
-it("copies fresh disk images but leaves their restored placeholders alone", async () => {
+it("copies fresh and restored disk images", async () => {
   vi.mocked(invoke).mockResolvedValue(btoa("<svg></svg>"));
   const write = vi.spyOn(navigator.clipboard, "write").mockResolvedValue();
   const files = displayAttachments([
@@ -193,17 +254,20 @@ it("copies fresh disk images but leaves their restored placeholders alone", asyn
   write.mockClear();
   vi.mocked(invoke).mockClear();
   await copyMessage("Diagram", files.map(persistableAttachment));
-  expect(write).not.toHaveBeenCalled();
-  expect(invoke).not.toHaveBeenCalled();
-  expect(await navigator.clipboard.readText()).toBe("Diagram");
+  expect(invoke).toHaveBeenCalledWith("read_file_base64", { path: "/diagram.svg" });
+  expect(write).toHaveBeenCalledOnce();
+  const restoredHtml = await (await write.mock.calls[0][0][0].getType("text/html")).text();
+  expect(await messageFilesFromClipboard({ getData: () => restoredHtml })![0].text()).toBe(
+    "<svg></svg>",
+  );
 });
 
-it("copies a message with multiple attachments and preserves names and bytes on paste", async () => {
+it("copies multiple attachments and restores their positions and numbers in the receiving draft", async () => {
   let written: ClipboardItem[] = [];
   vi.spyOn(navigator.clipboard, "write").mockImplementation(async (items) => {
     written = items;
   });
-  await copyMessage("Look at these", [
+  await copyMessage("[Image 1 · 3 B] Look at these [File 1 · 3 B]", [
     {
       id: "1",
       name: "screen.png",
@@ -221,7 +285,8 @@ it("copies a message with multiple attachments and preserves names and bytes on 
       data: "ZGVm",
     },
   ]);
-  expect(await (await written[0].getType("text/plain")).text()).toBe("Look at these");
+  const text = await (await written[0].getType("text/plain")).text();
+  expect(text).toBe("Look at these");
   const html = await (await written[0].getType("text/html")).text();
   const files = messageFilesFromClipboard({
     getData: (type) => (type === "text/html" ? html : ""),
@@ -229,23 +294,54 @@ it("copies a message with multiple attachments and preserves names and bytes on 
   expect(files?.map((file) => file.name)).toEqual(["screen.png", "report.pdf"]);
   expect(await files![0].text()).toBe("abc");
   expect(await files![1].text()).toBe("def");
+  expect(written[0].types).toEqual(["text/plain", "text/html"]);
+  const message = messageFromClipboard({
+    getData: (type) => (type === "text/html" ? html : text),
+  })!;
+  const pasted = message.files.map((file, index) => ({
+    id: `pasted-${index}`,
+    name: file.name,
+    mimeType: file.type,
+    kind: file.type.startsWith("image/") ? ("image" as const) : ("file" as const),
+    size: file.size,
+  }));
   expect(
-    Array.from(new Uint8Array(await (await written[0].getType("image/png")).arrayBuffer())),
-  ).toEqual([97, 98, 99]);
+    clipboardTextWithAttachments(message, pasted, [
+      { ...pasted[0], id: "existing-image", name: "existing.png" },
+      ...pasted,
+    ]),
+  ).toBe("[Image 2 · screen.png · 3 B] Look at these [File 1 · report.pdf · 3 B]");
+});
+
+it("pastes attachment bytes and names copied by an older Bycoda build", async () => {
+  const name = 'Quarterly "Özet".pdf';
+  const payload = encodeURIComponent(
+    JSON.stringify([{ name, mimeType: "application/pdf", data: "+/8=" }]),
+  );
+  const html = `<div data-bycoda-files="${payload}"><pre>Report</pre></div>`;
+
+  const files = messageFilesFromClipboard({ getData: () => html });
+
+  expect(files?.map((file) => [file.name, file.type])).toEqual([[name, "application/pdf"]]);
+  expect(new Uint8Array(await files![0].arrayBuffer())).toEqual(Uint8Array.of(251, 255));
+});
+
+it.each([
+  "%",
+  encodeURIComponent(
+    JSON.stringify([{ name: "local.txt", mimeType: "text/plain", path: "/local.txt" }]),
+  ),
+  encodeURIComponent(JSON.stringify([{ name: "bad.txt", mimeType: "text/plain", data: "!!!!" }])),
+])("rejects malformed or path-only legacy clipboard data", (payload) => {
+  const html = `<div data-bycoda-files="${payload}"></div>`;
+  expect(messageFilesFromClipboard({ getData: () => html })).toBeNull();
 });
 
 it("rejects clipboard files whose decoded bytes exceed the attachment limit", () => {
   const base64Length = Math.ceil((MAX_EMBED_BYTES + 1) / 3) * 4;
-  const payload = encodeURIComponent(
-    JSON.stringify([
-      {
-        name: "oversized.bin",
-        mimeType: "application/octet-stream",
-        data: "A".repeat(base64Length),
-      },
-    ]),
-  );
-  const html = `<div data-bycoda-files="${payload}"></div>`;
+  const html =
+    `<div><a data-bycoda-file="oversized.bin" href="data:application/octet-stream;base64,` +
+    `${"A".repeat(base64Length)}" download="oversized.bin">oversized.bin</a></div>`;
 
   expect(
     messageFilesFromClipboard({
@@ -254,43 +350,53 @@ it("rejects clipboard files whose decoded bytes exceed the attachment limit", ()
   ).toBeNull();
 });
 
-it("skips restored images without live content while keeping the text", async () => {
-  vi.mocked(invoke).mockImplementation(async (_command, args) => {
-    if ((args as { path: string }).path === "/old.png") return "YWJj";
-    throw new Error("File no longer exists");
+it("embeds each attachment once and keeps escaped names and text intact", async () => {
+  let written: ClipboardItem[] = [];
+  vi.spyOn(navigator.clipboard, "write").mockImplementation(async (items) => {
+    written = items;
   });
-  await copyMessage("Old message", [
+  const text = `<b>"quoted"</b> data-bycoda-file="x" & more`;
+  await copyMessage(text, [
     {
       id: "1",
-      name: "old.png",
-      mimeType: "image/png",
-      kind: "image",
+      name: `a "<&>" 'b'.bin`,
+      mimeType: "application/octet-stream",
+      kind: "file",
       size: 3,
-      path: "/old.png",
+      data: "+/+/",
     },
   ]);
-  expect(await navigator.clipboard.readText()).toBe("Old message");
-  expect(invoke).not.toHaveBeenCalledWith("read_file_base64", {
-    path: "/old.png",
-  });
+  expect(await (await written[0].getType("text/plain")).text()).toBe(text);
+  const html = await (await written[0].getType("text/html")).text();
+  expect(html.split("+/+/")).toHaveLength(2);
+  expect(html).not.toContain("%2B");
+  expect(html.split('data-bycoda-file="')).toHaveLength(2);
+  const files = messageFilesFromClipboard({ getData: () => html });
+  expect(files?.map((file) => file.name)).toEqual([`a "<&>" 'b'.bin`]);
+  expect(Array.from(new Uint8Array(await files![0].arrayBuffer()))).toEqual([251, 255, 191]);
 });
 
-it("keeps the existing clipboard when a message has no copyable content", async () => {
+it.each([
+  {},
+  { path: "/old.png", hostEnvironmentId: "other-host" },
+  { path: "remote://other-host/old.png" },
+])("keeps the clipboard when a restored image has no readable source (%j)", async (source) => {
+  vi.mocked(invoke).mockClear();
   await navigator.clipboard.writeText("Previous clipboard");
+  requireCompleteClipboardWrite();
+  const image = persistableAttachment({
+    id: "restored",
+    name: "old.png",
+    mimeType: "image/png",
+    kind: "image",
+    size: 3,
+    ...source,
+  });
 
-  await expect(
-    copyMessage("", [
-      {
-        id: "restored",
-        name: "old.png",
-        mimeType: "image/png",
-        kind: "image",
-        size: 3,
-        path: "/old.png",
-      },
-    ]),
-  ).rejects.toThrow("No copyable content");
-
+  await expect(copyMessage("Old message", [image])).rejects.toThrow(
+    "Could not copy old.png: File content is no longer available.",
+  );
+  expect(invoke).not.toHaveBeenCalled();
   expect(await navigator.clipboard.readText()).toBe("Previous clipboard");
 });
 
@@ -309,11 +415,14 @@ it("copies a folder path, including when the message is only that folder", async
   await copyMessage("See the reports", [folder]);
   expect(await navigator.clipboard.readText()).toBe("See the reports\n/home/dev/reports");
 
+  await copyMessage("Open [file1] first", [folder]);
+  expect(await navigator.clipboard.readText()).toBe("Open /home/dev/reports first");
+
   let written: ClipboardItem[] = [];
   vi.spyOn(navigator.clipboard, "write").mockImplementation(async (items) => {
     written = items;
   });
-  await copyMessage("See the reports", [
+  await copyMessage("[image1] See [file1] first", [
     folder,
     {
       id: "1",
@@ -324,8 +433,15 @@ it("copies a folder path, including when the message is only that folder", async
       data: "YWJj",
     },
   ]);
-  expect(await (await written[0].getType("text/plain")).text()).toBe(
-    "See the reports\n/home/dev/reports",
+  const text = await (await written[0].getType("text/plain")).text();
+  const html = await (await written[0].getType("text/html")).text();
+  expect(text).toBe("See /home/dev/reports first");
+  const message = messageFromClipboard({
+    getData: (type) => (type === "text/html" ? html : text),
+  })!;
+  expect(message.files.map((file) => file.name)).toEqual(["shot.png"]);
+  expect(message.referenceText).toBe(
+    "[Image: Attachment; ref=clipboard-0] See /home/dev/reports first",
   );
 });
 
@@ -370,6 +486,7 @@ it.each(["File is too large to attach inline (maximum 20 MB).", "File no longer 
   async (reason) => {
     vi.mocked(invoke).mockRejectedValue(new Error(reason));
     await navigator.clipboard.writeText("Previous clipboard");
+    requireCompleteClipboardWrite();
     await expect(
       copyMessage("New message", [
         {

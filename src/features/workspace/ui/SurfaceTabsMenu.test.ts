@@ -118,39 +118,39 @@ describe("file tab context menu", () => {
   it("selects the right-clicked tab and exposes its file actions", () => {
     const menu = openSecondMenu();
     expect(props.onSelectFile).toHaveBeenCalledWith("second");
-    expect(menu.textContent).toContain("Open in Default App");
-    expect(menu.textContent).toContain("Copy Path");
-    expect(menu.textContent).toContain("Copy Relative Path");
-    expect(menu.textContent).toContain("Copy File Name");
+    expect(menu.textContent).toContain("Open in default app");
+    expect(menu.textContent).toContain("Copy path");
+    expect(menu.textContent).toContain("Copy relative path");
+    expect(menu.textContent).toContain("Copy file name");
     expect(menu.textContent).toContain("Close");
-    expect(menu.textContent).toContain("Close Others");
+    expect(menu.textContent).toContain("Close others");
   });
 
   it("runs path, external-open, reveal, and close actions for the tab", async () => {
-    await pick("Copy Path");
+    await pick("Copy path");
     expect(actions.copyText).toHaveBeenLastCalledWith("/repo/src/app.ts");
 
-    await pick("Copy Relative Path");
+    await pick("Copy relative path");
     expect(actions.copyText).toHaveBeenLastCalledWith("src/app.ts");
 
-    await pick("Copy File Name");
+    await pick("Copy file name");
     expect(actions.copyText).toHaveBeenLastCalledWith("app.ts");
 
-    await pick("Open in Default App");
+    await pick("Open in default app");
     expect(actions.openPathWithDefaultApp).toHaveBeenCalledWith("/repo/src/app.ts");
 
     const revealLabel = IS_MAC
       ? "Reveal in Finder"
       : IS_WIN
         ? "Reveal in File Explorer"
-        : "Open Containing Folder";
+        : "Open containing folder";
     await pick(revealLabel);
     expect(actions.revealPath).toHaveBeenCalledWith("/repo/src/app.ts");
 
     await pick("Close");
     expect(props.onCloseFile).toHaveBeenCalledWith("second");
 
-    await pick("Close Others");
+    await pick("Close others");
     expect(props.onCloseOtherFiles).toHaveBeenCalledWith("second");
   });
 
@@ -158,11 +158,15 @@ describe("file tab context menu", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     actions.openPathWithDefaultApp.mockRejectedValueOnce("No application can open this file");
 
-    await pick("Open in Default App");
+    await pick("Open in default app");
 
     expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
-      "No application can open this file",
+      "Couldn’t open the file in its default app",
     );
+    await act(async () =>
+      document.body.querySelector<HTMLButtonElement>('button[aria-label^="Details"]')!.click(),
+    );
+    expect(document.body.textContent).toContain("No application can open this file");
   });
 
   it.each(["left", "right"] as const)(
@@ -173,7 +177,7 @@ describe("file tab context menu", () => {
         files: [...files, { id: "third", path: "/repo/third.ts", cwd: "/repo" }],
       };
       render();
-      await pick(direction === "left" ? "Close Tabs to the Left" : "Close Tabs to the Right");
+      await pick(direction === "left" ? "Close tabs to the left" : "Close tabs to the right");
       expect(props.onCloseOtherFiles).toHaveBeenCalledWith("second", direction);
       expect(props.onCloseFile).not.toHaveBeenCalled();
     },
@@ -182,15 +186,15 @@ describe("file tab context menu", () => {
   it("disables only the side without neighboring tabs", () => {
     const menu = openSecondMenu();
     const items = Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
-    expect(items.find((item) => item.textContent === "Close Tabs to the Right")?.disabled).toBe(
+    expect(items.find((item) => item.textContent === "Close tabs to the right")?.disabled).toBe(
       true,
     );
-    expect(items.find((item) => item.textContent === "Close Tabs to the Left")?.disabled).toBe(
+    expect(items.find((item) => item.textContent === "Close tabs to the left")?.disabled).toBe(
       false,
     );
   });
 
-  it("disables Close Others when the selected tab is the only tab", () => {
+  it("disables Close others when the selected tab is the only tab", () => {
     props = { ...props, files: [files[0]], activeFileId: "first" };
     render();
     const tab = container.querySelector<HTMLButtonElement>(
@@ -202,18 +206,18 @@ describe("file tab context menu", () => {
       );
     });
     const item = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(
-      (button) => button.textContent === "Close Others",
+      (button) => button.textContent === "Close others",
     );
     expect(item?.disabled).toBe(true);
     const sides = Array.from(
       document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
-    ).filter((button) => button.textContent?.startsWith("Close Tabs to the"));
+    ).filter((button) => button.textContent?.startsWith("Close tabs to the"));
     expect(sides).toHaveLength(2);
     expect(sides.every((button) => button.disabled)).toBe(true);
   });
 });
 
-describe("Open in New Window menu item", () => {
+describe("Open in new window menu item", () => {
   const ids = (items: ReturnType<typeof surfaceTabMenuItems>) =>
     items.flatMap((item) => (item.kind === "item" ? [item.id] : []));
 

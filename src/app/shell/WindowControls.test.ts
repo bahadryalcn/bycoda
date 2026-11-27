@@ -2,12 +2,15 @@
 import { act, createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, expect, it, vi } from "vitest";
+import { saveMinimizeToTray } from "../../features/settings/model/settings";
 
 const native = vi.hoisted(() => {
   let maximized = false;
   let fullscreen = false;
   let resized: (() => void) | undefined;
   return {
+    isWindows: false,
+    park: vi.fn(async () => {}),
     reset() {
       maximized = false;
       fullscreen = false;
@@ -40,6 +43,13 @@ const native = vi.hoisted(() => {
   };
 });
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => native.window }));
+vi.mock("../../platform/tauri/platform", async (original) => ({
+  ...(await original<typeof import("../../platform/tauri/platform")>()),
+  get IS_WIN() {
+    return native.isWindows;
+  },
+}));
+vi.mock("../model/appLifecycle", () => ({ hideCurrentWindow: native.park }));
 vi.mock("../../shared/i18n", () => ({
   t: (text: string) => text,
   useT: () => (text: string) => text,
@@ -65,6 +75,8 @@ async function tooltipText(element: HTMLElement): Promise<string> {
 beforeEach(() => {
   vi.clearAllMocks();
   native.reset();
+  native.isWindows = false;
+  localStorage.removeItem("bycoda.minimizeToTray");
 });
 
 async function mounted(test: (host: HTMLDivElement) => Promise<void>, component = WindowControls) {
@@ -121,7 +133,7 @@ it("unsubscribes hidden native controls and refreshes their state when ownership
     await act(async () => setVisible(true));
     expect(native.window.onResized).toHaveBeenCalledTimes(2);
     expect(native.window.onFocusChanged).toHaveBeenCalledTimes(2);
-    expect(host.querySelector('[aria-label="Restore window"]')).not.toBeNull();
+    expect(host.querySelector('[aria-label="Exit full screen"]')).not.toBeNull();
     expect(host.querySelectorAll("button")).toHaveLength(3);
     expect(native.window.toggleMaximize).not.toHaveBeenCalled();
     expect(native.window.setFullscreen).not.toHaveBeenCalled();
@@ -156,12 +168,13 @@ it("restores a maximized window and reflects native resize state", async () => {
   });
 });
 
-it("exits fullscreen through Restore without maximizing the normal window", async () => {
+it("exits fullscreen through the caption control without restoring or maximizing the window", async () => {
   await mounted(async (host) => {
     expect(host.querySelector('[aria-label="Full screen"]')).toBeNull();
     await act(async () => native.resize(false, true));
+    expect(host.querySelector('[aria-label="Restore window"]')).toBeNull();
     await act(async () =>
-      host.querySelector<HTMLButtonElement>('[aria-label="Restore window"]')!.click(),
+      host.querySelector<HTMLButtonElement>('[aria-label="Exit full screen"]')!.click(),
     );
     expect(native.window.setFullscreen).toHaveBeenLastCalledWith(false);
     expect(native.window.toggleMaximize).not.toHaveBeenCalled();
@@ -177,7 +190,7 @@ it("toggles fullscreen from the footer and switches to the inward restore icon",
     expect(await tooltipText(button)).toContain("F11");
     await act(async () => button.click());
     expect(native.window.setFullscreen).toHaveBeenLastCalledWith(true);
-    expect(button.getAttribute("aria-label")).toBe("Restore window");
+    expect(button.getAttribute("aria-label")).toBe("Exit full screen");
     expect(button.getAttribute("aria-pressed")).toBe("true");
     expect(button.querySelector("path")!.getAttribute("d")).not.toBe(expandPath);
     await act(async () => button.click());
@@ -216,8 +229,30 @@ it("routes minimize and close through native controls so lifecycle guards run", 
   });
 });
 
+it("routes only Minimize to the tray after the preference changes", async () => {
+  native.isWindows = true;
+  await mounted(async (host) => {
+    act(() => saveMinimizeToTray(true));
+    const minimize = host.querySelector<HTMLButtonElement>('button[aria-label="Minimize to tray"]');
+    const close = host.querySelector<HTMLButtonElement>('button[aria-label="Close window"]');
+    expect(minimize).not.toBeNull();
+    expect(close).not.toBeNull();
+    await act(async () => minimize?.click());
+    await act(async () => close?.click());
+    expect(native.park).toHaveBeenCalledOnce();
+    expect(native.window.minimize).not.toHaveBeenCalled();
+    expect(native.window.close).toHaveBeenCalledOnce();
+  });
+});
+
 it("keeps close neutral like the other caption controls", async () => {
   await mounted(async (host) => {
+    const buttons = [...host.querySelectorAll("[data-window-controls] button")];
+    expect(buttons).toHaveLength(3);
+    for (const button of buttons) {
+      expect(button.getAttribute("data-button-variant")).toBe("caption");
+      expect(button.getAttribute("data-tauri-drag-region")).toBe("false");
+    }
     expect(
       host.querySelector('[aria-label="Close window"]')?.getAttribute("data-button-tone"),
     ).toBe("neutral");

@@ -516,7 +516,9 @@ test("classic context survives narrow labels and localized role truncation", asy
               valueFits: value.left >= bounds.left - 0.5 && value.right <= bounds.right + 0.5,
               meterFits:
                 bar.left >= bounds.left - 0.5 && bar.right <= bounds.right + 0.5 && bar.width > 0,
-              roleTruncates: getComputedStyle(name).textOverflow === "ellipsis",
+              roleClamps:
+                getComputedStyle(name).getPropertyValue("-webkit-line-clamp") === "2" &&
+                getComputedStyle(name).overflow === "hidden",
               valueShrinks: getComputedStyle(charge).flexShrink,
               sceneFits: value.left >= 0 && bar.right <= innerWidth,
             };
@@ -528,7 +530,7 @@ test("classic context survives narrow labels and localized role truncation", asy
             text: "100%",
             valueFits: true,
             meterFits: true,
-            roleTruncates: true,
+            roleClamps: true,
             valueShrinks: "0",
             sceneFits: true,
           });

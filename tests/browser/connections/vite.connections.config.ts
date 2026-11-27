@@ -11,6 +11,16 @@ export default defineConfig({
       head: "00000000",
     }),
   },
-  build: { ...settings.build, outDir: "temp/build/browser-connections" },
+  build: {
+    ...settings.build,
+    outDir: "temp/build/browser-connections",
+    rolldownOptions: {
+      input: [
+        "tests/browser/settings/settings.html",
+        "tests/browser/settings/live-backgrounds.html",
+        "tests/browser/connections/connection-dialogs.html",
+      ],
+    },
+  },
   preview: { host: "127.0.0.1", port: 18438, strictPort: true },
 });

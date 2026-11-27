@@ -30,7 +30,9 @@ const item: NeedsHumanItem = {
 function clientWith(items: NeedsHumanItem[]) {
   const list = vi.fn(async () => ({ items }));
   const resolve = vi.fn(async () => undefined);
-  const client = { browser: { needsHuman: { list, resolve } } } as unknown as SocialClient;
+  const client = {
+    browser: { needsHuman: { list, resolve } },
+  } as unknown as SocialClient;
   return { client, list, resolve };
 }
 
@@ -82,10 +84,39 @@ it("reports how many items wait so the screen can show a count", async () => {
   const { client } = clientWith([item, { ...item, id: "n2" }]);
   const onCountChange = vi.fn();
   await act(async () => {
-    root.render(createElement(NeedsHumanList, { client, machineId: "machine", onCountChange }));
+    root.render(
+      createElement(NeedsHumanList, {
+        client,
+        machineId: "machine",
+        onCountChange,
+      }),
+    );
   });
   await act(async () => {
     for (let i = 0; i < 5; i++) await Promise.resolve();
   });
   expect(onCountChange).toHaveBeenLastCalledWith(2);
+});
+
+it("shows a refresh failure after a previously empty queue and recovers", async () => {
+  vi.useFakeTimers();
+  try {
+    const { client, list } = clientWith([]);
+    await render(client);
+    expect(element.textContent).toContain("Nothing is waiting for you.");
+
+    list.mockRejectedValueOnce(new Error("offline"));
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(element.textContent).toContain("Waiting items could not be refreshed.");
+    expect(element.textContent).not.toContain("Nothing is waiting for you.");
+
+    const retry = [...element.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Try again"),
+    );
+    expect(retry).toBeDefined();
+    await act(async () => retry?.click());
+    expect(element.textContent).toContain("Nothing is waiting for you.");
+  } finally {
+    vi.useRealTimers();
+  }
 });

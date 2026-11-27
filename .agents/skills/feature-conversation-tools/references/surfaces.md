@@ -7,7 +7,8 @@ inspection, stale-input admission and platform constraints. Follow
 `src/shared/model/host-contracts/native-devices.ts` and native remote dispatch for
 HTTP/WebSocket/native delivery. UI preview hit testing lives in
 `src/features/devices/deviceInspector.ts`; immutable screenshot receipts live in
-`deviceImageTransfer.ts` beside it. `tests/browser/devices/devices.e2e.ts` and
+`deviceImageTransfer.ts` beside it. A screenshot crosses app windows as a `write_attachment`
+file reference, never inline base64; only a definite refusal frees that file. `tests/browser/devices/devices.e2e.ts` and
 `playwright.devices.config.ts` cover UI fixtures, separately from live Host/native
 and emulator or physical-device acceptance.
 

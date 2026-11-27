@@ -55,3 +55,33 @@ Owner decision, 2026-11-15:
 (Gloss: smart setup may choose at most High; simple jobs always Low, most work Medium; levels above High are the owner's own choice, noted with a small info.)
 
 Recorded decision: smart setup creates entries per model and effort. The main order runs at medium, pools bound only to light roles at low, pools with any heavy role at high. It never sets an effort above high, and an owner entry above high is reused for high pools. An info popover beside Smart setup states the rule.
+
+## One Background work draft, tiered order, work and personal lists
+
+Owner decision, 2026-11-17:
+
+> fable ve astra pahalı modeller her zaman ihtiyaç yok opus sol daha çok kullanulan fayda fiyat ve yeteneğe göre bakmak gerekiyor
+
+(Gloss: Fable and Astra are expensive and not always needed; Opus and Sol are the everyday models; rank by benefit, price and capability together.) The owner also chose two separate lists for work and personal accounts, one global smart setup that also sets subagents and the advisor, and decision models on their own Settings page.
+
+Recorded decision: smart setup orders by tier (strong at a moderate price, then cheaper capable, then top-priced, then light), capability within a tier. Its primary action applies the researched rules at once; planning with AI is an explicit menu choice. It also sets global subagents, advisor and a medium subagent effort ceiling and clears those keys from provider and account layers in the draft. Models, groups, job bindings and limits are one draft with one Save. Entries are kept grouped work, personal, shared. No new execution or publishing authority.
+
+## Chat usage-limit failover follows the order only when the owner turns it on
+
+Owner decision, 2026-11-17:
+
+> tamam bunların hepsini düzeltelim. 3 ü de yapalım var olan sistemde açıp kapatabilsin ama kullanıcı bu özellikleri kontrollü olsun yani
+
+(Gloss: fix all of it, including automatic failover, but the owner must be able to turn it on and off.)
+
+Recorded decision: a Chat setting (`usageLimitFailover`: off, another account, model order; default off) lets a local conversation stopped at a usage limit switch once per limit and send Continue. Model order reads the main order and its live status and skips the limited account. Routing runs keep their run-start snapshot; this is an explicit chat preference, not order or quota changes moving a running session.
+
+## Host-run chats use the same failover setting
+
+Owner decision, 2026-11-24, answering whether Host-run chats should also switch at a usage limit:
+
+> olur ekliyelim
+
+(Gloss: yes, let's add it.)
+
+Recorded decision: the Host applies its own saved `usageLimitFailover` to ordinary conversations it runs, once per limit reported by a live turn. Work sessions (tasks, goals, crews, stewards, automations, Assistant, delegated children) and Native conversations the desktop still writes never switch. Account and order choices respect the project's work or personal scope, and an unreadable quota is not headroom. The note, switch and Continue commit together, so a refused send leaves the chat on the limited target with its notice.

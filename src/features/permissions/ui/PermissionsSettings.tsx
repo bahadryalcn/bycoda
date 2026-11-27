@@ -1,12 +1,14 @@
 import { t } from "../../../shared/i18n";
+import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Group } from "../../../shared/ui/settings";
 import { usePermissionStatus } from "../hooks/usePermissionStatus";
-import { PERMISSION_IDS, permissionInfo } from "../model/permissions";
+import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { linuxPermissionInstructions, PERMISSION_IDS, permissionInfo } from "../model/permissions";
 import { PermissionRow } from "./PermissionRow";
 
 export function PermissionsSettings() {
-  const { report } = usePermissionStatus();
+  const { report, failed, loading, refresh } = usePermissionStatus();
   // Capabilities this OS does not gate collapse into one line instead of rows
   // with nothing to do. Until the first read they stay rows, never hidden.
   const notRequired = PERMISSION_IDS.filter(
@@ -14,9 +16,19 @@ export function PermissionsSettings() {
   );
   return (
     <div className="settings-topics">
-      <Group title={null}>
+      {/* The page applies to this computer only; one failed read is rechecked once for all rows. */}
+      <Group
+        title={t("This computer")}
+        action={
+          failed ? (
+            <Button size="sm" loading={loading} onClick={() => void refresh()}>
+              {t("Check again")}
+            </Button>
+          ) : undefined
+        }
+      >
         {PERMISSION_IDS.filter((id) => !notRequired.includes(id)).map((id) => (
-          <PermissionRow key={id} id={id} />
+          <PermissionRow key={id} id={id} recheck={false} />
         ))}
       </Group>
       {notRequired.length > 0 && (
@@ -36,18 +48,15 @@ export function PermissionsSettings() {
       {report?.platform === "windows" && (
         <InlineMessage>
           {report.elevated
-            ? t("bycoda is running as administrator.")
+            ? t("{p0} is running as administrator.", { p0: PRODUCT_IDENTITY.displayName })
             : t(
-                "bycoda cannot control apps running as administrator. Run the target app without elevation.",
+                "{p0} cannot control apps running as administrator. Run the target app without elevation.",
+                { p0: PRODUCT_IDENTITY.displayName },
               )}
         </InlineMessage>
       )}
       {report?.platform === "linux" && (
-        <InlineMessage>
-          {t(
-            "Linux asks through your desktop portal when a tool starts. Choose the screen or device in that dialog. Check your desktop privacy settings and sandbox permissions if access fails.",
-          )}
-        </InlineMessage>
+        <InlineMessage>{linuxPermissionInstructions()}</InlineMessage>
       )}
     </div>
   );

@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InlineMessage } from "../../../shared/ui/InlineError";
@@ -58,6 +59,9 @@ export function FolderModelDialog({
   );
   const flow = useAddAndTest({ onAdd: (input) => onAdd(input), onTest });
   const locked = flow.busy || flow.done;
+  const lockedReason = flow.done
+    ? t("This model is already added.")
+    : t("Wait for the current step to finish.");
   const close = useDecisionDialogClose(
     !flow.done && (path !== "" || name !== "" || runtimePath !== "" || adapter !== "systemone"),
     flow.busy,
@@ -199,9 +203,13 @@ export function FolderModelDialog({
   return (
     <Modal
       title={t("Add from folder")}
-      description={t(
-        "Choose the folder containing your model. The app finds the model and runtime for you.",
-      )}
+      toolbar={
+        <InfoPopover>
+          {t(
+            "Choose the folder containing your model. The app finds the model and runtime for you.",
+          )}
+        </InfoPopover>
+      }
       size="md"
       onClose={close.requestClose}
       footer={
@@ -213,7 +221,15 @@ export function FolderModelDialog({
             <Button
               variant="primary"
               loading={flow.busy}
+              loadingLabel={flow.phase === "testing" ? t("Testing…") : t("Saving…")}
               disabled={scanning || locked || (!runtimePath.trim() && !selected.endpoint)}
+              disabledReason={
+                locked
+                  ? lockedReason
+                  : scanning
+                    ? t("Wait for the scan to finish.")
+                    : t("Enter the runtime program first.")
+              }
               onClick={submit}
             >
               {t("Add and test")}
@@ -230,11 +246,18 @@ export function FolderModelDialog({
           disabled={locked}
           error={!result ? fieldError : undefined}
           onChange={(event) => changePath(event.target.value)}
+          onKeyDown={(event) => {
+            // Typing a path needs no second click: Enter scans it.
+            if (event.key !== "Enter" || locked || scanning) return;
+            event.preventDefault();
+            void inspect(path).catch(() => undefined);
+          }}
           endAdornment={
             <Button
               variant="ghost"
               size="sm"
               disabled={locked || scanning}
+              disabledReason={locked ? lockedReason : t("Wait for the scan to finish.")}
               onClick={() => void browse().catch(() => undefined)}
             >
               {t("Choose folder…")}
@@ -246,6 +269,7 @@ export function FolderModelDialog({
             variant="secondary"
             loading={scanning}
             disabled={locked || scanning}
+            disabledReason={locked ? lockedReason : undefined}
             onClick={() => void inspect(path).catch(() => undefined)}
           >
             {t("Scan folder")}
@@ -272,11 +296,7 @@ export function FolderModelDialog({
                   if (model) chooseModel(model);
                 }}
               />
-            ) : (
-              <InlineMessage tone="success">
-                {t("Found: {p1}", { p1: selected.name })}
-              </InlineMessage>
-            )}
+            ) : null}
             <TextField
               label={t("Name")}
               value={name}
@@ -308,6 +328,7 @@ export function FolderModelDialog({
                       variant="ghost"
                       size="sm"
                       disabled={locked}
+                      disabledReason={lockedReason}
                       onClick={() => {
                         void pickPath({ title: t("Choose the runtime program") }).then(
                           (value) => {
@@ -337,9 +358,6 @@ export function FolderModelDialog({
               </div>
             </Disclosure>
           </>
-        ) : null}
-        {flow.phase === "testing" ? (
-          <InlineMessage tone="info">{t("Testing the connection…")}</InlineMessage>
         ) : null}
         {flow.failure !== null ? <ErrorNotice error={flow.failure} /> : null}
         {flow.outcome ? (

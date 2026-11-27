@@ -22,7 +22,7 @@ vi.mock("../model/voiceWakeAdapters", () => ({
 }));
 import { claimVoiceConversationActivity } from "../model/voiceActivity";
 import { reportDictation } from "../model/dictationActivity";
-import { loadVoiceSettings } from "../model/voiceSettings";
+import { loadVoiceSettings, saveVoiceSettings } from "../model/voiceSettings";
 import { useVoiceWake } from "./useVoiceWake";
 import { VOICE_WAKE_EVENT } from "./useVoiceTalkEvent";
 
@@ -65,8 +65,26 @@ beforeEach(() => {
 afterEach(async () => {
   window.removeEventListener(VOICE_WAKE_EVENT, talk);
   await act(async () => root.unmount());
+  vi.useRealTimers();
   vi.clearAllMocks();
   localStorage.clear();
+});
+
+it("retries a transient recognition failure and stops retrying when the desktop locks", async () => {
+  vi.useFakeTimers();
+  mocks.recognize.mockRejectedValue(new Error("Recognition is busy"));
+  await render();
+  await speak();
+  expect(seen.indicator).toEqual({ kind: "error" });
+  expect(mocks.close).toHaveBeenCalledTimes(1);
+  await act(async () => vi.advanceTimersByTimeAsync(2_000));
+  expect(mocks.open).toHaveBeenCalledTimes(2);
+  await speak();
+  mocks.presence = "away";
+  await render();
+  await act(async () => vi.advanceTimersByTimeAsync(30_000));
+  expect(mocks.open).toHaveBeenCalledTimes(2);
+  expect(seen.indicator).toBeNull();
 });
 
 it("does not listen unless the owner enabled the wake phrase", async () => {
@@ -128,10 +146,14 @@ it("starts Talk once on a match, with the capture already released", async () =>
   expect(talk).toHaveBeenCalledTimes(1);
 });
 
-it("turns the feature off in one click", async () => {
+it("toggles the saved wake preference without replacing the saved phrase", async () => {
+  saveVoiceSettings({ ...loadVoiceSettings(), wakePhrase: "Hello Arif" });
   await render();
-  seen.turnOff();
+  seen.setEnabled(true);
+  expect(loadVoiceSettings().wakeEnabled).toBe(true);
+  seen.setEnabled(false);
   expect(loadVoiceSettings().wakeEnabled).toBeUndefined();
+  expect(loadVoiceSettings().wakePhrase).toBe("Hello Arif");
 });
 
 it("stops for dictation, rejects late ASR and rearms after dictation ends", async () => {

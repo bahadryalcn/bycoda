@@ -6,7 +6,9 @@ vi.mock("../../shared/lib/productIdentity", () => ({
   PRODUCT_IDENTITY: {
     displayName: "Test Product",
     logoSrc: "/test-product.svg",
+    logoOnDarkSrc: "/test-product-dark.svg",
     wordmarkSrc: "/test-wordmark.svg",
+    wordmarkOnDarkSrc: "/test-wordmark-dark.svg",
   },
 }));
 
@@ -21,14 +23,14 @@ it("uses the configured brand in startup recovery without native APIs", () => {
   expect(markup).toContain("Your saved workspace is still available.");
   expect(markup).not.toContain("Bycoda");
   expect(markup).toContain('role="alert"');
-  expect(markup).toContain("Reload app");
+  expect(markup).toContain("Reload");
 });
 
 it("shows the configured brand lockup above the startup failure", () => {
   const markup = renderToStaticMarkup(
     createElement(BootFailure, { error: new Error("Chunk failed"), onRetry: vi.fn() }),
   );
-  expect(markup).toContain('src="/test-product.svg"');
-  expect(markup).toContain('src="/test-wordmark.svg"');
-  expect(markup.indexOf("/test-product.svg")).toBeLessThan(markup.indexOf('role="alert"'));
+  expect(markup).toMatch(/src="\/test-product(-dark)?\.svg"/);
+  expect(markup).toMatch(/src="\/test-wordmark(-dark)?\.svg"/);
+  expect(markup.search(/\/test-product(-dark)?\.svg/)).toBeLessThan(markup.indexOf('role="alert"'));
 });

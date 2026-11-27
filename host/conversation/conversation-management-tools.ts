@@ -136,7 +136,7 @@ export const MANAGEMENT_CONVERSATION_TOOLS = {
       change: {
         type: "object",
         description:
-          "Application: {kind:theme,value:light|dark|system}, {kind:density,value:compact|comfortable|touch}, {kind:language,value:system|tr|en|de|fr|es|pt|zh-CN|ja}, {kind:voice,value:{visual,compact,manualTurnEnd,turnEndSilence,holdAnnouncements,allowBargeIn,idleSleepMinutes,natural,mode,engine,device}}. Existing provider defaults and prompt-template changes remain supported. No microphone enabling, credentials, paths or installation.",
+          "Application: {kind:theme,value:light|dark|system}, {kind:density,value:compact|comfortable|touch}, {kind:language,value:system|tr|en|de|fr|es|pt|zh-CN|ja}, {kind:voice,value:{visual,compact,manualTurnEnd,turnEndSilence,holdAnnouncements,allowBargeIn,idleSleepMinutes,natural,mode,engine,device}}, or {kind:chatMessages,value:{userMessageOpacity,assistantMessageOpacity,messageColor}}, or {kind:transcript,value:{surface:reply|column|off,surfaceOpacity,surfaceBlur,bodyInk,chromeInk,cards:inset|outline|solid,actions:always|hover,fileRefs:colored|plain,fileToneCode,fileToneMarkup,fileToneDocs,fileToneData,fileToneMedia,fileToneArchive,fileToneFolder,fileToneOther}}. Chat fields are optional; opacity is an integer from 0 (no fill) to 100 (solid), surfaceBlur is 0-24, bodyInk 80-100, chromeInk 50-100, and messageColor is theme or neutral; fileRefs tints file references in replies by kind (colored) or keeps them neutral (plain), and each fileTone* is one of info|success|warning|danger|feature|orchestration|accent|neutral (code files, markup/web, documents, data/config, media, archives, folders, other). assistantMessageOpacity is an alias of transcript surfaceOpacity. Existing provider defaults and prompt-template changes remain supported. No microphone enabling, credentials, paths or installation.",
       },
     },
     ["requestId", "expectedRevision", "change"],
@@ -220,7 +220,7 @@ export function describeManagementTool(action: string) {
   if (action.startsWith("projects.organization."))
     return "Read or change focused desktop project names, groups, folders and ordering. Read projects.organization.read first and pass its expectedRevision with an exact change; patch requires in-app owner approval. Reuse requestId and inspect projects.organization.status. Private/locked projects and cross-window source gates remain enforced.";
   if (action.startsWith("preferences."))
-    return "Read or change application theme, density, language, voice preferences, provider defaults and prompt templates through the connected desktop. An Assistant Room uses its real thread identity. Use preferences.read revision as expectedRevision; patch requires exact in-app owner approval and retained requestId. Never enables microphone capture, changes credentials or installs runtimes.";
+    return "Read or change application theme, density, language, voice preferences, chat message opacity and color, provider defaults and prompt templates through the connected desktop. Chat appearance is in application.chatMessages; the reading surface, text ink and file reference colors are in application.transcript. An Assistant Room uses its real thread identity. Use preferences.read revision as expectedRevision; patch requires exact in-app owner approval and retained requestId. Never enables microphone capture, changes credentials or installs runtimes.";
   if (action.startsWith("providers."))
     return "Read desktop provider/account/quota metadata through the verified source; configuration is not authentication. Explicit Claude quota refresh requires accountRevision from providers.status, existing accountId and in-app owner approval. Poll providers.operation.status with the same requestId. Sign-in/credentials remain owner-only.";
   const session =
@@ -236,10 +236,16 @@ export function describeManagementTool(action: string) {
 }
 export type ManagementReceipt = {
   signature: string;
+  targetDigest?: string;
   state: "pending" | "completed" | "failed" | "uncertain";
+  /** Set when no prompt was shown: session Full access or native standing consent admitted it. */
+  approvedBy?: ManagementApprovedBy;
   result?: unknown;
   error?: string;
 };
+export type ManagementApprovedBy = "sessionFullAccess" | "standingConsent";
+const approvedByValue = (value: unknown): ManagementApprovedBy | undefined =>
+  value === "sessionFullAccess" || value === "standingConsent" ? value : undefined;
 export type GlobalManagementPrincipal = {
   kind: "assistant-thread";
   threadId: string;
@@ -277,7 +283,7 @@ export type ManagementPorts<
     operation: { action: string; input: Record<string, unknown>; operationHash: string },
     principal: P,
     authorized: () => Promise<boolean>,
-  ): Promise<{ approved?: boolean; operationHash?: string }>;
+  ): Promise<{ approved?: boolean; operationHash?: string; approvedBy?: string }>;
   receipt(key: string): Promise<ManagementReceipt | undefined>;
   saveReceipt(key: string, receipt: ManagementReceipt): Promise<void>;
 };
@@ -287,17 +293,29 @@ export class ConversationManagementTools<
   A extends string = ManagementAction,
   P extends RuntimeLogSubjectPrincipal | GlobalManagementPrincipal = RuntimeLogSubjectPrincipal,
 > {
-  private pending = new Map<string, { signature: string; promise: Promise<unknown> }>();
+  private pending = new Map<
+    string,
+    {
+      signature: string;
+      targetDigest?: string;
+      saved: Promise<void>;
+      promise: Promise<unknown>;
+    }
+  >();
   constructor(
     private readonly ports: ManagementPorts<A, P>,
     private readonly readActions: ReadonlySet<string> = MANAGEMENT_READS,
   ) {}
+  active(key: string) {
+    return this.pending.has(key);
+  }
   async call(
     action: A,
     input: Record<string, unknown>,
     principal: P,
     authorized: () => Promise<boolean>,
     qualify: <T>(effect: () => Promise<T>) => Promise<T> = (effect) => effect(),
+    options?: { acknowledgeAfterMs?: number; targetDigest: string },
   ) {
     const check = async () => {
       if (!(await authorized())) throw new Error("Conversation authority revoked.");
@@ -315,28 +333,57 @@ export class ConversationManagementTools<
     const signature = createHash("sha256")
       .update(JSON.stringify([action, input]))
       .digest("hex");
+    const targetDigest = options?.targetDigest;
+    const acknowledgeAfterMs = options?.acknowledgeAfterMs;
+    const receiptIdentity = { signature, ...(targetDigest ? { targetDigest } : {}) };
+    const pendingResult = { requestId: input.requestId, state: "pending" as const };
+    // A Room caller needs current disclosure authority for a stored result too.
+    // Read the exact receipt inside that scope without re-entering approval or execution.
+    const readReceipt = () =>
+      qualify(async () => {
+        const receipt = await this.ports.receipt(key);
+        await check();
+        if (
+          !receipt ||
+          receipt.signature !== signature ||
+          (receipt.targetDigest !== undefined && receipt.targetDigest !== targetDigest)
+        )
+          throw new Error("Management operation receipt is unavailable or changed.");
+        return {
+          requestId: input.requestId,
+          ...receipt,
+          state:
+            receipt.state === "pending"
+              ? acknowledgeAfterMs !== undefined && this.pending.has(key)
+                ? "pending"
+                : "uncertain"
+              : receipt.state,
+        };
+      });
     const previous = await this.ports.receipt(key);
     await check();
     if (previous) {
       if (previous.signature !== signature)
         throw new Error("Management request ID was reused with different input.");
-      return {
-        requestId: input.requestId,
-        ...previous,
-        state: previous.state === "pending" ? "uncertain" : previous.state,
-      };
+      return readReceipt();
     }
     const pending = this.pending.get(key);
     if (pending) {
-      if (pending.signature !== signature)
+      if (pending.signature !== signature || pending.targetDigest !== targetDigest)
         throw new Error("Management request ID was reused with different input.");
-      const result = await pending.promise;
-      await check();
-      return result;
+      await (acknowledgeAfterMs === undefined ? pending.promise : pending.saved);
+      return readReceipt();
     }
+    const pendingSaved = this.ports.saveReceipt(key, { ...receiptIdentity, state: "pending" });
+    let markEffectStarted!: () => void;
+    const effectStarted = new Promise<void>((resolve) => {
+      markEffectStarted = resolve;
+    });
     const operation = (async () => {
-      await this.ports.saveReceipt(key, { signature, state: "pending" });
+      await pendingSaved;
       let admitted = false;
+      let approvedBy: ManagementApprovedBy | undefined;
+      let scopeEntered = false;
       try {
         await check();
         const approved = await this.ports.approve(
@@ -348,28 +395,51 @@ export class ConversationManagementTools<
         if (!approved.approved || approved.operationHash !== signature)
           throw new Error("Native owner approval required.");
         admitted = true;
-        const result = await qualify(() =>
-          this.ports.execute(action, input, principal, authorized),
-        );
+        approvedBy = approvedByValue(approved.approvedBy);
+        const result = await qualify(() => {
+          scopeEntered = true;
+          markEffectStarted();
+          return this.ports.execute(action, input, principal, authorized);
+        });
         await check();
-        const receipt: ManagementReceipt = { signature, state: "completed", result };
+        const receipt: ManagementReceipt = {
+          ...receiptIdentity,
+          state: "completed",
+          ...(approvedBy ? { approvedBy } : {}),
+          result,
+        };
         await this.ports.saveReceipt(key, receipt);
         return { requestId: input.requestId, ...receipt };
       } catch (error) {
         const receipt: ManagementReceipt = {
-          signature,
+          ...receiptIdentity,
           state: admitted ? "uncertain" : "failed",
+          ...(approvedBy ? { approvedBy } : {}),
           error: error instanceof Error ? error.message : "Management operation failed.",
         };
         await this.ports.saveReceipt(key, receipt);
+        if (!scopeEntered && (await authorized())) return readReceipt();
         return { requestId: input.requestId, ...receipt };
       }
-    })();
-    this.pending.set(key, { signature, promise: operation });
+    })().finally(() => this.pending.delete(key));
+    this.pending.set(key, { ...receiptIdentity, saved: pendingSaved, promise: operation });
+    if (acknowledgeAfterMs === undefined) return operation;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      return await operation;
+      return await Promise.race([
+        operation,
+        (async () => {
+          // Room disclosure needs the original qualified project provenance before returning.
+          await effectStarted;
+          await new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, acknowledgeAfterMs);
+          });
+          await check();
+          return pendingResult;
+        })(),
+      ]);
     } finally {
-      this.pending.delete(key);
+      clearTimeout(timer);
     }
   }
 }

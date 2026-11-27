@@ -67,3 +67,23 @@ it("preserves caller-owned pending and disabled state and details disclosure", (
   expect(allow).not.toHaveBeenCalled();
   expect(deny).not.toHaveBeenCalled();
 });
+it("shows where and how far the decision reaches above the request", () => {
+  const { host } = mount({ context: ["/repo", "This request only"] });
+  expect(
+    [...host.querySelectorAll('[data-wrap="anywhere"]')].map((line) => line.textContent),
+  ).toEqual(["/repo", "This request only"]);
+});
+
+it("keeps the approval name and decision context in a compact row", () => {
+  const { host } = mount({
+    appearance: "compact",
+    path: "/repo/worktree",
+    scope: "This request only",
+  });
+  const section = host.querySelector("section");
+  expect(section?.getAttribute("aria-label")).toBe("Needs approval");
+  expect(section?.textContent).not.toContain("Needs approval");
+  expect(section?.textContent).toContain("/repo/worktree");
+  expect(section?.textContent).toContain("This request only");
+  expect(section?.querySelector('[data-button-variant="primary"]')?.textContent).toBe("Allow");
+});

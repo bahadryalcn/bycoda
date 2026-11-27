@@ -71,7 +71,10 @@ fn user_denial_is_reported() {
 
 #[test]
 fn exchange_failure_is_reported_as_failed() {
-    let (port, _, handle) = spawn_drive(|_| Err(TokenError::Network), Duration::from_secs(10));
+    let (port, _, handle) = spawn_drive(
+        |_| Err(TokenError::Network("connection or TLS failed")),
+        Duration::from_secs(10),
+    );
     request(port, "/callback?code=c&state=state1");
     let Outcome::Failed(error) = handle.join().unwrap() else {
         panic!("expected failure");

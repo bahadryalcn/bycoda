@@ -5,7 +5,24 @@ import {
   getDiagnosticsMode,
   setDiagnosticsMode,
 } from "./diagnosticsConsent";
-import { createLogBuffer, sourceLocation } from "./uiLogBuffer";
+import {
+  createLogBuffer,
+  isBenignResizeObserverError,
+  recordUiLog,
+  setUiLogSink,
+  sourceLocation,
+} from "./uiLogBuffer";
+
+describe("benign window errors", () => {
+  it("drops only the ResizeObserver loop notices", () => {
+    expect(
+      isBenignResizeObserverError("ResizeObserver loop completed with undelivered notifications."),
+    ).toBe(true);
+    expect(isBenignResizeObserverError("ResizeObserver loop limit exceeded")).toBe(true);
+    expect(isBenignResizeObserverError("ResizeObserver is not defined")).toBe(false);
+    expect(isBenignResizeObserverError(undefined)).toBe(false);
+  });
+});
 
 describe("log buffer", () => {
   it("writes lines in the shared format with a category", () => {
@@ -32,6 +49,27 @@ describe("log buffer", () => {
     buffer.push("error", "ui.error", "😀".repeat(3000));
     expect(buffer.snapshot().includes("�")).toBe(false);
     expect(buffer.snapshot().length).toBeLessThan(5000);
+  });
+
+  it("evicts routine focus breadcrumbs before a warning or error", () => {
+    const buffer = createLogBuffer({ lines: 3, chars: 10_000 });
+    buffer.push("error", "ui.error", "boom");
+    for (let i = 0; i < 6; i++) buffer.push("info", "ui.window", i % 2 ? "blur" : "focus");
+    const lines = buffer.snapshot().split("\n");
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toContain("ERROR [ui.error] boom");
+    expect(lines.slice(1).every((line) => line.includes("[ui.window]"))).toBe(true);
+  });
+
+  it("evicts a warning only when no routine line is left", () => {
+    const buffer = createLogBuffer({ lines: 2, chars: 10_000 });
+    buffer.push("warn", "ui.console", "first");
+    buffer.push("error", "ui.error", "second");
+    buffer.push("error", "ui.error", "third");
+    const lines = buffer.snapshot().split("\n");
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain("second");
+    expect(lines[1]).toContain("third");
   });
 
   it("folds identical consecutive lines into a repeat count", () => {
@@ -63,5 +101,25 @@ describe("consent", () => {
     setDiagnosticsMode("auto", () => new Date("2026-11-09T00:00:00Z"));
     expect(getDiagnosticsMode()).toBe("auto");
     expect(getDiagnosticsConsent().decidedAt).toBe("2026-11-09T00:00:00.000Z");
+  });
+});
+
+describe("durable sink", () => {
+  it("passes a warning's fields to the log file so a failed call can be attributed", () => {
+    const lines: string[] = [];
+    setUiLogSink((level, category, message) => lines.push(`${level} ${category} ${message}`));
+    try {
+      recordUiLog("warn", "ui.rpc", "request failed", {
+        method: "sessions.list",
+        code: "RPC_TIMEOUT",
+        ms: 30012,
+      });
+      recordUiLog("info", "ui.focus", "routine", { view: "x" });
+    } finally {
+      setUiLogSink(undefined);
+    }
+    expect(lines).toEqual([
+      "warn ui.rpc request failed method=sessions.list code=RPC_TIMEOUT ms=30012",
+    ]);
   });
 });

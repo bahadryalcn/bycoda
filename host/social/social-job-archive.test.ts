@@ -94,6 +94,42 @@ it("bounds the hot settled set while retaining cold pages and all unknown outcom
   });
 });
 
+it("indexes the per-rule daily limit counts on cold history and keeps the counts exact", async () => {
+  const f = await fixture();
+  const day = 86_400_000;
+  const createdWhere =
+    "json_extract(value,'$.ruleId')=? AND json_extract(value,'$.createdAt')>=? AND json_extract(value,'$.createdAt')<? AND status!='cancelled'";
+  const dispatchedWhere =
+    "id!=? AND json_extract(value,'$.ruleId')=? AND json_extract(value,'$.dispatchedAt')>0 AND json_extract(value,'$.dispatchedAt')>=? AND json_extract(value,'$.dispatchedAt')<?";
+  await f.insert("today", "succeeded", { ruleId: "r1", createdAt: day + 5, dispatchedAt: day + 6 });
+  await f.insert("yesterday", "succeeded", { ruleId: "r1", createdAt: 5, dispatchedAt: 6 });
+  await f.insert("other-rule", "succeeded", {
+    ruleId: "r2",
+    createdAt: day + 5,
+    dispatchedAt: day + 6,
+  });
+  await f.insert("cancelled", "cancelled", { ruleId: "r1", createdAt: day + 7 });
+  await f.archive.archive(["today", "yesterday", "other-rule", "cancelled"]);
+  const plan = async (sql: string, values: (string | number)[]) =>
+    (await f.store.db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...values))
+      .map((row) => String(row.detail))
+      .join("\n");
+  expect(
+    await plan(`SELECT COUNT(*) FROM social_jobs_cold WHERE ${createdWhere}`, ["r1", day, 2 * day]),
+  ).toContain("social_jobs_cold_rule_created");
+  expect(
+    await plan(`SELECT COUNT(*) FROM social_jobs_cold WHERE ${dispatchedWhere}`, [
+      "x",
+      "r1",
+      day,
+      2 * day,
+    ]),
+  ).toContain("social_jobs_cold_rule_dispatched");
+  expect(await f.archive.jobCount(createdWhere, ["r1", day, 2 * day])).toBe(1);
+  expect(await f.archive.jobCount(dispatchedWhere, ["x", "r1", day, 2 * day])).toBe(1);
+  expect(await f.archive.jobCount(dispatchedWhere, ["today", "r1", day, 2 * day])).toBe(0);
+});
+
 it("moves media claims with archived jobs without exposing a zero-owner window", async () => {
   const f = await fixture(),
     id = randomUUID(),

@@ -68,7 +68,7 @@ for (const theme of ["light", "dark"])
         (light) => document.documentElement.classList.toggle("theme-light", light),
         theme === "light",
       );
-      await page.getByRole("button", { name: /^Show output for/ }).click();
+      await page.locator('summary[aria-label^="Show output for"]').click();
       const wrap = page.getByRole("button", { name: "Wrap lines" });
       await expect(wrap).toBeVisible();
       if ((await wrap.getAttribute("aria-pressed")) !== "true") await wrap.click();
@@ -121,31 +121,93 @@ for (const theme of ["light", "dark"])
         (light) => document.documentElement.classList.toggle("theme-light", light),
         theme === "light",
       );
-      await page.getByRole("button", { name: /^Show output for/ }).click();
+      await page.locator('summary[aria-label^="Show output for"]').click();
       const output = page.locator("[data-tool-inspection] pre[tabindex='0']").last();
       await expect(output).toContainText("output-marker");
       await page.keyboard.press("Tab");
       await output.focus();
-      const outline = await output.evaluate((node) => {
-        const s = getComputedStyle(node);
-        const probe = document.createElement("span");
-        probe.style.outline = "2px solid var(--ui-focus-ring-color)";
-        node.appendChild(probe);
-        const expected = getComputedStyle(probe).outlineColor;
-        probe.remove();
-        return { width: s.outlineWidth, offset: s.outlineOffset, color: s.outlineColor, expected };
-      });
-      expect(outline).toEqual({
-        width: "2px",
-        offset: "-2px",
-        color: outline.expected,
-        expected: outline.expected,
-      });
+      // Focus styles can transition in; poll until the settled computed outline matches the token.
+      const readOutline = () =>
+        output.evaluate((node) => {
+          const s = getComputedStyle(node);
+          const probe = document.createElement("span");
+          probe.style.outline = "1px solid var(--ui-focus-ring-color)";
+          node.appendChild(probe);
+          const expected = getComputedStyle(probe).outlineColor;
+          probe.remove();
+          return {
+            width: s.outlineWidth,
+            offset: s.outlineOffset,
+            color: s.outlineColor,
+            expected,
+          };
+        });
+      await expect
+        .poll(async () => {
+          const outline = await readOutline();
+          return {
+            ...outline,
+            expected: outline.color === outline.expected ? "match" : outline.expected,
+          };
+        })
+        .toEqual({ width: "1px", offset: "-1px", color: expect.anything(), expected: "match" });
       await page.screenshot({
         animations: "disabled",
         path: `temp/verification/feature-controls/tool-output-focus-${theme}-${width}.png`,
       });
     });
+
+test("composer activity scrolls back to its first running row", async ({ page }, info) => {
+  await page.goto(
+    "/tests/browser/chat/transcript.html?chat-layout&background-work&dock-in-notices",
+  );
+  const notices = page.locator("[data-composer-notices]");
+  const dock = notices.getByRole("region", { name: "Turn activity", exact: true });
+  await dock.locator("button[data-dock-toggle]").click();
+  const first = dock.locator('[data-dock-agent="layout-command-9"]');
+  const last = dock.locator("[data-dock-agent]").last();
+  await expect(first).toBeInViewport({ ratio: 1 });
+  await notices.evaluate((node) => (node.scrollTop = 100));
+  await expect(first).not.toBeInViewport();
+  const box = (await notices.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, -1000);
+  await expect(first).toBeInViewport({ ratio: 1, timeout: 3000 });
+  await page.mouse.wheel(0, 5000);
+  await expect(last).toBeInViewport({ ratio: 1 });
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 800 });
+      await notices.evaluate((node) => (node.scrollTop = 0));
+      await expect(first).toBeInViewport({ ratio: 1 });
+      await notices.screenshot({
+        path: `temp/verification/activity-dock-scroll/${info.project.name}-${theme}-${width}.png`,
+      });
+    }
+  }
+});
+
+test("a narrow dock keeps its list toggle beside the status when both fit", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 440, height: 800 });
+  await page.goto("/tests/browser/chat/transcript.html?chat-layout&background-work");
+  // The fixture's long status and Stop all cannot share a row with the toggle at this width.
+  await page.addStyleTag({ content: "[data-dock-stop-all] { display: none; }" });
+  const dock = page.getByRole("region", { name: "Turn activity", exact: true });
+  const toggle = dock.locator("button[data-dock-toggle]");
+  await expect(toggle).toBeVisible();
+  expect((await dock.boundingBox())!.width).toBeLessThanOrEqual(28 * 16);
+  const toggleBox = (await toggle.boundingBox())!;
+  const summaryBox = (await dock.locator(".activity-dock-summary").boundingBox())!;
+  expect(
+    Math.abs(toggleBox.y + toggleBox.height / 2 - (summaryBox.y + summaryBox.height / 2)),
+  ).toBeLessThan(6);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
 
 test("background commands wrap without losing their start and remain separate", async ({
   page,
@@ -275,7 +337,8 @@ for (const layout of ["chat", "full"] as const) {
 
 test("a saved draft offers edit, remove and send on one row", async ({ page }, info) => {
   await page.goto("/tests/browser/chat/transcript.html?message-bubbles");
-  const draft = page.locator('[data-prompt-anchor="draft-user"] .user-message-bubble');
+  // The delivery row sits under the bubble, inside the same turn row.
+  const draft = page.locator('[data-prompt-anchor="draft-user"]');
   const actions = [
     draft.getByRole("button", { name: "Edit draft", exact: true }),
     draft.getByRole("button", { name: "Remove draft", exact: true }),
@@ -311,10 +374,14 @@ test("chat messages, attachment references and running work keep a readable hier
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/chat/transcript.html?chat-layout");
   const bubble = page.locator(".user-message-bubble");
+  // Attachments sit above the bubble, in the same turn row.
+  const turn = page.locator(".user-message-row").filter({
+    has: page.locator('[data-attachment-chip="image"]'),
+  });
   const group = page.locator(".transcript-activity-group").last();
   const dock = page.getByRole("region", { name: "Turn activity", exact: true });
   await expect(bubble).toBeVisible();
-  await expect(bubble.locator('[data-attachment-chip="image"]')).toHaveCount(7);
+  await expect(turn.locator('[data-attachment-chip="image"]')).toHaveCount(7);
   await expect(page.locator(".agent-transcript")).not.toContainText(/working for/i);
   for (const theme of ["dark", "light"]) {
     await page.evaluate(
@@ -325,13 +392,15 @@ test("chat messages, attachment references and running work keep a readable hier
       await page.setViewportSize({ width, height: 900 });
       await bubble.scrollIntoViewIfNeeded();
       expect(await bubble.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
-      const image = bubble.locator('[data-attachment-chip="image"] button').first();
+      const image = turn.locator('[data-attachment-chip="image"] button').first();
       expect((await image.boundingBox())!.width).toBeGreaterThanOrEqual(56);
-      const rail = bubble.getByRole("group", { name: "Attachments", exact: true });
+      const rail = turn.getByRole("group", { name: "Attachments", exact: true });
       const thumbnailTops = await rail
         .locator('[data-attachment-chip="image"]')
         .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().top));
-      expect(new Set(thumbnailTops).size).toBe(1);
+      // The thumbnails wrap into rows instead of scrolling sideways; every card stays inside the rail.
+      expect(thumbnailTops.length).toBe(7);
+      expect(await rail.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
       const card = rail.locator('[data-attachment-chip="image"]').first();
       // Compact image cards contain only a thumbnail. File identity remains on
       // the preview action and tooltip; size sits beside the copied text token.
@@ -358,7 +427,8 @@ test("chat messages, attachment references and running work keep a readable hier
         };
       });
       // clientHeight is integer-rounded while card rectangles can be fractional.
-      expect(Math.abs(railContent.height - railContent.tallestCard)).toBeLessThanOrEqual(1);
+      // Wrapped rows grow the rail; no card is ever clipped by it.
+      expect(railContent.height).toBeGreaterThanOrEqual(railContent.tallestCard - 1);
       const token = bubble.getByRole("button", {
         name: "Open [image1] (screenshot-1.png) full screen",
         exact: true,
@@ -367,7 +437,11 @@ test("chat messages, attachment references and running work keep a readable hier
         "data-size",
         "42 B",
       );
-      expect((await token.boundingBox())!.height).toBeLessThan(26);
+      // The token sits on the message's own line: at most the body leading plus the inline strut.
+      const leading = await token.evaluate((element) =>
+        parseFloat(getComputedStyle(element).lineHeight),
+      );
+      expect((await token.boundingBox())!.height).toBeLessThanOrEqual(leading + 4);
       const track = dock.locator('[data-pacing-track="reserved"]');
       const summary = dock.locator(".activity-dock-summary");
       const trackBox = (await track.boundingBox())!;
@@ -388,15 +462,16 @@ test("chat messages, attachment references and running work keep a readable hier
       if (width === 1440) await page.screenshot({ path: info.outputPath(`chat-${theme}.png`) });
     }
   }
-  const preview = group.locator(".zen-phase-summary");
-  expect((await preview.boundingBox())!.height).toBeLessThanOrEqual(120);
+  const preview = group.locator(".zen-phase-live");
+  // The live window is one bounded height rule: min(17.5rem, 45vh).
+  expect((await preview.boundingBox())!.height).toBeLessThanOrEqual(17.5 * 16);
   await group.getByRole("button", { name: "Show more", exact: true }).click();
-  await expect(group.locator(".zen-phase-summary")).toHaveCount(0);
+  await expect(group.locator(".zen-phase-live")).toHaveCount(0);
   await expect(group.getByText(/very-long-command-path-0/).first()).toBeVisible();
   await page.setViewportSize({ width: 390, height: 900 });
   // Trail rows keep one line height; a long command ends in an ellipsis inside its row
-  // while the row's name and overflow hint keep the full command.
-  const row = group.getByLabel(/^Tool call: .*very-long-command-path-0\.tsx$/).first();
+  // while the row's accessible name keeps the full command.
+  const row = group.locator(`summary[aria-label$="very-long-command-path-0.tsx"]`).first();
   const command = row.getByText(/very-long-command-path-0\.tsx/).first();
   await expect(command).toContainText("very-long-command-path-0.tsx");
   expect(
@@ -410,7 +485,7 @@ test("chat messages, attachment references and running work keep a readable hier
       };
     }),
   ).toEqual({ inside: true, oneLine: true, ellipsis: true });
-  const lastImage = bubble.getByRole("button", {
+  const lastImage = turn.getByRole("button", {
     name: "Open screenshot-7.png full screen",
     exact: true,
   });
@@ -420,12 +495,40 @@ test("chat messages, attachment references and running work keep a readable hier
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(lastImage).toBeFocused();
-  await bubble
+  await turn
     .getByRole("button", { name: "Open screenshot-1.png full screen", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("clipped transcript commands stay inline on hover", async ({ page }, info) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/chat/transcript.html?chat-layout");
+  const group = page.locator(".transcript-activity-group").last();
+  await group.getByRole("button", { name: "Show more", exact: true }).click();
+  const row = group.locator(`summary[aria-label$="very-long-command-path-0.tsx"]`).first();
+  const command = row.getByText(/very-long-command-path-0\.tsx/).first();
+  await expect(command).toBeVisible();
+  expect(await command.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+  await page.clock.install();
+  for (const theme of ["dark", "light"]) {
+    await page.mouse.move(0, 0);
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    await command.hover();
+    await page.clock.fastForward(600);
+    await expect(
+      page.getByRole("tooltip").filter({ hasText: /very-long-command-path-\d+\.tsx/ }),
+    ).toHaveCount(0);
+    await page.screenshot({ path: info.outputPath(`command-hover-${theme}.png`) });
+  }
+  await command.click();
+  await expect(row.locator("..")).toContainText("readable-output-marker");
 });
 
 test("chat code and command results remain compact until explicitly opened", async ({
@@ -435,11 +538,11 @@ test("chat code and command results remain compact until explicitly opened", asy
     waitUntil: "domcontentloaded",
   });
   await expect(page.locator("[data-tool-inspection]")).toHaveCount(0);
-  await page.getByRole("button", { name: /^Show changes for/ }).click();
+  await page.locator('summary[aria-label^="Show changes for"]').click();
   const code = page.locator("[data-tool-inspection]").first();
   await expect(code).toContainText("saved-code-marker");
   await expect(code.locator("pre")).toHaveCSS("user-select", "text");
-  await page.getByRole("button", { name: /^Show output for/ }).click();
+  await page.locator('summary[aria-label^="Show output for"]').click();
   await expect(page.locator("[data-tool-inspection]").last()).toContainText("output-marker");
   await page.setViewportSize({ width: 420, height: 800 });
   await expect(code).toBeVisible();
@@ -477,8 +580,9 @@ test("chat code and command results remain compact until explicitly opened", asy
       }),
     )
     .toBe(true);
-  await expect(page.getByRole("button", { name: /^Hide output for/ }).first()).toBeInViewport({
-    ratio: 1,
+  await expect(page.locator('summary[aria-label^="Hide output for"]').first()).toBeInViewport({
+    // The summary row carries a 6px hover overhang that the viewport edge may clip by a pixel.
+    ratio: 0.95,
   });
   const box = await code.boundingBox();
   expect(box!.x + box!.width).toBeLessThanOrEqual(420);
@@ -486,11 +590,15 @@ test("chat code and command results remain compact until explicitly opened", asy
     true,
   );
   await page.screenshot({ path: info.outputPath("chat-code-details.png") });
-  await page
-    .getByRole("button", { name: /^Hide output for/ })
-    .first()
-    .click();
-  await page.getByRole("button", { name: /^Hide output for/ }).click();
+  // Only the changes and the output the reader opened are open; the reader closes both.
+  const openOutputs = page.locator('summary[aria-label^="Hide output for"]');
+  await expect(openOutputs).toHaveCount(2);
+  // Close one at a time and wait for each to settle, so a click never targets a summary that the
+  // previous close is still re-rendering.
+  for (let left = 2; left > 0; left -= 1) {
+    await openOutputs.first().click();
+    await expect(openOutputs).toHaveCount(left - 1);
+  }
   await expect(page.locator("[data-tool-inspection]")).toHaveCount(0);
   await expect
     .poll(() => page.locator(".zen-phase-live").evaluate((node) => node.clientHeight))

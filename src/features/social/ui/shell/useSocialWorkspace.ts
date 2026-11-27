@@ -50,8 +50,8 @@ export type SocialWorkspace = {
   client: SocialClient | null;
   shell: SocialShellState;
   loaded: boolean;
-  /** Host discovery failed or no Host is connected. Empty when the workspace is usable. */
-  error: string;
+  /** Host discovery failed or no Host is connected, as a sentence. Empty when the workspace is usable. */
+  problem: string;
   selectWorkspace(choice: WorkspaceChoice): void;
   setAiStopped(stopped: boolean): void;
   retry(): void;
@@ -196,7 +196,7 @@ export function useSocialWorkspace(cwd: string): SocialWorkspace {
     client,
     shell: shellFor(machineId),
     loaded: current.loaded,
-    error,
+    problem: error,
     selectWorkspace,
     setAiStopped,
     retry,

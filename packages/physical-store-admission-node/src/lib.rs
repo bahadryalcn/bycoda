@@ -23,7 +23,8 @@ use std::{
     collections::BTreeMap,
     fs::File,
     path::Path,
-    sync::{Arc, Mutex, MutexGuard, OnceLock},
+    sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError, Weak},
+    time::Instant,
 };
 
 const MAX_OWNER: usize = 64;
@@ -35,6 +36,10 @@ struct StrongRegistry {
     next_binding: u64,
     next_slot: u64,
     records: BTreeMap<u64, Record>,
+    // Slots whose kernel admission runs OUTSIDE the registry mutex (slot -> owner).
+    // They count against capacity exactly like live records, so unlocked
+    // admission can never exceed the per-owner or per-process bound.
+    pending: BTreeMap<u64, u64>,
 }
 
 struct Binding {
@@ -42,6 +47,11 @@ struct Binding {
     id: u64,
     file: File,
     store: core::PhysicalStore,
+    // Serializes admission per physical file within this process (same as the
+    // old global mutex did), so same-process contenders never see each other's
+    // short exclusive turnstile as a spurious Busy. Other files and registry
+    // bookkeeping (release/statistics) no longer wait behind it.
+    admission: Arc<Mutex<()>>,
 }
 
 enum Guard {
@@ -53,20 +63,83 @@ enum Guard {
 struct Record {
     binding: Arc<Binding>,
     guard: Guard,
+    // Diagnostic only; never an identifier or authority.
+    created: Instant,
 }
 
 fn failure(reason: impl ToString) -> napi::Error {
     napi::Error::from_reason(reason.to_string())
 }
 
-fn registry() -> napi::Result<MutexGuard<'static, StrongRegistry>> {
+fn state() -> &'static Mutex<StrongRegistry> {
     static STATE: OnceLock<Mutex<StrongRegistry>> = OnceLock::new();
-    STATE
-        .get_or_init(|| Mutex::new(StrongRegistry::default()))
+    STATE.get_or_init(|| Mutex::new(StrongRegistry::default()))
+}
+
+fn registry() -> napi::Result<MutexGuard<'static, StrongRegistry>> {
+    state().lock().map_err(|_| {
+        failure("physical admission process registry is poisoned; retained guards remain held")
+    })
+}
+
+/// Only for re-inserting a guard that already exists (admission commit, upgrade
+/// restore) and for pending cleanup: a poisoned map must never drop a live
+/// kernel guard, because that would silently reopen ingress.
+fn registry_lenient() -> MutexGuard<'static, StrongRegistry> {
+    state().lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// One admission lock per physical file identity. The map holds weak entries
+/// so it stays bounded by the files that currently have live bindings.
+fn admission_lock(native_format: &str) -> Arc<Mutex<()>> {
+    static LOCKS: OnceLock<Mutex<BTreeMap<String, Weak<Mutex<()>>>>> = OnceLock::new();
+    let mut locks = LOCKS
+        .get_or_init(Default::default)
         .lock()
-        .map_err(|_| {
-            failure("physical admission process registry is poisoned; retained guards remain held")
-        })
+        .unwrap_or_else(PoisonError::into_inner);
+    locks.retain(|_, lock| lock.strong_count() > 0);
+    if let Some(lock) = locks.get(native_format).and_then(Weak::upgrade) {
+        return lock;
+    }
+    let lock = Arc::new(Mutex::new(()));
+    locks.insert(native_format.to_owned(), Arc::downgrade(&lock));
+    lock
+}
+
+/// A capacity-counted slot whose kernel admission runs without the registry
+/// mutex. Dropping it (Busy, error, panic) frees the slot; `commit` turns it
+/// into the live record under one short lock.
+struct Pending {
+    slot: u64,
+}
+
+impl Pending {
+    fn reserve(owner: u64) -> napi::Result<Self> {
+        let mut state = registry()?;
+        check_capacity(&state, owner)?;
+        let slot = next(state.next_slot)?;
+        state.next_slot = slot;
+        Ok(Self::adopt(&mut state, slot, owner))
+    }
+
+    /// Keep an already-owned slot counted while its record is out of the map.
+    fn adopt(state: &mut StrongRegistry, slot: u64, owner: u64) -> Self {
+        state.pending.insert(slot, owner);
+        Self { slot }
+    }
+
+    fn commit(self, record: Record) -> u64 {
+        let mut state = registry_lenient();
+        state.pending.remove(&self.slot);
+        state.records.insert(self.slot, record);
+        self.slot
+    }
+}
+
+impl Drop for Pending {
+    fn drop(&mut self) {
+        registry_lenient().pending.remove(&self.slot);
+    }
 }
 
 fn next(value: u64) -> napi::Result<u64> {
@@ -86,14 +159,17 @@ fn checked_path(value: &str) -> napi::Result<&Path> {
 }
 
 fn check_capacity(state: &StrongRegistry, owner: u64) -> napi::Result<()> {
-    if state.records.len() >= MAX_PROCESS
-        || state
-            .records
+    let owned = state
+        .records
+        .values()
+        .filter(|record| record.binding.owner == owner)
+        .count()
+        + state
+            .pending
             .values()
-            .filter(|record| record.binding.owner == owner)
-            .count()
-            >= MAX_OWNER
-    {
+            .filter(|&&pending| pending == owner)
+            .count();
+    if state.records.len() + state.pending.len() >= MAX_PROCESS || owned >= MAX_OWNER {
         Err(failure(
             "physical admission reservation capacity exceeded; existing guards retained",
         ))
@@ -143,6 +219,15 @@ pub struct ReservationStatistics {
     pub max_owner: u32,
 }
 
+/// Diagnostic row for one live reservation owned by a registry.
+#[napi(object)]
+pub struct ReservationInfo {
+    /// "writer" | "closing" | "closed"
+    pub kind: String,
+    pub native_format: String,
+    pub age_ms: f64,
+}
+
 #[napi]
 pub struct PhysicalRegistry {
     owner: u64,
@@ -175,6 +260,7 @@ impl PhysicalRegistry {
         let file = File::open(checked_path(&existing_path)?).map_err(failure)?;
         let metadata_file = file.try_clone().map_err(failure)?;
         let store = self.registry.bind(file).map_err(failure)?;
+        let admission = admission_lock(store.identity().native_format());
         let mut state = registry()?;
         let id = next(state.next_binding)?;
         state.next_binding = id;
@@ -184,8 +270,32 @@ impl PhysicalRegistry {
                 id,
                 file: metadata_file,
                 store,
+                admission,
             }),
         })
+    }
+
+    /// Diagnostic snapshot of this owner's live reservations, oldest first.
+    /// It exposes no slot, handle or other authority and releases nothing: a
+    /// lost handle stays held until its owner releases it or the process dies.
+    #[napi]
+    pub fn list_reservations(&self) -> napi::Result<Vec<ReservationInfo>> {
+        let state = registry()?;
+        Ok(state
+            .records
+            .values()
+            .filter(|record| record.binding.owner == self.owner)
+            .map(|record| ReservationInfo {
+                kind: match record.guard {
+                    Guard::Writer(_) => "writer",
+                    Guard::Closing(_) => "closing",
+                    Guard::Closed(_) => "closed",
+                }
+                .to_owned(),
+                native_format: record.binding.store.identity().native_format().to_owned(),
+                age_ms: record.created.elapsed().as_millis() as f64,
+            })
+            .collect())
     }
 
     #[napi]
@@ -238,87 +348,101 @@ impl BoundStore {
 
     #[napi]
     pub fn try_writer(&self) -> napi::Result<Option<WriterHandle>> {
-        let mut state = registry()?;
-        check_capacity(&state, self.binding.owner)?;
-        let slot = next(state.next_slot)?;
+        // Filesystem admission runs under the per-file admission lock only; the
+        // process registry mutex is held just to reserve and to commit.
+        let _admission = self
+            .binding
+            .admission
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let pending = Pending::reserve(self.binding.owner)?;
         let guard = match self.binding.store.try_writer() {
             Ok(guard) => guard,
             Err(error) if busy(&error) => return Ok(None),
             Err(error) => return Err(failure(error)),
         };
-        state.next_slot = slot;
-        state.records.insert(
-            slot,
-            Record {
-                binding: Arc::clone(&self.binding),
-                guard: Guard::Writer(guard),
-            },
-        );
+        let slot = pending.commit(Record {
+            binding: Arc::clone(&self.binding),
+            guard: Guard::Writer(guard),
+            created: Instant::now(),
+        });
         Ok(Some(WriterHandle { slot }))
     }
 
     #[napi]
     pub fn try_begin_close(&self) -> napi::Result<Option<ClosingHandle>> {
-        let mut state = registry()?;
-        check_capacity(&state, self.binding.owner)?;
-        let slot = next(state.next_slot)?;
+        let _admission = self
+            .binding
+            .admission
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let pending = Pending::reserve(self.binding.owner)?;
         let guard = match self.binding.store.try_begin_close() {
             Ok(guard) => guard,
             Err(error) if busy(&error) => return Ok(None),
             Err(error) => return Err(failure(error)),
         };
-        state.next_slot = slot;
-        state.records.insert(
-            slot,
-            Record {
-                binding: Arc::clone(&self.binding),
-                guard: Guard::Closing(guard),
-            },
-        );
+        let slot = pending.commit(Record {
+            binding: Arc::clone(&self.binding),
+            guard: Guard::Closing(guard),
+            created: Instant::now(),
+        });
         Ok(Some(ClosingHandle { slot }))
     }
 
     #[napi]
     pub fn try_upgrade(&self, closing: &ClosingHandle) -> napi::Result<Option<ClosedHandle>> {
-        let mut state = registry()?;
-        owned(&state, &self.binding, closing.slot, 2)?;
-        let record = state
-            .records
-            .remove(&closing.slot)
-            .ok_or_else(|| failure("retained closing handle disappeared"))?;
-        let fence = match record.guard {
+        let _admission = self
+            .binding
+            .admission
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        // The record leaves the map only for the filesystem drain attempt. Its
+        // slot stays capacity-counted, and EVERY outcome re-inserts the live
+        // guard (never dropped), so there is still no ingress gap. A concurrent
+        // use of this same handle meanwhile fails as unknown, not as released.
+        let (record, pending) = {
+            let mut state = registry()?;
+            owned(&state, &self.binding, closing.slot, 2)?;
+            let record = state
+                .records
+                .remove(&closing.slot)
+                .ok_or_else(|| failure("retained closing handle disappeared"))?;
+            let pending = Pending::adopt(&mut state, closing.slot, record.binding.owner);
+            (record, pending)
+        };
+        let Record {
+            binding,
+            guard,
+            created,
+        } = record;
+        let fence = match guard {
             Guard::Closing(fence) => fence,
             guard => {
-                state.records.insert(
-                    closing.slot,
-                    Record {
-                        binding: record.binding,
-                        guard,
-                    },
-                );
+                pending.commit(Record {
+                    binding,
+                    guard,
+                    created,
+                });
                 return Err(failure("invalid retained closing state"));
             }
         };
         match fence.try_upgrade() {
             Ok(closed) => {
-                state.records.insert(
-                    closing.slot,
-                    Record {
-                        binding: record.binding,
-                        guard: Guard::Closed(closed),
-                    },
-                );
-                Ok(Some(ClosedHandle { slot: closing.slot }))
+                let slot = pending.commit(Record {
+                    binding,
+                    guard: Guard::Closed(closed),
+                    created,
+                });
+                Ok(Some(ClosedHandle { slot }))
             }
             Err(error) => {
                 let (error, fence) = error.into_parts();
-                state.records.insert(
-                    closing.slot,
-                    Record {
-                        binding: record.binding,
-                        guard: Guard::Closing(fence),
-                    },
-                );
+                pending.commit(Record {
+                    binding,
+                    guard: Guard::Closing(fence),
+                    created,
+                });
                 if busy(&error) {
                     Ok(None)
                 } else {

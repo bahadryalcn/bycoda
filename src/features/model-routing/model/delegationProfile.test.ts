@@ -4,7 +4,12 @@ import {
   type ModelRoutingState,
 } from "../../../shared/model/host-contracts/model-routing";
 import { DELEGATION_LIMITS } from "../../../shared/model/host-contracts/delegation";
-import { delegationKeys, delegationSaveInput, replaceDelegation } from "./delegationProfile";
+import {
+  delegationKeys,
+  delegationSaveInput,
+  replaceDelegation,
+  withoutRedundantDelegation,
+} from "./delegationProfile";
 
 describe("delegation profile edits", () => {
   it("preserves routing fields, version and untouched layers, including explicit Off", () => {
@@ -59,5 +64,43 @@ describe("delegation profile edits", () => {
       extras: { fast: "true", crossAdvisor: "auto" },
     });
     expect(replaceDelegation({ extras: { crossAdvisor: "auto" } }, {})).toEqual({});
+  });
+  it("drops provider and account copies of what they inherit", () => {
+    expect(
+      withoutRedundantDelegation({
+        global: { crossSubagents: "auto", crossAdvisor: "a" },
+        providers: {
+          codex: { crossSubagents: "auto", crossAdvisor: "b" },
+          pi: { crossAdvisor: "a" },
+        },
+        accounts: { "codex\nwork": { crossAdvisor: "b" }, "pi\nhome": { crossAdvisor: "a" } },
+      }),
+    ).toEqual({
+      global: { crossSubagents: "auto", crossAdvisor: "a" },
+      providers: { codex: { crossAdvisor: "b" } },
+      accounts: {},
+    });
+  });
+  it("lets a new All providers value reach providers that only copied the old one", () => {
+    const state: ModelRoutingState = {
+      ...structuredClone(EMPTY_MODEL_ROUTING),
+      version: 1,
+      updatedAt: 0,
+      delegation: {
+        global: { crossSubagents: "auto" },
+        providers: { codex: { crossSubagents: "auto" }, pi: { crossSubagents: "[]" } },
+        accounts: {},
+      },
+    };
+    const input = delegationSaveInput(state, {
+      providers: {},
+      accounts: {},
+      delegation: { crossSubagents: "[]", crossAdvisor: null },
+    });
+    expect(input.draft.delegation).toEqual({
+      global: { crossSubagents: "[]" },
+      providers: { pi: { crossSubagents: "[]" } },
+      accounts: {},
+    });
   });
 });

@@ -1,24 +1,36 @@
 /** Different job: terminal-range actions delegate to TranscriptSelectionMenu, preserving the selection owner. */
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useState, type ComponentProps, type RefObject } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { requestAddToChat } from "../../sessions/model/quoteDraft";
 import type { TranscriptSelection } from "../../sessions/model/transcriptSelection";
 import { TranscriptSelectionMenu } from "../../sessions/ui/TranscriptSelectionMenu";
 import { createNote, noteTitle } from "../../notes";
 import { useSyncExternalStore } from "react";
+import { useT } from "../../../shared/i18n";
+import { ArrowUp, Save } from "../../../shared/ui/icons";
 import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/model/settings";
+import { isSingleLineCommand } from "../model/terminalSuggestions";
 
 export function TerminalSelectionMenu({
   terminal,
   host,
   active,
   cwd,
+  onSendToAgent,
+  onSendToHost,
+  onSaveCommand,
+  privateTerminal = false,
 }: {
   terminal: Terminal | null;
   host: RefObject<HTMLDivElement | null>;
   active: boolean;
   cwd: string;
+  onSendToAgent?: (text: string) => Promise<void>;
+  onSendToHost?: (text: string) => Promise<void>;
+  onSaveCommand?: (text: string) => void;
+  privateTerminal?: boolean;
 }) {
+  const t = useT();
   const [selection, setSelection] = useState<TranscriptSelection | null>(null);
   const notesEnabled = useSyncExternalStore(subscribeNotesEnabled, loadNotesEnabled, () => true);
   useEffect(() => {
@@ -95,16 +107,54 @@ export function TerminalSelectionMenu({
       document.removeEventListener("pointercancel", cancel);
     };
   }, [active, cwd, terminal, host]);
+  const clearSelection = (text: string) => {
+    if (terminal?.getSelection() === text) terminal.clearSelection();
+  };
+  const extraActions: NonNullable<ComponentProps<typeof TranscriptSelectionMenu>["extraActions"]> =
+    [];
+  if (onSendToHost)
+    extraActions.push({
+      id: "host",
+      label: t("Send to Host"),
+      icon: <ArrowUp />,
+      onSelect: async (text) => {
+        await onSendToHost(text);
+        clearSelection(text);
+      },
+    });
+  if (
+    onSaveCommand &&
+    selection &&
+    selection.text.length <= 8192 &&
+    isSingleLineCommand(selection.text) &&
+    terminal?.buffer.active.type === "normal"
+  )
+    extraActions.push({
+      id: "save-command",
+      label: t("Save command"),
+      icon: <Save />,
+      onSelect: (text) => {
+        onSaveCommand(text);
+        clearSelection(text);
+      },
+    });
   return (
     <TranscriptSelectionMenu
       selection={active ? selection : null}
       onDismiss={() => setSelection(null)}
-      onAddToChat={(text) => {
-        requestAddToChat(text, "quote");
-        terminal?.clearSelection();
-      }}
+      addToChatLabel={onSendToAgent ? t("Send to agent") : undefined}
+      onAddToChat={
+        onSendToAgent || !privateTerminal
+          ? async (text) => {
+              if (onSendToAgent) await onSendToAgent(text);
+              else requestAddToChat(text, "quote");
+              clearSelection(text);
+            }
+          : undefined
+      }
+      extraActions={extraActions}
       onAddToNotes={
-        notesEnabled
+        notesEnabled && !privateTerminal
           ? async (text) => {
               await createNote({ title: noteTitle(text), body: text, sourceCwd: cwd });
               terminal?.clearSelection();

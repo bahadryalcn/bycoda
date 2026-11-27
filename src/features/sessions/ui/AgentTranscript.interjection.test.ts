@@ -8,7 +8,6 @@ import { AgentTranscript } from "./AgentTranscript";
 let container: HTMLDivElement;
 let root: Root;
 let bodyHeight: number;
-let resize: () => void;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -20,12 +19,7 @@ beforeEach(() => {
   vi.stubGlobal(
     "ResizeObserver",
     class {
-      constructor(private callback: (entries: ResizeObserverEntry[]) => void) {}
-      observe(el: Element) {
-        // The shared observer routes entries by target, so a resize names the element.
-        if (el.tagName === "PRE")
-          resize = () => this.callback([{ target: el } as ResizeObserverEntry]);
-      }
+      observe() {}
       unobserve() {}
       disconnect() {}
     },
@@ -61,40 +55,27 @@ const note =
   "Check the fallback.\n```ts\nconst result = read();\nif (!result) throw new Error('missing');\n```";
 
 describe("AgentTranscript interjection preview", () => {
-  it("clamps long blocker bodies by default while retaining the label and full text", () => {
+  it("keeps the label and one summary line, and mounts the full text only when opened", () => {
     render(note, "blocker");
-    expect(container.querySelector("pre")?.classList.contains("line-clamp-2")).toBe(true);
-    expect(container.querySelector("pre")?.textContent).toBe(note);
     expect(container.querySelector('[aria-label="Interjection: Advisor"]')?.textContent).toContain(
       "Blocker",
     );
-    expect(container.querySelector("button")?.getAttribute("aria-expanded")).toBe("false");
-  });
-
-  it("expands and reclamps without losing the collapse control", () => {
-    render(note);
-    const button = container.querySelector<HTMLButtonElement>("button")!;
-    act(() => button.click());
-    expect(button.getAttribute("aria-expanded")).toBe("true");
-    expect(container.querySelector("pre")?.classList.contains("line-clamp-2")).toBe(false);
+    const trigger = container.querySelector<HTMLElement>("summary")!;
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector("pre")).toBeNull();
+    act(() => trigger.click());
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
     expect(container.querySelector("pre")?.textContent).toBe(note);
-    act(() => resize());
-    expect(container.querySelector("button")).toBe(button);
-    act(() => button.click());
-    expect(button.getAttribute("aria-expanded")).toBe("false");
-    expect(container.querySelector("pre")?.classList.contains("line-clamp-2")).toBe(true);
   });
 
-  it("omits the toggle for fitting text and remeasures when the transcript reflows", () => {
-    bodyHeight = 20;
-    render("Check this.");
-    expect(container.querySelector("button")).toBeNull();
-    bodyHeight = 60;
-    act(() => resize());
-    expect(container.querySelector("button")?.getAttribute("aria-expanded")).toBe("false");
-    bodyHeight = 40;
-    act(() => resize());
-    expect(container.querySelector("button")).toBeNull();
+  it("closes again from the same row", () => {
+    render(note);
+    const trigger = container.querySelector<HTMLElement>("summary")!;
+    act(() => trigger.click());
+    expect(container.querySelector("pre")).not.toBeNull();
+    act(() => trigger.click());
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector("pre")).toBeNull();
   });
 
   it("settles into the work trail as one compact line that opens to the full note", () => {

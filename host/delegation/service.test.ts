@@ -10,9 +10,11 @@ import {
   DELEGATION_CHAT_ONLY_KEY,
   DELEGATION_LIMITS,
   DELEGATION_PARENT_KEY,
+  DELEGATION_PROVIDER_HISTORY_KEY,
   type DelegateModelRef,
 } from "../../src/shared/model/host-contracts/delegation";
 import { STOPPED_BY_USER } from "../sessions/sessionRuns";
+import { ChangeSignal } from "../changeSignal";
 import { ConversationDelegation, type AgentsCaller } from "./service";
 import { DatabaseSync } from "node:sqlite";
 import { DesktopSessions } from "../desktop/desktopSessions";
@@ -37,12 +39,22 @@ type Entry = {
 class FakeHost {
   readonly entries = new Map<string, Entry>();
   readonly commands: Command[] = [];
+  /** Counts state-row reads, the cost a waiting parent pays per re-check. */
+  runIdReads = 0;
+  readonly changes = new ChangeSignal();
   private seq = 0;
   readonly store = {
+    changes: this.changes,
     session: async (sessionId: string) => {
       const entry = this.entries.get(sessionId);
       if (!entry) throw new Error(`no session ${sessionId}`);
       return entry;
+    },
+    sessionRunId: async (sessionId: string) => {
+      this.runIdReads++;
+      const entry = this.entries.get(sessionId);
+      if (!entry) throw new Error(`no session ${sessionId}`);
+      return entry.runId;
     },
     setScratchCwd: async (sessionId: string, cwd: string) => {
       this.scratch.set(sessionId, cwd);
@@ -126,6 +138,8 @@ class FakeHost {
   /** New array each time: the approval check caches by array identity. */
   append(entry: Entry, block: Block) {
     entry.session.blocks = [...entry.session.blocks, block];
+    // Like a committed session write in the real store.
+    this.changes.notify();
   }
 
   /** The child's turn completes with an assistant reply. */
@@ -229,6 +243,29 @@ const delegate = (requestId: string, extra: Record<string, unknown> = {}) =>
 const consult = (requestId: string, question = "Is this safe?") =>
   call("agents.consult", { requestId, question });
 
+it("does not re-read a waiting child while nothing changes", async () => {
+  setup({ subagents: [codexSix] });
+  const started = await delegate("idle-wait");
+  host.runIdReads = 0;
+  const result = await call("agents.wait", { runId: started.runId, timeoutSeconds: 2 });
+  expect(result).toMatchObject({ status: "running" });
+  // One initial read, plus the final description's freshness read.
+  expect(host.runIdReads).toBe(2);
+});
+
+it("resolves a waiting run on the child's committed change, not at the timeout", async () => {
+  setup({ subagents: [codexSix] });
+  const started = await delegate("change-wait");
+  const sessionId = String(started.sessionId);
+  host.runIdReads = 0;
+  setTimeout(() => host.finish(sessionId, "Done"), 50);
+  const begun = Date.now();
+  const result = await call("agents.wait", { runId: started.runId, timeoutSeconds: 10 });
+  expect(result).toMatchObject({ status: "succeeded" });
+  expect(Date.now() - begun).toBeLessThan(3000);
+  expect(host.runIdReads).toBeLessThanOrEqual(3);
+});
+
 it("supports direct sibling steering and same-context continuation with peer authority limits", async () => {
   setup({ subagents: [codexSix] });
   host.entries.get("parent")!.session.runtimeMode = "supervised";
@@ -281,6 +318,7 @@ beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), "delegation-service-"));
 });
 afterEach(() => {
+  vi.unstubAllEnvs();
   rmSync(directory, { recursive: true, force: true });
 });
 
@@ -361,6 +399,7 @@ describe("agents.options", () => {
           model: "claude:sonnet-5",
           label: "Claude Sonnet 5",
           available: true,
+          filesFalse: { available: true, repositoryReadIsolation: false },
           effortLevels: [],
         },
         {
@@ -370,6 +409,7 @@ describe("agents.options", () => {
           model: "codex:gpt-5",
           label: "GPT 5",
           available: true,
+          filesFalse: { available: true, repositoryReadIsolation: false },
           effortLevels: [],
         },
       ],
@@ -379,6 +419,7 @@ describe("agents.options", () => {
         model: "codex:gpt-6.1",
         label: "GPT 6.1",
         available: true,
+        filesFalse: { available: true, repositoryReadIsolation: false },
         effortLevels: [],
       },
       running: { subagents: 0, advisors: 0 },
@@ -588,6 +629,7 @@ describe("launch", () => {
     const settings = (host.commandsOf("create")[0]!.modelSettings ?? {}) as Record<string, string>;
     // The selection bounds the child's own runs; the advisor stays with the owner's conversation.
     expect(settings[CROSS_SUBAGENTS_KEY]).toBe(JSON.stringify([codexFive]));
+    expect(settings[DELEGATION_PROVIDER_HISTORY_KEY]).toBe("ephemeral");
     expect(settings).not.toHaveProperty(CROSS_ADVISOR_KEY);
     expect(settings).not.toHaveProperty("effort");
     expect(JSON.parse(settings[DELEGATION_PARENT_KEY]!)).toEqual({
@@ -614,6 +656,7 @@ describe("launch", () => {
     expect(String(send.text)).toContain("It drops a column.");
     expect(host.commandsOf("create")[0]).toMatchObject({
       model: "codex:gpt-6.1",
+      modelSettings: { [DELEGATION_PROVIDER_HISTORY_KEY]: "ephemeral" },
     });
   });
 
@@ -654,6 +697,23 @@ describe("requests and limits", () => {
       sessionId: "",
     });
     expect(host.commandsOf("create")).toHaveLength(DELEGATION_LIMITS.runningSubagents);
+  });
+
+  it("starts without reading other conversations' children or any child transcript", async () => {
+    setup({ subagents: [codexFive] });
+    host.add("other", { modelSettings: { [CROSS_SUBAGENTS_KEY]: JSON.stringify([codexFive]) } });
+    const foreign = await call(
+      "agents.delegate",
+      { requestId: "foreign", title: "Review", prompt: "Check" },
+      { sessionId: "other", projectId: "p" },
+    );
+    const own = await delegate("own-1");
+    const session = vi.spyOn(host.store, "session");
+    const runId = vi.spyOn(host.store, "sessionRunId");
+    await delegate("own-2");
+    expect(runId.mock.calls.map(([id]) => id)).not.toContain(foreign.sessionId);
+    expect(runId.mock.calls.map(([id]) => id)).toContain(own.sessionId);
+    expect(session.mock.calls.map(([id]) => id)).not.toContain(foreign.sessionId);
   });
 
   it("allows one running advisor at a time", async () => {
@@ -743,6 +803,21 @@ describe("agents.wait", () => {
       result: "Parser fixed.",
       truncated: false,
     });
+  });
+
+  it("marks the result unavailable when a succeeded child's transcript cannot be loaded", async () => {
+    setup({ subagents: [codexFive] });
+    const started = await delegate("req-1");
+    host.finish(String(started.sessionId), "Parser fixed.");
+    const load = host.store.session;
+    host.store.session = async (sessionId: string, signal?: AbortSignal) => {
+      // Only the reply load carries a deadline signal; the status check reads without one.
+      if (signal) throw new Error("timed out");
+      return await load(sessionId);
+    };
+    const waited = await call("agents.wait", { runId: started.runId });
+    expect(waited).toMatchObject({ status: "succeeded", resultUnavailable: true });
+    expect(waited).not.toHaveProperty("result");
   });
 
   it("reports a failed child with its error note", async () => {
@@ -1576,6 +1651,87 @@ describe("Automatic and the subagent ceiling", () => {
 });
 
 describe("files: false", () => {
+  it("uses scratch for Pi and refuses a continuation after its cwd changes", async () => {
+    const ref = { harness: "pi", model: "pi:test" } as DelegateModelRef;
+    setup({ subagents: [ref] });
+    deps.models = async () =>
+      ({
+        models: { pi: [{ id: ref.model, harness: "pi", name: "Pi" }] },
+        errors: {},
+      }) as unknown as HostModelCatalog;
+    deps.providers = ["pi"] as typeof deps.providers;
+    const started = await delegate("pi-chat", { files: false });
+    expect(await call("agents.options")).toMatchObject({
+      subagents: [{ filesFalse: { available: true, repositoryReadIsolation: false } }],
+    });
+    const child = String(started.sessionId);
+    expect(host.scratch.get(child)).toBeDefined();
+    host.finish(child, "done");
+    host.entries.get(child)!.session.cwd = "/project";
+    await expect(
+      call("agents.reply", { requestId: "pi-reply", runId: started.runId, message: "again" }),
+    ).rejects.toThrow("scratch folder");
+    expect(host.commandsOf("send")).toHaveLength(1);
+  });
+  it.each([
+    ["opencode", "opencode:test"],
+    ["grok", "grok:grok-4.7"],
+    ["antigravity", "antigravity:gemini-3.8-flash-high"],
+  ])(
+    "advertises and launches a supported %s chat-only child in scratch",
+    async (harness, model) => {
+      vi.stubEnv("BYCODA_GROK_CHAT_ONLY_API", "1");
+      vi.stubEnv("BYCODA_GEMINI_CHAT_ONLY_API", "1");
+      vi.stubEnv("XAI_API_KEY", "test-xai-key");
+      vi.stubEnv("GEMINI_API_KEY", "test-gemini-key");
+      const ref = { harness, model } as DelegateModelRef;
+      setup({ subagents: [ref] });
+      deps.models = async () =>
+        ({
+          models: { [harness]: [{ id: model, harness, name: "Chat-only test" }] },
+          errors: {},
+        }) as unknown as HostModelCatalog;
+      deps.providers = [harness] as typeof deps.providers;
+      expect(await call("agents.options")).toMatchObject({
+        subagents: [{ filesFalse: { available: true, repositoryReadIsolation: false } }],
+      });
+      const started = await delegate(`chat-only-${harness}`, { files: false });
+      expect(host.scratch.get(String(started.sessionId))).toBeDefined();
+      expect(host.commandsOf("create")).toEqual([
+        expect.objectContaining({
+          harness,
+          model,
+          runtimeMode: "supervised",
+          modelSettings: expect.objectContaining({ [DELEGATION_CHAT_ONLY_KEY]: "on" }),
+        }),
+      ]);
+    },
+  );
+
+  it.each(["grok", "cursor", "antigravity", "hermes"])(
+    "reports and rejects unsupported %s without launching a child",
+    async (harness) => {
+      vi.stubEnv("BYCODA_GROK_CHAT_ONLY_API", undefined);
+      vi.stubEnv("BYCODA_GEMINI_CHAT_ONLY_API", undefined);
+      const ref = { harness, model: `${harness}:test` } as DelegateModelRef;
+      setup({ subagents: [ref], advisor: ref });
+      deps.models = async () =>
+        ({
+          models: { [harness]: [{ id: ref.model, harness, name: "Test" }] },
+          errors: {},
+        }) as unknown as HostModelCatalog;
+      deps.providers = [harness] as typeof deps.providers;
+      expect(await call("agents.options")).toMatchObject({
+        subagents: [{ filesFalse: { available: false, repositoryReadIsolation: false } }],
+        advisor: { filesFalse: { available: false, repositoryReadIsolation: false } },
+      });
+      await expect(delegate(`unsupported-${harness}`, { files: false })).rejects.toThrow(
+        "files:false is unavailable",
+      );
+      expect(host.commandsOf("create")).toHaveLength(0);
+    },
+  );
+
   it("runs a subagent chat-only in its own empty scratch folder, supervised", async () => {
     setup({ subagents: [codexFive], worktreeCwd: "/worktrees/feature" });
     host.entries.get("parent")!.session.runtimeMode = "auto-accept-edits";
@@ -1601,6 +1757,33 @@ describe("files: false", () => {
     expect(host.scratch.size).toBe(0);
   });
 
+  it.each([
+    ["opencode", "opencode:provider/model"],
+    ["grok", "grok:grok-4.7"],
+    ["antigravity", "antigravity:gemini-3.8-flash-high"],
+  ])("uses normal worktree access for %s without a chat-only API key", async (harness, model) => {
+    vi.stubEnv("XAI_API_KEY", "");
+    vi.stubEnv("GEMINI_API_KEY", "");
+    const ref = { harness, model } as DelegateModelRef;
+    const worktreeCwd = "/worktrees/feature";
+    setup({ subagents: [ref], worktreeCwd });
+    host.entries.get("parent")!.session.runtimeMode = "auto-accept-edits";
+    deps.models = async () =>
+      ({
+        models: { [harness]: [{ id: model, harness, name: model }] },
+        errors: {},
+      }) as HostModelCatalog;
+    deps.providers = [ref.harness];
+
+    await delegate("req-provider-normal");
+
+    const create = host.commandsOf("create")[0]!;
+    expect(create).toMatchObject({ harness, model, worktreeCwd, runtimeMode: "auto-accept-edits" });
+    expect(create.modelSettings).not.toHaveProperty(DELEGATION_CHAT_ONLY_KEY);
+    expect(host.scratch.size).toBe(0);
+    expect(host.commandsOf("send")).toHaveLength(1);
+  });
+
   it("applies to advisors and rejects a non-boolean value", async () => {
     setup({ subagents: [codexFive], advisor: codexSix });
     await call("agents.consult", { requestId: "req-adv", question: "Is this safe?", files: false });
@@ -1613,5 +1796,83 @@ describe("files: false", () => {
     setup({ subagents: [codexFive] });
     await delegate("req-same", { files: false });
     await expect(delegate("req-same")).rejects.toThrow("different payload");
+  });
+});
+
+describe("usage limits", () => {
+  const RESET = Date.UTC(2026, 10, 26, 9, 0);
+  type Reading = { leftPercent: number; resetsAt?: number } | { unknown: true };
+  const quota = (readings: Record<string, Reading>) => ({
+    warm: async () => undefined,
+    reading: (harness: string, account: string | undefined, model: string) =>
+      ({
+        sampledAt: 0,
+        ...(readings[`${harness}:${account ?? "default"}:${model}`] ?? { unknown: true }),
+      }) as never,
+  });
+  const limited = (key: string) => ({
+    [`codex:default:${key}`]: { leftPercent: 0, resetsAt: Date.now() + 3_600_000 },
+  });
+  const withQuota = (readings: Record<string, Reading>) => {
+    deps.quota = quota(readings);
+    delegation = new ConversationDelegation(deps);
+  };
+
+  it("leaves a spent account out of agents.options and names its reset", async () => {
+    setup({ subagents: [codexSix, codexFive] });
+    withQuota({ "codex:default:codex:gpt-6.1": { leftPercent: 0, resetsAt: RESET + 9e12 } });
+    const options = await call("agents.options");
+    expect((options.subagents as { ref: string }[]).map((entry) => entry.ref)).toEqual([
+      "codex:gpt-5",
+    ]);
+    expect(options.atUsageLimit).toEqual([
+      { ref: "codex:gpt-6.1", resetsAt: new Date(RESET + 9e12).toISOString() },
+    ]);
+  });
+
+  it("refuses a requested spent model with its reset time and starts no run", async () => {
+    setup({ subagents: [codexSix, codexFive] });
+    withQuota(limited("codex:gpt-6.1"));
+    await expect(delegate("limit-1", { model: "codex:gpt-6.1" })).rejects.toThrow(
+      /usage limit and resets at/,
+    );
+    expect(host.commandsOf("send")).toHaveLength(0);
+    await expect(delegate("limit-2", { model: "codex:gpt-5" })).resolves.toBeDefined();
+  });
+
+  it("refuses when the only selected model is spent, for subagent and advisor", async () => {
+    setup({ subagents: [codexFive], advisor: codexSix });
+    withQuota({
+      ...limited("codex:gpt-5"),
+      ...limited("codex:gpt-6.1"),
+    });
+    await expect(delegate("limit-3")).rejects.toThrow(/usage limit/);
+    await expect(consult("limit-4")).rejects.toThrow(/usage limit/);
+  });
+
+  it("offers the account again once its reset time has passed", async () => {
+    setup({ subagents: [codexFive] });
+    withQuota({ "codex:default:codex:gpt-5": { leftPercent: 0, resetsAt: Date.now() - 1000 } });
+    const options = await call("agents.options");
+    expect(options.subagents).toHaveLength(1);
+    expect(options.atUsageLimit).toBeUndefined();
+  });
+
+  it("never treats unknown usage or partial headroom as exhausted", async () => {
+    setup({ subagents: [codexSix, codexFive] });
+    withQuota({ "codex:default:codex:gpt-6.1": { leftPercent: 3 } });
+    const options = await call("agents.options");
+    expect(options.subagents).toHaveLength(2);
+    expect(options.atUsageLimit).toBeUndefined();
+  });
+
+  it("refuses an agents.reply that would resume a spent account", async () => {
+    setup({ subagents: [codexFive] });
+    const started = await delegate("limit-5");
+    host.finish(String(started.sessionId), "First reply");
+    withQuota(limited("codex:gpt-5"));
+    await expect(
+      call("agents.reply", { requestId: "r1", runId: started.runId, message: "more" }),
+    ).rejects.toThrow(/usage limit/);
   });
 });

@@ -3,17 +3,14 @@ import type { CrewTheme } from "../../settings";
 import { loadCrewTheme, subscribeCrewTheme } from "../../settings/public/settings";
 import { isAvatarEye, memberAvatarRects } from "../model/memberAvatarArt";
 import type { MemberAvatarTraits } from "../model/memberAvatarTraits";
-
-const BLINK_CSS = `
-@keyframes member-avatar-blink { 0%, 94%, 100% { transform: scaleY(1); } 97% { transform: scaleY(0.2); } }
-.member-avatar-eye { transform-box: fill-box; transform-origin: center; animation: member-avatar-blink 4.6s infinite; }
-@media (prefers-reduced-motion: reduce) { .member-avatar-eye { animation: none; } }`;
+import "./MemberAvatar.css";
 
 /**
  * Member portrait: a pixel bust drawn from `traits` as crisp SVG rects, so it stays sharp
  * from 16 px up. It follows the device's scene theme (uncle, droid, Ent, Agent) unless `theme`
- * is given. `active` makes the eyes blink every few seconds (off under
- * reduced motion). With `label` it is an image; without it the avatar is decorative.
+ * is given. `active` marks the eyes for a slow blink, which stops with decorative motion off,
+ * an unfocused window, or reduced motion (see `MemberAvatar.css`). With `label` it is an image;
+ * without it the avatar is decorative.
  */
 export function MemberAvatar({
   traits,
@@ -45,7 +42,6 @@ export function MemberAvatar({
       aria-label={label}
       aria-hidden={label ? undefined : true}
     >
-      {active ? <style>{BLINK_CSS}</style> : null}
       {rects.map((rect, i) => (
         <rect
           key={i}

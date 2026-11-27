@@ -16,6 +16,17 @@ describe("SectionLabel", () => {
     expect(container.textContent).toBe("Projects");
   });
 
+  it("marks the rail variant as the sidebar header and keeps caption size for any size prop", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderToStaticMarkup(
+      createElement(SectionLabel, { variant: "rail", size: "micro", children: "Projects" }),
+    );
+    const row = container.firstElementChild!;
+    expect(row.getAttribute("data-variant")).toBe("rail");
+    expect(row.hasAttribute("data-size")).toBe(false);
+    expect(container.textContent).toBe("Projects");
+  });
+
   it("splits the chevron from the label so each runs its own action", async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const onExpandedChange = vi.fn();

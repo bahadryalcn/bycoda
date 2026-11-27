@@ -109,7 +109,7 @@ export function workspaceTabProject(tab: WorkspaceTab, sessions: Session[]): str
 
 export function findTabForProject(
   tabs: WorkspaceTab[],
-  sessions: Session[],
+  sessions: readonly Pick<Session, "id" | "cwd">[],
   path: string,
 ): WorkspaceTab | undefined {
   return tabs.find((tab) => {

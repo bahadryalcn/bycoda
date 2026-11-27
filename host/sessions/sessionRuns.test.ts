@@ -41,6 +41,7 @@ it("reports a deleted session only for a real not-found and rethrows other read 
     state: "finished",
     status: "failed",
     error: "The run's session was deleted.",
+    cause: "session_deleted",
   });
   const broken = {
     session: async () => {

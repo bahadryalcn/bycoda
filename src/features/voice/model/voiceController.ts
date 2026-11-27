@@ -26,7 +26,11 @@ export type VoiceControllerPorts = {
   invalidateCausalContext?(): Promise<void>;
   workspace: {
     tools: readonly { name: string; description: string; parameters: Record<string, unknown> }[];
-    execute(action: string, input: Record<string, unknown>): Promise<unknown>;
+    execute(
+      action: string,
+      input: Record<string, unknown>,
+      current?: () => boolean,
+    ): Promise<unknown>;
   };
   /** Creates an ordinary, persisted, unsent session through the existing owner flow. */
   ensureToolSession?(projectPath: string): Promise<string>;
@@ -203,6 +207,7 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
     name: string,
     args: Record<string, unknown>,
     authorized: () => boolean = () => true,
+    observePresentedView = false,
   ): Promise<unknown> {
     const assertActive = () => {
       if (!authorized()) throw new Error("The spoken request is no longer active.");
@@ -261,7 +266,7 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
       // Host tools need a verified project; desktop workspace actions do not.
       // A Host failure must not hide the workspace actions as well.
       try {
-        const selected = read().getThreadId ? await source(args, false, false, true) : target(args);
+        const selected = read().getThreadId ? await source(args, false, true, true) : target(args);
         const page = await discoverVoiceTools(selected, options);
         assertActive();
         if (selected.cwd) project(selected.cwd);
@@ -273,7 +278,11 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
           total: 0,
           nextOffset: null,
           hostToolsError:
-            error instanceof Error ? error.message : "Project tools could not be listed.",
+            typeof error === "string"
+              ? error
+              : error instanceof Error
+                ? error.message
+                : "Project tools could not be listed.",
           workspaceTools: workspace,
         };
       }
@@ -311,6 +320,7 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
     }
     const result = (async () => {
       if (args.family === "workspace") {
+        let scoped: ReturnType<typeof target> | undefined;
         await read().invalidateCausalContext?.();
         assertActive();
         if (read().getScope?.() === "session" || read().getScope?.() === "project") {
@@ -320,13 +330,18 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
             return resolveVoiceProjects(read().getProjects(), text(input.query, "query")!);
           if (action === "workspace.sessions.create" && read().getScope?.() === "session")
             throw new Error("Choose Global voice scope to create a session.");
-          target({ projectPath: input.projectPath, sessionId: input.sessionId });
+          scoped = target({ projectPath: input.projectPath, sessionId: input.sessionId });
         }
         // Reads take no request ID; the workspace bridge rejects arguments outside each schema.
         const tool = read().workspace.tools.find((entry) => entry.name === action);
         const properties = Object(tool?.parameters.properties) as Record<string, unknown>;
         const ids = "requestId" in properties ? { requestId } : {};
-        return read().workspace.execute(action, { ...input, ...ids });
+        // An optional projectPath means "everything" only in Global scope; otherwise the bound project.
+        const inherited = scoped && "projectPath" in properties ? { projectPath: scoped.cwd } : {};
+        const args = { ...inherited, ...input, ...ids };
+        return observePresentedView
+          ? read().workspace.execute(action, args, authorized)
+          : read().workspace.execute(action, args);
       }
       if (!isVoiceToolFamily(args.family)) throw new Error("Unknown tool family.");
       const accountId = text(args.accountId, "accountId", true);

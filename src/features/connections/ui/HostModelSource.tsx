@@ -3,6 +3,7 @@ import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { useQuery } from "@tanstack/react-query";
 import { machineProjects } from "../../automations/model/machineSnapshot";
 import { pathKey } from "../../../shared/lib/paths";
+import { t } from "../../../shared/i18n";
 import { remoteRequest } from "../model/connections";
 import { parseRemotePath } from "../model/remoteProjects";
 import type {
@@ -47,7 +48,7 @@ export function hostModelSource(
         ...(controls.model ?? {
           id: model,
           harness,
-          name: model ? modelDisplayName(model, harness) : "Loading models…",
+          name: model ? modelDisplayName(model, harness) : t("Loading models…"),
           nativeId: model.replace(/^[a-z]+:/, ""),
         }),
         settings: controls.settings,
@@ -94,7 +95,7 @@ export function HostModelSource({
     queryFn: async () => {
       const [descriptor, projects] = await Promise.all([
         remoteRequest<HostDescriptor>(machine!.id, "environment.describe"),
-        machineProjects(machine!),
+        cwd ? machineProjects(machine!) : [],
       ]);
       const hostPath = parseRemotePath(cwd)?.hostPath ?? cwd;
       const project = projects.find((entry) => pathKey(entry.cwd) === pathKey(hostPath));

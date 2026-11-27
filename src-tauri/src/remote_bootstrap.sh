@@ -10,6 +10,7 @@ FORCE_UPGRADE=${BYCODA_HOST_FORCE_UPGRADE:-0}
 HOST_PORT=${BYCODA_HOST_PORT:-3776}
 # A package shipped inside the desktop installer, verified like a download.
 ARCHIVE=${BYCODA_HOST_ARCHIVE:-}
+NO_SERVICE=${BYCODA_HOST_NO_SERVICE:-0}
 
 if [ ! -x "$ENTRY" ] || [ "$FORCE_UPGRADE" = 1 ]; then
   [ -n "$ARCHIVE" ] || [ -n "$RELEASE" ] || { echo 'bycoda host distribution is not configured. Set BYCODA_HOST_RELEASE_URL when building the desktop, or install an bycoda host package manually.' >&2; exit 1; }
@@ -80,6 +81,12 @@ if [ ! -x "$ENTRY" ] || [ "$FORCE_UPGRADE" = 1 ]; then
   # The replaced runtime stays one install longer: sessions started from it
   # (and a rollback) may still launch its files.
   OLD_RUNTIME=$(cat "$BASE/runtime-path" 2>/dev/null || true)
+  if [ "$NO_SERVICE" = 1 ]; then
+    if [ ! -f "$BASE/lifecycle.json" ]; then
+      "$DEST/bycoda-host" service uninstall --initialize-app
+    fi
+    "$DEST/bycoda-host" app-runtime-prepare
+  fi
   if [ -n "$OLD_RUNTIME" ] && [ "$OLD_RUNTIME" != "$DEST" ]; then
     printf '%s\n' "$OLD_RUNTIME" > "$TMP/previous-runtime-path"
     mv "$TMP/previous-runtime-path" "$BASE/previous-runtime-path"
@@ -97,11 +104,23 @@ SH
   mv "$TMP/launcher" "$ENTRY"
 fi
 
-if [ "$EXISTED" = 1 ] && { [ "$FORCE_UPGRADE" = 1 ] || [ "${BYCODA_HOST_REPAIR:-0}" = 1 ]; }; then
-  "$ENTRY" service uninstall >/dev/null
+if [ "$NO_SERVICE" != 1 ]; then
+  if [ "$EXISTED" = 1 ] && { [ "$FORCE_UPGRADE" = 1 ] || [ "${BYCODA_HOST_REPAIR:-0}" = 1 ]; }; then
+    if ! grep -Eq '"mode"[[:space:]]*:[[:space:]]*"app"' "$BASE/lifecycle.json" 2>/dev/null; then
+      "$ENTRY" service uninstall --preserve-mode >/dev/null
+    fi
+  fi
+  if [ -n "$ARCHIVE" ]; then
+    "$ENTRY" service install --port "$HOST_PORT" >/dev/null
+    "$ENTRY" connection-info
+  else
+    INSTALLED=$("$ENTRY" service install --ssh-setup --port "$HOST_PORT")
+    case "$INSTALLED" in
+      *'"enabledBackgroundService":true'*) "$ENTRY" connection-info --background-service-enabled ;;
+      *) "$ENTRY" connection-info ;;
+    esac
+  fi
 fi
-"$ENTRY" service install --port "$HOST_PORT" >/dev/null
-"$ENTRY" connection-info
 # Every install unpacks a fresh runtime (with its Node engine) beside the old
 # ones. Now that the new host answers, drop the others, except the previous
 # runtime, a runtime that a registered service definition still launches and

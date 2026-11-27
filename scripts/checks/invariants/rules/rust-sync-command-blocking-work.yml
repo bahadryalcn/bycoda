@@ -1,0 +1,31 @@
+id: rust-sync-command-blocking-work
+language: rust
+severity: error
+message: "A sync fn under `#[tauri::command(async)]` runs on a tokio worker (one per core); SQLite under the store lock, a spawned process or `std::fs` work there can stall every other IPC command. Make it `#[tauri::command] pub async fn` and move the body into `crate::harness::run_blocking` (or `run_admitted_blocking` for admitted writes)."
+note: docs/reference/code-invariants.md
+files:
+  - "src-tauri/src/**"
+ignores:
+  - "**/*_tests.rs"
+  - "**/tests.rs"
+rule:
+  kind: function_item
+  follows:
+    kind: attribute_item
+    regex: "^#\\[tauri::command\\(async\\)\\]$"
+  not:
+    has:
+      kind: function_modifiers
+      regex: "async"
+  has:
+    field: body
+    has:
+      stopBy: end
+      any:
+        - pattern: $S.lock_conn()
+        - pattern: $S.with_read_conn($$$)
+        - pattern: $S.conn.lock()
+        - pattern: Command::new($$$)
+        - pattern: std::process::Command::new($$$)
+        - pattern: std::fs::$F($$$)
+        - pattern: fs::$F($$$)

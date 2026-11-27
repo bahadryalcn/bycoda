@@ -1,6 +1,8 @@
-import { NativePopupHost, PopupBackdrop } from "./NativePopupHost";
+import { floatingFrameClassName, NativePopupHost, PopupBackdrop } from "./NativePopupHost";
 // Public alias of the NativePopupHost component; the catalog entry lives on its definition.
 export { NativePopover } from "./NativePopupHost";
+// The window backdrop paints the same opaque floating ground as popups, so it reuses this owner.
+export { PopupBackdrop } from "./NativePopupHost";
 import {
   useCallback,
   useContext,
@@ -21,12 +23,15 @@ import styles from "./Popover.module.css";
 import {
   placePopover,
   POPUP_MAX_WIDTH,
+  POPUP_SIZE_REM,
   POPUP_VIEWPORT_PADDING,
   popupListWidth,
+  popupSizeWidth,
   type AnchorRect,
   type PopoverAlign,
   type PopoverPosition,
   type PopoverSide,
+  type PopoverSize,
 } from "../lib/popover";
 
 /**
@@ -99,13 +104,34 @@ function focusDialog(surface: HTMLElement | null, initialFocus?: string) {
   (first ?? surface).focus({ preventScroll: true });
 }
 
+/**
+ * Content inset and look by purpose; `className` then carries layout only.
+ *
+ * - `"panel"`: filter panel, small form, details or tool panel (0.75rem, the Surface `md` inset).
+ * - `"compact"`: colour or icon grid and small picker (0.5rem, the Surface `sm` inset).
+ * - `"preview"`: hover preview or row detail with the standard panel inset.
+ * - Omitted: no inset; the content owns it (list bodies use {@link popupListClassName}).
+ *
+ * `padding` is the viewport edge gap, not this inset.
+ */
+export type PopoverVariant = "panel" | "compact" | "preview";
+
+const VARIANT_CLASS: Record<PopoverVariant, string> = {
+  panel: styles.panel,
+  compact: styles.compact,
+  preview: styles.preview,
+};
+
 type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   anchor: PopoverAnchor;
+  /** Content inset by purpose; see {@link PopoverVariant}. */
+  variant?: PopoverVariant;
   side?: PopoverSide;
   align?: PopoverAlign;
   gap?: number;
   padding?: number;
   width?: number;
+  size?: PopoverSize;
   /**
    * Marks a list popup (select, menu, picker): the width is the floor and the surface grows with its
    * longest row up to `POPUP_MAX_WIDTH` (800px), always clamped to the viewport. Unlike `width`, content
@@ -120,24 +146,19 @@ type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   flow?: PopoverFlow;
   /** Defaults to `LAYER.popover`; a flyout off an open popover wants higher. */
   layer?: number;
-  /** Drops the glass frame and keeps only placement and the content animation. */
+  /** Drops the floating frame and keeps placement and the content animation. */
   bare?: boolean;
+  /** Marks overlays attached to the composer. Uses the shared floating frame. */
+  appearance?: "composer";
   /** Non-interactive hints must not return focus when their trigger blurs. */
   restoreFocus?: boolean;
   /** A non-interactive hint participates in modal containment without owning Escape. */
   passive?: boolean;
   /** Keyboard hints and other frequent surfaces can skip their entrance motion. */
   motion?: "auto" | "none";
-  /**
-   * Keeps the frame but paints an opaque surface instead of backdrop glass.
-   * For popovers over live canvases (terminal WebGL): a backdrop-filter that
-   * samples a moving canvas makes Chromium recomposite, and flash, the canvas.
-   */
+  /** Legacy material flag. The frame is always opaque. */
   solid?: boolean;
-  /**
-   * Frosted glass: a thin tint over a strong blur, for non-interactive hover cards that should
-   * let the pane beneath show through. Falls back to the opaque surface without blur support.
-   */
+  /** Legacy material flag. Previews use the shared floating frame. */
   frosted?: boolean;
   style?: CSSProperties;
   autoFocus?: boolean;
@@ -175,6 +196,10 @@ function origin(side: PopoverSide, align: PopoverAlign): string {
   if (side === "bottom") return `${near} 0%`;
   if (side === "top") return `${near} 100%`;
   return side === "right" ? `0% ${near}` : `100% ${near}`;
+}
+
+function rootFontSize(): number {
+  return Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
 }
 
 function anchorElement(anchor: PopoverAnchor): HTMLElement | null {
@@ -235,6 +260,7 @@ function samePosition(a: PopoverPosition | null, b: PopoverPosition): boolean {
  * Anchored secondary surface portalled to the body: placed against a trigger, rect or point with viewport flipping,
  * animated from the anchored edge, with outside-press and Escape dismissal via `onDismiss`.
  * `kind="dialog"` makes it a small non-modal form or details panel (role, focus in, focus return); `flow="scroll"` owns one scroll region.
+ * `variant` ("panel", "compact", "preview") sets the content inset by purpose; pass `className` for layout only (grid, gap, max width), never `p-*` or a local padding rule.
  * @group overlay
  * @use Anchored custom content: filter panel, small form, details card, picker or list body.
  * @avoid Command menus and searchable or nested pickers of commands: DropdownMenu or ContextMenu. Hover hints: Tooltip. Blocking tasks: Modal. Side panels: Sheet. Never a hand-set role="menu"/"listbox" or role="dialog": use DropdownMenu or kind="dialog".
@@ -260,6 +286,7 @@ function NativePopover({
   passive = false,
   flow = "auto",
   kind,
+  variant,
   ...props
 }: Props & { host: HTMLElement }) {
   const surface = useRef<HTMLDivElement | null>(null);
@@ -303,11 +330,13 @@ function NativePopover({
     gap: _gap,
     padding: _padding,
     width: _width,
+    size: _size,
     minWidth,
     minHeight: _minHeight,
     constrainHeight: _constrainHeight,
     layer: _layer,
     bare: _bare,
+    appearance: _appearance,
     solid: _solid,
     frosted: _frosted,
     motion: _motion,
@@ -324,12 +353,12 @@ function NativePopover({
       }}
       data-popover-flow={flow}
       style={{
-        maxHeight: maxHeight ?? 400,
+        maxHeight: `min(${maxHeight ?? 400}px, var(--native-popup-max-height, 100dvh))`,
         ...(minWidth != null ? { "--popup-max-width": `${POPUP_MAX_WIDTH}px` } : null),
         ...(flow === "scroll" ? SCROLL_STYLE : null),
         ...style,
       }}
-      className={`${minWidth != null ? `${styles.list} ` : ""}${flow === "auto" ? `${styles.bounded} ` : ""}relative w-full outline-none ${className ?? ""}`}
+      className={`${minWidth != null ? `${styles.list} ` : ""}${flow === "auto" ? `${styles.bounded} ` : ""}${variant ? `${VARIANT_CLASS[variant]} ` : ""}relative w-full outline-none ${className ?? ""}`}
     >
       <OverlayParent.Provider value={overlayId}>{children}</OverlayParent.Provider>
     </div>,
@@ -344,6 +373,7 @@ function WebPopover({
   gap,
   padding,
   width,
+  size,
   minWidth,
   minHeight,
   maxHeight,
@@ -351,8 +381,10 @@ function WebPopover({
   flow = "auto",
   layer = LAYER.popover,
   bare = false,
-  solid = false,
-  frosted = false,
+  appearance,
+  solid,
+  variant,
+  frosted,
   className,
   style,
   autoFocus,
@@ -417,12 +449,13 @@ function WebPopover({
     };
     // offsetWidth rounds a fractional width down; pinning that width wraps the
     // last word of shrink-to-fit content (tooltips), so round the box up.
+    const fixedWidth = width ?? (size != null ? popupSizeWidth(size, rootFontSize()) : undefined);
     const pinnedWidth = el.style.width;
     let naturalWidth: number;
     try {
       // A positioned picker has a pinned width. Measure its new content before
       // reusing that width, including same-height lists loaded after opening.
-      if (width == null && minWidth != null) el.style.width = "max-content";
+      if (fixedWidth == null && minWidth != null) el.style.width = "max-content";
       naturalWidth = Math.max(
         el.offsetWidth,
         Math.ceil(el.getBoundingClientRect().width / zoom - 0.05),
@@ -439,7 +472,8 @@ function WebPopover({
         align,
         gap,
         padding,
-        width: width ?? (minWidth == null ? naturalWidth : popupListWidth(naturalWidth, minWidth)),
+        width:
+          fixedWidth ?? (minWidth == null ? naturalWidth : popupListWidth(naturalWidth, minWidth)),
         minHeight,
         maxHeight,
       },
@@ -447,7 +481,7 @@ function WebPopover({
     setPosition((prev) => (samePosition(prev, next) ? prev : next));
     // `key` stands in for the anchor, which is read through a ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, side, align, gap, padding, width, minWidth, minHeight, maxHeight]);
+  }, [key, side, align, gap, padding, width, size, minWidth, minHeight, maxHeight]);
 
   useLayoutEffect(() => {
     place();
@@ -476,6 +510,13 @@ function WebPopover({
       });
     const trigger = anchorElement(anchorRef.current);
     if (trigger) observer.observe(trigger);
+    // A late sibling can move an anchor in a centered layout without resizing it.
+    const layout = trigger?.closest("[data-popover-anchor-layout]");
+    const layoutObserver = layout ? new MutationObserver(updatePlacement) : undefined;
+    if (layout) {
+      layoutObserver?.observe(layout, { childList: true });
+      observer.observe(layout);
+    }
     // Moving a parent frame does not resize its menu row.
     const parentFrame = trigger?.closest("[data-popover-side]")?.parentElement;
     const parentObserver = new MutationObserver(updatePlacement);
@@ -490,6 +531,7 @@ function WebPopover({
     window.addEventListener("scroll", onScroll, true);
     return () => {
       observer.disconnect();
+      layoutObserver?.disconnect();
       contentObserver.disconnect();
       parentObserver.disconnect();
       cancelAnimationFrame(placementFrame);
@@ -540,16 +582,14 @@ function WebPopover({
         position: "fixed",
         left: 0,
         top: 0,
-        width: width ?? "max-content",
+        width: width ?? (size != null ? `${POPUP_SIZE_REM[size]}rem` : "max-content"),
         ...(constrainHeight
           ? { maxHeight: maxHeight ?? `calc(100vh - ${POPUP_VIEWPORT_PADDING * 2}px)` }
           : {}),
         visibility: "hidden",
       };
 
-  // Keep the backdrop-filter on a stable frame. WebKit can briefly paint a
-  // stale backdrop when the same composited element is transformed and then
-  // invalidated by a child hover. Only this unblurred content layer moves.
+  // Keep the frame stationary while its content animates in.
   const frameInset = bare ? 0 : 2;
   const contentMaxHeight = constrainHeight
     ? position
@@ -563,6 +603,7 @@ function WebPopover({
     <div
       ref={frame}
       data-popover-side={position?.side ?? side}
+      data-popover-appearance={appearance}
       style={
         {
           ...placed,
@@ -571,7 +612,9 @@ function WebPopover({
           zIndex: effectiveLayer,
         } as CSSProperties
       }
-      className={[!bare && FRAME, minWidth != null && styles.list].filter(Boolean).join(" ")}
+      className={[!bare && FRAME, !bare && floatingFrameClassName, minWidth != null && styles.list]
+        .filter(Boolean)
+        .join(" ")}
     >
       {bare ? null : <PopupBackdrop solid={solid} frosted={frosted} />}
       <div
@@ -590,9 +633,12 @@ function WebPopover({
           transformOrigin: origin(position?.side ?? side, align),
           ...style,
         }}
-        className={`${position && motion !== "none" ? "popover-open " : ""}${bounded ? `${styles.bounded} ` : ""}relative z-[1] outline-none ${className ?? ""}`}
+        className={`${position && motion !== "none" ? "popover-open " : ""}${bounded ? `${styles.bounded} ` : ""}${variant ? `${VARIANT_CLASS[variant]} ` : ""}relative z-[1] outline-none ${className ?? ""}`}
       >
-        <OverlayParent.Provider value={overlayId}>{children}</OverlayParent.Provider>
+        {/* Menus and tooltips opened from inside this popover stack above it. */}
+        <OverlayMenuLayer.Provider value={effectiveLayer + 1}>
+          <OverlayParent.Provider value={overlayId}>{children}</OverlayParent.Provider>
+        </OverlayMenuLayer.Provider>
       </div>
     </div>,
     // Keep menus inside their native top-layer owner so they stay visible and interactive.

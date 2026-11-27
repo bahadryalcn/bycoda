@@ -37,26 +37,32 @@ function commonGate(input: GateInput): ActionGate | undefined {
 }
 
 /** The one publish action: every problem is shown and the first one is the reason. */
-export function publishGate(input: GateInput & { problems: Problem[] }): PublishGate {
+export function publishGate(
+  input: GateInput & { problems: Problem[]; prepareOnly?: boolean },
+): PublishGate {
   const common = commonGate(input);
   if (common) return common;
-  if (!input.snapshot!.sendingEnabled)
+  if (!input.prepareOnly && !input.snapshot!.sendingEnabled)
     return {
       disabled: true,
       disabledReason: t("Sending is off. Turn it on in Accounts & Settings."),
       fix: "accounts",
     };
-  if (input.problems.length) return closed(input.problems[0]!.text);
+  const problem = input.problems[0];
+  if (problem)
+    return problem.fix ? { ...closed(problem.text), fix: problem.fix } : closed(problem.text);
   return { disabled: false };
 }
 
 /** Saving a draft sends nothing, so it needs content and an account but not sending or valid limits. */
 export function draftGate(
-  input: GateInput & { hasAccounts: boolean; hasContent: boolean },
+  input: GateInput & { hasAccounts: boolean; hasContent: boolean; hasMissingAccounts?: boolean },
 ): ActionGate {
   const common = commonGate(input);
   if (common) return common;
   if (!input.hasAccounts) return closed(t("Choose at least one account."));
+  if (input.hasMissingAccounts)
+    return closed(t("This account is no longer available. Uncheck it to continue."));
   if (!input.hasContent) return closed(t("Write the post or attach media."));
   return { disabled: false };
 }

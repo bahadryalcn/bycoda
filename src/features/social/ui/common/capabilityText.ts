@@ -36,6 +36,57 @@ export function operationText(operation: SocialOperation): string {
       return t("Audience collection");
     case "profile.read":
       return t("Profile reading");
+    // X capabilities.
+    case "x.engagement":
+      return t("X engagement");
+    case "x.relationships":
+      return t("X relationships");
+    case "x.lists":
+      return t("X lists");
+    case "x.spaces":
+      return t("Spaces");
+    // YouTube management.
+    case "video.update":
+      return t("Video editing");
+    case "thumbnail.set":
+      return t("Video thumbnails");
+    case "playlists.manage":
+      return t("Playlists");
+    case "comment.moderate":
+      return t("Comment moderation");
+    case "comment.react":
+      return t("Comment reactions");
+    case "subscribe":
+      return t("Subscriptions");
+    case "channel.profile.update":
+      return t("Channel profile editing");
+    case "analytics.report":
+      return t("YouTube Analytics");
+    case "monetization.read":
+      return t("Estimated earnings");
+    case "monetization.status":
+      return t("Monetization status");
+    case "live.manage":
+      return t("Live broadcasts");
+    case "live.chat":
+      return t("Live chat");
+    case "community.publish":
+      return t("Community posts");
+    // Facebook Page operations
+    case "profile.update":
+      return t("Edit profile");
+    case "post.edit":
+      return t("Edit post");
+    case "post.schedule":
+      return t("Facebook scheduling");
+    case "comment.privateReply":
+      return t("Private reply");
+    case "mentions.read":
+      return t("Mentions");
+    case "live.read":
+      return t("Live comments");
+    case "live.transmit":
+      return t("Live video");
   }
 }
 
@@ -57,10 +108,12 @@ export function needsConnection(row: CapabilityRow): boolean {
 export function capabilityReasonText(row: CapabilityRow): string {
   const code = row.reasonCode;
   if (code === "api.ready" || code === "browser.ready") return t("Ready");
+  if (code === "x.api.paid_product") return t("Paid X API disabled");
   if (needsConnection(row)) return t("Connection needed");
   if (code === "unsupported.platform") return t("Not available on this platform");
   if (code === "unsupported.not_yet") return t("Not available yet");
   if (code === "browser.no_recipe") return t("Not available in the browser yet");
+  if (code === "youtube.browser_required") return t("YouTube browser connection needed");
   if (code === "api.account_type_unsupported") return t("Not available for this account type");
   if (code.endsWith(".webhook.external_setup")) return t("Finish setup on the platform");
   switch (row.status) {

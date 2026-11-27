@@ -2,6 +2,7 @@
 import { act, createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => []) }));
 import { SshJumpPolicyEditor } from "./SshJumpPolicyEditor";
 import {
   emptySshJumpPolicyDraft,
@@ -92,19 +93,20 @@ it("honors controlled changes and eight-hop/disabled limits without callbacks on
       ),
     );
     expect(change).not.toHaveBeenCalled();
-    // Field help buttons (aria-haspopup) stay readable while the editor is disabled.
+    // Field help buttons (aria-haspopup) and disclosure toggles (aria-expanded) stay readable while the editor is disabled.
     expect(
-      [...host.querySelectorAll("button:not([aria-haspopup])")].every(
-        (b) => (b as HTMLButtonElement).disabled,
+      [...host.querySelectorAll("button:not([aria-haspopup]):not([aria-expanded])")].every(
+        (b) => (b as HTMLButtonElement).disabled || b.getAttribute("aria-disabled") === "true",
       ),
     ).toBe(true);
     await act(async () =>
       root.render(createElement(SshJumpPolicyEditor, { value, onChange: change })),
     );
     expect(
-      [...host.querySelectorAll("button")].find((b) => b.textContent?.includes("Add jump host"))
-        ?.disabled,
-    ).toBe(true);
+      [...host.querySelectorAll("button")]
+        .find((b) => b.textContent?.includes("Add jump host"))
+        ?.getAttribute("aria-disabled"),
+    ).toBe("true");
     const next = [
       {
         ...value[0],
@@ -115,9 +117,9 @@ it("honors controlled changes and eight-hop/disabled limits without callbacks on
     await act(async () =>
       root.render(createElement(SshJumpPolicyEditor, { value: next, onChange: change })),
     );
-    expect(host.querySelector<HTMLInputElement>('[aria-label="Jump host 1: Host"]')!.value).toBe(
-      "external-change",
-    );
+    expect(
+      host.querySelector<HTMLInputElement>('[aria-label="Jump host 1: Hostname"]')!.value,
+    ).toBe("external-change");
     expect(
       host.querySelector<HTMLInputElement>('[aria-label="Jump host 1: Certificate file"]')!.value,
     ).toBe("~/preserved cert");

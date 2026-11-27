@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { discoverHostInputs, hostBuildPlans } from "./host-inputs.mjs";
 
-test("discovers shared imports, every worker and conservative runtime resources without writing bundles", async () => {
+test("discovers all named outputs, shared imports and runtime resources without writing bundles", async () => {
   const root = await mkdtemp(join(tmpdir(), "bycoda-host-inputs-"));
   try {
     const files = {
@@ -15,8 +15,10 @@ test("discovers shared imports, every worker and conservative runtime resources 
       "scripts/build/host-inputs.mjs": "// fixture helper identity",
       "host/build.mjs": `import {build} from "esbuild";
         const options={bundle:true,platform:"node",format:"esm",target:"node24",sourcemap:true};
-        await build({...options,entryPoints:["host/cli.ts"],outfile:"build/host/host.mjs"});
-        await build({...options,entryPoints:["host/storage/snapshot-worker.mjs"],outfile:"build/host/snapshot-worker.mjs"});`,
+        await build({...options,entryPoints:[
+          {in:"host/cli.ts",out:"host"},
+          {in:"host/storage/snapshot-worker.mjs",out:"snapshot-worker"},
+        ],outdir:"build/host",outExtension:{".js":".mjs"}});`,
       "host/cli.ts":
         'import {shared} from "../src/shared.ts"; console.log(shared,new URL("./dynamic-worker.mjs",import.meta.url));',
       "host/storage/snapshot-worker.mjs":
@@ -43,7 +45,12 @@ test("discovers shared imports, every worker and conservative runtime resources 
       assert.ok(graph.inputs.includes(name), name);
     assert.ok(!graph.inputs.includes("src/UnrelatedUI.tsx"));
     assert.ok(!graph.inputs.includes("host/unrelated.test.ts"));
-    assert.ok(graph.outputs.includes("build/host/snapshot-worker.mjs.map"));
+    assert.deepEqual(graph.outputs, [
+      "build/host/host.mjs",
+      "build/host/host.mjs.map",
+      "build/host/snapshot-worker.mjs",
+      "build/host/snapshot-worker.mjs.map",
+    ]);
     assert.deepEqual(graph.entryPoints, ["host/cli.ts", "host/storage/snapshot-worker.mjs"]);
     await assert.rejects(access(join(root, "build")), { code: "ENOENT" });
   } finally {
@@ -66,14 +73,17 @@ test("refuses dynamic entrypoint configuration rather than silently accepting an
 });
 
 test("isolated readonly session helper is an explicit packaged build input", async () => {
+  const source = "host/session-read-helper.mjs";
+  const output = "session-read-helper";
   const plans = hostBuildPlans(
     await readFile(new URL("../../host/build.mjs", import.meta.url), "utf8"),
   );
   assert.ok(
     plans.some(
       (plan) =>
-        plan.entryPoints.includes("host/session-read-helper.mjs") &&
-        plan.outfile === "build/host/session-read-helper.mjs",
+        plan.outdir === "build/host" &&
+        plan.outExtension[".js"] === ".mjs" &&
+        plan.entryPoints.some((entry) => entry.in === source && entry.out === output),
     ),
   );
   const packaging = await readFile(new URL("../../host/package.mjs", import.meta.url), "utf8");

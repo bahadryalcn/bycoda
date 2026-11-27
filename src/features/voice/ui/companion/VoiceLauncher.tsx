@@ -13,10 +13,13 @@ import { useKeybindingShortcut } from "../../../settings/public/useKeybindingSho
 import type { VoiceVisual } from "../../model/voiceSettings";
 import type { VoiceVisualState } from "../../model/voiceVisualState";
 import { VoiceVisualizer } from "../VoiceVisualizer";
+import type { useVoiceWake } from "../useVoiceWake";
 import styles from "../VoiceCompanion.module.css";
 import { useVoiceLauncherSlot } from "./voiceLauncherSlot";
 
 export const VOICE_OPEN_COMPANION = "Voice: Open Companion";
+
+export type VoiceWakeControls = ReturnType<typeof useVoiceWake>;
 
 /** Default chord: Mod+Shift+K. Rebinding and disabling go through `keybindingPressed`. */
 export function voiceOpenShortcutPressed(event: KeyboardEvent): boolean {
@@ -62,7 +65,7 @@ export function VoiceReturnButton({
   );
 }
 
-/** Corner dot on the avatar: none while voice is off, grey when muted, live states pulse green. */
+/** Corner dot on the avatar: none while voice is off, grey in standby, live states pulse green. */
 export function voiceStatusTone(state: VoiceVisualState) {
   if (state === "off") return undefined;
   if (state === "muted") return "neutral";
@@ -73,7 +76,8 @@ export function voiceStatusTone(state: VoiceVisualState) {
 
 /**
  * Closed voice companion: the assistant's avatar (its default portrait when none was chosen,
- * the name's initial when the image fails) and name in a pill, with a status dot on the avatar.
+ * the name's initial when the image fails) and a status dot. Docked controls show the name
+ * when the rail is expanded.
  * Before setup there is no assistant yet, so the voice visual stands in. The open shortcut works
  * from anywhere in the app.
  */
@@ -84,6 +88,8 @@ export function VoiceLauncher({
   avatar,
   state,
   onOpen,
+  returnToWindow = false,
+  wakeControls,
 }: {
   ref: Ref<HTMLButtonElement>;
   visual: VoiceVisual;
@@ -91,6 +97,8 @@ export function VoiceLauncher({
   avatar: string | undefined;
   state: VoiceVisualState;
   onOpen: () => void;
+  returnToWindow?: boolean;
+  wakeControls?: VoiceWakeControls;
 }) {
   const shortcut = useKeybindingShortcut(VOICE_OPEN_COMPANION);
   const open = useStableCallback(onOpen);
@@ -105,12 +113,18 @@ export function VoiceLauncher({
   }, [open]);
   const slot = useVoiceLauncherSlot();
   const compact = slot?.hasAttribute("data-compact") === true;
-  const label = name ? t("Talk to {p0}", { p0: name }) : t("Voice companion");
+  const label = returnToWindow
+    ? t("Return voice companion to this window")
+    : name
+      ? t("Talk to {p0}", { p0: name })
+      : t("Voice companion");
   const tone = voiceStatusTone(state);
+  const wake = wakeControls?.indicator;
   const icon = name ? (
     <span className={styles.launcherAvatar} data-state={state}>
       <AssistantAvatarMark
-        className={styles.launcherMark}
+        avatarSize={slot ? "sm" : undefined}
+        className={slot ? undefined : styles.launcherMark}
         value={avatar}
         name={name}
         size="micro"
@@ -123,6 +137,15 @@ export function VoiceLauncher({
           className={styles.launcherDot}
           tone={tone}
           size="fixed"
+          appearance="solid"
+          halo="floating"
+        />
+      )}
+      {wake && (
+        <StatusDot
+          className={styles.launcherWakeDot}
+          data-wake-status={wake.kind}
+          tone={wake.kind === "listening" ? "success" : "warning"}
           appearance="solid"
           halo="floating"
         />
@@ -143,14 +166,29 @@ export function VoiceLauncher({
           : surfaceAttributes({ variant: "floating", frame: "pane" }, styles.launcherButton))}
         data-docked={slot ? "" : undefined}
         label={label}
-        tooltip={compact ? label : name ? t("Voice assistant") : undefined}
+        aria-description={wake ? wakeStatusText(wake) : undefined}
+        tooltip={compact || returnToWindow ? label : undefined}
         shortcut={shortcut}
         tooltipSide={compact ? "right" : "top"}
         startIcon={compact ? undefined : icon}
+        truncate={Boolean(slot)}
         onClick={onOpen}
       >
         {compact ? icon : name || t("Voice")}
       </Button>
     </VoiceLauncherFrame>
   );
+}
+
+function wakeStatusText(wake: NonNullable<VoiceWakeControls["indicator"]>) {
+  switch (wake.kind) {
+    case "listening":
+      return t("Listening for “{p0}” only", { p0: wake.phrase });
+    case "paused":
+      return t("Paused: too much background speech");
+    case "pack":
+      return t("Wake phrase needs the local voice pack");
+    case "error":
+      return t("Wake phrase stopped listening. Check the microphone.");
+  }
 }

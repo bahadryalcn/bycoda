@@ -21,8 +21,7 @@ import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/public/s
 import { useHostSessionBinding } from "../../connections/public/useHostSessionBinding";
 import { useCitedTurnHistory } from "./useCitedTurnHistory";
 import { useReadOnlyHostSession } from "./useReadOnlyHostSession";
-import { Button } from "../../../shared/ui/Button";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 
 type AgentTabViewProps = {
@@ -55,12 +54,7 @@ function HostAgentTabView(props: AgentTabViewProps & { session: Session }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       {remote.error && !shownCentrally && (
-        <Alert tone="danger">
-          {remote.error}
-          <Button type="button" variant="secondary" onClick={remote.retry}>
-            {t("Retry")}
-          </Button>
-        </Alert>
+        <InlineError details={remote.error} retry={{ onRetry: remote.retry, label: t("Retry") }} />
       )}
       <div className="min-h-0 flex-1">
         <LocalAgentTabView {...props} {...remote} remoteSession />
@@ -164,9 +158,7 @@ function LocalAgentTabView({
     return (
       <div className="grid h-full place-items-center px-6 text-center">
         <Text as="p" tone="secondary" leading="relaxed" className="max-w-sm">
-          {t(
-            "This agent is no longer running. Its work is summarised in the orchestrator's conversation.",
-          )}
+          {t("This agent is no longer running.")}
         </Text>
       </div>
     );
@@ -216,13 +208,13 @@ function LocalAgentTabView({
           "flex shrink-0 items-center gap-1.5  border-(--ui-tone-neutral-border) px-3 py-1.5 font-sans",
         )}
       >
-        <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
+        <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
+        {/* No composer is the read-only signal; the footer only names the model. */}
         <Tooltip label={title} asChild>
-          <Text size="inherit" tone="inherit" truncate className="min-w-0">
+          <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
             {model} · {HARNESS_TITLE[session.harness]}
           </Text>
         </Tooltip>
-        <span className="ml-auto shrink-0">{t("Run by the orchestrator · read-only")}</span>
         <span ref={setFindTriggerContainer} className="shrink-0" />
       </Text>
     </div>

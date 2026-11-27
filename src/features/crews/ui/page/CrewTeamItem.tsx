@@ -26,7 +26,6 @@ export function CrewTeamItem({
   deleteSupported,
   canOpenCoordinator,
   onStart,
-  onEdit,
   onPick,
 }: {
   crew: CrewDefinition;
@@ -36,7 +35,6 @@ export function CrewTeamItem({
   deleteSupported?: boolean;
   canOpenCoordinator: boolean;
   onStart: () => void;
-  onEdit: () => void;
   /** A "…" menu pick, with the crew's single ongoing run for the coordinator item. */
   onPick: (id: string, single?: CrewRunView) => void;
 }) {
@@ -52,14 +50,14 @@ export function CrewTeamItem({
       ? crewWorkStatusLabel("working")
       : undefined;
   const scope = crew.projectId ? t("This project") : t("All projects on this host");
-  const work = runs.length
-    ? [
-        execution ? crewWorkStatusLabel(execution) : "",
-        runs.length > 1 ? t("{p0} ongoing", { p0: runs.length }) : "",
-      ]
-        .filter(Boolean)
-        .join(" · ")
-    : t("No ongoing work");
+  // Idle crews say nothing. One status: attention already names the state, so the execution
+  // label is dropped.
+  const work = [
+    execution && !attention ? crewWorkStatusLabel(execution) : "",
+    runs.length > 1 ? t("{p0} ongoing", { p0: runs.length }) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <Surface
       as="li"
@@ -94,34 +92,37 @@ export function CrewTeamItem({
           </Text>
           {/* Scope and size are data, not help text: they stay visible. */}
           <Text as="p" tone="muted" truncate>
-            {[scope, t("{p0} members", { p0: crew.agents.length })].join(" · ")}
+            {[
+              scope,
+              crew.agents.length === 1
+                ? t("{p0} member", { p0: 1 })
+                : t("{p0} members", { p0: crew.agents.length }),
+            ].join(" · ")}
           </Text>
-          <Text as="p" tone="muted" className="mt-0.5 flex items-center gap-1.5">
-            {execution === "working" ? <WorkingIndicator size="xs" /> : null}
-            {attention ? (
-              <Badge size="xs" tone={CREW_ATTENTION_TONE[attention]}>
-                {crewAttentionLabel(attention)}
-              </Badge>
-            ) : null}
-            <Text size="inherit" tone="inherit" truncate>
-              {work}
+          {execution === "working" || attention || work ? (
+            <Text as="p" tone="muted" className="mt-0.5 flex items-center gap-1.5">
+              {execution === "working" ? <WorkingIndicator size="xs" /> : null}
+              {attention ? (
+                <Badge size="xs" tone={CREW_ATTENTION_TONE[attention]}>
+                  {crewAttentionLabel(attention)}
+                </Badge>
+              ) : null}
+              <Text size="inherit" tone="inherit" truncate>
+                {work}
+              </Text>
             </Text>
-          </Text>
+          ) : null}
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-1">
         <Button variant="secondary" startIcon={<Play className="icon-sm" />} onClick={onStart}>
           {t("New work")}
         </Button>
-        <Button variant="ghost" aria-label={t("Edit {p0}", { p0: crew.name })} onClick={onEdit}>
-          {t("Edit")}
-        </Button>
         <Button
           ref={trigger}
           variant="ghost"
           iconOnly
           label={t("{p0} options", { p0: crew.name })}
-          tooltip={t("More actions")}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           onClick={() => setMenuOpen(true)}
@@ -133,7 +134,7 @@ export function CrewTeamItem({
         <DropdownMenu
           anchor={trigger}
           label={t("{p0} options", { p0: crew.name })}
-          width={248}
+          size="sm"
           items={crewMenuItems(crew, { single, canOpenCoordinator, deleteSupported })}
           onPick={(id) => onPick(id, single)}
           onClose={() => setMenuOpen(false)}

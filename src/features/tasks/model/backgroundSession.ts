@@ -1,6 +1,7 @@
 import { remoteRequest } from "../../connections/public/connections";
 import type { HostSession } from "../../connections";
 import type { BoardTask } from "./taskClient";
+import { taskClientErrors } from "./taskClientErrors";
 import { sessionDisplayTitle, sessionNeedsInput } from "../../sessions/model/session";
 
 /** A host session a task or background automation started, as the views that
@@ -23,7 +24,7 @@ export function taskBackgroundSessionTarget(
   task: Pick<BoardTask, "machineId" | "cwd" | "projectId">,
   sessionId: string,
 ): BackgroundSessionTarget {
-  if (!sessionId.trim()) throw new Error("This session is no longer available.");
+  if (!sessionId.trim()) throw new Error(taskClientErrors.sessionGone());
   return {
     machineId: task.machineId,
     cwd: task.cwd,
@@ -74,6 +75,6 @@ export async function loadBackgroundSessionSummary(
     preview: true,
     summary: true,
   });
-  if (!host) throw new Error("This session is no longer available.");
+  if (!host) throw new Error(taskClientErrors.sessionGone());
   return backgroundSessionSummary(host);
 }

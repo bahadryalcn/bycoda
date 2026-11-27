@@ -7,7 +7,7 @@ import { CrewBulkModelBar } from "./CrewBulkModelBar";
 
 /**
  * The roster's bulk bar: select all, then one fixed model or one model pool for the
- * selected members (everyone when none is selected).
+ * selected members.
  */
 export function CrewEditorBulkBar({
   cwd,
@@ -34,7 +34,7 @@ export function CrewEditorBulkBar({
       catalog={data.catalog}
       noun="members"
       suggested={commonCandidate(agents, selected)}
-      targetCount={selected.length || agents.length}
+      targetCount={selected.length}
       disabled={disabled}
       machineId={data.machine.id}
       supported={data.modelPoolsSupported}

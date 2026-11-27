@@ -2,43 +2,75 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import type { AssistantActivity } from "../../../shared/model/host-contracts/assistant";
 import { dateTimeFormat, t, useLocale } from "../../../shared/i18n";
-import { ActionHost, InlineAction, InlineTextAction } from "../../../shared/ui/ActionHost";
+import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Badge } from "../../../shared/ui/Badge";
-import { LiveText } from "../../../shared/ui/LiveText";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Timestamp } from "../../../shared/ui/Timestamp";
-import { ExternalLink } from "../../../shared/ui/icons";
+import { Briefcase, ExternalLink } from "../../../shared/ui/icons";
 import styles from "./AssistantHistory.module.css";
 
-export const assistantActivityLabels: Record<string, string> = {
-  "action.started": "Started",
-  "action.completed": "Completed",
-  "action.submitted": "Submitted",
-  "action.accepted": "Accepted",
-  "action.unknown": "Outcome unknown",
-  "action.failed": "Failed",
-  "action.refused": "Refused",
-  "action.cancelled": "Cancelled",
-  "action.pending": "Pending",
-  "action.running": "Running",
-  "action.waiting": "Waiting",
-  "budget.exhausted": "Budget exhausted",
-  "chief.woke": "Status reviewed",
-  "conversation.replied": "Conversation reply",
-  "job.received": "Job received",
-  "job.replanned": "Job replanned",
-  "job.started": "Job started",
-  "job.unknown": "Dispatch status unknown",
-  "job.pause": "Job paused",
-  "job.resume": "Job resumed",
-  "job.stop": "Job stopped",
-  "memory.saved": "Memory saved",
-  "profile.updated": "Settings updated",
-  "task.started": "Task started",
-  "job.waiting": "Waiting for you",
-  "job.stalled": "Stalled",
-  "job.problem": "Job problem",
-};
+/** The translated label of an activity kind; call it while rendering. */
+export function assistantActivityLabel(kind: string): string {
+  switch (kind) {
+    case "action.started":
+      return t("Started");
+    case "action.completed":
+      return t("Completed");
+    case "action.submitted":
+      return t("Submitted");
+    case "action.accepted":
+      return t("Accepted");
+    case "action.unknown":
+      return t("Outcome unknown");
+    case "action.failed":
+      return t("Failed");
+    case "action.refused":
+      return t("Refused");
+    case "action.cancelled":
+      return t("Cancelled");
+    case "action.pending":
+      return t("Pending");
+    case "action.running":
+      return t("Running");
+    case "action.waiting":
+      return t("Waiting");
+    case "budget.exhausted":
+      return t("Budget exhausted");
+    case "chief.woke":
+      return t("Status reviewed");
+    case "conversation.replied":
+      return t("Conversation reply");
+    case "job.received":
+      return t("Job received");
+    case "job.replanned":
+      return t("Job replanned");
+    case "job.started":
+      return t("Job started");
+    case "job.unknown":
+      return t("Dispatch status unknown");
+    case "job.pause":
+      return t("Job paused");
+    case "job.resume":
+      return t("Job resumed");
+    case "job.stop":
+      return t("Job stopped");
+    case "memory.saved":
+      return t("Memory saved");
+    case "profile.updated":
+      return t("Settings updated");
+    case "task.started":
+      return t("Task started");
+    case "job.waiting":
+      return t("Waiting for you");
+    case "job.stalled":
+      return t("Stalled");
+    case "job.problem":
+      return t("Job problem");
+    default:
+      return t("Activity");
+  }
+}
 /** Problems keep the danger tone; every other kind stays neutral. */
 const DANGER_KINDS = new Set(["job.problem", "job.unknown", "action.failed", "action.unknown"]);
 
@@ -66,12 +98,18 @@ export function AssistantHistory({
   }
   return (
     <div className={styles.history}>
-      {/* Always mounted so the empty state is announced when it first appears. */}
-      <LiveText
-        tone="secondary"
-        className={styles.empty}
-        text={!entries.length ? t(filtered ? "No results" : "No activity yet") : ""}
-      />
+      {!entries.length ? (
+        <EmptyState
+          context="panel"
+          kind={filtered ? "filtered" : "empty"}
+          title={filtered ? t("No results") : t("No activity yet")}
+          description={
+            filtered
+              ? t("Try a different search or clear the filters.")
+              : t("What the assistant does is recorded here.")
+          }
+        />
+      ) : null}
       {[...groups].map(([key, events]) => (
         <section className={styles.day} key={key} aria-labelledby={`history-day-${key}`}>
           <SectionLabel as="h3" labelId={`history-day-${key}`} count={events.length}>
@@ -79,7 +117,11 @@ export function AssistantHistory({
               weekday: "long",
               day: "numeric",
               month: "long",
-              year: "numeric",
+              // The current year is understood; older days name it.
+              year:
+                new Date(events[0].createdAt).getFullYear() === new Date().getFullYear()
+                  ? undefined
+                  : "numeric",
             }).format(new Date(events[0].createdAt))}
           </SectionLabel>
           <ol className={styles.events}>
@@ -109,19 +151,18 @@ export function AssistantHistory({
                     ? `${entry.operation.tool} · ${entry.operation.target}`
                     : entry.summary}
                 </Text>
-                <Badge
-                  size="xs"
-                  className={styles.kind}
-                  tone={DANGER_KINDS.has(entry.kind) ? "danger" : "neutral"}
-                >
-                  {t(assistantActivityLabels[entry.kind] ?? "Activity")}
-                </Badge>
+                {/* The summary already says what happened; only problems earn a kind badge. */}
+                {DANGER_KINDS.has(entry.kind) && (
+                  <Badge size="xs" className={styles.kind} tone="danger">
+                    {assistantActivityLabel(entry.kind)}
+                  </Badge>
+                )}
                 {(entry.jobId || (entry.sessionId && onOpenSession)) && (
                   <div className={styles.actions}>
                     {entry.jobId && (
-                      <InlineTextAction reveal="interaction" onClick={() => onJob(entry.jobId!)}>
-                        {t("Job")}
-                      </InlineTextAction>
+                      <InlineAction label={t("Job")} onClick={() => onJob(entry.jobId!)}>
+                        <Briefcase className="icon-sm" />
+                      </InlineAction>
                     )}
                     {entry.sessionId && onOpenSession && (
                       <InlineAction

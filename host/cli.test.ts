@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vitest";
-import { execFile } from "node:child_process";
+import { processIsAlive } from "./execution/process.test-support";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { createServer, type AddressInfo } from "node:net";
 import {
@@ -19,21 +20,78 @@ import { acquireHostOwner } from "./owner";
 
 const exec = promisify(execFile);
 
-// An exited Host stays a zombie until its reaper collects it. Minimal container
-// inits reap lazily (about 2s), and kill(pid, 0) still succeeds for a zombie.
-function processIsAlive(pid: number): boolean {
+it("drains an app-owned Host when its parent exits", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bycoda-cli-parent-"));
+  const home = join(directory, "home");
+  const parent = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+    windowsHide: true,
+    stdio: "ignore",
+  });
+  const probe = createServer();
+  await new Promise<void>((resolve, reject) => {
+    probe.once("error", reject);
+    probe.listen(0, "127.0.0.1", resolve);
+  });
+  const port = (probe.address() as AddressInfo).port;
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  mkdirSync(join(home, "AppData", "Roaming"), { recursive: true });
+  mkdirSync(join(home, "AppData", "Local"), { recursive: true });
+  const cli = resolve(process.env.BYCODA_HOST_TEST_CLI ?? "build/host/bycoda-host.mjs");
+  const host = spawn(
+    process.execPath,
+    [
+      cli,
+      "serve",
+      "--data-dir",
+      directory,
+      "--port",
+      String(port),
+      "--parent-pid",
+      String(parent.pid),
+    ],
+    {
+      windowsHide: true,
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        HOME: home,
+        USERPROFILE: home,
+        APPDATA: join(home, "AppData", "Roaming"),
+        LOCALAPPDATA: join(home, "AppData", "Local"),
+      },
+    },
+  );
+  const exited = new Promise<number | null>((resolve, reject) => {
+    host.once("exit", resolve);
+    host.once("error", reject);
+  });
   try {
-    process.kill(pid, 0);
-  } catch {
-    return false;
+    const record = join(directory, "running.json");
+    await vi.waitFor(() => expect(existsSync(record)).toBe(true), { timeout: 25_000 });
+    const { secret } = JSON.parse(readFileSync(record, "utf8"));
+    const response = await fetch(`http://127.0.0.1:${port}/lifecycle`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${secret}` },
+      body: JSON.stringify({ action: "status" }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    expect(await response.json()).toMatchObject({
+      pid: host.pid,
+      activity: { sessions: 0, shells: 0, automations: 0 },
+      runningSessions: [],
+    });
+    parent.kill();
+    await vi.waitFor(() => expect(host.exitCode).not.toBeNull(), { timeout: 10_000 });
+    expect(await exited).toBe(0);
+    expect(existsSync(record)).toBe(false);
+    expect(existsSync(join(directory, "owner.lock"))).toBe(false);
+  } finally {
+    parent.kill();
+    if (host.exitCode === null) host.kill();
+    await exited.catch(() => undefined);
+    rmSync(directory, { recursive: true, force: true });
   }
-  try {
-    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-    return stat.slice(stat.lastIndexOf(")") + 2, stat.lastIndexOf(")") + 3) !== "Z";
-  } catch {
-    return true;
-  }
-}
+}, 45_000);
 
 it(
   "starts detached, authenticates a device, revokes it, and stops independently of the launcher",

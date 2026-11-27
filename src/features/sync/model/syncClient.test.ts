@@ -5,7 +5,10 @@ import {
   MIN_CYCLE_SPACING_MS,
   SYNC_BACKOFF_BASE_MS,
   SYNC_BACKOFF_MAX_MS,
+  SYNC_CYCLE_DEADLINE_MS,
+  SYNC_STOP_DRAIN_MS,
   SYNC_UNSUPPORTED_MESSAGE,
+  boundedDrain,
   getSyncStatus,
   recordSyncStatus,
   runSyncCycle,
@@ -312,9 +315,12 @@ describe("runSyncCycle", () => {
 
     await runSyncCycle(MACHINE, request);
 
-    expect(request).toHaveBeenCalledWith("sync.push", {
-      ops: expect.any(Array),
-    });
+    expect(request).toHaveBeenCalledWith(
+      "sync.push",
+      expect.objectContaining({
+        ops: expect.any(Array),
+      }),
+    );
     // First contact pulls before pushing, then pulls again after the push.
     expect(
       request.mock.calls.map(([method, params]) => `${method}:${params.sinceRev ?? ""}`),
@@ -625,8 +631,71 @@ describe("sync status", () => {
       state: "error",
       lastError: "Machine is unreachable",
     });
-    expect(warn).toHaveBeenCalledWith("[sync]", "st-err", expect.any(Error));
+    // The warning names the request that failed so an interruption can be traced.
+    expect(warn).toHaveBeenCalledWith(
+      "[sync]",
+      "st-err",
+      expect.stringMatching(/^method=sync\.\w+ requestMs=\d+ cycleMs=\d+ requests=1 pending=\d+$/),
+      expect.any(Error),
+    );
     warn.mockRestore();
+  });
+
+  it("clears a timeout after a successful retry", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await expect(
+      runSyncCycle("st-retry", async () => {
+        throw new Error("[RPC_TIMEOUT] timed out");
+      }),
+    ).rejects.toThrow("[RPC_TIMEOUT]");
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toContain('"deadline":"http","host":"no response"');
+    expect(getSyncStatus("st-retry")).toMatchObject({ state: "error" });
+
+    await runSyncCycle("st-retry", async () => ({ rev: 1, records: [] }));
+    expect(getSyncStatus("st-retry")).toMatchObject({ state: "ok", lastError: undefined });
+    warn.mockRestore();
+  });
+
+  it("logs one slow response with the transmitted call id and Host timings", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const timings = { dbWaitMs: 1700 };
+    let clock = performance.now();
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
+    // The first request itself takes 2.1 s: queue time alone never makes a call slow.
+    const request = vi.fn(async (_method: string, _params: unknown) => {
+      if (request.mock.calls.length === 1) clock += 2_100;
+      return { rev: 1, records: [], timings };
+    });
+    try {
+      await runSyncCycle("st-slow", request);
+      expect(warn).toHaveBeenCalledTimes(1);
+      const line = String(warn.mock.calls[0]?.[0]);
+      expect(JSON.parse(line.slice("[sync] ".length))).toMatchObject({
+        method: "sync.pull",
+        callId: (request.mock.calls[0]![1] as { syncCallId: string }).syncCallId,
+        host: timings,
+      });
+    } finally {
+      now.mockRestore();
+      warn.mockRestore();
+    }
+  });
+
+  it("does not log a fast call that only waited in the cycle queue", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      await runSyncCycle(
+        "st-queued",
+        async () => ({ rev: 1, records: [] }),
+        undefined,
+        undefined,
+        performance.now() - 5_000,
+      );
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("syncNow is a no-op without a loop and runs a cycle through a running one", async () => {
@@ -667,8 +736,11 @@ describe("sync loop pacing", () => {
   beforeEach(() => {
     mockLocalStorage();
     vi.useFakeTimers();
+    // Pacing runs on the monotonic clock; keep it moving with the fake timers.
+    vi.spyOn(performance, "now").mockImplementation(() => Date.now());
   });
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
@@ -728,12 +800,67 @@ describe("sync loop pacing", () => {
     expect(cycles).toHaveBeenCalledTimes(2);
     loop.stop();
   });
+
+  it("keeps spacing when the wall clock moves backwards", async () => {
+    let monotonic = 0;
+    vi.mocked(performance.now).mockImplementation(() => monotonic);
+    const request = async () => ({ rev: 1, records: [], applied: [], rejected: [] });
+    const cycles = vi.fn(() => ["pace-clock"]);
+    const loop = startSyncLoop(cycles, () => request);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cycles).toHaveBeenCalledTimes(1);
+
+    // Exactly the spacing passes on the monotonic clock while the wall clock jumps an hour back.
+    monotonic = MIN_CYCLE_SPACING_MS;
+    vi.setSystemTime(Date.now() - 3_600_000);
+    loop.nudge();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cycles).toHaveBeenCalledTimes(2);
+    loop.stop();
+  });
+
+  it("skips the 30 s poll while the window is hidden but keeps nudges, explicit syncs and catch-up", async () => {
+    const page = Object.assign(new EventTarget(), { hidden: true });
+    vi.stubGlobal("document", page);
+    const request = async () => ({ rev: 1, records: [], applied: [], rejected: [] });
+    const cycles = vi.fn(() => ["pace-hidden"]);
+    const loop = startSyncLoop(cycles, () => request);
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(cycles).toHaveBeenCalledTimes(0);
+
+      // Hidden: no periodic round, however long the window stays hidden.
+      await vi.advanceTimersByTimeAsync(CYCLE_INTERVAL_MS * 4);
+      expect(cycles).toHaveBeenCalledTimes(0);
+
+      // A local-change nudge still syncs, and so does an explicit refresh.
+      loop.nudge();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(cycles).toHaveBeenCalledTimes(1);
+      const explicit = syncNow();
+      await vi.advanceTimersByTimeAsync(0);
+      await explicit;
+      expect(cycles).toHaveBeenCalledTimes(2);
+
+      // Back in view: visibility catches up and the poll resumes.
+      page.hidden = false;
+      page.dispatchEvent(new Event("visibilitychange"));
+      await vi.advanceTimersByTimeAsync(MIN_CYCLE_SPACING_MS);
+      expect(cycles).toHaveBeenCalledTimes(3);
+      await vi.advanceTimersByTimeAsync(CYCLE_INTERVAL_MS);
+      expect(cycles.mock.calls.length).toBeGreaterThanOrEqual(4);
+    } finally {
+      loop.stop();
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe("per-machine scheduling", () => {
   beforeEach(() => {
     mockLocalStorage();
     vi.useFakeTimers();
+    vi.spyOn(performance, "now").mockImplementation(() => Date.now());
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
   });
   afterEach(() => {
@@ -908,6 +1035,223 @@ describe("per-machine scheduling", () => {
     await syncNow("ex-bad");
     expect(starts).toBe(2);
     loop.stop();
+  });
+});
+
+describe("sync cycle deadline", () => {
+  beforeEach(() => {
+    mockLocalStorage();
+    vi.useFakeTimers();
+    vi.spyOn(performance, "now").mockImplementation(() => Date.now());
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  const ok = { rev: 1, records: [], applied: [], rejected: [] };
+  /** A request that stays pending until `settle` is called. */
+  function hangingRequest() {
+    let settle: (value: unknown) => void = () => undefined;
+    const request = vi.fn(
+      () =>
+        new Promise<unknown>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    return { request, settle: (value: unknown) => settle(value) };
+  }
+
+  it("frees the slot of a cycle that never settles so waiting machines still sync", async () => {
+    const ids = ["dl-1", "dl-2", "dl-3", "dl-4", "dl-5"];
+    const started: string[] = [];
+    const loop = startSyncLoop(
+      () => ids,
+      (id) => () => {
+        if (!started.includes(id)) started.push(id);
+        return id <= "dl-3" ? new Promise<never>(() => undefined) : Promise.resolve(ok);
+      },
+    );
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(started).toEqual(["dl-1", "dl-2", "dl-3"]);
+      await vi.advanceTimersByTimeAsync(SYNC_CYCLE_DEADLINE_MS - 1);
+      expect(started).toEqual(["dl-1", "dl-2", "dl-3"]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(started).toEqual(ids);
+      expect(getSyncStatus("dl-1")).toMatchObject({ state: "error" });
+      expect(getSyncStatus("dl-1").lastError).toMatch(/timed out/i);
+      expect(getSyncStatus("dl-5").state).toBe("ok");
+    } finally {
+      void loop.stop();
+    }
+  });
+
+  it("describes a refused completion in words instead of its native owner code", async () => {
+    const loop = startSyncLoop(
+      () => ["dl-complete"],
+      () => () => Promise.resolve(ok),
+      undefined,
+      undefined,
+      undefined,
+      () => Promise.resolve(),
+      () => Promise.reject("SYNC_OWNER_UNKNOWN"),
+    );
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      const status = getSyncStatus("dl-complete");
+      expect(status.state).toBe("error");
+      expect(status.lastError).toMatch(/earlier run/);
+      expect(status.lastError).not.toMatch(/SYNC_OWNER_/);
+    } finally {
+      void loop.stop();
+    }
+  });
+
+  it("drops a response that arrives after the deadline", async () => {
+    const { request, settle } = hangingRequest();
+    const loop = startSyncLoop(
+      () => ["dl-late"],
+      () => request,
+    );
+    await vi.advanceTimersByTimeAsync(SYNC_CYCLE_DEADLINE_MS);
+    expect(getSyncStatus("dl-late").state).toBe("error");
+    settle({
+      rev: 4,
+      records: [{ table: "group", id: "late", rev: 4, value: { id: "late", name: "Late" } }],
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peerRev("dl-late")).toBe(0);
+    expect(loadProjectGroups().map((group) => group.id)).not.toContain("late");
+    expect(getSyncStatus("dl-late").state).toBe("error");
+    void loop.stop();
+  });
+
+  it("backs the machine off after a timeout instead of retrying at once", async () => {
+    const { request } = hangingRequest();
+    const loop = startSyncLoop(
+      () => ["dl-backoff"],
+      () => request,
+    );
+    await vi.advanceTimersByTimeAsync(SYNC_CYCLE_DEADLINE_MS);
+    expect(request).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(CYCLE_INTERVAL_MS);
+    expect(request).toHaveBeenCalledTimes(1);
+    void loop.stop();
+  });
+
+  it("bounds shutdown while a cycle is stuck and reports ownership as unproven", async () => {
+    const { request } = hangingRequest();
+    const loop = startSyncLoop(
+      () => ["dl-stop"],
+      () => request,
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    let result: boolean | undefined;
+    void loop.stop().then((settled) => {
+      result = settled;
+    });
+    await vi.advanceTimersByTimeAsync(SYNC_STOP_DRAIN_MS - 1);
+    expect(result).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(result).toBe(false);
+  });
+
+  it("keeps reporting an abandoned cycle as unsettled until its request settles", async () => {
+    const { request, settle } = hangingRequest();
+    const loop = startSyncLoop(
+      () => ["dl-keep"],
+      () => request,
+    );
+    await vi.advanceTimersByTimeAsync(SYNC_CYCLE_DEADLINE_MS);
+    let result: boolean | undefined;
+    void loop.stop().then((settled) => {
+      result = settled;
+    });
+    await vi.advanceTimersByTimeAsync(SYNC_STOP_DRAIN_MS);
+    expect(result).toBe(false);
+
+    // Settling after the bound proves nothing for a drain that already answered.
+    settle({ rev: 0, records: [] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(result).toBe(false);
+  });
+
+  it("allows releasing ownership once the abandoned request has settled", async () => {
+    const { request, settle } = hangingRequest();
+    const loop = startSyncLoop(
+      () => ["dl-release"],
+      () => request,
+    );
+    await vi.advanceTimersByTimeAsync(SYNC_CYCLE_DEADLINE_MS);
+    settle({ rev: 0, records: [] });
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(loop.stop()).resolves.toBe(true);
+  });
+
+  it("completes a native cycle only after its abandoned request settles", async () => {
+    const { request, settle } = hangingRequest();
+    const cycleIds: string[] = [];
+    const begin = vi.fn(async (...args: unknown[]) => {
+      cycleIds.push(String(args[1]));
+    });
+    const complete = vi.fn(async (...args: unknown[]) => void args);
+    const loop = startSyncLoop(
+      () => ["dl-native"],
+      () => request,
+      undefined,
+      undefined,
+      undefined,
+      begin,
+      complete,
+    );
+    await vi.advanceTimersByTimeAsync(SYNC_CYCLE_DEADLINE_MS);
+    expect(begin).toHaveBeenCalledTimes(1);
+    expect(complete).not.toHaveBeenCalled();
+
+    settle({ rev: 0, records: [] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(complete).toHaveBeenCalledWith("dl-native", cycleIds[0], expect.anything());
+    await expect(loop.stop()).resolves.toBe(true);
+  });
+
+  it("keeps ownership when completing an abandoned native cycle fails", async () => {
+    const { request, settle } = hangingRequest();
+    const loop = startSyncLoop(
+      () => ["dl-native-fail"],
+      () => request,
+      undefined,
+      undefined,
+      undefined,
+      async () => undefined,
+      async () => {
+        throw new Error("owner still holds the cycle");
+      },
+    );
+    await vi.advanceTimersByTimeAsync(SYNC_CYCLE_DEADLINE_MS);
+    settle({ rev: 0, records: [] });
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(loop.stop()).resolves.toBe(false);
+  });
+});
+
+describe("boundedDrain", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("passes the drain result through and leaves no timer behind", async () => {
+    await expect(boundedDrain(Promise.resolve(true), 1_000)).resolves.toBe(true);
+    await expect(boundedDrain(Promise.resolve(false), 1_000)).resolves.toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("answers false when the drain is slow or fails", async () => {
+    const slow = boundedDrain(new Promise<boolean>(() => undefined), 1_000);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(slow).resolves.toBe(false);
+    await expect(boundedDrain(Promise.reject(new Error("x")), 1_000)).resolves.toBe(false);
   });
 });
 

@@ -68,7 +68,7 @@ export interface NativeServiceOwnerPorts {
   appendTerminal(params: Record<string, unknown>): Promise<unknown>;
   terminalDemand?(params: Record<string, unknown>): Promise<unknown>;
   desktop: {
-    take(): Promise<unknown>;
+    take(options?: { waitMs?: number; signal?: AbortSignal }): Promise<unknown>;
     finish(id: string, result: unknown, error?: string): Promise<unknown>;
     authorize(id: string, action: string): Promise<unknown>;
   };
@@ -80,4 +80,13 @@ export interface NativeServiceOwnerPorts {
     reset(): Promise<unknown>;
   };
   format(params: Record<string, unknown>): Promise<unknown>;
+}
+
+/** Platform codecs keep canonical base64 and fatal UTF8 decoding explicit. */
+export interface NativeUploadPlatform {
+  sha256(bytes: Uint8Array): string;
+  decodeBase64(text: string): Uint8Array;
+  encodeBase64(bytes: Uint8Array): string;
+  decodeUtf8Fatal(bytes: Uint8Array): string;
+  scheduleSweep(action: () => void, intervalMs: number): () => void;
 }

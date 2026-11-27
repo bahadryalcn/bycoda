@@ -1,8 +1,8 @@
-import { t } from "../../../shared/i18n";
 import { type FormEvent, useMemo, useState } from "react";
+import { t } from "../../../shared/i18n";
 import { useSprintBoard } from "../model/sprintClient";
 import { taskMatchesProject, type TaskProjectScope } from "../model/taskBoardScope";
-import { TASK_MACHINE_ERROR } from "../model/taskClient";
+import { taskClientErrors } from "../model/taskClientErrors";
 import { backgroundMachineFor } from "../../automations/public/hostMachines";
 import type { RemoteMachine } from "../../connections";
 import { parseRemotePath } from "../../connections/public/remoteProjects";
@@ -37,6 +37,7 @@ type GoalScope = {
   projectFilter: string;
   lock: LockSnapshot;
   machines: RemoteMachine[];
+  machineId?: string;
   selectedProject?: TaskProjectScope;
   scopedCwd?: string;
   currentSprint?: { id: string; name: string };
@@ -70,7 +71,8 @@ export function useTaskGoals({
   openSession: (target: BackgroundSessionTarget) => void;
 }) {
   const { saving, setSaving, setError, refresh, act, confirm } = ops;
-  const { cwd, recents, projectFilter, lock, machines, selectedProject, scopedCwd } = scope;
+  const { cwd, recents, projectFilter, lock, machines, machineId, selectedProject, scopedCwd } =
+    scope;
   const { currentSprint, sprintBoard } = scope;
   const report = (reason: unknown) => setError(presentRemoteError(reason, { explicit: true }));
   const [draft, setDraft] = useState<GoalDraft | null>(null);
@@ -81,6 +83,7 @@ export function useTaskGoals({
     () =>
       stored.filter(
         (goal) =>
+          (!machineId || goal.machineId === machineId) &&
           !goal.projects.some((project) => isProjectLockedIn(lock, project.cwd)) &&
           goal.projects.some((project) =>
             taskMatchesProject(
@@ -90,7 +93,7 @@ export function useTaskGoals({
             ),
           ),
       ),
-    [lock, stored, projectFilter, machines],
+    [lock, stored, projectFilter, machines, machineId],
   );
 
   const begin = () => {
@@ -99,7 +102,7 @@ export function useTaskGoals({
       return;
     }
     if (projectFilter !== "all" && (!scopedCwd || isProjectLockedIn(lock, scopedCwd))) {
-      setError(TASK_MACHINE_ERROR);
+      setError(taskClientErrors.machine());
       return;
     }
     const project =
@@ -126,9 +129,10 @@ export function useTaskGoals({
       looksLikeProject(project)
         ? {
             ...next,
-            machineId: selectedProject?.machineId ?? backgroundMachineFor(capable, project)?.id,
+            machineId:
+              selectedProject?.machineId ?? machineId ?? backgroundMachineFor(capable, project)?.id,
           }
-        : { ...next, cwds: [], leadCwd: "" },
+        : { ...next, cwds: [], leadCwd: "", machineId },
     );
   };
 
@@ -143,20 +147,17 @@ export function useTaskGoals({
       if (currentSprint && sprintBoard.supported) {
         const machine = machines.find((entry) => entry.id === saved.machineId);
         try {
-          if (!machine) throw new Error(TASK_MACHINE_ERROR);
+          if (!machine) throw new Error(taskClientErrors.machine());
           await sprintBoard.setGoalContext(machine.environmentId, saved.id, currentSprint.id);
         } catch (reason) {
           addRecovery({
             id: `goal:${saved.machineId}:${saved.id}`,
             title: saved.title,
             sprintId: currentSprint.id,
+            reason: presentRemoteError(reason, { explicit: true }),
             goal: { environmentId: machine?.environmentId ?? "", goalId: saved.id },
           });
-          setError(
-            t("Epic created. Sprint assignment failed: {p0}", {
-              p0: presentRemoteError(reason, { explicit: true }),
-            }),
-          );
+          setError(null);
           refresh().catch(report);
           return;
         }

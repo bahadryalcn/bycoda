@@ -1,4 +1,3 @@
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { PickerList, usePickerList } from "../../../shared/ui/picker";
 import { InlineAction } from "../../../shared/ui/ActionHost";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
@@ -6,19 +5,23 @@ import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { useLocale, useT } from "../../../shared/i18n";
 import { Home, Star } from "../../../shared/ui/icons";
 import { StatusDot } from "../../../shared/ui/StatusDot";
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useId, type ReactNode } from "react";
 import { type AgentModel, type ModelPickerTab } from "../model/models";
 import { harnessUnavailableHint } from "../../../integrations/harness/core/availability";
 import { useModelSource } from "./modelSource";
 import { HARNESS_TITLE, type HarnessId } from "../model/session";
-import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { HarnessIcon } from "./HarnessIcon";
+import { ModelAccountNumber, type ModelAccountIdentity } from "./ModelAccountIdentity";
 import { modelGroups } from "../model/modelPickerData";
 import {
   modelChoiceBaseName,
   modelChoiceKey,
   type AccountModelChoice,
 } from "../model/accountModelChoices";
+
+// Each model row mounts favorite and default actions; bound that work for medium catalogs too.
+const MODEL_WINDOW_THRESHOLD = 24;
 
 /** Where new conversations start, marked on the rail and the rows. */
 export type ModelDefaultMark = {
@@ -46,14 +49,18 @@ export type ModelBrowserProps = {
   onSelectTab: (tab: ModelPickerTab) => void;
   onActive: (index: number) => void;
   onPick: (model: AgentModel) => void;
+  modelLimitReason?: (model: AccountModelChoice) => string | undefined;
   onToggleFavorite: (id: string) => void;
   defaultMark?: ModelDefaultMark;
+  railAccounts?: Partial<Record<HarnessId, ModelAccountIdentity | undefined>>;
   /** Between the search field and the list, e.g. the provider title and account control. */
   header?: ReactNode;
   /** First row of the list, e.g. an inherit choice. */
   leading?: ReactNode;
-  /** Replaces the model list, e.g. while the account list is open. */
+  /** Account list shown above the model rows. */
   body?: ReactNode;
+  /** Replaces the browser contents while editing a separate selection. */
+  editor?: ReactNode;
   footer?: ReactNode;
 };
 
@@ -66,12 +73,15 @@ export function ModelBrowser({
   active,
   query,
   favorites,
+  railAccounts,
   searchRef,
   autoFocusSearch = false,
+  editor,
   onQuery,
   onSelectTab,
   onActive,
   onPick,
+  modelLimitReason,
   onToggleFavorite,
   defaultMark,
   header,
@@ -82,8 +92,11 @@ export function ModelBrowser({
   const t = useT();
   const listId = useId();
   const source = useModelSource();
-  const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const groups = modelGroups(tab, models);
+  // A passing pointer previews a provider only while it cannot discard anything: a typed
+  // search or the open account list must survive pointer drift across the rail. Click and
+  // keyboard activation still switch providers on purpose.
+  const previewOnHover = query.length === 0 && body == null;
 
   // Popover measures its initially hidden frame during layout. Focus only
   // after that measurement, when the browser can focus the visible input.
@@ -95,52 +108,59 @@ export function ModelBrowser({
     return () => cancelAnimationFrame(frame);
   }, [autoFocusSearch, searchRef]);
 
+  const keys = models.map(modelChoiceKey);
+  const indexByKey = new Map(keys.map((key, index) => [key, index]));
+  const favoriteIds = new Set(favorites);
   const options = groups.flatMap((group) =>
-    group.models.map(({ item }) => ({
-      value: modelChoiceKey(item),
-      title: modelChoiceBaseName(item as AccountModelChoice),
-      icon: <HarnessIcon harness={item.harness} className="icon-sm" />,
-      meta: (item as AccountModelChoice).accountLabel ? (
-        <span className="inline-flex items-center gap-1">
-          {" "}
-          {(item as AccountModelChoice).accountColor ? (
-            <span
-              {...surfaceAttributes({ radius: "pill", variant: "user-color" }, "size-1.5 shrink-0")}
-              style={
-                {
-                  "--surface-user-color": (item as AccountModelChoice).accountColor,
-                } as React.CSSProperties
-              }
-              aria-hidden
-            />
-          ) : null}
-          {(item as AccountModelChoice).accountLabel}
-        </span>
-      ) : undefined,
-      group: group.name,
-      disabled: !source.available(item.harness),
-      disabledReason: !source.available(item.harness)
-        ? harnessUnavailableHint(item.harness)
-        : undefined,
-      trailing: (
-        <>
-          {tab === "favorites" ? " " : null}
-          {tab === "favorites" ? (item.provider?.name ?? HARNESS_TITLE[item.harness]) : null}
-          {defaultMark?.isDefault(item) ? <span data-model-default>{t("Default")}</span> : null}
-        </>
-      ),
-    })),
+    group.models.map(({ item, index }) => {
+      const account = item as AccountModelChoice;
+      const reason = modelLimitReason?.(account);
+      const available = source.available(item.harness);
+      const description = [
+        account.accountNumber !== undefined ? account.accountLabel : undefined,
+        reason,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      return {
+        value: keys[index]!,
+        title: modelChoiceBaseName(item as AccountModelChoice),
+        accessibleLabel:
+          tab === "favorites" || (item as AccountModelChoice).accountNumber !== undefined
+            ? [
+                modelChoiceBaseName(item as AccountModelChoice),
+                item.provider?.name ?? HARNESS_TITLE[item.harness],
+                (item as AccountModelChoice).accountNumber !== undefined
+                  ? (item as AccountModelChoice).accountLabel
+                  : undefined,
+              ]
+                .filter(Boolean)
+                .join(", ")
+            : undefined,
+        icon: <HarnessIcon harness={item.harness} className="icon-sm" />,
+        description: description ? (
+          <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+            <ModelAccountNumber account={account} />
+            <Text size="inherit" tone="inherit" wrap="anywhere">
+              {description}
+            </Text>
+          </span>
+        ) : undefined,
+        group: group.name,
+        disabled: !available || !!reason,
+        disabledReason: !available && !reason ? harnessUnavailableHint(item.harness) : undefined,
+      };
+    }),
   );
   const list = usePickerList({
     id: listId,
     options,
     value: currentId,
-    activeValue: models[active] ? modelChoiceKey(models[active]!) : null,
-    onActiveValueChange: (value) =>
-      onActive(models.findIndex((item) => modelChoiceKey(item) === value)),
+    activeValue: keys[active] ?? null,
+    onActiveValueChange: (value) => onActive(value == null ? -1 : (indexByKey.get(value) ?? -1)),
     onChange: (value) => {
-      const item = models.find((item) => modelChoiceKey(item) === value);
-      if (item) onPick(item);
+      const index = indexByKey.get(value);
+      if (index !== undefined) onPick(models[index]!);
     },
     inputRef: searchRef,
   });
@@ -166,6 +186,7 @@ export function ModelBrowser({
             title={t("Favorites")}
             onSelect={() => onSelectTab("favorites")}
             selected={tab === "favorites"}
+            previewOnHover={previewOnHover}
           >
             <Star
               className="icon-md"
@@ -173,46 +194,68 @@ export function ModelBrowser({
               fill={tab === "favorites" ? "currentColor" : "none"}
             />
           </ProviderTabButton>
-          {harnesses.map((harness) => (
-            <ProviderTabButton
-              key={harness}
-              value={harness}
-              title={
-                defaultMark?.harness === harness
-                  ? `${HARNESS_TITLE[harness]} · ${t("Default: {p0}", { p0: defaultMark.path })}`
-                  : HARNESS_TITLE[harness]
-              }
-              selected={tab === harness}
-              onSelect={() => onSelectTab(harness)}
-            >
-              <span className="relative block">
-                <HarnessIcon harness={harness} className="size-4" />
-                {defaultMark?.harness === harness ? (
-                  <StatusDot data-model-default-provider className="absolute -top-0.5 -right-1" />
-                ) : null}
-              </span>
-            </ProviderTabButton>
-          ))}
+          {harnesses.map((harness) => {
+            const account = railAccounts?.[harness];
+            const name =
+              account?.accountNumber === undefined
+                ? HARNESS_TITLE[harness]
+                : `${HARNESS_TITLE[harness]} · ${account.accountLabel}`;
+            return (
+              <ProviderTabButton
+                key={harness}
+                value={harness}
+                title={
+                  defaultMark?.harness === harness
+                    ? `${name} · ${t("Default: {p0}", { p0: defaultMark.path })}`
+                    : name
+                }
+                selected={tab === harness}
+                onSelect={() => onSelectTab(harness)}
+                previewOnHover={previewOnHover}
+              >
+                <span className="relative block">
+                  <HarnessIcon harness={harness} className="icon-md" />
+                  <ModelAccountNumber
+                    account={account}
+                    className="absolute -end-2.5 -inset-bs-1.5"
+                  />
+                  {defaultMark?.harness === harness && account?.accountNumber === undefined ? (
+                    <StatusDot
+                      data-model-default-provider
+                      className="absolute -inset-bs-0.5 -end-1"
+                    />
+                  ) : null}
+                </span>
+              </ProviderTabButton>
+            );
+          })}
         </TabList>
       </Tabs>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <PopoverSearchHeader
-          {...list.searchProps}
-          size="md"
-          label={t("Search models")}
-          value={query}
-          autoFocus={false}
-          onValueChange={onQuery}
-        />
-        {header}
-        {body ?? (
-          <div ref={lockOverscroll} className="min-h-0 flex-1 overflow-y-auto overscroll-none">
-            {leading}
+        {editor ?? (
+          <>
+            <PopoverSearchHeader
+              {...list.searchProps}
+              size="md"
+              label={t("Search models")}
+              value={query}
+              autoFocus={false}
+              onValueChange={onQuery}
+            />
+            {header}
             <PickerList
+              scrollHeader={
+                <>
+                  {body}
+                  {leading}
+                </>
+              }
               label={t("Models")}
               controller={list}
               query={query}
+              windowed={models.length > MODEL_WINDOW_THRESHOLD}
+              selectionIndicator="start"
               emptyLabel={
                 tab === "favorites" && !query.trim()
                   ? t("No favorite models")
@@ -223,20 +266,20 @@ export function ModelBrowser({
                       : t("No matching models")
               }
               renderOptionActions={(option) => {
-                const item = models.find((item) => modelChoiceKey(item) === option.value)!;
+                const item = models[indexByKey.get(option.value)!]!;
                 return (
                   <ModelActions
                     item={item}
-                    favorited={favorites.includes(item.id)}
+                    favorited={favoriteIds.has(item.id)}
                     defaultMark={defaultMark}
                     onToggleFavorite={() => onToggleFavorite(item.id)}
                   />
                 );
               }}
             />
-          </div>
+            {footer}
+          </>
         )}
-        {footer}
       </div>
     </div>
   );
@@ -263,6 +306,7 @@ function ModelActions({
         <InlineAction
           className="shrink-0"
           data-model-pin-default
+          data-model-default={isDefault || undefined}
           reveal={isDefault ? "always" : "interaction"}
           label={pinned ? t("Remove project default") : t("Make default for this project")}
           aria-pressed={pinned}
@@ -296,12 +340,15 @@ function ProviderTabButton({
   title,
   selected,
   onSelect,
+  previewOnHover,
   children,
 }: {
   value: string;
   title: string;
   selected: boolean;
   onSelect: () => void;
+  /** Whether a moving pointer may select this tab; false keeps the search and account list. */
+  previewOnHover: boolean;
   children: ReactNode;
 }) {
   useLocale();
@@ -319,7 +366,7 @@ function ProviderTabButton({
       // Only a moving pointer previews a provider: a flyout that opens under a
       // resting pointer must keep its initial tab.
       onMouseMove={
-        selected
+        selected || !previewOnHover
           ? undefined
           : (event) => {
               if (event.movementX || event.movementY) onSelect();

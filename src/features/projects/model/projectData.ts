@@ -7,7 +7,10 @@ import {
   rebaseProjectChatBackgroundSetting,
 } from "./projectChatBackground";
 import { normalizeProjectPath } from "./recents";
-import { deleteSession, listSessionsByProject } from "../../sessions/public/sessionStore";
+import {
+  countSessionsByProject,
+  deleteSessionsByProject,
+} from "../../sessions/public/sessionStore";
 import {
   clearTabGroupSettings,
   rebaseProjectTabGroupSettings,
@@ -27,9 +30,8 @@ import {
 } from "../../settings/public/projectSidebarTab";
 
 /** Saved chats filed under this project, so the confirm prompt can count them. */
-export async function projectSessionCount(path: string): Promise<number> {
-  const sessions = await listSessionsByProject(path);
-  return sessions.length;
+export function projectSessionCount(path: string): Promise<number> {
+  return countSessionsByProject(path);
 }
 
 /** Everything we persist for a project: saved chats plus its rail appearance. */
@@ -38,10 +40,7 @@ export async function removeProjectData(path: string): Promise<void> {
   const key = projectKey(normalized);
   // Keep the project visible and retryable if its conversations could not be
   // read or removed. A failed read is not an empty project.
-  const sessions = await listSessionsByProject(normalized);
-  for (const session of sessions) {
-    await deleteSession(session.id);
-  }
+  await deleteSessionsByProject(normalized);
   // Drops the copied image from app data; the localStorage entry goes with it.
   await clearProjectLogo(key).catch(() => undefined);
   await clearProjectChatBackground(key).catch(() => undefined);

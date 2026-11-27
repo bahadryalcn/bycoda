@@ -19,11 +19,15 @@
   letter-spacing: var(--tracking-body);
 }
 /* Whole-pixel line heights: an input centres its text by rounding, so a fractional line would sit the field a pixel below the display. */
-.root[data-variant="title"] {
+.root:is([data-variant="title"], [data-variant="compact-title"]) {
   --size: var(--ui-font-heading);
   --leading: round(var(--size) * 1.3, 2px);
   --weight: 500;
   --ink: var(--foreground);
+}
+.root[data-variant="compact-title"] {
+  --pad-x: var(--space-1);
+  --size: var(--ui-font-secondary);
 }
 .root[data-variant="body"] {
   --pad-y: var(--space-1);
@@ -32,7 +36,7 @@
   --weight: 400;
   --ink: var(--text-secondary);
 }
-/* Room for the actions is reserved in every state, so the text never rewraps when editing starts. */
+/* Reserve both actions by default. Compact titles give that space back to the display text at rest. */
 /* Inter at every size here: a heading host keeps its semantics but not the display face. */
 .line {
   display: block;
@@ -49,6 +53,9 @@
 }
 .root[data-multiline] .line {
   padding-inline-end: calc(var(--ui-control-height-sm) + var(--space-3));
+}
+.root[data-variant="compact-title"]:not([data-editing], [data-multiline]) .line {
+  padding-inline-end: calc(var(--ui-icon-sm) + var(--space-2));
 }
 .box {
   position: relative;
@@ -253,6 +260,12 @@ textarea.control {
   border-radius: var(--radius-pill);
   animation: spin var(--motion-spin-duration) linear infinite;
 }
+/* Holds its frame (still visible, still pending) while the window is hidden or minimized or
+   decorative motion is off. */
+:global(html[data-decorative-motion="off"]) .spinner,
+:global(html[data-window-visible="off"]) .spinner {
+  animation-play-state: paused;
+}
 .saved {
   display: grid;
   margin-inline-start: var(--space-1);
@@ -315,12 +328,7 @@ textarea.control {
   }
 }
 .srOnly {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
+  composes: srOnly from "../lib/screen-reader.module.css";
 }
 @keyframes spin {
   to {

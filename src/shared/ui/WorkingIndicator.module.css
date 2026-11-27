@@ -71,7 +71,7 @@
   }
 }
 
-/* Behind another window the pulse holds its frame, like the row status dots. */
+/* The pulse holds its frame while the window is hidden. */
 .indicator[data-working-variant="dot"] {
   --working-indicator-size: 0.375rem;
   border-radius: var(--radius-pill);
@@ -87,7 +87,7 @@
     opacity: 0.5;
   }
 }
-:global(html[data-window-focus="off"]) .indicator {
+:global(html[data-window-visible="off"]) .indicator {
   animation-play-state: paused;
 }
 
@@ -119,11 +119,144 @@
   }
 }
 
-/* Visible work labels share the same mark; text never runs a second animation. */
+/* A labeled signal runs one animation: the sweep over its text. A glyph beside
+   it holds still, so a working row never pulses and sweeps at once. */
 .labeled {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   min-inline-size: 0;
   vertical-align: baseline;
+}
+
+.labeled .indicator {
+  animation: none;
+}
+
+.label {
+  position: relative;
+  min-inline-size: 0;
+}
+
+/* Exactly the label's box. It clips the wider band itself, so the label never
+   reads as overflowing (the overflow tooltip skips it via data-tooltip-ignore). */
+.sweepClip {
+  position: absolute;
+  inset: 0;
+  display: none;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+/*
+ * The sweep overlays a copy of the activity label in full ink, visible through
+ * a soft mask. The mask moves right
+ * while the copy inside moves left by the same amount, so the letters stay put
+ * and only the light travels. Both are plain transforms, so the compositor runs
+ * them, and `steps(30)` swaps about 14 frames a second instead of one per vsync.
+ */
+.sweep {
+  --sweep-band: 4.5rem;
+  --sweep-ink: var(--palette-hex000);
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(-1 * var(--sweep-band));
+  inline-size: calc(100% + 2 * var(--sweep-band));
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    color-mix(in srgb, var(--sweep-ink) 12%, transparent) 0.675rem,
+    color-mix(in srgb, var(--sweep-ink) 55%, transparent) 1.575rem,
+    var(--sweep-ink) 2.25rem,
+    color-mix(in srgb, var(--sweep-ink) 55%, transparent) 2.925rem,
+    color-mix(in srgb, var(--sweep-ink) 12%, transparent) 3.825rem,
+    transparent var(--sweep-band)
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    color-mix(in srgb, var(--sweep-ink) 12%, transparent) 0.675rem,
+    color-mix(in srgb, var(--sweep-ink) 55%, transparent) 1.575rem,
+    var(--sweep-ink) 2.25rem,
+    color-mix(in srgb, var(--sweep-ink) 55%, transparent) 2.925rem,
+    color-mix(in srgb, var(--sweep-ink) 12%, transparent) 3.825rem,
+    transparent var(--sweep-band)
+  );
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+.sweepCounter {
+  display: block;
+  inline-size: 100%;
+}
+
+/* Exactly the label's box, so it wraps and truncates the same way. */
+.sweepText {
+  display: block;
+  inline-size: calc(100% - 2 * var(--sweep-band));
+  margin-inline-start: var(--sweep-band);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-content);
+}
+
+/* Toned parts of a label (a command beside its verb) light up with the rest. */
+.sweepText * {
+  color: inherit;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sweepClip {
+    display: block;
+  }
+
+  .sweep {
+    animation: working-sweep 2.2s steps(30) infinite;
+  }
+
+  .sweepCounter {
+    animation: working-sweep-counter 2.2s steps(30) infinite;
+  }
+}
+
+@keyframes working-sweep {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes working-sweep-counter {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+/* Off-viewport, hidden or minimized or in a hidden session pane the band holds its frame. */
+.labeled[data-offscreen="true"] :is(.sweep, .sweepCounter),
+:global(html[data-window-visible="off"]) :is(.sweep, .sweepCounter),
+:global([data-session-visible="false"]) :is(.sweep, .sweepCounter) {
+  animation-play-state: paused;
+}
+
+/* Appearance > Working animation (Steady, Off), decorative motion off and the
+   no-shimmer performance switch leave the label still and readable. */
+:global(html[data-decorative-motion="off"]) .sweepClip,
+:global(html[data-performance-no-shimmer]) .sweepClip,
+:global(html[data-working-indicator="steady"]) .sweepClip,
+:global(html[data-working-indicator="off"]) .sweepClip {
+  display: none;
+}
+
+@media (forced-colors: active) {
+  .sweepClip {
+    display: none;
+  }
 }

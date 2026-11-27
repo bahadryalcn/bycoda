@@ -4,15 +4,23 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useProjectWorktrees } from "../hooks/useProjectWorktrees";
 import { setWorktreeFocus, worktreeFocus, type WorktreeFocus } from "../model/worktreeFocus";
-import { createWorktree, type Worktree } from "../model/worktrees";
+import { type Worktree } from "../model/worktrees";
+import { createProjectWorktree as createWorktree } from "../model/remoteWorktrees";
 import { SidebarWorktreeSwitcher } from "./SidebarWorktreeSwitcher";
 
+const changeTotals = vi.hoisted(() => ({
+  ready: false,
+  total: 0,
+  stats: { files: 0, additions: 0, deletions: 0 },
+  byRoot: new Map<string, number>(),
+}));
+vi.mock("../hooks/useChangeTotals", () => ({ useChangeTotals: () => changeTotals }));
 vi.mock("../hooks/useProjectWorktrees", () => ({
   useProjectWorktrees: vi.fn(),
 }));
-vi.mock("../model/worktrees", async (original) => ({
-  ...(await original<typeof import("../model/worktrees")>()),
-  createWorktree: vi.fn(),
+vi.mock("../model/remoteWorktrees", async (original) => ({
+  ...(await original<typeof import("../model/remoteWorktrees")>()),
+  createProjectWorktree: vi.fn(),
 }));
 const tree = (path: string, branch: string | null, isMain = false): Worktree => ({
   path,
@@ -42,14 +50,15 @@ const render = async (pending = false, switchError?: string) => {
     ),
   );
 };
-const trigger = () =>
-  container.querySelector<HTMLButtonElement>('[aria-label="Switch working copy"]')!;
+const trigger = () => container.querySelector<HTMLButtonElement>('[aria-label="Switch worktree"]')!;
 const option = (name: string) =>
   [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find((button) =>
     button.textContent?.includes(name),
   )!;
+const copyName = () =>
+  trigger().querySelector("[data-workspace-copy-name] > :not([aria-hidden])")?.textContent;
 const search = () =>
-  document.querySelector<HTMLInputElement>('input[placeholder="Search or create a worktree..."]')!;
+  document.querySelector<HTMLInputElement>('input[placeholder="Search or create a worktree…"]')!;
 const typeQuery = async (value: string) => {
   await act(async () => {
     const input = search();
@@ -105,7 +114,7 @@ it("requests a switch without publishing the destination and permits a newer sel
   expect(worktreeFocus("/picker")).toBeUndefined();
   await render(true);
   expect(trigger().getAttribute("aria-busy")).toBe("true");
-  expect(trigger().textContent).toBe("pickermain");
+  expect(copyName()).toBe("All worktrees");
   await act(async () => trigger().click());
   await act(async () => option("feature-b").click());
   expect(select).toHaveBeenLastCalledWith({
@@ -119,10 +128,10 @@ it("shows a switch failure in the reopened picker", async () => {
   await render();
   await render(false, "Working copy no longer exists");
   expect(trigger().getAttribute("aria-expanded")).toBe("true");
-  expect(document.querySelector('[role="alert"]')?.textContent).toBe(
-    "Working copy no longer exists",
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    "Couldn’t switch worktree",
   );
-  expect(trigger().textContent).toBe("pickermain");
+  expect(copyName()).toBe("All worktrees");
 });
 
 it("names the project and the focused working copy in the trigger", async () => {
@@ -156,13 +165,14 @@ it("filters branches and paths without case or surrounding whitespace", async ()
   await typeQuery("main");
   expect(document.querySelectorAll('[role="option"]')).toHaveLength(1);
   await press("Enter");
-  expect(select).toHaveBeenLastCalledWith(undefined);
+  expect(select).toHaveBeenLastCalledWith({ path: "/picker", branch: "main" });
   expect(trigger().getAttribute("aria-expanded")).toBe("false");
 });
 
 it("supports keyboard navigation and clears search after dismissal", async () => {
   await render();
   await press("ArrowDown", trigger());
+  await press("ArrowDown");
   await press("ArrowDown");
   await press("ArrowDown");
   await press("Enter");
@@ -177,7 +187,7 @@ it("supports keyboard navigation and clears search after dismissal", async () =>
   expect(trigger().getAttribute("aria-expanded")).toBe("false");
   await act(async () => trigger().click());
   expect(search().value).toBe("");
-  expect(document.querySelectorAll('[role="option"]')).toHaveLength(3);
+  expect(document.querySelectorAll('[role="option"]')).toHaveLength(4);
 });
 
 it.each(["click", "Enter"])(
@@ -243,7 +253,9 @@ it("shows creation errors and allows correcting the name before retrying", async
   await act(async () => trigger().click());
   await typeQuery("invalid name");
   await press("Enter");
-  expect(document.querySelector('[role="alert"]')?.textContent).toBe("Enter a valid branch name");
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    "Couldn’t create worktree",
+  );
   expect(trigger().getAttribute("aria-expanded")).toBe("true");
   expect(search().value).toBe("invalid name");
   expect(search().disabled).toBe(false);
@@ -322,4 +334,239 @@ it("does not navigate another project when an earlier creation finishes", async 
   );
   await act(async () => finish(tree("/picker-new", "new-worktree")));
   expect(select).not.toHaveBeenCalled();
+});
+
+it("labels detached and folder-only working copies with the shared messages", async () => {
+  vi.mocked(useProjectWorktrees).mockReturnValue({
+    data: {
+      worktrees: [tree("/picker", null, true), tree("/picker-d", null)],
+      defaultRoot: "/picker-worktrees",
+    },
+    refresh,
+  });
+  setWorktreeFocus("/picker", { path: "/picker-d", branch: null });
+  await render();
+  expect(
+    trigger().querySelector("[data-workspace-copy-name] > :not([aria-hidden])")?.textContent,
+  ).toBe("Detached abcdef1");
+  await act(async () => trigger().click());
+  const options = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')];
+  expect(options).toHaveLength(3);
+  expect(options[0]!.textContent).toContain("All worktrees");
+  expect(options[1]!.textContent).toContain("Detached abcdef1");
+  expect(options[1]!.textContent).not.toContain("Project folder");
+  expect(options[2]!.textContent).toContain("Detached abcdef1");
+});
+
+it("hides missing and prunable worktrees and lists dirty ones before clean ones", async () => {
+  vi.mocked(useProjectWorktrees).mockReturnValue({
+    data: {
+      worktrees: [
+        tree("/picker", "main", true),
+        tree("/picker-clean", "clean"),
+        { ...tree("/picker-dirty", "dirty"), dirty: true },
+        { ...tree("/picker-gone", "gone"), missing: true },
+        { ...tree("/picker-pruned", "pruned"), prunable: true },
+      ],
+      defaultRoot: "/picker-worktrees",
+    },
+    refresh,
+  });
+  await render();
+  await act(async () => trigger().click());
+  const titles = [...document.querySelectorAll('[role="option"]')].map((node) => node.textContent);
+  expect(titles).toHaveLength(4);
+  expect(titles[0]).toContain("All worktrees");
+  // Worktrees with changes lead; the project folder follows, then the clean ones.
+  expect(titles[1]).toContain("dirty");
+  expect(titles[2]).toContain("main");
+  expect(titles[3]).toContain("clean");
+});
+
+it("lists All worktrees first, selected by default, and picks it as no focus", async () => {
+  setWorktreeFocus("/picker", { path: "/picker-a", branch: "feature-a" });
+  await render();
+  await act(async () => trigger().click());
+  const first = document.querySelector<HTMLButtonElement>('[role="option"]')!;
+  expect(first.textContent).toContain("All worktrees");
+  expect(first.getAttribute("aria-selected")).not.toBe("true");
+  await act(async () => first.click());
+  expect(select).toHaveBeenLastCalledWith(undefined);
+});
+
+it("marks All worktrees selected without a focus and hides it for one worktree", async () => {
+  await render();
+  await act(async () => trigger().click());
+  const first = document.querySelector<HTMLButtonElement>('[role="option"]')!;
+  expect(first.textContent).toContain("All worktrees");
+  expect(first.getAttribute("aria-selected")).toBe("true");
+  await typeQuery("feature");
+  expect(option("All worktrees")).toBeUndefined();
+
+  vi.mocked(useProjectWorktrees).mockReturnValue({
+    data: { worktrees: [tree("/picker", "main", true)], defaultRoot: "/w" },
+    refresh,
+  });
+  await render();
+  await typeQuery("");
+  expect(option("All worktrees")).toBeUndefined();
+  expect(trigger().textContent).toBe("pickermain");
+});
+
+it("treats the project folder as a real focus and keeps it while listed", async () => {
+  setWorktreeFocus("/picker", { path: "/picker", branch: "main" });
+  await render();
+  expect(trigger().textContent).toBe("pickermain");
+  expect(select).not.toHaveBeenCalled();
+});
+
+const mixedTrees = () => [
+  tree("/picker", "main", true),
+  tree("/picker-worktrees/clean-one", "by/clean-one"),
+  { ...tree("/picker-worktrees/dirty-one", "feat/dirty-one"), dirty: true },
+  { ...tree("/picker-worktrees/ahead-one", "feat/ahead-one"), unpushed: 2 },
+];
+
+it("reads as a breadcrumb: project, separator, branch icon and branch, then the picker chevron", async () => {
+  setWorktreeFocus("/picker", { path: "/picker-a", branch: "feature-a" });
+  await render();
+  expect(trigger().textContent).toBe("pickerfeature-a");
+  const icons = [...trigger().querySelectorAll("svg")].map((svg) =>
+    [...svg.classList].find((name) => name.startsWith("lucide-")),
+  );
+  expect(icons).toEqual(["lucide-chevron-right", "lucide-git-branch", "lucide-chevron-down"]);
+  // No path in the trigger text.
+  expect(trigger().textContent).not.toContain("/picker-a");
+});
+
+it("names the project and All worktrees without a branch icon when none is selected", async () => {
+  await render();
+  expect(copyName()).toBe("All worktrees");
+  expect(trigger().querySelector("svg.lucide-git-branch")).toBeNull();
+});
+
+it("lists the picker as the repository list: changes, project folder, other, agent worktrees", async () => {
+  vi.mocked(useProjectWorktrees).mockReturnValue({
+    data: { worktrees: mixedTrees(), defaultRoot: "/picker-worktrees" },
+    refresh,
+  });
+  await render();
+  await act(async () => trigger().click());
+  const options = [...document.querySelectorAll('[role="option"]')].map((node) => node.textContent);
+  expect(options[0]).toContain("All worktrees");
+  expect(options[1]).toContain("feat/dirty-one");
+  expect(options[2]).toContain("main");
+  expect(options[3]).toContain("feat/ahead-one");
+  expect(options[4]).toContain("by/clean-one");
+  const headings = [...document.querySelectorAll('[role="group"] > [role="presentation"]')].map(
+    (node) => node.textContent,
+  );
+  expect(headings).toEqual(["Uncommitted changes", "Agent worktrees · 1"]);
+});
+
+it("shows each picker row once with no text marker; agent worktrees get the agent icon and no folder", async () => {
+  vi.mocked(useProjectWorktrees).mockReturnValue({
+    data: { worktrees: mixedTrees(), defaultRoot: "/picker-worktrees" },
+    refresh,
+  });
+  await render();
+  await act(async () => trigger().click());
+  const dirty = option("feat/dirty-one");
+  expect(dirty.querySelectorAll("svg.lucide-git-branch")).toHaveLength(1);
+  expect(dirty.querySelector("svg.lucide-folder-tree")).toBeNull();
+  expect(dirty.textContent).not.toContain("Worktree");
+  expect(dirty.textContent).not.toContain("/picker-worktrees");
+  // The change dot is named for assistive tech.
+  expect(dirty.querySelector('[aria-label="Changes"]')).not.toBeNull();
+  expect(option("by/clean-one").querySelector('[aria-label="Changes"]')).toBeNull();
+  expect(option("feat/ahead-one").textContent).toContain("↑2");
+  // No text markers: the project folder and the session checkout carry no label.
+  expect(option("main").textContent).not.toContain("Project folder");
+  expect(option("main").textContent).not.toContain("This session");
+  // Agent worktrees: robot icon, no hash-like folder name.
+  const agent = option("by/clean-one");
+  expect(agent.querySelector("svg.lucide-bot")).not.toBeNull();
+  expect(agent.querySelector("svg.lucide-git-branch")).toBeNull();
+  expect(agent.textContent).not.toContain("clean-one" + "clean-one");
+});
+
+it("collapses a long agent group to five rows and expands it from the more row", async () => {
+  const agents = Array.from({ length: 8 }, (_, index) => ({
+    ...tree("/picker-worktrees/a" + index, "by/a" + index),
+    unpushed: index,
+  }));
+  vi.mocked(useProjectWorktrees).mockReturnValue({
+    data: {
+      worktrees: [tree("/picker", "main", true), ...agents],
+      defaultRoot: "/picker-worktrees",
+    },
+    refresh,
+  });
+  await render();
+  await act(async () => trigger().click());
+  const names = () =>
+    [...document.querySelectorAll('[role="option"]')].map((node) => node.textContent);
+  expect(names().filter((name) => name?.includes("by/a"))).toHaveLength(5);
+  const more = names().find((name) => name?.includes("3 more"));
+  expect(more).toBeDefined();
+  const headings = [...document.querySelectorAll('[role="group"] > [role="presentation"]')].map(
+    (node) => node.textContent,
+  );
+  expect(headings).toEqual(["Agent worktrees · 8"]);
+  const row = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((node) =>
+    node.textContent?.includes("3 more"),
+  )!;
+  await act(async () => row.click());
+  expect(select).not.toHaveBeenCalled();
+  expect(names().filter((name) => name?.includes("by/a"))).toHaveLength(8);
+});
+
+it("shows the total and per-worktree counts of uncommitted files, with no chip for an unknown state", async () => {
+  vi.mocked(useProjectWorktrees).mockReturnValue({
+    data: {
+      worktrees: [
+        ...mixedTrees(),
+        { ...tree("/picker-worktrees/unknown", "feat/unknown"), dirty: null, unpushed: null },
+      ],
+      defaultRoot: "/picker-worktrees",
+    },
+    refresh,
+  });
+  changeTotals.ready = true;
+  changeTotals.total = 324;
+  changeTotals.byRoot = new Map([["/picker-worktrees/dirty-one", 321]]);
+  try {
+    await render();
+    await act(async () => trigger().click());
+    expect(option("All worktrees").textContent).toContain("324");
+    expect(option("feat/dirty-one").textContent).toContain("321");
+    expect(option("feat/unknown").querySelector('[aria-label^="Changes"]')).toBeNull();
+    expect(option("feat/unknown").textContent).not.toContain("↑");
+  } finally {
+    changeTotals.ready = false;
+    changeTotals.total = 0;
+    changeTotals.byRoot = new Map();
+  }
+});
+
+it("keeps the full path in the row's hint rather than in its text", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(useProjectWorktrees).mockReturnValue({
+      data: { worktrees: mixedTrees(), defaultRoot: "/picker-worktrees" },
+      refresh,
+    });
+    await render();
+    await act(async () => trigger().click());
+    const label = option("feat/dirty-one").querySelector("span.flex")!;
+    await act(async () => {
+      label.dispatchEvent(new Event("pointerover", { bubbles: true }));
+      vi.advanceTimersByTime(520);
+    });
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(
+      "/picker-worktrees/dirty-one",
+    );
+  } finally {
+    vi.useRealTimers();
+  }
 });

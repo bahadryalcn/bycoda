@@ -1,10 +1,9 @@
 import type { CSSProperties } from "react";
-import { useState, useSyncExternalStore, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Settings } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
-import { Text } from "../../../shared/ui/Text";
 import {
   providerAccountLabel,
   providerAccounts,
@@ -25,12 +24,22 @@ import {
   subscribeProjectProviders,
 } from "../model/projectProviders";
 import { HARNESS_TITLE, type HarnessId } from "../model/session";
-import { ModelAccountControl, ModelAccountList, usePanelAccounts } from "./ModelAccountSwitcher";
+import {
+  ModelAccountControl,
+  ModelAccountList,
+  usePanelAccounts,
+  type usePickerAccountUsage,
+} from "./ModelAccountSwitcher";
 import { ModelBrowser, type ModelBrowserProps, type ModelDefaultMark } from "./ModelBrowser";
 import { ModelSettingHelp, ModelSettingsColumn } from "./ModelSettingsColumn";
+import { ModelSettingPicker } from "./ModelSettingPicker";
+import { isSubagentSetting } from "../model/crossDelegation";
+import type { AccountModelChoice } from "../model/accountModelChoices";
 import { useModelSource } from "./modelSource";
+import { accountSwitcherKind } from "../model/modelPanelData";
 
 const PANEL_WIDTH = 600;
+const MODEL_LIST_WIDTH = 420;
 const PANEL_HEIGHT = 460;
 
 export type ModelPanelSettings = {
@@ -38,7 +47,9 @@ export type ModelPanelSettings = {
   settings: ModelSetting[];
   values: Record<string, string>;
   locked: (setting: ModelSetting) => boolean;
+  lockReason?: (setting: ModelSetting) => string | undefined;
   onChoose: (setting: ModelSetting, value: string) => void;
+  onSet: (setting: ModelSetting, value: string) => void;
 };
 
 /**
@@ -53,10 +64,13 @@ export function ModelPanel({
   leading,
   accountHarness,
   accountId,
+  accountUsage,
   accountListOpen,
   onAccountListOpen,
   onSelectAccount,
+  conversationSettings,
   settings,
+  showProviderSettings = true,
   onDismiss,
 }: {
   anchor: { current: HTMLButtonElement | null };
@@ -69,30 +83,42 @@ export function ModelPanel({
   /** Provider whose accounts the header offers; none on the mixed Favorites tab. */
   accountHarness?: HarnessId;
   accountId: string;
+  accountUsage: ReturnType<typeof usePickerAccountUsage>;
   accountListOpen: boolean;
   onAccountListOpen: (open: boolean) => void;
   onSelectAccount: (accountId: string) => void;
+  conversationSettings?: ReactNode;
   /** Absent while an inherited choice has no model to configure. */
   settings?: ModelPanelSettings;
+  showProviderSettings?: boolean;
   onDismiss: (reason: "outside" | "escape") => void;
 }) {
   const t = useT();
   const [explained, setExplained] = useState<ModelSetting | null>(null);
-  const { accounts, now } = usePanelAccounts(
-    accountHarness ?? browser.harnesses[0],
-    !!accountHarness,
-  );
-  const shownAccounts = accountHarness ? accounts : [];
-  const listOpen = accountListOpen && shownAccounts.length > 2;
-  // The rail already names the provider, so its tab header shows only its accounts.
-  const title = browser.query.trim()
-    ? t("Results")
-    : browser.tab === "favorites"
-      ? t("Favorites")
-      : shownAccounts.length
-        ? null
-        : HARNESS_TITLE[browser.tab];
-
+  const [editingSubagents, setEditingSubagents] = useState(false);
+  const content = useRef<HTMLDivElement>(null);
+  const restoreSubagents = useRef(false);
+  const subagents = editingSubagents ? settings?.settings.find(isSubagentSetting) : undefined;
+  function closeSubagents() {
+    restoreSubagents.current = true;
+    setEditingSubagents(false);
+  }
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Restore DOM focus when the subagent controls become available again.
+  useLayoutEffect(() => {
+    if (editingSubagents || !restoreSubagents.current) return;
+    restoreSubagents.current = false;
+    const row = content.current?.querySelector('[data-setting-id="crossSubagents"]');
+    (
+      row?.querySelector<HTMLElement>("[data-model-setting-add]") ??
+      row?.querySelector<HTMLElement>('[aria-checked="true"]') ??
+      row?.querySelector<HTMLElement>("button")
+    )?.focus({ preventScroll: true });
+  }, [editingSubagents]);
+  const shownAccounts = usePanelAccounts(accountHarness, accountUsage);
+  const accountControl = accountSwitcherKind(shownAccounts.length);
+  const inlineAccounts = accountControl === "label" && shownAccounts[0].id !== accountId;
+  const showAccountMenu = accountControl === "menu" || accountControl === "search";
+  const listOpen = accountListOpen && showAccountMenu;
   const defaultMark = useDefaultMark(
     project,
     browser.tab,
@@ -107,12 +133,23 @@ export function ModelPanel({
     onAccountListOpen(false);
     onSelectAccount(id);
   };
+  const accountList =
+    inlineAccounts || listOpen ? (
+      <ModelAccountList
+        accounts={shownAccounts}
+        accountId={accountId}
+        defaultAccountId={defaultAccountId}
+        now={accountUsage.now}
+        inline={inlineAccounts}
+        onSelect={pickAccount}
+      />
+    ) : undefined;
 
   return (
     <Popover
       anchor={anchor}
       side={side}
-      width={PANEL_WIDTH}
+      width={settings || conversationSettings ? PANEL_WIDTH : MODEL_LIST_WIDTH}
       maxHeight={PANEL_HEIGHT}
       frosted
       dismissOnEscape={false}
@@ -123,56 +160,63 @@ export function ModelPanel({
       data-model-panel
       style={
         {
-          "--layout-height": PANEL_HEIGHT === undefined ? undefined : PANEL_HEIGHT + "px",
+          "--layout-height": `${PANEL_HEIGHT}px`,
         } as CSSProperties
       }
       className="flex min-h-0 flex-col overflow-hidden [height:var(--layout-height)]"
     >
       {/* Narrow panels stack the settings under the list instead of squeezing the list. */}
-      <div className="@container/model-panel flex min-h-0 min-w-0 flex-1">
+      <div ref={content} className="@container/model-panel flex min-h-0 min-w-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 @max-[32rem]/model-panel:flex-col @max-[32rem]/model-panel:overflow-y-auto">
           <ModelBrowser
             {...browser}
             defaultMark={defaultMark?.mark}
-            header={
-              <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 px-3 pt-1.5 pb-1">
-                {title ? (
-                  <Text
-                    as="span"
-                    size="caption"
-                    weight="medium"
-                    tone="secondary"
-                    className="shrink-0"
-                  >
-                    {title}
-                  </Text>
-                ) : null}
-                {browser.query.trim() ? null : (
-                  <ModelAccountControl
-                    accounts={shownAccounts}
-                    accountId={accountId}
-                    defaultAccountId={defaultAccountId}
-                    listOpen={listOpen}
-                    onSelect={pickAccount}
-                    onToggleList={() => onAccountListOpen(!listOpen)}
-                  />
-                )}
-              </div>
-            }
-            leading={leading}
-            body={
-              listOpen ? (
-                <ModelAccountList
-                  accounts={shownAccounts}
-                  accountId={accountId}
-                  defaultAccountId={defaultAccountId}
-                  now={now}
-                  onSelect={pickAccount}
+            editor={
+              subagents && settings ? (
+                <ModelSettingPicker
+                  key={settings.current.id}
+                  setting={subagents}
+                  values={settings.values}
+                  disabled={settings.locked(subagents)}
+                  limitReason={accountUsage.limitReason}
+                  onChoose={() => undefined}
+                  onClose={closeSubagents}
+                  onApply={(value) => {
+                    settings.onSet(subagents, value);
+                    closeSubagents();
+                  }}
                 />
               ) : undefined
             }
+            header={
+              <>
+                {showAccountMenu ? (
+                  <div className="flex shrink-0 justify-end px-3 py-1">
+                    <ModelAccountControl
+                      accounts={shownAccounts}
+                      accountId={accountId}
+                      defaultAccountId={defaultAccountId}
+                      listOpen={listOpen}
+                      onToggleList={() => onAccountListOpen(!listOpen)}
+                    />
+                  </div>
+                ) : null}
+                {inlineAccounts ? accountList : null}
+              </>
+            }
+            leading={leading}
+            body={listOpen ? accountList : undefined}
           />
-          {settings ? <ModelSettingsColumn {...settings} onExplain={setExplained} /> : null}
+          {settings ? (
+            <ModelSettingsColumn
+              {...settings}
+              limitReason={accountUsage.limitReason}
+              conversationSettings={conversationSettings}
+              onExplain={setExplained}
+              onEditSubagents={() => setEditingSubagents(true)}
+              editingSubagents={!!subagents}
+            />
+          ) : null}
         </div>
       </div>
       {settings ? (
@@ -180,22 +224,23 @@ export function ModelPanel({
           setting={explained}
           settings={settings.settings}
           trailing={
-            <Button
-              iconOnly
-              variant="ghost"
-              size="sm"
-              type="button"
-              label={t("Provider settings")}
-              data-model-provider-settings
-              className="-my-1 -mr-1.5 shrink-0"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => {
-                onDismiss("outside");
-                openProviderSettings();
-              }}
-            >
-              <Settings className="icon-sm" strokeWidth={1.75} />
-            </Button>
+            showProviderSettings ? (
+              <Button
+                iconOnly
+                variant="ghost"
+                size="sm"
+                type="button"
+                label={t("Provider settings")}
+                data-model-provider-settings
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  onDismiss("outside");
+                  openProviderSettings();
+                }}
+              >
+                <Settings className="icon-sm" strokeWidth={1.75} />
+              </Button>
+            ) : undefined
           }
         />
       ) : null}
@@ -248,8 +293,10 @@ function useDefaultMark(
   const path = [HARNESS_TITLE[harness], accountName, source.resolve(harness, value.model).name]
     .filter(Boolean)
     .join(" › ");
+  const viewedAccount = (item: AccountModelChoice) =>
+    tab === "favorites" ? item.accountId : tab === item.harness ? accountId : undefined;
   const onPin = (item: AgentModel) => {
-    const viewed = tab === item.harness ? accountId : undefined;
+    const viewed = viewedAccount(item);
     if (value.pinned && isModelDefault(value, item.harness, item.id, viewed)) {
       clearProjectDefault(project);
       return;
@@ -262,8 +309,7 @@ function useDefaultMark(
       harness,
       pinned: value.pinned,
       path,
-      isDefault: (item) =>
-        isModelDefault(value, item.harness, item.id, tab === item.harness ? accountId : undefined),
+      isDefault: (item) => isModelDefault(value, item.harness, item.id, viewedAccount(item)),
       onPin,
     },
   };

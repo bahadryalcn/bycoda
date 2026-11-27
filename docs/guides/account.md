@@ -16,13 +16,14 @@ Choose **Sign in with browser** on the Account page. bycoda opens your default b
 the sign-in page; pick Google, Facebook, Apple, GitHub or an emailed code. When the browser
 says you are signed in, return to bycoda. Sign-in finishes within five minutes; press
 **Cancel** to stop waiting.
+If bycoda cannot open the browser, it ends that attempt and shows the error. You can retry from the same screen.
 
 - Your sign-in secret is kept in the system credential store (Windows Credential Manager,
   macOS Keychain or the Linux Secret Service), never in a file.
 - **Sign out** removes the secret from this computer. Your local data is not touched.
 - If your session ends (for example you signed this computer out from another device),
   bycoda says so and returns to the signed-out state.
-- Offline, bycoda shows the account details it last confirmed for up to seven days.
+- Offline, bycoda shows the account details it last confirmed for up to seven days. A connection that stops answering is treated the same way after 15 seconds, so sign-in and sync never wait forever.
 
 ## The account center
 
@@ -55,11 +56,15 @@ out the next time it connects. Signing out this computer from here also signs it
 
 In Settings → Machines → Phone, **Let my signed-in phones find this computer**
 (off by default) stores this computer's name, its Host environment id and its phone route
-addresses (a private local-network address with its public key, and a Tailscale address) in
+addresses (a private local-network address with its public key, and a Tailscale address with its public key; only when you allow phones over the public internet, also public tunnel addresses, flagged as public) in
 your account so your signed-in phones can ask to connect. These are new stored data: route
 hints only, never sessions, prompts, code or credentials. The entry is removed when you turn the
 switch off or remove the device, and every connection still needs your approval on the computer
 ([details](mobile-connections.md)).
+
+Keep the computer's bycoda window visible when you request a connection. It checks again as soon
+as it returns from being hidden or minimized. Pairing controls check every few seconds. A visible
+idle window can take about a minute to discover a request.
 
 ## Activity on this computer
 
@@ -129,30 +134,41 @@ Shows, one row per category, what bycoda stores about your account (profile, dev
 route hints if you turned on phone connect, active-time days, notification items, support
 requests) and how long it is kept, and never your sessions, prompts, code or file names.
 **Request export** prepares a JSON copy of your account in the background; when it is ready,
-**Save file** downloads it. Statistics and diagnostic logs below are choices of this computer.
+**Save file** downloads it. Data sharing choices apply to this computer.
+
+In **Settings → Privacy**, choose **Do not send**, **Ask every time** or **Send every time** for each sharing category. Active time uses **Ask daily** by default. Choosing **Do not send** keeps new active-time records on the local Host. Previous uploads remain in the account.
+
+Previously enabled anonymous statistics and token totals ask for approval until you explicitly choose **Send every time**.
+
+Open **Details** in the lower-left notice to see the destination. Expand a file to read its full contents. In every category, **Send once** sends only the reviewed data and **Always send** saves **Send every time** for that category. For active time, **Send once** sends the reviewed data and pauses further requests until local midnight. **Send for today** lets active time sync for this account on this computer until local midnight. **Always send** saves **Send every time** and lets future active-time transfers sync automatically. Under **More options**, **Ask later** skips this transfer and waits until midnight. Dismissing the pending notice has the same effect. **Never send** disables active-time sharing until you change the preference in **Settings → Privacy**.
+
+Active time shows at most one successful upload receipt per day. The receipt shows the time sent and lets you inspect the same destination and files. Dismiss the receipt from its notice. **Data sharing receipts** controls the receipts independently of permission.
 
 **Share anonymous usage statistics** is off by default and needs no account. bycoda asks
-once: in the first-run setup, or for existing installations in a small notice that never
-blocks your work (if you ignore it, it comes back on the next launch, three times at most,
-and statistics stay off). When on, bycoda sends at most once a day a random install id, the
+once in first-run setup or in a small non-blocking notice for existing installations.
+Statistics stay off until you opt in. Saying yes there saves **Send every time**, so the daily signal is not reviewed again. When on, bycoda sends at most once a day a random install id, the
 app version, operating system, release channel and date, and nothing else. Without an account
 the same switch is in Settings → Privacy. Turning it off stops sending immediately.
 
+**Share anonymous token totals** has its own control in Settings → Privacy and Account →
+Privacy & data. It starts off. When enabled, desktop sends completed UTC days of measured
+Bycoda turn usage since you enabled it, with a random installation ID. The service receives
+only dates, token totals, estimated API-equivalent USD and counts of priced and unpriced
+turns. It keeps the daily reports for 400 days. The estimate uses known rates and omits
+unpriced turns. Turning the switch off stops future reports. Desktop can catch up on up to
+seven days after an outage.
+
 ### Diagnostic logs
 
-**Share diagnostic logs** (Account → Privacy and data, and Settings → Privacy) has three
-choices: **Off**, **Ask me** (also what you get until you choose) and **Send automatically**.
+**Share diagnostic logs** defaults to **Ask every time**. Bycoda uses error logs only to understand problems and improve the app.
 Logs are the app, Host and interface logs of this computer. They are redacted here before
 they leave it (secrets, tokens, e-mail addresses and your user name are removed) and again on
 the server, never include your conversations, prompts or code, and are kept 90 days.
 
-- After bycoda closed unexpectedly, **Ask me** shows a notice with **Send**, **Always send**
-  (switches to automatic) and **Don't send**. **Send automatically** uploads the crash report
-  silently and **Off** discards it.
-  Notice answers use the full card width below the message and wrap on narrow windows.
+- After an unexpected close, the notice opens the exact redacted log and report details. **Do not send** discards the pending report.
 - In automatic mode bycoda also sends a report at most once every seven days.
 - Logs of connected remote computers (their bycoda Host) are included, redacted the same way.
-- **Send logs now** uploads a report once, with an optional note, whatever the choice is.
+- **Send logs now** prepares a report for one transfer, with an optional note that is redacted before upload.
 - Signed in, reports are linked to your account; as a guest they carry no user, device or
   install id. Without the account platform nothing can be sent.
 

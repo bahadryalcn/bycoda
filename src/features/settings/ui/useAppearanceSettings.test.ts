@@ -181,7 +181,10 @@ describe("mounted shared appearance preferences", () => {
       expect(await states[0].onChooseChatBackground("/source.mp4")).toBeNull();
     });
     expect(loadChatBackgroundPath()).toBe("/current.png");
-    expect(states[0].chatBackgroundError).toBe("Unsupported codec");
+    expect(states[0].chatBackgroundError).toMatchObject({
+      operation: "choose",
+      detail: expect.stringContaining("Unsupported codec"),
+    });
     expect(states[0].chatBackgroundBusy).toBe(false);
   });
   it("applies sibling native scale, consecutive shortcuts, removal and reset without writing back", async () => {

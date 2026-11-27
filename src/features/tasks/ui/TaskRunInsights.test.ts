@@ -24,6 +24,14 @@ const task = (patch: Partial<HostTask> = {}): HostTask => ({
 });
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -54,7 +62,12 @@ it("shows unknown usage explicitly and never infers owner acceptance", async () 
   expect(container.textContent).toContain("Unknown");
   expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false);
   expect(save).not.toHaveBeenCalled();
-  expect(container.textContent).toContain("does not complete, approve or publish");
+  // The caveat sits behind the Help popover, not in the form.
+  expect(container.textContent).not.toContain("does not complete, approve or publish");
+  await act(async () =>
+    container.querySelector<HTMLElement>('form button[aria-label="Help"]')?.click(),
+  );
+  expect(document.body.textContent).toContain("does not complete, approve or publish");
 });
 
 it("does not carry an unsaved acceptance decision into a new result", async () => {
@@ -89,34 +102,6 @@ it("does not carry an unsaved acceptance decision into a new result", async () =
     ),
   );
   expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false);
-});
-
-it("labels incomplete old run history as lower bounds instead of showing total usage", async () => {
-  await act(async () =>
-    root.render(
-      createElement(TaskRunInsights, {
-        task: task({
-          budgetUsage: {
-            historyComplete: false,
-            agentMinutes: 0,
-            attempts: 0,
-            completedRuns: 0,
-            runningRuns: 0,
-            reportedTokens: 0,
-            tokens: null,
-            tokensComplete: false,
-            unknownTokenRuns: 0,
-            reportedCostUsd: null,
-            estimatedCostUsd: null,
-            measuredAt: 1,
-          },
-        }),
-        onSaveEvaluation: vi.fn(async () => {}),
-      }),
-    ),
-  );
-  expect(container.textContent).toContain("Recorded readings are lower bounds");
-  expect(container.querySelector("dd")?.textContent).toBe("Unknown");
 });
 
 it("saves explicit owner review data without modifying task state", async () => {
@@ -188,7 +173,9 @@ it("compares only completed accepted results and labels incomplete billing", asy
     ),
   );
   expect(container.textContent).toContain("Model");
-  expect(container.textContent).toContain("not a controlled model benchmark");
+  expect(container.textContent).not.toContain("not a controlled model benchmark");
+  await act(async () => container.querySelector<HTMLElement>('button[aria-label="Help"]')?.click());
+  expect(document.body.textContent).toContain("not a controlled model benchmark");
   expect(container.textContent).toContain("Partial readings are not shown as complete totals");
   expect(container.textContent).toContain("Unknown");
 });

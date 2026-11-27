@@ -60,7 +60,7 @@ it("stacks the newest toast in front and keeps the fourth out of reach", () => {
   try {
     act(() => {
       for (const message of ["First", "Second", "Third", "Fourth"])
-        toast.show({ message, durationMs: null });
+        toast.show({ tone: "info", message, durationMs: null });
     });
     const stack = document.querySelector<HTMLElement>("[data-toast-region] [data-toast-stack]")!;
     expect(stack.hasAttribute("data-empty")).toBe(false);
@@ -121,10 +121,12 @@ it("holds every toast's expiry while the stack is open and resumes the remaining
   const onDismiss = vi.fn();
   try {
     act(() => {
-      toast.show({ message: "Saved", onDismiss });
-      toast.show({ message: "Archived", onDismiss });
+      toast.show({ tone: "info", durationMs: 10_000, message: "Saved", onDismiss });
+      toast.show({ tone: "info", durationMs: 10_000, message: "Archived", onDismiss });
     });
-    const stack = document.querySelector<HTMLElement>("[data-toast-stack]")!;
+    const stack = document.querySelector<HTMLElement>(
+      '[data-toast-region="top-end"] [data-toast-stack]',
+    )!;
     await act(async () => {
       await vi.advanceTimersByTimeAsync(6_000);
     });
@@ -160,7 +162,7 @@ it("keeps the time of a toast that waits behind the visible three", async () => 
   try {
     act(() => {
       for (const message of ["First", "Second", "Third", "Fourth"])
-        toast.show({ message, onDismiss: () => dismissed.push(message) });
+        toast.show({ tone: "danger", message, onDismiss: () => dismissed.push(message) });
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10_000);
@@ -241,24 +243,120 @@ it("renders structured actions as secondary buttons and puts the glyph in a firs
   }
 });
 
-it("stacks in the top-center column by default and keeps explicit placements working", () => {
+it("keeps routine notices at top-end, warnings and errors centered, and explicit placements working", () => {
   const unmount = mount();
   try {
     act(() => {
-      toast.show({ message: "Default", durationMs: null });
-      toast.show({ message: "Corner", durationMs: null, placement: "bottom-end" });
+      toast.show({ tone: "info", message: "Default", durationMs: null });
+      toast.show({ message: "Saved", tone: "success", durationMs: null });
+      toast.show({ message: "Warning", tone: "warning", durationMs: null });
+      toast.show({ message: "Error", tone: "danger", durationMs: null });
+      toast.show({ tone: "info", message: "Corner", durationMs: null, placement: "bottom-end" });
     });
     const center = document.querySelector<HTMLElement>('[data-toast-region="top-center"]')!;
-    expect(DEFAULT_TOAST_PLACEMENT).toBe("top-center");
-    expect(center.className).toContain("inset-x-0");
+    expect(DEFAULT_TOAST_PLACEMENT).toBe("top-end");
     expect(center.className).toContain("items-center");
-    expect(center.className).toContain("top-0");
-    expect(center.textContent).toContain("Default");
+    // The column reaches past the window edge by the shadow bleed on every side it is pinned to.
+    expect(center.style.top).toBe("-32px");
+    expect(center.style.insetInlineStart).toBe("-32px");
+    expect(center.style.insetInlineEnd).toBe("-32px");
+    expect(center.textContent).toContain("Warning");
+    expect(center.textContent).toContain("Error");
+    expect(center.textContent).not.toContain("Default");
+    const routine = document.querySelector('[data-toast-region="top-end"]')!;
+    expect(routine.textContent).toContain("Default");
+    expect(routine.textContent).toContain("Saved");
     expect(center.textContent).not.toContain("Corner");
     const corner = document.querySelector<HTMLElement>('[data-toast-region="bottom-end"]')!;
-    expect(corner.className).toContain("end-0");
-    expect(corner.className).not.toContain("inset-x-0");
+    expect(corner.style.bottom).toBe("-32px");
+    expect(corner.style.insetInlineEnd).toBe("-32px");
+    expect(corner.style.insetInlineStart).toBe("");
     expect(corner.textContent).toContain("Corner");
+  } finally {
+    unmount();
+  }
+});
+
+it("never merges identical toasts that carry their own action, each keeps its own callback", () => {
+  const unmount = mount();
+  try {
+    const first = vi.fn();
+    const second = vi.fn();
+    act(() => {
+      toast.show({
+        tone: "danger",
+        message: "Could not save",
+        action: { label: "Retry", onClick: first },
+      });
+      toast.show({
+        tone: "danger",
+        message: "Could not save",
+        action: { label: "Retry", onClick: second },
+      });
+    });
+    const retries = () =>
+      [...document.querySelectorAll<HTMLButtonElement>("[data-toast-item] button")].filter(
+        (button) => button.textContent === "Retry",
+      );
+    expect(retries()).toHaveLength(2);
+    expect(document.body.textContent).not.toContain("×2");
+    // The newest card is in front; each Retry reaches only its own operation.
+    act(() => retries()[1]!.click());
+    act(() => retries()[0]!.click());
+    expect(first.mock.calls.length + second.mock.calls.length).toBe(2);
+    expect(first).toHaveBeenCalledOnce();
+    expect(second).toHaveBeenCalledOnce();
+  } finally {
+    unmount();
+  }
+});
+
+it("counts an actionless repeat once but keeps a callback-bearing or progress toast separate", () => {
+  const unmount = mount();
+  try {
+    act(() => {
+      toast.show({ tone: "info", message: "Copied" });
+      toast.show({ tone: "info", message: "Copied" });
+      toast.show({ tone: "info", message: "Copied", progress: { value: 0.5, label: "Copying" } });
+      toast.show({ tone: "info", message: "Copied", onDismiss: () => {} });
+    });
+    expect(items()).toHaveLength(3);
+    expect(document.body.textContent).toContain("×2");
+  } finally {
+    unmount();
+  }
+});
+
+it("updates a bound toast id in place instead of adding a second card", () => {
+  const unmount = mount();
+  try {
+    act(() => {
+      toast.show({ id: "op-1", tone: "info", message: "Sending", durationMs: null });
+    });
+    act(() => {
+      toast.show({ id: "op-1", tone: "danger", message: "Could not send", durationMs: null });
+    });
+    expect(items()).toHaveLength(1);
+    expect(items()[0]!.textContent).toContain("Could not send");
+    expect(items()[0]!.textContent).not.toContain("Sending");
+  } finally {
+    unmount();
+  }
+});
+
+it("announces each toast once through its own role, never through a live corner", () => {
+  const unmount = mount();
+  try {
+    act(() => {
+      toast.show({ message: "Saved", tone: "success", durationMs: null });
+      toast.show({ message: "Could not save", tone: "danger", durationMs: null });
+    });
+    for (const region of document.querySelectorAll<HTMLElement>("[data-toast-region]"))
+      expect(region.hasAttribute("aria-live")).toBe(false);
+    const roles = [...document.querySelectorAll("[data-toast-tone]")].map((node) =>
+      node.getAttribute("role"),
+    );
+    expect(roles.toSorted()).toEqual(["alert", "status"]);
   } finally {
     unmount();
   }

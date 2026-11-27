@@ -27,9 +27,17 @@ vi.mock("../../../shared/ui/Modal", () => ({
 import { ServerFiles } from "./ServerFiles";
 afterEach(() => {
   vi.clearAllMocks();
+  // Queued one-shot results from a test must not leak into the next one.
+  native.invoke.mockReset();
+  approval.request.mockReset();
   vi.unstubAllGlobals();
 });
 
+const initialEntries = [
+  { name: "folder", kind: "directory" },
+  { name: "file.txt", kind: "file" },
+  { name: "link", kind: "symlink" },
+];
 async function setup(
   recoveries?: unknown[],
   endpoint?: import("../model/serverInventory").SshEndpoint,
@@ -45,7 +53,12 @@ async function setup(
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
-  if (recoveries) native.invoke.mockResolvedValueOnce(recoveries);
+  // Opening the page lists the home directory; answer by command, not by call order.
+  if (!native.invoke.getMockImplementation())
+    native.invoke.mockImplementation(async (command: string) =>
+      command === "ssh_sftp_recoveries" ? (recoveries ?? []) : initialEntries,
+    );
+  else if (recoveries) native.invoke.mockResolvedValueOnce(recoveries);
   await act(async () =>
     root.render(
       createElement(ServerFiles, { connectionId: "canonical-server", endpoint, onClose: vi.fn() }),
@@ -94,21 +107,25 @@ it("unsubscribes an SFTP listener whose registration finishes after unmount", as
   expect(release).toHaveBeenCalledOnce();
 });
 
-it("opens only on explicit action and keeps symlinks without download/follow controls", async () => {
+it("lists the home directory on open without an Open button and keeps symlinks without download/follow controls", async () => {
   const context = await setup();
   try {
-    expect(native.invoke).toHaveBeenCalledExactlyOnceWith("ssh_sftp_recoveries", {
+    expect(native.invoke).toHaveBeenCalledWith("ssh_sftp_recoveries", {
       connectionId: "canonical-server",
     });
     expect(native.invoke).not.toHaveBeenCalledWith("ssh_sftp_resume", expect.anything());
-    await context.list();
+    expect(native.invoke).not.toHaveBeenCalledWith("ssh_sftp_download", expect.anything());
+    expect(native.invoke).not.toHaveBeenCalledWith("ssh_sftp_upload", expect.anything());
+    expect(
+      Array.from(context.host.querySelectorAll("button")).some((el) => el.textContent === "Open"),
+    ).toBe(false);
     expect(native.invoke).toHaveBeenCalledWith(
       "ssh_sftp_list",
       expect.objectContaining({ connectionId: "canonical-server", path: "." }),
     );
     expect(context.host.querySelector('[aria-label="Download file.txt"]')).not.toBeNull();
     expect(context.host.querySelector('[aria-label="Download link"]')).toBeNull();
-    expect(context.host.textContent).toContain("Symlink; not followed");
+    expect(context.host.querySelector('[aria-label="Symlink; not followed"]')).not.toBeNull();
   } finally {
     await context.cleanup();
   }
@@ -154,7 +171,7 @@ it("shows only real observed bytes for the current operation and ignores another
         },
       }),
     );
-    expect(context.host.textContent).toContain("64 / 128");
+    expect(context.host.textContent).toContain("64 B / 128 B");
     await act(async () => finish());
   } finally {
     await context.cleanup();
@@ -176,7 +193,7 @@ it("lists recovery metadata without auto-resume and requires fresh upload replac
     expect(native.invoke).not.toHaveBeenCalledWith("ssh_sftp_resume", expect.anything());
     await act(async () => context.button("Review resume").click());
     expect(context.host.textContent).toContain("/remote/target.txt");
-    expect(context.button("Resume").disabled).toBe(true);
+    expect(context.button("Resume").getAttribute("aria-disabled")).toBe("true");
     await act(async () =>
       context.host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
     );
@@ -196,16 +213,14 @@ it("lists recovery metadata without auto-resume and requires fresh upload replac
   }
 });
 
-it("requires fresh explicit replacement consent before every upload", async () => {
+it("asks for replacement consent only when the remote filename already exists", async () => {
   const context = await setup();
   try {
     await context.list();
+    // A new name uploads without a consent step and never claims consent.
     native.open.mockResolvedValueOnce("C:/chosen.txt");
     await act(async () => context.button("Upload").click());
-    expect(context.button("Upload file").disabled).toBe(true);
-    const checkbox = context.host.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-    expect(checkbox.checked).toBe(false);
-    await act(async () => checkbox.click());
+    expect(context.host.querySelector('input[type="checkbox"]')).toBeNull();
     expect(context.button("Upload file").disabled).toBe(false);
     native.invoke.mockResolvedValueOnce(123);
     await act(async () => context.button("Upload file").click());
@@ -215,16 +230,30 @@ it("requires fresh explicit replacement consent before every upload", async () =
         connectionId: "canonical-server",
         localPath: "C:/chosen.txt",
         remotePath: "./chosen.txt",
-        overwriteConfirmed: true,
+        overwriteConfirmed: false,
       }),
     );
-    expect(context.host.textContent).toContain("123");
-    native.open.mockResolvedValueOnce("C:/another.txt");
+    expect(context.host.textContent).toContain("123 B");
+    // An existing name needs fresh explicit consent every time.
+    native.open.mockResolvedValueOnce("C:/file.txt");
+    await act(async () => context.button("Upload").click());
+    expect(context.button("Upload file").getAttribute("aria-disabled")).toBe("true");
+    const checkbox = context.host.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    expect(checkbox.checked).toBe(false);
+    await act(async () => checkbox.click());
+    expect(context.button("Upload file").disabled).toBe(false);
+    native.invoke.mockResolvedValueOnce(5);
+    await act(async () => context.button("Upload file").click());
+    expect(native.invoke).toHaveBeenCalledWith(
+      "ssh_sftp_upload",
+      expect.objectContaining({ remotePath: "./file.txt", overwriteConfirmed: true }),
+    );
+    native.open.mockResolvedValueOnce("C:/file.txt");
     await act(async () => context.button("Upload").click());
     expect(context.host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(
       false,
     );
-    expect(context.button("Upload file").disabled).toBe(true);
+    expect(context.button("Upload file").getAttribute("aria-disabled")).toBe("true");
   } finally {
     await context.cleanup();
   }
@@ -243,7 +272,7 @@ it("requires target inspection and metadata-only dismissal after uncertain publi
   ]);
   try {
     expect(context.host.textContent).toContain("Publication outcome unknown");
-    expect(context.button("Review resume").disabled).toBe(true);
+    expect(context.button("Review resume").getAttribute("aria-disabled")).toBe("true");
     expect(native.invoke).not.toHaveBeenCalledWith("ssh_sftp_resume", expect.anything());
     await act(async () => context.button("Dismiss recovery").click());
     expect(native.invoke).toHaveBeenCalledWith(
@@ -267,8 +296,9 @@ it("retains the last directory on a network failure instead of erasing it", asyn
     );
     expect(context.host.textContent).toContain("file.txt");
     expect(context.host.querySelector('[role="alert"]')?.textContent).toContain(
-      "connection interrupted",
+      "Could not complete the file action.",
     );
+    expect(context.host.textContent).not.toContain("connection interrupted");
   } finally {
     await context.cleanup();
   }
@@ -289,11 +319,7 @@ it("cancels a pending proxy approval without starting the late directory request
   );
   const context = await setup([], proxyEndpoint);
   try {
-    await act(async () =>
-      context.host
-        .querySelector("form")!
-        .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
-    );
+    native.invoke.mockResolvedValueOnce(undefined);
     await act(async () => context.button("Cancel").click());
     await act(async () => approve("late-ticket"));
     expect(native.invoke).toHaveBeenCalledWith("ssh_sftp_cancel", expect.anything());
@@ -319,6 +345,7 @@ it("cancels a pending download picker without starting the late transfer", async
         .querySelector<HTMLButtonElement>('button[aria-label="Download file.txt"]')!
         .click(),
     );
+    native.invoke.mockResolvedValueOnce(undefined);
     await act(async () => context.button("Cancel").click());
     await act(async () => choose("C:/late-download.txt"));
     expect(native.invoke).not.toHaveBeenCalledWith("ssh_sftp_download", expect.anything());
@@ -344,8 +371,8 @@ it("binds explicit SFTP list/download/upload to one approved operation and cance
         .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
     );
   try {
-    expect(approval.request).not.toHaveBeenCalled();
-    await submit();
+    // Opening the page asks for the list approval; a refusal makes no remote call.
+    expect(approval.request).toHaveBeenCalledTimes(1);
     expect(native.invoke).not.toHaveBeenCalledWith("ssh_sftp_list", expect.anything());
     await submit();
     expect(approval.request).toHaveBeenLastCalledWith({
@@ -378,9 +405,6 @@ it("binds explicit SFTP list/download/upload to one approved operation and cance
     );
     native.open.mockResolvedValueOnce("C:/chosen.txt");
     await act(async () => context.button("Upload").click());
-    await act(async () =>
-      context.host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
-    );
     await act(async () => context.button("Upload file").click());
     const upload = approval.request.mock.calls.find(
       ([request]) => request.operation.kind === "sftpUpload",
@@ -388,7 +412,7 @@ it("binds explicit SFTP list/download/upload to one approved operation and cance
     expect(upload.operation).toMatchObject({
       localPath: "C:/chosen.txt",
       remotePath: "./chosen.txt",
-      overwriteConfirmed: true,
+      overwriteConfirmed: false,
     });
     expect(native.invoke).toHaveBeenCalledWith(
       "ssh_sftp_upload",
@@ -403,7 +427,6 @@ it("binds explicit SFTP list/download/upload to one approved operation and cance
 });
 it("binds recovery resume/discard authorization to the exact recovery and overwrite decision", async () => {
   approval.request.mockResolvedValue("recovery-ticket");
-  native.invoke.mockResolvedValue([]);
   const context = await setup(
     [
       {
@@ -417,7 +440,11 @@ it("binds recovery resume/discard authorization to the exact recovery and overwr
     proxyEndpoint,
   );
   try {
-    expect(approval.request).not.toHaveBeenCalled();
+    expect(approval.request).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: expect.objectContaining({ kind: "sftpResume" }),
+      }),
+    );
     await act(async () => context.button("Review resume").click());
     await act(async () =>
       context.host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
@@ -443,6 +470,7 @@ it("binds recovery resume/discard authorization to the exact recovery and overwr
   } finally {
     await context.cleanup();
   }
+  native.invoke.mockReset();
   const second = await setup(
     [
       {

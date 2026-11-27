@@ -2,6 +2,8 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NotesView } from "../../../src/features/notes/ui/NotesView";
 import { SessionNotesPanel } from "../../../src/features/notes/ui/SessionNotesPanel";
+import { NoteDraftRecoveryNotice } from "../../../src/features/notes/ui/NoteDraftRecoveryNotice";
+import { NoteInputOwner } from "../../../src/features/notes/notesInputOwners";
 import { useEffect, useState } from "react";
 import { OPEN_NOTE_LIBRARY_EVENT } from "../../../src/features/notes/noteNavigation";
 import { setLanguagePreference } from "../../../src/shared/i18n";
@@ -20,7 +22,8 @@ const notes: Note[] = Array.from({ length: count }, (_, index) => ({
   title: index === 0 ? "Release planning" : `Note ${String(index).padStart(2, "0")}`,
   body:
     (index === 0
-      ? "# Release checklist\n\nWrite the launch summary here.\n\n- [ ] Review changes\n- [ ] Update documentation\n\n```ts\nconst preserve = true;\n```"
+      ? (parameters.has("heading") ? "# " : "") +
+        "Release checklist\n\nWrite the launch summary here.\n\n- [ ] Review changes\n- [ ] Update documentation\n\n```ts\nconst preserve = true;\n```"
       : `Project notes and ideas for item ${index}.`) +
     padding +
     (index === 999 ? "\n\nSearch marker past preview 999." : ""),
@@ -32,6 +35,29 @@ const notes: Note[] = Array.from({ length: count }, (_, index) => ({
   updatedAt: Date.now() - index * 60000,
 }));
 let failSave = parameters.has("saveError");
+// Synthetic private input for recovery-layout evidence, not a live admission failure.
+if (parameters.has("recovery")) {
+  const owner = new NoteInputOwner(() => ({
+    surface: "retained-draft",
+    noteId: notes[0].id,
+    canonical: notes[0],
+  }));
+  const port = owner.observer("title").attach(
+    () => ({
+      snapshot: {
+        source: "inline-edit",
+        draft: "Unsubmitted note title",
+        committed: notes[0].title,
+        editing: true,
+        pendingInput: null,
+        failed: null,
+        error: null,
+      },
+    }),
+    { canClose: () => true, close: () => {} },
+  );
+  port.unregister();
+}
 const calls: { command: string; id?: string; query?: string; bytes?: number }[] = [];
 const imagePickerControl = { finish: null as null | (() => void) };
 Object.assign(window, {
@@ -128,6 +154,7 @@ createRoot(document.getElementById("root")!).render(
       style={{ blockSize: "100dvh", display: "flex", background: "var(--color-background-base)" }}
     >
       <Fixture />
+      <NoteDraftRecoveryNotice />
     </div>
   </QueryClientProvider>,
 );

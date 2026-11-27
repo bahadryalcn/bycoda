@@ -1,9 +1,9 @@
-FROM node:24-bookworm AS node
+FROM node:26.13.1-bookworm AS node
 FROM rust:1-bookworm
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
-    && npm install --global pnpm@12.15.0 \
+    && npm install --global pnpm@12.21.0 \
     && apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       python3 build-essential curl file wget pkg-config libgtk-3-dev libssl-dev \

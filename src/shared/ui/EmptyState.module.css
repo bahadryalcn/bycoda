@@ -1,0 +1,13 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer properties, theme, base, components, utilities;
+
+/* The inline state is one muted caption row at the list gutter and compact height, so it lines up
+   with the rows (and the rail header) above it. An explicit `inset` (utilities layer) wins. */
+@layer components {
+  .inline {
+    align-items: center;
+    min-block-size: var(--ui-control-height-compact);
+    padding-inline: var(--ui-list-gutter, 0.5rem);
+    font-weight: 400;
+  }
+}

@@ -156,6 +156,11 @@ export const VOICE_CAPABILITY_COVERAGE: Record<
     ],
     remaining: "External writes retain native review and durable operation receipts.",
   },
+  liveStream: {
+    tools: [],
+    remaining:
+      "Going live publishes to the owner's Social accounts from OBS; it stays an owner action in the desktop.",
+  },
   machine: {
     tools: [],
     sessionOnly: ["machines.list"],
@@ -178,7 +183,7 @@ export const VOICE_CAPABILITY_COVERAGE: Record<
     tools: [],
     sessionOnly: ["ui.tools.open", "ui.workspace.open"],
     remaining:
-      "Native upload/rewind/window lifecycle APIs are privileged internal protocols, not generic voice RPCs. ui.workspace.open only navigates but its relay needs a coding-session window context; opening any view or settings section from the global Room needs a native Room navigation operation that does not exist yet.",
+      "Native upload/rewind/window lifecycle APIs are privileged internal protocols, not generic voice RPCs. ui.workspace.open is a host relay that needs a coding-session window context. Voice navigation (workspace.views.open|close|status, renderer-side) reaches the projectless global Room only for settings, search, inbox and assistant; every other view needs an unlocked project window, and no voice tool opens a locked project.",
   },
   notes: {
     tools: [
@@ -195,6 +200,11 @@ export const VOICE_CAPABILITY_COVERAGE: Record<
     ],
     remaining:
       "Personal Room notebook has no project; project notes keep target scope. Revision, exact native review and delete recovery retained.",
+  },
+  ollama: {
+    tools: [],
+    remaining:
+      "Local Ollama status, service startup, model downloads, port changes and OpenCode configuration belong to owner settings.",
   },
   preferences: {
     tools: ["preferences.read", "preferences.patch"],
@@ -336,7 +346,7 @@ export const VOICE_CAPABILITY_COVERAGE: Record<
       "workspace.sessions.stop",
     ],
     remaining:
-      "Finite Room navigation/session owner workflows only; source admission and native effect availability must be verified. Submit status retains the original appRequestId; absence is not proof of non-delivery. Global app search, the Today summary and MCP server status are computed in the desktop renderer or its native files and have no Host data path, so they have no voice tool; machines.list and logs.wait need the desktop relay or a session waiter. Assistant activity and notifications are read through the voice assistant_activity control.",
+      "Finite Room navigation/session owner workflows only; source admission and native effect availability must be verified. Submit status retains the original appRequestId; absence is not proof of non-delivery. Global app search (workspace.search.query), the Today summary (workspace.today.read) and MCP server status (workspace.mcp.status) are renderer-side voice reads with no Host data path, so they are not Host catalog entries; machines.list and logs.wait need the desktop relay or a session waiter. Assistant activity and notifications are read through the voice assistant_activity control.",
   },
   workspaces: {
     tools: [

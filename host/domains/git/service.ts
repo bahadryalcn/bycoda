@@ -3,10 +3,24 @@ import * as dto from "../../../src/shared/model/host-contracts/git";
 import { assertDomainAuthority, type HostDomainContext } from "../context";
 
 type Scope = "local" | "exclusive";
+/** Index and commit writes: they never rewrite working files, so agents can keep running. */
+const LOCAL_ACTIONS: ReadonlySet<string> = new Set([
+  "stage",
+  "unstage",
+  "stageFiles",
+  "unstageFiles",
+  "stageAll",
+  "unstageAll",
+  "stageContents",
+  "commit",
+]);
+/** Remote delivery also leaves working files alone, but keeps the exclusive Git lane. */
+const PUBLISH_ACTIONS: ReadonlySet<string> = new Set(["push", "createPr"]);
 export interface HostGitServicePorts {
   project(id: string): Promise<{ id: string; cwd: string }>;
   resolveWorktree(root: string, requested: unknown): Promise<string>;
   withIdleProject<T>(id: string, work: () => Promise<T>): Promise<T>;
+  withStableCheckout<T>(id: string, work: () => Promise<T>): Promise<T>;
   serializeMutation<T>(cwd: string, work: () => Promise<T>, scope: Scope): Promise<T>;
   startActivity(cwd: string): Promise<() => Promise<void>>;
   invalidateRoots(): void;
@@ -76,38 +90,30 @@ export function createHostGitService(ports: HostGitServicePorts) {
     const first = await resolve(params, context);
     const release = action ? await ports.startActivity(first.cwd) : undefined;
     try {
-      const result = await ports.withIdleProject(first.project.id, async () => {
+      const name = action ? (params as unknown as dto.GitActionParams).action : undefined;
+      const besideAgents = !!name && (LOCAL_ACTIONS.has(name) || PUBLISH_ACTIONS.has(name));
+      const run = async () => {
         await assertDomainAuthority(context);
         const current = await resolve(params, context);
-        const name = (params as unknown as dto.GitActionParams).action;
-        const scope =
-          action &&
-          [
-            "stage",
-            "unstage",
-            "stageFiles",
-            "unstageFiles",
-            "stageAll",
-            "unstageAll",
-            "stageContents",
-            "commit",
-          ].includes(name)
-            ? "local"
-            : "exclusive";
+        const effect = async () => {
+          await assertDomainAuthority(context);
+          const latest = await resolve(params, context);
+          if (latest.cwd !== current.cwd || latest.project.cwd !== current.project.cwd)
+            throw new Error("Project checkout changed while Git mutation was queued");
+          await options.beforeEffect?.(latest.cwd);
+          await assertDomainAuthority(context);
+          return operation(latest.cwd, params, latest.project.cwd);
+        };
         return ports.serializeMutation(
           current.cwd,
-          async () => {
-            await assertDomainAuthority(context);
-            const latest = await resolve(params, context);
-            if (latest.cwd !== current.cwd || latest.project.cwd !== current.project.cwd)
-              throw new Error("Project checkout changed while Git mutation was queued");
-            await options.beforeEffect?.(latest.cwd);
-            await assertDomainAuthority(context);
-            return operation(latest.cwd, params, latest.project.cwd);
-          },
-          scope,
+          // Checked inside the queue so a branch switch that got ahead of this work still refuses it.
+          besideAgents ? () => ports.withStableCheckout(current.project.id, effect) : effect,
+          name && LOCAL_ACTIONS.has(name) ? "local" : "exclusive",
         );
-      });
+      };
+      const result = besideAgents
+        ? await run()
+        : await ports.withIdleProject(first.project.id, run);
       await assertDomainAuthority(context);
       return result;
     } finally {

@@ -4,7 +4,7 @@ import { TextField } from "../../../shared/ui/TextField";
 import { CREW_HANDLE_PATTERN } from "../model/crewIdentity";
 
 /**
- * The member's `@handle`. Typing is kept locally so a half-typed value never reaches the
+ * The member's `@handle`; empty means the mention comes from the name. Typing is kept locally so a half-typed value never reaches the
  * draft: only a valid handle (or none) is passed on, after lowercasing and trimming.
  */
 export function MemberHandleField({
@@ -30,7 +30,7 @@ export function MemberHandleField({
   return (
     <TextField
       label={t("Handle")}
-      placeholder={t("e.g. ada")}
+      placeholder={t("From the name")}
       value={text}
       maxLength={40}
       autoCapitalize="none"

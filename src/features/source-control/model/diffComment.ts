@@ -1,4 +1,5 @@
 import type { UnifiedLine } from "./unifiedDiff";
+import { serializeChatCitation } from "../../sessions/public/quoteDraft";
 
 export type DiffCommentTarget = {
   path: string;
@@ -10,9 +11,45 @@ export function diffCommentLocation({ path, line }: DiffCommentTarget): string {
   return number == null ? path : `${path}:${number}`;
 }
 
+const drafts = new Map<string, string>();
+
+function draftKey(target: DiffCommentTarget): string {
+  return `${target.line.kind}\0${diffCommentLocation(target)}`;
+}
+
+/** Unsent comment text per file line, so switching lines or reopening never loses it. */
+export function readDiffCommentDraft(target: DiffCommentTarget): string {
+  return drafts.get(draftKey(target)) ?? "";
+}
+
+/** An empty or blank draft is dropped, so only real text is kept. */
+export function writeDiffCommentDraft(target: DiffCommentTarget, comment: string): void {
+  if (comment.trim()) drafts.set(draftKey(target), comment);
+  else drafts.delete(draftKey(target));
+}
+
 export function formatDiffComment(target: DiffCommentTarget, comment: string): string {
   const body = comment.replace(/\r\n?/g, "\n").trim();
   if (!body) return "";
+
+  const { path, line } = target;
+  if (line.kind !== "hunk") {
+    try {
+      return serializeChatCitation({
+        version: 1,
+        id: crypto.randomUUID(),
+        file: {
+          path,
+          line: line.kind === "del" ? line.oldNumber : line.newNumber,
+          kind: line.kind,
+        },
+        text: line.text,
+        comment: body,
+      });
+    } catch {
+      // Oversized snapshots still reach the draft as readable text.
+    }
+  }
 
   const marker = target.line.kind === "add" ? "+" : target.line.kind === "del" ? "-" : " ";
   const deleted = target.line.kind === "del" ? " (deleted line)" : "";

@@ -1,7 +1,20 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type RefObject,
+} from "react";
+import { flushSync } from "react-dom";
+import { COLLECTION_WINDOW_THRESHOLD } from "../hooks/useCollectionVirtualizer";
+import { DropdownMenuWindow } from "./dropdownMenuWindow";
 import { contextMenuSlotClassName as slot } from "./arc/context-menu/context-menu";
 import { MenuRow } from "./MenuRow";
 import { LAYER } from "../lib/layers";
+import { observeResize } from "../lib/observeResize";
+import { popupSizeMinWidth } from "../lib/popover";
 import { Popover, popupListClassName, type PopoverAnchor } from "./Popover";
 import { PopoverSearchHeader } from "./PopoverSearchHeader";
 import { Check, ChevronRight } from "./icons";
@@ -21,22 +34,27 @@ import { popupNativeActionMenu } from "./nativeActionMenu";
 
 /**
  * Flat action menu for bounded native windows where a Popover would be clipped.
- * Owns native label presentation; only a real selection invokes onPick. The
- * returned promise acknowledges opening, not dismissal. Errors reach the caller.
+ * The OS owns the menu chrome. Only a real selection invokes onPick. The returned promise
+ * acknowledges opening, and errors reach the caller.
  */
 export function popupNativeDropdownMenu(
   anchor: HTMLElement,
   items: readonly Pick<
     DropdownMenuAction,
-    "id" | "label" | "description" | "disabled" | "checked"
+    "id" | "label" | "description" | "disabled" | "disabledReason" | "checked"
   >[],
   onPick: (id: string) => void,
 ): Promise<void> {
   return popupNativeActionMenu(
     anchor,
-    items.map(({ id, label, description, disabled, checked }) => ({
+    items.map(({ id, label, description, disabled, disabledReason, checked }) => ({
       id,
-      label: description ? `${label} — ${description}` : label,
+      label:
+        disabled && disabledReason
+          ? `${label} — ${disabledReason}`
+          : description
+            ? `${label} — ${description}`
+            : label,
       disabled,
       checked,
     })),
@@ -61,6 +79,16 @@ type Controller = {
 type Branch = { id: string; anchor: HTMLElement; keyboard: boolean };
 
 const SUBMENU_CLOSE_MS = 120;
+/** Content-width menus fall back to this minimum until their anchor can be measured. */
+const CONTENT_MIN_WIDTH = 228;
+
+function anchorElement(anchor: PopoverAnchor): HTMLElement | null {
+  return anchor instanceof HTMLElement
+    ? anchor
+    : anchor && "current" in anchor
+      ? anchor.current
+      : null;
+}
 
 /**
  * Controlled action menu on Popover: items, groups, separators, radio and checkbox rows, shortcut
@@ -81,12 +109,17 @@ export function DropdownMenu({
   returnFocusRef,
   side = "bottom",
   align = "end",
-  width = 228,
+  size,
+  width = size ? popupSizeMinWidth(size) : 228,
   gap,
   maxHeight,
+  density,
+  frosted,
   closeOnSelect,
   search,
+  highlight,
   initialActiveId,
+  windowed,
   ignore,
   onEscape,
   ...dataAttributes
@@ -123,6 +156,7 @@ export function DropdownMenu({
   return (
     <MenuSurface
       {...dataAttributes}
+      data-menu-density={density}
       depth={0}
       controller={controller}
       closed={closed}
@@ -134,8 +168,11 @@ export function DropdownMenu({
       width={width}
       gap={gap}
       maxHeight={maxHeight}
+      frosted={frosted}
       search={search}
+      highlight={highlight}
       initialActiveId={initialActiveId}
+      windowed={windowed}
       ignore={ignore}
       onEscape={onEscape}
     />
@@ -154,8 +191,11 @@ type SurfaceProps = {
   width: number | "content";
   gap?: number;
   maxHeight?: number;
+  frosted?: boolean;
   search?: DropdownMenuSearch;
+  highlight?: "focus" | "state";
   initialActiveId?: string;
+  windowed?: boolean;
   ignore?: string;
   onEscape?: () => boolean;
   /** Closes this flyout only; the parent row regains focus. */
@@ -179,8 +219,11 @@ function MenuSurface({
   width,
   gap,
   maxHeight,
+  frosted,
   search,
+  highlight,
   initialActiveId,
+  windowed,
   ignore,
   onEscape,
   back,
@@ -194,15 +237,35 @@ function MenuSurface({
   const takesFocus = takeFocus ?? depth === 0;
   const surface = useRef<HTMLDivElement>(null);
   const searchField = useRef<HTMLInputElement>(null);
+  const openingFocus = useRef<Element | null>(null);
   const query = useRef({ value: "", at: 0 });
   const closeTimer = useRef<number | null>(null);
   const uid = useId();
   const [branch, setBranch] = useState<Branch | null>(null);
+  const stateHighlight = Boolean(search) || highlight === "state";
   const [activeId, setActiveId] = useState<string | undefined>(initialActiveId);
+  const [contentWidth, setContentWidth] = useState(CONTENT_MIN_WIDTH);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps a content-width menu's minimum width in step with its anchor, measured outside render
+  useLayoutEffect(() => {
+    const node = width === "content" ? anchorElement(anchor) : null;
+    if (!node) return;
+    const measure = () => setContentWidth(node.getBoundingClientRect().width);
+    measure();
+    return observeResize(node, measure);
+  }, [anchor, width]);
   const actions = actionsOf(items);
   const enabled = actions.filter((action) => !action.disabled);
-  // With a search field the highlight is state (aria-activedescendant); otherwise it is DOM focus.
-  const highlighted = search ? (enabled.find((a) => a.id === activeId) ?? enabled[0]) : undefined;
+  // Windowing keeps DOM focus on the mounted rows, so a state-highlight menu always mounts every row.
+  const virtual =
+    windowed &&
+    !stateHighlight &&
+    items.length > COLLECTION_WINDOW_THRESHOLD &&
+    items.every((item) => item.kind === "item" && !item.submenu && !item.panel);
+  // With a search field or `highlight="state"` the highlight is state (aria-activedescendant);
+  // otherwise it is DOM focus.
+  const highlighted = stateHighlight
+    ? (enabled.find((a) => a.id === activeId) ?? enabled[0])
+    : undefined;
   const rowId = (id: string) => `${uid}-${id}`;
   const rows = () =>
     Array.from(
@@ -227,12 +290,13 @@ function MenuSurface({
   useEffect(() => cancelClose, []);
   useEffect(() => {
     if (!takesFocus) return;
+    openingFocus.current = document.activeElement;
     // A flyout of radio rows opens on the current choice.
     const first = () =>
       (initialActiveId ? rowOf(initialActiveId) : undefined) ??
       (depth > 0 ? rows().find((row) => row.getAttribute("aria-checked") === "true") : undefined) ??
       rows()[0];
-    if (!search) first()?.focus({ preventScroll: true });
+    if (!stateHighlight) first()?.focus({ preventScroll: true });
     // Popover measures its first pass with visibility:hidden. Browsers cannot
     // focus that pass, so Popover's autoFocus takes the menu surface as soon as it
     // is placed: a key pressed before the next frame reaches the menu instead of
@@ -241,19 +305,21 @@ function MenuSurface({
     const frame = requestAnimationFrame(() => {
       const menu = surface.current;
       const active = document.activeElement;
-      if (closed.current || !menu || search) return;
+      if (closed.current || !menu || stateHighlight) return;
       if (active === menu || !menu.contains(active))
         (first() ?? menu).focus({ preventScroll: true });
-      first()?.scrollIntoView?.({ block: "nearest" });
+      (virtual && menu.contains(document.activeElement)
+        ? document.activeElement
+        : first()
+      )?.scrollIntoView?.({ block: "nearest" });
     });
     return () => cancelAnimationFrame(frame);
   }, []);
   useEffect(() => {
-    if (search && highlighted) {
+    if (stateHighlight && highlighted) {
       document.getElementById(rowId(highlighted.id))?.scrollIntoView?.({ block: "nearest" });
     }
   }, [highlighted?.id]);
-
   const openBranch = (action: DropdownMenuAction, row: HTMLElement, keyboard: boolean) => {
     cancelClose();
     setBranch((current) =>
@@ -269,6 +335,7 @@ function MenuSurface({
     setBranch(null);
     if (!restoreFocus || !current) return;
     if (search) searchField.current?.focus({ preventScroll: true });
+    else if (stateHighlight) surface.current?.focus({ preventScroll: true });
     else if (current.anchor.isConnected) current.anchor.focus({ preventScroll: true });
   };
   const activate = (action: DropdownMenuAction, row: HTMLElement | null, keyboard: boolean) => {
@@ -288,11 +355,16 @@ function MenuSurface({
     if (!action) return;
     const id = action instanceof HTMLElement ? action.dataset.menuId : action.id;
     if (branch && branch.id !== id) setBranch(null);
-    if (action instanceof HTMLElement) focusRow(action);
-    else setActiveId(action.id);
+    if (action instanceof HTMLElement && !stateHighlight) focusRow(action);
+    else if (virtual && !(action instanceof HTMLElement)) {
+      // Keyboard jumps may target a row outside the mounted window. Pin it before focusing.
+      flushSync(() => setActiveId(action.id));
+      focusRow(rowOf(action.id));
+    } else if (id !== undefined) setActiveId(id);
   };
   const step = (key: string, index: number) => {
-    const count = search ? enabled.length : rows().length;
+    const options = stateHighlight || virtual ? enabled : rows();
+    const count = options.length;
     if (!count) return undefined;
     const next =
       key === "Home"
@@ -304,10 +376,23 @@ function MenuSurface({
             : index <= 0
               ? count - 1
               : index - 1;
-    return search ? enabled[next] : rows()[next];
+    return options[next];
+  };
+  const activateHighlight = (key: string) => {
+    if (!highlighted) return false;
+    if (key === "ArrowRight" && !highlighted.submenu && !highlighted.panel) return false;
+    if (key !== "ArrowRight" && key !== "Enter" && key !== " ") return false;
+    activate(highlighted, document.getElementById(rowId(highlighted.id)), true);
+    return true;
   };
   const keyboard = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.nativeEvent.isComposing || event.key === "Process" || event.keyCode === 229) return;
+    if (
+      event.defaultPrevented ||
+      event.nativeEvent.isComposing ||
+      event.key === "Process" ||
+      event.keyCode === 229
+    )
+      return;
     const target = event.target as Node;
     // Keys from a flyout bubble here through the React tree; they belong to that flyout.
     if (!surface.current?.contains(target)) return;
@@ -319,10 +404,20 @@ function MenuSurface({
     }
     if (target === searchField.current) return;
     if (inContent && !(field && (event.key === "ArrowDown" || event.key === "ArrowUp"))) return;
-    const current = rows().indexOf(document.activeElement as HTMLButtonElement);
+    const current = stateHighlight
+      ? searchIndex()
+      : virtual
+        ? enabled.findIndex(
+            (action) => action.id === (document.activeElement as HTMLElement)?.dataset.menuId,
+          )
+        : rows().indexOf(document.activeElement as HTMLButtonElement);
     if (event.key === "ArrowLeft" && depth > 0) {
       event.preventDefault();
       back?.();
+      return;
+    }
+    if (stateHighlight && !field && activateHighlight(event.key)) {
+      event.preventDefault();
       return;
     }
     if (event.key === "ArrowRight") {
@@ -350,7 +445,7 @@ function MenuSurface({
       !event.metaKey &&
       !field
     ) {
-      const list = rows();
+      const list = virtual ? enabled : rows();
       const now = performance.now();
       const letter = event.key.toLocaleLowerCase();
       const previous = now - query.current.at < 700 ? query.current.value : "";
@@ -359,7 +454,9 @@ function MenuSurface({
       query.current = { value, at: now };
       const ordered = [...list.slice(current + 1), ...list.slice(0, current + 1)];
       const match = ordered.find((row) =>
-        row.dataset.menuLabel?.toLocaleLowerCase().startsWith(value),
+        (row instanceof HTMLElement ? row.dataset.menuLabel : row.label)
+          ?.toLocaleLowerCase()
+          .startsWith(value),
       );
       if (match) {
         event.preventDefault();
@@ -381,13 +478,13 @@ function MenuSurface({
 
   // One leading icon slot for the whole menu, so rows without an icon keep the label column.
   const hasIcons = actions.some((action) => action.icon != null);
-  const renderAction = (item: DropdownMenuAction) => {
+  const renderAction = (item: DropdownMenuAction, windowIndex?: number) => {
     const hasBranch = Boolean(item.submenu || item.panel);
     const isHighlighted = highlighted?.id === item.id;
     return (
       <MenuRow
         key={item.id}
-        id={search ? rowId(item.id) : undefined}
+        id={stateHighlight ? rowId(item.id) : undefined}
         type="button"
         role={
           item.checked == null
@@ -397,12 +494,17 @@ function MenuSurface({
               : "menuitemcheckbox"
         }
         aria-checked={item.checked}
+        aria-posinset={windowIndex === undefined ? undefined : windowIndex + 1}
+        aria-setsize={windowIndex === undefined ? undefined : actions.length}
+        onFocus={virtual ? () => setActiveId(item.id) : undefined}
         aria-label={item.label}
-        aria-description={item.description}
+        aria-description={
+          item.disabled && item.disabledReason ? item.disabledReason : item.description
+        }
         aria-haspopup={hasBranch ? "menu" : undefined}
         aria-expanded={hasBranch ? branch?.id === item.id : undefined}
         disabled={item.disabled}
-        title={item.title}
+        title={item.title ?? (item.disabled ? item.disabledReason : undefined)}
         destructive={item.danger}
         data-menu-id={item.id}
         data-menu-label={item.label}
@@ -410,14 +512,15 @@ function MenuSurface({
         data-described={item.description ? "true" : undefined}
         tabIndex={-1}
         branchWidth={item.submenuWidth}
-        // The search field keeps focus: a press on a row must not pull it away.
-        onMouseDown={search ? (event) => event.preventDefault() : undefined}
+        // The search field (or the menu surface, in state highlight) keeps focus: a press on a row
+        // must not pull it away.
+        onMouseDown={stateHighlight ? (event) => event.preventDefault() : undefined}
         onPointerMove={(event) => {
           if (item.disabled) return;
           const row = event.currentTarget;
           if (hasBranch) openBranch(item, row, false);
           else if (branch) scheduleClose();
-          if (search) setActiveId(item.id);
+          if (stateHighlight) setActiveId(item.id);
           else if (!isField(document.activeElement) && document.activeElement !== row) {
             row.focus({ preventScroll: true });
           }
@@ -460,25 +563,29 @@ function MenuSurface({
     );
   };
   const open = branch ? actions.find((action) => action.id === branch.id) : undefined;
-  const rowsMarkup = items.map((item, index) =>
-    item.kind === "sep" ? (
-      <div role="separator" key={`sep-${index}`} className={slot.separator} />
-    ) : item.kind === "content" ? (
-      <div key={item.id} data-menu-content className={styles.content}>
-        {item.node}
-      </div>
-    ) : item.kind === "group" ? (
-      item.items.length ? (
-        <div key={item.id} role="group" aria-label={item.label} className={styles.group}>
-          <div className={slot.heading} aria-hidden="true">
-            {item.label}
-          </div>
-          {item.items.map(renderAction)}
+  const rowsMarkup = virtual ? (
+    <DropdownMenuWindow actions={actions} focusedId={activeId} renderAction={renderAction} />
+  ) : (
+    items.map((item, index) =>
+      item.kind === "sep" ? (
+        <div role="separator" key={`sep-${index}`} className={slot.separator} />
+      ) : item.kind === "content" ? (
+        <div key={item.id} data-menu-content className={styles.content}>
+          {item.node}
         </div>
-      ) : null
-    ) : (
-      renderAction(item)
-    ),
+      ) : item.kind === "group" ? (
+        item.items.length ? (
+          <div key={item.id} role="group" aria-label={item.label} className={styles.group}>
+            <div className={slot.heading} aria-hidden="true">
+              {item.label}
+            </div>
+            {item.items.map((action) => renderAction(action))}
+          </div>
+        ) : null
+      ) : (
+        renderAction(item)
+      ),
+    )
   );
   const flyout =
     open && branch ? (
@@ -523,6 +630,40 @@ function MenuSurface({
         />
       )
     ) : null;
+  // The opening control can still own focus while Popover measures its hidden frame.
+  // Once the menu receives focus, its own handler and active-descendant relationship take over.
+  useEffect(() => {
+    if (highlight !== "state" || search || !takesFocus) return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      const active = document.activeElement;
+      if (
+        event.defaultPrevented ||
+        event.isComposing ||
+        event.keyCode === 229 ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        closed.current ||
+        !active ||
+        active !== openingFocus.current ||
+        surface.current?.contains(active) ||
+        (event.target !== active && event.target !== window)
+      )
+        return;
+      if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+        event.preventDefault();
+        event.stopPropagation();
+        move(step(event.key, searchIndex()));
+        return;
+      }
+      if (activateHighlight(event.key)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  });
   return (
     <Popover
       {...dataAttributes}
@@ -530,22 +671,17 @@ function MenuSurface({
       anchor={anchor}
       role="menu"
       aria-label={label}
+      aria-activedescendant={
+        highlight === "state" && !search && highlighted ? rowId(highlighted.id) : undefined
+      }
       tabIndex={-1}
       autoFocus={takesFocus}
       side={side}
       align={align}
-      minWidth={
-        width === "content"
-          ? ((anchor instanceof HTMLElement
-              ? anchor
-              : anchor && "current" in anchor
-                ? anchor.current
-                : null
-            )?.getBoundingClientRect().width ?? 228)
-          : width
-      }
+      minWidth={width === "content" ? contentWidth : width}
       gap={gap}
       maxHeight={maxHeight}
+      frosted={frosted}
       layer={depth ? LAYER.submenu + depth - 1 : undefined}
       ignore={ignore}
       onContextMenu={(event) => event.preventDefault()}
@@ -558,6 +694,9 @@ function MenuSurface({
         controller.close(reason === "escape");
       }}
       onKeyDown={keyboard}
+      onFocus={() => {
+        openingFocus.current = null;
+      }}
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave ?? (branch ? scheduleClose : undefined)}
       className={`bycoda-arc ${styles.menu} ${search ? styles.searchable : popupListClassName}`}

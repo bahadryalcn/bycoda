@@ -17,20 +17,22 @@ export type BrowserTraversalDirection =
 export function BrowserInspectorNavigation({
   element,
   disabled,
+  disabledReason,
   onTraverse,
 }: {
   element: BrowserElementTarget;
   disabled: boolean;
+  disabledReason?: string;
   onTraverse: (direction: BrowserTraversalDirection, ancestorIndex?: number) => void;
 }) {
   useLocale();
   if (!element.nodeId) return null;
   const ancestors = element.ancestry.slice(-64);
   const actions = [
-    { direction: "parent", label: "Select parent", Icon: ArrowUp },
-    { direction: "child", label: "Select first child", Icon: ArrowDown },
-    { direction: "previousSibling", label: "Select previous sibling", Icon: ChevronLeft },
-    { direction: "nextSibling", label: "Select next sibling", Icon: ChevronRight },
+    { direction: "parent", label: t("Select parent"), Icon: ArrowUp },
+    { direction: "child", label: t("Select first child"), Icon: ArrowDown },
+    { direction: "previousSibling", label: t("Select previous sibling"), Icon: ChevronLeft },
+    { direction: "nextSibling", label: t("Select next sibling"), Icon: ChevronRight },
   ] as const;
   return (
     <div className="browser-inspector-navigation">
@@ -41,8 +43,9 @@ export function BrowserInspectorNavigation({
             variant="ghost"
             size="sm"
             iconOnly
-            label={t(label)}
+            label={label}
             disabled={disabled || (direction === "parent" && !element.parentNodeId)}
+            disabledReason={disabled ? disabledReason : t("This element has no parent.")}
             onClick={() => onTraverse(direction)}
           >
             <Icon className="icon-sm" aria-hidden />
@@ -80,6 +83,7 @@ export function BrowserInspectorNavigation({
             size="sm"
             tooltip={ancestor.selectorPart}
             disabled={disabled}
+            disabledReason={disabledReason}
             onClick={() => onTraverse("ancestor", visible.length - index - 1)}
           >
             {ancestor.tag}

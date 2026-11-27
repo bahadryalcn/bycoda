@@ -45,6 +45,8 @@ export type RuntimeManagementPorts = {
     principal: RuntimeReadPrincipal,
     authorized: () => Promise<boolean>,
   ): Promise<unknown>;
+  /** Cheap change token for the project's rows; equal tokens mean the same rows. */
+  revision(projectId: string): Promise<string>;
   snapshot(projectId: string): Promise<unknown[]>;
   subscribe(listener: () => void): () => void;
 };
@@ -187,23 +189,31 @@ export class ConversationManagementRuntime {
         reading = true;
         try {
           await check();
+          // The revision is read first: a change between the two reads only
+          // leaves the cursor older than the rows, so the next poll sees it again.
+          const revision = await withTimeout(
+            this.ports.revision(projectId),
+            5000,
+            "Project events",
+          );
+          await check();
+          const cursor = createHash("sha256")
+            .update(JSON.stringify([projectId, revision]))
+            .digest("hex");
+          if (!(heartbeat || heartbeatPending || cursor !== input.cursor)) return;
           const all = await withTimeout(this.ports.snapshot(projectId), 5000, "Project events");
           await check();
           const items = all.slice(0, 100);
-          const cursor = createHash("sha256")
-            .update(JSON.stringify([projectId, all]))
-            .digest("hex");
-          if (heartbeat || heartbeatPending || cursor !== input.cursor)
-            finish(undefined, {
-              cursor,
-              items,
-              total: all.length,
-              truncated: all.length > items.length,
-              heartbeat: cursor === input.cursor,
-              transport: "long-poll",
-              durableReplay: false,
-              coverage: "bounded-project-snapshot",
-            });
+          finish(undefined, {
+            cursor,
+            items,
+            total: all.length,
+            truncated: all.length > items.length,
+            heartbeat: cursor === input.cursor,
+            transport: "long-poll",
+            durableReplay: false,
+            coverage: "bounded-project-snapshot",
+          });
         } catch (error) {
           finish(error);
         } finally {

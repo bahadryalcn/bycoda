@@ -1,4 +1,4 @@
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { Button } from "../../../shared/ui/Button";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useCallback, useMemo } from "react";
@@ -7,6 +7,8 @@ import { t, useLocale } from "../../../shared/i18n/git";
 import { useGitResource } from "../hooks/useGitResource";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
+import { formatAbsoluteTime, formatRelativeTime } from "../model/gitGraphDisplay";
 import { GitFeedback } from "./GitFeedback";
 
 /** Historical attribution paired with the same revision's file content. */
@@ -15,11 +17,14 @@ export function GitCommitBlameView({
   sha,
   relative,
   text,
+  openCommit,
 }: {
   cwd: string;
   sha: string | undefined;
   relative: string;
   text: string;
+  /** Jump to a commit in the graph; `has` is false for commits the graph has not loaded. */
+  openCommit?: { has: (sha: string) => boolean; open: (sha: string) => void };
 }) {
   useLocale();
   const read = useCallback(() => gitBlame(cwd, relative, sha), [cwd, relative, sha]);
@@ -30,6 +35,7 @@ export function GitCommitBlameView({
     read,
     false,
   );
+  const now = useMinuteNow();
   const lines = useMemo(() => text.split(/\r?\n/), [text]);
   return (
     <section aria-label={t("Blame at commit")} className="flex min-h-0 flex-1 flex-col">
@@ -41,11 +47,9 @@ export function GitCommitBlameView({
         />
       ) : null}
       {resource.loading && !resource.data ? (
-        <LoadingText className="px-3 py-2">{t("Loading…")}</LoadingText>
+        <LoadingText inset="row">{t("Loading…")}</LoadingText>
       ) : null}
-      {!sha ? (
-        <EmptyState size="inline" className="px-3" description={t("No commits yet")} />
-      ) : null}
+      {!sha ? <EmptyState size="inline" inset="row" description={t("No commits yet")} /> : null}
       <Text
         as="div"
         size="caption"
@@ -66,27 +70,46 @@ export function GitCommitBlameView({
                 "flex whitespace-pre",
               )}
             >
-              <Tooltip label={`${entry.sha}\n${entry.author} · ${entry.summary}`} asChild>
-                <Text
-                  size="micro"
-                  tone="secondary"
-                  truncate
-                  {...surfaceAttributes(
-                    { variant: "canvas" },
-                    "sticky left-0 w-44 shrink-0 px-2 font-sans",
-                  )}
-                >
-                  {first ? `${entry.shortSha} ${entry.author}` : ""}
-                </Text>
-              </Tooltip>
               <Text
-                size="inherit"
-                tone="muted"
-                className="w-10 shrink-0 pr-2 text-right select-none"
+                as="div"
+                size="micro"
+                tone="secondary"
+                {...surfaceAttributes(
+                  { variant: "canvas" },
+                  "sticky left-0 flex w-40 shrink-0 items-baseline px-1 font-sans",
+                )}
               >
+                {first ? (
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    motion="none"
+                    align="start"
+                    truncate
+                    className="min-w-0 flex-1"
+                    disabled={!openCommit?.has(entry.sha)}
+                    disabledReason={
+                      openCommit?.has(entry.sha)
+                        ? undefined
+                        : t("This commit is not in the loaded history.")
+                    }
+                    onClick={() => openCommit?.open(entry.sha)}
+                    tooltip={entry.summary}
+                    tooltipDetails={[
+                      `${entry.author} · ${entry.shortSha} · ${formatAbsoluteTime(entry.timestamp)}`,
+                    ]}
+                  >
+                    <span className="shrink-0 font-mono">{entry.shortSha}</span>
+                    <span className="min-w-0 flex-1 truncate text-end tabular-nums">
+                      {formatRelativeTime(entry.timestamp, now)}
+                    </span>
+                  </Button>
+                ) : null}
+              </Text>
+              <Text size="inherit" tone="muted" className="w-10 shrink-0 pe-2 text-end select-none">
                 {entry.line}
               </Text>
-              <Text size="inherit" tone="primary" className="pr-3">
+              <Text size="inherit" tone="primary" className="pe-3">
                 {lines[entry.line - 1] ?? ""}
               </Text>
             </div>

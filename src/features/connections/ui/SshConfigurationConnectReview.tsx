@@ -5,11 +5,19 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Alert } from "../../../shared/ui/Alert";
 import { t } from "../../../shared/i18n";
-import { previewSshConfiguration, type SshConfigurationPreview } from "../model/sshGroupDefaults";
+import {
+  listSshGroupDefaults,
+  previewSshConfiguration,
+  type SshConfigurationPreview,
+} from "../model/sshGroupDefaults";
+import { sshProvenanceText } from "./sshProvenanceText";
 import { sshEndpointPreview, validSshEndpointPreview } from "../model/sshEndpointReview";
 import type { ServerRecord } from "../model/serverInventory";
+import { errorText } from "../../../shared/lib/errors";
+import { sanitizeConnectionError } from "../model/remoteConnection";
 
 /** Only an explicit click creates a new terminal; native launch rechecks this digest. */
 export function SshConfigurationConnectReview({
@@ -24,6 +32,7 @@ export function SshConfigurationConnectReview({
   const [review, setReview] = useState<SshConfigurationPreview>();
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
+  const [groupNames, setGroupNames] = useState<Record<string, string>>({});
   const used = useRef(false);
   const target = JSON.stringify([server.id, server.sshEndpoint, server.metadata.sshInheritance]);
   const [scope, setScope] = useState(target);
@@ -32,6 +41,7 @@ export function SshConfigurationConnectReview({
     setReview(undefined);
     setError("");
   }
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- requests the native configuration preview for the current server
   useEffect(() => {
     let current = true;
     used.current = false;
@@ -50,12 +60,26 @@ export function SshConfigurationConnectReview({
         setReview(result);
       })
       .catch((reason) => {
-        if (current) setError(String(reason));
+        if (current) setError(sanitizeConnectionError(errorText(reason)));
       });
     return () => {
       current = false;
     };
   }, [server.id, target, revision]);
+  // Group names only label provenance; a failed lookup leaves the revision-only label.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- reads the native SSH group names for the review
+  useEffect(() => {
+    let current = true;
+    void listSshGroupDefaults()
+      .then((groups) => {
+        if (current)
+          setGroupNames(Object.fromEntries(groups.map((group) => [group.id, group.name])));
+      })
+      .catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, []);
   const configuration = scope === target ? review?.configuration : undefined;
   return (
     <Modal
@@ -67,12 +91,10 @@ export function SshConfigurationConnectReview({
           <Button variant="ghost" onClick={onClose}>
             {t("Cancel")}
           </Button>
-          {error ? (
-            <Button onClick={() => setRevision((value) => value + 1)}>{t("Retry")}</Button>
-          ) : null}
           <Button
             variant="primary"
             disabled={!configuration}
+            disabledReason={configuration || error ? undefined : t("Reviewing the configuration…")}
             onClick={() => {
               if (!configuration || used.current) return;
               used.current = true;
@@ -113,11 +135,10 @@ export function SshConfigurationConnectReview({
                     value === t("Default") && configuration.provenance[field]?.source === "default"
                   ) && (
                     <Text size="inherit" tone="muted" className="ms-2">
-                      {configuration.provenance[field]?.source === "group"
-                        ? `${t("Group")} · ${configuration.provenance[field].groupId} · ${configuration.provenance[field].revision}`
-                        : configuration.provenance[field]?.source === "default"
-                          ? t("Default")
-                          : t("Connection")}
+                      {sshProvenanceText(
+                        configuration.provenance[field] ?? { source: "connection" },
+                        groupNames[configuration.provenance[field]?.groupId ?? ""],
+                      )}
                     </Text>
                   )}
                 </DescriptionItem>
@@ -132,14 +153,19 @@ export function SshConfigurationConnectReview({
                     </DescriptionItem>
                   ))}
                 </DescriptionList>
-                <Text as="p" size="inherit" tone="muted" className="mbs-2">
-                  {t("These literal values apply only to this new SSH terminal.")}
-                </Text>
               </Disclosure>
             ) : null}
           </>
         ) : error ? (
-          <Alert tone="danger">{error}</Alert>
+          <Alert
+            tone="danger"
+            action={{ label: t("Retry"), onClick: () => setRevision((value) => value + 1) }}
+            extra={
+              <ErrorDetails title={t("Could not review the SSH configuration.")} detail={error} />
+            }
+          >
+            {t("Could not review the SSH configuration.")}
+          </Alert>
         ) : (
           <LoadingText />
         )}

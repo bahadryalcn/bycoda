@@ -1,17 +1,22 @@
+import { errorText } from "../../../shared/lib/errors";
+import { bytesToBase64, decodeBase64 } from "../../../shared/lib/base64";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { DocumentMessage } from "../../files/public/DocumentMessage";
 import type { Attachment } from "../model/session";
-import { isAttachmentFolder } from "../model/attachments";
-import { readBinaryFile } from "../../../platform/tauri/fs";
+import { isAttachmentFolder, MAX_EMBED_BYTES } from "../model/attachments";
+import { readBinaryFile, saveFileCopy } from "../../../platform/tauri/fs";
 import { canPreviewFile } from "../../files/public/filePreviewMetadata";
 import { mediaKind } from "../../files/public/mediaPreview";
 import { documentKind, MAX_DOCUMENT_BYTES } from "../../files/public/documentViewer";
 import { DocumentView } from "../../files/public/DocumentView";
 import { Modal } from "../../../shared/ui/Modal";
+import { usePointContextMenu, type ContextMenuActions } from "../../../shared/ui/ContextMenu";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { lazySurface } from "../../../shared/ui/lazySurface";
 import { parseRemotePath, remotePath } from "../../connections/public/remoteProjects";
 
@@ -94,40 +99,152 @@ export function sameFilePreviewSource(opened: Attachment | null, current: Attach
     opened.hostEnvironmentId === current.hostEnvironmentId &&
     opened.loadPreview === current.loadPreview &&
     opened.data === current.data &&
+    opened.size === current.size &&
+    opened.kind === current.kind &&
     opened.name === current.name
   );
+}
+
+/** A bare attachment path may belong to another OS; a recorded host identity routes it to its owner. */
+export function ownedAttachmentPath(attachment: Attachment): string | undefined {
+  return attachment.path && attachment.hostEnvironmentId && !parseRemotePath(attachment.path)
+    ? remotePath(attachment.hostEnvironmentId, attachment.path)
+    : attachment.path;
+}
+
+/** The session reader takes precedence over a disk path; both are bounded by `limit` bytes. */
+async function readAttachmentBytes(
+  { size, loadPreview, data, path }: Pick<Attachment, "size" | "loadPreview" | "data" | "path">,
+  limit: number,
+  tooLarge: string,
+): Promise<Uint8Array> {
+  if (!Number.isSafeInteger(size) || size < 0 || size > limit) throw new Error(tooLarge);
+  const bytesData = loadPreview ? await loadPreview() : data;
+  if (bytesData !== undefined && bytesData.length > Math.ceil(limit / 3) * 4)
+    throw new Error(tooLarge);
+  const bytes =
+    bytesData !== undefined
+      ? decodeBase64(bytesData)
+      : path
+        ? await readBinaryFile(path)
+        : undefined;
+  if (!bytes) throw new Error("This attachment is unavailable.");
+  if (bytes.byteLength > limit) throw new Error(tooLarge);
+  return bytes;
+}
+
+/** Any attachment that is a real file with a reader can be saved, whether or not it previews. */
+export function canSaveAttachmentCopy(attachment: Attachment): boolean {
+  return (
+    !attachment.missing &&
+    !isAttachmentFolder(attachment) &&
+    Boolean(attachment.path || attachment.data !== undefined || attachment.loadPreview)
+  );
+}
+
+type SaveCopyState = { owner: Attachment; saving: boolean; error?: string };
+
+// Module-level so the try/finally stays out of the hook the React Compiler compiles.
+async function saveAttachmentCopy(
+  attachment: Attachment,
+  isCurrent: () => boolean,
+  update: (patch: Pick<SaveCopyState, "saving" | "error">) => void,
+  finish: () => void,
+) {
+  try {
+    update({ saving: true, error: undefined });
+    const bytes = await readAttachmentBytes(
+      { ...attachment, path: ownedAttachmentPath(attachment) },
+      MAX_EMBED_BYTES,
+      "File is too large to save (maximum 20 MB).",
+    );
+    if (!isCurrent()) return;
+    // The native dialog picks the destination; bytes are written as data, never opened.
+    await saveFileCopy({ name: attachment.name, data: bytesToBase64(bytes) });
+    update({ saving: false });
+  } catch (cause) {
+    update({
+      saving: false,
+      error: errorText(cause),
+    });
+  } finally {
+    finish();
+  }
+}
+
+/** Explicit "Save a copy": the owner picks the destination in a native dialog. */
+export function useSaveAttachmentCopy(attachment: Attachment) {
+  const [held, setHeld] = useState<SaveCopyState | null>(null);
+  const liveAttachment = useRef<Attachment | null>(null);
+  const flight = useRef<object | null>(null);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Invalidate an outstanding file read before it opens a save dialog for a replaced attachment.
+  useLayoutEffect(() => {
+    if (!sameFilePreviewSource(liveAttachment.current, attachment)) {
+      flight.current = null;
+      if (liveAttachment.current) setHeld(null);
+    }
+    liveAttachment.current = attachment;
+  }, [attachment]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Invalidate an outstanding save dialog request when its attachment unmounts.
+  useLayoutEffect(
+    () => () => {
+      flight.current = null;
+      liveAttachment.current = null;
+    },
+    [],
+  );
+  // Progress and errors belong to the source they were produced for.
+  const current = held && sameFilePreviewSource(held.owner, attachment) ? held : null;
+  const canSave = canSaveAttachmentCopy(attachment);
+  const save = useStableCallback(() => {
+    if (!canSave || flight.current || !sameFilePreviewSource(liveAttachment.current, attachment))
+      return;
+    const request = {};
+    flight.current = request;
+    const isCurrent = () => flight.current === request;
+    void saveAttachmentCopy(
+      attachment,
+      isCurrent,
+      (patch) => {
+        if (isCurrent()) setHeld({ owner: attachment, ...patch });
+      },
+      () => {
+        if (isCurrent()) flight.current = null;
+      },
+    );
+  });
+  return {
+    canSave,
+    saving: current?.saving ?? false,
+    error: current?.error,
+    save,
+  };
 }
 
 /** The session reader takes precedence: a bare attachment path may belong to another OS. */
 export function AttachmentFilePreview({
   attachment,
   onClose,
+  contextActions,
+  notice,
 }: {
   attachment: Attachment;
   onClose: () => void;
+  contextActions?: ContextMenuActions;
+  notice?: string;
 }) {
-  const path =
-    attachment.path && attachment.hostEnvironmentId && !parseRemotePath(attachment.path)
-      ? remotePath(attachment.hostEnvironmentId, attachment.path)
-      : attachment.path;
+  const contextMenu = usePointContextMenu(contextActions);
+  const path = ownedAttachmentPath(attachment);
   const { size, loadPreview, data } = attachment;
-  const readBytes = useCallback(async () => {
-    if (!Number.isSafeInteger(size) || size < 0 || size > MAX_DOCUMENT_BYTES)
-      throw new Error("File is too large to preview (maximum 25 MB).");
-    const bytesData = loadPreview ? await loadPreview() : data;
-    if (bytesData !== undefined && bytesData.length > Math.ceil(MAX_DOCUMENT_BYTES / 3) * 4)
-      throw new Error("File is too large to preview (maximum 25 MB).");
-    const bytes =
-      bytesData !== undefined
-        ? Uint8Array.from(atob(bytesData), (value) => value.charCodeAt(0))
-        : path
-          ? await readBinaryFile(path)
-          : undefined;
-    if (!bytes) throw new Error("This attachment is unavailable.");
-    if (bytes.byteLength > MAX_DOCUMENT_BYTES)
-      throw new Error("File is too large to preview (maximum 25 MB).");
-    return bytes;
-  }, [size, loadPreview, data, path]);
+  const readBytes = useCallback(
+    () =>
+      readAttachmentBytes(
+        { size, loadPreview, data, path },
+        MAX_DOCUMENT_BYTES,
+        "File is too large to preview (maximum 25 MB).",
+      ),
+    [size, loadPreview, data, path],
+  );
   // Session-only remote attachments use their authorized reader; never send their raw host path to an OS opener.
   const externalPath = attachment.loadPreview ? null : (path ?? null);
   const kind = documentKind(attachment.name);
@@ -139,10 +256,11 @@ export function AttachmentFilePreview({
       onClose={onClose}
       size="lg"
       fitViewport
-      surface="floating"
-      className={fitContent ? "" : "h-[min(760px,85dvh)]"}
+      height={fitContent ? "auto" : "tall"}
     >
-      <div className={fitContent ? "min-h-0" : "h-full min-h-0"}>
+      <div className={fitContent ? "min-h-0" : "h-full min-h-0"} {...contextMenu.trigger}>
+        {contextMenu.menu}
+        {notice ? <InlineMessage tone="warning">{notice}</InlineMessage> : null}
         {mediaKind(attachment.name) ? (
           <MediaView
             path={externalPath ?? attachment.name}

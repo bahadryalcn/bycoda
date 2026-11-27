@@ -100,15 +100,18 @@ async function open(props: { project?: string; accountId?: string; harness?: "cl
 }
 
 describe("model panel defaults", () => {
-  it("marks the default on the rail, the account and the model row", async () => {
+  it("marks the default on the rail and model row without labeling the current account", async () => {
     pinProjectDefault(PROJECT, "claude", "claude:opus-5.5", "account-work");
     await open({ project: PROJECT, accountId: "account-work" });
     expect(providerTab("Claude Code").getAttribute("aria-label")).toBe(
-      "Claude Code · Default: Claude Code › work › Opus 5.5",
+      "Claude Code · work · Default: Claude Code › work › Opus 5.5",
     );
     expect(
-      providerTab("Claude Code").querySelector("[data-model-default-provider]"),
-    ).not.toBeNull();
+      providerTab("Claude Code").querySelector("[data-model-account-number]")?.textContent,
+    ).toBe("2");
+    const menu = panel().querySelector<HTMLButtonElement>("[data-model-account-menu]")!;
+    expect(menu.textContent).toContain("work");
+    expect(menu.textContent).not.toContain("Default model");
     expect(row("Opus 5.5").querySelector("[data-model-default]")).not.toBeNull();
     expect(row("Sonnet 5").querySelector("[data-model-default]")).toBeNull();
     expect(pinButton("Opus 5.5").getAttribute("aria-pressed")).toBe("true");
@@ -127,13 +130,23 @@ describe("model panel defaults", () => {
     expect(marked[0].closest('[role="radio"]')?.textContent).toContain("work");
   });
 
-  it("badges the default provider while another provider is open", async () => {
+  it("keeps the full favorite model name when the account is named like its version", async () => {
+    renameProviderAccount("claude", "account-work", "5.5");
+    localStorage.setItem("bycoda.favoriteModels", JSON.stringify(["claude:opus-5.5"]));
+    await open({ accountId: "account-work" });
+    await click(providerTab("Favorites"));
+    expect(row("Opus 5.5").querySelector('[role="option"]')?.getAttribute("aria-label")).toBe(
+      "Opus 5.5, Claude Code, 5.5",
+    );
+  });
+
+  it("keeps the project default in the provider tooltip while another provider is open", async () => {
     pinProjectDefault(PROJECT, "claude", "claude:opus-5.5", "account-work");
     await open({ project: PROJECT, harness: "codex" });
-    expect(
-      providerTab("Claude Code").querySelector("[data-model-default-provider]"),
-    ).not.toBeNull();
-    expect(providerTab("Codex").querySelector("[data-model-default-provider]")).toBeNull();
+    expect(providerTab("Claude Code").getAttribute("aria-label")).toContain(
+      "Default: Claude Code › work",
+    );
+    expect(providerTab("Codex").querySelector("[data-model-account-number]")).toBeNull();
   });
 
   it("pins the browsed account and model for the project, and unpins it again", async () => {

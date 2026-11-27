@@ -1,6 +1,7 @@
 import { translateAt, useLocale, type LanguageDomain } from "../../../shared/i18n";
 import { useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
-import { FileActionError } from "./FileActionError";
+import { reportFailure } from "../../../shared/ui/reportFailure";
+import { useToast } from "../../../shared/ui/ToastRegion";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { openPathWithDefaultApp, revealPath } from "../../../platform/tauri/fs";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
@@ -50,7 +51,7 @@ export function useChangedFileMenu({
   const t = (message: string, values?: Record<string, unknown>) =>
     translateAt(locale, message, values);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const toast = useToast();
   const trigger = useRef<HTMLElement | null>(null);
   const selected = position
     ? typeof selection === "function"
@@ -98,7 +99,7 @@ export function useChangedFileMenu({
           kind: "item",
           id: "default",
           get label() {
-            return t("Open in Default App");
+            return t("Open in default app");
           },
           disabled: targets.every((target) => target.deleted) || remote,
         },
@@ -109,21 +110,21 @@ export function useChangedFileMenu({
             ? t("Reveal in Finder")
             : IS_WIN
               ? t("Reveal in File Explorer")
-              : t("Open Containing Folder"),
+              : t("Open containing folder"),
         },
         { kind: "sep" },
         {
           kind: "item",
           id: "copy-path",
           get label() {
-            return t("Copy Path");
+            return t("Copy path");
           },
         },
         {
           kind: "item",
           id: "copy-relative",
           get label() {
-            return t("Copy Relative Path");
+            return t("Copy relative path");
           },
         },
         ...(actions.length
@@ -179,7 +180,7 @@ export function useChangedFileMenu({
           if (action && !action.disabled) await action.run();
         }
       }
-    })().catch((error) => setActionError(String(error)));
+    })().catch((error) => reportFailure(error, { toast }).catch(() => {}));
   };
   return {
     onContextMenu: (event: MouseEvent<HTMLElement>) => {
@@ -217,9 +218,6 @@ export function useChangedFileMenu({
             onPick={pick}
             onClose={close}
           />
-        ) : null}
-        {actionError ? (
-          <FileActionError message={actionError} onDismiss={() => setActionError(null)} />
         ) : null}
       </>
     ),

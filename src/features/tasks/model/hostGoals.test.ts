@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  goalPlanReviews,
-  goalProgress,
-  goalStateFromTasks,
-  parseGoalPlan,
-  parseHostGoal,
-} from "./hostGoals";
-import { parseHostTask, unfinishedDependencies, type TaskStatus } from "./hostTasks";
+import { goalPlanReviews, parseGoalPlan, parseHostGoal } from "./hostGoals";
+import { parseHostTask, unfinishedDependencies } from "./hostTasks";
 
 const PROJECTS = ["/work/app", "/work/api", "C:\\work\\site"];
 
@@ -186,11 +180,18 @@ describe("parseHostGoal", () => {
       harness: "codex",
       model: "model",
       runtimeMode: "supervised",
-      crewDefinitionId: "crew",
+      executor: { kind: "crew", crewDefinitionId: "crew" },
     };
-    expect(parseHostGoal(input).crewDefinitionId).toBe("crew");
+    expect(parseHostGoal(input).executor).toEqual({ kind: "crew", crewDefinitionId: "crew" });
     expect(() => parseHostGoal({ ...input, projectIds: ["one", "two"] })).toThrow("one project");
-    expect(() => parseHostGoal({ ...input, crewDefinitionId: "bad id" })).toThrow("valid crew");
+    expect(() =>
+      parseHostGoal({ ...input, executor: { kind: "crew", crewDefinitionId: "bad id" } }),
+    ).toThrow("Invalid executor");
+    expect(() => parseHostGoal({ ...input, isolate: true })).toThrow(/^isolate: /);
+    // Auto may span several projects; each task decides when it starts.
+    expect(
+      parseHostGoal({ ...input, projectIds: ["one", "two"], executor: { kind: "auto" } }).executor,
+    ).toEqual({ kind: "auto" });
   });
   it("persists optional planner identity separately and rejects permission/lifecycle overrides", () => {
     const input = {
@@ -340,79 +341,6 @@ describe("parseHostGoal", () => {
     [{ approvePlan: "yes" }, "Invalid goal options"],
   ])("refuses %o", (overrides, error) => {
     expect(() => parseHostGoal(goal(overrides))).toThrow(error);
-  });
-});
-
-describe("goal progress", () => {
-  it("matches array and shared-index results for cross-goal chains and deleted dependencies", () => {
-    const all = [
-      { id: "blocked", title: "Blocked", status: "blocked" as const },
-      { id: "external", title: "External", status: "queued" as const, dependsOn: ["blocked"] },
-      { id: "own", title: "Own", status: "queued" as const, dependsOn: ["external"] },
-    ];
-    const goal = { taskIds: ["blocked", "own", "deleted"] };
-    const index = new Map(all.map((task) => [task.id, task]));
-    expect(goalStateFromTasks(goal, all)).toEqual({
-      status: "blocked",
-      error: "1 of 2 tasks blocked: Blocked",
-    });
-    expect(goalStateFromTasks(goal, index)).toEqual(goalStateFromTasks(goal, all));
-    index.delete("external");
-    expect(goalStateFromTasks(goal, index)).toEqual({ status: "running" });
-    expect(goalStateFromTasks(goal, [...index.values()])).toEqual({ status: "running" });
-  });
-
-  const task = (id: string, status: TaskStatus, dependsOn?: string[]) => ({
-    id,
-    title: `Do ${id}`,
-    status,
-    ...(dependsOn ? { dependsOn } : {}),
-  });
-  const state = (...tasks: ReturnType<typeof task>[]) =>
-    goalStateFromTasks({ taskIds: tasks.map((entry) => entry.id) }, tasks);
-
-  it("is done when every task is done", () => {
-    expect(state(task("a", "done"), task("b", "done"))).toEqual({
-      status: "done",
-    });
-  });
-
-  it("keeps running while anything can still move", () => {
-    expect(state(task("a", "running"), task("b", "queued", ["a"]))).toEqual({
-      status: "running",
-    });
-    // An unrelated task still runs beside a blocked one.
-    expect(state(task("a", "blocked"), task("b", "running")).status).toBe("running");
-    // A task in review waits only for the owner.
-    expect(state(task("a", "blocked"), task("b", "review")).status).toBe("running");
-    // A queued task whose dependencies are fine can still start.
-    expect(state(task("a", "blocked"), task("b", "done"), task("c", "queued", ["b"])).status).toBe(
-      "running",
-    );
-  });
-
-  it("is blocked when every unfinished task waits on a blocked one", () => {
-    expect(
-      state(
-        task("a", "blocked"),
-        task("b", "queued", ["a"]),
-        task("c", "queued", ["b"]),
-        task("d", "done"),
-      ),
-    ).toEqual({ status: "blocked", error: "1 of 4 tasks blocked: Do a" });
-    expect(state(task("a", "blocked"), task("b", "blocked"))).toEqual({
-      status: "blocked",
-      error: "2 of 2 tasks blocked: Do a, Do b",
-    });
-  });
-
-  it("counts done tasks, leaving out deleted ones", () => {
-    expect(
-      goalProgress({ taskIds: ["a", "b", "gone"] }, [task("a", "done"), task("b", "queued")]),
-    ).toEqual({ done: 1, total: 2 });
-    expect(goalStateFromTasks({ taskIds: ["gone"] }, [])).toMatchObject({
-      status: "blocked",
-    });
   });
 });
 

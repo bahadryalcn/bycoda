@@ -1,4 +1,5 @@
-import { projectDisplayName } from "../../projects/model/projectNames";
+import { projectDisplayNameFrom } from "../../projects/model/projectNames";
+import { loadTabGroupLabels } from "../../workspace/public/tabGroups";
 import { fuzzyMatch, prepareFuzzyQuery } from "../../../shared/lib/fuzzy";
 
 import { sameProjectPath, type RecentProject } from "../../projects/model/recents";
@@ -24,7 +25,7 @@ export type SearchRequest = {
   conversationScope?: "everywhere" | "group" | "project";
 };
 
-export type ConversationHit = {
+type ConversationHit = {
   id: string;
   kind: "conversation";
   sessionId: string;
@@ -36,7 +37,7 @@ export type ConversationHit = {
   positions: number[];
 };
 
-export type MessageHit = {
+type MessageHit = {
   id: string;
   kind: "message";
   sessionId: string;
@@ -50,7 +51,7 @@ export type MessageHit = {
   score: number;
 };
 
-export type FileHit = {
+type FileHit = {
   id: string;
   kind: "file";
   path: string;
@@ -60,7 +61,7 @@ export type FileHit = {
   positions: number[];
 };
 
-export type ContentHit = {
+type ContentHit = {
   id: string;
   kind: "content";
   path: string;
@@ -71,7 +72,7 @@ export type ContentHit = {
   preview: string;
 };
 
-export type ProjectHit = {
+type ProjectHit = {
   id: string;
   kind: "project";
   path: string;
@@ -82,7 +83,7 @@ export type ProjectHit = {
 
 export type AppSearchHit = ConversationHit | MessageHit | FileHit | ContentHit | ProjectHit;
 
-export type GroupedHits = {
+type GroupedHits = {
   conversations: ConversationHit[];
   messages: MessageHit[];
   files: FileHit[];
@@ -91,7 +92,7 @@ export type GroupedHits = {
 };
 
 /** Counts describe loaded eligible hits, never the backend's total population. */
-export type GroupedHitCounts = Record<
+type GroupedHitCounts = Record<
   keyof GroupedHits,
   {
     available: number;
@@ -321,14 +322,20 @@ export function searchSessionMessages(sessions: SearchableSession[], query: stri
   return hits.sort(byScoreThenRecency);
 }
 
-export function searchRecentProjects(recents: RecentProject[], query: string): ProjectHit[] {
+export function searchRecentProjects(
+  recents: RecentProject[],
+  query: string,
+  labels?: Record<string, string>,
+): ProjectHit[] {
   const needle = query.trim();
   if (!needle) return [];
+  const projectLabels = labels ?? loadTabGroupLabels();
+  const prepared = prepareFuzzyQuery(needle);
   const hits: ProjectHit[] = [];
   for (const recent of recents) {
-    const name = projectDisplayName(recent.path);
-    const nameHit = fuzzyMatch(needle, name);
-    const pathHit = nameHit ? null : fuzzyMatch(needle, recent.path);
+    const name = projectDisplayNameFrom(recent.path, projectLabels);
+    const nameHit = fuzzyMatch(prepared, name);
+    const pathHit = nameHit ? null : fuzzyMatch(prepared, recent.path);
     const match = nameHit ?? pathHit;
     if (!match) continue;
     hits.push({
@@ -444,10 +451,22 @@ export function conversationRowsFrom(
       cwd: session.cwd,
       harness: session.harness,
       title: session.title,
-      updatedAt: previous?.updatedAt ?? Date.now(),
+      updatedAt: previous?.updatedAt ?? liveActivityAt(session),
     });
   }
   return [...rows.values()];
+}
+
+/**
+ * Stable recency for a live session that has no history row: its latest
+ * recorded turn timestamp, or 0 (no recency bonus) when it records none.
+ * Never the wall clock, which would rebuild on every call and boost forever.
+ */
+function liveActivityAt(session: Session): number {
+  let latest = Math.max(0, session.backgroundSince ?? 0);
+  for (const block of session.blocks)
+    latest = Math.max(latest, block.turnStoppedAt ?? 0, block.statusRunningSince ?? 0);
+  return latest;
 }
 
 export function mergeHits(...lists: AppSearchHit[][]): AppSearchHit[] {
@@ -532,10 +551,6 @@ export function flattenGrouped(grouped: GroupedHits): AppSearchHit[] {
     ...grouped.content,
     ...grouped.projects,
   ];
-}
-
-export function groupedCount(grouped: GroupedHits): number {
-  return flattenGrouped(grouped).length;
 }
 
 function isSearchableRole(role: Block["role"]): boolean {

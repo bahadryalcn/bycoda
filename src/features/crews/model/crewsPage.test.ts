@@ -43,7 +43,7 @@ describe("crews page landing request", () => {
   });
 
   it("does not drop a newer request when an older one is consumed", () => {
-    openCrewsPageAt({ tab: "active" });
+    openCrewsPageAt({ tab: "work" });
     const first = pendingCrewsPageRequest()!;
     openCrewsPageAt({ tab: "teams" });
     consumeCrewsPageRequest(first);

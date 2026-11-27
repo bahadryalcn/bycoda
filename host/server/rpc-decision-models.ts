@@ -13,14 +13,9 @@ import {
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
 
-const LOCAL_ADDRESSES = ["127.0.0.1", "::1", "::ffff:127.0.0.1"];
-
-/** Keys stay on this computer: no browser origin and no remote address may send them. */
+/** Keys stay on this computer: only its own desktop credential, sent directly, may send them. */
 function assertLocalKeyCaller(request: OwnerRpcRequest): void {
-  if (
-    request.request.headers.origin ||
-    !LOCAL_ADDRESSES.includes(request.request.socket.remoteAddress ?? "")
-  )
+  if (!request.thisComputer)
     throw new Error("Decision model keys are available only on this computer.");
 }
 
@@ -75,7 +70,7 @@ export async function handleDecisionModelsRpc(
       break;
 
     case "decisionModels.discovery.results":
-      request.result = service.discoveryResults();
+      request.result = await service.discoveryResults();
       break;
 
     case "decisionModels.discovery.settings.get":
@@ -121,6 +116,24 @@ export async function handleDecisionModelsRpc(
     case "decisionModels.local.install":
       request.result = await service.installLocal(
         DecisionLocalInstallParamsSchema.parse(request.params),
+      );
+      break;
+
+    case "decisionModels.local.installStart":
+      request.result = await service.startInstallLocal(
+        DecisionLocalInstallParamsSchema.parse(request.params),
+      );
+      break;
+
+    case "decisionModels.local.installProgress":
+      request.result = service.installState(
+        DecisionModelIdParamsSchema.parse(request.params).modelId,
+      );
+      break;
+
+    case "decisionModels.local.cancelInstall":
+      request.result = service.cancelInstall(
+        DecisionModelIdParamsSchema.parse(request.params).modelId,
       );
       break;
 

@@ -46,6 +46,7 @@ export async function createAssistantRuntime(
     | "visibilityAdmission"
     | "social"
     | "terminals"
+    | "roomFiles"
   >,
   publish: (runtime: Awaited<ReturnType<typeof createAssistantRuntime>>) => void,
 ) {
@@ -116,7 +117,7 @@ export async function createAssistantRuntime(
       name: project.name,
     }));
   const assistantKeepAwake = new HostAssistantKeepAwake();
-  assistantPorts.keepAwake = (enabled) => assistantKeepAwake.setEnabled(enabled);
+  assistantPorts.keepAwake = async (enabled) => assistantKeepAwake.sync(enabled);
   assistantPorts.readPushPhones = () => dependencies.pushDevices.recipients();
   assistantPorts.readPresence = () => readOwnerAvailability();
   const assistant = new HostAssistant(dependencies.engine.store, assistantPorts);
@@ -168,6 +169,12 @@ export async function createAssistantRuntime(
     const errors: unknown[] = [];
     try {
       await roomChildren.stopAll();
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      // commands.run children started by the folder tools; their receipts record the cancellation.
+      await dependencies.roomFiles.folders.stopAll();
     } catch (error) {
       errors.push(error);
     }

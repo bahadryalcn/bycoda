@@ -57,6 +57,37 @@ async function lookup(store: Pick<HostStore, "db">, sessionId: string) {
 }
 
 /**
+ * Ids of every unfinished crew run with a task whose worker or reviewer session is
+ * `sessionId`, oldest run first. Seeks the `tasks_crew_run` index per unfinished run
+ * so an ordinary conversation costs no run decoding.
+ */
+export async function crewMemberRunIds(
+  store: Pick<HostStore, "db">,
+  sessionId: string,
+): Promise<string[]> {
+  if (!sessionId) return [];
+  try {
+    const rows = await store.db
+      .prepare(
+        `SELECT r.run_id FROM crew_runs_v2 r
+         WHERE r.status<>'finished' AND EXISTS (
+           SELECT 1 FROM tasks t
+           WHERE CASE WHEN json_valid(t.value) THEN json_extract(t.value,'$.crewRunId') END = +r.run_id
+             AND CASE WHEN json_valid(t.value)
+               THEN json_extract(t.value,'$.sessionId')=? OR json_extract(t.value,'$.reviewer.sessionId')=?
+             END)
+         ORDER BY r.ordinal`,
+      )
+      .all(sessionId, sessionId);
+    return rows.map((row) => String(row.run_id));
+  } catch (error) {
+    // Hosts that never initialized crews or tasks have no member sessions.
+    if (error instanceof Error && /no such table/i.test(error.message)) return [];
+    throw error;
+  }
+}
+
+/**
  * Session id -> crew run id for every crew run of a project, finished or not: the
  * coordinator plus each task's current worker and review session. Desktop hides
  * exactly these from its session lists (it reads them from `crews.list`).
@@ -73,11 +104,12 @@ export async function crewSessionRuns(
       )
       .all(projectId))
       owned.set(String(row.coordinator_session_id), String(row.run_id));
+    // Strip the subquery column's TEXT affinity so SQLite can seek the JSON expression index.
     for (const row of await store.db
       .prepare(
         `SELECT t.value FROM tasks t
          WHERE CASE WHEN json_valid(t.value) THEN json_extract(t.value,'$.crewRunId') END IN
-           (SELECT run_id FROM crew_runs_v2 WHERE project_id=?)`,
+           (SELECT +run_id FROM crew_runs_v2 WHERE project_id=?)`,
       )
       .all(projectId)) {
       let task: HostTask;

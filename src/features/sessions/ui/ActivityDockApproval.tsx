@@ -1,7 +1,10 @@
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { Text } from "../../../shared/ui/Text";
 import type { Block } from "../model/session";
 import { approvalDetail } from "../model/approvalDetail";
+import { mcpToolDisplay } from "../model/transcriptActivity";
+import { approvalSummary } from "./approvalPresentation";
 import { useApprovalDecisionContext } from "./ApprovalDecisionContext";
 import { useApprovalCardOnScreen } from "./approvalCardVisibility";
 import { useApprovalDecisionControl } from "./useApprovalDecisionControl";
@@ -30,8 +33,24 @@ function ConnectedDockApproval({
   const decision = useApprovalDecisionControl(context.session, requestId, context.dispatch, block);
   if (onScreen) return null;
   const reason = decision.feedback ?? undefined;
+  const full = approvalDetail(block);
+  const summary = approvalSummary(block);
+  const mcp = mcpToolDisplay(full);
   return (
-    <div className="flex shrink-0 items-center gap-1.5" data-no-drag="" data-dock-approval="">
+    <div
+      className="flex min-w-0 flex-wrap items-center gap-1.5"
+      data-no-drag=""
+      data-dock-approval=""
+    >
+      <Text
+        size="caption"
+        tone="secondary"
+        truncate
+        className={mcp ? "max-w-48 min-w-0" : "max-w-48 min-w-0 font-mono"}
+        data-dock-approval-summary=""
+      >
+        {mcp ? mcp.tool : summary}
+      </Text>
       <Button
         variant="ghost"
         size="sm"
@@ -39,19 +58,37 @@ function ConnectedDockApproval({
         motion="none"
         loading={decision.pending && decision.decision === "deny"}
         disabled={decision.blocked}
-        tooltip={decision.blocked ? reason : undefined}
+        disabledReason={decision.blocked ? reason : undefined}
         onClick={() => void decision.decide("deny")}
       >
         {t("Deny")}
       </Button>
+      {decision.sessionAction ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          type="button"
+          motion="none"
+          loading={decision.sessionAction.pending}
+          disabled={decision.sessionAction.disabled}
+          disabledReason={decision.sessionAction.disabled ? reason : undefined}
+          tooltip={decision.sessionAction.tooltip}
+          onClick={decision.sessionAction.onClick}
+        >
+          {decision.sessionAction.label}
+        </Button>
+      ) : null}
       <Button
         variant="primary"
         size="sm"
         type="button"
         motion="none"
-        loading={decision.pending && decision.decision === "allow"}
+        loading={
+          decision.pending && !decision.allowForSessionPending && decision.decision === "allow"
+        }
         disabled={decision.blocked}
-        tooltip={decision.blocked ? reason : approvalDetail(block)}
+        disabledReason={decision.blocked ? reason : undefined}
+        tooltip={full === summary ? undefined : full}
         onClick={() => void decision.decide("allow")}
       >
         {t("Allow")}

@@ -3,15 +3,14 @@ import { readFile, realpath, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 const active = new AsyncLocalStorage<string>();
+/** Every repository gate the current call chain holds, so a nested lock on any of them is reentrant. */
+const held = new AsyncLocalStorage<readonly string[]>();
 const tails = new Map<string, Promise<unknown>>();
 export type GitMutationScope = "local" | "fetch" | "exclusive";
 
 /** These legacy commands must not bypass managed workspace review/receipts. */
 export const isBranchDeliveryCommand = (command: string) =>
   ["git_merge", "git_push", "git_sync", "git_pr_create"].includes(command);
-
-export const isManagedWorkspaceBranch = (reference: unknown): reference is string =>
-  typeof reference === "string" && /^(?:refs\/heads\/)?bycoda\/[st]\//.test(reference);
 
 export const MANAGED_DELIVERY_REVIEW_REQUIRED =
   "Managed workspace delivery requires a fresh review plan and authenticated owner approval. Use workspaces.delivery.review, then workspaces.delivery.merge or workspaces.delivery.publish.";
@@ -80,7 +79,7 @@ export async function withHostGitMutation<T>(
 ): Promise<T> {
   const admitted = admission.then(async () => {
     const key = await hostGitRepositoryKey(cwd);
-    if (active.getStore() === key) return { pending: work() };
+    if (active.getStore() === key || held.getStore()?.includes(key)) return { pending: work() };
     let expired = false;
     const timeoutError = () =>
       new Error(
@@ -96,7 +95,7 @@ export async function withHostGitMutation<T>(
     const run = () => {
       clearTimeout(timer);
       if (expired) throw timeoutError();
-      return active.run(key, work);
+      return active.run(key, () => held.run([...(held.getStore() ?? []), key], work));
     };
     const lanes =
       scope === "exclusive" ? [key, `${key}\0fetch`] : [scope === "fetch" ? `${key}\0fetch` : key];
@@ -116,6 +115,29 @@ export async function withHostGitMutation<T>(
     () => undefined,
   );
   return (await admitted).pending;
+}
+
+/**
+ * Holds the gates of several repositories at once. They are always acquired in one canonical
+ * order (sorted common Git directory), so two operations that span the same repositories in a
+ * different order cannot wait on each other until the queue deadline.
+ */
+export async function withHostGitMutations<T>(
+  cwds: string[],
+  work: () => Promise<T>,
+  queueTimeoutMs = 120_000,
+): Promise<T> {
+  const keyed = await Promise.all(
+    cwds.map(async (cwd) => ({ cwd, key: await hostGitRepositoryKey(cwd) })),
+  );
+  const ordered = [...new Map(keyed.map((entry) => [entry.key, entry])).values()].sort((a, b) =>
+    a.key < b.key ? -1 : a.key > b.key ? 1 : 0,
+  );
+  const nest = (index: number): Promise<T> =>
+    index >= ordered.length
+      ? work()
+      : withHostGitMutation(ordered[index].cwd, () => nest(index + 1), queueTimeoutMs);
+  return nest(0);
 }
 
 const READ_COMMANDS = new Set([

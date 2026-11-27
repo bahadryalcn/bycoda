@@ -47,7 +47,7 @@
   display: block;
   block-size: 100%;
   border-radius: inherit;
-  background: var(--meter-fill);
+  background: var(--meter-series-color, var(--meter-fill));
   transition: inline-size var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
@@ -72,7 +72,7 @@
   stroke: var(--ui-tone-neutral-subtle);
 }
 .ringValue {
-  stroke: var(--meter-fill);
+  stroke: var(--meter-series-color, var(--meter-fill));
   transition: stroke-dashoffset var(--motion-duration-fast) var(--motion-ease-standard);
 }
 .ringCenter {

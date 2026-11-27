@@ -56,7 +56,15 @@ export function ValueEntry({
           ? t("HH:mm")
           : formatEntry(mode === "date" ? "2026-12-31" : "2026-12-31T14:30", mode, parts)
       }
-      error={draft.invalid ? t("Enter a valid date or time.") : undefined}
+      error={
+        draft.invalid
+          ? mode === "date"
+            ? t("Enter a valid date.")
+            : mode === "time"
+              ? t("Pick a valid time.")
+              : t("Choose a valid date and time.")
+          : undefined
+      }
       onChange={(event) => {
         setDraft({
           ...draft,

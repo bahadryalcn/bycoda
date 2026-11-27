@@ -8,18 +8,8 @@
 .picker {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
-}
-.tiles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.tile.tile {
-  inline-size: 40px;
-  block-size: 40px;
-  padding: 2px;
 }
 .tileImage {
   display: block;
@@ -27,10 +17,4 @@
   block-size: 100%;
   border-radius: var(--radius-pill);
   object-fit: cover;
-}
-.generate {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-inline-size: 0;
 }

@@ -92,14 +92,65 @@ it("keeps explicit retirement refusals closed even across the error wire", async
   };
   expect(await acquireRunLease("chat")).toMatchObject({
     kind: "failed",
-    text: expect.stringContaining("old writer unknown"),
+    text: "Check the conversation on its Host before resuming.",
   });
+});
+
+it.each([
+  new Error("Host rejected request: HOST_WRITER_RETIREMENT_PENDING: old writer is stopping"),
+  { code: "HOST_WRITER_RETIREMENT_PENDING", delivery: "not-sent", message: "Closing" },
+])("recognizes a definitive pre-send retirement wait on either wire", async (refusal) => {
+  configureRunLeaseClient({ transport, machineId: "local", retirement: true });
+  answer = () => {
+    throw refusal;
+  };
+  expect(await acquireRunLease("chat")).toEqual({
+    kind: "waiting",
+    text: "Waiting for the previous run to finish.",
+  });
+  expect(heldRunLeases()).toEqual([]);
+});
+
+it("keeps a conflicting retirement delivery outcome closed instead of retrying it", async () => {
+  answer = () => {
+    throw { code: "HOST_WRITER_RETIREMENT_PENDING", delivery: "unknown", message: "Closing" };
+  };
+  expect(await acquireRunLease("chat")).toEqual({
+    kind: "failed",
+    text: "Check the conversation on its Host before resuming.",
+  });
+  expect(heldRunLeases()).toEqual([]);
 });
 
 it("does not start without ownership ACK from a retirement-capable Host", async () => {
   configureRunLeaseClient({ transport, machineId: "local", retirement: true });
   answer = () => {
     throw new Error("RPC_HOST_UNAVAILABLE");
+  };
+  expect(await acquireRunLease("chat")).toMatchObject({ kind: "failed" });
+});
+
+it.each([
+  new Error("RPC_WS_UNAVAILABLE: Host connection is unavailable before dispatch"),
+  new Error("RPC_WS_OVERLOAD: Host read capacity is busy; retry later."),
+  { code: "RPC_OVERLOAD", message: "Busy", delivery: "not-sent", retryable: true },
+])("waits quietly for a proven pre-admission transport refusal", async (failure) => {
+  configureRunLeaseClient({ transport, machineId: "local", retirement: true });
+  answer = () => {
+    throw failure;
+  };
+  expect(await acquireRunLease("chat")).toEqual({
+    kind: "waiting",
+    text: "Waiting for the host to confirm your request.",
+  });
+  expect(heldRunLeases()).toEqual([]);
+});
+
+it("holds a legacy native refusal that explicitly reports an unknown result", async () => {
+  answer = () => {
+    throw new Error(
+      "RPC_WS_REMOTE: HOST_WRITER_RETIREMENT_PENDING: Closing. The operation outcome is unknown; reconcile its command receipt before retrying.",
+    );
   };
   expect(await acquireRunLease("chat")).toMatchObject({ kind: "failed" });
 });
@@ -152,6 +203,7 @@ it("holds a pending retirement and returns a late grant by its original epoch", 
     expect(await pending).toMatchObject({
       kind: "failed",
       text: expect.stringContaining("unconfirmed"),
+      queueMayWait: true,
     });
     expect(isRunLeasePending("chat")).toBe(false);
     // A retry cannot reuse the abandoned request's same-holder lease before
@@ -159,7 +211,11 @@ it("holds a pending retirement and returns a late grant by its original epoch", 
     expect(await acquireRunLease("chat")).toMatchObject({
       kind: "failed",
       text: expect.stringContaining("still pending"),
+      queueMayWait: true,
     });
+    expect(calls).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(RUN_LEASE_UNCERTAIN_GUARD_MS);
+    expect(await acquireRunLease("chat")).not.toHaveProperty("queueMayWait");
     expect(calls).toHaveLength(1);
     finish({ lease });
     await vi.advanceTimersByTimeAsync(0);
@@ -234,7 +290,11 @@ it.each([
       return { lease: { ...lease, epoch: 8 } };
     };
     expect(await acquireRunLease("chat")).toMatchObject({
-      kind: refusal.startsWith("LEASE_HELD") ? "held" : "failed",
+      kind: refusal.startsWith("LEASE_HELD")
+        ? "held"
+        : refusal.startsWith("HOST_WRITER_RETIREMENT_PENDING")
+          ? "waiting"
+          : "failed",
     });
     expect(calls).toHaveLength(2);
     retired = true;

@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildTaskStop } from "../../../src/shared/model/host-contracts/task-stop";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostStore } from "../../store";
+import { observeSupervisionClock } from "../../execution/confirmed-silence";
 import { HostAssistant, type AssistantPorts } from "../service";
 import { describeVerification, NO_VERIFICATION } from "./assistant-goal-verification";
 import { assistantJobNotificationBody } from "./assistant-job-holds";
+import { storeTrackedWorkReader } from "./assistant-tracked-work-reader";
 import { MAX_TRACKED_WORK, TRACKED_TERMINAL_MS } from "./assistant-tracked-work";
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -68,7 +71,7 @@ async function setup(ports: AssistantPorts = {}, autonomy: "report" | "jobs" | "
     ).filter((notice) => notice.kind !== "briefing");
   return { store, service, put, notices };
 }
-const item = (id: string, kind: "goal" | "task" | "crew" = "goal") => ({
+const item = (id: string, kind: "goal" | "task" | "crew" | "job" | "automation" = "goal") => ({
   kind,
   id,
   projectId: "project",
@@ -109,10 +112,70 @@ describe("tracked direct work", () => {
   it("notifies a failed tracked task", async () => {
     const f = await setup();
     await f.service.trackDirectWork(item("t1", "task"));
-    await f.put("tasks", { id: "t1", status: "blocked", error: "Tests crashed" });
+    await f.put("tasks", {
+      id: "t1",
+      status: "blocked",
+      stop: buildTaskStop({ code: "run_failed", phase: "worker", message: "Tests crashed" }, 1),
+    });
     await f.service.tick();
     expect(await f.notices()).toMatchObject([
-      { kind: "job.failed", title: "Task: Work t1", body: "Tests crashed" },
+      { kind: "job.failed", title: "Task: Work t1", body: "Failed: Tests crashed" },
+    ]);
+  });
+
+  it("reads a Room job and an automation occurrence without a task from the one projection", async () => {
+    const f = await setup();
+    await f.store.db.exec(
+      "CREATE TABLE IF NOT EXISTS automation_runs(id TEXT PRIMARY KEY,value TEXT NOT NULL)",
+    );
+    const job = (id: string, status: string, extra: Record<string, unknown> = {}) =>
+      f.store.db
+        .prepare("INSERT INTO assistant_jobs(id,value,version,updated_at) VALUES(?,?,1,1)")
+        .run(id, JSON.stringify({ id, status, sessionIds: [], ...extra }));
+    const run = (value: { id: string } & Record<string, unknown>) =>
+      f.store.db
+        .prepare("INSERT INTO automation_runs(id,value) VALUES(?,?)")
+        .run(value.id, JSON.stringify(value));
+    await job("j1", "failed", { error: "The model quota ran out. Retry later." });
+    await job("j2", "waiting");
+    await run({ id: "r1", status: "failed", error: "Host restarted." });
+    // An occurrence that started a task reads as that task.
+    await run({ id: "r2", status: "running", taskId: "t9" });
+    await f.put("tasks", { id: "t9", status: "review" });
+    const read = storeTrackedWorkReader(f.store);
+    const at = { now: 10, stallMs: 1000 };
+    expect(await read({ kind: "job", id: "j1" }, at)).toEqual({
+      state: "failed",
+      summary: "Failed: The model quota ran out.",
+    });
+    expect(await read({ kind: "job", id: "j2" }, at)).toEqual({
+      state: "waiting",
+      waitingReason: "owner",
+    });
+    expect(await read({ kind: "automation", id: "r1" }, at)).toMatchObject({
+      state: "failed",
+      summary: "Failed: Host restarted.",
+    });
+    expect(await read({ kind: "automation", id: "r2" }, at)).toMatchObject({ state: "done" });
+    expect(await read({ kind: "job", id: "missing" }, at)).toBeUndefined();
+  });
+
+  it("tells a blocked goal what stopped its task, as the task card does", async () => {
+    const f = await setup();
+    await f.service.trackDirectWork(item("g1"));
+    await f.put("tasks", {
+      id: "c1",
+      goalId: "g1",
+      status: "blocked",
+      stop: buildTaskStop({ code: "budget_exhausted", message: "Run budget reached." }, 1),
+    });
+    await f.put(
+      "goals",
+      goal({ status: "blocked", taskIds: ["c1"], error: "1 of 1 task blocked" }),
+    );
+    await f.service.tick();
+    expect(await f.notices()).toMatchObject([
+      { kind: "job.failed", body: "Run budget reached: Run budget reached." },
     ]);
   });
 
@@ -217,6 +280,65 @@ describe("Jobs-mode stall recovery", () => {
     expect(manageSession.mock.calls[0][0]).toMatchObject({ sessionId: "s1", reason: "nudge" });
     const activity = (await f.service.request({ op: "snapshot" }, "owner")).snapshot!.activity;
     expect(activity.filter((entry) => entry.kind === "session.nudged")).toHaveLength(1);
+  });
+
+  it("does not nudge after a Host sleep alone, but still nudges real silence", async () => {
+    let now = 10_000_000,
+      mono = 5_000;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => mono);
+    try {
+      const activityAt = now - 5 * 60000;
+      const manageSession = vi.fn(
+        async (_input: { sessionId: string; reason: string }) => undefined,
+      );
+      const f = await setup({
+        now: () => now,
+        manageSession,
+        createGoal: async () => ({ goalId: "goal" }),
+        goalStatus: async () => ({
+          status: "running",
+          taskIds: [],
+          sessionIds: ["s1"],
+          progress: { done: 0, total: 1 },
+          lastActivityAt: activityAt,
+        }),
+      });
+      vi.spyOn(f.store, "session").mockResolvedValue({
+        status: "running",
+        runId: "run1",
+        runActivity: { runId: "run1", lastActivityAt: activityAt },
+      } as never);
+      await f.service.request(
+        {
+          op: "jobs.create",
+          title: "Job",
+          request: "Do work",
+          projectId: "project",
+          idempotencyKey: "sleep",
+        },
+        "owner",
+      );
+      observeSupervisionClock(f.store, now);
+      await f.service.tick();
+      // The machine sleeps for an hour: wall time jumps, the monotonic clock does not.
+      now += 60 * 60000;
+      mono += 500;
+      observeSupervisionClock(f.store, now);
+      await f.service.tick();
+      expect(manageSession).not.toHaveBeenCalled();
+      const snapshot = (await f.service.request({ op: "snapshot" }, "owner")).snapshot!;
+      expect(snapshot.jobs?.some((job) => job.status === "stalled")).toBe(false);
+      // Silence the Host actually observed after the wake still stalls the job.
+      for (let beat = 0; beat < 11; beat++) {
+        now += 60000;
+        mono += 60000;
+        observeSupervisionClock(f.store, now);
+        await f.service.tick();
+      }
+      expect(manageSession).toHaveBeenCalledTimes(1);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it("leaves nudges to the Chief in Chief mode and to the owner in report mode", async () => {

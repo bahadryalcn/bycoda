@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { act, createElement, Fragment } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { newSession, type Block, type ComposerTurnOptions } from "../model/session";
 import { failedTurnRetry, RetryFailedTurn } from "./RetryFailedTurn";
+import { SessionErrorNotice } from "./SessionErrorNotice";
 import { appendPreparingHandoff, failHandoff } from "../model/handoff";
 import { sessionIssue } from "../model/sessionIssue";
 import { isNoticeBlock, isActivityBlock } from "../model/transcriptActivity";
@@ -50,8 +51,12 @@ it.each([
   expect(sessionIssue(session)).toBe("failed");
   expect(failedTurnRetry(session)).toBeNull();
   const onSubmit = vi.fn();
-  act(() => root.render(createElement(RetryFailedTurn, { session, onSubmit })));
-  expect(host.querySelector("button")).toBeNull();
+  view(session, onSubmit);
+  // The only control is the technical-details disclosure: nothing offers to resend the old prompt.
+  const labels = [...host.querySelectorAll("button")].map(
+    (b) => b.getAttribute("aria-label") ?? "",
+  );
+  expect(labels.every((label) => label.startsWith("Details"))).toBe(true);
   expect(onSubmit).not.toHaveBeenCalled();
 });
 
@@ -129,6 +134,27 @@ it("keeps legacy host writer errors visible, failed and retryable", () => {
 });
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
+type Retry = Parameters<typeof RetryFailedTurn>[0];
+/** The owner plus the one notice that shows its Retry beside the reason. */
+const view = (session: Retry["session"], onSubmit: Retry["onSubmit"], blocked?: boolean) =>
+  act(() =>
+    root.render(
+      createElement(
+        Fragment,
+        null,
+        createElement(RetryFailedTurn, { session, onSubmit, blocked }),
+        ...session.blocks
+          .filter((block) => block.notice === "error")
+          .map((block) =>
+            createElement(SessionErrorNotice, {
+              key: block.id,
+              text: block.text,
+              errorId: block.id,
+            }),
+          ),
+      ),
+    ),
+  );
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   host = document.createElement("div");
@@ -143,9 +169,15 @@ afterEach(() => {
 
 it("resends the original text, attachments and intent once without needing a provider turn id", () => {
   const onSubmit = vi.fn();
-  act(() => root.render(createElement(RetryFailedTurn, { session: chat(), onSubmit })));
+  view(chat(), onSubmit);
   const button = host.querySelector("button")!;
+  expect(button.textContent).toBe("Retry");
+  // One notice: the reason once, with Retry in the same alert and no separate row.
+  expect(host.querySelectorAll('[role="alert"]')).toHaveLength(1);
+  expect(host.querySelector('[role="alert"]')?.contains(button)).toBe(true);
+  expect(host.querySelector("[data-retry-failed-turn]")).toBe(host.querySelector('[role="alert"]'));
   expect(host.textContent).not.toContain("The last turn failed");
+  expect(host.textContent?.match(/Selected model is at capacity/g)).toHaveLength(1);
   act(() => {
     button.click();
     button.click();
@@ -165,7 +197,7 @@ it("allows retry again after immediate or asynchronous rejection", () => {
     options = next;
     return onSubmit.mock.calls.length === 1 ? false : undefined;
   });
-  act(() => root.render(createElement(RetryFailedTurn, { session: chat(), onSubmit })));
+  view(chat(), onSubmit);
   const button = host.querySelector("button")!;
   act(() => button.click());
   expect(button.disabled).toBe(false);
@@ -201,13 +233,13 @@ it("enables retry for a new failure without letting an old rejection unlock it",
   const onSubmit = vi.fn((_text, _attachments, next: ComposerTurnOptions | undefined) => {
     options.push(next!);
   });
-  act(() => root.render(createElement(RetryFailedTurn, { session: chat(), onSubmit })));
+  view(chat(), onSubmit);
   act(() => host.querySelector("button")!.click());
   const session = {
     ...chat(),
     blocks: [...blocks, { ...blocks[0], id: "retry-user" }, { ...blocks[1], id: "new-error" }],
   };
-  act(() => root.render(createElement(RetryFailedTurn, { session, onSubmit })));
+  view(session, onSubmit);
   const button = host.querySelector("button")!;
   expect(button.disabled).toBe(false);
   act(() => button.click());
@@ -233,11 +265,7 @@ it("holds retry during work, questions, queued sends, incomplete history and hos
     { pendingQuestion: {} as NonNullable<ReturnType<typeof chat>["pendingQuestion"]> },
   ])
     expect(failedTurnRetry({ ...chat(), ...patch })).toBeNull();
-  act(() =>
-    root.render(
-      createElement(RetryFailedTurn, { session: chat(), blocked: true, onSubmit: vi.fn() }),
-    ),
-  );
+  view(chat(), vi.fn(), true);
   expect(host.querySelector("button")).toBeNull();
 });
 
@@ -304,4 +332,28 @@ it("retries the prompt together with the messages sent while it ran", () => {
     intent: "plan",
   });
   expect(retry?.attachments.map((file) => file.id)).toEqual(["image", "notes"]);
+});
+
+it("shows no Retry and no extra sentence when the turn cannot be resent", () => {
+  const missing = {
+    ...chat(),
+    blocks: [
+      {
+        ...blocks[0],
+        attachments: blocks[0].attachments!.map((file) => ({ ...file, missing: true })),
+      },
+      blocks[1],
+    ],
+  };
+  view(missing, vi.fn());
+  expect(host.querySelector("button")).toBeNull();
+  expect(host.textContent).toBe(blocks[1].text);
+
+  const notSent = {
+    ...chat(),
+    blocks: [blocks[0], { ...blocks[1], text: "Message not sent: Host is unreachable." }],
+  };
+  view(notSent, vi.fn());
+  expect(host.querySelector("button")).toBeNull();
+  expect(host.textContent).toBe("Message not sent: Host is unreachable.");
 });

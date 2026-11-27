@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { buildTaskStop } from "../../src/shared/model/host-contracts/task-stop";
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
 import type { TaskContext } from "./context";
 import { MAX_REPAIR_ATTEMPTS, MAX_RUNTIME_RETRIES } from "./constants";
@@ -129,7 +130,10 @@ describe("one task repair with advisor", () => {
     await run();
     expect(context.block).toHaveBeenCalledWith(
       expect.anything(),
-      expect.stringContaining("delegation is unavailable"),
+      expect.objectContaining({
+        code: "repair_exhausted",
+        message: expect.stringContaining("delegation is unavailable"),
+      }),
       expect.any(Number),
     );
     expect(call).not.toHaveBeenCalled();
@@ -162,7 +166,10 @@ describe("one task repair with advisor", () => {
     const { task } = setup({
       status: "blocked",
       error: "Review failed: Missing result",
-      repairStop: { reason: "external", message: "Advisor unavailable" },
+      stop: buildTaskStop(
+        { code: "repair_exhausted", repair: "external", message: "Advisor unavailable" },
+        1,
+      ),
     });
     expect(canTakeOverBlockedTask(task)).toBe(false);
     expect(taskRequiresInstructions(task)).toBe(true);

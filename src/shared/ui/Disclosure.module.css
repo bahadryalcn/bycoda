@@ -12,7 +12,7 @@
 .summary {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--ui-space-1, 0.25rem);
   min-inline-size: 0;
   list-style: none;
   cursor: pointer;
@@ -78,6 +78,13 @@
 .count {
   flex: none;
 }
+/* A count sits right after its label; the rest of the row (actions, end chevron) stays at the far end. */
+.label:has(+ .count) {
+  flex: 0 1 auto;
+}
+.label + .count {
+  margin-inline-end: auto;
+}
 .actions {
   display: flex;
   flex: none;
@@ -130,24 +137,76 @@
   order: 1;
 }
 
-/* step: one 24px transcript line, the whole row toggles, persistent chevron. */
-.root[data-variant="step"] > .summary {
+/* Step rows share the same inset and ink in static and collapsible presentations. */
+.root[data-variant="step"] > .summary,
+.static[data-variant="step"] {
   min-block-size: var(--ui-control-height-xs);
-  padding-inline: 0.5rem;
-  border-radius: var(--ui-radius-row);
+  padding-inline: var(--ui-space-2, 0.5rem);
+  border-radius: var(--ui-radius-control);
+  color: var(--ui-quiet-chrome-ink, var(--ui-text-secondary));
   /* A step summary is interface text even inside a monospace log region. */
   font-family: var(--font-sans);
 }
-.root[data-variant="step"] > .summary > .label {
+.root[data-variant="step"] > .summary > .label,
+.static[data-variant="step"] > .label {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--ui-space-1, 0.25rem);
 }
+/* Hover and focus lift the chrome ink to the body ink, never to emphasis; an open row keeps no wash. */
 @media (hover: hover) and (pointer: fine) {
   .root[data-variant="step"] > .summary:hover {
     background: var(--ui-surface-hover);
+    color: var(--ui-quiet-chrome-active-ink, var(--foreground));
   }
+}
+.root[data-variant="step"] > .summary:focus-visible {
+  outline-offset: calc(var(--ui-focus-width) * -1);
+  color: var(--ui-quiet-chrome-active-ink, var(--foreground));
+}
+.root[data-variant="step"] > .summary > .chevron {
+  color: inherit;
+}
+/* collapsible={false}: the same row geometry as a plain block, no chevron, no toggle. */
+.static {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-1, 0.25rem);
+  min-inline-size: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-body);
+  line-height: var(--ui-leading-body);
+}
+.static[data-variant="step"] {
+  color: var(--ui-quiet-chrome-ink, var(--ui-text-secondary));
+}
+.static[data-size="sm"] {
+  font-size: var(--ui-font-caption);
+  line-height: var(--ui-leading-caption);
 }
 .root[data-variant="step"] > .body {
   padding-block-start: 0;
+}
+
+/* The body opens and closes smoothly: height from 0 to its natural size plus a fade. interpolate-size
+   lets `auto` animate; engines without ::details-content, or a reader who prefers reduced motion,
+   get the instant toggle. A body that unmounts on close still snaps shut; keep it mounted through
+   the standard duration to animate the close. */
+@media (prefers-reduced-motion: no-preference) {
+  .root {
+    interpolate-size: allow-keywords;
+  }
+  .root::details-content {
+    block-size: 0;
+    opacity: 0;
+    overflow: clip;
+    transition:
+      block-size var(--motion-duration-standard) var(--motion-ease-standard),
+      opacity var(--motion-duration-standard) var(--motion-ease-standard),
+      content-visibility var(--motion-duration-standard) allow-discrete;
+  }
+  .root[open]::details-content {
+    block-size: auto;
+    opacity: 1;
+  }
 }

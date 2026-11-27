@@ -1,4 +1,4 @@
-import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import type { NativeEditorDraftRecord } from "../../../src/features/files/data/editorDraftPersistence";
 import type { WorkspaceTab } from "../../../src/features/workspace/model/layout";
 
@@ -16,248 +16,22 @@ type State = {
   initialDocument: string;
   selectedTab: string;
   held: boolean;
-  legacyReport: { held: boolean; contentAvailable: false; reportVersion: number };
-  legacyCalls: string[];
-  hostCalls: { command: string; args: Record<string, any> }[];
-  hostReport: { retention: string; qualified: false };
-  hostContext: Record<string, unknown>;
-  hostCursor: Record<string, unknown>;
 };
 type Controls = {
   snapshot(): State;
   advanceSource(): Promise<void>;
   releasePut(): void;
   setTheme(light: boolean): void;
-  setPrivacy(allowed: boolean): void;
-  releaseLegacyRead(): void;
-  releaseHostRead(): void;
 };
 function snapshot(page: Page) {
   return page.evaluate(() =>
     (window as unknown as { editorRecoveryFixture: Controls }).editorRecoveryFixture.snapshot(),
   );
 }
-// The fixture module installs its controls after top-level awaits; goto can resolve first.
-const fixtureReady = (page: Page) => page.waitForFunction(() => "editorRecoveryFixture" in window);
-async function capturePrivacyRecovery(page: Page, info: TestInfo, state: string) {
-  for (const light of [true, false]) {
-    await page.evaluate(
-      (value) =>
-        (window as unknown as { editorRecoveryFixture: Controls }).editorRecoveryFixture.setTheme(
-          value,
-        ),
-      light,
-    );
-    await page.screenshot({
-      animations: "disabled",
-      path: info.outputPath(`${state}-${light ? "light" : "dark"}.png`),
-    });
-  }
-}
 const recoveredEditor = (page: Page) => page.locator('[data-workspace="recovered"] .cm-content');
-async function openHostReports(page: Page) {
-  await page.getByRole("button", { name: /^Recovered work(?: \(\d+\))?$/ }).click();
-  await page.getByRole("tab", { name: /^Earlier file reports/ }).click();
-  await page.getByRole("radio", { name: "Host reports", exact: true }).click();
-  expect((await snapshot(page)).hostCalls).toEqual([]);
-  await page.getByRole("button", { name: "Check reports", exact: true }).click();
-}
-for (const light of [true, false]) {
-  for (const width of [1280, 800]) {
-    test(`Host-held reports empty continuation, retry and copies ${light ? "light" : "dark"} ${width}`, async ({
-      page,
-    }, info) => {
-      await page.setViewportSize({ width, height: 900 });
-      await page.goto("/tests/browser/files/editor-recovery.html?host-empty&host-error");
-      await fixtureReady(page);
-      await page.evaluate(
-        (value) =>
-          (window as unknown as { editorRecoveryFixture: Controls }).editorRecoveryFixture.setTheme(
-            value,
-          ),
-        light,
-      );
-      await openHostReports(page);
-      // An empty first Host window keeps an explicit continuation instead of numbered pages.
-      await expect(
-        page.getByRole("heading", { name: "No earlier file reports.", exact: true }),
-      ).toBeVisible();
-      await expect(page.getByRole("button", { name: "Load more", exact: true })).toBeEnabled();
-      await page.screenshot({
-        path: info.outputPath(`host-empty-${width}-${light}.png`),
-        animations: "disabled",
-      });
-      await page.getByRole("button", { name: "Load more", exact: true }).click();
-      await expect(
-        page.getByRole("list", { name: "Earlier file reports", exact: true }),
-      ).toContainText("Report 3");
-      await expect(
-        page.getByText(
-          "This Host result may be incomplete. Inspect available reports or refresh to retry.",
-          { exact: true },
-        ),
-      ).toBeVisible();
-      const listed = await snapshot(page);
-      expect(listed.hostCalls[1]?.args).toEqual({
-        request: { after: listed.hostCursor, limit: 25 },
-        expectedContext: listed.hostContext,
-      });
-      await page.screenshot({
-        path: info.outputPath(`host-list-${width}-${light}.png`),
-        animations: "disabled",
-      });
-      await page.getByRole("button", { name: "Inspect report", exact: true }).click();
-      await expect(page.getByRole("alert")).toBeVisible();
-      await expect(
-        page.getByText("Fixture private diagnostic must not reach the UI", { exact: true }),
-      ).toHaveCount(0);
-      await page.screenshot({
-        path: info.outputPath(`host-error-${width}-${light}.png`),
-        animations: "disabled",
-      });
-      await page.getByRole("button", { name: "Retry inspection", exact: true }).click();
-      await expect(page.getByRole("list", { name: "Reported files", exact: true })).toContainText(
-        "C:\\fixture\\notes.txt",
-      );
-      await expect(
-        page.getByText(
-          "This report contains file names and edit status, not the edited text. Its protection has not been removed.",
-          { exact: true },
-        ),
-      ).toBeVisible();
-      await page.screenshot({
-        path: info.outputPath(`host-details-${width}-${light}.png`),
-        animations: "disabled",
-      });
-      await page.getByRole("button", { name: "Find file recovery copies", exact: true }).click();
-      await expect(sourceRow(page)).toBeVisible();
-      const state = await snapshot(page);
-      expect(state.hostCalls.map((call) => call.command)).toEqual([
-        "managed_workspace_host_buffer_recovery_list",
-        "managed_workspace_host_buffer_recovery_list",
-        "managed_workspace_host_buffer_recovery_read",
-        "managed_workspace_host_buffer_recovery_read",
-      ]);
-      expect(state.hostReport).toMatchObject({ retention: "held", qualified: false });
-      expect(state.legacyCalls).toEqual([]);
-      expect(state.writes).toEqual([]);
-      expect(state.putRequests).toEqual([]);
-      await sourceUntouched(page);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
-        true,
-      );
-    });
-  }
-}
-for (const light of [true, false]) {
-  for (const width of [1280, 800]) {
-    test(`Host report list and long paths stay bounded ${light ? "light" : "dark"} ${width}`, async ({
-      page,
-    }, info) => {
-      await page.setViewportSize({ width, height: 900 });
-      await page.goto("/tests/browser/files/editor-recovery.html?host-scale");
-      await fixtureReady(page);
-      await page.evaluate(
-        (value) =>
-          (window as unknown as { editorRecoveryFixture: Controls }).editorRecoveryFixture.setTheme(
-            value,
-          ),
-        light,
-      );
-      await openHostReports(page);
-      const reports = page.getByRole("list", { name: "Earlier file reports", exact: true });
-      await expect(reports.locator("[data-collection-key]")).toHaveCount(25);
-      // The pane keeps toolbar, counts and footer in place; the list's own scroller is `.recovery-body`.
-      expect(
-        await reports.evaluate((element) => {
-          const scroller = element.closest(".recovery-body") ?? element;
-          return scroller.clientHeight > 0 && scroller.scrollHeight > scroller.clientHeight;
-        }),
-      ).toBe(true);
-      await reports
-        .getByRole("button", { name: "Inspect report", exact: true })
-        .last()
-        .scrollIntoViewIfNeeded();
-      await page.screenshot({
-        path: info.outputPath(`host-scaled-list-${width}-${light}.png`),
-        animations: "disabled",
-      });
-      await reports.getByRole("button", { name: "Inspect report", exact: true }).last().click();
-      await expect(page.getByRole("list", { name: "Reported files", exact: true })).toContainText(
-        "long-reported-file-",
-      );
-      await page.screenshot({
-        path: info.outputPath(`host-long-path-${width}-${light}.png`),
-        animations: "disabled",
-      });
-      const bounds = await page
-        .getByRole("dialog", { name: "Recovered work", exact: true })
-        .boundingBox();
-      expect(bounds).not.toBeNull();
-      expect(bounds!.y).toBeGreaterThanOrEqual(0);
-      expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(901);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
-        true,
-      );
-      expect((await snapshot(page)).writes).toEqual([]);
-    });
-  }
-}
-test("Host-held read cannot disclose after privacy changes away and back", async ({
-  page,
-}, info) => {
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto("/tests/browser/files/editor-recovery.html?hold-host");
-  await openHostReports(page);
-  await page.getByRole("button", { name: "Inspect report", exact: true }).click();
-  await expect
-    .poll(
-      async () =>
-        (await snapshot(page)).hostCalls.filter((call) => call.command.endsWith("_read")).length,
-    )
-    .toBe(1);
-  await page.evaluate(() =>
-    (window as unknown as { editorRecoveryFixture: Controls }).editorRecoveryFixture.setPrivacy(
-      false,
-    ),
-  );
-  // Locked reports leave navigation entirely; the unmounted report view's
-  // help copy is not the privacy contract.
-  await expect(page.getByRole("tab", { name: /^Earlier file reports/ })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Inspect report", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("list", { name: "Reported files", exact: true })).toHaveCount(0);
-  await capturePrivacyRecovery(page, info, "host-locked");
-  await page.evaluate(() =>
-    (window as unknown as { editorRecoveryFixture: Controls }).editorRecoveryFixture.setPrivacy(
-      true,
-    ),
-  );
-  await page.evaluate(() =>
-    (
-      window as unknown as { editorRecoveryFixture: Controls }
-    ).editorRecoveryFixture.releaseHostRead(),
-  );
-  await expect(page.getByRole("button", { name: "Check reports", exact: true })).toBeVisible();
-  await expect(page.getByRole("list", { name: "Reported files", exact: true })).toHaveCount(0);
-  expect(
-    (await snapshot(page)).hostCalls.filter((call) => call.command.endsWith("_read")),
-  ).toHaveLength(1);
-  await capturePrivacyRecovery(page, info, "host-unlocked-late-read");
-  await page.getByRole("radio", { name: "Host reports", exact: true }).click();
-  await page.getByRole("button", { name: "Check reports", exact: true }).click();
-  await page.getByRole("button", { name: "Inspect report", exact: true }).click();
-  await expect(page.getByRole("list", { name: "Reported files", exact: true })).toContainText(
-    "C:\\fixture\\notes.txt",
-  );
-  expect(
-    (await snapshot(page)).hostCalls.filter((call) => call.command.endsWith("_read")),
-  ).toHaveLength(2);
-  await capturePrivacyRecovery(page, info, "host-explicit-reinspection");
-  expect((await snapshot(page)).writes).toEqual([]);
-});
 const sourceRow = (page: Page) =>
   page
-    .getByRole("list", { name: "File recovery copies", exact: true })
+    .getByRole("region", { name: "File recovery copies", exact: true })
     .locator("li")
     .filter({ hasText: "Earlier desktop window" });
 async function openCatalog(page: Page) {
@@ -291,21 +65,6 @@ async function openCopy(page: Page) {
   );
   await expect(page.getByRole("dialog")).toHaveCount(0);
 }
-async function openEarlierReports(page: Page) {
-  await page.getByRole("button", { name: /^Recovered work(?: \(\d+\))?$/ }).click();
-  await expect(page.getByRole("dialog", { name: "Recovered work", exact: true })).toBeVisible();
-  await page.getByRole("tab", { name: /^Earlier file reports/ }).click();
-  expect((await snapshot(page)).legacyCalls).toEqual([]);
-  await page.getByRole("button", { name: "Check reports", exact: true }).click();
-  await expect(page.getByRole("list", { name: "Earlier file reports", exact: true })).toContainText(
-    "Earlier desktop report",
-  );
-}
-const legacyRow = (page: Page) =>
-  page
-    .getByRole("list", { name: "Earlier file reports", exact: true })
-    .locator("[data-collection-key]")
-    .filter({ hasText: "Earlier desktop report" });
 async function sourceUntouched(page: Page) {
   const state = await snapshot(page);
   expect(state.source).toEqual(state.originalSource);
@@ -318,6 +77,59 @@ async function sourceUntouched(page: Page) {
   ).toEqual(state.originalSource);
 }
 
+test("hides the confirmed copy across refreshes while preserving the record", async ({ page }) => {
+  await page.goto("/tests/browser/files/editor-recovery.html");
+  await openCatalog(page);
+  const state = await snapshot(page);
+  const hide = sourceRow(page).getByRole("button", { name: "Hide from list" });
+  const confirmation = page.getByRole("dialog", { name: "Hide recovery copy?" });
+  await hide.click();
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+  await sourceUntouched(page);
+  await hide.click();
+  await confirmation.getByRole("button", { name: "Hide from list", exact: true }).click();
+  await expect(confirmation).toHaveCount(0);
+  await expect(sourceRow(page)).toHaveCount(0);
+  await page.getByRole("button", { name: "Refresh copies", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Refresh copies", exact: true })).toBeEnabled();
+  await expect(sourceRow(page)).toHaveCount(0);
+  // Every remaining copy is unsaved, so the filter is not offered and this list already shows all copies.
+  await expect(page.getByRole("radio", { name: /All copies/ })).toHaveCount(0);
+  await expect(sourceRow(page)).toHaveCount(0);
+  await sourceUntouched(page);
+  expect((await snapshot(page)).disk).toBe(state.disk);
+  expect((await snapshot(page)).writes).toHaveLength(0);
+  await page.evaluate(() =>
+    (
+      window as unknown as { editorRecoveryFixture: Controls }
+    ).editorRecoveryFixture.advanceSource(),
+  );
+  await page.getByRole("button", { name: "Refresh copies", exact: true }).click();
+  await expect(sourceRow(page)).toBeVisible();
+});
+
+test("keeps a copy visible if it changes before hiding and explains how to retry", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/files/editor-recovery.html");
+  await openCatalog(page);
+  const initialRevision = (await snapshot(page)).source.metadata.revision;
+  await sourceRow(page).getByRole("button", { name: "Hide from list" }).click();
+  await page.evaluate(() =>
+    (
+      window as unknown as { editorRecoveryFixture: Controls }
+    ).editorRecoveryFixture.advanceSource(),
+  );
+  const confirmation = page.getByRole("dialog", { name: "Hide recovery copy?" });
+  await confirmation.getByRole("button", { name: "Hide from list", exact: true }).click();
+  await expect(
+    confirmation.getByText("This copy changed. Refresh the list before hiding it."),
+  ).toBeVisible();
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+  await expect(sourceRow(page)).toBeVisible();
+  expect((await snapshot(page)).source.metadata.revision).toBe(initialRevision + 1);
+});
+
 test("file-only recovery persists a separate permanent tab, preserves an existing dirty same-path editor and reports only an explicit save", async ({
   page,
 }) => {
@@ -329,10 +141,13 @@ test("file-only recovery persists a separate permanent tab, preserves an existin
   await page.keyboard.insertText("Existing unsaved view\n");
   await expect(existing).toContainText("Existing unsaved view");
   await openCatalog(page);
-  await expect(page.getByRole("tab", { name: /File drafts/ })).toHaveAttribute(
-    "aria-selected",
-    "true",
+  // With file drafts only there is no tab set; the dialog title names the one section.
+  await expect(page.getByRole("dialog", { name: "Recovered work" }).getByRole("tab")).toHaveCount(
+    0,
   );
+  await expect(
+    page.getByRole("region", { name: "File recovery copies", exact: true }),
+  ).toBeVisible();
   await openCopy(page);
   const state = await snapshot(page);
   expect(state.tabs).toHaveLength(2);
@@ -400,8 +215,9 @@ for (const disk of ["missing", "changed"]) {
     );
     expect((await snapshot(page)).writes).toHaveLength(0);
     await page.getByRole("button", { name: "Save", exact: true }).click();
+    // The notice names the disk state and offers Reload or Overwrite; saving never writes.
     await expect(page.locator('[data-workspace="recovered"]')).toContainText(
-      "The file changed on disk. Reload or overwrite before saving.",
+      disk === "missing" ? "The disk version could not be verified." : "File changed on disk.",
     );
     expect((await snapshot(page)).writes).toHaveLength(0);
     await page.getByRole("button", { name: "Overwrite disk version", exact: true }).click();
@@ -465,12 +281,15 @@ test("pending Native copy keeps the real recovery dialog open through Escape and
 }) => {
   await page.goto("/tests/browser/files/editor-recovery.html?hold-target");
   await openCatalog(page);
+  const close = page
+    .getByRole("dialog", { name: "Recovered work", exact: true })
+    .getByRole("button", { name: "Close", exact: true });
+  await expect(close).not.toHaveAttribute("data-tooltip-owner");
   await sourceRow(page).getByRole("button", { name: "Open copy in new tab", exact: true }).click();
   await expect.poll(async () => (await snapshot(page)).held).toBe(true);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "Recovered work", exact: true })).toBeVisible();
   // Close is disabled while the copy is pending; a forced click must not dismiss the dialog.
-  const close = page.getByRole("dialog").getByRole("button", { name: "Close", exact: true });
   await expect(close).toBeDisabled();
   await close.click({ force: true });
   await expect(page.getByRole("dialog")).toBeVisible();
@@ -490,12 +309,21 @@ for (const width of [1280, 800]) {
     }, info) => {
       await page.setViewportSize({ width, height: 800 });
       await page.emulateMedia({ reducedMotion: "reduce" });
-      await page.goto(`/tests/browser/files/editor-recovery.html${light ? "?light" : ""}`);
+      await page.goto(`/tests/browser/files/editor-recovery.html?catalog${light ? "&light" : ""}`);
       await openCatalog(page);
+      await page.getByRole("radio", { name: /All copies/ }).click();
       await page.screenshot({
         path: info.outputPath(`recovery-list-${width}-${light ? "light" : "dark"}.png`),
         animations: "disabled",
       });
+      await sourceRow(page).getByRole("button", { name: "Hide from list" }).click();
+      const confirmation = page.getByRole("dialog", { name: "Hide recovery copy?" });
+      await expect(confirmation).toBeVisible();
+      await page.screenshot({
+        path: info.outputPath(`recovery-hide-${width}-${light ? "light" : "dark"}.png`),
+        animations: "disabled",
+      });
+      await confirmation.getByRole("button", { name: "Cancel" }).click();
       await page.evaluate(() =>
         (
           window as unknown as { editorRecoveryFixture: Controls }
@@ -523,150 +351,6 @@ for (const width of [1280, 800]) {
         animations: "disabled",
       });
       expect((await snapshot(page)).writes).toHaveLength(0);
-    });
-  }
-}
-
-test("a late report inspection stays concealed after lock and unlock until another explicit inspection", async ({
-  page,
-}, info) => {
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto("/tests/browser/files/editor-recovery.html?hold-legacy");
-  await openEarlierReports(page);
-  await legacyRow(page).getByRole("button", { name: "Inspect report", exact: true }).click();
-  await expect.poll(async () => (await snapshot(page)).legacyCalls.length).toBe(2);
-  await page.evaluate(() =>
-    (window as unknown as { editorRecoveryFixture: Controls }).editorRecoveryFixture.setPrivacy(
-      false,
-    ),
-  );
-  await expect(page.getByRole("tab", { name: /^Earlier file reports/ })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Inspect report", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("list", { name: "Reported files", exact: true })).toHaveCount(0);
-  await expect(page.getByText("Earlier desktop report", { exact: false })).toHaveCount(0);
-  await capturePrivacyRecovery(page, info, "desktop-locked");
-  await page.evaluate(() =>
-    (window as unknown as { editorRecoveryFixture: Controls }).editorRecoveryFixture.setPrivacy(
-      true,
-    ),
-  );
-  await page.evaluate(() =>
-    (
-      window as unknown as { editorRecoveryFixture: Controls }
-    ).editorRecoveryFixture.releaseLegacyRead(),
-  );
-  await expect(page.getByRole("button", { name: "Check reports", exact: true })).toBeVisible();
-  await expect(page.getByRole("list", { name: "Reported files", exact: true })).toHaveCount(0);
-  expect((await snapshot(page)).legacyCalls).toHaveLength(2);
-  await capturePrivacyRecovery(page, info, "desktop-unlocked-late-read");
-  await page.getByRole("button", { name: "Check reports", exact: true }).click();
-  await expect(
-    legacyRow(page).getByRole("button", { name: "Inspect report", exact: true }),
-  ).toBeEnabled();
-  await expect(page.getByRole("list", { name: "Reported files", exact: true })).toHaveCount(0);
-  await legacyRow(page).getByRole("button", { name: "Inspect report", exact: true }).click();
-  await expect(page.getByRole("list", { name: "Reported files", exact: true })).toContainText(
-    "C:\\fixture\\notes.txt",
-  );
-  await capturePrivacyRecovery(page, info, "desktop-explicit-reinspection");
-  expect((await snapshot(page)).legacyCalls).toEqual([
-    "managed_workspace_buffer_recovery_list",
-    "managed_workspace_buffer_recovery_read",
-    "managed_workspace_buffer_recovery_list",
-    "managed_workspace_buffer_recovery_read",
-  ]);
-  expect((await snapshot(page)).writes).toEqual([]);
-  expect((await snapshot(page)).legacyReport.held).toBe(true);
-});
-
-test("the desktop recovery entry reaches retained reports with no conversations or new-format copies", async ({
-  page,
-}) => {
-  await page.goto("/tests/browser/files/editor-recovery.html?legacy-only");
-  await openEarlierReports(page);
-  await legacyRow(page).getByRole("button", { name: "Inspect report", exact: true }).click();
-  await page.getByRole("button", { name: "Find file recovery copies", exact: true }).click();
-  await expect(
-    page.getByRole("list", { name: "File recovery copies", exact: true }).locator("li"),
-  ).toHaveCount(0);
-  expect((await snapshot(page)).legacyReport.held).toBe(true);
-  expect((await snapshot(page)).writes).toEqual([]);
-});
-
-for (const width of [1280, 800]) {
-  for (const light of [false, true]) {
-    test(`earlier report list, inspection retry and matching copies ${width} ${light ? "light" : "dark"}`, async ({
-      page,
-    }, info) => {
-      await page.setViewportSize({ width, height: 800 });
-      await page.emulateMedia({ reducedMotion: "reduce" });
-      await page.goto(
-        `/tests/browser/files/editor-recovery.html?legacy-error${light ? "&light" : ""}`,
-      );
-      await openEarlierReports(page);
-      const blocked = page
-        .getByRole("list", { name: "Earlier file reports", exact: true })
-        .locator("[data-collection-key]")
-        .filter({ hasText: "Uninspectable retained report" });
-      await expect(
-        blocked.getByRole("button", { name: "Inspect report", exact: true }),
-      ).toBeDisabled();
-      await page.screenshot({
-        path: info.outputPath(`legacy-list-${width}-${light ? "light" : "dark"}.png`),
-        animations: "disabled",
-      });
-      await legacyRow(page).getByRole("button", { name: "Inspect report", exact: true }).click();
-      await expect(legacyRow(page).getByRole("alert")).toBeVisible();
-      await page.screenshot({
-        path: info.outputPath(`legacy-error-${width}-${light ? "light" : "dark"}.png`),
-        animations: "disabled",
-      });
-      await legacyRow(page).getByRole("button", { name: "Retry inspection", exact: true }).click();
-      await expect(page.getByRole("list", { name: "Reported files", exact: true })).toContainText(
-        "C:\\fixture\\notes.txt",
-      );
-      await expect(page.getByText("Unsaved changes reported", { exact: true })).toBeVisible();
-      await expect(
-        page.getByText(
-          "This report contains file names and edit status, not the edited text. Its protection has not been removed.",
-          { exact: true },
-        ),
-      ).toBeVisible();
-      await page.screenshot({
-        path: info.outputPath(`legacy-details-${width}-${light ? "light" : "dark"}.png`),
-        animations: "disabled",
-      });
-      await page.getByRole("button", { name: "Find file recovery copies", exact: true }).click();
-      await expect(sourceRow(page)).toBeVisible();
-      await expect(
-        page.getByRole("button", { name: "Show all file copies", exact: true }),
-      ).toBeVisible();
-      await page.screenshot({
-        path: info.outputPath(`legacy-copies-${width}-${light ? "light" : "dark"}.png`),
-        animations: "disabled",
-      });
-      await page.getByRole("button", { name: "Show all file copies", exact: true }).click();
-      await expect(
-        page.getByRole("button", { name: "Show all file copies", exact: true }),
-      ).toHaveCount(0);
-      const state = await snapshot(page);
-      expect(state.legacyReport).toMatchObject({
-        held: true,
-        contentAvailable: false,
-        reportVersion: 1,
-      });
-      expect(state.legacyCalls).toEqual([
-        "managed_workspace_buffer_recovery_list",
-        "managed_workspace_buffer_recovery_read",
-        "managed_workspace_buffer_recovery_read",
-      ]);
-      expect(state.writes).toEqual([]);
-      expect(state.putRequests).toEqual([]);
-      expect(state.tabs).toHaveLength(1);
-      await sourceUntouched(page);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
-        true,
-      );
     });
   }
 }

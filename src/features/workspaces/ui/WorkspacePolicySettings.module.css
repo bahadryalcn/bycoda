@@ -1,43 +1,25 @@
+/* The policy editor adapts to the room the settings page gives it, not to the window. */
 .root {
-  display: flex;
-  flex-direction: column;
-  min-inline-size: 0;
-  gap: 16px;
-}
-
-.root :global(.settings-group) {
-  padding-block-start: 0;
-}
-
-.root :global(.settings-advanced-content) > :global(.settings-group) {
-  padding-block-start: 12px;
+  container: workspace-policy / inline-size;
 }
 
 .storage {
   min-inline-size: 0;
 }
 
-.groupTitle {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
 /* Storage summary: one type scale for the whole body; the caption tier is the only smaller one. */
 .storageBody {
   display: grid;
-  gap: 8px;
-  padding: 12px 16px;
+  gap: var(--ui-space-2);
+  padding: var(--ui-space-3) var(--ui-space-4);
   min-inline-size: 0;
-  font-variant-numeric: tabular-nums;
 }
 
 .storageLine {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 10px;
+  gap: var(--ui-space-1) var(--ui-space-3);
   min-inline-size: 0;
 }
 
@@ -50,75 +32,4 @@
   max-inline-size: 100%;
   overflow: hidden;
   white-space: nowrap;
-}
-
-/* Policy editor: plain labelled blocks, no nested disclosure. */
-.block {
-  min-inline-size: 0;
-  padding-block-end: 12px;
-}
-
-.subheading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 8px;
-  padding: 12px 16px 0;
-}
-
-.grid4,
-.grid3 {
-  display: grid;
-  gap: 8px 12px;
-  padding: 8px 16px 0;
-}
-
-.grid4 {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.grid3 {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.cell {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-inline-size: 0;
-}
-
-/* Single save bar for the whole policy; sticks to the bottom of the scroll area while dirty. */
-.saveBar {
-  position: sticky;
-  inset-block-end: 8px;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 12px 16px 0;
-  padding: 8px 8px 8px 14px;
-}
-
-.saveDot {
-  flex-shrink: 0;
-  inline-size: 7px;
-  block-size: 7px;
-}
-
-.saveSpacer {
-  flex: 1 1 auto;
-}
-
-@media (max-width: 640px) {
-  .grid4 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 560px) {
-  .grid3 {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }

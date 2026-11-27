@@ -71,7 +71,7 @@ export function AssistantPresetNumber({
           steppers={false}
           required
           endAdornment={
-            <Text size="micro" tone="secondary" leading="inherit" className={styles.unit}>
+            <Text size="caption" tone="secondary" leading="inherit" className={styles.unit}>
               {unit}
             </Text>
           }

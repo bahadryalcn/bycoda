@@ -1,7 +1,19 @@
-import { useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import {
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
 import { setCrewsPageOpen, useCrewsPageOpen } from "../../../features/crews/model/crewsPage";
+import {
+  setLiveStreamPageOpen,
+  useLiveStreamPageOpen,
+} from "../../../features/live-stream/public/liveStreamPage";
 import type { AuxiliaryToolId } from "../../model/toolWindows";
+import { workspaceActiveTool } from "../layout/workspaceActiveTool";
 
 export interface SettingsReturnView {
   servers?: boolean;
@@ -17,6 +29,7 @@ type View =
   | "search"
   | "servers"
   | "crews"
+  | "live-stream"
   | "inbox"
   | "notes"
   | "social"
@@ -61,33 +74,39 @@ const sameVisit = (a: Visit, b: Visit) =>
 /** One chronological history per mounted window. Never share or persist this stack. */
 export function useRailNavigation(d: RailNavigationDeps) {
   const crewsOpen = useCrewsPageOpen();
+  const liveStreamOpen = useLiveStreamPageOpen();
   const view: View = d.settingsOpen
     ? "settings"
     : d.searchViewOpen
       ? "search"
-      : d.serversViewOpen
-        ? crewsOpen
-          ? "crews"
-          : "servers"
-        : d.inboxViewOpen
-          ? "inbox"
-          : d.notesViewOpen
-            ? "notes"
-            : d.automationsViewOpen
-              ? (d.auxiliaryTool ??
-                (d.socialBoardShown ? "social" : d.taskBoardShown ? "tasks" : "automations"))
-              : "workspace";
+      : (workspaceActiveTool({
+          crewsOpen,
+          liveStreamOpen,
+          auxiliaryTool: d.auxiliaryTool,
+          automationsViewOpen: d.automationsViewOpen,
+          serversViewOpen: d.serversViewOpen,
+          inboxViewOpen: d.inboxViewOpen,
+          notesViewOpen: d.notesViewOpen,
+          socialBoardShown: d.socialBoardShown,
+          taskBoardShown: d.taskBoardShown,
+        }) ?? "workspace");
   const current: Visit = {
     view,
     // Tool windows have a bootstrap session underneath their chrome. It is not a destination.
     tabId: d.toolWindow ? "" : d.activeTabId,
     cwd: view === "social" && d.socialPanelCwd ? d.socialPanelCwd : d.projectCwd,
   };
+  const { toolWindow, openTabIds } = d;
+  // The caller builds a new Set each render, so gate on its contents, not its identity.
+  const openTabKey = JSON.stringify([...openTabIds]);
+  // One settings read per commit; it is the only validity input outside React state.
+  const notesEnabled = loadNotesEnabled();
   const valid = (visit: Visit) =>
-    (!d.toolWindow || visit.view !== "workspace") &&
-    (d.toolWindow || d.openTabIds.has(visit.tabId)) &&
-    (visit.view !== "notes" || loadNotesEnabled());
+    (!toolWindow || visit.view !== "workspace") &&
+    (toolWindow || visit.view === "inbox" || openTabIds.has(visit.tabId)) &&
+    (visit.view !== "notes" || notesEnabled);
   const history = useRef({ back: [] as Visit[], current, forward: [] as Visit[] });
+  const selectedWorkspaceTab = useRef(false);
   const [navigation, setNavigation] = useState({ canBack: false, canForward: false });
   const updateNavigation = () => {
     const canBack = history.current.back.some(valid);
@@ -96,13 +115,16 @@ export function useRailNavigation(d: RailNavigationDeps) {
       prev.canBack === canBack && prev.canForward === canForward ? prev : { canBack, canForward },
     );
   };
-  useLayoutEffect(() => {
+  const syncNavigation = useEffectEvent(() => {
     const h = history.current;
     const back = h.back.filter(valid);
     const forward = h.forward.filter(valid);
     const previous = back[back.length - 1];
+    const explicitTabVisit = selectedWorkspaceTab.current;
+    selectedWorkspaceTab.current = false;
     if (
       !sameVisit(h.current, current) &&
+      !explicitTabVisit &&
       h.current.view !== "workspace" &&
       previous &&
       sameVisit(previous, current) &&
@@ -125,6 +147,10 @@ export function useRailNavigation(d: RailNavigationDeps) {
     }
     updateNavigation();
   });
+  // The stacks change only with the location, open tabs, tool-window mode or notes setting.
+  useLayoutEffect(() => {
+    syncNavigation();
+  }, [current.view, current.tabId, current.cwd, toolWindow, openTabKey, notesEnabled]);
 
   const restore = (visit: Visit, previous: Visit) => {
     if (!d.toolWindow && visit.tabId !== previous.tabId) d.activateTab(visit.tabId);
@@ -135,6 +161,7 @@ export function useRailNavigation(d: RailNavigationDeps) {
     d.setServersViewOpen(visit.view === "servers");
     // Closing Servers closed Crews; reopen it only for a Crews visit.
     setCrewsPageOpen(visit.view === "crews");
+    setLiveStreamPageOpen(visit.view === "live-stream");
     d.setInboxViewOpen(visit.view === "inbox");
     d.setNotesViewOpen(visit.view === "notes");
     d.setAutomationsViewOpen(
@@ -153,11 +180,16 @@ export function useRailNavigation(d: RailNavigationDeps) {
   const step = (direction: "back" | "forward") => {
     const h = history.current;
     const entries = h[direction].filter(valid);
-    const next = entries.pop();
-    if (!next) {
+    const target = entries.pop();
+    if (!target) {
       updateNavigation();
       return;
     }
+    // Inbox can outlive the conversation that happened to be selected underneath it.
+    const next =
+      target.view === "inbox" && !toolWindow && !openTabIds.has(target.tabId)
+        ? { ...target, tabId: d.activeTabId }
+        : target;
     history.current =
       direction === "back"
         ? {
@@ -173,15 +205,22 @@ export function useRailNavigation(d: RailNavigationDeps) {
     restore(next, h.current);
     updateNavigation();
   };
+  const onShowWorkspace = () => {
+    if (d.toolWindow || view === "workspace") return;
+    restore({ view: "workspace", tabId: current.tabId, cwd: d.projectCwd }, current);
+  };
   return {
     navigation,
     surfaceForward: { canForward: navigation.canForward },
     onRailBack: () => step("back"),
     onRailForward: () => step("forward"),
     /** Closes every tool page and shows the current tab; the layout effect records the visit. */
-    onShowWorkspace: () => {
-      if (d.toolWindow || view === "workspace") return;
-      restore({ view: "workspace", tabId: current.tabId, cwd: d.projectCwd }, current);
+    onShowWorkspace,
+    onSelectWorkspaceTab: (id: string) => {
+      if (d.toolWindow || !openTabIds.has(id)) return;
+      selectedWorkspaceTab.current = view !== "workspace";
+      onShowWorkspace();
+      d.activateTab(id);
     },
   };
 }

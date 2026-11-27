@@ -39,6 +39,29 @@ pub fn copy_child_no_follow(
     dest: &Dir,
     target: &OsStr,
 ) -> io::Result<()> {
+    copy_child(source, name, dest, target, true)
+}
+
+/// Same copy without the per-file read-back compare, for callers that digest
+/// the finished copy against a source digest themselves (guarded move). All
+/// identity, race and metadata checks still run; only the second full read of
+/// both files is skipped, so the caller MUST verify the copy's content.
+pub(crate) fn copy_child_no_follow_unread(
+    source: &Dir,
+    name: &OsStr,
+    dest: &Dir,
+    target: &OsStr,
+) -> io::Result<()> {
+    copy_child(source, name, dest, target, false)
+}
+
+fn copy_child(
+    source: &Dir,
+    name: &OsStr,
+    dest: &Dir,
+    target: &OsStr,
+    read_back: bool,
+) -> io::Result<()> {
     let meta = child_metadata(source, name)?;
     let kind = meta.file_type();
     if kind.is_symlink() {
@@ -73,7 +96,7 @@ pub fn copy_child_no_follow(
         dest.create_dir(target)?;
         let output = dest.open_dir_nofollow(target)?;
         for child in &before {
-            copy_child_no_follow(&input, child, &output, child)?;
+            copy_child(&input, child, &output, child, read_back)?;
         }
         let after = child_metadata(source, name)?;
         if names(&input)? != before
@@ -158,17 +181,20 @@ pub fn copy_child_no_follow(
             }
             output.write_all(&buffer[..count])?;
         }
-        input.rewind()?;
-        output.rewind()?;
-        let mut copied = [0u8; 65536];
-        loop {
-            let source_count = read_full(&mut input, &mut buffer)?;
-            let copied_count = read_full(&mut output, &mut copied)?;
-            if source_count != copied_count || buffer[..source_count] != copied[..copied_count] {
-                return Err(io::Error::other("Copied file differs from source"));
-            }
-            if source_count == 0 {
-                break;
+        if read_back {
+            input.rewind()?;
+            output.rewind()?;
+            let mut copied = [0u8; 65536];
+            loop {
+                let source_count = read_full(&mut input, &mut buffer)?;
+                let copied_count = read_full(&mut output, &mut copied)?;
+                if source_count != copied_count || buffer[..source_count] != copied[..copied_count]
+                {
+                    return Err(io::Error::other("Copied file differs from source"));
+                }
+                if source_count == 0 {
+                    break;
+                }
             }
         }
         let after = input.metadata()?;

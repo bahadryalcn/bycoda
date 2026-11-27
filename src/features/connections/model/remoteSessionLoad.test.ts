@@ -5,6 +5,8 @@ import type { HostSession } from "./protocol";
 import { loadRemoteHistoryPage, loadRemoteSession } from "./connections";
 import { canApplyRemotePreview } from "./remotePreviewBinding";
 import { canCacheRemoteSnapshot } from "./remoteHistoryGeneration";
+import { desktopCopyOf } from "./adoptedSessions";
+import { getSession, upsertSession } from "../../sessions/data/sessionStore";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 beforeEach(() => vi.clearAllMocks());
 
@@ -26,11 +28,68 @@ const snapshot = (): HostSession => ({
         role: "user",
         text: "ready text",
         attachments: [
-          { id: "load-image", name: "x.png", kind: "image", mimeType: "image/png", size: 3 },
+          {
+            id: "00000000-0000-4000-8000-000000000001",
+            name: "x.png",
+            kind: "image",
+            mimeType: "image/png",
+            size: 3,
+          },
         ],
       },
     ],
   },
+});
+
+it("keeps an adopted reader live after upsert and restores it when switching back", async () => {
+  const host = snapshot();
+  const id = "adopted-upsert-image";
+  host.session.id = id;
+  const machine = {
+    id: "adopted-local",
+    environmentId: "adopted-env",
+    localHost: true,
+    endpoint: "http://127.0.0.1:3776",
+  };
+  let stored: typeof host.session | undefined;
+  const reads: unknown[] = [];
+  vi.mocked(invoke).mockImplementation(async (command, input) => {
+    const args = input as {
+      session: typeof host.session;
+      sessionId: string;
+      method: string;
+      params: unknown;
+    };
+    if (command === "remote_machines") return [machine];
+    if (command === "remote_request" && args.method === "sessions.sync")
+      return { kind: "snapshot", value: host };
+    if (command === "remote_request" && args.method === "attachments.read") {
+      reads.push(args.params);
+      return { data: "YWJj", offset: 3, size: 3 };
+    }
+    if (command === "session_upsert") {
+      stored = JSON.parse(JSON.stringify(args.session));
+      return { ...stored, id, updatedAt: 1, transcriptRevision: 1 };
+    }
+    if (command === "session_get_page") {
+      const session =
+        args.sessionId === id ? stored : { ...host.session, id: "other-adopted", blocks: [] };
+      return { session, totalBlocks: session?.blocks.length ?? 0, revision: 1 };
+    }
+    return [];
+  });
+  const lazy = await loadRemoteSession(machine.id, id, undefined, { deferPreviews: true });
+  const copy = desktopCopyOf(lazy, "/tmp", (a, b) => a === b);
+  expect(await upsertSession(copy)).toBeTruthy();
+  expect(stored?.blocks[0]?.attachments?.[0]?.loadPreview).toBeUndefined();
+  expect(reads).toHaveLength(0);
+  await expect(copy.blocks[0]!.attachments![0]!.loadPreview!()).resolves.toBe("YWJj");
+  await getSession("other-adopted", { deferHistory: true });
+  const reopened = await getSession(id, { deferHistory: true });
+  await expect(reopened!.blocks[0]!.attachments![0]!.loadPreview!()).resolves.toBe("YWJj");
+  expect(reads).toEqual(
+    Array(2).fill({ sessionId: id, id: host.session.blocks[0]!.attachments![0]!.id, offset: 0 }),
+  );
 });
 
 it("publishes text and running status without waiting for an image RPC", async () => {
@@ -56,12 +115,37 @@ it("publishes text and running status without waiting for an image RPC", async (
 });
 
 it.each([false, true])(
+  "a background read keeps image metadata and asks for bytes only on demand (pages: %s)",
+  async (pages) => {
+    const base = snapshot();
+    const methods: string[] = [];
+    vi.mocked(invoke).mockImplementation(async (_command, input) => {
+      const { method } = input as { method: string };
+      methods.push(method);
+      const sync = { kind: "snapshot", value: base };
+      if (method === "sessions.sync") return sync;
+      if (method === "sessions.page") return { sync, revision: 1, totalBlocks: 1 };
+      if (method === "attachments.read") return { data: btoa("abc"), offset: 3, size: 3 };
+      throw new Error(method);
+    });
+    const result = await loadRemoteSession("background-owner", "load-session", undefined, {
+      pages,
+      deferPreviews: true,
+    });
+    const [file] = result.session.blocks[0].attachments!;
+    expect(methods).toEqual([pages ? "sessions.page" : "sessions.sync"]);
+    await expect(file.loadPreview!()).resolves.toBe(btoa("abc"));
+    expect(methods.at(-1)).toBe("attachments.read");
+  },
+);
+
+it.each([false, true])(
   "binds document readers on the first visible remote snapshot (pages: %s)",
   async (pages) => {
     const base = snapshot();
     base.session.blocks[0].attachments = [
       {
-        id: "first-document",
+        id: "00000000-0000-4000-8000-000000000002",
         name: "report.pdf",
         kind: "file",
         mimeType: "application/pdf",
@@ -80,7 +164,7 @@ it.each([false, true])(
       if (method === "sessions.page")
         return { sync: { kind: "snapshot", value: base }, totalBlocks: 1, revision: 1 };
       if (method === "attachments.read") {
-        expect(params.id).toBe("first-document");
+        expect(params.id).toBe("00000000-0000-4000-8000-000000000002");
         return { data: btoa("pdf"), offset: 3, size: 3 };
       }
       throw new Error(method);
@@ -159,6 +243,72 @@ it("opens with the tail and loads one older page only after an explicit request"
   expect(full?.session.blocks.map((block) => block.id)).toEqual(["earlier", "user"]);
   expect(full?.history?.before).toBeUndefined();
   expect(vi.mocked(invoke)).toHaveBeenCalledTimes(2);
+});
+
+it("binds older uploaded and generated images to the owning Host without fetching bytes", async () => {
+  const current = snapshot();
+  current.history = { before: 2, revision: 1, totalBlocks: 3 };
+  const older: HostSession = {
+    ...current,
+    session: {
+      ...current.session,
+      blocks: [
+        {
+          id: "older-message",
+          role: "user",
+          text: "Uploaded image",
+          attachments: [
+            {
+              id: "00000000-0000-4000-8000-000000000003",
+              name: "upload.png",
+              kind: "image",
+              mimeType: "image/png",
+              size: 3,
+            },
+          ],
+        },
+        {
+          id: "older-generated",
+          role: "image",
+          text: "",
+          image: {
+            name: "generated.png",
+            mimeType: "image/png",
+            size: 3,
+            path: "G:/host/attachments/00000000-0000-4000-8000-000000000004",
+          },
+        },
+      ],
+    },
+  };
+  vi.mocked(invoke).mockImplementation(async (_command, input) => {
+    const { machineId, method, params } = input as {
+      machineId: string;
+      method: string;
+      params: { sessionId: string; id?: string; offset?: number };
+    };
+    expect(machineId).toBe("older-image-owner");
+    expect(params.sessionId).toBe(current.session.id);
+    if (method === "sessions.page") {
+      return { sync: { kind: "snapshot", value: older }, totalBlocks: 3, revision: 1 };
+    }
+    if (method === "attachments.read") {
+      expect(params.offset).toBe(0);
+      if (params.id === "00000000-0000-4000-8000-000000000003")
+        return { data: btoa("old"), offset: 3, size: 3 };
+      if (params.id === "older-generated") return { data: btoa("gen"), offset: 3, size: 3 };
+    }
+    throw new Error(method);
+  });
+
+  const full = await loadRemoteHistoryPage("older-image-owner", current.session.id, current);
+  expect(vi.mocked(invoke)).toHaveBeenCalledTimes(1);
+  const upload = full?.session.blocks[0].attachments?.[0];
+  const generated = full?.session.blocks[1].image;
+  expect(upload?.loadPreview).toBeTypeOf("function");
+  expect(generated?.loadPreview).toBeTypeOf("function");
+  await expect(upload!.loadPreview!()).resolves.toBe(btoa("old"));
+  await expect(generated!.loadPreview!()).resolves.toBe(btoa("gen"));
 });
 
 it("discards stale history pages without replacing live output or deleted blocks", async () => {

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { useStableCallback } from "../../shared/hooks/useStableCallback";
+import { observeResize } from "../../shared/lib/observeResize";
 
 /** Which tab-strip edges still have overflow to scroll toward. */
 export function tabStripOverflow(
@@ -22,13 +23,13 @@ export function tabStripOverflow(
 export function useTabStripScroll({
   tabStripRef,
   activeId,
-  tabs,
+  tabCount,
   dragging,
 }: {
   tabStripRef: RefObject<HTMLDivElement | null>;
   activeId: string;
-  /** Re-measures whenever the tab list changes. */
-  tabs: readonly unknown[];
+  /** Number of tab slots at their full width (including closing slots until removed). */
+  tabCount: number;
   /** While a tab is dragged the active tab is not scrolled into view. */
   dragging: boolean;
 }) {
@@ -48,31 +49,33 @@ export function useTabStripScroll({
     el.scrollBy({ left: direction * amount, behavior: "smooth" });
   });
   const activeTabRef = useRef<HTMLDivElement | null>(null);
+  const overflowing = tabOverflow.left || tabOverflow.right;
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Scroll the selected tab into view when the strip overflows or a drag ends.
   useEffect(() => {
-    if (dragging) return;
+    if (dragging || !overflowing) return;
     activeTabRef.current?.scrollIntoView({
       inline: "nearest",
       block: "nearest",
     });
-  }, [activeId, dragging]);
+  }, [activeId, dragging, overflowing]);
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Track the strip's scroll and resize events to update its chevrons.
   useLayoutEffect(() => {
     const el = tabStripRef.current;
     if (!el) return;
-    syncTabOverflow();
     el.addEventListener("scroll", syncTabOverflow, { passive: true });
-    const ro = new ResizeObserver(syncTabOverflow);
-    ro.observe(el);
+    const unobserve = observeResize(el, syncTabOverflow);
     return () => {
       el.removeEventListener("scroll", syncTabOverflow);
-      ro.disconnect();
+      unobserve();
     };
   }, [syncTabOverflow, tabStripRef]);
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Measure the strip when a fixed-width tab slot is added or removed.
   useLayoutEffect(() => {
     syncTabOverflow();
-  }, [activeId, syncTabOverflow, tabs]);
+  }, [tabCount, syncTabOverflow]);
 
   return { tabOverflow, scrollTabsBy, activeTabRef };
 }

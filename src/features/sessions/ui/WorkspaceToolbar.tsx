@@ -8,13 +8,11 @@ import styles from "./WorkspaceToolbar.module.css";
 /** Keeps workspace actions inline until the pane needs its compact menu. */
 export function WorkspaceToolbar({
   children,
-  newAction,
   active,
   items,
   onPick,
 }: {
   children: ReactNode;
-  newAction: ReactNode;
   active: boolean;
   items: DropdownMenuItem[];
   onPick: (id: string, anchor: HTMLButtonElement) => void;
@@ -24,10 +22,7 @@ export function WorkspaceToolbar({
   const [open, setOpen] = useState(false);
   return (
     <div className={styles.toolbar} data-session-selection-keep data-tauri-drag-region="false">
-      <div className={styles.inline}>
-        {children}
-        <div className={styles.newAction}>{newAction}</div>
-      </div>
+      <div className={styles.inline}>{children}</div>
       {items.length > 0 ? (
         <div className={styles.overflow}>
           <Button

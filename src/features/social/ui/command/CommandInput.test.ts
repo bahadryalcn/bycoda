@@ -39,13 +39,11 @@ function submitForm() {
   });
 }
 
-it("disables Plan with its reason as the description while the box is empty or only whitespace", () => {
+it("disables Plan without a reason while the box is empty or only whitespace", () => {
   for (const text of ["", "   \n "]) {
     const { onSubmit } = render({ text });
-    expect(plan()?.getAttribute("aria-disabled")).toBe("true");
-    expect(document.getElementById(plan()!.getAttribute("aria-describedby")!)?.textContent).toBe(
-      "Type what AI should do.",
-    );
+    expect((plan() as HTMLButtonElement | undefined)?.disabled).toBe(true);
+    expect(plan()?.getAttribute("aria-describedby")).toBeNull();
     act(() => plan()?.click());
     submitForm();
     expect(onSubmit).not.toHaveBeenCalled();

@@ -1,3 +1,5 @@
+import { emitCodexQuotaObservation } from "./codexQuotaObservations";
+import { errorText } from "../../../../shared/lib/errors";
 import { resumeCodexThread } from "./codexThreadRecovery";
 import {
   queueProviderOperation,
@@ -56,6 +58,7 @@ import {
 import { resolveCodexBinary, spawnChild, watchChild } from "../../core/child";
 import { additionalDirsFor } from "../../core/additionalDirs";
 import { announceSlowProviderStartup } from "../../core/providerStartupStatus";
+import { turnFinishedFollowUpText } from "../../core/providerNotices";
 import { forgetSessionCommands, reportSessionCommands } from "../../core/reportedCommands";
 import { skillDisabled, skillPathKey } from "../../core/skillPolicy";
 import {
@@ -143,6 +146,8 @@ import { createChildProcessHandle, type ChildProcessHandle } from "../../core/ch
 const operationTailsBySession = new Map<string, Promise<unknown>>();
 
 const retirements = createProviderRetirementLedger("codex.main", killChild);
+const writerByOperation = new WeakMap<object, ChildProcessHandle>();
+const exitedConstructions = new WeakSet<ChildProcessHandle>();
 
 type Live = {
   operation?: object;
@@ -153,6 +158,8 @@ type Live = {
   model?: string;
   cwd: string;
   providerAccountId?: string;
+  privateDelegateHistory: boolean;
+  privateDelegateReplayPending: boolean;
   /** Thread-level network policy used when this app-server opened the thread. */
   controlsAgents: boolean;
   runtimeMode: RuntimeMode;
@@ -195,6 +202,7 @@ type Live = {
   emittedAssistantByItem: Map<string, string>;
   emittedReasoningByItem: Map<string, string>;
   emittedGeneratedImages: Set<string>;
+  pendingGeneratedImages: Map<string, string>;
   emittedAsyncQuestions: Set<string>;
   turnGeneration: number;
   notificationQueue: Promise<void> | null;
@@ -282,6 +290,8 @@ export async function sendCodexTurn(input: SendTurnInput): Promise<void> {
         live.turns = continueAfterFailure(live.turns, async () => {
           if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch) return;
           const rpc = await bindWriter();
+          if (input.operationContext?.operation)
+            writerByOperation.set(input.operationContext.operation, live.handle);
           live.onEvent = input.onEvent;
           live.runtimeMode = input.runtimeMode;
           live.planning = input.intent === "plan";
@@ -369,6 +379,8 @@ export async function compactCodexContext(input: CompactContextInput): Promise<v
         live.turns = continueAfterFailure(live.turns, async () => {
           if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch) return;
           const rpc = await bindWriter();
+          if (input.operationContext?.operation)
+            writerByOperation.set(input.operationContext.operation, live.handle);
           live.onEvent = input.onEvent;
           live.cancelled = false;
           live.muteUpdates = false;
@@ -480,8 +492,7 @@ export async function steerCodexTurn(input: SteerTurnInput): Promise<void> {
     !live.awaitingAsyncAnswers &&
     live.turnDone &&
     live.openAgentRows.size > 0;
-  if (!turnId && !continueParent)
-    throw new Error("The previous turn has finished. Send this follow-up as a new message.");
+  if (!turnId && !continueParent) throw new Error(turnFinishedFollowUpText());
 
   const rpc = await rpcTurnWriter(
     live.handle,
@@ -744,7 +755,9 @@ export async function cancelCodexTurn(
         live.muteUpdates = false;
         live.onEvent({
           type: "status",
-          text: "Could not confirm that the subagents stopped. Retry Stop to verify their outcome.",
+          text: t(
+            "Could not confirm that the subagents stopped. Retry Stop to verify their outcome.",
+          ),
         });
       }
       throw error;
@@ -827,26 +840,45 @@ export async function stopCodexSession(
 /** Host-to-desktop ownership transfer is stricter than delete/provider switch.
  * A stale operation must never fall back to the latest session writer, and an
  * empty stop target is not evidence that the original writer was retired. */
+export class CodexWriterRetirementRefusal extends Error {
+  constructor(readonly reason: "original_unverified" | "original_active") {
+    super(
+      reason === "original_active"
+        ? "The original Codex writer still has active work; continuation remains guarded."
+        : "The original Codex writer cannot be verified; continuation remains guarded.",
+    );
+  }
+}
+
 export async function retireOriginalCodexWriter(
   sessionId: string,
   context: HarnessOperationContext,
 ): Promise<void> {
   const live = liveByThread.get(sessionId);
   const startup = startingByThread.get(sessionId);
-  if (
-    !context?.operation ||
-    !live ||
-    startup ||
-    !ownsOperation(context, live.handle, live.operation)
-  )
-    throw new Error("The original Codex writer cannot be verified; continuation remains guarded.");
-  if (live.activeTurnId || live.pendingTurnStart)
-    throw new Error(
-      "The original Codex writer still has active work; continuation remains guarded.",
-    );
-  // stopCodexSession captures the matching handle synchronously, before waiting
-  // for retirement. Unlike forget, it preserves the persisted resume identity.
-  await stopCodexSession(sessionId, context);
+  if (!context?.operation || startup) throw new CodexWriterRetirementRefusal("original_unverified");
+  if (!live) {
+    const original = writerByOperation.get(context.operation);
+    if (
+      !original ||
+      original.sessionId !== sessionId ||
+      !exitedConstructions.has(original) ||
+      !ownsOperation(context, original)
+    )
+      throw new CodexWriterRetirementRefusal("original_unverified");
+    // Core delivered exit for this exact construction. Join its retained
+    // physical retirement before granting a new writer.
+    await retirements.retire([original]);
+  } else {
+    if (!ownsOperation(context, live.handle, live.operation))
+      throw new CodexWriterRetirementRefusal("original_unverified");
+    if (live.activeTurnId || live.pendingTurnStart)
+      throw new CodexWriterRetirementRefusal("original_active");
+    // Captures the matching handle synchronously and preserves the persisted resume identity.
+    await stopCodexSession(sessionId, context);
+  }
+  if (liveByThread.has(sessionId) || startingByThread.has(sessionId))
+    throw new CodexWriterRetirementRefusal("original_unverified");
 }
 
 export async function forgetCodexSession(
@@ -885,11 +917,13 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
 
   const existing = liveByThread.get(input.sessionId);
   const controlsAgents = input.controlsAgents === true;
+  const privateDelegateHistory = input.privateDelegateHistory === true;
   if (
     existing &&
     existing.cwd === input.cwd &&
     sameProviderAccountId(existing.providerAccountId, input.providerAccountId) &&
     existing.controlsAgents === controlsAgents &&
+    existing.privateDelegateHistory === privateDelegateHistory &&
     existing.nativeSubagents === input.modelSettings?.nativeSubagents &&
     existing.autoCompactWindow === input.modelSettings?.autoCompactWindow &&
     existing.skillPolicyKey === JSON.stringify(input.skillPolicy)
@@ -926,12 +960,14 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
 
     const resume = resumeByThread.get(input.sessionId);
     const canResume =
+      !privateDelegateHistory &&
       resume != null &&
       resume.cwd === input.cwd &&
       sameProviderAccountId(resume.providerAccountId, input.providerAccountId);
     if (
       resume &&
-      (resume.cwd !== input.cwd ||
+      (privateDelegateHistory ||
+        resume.cwd !== input.cwd ||
         !sameProviderAccountId(resume.providerAccountId, input.providerAccountId))
     ) {
       resumeByThread.delete(input.sessionId);
@@ -1018,6 +1054,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       handle,
       (line) => rpc.pushLine(line),
       (code, reason) => {
+        exitedConstructions.add(handle);
         const error = new Error(
           reason ?? `Codex app-server exited${code == null ? "" : ` (exit code ${code})`}`,
         );
@@ -1149,19 +1186,22 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     }
 
     if (!threadId) {
-      const opened = await startupRpc.request<{ thread?: { id?: string }; model?: string }>(
-        "thread/start",
-        {
-          ...(threadConfig ? { config: threadConfig } : {}),
-          ...buildThreadStartParams({
-            cwd: input.cwd,
-            ...codexMode(input),
-            model,
-            serviceTier,
-            additionalDirs: additionalDirsFor(input.sessionId),
-          }),
-        },
-      );
+      const opened = await startupRpc.request<{
+        thread?: { id?: string; ephemeral?: boolean };
+        model?: string;
+      }>("thread/start", {
+        ...(privateDelegateHistory ? { ephemeral: true } : {}),
+        ...(threadConfig ? { config: threadConfig } : {}),
+        ...buildThreadStartParams({
+          cwd: input.cwd,
+          ...codexMode(input),
+          model,
+          serviceTier,
+          additionalDirs: additionalDirsFor(input.sessionId),
+        }),
+      });
+      if (privateDelegateHistory && opened.thread?.ephemeral !== true)
+        throw new Error("Codex did not confirm private session storage.");
       threadId = opened.thread?.id?.trim();
       threadModel = opened.model?.trim() || model;
     }
@@ -1179,6 +1219,8 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       model: threadModel,
       cwd: input.cwd,
       providerAccountId: input.providerAccountId,
+      privateDelegateHistory,
+      privateDelegateReplayPending: privateDelegateHistory,
       controlsAgents,
       runtimeMode: input.runtimeMode,
       planning: input.intent === "plan",
@@ -1213,6 +1255,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       emittedAssistantByItem: new Map(),
       emittedReasoningByItem: new Map(),
       emittedGeneratedImages: new Set(),
+      pendingGeneratedImages: new Map(),
       emittedAsyncQuestions: new Set(),
       turnGeneration: 0,
       notificationQueue: null,
@@ -1229,15 +1272,17 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     };
     liveRef.current = live;
     liveByThread.set(input.sessionId, live);
-    resumeByThread.set(input.sessionId, {
-      threadId,
-      cwd: input.cwd,
-      providerAccountId: input.providerAccountId,
-    });
-    live.onEvent({
-      type: "session.providerBound",
-      providerSessionId: threadId,
-    });
+    if (!privateDelegateHistory) {
+      resumeByThread.set(input.sessionId, {
+        threadId,
+        cwd: input.cwd,
+        providerAccountId: input.providerAccountId,
+      });
+      live.onEvent({
+        type: "session.providerBound",
+        providerSessionId: threadId,
+      });
+    }
     live.onEvent({ type: "session.started" });
     void loadCodexSkills(live, input.sessionId, startupRpc);
     return live;
@@ -1328,7 +1373,7 @@ async function runTurn(live: Live, input: SendTurnInput, rpc: JsonRpcWriterView)
     }
     live.onEvent({
       type: "session.error",
-      message: error instanceof Error ? error.message : String(error),
+      message: errorText(error),
     });
     throw error;
   } finally {
@@ -1367,12 +1412,14 @@ async function startParentTurn(
   const model = (live.model = nativeModelId(input.model) || live.model); // sticks to the thread
   const effort = input.modelSettings?.reasoningEffort;
   const serviceTier = input.modelSettings?.serviceTier;
+  const replay = live.privateDelegateReplayPending ? input.privateDelegateReplay : undefined;
 
   const params = buildTurnStartParams({
     threadId: live.threadId,
     ...codexMode(input),
     prompt:
-      [input.runtimeInstructions, input.text].filter(Boolean).join("\n\n").trim() || undefined,
+      [input.runtimeInstructions, replay, input.text].filter(Boolean).join("\n\n").trim() ||
+      undefined,
     attachments: input.attachments,
     skills: live.skills,
     model,
@@ -1414,6 +1461,7 @@ async function startParentTurn(
           // Natural completion may arrive before this response. Still acknowledge it,
           // but never accept a stopped turn or an old transport's late response.
           if (live.cancelled || live.muteUpdates) return response;
+          live.privateDelegateReplayPending = false;
           input.onAccepted?.();
           const turnId = response.turn?.id ?? live.activeTurnId;
           // turn/completed can arrive before turn/start returns; don't resurrect a
@@ -1573,15 +1621,11 @@ function handleNotification(
     if (duplicate && duplicateAgentRow(event)) {
       continue;
     }
-    if (event.type === "image.generated") {
-      if (live.emittedGeneratedImages.has(event.itemId)) continue;
-      live.emittedGeneratedImages.add(event.itemId);
-      if ("data" in event) {
-        const save = nativeOutputSink(outputWork, () => materializeGeneratedImage(live, event));
-        pending = pending ? pending.then(save) : save();
-        continue;
-      }
-      live.onEvent(event);
+    if (isCodexImageEvent(event)) {
+      const publish = nativeOutputSink(outputWork, () =>
+        publishImageEvent(live, live.threadId, event),
+      );
+      pending = pending ? pending.then(publish) : publish();
       continue;
     }
     trackAgentRow(live, event, live.model);
@@ -1632,6 +1676,7 @@ function handleNotification(
       live.activeTurnId = mapped.activeTurnId;
     }
     if (mapped.turnCompleted) {
+      settleThreadImages(live, live.threadId, mapped.turnCompleted.status);
       // Report the limit before the turn settles so queued follow-ups hold.
       if (live.usageLimited && !live.cancelled) {
         const resetsAt = usageLimitResetAt(live);
@@ -1681,7 +1726,7 @@ function showCodexAsyncQuestion(live: Live, rec: Record<string, unknown> | null)
   } catch (error) {
     live.onEvent({
       type: "status",
-      text: error instanceof Error ? error.message : String(error),
+      text: errorText(error),
     });
     return;
   }
@@ -1729,9 +1774,52 @@ function showCodexAsyncQuestion(live: Live, rec: Record<string, unknown> | null)
   });
 }
 
+type CodexImageEvent = Extract<
+  HarnessEvent,
+  { type: "image.generationStarted" | "image.generationEnded" | "image.generated" }
+>;
+
+function isCodexImageEvent(event: HarnessEvent): event is CodexImageEvent {
+  return (
+    event.type === "image.generationStarted" ||
+    event.type === "image.generationEnded" ||
+    event.type === "image.generated"
+  );
+}
+
+function publishImageEvent(live: Live, threadId: string, event: CodexImageEvent) {
+  if (live.emittedGeneratedImages.has(event.itemId)) return;
+  if (event.type === "image.generationStarted") {
+    if (live.pendingGeneratedImages.has(event.itemId)) return;
+    live.pendingGeneratedImages.set(event.itemId, threadId);
+    live.onEvent(event);
+    return;
+  }
+  live.emittedGeneratedImages.add(event.itemId);
+  const hadPlaceholder = live.pendingGeneratedImages.delete(event.itemId);
+  if (event.type === "image.generated" && "data" in event) {
+    return materializeGeneratedImage(live, event, hadPlaceholder);
+  }
+  if (hadPlaceholder || event.type === "image.generated") live.onEvent(event);
+}
+
+function settleThreadImages(live: Live, threadId: string, status: string): void {
+  const stopped = status === "interrupted" || status === "cancelled";
+  for (const [itemId, owner] of live.pendingGeneratedImages) {
+    if (owner === threadId) {
+      publishImageEvent(live, threadId, {
+        type: "image.generationEnded",
+        itemId,
+        status: stopped ? "stopped" : "failed",
+      });
+    }
+  }
+}
+
 async function materializeGeneratedImage(
   live: Live,
   event: Extract<HarnessEvent, { type: "image.generated"; data: string }>,
+  hadPlaceholder: boolean,
 ): Promise<void> {
   return runNativeOutputWork(async (outputWork) => {
     const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) =>
@@ -1762,11 +1850,13 @@ async function materializeGeneratedImage(
       if (live.cancelled || live.muteUpdates || turnGeneration !== live.turnGeneration) {
         return;
       }
+      if (hadPlaceholder) {
+        emitNative({ type: "image.generationEnded", itemId: event.itemId, status: "failed" });
+        return;
+      }
       emitNative({
         type: "session.error",
-        message: `Could not save generated image: ${
-          cause instanceof Error ? cause.message : String(cause)
-        }`,
+        message: `Could not save generated image: ${errorText(cause)}`,
       });
     }
   });
@@ -1780,6 +1870,11 @@ function noteRateLimits(live: Live, update: Record<string, unknown>): void {
     primary: update.primary ?? current.primary,
     secondary: update.secondary ?? current.secondary,
   });
+  if (id === "codex") {
+    const limits = parseCodexRateLimits(update);
+    if (limits.session || limits.weekly || limits.monthly)
+      emitCodexQuotaObservation(live.providerAccountId ?? "default", limits);
+  }
 }
 
 function usageLimitResetAt(live: Live): number | null {
@@ -1930,6 +2025,7 @@ function emitSubagentNotification(
     // Unknown/missing completion state is not proof of success.
     if (status && ["completed", "failed", "interrupted", "cancelled"].includes(status)) {
       if (key) live.completedChildTurns.add(key);
+      settleThreadImages(live, threadId, status);
       settleChild(
         live,
         threadId,
@@ -1938,11 +2034,12 @@ function emitSubagentNotification(
       );
     }
   }
-  return emitSubagentSteps(live, callId, method, params);
+  return emitSubagentSteps(live, threadId, callId, method, params);
 }
 
 function emitSubagentSteps(
   live: Live,
+  threadId: string,
   callId: string,
   method: string,
   params: unknown,
@@ -1958,17 +2055,8 @@ function emitSubagentSteps(
       });
     }
   }
-  const image = mapped.find(
-    (event): event is Extract<HarnessEvent, { type: "image.generated" }> =>
-      event.type === "image.generated",
-  );
-  if (image) {
-    if (live.emittedGeneratedImages.has(image.itemId)) return;
-    live.emittedGeneratedImages.add(image.itemId);
-    if ("data" in image) return materializeGeneratedImage(live, image);
-    live.onEvent(image);
-    return;
-  }
+  const image = mapped.find(isCodexImageEvent);
+  if (image) return publishImageEvent(live, threadId, image);
   for (const event of mapCodexSubagentSteps(callId, method, params)) {
     live.onEvent(event);
   }
@@ -2094,6 +2182,7 @@ function finishActiveTurn(live: Live, extraEvents: HarnessEvent[] = []): void {
   live.emittedReasoningByItem.clear();
   live.emittedGeneratedImages.clear();
   live.emittedAsyncQuestions.clear();
+  live.pendingGeneratedImages.clear();
   live.subagentThreads.clear();
   live.childTurns.clear();
   live.terminalChildren.clear();
@@ -2135,7 +2224,7 @@ async function handleServerRequest(
         } catch (error) {
           emitNative({
             type: "status",
-            text: error instanceof Error ? error.message : String(error),
+            text: errorText(error),
           });
           await nativeOutputSink(outputWork, () => live.rpc.respond(id, { answers: {} }))();
           return;
@@ -2197,7 +2286,10 @@ async function handleServerRequest(
           if (!live.cancelled && !live.muteUpdates)
             emitNative({
               type: "status",
-              text: `This MCP server requested a form or browser sign-in that ${PRODUCT_IDENTITY.displayName} does not support yet. Complete it in the server's own interface.`,
+              text: t(
+                "This MCP server requested a form or browser sign-in that {p0} does not support yet. Complete it in the server's own interface.",
+                { p0: PRODUCT_IDENTITY.displayName },
+              ),
             });
           await nativeOutputSink(outputWork, () =>
             live.rpc.respond(id, {
@@ -2258,7 +2350,7 @@ async function handleServerRequest(
         // An empty success or invented denial hides protocol incompatibility.
         emitNative({
           type: "status",
-          text: `Unsupported Codex request: ${method}`,
+          text: t("Unsupported Codex request: {p0}", { p0: method }),
         });
         await nativeOutputSink(outputWork, () =>
           live.rpc.respondError(id, {

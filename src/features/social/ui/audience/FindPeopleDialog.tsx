@@ -11,9 +11,8 @@ import type { SocialAccount } from "../../model/social";
 import type { SocialList } from "../../model/audience";
 import type { CollectResult } from "../../model/socialActions";
 import type { SocialClient } from "../../model/socialClient";
-import { DisabledReason } from "../common/DisabledReason";
 import { TechnicalDetails } from "../common/TechnicalDetails";
-import { LabeledSelect } from "./LabeledSelect";
+import { Select } from "../../../../shared/ui/Select";
 import { PlatformIcon } from "../common/PlatformIcon";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import {
@@ -67,7 +66,6 @@ export function FindPeopleDialog({
       : !limitValid
         ? t("Enter a whole number from 1 to {p0}.", { p0: COLLECT_LIMIT_MAX })
         : undefined;
-  const actionState = reason ? { disabled: true as const, reason } : { disabled: false as const };
   const needs = findPeopleNeeds(form.kind);
 
   async function run() {
@@ -98,25 +96,27 @@ export function FindPeopleDialog({
         if (!running) onClose();
       }}
       size="lg"
-      footerStart={error ? <InlineError>{error}</InlineError> : undefined}
+      footerStart={
+        error ? <InlineError details={error}>{t("Could not find people.")}</InlineError> : undefined
+      }
       footer={
-        <ModalActions>
+        <ModalActions reason={error ? undefined : reason}>
           <Button variant="ghost" disabled={running} onClick={onClose}>
             {result ? t("Done") : t("Cancel")}
           </Button>
-          <DisabledReason
+          <Button
             variant="primary"
             loading={running}
-            {...actionState}
+            disabled={Boolean(reason)}
             onClick={() => void run().catch(() => undefined)}
           >
             {t("Find people")}
-          </DisabledReason>
+          </Button>
         </ModalActions>
       }
     >
       <div className="audience-stack">
-        <LabeledSelect
+        <Select
           label={t("Account")}
           value={form.accountId}
           disabled={running || !accounts.length}
@@ -125,9 +125,9 @@ export function FindPeopleDialog({
             label: accountLabel(account),
             icon: <PlatformIcon platform={account.platform} />,
           }))}
-          onChange={(accountId) => setForm({ ...form, accountId })}
+          onValueChange={(accountId) => setForm({ ...form, accountId })}
         />
-        <LabeledSelect
+        <Select
           label={t("Where to look")}
           value={form.kind}
           disabled={running}
@@ -135,7 +135,7 @@ export function FindPeopleDialog({
             value: kind,
             label: captureSourceLabel(kind),
           }))}
-          onChange={(kind) => setForm({ ...form, kind: kind as CaptureSourceKind })}
+          onValueChange={(kind) => setForm({ ...form, kind: kind as CaptureSourceKind })}
         />
         {needs === "postRef" ? (
           <TextField
@@ -163,7 +163,7 @@ export function FindPeopleDialog({
             onChange={(event) => setForm({ ...form, handle: event.target.value })}
           />
         ) : null}
-        <LabeledSelect
+        <Select
           label={t("Add them to")}
           value={listId}
           disabled={running}
@@ -173,7 +173,7 @@ export function FindPeopleDialog({
               .filter((list) => list.kind === "static")
               .map((list) => ({ value: list.id, label: list.name })),
           ]}
-          onChange={setListId}
+          onValueChange={setListId}
         />
         <NumberField
           label={t("Maximum people")}

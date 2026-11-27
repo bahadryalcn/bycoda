@@ -17,6 +17,12 @@
   margin-block-end: var(--space-3);
 }
 
+/* The header spans the pane, so it can measure its own width: New session folds to its icon
+   (Button collapseLabel) when the pane is narrow, even without an overflow menu. */
+.workspaceHeader {
+  container: pane-header / inline-size;
+}
+
 /* Let the location use spare space and shrink only when the toolbar needs it. */
 .workspaceHeader > [data-pane-header-heading] {
   flex-shrink: 1;
@@ -24,4 +30,28 @@
 
 .workspaceHeader > [data-pane-header-body] {
   min-inline-size: fit-content;
+  justify-content: flex-end;
+}
+
+.projectlessToolbar:not(:has([data-expanded])) {
+  display: none;
+}
+
+@container workspace-pane (inline-size < 440px) {
+  .workspaceHeader,
+  .workspaceHeader > [data-pane-header-body],
+  .workspaceHeader [data-session-tools] {
+    column-gap: 0;
+  }
+
+  .workspaceHeader > [data-pane-header-heading] {
+    margin-inline-end: var(--space-1);
+  }
+}
+
+@container workspace-pane (inline-size < 280px) {
+  .workspaceHeader [data-workspace-copy-name],
+  .workspaceHeader [data-workspace-copy-decoration] {
+    display: none;
+  }
 }

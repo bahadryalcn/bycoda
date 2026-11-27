@@ -368,6 +368,110 @@ async function setup(ports: AssistantPorts = {}) {
   return f;
 }
 describe("durable assistant ownership and supervision", () => {
+  it("returns jobs.create once the job is persisted, before the goal and planner exist", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const createGoal = vi.fn(async () => {
+      await gate;
+      return { goalId: "late-goal" };
+    });
+    const f = await setup({ createGoal });
+    await f.configure();
+    const { job } = await f.request({
+      op: "jobs.create",
+      title: "Slow planner",
+      request: "Do work",
+      projectId: "project",
+      idempotencyKey: "slow-planner",
+    });
+    expect(job).toMatchObject({ status: "queued", dispatchState: "pending" });
+    expect(job!.goalId).toBeUndefined();
+    const stored = (await f.store.db
+      .prepare("SELECT value FROM assistant_jobs WHERE id=?")
+      .get(job!.id)) as {
+      value: string;
+    };
+    expect(JSON.parse(stored.value)).toMatchObject({ idempotencyKey: "slow-planner" });
+    await vi.waitFor(() => expect(createGoal).toHaveBeenCalledOnce());
+    release();
+    await f.request({ op: "tick" });
+    expect((await f.request({ op: "snapshot" })).snapshot!.jobs[0]).toMatchObject({
+      goalId: "late-goal",
+      dispatchState: "submitted",
+    });
+  });
+  it("records a background dispatch failure on the job instead of leaving an unhandled rejection", async () => {
+    const onError = vi.fn();
+    const f = await setup({ onError, createGoal: async () => ({ goalId: "goal" }) });
+    await f.configure();
+    vi.spyOn(
+      f.service as unknown as { cleanupDeletedRecords(): Promise<void> },
+      "cleanupDeletedRecords",
+    ).mockRejectedValueOnce(new Error("tick exploded"));
+    const { job } = await f.request({
+      op: "jobs.create",
+      title: "Doomed tick",
+      request: "Do work",
+      projectId: "project",
+      idempotencyKey: "doomed",
+    });
+    await vi.waitFor(() => expect(onError).toHaveBeenCalled());
+    const events = (await f.request({ op: "snapshot" })).snapshot!.activity ?? [];
+    expect(
+      events.some(
+        (event: { kind: string; jobId?: string; summary?: string }) =>
+          event.kind === "job.problem" &&
+          event.jobId === job!.id &&
+          event.summary?.includes("tick exploded"),
+      ),
+    ).toBe(true);
+  });
+  it("ticks without loading settled job history and still reconciles incomplete usage", async () => {
+    const goalStatus = vi.fn(async (_id: string) => ({
+      status: "done" as const,
+      tokens: 12,
+      taskIds: [],
+      sessionIds: [],
+      progress: { done: 1, total: 1 },
+    }));
+    const f = await setup({ goalStatus });
+    await f.configure();
+    await f.request({ op: "briefing.schedule", enabled: false, time: "09:00" });
+    const insert = f.store.db.prepare(
+      "INSERT INTO assistant_jobs(id,value,version,updated_at) VALUES(?,?,1,1)",
+    );
+    for (const [id, tokensComplete] of [
+      ["settled", true],
+      ["incomplete", false],
+    ] as const)
+      await insert.run(
+        id,
+        JSON.stringify({
+          id,
+          version: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          status: "done",
+          kind: "project",
+          title: id,
+          projectId: "project",
+          goalId: `assistant-${id}`,
+          tokens: 0,
+          tokensComplete,
+        }),
+      );
+    const prepare = vi.spyOn(f.store.db, "prepare");
+    await f.service.tick();
+    expect(goalStatus.mock.calls.map(([id]) => id)).toEqual(["assistant-incomplete"]);
+    expect(
+      prepare.mock.calls
+        .filter(
+          ([sql]) => sql.startsWith("SELECT value FROM assistant_jobs") && sql.includes("ORDER BY"),
+        )
+        .map(([sql]) => sql),
+    ).toEqual([expect.stringContaining("tokensComplete")]);
+    prepare.mockRestore();
+  });
   it("keeps identity unset and validates core setup and optimistic versions", async () => {
     const f = await setup();
     const initial = await f.request({ op: "snapshot" });
@@ -447,8 +551,9 @@ describe("durable assistant ownership and supervision", () => {
       projectId: "project",
       idempotencyKey: "request-1",
     };
-    const first = (await f.request(input)).job!;
-    expect(first.status).toBe("running");
+    expect((await f.request(input)).job!.status).toBe("queued");
+    await f.request({ op: "tick" });
+    expect((await f.request({ op: "snapshot" })).snapshot!.jobs[0].status).toBe("running");
     await f.restart();
     await f.request(input);
     expect(submitted).toHaveLength(1);
@@ -474,16 +579,15 @@ describe("durable assistant ownership and supervision", () => {
       findGoal: async () => (recovered ? { goalId: "stable-goal" } : undefined),
     });
     await f.configure();
-    const job = (
-      await f.request({
-        op: "jobs.create",
-        title: "Night work",
-        request: "Night work",
-        projectId: "project",
-        idempotencyKey: "uncertain",
-      })
-    ).job!;
-    expect(job.dispatchState).toBe("unknown");
+    await f.request({
+      op: "jobs.create",
+      title: "Night work",
+      request: "Night work",
+      projectId: "project",
+      idempotencyKey: "uncertain",
+    });
+    await f.request({ op: "tick" });
+    expect((await f.request({ op: "snapshot" })).snapshot!.jobs[0].dispatchState).toBe("unknown");
     await f.restart();
     recovered = true;
     await f.service.tick();
@@ -693,14 +797,13 @@ describe("durable assistant ownership and supervision", () => {
     });
     const f = await setup({ createGoal: async () => ({ goalId: "goal" }), chiefWake });
     await f.configure("chief");
-    const { job } = await f.request({
+    await f.request({
       op: "jobs.create",
       title: "A job",
       request: "Do work",
       projectId: "project",
       idempotencyKey: "slow-chief",
     });
-    expect(job?.goalId).toBe("goal");
     await vi.waitFor(() => expect(chiefWake).toHaveBeenCalledOnce());
     release();
   });

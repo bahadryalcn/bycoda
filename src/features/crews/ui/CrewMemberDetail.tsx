@@ -1,32 +1,24 @@
 import { Text } from "../../../shared/ui/Text";
-import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Surface } from "../../../shared/ui/Surface";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
-import type { CrewAgent, CrewPolicy, CrewRole } from "../model/crew";
+import type { CrewAgent } from "../model/crew";
 import type { ProjectCrews, useProjectCrews } from "../model/crewClient";
 import { libraryVersionPatch, memberLink } from "../model/crewLink";
 import type { MemberAvatarTraits } from "../model/memberAvatarTraits";
 import { libraryUpdate, memberFromLibrary } from "../model/crewRoster";
 import { CrewLibraryProfileDialog } from "./CrewLibraryProfileDialog";
-import { CrewMemberForm, roleLabel } from "./CrewMemberForm";
-import { MemberPerformance } from "./MemberPerformance";
+import { CrewMemberForm } from "./CrewMemberForm";
+import { useMemberReviews } from "./MemberReviews";
 
-export type CrewInspection = {
-  model: string;
-  imageGeneration?: boolean;
-  observations: { count: number; accepted: number };
-}[];
-
-export type CrewBusyAction = "save" | "start" | "add" | "inspect" | "library" | "delete" | null;
+export type CrewBusyAction = "save" | "library" | null;
 
 /**
- * The open member row: role, name, instructions, groups, automatic candidates and one
- * library line, edited in place. The pinned model is edited in the row itself.
+ * The open member row: the member form edited in place, plus one line for its library profile.
+ * The pinned model is edited in the row itself.
  */
 export function CrewMemberDetail({
   cwd,
@@ -34,17 +26,12 @@ export function CrewMemberDetail({
   data,
   traits,
   handleError,
-  crewSaved,
-  policy,
   agent,
-  groupNames,
   scope,
   onScopeChange,
   pending,
   pendingAction,
   showIssues,
-  inspection,
-  onInspect,
   onSaveToLibrary,
   onChange,
 }: {
@@ -55,17 +42,12 @@ export function CrewMemberDetail({
   traits?: MemberAvatarTraits;
   /** A Host refusal about this member's handle. */
   handleError?: string;
-  crewSaved: boolean;
-  policy: CrewPolicy;
   agent: CrewAgent;
-  groupNames: string[];
   scope: "project" | "global";
   onScopeChange: (scope: "project" | "global") => void;
   pending: boolean;
   pendingAction: CrewBusyAction;
   showIssues: boolean;
-  inspection?: CrewInspection;
-  onInspect: () => void;
   onSaveToLibrary: () => void;
   onChange: (patch: Partial<CrewAgent>) => void;
 }) {
@@ -78,34 +60,24 @@ export function CrewMemberDetail({
   const projectId = scope === "project" ? data.project.id : undefined;
   // Observations are kept per saved crew, so the section needs the saved crew that holds this member.
   const definitionId = data.definitions.find((d) => d.agents.some((a) => a.id === agent.id))?.id;
+  const reviews = useMemberReviews(state, definitionId, agent.id);
   const updatesProfile = !!source && source.projectId === projectId;
+  const libraryName = link ? link.profile.name : source?.name;
   return (
     <Surface variant="card" padding="md" className="mt-1 mb-3 flex min-w-0 flex-col gap-4">
       <section
         aria-label={t("Member library")}
         className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2"
       >
-        <Text className="flex min-w-0 flex-1 basis-56 flex-wrap items-center gap-x-2">
-          <span className="inline-flex min-w-0 items-center gap-1">
-            <Text size="inherit" tone="inherit" truncate className="min-w-0">
-              {link
-                ? t("Library: {p0}", { p0: link.profile.name })
-                : source
-                  ? t("From library: {p0}", { p0: source.name })
-                  : t("Member library")}
-            </Text>
-            {link?.state === "linked" ? (
-              <InfoPopover label={t("About the library profile")}>
-                <p>
-                  {t(
-                    "Changes to the name, instructions, model, groups, avatar or handle here customize this member for this crew only.",
-                  )}
-                </p>
-              </InfoPopover>
-            ) : null}
-          </span>
-          {link?.state === "customized" ? <span>{t("customized")}</span> : null}
-        </Text>
+        {libraryName ? (
+          <Text truncate className="min-w-0 flex-1 basis-56">
+            {link
+              ? t("Library: {p0}", { p0: libraryName })
+              : t("From library: {p0}", { p0: libraryName })}
+          </Text>
+        ) : (
+          <span className="flex-1" />
+        )}
         <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
           {link?.state === "customized" ? (
             <Button
@@ -144,33 +116,14 @@ export function CrewMemberDetail({
           </Button>
         </div>
       </section>
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <Text size="body" tone="inherit" weight="medium">
-          {t("Responsibility in the crew")}
-        </Text>
-        <RadioGroup
-          variant="inline"
-          label={t("Responsibility in the crew")}
-          value={agent.role}
-          options={(["coordinator", "specialist", "reviewer", "advisor"] as const).map((role) => ({
-            value: role,
-            label: roleLabel(role),
-          }))}
-          onValueChange={(role) => onChange({ role: role as CrewRole })}
-        />
-      </div>
       {link && editingProfile ? (
         <CrewLibraryProfileDialog
           cwd={cwd}
           state={state}
           data={data}
-          profile={link.profile}
-          groupNames={groupNames}
+          saved={link.profile}
           onClose={() => setEditingProfile(false)}
         />
-      ) : null}
-      {definitionId ? (
-        <MemberPerformance state={state} definitionId={definitionId} memberId={agent.id} />
       ) : null}
       {update ? (
         <Alert tone="info">
@@ -187,11 +140,8 @@ export function CrewMemberDetail({
         </Alert>
       ) : null}
       <CrewMemberForm
-        compact
         cwd={cwd}
-        catalog={data.catalog}
         agent={agent}
-        policy={policy}
         onChange={onChange}
         groups={data.groupsSupported}
         identity={identity}
@@ -201,41 +151,10 @@ export function CrewMemberDetail({
         modelPoolsSupported={data.modelPoolsSupported}
         handleError={handleError}
         traits={traits}
-        groupSuggestions={groupNames}
         nameError={showIssues && !agent.name.trim() ? t("Add a name") : undefined}
         modelError={showIssues && !agent.candidates.length ? t("Choose a model") : undefined}
-        advancedExtra={
-          crewSaved ? (
-            <div className="flex flex-col gap-1">
-              <Button
-                variant="ghost"
-                className="self-start"
-                disabled={pending}
-                loading={pendingAction === "inspect"}
-                onClick={onInspect}
-              >
-                {t("Inspect saved capabilities")}
-              </Button>
-              {inspection?.map((c) => (
-                <Text key={c.model} as="p">
-                  <ModelLabel model={c.model} /> · {t("Image generation")}:{" "}
-                  {t(
-                    c.imageGeneration === true
-                      ? "Available"
-                      : c.imageGeneration === false
-                        ? "Unavailable"
-                        : "Unknown",
-                  )}{" "}
-                  ·{" "}
-                  {t("{p0} reviews · {p1} accepted", {
-                    p0: c.observations.count,
-                    p1: c.observations.accepted,
-                  })}
-                </Text>
-              ))}
-            </div>
-          ) : null
-        }
+        reviews={reviews.section}
+        onMoreOpen={reviews.onOpen}
       />
     </Surface>
   );

@@ -6,6 +6,7 @@ import {
   asClient,
   bodyText,
   buttonByText,
+  isBlocked,
   clientMock,
   clickButton,
   deferred,
@@ -59,7 +60,7 @@ describe("SegmentBuilder save", () => {
     await flush();
     setFieldValue(fieldByLabel("Segment name"), "Everyone scored");
     setFieldValue(fieldByLabel("Minimum interest score"), "0");
-    expect(buttonByText("Save segment")?.disabled).toBe(false);
+    expect(isBlocked(buttonByText("Save segment"))).toBe(false);
   });
 
   it("stays open with the Host reason and the typed conditions when saving fails", async () => {
@@ -82,7 +83,7 @@ describe("SegmentBuilder save", () => {
     expect(onSaved).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
     expect(fieldByLabel("Language").value).toBe("tr");
-    expect(buttonByText("Save segment")?.disabled).toBe(false);
+    expect(isBlocked(buttonByText("Save segment"))).toBe(false);
   });
 
   it("does not save twice while the first request is running", async () => {

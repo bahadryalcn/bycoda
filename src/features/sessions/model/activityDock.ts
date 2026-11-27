@@ -1,6 +1,12 @@
+import { subagentStepStrip, type SubagentStepStrip } from "./subagentStepStrip";
 import { t } from "../../../shared/i18n/core";
 import type { CrewMemberChild } from "../../../shared/model/host-contracts/delegation";
-import { hasPendingApproval, type Block, type HarnessId } from "./session";
+import {
+  hasPendingApproval,
+  type Block,
+  type HarnessId,
+  type WorkflowAgentParent,
+} from "./session";
 import { executionUserIndex } from "./executionTurn";
 import { delegatedChildIdOf } from "./delegatedBlockId";
 import {
@@ -84,6 +90,7 @@ export type DockAgent = {
   blockId: string;
   /** The provider's id for the call, which is how a stop request finds it. */
   callId?: string;
+  workflow?: WorkflowAgentParent;
   name: string;
   /** The Crew member a delegated child runs; its portrait and @handle replace the generic marks. */
   crewMember?: CrewMemberChild;
@@ -103,6 +110,8 @@ export type DockAgent = {
   /** "46 steps, 1 failed", worded exactly as on the transcript row. */
   detail: string;
   detailParts?: SubagentStatusPart[];
+  /** The run's recent steps for its card; commands have none. */
+  stepStrip?: SubagentStepStrip;
   /** Epoch ms the run began and ended; absent on older sessions. */
   startedAt?: number;
   endedAt?: number;
@@ -226,11 +235,15 @@ export function dockAgent(block: Block, busy: boolean): DockAgent[] {
   return [
     {
       blockId: block.id,
-      ...(block.tool?.callId ? { callId: block.tool.callId } : {}),
+      ...(block.agentRun?.workflow ? { workflow: block.agentRun.workflow } : {}),
+      ...(block.tool?.callId && !block.agentRun?.workflow ? { callId: block.tool.callId } : {}),
       name: agent ? subagentName(block) : toolCallLabel(block),
       kind: agent ? "agent" : "command",
       status,
       model: agent ? subagentModelName(block) : undefined,
+      ...(agent
+        ? { stepStrip: subagentStepStrip(block.agentRun?.steps ?? [], status === "running") }
+        : {}),
       ...(agent && status !== "interrupted"
         ? { detailParts: subagentStatusParts(block, block.agentRun?.steps ?? []) }
         : {}),
@@ -250,6 +263,23 @@ export function dockAgent(block: Block, busy: boolean): DockAgent[] {
         : {}),
     },
   ];
+}
+
+export function groupDockAgents(agents: readonly DockAgent[]) {
+  const standalone: DockAgent[] = [];
+  const phases = new Map<string, { id: string; phase?: string; agents: DockAgent[] }>();
+  for (const agent of agents) {
+    if (!agent.workflow) {
+      standalone.push(agent);
+      continue;
+    }
+    const { callId, phase } = agent.workflow;
+    const id = JSON.stringify([callId, phase]);
+    const existing = phases.get(id);
+    if (existing) existing.agents.push(agent);
+    else phases.set(id, { id, phase, agents: [agent] });
+  }
+  return { standalone, phases: [...phases.values()] };
 }
 
 /**
@@ -324,10 +354,16 @@ export function dockStateLabel(dock: ActivityDock): string {
 
 function plural(count: number, noun: string): string {
   if (noun === "background task")
-    return t(count === 1 ? "{p0} background task" : "{p0} background tasks", { p0: count });
+    return count === 1
+      ? t("{p0} background task", { p0: count })
+      : t("{p0} background tasks", { p0: count });
   if (noun === "background agent")
-    return t(count === 1 ? "{p0} background agent" : "{p0} background agents", { p0: count });
+    return count === 1
+      ? t("{p0} background agent", { p0: count })
+      : t("{p0} background agents", { p0: count });
   if (noun === "background command")
-    return t(count === 1 ? "{p0} background command" : "{p0} background commands", { p0: count });
-  return t(count === 1 ? "{p0} command" : "{p0} commands", { p0: count });
+    return count === 1
+      ? t("{p0} background command", { p0: count })
+      : t("{p0} background commands", { p0: count });
+  return count === 1 ? t("{p0} command", { p0: count }) : t("{p0} commands", { p0: count });
 }

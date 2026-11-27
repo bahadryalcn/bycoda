@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { createVoiceWorkspaceActions } from "./useVoiceWorkspaceActions";
+import {
+  createVoiceWorkspaceActions,
+  type VoiceSessionDeleteDeps,
+} from "./useVoiceWorkspaceActions";
 import type {
   VoiceWorkspaceActionsDeps,
   VoiceWorkspaceSession,
@@ -12,8 +15,8 @@ const entry = (
   cwd = "/project",
   extra: Partial<VoiceWorkspaceSession> = {},
 ): VoiceWorkspaceSession => ({ id, cwd, title: id, harness: "codex", model: "model", ...extra });
-function setup(overrides: Partial<VoiceWorkspaceActionsDeps> = {}) {
-  const deps: VoiceWorkspaceActionsDeps = {
+function setup(overrides: Partial<VoiceWorkspaceActionsDeps & VoiceSessionDeleteDeps> = {}) {
+  const deps: VoiceWorkspaceActionsDeps & VoiceSessionDeleteDeps = {
     getProjects: () => [{ path: "/project" }, { path: "/other" }],
     getSessions: () => [entry("first"), entry("second", "/other")],
     getActiveSessionId: () => "first",
@@ -74,7 +77,7 @@ describe("voice workspace owner actions", () => {
     const { execute } = setup();
     expect(await execute("workspace.projects.select", { projectPath: "/missing" })).toMatchObject({
       status: "rejected",
-      next: expect.stringContaining("ask how to continue"),
+      next: expect.stringContaining("ask only if a necessary choice remains"),
     });
   });
   it("lists a visible project's run actions without running anything", async () => {
@@ -330,6 +333,27 @@ describe("voice workspace owner actions", () => {
       status: "cancelled",
     });
     expect(onDelete).toHaveBeenCalledWith("first");
+  });
+
+  it("deletes without the owner flow only under Full access", async () => {
+    const onDelete = vi.fn().mockResolvedValue(true);
+    const onDeleteNow = vi.fn().mockResolvedValue(true);
+    const full = await setup({ onDelete, onDeleteNow, fullAccess: async () => true }).execute(
+      "workspace.sessions.delete",
+      args,
+    );
+    expect(full).toMatchObject({ status: "completed", confirmation: "not_required_full_access" });
+    expect(onDeleteNow).toHaveBeenCalledWith("first");
+    expect(onDelete).not.toHaveBeenCalled();
+    for (const fullAccess of [async () => false, async () => Promise.reject(new Error("x"))]) {
+      onDeleteNow.mockClear();
+      await setup({ onDelete, onDeleteNow, fullAccess }).execute("workspace.sessions.delete", {
+        ...args,
+        requestId: `request-${onDelete.mock.calls.length}`,
+      });
+      expect(onDeleteNow).not.toHaveBeenCalled();
+    }
+    expect(onDelete).toHaveBeenCalledTimes(2);
   });
 
   it("refuses unavailable callbacks and sessions unready for submission", async () => {

@@ -1,6 +1,7 @@
 import { Text } from "../../../shared/ui/Text";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -40,6 +41,13 @@ export function SshCertificateInspection({
           size="sm"
           variant="ghost"
           disabled={disabled || busy || !reference.trim()}
+          disabledReason={
+            disabled
+              ? t("Wait for the current action to finish.")
+              : !reference.trim() && !busy
+                ? t("Enter a certificate path first.")
+                : undefined
+          }
           loading={busy}
           onClick={async () => {
             if (pending.current || disabled || !reference.trim()) return;
@@ -67,10 +75,14 @@ export function SshCertificateInspection({
         <InlineError>{t("Couldn’t inspect the public SSH certificate.")}</InlineError>
       ) : null}
       {metadata ? (
-        <Disclosure summary={t("Certificate details")}>
-          <Text as="p" size="inherit" tone="muted" className="mbe-2">
-            {t("Inspection does not establish trust or enroll this certificate.")}
-          </Text>
+        <Disclosure
+          summary={t("Certificate details")}
+          summaryActions={
+            <InfoPopover>
+              {t("Inspection does not establish trust or enroll this certificate.")}
+            </InfoPopover>
+          }
+        >
           <DescriptionList size="sm">
             <DescriptionItem term={t("Certificate type")}>
               {metadata.certificateType}

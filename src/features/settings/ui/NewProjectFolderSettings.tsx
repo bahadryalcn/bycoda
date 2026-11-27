@@ -1,6 +1,6 @@
-import { Text } from "../../../shared/ui/Text";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { useEffect, useRef, useState } from "react";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { RotateCcw } from "../../../shared/ui/icons";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -8,6 +8,7 @@ import { homeDir, pickFolders } from "../../../platform/tauri/fs";
 import { newProjectFolderSetting, newProjectParent } from "../../projects/public/newProjectFolder";
 import { loadRecents } from "../../projects/public/recents";
 import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
+import { errorText } from "../../../shared/lib/errors";
 
 /** Page-level "Restore defaults": bycoda chooses the folder again. */
 export const restoreNewProjectFolderDefault = () => {
@@ -23,34 +24,29 @@ export function NewProjectFolderGroup() {
     newProjectFolderSetting.subscribe,
   );
   const [home, setHome] = useState<string | null>(null);
-  const [homeLoading, setHomeLoading] = useState(true);
-  const [homeError, setHomeError] = useState<string | null>(null);
+  const [homeError, setHomeError] = useState<string | true | null>(null);
   const [homeAttempt, setHomeAttempt] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ title: string; detail?: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- resolves the native home directory for this mounted row and ignores completion after unmount.
   useEffect(() => {
     let current = true;
-    setHomeLoading(true);
     setHomeError(null);
     homeDir().then(
       (value) => {
         if (current) {
           if (typeof value !== "string" || !value.trim()) {
-            setHomeError(t("Could not read your home folder. Retry or choose a folder."));
-            setHomeLoading(false);
+            setHomeError(true);
             return;
           }
           setHome(value);
-          setHomeLoading(false);
         }
       },
       (cause: unknown) => {
         if (current) {
-          setHomeError(cause instanceof Error ? cause.message : String(cause));
-          setHomeLoading(false);
+          setHomeError(errorText(cause));
         }
       },
     );
@@ -79,8 +75,13 @@ export function NewProjectFolderGroup() {
       if (path) {
         newProjectFolderSetting.save(path);
         if (newProjectFolderSetting.load() !== path)
-          throw new Error(t("Could not save. Your previous choice was kept."));
+          setError({ title: t("Could not save. Your previous choice was kept.") });
       }
+    } catch (cause) {
+      setError({
+        title: t("Could not choose the folder for new projects."),
+        detail: errorText(cause),
+      });
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -88,65 +89,57 @@ export function NewProjectFolderGroup() {
   };
 
   return (
-    <Group title={t("New projects")}>
+    <Group title={null}>
       <Row
         id="new-project-folder"
         label={t("Folder for new projects")}
-        description={
-          chosen
-            ? t("New projects you ask the assistant to create are added here.")
-            : t(
-                "Not set: new projects go to the folder most of your projects share, otherwise Projects in your home folder.",
-              )
-        }
         feedback={
           error ? (
-            <SettingsFeedback state="error">{error}</SettingsFeedback>
+            <SettingsFeedback
+              state="error"
+              extra={error.detail ? <ErrorDetails detail={error.detail} /> : undefined}
+            >
+              {error.title}
+            </SettingsFeedback>
           ) : !chosen && homeError ? (
             <SettingsFeedback
               state="error"
+              extra={
+                typeof homeError === "string" ? <ErrorDetails detail={homeError} /> : undefined
+              }
               action={{
                 label: t("Retry"),
                 disabled: busy,
                 onClick: () => setHomeAttempt((attempt) => attempt + 1),
               }}
             >
-              {homeError}
+              {t("Could not read your home folder. Retry or choose a folder.")}
             </SettingsFeedback>
-          ) : !chosen && homeLoading ? (
-            <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
           ) : undefined
         }
       >
-        <OverflowTooltip label={chosen ?? automatic}>
-          <Text size="caption" tone="secondary" truncate tabIndex={0}>
-            {chosen ?? automatic}
-          </Text>
-        </OverflowTooltip>
         <Button
-          className="shrink-0"
+          variant="link"
           loading={busy}
-          disabled={!chosen && homeLoading}
+          disabled={busy}
           loadingLabel={t("Choosing folder…")}
-          onClick={() =>
-            choose().catch((cause: unknown) =>
-              setError(cause instanceof Error ? cause.message : String(cause)),
-            )
-          }
+          onClick={() => void choose()}
         >
-          {t("Choose folder…")}
+          {chosen || automatic || t("Choose folder…")}
         </Button>
         {chosen ? (
           <Button
-            className="shrink-0"
+            variant="ghost"
+            iconOnly
+            label={t("Choose automatically")}
             disabled={busy}
             onClick={() => {
               setError(null);
               if (!restoreNewProjectFolderDefault())
-                setError(t("Could not save. Your previous choice was kept."));
+                setError({ title: t("Could not save. Your previous choice was kept.") });
             }}
           >
-            {t("Choose automatically")}
+            <RotateCcw aria-hidden />
           </Button>
         ) : null}
       </Row>

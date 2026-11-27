@@ -1,80 +1,138 @@
 import { createServer, request as httpRequest, type IncomingMessage } from "node:http";
+import { DEVICE_PROOF_HEADER, DEVICE_PROOF_MAX_BYTES } from "../../src/integrations/device-proof";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { hostname, networkInterfaces } from "node:os";
+import { hostname } from "node:os";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
   isLanAddress,
+  isTailnetAddress,
   MOBILE_LAN_MAX_BYTES,
   MOBILE_LAN_MAX_WIRE_BYTES,
   MOBILE_LAN_WINDOW_MS,
+  type MobileAccessMode,
 } from "../../src/integrations/mobile-lan";
 import type { MobileAccessStatus } from "../../src/integrations/mobile-access";
 import { createLanIdentity, openLanRequest } from "./mobile-lan-crypto";
+import { ownerRpcDeadlineMs } from "../server/owner-rpc";
+import type { Socket } from "node:net";
+import { MOBILE_INGRESS_HEADER } from "../security/ingress";
 import { createMobileWssGateway } from "../security/mobile-wss";
+import { GATEWAY_ADMISSION, OVER_CAPACITY_HTTP_RESPONSE } from "../security/gateway-admission";
 import type { MobileTlsAuthority, MobileTlsMaterial } from "../security/mobile-tls";
+import {
+  currentNetworkInterfaces,
+  type NetworkInterfaces,
+  defaultRouteAddress,
+  knownDefaultRouteAddress,
+  windowsNetworkHint,
+} from "./mobile-network";
 
 /** Adapters that only reach this computer's own VMs, containers or a VPN. */
 const VIRTUAL_INTERFACE = /virtual|vethernet|docker|wsl|vpn|vmware|vbox|hyper-v/i;
-export function localMobileAddresses(): string[] {
-  return [
-    ...new Set(
-      Object.entries(networkInterfaces())
-        .sort(([a], [b]) => Number(VIRTUAL_INTERFACE.test(a)) - Number(VIRTUAL_INTERFACE.test(b)))
-        .flatMap(([, entries]) =>
-          (entries ?? [])
-            .filter(
-              (entry) => !entry.internal && entry.family === "IPv4" && isLanAddress(entry.address),
-            )
-            .map((entry) => entry.address),
-        ),
-    ),
-  ];
+export function localMobileAddresses(
+  interfaces = currentNetworkInterfaces(),
+  preferred = knownDefaultRouteAddress(),
+): string[] {
+  return reachableAddresses(interfaces, preferred).filter(isLanAddress);
 }
 /** This machine's home-network and Tailscale (100.64.0.0/10) IPv4 addresses, which
  * a client may learn as other ways to reach it. Hints only: a client proves each
  * one (host key, environment id) before using it. Virtual adapters are left out:
  * another computer cannot reach them. */
 export function reachableAddresses(
-  interfaces: ReturnType<typeof networkInterfaces> = networkInterfaces(),
+  interfaces: NetworkInterfaces = currentNetworkInterfaces(),
+  preferred = knownDefaultRouteAddress(),
 ): string[] {
   const lan: string[] = [];
   const tailnet: string[] = [];
   for (const [name, entries] of Object.entries(interfaces)) {
     for (const entry of entries ?? []) {
       if (entry.internal || entry.family !== "IPv4") continue;
+      // Tailscale on Windows reports its address as a /32, so the point-to-point VPN
+      // filter below applies to home-network addresses only.
       if (isTailnetAddress(entry.address)) tailnet.push(entry.address);
-      else if (isLanAddress(entry.address) && !VIRTUAL_INTERFACE.test(name))
+      else if (
+        isLanAddress(entry.address) &&
+        entry.netmask !== "255.255.255.255" &&
+        !VIRTUAL_INTERFACE.test(name)
+      )
         lan.push(entry.address);
     }
   }
+  lan.sort((a, b) => Number(b === preferred) - Number(a === preferred));
   return [...new Set([...lan, ...tailnet])];
 }
-function isTailnetAddress(address: string): boolean {
-  const [a, b] = address.split(".").map(Number);
-  return a === 100 && b >= 64 && b <= 127;
+/** This machine's Tailscale IPv4 addresses: the only ones the tailnet listener binds. */
+export function tailnetMobileAddresses(
+  interfaces = currentNetworkInterfaces(),
+  preferred = knownDefaultRouteAddress(),
+): string[] {
+  return reachableAddresses(interfaces, preferred).filter(isTailnetAddress);
 }
 function interfaceForAddress(address: string): string | undefined {
-  return Object.entries(networkInterfaces()).find(([, entries]) =>
+  return Object.entries(currentNetworkInterfaces()).find(([, entries]) =>
     (entries ?? []).some(
       (entry) => !entry.internal && entry.family === "IPv4" && entry.address === address,
     ),
   )?.[0];
 }
-function addressForInterface(name: string): string | undefined {
-  return (networkInterfaces()[name] ?? []).find(
-    (entry) => !entry.internal && entry.family === "IPv4" && isLanAddress(entry.address),
+function addressForInterface(
+  name: string,
+  accepts: (address: string) => boolean,
+): string | undefined {
+  return (currentNetworkInterfaces()[name] ?? []).find(
+    (entry) => !entry.internal && entry.family === "IPv4" && accepts(entry.address),
   )?.address;
+}
+
+/** A gateway failure with its own status, so a phone can tell a retryable one from a
+ * rejection. Retry: 429, 502, 504. Fix first: 400 `clock-skew` (set the phone clock),
+ * 413 (send less). Re-pair or re-scan: 403, which covers anything that fails decryption,
+ * authentication, the boot epoch or replay protection. */
+class LanFailure extends Error {
+  constructor(
+    readonly status: 400 | 413 | 502 | 504,
+    readonly code: string,
+  ) {
+    super(code);
+  }
+}
+
+const UPSTREAM_DEFAULT_MS = 180_000;
+/** Slack past the Host's own deadline, so its `HOST_RPC_DEADLINE` answer reaches the phone instead of a bare 504. */
+const UPSTREAM_DEADLINE_GRACE_MS = 30_000;
+/**
+ * Socket budget for one upstream call, read from the authenticated RPC body. A normal method
+ * keeps 180 s; a long owner method gets its Host deadline plus the grace; a method the Host
+ * bounds itself (Infinity) gets no gateway timer, so 0 disables the socket timeout.
+ */
+function upstreamBudgetMs(path: string, body: string): number {
+  if (path !== "/rpc") return UPSTREAM_DEFAULT_MS;
+  let call: { method?: unknown; params?: unknown } = {};
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (parsed && typeof parsed === "object") call = parsed;
+  } catch {
+    return UPSTREAM_DEFAULT_MS;
+  }
+  const params =
+    call.params && typeof call.params === "object" && !Array.isArray(call.params)
+      ? (call.params as Record<string, unknown>)
+      : {};
+  const deadline = ownerRpcDeadlineMs(String(call.method), params);
+  if (!Number.isFinite(deadline)) return 0;
+  return Math.max(UPSTREAM_DEFAULT_MS, deadline + UPSTREAM_DEADLINE_GRACE_MS);
 }
 
 async function boundedBody(request: IncomingMessage): Promise<string> {
   if (Number(request.headers["content-length"]) > MOBILE_LAN_MAX_WIRE_BYTES)
-    throw new Error("Too large");
+    throw new LanFailure(413, "request-too-large");
   let size = 0;
   const chunks: Buffer[] = [];
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > MOBILE_LAN_MAX_WIRE_BYTES) throw new Error("Too large");
+    if (size > MOBILE_LAN_MAX_WIRE_BYTES) throw new LanFailure(413, "request-too-large");
     chunks.push(chunk);
   }
   return Buffer.concat(chunks).toString("utf8");
@@ -85,11 +143,13 @@ export function createLanGateway(
   identity: ReturnType<typeof createLanIdentity>,
   environmentId: string,
   getPort: () => number,
+  /** Per-boot secret that marks forwarded requests as the phone listener's. */
+  ingressSecret?: string,
 ) {
   const seen = new Map<string, number>();
   const epoch = randomBytes(32).toString("hex");
   let pending = 0;
-  return createServer(
+  const server = createServer(
     { requestTimeout: 180_000, headersTimeout: 10_000, maxHeaderSize: 8192 },
     async (request, response) => {
       response.setHeader("Content-Type", "application/json");
@@ -98,6 +158,12 @@ export function createLanGateway(
       const deny = () => {
         if (!response.destroyed)
           response.writeHead(403).end('{"error":"Mobile LAN request rejected."}');
+      };
+      const fail = (failure: LanFailure) => {
+        if (!response.destroyed)
+          response
+            .writeHead(failure.status)
+            .end(JSON.stringify({ error: "Mobile LAN request failed.", code: failure.code }));
       };
       // The public boot challenge prevents replay across listener restarts.
       if (
@@ -140,8 +206,13 @@ export function createLanGateway(
           !input ||
           typeof input !== "object" ||
           input.epoch !== epoch ||
-          !Number.isFinite(input.time) ||
-          Math.abs(now - input.time) > MOBILE_LAN_WINDOW_MS ||
+          !Number.isFinite(input.time)
+        )
+          throw new Error("Invalid request");
+        // The envelope is already authenticated here, so naming the skew reveals nothing.
+        if (Math.abs(now - input.time) > MOBILE_LAN_WINDOW_MS)
+          throw new LanFailure(400, "clock-skew");
+        if (
           seen.has(opened.envelope.id) ||
           seen.size >= 10_000 ||
           !["/rpc", "/mobile/pairing/redeem"].includes(input.path) ||
@@ -149,11 +220,18 @@ export function createLanGateway(
           Buffer.byteLength(input.body) > MOBILE_LAN_MAX_BYTES ||
           (input.path === "/rpc" &&
             (typeof input.token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(input.token))) ||
-          (input.path === "/mobile/pairing/redeem" && input.token !== undefined)
+          (input.path === "/mobile/pairing/redeem" && input.token !== undefined) ||
+          // Device proof of possession: a compact JWS that only /rpc requests carry.
+          (input.proof !== undefined &&
+            (input.path !== "/rpc" ||
+              typeof input.proof !== "string" ||
+              input.proof.length > DEVICE_PROOF_MAX_BYTES ||
+              !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(input.proof)))
         )
           throw new Error("Invalid request");
         // Remember before dispatch; a captured write can never execute twice.
         seen.set(opened.envelope.id, now + MOBILE_LAN_WINDOW_MS * 2);
+        const budget = upstreamBudgetMs(input.path, input.body);
         const result = await new Promise<{ status: number; body: string }>((resolve, reject) => {
           const upstream = httpRequest(
             {
@@ -165,6 +243,10 @@ export function createLanGateway(
                 "Content-Type": "application/json",
                 "Content-Length": Buffer.byteLength(input.body),
                 ...(input.token ? { Authorization: `Bearer ${input.token}` } : {}),
+                // The gateway only relays the client's proof; the Host verifies it.
+                ...(input.proof ? { [DEVICE_PROOF_HEADER]: input.proof } : {}),
+                // Marks this as the phone listener, so the Host never takes it for this computer.
+                ...(ingressSecret ? { [MOBILE_INGRESS_HEADER]: ingressSecret } : {}),
               },
             },
             (reply) => {
@@ -172,10 +254,11 @@ export function createLanGateway(
               const chunks: Buffer[] = [];
               reply.on("data", (chunk: Buffer) => {
                 size += chunk.length;
-                if (size > MOBILE_LAN_MAX_BYTES) upstream.destroy(new Error("Response too large"));
+                if (size > MOBILE_LAN_MAX_BYTES)
+                  upstream.destroy(new LanFailure(413, "response-too-large"));
                 else chunks.push(chunk);
               });
-              reply.on("error", reject);
+              reply.on("error", () => reject(new LanFailure(502, "upstream-failed")));
               reply.on("end", () =>
                 resolve({
                   status: reply.statusCode ?? 502,
@@ -189,19 +272,84 @@ export function createLanGateway(
           };
           response.once("close", disconnect);
           upstream.once("close", () => response.off("close", disconnect));
-          upstream.setTimeout(180_000, () => upstream.destroy(new Error("Timeout")));
-          upstream.on("error", reject);
+          if (budget > 0)
+            upstream.setTimeout(budget, () =>
+              upstream.destroy(new LanFailure(504, "upstream-timeout")),
+            );
+          upstream.on("error", (error) =>
+            reject(error instanceof LanFailure ? error : new LanFailure(502, "upstream-failed")),
+          );
           upstream.end(input.body);
         });
         if (!response.destroyed) response.end(JSON.stringify(opened.seal(result)));
-      } catch {
-        deny();
+      } catch (error) {
+        if (error instanceof LanFailure) fail(error);
+        else deny();
       } finally {
         pending--;
       }
     },
   );
+  // Admission happens per TCP socket: plain HTTP lets a 429 reach sockets past the cap
+  // instead of Node dropping them silently. Only the reserve is answered, the rest are destroyed.
+  const admitted = new Set<Socket>();
+  const rejecting = new Set<Socket>();
+  server.maxConnections = GATEWAY_ADMISSION.maxAdmitted + GATEWAY_ADMISSION.rejectReserve;
+  server.on("connection", (socket) => {
+    socket.on("error", () => socket.destroy());
+    if (admitted.size < GATEWAY_ADMISSION.maxAdmitted) {
+      admitted.add(socket);
+      socket.once("close", () => admitted.delete(socket));
+    } else if (rejecting.size < GATEWAY_ADMISSION.rejectReserve) {
+      rejecting.add(socket);
+      socket.once("close", () => rejecting.delete(socket));
+      socket.end(OVER_CAPACITY_HTTP_RESPONSE, () => socket.destroy());
+    } else socket.destroy();
+  });
+  return server;
 }
+
+// Windows (Hyper-V, WSL, Docker) reserves new blocks of the dynamic range 49152-65535 after
+// reboots and network service restarts. An OS-assigned port lands there and later fails with
+// EACCES, which moves the endpoint paired phones hold. Paired ports come from below that range.
+const STABLE_PORT_FIRST = 20000;
+const STABLE_PORT_SPAN = 20000;
+const STABLE_PORT_ATTEMPTS = 24;
+
+/** A port chosen from the environment id, so it stays the same across restarts and reinstalls. */
+export function stablePortCandidates(environmentId: string, slot: number): number[] {
+  let hash = 2166136261;
+  for (const char of environmentId) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0;
+  const base = hash % STABLE_PORT_SPAN;
+  // Even offsets for the plain listener, odd for TLS: the two never pick the same port.
+  return Array.from(
+    { length: STABLE_PORT_ATTEMPTS },
+    (_, index) =>
+      STABLE_PORT_FIRST + ((base - (base % 2) + slot + index * 2 * 97) % STABLE_PORT_SPAN),
+  );
+}
+
+async function listenStablePort(
+  listen: (port: number) => Promise<void>,
+  environmentId: string,
+  slot: number,
+) {
+  for (const port of stablePortCandidates(environmentId, slot)) {
+    try {
+      return await listen(port);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EACCES" && code !== "EADDRINUSE") throw error;
+    }
+  }
+  await listen(0);
+}
+
+/** The check reads the OS interface list only, so a short period costs nothing and a
+ * restored address is served again within one tick. The listener is closed only after
+ * this many consecutive polls without the address. */
+const ADDRESS_POLL_MS = 5_000;
+const ADDRESS_MISSES_BEFORE_CLOSE = 3;
 
 type SavedAccess = {
   key: string;
@@ -228,6 +376,7 @@ export class MobileLanAccess {
   private loading?: Promise<void>;
   private operation?: Promise<MobileAccessStatus>;
   private addressTimer?: ReturnType<typeof setInterval>;
+  private missedPolls = 0;
   private addressCheck?: Promise<void>;
   private notice?: string;
   private disposed = false;
@@ -238,7 +387,17 @@ export class MobileLanAccess {
     private readonly addresses = localMobileAddresses,
     private readonly makeGateway = createLanGateway,
     private readonly tlsOptions?: MobileLanTlsOptions,
-  ) {}
+    /** `tailscale`: the same encrypted phone listener, bound to this machine's tailnet
+     * address instead of a home-network one. */
+    private readonly mode: MobileAccessMode = "lan",
+  ) {
+    this.accepts = mode === "tailscale" ? isTailnetAddress : isLanAddress;
+    // Both listeners share the stable-port hash but bind different addresses; offset the
+    // slots anyway so a saved port never points at the other listener's choice.
+    this.slotOffset = mode === "tailscale" ? 2 : 0;
+  }
+  private readonly accepts: (address: string) => boolean;
+  private readonly slotOffset: number;
 
   private load(): Promise<void> {
     if (this.loading) return this.loading;
@@ -254,7 +413,7 @@ export class MobileLanAccess {
       if (
         typeof saved.enabled !== "boolean" ||
         typeof saved.key !== "string" ||
-        (saved.address !== undefined && !isLanAddress(saved.address)) ||
+        (saved.address !== undefined && !this.accepts(saved.address)) ||
         (saved.interfaceName !== undefined &&
           (typeof saved.interfaceName !== "string" ||
             !saved.interfaceName ||
@@ -284,7 +443,17 @@ export class MobileLanAccess {
   }
   async status(): Promise<MobileAccessStatus> {
     await this.load();
-    const addresses = this.addresses();
+    if (this.addresses === localMobileAddresses) await defaultRouteAddress();
+    const addresses = this.orderedAddresses();
+    const addressInterfaces = Object.fromEntries(
+      addresses.flatMap((address) => {
+        const name = interfaceForAddress(address);
+        return name ? [[address, name]] : [];
+      }),
+    );
+    const networkHint = await windowsNetworkHint(
+      addressInterfaces[this.saved?.address ?? addresses[0]],
+    );
     const active = this.gateway?.address();
     const ready = active && typeof active !== "string" && addresses.includes(active.address);
     const tlsActive = this.wssGateway?.address();
@@ -299,7 +468,7 @@ export class MobileLanAccess {
         ? this.tlsBootstrap
         : undefined;
     return {
-      mode: "lan",
+      mode: this.mode,
       state: ready
         ? "ready"
         : this.notice
@@ -308,6 +477,8 @@ export class MobileLanAccess {
             ? "setup-required"
             : "unavailable",
       addresses,
+      addressInterfaces,
+      ...(networkHint ? { networkHint } : {}),
       ...(this.notice ? { reason: this.notice } : {}),
       machineName: hostname().slice(0, 120),
       ...(ready
@@ -315,6 +486,13 @@ export class MobileLanAccess {
         : {}),
       ...(tls ? { tls } : {}),
     };
+  }
+  private orderedAddresses(): string[] {
+    const addresses = [...this.addresses()];
+    const saved = this.saved;
+    if (saved?.enabled && saved.address)
+      addresses.sort((a, b) => Number(b === saved.address) - Number(a === saved.address));
+    return addresses;
   }
   async start(): Promise<void> {
     await this.load();
@@ -331,14 +509,22 @@ export class MobileLanAccess {
         const selected = this.saved?.address;
         if (!selected) return;
         const current = this.saved?.interfaceName
-          ? addressForInterface(this.saved.interfaceName)
+          ? addressForInterface(this.saved.interfaceName, this.accepts)
           : selected;
         const available = !!current && this.addresses().includes(current);
         const active = this.gateway?.address();
         if (!available) {
-          this.notice = "The selected mobile network interface is unavailable.";
-          if (active) await this.closeGateway();
-        } else if (
+          // A Wi-Fi roam or DHCP renewal drops the address for a moment. Closing the
+          // listener ends every phone's WebSocket, so wait for a few polls in a row.
+          this.missedPolls++;
+          if (this.missedPolls >= ADDRESS_MISSES_BEFORE_CLOSE) {
+            this.notice = "The selected mobile network interface is unavailable.";
+            if (active) await this.closeGateway();
+          }
+          return;
+        }
+        this.missedPolls = 0;
+        if (
           available &&
           (!active || (typeof active !== "string" && active.address !== current)) &&
           !this.disposed
@@ -351,7 +537,7 @@ export class MobileLanAccess {
         .finally(() => {
           if (this.addressCheck === check) this.addressCheck = undefined;
         });
-    }, 15_000);
+    }, ADDRESS_POLL_MS);
     this.addressTimer.unref?.();
   }
   enable(address?: unknown): Promise<MobileAccessStatus> {
@@ -359,9 +545,10 @@ export class MobileLanAccess {
     const operation = (async (): Promise<MobileAccessStatus> => {
       await this.load();
       if (this.disposed) throw new Error("Host is closing");
-      const addresses = this.addresses();
+      if (this.addresses === localMobileAddresses) await defaultRouteAddress();
+      const addresses = this.orderedAddresses();
       const selected = address === undefined ? addresses[0] : address;
-      if (typeof selected !== "string" || !isLanAddress(selected) || !addresses.includes(selected))
+      if (typeof selected !== "string" || !this.accepts(selected) || !addresses.includes(selected))
         return this.status();
       if (
         this.gateway?.address() &&
@@ -378,13 +565,33 @@ export class MobileLanAccess {
           material = await this.tlsOptions.tlsAuthority.issue([selected]);
         }
       } catch {
-        return { mode: "lan", state: "unavailable", addresses };
+        return { mode: this.mode, state: "unavailable", addresses };
       }
       await this.closeGateway();
-      const gateway = this.makeGateway(this.identity, this.environmentId, this.getPort);
+      const gateway = this.makeGateway(
+        this.identity,
+        this.environmentId,
+        this.getPort,
+        this.tlsOptions?.ingressSecret,
+      );
       let wss: ReturnType<typeof createMobileWssGateway> | undefined;
-      gateway.maxConnections = 32;
       try {
+        let portChanged = false;
+        const listenSaved = async (
+          listen: (port: number) => Promise<void>,
+          savedPort: number | undefined,
+          slot: number,
+        ) => {
+          if (savedPort) {
+            try {
+              return await listen(savedPort);
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== "EACCES") throw error;
+              portChanged = true;
+            }
+          }
+          await listenStablePort(listen, this.environmentId, slot);
+        };
         const listenGateway = (port: number) =>
           new Promise<void>((resolve, reject) => {
             gateway.once("error", reject);
@@ -395,7 +602,7 @@ export class MobileLanAccess {
           });
         // A paired device holds this endpoint. Never silently replace a saved
         // port when another process owns it; surface unavailable instead.
-        await listenGateway(this.saved?.port ?? 0);
+        await listenSaved(listenGateway, this.saved?.port, this.slotOffset);
         if (this.disposed) throw new Error("Host is closing");
         const active = gateway.address();
         if (!active || typeof active === "string") throw new Error("LAN access unavailable");
@@ -416,7 +623,7 @@ export class MobileLanAccess {
                 resolve();
               });
             });
-          await listen(this.saved?.tlsPort ?? 0);
+          await listenSaved(listen, this.saved?.tlsPort, this.slotOffset + 1);
           const address = wss.address();
           if (!address || typeof address === "string")
             throw new Error("Mobile TLS access unavailable");
@@ -439,7 +646,7 @@ export class MobileLanAccess {
         this.tlsBootstrap = tls;
         this.tlsExpiresAt = material?.expiresAt;
         this.notice =
-          previousAddress && previousAddress !== selected
+          portChanged || (previousAddress && previousAddress !== selected)
             ? "Mobile address changed. Reconnect paired devices using the new endpoint."
             : undefined;
         this.watchAddress();
@@ -458,7 +665,11 @@ export class MobileLanAccess {
         this.notice =
           (error as NodeJS.ErrnoException).code === "EADDRINUSE"
             ? "The saved mobile port is in use. Free it and retry."
-            : "Mobile LAN access could not start. Check the selected network and retry.";
+            : (error as NodeJS.ErrnoException).code === "EACCES"
+              ? "The mobile port is blocked by Windows or system policy. Choose another port or check network permissions."
+              : (error as NodeJS.ErrnoException).code === "EADDRNOTAVAIL"
+                ? "The selected mobile address is no longer available. Choose an active network and retry."
+                : "Mobile access could not start. Check the selected network and retry.";
         if (this.gateway === gateway || (wss && this.wssGateway === wss)) {
           await this.closeGateway();
         } else {
@@ -468,7 +679,7 @@ export class MobileLanAccess {
           wss?.close();
         }
         return {
-          mode: "lan",
+          mode: this.mode,
           state: "unavailable",
           addresses,
           reason: this.notice,

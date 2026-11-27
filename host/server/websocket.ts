@@ -1,16 +1,21 @@
 import { createHash } from "node:crypto";
+import { DEVICE_PROOF_CAPABILITY } from "../../src/integrations/device-proof";
+import { PROJECTLESS_SESSIONS_CAPABILITY } from "../../src/shared/model/host-contracts/projectless-sessions";
+import { attachDevServerTunnel, TUNNEL_CAPABILITY } from "../dev-servers/dev-server-tunnel";
 import { hostBulkDependencies } from "../transport/http/bulk";
 import { attachHostWebSocketTransport } from "../transport/ws/server";
 import { requestingDeviceName } from "../desktop/remoteActivity";
 import { memoized } from "../desktop/requester-name";
 import type { ServerBindings } from "./bindings";
-import { createTailnetServeHosts } from "../mobile/tailnet-serve-hosts";
+import { attachBrowserMedia } from "../browser/browser-media";
+import { resolveBrowserScope } from "./rpc-browser";
 export function createWebsocketRuntime(
   dependencies: Pick<
     ServerBindings,
     | "server"
     | "engine"
     | "mobileIngressSecret"
+    | "deviceProofGate"
     | "domainDispatcher"
     | "subscriptionHub"
     | "bulkTransfers"
@@ -22,39 +27,43 @@ export function createWebsocketRuntime(
     | "withWorkspaceOwner"
     | "tasks"
     | "attachmentOwnership"
-    | "mobileAccess"
+    | "sharedBrowser"
+    | "featureMeta"
   >,
 ) {
-  const tailnetHosts = createTailnetServeHosts(() => dependencies.mobileAccess.status());
   const websocket = attachHostWebSocketTransport({
-    // Phones away from home reach /ws through this Host's own Tailscale Serve name;
-    // the proxy connects from loopback and the bearer credential still authenticates.
-    allowedHosts: tailnetHosts.current,
     server: dependencies.server,
     environmentId: dependencies.engine.store.environmentId,
     mobileIngressSecret: dependencies.mobileIngressSecret,
     methods: dependencies.domainDispatcher.methods,
     capabilities: [
+      TUNNEL_CAPABILITY,
       "browser.sessionScopes.v1",
       "browser.ownerPresentationScopes.v1",
-      "native.buffers.recovery.v1",
       "transport.ws.models.v1",
       "transport.ws.devices.v1",
+      "transport.ws.devices.video.v1",
+      "devices.touch.v1",
       "transport.ws.devices.preview.mobile.v1",
+      "transport.ws.voice.v1",
+      // The phone's background voice socket has no HTTP fallback: without this its spoken
+      // message ("assistant.request") is refused as incompatible before it is ever sent.
+      "assistant.v1",
       "native.services.v1",
       "native.workspaces.v1",
-      "native.buffers.upload.v1",
-      "native.buffers.delivery.v1",
       "native.services.delivery.v1",
       "native.services.workspace.format.bounded.v1",
-      "native.buffers.delivery.ack.v1",
       "native.services.delivery.ack.v1",
+      "native.services.delivery.admission.v1",
       "native.delivery.epochs.v2",
+      "native.delivery.epochs.gaps.v1",
       "transport.ws.workspaces.cleanup.v1",
       "transport.ws.sessions.v2",
       "sessions.references.v1",
       "sessions.approvalOccurrence.v1",
+      "sessions.approvalGrants.v1",
       "sessions.desktopControlReceipts.v1",
+      PROJECTLESS_SESSIONS_CAPABILITY,
       "transport.ws.queue.v2",
       "transport.ws.files.v2",
       "transport.ws.terminals.v2",
@@ -68,7 +77,9 @@ export function createWebsocketRuntime(
       "transport.ws.automations.v2",
       "transport.ws.health.v2",
       "transport.ws.bulk.v2",
+      DEVICE_PROOF_CAPABILITY,
     ],
+    proof: (request, token) => dependencies.deviceProofGate(request, token),
     subscriptions: dependencies.subscriptionHub,
     bulk: dependencies.bulkTransfers,
     bulkDependencies: async (method, params) => {
@@ -111,5 +122,48 @@ export function createWebsocketRuntime(
         async () => await dependencies.domainDispatcher.dispatch(method, params, context),
       ),
   });
-  return { websocket };
+  // The tunnel shares the Host listener and its lifecycle: closing the websocket runtime
+  // also closes every open dev-server tunnel.
+  const tunnel = attachDevServerTunnel({
+    server: dependencies.server,
+    mobileIngressSecret: dependencies.mobileIngressSecret,
+    authenticate: async (token) =>
+      await dependencies.engine.store.db.outsideScope(async () =>
+        (await dependencies.engine.store.authenticated(token))
+          ? {
+              id: createHash("sha256").update(token).digest("hex"),
+              authorized: async () => await dependencies.engine.store.authenticated(token),
+            }
+          : null,
+      ),
+    proof: (request, token) => dependencies.deviceProofGate(request, token),
+    endpoint: async (params) => await dependencies.devServerAccess.endpoint(params),
+  });
+  const closeBrowserMedia = attachBrowserMedia({
+    server: dependencies.server,
+    environmentId: dependencies.engine.store.environmentId,
+    mobileIngressSecret: dependencies.mobileIngressSecret,
+    proof: (request, token) => dependencies.deviceProofGate(request, token),
+    authorized: async (token, scope) =>
+      await dependencies.engine.store.db.outsideScope(async () => {
+        if (!(await dependencies.engine.store.authenticated(token))) return false;
+        if (scope) await resolveBrowserScope(dependencies, scope);
+        return true;
+      }),
+    open: async (params, token) =>
+      await dependencies.engine.store.db.outsideScope(async () => {
+        const scope = await resolveBrowserScope(dependencies, params);
+        return dependencies.sharedBrowser.openFrameStream(scope, token);
+      }),
+  });
+  return {
+    websocket: {
+      ...websocket,
+      close: async () => {
+        closeBrowserMedia();
+        await tunnel.close();
+        await websocket.close();
+      },
+    },
+  };
 }

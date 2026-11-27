@@ -53,6 +53,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 const button = (label: string) =>
@@ -85,14 +86,17 @@ function restore() {
 }
 
 it("retains the restored target and frame through pending and failed status, then discovers that target", async () => {
+  vi.useFakeTimers();
   const scope = restore();
   const api = makeApi();
   let reject!: (error: Error) => void;
-  vi.mocked(api.status).mockReturnValueOnce(
-    new Promise((_, fail) => {
-      reject = fail;
-    }),
-  );
+  vi.mocked(api.status)
+    .mockReturnValueOnce(
+      new Promise((_, fail) => {
+        reject = fail;
+      }),
+    )
+    .mockRejectedValueOnce(new Error("Status unavailable"));
   await act(async () => root.render(createElement(DevicePanel, { api, transferScope: scope })));
   const retained = () =>
     readToolsDraftTransfer(scope.cwd, scope.sessionId, scope.targetValue)!.device;
@@ -101,7 +105,9 @@ it("retains the restored target and frame through pending and failed status, the
   await act(async () => reject(new Error("Status unavailable")));
   expect(retained()!.selected).toBe(second.id);
   expect(api.list).not.toHaveBeenCalled();
-  await click("Retry");
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  await act(async () => vi.advanceTimersByTimeAsync(3000));
+  await click("Try again");
   expect(retained()!.selected).toBe(second.id);
   expect(container.textContent).toContain("Second phone");
   expect(api.claimControl).not.toHaveBeenCalled();
@@ -147,4 +153,50 @@ it("shows an unknown discovery count while pending or failed, and zero only afte
     await click("Setup and access");
   }
   expect(summary()).toContain("0 devices found");
+});
+
+it("uses singular copy for exactly one discovered device", async () => {
+  const api = makeApi();
+  vi.mocked(api.list).mockResolvedValue({ devices: [second], errors: [] });
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await click("Device options");
+  await click("Setup and access");
+  const summary = document.querySelector(".device-panel-setup-summary")!.textContent;
+  expect(summary).toContain("1 device found");
+  expect(summary).not.toContain("1 devices found");
+});
+
+it("keeps a transient opening discovery failure quiet and retries automatically", async () => {
+  vi.useFakeTimers();
+  const api = makeApi();
+  vi.mocked(api.list).mockRejectedValueOnce(
+    new Error("RPC_HOST_UNAVAILABLE: host connection closed"),
+  );
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.textContent).toContain("Loading devices…");
+  expect(container.textContent).not.toContain("The device connection is unavailable");
+  await act(async () => vi.advanceTimersByTimeAsync(2000));
+  expect(api.list).toHaveBeenCalledTimes(2);
+  expect(container.textContent).toContain("First phone");
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.textContent).not.toContain("The device connection is unavailable");
+});
+
+it("shows the discovery error after three seconds and clears it after a successful refresh", async () => {
+  vi.useFakeTimers();
+  const api = makeApi();
+  const failure = new Error("RPC_HOST_UNAVAILABLE: host connection closed");
+  vi.mocked(api.list).mockRejectedValueOnce(failure).mockRejectedValueOnce(failure);
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await act(async () => vi.advanceTimersByTimeAsync(2999));
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not load devices",
+  );
+  expect(container.textContent).toContain("The device connection is unavailable");
+  await click("Refresh devices");
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.textContent).not.toContain("The device connection is unavailable");
 });

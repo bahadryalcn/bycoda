@@ -4,7 +4,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SocialAccount, SocialCampaign, SocialJob } from "../../model/social";
 import type { SocialProgram } from "../../model/socialProgram";
-import { ContentList, campaignState, type ContentListProps } from "./ContentList";
+import {
+  ContentList,
+  campaignState,
+  latestPublishJobs,
+  type ContentListProps,
+} from "./ContentList";
 
 let element: HTMLDivElement;
 let root: Root;
@@ -44,7 +49,7 @@ function job(
     kind,
     status,
     scheduledAt,
-    accountId: "x1",
+    accountId: ["c3", "c4"].includes(campaignId) ? "l1" : "x1",
     payload: { text: "", media: [] },
   } as unknown as SocialJob;
 }
@@ -66,6 +71,7 @@ function render(patch: Partial<ContentListProps> = {}) {
     onAccountFilter: vi.fn(),
     onStatusFilter: vi.fn(),
     onOpen: vi.fn(),
+    onReviewProgram: vi.fn(),
     ...patch,
   };
   act(() => root.render(createElement(ContentList, props)));
@@ -90,23 +96,50 @@ afterEach(() => {
 
 describe("campaignState", () => {
   it("is the status of the newest publish job of that campaign", () => {
-    const state = campaignState(queuedPost, [
-      job("c2", "failed", 5),
-      job("c2", "queued", 9),
-      job("c3", "succeeded", 99),
-    ]);
+    const state = campaignState(
+      queuedPost,
+      latestPublishJobs([
+        job("c2", "failed", 5),
+        job("c2", "queued", 9),
+        job("c3", "succeeded", 99),
+      ]),
+    );
     expect(state).toBe("queued");
   });
 
   it("ignores replies and messages of the same campaign", () => {
     expect(
-      campaignState(queuedPost, [job("c2", "succeeded", 50, "reply"), job("c2", "queued", 5)]),
+      campaignState(
+        queuedPost,
+        latestPublishJobs([job("c2", "succeeded", 50, "reply"), job("c2", "queued", 5)]),
+      ),
     ).toBe("queued");
   });
 
   it("is Draft with no jobs, and Paused when a campaign without jobs is paused", () => {
-    expect(campaignState(draftPost, [])).toBe("draft");
-    expect(campaignState({ ...draftPost, paused: true }, [])).toBe("paused");
+    expect(campaignState(draftPost, latestPublishJobs([]))).toBe("draft");
+    expect(campaignState({ ...draftPost, paused: true }, latestPublishJobs([]))).toBe("paused");
+  });
+
+  it("keeps the first loaded job when two publish jobs share the newest time", () => {
+    const first = job("c2", "failed", 10);
+    const second = job("c2", "queued", 10);
+    expect(campaignState(queuedPost, latestPublishJobs([first, second]))).toBe("failed");
+    expect(campaignState(queuedPost, latestPublishJobs([second, first]))).toBe("queued");
+  });
+
+  it("reads the newest job from a map built in one pass over many jobs", () => {
+    const loaded = [
+      job("c2", "succeeded", 1),
+      job("c3", "failed", 2),
+      job("c2", "queued", 30),
+      job("c3", "review", 7),
+      job("c2", "failed", 20),
+    ];
+    const latest = latestPublishJobs(loaded);
+    expect(latest.get("c2")?.status).toBe("queued");
+    expect(latest.get("c3")?.status).toBe("review");
+    expect(campaignState(queuedPost, latest)).toBe("queued");
   });
 });
 
@@ -114,11 +147,13 @@ describe("ContentList", () => {
   it("lists every saved post by name with its state", () => {
     render();
     expect(names()).toEqual(["Draft idea", "Queued post", "Sent post", "Failed post"]);
-    const rows = [...element.querySelectorAll(".content-row")].map((row) => row.textContent ?? "");
-    expect(rows[0]).toContain("Draft");
-    expect(rows[1]).toContain("Scheduled");
-    expect(rows[2]).toContain("Sent");
-    expect(rows[3]).toContain("Failed");
+    const rows = [...element.querySelectorAll('.content-row-meta [role="img"]')];
+    expect(rows.map((row) => row.getAttribute("aria-label"))).toEqual([
+      "Draft",
+      "Scheduled",
+      "Sent",
+      "Failed",
+    ]);
   });
 
   it.each([
@@ -201,9 +236,36 @@ describe("ContentList", () => {
     render({ programs });
     const section = element.querySelector(".content-programs")!;
     expect(section.textContent).toContain("Weekly tip");
-    expect(section.textContent).toContain("Active");
-    expect(section.textContent).toContain("Paused");
-    expect(section.textContent).toContain("Cancelled");
-    expect(section.querySelectorAll("button")).toHaveLength(0);
+    expect(
+      [...section.querySelectorAll('[role="img"]')].map((icon) => icon.getAttribute("aria-label")),
+    ).toEqual(["Active", "Paused", "Cancelled"]);
+    expect(section.querySelectorAll("button.content-row")).toHaveLength(3);
   });
+});
+
+it("opens the selected paused program for review", () => {
+  const program = { id: "program-1", name: "Repeat launch", enabled: false } as SocialProgram;
+  const onReviewProgram = vi.fn();
+  render({ programs: [program], onReviewProgram });
+  const review = [...element.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Repeat launch"),
+  );
+  expect(review).toBeDefined();
+  act(() => review!.click());
+  expect(onReviewProgram).toHaveBeenCalledWith(program);
+});
+
+it("filters a multi-account post by each matching job and displays mixed outcomes", () => {
+  const campaign = {
+    ...queuedPost,
+    variants: [...queuedPost.variants, { ...queuedPost.variants[0]!, accountId: "l1" }],
+  };
+  const jobs = [job("c2", "failed", 10), { ...job("c2", "succeeded", 20), accountId: "l1" }];
+  render({ campaigns: [campaign], jobs, accountFilter: "x1", statusFilter: "failed" });
+  expect(names()).toEqual(["Queued post"]);
+  expect(element.querySelector('.content-row-meta [aria-label="Failed"]')).not.toBeNull();
+  expect(element.querySelector('.content-row-meta [aria-label="Sent"]')).toBeNull();
+  render({ campaigns: [campaign], jobs });
+  expect(element.querySelector('.content-row-meta [aria-label="Failed"]')).not.toBeNull();
+  expect(element.querySelector('.content-row-meta [aria-label="Sent"]')).not.toBeNull();
 });

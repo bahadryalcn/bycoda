@@ -6,7 +6,9 @@ import type {
   ResolvedWorkspacePolicy,
   SessionRewindPlan,
   SessionRewindReceipt,
+  WorkspaceBaseSource,
   WorkspaceCleanupPlan,
+  WorkspaceCreationProgress,
   WorkspaceFeatureClaim,
   WorkspaceMutation,
   WorkspaceOperation,
@@ -41,6 +43,9 @@ export const WORKSPACE_RPC_METHODS = {
   cleanupApply: "workspaces.cleanup.apply",
   cleanupStatus: "workspaces.cleanup.status",
   storageStatus: "workspaces.storage.status",
+  prepareStatus: "workspaces.prepare.status",
+  prepareCancel: "workspaces.prepare.cancel",
+  renameBranch: "workspaces.renameBranch",
 } as const;
 
 /** S1 owns routing/auth. Requests convey intent; owner authorization is supplied by trusted transport. */
@@ -60,8 +65,41 @@ export interface WorkspaceRpcContract {
       /** A committed dependency, never another workspace's dirty directory. */
       dependency?: { workspaceId: string; commit: string };
       featureKey?: string;
+      /**
+       * `workspaces.creation.v2`. Extra project folders that each get a sibling worktree on the
+       * same branch. Absent means none. At most WORKSPACE_CREATION_MAX_REPOSITORIES.
+       */
+      repositories?: string[];
+      /** `workspaces.creation.v2`. Fetch the base's upstream and start from it. Absent means false. */
+      baseFromRemote?: boolean;
+      /** `workspaces.creation.v2`. Client-chosen key for `workspaces.prepare.status/cancel`. */
+      progressId?: string;
     };
-    response: { workspace: ManagedWorkspace; operationId: string };
+    response: {
+      workspace: ManagedWorkspace;
+      operationId: string;
+      /** Extra folder to its worktree path; empty when none were requested. */
+      extraWorktrees?: Record<string, string>;
+      /** "local" when a remote start was requested but no upstream branch existed. */
+      baseSource?: WorkspaceBaseSource;
+    };
+  };
+  "workspaces.prepare.status": {
+    request: { progressId: string };
+    response: WorkspaceCreationProgress;
+  };
+  /** Aborts the git child and rolls back what this operation created. Idempotent. */
+  "workspaces.prepare.cancel": {
+    request: { progressId: string };
+    response: WorkspaceCreationProgress;
+  };
+  /**
+   * Renames the temporary `by/<8hex>` branch (primary and sibling worktrees) to `by/<fragment>`.
+   * Refused while a mutation is active, an upstream is set or a delivery review is pending.
+   */
+  "workspaces.renameBranch": {
+    request: WorkspaceMutation & { fragment: string };
+    response: { branchRef: string; renamed: boolean; revision: number };
   };
   "workspaces.get": { request: { workspaceId: string }; response: ManagedWorkspace | null };
   "workspaces.list": {

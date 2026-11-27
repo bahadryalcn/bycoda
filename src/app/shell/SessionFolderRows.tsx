@@ -56,6 +56,28 @@ export function FolderRow({
   const count = sessions.length;
   const accent = folderAccent(folder.colorIndex, folder.customColor);
   const actionCount = (onNewSession ? 1 : 0) + (onOpenMenu ? 1 : 0);
+  const trailing = (
+    <Text size="micro" tone="muted" className="flex items-center gap-1.5 tabular-nums">
+      {busy ? (
+        <span role="img" aria-label={t("Working")}>
+          <TerminalSpinner />
+        </span>
+      ) : null}
+      {needsApproval ? (
+        <span role="img" aria-label={t("Needs input")}>
+          <CircleAlert className="icon-xs" tone="warning" strokeWidth={1.75} />
+        </span>
+      ) : !expanded && !busy && done ? (
+        <Check className="icon-xs" tone="success" />
+      ) : null}
+      <span
+        data-action-yield={actionCount ? "" : undefined}
+        className={`text-end ${actionCount === 2 ? "pointer-fine:w-10" : actionCount === 1 ? "pointer-fine:w-5" : ""}`}
+      >
+        {count}
+      </span>
+    </Text>
+  );
   const header = (
     <Button
       variant="item"
@@ -63,11 +85,11 @@ export function FolderRow({
       type="button"
       tooltip={folder.name}
       tooltipWhen="overflow"
-      tooltipDetails={[busy ? t("Working") : null, needsApproval ? t("Needs input") : null]}
       tooltipWide
       data-folder-row=""
       expanded={expanded}
       chevron="start"
+      trailing={trailing}
       restingIcon={
         <Text
           as="span"
@@ -120,30 +142,6 @@ export function FolderRow({
       >
         {nameNode ?? folder.name}
       </Text>
-      <Text
-        size="micro"
-        tone="muted"
-        className="relative flex shrink-0 items-center gap-1.5 tabular-nums"
-      >
-        {busy ? (
-          <span role="img" aria-label={t("Working")}>
-            <TerminalSpinner />
-          </span>
-        ) : null}
-        {needsApproval ? (
-          <span role="img" aria-label={t("Needs input")}>
-            <CircleAlert className="icon-xs" tone="warning" strokeWidth={1.75} />
-          </span>
-        ) : !expanded && !busy && done ? (
-          <Check className="icon-xs" tone="success" strokeWidth={2} />
-        ) : null}
-        <span
-          data-action-yield={actionCount ? "" : undefined}
-          className={`text-end ${actionCount === 2 ? "pointer-fine:w-10" : actionCount === 1 ? "pointer-fine:w-5" : ""}`}
-        >
-          {count}
-        </span>
-      </Text>
     </Button>
   );
   if (!actionCount) return header;
@@ -155,7 +153,6 @@ export function FolderRow({
         {onNewSession ? (
           <InlineAction
             label={newSessionLabel}
-            tooltipDetails={[folder.name]}
             motion="none"
             type="button"
             data-no-drag
@@ -170,7 +167,6 @@ export function FolderRow({
           <InlineMoreAction
             label={t("Actions for {p0}", { p0: folder.name })}
             tooltip={t("More actions")}
-            tooltipDetails={[folder.name]}
             motion="none"
             type="button"
             data-no-drag
@@ -186,12 +182,10 @@ export function FolderRow({
 
 export function FolderRenameRow({
   folder,
-  memberCount,
   onCommit,
   onCancel,
 }: {
   folder: SessionFolder;
-  memberCount: number;
   onCommit: (name: string) => void;
   onCancel: () => void;
 }) {
@@ -255,9 +249,6 @@ export function FolderRenameRow({
         leading="snug"
         className="relative min-w-0 flex-1"
       />
-      <Text size="micro" tone="muted" className="relative shrink-0 tabular-nums">
-        {memberCount}
-      </Text>
     </Text>
   );
 }

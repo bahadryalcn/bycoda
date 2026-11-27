@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { NoteChatAction } from "./NoteChatAction";
+import { saveTabGroupLabel } from "../../workspace/model/tabGroups";
 import { ADD_NOTE_TO_CHAT_EVENT, requestAddNoteToChat, type Note } from "../notes";
 
 it("keeps the quick action on the note project and offers a distinct destination", () => {
@@ -11,30 +12,41 @@ it("keeps the quick action on the note project and offers a distinct destination
   document.body.append(container);
   const root = createRoot(container);
   const onAdd = vi.fn();
-  try {
+  const updatedDraft = vi.fn();
+  const recents = [
+    { path: "/work/other", openedAt: 1 },
+    { path: "/work/notes", openedAt: 2 },
+  ];
+  const render = (onAdd: (cwd?: string) => void) =>
     act(() =>
-      root.render(
-        createElement(NoteChatAction, {
-          projectCwd: "/work/notes",
-          recents: [
-            { path: "/work/other", openedAt: 1 },
-            { path: "/work/notes", openedAt: 2 },
-          ],
-          onAdd,
-        }),
-      ),
+      root.render(createElement(NoteChatAction, { projectCwd: "/work/notes", recents, onAdd })),
     );
+  const reads = vi.spyOn(localStorage, "getItem");
+  try {
+    render(onAdd);
     act(() => container.querySelector<HTMLButtonElement>('[data-split-part="primary"]')!.click());
     expect(onAdd).toHaveBeenLastCalledWith("/work/notes");
+    reads.mockClear();
+    render(updatedDraft);
+    expect(reads.mock.calls.filter(([key]) => key.includes("labels"))).toHaveLength(0);
     act(() => container.querySelector<HTMLButtonElement>('[data-split-part="menu"]')!.click());
+    expect(document.querySelectorAll('[role="menuitem"]')).toHaveLength(2);
+    act(() => saveTabGroupLabel("/work/other", "Local rename"));
+    expect(document.querySelector('[role="menu"]')?.textContent).toContain("Local rename");
+    const key = "bycoda:tab-group:workspace-labels";
+    localStorage.setItem(key, JSON.stringify({ "/work/other": "Renamed destination" }));
+    act(() => window.dispatchEvent(new StorageEvent("storage", { key })));
     const other = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) =>
-      item.textContent?.includes("other"),
+      item.textContent?.includes("Renamed destination"),
     );
     expect(other).toBeDefined();
     act(() => other!.click());
-    expect(onAdd).toHaveBeenLastCalledWith("/work/other");
+    expect(updatedDraft).toHaveBeenLastCalledWith("/work/other");
   } finally {
     act(() => root.unmount());
+    reads.mockRestore();
+    localStorage.removeItem("bycoda:tab-group:workspace-labels");
+    localStorage.removeItem("bycoda:tab-group:labels");
     container.remove();
     vi.unstubAllGlobals();
   }
@@ -64,5 +76,31 @@ it("routes a note without rewriting its source project or canonical note", () =>
     expect(note.sourceCwd).toBe("/work/source");
   } finally {
     window.removeEventListener(ADD_NOTE_TO_CHAT_EVENT, onAdd);
+  }
+});
+
+it("shows a plain button without a destination picker when only one project exists", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const onAdd = vi.fn();
+  try {
+    act(() =>
+      root.render(
+        createElement(NoteChatAction, {
+          projectCwd: "/work/notes",
+          recents: [{ path: "/work/notes", openedAt: 2 }],
+          onAdd,
+        }),
+      ),
+    );
+    expect(container.querySelector('[data-split-part="menu"]')).toBeNull();
+    act(() => container.querySelector("button")!.click());
+    expect(onAdd).toHaveBeenCalledExactlyOnceWith("/work/notes");
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
   }
 });

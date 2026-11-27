@@ -1,6 +1,6 @@
 import { t } from "../../../shared/i18n";
 import { confirmInApp, type AppConfirmRequest } from "../../../shared/model/appConfirm";
-import { bulkDeleteConfirmMessage } from "./bulkSessionDelete";
+import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 
 /** What a deletion is about to remove; the wording is derived from it, never from the caller. */
 export type SessionDeleteConfirmation = {
@@ -13,8 +13,7 @@ export type SessionDeleteConfirmation = {
 };
 
 const MAX_TITLE = 80;
-const shortTitle = (title: string) =>
-  title.length > MAX_TITLE ? `${title.slice(0, MAX_TITLE - 1)}…` : title;
+const shortTitle = (title: string) => truncateGraphemes(title, MAX_TITLE);
 
 /** Singular/plural title, target and accurate effect for the shared dialog. */
 export function sessionDeleteRequest(confirmation: SessionDeleteConfirmation): AppConfirmRequest {
@@ -45,25 +44,15 @@ export function sessionDeleteRequest(confirmation: SessionDeleteConfirmation): A
   };
 }
 
-/** Reads a count out of an older plain-text question so callers that still pass one get the new dialog. */
-function legacyConfirmation(message: string): SessionDeleteConfirmation {
-  const count = Number(/Delete (\d+)/.exec(message)?.[1] ?? 1);
-  const skipped = Number(/(\d+) running conversations? will be skipped/.exec(message)?.[1] ?? 0);
-  return { count, skippedRunning: skipped };
-}
-
 /**
  * Resolves true only when the owner confirms. Escape, Cancel and closing resolve false. The caller
  * deletes after this resolves and reports progress, partial failure and retry on its own surface.
  */
-export function confirmSessionDelete(input: string | SessionDeleteConfirmation): Promise<boolean> {
-  const confirmation = typeof input === "string" ? legacyConfirmation(input) : input;
+export function confirmSessionDelete(confirmation: SessionDeleteConfirmation): Promise<boolean> {
+  const request = sessionDeleteRequest(confirmation);
   return confirmInApp({
-    ...sessionDeleteRequest(confirmation),
-    // Without the in-app host (web preview, tests) the platform dialog keeps the plain question.
-    fallbackText:
-      typeof input === "string"
-        ? input
-        : bulkDeleteConfirmMessage(confirmation.count, confirmation.skippedRunning ?? 0),
+    ...request,
+    // Plain-text wording for a surface that cannot show the in-app dialog; built from the same translated copy.
+    fallbackText: `${request.title}\n\n${request.message}`,
   });
 }

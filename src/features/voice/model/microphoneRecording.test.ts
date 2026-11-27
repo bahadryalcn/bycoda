@@ -2,7 +2,10 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { MicrophoneRecording } from "./microphoneRecording";
 const access = vi.hoisted(() => ({ open: vi.fn() }));
-vi.mock("./microphoneAccess", () => ({ openMicrophone: access.open }));
+vi.mock("./microphoneAccess", async (original) => ({
+  ...(await original<typeof import("./microphoneAccess")>()),
+  openMicrophone: access.open,
+}));
 let controller: MicrophoneRecording | undefined;
 afterEach(() => {
   controller?.dispose();

@@ -21,6 +21,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 }));
 
 import {
+  HarnessLoginError,
   harnessLoginArgs,
   isHarnessAuthError,
   isHarnessAuthBlock,
@@ -29,6 +30,11 @@ import {
   resetHarnessLoginState,
   supportsHarnessLogin,
 } from "./auth";
+import {
+  getSignInInstructions,
+  offerSignInInstructionLine,
+  signInInstructionsKey,
+} from "./authInstructions";
 
 beforeEach(() => {
   resetHarnessLoginState();
@@ -228,6 +234,86 @@ describe("harness login", () => {
     await cancelled;
     expect(child.spawnChild).not.toHaveBeenCalled();
     expect(processConstructions.created).toEqual([]);
+  });
+
+  it("surfaces only the printed sign-in link and device code while the login runs", async () => {
+    const login = loginHarness("codex", "account-work");
+    await vi.waitFor(() => expect(child.watchChild).toHaveBeenCalledOnce());
+    const [, onLine, onExit, onStderr] = child.watchChild.mock.calls[0] as unknown as [
+      unknown,
+      (line: string) => void,
+      (code: number | null) => void,
+      (line: string) => void,
+    ];
+    const key = signInInstructionsKey("codex", "account-work");
+    expect(getSignInInstructions(key)).toBeUndefined();
+
+    onLine("Welcome back, fake-user@example.com, token FAKE-TOKEN-VALUE");
+    expect(getSignInInstructions(key)).toBeUndefined();
+    onLine("Open https://auth.example.com/device in a browser.");
+    onStderr("Enter code ABCD-EFGH to continue");
+    expect(getSignInInstructions(key)).toEqual({
+      url: "https://auth.example.com/device",
+      code: "ABCD-EFGH",
+    });
+    expect(JSON.stringify(getSignInInstructions(key))).not.toContain("FAKE-TOKEN-VALUE");
+    // Another account's run sees nothing.
+    expect(getSignInInstructions(signInInstructionsKey("codex"))).toBeUndefined();
+
+    onExit(0);
+    await login;
+    expect(getSignInInstructions(key)).toBeUndefined();
+  });
+
+  it("clears surfaced instructions on failure and keeps the link out of the error text", async () => {
+    const login = loginHarness("claude");
+    const failed = expect(login).rejects.toThrow("Visit sign-in link to continue");
+    await vi.waitFor(() => expect(child.watchChild).toHaveBeenCalledOnce());
+    const [, onLine, onExit, onStderr] = child.watchChild.mock.calls[0] as unknown as [
+      unknown,
+      (line: string) => void,
+      (code: number | null) => void,
+      (line: string) => void,
+    ];
+    const key = signInInstructionsKey("claude");
+    onLine("Visit https://auth.example.com/authorize?state=fake-state");
+    expect(getSignInInstructions(key)?.url).toBe(
+      "https://auth.example.com/authorize?state=fake-state",
+    );
+    onStderr("Visit https://auth.example.com/authorize?state=fake-state to continue");
+    onExit(1);
+    await failed;
+    expect(getSignInInstructions(key)).toBeUndefined();
+  });
+
+  it("fails with a coded error whose detail is redacted and keeps the exit code", async () => {
+    const login = loginHarness("codex");
+    const failed = login.catch((error: unknown) => error);
+    await vi.waitFor(() => expect(child.watchChild).toHaveBeenCalledOnce());
+    const [, , onExit, onStderr] = child.watchChild.mock.calls[0] as unknown as [
+      unknown,
+      unknown,
+      (code: number | null) => void,
+      (line: string) => void,
+    ];
+    onStderr("auth failed: token=FAKE-SECRET-VALUE-123 at https://auth.example.com/cb?code=XYZ");
+    onExit(3);
+    const error = await failed;
+    expect(error).toBeInstanceOf(HarnessLoginError);
+    expect(error).toMatchObject({ code: "exited", harness: "codex", exitCode: 3 });
+    expect((error as Error).message).not.toContain("FAKE-SECRET-VALUE-123");
+    expect((error as HarnessLoginError).detail).not.toContain("https://");
+  });
+
+  it("starts each run without the previous run's instructions", async () => {
+    const key = signInInstructionsKey("codex");
+    offerSignInInstructionLine(key, "code: OLDD-CODE");
+    const login = loginHarness("codex");
+    await vi.waitFor(() => expect(child.watchChild).toHaveBeenCalledOnce());
+    expect(getSignInInstructions(key)).toBeUndefined();
+    const onExit = child.watchChild.mock.calls[0][2] as (code: number) => void;
+    onExit(0);
+    await login;
   });
 
   it("does not invent one login flow for multi-provider harnesses", async () => {

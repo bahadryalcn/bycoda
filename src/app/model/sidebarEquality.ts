@@ -52,6 +52,7 @@ function sessionSummaryEqual(a: SessionSummary, b: SessionSummary): boolean {
     a.draft === b.draft &&
     a.automationId === b.automationId &&
     plainEqual(a.delegationParent, b.delegationParent) &&
+    plainEqual(a.backgroundOwner, b.backgroundOwner) &&
     plainEqual(a.linkedWorkItem, b.linkedWorkItem) &&
     plainEqual(a.orchestration, b.orchestration)
   );
@@ -74,6 +75,7 @@ export function liveAgentsEqual(a: readonly LiveAgent[], b: readonly LiveAgent[]
       return (
         agent.id === other.id &&
         agent.cwd === other.cwd &&
+        agent.listedRemote === other.listedRemote &&
         agent.title === other.title &&
         agent.harness === other.harness &&
         agent.activity === other.activity &&

@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import {
   queueProviderOperation,
   retireProviderEpoch,
@@ -30,6 +31,10 @@ import {
   isApprovalOccurrenceId,
 } from "../../../../shared/model/approvalOccurrence";
 import {
+  CLAUDE_WORKSPACE_GLOB,
+  type SessionApprovalScope,
+} from "../../../../shared/model/sessionApprovalGrant";
+import {
   runNativeOutputWork,
   nativeOutputSink,
   captureNativeOutputWork,
@@ -41,6 +46,7 @@ import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import { deliverQuestionReply, type QuestionDelivery } from "../questionDelivery";
 import { TurnLatch } from "../../../../shared/lib/turnLatch";
 import { nativeModelId } from "../../../../features/sessions/model/models";
+import type { SearchSource } from "../../../../shared/model/searchSources";
 import { sameProviderAccountId } from "../../../../features/providers/model/providerAccounts";
 import type {
   Attachment,
@@ -48,7 +54,7 @@ import type {
   TaskListItem,
   TaskListMeta,
 } from "../../../../features/sessions/model/session";
-import { loadClaudeHooks } from "../../../../features/settings/model/settings";
+import { loadClaudeHooks } from "../../../../features/settings/model/claudeHooksSetting";
 import {
   resolveClaudeBinary,
   spawnChild,
@@ -56,6 +62,11 @@ import {
   writeChild,
   readHarnessTaskOutput,
 } from "../../core/child";
+import {
+  loadClaudeWorkflowArtifacts,
+  workflowReference,
+  type ClaudeWorkflowReference,
+} from "./claudeWorkflowArtifacts";
 import { additionalDirsFor } from "../../core/additionalDirs";
 import {
   askUserQuestionAllowInput,
@@ -81,16 +92,21 @@ import {
   inputJsonDeltaFromEvent,
   isAgentTaskType,
   isClaudeUltracodeEffort,
+  claudeSessionApprovalScope,
   isReplayedTaskNotificationResult,
   isSubagentMessage,
   isTerminalAgentTaskStatus,
   isTodoTool,
   applyClaudeTaskTool,
   isUsageLimitResult,
+  isUsageLimitText,
+  claudeExitMessage,
+  pushClaudeStderrTail,
   normalizeClaudeCliEffort,
   parseBackgroundTasks,
   parseControlCancelId,
   parseControlRequest,
+  parseControlResponse,
   parseJsonLine,
   parseTaskNotification,
   parseTaskProgress,
@@ -102,6 +118,7 @@ import {
   resolveClaudeApiModelId,
   sessionIdFromMessage,
   statusTextFromSystem,
+  retryFromSystem,
   streamDeltaFromEvent,
   stringField,
   summarizeToolRequest,
@@ -123,13 +140,21 @@ import { claudeNativeLaunch } from "./claudeNativeLaunch";
 import { bycodaMcpOnly, leanContext } from "../../core/nativeToolLimits";
 import { compactionPhaseFromSystem } from "./claudeCompaction";
 import {
-  COMPACTING_TEXT,
+  compactingText,
   COMPACTION_STATUS_KEY,
 } from "../../../../features/sessions/model/compactionStatus";
+import {
+  compactionFailedText,
+  messageStoppedBeforeSentText,
+  savedConversationUnavailableText,
+  turnFinishedFollowUpText,
+} from "../../core/providerNotices";
+import { t } from "../../../../shared/i18n/core";
 import { agentFallbackCallId, resolveStopTargets, settledTaskStatus } from "./claudeStopTask";
 import { isAgentToolName } from "../../core/preview";
 import { forgetSessionCommands, reportSessionCommands } from "../../core/reportedCommands";
 import { snapshotRemainder } from "../../core/streamText";
+import { withTimeout } from "../../../../shared/lib/withTimeout";
 import {
   questionPromptTitle,
   questionsFromUnknown,
@@ -150,9 +175,11 @@ import { TurnNotReadyError } from "../../core/types";
  * then cancels the control request out from under us. That is not a rejection,
  * so it gets its own outcome instead of being folded into "deny".
  */
-type ApprovalOutcome = ApprovalDecision | "cancelled";
+type ApprovalOutcome = ApprovalDecision | "cancelled" | SessionApprovalScope;
 
 type PendingApproval = {
+  responded?: true;
+  sessionApprovalScope?: SessionApprovalScope;
   occurrenceId: string;
   requestId: string;
   input: Record<string, unknown>;
@@ -168,6 +195,7 @@ type PendingQuestion = QuestionDelivery & {
 type InFlightTool = {
   id: string;
   name: string;
+  confirmedTopLevel?: boolean;
   input: Record<string, unknown>;
   inputJson: ReturnType<typeof createJsonRecordAccumulator>;
   title: string;
@@ -185,6 +213,7 @@ type BackgroundTask = {
   description: string;
   toolUseId?: string;
   outputPath?: string;
+  taskType?: string;
 };
 
 import { createChildProcessHandle, type ChildProcessHandle } from "../../core/child";
@@ -203,12 +232,18 @@ type Live = {
   runtimeMode: RuntimeMode;
   planning: boolean;
   settingsKey: string;
+  privateDelegateHistory: boolean;
+  privateDelegateReplayPending: boolean;
   onEvent: (event: HarnessEvent) => void;
   approvals: Map<number, PendingApproval>;
   questions: Map<number, PendingQuestion>;
   visibleQuestionId: number | null;
   nextApprovalUiId: number;
   nextControlId: number;
+  /** Undefined before the first request, null after it settles. */
+  contextWindowRequestId?: string | null;
+  contextModel?: string;
+  contextCapacity?: { model: string; window: number };
   toolsByIndex: Map<number, InFlightTool>;
   toolsById: Map<string, InFlightTool>;
   agentTasks: Map<string, LiveAgentTask>;
@@ -221,6 +256,8 @@ type Live = {
   /** Rows shown for tasks still running when Claude yielded, by task id. */
   backgroundRows: Map<string, string>;
   outputWatches: Map<string, { stop: () => void; finish: () => void }>;
+  workflowWatches: Map<string, { stop: () => void; finish: (status: string) => void }>;
+  workflowOutcomes: Map<string, string>;
   /** Tasks the user asked to stop, and the calls that stand for them. */
   stoppedTasks: Set<string>;
   stoppedCalls: Set<string>;
@@ -238,6 +275,10 @@ type Live = {
   queryGeneration: number | null;
   /** Latest `rate_limit_event` refused requests; reported when the turn ends. */
   usageLimit: { resetsAt?: number } | null;
+  /** Claude's own limit wording from stderr, shown when it exits at the limit. */
+  usageLimitText: string | null;
+  /** Last stderr lines, kept to explain an unexpected exit. */
+  stderrTail: string[];
   /** One failure can arrive as assistant, result and rejected promise in this turn. */
   reportedTurnErrors: Set<string>;
   cancelled: boolean;
@@ -322,7 +363,7 @@ export async function sendClaudeTurn(input: SendTurnInput): Promise<void> {
           throw error;
         }
         if (cancelledThreads.delete(input.sessionId)) {
-          input.onEvent({ type: "status", text: "The message was stopped before it was sent." });
+          input.onEvent({ type: "status", text: messageStoppedBeforeSentText() });
           return;
         }
 
@@ -335,7 +376,7 @@ export async function sendClaudeTurn(input: SendTurnInput): Promise<void> {
         live.turns = continueAfterFailure(live.turns, async () => {
           const writer = await bindWriter();
           if (cancelEpochByThread.get(input.sessionId) !== cancelEpoch) {
-            input.onEvent({ type: "status", text: "The message was stopped before it was sent." });
+            input.onEvent({ type: "status", text: messageStoppedBeforeSentText() });
             return;
           }
           live.queryFence.assertReady();
@@ -372,13 +413,13 @@ export async function compactClaudeContext(input: CompactContextInput): Promise<
       input.sessionId,
       input.operationContext,
       async () => {
-        const settingsKey = settingsKeyFor(input);
+        const settingsKey = settingsKeyFor(input, await chromeAccess(input));
         let live = liveByThread.get(input.sessionId);
         if (!live || live.cwd !== input.cwd || live.settingsKey !== settingsKey) {
           live = await ensureLive(input);
         }
         if (cancelledThreads.delete(input.sessionId)) {
-          input.onEvent({ type: "status", text: "The message was stopped before it was sent." });
+          input.onEvent({ type: "status", text: messageStoppedBeforeSentText() });
           return;
         }
 
@@ -391,7 +432,7 @@ export async function compactClaudeContext(input: CompactContextInput): Promise<
         live.turns = continueAfterFailure(live.turns, async () => {
           const writer = await bindWriter();
           if (cancelEpochByThread.get(input.sessionId) !== cancelEpoch) {
-            input.onEvent({ type: "status", text: "The message was stopped before it was sent." });
+            input.onEvent({ type: "status", text: messageStoppedBeforeSentText() });
             return;
           }
           live.queryFence.assertReady();
@@ -430,16 +471,21 @@ export async function compactClaudeContext(input: CompactContextInput): Promise<
   }
 }
 
+/** A Host receipt must not accept a follow-up the live CLI cannot track. */
+export function claudeSteerReady(sessionId: string): boolean {
+  const live = liveByThread.get(sessionId);
+  return !!live?.activeTurn && !live.cancelled && live.commands.tracksCommands;
+}
+
 export async function steerClaudeTurn(input: SteerTurnInput): Promise<void> {
   assertProviderOperation(input.operationContext);
 
   input = { ...input };
 
   const live = liveByThread.get(input.sessionId);
-  if (!live?.activeTurn)
-    throw new Error("The previous turn has finished. Send this follow-up as a new message.");
+  if (!live?.activeTurn) throw new TurnNotReadyError(turnFinishedFollowUpText());
   if (!ownsOperation(input.operationContext, live.handle, live.operation))
-    throw new Error("Provider operation replaced before steer");
+    throw new TurnNotReadyError("Provider operation replaced before steer");
 
   // Without a command lifecycle a result cannot be tied to its input, so the
   // composer keeps the message queued until the current turn has settled.
@@ -473,7 +519,8 @@ export function respondClaudeApproval(
   requestId: number,
   decision: ApprovalDecision,
   approvalOccurrenceId?: string,
-): void {
+  scope?: SessionApprovalScope,
+): boolean {
   const live = liveByThread.get(sessionId);
   const pending = live?.approvals.get(requestId);
   if (
@@ -481,11 +528,15 @@ export function respondClaudeApproval(
     live.cancelled ||
     live.muteUpdates ||
     !pending ||
+    pending.responded ||
+    (scope !== undefined && (decision !== "allow" || pending.sessionApprovalScope !== scope)) ||
     !isApprovalOccurrenceId(approvalOccurrenceId) ||
     pending.occurrenceId !== approvalOccurrenceId
   )
-    return;
-  pending.resolve(decision);
+    return false;
+  pending.responded = true;
+  pending.resolve(scope ?? decision);
+  return true;
 }
 
 export function respondClaudeQuestion(
@@ -795,6 +846,7 @@ function newLiveState(input: {
   runtimeMode: RuntimeMode;
   planning: boolean;
   settingsKey: string;
+  privateDelegateHistory?: boolean;
   onEvent: (event: HarnessEvent) => void;
   claudeTasks?: Map<string, TaskListItem>;
 }): Live {
@@ -807,6 +859,8 @@ function newLiveState(input: {
     runtimeMode: input.runtimeMode,
     planning: input.planning,
     settingsKey: input.settingsKey,
+    privateDelegateHistory: input.privateDelegateHistory === true,
+    privateDelegateReplayPending: input.privateDelegateHistory === true,
     onEvent: input.onEvent,
     approvals: new Map(),
     questions: new Map(),
@@ -819,6 +873,8 @@ function newLiveState(input: {
     backgroundTasks: new Map(),
     backgroundRows: new Map(),
     outputWatches: new Map(),
+    workflowWatches: new Map(),
+    workflowOutcomes: new Map(),
     stoppedTasks: new Set(),
     stoppedCalls: new Set(),
     awaitingResume: null,
@@ -830,6 +886,8 @@ function newLiveState(input: {
     commands: new ClaudeCommandLedger(),
     queryGeneration: null,
     usageLimit: null,
+    usageLimitText: null,
+    stderrTail: [],
     reportedTurnErrors: new Set(),
     cancelled: false,
     muteUpdates: false,
@@ -852,7 +910,9 @@ function newLiveState(input: {
 async function ensureLive(input: HarnessSessionInput): Promise<Live> {
   assertProviderOperation(input.operationContext);
 
-  const settingsKey = settingsKeyFor(input);
+  const chrome = await chromeAccess(input);
+  assertProviderOperation(input.operationContext);
+  const settingsKey = settingsKeyFor(input, chrome);
   const planning = input.intent === "plan";
   const existing = liveByThread.get(input.sessionId);
   if (
@@ -893,12 +953,14 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
 
     const resume = resumeByThread.get(input.sessionId);
     const canResume =
+      !input.privateDelegateHistory &&
       resume != null &&
       resume.cwd === input.cwd &&
       sameProviderAccountId(resume.providerAccountId, input.providerAccountId);
     if (
       resume &&
-      (resume.cwd !== input.cwd ||
+      (input.privateDelegateHistory ||
+        resume.cwd !== input.cwd ||
         !sameProviderAccountId(resume.providerAccountId, input.providerAccountId))
     ) {
       resumeByThread.delete(input.sessionId);
@@ -917,7 +979,10 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       providerSessionId: claudeSessionId,
       tasks: claudeTasks,
     });
-    const launch = launchOptions(input, canResume ? resume?.sessionId : undefined, claudeSessionId);
+    const launch = {
+      ...launchOptions(input, canResume ? resume?.sessionId : undefined, claudeSessionId),
+      chrome,
+    };
 
     const live: Live = newLiveState({
       operation: input.operationContext?.operation,
@@ -928,6 +993,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       runtimeMode: input.runtimeMode,
       planning,
       settingsKey,
+      privateDelegateHistory: input.privateDelegateHistory,
       onEvent: input.onEvent,
       claudeTasks,
     });
@@ -948,7 +1014,15 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
         }
         if (current) {
           stopOutputWatches(current);
-          current.exitError ??= new Error(reason || "Claude Code exited");
+          // Claude can stop at a refused usage window before it reports a result;
+          // that is a usage limit, not a crash.
+          if (!current.exitError && current.usageLimit && !current.cancelled) {
+            current.exitError = new Error(current.usageLimitText ?? "Usage limit reached");
+            if (!current.muteUpdates)
+              current.onEvent({ type: "usage.limited", ...current.usageLimit });
+          }
+          current.usageLimit = null;
+          current.exitError ??= new Error(reason || claudeExitMessage(code, current.stderrTail));
         }
         if (!current?.muteUpdates) {
           (current?.onEvent ?? input.onEvent)({ type: "session.ended", code });
@@ -967,8 +1041,15 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       },
       (line) => {
         const current = liveRef.current;
-        if (!current || current.muteUpdates) return;
-        // Only this explicit startup failure is actionable; ordinary CLI
+        if (!current) return;
+        pushClaudeStderrTail(current.stderrTail, line);
+        if (current.muteUpdates) return;
+        // A limit printed on stderr is reported only if Claude then exits.
+        if (isUsageLimitText(line)) {
+          current.usageLimit ??= {};
+          current.usageLimitText = current.stderrTail[current.stderrTail.length - 1] ?? null;
+        }
+        // Only these explicit failures are actionable; ordinary CLI
         // diagnostics must not turn a successful conversation into an error.
         if (/No conversation found with session ID:/i.test(line)) {
           current.exitError = new Error(
@@ -1023,7 +1104,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       resumeByThread.delete(input.sessionId);
       input.onEvent({
         type: "status",
-        text: "The saved provider conversation is unavailable. Starting a new session; the app will restore conversation context.",
+        text: savedConversationUnavailableText(),
       });
       return ensureLive(input);
     }
@@ -1043,6 +1124,14 @@ async function runTurn(live: Live, input: SendTurnInput, writer: ByteTurnWriter)
   });
   const content = (message.message as { content: unknown[] }).content;
   if (content.length === 0) return;
+  if (live.privateDelegateReplayPending && input.privateDelegateReplay) {
+    content.unshift({
+      type: "text",
+      text:
+        "Prior Bycoda conversation, quoted for context. The current request follows.\n" +
+        JSON.stringify(input.privateDelegateReplay),
+    });
+  }
   // Claude reports a command lifecycle only for a message with its own uuid; Steer needs it.
   message.uuid = crypto.randomUUID();
   const queryGeneration = live.queryFence.begin();
@@ -1078,17 +1167,30 @@ async function runTurn(live: Live, input: SendTurnInput, writer: ByteTurnWriter)
   try {
     try {
       await writeJson(live, message, writer);
+      live.privateDelegateReplayPending = false;
     } catch (error) {
       live.queryFence.writeFailed(queryGeneration);
       throw error;
     }
     input.onAccepted?.();
+    // Capacity is optional metadata. Keep it outside prompt admission and turn completion.
+    if (live.contextWindowRequestId === undefined) {
+      const requestId = nextControlId(live);
+      live.contextWindowRequestId = requestId;
+      void writeJson(
+        live,
+        buildControlRequest(requestId, { subtype: "get_context_usage" }),
+        writer,
+      ).catch(() => {
+        live.contextWindowRequestId = null;
+      });
+    }
     settlePendingTurn(live);
     await turnPromise;
   } catch (error) {
     if (live.cancelled) return;
     const failure = live.exitError ?? error;
-    reportTurnError(live, failure instanceof Error ? failure.message : String(failure));
+    reportTurnError(live, errorText(failure));
     throw failure;
   } finally {
     live.turnDone = null;
@@ -1169,9 +1271,9 @@ function handleLine(sessionId: string, live: Live, line: string): void {
   const sessionIdFromLine = sessionIdFromMessage(rec);
   if (sessionIdFromLine) {
     const changed = sessionIdFromLine !== live.claudeSessionId;
-    const unbound = resumeByThread.get(sessionId)?.sessionId !== sessionIdFromLine;
     if (changed) {
       live.claudeSessionId = sessionIdFromLine;
+      live.contextModel = undefined;
       // A different conversation starts with its own task ids.
       live.claudeTasks = new Map();
     }
@@ -1179,16 +1281,19 @@ function handleLine(sessionId: string, live: Live, line: string): void {
       providerSessionId: sessionIdFromLine,
       tasks: live.claudeTasks,
     });
-    resumeByThread.set(sessionId, {
-      sessionId: sessionIdFromLine,
-      cwd: live.cwd,
-      providerAccountId: live.providerAccountId,
-    });
-    if (changed || unbound) {
-      live.onEvent({
-        type: "session.providerBound",
-        providerSessionId: sessionIdFromLine,
+    if (!live.privateDelegateHistory) {
+      const unbound = resumeByThread.get(sessionId)?.sessionId !== sessionIdFromLine;
+      resumeByThread.set(sessionId, {
+        sessionId: sessionIdFromLine,
+        cwd: live.cwd,
+        providerAccountId: live.providerAccountId,
       });
+      if (changed || unbound) {
+        live.onEvent({
+          type: "session.providerBound",
+          providerSessionId: sessionIdFromLine,
+        });
+      }
     }
   }
 
@@ -1205,6 +1310,23 @@ function handleLine(sessionId: string, live: Live, line: string): void {
 
   if (type === "control_response") {
     markInitialized(live);
+    const response = parseControlResponse(rec);
+    if (response && response.requestId === live.contextWindowRequestId) {
+      live.contextWindowRequestId = null;
+      const model = stringField(response.payload, "model");
+      // maxTokens can reflect the configured compaction budget instead of model capacity.
+      const window = response.payload?.rawMaxTokens;
+      if (
+        response.ok &&
+        model &&
+        typeof window === "number" &&
+        Number.isSafeInteger(window) &&
+        window > 0
+      ) {
+        live.contextCapacity = { model, window };
+        if (model === live.contextModel) live.onEvent({ type: "context", window });
+      }
+    }
     return;
   }
 
@@ -1248,7 +1370,7 @@ function handleLine(sessionId: string, live: Live, line: string): void {
           type: "status",
           key: COMPACTION_STATUS_KEY,
           running: true,
-          text: COMPACTING_TEXT,
+          text: compactingText(),
         });
         return;
       }
@@ -1258,17 +1380,23 @@ function handleLine(sessionId: string, live: Live, line: string): void {
       if (compaction.phase === "failed") {
         live.onEvent({
           type: "status",
-          text: compaction.error
-            ? `Could not compact context: ${compaction.error}`
-            : "Could not compact context",
+          text: compactionFailedText(compaction.error || undefined),
         });
       }
+      return;
+    }
+    const retry = retryFromSystem(rec, Date.now());
+    if (retry) {
+      live.onEvent({ type: "status", key: "provider-retry", ...retry });
       return;
     }
     const text = statusTextFromSystem(rec);
     if (text) {
       const compact = (stringField(rec, "subtype") ?? "").startsWith("compact");
-      if (compact) live.compactionConfirmed = true;
+      if (compact) {
+        live.compactionConfirmed = true;
+        live.contextModel = undefined;
+      }
       live.onEvent(
         compact
           ? { type: "status", key: COMPACTION_STATUS_KEY, running: false, text }
@@ -1280,6 +1408,10 @@ function handleLine(sessionId: string, live: Live, line: string): void {
 
 function handleStreamEvent(live: Live, rec: Record<string, unknown>): void {
   const subagent = isSubagentMessage(rec);
+  const event = asRecord(rec.event);
+  if (event?.type === "message_start" && !subagent) {
+    reportAssistantContext(live, event);
+  }
   const delta = streamDeltaFromEvent(rec);
   if (delta) {
     if (subagent) return;
@@ -1309,6 +1441,7 @@ function handleStreamEvent(live: Live, rec: Record<string, unknown>): void {
     const tool: InFlightTool = {
       id: started.id,
       name: started.name,
+      confirmedTopLevel: rec.parent_tool_use_id === null,
       input: started.input,
       inputJson: createJsonRecordAccumulator(),
       title: toolTitle(started.name, started.input),
@@ -1352,6 +1485,19 @@ function handleStreamEvent(live: Live, rec: Record<string, unknown>): void {
   }
 }
 
+function reportAssistantContext(live: Live, rec: Record<string, unknown>): void {
+  const used = contextUsedFromAssistant(rec);
+  if (used === undefined) return;
+  const model = stringField(asRecord(rec.message), "model");
+  live.contextModel = model;
+  const capacity = live.contextCapacity;
+  live.onEvent({
+    type: "context",
+    used,
+    ...(capacity && capacity.model === model ? { window: capacity.window } : {}),
+  });
+}
+
 function handleAssistant(live: Live, rec: Record<string, unknown>): void {
   if (isSubagentMessage(rec)) {
     noteSubagentNarration(live, rec);
@@ -1366,8 +1512,7 @@ function handleAssistant(live: Live, rec: Record<string, unknown>): void {
     return;
   }
 
-  const used = contextUsedFromAssistant(rec);
-  if (used !== undefined) live.onEvent({ type: "context", used });
+  reportAssistantContext(live, rec);
 
   const snapshot = assistantTextBlocks(rec).join("");
   const failure = errorFromAssistant(rec);
@@ -1412,6 +1557,7 @@ function handleAssistant(live: Live, rec: Record<string, unknown>): void {
     const tool: InFlightTool = {
       id: use.id,
       name: use.name,
+      confirmedTopLevel: rec.parent_tool_use_id === null,
       input: use.input,
       inputJson: createJsonRecordAccumulator(),
       title: toolTitle(use.name, use.input),
@@ -1445,11 +1591,12 @@ function handleAssistant(live: Live, rec: Record<string, unknown>): void {
 /** Server tools (advisor, ...) report inside the assistant message, not as a user tool_result. */
 function settleServerTools(
   live: Live,
-  results: Array<{ toolUseId: string; isError: boolean; text: string }>,
+  results: Array<{ toolUseId: string; isError: boolean; text: string; sources?: SearchSource[] }>,
 ): void {
   for (const result of results) {
     const tool = live.toolsById.get(result.toolUseId);
     if (!tool) continue;
+    const preview = previewFromTool(tool.name, tool.input, result.text);
     live.onEvent({
       type: "tool.updated",
       callId: tool.id,
@@ -1457,7 +1604,10 @@ function settleServerTools(
       kind: toolKindFromName(tool.name),
       status: result.isError ? "failed" : "completed",
       detail: result.text || undefined,
-      preview: previewFromTool(tool.name, tool.input, result.text),
+      preview:
+        result.sources?.length && preview?.kind === "search"
+          ? { ...preview, sources: result.sources }
+          : preview,
     });
   }
 }
@@ -1473,9 +1623,19 @@ function handleUser(live: Live, rec: Record<string, unknown>): void {
     noteSubagentResults(live, rec);
     return;
   }
+  const workflow = workflowReference(rec);
+  if (
+    workflow &&
+    live.handle &&
+    live.claudeSessionId &&
+    live.toolsById.get(workflow.callId)?.name === "Workflow"
+  ) {
+    watchWorkflow(live, workflow);
+  }
   for (const result of toolResultsFromUserMessage(rec)) {
     const tool = live.toolsById.get(result.toolUseId);
     if (!tool) continue;
+    if (workflow?.callId === tool.id && !result.isError) continue;
     if (tool.name === "Bash") noteCommandOutputPath(live, rec, tool.id, result.text);
     if (isAgentToolName(tool.name) && isBackgroundedAgentTool(live, tool.id)) {
       continue;
@@ -1521,6 +1681,71 @@ function handleUser(live: Live, rec: Record<string, unknown>): void {
   }
 }
 
+function watchWorkflow(live: Live, reference: ClaudeWorkflowReference): void {
+  if (live.workflowWatches.has(reference.taskId)) return;
+  const providerSessionId = live.claudeSessionId;
+  const outputWork = captureNativeOutputWork({ additionalInput: true });
+  const emit = nativeOutputSink(outputWork, live.onEvent);
+  let stopped = false;
+  let finalStatus: string | undefined;
+  let reading = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const snapshotCache = new Map<string, string>();
+  const poll = async () => {
+    if (stopped || reading) return;
+    reading = true;
+    const final = finalStatus !== undefined;
+    try {
+      await loadClaudeWorkflowArtifacts({
+        cwd: live.cwd,
+        providerAccountId: live.providerAccountId,
+        providerSessionId,
+        runId: reference.runId,
+        callId: reference.callId,
+        snapshotCache,
+        onEvent: (event) => {
+          if (!stopped) emit(event);
+        },
+        ...(finalStatus !== undefined
+          ? {
+              status:
+                finalStatus === "completed" ? ("completed" as const) : ("interrupted" as const),
+            }
+          : {}),
+      });
+    } catch {
+      /* Artifact discovery is best effort; the workflow itself remains authoritative. */
+    }
+    reading = false;
+    if (stopped) return;
+    if (final) {
+      live.workflowWatches.delete(reference.taskId);
+      return;
+    }
+    if (finalStatus !== undefined) {
+      void poll();
+      return;
+    }
+    timer = scheduleNativeOutputCallback(() => {
+      void poll();
+    }, 2_000);
+  };
+  live.workflowWatches.set(reference.taskId, {
+    stop: () => {
+      stopped = true;
+      cancelNativeOutputCallback(timer);
+    },
+    finish: (status) => {
+      finalStatus = status;
+      cancelNativeOutputCallback(timer);
+      void poll();
+    },
+  });
+  const outcome = live.workflowOutcomes.get(reference.taskId);
+  if (outcome !== undefined) finalStatus = outcome;
+  void poll();
+}
+
 /**
  * A subagent that was never backgrounded reports back on the parent's own tool
  * result, and Claude sends no task record for one that ended inline. Without
@@ -1549,8 +1774,15 @@ function handleResult(live: Live, rec: Record<string, unknown>): void {
   // A /compact result reports the summarizer call's usage, not the rebuilt
   // conversation level. The next real turn will provide the fresh reading.
   if (!live.manualCompaction) {
-    const context = contextFromResult(rec);
-    if (context) live.onEvent({ type: "context", ...context });
+    const context = contextFromResult(rec, live.contextModel);
+    if (context) {
+      if (context.window !== undefined) {
+        live.contextWindowRequestId = null;
+        if (live.contextModel)
+          live.contextCapacity = { model: live.contextModel, window: context.window };
+      }
+      live.onEvent({ type: "context", ...context });
+    }
   }
   // Compaction is billed too, so its result counts.
   const usage = usageFromResult(rec);
@@ -1685,12 +1917,18 @@ async function handleControlRequest(
         return;
       }
 
+      const tool = control.toolUseId ? live.toolsById.get(control.toolUseId) : undefined;
+      const sessionApprovalScope = claudeSessionApprovalScope(
+        control,
+        tool?.confirmedTopLevel ? tool.name : undefined,
+      );
       const uiId = live.nextApprovalUiId++;
       const pending = nativeOutputSink(outputWork, waitApproval)(
         live,
         uiId,
         control.requestId,
         input,
+        sessionApprovalScope,
       );
       emitNative({
         type: "approval.requested",
@@ -1700,8 +1938,11 @@ async function handleControlRequest(
         kind: toolKindFromName(toolName),
         callId: control.toolUseId,
         preview: previewFromTool(toolName, input),
+        ...(sessionApprovalScope ? { sessionApprovalScope } : {}),
       });
-      const decision = await pending;
+      const outcome = await pending;
+      const scoped = outcome === CLAUDE_WORKSPACE_GLOB;
+      const decision = scoped ? "allow" : outcome;
       emitNative({
         type: "approval.resolved",
         requestId: uiId,
@@ -1709,9 +1950,11 @@ async function handleControlRequest(
         decision,
       });
       if (decision === "cancelled" || !Array.from(liveByThread.values()).includes(live)) return;
+      // Session grants are rooted in the admitted execution cwd even if Claude changed its cwd.
+      const approvedInput = scoped ? { ...input, path: live.cwd } : input;
       await nativeOutputSink(outputWork, writeJson)(
         live,
-        buildControlResponse(control.requestId, toClaudePermissionResult(decision, input)),
+        buildControlResponse(control.requestId, toClaudePermissionResult(decision, approvedInput)),
       );
     },
     { additionalInput: true },
@@ -1745,10 +1988,11 @@ function waitApproval(
   uiId: number,
   requestId: string,
   input: Record<string, unknown>,
+  sessionApprovalScope?: SessionApprovalScope,
 ): Promise<ApprovalOutcome> & { occurrenceId: string } {
   const occurrenceId = createApprovalOccurrenceId();
   const promise = new Promise<ApprovalOutcome>((resolve) => {
-    live.approvals.set(uiId, { requestId, input, occurrenceId, resolve });
+    live.approvals.set(uiId, { requestId, input, occurrenceId, sessionApprovalScope, resolve });
   }).finally(() => {
     if (live.approvals.get(uiId)?.occurrenceId === occurrenceId) live.approvals.delete(uiId);
   });
@@ -1791,6 +2035,7 @@ function handleAgentLifecycle(live: Live, rec: Record<string, unknown>): boolean
     live.backgroundTasks.set(started.taskId, {
       description: started.description,
       toolUseId: started.toolUseId,
+      taskType: started.taskType,
       outputPath:
         stringField(rec, "output_file") ||
         (started.toolUseId ? live.toolsById.get(started.toolUseId)?.outputPath : undefined),
@@ -1811,6 +2056,8 @@ function handleAgentLifecycle(live: Live, rec: Record<string, unknown>): boolean
   const progress = parseTaskProgress(rec);
   if (progress) {
     const task = live.agentTasks.get(progress.taskId);
+    const source = progress.toolUseId ? live.toolsById.get(progress.toolUseId) : undefined;
+    if (!task && (!source || !isAgentToolName(source.name))) return true;
     const title = progress.description || task?.description || "Subagent";
     const detail =
       progress.summary ||
@@ -1835,6 +2082,8 @@ function handleAgentLifecycle(live: Live, rec: Record<string, unknown>): boolean
     }
     if (isTerminalAgentTaskStatus(updated.status)) {
       settleBackgroundRow(live, updated.taskId, updated.status ?? "completed", updated.error);
+      settleWorkflow(live, updated.taskId, updated.status ?? "completed", updated.error);
+      live.workflowWatches.get(updated.taskId)?.finish(updated.status ?? "completed");
       finishBackgroundTask(live, updated.taskId);
       completeAgentTask(
         live,
@@ -1850,6 +2099,8 @@ function handleAgentLifecycle(live: Live, rec: Record<string, unknown>): boolean
   if (notice) {
     if (!notice.ambient) {
       noteTaskNotification(live, notice);
+      settleWorkflow(live, notice.taskId, notice.status, notice.summary || undefined);
+      live.workflowWatches.get(notice.taskId)?.finish(notice.status);
       finishBackgroundTask(live, notice.taskId);
       completeAgentTask(
         live,
@@ -1894,6 +2145,19 @@ function handleAgentLifecycle(live: Live, rec: Record<string, unknown>): boolean
   maybeFinishTurn(live);
   syncBackgroundWait(live);
   return true;
+}
+
+function settleWorkflow(live: Live, taskId: string, status: string, detail?: string): void {
+  const background = live.backgroundTasks.get(taskId);
+  const callId = background?.taskType === "local_workflow" ? background.toolUseId : undefined;
+  if (background?.taskType === "local_workflow") live.workflowOutcomes.set(taskId, status);
+  if (!callId || live.muteUpdates) return;
+  live.onEvent({
+    type: "tool.updated",
+    callId,
+    status: taskOutcome(live, taskId, status),
+    ...(detail ? { detail } : {}),
+  });
 }
 
 function handleToolProgress(live: Live, rec: Record<string, unknown>): void {
@@ -2241,12 +2505,24 @@ function noteCommandOutputPath(
 function stopOutputWatches(live: Live): void {
   for (const watch of live.outputWatches.values()) watch.stop();
   live.outputWatches.clear();
+  for (const watch of live.workflowWatches.values()) watch.stop();
+  live.workflowWatches.clear();
 }
 
 /** Consecutive missing-file polls (about a second each) before the row says it is still waiting. */
 const OUTPUT_WAIT_REPORT_AFTER = 30;
 /** Extra attempts after the last read of a finished task fails. */
 const OUTPUT_FINAL_RETRIES = 3;
+/** Poll interval while output keeps changing, and the cap it backs off to while it stays unchanged. */
+const OUTPUT_POLL_MIN_MS = 1_000;
+const OUTPUT_POLL_MAX_MS = 5_000;
+/** One stalled read (a remote Host that stopped answering) must not stop later polls. */
+const OUTPUT_READ_TIMEOUT_MS = 15_000;
+
+/** Back off while a running command prints nothing new; the task notification still finishes at once. */
+export function nextOutputPollDelay(current: number, changed: boolean): number {
+  return changed ? OUTPUT_POLL_MIN_MS : Math.min(OUTPUT_POLL_MAX_MS, Math.round(current * 1.5));
+}
 
 function watchCommandOutput(live: Live, taskId: string, reportedTask?: BackgroundTask): void {
   const task = reportedTask ?? live.backgroundTasks.get(taskId);
@@ -2269,6 +2545,7 @@ function watchCommandOutput(live: Live, taskId: string, reportedTask?: Backgroun
   let lastOutput = "";
   let failures = 0;
   let finalFailures = 0;
+  let pollDelay = OUTPUT_POLL_MIN_MS;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const emitOutput = nativeOutputSink(outputWork, (text: string) => {
     if (stopped || live.cancelled || live.muteUpdates || text === last) return;
@@ -2285,16 +2562,24 @@ function watchCommandOutput(live: Live, taskId: string, reportedTask?: Backgroun
     const finalRead = finished;
     let failed = false;
     try {
-      const output = await readHarnessTaskOutput(path, taskId);
+      // A read that never settles is abandoned; its late result is ignored.
+      const output = await withTimeout(
+        readHarnessTaskOutput(path, taskId),
+        OUTPUT_READ_TIMEOUT_MS,
+        "Claude task output read",
+      );
       failures = 0;
-      lastOutput = output.truncated
+      const next = output.truncated
         ? `[Earlier output omitted]
 ${output.text}`
         : output.text;
+      pollDelay = nextOutputPollDelay(pollDelay, next !== lastOutput);
+      lastOutput = next;
       emitOutput(lastOutput);
     } catch (error) {
       failed = true;
       failures += 1;
+      pollDelay = OUTPUT_POLL_MIN_MS;
       // A missing file is normal until the provider creates it, so it is only
       // reported once the command has finished or has been missing for a long
       // while. Any other read error is reported after a few retries.
@@ -2325,7 +2610,7 @@ ${note}`
           live.outputWatches.delete(taskId);
           if (failed) outputWork?.fail("claude-file-output-failed");
           else outputWork?.finish();
-        } else timer = setTimeout(() => void poll(), finished ? 0 : 1000);
+        } else timer = setTimeout(() => void poll(), finished ? 0 : pollDelay);
       } else outputWork?.fail("claude-file-output-retired");
     }
   };
@@ -2377,7 +2662,7 @@ function noteTaskNotification(live: Live, notice: ClaudeAgentTaskNotification): 
   const tool = notice.toolUseId ? live.toolsById.get(notice.toolUseId) : null;
   const agent = (tool && isAgentToolName(tool.name)) || live.agentTasks.has(notice.taskId);
   if (!agent || !live.turnResultSeen) return;
-  live.taskNotes.push(notice.summary || "Subagent finished.");
+  live.taskNotes.push(notice.summary || t("Subagent finished."));
 }
 
 function clearAwaitingResume(live: Live): void {
@@ -2468,8 +2753,27 @@ function writeJson(
     : writeChild(live.handle, JSON.stringify(payload));
 }
 
-function settingsKeyFor(input: HarnessSessionInput): string {
-  return `${input.providerAccountId ?? "default"}:${claudeSettingsKey({
+let readChromeAccess: (() => Promise<boolean>) | undefined;
+
+/** The Host supplies its owner-controlled browser setting for regular Claude sessions. */
+export function configureClaudeChromeAccess(read: () => Promise<boolean>) {
+  readChromeAccess = read;
+}
+
+async function chromeAccess(input: HarnessSessionInput) {
+  if (
+    input.privateDelegateHistory ||
+    bycodaMcpOnly(input.modelSettings) ||
+    claudeNativeLaunch(input).nativeReadOnly
+  )
+    return false;
+  return readChromeAccess?.();
+}
+
+function settingsKeyFor(input: HarnessSessionInput, chrome: boolean | undefined): string {
+  const account = input.providerAccountId ?? "default";
+  const historyScope = input.privateDelegateHistory ? ":private" : "";
+  return `${account}${historyScope}:${chrome}:${claudeSettingsKey({
     model: nativeModelId(input.model),
     effort: input.modelSettings?.effort,
     fast: input.modelSettings?.fast,
@@ -2501,6 +2805,7 @@ function launchOptions(
   settings?: ClaudeCliSettings;
   additionalDirs: string[];
   leanContext?: boolean;
+  privateDelegateHistory?: boolean;
 } & ReturnType<typeof claudeNativeLaunch> {
   const native = nativeModelId(input.model);
   const effortRaw = input.modelSettings?.effort;
@@ -2531,6 +2836,7 @@ function launchOptions(
     settings: Object.keys(settings).length > 0 ? settings : undefined,
     additionalDirs: additionalDirsFor(input.sessionId),
     ...(leanContext(input.modelSettings) ? { leanContext: true } : {}),
+    ...(input.privateDelegateHistory ? { privateDelegateHistory: true } : {}),
   };
 }
 

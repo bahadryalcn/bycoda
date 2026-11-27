@@ -47,7 +47,10 @@ it("projects a shared Work wait without turning capacity into a task error", asy
     await f.tasks.idle();
     const waiting = await f.task();
     expect(waiting.status).toBe("queued");
-    expect(waiting.modelRoutingWait?.reason).toBe("Waiting for the shared model slot.");
+    expect(waiting.wait).toMatchObject({
+      code: "model_quota",
+      message: "Waiting for the shared model slot.",
+    });
     expect(waiting.error).toBeUndefined();
     expect(waiting.prompt).toBe("Write report");
   } finally {
@@ -73,7 +76,7 @@ it("rotates Host-owned Work invocation only for owner configuration edits", asyn
     title: "Revised report",
     prompt: first.prompt,
   });
-  expect(changed.awaitingOwnerRestart).toBeUndefined();
+  expect(changed.stop).toBeUndefined();
   expect(changed.workInvocationId).not.toBe(first.workInvocationId);
   expect(changed.workInvocationId).not.toBe("forged-again");
   await f.tasks.tick();
@@ -169,7 +172,7 @@ it("clears stale parent recovery only when owner configuration creates a new inv
   const changed = await f.tasks.save(f.input({ title: "New owner request" }));
   expect(changed.workInvocationId).not.toBe(initial.workInvocationId);
   expect(changed.conflictRecovery).toBeUndefined();
-  expect(changed.crewWorkWait).toBeUndefined();
+  expect(changed.wait).toBeUndefined();
   expect(changed.repairAdvisor).toBeUndefined();
   expect(changed.repairAttempts).toBe(1);
 });

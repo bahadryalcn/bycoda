@@ -1,9 +1,15 @@
 // @vitest-environment happy-dom
+import { expectErrorDetails } from "./errorDetails.test-support";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { TerminalProfileDiscovery, dedupeTerminalProfiles } from "./TerminalProfileDiscovery";
+import {
+  TerminalProfileDiscovery,
+  dedupeTerminalProfiles,
+  profileFolderLabel,
+} from "./TerminalProfileDiscovery";
+import type { ProviderAccount } from "../../providers/model/providerAccounts";
 import {
   providerAccounts,
   saveTerminalProviderAccount,
@@ -19,7 +25,9 @@ let container: HTMLDivElement;
 let root: Root;
 beforeEach(async () => {
   localStorage.clear();
+  // Opening the popover discovers profiles by itself, so an empty home is the default answer.
   vi.mocked(invoke).mockReset();
+  vi.mocked(invoke).mockResolvedValue([]);
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -31,12 +39,33 @@ beforeEach(async () => {
       }),
     ),
   );
-  await click("Terminal account profiles");
+  await click("Add existing account");
+  // Count only what each test does after the popover opened.
+  vi.mocked(invoke).mockClear();
 });
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
 });
+
+/** Mounts a setup-style control that discovers on mount, then opens its popover. */
+async function renderAutoDiscover(
+  extra: { onConnected?: (account: ProviderAccount) => void } = {},
+) {
+  await act(async () =>
+    root.render(
+      createElement(TerminalProfileDiscovery, {
+        key: "auto",
+        provider: "claude",
+        disabled: false,
+        autoDiscover: true,
+        ...extra,
+      }),
+    ),
+  );
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-controls$="-popover"]')!;
+  await act(async () => trigger.click());
+}
 
 async function click(label: string) {
   const button = [...document.querySelectorAll("button")].find(
@@ -55,7 +84,7 @@ it("keeps long profile identity and path readable without hover or a focus-only 
   };
   vi.mocked(invoke).mockResolvedValueOnce([profile]);
   await click("Find terminal profiles");
-  for (const value of [profile.label, profile.path]) {
+  for (const value of [profile.label, profileFolderLabel(profile.path)]) {
     const text = [...document.querySelectorAll("p")].find(
       (element) => element.textContent === value,
     )!;
@@ -75,15 +104,17 @@ it("discovers profiles without connecting or logging in, then connects the selec
   vi.mocked(invoke).mockResolvedValueOnce([profile]);
   await click("Find terminal profiles");
   expect(providerAccounts("claude")).toHaveLength(1);
-  expect(document.body.textContent).toContain(profile.path);
+  expect(document.body.textContent).toContain("~/.claude-f");
   vi.mocked(invoke).mockResolvedValueOnce(profile);
-  await click("Connect");
+  await click("Add");
   expect(invoke).toHaveBeenLastCalledWith("provider_terminal_profile_connect", {
     provider: "claude",
     path: profile.path,
   });
   expect(providerAccounts("claude").map((account) => account.id)).toContain(profile.id);
-  expect(document.body.textContent).toContain("Connected");
+  // An added account leaves the list; settings only offers what can still be added.
+  expect(document.body.textContent).not.toContain("~/.claude-f");
+  expect(document.body.textContent).toContain("already added");
   expect(invoke).toHaveBeenCalledTimes(2);
 });
 
@@ -96,16 +127,7 @@ it("automatically finds profiles for setup and uses an explicitly chosen account
   };
   vi.mocked(invoke).mockResolvedValueOnce([profile]);
   const onConnected = vi.fn((account) => setDefaultProviderAccount(account.provider, account.id));
-  await act(async () =>
-    root.render(
-      createElement(TerminalProfileDiscovery, {
-        provider: "claude",
-        disabled: false,
-        autoDiscover: true,
-        onConnected,
-      }),
-    ),
-  );
+  await renderAutoDiscover({ onConnected });
   expect(invoke).toHaveBeenLastCalledWith("provider_terminal_profiles", { provider: "claude" });
   expect(onConnected).not.toHaveBeenCalled();
   expect(defaultProviderAccountId("claude")).toBe("default");
@@ -119,7 +141,9 @@ it("automatically finds profiles for setup and uses an explicitly chosen account
 it("shows discovery failures and allows retry", async () => {
   vi.mocked(invoke).mockRejectedValueOnce(new Error("Profile directory unavailable"));
   await click("Find terminal profiles");
-  expect(document.querySelector('[role="alert"]')?.textContent).toBe(
+  await expectErrorDetails(
+    document,
+    "Could not find terminal profiles.",
     "Profile directory unavailable",
   );
   vi.mocked(invoke).mockResolvedValueOnce([]);
@@ -143,7 +167,7 @@ it("closes on provider changes and ignores a late discovery error from the previ
     ),
   );
   expect(document.querySelector('[role="dialog"]')).toBeNull();
-  await click("Terminal account profiles");
+  await click("Add existing account");
   await act(async () => rejectOld(new Error("Old provider error")));
   expect(document.body.textContent).not.toContain("Old provider error");
 });
@@ -164,10 +188,10 @@ it("does not save a connection receipt after its provider was changed", async ()
         resolveConnect = resolve;
       }),
   );
-  await click("Connect");
+  await click("Add");
   expect(document.querySelectorAll('button[aria-busy="true"]')).toHaveLength(1);
-  expect(document.querySelector('button[aria-busy="true"]')?.textContent).toBe("Connect");
-  await click("Connect");
+  expect(document.querySelector('button[aria-busy="true"]')?.textContent).toBe("Add");
+  await click("Add");
   expect(invoke).toHaveBeenCalledTimes(2);
   await act(async () =>
     root.render(
@@ -181,16 +205,12 @@ it("does not save a connection receipt after its provider was changed", async ()
 
 it("shows automatic discovery errors and clears them after a successful retry", async () => {
   vi.mocked(invoke).mockRejectedValueOnce(new Error("Automatic discovery failed"));
-  await act(async () =>
-    root.render(
-      createElement(TerminalProfileDiscovery, {
-        provider: "claude",
-        disabled: false,
-        autoDiscover: true,
-      }),
-    ),
+  await renderAutoDiscover();
+  await expectErrorDetails(
+    document,
+    "Could not find terminal profiles.",
+    "Automatic discovery failed",
   );
-  expect(document.querySelector('[role="alert"]')?.textContent).toBe("Automatic discovery failed");
   vi.mocked(invoke).mockResolvedValueOnce([]);
   await click("Find terminal profiles");
   expect(document.querySelector('[role="alert"]')).toBeNull();
@@ -206,15 +226,7 @@ it.each(["success", "failure"])(
           settle = outcome === "success" ? resolve : reject;
         }),
     );
-    await act(async () =>
-      root.render(
-        createElement(TerminalProfileDiscovery, {
-          provider: "claude",
-          disabled: false,
-          autoDiscover: true,
-        }),
-      ),
-    );
+    await renderAutoDiscover();
     vi.mocked(invoke).mockResolvedValueOnce([
       { id: "manual", provider: "claude", label: "Manual result", path: "C:/manual" },
     ]);
@@ -255,24 +267,48 @@ it("groups profiles by identity and prefers connected, then default, then manage
   ]);
 });
 
-it("shows the stored label, the identity email and Connected for a managed account id", async () => {
+it("hides added accounts in settings but offers them, by stored label, during setup", async () => {
   saveTerminalProviderAccount({
     id: "account-7",
     provider: "claude",
     label: "Stored name",
   });
-  vi.mocked(invoke).mockResolvedValueOnce([
-    { ...found("account-7", "me@x.com"), label: "folder-name" },
-  ]);
+  const listed = [{ ...found("account-7", "me@x.com"), label: "folder-name" }];
+  vi.mocked(invoke).mockResolvedValueOnce(listed);
   await click("Find terminal profiles");
+  expect(document.body.textContent).not.toContain("Stored name");
+  expect(document.body.textContent).toContain("already added");
+  vi.mocked(invoke).mockResolvedValueOnce(listed);
+  await renderAutoDiscover({ onConnected: vi.fn() });
   const text = document.body.textContent ?? "";
   expect(text).toContain("Stored name");
   expect(text).not.toContain("folder-name");
   expect(text).toContain("me@x.com");
-  expect(text).toContain("Connected");
+  expect(text).toContain("Use account");
 });
 
-it("keeps Find label while connecting another profile", async () => {
+it("titles a generated account folder by its email and shows a readable folder", async () => {
+  const id = "account-9a8fc403-b2ca-4872-8a05-b2b61d9153a6";
+  vi.mocked(invoke).mockResolvedValueOnce([
+    {
+      ...found(id, "work@x.com"),
+      path: `\\\\?\\C:\\Users\\me\\AppData\\Roaming\\app\\${id}`,
+    },
+  ]);
+  await click("Find terminal profiles");
+  const lines = [...document.querySelectorAll("li p")].map((node) => node.textContent);
+  expect(lines).toHaveLength(2);
+  expect(lines[0]).toContain("work@x.com");
+  expect(lines[1]).toBe(`~/AppData/Roaming/app/${id}`);
+});
+
+it("reads Windows verbatim and UNC profile folders without their prefix", () => {
+  expect(profileFolderLabel("\\\\?\\D:\\profiles\\.codex")).toBe("D:/profiles/.codex");
+  expect(profileFolderLabel("\\\\?\\UNC\\server\\share\\.claude")).toBe("//server/share/.claude");
+  expect(profileFolderLabel("/home/me/.claude")).toBe("~/.claude");
+});
+
+it("keeps discovery idle while connecting another profile", async () => {
   vi.mocked(invoke).mockResolvedValueOnce([
     { id: "profile", provider: "claude", label: "Profile", path: "C:/profile" },
   ]);
@@ -284,11 +320,58 @@ it("keeps Find label while connecting another profile", async () => {
         finish = resolve;
       }),
   );
-  await click("Connect");
-  expect(document.querySelector('button[aria-label="Find terminal profiles"]')?.textContent).toBe(
-    "Find terminal profiles",
-  );
+  await click("Add");
+  const find = document.querySelector('button[aria-label="Find terminal profiles"]');
+  expect(find?.getAttribute("aria-busy")).not.toBe("true");
   await act(async () =>
     finish({ id: "profile", provider: "claude", label: "Profile", path: "C:/profile" }),
   );
+});
+
+it("hands a chosen profile to settings for naming instead of saving it", async () => {
+  const profile = { id: "terminal-new", provider: "claude", label: "new", path: "C:/new" };
+  const onAdd = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(TerminalProfileDiscovery, {
+        key: "settings",
+        provider: "claude",
+        disabled: false,
+        onAdd,
+      }),
+    ),
+  );
+  vi.mocked(invoke).mockResolvedValueOnce([profile]);
+  await click("Add existing account");
+  vi.mocked(invoke).mockResolvedValueOnce(profile);
+  await click("Add");
+  expect(onAdd).toHaveBeenCalledWith(profile, expect.any(HTMLButtonElement));
+  expect(providerAccounts("claude").map((account) => account.id)).not.toContain(profile.id);
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+});
+
+it("reports a chosen folder that is already added instead of adding it again", async () => {
+  const onAdd = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(TerminalProfileDiscovery, {
+        key: "settings",
+        provider: "claude",
+        disabled: false,
+        onAdd,
+      }),
+    ),
+  );
+  await click("Add existing account");
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  vi.mocked(open).mockResolvedValueOnce("C:/home/.claude");
+  vi.mocked(invoke).mockResolvedValueOnce({
+    id: "default",
+    provider: "claude",
+    label: "Terminal account",
+    path: "C:/home/.claude",
+  });
+  await click("Choose profile folder");
+  expect(onAdd).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain("This account is already added.");
 });

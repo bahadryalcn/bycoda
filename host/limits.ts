@@ -48,9 +48,6 @@ export class HostLimits {
           "CREATE TABLE IF NOT EXISTS run_duration_daily (session_id TEXT NOT NULL, run_id TEXT NOT NULL, day TEXT NOT NULL, ms REAL NOT NULL, PRIMARY KEY(session_id,run_id,day))",
         );
         await store.db.exec(
-          "CREATE TABLE IF NOT EXISTS run_duration_daily_unknown (session_id TEXT NOT NULL, run_id TEXT NOT NULL, day TEXT NOT NULL, PRIMARY KEY(session_id,run_id,day))",
-        );
-        await store.db.exec(
           "CREATE TABLE IF NOT EXISTS run_duration_quota (session_id TEXT NOT NULL, run_id TEXT NOT NULL, PRIMARY KEY(session_id,run_id))",
         );
       });
@@ -203,8 +200,7 @@ export class HostLimits {
     return await this.store.db.scope(async () => {
       const { dailyAgentMinutes } = await this.settings();
       if (dailyAgentMinutes <= 0) return false;
-      const used = await this.usedMinutes();
-      return used >= dailyAgentMinutes || (await this.usageUncertain());
+      return (await this.usedMinutes()) >= dailyAgentMinutes;
     });
   }
 
@@ -214,24 +210,11 @@ export class HostLimits {
     return await this.store.db.scope(async () => {
       const settings = await this.settings();
       const usedMinutes = await this.usedMinutes();
-      const usageUncertain = await this.usageUncertain();
       return {
         ...settings,
         usedMinutes,
-        ...(usageUncertain ? { usageUncertain: true } : {}),
-        limitReached:
-          settings.dailyAgentMinutes > 0 &&
-          (usageUncertain || usedMinutes >= settings.dailyAgentMinutes),
+        limitReached: settings.dailyAgentMinutes > 0 && usedMinutes >= settings.dailyAgentMinutes,
       };
     });
-  }
-
-  private async usageUncertain(): Promise<boolean> {
-    const row = await this.store.db
-      .prepare(
-        "SELECT 1 AS present FROM run_duration_daily_unknown d JOIN run_duration_quota q USING(session_id,run_id) WHERE d.day=? LIMIT 1",
-      )
-      .get(localDay(this.now()));
-    return !!row;
   }
 }

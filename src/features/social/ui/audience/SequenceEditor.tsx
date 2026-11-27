@@ -10,10 +10,11 @@ import type { SocialList } from "../../model/audience";
 import type { EmailAccount, Sequence, SequenceStep } from "../../model/outreach";
 import type { SocialClient } from "../../model/socialClient";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
-import { LabeledSelect } from "./LabeledSelect";
+import { Select } from "../../../../shared/ui/Select";
 import { errorMessage } from "./audienceModel";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
-import { useFormFooter, useTouched } from "./formFooter";
+import { useFormFooter } from "../../../../shared/ui/FormFooter";
+import { useTouched } from "./formFooter";
 import { SequenceStepEditor, newStepDraft, type StepDraft } from "./SequenceStepEditor";
 
 export type SequenceEditorProps = {
@@ -187,7 +188,7 @@ export function SequenceEditor({ client, sequence, lists, onClose, onSaved }: Se
             onBlur={() => touch("name")}
             onChange={(event) => setName(event.target.value)}
           />
-          <LabeledSelect
+          <Select
             label={t("People")}
             value={listId}
             disabled={saving}
@@ -199,7 +200,7 @@ export function SequenceEditor({ client, sequence, lists, onClose, onSaved }: Se
                 label: list.name,
               })),
             ]}
-            onChange={(value) => {
+            onValueChange={(value) => {
               touch("list");
               setListId(value);
             }}
@@ -226,6 +227,11 @@ export function SequenceEditor({ client, sequence, lists, onClose, onSaved }: Se
             size="sm"
             startIcon={<Plus className="icon-sm" aria-hidden="true" />}
             disabled={saving || steps.length >= MAX_STEPS}
+            disabledReason={
+              steps.length >= MAX_STEPS
+                ? t("A sequence can have at most {p0} steps.", { p0: MAX_STEPS })
+                : t("Wait for the current action to finish.")
+            }
             onClick={() => setSteps((current) => [...current, newStepDraft(newId("step"))])}
           >
             {t("Add step")}
@@ -239,7 +245,10 @@ export function SequenceEditor({ client, sequence, lists, onClose, onSaved }: Se
               min={1}
               value={perHour}
               disabled={saving}
-              error={hourValid ? undefined : t("Enter a whole number, 1 or more.")}
+              error={
+                touched("hour") && !hourValid ? t("Enter a whole number, 1 or more.") : undefined
+              }
+              onBlur={() => touch("hour")}
               onChange={(event) => setPerHour(event.target.value)}
             />
             <NumberField
@@ -247,7 +256,10 @@ export function SequenceEditor({ client, sequence, lists, onClose, onSaved }: Se
               min={1}
               value={perDay}
               disabled={saving}
-              error={dayValid ? undefined : t("Enter a whole number, 1 or more.")}
+              error={
+                touched("day") && !dayValid ? t("Enter a whole number, 1 or more.") : undefined
+              }
+              onBlur={() => touch("day")}
               onChange={(event) => setPerDay(event.target.value)}
             />
             <NumberField
@@ -255,7 +267,12 @@ export function SequenceEditor({ client, sequence, lists, onClose, onSaved }: Se
               min={0}
               value={warmupDays}
               disabled={saving}
-              error={warmupValid ? undefined : t("Enter a whole number, 0 or more.")}
+              error={
+                touched("warmup") && !warmupValid
+                  ? t("Enter a whole number, 0 or more.")
+                  : undefined
+              }
+              onBlur={() => touch("warmup")}
               onChange={(event) => setWarmupDays(event.target.value)}
             />
           </div>

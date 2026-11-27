@@ -288,6 +288,14 @@ it("rechecks session authority after an unavailable bridge preparation", async (
     "http://127.0.0.1:1",
   );
   try {
+    // A Host-run child gets its tools from this process: never a respawn, never a grant.
+    expect(
+      await backend.invoke("harness_conversation_tools_bridge", {
+        sessionId: "session",
+        checkRespawn: true,
+      }),
+    ).toEqual({ respawn: false });
+    expect(issueSessionGrant).not.toHaveBeenCalled();
     expect(
       await backend.invoke("harness_conversation_tools_bridge", { sessionId: "session" }),
     ).toBeNull();

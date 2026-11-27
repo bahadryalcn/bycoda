@@ -2,6 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { memo, useEffect, useState, type ReactNode } from "react";
 import { useLocale } from "../../../shared/i18n";
 import { Spinner } from "../../../shared/ui/Spinner";
+import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { Brain, Clock, RefreshCw } from "../../../shared/ui/icons";
 import { claimTurnClock, type TurnActivityPhase } from "../model/turnActivity";
 import { formatElapsed, useElapsedFrom } from "./useElapsedFrom";
@@ -110,20 +111,14 @@ function TurnActivityRow({
       data-turn-activity={phase}
       as="div"
       size="body"
-      tone="secondary"
-      className="turn-activity-line flex min-w-0 items-center gap-1.5 px-4 py-1 font-sans"
+      tone="inherit"
+      className="turn-activity-line flex min-w-0 items-center gap-1.5 px-4 py-1 font-sans text-(--transcript-ink-chrome)"
     >
       <TurnActivityIcon phase={phase} />
-      {/* One live signal: the label breathes; the icon and the clock stay still. */}
-      <Text
-        role="status"
-        size="inherit"
-        tone="inherit"
-        truncate
-        className="zen-thinking-pulse min-w-0"
-      >
+      {/* The label carries the live signal (the shared sweep); the clock stays still. */}
+      <WorkingIndicator className="min-w-0" truncate glyph={false} live>
         {label}
-      </Text>
+      </WorkingIndicator>
       {children}
     </Text>
   );
@@ -133,7 +128,12 @@ function TurnActivityRow({
 function TurnActivityClock({ origin }: { origin?: number }) {
   const elapsed = formatElapsed(useElapsedFrom(origin, false));
   return (
-    <Text aria-hidden size="micro" tone="inherit" className="shrink-0 tabular-nums">
+    <Text
+      aria-hidden
+      size="micro"
+      tone="inherit"
+      className="shrink-0 tabular-nums text-(--transcript-ink-faint)"
+    >
       {elapsed}
     </Text>
   );
@@ -141,9 +141,8 @@ function TurnActivityClock({ origin }: { origin?: number }) {
 
 function TurnActivityIcon({ phase }: { phase: TurnActivityPhase }) {
   const props = {
-    className: "size-3.5 shrink-0",
+    className: "icon-sm shrink-0",
     tone: "secondary",
-    strokeWidth: 1.75,
   } as const;
   if (phase === "thinking") return <Brain {...props} />;
   if (phase === "waiting") return <Clock {...props} />;

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { classifyQueueReadFailure } from "./remoteQueueReadFailure";
 import { subscribeRemoteRecovered } from "./remoteHealth";
 import { remoteBackoffDelay } from "./remotePollingPolicy";
 import { loadStoredQueue, setSessionQueue } from "../../sessions/public/sessionStore";
@@ -63,6 +64,28 @@ export function useSharedRemoteQueue(
     client?.subscribe ?? (() => () => {}),
     client?.snapshot ?? (() => empty),
   );
+  // When the current read error was first seen. Reason: the client holds only the error text, and a
+  // retry that fails the same way must keep the first time instead of looking newly failed.
+  const [errorSeen, setErrorSeen] = useState<{ error: string; at: number; revision: number }>();
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- records the first-seen time of the client's error text
+  useEffect(() => {
+    setErrorSeen((seen) => {
+      // A retry clears the text while it runs, however long that takes; only a read that
+      // delivered a queue ends the failure. The same text until then is the same failure.
+      if (!state.error) return seen && state.queue.revision !== seen.revision ? undefined : seen;
+      if (seen?.error === state.error) return seen;
+      return { error: state.error, at: Date.now(), revision: state.queue.revision };
+    });
+  }, [state.error, state.queue.revision]);
+  const failure =
+    state.error && key && errorSeen?.error === state.error
+      ? classifyQueueReadFailure(state.error, {
+          machineId,
+          environmentId,
+          sessionId: key,
+          at: errorSeen.at,
+        })
+      : undefined;
   const initializeRef = useRef<(() => Promise<void>) | undefined>(undefined);
   const wakeRef = useRef<(() => void) | undefined>(undefined);
   const lastWake = useRef(0);
@@ -189,9 +212,17 @@ export function useSharedRemoteQueue(
       savedRows.current = undefined; // not written: try again with the next change
     });
   }, [client, key, environmentId, state.queue.messages, state.loaded]);
+  const retryRead = async () => {
+    if (!client) return;
+    const read = state.loaded ? client.retry() : (initializeRef.current?.() ?? Promise.resolve());
+    await read.catch((error) => client.hold(error));
+  };
   if (!enabled || !client)
     return {
       ...fallback,
+      failure: undefined as ReturnType<typeof classifyQueueReadFailure> | undefined,
+      // shortcut: the saved-queue fallback reports no read state, so its retry counts as settled at once.
+      retryRead: async () => fallback.retry(),
       release: async (isCurrent: () => boolean = () => true) => {
         if (!isCurrent())
           throw new Error("Queue resume was cancelled. The messages remain queued.");
@@ -220,12 +251,11 @@ export function useSharedRemoteQueue(
     current: () => client.snapshot().queue,
     loaded: state.loaded,
     error: state.error,
-    retry: () => {
-      const retry = state.loaded
-        ? client.retry()
-        : (initializeRef.current?.() ?? Promise.resolve());
-      void retry.catch((error) => client.hold(error));
-    },
+    /** The held read's machine, environment, session, operation, time and class. */
+    failure,
+    retry: () => void retryRead(),
+    /** The same read, as a promise that settles when it ends, so a quiet retry waits for it. */
+    retryRead,
     enqueue: (message: RemoteQueueDraft) =>
       client.update((queue) => enqueueRemoteMessage(queue, message)),
     remove: (id: string) => client.update((queue) => removeRemoteMessage(queue, id)),
@@ -342,8 +372,12 @@ export function useSharedRemoteQueue(
     dispatch: (id: string, selected = false) => client.dispatch(id, selected),
     prepareSend: async (selected = false) => {
       if (client.snapshot().error) {
-        await client.retry();
-        if (client.snapshot().error) return false;
+        // A read that still fails holds the send: the message stays a draft and nothing is written.
+        const read = await client.retry().then(
+          () => true,
+          () => false,
+        );
+        if (!read || client.snapshot().error) return false;
       }
       if (
         !client.update(

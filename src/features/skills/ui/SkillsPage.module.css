@@ -41,17 +41,9 @@
   min-inline-size: 0;
 }
 .headingRow h1,
-.headingRow h2,
-.heading {
+.headingRow h2 {
   flex: 1;
   min-inline-size: 0;
-}
-.heading > * {
-  margin: 0;
-  padding: 0;
-}
-.heading p {
-  display: none;
 }
 .filter {
   flex: 1;
@@ -76,9 +68,10 @@
 .list {
   isolation: isolate;
   flex: 1;
-  min-block-size: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+.listContent {
   padding: 0 0.5rem 0.5rem;
 }
 .message {
@@ -89,9 +82,7 @@
 .row {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
   min-inline-size: 0;
-  padding-inline-end: 0.25rem;
 }
 .name {
   flex: 1;
@@ -99,9 +90,6 @@
 }
 .skillName {
   min-inline-size: 0;
-}
-.offLabel {
-  flex: none;
 }
 /* Machine columns: the same fixed cell width in the heading and every row. */
 .columns {
@@ -135,13 +123,6 @@
   justify-content: center;
   inline-size: var(--ui-control-height-sm);
 }
-.detailFooter {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem;
-  flex: none;
-}
 .workspace {
   flex: 1;
 }
@@ -151,9 +132,6 @@
 .feedback {
   flex: none;
   padding: 0.5rem clamp(1rem, 3cqi, 2rem) 0.75rem;
-}
-.detailTabs {
-  margin-block-start: 0.75rem;
 }
 .machinesPane {
   flex: 1;
@@ -178,6 +156,9 @@
   min-inline-size: 0;
 }
 .machineStatus {
+  /* A load failure can be a long sentence; the shared status word otherwise stays on one line. */
+  flex: initial;
+  white-space: normal;
   overflow-wrap: anywhere;
 }
 .machineActions {
@@ -189,23 +170,13 @@
 .detailHeader {
   padding-inline: clamp(1rem, 3cqi, 2rem);
 }
-.path {
-  overflow-wrap: anywhere;
-  margin-block-start: 0.375rem;
-}
 .description {
-  margin-block: 1rem;
-  max-block-size: 8rem;
-  overflow-y: auto;
+  margin-block: var(--ui-space-3);
 }
 .toolbar {
   flex-wrap: wrap;
-  margin-block-start: 1rem;
-}
-.fileLabel {
-  flex: 1;
-
-  font-family: var(--font-mono);
+  justify-content: space-between;
+  margin-block-start: var(--ui-space-3);
 }
 .document {
   display: flex;
@@ -218,9 +189,6 @@
 }
 .document > div {
   min-inline-size: 0;
-}
-.detailFooter {
-  justify-content: space-between;
 }
 .split,
 .editPane {
@@ -305,7 +273,28 @@
 }
 .groupEditorList {
   flex: 1;
-  min-block-size: 0;
   overflow-y: auto;
+}
+.groupEditorContent {
   padding: 0.25rem 1rem 1rem;
+}
+
+.folders {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-3);
+}
+.folderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-space-3);
+}
+.folderText {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+.folderPath {
+  overflow-wrap: anywhere;
 }

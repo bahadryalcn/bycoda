@@ -106,6 +106,13 @@ it("accepts a caller-owned retrying state and keeps a synchronous retry immediat
   expect(onRetry).toHaveBeenCalledTimes(2);
 });
 
+it("renders the retry as a compact primary recovery action", async () => {
+  await render();
+  const retry = button("Try again");
+  expect(retry.getAttribute("data-button-variant")).toBe("primary");
+  expect(retry.getAttribute("data-button-size")).toBe("sm");
+});
+
 it("labels the failure with a visible title and uses a heading level that fits its place", async () => {
   await render({ title: "Panel failed" });
   expect(container.querySelector("h2")?.textContent).toBe("Panel failed");
@@ -140,11 +147,11 @@ it("uses InlineError for inline failure and guards an asynchronous retry", async
     ),
   );
   expect(container.querySelector('[data-tone="danger"]')).not.toBeNull();
-  await act(async () => button("Retry").click());
-  await act(async () => button("Retry").click());
+  await act(async () => button("Try again").click());
+  await act(async () => button("Try again").click());
   expect(onRetry).toHaveBeenCalledOnce();
   await act(async () => finish());
-  expect(button("Retry").disabled).toBe(false);
+  expect(button("Try again").disabled).toBe(false);
 });
 
 it("renders structured actions in a block and as text links inline", async () => {
@@ -157,11 +164,68 @@ it("renders structured actions in a block and as text links inline", async () =>
   expect([...container.querySelectorAll("button")].map((el) => el.textContent)).toEqual([
     "Open settings",
     "Dismiss",
-    "Retry",
+    "Try again",
   ]);
   act(() => button("Open settings").click());
   expect(onClick).toHaveBeenCalledOnce();
   await render({ error: undefined, size: "inline", action: { label: "Open settings", onClick } });
   expect(container.querySelector('[role="alert"]')).not.toBeNull();
   expect(button("Open settings").closest("span.min-w-0")).not.toBeNull();
+});
+
+function stubMotion(reduce: boolean) {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockReturnValue({
+      matches: reduce,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }),
+  );
+}
+
+it("leads a block failure with the decorative error mascot and lets a caller drop it", async () => {
+  stubMotion(false);
+  await render();
+  const art = container.querySelector("img[data-scene]")!;
+  expect(art.getAttribute("data-scene")).toBe("error");
+  expect(art.getAttribute("alt")).toBe("");
+  expect(art.getAttribute("aria-hidden")).toBe("true");
+  await render({ illustration: "offline" });
+  expect(container.querySelector("img[data-scene]")?.getAttribute("data-scene")).toBe("offline");
+  await render({ illustration: false });
+  expect(container.querySelector("img[data-scene]")).toBeNull();
+});
+
+it("keeps the mascot on its rest frame under reduced motion", async () => {
+  vi.useFakeTimers();
+  stubMotion(true);
+  try {
+    await render();
+    await act(async () => vi.advanceTimersByTime(2000));
+    expect(container.querySelector("img[data-scene]")?.getAttribute("data-step")).toBe("0");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("plays the loop at six steps a second when motion is allowed", async () => {
+  vi.useFakeTimers();
+  stubMotion(false);
+  try {
+    await render();
+    await act(async () => vi.advanceTimersByTime(500));
+    expect(container.querySelector("img[data-scene]")?.getAttribute("data-step")).toBe("3");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("puts the copy control in the details header beside its label", async () => {
+  stubMotion(false);
+  await render();
+  await act(async () => button("Show details").click());
+  const header = container.querySelector("[id] > div")!;
+  expect(header.textContent).toContain("Technical details");
+  expect(header.contains(button("Copy details"))).toBe(true);
 });

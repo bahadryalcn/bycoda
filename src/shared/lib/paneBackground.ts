@@ -12,10 +12,11 @@ export function syncPaneBackground(
   layer = leaf?.querySelector<HTMLElement>(".chat-pane-background"),
 ) {
   const values = leaf?.dataset.paneBackground?.split(" ");
-  if (!values || !layer) return;
+  if (!layer) return;
   PLACEMENT.forEach((side, index) => {
     const name = `--chat-background-${side}`;
-    if (layer.style.getPropertyValue(name) !== values[index])
+    if (!values) layer.style.removeProperty(name);
+    else if (layer.style.getPropertyValue(name) !== values[index])
       layer.style.setProperty(name, values[index]);
   });
 }

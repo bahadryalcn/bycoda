@@ -67,3 +67,87 @@ it("renders Host account choices without reading or probing Native credential pr
     vi.unstubAllGlobals();
   }
 });
+
+async function renderAccountMenu(accountId: string | undefined) {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const element = document.createElement("div");
+  document.body.append(element);
+  const root = createRoot(element);
+  const selected = vi.fn();
+  const source = {
+    accounts: {
+      codex: [
+        { id: "host-a", label: "Host Alpha", isDefault: true },
+        { id: "host-b", label: "Host Beta" },
+      ],
+    },
+  } as unknown as ModelSource;
+  await act(async () =>
+    root.render(
+      createElement(
+        ModelSourceContext.Provider,
+        { value: source },
+        createElement(ProviderAccountMenu, {
+          provider: "codex",
+          accountId,
+          variant: "notice",
+          onSelect: selected,
+        }),
+      ),
+    ),
+  );
+  const open = () => act(async () => element.querySelector<HTMLButtonElement>("button")!.click());
+  await open();
+  const rows = () => [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
+  const pick = (label: string) =>
+    act(async () =>
+      rows()
+        .find((row) => row.textContent?.includes(label))!
+        .click(),
+    );
+  const cleanup = async () => {
+    await act(async () => root.unmount());
+    element.remove();
+    vi.unstubAllGlobals();
+  };
+  return { rows, pick, open, selected, cleanup };
+}
+
+it("marks the effective default account when the session has no explicit account", async () => {
+  const menu = await renderAccountMenu(undefined);
+  try {
+    expect(
+      menu
+        .rows()
+        .find((row) => row.textContent?.includes("Host Alpha"))
+        ?.getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(
+      menu
+        .rows()
+        .find((row) => row.textContent?.includes("Host Beta"))
+        ?.getAttribute("aria-checked"),
+    ).toBe("false");
+    await menu.pick("Host Alpha");
+    expect(menu.selected).not.toHaveBeenCalled();
+    // Choosing a row closes the menu, so open it again for the next choice.
+    await menu.open();
+    await menu.pick("Host Beta");
+    expect(menu.selected).toHaveBeenCalledTimes(1);
+    expect(menu.selected).toHaveBeenCalledWith("host-b");
+  } finally {
+    await menu.cleanup();
+  }
+});
+
+it("keeps an explicit default-profile override checked and switchable", async () => {
+  const menu = await renderAccountMenu("default");
+  try {
+    expect(menu.rows().some((row) => row.getAttribute("aria-checked") === "true")).toBe(false);
+    await menu.pick("Host Alpha");
+    expect(menu.selected).toHaveBeenCalledTimes(1);
+    expect(menu.selected).toHaveBeenCalledWith("host-a");
+  } finally {
+    await menu.cleanup();
+  }
+});

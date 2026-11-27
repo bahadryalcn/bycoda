@@ -4,24 +4,8 @@
  * check-host-contracts.mjs) read the same objects Vite+ runs with.
  */
 
-/** Formatter options. */
-export const fmt = {
-  printWidth: 100,
-  tabWidth: 2,
-  semi: true,
-  singleQuote: false,
-  endOfLine: "lf",
-  sortImports: false,
-  sortPackageJson: false,
-  sortTailwindcss: false,
-  ignorePatterns: [
-    "vendor/**",
-    "scripts/checks/ui-reviewed-baseline.json",
-    "src/styles/palette.css",
-    "docs/reference/ui-components.md",
-    "docs/reference/rules.md",
-  ],
-};
+/** Shared formatter options for Vite+, Bun, and generated contract files. */
+export { default as fmt } from "../../.oxfmtrc.json" with { type: "json" };
 
 /** Lint rules. A rule set to "error" is a code invariant; a rule set to "warn" is lint debt. */
 export const lint = {
@@ -105,6 +89,7 @@ export const lint = {
       files: ["src/**", "host/**", "packages/**"],
       rules: {
         "bycoda/safe-timestamp-render": "error",
+        "bycoda/task-state-from-stop-code": "error",
         "bycoda/shared-formatters-only": "error",
         "bycoda/whole-sentence-translation": "error",
         "bycoda/utf8-child-locale": "error",
@@ -116,6 +101,17 @@ export const lint = {
         "bycoda/suppression-has-reason": "error",
         "bycoda/grapheme-safe-truncate": "error",
         "bycoda/handled-background-promise": "error",
+        "bycoda/translation-slot-names": "error",
+        "bycoda/transcript-ink-roles": "error",
+        "bycoda/transcript-row-trigger": "error",
+        "bycoda/no-raw-error-text": "error",
+        "bycoda/literal-translation-key": "error",
+        "bycoda/shared-container-appearance": "error",
+        "bycoda/button-pressed-prop": "error",
+        "bycoda/dialog-single-translator": "error",
+        "bycoda/icon-button-needs-label": "error",
+        "bycoda/menu-uses-dropdown": "error",
+        "bycoda/toast-needs-tone": "error",
         "no-restricted-imports": [
           "error",
           {
@@ -259,6 +255,12 @@ export const lint = {
                 message:
                   "State files written in place are truncated to zero bytes by a crash mid-write. Use writeFileAtomic() / readStateFile() from host/storage/atomic-write.ts for anything the Host reads back at startup.",
               },
+              {
+                name: "node:os",
+                importNames: ["networkInterfaces"],
+                message:
+                  "os.networkInterfaces() is a synchronous adapter query that blocks the Host event loop (~20 ms on Windows, more under load); per-request or per-poll calls froze the Host. Use currentNetworkInterfaces() / networkFingerprint() from host/mobile/mobile-network.ts.",
+              },
             ],
           },
         ],
@@ -308,6 +310,7 @@ export const lint = {
       ],
       rules: {
         "bycoda/safe-timestamp-render": "off",
+        "bycoda/task-state-from-stop-code": "off",
         "bycoda/shared-formatters-only": "off",
         "bycoda/whole-sentence-translation": "off",
         "bycoda/utf8-child-locale": "off",
@@ -317,6 +320,16 @@ export const lint = {
         "bycoda/effect-names-its-sync": "off",
         "bycoda/compiler-owns-memo": "off",
         "bycoda/suppression-has-reason": "off",
+        "bycoda/translation-slot-names": "off",
+        "bycoda/transcript-ink-roles": "off",
+        "bycoda/transcript-row-trigger": "off",
+        "bycoda/no-raw-error-text": "off",
+        "bycoda/shared-container-appearance": "off",
+        "bycoda/button-pressed-prop": "off",
+        "bycoda/dialog-single-translator": "off",
+        "bycoda/icon-button-needs-label": "off",
+        "bycoda/menu-uses-dropdown": "off",
+        "bycoda/toast-needs-tone": "off",
         "bycoda/grapheme-safe-truncate": "off",
         "bycoda/handled-background-promise": "off",
         "no-restricted-imports": "off",

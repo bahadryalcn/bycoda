@@ -75,7 +75,7 @@ it("owns the submitted new-group draft until the privacy mutation finishes", asy
         .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     });
     expect(input.disabled).toBe(true);
-    expect(button("Cancel").disabled).toBe(true);
+    expect(button("Cancel").getAttribute("aria-disabled")).toBe("true");
     await act(async () => {
       input
         .closest("form")!
@@ -261,7 +261,24 @@ it("creates one group for the selection and rejects a hidden destination with th
     await Promise.resolve();
   });
   expect(loadProjectGroupAssignments()["/a"]).toBe(group.id);
-  expect(document.querySelector('[role="alert"]')).not.toBeNull();
+  // Regression for #1164: the clash is named on the field and is not reported as a save failure.
+  const field = document.querySelector("#project-selection-group-name")!;
+  expect(field.getAttribute("aria-invalid")).toBe("true");
+  // The alert's text content carries more than the sentence alone, so match the sentence.
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    "A group with this name already exists",
+  );
+  expect(document.body.textContent).not.toContain("Could not save project changes");
+  expect(loadProjectGroups().map((item) => item.name)).toEqual(["Secret", "Team"]);
+  expect(loadProjectGroupAssignments()).toEqual({
+    "/a": group.id,
+    "/b": group.id,
+  });
+  // Editing the name clears the clash; the message then leaves through its exit animation.
+  setName("Team 2");
+  expect(
+    document.querySelector("#project-selection-group-name")!.getAttribute("aria-invalid"),
+  ).not.toBe("true");
 });
 
 it("renders no toolbar or inline form before or during selection", () => {

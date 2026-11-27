@@ -31,6 +31,8 @@ function setup() {
   const ports: CommandServicePorts<{ revision: number }> = {
     repository: {
       receiptStatus: vi.fn(async () => undefined),
+      bindSteerClaim: vi.fn(async () => {}),
+      settleSteerReceipt: vi.fn(async () => {}),
       desktopCommandStatus: vi.fn(async () => undefined),
       acceptDesktopCommand: vi.fn(async (input, revalidate) => {
         await revalidate();
@@ -52,6 +54,7 @@ function setup() {
       }),
     },
     execution: {
+      steerDelivery: vi.fn(async () => "delivered" as const),
       commandSignature: (command) => JSON.stringify(command),
       persistenceReady: vi.fn(() => true),
       validateCommand: vi.fn(() => {
@@ -92,6 +95,8 @@ function setup() {
       isClearCommand: vi.fn((text) => /^\s*\/clear\s*$/i.test(text)),
     },
     queue: {
+      claimSteer: vi.fn(async () => "claim-token"),
+      settleSteer: vi.fn(async () => {}),
       reapStale: vi.fn(async () => queue),
       get: vi.fn(async () => queue),
       renew: vi.fn(async () => {}),
@@ -165,6 +170,46 @@ function queuedSetup() {
 type Row = CommandQueueSnapshot["messages"][number];
 
 describe("command domain admission", () => {
+  it.each(["delivered", "not_delivered", "unknown"] as const)(
+    "settles queued steer by claim after commit on %s",
+    async (outcome) => {
+      const { service, ports, command, auth, events } = queuedSetup();
+      vi.mocked(ports.execution.steerDelivery).mockImplementation(async () => {
+        expect(events).toContain("transaction:end");
+        return outcome;
+      });
+      const dispatched = service.dispatch({ ...command, type: "steer", runId: "r" }, auth);
+      if (outcome === "delivered")
+        await expect(dispatched).resolves.toMatchObject({ commandId: "c" });
+      else
+        await expect(dispatched).rejects.toMatchObject({
+          delivery: outcome === "unknown" ? "unknown" : "not-sent",
+        });
+      expect(ports.repository.bindSteerClaim).toHaveBeenCalledWith("c", "claim-token");
+      expect(ports.queue.settleSteer).toHaveBeenCalledWith("s", "claim-token", outcome);
+      expect(ports.queue.consumed).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["not_delivered", "unknown"] as const)(
+    "keeps provider outcome %s on dispatch and status after admission",
+    async (outcome) => {
+      const { service, ports, auth, receipt, events } = setup();
+      const steer = { ...send, type: "steer", runId: "r" };
+      const marker = { runId: "r" };
+      vi.mocked(ports.execution.steerDelivery).mockImplementation(async () => {
+        expect(events.at(-1)).not.toBe("transaction:start");
+        return outcome;
+      });
+      const failure =
+        outcome === "unknown"
+          ? { delivery: "unknown" }
+          : { code: "COMMAND_BUSY", delivery: "not-sent" };
+      await expect(service.dispatch(steer, auth)).rejects.toMatchObject(failure);
+      vi.mocked(ports.repository.receiptStatus).mockResolvedValue({ ...receipt, steer: marker });
+      await expect(service.status({ commandId: "c" }, auth)).rejects.toMatchObject(failure);
+      expect(ports.execution.command).toHaveBeenCalledTimes(1);
+    },
+  );
   it("passes exact command type to the crew owner boundary before ordinary admission", async () => {
     const { service, ports, auth } = setup();
     await service.dispatch(send, auth);
@@ -606,6 +651,29 @@ describe("command domain admission", () => {
       expect(ports.repository.adopt).not.toHaveBeenCalled();
     },
   );
+  it("refuses session consent for a desktop-owned approval", async () => {
+    const { service, ports, auth } = setup();
+    vi.mocked(ports.nativeProjection.watch).mockResolvedValue({ revision: 8, running: true });
+    await expect(
+      service.dispatch(
+        {
+          type: "approve",
+          sessionId: "s",
+          commandId: "approve-desktop",
+          runId: "desktop",
+          requestId: 7,
+          approvalOccurrenceId: "7e1c4dc0-6f53-4a8c-b8d8-000000000001",
+          decision: "allow",
+          allowForSession: true,
+        },
+        auth,
+      ),
+    ).rejects.toThrow("Session grants require the original Host tool request");
+    expect(ports.nativeProjection.prepareDesktop).not.toHaveBeenCalled();
+    expect(ports.repository.adopt).not.toHaveBeenCalled();
+    expect(ports.execution.command).not.toHaveBeenCalled();
+  });
+
   it("refuses approval admission without an original occurrence and preserves revoked authority", async () => {
     const { service, ports, auth, revoke } = setup();
     vi.mocked(ports.nativeProjection.watch).mockResolvedValue({ revision: 8, running: true });

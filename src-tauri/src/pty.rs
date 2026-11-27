@@ -372,6 +372,15 @@ impl PtyHost {
         sessions.remove(id)
     }
 
+    #[cfg(windows)]
+    pub(crate) fn has_sessions(&self) -> bool {
+        !self
+            .sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty()
+    }
+
     pub(crate) fn kill_all(&self) {
         let kids: Vec<Arc<LivePty>> = {
             let mut map = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
@@ -510,7 +519,7 @@ pub fn pty_spawn(
         }
         path
     } else {
-        working_dir(&cwd)
+        working_dir(&cwd)?
     };
     let _reservation = crate::worktree_lifecycle::reserve_spawn(&workdir)?;
     crate::mobile_pty::reserve_native_spawn(&app, &id)?;
@@ -560,6 +569,72 @@ pub fn pty_spawn(
         let _ = (app, cwd, cols, rows, shell);
         Err("Terminals are not supported on this platform.".into())
     }
+}
+
+#[tauri::command(async)]
+pub fn desktop_worktree_removal_lease(
+    host: State<'_, PtyHost>,
+    agents: State<'_, crate::harness::HarnessHost>,
+    editors: State<'_, crate::native_workspace::editor_buffers::EditorBuffers>,
+    client_id: String,
+    lease_id: String,
+    path: Option<String>,
+) -> Result<(), String> {
+    if uuid::Uuid::parse_str(&client_id).is_err() || uuid::Uuid::parse_str(&lease_id).is_err() {
+        return Err("Invalid desktop removal lease identity.".into());
+    }
+    let Some(path) = path else {
+        crate::worktree_lifecycle::release_desktop_removal_lease(&client_id, &lease_id);
+        return Ok(());
+    };
+    acquire_desktop_removal_lease(
+        &host,
+        &agents,
+        &editors,
+        std::path::Path::new(&path),
+        client_id,
+        lease_id,
+        std::time::Duration::from_secs(600),
+    )
+}
+
+fn acquire_desktop_removal_lease(
+    host: &PtyHost,
+    agents: &crate::harness::HarnessHost,
+    editors: &crate::native_workspace::editor_buffers::EditorBuffers,
+    path: &std::path::Path,
+    client_id: String,
+    lease_id: String,
+    ttl: std::time::Duration,
+) -> Result<(), String> {
+    let _gate = host.spawn_gate.lock().unwrap_or_else(|e| e.into_inner());
+    let path = crate::worktree_lifecycle::canonical_removal_path(path)?;
+    if host
+        .sessions
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .values()
+        .any(|live| crate::worktrees::contains_working_dir(&path, &live.cwd))
+    {
+        return Err("Stop active terminals and agents before removing the worktree.".into());
+    }
+    // The Host trusts a grant only because this check ran; terminals above keep their own refusal.
+    if !editors.dirty_under(&path.to_string_lossy()).is_empty() {
+        return Err(
+            "editors: Save or close unsaved files under this worktree before removing it.".into(),
+        );
+    }
+    crate::worktree_lifecycle::install_desktop_removal_lease(
+        &path,
+        client_id.clone(),
+        lease_id.clone(),
+        ttl,
+    )?;
+    if agents.has_working_dir(&path) {
+        crate::worktree_lifecycle::release_desktop_removal_lease(&client_id, &lease_id);
+        return Err("Stop active terminals and agents before removing the worktree.".into());
+    }
+    Ok(())
 }
 
 /// Only the window owning a local PTY can query its launch shell's catalog.
@@ -760,6 +835,7 @@ fn spawn_private_program(
         .map(std::path::PathBuf::from)
         .filter(|path| path.is_dir())
         .ok_or("Home directory is unavailable")?;
+    let _reservation = crate::worktree_lifecycle::reserve_spawn(&workdir)?;
     let shell = (program.into(), args, vec![("SSH_ASKPASS_REQUIRE", "never")]);
     #[cfg(unix)]
     return spawn_unix(
@@ -1160,6 +1236,7 @@ fn spawn_unix(
             return Err(error);
         }
     };
+    let workspace = crate::worktree_lifecycle::reserve_spawn(&workdir)?;
     let spawned = cmd.spawn();
     drop(slave);
     let child = match spawned {
@@ -1299,6 +1376,8 @@ fn spawn_unix(
     let wait_app = app;
     let wait_id = id;
     thread::spawn(move || {
+        // Window teardown can remove the registry entry before the shell exits.
+        let _workspace = workspace;
         let exit = child.wait();
         let output_complete = command::await_drain(one_shot, drain);
         let code = crate::pty_runtime_logs::report_exit(log_exit.as_ref(), exit.as_ref().ok());
@@ -1314,18 +1393,15 @@ fn spawn_unix(
         }
         // Only announce this child. A remount/respawn reuses the id, and the
         // previous wait thread must not paint "[process exited]" on the new PTY
-        // or yank the replacement out of the host map.
-        let owner = if exit.is_ok() {
-            wait_app.try_state::<PtyHost>().and_then(|host| {
-                host.remove_if_child(&wait_id, &child).map(|live| {
-                    live.output.set_enabled(false);
-                    live.set_output_visible(&wait_app, &wait_id, true);
-                    live.owner_label()
-                })
+        // or yank the replacement out of the host map. A failed wait still
+        // retires this child, so the pane is not left registered without an exit.
+        let owner = wait_app.try_state::<PtyHost>().and_then(|host| {
+            host.remove_if_child(&wait_id, &child).map(|live| {
+                live.output.set_enabled(false);
+                live.set_output_visible(&wait_app, &wait_id, true);
+                live.owner_label()
             })
-        } else {
-            None
-        };
+        });
         if let Some(owner) = owner {
             emit_to_owner(
                 &wait_app,
@@ -1413,6 +1489,7 @@ fn spawn_windows(
         .take_writer()
         .map_err(|err| format!("Failed to write to terminal: {err}"))?;
 
+    let workspace = crate::worktree_lifecycle::reserve_spawn(&workdir)?;
     let mut child = crate::windows::spawn_pty(pair.slave.as_ref(), cmd)
         .map_err(|err| format!("Failed to start {shell}: {err}"))?;
     let pid = child.process_id().unwrap_or(0);
@@ -1503,6 +1580,8 @@ fn spawn_windows(
     let wait_app = app;
     let wait_id = id;
     thread::spawn(move || {
+        // Window teardown can remove the registry entry before the shell exits.
+        let _workspace = workspace;
         let exit = child.wait();
         let output_complete = command::await_drain(one_shot, drain);
         let code = crate::pty_runtime_logs::report_exit(log_exit.as_ref(), exit.as_ref().ok());
@@ -1541,12 +1620,12 @@ fn spawn_windows(
     Ok(())
 }
 
-fn working_dir(cwd: &str) -> std::path::PathBuf {
-    let path = resolve_session_cwd(cwd);
+fn working_dir(cwd: &str) -> Result<std::path::PathBuf, String> {
+    let path = resolve_session_cwd(cwd)?;
     if path.is_dir() {
-        return path;
+        return Ok(path);
     }
-    dirs_home().map(std::path::PathBuf::from).unwrap_or(path)
+    Ok(dirs_home().map(std::path::PathBuf::from).unwrap_or(path))
 }
 
 /// A shell to start: its path, its arguments, and environment it needs.
@@ -1877,8 +1956,12 @@ pub fn ssh_terminal_suggestions_request(
         |event| emit_shell_event(&app, window.label(), event),
     )?;
     let acknowledgement = request_id.clone();
-    thread::spawn(move || {
-        thread::sleep(Duration::from_millis(1500));
+    // The 1.5 s deadline runs on the async runtime's timer, not a parked OS
+    // thread per request. The wake-time checks below stay as they were: a
+    // terminal that has gone or a request that was answered or replaced
+    // yields no event.
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(1500)).await;
         let Some(host) = app.try_state::<PtyHost>() else {
             return;
         };
@@ -2359,6 +2442,26 @@ mod tests {
         assert!(host.get("term").is_none());
     }
 
+    // The wait thread retires its child even when `wait()` failed, so the
+    // removal must not depend on the exit status: it is keyed by child identity.
+    #[test]
+    fn remove_if_child_retires_the_child_it_was_given() {
+        let host = PtyHost::new();
+        let child = Arc::new(unix_child::UnixChild::new(
+            std::process::Command::new("true").spawn().unwrap(),
+        ));
+        let other = Arc::new(unix_child::UnixChild::new(
+            std::process::Command::new("true").spawn().unwrap(),
+        ));
+        let mut live = fake_pty(0, "main");
+        Arc::get_mut(&mut live).unwrap().child = Some(child.clone());
+        host.insert("term".into(), live);
+        assert!(host.remove_if_child("term", &other).is_none());
+        assert!(host.get("term").is_some());
+        assert!(host.remove_if_child("term", &child).is_some());
+        assert!(host.get("term").is_none());
+    }
+
     #[test]
     fn terminal_output_follows_transfer_but_not_a_replacement() {
         let host = PtyHost::new();
@@ -2383,6 +2486,9 @@ mod tests {
 
 #[cfg(test)]
 mod coalesce_tests;
+
+#[cfg(all(test, any(unix, windows)))]
+mod removal_lease_tests;
 
 #[cfg(test)]
 mod queued_writer_tests {

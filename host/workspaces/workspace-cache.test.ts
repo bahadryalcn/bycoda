@@ -4,8 +4,7 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { withHostGitMutation } from "../git/git-mutations";
 const api = vi.hoisted(() => ({ exec: vi.fn() }));
-vi.mock("../../src/shared/lib/processExecution.node", () => ({ execFileAsync: api.exec }));
-vi.mock("../git/git-start-gate", () => ({ hostGitStarts: { enter: async () => {} } }));
+vi.mock("../git/git-exec-pool", () => ({ hostGitExec: { exec: api.exec } }));
 vi.mock("../git/git-conflicts", () => ({
   hostUnmerged: async () => [],
   hostOperationState: async () => null,
@@ -52,7 +51,7 @@ function gitReplies() {
           : command === "symbolic-ref"
             ? "main\n"
             : args.includes("--is-inside-work-tree")
-              ? "true\n"
+              ? `true\n\n${"a".repeat(40)}\n`
               : args.includes("--verify")
                 ? "head\n"
                 : command === "ls-files" && !args.includes("--deleted")

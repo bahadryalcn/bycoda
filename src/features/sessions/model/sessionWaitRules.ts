@@ -27,6 +27,14 @@ export type SessionWakeSource = {
   until?: number;
 };
 
+/**
+ * Work the turn itself started (commands, subagents, background tasks) still runs, so
+ * rows show it as working. Delegated children and wake sources are a real wait.
+ */
+export function waitStillWorking(wait: SessionWait | null | undefined): boolean {
+  return wait?.kind === "commands" || wait?.kind === "agents" || wait?.kind === "tasks";
+}
+
 /** The turn yielded but background work it started still runs. Null while the agent itself works. */
 export function backgroundWait(session: {
   backgroundTasks?: readonly string[];

@@ -449,6 +449,29 @@ describe("Assistant folder tools", () => {
       expect(cancelled).toMatchObject({ status: "cancelled", cancelRequested: true });
     });
 
+    it("stops a running command on Stop-all and refuses later starts after close (#1099)", async () => {
+      const tools = make({ inlineWaitMs: 150 });
+      const first = (await tools.call(
+        "commands.run",
+        node("setInterval(() => {}, 1000)"),
+        global,
+        yes,
+      )) as { status: string };
+      expect(first.status).toBe("running");
+      await tools.stopAll();
+      const settled = (await tools.call(
+        "commands.run.status",
+        { requestId: "run-1" },
+        global,
+        yes,
+      )) as { status: string };
+      expect(settled.status).toBe("cancelled");
+      await tools.close();
+      await expect(
+        tools.call("commands.run", node("0", { requestId: "run-2" }), global, yes),
+      ).resolves.toMatchObject({ error: expect.stringContaining("shutting down") });
+    });
+
     it("reuses a request id for identical input without a second process and rejects changes", async () => {
       const start = vi.fn(startCommand);
       const tools = make({ start, inlineWaitMs: 150 });

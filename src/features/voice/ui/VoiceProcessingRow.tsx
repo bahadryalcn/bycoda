@@ -1,33 +1,48 @@
 import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { t } from "../../../shared/i18n";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { Segmented } from "../../../shared/ui/settings";
+import { Segmented, SettingsFeedback } from "../../../shared/ui/settings";
 import type { VoiceDevice } from "../model/localVoiceClient";
 import type { VoiceSettings } from "../model/voiceSettings";
 import type { VoiceSetup } from "./useVoiceSetup";
 type Change = (patch: Partial<VoiceSettings>) => void;
 
+/** The one Processing choice (Automatic, GPU, CPU) shared by voice replies and local dictation. */
 export function ProcessingRow({
-  id,
   setup,
   value,
   change,
 }: {
-  id: string;
   setup: VoiceSetup;
   value: VoiceDevice;
   change: Change;
 }) {
   return (
     <Row
-      id={id}
+      id="voice-device"
       label={t("Processing")}
-      info={
-        <InfoPopover label={`${t("Processing")}: ${t("Help")}`}>
-          {t("Automatic uses a supported NVIDIA GPU when available.")}
-        </InfoPopover>
-      }
+      description={t("Automatic uses a supported NVIDIA GPU when available.")}
       disabled={setup.installing}
+      modified={!setup.installing && value !== "auto"}
+      onReset={() => {
+        setup.resetJob();
+        change({ device: "auto" });
+      }}
+      feedback={
+        setup.gpuUnavailable ? (
+          <SettingsFeedback
+            state="warning"
+            action={{
+              label: t("Use automatic selection"),
+              onClick: () => {
+                setup.resetJob();
+                change({ device: "auto" });
+              },
+            }}
+          >
+            {t("No supported NVIDIA GPU was found.")}
+          </SettingsFeedback>
+        ) : undefined
+      }
     >
       <Segmented
         label={t("Processing")}

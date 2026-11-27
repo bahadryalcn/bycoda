@@ -25,19 +25,21 @@ it("opens each destination and refreshes without reloading the app", async () =>
     document.body.append(host);
     expect(
       [...host.querySelectorAll("button")].map((button) => button.getAttribute("aria-label")),
-    ).toEqual(["Workspace controls", "Sounds", "Full screen"]);
-    const openMenu = async () =>
-      act(async () =>
-        host.querySelector<HTMLButtonElement>('button[aria-label="Workspace controls"]')!.click(),
-      );
-    for (const label of ["Refresh current view"]) {
-      await openMenu();
-      const item = [...document.body.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find(
-        (item) => item.textContent?.includes(label),
-      );
-      expect(item, label).toBeDefined();
-      await act(async () => item!.click());
-    }
+    ).toEqual(["Refresh current view", "Sounds", "Full screen", "More"]);
+    // The wide-footer form: the container query only decides which form is visible.
+    const inline = host.querySelector<HTMLButtonElement>('[data-workspace-control="refresh"]')!;
+    expect(inline.closest(".hidden")?.className).toContain("@min-[40rem]/footer:flex");
+    await act(async () => inline.click());
+    expect(reload).toHaveBeenCalledOnce();
+    reload.mockClear();
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-workspace-control="more"]')!.click(),
+    );
+    const refreshButton = () =>
+      document.querySelector<HTMLButtonElement>(
+        '[role^="menuitem"][aria-label="Refresh current view"]',
+      )!;
+    await act(async () => refreshButton().click());
     expect(reload).toHaveBeenCalledOnce();
     expect(document.body.textContent).not.toContain("Manage hidden groups");
     expect(document.body.textContent).not.toContain("Provider usage");
@@ -49,12 +51,18 @@ it("opens each destination and refreshes without reloading the app", async () =>
         }),
       ),
     );
-    await openMenu();
-    const refresh = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
-      (item) => item.textContent?.includes("Refresh current view"),
+    // Picking an item closed the menu; open it again to see the disabled state.
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-workspace-control="more"]')!.click(),
+    );
+    expect(refreshButton().disabled).toBe(true);
+    const inlineRefresh = host.querySelector<HTMLButtonElement>(
+      '[data-workspace-control="refresh"]',
     )!;
-    expect((refresh as HTMLButtonElement).disabled).toBe(true);
-    await act(async () => refresh.click());
+    expect(inlineRefresh.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => inlineRefresh.click());
+    expect(reload).toHaveBeenCalledOnce();
+    await act(async () => refreshButton().click());
     expect(reload).toHaveBeenCalledOnce();
   } finally {
     await act(async () => root.unmount());
@@ -63,27 +71,65 @@ it("opens each destination and refreshes without reloading the app", async () =>
   }
 });
 
+it("offers every control in the narrow-footer menu", async () => {
+  localStorage.clear();
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const reload = vi.fn();
+  window.addEventListener(WORKSPACE_REFRESH_EVENT, reload);
+  const openMenu = async () => {
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-workspace-control="more"]')!.click(),
+    );
+    return (label: string) =>
+      document.body.querySelector<HTMLButtonElement>(`[role^="menuitem"][aria-label="${label}"]`)!;
+  };
+  try {
+    await act(async () => root.render(createElement(WorkspaceControls, {})));
+    const row = await openMenu();
+    expect(row("Full screen")).not.toBeNull();
+    expect(row("Sounds").getAttribute("aria-checked")).toBe("true");
+    await act(async () => row("Sounds").click());
+    expect(loadSoundsEnabled()).toBe(false);
+    expect(row("Sounds").getAttribute("aria-checked")).toBe("false");
+    await act(async () => row("Refresh current view").click());
+    expect(reload).toHaveBeenCalledOnce();
+  } finally {
+    await act(async () => root.unmount());
+    window.removeEventListener(WORKSPACE_REFRESH_EVENT, reload);
+    host.remove();
+    localStorage.clear();
+  }
+});
+
 it("persists the sound toggle, follows Settings changes and retains state on failed saves", async () => {
   localStorage.clear();
   const host = document.createElement("div");
   const root = createRoot(host);
   try {
+    document.body.append(host);
     await act(async () => root.render(createElement(WorkspaceControls, {})));
-    const button = host.querySelector<HTMLButtonElement>('[data-workspace-control="sounds"]')!;
-    expect(button.getAttribute("aria-pressed")).toBe("true");
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-workspace-control="more"]')!.click(),
+    );
+    const button = document.querySelector<HTMLButtonElement>(
+      '[role="menuitemcheckbox"][aria-label="Sounds"]',
+    )!;
+    expect(button.getAttribute("aria-checked")).toBe("true");
     await act(async () => button.click());
     expect(loadSoundsEnabled()).toBe(false);
-    expect(button.getAttribute("aria-pressed")).toBe("false");
+    expect(button.getAttribute("aria-checked")).toBe("false");
     await act(async () => {
       saveSoundsEnabled(true);
     });
-    expect(button.getAttribute("aria-pressed")).toBe("true");
+    expect(button.getAttribute("aria-checked")).toBe("true");
     const write = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
       throw new Error("Storage unavailable");
     });
     await act(async () => button.click());
     expect(loadSoundsEnabled()).toBe(true);
-    expect(button.getAttribute("aria-pressed")).toBe("true");
+    expect(button.getAttribute("aria-checked")).toBe("true");
     expect(document.body.textContent).toContain("Could not save changes");
     write.mockRestore();
     const retry = [...document.body.querySelectorAll("button")].find(
@@ -91,10 +137,11 @@ it("persists the sound toggle, follows Settings changes and retains state on fai
     )!;
     await act(async () => retry.click());
     expect(loadSoundsEnabled()).toBe(false);
-    expect(button.getAttribute("aria-pressed")).toBe("false");
+    expect(button.getAttribute("aria-checked")).toBe("false");
   } finally {
     vi.restoreAllMocks();
     await act(async () => root.unmount());
+    host.remove();
     localStorage.clear();
   }
 });

@@ -1,3 +1,4 @@
+import { errorText } from "../../shared/lib/errors";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isRemoteProjectPath, sameProjectPath } from "../../features/projects/model/recents";
 import { isBlankSession } from "../../features/projects/model/projectReturn";
@@ -61,7 +62,12 @@ export function useWorkspaceNavigation(options: Options) {
   }, []);
 
   const select = useCallback((next: Request) => {
-    if (!next.project || next.project === "~" || isRemoteProjectPath(next.project)) return;
+    if (
+      !next.project ||
+      next.project === "~" ||
+      (next.kind === "project" && isRemoteProjectPath(next.project))
+    )
+      return;
     navigationEpoch.current++;
     request.current = next;
     setError(null);
@@ -126,6 +132,7 @@ export function useWorkspaceNavigation(options: Options) {
             tabId = target.id;
           } else if (
             session &&
+            !isRemoteProjectPath(next.project) &&
             isBlankSession(session) &&
             sameProjectPath(session.cwd, next.project)
           ) {
@@ -136,7 +143,7 @@ export function useWorkspaceNavigation(options: Options) {
                 path,
                 branch: next.focus?.branch ?? null,
                 head: "",
-                isMain: !next.focus,
+                isMain: !next.focus || sameProjectPath(next.focus.path, next.project),
                 locked: false,
                 prunable: false,
                 missing: false,
@@ -182,7 +189,7 @@ export function useWorkspaceNavigation(options: Options) {
             }
             setError({
               project: next.project,
-              message: caught instanceof Error ? caught.message : String(caught),
+              message: errorText(caught),
             });
           }
         } finally {

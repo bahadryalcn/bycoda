@@ -8,7 +8,8 @@ import type { GitBranchInfo } from "../../../platform/tauri/fs";
 
 type Props = {
   busy: boolean;
-  error?: string | null;
+  /** Translated summary of the failure and the raw reason behind it. */
+  error?: { title: string; details: string } | null;
   initialName?: string;
   branches?: GitBranchInfo[];
   initialReference?: string;
@@ -48,6 +49,12 @@ export function CreateBranchDialog({
     if (error) input.current?.focus();
   }, [error]);
 
+  const blockedReason = !trimmed
+    ? t("Enter a name.")
+    : branches && !trimmedReference
+      ? t("Choose a base branch.")
+      : undefined;
+
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!trimmed || busy || (branches && !trimmedReference)) return;
@@ -57,14 +64,13 @@ export function CreateBranchDialog({
   return (
     <Modal
       languageDomain="git"
-      title={t(branches ? "New branch from…" : "New branch")}
-      description={t("Create and check out a branch in this project.")}
+      title={branches ? t("New branch from…") : t("New branch")}
       size="sm"
       onClose={() => {
         if (!busy) onCancel();
       }}
       footer={
-        <ModalActions>
+        <ModalActions reason={blockedReason}>
           <Button type="button" disabled={busy} onClick={onCancel} variant="ghost">
             {t("Cancel")}
           </Button>
@@ -72,36 +78,15 @@ export function CreateBranchDialog({
             type="submit"
             form={formId}
             variant="primary"
-            disabled={!trimmed || busy || Boolean(branches && !trimmedReference)}
+            disabled={busy || Boolean(blockedReason)}
             loading={busy}
           >
-            {t("Create branch")}
+            {t("Create")}
           </Button>
         </ModalActions>
       }
     >
       <form id={formId} className="flex flex-col gap-4" onSubmit={submit}>
-        {branches ? (
-          <>
-            <TextField
-              label={t("Base branch")}
-              value={reference}
-              onChange={(event) => setReference(event.target.value)}
-              aria-label={t("Base branch")}
-              list={referencesId}
-              spellCheck={false}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              disabled={busy}
-            />
-            <datalist id={referencesId}>
-              {references?.map((value) => (
-                <option key={value} value={value} />
-              ))}
-            </datalist>
-          </>
-        ) : null}
         <TextField
           label={t("Branch name")}
           ref={input}
@@ -116,8 +101,28 @@ export function CreateBranchDialog({
           disabled={busy}
           onChange={(event) => setName(event.target.value)}
         />
-
-        {error ? <InlineError>{error}</InlineError> : null}
+        {branches ? (
+          <>
+            <TextField
+              label={t("Base branch")}
+              value={reference}
+              aria-label={t("Base branch")}
+              onChange={(event) => setReference(event.target.value)}
+              list={referencesId}
+              spellCheck={false}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              disabled={busy}
+            />
+            <datalist id={referencesId}>
+              {references?.map((value) => (
+                <option key={value} value={value} />
+              ))}
+            </datalist>
+          </>
+        ) : null}
+        {error ? <InlineError details={error.details}>{error.title}</InlineError> : null}
       </form>
     </Modal>
   );

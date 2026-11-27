@@ -1,4 +1,6 @@
 import type { HarnessId } from "../../../shared/model/harnessIdentity";
+import type { AgentModel, ModelSetting } from "../../../shared/model/agentModel";
+import { attachProbedCatalogConsumer } from "../../../integrations/harness/core/probedCatalogStore";
 import { productProviderDefaults } from "../../../shared/model/productProviderDefaults";
 import { withClaudeAdvisor } from "./claudeAdvisor";
 import { withAutoCompactSettings } from "./autoCompact";
@@ -13,38 +15,11 @@ import {
   isHarnessAvailable,
 } from "../../../integrations/harness/core/availabilityState";
 
-export type ModelSettingChoice = {
-  value: string;
-  label: string;
-};
-
-export type ModelSetting = {
-  id: string;
-  label: string;
-  kind: "select" | "toggle";
-  value: string;
-  options: ModelSettingChoice[];
-  description?: string;
-};
-
-export type AgentModel = {
-  id: string;
-  harness: HarnessId;
-  name: string;
-  nativeId?: string;
-  /** Concrete native model launched by a moving provider alias. */
-  aliasTarget?: string;
-  /** Upstream provider inside a multi-provider harness such as OpenCode. */
-  provider?: {
-    id: string;
-    name: string;
-  };
-  settings?: ModelSetting[];
-  /** A CLI speed variant represented by this model's Fast setting. */
-  fastVariant?: { id: string; nativeId: string };
-  /** Context window, when the harness catalog reports one. */
-  contextWindow?: number;
-};
+export type {
+  AgentModel,
+  ModelSetting,
+  ModelSettingChoice,
+} from "../../../shared/model/agentModel";
 
 export const MODELS: AgentModel[] = [
   {
@@ -516,8 +491,8 @@ export function resetDisabledModels() {
   disabledCache = null;
   emit();
 }
-// Another window (Settings, quick composer) may change the list.
-if (typeof window !== "undefined") {
+// Another window (Settings, quick composer) may change the list. React Native's window has no DOM events.
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
   window.addEventListener("storage", (event) => {
     if (event.key !== DISABLED_MODELS_KEY) return;
     disabledCache = null;
@@ -608,7 +583,7 @@ export function resolveModelFromCatalog(
   if (id) {
     const exact = catalog.all.find((model) => model.id === id) ?? savedFastVariant(id, catalog.all);
     if (exact && exact.harness === harness) return exact;
-    const slug = nativeIdFrom(id);
+    const slug = nativeIdFrom(harness === "claude" ? id.trim().replace(/\[1m\]$/i, "") : id);
     const byNative = available.find((model) => (model.nativeId ?? nativeIdFrom(model.id)) === slug);
     if (byNative) return byNative;
     // Keep moving Claude aliases as aliases until the CLI advertises them.
@@ -665,10 +640,7 @@ export function resolveModelFromCatalog(
   // until discovery finishes instead of borrowing another provider's model.
   if (available.length === 0) {
     const requested = id?.trim() ?? "";
-    const modelId =
-      requested && (!requested.includes(":") || requested.startsWith(`${harness}:`))
-        ? requested
-        : "";
+    const modelId = requested && modelBelongsToHarness(harness, requested) ? requested : "";
     const nativeId = nativeIdFrom(modelId);
     return {
       id: modelId,
@@ -764,11 +736,10 @@ export function nativeModelId(model: AgentModel | string): string {
 function nativeIdForUnknownKey(id: string): string {
   const trimmed = id.trim();
   const slug = nativeIdFrom(trimmed);
-  const colon = trimmed.indexOf(":");
-  const harness = colon >= 0 ? trimmed.slice(0, colon).toLowerCase() : "";
+  if (!trimmed.toLowerCase().startsWith("claude:")) return slug;
   // Picker keys can use dotted versions (`opus-4.8`), while Claude's CLI
   // expects hyphenated native ids (`claude-opus-4-8`).
-  return harness === "claude" ? claudeNativeId("claude", slug.replace(/\.(?=\d)/g, "-")) : slug;
+  return claudeNativeId("claude", slug.replace(/\.(?=\d)/g, "-"));
 }
 
 /**
@@ -858,6 +829,7 @@ export function loadLastModelSettings(): Record<string, string> {
       "advisor",
       "subagentModel",
       delegation.DELEGATION_PARENT_KEY,
+      delegation.BACKGROUND_OWNER_KEY,
     ])
       delete settings[key];
     return settings;
@@ -872,7 +844,11 @@ export function saveLastModelSettings(
   mode: "overwrite" | "fill" = "overwrite",
 ) {
   const prev = loadLastModelSettings();
-  const { [delegation.DELEGATION_PARENT_KEY]: _parent, ...incoming } = parseStringRecord(settings);
+  const {
+    [delegation.DELEGATION_PARENT_KEY]: _parent,
+    [delegation.BACKGROUND_OWNER_KEY]: _owner,
+    ...incoming
+  } = parseStringRecord(settings);
   for (const key of [...delegation.CROSS_DELEGATION_KEYS, "advisor", "subagentModel"])
     delete incoming[key];
   const next = mode === "fill" ? { ...incoming, ...prev } : { ...prev, ...incoming };
@@ -1227,9 +1203,11 @@ function compatibleSettingValue(
 function nativeIdFrom(id: string): string {
   const trimmed = id.trim();
   const colon = trimmed.indexOf(":");
-  const slug = colon >= 0 ? trimmed.slice(colon + 1) : trimmed;
-  const bracket = slug.indexOf("[");
-  return bracket >= 0 ? slug.slice(0, bracket) : slug;
+  if (colon < 0) return trimmed;
+  const owner = trimmed.slice(0, colon).toLowerCase() as HarnessId;
+  if (!HARNESSES.includes(owner)) return trimmed;
+  const slug = trimmed.slice(colon + 1);
+  return owner === "claude" ? slug.replace(/\[1m\]$/i, "") : slug;
 }
 
 /** Match Claude ids with and without the provider prefix. */
@@ -1290,3 +1268,5 @@ function pickDefaultId(harness: HarnessId, models: AgentModel[]): string {
     DEFAULT_MODEL_ID[harness]
   );
 }
+
+attachProbedCatalogConsumer(setHarnessModels);

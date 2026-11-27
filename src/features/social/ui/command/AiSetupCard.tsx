@@ -1,13 +1,12 @@
-import { Text } from "../../../../shared/ui/Text";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
+import { Button } from "../../../../shared/ui/Button";
 import { Heading } from "../../../../shared/ui/Heading";
-import { surfaceAttributes, Surface } from "../../../../shared/ui/Surface";
-import { Sparkles } from "../../../../shared/ui/icons";
+import { Surface } from "../../../../shared/ui/Surface";
 import { REMOTE_PROVIDERS, isRemoteProvider } from "../../../connections/public/protocol";
 import type { SocialAgent } from "../../model/social";
 import { ModelPicker } from "../../../sessions/public/ModelPicker";
-import { DisabledReason, gateProps, type ActionGate } from "../common/DisabledReason";
 import { SocialModelSource } from "../shell/SocialModelSource";
 
 export type AiSetupCardProps = {
@@ -21,9 +20,6 @@ export type AiSetupCardProps = {
  */
 export function AiSetupCard({ busy, onSave }: AiSetupCardProps) {
   const [choice, setChoice] = useState<Partial<SocialAgent> & { model: string }>({ model: "" });
-  const gate: ActionGate = choice.provider
-    ? { disabled: false }
-    : { disabled: true, disabledReason: t("Choose a model first.") };
   return (
     <Surface
       as="section"
@@ -31,20 +27,15 @@ export function AiSetupCard({ busy, onSave }: AiSetupCardProps) {
       className="command-frame command-setup"
       aria-label={t("Choose an AI model")}
     >
-      <Text
-        size="inherit"
-        tone="secondary"
-        {...surfaceAttributes({ radius: "card", variant: "inset" }, "command-card-icon")}
-      >
-        <Sparkles className="icon-sm" strokeWidth={1.75} aria-hidden />
-      </Text>
       <div className="command-setup-text">
-        <Heading size="section">{t("Choose an AI model")}</Heading>
-        <Text as="p" size="caption" tone="muted" leading="inherit" className="command-muted">
-          {t(
-            "AI needs a model before it can plan or write reports. You can change it later in Accounts.",
-          )}
-        </Text>
+        <div className="flex items-center gap-1">
+          <Heading size="section">{t("Choose an AI model")}</Heading>
+          <InfoPopover>
+            {t(
+              "AI needs a model before it can plan or write reports. You can change it later in Accounts.",
+            )}
+          </InfoPopover>
+        </div>
       </div>
       <div className="command-setup-picker">
         <SocialModelSource model={choice.model} values={choice.modelSettings ?? {}}>
@@ -79,10 +70,12 @@ export function AiSetupCard({ busy, onSave }: AiSetupCardProps) {
             }
           />
         </SocialModelSource>
-        <DisabledReason
+        <Button
           variant="primary"
           size="sm"
           loading={busy}
+          disabled={!choice.provider}
+          disabledReason={t("Choose a model first.")}
           onClick={() => {
             if (choice.provider)
               onSave({
@@ -94,10 +87,9 @@ export function AiSetupCard({ busy, onSave }: AiSetupCardProps) {
                 ...(choice.modelSettings ? { modelSettings: choice.modelSettings } : {}),
               });
           }}
-          {...gateProps(gate)}
         >
           {t("Use this model")}
-        </DisabledReason>
+        </Button>
       </div>
     </Surface>
   );

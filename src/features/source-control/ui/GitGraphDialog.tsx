@@ -24,13 +24,14 @@ export function GitGraphDialog({ title, toolbar, onClose, children, expandable =
   return (
     <Modal
       padding="none"
+      surface="workspace-panel"
       title={title}
       onClose={onClose}
       size={expandable ? "full" : "xl"}
       expandable={expandable}
       fieldEscape="field"
       scroll="none"
-      className={expandable ? "h-[calc(100dvh-48px)]" : "h-[min(760px,calc(100dvh-48px))]"}
+      height={expandable ? "fill" : "tall"}
       toolbar={<div className={styles.toolbar}>{toolbar}</div>}
     >
       <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "flex min-h-0 flex-1 flex-col")}>

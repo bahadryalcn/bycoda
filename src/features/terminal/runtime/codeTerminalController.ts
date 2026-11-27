@@ -1,6 +1,11 @@
 import { featureHost } from "../../connections/public/hostFeatureClient";
-import { remoteRequest } from "../../connections/public/connections";
+import { classifyCommandFailure, remoteRequest } from "../../connections/public/connections";
 import { parseRemotePath } from "../../connections/public/remoteProjects";
+import { describeRemoteError } from "../../connections/public/remoteFailure";
+import {
+  classifyFailureLifetime,
+  describeActionFailure,
+} from "../../connections/public/transientFailure";
 import type {
   HostTerminal,
   HostTerminalList,
@@ -14,13 +19,15 @@ import { graphemes } from "../../../shared/lib/text/truncate";
 
 export type CodeTerminalState = {
   id: string;
-  phase: "starting" | "running" | "exited" | "unknown";
+  phase: "starting" | "running" | "exited" | "not-started" | "unknown";
   shell: string;
   profile?: string;
   output: string;
   truncated: boolean;
   exitCode: number | null;
   error?: string;
+  readError?: unknown;
+  actionError?: unknown;
 };
 export type CodeTerminalOptions = {
   cwd: string;
@@ -30,6 +37,41 @@ export type CodeTerminalOptions = {
   shellKind: CodeShellKind;
   isCurrent(): boolean;
 };
+
+export type RemoteCodeRun = {
+  controller: CodeTerminalController;
+  options: CodeTerminalOptions;
+  onReport?: (text: string) => boolean | void;
+};
+
+/** `progress` made visible progress (or more is pending), `idle` read nothing new, `failed` could not read. */
+export type CodeTerminalReadOutcome = "progress" | "idle" | "failed";
+
+function actionFailurePatch(reason: unknown, dispatched: boolean): Partial<CodeTerminalState> {
+  const failure = describeActionFailure(reason);
+  const defer = dispatched ? failure.transient : classifyFailureLifetime(reason) === "transient";
+  return defer ? { actionError: reason } : { error: failure.message, actionError: undefined };
+}
+
+/** Keeps the latest CODE_OUTPUT_LIMIT code units without splitting a grapheme. */
+function boundOutput(output: string): string {
+  if (output.length <= CODE_OUTPUT_LIMIT) return output;
+  const cut = output.length - CODE_OUTPUT_LIMIT;
+  // Segment only a window around the cut; a cluster reaching the window end falls back to the full tail.
+  const windowStart = Math.max(0, cut - 64);
+  const firstBoundary = (end: number) => {
+    let start = windowStart;
+    for (const part of graphemes(output.slice(windowStart, end))) {
+      if (start >= cut) break;
+      start += part.length;
+    }
+    return start;
+  };
+  const windowEnd = cut + 64;
+  let start = firstBoundary(windowEnd);
+  if (start >= windowEnd && windowEnd < output.length) start = firstBoundary(output.length);
+  return output.slice(start);
+}
 
 /** One explicit click owns one process; reads and failures never replay its launch. */
 export function createCodeTerminal(options: CodeTerminalOptions) {
@@ -42,28 +84,30 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
     exitCode: null,
   };
   const listeners = new Set<() => void>();
-  let readHost: (() => Promise<void>) | undefined;
+  let readHost: (() => Promise<CodeTerminalReadOutcome>) | undefined;
   let stopHost: (() => Promise<void>) | undefined;
   let started = false;
-  let reading: Promise<void> | undefined;
+  let dispatched = false;
+  let reading: Promise<CodeTerminalReadOutcome> | undefined;
   const update = (patch: Partial<CodeTerminalState>) => {
     state = { ...state, ...patch };
     for (const listener of listeners) listener();
   };
-  const append = (data: string, truncated = false) => {
+  /** Appends in order; undefined when the read carries nothing new for the visible state. */
+  const outputPatch = (
+    data: string,
+    truncated: boolean,
+  ): Partial<CodeTerminalState> | undefined => {
+    if (!data && (!truncated || state.truncated)) return undefined;
     const output = state.output + data;
-    let bounded = output;
-    if (output.length > CODE_OUTPUT_LIMIT) {
-      const parts = graphemes(output);
-      let start = parts.length;
-      let remaining = CODE_OUTPUT_LIMIT;
-      while (start > 0 && parts[start - 1].length <= remaining) remaining -= parts[--start].length;
-      bounded = parts.slice(start).join("");
-    }
-    const patch = {
-      output: bounded,
+    return {
+      output: boundOutput(output),
       truncated: state.truncated || truncated || output.length > CODE_OUTPUT_LIMIT,
     };
+  };
+  const append = (data: string, truncated = false) => {
+    const patch = outputPatch(data, truncated);
+    if (!patch) return;
     // xterm already draws native chunks. Only notify its React owner at process settlement.
     if (options.native) state = { ...state, ...patch };
     else update(patch);
@@ -72,16 +116,23 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
     if (!options.isCurrent())
       throw new Error("Conversation or working directory changed before execution.");
   };
-  const refresh = async () => {
-    if (!readHost || state.phase === "exited") return;
+  const refresh = async (): Promise<CodeTerminalReadOutcome> => {
+    // Before the Host process exists there is nothing to read yet; keep the base cadence.
+    if (!readHost) return state.phase === "starting" ? "progress" : "idle";
+    if (state.phase === "exited") return "idle";
     if (reading) return reading;
     reading = readHost()
-      .catch((reason) =>
-        update({
-          phase: "unknown",
-          error: reason instanceof Error ? reason.message : String(reason),
-        }),
-      )
+      .catch((reason): CodeTerminalReadOutcome => {
+        if (classifyFailureLifetime(reason) === "transient") {
+          if (!state.readError) update({ readError: reason });
+          return "failed";
+        }
+        const error = describeRemoteError(reason).message;
+        // A repeated identical failure must not re-render the dialog.
+        if (state.phase !== "unknown" || state.error !== error || state.readError)
+          update({ phase: "unknown", error, readError: undefined });
+        return "failed";
+      })
       .finally(() => {
         reading = undefined;
       });
@@ -89,6 +140,7 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
   };
   return {
     snapshot: () => state,
+    canDismiss: () => state.phase === "exited" || (state.phase !== "starting" && !dispatched),
     subscribe(listener: () => void) {
       listeners.add(listener);
       return () => {
@@ -119,6 +171,7 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
           queueTerminalRun(state.id, {
             command: options.command,
             shellKind: options.shellKind,
+            canStart: options.isCurrent,
             onOutput: append,
             onExit: (exitCode) => update({ phase: "exited", exitCode }),
             onError: (error) => update({ phase: "unknown", error }),
@@ -143,6 +196,7 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
         const catalog = await request<HostTerminalList>("terminals.list", {});
         if (!catalog.writable) throw new Error("This terminal is read-only.");
         assertCurrent();
+        dispatched = true;
         const terminal = await request<HostTerminal>("terminals.create", {
           requestId: state.id,
           cwd: parseRemotePath(options.cwd)?.hostPath ?? options.cwd,
@@ -150,7 +204,6 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
           command: options.command,
           shellKind: options.shellKind,
         });
-        update({ id: terminal.id, phase: "running", shell: terminal.shell });
         let cursor = 0;
         readHost = async () => {
           const result = await request<HostTerminalRead>("terminals.read", {
@@ -159,21 +212,40 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
             limit: 65536,
           });
           cursor = result.cursor;
-          append(result.output, result.truncated);
+          const output = outputPatch(result.output, result.truncated);
           // The exit record can arrive before the final output page is drained.
-          if (result.terminal.state === "exited" && !result.hasMore)
-            update({ phase: "exited", exitCode: result.terminal.exitCode, error: undefined });
-          else update({ phase: "running", error: undefined });
+          const next: Partial<CodeTerminalState> =
+            result.terminal.state === "exited" && !result.hasMore
+              ? {
+                  phase: "exited",
+                  exitCode: result.terminal.exitCode,
+                  error: undefined,
+                  actionError: undefined,
+                }
+              : { phase: "running", error: undefined };
+          const patch = { ...output, ...next, readError: undefined };
+          // One notification per read, and none when nothing visible changed.
+          if (
+            (Object.keys(patch) as (keyof CodeTerminalState)[]).some(
+              (key) => state[key] !== patch[key],
+            )
+          )
+            update(patch);
+          return output || result.hasMore || patch.phase === "exited" ? "progress" : "idle";
         };
         stopHost = async () => {
-          await request("terminals.close", { id: terminal.id });
+          // Interrupt retains the terminal record and the unread tail for settlement.
+          await request("terminals.interrupt", { id: terminal.id });
         };
+        update({ id: terminal.id, phase: "running", shell: terminal.shell });
         await refresh();
       } catch (reason) {
         discardTerminalRun(state.id);
+        const failure = actionFailurePatch(reason, dispatched);
+        if (dispatched && classifyCommandFailure(reason) !== "uncertain") dispatched = false;
         update({
-          phase: "unknown",
-          error: reason instanceof Error ? reason.message : String(reason),
+          phase: failure.actionError ? "not-started" : "unknown",
+          ...failure,
         });
       }
     },
@@ -182,7 +254,12 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
       try {
         if (stopHost) {
           await stopHost();
-          await refresh();
+          if (state.actionError) update({ actionError: undefined });
+          // A poll started before the stop acknowledgement may still report "running".
+          await reading;
+          do {
+            if ((await refresh()) !== "progress") break;
+          } while (state.phase !== "exited");
         } else if (options.native && state.profile) {
           await killPty(state.id);
           update({ phase: "unknown", error: "Stop requested. Command completion is unknown." });
@@ -191,7 +268,7 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
             "Terminal identity is unknown. Inspect the original machine before stopping or starting another command.",
           );
       } catch (reason) {
-        update({ error: reason instanceof Error ? reason.message : String(reason) });
+        update(actionFailurePatch(reason, true));
       }
     },
   };

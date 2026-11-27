@@ -59,11 +59,10 @@ describe("AgentMarkdown inline code", () => {
       }),
     );
 
-    const match = markup.match(/<code dir="ltr" class="([^"]*)"/);
+    const match = markup.match(/<code[^>]*? class="([^"]*)"/);
     expect(match).not.toBeNull();
     const classes = match![1].split(/\s+/);
     expect(classes).toContain("inline-flex");
-    expect(classes).toContain("min-h-6");
     expect(classes).toContain("max-w-full");
     expect(classes).toContain("[overflow-wrap:anywhere]");
     expect(classes).not.toContain("h-6");

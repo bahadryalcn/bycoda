@@ -8,7 +8,7 @@ import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useCallback, useState } from "react";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
-import { Plus, RefreshCw } from "../../../shared/ui/icons";
+import { Plus } from "../../../shared/ui/icons";
 import {
   gitStash,
   gitStashAction,
@@ -19,6 +19,7 @@ import {
 } from "../../../platform/tauri/fs";
 import { GIT_ACTIONS, useRemoteSupports } from "../../connections/public/remoteCapabilities";
 import { useGitResource } from "../hooks/useGitResource";
+import { shortSha } from "../../../shared/lib/shortSha";
 import { GitFeedback } from "./GitFeedback";
 import {
   gitPanelRuntime,
@@ -41,7 +42,7 @@ let stashOpen = false;
 export function stashCommit(entry: GitStashEntry): GitHistoryCommit {
   return {
     sha: entry.sha,
-    shortSha: entry.sha.slice(0, 7),
+    shortSha: shortSha(entry.sha),
     parents: [],
     author: "",
     timestamp: entry.timestamp,
@@ -72,12 +73,6 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
     setStashAction(target);
     try {
       await withGitOperation(cwd, "Updating stash…", work);
-      setGitFeedback(cwd, {
-        kind: "success",
-        get title() {
-          return t("Stash operation complete");
-        },
-      });
     } catch (error) {
       setGitFeedback(cwd, {
         kind: "error",
@@ -94,8 +89,8 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
 
   const drop = async (entry: GitStashEntry) => {
     const confirmed = await confirm({
-      title: t("Drop"),
-      message: t('Drop "{p0}"? The stashed changes are lost.', { p0: entry.message }),
+      title: t('Drop "{p0}"?', { p0: entry.message }),
+      message: t("The stashed changes are lost."),
       confirmLabel: t("Drop"),
     });
     if (confirmed)
@@ -117,36 +112,30 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
           setOpen(stashOpen);
         }}
         actions={
-          <>
-            <Button
-              iconOnly
-              size="sm"
-              label={t("Refresh stashes")}
-              variant="ghost"
-              motion="none"
-              type="button"
-              loading={loading}
-              loadingLabel={t("Refreshing…")}
-              onClick={refresh}
-            >
-              <RefreshCw className="icon-sm" strokeWidth={1.75} />
-            </Button>
-            <Button
-              iconOnly
-              size="sm"
-              label={t("Stash all changes")}
-              tooltip={t("Stash all changes, including untracked files")}
-              variant="ghost"
-              motion="none"
-              type="button"
-              disabled={stashAction !== "create" && (!!busy || !hasChanges)}
-              loading={stashAction === "create"}
-              loadingLabel={t("Working…")}
-              onClick={() => void run("create", () => gitStash(cwd))}
-            >
-              <Plus className="icon-sm" strokeWidth={1.75} />
-            </Button>
-          </>
+          <Button
+            iconOnly
+            size="sm"
+            label={t("Stash all changes")}
+            tooltip={t("Stash all changes, including untracked files")}
+            variant="ghost"
+            motion="none"
+            type="button"
+            disabled={stashAction !== "create" && (!!busy || !hasChanges)}
+            disabledReason={
+              stashAction === "create"
+                ? undefined
+                : busy
+                  ? t("Wait for the current operation to finish")
+                  : hasChanges
+                    ? undefined
+                    : t("There are no changes to stash.")
+            }
+            loading={stashAction === "create"}
+            loadingLabel={t("Working…")}
+            onClick={() => void run("create", () => gitStash(cwd))}
+          >
+            <Plus className="icon-sm" strokeWidth={1.75} />
+          </Button>
         }
       >
         {t("Stashes")}
@@ -161,12 +150,7 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
       ) : null}
       {open ? (
         entries.length === 0 && !loading && !error ? (
-          <EmptyState
-            size="inline"
-            kind="empty"
-            className="px-3 pt-0"
-            description={t("No stashes")}
-          />
+          <EmptyState size="inline" kind="empty" inset="row" description={t("No stashes")} />
         ) : (
           <ul className="max-h-[min(10rem,20vh)] overflow-y-auto pb-1">
             {entries.map((entry) => (
@@ -210,14 +194,12 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
               kind: "item",
               id: "apply",
               label: t("Apply"),
-              description: t("Apply and keep the stash"),
               disabled: !!busy,
             },
             {
               kind: "item",
               id: "pop",
               label: t("Pop"),
-              description: t("Apply and remove the stash"),
               disabled: !!busy,
             },
             { kind: "sep" },

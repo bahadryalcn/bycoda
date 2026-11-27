@@ -21,7 +21,7 @@ export async function loadModelHolds(db: {
 }): Promise<Record<string, AssistantModelHold>> {
   const rows = await db
     .prepare(
-      "SELECT id,value FROM assistant_runtime WHERE id LIKE 'modelHold:%' AND deleted_at IS NULL AND json_extract(value,'$.value.held') IS NOT NULL LIMIT 1000",
+      "SELECT id,value FROM assistant_runtime WHERE id>='modelHold:' AND id<'modelHold;' AND deleted_at IS NULL AND json_extract(value,'$.value.held') IS NOT NULL LIMIT 1000",
     )
     .all();
   const holds: Record<string, AssistantModelHold> = {};

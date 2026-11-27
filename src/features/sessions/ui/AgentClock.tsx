@@ -40,6 +40,17 @@ function useSharedNow(enabled: boolean): number {
 }
 
 /**
+ * Wall-clock now for a presentation timer: the shared once-a-second tick while `ticking` and the
+ * pane and document are visible, otherwise a render-time read so hidden surfaces schedule no
+ * renders. Display only; expiry and authority checks read their own clocks.
+ */
+export function usePresentationNow(ticking: boolean): number {
+  const visible = usePresentationVisible();
+  const shared = useSharedNow(ticking && visible);
+  return ticking && visible ? shared : Date.now();
+}
+
+/**
  * What a run's clock reads, or null when there is nothing honest to show:
  * - finished (`endedAt` set): the final duration;
  * - running and `live`: time since it started;
@@ -72,14 +83,8 @@ export function AgentClock({
 }) {
   const ticking = live && startedAt !== undefined && endedAt === undefined;
   // Hidden panes keep their rows mounted; they need no once-a-second render.
-  const visible = usePresentationVisible();
-  const at = useSharedNow(ticking && visible);
-  const label = agentClockLabel(
-    startedAt,
-    endedAt,
-    live,
-    ticking ? (visible ? at : Date.now()) : 0,
-  );
+  const at = usePresentationNow(ticking);
+  const label = agentClockLabel(startedAt, endedAt, live, at);
   if (!label) return null;
   return <span className={`shrink-0 tabular-nums ${className}`}>{label}</span>;
 }

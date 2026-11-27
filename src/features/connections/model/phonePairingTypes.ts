@@ -8,23 +8,31 @@ import type {
 } from "../../../integrations/mobile-pairing";
 import type { RemoteMachine } from "./protocol";
 
+/** A private listener, or the live public tunnel of the Host (only offered when allowed). */
+export type PhonePairingMode = MobileAccessMode | "public";
+
 export type PhonePairingCreated = MobilePairingTicket;
 export type PhonePairingStatus = MobilePairingStatus;
 
 export type PhonePairingApi = {
-  access(machine: RemoteMachine, mode?: MobileAccessMode): Promise<MobileAccessStatus>;
+  access(machine: RemoteMachine, mode?: PhonePairingMode): Promise<MobileAccessStatus>;
   enable(
     machine: RemoteMachine,
     mode?: MobileAccessMode,
     address?: string,
   ): Promise<MobileAccessStatus>;
-  disable?(machine: RemoteMachine): Promise<MobileAccessStatus>;
-  create(machine: RemoteMachine): Promise<PhonePairingCreated>;
+  disable?(machine: RemoteMachine, mode?: MobileAccessMode): Promise<MobileAccessStatus>;
+  /** `kind` labels the credential the Host issues; Hosts that predate it ignore it. */
+  create(machine: RemoteMachine, kind?: "phone" | "desktop"): Promise<PhonePairingCreated>;
   status(machine: RemoteMachine, pairingId: string): Promise<PhonePairingStatus>;
   cancel(machine: RemoteMachine, pairingId: string): Promise<void>;
 };
 
-export type PhonePairingError = "connection" | "host-update" | "invalid-response";
+export type PhonePairingError =
+  | "connection"
+  | "host-update"
+  | "invalid-response"
+  | "management-required";
 
 export type PhonePairingSession = {
   pairingId: string;
@@ -65,7 +73,7 @@ export type PhonePairingState = (
       machine: RemoteMachine;
       error: PhonePairingError;
     }
-) & { mode?: MobileAccessMode };
+) & { mode?: PhonePairingMode };
 
 export type PhoneConnectionPanelProps = {
   machines: RemoteMachine[];
@@ -77,12 +85,10 @@ export type PhoneConnectionPanelProps = {
 };
 
 export type PhonePairingDialogProps = {
-  /** An external tunnel supplies its endpoint; network setup choices do not apply. */
-  fixedEndpoint?: boolean;
   machines: RemoteMachine[];
   state: Exclude<PhonePairingState, { stage: "closed" }>;
   onSelect: (machine: RemoteMachine) => void;
-  onMode?: (mode: MobileAccessMode) => void;
+  onMode?: (mode: PhonePairingMode) => void;
   onClose: () => void;
   onRefresh: () => void;
   onEnable: (address?: string) => void;
@@ -103,9 +109,5 @@ export type PhonePairingLinkProps = {
 };
 
 export type PhonePairingLinkStatus = "idle" | "pending" | "error";
-
-export type PhonePairingCopyProps = {
-  code: MobilePairingCode;
-};
 
 export type PhonePairingCopyStatus = "idle" | "pending" | "success" | "error";

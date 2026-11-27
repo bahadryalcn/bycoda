@@ -1,6 +1,7 @@
 import { popupListClassName } from "./Popover";
 import { OverflowTooltip } from "./Tooltip";
 import { useT } from "../i18n";
+import { COLLECTION_WINDOW_THRESHOLD } from "../hooks/useCollectionVirtualizer";
 import {
   useEffect,
   useId,
@@ -21,7 +22,6 @@ import {
   type ReactElement,
   type ReactNode,
   type Ref,
-  type RefObject,
 } from "react";
 import { ChevronDown, X } from "./icons";
 import { Spinner } from "./Spinner";
@@ -37,10 +37,13 @@ import { Button } from "./Button";
 import { useTooltip, type TooltipContent } from "./Tooltip";
 import { isImeComposition } from "../lib/keyboard";
 import { SelectTrigger, SelectValue } from "./arc/select/select";
-import { ComboboxItem, ComboboxList, ComboboxStatus } from "./arc/combobox/combobox";
+import { ComboboxItem, ComboboxStatus } from "./arc/combobox/combobox";
+import { SearchableSelectList } from "./SearchableSelectList";
 import { PopoverSearchHeader } from "./PopoverSearchHeader";
 import { PickerChoice } from "./picker/PickerChoice";
 import { PickerFooter } from "./picker/PickerList";
+import { canInspectPickerOption } from "./picker/usePickerList";
+import { usePointerMovement, type PointerMovement } from "./picker/usePointerMovement";
 import {
   ALL_GROUPS,
   filterByGroup,
@@ -54,6 +57,8 @@ export type SearchableSelectOption = {
   keywords?: string;
   description?: string;
   disabled?: boolean;
+  /** Shown when the user inspects this unavailable choice. */
+  disabledReason?: string;
   /** Keep this scope reset visible above scrolling results, including during search. Use at most one, first in options. */
   pinned?: boolean;
   /** Leading glyph, logo or avatar (icon-sm/icon-md); also shown in the trigger for the selected value. */
@@ -80,6 +85,7 @@ export type SearchableSelectTriggerRender = {
     "aria-readonly"?: boolean;
     "aria-invalid"?: boolean | "true" | "false" | "grammar" | "spelling";
     "aria-describedby"?: string;
+    "aria-description"?: string;
     "aria-busy"?: boolean | "true" | "false";
     "data-state": "open" | "closed";
     onClick: (event: MouseEvent<HTMLButtonElement>) => void;
@@ -125,7 +131,7 @@ type AsyncOptions = {
   /** Shows a Retry action with the error. */
   onRetry?: () => void;
   retryLabel?: string;
-  /** Shown when there are no options at all and no query. Defaults to `emptyLabel`. */
+  /** Shown when there are no options at all and no query. */
   noOptionsLabel?: string;
 };
 
@@ -210,6 +216,8 @@ export function SearchableSelect(
     searchPlaceholder?: string;
     emptyLabel?: string;
     disabled?: boolean;
+    /** Why the picker is unavailable while `disabled`: shown as its tooltip and exposed to assistive tech. */
+    disabledReason?: string;
     layer?: number;
     variant?: "field" | "transparent" | "row" | "panel" | "pill";
     searchable?: boolean;
@@ -261,9 +269,12 @@ const OptionRow = memo(function OptionRow({
   compact,
   query,
   rowRef,
+  entryIndex,
+  setSize,
   controlDisabled,
   onPick,
   onHover,
+  pointerMoved,
 }: {
   option: SearchableSelectOption;
   index: number;
@@ -273,32 +284,42 @@ const OptionRow = memo(function OptionRow({
   compact: boolean;
   /** The raw query when one is active, to accent matched text. */
   query: string;
-  rowRef?: RefObject<HTMLButtonElement | null>;
+  rowRef?: Ref<HTMLButtonElement>;
+  entryIndex?: number;
+  setSize?: number;
   controlDisabled: boolean;
   onPick: (value: string) => void;
   onHover: (index: number) => void;
+  /** The list's shared guard: stationary pointer entry after keyboard scrolling must not take the highlight. */
+  pointerMoved: PointerMovement;
 }) {
-  const title = option.description ? `${option.label} ${option.description}` : option.label;
+  const description =
+    (highlighted && option.disabled && option.disabledReason?.trim()) || option.description;
+  const title = description ? `${option.label} ${description}` : option.label;
+  const inspectable = canInspectPickerOption(option);
   return (
     <ComboboxItem
       data-value={option.value}
       data-pinned={option.pinned || undefined}
       ref={rowRef}
+      data-index={entryIndex}
+      aria-setsize={setSize}
+      aria-posinset={setSize === undefined ? undefined : index + 1}
       id={`${listId}-option-${index}`}
       type="button"
       role="option"
       tabIndex={-1}
       aria-selected={selected}
       aria-disabled={option.disabled || undefined}
-      disabled={controlDisabled || option.disabled}
-      aria-describedby={option.description ? `${listId}-description-${index}` : undefined}
+      disabled={controlDisabled || !inspectable}
+      aria-describedby={description ? `${listId}-description-${index}` : undefined}
       data-density={compact ? "sm" : "md"}
-      data-has-description={option.description ? "" : undefined}
+      data-has-description={description ? "" : undefined}
       data-active={highlighted || undefined}
       data-highlighted={highlighted || undefined}
       onMouseDown={(event) => event.preventDefault()}
-      onMouseEnter={() => {
-        if (!option.disabled) onHover(index);
+      onPointerMove={(event) => {
+        if (pointerMoved(event) && inspectable) onHover(index);
       }}
       onClick={() => onPick(option.value)}
       className={option.pinned ? styles.pinnedOption : undefined}
@@ -315,7 +336,7 @@ const OptionRow = memo(function OptionRow({
             />
           </span>
         }
-        description={option.description}
+        description={description}
         descriptionId={`${listId}-description-${index}`}
         title={title}
         meta={option.meta}
@@ -324,20 +345,8 @@ const OptionRow = memo(function OptionRow({
   );
 });
 
-/** Consecutive options sharing a group; ungrouped lists stay one flat section. */
-function optionSections(options: readonly SearchableSelectOption[]) {
-  const sections: {
-    group?: string;
-    start: number;
-    options: SearchableSelectOption[];
-  }[] = [];
-  options.forEach((option, index) => {
-    const current = sections[sections.length - 1];
-    if (current && current.group === option.group) current.options.push(option);
-    else sections.push({ group: option.group, start: index, options: [option] });
-  });
-  return sections;
-}
+const COMPACT_TRIGGER_CLASS =
+  "inline-flex h-[var(--ui-control-height-compact)] max-w-full items-center gap-1 rounded-md bg-(--ui-surface-raised) py-0 pr-1.5 pl-2 text-left text-ui-caption hover:bg-(--ui-surface-hover) disabled:opacity-[var(--ui-disabled-opacity,0.5)]";
 
 function SearchableSelectMenu({
   label,
@@ -350,6 +359,7 @@ function SearchableSelectMenu({
   searchPlaceholder: searchPlaceholderOption,
   emptyLabel: emptyLabelOption,
   disabled = false,
+  disabledReason,
   readOnly = false,
   onClose,
   menuAttributes,
@@ -392,6 +402,7 @@ function SearchableSelectMenu({
   searchPlaceholder?: string;
   emptyLabel?: string;
   disabled?: boolean;
+  disabledReason?: string;
   layer?: number;
   variant?: "field" | "transparent" | "row" | "panel" | "pill";
   searchable?: boolean;
@@ -410,6 +421,7 @@ function SearchableSelectMenu({
   const [active, setActive] = useState(0);
   const [groupKey, setGroupKey] = useState(ALL_GROUPS);
   const [menuWidth, setMenuWidth] = useState<number>();
+  const pointerMoved = usePointerMovement();
   // A disabled picker cannot stay open: close during render so re-enabling does not reopen it.
   if ((disabled || readOnly) && (open || query)) {
     setOpen(false);
@@ -464,9 +476,8 @@ function SearchableSelectMenu({
         : [...scoped],
     [normalizedQuery, scoped, searchLocale],
   );
-  // Disabled options are shown but never active: the stored index falls through to the first choosable row.
-  const firstChoosable = filtered.findIndex((option) => !option.disabled);
-  const activeIndex = filtered[active] && !filtered[active]!.disabled ? active : firstChoosable;
+  const firstInspectable = filtered.findIndex(canInspectPickerOption);
+  const activeIndex = canInspectPickerOption(filtered[active]) ? active : firstInspectable;
   const activeId = activeIndex >= 0 ? `${listId}-option-${activeIndex}` : undefined;
   const failed = error != null && error !== false && error !== "";
   const popoverLayer =
@@ -488,14 +499,7 @@ function SearchableSelectMenu({
     const committed = options.findIndex(
       (option) => values.includes(option.value) && !option.disabled,
     );
-    setActive(
-      committed >= 0
-        ? committed
-        : Math.max(
-            0,
-            options.findIndex((o) => !o.disabled),
-          ),
-    );
+    setActive(committed >= 0 ? committed : Math.max(0, options.findIndex(canInspectPickerOption)));
     setOpen(true);
   };
 
@@ -534,14 +538,14 @@ function SearchableSelectMenu({
   });
   const pickLatest = useCallback((next: string) => latestPick.current(next), []);
 
-  /** Next choosable row from `from`; wraps only with loopNavigation, otherwise stays at the end. */
+  /** Next inspectable row from `from`; wraps only with loopNavigation. */
   const step = (from: number, direction: 1 | -1) => {
     const count = filtered.length;
     for (let offset = 1; offset <= count; offset++) {
       const raw = from + direction * offset;
       const index = loopNavigation ? ((raw % count) + count) % count : raw;
       if (index < 0 || index >= count) return from;
-      if (!filtered[index]!.disabled) return index;
+      if (canInspectPickerOption(filtered[index])) return index;
     }
     return from;
   };
@@ -584,13 +588,13 @@ function SearchableSelectMenu({
     }
     if (event.key === "Home") {
       event.preventDefault();
-      setActive(Math.max(0, firstChoosable));
+      setActive(Math.max(0, firstInspectable));
       return;
     }
     if (event.key === "End") {
       event.preventDefault();
       let last = filtered.length - 1;
-      while (last > 0 && filtered[last]!.disabled) last--;
+      while (last > 0 && !canInspectPickerOption(filtered[last])) last--;
       setActive(Math.max(0, last));
       return;
     }
@@ -609,7 +613,9 @@ function SearchableSelectMenu({
   // An empty list says why: loading and failure have their own rows and are never "no matches".
   const noResults = !loading && !failed && filtered.length === 0;
   const resultsCopy =
-    options.length === 0 && !normalizedQuery ? (noOptionsLabel ?? emptyLabel) : emptyLabel;
+    options.length === 0 && !normalizedQuery
+      ? (noOptionsLabel ?? emptyLabelOption ?? t("No options available"))
+      : emptyLabel;
 
   const selectedOption = optionLookup.get(values[0] ?? "");
   // Shared tooltip: only while the list is closed, so it never covers the open menu.
@@ -619,9 +625,11 @@ function SearchableSelectMenu({
     typeof tooltipSource === "string"
       ? { label: tooltipSource }
       : (tooltipSource ?? { label: selectedLabel, when: "overflow" });
+  const reason = disabled ? disabledReason?.trim() || undefined : undefined;
   const hint = useTooltip({
     ...tooltipContent,
-    label: open ? undefined : tooltipContent.label,
+    ...(reason ? { when: "always" as const } : {}),
+    label: open ? undefined : (reason ?? tooltipContent.label),
     details: open ? undefined : tooltipContent.details,
     shortcut: open ? undefined : tooltipContent.shortcut,
     describe: false,
@@ -642,6 +650,7 @@ function SearchableSelectMenu({
         )
       : triggerProps?.["aria-describedby"],
     "aria-label": triggerProps?.["aria-label"] ?? `${label}: ${selectedLabel ?? placeholder}`,
+    "aria-description": reason,
     "aria-busy": loading || triggerProps?.["aria-busy"],
     "aria-expanded": open,
     "aria-haspopup": "dialog",
@@ -711,11 +720,9 @@ function SearchableSelectMenu({
             // disabled roles); the compact variants are deliberate toolbar shapes with their own utilities.
             framed
               ? `bycoda-arc-select text-left ${variant === "transparent" ? "bg-transparent" : ""}`
-              : variant === "row"
-                ? "inline-flex h-[var(--ui-control-height-compact)] max-w-full items-center gap-1 rounded-md bg-(--ui-surface-raised) py-0 pr-1.5 pl-2 text-left text-[12px] hover:bg-(--ui-surface-hover) disabled:opacity-[var(--ui-disabled-opacity,0.5)]"
-                : variant === "panel"
-                  ? "flex h-14 w-full items-center justify-end gap-3 rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-4 text-right text-[14px] font-medium hover:bg-(--ui-surface-hover) disabled:opacity-[var(--ui-disabled-opacity,0.5)] active:scale-[0.995]"
-                  : "inline-flex h-[var(--ui-control-height-compact)] max-w-full items-center gap-1 rounded-md bg-(--ui-surface-raised) py-0 pr-1.5 pl-2 text-left text-[12px] hover:bg-(--ui-surface-hover) disabled:opacity-[var(--ui-disabled-opacity,0.5)]",
+              : variant === "panel"
+                ? "flex h-[max(var(--ui-control-height-panel),calc(var(--ui-control-height-lg)+var(--space-5)))] w-full items-center justify-end gap-3 rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-4 text-right text-ui-body font-medium hover:bg-(--ui-surface-hover) disabled:opacity-[var(--ui-disabled-opacity,0.5)] active:scale-[0.995]"
+                : COMPACT_TRIGGER_CLASS,
           ]
             .filter(Boolean)
             .join(" ")}
@@ -851,8 +858,12 @@ function SearchableSelectMenu({
           ) : showLoading ? (
             <ComboboxStatus className="shrink-0">{loadingLabel ?? t("Loading…")}</ComboboxStatus>
           ) : null}
-          <ComboboxList
-            ref={list}
+          <SearchableSelectList
+            listRef={list}
+            options={filtered}
+            activeIndex={activeIndex}
+            windowed={options.length > COLLECTION_WINDOW_THRESHOLD}
+            query={normalizedQuery}
             id={listId}
             role="listbox"
             aria-label={label}
@@ -861,49 +872,29 @@ function SearchableSelectMenu({
             aria-activedescendant={searchable ? undefined : activeId}
             tabIndex={searchable ? undefined : 0}
             onKeyDown={searchable ? undefined : onSearchKeyDown}
-            className={`${popupListClassName} min-h-0 flex-1 overflow-y-auto overscroll-none focus-visible:outline-2 focus-visible:outline-accent`}
+            className={`${popupListClassName} min-h-0 flex-1 overflow-y-auto overscroll-none`}
+            renderOption={(option, index, entryIndex, measure) => (
+              <OptionRow
+                key={option.value}
+                option={option}
+                index={index}
+                listId={listId}
+                highlighted={index === activeIndex}
+                selected={values.includes(option.value)}
+                compact={compact}
+                query={normalizedQuery ? query : ""}
+                rowRef={measure ?? (index === activeIndex ? activeOption : undefined)}
+                entryIndex={entryIndex}
+                setSize={entryIndex === undefined ? undefined : filtered.length}
+                controlDisabled={disabled}
+                onPick={pickLatest}
+                onHover={setActive}
+                pointerMoved={pointerMoved}
+              />
+            )}
           >
-            {filtered.length > 0 ? (
-              optionSections(filtered).map((section) => {
-                const rows = section.options.map((option, offset) => {
-                  const index = section.start + offset;
-                  return (
-                    <OptionRow
-                      key={option.value}
-                      option={option}
-                      index={index}
-                      listId={listId}
-                      highlighted={index === activeIndex}
-                      selected={values.includes(option.value)}
-                      compact={compact}
-                      query={normalizedQuery ? query : ""}
-                      rowRef={index === activeIndex ? activeOption : undefined}
-                      controlDisabled={disabled}
-                      onPick={pickLatest}
-                      onHover={setActive}
-                    />
-                  );
-                });
-                if (!section.group) return rows;
-                const headingId = `${listId}-group-${section.start}`;
-                return (
-                  <div
-                    key={headingId}
-                    role="group"
-                    aria-labelledby={headingId}
-                    className={styles.group}
-                  >
-                    <div id={headingId} role="presentation" className={styles.groupHeading}>
-                      {section.group}
-                    </div>
-                    {rows}
-                  </div>
-                );
-              })
-            ) : noResults ? (
-              <ComboboxStatus empty>{resultsCopy}</ComboboxStatus>
-            ) : null}
-          </ComboboxList>
+            {noResults ? <ComboboxStatus empty>{resultsCopy}</ComboboxStatus> : null}
+          </SearchableSelectList>
           {onClear && (values.length > 0 || selectionLabels?.done) ? (
             <PickerFooter>
               <Button

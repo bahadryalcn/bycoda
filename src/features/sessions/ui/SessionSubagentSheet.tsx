@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { t, useT } from "../../../shared/i18n";
 import { Text } from "../../../shared/ui/Text";
@@ -6,12 +6,28 @@ import type { DockAgent } from "../model/activityDock";
 import {
   delegatedAgentBlock,
   delegationParentOf,
+  isDelegatedChildOf,
   isDelegatedDescendantOf,
 } from "../model/delegatedAgents";
 import { useDelegatedDockAgents, useNestedDelegationOwner } from "../model/reactiveReads";
-import type { Block, ComposerTurnOptions } from "../model/session";
-import { getSessions, useSession, useSessionsSelector } from "../model/sessionsStore";
-import { DelegatedSessionRequests } from "../../connections/public/DelegatedSessionRequests";
+import {
+  sessionNeedsInput,
+  type Attachment,
+  type Block,
+  type ComposerTurnOptions,
+} from "../model/session";
+import type { ParentAdmission } from "../data/parentInputClosure";
+import {
+  getSessions,
+  selectSessionById,
+  usePaneSession,
+  useSession,
+  useSessionsSelector,
+} from "../model/sessionsStore";
+import {
+  DelegatedSessionRequests,
+  useDelegatedMessageReceipts,
+} from "../../connections/public/DelegatedSessionRequests";
 import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
 import { useHostSessionBindingReader } from "../../connections/public/useHostSessionBinding";
 import { useRemoteSessionBindings } from "../../connections/public/useRemoteSessionBinding";
@@ -27,15 +43,20 @@ import {
   VIEW_DELEGATED_EVENT,
 } from "./delegatedFocus";
 import { requestViewSubagent } from "./subagentFocus";
-import { useDelegatedMessage } from "./useDelegatedMessage";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { useStopRequests } from "./useStopRequests";
+import { SubagentChatComposer } from "./SubagentMessageForm";
 import { SubagentSheet, type SubagentRelay } from "./SubagentSheet";
 import { NestedSubagentList } from "./NestedSubagentList";
 
 const NO_BLOCKS: Block[] = [];
 
-function isHostChild(session: NonNullable<ReturnType<typeof useSession>>): boolean {
+function isHostChild(
+  session: NonNullable<ReturnType<typeof useSession>>,
+  readBinding: ReturnType<typeof useHostSessionBindingReader>,
+): boolean {
   try {
-    return !!hostSessionBinding(session) || !!parseRemotePath(session.cwd);
+    return !!readBinding(session) || !!parseRemotePath(session.cwd);
   } catch {
     return true;
   }
@@ -56,6 +77,35 @@ function canOwnDelegatedSession(
   }
 }
 
+/**
+ * Which Host serves this child, for its message receipts: the local binding, or the
+ * remote project's environment with the session it is paired to. Anything unreadable
+ * reads as no authority, never as another one.
+ */
+function receiptAuthority(
+  session: NonNullable<ReturnType<typeof useSession>>,
+  readHostBinding: ReturnType<typeof useHostSessionBindingReader>,
+  remoteBindings: ReturnType<typeof useRemoteSessionBindings>,
+): { environmentId: string; sessionId: string; machineId?: string } | undefined {
+  try {
+    const remote = parseRemotePath(session.cwd);
+    if (remote) {
+      const sessionId = remoteBindings.sessionFor(session.id);
+      return sessionId ? { environmentId: remote.environmentId, sessionId } : undefined;
+    }
+    const binding = readHostBinding(session);
+    return binding
+      ? {
+          environmentId: binding.environmentId,
+          sessionId: binding.sessionId,
+          machineId: binding.machineId,
+        }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function readyOwner(id: string) {
   const captured = captureRemoteSessionActions(id);
   return captured?.current() && captured.actions.approvalSource?.() ? captured : undefined;
@@ -64,7 +114,7 @@ function readyOwner(id: string) {
 function stopChild(id: string, fallback: (sessionId: string) => unknown): unknown {
   const child = getSessions().find((session) => session.id === id);
   if (!child) throw new Error(t("This local conversation is unavailable or inaccessible."));
-  if (!isHostChild(child)) return fallback(id);
+  if (!isHostChild(child, hostSessionBinding)) return fallback(id);
   const captured = readyOwner(id);
   if (!captured) throw new Error(t("This local conversation is unavailable or inaccessible."));
   return captured.actions.stop();
@@ -77,7 +127,8 @@ function submitToChild(
   options: ComposerTurnOptions,
   onSubmitToSession: (sessionId: string, text: string, options: ComposerTurnOptions) => unknown,
 ): boolean | void {
-  if (!isHostChild(child)) return onSubmitToSession(child.id, text, options) as boolean | void;
+  if (!isHostChild(child, hostSessionBinding))
+    return onSubmitToSession(child.id, text, options) as boolean | void;
   const captured = captureRemoteSessionActions(child.id);
   return captured?.current() && captured.actions.approvalSource?.()
     ? captured.actions.submit(text, [], options)
@@ -88,7 +139,19 @@ type SubmitToSession = (
   sessionId: string,
   text: string,
   options: ComposerTurnOptions,
+  attachments?: Attachment[],
+  admission?: ParentAdmission,
 ) => boolean | void;
+
+type ChildQueueActions = Pick<
+  ComponentProps<typeof SubagentChatComposer>,
+  | "onDeleteQueuedMessage"
+  | "onEditQueuedMessage"
+  | "onQueuedMessageEditingChange"
+  | "onReorderQueuedMessages"
+  | "onSteerQueuedMessage"
+  | "onResumeQueue"
+>;
 
 // Module level: React Compiler cannot lower try/finally inside a hook.
 async function retryChild(
@@ -102,7 +165,8 @@ async function retryChild(
   // A Host child's owner connects only for a request: hold it until the task is sent.
   setConnecting((current) => (current.includes(id) ? current : [...current, id]));
   try {
-    if (isHostChild(child) && !readyOwner(id) && !(await waitForOwner(id))) throw unavailable();
+    if (isHostChild(child, hostSessionBinding) && !readyOwner(id) && !(await waitForOwner(id)))
+      throw unavailable();
     if (submitToChild(child, t("Retry the same task."), {}, onSubmitToSession) === false)
       throw new Error(t("Request was not accepted. Your message is kept here; try again."));
   } finally {
@@ -185,7 +249,7 @@ export function useDelegatedSheet({
   const stop = useCallback(
     async (id: string) => {
       const child = getSessions().find((session) => session.id === id);
-      if (child && isHostChild(child) && !readyOwner(id)) {
+      if (child && isHostChild(child, hostSessionBinding) && !readyOwner(id)) {
         setStopping((current) => (current.includes(id) ? current : [...current, id]));
         if (!(await waitForOwner(id))) {
           setStopping((current) => current.filter((entry) => entry !== id));
@@ -293,6 +357,7 @@ export function SessionSubagentSheet({
   native,
   delegated,
   onSubmitToSession,
+  localQueueActions,
   onStopSession,
   onLoadRemoteBlock,
   onOpenFile,
@@ -304,6 +369,7 @@ export function SessionSubagentSheet({
   cwd?: string;
   native: {
     block?: Block;
+    liveSessionId?: string;
     relay: SubagentRelay;
     blockedReason?: string;
     close: () => void;
@@ -314,14 +380,33 @@ export function SessionSubagentSheet({
   };
   delegated: DelegatedSheetState;
   onSubmitToSession: SubmitToSession;
+  localQueueActions?: (sessionId: string) => ChildQueueActions;
   onStopSession: (sessionId: string) => unknown;
   onLoadRemoteBlock?: (blockId: string, revision: number) => Promise<void> | void;
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (path: string) => void;
 }) {
   const translate = useT();
-  const child = useSession(delegated.childId);
-  const selected = !native.block && !!child && delegated.isOpen !== false;
+  const panelSelected = !native.block && delegated.isOpen !== false;
+  // Keep the closed sheet's last child so its scroll and disclosure state survive.
+  // Reopening selects the current snapshot, including everything received while closed.
+  const child = usePaneSession(
+    native.block ? undefined : delegated.childId,
+    visible && panelSelected,
+    (a, b) => a === b || (!panelSelected && a?.id === b?.id),
+  );
+  // The pane skips running command output. An open details sheet follows its own block.
+  const currentBlock = useSessionsSelector((sessions) => {
+    if (!visible || !native.block || !native.liveSessionId) return native.block;
+    const blocks = selectSessionById(sessions, native.liveSessionId)?.blocks;
+    if (!blocks) return native.block;
+    for (let index = blocks.length - 1; index >= 0; index--) {
+      if (blocks[index].id === native.block.id) return blocks[index];
+    }
+    return native.block;
+  });
+  const selected = !currentBlock && !!child && delegated.isOpen !== false;
+  const composerStops = useStopRequests();
   // A child's Host owner connects only while its panel is open or a Stop needs it;
   // children otherwise leave no sessions, queues or notices in the parent.
   const stopping = new Set([...(delegated.stopping ?? []), ...(delegated.connecting ?? [])]);
@@ -346,10 +431,25 @@ export function SessionSubagentSheet({
         onOpenDiff={onOpenDiff}
       />
     ));
-  const childBlock = useMemo(() => (child ? delegatedAgentBlock(child) : undefined), [child]);
+  // Receipts of the sends to the open child, from the authority that serves it and no other.
+  const receiptTarget =
+    visible && selected ? receiptAuthority(child, readHostBinding, remoteBindings) : undefined;
+  const receipts = useDelegatedMessageReceipts(
+    receiptTarget?.environmentId,
+    receiptTarget?.sessionId,
+    receiptTarget?.machineId,
+  );
+  // The panel reads the whole conversation; the parent's inline card keeps the latest round.
+  const childBlock = useMemo(
+    () => (child ? delegatedAgentBlock(child, { history: true, receipts }) : undefined),
+    [child, receipts],
+  );
   // A subagent's own subagents: listed at the top of its sheet, and their
   // requests answered here, so nothing waits unseen one level down.
-  const nestedAgents = useDelegatedDockAgents(delegated.childId ?? "", child?.blocks ?? NO_BLOCKS);
+  const nestedAgents = useDelegatedDockAgents(
+    selected ? child.id : "",
+    selected ? child.blocks : NO_BLOCKS,
+  );
   const waitingIds = nestedAgents.flatMap((agent) =>
     agent.needsInput && agent.sessionId ? [agent.sessionId] : [],
   );
@@ -357,23 +457,15 @@ export function SessionSubagentSheet({
     (sessions) => sessions.filter((session) => waitingIds.includes(session.id)),
     (a, b) => a.length === b.length && a.every((entry, index) => entry === b[index]),
   );
-  const owner = useNestedDelegationOwner(delegated.childId);
-  const message = useDelegatedMessage({
-    childSessionId: child?.id,
-    blocked: !child,
-    onSubmit: (text, options) => {
-      if (!child) return false;
-      return submitToChild(child, text, options, onSubmitToSession);
-    },
-  });
+  const owner = useNestedDelegationOwner(selected ? child.id : undefined);
 
-  if (native.block) {
-    const callId = native.block.tool?.callId;
+  if (currentBlock) {
+    const callId = currentBlock.agentRun?.workflow ? undefined : currentBlock.tool?.callId;
     return (
       <>
         {owners}
         <SubagentSheet
-          block={native.block}
+          block={currentBlock}
           busy={busy}
           visible={visible}
           cwd={cwd}
@@ -390,13 +482,18 @@ export function SessionSubagentSheet({
           onLoadRemoteBlock={onLoadRemoteBlock}
           onOpenFile={onOpenFile}
           onOpenDiff={onOpenDiff}
-          relay={{ ...native.relay, blockedReason: native.blockedReason }}
+          relay={
+            currentBlock.agentRun?.workflow
+              ? undefined
+              : { ...native.relay, blockedReason: native.blockedReason }
+          }
         />
       </>
     );
   }
   if (!child || !childBlock) return <>{owners}</>;
   const running = !!child.busy || !!child.continuingElsewhere;
+  const parentSessionId = delegationParentOf(child)?.parentSessionId;
   const nestedRequests = selected
     ? waiting.filter(canOwn).map((session) => (
         <section key={session.id} data-nested-requests={session.id}>
@@ -415,8 +512,10 @@ export function SessionSubagentSheet({
   const ownRequests =
     selected && canOwn(child) ? (
       <DelegatedSessionRequests
+        key={child.id}
         child={child}
         visible={visible}
+        composer={{ name: childBlock.text, parentSessionId }}
         onOpenFile={onOpenFile}
         onOpenDiff={onOpenDiff}
       />
@@ -427,9 +526,21 @@ export function SessionSubagentSheet({
       <SubagentSheet
         block={childBlock}
         busy={running}
+        // Same child state as the dock row; a settled child never claims it waits.
+        needsInput={running && sessionNeedsInput(child)}
         visible={visible && (delegated.isOpen ?? true)}
         agentRole={delegationParentOf(child)?.kind}
-        nested={<NestedSubagentList agents={nestedAgents} onOpen={delegated.open} />}
+        nested={
+          <NestedSubagentList
+            agents={nestedAgents}
+            onOpen={(id) => {
+              const target = getSessions().find((session) => session.id === id);
+              if (!target || !isDelegatedChildOf(target, child)) return false;
+              delegated.open(id);
+              return true;
+            }}
+          />
+        }
         back={
           owner
             ? { name: delegatedAgentBlock(owner).text, open: () => delegated.open(owner.id) }
@@ -467,13 +578,31 @@ export function SessionSubagentSheet({
         }
         onOpenFile={onOpenFile}
         onOpenDiff={onOpenDiff}
-        relay={{
-          mode: "direct",
-          draft: message.draft,
-          status: message.status,
-          setDraft: message.setDraft,
-          send: message.send,
-        }}
+        composer={
+          selected && !isHostChild(child, readHostBinding) ? (
+            <>
+              {composerStops.failed.has(child.id) ? (
+                <InlineError inset="row">{translate("Could not stop this subagent.")}</InlineError>
+              ) : null}
+              <SubagentChatComposer
+                {...localQueueActions?.(child.id)}
+                key={child.id}
+                name={childBlock.text}
+                session={child}
+                visible={visible}
+                parentSessionId={parentSessionId}
+                onStop={() =>
+                  composerStops.request(child.id, async () => {
+                    await onStopSession(child.id);
+                  })
+                }
+                onSubmit={(text, attachments, options, admission) =>
+                  onSubmitToSession(child.id, text, options ?? {}, attachments, admission)
+                }
+              />
+            </>
+          ) : undefined
+        }
       />
     </>
   );

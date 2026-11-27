@@ -1,5 +1,6 @@
 import { useEffect, type KeyboardEvent } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
+import { ErrorDetails } from "../../../../../shared/ui/ErrorDetails";
 import { Button } from "../../../../../shared/ui/Button";
 import { TextField } from "../../../../../shared/ui/TextField";
 import { canRunHarnessTextPrompt } from "../../../../../integrations/harness";
@@ -66,11 +67,6 @@ export function BackgroundGenerator({
           onChange={(event) => setPrompt(event.target.value)}
           onKeyDown={onKeyDown}
         />
-        <span>
-          {t("Model: {p1}", {
-            p1: `${choice.harness} / ${choice.model}${choice.providerAccountId ? ` / ${choice.providerAccountId}` : ""}`,
-          })}
-        </span>
         <Button
           variant="primary"
           tone="accent"
@@ -89,10 +85,16 @@ export function BackgroundGenerator({
           {t("Generate gradient")}
         </Button>
       </div>
-      <span>{t("Applies when ready")}</span>
       {failure !== null ? (
-        <SettingsFeedback state="error">
-          {t("Gradient generation failed. Try again.")} {failure}
+        <SettingsFeedback
+          state="error"
+          extra={
+            failure ? (
+              <ErrorDetails title={t("Gradient generation failed. Try again.")} detail={failure} />
+            ) : undefined
+          }
+        >
+          {t("Gradient generation failed. Try again.")}
         </SettingsFeedback>
       ) : null}
     </div>

@@ -146,10 +146,40 @@ it("keeps selected session open without pin actions, including keyboard context 
   expect(document.querySelector('[role="menu"]')).toBeNull();
 });
 
-it("opens the global workspace from its title independently of collapse, even when empty", async () => {
+it("opens the global workspace from its title independently of collapse", async () => {
+  const open = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(LastSessionsSection, {
+        ...appearance,
+        source: { history: [], live: [] },
+        projectKeys: new Set([pathKey("/work/project")]),
+        enabled: true,
+        searchActive: false,
+        onOpenProject: vi.fn(),
+        onOpenLastSessions: open,
+        lastSessionsOpen: true,
+      }),
+    ),
+  );
+  const title = container.querySelector<HTMLButtonElement>('button[aria-current="page"]')!;
+  const collapse = container.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+  expect(title.textContent).toContain("Last sessions");
+  const header = collapse.closest("[data-action-host]")!;
+  expect(header.contains(title)).toBe(true);
+  expect(header.hasAttribute("data-selected")).toBe(true);
+  await act(async () => collapse.click());
+  expect(open).not.toHaveBeenCalled();
+  expect(collapse.getAttribute("aria-expanded")).toBe("false");
+  await act(async () => title.click());
+  expect(open).toHaveBeenCalledOnce();
+  expect(collapse.getAttribute("aria-expanded")).toBe("false");
+});
+
+it("hides the empty recent section and removes it from sortable membership", async () => {
   const original = data.stored;
   data.stored = [];
-  const open = vi.fn();
+  const onShownChange = vi.fn();
   try {
     await act(async () =>
       root.render(
@@ -160,25 +190,12 @@ it("opens the global workspace from its title independently of collapse, even wh
           enabled: true,
           searchActive: false,
           onOpenProject: vi.fn(),
-          onOpenLastSessions: open,
-          lastSessionsOpen: true,
+          onShownChange,
         }),
       ),
     );
-    const title = container.querySelector<HTMLButtonElement>('button[aria-current="page"]')!;
-    const collapse = container.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
-    expect(title.textContent).toContain("Last sessions");
-    // One header surface: the open state is the host's, not a second pill on the label.
-    const header = collapse.closest("[data-action-host]")!;
-    expect(header.contains(title)).toBe(true);
-    expect(header.hasAttribute("data-selected")).toBe(true);
-    expect(header.contains(title)).toBe(true);
-    await act(async () => collapse.click());
-    expect(open).not.toHaveBeenCalled();
-    expect(collapse.getAttribute("aria-expanded")).toBe("false");
-    await act(async () => title.click());
-    expect(open).toHaveBeenCalledOnce();
-    expect(collapse.getAttribute("aria-expanded")).toBe("false");
+    expect(container.textContent).toBe("");
+    expect(onShownChange).toHaveBeenLastCalledWith(false);
   } finally {
     data.stored = original;
   }
@@ -222,7 +239,7 @@ it("applies the selected total count to pinned rows and persists the new three-r
   }
 });
 
-it("marks only the working status dot so the root motion and focus state can pause it", async () => {
+it("marks only the working status dot so motion settings and window visibility can pause it", async () => {
   const row = (status: "working" | "done") => ({
     ...data.stored[0],
     id: status,
@@ -252,7 +269,7 @@ it("marks only the working status dot so the root motion and focus state can pau
   // The shared stylesheet pauses that class from the root attributes, with no per-row listeners.
   const css = readFileSync("src/styles/index.css", "utf8");
   expect(css).toMatch(
-    /html:is\(\[data-decorative-motion="off"\], \[data-window-focus="off"\]\) \.working-dot \{\s*animation-play-state: paused/,
+    /html:is\(\[data-decorative-motion="off"\], \[data-window-visible="off"\]\) \.working-dot \{\s*animation-play-state: paused/,
   );
 });
 

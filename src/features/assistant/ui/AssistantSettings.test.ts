@@ -12,11 +12,39 @@ const mock = vi.hoisted(() => ({
   failProject: false,
   full: false,
   request: vi.fn(),
+  /** What the native `assistant_consent_get` returns for the selected Host. */
+  grant: null as Record<string, unknown> | null,
+  readFails: false,
+  consentSets: [] as Record<string, unknown>[],
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: async (command: string, args: Record<string, unknown>) => {
+    if (command === "assistant_consent_get") {
+      if (mock.readFails) throw new Error("native unavailable");
+      return mock.grant;
+    }
+    if (command === "assistant_consent_set") {
+      mock.consentSets.push(args);
+      return {
+        revision: Number(args.expectedRevision) + 1,
+        active: true,
+        permissionLevel: args.permissionLevel,
+        projectIds: args.projectIds,
+        criticalExclusions: args.criticalExclusions,
+      };
+    }
+    throw new Error(`Unexpected native command ${command}`);
+  },
 }));
 
 vi.mock("../../../shared/ui/settings", async () => {
   const { createElement } = await import("react");
+  const { SettingsSaveBar } = await import("../../../shared/ui/settings/SettingsSaveBar");
+  const { useLeaveGuard } = await import("../../../shared/ui/settings/useLeaveGuard");
   return {
+    SettingsSaveBar,
+    useLeaveGuard,
     Row: ({ label, description, info, children }: any) =>
       createElement(
         "div",
@@ -35,8 +63,6 @@ vi.mock("../../../shared/ui/settings", async () => {
         action,
         children,
       ),
-    AdvancedSettings: ({ title, children }: any) =>
-      createElement("div", null, createElement("button", { type: "button" }, title), children),
   };
 });
 vi.mock("../../../shared/i18n", () => ({
@@ -216,6 +242,9 @@ beforeEach(() => {
   mock.calls = [];
   mock.failProject = false;
   mock.full = false;
+  mock.grant = null;
+  mock.readFails = false;
+  mock.consentSets = [];
   mock.request = vi.fn(async (input: any) => {
     if (input.op === "profile.update") {
       mock.calls.push("profile");
@@ -235,7 +264,7 @@ afterEach(async () => {
   vi.clearAllMocks();
 });
 
-async function render() {
+async function render(makeSnapshot: () => any = snapshot) {
   const onClose = vi.fn();
   const onSetup = vi.fn();
   container = document.createElement("div");
@@ -246,7 +275,7 @@ async function render() {
       createElement(AssistantSettings, {
         environmentId: "settings-fixture",
         request: mock.request as any,
-        snapshot: snapshot(),
+        snapshot: makeSnapshot(),
         manual: {} as any,
         projects: [],
         onClose,
@@ -276,15 +305,15 @@ function footerText() {
 
 it("keeps one footer row with a disabled Save until any section is dirty", async () => {
   await render();
-  const save = control("Save profile settings")!;
+  const save = control("Save")!;
   expect(save.disabled).toBe(true);
   expect(save.textContent).toBe("Save");
   expect(footerText()).toContain("Quick setup");
   expect(footerText()).not.toContain("Saved");
   await press("Change project scope");
-  expect(control("Save profile settings")!.disabled).toBe(false);
+  expect(control("Save")!.disabled).toBe(false);
   await press("Change computer controls");
-  expect(control("Save profile settings")!.disabled).toBe(false);
+  expect(control("Save")!.disabled).toBe(false);
 });
 
 it("saves profile, then project scope, then computer use, and shows Saved only after all succeed", async () => {
@@ -292,11 +321,11 @@ it("saves profile, then project scope, then computer use, and shows Saved only a
   await press("Rename assistant");
   await press("Change project scope");
   await press("Change computer controls");
-  await press("Save profile settings");
+  await press("Save");
   expect(mock.calls).toEqual(["profile", "project", "computer"]);
   expect(footerText()).toContain("Saved");
   expect(control("Saved")!.textContent).toBe("Saved");
-  expect(document.querySelector("footer")!.querySelectorAll("button")).toHaveLength(2);
+  expect(document.querySelector("footer")!.querySelectorAll("button")).toHaveLength(3);
   expect(
     document.querySelector("footer")!.querySelectorAll("[role=status]:not(.sr-only)"),
   ).toHaveLength(0);
@@ -310,17 +339,17 @@ it("stops at the first failing section, shows its error and leaves the later sec
   await press("Rename assistant");
   await press("Change project scope");
   await press("Change computer controls");
-  await press("Save profile settings");
+  await press("Save");
   expect(mock.calls).toEqual(["profile", "project"]);
   expect(document.querySelector("footer")!.textContent).toContain("Project scope save failed");
   expect(footerText()).not.toContain("Saved");
-  expect(control("Save profile settings")!.disabled).toBe(false);
+  expect(control("Save")!.disabled).toBe(false);
 });
 
 it("shows a folder save error once, in its section, not again in the footer", async () => {
   await render();
   await press("Add folder");
-  await press("Save profile settings");
+  await press("Save");
   expect(mock.calls).toEqual(["folders"]);
   expect(document.body.textContent!.split("Folder rejected")).toHaveLength(2);
   expect(footerText()).not.toContain("Folder rejected");
@@ -337,40 +366,44 @@ it("keeps the save action busy until the Host confirms and never reports an unco
   );
   await render();
   await press("Rename assistant");
-  await press("Save profile settings");
+  await press("Save");
   expect(control("Saving…")!.getAttribute("aria-busy")).toBe("true");
   expect(footerText()).not.toContain("Saved");
   await act(async () => finish({}));
-  expect(footerText()).toContain("The settings save was not confirmed.");
+  expect(footerText()).toContain("Saving settings could not be confirmed.");
   expect(footerText()).not.toContain("Saved");
-  expect(control("Save profile settings")!.disabled).toBe(false);
+  expect(control("Save")!.disabled).toBe(false);
 });
 
-it("replaces the footer row with the discard confirmation and never shows Save or Saved beside it", async () => {
+it("asks to save, discard or keep editing before Quick setup leaves with unsaved changes", async () => {
   const { onSetup } = await render();
   await press("Change project scope");
+  expect(footerText()).toContain("1 unsaved change");
   await press("Quick setup");
-  expect(footerText()).toContain("Discard unsaved changes?");
-  expect(control("Save profile settings")).toBeUndefined();
-  expect(footerText()).not.toContain("Saved");
-  expect(footerText()).not.toContain("Quick setup");
+  expect(document.body.textContent).toContain("Save changes before leaving?");
+  expect(document.body.textContent).toContain("Manual session supervision");
   await press("Keep editing");
-  expect(footerText()).toContain("Quick setup");
-  expect(control("Save profile settings")).toBeDefined();
   expect(onSetup).not.toHaveBeenCalled();
+  expect(control("Save")).toBeDefined();
   await press("Quick setup");
-  await press("Discard");
+  await press("Discard and leave");
+  expect(onSetup).toHaveBeenCalledTimes(1);
+});
+
+it("leaves at once when nothing is unsaved", async () => {
+  const { onSetup } = await render();
+  await press("Quick setup");
   expect(onSetup).toHaveBeenCalledTimes(1);
 });
 
 it("clears the saved notice as soon as another section becomes dirty", async () => {
   await render();
   await press("Rename assistant");
-  await press("Save profile settings");
+  await press("Save");
   expect(footerText()).toContain("Saved");
   await press("Change computer controls");
   expect(footerText()).not.toContain("Saved");
-  expect(control("Save profile settings")!.disabled).toBe(false);
+  expect(control("Save")!.disabled).toBe(false);
 });
 
 function page(id: string) {
@@ -387,21 +420,28 @@ function titles(id: string) {
 
 it("offers four tabs: Personal, Work, Access and Advanced", async () => {
   await render();
-  const tabs = [...document.querySelectorAll('[role="tab"]')].map((node) => node.textContent);
-  expect(tabs).toEqual(["Personal", "Work", "Access", "Advanced"]);
+  const tabs = [...document.querySelectorAll('[role="tab"]')];
+  expect(tabs.map((node) => node.textContent)).toEqual(["Personal", "Work", "Access", "Advanced"]);
   expect(document.querySelectorAll("[data-settings-page]")).toHaveLength(4);
+  for (const tab of tabs) {
+    const panel = document.getElementById(tab.getAttribute("aria-controls")!);
+    expect(panel?.getAttribute("role")).toBe("tabpanel");
+    expect(panel?.getAttribute("aria-labelledby")).toBe(tab.id);
+  }
+  await press("Work");
+  expect(page("personal").hidden).toBe(true);
+  expect(page("work").hidden).toBe(false);
 });
 
 it("groups every setting under the tab that answers its question", async () => {
   await render();
   expect(titles("personal")).toEqual(["Identity", "Conversation"]);
   expect(sections("personal")).toEqual(["language", "personality", "behavior"]);
-  expect(titles("work")).toEqual(["Models", "Presence and hours"]);
+  expect(titles("work")).toEqual(["Work limits", "Presence and hours", "Notifications"]);
   expect(sections("work")).toEqual(["budget", "presence", "notifications"]);
   expect(titles("access")).toEqual([
-    "Access",
+    "Permissions",
     "Customize access",
-    "Job permissions",
     "Folders and commands",
     "Computer use",
     "Manual session supervision",
@@ -411,7 +451,7 @@ it("groups every setting under the tab that answers its question", async () => {
   // Collapsed disclosures keep their sections mounted, so drafts survive.
   expect(page("access").textContent).toContain("Customize access");
   expect(page("access").textContent).toContain("Ready for 24/7");
-  expect(page("personal").textContent).toContain("Personality and conversation");
+  expect(page("personal").textContent).toContain("Conversation");
 });
 
 it("shows the permission picker only once a worker execution exists", async () => {
@@ -423,15 +463,29 @@ it("shows the permission picker only once a worker execution exists", async () =
 });
 
 it("links to Models roles without a pool editor or writable pool request", async () => {
-  await render();
+  const { onClose } = await render();
+  await press("Work");
   await press("Manage models");
+  expect(onClose).toHaveBeenCalledOnce();
   expect(openModelsSettings).toHaveBeenCalledWith("roles");
   expect(mock.request.mock.calls.some(([input]) => input.op === "models.pool.set")).toBe(false);
   expect(control("Add model")).toBeUndefined();
 });
 
+it("keeps a profile draft when the owner cancels navigation to Models", async () => {
+  const { onClose } = await render();
+  await press("Rename assistant");
+  await press("Work");
+  await press("Manage models");
+  expect(openModelsSettings).not.toHaveBeenCalled();
+  await press("Keep editing");
+  expect(onClose).not.toHaveBeenCalled();
+  expect(control("Save")!.disabled).toBe(false);
+});
+
 it("keeps preset grants selected while customizing and preserves the mounted owners", async () => {
   mock.full = true;
+  mock.grant = { revision: 4, active: true, permissionLevel: "everything", criticalExclusions: [] };
   await render();
   await press("Access");
   const full = control("Full access")!;
@@ -441,29 +495,22 @@ it("keeps preset grants selected while customizing and preserves the mounted own
   await press("Custom");
   expect(full.getAttribute("aria-checked")).toBe("true");
   expect(sections("access")).toEqual(["jobs", "permissions"]);
-  expect(control("Save profile settings")!.disabled).toBe(true);
+  expect(control("Save")!.disabled).toBe(true);
   await press("Done");
   expect(sections("access")).toEqual([]);
   await press("Add folder");
-  await press("Save profile settings");
+  await press("Save");
   expect(page("access").textContent).toContain("Folder rejected");
   expect(sections("access")).toEqual(["jobs", "permissions"]);
   expect(mock.calls).toEqual(["folders"]);
 });
 
-it("reveals the hidden tab and nested settings disclosures before focusing an invalid field", async () => {
+it("reveals the hidden tab and nested details before focusing an invalid field", async () => {
   await render();
   const advanced = document.createElement("section");
-  advanced.dataset.settingsPart = "advanced";
   advanced.innerHTML =
-    '<h3><button type="button" aria-expanded="false">Technical limits</button></h3><div hidden><details><summary>Additional limits</summary><input type="number" min="1" value="0" required></details></div>';
+    '<details><summary>Additional limits</summary><input type="number" min="1" value="0" required></details>';
   page("advanced").append(advanced);
-  const toggle = advanced.querySelector("button")!;
-  toggle.addEventListener("click", () => {
-    advanced.dataset.open = "true";
-    toggle.setAttribute("aria-expanded", "true");
-    advanced.querySelector("div")!.hidden = false;
-  });
   const details = advanced.querySelector("details")!;
   const input = advanced.querySelector("input")!;
   const focus = vi.spyOn(input, "focus");
@@ -476,7 +523,6 @@ it("reveals the hidden tab and nested settings disclosures before focusing an in
   });
   expect(invalid.defaultPrevented).toBe(true);
   expect(page("advanced").hidden).toBe(false);
-  expect(toggle.getAttribute("aria-expanded")).toBe("true");
   expect(details.open).toBe(true);
   expect(frames).toHaveLength(1);
   await act(async () => {
@@ -484,4 +530,127 @@ it("reveals the hidden tab and nested settings disclosures before focusing an in
   });
   expect(focus).toHaveBeenCalledOnce();
   expect(report).toHaveBeenCalledOnce();
+});
+
+const executionDraft = {
+  harness: "codex",
+  model: "gpt-6",
+  runtimeMode: "supervised",
+  modelSettings: {},
+  maxRunMinutes: 60,
+} as const;
+/** A profile that already has a worker model, so the presets are selectable. */
+function withExecution() {
+  const base = snapshot;
+  return () => {
+    const value = base();
+    value.profile.execution = executionDraft;
+    return value;
+  };
+}
+
+it("Full access grants everything with no exclusions only when the owner picks it and saves", async () => {
+  mock.grant = { revision: 7, active: true, permissionLevel: "ask", criticalExclusions: [] };
+  await render(withExecution());
+  await press("Access");
+  // Rendering alone never grants or writes anything.
+  expect(mock.consentSets).toEqual([]);
+  expect(control("Full access")!.getAttribute("aria-checked")).toBe("false");
+  await press("Full access");
+  expect(control("Full access")!.getAttribute("aria-checked")).toBe("true");
+  expect(page("access").textContent).toContain(
+    "Save to apply the permission you chose on this device.",
+  );
+  expect(mock.consentSets).toEqual([]);
+  await press("Save");
+  expect(mock.consentSets).toEqual([
+    {
+      environmentId: "settings-fixture",
+      expectedRevision: 7,
+      permissionLevel: "everything",
+      projectIds: [],
+      criticalExclusions: [],
+    },
+  ]);
+  expect(page("access").textContent).toContain("Standing permission on this device: Everything.");
+});
+
+it("Work and ask replaces a broad native grant with ask", async () => {
+  mock.full = true;
+  mock.grant = { revision: 4, active: true, permissionLevel: "everything", criticalExclusions: [] };
+  await render();
+  await press("Access");
+  expect(control("Full access")!.getAttribute("aria-checked")).toBe("true");
+  await press("Work and ask");
+  await press("Save");
+  expect(mock.consentSets).toMatchObject([
+    {
+      expectedRevision: 4,
+      permissionLevel: "ask",
+      projectIds: [],
+      criticalExclusions: [
+        "pushMain",
+        "deleteProject",
+        "deleteSession",
+        "sendMessages",
+        "computerUse",
+        "spend",
+      ],
+    },
+  ]);
+  expect(page("access").textContent).toContain(
+    "Standing permission on this device: Ask for each operation.",
+  );
+});
+
+it("a Host mirror of everything never shows Full access without an active native grant", async () => {
+  mock.full = true;
+  for (const grant of [
+    null,
+    { revision: 2, active: false, permissionLevel: "everything", criticalExclusions: [] },
+  ]) {
+    mock.grant = grant;
+    await render();
+    await press("Access");
+    expect(control("Full access")!.getAttribute("aria-checked")).toBe("false");
+    expect(page("access").textContent).toContain(
+      grant
+        ? "belongs to other Host credentials"
+        : "No standing permission is saved on this device",
+    );
+    // An unrelated Save never renews or elevates the native grant.
+    await press("Rename assistant");
+    await press("Save");
+    expect(mock.consentSets).toEqual([]);
+    await act(async () => root!.unmount());
+    root = undefined;
+    container.remove();
+  }
+});
+
+it("blocks presets and says so when the native grant cannot be read", async () => {
+  mock.readFails = true;
+  await render(withExecution());
+  await press("Access");
+  expect(page("access").textContent).toContain(
+    "The permission saved on this device could not be read. Reopen settings.",
+  );
+  expect(control("Full access")!.disabled).toBe(true);
+  expect(control("Work and ask")!.disabled).toBe(true);
+});
+
+it("keeps owner-selected critical exclusions when Full access is chosen first", async () => {
+  mock.grant = null;
+  await render(withExecution());
+  await press("Access");
+  await press("Full access");
+  const spend = [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find(
+    (input) => input.closest("label")?.textContent === "Spend money",
+  )!;
+  await act(async () => spend.click());
+  expect(control("Full access")!.getAttribute("aria-checked")).toBe("false");
+  await press("Save");
+  expect(mock.consentSets).toMatchObject([
+    { permissionLevel: "everything", criticalExclusions: ["spend"] },
+  ]);
 });

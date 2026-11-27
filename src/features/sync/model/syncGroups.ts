@@ -1,12 +1,18 @@
 import {
   loadProjectGroupAssignments,
   loadProjectGroups,
+  projectGroupIncludesWorkspaceRoot,
+  projectGroupWorkspaceRoot,
   reorderProjectGroups,
   saveProjectGroupAssignments,
   saveProjectGroups,
   type ProjectGroup,
-} from "../../projects/model/projectGroups";
-import { localPathKeyForProjectId } from "./syncProjects";
+} from "../../projects/public/projectGroups";
+import { knownProjectPaths } from "../../projects/public/recents";
+import { pathKey } from "../../../shared/lib/paths";
+import { localPathKeyForProjectId, localProjectIdsByPath } from "./syncProjects";
+import { isLocationProjectId } from "./syncProjectId";
+import { localMachineId } from "./syncMachineId";
 import { mergeIdOrder } from "./syncOrder";
 import { hasPulled, knownRecordIds, knownRecordValue, queueLocalChange } from "./syncPeerState";
 import type {
@@ -14,6 +20,7 @@ import type {
   SyncGroupOrderValue,
   SyncGroupValue,
   SyncRecord,
+  SyncWorkspaceLayoutValue,
 } from "./syncProtocol";
 
 type SeenKind = "seenGroups" | "seenAssignments";
@@ -57,15 +64,139 @@ function lastHostGroupOrder(machineId: string): string[] {
   return Array.isArray(order) ? order.filter((id): id is string => typeof id === "string") : [];
 }
 
-/** Drops per-machine fields: the workspace link and the collapsed UI state. */
-function syncableGroup(group: ProjectGroup | SyncGroupValue): SyncGroupValue {
+/** Drops per-machine fields. The portable workspace layout has its own record. */
+function syncableGroup(
+  group: SyncGroupValue & Pick<ProjectGroup, "syncedWorkspace">,
+  projectIds?: Record<string, string>,
+): SyncGroupValue {
   const {
     workspaceFile: _file,
     workspaceFolders: _folders,
     collapsed: _collapsed,
+    syncedWorkspace: _syncedWorkspace,
     ...rest
   } = group;
+  if (projectIds && Array.isArray(group.memberOrder)) {
+    rest.memberOrder = group.memberOrder.map((key) =>
+      typeof projectIds[key] === "string" ? projectIds[key] : key,
+    );
+  }
   return rest;
+}
+
+function captureWorkspaceLayout(
+  machineId: string,
+  group: ProjectGroup,
+  projectIds: Record<string, string>,
+): void {
+  if (group.workspaceFile) {
+    const root = projectGroupWorkspaceRoot(group);
+    if (!root) return;
+    const rootKey = pathKey(root);
+    const rootProjectId = projectIds[rootKey];
+    if (!rootProjectId) return;
+    const sourceMachineId = localMachineId();
+    const known = knownRecordValue(machineId, "workspaceLayout", group.id) as
+      | SyncWorkspaceLayoutValue
+      | null
+      | undefined;
+    // Desktops may independently link the same named group to different folders.
+    // Each keeps its local link and the first published layout serves other desktops.
+    if (known?.sourceMachineId && known.sourceMachineId !== sourceMachineId) return;
+    const includesRoot = projectGroupIncludesWorkspaceRoot(group);
+    queueLocalChange(machineId, "workspaceLayout", group.id, {
+      rootProjectId,
+      includesRoot,
+      sourceMachineId,
+    });
+  } else if (group.syncedWorkspace !== undefined) {
+    const workspace = group.syncedWorkspace;
+    queueLocalChange(
+      machineId,
+      "workspaceLayout",
+      group.id,
+      workspace && {
+        rootProjectId: workspace.rootProjectId,
+        includesRoot: workspace.includesRoot,
+        ...(workspace.sourceMachineId ? { sourceMachineId: workspace.sourceMachineId } : {}),
+      },
+    );
+  }
+}
+
+/** Resolve layout references after a pull or after projects become available on the rail. */
+function applyWorkspaceLayouts(machineId: string, records: readonly SyncRecord[] = []): void {
+  const incoming = new Map(
+    records
+      .filter((record) => record.table === "workspaceLayout")
+      .map((record) => [record.id, record.value]),
+  );
+  const assignments = new Map(
+    records
+      .filter((record) => record.table === "assignment")
+      .map((record) => [record.id, record.value as SyncAssignmentValue | null]),
+  );
+  const paths = new Map<string, string>();
+  const projectIds = localProjectIdsByPath();
+  for (const path of knownProjectPaths()) {
+    const projectId = projectIds[pathKey(path)];
+    if (projectId) paths.set(projectId, path);
+  }
+  let changed = false;
+  const groups = loadProjectGroups().map((group) => {
+    if (group.workspaceFile) return group;
+    const current = group.syncedWorkspace;
+    // A locally recorded unlink or edit stays pending until its operation is applied.
+    const value = (
+      incoming.has(group.id)
+        ? incoming.get(group.id)
+        : current === undefined
+          ? knownRecordValue(machineId, "workspaceLayout", group.id)
+          : current
+    ) as SyncWorkspaceLayoutValue | null | undefined;
+    if (value === null) {
+      if (current === null) return group;
+      changed = true;
+      return { ...group, syncedWorkspace: null };
+    }
+    if (
+      !value ||
+      typeof value.rootProjectId !== "string" ||
+      !isLocationProjectId(value.rootProjectId) ||
+      typeof value.includesRoot !== "boolean"
+    )
+      return group;
+    const { rootProjectId, includesRoot } = value;
+    const sourceMachineId =
+      typeof value.sourceMachineId === "string" ? value.sourceMachineId : undefined;
+    const path = paths.get(rootProjectId);
+    const assignment = assignments.has(rootProjectId)
+      ? assignments.get(rootProjectId)
+      : (knownRecordValue(machineId, "assignment", rootProjectId) as
+          | SyncAssignmentValue
+          | null
+          | undefined);
+    const parentId =
+      typeof assignment?.groupId === "string"
+        ? assignment.groupId
+        : assignment === undefined && current?.rootProjectId === rootProjectId
+          ? current.parentId
+          : undefined;
+    if (
+      current?.rootProjectId === rootProjectId &&
+      current.includesRoot === includesRoot &&
+      current.sourceMachineId === sourceMachineId &&
+      current.path === path &&
+      current.parentId === parentId
+    )
+      return group;
+    changed = true;
+    return {
+      ...group,
+      syncedWorkspace: { rootProjectId, includesRoot, sourceMachineId, path, parentId },
+    };
+  });
+  if (changed) saveProjectGroups(groups);
 }
 
 /** Queues every local group, and every assignment this machine can resolve
@@ -74,16 +205,28 @@ function syncableGroup(group: ProjectGroup | SyncGroupValue): SyncGroupValue {
 export function captureLocalGroupChanges(
   machineId: string,
   pathToProjectId: Record<string, string> = {},
+  supportsWorkspaceLayout = true,
 ): void {
+  applyWorkspaceLayouts(machineId);
   const localGroups = loadProjectGroups();
   const seen = loadSeen("seenGroups", machineId);
   const localIds = new Set(localGroups.map((group) => group.id));
   for (const group of localGroups) {
-    queueLocalChange(machineId, "group", group.id, syncableGroup(group));
+    queueLocalChange(
+      machineId,
+      "group",
+      group.id,
+      syncableGroup(group, supportsWorkspaceLayout ? pathToProjectId : undefined),
+    );
+    if (supportsWorkspaceLayout) captureWorkspaceLayout(machineId, group, pathToProjectId);
     seen.add(group.id);
   }
   for (const id of knownRecordIds(machineId, "group")) {
-    if (seen.has(id) && !localIds.has(id)) queueLocalChange(machineId, "group", id, null);
+    if (seen.has(id) && !localIds.has(id)) {
+      queueLocalChange(machineId, "group", id, null);
+      if (supportsWorkspaceLayout && knownRecordValue(machineId, "workspaceLayout", id) != null)
+        queueLocalChange(machineId, "workspaceLayout", id, null);
+    }
   }
   saveSeen("seenGroups", machineId, seen);
   // An empty or smaller local order must not replace a host order this machine has not read yet.
@@ -166,10 +309,11 @@ export function applyRemoteGroupRecords(machineId: string, records: readonly Syn
       if (!value) {
         if (index >= 0) groups = groups.filter((_, i) => i !== index);
       } else if (index >= 0) {
-        const { workspaceFile, workspaceFolders, collapsed } = groups[index];
+        const { workspaceFile, workspaceFolders, syncedWorkspace, collapsed } = groups[index];
         const merged: ProjectGroup = {
           ...syncableGroup(value),
           collapsed,
+          syncedWorkspace,
           ...(workspaceFile ? { workspaceFile, workspaceFolders } : {}),
         };
         groups = groups.map((group, i) => (i === index ? merged : group));
@@ -197,6 +341,12 @@ export function applyRemoteGroupRecords(machineId: string, records: readonly Syn
     reorderProjectGroups([...remote, ...localIds.filter((id) => !included.has(id))]);
   }
   const assignmentRecords = records.filter((record) => record.table === "assignment");
+  if (
+    groupRecords.length ||
+    assignmentRecords.length ||
+    records.some(({ table }) => table === "workspaceLayout")
+  )
+    applyWorkspaceLayouts(machineId, records);
   if (assignmentRecords.length === 0) return;
   const assignments = loadProjectGroupAssignments();
   const seenAssignments = loadSeen("seenAssignments", machineId);

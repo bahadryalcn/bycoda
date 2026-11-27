@@ -60,7 +60,7 @@ export const isGoalWriteTool = (action: string): action is GoalWriteTool =>
   Object.hasOwn(GOAL_WRITE_TOOLS, action);
 export const describeGoalWriteTool = (action: string): string | undefined =>
   isGoalWriteTool(action)
-    ? "Create a goal plan in this project using the calling conversation's provider, model and runtime permissions; the owner must approve its plan and start its tasks. Writers follow project workspace policy and use the current checkout by default; no automatic integration, push, PR or continuous execution. Mutations require singleton-project scope and expectedUpdatedAt; a goal's planner, workers and reviewers cannot change their own goal. Replan starts a new planner; update changes only concurrency/run limits on a goal whose safe execution identity matches the caller. Cancel stops its planner/tasks while retaining branches. Delete removes only a terminal goal or a never-executed awaiting/blocked plan, with no active planner; tasks, branches and artifacts stay. Creation rejects reused goal IDs: read goals.get before retrying. This never approves, merges or discards work."
+    ? "goals.* manage bycoda Epics: a planned parent split into board tasks that the owner approves. Call goals.create only when the owner explicitly asks for an Epic, planned board tasks or /epic. The word goal or /goal means the provider-native goal, never this tool; if /goal appears anywhere but the start of the message, create no task, Epic or plan, do the work in this session and tell the owner native /goal only works as the first word. Create an Epic plan in this project using the calling conversation's provider, model and runtime permissions; the owner must approve its plan and start its tasks. Writers follow project workspace policy and use the current checkout by default; no automatic integration, push, PR or continuous execution. Mutations require singleton-project scope and expectedUpdatedAt; a goal's planner, workers and reviewers cannot change their own goal. Replan starts a new planner; update changes only concurrency/run limits on a goal whose safe execution identity matches the caller. Cancel stops its planner/tasks while retaining branches. Delete removes only a terminal goal or a never-executed awaiting/blocked plan, with no active planner; tasks, branches and artifacts stay. Creation rejects reused goal IDs: read goals.get before retrying. This never approves, merges or discards work."
     : undefined;
 
 export class ConversationGoalTools {
@@ -99,7 +99,7 @@ export class ConversationGoalTools {
         projectIds: [principal.projectId],
         leadProjectId: principal.projectId,
         ...(typeof input.crewDefinitionId === "string"
-          ? { crewDefinitionId: input.crewDefinitionId }
+          ? { executor: { kind: "crew" as const, crewDefinitionId: input.crewDefinitionId } }
           : {}),
         harness: caller.session.harness,
         providerAccountId: caller.session.providerAccountId,

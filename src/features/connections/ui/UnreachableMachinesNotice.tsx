@@ -31,7 +31,7 @@ export function UnreachableMachinesNotice({
         retry={{ onRetry, label: t("Retry"), pending: retrying, disabled }}
         extra={detail ? <ErrorDetails title={message} detail={detail} /> : undefined}
       >
-        <strong>{message}</strong>
+        {message}
       </InlineMessage>
     </div>
   );

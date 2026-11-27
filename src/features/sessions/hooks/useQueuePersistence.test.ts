@@ -64,6 +64,22 @@ it("does not let failure of an older write invalidate a newer successful queue",
   expect(write).toHaveBeenCalledTimes(2);
 });
 
+it("retries a failed write on a timer while the store stays idle", async () => {
+  vi.useFakeTimers();
+  try {
+    write.mockRejectedValueOnce(new Error("disk full"));
+    await act(async () => root.render(createElement(StrictMode, null, createElement(Harness))));
+    expect(write).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(write).toHaveBeenCalledTimes(2);
+    expect(write).toHaveBeenLastCalledWith("local", queue);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("marks the queue before writing so a reentrant store update does not duplicate it", async () => {
   write.mockImplementationOnce(async () =>
     setSessions([{ ...session, title: "Updated during write" }]),

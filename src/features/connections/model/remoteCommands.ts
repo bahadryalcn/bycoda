@@ -1,9 +1,10 @@
 import {
   notifyGitChanged,
+  notifyMachineGitChanged,
   setRemoteCommandRunner,
   type FolderListing,
 } from "../../../platform/tauri/fs";
-import { notifyDirsChanged } from "../../files/public/fileTree";
+import { notifyDirsChanged, notifyMachineDirsChanged } from "../../files/public/fileTree";
 import { remoteMachineFor, remoteRequest } from "./connections";
 import { subscribeRemoteRecovered } from "./remoteHealth";
 import { parseRemotePath, remotePath } from "./remoteProjects";
@@ -25,7 +26,12 @@ export const HOST_COMMANDS = new Set([
   "read_folder_entry",
   "read_file_chunk",
   "read_file_preview",
+  "read_text_file_slice",
   "write_text_file",
+  "write_file_begin",
+  "write_file_chunk",
+  "write_file_commit",
+  "write_file_abort",
   "stat_files",
   "create_path",
   "rename_path",
@@ -130,6 +136,9 @@ const ENTRY_RESULTS = new Set(["list_dir", "list_project_files", "stat_files", "
 
 const UNAVAILABLE = "This isn’t available for projects on another machine yet.";
 const OUTDATED = "Update bycoda Host in Machines settings to use this project’s files.";
+/** Keeps the old Host's own 1 MB refusal and says how to lift it. */
+const OUTDATED_LARGE_SAVE =
+  "File is too large to save (maximum 1 MB). Update bycoda Host in Machines settings to save larger files.";
 const OUTDATED_FOLDERS =
   "Update bycoda Host in Machines settings to browse folders outside projects.";
 const OUTDATED_SKILLS =
@@ -224,11 +233,13 @@ async function runOnMachine(
       throw new Error(
         command === "browse_dir"
           ? OUTDATED_FOLDERS
-          : command === "skill_delete"
-            ? OUTDATED_SKILL_DELETE
-            : command.startsWith("skill_")
-              ? OUTDATED_SKILLS
-              : OUTDATED,
+          : command === "write_file_begin"
+            ? OUTDATED_LARGE_SAVE
+            : command === "skill_delete"
+              ? OUTDATED_SKILL_DELETE
+              : command.startsWith("skill_")
+                ? OUTDATED_SKILLS
+                : OUTDATED,
       );
     throw reason;
   }
@@ -297,6 +308,18 @@ async function runOnMachine(
       ...entry,
       path: fromHost(entry.path),
     }));
+  // A status-aware listing: translate its entries and keep the truncation flag.
+  if (command === "list_skills" && result && typeof result === "object") {
+    const listing = result as { skills?: unknown; truncated?: unknown };
+    if (Array.isArray(listing.skills))
+      return {
+        skills: listing.skills.map((entry: { path: string }) => ({
+          ...entry,
+          path: fromHost(entry.path),
+        })),
+        truncated: listing.truncated === true,
+      };
+  }
   if (
     (command === "git_diff_index" || command === "git_diff_files") &&
     result &&
@@ -355,8 +378,15 @@ async function runOnMachine(
 }
 
 setRemoteCommandRunner(runRemoteCommand);
-// When a machine comes back, every view of it reloads at once.
-subscribeRemoteRecovered(() => {
+// When a machine comes back, every view of it reloads at once. Views of this
+// computer and of other machines are untouched; a recovery that names no
+// machine still reloads everything.
+subscribeRemoteRecovered((environmentId) => {
+  if (environmentId) {
+    notifyMachineGitChanged(environmentId);
+    notifyMachineDirsChanged(environmentId);
+    return;
+  }
   notifyGitChanged();
   notifyDirsChanged();
 });

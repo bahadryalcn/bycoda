@@ -1,5 +1,3 @@
-import { Text } from "../../../shared/ui/Text";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import type { HarnessId } from "../../sessions";
 import type { GitFileDiffKind, GitHistoryCommit } from "../../../platform/tauri/fs";
 import { GitChangesPanel } from "./GitChangesPanel";
@@ -8,11 +6,13 @@ import type { RepositoryReviewRequest } from "../model/workspaceRepositories";
 import { useProjectWorktrees } from "../hooks/useProjectWorktrees";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { pathKey } from "../../../shared/lib/paths";
-import { checkoutOptionLabel, sessionCheckout } from "../model/checkoutSelection";
+import { useWorktreeFocus } from "../model/worktreeFocus";
+import { isListedWorktree } from "../model/worktreeRows";
 import type { Worktree } from "../model/worktrees";
-import { Button } from "../../../shared/ui/Button";
-import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
+import { MachineGate } from "../../connections/public/MachineUnavailable";
+import { peekDiffIndex } from "../hooks/useDiffIndex";
 
 type Props = {
   repositoryPaths?: readonly string[];
@@ -29,7 +29,23 @@ type Props = {
   onOpenCommit: (commit: GitHistoryCommit) => void;
 };
 
-export function SourceControl({
+/** Source control of a project, or the shared notice while its machine cannot be asked: no
+ * repository, change, branch or history read starts until the machine is available. An
+ * offline machine keeps what was loaded (worktrees or changes) with its reconnect notice. */
+export function SourceControl(props: Props) {
+  const { cwd, enabled, repositoryPaths, onOpenRepository } = props;
+  const worktrees = useProjectWorktrees(
+    cwd,
+    enabled && !repositoryPaths?.length && !!onOpenRepository,
+  );
+  return (
+    <MachineGate cwd={cwd} hasData={() => !!worktrees.data || peekDiffIndex(cwd) !== null}>
+      <SourceControlContent {...props} worktrees={worktrees} />
+    </MachineGate>
+  );
+}
+
+function SourceControlContent({
   repositoryPaths,
   onOpenRepository,
   cwd,
@@ -42,60 +58,41 @@ export function SourceControl({
   onOpenInEditor,
   onOpenAllChanges,
   onOpenCommit,
-}: Props) {
+  worktrees: { data, error, loading, refresh },
+}: Props & { worktrees: ReturnType<typeof useProjectWorktrees> }) {
   useLocale();
-  const { data, error, loading, refresh } = useProjectWorktrees(
-    cwd,
-    enabled && !repositoryPaths?.length && !!onOpenRepository,
-  );
+  // The sidebar header is the only worktree selector; its focus is keyed by the project folder.
+  const focus = useWorktreeFocus(data?.worktrees.find((tree) => tree.isMain)?.path ?? cwd);
   // A plain folder has no worktrees to list; the panel below says so once.
   const connectionShownCentrally = useConnectionErrorShownCentrally(error);
   const discoveryNotice =
     error && !connectionShownCentrally && !/not a git repository/i.test(error) ? (
-      <Text
-        as="div"
-        size="caption"
-        tone="inherit"
-        {...surfaceAttributes(
-          { frame: "pane", edge: "bottom" },
-          "flex shrink-0 flex-wrap items-center gap-x-2 px-2 py-0.5",
-        )}
+      <InlineError
+        inset="row"
+        className="shrink-0"
+        details={error}
+        retry={{
+          onRetry: () => void refresh(),
+          pending: loading,
+          disabled: !enabled,
+          label: t("Retry"),
+        }}
       >
-        <Text role="status" as="p" size="inherit" tone="secondary" className="min-w-0">
-          {data
-            ? t("Could not refresh worktrees. Showing the last available list.")
-            : `${t("Worktrees")} · ${t("Unavailable")}`}
-        </Text>
-        <ErrorDetails detail={error} />
-        <Button
-          variant="ghost"
-          size="sm"
-          className="ms-auto"
-          loading={loading}
-          disabled={!enabled}
-          onClick={() => void refresh()}
-        >
-          {t("Retry")}
-        </Button>
-      </Text>
+        {data
+          ? t("Could not refresh worktrees. Showing the last available list.")
+          : t("Couldn’t load worktrees")}
+      </InlineError>
     ) : null;
   const checkouts = (() => {
     const paths: string[] = [];
-    const labels: Record<string, string> = {};
-    const worktrees: Record<string, Worktree> = {};
+    const byPath: Record<string, Worktree> = {};
     for (const tree of data?.worktrees ?? []) {
-      if (tree.missing || tree.prunable) continue;
+      if (!isListedWorktree(tree)) continue;
       if (paths.some((path) => pathKey(path) === pathKey(tree.path))) continue;
       paths.push(tree.path);
-      worktrees[tree.path] = tree;
+      byPath[tree.path] = tree;
     }
-    const current = sessionCheckout(cwd, paths);
-    for (const path of paths)
-      labels[path] = checkoutOptionLabel(
-        worktrees[path],
-        !!current && pathKey(path) === pathKey(current),
-      );
-    return { paths, labels, worktrees };
+    return { paths, worktrees: byPath };
   })();
   if (!repositoryPaths?.length && onOpenRepository && checkouts.paths.length > 1)
     return (
@@ -105,9 +102,9 @@ export function SourceControl({
           key={cwd}
           cwd={cwd}
           paths={checkouts.paths}
-          labels={checkouts.labels}
           worktrees={checkouts.worktrees}
           checkouts
+          focusPath={focus?.path}
           enabled={enabled}
           textHarness={textHarness}
           selectedPath={selectedPath}

@@ -10,7 +10,25 @@ const native = (code: string, message = "Host request failed", uncertain = false
   Object.assign(new Error(`${code}: ${message}`), { code, uncertain });
 
 describe("classifyCommandFailure", () => {
+  it("recognizes queue expiration before Git launches as undelivered", () => {
+    expect(classifyCommandFailure(native("GIT_START_TIMEOUT"))).toBe("not-sent");
+    expect(classifyCommandFailure("Host rejected request: Command timed out before launch")).toBe(
+      "not-sent",
+    );
+    expect(classifyCommandFailure("Command timed out while running")).toBe("uncertain");
+  });
+
+  it("preserves an unknown delivery through a legacy HTTP rejection envelope", () => {
+    expect(classifyCommandFailure("Host rejected request: The operation outcome is unknown.")).toBe(
+      "uncertain",
+    );
+  });
+
   it("treats a Host refusal as definitive", () => {
+    expect(classifyCommandFailure(native("RPC_WS_REMOTE", "Turn not ready"))).toBe("definitive");
+    expect(classifyCommandFailure(native("RPC_WS_REMOTE", "Delivery unknown", true))).toBe(
+      "uncertain",
+    );
     expect(classifyCommandFailure("Host rejected request: Branch x does not exist")).toBe(
       "definitive",
     );
@@ -32,6 +50,30 @@ describe("classifyCommandFailure", () => {
       expect(classifyCommandFailure(`${code}: Host admission failed`)).toBe("not-sent");
     },
   );
+
+  it("keeps a reset, EOF or abort of the HTTP exchange uncertain, since the command may have arrived", () => {
+    for (const text of [
+      "The host request did not complete [RPC_HOST_UNAVAILABLE] (commands.dispatch).",
+      "The host request did not complete [RPC_HOST_UNAVAILABLE] (commands.dispatch). The host connection closed or refused the request. Reconnect before retrying an action; its outcome is unknown.",
+      "Host is not running on the machine. Start bycoda Host there, then reconnect. The request may have reached it before it stopped; its outcome is unknown.",
+    ])
+      expect(classifyCommandFailure(text)).toBe("uncertain");
+  });
+
+  it("treats only a proven pre-send HTTP failure as not sent", () => {
+    for (const text of [
+      "The host request did not complete [RPC_DNS] (commands.dispatch). The machine address could not be resolved.",
+      "The host request did not complete [RPC_PROXY] (commands.dispatch). The network proxy could not connect.",
+      "Host is not running on the machine. Start bycoda Host there, then reconnect.",
+    ])
+      expect(classifyCommandFailure(text)).toBe("not-sent");
+    for (const text of [
+      "The host request did not complete [RPC_TIMEOUT] (commands.dispatch).",
+      "The host request did not complete [RPC_PROTOCOL] (commands.dispatch).",
+      "Host returned HTTP 502",
+    ])
+      expect(classifyCommandFailure(text)).toBe("uncertain");
+  });
 
   it("treats a blocked lane as not sent", () => {
     expect(

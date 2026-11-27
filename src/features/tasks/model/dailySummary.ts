@@ -1,7 +1,9 @@
 import { projectDisplayName } from "../../projects/model/projectNames";
 
+import { taskNeedsInput } from "../../../shared/model/host-contracts/task-stop";
+import { taskStopText } from "../../../shared/model/taskStopSummary";
 import type { BoardGoal } from "./goalClient";
-import { goalProgress } from "./hostGoals";
+import { goalProgress } from "../../../shared/model/workProjection";
 import type { BoardTask } from "./taskClient";
 
 /** A task as the summary lists it. `key` opens it on the board. */
@@ -26,7 +28,6 @@ export type SummaryUsage = {
   usedMinutes: number;
   /** Zero means no limit. */
   dailyAgentMinutes: number;
-  usageUncertain?: boolean;
 };
 
 export type DailySummary = {
@@ -78,14 +79,6 @@ function inPeriod(at: number, since: number, now: number): boolean {
   return at > since && at <= now;
 }
 
-function firstLine(text: string | undefined): string | undefined {
-  const line = text
-    ?.split("\n")
-    .map((part) => part.trim())
-    .find(Boolean);
-  return line || undefined;
-}
-
 export function buildDailySummary(input: DailySummaryInput): DailySummary {
   const { since, now } = input;
   // Tasks of a machine that did not answer are last-known, not news.
@@ -97,7 +90,7 @@ export function buildDailySummary(input: DailySummaryInput): DailySummary {
   for (const task of tasks) {
     if (task.status === "review")
       waiting.set(summaryTaskKey(task), entry(task, "Ready for review"));
-    else if (task.needsInput && (task.status === "running" || task.status === "verifying"))
+    else if (taskNeedsInput(task) && (task.status === "running" || task.status === "verifying"))
       waiting.set(summaryTaskKey(task), entry(task, "Needs your input"));
   }
   const goals = input.goals.filter((goal) => !goal.stale);
@@ -116,7 +109,7 @@ export function buildDailySummary(input: DailySummaryInput): DailySummary {
     autoMerged: finishedTasks.filter((task) => task.autoMerged).length,
     blocked: tasks
       .filter((task) => task.status === "blocked" && inPeriod(task.updatedAt, since, now))
-      .map((task) => entry(task, firstLine(task.error))),
+      .map((task) => entry(task, taskStopText(task))),
     waiting: [...waiting.values()],
     suggestions: tasks
       .filter(

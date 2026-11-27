@@ -8,6 +8,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Row } from "../../../shared/ui/settings";
+import { errorText } from "../../../shared/lib/errors";
 import {
   InboxAccountActions,
   InboxConnectionStatus,
@@ -32,7 +33,11 @@ import {
   type JiraProject,
   type JiraStatus,
 } from "../../inbox/model/jira";
-import { listJiraBoards, type JiraBoard } from "../../inbox/model/jiraBoard";
+import {
+  jiraBoardsInVisibleProjects,
+  listJiraBoardCatalog,
+  type JiraBoard,
+} from "../../inbox/model/jiraBoard";
 import {
   isInboxScopeNumber,
   isInboxScopeString,
@@ -86,29 +91,41 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
   const hiddenIds = projectScope.value;
   const allowedBoardIds = boardScope.value;
   const [backgroundState, setBackgroundState] = useState(readBackgroundSync);
+  const setBackgroundSync = (next: boolean) => {
+    try {
+      saveJiraBackgroundSync(next);
+      setBackgroundState(readBackgroundSync());
+    } catch {
+      setBackgroundState((previous) => ({ ...previous, available: false }));
+    }
+  };
   const projectOwner = useRef("");
-  const [boards, setBoards] = useState<JiraBoard[]>([]);
+  const [catalog, setCatalog] = useState<JiraBoard[]>([]);
   const [boardsError, setBoardsError] = useState<string | null>(null);
   const boardsOwner = useRef(scopeOwner);
+  // Project checkboxes only narrow the cached catalog; they never start a board request.
+  const boards = jiraBoardsInVisibleProjects(catalog, projects, hiddenIds);
 
+  // Effect reason: the board catalog is external Jira data; it loads per account, tab visibility
+  // or explicit refresh, never per project selection.
   useEffect(() => {
     if (busy || !active) return;
     if (!status?.connected) {
-      setBoards([]);
+      setCatalog([]);
       setBoardsLoading(false);
       return;
     }
     let cancelled = false;
-    if (boardsOwner.current !== scopeOwner) setBoards([]);
+    if (boardsOwner.current !== scopeOwner) setCatalog([]);
     boardsOwner.current = scopeOwner;
     setBoardsError(null);
     setBoardsLoading(true);
-    void listJiraBoards({ includeUnselected: true })
+    void listJiraBoardCatalog()
       .then((next) => {
-        if (!cancelled) setBoards(next);
+        if (!cancelled) setCatalog(next);
       })
       .catch((err: unknown) => {
-        if (!cancelled) setBoardsError(String(err instanceof Error ? err.message : err));
+        if (!cancelled) setBoardsError(errorText(err));
       })
       .finally(() => {
         if (!cancelled) setBoardsLoading(false);
@@ -116,7 +133,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
     return () => {
       cancelled = true;
     };
-  }, [status?.connected, scopeOwner, busy, active, hiddenIds, projects, boardsRevision]);
+  }, [status?.connected, scopeOwner, busy, active, boardsRevision]);
 
   const loadProjects = useCallback(async () => {
     const generation = ++projectRequest.current;
@@ -128,7 +145,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
       if (generation === projectRequest.current && account === request.current) setProjects(next);
     } catch (err) {
       if (generation === projectRequest.current && account === request.current)
-        setProjectsError(String(err instanceof Error ? err.message : err));
+        setProjectsError(errorText(err));
     } finally {
       if (generation === projectRequest.current && account === request.current)
         setProjectsLoading(false);
@@ -148,8 +165,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
       setStatus(next);
       if (next.connected) await loadProjects();
     } catch (err: unknown) {
-      if (generation === request.current)
-        setStatusError(String(err instanceof Error ? err.message : err));
+      if (generation === request.current) setStatusError(errorText(err));
     } finally {
       if (generation === request.current) setChecking(false);
     }
@@ -200,7 +216,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
       notifyJiraChange();
       await loadProjects();
     } catch (err) {
-      setError(String(err instanceof Error ? err.message : err));
+      setError(errorText(err));
     } finally {
       mutation.current = false;
       setOperation(null);
@@ -224,7 +240,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
       clearInboxCache();
       notifyJiraChange();
     } catch (err) {
-      setError(String(err instanceof Error ? err.message : err));
+      setError(errorText(err));
     } finally {
       mutation.current = false;
       setOperation(null);
@@ -307,61 +323,36 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
               }}
               className="flex flex-col gap-3"
             >
-              {(
-                [
-                  {
-                    get label() {
-                      return t("Jira site");
-                    },
-                    value: site,
-                    set: setSite,
-                    type: "text",
-                    get placeholder() {
-                      return t("yourteam.atlassian.net");
-                    },
-                  },
-                  {
-                    get label() {
-                      return t("Atlassian email");
-                    },
-                    value: email,
-                    set: setEmail,
-                    type: "email",
-                    get placeholder() {
-                      return t("you@example.com");
-                    },
-                  },
-                  {
-                    get label() {
-                      return t("Jira API token");
-                    },
-                    value: token,
-                    set: setToken,
-                    type: "password",
-                    get placeholder() {
-                      return t("API token");
-                    },
-                  },
-                ] as const
-              ).map((field) => {
-                const Input = field.type === "password" ? PasswordField : TextField;
-                return (
-                  <Input
-                    key={field.label}
-                    label={field.label}
-                    aria-label={field.label}
-                    {...(field.type === "password" ? {} : { type: field.type })}
-                    value={field.value}
-                    onChange={(event) => field.set(event.target.value)}
-                    placeholder={field.placeholder}
-                    disabled={busy}
-                    required
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                );
-              })}
-              <div className="flex items-center gap-3">
+              <TextField
+                label={t("Jira site")}
+                placeholder="yourteam.atlassian.net"
+                value={site}
+                onChange={(event) => setSite(event.target.value)}
+                disabled={busy}
+                required
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <TextField
+                label={t("Atlassian email")}
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                disabled={busy}
+                required
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <PasswordField
+                label={t("Jira API token")}
+                value={token}
+                onChange={(event) => setToken(event.target.value)}
+                disabled={busy}
+                required
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <div className="flex flex-wrap items-center gap-3">
                 {status?.connected ? (
                   <Button
                     stableWidth
@@ -380,14 +371,10 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                   className="shrink-0"
                   type="submit"
                   loading={operation === "save"}
+                  loadingLabel={t("Connecting…")}
                   disabled={busy || !site.trim() || !email.trim() || !token.trim()}
-                  reserveLabels={[t("Saving and testing…"), t("Retry save and test")]}
                 >
-                  {busy
-                    ? t("Saving and testing…")
-                    : error
-                      ? t("Retry save and test")
-                      : t("Save and test connection")}
+                  {t("Connect")}
                 </Button>
                 <Button
                   stableWidth
@@ -396,7 +383,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                   onClick={() =>
                     void openUrl(
                       "https://id.atlassian.com/manage-profile/security/api-tokens",
-                    ).catch((err: unknown) => setError(String(err)))
+                    ).catch((err: unknown) => setError(errorText(err)))
                   }
                 >
                   {t("Create API token")}
@@ -456,10 +443,12 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                       className="shrink-0"
                       size="sm"
                       loading={projectsLoading}
+                      loadingLabel={t("Loading…")}
                       disabled={busy || checking || projectsLoading}
+                      disabledReason={t("Wait for the current operation to finish")}
                       onClick={() => void loadProjects()}
                     >
-                      {projectsLoading ? t("Loading…") : t("Refresh projects")}
+                      {t("Refresh projects")}
                     </Button>
                   }
                 />
@@ -473,9 +462,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
             persistence={{ mode: "automatic" }}
           >
             <div className="inbox-scope">
-              {boardsError ? (
-                <SettingsFeedback state="error">{boardsError}</SettingsFeedback>
-              ) : null}
+              <InboxConnectionError error={boardsError} />
               {boardScope.error ? (
                 <SettingsFeedback
                   state="error"
@@ -497,7 +484,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                     .filter((board) => allowedBoardIds.includes(board.id))
                     .map((board) => String(board.id))}
                   onChange={setAllowedBoards}
-                  disabled={busy || checking || boardsLoading || Boolean(boardsError)}
+                  disabled={busy || checking || boardsLoading}
                   loading={boardsLoading}
                   summary={(count, total) =>
                     t("{p0} of {p1} boards selected", { p0: count, p1: total })
@@ -510,14 +497,12 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                       className="shrink-0"
                       size="sm"
                       loading={boardsLoading}
+                      loadingLabel={t("Loading…")}
                       disabled={busy || checking || boardsLoading}
+                      disabledReason={t("Wait for the current operation to finish")}
                       onClick={() => setBoardsRevision((value) => value + 1)}
                     >
-                      {boardsLoading
-                        ? t("Loading…")
-                        : boardsError
-                          ? t("Retry")
-                          : t("Refresh boards")}
+                      {boardsError ? t("Retry") : t("Refresh boards")}
                     </Button>
                   }
                 />
@@ -529,6 +514,8 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
       {status?.connected ? (
         <Row
           label={t("Automatically refresh Jira in the background")}
+          modified={backgroundState.available && backgroundState.value}
+          onReset={() => setBackgroundSync(false)}
           info={t(
             "Off by default. Jira loads when opened or refreshed manually. Background notifications and Jira triggers require this option.",
           )}
@@ -542,7 +529,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                   onClick: () => setBackgroundState(readBackgroundSync()),
                 }}
               >
-                {t("Saved Inbox scope is unavailable. Retry before changing it.")}
+                {t("The Jira background refresh setting is unavailable. Retry before changing it.")}
               </SettingsFeedback>
             ) : undefined
           }
@@ -551,14 +538,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
             label={t("Automatically refresh Jira in the background")}
             on={backgroundState.value}
             disabled={busy || !backgroundState.available}
-            onChange={(next) => {
-              try {
-                saveJiraBackgroundSync(next);
-                setBackgroundState(readBackgroundSync());
-              } catch {
-                setBackgroundState((previous) => ({ ...previous, available: false }));
-              }
-            }}
+            onChange={setBackgroundSync}
           />
         </Row>
       ) : null}

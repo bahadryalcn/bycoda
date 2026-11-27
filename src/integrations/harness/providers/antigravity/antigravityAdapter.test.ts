@@ -73,6 +73,18 @@ describe("antigravity adapter transport choice", () => {
   it("cannot steer a running turn", () => {
     expect(antigravityAdapter.canSteer).toBe(false);
   });
+
+  it.each(["acp", "stream-json"] as const)(
+    "refuses chat-only on %s before launching",
+    async (transport) => {
+      mock.transport = transport;
+      await expect(
+        antigravityAdapter.sendTurn({ ...input, modelSettings: { leanContext: "on" } }),
+      ).rejects.toThrow("Antigravity chat-only mode is unavailable");
+      expect(mock.acp).not.toHaveBeenCalled();
+      expect(mock.stream).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("antigravity attachment support", () => {

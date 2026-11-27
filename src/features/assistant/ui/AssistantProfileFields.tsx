@@ -1,12 +1,12 @@
 import type { AssistantProfilePatch } from "../../../shared/model/host-contracts/assistant";
 import { t } from "../../../shared/i18n";
+import { LANGUAGES as APP_LANGUAGES } from "../../../shared/i18n/languages";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
-import { Text } from "../../../shared/ui/Text";
 import { Select } from "../../../shared/ui/Select";
-import { Switch } from "../../../shared/ui/Switch";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { AdvancedSettings, Row } from "../../../shared/ui/settings";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { Row } from "../../../shared/ui/settings";
 import { ProfileSegmented, ProfileSelect } from "./settings/ProfileControls";
 import { ProfileRow, ProfileSwitch, useProfileRows } from "./settings/SettingsProfileRow";
 import { AssistantWorkFields } from "./settings/AssistantWorkFields";
@@ -30,35 +30,43 @@ export type ProfileSection =
   | "notifications"
   | "cost";
 
+/** Settings still waiting for the owner's review after a language change (settings only). */
+export type LanguageReview = {
+  /** Profile fields to flag: `persona` and `addressAs`. */
+  keys: ReadonlySet<string>;
+  /** Shown under each flagged field. */
+  text: string;
+  /** Shown under the language control for settings outside the profile (voice phrases). */
+  extraText?: string;
+};
+
+function ReviewHint({ review, field }: { review?: LanguageReview; field: string }) {
+  if (!review?.keys.has(field)) return null;
+  return (
+    <InlineMessage tone="warning" live="off">
+      {review.text}
+    </InlineMessage>
+  );
+}
+
 /** Renders one settings or setup section. Callers own the grid and headings. */
 export function AssistantProfileFields({
   section,
   value,
   onChange,
   observationTasksAvailable = false,
-  workModeUnchosen = false,
+  languageReview,
 }: {
   section: ProfileSection;
   value: AssistantProfilePatch;
   observationTasksAvailable?: boolean;
-  /** Work mode only: show no selection instead of "Custom" (first setup, nothing chosen yet). */
-  workModeUnchosen?: boolean;
+  languageReview?: LanguageReview;
   onChange: (patch: AssistantProfilePatch) => void;
 }) {
   const rows = useProfileRows();
   if (section === "identity") {
-    const avatar = (
-      <AdvancedSettings title={t("Avatar")} keepMounted>
-        {rows ? (
-          <Row label={null} stacked>
-            <AssistantAvatarPicker value={value.avatar} hideLabel onChange={onChange} />
-          </Row>
-        ) : (
-          <AssistantAvatarPicker value={value.avatar} hideLabel={false} onChange={onChange} />
-        )}
-        <ShowTitle value={value} onChange={onChange} />
-      </AdvancedSettings>
-    );
+    const name = value.name?.trim();
+    const showTitle = value.showTitle ?? true;
     return (
       <>
         <ProfileRow label={t("Assistant name")}>
@@ -75,43 +83,72 @@ export function AssistantProfileFields({
             />
           )}
         </ProfileRow>
-        <ProfileRow label={t("How should I address you?")}>
-          {(hideLabel) => (
-            <TextField
-              label={t("How should I address you?")}
-              hideLabel={hideLabel}
-              fieldClassName={hideLabel ? roleStyles.grow : undefined}
-              value={value.addressAs ?? ""}
-              maxLength={100}
-              onChange={(event) => onChange({ addressAs: event.currentTarget.value })}
-            />
-          )}
-        </ProfileRow>
-        {!rows && <AddressFrequency value={value} onChange={onChange} />}
-        {rows ? avatar : <div className={roleStyles.wide}>{avatar}</div>}
+        {/* Setup asks for the name only; address, avatar and title are settings rows. */}
+        {rows && (
+          <>
+            <ProfileRow label={t("How should I address you?")}>
+              {(hideLabel) => (
+                <TextField
+                  label={t("How should I address you?")}
+                  hideLabel={hideLabel}
+                  fieldClassName={roleStyles.grow}
+                  value={value.addressAs ?? ""}
+                  maxLength={100}
+                  onChange={(event) => onChange({ addressAs: event.currentTarget.value })}
+                />
+              )}
+            </ProfileRow>
+            <ReviewHint review={languageReview} field="addressAs" />
+            <>
+              <Row label={null} stacked>
+                <AssistantAvatarPicker value={value.avatar} onChange={onChange} />
+              </Row>
+              <ProfileSwitch
+                label={t("Show title")}
+                info={
+                  name ? (
+                    <InfoTooltip label={t("Preview")}>
+                      {showTitle ? t("Assistant {p0}", { p0: name }) : name} ·{" "}
+                      {t("Room · {p0}", { p0: name })} · {t("{p0} wrote", { p0: name })}
+                    </InfoTooltip>
+                  ) : undefined
+                }
+                checked={showTitle}
+                onCheckedChange={(showTitle) => onChange({ showTitle })}
+              />
+            </>
+          </>
+        )}
       </>
     );
   }
   if (section === "language")
     return (
-      <ProfileLanguage
-        value={String(value.language ?? "auto")}
-        onValueChange={(language) => onChange({ language })}
-      />
+      <>
+        <ProfileLanguage
+          value={String(value.language ?? "auto")}
+          onValueChange={(language) => onChange({ language })}
+        />
+        {languageReview?.extraText && (
+          <InlineMessage tone="warning" live="off">
+            {languageReview.extraText}
+          </InlineMessage>
+        )}
+      </>
     );
   if (section === "personality")
     return (
       <>
-        {rows && <AddressFrequency value={value} onChange={onChange} />}
+        <AddressFrequency value={value} onChange={onChange} />
         <ProfileSelect
-          label="Tone"
+          label={t("Tone")}
           value={String(value.tone ?? "friendly")}
           options={[
-            ["friendly", "Friendly"],
-            ["neutral", "Neutral"],
-            ["formal", "Formal"],
-            ["casual", "Casual"],
-            ["blunt", "Blunt"],
+            ["friendly", t("Friendly")],
+            ["neutral", t("Neutral")],
+            ["formal", t("Formal")],
+            ["casual", t("Casual")],
+            ["blunt", t("Blunt")],
           ]}
           onValueChange={(tone) => onChange({ tone: tone as AssistantProfilePatch["tone"] })}
         />
@@ -138,6 +175,7 @@ export function AssistantProfileFields({
             </div>
           )}
         </ProfileRow>
+        <ReviewHint review={languageReview} field="persona" />
       </>
     );
   if (section === "behavior")
@@ -150,32 +188,20 @@ export function AssistantProfileFields({
         />
         <ProfileSelect
           label={t("Start a conversation")}
-          hint={rows ? "The microphone opens only when you choose to talk." : undefined}
+          hint={rows ? t("The microphone opens only when you choose to talk.") : undefined}
           value={String(value.proactiveSpeech ?? "never")}
           options={[
-            ["never", "Never"],
-            ["return", "Only when I return"],
-            ["important", "Also for important events"],
+            ["never", t("Never")],
+            ["return", t("Only when I return")],
+            ["important", t("Also for important events")],
           ]}
           onValueChange={(next) =>
             onChange({ proactiveSpeech: next as AssistantProfilePatch["proactiveSpeech"] })
           }
         />
-        {!rows && (
-          <Text
-            as="p"
-            size="micro"
-            tone="secondary"
-            leading="inherit"
-            className={`${styles.muted} ${roleStyles.wide}`}
-          >
-            {t("The microphone opens only when you choose to talk.")}
-          </Text>
-        )}
       </>
     );
-  if (section === "workmode")
-    return <AssistantWorkModeField value={value} onChange={onChange} unchosen={workModeUnchosen} />;
+  if (section === "workmode") return <AssistantWorkModeField value={value} onChange={onChange} />;
   if (section === "jobs" || section === "budget" || section === "permissions")
     return <AssistantWorkFields value={value} onChange={onChange} part={section} />;
   if (section === "presence" || section === "notifications")
@@ -202,9 +228,9 @@ function AddressFrequency({
       label={t("How often to use your name")}
       value={value.addressFrequency ?? "sometimes"}
       options={[
-        ["always", "Always"],
-        ["sometimes", "Sometimes"],
-        ["never", "Never"],
+        ["always", t("Always")],
+        ["sometimes", t("Sometimes")],
+        ["never", t("Never")],
       ]}
       onValueChange={(next) =>
         onChange({ addressFrequency: next as AssistantProfilePatch["addressFrequency"] })
@@ -213,57 +239,11 @@ function AddressFrequency({
   );
 }
 
-/** "Show title" with a preview of how the name reads once the name is set. */
-function ShowTitle({
-  value,
-  onChange,
-}: {
-  value: AssistantProfilePatch;
-  onChange: (patch: AssistantProfilePatch) => void;
-}) {
-  const name = value.name?.trim();
-  const preview = name ? (
-    <InfoPopover label={t("Preview")}>
-      {" "}
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={styles.muted}>
-        {value.showTitle ? t("Assistant {p0}", { p0: name }) : name} ·{" "}
-        {t("Room · {p0}", { p0: name })} · {t("{p0} wrote", { p0: name })}
-      </Text>
-    </InfoPopover>
-  ) : undefined;
-  const rows = useProfileRows();
-  if (rows)
-    return (
-      <ProfileSwitch
-        label={t("Show title")}
-        info={preview}
-        checked={value.showTitle ?? true}
-        onCheckedChange={(showTitle) => onChange({ showTitle })}
-      />
-    );
-  return (
-    <div className={roleStyles.inlineControls}>
-      <Switch
-        label={t("Show title")}
-        checked={value.showTitle ?? true}
-        onCheckedChange={(showTitle) => onChange({ showTitle })}
-      />
-      {preview}
-    </div>
-  );
-}
-
-const LANGUAGES = [
-  ["auto", "Auto"],
-  ["tr-TR", "Türkçe"],
-  ["en-US", "English"],
-  ["de-DE", "Deutsch"],
-  ["fr-FR", "Français"],
-  ["es-ES", "Español"],
-  ["pt-PT", "Português"],
-  ["zh-CN", "简体中文"],
-  ["ja-JP", "日本語"],
-] as const;
+/** Auto follows the spoken language; every other option is an app language saved by its region tag. */
+const languageOptions = (): readonly (readonly [string, string])[] => [
+  ["auto", t("Auto")],
+  ...APP_LANGUAGES.map(({ tag, label }) => [tag, label] as const),
+];
 
 /** Language select: a row with a one-line description in settings, the select plus info popover in setup. */
 function ProfileLanguage({
@@ -278,23 +258,14 @@ function ProfileLanguage({
     return (
       <ProfileRow
         label={t("Language")}
-        info={
-          <InfoPopover label={t("About language")}>
-            <Text as="p" size="secondary">
-              {help}
-            </Text>
-          </InfoPopover>
-        }
+        info={<InfoTooltip label={t("About language")}>{help}</InfoTooltip>}
       >
         {() => (
           <Select
             hideLabel
             label={t("Language")}
             value={value}
-            options={LANGUAGES.map(([id, label]) => ({
-              value: id,
-              label: id === "auto" ? t(label) : label,
-            }))}
+            options={languageOptions().map(([value, label]) => ({ value, label }))}
             onValueChange={onValueChange}
           />
         )}
@@ -303,16 +274,12 @@ function ProfileLanguage({
   return (
     <div className={roleStyles.inlineField}>
       <ProfileSelect
-        label="Language"
+        label={t("Language")}
         value={value}
-        options={LANGUAGES}
+        options={languageOptions()}
         onValueChange={onValueChange}
       />
-      <InfoPopover label={t("About language")}>
-        <Text as="p" size="micro" tone="secondary" leading="inherit" className={styles.muted}>
-          {help}
-        </Text>
-      </InfoPopover>
+      <InfoTooltip label={t("About language")}>{help}</InfoTooltip>
     </div>
   );
 }

@@ -1,32 +1,28 @@
+import { errorText } from "../../../shared/lib/errors";
 import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Timestamp } from "../../../shared/ui/Timestamp";
 import { InboxStatusBadge } from "./InboxStatusBadge";
 import { Alert } from "../../../shared/ui/Alert";
+import { InboxLoadError } from "./InboxLoadError";
 import { Heading } from "../../../shared/ui/Heading";
 import { Badge } from "../../../shared/ui/Badge";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
-import { t, useLocale, useT, useFormat } from "../../../shared/i18n";
+import { t, useT, useFormat } from "../../../shared/i18n";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { useGithubPrChecks } from "../hooks/useGithubPrChecks";
 import { useJiraWorkingProject } from "../hooks/useJiraWorkingProject";
 import { summarizePrChecks } from "../model/githubPrChecks";
 import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
-import {
-  Check,
-  Copy,
-  ExternalLink,
-  GitCompare,
-  MessageSquare,
-  MessageMultiple,
-} from "../../../shared/ui/icons";
-import { useEffect, useId, useRef, useState, type ComponentPropsWithRef } from "react";
+import { ExternalLink, GitCompare, MessageSquare, MessageMultiple } from "../../../shared/ui/icons";
+import { useId, useRef, useState, type ComponentPropsWithRef } from "react";
 import { InboxProviderMark } from "./InboxProviderMark";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import {
@@ -37,7 +33,6 @@ import {
   inboxItemRef,
   inboxItemKey,
   inboxItemStatus,
-  formatRelativeTime,
   inboxPersonAvatarUrl,
   type InboxItem,
 } from "../model/githubTasks";
@@ -49,13 +44,15 @@ import { sameProjectPath } from "../../projects/model/recents";
 import { sessionDisplayTitle } from "../../sessions/model/session";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
 import { linearIssueComment, linearIssueThread } from "../model/linear";
-import { jiraIssueComment, jiraIssueThread } from "../model/jira";
+import { jiraIssueComment, jiraIssueThread, type JiraIssueStatus } from "../model/jira";
+import { JiraStatusPicker } from "./JiraStatusPicker";
 import { gitlabWorkItemComment, gitlabWorkItemThread } from "../model/gitlab";
 import { azureDevOpsWorkItemComment, azureDevOpsWorkItemThread } from "../model/azureDevOps";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
 import { InboxComments, InboxCommentForm, type InboxReplyTarget } from "./InboxComments";
 import { InboxPrDiff } from "./InboxPrDiff";
+import { InboxRelativeTime, hasInboxRelativeTime } from "./InboxRelativeTime";
 import { InboxPrChecks, PrChecksTab } from "./InboxPrChecks";
 import { GithubPrActions } from "./InboxPrActions";
 import {
@@ -92,6 +89,7 @@ export function InboxDetail({
   onRepairChecks,
   onOpenSession,
   onItemChange,
+  onJiraStatusChange,
 }: {
   item: InboxItem;
   cwd: string;
@@ -106,6 +104,7 @@ export function InboxDetail({
   onRepairChecks?: CiRepairProps["onRepairChecks"];
   onOpenSession?: (sessionId: string) => void | Promise<void>;
   onItemChange?: (item: InboxItem) => void;
+  onJiraStatusChange?: (status: JiraIssueStatus) => void;
 }) {
   const t = useT();
   const { formatNumber } = useFormat();
@@ -130,6 +129,8 @@ export function InboxDetail({
     details,
     loading,
     error,
+    retrying,
+    retry,
     prDiff,
     diffLoading,
     diffError,
@@ -138,23 +139,22 @@ export function InboxDetail({
     threadLoading,
     threadError,
   } = useInboxDetailData(item, revision, tab, fullFile, panel);
-  const externalActionLabel = t(
+  const externalActionLabel =
     item.kind === "pr"
       ? gitlab
-        ? "Review on GitLab"
+        ? t("Review on GitLab")
         : azuredevops
-          ? "Review on ADO"
-          : "Review on GitHub"
+          ? t("Review on ADO")
+          : t("Review on GitHub")
       : linear
-        ? "Open in Linear"
+        ? t("Open in Linear")
         : jira
-          ? "Open in Jira"
+          ? t("Open in Jira")
           : gitlab
-            ? "Open on GitLab"
+            ? t("Open on GitLab")
             : azuredevops
-              ? "Open on ADO"
-              : "Open on GitHub",
-  );
+              ? t("Open on ADO")
+              : t("Open on GitHub");
   const commentScope = `${cwd}:${item.projectPath}:${inboxItemKey(item)}`;
   const [replyTo, setReplyTo] = useRetainedState<InboxReplyTarget | null>(
     `inbox:reply:${commentScope}`,
@@ -178,7 +178,7 @@ export function InboxDetail({
   const [starting, setStarting] = useState(false);
   const chooseStartProject = tracker || ((gitlab || azuredevops) && !item.projectPath);
   const statusMark = inboxStatusMark(item);
-  const status = tracker ? item.state || inboxItemStatus(item) : t(statusMark.label);
+  const status = tracker ? item.state || inboxItemStatus(item) : statusMark.label;
 
   const source = tracker ? item.teamName || item.repo : item.repo || projectName(item.projectPath);
   const attentionLabel =
@@ -222,6 +222,17 @@ export function InboxDetail({
       )
     : null;
 
+  const mergeBlocker = [
+    ["REVIEW_REQUIRED", "CHANGES_REQUESTED"].includes(reviewDecision.toUpperCase())
+      ? reviewLabel
+      : "",
+    prChecksOverall?.kind === "fail"
+      ? t("Failing checks: {p0}", { p0: formatNumber(prChecksOverall.failed) })
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   const refreshPostedThread = async () => {
     setThreadRefreshing(true);
     try {
@@ -243,7 +254,7 @@ export function InboxDetail({
       if (next) setThread(next);
       setPostRefreshError(null);
     } catch (err: unknown) {
-      setPostRefreshError(err instanceof Error ? err.message : String(err));
+      setPostRefreshError(errorText(err));
     } finally {
       setThreadRefreshing(false);
     }
@@ -277,7 +288,7 @@ export function InboxDetail({
       setReplyTo(null);
       await refreshPostedThread();
     } catch (err: unknown) {
-      setPostError(err instanceof Error ? err.message : String(err));
+      setPostError(errorText(err));
       throw err;
     } finally {
       postingRef.current = false;
@@ -285,6 +296,7 @@ export function InboxDetail({
     }
   };
 
+  const githubWorkspace = item.provider === "github" && !panel;
   const identityRow = (
     <Text
       as="div"
@@ -303,7 +315,17 @@ export function InboxDetail({
         {item.kind === "pr" ? (gitlab ? t("Merge request") : t("Pull request")) : t("Issue")}
       </span>
       <span className="shrink-0 tabular-nums">{inboxItemRef(item)}</span>
-      <InboxStatusBadge mark={statusMark} label={status} attention={attentionLabel} />
+      {jira && jiraKey && onJiraStatusChange ? (
+        <JiraStatusPicker
+          issueKey={jiraKey}
+          url={item.url}
+          mark={statusMark}
+          status={status}
+          onChange={onJiraStatusChange}
+        />
+      ) : (
+        <InboxStatusBadge mark={statusMark} label={status} attention={attentionLabel} />
+      )}
       {source ? <span className="min-w-0 wrap-anywhere">{source}</span> : null}
       {panel ? (
         <Button
@@ -347,118 +369,122 @@ export function InboxDetail({
               `relative ${panel ? "" : "shrink-0"}`,
             )}
           >
-            <div className={`flex w-full min-w-0 flex-col gap-2 px-4 pt-3 ${isPr ? "" : "pb-3"}`}>
+            <div
+              className={`flex w-full min-w-0 flex-col gap-2 px-4 pt-3 ${isPr ? "" : "pb-3"} ${githubWorkspace ? "mx-auto max-w-3xl" : ""}`}
+            >
               <header className={`flex flex-col ${panel ? "gap-2" : "gap-2.5"}`}>
+                {githubWorkspace ? identityRow : null}
                 <Heading size="page" lines={3} className="break-words">
                   {item.title}
                 </Heading>
-                {panel ? null : identityRow}
-                <Text
-                  as="div"
-                  size="caption"
-                  tone="secondary"
-                  className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"
+                {/* Identity and people share one wrapping line instead of two stacked rows. */}
+                <div
+                  className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1"
+                  data-inbox-detail-meta
                 >
-                  {authorName ? (
-                    <span className="inline-flex min-w-0 items-center gap-1.5">
-                      <Text size="inherit" tone="muted">
-                        {jira ? t("Reporter") : t("Author")}
-                      </Text>
-                      <InboxPerson
-                        name={authorName}
-                        avatarUrl={inboxPersonAvatarUrl(
-                          item.provider,
-                          authorName,
-                          details?.authorAvatarUrl,
+                  {panel || githubWorkspace ? null : identityRow}
+                  <Text
+                    as="div"
+                    size="caption"
+                    tone="secondary"
+                    className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"
+                  >
+                    {authorName ? (
+                      <span className="inline-flex min-w-0 items-center gap-1.5">
+                        <Text size="inherit" tone="muted">
+                          {jira ? t("Reporter") : t("Author")}
+                        </Text>
+                        <InboxPerson
+                          name={authorName}
+                          avatarUrl={inboxPersonAvatarUrl(
+                            item.provider,
+                            authorName,
+                            details?.authorAvatarUrl,
+                          )}
+                          size="sm"
+                        />
+                      </span>
+                    ) : null}
+                    {showAssignment ? (
+                      <span className="inline-flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+                        <Text size="inherit" tone="muted">
+                          {t("Assignee")}
+                        </Text>
+                        {extraAssignees.length > 0 ? (
+                          <span className="flex min-w-0 flex-wrap items-center gap-2">
+                            {extraAssignees.map((person) => (
+                              <InboxPerson
+                                key={person.login}
+                                name={person.login}
+                                avatarUrl={inboxPersonAvatarUrl(
+                                  item.provider,
+                                  person.login,
+                                  person.avatarUrl,
+                                )}
+                                size="sm"
+                              />
+                            ))}
+                          </span>
+                        ) : (
+                          <span>{t("Unassigned")}</span>
                         )}
-                        size="sm"
-                      />
-                    </span>
-                  ) : null}
-                  {showAssignment ? (
-                    <>
-                      <Text size="inherit" tone="muted">
-                        {t("Assignee")}
-                      </Text>
-                      {extraAssignees.length > 0 ? (
-                        <span className="flex min-w-0 flex-wrap items-center gap-2">
-                          {extraAssignees.map((person) => (
-                            <InboxPerson
-                              key={person.login}
-                              name={person.login}
-                              avatarUrl={inboxPersonAvatarUrl(
-                                item.provider,
-                                person.login,
-                                person.avatarUrl,
-                              )}
-                              size="sm"
-                            />
-                          ))}
-                        </span>
-                      ) : (
-                        <span>{t("Unassigned")}</span>
-                      )}
-                    </>
-                  ) : null}
-                  {item.createdAt && formatRelativeTime(item.createdAt) ? (
-                    <>
-                      <span aria-hidden>·</span>
-                      <Timestamp
-                        value={Date.parse(item.createdAt)}
-                        format="relative"
-                        prefix={t("Created")}
-                      />
-                    </>
-                  ) : null}
-                  {formatRelativeTime(item.updatedAt) ? (
-                    <>
-                      <span aria-hidden>·</span>
-                      <span>
-                        {t("Updated ")}
-                        {formatRelativeTime(item.updatedAt)}
                       </span>
-                    </>
-                  ) : null}
-                  {baseRef && headRef ? (
-                    <>
-                      <span aria-hidden>·</span>
-                      <span className="inline-flex min-w-0 items-center gap-1">
-                        <GitCompare className="icon-xs shrink-0" strokeWidth={1.75} />
-                        <span className="min-w-0 wrap-anywhere">
-                          {baseRef} ← {headRef}
+                    ) : null}
+                    {hasInboxRelativeTime(item.updatedAt) ? (
+                      <>
+                        {githubWorkspace ? null : <span aria-hidden>·</span>}
+                        <span>
+                          {t("Updated ")}
+                          <InboxRelativeTime at={item.updatedAt} />
                         </span>
-                        <CopyBranchNameButton branch={headRef} />
-                      </span>
-                    </>
-                  ) : null}
-                  {reviewLabel ? (
-                    <Badge
-                      tone={
-                        reviewDecision.toUpperCase() === "APPROVED"
-                          ? "success"
-                          : reviewDecision.toUpperCase() === "CHANGES_REQUESTED"
-                            ? "danger"
-                            : reviewDecision.toUpperCase() === "REVIEW_REQUIRED"
-                              ? "warning"
-                              : "neutral"
-                      }
-                    >
-                      {t(reviewLabel)}
-                    </Badge>
-                  ) : null}
-                  <BadgeList
-                    label={t("Labels")}
-                    rows={1}
-                    items={inboxLabelItems(item.labels)}
-                    className="min-w-0 max-w-full"
-                  />
-                </Text>
+                      </>
+                    ) : null}
+                    {baseRef && headRef ? (
+                      <>
+                        {githubWorkspace ? null : <span aria-hidden>·</span>}
+                        <span className="inline-flex min-w-0 items-center gap-1">
+                          <GitCompare className="icon-xs shrink-0" strokeWidth={1.75} />
+                          <span className="min-w-0 wrap-anywhere">
+                            {baseRef} ← {headRef}
+                          </span>
+                          <CopyBranchNameButton branch={headRef} />
+                        </span>
+                      </>
+                    ) : null}
+                    {reviewLabel ? (
+                      <Badge
+                        tone={
+                          reviewDecision.toUpperCase() === "APPROVED"
+                            ? "success"
+                            : reviewDecision.toUpperCase() === "CHANGES_REQUESTED"
+                              ? "danger"
+                              : reviewDecision.toUpperCase() === "REVIEW_REQUIRED"
+                                ? "warning"
+                                : "neutral"
+                        }
+                      >
+                        {reviewLabel}
+                      </Badge>
+                    ) : null}
+                    {githubWorkspace ? null : (
+                      <BadgeList
+                        label={t("Labels")}
+                        rows={1}
+                        items={inboxLabelItems(item.labels)}
+                        className="min-w-0 max-w-full"
+                      />
+                    )}
+                  </Text>
+                </div>
+                {githubWorkspace ? (
+                  <BadgeList label={t("Labels")} rows={2} items={inboxLabelItems(item.labels)} />
+                ) : null}
                 {!panel && relatedSessions.length > 0 ? (
                   <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
                     <Text
                       size="micro"
                       tone="secondary"
-                      className="mr-0.5 inline-flex shrink-0 items-center gap-1"
+                      className="me-0.5 inline-flex shrink-0 items-center gap-1"
                     >
                       <MessageMultiple className="icon-sm" strokeWidth={1.75} />
                       {t("Related")} {relatedSessions.length === 1 ? t("thread") : t("threads")}
@@ -504,10 +530,23 @@ export function InboxDetail({
                           variant="primary"
                           size="md"
                           type="button"
+                          loading={starting}
+                          loadingLabel={t("Sending…")}
                           disabled={
                             starting ||
                             (chooseStartProject &&
                               (projects.length === 0 || !startProject || loading || !!error))
+                          }
+                          disabledReason={
+                            starting || !chooseStartProject
+                              ? undefined
+                              : projects.length === 0 || !startProject
+                                ? t("Choose a project first.")
+                                : loading
+                                  ? t("Loading…")
+                                  : error
+                                    ? t("Could not load this item.")
+                                    : undefined
                           }
                           onClick={() => {
                             if (starting) return;
@@ -518,23 +557,13 @@ export function InboxDetail({
                               : item;
                             void Promise.resolve(onStart(next, tracker ? details?.body : undefined))
                               .catch((err: unknown) => {
-                                setStartError(err instanceof Error ? err.message : String(err));
+                                setStartError(errorText(err));
                               })
                               .finally(() => setStarting(false));
                           }}
                         >
-                          {starting ? t("Sending...") : t("Send to agent")}
+                          {t("Send to agent")}
                         </Button>
-                        {!chooseStartProject && item.repo ? (
-                          <Text
-                            size="caption"
-                            tone="secondary"
-                            truncate
-                            className="min-w-0 max-w-48"
-                          >
-                            {t("in {p0}", { p0: item.repo })}
-                          </Text>
-                        ) : null}
                         {chooseStartProject ? (
                           <div className="min-w-0 max-w-full">
                             <InboxProjectPicker
@@ -564,6 +593,7 @@ export function InboxDetail({
                         baseRef={baseRef}
                         headRef={headRef}
                         reviewedHeadOid={prDiff?.headOid || details?.headRefOid}
+                        mergeBlocker={mergeBlocker}
                         onChange={onItemChange}
                       />
                     ) : null}
@@ -582,7 +612,11 @@ export function InboxDetail({
                     )}
                   </div>
                 </div>
-                {startError ? <InlineError>{startError}</InlineError> : null}
+                {startError ? (
+                  <InlineError details={startError}>
+                    {t("Could not start the session.")}
+                  </InlineError>
+                ) : null}
               </header>
               {isPr ? (
                 <div className="flex h-9 items-center">
@@ -595,12 +629,9 @@ export function InboxDetail({
                       count={panel ? prDiff?.files.length : undefined}
                       countLabel={
                         panel && prDiff
-                          ? t(
-                              prDiff.files.length === 1
-                                ? "{p0} changed file"
-                                : "{p0} changed files",
-                              { p0: prDiff.files.length },
-                            )
+                          ? prDiff.files.length === 1
+                            ? t("{p0} changed file", { p0: prDiff.files.length })
+                            : t("{p0} changed files", { p0: prDiff.files.length })
                           : undefined
                       }
                       onClick={() => {
@@ -627,13 +658,18 @@ export function InboxDetail({
             >
               {isPr && tab === "code" ? (
                 diffLoading && !prDiff ? (
-                  <LoadingText className="justify-center py-10" />
+                  <LoadingText inset="panel" className="justify-center" />
                 ) : diffError && !prDiff ? (
-                  <Alert tone="danger">{diffError}</Alert>
+                  <InboxLoadError title={t("Could not load the code changes.")} error={diffError} />
                 ) : prDiff ? (
                   <>
                     {diffLoading ? <LoadingText /> : null}
-                    {diffError ? <Alert tone="danger">{diffError}</Alert> : null}
+                    {diffError ? (
+                      <InboxLoadError
+                        title={t("Could not load the code changes.")}
+                        error={diffError}
+                      />
+                    ) : null}
                     <InboxPrDiff
                       key={inboxItemKey(item)}
                       diff={prDiff}
@@ -701,12 +737,24 @@ export function InboxDetail({
                   }
                 />
               ) : loading && !details ? (
-                <LoadingText className="justify-center py-10" />
+                <LoadingText inset="panel" className="justify-center" />
               ) : error && !details ? (
-                <Alert tone="danger">{error}</Alert>
+                <InboxLoadError
+                  title={t("Could not load this item.")}
+                  error={error}
+                  retrying={retrying}
+                  onRetry={() => void retry()}
+                />
               ) : (
                 <>
-                  {error ? <Alert tone="danger">{error}</Alert> : null}
+                  {error ? (
+                    <InboxLoadError
+                      title={t("Could not refresh this item.")}
+                      error={error}
+                      retrying={retrying}
+                      onRetry={() => void retry()}
+                    />
+                  ) : null}
                   {panel ? (
                     <InboxDescriptionSummary
                       body={details?.body ?? ""}
@@ -759,9 +807,7 @@ export function InboxDetail({
                       }}
                     >
                       <p>{t("Comment sent. Could not refresh the conversation.")}</p>
-                      <Text as="p" size="caption" tone="inherit" className="wrap-anywhere">
-                        {postRefreshError}
-                      </Text>
+                      <ErrorDetails detail={postRefreshError} />
                     </Alert>
                   ) : null}
                   <InboxCommentForm
@@ -792,81 +838,17 @@ export function InboxDetail({
  * is ignored. A failure stays visible next to the control until it is retried.
  */
 export function CopyBranchNameButton({ branch }: { branch: string }) {
-  useLocale();
-  const [outcome, setOutcome] = useState<{
-    branch: string;
-    status: "pending" | "copied" | "failed";
-  } | null>(null);
-  const timer = useRef<number | null>(null);
-  const pending = useRef(false);
-  const generation = useRef(0);
-  const clearTimer = () => {
-    if (timer.current != null) window.clearTimeout(timer.current);
-    timer.current = null;
-  };
-
-  useEffect(() => {
-    generation.current += 1;
-    pending.current = false;
-    clearTimer();
-    return () => {
-      generation.current += 1;
-      clearTimer();
-    };
-  }, [branch]);
-
-  const status = outcome?.branch === branch ? outcome.status : null;
-  const label =
-    status === "copied"
-      ? t("Copied")
-      : status === "failed"
-        ? t("Copy failed. Try again.")
-        : t("Copy branch name");
-
-  const copy = () => {
-    if (pending.current) return;
-    pending.current = true;
-    const requested = generation.current;
-    const target = branch;
-    clearTimer();
-    setOutcome({ branch: target, status: "pending" });
-    const settle = (next: "copied" | "failed") => {
-      if (generation.current !== requested) return;
-      pending.current = false;
-      setOutcome({ branch: target, status: next });
-      if (next === "copied") {
-        playCue("copy");
-        timer.current = window.setTimeout(() => setOutcome(null), 2000);
-      }
-    };
-    void copyText(target).then(
-      () => settle("copied"),
-      () => settle("failed"),
-    );
-  };
-
   return (
-    <>
-      <Button
-        variant="ghost"
-        type="button"
-        iconOnly
-        label={label}
-        className="shrink-0"
-        loading={status === "pending"}
-        onClick={copy}
-      >
-        {status === "copied" ? (
-          <Check className="icon-xs" strokeWidth={1.75} />
-        ) : (
-          <Copy className="icon-xs" strokeWidth={1.75} />
-        )}
-      </Button>
-      {status === "failed" ? (
-        <InlineError live="polite" className="shrink-0">
-          {t("Copy failed. Try again.")}
-        </InlineError>
-      ) : null}
-    </>
+    <CopyButton
+      iconOnly
+      type="button"
+      className="shrink-0"
+      label={t("Copy branch name")}
+      resetKeys={[branch]}
+      onCopy={async () => {
+        await copyText(branch);
+        playCue("copy");
+      }}
+    />
   );
 }

@@ -3,6 +3,9 @@
 // These synthetic original frames/ACKs never establish a real Native/FULL join.
 import { createHash, webcrypto } from "node:crypto";
 import { afterEach, expect, it, vi } from "vitest";
+
+// Every case re-imports the whole store graph (`vi.resetModules`), which exceeds 5 s on a loaded machine.
+vi.setConfig({ testTimeout: 30_000 });
 import type { Session } from "../model/session";
 import type { ComposerDraft } from "../model/draftPersistence";
 import type { NativeProducerInputClosure, NativeProducerInputLease } from "./mountedInputCapture";

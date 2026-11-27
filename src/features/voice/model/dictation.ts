@@ -4,16 +4,18 @@ import {
   type CloudDictationProvider,
   type VoiceRuntimeConfig,
 } from "./localVoiceClient";
-import { VoiceVad, pcmBase64, resamplePcm } from "./voiceVad";
+import { VoiceVad, pcmBase64, resamplePcm } from "../../../shared/model/voice-realtime/voiceVad";
 import { errorText } from "../../../shared/lib/errors";
-import { openMicrophone } from "./microphoneAccess";
+import { openMicrophone, stopMicrophone } from "./microphoneAccess";
 import { t } from "../../../shared/i18n";
 import { processDictationText, type DictationProcessingOptions } from "./dictationProcessing";
+import { reportDictationLanguage } from "./dictationActivity";
+import { acceptedVoiceLanguage } from "../../../shared/model/voice-realtime/voiceSpokenLanguage";
 
 const noop = () => {};
 /** New speech (seconds) before the next live preview of the phrase in progress.
- * Cloud previews are sparser because each one is a billed request. */
-const PREVIEW_SECONDS = { local: 0.9, cloud: 1.4 };
+ * Local only: cloud engines transcribe each phrase once, since every preview is billed. */
+const PREVIEW_SECONDS = 0.9;
 
 export type DictationState = "idle" | "starting" | "listening" | "finishing";
 type Callbacks = {
@@ -31,11 +33,13 @@ type Callbacks = {
 
 /**
  * Microphone-to-text for the composer, with the local recognizer (no natural
- * speech) or a cloud speech-to-text provider through the Host. While a phrase is
- * spoken it is previewed about every second; each pause ends the phrase, which is
- * transcribed and handed over at once; stopping transcribes the unfinished phrase.
+ * speech) or a cloud speech-to-text provider through the Host. With the local
+ * recognizer a phrase in progress is previewed about every second; cloud phrases are
+ * not previewed. Each pause ends the phrase, which is transcribed and handed over at
+ * once; stopping transcribes the unfinished phrase.
  */
 export class Dictation {
+  private readonly captureAbort = new AbortController();
   private lease?: string;
   private stream?: MediaStream;
   private audio?: AudioContext;
@@ -102,15 +106,18 @@ export class Dictation {
       const backend = this.engine !== "local" ? Promise.resolve("") : this.startLocal();
       this.backend = backend;
       backend.catch((cause) => this.fail(cause));
-      const stream = await openMicrophone({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          ...(this.microphoneId ? { deviceId: { exact: this.microphoneId } } : {}),
+      const stream = await openMicrophone(
+        {
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            ...(this.microphoneId ? { deviceId: { exact: this.microphoneId } } : {}),
+          },
+          video: false,
         },
-        video: false,
-      });
+        { signal: this.captureAbort.signal },
+      );
       this.stream = stream;
       if (this.closed) return this.stopCapture();
       const audio = (this.audio = new AudioContext({ sampleRate: 16000 }));
@@ -179,7 +186,7 @@ export class Dictation {
     const hint = /^[a-z]{2}$/.test(this.language) ? this.language : undefined;
     const slot = this.inflight.length >= 2 ? this.inflight[0] : undefined;
     const pending = Promise.all([backend, slot]).then(([lease]) => {
-      if (this.closed) return { text: "" };
+      if (this.closed) return { text: "", language: undefined };
       return this.engine === "local"
         ? localVoiceBackend.transcribe(lease, pcm, hint)
         : localVoiceBackend.cloudTranscribe(this.engine, pcm, hint, this.model);
@@ -193,10 +200,13 @@ export class Dictation {
    * a finished phrase is pending, so previews never delay or reorder final text.
    */
   private preview(rate: number) {
+    // Cloud previews would re-upload and bill the whole phrase so far every step
+    // (quadratic in phrase length); the phrase is transcribed once at its pause.
+    if (this.engine !== "local") return;
     if (this.closed || !this.ready || this.previewing || this.finals) return;
-    const audio = this.vad?.current();
-    const step = PREVIEW_SECONDS[this.engine === "local" ? "local" : "cloud"];
-    if (!audio || audio.length - this.previewed < rate * step) return;
+    // The buffer is copied only once enough new speech has accumulated.
+    const audio = this.vad?.current(this.previewed + rate * PREVIEW_SECONDS);
+    if (!audio) return;
     this.previewed = audio.length;
     this.previewing = true;
     const phrase = this.phrase;
@@ -242,7 +252,16 @@ export class Dictation {
     this.finals++;
     this.queue = this.queue.then(async () => {
       try {
-        let text = processDictationText((await pending).text.trim(), this.processing);
+        const recognized = await pending;
+        if (this.closed) return;
+        const raw = recognized.text.trim();
+        const spoken = raw && acceptedVoiceLanguage(raw, recognized.language);
+        const detected = spoken || recognized.language;
+        if (raw && detected) reportDictationLanguage(detected);
+        let text = processDictationText(raw, {
+          ...this.processing,
+          language: this.processing.language || detected || this.language,
+        });
         if (text && this.processing.cleanup?.enabled && !this.closed) {
           try {
             const cleanup = this.processing.cleanup;
@@ -306,8 +325,9 @@ export class Dictation {
   }
 
   private stopCapture() {
+    this.captureAbort.abort();
     this.callbacks.level?.(0);
-    this.stream?.getTracks().forEach((track) => track.stop());
+    stopMicrophone(this.stream);
     this.source?.disconnect();
     this.capture?.disconnect();
     if (this.capture) this.capture.port.onmessage = null;

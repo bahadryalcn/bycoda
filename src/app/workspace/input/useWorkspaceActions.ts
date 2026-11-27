@@ -29,6 +29,7 @@ export interface WorkspaceActions {
   onActivate: (slot: number) => void;
   onSplit: (dir: SplitDir) => void;
   onFocusDir: (dir: FocusDir) => void;
+  onMovePaneDir: (dir: FocusDir) => void;
   onToggleSidebar: () => void;
   onToggleSessionSidebar: () => void;
   onGoToFile: () => void;

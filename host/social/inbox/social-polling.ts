@@ -4,6 +4,14 @@ import type { SocialServiceInternals } from "../core/social-internals";
 import { hash } from "../core/social-helpers";
 import { pollIntervalMs, readInboxSettings } from "./inbox-settings";
 
+const POLL_FAILURE_BASE_MS = 60_000;
+const POLL_FAILURE_MAX_MS = 60 * 60_000;
+
+/** Wait after the nth consecutive failed background poll: 1, 2, 4 ... minutes, capped at one hour. */
+export function pollFailureDelayMs(failures: number): number {
+  return Math.min(POLL_FAILURE_MAX_MS, POLL_FAILURE_BASE_MS * 2 ** Math.max(0, failures - 1));
+}
+
 /** One account's inbox poll. SocialService.pollAccount owns the pending map and coalescing. */
 export async function pollOwnedAccount(
   s: SocialServiceInternals,
@@ -55,7 +63,9 @@ export async function pollOwnedAccount(
     const result = await adapter.poll(
       account,
       credential.accessToken,
-      adapter.ownedPostPages
+      // Paged or ignored lists never load the full publish history; every other adapter keeps
+      // receiving the complete pending list in scheduled order.
+      adapter.ownedPostPages || adapter.ignoresPublishedPosts
         ? []
         : (
             await s.store.db

@@ -55,6 +55,7 @@ import {
 } from "./registry";
 import type { SendTurnInput, SteerTurnInput } from "./types";
 import { providerTurnInput } from "./providerInput";
+import { resetDelegationRespawns } from "./delegationReadiness";
 
 function stub(id: HarnessId, extra: Partial<HarnessAdapter> = {}): HarnessAdapter {
   return {
@@ -234,6 +235,53 @@ describe("harness registry: reserved delegation keys", () => {
       subagentPolicy: "force",
     });
   });
+  it("restarts a running provider that lost its Host tools once the Host answers, at most once per cooldown", async () => {
+    let respawn = false;
+    nativeInvoke.mockImplementation(async (command, args) => {
+      if (command !== "harness_conversation_tools_bridge") return undefined;
+      const request = args as { checkReady?: boolean; checkRespawn?: boolean };
+      if (request.checkRespawn) return { respawn };
+      if (request.checkReady) return { ready: true };
+      return undefined;
+    });
+    const order: string[] = [];
+    const onEvent = vi.fn();
+    registerHarness(
+      stub("claude", {
+        stopSession: async () => {
+          order.push("stop");
+        },
+        sendTurn: async (input) => {
+          order.push("send");
+          input.onAccepted?.();
+        },
+      }),
+    );
+    const turn = () =>
+      sendHarnessTurn({
+        harness: "claude",
+        sessionId: "lost-host-tools",
+        cwd: "/tmp",
+        model: defaultModelId("claude"),
+        runtimeMode: "supervised",
+        text: "Continue",
+        modelSettings: { crossSubagents: "auto" },
+        onEvent,
+      });
+    // The Host does not answer yet, or the process still has its route: no restart.
+    await turn();
+    expect(order).toEqual(["send"]);
+    respawn = true;
+    await turn();
+    // The stop comes before the turn, so the turn starts a process with Host tools.
+    expect(order).toEqual(["send", "stop", "send"]);
+    // A respawn that did not restore tools is not retried on every message.
+    await turn();
+    expect(order).toEqual(["send", "stop", "send", "send"]);
+    expect(onEvent.mock.calls.some(([event]) => event.key === "delegation-unavailable")).toBe(
+      false,
+    );
+  });
   it("announces delegation fallback once, only after the adapter accepts", async () => {
     const onEvent = vi.fn();
     const notices = () =>
@@ -265,6 +313,7 @@ describe("harness registry: reserved delegation keys", () => {
     nativeInvoke.mockReset().mockResolvedValue(undefined);
     resetHarnessModelOverlays();
     resetHarnessIdlePark();
+    resetDelegationRespawns();
     socialBridgeMock.mockReset().mockResolvedValue(null);
     runtimeLogsBridgeMock.mockReset().mockResolvedValue(null);
     vi.useRealTimers();

@@ -12,6 +12,7 @@ import {
 
 import { killChild } from "../../core/child";
 import { withSlowStartupNotice } from "../../core/providerStartupStatus";
+import { t } from "../../../../shared/i18n/core";
 import {
   preserveProviderFailure,
   createProviderRetirementLedger,
@@ -20,6 +21,7 @@ import {
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import { additionalDirsFor } from "../../core/additionalDirs";
 import { spawnChild, unwatchChild, watchChild } from "../../core/child";
+import { pushExitStderrTail, redactExitStderrLine } from "../../core/exitDiagnostics";
 import type { HarnessEvent, SendTurnInput } from "../../core/types";
 import {
   antigravityStreamArgs,
@@ -72,7 +74,6 @@ type Live = {
 type Resume = { conversationId: string; cwd: string };
 
 const READY_TIMEOUT_MS = 60_000;
-const STDERR_TAIL = 4;
 
 const liveBySession = new Map<string, Live>();
 const resumeBySession = new Map<string, Resume>();
@@ -229,8 +230,8 @@ async function ensureLive(
     (text) => onLine(live, text),
     (code) => onExit(live, code),
     (text) => {
-      live.stderr = [...live.stderr, text].slice(-STDERR_TAIL);
-      console.debug("[bycoda] antigravity stderr", text);
+      pushExitStderrTail(live.stderr, text);
+      console.debug("[bycoda] antigravity stderr", redactExitStderrLine(text));
     },
   );
 
@@ -279,7 +280,7 @@ async function ensureLive(
     resumeBySession.delete(sessionId);
     input.onEvent({
       type: "status",
-      text: "Antigravity could not restore the previous conversation. Starting a new one.",
+      text: t("Antigravity could not restore the previous conversation. Starting a new one."),
     });
   }
   if (live.state.conversationId) {
@@ -322,7 +323,7 @@ function onLine(live: Live, line: string): void {
   if (!outcome.result.ok) {
     live.onEvent({
       type: "session.error",
-      message: outcome.result.error ?? "Antigravity turn failed.",
+      message: outcome.result.error ?? t("Antigravity turn failed."),
     });
   }
   finishTurn(live);

@@ -26,6 +26,7 @@ impl Fixture {
             token: "secret-native-token".into(),
             ssh: None,
             local_host: false,
+            proof_seed: None,
         };
         let mut local = target.clone();
         local.id = "local-issuer".into();

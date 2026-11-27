@@ -251,6 +251,11 @@ export function previewRewindHistory(
 
   // Preserve chronology in the wire shape; RewoundHistoryDisclosure presents
   // entries newest-first. Select newest entries/blocks first under the budget.
+  // JSON of an array is its elements plus separators, so the byte total is kept
+  // as a running sum: each element is serialized once, never the whole archive.
+  let projectedBytes = 2; // JSON bytes of `projected`, brackets included.
+  const bytesWithEntry = (entryBytes: number) =>
+    projectedBytes + (projected.length ? 1 : 0) + entryBytes;
   for (let entryIndex = history.length - 1; entryIndex >= 0; entryIndex--) {
     const entry = history[entryIndex]!;
     if (entry.id.length > 256 || entry.fromBlockId.length > 256) truncated = true;
@@ -260,26 +265,31 @@ export function previewRewindHistory(
       fromBlockId: truncateJsonString(entry.fromBlockId, 256),
       blocks: [],
     };
+    // Entry JSON without its blocks array, i.e. everything except the `[]` (2 bytes).
+    const entryWrapBytes = Buffer.byteLength(JSON.stringify({ ...boundedEntry, blocks: [] })) - 2;
     if (entry.blocks.length > 100) truncated = true;
+    let blockBytes = 0; // Sum of accepted block JSON bytes.
     for (const block of entry.blocks.slice(-100).reverse()) {
       const projectedBlock = projectBlock(block);
-      const trial = [
-        ...projected,
-        { ...boundedEntry, blocks: [...boundedEntry.blocks, projectedBlock] },
-      ];
-      if (Buffer.byteLength(JSON.stringify(trial)) > REWIND_ARCHIVE_PREVIEW_BYTES) {
+      const candidateBytes = Buffer.byteLength(JSON.stringify(projectedBlock));
+      const commas = boundedEntry.blocks.length; // Separators once the candidate joins.
+      const trialBytes = bytesWithEntry(entryWrapBytes + 2 + blockBytes + candidateBytes + commas);
+      if (trialBytes > REWIND_ARCHIVE_PREVIEW_BYTES) {
         truncated = true;
         break;
       }
+      blockBytes += candidateBytes;
       boundedEntry.blocks.unshift(projectedBlock);
     }
-    if (
-      Buffer.byteLength(JSON.stringify([...projected, boundedEntry])) > REWIND_ARCHIVE_PREVIEW_BYTES
-    ) {
+    const entryBytes =
+      entryWrapBytes + 2 + blockBytes + Math.max(0, boundedEntry.blocks.length - 1);
+    const totalBytes = bytesWithEntry(entryBytes);
+    if (totalBytes > REWIND_ARCHIVE_PREVIEW_BYTES) {
       truncated = true;
       break;
     }
     projected.unshift(boundedEntry);
+    projectedBytes = totalBytes;
     if (entryIndex > 0 && projected.length >= 100) {
       truncated = true;
       break;

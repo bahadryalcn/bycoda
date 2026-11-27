@@ -1,3 +1,10 @@
+import { TranscriptHistoryNotice } from "./TranscriptHistoryNotice";
+import {
+  collectSearchSources,
+  linkSearchCitations,
+  type SearchSource,
+} from "../model/searchSources";
+import { innerScrollerTakes } from "../../../shared/hooks/useLockOverscroll";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { JumpRelay } from "./transcriptJumpRelay";
@@ -17,12 +24,12 @@ import {
   useTranscriptActiveBlocksVersion,
 } from "./transcriptVirtualization";
 import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { DelegationNoticeRow, SessionMessageAuthor } from "./SessionMessageAuthor";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { Alert } from "../../../shared/ui/Alert";
 import { ApprovalDecisionProvider, type ApprovalDispatch } from "./ApprovalDecisionContext";
 import { InlineVisual } from "./InlineVisual";
-import { Badge } from "../../../shared/ui/Badge";
+import { InlineVisualHost, type InlineVisualHostRoute } from "../hooks/useInlineVisualSource";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import {
   canOfferTranslation,
@@ -36,25 +43,33 @@ import {
 } from "../model/translationHistory";
 import { TranslationResultDialog } from "./TranslationResultDialog";
 import { useTranscriptImageOpen } from "./TranscriptImagePreview";
-import type { TranscriptSelection } from "../model/transcriptSelection";
+import { resolveTranscriptSelection, type TranscriptSelection } from "../model/transcriptSelection";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import { INTERRUPT_MESSAGE, isTurnInterruptMessage } from "../model/inFlight";
 import { isSessionErrorBlock } from "../model/sessionIssue";
 import { filterDisplayedBlocks, type DisplayFilterFrame } from "../model/transcriptDisplayFilter";
-import { SessionErrorNotice } from "./SessionErrorNotice";
+import {
+  SessionErrorNotice,
+  UsageLimitRecoveryContext,
+  type UsageLimitRecovery,
+} from "./SessionErrorNotice";
 import { useFormat, useLocale, useT } from "../../../shared/i18n";
 import {
   Check,
-  Copy,
+  ChatCopy,
+  ChatEditMessage,
+  ChatRun,
+  ChatWork,
   FilePlusCorner,
   MessageMultiple,
+  GitBranch,
   Replace,
   MoreHorizontal,
-  Pencil,
   ChartBreakoutSquare,
-  Terminal,
   X,
   MessageSquare,
+  Pause,
 } from "../../../shared/ui/icons";
 import { PerformanceTraceContext } from "./performanceTraceContext";
 import {
@@ -73,15 +88,17 @@ import {
 } from "react";
 import { TranscriptRetentionContext } from "./TranscriptPool";
 import { AttachmentChip } from "./AttachmentChip";
-import { AttachmentTokenText } from "./AttachmentTokenText";
+import { inlineMediaAttachmentPath, LocalMedia } from "./LocalMedia";
 import { WorkItemMentionCwd } from "./WorkItemMentionChip";
+import { TranscriptSessionId } from "./TranscriptSessionId";
 import { ChatCitationList } from "./ChatCitationText";
 import { extractChatCitations } from "../model/chatCitation";
 import { TranscriptSkills } from "./SkillTokenText";
 import { RunHarness } from "./SubagentAnatomy";
-import { UserTextPreview } from "./UserTextPreview";
+import { UserMessageMarkdown, UserTextPreview } from "./UserTextPreview";
 import { userTextParts } from "../model/userTextPreview";
-import { findTokens } from "../model/attachmentTokens";
+import { findTokens, stripAttachmentTokens } from "../model/attachmentTokens";
+import { isPastedTextAttachment } from "../model/attachmentPresentation";
 import { GeneratedImage } from "./GeneratedImage";
 import { BycodaSparkles } from "./BycodaSparkles";
 import { OrchestratorConstellation } from "./OrchestratorConstellation";
@@ -94,18 +111,18 @@ import { SecondOpinionCard } from "./SecondOpinionCard";
 import { NoteMiniCard } from "../../notes/ui/NoteMiniCard";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Popover } from "../../../shared/ui/Popover";
-import { Surface } from "../../../shared/ui/Surface";
+import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import { Button } from "../../../shared/ui/Button";
 import { UserDraftFooter } from "./UserDraftFooter";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Disclosure } from "../../../shared/ui/Disclosure";
-import { CollectionFooter } from "../../../shared/ui/ContinuousList";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import type {
   FloatingButtonGroupAction,
   FloatingButtonGroupTriggerProps,
 } from "../../../shared/ui/FloatingButtonGroup";
 import { TurnOutputActions } from "./TranscriptMessageActions";
+import { TurnChangedFiles } from "./TurnChangedFiles";
 import { ResumeTurnRow } from "./ResumeTurnRow";
 import { resumePromptKind } from "../model/resumePrompt";
 import type { ApprovalDecision } from "../../../integrations/harness";
@@ -115,7 +132,7 @@ import type { ShellRun } from "../model/shellRun";
 import { visibleUserPrompt } from "../model/userPromptText";
 import { playCue } from "../../settings/public/sounds";
 import { legacyTaskListFromText } from "../model/taskList";
-import { useResolvedModelName } from "../model/reactiveReads";
+import { useResolvedModelName, useTurnChangedFiles } from "../model/reactiveReads";
 import { BlockScanCache } from "../model/blockScanCache";
 import { sameBlocksIgnoringStreamingText } from "../model/stableBlocks";
 import {
@@ -124,6 +141,9 @@ import {
 } from "../model/translationProjection";
 import { TranscriptTurnCache } from "../model/transcriptTurnCache";
 import { ModelSwitchRow } from "./ModelSwitchRow";
+import { BranchOriginRow } from "./BranchOriginRow";
+import { TranscriptBranchContext, type TranscriptBranch } from "./transcriptBranchContext";
+import type { BranchBlockedReason } from "../model/conversationBranch";
 import {
   hasPendingApproval,
   HARNESS_TITLE,
@@ -162,9 +182,7 @@ import {
   isProseBlock,
   hasTurnCopyText,
   turnCopyText,
-  workKind,
-  workSummaryLine,
-  type ActivityPhaseKind,
+  settledWorkSummaryLine,
   type TurnItem,
 } from "../model/transcriptActivity";
 import { lastUserTurnBlock } from "../model/editLastTurn";
@@ -177,7 +195,6 @@ import { CodeExecutionProvider, type CodeExecutionScope } from "./CodeExecutionC
 import { useRetainedDisclosure } from "./useRetainedDisclosure";
 import {
   ActivityPhases,
-  ActivityPhaseIcon,
   formatWorkingDuration,
   ToolCall,
   HandoffDivider,
@@ -188,6 +205,7 @@ import { AdvisorRow } from "./AdvisorRow";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 export { ActivityRow, agentStepBlock } from "./AgentTranscriptActivity";
 type Props = {
+  inlineVisualHost?: InlineVisualHostRoute;
   codeExecution?: CodeExecutionScope;
   /** Travels with the element when TranscriptPool renders it in its outlet. */
   approvalContext?: {
@@ -203,6 +221,8 @@ type Props = {
   busy?: boolean;
   historyLoading?: boolean;
   historyLoadError?: string;
+  /** Reads the stored conversation again after `historyLoadError`; without it the failure has no Retry. */
+  onRetryHistory?: () => void;
   remoteHistoryHasMore?: boolean;
   remoteHistoryLoading?: boolean;
   remoteHistoryError?: string;
@@ -214,6 +234,7 @@ type Props = {
   model?: string;
   modelSettings?: Record<string, string>;
   providerAccountId?: string;
+  usageLimitRecovery?: UsageLimitRecovery;
   pendingQuestion?: boolean;
   pendingOwnerApproval?: boolean;
   questionBehavior?: "blocking" | "nonBlocking";
@@ -240,6 +261,8 @@ type Props = {
   planBuildTargets?: boolean;
   onSecondOpinion?: (target: ModelTarget, turn: Block[]) => void;
   onHandoff?: (target: ModelTarget, turn: Block[]) => void;
+  /** Branching of this conversation; absent where it does not apply. */
+  branch?: TranscriptBranch;
   onEditLastTurn?: () => void;
   canRewindMessage?: (blockId: string) => boolean;
   onRewindMessage?: (block: Block, action: "edit" | "return") => void;
@@ -269,6 +292,7 @@ function AgentTranscriptComponent({
   busy,
   historyLoading = false,
   historyLoadError,
+  onRetryHistory,
   remoteHistoryHasMore = false,
   remoteHistoryLoading = false,
   remoteHistoryError,
@@ -330,9 +354,6 @@ function AgentTranscriptComponent({
     Record<string, TranslationHistory & { source: string; translatedVisible: boolean }>
   >({});
   const [activeTranslation, setActiveTranslation] = useState<string | null>(null);
-  const translationCopy = useCopyFeedback({
-    resetKeys: [activeTranslation, translations[activeTranslation ?? ""]?.translatedVisible],
-  });
   const [translationProjection] = useState(() => new FrameMemory<TranslationProjection>());
   const sourceBlocks = useMemo(
     () => projectTranslatedBlocks(persistedBlocks, translations, translationProjection.read()),
@@ -343,7 +364,10 @@ function AgentTranscriptComponent({
   }, [persistedBlocks, translations, sourceBlocks, translationProjection]);
   const translateSelection = useStableCallback(
     canOfferTranslation(translationContext)
-      ? (selection: TranscriptSelection, target: TextActionTarget) => {
+      ? (liveSelection: TranscriptSelection, target: TextActionTarget) => {
+          // Read occurrence and text now, so the apply step checks the same snapshot it translated.
+          const selection = resolveTranscriptSelection(liveSelection);
+          if (!selection) return;
           const sourceBlock = persistedBlocks.find((block) => block.id === selection.responseId);
           if (target === "reprompt" && sourceBlock?.role !== "user") return;
           const source = sourceBlock?.text;
@@ -394,23 +418,10 @@ function AgentTranscriptComponent({
   const toggleWork = useCallback((turnId: string, currentlyOpen: boolean) => {
     setOpenWork((open) => ({ ...open, [turnId]: !currentlyOpen }));
   }, []);
-  // Stretch the last turn after a send while this tab stays open. Closing
-  // the tab is a new visit: the remount uses the true transcript height so
-  // the latest reply sits near the composer instead of a hole of empty space.
-  const [anchorTurn, setAnchorTurn] = useState(!!busy);
-  const [wasParked, setWasParked] = useState(parked);
-  if (wasParked !== parked) {
-    setWasParked(parked);
-    if (!parked && anchorTurn !== !!busy) setAnchorTurn(!!busy);
-  }
   const transcriptLayout = useTranscriptLayout();
-  const promptAnchor = useTranscriptAnchor();
+  // The active turn fills the viewport until its reply settles.
+  const anchorTurn = useTranscriptAnchor() && !!busy;
   const lastUserId = lastUserBlockId(blocks, managed);
-  const [seenUserId, setSeenUserId] = useState(lastUserId);
-  if (lastUserId !== seenUserId) {
-    setSeenUserId(lastUserId);
-    if (lastUserId && !anchorTurn) setAnchorTurn(true);
-  }
   const currentModelName = useResolvedModelName(harness, model);
   const blockingQuestion = pendingQuestion && questionBehavior === "blocking";
   const [scanCache] = useState(() => new BlockScanCache());
@@ -423,8 +434,7 @@ function AgentTranscriptComponent({
   // anchored spot at the top. On mount this only plays for a session's first
   // send.
   const introducePrompt = useStableCallback((mounting: boolean, el: HTMLDivElement | null) => {
-    if (!lastUserId || transcriptLayout !== "chat" || !(promptAnchor && anchorTurn) || !visible)
-      return;
+    if (!lastUserId || transcriptLayout !== "chat" || !anchorTurn || !visible) return;
     if (mounting && !(busy && userTurnCount(blocks, managed) === 1)) return;
     return riseIntoAnchor(el, lastUserId);
   });
@@ -454,6 +464,7 @@ function AgentTranscriptComponent({
     lastVisibleTurn,
     visibleTurns,
     loadEarlier,
+    onHistoryScroll,
     loadNewer,
     jumpLatest,
     revealBlock: pagingRevealBlock,
@@ -461,6 +472,7 @@ function AgentTranscriptComponent({
     pagingLoading,
     pagingError,
   } = useTranscriptPaging({
+    sessionId,
     turns,
     blockCount: blocks.length,
     openWork,
@@ -477,23 +489,24 @@ function AgentTranscriptComponent({
   const anchorAdjusted = useStableCallback((element: HTMLElement) => {
     if (element === scroller.current) follow.rememberScroll(element);
   });
-  // The virtualization owner outlives renders and calls back when anchoring moves the scroller.
+  // At the latest message the follow hook alone positions the transcript.
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- registers the anchoring callback with the external virtualization owner and unregisters it on unmount
   useLayoutEffect(() => {
-    virtualization.setAdjusted(anchorAdjusted);
+    virtualization.setAdjusted(
+      anchorAdjusted,
+      (element) => element !== scroller.current || !follow.stickToBottom.current,
+    );
     return () => virtualization.setAdjusted(undefined);
-  }, [virtualization, anchorAdjusted]);
-  const revealBlock = useCallback(
-    (blockId: string) => {
-      if (!findTurn(blockId)) return false;
-      flushSync(() => virtualization.reveal(blockId));
-      // Callers align the block now and once more on the next frame; after
-      // that the reveal must not keep forcing its rows mounted or groups open.
-      virtualization.settleRevealAfterAlignment(blockId);
-      return pagingRevealBlock(blockId);
-    },
-    [findTurn, pagingRevealBlock, virtualization],
-  );
+  }, [virtualization, anchorAdjusted, scroller, follow.stickToBottom]);
+  const prepareReveal = (blockId: string, forSearch = false) => {
+    if (!pagingRevealBlock(blockId, forSearch)) return false;
+    virtualization.reveal(blockId);
+    // Callers align the block now and once more on the next frame; after
+    // that the reveal must not keep forcing its rows mounted or groups open.
+    virtualization.settleRevealAfterAlignment(blockId);
+    return true;
+  };
+  const revealBlock = useStableCallback((id: string) => flushSync(() => prepareReveal(id)));
   useEffect(() => {
     onRevealReady?.(revealBlock);
     return () => onRevealReady?.(null);
@@ -538,6 +551,10 @@ function AgentTranscriptComponent({
   )
     renderedTurns.push({ turn: turns[latestIndex], index: latestIndex });
   renderedTurns.sort((a, b) => a.index - b.index);
+  const hasHiddenNewerTurns =
+    lastVisibleTurn < turns.length &&
+    renderedTurns.filter(({ index }) => index >= lastVisibleTurn).length <
+      turns.length - lastVisibleTurn;
   const renderTurns = renderedTurns.map((entry) => entry.turn);
   const { searchCurrent } = useTranscriptSearch({
     scroller,
@@ -549,7 +566,7 @@ function AgentTranscriptComponent({
     visibleTurnCount,
     openWork,
     setOpenWork,
-    revealBlock,
+    prepareReveal,
     findTurn,
     onNavigateReady: registerNavigate,
   });
@@ -623,6 +640,24 @@ function AgentTranscriptComponent({
         ref={setScroller}
         data-chat-citation-session={sessionId}
         tabIndex={-1}
+        onScroll={(event) => {
+          onHistoryScroll(
+            event.currentTarget.scrollTop,
+            false,
+            visible && !remoteHistoryError && follow.hasReaderInput(),
+          );
+        }}
+        onWheel={(event) => {
+          if (
+            visible &&
+            !remoteHistoryError &&
+            event.deltaY < 0 &&
+            !event.ctrlKey &&
+            !event.shiftKey &&
+            !innerScrollerTakes(event.currentTarget, event.nativeEvent)
+          )
+            onHistoryScroll(event.currentTarget.scrollTop, true);
+        }}
         onClickCapture={(event) => {
           imageOpen.noteClick(event);
           captureCodeDisclosure(event.target, retention);
@@ -635,6 +670,14 @@ function AgentTranscriptComponent({
         }}
         onKeyDown={(event) => {
           const target = event.target as HTMLElement;
+          if (
+            target === event.currentTarget &&
+            visible &&
+            !remoteHistoryError &&
+            !activeVersionValid &&
+            ["ArrowUp", "PageUp", "Home"].includes(event.key)
+          )
+            onHistoryScroll(event.currentTarget.scrollTop, true);
           if (
             !activeVersionValid ||
             event.shiftKey ||
@@ -652,94 +695,98 @@ function AgentTranscriptComponent({
         className="agent-transcript h-full overflow-y-auto overscroll-none [overflow-anchor:none] font-mono text-ui-secondary leading-5"
       >
         {activeVersionValid ? (
-          <div className="sticky inset-bs-0 z-(--layer-pane-sheet) flex flex-wrap items-center justify-end gap-1 bg-(--ui-surface) px-3 py-1 font-sans text-ui-caption text-(--ui-text-secondary)">
-            <SegmentedControl
-              size="sm"
-              label={t("Translation")}
-              value={activeVersion.translatedVisible ? "translation" : "original"}
-              onValueChange={(next) => showTranslation(next === "translation")}
-              options={[
-                {
-                  value: "original",
-                  label: t("Original text"),
-                  tooltip: t("After applying: ↑ original, ↓ translation."),
-                },
-                { value: "translation", label: t("Translation") },
-              ]}
-            />
-            <Button
-              motion="none"
-              size="sm"
-              variant="ghost"
-              iconOnly
-              label={translationCopy.copied ? t("Copied") : t("Copy")}
-              loading={translationCopy.pending}
-              onClick={() =>
-                translationCopy.copy(() =>
+          <div className="pointer-events-none sticky inset-bs-0 z-(--layer-pane-sheet) h-0">
+            <div
+              {...surfaceAttributes(
+                { variant: "floating", frame: "card", radius: "card", elevation: "floating" },
+                "pointer-events-auto absolute inset-bs-2 inset-ie-3 flex flex-wrap items-center justify-end gap-1 p-1 font-sans text-ui-caption text-(--transcript-ink-chrome)",
+              )}
+            >
+              <span className="px-1">{t("After applying: ↑ original, ↓ translation.")}</span>
+              <SegmentedControl
+                size="sm"
+                label={t("Translation view")}
+                value={activeVersion.translatedVisible ? "translation" : "original"}
+                onValueChange={(next) => showTranslation(next === "translation")}
+                options={[
+                  { value: "original", label: t("Original text") },
+                  { value: "translation", label: t("Translation") },
+                ]}
+              />
+              <CopyButton
+                motion="none"
+                size="sm"
+                variant="ghost"
+                iconOnly
+                label={t("Copy")}
+                resetKeys={[activeTranslation, activeVersion.translatedVisible]}
+                errorDetail
+                onCopy={() =>
                   copyMessage(
                     activeVersion.translatedVisible
                       ? activeVersion.translated
                       : activeVersion.original,
-                  ),
-                )
-              }
-            >
-              {translationCopy.copied ? <Check /> : <Copy />}
-            </Button>
-            <Button
-              motion="none"
-              size="sm"
-              variant="ghost"
-              iconOnly
-              label={t("Close translation")}
-              onClick={() => setActiveTranslation(null)}
-            >
-              <X />
-            </Button>
-            {translationCopy.failed ? (
-              <InlineError>
-                {t("Could not complete this action. ")}
-                {translationCopy.error}
-              </InlineError>
-            ) : null}
+                  )
+                }
+              />
+              <Button
+                motion="none"
+                size="sm"
+                variant="ghost"
+                iconOnly
+                label={t("Close translation")}
+                onClick={() => setActiveTranslation(null)}
+              >
+                <X />
+              </Button>
+            </div>
+          </div>
+        ) : null}
+        {(remoteHistoryLoading || pagingLoading) &&
+        !remoteHistoryError &&
+        !pagingError &&
+        blocks.length > 0 ? (
+          <div className="pointer-events-none sticky inset-bs-0 z-(--layer-pane-sheet) h-0">
+            <LoadingText inset="panel" className="mx-auto w-fit">
+              {t("Loading earlier messages…")}
+            </LoadingText>
           </div>
         ) : null}
         <div
           data-transcript-content
           className="transcript-content mx-auto flex w-full min-w-0 max-w-4xl flex-col gap-1 pb-8"
         >
-          {historyLoading ? (
-            <LoadingText delay={false} className="px-4 py-3">
-              {t("Loading earlier messages…")}
-            </LoadingText>
-          ) : null}
-          {historyLoadError ? <Alert tone="danger">{historyLoadError}</Alert> : null}
-          {remoteHistoryError ? <Alert tone="danger">{remoteHistoryError}</Alert> : null}
-          {pagingError ? <Alert tone="danger">{pagingError}</Alert> : null}
-          {firstVisibleTurn > 0 || remoteHistoryHasMore ? (
-            <div className="flex justify-center px-4 py-3">
-              <CollectionFooter
-                standalone
-                hasMore
-                onLoadMore={() => void loadEarlier()}
-                loadMoreLabel={
-                  remoteHistoryLoading ? t("Loading earlier messages…") : t("Load earlier messages")
-                }
-                loadMoreButtonProps={{
-                  motion: "none",
-                  variant: "ghost",
-                  type: "button",
-                  disabled: remoteHistoryLoading || pagingLoading,
-                }}
-              />
-            </div>
-          ) : null}
+          <TranscriptHistoryNotice
+            initial={blocks.length === 0}
+            loading={
+              historyLoading || (blocks.length === 0 && (remoteHistoryLoading || pagingLoading))
+            }
+            loadFailed={!!historyLoadError}
+            pageError={
+              remoteHistoryError ||
+              (pagingError
+                ? t("Couldn’t load earlier messages: {p0}", { p0: pagingError })
+                : undefined)
+            }
+            onRetryLoad={onRetryHistory}
+            onRetryPage={
+              remoteHistoryHasMore && onLoadRemoteHistory ? () => void loadEarlier() : undefined
+            }
+          />
           {renderedTurns.map(({ turn, index }, turnIndex) => {
             const turnNumber = index + 1;
             const isLastTurn = turnNumber === turns.length;
             const settled = !(busy && isLastTurn);
             const live = visible && !settled && !preparingHandoff;
             const turnId = turn[0].id;
+            // A failed handoff stands alone before the prompt it failed to start. That prompt's
+            // error notice (with Retry) already says so, so the divider would only repeat it.
+            if (
+              turn.length === 1 &&
+              turn[0].handoff?.status === "failed" &&
+              turns[index + 1]?.some(isSessionErrorBlock)
+            )
+              return null;
             const runHarness = turnHarnesses?.[turnIndex] ?? harness;
             const activity = live
               ? deriveTurnActivity({
@@ -761,12 +808,16 @@ function AgentTranscriptComponent({
                 turn={turn}
                 seenOutput={seenOutput}
                 allowMountReveal={
-                  visible && wasVisible.current && !historyLoading && !remoteHistoryLoading
+                  isLastTurn &&
+                  visible &&
+                  wasVisible.current &&
+                  !historyLoading &&
+                  !remoteHistoryLoading
                 }
                 managed={managed}
                 settled={settled}
                 live={live}
-                visible={visible}
+                activeTurnVisible={visible && !settled}
                 isLastTurn={isLastTurn}
                 turnHarness={turnHarnesses?.[turnIndex]}
                 clockStart={
@@ -783,7 +834,7 @@ function AgentTranscriptComponent({
                 activityAfterSilence={activity?.afterSilence}
                 activityOwner={activityOwnsClock ? runOwner : undefined}
                 activitySessionId={activityOwnsClock ? sessionId : undefined}
-                anchorPrompt={promptAnchor && anchorTurn && isLastTurn}
+                anchorPrompt={anchorTurn && isLastTurn}
                 latestTurnAccessory={isLastTurn && !parked ? latestTurnAccessory : undefined}
                 workOpen={
                   (openWork[turnId] ?? false) || (waitingForApproval && hasPendingApproval(turn))
@@ -823,9 +874,11 @@ function AgentTranscriptComponent({
         </div>
         {lastVisibleTurn < turns.length ? (
           <div className="flex justify-center gap-2 px-4 py-3">
-            <Button motion="none" variant="ghost" type="button" onClick={loadNewer}>
-              {t("Load newer messages")}
-            </Button>
+            {hasHiddenNewerTurns ? (
+              <Button motion="none" variant="ghost" type="button" onClick={loadNewer}>
+                {t("Load newer messages")}
+              </Button>
+            ) : null}
             <Button motion="none" variant="ghost" type="button" onClick={jumpToLatest}>
               {t("Jump to latest")}
             </Button>
@@ -905,7 +958,13 @@ function VirtualizedTranscriptComponent(props: Props) {
   );
   return (
     <TranscriptVirtualizationContext.Provider value={virtualization}>
-      <AgentTranscriptComponent {...props} />
+      <InlineVisualHost.Provider value={props.inlineVisualHost}>
+        <UsageLimitRecoveryContext.Provider value={props.usageLimitRecovery}>
+          <TranscriptBranchContext.Provider value={props.branch ?? null}>
+            <AgentTranscriptComponent {...props} />
+          </TranscriptBranchContext.Provider>
+        </UsageLimitRecoveryContext.Provider>
+      </InlineVisualHost.Provider>
     </TranscriptVirtualizationContext.Provider>
   );
 }
@@ -931,15 +990,17 @@ export const AgentTranscript = memo(function AgentTranscript(props: Props) {
       >
         <Activity mode={props.visible === false ? "hidden" : "visible"}>
           <WorkItemMentionCwd value={props.cwd}>
-            <DelegatedRunOwner.Provider value={props.delegatedRunOwner}>
-              {props.approvalContext ? (
-                <ApprovalDecisionProvider {...props.approvalContext}>
-                  {transcript}
-                </ApprovalDecisionProvider>
-              ) : (
-                transcript
-              )}
-            </DelegatedRunOwner.Provider>
+            <TranscriptSessionId.Provider value={props.sessionId}>
+              <DelegatedRunOwner.Provider value={props.delegatedRunOwner}>
+                {props.approvalContext ? (
+                  <ApprovalDecisionProvider {...props.approvalContext}>
+                    {transcript}
+                  </ApprovalDecisionProvider>
+                ) : (
+                  transcript
+                )}
+              </DelegatedRunOwner.Provider>
+            </TranscriptSessionId.Provider>
           </WorkItemMentionCwd>
         </Activity>
       </CodeExecutionProvider>
@@ -953,7 +1014,7 @@ type TurnProps = {
   managed: boolean;
   settled: boolean;
   live: boolean;
-  visible: boolean;
+  activeTurnVisible: boolean;
   isLastTurn: boolean;
   /** One-based position in the whole transcript, not in the visible window. */
   /** The provider that produced the turn, resolved for the whole transcript. */
@@ -1027,7 +1088,7 @@ const Turn = memo(function Turn({
   managed,
   settled,
   live,
-  visible,
+  activeTurnVisible,
   isLastTurn,
   turnHarness,
   clockStart,
@@ -1081,6 +1142,15 @@ const Turn = memo(function Turn({
   const [itemCache] = useState(() => new TranscriptTurnCache());
   const [rowCache] = useState(() => new TranscriptRowCache());
   const items = itemCache.turnItems(turn, settled);
+  // A reply's `[n]` cites the nth page its web searches returned, across the whole turn.
+  const turnSearchSources = collectSearchSources(
+    items.flatMap((item) => (item.type === "block" ? [item.block] : item.blocks)),
+  );
+  // The leading user blocks are the turn's prompt; the reply surface starts after them.
+  const firstReplyAt = items.findIndex(
+    (item) => !(item.type === "block" && item.block.role === "user" && !item.block.interjection),
+  );
+  const promptCount = firstReplyAt === -1 ? items.length : firstReplyAt;
   // Earlier activity groups have already been followed by prose or
   // more work. Only the last one can still be the live group.
   const foldedAt = lastActivityIndex(items);
@@ -1112,25 +1182,27 @@ const Turn = memo(function Turn({
   // The fold line speaks for the main agent only. A delegated run has
   // its own row, which says who is working and how it went, so saying
   // it again here would be two lines telling the same story.
-  const foldTitle: ReactNode =
-    live && liveStatusInDock && !waitingForApproval ? (
-      (turnModelName ?? workSummaryLine(folded))
-    ) : live ? (
-      <LiveFoldTitle
-        startedAt={clockStart}
-        paused={waitingForApproval}
-        waitingFor={
-          managed && waitingForApproval ? "orchestrator" : pendingQuestion ? "answers" : undefined
-        }
-        background={backgroundTasks}
-        backgroundAgents={backgroundAgents}
-        modelName={turnModelName}
-      />
-    ) : durationMs != null ? (
-      formatWorkingDuration(t, format, durationMs, turnModelName, true)
-    ) : (
-      workSummaryLine(folded)
-    );
+  // With the clock in the dock, the line says what the work was; the model
+  // that did it trails as a quiet tag rather than standing in for a title.
+  const foldInDock = live && liveStatusInDock && !waitingForApproval;
+  const foldTitle: ReactNode = foldInDock ? (
+    settledWorkSummaryLine(folded)
+  ) : live ? (
+    <LiveFoldTitle
+      startedAt={clockStart}
+      paused={waitingForApproval}
+      waitingFor={
+        managed && waitingForApproval ? "orchestrator" : pendingQuestion ? "answers" : undefined
+      }
+      background={backgroundTasks}
+      backgroundAgents={backgroundAgents}
+      modelName={turnModelName}
+    />
+  ) : durationMs != null ? (
+    formatWorkingDuration(t, format, durationMs, turnModelName, true)
+  ) : (
+    settledWorkSummaryLine(folded)
+  );
   const showFoldLine =
     (live && (!liveStatusInDock || waitingForApproval)) || durationMs != null || !!fold;
   // It sits where the work starts, from before there is any: the row
@@ -1154,13 +1226,13 @@ const Turn = memo(function Turn({
       />
     ) : item.type === "activity" ? (
       itemIndex === initialThinkingAt ? (
-        <InitialThinking key={item.blocks[0].id} live={visible && !settled} />
+        <InitialThinking key={item.blocks[0].id} live={activeTurnVisible} embedded />
       ) : (
         <ActivityPhases
           key={item.blocks[0].id}
           blocks={item.blocks}
           cwd={cwd}
-          done={!visible || settled || itemIndex < foldedAt || (answering && !workStillRunning)}
+          done={!activeTurnVisible || itemIndex < foldedAt || (answering && !workStillRunning)}
           onApproval={onApproval}
           onOpenFile={onOpenFile}
           onOpenDiff={onOpenDiff}
@@ -1180,9 +1252,10 @@ const Turn = memo(function Turn({
         ) : null}
         <TranscriptBlock
           block={item.block}
-          revealOnMount={allowMountReveal && isLastTurn && !seenOutput.has(item.block.id)}
+          revealOnMount={allowMountReveal && !seenOutput.has(item.block.id)}
           layout={transcriptLayout}
-          visible={item.block.role === "user" ? visible : undefined}
+          // The reply surface owns the gutter; only the turn's own prompt rows draw their own.
+          embedded={itemIndex >= promptCount}
           // Prose reads the same wherever it lands: under the fold
           // line at the top of the turn, or under the work it follows.
           underLine={
@@ -1192,6 +1265,7 @@ const Turn = memo(function Turn({
               items[itemIndex - 1]?.type === "subagents" ||
               (itemIndex === foldLineAt && showFoldLine))
           }
+          searchSources={isProseBlock(item.block) ? turnSearchSources : undefined}
           onApproval={onApproval}
           onSaveNote={onSaveNote}
           onSendDraft={onSendDraft}
@@ -1239,7 +1313,7 @@ const Turn = memo(function Turn({
     <TurnRow key="work-fold" folded={!showFoldLine}>
       <WorkFoldLine
         title={foldTitle}
-        kind={workKind(folded)}
+        meta={foldInDock ? turnModelName : undefined}
         harness={turnHarness}
         live={live}
         expandable={!!fold}
@@ -1271,11 +1345,11 @@ const Turn = memo(function Turn({
       // List every value the row factory/renderItem reads here, or the row goes stale.
       [
         item, index, rail, tail, pinnedItem(item, index), isCurrentItem(item),
-        cwd, live, visible, settled,
+        cwd, live, activeTurnVisible, settled,
         index === initialThinkingAt,
-        !visible || settled || index < foldedAt || (answering && !workStillRunning),
-        allowMountReveal && isLastTurn && item.type === "block" && !seenOutput.has(item.block.id),
-        transcriptLayout, items[index - 1]?.type, index === foldLineAt && showFoldLine,
+        !activeTurnVisible || index < foldedAt || (answering && !workStillRunning),
+        allowMountReveal && item.type === "block" && !seenOutput.has(item.block.id),
+        transcriptLayout, items[index - 1]?.type, index === foldLineAt && showFoldLine, index >= promptCount,
         busy, planHarness, planModel, planModelSettings, editableUserBlockId, editingLastTurn,
         onApproval, onSaveNote, onSendDraft, onEditDraft, onRemoveDraft, onOpenFile, onOpenDiff,
         onOpenPlan, onBuildPlan, onLoadRemoteBlock, onEditLastTurn, canRewindMessage, onRewindMessage,
@@ -1290,7 +1364,7 @@ const Turn = memo(function Turn({
             data-transcript-search-current={isCurrentItem(item) || undefined}
             className={
               rail
-                ? `flow-root ${tail ? "pb-0 zen-fold-tail" : "pb-1"} pl-5 zen-fold-rail`
+                ? `flow-root ${tail ? "pb-0 zen-fold-tail" : "pb-1"} ps-5 zen-fold-rail`
                 : "flow-root pb-1"
             }
           >
@@ -1333,16 +1407,22 @@ const Turn = memo(function Turn({
   });
   if (foldLineAt >= items.length) virtualRows.push(lineRow);
   rowCache.retain([...virtualRows, ...workRows]);
-  return (
-    <div
-      key={turn[0].id}
-      data-transcript-turn={turnId}
-      className={`transcript-turn flex min-w-0 flex-col${
-        isLastTurn ? " transcript-turn-live" : ""
-      }${anchorPrompt && userBlock ? " transcript-turn-anchor" : ""}`}
-    >
+  // The turn's own prompt rows stay outside the reply surface; everything after them is the reply.
+  const promptIds = new Set(items.slice(0, promptCount).map(turnItemKey));
+  const promptRows = virtualRows.filter((row) => promptIds.has(row.id));
+  const replyRows = virtualRows.filter((row) => !promptIds.has(row.id));
+  const changedFiles = useTurnChangedFiles(turn, cwd, settled);
+  const hasReply =
+    changedFiles.length > 0 ||
+    replyRows.some((row) => row.id !== lineRow.id || showFoldLine) ||
+    !!(activityPhase && activityLabel) ||
+    !!latestTurnAccessory ||
+    (durationMs != null && settled) ||
+    (settled && proposals.some((block) => block.orchestration?.status !== "planning"));
+  const replyContent = (
+    <>
       <RunHarness.Provider value={turnHarness}>
-        <TranscriptVirtualRows rows={virtualRows} listId={`turn:${turnId}:items`} />
+        <TranscriptVirtualRows rows={replyRows} listId={`turn:${turnId}:items`} />
       </RunHarness.Provider>
       {activityPhase && activityLabel ? (
         <OriginTurnActivityLine
@@ -1363,7 +1443,7 @@ const Turn = memo(function Turn({
               id: block.id,
               blockIds: [block.id],
               render: () => (
-                <div className="px-4 pt-1 pb-2" data-orchestration-result>
+                <div className="pt-1 pb-2" data-orchestration-result>
                   <OrchestrationPreview block={block} busy={busy} />
                 </div>
               ),
@@ -1388,6 +1468,23 @@ const Turn = memo(function Turn({
           onHandoff={onHandoff ? (target) => onHandoff(target, turn) : undefined}
         />
       ) : null}
+      {changedFiles.length > 0 ? (
+        <TurnChangedFiles files={changedFiles} onOpen={onOpenDiff ?? onOpenFile} />
+      ) : null}
+    </>
+  );
+  return (
+    <div
+      key={turn[0].id}
+      data-transcript-turn={turnId}
+      className={`transcript-turn flex min-w-0 flex-col${
+        isLastTurn ? " transcript-turn-live" : ""
+      }${anchorPrompt && userBlock ? " transcript-turn-anchor" : ""}`}
+    >
+      {promptRows.length > 0 ? (
+        <TranscriptVirtualRows rows={promptRows} listId={`turn:${turnId}:prompt`} />
+      ) : null}
+      {hasReply ? <div data-transcript-reply>{replyContent}</div> : null}
     </div>
   );
 }, sameTurn);
@@ -1416,7 +1513,7 @@ function InitialThinking({ live, embedded = false }: { live: boolean; embedded?:
   const t = useT();
   return (
     <div
-      className={`min-w-0 pt-3 pb-1 font-sans text-ui-body text-(--ui-text-secondary) ${embedded ? "" : "px-4"}`}
+      className={`min-w-0 pt-3 pb-1 font-sans text-ui-body text-(--transcript-ink-chrome) ${embedded ? "" : "px-4"}`}
     >
       {live ? <WorkingIndicator>{t("Thinking…")}</WorkingIndicator> : t("Thinking…")}
     </div>
@@ -1451,10 +1548,8 @@ function LiveFoldTitle({
   if (!paused && background && isBackgroundOnly(true, background, backgroundAgents)) {
     return (
       <Tooltip label={background.join("\n")} asChild>
-        <span className="min-w-0 truncate font-sans text-ui-body text-(--ui-text-secondary)">
-          {background.length === 1
-            ? t("Finished · 1 command running in background")
-            : t("Finished · {p0} commands running in background", { p0: background.length })}
+        <span className="min-w-0 truncate font-sans text-ui-body text-(--transcript-ink-chrome)">
+          {t("Finished")} · {t("{p0} running in background", { p0: background.length })}
         </span>
       </Tooltip>
     );
@@ -1468,7 +1563,7 @@ function LiveFoldTitle({
         ? t("Waiting for answers")
         : t("Waiting for approval")
     : background?.length
-      ? `${formatWorkingDuration(t, format, elapsedMs, modelName)} · ${background.length === 1 ? t("running in background") : t("{p0} tasks running in background", { p0: background.length })}`
+      ? `${formatWorkingDuration(t, format, elapsedMs, modelName)} · ${t("{p0} running in background", { p0: background.length })}`
       : formatWorkingDuration(t, format, elapsedMs, modelName);
   const workLabel = (
     <WorkingIndicator className="min-w-0" text={{ size: "body" }} truncate glyph={false}>
@@ -1560,14 +1655,12 @@ function RemoteBlockLoad({
         variant="ghost"
         type="button"
         loading={state === "pending"}
-        disabled={state === "pending"}
+        loadingLabel={t("Loading full output…")}
         onClick={() => void load()}
       >
-        {state === "pending"
-          ? t("Loading full output…")
-          : state === "failed"
-            ? t("Retry")
-            : t("Load full output ({p0} KB)", { p0: Math.max(1, Math.ceil(bytes / 1024)) })}
+        {state === "failed"
+          ? t("Retry")
+          : t("Load full output ({p0} KB)", { p0: Math.max(1, Math.ceil(bytes / 1024)) })}
       </Button>
       {state === "failed" ? (
         <InlineError>{t("Could not load the full output.")}</InlineError>
@@ -1575,6 +1668,23 @@ function RemoteBlockLoad({
     </div>
   );
 }
+function branchBlockedText(t: ReturnType<typeof useT>, reason: BranchBlockedReason): string {
+  switch (reason) {
+    case "host":
+      return t("This conversation is owned by a bycoda Host, so it cannot be branched from here.");
+    case "managed":
+      return t("This conversation has its own managed workspace, so it cannot be branched.");
+    case "removed":
+      return t("This conversation's workspace was removed, so it cannot be branched.");
+    case "loading":
+      return t("The conversation is still loading. Branch it once it has loaded.");
+    case "approval":
+      return t("Answer the open approval before branching from this reply.");
+    default:
+      return t("This reply cannot be branched.");
+  }
+}
+
 function TurnDuration({
   elapsedMs,
   metrics,
@@ -1610,13 +1720,19 @@ function TurnDuration({
   const label = formatWorkingDuration(t, format, elapsedMs, modelName, true);
   const hasOutput = hasTurnCopyText(turn);
   const getText = useCallback(() => turnCopyText(turn), [turn]);
+  const branch = useContext(TranscriptBranchContext);
+  const branchBlocked = branch?.blockedReason(turn);
   const dot = (
-    <span aria-hidden className="size-0.75 shrink-0 rounded-full bg-(--ui-tone-neutral-border)" />
+    <span
+      aria-hidden
+      className="size-0.75 shrink-0 rounded-full border-[3px] border-(--ui-tone-neutral-border)"
+    />
   );
   return (
     <div
       aria-label={label}
-      className="flex w-full min-w-0 max-w-full flex-wrap items-center gap-2.5 px-4 pt-1 pb-3 font-sans text-ui-body text-(--ui-text-secondary)"
+      data-transcript-actions-row
+      className="flex w-full min-w-0 max-w-full flex-wrap items-center gap-2.5 pt-1 pb-3 font-sans text-ui-body text-(--transcript-ink-chrome)"
     >
       <span className="flex min-w-0 max-w-full flex-wrap items-center gap-1">
         {hasOutput ? null : turn.some(
@@ -1630,6 +1746,18 @@ function TurnDuration({
           getText={hasOutput ? getText : undefined}
           onSave={onSaveNote}
           extraItems={[
+            ...(branch && hasOutput
+              ? [
+                  {
+                    id: "branch",
+                    label: t("Branch from here"),
+                    icon: <GitBranch />,
+                    disabled: !!branchBlocked,
+                    tooltip: branchBlocked ? branchBlockedText(t, branchBlocked) : undefined,
+                    onSelect: () => branch.branch(turn),
+                  } satisfies FloatingButtonGroupAction,
+                ]
+              : []),
             ...(fromHarness && onHandoff
               ? [
                   {
@@ -1689,7 +1817,7 @@ function TurnDuration({
           <span className="flex min-w-0 items-center gap-1.5">
             {harness ? <HarnessIcon harness={harness} className="size-3.5 shrink-0" /> : null}
             <OverflowTooltip label={label}>
-              <span className="min-w-0 truncate">{label}</span>
+              <span className="min-w-0 truncate text-(--transcript-ink-faint)">{label}</span>
             </OverflowTooltip>
           </span>
         </span>
@@ -1697,7 +1825,10 @@ function TurnDuration({
       {completedAt != null ? (
         <span className="flex shrink-0 items-center gap-2.5">
           {labelHidden ? null : dot}
-          <Timestamp value={completedAt} className="shrink-0 text-(--ui-text-secondary)" />
+          <Timestamp
+            value={completedAt}
+            className="shrink-0 text-ui-secondary text-(--transcript-ink-faint)"
+          />
         </span>
       ) : null}
     </div>
@@ -1768,12 +1899,7 @@ function TurnMetricsBadge({
           onSelect: () => setOpen((value) => !value),
         })
       ) : (
-        <Button
-          variant="ghost"
-          iconOnly
-          label={t("Turn metrics: {p0}", { p0: label })}
-          tooltip={t("Turn metrics")}
-        >
+        <Button variant="ghost" iconOnly label={t("Turn metrics: {p0}", { p0: label })}>
           <ChartBreakoutSquare className="icon-sm" strokeWidth={1.75} />
         </Button>
       )}
@@ -1792,11 +1918,12 @@ function TurnMetricsBadge({
                 }
               : undefined
           }
-          className="w-max px-2.5 py-1.5"
+          variant="preview"
+          className="w-max"
         >
           <div className="text-ui-caption leading-4 text-(--ui-tone-neutral-fg)">{headline}</div>
           {detail ? (
-            <div className="text-ui-micro leading-4 text-(--ui-text-secondary)">{detail}</div>
+            <div className="text-ui-micro leading-4 text-(--transcript-ink-chrome)">{detail}</div>
           ) : null}
         </Popover>
       ) : null}
@@ -1830,57 +1957,23 @@ function CopyTurnButton({
 }) {
   const t = useT();
   const label = labelProp ?? t("Copy response");
-  const {
-    pending,
-    copied,
-    error,
-    copy: runCopy,
-  } = useCopyFeedback({ resetKeys: [text, getText, attachments], successMs: 2000 });
-
   return (
-    <>
-      <Button
-        iconOnly={!showLabel}
-        label={copied ? t("Copied") : label}
-        motion="none"
-        variant="ghost"
-        type="button"
-        disabled={pending}
-        aria-label={copied ? t("Copied") : label}
-        loading={pending}
-        startIcon={
-          showLabel ? (
-            copied ? (
-              <Check className="icon-sm" strokeWidth={1.75} />
-            ) : (
-              <Copy className="icon-sm" strokeWidth={1.75} />
-            )
-          ) : undefined
-        }
-        onClick={(event) => {
-          event.stopPropagation();
-          runCopy(async () => {
-            await copyMessage(text ?? getText?.() ?? "", attachments);
-            // The confirmation sound belongs to a copy that actually landed.
-            playCue("copy");
-          });
-        }}
-      >
-        {!showLabel &&
-          (copied ? (
-            <Check className="icon-md" strokeWidth={1.75} />
-          ) : (
-            <Copy className="icon-md" strokeWidth={1.75} />
-          ))}
-        {showLabel ? <span>{copied ? t("Copied") : label}</span> : null}
-      </Button>
-      {error && (
-        <InlineError className="max-w-xs">
-          {t("Copy failed. ")}
-          {error}
-        </InlineError>
-      )}
-    </>
+    <CopyButton
+      iconOnly={!showLabel}
+      label={label}
+      motion="none"
+      variant="ghost"
+      type="button"
+      icon={<ChatCopy className={showLabel ? "icon-sm" : "icon-md"} strokeWidth={1.75} />}
+      resetKeys={[text, getText, attachments]}
+      errorDetail
+      onClick={(event) => event.stopPropagation()}
+      onCopy={async () => {
+        await copyMessage(text ?? getText?.() ?? "", attachments);
+        // The confirmation sound belongs to a copy that actually landed.
+        playCue("copy");
+      }}
+    />
   );
 }
 
@@ -1939,9 +2032,8 @@ function SaveNoteButton({
         {showLabel ? <span>{saved ? t("Saved to Notes") : t("Save as note")}</span> : null}
       </Button>
       {error && (
-        <InlineError className="max-w-xs">
-          {t("Could not save note. ")}
-          {error}
+        <InlineError className="max-w-xs" details={error}>
+          {t("Could not save note")}
         </InlineError>
       )}
     </>
@@ -1967,7 +2059,7 @@ function MessageEditMenu({
           kind: "item",
           id: "resend",
           label: editing ? t("Cancel edit") : t("Edit and resend"),
-          icon: <Pencil />,
+          icon: <ChatEditMessage />,
         } satisfies DropdownMenuItem,
       ]
     : [];
@@ -2013,9 +2105,9 @@ const TranscriptBlock = memo(function TranscriptBlock({
   block,
   revealOnMount,
   layout,
-  visible,
   underLine = false,
   embedded = false,
+  searchSources,
   cwd,
   onApproval,
   onSaveNote,
@@ -2038,11 +2130,12 @@ const TranscriptBlock = memo(function TranscriptBlock({
   block: Block;
   layout: TranscriptLayout;
   revealOnMount?: boolean;
-  visible?: boolean;
   /** True when something already sits directly above this in the turn. */
   underLine?: boolean;
   /** True when the parent surface already provides the horizontal gutter. */
   embedded?: boolean;
+  /** Pages the turn's web searches returned; `[n]` in the reply links to the nth. */
+  searchSources?: readonly SearchSource[];
   cwd?: string;
   onApproval?: (requestId: number, decision: ApprovalDecision) => void;
   onSaveNote?: (text: string) => void | Promise<void>;
@@ -2081,7 +2174,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
             <div key={index} className="flex min-w-0 flex-col gap-1.5">
               <section
                 aria-label={t("AI question")}
-                className="flex min-w-0 max-w-[min(100%,36rem)] items-start gap-2 text-(--ui-text-secondary)"
+                className="flex min-w-0 max-w-[min(100%,36rem)] items-start gap-2 text-(--transcript-ink-body)"
               >
                 <MessageSquare aria-hidden="true" className="mt-0.5 icon-sm shrink-0" />
                 <p className="min-w-0 whitespace-pre-wrap break-words text-ui-caption leading-relaxed">
@@ -2093,8 +2186,8 @@ const TranscriptBlock = memo(function TranscriptBlock({
                   questionAnswer
                   block={{ ...block, text: answers.join("\n"), questionAnswers: undefined }}
                   layout={layout}
-                  visible={visible ?? true}
                   cwd={cwd}
+                  onOpenFile={onOpenFile}
                   onSaveNote={onSaveNote}
                   canRewind={canRewindMessage?.(block.id) ?? false}
                   onRewind={
@@ -2112,8 +2205,8 @@ const TranscriptBlock = memo(function TranscriptBlock({
         block={block}
         layout={layout}
         busy={planBusy}
-        visible={visible ?? true}
         cwd={cwd}
+        onOpenFile={onOpenFile}
         onEdit={onEditLastTurn}
         canRewind={canRewindMessage?.(block.id) ?? false}
         onRewind={onRewindMessage ? (action) => onRewindMessage(block, action) : undefined}
@@ -2126,12 +2219,22 @@ const TranscriptBlock = memo(function TranscriptBlock({
     );
   }
 
-  if (block.role === "image") return block.image ? <GeneratedImage image={block.image} /> : null;
+  if (block.role === "image")
+    return block.image || block.imageGeneration ? (
+      <GeneratedImage image={block.image} generation={block.imageGeneration} />
+    ) : null;
 
   if (block.role === "tool") {
     if (block.inlineVisual) return <InlineVisual snapshot={block.inlineVisual} />;
     if (isAdvisorBlock(block))
-      return <AdvisorRow block={block} modelSettings={planModelSettings} />;
+      return (
+        <AdvisorRow
+          block={block}
+          modelSettings={planModelSettings}
+          cwd={cwd}
+          onOpenFile={onOpenFile}
+        />
+      );
     return (
       <ToolCall
         block={block}
@@ -2209,17 +2312,18 @@ const TranscriptBlock = memo(function TranscriptBlock({
     if (block.shell) {
       return <ShellRunCard run={block.shell} embedded={embedded} />;
     }
+    if (block.branchOrigin)
+      return <BranchOriginRow origin={block.branchOrigin} embedded={embedded} />;
     if (block.modelSwitch) return <ModelSwitchRow meta={block.modelSwitch} embedded={embedded} />;
     if (isSessionErrorBlock(block))
       return (
         <div className={`${embedded ? "" : "px-4"} py-2`}>
-          <SessionErrorNotice text={text} />
+          <SessionErrorNotice text={text} errorId={block.id} />
         </div>
       );
     return (
       <div
-        role={isSessionErrorBlock(block) ? "alert" : undefined}
-        className={`${embedded ? "" : "px-4"} py-2 ${block.notice === "interrupt" ? "font-medium text-(--ui-tone-danger-fg)" : isSessionErrorBlock(block) ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
+        className={`${embedded ? "" : "px-4"} py-2 ${block.notice === "interrupt" ? "font-medium text-(--ui-tone-danger-fg)" : "text-(--transcript-ink-body)"}`}
       >
         <OutputBlock face="sans" size="inherit" tone="inherit">
           {text}
@@ -2233,10 +2337,10 @@ const TranscriptBlock = memo(function TranscriptBlock({
   return (
     <div
       data-selectable-agent-response={block.streaming ? undefined : block.id}
-      className={`min-w-0 pb-1 text-(--ui-tone-neutral-fg) ${embedded ? "" : "px-4"} ${underLine ? "pt-1" : "pt-3"}`}
+      className={`min-w-0 pb-1 text-(--transcript-ink-body) ${embedded ? "" : "px-4"} ${underLine ? "pt-1" : "pt-3"}`}
     >
       <AgentMarkdown
-        text={block.text}
+        text={searchSources?.length ? linkSearchCitations(block.text, searchSources) : block.text}
         streaming={block.streaming}
         revealOnMount={revealOnMount}
         localMedia
@@ -2268,8 +2372,8 @@ function ShellRunCard({ run, embedded }: { run: ShellRun; embedded?: boolean }) 
         className="overflow-hidden font-mono text-ui-caption leading-5"
       >
         <div className="flex min-w-0 items-start gap-2 px-3 py-1.5">
-          <Terminal
-            className="mt-1 icon-xs shrink-0 text-(--ui-text-secondary)"
+          <ChatRun
+            className="mt-1 icon-xs shrink-0 text-(--transcript-ink-chrome)"
             strokeWidth={1.75}
             aria-hidden
           />
@@ -2303,12 +2407,12 @@ function ShellRunCard({ run, embedded }: { run: ShellRun; embedded?: boolean }) 
 function UserMessageBlock({
   block,
   layout,
-  visible,
   onEdit,
   canRewind = false,
   onRewind,
   editing = false,
   cwd,
+  onOpenFile,
   onSaveNote,
   onSendDraft,
   onEditDraft,
@@ -2318,12 +2422,12 @@ function UserMessageBlock({
 }: {
   block: Block;
   layout: TranscriptLayout;
-  visible: boolean;
   onEdit?: () => void;
   canRewind?: boolean;
   onRewind?: (action: "edit" | "return") => void;
   editing?: boolean;
   cwd?: string;
+  onOpenFile?: (path: string) => void;
   onSaveNote?: (text: string) => void | Promise<void>;
   onSendDraft?: (block: Block) => boolean | void;
   onEditDraft?: (block: Block) => boolean | void;
@@ -2351,7 +2455,7 @@ function UserMessageBlock({
           : undefined;
   const deliveryLabel =
     delivery === "pending"
-      ? t("Sending...")
+      ? t("Sending…")
       : delivery === "undelivered"
         ? t("Not delivered")
         : delivery === "uncertain"
@@ -2366,36 +2470,61 @@ function UserMessageBlock({
     card && card.kind !== "handoff"
       ? ""
       : visibleUserPrompt(bycoda ? operatorUserPrompt(block) : block.text);
-  const { text, citations } = extractChatCitations(rawText);
-  const messageLink = text ? parseUserMessageLink(text) : null;
-  const displayText = messageLink ? `${messageLink.beforeText}${messageLink.afterText}` : text;
+  const { text: messageText, citations } = extractChatCitations(rawText);
+  const attachmentFiles = block.attachments ?? [];
+  const pastedTextOnly =
+    !card &&
+    !note &&
+    !citations.length &&
+    attachmentFiles.length > 0 &&
+    attachmentFiles.every(isPastedTextAttachment) &&
+    !stripAttachmentTokens(messageText, attachmentFiles).trim();
+  const text = pastedTextOnly ? "" : messageText;
+  const firstLink = text ? parseUserMessageLink(text) : null;
+  // Keep the compact URL card for plain prose. Splitting a formatted message
+  // at a URL would break its links, code spans, or enclosing Markdown blocks.
+  const messageLink =
+    firstLink && !/[\n\r[`*_<~#]/.test(firstLink.beforeText + firstLink.afterText)
+      ? firstLink
+      : null;
   const chat = layout === "chat";
   const previewParts = userTextParts(text);
   const compactText = previewParts.some((part) => part.compact);
   // A chip carries its token's label only when the message mentions it, so
   // messages sent before tokens existed look as they always did.
-  const attachmentFiles = block.attachments ?? [];
   const usedTokens = new Map(
     findTokens(text, attachmentFiles).map((match) => [match.index, match.token]),
   );
   const referencedTokens = attachmentFiles.map((_, index) => usedTokens.get(index));
-  const overflows = useClampOverflow(
-    textRef,
-    Boolean(text),
-    expanded,
-    text,
-    (visible ? 1 : 0) + (compactText ? 2 : 0),
+  // Local video and audio play in the bubble; their chip stays below the player for its actions.
+  const mediaAttachments = attachmentFiles.flatMap((file, index) => {
+    const path = inlineMediaAttachmentPath(file);
+    return path ? [{ file, path, index }] : [];
+  });
+  const chipAttachments = attachmentFiles.length > mediaAttachments.length;
+  // Attachments sit above the bubble; the bubble itself exists only when something is written in it.
+  const hasBubble = Boolean(text || card || note || citations.length || block.ciContext);
+  const hasActions = Boolean(
+    text || block.attachments?.length || block.startedAt != null || onEdit || onRewind,
   );
+  const overflows = useClampOverflow(textRef, Boolean(text), expanded, text, compactText ? 1 : 0);
 
   const toggle = () => {
     if (overflows) setExpanded((value) => !value);
   };
 
+  // Time leads the hover actions beside the bubble (the labelled menu variant keeps it last).
   const renderMessageActions = (dismiss?: () => void, showLabels = false) => (
     <>
+      {block.startedAt != null && !showLabels ? (
+        <Timestamp
+          value={block.startedAt}
+          className="me-1 self-center whitespace-nowrap font-sans text-ui-caption tabular-nums text-(--transcript-ink-faint)"
+        />
+      ) : null}
       {text || block.attachments?.length ? (
         <CopyTurnButton
-          text={text}
+          text={messageText}
           attachments={block.attachments}
           label={t("Copy message")}
           showLabel={showLabels}
@@ -2409,11 +2538,11 @@ function UserMessageBlock({
           motion="none"
           iconOnly={!showLabels}
           label={t("Edit from here")}
-          tooltip={canRewind ? undefined : t("This conversation can no longer be rewound.")}
           variant="ghost"
           type="button"
           disabled={!canRewind}
-          startIcon={<Pencil className={showLabels ? undefined : "icon-md"} />}
+          disabledReason={canRewind ? undefined : t("This conversation can no longer be rewound.")}
+          startIcon={<ChatEditMessage className={showLabels ? undefined : "icon-md"} />}
           onClick={(event) => {
             event.stopPropagation();
             dismiss?.();
@@ -2424,10 +2553,10 @@ function UserMessageBlock({
         </Button>
       ) : null}
       {onEdit ? <MessageEditMenu onEdit={onEdit} editing={editing} dismiss={dismiss} /> : null}
-      {block.startedAt != null ? (
+      {block.startedAt != null && showLabels ? (
         <Timestamp
           value={block.startedAt}
-          className="ms-1 whitespace-nowrap font-sans text-ui-body text-(--ui-text-secondary)"
+          className="ms-auto whitespace-nowrap font-sans text-ui-caption tabular-nums text-(--transcript-ink-faint)"
         />
       ) : null}
     </>
@@ -2437,7 +2566,7 @@ function UserMessageBlock({
     <div
       data-prompt-anchor={block.id}
       data-editing-last-turn={editing ? "true" : undefined}
-      className={`user-message-row group/usermsg flex min-w-0 flex-col items-end overflow-visible ${questionAnswer ? "" : "pbs-1.5 pe-4 pbe-5 ps-14"}`}
+      className={`user-message-row group/usermsg flex min-w-0 flex-col items-end overflow-visible ${questionAnswer ? "" : "pbs-1.5 pe-4 pbe-10 ps-14"}`}
     >
       <SessionMessageAuthor
         author={block.author}
@@ -2462,134 +2591,170 @@ function UserMessageBlock({
         }
       />
       {/* Give actions the pane width while the bubble keeps its content width. */}
-      <div className="user-message-hover-zone flex w-full min-w-0 max-w-full flex-col items-end overflow-visible">
-        <div
-          data-draft={block.draft ? "true" : undefined}
-          data-follow-up-delivery={delivery}
-          data-bycoda={bycoda ? "true" : undefined}
-          className={`user-message-bubble relative min-w-0 bg-(--ui-message-bubble) px-3 py-2 font-sans text-(--ui-text-secondary) transition-[background-color] duration-200 ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} rounded-(--ui-radius-popup)`}
-        >
-          <ChatCitationList citations={citations} text={text} />
-          {block.turnOutcome === "stopped" ? (
-            <Badge tone="neutral" className="mb-1">
-              {t("Stopped by you")}
-            </Badge>
-          ) : null}
-          {block.attachments?.length ? (
-            <div
-              role="group"
-              aria-label={t("Attachments")}
-              className={`user-message-attachments flex min-w-0 max-w-full gap-2 overflow-x-auto ${text || card || note ? "mbe-2" : ""}`}
-            >
-              {block.attachments.map((file, index) => (
+      <div className="user-message-hover-zone flex w-full min-w-0 max-w-full flex-col items-end gap-1.5 overflow-visible">
+        {mediaAttachments.length ? (
+          <div className="flex w-[30rem] min-w-0 max-w-full flex-col items-end gap-1.5 font-sans">
+            {mediaAttachments.map(({ file, path, index }) => (
+              <LocalMedia
+                key={file.id}
+                path={path}
+                label={file.name}
+                fallback={<AttachmentChip attachment={file} token={referencedTokens[index]} />}
+              />
+            ))}
+          </div>
+        ) : null}
+        {chipAttachments ? (
+          <div
+            role="group"
+            aria-label={t("Attachments")}
+            className="user-message-attachments flex min-w-0 max-w-full flex-wrap justify-end gap-1.5 font-sans"
+          >
+            {attachmentFiles.map((file, index) =>
+              inlineMediaAttachmentPath(file) ? null : (
                 <AttachmentChip key={file.id} attachment={file} token={referencedTokens[index]} />
-              ))}
+              ),
+            )}
+          </div>
+        ) : null}
+        <div className="flex w-full min-w-0 items-end justify-end gap-1.5">
+          {hasActions ? (
+            <div className="user-message-actions flex shrink-0 items-center gap-0.5 pb-0.5 opacity-0 transition-opacity duration-150 group-focus-within/usermsg:opacity-100 group-hover/usermsg:opacity-100 motion-reduce:transition-none [@media(hover:none)]:opacity-100">
+              {renderMessageActions()}
             </div>
           ) : null}
-          {note ? (
-            <div className={text || card ? "mb-2" : ""}>
-              <NoteMiniCard card={note} embedded />
-            </div>
-          ) : null}
-          {card ? (
-            <div className={text ? "mb-1.5" : undefined}>
-              <SecondOpinionCard card={card} />
-            </div>
-          ) : null}
-          {compactText ? (
-            <UserTextPreview
-              parts={previewParts}
-              messageId={block.id}
-              attachments={block.attachments}
-              citations={citations}
-              renderActions={renderMessageActions}
-            />
-          ) : messageLink ? (
+          {hasBubble ? (
             <div
-              ref={(element) => {
-                textRef.current = element;
-              }}
-              className="user-message-with-link min-w-0 whitespace-pre-wrap break-words font-sans text-ui-body"
-              data-selectable-agent-response={block.id}
+              data-draft={block.draft ? "true" : undefined}
+              data-chat-message-surface={block.draft ? undefined : "user"}
+              data-follow-up-delivery={delivery}
+              data-bycoda={bycoda ? "true" : undefined}
+              className={`user-message-bubble relative min-w-0 font-sans text-(--transcript-ink-body) transition-[background-color] duration-200 ${pastedTextOnly ? "" : "px-(--message-bubble-inset-x) py-(--message-bubble-inset-y) [--message-bubble-inset-x:--spacing(3.5)] [--message-bubble-inset-y:--spacing(2.5)]"} ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} rounded-(--ui-radius-popup)`}
             >
-              <AttachmentTokenText
-                text={messageLink.beforeText}
-                attachments={block.attachments}
-                citations={citations}
-              />
-              <UserLinkPreview link={messageLink.link} cwd={cwd} compact />
-              <AttachmentTokenText
-                text={messageLink.afterText}
-                attachments={block.attachments}
-                citations={citations}
-              />
+              <ChatCitationList citations={citations} text={text} />
+
+              {note ? (
+                <div className={text || card ? "mb-2" : ""}>
+                  <NoteMiniCard card={note} embedded />
+                </div>
+              ) : null}
+              {card ? (
+                <div className={text ? "mb-1.5" : undefined}>
+                  <SecondOpinionCard card={card} />
+                </div>
+              ) : null}
+              {compactText ? (
+                <UserTextPreview
+                  markdown
+                  parts={previewParts}
+                  messageId={block.id}
+                  cwd={cwd}
+                  onOpenFile={onOpenFile}
+                  attachments={block.attachments}
+                  citations={citations}
+                  renderActions={renderMessageActions}
+                />
+              ) : messageLink ? (
+                <div
+                  ref={(element) => {
+                    textRef.current = element;
+                  }}
+                  className="user-message-with-link min-w-0 whitespace-pre-wrap break-words font-sans text-ui-body"
+                  data-selectable-agent-response={block.id}
+                >
+                  <UserMessageMarkdown
+                    text={messageLink.beforeText}
+                    cwd={cwd}
+                    onOpenFile={onOpenFile}
+                    attachments={block.attachments}
+                    citations={citations}
+                  />
+                  <UserLinkPreview link={messageLink.link} cwd={cwd} compact />
+                  <UserMessageMarkdown
+                    text={messageLink.afterText}
+                    cwd={cwd}
+                    onOpenFile={onOpenFile}
+                    attachments={block.attachments}
+                    citations={citations}
+                  />
+                </div>
+              ) : text ? (
+                <div
+                  data-selectable-agent-response={block.id}
+                  ref={(element) => {
+                    textRef.current = element;
+                  }}
+                  className={`min-w-0 ${expanded || questionAnswer ? "" : "line-clamp-4"}`}
+                >
+                  <UserMessageMarkdown
+                    text={text}
+                    cwd={cwd}
+                    onOpenFile={onOpenFile}
+                    attachments={block.attachments}
+                    citations={citations}
+                  />
+                </div>
+              ) : null}
+              {overflows && !compactText ? (
+                <Button
+                  motion="none"
+                  variant="ghost"
+                  type="button"
+                  aria-expanded={expanded}
+                  className="mt-1"
+                  onClick={toggle}
+                >
+                  {expanded ? t("Show less") : t("Show more")}
+                </Button>
+              ) : null}
+              {block.ciContext ? (
+                <Disclosure
+                  size="sm"
+                  summary={t("CI context")}
+                  open={ciOpen}
+                  onOpenChange={setCiOpen}
+                  className="mt-2 min-w-0 border-t border-(--ui-tone-neutral-border) pt-2"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <OutputBlock frame="filled" scroll className="mt-2 max-h-72">
+                    {block.ciContext}
+                  </OutputBlock>
+                </Disclosure>
+              ) : null}
+
+              {bycoda ? (
+                <BycodaSparkles blockId={block.id} startedAt={block.startedAt} />
+              ) : block.intent === "plan" ? (
+                <PlanStepsBurst blockId={block.id} startedAt={block.startedAt} />
+              ) : block.intent === "orchestrate" ? (
+                <OrchestratorConstellation blockId={block.id} startedAt={block.startedAt} />
+              ) : null}
             </div>
-          ) : displayText ? (
-            <pre
-              data-selectable-agent-response={block.id}
-              ref={(element) => {
-                textRef.current = element;
-              }}
-              className={`min-w-0 whitespace-pre-wrap break-words font-sans text-ui-body ${expanded || questionAnswer ? "" : "line-clamp-4"}`}
-            >
-              <AttachmentTokenText
-                text={displayText}
-                attachments={block.attachments}
-                citations={citations}
-              />
-            </pre>
-          ) : null}
-          {overflows && !compactText ? (
-            <Button
-              motion="none"
-              variant="ghost"
-              type="button"
-              aria-expanded={expanded}
-              className="mt-1"
-              onClick={toggle}
-            >
-              {expanded ? t("Show less") : t("Show more")}
-            </Button>
-          ) : null}
-          {block.ciContext ? (
-            <Disclosure
-              size="sm"
-              summary={t("CI context")}
-              open={ciOpen}
-              onOpenChange={setCiOpen}
-              className="mt-2 min-w-0 border-t border-(--ui-tone-neutral-border) pt-2"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <OutputBlock frame="filled" scroll className="mt-2 max-h-72">
-                {block.ciContext}
-              </OutputBlock>
-            </Disclosure>
-          ) : null}
-          {block.draft ? (
-            <UserDraftFooter
-              block={block}
-              delivery={delivery}
-              deliveryLabel={deliveryLabel}
-              deliveryDescription={deliveryDescription}
-              deliveryActive={deliveryActive}
-              heldActionTitle={heldActionTitle}
-              onEditDraft={onEditDraft}
-              onRemoveDraft={onRemoveDraft}
-              onSendDraft={onSendDraft}
-            />
-          ) : null}
-          {bycoda ? (
-            <BycodaSparkles blockId={block.id} startedAt={block.startedAt} />
-          ) : block.intent === "plan" ? (
-            <PlanStepsBurst blockId={block.id} startedAt={block.startedAt} />
-          ) : block.intent === "orchestrate" ? (
-            <OrchestratorConstellation blockId={block.id} startedAt={block.startedAt} />
           ) : null}
         </div>
-        {text || block.attachments?.length || block.startedAt != null || onEdit || onRewind ? (
-          <div className="user-message-actions flex max-w-full flex-wrap items-center justify-end gap-1 px-3 pt-1">
-            {renderMessageActions()}
+        {block.turnOutcome === "stopped" ? (
+          <div className="flex justify-end">
+            <InfoTooltip
+              label={t("Stopped by you")}
+              className="text-(--transcript-ink-chrome)"
+              icon={<Pause className="icon-sm" aria-hidden />}
+            >
+              {t("Stopped by you")}
+            </InfoTooltip>
           </div>
+        ) : null}
+        {block.draft ? (
+          <UserDraftFooter
+            block={block}
+            delivery={delivery}
+            deliveryLabel={deliveryLabel}
+            deliveryDescription={deliveryDescription}
+            deliveryActive={deliveryActive}
+            heldActionTitle={heldActionTitle}
+            onEditDraft={onEditDraft}
+            onRemoveDraft={onRemoveDraft}
+            onSendDraft={onSendDraft}
+          />
         ) : null}
       </div>
     </div>
@@ -2669,7 +2834,7 @@ function turnItemKey(item: TurnItem): string {
  */
 function WorkFoldLine({
   title,
-  kind,
+  meta,
   harness,
   live = false,
   expandable,
@@ -2677,7 +2842,8 @@ function WorkFoldLine({
   onToggle,
 }: {
   title: ReactNode;
-  kind: ActivityPhaseKind;
+  /** The model that did the work, when the title does not already name it. */
+  meta?: string;
   harness?: HarnessId;
   live?: boolean;
   expandable: boolean;
@@ -2690,48 +2856,47 @@ function WorkFoldLine({
       {harness ? (
         <HarnessIcon harness={harness} className="size-3.5 shrink-0" />
       ) : (
-        <ActivityPhaseIcon kind={kind} />
+        <ChatWork className="icon-sm shrink-0" />
       )}
     </span>
   );
   // While the agent runs, the clock shimmers here rather than at the bottom,
-  // which is now bare.
-  const label = live ? (
-    title
-  ) : (
-    <span className="min-w-0 flex-1 truncate font-sans text-ui-body text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-text-secondary)">
-      {title}
-    </span>
+  // which is now bare. Same face as the settled line, so settling never
+  // swaps the font under the reader. The model rides along as a quiet tag.
+  const label = (
+    <>
+      {icon}
+      <span className="flex min-w-0 flex-1 items-baseline gap-2">
+        {live ? (
+          <span className="flex min-w-0 font-sans text-ui-body">{title}</span>
+        ) : (
+          <span className="min-w-0 truncate font-sans text-ui-body">{title}</span>
+        )}
+        {meta ? <span className="shrink-0 font-sans text-ui-caption">{meta}</span> : null}
+      </span>
+    </>
   );
-  const row = `flex w-full min-w-0 items-center gap-1.5 px-4 py-1 text-left${
-    open ? " zen-fold-drop" : ""
-  }`;
 
-  if (!expandable) {
-    return (
-      <div className={`group ${row}`} role={live ? "status" : undefined}>
-        {icon}
-        {label}
-      </div>
-    );
-  }
+  // The same step row as an activity group header: the whole row is the trigger, the chevron
+  // is always there while the work can open, and nothing draws a selected box around it.
   return (
-    <Button
-      motion="none"
-      variant="ghost"
-      type="button"
-      selected={open}
-      // Open, the chevron leads in the icon's place: it is the way back, and hunting for it
-      // under the cursor is no way to close what you opened.
-      expanded={open}
-      chevron={open ? "start" : "end"}
-      aria-label={open ? t("Hide the work") : t("Show the work")}
-      aria-live={live ? "polite" : undefined}
-      onClick={onToggle}
-    >
-      {open ? null : icon}
-      {label}
-    </Button>
+    <div className={`transcript-fold-line min-w-0${open ? " zen-fold-drop" : ""}`}>
+      {expandable ? (
+        <Disclosure
+          variant="step"
+          chevron="end"
+          open={open}
+          onOpenChange={(next) => {
+            if (next !== open) onToggle();
+          }}
+          summaryLabel={open ? t("Hide the work") : t("Show the work")}
+          live={live}
+          summary={label}
+        />
+      ) : (
+        <Disclosure variant="step" collapsible={false} live={live} summary={label} />
+      )}
+    </div>
   );
 }
 

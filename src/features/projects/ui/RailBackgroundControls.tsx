@@ -21,6 +21,7 @@ function ColorSwatchButton({
   disabled: boolean;
   onChange: (hex: string) => void;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   return (
@@ -31,6 +32,7 @@ function ColorSwatchButton({
         iconOnly
         label={label}
         disabled={disabled}
+        disabledReason={disabled ? t("Not available right now.") : undefined}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
@@ -54,9 +56,10 @@ function ColorSwatchButton({
           align="start"
           aria-label={label}
           width={232}
+          variant="panel"
           onDismiss={() => setOpen(false)}
         >
-          <div className="p-3">
+          <div>
             <ColorPickerPopover value={value} onChange={onChange} />
           </div>
         </Popover>
@@ -86,9 +89,8 @@ export function RailBackgroundControls({
       <div className="flex flex-col gap-1">
         {parts.map((part) => {
           const current = value[part];
-          const label = t(
-            part === "body" ? "Expanded contents" : group ? "Group header" : "Project row",
-          );
+          const label =
+            part === "body" ? t("Expanded contents") : group ? t("Group header") : t("Project row");
           const opacity = current?.opacity ?? 15;
           const update = (patch: Partial<NonNullable<typeof current>>) =>
             onChange({

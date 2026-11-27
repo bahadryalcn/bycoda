@@ -1,12 +1,25 @@
 import { hostname } from "node:os";
-import { HOST_PROTOCOL_VERSION } from "../../src/features/connections/model/protocol";
+import {
+  HOST_PROTOCOL_VERSION,
+  providerSteerCapability,
+} from "../../src/features/connections/model/protocol";
+import { DEVICE_PROOF_CAPABILITY } from "../../src/integrations/device-proof";
+import { PROJECTLESS_SESSIONS_CAPABILITY } from "../../src/shared/model/host-contracts/projectless-sessions";
 import { createEnvironmentService } from "../domains/environment/service";
 import { reachableAddresses } from "../mobile/mobile-lan";
+import { defaultRouteAddress } from "../mobile/mobile-network";
 import { createMobileRoutes } from "../mobile/mobile-routes";
 import { HOST_WS_READ_CAPABILITY } from "../transport/ws/server";
 import { agentDefaultsCapabilities } from "../settings-defaults/archive-capability";
 import { WORKSPACE_CAPABILITIES } from "../workspaces/workspace-contracts";
 import type { ServerBindings } from "./bindings";
+import { GROUP_LOCK_REMOTE_CAPABILITY } from "../../src/shared/model/host-contracts/group-lock";
+import { DECISION_INSTALL_CAPABILITY } from "../../src/shared/model/host-contracts/decision-models";
+import { DEVICE_VIEWER_CAPABILITY } from "../../src/shared/model/host-contracts/native-devices";
+import { DELEGATION_MESSAGES_STREAM } from "../../src/shared/model/host-contracts/delegation";
+import { HOST_USAGE_ROWS } from "../../src/shared/model/host-contracts/usage-rows";
+import { HOST_ADDITIONAL_DIRS_CAPABILITY } from "../../src/shared/model/host-contracts/session-additional-dirs";
+import { GITHUB_WORK_ITEMS } from "../../src/shared/model/host-contracts/work-items";
 export function createEnvironmentRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -14,12 +27,13 @@ export function createEnvironmentRuntime(
     | "engine"
     | "webControl"
     | "mobileLan"
-    | "mobileAccess"
+    | "mobileTailnet"
     | "tunnels"
     | "buildIdentity"
     | "providers"
     | "genericAcp"
     | "managed"
+    | "desktop"
   >,
 ) {
   // The service reads this only after composition has finished. An explicit
@@ -30,11 +44,21 @@ export function createEnvironmentRuntime(
   }
   const mobileRoutes = createMobileRoutes({
     lan: () => dependencies.mobileLan.status(),
-    tailscale: () => dependencies.mobileAccess.status(),
-    tunnel: () => dependencies.tunnels.publicHostUrl(),
+    tailnet: () => dependencies.mobileTailnet.status(),
+    publicUrls: () => dependencies.tunnels.publicPhoneUrls(),
   });
+  async function callerCredential(principalId: string | undefined) {
+    const authority = principalId
+      ? await dependencies.engine.store.deviceAuthorityByHash(principalId)
+      : undefined;
+    return {
+      ...(authority?.kind ? { kind: authority.kind } : {}),
+      localDesktop: authority?.localDesktop === true,
+      proofBound: authority?.binding !== undefined,
+    };
+  }
   const environmentService = createEnvironmentService({
-    snapshot: async () => ({
+    snapshot: async ({ principalId }) => ({
       protocolVersion: HOST_PROTOCOL_VERSION,
       environmentId: dependencies.engine.store.environmentId,
       name: hostname(),
@@ -46,12 +70,20 @@ export function createEnvironmentRuntime(
         : undefined,
       platform: process.platform,
       // Other ways to reach this machine; desktops learn them as SSH routes.
-      addresses: reachableAddresses(),
+      addresses: reachableAddresses(undefined, await defaultRouteAddress()),
       // Phones learn the other ways to this Host from it (route selection).
       mobileRoutes: await mobileRoutes(),
+      // Other computers may reach this Host through its public tunnel; phones never do.
+      ...(dependencies.tunnels.publicHostUrl()
+        ? { tunnelRoute: dependencies.tunnels.publicHostUrl() }
+        : {}),
+      // Each phone listener has its own WSS endpoint; a phone uses the one for its route.
       mobileTls: (await dependencies.mobileLan.status()).tls,
+      mobileTlsTailnet: (await dependencies.mobileTailnet.status()).tls,
       persistence: dependencies.engine.store.db.persistenceHealth(),
       gitRewindExecution: "host",
+      // Only the caller's own credential: the principal id is its hash, resolved per request.
+      credential: await callerCredential(principalId),
       methods: advertisedRpcMethods(),
       ...(dependencies.buildIdentity ? { buildIdentity: dependencies.buildIdentity } : {}),
       // Older clients validate this list against Codex and Claude only.
@@ -62,16 +94,24 @@ export function createEnvironmentRuntime(
         ]),
       ],
       capabilities: [
+        "liveStream.v1",
         "models.routing.v1",
         "browser.sessionScopes.v1",
         "browser.ownerPresentationScopes.v1",
+        "browser.holder.v1",
+        "devices.holder.v1",
         "assistant.v1",
         "desktop.control.v1",
         HOST_WS_READ_CAPABILITY,
         "transport.ws.sessions.v2",
+        "transport.ws.devices.video.v1",
+        "devices.touch.v1",
         "transport.ws.sessions.tail.v1",
+        "transport.ws.projects.delta.v1",
         "sessions.approvalOccurrence.v1",
+        "sessions.approvalGrants.v1",
         "sessions.desktopControlReceipts.v1",
+        PROJECTLESS_SESSIONS_CAPABILITY,
         "transport.ws.queue.v2",
         "transport.ws.files.v2",
         "transport.ws.terminals.v2",
@@ -88,8 +128,10 @@ export function createEnvironmentRuntime(
         "transport.ws.health.v2",
         "transport.ws.streams.v2",
         "transport.ws.bulk.v2",
+        DEVICE_PROOF_CAPABILITY,
         WORKSPACE_CAPABILITIES.managed,
         WORKSPACE_CAPABILITIES.policy,
+        WORKSPACE_CAPABILITIES.creationV2,
         "workspaces.delivery.v1",
         "workspaces.pr-publication.v1",
         "workspaces.lifecycle.v1",
@@ -105,21 +147,26 @@ export function createEnvironmentRuntime(
           : []),
         "sessions.managedCreation.v1",
         "workspaces.native-activity.v1",
-        "native.buffers.recovery.v1",
         "transport.ws.models.v1",
         "transport.ws.devices.v1",
         "transport.ws.devices.preview.mobile.v1",
+        "transport.ws.voice.v1",
         "native.services.v1",
         "native.workspaces.v1",
-        "native.buffers.upload.v1",
-        "native.buffers.delivery.v1",
         "native.services.delivery.v1",
         "native.services.workspace.format.bounded.v1",
-        "native.buffers.delivery.ack.v1",
         "native.services.delivery.ack.v1",
+        "native.services.delivery.admission.v1",
+        // An idle desktop take may be held open for `waitMs` (see the desktop relay).
+        "native.services.conversation.desktop.take.wait.v1",
         "native.delivery.epochs.v2",
+        "native.delivery.epochs.gaps.v1",
         "transport.ws.workspaces.cleanup.v1",
+        // Install start, progress and cancel for decision models (owner RPC; see the contract).
+        DECISION_INSTALL_CAPABILITY,
         ...(dependencies.buildIdentity ? ["build.identity.v1"] : []),
+        // Offered only while a desktop window that can verify the password is beating.
+        ...(dependencies.desktop.live.groupLock.ready() ? [GROUP_LOCK_REMOTE_CAPABILITY] : []),
         "terminals.v1",
         "mobile.pairing",
         "mobile.access",
@@ -135,6 +182,7 @@ export function createEnvironmentRuntime(
         "sessions.longPoll",
         "sessions.lazyHistory",
         "sessions.block",
+        "sessions.inlineVisual",
         "sessions.digests",
         "machine.changes",
         "machine.changes.inlineSync",
@@ -142,6 +190,9 @@ export function createEnvironmentRuntime(
         "commands.status",
         "sessions.harnessSwitch",
         "sessions.steer",
+        ...dependencies.providers
+          .filter((id) => dependencies.engine.supportsSteer(id))
+          .map(providerSteerCapability),
         "sessions.executionOwner",
         "sessions.queue.claimDispatch",
         "sessions.rewind",
@@ -149,6 +200,7 @@ export function createEnvironmentRuntime(
         "sessions.edit-from-here.v1",
         "sessions.plan.review",
         "sessions.contextual",
+        HOST_ADDITIONAL_DIRS_CAPABILITY,
         ...(dependencies.providers.includes("claude") &&
         dependencies.engine.supportsItemStop("claude")
           ? ["sessions.stopItem.claude"]
@@ -167,12 +219,14 @@ export function createEnvironmentRuntime(
         "models.list",
         "models.providerAccounts.v1",
         "models.catalog.stream.v1",
+        DELEGATION_MESSAGES_STREAM,
         "sessions.configure.providerAccount.v1",
         "crews.v1",
         "crews.tasks.v1",
         "crews.delete.v1",
         "crews.run-delete.v1",
         "crews.agent-groups.v1",
+        "crews.agent-group-update.v1",
         "crews.access.v1",
         "crews.identity.v1",
         "crews.active.v1",
@@ -187,6 +241,7 @@ export function createEnvironmentRuntime(
         "git.createBranch",
         "git.worktrees",
         "git.worktreeCreate",
+        "git.worktreeRemoval.v1",
         "files.read",
         "files.list",
         "files.index",
@@ -228,6 +283,7 @@ export function createEnvironmentRuntime(
         "automations.room.v1",
         "automations.project-tasks",
         "automations.project-scan",
+        "automations.recipes",
         "automations.triggers.v1",
         "tasks",
         "tasks.todo",
@@ -240,11 +296,13 @@ export function createEnvironmentRuntime(
         "goals.final-review",
         "tasks.run-budget",
         "tasks.preflight",
+        "tasks.helpers.v1",
         "tasks.evaluation",
         "tasks.reviewer-profile",
         "tasks.notes",
         "tasks.review-recheck",
         "tasks.finish-with-findings",
+        "tasks.reorder-guard",
         "tasks.blocked-takeover",
         "tasks.continue-until-done",
         "goals",
@@ -259,9 +317,13 @@ export function createEnvironmentRuntime(
         "preferences.desktop.v1",
         "worktrees.removal.desktop.v1",
         "git.selective.review",
+        GITHUB_WORK_ITEMS,
         "usage.sessions.read",
         "usage.limits.read",
+        "usage.quota.read",
         "usage.cost.read",
+        "usage.planShare.v1",
+        HOST_USAGE_ROWS,
         "pullRequests.link.v1",
         "providers.center.read",
         "providers.desktop.v1",
@@ -272,7 +334,10 @@ export function createEnvironmentRuntime(
         "providers.desktop.quotaRefresh.v1",
         "providers.acp.patchMetadata",
         "host.access.read",
+        "devices.paired",
         "devices.revokeOther",
+        "devices.setManagement",
+        "devices.applyRecovery",
         "dev.servers.reviewed-impact",
         "inbox.attention",
         "inbox.providers.desktop",
@@ -280,13 +345,16 @@ export function createEnvironmentRuntime(
         "inbox.jiraBoard.v1",
         "device.host",
         "devices.preview.mobile.v1",
+        DEVICE_VIEWER_CAPABILITY,
         "host.tools.machine-targets",
         "generic-acp-v1",
         "handoff-history-v1",
         "resources.diagnostics",
         "browser.shared.setup",
         "browser.shared",
+        "browser.frames.binary.v1",
         "browser.shared.viewport.v1",
+        "browser.profiles.v1",
         "conversation.tools.management.v1",
         "runtime.logs",
         "conversation.tools",
@@ -294,11 +362,15 @@ export function createEnvironmentRuntime(
         "browser.annotation",
         "dev.servers",
         "dev.servers.private-access",
+        "dev.servers.tunnel.v1",
         "voice.realtime.v1",
         "voice.realtime.v2",
+        "voice.realtime.relay.v1",
+        "voice.realtime.relay.v2",
         "voice.tools.v1",
         "voice.local.v1",
         "voice.cloud.v1",
+        "voice.transcription-models.v1",
         "voice.local.setup.v1",
         "social.v1",
         "social.policy.reviewed.v1",

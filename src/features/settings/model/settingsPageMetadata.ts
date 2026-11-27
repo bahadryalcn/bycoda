@@ -43,6 +43,7 @@ const SETTINGS_PRESENTATION: Record<SettingsSectionId, SettingsPresentation> = {
   groupLock: "bounded",
   policies: "bounded",
   providers: "wide",
+  decisionModels: "wide",
   usage: "wide",
   models: "wide",
   work: "wide",

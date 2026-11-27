@@ -1,8 +1,13 @@
 /** Unattended-work limits of a Host (running tasks, daily agent time) and their client. */
-export { formatAgentMinutes, parseHostSettings, type HostSettings } from "../model/hostSettings";
+export {
+  DEFAULT_MAX_RUNNING_TASKS,
+  formatAgentMinutes,
+  parseHostSettings,
+  type HostSettings,
+} from "../model/hostSettings";
 export {
   listMachineLimits,
   saveMachineLimits,
-  settingsMachines,
+  settingsMachine,
   type MachineLimits,
 } from "../model/settingsClient";

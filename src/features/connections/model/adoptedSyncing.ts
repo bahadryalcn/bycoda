@@ -1,9 +1,11 @@
 import { useSyncExternalStore } from "react";
 import type { Session } from "../../sessions";
-import type { AdoptedEntry } from "./adoptedSessions";
+import { canCompareAdoptedHistory, type AdoptedEntry } from "./adoptedSessions";
 
 /** Open conversations whose newer host copy this window has yet to compare. */
 let syncing: ReadonlySet<string> = new Set();
+const noFailures: ReadonlyMap<string, string> = new Map();
+let failures = noFailures;
 const listeners = new Set<() => void>();
 
 /** Loaded, idle conversations the host holds a revision of that is not mirrored
@@ -21,6 +23,7 @@ export function adoptedSyncingIds(
     if (
       session &&
       !session.busy &&
+      canCompareAdoptedHistory(session) &&
       !session.adoptedSyncConflict &&
       entry.status !== "running" &&
       mirrored.get(entry.id) !== entry.revision
@@ -30,9 +33,14 @@ export function adoptedSyncingIds(
   return ids;
 }
 
-export function setAdoptedSyncing(ids: ReadonlySet<string>): void {
-  if (ids.size === syncing.size && [...ids].every((id) => syncing.has(id))) return;
+export function setAdoptedSyncing(ids: ReadonlySet<string>, reasons = noFailures): void {
+  const sameIds = ids.size === syncing.size && [...ids].every((id) => syncing.has(id));
+  const sameReasons =
+    reasons.size === failures.size &&
+    [...reasons].every(([id, reason]) => failures.get(id) === reason);
+  if (sameIds && sameReasons) return;
   syncing = ids;
+  failures = reasons;
   for (const listener of listeners) listener();
 }
 
@@ -47,5 +55,14 @@ export function useAdoptedSyncing(sessionId: string): boolean {
     subscribe,
     () => syncing.has(sessionId),
     () => false,
+  );
+}
+
+/** Runtime-only reason for a conversation whose automatic reads keep failing. */
+export function useAdoptedSyncFailure(sessionId: string): string | undefined {
+  return useSyncExternalStore(
+    subscribe,
+    () => failures.get(sessionId),
+    () => undefined,
   );
 }

@@ -22,7 +22,7 @@ vi.mock("../../projects/public/contribute", () => ({
   startContribution: vi.fn(async () => undefined),
   useContributeFlow: () => ({ status: "idle" }),
 }));
-import { GeneralPage } from "./GeneralSettings";
+import { HelpSettings } from "./GeneralSettings";
 import { SETTINGS_INDEX } from "../model/settings";
 
 let container: HTMLDivElement;
@@ -41,8 +41,8 @@ afterEach(() => {
 });
 const row = (id: string) => container.querySelector<HTMLElement>(`[data-setting-id="${id}"]`);
 
-it("General settings offer Send feedback and the GitHub link, and search finds them", async () => {
-  await act(async () => root.render(createElement(GeneralPage, { onOpenWhatsNew: vi.fn() })));
+it("Help offers Send feedback and the GitHub link, and search finds them", async () => {
+  await act(async () => root.render(createElement(HelpSettings)));
   await act(async () =>
     row("send-feedback")!
       .querySelector<HTMLButtonElement>('button:not([aria-label="Help"])')!
@@ -56,6 +56,6 @@ it("General settings offer Send feedback and the GitHub link, and search finds t
   );
   expect(mocks.openExternal).toHaveBeenCalledWith("https://github.com/example/bycoda");
   expect(row("contribute")).not.toBeNull();
-  const ids = SETTINGS_INDEX.filter((entry) => entry.section === "general").map((e) => e.id);
+  const ids = SETTINGS_INDEX.filter((entry) => entry.section === "policies").map((e) => e.id);
   expect(ids).toEqual(expect.arrayContaining(["send-feedback", "star-github", "contribute"]));
 });

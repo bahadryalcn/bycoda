@@ -15,6 +15,7 @@ import {
   SUPPORT_CATEGORIES,
   SUPPORT_SUBJECT_MAX,
   submitSupportTicket,
+  validateSupportDraft,
   type SupportCategory,
   type SupportDraft,
   type SupportDraftIssue,
@@ -111,10 +112,25 @@ export function AccountSupport() {
   const [draft, setDraft] = useState<SupportDraft>(EMPTY_SUPPORT_DRAFT);
   const [result, setResult] = useState<SupportSubmitResult | null>(null);
   const [busy, setBusy] = useState(false);
-  const issues = result?.status === "invalid" ? result.issues : [];
+  // Field errors follow the draft as it is now, and only while the last send was rejected.
+  const issues = result?.status === "invalid" ? validateSupportDraft(draft) : [];
+  // The first missing field names the blocker; its error only appears after a rejected send.
+  const missing: SupportDraftIssue | null = !draft.subject.trim()
+    ? "subject-missing"
+    : !draft.body.trim()
+      ? "body-missing"
+      : null;
   const issue = (...names: SupportDraftIssue[]) => {
     const found = issues.find((name) => names.includes(name));
     return found ? issueText(found) : undefined;
+  };
+  // Any edit makes the last outcome stale, except a rejection of the fields: its errors follow
+  // the draft through `issues`, so fixing one field leaves the other field's error in place.
+  // A send still in flight sets `result` when it settles, so its outcome is shown even if the
+  // user typed meanwhile.
+  const edit = (next: SupportDraft) => {
+    setDraft(next);
+    setResult((current) => (current?.status === "invalid" ? current : null));
   };
 
   const send = async () => {
@@ -140,7 +156,14 @@ export function AccountSupport() {
       <Group
         title={t("Contact support")}
         action={
-          <Button variant="primary" size="sm" loading={busy} onClick={send}>
+          <Button
+            variant="primary"
+            size="sm"
+            loading={busy}
+            disabled={missing !== null}
+            disabledReason={missing ? issueText(missing) : undefined}
+            onClick={send}
+          >
             {t("Send to support")}
           </Button>
         }
@@ -167,7 +190,7 @@ export function AccountSupport() {
             hideLabel
             value={draft.category}
             options={SUPPORT_CATEGORIES.map((value) => ({ value, label: categoryLabel(value) }))}
-            onValueChange={(value) => setDraft({ ...draft, category: value as SupportCategory })}
+            onValueChange={(value) => edit({ ...draft, category: value as SupportCategory })}
           />
         </Row>
         <Row label={t("Subject")} stacked>
@@ -176,7 +199,7 @@ export function AccountSupport() {
             hideLabel
             value={draft.subject}
             error={issue("subject-missing", "subject-long")}
-            onChange={(event) => setDraft({ ...draft, subject: event.target.value })}
+            onChange={(event) => edit({ ...draft, subject: event.target.value })}
           />
         </Row>
         <Row label={t("Message")} stacked>
@@ -188,24 +211,20 @@ export function AccountSupport() {
             maxRows={14}
             autosize
             error={issue("body-missing", "body-long")}
-            onChange={(event) => setDraft({ ...draft, body: event.target.value })}
+            onChange={(event) => edit({ ...draft, body: event.target.value })}
           />
         </Row>
       </Group>
       <Group title={null}>
-        <Row label={t("Feedback")}>
-          <Button variant="secondary" size="sm" onClick={openFeedbackDialog}>
-            {t("Send feedback")}
-          </Button>
-        </Row>
-        <Row label={t("E-mail")}>
-          <ContactByEmail />
-        </Row>
-        {PRODUCT_IDENTITY.repositoryUrl ? (
-          <Row label={t("GitHub")}>
+        <Row label={t("Other ways to reach us")}>
+          <span className="flex flex-wrap items-center justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={openFeedbackDialog}>
+              {t("Send feedback")}
+            </Button>
+            <ContactByEmail />
             <ProjectLinks />
-          </Row>
-        ) : null}
+          </span>
+        </Row>
       </Group>
     </>
   );

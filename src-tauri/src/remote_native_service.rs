@@ -30,7 +30,10 @@ pub(crate) struct NativeServiceChannel {
     delivery_supported: bool,
     delivery_ack_supported: bool,
     delivery_epochs_supported: bool,
+    delivery_epoch_gaps_supported: bool,
     bounded_format_supported: bool,
+    delivery_admission_supported: bool,
+    desktop_take_wait_supported: bool,
     journal: Option<delivery::JournalAccess>,
     delivery_cursor: Mutex<Option<String>>,
     delivery_ack_cursor: Mutex<Option<String>>,
@@ -147,7 +150,10 @@ impl NativeServiceChannel {
             delivery_supported: false,
             delivery_ack_supported: false,
             delivery_epochs_supported: false,
+            delivery_epoch_gaps_supported: false,
             bounded_format_supported: false,
+            delivery_admission_supported: false,
+            desktop_take_wait_supported: false,
             journal: None,
             delivery_cursor: Mutex::new(None),
             delivery_ack_cursor: Mutex::new(None),
@@ -155,6 +161,17 @@ impl NativeServiceChannel {
     }
     pub(crate) fn connect(app: &AppHandle) -> Result<Arc<Self>, String> {
         Self::connect_until(app, None)
+    }
+
+    /// Idle durable-delivery maintenance on this channel, bounded by `budget`.
+    pub(crate) fn maintain_delivery(
+        self: &Arc<Self>,
+        budget: std::time::Duration,
+    ) -> Result<bool, String> {
+        if self.journal.is_none() {
+            return Ok(false);
+        }
+        delivery::maintain(self, Instant::now() + budget)
     }
 
     /// Optional helpers (spawn tool grants, bridge metadata) bound the whole
@@ -223,7 +240,10 @@ impl NativeServiceChannel {
             delivery_supported: false,
             delivery_ack_supported: false,
             delivery_epochs_supported: false,
+            delivery_epoch_gaps_supported: false,
             bounded_format_supported: false,
+            delivery_admission_supported: false,
+            desktop_take_wait_supported: false,
             journal: delivery::JournalAccess::capture(app),
             delivery_cursor: Mutex::new(None),
             delivery_ack_cursor: Mutex::new(None),
@@ -252,9 +272,10 @@ impl NativeServiceChannel {
             )?,
         };
         channel.check()?;
-        if descriptor["environmentId"] != machine.environment_id
-            || descriptor["protocolVersion"] != 1
-        {
+        if let Some(message) = crate::remote::protocol::protocol_mismatch(&descriptor) {
+            return Err(message.into());
+        }
+        if descriptor["environmentId"] != machine.environment_id {
             return Err("Native Host identity changed; reconnect before using tools".into());
         }
         // The saved token and Host identity just answered over HTTP, so a lane
@@ -269,8 +290,18 @@ impl NativeServiceChannel {
             channel.delivery_supported && delivery::supports_ack_host(&descriptor);
         channel.delivery_epochs_supported =
             channel.delivery_ack_supported && super::native_delivery_epochs::supports(&descriptor);
+        channel.delivery_epoch_gaps_supported = channel.delivery_epochs_supported
+            && super::native_delivery_epochs::supports_gaps(&descriptor);
         channel.bounded_format_supported =
             channel.delivery_supported && delivery::supports_bounded_format_host(&descriptor);
+        channel.delivery_admission_supported =
+            channel.delivery_supported && delivery::supports_admission_host(&descriptor);
+        channel.desktop_take_wait_supported =
+            descriptor["capabilities"].as_array().is_some_and(|caps| {
+                caps.iter().any(|cap| {
+                    cap.as_str() == Some("native.services.conversation.desktop.take.wait.v1")
+                })
+            });
         let channel = Arc::new(channel);
         if channel.journal.is_some() && channel.delivery_supported {
             // Startup recovery is status-only. Ordinary helper reads remain
@@ -374,7 +405,10 @@ impl NativeServiceChannel {
             delivery_supported: false,
             delivery_ack_supported: false,
             delivery_epochs_supported: false,
+            delivery_epoch_gaps_supported: false,
             bounded_format_supported: false,
+            delivery_admission_supported: false,
+            desktop_take_wait_supported: false,
             journal: None,
             delivery_cursor: Mutex::new(None),
             delivery_ack_cursor: Mutex::new(None),
@@ -392,15 +426,21 @@ impl NativeServiceChannel {
             json!({}),
         )?;
         channel.check()?;
-        if descriptor["environmentId"] != selection.machine.environment_id
-            || descriptor["protocolVersion"] != 1
-        {
+        if let Some(message) = crate::remote::protocol::protocol_mismatch(&descriptor) {
+            return Err(message.into());
+        }
+        if descriptor["environmentId"] != selection.machine.environment_id {
             return Err("Social authority Host identity changed".into());
         }
         channel.websocket = descriptor["capabilities"]
             .as_array()
             .is_some_and(|caps| caps.iter().any(|v| v == "native.services.v1"));
         Ok(Arc::new(channel))
+    }
+
+    /// Whether the Host holds an idle `conversation.desktop.take` open for `waitMs`.
+    pub(crate) fn supports_desktop_take_wait(&self) -> bool {
+        self.desktop_take_wait_supported
     }
 
     pub(crate) fn machine_id(&self) -> &str {
@@ -842,7 +882,10 @@ impl NativeServiceChannel {
             delivery_supported: false,
             delivery_ack_supported: false,
             delivery_epochs_supported: false,
+            delivery_epoch_gaps_supported: false,
             bounded_format_supported: false,
+            delivery_admission_supported: false,
+            desktop_take_wait_supported: false,
             journal: None,
             delivery_cursor: Mutex::new(None),
             delivery_ack_cursor: Mutex::new(None),
@@ -970,6 +1013,7 @@ mod tests {
                 token: "secret-native-token".into(),
                 ssh: None,
                 local_host: true,
+                proof_seed: None,
             };
             write(&path, std::slice::from_ref(&machine)).unwrap();
             let broker = NativeProfileBroker::default();
@@ -999,7 +1043,10 @@ mod tests {
                 delivery_supported: false,
                 delivery_ack_supported: false,
                 delivery_epochs_supported: false,
+                delivery_epoch_gaps_supported: false,
                 bounded_format_supported: false,
+                delivery_admission_supported: false,
+                desktop_take_wait_supported: false,
                 journal: None,
                 delivery_cursor: Mutex::new(None),
                 delivery_ack_cursor: Mutex::new(None),

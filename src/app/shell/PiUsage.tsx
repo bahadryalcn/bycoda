@@ -1,21 +1,11 @@
 import { Tooltip } from "../../shared/ui/Tooltip";
-import { Button } from "../../shared/ui/Button";
 import { useT } from "../../shared/i18n";
-import { useEffect, useRef, useState } from "react";
-import { RefreshCw } from "../../shared/ui/icons";
-import { Spinner } from "../../shared/ui/Spinner";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
+import { piUsageProvider, type PiUsageProvider } from "../../features/providers/model/piUsage";
 import {
-  fetchPiUsage,
-  piBillingProvider,
-  piUsageProvider,
-  type PiUsageProvider,
-} from "../../features/providers/model/piUsage";
-import {
-  idleRateLimits,
-  RATE_LIMIT_MIN_REFETCH_MS,
-  RATE_LIMIT_POLL_MS,
-} from "../../features/providers/model/rateLimits";
+  loadRateLimitsForQuery,
+  useRateLimitQuery,
+} from "../../features/providers/model/useRateLimitQuery";
 import { UsageProviderChip } from "./UsageProviderChip";
 
 export function PiUsage({ model, now }: { model?: string; now: number }) {
@@ -32,7 +22,6 @@ export function PiUsage({ model, now }: { model?: string; now: number }) {
       >
         <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
           <HarnessIcon harness="pi" className="icon-sm shrink-0" />
-          <span>{t("pi · Usage unavailable")}</span>
         </span>
       </Tooltip>
     );
@@ -41,73 +30,21 @@ export function PiUsage({ model, now }: { model?: string; now: number }) {
 }
 
 function PiProviderUsage({ provider, now }: { provider: PiUsageProvider; now: number }) {
-  const t = useT();
-  const [limits, setLimits] = useState(() => idleRateLimits(piBillingProvider(provider)));
-  const refreshRef = useRef<(force?: boolean) => void>(() => undefined);
-  useEffect(() => {
-    let disposed = false;
-    let inflight = false;
-    let lastFetchAt = 0;
-    const refresh = (force = false) => {
-      if (disposed || inflight) return;
-      if (
-        !force &&
-        (document.visibilityState !== "visible" ||
-          Date.now() - lastFetchAt < RATE_LIMIT_MIN_REFETCH_MS)
-      )
-        return;
-      inflight = true;
-      setLimits({
-        ...idleRateLimits(piBillingProvider(provider)),
-        status: "fetching",
-      });
-      void fetchPiUsage(provider)
-        .then((result) => {
-          if (!disposed) setLimits(result);
-        })
-        .finally(() => {
-          inflight = false;
-          lastFetchAt = Date.now();
-        });
-    };
-    refreshRef.current = refresh;
-    refresh();
-    const timer = window.setInterval(refresh, RATE_LIMIT_POLL_MS);
-    const onVisible = () => refresh();
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onVisible);
-    return () => {
-      disposed = true;
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onVisible);
-    };
-  }, [provider]);
-  const fetching = limits.status === "fetching";
+  const source = `pi-${provider}` as const;
+  const limits = useRateLimitQuery(source, "default", true);
   return (
-    <>
-      <UsageProviderChip
-        limits={limits}
-        now={now}
-        presentation={{
-          sourceLabel: "Pi's saved OAuth account",
-          harness: "pi",
-          label: provider === "anthropic" ? "Pi · Anthropic" : "Pi · OpenAI Codex",
-        }}
-      />
-      <Button
-        iconOnly
-        label={t("Refresh Pi usage")}
-        variant="ghost"
-        motion="none"
-        type="button"
-        size="sm"
-        disabled={fetching}
-        onClick={() => refreshRef.current(true)}
-        className="shrink-0"
-      >
-        {fetching ? <Spinner /> : <RefreshCw className="icon-sm" aria-hidden />}
-      </Button>
-    </>
+    <UsageProviderChip
+      limits={limits}
+      now={now}
+      onRefresh={async () => {
+        await loadRateLimitsForQuery(source, "default", true);
+      }}
+      refreshing={limits.status === "fetching"}
+      presentation={{
+        sourceLabel: "Pi's saved OAuth account",
+        harness: "pi",
+        label: provider === "anthropic" ? "Pi · Anthropic" : "Pi · OpenAI Codex",
+      }}
+    />
   );
 }

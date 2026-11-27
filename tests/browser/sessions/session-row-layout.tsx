@@ -1,15 +1,19 @@
 import { useState, type ComponentProps } from "react";
+import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { buildGlobalRecentSessions } from "../../../src/features/sessions/model/globalRecentSessions";
 import { pathKey } from "../../../src/shared/lib/paths";
 import { LastSessionsRows } from "../../../src/app/shell/LastSessionsSection";
 import { Sidebar } from "../../../src/app/shell/Sidebar";
+import { setWorktreeFocus } from "../../../src/features/source-control/model/worktreeFocus";
+import { remoteMachineFor } from "../../../src/features/connections/model/connections";
 import { rememberRemoteProject } from "../../../src/features/connections/model/remoteProjects";
 import { saveSessionFolders } from "../../../src/features/sessions/model/sessionFolders";
 import { setSessionLifecycleList } from "../../../src/features/sessions/model/sessionLifecycleClient";
 import type { SessionSummary } from "../../../src/features/sessions/data/sessionStore";
 import {
+  saveAutoTabGroupLabel,
   saveRailBackgrounds,
   saveTabGroupColor,
   saveTabGroupLabel,
@@ -22,12 +26,138 @@ import {
 } from "../../../src/features/sessions/model/sessionListDisplay";
 import { LiveAgentsPreview } from "../../../src/features/sessions/ui/LiveAgentsPreview";
 import type { SessionWait } from "../../../src/features/sessions/model/sessionWait";
-import { applyThemePreference } from "../../../src/features/settings/model/appearance";
+import {
+  applyThemePreference,
+  saveSessionSidebarWidth,
+} from "../../../src/features/settings/model/appearance";
 import { languageReady } from "../../../src/shared/i18n";
+import type { SessionLifecycleView } from "../../../src/features/sessions/model/sessionLifecycle";
 import "./session-row-layout.css";
 
 // Isolated browser-local history and preferences. No native writes or provider calls.
 const params = new URLSearchParams(location.search);
+if (params.has("wide-workspace")) saveSessionSidebarWidth(510);
+if (params.has("remote-settle") || params.has("local-bulk-settle")) {
+  mockWindows("main");
+  const local = params.has("local-bulk-settle");
+  const machineId = local ? "fixture-local-host" : "office";
+  const remoteSessions = [
+    { id: "office-session", title: "Remote project conversation" },
+    ...(params.has("bulk")
+      ? [
+          { id: "office-second", title: "Second remote conversation" },
+          { id: "office-third", title: "Unselected remote conversation" },
+        ]
+      : []),
+    ...Array.from({ length: params.has("bulk-large") ? 257 : 0 }, (_, index) => ({
+      id: `office-bulk-${index}`,
+      title: `Remote conversation ${index + 2}`,
+    })),
+  ];
+  const lifecycle = new Map<string, SessionLifecycleView>();
+  mockIPC(
+    (command, args) => {
+      if (command === "local_host_connect" && local) return { id: machineId };
+      if (command === "remote_machines") {
+        return [
+          {
+            id: machineId,
+            environmentId: local ? "fixture-local" : "fixture-office",
+            name: local
+              ? "This computer (local sync)"
+              : params.has("worktree-picker")
+                ? "Office Mac"
+                : "Office",
+            endpoint: local ? "http://127.0.0.1:12345" : "http://office.invalid",
+          },
+        ];
+      }
+      if (command !== "remote_request" || args.machineId !== machineId) return null;
+      if (args.method === "environment.describe") {
+        return {
+          protocolVersion: 1,
+          environmentId: "fixture-office",
+          name: "Office",
+          providers: [],
+          capabilities: ["sessions.lifecycle.v2", "workspace.run"],
+        };
+      }
+      if (args.method === "sessions.list") {
+        return remoteSessions.map((row, index) => ({
+          ...row,
+          projectId: "fixture-project",
+          revision: 1,
+          status: "idle",
+          harness: "codex",
+          updatedAt: Date.now() - index * 1000,
+        }));
+      }
+      if (args.method === "workspace.run" && params.has("worktree-picker")) {
+        const command = (args.params as { command: string }).command;
+        if (command === "git_worktrees") {
+          return {
+            defaultRoot: "/fixture/bycoda",
+            worktrees: [
+              { path: "/fixture/bycoda", branch: "main", isMain: true },
+              { path: "/fixture/bycoda-feature", branch: "feature", isMain: false },
+            ].map((tree) => ({
+              ...tree,
+              head: "abcdef",
+              locked: false,
+              prunable: false,
+              missing: false,
+              dirty: false,
+              unpushed: 0,
+              sessionIds: [],
+            })),
+          };
+        }
+        if (command === "git_submodules") return { paths: [] };
+      }
+      if (args.method === "sessions.lifecycle.list") {
+        return {
+          records: [...lifecycle.values()],
+          autoSettle: { afterDays: 3 },
+        };
+      }
+      if (args.method === "sessions.lifecycle.settle") {
+        const { sessionId } = args.params as { sessionId: string };
+        const view: SessionLifecycleView = {
+          sessionId,
+          state: "settled",
+          settledAt: Date.now(),
+          participants: [],
+        };
+        lifecycle.set(sessionId, view);
+        return view;
+      }
+      if (args.method === "sessions.lifecycle.unsettle") {
+        const { sessionId } = args.params as { sessionId: string };
+        lifecycle.delete(sessionId);
+        return { sessionId, state: "active", participants: [] };
+      }
+      return null;
+    },
+    { shouldMockEvents: true },
+  );
+  await import("../../../src/features/connections/model/remoteCommands");
+  await remoteMachineFor(local ? "fixture-local" : "fixture-office");
+}
+if (params.has("global-settle")) {
+  mockIPC((command, args) => {
+    if (command === "local_host_connect") return { id: "fixture-local-host" };
+    if (
+      command === "remote_request" &&
+      args.machineId === "fixture-local-host" &&
+      args.method === "sessions.lifecycle.settle"
+    ) {
+      const { sessionId } = args.params as { sessionId: string };
+      return { sessionId, state: "settled", settledAt: Date.now(), participants: [] };
+    }
+    if (command === "remote_machines") return [];
+    return null;
+  });
+}
 const cwd = params.has("remote-header")
   ? rememberRemoteProject("fixture-office", {
       id: "fixture-project",
@@ -55,7 +185,12 @@ const demoWorktree = "/fixture/demo-repo-worktree";
 saveTabGroupLabel(demoCwd, "demo-repo");
 saveTabGroupColor(demoCwd, 5);
 saveRailBackgrounds(demoCwd, { header: { color: "#774466", opacity: 22 } });
-saveTabGroupLabel(cwd, params.has("remote-header") ? "bycoda-cloud" : "bycoda");
+if (params.has("legacy-remote-label")) {
+  saveTabGroupLabel(cwd, "");
+  saveAutoTabGroupLabel(cwd, "bycoda (Office Mac)");
+} else {
+  saveTabGroupLabel(cwd, params.has("remote-header") ? "bycoda-cloud" : "bycoda");
+}
 saveTabGroupColor(cwd, 7);
 saveTabGroupMascot(cwd, "cat");
 saveRailBackgrounds(cwd, { header: { color: "#336677", opacity: 25 } });
@@ -107,6 +242,9 @@ const initial: SessionSummary[] = [
     harness: "codex",
     model: "gpt-6.1",
     title: "Arif: 7/24 Sesli Asistan ve İş Takibi",
+    managedBy: params.has("managed")
+      ? { assistant: true as const, jobId: "fixture-job", managedAt: now }
+      : undefined,
     branch: "feature/voice",
     createdAt: now - 7_200_000,
     updatedAt: now - 60_000,
@@ -127,10 +265,11 @@ const initial: SessionSummary[] = [
   harness: row.harness as "claude" | "codex",
   runtimeMode: "supervised" as const,
 }));
-// ?statuses: one row per session status, including the three "Waiting" reasons.
+// ?statuses: one row per session status: the turn's own background commands read as
+// working, delegated tasks and a pull request watch as "Waiting".
 const statusRows: SessionSummary[] = [
   ["status-working", "Working on a refactor"],
-  ["status-wait-commands", "Waiting on a dev server"],
+  ["status-wait-commands", "Running a dev server"],
   ["status-wait-delegated", "Waiting on delegated tasks"],
   ["status-wait-pr", "Waiting on a pull request"],
   ["status-approval", "Needs your approval"],
@@ -168,13 +307,12 @@ const statusLiveAgents = [
   {
     id: "status-wait-commands",
     cwd,
-    title: "Waiting on a dev server",
+    title: "Running a dev server",
     harness: "codex" as const,
     activity: "",
     startedAt: now - 12 * 60_000,
     needsApproval: false,
     done: false,
-    waiting: statusWaits.get("status-wait-commands"),
   },
 ];
 const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -212,6 +350,7 @@ function Fixture() {
     setGitCwd(row.worktreeCwd ?? path);
   };
   const [pinCount, setPinCount] = useState(0);
+  const [reminderTarget, setReminderTarget] = useState("");
   const [createdProject, setCreatedProject] = useState("");
   const [createCount, setCreateCount] = useState(0);
   const [tab, setTab] = useState<ComponentProps<typeof Sidebar>["tab"]>("sessions");
@@ -255,6 +394,7 @@ function Fixture() {
         <Sidebar
           cwd={projectCwd}
           gitCwd={gitCwd}
+          onSelectWorkspace={(focus) => setWorktreeFocus(projectCwd, focus)}
           lastSessionsOpen={lastSessionsOpen}
           onOpenLastSessions={() => {
             setLastSessionsOpen(true);
@@ -268,6 +408,10 @@ function Fixture() {
             setCreateCount((count) => count + 1);
             setProjectCwd(path);
             setGitCwd(path);
+            if (path !== projectCwd) {
+              setLastSessionsOpen(false);
+              setTab("sessions");
+            }
           }}
           lastSessionsData={{
             rows: params.has("empty") || params.has("loading") ? [] : lastSessionsRows,
@@ -278,8 +422,8 @@ function Fixture() {
           open
           projectRailOpen={params.has("wide")}
           compactProjectRail={!params.has("no-rail")}
-          titleBarAbove
           sessions={history.filter((row) => row.cwd === projectCwd)}
+          busyProjectPaths={params.has("project-tooltip") ? [cwd] : undefined}
           busySessionIds={new Set(params.has("statuses") ? ["status-working"] : ["row-working"])}
           sessionWaits={params.has("statuses") ? statusWaits : undefined}
           unseenFinishedIds={params.has("statuses") ? new Set(["status-done"]) : undefined}
@@ -301,6 +445,12 @@ function Fixture() {
               ),
             );
           }}
+          onSetSessionLinkedWorkItem={(id, linkedWorkItem) =>
+            setHistory((rows) =>
+              rows.map((row) => (row.id === id ? { ...row, linkedWorkItem } : row)),
+            )
+          }
+          onSetReminders={(ids) => setReminderTarget(ids.join(","))}
           onArchiveSession={() => {}}
           onDeleteSession={() => {}}
           onPinSession={(id, pinned) => {
@@ -312,7 +462,16 @@ function Fixture() {
           onTabChange={setTab}
           filesSearchOpen={false}
           onFilesSearchOpenChange={() => {}}
-          recentSessions={{ history, live: [] }}
+          recentSessions={{
+            history,
+            live: params.has("rail-header")
+              ? history.map((session) => ({
+                  ...session,
+                  status: "done" as const,
+                  activityAt: session.updatedAt,
+                }))
+              : [],
+          }}
           recents={[
             { path: cwd, openedAt: now },
             { path: demoCwd, openedAt: now },
@@ -343,6 +502,7 @@ function Fixture() {
           <output aria-label="Created project">{createdProject}</output>
           <output aria-label="Created sessions">{createCount}</output>
           <output aria-label="Pin operations">{pinCount}</output>
+          <output aria-label="Reminder target">{reminderTarget}</output>
         </main>
       </div>
     </QueryClientProvider>

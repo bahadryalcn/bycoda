@@ -2,7 +2,6 @@
 import { createMockAccountServer } from "@bycoda/account-contracts/mock";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  MAX_STATS_PROMPTS,
   getStatsConsent,
   installationId,
   migrateLegacyConsent,
@@ -11,7 +10,13 @@ import {
   setStatsChoice,
   shouldPromptForStats,
 } from "./accountPrivacy";
-import { sendDailyPing, startAnonymousStats, localDay } from "./anonymousStats";
+import {
+  getStatisticsMode,
+  localDay,
+  sendDailyPing,
+  setStatisticsMode,
+  startAnonymousStats,
+} from "./anonymousStats";
 
 const LEGACY = "bycoda.account.anonymousStats";
 const DAY = new Date(2026, 10, 8, 12);
@@ -53,6 +58,14 @@ beforeEach(() => {
 });
 
 describe("statistics consent", () => {
+  it("a yes from onboarding or the first-run toast sends without asking again", () => {
+    expect(setStatisticsMode("auto")).toBe(true);
+    expect(getStatsConsent().choice).toBe("on");
+    expect(getStatisticsMode()).toBe("auto");
+    setStatisticsMode("off");
+    expect(getStatisticsMode()).toBe("off");
+  });
+
   it("is not asked yet by default", () => {
     expect(getStatsConsent()).toEqual({ choice: null, decidedAt: null });
   });
@@ -80,12 +93,9 @@ describe("statistics consent", () => {
 });
 
 describe("one-time prompt", () => {
-  it("asks until answered, at most three times", () => {
+  it("asks once even when the notice is dismissed without an answer", () => {
     expect(shouldPromptForStats()).toBe(true);
-    for (let i = 0; i < MAX_STATS_PROMPTS; i++) {
-      expect(shouldPromptForStats()).toBe(true);
-      recordStatsPromptShown();
-    }
+    recordStatsPromptShown();
     expect(shouldPromptForStats()).toBe(false);
     expect(getStatsConsent().choice).toBeNull();
   });

@@ -3,8 +3,7 @@
 "use client";
 
 import type { HTMLAttributes, ReactNode } from "react";
-import { Folder } from "../../icons";
-import { InfoPopover } from "../../InfoPopover";
+import { InfoPopover, InfoTooltip } from "../../InfoPopover";
 import { noticeEnterClass } from "../../Notice";
 import { optionalTextAttributes, type TextRoles } from "../../Text";
 import styles from "./empty-state.module.css";
@@ -12,8 +11,9 @@ import styles from "./empty-state.module.css";
 /**
  * Where the state sits. `page` fills an area and centres generously (default);
  * `panel` is a compact centred block inside a side panel or card; `list` is a
- * start-aligned row for a list that has no entries. The primitive only changes
- * density: whether the copy means no data, no match or unavailable is the caller's.
+ * start-aligned row for a list that has no entries. `page` and `panel` fill the free space
+ * of their parent and centre their content both ways: the parent must give them the remaining
+ * height (flex column / grid with `min-block-size: 0`). The primitive only changes density: whether the copy means no data, no match or unavailable is the caller's.
  */
 export type EmptyStateContext = "page" | "panel" | "list";
 
@@ -28,6 +28,7 @@ export interface EmptyStateProps extends Omit<HTMLAttributes<HTMLElement>, "titl
   descriptionText?: TextRoles;
   /** Rendered action row; the shared wrappers build it from structured actions. */
   action?: ReactNode;
+  /** Optional glyph above the copy; none is drawn unless this is passed. */
   icon?: ReactNode;
   className?: string;
   /** Optional accessible label for the state region. */
@@ -46,7 +47,7 @@ export function EmptyState({
   context = "page",
   ...props
 }: EmptyStateProps) {
-  const glyph = icon === null ? null : (icon ?? <Folder aria-hidden />);
+  const glyph = icon ?? null;
   const hasDescription =
     description !== undefined &&
     description !== null &&
@@ -68,7 +69,11 @@ export function EmptyState({
         {title ? (
           <div className={styles.heading}>
             <h3>{title}</h3>
-            {help ? <InfoPopover>{help}</InfoPopover> : null}
+            {typeof help === "string" && help ? (
+              <InfoTooltip>{help}</InfoTooltip>
+            ) : help ? (
+              <InfoPopover>{help}</InfoPopover>
+            ) : null}
           </div>
         ) : null}
         {hasDescription ? (

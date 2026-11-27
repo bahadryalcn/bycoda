@@ -1,5 +1,210 @@
 import { expect, test } from "@playwright/test";
 
+test("normal coding session has no voice results launcher", async ({ page }) => {
+  await page.goto("/tests/browser/sessions/session-usability.html?historyFixture");
+  const session = page.locator("[data-session-drop]");
+  await expect(session.getByText("Response 16", { exact: true })).toBeVisible();
+  await expect(session.locator("[data-composer-box] textarea")).toBeEditable();
+  await expect(
+    session.getByRole("button", { name: /live (results|work)/i, includeHidden: true }),
+  ).toHaveCount(0);
+  await expect(
+    session.locator("[data-work-panel], button:has(svg.lucide-chart-no-axes-combined)"),
+  ).toHaveCount(0);
+});
+
+for (const kind of ["projectless", "project"])
+  for (const light of [true, false])
+    for (const width of [800, 1280])
+      test(`session machine picker ${kind} ${light ? "light" : "dark"} ${width}`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width, height: 850 });
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await page.goto(
+          `/tests/browser/sessions/session-usability.html?machineFixture=${kind}${light ? "&light" : ""}`,
+        );
+        const picker = page.getByRole("button", { name: /^Run on:/ });
+        await expect(picker).toContainText("This computer");
+        // The first click can land before the fixture finishes hydrating; reopen only while closed.
+        await expect(async () => {
+          if ((await page.getByRole("menu", { name: "Run on" }).count()) === 0) {
+            await picker.click();
+          }
+          await expect(page.getByRole("menuitemradio", { name: /Office Mac/ })).toBeVisible({
+            timeout: 1500,
+          });
+        }).toPass({ timeout: 10_000 });
+        await expect(page.getByRole("menuitemradio", { name: /Build PC.*Offline/ })).toBeDisabled();
+        if (width === 1280) await expect(page.locator(".crew-scene")).toBeVisible();
+        const choices = page.getByRole("menu", { name: "Run on" });
+        await expect
+          .poll(async () => {
+            const trigger = (await picker.boundingBox())!;
+            const list = (await choices.boundingBox())!;
+            return Math.min(
+              Math.abs(list.y - trigger.y - trigger.height),
+              Math.abs(trigger.y - list.y - list.height),
+            );
+          })
+          .toBeLessThan(18);
+        await page.screenshot({
+          path: `temp/verification/session-machine-selection/${kind}-${light ? "light" : "dark"}-${width}.png`,
+        });
+        await page.getByRole("menuitemradio", { name: /Office Mac/ }).click();
+        await expect
+          .poll(() => page.evaluate(() => window.sessionUsability.events.machine))
+          .toBe("office");
+        const editor = page.locator("[data-composer-box] textarea");
+        await expect(editor).toHaveValue("Keep this integrated draft");
+        await expect(editor).toBeFocused();
+        await picker.evaluate((trigger: HTMLButtonElement) => trigger.click());
+        await expect(choices).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(choices).toHaveCount(0);
+        await expect(editor).toBeFocused();
+      });
+
+for (const light of [true, false])
+  for (const width of [800, 1280])
+    test(`earlier history scroll ${light ? "light" : "dark"} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/sessions/session-usability.html?historyFixture${light ? "&light" : ""}`,
+      );
+      const transcript = page.locator(".agent-transcript");
+      const firstRecent = transcript.locator('[data-transcript-turn="history-12"]');
+      const firstOld = transcript.locator('[data-transcript-turn="history-0"]');
+      const loading = transcript.getByText("Loading earlier messages…");
+      const rail = page.getByRole("toolbar", { name: "Prompts", exact: true });
+      const marker = rail.locator('[data-prompt-bar="history-12"]');
+      const folder = "temp/verification/prompt-outline-prepend";
+      const name = `${light ? "light" : "dark"}-${width}`;
+      await expect(transcript.getByText("Response 16", { exact: true })).toBeVisible();
+      // The tail paints first. Until the first local turn is mounted, scrolling
+      // reveals more local turns before it can request the stored history page.
+      await expect(firstRecent).toBeAttached();
+      await expect(firstOld).toHaveCount(0);
+      expect(await page.evaluate(() => window.sessionUsability.events.historyPages)).toBe(0);
+      await transcript.hover();
+      await page.mouse.wheel(0, -2400);
+      await expect(loading).toBeVisible();
+      await expect.poll(() => transcript.evaluate((element) => element.scrollTop)).toBe(0);
+      const before = (await firstRecent.boundingBox())!.y;
+      const markerBefore = width === 1280 ? (await marker.boundingBox())!.y : null;
+      await page.screenshot({ path: `${folder}/loading-${name}.png` });
+      await page.evaluate(() => window.sessionUsability.finishHistoryPage());
+      await expect(firstOld).toHaveCount(1);
+      await expect(loading).toHaveCount(0);
+      expect(await page.evaluate(() => window.sessionUsability.events.historyPages)).toBe(1);
+      await expect
+        .poll(async () => Math.abs((await firstRecent.boundingBox())!.y - before))
+        .toBeLessThan(2);
+      await page.screenshot({ path: `${folder}/loaded-${name}.png` });
+      if (markerBefore !== null) {
+        await expect(marker).toHaveAttribute("aria-current", "true");
+        await expect
+          .poll(async () => Math.abs((await marker.boundingBox())!.y - markerBefore))
+          .toBeLessThan(2);
+        await transcript.hover();
+        await page.mouse.wheel(0, -2400);
+        await expect(rail.locator('[data-prompt-bar="history-0"]')).toHaveAttribute(
+          "aria-current",
+          "true",
+        );
+        await page.screenshot({ path: `${folder}/earlier-${name}.png` });
+      } else await expect(rail).toBeHidden();
+    });
+
+for (const light of [true, false])
+  test(`earlier history loads after a slow animated wheel scroll ${light ? "light" : "dark"} 1280`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(
+      `/tests/browser/sessions/session-usability.html?historyFixture${light ? "&light" : ""}`,
+    );
+    const transcript = page.locator(".agent-transcript");
+    await expect(transcript.getByText("Response 16", { exact: true })).toBeVisible();
+    await expect(transcript.locator('[data-transcript-turn="history-12"]')).toBeAttached();
+    expect(await page.evaluate(() => window.sessionUsability.events.historyPages)).toBe(0);
+    await transcript.hover();
+    // One upward wheel event starts the motion, then the engine animates it: WebKit on CI took
+    // over a second, so the top was only reached after the wheel's input window. The wheel is
+    // dispatched in the page so no second, engine-owned wheel animation competes with this one.
+    const animatedFrom = await transcript.evaluate(
+      (element) =>
+        new Promise<number>((resolve) => {
+          element.dispatchEvent(
+            new WheelEvent("wheel", { deltaY: -1, bubbles: true, cancelable: true }),
+          );
+          // From the end (about 760px) the 320px load threshold is crossed after about 1.7s,
+          // well past the 1s input window; the CI screencast was still near the end at 1s.
+          const from = element.scrollTop;
+          const started = performance.now();
+          const step = () => {
+            const progress = Math.min(1, (performance.now() - started) / 3000);
+            element.scrollTop = Math.round(from * (1 - progress));
+            if (progress < 1) requestAnimationFrame(step);
+            else resolve(from);
+          };
+          requestAnimationFrame(step);
+        }),
+    );
+    // The motion starts from the end, far above the load threshold.
+    expect(animatedFrom).toBeGreaterThan(600);
+    await expect(transcript.getByText("Loading earlier messages…")).toBeVisible();
+    expect(await page.evaluate(() => window.sessionUsability.events.historyPages)).toBe(1);
+    await page.evaluate(() => window.sessionUsability.finishHistoryPage());
+    await expect(transcript.locator('[data-transcript-turn="history-0"]')).toHaveCount(1);
+  });
+
+for (const light of [true, false])
+  test(`earlier history loads when a wheel scroll paints no frame for seconds ${light ? "light" : "dark"} 1280`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(
+      `/tests/browser/sessions/session-usability.html?historyFixture${light ? "&light" : ""}`,
+    );
+    const transcript = page.locator(".agent-transcript");
+    await expect(transcript.getByText("Response 16", { exact: true })).toBeVisible();
+    await expect(transcript.locator('[data-transcript-turn="history-12"]')).toBeAttached();
+    expect(await page.evaluate(() => window.sessionUsability.events.historyPages)).toBe(0);
+    // CI Linux WebKit under load: after the wheel no frame was painted for 1-3s, then one
+    // frame moved a little, then none for seconds again until a frame landed on the top. A
+    // busy main thread stalls frames the same way in every engine.
+    const offsets = await transcript.evaluate(
+      (element) =>
+        new Promise<number[]>((resolve) => {
+          const stall = (ms: number) => {
+            const until = performance.now() + ms;
+            while (performance.now() < until);
+          };
+          const from = element.scrollTop;
+          element.dispatchEvent(
+            new WheelEvent("wheel", { deltaY: -1, bubbles: true, cancelable: true }),
+          );
+          stall(1500);
+          element.scrollTop = from - 40;
+          requestAnimationFrame(() => {
+            const middle = element.scrollTop;
+            stall(1500);
+            element.scrollTop = 0;
+            requestAnimationFrame(() => resolve([from, middle, element.scrollTop]));
+          });
+        }),
+    );
+    expect(offsets[0]).toBeGreaterThan(600);
+    expect(offsets[1]).toBeGreaterThan(320);
+    expect(offsets[2]).toBe(0);
+    await expect(transcript.getByText("Loading earlier messages…")).toBeVisible();
+    expect(await page.evaluate(() => window.sessionUsability.events.historyPages)).toBe(1);
+    await page.evaluate(() => window.sessionUsability.finishHistoryPage());
+    await expect(transcript.locator('[data-transcript-turn="history-0"]')).toHaveCount(1);
+  });
+
 for (const light of [true, false])
   for (const width of [800, 1280])
     test(`session review caller visual ${light ? "light" : "dark"} ${width}`, async ({ page }) => {
@@ -7,11 +212,58 @@ for (const light of [true, false])
       await page.goto(
         `/tests/browser/sessions/session-usability.html?reviewFixture${light ? "&light" : ""}`,
       );
-      await expect(page.locator("[data-session-review]")).toContainText("Changed 1 file");
+      await page.addStyleTag({
+        content:
+          ".agent-transcript { background-image: radial-gradient(ellipse at 70% 25%, var(--ui-tone-info-subtle), transparent 75%); }",
+      });
+      await expect(page.locator("[data-session-review]")).toContainText("1 file changed");
+      const review = page.getByRole("button", { name: "Review", exact: true });
+      const undo = page.getByRole("button", { name: "Undo", exact: true });
+      await expect(undo).toBeDisabled();
+      await expect(undo).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      const undoSurface = page.locator("[data-session-review-actions] [data-ui-focus-group] > div");
+      const file = page.locator(".agent-markdown code").filter({ hasText: "src/example.ts" });
+      await expect(file).toBeVisible();
+      for (const [name, control] of Object.entries({ review, undoSurface, file })) {
+        const alpha = await control.evaluate((element) => {
+          const canvas = document.createElement("canvas");
+          const context = canvas.getContext("2d")!;
+          context.fillStyle = getComputedStyle(element).backgroundColor;
+          context.fillRect(0, 0, 1, 1);
+          return context.getImageData(0, 0, 1, 1).data[3];
+        });
+        expect(alpha, name).toBeGreaterThan(0);
+        // The Undo morph is a field-like control on the shared muted fill, which is opaque by design.
+        if (name !== "undoSurface") expect(alpha, name).toBeLessThan(255);
+      }
       await page.screenshot({
         path: `temp/verification/sessions-callers/session-review-${light ? "light" : "dark"}-${width}.png`,
       });
     });
+
+for (const directory of ["scratch-missing", "scratch-present"]) {
+  test(`settled projectless session skips checkpoint review with ${directory}`, async ({
+    page,
+  }) => {
+    await page.goto(`/tests/browser/sessions/session-usability.html?reviewFixture=${directory}`);
+    await expect(page.getByText("The report is ready for review.", { exact: false })).toBeVisible();
+    await expect(page.locator("[data-session-review-shell]")).toHaveCount(0);
+    await expect(page.getByText("Could not load the changes.", { exact: true })).toHaveCount(0);
+    await expect(page.getByText(/\.bycoda-host\/scratch\/session-/)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => window.sessionUsability.events.checkpointReads)).toBe(0);
+  });
+}
+
+test("worktree checkpoint review recovers automatically while recording", async ({ page }) => {
+  await page.goto("/tests/browser/sessions/session-usability.html?reviewFixture=worktree-busy");
+  await expect(page.locator("[data-session-review]")).toContainText("1 file changed");
+  expect(await page.evaluate(() => window.sessionUsability.events.checkpointReads)).toBe(2);
+  expect(await page.evaluate(() => window.sessionUsability.events.checkpointDirectories)).toEqual([
+    "/fixture-worktree",
+    "/fixture-worktree",
+  ]);
+});
 
 for (const light of [true, false])
   for (const width of [800, 1280])
@@ -21,6 +273,8 @@ for (const light of [true, false])
         `/tests/browser/sessions/session-usability.html?accountFixture${light ? "&light" : ""}`,
       );
       await page.getByRole("button", { name: /Claude Code Claude Sonnet research model/ }).click();
+      // Accounts sit behind one collapsed control in the picker; open it to reach them.
+      await page.getByRole("button", { name: "Accounts", exact: true }).click();
       await expect(page.getByText("Work", { exact: true })).toBeVisible();
       await page.screenshot({
         path: `temp/verification/sessions-callers/model-accounts-${light ? "light" : "dark"}-${width}.png`,
@@ -48,7 +302,8 @@ for (const light of [true, false])
       await expect(page.getByRole("dialog")).toBeVisible();
       await page.screenshot({ path: `${folder}/attachment-preview-${theme}-${width}.png` });
       await page.keyboard.press("Escape");
-      await page.getByRole("button", { name: "Find in conversation", exact: true }).click();
+      await page.getByRole("button", { name: "More actions", exact: true }).click();
+      await page.getByRole("menuitem", { name: /Find in conversation/ }).click();
       await expect(page.getByRole("textbox", { name: "Find in conversation" })).toBeVisible();
       await page.screenshot({ path: `${folder}/find-${theme}-${width}.png` });
       await page.keyboard.press("Escape");
@@ -121,6 +376,11 @@ for (const light of [false, true]) {
       await page.keyboard.press("Escape");
       await expect(addMenu).toHaveCount(0);
       await expect(addTrigger).toBeFocused();
+      // A narrow composer moves Mode into the model panel's Settings tab.
+      if (width < 1000) {
+        await expect(trigger).toHaveCount(0);
+        continue;
+      }
 
       await trigger.focus();
       await trigger.press("ArrowDown");
@@ -158,7 +418,8 @@ for (const light of [false, true]) {
     page,
   }, info) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.setViewportSize({ width: 390, height: 800 });
+    // The narrowest pane that still keeps Mode in the composer toolbar.
+    await page.setViewportSize({ width: 520, height: 800 });
     await page.goto(
       `/tests/browser/sessions/session-usability.html?lang=tr${light ? "&light" : ""}`,
     );
@@ -186,7 +447,7 @@ for (const light of [false, true]) {
     });
     expect(fits).toBe(true);
     await page.screenshot({
-      path: info.outputPath("composer-menu-tr-390.png"),
+      path: info.outputPath("composer-menu-tr-520.png"),
     });
     await menu.getByRole("menuitemcheckbox", { name: "Plan modu", exact: true }).click();
     await expect(page.getByRole("textbox")).toHaveValue("Keep this integrated draft");
@@ -230,12 +491,13 @@ for (const light of [false, true]) {
     expect(await page.evaluate(() => window.sessionUsability.events.sends)).toBe(1);
     await page.evaluate(() => window.sessionUsability.mode("working"));
     await page.setViewportSize({ width: 320, height: 800 });
-    const stop = page.getByRole("button", { name: "Stop", exact: true });
-    await expect(stop).toBeInViewport();
+    // With a draft, a narrow pane shows Queue and Send; the Stop shortcut still interrupts.
+    await expect(page.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Queue message", exact: true })).toBeInViewport();
     await page.screenshot({
       path: info.outputPath("integrated-working-320.png"),
     });
-    await stop.press("Enter");
+    await input.press("Escape");
     expect(await page.evaluate(() => window.sessionUsability.events.stops)).toBe(1);
     await expect(input).toHaveValue("Keep this changed draft");
     await page.evaluate(() => window.sessionUsability.remount());
@@ -256,19 +518,25 @@ for (const light of [false, true]) {
       "data-delivery-progress",
       "unknown",
     );
-    await expect(page.getByRole("button", { name: "Resume", exact: true })).toBeDisabled();
+    // An unconfirmed row is settled by the owner's explicit choice on that row, never by a blind
+    // header Resume: Resume is absent, and "Send again" is the only way to resend it.
+    await expect(page.getByRole("button", { name: "Resume", exact: true })).toHaveCount(0);
     await expect(input).toHaveValue("Keep this changed draft");
-    // The unconfirmed message stays visible in the queue and in the delivery notice that settles it.
+    // The unconfirmed message stays visible in its queue row, which carries the settling control (the pane banner steps aside).
     const retained = "Retained follow-up with unknown delivery";
     const queueRows = page.locator("[data-message-queue-rows]");
+    await expect(queueRows.getByRole("button", { name: "Send again", exact: true })).toHaveCount(1);
     const queuedMessage = queueRows.getByText(retained, { exact: true });
     await expect(queuedMessage).toHaveCount(1);
     await expect(queuedMessage).toBeVisible();
     await expect(
       queueRows.getByRole("button", { name: "Remove queued message", exact: true }),
     ).toHaveCount(1);
+    // The row's own delivery control is where the owner settles it; nothing was resent meanwhile.
     await expect(
-      page.locator("[data-delivery-progress]").getByText(retained, { exact: true }),
+      page
+        .locator("[data-delivery-progress]")
+        .getByRole("button", { name: "Send again", exact: true }),
     ).toBeVisible();
     expect(await page.evaluate(() => window.sessionUsability.events.queueAttempts)).toBe(0);
     await page.screenshot({
@@ -315,7 +583,8 @@ for (const mode of ["folders", "imports"] as const)
 test("focused dialog tooltip does not block adjacent filters", async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 900 });
   await page.goto("/tests/browser/sessions/session-usability.html?controlDialogs=imports&light");
-  await expect(page.getByRole("tooltip").filter({ hasText: "Close" })).toBeVisible();
+  // An icon-only Close carries no hint, so nothing floats over the neighbouring filter control.
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
   await page.getByRole("button", { name: "Conversation filters" }).click({ timeout: 3000 });
   await expect(page.getByRole("switch", { name: /Show automation runs/ })).toBeVisible();
 });
@@ -328,8 +597,14 @@ for (const theme of ["light", "dark"])
         `/tests/browser/sessions/session-usability.html?controlDialogs=imports${theme === "light" ? "&light" : ""}`,
       );
       await page.getByRole("button", { name: "Import 1" }).click();
-      await expect(page.getByText("Fixture transcript unavailable")).toBeVisible();
+      await expect(page.getByText("The conversation could not be imported.")).toBeVisible();
       await expect(page.getByText("Conversations that could not be imported: 1")).toBeVisible();
+      // The raw reason waits behind the shared Details control.
+      await page.getByRole("button", { name: /^Details/ }).click();
+      await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText(
+        "Fixture transcript unavailable",
+      );
+      await page.keyboard.press("Escape");
       await page.screenshot({
         animations: "disabled",
         path: `temp/verification/feature-controls/import-failure-${theme}-${width}.png`,
@@ -344,7 +619,10 @@ test("import folder separators follow present and missing composition", async ({
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByRole("button", { name: /project.*1/ })).toBeVisible();
     if (mode === "mixed") await dialog.getByRole("button", { name: /Missing folders/ }).click();
-    const sections = dialog.locator('section[data-surface-edge="bottom"]');
+    // The provider group wraps its folders in one more section; only the folders are measured.
+    const sections = dialog.locator(
+      'section[data-surface-edge="bottom"] section[data-surface-edge="bottom"]',
+    );
     await expect(sections).toHaveCount(mode === "mixed" ? 4 : 2);
     const borders = await sections.evaluateAll((nodes) =>
       nodes.map((node) => getComputedStyle(node).borderBottomWidth),
@@ -422,12 +700,12 @@ for (const light of [true, false])
       await row.locator("summary").click();
       const text = row.getByText("Continue the retained draft.");
       await expect(text).toBeVisible();
-      await expect(text).toHaveCSS("padding-inline-start", "28px");
+      await expect(text).toHaveCSS("padding-inline-start", "16px");
       await row.screenshot({ path: info.outputPath(`resume-${light}-${width}.png`) });
     });
 for (const light of [true, false])
   for (const width of [800, 1280])
-    test(`project background and mascot ${light ? "light" : "dark"} ${width}`, async ({
+    test(`project background and Codex usage ${light ? "light" : "dark"} ${width}`, async ({
       page,
     }, info) => {
       await page.setViewportSize({ width, height: 900 });
@@ -452,12 +730,24 @@ for (const light of [true, false])
       await expect(swatch).toHaveCSS("background-color", "rgb(18, 52, 86)");
       await swatch.screenshot({ path: info.outputPath(`project-swatch-${light}-${width}.png`) });
       await page.goto(
-        `/tests/browser/sessions/session-usability.html?projectVisual=mascot${suffix}`,
+        `/tests/browser/sessions/session-usability.html?projectVisual=usage${suffix}`,
       );
       await page.getByRole("button", { name: "Codex usage details" }).click();
-      const mascot = page.locator('[data-reset-mascot-mood="happy"] svg');
-      await expect(mascot).toBeVisible();
-      await mascot.screenshot({ path: info.outputPath(`project-mascot-${light}-${width}.png`) });
+      const usage = page.getByRole("dialog", { name: "Codex usage details" });
+      const resetIcon = usage.locator("[data-quota-reset-icon]");
+      await expect(resetIcon).toBeVisible();
+      await expect(resetIcon).toHaveCSS("mask-image", /quota-reset\.png/);
+      const heading = usage.getByRole("heading", { name: "Codex usage", exact: true });
+      const refresh = usage.getByRole("button", { name: "Refresh usage" });
+      await expect(refresh).toBeVisible();
+      await usage.screenshot({ path: info.outputPath(`codex-usage-${light}-${width}.png`) });
+      const headingBox = (await heading.boundingBox())!;
+      const refreshBox = (await refresh.boundingBox())!;
+      // Refresh is the trailing icon under the limit rows, inside the dialog and right-aligned.
+      const usageBox = (await usage.boundingBox())!;
+      expect(refreshBox.y).toBeGreaterThan(headingBox.y + headingBox.height);
+      expect(refreshBox.x + refreshBox.width).toBeLessThanOrEqual(usageBox.x + usageBox.width);
+      expect(refreshBox.x).toBeGreaterThan(usageBox.x + usageBox.width / 2);
     });
 for (const light of [true, false])
   for (const width of [800, 1280])
@@ -494,3 +784,62 @@ for (const width of [800, 1280]) {
     expect(errors).toEqual([]);
   });
 }
+
+test("a referenced draft with one very long wrapped line keeps its caret in view and its undo", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 850 });
+  await page.goto("/tests/browser/sessions/session-usability.html?machineFixture=project");
+  const field = page.locator("[data-composer-box] textarea");
+  const editor = page.locator("[data-composer-box] .cm-editor");
+  const link = "https://example.com/fixture ";
+  await field.fill(link);
+  await expect(editor).toHaveCount(1);
+  // Cross the long-line limit inside the editor, then undo and redo the insertion.
+  const rest = "a b ".repeat(16384).slice(0, 65536 - link.length);
+  const draft = link + rest;
+  await page.locator("[data-composer-box] .cm-content").click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.insertText(rest);
+  await expect(editor).toHaveCount(0);
+  await expect(field).toBeVisible();
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue(draft);
+  // The caret line counts as in view when at least half of it is: its glyphs sit centred in the
+  // line box, so the scroll offset beside the padding depends on the font (about 1px on Windows,
+  // 3px with the Linux fallback font), never on the layout under test.
+  const atBottom = () =>
+    field.evaluate(
+      (input) =>
+        input.scrollHeight - input.scrollTop - input.clientHeight <=
+        parseFloat(getComputedStyle(input).paddingBottom) +
+          parseFloat(getComputedStyle(input).lineHeight) / 2,
+    );
+  await expect.poll(atBottom).toBe(true);
+  await page.keyboard.press("Control+z");
+  await expect(field).toHaveValue(link);
+  await page.keyboard.press("Control+Shift+z");
+  await expect(field).toHaveValue(draft);
+  await field.focus();
+  await page.keyboard.press("Control+Home");
+  await expect
+    .poll(() =>
+      field.evaluate(
+        (input: HTMLTextAreaElement) =>
+          input.selectionEnd === 0 &&
+          input.scrollTop <=
+            parseFloat(getComputedStyle(input).paddingTop) +
+              parseFloat(getComputedStyle(input).lineHeight) / 2,
+      ),
+    )
+    .toBe(true);
+  await page.keyboard.press("Control+End");
+  await expect.poll(atBottom).toBe(true);
+  expect(await field.evaluate((input: HTMLTextAreaElement) => input.selectionEnd)).toBe(
+    draft.length,
+  );
+  await page.keyboard.type("xy");
+  await expect(field).toHaveValue(draft + "xy");
+  await expect.poll(atBottom).toBe(true);
+  await expect(editor).toHaveCount(0);
+});

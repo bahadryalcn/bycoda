@@ -17,6 +17,21 @@
   background: transparent;
   filter: var(--crew-figure-rim);
 }
+/* While typing, a still of the live canvas with the rim baked in replaces it: the CSS rim filter is
+   re-run by software compositing on every page frame, an unfiltered canvas costs nothing. */
+.crew-scene .crew-scene__still {
+  display: none;
+  position: absolute;
+  inset: 0;
+  block-size: 100%;
+  filter: none;
+}
+.crew-scene[data-still] .crew-scene__still {
+  display: block;
+}
+.crew-scene[data-still] canvas:not(.crew-scene__still) {
+  visibility: hidden;
+}
 .crew-scene__stage {
   position: relative;
   container-type: inline-size;
@@ -33,57 +48,56 @@
   position: absolute;
   transform: translate(-50%, -100%);
   min-inline-size: 0;
-  white-space: nowrap;
-  overflow: clip;
-  text-overflow: ellipsis;
+  /* Names wrap inside the seat's column instead of clipping; the box grows upward above the figure. */
+  white-space: normal;
+  overflow-wrap: anywhere;
   text-align: center;
   font-size: var(--ui-font-scene-label);
   line-height: 1.2;
   letter-spacing: 0.02em;
-  color: currentColor;
-  opacity: 0.45;
+  /* Secondary text keeps idle captions legible in the hero scene. */
+  color: var(--ui-text-secondary);
 }
 @media (prefers-reduced-motion: no-preference) {
   .crew-scene__label {
-    transition: opacity 0.3s ease-out;
+    transition: color 0.3s ease-out;
   }
 }
 .crew-scene__label[data-working="true"] {
-  opacity: 1;
+  color: currentColor;
   font-weight: 500;
+}
+.crew-scene--hero .crew-scene__label[data-clipped] {
+  pointer-events: auto;
 }
 .crew-scene--background .crew-scene__label {
   font-size: var(--ui-font-scene-label-small);
-  opacity: 0.5;
-}
-.crew-scene--background .crew-scene__label[data-working="true"] {
-  opacity: 0.9;
 }
 .crew-scene--hero {
   opacity: 1;
 }
 .crew-scene--background {
-  opacity: 0.28;
   max-inline-size: 1280px;
 }
+/* Backdrop captions are decorative and should recede behind the conversation. */
+.crew-scene--background canvas,
+.crew-scene--background .crew-scene__labels {
+  opacity: 0.28;
+}
 .crew-scene:is([data-theme="star-wars"], [data-theme="lotr"]) .crew-scene__label {
-  opacity: 0.85;
   line-height: 1.4;
 }
-.crew-scene:is([data-theme="star-wars"], [data-theme="lotr"])
-  .crew-scene__label[data-working="true"] {
-  opacity: 1;
-}
 .crew-scene__name {
-  display: block;
-  overflow: clip;
-  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
   font-weight: 500;
 }
 .crew-scene__detail {
   display: block;
   font-size: 0.85em;
-  opacity: 0.65;
+  color: var(--ui-text-secondary);
   overflow: clip;
   text-overflow: ellipsis;
   font-variant-numeric: tabular-nums;
@@ -103,7 +117,8 @@
   opacity: 0.75;
 }
 .crew-scene__theme-title {
-  margin-block-end: 16px;
+  /* Wrapped labels grow upward past the stage's top edge; this gap keeps them below the title. */
+  margin-block-end: 36px;
   text-align: center;
   color: currentColor;
   opacity: 0.7;

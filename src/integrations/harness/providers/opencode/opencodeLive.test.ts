@@ -25,6 +25,8 @@ let v2SessionDirectory = "/repo";
 let v2ForkDirectory: string | undefined;
 let v2MoveApplies = true;
 let v2ForkFailure: { status: number; body: string } | undefined;
+let archiveTime: number | undefined;
+let archiveApplies = true;
 const spawnChild = vi.fn(async () => {
   onStdout?.("opencode server listening on http://127.0.0.1:4096");
 });
@@ -37,16 +39,29 @@ const harnessHttp = vi.fn(
     body?: string;
   }): Promise<{ status: number; body: string }> => {
     const url = new URL(input.url);
+    if (input.method === "POST" && url.pathname === "/api/session/session_1/generate") {
+      return { status: 200, body: JSON.stringify({ data: { text: "answer" } }) };
+    }
     // v2 reports a session's folder only under `location`.
     const v2Session = (id: string, directory: string) => ({
       status: 200,
-      body: JSON.stringify({ data: { id, location: { directory } } }),
+      body: JSON.stringify({
+        data: { id, location: { directory }, time: { archived: archiveTime } },
+      }),
     });
     if (input.method === "POST" && url.pathname === "/api/session") {
       return v2Session("session_1", url.searchParams.get("directory") ?? "");
     }
     if (input.method === "GET" && url.pathname === "/api/session/session_1") {
       return v2Session("session_1", v2SessionDirectory);
+    }
+    if (input.method === "PATCH" && /^\/(?:api\/)?session\/session_1$/.test(url.pathname)) {
+      const body = JSON.parse(input.body ?? "{}") as {
+        archived?: boolean;
+        time?: { archived?: number };
+      };
+      if (archiveApplies) archiveTime = (body.archived ? 1 : body.time?.archived) ?? archiveTime;
+      return { status: 204, body: "" };
     }
     if (input.method === "POST" && url.pathname === "/api/session/session_1/fork") {
       if (v2ForkFailure) return v2ForkFailure;
@@ -71,7 +86,11 @@ const harnessHttp = vi.fn(
     ) {
       return {
         status: 200,
-        body: JSON.stringify({ id: "session_1", directory: "/repo" }),
+        body: JSON.stringify({
+          id: "session_1",
+          directory: "/repo",
+          time: { archived: archiveTime },
+        }),
       };
     }
     if (input.method === "GET" && url.pathname === "/session/session_1/message") {
@@ -141,7 +160,6 @@ vi.mock("../../core/child", () =>
         : args[1] === "get"
           ? "secret"
           : "http://127.0.0.1:4096",
-    freeHarnessPort: async () => 4096,
     harnessHttp,
     captureHostHarnessHttp,
     killChild,
@@ -189,13 +207,18 @@ const waitFor = async (predicate: () => boolean, label: string) => {
 
 function turn(
   events: HarnessEvent[],
-  options: { runtimeMode?: RuntimeMode; onAccepted?: () => void } = {},
+  options: {
+    runtimeMode?: RuntimeMode;
+    onAccepted?: () => void;
+    archiveDelegateHistory?: boolean;
+  } = {},
 ) {
   return sendOpenCodeTurn({
     sessionId: "opencode-live",
     cwd: "/repo",
     model: "opencode:openrouter/anthropic/claude-sonnet-4.6",
     runtimeMode: options.runtimeMode ?? "supervised",
+    archiveDelegateHistory: options.archiveDelegateHistory,
     text: "delegate the investigation",
     attachments: [],
     onAccepted: options.onAccepted,
@@ -256,6 +279,8 @@ beforeEach(() => {
   v2ForkDirectory = undefined;
   v2MoveApplies = true;
   v2ForkFailure = undefined;
+  archiveTime = undefined;
+  archiveApplies = true;
   spawnChild.mockClear();
   killChild.mockClear();
   closeHarnessSse.mockClear();
@@ -269,6 +294,185 @@ beforeEach(() => {
 afterEach(async () => {
   await stopOpenCodeSession("opencode-live");
   __openCodeTestReset();
+});
+
+it.each([
+  { version: "opencode v2.3.2", route: "/api/session", prompt: "prompt", body: { archived: true } },
+  {
+    version: "opencode 1.14.19",
+    route: "/session",
+    prompt: "prompt_async",
+    body: { time: { archived: expect.any(Number) } },
+  },
+])(
+  "archives an OpenCode $version delegate before the first prompt",
+  async ({ version, route, prompt, body }) => {
+    openCodeVersion = version;
+    const done = turn([], { archiveDelegateHistory: true });
+    void done.catch(() => undefined);
+    const requests = () =>
+      harnessHttp.mock.calls.map(([request]) => ({
+        ...request,
+        path: new URL(request.url).pathname,
+      }));
+    await waitFor(
+      () => requests().some(({ path }) => path === `${route}/session_1/${prompt}`),
+      "prompt",
+    );
+    const requestsToSession = requests().filter(({ path }) => path.startsWith(route));
+    expect(requestsToSession.slice(0, 3).map(({ method, path }) => [method, path])).toEqual([
+      ["POST", route],
+      ["PATCH", `${route}/session_1`],
+      ["GET", `${route}/session_1`],
+    ]);
+    expect(JSON.parse(requestsToSession[1].body ?? "{}")).toEqual(body);
+    await cancelOpenCodeTurn("opencode-live");
+    await done;
+  },
+);
+
+it("withholds prompts when OpenCode does not confirm the archive", async () => {
+  openCodeVersion = "opencode v2.3.2";
+  archiveApplies = false;
+  const done = turn([], { archiveDelegateHistory: true });
+  await expect(done).rejects.toThrow(
+    "OpenCode did not confirm that the delegated session was archived",
+  );
+  expect(harnessHttp.mock.calls.some(([{ url }]) => url.includes("/prompt"))).toBe(false);
+  expect(harnessHttp.mock.calls.some(([{ method }]) => method === "DELETE")).toBe(false);
+});
+
+it("resumes the exact archived OpenCode delegate without creating or re-archiving a session", async () => {
+  openCodeVersion = "opencode v2.3.2";
+  archiveTime = 42;
+  bindOpenCodeSession("opencode-live", "session_1", "/repo");
+  const done = turn([], { archiveDelegateHistory: true });
+  void done.catch(() => undefined);
+  await waitFor(
+    () => harnessHttp.mock.calls.some(([{ url }]) => url.includes("/session_1/prompt")),
+    "resumed prompt",
+  );
+  expect(
+    harnessHttp.mock.calls.some(
+      ([{ method, url }]) => method === "POST" && new URL(url).pathname === "/api/session",
+    ),
+  ).toBe(false);
+  expect(
+    harnessHttp.mock.calls.some(
+      ([{ method, body }]) => method === "PATCH" && JSON.parse(body ?? "{}").archived === true,
+    ),
+  ).toBe(false);
+  await cancelOpenCodeTurn("opencode-live");
+  await done;
+});
+
+it("fails closed before starting or steering an unisolated chat-only session", async () => {
+  const input = {
+    sessionId: "chat-only",
+    cwd: "/scratch",
+    model: "opencode:provider/model",
+    runtimeMode: "supervised" as const,
+    modelSettings: { leanContext: "on" },
+    text: "private brief",
+    attachments: [],
+    onEvent: () => {},
+  };
+  await expect(sendOpenCodeTurn(input)).rejects.toThrow(
+    "OpenCode chat-only history is unavailable",
+  );
+  await expect(steerOpenCodeTurn(input)).rejects.toThrow(
+    "OpenCode chat-only generation cannot be steered",
+  );
+  await expect(compactOpenCodeContext(input)).rejects.toThrow(
+    "does not support provider compaction",
+  );
+  await expect(rewindOpenCodeLastTurn(input)).rejects.toThrow("does not support provider rewind");
+  expect(spawnChild).not.toHaveBeenCalled();
+  expect(harnessHttp).not.toHaveBeenCalled();
+});
+
+it("uses tool-free v2 generation with Host history for chat-only replies", async () => {
+  openCodeVersion = "opencode 2.3.2";
+  const events: HarnessEvent[] = [];
+  const input = {
+    sessionId: "opencode-live",
+    cwd: "/scratch",
+    model: "opencode:provider/model",
+    runtimeMode: "supervised" as const,
+    modelSettings: { leanContext: "on" },
+    chatOnlyHistory: "User: earlier\nAssistant: first answer",
+    text: "follow up",
+    attachments: [],
+    onEvent: (event: HarnessEvent) => events.push(event),
+  };
+  await sendOpenCodeTurn(input);
+  const calls = harnessHttp.mock.calls.map(([request]) => request);
+  const create = calls.find(
+    (request) => request.method === "POST" && new URL(request.url).pathname === "/api/session",
+  );
+  expect(JSON.parse(create?.body ?? "{}").permissions).toEqual([
+    { action: "*", resource: "*", effect: "deny" },
+  ]);
+  const generated = calls.find((request) => new URL(request.url).pathname.endsWith("/generate"));
+  expect(JSON.parse(generated?.body ?? "{}").prompt).toContain(
+    "Assistant: first answer\n\nCurrent user message:\nfollow up",
+  );
+  expect(calls.some((request) => new URL(request.url).pathname.endsWith("/prompt"))).toBe(false);
+  expect(events).toContainEqual({ type: "message.delta", text: "answer" });
+  await sendOpenCodeTurn({ ...input, chatOnlyHistory: "", text: "fresh" });
+  const generations = harnessHttp.mock.calls
+    .map(([request]) => request)
+    .filter((request) => new URL(request.url).pathname.endsWith("/generate"));
+  expect(JSON.parse(generations[1].body ?? "{}").prompt).toBe("fresh");
+});
+
+it("refuses chat-only generation on OpenCode v1 before creating a session", async () => {
+  await expect(
+    sendOpenCodeTurn({
+      sessionId: "opencode-live",
+      cwd: "/scratch",
+      model: "opencode:provider/model",
+      runtimeMode: "supervised",
+      modelSettings: { leanContext: "on" },
+      chatOnlyHistory: "",
+      text: "brief",
+      attachments: [],
+      onEvent: () => {},
+    }),
+  ).rejects.toThrow("requires OpenCode 2");
+  expect(spawnChild).not.toHaveBeenCalled();
+  expect(harnessHttp).not.toHaveBeenCalled();
+});
+
+it("does not deliver a late chat-only result after cancellation", async () => {
+  openCodeVersion = "opencode 2.3.2";
+  const original = harnessHttp.getMockImplementation()!;
+  let settle: ((value: { status: number; body: string }) => void) | undefined;
+  harnessHttp.mockImplementation((request) =>
+    new URL(request.url).pathname.endsWith("/generate")
+      ? new Promise((resolve) => {
+          settle = resolve;
+        })
+      : original(request),
+  );
+  const events: HarnessEvent[] = [];
+  const pending = sendOpenCodeTurn({
+    sessionId: "opencode-live",
+    cwd: "/scratch",
+    model: "opencode:provider/model",
+    runtimeMode: "supervised",
+    modelSettings: { leanContext: "on" },
+    chatOnlyHistory: "",
+    text: "brief",
+    attachments: [],
+    onEvent: (event) => events.push(event),
+  });
+  await waitFor(() => settle !== undefined, "chat-only generation");
+  await cancelOpenCodeTurn("opencode-live");
+  settle!({ status: 200, body: JSON.stringify({ data: { text: "late answer" } }) });
+  await pending;
+  expect(events).not.toContainEqual({ type: "message.delta", text: "late answer" });
+  harnessHttp.mockImplementation(original);
 });
 
 it("isolates v1 compaction settings and resumes the same conversation on changes and reset", async () => {
@@ -299,6 +503,31 @@ it("isolates v1 compaction settings and resumes the same conversation on changes
     idle();
     await turn;
   }
+});
+
+it("starts a v1 live server with an OS-assigned port, not a pre-probed one", async () => {
+  let accepted = false;
+  const turn = sendOpenCodeTurn({
+    sessionId: "opencode-live",
+    cwd: "/repo",
+    model: "opencode:openai/gpt-5",
+    runtimeMode: "supervised",
+    text: "test",
+    attachments: [],
+    modelSettings: { autoCompact: "default" },
+    onEvent: () => undefined,
+    onAccepted: () => {
+      accepted = true;
+    },
+  });
+  await vi.waitFor(() => expect(accepted).toBe(true));
+  expect((spawnChild.mock.calls.at(-1) as unknown[] | undefined)?.[2]).toEqual([
+    "serve",
+    "--hostname=127.0.0.1",
+    "--port=0",
+  ]);
+  idle();
+  await turn;
 });
 
 it("refuses a stale v1 compaction override on a shared v2 service", async () => {

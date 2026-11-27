@@ -16,7 +16,7 @@ import { NumberField } from "../../../shared/ui/NumberField";
 import { TextField } from "../../../shared/ui/TextField";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { errorText } from "./serverActionFeedback";
+import { errorText } from "../../../shared/lib/errors";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { updateServerMetadata, type ServerRecord } from "../model/serverInventory";
 import {
@@ -25,6 +25,9 @@ import {
   stopSshForward,
   validateForwardRule,
 } from "../model/sshForwards";
+
+/** Forwarding rules show a search field only past this many rules. */
+const SEARCH_FROM = 8;
 
 /** Saved rules belong to canonical records. Mounting/restoring never starts SSH. */
 export function ServerForwards({
@@ -47,7 +50,13 @@ export function ServerForwards({
     targetHost: "127.0.0.1",
     targetPort: "",
   });
-  const { statuses, statusError, verified, refresh } = useForwardStatuses(server.id, active);
+  // `statusMessage` is the status hook's own translated sentence, not raw error text.
+  const {
+    statuses,
+    statusError: statusMessage,
+    verified,
+    refresh,
+  } = useForwardStatuses(server.id, active);
   const [busyState, setBusyState] = useState({ source: server.id, value: "" });
   const [errorState, setErrorState] = useState({ source: server.id, value: "" });
   const busy = busyState.source === server.id ? busyState.value : "";
@@ -85,7 +94,7 @@ export function ServerForwards({
   const content = (
     <>
       <div className="mbs-3 flex min-w-0 flex-col gap-3">
-        {rules.length ? (
+        {rules.length > SEARCH_FROM || search ? (
           <SearchInput
             appearance="field"
             aria-label={t("Search forwarding rules")}
@@ -93,9 +102,10 @@ export function ServerForwards({
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
-        ) : (
+        ) : null}
+        {rules.length === 0 ? (
           <EmptyState size="inline" description={t("No forwarding rules yet.")} />
-        )}
+        ) : null}
         {rules.length > 0 && matchingRules.length === 0 ? (
           <EmptyState
             size="inline"
@@ -109,8 +119,13 @@ export function ServerForwards({
           const status = statuses.find((item) => item.id === runtimeId);
           const stopping = status?.state === "stopping";
           const unknown = status?.state === "unknown";
+          const reconnecting = status?.state === "reconnecting";
           const running =
-            status?.state === "running" || status?.state === "starting" || stopping || unknown;
+            status?.state === "running" ||
+            status?.state === "starting" ||
+            reconnecting ||
+            stopping ||
+            unknown;
           return (
             <div
               key={rule.id}
@@ -132,7 +147,11 @@ export function ServerForwards({
                 </Text>
                 {!verified || stopping || unknown ? (
                   <Badge size="sm" tone="neutral">
-                    {t(verified && stopping ? "Stopping" : "Status unknown")}
+                    {verified && stopping ? t("Stopping") : t("Status unknown")}
+                  </Badge>
+                ) : reconnecting ? (
+                  <Badge size="sm" tone="neutral">
+                    {t("Reconnecting…")}
                   </Badge>
                 ) : running ? (
                   <StatusBadge status="running" />
@@ -149,46 +168,52 @@ export function ServerForwards({
                   ? `SOCKS5 · 127.0.0.1:${rule.localPort}`
                   : `127.0.0.1:${rule.localPort} → ${rule.targetHost}:${rule.targetPort}`}
               </Text>
-              {status?.error ? <InlineError details={status.error} /> : null}
+              {status?.error ? (
+                <InlineError details={status.error}>{t("Port forwarding failed")}</InlineError>
+              ) : null}
               <div className="flex flex-wrap gap-2">
-                <Button
-                  loading={busy === rule.id}
-                  disabled={Boolean(busy) || stopping || !verified}
-                  onClick={() =>
-                    void run(rule.id, async () => {
-                      if (running) return stopSshForward(runtimeId);
-                      const endpoint = server.effectiveSshEndpoint ?? server.sshEndpoint;
-                      const ticket = endpoint
-                        ? await proxy.request({
-                            connectionId: server.id,
-                            endpoint,
-                            operation: {
-                              kind: "forward",
-                              id: runtimeId,
-                              forwardKind: rule.kind ?? "local",
-                              localPort: rule.localPort,
-                              targetHost: rule.targetHost,
-                              targetPort: rule.targetPort,
-                            },
-                          })
-                        : undefined;
-                      if (ticket === null) return;
-                      return ticket
-                        ? startSshForward(server.id, rule, ticket)
-                        : startSshForward(server.id, rule);
-                    })
-                  }
-                >
-                  {!verified
-                    ? t(statusError ? "Status unknown" : "Checking…")
-                    : stopping
+                {/* Until the status is verified the badge says so; no second "unknown" control. */}
+                {verified ? (
+                  <Button
+                    loading={busy === rule.id}
+                    disabled={Boolean(busy) || stopping}
+                    disabledReason={
+                      busy || stopping ? t("Wait for the current action to finish.") : undefined
+                    }
+                    onClick={() =>
+                      void run(rule.id, async () => {
+                        if (running) return stopSshForward(runtimeId);
+                        const endpoint = server.effectiveSshEndpoint ?? server.sshEndpoint;
+                        const ticket = endpoint
+                          ? await proxy.request({
+                              connectionId: server.id,
+                              endpoint,
+                              operation: {
+                                kind: "forward",
+                                id: runtimeId,
+                                forwardKind: rule.kind ?? "local",
+                                localPort: rule.localPort,
+                                targetHost: rule.targetHost,
+                                targetPort: rule.targetPort,
+                              },
+                            })
+                          : undefined;
+                        if (ticket === null) return;
+                        return ticket
+                          ? startSshForward(server.id, rule, ticket)
+                          : startSshForward(server.id, rule);
+                      })
+                    }
+                  >
+                    {stopping
                       ? t("Stopping")
                       : unknown
                         ? t("Retry stop")
                         : running
                           ? t("Stop")
                           : t("Start")}
-                </Button>
+                  </Button>
+                ) : null}
                 <span className="ms-auto">
                   <ConfirmMorph
                     label={t("Remove")}
@@ -293,24 +318,24 @@ export function ServerForwards({
                   }
                 />
               </>
-            ) : (
-              <Text wrap="anywhere" as="p" size="inherit" tone="muted">
-                SOCKS5 · 127.0.0.1:{draft.localPort || "…"}
-              </Text>
-            )}
-            <div className="col-span-full flex flex-wrap items-center justify-between gap-2">
-              <Text size="inherit" tone="muted">
-                {t("Loopback only. Start separately after saving.")}
-              </Text>
-              <Button type="submit" loading={busy === "save"} disabled={Boolean(busy)}>
+            ) : null}
+            <div className="col-span-full flex flex-wrap items-center justify-end gap-2">
+              <Button
+                type="submit"
+                loading={busy === "save"}
+                disabled={Boolean(busy)}
+                disabledReason={busy ? t("Wait for the current action to finish.") : undefined}
+              >
                 {t("Save rule")}
               </Button>
             </div>
           </form>
         </Disclosure>
-        {error ? <InlineError>{error}</InlineError> : null}
-        {statusError ? (
-          <InlineError retry={{ onRetry: () => refresh(server.id) }}>{statusError}</InlineError>
+        {error ? (
+          <InlineError details={error}>{t("Port forwarding action failed")}</InlineError>
+        ) : null}
+        {statusMessage ? (
+          <InlineError retry={{ onRetry: () => refresh(server.id) }}>{statusMessage}</InlineError>
         ) : null}
       </div>
     </>

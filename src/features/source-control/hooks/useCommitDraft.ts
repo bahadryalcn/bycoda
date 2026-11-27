@@ -53,8 +53,10 @@ export function useCommitDraft({
   // Generating reads the changes without touching the index, so it does not
   // take `busy` and files can be staged while it runs.
   const [generating, setGenerating] = useGitPanelState(cwd, "generating");
+  const [generationResult, setGenerationResult] = useGitPanelState(cwd, "generationResult");
   const [storedMessage, setStoredMessage] = useGitPanelState(cwd, "message");
   const [generationChoice] = useGitGenerationChoice(cwd);
+  const [commitGenerationChoice, setCommitGenerationChoice] = useGitGenerationChoice(cwd, "commit");
   const [storedAmendTarget, setStoredAmendTarget] = useGitPanelState(cwd, "amendTarget");
   // An amend belongs to the branch and HEAD it was started on. Once either
   // moves, it and its message no longer apply: they read as cleared here and
@@ -81,6 +83,15 @@ export function useCommitDraft({
   const clearDraft = () => {
     setStoredMessage("");
     setStoredAmendTarget(null);
+    setGenerationResult(null);
+  };
+
+  const dismissGenerationResult = () => setGenerationResult(null);
+  const useGeneratedMessage = () => {
+    const result = runtime.state.generationResult;
+    if (!result?.suggestion) return;
+    setMessage(result.suggestion);
+    setGenerationResult(result.changesUpdated ? { changesUpdated: true } : null);
   };
 
   const generate = async () => {
@@ -94,30 +105,33 @@ export function useCommitDraft({
     settleStaleAmend();
     const controller = new AbortController();
     const draft = runtime.state.message;
+    const amendTarget = runtime.state.amendTarget;
     const context = generationMutation.identity;
     const mutation = generationMutation.version;
     generateAbortRef.current = controller;
     setGenerating(true);
+    setGenerationResult(null);
     setGitFeedback(cwd, null);
     try {
-      const generated = generationChoice
-        ? await generateCommitMessage(cwd, textHarness, controller.signal, generationChoice)
+      const choice = commitGenerationChoice ?? generationChoice;
+      const generated = choice
+        ? await generateCommitMessage(cwd, textHarness, controller.signal, choice)
         : await generateCommitMessage(cwd, textHarness, controller.signal);
       if (!controller.signal.aborted && generateAbortRef.current === controller) {
+        if (!generated.trim())
+          throw new Error(t("The provider returned an empty commit message. Retry generation."));
+        const changesUpdated =
+          generationMutation.identity !== context || generationMutation.version !== mutation;
         if (
           runtime.state.message !== draft ||
-          generationMutation.identity !== context ||
-          generationMutation.version !== mutation
+          runtime.state.amendTarget !== amendTarget ||
+          (amendTarget !== null && generationMutation.identity !== context)
         ) {
-          setGitFeedback(cwd, {
-            kind: "info",
-            title: t("Draft or changes changed during generation. Generate again when ready."),
-          });
+          setGenerationResult({ changesUpdated, suggestion: generated });
           return;
         }
-        if (!generated.trim())
-          throw new Error("The provider returned an empty commit message. Retry generation.");
         setMessage(generated);
+        if (changesUpdated) setGenerationResult({ changesUpdated });
       }
     } catch (error) {
       if (!controller.signal.aborted) fail(error, "Couldn’t generate commit message");
@@ -174,8 +188,13 @@ export function useCommitDraft({
     message,
     setMessage,
     generating,
+    generationResult,
+    dismissGenerationResult,
+    useGeneratedMessage,
     amend,
     generationChoice,
+    commitGenerationChoice,
+    setCommitGenerationChoice,
     generate,
     cancelGenerate,
     toggleAmend,

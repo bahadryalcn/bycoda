@@ -3,10 +3,21 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { RevealedSetting, SettingsFeedback } from "../../../shared/ui/settings";
 import { Button } from "../../../shared/ui/Button";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { errorText } from "../../../shared/lib/errors";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { useContext, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useContext,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import {
   getHarnessAvailabilitySnapshot,
   isHarnessAvailable,
@@ -17,6 +28,16 @@ import { discoverAntigravityModels } from "../../../integrations/harness/provide
 import { setHarnessModels } from "../../sessions/public/models";
 import { Group } from "../../../shared/ui/settings";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
+
+const SLOT_PASSTHROUGH = { p0: "{p0}", p1: "{p1}", p2: "{p2}", p3: "{p3}" };
+
+/** Fills `{pN}` slots of an already translated sentence with nodes, keeping word order per locale. */
+function withSlots(sentence: string, slots: ReactNode[]): ReactNode[] {
+  return sentence.split(/(\{p\d\})/).map((part) => {
+    const slot = /^\{p(\d)\}$/.exec(part);
+    return slot ? (slots[Number(slot[1])] ?? part) : part || null;
+  });
+}
 
 export function AntigravityAccountSettings({ embedded = false }: { embedded?: boolean }) {
   useLocale();
@@ -29,37 +50,42 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
     setHandledReveal(revealed);
     if (revealed === "antigravity-account") setExpanded(true);
   }
-  const [status, setStatus] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ title: string; detail?: string } | null>(null);
   const busy = useRef(false);
   const available = isHarnessAvailable("antigravity");
 
-  async function checkInstallation() {
+  async function checkInstallation(force = true) {
     if (busy.current) return;
     busy.current = true;
     setChecking(true);
-    setStatus(null);
     setError(null);
     try {
-      await probeHarnessAvailability({ force: true });
-      if (!isHarnessAvailable("antigravity")) {
-        setStatus("Antigravity CLI was not found. Install it, then check again.");
+      await probeHarnessAvailability({ force });
+      if (!isHarnessAvailable("antigravity")) return;
+      const models = await discoverAntigravityModels();
+      if (!models.length) {
+        setError({
+          title: t(
+            "No Antigravity models were returned. Run agy in a terminal to sign in, then check again.",
+          ),
+        });
         return;
       }
-      const models = await discoverAntigravityModels();
-      if (!models.length)
-        throw new Error(
-          "No Antigravity models were returned. Run agy in a terminal to sign in, then check again.",
-        );
       setHarnessModels("antigravity", models);
-      setStatus("Antigravity models refreshed. Choose Antigravity in the model picker.");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not check Antigravity CLI.");
+      setError({ title: t("Could not check Antigravity CLI."), detail: errorText(reason) });
     } finally {
       busy.current = false;
       setChecking(false);
     }
   }
+
+  const autoCheck = useEffectEvent(() => void checkInstallation(false));
+  // Refresh the installation and catalog when setup is shown.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- checks the installed CLI when the account settings are visible
+  useEffect(() => {
+    if (!embedded || expanded) autoCheck();
+  }, [embedded, expanded]);
 
   const instructions = (
     <Text
@@ -68,12 +94,55 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
       tone="secondary"
       className={`space-y-3 ${embedded ? "" : "px-4 py-4"}`}
     >
-      <p>
-        {available
-          ? t("Antigravity is installed.")
-          : t("Install Antigravity CLI on the computer running your sessions.")}
-      </p>
-      {!available && (
+      <div className="flex items-center gap-1">
+        {!available && !checking ? (
+          <p>{t("Install Antigravity CLI on the computer running your sessions.")}</p>
+        ) : null}
+        <InfoPopover className="shrink-0" width={360}>
+          <p>
+            {withSlots(
+              t(
+                "Run {p0} in a terminal on that computer and complete Google sign-in in your browser. Then check again here. Installation and model discovery do not confirm account sign-in.",
+                SLOT_PASSTHROUGH,
+              ),
+              [
+                <Code key="agy" tone="primary" className="select-text">
+                  {"agy"}
+                </Code>,
+              ],
+            )}
+          </p>
+          <p>
+            {withSlots(
+              t(
+                "{p0} uses the shared Antigravity CLI account on this computer. Separate named Antigravity accounts cannot currently be added here. To change the shared account, run {p1} inside agy and complete sign-in again. This affects other Antigravity sessions on the same computer.",
+                SLOT_PASSTHROUGH,
+              ),
+              [PRODUCT_IDENTITY.displayName, <Code key="logout">{"/logout"}</Code>],
+            )}
+          </p>
+          <p>
+            {withSlots(
+              t(
+                "For a Gemini API key, set {p0} to {p1} in {p2} and provide {p3} in the CLI environment.",
+                SLOT_PASSTHROUGH,
+              ),
+              [
+                <Code key="provider">{"modelProvider"}</Code>,
+                <Code key="gemini">{"gemini"}</Code>,
+                <Code key="settings">{"~/.gemini/antigravity-cli/settings.json"}</Code>,
+                <Code key="key">{"GEMINI_API_KEY"}</Code>,
+              ],
+            )}
+          </p>
+          <p>
+            {t(
+              "Gemini CLI remains available for enterprise Gemini Code Assist licenses and supported API keys. Existing Gemini sessions and CLI paths are preserved.",
+            )}
+          </p>
+        </InfoPopover>
+      </div>
+      {!available && !checking && (
         <>
           <p>{t("Windows (PowerShell)")}</p>
           <Code variant="block" tone="primary">
@@ -85,45 +154,25 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
           </Code>
         </>
       )}
-      <p>
-        {t("Run ")}
-        <Code tone="primary" className="select-text">
-          {"agy"}
-        </Code>
-        {t(
-          " in a terminal on that computer and complete Google sign-in in your browser. Then check again here. Installation and model discovery do not confirm account sign-in.",
-        )}
-      </p>
-      <p>
-        {PRODUCT_IDENTITY.displayName}
-        {t(
-          " uses the shared Antigravity CLI account on this computer. Separate named Antigravity accounts cannot currently be added here. To change the shared account, run ",
-        )}
-        <Code>{"/logout"}</Code>
-        {t(
-          " inside agy and complete sign-in again. This affects other Antigravity sessions on the same computer.",
-        )}
-      </p>
-      <p>
-        {t("For a Gemini API key, set ")}
-        <Code>{"modelProvider"}</Code>
-        {t(" to")} <Code>{"gemini"}</Code>
-        {t(" in")} <Code>{"~/.gemini/antigravity-cli/settings.json"}</Code>
-        {t(" and provide")} <Code>{"GEMINI_API_KEY"}</Code>
-        {t(" in the CLI environment.")}
-      </p>
-      <p>
-        {t(
-          "Gemini CLI remains available for enterprise Gemini Code Assist licenses and supported API keys. Existing Gemini sessions and CLI paths are preserved.",
-        )}
-      </p>
-      <Button className="shrink-0" loading={checking} onClick={() => void checkInstallation()}>
-        {checking ? t("Checking…") : t("Check installation and models")}
-      </Button>
-      {!checking && status ? (
-        <SettingsFeedback state={available ? "success" : "warning"}>{t(status)}</SettingsFeedback>
+      {!available || error ? (
+        <Button
+          loading={checking}
+          loadingLabel={t("Checking…")}
+          onClick={() => void checkInstallation()}
+        >
+          {t("Retry")}
+        </Button>
       ) : null}
-      {error && <SettingsFeedback state="error">{t(error)}</SettingsFeedback>}
+      {error ? (
+        <SettingsFeedback
+          state="error"
+          extra={
+            error.detail ? <ErrorDetails title={error.title} detail={error.detail} /> : undefined
+          }
+        >
+          {error.title}
+        </SettingsFeedback>
+      ) : null}
     </Text>
   );
   if (embedded)

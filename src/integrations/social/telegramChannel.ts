@@ -116,20 +116,34 @@ export function createTelegramChannelAdapter(http: SocialHttp): SocialAdapter {
       throw new SocialPlatformError("unsupported");
     },
     /** Deletes only a post of this verified channel, after rechecking the bot's delete right. */
-    async deletePost(account, token, platformId) {
-      if (account.platform !== "telegram" || account.accountType !== "channel")
+    async deletePost(account, token, platformId, beforeSubmit) {
+      if (
+        account.platform !== "telegram" ||
+        account.accountType !== "channel" ||
+        account.connection !== "token"
+      )
         throw new SocialPlatformError("unsupported");
       const { chatId } = parseTelegramPlatformId(platformId);
-      if (chatId !== account.platformId) throw new SocialPlatformError("denied");
+      const botId = account.telegramBotId;
+      if (chatId !== account.platformId || !canonicalId(chatId, true) || !canonicalId(botId, false))
+        throw new SocialPlatformError("denied");
       const me = await http.telegram("getMe", token);
-      if (String(me?.id) !== account.telegramBotId || me?.is_bot !== true)
+      if (!exactId(me?.id, botId) || me?.is_bot !== true) throw new SocialPlatformError("denied");
+      const chat = await http.telegram("getChat", token, { chat_id: chatId });
+      if (!exactId(chat?.id, chatId) || chat?.type !== "channel")
         throw new SocialPlatformError("denied");
       const member = await http.telegram("getChatMember", token, {
         chat_id: chatId,
-        user_id: Number(account.telegramBotId),
+        user_id: Number(botId),
       });
-      if (member?.status !== "administrator" || member?.can_delete_messages !== true)
+      if (
+        !exactId(member?.user?.id, botId) ||
+        member?.user?.is_bot !== true ||
+        member?.status !== "administrator" ||
+        member?.can_delete_messages !== true
+      )
         throw new SocialPlatformError("denied");
+      await beforeSubmit?.();
       await deleteTelegramMessage(http, token, platformId);
     },
   };

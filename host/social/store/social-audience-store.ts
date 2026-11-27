@@ -5,6 +5,7 @@ import type {
   SocialContact,
   SocialPlatform,
   SocialSegment,
+  SocialThread,
 } from "../../../src/features/social/model/social";
 import type {
   AudienceFilter,
@@ -22,7 +23,13 @@ import type {
 } from "../../../src/features/social/model/outreach";
 import type { AiAction, AutonomyPolicy } from "../../../src/features/social/model/autonomy";
 import type { SocialAccountRequest } from "../../../src/features/social/model/accountRequests";
+import type { SocialBrowserWorkflow } from "../../../src/features/social/model/socialBrowser";
+import type { InstagramModerationRequest } from "../../../src/features/social/model/instagramModeration";
 import type { InboxStatusRecord } from "../inbox/inbox-types";
+import { readInstagramMentions } from "../inbox/instagram-mentions";
+import type { YouTubeOperation } from "../../../src/features/social/model/youtubeManagement";
+import type { LinkedInManagementReview } from "../../../src/integrations/social/adapters/linkedin-manage";
+import { utcDay } from "../../../src/shared/lib/time/timestamps";
 
 /** Generic `social_records` kinds. Person and list have dedicated typed methods below. */
 export type AudienceRecordKind =
@@ -33,7 +40,10 @@ export type AudienceRecordKind =
   | "email-account"
   | "autonomy"
   | "inbox-status"
-  | "account-request";
+  | "account-request"
+  | "youtube-operation"
+  | "linkedin-management-review"
+  | "instagram-moderation";
 
 export type AudienceRecordValue = {
   person: SocialPerson;
@@ -44,6 +54,15 @@ export type AudienceRecordValue = {
   autonomy: AutonomyPolicy;
   "inbox-status": InboxStatusRecord;
   "account-request": SocialAccountRequest;
+  "youtube-operation": YouTubeOperation & {
+    actorId: string;
+    projectId?: string;
+    channelId: string;
+    fingerprint: string;
+    submittedAt?: number;
+  };
+  "linkedin-management-review": LinkedInManagementReview;
+  "instagram-moderation": InstagramModerationRequest;
 };
 
 export type Page<T> = { items: T[]; next?: string };
@@ -55,17 +74,25 @@ const INTERACTION_PAGE = 100;
 
 export const AUDIENCE_SCHEMA_KEY = "schema.audience";
 export const AUDIENCE_SCHEMA_VERSION = "1";
+/** Set once `social_person_emails` has been rebuilt from the stored people. */
+export const PERSON_EMAIL_INDEX_KEY = "schema.audience.person-emails";
+/** Bound variables per statement when a lookup takes a list of ids or addresses. */
+const LOOKUP_CHUNK = 500;
 export const SYSTEM_COMMENTERS_LIST_ID = "system-commenters";
 export const SYSTEM_COMMENTERS_RULE_ID = "system-commenters-capture";
 
 /** Idempotent DDL. social.ts also creates social_records and social_settings; repeating them is safe. */
 const AUDIENCE_DDL = `
   CREATE TABLE IF NOT EXISTS social_records (kind TEXT NOT NULL, id TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(kind,id));
+  CREATE INDEX IF NOT EXISTS social_youtube_operations_account ON social_records(json_extract(value,'$.accountId'), id) WHERE kind='youtube-operation';
+  CREATE INDEX IF NOT EXISTS social_youtube_operations_outcome ON social_records(json_extract(value,'$.fingerprint'), json_extract(value,'$.status')) WHERE kind='youtube-operation';
   CREATE TABLE IF NOT EXISTS social_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS social_person_handles (account_id TEXT NOT NULL, platform_id TEXT NOT NULL, person_id TEXT NOT NULL, PRIMARY KEY(account_id, platform_id));
   CREATE INDEX IF NOT EXISTS social_person_handles_person ON social_person_handles(person_id);
   CREATE TABLE IF NOT EXISTS social_list_members (list_id TEXT NOT NULL, person_id TEXT NOT NULL, added_at INTEGER NOT NULL, source TEXT NOT NULL, PRIMARY KEY(list_id, person_id));
   CREATE INDEX IF NOT EXISTS social_list_members_person ON social_list_members(person_id);
+  CREATE TABLE IF NOT EXISTS social_person_emails (address TEXT NOT NULL, person_id TEXT NOT NULL, PRIMARY KEY(address, person_id)) WITHOUT ROWID;
+  CREATE INDEX IF NOT EXISTS social_person_emails_person ON social_person_emails(person_id);
   CREATE TABLE IF NOT EXISTS social_interactions (id TEXT PRIMARY KEY, person_id TEXT NOT NULL, account_id TEXT NOT NULL, kind TEXT NOT NULL, at INTEGER NOT NULL, value TEXT NOT NULL);
   CREATE INDEX IF NOT EXISTS social_interactions_person ON social_interactions(person_id, at);
   CREATE TABLE IF NOT EXISTS social_enrollments (id TEXT PRIMARY KEY, sequence_id TEXT NOT NULL, person_id TEXT NOT NULL, status TEXT NOT NULL, next_at INTEGER, value TEXT NOT NULL);
@@ -78,7 +105,21 @@ const AUDIENCE_DDL = `
   CREATE TABLE IF NOT EXISTS social_ai_actions (id TEXT PRIMARY KEY, at INTEGER NOT NULL, account_id TEXT NOT NULL, value TEXT NOT NULL);
   CREATE INDEX IF NOT EXISTS social_ai_actions_at ON social_ai_actions(at, id);
   CREATE TABLE IF NOT EXISTS social_autonomy_counters (account_id TEXT NOT NULL, action TEXT NOT NULL, day TEXT NOT NULL, count INTEGER NOT NULL, PRIMARY KEY(account_id, action, day));
+  CREATE INDEX IF NOT EXISTS social_autonomy_counters_day ON social_autonomy_counters(day);
 `;
+
+/**
+ * Spent quota counters are kept this many UTC days. Every reader (autonomy gate, audience access,
+ * browser limiter, outreach pacing, email) asks only for the key of the current instant, which in
+ * any time zone is at most one UTC day away from today, so older day/hour rows can never be read
+ * again. The margin absorbs host clock corrections. A limit that starts reading a longer window
+ * (a weekly quota, a rolling count) must raise this first.
+ */
+export const SPENT_COUNTER_RETENTION_DAYS = 7;
+/** Rows removed per pass; a full pass is followed by a quick second pass until the backlog clears. */
+export const SPENT_COUNTER_PRUNE_BATCH = 1000;
+const SPENT_COUNTER_IDLE_MS = 60 * 60_000;
+const SPENT_COUNTER_BACKLOG_MS = 60_000;
 
 function pageSize(limit: number | undefined, fallback = DEFAULT_PAGE): number {
   if (limit === undefined) return fallback;
@@ -105,9 +146,34 @@ function parse<T>(row: StoreRow): T {
 export class SocialAudienceStore {
   constructor(private readonly store: HostStore) {}
 
+  get environmentId(): string {
+    return this.store.environmentId;
+  }
+
   async initialize(): Promise<void> {
     await this.store.ready;
     await this.store.db.scope(() => this.store.db.exec(AUDIENCE_DDL));
+    await this.backfillPersonEmails();
+  }
+
+  /**
+   * People saved before the e-mail index existed have no rows in it. One pass rebuilds the index
+   * from the stored records together with its marker, so a failure leaves both unset and retries.
+   */
+  private async backfillPersonEmails(): Promise<void> {
+    if ((await this.getSetting(PERSON_EMAIL_INDEX_KEY)) === "1") return;
+    await this.store.transaction(async () => {
+      await this.store.db.prepare("DELETE FROM social_person_emails").run();
+      await this.store.db
+        .prepare(
+          `INSERT OR IGNORE INTO social_person_emails
+           SELECT json_extract(e.value,'$.address'), r.id
+           FROM social_records r, json_each(r.value,'$.emails') e
+           WHERE r.kind='person' AND json_type(e.value,'$.address')='text'`,
+        )
+        .run();
+      await this.putSetting(PERSON_EMAIL_INDEX_KEY, "1");
+    });
   }
 
   // Generic records (social_records).
@@ -120,6 +186,16 @@ export class SocialAudienceStore {
       .prepare("SELECT value FROM social_records WHERE kind=? AND id=?")
       .get(kind, id);
     return row ? parse<AudienceRecordValue[K]>(row) : undefined;
+  }
+
+  /** Stored signup progress only. Reading it never opens or inspects a browser. */
+  async latestBrowserSignup(accountId: string): Promise<SocialBrowserWorkflow | undefined> {
+    const row = await this.store.db
+      .prepare(
+        "SELECT value FROM social_records WHERE kind='browser-workflow' AND json_extract(value,'$.accountId')=? AND json_extract(value,'$.intent')='signup' ORDER BY json_extract(value,'$.createdAt') DESC,rowid DESC LIMIT 1",
+      )
+      .get(accountId);
+    return row ? parse<SocialBrowserWorkflow>(row) : undefined;
   }
 
   async putRecord<K extends AudienceRecordKind>(
@@ -142,6 +218,26 @@ export class SocialAudienceStore {
     return Number(result.changes) > 0;
   }
 
+  async listYouTubeOperations(accountId: string, cursor = "") {
+    const rows = await this.store.db
+      .prepare(
+        "SELECT id,value FROM social_records WHERE kind='youtube-operation' AND json_extract(value,'$.accountId')=? AND id>? ORDER BY id LIMIT ?",
+      )
+      .all(accountId, cursor, DEFAULT_PAGE + 1);
+    return pageOf(rows, DEFAULT_PAGE, (row) =>
+      parse<AudienceRecordValue["youtube-operation"]>(row),
+    );
+  }
+
+  async unresolvedYouTubeOperation(fingerprint: string) {
+    const row = await this.store.db
+      .prepare(
+        "SELECT value FROM social_records WHERE kind='youtube-operation' AND json_extract(value,'$.fingerprint')=? AND json_extract(value,'$.status') IN ('submitted','unknown') LIMIT 1",
+      )
+      .get(fingerprint);
+    return row ? parse<AudienceRecordValue["youtube-operation"]>(row) : undefined;
+  }
+
   /** Keyset page ordered by id. The cursor is the last id of the previous page. */
   async listRecords<K extends AudienceRecordKind>(
     kind: K,
@@ -152,6 +248,37 @@ export class SocialAudienceStore {
       .prepare("SELECT id, value FROM social_records WHERE kind=? AND id>? ORDER BY id LIMIT ?")
       .all(kind, input.cursor ?? "", limit + 1);
     return pageOf(rows, limit, (row) => parse<AudienceRecordValue[K]>(row));
+  }
+
+  /** Account-specific Instagram mention notifications, paged by delivery order. */
+  async instagramMentions(accountId: string, cursor?: string) {
+    return readInstagramMentions(this.store, accountId, cursor);
+  }
+
+  async instagramModerationRequests(threadId: string, before?: string) {
+    const prefix = `${encodeURIComponent(threadId)}/`;
+    if (before !== undefined && !before.startsWith(prefix))
+      throw new Error("Invalid Instagram moderation cursor.");
+    const rows = await this.store.db
+      .prepare(
+        "SELECT value FROM social_records WHERE kind='instagram-moderation' AND id>=? AND id<? " +
+          "AND json_extract(value,'$.status') IN ('pending','attempting','uncertain') ORDER BY id DESC LIMIT 26",
+      )
+      .all(prefix, before ?? `${prefix}\uffff`);
+    const requests = rows.slice(0, 25).map((row) => parse<InstagramModerationRequest>(row));
+    return { requests, ...(rows.length > 25 ? { next: requests.at(-1)?.id } : {}) };
+  }
+
+  async activeInstagramModeration(threadId: string, commentId: string, action: string) {
+    const prefix = `${encodeURIComponent(threadId)}/`;
+    const row = await this.store.db
+      .prepare(
+        "SELECT value FROM social_records WHERE kind='instagram-moderation' AND id>=? AND id<? " +
+          "AND json_extract(value,'$.commentId')=? AND json_extract(value,'$.action')=? " +
+          "AND json_extract(value,'$.status') IN ('pending','attempting','uncertain') LIMIT 1",
+      )
+      .get(prefix, `${prefix}\uffff`, commentId, action);
+    return row ? parse<InstagramModerationRequest>(row) : undefined;
   }
 
   // People and handles.
@@ -181,6 +308,13 @@ export class SocialAudienceStore {
             "INSERT INTO social_person_handles VALUES (?,?,?) ON CONFLICT(account_id,platform_id) DO UPDATE SET person_id=excluded.person_id",
           )
           .run(handle.accountId, handle.platformId, person.id);
+      await this.store.db
+        .prepare("DELETE FROM social_person_emails WHERE person_id=?")
+        .run(person.id);
+      for (const email of new Set(person.emails.map((item) => item.address)))
+        await this.store.db
+          .prepare("INSERT INTO social_person_emails VALUES (?,?)")
+          .run(email, person.id);
       return this.putRecord("person", person.id, person);
     });
   }
@@ -191,6 +325,7 @@ export class SocialAudienceStore {
       if (!(await this.getPerson(id))) return false;
       for (const sql of [
         "DELETE FROM social_person_handles WHERE person_id=?",
+        "DELETE FROM social_person_emails WHERE person_id=?",
         "DELETE FROM social_list_members WHERE person_id=?",
         "DELETE FROM social_interactions WHERE person_id=?",
         "DELETE FROM social_enrollments WHERE person_id=?",
@@ -213,6 +348,25 @@ export class SocialAudienceStore {
       .prepare("SELECT person_id FROM social_person_handles WHERE account_id=? AND platform_id=?")
       .get(accountId, platformId);
     return row ? this.getPerson(String(row.person_id)) : undefined;
+  }
+
+  /**
+   * Ids of every person holding any of the given addresses (exact match on the stored address),
+   * from the e-mail index. Ordered by id; never reads the person records.
+   */
+  async findPersonIdsByEmail(addresses: string[]): Promise<string[]> {
+    const ids = new Set<string>();
+    const unique = [...new Set(addresses)];
+    for (let start = 0; start < unique.length; start += LOOKUP_CHUNK) {
+      const chunk = unique.slice(start, start + LOOKUP_CHUNK);
+      const rows = await this.store.db
+        .prepare(
+          `SELECT person_id FROM social_person_emails WHERE address IN (${marks(chunk.length)})`,
+        )
+        .all(...chunk);
+      for (const row of rows) ids.add(String(row.person_id));
+    }
+    return [...ids].sort();
   }
 
   /** Adds a handle to an existing person. An identical handle is a no-op. */
@@ -316,6 +470,24 @@ export class SocialAudienceStore {
     ).map((row) => parse<SocialList>(row));
   }
 
+  /** Ids of the static lists that hold any of the given people, in one indexed query per chunk. */
+  async staticListIdsHolding(personIds: string[]): Promise<string[]> {
+    const ids = new Set<string>();
+    const unique = [...new Set(personIds)];
+    for (let start = 0; start < unique.length; start += LOOKUP_CHUNK) {
+      const chunk = unique.slice(start, start + LOOKUP_CHUNK);
+      const rows = await this.store.db
+        .prepare(
+          `SELECT DISTINCT m.list_id FROM social_list_members m
+           JOIN social_records l ON l.kind='list' AND l.id=m.list_id
+           WHERE m.person_id IN (${marks(chunk.length)}) AND json_extract(l.value,'$.kind')='static'`,
+        )
+        .all(...chunk);
+      for (const row of rows) ids.add(String(row.list_id));
+    }
+    return [...ids].sort();
+  }
+
   async addMembers(
     listId: string,
     personIds: string[],
@@ -391,6 +563,35 @@ export class SocialAudienceStore {
       )
       .all(personId, Math.min(INTERACTION_PAGE, pageSize(limit)));
     return rows.map((row) => parse<Interaction>(row));
+  }
+
+  /**
+   * Reply counts for the given people in one query. Contacted: has an outbound at or after `since`.
+   * Replied: has an inbound after that first outbound. Reads each person's full history, not the newest page.
+   */
+  async replyStats(
+    personIds: string[],
+    since: number,
+  ): Promise<{ contacted: number; replied: number }> {
+    if (!personIds.length) return { contacted: 0, replied: 0 };
+    const row = await this.store.db
+      .prepare(
+        `WITH firsts AS (
+           SELECT person_id, MIN(at) AS first_at FROM social_interactions
+           WHERE person_id IN (${marks(personIds.length)}) AND at>=?
+             AND json_extract(value,'$.direction')='outbound'
+           GROUP BY person_id
+         )
+         SELECT COUNT(*) AS contacted,
+           COALESCE(SUM(EXISTS (
+             SELECT 1 FROM social_interactions i
+             WHERE i.person_id=firsts.person_id AND i.at>firsts.first_at
+               AND json_extract(i.value,'$.direction')='inbound'
+           )), 0) AS replied
+         FROM firsts`,
+      )
+      .get(...personIds, since);
+    return { contacted: Number(row?.contacted ?? 0), replied: Number(row?.replied ?? 0) };
   }
 
   // Sequence enrollments.
@@ -536,11 +737,12 @@ export class SocialAudienceStore {
     return action;
   }
 
-  /** Newest first. The cursor is "<at>:<id>" of the last row of the previous page. */
+  /** Newest first. The cursor is "<at>:<id>" of the last row of the previous page. `since` keeps rows with `at >= since`. */
   async listAiActions(
     input: {
       cursor?: string;
       accountId?: string;
+      since?: number;
       limit?: number;
     } = {},
   ): Promise<Page<AiAction>> {
@@ -550,6 +752,10 @@ export class SocialAudienceStore {
     if (input.accountId !== undefined) {
       clauses.push("account_id=?");
       values.push(input.accountId);
+    }
+    if (input.since !== undefined) {
+      clauses.push("at>=?");
+      values.push(input.since);
     }
     if (input.cursor !== undefined) {
       const separator = input.cursor.indexOf(":");
@@ -598,6 +804,38 @@ export class SocialAudienceStore {
     });
   }
 
+  private nextCounterPruneAt = 0;
+
+  /**
+   * Deletes day/hour counters older than the retention window, at most `limit` rows. Cumulative
+   * counters (day "total", e.g. outreach stats) and any key that is not a UTC-date-shaped day or
+   * hour are never touched; rows inside the window keep their exact counts, so quotas stand.
+   * Returns the number of rows removed.
+   */
+  async pruneSpentCounters(now: number, limit = SPENT_COUNTER_PRUNE_BATCH): Promise<number> {
+    const cutoff = utcDay(now - SPENT_COUNTER_RETENTION_DAYS * 86_400_000);
+    if (!cutoff || !Number.isInteger(limit) || limit < 1) return 0;
+    const removed = await this.store.db
+      .prepare(
+        `DELETE FROM social_autonomy_counters WHERE rowid IN (
+           SELECT rowid FROM social_autonomy_counters
+           WHERE day<? AND day GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*'
+           LIMIT ?)`,
+      )
+      .run(cutoff, limit);
+    return Number(removed.changes);
+  }
+
+  /** Throttled entry for the Host tick: hourly, or every minute while a backlog drains. */
+  async pruneSpentCountersIfDue(now: number): Promise<void> {
+    const at = performance.now();
+    if (at < this.nextCounterPruneAt) return;
+    this.nextCounterPruneAt = at + SPENT_COUNTER_IDLE_MS;
+    const removed = await this.pruneSpentCounters(now);
+    if (removed >= SPENT_COUNTER_PRUNE_BATCH)
+      this.nextCounterPruneAt = at + SPENT_COUNTER_BACKLOG_MS;
+  }
+
   // Settings and legacy reads.
 
   async getSetting(key: string): Promise<string | undefined> {
@@ -616,6 +854,46 @@ export class SocialAudienceStore {
   }
 
   /** Every legacy `social_records` value of one kind, in insertion order. Migration only. */
+  /** One conversation by id, with its full event history. Callers apply account and project access. */
+  async getThread(id: string): Promise<SocialThread | undefined> {
+    const row = await this.store.db
+      .prepare("SELECT value FROM social_records WHERE kind='thread' AND id=?")
+      .get(id);
+    return row ? parse<SocialThread>(row) : undefined;
+  }
+
+  /** One contact by id. Callers apply account and project access. */
+  async getContact(id: string): Promise<SocialContact | undefined> {
+    const row = await this.store.db
+      .prepare("SELECT value FROM social_records WHERE kind='contact' AND id=?")
+      .get(id);
+    return row ? parse<SocialContact>(row) : undefined;
+  }
+
+  /**
+   * Conversations on one account whose contact has one of `platformIds`, each with that contact.
+   * Reads only those rows through the account index, never the whole thread kind.
+   */
+  async threadsForHandles(
+    accountId: string,
+    platformIds: string[],
+  ): Promise<{ thread: SocialThread; contact: SocialContact }[]> {
+    if (!platformIds.length) return [];
+    const rows = await this.store.db
+      .prepare(
+        `SELECT t.value AS thread, c.value AS contact FROM social_records t
+         JOIN social_records c ON c.kind='contact' AND c.id=json_extract(t.value,'$.contactId')
+         WHERE t.kind='thread' AND json_extract(t.value,'$.accountId')=?
+           AND json_extract(c.value,'$.platformId') IN (SELECT value FROM json_each(?))
+         ORDER BY t.rowid`,
+      )
+      .all(accountId, JSON.stringify(platformIds));
+    return rows.map((row) => ({
+      thread: JSON.parse(String(row.thread)) as SocialThread,
+      contact: JSON.parse(String(row.contact)) as SocialContact,
+    }));
+  }
+
   async legacyRecords<T>(kind: string): Promise<T[]> {
     return (
       await this.store.db

@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -15,11 +16,8 @@ import { HostStore } from "../store";
 import { createManagedWorkspaceRegistry } from "./managed-workspaces";
 import { createWorkspacePolicyResolver } from "../workspaces/workspace-policy";
 import { createWorkspaceFeatureClaims } from "./feature-claims";
-import {
-  invalidateHostWorktrees,
-  managedWorkspaceNames,
-  materializeManagedWorkspace,
-} from "../git/git-worktrees";
+import { invalidateHostWorktrees, materializeManagedWorkspace } from "../git/git-worktrees";
+import { managedWorkspaceNames } from "./workspace-branch-naming";
 import type { ManagedWorkspace, WorkspaceCreateOperation } from "../workspaces/workspace-contracts";
 import type { DurableRewindOperation } from "../sessions/session-rewind";
 
@@ -293,7 +291,7 @@ it("pins the integration tip, excludes dirty files and returns the original dupl
   ]);
   expect(duplicate).toEqual(a);
   expect(a.workspace.baseCommit).toBe(sha);
-  expect(a.workspace.branchRef).toMatch(/^refs\/heads\/bycoda\/s\/fix-file-picker-[a-f0-9]{12}$/);
+  expect(a.workspace.branchRef).toMatch(/^refs\/heads\/by\/[a-f0-9]{8}$/);
   expect(basename(a.workspace.path)).toMatch(/^wt-[a-f0-9]{12}$/);
   expect(readFileSync(join(a.workspace.path, "source.txt"), "utf8")).toBe("committed\n");
   expect(existsSync(join(a.workspace.path, "untracked.txt"))).toBe(false);
@@ -468,7 +466,7 @@ it("allows one workspace per writer and independent workspaces for other writer 
     idempotencyKey: "task",
     owner: { kind: "task", id: "task-a" },
   });
-  expect(task.workspace.branchRef).toMatch(/^refs\/heads\/bycoda\/t\//);
+  expect(task.workspace.branchRef).toMatch(/^refs\/heads\/by\/[a-z0-9-]+-[a-f0-9]{8}$/);
   expect(task.workspace.path).not.toBe(created.workspace.path);
   expect(await f.registry.list({ projectId: f.project.id })).toHaveLength(2);
 }, 60_000);
@@ -516,9 +514,11 @@ it("journals before directory mutation and automatically recovers the pinned cre
   expect(recovered.baseCommit).toBe(base);
   expect(recovered.path).toBe(workspace.path);
   expect(await startup.recoverCreate(operation.id)).toEqual(recovered);
-  expect(await reopened.registry.prepare(f.request)).toEqual({
+  expect(await reopened.registry.prepare(f.request)).toMatchObject({
     workspace: recovered,
     operationId: operation.id,
+    extraWorktrees: {},
+    baseSource: "local",
   });
   expect(f.gitAt(workspace.path, "rev-parse", "HEAD")).toBe(base);
   expect(await reopened.registry.listOperations(workspace.id)).toMatchObject([
@@ -584,10 +584,12 @@ it("never adopts an existing unregistered directory or falls back to main", asyn
     writeFileSync(join(workspace.path, "sentinel.txt"), "do not overwrite");
   });
   await expect(f.registry.prepare(f.request)).rejects.toThrow("already exists");
-  const [workspace] = await f.store.managedWorkspaces();
-  expect(workspace.directoryState).toBe("blocked");
-  expect(workspace.path).not.toBe(f.cwd);
-  expect(readFileSync(join(workspace.path, "sentinel.txt"), "utf8")).toBe("do not overwrite");
+  // Git refused definitively: the creation is rolled back, but the foreign directory is never touched.
+  expect(await f.store.managedWorkspaces()).toEqual([]);
+  expect(f.git("branch", "--list", "by/*")).toBe("");
+  expect(f.git("for-each-ref", "refs/bycoda/")).toBe("");
+  const [directory] = readdirSync(f.root);
+  expect(readFileSync(join(f.root, directory, "sentinel.txt"), "utf8")).toBe("do not overwrite");
   expect(f.git("symbolic-ref", "HEAD")).toBe("refs/heads/main");
 });
 
@@ -599,10 +601,30 @@ it("skips owner activity for a workspace whose directory never materialized", as
     mkdirSync(workspace.path, { recursive: true });
   });
   await expect(f.registry.prepare(f.request)).rejects.toThrow("already exists");
-  const [blocked] = await f.store.managedWorkspaces();
-  expect(blocked.directoryState).toBe("blocked");
-  await expect(f.registry.touchOwnerActivity(blocked.owner)).resolves.toBeUndefined();
-  expect((await f.registry.get({ workspaceId: blocked.id }))?.revision).toBe(blocked.revision);
+  expect(await f.store.managedWorkspaces()).toEqual([]);
+  await expect(f.registry.touchOwnerActivity(f.request.owner)).resolves.toBeUndefined();
+});
+
+it("looks up only the owner's workspaces when recording owner activity", async () => {
+  const f = await fixture();
+  const { workspace } = await f.registry.prepare(f.request);
+  expect(
+    (
+      await f.store.managedWorkspaces({
+        ownerKind: workspace.owner.kind,
+        ownerId: workspace.owner.id,
+      })
+    ).map((item) => item.id),
+  ).toEqual([workspace.id]);
+  expect(
+    await f.store.managedWorkspaces({ ownerKind: workspace.owner.kind, ownerId: "someone-else" }),
+  ).toEqual([]);
+  const list = vi.spyOn(f.store, "managedWorkspaces");
+  await f.registry.touchOwnerActivity(workspace.owner);
+  expect(list).toHaveBeenCalledWith({
+    ownerKind: workspace.owner.kind,
+    ownerId: workspace.owner.id,
+  });
 });
 
 it("rejects an unavailable base and explicit current-mode preparation without allocating directories", async () => {
@@ -804,7 +826,7 @@ it("uses stable collision-resistant naming and rejects malformed identities", ()
       "../Türkçe ❄",
       "12345678-1234-1234-1234-123456789012",
     ),
-  ).toEqual({ branch: "bycoda/s/t-rk-e-123456781234", directory: "wt-123456781234" });
+  ).toEqual({ branch: "by/12345678", directory: "wt-123456781234" });
   expect(() => managedWorkspaceNames({ kind: "session", id: "a" }, "x", "bad/id")).toThrow(
     "identity",
   );

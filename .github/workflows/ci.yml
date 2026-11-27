@@ -5,6 +5,8 @@ on:
     # release/* branches carry stable hotfixes; their full CI qualifies a vX.Y.Z tag.
     branches: [main, "release/**"]
   pull_request:
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
     inputs:
       deterministic_task_cache:
@@ -40,7 +42,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-deps
         with:
-          node-version: 24
+          node-version: "26.13.1"
           install: "false"
       - name: Fetch the branch tip before this push (missing tip means full coverage)
         if: github.event_name == 'push'
@@ -67,7 +69,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-deps
         with:
-          node-version: 24
+          node-version: "26.13.1"
       - run: node scripts/checks/check-repository-hygiene.mjs
       - run: node --test .github/scripts/issue-labels.test.cjs
       - name: Repository quality gates (format, lint baseline, locales, feature skills, theme colors, UI drift, code structure, UI catalog)
@@ -84,7 +86,7 @@ jobs:
       - name: Baseline guard (a ratchet baseline may not rise without a recorded approval)
         # Same base as the changes job; an unresolvable base prints a notice and passes.
         env:
-          CI_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CI_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
         run: pnpm run check:baselines ${CI_BASE:+--base "$CI_BASE"}
 
   preflight:
@@ -98,7 +100,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-deps
         with:
-          node-version: 24
+          node-version: "26.13.1"
           install: ${{ needs.changes.outputs.web }}
       - name: Verify shared Host contracts and headless boundaries
         if: needs.changes.outputs.web == 'true'
@@ -154,7 +156,7 @@ jobs:
         run: pwsh -NoProfile -NonInteractive -File scripts/setup/windows-runner.ps1 -Mode Verify -Purpose ci -ExportEnvironment
       - uses: ./.github/actions/setup-deps
         with:
-          node-version: 24
+          node-version: "26.13.1"
       - name: Verify Host test shard coverage
         if: matrix.shard == 1
         run: node scripts/checks/check-host-test-shards.mjs ${{ matrix.shard-count }}
@@ -172,12 +174,27 @@ jobs:
       - name: Install Chromium only for shards that exercise the real browser
         if: steps.host-environment.outputs.chromium == 'true'
         run: pnpm exec playwright install --with-deps chromium
+      - name: Typecheck and build Host once for this shard
+        run: pnpm run host:build
       - name: Run Host test shard
         run: >-
-          pnpm run test:host --shard=${{ matrix.shard }}/${{ matrix.shard-count }}
+          pnpm exec vp test run --config host/vitest.config.ts
+          --shard=${{ matrix.shard }}/${{ matrix.shard-count }}
           --reporter=default --reporter=json
           --outputFile.json=temp/test-results/host-ci/results.json
-      # test:host's pretest hook already typechecks and builds the host.
+      - name: Report runner resources and native crash frames after a macOS Host failure
+        if: failure() && runner.os == 'macOS'
+        shell: bash
+        run: |
+          df -h "$RUNNER_TEMP" "$GITHUB_WORKSPACE"
+          vm_stat
+          shopt -s nullglob
+          for report in "$HOME"/Library/Logs/DiagnosticReports/node-*.ips; do
+            jq -s '.[-1] | {
+              signal: .exception.signal, type: .exception.type, codes: .exception.codes,
+              frames: [.threads[.faultingThread // 0].frames[:12][]? | {symbol, imageIndex, imageOffset}]
+            }' "$report" || echo "Could not read Node crash summary"
+          done
       - run: node host/package.mjs
         if: matrix.shard == 1
       - name: Record shard source and result
@@ -211,15 +228,17 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-deps
         with:
-          node-version: 24
-      - name: Check workspace package boundaries and normal package types
+          node-version: "26.13.1"
+      - name: Check workspace package boundaries
         run: |
           pnpm run check:packages
-          pnpm run typecheck:packages
+      - name: Typecheck the portable workspace package
+        run: pnpm run typecheck:packages
       - name: Check code invariants ratchet
         run: pnpm run check:invariants
+      - name: Typecheck the application
+        run: pnpm exec tsrs --noEmit
       - run: pnpm test --reporter=default --reporter=json --outputFile.json=temp/test-results/web-ci/results.json
-      - run: pnpm exec tsc-rs --noEmit
       - run: pnpm run check:types:tests
       - id: playwright
         name: Read pinned web boot browser version
@@ -276,7 +295,7 @@ jobs:
         run: pwsh -NoProfile -NonInteractive -File scripts/setup/windows-runner.ps1 -Mode Verify -Purpose ci -ExportEnvironment
       - uses: ./.github/actions/setup-deps
         with:
-          node-version: 24
+          node-version: "26.13.1"
           install: "false"
 
       - name: Install Linux system dependencies
@@ -334,7 +353,7 @@ jobs:
 
       - uses: ./.github/actions/setup-deps
         with:
-          node-version: 24
+          node-version: "26.13.1"
 
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
@@ -414,7 +433,7 @@ jobs:
 
       - uses: ./.github/actions/setup-deps
         with:
-          node-version: 24
+          node-version: "26.13.1"
           install: "false"
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -467,7 +486,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-deps
         with:
-          node-version: 24
+          node-version: "26.13.1"
       - id: inventory-cache-key
         name: Identify complete deterministic inventory inputs (explicit main-branch opt-in only)
         if: github.event_name == 'workflow_dispatch' && inputs.deterministic_task_cache && github.ref == 'refs/heads/main'
@@ -494,19 +513,22 @@ jobs:
           --report temp/test-results/scripts-ci/results.json
       - name: Typecheck the offline evaluation harness
         run: pnpm run eval:check
+      - id: bun
+        uses: ./.github/actions/setup-bun
+        if: ${{ !cancelled() }}
       - name: Check offline model behavior graders (no provider calls)
         # Still runs after a type failure above so one push reports both results.
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.bun.outcome == 'success' }}
         run: >-
-          pnpm run eval:offline --reporter=default --reporter=json
-          --outputFile.json=temp/test-results/scripts-ci/evals.json
+          pnpm run eval:offline:bun --reporter=junit
+          --reporter-outfile=temp/test-results/scripts-ci/evals.xml
       - name: Record script source and result
         if: always()
         run: >-
           node scripts/checks/ci-results.mjs record --job scripts --variant linux
           --result ${{ job.status }} --directory temp/test-results/ci-evidence
           --require temp/test-results/scripts-ci/results.json
-          --require temp/test-results/scripts-ci/evals.json
+          --require temp/test-results/scripts-ci/evals.xml
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
@@ -533,7 +555,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-deps
         with:
-          node-version: 24
+          node-version: "26.13.1"
           install: "false"
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
@@ -574,11 +596,11 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-deps
         with:
-          node-version: 24
+          node-version: "26.13.1"
       - name: Verify every browser fixture has one owner
         run: node scripts/checks/browser-test-inventory.mjs --check
-      - name: Typecheck all maintained browser configs (normal tsc-rs)
-        run: pnpm exec tsc-rs --noEmit -p tests/browser/tsconfig.json
+      - name: Typecheck all maintained browser configs (normal tsrs)
+        run: pnpm exec tsrs --noEmit -p tests/browser/tsconfig.json
       - id: playwright
         name: Read pinned Playwright version
         run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
@@ -616,7 +638,7 @@ jobs:
     # Playwright 1.64's WebKit fails at launch ("libicudata.so.74: cannot open shared object file").
     # Upgrade the image deliberately, together with a Playwright release that supports it.
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       max-parallel: 6
@@ -640,11 +662,11 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-deps
         with:
-          node-version: 24
+          node-version: "26.13.1"
       - name: Verify full collection ownership and normal browser config types
         run: |
           node scripts/checks/browser-test-inventory.mjs --check
-          pnpm exec tsc-rs --noEmit -p tests/browser/tsconfig.json
+          pnpm exec tsrs --noEmit -p tests/browser/tsconfig.json
       - id: playwright
         run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -700,7 +722,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-deps
         with:
-          node-version: 24
+          node-version: "26.13.1"
           install: "false"
       - name: Download data-only evidence from this run
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4

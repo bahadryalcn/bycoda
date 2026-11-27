@@ -1,4 +1,4 @@
-import { presentRemoteError } from "../../../connections/public/remoteFailure";
+import { describeRemoteError } from "../../../connections/public/remoteFailure";
 import { useEffect, useId, useRef, useState } from "react";
 import type {
   AssistantJob,
@@ -14,7 +14,7 @@ import { InlineError } from "../../../../shared/ui/InlineError";
 import { LiveText } from "../../../../shared/ui/LiveText";
 import { Text } from "../../../../shared/ui/Text";
 import { assistantJobProjectIds } from "../../model/assistantJobs";
-import rootStyles from "../AssistantView.module.css";
+import { createLocalDraftWriter } from "../../model/assistantLocalDraft";
 import styles from "./Jobs.module.css";
 import { type OwnerRequest } from "./assistantRoomHelpers";
 
@@ -66,8 +66,16 @@ export function JobOwnerEditDialog({
   });
   const [pending, setPending] = useState(false),
     busy = useRef(false),
-    [error, setError] = useState("");
+    [problem, setProblem] = useState<{ message: string; details?: string } | null>(null);
   const [draftStorageError, setDraftStorageError] = useState(() => unsavedJobOwnerDrafts.has(key));
+  const [writer] = useState(() =>
+    createLocalDraftWriter(key, (saved) => {
+      if (saved) unsavedJobOwnerDrafts.delete(key);
+      setDraftStorageError(!saved);
+    }),
+  );
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Attach the draft writer's page lifecycle listener and flush on unmount.
+  useEffect(() => writer.attach(), [writer]);
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -76,19 +84,33 @@ export function JobOwnerEditDialog({
     };
   }, []);
   const live = useStableCallback(current);
+  /**
+   * Keeps the latest draft in memory for remounts and hands storage to the shared writer. A
+   * persistence-required call (durable intent before dispatch) flushes at once; a failed write
+   * stays pending and is retried by the next flush.
+   */
   function retain(next: typeof draft, requirePersistence = false) {
-    if (!requirePersistence) setDraft(next);
-    try {
-      localStorage.setItem(key, JSON.stringify(next));
-      unsavedJobOwnerDrafts.delete(key);
-      setDraftStorageError(false);
-      if (requirePersistence) setDraft(next);
+    if (!requirePersistence) {
+      setDraft(next);
+      unsavedJobOwnerDrafts.set(key, next);
+      writer.schedule(() => JSON.stringify(next));
       return true;
-    } catch {
-      if (!requirePersistence) unsavedJobOwnerDrafts.set(key, next);
-      setDraftStorageError(true);
-      return false;
     }
+    unsavedJobOwnerDrafts.set(key, next);
+    writer.schedule(() => JSON.stringify(next));
+    if (writer.flush()) {
+      setDraft(next);
+      return true;
+    }
+    // An undispatched intent must not reach storage later: keep the pre-intent draft pending instead.
+    unsavedJobOwnerDrafts.set(key, draft);
+    writer.schedule(() => JSON.stringify(draft));
+    return false;
+  }
+  /** Explicit discard or a confirmed save: no pending write may bring the draft back. */
+  function discard() {
+    writer.clear();
+    unsavedJobOwnerDrafts.delete(key);
   }
   function verify(next: AssistantJob | undefined) {
     if (
@@ -100,16 +122,16 @@ export function JobOwnerEditDialog({
       next.projectId !== job.projectId ||
       JSON.stringify(assistantJobProjectIds(next)) !== JSON.stringify(assistantJobProjectIds(job))
     )
-      throw new Error("The job changed or is outside visible project scope.");
+      throw new Error(t("The job changed or is outside visible project scope."));
     return next;
   }
   async function submit() {
     if (busy.current) return;
     busy.current = true;
     setPending(true);
-    setError("");
+    setProblem(null);
     try {
-      if (!live()) throw new Error("The selected project is no longer visible.");
+      if (!live()) throw new Error(t("The selected project is no longer visible."));
       if (draft.intent) {
         const next = verify((await request({ op: "jobs.get", id: job.id }, environmentId)).job);
         if (
@@ -117,17 +139,18 @@ export function JobOwnerEditDialog({
           next.version > draft.intent.expectedVersion &&
           (next.priority ?? "normal") === draft.intent.priority
         ) {
-          localStorage.removeItem(key);
+          discard();
           onSaved();
           return;
         }
-        setError(
-          t(
+        setProblem({
+          message:
             mode === "replan"
-              ? "Replan was not confirmed. Review the epic before starting another replan."
-              : "Priority change was not confirmed. Review the job before changing it again.",
-          ),
-        );
+              ? t("Replan could not be confirmed. Review the epic before starting another replan.")
+              : t(
+                  "Priority change could not be confirmed. Review the job before changing it again.",
+                ),
+        });
         return;
       }
       const input: JobOwnerEditInput =
@@ -145,7 +168,7 @@ export function JobOwnerEditDialog({
               priority: draft.priority,
             };
       if (input.op === "jobs.replan" && !input.feedback)
-        throw new Error("Describe the change before replanning.");
+        throw new Error(t("Describe the change before replanning."));
       if (!retain({ ...draft, intent: input }, true))
         throw new Error(
           t(
@@ -158,34 +181,38 @@ export function JobOwnerEditDialog({
         (input.op === "jobs.priority" && (next.priority ?? "normal") !== input.priority) ||
         (input.op === "jobs.replan" && next.status !== "planning")
       )
-        throw new Error("Job status is unknown. Check the Room before retrying.");
-      localStorage.removeItem(key);
+        throw new Error(t("Job status is unknown. Check the Room before retrying."));
+      discard();
       onSaved();
     } catch (cause) {
-      if (alive.current && live()) setError(t(presentRemoteError(cause, { explicit: true })));
+      if (alive.current && live()) setProblem(describeRemoteError(cause));
     } finally {
       busy.current = false;
       setPending(false);
     }
   }
+  const blockedReason =
+    !draft.intent && mode === "replan" && !draft.feedback.trim()
+      ? t("Describe what should change")
+      : undefined;
   return (
     <Modal
-      title={t(mode === "replan" ? "Replan job" : "Job priority")}
+      title={mode === "replan" ? t("Replan job") : t("Job priority")}
       onClose={onClose}
       size="md"
       footer={
-        <ModalActions>
+        <ModalActions reason={blockedReason}>
           <Button variant="ghost" disabled={pending} onClick={onClose}>
-            {t("Close")}
+            {t("Cancel")}
           </Button>
           <Button
             form={formId}
             type="submit"
             variant="primary"
             loading={pending}
-            disabled={!draft.intent && mode === "replan" && !draft.feedback.trim()}
+            disabled={Boolean(blockedReason)}
           >
-            {t(draft.intent ? "Check status" : mode === "replan" ? "Replan" : "Save")}
+            {draft.intent ? t("Check status") : mode === "replan" ? t("Replan") : t("Save")}
           </Button>
         </ModalActions>
       }
@@ -204,6 +231,7 @@ export function JobOwnerEditDialog({
         {mode === "replan" ? (
           <TextareaField
             label={t("Replan feedback")}
+            placeholder={t("What should the plan do differently?")}
             value={draft.feedback}
             maxLength={3000}
             minRows={5}
@@ -238,13 +266,18 @@ export function JobOwnerEditDialog({
               : ""
           }
         />
-        {error && <InlineError className={rootStyles.error}>{error}</InlineError>}
+        {problem && <InlineError details={problem.details}>{problem.message}</InlineError>}
         {draftStorageError && (
-          <InlineError className={rootStyles.error}>
-            {t("Could not save this draft. It is kept in this window.")}{" "}
-            <Button type="button" onClick={() => retain(draft)}>
-              {t("Retry saving")}
-            </Button>
+          <InlineError
+            retry={{
+              label: t("Retry saving"),
+              onRetry: () => {
+                retain(draft);
+                writer.flush();
+              },
+            }}
+          >
+            {t("Could not save this draft. It is kept in this window.")}
           </InlineError>
         )}
       </form>

@@ -36,7 +36,7 @@ const view = (row: Stored): AssistantReminder => ({
 async function pending(repository: Deps["repository"], limit = MAX_PENDING): Promise<Stored[]> {
   const rows = await repository.store.db
     .prepare(
-      "SELECT value FROM assistant_runtime WHERE id LIKE 'reminder:%' AND deleted_at IS NULL AND json_extract(value,'$.value.status')='pending' ORDER BY json_extract(value,'$.value.at'),id LIMIT ?",
+      "SELECT value FROM assistant_runtime WHERE id>='reminder:' AND id<'reminder;' AND deleted_at IS NULL AND json_extract(value,'$.value.status')='pending' ORDER BY json_extract(value,'$.value.at'),id LIMIT ?",
     )
     .all(limit);
   return rows.map((row) => JSON.parse(String(row.value)) as Stored);

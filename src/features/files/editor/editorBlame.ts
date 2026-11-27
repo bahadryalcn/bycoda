@@ -8,6 +8,9 @@ import {
   type Text,
 } from "@codemirror/state";
 import { EditorView, GutterMarker, gutter } from "@codemirror/view";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { textAttributes, type TextRoles } from "../../../shared/ui/Text";
+import { TOOLTIP_DELAY_MS } from "../../../shared/ui/Tooltip";
 import type { GitBlameLine, GitHistoryCommit } from "../../../platform/tauri/fs";
 import { blameByLine, mapBlameLines } from "../../source-control/public/blameMapping";
 import {
@@ -16,6 +19,7 @@ import {
   formatRelativeTime,
 } from "../../source-control/public/gitGraphDisplay";
 import { editorDocChanges } from "./editorDoc";
+import "./editorBlame.css";
 
 /**
  * A blame gutter: per line, the commit that last changed it, drawn on the
@@ -139,20 +143,51 @@ function blameLabel(entry: GitBlameLine): string {
 // on the body and is positioned from the hovered entry.
 let card: HTMLDivElement | null = null;
 let cardOwner: HTMLElement | null = null;
+let pendingCard: { anchor: HTMLElement; timer: number } | null = null;
 
 function showCard(anchor: HTMLElement, entry: GitBlameLine) {
+  if (pendingCard) {
+    window.clearTimeout(pendingCard.timer);
+    pendingCard = null;
+  }
   card ??= document.createElement("div");
-  card.className = "cm-blameCard";
+  const { className, ...surface } = surfaceAttributes(
+    { variant: "floating", frame: "pane", radius: "popup", elevation: "floating" },
+    "cm-blameCard",
+  );
+  const { className: textClass, ...typography } = textAttributes({
+    size: "caption",
+    tone: "primary",
+    leading: "normal",
+  });
+  card.className = `${className} ${textClass}`;
+  for (const [name, value] of Object.entries({ ...surface, ...typography })) {
+    if (value !== undefined) card.setAttribute(name, String(value));
+  }
   card.setAttribute("role", "tooltip");
   card.replaceChildren(
-    ...[
-      ["cm-blameCardSha", entry.shortSha],
-      ["cm-blameCardAuthor", entry.author],
-      ["cm-blameCardDate", entry.timestamp > 0 ? formatAbsoluteTime(entry.timestamp) : ""],
-      ["cm-blameCardSubject", entry.summary],
-    ].map(([className, text]) => {
+    ...(
+      [
+        {
+          text: entry.shortSha,
+          roles: { size: "micro", tone: "muted" },
+          className: "cm-blameCardSha",
+        },
+        { text: entry.author, roles: { weight: "medium" }, className: "cm-blameCardAuthor" },
+        {
+          text: entry.timestamp > 0 ? formatAbsoluteTime(entry.timestamp) : "",
+          roles: { tone: "secondary" },
+          className: "cm-blameCardDate",
+        },
+        { text: entry.summary, roles: { wrap: "anywhere" }, className: "cm-blameCardSubject" },
+      ] satisfies { text: string; roles: TextRoles; className: string }[]
+    ).map(({ className, text, roles }) => {
       const row = document.createElement("div");
-      row.className = className;
+      const { className: textClass, ...typography } = textAttributes(roles, className);
+      row.className = textClass;
+      for (const [name, value] of Object.entries(typography)) {
+        if (value !== undefined) row.setAttribute(name, String(value));
+      }
       row.textContent = text;
       return row;
     }),
@@ -170,6 +205,10 @@ function showCard(anchor: HTMLElement, entry: GitBlameLine) {
 }
 
 function hideCard(anchor: HTMLElement) {
+  if (pendingCard?.anchor === anchor) {
+    window.clearTimeout(pendingCard.timer);
+    pendingCard = null;
+  }
   if (cardOwner !== anchor) return;
   cardOwner = null;
   card?.remove();
@@ -204,7 +243,13 @@ class BlameMarker extends GutterMarker {
     el.style.setProperty("--blame-color", authorColor(entry.author));
     if (first) el.textContent = blameLabel(entry);
     el.classList.add("cm-blameCommit");
-    el.addEventListener("mouseenter", () => showCard(el, entry));
+    el.addEventListener("mouseenter", () => {
+      if (pendingCard) window.clearTimeout(pendingCard.timer);
+      pendingCard = {
+        anchor: el,
+        timer: window.setTimeout(() => showCard(el, entry), TOOLTIP_DELAY_MS),
+      };
+    });
     el.addEventListener("mouseleave", () => hideCard(el));
     el.addEventListener("click", () => onOpen?.(blameCommit(entry)));
     if (first) {

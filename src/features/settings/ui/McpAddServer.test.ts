@@ -5,6 +5,14 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AddServerModal } from "./McpAddServer";
 
 vi.mock("../../sessions", () => import("../../sessions/ui/HarnessIcon"));
+// Raw error text sits behind the Details popover; open it and read the dialog it shows.
+async function detailsText() {
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+  if (!trigger) return "";
+  await act(async () => trigger.click());
+  // The Details popover opens last, above any enclosing dialog.
+  return [...document.querySelectorAll('[role="dialog"]')].at(-1)?.textContent ?? "";
+}
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => false,
@@ -31,6 +39,7 @@ it("retries discovery without adding the server again after a confirmed write", 
   invoke.mockResolvedValue(undefined);
   onAdded.mockRejectedValueOnce(new Error("Discovery unavailable"));
   await render();
+  await choose("Setup method", "JSON configuration");
   const config = dialog().querySelector<HTMLTextAreaElement>("textarea")!;
   const value = '{"mcpServers":{"docs":{"command":"docs"}}}';
   await act(async () => {
@@ -81,22 +90,30 @@ function dialog() {
   return document.querySelector<HTMLElement>('[role="dialog"]')!;
 }
 
+async function choose(label: string, option: string) {
+  const trigger = dialog().querySelector<HTMLButtonElement>(`button[aria-label^="${label}:"]`)!;
+  await act(async () => trigger.click());
+  const target = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+    (node) => node.textContent?.trim() === option,
+  )!;
+  await act(async () => target.click());
+}
+
 it("keeps global context concise and reveals project identity only for project scope", async () => {
   await render();
+  expect(dialog().textContent).toContain("/selected-project");
+  await choose("Scope", "Global");
   expect(dialog().textContent).not.toContain("/selected-project");
   expect(dialog().textContent).not.toContain("Advanced: configuration requirements");
-  const scope = dialog().querySelector<HTMLButtonElement>('[aria-label="Scope: Global"]')!;
-  await act(async () => scope.click());
-  const project = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
-    (option) => option.textContent === "Project",
-  )!;
-  await act(async () => project.click());
+  await choose("Scope", "Project");
   expect(dialog().textContent).toContain("/selected-project");
 });
 
 it("retains JSON draft and exact provider/scope identity after a rejected save", async () => {
   invoke.mockRejectedValueOnce(new Error("Configuration changed; reload before saving"));
   await render();
+  await choose("Scope", "Global");
+  await choose("Setup method", "JSON configuration");
   const config = dialog().querySelector<HTMLTextAreaElement>("textarea")!;
   const value = '{"mcpServers":{"docs":{"command":"npx","args":["docs"]}}}';
   await act(async () => {
@@ -119,7 +136,41 @@ it("retains JSON draft and exact provider/scope identity after a rejected save",
     config: value,
   });
   expect(config.value).toBe(value);
-  expect(dialog().textContent).toContain("Configuration changed; reload before saving");
+  // The JSON supplies the server name, so the separate name field is not offered.
+  expect(dialog().querySelector('input[placeholder="my-server"]')).toBeNull();
+  expect(dialog().textContent).toContain("The MCP server could not be saved.");
+  expect(await detailsText()).toContain("Configuration changed; reload before saving");
   expect(onClose).not.toHaveBeenCalled();
   expect(onAdded).not.toHaveBeenCalled();
+});
+
+it("names a saved Hub server in the description instead of showing locked identity fields", async () => {
+  const manageServer = vi.fn(async () => ({ revision: "r2" }));
+  await act(async () => {
+    root.render(
+      createElement(AddServerModal, {
+        cwd: "/selected-project",
+        globalOnly: true,
+        machineName: "This computer",
+        initialProvider: "claude",
+        manageServer: manageServer as never,
+        editing: {
+          name: "clinic",
+          scope: "user",
+          revision: "r1",
+          enabled: true,
+          config: { url: "https://cms.example.test/mcp" },
+        },
+        onClose,
+        onAdded,
+      }),
+    );
+  });
+  expect(dialog().textContent).toContain("bycoda Hub · Global · This computer");
+  expect(dialog().querySelector('[aria-label^="Provider:"]')).toBeNull();
+  expect(dialog().querySelector('[aria-label^="Scope:"]')).toBeNull();
+  expect(dialog().textContent).not.toContain("Name");
+  expect(dialog().querySelector<HTMLInputElement>('input[type="url"]')!.value).toBe(
+    "https://cms.example.test/mcp",
+  );
 });

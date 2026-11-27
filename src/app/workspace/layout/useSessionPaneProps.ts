@@ -21,12 +21,17 @@ export interface SessionPaneDeps {
   onFocusPane: P["onFocus"];
   onClosePane: P["onClose"];
   onCwdChange: P["onCwdChange"];
+  onSessionMachineChange?: P["onSessionMachineChange"];
   onBranchChange: P["onBranchChange"];
   onComposerWorktreeChange: P["onWorktreeChange"];
   onRemoteSnapshot: P["onRemoteSnapshot"];
   onRefreshAdoptedSession: P["onRefreshAdoptedSession"];
+  onRetrySessionHistory: P["onRetrySessionHistory"];
+  onLoadSessionHistory: P["onLoadSessionHistory"];
+  onPrepareSessionHistory: P["onPrepareSessionHistory"];
   onWorkspaceModeChange: P["onWorkspaceModeChange"];
   onWorktreeBaseChange: P["onWorktreeBaseChange"];
+  onWorktreeBaseRemoteChange?: P["onWorktreeBaseRemoteChange"];
   onManageWorktrees: P["onManageWorktrees"];
   onModelChange: P["onModelChange"];
   onModelSettingsChange: P["onModelSettingsChange"];
@@ -66,6 +71,8 @@ export interface SessionPaneDeps {
   onBuildPlan: P["onBuildPlan"];
   onSecondOpinion: P["onSecondOpinion"];
   onHandoff: P["onHandoff"];
+  onBranchFromReply: P["onBranchFromReply"];
+  onOpenBranchSource: P["onOpenBranchSource"];
   onBtwSubmit: P["onBtwSubmit"];
   onBtwRetry: P["onBtwRetry"];
   onBtwDelete: P["onBtwDelete"];
@@ -74,6 +81,7 @@ export interface SessionPaneDeps {
   onNewTerminalInSession: P["onNewTerminal"];
   onRunSessionProjectAction: P["onRunProjectAction"];
   onRunSessionCode: P["onRunCode"];
+  onRunRemoteSessionCode: P["onRunRemoteCode"];
 }
 
 export function useSessionPaneProps({
@@ -87,12 +95,17 @@ export function useSessionPaneProps({
   onFocusPane,
   onClosePane,
   onCwdChange,
+  onSessionMachineChange,
   onBranchChange,
   onComposerWorktreeChange,
   onRemoteSnapshot,
   onRefreshAdoptedSession,
+  onRetrySessionHistory,
+  onLoadSessionHistory,
+  onPrepareSessionHistory,
   onWorkspaceModeChange,
   onWorktreeBaseChange,
+  onWorktreeBaseRemoteChange,
   onManageWorktrees,
   onModelChange,
   onModelSettingsChange,
@@ -132,6 +145,8 @@ export function useSessionPaneProps({
   onBuildPlan,
   onSecondOpinion,
   onHandoff,
+  onBranchFromReply,
+  onOpenBranchSource,
   onBtwSubmit,
   onBtwRetry,
   onBtwDelete,
@@ -140,6 +155,7 @@ export function useSessionPaneProps({
   onNewTerminalInSession,
   onRunSessionProjectAction,
   onRunSessionCode,
+  onRunRemoteSessionCode,
 }: SessionPaneDeps) {
   const windowMovingSessionIds = useMemo(
     () =>
@@ -159,12 +175,17 @@ export function useSessionPaneProps({
     onSessionInteraction: onKeepSession,
     onClose: onClosePane,
     onCwdChange: useKeepSessionAction(onCwdChange, onKeepSession)!,
+    onSessionMachineChange: useKeepSessionAction(onSessionMachineChange, onKeepSession),
     onBranchChange: useKeepSessionAction(onBranchChange, onKeepSession)!,
     onWorktreeChange: onComposerWorktreeChange,
     onRemoteSnapshot,
     onRefreshAdoptedSession,
+    onRetrySessionHistory,
+    onLoadSessionHistory,
+    onPrepareSessionHistory,
     onWorkspaceModeChange: useKeepSessionAction(onWorkspaceModeChange, onKeepSession)!,
     onWorktreeBaseChange,
+    onWorktreeBaseRemoteChange,
     onManageWorktrees,
     onModelChange: useKeepSessionAction(onModelChange, onKeepSession)!,
     onModelSettingsChange: useKeepSessionAction(onModelSettingsChange, onKeepSession)!,
@@ -199,13 +220,18 @@ export function useSessionPaneProps({
     onQuestionReply: useKeepSessionAction(onQuestionReply, onKeepSession)!,
     onQuestionInteraction: useKeepSessionAction(onQuestionInteraction, onKeepSession),
     onOpenFile: useStableCallback<Parameters<P["onOpenFile"]>, void>((path, navigation, options) =>
-      onOpenFile(path, navigation, { ...options, placement: "pane" }),
+      onOpenFile(path, navigation && { ...navigation, keepMarkdownView: true }, {
+        ...options,
+        placement: "pane",
+      }),
     ),
     onOpenDiff,
     onOpenPlan,
     onBuildPlan: useKeepSessionAction(onBuildPlan, onKeepSession)!,
     onSecondOpinion: useKeepSessionAction(onSecondOpinion, onKeepSession)!,
     onHandoff: useKeepSessionAction(onHandoff, onKeepSession)!,
+    onBranchFromReply: useKeepSessionAction(onBranchFromReply, onKeepSession),
+    onOpenBranchSource,
     onBtwSubmit: useKeepSessionAction(onBtwSubmit, onKeepSession),
     onBtwRetry: useKeepSessionAction(onBtwRetry, onKeepSession),
     onBtwDelete: useKeepSessionAction(onBtwDelete, onKeepSession),
@@ -214,6 +240,7 @@ export function useSessionPaneProps({
     onNewTerminal: onNewTerminalInSession,
     onRunProjectAction: onRunSessionProjectAction,
     onRunCode: onRunSessionCode,
+    onRunRemoteCode: onRunRemoteSessionCode,
   };
 
   // One object while its values hold: the main area and inbox-ask panes are memoized on it.

@@ -43,7 +43,6 @@ type Props = {
   icon?: IconComponent;
   title?: string;
   disabledTitle?: string;
-  description?: string;
   menuLabel?: string;
   includeCurrent?: boolean;
   /**
@@ -54,12 +53,13 @@ type Props = {
    */
   excludeFromModel?: boolean;
   disabled?: boolean;
+  /** Why the caller disabled it; replaces the tooltip while `disabled` is set. */
+  disabledReason?: string;
   triggerClassName?: string;
   triggerVariant?: "ghost" | "secondary";
   renderTrigger?: (props: ExpandingButtonGroupTriggerProps) => ReactNode;
 };
 
-const MENU_WIDTH = 240;
 const SUBMENU_WIDTH = 240;
 const SUBMENU_MAX_HEIGHT = 288;
 
@@ -76,9 +76,8 @@ export function HandoffButton({
       renderTrigger={renderTrigger}
       icon={Replace}
       title={t("Handoff")}
-      disabledTitle="Install another provider to hand off"
-      description={t("Hand this session to another agent to continue the work.")}
-      menuLabel="Hand this session to another agent"
+      disabledTitle={t("Install another provider to hand off")}
+      menuLabel={t("Hand this session to another agent")}
     />
   );
 }
@@ -88,12 +87,14 @@ export function BuildTargetButton({
   model,
   settings,
   disabled,
+  disabledReason,
   onPick,
 }: {
   from: HarnessId;
   model?: string;
   settings?: Record<string, string>;
   disabled?: boolean;
+  disabledReason?: string;
   onPick: (target: ModelTarget) => void;
 }) {
   const t = useT();
@@ -105,11 +106,11 @@ export function BuildTargetButton({
       onPick={onPick}
       icon={ChevronDown}
       title={t("Build with another model")}
-      disabledTitle="No build providers are available"
-      description={t("Choose the model and provider that should build this plan.")}
-      menuLabel="Build this plan with another model or provider"
+      disabledTitle={t("No build providers are available")}
+      menuLabel={t("Build this plan with another model or provider")}
       includeCurrent
       disabled={disabled}
+      disabledReason={disabledReason}
       triggerVariant="secondary"
     />
   );
@@ -121,18 +122,23 @@ export function SecondOpinionButton({
   fromSettings,
   onPick,
   icon: Icon = MessageMultiple,
-  title = "Second opinion",
-  disabledTitle = "No different model available for a second opinion",
-  description = "Send this turn to another agent to review the work.",
-  menuLabel = "Send this turn to another agent",
+  title,
+  disabledTitle,
+  menuLabel,
   includeCurrent = false,
   excludeFromModel = false,
   disabled: disabledByCaller = false,
+  disabledReason,
   triggerClassName,
   triggerVariant = "ghost",
   renderTrigger,
 }: Props) {
   const t = useT();
+  // Callers pass already-translated copy; these English fallbacks are translated here
+  // so a caller that omits a prop still gets the active language.
+  const titleText = title ?? t("Second opinion");
+  const disabledText = disabledTitle ?? t("No different model available for a second opinion");
+  const menuLabelText = menuLabel ?? t("Send this turn to another agent");
   const availabilityVersion = useSyncExternalStore(
     subscribeHarnessAvailability,
     getHarnessAvailabilitySnapshot,
@@ -197,7 +203,11 @@ export function SecondOpinionButton({
         });
   const noTargets = targets.length === 0 || !hasSelectableModel;
   const disabled = disabledByCaller || noTargets;
-  const label = noTargets ? disabledTitle : title;
+  const label = noTargets
+    ? disabledText
+    : disabledByCaller && disabledReason
+      ? disabledReason
+      : titleText;
 
   const modelsOf = (harness: HarnessId) => {
     const list = catalog.modelsFor(harness);
@@ -220,31 +230,15 @@ export function SecondOpinionButton({
     setOpen(false);
     onPick({ harness: model.harness, model: model.id, modelSettings });
   };
-  const menuItems = (): DropdownMenuItem[] => [
-    {
-      kind: "content",
-      id: "description",
-      node: (
-        <Text
-          as="p"
-          size="micro"
-          tone="secondary"
-          leading="none"
-          className="px-1.5 py-1 text-balance"
-        >
-          {description}
-        </Text>
-      ),
-    },
-    { kind: "sep" },
-    ...(targets.length === 0
+  const menuItems = (): DropdownMenuItem[] =>
+    targets.length === 0
       ? [
           {
             kind: "content" as const,
             id: "empty",
             node: (
               <Text as="div" size="caption" tone="secondary" className="px-1.5 py-1">
-                {disabledTitle}
+                {disabledText}
               </Text>
             ),
           },
@@ -259,7 +253,7 @@ export function SecondOpinionButton({
             kind: "item",
             id: harness,
             label: HARNESS_TITLE[harness],
-            icon: <HarnessIcon harness={harness} className="size-3.5" />,
+            icon: <HarnessIcon harness={harness} size="sm" />,
             disabled: !isHarnessAvailable(harness) && probed,
             submenu: list.length
               ? list.map((model): DropdownMenuAction => {
@@ -294,8 +288,7 @@ export function SecondOpinionButton({
             submenuWidth: SUBMENU_WIDTH,
             submenuMaxHeight: SUBMENU_MAX_HEIGHT,
           };
-        })),
-  ];
+        });
 
   return (
     <>
@@ -322,22 +315,23 @@ export function SecondOpinionButton({
           aria-haspopup="menu"
           aria-expanded={open}
           disabled={disabled}
+          disabledReason={disabled ? label : undefined}
           onClick={() => {
             if (disabled) return;
             setOpen((value) => !value);
           }}
         >
-          <Icon className="size-3.5" strokeWidth={1.75} />
+          <Icon className="icon-sm" strokeWidth={1.75} />
         </Button>
       )}
       {open && button ? (
         <DropdownMenu
           anchor={button}
-          label={menuLabel}
+          label={menuLabelText}
           items={menuItems()}
           side="top"
           align="center"
-          width={MENU_WIDTH}
+          size="sm"
           onPick={pickEncoded}
           onClose={() => setOpen(false)}
         />

@@ -27,6 +27,8 @@ export function createSmtpTransport(
     port: account.port,
     secure: account.secure ?? account.port === 465,
     auth: { user: credentials.user, pass: credentials.pass },
+    pool: true,
+    maxConnections: 1,
     connectionTimeout: 15_000,
     greetingTimeout: 15_000,
     socketTimeout: 30_000,
@@ -36,6 +38,56 @@ export function createSmtpTransport(
     verify: () => transport.verify(),
     close: () => transport.close(),
   };
+}
+
+/**
+ * Hands out one transport per account for as long as the pool lives, so a tick's sends reuse one
+ * authenticated connection instead of connecting and logging in for each message. A changed host,
+ * port, security mode or credential gets a new transport. The `close()` a sender calls on a handle
+ * is a no-op; `close()` on the pool closes every connection, so the owner must call it when done.
+ */
+export type SmtpPool = SmtpTransportFactory & { close(): void };
+
+type PooledTransport = {
+  /** Every field the connection depends on; a mismatch means the pooled connection is stale. */
+  connection: string;
+  transport: SmtpTransport;
+};
+
+function connectionKey(account: EmailAccount, credentials: SmtpCredentials): string {
+  return JSON.stringify([
+    account.host,
+    account.port,
+    account.secure,
+    credentials.user,
+    credentials.pass,
+  ]);
+}
+
+export function createSmtpPool(create: SmtpTransportFactory = createSmtpTransport): SmtpPool {
+  const pooled = new Map<string, PooledTransport>();
+  const factory: SmtpTransportFactory = (account, credentials) => {
+    const connection = connectionKey(account, credentials);
+    let entry = pooled.get(account.id);
+    if (!entry || entry.connection !== connection) {
+      entry?.transport.close();
+      pooled.delete(account.id);
+      entry = { connection, transport: create(account, credentials) };
+      pooled.set(account.id, entry);
+    }
+    const { transport } = entry;
+    return {
+      sendMail: (message) => transport.sendMail(message),
+      verify: () => transport.verify(),
+      close: () => undefined,
+    };
+  };
+  return Object.assign(factory, {
+    close: () => {
+      for (const entry of pooled.values()) entry.transport.close();
+      pooled.clear();
+    },
+  });
 }
 
 /** SMTP authentication codes (534, 535) mean the stored credentials are no longer accepted. */

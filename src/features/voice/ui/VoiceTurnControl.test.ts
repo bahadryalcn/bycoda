@@ -16,13 +16,11 @@ afterEach(async () => {
   container.remove();
   vi.unstubAllGlobals();
 });
-async function render(manual: boolean, muted = false, compact = false) {
+async function render(manual: boolean, muted = false) {
   const onManualChange = vi.fn(),
     onFinish = vi.fn();
   await act(async () =>
-    root.render(
-      createElement(VoiceTurnControl, { manual, muted, compact, onManualChange, onFinish }),
-    ),
+    root.render(createElement(VoiceTurnControl, { manual, muted, onManualChange, onFinish })),
   );
   return { onManualChange, onFinish };
 }
@@ -35,8 +33,8 @@ it("shows the current automatic mode and opens choices without changing or commi
   expect(automatic.onFinish).not.toHaveBeenCalled();
   const choices = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
   expect(choices.map((node) => [node.textContent, node.getAttribute("aria-checked")])).toEqual([
-    ["I'll finish when readyPress Finish turn to send your speech.", "false"],
-    ["Reply when I pauseReply after a pause in your speech.", "true"],
+    ["I'll finish when ready", "false"],
+    ["Reply when I pause", "true"],
   ]);
   await act(async () => choices[0].click());
   expect(automatic.onManualChange).toHaveBeenCalledExactlyOnceWith(true);
@@ -48,28 +46,13 @@ it("shows the current automatic mode and opens choices without changing or commi
   expect(manual.onFinish).toHaveBeenCalledOnce();
   expect(manual.onManualChange).not.toHaveBeenCalled();
 });
-it("shows only icons in compact mode and never finishes from the menu", async () => {
-  await render(false, false, true);
-  expect(container.querySelectorAll("button")).toHaveLength(1);
-  expect(container.textContent).toBe("");
-  const manual = await render(true, false, true);
-  const finish = container.querySelector<HTMLButtonElement>('[aria-label="Finish turn"]')!;
-  expect(finish.textContent).toBe("");
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Turn ending"]')!.click(),
-  );
-  const choices = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
-  expect(choices.map((node) => node.getAttribute("aria-checked"))).toEqual(["true", "false"]);
-  expect(manual.onFinish).not.toHaveBeenCalled();
-  await act(async () => choices[1].click());
-  expect(manual.onManualChange).toHaveBeenCalledWith(false);
-  expect(manual.onFinish).not.toHaveBeenCalled();
-});
 it("blocks finishing while muted but keeps the turn policy choice available", async () => {
   const { onFinish, onManualChange } = await render(true, true);
   expect(
-    container.querySelector<HTMLButtonElement>('button[aria-label="Finish turn"]')!.disabled,
-  ).toBe(true);
+    container
+      .querySelector<HTMLButtonElement>('button[aria-label="Finish turn"]')!
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
   const menu = container.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!;
   expect(menu.disabled).toBe(false);
   await act(async () => menu.click());

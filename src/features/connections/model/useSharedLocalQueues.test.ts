@@ -8,6 +8,8 @@ import {
   QUEUE_LEASE_TTL_MS,
   QueueNotReadyError,
   QueueDeferredError,
+  QueueRunLeaseBlockedError,
+  QueueRunLeasePendingError,
   type SharedQueue,
 } from "./sharedQueue";
 import { desktopQueueClientId } from "./sharedQueueClient";
@@ -22,6 +24,8 @@ import { setImmediate as nextWorkerTurn } from "node:timers/promises";
 import { SessionQueues } from "../../../../host/sessions/session-queue";
 import {
   heldSharedQueueLeases,
+  noteSharedQueueLeases,
+  QUEUE_SYNC_DEADLINE_MS,
   sharedLocalQueueReady,
   resumeSharedLocalQueue,
   requeueSharedLocalHead,
@@ -364,6 +368,64 @@ it("recovers a synchronization failure and steers on the same click", async () =
   expect(queue.messages).toEqual([]);
 });
 
+it("records a wait, not a rejection, when the host cannot be asked before anything is sent", async () => {
+  await mount();
+  const send = vi.fn(() => true);
+  mocks.request.mockRejectedValue(
+    new Error("RPC_WS_INTERRUPTED: Host connection ended before the result was known."),
+  );
+  await expect(submitSharedLocalQueue("chat", "a", false, send)).rejects.toBeInstanceOf(
+    QueueNotReadyError,
+  );
+  expect(send).not.toHaveBeenCalled();
+  expect(readDeliveryProgress("chat")).toMatchObject({
+    stage: "waiting",
+    detail: expect.stringContaining("RPC_WS_INTERRUPTED"),
+  });
+  expect(sessionsRef.current[0].queuedMessages).toEqual([row("a")]);
+  expect(sessionsRef.current[0].queueStatus).toBe("active");
+});
+
+it("records a wait when the full local storage stops the claim, and the next send replaces it", async () => {
+  await mount();
+  const send = vi.fn(() => true);
+  const setItem = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+    throw new DOMException("quota", "QuotaExceededError");
+  });
+  try {
+    await expect(submitSharedLocalQueue("chat", "a", false, send)).rejects.toBeInstanceOf(
+      QueueNotReadyError,
+    );
+  } finally {
+    setItem.mockRestore();
+  }
+  expect(readDeliveryProgress("chat")).toMatchObject({
+    stage: "waiting",
+    detail: expect.stringContaining("local storage is full"),
+  });
+  expect(send).not.toHaveBeenCalled();
+  expect(sessionsRef.current[0].queuedMessages).toEqual([row("a")]);
+  await wake();
+  expect(await submitSharedLocalQueue("chat", "a", false, send)).toBe(true);
+  expect(readDeliveryProgress("chat")?.stage).toBe("accepted");
+});
+
+it("does not hold the queue when a plain error stops a send after the claim but before the hand-over", async () => {
+  await mount();
+  const send = vi.fn(() => true);
+  await expect(
+    submitSharedLocalQueue("chat", "a", false, send, () => {
+      throw new Error("preparation failed");
+    }),
+  ).rejects.toBeInstanceOf(QueueNotReadyError);
+  expect(send).not.toHaveBeenCalled();
+  await tick();
+  expect(readDeliveryProgress("chat")?.stage).toBe("waiting");
+  expect(queue.claim).toBeUndefined();
+  expect(queue.messages).toEqual([row("a")]);
+  expect(queue.status).not.toBe("paused");
+});
+
 it("durably releases a paused shared queue without sending a message", async () => {
   await mount();
   sessionsRef.current = [{ ...sessionsRef.current[0], queueStatus: "resuming", busy: true }];
@@ -584,6 +646,29 @@ it.each(["active", "paused", "restored"] as const)(
   },
 );
 
+it.each([
+  [QueueRunLeasePendingError, "waiting", "active"],
+  [QueueRunLeaseBlockedError, "rejected", "paused"],
+] as const)(
+  "retains the exact row when a Host writer blocks before delivery",
+  async (ErrorClass, stage, status) => {
+    const host = useRealHostQueue();
+    await mount();
+    const detail = "Ownership feedback";
+    await expect(
+      submitSharedLocalQueue("chat", "a", false, () => {
+        throw new ErrorClass(detail);
+      }),
+    ).rejects.toBeInstanceOf(ErrorClass);
+    await tick();
+    const retained = await host.queues.get("chat");
+    expect(retained).toMatchObject({ status, messages: [row("a")] });
+    expect(retained.claim).toBeUndefined();
+    expect(retained.messages[0]?.deliveryUnknown).toBeUndefined();
+    expect(readDeliveryProgress("chat")).toMatchObject({ stage, detail, queueOnly: true });
+  },
+);
+
 it("does not undo a Stop that pauses the host queue while a steer is being deferred", async () => {
   const host = useRealHostQueue();
   sessionsRef.current[0].busy = true;
@@ -646,6 +731,9 @@ function useRealHostQueue(
     pathToFileURL(resolve(__dirname, "../../../../host/store-worker.mjs")),
   );
   databases.push(db);
+  // The worker answers in real time while the fake clock jumps whole lease spans:
+  // its reply deadline must not fire on the jump (it stays below setTimeout's 2^31 cap).
+  db.boundaryDeadlineMs = 2_000_000_000;
   const queues = new SessionQueues(db);
   mocks.request.mockImplementation(async (_machine, method, params) => {
     await onCall?.(method, params);
@@ -941,8 +1029,8 @@ it("does not resume while a given-up send may still be answered, and resumes onc
   expect(queue.status).toBe("active");
 });
 
-it("tells the host a held lease cannot send while the conversation diverged from its host copy", async () => {
-  useRealHostQueue();
+it("yields a stale mirror's queue to the host but keeps a divergence blocked", async () => {
+  const { queues } = useRealHostQueue();
   await mount();
   expect(heldSharedQueueLeases()).toEqual([{ sessionId: "chat", epoch: 1 }]);
   await act(async () => {
@@ -951,7 +1039,27 @@ it("tells the host a held lease cannot send while the conversation diverged from
       adoptedSyncConflict: true,
     })) as Session[];
   });
+  expect(heldSharedQueueLeases()).toEqual([
+    { sessionId: "chat", epoch: 1, blocked: true, syncPending: true },
+  ]);
+  await act(async () => {
+    sessionsRef.current = sessionsRef.current.map((session) => ({
+      ...session,
+      adoptedDivergence: { key: "diverged" },
+    })) as Session[];
+  });
   expect(heldSharedQueueLeases()).toEqual([{ sessionId: "chat", epoch: 1, blocked: true }]);
+  await act(async () => {
+    sessionsRef.current = sessionsRef.current.map((session) => ({
+      ...session,
+      adoptedDivergence: undefined,
+    })) as Session[];
+    const lease = (await queues.get("chat")).drain!;
+    await queues.release("chat", lease.holder, lease.epoch);
+    noteSharedQueueLeases({ chat: null });
+    for (let i = 0; i < 20; i++) await flushTurn();
+  });
+  expect(queues.live(await queues.get("chat"))).toBe(false);
 });
 
 function releasing() {
@@ -1042,4 +1150,106 @@ it("finds a Host notice on the safety pass when the wake for an unshared idle co
     }
   });
   expect(sessionsRef.current[0].queuedMessages).toEqual([notice]);
+});
+
+/** Per-conversation host queues; `gate` answers every request of the conversations it names later. */
+function stalledHost(gated: Set<string>) {
+  const queues = new Map<string, SharedQueue>();
+  const held: { sessionId: string; release: () => void }[] = [];
+  mocks.request.mockImplementation(async (_machine, method, params) => {
+    const answer = () => {
+      const previous = queues.get(params.sessionId) ?? { messages: [], revision: 0 };
+      const value = method.endsWith(".change")
+        ? {
+            ...mergeQueueChange(previous, { before: params.before, after: params.after }),
+            ...(params.takeOwnership ? { consumer: params.clientId } : {}),
+            revision: previous.revision + 1,
+          }
+        : previous;
+      queues.set(params.sessionId, value);
+      return structuredClone(value);
+    };
+    if (!gated.has(params.sessionId)) return answer();
+    return new Promise((resolve) => {
+      held.push({ sessionId: params.sessionId, release: () => resolve(answer()) });
+    });
+  });
+  return { queues, held };
+}
+
+async function pastDeadline() {
+  await act(async () => {
+    for (let elapsed = 0; elapsed <= QUEUE_SYNC_DEADLINE_MS; elapsed += 1_000) {
+      vi.advanceTimersByTime(1_000);
+      for (let i = 0; i < 10; i++) await flushTurn();
+    }
+  });
+}
+
+it("keeps serving other queues when one queue's host request never answers", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  sessionsRef.current = [
+    sessionsRef.current[0],
+    { ...sessionsRef.current[0], id: "other", queuedMessages: [row("o1")] },
+  ];
+  const { queues, held } = stalledHost(new Set(["chat"]));
+  try {
+    await mount();
+    await pastDeadline();
+    // The hung queue neither froze the pass nor sent anything: it shows why it waits.
+    expect(queues.get("other")?.messages.map((message) => message.id)).toEqual(["o1"]);
+    expect(sharedLocalQueueReady("chat")).toBe(false);
+    expect(localClient?.snapshot().error).toMatch(/did not answer/);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/Shared queue load timed out/));
+    // It is left alone while its request is out: no second request joins or duplicates it.
+    await tick();
+    expect(held.filter((request) => request.sessionId === "chat")).toHaveLength(1);
+  } finally {
+    warn.mockRestore();
+  }
+});
+
+it("applies the late answer of a stalled queue once, without sending its row", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const gated = new Set(["chat"]);
+  const { queues, held } = stalledHost(gated);
+  try {
+    await mount();
+    await pastDeadline();
+    expect(sharedLocalQueueReady("chat")).toBe(false);
+    // The host answers late and normally from now on.
+    gated.clear();
+    await act(async () => {
+      held.splice(0).forEach((request) => request.release());
+      for (let i = 0; i < 40; i++) await flushTurn();
+    });
+    await tick();
+    expect(localClient?.snapshot().error).toBeUndefined();
+    expect(sharedLocalQueueReady("chat")).toBe(true);
+    // The late answer is adopted once: the row stays queued on the host, never doubled or dropped.
+    expect(queues.get("chat")?.messages.map((message) => message.id)).toEqual(["a"]);
+  } finally {
+    warn.mockRestore();
+  }
+});
+
+it("names a failed queue sync instead of dropping it", async () => {
+  await mount();
+  expect(sharedLocalQueueReady("chat")).toBe(true);
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    mocks.request.mockImplementation(async () => {
+      throw new Error("host refused the read");
+    });
+    await wake();
+    await tick();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringMatching(/Shared queue sync failed/),
+      expect.objectContaining({ message: "host refused the read" }),
+    );
+    expect(localClient?.snapshot().error).toBe("host refused the read");
+    expect(sharedLocalQueueReady("chat")).toBe(false);
+  } finally {
+    warn.mockRestore();
+  }
 });

@@ -66,16 +66,20 @@ it("paces a newly arrived reply completed before its first paint", () => {
       }),
     ),
   );
-  expect(container.querySelector(".agent-markdown")?.textContent).toBe("");
+  const response = () =>
+    container.querySelector('[data-selectable-agent-response="reply"] .agent-markdown');
+  expect(response()?.textContent).toBe("");
   act(() => vi.advanceTimersByTime(2_000));
-  expect(container.querySelector(".agent-markdown")?.textContent).toBe(reply);
+  expect(response()?.textContent).toBe(reply);
 });
 
 it("shows saved and newly reopened output immediately", () => {
   const head: Block[] = [{ id: "user", role: "user", text: "Explain" }];
   const reply: Block = { id: "reply", role: "assistant", text: "An already saved answer." };
   render([...head, reply]);
-  expect(container.querySelector(".agent-markdown")?.textContent).toBe(reply.text);
+  const response = () =>
+    container.querySelector('[data-selectable-agent-response="reply"] .agent-markdown');
+  expect(response()?.textContent).toBe(reply.text);
   act(() => root.render(createElement(AgentTranscript, { blocks: head, visible: false })));
   act(() =>
     root.render(
@@ -85,9 +89,7 @@ it("shows saved and newly reopened output immediately", () => {
       }),
     ),
   );
-  expect(container.querySelector(".agent-markdown")?.textContent).toBe(
-    "Output received while hidden.",
-  );
+  expect(response()?.textContent).toBe("Output received while hidden.");
 });
 
 it("paces a burst of tool calls so each enters after the one before it", () => {

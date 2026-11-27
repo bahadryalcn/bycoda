@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, onTestFinished, vi } from "vitest";
+import { saveRemoteMediaMode } from "../../settings/model/remoteMediaMode";
 import { useTranscriptImageOpen } from "./TranscriptImagePreview";
 
 const mocks = vi.hoisted(() => ({
@@ -16,6 +17,10 @@ vi.mock("../../../platform/tauri/fs", () => ({
   readBinaryFile: mocks.read,
   prepareLocalFile: mocks.prepare,
   preparedFileSize: vi.fn(async () => 1024),
+  // No finished copy of this version yet, so the saved mode decides how it plays.
+  remoteMediaInfo: vi.fn(async () => ({ size: 1024 })),
+  remoteMediaStreamUrl: vi.fn(),
+  releaseRemoteMediaLease: vi.fn(),
   openPathWithDefaultApp: vi.fn(),
   revealPath: vi.fn(),
 }));
@@ -98,6 +103,9 @@ it("retains the image lightbox and lets other documents reach the caller", async
 });
 
 it("resolves a remote video through the owning workspace before preparing it", async () => {
+  // "Download, then play" copies the file first; streaming is covered by the MediaView tests.
+  saveRemoteMediaMode("download");
+  onTestFinished(() => void saveRemoteMediaMode("stream"));
   mocks.resolve.mockResolvedValue("remote://machine/repo/demo.mp4");
   mocks.prepare.mockResolvedValue("C:/cache/demo.mp4");
   await act(async () => root.render(createElement(Harness, { cwd: "remote://machine/repo" })));

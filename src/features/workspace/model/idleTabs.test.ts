@@ -6,6 +6,7 @@ import {
   idleWorkspaceTabIds,
   isEmptyNewChat,
   sessionIsIdle,
+  sessionsById,
   unlistedTabIds,
   type IdleTabInput,
 } from "./idleTabs";
@@ -106,6 +107,26 @@ describe("sessionIsIdle", () => {
     expect(sessionIsIdle(session("a"), input({ busySessionIds: new Set(["a"]) }))).toBe(false);
     expect(sessionIsIdle(session("a"), input({ unseenFinishedIds: new Set(["a"]) }))).toBe(false);
     expect(sessionIsIdle(session("a"), input({ hasComposerDraft: () => true }))).toBe(false);
+  });
+});
+
+describe("sessionsById", () => {
+  it("indexes one sessions array once and rebuilds only for a new array", () => {
+    const sessions = [session("a"), session("b")];
+    const first = sessionsById(sessions);
+    expect(sessionsById(sessions)).toBe(first);
+    expect(first.get("b")).toBe(sessions[1]);
+
+    const next = [session("a")];
+    expect(sessionsById(next)).not.toBe(first);
+    expect(sessionsById(next).has("b")).toBe(false);
+  });
+
+  it("keeps idle eligibility identical when the index is shared", () => {
+    const sessions = [session("a"), session("b", { busy: true })];
+    const tabs = [tab("t1", ["a"]), tab("t2", ["b"])];
+    expect(idleWorkspaceTabIds(input({ tabs, sessions }))).toEqual(["t1"]);
+    expect(idleWorkspaceTabIds(input({ tabs, sessions }))).toEqual(["t1"]);
   });
 });
 

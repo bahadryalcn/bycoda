@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import type { BoundFormat, t } from "../../shared/i18n";
-import { Badge } from "../../shared/ui/Badge";
 import { DiffStat } from "../../shared/ui/DiffStat";
 import { GitBranch } from "../../shared/ui/icons";
 import { Text } from "../../shared/ui/Text";
@@ -55,11 +54,6 @@ export function changesTooltipDetails({
           <Text wrap="anywhere" size="inherit" tone="inherit">
             {scope.folder}
           </Text>
-        ) : null}
-        {scope.session ? (
-          <Badge size="xs" tone="accent" appearance="subtle" className="shrink-0">
-            {translate("This session")}
-          </Badge>
         ) : null}
       </span>,
     );

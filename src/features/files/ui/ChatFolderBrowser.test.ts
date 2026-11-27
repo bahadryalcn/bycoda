@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { showErrorDetails } from "./errorDetails.test-support";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const native = vi.hoisted(() => ({
   list: vi.fn(),
@@ -73,15 +74,23 @@ it("keeps live-folder progress on its action, suppresses duplicates and recovers
   expect(document.querySelectorAll('button[aria-busy="true"]')).toHaveLength(1);
   expect(document.activeElement).toBe(action);
   await act(async () => reject(new Error("Connection unavailable")));
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain("Connection unavailable");
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not open the shared folder.",
+  );
+  await showErrorDetails(document);
+  expect(document.body.textContent).toContain("Connection unavailable");
   await act(async () => action.click());
   expect(native.live).toHaveBeenCalledTimes(2);
 });
 it("retries an unavailable listing in place", async () => {
   native.list.mockRejectedValueOnce(new Error("Folder unavailable"));
   await render();
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain("Folder unavailable");
-  await act(async () => button("Retry").click());
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    "Couldn’t open this folder",
+  );
+  await showErrorDetails(document);
+  expect(document.body.textContent).toContain("Folder unavailable");
+  await act(async () => button("Try again").click());
   expect(native.list).toHaveBeenCalledTimes(2);
   expect(document.querySelector('[aria-label="Folder contents"]')?.textContent).toContain(
     "report.md",
@@ -136,7 +145,37 @@ it("locks mapping roots while validation owns their values and restores editing 
   expect(inputs.every((input) => !input.disabled)).toBe(true);
   expect(inputs[1].value).toBe("/shared/retained-folder");
   expect(document.querySelector('[role="alert"]')?.textContent).toContain(
-    "Mapping connection unavailable",
+    "Could not open the shared folder.",
   );
+  await showErrorDetails(document);
+  expect(document.body.textContent).toContain("Mapping connection unavailable");
   expect(native.open).not.toHaveBeenCalled();
+});
+
+it("sorts a large listing once and windows rows behind a show-more control", async () => {
+  const files = Array.from({ length: 300 }, (_, i) => ({
+    name: `file-${String(i).padStart(3, "0")}.md`,
+    path: `/fixture/file-${String(i).padStart(3, "0")}.md`,
+    isDir: false,
+    ignored: false,
+  })).reverse();
+  native.list.mockResolvedValueOnce({
+    ...listing,
+    entries: [
+      ...files,
+      { name: "zz-folder", path: "/fixture/zz-folder", isDir: true, ignored: false },
+    ],
+  });
+  await render();
+  const rows = () => [...document.querySelectorAll('[aria-label="Folder contents"] li')];
+  expect(rows()).toHaveLength(200);
+  expect(rows()[0].textContent).toContain("zz-folder");
+  expect(rows()[1].textContent).toContain("file-000.md");
+  expect(button("Show 101 more…")).toBeTruthy();
+  await act(async () => button("Show 101 more…").click());
+  expect(rows()).toHaveLength(301);
+  expect(rows().at(-1)?.textContent).toContain("file-299.md");
+  expect(
+    [...document.querySelectorAll("button")].some((item) => item.textContent === "Show 101 more…"),
+  ).toBe(false);
 });

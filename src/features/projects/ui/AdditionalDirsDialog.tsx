@@ -16,6 +16,7 @@ import {
 } from "../model/additionalDirs";
 import { useProjectGroupAssignments } from "../model/projectGroups";
 import { useRecents } from "../model/recents";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 
 type Props = {
   project: string;
@@ -44,6 +45,13 @@ export function AdditionalDirsDialog({ project, name, onClose }: Props) {
     (path, index, all) => all.findIndex((other) => pathKey(other) === pathKey(path)) === index,
   );
 
+  const nameCounts = new Map<string, number>();
+  for (const path of candidates) {
+    const key = basename(path).toLocaleLowerCase();
+    nameCounts.set(key, (nameCounts.get(key) ?? 0) + 1);
+  }
+  const sharedNames = new Set([...nameCounts].filter(([, count]) => count > 1).map(([key]) => key));
+
   const needle = query.trim().toLocaleLowerCase();
   const visible = candidates.filter((path) =>
     `${basename(path)} ${path}`.toLocaleLowerCase().includes(needle),
@@ -62,18 +70,13 @@ export function AdditionalDirsDialog({ project, name, onClose }: Props) {
     <Modal
       padding="none"
       title={t("Additional folders")}
-      description={t(
-        "Folders agents in {p0} can also read and edit. Applies to Claude Code and Codex, from the next message.",
-        { p0: name },
-      )}
+      description={t("Folders agents in {p0} can also read and edit.", { p0: name })}
       size="sm"
       fitViewport
       onClose={onClose}
     >
       {saveError ? (
-        <InlineError className="px-3 pt-2">
-          {t("Could not save project changes. Try again.")}
-        </InlineError>
+        <InlineError inset="row">{t("Could not save project changes. Try again.")}</InlineError>
       ) : null}
       {candidates.length ? (
         <div className="px-2 pt-2">
@@ -87,13 +90,14 @@ export function AdditionalDirsDialog({ project, name, onClose }: Props) {
       ) : null}
       {candidates.length === 0 ? (
         <EmptyState
+          illustration={false}
           description={t("Put this project in a group with other projects to offer them here.")}
         />
       ) : visible.length === 0 ? (
         <EmptyState
           context="panel"
           kind="filtered"
-          icon={null}
+          illustration={false}
           description={t("No folders match your search.")}
           onReset={() => setQuery("")}
           resetLabel={t("Clear search")}
@@ -107,16 +111,19 @@ export function AdditionalDirsDialog({ project, name, onClose }: Props) {
                   checked={selectedKeys.has(pathKey(path))}
                   onChange={() => toggle(path)}
                   label={
-                    <>
+                    <Tooltip label={path} asChild>
                       <span className="flex min-w-0 flex-col">
                         <Text wrap="anywhere" size="secondary" tone="primary">
                           {basename(path)}
                         </Text>
-                        <Text wrap="anywhere" size="micro" tone="muted">
-                          {path}
-                        </Text>
+                        {/* The full path only tells same-named folders apart; otherwise it is a hover. */}
+                        {sharedNames.has(basename(path).toLocaleLowerCase()) ? (
+                          <Text wrap="anywhere" size="micro" tone="muted">
+                            {path}
+                          </Text>
+                        ) : null}
                       </span>
-                    </>
+                    </Tooltip>
                   }
                   padding={{ inline: "md", block: "sm" }}
                   className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5"

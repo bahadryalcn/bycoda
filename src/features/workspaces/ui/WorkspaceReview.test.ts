@@ -13,6 +13,9 @@ vi.mock("../model/workspaceClient", () => ({
   getWorkspaceCapabilities: vi.fn(),
   workspaceOperationKey: () => "operation-key",
 }));
+vi.mock("../../source-control/ui/CommitDiff", () => ({
+  CommitDiff: ({ sha }: { sha: string }) => createElement("div", { "data-sha": sha }),
+}));
 vi.mock("../../../shared/ui/Modal", () => ({
   Modal: ({ title, children, footer }: { title: string; children: ReactNode; footer: ReactNode }) =>
     createElement("div", { role: "dialog", "aria-label": title }, children, footer),
@@ -43,6 +46,7 @@ const workspace: ManagedWorkspace = {
 const plan: BranchDeliveryPlan = {
   token: "sha-bound-plan",
   expiresAt: Date.now() + 60000,
+  expiresInMs: 60000,
   workspaceId: "owned",
   expectedRevision: 7,
   sourceBranchRef: workspace.branchRef,
@@ -125,10 +129,10 @@ it("blocks overlapping target paths and expired approval plans", async () => {
     async (method) =>
       (method === "workspaces.get"
         ? workspace
-        : { ...plan, overlappingPaths: ["src/changed.ts"], expiresAt: 1 }) as never,
+        : { ...plan, overlappingPaths: ["src/changed.ts"], expiresInMs: 0 }) as never,
   );
   await renderReview();
-  expect(button("Merge into main").disabled).toBe(true);
+  expect(button("Merge into main").getAttribute("aria-disabled")).toBe("true");
   expect(container.textContent).toContain("Overlapping target changes");
   expect(container.textContent).toContain("This review expired");
   expect(
@@ -136,6 +140,66 @@ it("blocks overlapping target paths and expired approval plans", async () => {
       .mocked(workspaceRequest)
       .mock.calls.some(([method]) => method === "workspaces.delivery.merge"),
   ).toBe(false);
+});
+
+it("requires repository and title before preparing a publication", async () => {
+  vi.mocked(workspaceRequest).mockImplementation(
+    async (method) => (method === "workspaces.get" ? workspace : plan) as never,
+  );
+  await renderReview();
+  await act(async () => button("Create PR").click());
+  const review = button("Review publication");
+  expect(review.getAttribute("aria-disabled")).toBe("true");
+  expect(button("Retry review")).toBeUndefined();
+  await act(async () => review.click());
+  expect(
+    vi
+      .mocked(workspaceRequest)
+      .mock.calls.filter(([method]) => method === "workspaces.delivery.review"),
+  ).toHaveLength(1);
+});
+
+it("clears the selected commit diff on review refresh", async () => {
+  const reviewedCommit = "c".repeat(40);
+  const review = vi
+    .fn()
+    .mockResolvedValueOnce({ ...plan, commits: [reviewedCommit] })
+    .mockResolvedValueOnce({ ...plan, token: "new-plan", commits: [reviewedCommit] });
+  vi.mocked(workspaceRequest).mockImplementation(
+    async (method) => (method === "workspaces.get" ? workspace : await review()) as never,
+  );
+  await renderReview();
+  await act(async () => button("ccccccc").click());
+  expect(container.querySelector(`[data-sha="${reviewedCommit}"]`)).not.toBeNull();
+  await act(async () => button("Refresh review").click());
+  expect(container.querySelector(`[data-sha="${reviewedCommit}"]`)).toBeNull();
+});
+
+it("reports a confirmed merge even when the workspace refresh fails and retries only the read", async () => {
+  const getWorkspace = vi
+    .fn()
+    .mockResolvedValueOnce(workspace)
+    .mockRejectedValueOnce(new Error("Read failed after merge"))
+    .mockResolvedValueOnce(workspace);
+  vi.mocked(workspaceRequest).mockImplementation(async (method) => {
+    if (method === "workspaces.get") return getWorkspace();
+    if (method === "workspaces.delivery.review") return plan as never;
+    if (method === "workspaces.delivery.merge") return {} as never;
+    throw new Error(method);
+  });
+  await renderReview();
+  await act(async () => button("Merge into main").click());
+  expect(container.textContent).toContain("Merged into main.");
+  expect(container.textContent).toContain("Couldn’t refresh workspace status");
+  expect(container.textContent).not.toContain("Couldn’t merge workspace changes");
+  await act(async () => button("Refresh workspace status").click());
+  expect(container.textContent).not.toContain("Couldn’t refresh workspace status");
+  expect(getWorkspace).toHaveBeenCalledTimes(3);
+  expect(
+    vi
+      .mocked(workspaceRequest)
+      .mock.calls.filter(([method]) => method === "workspaces.delivery.merge"),
+  ).toHaveLength(1);
 });
 
 const cleanupPlan = (blockers: string[] = []) => ({
@@ -313,7 +377,12 @@ it("closes the dialog at once and reports a blocker left after closing in the ba
   await act(async () => button("Remove record").click());
   expect(close).toHaveBeenCalledOnce();
   expect(show).toHaveBeenLastCalledWith(
-    expect.objectContaining({ tone: "danger", message: "Workspace is still in use." }),
+    expect.objectContaining({
+      tone: "danger",
+      extra: expect.objectContaining({
+        props: expect.objectContaining({ detail: "Workspace is still in use." }),
+      }),
+    }),
   );
   expect(vi.mocked(workspaceRequest).mock.calls.map(([method]) => method)).not.toContain(
     "workspaces.cleanup.apply",
@@ -361,7 +430,11 @@ it("keeps the PR draft and reconciles an uncertain publication with the original
   ).not.toBeNull();
   await act(async () => button("Review publication").click());
   await act(async () => button("Push branch and create PR").click());
-  expect(container.textContent).toContain("Unknown publication outcome");
+  expect(container.textContent).toContain("Couldn’t confirm pull request creation");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[role="alert"] button')!.click(),
+  );
+  expect(document.querySelector("pre")?.textContent).toContain("Unknown publication outcome");
   await act(async () => root.unmount());
   root = createRoot(container);
   await renderReview();

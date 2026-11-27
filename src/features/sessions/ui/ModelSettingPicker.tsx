@@ -2,26 +2,40 @@ import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { LiveText } from "../../../shared/ui/LiveText";
+import { Select } from "../../../shared/ui/Select";
+import {
+  decodeAdvisor,
+  decodeSubagents,
+  DELEGATION_LIMITS,
+} from "../../../shared/model/host-contracts/delegation";
 import {
   PickerFooter,
   PickerList,
   PopoverSearchHeader,
   usePickerList,
 } from "../../../shared/ui/picker";
-import { ArrowLeft } from "../../../shared/ui/icons";
+import { ArrowLeft, CheckList, Minus } from "../../../shared/ui/icons";
+import { DEFAULT_PROVIDER_ACCOUNT_ID } from "../../providers/public/providerAccounts";
 import {
   delegationOptionHarness,
   delegationOptionSelected,
+  delegationNextValue,
+  delegationShortLabel,
+  type DelegationOption,
   isMultiSetting,
 } from "../model/crossDelegation";
+import { catalogText } from "../model/catalogText";
 import { settingLabel } from "../model/modelPickerData";
 import type { ModelSetting } from "../model/models";
 import { HARNESS_TITLE } from "../model/session";
 import { DelegationOptionIcon } from "./DelegationSettings";
+import { ModelAccountNumber } from "./ModelAccountIdentity";
+import type { AccountLimitReason } from "./ModelAccountSwitcher";
 
 /**
  * A long choice (subagents, advisor) given the whole settings column: search on top, options
- * grouped by provider, and for multi-select a footer with Done that stays under the list.
+ * grouped by provider, with a fixed footer for multi-select actions.
  * @use Column navigation inside the model panel, built from shared picker primitives.
  * @avoid Standalone fields: SearchableSelect.
  * @replaces The model panel's local choice rows and search header.
@@ -30,45 +44,128 @@ export function ModelSettingPicker({
   setting,
   values,
   disabled,
+  limitReason,
   onChoose,
   onClose,
+  onApply,
 }: {
   setting: ModelSetting;
   values: Record<string, string>;
   disabled: boolean;
+  limitReason?: AccountLimitReason;
   onChoose: (value: string) => void;
   onClose: () => void;
+  /** Subagent lists are edited as a draft and committed once. */
+  onApply?: (value: string) => void;
 }) {
   const t = useT();
   const [query, setQuery] = useState("");
+  const [accountFilter, setAccountFilter] = useState("");
+  const saved = values[setting.id] ?? setting.value;
+  const [draft, setDraft] = useState(saved);
+  const bulk = onApply !== undefined;
+  const selection = bulk ? { ...values, [setting.id]: draft } : values;
+  const modelCount = bulk ? decodeSubagents(draft).length : 0;
   const multi = isMultiSetting(setting);
-  const label = t(settingLabel(setting));
+  const label = catalogText(t, settingLabel(setting));
   const needle = query.trim().toLocaleLowerCase();
-  // Options are grouped under their provider, so a leading "Provider · " repeats the heading.
-  const optionLabel = (option: (typeof setting.options)[number]) => {
-    const text = t(option.label);
-    const harness = delegationOptionHarness(setting, option.value);
-    const prefix = harness ? `${HARNESS_TITLE[harness]} · ` : "";
-    return prefix && text.startsWith(prefix) ? text.slice(prefix.length) : text;
-  };
-  const shown = setting.options.filter(
-    (option) => !needle || t(option.label).toLocaleLowerCase().includes(needle),
+  const settingOptions: DelegationOption[] = setting.options;
+  const entries = settingOptions
+    .filter((option) => !bulk || decodeAdvisor(option.value) !== undefined)
+    .map((option) => {
+      const ref = decodeAdvisor(option.value);
+      const harness = delegationOptionHarness(setting, option.value);
+      const provider = harness ? HARNESS_TITLE[harness] : undefined;
+      const group = bulk && option.accountLabel ? `${provider} · ${option.accountLabel}` : provider;
+      return {
+        option,
+        group,
+        reason: ref ? limitReason?.(ref.harness, ref.providerAccountId) : undefined,
+        accountKey:
+          bulk && ref
+            ? JSON.stringify([
+                ref.harness,
+                ref.providerAccountId ??
+                  (option.accountLabel ? DEFAULT_PROVIDER_ACCOUNT_ID : undefined),
+              ])
+            : "",
+      };
+    });
+  const accountOptions = Array.from(
+    new Map(
+      entries.flatMap(({ accountKey, group }) => (group ? [[accountKey, group] as const] : [])),
+    ),
+    ([value, label]) => ({ value, label }),
   );
-  const options = shown.map((option) => {
-    const harness = delegationOptionHarness(setting, option.value);
+  const shown = entries.filter(
+    ({ option, accountKey }) =>
+      (!bulk || !accountFilter || accountFilter === accountKey) &&
+      (!needle ||
+        `${catalogText(t, option.label)} ${option.accountLabel ?? ""}`
+          .toLocaleLowerCase()
+          .includes(needle)),
+  );
+  const groups = new Map<string | undefined, typeof shown>();
+  for (const entry of shown) {
+    const group = groups.get(entry.group);
+    if (group) group.push(entry);
+    else groups.set(entry.group, [entry]);
+  }
+  const grouped = [...groups.values()].flat();
+  const newlyExhausted = ({ option, reason }: (typeof entries)[number]) =>
+    bulk &&
+    !!reason &&
+    delegationOptionSelected(setting, selection, option.value) &&
+    !delegationOptionSelected(setting, values, option.value);
+  const options = grouped.map((entry) => {
+    const { option, group, reason } = entry;
+    const picked = delegationOptionSelected(setting, selection, option.value);
+    const accountShownInFilter = Boolean(accountFilter && option.accountLabel);
     return {
       value: option.value,
-      title: optionLabel(option),
-      icon: <DelegationOptionIcon setting={setting} value={option.value} />,
-      group: harness ? HARNESS_TITLE[harness] : undefined,
-      disabled,
+      title:
+        bulk && !accountShownInFilter
+          ? delegationShortLabel(setting, option.value, catalogText(t, option.label))
+          : (option.modelLabel ??
+            delegationShortLabel(setting, option.value, catalogText(t, option.label))),
+      accessibleLabel: option.modelLabel
+        ? [option.modelLabel, group, !bulk ? option.accountLabel : option.detail]
+            .filter(Boolean)
+            .join(", ")
+        : undefined,
+      icon: (
+        <DelegationOptionIcon setting={setting} value={option.value} showAccountNumber={false} />
+      ),
+      meta:
+        option.accountNumber !== undefined && !accountShownInFilter ? (
+          <span className="inline-flex items-center gap-1">
+            <ModelAccountNumber account={option} />
+            {!bulk ? option.accountLabel : null}
+          </span>
+        ) : undefined,
+      description: reason ? (
+        <Text size="inherit" tone="inherit" wrap="anywhere">
+          {reason}
+        </Text>
+      ) : bulk ? undefined : (
+        option.detail
+      ),
+      group: accountFilter ? undefined : group,
+      disabled:
+        disabled ||
+        (!!reason && !newlyExhausted(entry)) ||
+        (bulk && !picked && modelCount >= DELEGATION_LIMITS.subagentModels),
     };
   });
   const selected = setting.options
-    .filter((option) => delegationOptionSelected(setting, values, option.value))
+    .filter((option) => delegationOptionSelected(setting, selection, option.value))
     .map((option) => option.value);
   const choose = (value: string) => {
     if (disabled) return;
+    if (bulk) {
+      setDraft((previous) => delegationNextValue(setting, { [setting.id]: previous }, value));
+      return;
+    }
     onChoose(value);
     if (!multi) onClose();
   };
@@ -89,18 +186,35 @@ export function ModelSettingPicker({
       option.value !== "auto" &&
       delegationOptionSelected(setting, values, option.value),
   ).length;
+  const addShown = shown.filter(
+    ({ option, reason }) => !reason && !selected.includes(option.value),
+  );
+  const selectedShown = shown.filter(({ option }) => selected.includes(option.value));
+  const clearShown = selectedShown.length > 0 && addShown.length === 0;
+  // A quota update can arrive while editing. Keep saved picks and let the user remove a newly blocked one before applying.
+  const blockedDraft = entries.some(newlyExhausted);
+  const bulkActionLabel = clearShown ? t("Clear shown selection") : t("Select all shown");
+  const BulkActionIcon = clearShown ? Minus : CheckList;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col" data-model-setting-picker={setting.id}>
+    // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- Handle Escape from any of the editor's keyboard controls.
+    <div
+      className="flex min-h-0 flex-1 flex-col"
+      data-model-setting-picker={setting.id}
+      data-model-subagent-editor={bulk || undefined}
+      onKeyDown={
+        bulk
+          ? (event) => {
+              if (event.key !== "Escape" || event.defaultPrevented) return;
+              event.preventDefault();
+              event.stopPropagation();
+              onClose();
+            }
+          : undefined
+      }
+    >
       <div className="flex shrink-0 items-center gap-1.5 px-1.5 pt-1 pb-1.5">
-        <Button
-          iconOnly
-          variant="ghost"
-          type="button"
-          label={t("Back")}
-          aria-label={t("Back")}
-          onClick={onClose}
-        >
+        <Button iconOnly variant="ghost" type="button" label={t("Back")} onClick={onClose}>
           <ArrowLeft className="icon-sm" strokeWidth={1.75} />
         </Button>
         <Text
@@ -113,6 +227,13 @@ export function ModelSettingPicker({
         >
           {label}
         </Text>
+        {multi ? (
+          <LiveText
+            text={t("{p0} selected", { p0: bulk ? modelCount : picked })}
+            size="caption"
+            tone="secondary"
+          />
+        ) : null}
       </div>
       <PopoverSearchHeader
         type="search"
@@ -122,6 +243,55 @@ export function ModelSettingPicker({
         onValueChange={setQuery}
         {...list.searchProps}
       />
+      {bulk && (accountOptions.length > 1 || shown.length >= 8) ? (
+        <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-2 py-1">
+          {accountOptions.length > 1 ? (
+            <Select
+              label={t("Accounts")}
+              hideLabel
+              fieldSize="sm"
+              value={accountFilter}
+              options={[{ value: "", label: t("All accounts") }, ...accountOptions]}
+              onValueChange={setAccountFilter}
+            />
+          ) : null}
+          {shown.length >= 8 ? (
+            <Button
+              iconOnly
+              label={bulkActionLabel}
+              variant="secondary"
+              size="sm"
+              type="button"
+              className="col-start-2"
+              disabled={
+                disabled ||
+                (!clearShown &&
+                  (addShown.length === 0 || modelCount >= DELEGATION_LIMITS.subagentModels))
+              }
+              disabledReason={
+                disabled
+                  ? undefined
+                  : !clearShown && modelCount >= DELEGATION_LIMITS.subagentModels
+                    ? t("Remove a selected model before adding more.")
+                    : !clearShown && addShown.length === 0
+                      ? t("No shown models can be added.")
+                      : undefined
+              }
+              onClick={() =>
+                setDraft((previous) =>
+                  (clearShown ? selectedShown : addShown).reduce(
+                    (next, { option }) =>
+                      delegationNextValue(setting, { [setting.id]: next }, option.value),
+                    previous,
+                  ),
+                )
+              }
+            >
+              <BulkActionIcon className="icon-sm" aria-hidden />
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       <PickerList
         label={label}
         controller={list}
@@ -130,12 +300,27 @@ export function ModelSettingPicker({
       />
       {multi ? (
         // Stays under the scrolling list, so Done never needs a scroll back up.
-        <PickerFooter align="between">
-          <Text tone="secondary" truncate className="min-w-0 flex-1">
-            {t("{p0} selected", { p0: picked })}
-          </Text>
-          <Button variant="primary" size="sm" type="button" onClick={onClose}>
-            {t("Done")}
+        <PickerFooter align="end">
+          {bulk ? (
+            <Button variant="ghost" size="sm" type="button" onClick={onClose}>
+              {t("Cancel")}
+            </Button>
+          ) : null}
+          <Button
+            variant="primary"
+            size="sm"
+            type="button"
+            disabled={bulk && (disabled || draft === saved || blockedDraft)}
+            disabledReason={
+              blockedDraft
+                ? t(
+                    "A selected account has reached its limit. Remove its newly selected models to apply.",
+                  )
+                : undefined
+            }
+            onClick={onApply ? () => onApply(draft || "[]") : onClose}
+          >
+            {bulk ? t("Apply") : t("Done")}
           </Button>
         </PickerFooter>
       ) : null}

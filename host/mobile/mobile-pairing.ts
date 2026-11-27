@@ -8,6 +8,10 @@ import {
   type MobilePairingStatus,
   type MobilePairingRedemption as MobilePairingCredential,
 } from "../../src/integrations/mobile-pairing";
+import { deviceProofThumbprint, parseDeviceProofJwk } from "../../src/integrations/device-proof";
+import type { DeviceProofBinding } from "../security/device-proof";
+import { isoTimestamp } from "../../src/shared/lib/time/timestamps";
+import { isTunnelIngress } from "../security/ingress";
 import { hostProof, matchesHostProof } from "./host-proof";
 
 export type {
@@ -20,6 +24,9 @@ const MAX_PAIRINGS = 32;
 const RATE_WINDOW_MS = 60_000;
 const MAX_CREATE_PER_OWNER = 10;
 const MAX_REDEMPTIONS = 120;
+const MAX_HTTP_REDEMPTIONS_PER_SOURCE = 120;
+const MAX_HTTP_REDEMPTIONS = 600;
+const MAX_REDEMPTION_SOURCES = 64;
 const SECRET_FORMAT = /^[A-Za-z0-9_-]{43}$/;
 const PAIRING_ID_FORMAT = /^[a-f0-9-]{36}$/i;
 const INVALID_TICKET = "Mobile pairing ticket is invalid or expired. Create a new QR code.";
@@ -27,10 +34,15 @@ const INVALID_TICKET = "Mobile pairing ticket is invalid or expired. Create a ne
 export type MobilePairingStore = {
   environmentId: string;
   hasDeviceHash: (hash: string) => boolean | Promise<boolean>;
+  canIssuePairing: (hash: string) => boolean | Promise<boolean>;
   deviceProofKeys?: () => Promise<string[]>;
   proofOrigins?: () => Promise<string[]>;
+  /** The owner allowed phones over public tunnels; read at redemption time. */
+  phonesOverPublic?: () => boolean;
   issueDevice: (
     name: string,
+    kind: "phone" | "desktop" | undefined,
+    proofKey: DeviceProofBinding,
   ) => { id: string; token: string } | Promise<{ id: string; token: string }>;
   transaction?<T>(action: () => T | Promise<T>): T | Promise<T>;
 };
@@ -42,7 +54,10 @@ type Pairing = {
   expiresAt: number;
   state: "pending" | "paired" | "cancelled";
   suggestedName: string;
+  kind: "phone" | "desktop";
   claimHash?: string;
+  /** Thumbprint of the key the issued credential is bound to; a retry must present the same one. */
+  proofJkt?: string;
   deviceName?: string;
   credential?: MobilePairingCredential;
   expiryTimer: ReturnType<typeof setTimeout>;
@@ -83,6 +98,8 @@ export class MobilePairing {
   private readonly tickets = new Map<string, string>();
   private readonly creationRates = new Map<string, Rate>();
   private redemptionRate: Rate = { startedAt: 0, count: 0 };
+  private httpRedemptionRate: Rate = { startedAt: 0, count: 0 };
+  private readonly sourceRedemptionRates = new Map<string, Rate>();
   private redemptionTail: Promise<void> = Promise.resolve();
   private closed = false;
 
@@ -97,6 +114,9 @@ export class MobilePairing {
   ): Promise<MobilePairingCreated> {
     await this.prune();
     const issuerHash = await this.owner(issuerToken);
+    if (!(await this.store.canIssuePairing(issuerHash))) {
+      throw new MobilePairingError("Device management permission required.", 403);
+    }
     if (this.closed) throw new MobilePairingError(INVALID_TICKET);
     const name = deviceName(input.name, "My phone");
     this.creationRate(issuerHash);
@@ -117,6 +137,8 @@ export class MobilePairing {
     const ticket = randomBytes(32).toString("base64url");
     const ticketHash = hash(ticket);
     const expiresAt = this.now() + MOBILE_PAIRING_TTL_MS;
+    const expiresAtIso = isoTimestamp(expiresAt);
+    if (!expiresAtIso) throw new MobilePairingError(INVALID_TICKET);
     const expiryTimer = setTimeout(() => this.remove(id), MOBILE_PAIRING_TTL_MS);
     expiryTimer.unref();
     const entry: Pairing = {
@@ -126,6 +148,7 @@ export class MobilePairing {
       expiresAt,
       state: "pending",
       suggestedName: name,
+      kind: input.kind === "desktop" ? "desktop" : "phone",
       expiryTimer,
     };
     this.pairings.set(id, entry);
@@ -133,7 +156,7 @@ export class MobilePairing {
     return {
       pairingId: id,
       ticket,
-      expiresAt: new Date(expiresAt).toISOString(),
+      expiresAt: expiresAtIso,
       environmentId: this.store.environmentId,
     };
   }
@@ -167,13 +190,17 @@ export class MobilePairing {
     return await this.enqueueClaim(input);
   }
 
-  private enqueueClaim(input: Record<string, unknown>): Promise<MobilePairingCredential> {
+  /** `viaTunnel`: the redemption arrived through the public tunnel ingress listener. */
+  private enqueueClaim(
+    input: Record<string, unknown>,
+    viaTunnel = false,
+  ): Promise<MobilePairingCredential> {
     const captured = structuredClone(input);
     const result = this.redemptionTail.then(async () => {
       if (this.closed) throw new MobilePairingError(INVALID_TICKET);
       return this.store.transaction
-        ? await this.store.transaction(async () => await this.claim(captured))
-        : await this.claim(captured);
+        ? await this.store.transaction(async () => await this.claim(captured, viaTunnel))
+        : await this.claim(captured, viaTunnel);
     });
     this.redemptionTail = result.then(
       () => {},
@@ -182,7 +209,10 @@ export class MobilePairing {
     return result;
   }
 
-  private async claim(input: Record<string, unknown>): Promise<MobilePairingCredential> {
+  private async claim(
+    input: Record<string, unknown>,
+    viaTunnel: boolean,
+  ): Promise<MobilePairingCredential> {
     await this.prune();
     if (
       input.version !== MOBILE_PAIRING_VERSION ||
@@ -199,7 +229,7 @@ export class MobilePairing {
     if (
       !entry ||
       entry.state === "cancelled" ||
-      !(await this.store.hasDeviceHash(entry.issuerHash)) ||
+      !(await this.store.canIssuePairing(entry.issuerHash)) ||
       this.closed ||
       this.pairings.get(entry.id) !== entry ||
       entry.expiresAt <= this.now()
@@ -207,10 +237,22 @@ export class MobilePairing {
       if (entry) this.remove(entry.id);
       throw new MobilePairingError(INVALID_TICKET);
     }
+    // Phones pair over a public tunnel only when the owner allowed it. The code stays valid,
+    // so the same phone can still pair over the local network or Tailscale before it expires.
+    if (viaTunnel && entry.kind === "phone" && !this.store.phonesOverPublic?.())
+      throw new MobilePairingError(
+        "Phones pair only over the local network or Tailscale unless public access is allowed.",
+        403,
+      );
     const name = deviceName(input.deviceName, entry.suggestedName);
     const claimHash = hash(input.claimId);
+    // Every credential is bound to a client key at issuance; a stolen token alone is useless.
+    const jwk = parseDeviceProofJwk(input.proofKey);
+    if (!jwk) throw new MobilePairingError("A device proof key is required to pair.");
+    const proofKey: DeviceProofBinding = { jkt: deviceProofThumbprint(jwk), x: jwk.x };
     if (entry.state === "paired") {
       if (
+        entry.proofJkt !== proofKey.jkt ||
         entry.claimHash !== claimHash ||
         entry.deviceName !== name ||
         !entry.credential ||
@@ -226,7 +268,7 @@ export class MobilePairing {
     // keeps issuer validation and device creation in one durable operation.
     let issued: { id: string; token: string };
     try {
-      issued = await this.store.issueDevice(name);
+      issued = await this.store.issueDevice(name, entry.kind, proofKey);
       if (
         this.closed ||
         this.pairings.get(entry.id) !== entry ||
@@ -246,9 +288,23 @@ export class MobilePairing {
     };
     entry.state = "paired";
     entry.claimHash = claimHash;
+    entry.proofJkt = proofKey.jkt;
     entry.deviceName = name;
     entry.credential = credential;
+    this.retainForRetry(entry);
     return { ...credential };
+  }
+
+  /**
+   * A paired entry keeps its retry credential for a full TTL from issuance, not from the QR
+   * expiry, so a redeem response lost near expiry can still be recovered. Retries still need
+   * the ticket, the same claim ID, and a registered device; the credential is dropped on time.
+   */
+  private retainForRetry(entry: Pairing): void {
+    clearTimeout(entry.expiryTimer);
+    entry.expiresAt = this.now() + MOBILE_PAIRING_TTL_MS;
+    entry.expiryTimer = setTimeout(() => this.remove(entry.id), MOBILE_PAIRING_TTL_MS);
+    entry.expiryTimer.unref();
   }
 
   /** Additive desktop preflight. The phone's ticket/redeem protocol is unchanged. */
@@ -297,7 +353,6 @@ export class MobilePairing {
     response.setHeader("X-Content-Type-Options", "nosniff");
     response.setHeader("Referrer-Policy", "no-referrer");
     try {
-      this.redeemRate();
       if (request.method !== "POST" || request.headers.origin !== undefined) {
         throw new MobilePairingError("Unsupported mobile pairing origin or method.", 403);
       }
@@ -312,9 +367,13 @@ export class MobilePairing {
         throw new MobilePairingError("Mobile pairing request is too large.", 413);
       }
       const input = await this.readBody(request);
+      // Count only requests that reach proof or ticket validation, keyed by the socket peer.
+      this.httpRedeemRate(request.socket.remoteAddress ?? "unknown");
       response.end(
         JSON.stringify({
-          result: proving ? await this.prove(input) : await this.enqueueClaim(input),
+          result: proving
+            ? await this.prove(input)
+            : await this.enqueueClaim(input, isTunnelIngress(request)),
         }),
       );
     } catch (error) {
@@ -333,6 +392,8 @@ export class MobilePairing {
     for (const id of this.pairings.keys()) this.remove(id);
     this.creationRates.clear();
     this.redemptionRate = { startedAt: 0, count: 0 };
+    this.httpRedemptionRate = { startedAt: 0, count: 0 };
+    this.sourceRedemptionRates.clear();
   }
 
   private async owner(token: string): Promise<string> {
@@ -394,6 +455,35 @@ export class MobilePairing {
     this.creationRates.set(owner, rate);
   }
 
+  /**
+   * Each source has its own bucket under a larger Host-wide ceiling. The table is bounded:
+   * when full, the oldest source's counter is dropped, which only loosens that source's limit.
+   */
+  private httpRedeemRate(source: string): void {
+    const now = this.now();
+    if (now - this.httpRedemptionRate.startedAt >= RATE_WINDOW_MS)
+      this.httpRedemptionRate = { startedAt: now, count: 0 };
+    let sourceRate = this.sourceRedemptionRates.get(source);
+    if (!sourceRate || now - sourceRate.startedAt >= RATE_WINDOW_MS) {
+      this.sourceRedemptionRates.delete(source);
+      if (this.sourceRedemptionRates.size >= MAX_REDEMPTION_SOURCES) {
+        const oldest = this.sourceRedemptionRates.keys().next().value;
+        if (oldest !== undefined) this.sourceRedemptionRates.delete(oldest);
+      }
+      sourceRate = { startedAt: now, count: 0 };
+      this.sourceRedemptionRates.set(source, sourceRate);
+    }
+    if (
+      sourceRate.count >= MAX_HTTP_REDEMPTIONS_PER_SOURCE ||
+      this.httpRedemptionRate.count >= MAX_HTTP_REDEMPTIONS
+    ) {
+      throw new MobilePairingError("Too many pairing attempts. Try again shortly.", 429);
+    }
+    sourceRate.count++;
+    this.httpRedemptionRate.count++;
+  }
+
+  /** In-process redemptions only; HTTP requests are limited by httpRedeemRate. */
   private redeemRate(): void {
     const now = this.now();
     if (now - this.redemptionRate.startedAt >= RATE_WINDOW_MS)

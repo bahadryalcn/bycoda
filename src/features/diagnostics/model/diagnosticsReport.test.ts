@@ -20,6 +20,26 @@ const textOf = (body: Body) =>
   gunzipSync(Buffer.from(body.content.data, "base64")).toString("utf8");
 
 describe("sendDiagnosticReport", () => {
+  it("reviews the exact compressed content and masks the note before requesting consent", async () => {
+    const kit = makeDeps();
+    kit.deps.destination = async () => "https://account.test";
+    kit.deps.review = async (details, send) => {
+      expect(kit.sendDiagnosticReport).not.toHaveBeenCalled();
+      expect(details.destination).toBe("https://account.test/v1/diagnostics/reports");
+      expect(details.files[1]?.text).not.toContain("someone@example.com");
+      await send();
+      const body = bodyOf(kit.sendDiagnosticReport.mock.calls[0]![0]);
+      expect(body.note).not.toContain("someone@example.com");
+      expect(textOf(body)).toBe(details.files[0]?.text);
+      return true;
+    };
+    expect(
+      await sendDiagnosticReport(kit.deps, {
+        trigger: "manual",
+        note: "Email someone@example.com",
+      }),
+    ).toBe("sent");
+  });
   it("redacts, compresses and uses the account route when signed in", async () => {
     const kit = makeDeps();
     const status = await sendDiagnosticReport(kit.deps, { trigger: "manual", note: " help " });

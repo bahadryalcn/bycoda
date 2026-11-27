@@ -4,11 +4,13 @@ import { recordHostConnection } from "../../diagnostics";
 import {
   classifyRemoteError,
   isConnectionFailure,
+  isTimeoutFailure,
   unreachablePollDelay,
   type RemoteFailure,
 } from "./remoteFailure";
 import {
   INITIAL_CONNECTION,
+  isPairingRefused,
   reduceConnection,
   type RemoteConnectionEvent,
   type RemoteConnectionState,
@@ -22,6 +24,7 @@ import {
   SUPERSEDED_CONNECTION,
 } from "./remoteLifecycle";
 import { remoteErrorText } from "./remoteFailure";
+import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 
 /** What the views of a remote project last learned about its machine. Each view
  * reports the outcome of its loads under its own `source` ("changes", "graph",
@@ -30,12 +33,18 @@ import { remoteErrorText } from "./remoteFailure";
  * never recorded. */
 
 const failures = new Map<string, RemoteFailure>();
-/** Machines whose last requests failed to connect, and when. */
+/** Machines whose last requests failed to connect, and when (monotonic clock, for poll delays only). */
 const unreachable = new Map<string, { count: number; at: number }>();
 /** One connection state per machine, fed by the outcome of every load. */
 const connections = new Map<string, RemoteConnectionState>();
 /** When each machine's status first left `connected`; cleared once it connects again. */
 const downSince = new Map<string, number>();
+/** Per machine, the run of timeouts with no answer of any kind between, and when (monotonic
+ * clock) the latest counted one resolved. Only a request that started after that moment
+ * extends the run, so requests stalled by the same hiccup count once. */
+const timeouts = new Map<string, { count: number; resolvedAt: number }>();
+/** This many timeouts in a row make a machine unreachable. */
+export const TIMEOUTS_BEFORE_UNREACHABLE = 3;
 const changeListeners = new Set<() => void>();
 const recoveredListeners = new Set<(environmentId?: string) => void>();
 
@@ -46,6 +55,13 @@ const emit = () => changeListeners.forEach((listener) => listener());
 /** Applies one event to a machine's connection state. Listeners hear about it
  * only when what the user sees changed, not for every successful poll. */
 export function applyRemoteConnection(environmentId: string, event: RemoteConnectionEvent): void {
+  // Any answer, or a failure that is not a busy/timeout one, ends a run of timeouts. A local
+  // refusal of a turned-off machine is no answer, so it leaves the run as it was.
+  if (
+    event.type !== "failure" ||
+    !["temporary", "disabled"].includes(classifyRemoteError(event.error).kind)
+  )
+    timeouts.delete(environmentId);
   const previous = connections.get(environmentId) ?? INITIAL_CONNECTION;
   const next = reduceConnection(previous, event);
   if (next === previous) return;
@@ -59,9 +75,35 @@ export function applyRemoteConnection(environmentId: string, event: RemoteConnec
   if (next.status !== previous.status || next.error !== previous.error) emit();
 }
 
-/** Records one outcome of a request to a machine, from a view that has no cwd. */
-export function recordRemoteConnection(environmentId: string, error?: unknown): void {
+/** Records one outcome of a request to a machine, from a view that has no cwd.
+ * `startedAt` (`monotonicNow()` when the request began) lets a timeout count toward
+ * the unreachable run; a timeout reported without it is never counted. */
+export function recordRemoteConnection(
+  environmentId: string,
+  error?: unknown,
+  options?: { startedAt?: number },
+): void {
   if (error !== undefined && remoteErrorText(error) === SUPERSEDED_CONNECTION) return;
+  if (error !== undefined && isTimeoutFailure(error)) {
+    // One timeout proves nothing, and neither do several that stalled together: one busy
+    // moment fails every request in flight at once. A run of timeouts, each from a request
+    // that began after the previous counted one resolved, with no answer between, means
+    // the machine is half-open, so it is unreachable and the reconnect ladder starts.
+    // A report that cannot say when its request began (a view repeating an error the
+    // request path already recorded) cannot prove that, so it is not counted.
+    const startedAt = options?.startedAt;
+    if (startedAt === undefined) return;
+    const run = timeouts.get(environmentId);
+    if (run && startedAt < run.resolvedAt) return;
+    const count = (run?.count ?? 0) + 1;
+    timeouts.set(environmentId, { count, resolvedAt: monotonicNow() });
+    if (count < TIMEOUTS_BEFORE_UNREACHABLE) return;
+    return applyRemoteConnection(environmentId, {
+      type: "failure",
+      error: `Machine is unreachable: ${count} requests in a row timed out.`,
+      at: Date.now(),
+    });
+  }
   applyRemoteConnection(
     environmentId,
     error === undefined
@@ -88,18 +130,13 @@ export function listRemoteOutages(): string[] {
     .map(([environmentId]) => environmentId);
 }
 
-let outageSnapshot: readonly string[] = [];
-function readOutages(): readonly string[] {
-  const next = listRemoteOutages();
-  // Keep the array identity while the set is unchanged, as useSyncExternalStore requires.
-  if (next.length !== outageSnapshot.length || next.some((id, i) => id !== outageSnapshot[i]))
-    outageSnapshot = next;
-  return outageSnapshot;
-}
-
-/** Subscribe-able list of machines with an outage, independent of any mounted pane. */
-export function useRemoteOutages(): readonly string[] {
-  return useSyncExternalStore(subscribeChanges, readOutages, readOutages);
+/** Machines that answered 401 to this computer's credential, as one stable string for a store snapshot. */
+export function pairingRefusalKey(): string {
+  return [...connections]
+    .filter(([, state]) => isPairingRefused(state))
+    .map(([environmentId]) => environmentId)
+    .sort()
+    .join("\n");
 }
 
 export function readRemoteConnection(environmentId: string): RemoteConnectionState {
@@ -139,7 +176,7 @@ export function reportRemoteLoad(cwd: string, source: string, error?: unknown): 
   if (failure.kind === "unreachable") {
     unreachable.set(environmentId, {
       count: (unreachable.get(environmentId)?.count ?? 0) + 1,
-      at: Date.now(),
+      at: monotonicNow(),
     });
   } else if (answered(failure) && unreachable.delete(environmentId)) {
     return recover(environmentId); // the machine answered, with an error of its own
@@ -153,7 +190,12 @@ export function reportRemoteLoad(cwd: string, source: string, error?: unknown): 
 export function reportRemoteConnection(cwd: string, source: string, error?: unknown): void {
   // A timed-out/overloaded request proves neither failure nor recovery. Keep
   // the previous outage and backoff until an actual answer arrives.
+  // Timeouts are counted where the request runs (`recordRemoteConnection` with its start
+  // time), not again here when the view reports the same error.
   if (error !== undefined && classifyRemoteError(error).kind === "temporary") return;
+  // A request refused because the machine is turned off here is neither an outage nor an answer,
+  // so it is not passed on as the success that `reportRemoteLoad` would read from `undefined`.
+  if (error !== undefined && classifyRemoteError(error).kind === "disabled") return;
   reportRemoteLoad(
     cwd,
     source,
@@ -214,7 +256,7 @@ export function remotePollDue(cwd: string): boolean {
   const environmentId = environmentOf(cwd);
   if (environmentId && !isMachineEnabled(environmentId)) return false;
   const state = environmentId ? unreachable.get(environmentId) : undefined;
-  return !state || Date.now() - state.at >= unreachablePollDelay(state.count);
+  return !state || elapsedSince(state.at) >= unreachablePollDelay(state.count);
 }
 
 export function subscribeRemoteRecovered(listener: (environmentId?: string) => void): () => void {
@@ -227,10 +269,30 @@ export function subscribeChanges(listener: () => void): () => void {
   return () => changeListeners.delete(listener);
 }
 
-/** The latest failure of one view's loads for a remote project, if any. */
+/** One stable failure per machine for `offlineFailure`, so snapshots compare equal. */
+const offlineFailures = new Map<string, RemoteFailure>();
+
+/** What a view with retained data shows while its machine is offline and its reads are paused
+ * (`machineAvailability`): no read runs, so none reports the failure itself. */
+function offlineFailure(environmentId: string): RemoteFailure | undefined {
+  const state = connections.get(environmentId);
+  if (state?.status !== "unreachable" && state?.status !== "host-not-running") return undefined;
+  const message = state.error ?? "Machine is unreachable.";
+  const known = offlineFailures.get(environmentId);
+  if (known?.message === message) return known;
+  const next: RemoteFailure = { kind: "unreachable", message };
+  offlineFailures.set(environmentId, next);
+  return next;
+}
+
+/** The latest failure of one view's loads for a remote project, if any. While the machine is
+ * offline that is an unreachable failure even if this view's own loads stopped. */
 export function useRemoteLoadFailure(cwd: string, source: string): RemoteFailure | undefined {
   const environmentId = environmentOf(cwd);
-  const read = () => (environmentId ? failures.get(keyFor(environmentId, source)) : undefined);
+  const read = () =>
+    environmentId
+      ? (failures.get(keyFor(environmentId, source)) ?? offlineFailure(environmentId))
+      : undefined;
   return useSyncExternalStore(subscribeChanges, read, read);
 }
 
@@ -240,6 +302,8 @@ export function forgetRemoteConnection(environmentId: string): void {
   invalidateConnection(environmentId);
   connections.delete(environmentId);
   downSince.delete(environmentId);
+  offlineFailures.delete(environmentId);
+  timeouts.delete(environmentId);
   unreachable.delete(environmentId);
   for (const key of Array.from(failures.keys()))
     if (key.startsWith(`${environmentId}\n`)) failures.delete(key);
@@ -253,4 +317,6 @@ export function resetRemoteHealth(): void {
   unreachable.clear();
   connections.clear();
   downSince.clear();
+  offlineFailures.clear();
+  timeouts.clear();
 }

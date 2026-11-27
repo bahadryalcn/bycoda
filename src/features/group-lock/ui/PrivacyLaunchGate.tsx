@@ -4,7 +4,6 @@ import { useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
-import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { Shield } from "../../../shared/ui/icons";
 import { useGroupLock } from "../hooks/useGroupLock";
 import { getGroupLockView, verifyLockPassword } from "../model/groupLock";
@@ -43,17 +42,9 @@ export function PrivacyLaunchGate({ children }: { children: ReactNode }) {
           className="flex w-full max-w-sm flex-col items-center gap-5 text-center"
         >
           <Shield aria-hidden className="size-10" tone="muted" strokeWidth={1.75} />
-          <div>
-            <Text as="p" size="caption" tone="muted" className="mb-2">
-              {PRODUCT_IDENTITY.displayName}
-            </Text>
-            <Heading size="page" id="privacy-launch-title">
-              {t("Privacy mode")}
-            </Heading>
-            <Text as="p" size="body" tone="secondary" leading="relaxed" className="mt-3">
-              {t("Your workspace is hidden. Continue when you are ready.")}
-            </Text>
-          </div>
+          <Heading size="page" id="privacy-launch-title">
+            {t("Privacy mode")}
+          </Heading>
           {lock.storageAvailable === false ? (
             <PrivacyStorageError />
           ) : (
@@ -74,7 +65,6 @@ export function PrivacyLaunchGate({ children }: { children: ReactNode }) {
       {dialog === "password" ? (
         <PasswordPromptDialog
           title={t("Show workspace")}
-          description={t("Enter your lock password to leave privacy mode.")}
           submitLabel={t("Show workspace")}
           verify={verifyLockPassword}
           onDone={() => {

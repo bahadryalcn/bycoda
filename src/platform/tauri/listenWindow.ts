@@ -15,7 +15,8 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 export type WindowSubscription = () => void;
 
-function currentWindowLabel(): string {
+/** This window's label; throws when the window has no usable identity. */
+export function currentWindowLabel(): string {
   const label = getCurrentWebviewWindow().label;
   if (typeof label !== "string" || !label.trim()) {
     throw new Error("Window event subscription requires a window identity");

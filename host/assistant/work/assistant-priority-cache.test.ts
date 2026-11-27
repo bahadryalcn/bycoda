@@ -59,16 +59,18 @@ async function fixture(ports: AssistantPorts = {}) {
   return {
     request,
     configure,
-    create: async (key: string) =>
-      (
-        await request({
-          op: "jobs.create",
-          projectId: "p",
-          title: key,
-          request: key,
-          idempotencyKey: key,
-        })
-      ).job!,
+    create: async (key: string) => {
+      const { job } = await request({
+        op: "jobs.create",
+        projectId: "p",
+        title: key,
+        request: key,
+        idempotencyKey: key,
+      });
+      // Dispatch runs on the request queue after the RPC; this request queues behind it.
+      await request({ op: "tick" });
+      return (await request({ op: "jobs.get", id: job!.id })).job!;
+    },
     restart: async () => {
       await service.close();
       await store.close();

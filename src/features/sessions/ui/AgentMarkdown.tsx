@@ -1,19 +1,23 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { Skeleton } from "../../../shared/ui/Skeleton";
 import { MarkdownSource as IncrementalMarkdownSource } from "./markdownSource";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { Code } from "../../../shared/ui/Code";
+import { FoldVertical, UnfoldVertical } from "../../../shared/ui/icons";
 import { Link } from "../../../shared/ui/Link";
-import { LiveText } from "../../../shared/ui/LiveText";
-import { LoadingText } from "../../../shared/ui/LoadingText";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
-import { useTransientFlag } from "../../../shared/hooks/useTransientFlag";
-import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import { useLocale, useT } from "../../../shared/i18n";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { resolveNoteImagePath } from "../../notes/notes";
-import { openWorkspaceUrl } from "../../connections/public/workspaceUrls";
+import {
+  openWorkspaceUrl,
+  useDevelopmentLinkMachine,
+} from "../../connections/public/workspaceUrls";
+import { TranscriptSessionId } from "./TranscriptSessionId";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import {
   createContext,
@@ -36,7 +40,6 @@ import {
 import { harden } from "rehype-harden";
 import {
   Block,
-  CodeBlock,
   Streamdown,
   defaultRehypePlugins,
   defaultComponents,
@@ -49,6 +52,7 @@ import {
   type Components,
 } from "streamdown";
 import type { Pluggable, PluggableList, Plugin } from "unified";
+import type { Element as HastElement, Root } from "hast";
 import { useRenderTrace } from "./useRenderTrace";
 import { ExplorerMenu } from "../../files/public/ExplorerMenu";
 import { fileLinkMenuItems } from "./fileLinkMenuItems";
@@ -71,9 +75,15 @@ import {
   revealPath,
 } from "../../../platform/tauri/fs";
 import { ChatFolderBrowser } from "../../files/public/ChatFolderBrowser";
-import { Check, Copy, FolderOpen } from "../../../shared/ui/icons";
 import { resolveFileOpenRequest } from "../../files/public/fileIndex";
-import { existingChatPath } from "../../files/public/chatPathChecks";
+import { chatPathInfo } from "../../files/public/chatPathChecks";
+import { leafName } from "../../files/public/fileName";
+import { isKnownFileType } from "../../../shared/lib/fileReferenceKind";
+import {
+  FileReferenceBody,
+  fileReferenceChip,
+  useChatPathIsDirectory,
+} from "../../files/public/FileReference";
 import {
   messageFileCandidates,
   resolveMessageFileReference,
@@ -82,6 +92,7 @@ import { resolveInboxMediaUrl } from "../../inbox/model/inboxMedia";
 import { isNoteImagePath } from "../../notes";
 import { InboxMedia } from "../../inbox/ui/InboxMedia";
 import { isLocalMediaPath, LocalMedia } from "./LocalMedia";
+import { mediaKind } from "../../files/public/mediaPreview";
 import { DocumentImage, ImageAltText } from "./DocumentImage";
 import { resolveDocumentImage } from "../../../shared/lib/paths";
 import { rehypeHoldImageSources, rehypeRestoreImageSources } from "./documentImageSources";
@@ -98,6 +109,10 @@ import { loadStreamingTextMode, subscribeStreamingTextMode } from "../../setting
 import { usePresentationVisible } from "./presentationVisibility";
 import { usePrefersReducedMotion } from "../../settings/public/decorativeMotion";
 import { HighlightedCodeBlock } from "./HighlightedCodeBlock";
+import { FenceCard, fenceTree } from "./FenceCard";
+import { FenceViewToggle } from "./MarkdownModeToggle";
+import { JsonViewer } from "../../../shared/ui/JsonViewer";
+import { jsonOpenDepth, parseJsonTree } from "../../../shared/lib/jsonTree";
 import { CodeRunButton } from "./CodeExecutionContext";
 import { codeSourceFingerprint } from "./stableCodeDisclosureIdentity";
 import { useParsedMarkdown } from "./useParsedMarkdown";
@@ -203,7 +218,6 @@ const FileOpenContext = createContext<{
   cwd?: string;
   documentPath?: string;
   onOpenFile?: OpenFileFn;
-  onRevealFile?: (path: string) => void;
   onFileContextMenu?: (event: ReactMouseEvent, path: string, navigation?: EditorNavigation) => void;
 }>({});
 
@@ -237,16 +251,27 @@ function MarkdownLink({
   onContextMenu,
   dir,
   previewMedia = true,
+  title,
   ...props
 }: MarkdownLinkProps) {
   useLocale();
   const { enabled: allowRemoteMedia, base: remoteBase } = useContext(RemoteMediaContext);
   const localMedia = useContext(LocalMediaContext);
   const { cwd, onOpenFile, onFileContextMenu } = useContext(FileOpenContext);
+  const machine = useDevelopmentLinkMachine(cwd, href);
+  const sessionId = useContext(TranscriptSessionId);
   const resolveFile = useWorkspaceFileResolver();
   const [linkError, setLinkError] = useState<string>();
   const file = href ? resolveFile(href, cwd) : undefined;
   const label = textContent(children);
+  const fileLeaf = file ? leafName(file.path) : "";
+  const fileSlash = !!file && /[\\/]$/.test(file.path);
+  const fileVerifiedDir = useChatPathIsDirectory(
+    file?.path,
+    !!file && !fileSlash && !isKnownFileType(fileLeaf),
+  );
+  const fileIsDir = fileSlash || fileVerifiedDir;
+  const fileChip = file ? fileReferenceChip(fileLeaf, fileIsDir) : undefined;
   const sessionReference = href ? parseLocalSessionLink(href) : null;
   if (href && sessionReference) {
     return (
@@ -265,51 +290,63 @@ function MarkdownLink({
     return <InboxMedia src={mediaUrl} alt={label} />;
   }
 
+  const anchor = (
+    <Link
+      href={href}
+      unstyled={!!fileChip}
+      {...fileChip}
+      className={[fileChip?.className, className].filter(Boolean).join(" ") || undefined}
+      {...props}
+      dir={dir ?? "auto"}
+      onClick={(event) => {
+        onClick?.(event);
+        if (event.defaultPrevented) return;
+        if (file && onOpenFile) {
+          event.preventDefault();
+          onOpenFile(file.path, file.navigation);
+          return;
+        }
+        event.preventDefault();
+        if (href?.startsWith("#")) {
+          scrollToMessageAnchor(event.currentTarget, href.slice(1));
+          return;
+        }
+        const open = !href
+          ? undefined
+          : /^https?:\/\//i.test(href)
+            ? () => openWorkspaceUrl(cwd, href, sessionId)
+            : /^mailto:/i.test(href)
+              ? () => openExternal(href)
+              : undefined;
+        if (open) {
+          setLinkError(undefined);
+          void open().catch((error: unknown) => {
+            setLinkError(presentRemoteError(error, { explicit: true }));
+          });
+        }
+      }}
+      onContextMenu={(event) => {
+        onContextMenu?.(event);
+        if (event.defaultPrevented || !file || !onFileContextMenu) return;
+        onFileContextMenu(event, file.path, file.navigation);
+      }}
+    >
+      {machine ? `${machine} · ` : null}
+      {file ? (
+        <FileReferenceBody name={fileLeaf} isDir={fileIsDir}>
+          {children}
+        </FileReferenceBody>
+      ) : (
+        children
+      )}
+    </Link>
+  );
   const link = (
     <>
-      <Link
-        href={href}
-        className={className}
-        {...props}
-        dir={dir ?? "auto"}
-        onClick={(event) => {
-          onClick?.(event);
-          if (event.defaultPrevented) return;
-          if (file && onOpenFile) {
-            event.preventDefault();
-            onOpenFile(file.path, file.navigation);
-            return;
-          }
-          event.preventDefault();
-          if (href?.startsWith("#")) {
-            scrollToMessageAnchor(event.currentTarget, href.slice(1));
-            return;
-          }
-          const open = !href
-            ? undefined
-            : /^https?:\/\//i.test(href)
-              ? () => openWorkspaceUrl(cwd, href)
-              : /^mailto:/i.test(href)
-                ? () => openExternal(href)
-                : undefined;
-          if (open) {
-            setLinkError(undefined);
-            void open().catch((error: unknown) => {
-              setLinkError(presentRemoteError(error, { explicit: true }));
-            });
-          }
-        }}
-        onContextMenu={(event) => {
-          onContextMenu?.(event);
-          if (event.defaultPrevented || !file || !onFileContextMenu) return;
-          onFileContextMenu(event, file.path, file.navigation);
-        }}
-      >
-        {children}
-      </Link>
-      {file ? <FileRevealButton path={file.path} /> : null}
+      {/* A markdown link title (a cited source) shows in the shared tooltip, not a native one. */}
+      {title ? <Tooltip label={title}>{anchor}</Tooltip> : anchor}
       {linkError ? (
-        <FileActionError message={linkError} onDismiss={() => setLinkError(undefined)} />
+        <FileActionError details={linkError} onDismiss={() => setLinkError(undefined)} />
       ) : null}
     </>
   );
@@ -354,84 +391,14 @@ function scrollToMessageAnchor(link: Element, id: string) {
   target?.scrollIntoView({ block: "nearest" });
 }
 
-function FileRevealButton({ path }: { path: string }) {
-  // A changed reference must start unverified, even when a prior path was valid.
-  return <VerifiedFileRevealButton key={path} path={path} />;
-}
-
-function VerifiedFileRevealButton({ path }: { path: string }) {
-  const t = useT();
-  const { onRevealFile } = useContext(FileOpenContext);
-  const [exists, setExists] = useState(false);
-  useEffect(() => {
-    if (!onRevealFile) return;
-    let cancelled = false;
-    void existingChatPath(path).then((confirmed) => {
-      if (!cancelled) setExists(confirmed);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [path, onRevealFile]);
-  if (!onRevealFile || !exists) return null;
-  return (
-    <Button
-      motion="none"
-      iconOnly
-      label={t("Open containing folder")}
-      variant="ghost"
-      type="button"
-      aria-label={t("Open containing folder")}
-      tooltip={t("Open containing folder: {p0}", { p0: path })}
-      className="ml-1 shrink-0"
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        onRevealFile?.(path);
-      }}
-    >
-      <FolderOpen className="icon-sm" />
-    </Button>
-  );
-}
-
 type MarkdownCodeProps = ComponentProps<"code"> & { node?: unknown };
-
-function EmailCopyButton({ text }: { text: string }) {
-  const t = useT();
-  const [copied, setCopied] = useTransientFlag(1500);
-  const [failed, setFailed] = useState(false);
-  const label = failed ? t("Copy failed. Try again.") : copied ? t("Copied") : t("Copy");
-  return (
-    <Button
-      motion="none"
-      variant="ghost"
-      type="button"
-      tooltip={label}
-      aria-label={label}
-      className="shrink-0"
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        setCopied(false);
-        setFailed(false);
-        void copyText(text).then(
-          () => setCopied(true),
-          () => setFailed(true),
-        );
-      }}
-    >
-      {copied ? <Check className="icon-sm" /> : <Copy className="icon-sm" />}
-      <LiveText className="sr-only" text={failed || copied ? label : ""} />
-    </Button>
-  );
-}
 
 function MarkdownCode({ children, className, node, onContextMenu, ...props }: MarkdownCodeProps) {
   useLocale();
   const incomplete = useIsCodeFenceIncomplete();
   const block = Object.prototype.hasOwnProperty.call(props, "data-block");
   const { cwd, onOpenFile, onFileContextMenu } = useContext(FileOpenContext);
+  const localMedia = useContext(LocalMediaContext);
   const resolveFile = useWorkspaceFileResolver();
   const text = block ? "" : textContent(children);
   const slashCommand = /^\/[\p{L}\p{N}_-]+$/u.test(text.trim());
@@ -445,34 +412,44 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
     !/[\r\n]/.test(text)
       ? resolveFile(reference, cwd)
       : undefined;
-  const [verifiedPath, setVerifiedPath] = useState<string>();
+  const [verified, setVerified] = useState<{ path: string; isDir: boolean }>();
   const ambiguousPath = candidate?.path;
   useEffect(() => {
     if (!ambiguousPath) return;
     let cancelled = false;
-    void existingChatPath(ambiguousPath).then((exists) => {
-      if (!cancelled) setVerifiedPath(exists ? ambiguousPath : undefined);
+    void chatPathInfo(ambiguousPath).then((info) => {
+      if (!cancelled)
+        setVerified(info.exists ? { path: ambiguousPath, isDir: info.isDir } : undefined);
     });
     return () => {
       cancelled = true;
     };
   }, [ambiguousPath]);
   if (!block) {
+    // A name with a known file type opens as written; any other path-like text needs the file
+    // system to confirm it, so identifiers such as `images.generate` stay plain code.
     const file =
-      fileName && !text.trim().startsWith("/")
+      fileName && isKnownFileType(fileName) && !text.trim().startsWith("/")
         ? resolveFile(text, cwd)
-        : candidate?.path === verifiedPath
+        : candidate && verified && candidate.path === verified.path
           ? candidate
           : undefined;
+    const fileIsDir =
+      !!file &&
+      (/[\\/]$/.test(text.trim()) || (!!verified && verified.path === file.path && verified.isDir));
+    const fileChip = file ? fileReferenceChip(leafName(file.path), fileIsDir) : undefined;
     const open = file && onOpenFile ? () => onOpenFile(file.path, file.navigation) : undefined;
-    return (
+    const span = (
       <span className="inline-flex max-w-full items-center align-baseline">
-        {isEmailAddress(text) ? <EmailCopyButton key={text} text={text} /> : null}
-        <code
+        <Code
           {...props}
+          // A file reference brings its own tinted chip; other inline code keeps the neutral one.
+          variant={fileChip ? "plain" : "chip"}
+          size="caption"
           dir="ltr"
-          className={`inline-flex items-center gap-1 rounded-md bg-(--ui-surface-raised) px-1.5 min-h-6 max-w-full [overflow-wrap:anywhere] align-baseline font-mono text-[0.8em] text-(--ui-tone-neutral-fg) ${
-            open ? "cursor-pointer hover:text-(--ui-tone-info-fg) hover:underline" : ""
+          {...fileChip}
+          className={`inline-flex items-center gap-1 max-w-full [overflow-wrap:anywhere] align-baseline ${
+            fileChip?.className ?? ""
           } ${className ?? ""}`}
           role={open ? "link" : undefined}
           tabIndex={open ? 0 : undefined}
@@ -493,15 +470,21 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
               : undefined
           }
         >
-          {fileName && file ? (
-            <span aria-hidden="true">
-              <FileTypeIcon name={fileName} isDir={/[\\/]$/.test(text)} size="sm" />
-            </span>
-          ) : null}
-          {children}
-        </code>
-        {file && file.path === verifiedPath ? <FileRevealButton path={file.path} /> : null}
+          {file ? (
+            <FileReferenceBody name={leafName(file.path)} isDir={fileIsDir}>
+              {children}
+            </FileReferenceBody>
+          ) : (
+            children
+          )}
+        </Code>
       </span>
+    );
+    // A video or audio path written as code plays above its path, like a linked one.
+    return localMedia && file && mediaKind(file.path) && isLocalMediaPath(file.path) ? (
+      <LocalMedia key={file.path} path={file.path} label={fileName || text} fallback={span} />
+    ) : (
+      span
     );
   }
 
@@ -513,6 +496,24 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
   const iconName = fence.fileName ?? (fence.language ? fileNameForLanguage(fence.language) : "");
   const lineNumbers = !/\bnoLineNumbers\b/.test(meta);
   const code = textContent(children);
+  // A complete, valid JSON object or array shows as a tree with a Raw toggle. A fence that is still
+  // streaming, invalid, a scalar or too large keeps the highlighted block below. Parsed once per settled text.
+  const json =
+    !incomplete && !fence.filePath && fence.language.toLowerCase() === "json"
+      ? parseJsonTree(code)
+      : null;
+  if (json?.ok) {
+    return (
+      <JsonFence
+        code={code}
+        data={json.data}
+        iconName={iconName}
+        className={className}
+        lineNumbers={lineNumbers}
+        startLine={fence.startLine}
+      />
+    );
+  }
   // highlightLanguageFor picks a grammar for plaintext fences (a detected one
   // for untagged fences), but Streamdown's CodeBlock reuses that same value
   // for the header label. Without this, an untagged fence would gain a header
@@ -614,23 +615,22 @@ function MarkdownCodeShell({
         label={label}
         variant="ghost"
         type="button"
-        aria-label={label}
         className="markdown-code-copy markdown-code-toggle"
         aria-expanded={!collapsed}
         aria-controls={contentId}
         onClick={() => setCollapsed((value) => !value)}
       >
-        <svg viewBox="0 0 20 20" aria-hidden="true">
-          <path d={collapsed ? "m6 8 4 4 4-4" : "m6 12 4-4 4 4"} />
-        </svg>
+        {collapsed ? (
+          <UnfoldVertical aria-hidden className="icon-sm" />
+        ) : (
+          <FoldVertical aria-hidden className="icon-sm" />
+        )}
       </Button>
       {collapsed ? (
         <Button
           motion="none"
           variant="item"
           type="button"
-
-          tooltip={label}
           aria-label={`${label}: ${summary.preview}`}
           className="markdown-code-summary"
           aria-expanded={false}
@@ -654,48 +654,22 @@ function CodeCopyButton({
   code,
   getText,
   label: labelProp,
-  copiedMessage: copiedMessageProp,
-  className = "",
 }: {
   code: string;
   /** Read the text at click time, for content that only exists in the DOM. */
   getText?: () => string;
   label?: string;
-  copiedMessage?: string;
-  className?: string;
 }) {
   const t = useT();
-  const label = labelProp ?? t("Copy code");
-  const copiedMessage = copiedMessageProp ?? t("Code copied.");
-  const { copied, failed, copy } = useCopyFeedback({ resetKeys: [code], successMs: 1500 });
-
   return (
-    <Button
+    <CopyButton
       motion="none"
       iconOnly
-      label={label}
-      variant="ghost"
-      className={`markdown-code-copy${copied ? " is-copied" : ""}${failed ? " is-failed" : ""} ${className}`}
-      type="button"
-      tooltip={failed ? t("Copy failed. Try again.") : copied ? t("Copied") : label}
-      aria-label={failed ? t("Copy failed. Try again.") : copied ? t("Copied") : label}
-
-      onClick={() => {
-        copy(() => copyText(getText ? getText() : code.replace(/\r?\n$/, "")));
-      }}
-    >
-      <LiveText
-        className="sr-only"
-        text={failed ? t("Copy failed. Try again.") : copied ? copiedMessage : ""}
-      />
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        <g className="markdown-code-copy-pages">
-          <path d="M12 4H6a2 2 0 0 0-2 2v6" />
-          <rect x="7" y="7" width="9" height="9" rx="1.5" />
-        </g>
-        <path className="markdown-code-copy-check" d="M4.5 10.5 8.2 14 15.5 6.5" />
-      </svg>
-    </Button>
+      label={labelProp ?? t("Copy code")}
+      className="markdown-code-copy"
+      resetKeys={[code]}
+      text={() => (getText ? getText() : code.replace(/\r?\n$/, ""))}
+    />
   );
 }
 
@@ -810,12 +784,7 @@ function MarkdownTable(props: ComponentProps<typeof defaultComponents.table>) {
   }, []);
   return (
     <div ref={shell} className="markdown-table-shell">
-      <CodeCopyButton
-        code=""
-        getText={getMarkdown}
-        label={t("Copy table as Markdown")}
-        copiedMessage={t("Table copied.")}
-      />
+      <CodeCopyButton code="" getText={getMarkdown} label={t("Copy table as Markdown")} />
       <defaultComponents.table {...props} />
     </div>
   );
@@ -841,6 +810,39 @@ function MarkdownInput({
 
 function noopChange() {}
 
+const MarkdownProseContext = createContext<((text: string) => ReactNode) | undefined>(undefined);
+const literalOrInteractiveTags = new Set(["a", "button", "code", "kbd", "pre", "samp", "summary"]);
+
+function rehypeMarkdownProse() {
+  return function markProse(node: Root | HastElement) {
+    node.children = node.children.map((child) => {
+      if (child.type === "element" && !literalOrInteractiveTags.has(child.tagName)) {
+        markProse(child);
+      }
+      if (child.type !== "text" || !/[[@/$]/.test(child.value)) return child;
+      return {
+        type: "element",
+        tagName: "span",
+        properties: { dataMarkdownProse: true },
+        children: [child],
+      };
+    });
+  };
+}
+
+function MarkdownProseSpan({
+  node,
+  children,
+  ...props
+}: ComponentProps<"span"> & { node?: HastElement }) {
+  const renderProse = useContext(MarkdownProseContext);
+  const source = node?.children[0];
+  if (node?.properties.dataMarkdownProse && source?.type === "text" && renderProse) {
+    return <>{renderProse(source.value)}</>;
+  }
+  return <span {...props}>{children}</span>;
+}
+
 const MARKDOWN_COMPONENTS = {
   input: MarkdownInput,
   a: MarkdownLink,
@@ -848,6 +850,7 @@ const MARKDOWN_COMPONENTS = {
   img: MarkdownImage,
   table: MarkdownTable,
 } satisfies Components;
+const MARKDOWN_PROSE_COMPONENTS = { ...MARKDOWN_COMPONENTS, span: MarkdownProseSpan };
 
 /**
  * With dir="auto" Streamdown wraps each block in
@@ -868,21 +871,22 @@ const DirectionalBlock = memo(function DirectionalBlock({ dir, ...props }: Block
   // without spans, so a long reply does not keep a span per word.
   const fade = !!ctx?.fading && props.index === ctx.lastBlock;
   const hardBreaks = !!ctx?.hardBreaks;
+  const hasProseRenderer = !!useContext(MarkdownProseContext);
   const fadeOptions = ctx?.fadeOptions;
   const base = props.rehypePlugins;
-  // Hard breaks go last, so nothing after them undoes them, and after the word
-  // fade, whose word spans would otherwise hide the newlines from them.
+  // Read newlines after word fading and before handing prose to the token renderer.
   const fadePlugin = useMemo<Pluggable>(() => [rehypeWordFade, fadeOptions], [fadeOptions]);
   const rehypePlugins = useMemo<PluggableList | undefined>(
     () =>
-      fade || hardBreaks
+      fade || hardBreaks || hasProseRenderer
         ? [
             ...(base ?? []),
             ...(fade ? [fadePlugin] : []),
             ...(hardBreaks ? [rehypeHardBreaks] : []),
+            ...(hasProseRenderer ? [rehypeMarkdownProse] : []),
           ]
         : base,
-    [base, fade, fadePlugin, hardBreaks],
+    [base, fade, fadePlugin, hardBreaks, hasProseRenderer],
   );
   const block = <Block {...props} rehypePlugins={rehypePlugins} />;
   return direction ? (
@@ -906,6 +910,8 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   localMedia,
   documentPath,
   hardBreaks,
+  renderProse,
+  isProseLine,
 }: {
   text: string;
   streaming?: boolean;
@@ -922,6 +928,10 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   documentPath?: string;
   /** Show a newline inside a block as a line break, as a document does. */
   hardBreaks?: boolean;
+  /** Render application tokens in prose after Markdown parsing and sanitization. */
+  renderProse?: (text: string) => ReactNode;
+  /** Retain lines with application tokens as prose during file auto-linking. */
+  isProseLine?: (line: string) => boolean;
 }) {
   const t = useT();
   const codePlugin = useCodeHighlightPlugin();
@@ -996,17 +1006,16 @@ export const AgentMarkdown = memo(function AgentMarkdown({
       documentPath,
       onOpenFile: onOpenFile ? openFile : undefined,
       onFileContextMenu,
-      onRevealFile,
     }),
-    [cwd, documentPath, onOpenFile, openFile, onFileContextMenu, onRevealFile],
+    [cwd, documentPath, onOpenFile, openFile, onFileContextMenu],
   );
   const remarkPlugins = useMemo<PluggableList>(
     () => [
       ...Object.values(defaultRemarkPlugins),
       remarkLocalSessionLinks,
-      [remarkWorkspaceFileLinks, { cwd }],
+      [remarkWorkspaceFileLinks, { cwd, isProseLine }],
     ],
-    [cwd],
+    [cwd, isProseLine],
   );
   const remoteMedia = !!allowRemoteMedia;
   const textMode = useSyncExternalStore(
@@ -1015,7 +1024,6 @@ export const AgentMarkdown = memo(function AgentMarkdown({
     loadStreamingTextMode,
   );
   const adaptive = textMode === "adaptive";
-  const visible = usePresentationVisible();
   const reducedMotion = usePrefersReducedMotion();
   // Keep one hook order when preferences change during an active reply.
   const paced = usePacedText(text, !!streaming, revealOnMount, !adaptive);
@@ -1023,6 +1031,11 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   useEffect(() => {
     setMountEntrance(false);
   }, []);
+  const fading = useWordFading(
+    !!streaming || paced.revealing || (adaptive && mountEntrance),
+    adaptive ? ADAPTIVE_FADE_MAX_MS : undefined,
+  );
+  const visible = usePresentationVisible(fading);
   const fadeRoot = useRef<HTMLDivElement>(null);
   const previousPresentation = useRef({ visible, textMode, reducedMotion });
   useLayoutEffect(() => {
@@ -1039,10 +1052,6 @@ export const AgentMarkdown = memo(function AgentMarkdown({
     previousPresentation.current = { visible, textMode, reducedMotion };
   }, [visible, textMode, reducedMotion]);
   useRenderTrace(text, paced.text, paced.revealing, streaming);
-  const fading = useWordFading(
-    !!streaming || paced.revealing || (adaptive && mountEntrance),
-    adaptive ? ADAPTIVE_FADE_MAX_MS : undefined,
-  );
   // Only the words still fading in, in the last block, carry a span (see
   // DirectionalBlock and useWordFadeWindow), and a word keeps its element until
   // its fade is over, since dropping one mid-fade would remount it and fade it
@@ -1143,27 +1152,28 @@ export const AgentMarkdown = memo(function AgentMarkdown({
                   <InlineMessage tone="warning">
                     {t("Formatted preview unavailable. Showing source.")}
                   </InlineMessage>
-                  <div className="whitespace-pre-wrap">{paced.text}</div>
+                  <div className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">
+                    {paced.text}
+                  </div>
                 </>
               ) : (
-                <Streamdown
-                  BlockComponent={DirectionalBlock}
-                  className={`agent-markdown min-w-0 font-sans text-ui-body leading-6 ${fading ? "word-fading" : ""} ${className ?? ""}`}
-                  components={MARKDOWN_COMPONENTS}
-                  controls={false}
-                  isAnimating={!!streaming || paced.revealing}
-                  parseIncompleteMarkdown={false}
-                  parseMarkdownIntoBlocksFn={parseBlocks}
-                  plugins={markdownPlugins}
-                  remarkPlugins={remarkPlugins}
-                  rehypePlugins={rehypePlugins}
-                >
-                  {parsedSource}
-                </Streamdown>
+                <MarkdownProseContext.Provider value={renderProse}>
+                  <Streamdown
+                    BlockComponent={DirectionalBlock}
+                    className={`agent-markdown min-w-0 font-sans text-ui-body leading-6 ${fading ? "word-fading" : ""} ${className ?? ""}`}
+                    components={renderProse ? MARKDOWN_PROSE_COMPONENTS : MARKDOWN_COMPONENTS}
+                    controls={false}
+                    isAnimating={!!streaming || paced.revealing}
+                    parseIncompleteMarkdown={false}
+                    parseMarkdownIntoBlocksFn={parseBlocks}
+                    plugins={markdownPlugins}
+                    remarkPlugins={remarkPlugins}
+                    rehypePlugins={rehypePlugins}
+                  >
+                    {parsedSource}
+                  </Streamdown>
+                </MarkdownProseContext.Provider>
               )}
-              {markdownPending ? (
-                <LoadingText delay={false}>{t("Rendering Markdown…")}</LoadingText>
-              ) : null}
             </div>
             {fileMenu ? (
               <ExplorerMenu
@@ -1191,7 +1201,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
             ) : null}
             {fileActionError ? (
               <FileActionError
-                message={fileActionError}
+                details={fileActionError}
                 onDismiss={() => setFileActionError(null)}
               />
             ) : null}
@@ -1231,10 +1241,9 @@ export const MarkdownPreview = memo(function MarkdownPreview({
       data-markdown-region="preview"
       className="markdown-preview h-full overflow-y-auto overscroll-none [overflow-anchor:none]"
     >
-      <div className="mx-auto w-full max-w-[46rem] px-6 py-8">
+      <div className="mx-auto w-full max-w-3xl px-6 py-8">
         {header}
         <AgentMarkdown
-          className="text-ui-body! leading-[1.6]!"
           text={text}
           streaming={streaming}
           cwd={cwd}
@@ -1287,6 +1296,70 @@ export function MarkdownSourceHighlight({ text }: { text: string }) {
   );
 }
 
+function JsonFence({
+  code,
+  data,
+  iconName,
+  className,
+  lineNumbers,
+  startLine,
+}: {
+  code: string;
+  data: object;
+  iconName: string;
+  className?: string;
+  lineNumbers: boolean;
+  startLine?: number;
+}) {
+  const t = useT();
+  const [view, setView] = useState<"tree" | "raw">("tree");
+  const icon = iconName ? <FileTypeIcon name={iconName} isDir={false} /> : null;
+  const toggle = (
+    <FenceViewToggle
+      label={t("JSON view")}
+      value={view}
+      options={[
+        { value: "tree", label: t("Tree") },
+        { value: "raw", label: t("Raw") },
+      ]}
+      onChange={(next) => setView(next === "raw" ? "raw" : "tree")}
+    />
+  );
+  if (view === "raw") {
+    return (
+      <MarkdownCodeShell code={code} language="json">
+        {icon ? (
+          <span className="markdown-code-icon" aria-hidden="true">
+            {icon}
+          </span>
+        ) : null}
+        {toggle}
+        <CodeCopyButton code={code} />
+        <HighlightedCodeBlock
+          className={className}
+          code={code}
+          isIncomplete={false}
+          language="json"
+          lineNumbers={lineNumbers}
+          startLine={startLine}
+        />
+      </MarkdownCodeShell>
+    );
+  }
+  return (
+    <FenceCard language="json" icon={icon} toggle={toggle} actions={<CodeCopyButton code={code} />}>
+      <JsonViewer
+        data={data}
+        defaultExpandDepth={jsonOpenDepth(data)}
+        showPath={false}
+        maxHeight={360}
+        label={t("JSON tree")}
+        className={fenceTree}
+      />
+    </FenceCard>
+  );
+}
+
 let mermaidRenderSequence = 0;
 function nextMermaidRenderId() {
   return ++mermaidRenderSequence;
@@ -1307,6 +1380,8 @@ function MermaidBlock({ code, incomplete }: { code: string; incomplete: boolean 
     rendered && rendered.code === code && rendered.colorScheme === colorScheme ? rendered : null;
   const svg = current?.svg ?? null;
   const failed = current?.failed ?? false;
+  const t = useT();
+  const [view, setView] = useState<"diagram" | "source">("diagram");
 
   useEffect(() => {
     if (incomplete) return;
@@ -1330,29 +1405,56 @@ function MermaidBlock({ code, incomplete }: { code: string; incomplete: boolean 
     };
   }, [code, incomplete, colorScheme]);
 
-  if (incomplete || failed) {
+  const icon = <FileTypeIcon name="diagram.mmd" isDir={false} />;
+  // The diagram is drawn once the fence is complete; until then (and when it cannot be drawn) only the source shows.
+  const showSource = incomplete || failed || (!!svg && view === "source");
+  const toggle = (
+    <FenceViewToggle
+      label={t("Diagram view")}
+      value={view}
+      options={[
+        { value: "diagram", label: t("Diagram") },
+        { value: "source", label: t("Source") },
+      ]}
+      onChange={(next) => setView(next === "source" ? "source" : "diagram")}
+    />
+  );
+  if (showSource) {
     return (
       <MarkdownCodeShell code={code} language="mermaid">
         <span className="markdown-code-icon" aria-hidden="true">
-          <FileTypeIcon name="diagram.mmd" isDir={false} />
+          {icon}
         </span>
+        {svg && !incomplete && !failed ? toggle : null}
         <CodeCopyButton code={code} />
-        <CodeBlock code={code} isIncomplete={incomplete} language="mermaid" lineNumbers={false} />
+        <HighlightedCodeBlock
+          code={code}
+          isIncomplete={incomplete}
+          language="mermaid"
+          lineNumbers
+        />
       </MarkdownCodeShell>
     );
   }
 
   if (!svg) {
-    return <Skeleton lines={5} className="h-32 rounded-xl" />;
+    return <Skeleton lines={5} className="h-32" />;
   }
 
   return (
-    <div
-      className="mermaid-block overflow-x-auto rounded-xl border border-(--ui-tone-neutral-border) p-3"
-      data-streamdown="mermaid-block"
-      dir="ltr"
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
+    <FenceCard
+      language="mermaid"
+      icon={icon}
+      toggle={toggle}
+      actions={<CodeCopyButton code={code} />}
+    >
+      <div
+        className="mermaid-block overflow-x-auto p-3"
+        data-streamdown="mermaid-block"
+        dir="ltr"
+        dangerouslySetInnerHTML={{ __html: svg }}
+      />
+    </FenceCard>
   );
 }
 
@@ -1441,7 +1543,6 @@ function MarkdownCodePath({ path, startLine }: { path: string; startLine?: numbe
         motion="none"
         variant="ghost"
         type="button"
-
         className="markdown-code-path-link"
         tooltip={file.path}
         onClick={() => onOpenFile(file.path, navigation)}
@@ -1449,7 +1550,6 @@ function MarkdownCodePath({ path, startLine }: { path: string; startLine?: numbe
       >
         {path}
       </Button>
-      <FileRevealButton path={file.path} />
     </span>
   );
 }
@@ -1491,5 +1591,6 @@ function inlineFileName(value: string): string | undefined {
   }
 
   const extension = fileName.includes(".") ? fileName.split(".").pop() : undefined;
-  return extension && /^[a-z][a-z0-9+-]{0,11}$/i.test(extension) ? fileName : undefined;
+  // Only a recognised file type counts; `images.generate` or `logs.sources` is an identifier.
+  return extension && isKnownFileType(fileName) ? fileName : undefined;
 }

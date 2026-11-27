@@ -1,6 +1,11 @@
 import type { Block, Session, ApprovalRequestToken, UserQuestionReply } from "../../sessions";
+import { invoke } from "@tauri-apps/api/core";
 import { isApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence";
 import type { DesktopProjectDirectory } from "./protocol";
+import type {
+  RemoteGroupLockJob,
+  RemoteGroupLockReply,
+} from "../../group-lock/public/remoteGroupLock";
 import type { NativeControlTurnReceipt } from "../../../integrations/harness/core/controlTurn";
 import {
   REMOTE_INBOX_VERSION,
@@ -26,6 +31,9 @@ export const DESKTOP_LIVE_MS = 1_500;
  * 20 s stale threshold (DESKTOP_BEAT_STALE_MS), and a remote Stop/Approve/Answer
  * only exists for a busy or waiting session, so it never waits on this. */
 export const DESKTOP_LIVE_IDLE_MS = 5_000;
+/** After inbox work from a phone arrives or is answered, a phone is browsing: its next request
+ * (a filter, a detail, a board) is picked up within DESKTOP_LIVE_MS instead of the idle gap. */
+export const DESKTOP_INBOX_ACTIVE_MS = 30_000;
 
 export function supportsDesktopLive(capabilities: string[] | undefined): boolean {
   return !!capabilities?.includes(DESKTOP_LIVE_CAPABILITY);
@@ -40,11 +48,14 @@ export type DesktopLiveSession = {
 };
 
 export type DesktopLivePayload = {
+  removalLeaseReplies?: DesktopRemovalLeaseReply[];
   writers?: { version: 1; sessionIds: string[] };
   projectDirectory?: DesktopProjectDirectory;
   /** Omit directory contents only after the host acknowledges this revision. */
   projectDirectoryRevision?: string;
   deletions?: { version: 1; replies: { id: string; error?: string }[] };
+  /** Phone unlock verdicts, and the epoch whose change ends every phone's unlock. */
+  groupLock?: { version: 1; epoch: string; replies: RemoteGroupLockReply[] };
   clientId?: string;
   pageToken?: string;
   sessions: DesktopLiveSession[];
@@ -57,7 +68,7 @@ export type DesktopLivePayload = {
   /** The last remote-activity cursor this desktop saw (`activity.seq`). */
   activitySeq?: number;
   /** The shared queues this desktop holds the drain lease of; the beat keeps them alive. `blocked`: it cannot send them now (a sync conflict). */
-  queueLeases?: { sessionId: string; epoch: number; blocked?: boolean }[];
+  queueLeases?: { sessionId: string; epoch: number; blocked?: boolean; syncPending?: boolean }[];
   /** The conversations this window runs a turn of under a run lease; the beat keeps them alive. */
   runLeases?: { sessionId: string; epoch: number }[];
   /** Someone is using this window now; the Host holds phone pushes meanwhile. */
@@ -67,6 +78,7 @@ export type DesktopLivePayload = {
 };
 
 export type DesktopLiveResult = {
+  removalLease?: { jobs: { id: string; clientId: string; path?: string }[]; acked: string[] };
   projectDirectoryRevision?: string;
   deletions?: {
     jobs: { id: string; sessionId: string; cwd: string; requestedBy?: string }[];
@@ -74,6 +86,7 @@ export type DesktopLiveResult = {
   };
   commands?: DesktopLiveCommand[];
   inbox?: { jobs?: DesktopInboxJob[]; acked?: string[] };
+  groupLock?: { jobs?: RemoteGroupLockJob[]; acked?: string[] };
   notesRevision?: number;
   /** Shared queues changed since `queueSeq`; `reset` when that cannot be told. */
   queues?: { seq: number; ids: string[]; reset?: boolean };
@@ -88,6 +101,15 @@ export type DesktopLiveResult = {
   /** Per conversation in `runLeases`: the lease kept, or `null` when another side runs it now. */
   runLeases?: Record<string, { holder: string; epoch: number; expiresAt: number } | null>;
 };
+
+type DesktopRemovalLeaseReply = {
+  id: string;
+  granted: boolean;
+  release: boolean;
+  checks?: string[];
+  reason?: string;
+};
+const removalLeaseReplies = new Map<string, DesktopRemovalLeaseReply>();
 export type DesktopLiveCommand = {
   id: string;
   sessionId: string;
@@ -336,6 +358,8 @@ function dispatchDesktopLiveCommand(
 /** When the last heartbeat was sent and whether it reported nothing. */
 export type DesktopLiveBeat = {
   idleAt?: number;
+  /** Until when a phone is treated as browsing the inbox (see DESKTOP_INBOX_ACTIVE_MS). */
+  inboxActiveUntil?: number;
   notesRevision?: number;
   queueSeq?: number;
   adoptedSeq?: number;
@@ -394,7 +418,7 @@ export async function runDesktopLiveTick(deps: {
   onAdopted?: (change: { ids: string[]; reset: boolean }) => void;
   /** The drain leases this desktop holds, and what the host answered for them. */
   queueLeases?: {
-    held: () => { sessionId: string; epoch: number; blocked?: boolean }[];
+    held: () => NonNullable<DesktopLivePayload["queueLeases"]>;
     answered: (answers: NonNullable<DesktopLiveResult["queueLeases"]>) => void;
   };
   /** The run leases of the turns this window runs; `answered` returns the conversations whose lease was lost. */
@@ -406,6 +430,13 @@ export async function runDesktopLiveTick(deps: {
   deletions?: {
     results: Map<string, { id: string; error?: string }>;
     running: Set<string>;
+  };
+  /** Phones' unlock requests, run with this window's password check; absent on older hosts. */
+  groupLock?: {
+    results: Map<string, RemoteGroupLockReply>;
+    running: Set<string>;
+    epoch: () => string;
+    run: (job: RemoteGroupLockJob) => Promise<RemoteGroupLockReply>;
   };
 }): Promise<void> {
   const acked = [...deps.unacked];
@@ -462,14 +493,20 @@ export async function runDesktopLiveTick(deps: {
     voiceActiveAgeMs === undefined &&
     live.length === 0 &&
     acked.length === 0 &&
+    removalLeaseReplies.size === 0 &&
     inboxReplies.length === 0 &&
     !deps.deletions?.results.size &&
     !deps.deletions?.running.size &&
+    !deps.groupLock?.results.size &&
+    !deps.groupLock?.running.size &&
     !deps.inbox?.running.size;
   // Anything busy, waiting or unacknowledged goes out on every tick, so a
   // session that starts running is reported within one DESKTOP_LIVE_MS.
+  const inboxActive =
+    deps.beat?.inboxActiveUntil !== undefined && now() < deps.beat.inboxActiveUntil;
   if (
     idle &&
+    !inboxActive &&
     !directoryChanged &&
     deps.beat?.idleAt !== undefined &&
     now() - deps.beat.idleAt < DESKTOP_LIVE_IDLE_MS
@@ -491,7 +528,17 @@ export async function runDesktopLiveTick(deps: {
           },
         }
       : {}),
+    ...(deps.groupLock
+      ? {
+          groupLock: {
+            version: 1 as const,
+            epoch: deps.groupLock.epoch(),
+            replies: [...deps.groupLock.results.values()].slice(0, 20),
+          },
+        }
+      : {}),
     ...(deps.clientId ? { clientId: deps.clientId } : {}),
+    ...(removalLeaseReplies.size ? { removalLeaseReplies: [...removalLeaseReplies.values()] } : {}),
     ...(deps.userActive?.() ? { userActive: true as const } : {}),
     ...(voiceActiveAgeMs !== undefined ? { voiceActiveAgeMs } : {}),
     ...(pageToken ? { pageToken } : {}),
@@ -575,7 +622,47 @@ export async function runDesktopLiveTick(deps: {
         .finally(() => runner.running.delete(job.id));
     }
   }
+  for (const id of result?.removalLease?.acked ?? []) removalLeaseReplies.delete(id);
+  for (const job of result?.removalLease?.jobs ?? []) {
+    if (!deps.clientId || job.clientId !== deps.clientId || typeof job.id !== "string") continue;
+    const release = job.path === undefined;
+    if (!release && typeof job.path !== "string") continue;
+    // The native command refuses with a stable "<code>: message" error; "editors" is the only
+    // code the Host acts on, and `checks` tells it this desktop ran the editor check.
+    const refusal = await invoke<void>("desktop_worktree_removal_lease", {
+      clientId: deps.clientId,
+      leaseId: job.id,
+      path: job.path ?? null,
+    }).then(
+      () => undefined,
+      (error: unknown) => String(error),
+    );
+    removalLeaseReplies.set(job.id, {
+      id: job.id,
+      granted: refusal === undefined,
+      release,
+      ...(release ? {} : { checks: ["editors"] }),
+      ...(refusal?.startsWith("editors:") ? { reason: "editors" } : {}),
+    });
+  }
+  if (deps.groupLock) {
+    const runner = deps.groupLock;
+    for (const id of result?.groupLock?.acked ?? []) runner.results.delete(id);
+    for (const job of result?.groupLock?.jobs ?? []) {
+      if (!job || typeof job.id !== "string" || runner.running.has(job.id)) continue;
+      if (runner.results.has(job.id)) continue;
+      runner.running.add(job.id);
+      // Hashing is slow by design; keep beating while it runs. Never run a job twice.
+      void Promise.resolve()
+        .then(() => runner.run(job))
+        .then((reply) => runner.results.set(job.id, reply))
+        .catch(() => runner.results.set(job.id, { id: job.id, error: "failed" }))
+        .finally(() => runner.running.delete(job.id));
+    }
+  }
   if (deps.inbox) {
+    if ((result?.inbox?.jobs?.length ?? 0) > 0 || inboxReplies.length > 0)
+      if (deps.beat) deps.beat.inboxActiveUntil = now() + DESKTOP_INBOX_ACTIVE_MS;
     for (const id of result?.inbox?.acked ?? []) deps.inbox.results.delete(id);
     for (const job of result?.inbox?.jobs ?? []) {
       if (

@@ -6,7 +6,11 @@ import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
 import { Plus } from "../../../shared/ui/icons";
 import { MAX_NOTE_TAGS, normalizeNoteTags } from "../notes";
-import { NOTE_TAG_PRESETS, noteTagSuggestions } from "../model/noteTagSuggestions";
+import {
+  NOTE_TAG_PRESETS,
+  noteTagPresetLabel,
+  noteTagSuggestions,
+} from "../model/noteTagSuggestions";
 
 export function NoteTagsEditor({
   tags,
@@ -25,6 +29,7 @@ export function NoteTagsEditor({
   const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const suggestions = noteTagSuggestions(availableTags, tags);
+  const canAdd = tags.length < MAX_NOTE_TAGS && suggestions.length > 0;
   return (
     <div className="flex min-w-0 items-center gap-1">
       <TagInput
@@ -46,20 +51,22 @@ export function NoteTagsEditor({
           if (!sameTags(next, tags)) onChange(next);
         }}
       />
-      <Button
-        ref={trigger}
-        variant="ghost"
-        size="sm"
-        iconOnly
-        label={t("Tags")}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        disabled={tags.length >= MAX_NOTE_TAGS || suggestions.length === 0}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <Plus className="icon-xs" />
-      </Button>
-      {open ? (
+      {/* A disabled trigger would give no reason, so it only exists while there is something to add. */}
+      {canAdd ? (
+        <Button
+          ref={trigger}
+          variant="ghost"
+          size="sm"
+          iconOnly
+          label={t("Tags")}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <Plus className="icon-xs" />
+        </Button>
+      ) : null}
+      {open && canAdd ? (
         <Popover
           anchor={trigger}
           kind="dialog"
@@ -78,12 +85,13 @@ export function NoteTagsEditor({
                   variant="secondary"
                   size="sm"
                   disabled={tags.length >= MAX_NOTE_TAGS}
+                  disabledReason={t("Up to {p0} tags per note", { p0: MAX_NOTE_TAGS })}
                   onClick={() => {
                     const next = normalizeNoteTags([...tags, tag]);
                     if (!sameTags(next, tags)) onChange(next);
                   }}
                 >
-                  {preset ? t(preset.label) : `#${tag}`}
+                  {preset ? noteTagPresetLabel(preset.value) : `#${tag}`}
                 </Button>
               );
             })}

@@ -9,6 +9,7 @@ import {
 import { createNote, noteTitle } from "../../notes";
 import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/public/settings";
 import { useTranscriptSelection } from "../hooks/useTranscriptSelection";
+import { isRectVisible } from "../model/selectionGeometry";
 import { textareaSelectionRect } from "../model/textareaSelectionRect";
 import type { TranscriptSelection } from "../model/transcriptSelection";
 import { requestAddToChat } from "../model/quoteDraft";
@@ -58,30 +59,52 @@ export function SurfaceSelection({
     let selecting = false;
     let field: HTMLTextAreaElement | null = null;
     let point: { x: number; y: number } | null = null;
+    const fieldRect = (target: HTMLTextAreaElement): DOMRect | null => {
+      let rect: DOMRect | null = null;
+      try {
+        rect = textareaSelectionRect(target, target.selectionStart, target.selectionEnd);
+      } catch {
+        /* Selection geometry can be unavailable during layout. */
+      }
+      if (rect) return rect;
+      const bounds = target.getBoundingClientRect();
+      if (bounds.width <= 0 || bounds.height <= 0) return null;
+      return new DOMRect(
+        Math.max(bounds.left, Math.min(bounds.right, point?.x ?? bounds.left)),
+        Math.max(bounds.top, Math.min(bounds.bottom, point?.y ?? bounds.top)),
+        1,
+        1,
+      );
+    };
     const report = () => {
       frame.current = 0;
       if (selecting || !field || document.activeElement !== field || !root.contains(field)) return;
-      const text = field.value.slice(field.selectionStart, field.selectionEnd).trim();
-      let rect: DOMRect | null = null;
-      if (text) {
-        try {
-          rect = textareaSelectionRect(field, field.selectionStart, field.selectionEnd);
-        } catch {
-          /* Selection geometry can be unavailable during layout. */
-        }
-        if (!rect) {
-          const bounds = field.getBoundingClientRect();
-          if (bounds.width > 0 && bounds.height > 0)
-            rect = new DOMRect(
-              Math.max(bounds.left, Math.min(bounds.right, point?.x ?? bounds.left)),
-              Math.max(bounds.top, Math.min(bounds.bottom, point?.y ?? bounds.top)),
-              1,
-              1,
-            );
-        }
-      }
+      const target = field;
+      const start = target.selectionStart;
+      const end = target.selectionEnd;
+      const text = target.value.slice(start, end).trim();
+      const rect = text ? fieldRect(target) : null;
       dismissRange();
-      setFieldSelection(rect ? { text, rect } : null);
+      setFieldSelection(
+        rect
+          ? {
+              text,
+              rect,
+              // Same textarea, same range: anything else is a lost selection, not a moved one.
+              measure: () => {
+                if (
+                  !target.isConnected ||
+                  target.selectionStart !== start ||
+                  target.selectionEnd !== end ||
+                  target.value.slice(start, end).trim() !== text
+                )
+                  return null;
+                const next = fieldRect(target);
+                return next ? { rect: next, visible: isRectVisible(next, target) } : null;
+              },
+            }
+          : null,
+      );
     };
     const schedule = (event?: Event) => {
       if (event?.target instanceof HTMLTextAreaElement) field = event.target;

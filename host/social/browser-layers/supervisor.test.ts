@@ -92,4 +92,63 @@ describe("BrowserSupervisor", () => {
     await vi.waitFor(() => expect(onGaveUp).toHaveBeenCalledWith("acc"));
     expect(launch).toHaveBeenCalledTimes(2);
   });
+
+  it("bounds a wedged relaunch, counts it against the budget, and closes the browser if it lands late", async () => {
+    const first = fakeSession();
+    const late = fakeSession();
+    const next = fakeSession();
+    let landLate!: (session: BrowserSession) => void;
+    const launch = vi
+      .fn<(accountId: string) => Promise<BrowserSession>>()
+      .mockImplementationOnce(
+        () =>
+          new Promise<BrowserSession>((resolve) => {
+            landLate = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(next.session);
+    const onGaveUp = vi.fn();
+    const supervisor = new BrowserSupervisor({
+      launch,
+      wait: async () => undefined,
+      now: () => 0,
+      launchTimeoutMs: 1,
+      onGaveUp,
+    });
+    supervisor.supervise("acc", first.session);
+    first.crash();
+    await vi.waitFor(() => expect(launch).toHaveBeenCalledTimes(2));
+    landLate(late.session);
+    await vi.waitFor(() => expect(late.session.close).toHaveBeenCalledTimes(1));
+    expect(onGaveUp).not.toHaveBeenCalled();
+    expect(launch).toHaveBeenCalledTimes(2);
+    expect(next.session.close).not.toHaveBeenCalled();
+  });
+
+  it("closes a browser that finishes launching after the owner stopped the account", async () => {
+    const first = fakeSession();
+    const launched = fakeSession();
+    let finish!: (session: BrowserSession) => void;
+    const launch = vi.fn(
+      () =>
+        new Promise<BrowserSession>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const supervisor = new BrowserSupervisor({
+      launch,
+      wait: async () => undefined,
+      now: () => 0,
+      launchTimeoutMs: 60_000,
+    });
+    supervisor.supervise("acc", first.session);
+    first.crash();
+    await vi.waitFor(() => expect(launch).toHaveBeenCalledTimes(1));
+    supervisor.stop("acc");
+    finish(launched.session);
+    await vi.waitFor(() => expect(launched.session.close).toHaveBeenCalledTimes(1));
+    launched.crash();
+    await flush();
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
 });

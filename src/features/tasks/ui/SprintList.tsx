@@ -1,13 +1,12 @@
-import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { useT } from "../../../shared/i18n";
 import type { RemoteMachine } from "../../connections";
-import { BadgeList } from "../../../shared/ui/BadgeList";
-import { Button } from "../../../shared/ui/Button";
+import { CollectionRow } from "../../../shared/ui/CollectionRow";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Surface } from "../../../shared/ui/Surface";
+import { sprintStateLabel } from "../model/statusLabels";
 import { sprintProjectKey, type HostSprint } from "../model/hostSprints";
-import { displayDate } from "../model/sprintDates";
+import { sprintDateRange } from "./sprintDateRange";
 import { SprintStatusBadge } from "./SprintStatusBadge";
 import "./sprints.css";
 
@@ -36,16 +35,9 @@ export function SprintList({
   // A state that no sprint has any more falls back to All.
   const stateFilter = present.some((state) => state === chosen) ? chosen : "all";
   const label = (state: string) =>
-    state === "all"
-      ? t("All")
-      : t(
-          {
-            planned: "Planned",
-            active: "Active",
-            completed: "Completed",
-            archived: "Archived",
-          }[state as (typeof STATES)[number]],
-        );
+    state === "all" ? t("All") : sprintStateLabel(state as (typeof STATES)[number]);
+  // Server and machine names only tell rows apart when several machines are involved.
+  const manyServers = machines.length > 1;
   const shown = rows.filter(
     (sprint) => !filtering || stateFilter === "all" || sprint.state === stateFilter,
   );
@@ -60,45 +52,35 @@ export function SprintList({
         />
       ) : null}
       <Surface as="ul" variant="card" padding="none" dividers="pane" className="sprint-collection">
-        {shown.map((sprint) => (
-          <li className="sprint-row" key={sprint.catalogKey ?? sprint.id}>
-            <div className="sprint-row-main">
-              <Button
-                variant="link"
-                align="start"
-                disabled={sprint.unavailable}
-                disabledReason={sprint.unavailable ? t("Offline") : undefined}
-                onClick={() => onSelect(sprint.catalogKey ?? sprint.id)}
-              >
-                {sprint.name}
-              </Button>
-              {sprint.serverName ? (
-                <Text size="caption" tone="secondary">
-                  {sprint.serverName}
-                  {sprint.unavailable ? ` (${t("Offline")})` : ""}
-                </Text>
-              ) : null}
-              {sprint.startsAt !== undefined || sprint.endsAt !== undefined ? (
-                <Text tone="muted" size="caption" leading="inherit" className="sprint-row-dates">
-                  {displayDate(sprint.startsAt, t("No start date"))} ·{" "}
-                  {displayDate(sprint.endsAt, t("No end date"))}
-                </Text>
-              ) : null}
-            </div>
-            <BadgeList
-              label={t("Projects")}
-              size="xs"
-              className="sprint-row-projects"
-              items={sprint.projects
+        {shown.map((sprint) => {
+          // Each project once, by name; the server is named once below, not per project.
+          const names = [
+            ...new Set(
+              sprint.projects
                 .filter((project) => accessible.has(sprintProjectKey(project)))
-                .map((project, index) => ({
-                  id: `${index}:${project.name}`,
-                  label: `${project.name}${machines.find((machine) => machine.environmentId === project.environmentId) ? ` / ${machines.find((machine) => machine.environmentId === project.environmentId)!.name}` : ""}`,
-                }))}
-            />
-            <SprintStatusBadge state={sprint.state} />
-          </li>
-        ))}
+                .map((project) => project.name),
+            ),
+          ];
+          const projectNames =
+            names.length > 2 ? [t("{p0} projects", { p0: names.length })] : names;
+          const server =
+            sprint.serverName && (manyServers || sprint.unavailable)
+              ? `${sprint.serverName}${sprint.unavailable ? ` (${t("Offline")})` : ""}`
+              : "";
+          return (
+            <li key={sprint.catalogKey ?? sprint.id}>
+              <CollectionRow
+                title={sprint.name}
+                secondary={[sprintDateRange(sprint, t), projectNames.join(", "), server]
+                  .filter(Boolean)
+                  .join(" · ")}
+                trailing={<SprintStatusBadge state={sprint.state} />}
+                primary={{ disabled: sprint.unavailable }}
+                onOpen={() => onSelect(sprint.catalogKey ?? sprint.id)}
+              />
+            </li>
+          );
+        })}
       </Surface>
     </>
   );

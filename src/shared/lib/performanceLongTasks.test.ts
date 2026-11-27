@@ -64,11 +64,38 @@ describe("long task recording", () => {
     startLongTaskRecording();
     const frames = FakePerformanceObserver.instances[1];
     frames.callback({
-      getEntries: () => [{ startTime: 40, duration: 120, scripts: [{ sourceURL: "x.js" }] }],
+      getEntries: () => [
+        {
+          startTime: 40,
+          duration: 120,
+          blockingDuration: 30,
+          styleAndLayoutStart: 140,
+          scripts: [{ duration: 25, sourceURL: "x.js" }],
+        },
+      ],
     });
     expect(getPerformanceTrace()).toEqual([
-      { stage: "long-animation-frame", at: 40, duration: 120, metrics: {} },
+      {
+        stage: "long-animation-frame",
+        at: 40,
+        duration: 120,
+        metrics: { blockingMs: 30, styleAndLayoutMs: 20, scriptMs: 25 },
+      },
     ]);
+  });
+
+  it("keeps the sixteen slowest frames after rollover and clears them on reset", () => {
+    configurePerformanceTracing({ enabled: true, capacity: 1 });
+    startLongTaskRecording();
+    const [tasks, frames] = FakePerformanceObserver.instances;
+    for (let duration = 100; duration >= 80; duration--)
+      frames.callback({ getEntries: () => [{ startTime: 100 - duration, duration }] });
+    tasks.callback({ getEntries: () => [{ startTime: 200, duration: 51 }] });
+    const kept = getPerformanceTrace().filter((record) => record.stage === "long-animation-frame");
+    expect(kept).toHaveLength(16);
+    expect(kept.at(-1)?.duration).toBe(85);
+    clearPerformanceTrace();
+    expect(getPerformanceTrace()).toEqual([]);
   });
 
   it("observes only entry types the runtime supports", () => {

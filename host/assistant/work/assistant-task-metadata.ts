@@ -8,34 +8,25 @@ import { assertAssistantGoalProjects } from "./assistant-job-scope";
 /** Only attribution dependencies participate; token/summary updates do not evict it. */
 export async function assistantTaskMetadataSourceStamp(
   store: HostStore,
-  tasks: HostTask[],
+  goalIds: string[],
 ): Promise<string> {
-  const ids = [
-    ...new Set(
-      tasks.flatMap((task) =>
-        task.goalId?.startsWith("assistant-") && task.sessionId
-          ? [task.goalId.slice("assistant-".length)]
-          : [],
-      ),
-    ),
-  ];
-  if (!ids.length) return "none";
+  if (!goalIds.length) return "none";
   const tables = await store.db
     .prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('assistant_jobs','goals') ORDER BY name",
+      "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('assistant_jobs','assistant_session_receipts','goals')",
     )
     .all();
-  if (tables.length !== 2) return "unavailable";
+  if (tables.length !== 3) return "unavailable";
   const jobs = await store.db
     .prepare(
       "SELECT id,deleted_at,json_array(json_extract(value,'$.kind'),json_extract(value,'$.goalId'),json_extract(value,'$.projectId'),json_extract(value,'$.projectIds'),json_extract(value,'$.taskIds'),json_extract(value,'$.sessionIds')) AS scope FROM assistant_jobs WHERE id IN (SELECT value FROM json_each(?)) ORDER BY id",
     )
-    .all(JSON.stringify(ids));
+    .all(JSON.stringify(goalIds.map((id) => id.slice("assistant-".length))));
   const goals = await store.db
     .prepare(
       "SELECT id,json_array(json_extract(value,'$.leadProjectId'),json_extract(value,'$.projectIds'),json_extract(value,'$.taskIds')) AS scope FROM goals WHERE id IN (SELECT value FROM json_each(?)) ORDER BY id",
     )
-    .all(JSON.stringify(ids.map((id) => `assistant-${id}`)));
+    .all(JSON.stringify(goalIds));
   return JSON.stringify([jobs, goals]);
 }
 

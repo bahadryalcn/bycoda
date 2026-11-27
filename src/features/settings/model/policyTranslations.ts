@@ -2,7 +2,7 @@
 export const turkishPolicies = {
   privacy: `# Gizlilik politikası
 
-Son güncelleme: 9 Kasım 2026
+Son güncelleme: 25 Kasım 2026
 
 ## Kapsam ve iletişim
 
@@ -14,11 +14,11 @@ Gizlilik soruları ve talepleri için [info@bycoda.codes](mailto:info@bycoda.cod
 
 ## bycoda neyi toplar, neyi toplamaz
 
-bycoda'yı hesap açmadan kullanabilirsiniz. Hesap olmadan uygulama projelerinizi, konuşmalarınızı, kimlik bilgilerinizi veya kullanım geçmişinizi bakımcıya göndermez; reklam, davranış takibi veya otomatik hata raporu gönderimi içermez. Hesap olmadan gönderebileceği tek şey aşağıda açıklanan, varsayılan olarak kapalı isteğe bağlı anonim istatistik sinyalidir.
+bycoda masaüstünü hesap açmadan kullanabilirsiniz. İsteğe bağlı istatistikler varsayılan olarak kapalıdır. Tanılama raporları varsayılan olarak gönderim onayı ister. Veri paylaşımı bildirimi gönderilen veriyi ve hedefi incelemenizi sağlar.
 
 Bir bycoda hesabı oluşturursanız bakımcı aşağıdaki bölümlerde açıklanan sınırlı hesap verilerini alır ve saklar: hesap profiliniz, cihazlarınız, her cihazın günde kaç dakika etkin olduğu ve bildirim ayarlarınız.
 
-Hesapla da hesapsız da asla toplanmayanlar: oturum içeriği, istemler, model yanıtları, kod, dosya içerikleri, dosya yolları, proje adları, depo adları, ekranda gösterilen şeyler, kimlik bilgileri, e-posta ve sohbet mesajlarınızın içeriği. Verilerinizi satmaz, reklam için kullanmaz ve içeriğinizi model eğitimi için kullanmayız.
+Rutin hesap ve istatistik istekleri oturum içeriğini, istemleri, model yanıtlarını, kodu, dosya içeriklerini ve yollarını, proje ve depo adlarını, ekran içeriğini, çalışma alanı kimlik bilgilerini ve e-posta veya sohbet içeriğini içermez. Tanılama ve destek yüklemeleri ayrı paylaşım kontrollerine tabidir. Verilerinizi satmaz, reklam için kullanmaz ve içeriğinizi model eğitimi için kullanmayız.
 
 Bu, uygulamanın hiç veri saklamadığı veya ağa hiç bağlanmadığı anlamına gelmez. Veriler cihazlarınızda; bağlı özellikler çalıştığında ise kullandığınız sağlayıcılarda ve host'larda işlenir.
 
@@ -68,6 +68,20 @@ Hizmetin güvenli ve hesap verebilir kalması için önemli hesap olaylarını v
 ## İsteğe bağlı anonim istatistik
 
 Anonim istatistik isteğe bağlıdır ve hesaplı ya da hesapsız varsayılan olarak kapalıdır. Uygulama size bir kez sorar (ilk kurulumda ya da daha önce hiç sorulmadıysanız uygulama içinde bir kez) ve yalnız paylaşmayı seçerseniz gönderim yapar; seçiminizi Ayarlar'dan istediğiniz zaman değiştirebilirsiniz. Açıkken uygulama günde en fazla bir küçük sinyal gönderir: rastgele kurulum kimliği, uygulama sürümü, işletim sistemi, yayın kanalı ve tarih. Kimlik donanımınızdan, adınızdan veya e-postanızdan türetilmez ve hiçbir hesapla ilişkilendirilmez. Ayarı kapatmak sinyali durdurur.
+
+## İsteğe bağlı token ve maliyet istatistikleri
+
+Masaüstündeki bu ayrı ayar varsayılan olarak kapalıdır. Açıldığında, açılış tarihinden sonraki günlük token toplamı, tahmini API maliyeti ve işlem sayıları gönderilebilir. İstek rastgele kurulum kimliğini içerir. Sağlayıcı hesabı, model adı ve konuşma içeriği gönderilmez. Cloud kurulum kimliğinin salt uygulanmış hash'ini ve günlük kayıtları saklar. Günlük kayıtlar için saklama süresi 400 gündür. Ayarı kapatmak sonraki yüklemeleri durdurur.
+
+## Cihaz keşfi ve erişim yönetimi
+
+Hesapla bilgisayar keşfi açıldığında Cloud bilgisayar adını, Host kimliğini, bağlantı adreslerini ve varsa LAN açık anahtarını saklar. Eşleştirme isteği cihaz kimliklerini, açık anahtarları, istek durumunu ve kısa ömürlü şifreli bileti içerir. Bilet teslimde silinir. Teslim edilmeyen istekler süreleri dolduktan beş dakika sonra temizlenmeye uygun hale gelir. Hesaptan bilgisayar erişim yönetimi açıldığında Cloud son eşleşmiş cihaz listesini, izinleri ve bekleyen değişiklikleri saklar. Yönetimi kapatmak bu bilgisayarın senkronize erişim kaydını kaldırır.
+
+## Tanılama ve politika bildirimleri
+
+Tanılama varsayılan olarak onay ister. İsterseniz gönderimi kapatabilir veya çökme sonrası ve dönemsel otomatik raporları açabilirsiniz. Önizleme hedefi ve maskelenmiş uygulama ve Host loglarını gösterir. Cloud gönderilen tanılama raporlarını 90 gün tutar.
+
+Önemli politika ve kullanım koşulu değişiklikleri açık depoda tarihli olarak yayımlanır. Uygulama GitHub'dan sürümü ve özeti alırken bycoda hesap veya cihaz kimliği göndermez. GitHub olağan bağlantı bilgilerini alır. Bildirimi kapatma bilgisi cihazda kalır ve paylaşım izinlerini değiştirmez.
 
 ## Hesap portalı istatistikleri
 

@@ -10,9 +10,15 @@ vi.mock("../../../integrations/harness/core/registry", () => ({
       : undefined,
 }));
 
+const availability = vi.hoisted(() => ({ available: true }));
+vi.mock("../../connections/public/machineAvailability", () => ({
+  readMachineAvailability: () => availability,
+}));
+
 import { describe, expect, it, vi } from "vitest";
 import type { Skill } from "../../skills/model/skills";
 import {
+  logComposerSkillsFailure,
   nextComposerSkillContextToken,
   pickerSkillLoadOptions,
   visibleComposerSkills,
@@ -60,5 +66,16 @@ describe("composer skill catalog policies", () => {
     expect(secondA.key).toBe(firstA.key);
     expect(secondA).not.toBe(firstA);
     expect(secondA.generation).toBeGreaterThan(firstA.generation);
+  });
+
+  it("logs a failed load only while its machine is reachable", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    availability.available = false;
+    logComposerSkillsFailure("remote://m", new Error("offline"));
+    expect(warn).not.toHaveBeenCalled();
+    availability.available = true;
+    logComposerSkillsFailure("remote://m", new Error("real"));
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
   });
 });

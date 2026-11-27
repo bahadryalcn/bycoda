@@ -162,6 +162,16 @@ function ModalScene({
     >
       <div className="flex flex-col gap-2" data-testid="modal-body">
         <TextField label="Name" defaultValue="overlay" />
+        {/* An icon-only label is just the name, so the keyboard-hint test asks for one explicitly. */}
+        <Button
+          variant="ghost"
+          iconOnly
+          label="Dialog hint"
+          tooltip="Dialog hint"
+          data-testid="dialog-hint-icon"
+        >
+          <Settings />
+        </Button>
         {nested ? (
           <>
             <Button
@@ -460,7 +470,14 @@ function App() {
       <BoundedPopover mode="clip" />
       <BoundedPopover mode="hard-clip" />
       <BoundedPopover mode="intrinsic" />
-      <Button variant="ghost" iconOnly label="Project settings" data-testid="tooltip-icon">
+      <Button
+        variant="ghost"
+        iconOnly
+        label="Project settings"
+        // An icon-only label is only the accessible name; this fixture asks for the hint surface.
+        tooltip="Project settings"
+        data-testid="tooltip-icon"
+      >
         <Settings />
       </Button>
       <Button variant="ghost" iconOnly label="Add item" data-testid="tooltip-icon-2">

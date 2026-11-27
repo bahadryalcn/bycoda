@@ -22,11 +22,8 @@ const state = (patch: Partial<VoiceReturnCallState> = {}): VoiceReturnCallState 
   ...patch,
 });
 
-test("the window setting is clamped to 5 to 120 seconds with a 20 second default", () => {
-  expect(voiceReturnCallWindowMs(undefined)).toBe(20_000);
-  expect(voiceReturnCallWindowMs(1)).toBe(5_000);
-  expect(voiceReturnCallWindowMs(500)).toBe(120_000);
-  expect(voiceReturnCallWindowMs(45)).toBe(45_000);
+test("the listening window is fixed at 20 seconds", () => {
+  expect(voiceReturnCallWindowMs()).toBe(20_000);
 });
 
 test.each<[string, Partial<VoiceReturnCallState>, boolean]>([

@@ -73,6 +73,10 @@ is at most 64 KiB. `sessions.block` fetches full content for the same
 session/block/revision on explicit demand. Large responses use the existing bounded
 `syncChunk` transport. Apply full blocks only to a still-matching revision.
 
+`sessions.inlineVisual` resolves a stored visual from its owning Host using
+`{ sessionId, id }`. The Host verifies the transcript reference and content hash
+before returning the HTML. Large results use the existing bulk RPC transport.
+
 `sessions.workedTime` returns `{ workedMs }`, the sum of finished submitted user
 turns' `durationMs`, without transferring the transcript. The session detail card
 reads it on open and adds a still-running turn from its own start time.
@@ -280,3 +284,5 @@ shows, written for the person holding the client: a newer Host asks them to upda
 the app, an older Host asks them to update the Host. The Host returns the same text
 to a client whose request carries another version. Any change that does bump the
 version must ship new desktop and mobile builds together with the Host release.
+The Rust side keeps the same version and texts in `src-tauri/src/remote/protocol.rs`;
+its tests fail when they differ from the TypeScript source, so bump both together.

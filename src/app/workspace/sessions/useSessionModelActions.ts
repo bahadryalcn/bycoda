@@ -35,6 +35,7 @@ import {
 import { sessionsRef, setSessions } from "../../../features/sessions/model/sessionsStore";
 import { transferProviderSession } from "../../../platform/tauri/providerSessionTransfer";
 import { recordModelSwitch } from "./recordModelSwitch";
+import { usageLimitAfterTargetChange } from "../../../features/sessions/model/usageLimit";
 
 export interface SessionModelActionDeps {
   isMovingPane: (paneId: string) => boolean;
@@ -172,7 +173,7 @@ export function useSessionModelActions({
       setSessions((prev) =>
         prev.map((s) => {
           if (s.id !== sessionId) return s;
-          const next = withHarnessChoice(
+          let next = withHarnessChoice(
             accountUpdate ? accountUpdate(s) : s,
             harness,
             resolved.id,
@@ -191,29 +192,29 @@ export function useSessionModelActions({
                 ? sessionProviderAccountId(s.harness, s)
                 : undefined,
             };
-          if (plan.kind === "arm") {
-            return { ...next, pendingSwitch: plan.pending };
-          }
+          if (plan.kind === "arm") next.pendingSwitch = plan.pending;
+          if (plan.kind === "empty") next.pendingSwitch = undefined;
           if (plan.kind === "revert") {
-            if (handoffAccount) {
-              return withAccountHandoff({ ...next, pendingSwitch: undefined }, nowAccount);
-            }
-            return {
-              ...next,
-              pendingSwitch: undefined,
-              ...(plan.restoreProviderSessionId
-                ? { providerSessionId: plan.restoreProviderSessionId }
-                : { providerSessionId: undefined }),
-              ...(plan.restoreProviderAccountId
-                ? {
-                    providerAccountId: nowAccount ?? plan.restoreProviderAccountId,
-                  }
-                : { providerAccountId: nowAccount }),
-            };
+            next = handoffAccount
+              ? withAccountHandoff({ ...next, pendingSwitch: undefined }, nowAccount)
+              : {
+                  ...next,
+                  pendingSwitch: undefined,
+                  ...(plan.restoreProviderSessionId
+                    ? { providerSessionId: plan.restoreProviderSessionId }
+                    : { providerSessionId: undefined }),
+                  ...(plan.restoreProviderAccountId
+                    ? {
+                        providerAccountId: nowAccount ?? plan.restoreProviderAccountId,
+                      }
+                    : { providerAccountId: nowAccount }),
+                };
           }
-          if (plan.kind === "empty") {
-            return { ...next, pendingSwitch: undefined };
-          }
+          next.usageLimit = usageLimitAfterTargetChange(s, next, (target) =>
+            supportsProviderAccounts(target.harness)
+              ? sessionProviderAccountId(target.harness, target)
+              : undefined,
+          );
           return next;
         }),
       );

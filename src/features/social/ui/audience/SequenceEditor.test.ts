@@ -7,6 +7,7 @@ import {
   asClient,
   bodyText,
   buttonByText,
+  isBlocked,
   clientMock,
   flush,
   mountHost,
@@ -56,7 +57,7 @@ describe("SequenceEditor", () => {
     await flush();
     await flush();
 
-    expect(buttonByText("Save sequence")?.disabled).toBe(true);
+    expect(isBlocked(buttonByText("Save sequence"))).toBe(true);
     setFieldValue(document.querySelector("input")!, "Spring follow-up");
     pickOption("People", "Buyers");
     await flush();
@@ -83,7 +84,7 @@ describe("SequenceEditor", () => {
     setFieldValue(document.querySelector("input")!, "Follow-up");
     pickOption("People", "Buyers");
     await flush();
-    expect(buttonByText("Save sequence")?.disabled).toBe(true);
+    expect(isBlocked(buttonByText("Save sequence"))).toBe(true);
     expect(bodyText()).toContain("Each step needs a message");
   });
 });

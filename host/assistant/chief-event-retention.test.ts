@@ -137,8 +137,18 @@ it("preserves admitted pending events and unknown intent/action bytes across clo
   const f = await fixture();
   await f.mode("chief");
   await f.create();
-  const pending = await f.events();
-  expect(pending.length).toBeGreaterThan(0);
+  // jobs.create returns before dispatch; the Chief event is admitted on the queued tick.
+  // Wait until admission settles: a slow runner can admit a second event after the first read.
+  let pending = await f.events();
+  await vi.waitFor(
+    async () => {
+      const next = await f.events();
+      const settled = next.length > 0 && JSON.stringify(next) === JSON.stringify(pending);
+      pending = next;
+      expect(settled).toBe(true);
+    },
+    { interval: 100 },
+  );
   const repository = new AssistantRepository(f.store);
   const intent = {
     operationId: "unknown-operation",

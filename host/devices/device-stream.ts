@@ -185,6 +185,11 @@ export interface DeviceStreamPorts {
   platform(): NodeJS.Platform;
   adb(): string;
   env(): NodeJS.ProcessEnv;
+  iosVideo?(
+    id: string,
+    signal: AbortSignal,
+    publish: (bytes: Buffer, display: { width: number; height: number }) => void,
+  ): Promise<void>;
   closed(): boolean;
   spawn?: typeof spawn;
   command?: typeof deviceCommand;
@@ -207,6 +212,8 @@ export const DEVICE_STREAM_TIMING = {
 };
 
 interface Recorder {
+  platform: DeviceSummary["platform"];
+  simulator?: AbortController;
   readonly id: string;
   readonly buffer: H264GopBuffer;
   readonly waiters: Set<() => void>;
@@ -214,6 +221,7 @@ interface Recorder {
   starting?: Promise<void>;
   display: { width: number; height: number };
   verifiedAt: number;
+  verifying?: boolean;
   lastDataAt: number;
   /** Consecutive runs that ended before their first key frame. */
   failures: number;
@@ -224,7 +232,7 @@ interface Recorder {
   idle?: ReturnType<typeof setTimeout>;
 }
 
-/** One `adb exec-out screenrecord` H.264 recorder per Android device, read by cursor. */
+/** One Host-owned H.264 source per viewed device, shared by cursor readers. */
 export class DeviceStreams {
   private readonly recorders = new Map<string, Recorder>();
   private readonly timing: typeof DEVICE_STREAM_TIMING;
@@ -244,34 +252,23 @@ export class DeviceStreams {
     id: string,
     cursor: number | undefined,
     effect?: DeviceEffectContext,
+    push?: { signal: AbortSignal },
   ): Promise<DeviceStreamChunk> {
+    push?.signal.throwIfAborted();
     if (this.ports.closed()) throw new Error("Device host is disposed");
     if (cursor !== undefined && !(Number.isSafeInteger(cursor) && cursor >= 0))
       throw new Error("Invalid device stream cursor");
     await assertDeviceAuthority(effect);
     let recorder = this.recorders.get(id);
-    if (!recorder || elapsedSince(recorder.verifiedAt) >= this.timing.verifyMs) {
-      let device: DeviceSummary;
-      try {
-        device = await this.ports.device(id);
-      } catch (cause) {
-        await this.stop(id);
-        throw cause;
-      }
+    if (!recorder) {
+      const platform = await this.verifyDevice(id);
       await assertDeviceAuthority(effect);
-      if (!device.booted) {
-        await this.stop(id);
-        throw new Error("Boot the device before viewing");
-      }
-      if (!["win32", "darwin"].includes(this.ports.platform()) || device.platform !== "android")
-        throw new Error(
-          "DEVICE_STREAM_UNSUPPORTED: Live view needs an Android device on a Windows or macOS Host.",
-        );
       if (this.ports.closed()) throw new Error("Device host is disposed");
       recorder = this.recorders.get(id);
       if (!recorder) {
         recorder = {
           id,
+          platform,
           buffer: new H264GopBuffer(),
           waiters: new Set(),
           display: { width: 0, height: 0 },
@@ -285,11 +282,48 @@ export class DeviceStreams {
         this.recorders.set(id, recorder);
       }
       recorder.verifiedAt = monotonicNow();
+    } else if (!recorder.verifying && elapsedSince(recorder.verifiedAt) >= this.timing.verifyMs) {
+      const current = recorder;
+      // Discovery must not block delivery from the existing, device-bound recorder.
+      current.verifying = true;
+      void this.verifyDevice(id)
+        .then((platform) => {
+          if (platform !== current.platform) throw new Error("Device platform changed");
+          current.verifiedAt = monotonicNow();
+        })
+        .catch((cause: unknown) => {
+          if (this.recorders.get(id) !== current) return;
+          current.error = cause instanceof Error ? cause : new Error(String(cause));
+          return this.stop(id);
+        })
+        .finally(() => {
+          current.verifying = false;
+        })
+        .catch(() => {});
     }
+    push?.signal.throwIfAborted();
     this.armIdle(recorder);
-    const chunk = await this.next(recorder, cursor);
+    const chunk = await this.next(recorder, cursor, push?.signal);
+    push?.signal.throwIfAborted();
     await assertDeviceAuthority(effect);
+    if (recorder.error) throw recorder.error;
     return chunk;
+  }
+
+  private async verifyDevice(id: string): Promise<DeviceSummary["platform"]> {
+    const device = await this.ports.device(id);
+    if (!device.booted) throw new Error("Boot the device before viewing");
+    if (
+      this.ports.platform() === "darwin" &&
+      device.platform === "ios" &&
+      !device.physical &&
+      !device.supportsFold &&
+      this.ports.iosVideo
+    )
+      return "ios";
+    if (!["win32", "darwin"].includes(this.ports.platform()) || device.platform !== "android")
+      throw new Error("DEVICE_STREAM_UNSUPPORTED: This device has no supported live video source.");
+    return "android";
   }
 
   /** Stops one recorder; adbd ends the device-side screenrecord when its client goes. */
@@ -298,6 +332,7 @@ export class DeviceStreams {
     if (!recorder) return;
     this.recorders.delete(id);
     clearTimeout(recorder.idle);
+    recorder.simulator?.abort();
     const child = recorder.child;
     recorder.child = undefined;
     this.wake(recorder);
@@ -308,32 +343,63 @@ export class DeviceStreams {
     await Promise.all(this.active().map((id) => this.stop(id)));
   }
 
-  private async next(recorder: Recorder, cursor: number | undefined): Promise<DeviceStreamChunk> {
+  private async next(
+    recorder: Recorder,
+    cursor: number | undefined,
+    signal?: AbortSignal,
+  ): Promise<DeviceStreamChunk> {
+    // Base64 plus the event envelope must fit a 64 KiB subscription message.
+    const limit = signal ? 45 * 1024 : DEVICE_STREAM_MAX_CHUNK_BYTES;
     const { waitMs, quietMs, settleMs } = this.timing;
     const startedAt = monotonicNow();
     let firstSeenAt: number | undefined;
-    const reply = (next: number, reset: boolean, bytes?: Buffer): DeviceStreamChunk => ({
+    const reply = (
+      next: number,
+      reset: boolean,
+      bytes?: Buffer,
+      boundary = false,
+    ): DeviceStreamChunk => ({
       cursor: next,
       reset,
       base64: bytes ? bytes.toString("base64") : "",
       ...recorder.display,
+      ...(signal ? { boundary } : {}),
     });
     for (;;) {
+      signal?.throwIfAborted();
       await this.ensureRunning(recorder);
+      signal?.throwIfAborted();
       if (this.ports.closed()) throw new Error("Device host is disposed");
       const found =
         this.recorders.get(recorder.id) === recorder
-          ? recorder.buffer.read(cursor, DEVICE_STREAM_MAX_CHUNK_BYTES)
+          ? recorder.buffer.read(cursor, limit)
           : undefined;
       const now = monotonicNow();
       if (found) {
+        if (recorder.platform === "ios")
+          return reply(
+            found.cursor,
+            found.reset,
+            found.bytes,
+            found.cursor === recorder.buffer.end,
+          );
         firstSeenAt ??= now;
         const settle = Math.min(
           quietMs - elapsedSince(recorder.lastDataAt, now),
           settleMs - elapsedSince(firstSeenAt, now),
         );
-        if (settle <= 0 || found.bytes.length >= DEVICE_STREAM_MAX_CHUNK_BYTES)
-          return reply(found.cursor, found.reset, found.bytes);
+        const atEnd = found.cursor === recorder.buffer.end;
+        const boundary = atEnd && elapsedSince(recorder.lastDataAt, now) >= quietMs;
+        // A settle deadline can cut through a NAL. Keep its last byte for the next
+        // read so even a recorder that goes silent can still deliver the quiet tail.
+        if (signal && settle <= 0 && atEnd && !boundary) {
+          if (found.bytes.length > 1)
+            return reply(found.cursor - 1, found.reset, found.bytes.subarray(0, -1));
+          await this.wait(recorder, quietMs - elapsedSince(recorder.lastDataAt, now), signal);
+          continue;
+        }
+        if (settle <= 0 || (found.bytes.length >= limit && (!signal || !atEnd)))
+          return reply(found.cursor, found.reset, found.bytes, boundary);
         await new Promise((resolve) => setTimeout(resolve, settle));
         continue;
       }
@@ -343,20 +409,67 @@ export class DeviceStreams {
       const continues = cursor !== undefined && cursor === recorder.buffer.end;
       if (left <= 0 || this.recorders.get(recorder.id) !== recorder)
         return reply(continues ? cursor : 0, !continues);
-      const retry = recorder.child ? left : Math.max(1, recorder.retryAt - now);
-      await this.wait(recorder, Math.min(left, retry));
+      const retry =
+        recorder.child || recorder.simulator ? left : Math.max(1, recorder.retryAt - now);
+      await this.wait(recorder, Math.min(left, retry), signal);
     }
   }
 
   private ensureRunning(recorder: Recorder): Promise<void> | undefined {
     if (recorder.error) throw recorder.error;
-    if (recorder.child || this.recorders.get(recorder.id) !== recorder) return undefined;
+    if (recorder.child || recorder.simulator || this.recorders.get(recorder.id) !== recorder)
+      return undefined;
     if (recorder.starting) return recorder.starting;
     if (monotonicNow() < recorder.retryAt) return undefined;
+    if (recorder.platform === "ios") {
+      void this.startSimulator(recorder).catch((cause: unknown) => {
+        recorder.error = cause instanceof Error ? cause : new Error(String(cause));
+        this.wake(recorder);
+      });
+      return;
+    }
     recorder.starting = this.start(recorder).finally(() => {
       recorder.starting = undefined;
     });
     return recorder.starting;
+  }
+
+  private async startSimulator(recorder: Recorder) {
+    const controller = new AbortController();
+    recorder.simulator = controller;
+    let received = false;
+    const deadline = setTimeout(() => controller.abort(), 12000);
+    try {
+      await this.ports.iosVideo!(recorder.id, controller.signal, (bytes, display) => {
+        if (controller.signal.aborted) return;
+        recorder.display = display;
+        recorder.lastDataAt = monotonicNow();
+        recorder.buffer.append(bytes);
+        if (recorder.buffer.hasGop) {
+          received = true;
+          recorder.failures = 0;
+          deadline.refresh();
+        }
+        if (recorder.buffer.retainedBytes > this.timing.maxBufferBytes) controller.abort();
+        this.wake(recorder);
+      });
+    } catch (cause) {
+      recorder.diagnostic = cause instanceof Error ? cause.message : "Simulator stream failed";
+    } finally {
+      clearTimeout(deadline);
+      controller.abort();
+      recorder.simulator = undefined;
+      if (this.recorders.get(recorder.id) === recorder) {
+        recorder.buffer.endRun();
+        recorder.retryAt = monotonicNow() + this.timing.backoffMs;
+        if (!received && ++recorder.failures >= this.timing.maxFailures)
+          recorder.error = new Error(
+            "DEVICE_STREAM_UNSUPPORTED: " +
+              (recorder.diagnostic || "Simulator video did not provide a key frame."),
+          );
+        this.wake(recorder);
+      }
+    }
   }
 
   private async start(recorder: Recorder): Promise<void> {
@@ -434,15 +547,17 @@ export class DeviceStreams {
     child.once("close", () => ended());
   }
 
-  private wait(recorder: Recorder, ms: number): Promise<void> {
+  private wait(recorder: Recorder, ms: number, signal?: AbortSignal): Promise<void> {
     return new Promise((resolve) => {
       const done = () => {
         clearTimeout(timer);
+        signal?.removeEventListener("abort", done);
         recorder.waiters.delete(done);
         resolve();
       };
       const timer = setTimeout(done, ms);
       recorder.waiters.add(done);
+      signal?.addEventListener("abort", done, { once: true });
     });
   }
 

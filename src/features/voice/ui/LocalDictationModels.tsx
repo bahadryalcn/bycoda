@@ -1,21 +1,35 @@
 import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
-import { useEffect, useRef, useState } from "react";
-import { t } from "../../../shared/i18n";
+import {
+  LocalDictationModelRow,
+  ModelCancelButton,
+  type ModelCancelState,
+} from "./LocalDictationModelRow";
+import { useContext, useEffect, useRef, useState } from "react";
+import { t, useFormat, useLocale } from "../../../shared/i18n";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
-import { Button } from "../../../shared/ui/Button";
-import { TextField } from "../../../shared/ui/TextField";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { SettingsFeedback } from "../../../shared/ui/settings";
-import { ModelLabel } from "../../sessions/public/ModelLabel";
+import { RevealedSetting, Select, SettingsFeedback } from "../../../shared/ui/settings";
+import { SearchInput } from "../../../shared/ui/SearchInput";
 import {
   localDictationModels,
+  rankLocalModels,
+  supportsDictationLanguage,
   type LocalDictationModel,
   type LocalModelJob,
 } from "../model/localDictationModels";
+import { knownLocalModelMessage } from "../model/voiceEngineMessages";
 import { voiceRuntimeSettings, type VoiceSettings } from "../model/voiceSettings";
+import { DICTATION_LANGUAGES } from "../model/dictationModels";
+import { useDetectedDictationLanguage } from "../model/dictationActivity";
 
-/** Browse and manage the two local Whisper models owned by voice setup. */
+const STATUS_POLL_MS = 1000;
+const MAX_STATUS_RETRIES = 5;
+const MAX_STATUS_RETRY_DELAY_MS = 16_000;
+
+/** Browse and manage transcription models owned by the local Host. */
 export function LocalDictationModels({
   settings,
   change,
@@ -24,22 +38,34 @@ export function LocalDictationModels({
   change: (patch: Partial<VoiceSettings>) => void;
 }) {
   const [models, setModels] = useState<LocalDictationModel[]>([]);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [manageOpen, setManageOpen] = useState(false);
+  const [revealSeen, setRevealSeen] = useState<string | null>(null);
+  const revealed = useContext(RevealedSetting);
+  const { formatBytes } = useFormat();
+  const locale = useLocale();
+  const detected = useDetectedDictationLanguage();
   const [job, setJob] = useState<LocalModelJob>({ state: "idle" });
-  const [filter, setFilter] = useState("");
-  const [error, setError] = useState("");
+  const [actionNotice, setActionNotice] = useState("");
+  /** Raw host text behind a failed model action, shown only in Details. */
+  const [errorDetail, setErrorDetail] = useState("");
   const [revision, setRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<{
     action: NonNullable<LocalModelJob["action"]>;
     id: LocalDictationModel["id"];
   } | null>(null);
-  const [cancelState, setCancelState] = useState<"requesting" | "requested" | null>(null);
+  const [cancelState, setCancelState] = useState<ModelCancelState>(null);
   const { confirm, dialog } = useConfirm();
   const starting = useRef(false);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- owns polling timer for the running host job and clears it on unmount
   useEffect(() => {
     let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // Last observed state is "working": keep polling it through transient failures.
+    let working = false;
+    let failures = 0;
     async function refresh() {
       try {
         const [next, state] = await Promise.all([
@@ -47,6 +73,8 @@ export function LocalDictationModels({
           localDictationModels.status(),
         ]);
         if (!active) return;
+        if (failures > 0) setActionNotice("");
+        failures = 0;
         setModels(next);
         setJob(state);
         setLoading(false);
@@ -56,11 +84,19 @@ export function LocalDictationModels({
           if (deleted && !deleted.installed && settings.dictationLocalModelPath === deleted.path)
             change({ dictationLocalModelPath: "" });
         }
-        if (state.state === "working") timer = setTimeout(() => void refresh(), 1000);
+        working = state.state === "working";
+        if (working) timer = setTimeout(() => void refresh(), STATUS_POLL_MS);
       } catch {
-        if (active) {
-          setLoading(false);
-          setError(t("Could not load local models."));
+        if (!active) return;
+        setLoading(false);
+        setActionNotice(t("Could not load local models."));
+        // Bounded retries with backoff; the last known job stays visible. "Try again" re-arms polling after the limit.
+        if (working && failures < MAX_STATUS_RETRIES) {
+          failures += 1;
+          timer = setTimeout(
+            () => void refresh(),
+            Math.min(STATUS_POLL_MS * 2 ** failures, MAX_STATUS_RETRY_DELAY_MS),
+          );
         }
       }
     }
@@ -74,7 +110,8 @@ export function LocalDictationModels({
     if (starting.current) return;
     starting.current = true;
     setPending({ action, id: model.id });
-    setError("");
+    setActionNotice("");
+    setErrorDetail("");
     setCancelState(null);
     try {
       const state = await localDictationModels.start(
@@ -83,10 +120,11 @@ export function LocalDictationModels({
         voiceRuntimeSettings({ ...settings, natural: false }),
       );
       setJob(state);
-      setError("");
+      setActionNotice("");
       setRevision((value) => value + 1);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("Model action failed."));
+      setActionNotice(t("Model action failed."));
+      setErrorDetail(cause instanceof Error ? cause.message : "");
     } finally {
       starting.current = false;
       setPending(null);
@@ -94,15 +132,35 @@ export function LocalDictationModels({
   }
   const busy = pending !== null || job.state === "working";
   const operation = pending ?? job;
-  const activeModel = models.find((model) => model.id === operation.id);
+  const selectedModel = models.find((model) => model.path === settings.dictationLocalModelPath);
+  const preferred =
+    settings.dictationLanguage === "auto"
+      ? detected || locale.split("-")[0]
+      : settings.dictationLanguage;
+  const preferredLabel = DICTATION_LANGUAGES.find(([id]) => id === preferred)?.[1];
+  const needle = query.trim().toLowerCase();
+  const visibleModels = rankLocalModels(models, preferred).filter(
+    (model) =>
+      (filter !== "installed" || model.installed) && model.label.toLowerCase().includes(needle),
+  );
   const operationLabel =
     operation.action === "download"
       ? t("Downloading…")
       : operation.action === "delete"
         ? t("Deleting…")
         : t("Testing…");
-  const active = (action: LocalModelJob["action"], id: string) =>
-    busy && operation.action === action && operation.id === id;
+  const hasBytes = job.state === "working" && job.bytesDone !== undefined && !!job.bytesTotal;
+  const progressText = hasBytes
+    ? `${operationLabel} ${formatBytes(job.bytesDone ?? 0)} / ${formatBytes(job.bytesTotal ?? 0)}`
+    : operationLabel;
+  const progressValue = hasBytes ? (job.bytesDone ?? 0) / (job.bytesTotal ?? 1) : undefined;
+  // A search reveal of a model row opens the manager once per target; the owner can close it afterwards.
+  const revealsModel =
+    !!revealed && revealed.startsWith("dictation-local-") && revealed !== "dictation-local-models";
+  if (revealsModel && revealSeen !== revealed) {
+    setRevealSeen(revealed);
+    setManageOpen(true);
+  }
   async function requestDelete(model: LocalDictationModel) {
     if (
       await confirm({
@@ -116,7 +174,7 @@ export function LocalDictationModels({
   }
   async function cancel() {
     setCancelState("requesting");
-    setError("");
+    setActionNotice("");
     try {
       const next = await localDictationModels.cancel();
       setJob(next);
@@ -124,24 +182,44 @@ export function LocalDictationModels({
       setRevision((value) => value + 1);
     } catch {
       setCancelState(null);
-      setError(t("Could not request cancellation. Try again."));
+      setActionNotice(t("Could not request cancellation. Try again."));
     }
   }
-  const visible = models.filter((model) =>
-    model.label.toLowerCase().includes(filter.toLowerCase()),
-  );
+  const hostText = errorDetail || job.detail || "";
+  const knownText = knownLocalModelMessage(hostText);
+  const headline = knownText || actionNotice || t("Model action failed.");
+  const canCancel = job.state === "working" && !pending;
+  // The running model's own row owns Cancel; when a filter hides that row, the picker keeps it reachable.
+  const cancelInPicker = canCancel && !visibleModels.some((model) => model.id === job.id);
   return (
     <>
       {dialog}
       <Row
         id="dictation-local-models"
-        label={t("Local transcription models")}
-        descriptionVisible
-        description={t("Models stay on this computer.")}
+        label={t("Model")}
         feedback={
-          error || job.state === "error" ? (
-            <SettingsFeedback state="error">
-              {t(error || job.detail || "Model action failed.")}
+          actionNotice || job.state === "error" ? (
+            <SettingsFeedback
+              state="error"
+              action={
+                actionNotice
+                  ? {
+                      label: t("Try again"),
+                      onClick: () => {
+                        setLoading(true);
+                        setActionNotice("");
+                        setRevision((value) => value + 1);
+                      },
+                    }
+                  : undefined
+              }
+              extra={
+                hostText && !knownText ? (
+                  <ErrorDetails title={headline} detail={hostText} />
+                ) : undefined
+              }
+            >
+              {headline}
             </SettingsFeedback>
           ) : job.state === "ready" && job.action === "test" ? (
             <SettingsFeedback state="success">
@@ -150,116 +228,117 @@ export function LocalDictationModels({
           ) : undefined
         }
       >
-        <TextField
-          label={t("Filter models")}
-          hideLabel
-          placeholder={t("Filter models")}
-          value={filter}
-          onChange={(event) => setFilter(event.target.value)}
-        />
-        <Button
-          variant="ghost"
-          disabled={busy || !settings.dictationLocalModelPath}
-          onClick={() => change({ dictationLocalModelPath: "" })}
-        >
-          {t("Automatic")}
-        </Button>
-        {error ? (
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setLoading(true);
-              setError("");
-              setRevision((value) => value + 1);
-            }}
-          >
-            {t("Try again")}
-          </Button>
-        ) : null}
-        {busy ? (
-          <LoadingText delay={false}>
-            {t("{p0}: {p1}", {
-              p0: activeModel?.label ?? operation.id ?? t("Local transcription models"),
-              p1: operationLabel,
-            })}
-          </LoadingText>
-        ) : null}
-        {job.state === "working" && !pending ? (
-          <Button
-            variant="ghost"
-            disabled={cancelState !== null}
-            loading={cancelState === "requesting"}
-            loadingLabel={t("Requesting cancellation…")}
-            onClick={() => void cancel()}
-          >
-            {cancelState === "requested" ? t("Cancellation requested") : t("Cancel")}
-          </Button>
-        ) : null}
+        <div className="flex items-center gap-2">
+          <Select
+            hideLabel
+            label={t("Model")}
+            value={selectedModel?.installed ? selectedModel.path : ""}
+            disabled={busy}
+            options={[
+              { value: "", label: t("Automatic") },
+              ...models
+                .filter((model) => model.installed)
+                .map((model) => ({
+                  value: model.path,
+                  label: model.label,
+                  disabled: model.available === false,
+                  disabledReason:
+                    model.available === false ? t("Unavailable on this platform") : undefined,
+                })),
+            ]}
+            onChange={(path) => change({ dictationLocalModelPath: path })}
+          />
+          {cancelInPicker ? (
+            <ModelCancelButton state={cancelState} onCancel={() => void cancel()} />
+          ) : null}
+        </div>
       </Row>
       {loading ? <LoadingText>{t("Loading models…")}</LoadingText> : null}
-      {!loading && !error && !visible.length ? (
-        <EmptyState
-          size="inline"
-          kind="filtered"
-          description={t("No matching models")}
-          onReset={() => setFilter("")}
-        />
+      {!loading && !actionNotice && !models.length ? (
+        <EmptyState size="inline" description={t("No local transcription models found.")} />
       ) : null}
-      {visible.map((model) => (
-        <Row
-          key={model.id}
-          id={`dictation-local-${model.id}`}
-          label={<ModelLabel model={`openai/whisper-${model.id}`} name={model.label} />}
-          description={
-            model.installed
-              ? settings.dictationLocalModelPath === model.path
-                ? t("Selected")
-                : t("Installed")
-              : t("Not installed")
-          }
+      {models.length > 0 ? (
+        <Disclosure
+          variant="row"
+          textSize="secondary"
+          summary={t("Manage models")}
+          count={models.length}
+          open={manageOpen}
+          onOpenChange={setManageOpen}
         >
-          {model.installed ? (
-            <>
-              <Button
-                variant="ghost"
-                disabled={busy}
-                onClick={() => change({ dictationLocalModelPath: model.path })}
-              >
-                {t("Select")}
-              </Button>
-              <Button
-                variant="ghost"
-                disabled={busy}
-                loading={active("test", model.id)}
-                loadingLabel={t("Testing…")}
-                onClick={() => void action("test", model)}
-              >
-                {t("Test model load")}
-              </Button>
-              <Button
-                variant="ghost"
-                tone="danger"
-                disabled={busy}
-                loading={active("delete", model.id)}
-                loadingLabel={t("Deleting…")}
-                onClick={() => void requestDelete(model)}
-              >
-                {t("Delete")}
-              </Button>
-            </>
-          ) : (
-            <Button
-              variant="ghost"
-              disabled={busy}
-              loading={active("download", model.id)}
-              loadingLabel={t("Downloading…")}
-              onClick={() => void action("download", model)}
-            >
-              {t("Download")}
-            </Button>
-          )}
-        </Row>
-      ))}
+          <Row label={t("Search models")} controlWidth="wide">
+            <div className="flex min-w-0 items-center gap-2">
+              <SearchInput
+                containerClassName="min-w-0 flex-1"
+                aria-label={t("Search models")}
+                placeholder={t("Model name")}
+                appearance="field"
+                fieldSize="sm"
+                textSize="secondary"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+              <Select
+                hideLabel
+                label={t("Model availability")}
+                value={filter}
+                options={[
+                  { value: "all", label: t("All models") },
+                  { value: "installed", label: t("Installed") },
+                ]}
+                onChange={setFilter}
+              />
+            </div>
+          </Row>
+          {visibleModels.length === 0 ? (
+            <EmptyState
+              size="inline"
+              context="list"
+              kind="filtered"
+              description={t("No matching models.")}
+              onReset={() => {
+                setQuery("");
+                setFilter("all");
+              }}
+            />
+          ) : null}
+          {visibleModels.map((model) => {
+            const pendingHere = pending?.id === model.id ? pending.action : null;
+            return (
+              <LocalDictationModelRow
+                key={model.id}
+                model={model}
+                selected={settings.dictationLocalModelPath === model.path}
+                busy={busy}
+                working={job.state === "working" && !pending && job.id === model.id}
+                pendingAction={pendingHere}
+                progressText={progressText}
+                progressValue={progressValue}
+                meta={[
+                  model.available === false ? t("Unavailable on this platform") : "",
+                  model.sizeBytes ? formatBytes(model.sizeBytes) : "",
+                  model.format === "faster-whisper"
+                    ? "Faster Whisper"
+                    : model.format === "gguf"
+                      ? "GGUF"
+                      : "",
+                  preferredLabel && model.languages && supportsDictationLanguage(model, preferred)
+                    ? preferredLabel
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+                cancelState={cancelState}
+                onDownload={() => void action("download", model)}
+                onSelect={() => change({ dictationLocalModelPath: model.path })}
+                onTest={() => void action("test", model)}
+                onDelete={() => void requestDelete(model)}
+                onCancel={() => void cancel()}
+              />
+            );
+          })}
+        </Disclosure>
+      ) : null}
     </>
   );
 }

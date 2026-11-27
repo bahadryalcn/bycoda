@@ -100,12 +100,7 @@
   display: inline-block;
 }
 .srOnly {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
+  composes: srOnly from "../lib/screen-reader.module.css";
 }
 
 /* Fill: the frame and the editor stretch to the parent's height; the field scrolls inside. */

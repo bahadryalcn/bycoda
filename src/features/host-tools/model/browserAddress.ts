@@ -1,3 +1,5 @@
+import { isBrowserDevelopmentAddress } from "../../../shared/lib/browserProfile";
+
 export type BrowserSearchEngine = "disabled" | "duckduckgo" | "google" | "bing" | "custom";
 export type BrowserSearchSettings = { engine: BrowserSearchEngine; template: string };
 const controls = /\p{Cc}/u;
@@ -36,6 +38,10 @@ export function resolveBrowserAddress(
   const value = input.trim();
   if (!value) return undefined;
   if (validBrowserHome(value)) return value;
+  if (/^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?(?:[/?#]|$)/i.test(value)) {
+    const address = `http://${value}`;
+    return validBrowserHome(address) ? address : undefined;
+  }
   // Never reinterpret an invalid URL or a scheme as a search.
   if (/^[a-z][a-z\d+.-]*:/i.test(value) || /^(?:\/\/|[^\s]+@)/.test(value)) return undefined;
   if (settings.engine === "disabled") return undefined;
@@ -53,5 +59,16 @@ export function resolveBrowserAddress(
     return validBrowserHome(resolved) ? resolved : undefined;
   } catch {
     return undefined;
+  }
+}
+/** Direct native previews admit only local web servers, excluding the app's own dev origin. */
+export function isLocalBrowserAddress(address: string) {
+  try {
+    const url = new URL(address);
+    return (
+      isBrowserDevelopmentAddress(url) && url.port !== "1420" && !url.username && !url.password
+    );
+  } catch {
+    return false;
   }
 }

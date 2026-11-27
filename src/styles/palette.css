@@ -13,6 +13,12 @@
   --palette-featureLight: #7e22ce;
   --palette-orchestrationDark: #f0abfc;
   --palette-orchestrationLight: #a21caf;
+  --palette-voiceListen: #2f7bff;
+  --palette-voiceListenGlow: #3fd0ff;
+  --palette-voiceThink: #8b5cf6;
+  --palette-voiceThinkGlow: #e14fd8;
+  --palette-voiceReply: #14c8b4;
+  --palette-voiceReplyGlow: #5eea9a;
   --palette-solidInk: #ffffff;
   --palette-svgDefaultFill: #000000;
   --palette-scrim: #000000;

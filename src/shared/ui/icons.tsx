@@ -16,6 +16,7 @@ import {
   Quote as LucideBlockQuote,
   Bold as LucideBold,
   Bot as LucideBot,
+  BookOpen as LucideBookOpen,
   Briefcase as LucideBriefcase,
   Brain as LucideBrain,
   ListChecks as LucideCheckList,
@@ -44,6 +45,7 @@ import {
   CircleHelp as LucideCircleHelp,
   Info as LucideInfo,
   CircleX as LucideCircleX,
+  CloudOff as LucideCloudOff,
   CloudUpload as LucideCloudUpload,
   Calendar as LucideCalendar,
   CalendarDays as LucideCalendarDays,
@@ -61,6 +63,7 @@ import {
   FileCode as LucideFileScript,
   FoldVertical as LucideFoldVertical,
   Folder as LucideFolder,
+  FolderGit2 as LucideFolderGit2,
   FolderOpen as LucideFolderOpen,
   Eye as LucideEye,
   EyeOff as LucideEyeOff,
@@ -111,6 +114,7 @@ import {
   Strikethrough as LucideStrikethrough,
   Table as LucideTable,
   MoreHorizontal as LucideMoreHorizontal,
+  OctagonX as LucideOctagonX,
   Palette as LucidePalette,
   Pause as LucidePause,
   PanelBottom as LucidePanelBottom,
@@ -143,6 +147,9 @@ import {
   MonitorSmartphone as LucideMonitorSmartphone,
   Dices as LucideDices,
   Sparkles as LucideSparkles,
+  SkipForward as LucideSkipForward,
+  Hand as LucideHand,
+  PhoneOff as LucidePhoneOff,
   Square as LucideSquare,
   Columns2 as LucideSplitSquare,
   SquarePlus as LucideSquarePlus,
@@ -160,6 +167,7 @@ import {
   Crosshair as LucideCrosshair,
   Download as LucideDownload,
   Wrench as LucideWrench,
+  FlaskConical as LucideFlaskConical,
   X as LucideX,
   Zap as LucideZap,
   UsersRound as LucideUsersRound,
@@ -292,6 +300,81 @@ export const SkillGroupIcon = custom(
   </>,
 );
 
+/** Marks files edited during a turn. */
+export const ChatEdit = custom(
+  "ChatEdit",
+  <path d="M12.5 4H7a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-5.5M13.5 10.5 20 4" />,
+);
+
+/** Marks a search, read, or project exploration step. */
+export const ChatExplore = custom(
+  "ChatExplore",
+  <path d="M15 8a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM14 11l3 3M5 17.5h14M7 21h7" />,
+);
+
+/** Marks shell commands run during a turn. */
+export const ChatRun = custom(
+  "ChatRun",
+  <path d="M6 4.5h12a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-9a3 3 0 0 1 3-3ZM3 9h18m-14 3 2.5 2.5L7 17m6-.5h4" />,
+);
+
+/** Marks work delegated to a subagent. */
+export const ChatAgent = custom(
+  "ChatAgent",
+  <path d="M3 12h3c4 0 3-5 8-5m-8 5c4 0 3 5 8 5M16 4h3a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-3a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm0 10h3a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-3a2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2Z" />,
+);
+
+/** A closed toolbox; marks a tool call without a dedicated activity glyph. */
+export const ChatTool = custom(
+  "ChatTool",
+  <path d="M6.5 8h11a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-11a3 3 0 0 1-3-3v-6a3 3 0 0 1 3-3ZM8.5 8V6.5A2.5 2.5 0 0 1 11 4h2a2.5 2.5 0 0 1 2.5 2.5V8M3.5 13h6.5m4 0h6.5M10 12h4v3.5h-4Z" />,
+);
+
+/** Marks a narrated step in the activity list. */
+export const ChatNote = custom("ChatNote", <path d="M14 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z" />);
+
+/** Marks a queued call that has yet to start. */
+export const ChatPending = custom(
+  "ChatPending",
+  <path d="M4 10a8.25 8.25 0 0 1 6-6m4 0a8.25 8.25 0 0 1 6 6m0 4a8.25 8.25 0 0 1-6 6m-4 0a8.25 8.25 0 0 1-6-6" />,
+);
+
+/** Marks a failed or rejected call. */
+export const ChatFailed = custom(
+  "ChatFailed",
+  <path d="M20.5 12a8.5 8.5 0 1 1-17 0 8.5 8.5 0 0 1 17 0ZM9.5 9.5l5 5m0-5-5 5" />,
+);
+
+/** Marks the fold containing the turn’s collected work. */
+export const ChatWork = custom(
+  "ChatWork",
+  <path d="M4.5 7.5 11 4.25a2.24 2.24 0 0 1 2 0l6.5 3.25a1.12 1.12 0 0 1 0 2L13 12.75a2.24 2.24 0 0 1-2 0L4.5 9.5a1.12 1.12 0 0 1 0-2ZM4 13l7 3.5a2.24 2.24 0 0 0 2 0l7-3.5M4 17l7 3.5a2.24 2.24 0 0 0 2 0l7-3.5" />,
+);
+
+/** Copies a chat message. */
+export const ChatCopy = custom(
+  "ChatCopy",
+  <path d="M7 16.5a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h6.5a3 3 0 0 1 3 3v1M10 8h7a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-7a3 3 0 0 1-3-3v-6a3 3 0 0 1 3-3Z" />,
+);
+
+/** Confirms that a chat message was copied. */
+export const ChatCopied = custom(
+  "ChatCopied",
+  <path d="M7 16.5a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h6.5a3 3 0 0 1 3 3v1M10 8h7a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-7a3 3 0 0 1-3-3v-6a3 3 0 0 1 3-3ZM10.25 14l2.25 2.25 4.5-4.5" />,
+);
+
+/** Retries a chat turn. */
+export const ChatRetry = custom(
+  "ChatRetry",
+  <path d="M4.5 8.5a8.5 8.5 0 1 1 1.25 9m-1.25-14v5h5" />,
+);
+
+/** Edits the user’s chat message. */
+export const ChatEditMessage = custom(
+  "ChatEditMessage",
+  <path d="M12 5H7a3 3 0 0 0-3 3v6a3 3 0 0 0 2 2.83V21l5-4h6a3 3 0 0 0 3-3v-2.5M13.5 10.5 20 4" />,
+);
+
 export const AlertCircle = wrap(LucideAlertCircle, "AlertCircle");
 export const AppWindow = wrap(LucideAppWindow, "AppWindow");
 export const Archive = wrap(LucideArchive, "Archive");
@@ -316,6 +399,14 @@ export const ListNumbered = wrap(LucideListNumbered, "ListNumbered");
 export const AiIdea = wrap(LucideAiIdea, "AiIdea");
 export const CaseSensitive = wrap(LucideCaseSensitive, "CaseSensitive");
 export const Chatting = wrap(LucideChatting, "Chatting");
+export const StandaloneChat = custom(
+  "StandaloneChat",
+  <>
+    <path d="M6 4.5h12a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H9.5L4 21v-4.3a3 3 0 0 1-1-2.2v-7a3 3 0 0 1 3-3Z" />
+    <circle cx="9" cy="11" r="1" fill="currentColor" stroke="none" />
+    <circle cx="15" cy="11" r="1" fill="currentColor" stroke="none" />
+  </>,
+);
 export const Check = wrap(LucideCheck, "Check");
 export const CheckCheck = wrap(LucideCheckCheck, "CheckCheck");
 export const CheckCircle = wrap(LucideCheckCircle, "CheckCircle");
@@ -332,6 +423,7 @@ export const CircleDot = wrap(LucideCircleDot, "CircleDot");
 export const CircleHelp = wrap(LucideCircleHelp, "CircleHelp");
 export const Info = wrap(LucideInfo, "Info");
 export const CircleX = wrap(LucideCircleX, "CircleX");
+export const CloudOff = wrap(LucideCloudOff, "CloudOff");
 export const CloudUpload = wrap(LucideCloudUpload, "CloudUpload");
 export const Calendar = wrap(LucideCalendar, "Calendar");
 export const CalendarDays = wrap(LucideCalendarDays, "CalendarDays");
@@ -349,6 +441,7 @@ export const FilePlusCorner = wrap(LucideFilePlusCorner, "FilePlusCorner");
 export const FileScript = wrap(LucideFileScript, "FileScript");
 export const FoldVertical = wrap(LucideFoldVertical, "FoldVertical");
 export const Folder = wrap(LucideFolder, "Folder");
+export const FolderGit2 = wrap(LucideFolderGit2, "FolderGit2");
 export const FolderOpen = wrap(LucideFolderOpen, "FolderOpen");
 export const Eye = wrap(LucideEye, "Eye");
 export const EyeOff = wrap(LucideEyeOff, "EyeOff");
@@ -401,10 +494,15 @@ export const Languages = wrap(LucideLanguages, "Languages");
 export const Volume2 = wrap(LucideVolume2, "Volume2");
 export const VolumeX = wrap(LucideVolumeX, "VolumeX");
 export const MessageSquarePlus = wrap(LucideMessageSquarePlus, "MessageSquarePlus");
+export const NewSession = custom(
+  "NewSession",
+  <path d="M18 14v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5l3 3h.5M18.5 3.5v7M15 7h7" />,
+);
 export const Minus = wrap(LucideMinus, "Minus");
 export const Strikethrough = wrap(LucideStrikethrough, "Strikethrough");
 export const Table = wrap(LucideTable, "Table");
 export const MoreHorizontal = wrap(LucideMoreHorizontal, "MoreHorizontal");
+export const OctagonX = wrap(LucideOctagonX, "OctagonX");
 export const Palette = wrap(LucidePalette, "Palette");
 export const Pause = wrap(LucidePause, "Pause");
 export const PanelBottom = wrap(LucidePanelBottom, "PanelBottom");
@@ -429,6 +527,7 @@ export const RotateCcw = wrap(LucideRotateCcw, "RotateCcw");
 export const Save = wrap(LucideSave, "Save");
 export const Search = wrap(LucideSearch, "Search");
 export const Settings = wrap(LucideSettings, "Settings");
+export const BookOpen = wrap(LucideBookOpen, "BookOpen");
 export const Briefcase = wrap(LucideBriefcase, "Briefcase");
 export const UserRound = wrap(LucideUserRound, "UserRound");
 export const UsersRound = wrap(LucideUsersRound, "UsersRound");
@@ -440,6 +539,9 @@ export const MonitorSmartphone = wrap(LucideMonitorSmartphone, "MonitorSmartphon
 export const Dices = wrap(LucideDices, "Dices");
 export const Sparkles = wrap(LucideSparkles, "Sparkles");
 export const Square = wrap(LucideSquare, "Square");
+export const SkipForward = wrap(LucideSkipForward, "SkipForward");
+export const Hand = wrap(LucideHand, "Hand");
+export const PhoneOff = wrap(LucidePhoneOff, "PhoneOff");
 export const SplitSquare = wrap(LucideSplitSquare, "SplitSquare");
 export const SquarePlus = wrap(LucideSquarePlus, "SquarePlus");
 export const Star = wrap(LucideStar, "Star");
@@ -458,5 +560,6 @@ export const Apple = wrap(LucideApple, "Apple");
 export const Crosshair = wrap(LucideCrosshair, "Crosshair");
 export const Download = wrap(LucideDownload, "Download");
 export const Wrench = wrap(LucideWrench, "Wrench");
+export const FlaskConical = wrap(LucideFlaskConical, "FlaskConical");
 export const X = wrap(LucideX, "X");
 export const Zap = wrap(LucideZap, "Zap");

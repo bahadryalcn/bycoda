@@ -1,7 +1,7 @@
 import { readFile, readdir, realpath, stat, symlink, lstat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { desktopDatabasePaths } from "../desktop/desktopSessions";
+import { desktopDatabasePathsFresh } from "../desktop/desktopSessions";
 import { providerAccountColorValue } from "../../src/features/providers/model/providerAccounts";
 
 // Mirrors the desktop app's account profiles (src-tauri/src/harness.rs
@@ -68,8 +68,9 @@ function accountColor(provider: ProfileProvider, id: string): string {
  * evidence, checked as a boolean. No credential contents, auth output, email,
  * external profile path or renderer-side account metadata is returned or logged. */
 export async function hostProviderAccounts(
-  roots: string[] = desktopDatabasePaths().map(dirname),
+  givenRoots?: string[],
 ): Promise<HostProviderAccountCatalog> {
+  const roots = givenRoots ?? (await desktopDatabasePathsFresh()).map(dirname);
   const catalog: HostProviderAccountCatalog = {};
   for (const provider of PROFILE_PROVIDERS) {
     const ids = new Set<string>();
@@ -200,8 +201,9 @@ async function terminalProfile(root: string, provider: string, id: string) {
 export async function providerAccountDir(
   provider: string,
   accountId: string,
-  roots: string[] = desktopDatabasePaths().map(dirname),
+  givenRoots?: string[],
 ): Promise<string | null> {
+  const roots = givenRoots ?? (await desktopDatabasePathsFresh()).map(dirname);
   for (const root of roots) {
     const dir = accountId.startsWith(TERMINAL_PREFIX)
       ? await terminalProfile(root, provider, accountId)

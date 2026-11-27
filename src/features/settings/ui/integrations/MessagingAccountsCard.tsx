@@ -1,15 +1,15 @@
+import { ErrorDetails } from "../../../../shared/ui/ErrorDetails";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { ActionHost } from "../../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useRef, useState, type ComponentType, type ReactNode } from "react";
 import { t, useLocale } from "../../../../shared/i18n";
-import { Badge } from "../../../../shared/ui/Badge";
+import { InfoTooltip } from "../../../../shared/ui/InfoPopover";
 import { Button } from "../../../../shared/ui/Button";
-import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { ScrollArea } from "../../../../shared/ui/ScrollArea";
 import { Text } from "../../../../shared/ui/Text";
-import { Plus } from "../../../../shared/ui/icons";
+import { Plus, TriangleAlert } from "../../../../shared/ui/icons";
 import { InboxAccountActions, InboxConnectionError } from "../InboxConnectionStatus";
 import { Row, SettingsFeedback } from "../../../../shared/ui/settings";
 import type { SaveInputResult } from "./emailPresets";
@@ -33,13 +33,11 @@ export type AccountFormProps = {
 /** Saved accounts of one provider plus the add/edit form. Drafts live in the mounted form. */
 export function MessagingAccountsCard({
   provider,
-  emptyLabel,
   addLabel,
   describe,
   Form,
 }: {
   provider: MessagingProvider;
-  emptyLabel: string;
   addLabel: string;
   describe: (account: MessagingAccount) => string;
   Form: ComponentType<AccountFormProps>;
@@ -49,7 +47,6 @@ export function MessagingAccountsCard({
   const [editing, setEditing] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<MessagingAccount | null>(null);
   const [drafts, setDrafts] = useState<string[]>([]);
   const [saving, setSaving] = useState<string[]>([]);
   const empty = accounts !== null && accounts.length === 0;
@@ -73,7 +70,6 @@ export function MessagingAccountsCard({
     try {
       await removeMessagingAccount(account.id);
       setEditing((current) => (current === account.id ? null : current));
-      setSaved((current) => (current?.id === account.id ? null : current));
     } catch (err: unknown) {
       setRemoveError(presentRemoteError(err, { explicit: true }));
     } finally {
@@ -85,12 +81,13 @@ export function MessagingAccountsCard({
     <>
       <Row
         stacked
-        label={t("Accounts")}
+        label={null}
         info={t("Credentials are stored on this computer. Disconnect removes them.")}
         feedback={
           error ? (
             <SettingsFeedback
               state="error"
+              extra={<ErrorDetails detail={error} />}
               action={{
                 label: t("Retry"),
                 pending: loading,
@@ -99,7 +96,7 @@ export function MessagingAccountsCard({
                 },
               }}
             >
-              {error}
+              {t("Could not load messaging accounts.")}
             </SettingsFeedback>
           ) : undefined
         }
@@ -108,21 +105,7 @@ export function MessagingAccountsCard({
           loading ? (
             <LoadingText />
           ) : null
-        ) : empty ? (
-          <EmptyState
-            size="inline"
-            {...surfaceAttributes(
-              { variant: "card", frame: "card", radius: "card" },
-              "settings-collection settings-collection-empty",
-            )}
-            descriptionText={{
-              size: "caption",
-              tone: "secondary",
-              leading: "normal",
-            }}
-            description={emptyLabel}
-          />
-        ) : (
+        ) : !empty ? (
           <div
             {...surfaceAttributes(
               { variant: "card", frame: "card", radius: "card" },
@@ -160,15 +143,17 @@ export function MessagingAccountsCard({
                     </Text>
                   </div>
                   <div className="settings-collection-actions">
-                    <Badge
-                      size="sm"
-                      appearance="subtle"
-                      tone={account.connected ? "neutral" : "warning"}
-                    >
-                      {account.connected ? t("Configured") : t("Credentials missing")}
-                    </Badge>
+                    {!account.connected ? (
+                      <InfoTooltip
+                        label={t("Credentials missing")}
+                        icon={<TriangleAlert aria-hidden className="icon-sm" />}
+                      >
+                        {t("Credentials missing")}
+                      </InfoTooltip>
+                    ) : null}
                     <Button
                       disabled={saving.length > 0 || removing !== null || target === account.id}
+                      disabledReason={t("Wait for the current operation to finish")}
                       onClick={() => open(account.id)}
                     >
                       {t("Edit")}
@@ -185,11 +170,12 @@ export function MessagingAccountsCard({
               ))}
             </ScrollArea>
           </div>
-        )}
+        ) : null}
         {accounts !== null && !empty && target !== "new" ? (
           <div className="integration-actions">
             <Button
               disabled={saving.length > 0 || removing !== null}
+              disabledReason={t("Wait for the current operation to finish")}
               startIcon={<Plus className="icon-sm" />}
               onClick={() => open("new")}
             >
@@ -199,11 +185,6 @@ export function MessagingAccountsCard({
         ) : null}
       </Row>
       <InboxConnectionError error={removeError} />
-      {saved && !formOpen ? (
-        <SettingsFeedback state="success" onDismiss={() => setSaved(null)}>
-          {t("Connected as {p0}.", { p0: saved.identity || saved.label })}
-        </SettingsFeedback>
-      ) : null}
       {[...new Set([...drafts, ...(formOpen && target ? [target] : [])])].map((id) => {
         const account = accounts?.find((item) => item.id === id) ?? null;
         if (id !== "new" && !account) return null;
@@ -218,10 +199,7 @@ export function MessagingAccountsCard({
                     : current.filter((owner) => owner !== id),
                 )
               }
-              onSaved={(value) => {
-                setSaved(value);
-                close(id);
-              }}
+              onSaved={() => close(id)}
               onCancel={empty ? undefined : () => close(id)}
             />
           </div>
@@ -281,21 +259,19 @@ export function AccountFormActions({
 }) {
   return (
     <>
-      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "integration-actions")}>
+      <div className="integration-actions">
         {children}
         <Button
           variant="primary"
           stableWidth
-          reserveLabels={[t("Saving and testing…"), t("Retry save and test")]}
+          reserveLabels={[t("Retry save and test")]}
           loading={saving}
+          loadingLabel={t("Saving and testing…")}
           disabled={disabled}
+          disabledReason={t("Wait for the current operation to finish")}
           onClick={onSave}
         >
-          {saving
-            ? t("Saving and testing…")
-            : error
-              ? t("Retry save and test")
-              : t("Save and test connection")}
+          {error ? t("Retry save and test") : t("Save and test connection")}
         </Button>
         {onCancel ? (
           <Button disabled={saving} onClick={onCancel}>

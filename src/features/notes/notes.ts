@@ -24,6 +24,7 @@ export function noteTitleError(title: string): string | undefined {
 }
 
 export const NOTE_MENTION_PREFIX = "note/";
+export const NOTES_MENTION_SCOPE = "notes:";
 export const NOTE_PATH_PREFIX = "note:";
 
 export type Note = {
@@ -113,7 +114,7 @@ const MAX_TITLE = 200;
 export const MAX_NOTE_TAGS = 20;
 export const MAX_NOTE_TAG_LENGTH = 48;
 const MAX_NOTE_PICKER = 8;
-const NOTE_SLUG_RE = /(^|\s)@note\/([A-Za-z0-9_-]+)/g;
+const NOTE_SLUG_RE = /(^|\s)@(?:note\/|notes:)([A-Za-z0-9_-]+)/gi;
 
 let cache: Note[] | null = null;
 let inflight: Promise<Note[]> | null = null;
@@ -300,7 +301,10 @@ export async function resolveNoteImagePath(asset: string, parent?: NoteInputWork
   }
 }
 
-export async function upsertNote(note: NoteUpsert, parent?: NoteInputWork): Promise<Note> {
+export async function upsertNote(input: NoteUpsert, parent?: NoteInputWork): Promise<Note> {
+  // The first heading names the note, so the stored name and the text never differ.
+  const heading = noteHeading(input.body ?? "");
+  const note = heading ? { ...input, title: heading } : input;
   const titleError = noteTitleError(note.title ?? "");
   if (titleError) throw new Error(titleError);
   const work = requireNoteWork("notes-upsert", parent);
@@ -332,7 +336,7 @@ export async function deleteNote(
   expectedUpdatedAt?: number,
   parent?: NoteInputWork,
 ): Promise<void> {
-  if (expectedUpdatedAt === undefined) throw new Error("Refresh this note before deleting it.");
+  if (expectedUpdatedAt === undefined) throw new Error(t("Refresh this note before deleting it."));
   const work = requireNoteWork("notes-delete", parent);
   try {
     const args = { id, expectedUpdatedAt };
@@ -493,6 +497,39 @@ export function rankNoteFiles(
   }));
 }
 
+const HEADING_LINE = /^ {0,3}#[ \t]+(.+?)[ \t]*#*[ \t]*$/;
+
+/** Line index and text of the first level-one heading outside code fences. */
+function firstHeading(body: string): { index: number; lines: string[]; title: string } | undefined {
+  const lines = body.split("\n");
+  let inFence = false;
+  for (const [index, line] of lines.entries()) {
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    const match = line.match(HEADING_LINE);
+    const title = match ? unwrapMarkdown(match[1]).slice(0, MAX_TITLE) : "";
+    if (title) return { index, lines, title };
+  }
+  return undefined;
+}
+
+/** A note's name is its first level-one heading; without one the stored name stands. */
+export function noteHeading(body: string): string | undefined {
+  return firstHeading(body)?.title;
+}
+
+/** Writes a new name into the first level-one heading; a body without one is unchanged. */
+export function withNoteHeading(body: string, title: string): string {
+  const found = firstHeading(body);
+  if (!found) return body;
+  const lines = [...found.lines];
+  lines[found.index] = `# ${title.trim()}`;
+  return lines.join("\n");
+}
+
 /** First markdown heading, or the first non-empty prose line. */
 export function noteTitle(text: string): string {
   const heading = text.match(/^\s{0,3}#{1,6}\s+(.+)$/m);
@@ -516,9 +553,9 @@ export function noteTitle(text: string): string {
 }
 
 /** Project display name for a note saved from a session, or null without a project. */
-export function noteSourceProject(cwd?: string): string | null {
+export function noteSourceProject(cwd?: string, labels?: Record<string, string>): string | null {
   if (!cwd || !looksLikeProject(cwd)) return null;
-  const name = projectDisplayName(cwd);
+  const name = projectDisplayName(cwd, labels);
   return name || null;
 }
 

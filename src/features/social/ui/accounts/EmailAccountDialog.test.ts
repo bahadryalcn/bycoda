@@ -13,7 +13,13 @@ vi.mock("../../../../shared/ui/Modal", () => ({
       props.children,
       props.footer,
     ),
-  ModalActions: (props: { children: ReactNode }) => createElement("div", null, props.children),
+  ModalActions: (props: { reason?: string; children: ReactNode }) =>
+    createElement(
+      "div",
+      null,
+      props.reason ? createElement("p", { "data-reason": "" }, props.reason) : null,
+      props.children,
+    ),
 }));
 
 let element: HTMLDivElement, root: Root;
@@ -71,14 +77,14 @@ const submit = () =>
   });
 
 const reasons = () =>
-  [...element.querySelectorAll(".social-disabled-reason-text")].map((node) => node.textContent);
+  [...document.querySelectorAll("[data-reason]")].map((node) => node.textContent);
 
 const saveButton = () =>
   [...element.querySelectorAll("button")].find((node) => node.textContent === "Save email account");
 
 it("walks the owner through what is missing before the account can be saved", () => {
   render(vi.fn());
-  expect(saveButton()?.disabled).toBe(true);
+  expect(saveButton()?.getAttribute("aria-disabled")).toBe("true");
   expect(reasons()).toEqual(["Enter a name for this email account."]);
   typeInto("Name", "Newsletter");
   typeInto("Sender address", "hello@example.com");
@@ -129,7 +135,13 @@ it("keeps the form and shows the failure when the Host refuses the account", asy
   const { onCreated } = render(save);
   fillValid();
   await submit();
-  expect(element.textContent).toContain("The unsubscribe link is not reachable.");
+  const alert = element.querySelector('[role="alert"]');
+  expect(alert?.textContent).toContain("The email account could not be saved. Try again.");
+  expect(document.body.textContent).not.toContain("The unsubscribe link is not reachable.");
+  act(() => alert?.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')?.click());
+  expect(document.body.querySelector('[aria-label="Error details"]')?.textContent).toBe(
+    "The unsubscribe link is not reachable.",
+  );
   expect(field("Name").value).toBe("Newsletter");
   expect(onCreated).not.toHaveBeenCalled();
 });

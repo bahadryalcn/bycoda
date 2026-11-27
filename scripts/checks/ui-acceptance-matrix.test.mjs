@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
+import net from "node:net";
 import test from "node:test";
-import { archetypes, fixtureFile, schemes, widths } from "./ui-acceptance-matrix.mjs";
+import {
+  archetypes,
+  fixtureFile,
+  schemes,
+  startFixtureServer,
+  widths,
+} from "./ui-acceptance-matrix.mjs";
 
 test("every archetype names an existing browser fixture and a known archetype", () => {
   const kinds = new Set([
@@ -24,4 +31,16 @@ test("every archetype names an existing browser fixture and a known archetype", 
 test("the matrix covers both themes at both widths", () => {
   assert.deepEqual(widths, [1280, 800]);
   assert.deepEqual([...schemes].sort(), ["dark", "light"]);
+});
+
+test("a busy fixture port fails with a --base hint and is left alone", async () => {
+  const holder = net.createServer();
+  await new Promise((done) => holder.listen(0, "127.0.0.1", done));
+  const { port } = holder.address();
+  try {
+    await assert.rejects(startFixtureServer(port), /--base/);
+    assert.ok(holder.listening, "the foreign listener must stay up");
+  } finally {
+    await new Promise((done) => holder.close(done));
+  }
 });

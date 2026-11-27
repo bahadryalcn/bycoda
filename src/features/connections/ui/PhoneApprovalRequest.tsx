@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { ApprovalRequest } from "../../../shared/ui/ApprovalRequest";
+import { useT } from "../../../shared/i18n";
+import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { Text } from "../../../shared/ui/Text";
+import { errorText } from "../../../shared/lib/errors";
 
 type Request = {
   title: string;
@@ -60,6 +63,7 @@ function PhoneApprovalDialog({
   current: () => boolean;
   onSettle: (value: boolean) => void;
 }) {
+  const t = useT();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
@@ -73,7 +77,7 @@ function PhoneApprovalDialog({
       if (current()) onSettle(true);
     } catch (cause) {
       if (current()) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(errorText(cause));
         setPending(false);
         inFlight.current = false;
       }
@@ -86,19 +90,37 @@ function PhoneApprovalDialog({
       onClose={() => {
         if (!inFlight.current) onSettle(false);
       }}
+      footer={
+        <ModalActions>
+          <Button
+            stableWidth
+            type="button"
+            variant="ghost"
+            disabled={pending}
+            disabledReason={pending ? t("Wait for the current action to finish.") : undefined}
+            onClick={() => onSettle(false)}
+          >
+            {request.cancelLabel}
+          </Button>
+          <Button
+            stableWidth
+            type="button"
+            variant="primary"
+            loading={pending}
+            disabled={pending}
+            onClick={() => void allow()}
+          >
+            {pending ? request.pendingLabel : request.confirmLabel}
+          </Button>
+        </ModalActions>
+      }
     >
-      <ApprovalRequest
-        title={request.title}
-        detail={request.message}
-        allow={{
-          label: pending ? request.pendingLabel : request.confirmLabel,
-          pending,
-          disabled: pending,
-          onClick: () => void allow(),
-        }}
-        deny={{ label: request.cancelLabel, disabled: pending, onClick: () => onSettle(false) }}
-      />
-      {error ? <InlineError>{error}</InlineError> : null}
+      <Text as="p" wrap="anywhere">
+        {request.message}
+      </Text>
+      {error ? (
+        <InlineError details={error}>{t("Could not complete this action.")}</InlineError>
+      ) : null}
     </Modal>
   );
 }

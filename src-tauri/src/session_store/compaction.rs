@@ -4,8 +4,9 @@
 //! (the retired legacy transcript copies, removed sessions) left most of the
 //! file empty for good.
 //!
-//! A database created before this module has `auto_vacuum=NONE`; only a
-//! `VACUUM` can change that. So a mostly free file is rewritten once, which
+//! A new database is created with `auto_vacuum=INCREMENTAL` (`SessionStore::open`)
+//! and never needs the rewrite. One created before that has `auto_vacuum=NONE`;
+//! only a `VACUUM` can change it. So a mostly free file is rewritten once, which
 //! also switches it to `auto_vacuum=INCREMENTAL`. That rewrite holds the writer
 //! for seconds, so it waits for a minute without writes; readers keep working
 //! on their WAL snapshots. From then on free pages are released a few megabytes
@@ -78,7 +79,15 @@ fn vacuum(conn: &Connection) -> Result<(i64, i64), String> {
         .map_err(|error| error.to_string())?;
     // The rewrite went through the WAL; the file shrinks once it is checkpointed.
     // A reader may still pin it: the watchdog's passive checkpoints finish later.
-    let _ = conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()));
+    match conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))
+    }) {
+        Ok((0, _, _)) => {}
+        Ok((_, log, checkpointed)) => log::warn!(
+            "session database VACUUM checkpoint was blocked: {checkpointed} of {log} WAL frames written back"
+        ),
+        Err(error) => log::warn!("session database VACUUM checkpoint: {error}"),
+    }
     Ok((
         before * page_size,
         number(conn, "PRAGMA page_count")? * page_size,
@@ -213,6 +222,25 @@ mod tests {
                 "CREATE TABLE IF NOT EXISTS activity (n INTEGER); INSERT INTO activity VALUES (1);",
             )
             .unwrap();
+    }
+
+    #[test]
+    fn a_new_database_file_starts_incremental_and_needs_no_rewrite() {
+        let path = std::env::temp_dir().join(format!("bycoda-compaction-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&path).unwrap();
+        {
+            let store = SessionStore::open(path.join("new.db")).unwrap();
+            assert_eq!(layout(&store.lock_conn().unwrap()).unwrap().0, INCREMENTAL);
+            fill_and_free(&store, 40_000_000);
+            let free = free_pages(&store);
+            assert!(free > KEEP_FREE_PAGES + STEP_PAGES, "{free}");
+            let mut watch = Watch::default();
+            // Free pages are released in one short step, never by the rewrite.
+            assert!(tick(&store, &mut watch, Instant::now()).is_none());
+            assert_eq!(free_pages(&store), free - STEP_PAGES);
+            assert_eq!(layout(&store.lock_conn().unwrap()).unwrap().0, INCREMENTAL);
+        }
+        let _ = std::fs::remove_dir_all(&path);
     }
 
     #[test]

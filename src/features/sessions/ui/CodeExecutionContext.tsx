@@ -11,12 +11,14 @@ import { Button } from "../../../shared/ui/Button";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { Play } from "../../../shared/ui/icons";
 import { toast } from "../../../shared/ui/ToastRegion";
+import { reportFailure } from "../../../shared/ui/reportFailure";
 import {
   codeShellKind,
   type CodeShellKind,
   createCodeTerminal,
   type CodeTerminalController,
   type CodeTerminalOptions,
+  type RemoteCodeRun,
   CodeTerminalDialog,
   discardTerminalRun,
   loadCodeRunReport,
@@ -29,6 +31,7 @@ export type CodeExecutionScope = {
   native: boolean;
   /** Opens the queued native run as a project dock terminal; false falls back to the dialog. */
   openTerminal?: (sessionId: string, cwd: string, profile: string, terminalId: string) => boolean;
+  openRemoteTerminal?: (sessionId: string, run: RemoteCodeRun) => boolean;
 };
 
 /** Adds the settled dock run's output to the composer once, when the owner setting allows it. */
@@ -57,6 +60,10 @@ function reportWhenSettled(
 const CodeExecutionContext = createContext<
   ((command: string, shellKind: CodeShellKind) => void) | undefined
 >(undefined);
+
+export function CodeExecutionDisabled({ children }: { children: ReactNode }) {
+  return <CodeExecutionContext value={undefined}>{children}</CodeExecutionContext>;
+}
 
 /** Kept with the pooled transcript, including its original result destination. */
 export function CodeExecutionProvider({
@@ -100,6 +107,18 @@ export function CodeExecutionProvider({
     };
     const controller = createCodeTerminal(options);
     const openTerminal = scope.openTerminal;
+    if (
+      !scope.native &&
+      scope.openRemoteTerminal?.(scope.sessionId, { controller, options, onReport })
+    ) {
+      void controller
+        .start()
+        .finally(() => {
+          active.current = false;
+        })
+        .catch(() => {});
+      return;
+    }
     if (!scope.native || !openTerminal) {
       setRun({ controller, options, report: onReport });
       void controller.start().catch(() => {});
@@ -111,8 +130,13 @@ export function CodeExecutionProvider({
       .then(() => {
         const state = controller.snapshot();
         if (state.phase !== "running" || !state.profile) {
+          if (state.actionError && options.isCurrent()) {
+            setRun({ controller, options, report: onReport });
+            return;
+          }
           active.current = false;
-          toast.show({ tone: "danger", message: state.error ?? t("Could not run the command.") });
+          if (!state.actionError)
+            return reportFailure(state.error ?? t("Could not run the command."), { toast });
           return;
         }
         if (!options.isCurrent()) {
@@ -170,9 +194,11 @@ export function CodeRunButton({
       motion="none"
       iconOnly
       label={t("Run in terminal")}
-      tooltip={t("Run in terminal")}
       className="markdown-code-copy markdown-code-run"
       disabled={incomplete || !code.trim()}
+      disabledReason={
+        incomplete ? t("Wait until the code block is complete.") : t("There is no code to run.")
+      }
       onClick={() => execute(code.replace(/\r?\n$/, ""), shellKind)}
     >
       <Play aria-hidden className="icon-sm" />

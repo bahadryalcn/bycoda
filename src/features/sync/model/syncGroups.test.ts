@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyRemoteGroupRecords, captureLocalGroupChanges } from "./syncGroups";
 import { captureLocalProjectChanges, localProjectIdsByPath } from "./syncProjects";
+import { localMachineId } from "./syncMachineId";
 import { rememberProject } from "../../projects/model/recents";
 import { applyPushResult, markPullCompleted, markPulled, takeOutbox } from "./syncPeerState";
 import {
   loadProjectGroupAssignments,
   loadProjectGroups,
+  projectGroupParentId,
+  projectGroupWorkspaceRoot,
   saveProjectGroupAssignments,
   saveProjectGroups,
 } from "../../projects/model/projectGroups";
@@ -26,6 +29,100 @@ const MACHINE = "host-1";
 
 describe("syncGroups", () => {
   beforeEach(mockLocalStorage);
+
+  it("publishes a linked workspace by project identity without sending the file path", () => {
+    saveProjectGroups([
+      {
+        id: "wallet",
+        name: "wallet",
+        collapsed: false,
+        workspaceFile: "G:/wallet/wallet.code-workspace",
+        workspaceFolders: ["G:/wallet", "G:/wallet/mobile"],
+        memberOrder: ["g:/wallet"],
+      },
+    ]);
+    rememberProject("G:/wallet");
+    captureLocalProjectChanges(MACHINE);
+    const ids = localProjectIdsByPath();
+    captureLocalGroupChanges(MACHINE, ids);
+    expect(takeOutbox(MACHINE)).toContainEqual(
+      expect.objectContaining({
+        table: "workspaceLayout",
+        id: "wallet",
+        value: {
+          rootProjectId: ids["g:/wallet"],
+          includesRoot: true,
+          sourceMachineId: localMachineId(),
+        },
+      }),
+    );
+    expect(takeOutbox(MACHINE).find(({ table }) => table === "group")?.value).toMatchObject({
+      memberOrder: [ids["g:/wallet"]],
+    });
+  });
+
+  it("nests a synced workspace and resolves its root when the remote project joins the rail", () => {
+    const remoteRoot = "remote://windows/G:/wallet";
+    const remoteChild = "remote://windows/G:/wallet/mobile";
+    rememberProject(remoteRoot);
+    rememberProject(remoteChild);
+    captureLocalProjectChanges(MACHINE);
+    const ids = localProjectIdsByPath();
+    const rootId = Object.entries(ids).find(([path]) => path.endsWith("/wallet"))![1];
+    const childId = Object.entries(ids).find(([path]) => path.endsWith("/mobile"))![1];
+    const records = [
+      { table: "group", id: "team", rev: 1, value: { id: "team", name: "Firisbe" } },
+      { table: "group", id: "wallet", rev: 2, value: { id: "wallet", name: "wallet" } },
+      {
+        table: "workspaceLayout",
+        id: "wallet",
+        rev: 3,
+        value: { rootProjectId: rootId, includesRoot: true },
+      },
+      { table: "assignment", id: rootId, rev: 4, value: { projectId: rootId, groupId: "team" } },
+      {
+        table: "assignment",
+        id: childId,
+        rev: 5,
+        value: { projectId: childId, groupId: "wallet" },
+      },
+    ] as const;
+    applyRemoteGroupRecords(MACHINE, records);
+    const groups = loadProjectGroups();
+    const workspace = groups.find(({ id }) => id === "wallet")!;
+    const assignments = loadProjectGroupAssignments();
+    expect(projectGroupWorkspaceRoot(workspace)).toBe(remoteRoot);
+    expect(projectGroupParentId(workspace, groups, assignments)).toBe("team");
+    expect(Object.values(assignments)).toContain("wallet");
+    expect(workspace).not.toHaveProperty("workspaceFile");
+  });
+
+  it("keeps a second local workspace link from replacing the published layout on each sync", () => {
+    saveProjectGroups([
+      {
+        id: "wallet",
+        name: "wallet",
+        collapsed: false,
+        workspaceFile: "/mac/wallet.code-workspace",
+      },
+    ]);
+    markPulled(MACHINE, [
+      {
+        table: "workspaceLayout",
+        id: "wallet",
+        rev: 1,
+        value: {
+          rootProjectId: "loc:windows:g:/wallet",
+          includesRoot: true,
+          sourceMachineId: "windows-desktop",
+        },
+      },
+    ]);
+    captureLocalProjectChanges(MACHINE);
+    captureLocalGroupChanges(MACHINE, localProjectIdsByPath());
+    expect(takeOutbox(MACHINE).some(({ table }) => table === "workspaceLayout")).toBe(false);
+    expect(projectGroupWorkspaceRoot(loadProjectGroups()[0])).toBe("/mac");
+  });
 
   it("captures each local group as its own op, keyed by the group id", () => {
     saveProjectGroups([{ id: "g1", name: "Work", collapsed: false }]);

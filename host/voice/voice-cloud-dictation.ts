@@ -18,6 +18,14 @@ const SIGN_IN: Record<CloudDictationProvider, string> = {
   xai: "Sign in to Grok Build (grok login) or set XAI_API_KEY on bycoda Host.",
   openrouter: "Add an OpenRouter API key in Settings → Voice assistant.",
 };
+const CERTIFICATE_ERRORS = new Set([
+  "CERT_HAS_EXPIRED",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+]);
 
 export type CloudDictationDeps = {
   /** Long-lived credential, read on the Host only; never returned to callers. */
@@ -62,7 +70,7 @@ export async function transcribeCloudDictation(
   deps: CloudDictationDeps,
   /** One of the provider's allowed models; omitted uses its default. */
   requestedModel?: unknown,
-): Promise<{ text: string }> {
+): Promise<{ text: string; language?: string }> {
   if (!CLOUD_DICTATION_PROVIDERS.includes(provider as CloudDictationProvider))
     throw new Error("Invalid dictation provider.");
   const chosen = provider as CloudDictationProvider;
@@ -120,16 +128,47 @@ export async function transcribeCloudDictation(
   let response: Response;
   try {
     response = await (deps.request ?? fetch)(url, { ...init, signal: AbortSignal.timeout(25_000) });
-  } catch {
+  } catch (error) {
+    const cause = error instanceof Error ? (error.cause ?? error) : undefined;
+    if (
+      cause &&
+      typeof cause === "object" &&
+      "code" in cause &&
+      typeof cause.code === "string" &&
+      CERTIFICATE_ERRORS.has(cause.code)
+    )
+      throw new Error(
+        `${name} certificate could not be verified by bycoda Host. Check the network's trusted certificates on the Host computer.`,
+      );
+    if (error instanceof Error && error.name === "TimeoutError")
+      throw new Error(`${name} speech recognition timed out. Try again.`);
     throw new Error(`${name} could not be reached. Check the internet connection.`);
   }
-  // Upstream bodies can echo credentials; report only the status.
+  // Never surface upstream messages. OpenAI uses the same status for quota and rate limits.
+  if (response.status === 429) {
+    if (chosen === "openai") {
+      const body = (await response.json().catch(() => undefined)) as
+        | { error?: { type?: unknown; code?: unknown } }
+        | undefined;
+      if (body?.error?.type === "insufficient_quota" || body?.error?.code === "insufficient_quota")
+        throw new Error(
+          "OpenAI speech recognition quota is exhausted. Check OpenAI API billing or set an OPENAI_API_KEY with available quota on bycoda Host.",
+        );
+    }
+    throw new Error(`${name} speech recognition is rate limited (429). Try again shortly.`);
+  }
   if (response.status === 401 || response.status === 403)
     throw new Error(`${name} sign-in was rejected (${response.status}). ${SIGN_IN[chosen]}`);
   if (!response.ok)
     throw new Error(`${name} speech recognition is unavailable (${response.status}).`);
-  const result = (await response.json().catch(() => undefined)) as { text?: unknown } | undefined;
+  const result = (await response.json().catch(() => undefined)) as
+    | { text?: unknown; language?: unknown }
+    | undefined;
   if (typeof result?.text !== "string" || result.text.length > 16000)
     throw new Error(`${name} returned an invalid transcript.`);
-  return { text: result.text };
+  const detected =
+    typeof result.language === "string"
+      ? /^[a-z]{2}(?=$|[-_])/i.exec(result.language)?.[0].toLowerCase()
+      : undefined;
+  return { text: result.text, ...(detected && { language: detected }) };
 }

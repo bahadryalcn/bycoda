@@ -1,4 +1,7 @@
+import { safeErrorDetail } from "../../integrations/harness/core/errorDetail";
 import { t } from "../../shared/i18n";
+import { errorText } from "../../shared/lib/errors";
+import { workspaceActionErrorSentence } from "./workspaceActionError";
 
 export type WindowTransferNoticeTone = "info" | "danger";
 
@@ -45,7 +48,7 @@ export function subscribeWindowTransferNotice(listener: () => void): () => void 
 
 /** A rejection reason for display; the protocol keeps the raw `String(error)`. */
 export function transferFailureReason(error: unknown): string {
-  const raw = error instanceof Error ? error.message : String(error ?? "");
+  const raw = errorText(error ?? "");
   return raw.replace(/^(?:\w*Error:\s*)+/, "").trim();
 }
 
@@ -57,8 +60,15 @@ export function cancelledTransferMessage(): string {
   return t("The move to a new window was cancelled.");
 }
 
+export function unknownTransferResultMessage(): string {
+  return t("The transfer result is unknown. Check both windows before retrying.");
+}
+
 export function rejectedTransferMessage(error: unknown): string {
-  const reason = transferFailureReason(error);
+  // A typed refusal is translated here; the native protocol keeps the English `String(error)`.
+  // Any other reason is native or provider text, so only its redacted, bounded form is shown.
+  const reason =
+    workspaceActionErrorSentence(error) ?? safeErrorDetail(transferFailureReason(error));
   if (!reason)
     return t("The tab could not be placed in this window. It stays in its original window.");
   const sentence = /[.!?]$/.test(reason) ? reason : `${reason}.`;

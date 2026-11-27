@@ -1,9 +1,12 @@
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { Tooltip } from "../../../shared/ui/Tooltip";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { LiveText } from "../../../shared/ui/LiveText";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Stepper } from "../../../shared/ui/Stepper";
 import { Progress } from "../../../shared/ui/Progress";
@@ -11,7 +14,7 @@ import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { Select } from "../../../shared/ui/Select";
-import { Skeleton } from "../../../shared/ui/Skeleton";
+import { SkeletonList } from "../../../shared/ui/SkeletonList";
 import {
   t,
   useLocale,
@@ -28,7 +31,6 @@ import {
   ChevronRight,
   ArrowLeft,
   Folder,
-  FolderOpen,
   FolderPlus,
 } from "../../../shared/ui/icons";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -54,6 +56,7 @@ import {
 import { importedSessionKeys } from "../../sessions/data/sessionStore";
 import {
   groupByFolder,
+  importHarness,
   isAlreadyImported,
   isTemporaryFolder,
 } from "../../sessions/import/importModel";
@@ -78,24 +81,26 @@ import { useOnboardingSteps } from "../model/useOnboardingSteps";
 import { loadOnboardingProviders, addOnboardingProviders } from "../model/onboardingProviders";
 import "./onboarding.css";
 
-/** Steps whose choices persist the moment they change; the footer says so only there. */
-const SAVES_ON_CHANGE: ReadonlySet<string> = new Set(["Statistics", "Workspace", "Appearance"]);
-
 type Props = {
-  onStartGuide?: () => void;
   onFinish: () => void;
   onImported: () => void;
   onOpenProject: (path: string) => void;
 };
 
-export default function OnboardingDialog({
-  onFinish,
-  onImported,
-  onOpenProject,
-  onStartGuide,
-}: Props) {
+export default function OnboardingDialog({ onFinish, onImported, onOpenProject }: Props) {
   useLocale();
-  const steps = useOnboardingSteps();
+  const { machines } = useRemoteMachines();
+  const remotes = remoteProjectMachines(machines);
+  const steps = useOnboardingSteps().filter((id) => id !== "Machines" || remotes.length > 0);
+  const stepLabels = {
+    Account: t("Account"),
+    Statistics: t("Statistics"),
+    Workspace: t("Workspace"),
+    Appearance: t("Appearance"),
+    Agents: t("Agents"),
+    Machines: t("Machines"),
+    Projects: t("Projects"),
+  };
   const [currentId, setCurrentId] = useState(steps[0]);
   const step = Math.max(0, steps.indexOf(currentId));
   const current = steps[step];
@@ -113,17 +118,21 @@ export default function OnboardingDialog({
     [],
   );
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  // Language-change failures belong to the language picker, not to the step body.
+  const [languageError, setLanguageError] = useState("");
+  const languageAttempt = useRef(0);
   const body = useRef<HTMLDivElement>(null);
   const previousStep = useRef(step);
-  const { machines } = useRemoteMachines();
-  const remotes = remoteProjectMachines(machines);
   const goTo = (next: number) => {
     if (busy) return;
     if (current === "Account") markAccountStepSeen();
+    // Moving on ends the previous outcome; a late reply to an older attempt must not reappear.
+    languageAttempt.current += 1;
+    setLanguageError("");
     setVisited((seen) => new Set([...seen, steps[next]]));
     setCurrentId(steps[next]);
   };
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Moves DOM focus to the new step's heading after the step changes.
   useEffect(() => {
     if (previousStep.current === step) return;
     previousStep.current = step;
@@ -136,30 +145,19 @@ export default function OnboardingDialog({
 
   return (
     <Modal
+      scroll="none"
       padding="none"
       title={t("Welcome to {p0}", { p0: PRODUCT_IDENTITY.displayName })}
       size="lg"
+      height="tall"
       minimalHeader
-      className="onboarding-panel"
       bodyText={{ size: "secondary", leading: "inherit" }}
       onClose={busy ? () => undefined : onFinish}
     >
       <div className="onboarding-layout" ref={body}>
         <header {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "onboarding-header")}>
           <div className="onboarding-topline">
-            <div className="onboarding-brand">
-              <img src={PRODUCT_IDENTITY.logoSrc} alt="" />
-              <span>{PRODUCT_IDENTITY.displayName}</span>
-              <small {...surfaceAttributes({ frame: "pane", edge: "inline-start" })}>
-                {t("Quick setup")}
-              </small>
-            </div>
             <div className="onboarding-topline-actions">
-              {onStartGuide && !busy ? (
-                <Button onClick={onStartGuide} variant="ghost" type="button">
-                  {t("Guide")}
-                </Button>
-              ) : null}
               <div className="onboarding-language">
                 <Select
                   hideLabel
@@ -167,18 +165,35 @@ export default function OnboardingDialog({
                   value={getLanguagePreference()}
                   options={[{ value: "system", label: t("System language") }, ...LANGUAGES]}
                   onValueChange={(value) => {
-                    if (value === "system" || isLocale(value))
-                      void setLanguagePreference(value).catch((reason) => setError(String(reason)));
+                    if (value !== "system" && !isLocale(value)) return;
+                    const attempt = ++languageAttempt.current;
+                    setLanguageError("");
+                    void setLanguagePreference(value).catch((reason) => {
+                      // Only the newest language change may report; an older reply is stale.
+                      if (attempt === languageAttempt.current) setLanguageError(String(reason));
+                    });
                   }}
                 />
               </div>
             </div>
+            {languageError ? (
+              <Alert
+                tone="danger"
+                title={t("Could not change the language.")}
+                extra={
+                  <ErrorDetails
+                    title={t("Could not change the language.")}
+                    detail={languageError}
+                  />
+                }
+              />
+            ) : null}
           </div>
           <div className="onboarding-stepper-wrap">
             <Stepper
               className="onboarding-stepper"
               label={t("Getting started")}
-              steps={steps.map((label) => ({ id: label, label: t(label) }))}
+              steps={steps.map((id) => ({ id, label: stepLabels[id] }))}
               current={step}
               completed={[...visited].filter((id) => id !== current)}
               selectable="all"
@@ -190,7 +205,6 @@ export default function OnboardingDialog({
         {current !== "Projects" ? (
           <div className="onboarding-stage">
             <div className="onboarding-body" key={step}>
-              {error ? <Alert tone="danger">{error}</Alert> : null}
               {current === "Account" ? <OnboardingAccount /> : null}
               {current === "Statistics" ? <OnboardingStatistics /> : null}
               {current === "Workspace" ? <OnboardingWorkspace /> : null}
@@ -231,7 +245,6 @@ export default function OnboardingDialog({
                   )}
                 </Button>
               }
-              note={SAVES_ON_CHANGE.has(current) ? t("Changes save automatically") : undefined}
             >
               <Button onClick={() => goTo(step + 1)} variant="primary" type="button">
                 {t("Continue")}
@@ -264,7 +277,7 @@ export default function OnboardingDialog({
           harness={signIn.provider}
           accountId={signIn.accountId}
           onClose={() => setSignIn(null)}
-          completeDescription="Your agent is connected. Continue setting up your workspace."
+          completeDescription={t("Your agent is connected. Continue setting up your workspace.")}
           onSignedIn={() =>
             setSignedIn(
               (current) =>
@@ -287,6 +300,19 @@ export default function OnboardingDialog({
   );
 }
 
+type ProjectsFailure = { action: "load" | "import" | "add"; detail: string };
+
+function projectsFailureTitle(action: ProjectsFailure["action"]): string {
+  switch (action) {
+    case "load":
+      return t("Could not read this computer’s conversation history.");
+    case "import":
+      return t("Could not import the selected projects.");
+    case "add":
+      return t("Could not add the project folders.");
+  }
+}
+
 function Projects({
   onBusy,
   onImported,
@@ -302,10 +328,9 @@ function Projects({
 }) {
   useLocale();
   const [candidates, setCandidates] = useState<ImportCandidate[]>([]);
-  const [hiddenTemporary, setHiddenTemporary] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<ProjectsFailure | null>(null);
   const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
   const [adding, setAdding] = useState(false);
@@ -315,6 +340,7 @@ function Projects({
   const running = useRef(false);
   const folders = groupByFolder(candidates);
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Scans native conversation history once while mounted and aborts a running import on unmount.
   useEffect(() => {
     let alive = true;
     Promise.all([discoverImportableSessions(), importedSessionKeys()])
@@ -330,13 +356,10 @@ function Projects({
         // Scratch folders (OS temp, e2e runs) stay out of the list; nothing is deleted.
         const next = usable.filter((item) => !isTemporaryFolder(item.cwd));
         setCandidates(next);
-        setHiddenTemporary(
-          groupByFolder(usable.filter((item) => isTemporaryFolder(item.cwd))).length,
-        );
         setSelected(new Set(groupByFolder(next).map((folder) => folder.key)));
       })
       .catch((reason) => {
-        if (alive) setError(String(reason));
+        if (alive) setError({ action: "load", detail: String(reason) });
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -352,7 +375,7 @@ function Projects({
     running.current = true;
     setImporting(true);
     onBusy(true);
-    setError("");
+    setError(null);
     const controller = new AbortController();
     abort.current = controller;
     try {
@@ -366,7 +389,7 @@ function Projects({
       });
       setSummary(result);
     } catch (reason) {
-      setError(String(reason));
+      setError({ action: "import", detail: String(reason) });
     } finally {
       running.current = false;
       setImporting(false);
@@ -386,7 +409,7 @@ function Projects({
       setAddedFolders((current) => [...new Set([...current, ...paths])]);
       onImported();
     } catch (reason) {
-      setError(String(reason));
+      setError({ action: "add", detail: String(reason) });
     } finally {
       running.current = false;
       setAdding(false);
@@ -394,17 +417,21 @@ function Projects({
     }
   };
   const busy = importing || adding;
+  const importStatus = t("Importing conversations: {p0} / {p1}", {
+    p0: progress?.done ?? 0,
+    p1: progress?.total ?? 0,
+  });
   const listing = !loading && !summary && !importing;
   const empty = listing && !error && folders.length === 0;
   const chooseFolders = (
     <Button
       disabled={busy}
       loading={adding}
+      startIcon={<FolderPlus aria-hidden className="icon-sm" />}
       onClick={() => void addFolders()}
       variant="secondary"
       type="button"
     >
-      <FolderPlus aria-hidden className="icon-sm" />
       {t("Choose project folders")}
     </Button>
   );
@@ -414,24 +441,25 @@ function Projects({
         <OnboardingHeading
           title={t("Projects")}
           info={t(
-            "Import local projects and conversations from Claude Code and Codex, or choose a folder.",
+            "Import local projects and conversations from Claude Code, Codex and other coding agents, or choose a folder.",
           )}
         />
         <div className="onboarding-scroll">
           {error ? (
-            <Alert tone="danger">
-              {t("Could not complete this action: ")}
-              {error}
-            </Alert>
+            <Alert
+              tone="danger"
+              title={projectsFailureTitle(error.action)}
+              extra={
+                <ErrorDetails title={projectsFailureTitle(error.action)} detail={error.detail} />
+              }
+            />
           ) : null}
           {loading ? (
             <div className="onboarding-scan">
-              <Text as="p" size="inherit" tone="muted" leading="normal" role="status">
+              <LoadingText delay={false}>
                 {t("Scanning this computer’s conversation history…")}
-              </Text>
-              {[0, 1, 2, 3].map((row) => (
-                <Skeleton key={row} aria-hidden className="h-9 w-full" />
-              ))}
+              </LoadingText>
+              <SkeletonList rows={4} framed leading="icon" trailing="text" seed={5} />
             </div>
           ) : null}
           {listing && folders.length > 0 ? (
@@ -459,17 +487,6 @@ function Projects({
                   }
                 />
                 <span>{t("{p0} of {p1} selected", { p0: selected.size, p1: folders.length })}</span>
-                {hiddenTemporary > 0 ? (
-                  <Text
-                    as="small"
-                    size="micro"
-                    tone="muted"
-                    leading="normal"
-                    className="onboarding-selection-note"
-                  >
-                    {t("{p0} temporary folders hidden", { p0: hiddenTemporary })}
-                  </Text>
-                ) : null}
               </Text>
               <div {...surfaceAttributes({ dividers: "pane" }, "onboarding-projects")}>
                 {folders.map((folder) => {
@@ -523,15 +540,11 @@ function Projects({
                             />
                           )}
                           <span className="onboarding-provider-icons">
-                            {[...new Set(folder.items.map((item) => item.provider))].map(
-                              (provider) => (
-                                <HarnessIcon
-                                  key={provider}
-                                  harness={provider}
-                                  className="icon-sm"
-                                />
-                              ),
-                            )}
+                            {[
+                              ...new Set(folder.items.map((item) => importHarness(item.provider))),
+                            ].map((provider) => (
+                              <HarnessIcon key={provider} harness={provider} className="icon-sm" />
+                            ))}
                           </span>
                           <Tooltip label={t("Sessions")} asChild>
                             <Text
@@ -557,7 +570,7 @@ function Projects({
           {empty ? (
             <EmptyState
               context="panel"
-              icon={<FolderOpen aria-hidden width={24} height={24} strokeWidth={1.75} />}
+              illustration="no-projects"
               description={t(
                 "No new conversation history found. Choose a project folder to start.",
               )}
@@ -570,31 +583,44 @@ function Projects({
             />
           ) : null}
           {importing ? (
-            <div>
-              <Progress
-                label={t("Importing conversations: ")}
-                value={progress?.total ? progress.done : undefined}
-                max={progress?.total || 1}
-                compact
-              />
-              <Text as="p" size="inherit" tone="muted" leading="normal">
-                <LiveText
-                  text={`${t("Importing conversations: ")}${progress?.done ?? 0} / ${progress?.total ?? 0}`}
+            <Surface variant="card" padding="md">
+              <div className="onboarding-import-progress">
+                <div className="onboarding-import-status">
+                  <Text as="p" size="inherit" tone="primary" weight="medium" leading="normal">
+                    <LiveText text={importStatus} />
+                  </Text>
+                  <Button
+                    onClick={() => abort.current?.abort()}
+                    variant="secondary"
+                    size="sm"
+                    type="button"
+                  >
+                    {t("Stop import")}
+                  </Button>
+                </div>
+                <Progress
+                  aria-valuetext={importStatus}
+                  value={progress?.total ? progress.done : undefined}
+                  max={progress?.total || 1}
+                  compact
                 />
-              </Text>
-              <Button onClick={() => abort.current?.abort()} variant="secondary" type="button">
-                {t("Stop import")}
-              </Button>
-            </div>
+                <Text as="p" size="caption" tone="muted" leading="normal">
+                  {t(
+                    "Stopping keeps the conversations imported so far. Import the rest later with Import history in the session list.",
+                  )}
+                </Text>
+              </div>
+            </Surface>
           ) : null}
           {summary ? (
-            <div role="status">
+            <div>
               <Text as="p" size="inherit" tone="muted" leading="normal">
-                {t("{p0} conversations imported across {p1} projects.", {
-                  p0: summary.imported,
-                  p1: summary.projects,
-                })}
-                {summary.cancelled ? ` ${t("Import cancelled.")}` : ""}
+                <LiveText
+                  text={`${t("{p0} conversations imported across {p1} projects.", {
+                    p0: summary.imported,
+                    p1: summary.projects,
+                  })}${summary.cancelled ? ` ${t("Import cancelled.")}` : ""}`}
+                />
               </Text>
               {summary.failed.length ? (
                 <Alert tone="danger">
@@ -602,9 +628,11 @@ function Projects({
                     {t("{p0} conversations could not be imported.", { p0: summary.failed.length })}
                   </Text>
                   {summary.failed.map((failure, index) => (
-                    <Text as="p" key={index} size="inherit" tone="muted" leading="normal">
-                      {failure.candidate.cwd}: {failure.error}
-                    </Text>
+                    <InlineError key={index} details={failure.error}>
+                      {t("Could not import {p0}.", {
+                        p0: prettyCwd(failure.candidate.cwd),
+                      })}
+                    </InlineError>
                   ))}
                 </Alert>
               ) : null}
@@ -619,9 +647,9 @@ function Projects({
             </div>
           ) : null}
           {addedFolders.length ? (
-            <div role="status">
+            <div>
               <Text as="p" size="inherit" tone="muted" leading="normal">
-                {t("{p0} project folders added.", { p0: addedFolders.length })}
+                <LiveText text={t("{p0} project folders added.", { p0: addedFolders.length })} />
               </Text>
               {addedFolders.map((path) => (
                 <div className="onboarding-project" key={path}>
@@ -648,7 +676,7 @@ function Projects({
               ))}
             </div>
           ) : null}
-          {!empty && !loading ? (
+          {!empty && !loading && !importing ? (
             <div className="onboarding-actions">
               {chooseFolders}
               {onOpenRemote ? (
@@ -677,21 +705,31 @@ function Projects({
           </Button>
         }
       >
-        {!summary && selected.size ? (
-          <Button disabled={busy} onClick={onFinish} variant="ghost" type="button">
-            {t("Skip import")}
-          </Button>
-        ) : null}
         <Button
-          disabled={busy}
+          disabled={busy || !!summary}
+          disabledReason={
+            summary
+              ? t("The import is finished. Use Finish setup.")
+              : t("Wait for the current operation to finish")
+          }
+          onClick={onFinish}
+          variant="ghost"
+          type="button"
+        >
+          {t("Skip import")}
+        </Button>
+        <Button
+          disabled={busy || (!summary && !selected.size)}
+          disabledReason={
+            busy ? t("Wait for the current operation to finish") : t("Choose at least one project.")
+          }
           loading={importing}
-          onClick={summary || !selected.size ? onFinish : () => void start()}
+          onClick={summary ? onFinish : () => void start()}
+          reserveLabels={[t("Finish setup"), t("Import {p0} projects", { p0: folders.length })]}
           variant="primary"
           type="button"
         >
-          {summary || !selected.size
-            ? t("Finish setup")
-            : t("Import {p0} projects", { p0: selected.size })}
+          {summary ? t("Finish setup") : t("Import {p0} projects", { p0: selected.size })}
         </Button>
       </OnboardingFooter>
     </>

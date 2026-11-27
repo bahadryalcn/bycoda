@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { stopStreaming } from "../../../integrations/harness/core/apply";
 import { forgetHarnessSession } from "../../../integrations/harness/core/registry";
 import { cancelHandoff, isPreparingHandoff, sessionChildHarnesses } from "./handoff";
@@ -235,5 +236,5 @@ async function removeSession(
 
 function warn(options: SessionRemovalOptions, summary: string, error: unknown): void {
   console.warn(summary, error);
-  options.onWarning?.(`${summary}: ${error instanceof Error ? error.message : String(error)}`);
+  options.onWarning?.(`${summary}: ${errorText(error)}`);
 }

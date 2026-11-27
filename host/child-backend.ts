@@ -48,7 +48,11 @@ import {
 import { bridgeToolGroup } from "./mcp/hub/bridge";
 import { mcpReady } from "./mcp/mcp-readiness";
 import { providerAccountEnvironment } from "./providers/provider-accounts";
-import { providerAuthStatus } from "./providers/provider-auth";
+import {
+  claudeWorkflowArtifacts,
+  resolveClaudeWorkflow,
+} from "./providers/claude-workflow-artifacts";
+import { reusedProviderAuthStatus } from "./providers/provider-auth";
 import {
   ProviderLines,
   PROVIDER_STDOUT_LINE_BYTES,
@@ -249,7 +253,7 @@ export class HostChildBackend implements ChildBackend {
     if (command === "harness_auth_status") {
       const provider = args.provider;
       if (provider !== "claude" && provider !== "codex") return "unknown" as T;
-      return (await providerAuthStatus(
+      return (await reusedProviderAuthStatus(
         provider,
         await this.resolve(provider),
         typeof args.accountId === "string" ? args.accountId : undefined,
@@ -257,6 +261,10 @@ export class HostChildBackend implements ChildBackend {
     }
     const toolGroup = bridgeToolGroup(command);
     if (toolGroup) {
+      // Host-run children get their tools from this process, so a Host outage never
+      // leaves one running without them.
+      if (toolGroup === "conversation" && args.checkRespawn === true)
+        return { respawn: false } as T;
       if (toolGroup === "conversation" && args.checkReady === true) {
         const active = this.activeTools.get(id);
         const tools = active ?? (args.prepareSpawn === true ? this.preparation(id) : undefined);
@@ -332,6 +340,14 @@ export class HostChildBackend implements ChildBackend {
       } as T;
     }
     switch (command) {
+      case "harness_claude_workflow_artifacts":
+        return (await claudeWorkflowArtifacts(
+          args as Parameters<typeof claudeWorkflowArtifacts>[0],
+        )) as T;
+      case "harness_claude_workflow_resolve":
+        return (await resolveClaudeWorkflow(
+          args as Parameters<typeof resolveClaudeWorkflow>[0],
+        )) as T;
       case "harness_prepare_text_workspace": {
         if (typeof args.content !== "string" || args.content.length > 20_000)
           throw new Error("Invalid text agent profile");
@@ -857,7 +873,11 @@ export class HostChildBackend implements ChildBackend {
       // A management or utility child has no stored conversation to grant against:
       // it gets the same stripped environment and no issuance.
       const sessionless = args.purpose === "management" || args.purpose === "utility";
-      for (const group of sessionless
+      const launchArgs = Array.isArray(args.args) ? args.args : [];
+      const toolFreePi =
+        args.binaryProvider === "pi" &&
+        ["--no-tools", "--no-extensions", "--no-mcp"].every((flag) => launchArgs.includes(flag));
+      for (const group of sessionless || toolFreePi
         ? []
         : (["social", "conversation", "runtime-logs"] as const)) {
         const tool = await this.prepareTool(id, tools, group, check);
@@ -871,7 +891,9 @@ export class HostChildBackend implements ChildBackend {
       }
       Object.assign(env, opencodeCompactionEnv(env.OPENCODE_CONFIG_CONTENT, autoCompact));
       const conversationGranted = !!env.BYCODA_CONVERSATION_TOKEN;
-      console.warn(
+      // Only a grant that should have been issued is a warning; probes and other
+      // sessionless children are expected to run without one (every probe logged it).
+      (conversationGranted || sessionless ? console.debug : console.warn)(
         `[session tools] provider=${String(args.binaryProvider ?? "generic")} session=${id} conversation grant=${conversationGranted ? "ok" : "failed"} reason=${conversationGranted ? "issued" : sessionless ? "sessionless child" : "grant unavailable"}`,
       );
       if (!conversationGranted) launch.args = withoutConversationBridge(launch.args);
@@ -1421,7 +1443,7 @@ export class HostChildBackend implements ChildBackend {
           await exec(
             join(process.env.SystemRoot ?? "C:\\Windows", "System32", "taskkill.exe"),
             ["/PID", String(child.pid), "/T", "/F"],
-            { windowsHide: true, timeout: 10_000 },
+            { lane: "control", windowsHide: true, timeout: 10_000 },
           );
         } catch {
           child.kill();

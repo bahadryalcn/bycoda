@@ -28,6 +28,9 @@ References to an orchestrated worker open its existing read-only agent tab besid
 the lead conversation. A cited turn belongs to that worker's transcript, even
 when earlier history must be loaded first.
 
+References to a subagent or advisor open its details panel in the owning
+conversation. Agent references show their role and offer one **Open** action.
+
 Links identify the owning local Host environment or Native store and profile,
 plus the saved conversation ID. Titles, file paths, provider session IDs and
 temporary process identities are not used as the target. Renaming and restarting
@@ -73,6 +76,9 @@ The page uses the canonical bycoda logo in both themes and states when mobile
 distribution is not ready.
 
 On another device, the owning computer must already be paired and reachable.
+If a paired computer is unreachable, open **Manage connections** from the link
+screen. Go back to return to the same link. You can open **Manage connections**
+again while the computer is still unreachable.
 The authenticated Host must advertise `sessions.references.v1` and validate the
 complete environment or Native store/profile/session locator before disclosure
 and after history loading. A Native address follows an existing verified

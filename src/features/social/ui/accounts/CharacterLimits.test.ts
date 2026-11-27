@@ -20,7 +20,10 @@ afterEach(() => {
 });
 
 const policies: SocialPolicies = {
-  global: { agent: { provider: "claude", model: "m" }, maxContentCharacters: 280 },
+  global: {
+    agent: { provider: "claude", model: "m" },
+    maxContentCharacters: 280,
+  },
   platforms: {},
 };
 
@@ -93,7 +96,13 @@ function mount(
 ) {
   const client = { request } as unknown as SocialClient;
   act(() =>
-    root.render(createElement(CharacterLimits, { client, policies: policiesValue, onChanged })),
+    root.render(
+      createElement(CharacterLimits, {
+        client,
+        policies: policiesValue,
+        onChanged,
+      }),
+    ),
   );
   return onChanged;
 }
@@ -134,7 +143,10 @@ it("saves a platform override without touching the global policy", async () => {
   act(() => typeInto(inputs()[1]!, "80"));
   await submit();
   expect(request).toHaveBeenCalledExactlyOnceWith("policy.saveReviewed", {
-    policies: { ...scoped, platforms: { youtube: { maxCommentCharacters: 80 } } },
+    policies: {
+      ...scoped,
+      platforms: { youtube: { maxCommentCharacters: 80 } },
+    },
     expectedPolicies: scoped,
     confirm: "UPDATE_SOCIAL_POLICY",
   });
@@ -195,7 +207,13 @@ it("keeps the edited values after a failed save and sends them again on retry", 
   const onChanged = mount(request, scoped);
   act(() => typeInto(inputs()[2]!, "222"));
   await submit();
-  expect(element.textContent).toContain("The Host is offline.");
+  const alert = element.querySelector('[role="alert"]');
+  expect(alert?.textContent).toContain("The limits could not be saved. Try again.");
+  expect(document.body.textContent).not.toContain("The Host is offline.");
+  act(() => alert?.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')?.click());
+  expect(document.body.querySelector('[aria-label="Error details"]')?.textContent).toBe(
+    "The Host is offline.",
+  );
   expect(inputs()[2]?.value).toBe("222");
   expect(onChanged).not.toHaveBeenCalled();
   await submit();
@@ -206,13 +224,19 @@ it("keeps the edited values after a failed save and sends them again on retry", 
 });
 
 it("leaves an unset agent unset when an unrelated limit is saved", async () => {
-  const noAgent: SocialPolicies = { global: { maxContentCharacters: 280 }, platforms: {} };
+  const noAgent: SocialPolicies = {
+    global: { maxContentCharacters: 280 },
+    platforms: {},
+  };
   const request = vi.fn(async () => noAgent);
   mount(request, noAgent);
   act(() => typeInto(inputs()[2]!, "250"));
   await submit();
   expect(request).toHaveBeenCalledExactlyOnceWith("policy.saveReviewed", {
-    policies: { global: { maxContentCharacters: 280, maxMessageCharacters: 250 }, platforms: {} },
+    policies: {
+      global: { maxContentCharacters: 280, maxMessageCharacters: 250 },
+      platforms: {},
+    },
     expectedPolicies: noAgent,
     confirm: "UPDATE_SOCIAL_POLICY",
   });
@@ -222,7 +246,10 @@ it("follows the saved limits when the shown scope has no edits", () => {
   const request = vi.fn();
   mount(request, scoped);
   expect(inputs()[1]?.value).toBe("120");
-  mount(request, { ...scoped, global: { ...scoped.global, maxCommentCharacters: 70 } });
+  mount(request, {
+    ...scoped,
+    global: { ...scoped.global, maxCommentCharacters: 70 },
+  });
   expect(inputs()[1]?.value).toBe("70");
 });
 
@@ -241,6 +268,9 @@ it("keeps an unsaved edit when the shown scope's saved limits change", () => {
   const request = vi.fn();
   mount(request, scoped);
   act(() => typeInto(inputs()[2]!, "222"));
-  mount(request, { ...scoped, global: { ...scoped.global, maxCommentCharacters: 70 } });
+  mount(request, {
+    ...scoped,
+    global: { ...scoped.global, maxCommentCharacters: 70 },
+  });
   expect(inputs()[2]?.value).toBe("222");
 });

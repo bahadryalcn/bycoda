@@ -8,6 +8,12 @@ import {
   assertUnstartedAutomationTaskRetired,
   stopAutomationTask,
 } from "./task-execution";
+import { advanceRecipe, decideRecipe, startRecipeInstance } from "./recipe-execution";
+import {
+  nextRecipeVersion,
+  recipeConfigOf,
+  recipeCursor,
+} from "../../src/features/automations/model/automationRecipe";
 import { hostModelRoutingService } from "../model-routing/runtime";
 import {
   bindSessionWork,
@@ -35,12 +41,11 @@ import {
 import {
   cancelSessionRun,
   errorMessage,
-  launchSessionRun,
   sessionRunState,
   type SessionRunEngine,
 } from "../sessions/sessionRuns";
 import type { HostStore } from "../store";
-import { previewTaskFinalization, writerWorkspaceMode } from "../tasks/task-workspace-runtime";
+import { previewTaskFinalization } from "../tasks/task-workspace-runtime";
 import type {
   ExecutionActivityReservations,
   WorkspaceRegistry,
@@ -61,6 +66,12 @@ type ManagedAutomationRun = StoredAutomationRun & {
   workPending?: boolean;
 };
 const TICK_MS = 30000;
+/** How long one tick lets its own launches finish before it stops waiting for them. The
+ * wait is only the caller's; a slow launch keeps running and owns its run until it settles. */
+const LAUNCH_WAIT_MS = 10000;
+/** Scheduled launches that may be in flight at once; a stalled few cannot occupy every slot of
+ * settling or time-limit enforcement because ticks never block on them. */
+const MAX_CONCURRENT_LAUNCHES = 4;
 const MAX_RUNS_PER_AUTOMATION = 100;
 const sameSchedule = (a: AutomationSchedule, b: AutomationSchedule) =>
   a.scheduleKind === b.scheduleKind &&
@@ -76,6 +87,15 @@ const truthyJson = (value: string, path: string) => {
   const field = `json_extract(${value},'${path}')`;
   return `(${type} IN ('true','array','object') OR (${type} IN ('integer','real') AND ${field}<>0) OR (${type}='text' AND ${field}<>''))`;
 };
+// Repeat the indexed expressions in the query so SQLite can seek the due range.
+const SCHEDULED_AUTOMATION = `CASE WHEN json_valid(value)
+  THEN ${truthyJson("value", "$.enabled")} AND json_extract(value, '$.trigger.kind') IS NOT 'event'
+  ELSE 1 END`;
+// SQL's negative infinity keeps missing or nonnumeric timestamps eligible at any clock time.
+const DUE_AT = `COALESCE(CASE WHEN json_valid(value) THEN
+  CASE WHEN json_type(value, '$.nextRunAt') IN ('integer','real')
+    THEN json_extract(value, '$.nextRunAt') END
+  END, -1e999)`;
 /** A run this overdue was missed while the machine was off or asleep. */
 const MISSED_RUN_GRACE_MS = 12 * 60 * 60000;
 export const MISSED_RUN_SKIP = "Skipped: missed while this machine was off.";
@@ -105,12 +125,16 @@ export class HostAutomations {
   private disposal?: Promise<void>;
   private readonly manualRuns = new Set<Promise<HostAutomationRun>>();
   private readonly launching = new Set<string>();
+  /** Scheduler-started launches by run id. A launch is never cancelled or failed because a
+   * tick stopped waiting; its own outcome, retry and unknown-reply handling stay authoritative. */
+  private readonly inflight = new Map<string, Promise<void>>();
   readonly ready: Promise<void>;
   constructor(
     private readonly store: HostStore,
     engine: SessionRunEngine,
     private readonly now: () => number = Date.now,
     private readonly workspaces?: AutomationWorkspaceServices,
+    private readonly launchWaitMs: number = LAUNCH_WAIT_MS,
   ) {
     const outbox = (this.outbox = new AutomationEventOutbox(store));
     if (engine.withCommandAdmission) bindSessionWork(store, engine);
@@ -136,6 +160,9 @@ export class HostAutomations {
       CREATE TABLE IF NOT EXISTS automation_runs (id TEXT PRIMARY KEY, automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE, created_at INTEGER NOT NULL, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS automation_tasks (run_id TEXT PRIMARY KEY, automation_id TEXT NOT NULL, task_id TEXT NOT NULL UNIQUE);
       CREATE TABLE IF NOT EXISTS automation_events (automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE, event_id TEXT NOT NULL, kind TEXT NOT NULL, project_id TEXT, run_id TEXT NOT NULL, PRIMARY KEY(automation_id,event_id));
+      CREATE INDEX IF NOT EXISTS automations_due_idx ON automations (${DUE_AT})
+        WHERE ${SCHEDULED_AUTOMATION};
+      CREATE INDEX IF NOT EXISTS automation_events_event_idx ON automation_events (event_id);
       CREATE INDEX IF NOT EXISTS automation_runs_history_idx ON automation_runs (automation_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS automation_runs_status_idx ON automation_runs (automation_id, json_extract(value, '$.status'));
       CREATE INDEX IF NOT EXISTS automation_runs_started_idx ON automation_runs (automation_id, json_extract(value, '$.startedAt'));
@@ -167,6 +194,8 @@ export class HostAutomations {
     this.disposal = (async () => {
       await this.ready;
       await Promise.allSettled([this.ticking, ...this.manualRuns]);
+      // Ticking is done, so nothing can start another launch; drain those still running.
+      await Promise.allSettled(this.inflight.values());
     })();
     return this.disposal;
   }
@@ -176,6 +205,24 @@ export class HostAutomations {
     return (await this.store.db.prepare("SELECT value FROM automations").all())
       .map((row) => JSON.parse(String(row.value)) as HostAutomation)
       .sort((a, b) => a.createdAt - b.createdAt);
+  }
+  /** Legacy rows without a numeric nextRunAt still go through the scheduler's JS due check. */
+  private async dueCandidates(now: number): Promise<HostAutomation[]> {
+    await this.ready;
+
+    return (
+      await this.store.db
+        .prepare(
+          `SELECT value, rowid FROM automations WHERE ${SCHEDULED_AUTOMATION} AND ${DUE_AT}<=?`,
+        )
+        .all(now)
+    )
+      .map((row) => ({
+        automation: JSON.parse(String(row.value)) as HostAutomation,
+        ordinal: Number(row.rowid),
+      }))
+      .sort((a, b) => a.automation.createdAt - b.automation.createdAt || a.ordinal - b.ordinal)
+      .map(({ automation }) => automation);
   }
   /** Bind this request only, never the saved automation's autonomous lifetime. */
   withAuthorization<T>(authorized: () => Promise<boolean>, work: () => Promise<T>): Promise<T> {
@@ -232,6 +279,21 @@ export class HostAutomations {
           throw new Error("Project scan requires its original project and a scheduled trigger.");
         if (!this.projectScan) throw new Error("Project scan service is unavailable.");
         await this.projectScan.update(input, previous.template.sourceStewardId);
+      }
+      if (input.recipe) {
+        const config = recipeConfigOf(input);
+        input = {
+          ...input,
+          recipe: {
+            ...input.recipe,
+            version: nextRecipeVersion(
+              previous?.recipe
+                ? { recipe: previous.recipe, config: recipeConfigOf(previous) }
+                : undefined,
+              { recipe: input.recipe, config },
+            ),
+          },
+        };
       }
       // A one-time arming survives pause/resume edits that keep the schedule; any schedule change drops it.
       const armed =
@@ -388,6 +450,41 @@ export class HostAutomations {
     const run = row ? (JSON.parse(String(row.value)) as HostAutomationRun) : undefined;
     if (!run || (run.status !== "running" && run.status !== "pending"))
       throw new Error("Automation run is not running.");
+    if (run.recipe) {
+      const tasks = this.tasks;
+      if (!tasks) throw new Error("Canonical Task service is unavailable.");
+      const active = run.recipe.results[recipeCursor(run.recipe)];
+      const task = active?.taskId ? await tasks.get(active.taskId) : undefined;
+      if (task && ["queued", "running", "verifying"].includes(task.status))
+        await stopAutomationTask(this.store, tasks, task);
+      const now = this.now();
+      const stopped = await this.store.transaction(async () => {
+        const row = await this.store.db
+          .prepare("SELECT value FROM automation_runs WHERE id=? AND automation_id=?")
+          .get(runId, automationId);
+        const latest = row ? (JSON.parse(String(row.value)) as HostAutomationRun) : undefined;
+        if (!latest?.recipe || latest.status !== "running") return latest ?? run;
+        const results = [...latest.recipe.results];
+        const at = recipeCursor(latest.recipe);
+        const open = results[at];
+        if (open) results[at] = { ...open, status: "cancelled", at: now };
+        return this.finish(
+          {
+            ...latest,
+            cancellationRequested: true,
+            recipe: {
+              ...latest.recipe,
+              results,
+              stop: { code: "owner_stopped", stepIndex: at, nextAction: "run_again" },
+            },
+          },
+          "cancelled",
+          undefined,
+          now,
+        );
+      });
+      return { requested: true, run: stopped };
+    }
     if (run.taskId) {
       if (!this.tasks) throw new Error("Canonical Task service is unavailable.");
       const task = await this.tasks.get(run.taskId);
@@ -452,18 +549,28 @@ export class HostAutomations {
     await this.outbox.drain((event) => this.recordEvent(event));
 
     const now = this.now();
+    const started: Promise<void>[] = [];
     for (const run of await this.activeRuns()) {
       try {
         if (run.cleanupPending) await this.releaseFailedRunActivity(run);
-        else await this.settle(run, now);
+        else if (run.status === "pending" && !run.taskId) {
+          // Pending direct/Work occurrences launch from settle; never hold the tick on that.
+          if (!this.hasLaunchSlot()) continue;
+          const launch = this.dispatch(`run:${run.id}`, "Could not settle an automation run:", () =>
+            this.settle(run, now),
+          );
+          if (launch) started.push(launch);
+        } else await this.settle(run, now);
       } catch (error) {
         console.error("Could not settle an automation run:", errorMessage(error));
       }
     }
-    for (const automation of await this.list()) {
-      if (this.closing) return;
+    for (const automation of await this.dueCandidates(now)) {
+      if (this.closing) break;
       if (automation.trigger?.kind === "event") continue;
       if (!automation.enabled || automation.nextRunAt > now) continue;
+      // Leave it due, unclaimed, until a launch slot frees up.
+      if (!this.hasLaunchSlot()) break;
       try {
         if (automation.trigger?.kind === "continuous" && (await this.hasActiveRun(automation.id)))
           continue;
@@ -498,10 +605,56 @@ export class HostAutomations {
               : automation.missedRunGraceMinutes * 60000)
         )
           await this.finish(run, "skipped", MISSED_RUN_SKIP, now);
-        else await this.launch(due, run, now, once);
+        else {
+          const launch = this.dispatch(`run:${run.id}`, "Could not start an automation:", () =>
+            this.launch(due, run, now, once),
+          );
+          if (launch) started.push(launch);
+        }
       } catch (error) {
         console.error("Could not start an automation:", errorMessage(error));
       }
+    }
+    await this.waitForLaunches(started);
+  }
+  private hasLaunchSlot(): boolean {
+    return !this.closing && this.inflight.size < MAX_CONCURRENT_LAUNCHES;
+  }
+  /** Runs a launch beside the tick. Failures are logged, and the run stays owned by launch. */
+  private dispatch(
+    key: string,
+    failure: string,
+    work: () => Promise<unknown>,
+  ): Promise<void> | undefined {
+    if (this.inflight.has(key)) return undefined;
+    const pending = work()
+      .then(
+        () => undefined,
+        (error) => console.error(failure, errorMessage(error)),
+      )
+      .finally(() => {
+        this.inflight.delete(key);
+      });
+    this.inflight.set(key, pending);
+    return pending;
+  }
+  /** Bounds only this tick's wait. Timing out neither fails nor replays a launch. */
+  private async waitForLaunches(launches: Promise<void>[]): Promise<void> {
+    if (!launches.length) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const elapsed = Symbol("launch wait elapsed");
+    const limit = new Promise<typeof elapsed>((resolve) => {
+      timer = setTimeout(() => resolve(elapsed), this.launchWaitMs);
+      timer.unref?.();
+    });
+    try {
+      const outcome = await Promise.race([Promise.all(launches), limit]);
+      if (outcome === elapsed)
+        console.error(
+          "An automation launch is still running; scheduling continues while it settles.",
+        );
+    } finally {
+      clearTimeout(timer);
     }
   }
   /** Producers supply an immutable transition identity; retries never create another run. */
@@ -520,12 +673,16 @@ export class HostAutomations {
     )
       throw new Error("Invalid automation event.");
     await this.store.transaction(async () => {
+      // One probe for the whole event instead of one query per automation.
+      const recorded = new Map(
+        (
+          await this.store.db
+            .prepare("SELECT automation_id,kind,project_id FROM automation_events WHERE event_id=?")
+            .all(event.id)
+        ).map((row) => [String(row.automation_id), row]),
+      );
       for (const automation of await this.list()) {
-        const previous = await this.store.db
-          .prepare(
-            "SELECT kind,project_id FROM automation_events WHERE automation_id=? AND event_id=?",
-          )
-          .get(automation.id, event.id);
+        const previous = recorded.get(automation.id);
         if (previous) {
           if (
             previous.kind !== event.kind ||
@@ -608,7 +765,7 @@ export class HostAutomations {
     return (
       await this.store.db
         .prepare(
-          `SELECT r.value FROM automation_runs r JOIN automations a ON a.id=r.automation_id WHERE json_extract(r.value, '$.status')='running' OR (json_extract(r.value, '$.status')='failed' AND json_type(r.value, '$.cleanupPending')='true') OR (json_extract(r.value, '$.status')='pending' AND (${truthyJson("r.value", "$.workspaceId")} OR json_type(r.value, '$.workPending')='true' OR ${truthyJson("r.value", "$.taskId")})) ORDER BY json_extract(a.value, '$.createdAt'), r.created_at DESC, r.rowid DESC`,
+          `SELECT r.value FROM automation_runs r JOIN automations a ON a.id=r.automation_id WHERE json_extract(r.value, '$.status') IN ('running','failed','pending') AND (json_extract(r.value, '$.status')='running' OR (json_extract(r.value, '$.status')='failed' AND json_type(r.value, '$.cleanupPending')='true') OR (json_extract(r.value, '$.status')='pending' AND (${truthyJson("r.value", "$.workspaceId")} OR json_type(r.value, '$.workPending')='true' OR ${truthyJson("r.value", "$.taskId")}))) ORDER BY json_extract(a.value, '$.createdAt'), r.created_at DESC, r.rowid DESC`,
         )
         .all()
     )
@@ -644,7 +801,6 @@ export class HostAutomations {
     if (this.launching.has(automation.id))
       return this.finish(run, "skipped", PREVIOUS_RUN_SKIP, now);
     this.launching.add(automation.id);
-    let accepted: { sessionId: string; runId?: string } | undefined;
     try {
       const skip = (await this.hasRunningRun(automation.id, run.id))
         ? PREVIOUS_RUN_SKIP
@@ -654,6 +810,19 @@ export class HostAutomations {
       if (skip) return await this.finish(run, "skipped", skip, now);
       if (this.closing)
         return await this.finish(run, "skipped", "Skipped: the host is stopping.", now);
+      if (automation.recipe) {
+        if (!this.tasks) throw new Error("Canonical Task service is unavailable.");
+        const started = await this.retainOwnedRun(run, {
+          status: "running",
+          startedAt: now,
+          recipe: startRecipeInstance(automation.recipe, recipeConfigOf(automation)),
+        });
+        // A failed first advance is retried by the tick; the instance and its results are saved.
+        return await this.settleRecipe(started, now).catch((error) => {
+          console.error("Could not start the first recipe step:", errorMessage(error));
+          return started;
+        });
+      }
       if (!run.sessionId && !run.execution) {
         const routing = hostModelRoutingService(this.store);
         const resolution = await resolveModelChoice(routing, {
@@ -721,146 +890,25 @@ export class HostAutomations {
           });
         return this.retainOwnedRun(run, { status: "pending" });
       }
-      // Existing direct-session occurrences retain their original recovery owner.
-      // New project occurrences are Tasks; only Task runtime creates sessions/workspaces.
-      if (!run.sessionId) {
-        if (!this.tasks) throw new Error("Canonical Task service is unavailable.");
-        if (automation.template?.kind === "project-scan") {
-          if (!this.projectScan) throw new Error("Project scan migration service is unavailable.");
-          automation = {
-            ...automation,
-            prompt: await this.projectScan.prepare(automation.template.sourceStewardId),
-          };
-        }
-        return await createAutomationTask(this.store, this.tasks, automation, run);
-      }
-      const mode = await writerWorkspaceMode(
-        this.store,
-        this.workspaces,
-        automation.projectId,
-        automation.isolate,
-      );
-      let workspace: Awaited<ReturnType<WorkspaceRegistry["prepare"]>>["workspace"] | undefined;
-      if (mode === "worktree") {
-        if (!this.workspaces)
-          throw new Error("Update the Host to enable managed automation workspaces.");
-        await this.store.db.checkAuthorization();
-        workspace = (
-          await this.workspaces.registry.prepare({
-            idempotencyKey: `automation:${run.id}`,
-            projectId: automation.projectId,
-            environmentId: this.workspaces.environmentId,
-            owner: { kind: "automationRun", id: run.id },
-            slug: automation.name,
-            choice: { defaultMode: "worktree" },
-          })
-        ).workspace;
-        if (
-          workspace.owner.kind !== "automationRun" ||
-          workspace.owner.id !== run.id ||
-          workspace.projectId !== automation.projectId ||
-          workspace.directoryState !== "present"
-        )
-          throw new Error("The managed workspace does not belong to this automation run.");
-        run = { ...run, workspaceId: workspace.id };
-        await this.writeRun(run);
-        await this.store.db.checkAuthorization();
-        const activity = await this.workspaces.activity.start({
-          workspaceId: workspace.id,
-          kind: "provider",
-          ownerId: run.id,
-        });
-        run = { ...run, activityId: activity.id };
-        await this.writeRun(run);
-      }
-      // Persist producer ownership before Work admission, including capacity waits.
-      run = { ...run, workPending: true };
-      await this.writeRun(run);
-      const cwd = workspace?.path ?? (await this.store.project(automation.projectId)).cwd;
-      const started = await launchSessionRun(
-        this.store,
-        {
-          command: async (command) => {
-            const receipt = await this.engine.command(command);
-            const type = (command as { type?: unknown }).type;
-            if (type === "create") run = { ...run, sessionId: receipt.sessionId };
-            if (type === "send") accepted = { sessionId: receipt.sessionId, runId: receipt.runId };
-            return receipt;
-          },
-          updateSession: (...args) => this.engine.updateSession(...args),
-          withMessageAuthor: this.engine.withMessageAuthor?.bind(this.engine),
-        },
-        {
-          projectId: automation.projectId,
-          author: {
-            // Work occurrence belongs to the durable automation run.
-            kind: "automation",
-            id: automation.id,
-            name: automation.name,
-            reason: "kickoff",
-          },
-          harness: automation.harness,
-          work: { kind: "automation", id: automation.id, occurrence: run.id },
-          providerAccountId: automation.providerAccountId,
-          model: automation.model,
-          modelSettings: automation.modelSettings,
-          runtimeMode: automation.runtimeMode,
-          title: automation.name,
-          prompt: workspace
-            ? `Work only in ${workspace.path} on ${workspace.branchRef}. Commit scoped changes on this branch and leave a clean tree. Integration, push and PR publication require separate owner approval.\n\n${automation.prompt}`
-            : `Work directly in ${cwd}, the current checkout shared with other sessions. Preserve their work and leave your changes uncommitted for owner review. Do not create a worktree, switch branches, stage, commit, merge, push or create PRs.\n\n${automation.prompt}`,
-          ...(workspace
-            ? { worktreeCwd: workspace.path, workspaceId: workspace.id }
-            : { workspaceMode: "current" as const }),
-        },
-        async () => {
-          if (this.closing) return false;
-          const current = await this.store.db
-            .prepare("SELECT value FROM automation_runs WHERE id=? AND automation_id=?")
-            .get(run.id, automation.id);
-          if (!current) return false;
-          const latest = JSON.parse(String(current.value)) as HostAutomationRun;
-          return (
-            latest.status === "pending" ||
-            (latest.status === "running" &&
-              accepted !== undefined &&
-              latest.sessionId === accepted.sessionId &&
-              latest.runId === accepted.runId)
-          );
-        },
-      );
-      if (accepted) {
-        // The engine's durable send receipt, not the creator's subsequent
-        // connection/grant, owns the accepted run. SQL bookkeeping only.
-        return this.retainOwnedRun(run, {
-          status: "running",
-          startedAt: now,
-          ...accepted,
-        });
-      }
-      if (started.deferred) {
-        const retained = await this.retainOwnedRun(run, { status: "pending" });
-        // Preparation may have acquired activity after a concurrent pending stop.
-        if (retained.status === "cancelled") return this.finish(run, "cancelled", undefined, now);
-        return retained;
-      }
-      if (started.error !== undefined)
+      // A project occurrence is always a Task; only Task runtime creates sessions/workspaces.
+      // An occurrence that already has a session predates Tasks and is not resumed or rerun.
+      if (run.sessionId)
         return await this.finish(
-          { ...run, sessionId: started.sessionId },
+          run,
           "failed",
-          started.error,
+          "This run started before automations ran as tasks and cannot be resumed.",
           now,
         );
-      return await this.writeRun({
-        ...run,
-        status: "running",
-        startedAt: now,
-        sessionId: started.sessionId,
-        runId: started.runId,
-      });
+      if (!this.tasks) throw new Error("Canonical Task service is unavailable.");
+      if (automation.template?.kind === "project-scan") {
+        if (!this.projectScan) throw new Error("Project scan migration service is unavailable.");
+        automation = {
+          ...automation,
+          prompt: await this.projectScan.prepare(automation.template.sourceStewardId),
+        };
+      }
+      return await createAutomationTask(this.store, this.tasks, automation, run);
     } catch (error) {
-      if (accepted)
-        return this.retainOwnedRun(run, { status: "running", startedAt: now, ...accepted });
       try {
         await this.store.db.checkAuthorization();
       } catch (revoked) {
@@ -916,6 +964,10 @@ export class HostAutomations {
   }
   private async settle(run: HostAutomationRun, now: number): Promise<void> {
     const automation = await this.find(run.automationId);
+    if (run.recipe) {
+      await this.settleRecipe(run, now);
+      return;
+    }
     if (run.taskId) {
       await this.store.transaction(async () => {
         if (!this.tasks) throw new Error("Canonical Task service is unavailable.");
@@ -1042,6 +1094,49 @@ export class HostAutomations {
     }
     await this.finish(run, outcome.status, outcome.error, now);
   }
+  /** Advances a recipe occurrence from its saved row; a repeated tick or a restart finds the same results. */
+  private async settleRecipe(run: HostAutomationRun, now: number): Promise<HostAutomationRun> {
+    return this.store.transaction(async () => {
+      if (!this.tasks) throw new Error("Canonical Task service is unavailable.");
+      const row = await this.store.db
+        .prepare("SELECT value FROM automation_runs WHERE id=? AND automation_id=?")
+        .get(run.id, run.automationId);
+      if (!row) return run;
+      const current = JSON.parse(String(row.value)) as HostAutomationRun;
+      if (!current.recipe || !["pending", "running"].includes(current.status)) return current;
+      const advance = await advanceRecipe({ store: this.store, tasks: this.tasks }, current, now);
+      return this.applyRecipe(advance, now);
+    });
+  }
+  private async applyRecipe(
+    advance: Awaited<ReturnType<typeof advanceRecipe>>,
+    now: number,
+  ): Promise<HostAutomationRun> {
+    if (advance.done) return this.finish(advance.run, advance.done.status, advance.done.error, now);
+    const written = await this.writeRun(advance.run);
+    const latest = await this.find(written.automationId);
+    if (latest && Boolean(latest.needsInput) !== Boolean(written.needsInput))
+      await this.write({ ...latest, needsInput: written.needsInput });
+    return written;
+  }
+  /** The owner's answer to the decision step an instance waits on. */
+  async decide(automationId: string, runId: string, approve: boolean): Promise<HostAutomationRun> {
+    await this.ready;
+    return this.store.transaction(async () => {
+      if (!this.tasks) throw new Error("Canonical Task service is unavailable.");
+      const row = await this.store.db
+        .prepare("SELECT value FROM automation_runs WHERE id=? AND automation_id=?")
+        .get(runId, automationId);
+      const run = row ? (JSON.parse(String(row.value)) as HostAutomationRun) : undefined;
+      if (!run?.recipe || run.status !== "running")
+        throw new Error("This run is not waiting for a decision.");
+      const now = this.now();
+      const decided = decideRecipe(run, approve, now);
+      if (decided.done) return this.applyRecipe(decided, now);
+      const deps = { store: this.store, tasks: this.tasks };
+      return this.applyRecipe(await advanceRecipe(deps, decided.run, now), now);
+    });
+  }
   /** Compensate only a reservation this exact failed run already owns. The
    * autonomous tick retries failure; no provider signal or workspace mutation. */
   private async releaseFailedRunActivity(run: ManagedAutomationRun): Promise<void> {
@@ -1143,6 +1238,13 @@ export class HostAutomations {
           "DELETE FROM automation_runs WHERE automation_id=? AND json_extract(value, '$.status') NOT IN ('pending','running') AND NOT COALESCE(json_extract(value, '$.cleanupPending'), 0) AND json_extract(value, '$.nativeRunId') IS NULL AND COALESCE(json_extract(value, '$.startedAt'), 0) < ? AND id NOT IN (SELECT id FROM automation_runs WHERE automation_id=? ORDER BY created_at DESC, rowid DESC LIMIT ?)",
         )
         .run(run.automationId, dayStart, run.automationId, MAX_RUNS_PER_AUTOMATION);
+      // Dedupe rows live as long as their run: a pruned run can never be replayed (the outbox
+      // row is consumed in the same transaction), while pending/running runs keep theirs.
+      await this.store.db
+        .prepare(
+          "DELETE FROM automation_events WHERE automation_id=? AND run_id NOT IN (SELECT id FROM automation_runs WHERE automation_id=?)",
+        )
+        .run(run.automationId, run.automationId);
       return finished;
     });
   }

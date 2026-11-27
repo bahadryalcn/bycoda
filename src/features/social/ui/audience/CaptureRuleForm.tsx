@@ -14,9 +14,9 @@ import { SOCIAL_PLATFORM_NAMES } from "../../model/social";
 import type { Sequence } from "../../model/outreach";
 import type { SocialClient } from "../../model/socialClient";
 import { PlatformIcon } from "../common/PlatformIcon";
-import { LabeledSelect } from "./LabeledSelect";
 import { uniqueTags } from "./audienceModel";
-import { useFormFooter, useTouched } from "./formFooter";
+import { useFormFooter } from "../../../../shared/ui/FormFooter";
+import { useTouched } from "./formFooter";
 import {
   FIND_PEOPLE_KINDS,
   buildFindPeopleSource,
@@ -184,7 +184,7 @@ export function CaptureRuleForm({
               onOpen={() => touch("account")}
               onValueChange={(accountId) => setSource({ ...source, accountId })}
             />
-            <LabeledSelect
+            <Select
               label={t("Where to look")}
               value={source.kind}
               disabled={saving}
@@ -192,7 +192,7 @@ export function CaptureRuleForm({
                 value: kind,
                 label: captureSourceLabel(kind),
               }))}
-              onChange={(kind) => setSource({ ...source, kind: kind as CaptureSourceKind })}
+              onValueChange={(kind) => setSource({ ...source, kind: kind as CaptureSourceKind })}
             />
           </div>
           {needs === "postRef" ? (
@@ -257,7 +257,7 @@ export function CaptureRuleForm({
                   onChange={(event) => setMinFollowers(event.target.value)}
                 />
               </div>
-              <LabeledSelect
+              <Select
                 label={t("Tone (optional)")}
                 value={sentiment}
                 disabled={saving}
@@ -267,7 +267,7 @@ export function CaptureRuleForm({
                   { value: "neutral", label: t("Neutral") },
                   { value: "negative", label: t("Negative") },
                 ]}
-                onChange={(value) => setSentiment(value as Sentiment)}
+                onValueChange={(value) => setSentiment(value as Sentiment)}
               />
             </div>
           </Disclosure>
@@ -275,7 +275,7 @@ export function CaptureRuleForm({
 
         <FieldGroup legend={t("Add them to")} disabled={saving}>
           {staticLists.length ? (
-            <LabeledSelect
+            <Select
               label={t("List")}
               value={targetListId}
               disabled={saving}
@@ -284,7 +284,7 @@ export function CaptureRuleForm({
                 { value: "", label: t("Choose a list") },
                 ...staticLists.map((list) => ({ value: list.id, label: list.name })),
               ]}
-              onChange={(value) => {
+              onValueChange={(value) => {
                 touch("list");
                 setTargetListId(value);
               }}
@@ -297,7 +297,7 @@ export function CaptureRuleForm({
         </FieldGroup>
 
         <FieldGroup legend={t("Then")} disabled={saving}>
-          <LabeledSelect
+          <Select
             label={t("Next step")}
             value={actionKind}
             disabled={saving}
@@ -306,7 +306,7 @@ export function CaptureRuleForm({
               { value: "tag", label: t("Add a tag") },
               { value: "enroll", label: t("Start a sequence") },
             ]}
-            onChange={(value) => setActionKind(value as ActionKind)}
+            onValueChange={(value) => setActionKind(value as ActionKind)}
           />
           {actionKind === "tag" ? (
             <TextField
@@ -319,7 +319,7 @@ export function CaptureRuleForm({
             />
           ) : null}
           {actionKind === "enroll" ? (
-            <LabeledSelect
+            <Select
               label={t("Sequence")}
               value={sequenceId}
               disabled={saving}
@@ -328,7 +328,7 @@ export function CaptureRuleForm({
                 { value: "", label: t("Choose a sequence") },
                 ...sequences.map((sequence) => ({ value: sequence.id, label: sequence.name })),
               ]}
-              onChange={(value) => {
+              onValueChange={(value) => {
                 touch("sequence");
                 setSequenceId(value);
               }}

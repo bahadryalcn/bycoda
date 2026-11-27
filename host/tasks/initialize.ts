@@ -68,11 +68,41 @@ export function initialize(context: TaskContext, store: HostStore): Promise<void
       CREATE TRIGGER IF NOT EXISTS task_cache_update AFTER UPDATE ON tasks BEGIN UPDATE task_cache_revision SET version=version+1 WHERE id=1; END;
       CREATE TRIGGER IF NOT EXISTS task_cache_delete AFTER DELETE ON tasks BEGIN UPDATE task_cache_revision SET version=version+1 WHERE id=1; END;
       CREATE INDEX IF NOT EXISTS tasks_scheduler_status ON tasks(json_extract(value, '$.status'));
+      CREATE INDEX IF NOT EXISTS tasks_crew_run
+        ON tasks(CASE WHEN json_valid(value) THEN json_extract(value,'$.crewRunId') END);
+      -- budgetParent resolves a crew task's owner every scheduler tick; queries must repeat this exact expression.
+      CREATE INDEX IF NOT EXISTS tasks_crew_execution
+        ON tasks(CASE WHEN json_valid(value) THEN json_extract(value,'$.crewExecutionId') END);
+      -- General goal lookup; the partial tasks_assistant_goal index below cannot serve goalId=? predicates.
+      CREATE INDEX IF NOT EXISTS tasks_goal ON tasks(json_extract(value,'$.goalId'));
       CREATE INDEX IF NOT EXISTS tasks_scheduler_status_merged ON tasks(json_extract(value, '$.status'), json_extract(value, '$.merged'));
       CREATE INDEX IF NOT EXISTS tasks_scheduler_cleanup ON tasks(id)
         WHERE json_extract(value, '$.status')='done' AND json_extract(value, '$.merged')=1
           AND (json_extract(value, '$.worktreeCwd') IS NOT NULL OR json_array_length(value, '$.historyRecovery')>0);
     `);
+      // Polling has its own stamp so a measurement timestamp alone does not
+      // invalidate the board. A random stamp also distinguishes revision reuse
+      // after rollback. The triggers cover scheduler, recovery and direct writes.
+      await store.db.exec(`
+        CREATE TABLE IF NOT EXISTS task_change_stamp (
+          id INTEGER PRIMARY KEY CHECK(id=1), stamp TEXT NOT NULL, assistant_stamp TEXT NOT NULL
+        );
+        INSERT OR IGNORE INTO task_change_stamp VALUES (1, hex(randomblob(16)), '');
+        CREATE TRIGGER IF NOT EXISTS task_change_insert AFTER INSERT ON tasks BEGIN
+          UPDATE task_change_stamp SET stamp=hex(randomblob(16)) WHERE id=1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS task_change_update AFTER UPDATE ON tasks
+        WHEN json_remove(OLD.value, '$.budgetUsage.measuredAt')
+          IS NOT json_remove(NEW.value, '$.budgetUsage.measuredAt') BEGIN
+          UPDATE task_change_stamp SET stamp=hex(randomblob(16)) WHERE id=1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS task_change_delete AFTER DELETE ON tasks BEGIN
+          UPDATE task_change_stamp SET stamp=hex(randomblob(16)) WHERE id=1;
+        END;
+        CREATE INDEX IF NOT EXISTS tasks_assistant_goal ON tasks(json_extract(value, '$.goalId'))
+          WHERE json_extract(value, '$.goalId') GLOB 'assistant-*'
+            AND json_extract(value, '$.sessionId') <> '';
+      `);
       // SQLite owns the journal so every writer (including recovery and DELETE)
       // commits the task change and its history together. Do not journal prompts,
       // credentials or session output: planning only needs this compact projection.
@@ -81,26 +111,54 @@ export function initialize(context: TaskContext, store: HostStore): Promise<void
           CREATE TABLE IF NOT EXISTS task_history_floor (id INTEGER PRIMARY KEY CHECK(id=1), sequence INTEGER NOT NULL);
           INSERT OR IGNORE INTO task_history_floor VALUES (1, 0);
           CREATE TABLE IF NOT EXISTS task_history (sequence INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL, task_id TEXT NOT NULL, status TEXT NOT NULL, effective_at INTEGER NOT NULL, deleted INTEGER NOT NULL, task TEXT NOT NULL);
-          CREATE TRIGGER IF NOT EXISTS task_history_insert AFTER INSERT ON tasks BEGIN
-            INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task) VALUES (
+        `);
+      // The stop and wait codes make "why did tasks stop" answerable from the journal alone.
+      const historyColumns = new Set(
+        (await store.db.prepare("PRAGMA table_info(task_history)").all()).map((row) =>
+          String(row.name),
+        ),
+      );
+      for (const column of ["stop_code", "wait_code"])
+        if (!historyColumns.has(column))
+          await store.db.exec(`ALTER TABLE task_history ADD COLUMN ${column} TEXT`);
+      // Recreated on every start: a trigger kept by IF NOT EXISTS would journal without the codes.
+      // An update is journaled only when the status, a code or the listed identity changes, so a
+      // budget or activity refresh in the same state is not a new stop.
+      const projection = (row: "NEW" | "OLD") =>
+        `json_object('id',${row}.id,'projectId',json_extract(${row}.value,'$.projectId'),'title',json_extract(${row}.value,'$.title'),'status',json_extract(${row}.value,'$.status'),'updatedAt',json_extract(${row}.value,'$.updatedAt'),'goalId',json_extract(${row}.value,'$.goalId'))`;
+      const codes = (row: "NEW" | "OLD") =>
+        `json_extract(${row}.value,'$.stop.code'),json_extract(${row}.value,'$.wait.code')`;
+      await store.db.exec(`
+          DROP TRIGGER IF EXISTS task_history_insert;
+          DROP TRIGGER IF EXISTS task_history_update;
+          DROP TRIGGER IF EXISTS task_history_transfer;
+          DROP TRIGGER IF EXISTS task_history_delete;
+          CREATE TRIGGER task_history_insert AFTER INSERT ON tasks BEGIN
+            INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task,stop_code,wait_code) VALUES (
               json_extract(NEW.value,'$.projectId'),NEW.id,json_extract(NEW.value,'$.status'),json_extract(NEW.value,'$.updatedAt'),0,
-              json_object('id',NEW.id,'projectId',json_extract(NEW.value,'$.projectId'),'title',json_extract(NEW.value,'$.title'),'status',json_extract(NEW.value,'$.status'),'updatedAt',json_extract(NEW.value,'$.updatedAt'),'goalId',json_extract(NEW.value,'$.goalId')));
+              ${projection("NEW")},${codes("NEW")});
           END;
-          CREATE TRIGGER IF NOT EXISTS task_history_update AFTER UPDATE ON tasks BEGIN
-            INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task) VALUES (
+          CREATE TRIGGER task_history_update AFTER UPDATE ON tasks
+          WHEN json_extract(OLD.value,'$.status') IS NOT json_extract(NEW.value,'$.status')
+            OR json_extract(OLD.value,'$.stop.code') IS NOT json_extract(NEW.value,'$.stop.code')
+            OR json_extract(OLD.value,'$.wait.code') IS NOT json_extract(NEW.value,'$.wait.code')
+            OR json_extract(OLD.value,'$.title') IS NOT json_extract(NEW.value,'$.title')
+            OR json_extract(OLD.value,'$.goalId') IS NOT json_extract(NEW.value,'$.goalId')
+            OR json_extract(OLD.value,'$.projectId') IS NOT json_extract(NEW.value,'$.projectId') BEGIN
+            INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task,stop_code,wait_code) VALUES (
               json_extract(NEW.value,'$.projectId'),NEW.id,json_extract(NEW.value,'$.status'),json_extract(NEW.value,'$.updatedAt'),0,
-              json_object('id',NEW.id,'projectId',json_extract(NEW.value,'$.projectId'),'title',json_extract(NEW.value,'$.title'),'status',json_extract(NEW.value,'$.status'),'updatedAt',json_extract(NEW.value,'$.updatedAt'),'goalId',json_extract(NEW.value,'$.goalId')));
+              ${projection("NEW")},${codes("NEW")});
           END;
-          CREATE TRIGGER IF NOT EXISTS task_history_transfer BEFORE UPDATE ON tasks
+          CREATE TRIGGER task_history_transfer BEFORE UPDATE ON tasks
           WHEN json_extract(OLD.value,'$.projectId') IS NOT json_extract(NEW.value,'$.projectId') BEGIN
-            INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task) VALUES (
+            INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task,stop_code,wait_code) VALUES (
               json_extract(OLD.value,'$.projectId'),OLD.id,json_extract(OLD.value,'$.status'),json_extract(NEW.value,'$.updatedAt'),1,
-              json_object('id',OLD.id,'projectId',json_extract(OLD.value,'$.projectId'),'title',json_extract(OLD.value,'$.title'),'status',json_extract(OLD.value,'$.status'),'updatedAt',json_extract(OLD.value,'$.updatedAt'),'goalId',json_extract(OLD.value,'$.goalId')));
+              ${projection("OLD")},${codes("OLD")});
           END;
-          CREATE TRIGGER IF NOT EXISTS task_history_delete AFTER DELETE ON tasks BEGIN
-            INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task) VALUES (
+          CREATE TRIGGER task_history_delete AFTER DELETE ON tasks BEGIN
+            INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task,stop_code,wait_code) VALUES (
               json_extract(OLD.value,'$.projectId'),OLD.id,json_extract(OLD.value,'$.status'),CAST(unixepoch('subsec')*1000 AS INTEGER),1,
-              json_object('id',OLD.id,'projectId',json_extract(OLD.value,'$.projectId'),'title',json_extract(OLD.value,'$.title'),'status',json_extract(OLD.value,'$.status'),'updatedAt',json_extract(OLD.value,'$.updatedAt'),'goalId',json_extract(OLD.value,'$.goalId')));
+              ${projection("OLD")},${codes("OLD")});
           END;
         `);
       await store.db

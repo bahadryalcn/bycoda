@@ -1,6 +1,13 @@
+import type { BrowserProfiles, BrowserProfileStorage } from "./browser-profiles";
+import { isBrowserDevelopmentAddress } from "../../src/shared/lib/browserProfile";
+import {
+  BROWSER_VIEWPORT_MAX_WIDTH,
+  BROWSER_VIEWPORT_MAX_HEIGHT,
+} from "../../src/shared/lib/browserViewport";
 import { createHash, randomUUID } from "node:crypto";
 import { inspectBrowserElement, type ElementInspection } from "./browser-annotation";
 import type { BrowserAnnotationCapture } from "../../src/shared/lib/browserAnnotation";
+import type { LeaseHolder } from "../../src/shared/model/host-contracts/native-devices";
 import { applyBrowserInput } from "./browser-input";
 import { BrowserRefs } from "./browser-read";
 import { BrowserScreencast, browserFrameCursor } from "./browser-screencast";
@@ -38,6 +45,7 @@ type PageEvents = {
   requestfailed: BrowserRequest;
   response: BrowserResponse;
   close: undefined;
+  crash: undefined;
 };
 
 type BrowserCdpSession = {
@@ -83,7 +91,7 @@ type BrowserCdpSession = {
 };
 
 type Page = {
-  goto(url: string, options: { timeout: number }): Promise<unknown>;
+  goto(url: string, options: { timeout: number; waitUntil?: "commit" }): Promise<unknown>;
   setViewportSize?(viewport: { width: number; height: number }): Promise<void>;
   url(): string;
   screenshot(options: {
@@ -105,21 +113,25 @@ type Page = {
     click(x: number, y: number): Promise<void>;
     wheel(x: number, y: number): Promise<void>;
     move?(x: number, y: number): Promise<void>;
-    down?(options: { button: "left" | "middle" | "right" }): Promise<void>;
-    up?(options: { button: "left" | "middle" | "right" }): Promise<void>;
+    down?(options: { button: "left" | "middle" | "right"; clickCount?: number }): Promise<void>;
+    up?(options: { button: "left" | "middle" | "right"; clickCount?: number }): Promise<void>;
   };
   keyboard: {
     type(text: string): Promise<void>;
     insertText?(text: string): Promise<void>;
     press(key: string): Promise<void>;
+    down?(key: string): Promise<void>;
+    up?(key: string): Promise<void>;
   };
 };
 type Browser = {
   newContext(options: {
     viewport: { width: number; height: number };
     acceptDownloads: boolean;
+    storageState?: BrowserProfileStorage;
   }): Promise<{ newPage(): Promise<Page>; close?(): Promise<void> }>;
   close(): Promise<void>;
+  on?(event: "disconnected", listener: () => void): unknown;
 };
 export type BrowserLoader = () => Promise<{
   chromium: { launch(options: { headless: boolean }): Promise<Browser> };
@@ -129,21 +141,30 @@ export type SharedBrowserOptions = {
   logLabel?: string;
   keepAlive?: boolean;
   onIdleClosed?: () => void;
+  profiles?: BrowserProfiles;
 };
 const fingerprint = (credential: string) => createHash("sha256").update(credential).digest("hex");
 const DEFAULT_VIEWPORT = { width: 1280, height: 720 };
 
 /** Bound screenshot memory and coordinate work before touching Chromium. */
+/** Optional JPEG quality (20..80) a client may request for one-shot frames; default 65. */
+function sharedBrowserFrameQuality(value: unknown): number {
+  if (value === undefined) return 65;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 20 || value > 80)
+    throw new Error("Invalid browser frame quality");
+  return value;
+}
+
 export function sharedBrowserViewport(width: unknown, height: unknown) {
   if (
     !Number.isInteger(width) ||
     !Number.isInteger(height) ||
     Number(width) < 240 ||
-    Number(width) > 2560 ||
+    Number(width) > BROWSER_VIEWPORT_MAX_WIDTH ||
     Number(height) < 240 ||
-    Number(height) > 2160
+    Number(height) > BROWSER_VIEWPORT_MAX_HEIGHT
   )
-    throw new Error("Browser viewport must be integer dimensions between 240x240 and 2560x2160.");
+    throw new Error("Browser viewport must be integer dimensions between 240x240 and 3840x2160.");
   return { width: Number(width), height: Number(height) };
 }
 
@@ -151,16 +172,40 @@ export function sharedBrowserViewport(width: unknown, height: unknown) {
 // Bound the returned value before Playwright serializes/transfers it to the host.
 const browserArgumentValue = runtimeLogPreview;
 
+/** Thrown for an address the shared browser cannot open; clients match this exact message. */
+export const SHARED_BROWSER_INVALID_URL = "Enter a web address such as example.com.";
+
+/**
+ * People type addresses the way a browser bar accepts them ("www.google.com",
+ * "localhost:3000"). A missing scheme becomes https, or http for a local or IP host.
+ * A rejection is a plain Error: a TypeError from `new URL` would be reported as an
+ * internal Host failure ("Host request failed") instead of a usable message.
+ */
 export function sharedBrowserUrl(input: unknown) {
   if (typeof input !== "string" || input.length > 4096) throw new Error("Invalid browser URL");
-  const url = new URL(input);
+  const trimmed = input.trim();
+  if (!trimmed || /\s/.test(trimmed)) throw new Error(SHARED_BROWSER_INVALID_URL);
+  const local =
+    /^(localhost|127\.\d+\.\d+\.\d+|\[::1\]|(\d{1,3}\.){3}\d{1,3})(:\d+)?([/?#]|$)/i.test(trimmed);
+  const candidate = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed)
+    ? trimmed
+    : `${local ? "http" : "https"}://${trimmed}`;
+  let url: URL;
+  try {
+    url = new URL(candidate);
+  } catch {
+    throw new Error(SHARED_BROWSER_INVALID_URL);
+  }
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password)
     throw new Error("Use an HTTP(S) URL without credentials");
   return url.href;
 }
 
-/** One host-owned ephemeral browser. No user profile, extension, download or
- * stored token is exposed. Viewing is shared; mutations require a short lease. */
+/** How long a recorder's fast request keeps every screencast picture acknowledged. */
+const FAST_ACK_MS = 1000;
+
+/** One host-owned browser context, optionally seeded from an owner-approved profile.
+ * Mutations require a short lease. */
 export class SharedBrowser {
   private browser?: Browser;
   private page?: Page;
@@ -176,7 +221,8 @@ export class SharedBrowser {
     glass: boolean;
     glassExpected: boolean;
   };
-  private lease?: { owner: string; id: string; expiresAt: number };
+  /** `sessionId` is set only when an agent conversation claimed it (never for a person's panel). */
+  private lease?: { owner: string; id: string; expiresAt: number; sessionId?: string };
   private busy = false;
   private readonly refs = new BrowserRefs();
   private readonly inputReceipts = new Map<
@@ -193,6 +239,8 @@ export class SharedBrowser {
   private documentId = randomUUID();
   private hoverObjects?: { session: BrowserCdpSession; group: string };
   private pageGeneration = 0;
+  private profileId?: string;
+  private profileOverride = false;
   private captureGeneration = 0;
   private viewport = { ...DEFAULT_VIEWPORT };
   private logSource?: RuntimeLogSource;
@@ -246,8 +294,11 @@ export class SharedBrowser {
     method: string,
     params: Record<string, unknown>,
     credential: string,
-    options: { takeover?: boolean } = {},
+    options: { takeover?: boolean; holderSessionId?: string } = {},
+    ownerProfileAccess = false,
   ) {
+    if (method === "browser.claim" && typeof params.sessionId === "string")
+      options = { ...options, holderSessionId: params.sessionId };
     const matches =
       this.logSource?.projectId === params.projectId &&
       this.logSource?.sessionId === params.sessionId &&
@@ -263,12 +314,33 @@ export class SharedBrowser {
         throw new Error("Claim browser control before using it.");
       if (!observe) this.requireLease(fingerprint(credential), params);
     }
-    const value = await this.dispatch(method, params, credential, options);
+    if (this.options.profiles && !ownerProfileAccess && method !== "browser.open") {
+      const sessionControl = [
+        "browser.status",
+        "browser.claim",
+        "browser.release",
+        "browser.close",
+      ].includes(method);
+      await this.options.profiles.resolve(
+        undefined,
+        false,
+        sessionControl ? undefined : this.profileId,
+      );
+    }
+    const value = await this.dispatch(method, params, credential, options, ownerProfileAccess);
     if (method === "browser.status" || method === "browser.claim" || method === "browser.release") {
-      return matches
-        ? value
+      const profiles = ownerProfileAccess
+        ? undefined
+        : await this.options.profiles?.agentProfiles();
+      const status = method === "browser.status" && profiles ? { ...value, profiles } : value;
+      const granted =
+        !this.profileId || !profiles || profiles.some(({ id }) => id === this.profileId);
+      return matches && granted
+        ? status
         : {
-            ...value,
+            ...status,
+            ...(!granted ? { open: false } : {}),
+            profileId: undefined,
             url: null,
             logSourceId: undefined,
             navigationId: undefined,
@@ -283,7 +355,8 @@ export class SharedBrowser {
     method: string,
     params: Record<string, unknown>,
     credential: string,
-    options: { takeover?: boolean } = {},
+    options: { takeover?: boolean; holderSessionId?: string } = {},
+    ownerProfileAccess = true,
   ) {
     const receiptOwner = fingerprint(credential);
     let receiptKey: string | undefined;
@@ -334,7 +407,12 @@ export class SharedBrowser {
           this.lease = undefined;
           this.annotation = undefined;
         }
-        this.lease = { owner, id: this.lease?.id ?? randomUUID(), expiresAt: at + 30_000 };
+        this.lease = {
+          owner,
+          id: this.lease?.id ?? randomUUID(),
+          expiresAt: at + 30_000,
+          sessionId: options.holderSessionId,
+        };
         return this.status(owner);
       }
       if (method === "browser.release") {
@@ -349,18 +427,36 @@ export class SharedBrowser {
         const projectId = this.logContext(params.projectId);
         const sessionId = this.logContext(params.sessionId);
         const assistantThreadId = this.logContext(params.threadId);
+        const sameScope =
+          this.logSource?.projectId === projectId &&
+          this.logSource?.sessionId === sessionId &&
+          this.logSource?.assistantThreadId === assistantThreadId;
+        const samePurpose =
+          this.logSource?.url !== undefined &&
+          isBrowserDevelopmentAddress(this.logSource.url) === isBrowserDevelopmentAddress(url);
+        const keepOverride = !!this.page && sameScope && samePurpose && this.profileOverride;
+        const profile = await this.options.profiles?.resolve(
+          params.profile,
+          ownerProfileAccess,
+          keepOverride ? (this.profileId ?? "isolated") : undefined,
+          url,
+        );
+        const profileOverride =
+          params.profile !== undefined || (keepOverride && profile?.id === this.profileId);
+        if (params.profile !== undefined && !this.options.profiles)
+          throw new Error("Browser profiles are unavailable on this Host.");
         if (
           this.page &&
-          (this.logSource?.projectId !== projectId ||
-            this.logSource?.sessionId !== sessionId ||
-            this.logSource?.assistantThreadId !== assistantThreadId)
+          (!sameScope || this.profileId !== profile?.id || (!profile && !samePurpose))
         ) {
-          // A new context prevents old-document network/console events from being
-          // attributed to a different conversation while navigation is pending.
+          // A new context prevents old-document state and logs from crossing a conversation or profile.
+          const viewport = this.viewport;
           await this.disposePage();
+          if (sameScope) this.viewport = viewport;
         }
         this.documentId = randomUUID();
         this.invalidateSelection();
+        void this.screencast.stop().catch(() => {});
         const source: RuntimeLogSource = {
           id: `browser:${randomUUID()}`,
           kind: "browser",
@@ -372,7 +468,9 @@ export class SharedBrowser {
           available: true,
         };
         try {
-          await this.ensurePage();
+          await this.ensurePage(profile?.storage);
+          this.profileId = profile?.id;
+          this.profileOverride = profileOverride;
         } catch (error) {
           this.options.runtimeLogs?.setSource({
             ...source,
@@ -382,7 +480,10 @@ export class SharedBrowser {
           throw error;
         }
         this.captureLogs(this.page!, source);
-        await this.page!.goto(url, { timeout: 15_000 });
+        await this.page!.goto(url, {
+          timeout: 15_000,
+          ...(params.preview === true ? { waitUntil: "commit" as const } : {}),
+        });
         return this.status(owner);
       }
       if (method === "browser.frame") {
@@ -391,7 +492,8 @@ export class SharedBrowser {
           documentId = this.documentId,
           navigationId = this.navigationId;
         const viewport = { ...this.viewport };
-        const frame = await page.screenshot({ type: "jpeg", quality: 65, timeout: 5_000 });
+        const quality = sharedBrowserFrameQuality(params.quality);
+        const frame = await page.screenshot({ type: "jpeg", quality, timeout: 5_000 });
         if (
           page !== this.page ||
           documentId !== this.documentId ||
@@ -424,6 +526,7 @@ export class SharedBrowser {
         this.viewport = viewport;
         this.documentId = randomUUID();
         this.invalidateSelection();
+        void this.screencast.stop().catch(() => {});
         return this.status(owner);
       }
       if (method === "browser.close") {
@@ -461,8 +564,11 @@ export class SharedBrowser {
   }
   private async liveFrame(params: Record<string, unknown>, owner: string) {
     const { after, waitMs } = browserFrameCursor(params.after, params.waitMs);
+    if (!this.page) throw new Error("Open a shared browser first");
     this.lastUse = this.now();
-    const frame = await this.screencast.next(this.page!, after, waitMs);
+    // A recorder asks for every picture; viewers keep the paced acks.
+    if (params.fast === true) this.screencast.boostAck(FAST_ACK_MS);
+    const frame = await this.screencast.next(this.page, after, waitMs);
     if (!frame || !this.page) return { ...this.status(owner), frameSequence: after };
     return {
       ...this.status(owner),
@@ -471,6 +577,32 @@ export class SharedBrowser {
       width: frame.width,
       height: frame.height,
       frameSequence: frame.sequence,
+    };
+  }
+
+  openFrameStream() {
+    if (!this.screencast.available(this.page))
+      throw new Error("Browser frame streaming is unavailable");
+    const release = this.screencast.retainFastReader();
+    const pace = () =>
+      void this.options.profiles
+        ?.list()
+        .then(({ liveFps }) => this.screencast.setLiveFps(liveFps))
+        .catch(() => {});
+    pace();
+    return {
+      release,
+      next: async (after: number) => {
+        const page = this.page;
+        if (!page) throw new Error("Browser page closed");
+        this.lastUse = this.now();
+        // Picks up a changed live frame rate without reopening the stream.
+        pace();
+        const frame = await this.screencast.next(page, after, 1000);
+        if (page !== this.page) throw new Error("Browser page changed");
+        if (!frame || frame.stamp !== this.documentId) return undefined;
+        return { ...frame, documentId: this.documentId, navigationId: this.navigationId };
+      },
     };
   }
   private pageKey = () => `${this.documentId}|${this.page?.url()}`;
@@ -482,11 +614,23 @@ export class SharedBrowser {
       controlling: this.lease?.owner === owner,
       leaseId: this.lease?.owner === owner ? this.lease.id : undefined,
       leaseExpiresAt: this.lease?.expiresAt,
+      // Remaining lifetime on the Host clock; clients turn it into a local deadline on receipt.
+      leaseTtlMs: this.lease ? Math.max(0, this.lease.expiresAt - this.now()) : undefined,
+      heldBy: this.holder(),
       viewport: { ...this.viewport },
+      ...(this.profileId ? { profileId: this.profileId } : {}),
       navigationId: this.navigationId,
       documentId: this.documentId,
       annotationId: this.annotation?.owner === owner ? this.annotation.id : undefined,
     };
+  }
+  /** Public holder of a live lease; no owner fingerprint or lease id of another client. */
+  private holder(): LeaseHolder | undefined {
+    const lease = this.lease;
+    if (!lease || lease.expiresAt <= this.now()) return undefined;
+    return lease.sessionId
+      ? { kind: "session", sessionId: lease.sessionId }
+      : { kind: "controller" };
   }
   private requireLease(owner: string, params: Record<string, unknown>) {
     if (!this.lease || this.lease.owner !== owner || this.lease.id !== params.leaseId)
@@ -860,6 +1004,7 @@ export class SharedBrowser {
     if (!this.maskEvents)
       throw new Error("Safe capture requires browser DOM mutation observation.");
     const inspectedRevision = this.maskRevision;
+    const frameQuality = sharedBrowserFrameQuality(params.quality);
     const marker = `bycoda-capture-${randomUUID()}`;
     this.screenshotMutations = {
       marker,
@@ -872,7 +1017,7 @@ export class SharedBrowser {
     try {
       frame = await page.screenshot({
         type: "jpeg",
-        quality: 65,
+        quality: frameQuality,
         timeout: 5_000,
         mask: inspection.masks.map((selector) => page.locator!(selector)),
         maskColor: "#333333",
@@ -955,7 +1100,7 @@ export class SharedBrowser {
     });
     return { ...this.status(owner), selection: annotation.selection };
   }
-  private async ensurePage() {
+  private async ensurePage(storageState?: BrowserProfileStorage) {
     if (this.page) return;
     const generation = this.pageGeneration;
     const { chromium } = await this.loader();
@@ -965,6 +1110,7 @@ export class SharedBrowser {
       const context = await browser.newContext({
         viewport: { ...this.viewport },
         acceptDownloads: false,
+        ...(storageState ? { storageState } : {}),
       });
       const page = await context.newPage();
       if (generation !== this.pageGeneration) throw new Error("Browser was closed during startup");
@@ -973,6 +1119,7 @@ export class SharedBrowser {
         if (this.page === page && generation === this.pageGeneration && !frame.parentFrame()) {
           this.documentId = randomUUID();
           this.invalidateSelection();
+          void this.screencast.stop().catch(() => {});
         }
       };
       page.on?.("framenavigated", navigated);
@@ -1164,12 +1311,15 @@ export class SharedBrowser {
     page.on?.("requestfailed", requestfailed);
     page.on?.("response", response);
     page.on?.("close", close);
+    // A crashed renderer leaves a dead page; drop it so the next call opens a fresh one.
+    page.on?.("crash", close);
     this.detachLogListeners = () => {
       page.off?.("console", console);
       page.off?.("pageerror", pageerror);
       page.off?.("requestfailed", requestfailed);
       page.off?.("response", response);
       page.off?.("close", close);
+      page.off?.("crash", close);
     };
   }
 
@@ -1203,6 +1353,8 @@ export class SharedBrowser {
     this.idleTimer = undefined;
     const browser = this.browser;
     this.page = undefined;
+    this.profileId = undefined;
+    this.profileOverride = false;
     this.browser = undefined;
     this.viewport = { ...DEFAULT_VIEWPORT };
     this.documentId = randomUUID();
@@ -1219,12 +1371,23 @@ export class SharedBrowser {
   }
 }
 
+const BROWSER_PROCESS_IDLE_MS = 2 * 60_000;
+/** The shared Chromium process and the number of owned contexts currently using it. */
+type BrowserPool = {
+  process: Promise<Browser>;
+  leases: number;
+  idleTimer?: ReturnType<typeof setTimeout>;
+};
+
 /** Isolated per-conversation browser state; legacy owner-wide mode remains separate. */
 export class SessionBrowserRegistry {
   private readonly browsers = new Map<string, SharedBrowser>();
   private readonly shared: SharedBrowser;
-  private process?: Promise<Browser>;
+  private pool?: BrowserPool;
   private readonly pooledLoader: BrowserLoader;
+  get profiles() {
+    return this.options.profiles;
+  }
   constructor(
     private readonly loader: BrowserLoader,
     private readonly now = Date.now,
@@ -1233,14 +1396,21 @@ export class SessionBrowserRegistry {
     this.pooledLoader = async () => ({
       chromium: {
         launch: async () => {
-          if (!this.process)
-            this.process = this.loader()
-              .then((runtime) => runtime.chromium.launch({ headless: true }))
-              .catch((error) => {
-                this.process = undefined;
-                throw error;
-              });
-          const process = await this.process;
+          const pool = this.acquirePool();
+          let released = false;
+          const release = () => {
+            if (released) return;
+            released = true;
+            pool.leases--;
+            this.scheduleIdleClose(pool);
+          };
+          let process: Browser;
+          try {
+            process = await pool.process;
+          } catch (error) {
+            release();
+            throw error;
+          }
           let context: Awaited<ReturnType<Browser["newContext"]>> | undefined;
           return {
             newContext: async (options) => {
@@ -1248,13 +1418,59 @@ export class SessionBrowserRegistry {
               return context;
             },
             close: async () => {
-              await context?.close?.();
+              try {
+                await context?.close?.();
+              } finally {
+                // A crashed process makes context.close() throw; the lease still ends.
+                release();
+              }
             },
           };
         },
       },
     });
     this.shared = new SharedBrowser(this.pooledLoader, now, options);
+  }
+  /** Returns the live shared Chromium, launching it when absent, and takes a lease on it. */
+  private acquirePool() {
+    let pool = this.pool;
+    if (!pool) {
+      const created: BrowserPool = { leases: 0, process: undefined as unknown as Promise<Browser> };
+      created.process = this.loader()
+        .then((runtime) => runtime.chromium.launch({ headless: true }))
+        .then((browser) => {
+          // A crashed or killed Chromium must not stay cached; the next launch starts a new one.
+          browser.on?.("disconnected", () => this.discardPool(created));
+          return browser;
+        })
+        .catch((error) => {
+          this.discardPool(created);
+          throw error;
+        });
+      // Launch failures reach every lease through `process`; this only avoids an unhandled rejection.
+      created.process.catch(() => {});
+      this.pool = pool = created;
+    }
+    if (pool.idleTimer) clearTimeout(pool.idleTimer);
+    pool.idleTimer = undefined;
+    pool.leases++;
+    return pool;
+  }
+  private discardPool(pool: BrowserPool) {
+    if (pool.idleTimer) clearTimeout(pool.idleTimer);
+    pool.idleTimer = undefined;
+    if (this.pool === pool) this.pool = undefined;
+  }
+  /** Closes Chromium after a bounded idle period once no owned context remains. */
+  private scheduleIdleClose(pool: BrowserPool) {
+    if (this.pool !== pool || pool.leases > 0 || pool.idleTimer) return;
+    pool.idleTimer = setTimeout(() => {
+      pool.idleTimer = undefined;
+      if (this.pool !== pool || pool.leases > 0) return;
+      this.discardPool(pool);
+      void pool.process.then((browser) => browser.close()).catch(() => {});
+    }, BROWSER_PROCESS_IDLE_MS);
+    pool.idleTimer.unref?.();
   }
   private browser(params: Record<string, unknown>, credential: string) {
     if (params.threadId !== undefined) {
@@ -1343,6 +1559,9 @@ export class SessionBrowserRegistry {
     }
     return result;
   }
+  openFrameStream(params: Record<string, unknown>, credential: string) {
+    return this.browser(params, credential).openFrameStream();
+  }
   async dispatchForSession(method: string, params: Record<string, unknown>, credential: string) {
     if (params.ownerPresentationScope !== undefined || params.threadId !== undefined)
       throw new Error("Owner browser presentation scopes are unavailable to agents.");
@@ -1352,7 +1571,7 @@ export class SessionBrowserRegistry {
     method: string,
     params: Record<string, unknown>,
     credential: string,
-    options: { takeover?: boolean } = {},
+    options?: { takeover?: boolean },
   ) {
     if (
       !params.threadId ||
@@ -1364,7 +1583,13 @@ export class SessionBrowserRegistry {
         "A real Room browser source is required; session annotations have a separate owner.",
       );
     const browser = this.browser(params, credential);
-    const result = await browser.dispatchForSession(method, params, credential, options);
+    const result = await browser.dispatchForSession(
+      method,
+      params,
+      credential,
+      options,
+      options !== undefined,
+    );
     if (method === "browser.close")
       this.browsers.delete(
         JSON.stringify([
@@ -1387,8 +1612,9 @@ export class SessionBrowserRegistry {
       ...Array.from(this.browsers.values(), (browser) => browser.close()),
     ]);
     this.browsers.clear();
-    const process = this.process;
-    this.process = undefined;
-    if (process) await (await process).close();
+    const pool = this.pool;
+    if (!pool) return;
+    this.discardPool(pool);
+    await (await pool.process).close();
   }
 }

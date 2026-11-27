@@ -3,6 +3,7 @@ import { DiffStat } from "../../../shared/ui/DiffStat";
 import { Text } from "../../../shared/ui/Text";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
+import { Divider } from "../../../shared/ui/Divider";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { CircleDashed, X } from "../../../shared/ui/icons";
 import { MAX_PREVIEW_LINES } from "../../../integrations/harness/core/preview";
@@ -86,9 +87,7 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
     <div
       {...surfaceAttributes(
         { frame: variant === "card" ? "card" : undefined, edge: "all" },
-        variant === "card"
-          ? "overflow-hidden rounded-(--ui-radius-card) border-(--ui-card-border)"
-          : "min-w-0",
+        variant === "card" ? "overflow-hidden" : "min-w-0",
       )}
     >
       <div className="flex items-center gap-2 px-2.5 py-2">
@@ -96,10 +95,8 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
         {filePath && onOpenFile ? (
           <Button
             variant="ghost"
-            motion="none"
-            type="button"
             hoverUnderline
-            className="min-w-0 flex-1 text-left font-mono"
+            className="min-w-0 flex-1 text-start font-mono"
             truncate
             tooltip={path}
             tooltipWhen={path === label ? "overflow" : "always"}
@@ -134,7 +131,7 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
       </div>
       {showDiff ? (
         <>
-          <div {...surfaceAttributes({ variant: "inset" }, "h-px")} />
+          <Divider decorative />
           <div
             className={
               variant === "popover"
@@ -142,6 +139,7 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
                 : undefined
             }
             tabIndex={variant === "popover" ? 0 : undefined}
+            role={variant === "popover" ? "region" : undefined}
             aria-label={variant === "popover" ? t("Preview lines") : undefined}
           >
             {preview.contentOnly && !lines.length ? (
@@ -174,16 +172,22 @@ function PreviewLine({
   scrollable?: boolean;
 }) {
   useLocale();
-  const bg = line.kind === "add" ? "bg-diff-add-bg" : line.kind === "del" ? "bg-diff-del-bg" : "";
+  const rowVariant =
+    line.kind === "add" ? "diff-add" : line.kind === "del" ? "diff-delete" : undefined;
   const bar =
     line.kind === "add" ? "bg-diff-add" : line.kind === "del" ? "bg-diff-del" : "bg-transparent";
   const mark = line.kind === "add" ? "+" : line.kind === "del" ? "−" : " ";
   const markTone = line.kind === "add" ? "added" : line.kind === "del" ? "removed" : "inherit";
 
   return (
-    <div className={`relative flex items-baseline ${scrollable ? "w-max min-w-full" : ""} ${bg}`}>
+    <div
+      {...surfaceAttributes(
+        { variant: rowVariant },
+        `relative flex items-baseline ${scrollable ? "w-max min-w-full" : ""}`,
+      )}
+    >
       <span className={`absolute inset-y-0 left-0 w-0.5 ${bar}`} />
-      <Text size="micro" tone="muted" className="w-7 shrink-0 pr-1 text-right font-mono">
+      <Text size="micro" tone="muted" className="w-7 shrink-0 pe-1 text-end font-mono">
         {line.number ?? " "}
       </Text>
       {showGutter ? (
@@ -201,7 +205,7 @@ function PreviewLine({
         tone="inherit"
         leading="relaxed"
         truncate={!scrollable}
-        className={`min-w-0 flex-1 pr-2 font-mono ${scrollable ? "whitespace-pre" : ""}`}
+        className={`min-w-0 flex-1 pe-2 font-mono ${scrollable ? "whitespace-pre" : ""}`}
       >
         {highlight(line.text, line.kind === "context")}
       </Text>

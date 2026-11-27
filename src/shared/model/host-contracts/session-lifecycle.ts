@@ -23,6 +23,12 @@ export const AutoSettleSettingsSchema = z.strictObject({
   archiveAfterDays: AutoDays.optional(),
 });
 
+/** A change sets only the windows it names; an omitted one keeps the saved value. */
+const AutoSettleChangeSchema = z.strictObject({
+  afterDays: AutoDays.optional(),
+  archiveAfterDays: AutoDays.optional(),
+});
+
 const SessionTaskLinkSchema = z.strictObject({
   sessionId: z.string(),
   taskId: z.string(),
@@ -54,7 +60,7 @@ export const SESSION_LIFECYCLE_RPC = {
     query: false,
   },
   "sessions.lifecycle.configure": {
-    params: AutoSettleSettingsSchema,
+    params: AutoSettleChangeSchema,
     result: AutoSettleSettingsSchema,
     query: false,
   },

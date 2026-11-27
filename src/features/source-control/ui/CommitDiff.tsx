@@ -1,3 +1,5 @@
+import { errorText } from "../../../shared/lib/errors";
+import { isMissingPathError } from "../model/checkoutSelection";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import { FailureState } from "../../../shared/ui/FailureState";
@@ -7,8 +9,14 @@ import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useMemo, useState } from "react";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { gitCommitFileDiff, gitCommitFiles, type GitChangedFile } from "../../../platform/tauri/fs";
-import { forEachConcurrent } from "../../../shared/lib/concurrent";
+import { useNeededSections } from "../hooks/useNeededSections";
 import { runDiffWorker } from "../model/diffWorker";
+import {
+  createLazyDiffLoader,
+  LAZY_DIFF_CONCURRENCY,
+  LAZY_DIFF_EAGER,
+  type LazyDiffItem,
+} from "../model/lazyDiffLoader";
 import { buildUnifiedFileAsync, type UnifiedFileDiff } from "../model/unifiedDiff";
 import { UnifiedDiffView, type UnifiedDiffFileModel } from "./UnifiedDiffView";
 
@@ -24,10 +32,20 @@ type LoadedDiff = {
   error?: string;
 };
 
-const DIFF_LOAD_CONCURRENCY = 4;
+type CommitDiffItem = LazyDiffItem & { file: GitChangedFile };
+
+/** A commit is immutable, so a file's row is its whole signature. */
+function commitDiffItem(file: GitChangedFile): CommitDiffItem {
+  return {
+    id: file.relative,
+    signature: `${file.path}\0${file.status}\0${file.additions}\0${file.deletions}`,
+    file,
+  };
+}
 
 export function CommitDiff({ cwd, sha }: Props) {
   useLocale();
+  const { needed, pumpRef, onSectionNeeded } = useNeededSections();
   const [files, setFiles] = useState<GitChangedFile[] | null>(null);
   const [diffs, setDiffs] = useState<Map<string, LoadedDiff>>(new Map());
   const [error, setError] = useState<string | null>(null);
@@ -43,68 +61,56 @@ export function CommitDiff({ cwd, sha }: Props) {
     }
 
     let disposed = false;
-    let generation = 0;
     setFiles(null);
     setDiffs(new Map());
 
-    const run = () => {
-      const current = ++generation;
-      void gitCommitFiles(cwd, sha)
-        .then(async (listed) => {
-          if (disposed || current !== generation) return;
-          setFiles(listed);
-          setDiffs(new Map());
-          setError(null);
-          await forEachConcurrent(
-            listed,
-            DIFF_LOAD_CONCURRENCY,
-            async (file) => {
-              let loaded: LoadedDiff;
-              try {
-                const diff = await gitCommitFileDiff(cwd, sha, file.relative);
-                const unified =
-                  !diff.binary && !diff.tooLarge
-                    ? await runDiffWorker(
-                        (remote) => remote.build(diff.original, diff.current),
-                        () => buildUnifiedFileAsync(diff.original, diff.current),
-                        { size: diff.original.length + diff.current.length },
-                      )
-                    : null;
-                loaded = {
-                  binary: diff.binary,
-                  tooLarge: diff.tooLarge,
-                  unified,
-                };
-              } catch (caught: unknown) {
-                loaded = {
-                  binary: false,
-                  tooLarge: false,
-                  unified: null,
-                  error: caught instanceof Error ? caught.message : String(caught),
-                };
-              }
-              if (disposed || current !== generation) return;
-              setDiffs((existing) => {
-                const next = new Map(existing);
-                next.set(file.relative, loaded);
-                return next;
-              });
-            },
-            () => !disposed && current === generation,
-          );
-        })
-        .catch((caught: unknown) => {
-          if (disposed || current !== generation) return;
-          setError(presentRemoteError(caught, { explicit: true }));
-          setFiles([]);
-        });
-    };
+    // Bodies load for the files that are visible or among the first few, and
+    // reach the view in per-frame batches instead of one render per file.
+    const loader = createLazyDiffLoader<CommitDiffItem, LoadedDiff>({
+      concurrency: LAZY_DIFF_CONCURRENCY,
+      eagerCount: LAZY_DIFF_EAGER,
+      needed,
+      load: async (item) => {
+        const diff = await gitCommitFileDiff(cwd, sha, item.file.relative);
+        const unified =
+          !diff.binary && !diff.tooLarge
+            ? await runDiffWorker(
+                (remote) => remote.build(diff.original, diff.current),
+                () => buildUnifiedFileAsync(diff.original, diff.current),
+                { size: diff.original.length + diff.current.length },
+              )
+            : null;
+        return { binary: diff.binary, tooLarge: diff.tooLarge, unified };
+      },
+      failure: (caught) => ({
+        binary: false,
+        tooLarge: false,
+        unified: null,
+        error: errorText(caught),
+      }),
+      onChange: setDiffs,
+    });
+    pumpRef.current = loader.pump;
 
-    run();
+    void gitCommitFiles(cwd, sha)
+      .then((listed) => {
+        if (disposed) return;
+        setFiles(listed);
+        setError(null);
+        loader.setItems(listed.map(commitDiffItem));
+      })
+      .catch((caught: unknown) => {
+        if (disposed) return;
+        setError(presentRemoteError(caught, { explicit: true }));
+        setFiles([]);
+      });
+
     return () => {
       disposed = true;
+      pumpRef.current = null;
+      loader.dispose();
     };
-  }, [cwd, sha, retry]);
+  }, [cwd, sha, retry, needed, pumpRef]);
   // A failed first load reruns once the machine's link is back.
   useReloadOnReconnect(cwd, () => setRetry((value) => value + 1), { active: error !== null });
 
@@ -128,7 +134,7 @@ export function CommitDiff({ cwd, sha }: Props) {
                   unified.additions === 0 &&
                   unified.deletions === 0 &&
                   !loaded.binary
-                ? "No textual diff"
+                ? t("No textual diff")
                 : undefined,
         additions: unified?.additions ?? file.additions,
         deletions: unified?.deletions ?? file.deletions,
@@ -147,23 +153,29 @@ export function CommitDiff({ cwd, sha }: Props) {
     );
   }, [models]);
 
-  if (!cwd || cwd === "~") {
+  // A folder that no longer exists is the same state as no folder: nothing to retry.
+  if (!cwd || cwd === "~" || (files == null && isMissingPathError(error))) {
     return (
-      <div className="grid h-full place-items-center">
-        <EmptyState key="no-project" context="panel" description={t("No project folder")} />
+      <div className="flex h-full min-h-0 flex-col">
+        <EmptyState
+          key="no-project"
+          context="panel"
+          illustration="no-projects"
+          title={t("No project folder")}
+          description={t("Open a project folder to see its changes.")}
+        />
       </div>
     );
   }
   if (error) {
     if (shownCentrally) return null;
     return (
-      <div className="grid h-full place-items-center p-6">
+      <div className="flex h-full min-h-0 flex-col">
         <FailureState
           key="load-error"
-
           context="panel"
           title={t("Couldn’t load commit")}
-          description={error}
+          error={error}
           onRetry={() => setRetry((value) => value + 1)}
         />
       </div>
@@ -173,5 +185,5 @@ export function CommitDiff({ cwd, sha }: Props) {
     return <SurfaceLoading />;
   }
 
-  return <UnifiedDiffView files={models} totals={totals} />;
+  return <UnifiedDiffView files={models} totals={totals} onSectionNeeded={onSectionNeeded} />;
 }

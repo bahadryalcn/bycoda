@@ -3,7 +3,7 @@
 .feedback {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2);
   flex-wrap: wrap;
   min-inline-size: 0;
 }
@@ -11,46 +11,39 @@
   flex: 1;
   overflow-y: auto;
   min-block-size: 0;
-  padding: 20px 24px;
+  padding: var(--ui-space-5) var(--ui-space-6);
   overscroll-behavior: contain;
 }
 .section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--ui-space-3);
   min-inline-size: 0;
 }
 .section + .section {
-  margin-block-start: 20px;
+  margin-block-start: var(--ui-space-5);
 }
 .muted {
   overflow-wrap: anywhere;
-}
-.empty {
-  margin: 0;
-  padding-block: 16px;
 }
 .error {
   overflow-wrap: anywhere;
   margin: 0;
 }
 .feedback {
-  padding: 10px 16px;
+  padding: var(--ui-space-3) var(--ui-space-4);
 }
 /* One header row for every collection tab: title and count on the left, tools on the right. */
 .collectionTools {
-  gap: 8px 12px;
+  gap: var(--ui-space-2) var(--ui-space-3);
 }
 .pageTitle {
-  display: flex;
-  align-items: baseline;
   flex: 1 1 auto;
-  gap: 8px;
   min-inline-size: 0;
   margin: 0;
 }
-.pageTitle span {
-  font-variant-numeric: tabular-nums;
+.collectionCount {
+  margin-inline-start: var(--ui-space-2);
 }
 .collectionTools > :nth-child(2) {
   flex: 0 1 240px;
@@ -59,19 +52,15 @@
 .fieldRow {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
-  gap: 10px;
+  gap: var(--ui-space-3);
   min-inline-size: 0;
 }
-.fieldRow > :global(.max-w-52) {
-  max-inline-size: none;
-}
-/* One compact block: kind, "Every day at" + time, then the Host timezone notes as a caption line.
-   The shared sentence renders loose inline nodes, so it dissolves into this row. */
+/* Keep the schedule kind and sentence in separate wrapping groups. */
 .scheduleRow {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
-  gap: 4px 8px;
+  gap: var(--ui-space-1) var(--ui-space-2);
   min-inline-size: 0;
 }
 .scheduleKind {
@@ -80,26 +69,16 @@
   min-inline-size: 0;
 }
 .scheduleSentence {
-  display: contents;
-}
-.scheduleSentence > * {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-}
-.scheduleSentence::after {
-  content: "";
-  order: 1;
-  flex-basis: 100%;
-  block-size: 0;
-}
-.scheduleSentence > :nth-last-child(-n + 2) {
-  order: 2;
-  min-block-size: 0;
+  gap: var(--ui-space-1) var(--ui-space-2);
+  min-inline-size: 0;
 }
 .quickNoteFields {
   grid-column: 1 / -1;
   display: grid;
-  gap: 10px;
+  gap: var(--ui-space-3);
   min-inline-size: 0;
 }
 .content[data-view="Conversations"] {
@@ -109,7 +88,7 @@
   overflow: hidden;
 }
 .content[data-view="Conversations"] > .collectionTools {
-  padding: 12px 16px 0;
+  padding: var(--ui-space-3) var(--ui-space-4) 0;
 }
 /* One content column for every tab except Conversations: the same width, gutter and
    vertical rhythm, so headers, composers, lists and readers align. */
@@ -129,7 +108,7 @@
 .content[data-view="Notes"] {
   overflow: hidden;
 }
-@media (max-width: 600px) {
+@container assistant-room (max-width: 600px) {
   .collectionTools > .pageTitle {
     flex-basis: 100%;
   }
@@ -137,8 +116,8 @@
     flex: 1 1 10rem;
   }
 }
-@media (max-width: 720px) {
+@container assistant-room (max-width: 720px) {
   .content {
-    padding: 16px 12px;
+    padding: var(--ui-space-4) var(--ui-space-3);
   }
 }

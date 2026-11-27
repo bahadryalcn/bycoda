@@ -13,6 +13,7 @@ import {
   verifySourceCandidate,
 } from "./release-candidate.mjs";
 import {
+  changelogNotes,
   previewReleasesToPrune,
   revalidateSource,
   shouldReplacePreviewFeed,
@@ -339,6 +340,17 @@ test("the app reads the same preview feed the publisher writes", () => {
     config.plugins.updater.endpoints[0],
   );
   assert(source.includes(`"${previewFeedUrl(stableRepository)}"`));
+});
+test("update notes come from the changelog section the build ships", () => {
+  const changelog =
+    "# Changelog\r\n\r\n## [Unreleased]\r\n\r\n- Next.\r\n\r\n## [0.7.6]\r\n\r\n### Fixed\r\n\r\n- Six.\r\n\r\n## [0.7.5]\r\n\r\n- Five.\r\n";
+  assert.equal(changelogNotes("0.7.6", changelog), "### Fixed\n\n- Six.");
+  assert.equal(
+    changelogNotes(`0.7.6-preview.3.g${sha.slice(0, 12)}`, changelog),
+    "### Fixed\n\n- Six.",
+  );
+  assert.equal(changelogNotes(`0.7.7-preview.1.g${sha.slice(0, 12)}`, changelog), "- Next.");
+  assert.equal(changelogNotes("0.7.8", "## [Unreleased]\n\n## [0.7.5]\n- Five."), "");
 });
 test("the preview feed only moves forward", () => {
   const p = (n) => `0.7.6-preview.${n}.g${sha.slice(0, 12)}`;

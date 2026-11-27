@@ -135,6 +135,18 @@ export async function createSocialRuntime(
       dependencies.decisionModels,
     );
   await social.ready;
+  social.youtubeBrowser = xBrowser.youtubeOperation.bind(xBrowser);
+  // TikTok account operations.
+  social.tiktokBrowser ??= xBrowser.runTikTok;
+  // Read-only: the action checks the caller's access first; the recipe only reads the dashboard.
+  social.instagramEarnings ??= (accountId) =>
+    xBrowser.instagramAction(
+      social,
+      { kind: "owner", actorId: "instagram-earnings-read", provider: "owner" },
+      accountId,
+      "earnings",
+      {},
+    );
   social.setSessionAuthorityResolver(
     createSessionAuthorityResolver(
       dependencies.engine.store,

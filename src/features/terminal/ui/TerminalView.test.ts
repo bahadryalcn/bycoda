@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
-import { act, createElement, StrictMode } from "react";
+import { act, createElement, StrictMode, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
+import type { ITerminalOptions } from "@xterm/xterm";
 
 const pty = vi.hoisted(() => ({
   spawnPty: vi.fn(async () => {}),
@@ -13,7 +14,7 @@ const pty = vi.hoisted(() => ({
   getPtyStatus: vi.fn(async () => ({ foreground: null })),
   setPtyVisible: vi.fn(async () => {}),
 }));
-const native = vi.hoisted(() => ({ invoke: vi.fn(async () => {}) }));
+const native = vi.hoisted(() => ({ invoke: vi.fn(async () => {}), isTauri: () => false }));
 const assistance = vi.hoisted(() => ({
   state: undefined as import("../model/sshShellIntegration").SshShellState | undefined,
   waiting: false,
@@ -29,14 +30,33 @@ const assistance = vi.hoisted(() => ({
   setAutomatic: vi.fn(),
   setSource: vi.fn(),
 }));
-vi.mock("../model/sshShellIntegration", () => ({ useSshShellIntegration: () => assistance }));
+const assistanceUpdates = new Set<() => void>();
+let assistanceRevision = 0;
+function subscribeToAssistance(listener: () => void) {
+  assistanceUpdates.add(listener);
+  return () => assistanceUpdates.delete(listener);
+}
+vi.mock("../model/sshShellIntegration", () => ({
+  useSshShellIntegration: () => {
+    useSyncExternalStore(subscribeToAssistance, () => assistanceRevision);
+    return assistance;
+  },
+}));
+vi.mock("../../../shared/ui/ActionHost", { spy: true });
+vi.mock("./TerminalCursorPopover", () => ({
+  TerminalCursorPopover: ({ children }: { children: React.ReactNode }) => children,
+}));
 vi.mock("@tauri-apps/api/core", () => native);
+vi.mock("../../../platform/tauri/platform", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../platform/tauri/platform")>()),
+  IS_MAC: true,
+}));
 const xterm = vi.hoisted(() => ({
   fit: vi.fn(() => null as { cols: number; rows: number } | null),
   writes: vi.fn((callback?: () => void) => callback?.()),
   webgl: [] as Array<{ dispose: ReturnType<typeof vi.fn> }>,
   instances: [] as Array<{
-    options: { theme?: { foreground?: string; cursor?: string } };
+    options: ITerminalOptions;
     osc: Map<number, (data: string) => boolean>;
     dataHandler?: (data: string) => void;
     write: ReturnType<typeof vi.fn>;
@@ -68,7 +88,7 @@ vi.mock("@xterm/xterm", () => ({
     options = {};
     osc = new Map<number, (data: string) => boolean>();
     dataHandler?: (data: string) => void;
-    constructor(options: { theme?: { foreground?: string; cursor?: string } }) {
+    constructor(options: ITerminalOptions) {
       this.options = options;
       xterm.instances.push(this);
     }
@@ -101,11 +121,21 @@ vi.mock("@xterm/xterm", () => ({
     onRender() {
       return { dispose() {} };
     }
+    onSelectionChange() {
+      return { dispose() {} };
+    }
+    onScroll() {
+      return { dispose() {} };
+    }
+    getSelection() {
+      return "";
+    }
     attachCustomKeyEventHandler() {}
     attachCustomWheelEventHandler() {}
   },
 }));
 import { TerminalView } from "./TerminalView";
+import { actionContentScopeAttributes } from "../../../shared/ui/ActionHost";
 import { WEBGL_IDLE_DROP_MS } from "../runtime/terminalWebgl";
 import { queueTerminalCommand } from "../model/terminalLaunchCommand";
 import { takeTerminalCommand } from "../model/terminalLaunchCommand";
@@ -113,6 +143,19 @@ import {
   APPEARANCE_DEFAULTS,
   saveAppearancePreferences,
 } from "../../settings/model/appearancePreferences";
+
+it("lets the macOS keyboard layout produce Option characters in xterm", async () => {
+  const { host, root } = setup();
+  try {
+    await act(async () =>
+      root.render(createElement(TerminalView, { id: "mac-option", cwd: "", active: true })),
+    );
+    expect(xterm.instances[0]?.options.macOptionIsMeta).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
 
 it("zooms only the hovered terminal, clamps size and applies saved typography without respawning", async () => {
   localStorage.clear();
@@ -534,6 +577,7 @@ it("runs an action once after shell startup, without replaying it on remount", a
 
 afterEach(() => {
   assistance.state = undefined;
+  assistance.automatic = false;
   xterm.instances.length = 0;
   xterm.webgl.length = 0;
   xterm.fit.mockReset().mockReturnValue(null);
@@ -592,6 +636,58 @@ it("signals startup review only once after the native ready prompt for this inte
   }
 });
 
+it("keeps SSH suggestion updates inside the controls without rendering the terminal pane", async () => {
+  const { host, root } = setup();
+  assistance.automatic = true;
+  try {
+    await act(async () =>
+      root.render(
+        createElement(TerminalView, {
+          id: "ssh-typing",
+          cwd: "",
+          active: true,
+          sshConnectionId: "saved",
+          shellIntegration: "bash",
+        }),
+      ),
+    );
+    vi.mocked(actionContentScopeAttributes).mockClear();
+    for (const prefix of ["l", "ls"]) {
+      await act(async () => {
+        xterm.instances[0].dataHandler!(prefix.at(-1)!);
+        assistance.state = {
+          id: "ssh-typing",
+          status: "suggestions",
+          shell: "bash",
+          user: "ubuntu",
+          host: "fixture",
+          requestId: prefix,
+          prefix,
+          suggestions: prefix === "l" ? ["lsmod"] : ["ls -l"],
+        };
+        assistanceRevision += 1;
+        assistanceUpdates.forEach((update) => update());
+      });
+      expect(host.querySelector('[role="option"]')?.textContent).toBe(
+        prefix === "l" ? "lsmod" : "ls -l",
+      );
+    }
+    expect(pty.writePty.mock.calls).toEqual([
+      ["ssh-typing", "l"],
+      ["ssh-typing", "s"],
+    ]);
+    expect(actionContentScopeAttributes).not.toHaveBeenCalled();
+    expect(native.invoke).toHaveBeenCalledExactlyOnceWith(
+      "ssh_terminal_spawn",
+      expect.objectContaining({ id: "ssh-typing" }),
+    );
+    expect(xterm.instances).toHaveLength(1);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
 it("resolves scoped theme colors for xterm and six-digit OSC replies", async () => {
   // No visibility signal: the terminal counts as on screen, so theme changes apply.
   vi.stubGlobal("IntersectionObserver", undefined);
@@ -612,7 +708,7 @@ it("resolves scoped theme colors for xterm and six-digit OSC replies", async () 
     );
     const terminal = xterm.instances[0];
     expect(terminal.options.theme?.foreground).toBe("#aabbcc");
-    expect(terminal.options.theme?.cursor).toBe("#778899");
+    expect(terminal.options.theme?.cursor).toBe("#aabbcc");
     await act(async () => {
       terminal.osc.get(10)?.("?");
       terminal.osc.get(11)?.("?");
@@ -620,7 +716,7 @@ it("resolves scoped theme colors for xterm and six-digit OSC replies", async () 
     });
     expect(pty.writePty).toHaveBeenCalledWith("theme-terminal", "\x1b]10;rgb:aaaa/bbbb/cccc\x1b\\");
     expect(pty.writePty).toHaveBeenCalledWith("theme-terminal", "\x1b]11;rgb:1111/2222/3333\x1b\\");
-    expect(pty.writePty).toHaveBeenCalledWith("theme-terminal", "\x1b]12;rgb:7777/8888/9999\x1b\\");
+    expect(pty.writePty).toHaveBeenCalledWith("theme-terminal", "\x1b]12;rgb:aaaa/bbbb/cccc\x1b\\");
     host.style.setProperty("--terminal-text", "#ddeeff");
     await act(async () => {
       document.documentElement.style.setProperty("--terminal-test-theme", "updated");
@@ -876,14 +972,45 @@ it("shows failed SSH startup as a closed terminal and discards pending input", a
       ),
     );
     expect(host.querySelector('[role="status"]')?.textContent).toContain("Terminal closed");
-    expect(host.querySelector('[role="status"]')?.textContent).toContain(
-      "SSH authentication failed",
-    );
+    // The raw reason waits behind the shared Details control.
+    expect(host.querySelector('[role="status"]')?.textContent).toContain("Details");
     await act(async () => xterm.instances.at(-1)!.dataHandler!("late\r"));
     expect(pty.writePty).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());
     host.remove();
+  }
+});
+
+it("holds a transient PTY bridge failure before showing it and does not spawn again", async () => {
+  const { host, root } = setup();
+  pty.readyPtyBridge.mockRejectedValueOnce(
+    Object.assign(new Error("Bridge request timed out"), { code: "RPC_TIMEOUT" }),
+  );
+  const lifecycle = vi.fn();
+  vi.useFakeTimers();
+  try {
+    await act(async () =>
+      root.render(
+        createElement(TerminalView, {
+          id: "bridge-grace",
+          cwd: "",
+          active: true,
+          onLifecycle: lifecycle,
+        }),
+      ),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(2_999));
+    expect(host.textContent).not.toContain("Terminal closed");
+    expect(lifecycle).not.toHaveBeenCalledWith("failed");
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(host.textContent).toContain("Terminal closed");
+    expect(lifecycle).toHaveBeenCalledWith("failed");
+    expect(pty.spawnPty).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    vi.useRealTimers();
   }
 });
 
@@ -904,7 +1031,14 @@ it.each(["terminal input is backed up", "disconnected"])(
         edit("\r");
       });
       expect(pty.writePty).toHaveBeenCalledExactlyOnceWith(`failure-${message}`, "npm test");
-      expect(host.querySelector('[role="status"]')?.textContent).toContain(message);
+      // The band says what to do; the raw cause waits behind Details instead of repeating it.
+      expect(host.querySelector('[role="status"]')?.textContent).toContain("Input paused");
+      expect(host.querySelector('[role="status"]')?.textContent).not.toContain(message);
+      const details = Array.from(host.querySelectorAll("button")).find(
+        (button) => button.textContent === "Details",
+      );
+      await act(async () => details?.click());
+      expect(document.body.textContent).toContain(message);
       await act(async () => edit("discarded\r"));
       expect(pty.writePty).toHaveBeenCalledTimes(1);
       const resume = Array.from(host.querySelectorAll("button")).find((button) =>

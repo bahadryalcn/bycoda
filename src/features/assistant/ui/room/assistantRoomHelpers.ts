@@ -36,19 +36,45 @@ export type AssistantViewProps = {
 };
 export const finished = (job: AssistantJob) => ["done", "failed", "cancelled"].includes(job.status);
 export function statusLabel(status: AssistantJob["status"]) {
-  return t(
-    {
-      queued: "Queued",
-      planning: "Planning",
-      running: "Running",
-      stalled: "Stalled",
-      waiting: "Waiting for you",
-      done: "Done",
-      failed: "Failed",
-      paused: "Paused",
-      cancelled: "Cancelled",
-    }[status],
-  );
+  switch (status) {
+    case "queued":
+      return t("Queued");
+    case "planning":
+      return t("Planning");
+    case "running":
+      return t("Running");
+    case "stalled":
+      return t("Stalled");
+    case "waiting":
+      return t("Waiting for you");
+    case "done":
+      return t("Done");
+    case "failed":
+      return t("Failed");
+    case "paused":
+      return t("Paused");
+    case "cancelled":
+      return t("Cancelled");
+  }
+}
+/** The translated Room section name. */
+export function viewLabel(view: View) {
+  switch (view) {
+    case "Today":
+      return t("Today");
+    case "Conversations":
+      return t("Conversations");
+    case "Jobs":
+      return t("Jobs");
+    case "Sessions":
+      return t("Sessions");
+    case "Notes":
+      return t("Notes");
+    case "History":
+      return t("History");
+    case "Memory":
+      return t("Memory");
+  }
 }
 export function jobStatusLabel(job: AssistantJob) {
   return job.kind === "quick" && job.status === "done"

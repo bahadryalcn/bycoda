@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { surfaceAttributes } from "../../shared/ui/Surface";
 import { AccountMenu, useAccount } from "../../features/account";
 import { useAssistantPresence } from "../../features/assistant/hooks/useAssistantPresence";
@@ -6,9 +7,7 @@ import { useKeybindingShortcut } from "../../features/settings/model/useKeybindi
 import { VoiceLauncherSlot } from "../../features/voice/ui/companion/voiceLauncherSlot";
 import { useT } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
-import { Badge } from "../../shared/ui/Badge";
-import { Tooltip } from "../../shared/ui/Tooltip";
-import { Settings, Wrench } from "../../shared/ui/icons";
+import { Settings } from "../../shared/ui/icons";
 import { SidebarUpdateFooter } from "./SidebarUpdate";
 import styles from "./SidebarAccountFooter.module.css";
 
@@ -18,10 +17,16 @@ import styles from "./SidebarAccountFooter.module.css";
  */
 export function SidebarAccountFooter({
   compact = false,
+  updateNotice,
+  recoveryControl,
+  notificationTriggerRef,
   onOpenSettings,
   onOpenAccountSettings,
 }: {
   compact?: boolean;
+  updateNotice?: ReactNode;
+  recoveryControl?: ReactNode;
+  notificationTriggerRef?: (element: HTMLSpanElement | null) => void;
   onOpenSettings?: () => void;
   onOpenAccountSettings?: () => void;
 }) {
@@ -56,30 +61,26 @@ export function SidebarAccountFooter({
       tooltipSide={compact ? "right" : "top"}
       onClick={onOpenSettings}
       disabled={!onOpenSettings}
+      disabledReason={!onOpenSettings ? t("Not available yet.") : undefined}
     >
       <Settings className="icon-md" aria-hidden />
     </Button>
   );
   return (
     <div data-sidebar-account-footer={compact ? "compact" : ""} className={styles.footer}>
-      <VoiceLauncherSlot compact={compact} />
       <div className={styles.actions}>
-        {import.meta.env.DEV ? (
-          <Tooltip label={t("Development build")} side={compact ? "right" : "top"}>
-            <Badge
-              data-dev-mode-indicator=""
-              size="sm"
-              tone="info"
-              appearance="subtle"
-              role="img"
-              aria-label={t("Development build")}
-            >
-              <Wrench className="icon-sm" strokeWidth={1.75} aria-hidden />
-            </Badge>
-          </Tooltip>
-        ) : null}
-        <SidebarUpdateFooter icon compact={compact} />
+        <VoiceLauncherSlot compact={compact} />
+        <div className={styles.status}>
+          {recoveryControl}
+          <div className={styles.updateNotice}>{updateNotice}</div>
+          <div className={styles.updateAction}>
+            <SidebarUpdateFooter icon compact={compact} />
+          </div>
+        </div>
         <div {...surfaceAttributes(compact ? { frame: "pane", edge: "top" } : {}, styles.personal)}>
+          {notificationTriggerRef ? (
+            <span className="inline-flex" ref={notificationTriggerRef} />
+          ) : null}
           {settings}
           {account}
         </div>

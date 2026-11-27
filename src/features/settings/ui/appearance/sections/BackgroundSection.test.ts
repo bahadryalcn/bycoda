@@ -18,6 +18,38 @@ document.body.append(host);
 const root = createRoot(host);
 afterEach(() => act(() => root.render(null)));
 
+it("previews image blur during a drag and saves only on release", async () => {
+  const save = vi.fn();
+  const appearance = {
+    preferences: APPEARANCE_DEFAULTS,
+    chatBackgroundPath: "/fixture.png",
+    chatBackgroundBlur: 0,
+    chatBackgroundEmptyOpacity: 0.3,
+    chatBackgroundSessionOpacity: 0.1,
+    chatBackgroundScope: "empty",
+    newThreadBackgroundEffect: "none",
+    onChatBackgroundBlur: save,
+  } as unknown as AppearanceSettings;
+  await act(async () => root.render(createElement(ChatBackgroundCard, { appearance })));
+  const slider = host.querySelector<HTMLElement>('[role="slider"]')!;
+  const thumbs = slider.parentElement!.parentElement!;
+  const control = thumbs.parentElement!;
+  const track = control.firstElementChild!;
+  track.getBoundingClientRect = () => new DOMRect(0, 0, 100, 10);
+  const pointer = (type: string, clientX: number) =>
+    track.dispatchEvent(new PointerEvent(type, { bubbles: true, isPrimary: true, clientX }));
+  try {
+    act(() => void pointer("pointerdown", 50));
+    expect(save).not.toHaveBeenCalled();
+    expect(document.documentElement.style.getPropertyValue("--chat-background-blur")).toBe("20px");
+    act(() => void pointer("pointerup", 50));
+    expect(save).toHaveBeenCalledExactlyOnceWith(20);
+  } finally {
+    document.documentElement.style.removeProperty("--chat-background-blur");
+    document.documentElement.classList.remove("chat-background-blurred");
+  }
+});
+
 it.each(["Choose background", "Remove", "Reset background settings"])(
   "revokes old generated-image intent on %s",
   async (label) => {

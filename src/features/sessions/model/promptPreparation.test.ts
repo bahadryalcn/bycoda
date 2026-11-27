@@ -5,9 +5,12 @@ const mocks = vi.hoisted(() => ({
   applyNotesToTurn: vi.fn(),
   applyWorkItemMentionsToTurn: vi.fn(),
   applySkillsToTurn: vi.fn(),
+  invoke: vi.fn(),
   events: [] as string[],
   warmNativeSkills: vi.fn(),
 }));
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke, isTauri: () => false }));
 
 vi.mock("../../files/model/fileMentions", () => ({
   applyFileMentionsToTurn: mocks.applyFileMentionsToTurn,
@@ -40,6 +43,7 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
+  mocks.invoke.mockReset();
   mocks.events.length = 0;
   mocks.applyFileMentionsToTurn.mockReset();
   mocks.applyNotesToTurn.mockReset();
@@ -120,6 +124,23 @@ describe("preparePrompt", () => {
     await expect(
       preparePrompt("@jira:PROJ-123", { harness: "claude", cwd: "/repo" }),
     ).resolves.toBe("@jira:PROJ-123");
+  });
+  it("resolves a saved local SSH ID and preserves remote text without a local inventory read", async () => {
+    mocks.applyFileMentionsToTurn.mockImplementation(async (text: string) => text);
+    mocks.applySkillsToTurn.mockImplementation(async (text: string) => text);
+    mocks.invoke.mockResolvedValue([
+      { id: "prod-id", name: "Prod", kind: "ssh", sshEndpoint: { identityFile: "private" } },
+    ]);
+    const text = "Check @server:prod-id @srv:unknown";
+    const prepared = await preparePrompt(text, { harness: "claude", cwd: "/repo" });
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("server_inventory_list");
+    expect(prepared).toBe(
+      `${text}\n\nSaved SSH references (resolve by id using servers.get on this Host): prod-id`,
+    );
+    await expect(
+      preparePrompt(text, { harness: "claude", cwd: "remote://host-a/srv/repo" }),
+    ).resolves.toBe(text);
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
   });
   it("starts warmup before awaiting file mentions", async () => {
     const files = deferred<string>();

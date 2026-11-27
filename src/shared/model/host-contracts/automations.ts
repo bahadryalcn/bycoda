@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { SafeCounterSchema } from "./schemas";
+import { WorkExecutorSchema, WorkHelpersSchema } from "./work-executor";
 import { ModelRoutingItemChoiceSchema, ModelRoutingTargetSchema } from "./model-routing";
 import {
   ModelSettingsSchema,
@@ -23,7 +24,75 @@ export const AutomationRunStatusSchema = z.enum([
   "skipped",
   "cancelled",
 ]);
+const stepId = z.string().min(1).max(64);
+/** One step of a recipe: work created through `createWork`, or a pause for the owner's decision. */
+export const RecipeStepSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    id: stepId,
+    kind: z.literal("task"),
+    title: z.string().min(1).max(200),
+    request: z.string().min(1).max(32_000),
+    /** Absent steps follow the recipe's own choice. */
+    executor: WorkExecutorSchema.optional(),
+    helpers: WorkHelpersSchema.optional(),
+    modelChoice: ModelRoutingItemChoiceSchema.optional(),
+  }),
+  z.strictObject({
+    id: stepId,
+    kind: z.literal("decision"),
+    title: z.string().min(1).max(200),
+    question: z.string().min(1).max(2_000),
+  }),
+]);
+const recipeSteps = z.array(RecipeStepSchema).min(1).max(20);
+/** The recipe an automation runs. The Host sets `version`: it rises whenever steps or defaults change. */
+export const RecipeSchema = z.strictObject({
+  version: SafeCounterSchema.min(1),
+  steps: recipeSteps,
+});
+/** Where one step of an instance stands; saved once and never replayed. */
+export const RecipeStepResultSchema = z.strictObject({
+  stepId: stepId,
+  status: z.enum(["running", "awaiting", "succeeded", "failed", "declined", "cancelled"]),
+  taskId: z.string().optional(),
+  summary: z.string().max(400).optional(),
+  at: SafeCounterSchema,
+});
+export const RECIPE_STOP_CODES = [
+  "decision_declined",
+  "step_stopped",
+  "step_uncertain",
+  "owner_stopped",
+] as const;
+export const RecipeStopSchema = z.strictObject({
+  code: z.enum(RECIPE_STOP_CODES),
+  stepIndex: SafeCounterSchema,
+  message: z.string().max(1_000).optional(),
+  nextAction: z.enum(["open_task", "run_again"]),
+});
+/** The settings an instance uses, copied when it starts so edits do not change a running instance. */
+export const RecipeInstanceConfigSchema = z.strictObject({
+  projectId: z.string(),
+  harness: SessionProviderSchema,
+  providerAccountId: z.string().optional(),
+  model: z.string(),
+  modelSettings: ModelSettingsSchema,
+  runtimeMode: SessionRuntimeModeSchema,
+  modelChoice: ModelRoutingItemChoiceSchema.optional(),
+  executor: WorkExecutorSchema.optional(),
+  helpers: WorkHelpersSchema.optional(),
+  isolate: z.boolean().optional(),
+  maxRunMinutes: SafeCounterSchema.max(10_080),
+});
+export const RecipeInstanceSchema = z.strictObject({
+  version: SafeCounterSchema.min(1),
+  steps: recipeSteps,
+  config: RecipeInstanceConfigSchema,
+  results: z.array(RecipeStepResultSchema).max(20),
+  stop: RecipeStopSchema.optional(),
+});
 const editable = {
+  recipe: RecipeSchema.optional(),
   template: z
     .strictObject({ kind: z.literal("project-scan"), sourceStewardId: z.string() })
     .optional(),
@@ -47,6 +116,8 @@ const editable = {
   harness: SessionProviderSchema,
   providerAccountId: z.string().min(1).max(200).optional(),
   modelChoice: ModelRoutingItemChoiceSchema.optional(),
+  executor: WorkExecutorSchema.optional(),
+  helpers: WorkHelpersSchema.optional(),
   model: z.string(),
   modelSettings: ModelSettingsSchema.optional(),
   runtimeMode: SessionRuntimeModeSchema,
@@ -56,6 +127,8 @@ const editable = {
   enabled: z.boolean().optional(),
   isolate: z.boolean().optional(),
 };
+/** UI read-back compares editable values without scheduler metadata. */
+export const AutomationEditableConfigurationSchema = z.object(editable);
 export const NativeAutomationMigrationSchema = z.strictObject({
   automationId: z.string(),
   receipt: z.string().min(1).max(200),
@@ -121,6 +194,7 @@ export const HostAutomationRunSchema = z.strictObject({
   needsInput: z.boolean().optional(),
   workspaceId: z.string().optional(),
   activityId: z.string().optional(),
+  recipe: RecipeInstanceSchema.optional(),
 });
 export const AutomationsEmptyParamsSchema = z.strictObject({});
 export const AutomationsPreviewParamsSchema = z.strictObject({
@@ -130,6 +204,11 @@ export const AutomationsSaveParamsSchema = z.strictObject({
   automation: AutomationSavePayloadSchema,
 });
 export const AutomationsIdParamsSchema = z.strictObject({ automationId: z.string() });
+export const AutomationsDecideParamsSchema = z.strictObject({
+  automationId: z.string(),
+  runId: z.string(),
+  approve: z.boolean(),
+});
 export const AutomationsPreviewResultSchema = z.strictObject({
   timeZone: z.string(),
   nextRunAt: SafeCounterSchema,
@@ -164,6 +243,12 @@ export type AutomationProposalDraft = z.infer<typeof AutomationProposalDraftSche
 export type AutomationProposal = z.infer<typeof AutomationsProposeResultSchema>;
 export type AutomationProposalInput = z.infer<typeof AutomationsProposeParamsSchema>;
 export const AutomationsDeleteResultSchema = z.strictObject({ deleted: z.literal(true) });
+export type Recipe = z.infer<typeof RecipeSchema>;
+export type RecipeStep = z.infer<typeof RecipeStepSchema>;
+export type RecipeStepResult = z.infer<typeof RecipeStepResultSchema>;
+export type RecipeInstance = z.infer<typeof RecipeInstanceSchema>;
+export type RecipeInstanceConfig = z.infer<typeof RecipeInstanceConfigSchema>;
+export type RecipeStop = z.infer<typeof RecipeStopSchema>;
 export type HostAutomation = z.infer<typeof HostAutomationSchema>;
 export type HostAutomationRun = z.infer<typeof HostAutomationRunSchema>;
 export type AutomationPreview = z.infer<typeof AutomationsPreviewResultSchema>;

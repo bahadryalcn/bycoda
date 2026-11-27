@@ -143,7 +143,7 @@ async function submit() {
 it("saves an unnamed endpoint using its address without native validation blocking it", async () => {
   vi.mocked(saveSshConnection).mockResolvedValue(legacy);
   await act(async () => root.render(createElement(SshServerEditor, { onClose: vi.fn() })));
-  await input("Host", "fresh.invalid");
+  await input("Hostname", "fresh.invalid");
   await input("SSH user", "alice");
   const nameLabel = [...document.querySelectorAll("label")].find(
     (label) => label.textContent?.replace("*", "").trim() === "Name",
@@ -262,10 +262,10 @@ it("keeps independent legacy and per-hop drafts when the mode is switched both w
     document.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Per-hop SSH policy"]')!;
   await act(async () => toggle().click());
   expect(
-    document.querySelector<HTMLInputElement>('input[aria-label="Jump host 1: Host"]')!.value,
+    document.querySelector<HTMLInputElement>('input[aria-label="Jump host 1: Hostname"]')!.value,
   ).toBe("");
-  await setAriaInput("Jump host 1: Host", "typed-bastion");
-  await setAriaInput("Jump host 1: Identity file", "~/typed key reference");
+  await setAriaInput("Jump host 1: Hostname", "typed-bastion");
+  await input("Jump host 1: Identity file", "~/typed key reference");
   await act(async () => toggle().click());
   expect(
     [...document.querySelectorAll("input")].some((field) => field.value === "legacy@bastion:22"),
@@ -273,12 +273,14 @@ it("keeps independent legacy and per-hop drafts when the mode is switched both w
   await input("Jump host", "edited@legacy:2222");
   await act(async () => toggle().click());
   expect(
-    document.querySelector<HTMLInputElement>('input[aria-label="Jump host 1: Host"]')!.value,
+    document.querySelector<HTMLInputElement>('input[aria-label="Jump host 1: Hostname"]')!.value,
   ).toBe("typed-bastion");
-  expect(
-    document.querySelector<HTMLInputElement>('input[aria-label="Jump host 1: Identity file"]')!
-      .value,
-  ).toBe("~/typed key reference");
+  const identityLabel = [...document.querySelectorAll("label")].find(
+    (entry) => entry.textContent?.trim() === "Jump host 1: Identity file",
+  )!;
+  expect((document.getElementById(identityLabel.htmlFor) as HTMLInputElement).value).toBe(
+    "~/typed key reference",
+  );
   vi.mocked(saveSshConnection).mockResolvedValue(legacy);
   await submit();
   expect(vi.mocked(saveSshConnection).mock.calls[0][0].endpoint).toMatchObject({
@@ -415,7 +417,7 @@ it("rejects mixed HTTP/jump routes until the owner explicitly chooses one withou
       .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Per-hop SSH policy"]')!
       .click(),
   );
-  await setAriaInput("Jump host 1: Host", "typed-hop.invalid");
+  await setAriaInput("Jump host 1: Hostname", "typed-hop.invalid");
   await submit();
   expect(saveSshConnection).toHaveBeenCalledTimes(1);
   await act(async () => toggleProxy().click());
@@ -425,7 +427,7 @@ it("rejects mixed HTTP/jump routes until the owner explicitly chooses one withou
   ]);
   await act(async () => toggleProxy().click());
   expect(
-    document.querySelector<HTMLInputElement>('input[aria-label="Jump host 1: Host"]')!.value,
+    document.querySelector<HTMLInputElement>('input[aria-label="Jump host 1: Hostname"]')!.value,
   ).toBe("typed-hop.invalid");
 });
 it("blocks incomplete or nonliteral proxy ports before quick connect", async () => {
@@ -479,7 +481,7 @@ it("clears a saved new-server draft so the next add form starts empty", async ()
   await act(async () =>
     root.render(createElement(SshServerEditor, { onClose: vi.fn(), onSaved: vi.fn() })),
   );
-  await input("Host", "fresh.invalid");
+  await input("Hostname", "fresh.invalid");
   await input("Name", "New");
   await act(async () =>
     document
@@ -493,7 +495,7 @@ it("clears a saved new-server draft so the next add form starts empty", async ()
     root.render(createElement(SshServerEditor, { onClose: vi.fn(), onSaved: vi.fn() })),
   );
   const host = [...document.querySelectorAll("label")].find(
-    (labelElement) => labelElement.textContent?.replace("*", "").trim() === "Host",
+    (labelElement) => labelElement.textContent?.replace("*", "").trim() === "Hostname",
   )!;
   expect((document.getElementById(host.htmlFor) as HTMLInputElement).value).toBe("");
 });

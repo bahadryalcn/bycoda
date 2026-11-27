@@ -147,9 +147,12 @@ describe("child bridge", () => {
           : null,
     });
     mocks.invoke.mockResolvedValueOnce({ path: "/resolved/opencode" });
+    mocks.invoke.mockResolvedValueOnce("Update through your package manager.");
     const child = await loadChild();
 
-    await child.updateHarnessCli("opencode", "1.19.0");
+    await expect(child.updateHarnessCli("opencode", "1.19.0")).resolves.toBe(
+      "Update through your package manager.",
+    );
 
     expect(mocks.invoke).toHaveBeenCalledWith("harness_resolve_configured", {
       provider: "opencode",

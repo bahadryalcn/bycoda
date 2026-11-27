@@ -1,5 +1,5 @@
-import { PickerListRoot } from "../../../shared/ui/picker/PickerList";
 import { StatusDot } from "../../../shared/ui/StatusDot";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Text } from "../../../shared/ui/Text";
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useVirtualizer, defaultRangeExtractor } from "@tanstack/react-virtual";
@@ -16,9 +16,12 @@ import { selectTreePaths, type TreeSelectionModifiers } from "../../files/public
 
 import type { ChangesView } from "../../settings";
 import { basename, type GitChangedFile, type GitFileDiffKind } from "../../../platform/tauri/fs";
-import { ChangeRow, ChangeSelectionCtx, statusTone } from "./ChangeRow";
+import { ChangeRow, ChangeSelectionCtx, statusTone, virtualRowStyle } from "./ChangeRow";
 
 const ROW_HEIGHT_FALLBACK = 28;
+
+/** A file row is keyed by its path (`data-git-row`), a folder row by this. */
+const dirRowKey = (path: string) => `dir:${path}`;
 
 /** The compact control height in px for the current density (a probe resolves rem and zoom). */
 function readRowHeight(list: HTMLElement): number {
@@ -47,7 +50,6 @@ type ChangeDir = {
 type ChangeRowProps = {
   onOpenInEditor?: (path: string, pin?: boolean) => void;
   files: GitChangedFile[];
-  collisionNames?: ReadonlySet<string>;
   view: ChangesView;
   kind: GitFileDiffKind;
   selected?: string;
@@ -65,11 +67,12 @@ type ChangeRowProps = {
 export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
   useLocale();
   const [collapsedVersion, setCollapsedVersion] = useState(0);
-  const [focusedPath, setFocusedPath] = useState<string | null>(null);
+  // The row that last held focus (file path or folder key): the grid's one tab stop.
+  const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [scrollElement, setScrollElement] = useState<HTMLElement | null>(null);
   const [scrollMargin, setScrollMargin] = useState(0);
   const tree = useMemo(() => buildChangeTree(files), [files]);
-  const listRef = useRef<HTMLUListElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const openFile = useStableCallback(rest.onOpenFile);
   const openEditor = useStableCallback(rest.onOpenInEditor);
   const fileAction = useStableCallback(rest.onAction);
@@ -101,24 +104,27 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
       ? current
       : new Set([...current].filter((path) => filesByPath.has(path)));
   const paths = useMemo(() => prunePaths(rawPaths), [rawPaths, filesByPath]);
-  const positions = useMemo(
-    () => new Map(visiblePaths.map((path, index) => [path, index + 1])),
-    [visiblePaths],
+  const visibleKeys = useMemo(
+    () => visibleRows.map((row) => (row.file ? row.file.path : dirRowKey(row.dir!.path))),
+    [visibleRows],
   );
-  const focusedIndex = visibleRows.findIndex((row) => row.file?.path === focusedPath);
+  // Roving tab stop: the focused row, else the first, so the list is one Tab stop even when the
+  // focused row left it. It stays mounted while virtualized so keyboard users can always enter.
+  const tabIndexRow = Math.max(0, visibleKeys.indexOf(focusedKey ?? ""));
+  const tabKey = visibleKeys[tabIndexRow];
   // Rows are one compact control tall: follow the density token instead of a fixed 28px.
   const [rowHeight, setRowHeight] = useState(ROW_HEIGHT_FALLBACK);
   const virtual = useVirtualizer({
     count: visibleRows.length,
     getScrollElement: () => scrollElement,
     estimateSize: () => rowHeight,
-    getItemKey: (index) => visibleRows[index].file?.path ?? `dir:${visibleRows[index].dir!.path}`,
+    getItemKey: (index) => visibleKeys[index],
     enabled: visibleRows.length > 80 && !!scrollElement,
     overscan: 8,
     scrollMargin,
     rangeExtractor: (range) => {
       const indexes = defaultRangeExtractor(range);
-      if (focusedIndex >= 0 && !indexes.includes(focusedIndex)) indexes.push(focusedIndex);
+      if (visibleRows.length > 0 && !indexes.includes(tabIndexRow)) indexes.push(tabIndexRow);
       return indexes.sort((a, b) => a - b);
     },
   });
@@ -179,16 +185,15 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
     else collapsedDirs.add(key);
     setCollapsedVersion((value) => value + 1);
   });
-  const focusPath = (path: string) => {
-    setFocusedPath(path);
-    const index = visibleRows.findIndex((row) => row.file?.path === path);
-    if (virtualized) virtual.scrollToIndex(index, { align: "auto" });
+  const focusRow = (key: string) => {
+    setFocusedKey(key);
+    if (virtualized) virtual.scrollToIndex(visibleKeys.indexOf(key), { align: "auto" });
+    const rowSelector = `[data-git-row="${CSS.escape(key)}"] [role="gridcell"] button`;
     const focus = () =>
       listRef.current
-        ?.querySelector<HTMLButtonElement>(`[data-git-file="${CSS.escape(path)}"]`)
+        ?.querySelector<HTMLButtonElement>(rowSelector)
         ?.focus({ preventScroll: true });
-    const mounted = listRef.current?.querySelector(`[data-git-file="${CSS.escape(path)}"]`);
-    if (mounted) focus();
+    if (listRef.current?.querySelector(rowSelector)) focus();
     else requestAnimationFrame(focus);
   };
 
@@ -197,7 +202,7 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
     anchor.current && filesByPath.has(anchor.current) ? anchor.current : null;
   const select = useStableCallback(
     (path: string, modifiers: TreeSelectionModifiers = {}, preserve = false) => {
-      setFocusedPath(path);
+      setFocusedKey(path);
       if (preserve && paths.has(path)) return;
       const previousAnchor = liveAnchor();
       anchor.current = previousAnchor;
@@ -219,20 +224,21 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
       else for (const target of chosen) rest.onAction(target, kind);
     },
   );
-  const renderRow = (index: number, style?: CSSProperties) => {
+  const renderRow = (index: number, start?: number) => {
     const row = visibleRows[index];
+    const style = start === undefined ? undefined : virtualRowStyle(start, rowHeight);
     return row.file ? (
       <ChangeRow
         key={`${rest.kind}:${row.file.path}`}
         file={row.file}
-        collision={rest.collisionNames?.has(basename(row.file.relative))}
         active={isActive(row.file, rest.selected, rest.selectedKind, rest.kind)}
         busy={rest.busy === row.file.relative || !!rest.busy?.startsWith("folder:")}
         kind={rest.kind}
         depth={row.depth}
-        style={style}
-        position={positions.get(row.file.path)}
-        total={visiblePaths.length}
+        virtualStart={start}
+        virtualHeight={start === undefined ? undefined : rowHeight}
+        position={index + 1}
+        tabStop={visibleKeys[index] === tabKey}
         onOpenFile={openFile}
         onOpenInEditor={rest.onOpenInEditor ? openEditor : undefined}
         onAction={fileAction}
@@ -244,22 +250,15 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
         depth={row.depth!}
         {...rest}
         style={style}
+        position={index + 1}
+        tabStop={visibleKeys[index] === tabKey}
         open={!collapsedDirs.has(`${rest.kind}:${row.dir!.path}`)}
         onToggle={toggleDir}
       />
     );
   };
   const content = virtualized
-    ? virtual.getVirtualItems().map((item) =>
-        renderRow(item.index, {
-          position: "absolute",
-          insetBlockStart: 0,
-          insetInlineStart: 0,
-          width: "100%",
-          height: rowHeight,
-          transform: `translateY(${item.start - scrollMargin}px)`,
-        }),
-      )
+    ? virtual.getVirtualItems().map((item) => renderRow(item.index, item.start - scrollMargin))
     : visibleRows.map((_, index) => renderRow(index));
   const context = useMemo(
     () => ({ paths, select, targets, action }),
@@ -269,74 +268,104 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
     <ChangeSelectionCtx.Provider value={context}>
       <li className="list-none">
         {selectedFiles.length > 1 ? (
-          <Text role="status" as="p" size="caption" tone="secondary" className="px-3 py-1">
-            {t("{p0} selected entries", { p0: selectedFiles.length })}
-          </Text>
+          <LiveText
+            size="caption"
+            tone="secondary"
+            className="block px-3 py-1"
+            text={t("{p0} selected entries", { p0: selectedFiles.length })}
+          />
         ) : null}
-        <PickerListRoot
-          as="ul"
+        {/* A grid, not a listbox: every row holds independent buttons, which options may not. The
+            grid is one Tab stop (the focused row's open button); arrows move between rows and
+            ArrowRight/ArrowLeft between a row's controls. */}
+        <div
           ref={listRef}
+          role="grid"
+          aria-label={rest.kind === "staged" ? t("Staged Changes") : t("Changes")}
+          aria-multiselectable
+          aria-rowcount={visibleRows.length}
+          tabIndex={-1}
           style={virtualized ? { position: "relative", height: virtual.getTotalSize() } : undefined}
           onFocusCapture={(event) => {
-            const path = (event.target as HTMLElement).closest<HTMLElement>("[data-git-file]")
-              ?.dataset.gitFile;
-            if (path) setFocusedPath(path);
+            const key = (event.target as HTMLElement).closest<HTMLElement>("[data-git-row]")
+              ?.dataset.gitRow;
+            if (key) setFocusedKey(key);
           }}
-
-          label={rest.kind === "staged" ? t("Staged Changes") : t("Changes")}
-          multiple
           onKeyDown={(event) => {
-            const row = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-git-file]");
-            if (!row) return;
-            const visible = visiblePaths;
+            const target = event.target as HTMLElement;
+            const rowElement = target.closest<HTMLElement>("[data-git-row]");
+            if (!rowElement) return;
+            const key = rowElement.dataset.gitRow!;
+            // Selection chords, Escape and Enter belong to a file's open button, not to the row's
+            // inline actions or a folder row.
+            const filePath = target.closest<HTMLElement>("[data-git-file]")?.dataset.gitFile;
             const mod = event.ctrlKey || event.metaKey;
-            if (mod && !event.altKey && event.key.toLowerCase() === "a") {
+            if (filePath && mod && !event.altKey && event.key.toLowerCase() === "a") {
               event.preventDefault();
               event.stopPropagation();
-              setRawPaths(new Set(visible));
-              anchor.current = liveAnchor() ?? row.dataset.gitFile!;
-            } else if (mod && event.key === " ") {
+              setRawPaths(new Set(visiblePaths));
+              anchor.current = liveAnchor() ?? filePath;
+            } else if (filePath && mod && event.key === " ") {
               event.preventDefault();
-              select(row.dataset.gitFile!, { ctrlKey: true });
+              select(filePath, { ctrlKey: true });
             } else if (
               ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) &&
               !event.altKey
             ) {
               event.preventDefault();
               event.stopPropagation();
-              const index = visible.indexOf(focusedPath ?? row.dataset.gitFile!);
+              const index = visibleKeys.indexOf(key);
               const next =
                 event.key === "Home"
-                  ? visible[0]
+                  ? visibleKeys[0]
                   : event.key === "End"
-                    ? visible[visible.length - 1]
-                    : visible[
+                    ? visibleKeys[visibleKeys.length - 1]
+                    : visibleKeys[
                         Math.min(
-                          visible.length - 1,
+                          visibleKeys.length - 1,
                           Math.max(0, index + (event.key === "ArrowDown" ? 1 : -1)),
                         )
                       ];
               if (next) {
-                if (!mod || event.shiftKey) select(next, event);
-                focusPath(next);
-                if (!mod && !event.shiftKey) {
-                  const file = filesByPath.get(next);
-                  if (file && file.status !== "deleted") rest.onOpenFile(file.path, rest.kind);
-                }
+                // Folder rows take focus only; files also follow the selection and open their diff.
+                const file = filesByPath.get(next);
+                if (file && (!mod || event.shiftKey)) select(next, event);
+                focusRow(next);
+                if (file && !mod && !event.shiftKey && file.status !== "deleted")
+                  rest.onOpenFile(file.path, rest.kind);
               }
-            } else if (event.key === "Escape") {
-              setRawPaths(new Set([row.dataset.gitFile!]));
-              anchor.current = row.dataset.gitFile!;
-            } else if (event.key === "Enter") {
+            } else if (
+              (event.key === "ArrowRight" || event.key === "ArrowLeft") &&
+              !event.altKey &&
+              !mod &&
+              !event.shiftKey
+            ) {
+              const cells = [
+                ...rowElement.querySelectorAll<HTMLButtonElement>(
+                  '[role="gridcell"] button:not(:disabled)',
+                ),
+              ];
+              const from = cells.indexOf(target.closest("button") as HTMLButtonElement);
+              const to =
+                from >= 0 ? cells[from + (event.key === "ArrowRight" ? 1 : -1)] : undefined;
+              if (to) {
+                event.preventDefault();
+                event.stopPropagation();
+                to.focus({ preventScroll: true });
+              }
+            } else if (filePath && event.key === "Escape") {
+              setRawPaths(new Set([filePath]));
+              anchor.current = filePath;
+            } else if (filePath && event.key === "Enter") {
               event.preventDefault();
-              const file = filesByPath.get(row.dataset.gitFile!);
+              const file = filesByPath.get(filePath);
               if (file)
                 for (const value of targets(file)) rest.onOpenFile(value.path, rest.kind, true);
             }
           }}
         >
           {content}
-        </PickerListRoot>
+        </div>
       </li>
     </ChangeSelectionCtx.Provider>
   );
@@ -349,6 +378,8 @@ function ChangeDirRow({
   open,
   onToggle,
   style,
+  position,
+  tabStop,
   ...rest
 }: Omit<ChangeRowProps, "files" | "view"> & {
   dir: ChangeDir;
@@ -356,10 +387,15 @@ function ChangeDirRow({
   open: boolean;
   onToggle: (path: string) => void;
   style?: CSSProperties;
+  position: number;
+  tabStop: boolean;
 }) {
   useLocale();
   return (
-    <li
+    <div
+      role="row"
+      data-git-row={dirRowKey(dir.path)}
+      aria-rowindex={position}
       style={
         {
           ...style,
@@ -368,37 +404,45 @@ function ChangeDirRow({
       }
     >
       <ActionHost padding={{ start: "md" }} className="flex w-full items-center gap-1">
-        <Button
-          size="sm"
-          controlHeight="fill"
-          variant="ghost"
-          motion="none"
-          type="button"
-          tooltip={dir.path}
-          expanded={open}
-          chevron="start"
-          onClick={() => onToggle(dir.path)}
-          className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-        >
-          <FileTypeIcon name={dir.name} isDir isOpen={open} />
-          <Text
-            as="span"
-            size="inherit"
-            tone="inherit"
-            weight="medium"
-            className="flex min-w-0 flex-1"
+        <div role="gridcell" className="flex min-w-0 flex-1">
+          <Button
+            size="sm"
+            controlHeight="fill"
+            variant="ghost"
+            motion="none"
+            type="button"
+            tooltip={dir.path}
+            expanded={open}
+            chevron="start"
+            data-action-primary=""
+            tabIndex={tabStop ? 0 : -1}
+            onClick={() => onToggle(dir.path)}
+            align="start"
+            className="min-w-0 flex-1"
           >
-            <MiddleTruncate mode="path" size="body" tone="primary" className="min-w-0 flex-1">
-              {dir.name}
-            </MiddleTruncate>
-          </Text>
-        </Button>
-        <div className="flex shrink-0 items-center">
+            <FileTypeIcon name={dir.name} isDir isOpen={open} />
+            <Text
+              as="span"
+              size="inherit"
+              tone="inherit"
+              weight="medium"
+              className="flex min-w-0 flex-1"
+            >
+              <MiddleTruncate mode="path" size="body" tone="primary" className="min-w-0 flex-1">
+                {dir.name}
+              </MiddleTruncate>
+            </Text>
+          </Button>
+        </div>
+        <div role="gridcell" className="flex shrink-0 items-center">
           <InlineAction
-            label={t(kind === "staged" ? "Unstage Changes in {p1}" : "Stage Changes in {p1}", {
-              p1: dir.path,
-            })}
-            disabled={rest.busy !== null}
+            label={
+              kind === "staged"
+                ? t("Unstage Changes in {p1}", { p1: dir.path })
+                : t("Stage Changes in {p1}", { p1: dir.path })
+            }
+            tabIndex={-1}
+            disabled={!!rest.busy}
             onClick={() => rest.onFolderAction(dir.path, kind === "staged" ? "unstage" : "stage")}
           >
             {kind === "staged" ? (
@@ -409,6 +453,7 @@ function ChangeDirRow({
           </InlineAction>
         </div>
         <Text
+          role="gridcell"
           size="inherit"
           tone={dir.status ? statusTone(dir.status) : "muted"}
           className="grid w-3.5 shrink-0 place-items-center"
@@ -417,7 +462,7 @@ function ChangeDirRow({
           <StatusDot tone={dir.status ? statusTone(dir.status) : "secondary"} />
         </Text>
       </ActionHost>
-    </li>
+    </div>
   );
 }
 

@@ -80,7 +80,7 @@ function parse(action: string, value: unknown): Record<string, unknown> {
   return schema.parse(value);
 }
 
-/** Room owns only its own Host pipe processes. The admission permit spans the
+/** Room owns only its own Host terminal processes. The admission permit spans the
  * actual process call, including asynchronous write/stop settlement. */
 export function createRoomTerminalTools(ports: RoomTerminalPorts) {
   const tools = new ConversationManagementTools<string, RoomTerminalPrincipal>(
@@ -137,7 +137,7 @@ export function createRoomTerminalTools(ports: RoomTerminalPorts) {
         if (action === "terminals.list") {
           const result = ports.terminals.list(project.id, owner);
           const page = managementPage(result.terminals, value);
-          return { ...result, ...page, terminals: page.items, transport: "pipe" };
+          return { ...result, ...page, terminals: page.items, transport: "pty" };
         }
         if (action === "terminals.read") {
           const result = ports.terminals.read(
@@ -149,7 +149,7 @@ export function createRoomTerminalTools(ports: RoomTerminalPorts) {
           return {
             ...result,
             output: scrubRuntimeLogText(result.output, Number.MAX_SAFE_INTEGER),
-            transport: "pipe",
+            transport: "pty",
           };
         }
         await check();
@@ -177,9 +177,9 @@ export function createRoomTerminalTools(ports: RoomTerminalPorts) {
           );
           return {
             ...accepted,
-            delivery: "pipe-written",
+            delivery: "pty-written",
             commandCompletion: "unobserved",
-            transport: "pipe",
+            transport: "pty",
           };
         }
         if (action === "terminals.interrupt")

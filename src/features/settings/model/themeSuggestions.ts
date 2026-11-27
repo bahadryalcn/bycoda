@@ -136,6 +136,18 @@ const RANDOM_NAMES = [
   "Copper",
   "Mist",
   "Sable",
+  "Lichen",
+  "Ochre",
+  "Glacier",
+  "Plum",
+  "Kelp",
+  "Ink",
+  "Rust",
+  "Heather",
+  "Tundra",
+  "Coral",
+  "Pewter",
+  "Marigold",
 ];
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -242,23 +254,35 @@ export function parseThemeSuggestions(input: unknown): ThemeSuggestion[] {
     .slice(0, THEME_SUGGESTION_COUNT);
 }
 
+export const RANDOM_LOOK_COUNT = 6;
 /**
- * Three suggestions with hues spread about the colour wheel, muted saturation (10 to 40) and an
- * accent derived from each hue. `random` is injectable so the spread is testable.
+ * Accent hue offsets from the tint: same hue, analogous, split complement and complement. Each
+ * look picks one, so a roll mixes calm monochrome looks with contrasting ones.
+ */
+const ACCENT_HARMONIES = [0, 30, -30, 150, 180, 210] as const;
+
+/**
+ * Six looks with hues spread about the colour wheel (with jitter), muted saturation (8 to 45), a
+ * random depth and an accent from a random harmony. `random` is injectable so the spread is
+ * testable.
  */
 export function randomThemeSuggestions(random: () => number = Math.random): ThemeSuggestion[] {
   const base = Math.floor(random() * 360);
+  const step = 360 / RANDOM_LOOK_COUNT;
   const names = [...RANDOM_NAMES];
-  return Array.from({ length: THEME_SUGGESTION_COUNT }, (_, index) => {
-    const hue = (base + index * (360 / THEME_SUGGESTION_COUNT)) % 360;
+  return Array.from({ length: RANDOM_LOOK_COUNT }, (_, index) => {
+    const hue = Math.round(base + index * step + (random() - 0.5) * step * 0.5 + 360) % 360;
     // Drawn without replacement, so one roll never shows the same name twice.
     const [name] = names.splice(Math.floor(random() * names.length), 1);
+    const harmony = ACCENT_HARMONIES[Math.floor(random() * ACCENT_HARMONIES.length)] ?? 0;
+    const accentHue = (hue + harmony + 360) % 360;
     return {
       name: name ?? RANDOM_NAMES[0]!,
       canvas: random() < 0.5 ? "pure" : "tinted",
-      hue: Math.round(hue),
-      saturation: 10 + Math.floor(random() * 31),
-      accent: ensureAccentContrast(accentForHue(hue)),
+      hue,
+      saturation: 8 + Math.floor(random() * 38),
+      darkLightness: 2 + Math.floor(random() * 11),
+      accent: ensureAccentContrast(hslToHex(accentHue, 55 + random() * 25, 52 + random() * 10)),
     };
   });
 }
@@ -266,10 +290,11 @@ export function randomThemeSuggestions(random: () => number = Math.random): Them
 /** The four swatch colours a suggestion previews: canvas, surface, line and accent. */
 export function suggestionSwatches(suggestion: ThemeSuggestion): [string, string, string, string] {
   const s = suggestion.saturation;
+  const depth = suggestion.darkLightness ?? 4;
   return [
-    hslToHex(suggestion.hue, s * 0.6, 4),
-    hslToHex(suggestion.hue, s * 0.7, 9),
-    hslToHex(suggestion.hue, s * 0.7, 18),
+    hslToHex(suggestion.hue, s * 0.6, depth),
+    hslToHex(suggestion.hue, s * 0.7, depth + 5),
+    hslToHex(suggestion.hue, s * 0.7, depth + 14),
     suggestion.accent,
   ];
 }

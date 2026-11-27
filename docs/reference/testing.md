@@ -10,7 +10,7 @@ prove that Tauri, an installed service or a paid provider was exercised.
 | Entry                                                                    | Scope and cost                                                                                                                                           | Exclusions                                                                                                                                   |
 | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm test -- <file>`                                                    | Root Vitest source tests under `src/` and `packages/`; existing DOM setup and test doubles apply.                                                        | Host suite, Rust, browser, mobile and installed app.                                                                                         |
-| `pnpm check:web`                                                         | Existing Host-boundary contracts, root source tests, normal tsc-rs checking and the test-file type ratchet. `:fast` explicitly uses fast mode.           | Browser/native acceptance. Do not also run the same source suite unchanged through another alias.                                            |
+| `pnpm check:web`                                                         | Existing Host-boundary contracts, root source tests, normal tsrs checking and the test-file type ratchet. `:fast` explicitly uses fast mode.             | Browser/native acceptance. Do not also run the same source suite unchanged through another alias.                                            |
 | `pnpm check`                                                             | Web/source checks plus the existing Rust check chain.                                                                                                    | An installer or release is not produced or accepted by this command.                                                                         |
 | `pnpm test:host -- <file>`                                               | Existing `pretest:host` runs `host:build` first, then Host Vitest. Tests launch temporary Git/Node/PowerShell processes; files remain serial per runner. | Installed Host/device/provider acceptance. Use the installed Vitest directly only when a current required Host prebuild is already verified. |
 | `node scripts/checks/test-inventory.mjs --check`                         | Source-only command/browser ownership and ignored Rust/manual inventory. `--json` includes current script definitions.                                   | Does not execute discovered tests, native helpers or mobile commands.                                                                        |
@@ -42,7 +42,7 @@ live/device acceptance. Structural parity protects a cross-layer contract but do
 not prove that a remote operation completed. Keep the category in reports even
 when a legacy filename contains `e2e`.
 
-`pnpm build` and `pnpm host:build` retain their normal tsc-rs contracts. Builds are
+`pnpm build` and `pnpm host:build` retain their normal tsrs contracts. Builds are
 not routine prerequisites for every source-only check. A release check uses its
 frozen source, actual artifacts/hashes and the separately required platform checks.
 Model quality evaluations remain a separate, explicitly budgeted provider activity;
@@ -50,17 +50,16 @@ deterministic grader/schema checks can run without calling a model.
 
 ## Order of verification
 
-Running the whole suite after every edit is the main reason tasks take days. Checks
-are evidence for a finished change set, not a progress bar. Order one task like this:
-
-| Phase                  | What runs                                                                                                                                                                                                        | Not yet                                                             |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| 1. Implement           | Editor feedback, `tsc-rs --noEmit --fast` for the changed project (`-p host/tsconfig.json` for Host), the one test file you are writing with `vitest run <path>`                                                 | Full vitest, `check:web`, browser suites, `cargo test`, screenshots |
-| 2. Change set complete | `pnpm check:changed` (formats changed files in place, lint ratchet, invariants, structure, UI drift, test-file types and up to `--max-tests` related tests, all bounded)                                         | Everything else                                                     |
-| 3. Focused tests       | `vitest run src/features/<feature>` or `vitest run --config host/vitest.config.ts host/<feature>`; `cargo test -p <crate> <module>` for Rust                                                                     | Suites of untouched features                                        |
-| 4. One full gate       | `pnpm check:web` (or `check:web:fast`), `pnpm host:build` or `pnpm check:rust` when the change touches that layer; for T1/T2 also `pnpm check:preflight`; run once, in the background, while writing the handoff | A second full run unless a fix changed code                         |
-| 5. Evidence            | Screenshots per tier, saved under `temp/verification/<id>/` and opened                                                                                                                                           |                                                                     |
-| 6. Review              | A capable model reads the diff and the phase 2–5 results; fixes go back to phase 1 for the touched files only                                                                                                    |                                                                     |
+1. **Implement and hand off.** Review the diff and use fast types for the changed
+   project when useful. Run a specific test if the owner asks or a named defect
+   needs reproduction or verification. A task handoff or review does not trigger
+   test suites. Report the evidence collected and leave broader checks to integration.
+2. **Commit.** Use `pnpm check:staged` for staged formatting, lint and UI drift.
+   See [staged source checks](platform-operations.md#staged-source-checks).
+3. **Integrate.** The session merging or pushing to `main` checks the exact final
+   source once. Run `pnpm check:preflight` plus the applicable Web, Host, browser
+   and Rust checks. Use `pnpm check:plan` to review affected coverage. A Host
+   build alone does not exercise Host behavior tests. CI retains its required jobs.
 
 `check:changed` rewrites changed files with the formatter (LF line endings included),
 so never run a formatter or convert line endings by hand, and do not report either.
@@ -95,10 +94,9 @@ call it for `main` and tag pushes.
 
 Rules that keep the order honest:
 
-- Never start phase 4 to find out what to fix. Phases 1–3 find defects; phase 4
-  confirms the finished change set.
-- A failure in phase 4 that is unrelated to the change is reported with the output,
-  not retried in a loop and not fixed by widening the task.
+- Report unrelated integration failures with the failing check and its output.
+  Rerun affected checks when a fix changes their inputs or when a failure has
+  evidence of a transient cause.
 - Parallel work uses isolated Host/desktop data and allocated ports; two full gates
   on one checkout race each other and prove nothing.
 - `pnpm check:web`, `check:web:fast` and `check:preflight` go through
@@ -108,8 +106,8 @@ Rules that keep the order honest:
   in the output is valid evidence for the report. Never bypass it with the `:run`
   scripts; `GATE_FORCE=1` reruns a result you believe was flaky. A run during which
   another session edited the tree is not shared.
-- Delegated subagents on small models may run phases 1–3 for their own files; the
-  full gate and the review stay with the responsible session.
+- Delegated agents follow the same task schedule. The integration session owns
+  the shared gate results.
 - Report fast mode when used, and UNVERIFIED only for a named check with its blocker.
 
 ## Browser fixture ownership
@@ -144,6 +142,19 @@ Legacy configs may intentionally select the same file in another fixture. Runnin
 every legacy config manually is not the canonical full suite. New files need one
 default owner in the manifest; browser/theme/viewport repetitions inside the spec
 remain deliberate coverage. Tests are not deleted to make an inventory pass.
+
+### Layout and message contracts
+
+`tests/browser/support/uiLayoutAssertions.ts` holds the shared runtime contracts for UI
+surfaces. `openPane` puts a surface in a real 320 px pane inside an 800 or 1280 px window in
+both themes. `expectLayoutContracts` then checks, with geometry measured after fonts and
+animation frames settle: no overflow, no clipped actionable content, no overlapping unrelated
+actions (with a hit test), and spacing (8 px between independent controls, 4 px glyph to label,
+0 px in a joined group). `expectFailureShownOnce`, `watchAnnouncements` and
+`expectAnnouncedOnce` count the visible messages and live-region announcements of one failed
+operation. A surface that legitimately differs declares an exception with a selector and a written
+reason, which silences that one check only; never weaken a contract to make a suite pass. Add a
+new surface to the existing owning spec rather than a new file.
 
 Before changing selection, capture the existing actual discovery and compare it:
 
@@ -254,7 +265,7 @@ non-artifact network requests. Existing dist always has unknown source inclusion
 `--build` explicitly creates a new production output through Vite, captures source
 identity before/after, and fails if that source changes during the build. Its
 receipt records the captured source fingerprint, dirty-state truth and built-file
-digest; normal tsc-rs is a separate CI prerequisite.
+digest; normal tsrs is a separate CI prerequisite.
 
 ```sh
 node scripts/checks/browser-built-boot.mjs --build --dist temp/build/<id>/dist --boundary native-unavailable --output temp/verification/<id>/web --receipt temp/verification/<id>/web.json

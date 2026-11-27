@@ -6,11 +6,13 @@ import type { ExplorerMenuItem } from "./ExplorerMenu";
 import type { Clip, MenuTarget } from "./fileTreeSupport";
 import { parentPath } from "../../../shared/lib/paths";
 
-export const REVEAL_LABEL = IS_MAC
-  ? "Reveal in Finder"
-  : IS_WIN
-    ? "Reveal in File Explorer"
-    : "Open Containing Folder";
+/** The platform's name for showing a file in its folder. */
+export const revealLabel = () =>
+  IS_MAC
+    ? t("Reveal in Finder")
+    : IS_WIN
+      ? t("Reveal in File Explorer")
+      : t("Open containing folder");
 
 /** Menu item ids that mutate the filesystem or start another operation: disabled while one runs. */
 export const BUSY_MENU_ITEMS = [
@@ -56,7 +58,7 @@ export function explorerItems(
       kind: "item",
       id: "new-file",
       get label() {
-        return t("New File");
+        return t("New file");
       },
       description: createIn,
     },
@@ -64,7 +66,7 @@ export function explorerItems(
       kind: "item",
       id: "new-folder",
       get label() {
-        return t("New Folder");
+        return t("New folder");
       },
       description: createIn,
     },
@@ -109,7 +111,7 @@ export function explorerItems(
       kind: "item",
       id: "copy-path",
       get label() {
-        return t("Copy Path");
+        return t("Copy path");
       },
       shortcut: `${MOD}${SHIFT}C`,
     },
@@ -117,7 +119,7 @@ export function explorerItems(
       kind: "item",
       id: "copy-relative-path",
       get label() {
-        return t("Copy Relative Path");
+        return t("Copy relative path");
       },
     },
     { kind: "sep" },
@@ -147,7 +149,7 @@ export function explorerItems(
             kind: "item" as const,
             id: "git-history",
             get label() {
-              return t("File History");
+              return t("File history");
             },
           },
           {
@@ -171,7 +173,7 @@ export function explorerItems(
           },
         ]
       : []),
-    { kind: "item", id: "reveal", label: t(REVEAL_LABEL) },
+    { kind: "item", id: "reveal", label: revealLabel() },
   ];
 }
 
@@ -218,7 +220,7 @@ export function explorerHeaderItems(
     {
       kind: "item",
       id: "new-file",
-      label: t("New File"),
+      label: t("New file"),
       disabled: Boolean(busyReason),
       description: busyReason,
       icon: icon("new-file"),
@@ -226,7 +228,7 @@ export function explorerHeaderItems(
     {
       kind: "item",
       id: "new-folder",
-      label: t("New Folder"),
+      label: t("New folder"),
       disabled: Boolean(busyReason),
       description: busyReason,
       icon: icon("new-folder"),
@@ -237,7 +239,7 @@ export function explorerHeaderItems(
           {
             kind: "item" as const,
             id: "collapse",
-            label: t("Collapse All"),
+            label: t("Collapse all"),
             icon: icon("collapse"),
           },
           ...(canSearch
@@ -257,7 +259,7 @@ export function explorerHeaderItems(
     {
       kind: "item",
       id: "reveal",
-      label: t(REVEAL_LABEL),
+      label: revealLabel(),
       disabled: Boolean(busyReason),
       icon: icon("reveal"),
     },

@@ -49,12 +49,32 @@ it("blocks saved look application while an image change is pending", () => {
       }),
     ),
   );
-  expect(container.querySelector<HTMLButtonElement>(".theme-saved-apply")!.disabled).toBe(true);
+  expect(
+    container.querySelector<HTMLButtonElement>(".theme-saved-apply")!.getAttribute("aria-disabled"),
+  ).toBe("true");
 });
 afterEach(() => {
   act(() => root.render(null));
   resetGeneratorSession();
   state.rename.mockClear();
+});
+
+it("keeps the theme label and one actions menu button without tooltip triggers", () => {
+  act(() =>
+    root.render(
+      createElement(SavedThemes, {
+        appearance: { themeHue: 220, themeSaturation: 12 } as AppearanceSettings,
+      }),
+    ),
+  );
+
+  expect(container.querySelector(".theme-saved-apply")?.textContent).toBe("Siyah Ufuk");
+  expect(
+    Array.from(container.querySelectorAll(".theme-saved-actions button"), (button) =>
+      button.getAttribute("aria-label"),
+    ),
+  ).toEqual(["More actions"]);
+  expect(container.querySelector("[data-tooltip-owner]")).toBeNull();
 });
 
 it.each([
@@ -69,7 +89,14 @@ it.each([
       }),
     ),
   );
-  act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Rename"]')!.click());
+  act(() =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')!.click(),
+  );
+  act(() =>
+    [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+      .find((item) => item.textContent?.includes("Rename"))!
+      .click(),
+  );
   const input = document.querySelector<HTMLInputElement>("input[maxlength]")!;
   expect(input.value).toBe("Siyah Ufuk");
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;

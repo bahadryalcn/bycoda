@@ -4,11 +4,12 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
 import { Code } from "../../../shared/ui/Code";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Button } from "../../../shared/ui/Button";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Heading } from "../../../shared/ui/Heading";
 import { Popover } from "../../../shared/ui/Popover";
-import { Skeleton } from "../../../shared/ui/Skeleton";
+import { SkeletonList } from "../../../shared/ui/SkeletonList";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Switch } from "../../../shared/ui/Switch";
 import {
@@ -24,7 +25,7 @@ import {
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { t, useLocale } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
-import { MoreHorizontal, Plus, RefreshCw } from "../../../shared/ui/icons";
+import { ExternalLink, MoreHorizontal, Plus, RefreshCw } from "../../../shared/ui/icons";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { supportsHarnessLogin } from "../../../integrations/harness/core/authSupport";
 import {
@@ -57,7 +58,7 @@ import {
   readHarnessAuthStatus,
   type HarnessAuthStatus,
 } from "../../../integrations/harness/core/authStatus";
-import { LoadingText } from "../../../shared/ui/LoadingText";
+import { LiveText } from "../../../shared/ui/LiveText";
 const GenericAcpSettings = lazy(() =>
   import("../../providers/ui/GenericAcpSettings").then((module) => ({
     default: module.GenericAcpSettings,
@@ -107,15 +108,20 @@ export function OnboardingAgents({
   const [setup, setSetup] = useState<HarnessId | null>(null);
   const [auth, setAuth] = useState<Partial<Record<HarnessId, HarnessAuthStatus>>>({});
   const [checking, setChecking] = useState(true);
-  const [error, setError] = useState("");
+  // False until the first scan settles; after that, refreshes keep buttons in place.
+  const [probed, setProbed] = useState(false);
+  // Providers whose status is being re-read. Their last known status stays visible meanwhile.
+  const [reading, setReading] = useState<ReadonlySet<HarnessId>>(() => new Set());
+  // `status`: the provider scan failed; `guide`: an install guide did not open.
+  const [error, setError] = useState<{ kind: "status" | "guide"; detail: string } | null>(null);
   const alive = useRef(true);
   const scan = useRef(0);
   const refresh = useCallback(() => {
     const revision = ++scan.current;
     const current = () => alive.current && scan.current === revision;
     setChecking(true);
-    setError("");
-    setAuth({});
+    setError(null);
+    setReading(new Set(HARNESSES.filter(isHarnessAvailable)));
     void probeHarnessAvailability({ force: true })
       .then(() => {
         if (!current()) return;
@@ -124,16 +130,32 @@ export function OnboardingAgents({
           const accountId = supportsProviderAccounts(provider)
             ? defaultProviderAccountId(provider)
             : undefined;
-          void readHarnessAuthStatus(provider, accountId).then((status) => {
-            if (current()) setAuth((previous) => ({ ...previous, [provider]: status }));
-          });
+          void readHarnessAuthStatus(provider, accountId)
+            .then((status) => {
+              if (current()) setAuth((previous) => ({ ...previous, [provider]: status }));
+            })
+            .catch((reason) => {
+              if (current()) setError({ kind: "status", detail: String(reason) });
+            })
+            .finally(() => {
+              if (!current()) return;
+              setReading((previous) => {
+                const next = new Set(previous);
+                next.delete(provider);
+                return next;
+              });
+            });
         }
       })
       .catch((reason) => {
-        if (current()) setError(String(reason));
+        if (!current()) return;
+        setReading(new Set());
+        setError({ kind: "status", detail: String(reason) });
       })
       .finally(() => {
-        if (current()) setChecking(false);
+        if (!current()) return;
+        setChecking(false);
+        setProbed(true);
       });
   }, []);
   useEffect(() => {
@@ -172,9 +194,9 @@ export function OnboardingAgents({
           <Heading size="page" level={3}>
             {t("Agents")}
           </Heading>
-          <InfoPopover>
+          <InfoTooltip label={t("Agents")}>
             {t("Use the providers found on this computer, or add one from another location.")}
-          </InfoPopover>
+          </InfoTooltip>
         </div>
         <Button
           iconOnly
@@ -188,21 +210,12 @@ export function OnboardingAgents({
       </div>
       <div className="onboarding-scroll">
         {checking && listed.length === 0 ? (
-          <>
-            <LoadingText>{t("Scanning this computer…")}</LoadingText>
-            <div className="onboarding-agent-skeleton" aria-hidden="true">
-              {[0, 1, 2].map((row) => (
-                <Skeleton key={row} aria-hidden className="h-9 w-full" />
-              ))}
-            </div>
-          </>
+          // The skeleton and the single live line below are the only scanning indicators.
+          <SkeletonList rows={3} framed leading="icon" trailing="badge" seed={2} />
         ) : null}
-        {!checking && listed.length === 0 ? (
-          <div className="onboarding-provider-empty" role="status">
+        {probed && listed.length === 0 ? (
+          <div className="onboarding-provider-empty">
             <EmptyState size="inline" kind="empty" description={t("No providers found")} />
-            <Text as="p" size="caption" tone="secondary" leading="normal">
-              {t("Already installed one? Choose its executable, or install it and scan again.")}
-            </Text>
           </div>
         ) : null}
         <div
@@ -222,9 +235,9 @@ export function OnboardingAgents({
             const restartRequired = providerBinaryPathChangePending(provider);
             const title = HARNESS_TITLE[provider];
             const guide = INSTALL_GUIDES[provider];
-            let busy = false;
+            let busy = reading.has(provider);
             let status: string;
-            if (checking) {
+            if (!probed) {
               busy = true;
               status = t("Checking…");
             } else if (restartRequired) {
@@ -252,21 +265,22 @@ export function OnboardingAgents({
                   {t("Configure")}
                 </Button>
               );
-            } else if (!checking && !available && guide) {
+            } else if (probed && !available && guide) {
               primary = (
                 <Button
                   onClick={() =>
                     void openUrl(guide).catch((reason) => {
-                      if (alive.current) setError(String(reason));
+                      if (alive.current) setError({ kind: "guide", detail: String(reason) });
                     })
                   }
                   variant="secondary"
                   type="button"
                 >
-                  {t("Install guide ↗")}
+                  {t("Install guide")}
+                  <ExternalLink aria-hidden className="icon-sm" />
                 </Button>
               );
-            } else if (!checking && !available) {
+            } else if (probed && !available) {
               cliSetupIsPrimary = true;
               primary = (
                 <ProviderBinaryControl
@@ -276,11 +290,14 @@ export function OnboardingAgents({
                   onPathSaved={refresh}
                 />
               );
-            } else if (!checking && available && supportsHarnessLogin(provider) && !connected) {
+            } else if (probed && available && supportsHarnessLogin(provider) && !connected) {
               primary = (
                 <Button
                   aria-label={t("Sign in to {p0}", { p0: title })}
                   disabled={restartRequired}
+                  disabledReason={
+                    restartRequired ? t("CLI path saved · restart required") : undefined
+                  }
                   onClick={() => onSignIn(provider)}
                   variant="secondary"
                   type="button"
@@ -315,7 +332,6 @@ export function OnboardingAgents({
                     </Text>
                     <Text
                       as="small"
-                      role="status"
                       size="caption"
                       tone="secondary"
                       leading="normal"
@@ -331,9 +347,6 @@ export function OnboardingAgents({
                 <div className="onboarding-agent-controls">
                   <span className="onboarding-agent-primary">{primary}</span>
                   <span className="onboarding-agent-visibility">
-                    <Text size="micro" tone="muted" leading="inherit">
-                      {t("In picker")}
-                    </Text>
                     <Switch
                       aria-label={t("Use {p0}", { p0: title })}
                       checked={visible}
@@ -362,12 +375,6 @@ export function OnboardingAgents({
                             }
                           />
                         ) : null}
-                        {available ? (
-                          <Button variant="ghost" size="sm" disabled={checking} onClick={refresh}>
-                            <RefreshCw className="icon-sm" />
-                            {t("Check again")}
-                          </Button>
-                        ) : null}
                       </AgentMore>
                     ) : null}
                   </span>
@@ -376,6 +383,12 @@ export function OnboardingAgents({
             );
           })}
         </div>
+        {/* One live region for the whole list; rows only show their own visual status. */}
+        <LiveText
+          size="caption"
+          tone="secondary"
+          text={checking ? t("Scanning this computer…") : ""}
+        />
         {missing.length > 0 ? (
           <div className="onboarding-provider-footer">
             <Button
@@ -387,16 +400,31 @@ export function OnboardingAgents({
               <Plus className="icon-md" />
               {t("Add provider")}
             </Button>
-            <InfoPopover label={t("About existing accounts")}>
-              <p>
-                {t(
-                  "Existing CLI accounts are reused. Choose another account from its profile menu.",
-                )}
-              </p>
-            </InfoPopover>
+            <InfoTooltip label={t("About existing accounts")}>
+              {t("Existing CLI accounts are reused. Choose another account from its profile menu.")}
+            </InfoTooltip>
           </div>
         ) : null}
-        {error ? <Alert tone="danger">{error}</Alert> : null}
+        {error ? (
+          <Alert
+            tone="danger"
+            title={
+              error.kind === "guide"
+                ? t("Could not open the install guide.")
+                : t("Could not read the provider status.")
+            }
+            extra={
+              <ErrorDetails
+                title={
+                  error.kind === "guide"
+                    ? t("Could not open the install guide.")
+                    : t("Could not read the provider status.")
+                }
+                detail={error.detail}
+              />
+            }
+          />
+        ) : null}
       </div>
       {adding ? (
         <Modal title={t("Add provider")} size="sm" onClose={closeAdd}>
@@ -432,11 +460,12 @@ export function OnboardingAgents({
                     variant="link"
                     onClick={() =>
                       void openUrl(INSTALL_GUIDES[candidate]!).catch((reason) =>
-                        setError(String(reason)),
+                        setError({ kind: "guide", detail: String(reason) }),
                       )
                     }
                   >
-                    {t("Install guide ↗")}
+                    {t("Install guide")}
+                    <ExternalLink aria-hidden className="icon-sm" />
                   </Button>
                 ) : null}
               </>
@@ -514,12 +543,12 @@ function AgentMore({ label, children }: { label: string; children: ReactNode }) 
       {open ? (
         <Popover
           anchor={anchor}
-          role="dialog"
+          kind="dialog"
           aria-label={label}
           align="end"
           minWidth={220}
-          autoFocus
           onDismiss={() => setOpen(false)}
+          variant="compact"
           className="onboarding-agent-menu"
         >
           {children}

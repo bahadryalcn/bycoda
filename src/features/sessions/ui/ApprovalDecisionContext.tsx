@@ -8,6 +8,7 @@ export type ApprovalDispatch = (
   requestId: number,
   decision: ApprovalDecision,
   expected?: ApprovalRequestToken,
+  allowForSession?: true,
 ) => void | boolean | Promise<void | boolean>;
 
 const Context = createContext<{ session: Session; dispatch: ApprovalDispatch } | null>(null);

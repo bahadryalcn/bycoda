@@ -1,3 +1,4 @@
+import { turkishLocaleWarnings } from "../checks/turkish-locale-warnings.mjs";
 import fs from "node:fs";
 import path from "node:path";
 // AST utilities still use the JavaScript API; builds use the native TS 7 compiler.
@@ -26,7 +27,7 @@ for (const file of files("src").filter(
     ) {
       const arg = node.arguments[0];
       function messages(arg) {
-        if (arg && ts.isStringLiteral(arg)) used.add(arg.text);
+        if (arg && ts.isStringLiteralLike(arg)) used.add(arg.text);
         else if (arg && ts.isParenthesizedExpression(arg)) messages(arg.expression);
         else if (arg && ts.isConditionalExpression(arg)) {
           messages(arg.whenTrue);
@@ -70,6 +71,7 @@ if (process.argv.includes("--extract")) {
   process.exit(0);
 }
 const issues = [];
+const warnings = [];
 for (const key of used) if (!(key in source)) issues.push(`Missing source: ${key}`);
 // Same intent, same word: new keys must follow the glossary; existing offenders are baselined.
 const glossary = JSON.parse(fs.readFileSync("scripts/i18n/glossary.json", "utf8"));
@@ -95,7 +97,15 @@ if (process.argv.includes("--update-glossary-baseline")) {
   process.exit(0);
 }
 const slots = (text) => (text.match(/\{p\d+\}/g) ?? []).sort().join(",");
-const turkishEditorial = JSON.parse(fs.readFileSync("src/shared/i18n/tr-overrides.json", "utf8"));
+const editorial = new Map(
+  ["en", "tr"].map((locale) => [
+    locale,
+    JSON.parse(fs.readFileSync(`src/shared/i18n/${locale}-overrides.json`, "utf8")),
+  ]),
+);
+for (const [locale, overrides] of editorial)
+  for (const key of Object.keys(overrides))
+    if (!Object.hasOwn(source, key)) issues.push(`${locale}: unknown editorial source ${key}`);
 for (const locale of ["tr", "de", "fr", "es", "pt", "zh-CN", "ja"]) {
   const catalog = JSON.parse(fs.readFileSync(`${root}/${locale}.json`, "utf8"));
   for (const key of Object.keys(source)) {
@@ -106,12 +116,20 @@ for (const locale of ["tr", "de", "fr", "es", "pt", "zh-CN", "ja"]) {
   for (const key of Object.keys(catalog))
     if (!(key in source)) issues.push(`${locale}: unknown source ${key}`);
   if (locale === "tr") {
-    for (const [key, expected] of Object.entries(turkishEditorial)) {
-      // The translation helper also ignores historical entries no longer in use.
-      if (key in source && catalog[key] !== expected)
+    for (const [key, value] of Object.entries(catalog)) {
+      if (typeof value !== "string") continue;
+      for (const rule of turkishLocaleWarnings(value)) warnings.push({ rule, key, value });
+    }
+    for (const [key, expected] of Object.entries(editorial.get(locale))) {
+      if (Object.hasOwn(source, key) && catalog[key] !== expected)
         issues.push(`tr: editorial correction lost ${key}`);
     }
   }
+}
+if (warnings.length) {
+  for (const { rule, key, value } of warnings.slice(0, 20))
+    console.warn(`tr [${rule}] ${key} = ${value}`);
+  console.warn(`${warnings.length} Turkish catalog warnings`);
 }
 if (issues.length) {
   console.error(issues.slice(0, 20).join("\n"));

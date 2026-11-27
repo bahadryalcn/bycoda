@@ -252,7 +252,7 @@ it.each(["single", "all"])(
       mode === "all" ? "Some read status updates may have saved" : "Could not save read status",
     );
     expect(isInboxEntryUnseen(entry)).toBe(true);
-    expect(markAll.disabled).toBe(false);
+    expect(markAll.getAttribute("aria-disabled")).toBeNull();
     write.mockRestore();
     act(() =>
       (mode === "all"
@@ -261,7 +261,7 @@ it.each(["single", "all"])(
       ).click(),
     );
     expect(isInboxEntryUnseen(entry)).toBe(false);
-    expect(markAll.disabled).toBe(true);
+    expect(markAll.getAttribute("aria-disabled")).toBe("true");
     // The detail panel can independently report an unavailable native bridge.
     // Retrying read status clears its own error without suppressing other errors.
     expect(
@@ -340,6 +340,12 @@ it.each([
         ),
       );
     await mount();
+    if (provider === "github" && kind === "pr") {
+      const pulls = container.querySelector<HTMLButtonElement>(
+        '[role="radio"][aria-label="Pull requests"]',
+      )!;
+      await act(async () => pulls.click());
+    }
     let card = inboxRow(container, "Notification indicator regression")!;
     expect(card).not.toBeNull();
     expect(card.getAttribute("aria-label")).toContain(", Unread");

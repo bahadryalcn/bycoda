@@ -9,15 +9,17 @@ import {
 } from "../../../integrations/harness/core/handoffPhase";
 import { t, useFormat, useLocale, useT, type BoundFormat } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { stripAnsi } from "../../../shared/lib/ansi";
+import { BrandMark } from "../../../shared/ui/BrandMark";
 import {
-  CircleDashed,
-  Minus,
-  PenLine,
-  Bot,
-  Search,
-  Terminal,
-  Wrench,
-  X,
+  ChatPending,
+  ChatNote,
+  ChatEdit,
+  ChatAgent,
+  ChatExplore,
+  ChatRun,
+  ChatTool,
+  ChatFailed,
 } from "../../../shared/ui/icons";
 import {
   memo,
@@ -32,20 +34,29 @@ import { FilePreview } from "../../files/public/FilePreview";
 import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { ToolDiffPreview } from "./ToolDiffPreview";
 import { hasToolInspection, ToolInspectionPanel } from "./ToolInspectionPanel";
+import { WebSearchRow } from "./WebSearchRow";
+import { isWebSearchBlock } from "../model/searchSources";
 import { Spinner } from "../../../shared/ui/Spinner";
-import { SubagentRow } from "./SubagentCards";
+import { SubagentRow, SubagentStack } from "./SubagentCards";
+import { SessionErrorNotice } from "./SessionErrorNotice";
 import { Button } from "../../../shared/ui/Button";
+import { DiffStat } from "../../../shared/ui/DiffStat";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
-import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { ApprovalRequest } from "../../../shared/ui/ApprovalRequest";
-import { InlineError } from "../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { Text } from "../../../shared/ui/Text";
 import { useApprovalDecisionContext } from "./ApprovalDecisionContext";
 import { useReportApprovalCardOnScreen } from "./approvalCardVisibility";
+import { approvalTitle } from "./approvalPresentation";
 import { approvalDetail } from "../model/approvalDetail";
 import { useApprovalDecisionControl } from "./useApprovalDecisionControl";
 import type { ApprovalDecision } from "../../../integrations/harness";
-import { isEditTool, stubFilePreview } from "../../../integrations/harness/core/preview";
+import {
+  isEditTool,
+  isExecuteTool,
+  stubFilePreview,
+} from "../../../integrations/harness/core/preview";
 import { useToolCallDisplay } from "../model/reactiveReads";
 import {
   HARNESS_TITLE,
@@ -67,6 +78,7 @@ import {
   proseSummary,
   toolCallLabel,
   isStoppedBlock,
+  mcpToolDisplay,
   toolCallState,
   type ActivityPhase,
   type ActivityPhaseKind,
@@ -74,7 +86,6 @@ import {
 } from "../model/transcriptActivity";
 import { bycodaToolCall, bycodaWorkSummary, type BycodaToolCall } from "../model/bycodaToolCall";
 import { NEAR_BOTTOM_PX } from "./transcriptScroll";
-import { useClampOverflow } from "./useClampOverflow";
 import { useRetainedDisclosure } from "./useRetainedDisclosure";
 /*
  * Tool calls often land in a burst. Each arrival waits for the one before it
@@ -103,6 +114,17 @@ type ActivityPhasesProps = {
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (path: string) => void;
 };
+
+/** Consecutive delegated runs of a trail are one group, so they lay out as cards or rows together. */
+function subagentGroups(steps: Block[]): Block[][] {
+  const groups: Block[][] = [];
+  for (const step of steps) {
+    const last = groups[groups.length - 1];
+    if (isSubagentBlock(step) && last && isSubagentBlock(last[0])) last.push(step);
+    else groups.push([step]);
+  }
+  return groups;
+}
 
 export const ActivityPhases = memo(function ActivityPhases({
   blocks,
@@ -275,26 +297,37 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
     );
   }
 
+  // The live title is the group's working signal (the shared sweep); a span
+  // carries the overflow tooltip's handlers, which the indicator does not take.
   const label = active ? (
-    <WorkingIndicator className="min-w-0 flex-1" text={{ size: "body" }} truncate glyph={false}>
-      {title}
-    </WorkingIndicator>
+    <span className="flex min-w-0 flex-1">
+      <WorkingIndicator className="min-w-0 flex-1" text={{ size: "body" }} truncate glyph={false}>
+        {title}
+      </WorkingIndicator>
+    </span>
   ) : (
     // Dimmed to sit with the icons: the work is chrome around the answer, and
     // only the answer reads at full strength.
-    <span className="min-w-0 flex-1 truncate font-sans text-ui-body text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-text-secondary)">
+    <span className="min-w-0 flex-1 truncate font-sans text-ui-body text-(--transcript-ink-chrome)">
       {title}
     </span>
   );
 
   const titledLabel = <OverflowTooltip label={title}>{label}</OverflowTooltip>;
 
-  // A line the agent wrote with nothing under it is just that line.
+  // A line the agent wrote with nothing under it is just that line. It has no
+  // steps to disclose, so a cut note is read in full through the overflow
+  // tooltip, which the focusable wrapper opens from the keyboard as well.
   if (inert) {
     return (
       <div className="flex min-w-0 items-center gap-1.5 py-1">
         <ActivityPhaseIcon kind={phase.kind} />
-        {label}
+        <OverflowTooltip label={title}>
+          {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a note cut at the pane width must stay reachable by keyboard to open its full-text tooltip */}
+          <span className="flex min-w-0 flex-1" tabIndex={0}>
+            {label}
+          </span>
+        </OverflowTooltip>
       </div>
     );
   }
@@ -340,7 +373,7 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
                 ref={setLiveScroller}
                 className={
                   active && override !== true && !revealed && !needsAttention
-                    ? "zen-phase-live zen-phase-summary"
+                    ? "zen-phase-live"
                     : undefined
                 }
               >
@@ -357,7 +390,8 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
                   ) : null}
                   <TranscriptVirtualRows
                     listId={`steps:${phase.id}`}
-                    rows={phase.steps.map((block, index) => {
+                    rows={subagentGroups(phase.steps).map((group, index, groups) => {
+                      const block = group[0];
                       const arriving = active && !settled.current?.has(block.id);
                       const render = (virtual?: TranscriptVirtualElement) => (
                         <PhaseStep
@@ -365,23 +399,34 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
                           live={active}
                           turn={arriving ? turnFor(block.id) : undefined}
                         >
-                          <ActivityRow
-                            block={block}
-                            cwd={cwd}
-                            live={active}
-                            onApproval={onApproval}
-                            onOpenFile={onOpenFile}
-                            onOpenDiff={onOpenDiff}
-                          />
+                          {group.length > 1 ? (
+                            <SubagentStack
+                              blocks={group}
+                              cwd={cwd}
+                              live={active}
+                              embedded
+                              onOpenFile={onOpenFile}
+                              onOpenDiff={onOpenDiff}
+                            />
+                          ) : (
+                            <ActivityRow
+                              block={block}
+                              cwd={cwd}
+                              live={active}
+                              onApproval={onApproval}
+                              onOpenFile={onOpenFile}
+                              onOpenDiff={onOpenDiff}
+                            />
+                          )}
                         </PhaseStep>
                       );
                       return {
                         id: block.id,
-                        blockIds: [block.id],
+                        blockIds: group.map((member) => member.id),
                         pinned:
-                          needsApproval(block) ||
-                          (active && index === phase.steps.length - 1) ||
-                          !!block.streaming,
+                          group.some(needsApproval) ||
+                          (active && index === groups.length - 1) ||
+                          group.some((member) => !!member.streaming),
                         render: () => render(),
                         renderElement: render,
                       };
@@ -512,16 +557,16 @@ export function ActivityPhaseIcon({
 }) {
   useLocale();
   const props = {
-    className: `size-3.5 shrink-0 text-(--ui-text-secondary) ${className}`,
+    className: `size-3.5 shrink-0 text-(--transcript-ink-chrome) ${className}`,
     strokeWidth: 1.75,
   };
-  if (kind === "edit") return <PenLine {...props} />;
-  if (kind === "research") return <Search {...props} />;
-  if (kind === "run") return <Terminal {...props} />;
-  if (kind === "agent") return <Bot {...props} />;
+  if (kind === "edit") return <ChatEdit {...props} />;
+  if (kind === "research") return <ChatExplore {...props} />;
+  if (kind === "run") return <ChatRun {...props} />;
+  if (kind === "agent") return <ChatAgent {...props} />;
   if (kind === "think") return null;
-  if (kind === "other") return <Wrench {...props} />;
-  return <Minus {...props} />;
+  if (kind === "other") return <ChatTool {...props} />;
+  return <ChatNote {...props} />;
 }
 
 /**
@@ -597,13 +642,13 @@ function ActivityStatusRow({ block }: { block: Block }) {
       {running ? <Spinner size="xs" className="shrink-0" /> : null}
       <OverflowTooltip label={block.text.trim()}>
         <span
-          className={`min-w-0 flex-1 truncate font-sans text-ui-body ${block.notice === "interrupt" ? "font-medium text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
+          className={`min-w-0 flex-1 truncate font-sans text-ui-body ${block.notice === "interrupt" ? "font-medium text-(--ui-tone-danger-fg)" : "text-(--transcript-ink-chrome)"}`}
         >
           {block.text.trim()}
         </span>
       </OverflowTooltip>
       {elapsed ? (
-        <span className="shrink-0 text-ui-micro text-(--ui-text-secondary) tabular-nums">
+        <span className="shrink-0 text-ui-micro text-(--transcript-ink-chrome) tabular-nums">
           {elapsed}
         </span>
       ) : null}
@@ -628,12 +673,19 @@ function ActivityInterjectionRow({ block }: { block: Block }) {
   const summary = proseSummary(block.text);
   const label = (
     <span className="min-w-0 flex-1 truncate font-sans text-ui-body">
-      <span className="text-(--ui-text-secondary)">{chrome.label}</span>
+      <span className="text-(--transcript-ink-chrome)">{chrome.label}</span>
       {chrome.severityText ? (
-        <span className={`text-ui-micro ${chrome.severityClass}`}> {chrome.severityText}</span>
+        <span
+          {...surfaceAttributes(
+            { tone: INTERJECTION_TONE[meta.severity ?? "nit"], radius: "pill" },
+            `ms-1.5 px-2 py-px text-ui-micro ${chrome.severityClass}`,
+          )}
+        >
+          {chrome.severityText}
+        </span>
       ) : null}
       {summary ? (
-        <span className="text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-text-secondary)">
+        <span className="text-(--transcript-ink-chrome)">
           {" · "}
           {summary}
         </span>
@@ -693,16 +745,21 @@ export function ActivityThinkingRow({
   const t = useT();
   const [open, setOpen] = useRetainedDisclosure<boolean>(`ActivityThinkingRow:${block.id}`, false);
   const text = open ? t("Thinking…") : proseSummary(block.text) || t("Thinking…");
-  // In a group the rail is the bullet, so there is nothing to breathe while
-  // reasoning streams in — the line itself does.
-  const pulse = block.streaming ? "zen-thinking-pulse" : "";
+  // While reasoning streams in, the line itself carries the shared sweep.
   const icon = bare ? null : (
-    <Minus className={`icon-sm shrink-0 text-(--ui-text-secondary) ${pulse}`} strokeWidth={1.75} />
+    <ChatNote className="icon-sm shrink-0 text-(--transcript-ink-chrome)" strokeWidth={1.75} />
   );
-  const label = (
-    <span
-      className={`min-w-0 flex-1 truncate font-sans text-ui-body text-(--ui-text-secondary) ${bare ? pulse : ""}`}
+  const label = block.streaming ? (
+    <WorkingIndicator
+      className="min-w-0 flex-1"
+      text={{ size: "body", weight: "regular" }}
+      truncate
+      glyph={false}
     >
+      {text}
+    </WorkingIndicator>
+  ) : (
+    <span className="min-w-0 flex-1 truncate font-sans text-ui-body font-normal text-(--transcript-ink-chrome)">
       {text}
     </span>
   );
@@ -729,18 +786,12 @@ export function ActivityThinkingRow({
       summary={
         <>
           {icon}
-          <span
-            className={`min-w-0 flex-1 truncate font-sans text-ui-body font-normal text-(--ui-text-secondary) ${
-              bare ? pulse : ""
-            }`}
-          >
-            {text}
-          </span>
+          {label}
         </>
       }
     >
       {open ? (
-        <div className={`min-w-0 pb-2 ${bare ? "" : "pl-5"}`}>
+        <div className={`min-w-0 pb-2 ${bare ? "" : "ps-5"}`}>
           <AgentMarkdown
             className="agent-reasoning"
             text={block.text}
@@ -774,7 +825,7 @@ function ActivityNoteRow({
   const [open, setOpen] = useRetainedDisclosure<boolean>(`ActivityNoteRow:${block.id}`, false);
   const text = proseSummary(block.text);
   const icon = bare ? null : (
-    <Minus className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+    <ChatNote className="icon-sm shrink-0 text-(--transcript-ink-chrome)" strokeWidth={1.75} />
   );
 
   if (!expandable) {
@@ -784,7 +835,7 @@ function ActivityNoteRow({
         className="flex min-w-0 items-center gap-1.5 py-1"
       >
         {icon}
-        <span className="line-clamp-2 min-w-0 flex-1 font-sans text-ui-body font-normal text-(--ui-text-secondary)">
+        <span className="line-clamp-2 min-w-0 flex-1 font-sans text-ui-body font-normal text-(--transcript-ink-chrome)">
           {text}
         </span>
       </div>
@@ -801,7 +852,7 @@ function ActivityNoteRow({
       summary={
         <>
           {icon}
-          <span className="line-clamp-2 min-w-0 flex-1 text-left font-sans text-ui-body font-normal text-(--ui-text-secondary)">
+          <span className="line-clamp-2 min-w-0 flex-1 text-start font-sans text-ui-body font-normal text-(--transcript-ink-chrome)">
             {text}
           </span>
         </>
@@ -814,6 +865,58 @@ function ActivityNoteRow({
       ) : null}
     </Disclosure>
   );
+}
+
+/** The verb of a file or search call, translated through literal keys. */
+function toolActionText(translate: ReturnType<typeof useT>, action: string): string {
+  switch (action) {
+    case "Read":
+      return translate("Read");
+    case "Find":
+      return translate("Find");
+    case "Skill":
+      return translate("Skill");
+    case "List":
+      return translate("List");
+    case "Edit":
+      return translate("Edit");
+    case "Write":
+      return translate("Write");
+    default:
+      return action;
+  }
+}
+
+/** How long a closing row's body stays mounted so the shared Disclosure collapse (standard motion duration) can play. */
+const DISCLOSURE_CLOSE_MS = 200;
+
+/** The collapse only plays where the stylesheet animates it; elsewhere the body unmounts at once. */
+function closeIsAnimated(): boolean {
+  return (
+    typeof CSS !== "undefined" &&
+    CSS.supports("interpolate-size", "allow-keywords") &&
+    window.matchMedia("(prefers-reduced-motion: no-preference)").matches
+  );
+}
+
+/**
+ * Whether a disclosure body is mounted: while open, and for the length of the close transition
+ * afterwards. Closed rows keep nothing mounted, so long transcripts stay cheap.
+ */
+function useClosingMount(open: boolean): boolean {
+  const [lingering, setLingering] = useState(false);
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    setLingering(!open && closeIsAnimated());
+  }
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- timer that ends the lingering mount after the CSS collapse; cleared on reopen and unmount
+  useEffect(() => {
+    if (!lingering) return;
+    const timer = window.setTimeout(() => setLingering(false), DISCLOSURE_CLOSE_MS);
+    return () => window.clearTimeout(timer);
+  }, [lingering]);
+  return open || lingering;
 }
 
 function ActivityToolRow({
@@ -834,126 +937,148 @@ function ActivityToolRow({
   onOpenDiff?: (path: string) => void;
 }) {
   const t = useT();
-  const [errorOpen, setErrorOpen] = useRetainedDisclosure<boolean>(
+  // null = the reader has not toggled yet: a failed command then shows its output by itself.
+  const [override, setErrorOpen] = useRetainedDisclosure<boolean | null>(
     `ActivityToolRow:${block.id}`,
-    false,
+    null,
   );
   const appCall = bycodaToolCall(block);
-  if (appCall) {
-    return <BycodaCallRow block={block} call={appCall} onApproval={onApproval} />;
-  }
   const label = toolCallLabel(block, cwd);
   const state = toolCallState(block);
   const pending = needsApproval(block);
   const errorDetail = !pending && state === "rejected" ? block.tool?.detail?.trim() : undefined;
   const hasResult = !pending && hasToolInspection(block);
-  const inspectionLabel =
-    block.tool?.preview?.kind === "write" ? "Show changes for {p2}" : "Show output for {p2}";
+  const command =
+    block.tool?.preview?.kind === "shell" ||
+    isExecuteTool(block.tool?.kind, block.text || block.tool?.title);
+  const errorOpen = override ?? (command && state === "rejected" && hasResult);
+  const bodyMounted = useClosingMount(errorOpen);
+  if (appCall) {
+    return <BycodaCallRow block={block} call={appCall} live={live} onApproval={onApproval} />;
+  }
+  // A web search reads as its own pill and source cards; a failed or waiting one stays a plain row.
+  if (isWebSearchBlock(block) && !pending && state !== "rejected") {
+    return <WebSearchRow block={block} working={live && state === "pending"} />;
+  }
   const summary = (
     <ToolCallSummary
       label={label}
+      command={command}
       preview={block.tool?.preview}
       cwd={cwd}
       chip={bare}
       failed={state === "rejected"}
       status={state}
+      working={live && state === "pending" && !pending}
       onOpenFile={onOpenFile}
       onOpenDiff={onOpenDiff}
     />
   );
 
+  const editCounts = editLineCounts(block.tool?.preview);
+  const rowContent = (
+    <span className="flex min-w-0 flex-1 items-center gap-1.5">
+      {bare ? null : <ActivityToolIcon state={state} live={live} />}
+      {summary}
+      {pending ? null : <ToolCallStatusIcon state={state} stopped={isStoppedBlock(block)} />}
+      {hasResult && block.tool?.preview?.kind === "write" && !errorDetail ? (
+        editCounts ? (
+          <DiffStat
+            additions={editCounts.additions}
+            deletions={editCounts.deletions}
+            size="micro"
+            className="shrink-0"
+          />
+        ) : (
+          <span className="shrink-0 text-ui-micro text-(--transcript-ink-faint)">
+            {t("Changes")}
+          </span>
+        )
+      ) : null}
+    </span>
+  );
+
   // Every row shares one height and inset, so the trail keeps a single rhythm
   // whether or not a row can open.
   return (
-    <div className="flex min-w-0 flex-col">
+    <div className="transcript-tool-row flex min-w-0 flex-col">
       {hasResult ? (
-        <ActionHost
-          aria-label={
-            errorDetail
-              ? t("Failed tool call: {p0}", { p0: label })
-              : t("Tool call: {p0}", { p0: label })
+        <Disclosure
+          variant="step"
+          chevron="end"
+          open={errorOpen}
+          onOpenChange={setErrorOpen}
+          summaryLabel={
+            errorOpen
+              ? errorDetail
+                ? t("Hide error details for {p2}", { p2: label })
+                : t("Hide output for {p2}", { p2: label })
+              : errorDetail
+                ? t("Show error details for {p2}", { p2: label })
+                : block.tool?.preview?.kind === "write"
+                  ? t("Show changes for {p2}", { p2: label })
+                  : t("Show output for {p2}", { p2: label })
           }
-          controlMinHeight="compact"
-          padding={{ inline: "xs", block: "xxs" }}
-          className="-mx-1 min-w-0 gap-1.5"
+          summary={rowContent}
         >
-          {bare ? null : <ActivityToolIcon state={state} live={live} />}
-          <div
-            className="flex min-w-0 flex-1 cursor-pointer"
-            onClick={() => setErrorOpen((value) => !value)}
-          >
-            {summary}
-          </div>
-          <ToolCallStatusIcon state={state} stopped={isStoppedBlock(block)} />
-          {block.tool?.preview?.kind === "write" && !errorDetail ? (
-            <span className="shrink-0 text-ui-micro text-(--ui-text-secondary)">
-              {t("Changes")}
-            </span>
+          {bodyMounted ? (
+            <div className={`min-w-0 py-1 ${bare ? "" : "ps-5"}`}>
+              <ToolInspectionPanel block={block} />
+            </div>
           ) : null}
-          {/* Quiet until the row is hovered or focused, open, or failed: the row
-              itself also toggles, and keyboard focus always reveals the action. */}
-          <InlineAction
-            motion="none"
-            reveal={errorDetail ? "always" : "interaction"}
-            expanded={errorOpen}
-            label={t(
-              errorOpen
-                ? errorDetail
-                  ? "Hide error details for {p2}"
-                  : "Hide output for {p2}"
-                : errorDetail
-                  ? "Show error details for {p2}"
-                  : inspectionLabel,
-              { p2: label },
-            )}
-            onClick={() => setErrorOpen((value) => !value)}
-          />
-        </ActionHost>
+        </Disclosure>
       ) : (
-        <div
-          aria-label={t("Tool call: {p0}", { p0: label })}
-          className="-mx-1 flex min-h-7 min-w-0 items-center gap-1.5 px-1 py-0.5"
-        >
-          {bare ? null : <ActivityToolIcon state={state} live={live} />}
-          {summary}
-          {pending ? null : <ToolCallStatusIcon state={state} stopped={isStoppedBlock(block)} />}
-        </div>
+        <Disclosure
+          variant="step"
+          collapsible={false}
+          summaryLabel={t("Tool call: {p0}", { p0: label })}
+          summary={rowContent}
+        />
       )}
       {pending ? <ApprovalControls block={block} onApproval={onApproval} /> : null}
-      {errorDetail ? (
+      {errorDetail && !errorOpen ? (
         <p
-          className={`m-0 line-clamp-2 min-w-0 break-words text-ui-caption text-(--ui-tone-danger-fg) ${bare ? "" : "pl-5"}`}
+          className={`m-0 line-clamp-2 min-w-0 break-words text-ui-caption text-(--ui-tone-danger-fg) ${bare ? "" : "ps-5"}`}
         >
           {errorSummaryLine(errorDetail)}
         </p>
-      ) : null}
-      {errorOpen && hasResult ? (
-        <div className={`min-w-0 py-1 ${bare ? "" : "pl-5"}`}>
-          <ToolInspectionPanel block={block} />
-        </div>
       ) : null}
     </div>
   );
 }
 
-/** First non-empty line of a failure's raw output; the full text stays in the inspection panel. */
+/** `+N −M` for an edit row: the preview's own counts, else counted from its changed lines. */
+function editLineCounts(
+  preview?: ToolPreview,
+): { additions: number; deletions: number } | undefined {
+  if (!preview) return undefined;
+  const additions =
+    preview.additions ?? preview.lines?.filter((line) => line.kind === "add").length ?? 0;
+  const deletions =
+    preview.deletions ?? preview.lines?.filter((line) => line.kind === "del").length ?? 0;
+  return additions > 0 || deletions > 0 ? { additions, deletions } : undefined;
+}
+
+/** First readable line of a failure; full output stays in the inspection panel. */
 function errorSummaryLine(detail: string): string {
-  return detail.trim().split(String.fromCharCode(10), 1)[0]!.trim();
+  return stripAnsi(detail).trim().split("\n", 1)[0]!.trim();
 }
 
 function BycodaMark({ className = "size-4" }: { className?: string }) {
   useLocale();
-  return <img src={PRODUCT_IDENTITY.logoSrc} alt="" className={`shrink-0 ${className}`} />;
+  return <BrandMark className={`shrink-0 ${className}`} />;
 }
 
 /** Bycoda commands keep both successful results and failures available on demand. */
 function BycodaCallRow({
   block,
   call,
+  live = false,
   onApproval,
 }: {
   block: Block;
   call: BycodaToolCall;
+  live?: boolean;
   onApproval?: (requestId: number, decision: ApprovalDecision) => void;
 }) {
   const t = useT();
@@ -962,24 +1087,31 @@ function BycodaCallRow({
     `BycodaCallRow:${block.id}`,
     false,
   );
+  const bodyMounted = useClosingMount(errorOpen);
   const pendingApproval = needsApproval(block);
   const hasResult = !pendingApproval && hasToolInspection(block);
   const hasError = state === "rejected" && hasResult;
   const command = `${PRODUCT_IDENTITY.displayName} app ${call.action}`;
   const verb = pendingApproval
-    ? t("Needs approval")
+    ? approvalTitle(block, t)
     : state === "pending"
       ? t("Running")
       : t("Ran");
   const summary = (
-    <>
+    <span className="flex min-w-0 flex-1 items-center gap-1.5">
+      {live && state === "pending" && !pendingApproval ? (
+        <WorkingIndicator className="shrink-0 font-sans" text={{ size: "body" }} glyph={false}>
+          {verb}
+        </WorkingIndicator>
+      ) : (
+        <span
+          className={`shrink-0 font-sans text-ui-body ${state === "rejected" ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-ink-chrome)"}`}
+        >
+          {verb}
+        </span>
+      )}
       <span
-        className={`shrink-0 font-sans text-ui-body ${state === "rejected" ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
-      >
-        {verb}
-      </span>
-      <span
-        className={`flex min-w-0 max-w-full items-center gap-1 rounded px-1 font-mono text-ui-secondary ${state === "rejected" ? "text-(--ui-tone-danger-fg)" : "text-(--color-content)"}`}
+        className={`flex min-w-0 max-w-full items-center gap-1 font-mono text-ui-secondary ${state === "rejected" ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-ink-chrome)"}`}
       >
         <BycodaMark className="size-3.5" />
         <OverflowTooltip label={command}>
@@ -987,41 +1119,49 @@ function BycodaCallRow({
         </OverflowTooltip>
       </span>
       <ToolCallStatusIcon state={state} stopped={isStoppedBlock(block)} />
-    </>
+    </span>
   );
   return (
     <div data-bycoda-tool-call={call.action} className="min-w-0">
       {hasResult ? (
-        <Button
-          motion="none"
-          fullWidth
-          variant="item"
-          type="button"
-          expanded={errorOpen}
-          aria-label={t(
+        <Disclosure
+          variant="step"
+          chevron="end"
+          open={errorOpen}
+          onOpenChange={setErrorOpen}
+          summaryLabel={
             hasError
               ? errorOpen
-                ? "Hide error details for {p1}: {p2}"
-                : "Show error details for {p1}: {p2}"
+                ? t("Hide error details for {p1}: {p2}", {
+                    p1: PRODUCT_IDENTITY.displayName,
+                    p2: call.label,
+                  })
+                : t("Show error details for {p1}: {p2}", {
+                    p1: PRODUCT_IDENTITY.displayName,
+                    p2: call.label,
+                  })
               : errorOpen
-                ? "Hide output for {p1}: {p2}"
-                : "Show output for {p1}: {p2}",
-            { p1: PRODUCT_IDENTITY.displayName, p2: call.label },
-          )}
-          onClick={() => setErrorOpen((value) => !value)}
-          className="w-full min-w-0 text-left"
+                ? t("Hide output for {p1}: {p2}", {
+                    p1: PRODUCT_IDENTITY.displayName,
+                    p2: call.label,
+                  })
+                : t("Show output for {p1}: {p2}", {
+                    p1: PRODUCT_IDENTITY.displayName,
+                    p2: call.label,
+                  })
+          }
+          summary={summary}
         >
-          {summary}
-        </Button>
+          {bodyMounted ? <ToolInspectionPanel block={block} /> : null}
+        </Disclosure>
       ) : (
-        <div className="flex min-w-0 items-center gap-1.5 py-1">{summary}</div>
+        <Disclosure variant="step" collapsible={false} summary={summary} />
       )}
       {hasError && block.tool?.detail?.trim() ? (
-        <p className="m-0 line-clamp-2 min-w-0 break-words py-1 pl-5 text-ui-caption text-(--ui-tone-danger-fg)">
+        <p className="m-0 line-clamp-2 min-w-0 break-words py-1 ps-5 text-ui-caption text-(--ui-tone-danger-fg)">
           {errorSummaryLine(block.tool.detail)}
         </p>
       ) : null}
-      {errorOpen && hasResult ? <ToolInspectionPanel block={block} /> : null}
       <ApprovalControls block={block} onApproval={onApproval} />
     </div>
   );
@@ -1033,11 +1173,13 @@ function ActivityToolIcon({ state, live = false }: { state: ToolCallState; live?
     return live ? (
       <Spinner size="sm" tone="secondary" />
     ) : (
-      <CircleDashed className="icon-sm shrink-0" tone="secondary" strokeWidth={1.75} />
+      <ChatPending className="icon-sm shrink-0" tone="secondary" strokeWidth={1.75} />
     );
   }
 
-  return <Minus className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />;
+  return (
+    <ChatNote className="icon-sm shrink-0 text-(--transcript-ink-chrome)" strokeWidth={1.75} />
+  );
 }
 
 /** Failure stays marked. Running and success do not get a trailing icon. */
@@ -1052,13 +1194,13 @@ function ToolCallStatusIcon({
   // A call cut short on purpose settles as accepted, so mark it instead of reading as done.
   if (stopped && state !== "rejected") {
     return (
-      <span className="shrink-0 font-sans text-ui-micro text-(--ui-text-secondary)">
+      <span className="shrink-0 font-sans text-ui-micro text-(--transcript-ink-chrome)">
         {t("Stopped")}
       </span>
     );
   }
   if (state === "rejected") {
-    return <X className="icon-sm shrink-0 text-(--ui-tone-danger-fg)" strokeWidth={2} />;
+    return <ChatFailed className="icon-sm shrink-0 text-(--ui-tone-danger-fg)" strokeWidth={2} />;
   }
   return null;
 }
@@ -1137,8 +1279,25 @@ export function ToolCall({
   );
 }
 
+/** An MCP tool call: the tool in the body ink, its server a step back in the chrome ink. */
+function McpCallText({
+  call,
+  failed = false,
+}: {
+  call: { tool: string; server: string };
+  failed?: boolean;
+}) {
+  return (
+    <>
+      <span className={failed ? undefined : "text-(--transcript-ink-body)"}>{call.tool}</span>{" "}
+      <span className={failed ? undefined : "text-(--transcript-ink-chrome)"}>{call.server}</span>
+    </>
+  );
+}
+
 function ToolCallSummary({
   label,
+  command,
   preview,
   cwd,
   onOpenFile,
@@ -1147,8 +1306,10 @@ function ToolCallSummary({
   chip = false,
   failed = false,
   status = "accepted",
+  working = false,
 }: {
   label: string;
+  command: boolean;
   preview?: ToolPreview;
   cwd?: string;
   onOpenFile?: (path: string) => void;
@@ -1158,6 +1319,8 @@ function ToolCallSummary({
   chip?: boolean;
   failed?: boolean;
   status?: ToolCallState;
+  /** The call is running in the live turn: its words carry the shared sweep. */
+  working?: boolean;
 }) {
   const t = useT();
   const { action, target, fileName, filePath, isFile, previewMatchesFile } = useToolCallDisplay(
@@ -1165,18 +1328,52 @@ function ToolCallSummary({
     preview,
     cwd,
   );
-  if (!action || !target) {
-    return (
-      <OverflowTooltip label={label}>
-        <span
-          className={`min-w-0 flex-1 truncate font-mono text-ui-secondary ${
-            failed ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"
-          }`}
-        >
-          {label}
-        </span>
-      </OverflowTooltip>
+  // An MCP call reads as its tool in words with the server after it; the raw id and arguments stay in the tooltip and details.
+  const mcp = command ? undefined : mcpToolDisplay(label);
+  // A running command or search reads as one live line: verb and command sweep together.
+  if (working && (!action || !target || !isFile)) {
+    const summary = (
+      <span className="flex min-w-0 flex-1 font-sans">
+        <WorkingIndicator className="min-w-0 flex-1" text={{ size: "body" }} truncate glyph={false}>
+          {action && target ? (
+            <>
+              {toolActionText(t, action)}{" "}
+              <span className="font-mono text-ui-secondary text-(--transcript-ink-chrome)">
+                {target}
+              </span>
+            </>
+          ) : (
+            <>
+              {command ? <>{t("Running")} </> : null}
+              {mcp ? (
+                <McpCallText call={mcp} />
+              ) : (
+                <span className="font-mono text-ui-secondary">{label}</span>
+              )}
+            </>
+          )}
+        </WorkingIndicator>
+      </span>
     );
+    return command ? summary : <OverflowTooltip label={label}>{summary}</OverflowTooltip>;
+  }
+  if (!action || !target) {
+    const summary = mcp ? (
+      <span
+        className={`min-w-0 flex-1 truncate font-sans ${failed ? "text-(--ui-tone-danger-fg)" : ""}`}
+      >
+        <McpCallText call={mcp} failed={failed} />
+      </span>
+    ) : (
+      <span
+        className={`min-w-0 flex-1 truncate font-mono text-ui-secondary ${
+          failed ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-tool-ink)"
+        }`}
+      >
+        {label}
+      </span>
+    );
+    return command ? summary : <OverflowTooltip label={label}>{summary}</OverflowTooltip>;
   }
   const openFile =
     action === "Edit" || action === "Write" ? (onOpenDiff ?? onOpenFile) : onOpenFile;
@@ -1186,12 +1383,21 @@ function ToolCallSummary({
     preview?.kind === "write" &&
     previewMatchesFile &&
     (preview.contentOnly || preview.lines?.some((line) => line.kind !== "context"));
-  const actionTone = failed ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)";
-  const targetTone = failed ? "text-(--ui-tone-danger-fg)" : "text-(--color-content)";
+  // One line, two roles: the action label in the body ink, its value a step back in the chrome ink.
+  const actionTone = failed ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-ink-body)";
+  const targetTone = failed ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-ink-chrome)";
 
   return (
     <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-ui-secondary">
-      <span className={`shrink-0 font-sans text-ui-body ${actionTone}`}>{t(action)}</span>
+      {working ? (
+        <WorkingIndicator className="shrink-0 font-sans" text={{ size: "body" }} glyph={false}>
+          {toolActionText(t, action)}
+        </WorkingIndicator>
+      ) : (
+        <span className={`shrink-0 font-sans text-ui-body ${actionTone}`}>
+          {toolActionText(t, action)}
+        </span>
+      )}
       {isFile ? (
         canPreview ? (
           <ToolDiffPreview
@@ -1201,7 +1407,7 @@ function ToolCallSummary({
             cwd={cwd}
             onOpen={openFile && filePath ? () => openFile(filePath) : undefined}
             onOpenFile={onOpenFile}
-            className={`-my-0.5 flex min-w-0 cursor-pointer items-center gap-1 rounded px-1 py-0.5 text-left hover:text-(--ui-tone-info-fg) ${
+            className={`-my-0.5 flex min-w-0 cursor-pointer items-center gap-1 rounded py-0.5 text-start hover:text-(--ui-tone-info-fg) ${
               chip ? `max-w-full ${targetTone}` : `flex-1 ${targetTone}`
             }`}
           >
@@ -1211,7 +1417,7 @@ function ToolCallSummary({
         ) : canOpen ? (
           <Button
             motion="none"
-            className="-my-0.5 min-w-0 text-left max-w-full flex-1"
+            className="-my-0.5 min-w-0 text-start max-w-full flex-1"
             fullWidth
             variant="item"
             type="button"
@@ -1229,7 +1435,7 @@ function ToolCallSummary({
         ) : (
           <OverflowTooltip label={target}>
             <span
-              className={`flex min-w-0 items-center gap-1 rounded px-1 ${
+              className={`flex min-w-0 items-center gap-1 ${
                 chip ? `max-w-full ${targetTone}` : `flex-1 ${targetTone}`
               }`}
             >
@@ -1240,9 +1446,18 @@ function ToolCallSummary({
         )
       ) : (
         <OverflowTooltip label={target}>
-          <span className={`flex min-w-0 flex-1 items-center gap-1.5 pl-1 ${targetTone}`}>
-            <span className="min-w-0 truncate">{target}</span>
-          </span>
+          {preview?.kind === "search" ? (
+            // The query is plain text in the value ink, so a search reads as a question asked, not a command run.
+            <span className="flex min-w-0 flex-1">
+              <span className={`min-w-0 max-w-full truncate font-sans text-ui-body ${targetTone}`}>
+                {target}
+              </span>
+            </span>
+          ) : (
+            <span className={`flex min-w-0 flex-1 items-center gap-1.5 ${targetTone}`}>
+              <span className="min-w-0 truncate">{target}</span>
+            </span>
+          )}
         </OverflowTooltip>
       )}
     </span>
@@ -1266,9 +1481,9 @@ function ApprovalControls({
 function ApprovalContextUnavailable() {
   const t = useT();
   return (
-    <span className="text-ui-caption text-(--ui-text-secondary)">
+    <Text size="caption" tone="secondary">
       {t("Open this request in its conversation to respond.")}
-    </span>
+    </Text>
   );
 }
 
@@ -1290,11 +1505,26 @@ function ConnectedApprovalControls({
     context.session.id,
     block.approval!.requestId,
   );
+  // A bare MCP tool id reads as words with its server beside it; the exact id stays in the tooltip.
+  const detail = approvalDetail(block);
+  const mcp = mcpToolDisplay(detail);
   return (
-    <Surface ref={cardRef} as="div" variant="card" padding="sm" className="mt-1.5 min-w-0">
+    <Surface ref={cardRef} as="div" variant="inset" padding="sm" className="mt-1.5 min-w-0">
       <ApprovalRequest
-        title={t("Needs approval")}
-        detail={approvalDetail(block)}
+        title={mcp ? t("Allow {p0}?", { p0: mcp.tool }) : approvalTitle(block, t)}
+        path={context.session.cwd}
+        scope={decision.sessionAction ? undefined : t("This request only")}
+        actions={decision.sessionAction ? [decision.sessionAction] : undefined}
+        detail={detail}
+        summary={
+          mcp ? (
+            <OverflowTooltip label={detail}>
+              <Text as="div" size="caption" tone="secondary" truncate>
+                {mcp.server}
+              </Text>
+            </OverflowTooltip>
+          ) : undefined
+        }
         details={
           hasToolInspection(block)
             ? { label: t("Details"), content: <ToolInspectionPanel block={block} /> }
@@ -1302,7 +1532,8 @@ function ConnectedApprovalControls({
         }
         allow={{
           label: t("Allow"),
-          pending: decision.pending && decision.decision === "allow",
+          pending:
+            decision.pending && !decision.allowForSessionPending && decision.decision === "allow",
           disabled: decision.blocked,
           onClick: () => void decision.decide("allow"),
         }}
@@ -1317,9 +1548,9 @@ function ConnectedApprovalControls({
         decision.danger ? (
           <InlineError>{decision.feedback}</InlineError>
         ) : (
-          <div role="status" className="mt-1.5 text-ui-caption text-(--ui-text-secondary)">
+          <InlineMessage tone="neutral" live="polite" className="mt-1.5">
             {decision.feedback}
-          </div>
+          </InlineMessage>
         )
       ) : null}
     </Surface>
@@ -1336,10 +1567,19 @@ export function HandoffDivider({ block }: { block: Block }) {
   );
   if (!meta) return null;
 
+  // A failed switch is one failure notice, not a divider: the transcript hides this block when the
+  // failed prompt's own notice follows, so it only shows for a history that has no such notice.
+  if (meta.status === "failed") {
+    return (
+      <div className="px-4 py-2">
+        <SessionErrorNotice text={meta.error ?? t("The last turn failed")} />
+      </div>
+    );
+  }
+
   const preparing = meta.status === "preparing";
-  const failed = meta.status === "failed";
   const cancelled = meta.status === "cancelled";
-  const terminal = failed || cancelled;
+  const terminal = cancelled;
   const label = preparing
     ? phase === "summarizing"
       ? t("Asking {p0} for a summary…", { p0: HARNESS_TITLE[meta.from] })
@@ -1347,13 +1587,13 @@ export function HandoffDivider({ block }: { block: Block }) {
         ? t("Stopping {p0}…", { p0: HARNESS_TITLE[meta.from] })
         : t("Preparing a handoff")
     : terminal
-      ? `${HARNESS_TITLE[meta.to]} · ${t(failed ? "Failed" : "Cancelled")}`
+      ? `${HARNESS_TITLE[meta.to]} · ${t("Cancelled")}`
       : HARNESS_TITLE[meta.to];
 
   return (
     <div className="px-4 py-5">
       <div className="flex items-center gap-3">
-        <div className="h-px min-w-4 flex-1 bg-(--color-stroke)" />
+        <div className="min-w-4 flex-1 border-t border-(--transcript-inset-border)" />
         <div
           role={terminal ? "status" : "separator"}
           aria-label={
@@ -1363,15 +1603,16 @@ export function HandoffDivider({ block }: { block: Block }) {
                 ? `${t("Handoff")} · ${label}`
                 : t("Continued with {p0}", { p0: label })
           }
-          className={`flex max-w-[min(100%,20rem)] items-center gap-1.5 px-1.5 font-sans text-ui-caption ${failed ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
+          className={`flex max-w-[min(100%,20rem)] items-center gap-1.5 px-1.5 font-sans text-ui-caption ${preparing ? "text-(--transcript-ink-faint)" : "text-(--transcript-ink-chrome)"}`}
         >
           {preparing ? (
             <>
-              <WorkingIndicator>{label}</WorkingIndicator>
+              <Spinner size="xs" className="shrink-0" />
+              <WorkingIndicator glyph={false}>{label}</WorkingIndicator>
             </>
           ) : terminal ? (
             <>
-              <X aria-hidden="true" className="icon-sm shrink-0" />
+              <ChatFailed aria-hidden="true" className="icon-sm shrink-0" />
               <span>{label}</span>
             </>
           ) : (
@@ -1381,7 +1622,7 @@ export function HandoffDivider({ block }: { block: Block }) {
             </>
           )}
         </div>
-        <div className="h-px min-w-4 flex-1 bg-(--color-stroke)" />
+        <div className="min-w-4 flex-1 border-t border-(--color-stroke)" />
       </div>
     </div>
   );
@@ -1415,60 +1656,80 @@ function interjectionChrome(
       ? "text-(--ui-tone-danger-fg)"
       : meta.severity === "concern"
         ? "text-(--ui-tone-warning-fg)"
-        : "text-(--ui-text-secondary)";
+        : "text-(--transcript-ink-chrome)";
   return { label, severityText, severityClass };
 }
 
+/** Severity pills: the Surface tone behind the tone's own text colour. */
+const INTERJECTION_TONE = {
+  blocker: "danger",
+  concern: "warning",
+  nit: "neutral",
+} as const;
+
 /** The advisory body under an interjection, wherever the note is surfaced. */
 const INTERJECTION_BODY =
-  "min-w-0 whitespace-pre-wrap break-words font-sans text-ui-secondary leading-5 text-(--ui-text-secondary)";
+  "min-w-0 whitespace-pre-wrap break-words font-sans text-ui-secondary leading-5 text-(--transcript-ink-chrome)";
 
 /** A mid-turn interjection, e.g. OMP advisor notes: a labeled boundary with
  * a collapsible advisory body below it. */
 export function InterjectionDivider({ block }: { block: Block }) {
   const t = useT();
   const [expanded, setExpanded] = useRetainedDisclosure<boolean>(`interjection:${block.id}`, false);
-  const textRef = useRef<HTMLPreElement>(null);
-  const overflows = useClampOverflow(textRef, Boolean(block.text), expanded, block.text);
 
   const meta = block.interjection;
   if (!meta) return null;
   const { label, severityText, severityClass } = interjectionChrome(meta, t);
   return (
-    <div className="px-4 py-4">
-      <div className="flex items-center gap-3">
-        <div className="h-px min-w-4 flex-1 bg-(--color-stroke)" />
-        <div
-          role="separator"
-          aria-label={t("Interjection: {p0}", { p0: label })}
-          className="flex items-center gap-2 px-1.5 font-sans text-ui-caption text-(--ui-text-secondary)"
-        >
+    <div className="px-4 py-2">
+      <div
+        role="separator"
+        aria-label={t("Interjection: {p0}", { p0: label })}
+        {...surfaceAttributes(
+          { variant: "card", frame: "card", radius: "card" },
+          "min-w-0 border-s-2 border-s-(--ui-tone-warning-fg) px-3 py-2.5",
+        )}
+      >
+        <div className="flex items-center gap-2 font-sans text-ui-caption text-(--transcript-ink-chrome)">
           <span>{label}</span>
           {severityText ? (
-            <span className={`text-ui-micro ${severityClass}`}>{severityText}</span>
-          ) : null}
-        </div>
-        <div className="h-px min-w-4 flex-1 bg-(--color-stroke)" />
-      </div>
-      {block.text ? (
-        <div className="mt-2 px-2">
-          <pre ref={textRef} className={`${INTERJECTION_BODY} ${expanded ? "" : "line-clamp-2"}`}>
-            {block.text}
-          </pre>
-          {overflows ? (
-            <Button
-              motion="none"
-              variant="ghost"
-              type="button"
-              aria-expanded={expanded}
-              onClick={() => setExpanded((value) => !value)}
-              className="mt-1"
+            <span
+              {...surfaceAttributes(
+                { tone: INTERJECTION_TONE[meta.severity ?? "nit"], radius: "pill" },
+                `px-2 py-px text-ui-micro ${severityClass}`,
+              )}
             >
-              {expanded ? t("Show less") : t("Show more")}
-            </Button>
+              {severityText}
+            </span>
           ) : null}
         </div>
-      ) : null}
+        {block.text ? (
+          <Disclosure
+            variant="step"
+            chevron="end"
+            open={expanded}
+            onOpenChange={setExpanded}
+            summaryLabel={
+              expanded
+                ? t("Hide the {p0} note", { p0: label })
+                : `${label}: ${proseSummary(block.text)}`
+            }
+            summary={
+              <span className="min-w-0 flex-1 truncate font-sans text-ui-body text-(--transcript-ink-body)">
+                {proseSummary(block.text)}
+              </span>
+            }
+          >
+            {expanded ? (
+              <div className="min-w-0 pb-1">
+                <pre className={`${INTERJECTION_BODY} text-(--transcript-ink-body)`}>
+                  {block.text}
+                </pre>
+              </div>
+            ) : null}
+          </Disclosure>
+        ) : null}
+      </div>
     </div>
   );
 }

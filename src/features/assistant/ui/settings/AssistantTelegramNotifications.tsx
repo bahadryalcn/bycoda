@@ -1,4 +1,4 @@
-import { presentRemoteError } from "../../../connections/public/remoteFailure";
+import { describeRemoteError } from "../../../connections/public/remoteFailure";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import type {
@@ -27,18 +27,18 @@ export function AssistantTelegramNotifications({
   const [targets, setTargets] = useState<AssistantNotificationTarget[]>([]);
   const [pending, setPending] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState("");
+  const [problem, setProblem] = useState<{ message: string; details?: string } | null>(null);
   const key = (target: NonNullable<AssistantProfilePatch["notificationTelegram"]>) =>
     JSON.stringify([target.accountId, target.conversationId]);
   const selected = value.notificationTelegram ? key(value.notificationTelegram) : "";
   async function load() {
     if (pending) return;
     if (!environmentId) {
-      setError(t("Selected Host is unavailable."));
+      setProblem({ message: t("Selected Host is unavailable.") });
       return;
     }
     setPending(true);
-    setError("");
+    setProblem(null);
     try {
       const result = await request({ op: "notifications.targets" }, environmentId);
       if (!result.notificationTargets)
@@ -46,7 +46,7 @@ export function AssistantTelegramNotifications({
       setTargets(result.notificationTargets);
       setLoaded(true);
     } catch (cause) {
-      setError(presentRemoteError(cause, { explicit: true }));
+      setProblem(describeRemoteError(cause));
     } finally {
       setPending(false);
     }
@@ -95,12 +95,12 @@ export function AssistantTelegramNotifications({
           >
             {loaded ? t("Refresh conversations") : t("Choose Telegram conversation")}
           </Button>
-          {loaded && !targets.length && !error && (
+          {loaded && !targets.length && !problem && (
             <Text size="caption" tone="secondary">
               {t("No allowed Telegram conversations.")}
             </Text>
           )}
-          {error && <InlineError>{error}</InlineError>}
+          {problem && <InlineError details={problem.details}>{problem.message}</InlineError>}
         </div>
       )}
     </ProfileRow>

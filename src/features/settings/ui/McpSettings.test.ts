@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { expectErrorDetails } from "./errorDetails.test-support";
 import { act, createElement, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -6,6 +7,7 @@ import { useRetainedState, resetRetainedState } from "../../../shared/hooks/useR
 import type { McpHub } from "../hooks/useMcpHub";
 import { McpSettings } from "./McpSettings";
 import { clearMcpSettingsCache } from "../model/mcpSettingsCache";
+import { rememberRemoteProject } from "../../connections/public/remoteProjects";
 
 // External owner-token lifecycle has its own isolated browser coverage. Keep
 // these discovery/cache assertions scoped to provider MCP connections.
@@ -13,6 +15,14 @@ vi.mock("./ExternalMcpAccess", () => ({ ExternalMcpAccess: () => null }));
 // The Host hub hook has its own tests (useMcpHub.test.ts); here it is a controllable stub.
 const hubMock = vi.hoisted(() => ({ hub: undefined as unknown as McpHub }));
 vi.mock("../hooks/useMcpHub", () => ({ useMcpHub: () => hubMock.hub }));
+const machinesMock = vi.hoisted(() => ({
+  machines: [] as { id: string; name: string; environmentId: string; endpoint: string }[],
+  request: vi.fn(),
+}));
+vi.mock("../../connections/public/connections", () => ({
+  useRemoteMachines: () => ({ machines: machinesMock.machines, loading: false, refresh: vi.fn() }),
+  remoteRequest: machinesMock.request,
+}));
 // Keep this settings fixture independent of unrelated application barrel cycles.
 vi.mock("../../sessions", () => import("../../sessions/ui/HarnessIcon"));
 vi.mock("../../projects", () => import("../../projects/ui/SearchableProjectPicker"));
@@ -59,6 +69,8 @@ beforeEach(async () => {
   resetRetainedState();
   clearMcpSettingsCache();
   hubMock.hub = makeHub();
+  machinesMock.machines = [];
+  machinesMock.request.mockReset();
   const storage = new Map<string, string>();
   vi.stubGlobal("localStorage", {
     getItem: (key: string) => storage.get(key) ?? null,
@@ -134,6 +146,38 @@ async function openDetail(name: string) {
   await act(async () => rowButton(name)!.click());
   expect(sheet(), `detail sheet for ${name}`).not.toBeNull();
 }
+
+async function openProviderJson() {
+  const details = sheet()!.querySelector<HTMLDetailsElement>("details")!;
+  await act(async () => {
+    details.open = true;
+    details.dispatchEvent(new Event("toggle"));
+  });
+}
+
+it("keeps a configuration draft open when discovery loses its server", async () => {
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  await openDetail("docs");
+  await openProviderJson();
+  const editor = sheet()!.querySelector<HTMLTextAreaElement>("textarea")!;
+  const draft = '{"args":["keep"]}';
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      editor,
+      draft,
+    );
+    editor.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(sheetButtons("Save")[0]?.disabled).toBe(false);
+
+  invoke.mockImplementation(async (command: string) => (command === "mcp_discover" ? [] : ""));
+  await refreshStatus();
+
+  expect(rowButton("docs")).toBeNull();
+  expect(sheet()?.querySelector("textarea")?.value).toBe(draft);
+  expect(sheet()?.textContent).toContain("Unavailable");
+  expect(sheetButtons("Save")[0]?.getAttribute("aria-disabled")).toBe("true");
+});
 
 it("groups providers that share a name into one row and keeps progress on the exact action", async () => {
   let finishLogin!: () => void;
@@ -212,7 +256,7 @@ it("confirms before removing a Claude entry and sends scope and name only after 
   expect(sheetButtons("Remove")).toHaveLength(0);
 });
 
-it("shows unsupported remote targets without local discovery or Add and permits choosing a local project", async () => {
+it("keeps an unavailable remote project selected and permits choosing a local project", async () => {
   await act(async () =>
     root.render(
       createElement(McpSettings, {
@@ -224,7 +268,7 @@ it("shows unsupported remote targets without local discovery or Add and permits 
       }),
     ),
   );
-  expect(container.textContent).toContain("only available for projects on this computer");
+  expect(container.textContent).toContain("This computer is no longer available in Connections.");
   expect(addServerButton()).toBeNull();
   expect(invoke).not.toHaveBeenCalled();
   const picker = container.querySelector<HTMLButtonElement>(
@@ -234,7 +278,7 @@ it("shows unsupported remote targets without local discovery or Add and permits 
   const options = Array.from(
     document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
   );
-  expect(options.some((option) => option.textContent?.includes("other-remote"))).toBe(false);
+  expect(options.some((option) => option.textContent?.includes("other-remote"))).toBe(true);
   const local = options.find((option) => option.textContent?.includes("local-project"))!;
   await act(async () => local.click());
   expect(invoke).toHaveBeenCalledWith("mcp_discover", { cwd: "/local-project" });
@@ -242,11 +286,63 @@ it("shows unsupported remote targets without local discovery or Add and permits 
   expect(addServerButton()).not.toBeNull();
 });
 
+it("uses the owning Host and project ID for Project, then discovers this computer in Global", async () => {
+  const cwd = "remote://fixture-host/work/remote-project";
+  rememberRemoteProject("fixture-host", {
+    id: "registered-project",
+    name: "remote-project",
+    cwd: "/work/remote-project",
+  });
+  machinesMock.machines = [
+    { id: "saved-host", name: "Office PC", environmentId: "fixture-host", endpoint: "http://host" },
+  ];
+  machinesMock.request.mockResolvedValue({ connections: [], warnings: [] });
+  await act(async () => root.render(createElement(McpSettings, { cwd })));
+  expect(container.textContent).toContain("Office PC");
+  expect(machinesMock.request).toHaveBeenCalledWith(
+    "saved-host",
+    "mcp.config.call",
+    {
+      projectId: "registered-project",
+      command: "mcp_discover",
+      args: {},
+    },
+    false,
+    false,
+    "fixture-host",
+  );
+  expect(invoke).not.toHaveBeenCalled();
+
+  const global = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Global",
+  )!;
+  await act(async () => global.click());
+  expect(invoke).toHaveBeenCalledWith("mcp_discover", { cwd: "~", globalOnly: true });
+  const chooser = container.querySelector<HTMLButtonElement>('[aria-label^="Computer"]')!;
+  await act(async () => chooser.click());
+  const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+    (item) => item.textContent === "Office PC",
+  )!;
+  await act(async () => option.click());
+  expect(machinesMock.request).toHaveBeenLastCalledWith(
+    "saved-host",
+    "mcp.config.call",
+    {
+      projectId: undefined,
+      command: "mcp_discover",
+      args: {},
+    },
+    false,
+    false,
+    "fixture-host",
+  );
+});
+
 async function selectProject(path: string) {
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label^="Switch project"]')!.click(),
   );
-  expect(document.querySelector('input[placeholder="Search projects..."]')).not.toBeNull();
+  expect(document.querySelector('input[placeholder="Search projects…"]')).not.toBeNull();
   // Each project option names the project's folder (its full path shows only as a tooltip).
   const name = path.split("/").pop()!;
   const option = Array.from(
@@ -401,6 +497,15 @@ it("adds a standard mcpServers entry to the selected provider and project", asyn
     (button) => button.textContent === "Cursor",
   )!;
   await act(async () => cursor.click());
+  await act(async () =>
+    document.body
+      .querySelector<HTMLButtonElement>('[aria-label="Setup method: Server URL"]')!
+      .click(),
+  );
+  const jsonOption = [...document.body.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+    (button) => button.textContent === "JSON configuration",
+  )!;
+  await act(async () => jsonOption.click());
   const config = document.body.querySelector<HTMLTextAreaElement>("textarea")!;
   const json = '{"mcpServers":{"new-server":{"command":"npx","args":["example"]}}}';
   await act(async () => {
@@ -511,8 +616,10 @@ it("exposes configured remote sign-in per provider without offering it to disabl
     });
   }
   expect(rowOf("disabled").textContent).toContain("Off");
-  expect(rowOf("local-tool").textContent).toContain("Configured");
-  expect(rowOf("desktop").textContent).toContain("Configured");
+  // Configured is the quiet default: the dot names it, the row writes nothing.
+  expect(rowOf("local-tool").querySelector('[aria-label="Configured"]')).not.toBeNull();
+  expect(rowOf("local-tool").textContent).not.toContain("Configured");
+  expect(rowOf("desktop").querySelector('[aria-label="Configured"]')).not.toBeNull();
   expect(container.textContent).not.toContain("Ready");
 });
 
@@ -951,7 +1058,7 @@ it("opens Global independently of ambiguous project settings", async () => {
     return "";
   });
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
-  expect(invoke).toHaveBeenCalledWith("mcp_discover", { cwd: "/repo", globalOnly: true });
+  expect(invoke).toHaveBeenCalledWith("mcp_discover", { cwd: "~", globalOnly: true });
   expect(container.textContent).toContain("global-docs");
   expect(container.textContent).not.toContain("ambiguous project settings");
   const project = [...container.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
@@ -977,9 +1084,11 @@ async function type(area: HTMLTextAreaElement, value: string) {
   });
 }
 
-it("reads the entry when the detail opens and saves with the loaded revision", async () => {
+it("reads the entry when JSON opens and saves with the loaded revision", async () => {
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
   await openDetail("sentry");
+  expect(invoke.mock.calls.some(([command]) => command === "mcp_server_config_read")).toBe(false);
+  await openProviderJson();
   expect(invoke).toHaveBeenCalledWith("mcp_server_config_read", {
     cwd: "/repo",
     provider: "claude",
@@ -989,9 +1098,9 @@ it("reads the entry when the detail opens and saves with the loaded revision", a
   });
   expect(configArea().value).toBe("{}");
   const save = () => sheetButtons("Save")[0];
-  expect(save().disabled).toBe(true);
+  expect(save().getAttribute("aria-disabled")).toBe("true");
   await type(configArea(), '{"url":"https://new.example"}');
-  expect(save().disabled).toBe(false);
+  expect(save().getAttribute("aria-disabled")).not.toBe("true");
   const discovery = invoke.getMockImplementation()!;
   invoke.mockImplementation(async (command: string, args: unknown) =>
     command === "mcp_server_config_write"
@@ -1016,6 +1125,7 @@ it("reads the entry when the detail opens and saves with the loaded revision", a
 it("keeps the draft and shows the error when the file changed since it was read", async () => {
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
   await openDetail("sentry");
+  await openProviderJson();
   const draft = '{"url":"https://mine.example"}';
   await type(configArea(), draft);
   const discovers = invoke.mock.calls.filter(([command]) => command === "mcp_discover").length;
@@ -1025,7 +1135,11 @@ it("keeps the draft and shows the error when the file changed since it was read"
     return "";
   });
   await act(async () => sheetButtons("Save")[0].click());
-  expect(sheet()!.textContent).toContain("The configuration changed on disk");
+  await expectErrorDetails(
+    sheet()!,
+    "Could not save MCP configuration.",
+    "The configuration changed on disk",
+  );
   expect(configArea().value).toBe(draft);
   expect(sheetButtons("Save")[0].disabled).toBe(false);
   expect(invoke.mock.calls.filter(([command]) => command === "mcp_discover")).toHaveLength(
@@ -1036,10 +1150,14 @@ it("keeps the draft and shows the error when the file changed since it was read"
 it("rejects an invalid draft locally without writing", async () => {
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
   await openDetail("sentry");
+  await openProviderJson();
   await type(configArea(), "{ nope");
   await act(async () => sheetButtons("Save")[0].click());
   expect(invoke.mock.calls.some(([command]) => command === "mcp_server_config_write")).toBe(false);
   expect(sheet()!.querySelector('[role="alert"]')).not.toBeNull();
-  await act(async () => sheetButtons("Revert")[0].click());
+  // Revert is an icon-only button named by its accessible label.
+  await act(async () =>
+    sheet()!.querySelector<HTMLButtonElement>('button[aria-label="Revert"]')!.click(),
+  );
   expect(configArea().value).toBe("{}");
 });

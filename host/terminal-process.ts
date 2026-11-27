@@ -6,6 +6,10 @@ import { windowsUtf8ConsoleSetup, type ShellProfile } from "./execution/shellPro
 export type OwnedTerminalProcess = {
   write(data: string): Promise<void>;
   stop(): Promise<void>;
+  /** PTY only: Ctrl-C to the foreground program. A pipe shell has no foreground program. */
+  interrupt?(): Promise<void>;
+  /** PTY only. */
+  resize?(cols: number, rows: number): Promise<void>;
 };
 
 /** Input written before the first user command; empty where the shell needs no setup. */

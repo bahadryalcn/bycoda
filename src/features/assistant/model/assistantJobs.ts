@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import type {
   AssistantJob,
   AssistantRequest,
@@ -81,7 +82,7 @@ const automationScope = (source: AssistantJobProjectSource) => {
 function normalizeQuick(action: AssistantQuickAction): AssistantQuickAction {
   if (action?.kind === "note") return normalizeAssistantQuickNoteAction(action);
   if (action?.kind === "automation") return normalizeAssistantQuickAutomationAction(action);
-  throw new Error("Review the project, schedule, model and run limits for every automation.");
+  throw new Error(t("Review the project, schedule, model and run limits for every automation."));
 }
 export { normalizeQuick as normalizeAssistantJobQuickAction };
 type ProjectSource = AssistantJobProjectSource;
@@ -231,7 +232,7 @@ type Create = Extract<AssistantRequest, { op: "jobs.create" }>;
 export function assistantJobDraftRequest(row: AssistantJobDraft): Create {
   if (row.kind === "quick") {
     if (!row.quickAction)
-      throw new Error("Review the exact title and content of every personal note.");
+      throw new Error(t("Review the exact title and content of every personal note."));
     if (
       row.quickAction.kind === "automation" &&
       row.quickAction.modelChoice?.kind === "fixed" &&
@@ -256,7 +257,7 @@ export function assistantJobDraftRequest(row: AssistantJobDraft): Create {
   }
   const projectIds = assistantJobProjectIds(row);
   if (!projectIds.length)
-    throw new Error("Review a title, request and one to twenty projects for every job.");
+    throw new Error(t("Review a title, request and one to twenty projects for every job."));
   return {
     op: "jobs.create",
     title: row.title.trim(),
@@ -339,7 +340,7 @@ export class AssistantJobBatch {
     this.pending = (async () => {
       const current = await this.request({ op: "snapshot", limit: 100 });
       if (!current.snapshot)
-        throw new Error("Job status is unknown. Check the Room before retrying.");
+        throw new Error(t("Job status is unknown. Check the Room before retrying."));
       for (const row of this.frozen!) {
         if (this.accepted.some((job) => job.idempotencyKey === row.idempotencyKey)) continue;
         const prior = current.snapshot?.jobs.find(
@@ -357,14 +358,15 @@ export class AssistantJobBatch {
         const input: Create = after && base.kind !== "quick" ? { ...base, after } : base;
         if (prior) {
           if (!receiptMatches(prior, input))
-            throw new Error("Job request identity changed. Open the Room to check it.");
+            throw new Error(t("Job request identity changed. Open the Room to check it."));
           this.accepted.push(prior);
           continue;
         }
         const result = await this.request(input);
-        if (!result.job) throw new Error("Job status is unknown. Check the Room before retrying.");
+        if (!result.job)
+          throw new Error(t("Job status is unknown. Check the Room before retrying."));
         if (!receiptMatches(result.job, input))
-          throw new Error("Job request identity changed. Open the Room to check it.");
+          throw new Error(t("Job request identity changed. Open the Room to check it."));
         this.accepted.push(result.job);
       }
       return this.accepted;

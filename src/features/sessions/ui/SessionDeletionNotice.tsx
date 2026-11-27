@@ -1,8 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Spinner } from "../../../shared/ui/Spinner";
-import { useEffect, useState, useSyncExternalStore } from "react";
-import { InlineMessage } from "../../../shared/ui/InlineError";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { useSyncExternalStore } from "react";
 import { useT } from "../../../shared/i18n";
 import { sameProjectPath } from "../../projects/public/recents";
 import {
@@ -11,6 +9,8 @@ import {
   subscribeSessionDeletionStatus,
   type SessionDeletionStatus,
 } from "../model/sessionDeletionStatus";
+import { usePresentationNow } from "./AgentClock";
+import { NoticeActionButton, TranscriptNotice } from "./TranscriptNotice";
 import { RemoteActivityNotices } from "./RemoteActivityNotices";
 import {
   SessionBulkDeletionNotice,
@@ -47,15 +47,9 @@ export function SessionDeletionNotice({
 
 function DeletionNotice({ status }: { status: SessionDeletionStatus }) {
   const t = useT();
-  const [elapsed, setElapsed] = useState(0);
   const pending = !status.outcome;
-  useEffect(() => {
-    if (!pending) return;
-    const tick = () => setElapsed(Math.floor((Date.now() - status.startedAt) / 1000));
-    tick();
-    const timer = window.setInterval(tick, 1000);
-    return () => window.clearInterval(timer);
-  }, [pending, status.startedAt]);
+  const now = usePresentationNow(pending);
+  const elapsed = Math.max(0, Math.floor((now - status.startedAt) / 1000));
   const onDismissStatus = () => dismissSessionDeletionStatus(status.sessionId);
   const stages = {
     preparing: t("Preparing deletion…"),
@@ -66,41 +60,37 @@ function DeletionNotice({ status }: { status: SessionDeletionStatus }) {
     worktree: t("Conversation deleted. Removing worktree…"),
   };
   return (
-    <div
-      {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "shrink-0 px-3 py-2")}
-      data-session-deletion-detail
-    >
-      <InlineMessage
-        tone={
+    <div className="shrink-0 px-3 py-1" data-session-deletion-detail>
+      <TranscriptNotice
+        kind={
           pending
             ? "info"
             : status.outcome === "failed"
-              ? "danger"
+              ? "error"
               : status.error
                 ? "warning"
                 : "success"
         }
-        icon={pending ? <Spinner size="sm" /> : undefined}
-        action={pending ? undefined : { label: t("Dismiss"), onClick: onDismissStatus }}
-      >
-        <span className="min-w-0 break-words">
-          <span className="block">{status.title}</span>
-          <Text size="caption" tone="secondary" className="block">
-            {pending
-              ? stages[status.stage]
-              : status.outcome === "failed"
-                ? t("Could not delete conversation. Try again from its menu.")
-                : status.error
-                  ? t("Conversation deleted. Its worktree was kept.")
-                  : t("Conversation deleted.")}
-          </Text>
-          {status.error ? (
-            <Text size="caption" tone="inherit" className="block break-words">
-              {status.error}
-            </Text>
-          ) : null}
-        </span>
-      </InlineMessage>
+        trying={pending}
+        title={status.title}
+        detail={
+          pending
+            ? stages[status.stage]
+            : status.outcome === "failed"
+              ? t("Could not delete conversation. Try again from its menu.")
+              : status.error
+                ? t("Conversation deleted. Its worktree was kept.")
+                : t("Conversation deleted.")
+        }
+        extra={
+          status.error ? <ErrorDetails title={status.title} detail={status.error} /> : undefined
+        }
+        actions={
+          pending ? undefined : (
+            <NoticeActionButton action={{ label: t("Dismiss"), onClick: onDismissStatus }} quiet />
+          )
+        }
+      />
       {pending && elapsed >= 10 ? (
         <Text size="caption" tone="secondary" className="block tabular-nums" aria-hidden="true">
           {t("Still working… {p0}s elapsed", { p0: elapsed })}

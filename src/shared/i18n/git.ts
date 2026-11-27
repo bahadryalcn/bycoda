@@ -1,10 +1,10 @@
-import { getLocale as currentLocale, useLocale as subscribeLocale, translateAt } from "./index";
+import { useLocale as subscribeLocale } from "./index";
+import { translateAt } from "./core";
 import { useMemo } from "react";
+import type { t } from "./gitCore";
 
-export const getLocale = () => currentLocale("git");
+export { getLocale, t } from "./gitCore";
 export const useLocale = () => subscribeLocale("git");
-export const t = (message: string, values?: Record<string, unknown>) =>
-  translateAt(getLocale(), message, values);
 
 /** Locale-bound translator for compiler-managed Git components. */
 export function useT(): typeof t {

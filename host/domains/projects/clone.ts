@@ -65,6 +65,16 @@ export function validateCloneName(name: string): string {
 /** Whether a path exists; the Host injects the file system so domains stay platform-free. */
 export type PathExists = (path: string) => Promise<boolean>;
 
+/**
+ * Folder operations the Host injects. `claim` creates the folder only when nothing exists at
+ * that path and reports false otherwise, so a folder this attempt claimed is provably its own.
+ */
+export interface CloneFolderPorts {
+  exists: PathExists;
+  claim(path: string): Promise<boolean>;
+  remove(path: string): Promise<void>;
+}
+
 /** Destination under an already-validated absolute parent; it must not exist yet. */
 export async function resolveCloneDestination(
   parentPath: string,
@@ -91,109 +101,98 @@ export function cloneProgress(operationId: string): ProjectCloneProgress | null 
 
 const PROGRESS_LINE = /([A-Za-z][A-Za-z ]+?):\s+(\d{1,3})%/;
 
-/** The process launch a clone needs; the Host injects `node:child_process` spawn. */
-export interface CloneChild {
-  stderr: {
-    setEncoding(encoding: "utf8"): void;
-    on(event: "data", listener: (chunk: string) => void): void;
-  };
-  once(event: "error", listener: (error: NodeJS.ErrnoException) => void): void;
-  once(event: "close", listener: (code: number | null) => void): void;
-  kill(): void;
-}
-export type SpawnProcess = (
+/** The process runner a clone needs; the Host injects its Git worker pool. */
+export type CloneExec = (
   command: string,
   args: string[],
-  options: { windowsHide: boolean; stdio: ["ignore", "ignore", "pipe"]; env: NodeJS.ProcessEnv },
-) => CloneChild;
+  options: {
+    windowsHide: boolean;
+    timeout: number;
+    lane: "network";
+    env: NodeJS.ProcessEnv;
+    onOutput: (stream: "stdout" | "stderr", chunk: Uint8Array) => void;
+  },
+) => Promise<unknown>;
 
 /** Runs `git clone -- url dest` without prompts, under a deadline, reporting progress. */
-export function runGitClone(
+export async function runGitClone(
   url: string,
   dest: string,
   options: {
-    spawn: SpawnProcess;
+    exec: CloneExec;
     operationId?: string;
     deadlineMs?: number;
     gitBinary?: string;
   },
 ): Promise<void> {
-  return new Promise((resolvePromise, reject) => {
-    const child = options.spawn(
-      options.gitBinary ?? "git",
-      ["clone", "--progress", "--", url, dest],
-      {
-        windowsHide: true,
-        stdio: ["ignore", "ignore", "pipe"],
-        env: {
-          ...process.env,
-          GIT_TERMINAL_PROMPT: "0",
-          GIT_ASKPASS: "",
-          SSH_ASKPASS: "",
-          GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? "ssh -o BatchMode=yes",
-        },
+  let lastLine = "";
+  let buffer = "";
+  const decoder = new TextDecoder();
+  await options
+    .exec(options.gitBinary ?? "git", ["clone", "--progress", "--", url, dest], {
+      windowsHide: true,
+      timeout: options.deadlineMs ?? CLONE_DEADLINE_MS,
+      lane: "network",
+      env: {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: "0",
+        GIT_ASKPASS: "",
+        SSH_ASKPASS: "",
+        GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? "ssh -o BatchMode=yes",
       },
-    );
-    let lastLine = "";
-    let buffer = "";
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill();
-    }, options.deadlineMs ?? CLONE_DEADLINE_MS);
-    child.stderr.setEncoding("utf8"); // lossy by default: invalid bytes become U+FFFD
-    child.stderr.on("data", (chunk: string) => {
-      buffer += chunk;
-      const lines = buffer.split(/[\r\n]+/);
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        lastLine = line.trim();
-        const match = PROGRESS_LINE.exec(line);
-        if (match)
-          remember(options.operationId, {
-            state: "running",
-            phase: match[1]!.trim(),
-            percent: Math.min(100, Number(match[2])),
-          });
-      }
-    });
-    child.once("error", (error: NodeJS.ErrnoException) => {
-      clearTimeout(timer);
-      reject(
-        new Error(
-          error.code === "ENOENT" ? "git is not installed" : `git clone failed: ${error.message}`,
-        ),
-      );
-    });
-    child.once("close", (code) => {
-      clearTimeout(timer);
-      if (code === 0) return resolvePromise();
-      if (timedOut) return reject(new Error("git clone timed out"));
+      onOutput: (stream, chunk) => {
+        if (stream !== "stderr") return;
+        buffer += decoder.decode(chunk, { stream: true });
+        const lines = buffer.split(/[\r\n]+/);
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          lastLine = line.trim();
+          const match = PROGRESS_LINE.exec(line);
+          if (match)
+            remember(options.operationId, {
+              state: "running",
+              phase: match[1]!.trim(),
+              percent: Math.min(100, Number(match[2])),
+            });
+        }
+      },
+    })
+    .catch((error: Error & { code?: string | number | null; killed?: boolean }) => {
+      if (error.code === "ENOENT") throw new Error("git is not installed");
+      if (error.killed || error.code === "ETIMEDOUT") throw new Error("git clone timed out");
+      if (typeof error.code === "string") throw new Error(`git clone failed: ${error.message}`);
+      buffer += decoder.decode();
       if (buffer.trim()) lastLine = buffer.trim();
-      reject(new Error(lastLine || "git clone failed"));
+      throw new Error(lastLine || "git clone failed");
     });
-  });
 }
 
-/** Validates every input, then clones. `parentPath` must already be vetted by the caller. */
+/**
+ * Validates every input, claims the destination, then clones. `parentPath` must already be
+ * vetted by the caller. A failed clone removes only the folder this call claimed; a folder that
+ * existed before the call, or one created concurrently, is never touched.
+ */
 export async function cloneRepository(
   params: z.infer<typeof ProjectsCloneParamsSchema>,
   parentPath: string,
   run: (url: string, dest: string, options: { operationId?: string }) => Promise<void>,
-  exists: PathExists,
+  folders: CloneFolderPorts,
 ): Promise<{ path: string }> {
   const url = validateCloneUrl(params.url);
   const dest = await resolveCloneDestination(
     parentPath,
     params.name ?? inferCloneName(url),
-    exists,
+    folders.exists,
   );
+  if (!(await folders.claim(dest))) throw new Error(`${dest} already exists`);
   remember(params.operationId, { state: "running", phase: "Starting", percent: null });
   try {
     await run(url, dest, { operationId: params.operationId });
   } catch (error) {
     remember(params.operationId, { state: "failed", phase: "Failed", percent: null });
+    // Cleanup is best effort: the clone error is the one the caller needs to see.
+    await folders.remove(dest).catch(() => {});
     throw error;
   }
   remember(params.operationId, { state: "done", phase: "Done", percent: 100 });

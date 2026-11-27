@@ -23,7 +23,9 @@ import { revealPath } from "../../../platform/tauri/fs";
 import type { Session } from "../../sessions/model/session";
 import { WorkspaceDirectoryRemoval } from "./WorkspaceDirectoryRemoval";
 import { WorkspaceReview } from "./WorkspaceReview";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { SettingsFeedback } from "../../../shared/ui/settings";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { CollectionToolbar } from "../../settings/ui/SettingsCollection";
 import type {
   ManagedWorkspace,
@@ -39,7 +41,7 @@ import {
 } from "../model/workspaceClient";
 import { setWorkspacePinned, WORKSPACE_PINNING_CAPABILITY } from "../model/workspacePinning";
 import { isBackgroundRemoval } from "../model/backgroundRemoval";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { describeRemoteError, presentRemoteError } from "../../connections/public/remoteFailure";
 import { useBackgroundRemovals } from "../hooks/useBackgroundRemovals";
 
 type Stage = "inventory" | "policy" | "storage";
@@ -69,7 +71,11 @@ export function WorkspacePolicySettings({
   policyCollapsed?: boolean;
   cwd: string;
   environmentId?: string;
-  onInventory?: (workspaces: ManagedWorkspace[] | null) => void;
+  onInventory?: (
+    inventory:
+      | { status: "loading" | "failed" }
+      | { status: "ready"; workspaces: ManagedWorkspace[] },
+  ) => void;
 }) {
   useLocale();
   const [capabilities, setCapabilities] = useState<string[]>();
@@ -121,6 +127,8 @@ export function WorkspacePolicySettings({
   );
   const draftRef = useRef<WorkspacePolicy | undefined>(undefined);
   const inventoryCallback = useRef(onInventory);
+  const inventoryRead = useRef(0);
+  // Keep the active inventory read connected to the latest parent callback.
   useEffect(() => {
     inventoryCallback.current = onInventory;
   }, [onInventory]);
@@ -157,21 +165,25 @@ export function WorkspacePolicySettings({
     async (stage: Stage, requestEpoch: number) => {
       const context = resolvedContext.current;
       const caps = capabilitiesRef.current;
-      if (!context || !caps) return;
+      if (!context || !caps || epoch.current !== requestEpoch) return;
       const args = {
         projectId: context.projectId,
         environmentId: context.environmentId,
       };
+      const read = stage === "inventory" ? ++inventoryRead.current : undefined;
+      const isCurrent = () =>
+        epoch.current === requestEpoch && (read === undefined || read === inventoryRead.current);
       setStageBusy((busy) => ({ ...busy, [stage]: true }));
+      if (read !== undefined) inventoryCallback.current?.({ status: "loading" });
       try {
         if (stage === "inventory") {
           const inventory = caps.includes("workspaces.managed.v1")
             ? await workspaceRequest("workspaces.list", args, scope())
             : [];
-          if (epoch.current !== requestEpoch) return;
+          if (!isCurrent()) return;
           setWorkspaces(inventory);
           setInventoryLoaded(true);
-          inventoryCallback.current?.(inventory);
+          inventoryCallback.current?.({ status: "ready", workspaces: inventory });
         } else if (stage === "policy") {
           if (!caps.includes("workspaces.policy.v1")) return;
           const next = await workspaceRequest("projects.workspacePolicy.get", args, scope());
@@ -185,10 +197,16 @@ export function WorkspacePolicySettings({
         }
         setStageError((errors) => ({ ...errors, [stage]: undefined }));
       } catch (failure) {
-        if (epoch.current === requestEpoch)
-          setStageError((errors) => ({ ...errors, [stage]: String(failure) }));
+        if (isCurrent()) {
+          const { details, message } = describeRemoteError(failure);
+          setStageError((errors) => ({
+            ...errors,
+            [stage]: details || message,
+          }));
+          if (stage === "inventory") inventoryCallback.current?.({ status: "failed" });
+        }
       } finally {
-        if (epoch.current === requestEpoch) setStageBusy((busy) => ({ ...busy, [stage]: false }));
+        if (isCurrent()) setStageBusy((busy) => ({ ...busy, [stage]: false }));
       }
     },
     // adoptPolicy only touches refs and state setters.
@@ -199,7 +217,7 @@ export function WorkspacePolicySettings({
     const requestEpoch = ++epoch.current;
     setLoading(true);
     setError(undefined);
-    inventoryCallback.current?.(null);
+    inventoryCallback.current?.({ status: "loading" });
     try {
       const context = await resolveWorkspaceContext(cwd);
       if (epoch.current !== requestEpoch) return;
@@ -213,7 +231,10 @@ export function WorkspacePolicySettings({
       for (const stage of ["inventory", "policy", "storage"] as const)
         await runStage(stage, requestEpoch);
     } catch (failure) {
-      if (epoch.current === requestEpoch) setError(String(failure));
+      if (epoch.current === requestEpoch) {
+        setError(presentRemoteError(failure, { explicit: true }));
+        inventoryCallback.current?.({ status: "failed" });
+      }
     } finally {
       if (epoch.current === requestEpoch) setLoading(false);
     }
@@ -224,6 +245,7 @@ export function WorkspacePolicySettings({
     await runStage("inventory", requestEpoch);
     await runStage("storage", requestEpoch);
   }, [runStage]);
+  // Reset the policy and roster when this view switches projects.
   useEffect(() => {
     setPolicy(undefined);
     policyRef.current = undefined;
@@ -252,8 +274,9 @@ export function WorkspacePolicySettings({
     };
   }, [cwd, refresh]);
 
-  const save = async (override?: WorkspacePolicyOverride) => {
-    if (!policy || !draft || saving) return;
+  /** True only once the Host acknowledged the policy for the context that was open. */
+  const save = async (override?: WorkspacePolicyOverride): Promise<boolean> => {
+    if (!policy || !draft || saving) return false;
     const requestEpoch = epoch.current;
     setSaving(true);
     setError(undefined);
@@ -277,7 +300,8 @@ export function WorkspacePolicySettings({
         },
         scope(),
       );
-      if (epoch.current !== requestEpoch) return;
+      // The project changed while saving: this draft no longer exists here, so nothing is acknowledged.
+      if (epoch.current !== requestEpoch) return false;
       commitPolicy(next);
       commitDraft(next.resolved.policy);
       setPolicyConflict(false);
@@ -286,8 +310,10 @@ export function WorkspacePolicySettings({
       // Storage limits just changed. The policy draft is already settled, so a storage
       // failure is reported on its own section with a local retry.
       void runStage("storage", requestEpoch);
+      return true;
     } catch (failure) {
       if (epoch.current === requestEpoch) setError(presentRemoteError(failure, { explicit: true }));
+      return false;
     } finally {
       setSaving(false);
     }
@@ -347,10 +373,15 @@ export function WorkspacePolicySettings({
     !!onDisk.length ||
     (inventoryLoaded && !!capabilities?.includes("workspaces.managed.v1"));
   /** A failed read keeps the last good data visible, labelled stale, with a local retry. */
-  const stageNotice = (stage: Stage, label: string, hasData: boolean) =>
-    stageError[stage] ? (
+  const stageNotice = (stage: Stage, label: string, hasData: boolean) => {
+    const detail = stageError[stage];
+    const title = hasData
+      ? t("Couldn’t refresh {p0}. Showing last loaded data.", { p0: label })
+      : t("Couldn’t refresh {p0}. Data has not been verified.", { p0: label });
+    return detail ? (
       <SettingsFeedback
         state="warning"
+        extra={<ErrorDetails title={title} detail={detail} />}
         action={{
           label: t("Retry"),
           pending: !!stageBusy[stage],
@@ -358,24 +389,27 @@ export function WorkspacePolicySettings({
           onClick: () => void runStage(stage, epoch.current),
         }}
       >
-        {hasData
-          ? t("{p0} could not refresh and may be out of date: {p1}", {
-              p0: label,
-              p1: stageError[stage],
-            })
-          : t("{p0} could not be read: {p1}", {
-              p0: label,
-              p1: stageError[stage],
-            })}
+        {title}
       </SettingsFeedback>
     ) : null;
+  };
+  // An older Host lacks some controls; one notice names the most consequential gap, not three.
+  const hostUpdateNotice = !capabilities
+    ? undefined
+    : !capabilities.includes("workspaces.policy.v1")
+      ? t("Update the execution Host to configure worktree defaults and retention.")
+      : !capabilities.includes("workspaces.lifecycle.v1")
+        ? t("Update the execution Host to inspect storage and safely remove managed directories.")
+        : !capabilities.includes(WORKSPACE_PINNING_CAPABILITY)
+          ? t("Update the execution Host to pin or unpin individual workspaces.")
+          : undefined;
   if (!cwd || cwd === "~") return renderHeader?.(async () => {}, false, true) ?? null;
 
   return (
     <div
       role="group"
       aria-label={t("Managed workspaces")}
-      className={styles.root}
+      className={`${styles.root} settings-topics`}
       data-testid="workspace-policy-settings"
     >
       {renderHeader ? (
@@ -387,28 +421,34 @@ export function WorkspacePolicySettings({
             loading={loading}
             loadingLabel={t("Refreshing…")}
             disabled={saving || removing}
+            disabledReason={t("Wait for the current operation to finish")}
             onClick={() => void refresh()}
           >
             {t("Refresh workspace status")}
           </Button>
         </div>
       )}
-      {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
+      {error && (
+        <SettingsFeedback
+          state="error"
+          extra={<ErrorDetails title={t("Could not update workspace settings.")} detail={error} />}
+        >
+          {t("Could not update workspace settings.")}
+        </SettingsFeedback>
+      )}
       {stageNotice("inventory", t("Managed workspace directories"), inventoryLoaded)}
+      {hostUpdateNotice ? (
+        <SettingsFeedback state="warning">{hostUpdateNotice}</SettingsFeedback>
+      ) : null}
       {showRoster && (
         <section aria-label={t("Worktrees")} className="flex min-w-0 flex-col gap-2">
           {!renderHeader && <Heading size="item">{t("Worktrees")}</Heading>}
-          {capabilities && !capabilities.includes(WORKSPACE_PINNING_CAPABILITY) && (
-            <SettingsFeedback state="warning">
-              {t("Update the execution Host to pin or unpin individual workspaces.")}
-            </SettingsFeedback>
-          )}
           {!onDisk.length && !renderWorktrees ? (
-            <Text as="p" size="caption" tone="secondary" role="status">
+            <InlineMessage tone="neutral" icon={null}>
               {t(
                 "No managed workspace directories yet. Workspaces created by sessions appear here.",
               )}
-            </Text>
+            </InlineMessage>
           ) : (
             <div
               {...surfaceAttributes(
@@ -421,7 +461,7 @@ export function WorkspacePolicySettings({
                 query={query}
                 onQueryChange={setQuery}
                 count={
-                  renderWorktrees
+                  renderWorktrees || visibleWorkspaces.length === onDisk.length
                     ? undefined
                     : t("Showing {p0} of {p1} workspaces", {
                         p0: visibleWorkspaces.length,
@@ -466,8 +506,14 @@ export function WorkspacePolicySettings({
                       workspace={workspace}
                       title={workspaceTitle(workspace)}
                       {...rosterFacts(workspace)}
-                      reviewDisabled={
-                        !capabilities?.includes("workspaces.delivery.v1") || loading || removing
+                      reviewDisabledReason={
+                        loading
+                          ? t("Wait for managed workspaces to load.")
+                          : removing
+                            ? t("Another removal is open.")
+                            : !capabilities?.includes("workspaces.delivery.v1")
+                              ? t("Update bycoda Host to review and deliver workspace changes.")
+                              : undefined
                       }
                       pinning={pinning === workspace.id}
                       pinError={pinError?.id === workspace.id ? pinError.message : undefined}
@@ -528,11 +574,6 @@ export function WorkspacePolicySettings({
       )}
       {stageNotice("policy", t("Workspace policy"), !!policy)}
       {/* No wrapper: the editor's Group and Rows carry the settings-search anchors. */}
-      {capabilities && !capabilities.includes("workspaces.policy.v1") && (
-        <SettingsFeedback state="warning">
-          {t("Update the execution Host to configure worktree defaults and retention.")}
-        </SettingsFeedback>
-      )}
       {draft && policy && (
         <WorkspacePolicyEditor
           draft={draft}
@@ -549,16 +590,14 @@ export function WorkspacePolicySettings({
           onKeepEdits={() => setPolicyConflict(false)}
         />
       )}
-      {capabilities &&
-        capabilities.includes("workspaces.policy.v1") &&
-        !capabilities.includes("workspaces.lifecycle.v1") && (
-          <SettingsFeedback state="warning">
-            {t(
-              "Update the execution Host to inspect storage and safely remove managed directories.",
-            )}
-          </SettingsFeedback>
-        )}
-      {revealError && <SettingsFeedback state="error">{revealError}</SettingsFeedback>}
+      {revealError && (
+        <SettingsFeedback
+          state="error"
+          extra={<ErrorDetails title={t("Could not open the folder.")} detail={revealError} />}
+        >
+          {t("Could not open the folder.")}
+        </SettingsFeedback>
+      )}
       {cleanup && (
         <WorkspaceDirectoryRemoval
           workspace={cleanup}
@@ -586,9 +625,6 @@ export function WorkspacePolicySettings({
           onWorkspaceChange={(next) => {
             setReview(next);
             setWorkspaces((items) => items.map((item) => (item.id === next.id ? next : item)));
-            inventoryCallback.current?.(
-              workspaces.map((item) => (item.id === next.id ? next : item)),
-            );
           }}
         />
       )}

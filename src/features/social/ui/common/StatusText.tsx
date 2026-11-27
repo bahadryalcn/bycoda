@@ -58,9 +58,5 @@ function statusTone(status: StatusTextStatus): StatusTextTone {
 
 /** Plain-language status of a job or delivery. Raw status codes are never shown. */
 export function StatusText({ status }: { status: StatusTextStatus }) {
-  return (
-    <SharedStatusText tone={statusTone(status)} data-status={status}>
-      {statusWord(status)}
-    </SharedStatusText>
-  );
+  return <SharedStatusText tone={statusTone(status)}>{statusWord(status)}</SharedStatusText>;
 }

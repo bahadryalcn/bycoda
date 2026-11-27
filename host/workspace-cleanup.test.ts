@@ -202,7 +202,7 @@ afterEach(() => {
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", args, { cwd, encoding: "utf8", windowsHide: true }).trim();
 async function setup(linkedAncestor = false) {
-  const root = mkdtempSync(join(tmpdir(), "workspace-cleanup-"));
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), "workspace-cleanup-")));
   roots.push(root);
   const parent = join(root, "parent");
   mkdirSync(parent);
@@ -223,7 +223,7 @@ async function setup(linkedAncestor = false) {
   writeFileSync(join(project, "source.txt"), "initial");
   git(project, "add", ".");
   git(project, "commit", "-q", "-m", "initial");
-  git(project, "worktree", "add", "-q", "-b", "bycoda/t/test", path, "HEAD");
+  git(project, "worktree", "add", "-q", "-b", "by/test", path, "HEAD");
   let workspace: ManagedWorkspace = {
     id: "workspace",
     repositoryId: join(project, ".git"),
@@ -231,7 +231,7 @@ async function setup(linkedAncestor = false) {
     environmentId: "local",
     owner: { kind: "task", id: "owner" },
     path,
-    branchRef: "refs/heads/bycoda/t/test",
+    branchRef: "refs/heads/by/test",
     baseRef: "refs/heads/main",
     baseCommit: git(project, "rev-parse", "HEAD"),
     targetBranchRef: "refs/heads/main",
@@ -273,16 +273,20 @@ async function setup(linkedAncestor = false) {
       return structuredClone([...operations.values()]);
     },
   };
-  let probe: () => Promise<[]> = async () => [];
+  let probe: Parameters<typeof createExecutionActivityReservations>[0]["probe"] = async () => [];
   const reservations = createExecutionActivityReservations({
     get: async () => workspace,
-    probe: async () => probe(),
+    probe: async (input) => probe(input),
     pending: async (id, except) =>
       [...operations.values()].some(
         (op) => op.workspaceId === id && op.id !== except && op.phase !== "complete",
       ),
   });
   const deps: WorkspaceCleanupDependencies = {
+    withRemovalLease: async (_path, run, resolveProject) => {
+      expect(await resolveProject()).toBe(project);
+      return run(() => {});
+    },
     registry,
     reservations,
     location: async () => ({ projectCwd: project, managedRoot, archiveRoot }),
@@ -357,7 +361,7 @@ it("detaches a node_modules junction before Git removal and preserves the outsid
   const receipt = await s.apply({ kind: "retentionScheduler" });
   expect(existsSync(s.path)).toBe(false);
   expect(readFileSync(join(sentinel, "sentinel.txt"), "utf8")).toBe("never delete");
-  expect(git(s.project, "rev-parse", "refs/heads/bycoda/t/test")).toBe(head);
+  expect(git(s.project, "rev-parse", "refs/heads/by/test")).toBe(head);
   expect(git(s.project, "rev-parse", ref)).toBe(head);
   expect(
     readFileSync(join(receipt.evidenceArchivePath!, "temp/verification/result.txt"), "utf8"),
@@ -405,7 +409,7 @@ it.skipIf(process.platform === "win32")(
     await s.apply({ kind: "retentionScheduler" });
     expect(existsSync(s.path)).toBe(false);
     expect(readFileSync(join(target, "sentinel"), "utf8")).toBe("preserve");
-    expect(git(s.project, "rev-parse", "bycoda/t/test")).toBe(head);
+    expect(git(s.project, "rev-parse", "by/test")).toBe(head);
   },
   120_000,
 );
@@ -648,13 +652,18 @@ it("atomically fences starts while reserving and rejects active, unknown or unfi
   expect(existsSync(s.path)).toBe(true);
 }, 120_000);
 
-it("settles a missing workspace directory as removed by pruning only its stale registration", async () => {
+it("settles a missing workspace directory while preserving both stale registrations", async () => {
   const s = await setup();
+  const sibling = join(s.root, "missing-sibling");
+  git(s.project, "worktree", "add", "--detach", sibling, "HEAD");
+  rmSync(sibling, { recursive: true, force: true });
   rmSync(s.path, { recursive: true, force: true });
   const receipt = await s.apply();
   expect(receipt.directoryState).toBe("removed");
-  expect(git(s.project, "worktree", "list", "--porcelain")).not.toContain(s.path);
-  expect(git(s.project, "branch", "--list", "bycoda/t/test")).toContain("bycoda/t/test");
+  const listed = git(s.project, "worktree", "list", "--porcelain").split(/\r?\n/);
+  expect(listed).toContain(`worktree ${s.path.replaceAll("\\", "/")}`);
+  expect(listed).toContain(`worktree ${sibling.replaceAll("\\", "/")}`);
+  expect(git(s.project, "branch", "--list", "by/test")).toContain("by/test");
 }, 120_000);
 it("returns an idempotent receipt and rejects payload reuse", async () => {
   const s = await setup();
@@ -692,7 +701,24 @@ it("reconciles journaled partially deleted Windows-style remnants after restart 
     recoveryIds: [],
   };
   s.operations.set(op.id, op);
+  const unavailable = createWorkspaceRemovalService({ ...s.deps, withRemovalLease: undefined });
+  await expect(unavailable.recover(op.id)).rejects.toThrow("fresh desktop removal lease");
+  expect(existsSync(join(s.path, "locked-output.txt"))).toBe(true);
+  expect(s.operations.get(op.id)?.phase).toBe("blocked");
   const fresh = createWorkspaceRemovalService(s.deps);
+  s.setProbe(async () => [
+    {
+      id: "terminal",
+      workspaceId: s.workspace.id,
+      kind: "shell",
+      ownerId: "new-terminal",
+      startedAt: 2,
+    },
+  ]);
+  await expect(fresh.recover(op.id)).rejects.toThrow("Workspace is still in use");
+  expect(existsSync(join(s.path, "locked-output.txt"))).toBe(true);
+  expect(s.operations.get(op.id)?.phase).toBe("blocked");
+  s.setProbe(async () => []);
   const result = await fresh.recover(op.id);
   expect(result.phase).toBe("complete");
   expect(existsSync(s.path)).toBe(false);

@@ -1,14 +1,15 @@
 import { toolsSessionsFor } from "./useActiveTabContext";
 import { useLockSnapshot } from "../../../features/group-lock/hooks/useGroupLock";
-import { memo, useLayoutEffect, type ComponentProps, type RefObject } from "react";
+import { memo, useLayoutEffect, type ComponentProps, type RefCallback } from "react";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { ProjectTerminalDock } from "../../../features/terminal/ui/ProjectTerminalDock";
 import { ToolsWorkspace } from "../../../features/host-tools/ToolsWorkspace";
+import type { VoiceWorkspaceOutlet } from "../../../features/voice/ui/VoiceCompanion";
 import { PaneTree } from "../../../features/workspace/ui/PaneTree";
 import type { EditorPane, WorkspaceTab } from "../../../features/workspace/model/layout";
 import type { ProjectTerminalDock as ProjectTerminal } from "../../../features/projects/model/projectTerminal";
-import { sameProjectPath } from "../../../features/projects/model/recents";
+import { canOpenTerminalIn, sameProjectPath } from "../../../features/projects/model/recents";
 import type { SettingsSectionId } from "../../../features/settings/model/settings";
 import {
   hasPendingApproval,
@@ -62,8 +63,9 @@ export type WorkspaceSessionPaneProps = Omit<
 >;
 
 export interface WorkspaceMainAreaProps {
+  voiceWorkspaceOutlet?: VoiceWorkspaceOutlet;
   // Project terminal dock (markup only; dock state lives in Workspace)
-  dockGridRef: RefObject<HTMLDivElement | null>;
+  dockGridRef: RefCallback<HTMLDivElement>;
   projectCwd: string;
   projectTerminals: ProjectTerminal[];
   projectTerminalFocused: boolean;
@@ -73,6 +75,7 @@ export interface WorkspaceMainAreaProps {
   paintDockSize: DockProps["onSizePaint"];
   commitDockSize: DockProps["onSizeCommit"];
   onNewTerminal: DockProps["onAddTerminal"];
+  remoteTerminalAvailable?: boolean;
   onNewTerminalWithProfile: DockProps["onAddTerminalWithProfile"];
   onSplitProjectTerminal: DockProps["onSplitTerminal"];
   openSettings: (section: SettingsSectionId) => void;
@@ -145,6 +148,7 @@ function hasLiveBlock(blocks: Block[]): boolean {
 }
 
 function WorkspaceMainAreaComponent({
+  voiceWorkspaceOutlet,
   dockGridRef,
   projectCwd,
   projectTerminals,
@@ -155,6 +159,7 @@ function WorkspaceMainAreaComponent({
   paintDockSize,
   commitDockSize,
   onNewTerminal,
+  remoteTerminalAvailable,
   onNewTerminalWithProfile,
   onSplitProjectTerminal,
   openSettings,
@@ -253,6 +258,11 @@ function WorkspaceMainAreaComponent({
         </Heading>
       )}
       <ToolsWorkspace
+        outlet={voiceWorkspaceOutlet?.kind === "tools" ? voiceWorkspaceOutlet.element : undefined}
+        outletOverlayParent={voiceWorkspaceOutlet?.overlay}
+        outletPanelId={
+          voiceWorkspaceOutlet?.kind === "tools" ? voiceWorkspaceOutlet.panelId : undefined
+        }
         followEligible={!routeOpen}
         activeConversation={activeToolsConversation}
         accessibleSessions={toolsSessions}
@@ -261,6 +271,7 @@ function WorkspaceMainAreaComponent({
           <div ref={dockGridRef} className="grid h-full min-h-0 min-w-0 flex-1">
             {projectTerminals.map((dock) => {
               const show = dock.open && sameProjectPath(dock.projectPath, projectCwd);
+              const local = canOpenTerminalIn(dock.projectPath);
               return (
                 <div
                   key={dock.projectPath}
@@ -277,10 +288,12 @@ function WorkspaceMainAreaComponent({
                     onSideChange={onProjectTerminalSide}
                     onSizePaint={paintDockSize}
                     onSizeCommit={commitDockSize}
-                    onAddTerminal={onNewTerminal}
-                    onAddTerminalWithProfile={onNewTerminalWithProfile}
-                    onSplitTerminal={onSplitProjectTerminal}
-                    onSelectDefaultProfile={selectDefaultTerminalProfile}
+                    onAddTerminal={local || remoteTerminalAvailable ? onNewTerminal : undefined}
+                    onAddTerminalWithProfile={local ? onNewTerminalWithProfile : undefined}
+                    onSplitTerminal={
+                      local || remoteTerminalAvailable ? onSplitProjectTerminal : undefined
+                    }
+                    onSelectDefaultProfile={local ? selectDefaultTerminalProfile : undefined}
                     onSelectTerminal={onSelectProjectTerminal}
                     onCloseTerminal={onCloseProjectTerminal}
                     onCloseTerminals={onCloseProjectTerminals}
@@ -310,6 +323,12 @@ function WorkspaceMainAreaComponent({
                       {isHibernated(tab) ? null : (
                         <PaneTree
                           {...sessionPaneProps}
+                          previewSessionId={tab.previewSessionId}
+                          sessionOutlet={
+                            voiceWorkspaceOutlet?.kind === "session"
+                              ? voiceWorkspaceOutlet
+                              : undefined
+                          }
                           visible={tab.id === activeTabId && !inboxViewOpen}
                           layout={tab.layout}
                           maximizedPaneId={

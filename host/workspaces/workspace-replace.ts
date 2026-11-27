@@ -153,12 +153,13 @@ function replaceText(input: ReplaceInput): { content: string; count: number } {
     let end = 0;
     for (const match of line.matchAll(pattern)) {
       const offset = match.index;
-      if (
-        input.wholeWord &&
-        (/[\p{L}\p{N}_]$/u.test(line.slice(0, offset)) ||
-          /^[\p{L}\p{N}_]/u.test(line.slice(offset + match[0].length)))
-      )
-        continue;
+      if (input.wholeWord) {
+        const previous = line.charCodeAt(offset - 1);
+        const width = previous >= 0xdc00 && previous <= 0xdfff ? 2 : 1;
+        const before = line.slice(Math.max(0, offset - width), offset);
+        const after = line.slice(offset + match[0].length);
+        if (/^[\p{L}\p{N}_]$/u.test(before) || /^[\p{L}\p{N}_]/u.test(after)) continue;
+      }
       append(line.slice(end, offset));
       const replacement = input.regex
         ? input.replacement.replace(

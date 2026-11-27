@@ -5,6 +5,7 @@ import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { useT } from "../../../shared/i18n";
+import { Undo2 } from "../../../shared/ui/icons";
 import type { Session } from "../model/session";
 export function RewoundHistoryDisclosure({
   history,
@@ -14,22 +15,37 @@ export function RewoundHistoryDisclosure({
   truncated?: boolean;
 }) {
   const t = useT();
+  const summary = t("Rewound history ({p0})", { p0: history.length });
   return (
     <Disclosure
       data-rewind-history=""
       size="sm"
-      summary={t("Rewound history ({p0})", { p0: history.length })}
+      summary={
+        <span className="flex min-w-0 items-center gap-2">
+          <Undo2 className="icon-sm shrink-0" aria-hidden />
+          {summary}
+        </span>
+      }
+      summaryLabel={summary}
       {...surfaceAttributes(
-        { frame: "pane", edge: "bottom" },
-        "mx-auto max-h-64 w-full max-w-4xl shrink-0 overflow-y-auto px-3 py-2",
+        { frame: "card", radius: "control" },
+        "mx-auto my-2 w-[calc(100%-1.5rem)] max-w-4xl shrink-0 px-3 py-1",
       )}
     >
       {truncated ? (
-        <Text as="p" size="inherit" tone="disabled" className="mt-1">
-          {t("Showing a preview of rewound history.")}
+        <Text as="p" size="inherit" tone="disabled" className="mt-1" aria-hidden>
+          …
         </Text>
       ) : null}
-      <div className="mt-2 flex flex-col gap-3">
+      {/* The list owns its scroll inside a cap relative to the session pane, so the summary row
+          stays put and the transcript keeps most of the pane. Focusable so keyboard users can scroll. */}
+      <div
+        role="region"
+        aria-label={summary}
+        // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- The capped history region needs keyboard scroll access.
+        tabIndex={0}
+        className="mt-2 flex max-h-[min(16rem,40cqb)] flex-col gap-3 overflow-y-auto overscroll-contain"
+      >
         {[...history].reverse().map((entry) => (
           <section key={entry.id} className="flex flex-col gap-2">
             <Timestamp
@@ -65,7 +81,6 @@ export function RewoundHistoryDisclosure({
                       tone="secondary"
                       className="mt-1 flex min-w-0 items-center gap-1.5"
                     >
-                      <span className="shrink-0">{t("Attachments")}:</span>
                       <BadgeList
                         label={t("Attachments")}
                         size="xs"

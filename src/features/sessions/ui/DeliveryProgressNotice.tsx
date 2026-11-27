@@ -3,25 +3,40 @@ import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { TranscriptNotice, type TranscriptNoticeKind } from "./TranscriptNotice";
 import { DeliveryReviewChoice, type DeliveryReviewOutcome } from "./DeliveryReviewChoice";
 import { useT } from "../../../shared/i18n";
+import { Button } from "../../../shared/ui/Button";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { Check } from "../../../shared/ui/icons";
+import { Check, TriangleAlert } from "../../../shared/ui/icons";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { nextQueueStatus } from "../../connections/public/queueState";
 import {
   deliveryResolverFor,
   useDeliveryReviewRequest,
   useLateSettlementPossible,
+  useQueueHoldReason,
 } from "../model/deliveryReview";
+import {
+  deliveryNoticeKey,
+  dismissDeliveryNotice,
+  reasonToken,
+  reopenDeliveryNotice,
+  useDeliveryNoticeDismissed,
+} from "../model/deliveryNoticeDismissal";
+import { deliveryFailureSentence } from "../model/deliveryFailureText";
+import { catalogText } from "../model/catalogText";
 import { getSessions, setSessions } from "../model/sessionsStore";
 import type { QueuedMessage } from "../model/session";
 import {
   beginDeliveryProgress,
   clearDeliveryProgress,
   readDeliveryProgress,
+  readWaitingDelivery,
   subscribeDeliveryProgress,
   updateDeliveryProgress,
+  type DeliveryProgress,
   type DeliveryStage,
 } from "../model/deliveryProgress";
 import { useLocalSharedQueueClient } from "../../connections/public/useSharedLocalQueues";
@@ -32,18 +47,126 @@ const noClientState = { queue: { claim: undefined as { id: string } | undefined 
 export function useDeliveryProgress(sessionId = "") {
   return useSyncExternalStore(subscribeDeliveryProgress, () => readDeliveryProgress(sessionId));
 }
-const labels: Record<DeliveryStage, string> = {
-  syncing: "Synchronizing the message queue…",
-  claiming: "Waiting for queue ownership…",
-  preparing: "Preparing the message and attachments…",
-  provider: "Waiting for the provider to be ready…",
-  confirming: "Sending the message. Waiting for provider confirmation…",
-  accepted: "Message accepted. Follow its progress in the conversation.",
-  rejected: "Queue paused: the last message was not accepted",
-  unknown: "Delivery is not confirmed. Automatic resend is held.",
+
+export function useQueueDeliveryMessage(sessionId = "", progress?: DeliveryProgress) {
+  const waiting = useSyncExternalStore(subscribeDeliveryProgress, () =>
+    readWaitingDelivery(sessionId),
+  );
+  return progress?.queueOnly
+    ? progress
+    : waiting?.queueOnly && waiting.messageId === progress?.messageId
+      ? waiting
+      : undefined;
+}
+const stageLabel = (stage: DeliveryStage, t: ReturnType<typeof useT>): string => {
+  switch (stage) {
+    case "syncing":
+      return t("Synchronizing the message queue…");
+    case "claiming":
+      return t("Waiting for queue ownership…");
+    case "preparing":
+      return t("Preparing the message and attachments…");
+    case "provider":
+      return t("Waiting for the provider to be ready…");
+    case "confirming":
+      return t("Sending the message. Waiting for provider confirmation…");
+    case "accepted":
+      return t("Message accepted. Follow its progress in the conversation.");
+    case "rejected":
+      return t("Queue paused: the last message was not accepted");
+    case "unknown":
+      return t("Delivery is not confirmed. Automatic resend is held.");
+    case "waiting":
+      return t("Not sent yet. The message stays queued and is retried automatically.");
+  }
 };
 export const deliveryIsPending = (stage?: DeliveryStage) =>
-  !!stage && !["accepted", "rejected", "unknown"].includes(stage);
+  !!stage && !["accepted", "rejected", "unknown", "waiting"].includes(stage);
+
+/** A delivery stage, or a pause the host reported with no delivery operation. */
+type NoticeStage = DeliveryStage | "paused";
+const noticeKind = (stage: NoticeStage, noticeOnly?: boolean): TranscriptNoticeKind =>
+  stage === "accepted" ? "success" : stage === "rejected" && !noticeOnly ? "error" : "warning";
+
+/** Which notice (if any) the session shows now, and whether the owner closed it. */
+function useDeliveryNoticeState(sessionId: string, messages: QueuedMessage[]) {
+  const progress = useDeliveryProgress(sessionId);
+  const holdReason = useQueueHoldReason(sessionId);
+  const focusRequest = useDeliveryReviewRequest(sessionId);
+  const unknownRow = messages.find((row) => row.deliveryUnknown);
+  const holdDetail =
+    holdReason && holdReason !== "stopped" && messages.length > 0 ? holdReason : undefined;
+  const waiting = useSyncExternalStore(subscribeDeliveryProgress, () =>
+    readWaitingDelivery(sessionId),
+  );
+  const pending = deliveryIsPending(progress?.stage);
+  // An automatic retry of the same message is a new, pending operation: keep its waiting notice.
+  const retrying = pending && !unknownRow && !!waiting && progress?.messageId === waiting.messageId;
+  const queueOnly = progress?.queueOnly || (retrying && waiting?.queueOnly);
+  const present =
+    (!queueOnly || !!unknownRow) &&
+    (retrying ||
+      (!pending &&
+        ((progress && (progress.stage !== "accepted" || progress.noticeOnly)) ||
+          unknownRow ||
+          (!progress && holdDetail))));
+  const stage: NoticeStage = unknownRow
+    ? "unknown"
+    : retrying
+      ? "waiting"
+      : (progress?.stage ?? "paused");
+  const identity = retrying
+    ? `wait:${waiting.messageId}`
+    : unknownRow
+      ? `row${unknownRow.id}`
+      : progress
+        ? progress.stage === "waiting"
+          ? `wait:${progress.messageId}`
+          : `op${progress.operationId}`
+        : `hold:${reasonToken(holdDetail ?? "")}`;
+  const key = present ? deliveryNoticeKey(sessionId, identity) : undefined;
+  const dismissed = useDeliveryNoticeDismissed(key, focusRequest);
+  return {
+    progress,
+    unknownRow,
+    holdDetail,
+    waiting,
+    retrying,
+    stage,
+    key,
+    present: !!present,
+    dismissed,
+    focusRequest,
+  };
+}
+
+/** Icon button in the queue header that brings back a closed delivery notice. */
+export function DeliveryNoticeReopen({
+  sessionId = "",
+  messages,
+}: {
+  sessionId?: string;
+  messages: QueuedMessage[];
+}) {
+  const t = useT();
+  const state = useDeliveryNoticeState(sessionId, messages);
+  if (!state.key || !state.dismissed || state.stage === "accepted") return null;
+  const key = state.key;
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      type="button"
+      iconOnly
+      label={t("Show delivery notice")}
+      className="shrink-0"
+      data-delivery-notice-reopen=""
+      onClick={() => reopenDeliveryNotice(key)}
+    >
+      <TriangleAlert className="icon-sm" aria-hidden="true" />
+    </Button>
+  );
+}
 
 /** Compact, session-owned indication; acceptance is not turn completion. */
 export function DeliveryProgressIndicator({ sessionId = "" }: { sessionId?: string }) {
@@ -55,7 +178,7 @@ export function DeliveryProgressIndicator({ sessionId = "" }: { sessionId?: stri
   )
     return null;
   const pending = deliveryIsPending(progress.stage);
-  const label = t(labels[progress.stage]);
+  const label = stageLabel(progress.stage, t);
   return (
     <Tooltip label={label} asChild>
       <Text
@@ -76,14 +199,27 @@ export function DeliveryProgressIndicator({ sessionId = "" }: { sessionId?: stri
 export function DeliveryProgressNotice({
   sessionId = "",
   messages,
-  embedded = false,
+  inlineRowId,
+  retryDisabled = false,
 }: {
   sessionId?: string;
   messages: QueuedMessage[];
-  embedded?: boolean;
+  inlineRowId?: string;
+  retryDisabled?: boolean;
 }) {
   const t = useT();
-  const progress = useDeliveryProgress(sessionId);
+  const {
+    progress,
+    unknownRow,
+    holdDetail,
+    waiting,
+    retrying,
+    stage,
+    key,
+    present,
+    dismissed,
+    focusRequest,
+  } = useDeliveryNoticeState(sessionId, messages);
   const client = useLocalSharedQueueClient(sessionId);
   const clientState = useSyncExternalStore<{ queue: { claim?: { id: string } } }>(
     client?.subscribe ?? noSubscribe,
@@ -91,19 +227,18 @@ export function DeliveryProgressNotice({
   );
   const [working, setWorking] = useState(false);
   const [resolveError, setResolveError] = useState<string>();
-  const focusRequest = useDeliveryReviewRequest(sessionId);
   const lateSettlement = useLateSettlementPossible(sessionId);
-  const unknownRow = messages.find((row) => row.deliveryUnknown);
-  const pending = deliveryIsPending(progress?.stage);
+  // Effect reason: an accepted notice is obsolete after a short moment; clear it from the store.
   useEffect(() => {
     if (!progress || progress.stage !== "accepted") return;
     const timer = window.setTimeout(() => clearDeliveryProgress(sessionId, progress), 1800);
     return () => window.clearTimeout(timer);
   }, [sessionId, progress]);
+  // Effect reason: a rejected, unknown or waiting notice for a row that left the queue is obsolete; clear it.
   useEffect(() => {
     if (
       !progress ||
-      !["rejected", "unknown"].includes(progress.stage) ||
+      !["rejected", "unknown", "waiting"].includes(progress.stage) ||
       messages.some((row) => row.id === progress.messageId) ||
       clientState.queue.claim?.id === progress.messageId
     )
@@ -122,19 +257,23 @@ export function DeliveryProgressNotice({
     }, 0);
     return () => window.clearTimeout(timer);
   }, [sessionId, progress, messages, client, clientState]);
-  if (
-    (!progress && !unknownRow) ||
-    (progress?.stage === "accepted" && !progress.noticeOnly && !unknownRow) ||
-    pending
-  )
-    return null;
-  const stage = unknownRow && !pending ? "unknown" : (progress?.stage ?? "unknown");
-  const failure = stage === "rejected" ? progress?.detail : undefined;
-  const summary = failure?.split(/\r?\n/, 1)[0] || labels[stage];
-  const expandedDetail =
-    progress?.detail &&
-    !unknownRow &&
-    (failure ? failure.length > 180 || failure.includes("\n") : progress.detail !== labels[stage]);
+  if (!present || !key || (dismissed && !inlineRowId)) return null;
+  const noticeOnly = !!progress?.noticeOnly;
+  // A recorded outcome is already a plain sentence; a failure keeps its raw text behind details.
+  const raw =
+    noticeOnly || unknownRow
+      ? undefined
+      : retrying
+        ? waiting?.detail
+        : (progress?.detail ?? holdDetail);
+  const title =
+    noticeOnly && progress?.detail
+      ? catalogText(t, progress.detail)
+      : stage === "paused"
+        ? t("Queue paused")
+        : stageLabel(stage, t);
+  const body = raw ? deliveryFailureSentence(raw, t) : undefined;
+  const technical = raw && raw.trim() !== body ? raw : undefined;
   const outcomeText = (outcome: DeliveryReviewOutcome) =>
     outcome === "delivered"
       ? t("Marked as delivered. The message was not sent again.")
@@ -189,37 +328,69 @@ export function DeliveryProgressNotice({
     );
     finish();
   };
-  return (
-    <Text as="div" className={embedded ? "px-1 py-1" : undefined} data-delivery-progress={stage}>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <LiveText
-          className="min-w-0 flex-1 [overflow-wrap:anywhere]"
-          lines={2}
-          text={t(summary)}
-          mode={stage === "rejected" ? "assertive" : "polite"}
-        />
-      </div>
-      {expandedDetail ? (
-        <Text
-          as="p"
-          size="inherit"
-          tone="muted"
-          className="mt-1 max-h-32 min-w-0 overflow-y-auto whitespace-pre-wrap [overflow-wrap:anywhere]"
-          data-delivery-details=""
+  if (inlineRowId) {
+    if (unknownRow?.id !== inlineRowId || clientState.queue.claim) return null;
+    return (
+      <div data-delivery-progress="unknown">
+        <Button
+          size="sm"
+          variant="secondary"
+          tone="warning"
+          disabled={retryDisabled || working || lateSettlement}
+          disabledReason={
+            lateSettlement
+              ? t(
+                  "The provider has not answered yet and may still deliver this message. Wait for the answer, or stop the turn.",
+                )
+              : undefined
+          }
+          tooltip={t(
+            "Check the conversation first. Sending again duplicates a message that was delivered. Keeping it queued pauses the queue and does not resend it.",
+          )}
+          onClick={() => choose("retry")}
         >
-          {t(progress!.detail!)}
-        </Text>
-      ) : null}
-      {unknownRow && !clientState.queue.claim ? (
-        <DeliveryReviewChoice
-          text={unknownRow.text}
-          working={working}
-          lateSettlement={lateSettlement}
-          focusRequest={focusRequest}
-          onChoose={choose}
-        />
-      ) : null}
-      {resolveError ? <InlineError className="mt-1">{resolveError}</InlineError> : null}
-    </Text>
+          <TriangleAlert className="icon-sm" aria-hidden="true" />
+          {t("Send again")}
+        </Button>
+        {resolveError ? (
+          <InlineError details={resolveError}>
+            {t("Could not record your choice. Try again.")}
+          </InlineError>
+        ) : null}
+      </div>
+    );
+  }
+  return (
+    // In-flow banner at the top of the pane body: the transcript (and its Find bar) sits below it,
+    // so the notice never covers the conversation it asks the owner to check.
+    <div className="flex shrink-0 justify-center px-2 py-1" data-delivery-notice-slot>
+      {/* An opaque ground under the tone: the transcript never shows through the text. */}
+      <TranscriptNotice
+        key={key}
+        elevated
+        className="w-full max-w-2xl"
+        kind={noticeKind(stage, noticeOnly)}
+        title={title}
+        detail={body}
+        data-delivery-progress={stage}
+        onDismiss={() => dismissDeliveryNotice(key, focusRequest)}
+        extra={technical ? <ErrorDetails detail={technical} title={title} /> : undefined}
+      >
+        {unknownRow && !clientState.queue.claim ? (
+          <DeliveryReviewChoice
+            text={unknownRow.text}
+            working={working}
+            lateSettlement={lateSettlement}
+            focusRequest={focusRequest}
+            onChoose={choose}
+          />
+        ) : null}
+        {resolveError ? (
+          <InlineError className="mt-1" details={resolveError}>
+            {t("Could not record your choice. Try again.")}
+          </InlineError>
+        ) : null}
+      </TranscriptNotice>
+    </div>
   );
 }

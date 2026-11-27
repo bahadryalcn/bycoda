@@ -1,6 +1,6 @@
 .bycoda-session-backdrop {
   position: absolute;
-  inset: auto 0 5.5rem;
+  inset: auto 0 calc(var(--ui-space-12) + var(--ui-space-10));
   z-index: -1;
   margin: 0 auto;
   pointer-events: none;
@@ -31,21 +31,21 @@
   max-inline-size: 100%;
   margin: 0;
 }
+/* The project path is visible text under the heading (not hover-only), so keyboard and
+   touch users see which folder the new session runs in. Long paths wrap; nothing is cut. */
+.bycoda-empty .bycoda-task-path {
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
 .bycoda-empty .bycoda-task-brief h2 {
   max-inline-size: 100%;
   white-space: normal;
   overflow-wrap: anywhere;
   text-wrap: balance;
 }
-.bycoda-empty .bycoda-entry-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-2);
-  margin-block-start: var(--space-3);
-}
 .bycoda-entry-composer {
   position: relative;
+  z-index: 1;
   min-inline-size: 0;
   max-inline-size: 896px;
   margin-inline: auto;
@@ -63,7 +63,7 @@
 }
 
 .chat-pane-background :is(.composer-field, .composer-highlight) {
-  max-block-size: clamp(2.75rem, 28cqb, 10rem);
+  max-block-size: clamp(2.75rem, 28cqb, var(--composer-draft-max-height));
 }
 
 .chat-pane-background .bycoda-entry-workbench {
@@ -76,8 +76,7 @@
 }
 
 /* The maximize action owns a slot, leaving notes and close controls clickable. */
-[data-pane-can-maximize] [data-session-header],
-[data-pane-can-maximize] > [role="tablist"] {
+[data-pane-can-maximize] [data-session-header] {
   padding-inline-end: 2.5rem;
 }
 [data-pane-can-maximize] [data-surface-pane-id] {

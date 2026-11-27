@@ -1,10 +1,12 @@
 // @vitest-environment happy-dom
 import { withQueryClient } from "../../../tests/browser/support/queryTest";
 import { act, createElement, StrictMode } from "react";
-import { RATE_LIMIT_POLL_MS } from "../../features/providers/model/rateLimits";
+import { focusManager } from "@tanstack/react-query";
+import { QUOTA_POLL_MS } from "../../features/providers/model/rateLimits";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
+import { clearCachedRateLimits } from "../../features/providers/model/rateLimitsCache";
 import { UsageFooter as QueryComponent } from "./UsageFooter";
 import { saveShowRemainingUsage } from "../../features/settings/model/displayPrefs";
 
@@ -21,7 +23,8 @@ async function tooltipText(element: HTMLElement): Promise<string> {
   return text;
 }
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+// Outside Tauri the quota read skips the Host and uses the native `fetch_pi_usage` adapter.
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: () => false }));
 let container: HTMLDivElement;
 let root: Root;
 const quota = (percent: number) => ({
@@ -33,6 +36,8 @@ const quota = (percent: number) => ({
 });
 
 beforeEach(() => {
+  // Quotas now live in a module-level cache shared by every test.
+  clearCachedRateLimits();
   saveShowRemainingUsage(false);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
@@ -121,8 +126,11 @@ it("clears old usage on provider changes and ignores late responses", async () =
 it("does not guess a provider for defaults or unsupported models", async () => {
   for (const model of ["pi:default", "pi:openai/gpt-5.4", "pi:openrouter/anthropic/claude"]) {
     await show(model);
-    expect(container.textContent).toContain("pi");
+    // The mark stands alone; the tooltip carries the reason. No provider is guessed.
+    const mark = container.querySelector<HTMLElement>("[data-provider-usage] span");
+    expect(mark).not.toBeNull();
     expect(container.textContent).not.toMatch(/\d+%/);
+    expect(await tooltipText(mark!)).toMatch(/Pi can report|not supported/);
   }
   expect(invoke).not.toHaveBeenCalled();
 });
@@ -134,8 +142,13 @@ it("clears quotas on failed refresh and can recover after a Pi login", async () 
     status: "unavailable",
     message: "Sign in through Pi, then refresh usage.",
   });
-  const refresh = () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Refresh Pi usage"]');
+  // Refresh lives in the provider detail popover, not on the footer chip.
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Pi · Anthropic usage details"]')
+      ?.click(),
+  );
+  const refresh = () => document.querySelector<HTMLButtonElement>('[aria-label="Refresh usage"]');
   expect(refresh()).not.toBeNull();
   await act(async () => refresh()?.click());
   expect(container.textContent).not.toContain("24%");
@@ -153,24 +166,27 @@ it("isolates A to B to A and same-provider session changes", async () => {
       }),
   );
   await show("pi:anthropic/claude", "a");
-  await show("pi:openai-codex/gpt", "b");
   vi.mocked(invoke).mockResolvedValueOnce(quota(17));
-  await show("pi:anthropic/claude", "a");
-  await act(async () => finishOld?.(quota(99)));
+  await show("pi:openai-codex/gpt", "b");
   expect(container.textContent).toContain("17%");
-  expect(container.textContent).not.toContain("99%");
-  vi.mocked(invoke).mockResolvedValueOnce(quota(8));
+  // Returning to A joins its still-running read; B's quota never shows under A.
+  await show("pi:anthropic/claude", "a");
+  expect(container.textContent).not.toContain("17%");
+  await act(async () => finishOld?.(quota(99)));
+  expect(container.textContent).toContain("99%");
+  expect(container.textContent).not.toContain("17%");
+  // The same provider in another session reuses the shared fresh snapshot.
   await show("pi:anthropic/claude", "c");
-  expect(container.textContent).toContain("8%");
-  expect(invoke).toHaveBeenCalledTimes(4);
+  expect(container.textContent).toContain("99%");
+  expect(invoke).toHaveBeenCalledTimes(2);
 });
 
-it("ignores a disposed Strict Mode request without blocking its replacement", async () => {
-  let finishOld: ((value: unknown) => void) | undefined;
+it("shares one request across a Strict Mode remount", async () => {
+  let finish: ((value: unknown) => void) | undefined;
   vi.mocked(invoke).mockImplementationOnce(
     () =>
       new Promise((resolve) => {
-        finishOld = resolve;
+        finish = resolve;
       }),
   );
   await act(async () =>
@@ -189,10 +205,10 @@ it("ignores a disposed Strict Mode request without blocking its replacement", as
       ),
     ),
   );
+  expect(invoke).toHaveBeenCalledTimes(1);
+  await act(async () => finish?.(quota(24)));
   expect(container.textContent).toContain("24%");
-  await act(async () => finishOld?.(quota(99)));
-  expect(container.textContent).not.toContain("99%");
-  expect(container.textContent).toContain("24%");
+  expect(invoke).toHaveBeenCalledTimes(1);
 });
 
 it("refreshes on native window focus after the minimum interval", async () => {
@@ -208,6 +224,8 @@ it("refreshes on native window focus after the minimum interval", async () => {
 it("polls only while visible and retries unavailable credentials", async () => {
   vi.useFakeTimers();
   vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  // The query client owns visibility; the shared test client pins it focused.
+  focusManager.setFocused(false);
   await show("pi:anthropic/claude");
   expect(invoke).not.toHaveBeenCalled();
   vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
@@ -215,13 +233,15 @@ it("polls only while visible and retries unavailable credentials", async () => {
     status: "unavailable",
     message: "Sign in through Pi.",
   });
-  await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+  await act(async () => focusManager.setFocused(true));
   expect(invoke).toHaveBeenCalledTimes(1);
-  await act(async () => vi.advanceTimersByTimeAsync(RATE_LIMIT_POLL_MS));
+  // An idle window (no input for a minute) polls at four times the period.
+  await act(async () => vi.advanceTimersByTimeAsync(QUOTA_POLL_MS["pi-anthropic"] * 5));
   expect(invoke).toHaveBeenCalledTimes(2);
   expect(container.textContent).toContain("24%");
   vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
-  await act(async () => vi.advanceTimersByTimeAsync(RATE_LIMIT_POLL_MS));
+  await act(async () => focusManager.setFocused(false));
+  await act(async () => vi.advanceTimersByTimeAsync(QUOTA_POLL_MS["pi-anthropic"] * 5));
   expect(invoke).toHaveBeenCalledTimes(2);
 });
 

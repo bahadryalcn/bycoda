@@ -229,3 +229,88 @@ it("keeps one view identity until a writer changes the preferences, then reports
     unsubscribe();
   }
 });
+
+it("does not parse stored preferences again while the stored text is unchanged", () => {
+  updateNotificationPreferences(["private"], { disabled: ["issues"] });
+  const first = notificationPreferencesViewSnapshot();
+  const parse = vi.spyOn(JSON, "parse");
+  try {
+    for (let read = 0; read < 5; read++) {
+      expect(notificationPreferencesViewSnapshot()).toBe(first);
+    }
+    expect(parse).not.toHaveBeenCalled();
+  } finally {
+    parse.mockRestore();
+  }
+});
+
+it("parses once when the stored text changes and keeps the new view stable afterwards", () => {
+  updateNotificationPreferences(["private"], { disabled: ["issues"] });
+  const first = notificationPreferencesViewSnapshot();
+  localStorage.setItem(
+    "bycoda.projectNotifications.v1",
+    JSON.stringify({ private: { disabled: ["agentFinished"] } }),
+  );
+  const parse = vi.spyOn(JSON, "parse");
+  try {
+    const next = notificationPreferencesViewSnapshot();
+    expect(next).not.toBe(first);
+    expect(next.preferences).toEqual({ private: { disabled: ["agentFinished"] } });
+    expect(parse).toHaveBeenCalledTimes(1);
+    expect(notificationPreferencesViewSnapshot()).toBe(next);
+    expect(parse).toHaveBeenCalledTimes(1);
+  } finally {
+    parse.mockRestore();
+  }
+});
+
+it("drops muted ids at their deadline without re-parsing storage", () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(1000);
+  try {
+    updateNotificationPreferences(["private"], { mutedUntil: 2000 });
+    expect([...notificationPreferencesViewSnapshot().muted]).toEqual(["private"]);
+    const parse = vi.spyOn(JSON, "parse");
+    vi.setSystemTime(2000);
+    try {
+      const expired = notificationPreferencesViewSnapshot();
+      expect([...expired.muted]).toEqual([]);
+      expect(expired.preferences.private.mutedUntil).toBe(2000);
+      expect(parse).not.toHaveBeenCalled();
+    } finally {
+      parse.mockRestore();
+    }
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("keeps last known preferences and a stable view while storage cannot be read, then recovers", () => {
+  updateNotificationPreferences(["private"], { disabled: ["issues"] });
+  notificationPreferencesViewSnapshot();
+  const read = vi.spyOn(localStorage, "getItem").mockImplementation(() => {
+    throw new Error("denied");
+  });
+  try {
+    const unavailable = notificationPreferencesViewSnapshot();
+    expect(unavailable.unavailable).toBe(true);
+    expect(unavailable.preferences.private.disabled).toEqual(["issues"]);
+    expect(notificationPreferencesViewSnapshot()).toBe(unavailable);
+    expect(retryNotificationPreferencesRead()).toBe("unavailable");
+  } finally {
+    read.mockRestore();
+  }
+  expect(retryNotificationPreferencesRead()).toBe("ready");
+  expect(notificationPreferencesViewSnapshot().unavailable).toBe(false);
+});
+
+it("reports corrupt stored text as unavailable with the last known choices, not the cached valid view", () => {
+  updateNotificationPreferences(["private"], { disabled: ["issues"] });
+  const valid = notificationPreferencesViewSnapshot();
+  localStorage.setItem("bycoda.projectNotifications.v1", "{broken");
+  const corrupt = notificationPreferencesViewSnapshot();
+  expect(corrupt).not.toBe(valid);
+  expect(corrupt.unavailable).toBe(true);
+  expect(corrupt.preferences.private.disabled).toEqual(["issues"]);
+  expect(notificationPreferencesViewSnapshot()).toBe(corrupt);
+});

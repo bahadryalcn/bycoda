@@ -139,6 +139,89 @@ fn parses_literal_paths_and_worktree_flags() {
     assert!(!trees[1].is_main);
 }
 
+#[test]
+fn bounded_map_keeps_order_and_never_exceeds_the_limit() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let active = AtomicUsize::new(0);
+    let peak = AtomicUsize::new(0);
+    let items: Vec<usize> = (0..12).collect();
+    let results = map_bounded(&items, 3, |item| {
+        let now = active.fetch_add(1, Ordering::SeqCst) + 1;
+        peak.fetch_max(now, Ordering::SeqCst);
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        active.fetch_sub(1, Ordering::SeqCst);
+        item * 2
+    })
+    .unwrap();
+    assert_eq!(
+        results,
+        items.iter().map(|item| item * 2).collect::<Vec<_>>()
+    );
+    assert!(peak.load(Ordering::SeqCst) <= 3);
+    assert!(map_bounded(&Vec::<usize>::new(), 3, |item| *item)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn session_dirs_match_nested_sessions_once_per_worktree_in_row_order() {
+    let repo = repo();
+    let root = repo.0.join("repo");
+    let sibling = repo.0.join("repo-sibling");
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::create_dir_all(&sibling).unwrap();
+    let text = |path: &Path| path_to_js(path);
+    let sessions = SessionDirs::new(vec![
+        ("root".into(), text(&root)),
+        ("nested".into(), text(&root.join("src"))),
+        ("again".into(), text(&root)),
+        ("sibling".into(), text(&sibling)),
+        ("gone".into(), text(&root.join("missing-directory"))),
+    ]);
+    // One resolved key per distinct directory, however many sessions share it.
+    assert_eq!(sessions.keys.len(), 4);
+    assert_eq!(
+        sessions.ids_under(&WorkingDirKey::new(&root)),
+        ["root", "nested", "again", "gone"]
+    );
+    assert_eq!(
+        sessions.ids_under(&WorkingDirKey::new(&sibling)),
+        ["sibling"]
+    );
+    assert!(contains_working_dir(&root, &root.join("src")));
+    assert!(!contains_working_dir(&root, &sibling));
+}
+
+#[test]
+fn session_ids_ignore_removed_sessions() {
+    let repo = repo();
+    let root = repo.0.join("repo");
+    let store = SessionStore::open_in_memory().unwrap();
+    let conn = store.lock_conn().unwrap();
+    for (id, removed) in [("kept", 0), ("removed", 1)] {
+        conn.execute("INSERT INTO sessions (id,cwd,harness,model,runtime_mode,title,blocks_json,created_at,updated_at,worktree_removed) VALUES (?1,?2,'codex','test','supervised','Fixture','[]',1,1,?3)", rusqlite::params![id, path_to_js(&root), removed]).unwrap();
+    }
+    assert_eq!(session_ids(&conn, &root).unwrap(), ["kept"]);
+}
+
+#[test]
+fn worktree_probes_report_dirty_clean_and_missing_in_order() {
+    let repo = repo();
+    let root = repo.0.join("repo");
+    let dirty = create(&root, "probe-dirty", "main", false).unwrap();
+    std::fs::write(Path::new(&dirty.path).join("untracked"), "fixture").unwrap();
+    let missing = repo.0.join("never-created");
+    // More entries than STATUS_PARALLELISM, so results must be reassembled.
+    let mut paths = vec![root.clone(), PathBuf::from(&dirty.path), missing];
+    paths.extend(std::iter::repeat_n(root.clone(), STATUS_PARALLELISM + 2));
+    let probes = map_bounded(&paths, STATUS_PARALLELISM, |path| probe_worktree(path)).unwrap();
+    assert_eq!(probes.len(), paths.len());
+    assert!(!probes[0].missing && probes[0].dirty == Some(false));
+    assert_eq!(probes[1].dirty, Some(true));
+    assert!(probes[2].missing && probes[2].dirty.is_none() && probes[2].unpushed.is_none());
+    assert!(probes[3..].iter().all(|probe| probe.dirty == Some(false)));
+}
+
 #[cfg(windows)]
 #[test]
 fn removal_deletes_long_paths_without_changing_repository_config() {
@@ -462,8 +545,17 @@ fn worktree_registered_managed_path_cannot_bypass_host_after_branch_rename() {
 fn worktree_managed_branches_require_authoritative_host_cleanup_even_with_force() {
     let repo = repo();
     let root = repo.0.join("repo");
-    for branch in ["bycoda/s/managed-session", "bycoda/t/managed-task"] {
+    for branch in ["by/managed-session", "by/managed-task-1a2b3c4d"] {
         let tree = create(&root, branch, "main", false).unwrap();
+        git(
+            &root,
+            &[
+                "config",
+                &format!("branch.{branch}.bycodaWorkspace"),
+                "ws-1",
+            ],
+        )
+        .unwrap();
         let path = Path::new(&tree.path);
         std::fs::write(path.join("dirty-source"), "retained source").unwrap();
         let error = remove(&root, path, true).unwrap_err();
@@ -510,6 +602,46 @@ fn worktree_removal_reconciles_only_journaled_unregistered_remnants() {
     std::fs::write(unknown.join("keep"), "unknown source").unwrap();
     assert!(remove(&root, &unknown, true).is_err());
     assert!(unknown.join("keep").exists());
+}
+
+// Regression: a receipt whose recovery branch was later deleted failed
+// `rev-parse --verify` on every launch ("Needed a single revision") although its
+// folder was already gone, so the removal stayed pending forever.
+#[test]
+fn removal_recovery_finishes_a_gone_worktree_whose_branch_was_deleted() {
+    let repo = repo();
+    let root = repo.0.join("repo");
+    let tree = create(&root, "gone-branch", "main", false).unwrap();
+    let path = Path::new(&tree.path);
+    let journal = removal_journal_directory(&root).unwrap();
+    std::fs::create_dir_all(&journal).unwrap();
+    let receipt = journal.join("interrupted.json");
+    let saved = NativeRemovalJournal {
+        path: tree.path.clone(),
+        branch: "gone-branch".into(),
+        head: tree.head.clone(),
+        manifest: native_removal_manifest(path).unwrap(),
+    };
+    std::fs::write(&receipt, serde_json::to_vec(&saved).unwrap()).unwrap();
+    git_checked(&root, &["worktree", "remove", "--force", "--", &tree.path]).unwrap();
+    git_checked(&root, &["branch", "-D", "gone-branch"]).unwrap();
+    assert!(!path.exists());
+    let store = SessionStore::open_in_memory().unwrap();
+    let conn = store.lock_conn().unwrap();
+    let journal_row = serde_json::json!({ "project_cwd": path_to_js(&root), "sessions": [] });
+    conn.execute(
+        "INSERT INTO worktree_removals (path, sessions_json) VALUES (?1, ?2)",
+        rusqlite::params![tree.path, journal_row.to_string()],
+    )
+    .unwrap();
+    reconcile_removals(&conn).unwrap();
+    let pending: i64 = conn
+        .query_row("SELECT COUNT(*) FROM worktree_removals", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(pending, 0);
+    assert!(!receipt.exists());
 }
 
 #[test]
@@ -580,18 +712,27 @@ fn reuses_branches_and_rejects_locked_or_unregistered_paths() {
 fn renames_only_temporary_worktree_branches() {
     let repo = repo();
     let root = repo.0.join("repo");
-    let tree = create(&root, "mc/12345678", "main", false).unwrap();
-    let renamed = rename_branch(&root, Path::new(&tree.path), "mc/faster-worktrees").unwrap();
-    assert_eq!(renamed.branch.as_deref(), Some("mc/faster-worktrees"));
+    let tree = create(&root, "by/12345678", "main", false).unwrap();
+    let renamed = rename_branch(&root, Path::new(&tree.path), "by/faster-worktrees").unwrap();
+    assert_eq!(renamed.branch.as_deref(), Some("by/faster-worktrees"));
     assert!(git(
         &root,
-        &["rev-parse", "--verify", "refs/heads/mc/faster-worktrees"]
+        &["rev-parse", "--verify", "refs/heads/by/faster-worktrees"]
     )
     .is_ok());
-    assert!(rename_branch(&root, &root, "mc/nope").is_err());
+    assert!(rename_branch(&root, &root, "by/nope").is_err());
 
     let regular = create(&root, "feature/manual", "main", false).unwrap();
-    assert!(rename_branch(&root, Path::new(&regular.path), "mc/should-not-change").is_err());
+    assert!(rename_branch(&root, Path::new(&regular.path), "by/should-not-change").is_err());
+
+    // A managed branch is renamed by Host only.
+    let managed = create(&root, "by/87654321", "main", false).unwrap();
+    git(
+        &root,
+        &["config", "branch.by/87654321.bycodaWorkspace", "ws-1"],
+    )
+    .unwrap();
+    assert!(rename_branch(&root, Path::new(&managed.path), "by/stolen").is_err());
 }
 
 #[test]
@@ -758,6 +899,14 @@ fn startup_recovers_interruptions_before_and_after_git_removal() {
         }
         let store = SessionStore::open(db).unwrap();
         let conn = store.lock_conn().unwrap();
+        // Opening only fences the worktree; Git recovery runs after launch.
+        let deferred: i64 = conn
+            .query_row("SELECT COUNT(*) FROM worktree_removals", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(deferred, 1);
+        reconcile_removals(&conn).unwrap();
         let state: StoredContext = conn.query_row(
             "SELECT cwd, worktree_cwd, worktree_removed, branch, provider_session_id, context_used, context_window FROM sessions WHERE id = 's1'", [],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?)),
@@ -903,4 +1052,224 @@ fn worktree_removal_releases_session_store_during_filesystem_removal() {
         "a session store lock spanned the directory removal"
     );
     assert!(locks.get() >= 3);
+}
+
+#[test]
+fn startup_defers_removal_recovery_and_keeps_unlistable_rows_pending() {
+    let repo = repo();
+    let missing_root = repo.0.join("moved-project");
+    let blocked = repo.0.join("orphan-worktree");
+    std::fs::create_dir_all(blocked.join(".git")).unwrap();
+    let legacy = repo.0.join("legacy-worktree");
+    let database = repo.0.join("startup-recovery.db");
+    {
+        let store = SessionStore::open(database.clone()).unwrap();
+        let conn = store.lock_conn().unwrap();
+        let current = serde_json::json!({
+            "project_cwd": path_to_js(&missing_root),
+            "sessions": [],
+        });
+        conn.execute(
+            "INSERT INTO worktree_removals (path, sessions_json) VALUES (?1, ?2), (?3, '[]'), ('bad', 'not json')",
+            rusqlite::params![path_to_js(&blocked), current.to_string(), path_to_js(&legacy)],
+        )
+        .unwrap();
+    }
+    // Opening must neither run Git nor fail on an unreachable project root or
+    // a corrupt journal; it only fences process starts in pending worktrees.
+    let store = SessionStore::open(database).unwrap();
+    assert!(crate::worktree_lifecycle::reserve_spawn(&blocked).is_err());
+    let conn = store.lock_conn().unwrap();
+    let pending = |conn: &rusqlite::Connection| -> Vec<String> {
+        conn.prepare("SELECT path FROM worktree_removals ORDER BY path")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    };
+    assert_eq!(pending(&conn).len(), 3);
+    // The deferred pass settles what it can and leaves the rest for a retry.
+    reconcile_removals(&conn).unwrap();
+    let mut expected = vec![path_to_js(&blocked), "bad".to_string()];
+    expected.sort();
+    assert_eq!(pending(&conn), expected);
+    assert!(crate::worktree_lifecycle::reserve_spawn(&blocked).is_err());
+}
+#[test]
+fn live_editor_registry_allows_cleanup_before_the_first_report() {
+    let store = SessionStore::open_in_memory().unwrap();
+    let buffers = crate::native_workspace::editor_buffers::EditorBuffers::default();
+    let terminals = crate::pty::PtyHost::new();
+    let agents = crate::harness::HarnessHost::new();
+    let check = || {
+        managed_cleanup_local_check(
+            &store,
+            &terminals,
+            &agents,
+            &buffers,
+            "workspace",
+            Path::new("/fixture"),
+        )
+    };
+    assert!(check().is_ok());
+    buffers.report(
+        "main",
+        &serde_json::from_value::<Vec<_>>(serde_json::json!([
+            {"path":"/fixture-sibling/dirty.txt","dirty":true},
+            {"path":"/fixture/clean.txt","dirty":false}
+        ]))
+        .unwrap(),
+    );
+    assert!(check().is_ok());
+    buffers.report(
+        "secondary",
+        &serde_json::from_value::<Vec<_>>(serde_json::json!([
+            {"path":"/fixture/dirty.txt","dirty":true}
+        ]))
+        .unwrap(),
+    );
+    assert!(check().unwrap_err().contains("unsaved workspace files"));
+    buffers.clear("secondary");
+    assert!(check().is_ok());
+}
+
+#[test]
+fn local_removal_refuses_unsaved_editors_of_any_window() {
+    use crate::native_workspace::editor_buffers::EditorBuffers;
+    use crate::native_workspace::BufferState;
+    let editors = EditorBuffers::default();
+    let tree = std::path::Path::new("/repo-trees/feature");
+    assert!(refuse_unsaved_editors(&editors, tree).is_ok());
+    editors.report(
+        "second-window",
+        &[serde_json::from_value::<BufferState>(
+            serde_json::json!({"path": "/repo-trees/feature/README.md", "dirty": true}),
+        )
+        .unwrap()],
+    );
+    assert!(refuse_unsaved_editors(&editors, tree)
+        .unwrap_err()
+        .contains("unsaved files"));
+    assert!(
+        refuse_unsaved_editors(&editors, std::path::Path::new("/repo-trees/feature-2")).is_ok()
+    );
+    editors.clear("second-window");
+    assert!(refuse_unsaved_editors(&editors, tree).is_ok());
+}
+
+fn branch_exists(root: &Path, branch: &str) -> bool {
+    git(
+        root,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{branch}"),
+        ],
+    )
+    .is_ok()
+}
+
+#[test]
+fn delete_branch_removes_a_merged_branch_after_removal() {
+    let repo = repo();
+    let root = repo.0.join("repo");
+    let tree = create(&root, "merged-branch", "main", false).unwrap();
+    let store = SessionStore::open_in_memory().unwrap();
+    let conn = store.lock_conn().unwrap();
+    let removed = remove_with_branch(
+        || Ok(&**conn),
+        &root,
+        Path::new(&tree.path),
+        true,
+        true,
+        true,
+    )
+    .unwrap();
+    assert!(!Path::new(&tree.path).exists());
+    assert!(!branch_exists(&root, "merged-branch"));
+    assert!(removed.branch_notice.is_none());
+}
+
+#[test]
+fn delete_branch_keeps_an_unmerged_branch_and_reports() {
+    let repo = repo();
+    let root = repo.0.join("repo");
+    let tree = create(&root, "unmerged-branch", "main", false).unwrap();
+    git_checked(
+        Path::new(&tree.path),
+        &[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "unmerged work",
+        ],
+    )
+    .unwrap();
+    let store = SessionStore::open_in_memory().unwrap();
+    let conn = store.lock_conn().unwrap();
+    let removed = remove_with_branch(
+        || Ok(&**conn),
+        &root,
+        Path::new(&tree.path),
+        true,
+        true,
+        true,
+    )
+    .unwrap();
+    assert!(!Path::new(&tree.path).exists());
+    assert!(branch_exists(&root, "unmerged-branch"));
+    assert!(removed.branch_notice.is_some());
+}
+
+#[test]
+fn removal_keeps_the_branch_by_default() {
+    let repo = repo();
+    let root = repo.0.join("repo");
+    let tree = create(&root, "kept-branch", "main", false).unwrap();
+    let store = SessionStore::open_in_memory().unwrap();
+    let conn = store.lock_conn().unwrap();
+    let removed = remove_with_branch(
+        || Ok(&**conn),
+        &root,
+        Path::new(&tree.path),
+        true,
+        true,
+        false,
+    )
+    .unwrap();
+    assert!(branch_exists(&root, "kept-branch"));
+    assert!(removed.branch_notice.is_none());
+}
+
+#[test]
+fn light_probe_reports_missing_without_git_state() {
+    let repo = repo();
+    let present = light_probe(&repo.0.join("repo"));
+    assert!(!present.missing);
+    assert!(present.dirty.is_none() && present.unpushed.is_none());
+    let gone = light_probe(&repo.0.join("nope"));
+    assert!(gone.missing);
+}
+
+#[test]
+fn worktree_missing_folder_is_not_mistaken_for_a_managed_workspace() {
+    let repo = repo();
+    let root = repo.0.join("repo");
+    let tree = create(&root, "by/hand-made-gone", "main", false).unwrap();
+    let path = std::path::PathBuf::from(&tree.path);
+    std::fs::remove_dir_all(&path).unwrap();
+    // The marker is read from the repository, so a deleted folder does not fail the check closed.
+    assert!(!branch_is_managed(&root, "by/hand-made-gone"));
+    if let Err(error) = removal_target(&root, &path) {
+        assert!(
+            !error.contains("Host workspace cleanup plan/apply"),
+            "{error}"
+        );
+    }
 }

@@ -72,3 +72,14 @@ Source references identify the original card's provenance; they are not acceptan
   detected input. Their capped audio feedback does not inherit the automatic
   high-refresh display fallback for unbounded decoration. Explicit motion-off,
   reduced-motion and visibility choices remain authoritative.
+
+- 2026-11-23, owner chat (translated):
+
+  > We did Tasks. Let's also do Crews and simplify them, Automation and the voice assistant too. You need to edit every setting, every dialog, settings etc. I do not want anything unnecessary.
+
+  Consequence: Voice settings and the live surfaces each own their controls once:
+  provider, reply voice and speaker live in Settings; the live
+  panel keeps session choice, mute, Stop speaking, turn ending and Disconnect. Assistant
+  settings is the single owner of the assistant's name, address and tone, so the old
+  voice persona no longer shapes the prompt when a Host profile exists (only its name
+  and legacy rules remain). Consent, mute, Stop work and Disconnect stay on every surface.

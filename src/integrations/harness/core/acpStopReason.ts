@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n/core";
 import { asRecord, stringField } from "../../../shared/lib/records";
 import type { HarnessEvent } from "./types";
 
@@ -11,12 +12,17 @@ export function reportAcpStopReason(
   if (reason === "cancelled") return true;
   const recovery =
     reason === "max_tokens"
-      ? "The response reached the token limit and may be incomplete. Ask the agent to continue."
+      ? t("The response reached the token limit and may be incomplete. Ask the agent to continue.")
       : reason === "max_turn_requests"
-        ? "The turn reached its request limit. Review the partial result, then ask the agent to continue."
+        ? t(
+            "The turn reached its request limit. Review the partial result, then ask the agent to continue.",
+          )
         : reason === "refusal"
-          ? "The agent refused this request. Revise the request before trying again."
-          : "Review the partial result before sending another request.";
-  onEvent({ type: "session.error", message: `Generation stopped (${reason}). ${recovery}` });
+          ? t("The agent refused this request. Revise the request before trying again.")
+          : t("Review the partial result before sending another request.");
+  onEvent({
+    type: "session.error",
+    message: t("Generation stopped ({p0}). {p1}", { p0: reason, p1: recovery }),
+  });
   return true;
 }

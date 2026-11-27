@@ -324,6 +324,30 @@
       ]
     },
     {
+      "id": "transcript-surface",
+      "config": "tests/browser/chat/playwright.transcript-surface.config.ts",
+      "files": ["transcript-surface.spec.ts"],
+      "fixture": {
+        "config": "tests/browser/chat/vite.transcript-scenario.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/chat/transcript-scenario.html",
+        "fixedPort": 15710,
+        "portReason": "Existing absolute-origin config; occupied endpoints are never reused."
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["transcript-surface.spec.ts"]
+        },
+        {
+          "name": "webkit",
+          "browser": "webkit",
+          "files": ["transcript-surface.spec.ts"]
+        }
+      ]
+    },
+    {
       "id": "arc-controls",
       "config": "tests/browser/shared-ui/playwright.arc-controls.config.ts",
       "files": ["arc-controls.spec.ts"],
@@ -433,7 +457,7 @@
     {
       "id": "connections",
       "config": "tests/browser/connections/playwright.connections.config.ts",
-      "files": ["connections.e2e.ts", "machine-rows.e2e.ts"],
+      "files": ["connections.e2e.ts", "machine-rows.e2e.ts", "phone-lan-unavailable.e2e.ts"],
       "fixture": {
         "config": "tests/browser/connections/vite.connections.config.ts",
         "mode": "preview",
@@ -443,7 +467,7 @@
         {
           "name": "chromium",
           "browser": "chromium",
-          "files": ["connections.e2e.ts", "machine-rows.e2e.ts"]
+          "files": ["connections.e2e.ts", "machine-rows.e2e.ts", "phone-lan-unavailable.e2e.ts"]
         }
       ]
     },
@@ -1307,9 +1331,9 @@
       "id": "voice-visual-styles",
       "config": "tests/browser/voice/playwright.voice-visual-styles.config.ts",
       "files": [
+        "presented-catalog.e2e.ts",
         "voice-visual-styles.e2e.ts",
         "voice-overlay.e2e.ts",
-        "voice-persona.e2e.ts",
         "voice-companion-controls.e2e.ts",
         "voice-tool-activity.e2e.ts"
       ],
@@ -1323,9 +1347,9 @@
           "name": "chromium",
           "browser": "chromium",
           "files": [
+            "presented-catalog.e2e.ts",
             "voice-visual-styles.e2e.ts",
             "voice-overlay.e2e.ts",
-            "voice-persona.e2e.ts",
             "voice-companion-controls.e2e.ts",
             "voice-tool-activity.e2e.ts"
           ]
@@ -1832,6 +1856,11 @@
       "browsers": ["chromium"]
     },
     {
+      "config": "tests/browser/chat/playwright.transcript-surface.config.ts",
+      "files": ["transcript-surface.spec.ts"],
+      "browsers": ["chromium", "webkit"]
+    },
+    {
       "config": "tests/browser/shared-ui/playwright.arc-controls.config.ts",
       "files": ["arc-controls.spec.ts"],
       "browsers": ["chromium"]
@@ -1858,7 +1887,7 @@
     },
     {
       "config": "tests/browser/connections/playwright.connections.config.ts",
-      "files": ["connections.e2e.ts", "machine-rows.e2e.ts"],
+      "files": ["connections.e2e.ts", "machine-rows.e2e.ts", "phone-lan-unavailable.e2e.ts"],
       "browsers": ["chromium"]
     },
     {

@@ -201,7 +201,9 @@ describe("linked work item update notice", () => {
     );
     expect(notice?.classList.contains("bg-content/10")).toBe(false);
     expect(notice?.classList.contains("bg-background-base/95")).toBe(false);
-    expect(document.body.textContent).toContain("1 new comment");
+    // The comment itself is shown; no separate "1 new comment" count repeats it.
+    expect(document.body.textContent).toContain("Please cover the empty state");
+    expect(document.body.textContent).not.toContain("1 new comment");
     expect(notice?.querySelector('button[aria-label="Dismiss notice"]')).not.toBeNull();
     expect(button("Open PR").hasAttribute("data-truncate")).toBe(true);
     act(() => button("Open PR").click());

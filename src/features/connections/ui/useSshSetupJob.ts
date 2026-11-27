@@ -1,8 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { withTimeout } from "../../../shared/lib/withTimeout";
 import type { SshSetup } from "../model/protocol";
+import { errorText } from "../../../shared/lib/errors";
+import { sanitizeConnectionError } from "../model/remoteConnection";
 
 const POLL_INTERVAL_MS = 350;
+/** One status read that outlasts this counts as a failed read. */
+const POLL_DEADLINE_MS = 5_000;
+/** Consecutive failed reads tolerated (backed off 0.7 s, 1.4 s, 2.8 s) before the job is dropped. */
+const MAX_POLL_RETRIES = 3;
+const CANCEL_DEADLINE_MS = 2_000;
+/** The native error for an id that no longer exists; retrying it cannot succeed. */
+const JOB_GONE = "Connection setup has expired";
 
 /** Polls one native SSH setup job and forwards its prompt answers.
  *
@@ -15,7 +25,7 @@ export function useSshSetupJob({
 }: {
   /** The job finished (successfully or with `job.error`); the id is already cleared. */
   onDone: (job: SshSetup) => void;
-  /** Polling itself failed; the job was cancelled and the id cleared. */
+  /** Polling failed repeatedly or the job is gone; the job was cancelled and the id cleared. */
   onFailed: (reason: unknown) => void;
   /** An answer could not be delivered; called with "" when one is sent. */
   onError: (message: string) => void;
@@ -39,10 +49,19 @@ export function useSshSetupJob({
     if (!jobId) return;
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
+    // A read that fails once says nothing about the job: it keeps running natively and
+    // may be waiting on a prompt. Only consecutive failures, or a job the native side
+    // no longer knows, end it.
+    let failures = 0;
     const poll = async () => {
       try {
-        const next = await invoke<SshSetup>("remote_ssh_poll", { jobId });
+        const next = await withTimeout(
+          invoke<SshSetup>("remote_ssh_poll", { jobId }),
+          POLL_DEADLINE_MS,
+          "SSH setup status",
+        );
         if (disposed) return;
+        failures = 0;
         setJob(next);
         if (next.done) {
           currentJob.current = undefined;
@@ -52,8 +71,17 @@ export function useSshSetupJob({
         }
       } catch (reason) {
         if (disposed) return;
+        failures += 1;
+        if (!String(reason).includes(JOB_GONE) && failures <= MAX_POLL_RETRIES) {
+          timer = setTimeout(() => void poll(), POLL_INTERVAL_MS * 2 ** failures);
+          return;
+        }
         failed(reason);
-        void invoke("remote_ssh_cancel", { jobId }).catch(() => {});
+        void withTimeout(
+          invoke("remote_ssh_cancel", { jobId }),
+          CANCEL_DEADLINE_MS,
+          "SSH setup cancel",
+        ).catch(() => {});
         currentJob.current = undefined;
         setJobId(undefined);
         return;
@@ -96,7 +124,7 @@ export function useSshSetupJob({
         await invoke("remote_ssh_answer", { jobId, promptId: job.prompt.id, answer: value });
         return true;
       } catch (reason) {
-        onError(String(reason));
+        onError(sanitizeConnectionError(errorText(reason)));
         return false;
       }
     },

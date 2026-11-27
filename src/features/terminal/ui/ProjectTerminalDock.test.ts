@@ -146,8 +146,12 @@ vi.mock("../../files/ui/ExplorerMenu", () => ({
     );
   },
 }));
+// The profile menu is a DropdownMenu; it reuses the recording ExplorerMenu stand-in above.
+vi.mock("../../../shared/ui/DropdownMenu", async () => ({
+  DropdownMenu: (await import("../../files/ui/ExplorerMenu")).ExplorerMenu,
+}));
 
-it.each(["terminal", "dock", "profile"])(
+it.each(["terminal", "move", "profile"])(
   "dismisses the old project's %s menu when its retained dock becomes hidden",
   async (menu) => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -197,9 +201,7 @@ it.each(["terminal", "dock", "profile"])(
         } else {
           host
             .querySelector<HTMLButtonElement>(
-              menu === "dock"
-                ? '[aria-label="Terminal dock actions"]'
-                : '[aria-label="Launch Profile…"]',
+              menu === "move" ? '[aria-label="Move terminal"]' : '[aria-label="Launch profile…"]',
             )!
             .click();
         }
@@ -216,8 +218,8 @@ it.each(["terminal", "dock", "profile"])(
       const staleActions =
         menu === "profile"
           ? ["profile:shell", "split", "default"]
-          : menu === "dock"
-            ? ["top", "close", "close-others", "close-all", "hide"]
+          : menu === "move"
+            ? ["top", "bottom", "left", "right"]
             : ["split", "move-up", "close", "close-others", "close-all"];
       await act(async () => {
         for (const id of staleActions) stalePick(id);
@@ -369,16 +371,19 @@ it("splits the targeted row and keeps both canvases visible while changing focus
     );
     expect(onSelectTerminal).toHaveBeenCalledWith("one");
     await act(async () =>
-      host.querySelector<HTMLButtonElement>('[aria-label="Launch Profile…"]')!.click(),
+      host.querySelector<HTMLButtonElement>('[aria-label="Launch profile…"]')!.click(),
     );
     expect(host.querySelector('[role="menu"]')).not.toBeNull();
+    // Split lives on the tab rows and their menu, not in the profile list.
+    expect(
+      Array.from(host.querySelectorAll<HTMLButtonElement>('[role="menu"] button')).some(
+        (button) => button.textContent === "Split",
+      ),
+    ).toBe(false);
     await act(async () =>
-      Array.from(host.querySelectorAll<HTMLButtonElement>('[role="menu"] button'))
-        .find((button) => button.textContent === "Split")!
-        .click(),
+      host.querySelector<HTMLButtonElement>('[aria-label="Split — Terminal 2"]')!.click(),
     );
     expect(onSplitTerminal).toHaveBeenLastCalledWith("two");
-    expect(host.querySelector('[role="menu"]')).toBeNull();
   } finally {
     await act(async () => root.unmount());
     vi.unstubAllGlobals();
@@ -506,6 +511,75 @@ it("reorders terminals without dragging: Alt+Arrow and the Move up / Move down m
         ?.click();
     });
     expect(onReorderTerminals).toHaveBeenLastCalledWith(["one", "three", "two"], "three");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("ends the owner's live resize when a dock drag is cancelled", async () => {
+  // A cancelled drag (Escape, window blur) that only repainted left the owner's grid
+  // in drag mode, so closing the terminal kept an empty dock row under the chat.
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  const onSizePaint = vi.fn();
+  const onSizeCommit = vi.fn();
+  try {
+    await act(async () =>
+      root.render(
+        createElement(ProjectTerminalDock, {
+          dock: {
+            projectPath: "/project",
+            side: "bottom",
+            size: 220,
+            open: true,
+            pane: {
+              id: "pane",
+              activeFileId: "one",
+              files: [{ id: "one", path: "Terminal 1", cwd: "/project", terminal: true }],
+            },
+          } as Dock,
+          focused: true,
+          onFocus: vi.fn(),
+          onHide: vi.fn(),
+          onSideChange: vi.fn(),
+          onSizePaint,
+          onSizeCommit,
+          onAddTerminal: vi.fn(),
+          onSelectTerminal: vi.fn(),
+          onCloseTerminal: vi.fn(),
+          onCloseTerminals: vi.fn(),
+          onReorderTerminals: vi.fn(),
+        }),
+      ),
+    );
+    const sash = host.querySelector<HTMLElement>(".terminal-dock-sash")!;
+    sash.setPointerCapture = vi.fn();
+    sash.releasePointerCapture = vi.fn();
+    sash.hasPointerCapture = () => true;
+    await act(async () => {
+      sash.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          pointerId: 1,
+          isPrimary: true,
+          clientY: 500,
+          button: 0,
+        }),
+      );
+      sash.dispatchEvent(
+        new PointerEvent("pointermove", { bubbles: true, pointerId: 1, clientY: 400 }),
+      );
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+    expect(onSizePaint).toHaveBeenCalled();
+    await act(async () =>
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    );
+    expect(onSizeCommit).toHaveBeenCalledWith(220);
   } finally {
     await act(async () => root.unmount());
     host.remove();

@@ -4,14 +4,18 @@
 //! images from.
 
 use std::{
-    io::{Read, Write},
+    io::Read,
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 
 use tauri::AppHandle;
 
 use super::{logo_stem, project_logos_dir, validate_logo_bytes, MAX_LOGO_BYTES};
+use crate::file_access::durable_write;
 use crate::fs::expand_home;
+
+static STORE_LOCK: Mutex<()> = Mutex::new(());
 
 /// Checked in order; the first readable, valid image wins.
 const CANDIDATES: [&str; 22] = [
@@ -193,6 +197,9 @@ fn remove_detected_except(dir: &Path, stem: &str, keep: Option<&Path>) {
 
 /// Copies the detected logo into `dir`, rewriting only when its bytes changed.
 fn store_detected(dir: &Path, project: &str, root: &Path) -> Result<Option<String>, String> {
+    let _guard = STORE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let stem = detected_stem(project);
     let Some((bytes, ext)) = find_project_logo(root) else {
         remove_detected_except(dir, &stem, None);
@@ -200,13 +207,7 @@ fn store_detected(dir: &Path, project: &str, root: &Path) -> Result<Option<Strin
     };
     let dest = dir.join(format!("{stem}.{ext}"));
     if std::fs::read(&dest).ok().as_deref() != Some(bytes.as_slice()) {
-        let temp = dir.join(format!(".{stem}-detect"));
-        let mut file = std::fs::File::create(&temp).map_err(|e| e.to_string())?;
-        file.write_all(&bytes)
-            .and_then(|()| file.sync_all())
-            .map_err(|e| e.to_string())?;
-        drop(file);
-        std::fs::rename(&temp, &dest).map_err(|e| format!("{}: {e}", dest.display()))?;
+        durable_write(&dest, &bytes).map_err(|e| format!("{}: {e}", dest.display()))?;
     }
     remove_detected_except(dir, &stem, Some(&dest));
     Ok(Some(dest.to_string_lossy().into_owned()))
@@ -320,6 +321,35 @@ mod tests {
         std::fs::remove_file(root.join("favicon.svg")).unwrap();
         assert_eq!(store_detected(&dir, "p", &root).unwrap(), None);
         assert!(!Path::new(&saved).exists());
+        std::fs::remove_dir_all(root).unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn concurrent_detections_publish_one_complete_logo_without_leftovers() {
+        let root = temp_dir("logo-race-project");
+        let dir = temp_dir("logo-race-store");
+        let svg = format!("<svg>{}</svg>", "a".repeat(200_000));
+        std::fs::write(root.join("favicon.svg"), svg.as_bytes()).unwrap();
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let (root, dir) = (root.clone(), dir.clone());
+                std::thread::spawn(move || store_detected(&dir, "p", &root))
+            })
+            .collect();
+        let mut published = std::collections::BTreeSet::new();
+        for handle in handles {
+            let saved = handle.join().unwrap().unwrap().unwrap();
+            published.insert(saved);
+        }
+        assert_eq!(published.len(), 1);
+        let saved = published.into_iter().next().unwrap();
+        assert_eq!(std::fs::read(&saved).unwrap(), svg.as_bytes());
+        let names: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names.len(), 1, "{names:?}");
         std::fs::remove_dir_all(root).unwrap();
         std::fs::remove_dir_all(dir).unwrap();
     }

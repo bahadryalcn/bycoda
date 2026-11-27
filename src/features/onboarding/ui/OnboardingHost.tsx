@@ -1,13 +1,14 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { lazy, Suspense, useEffect, useLayoutEffect, useState } from "react";
 import {
   finishOnboarding,
   OPEN_ONBOARDING_EVENT,
   shouldShowOnboarding,
   type OnboardingContext,
 } from "../model/onboarding";
-import { OPEN_USAGE_GUIDE_EVENT, openUsageGuide } from "../model/usageGuide";
+import { OPEN_USAGE_GUIDE_EVENT } from "../model/usageGuide";
 import {
   highlightTourSteps,
   markHighlightSeen,
@@ -26,9 +27,11 @@ import {
 } from "../model/tourState";
 import { firstRunTourSteps } from "../model/tourSteps";
 import { configureFileAccess } from "../../../platform/tauri/fileAccess";
+import { describeLocalError } from "../../connections/public/remoteFailure";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
-import { hasActiveModalOverlay } from "../../../shared/ui/overlay";
+import { hasActiveModalOverlay, useHasActiveModalOverlay } from "../../../shared/ui/overlay";
 import { t } from "../../../shared/i18n";
+import { startPolicyUpdatesFromCurrent } from "../../../shared/lib/policyUpdates";
 import { FeatureHighlightMarkers } from "./FeatureHighlightMarkers";
 import type { GuidedTourOutcome } from "./GuidedTour";
 
@@ -66,17 +69,21 @@ export function OnboardingHost({
   onOpenProject: (path: string) => void;
   projectCwd: string;
 }) {
-  const [open, setOpen] = useState(() => shouldShowOnboarding(context));
+  const [freshInstall] = useState(() => shouldShowOnboarding(context));
+  const [open, setOpen] = useState(freshInstall);
   const [guide, setGuide] = useState<GuideView | null>(null);
   const [tour, setTour] = useState<ActiveTour | null>(null);
   const [offer, setOffer] = useState(false);
+  const modalOpen = useHasActiveModalOverlay();
   const [accessError, setAccessError] = useState("");
   const [accessBusy, setAccessBusy] = useState(false);
   const setupAccess = () => {
     setAccessBusy(true);
     setAccessError("");
     void configureFileAccess()
-      .catch((error) => setAccessError(String(error)))
+      .catch((error) =>
+        setAccessError(describeLocalError(error, t("Could not set up file access."))),
+      )
       .finally(() => setAccessBusy(false));
   };
   // Native storage owns the decision, including migration of existing installs, and its
@@ -84,12 +91,18 @@ export function OnboardingHost({
   // and the guide are closed: those dialogs mount later and would cover the consent dialog
   // until its native deadline expires.
   const accessReady = !open && !guide;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Asks the native file-access consent once setup and the guide close; native storage owns the decision.
   useEffect(() => {
     if (accessReady) setupAccess();
   }, [accessReady]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Records a fresh installation's policy baseline in storage before the first paint so no "policies changed" notice flashes.
+  useLayoutEffect(() => {
+    if (freshInstall) startPolicyUpdatesFromCurrent();
+  }, [freshInstall]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Holds the window listeners that open setup, the guide and tours while mounted.
   useEffect(() => {
     // Record existing installations too: deleting their last project isn't a first run.
-    if (!shouldShowOnboarding(context)) finishOnboarding();
+    if (!freshInstall) finishOnboarding();
     // A fresh install starts "What's new" from this version; an update keeps older entries pending.
     syncHighlightBaseline();
     const show = () => {
@@ -124,11 +137,12 @@ export function OnboardingHost({
       window.removeEventListener(OPEN_USAGE_GUIDE_EVENT, showGuide);
       window.removeEventListener(START_TOUR_EVENT, showTour);
     };
-  }, []); // The boot context is intentionally evaluated once per window.
+  }, [freshInstall]); // The boot context is evaluated once per window.
 
   // Everyone who has never finished, skipped or declined the tour is offered it once, but never
   // over Quick setup, the guide or any open dialog: the offer waits until they are closed.
   const idle = !accessError && !open && !guide && !tour && !offer;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Holds the tour-offer timer while the window is idle.
   useEffect(() => {
     if (!idle) return;
     let timer = 0;
@@ -166,13 +180,17 @@ export function OnboardingHost({
       onClose={() => setAccessError("")}
       footer={
         <ModalActions>
-          <Button disabled={accessBusy} onClick={setupAccess} variant="secondary" type="button">
+          <Button loading={accessBusy} onClick={setupAccess} variant="secondary" type="button">
             {t("Retry")}
           </Button>
         </ModalActions>
       }
     >
-      <Alert tone="danger">{accessError}</Alert>
+      <Alert
+        tone="danger"
+        title={t("Could not set up file access.")}
+        extra={<ErrorDetails title={t("Could not set up file access.")} detail={accessError} />}
+      />
     </Modal>
   ) : guide?.view === "tour" ? (
     <Suspense fallback={null}>
@@ -211,11 +229,6 @@ export function OnboardingHost({
       <OnboardingDialog
         onImported={onImported}
         onOpenProject={onOpenProject}
-        onStartGuide={() => {
-          finishOnboarding();
-          // Use the shared request so the shell reveals the workspace too.
-          openUsageGuide();
-        }}
         onFinish={() => {
           finishOnboarding();
           setOpen(false);
@@ -237,7 +250,7 @@ export function OnboardingHost({
         onEnd={endTour}
       />
     </Suspense>
-  ) : offer ? (
+  ) : offer && !modalOpen ? (
     <Suspense fallback={null}>
       <TourOffer
         onStart={() => {

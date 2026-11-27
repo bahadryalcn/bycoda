@@ -22,7 +22,7 @@ async function openSettings(page: Page, tab: string, theme: string, width: numbe
   await page.goto(`${fixture}?view=settings&tab=${tab}&theme=${theme}`, {
     waitUntil: "domcontentloaded",
   });
-  await expect(page.getByRole("tab", { name: "Email" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Services: (Email|Slack)$/ })).toBeVisible();
 }
 
 test.beforeAll(async () => {
@@ -43,7 +43,7 @@ for (const theme of themes) {
 
     test(`integrations email accounts and form (${suffix})`, async ({ page }) => {
       await openSettings(page, "email", theme, width);
-      const panel = page.getByRole("tabpanel", { name: "Email" });
+      const panel = page.getByRole("region", { name: "Connection" });
       await expect(panel.getByText("work@example.com · Outlook")).toBeVisible();
       await expect(panel.getByText("me@example.org · Gmail")).toBeVisible();
       await capture(page, `a-email-list-${suffix}`);
@@ -52,31 +52,32 @@ for (const theme of themes) {
       await expect(panel.getByRole("button", { name: /Provider: Gmail/ })).toBeVisible();
       await panel.getByLabel("Email address").fill("new.person@example.com");
       await expect(panel.getByRole("button", { name: "Sign in with Google" })).toBeVisible();
-      await expect(panel.getByText("Can't sign in with Google?")).toBeVisible();
+      await expect(
+        panel.getByRole("switch", { name: "Use an app password instead" }),
+      ).toBeVisible();
       await capture(page, `b-email-form-${suffix}`);
-      await panel.getByRole("button", { name: "Advanced" }).click();
       await expect(panel.getByLabel("IMAP server")).toHaveValue("imap.gmail.com");
       await capture(page, `b-email-form-servers-${suffix}`);
     });
 
     test(`integrations slack (${suffix})`, async ({ page }) => {
       await openSettings(page, "slack", theme, width);
-      const panel = page.getByRole("tabpanel", { name: "Slack" });
+      const panel = page.getByRole("region", { name: "Connection" });
       await expect(panel.getByText("Acme", { exact: true })).toBeVisible();
       await panel.getByRole("button", { name: "Add workspace" }).click();
       await expect(panel.getByRole("button", { name: "Sign in with Slack" })).toBeVisible();
-      await panel.getByRole("button", { name: "Advanced" }).click();
       await panel.getByRole("switch", { name: "Use a bot token instead" }).click();
-      await panel.getByRole("button", { name: "How to get a bot token" }).click();
       await expect(panel.getByText("channels:read", { exact: false })).toBeVisible();
       await capture(page, `c-slack-${suffix}`);
     });
 
     test(`integrations offer only email and Slack (${suffix})`, async ({ page }) => {
       await openSettings(page, "email", theme, width);
-      await expect(page.getByRole("tab", { name: "Slack" })).toBeVisible();
-      await expect(page.getByRole("tab", { name: "Discord" })).toHaveCount(0);
-      await expect(page.getByRole("tab", { name: "Microsoft Teams" })).toHaveCount(0);
+      await page.getByRole("button", { name: /^Services:/ }).click();
+      await expect(page.getByRole("option", { name: "Email", exact: true })).toBeVisible();
+      await expect(page.getByRole("option", { name: "Slack", exact: true })).toBeVisible();
+      await expect(page.getByRole("option", { name: "Discord" })).toHaveCount(0);
+      await expect(page.getByRole("option", { name: "Microsoft Teams" })).toHaveCount(0);
     });
 
     test(`messages list and thread (${suffix})`, async ({ page }, testInfo) => {

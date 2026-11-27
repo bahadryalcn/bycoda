@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useContext, type CSSProperties, type MouseEvent } from "react";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Text, type TextTone } from "../../../shared/ui/Text";
@@ -6,13 +6,12 @@ import { Heading } from "../../../shared/ui/Heading";
 import { Badge } from "../../../shared/ui/Badge";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Link, linkContentAttributes } from "../../../shared/ui/Link";
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { TOOLTIP_DELAY_MS, Tooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale, useT } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import {
   CircleDot,
   CircleX,
-  ExternalLink,
   GitCompare,
   GitMerge,
   GitPullRequest,
@@ -22,7 +21,15 @@ import {
 } from "../../../shared/ui/icons";
 import { useHoverCard } from "../../../shared/ui/HoverCard";
 import { Skeleton } from "../../../shared/ui/Skeleton";
+import { FileActionError } from "../../files/public/FileActionError";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
+import {
+  isHostDevelopmentUrl,
+  openWorkspaceUrl,
+  useDevelopmentLinkMachine,
+} from "../../connections/public/workspaceUrls";
 import { UserLinkIcon } from "./UserLinkIcon";
+import { TranscriptSessionId } from "./TranscriptSessionId";
 import {
   formatRelativeTime,
   githubWorkItem,
@@ -61,55 +68,103 @@ export function UserLinkPreview({
       />
     );
   }
-  return <GenericLinkPreview key={link.url} link={link} />;
+  return <GenericLinkPreview key={`${cwd ?? ""}:${link.url}`} link={link} cwd={cwd} />;
 }
 
-function GenericLinkPreview({ link }: { link: UserLink }) {
-  const t = useT();
+function GenericLinkPreview({ link, cwd }: { link: UserLink; cwd?: string }) {
   const [metadata, setMetadata] = useState<LinkPreviewMetadata | null>(null);
   const [faviconFailed, setFaviconFailed] = useState(false);
+  const [openError, setOpenError] = useState<string>();
+  const sessionId = useContext(TranscriptSessionId);
+  const development = isHostDevelopmentUrl(link.url);
+  const machine = useDevelopmentLinkMachine(cwd, link.url);
 
+  const mounted = useRef(true);
+  const requested = useRef(false);
+  const restTimer = useRef<number | null>(null);
+
+  // Drops a pending rest timer and ignores a late page title once the chip unmounts.
   useEffect(() => {
-    let cancelled = false;
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (restTimer.current !== null) window.clearTimeout(restTimer.current);
+    };
+  }, []);
+
+  // Fetching a page title and icon contacts the linked host, so it starts only from user
+  // intent (a rested pointer or keyboard focus), once per chip, never from mounting.
+  const load = () => {
+    if (development || requested.current) return;
+    requested.current = true;
     void fetchLinkPreviewMetadata(link.url)
       .then((value) => {
-        if (!cancelled) setMetadata(value);
+        if (mounted.current) setMetadata(value);
       })
       .catch((error) => {
         console.warn("UserLinkPreview operation failed", error);
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [link.url]);
+  };
+  const cancelRest = () => {
+    if (restTimer.current === null) return;
+    window.clearTimeout(restTimer.current);
+    restTimer.current = null;
+  };
 
-  const title = metadata?.title?.trim() || link.host;
+  const open = (event: MouseEvent<HTMLAnchorElement>) => {
+    event.stopPropagation();
+    if (!development || !cwd || event.defaultPrevented) return;
+    event.preventDefault();
+    setOpenError(undefined);
+    void openWorkspaceUrl(cwd, link.url, sessionId).catch((error: unknown) => {
+      setOpenError(presentRemoteError(error, { explicit: true }));
+    });
+  };
+
+  const title = machine
+    ? `${machine} · ${link.url.replace(/^https?:\/\//i, "")}`
+    : metadata?.title?.trim() || link.host;
   const favicon = faviconFailed ? null : metadata?.faviconDataUrl;
 
-  return (
-    <Tooltip label={link.url}>
+  const preview = (
+    <Tooltip label={title !== link.host ? link.url : undefined}>
       <Link
         href={link.url}
         data-user-link-preview
-        aria-label={t("Open {p0}", { p0: title })}
-        className="user-link-preview group mx-0.5"
-        onClick={(event) => event.stopPropagation()}
+        unstyled
+        {...surfaceAttributes(
+          { variant: "card", radius: "pill" },
+          "group mx-0.5 inline-flex h-5.5 max-w-full items-center gap-1.5 ps-1.5 pe-2 align-[1px] text-(--transcript-ink-emphasis) no-underline",
+        )}
+        onClick={open}
+        onPointerEnter={(event) => {
+          if (event.pointerType === "touch" || development || requested.current) return;
+          cancelRest();
+          restTimer.current = window.setTimeout(() => {
+            restTimer.current = null;
+            load();
+          }, TOOLTIP_DELAY_MS);
+        }}
+        onPointerLeave={cancelRest}
+        onFocus={(event) => {
+          if (event.target.matches(":focus-visible")) load();
+        }}
+        onAuxClick={(event) => {
+          if (event.button === 1 && development && cwd) open(event);
+        }}
       >
         <Text
           as="span"
           size="micro"
           weight="medium"
-          {...surfaceAttributes(
-            { radius: "sm", variant: "card" },
-            "mr-1 inline-flex size-4 items-center justify-center overflow-hidden   align-[-0.125em] uppercase",
-          )}
+          className="inline-flex icon-md shrink-0 items-center justify-center overflow-hidden uppercase"
         >
           {favicon ? (
             <img
               src={favicon}
               alt=""
               draggable={false}
-              className="size-3.5 object-contain"
+              className="icon-sm object-contain"
               onError={() => setFaviconFailed(true)}
             />
           ) : (
@@ -121,12 +176,21 @@ function GenericLinkPreview({ link }: { link: UserLink }) {
           size="inherit"
           tone="inherit"
           weight="medium"
-          {...linkContentAttributes("user-link-preview-title")}
+          truncate
+          {...linkContentAttributes("user-link-preview-title min-w-0 max-w-72")}
         >
           {title}
         </Text>
       </Link>
     </Tooltip>
+  );
+  return (
+    <>
+      {preview}
+      {openError ? (
+        <FileActionError details={openError} onDismiss={() => setOpenError(undefined)} />
+      ) : null}
+    </>
   );
 }
 
@@ -200,16 +264,24 @@ function GithubWorkItemPreview({
     side: "top",
     align: "start",
     width: 360,
-    className: "p-3.5 font-sans",
+    className: "font-sans",
     "aria-label": t("Work item preview"),
     onOpenChange: (open) => {
       if (open) load();
     },
   });
 
-  const kindLabel = workItem.kind === "pr" ? "Pull request" : "Issue";
-  const compactKind = workItem.kind === "pr" ? "PR" : "Issue";
   const itemTitle = item?.title.trim();
+  const kindLabel = workItem.kind === "pr" ? t("Pull request") : t("Issue");
+  const openParams = {
+    p1: workItem.number,
+    p2: workItem.repo,
+    p3: itemTitle ? `: ${itemTitle}` : "",
+  };
+  const openLabel =
+    workItem.kind === "pr"
+      ? t("Open pull request #{p1} in {p2}{p3}", openParams)
+      : t("Open issue #{p1} in {p2}{p3}", openParams);
 
   return (
     <>
@@ -220,12 +292,7 @@ function GithubWorkItemPreview({
         data-user-link-preview
         data-github-work-item-chip={workItem.kind}
         data-compact={compact || undefined}
-        aria-label={t("Open {p0} #{p1} in {p2}{p3}", {
-          p0: kindLabel.toLowerCase(),
-          p1: workItem.number,
-          p2: workItem.repo,
-          p3: itemTitle ? `: ${itemTitle}` : "",
-        })}
+        aria-label={openLabel}
         appearance="chip"
         className={`mx-0.5 inline-flex max-w-full items-center gap-1 ${compact ? "align-middle" : "align-[-0.25em]"}`}
         onClick={(event) => {
@@ -239,7 +306,7 @@ function GithubWorkItemPreview({
           weight="medium"
           {...surfaceAttributes(
             { radius: "row", tone: workItem.kind === "pr" ? "accent" : "success" },
-            ` inline-flex shrink-0 items-center  ${compact ? "h-4.5 gap-0.5  px-1.5" : "h-5 gap-1  px-1.5"}`,
+            `inline-flex shrink-0 items-center ${compact ? "h-4.5 gap-0.5 px-1.5" : "h-5 gap-1 px-1.5"}`,
           )}
         >
           {workItem.kind === "pr" ? (
@@ -247,7 +314,7 @@ function GithubWorkItemPreview({
           ) : (
             <CircleDot className={compact ? "icon-xs" : "icon-sm"} aria-hidden="true" />
           )}
-          {compactKind} #{workItem.number}
+          {kindLabel} #{workItem.number}
         </Text>
       </Link>
       {hover.card(() => (
@@ -284,17 +351,11 @@ function GithubWorkItemCard({
   const hasBranches = parsed.kind === "pr" && details?.baseRefName && details?.headRefName;
 
   return (
-    <div className="min-w-0 text-left">
+    <div className="min-w-0 text-start">
       <Text as="div" size="micro" tone="inherit" className="flex min-w-0 items-center gap-2">
-        <status.Icon className="size-4 shrink-0" tone={status.tone} aria-hidden="true" />
-        <Text size="inherit" tone="secondary" weight="medium" truncate className="min-w-0">
+        <status.Icon className="icon-md shrink-0" tone={status.tone} aria-hidden="true" />
+        <Text size="inherit" tone="secondary" weight="medium" truncate className="min-w-0 flex-1">
           {parsed.repo}
-        </Text>
-        <Text size="inherit" tone="secondary" className="shrink-0">
-          ·
-        </Text>
-        <Text size="inherit" tone="secondary" className="shrink-0 font-mono tabular-nums">
-          #{parsed.number}
         </Text>
         <Badge tone="neutral">{status.label}</Badge>
       </Text>
@@ -321,11 +382,7 @@ function GithubWorkItemCard({
             <ClampText as="p" lines={3} expandable={false} size="micro" className="mt-1.5">
               {summary}
             </ClampText>
-          ) : (
-            <Text as="p" size="micro" tone="secondary" leading="relaxed" className="mt-1">
-              {t("Details aren't available here, but the link can still be opened on GitHub.")}
-            </Text>
-          )}
+          ) : null}
         </div>
       )}
 
@@ -380,7 +437,7 @@ function GithubWorkItemCard({
                   aria-hidden="true"
                   {...surfaceAttributes(
                     { radius: "pill", variant: "user-color" },
-                    "size-1.5 shrink-0 ",
+                    "size-1.5 shrink-0",
                   )}
                   style={{ "--surface-user-color": labelColor(label.color) } as React.CSSProperties}
                 />
@@ -406,19 +463,6 @@ function GithubWorkItemCard({
           ) : null}
         </div>
       ) : null}
-
-      <Text
-        as="div"
-        size="caption"
-        tone="secondary"
-        {...surfaceAttributes(
-          { frame: "pane", edge: "top" },
-          "mt-3 flex items-center gap-1.5 pt-2",
-        )}
-      >
-        <ExternalLink className="icon-xs" aria-hidden="true" />
-        {t("Click the chip to open on GitHub")}
-      </Text>
     </div>
   );
 }

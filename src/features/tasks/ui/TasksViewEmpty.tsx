@@ -11,11 +11,14 @@ export function TasksViewEmpty({
   narrowed,
   onboarding,
   createDisabled,
+  epicDisabled,
   onRetry,
   onReset,
   onCreate,
+  onCreateEpic,
   emptySprint = false,
   onBacklog,
+  onSprints,
 }: {
   unreadable: string | null;
   retrying: boolean;
@@ -23,11 +26,14 @@ export function TasksViewEmpty({
   narrowed: boolean;
   onboarding: boolean;
   createDisabled: boolean;
+  epicDisabled: boolean;
   onRetry: () => void;
   onReset: () => void;
   onCreate: () => void;
+  onCreateEpic: () => void;
   emptySprint?: boolean;
   onBacklog?: () => void;
+  onSprints: () => void;
 }) {
   const t = useT();
   if (unreadable)
@@ -35,6 +41,7 @@ export function TasksViewEmpty({
       <FailureState
         context="panel"
         title={t("Tasks unavailable")}
+        illustration="unreachable"
         description={unreadable}
         onRetry={onRetry}
         retrying={retrying}
@@ -45,16 +52,17 @@ export function TasksViewEmpty({
       <EmptyState
         context="panel"
         title={t("No tasks in this sprint")}
-        description={t("Add tasks from Backlog.")}
-        action={onBacklog ? { label: t("Backlog"), onClick: onBacklog } : undefined}
+        description={t("Add tasks from the backlog to plan this sprint.")}
+        illustration="no-sessions"
+        action={onBacklog ? { label: t("Browse tasks"), onClick: onBacklog } : undefined}
       />
     );
-  if (hasVisibleTasks && narrowed)
+  if (narrowed)
     return (
       <EmptyState
         context="panel"
         kind="filtered"
-        icon={null}
+        illustration="search-empty"
         description={t("No tasks match your search or filters.")}
         onReset={onReset}
       />
@@ -64,18 +72,28 @@ export function TasksViewEmpty({
       <EmptyState
         context="panel"
         kind="empty"
-        icon={null}
+        illustration="success"
         description={t("Every task is planned in a sprint.")}
+        action={{ label: t("Sprints"), onClick: onSprints }}
       />
     );
   // The one New task action lives here; the toolbar leaves it out while there is nothing else.
-  if (onboarding) return <TasksEmptyState onCreate={onCreate} disabled={createDisabled} />;
+  if (onboarding)
+    return (
+      <TasksEmptyState
+        onCreate={onCreate}
+        disabled={createDisabled}
+        epicDisabled={epicDisabled}
+        onCreateEpic={onCreateEpic}
+      />
+    );
   return (
     <EmptyState
       context="panel"
       kind="empty"
       title={t("No tasks yet")}
-      description={t("Use New task to give an agent something to work on.")}
+      description={t("Tasks will appear here once they are created.")}
+      illustration="inbox-empty"
     />
   );
 }

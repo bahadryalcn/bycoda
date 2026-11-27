@@ -7,7 +7,7 @@ use account_routes::native_ws_route;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
@@ -17,7 +17,15 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 pub(crate) mod account_pairing;
 pub(crate) mod account_routes;
+pub(crate) mod browser_frames;
+mod credential_store;
+pub(crate) mod device_proof;
+mod proof_binding;
+pub(crate) use proof_binding::PairingKey;
 pub(crate) mod host_proof;
+pub(crate) mod protocol;
+pub(crate) mod response_limit;
+mod window_lists;
 
 #[path = "remote_changes.rs"]
 mod changes;
@@ -28,9 +36,6 @@ mod native_workspace_transport;
 #[path = "remote_native_commit.rs"]
 mod native_commit;
 pub(crate) use native_commit::NativeProjection;
-
-#[path = "remote_native_upload.rs"]
-mod native_upload;
 
 #[path = "assistant/assistant_native_signer.rs"]
 pub(crate) mod assistant_native_signer;
@@ -46,9 +51,6 @@ mod native_gateway;
 #[path = "remote_native_devices.rs"]
 mod native_devices;
 pub(crate) use native_devices::NativeDeviceReply;
-#[path = "remote_native_buffer_delivery.rs"]
-mod native_buffer_delivery;
-
 #[path = "remote_native_delivery_epochs.rs"]
 mod native_delivery_epochs;
 
@@ -69,20 +71,19 @@ struct WsCapability {
 
 #[derive(Default)]
 pub struct RemoteConnections {
+    browser_frames: browser_frames::Streams,
     changes: changes::Changes,
     reads: changes::Reads,
     pub(crate) store: Arc<Mutex<()>>,
     pub(crate) tunnels: Tunnels,
     jobs: Mutex<HashMap<String, Arc<Job>>>,
     ws: HostWsBroker,
+    window_lists: window_lists::WindowLists,
     native_profile_ws: crate::host_ws::native_profile::NativeProfileBroker,
     native_service_ws: crate::host_ws::native_profile::NativeProfileBroker,
     native_service_channel: Mutex<Option<Arc<NativeServiceChannel>>>,
     native_gateway_ws: crate::host_ws::native_profile::NativeProfileBroker,
     native_device_ws: crate::host_ws::native_profile::NativeProfileBroker,
-    native_workspace_uploads: Arc<native_upload::NativeUploads>,
-    native_buffer_delivery_cursors: Arc<native_buffer_delivery::RecoveryCursors>,
-    native_buffer_delivery_ack_cursors: Arc<native_buffer_delivery::RecoveryCursors>,
     ws_capabilities: Mutex<HashMap<String, WsCapability>>,
     /// Local Host `environment.describe` per machine, reused by the managed
     /// send chain instead of one fresh describe per native check.
@@ -95,42 +96,51 @@ pub struct RemoteConnections {
 /// re-pair ABA while an old bearer remains valid on the Host.
 #[derive(Default)]
 struct RecoveryRoutes {
-    revision: AtomicU64,
+    /// Retirement count per machine id (absent is 0). Entries outlive the
+    /// machine so a re-added id never repeats an earlier revision.
+    revisions: Mutex<HashMap<String, u64>>,
     closed: AtomicBool,
     commit: Mutex<()>,
 }
 impl RecoveryRoutes {
-    fn retire(&self) {
+    /// Retires only `machine_id`; other machines' pinned selections stay valid.
+    fn retire(&self, machine_id: &str) {
         let _guard = self
             .commit
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        self.retire_locked();
+        let mut revisions = self
+            .revisions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let revision = revisions.entry(machine_id.to_owned()).or_insert(0);
+        // A saturated counter stays saturated, so `capture` keeps refusing.
+        *revision = revision.saturating_add(1);
     }
-    fn retire_locked(&self) {
-        let _ = self
-            .revision
-            .try_update(Ordering::AcqRel, Ordering::Acquire, |revision| {
-                revision.checked_add(1)
-            });
-    }
-    fn capture(&self) -> Result<u64, String> {
-        let revision = self.revision.load(Ordering::Acquire);
+    fn capture(&self, machine_id: &str) -> Result<u64, String> {
+        let revision = self
+            .revisions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(machine_id)
+            .copied()
+            .unwrap_or(0);
         if self.closed.load(Ordering::Acquire) || revision == u64::MAX {
             return Err("Native recovery connection retired".into());
         }
         Ok(revision)
     }
-    fn current(&self, revision: u64) -> bool {
-        self.capture().is_ok_and(|current| current == revision)
+    fn current(&self, machine_id: &str, revision: u64) -> bool {
+        self.capture(machine_id)
+            .is_ok_and(|current| current == revision)
     }
+    /// Global shutdown: every machine's pinned selection is refused for good.
     fn close(&self) {
         let _guard = self
             .commit
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.closed.store(true, Ordering::Release);
-        self.retire_locked();
     }
 }
 
@@ -173,24 +183,18 @@ impl RemoteConnections {
         self.tunnels.clear();
     }
     pub fn detach_window(&self, label: &str) {
+        self.browser_frames.detach(label);
         self.ws.detach(label);
+        self.ws.detach(&window_lists::owner(label));
     }
 
     pub(crate) fn invalidate_ws(&self, machine_id: &str) {
-        self.recovery_routes.retire();
+        self.recovery_routes.retire(machine_id);
         self.ws.invalidate_machine(machine_id);
         self.native_profile_ws.invalidate_machine(machine_id);
         self.native_service_ws.invalidate_machine(machine_id);
         self.native_gateway_ws.invalidate_machine(machine_id);
         self.native_device_ws.invalidate_machine(machine_id);
-        self.native_buffer_delivery_cursors
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(machine_id);
-        self.native_buffer_delivery_ack_cursors
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(machine_id);
         self.ws_capabilities
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -283,6 +287,10 @@ struct StoredMachine {
     ssh: Option<SshTarget>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     local_host: bool,
+    /// Base64url seed of the Ed25519 key this credential is bound to. Sealed in the store
+    /// beside `token` and replaced or removed with it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    proof_seed: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -298,6 +306,12 @@ pub struct Machine {
 }
 
 impl StoredMachine {
+    fn seed(&self) -> Option<device_proof::Seed> {
+        self.proof_seed
+            .as_deref()
+            .and_then(device_proof::decode_seed)
+    }
+
     fn public(&self) -> Machine {
         Machine {
             id: self.id.clone(),
@@ -413,14 +427,26 @@ pub(crate) fn read_store_values(path: &Path) -> Result<Vec<Value>, String> {
     }
 }
 
+/// Makes the saved machines' keys available to every request signed with their token.
+fn register_proofs(machines: &[StoredMachine]) {
+    device_proof::replace_saved(machines.iter().filter_map(|machine| {
+        machine
+            .seed()
+            .map(|seed| (machine.token.clone(), machine.environment_id.clone(), seed))
+    }));
+}
+
 fn read_uncached(path: &Path) -> Result<Vec<StoredMachine>, String> {
-    let machines: Vec<StoredMachine> = read_store_values(path)?
+    let mut records = read_store_values(path)?;
+    credential_store::open(path, &mut records)?;
+    let machines: Vec<StoredMachine> = records
         .into_iter()
         .filter(|record| record.get("kind").and_then(Value::as_str) != Some("ssh"))
         .map(|record| {
             serde_json::from_value(record).map_err(|_| "Remote connection store is invalid".into())
         })
         .collect::<Result<_, String>>()?;
+    register_proofs(&machines);
     // A direct loopback machine is the Host on this computer. An SSH machine's
     // forward listens on loopback too and is never one.
     crate::host_ws::local_endpoints::replace(
@@ -450,13 +476,36 @@ fn write(path: &Path, machines: &[StoredMachine]) -> Result<(), String> {
         }
         records.push(record);
     }
-    write_store_values(path, &records)
+    write_store_values(path, &records)?;
+    register_proofs(machines);
+    Ok(())
 }
 
 pub(crate) fn write_store_values(path: &Path, records: &[Value]) -> Result<(), String> {
+    write_protected_store(path, Some(records))
+}
+
+fn write_protected_store(path: &Path, records: Option<&[Value]>) -> Result<(), String> {
     let parent = path.parent().ok_or("Missing connection directory")?;
     std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let lock = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(parent.join("remote-machines.lock"))
+        .map_err(|e| e.to_string())?;
+    lock.lock().map_err(|e| e.to_string())?;
     let before = read_store_values(path)?;
+    if records.is_none() && !credential_store::has_legacy_tokens(&before) {
+        return Ok(());
+    }
+    let mut protected = records.unwrap_or(&before).to_vec();
+    credential_store::seal(
+        path,
+        &mut protected,
+        !credential_store::has_sealed_tokens(&before),
+    )?;
+    let records = protected.as_slice();
     let prepared = match crate::assistant_server_observation::prepare(path, &before, records) {
         Ok(()) => true,
         Err(_) => {
@@ -508,12 +557,10 @@ fn write_store_values_inner(path: &Path, records: &[Value]) -> Result<(), String
     result
 }
 
-/// Hosts split large session syncs into pieces below this cap
-/// (`host/sync/sync-transfer.ts`), so it bounds memory without limiting transcripts.
-const MAX_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
+use response_limit::MAX_RESPONSE_BYTES;
 static RPC_AGENT: OnceLock<ureq::Agent> = OnceLock::new();
 
-fn rpc_agent() -> &'static ureq::Agent {
+pub(crate) fn rpc_agent() -> &'static ureq::Agent {
     RPC_AGENT.get_or_init(|| {
         ureq::AgentBuilder::new()
             .redirects(0)
@@ -536,6 +583,8 @@ const INTERACTIVE_READ_RPC_TIMEOUT: std::time::Duration = std::time::Duration::f
 /// Workspace and policy reads resolve the repository identity with git, which
 /// takes seconds on a large repository or a cold disk.
 const WORKSPACE_READ_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+/// An idle desktop take is held up to 25 s on the Host (`DESKTOP_TAKE_WAIT_MS`); outlast it.
+const DESKTOP_TAKE_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(40);
 const INTERACTIVE_ACTION_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 const GIT_STATUS_READ_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 const ATTACHMENT_CHUNK_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
@@ -549,16 +598,20 @@ const CONNECTION_REFUSED: &str =
 fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
     const GIT_MUTATION: std::time::Duration = std::time::Duration::from_secs(450);
     match method {
+        "mcp.config.call" => std::time::Duration::from_secs(45),
+        // Going live or stopping waits on every Social account; the contract allows 120 s.
+        "liveStream.live.start" | "liveStream.live.stop" => std::time::Duration::from_secs(125),
+        "liveStream.obsSetup" => std::time::Duration::from_secs(65),
         // A reviewed page can publish 500 files, including Windows permission-preserving replacements.
         "workspace.run"
             if params.get("command").and_then(Value::as_str) == Some("replace_project") =>
         {
             std::time::Duration::from_secs(1800)
         }
-        // The isolated assistant reply adapter permits a 90 s model turn.
-        // Keep its durable request identity through that bounded operation.
+        // A thread send waits for the assistant's reply; its contract allows 150 s so the
+        // phone's own 120 s wait decides. Keep the durable request identity past that deadline.
         "assistant.request" if params.get("op").and_then(Value::as_str) == Some("threads.send") => {
-            std::time::Duration::from_secs(120)
+            std::time::Duration::from_secs(160)
         }
         // Interactive HTTP-only methods that a send, the composer or an open
         // pane awaits. A hung Host must not hold a native worker (and the user's
@@ -575,9 +628,12 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         | "attachments.status"
         | "host.settings.get"
         | "shell.profiles" => INTERACTIVE_READ_RPC_TIMEOUT,
-        "workspaces.get" | "workspaces.list" | "projects.workspacePolicy.get" => {
-            WORKSPACE_READ_RPC_TIMEOUT
-        }
+        "conversation.desktop.take" => DESKTOP_TAKE_RPC_TIMEOUT,
+        "workspaces.get"
+        | "workspaces.list"
+        | "workspaces.prepare.status"
+        | "workspaces.prepare.cancel"
+        | "projects.workspacePolicy.get" => WORKSPACE_READ_RPC_TIMEOUT,
         // One 512 KiB chunk per call; allow slow SSH links.
         "attachments.upload" | "attachments.read" => ATTACHMENT_CHUNK_RPC_TIMEOUT,
         "sessions.update"
@@ -620,13 +676,25 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         // Pi/OMP discovery can use 45 seconds, plus binary resolution and teardown.
         "models.list" => std::time::Duration::from_secs(60),
         // Model calls, offline discovery and device start can exceed ordinary RPC reads.
-        m if m.starts_with("appearance.") => std::time::Duration::from_secs(100),
+        // Contract deadlines (`responseTimeoutMs`): the image adapter stops at 180 s and the
+        // contract allows 240 s; suggestions allow 100 s. Over HTTP the desktop must outlast
+        // them, or it reports failure for work the Host still completes.
+        "appearance.backgroundImage" => std::time::Duration::from_secs(250),
+        m if m.starts_with("appearance.") => std::time::Duration::from_secs(110),
+        // Decision-model setup: contract 95 s (local start, source test) and 45 s (manual verify).
+        "decisionModels.local.start" | "decisionModels.sources.test" => {
+            std::time::Duration::from_secs(105)
+        }
+        "decisionModels.manual.verify" => std::time::Duration::from_secs(55),
+        // Starting a local Ollama server waits up to its 45 s contract for the API to answer.
+        "ollama.start" => std::time::Duration::from_secs(55),
         // Must outlast the Host contract deadlines (interview 100 s, avatar 240 s).
         "assistant.builder.interview" => std::time::Duration::from_secs(110),
         "assistant.builder.avatarGenerate" => std::time::Duration::from_secs(250),
         "voice.local.inspect" | "devices.start" => std::time::Duration::from_secs(60),
         "voice.local.start" => std::time::Duration::from_secs(180),
-        "voice.local.transcribe" | "voice.cloud.transcribe" => std::time::Duration::from_secs(40),
+        // Contract deadline 60 s.
+        "voice.local.transcribe" | "voice.cloud.transcribe" => std::time::Duration::from_secs(70),
         "voice.dictation.process" => std::time::Duration::from_secs(110),
         "git.generateText" => std::time::Duration::from_secs(130),
         "sessions.sideQuestion" => std::time::Duration::from_secs(160),
@@ -635,15 +703,23 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         "voice.tools.call" => std::time::Duration::from_secs(250),
         "devices.boot" => std::time::Duration::from_secs(240),
         "devices.action" => std::time::Duration::from_secs(180),
-        "git.action" | "git.switch" | "git.createBranch" | "git.worktreeCreate" => GIT_MUTATION,
+        "devices.touch" => std::time::Duration::from_secs(35),
+        // Contract deadline 180 s for a device screenshot.
+        "devices.capture" => std::time::Duration::from_secs(190),
+        // Contract deadline 600 s: sync may queue, pull and push on top of the 120 s limits.
+        "git.action" => std::time::Duration::from_secs(610),
+        "git.switch" | "git.createBranch" | "git.worktreeCreate" => GIT_MUTATION,
         // Worktree removal fingerprints and inventories the checkout (Host workers allow 120 s
         // each), waits for the repository lease and deletes it; close and finish queue behind
         // the same Host work. The desktop runs these in the background, so outlast the Host.
         "workspaces.close"
         | "workspaces.finish"
+        | "workspaces.prepare"
+        | "workspaces.renameBranch"
         | "workspaces.cleanup.plan"
         | "workspaces.cleanup.status"
         | "workspaces.cleanup.apply" => GIT_MUTATION,
+        "git.worktreeRemovalReview" | "git.worktreeRemove" => GIT_MUTATION,
         "workspace.run"
             if params
                 .get("command")
@@ -720,15 +796,43 @@ fn rpc_timed(
     params: Value,
     timeout: std::time::Duration,
 ) -> Result<Value, String> {
+    const UNVERIFIED: &str =
+        "Machine is unreachable. Account route identity could not be verified.";
+    let started = std::time::Instant::now();
+    let mut verified = None;
     if let Some(environment_id) = environment_id {
         account_routes::require_environment_enabled(environment_id)?;
         if crate::remote_routes::account_tunnel(endpoint).is_some() {
-            crate::remote_routes::verify_account_endpoint(endpoint, environment_id, token)
-                .map_err(|_| {
-                    "Machine is unreachable. Account route identity could not be verified."
-                })?;
+            // The proof counts against this call's deadline, and a fresh one for the
+            // same route, machine and credential is reused instead of repeated.
+            crate::remote_routes::verify_account_endpoint(endpoint, environment_id, token, timeout)
+                .map_err(|_| UNVERIFIED)?;
+            verified = Some(environment_id);
         }
     }
+    let timeout = timeout
+        .checked_sub(started.elapsed())
+        .filter(|left| !left.is_zero())
+        .ok_or(UNVERIFIED)?;
+    let result = rpc_exchange(endpoint, token, environment_id, method, params, timeout);
+    if let (Some(environment_id), Err(error)) = (verified, &result) {
+        // Only an answer from the Host itself keeps the proof; any other failure
+        // makes the next call prove the route again.
+        if !error.starts_with("Host rejected request:") {
+            crate::remote_routes::forget_account_identity(environment_id, endpoint);
+        }
+    }
+    result
+}
+
+fn rpc_exchange(
+    endpoint: &str,
+    token: &str,
+    environment_id: Option<&str>,
+    method: &str,
+    params: Value,
+    timeout: std::time::Duration,
+) -> Result<Value, String> {
     let agent = rpc_agent();
     if let Some(environment_id) = environment_id {
         account_routes::require_environment_enabled(environment_id)?;
@@ -736,13 +840,16 @@ fn rpc_timed(
     let payload = json!({ "version": 1, "environmentId": environment_id, "method": method, "params": params }).to_string();
     let exchange = transport_health::Exchange::new(endpoint, environment_id, method, timeout);
     let response = exchange.send(|timeout| {
-        agent
+        let mut request = agent
             .post(&format!("{endpoint}/rpc"))
             .timeout(timeout)
             .set("Authorization", &format!("Bearer {token}"))
-            .set("Content-Type", "application/json")
-            .send_string(&payload)
-            .map_err(Box::new)
+            .set("Content-Type", "application/json");
+        // A fresh proof per attempt: the Host refuses a repeated identifier.
+        if let Some(proof) = device_proof::header_for(token, "POST", "/rpc") {
+            request = request.set(device_proof::HEADER, &proof);
+        }
+        request.send_string(&payload).map_err(Box::new)
     });
     let response = match response {
         Ok(response) => response,
@@ -755,32 +862,59 @@ fn rpc_timed(
         }
     };
     let status = response.status();
-    let authorization_error = || {
-        format!("Host rejected request [RPC_AUTHORIZATION] ({method}). Reconnect the selected machine and check its access scope.")
-    };
+    let proof_stage = status == 401 && response.header(device_proof::STAGE_HEADER) == Some("proof");
     let device_effect = device_http_effect(method);
-    if (status == 401 || status == 403) && !device_effect {
-        return Err(authorization_error());
-    }
+    let denied = status == 401 || status == 403;
+    // The Host names why it refused in the body. Read it (bounded, best effort) so a
+    // revoked pairing and a rejected proxy route are not reported as the same thing.
     let mut bytes = Vec::new();
-    response
+    let mut read_failure = None;
+    if let Err(error) = response
         .into_reader()
         .take(MAX_RESPONSE_BYTES + 1)
         .read_to_end(&mut bytes)
-        .map_err(|error| {
-            let ureq::Error::Transport(error) = ureq::Error::from(error) else {
-                unreachable!("An I/O error becomes a transport error")
-            };
-            exchange.failed(&error);
-            if device_effect {
-                device_http_unknown(method)
-            } else {
-                rpc_transport_failure(&error, &rpc_operation(method, &params))
-            }
-        })?;
-    if bytes.len() as u64 > MAX_RESPONSE_BYTES {
+    {
+        read_failure = Some(error);
+    }
+    let proof_reason = proof_stage.then(|| {
+        serde_json::from_slice::<Value>(&bytes)
+            .ok()
+            .and_then(|value| value["reason"].as_str().map(str::to_owned))
+            .unwrap_or_default()
+    });
+    let rejection = |error: Option<&str>| match &proof_reason {
+        Some(reason) => proof_failure(method, reason),
+        None => authorization_failure(method, status, error),
+    };
+    if denied && !device_effect {
+        let error = serde_json::from_slice::<Value>(&bytes)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("error")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            });
+        return Err(rejection(error.as_deref()));
+    }
+    if let Some(error) = read_failure {
+        let ureq::Error::Transport(error) = ureq::Error::from(error) else {
+            unreachable!("An I/O error becomes a transport error")
+        };
+        exchange.failed(&error);
         return Err(if device_effect {
             device_http_unknown(method)
+        } else {
+            rpc_transport_failure(&error, &rpc_operation(method, &params))
+        });
+    }
+    if bytes.len() as u64 > MAX_RESPONSE_BYTES {
+        // An older Host sends the oversized body anyway. The handler ran, so an effect's
+        // outcome is unknown and only its command receipt can settle it.
+        return Err(if device_effect {
+            device_http_unknown(method)
+        } else if HostWsBroker::method_has_effect(method) {
+            response_limit::result_too_large_unknown(method)
         } else {
             "Host response is too large".into()
         });
@@ -801,8 +935,22 @@ fn rpc_timed(
         {
             return Err(device_http_unknown(method));
         }
-        if status == 401 || status == 403 {
-            return Err(authorization_error());
+        // Typed oversize answer: a query was refused harmlessly; an effect already ran and
+        // its undelivered outcome must not read as a definitive "Host rejected request".
+        if value.get("code").and_then(Value::as_str) == Some(response_limit::RESULT_TOO_LARGE_CODE)
+            && (device_effect || value.get("delivery").and_then(Value::as_str) == Some("unknown"))
+        {
+            return Err(response_limit::result_too_large_unknown(method));
+        }
+        if denied {
+            return Err(rejection(Some(error)));
+        }
+        if let Some(
+            code
+            @ ("HOST_STOPPING" | "HOST_RPC_DEADLINE" | "HOST_DB_CLOSING" | "REQUEST_CANCELLED"),
+        ) = value.get("code").and_then(Value::as_str)
+        {
+            return Err(format!("Host rejected request: [{code}] {error}"));
         }
         return Err(format!("Host rejected request: {error}"));
     }
@@ -824,6 +972,31 @@ fn rpc_timed(
         .ok_or_else(invalid_response)
 }
 
+/// Host body of the 403 that rejects the origin or route before any credential check.
+const ROUTE_REJECTED_BODY: &str = "Unsupported request origin or route";
+
+/// The Host refused the device proof (`X-Bycoda-Auth-Stage: proof`), not the pairing itself. A
+/// credential without a key is only accepted on a private connection, so the owner has to pair
+/// again there; any other reason is a proof the Host could not verify.
+fn proof_failure(method: &str, reason: &str) -> String {
+    if reason == "proof-required" {
+        format!("Host rejected request [RPC_AUTHORIZATION] [RPC_PROOF_REQUIRED] ({method}). Re-pair this computer over a private connection (SSH, the local network or Tailscale): this machine does not accept an unbound computer over a public tunnel.")
+    } else {
+        format!("Host rejected request [RPC_PROOF_INVALID] ({method}). This computer's device proof was not accepted. Check this computer's clock; if it stays this way, pair it again.")
+    }
+}
+
+/// A 401 means the device row is gone on the remote (at the gate or mid-dispatch), so
+/// retrying with this token cannot succeed. A 403 with the route body means a proxy or
+/// origin header was rejected, not the pairing.
+fn authorization_failure(method: &str, status: u16, error: Option<&str>) -> String {
+    if status == 403 && error == Some(ROUTE_REJECTED_BODY) {
+        format!("Host rejected request [RPC_ROUTE_REJECTED] ({method}). A proxy or origin header in front of the machine was refused; check the route to it.")
+    } else {
+        format!("Host rejected request [RPC_AUTHORIZATION] ({method}). This machine no longer accepts this computer's pairing; pair it again.")
+    }
+}
+
 // Error classification only; this does not grant the narrower NativeDevice
 // caller any lifecycle/mobile methods. Canonical effect metadata is authoritative.
 fn device_http_effect(method: &str) -> bool {
@@ -838,6 +1011,7 @@ fn device_http_effect(method: &str) -> bool {
             | "devices.control.release"
             | "devices.control.renew"
             | "devices.action"
+            | "devices.touch"
             | "devices.preview"
             | "devices.preview.mobile.start"
     ) && HostWsBroker::method_has_effect(method)
@@ -951,6 +1125,7 @@ fn rpc_operation(method: &str, params: &Value) -> String {
                     | "read_file_info"
                     | "read_file_preview"
                     | "read_folder_entry"
+                    | "read_text_file_slice"
                     | "read_text_file"
                     | "rename_path"
                     | "search_project"
@@ -964,6 +1139,10 @@ fn rpc_operation(method: &str, params: &Value) -> String {
                     | "skill_policy_get"
                     | "skill_policy_set"
                     | "stat_files"
+                    | "write_file_abort"
+                    | "write_file_begin"
+                    | "write_file_chunk"
+                    | "write_file_commit"
                     | "write_text_file"
             ) {
                 return format!("{method}:{action}");
@@ -1011,6 +1190,27 @@ fn rpc_transport_failure(error: &ureq::Transport, method: &str) -> String {
     };
     // Never include ureq's raw diagnostic: it can contain endpoints and credentials.
     format!("The host request did not complete [{code}] ({method}). {remedy}")
+}
+
+/// Only a failed address lookup or proxy connection proves the request body was never
+/// sent. A reset, EOF, timeout or unreadable response can follow a delivered command.
+fn transport_failure_proves_unsent(error: &str) -> bool {
+    error.contains("[RPC_DNS]") || error.contains("[RPC_PROXY]")
+}
+
+/// The tunnel reports that nothing listens on the machine. That does not make an earlier
+/// ambiguous failure of the same request "not sent": its outcome stays unknown, so the
+/// caller checks the command receipt instead of sending the command again.
+fn host_not_running_failure(error: &str) -> String {
+    const MESSAGE: &str =
+        "Host is not running on the machine. Start bycoda Host there, then reconnect.";
+    if transport_failure_proves_unsent(error) {
+        MESSAGE.to_owned()
+    } else {
+        format!(
+            "{MESSAGE} The request may have reached it before it stopped; its outcome is unknown."
+        )
+    }
 }
 
 /// A refused TCP connection never delivered the request body. Once its lease
@@ -1132,17 +1332,14 @@ fn machine_rpc_for_consumer(
                     }
                 }
                 let response = match response {
-            Err(error)
-                if error.starts_with("The host request did not complete")
-                    && state.tunnels.take_host_refusal(&machine.id) =>
-            {
-                Err(
-                    "Host is not running on the machine. Start bycoda Host there, then reconnect."
-                        .to_owned(),
-                )
-            }
-            other => other,
-        };
+                    Err(error)
+                        if error.starts_with("The host request did not complete")
+                            && state.tunnels.take_host_refusal(&machine.id) =>
+                    {
+                        Err(host_not_running_failure(&error))
+                    }
+                    other => other,
+                };
                 if response
                     .as_ref()
                     .err()
@@ -1190,6 +1387,12 @@ fn native_ws_failure(error: WsFailure) -> String {
         );
     }
     if error.code == "RPC_WS_REMOTE" {
+        if error.retryable {
+            return format!(
+                "Host rejected request: [RPC_WS_RETRYABLE] {}",
+                error.message
+            );
+        }
         return format!("Host rejected request: {}", error.message);
     }
     error.to_string()
@@ -1243,7 +1446,12 @@ pub fn remote_machines(
         .store
         .lock()
         .map_err(|_| "Connection store is locked")?;
-    Ok(read(&store_path(&app)?)?
+    let path = store_path(&app)?;
+    let records = read_store_values(&path)?;
+    if credential_store::has_legacy_tokens(&records) {
+        write_protected_store(&path, None)?;
+    }
+    Ok(read_shared(&path)?
         .iter()
         .map(StoredMachine::public)
         .collect())
@@ -1258,7 +1466,7 @@ pub async fn remote_connect(
 ) -> Result<Machine, String> {
     crate::harness::run_blocking("remote_connect", move || {
         let state = app.state::<RemoteConnections>();
-        connect_host(app.clone(), state, name, url, token, false)
+        connect_host(app.clone(), state, name, url, token, false, None)
     })
     .await
 }
@@ -1270,8 +1478,36 @@ pub(crate) fn local_host_pair(
     name: String,
     url: String,
     token: String,
+    key: PairingKey,
 ) -> Result<Machine, String> {
-    connect_host(app, state, name, url, token, true)
+    connect_host(app, state, name, url, token, true, Some(key))
+}
+
+fn normalize_device_token(token: &str) -> Result<String, String> {
+    let token = token.trim().to_string();
+    if token.len() != 43
+        || !token
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    {
+        return Err("Enter the device token issued by bycoda-host pair".into());
+    }
+    Ok(token)
+}
+
+/// Verifies a fresh pairing with the Host and returns its descriptor and identity.
+fn describe_for_pairing(endpoint: &str, token: &str) -> Result<(Value, String), String> {
+    let descriptor = rpc(endpoint, token, None, "environment.describe", json!({}))?;
+    if let Some(message) = protocol::protocol_mismatch(&descriptor) {
+        return Err(message.into());
+    }
+    let environment_id = descriptor
+        .get("environmentId")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .ok_or("Host identity is missing")?
+        .to_string();
+    Ok((descriptor, environment_id))
 }
 
 fn connect_host(
@@ -1281,26 +1517,19 @@ fn connect_host(
     url: String,
     token: String,
     local_host: bool,
+    key: Option<PairingKey>,
 ) -> Result<Machine, String> {
     let endpoint = endpoint(&url)?;
-    let token = token.trim().to_string();
-    if token.len() != 43
-        || !token
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    let token = normalize_device_token(&token)?;
+    // The credential was issued bound to this key: sign the verification and everything after.
+    let _signing = key.as_ref().map(|key| key.sign_for(&token));
+    let (descriptor, environment_id) = describe_for_pairing(&endpoint, &token)?;
+    if key
+        .as_ref()
+        .is_some_and(|key| key.environment_id != environment_id)
     {
-        return Err("Enter the device token issued by bycoda-host pair".into());
+        return Err("Host identity changed".into());
     }
-    let descriptor = rpc(&endpoint, &token, None, "environment.describe", json!({}))?;
-    if descriptor.get("protocolVersion").and_then(Value::as_u64) != Some(1) {
-        return Err("This host uses an incompatible protocol version".into());
-    }
-    let environment_id = descriptor
-        .get("environmentId")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-        .ok_or("Host identity is missing")?
-        .to_string();
     let name = if name.trim().is_empty() {
         descriptor
             .get("name")
@@ -1333,6 +1562,7 @@ fn connect_host(
         } else {
             existing.and_then(|m| m.ssh.clone())
         },
+        proof_seed: key.map(|key| key.encoded_seed()),
     };
     machines.retain(|m| m.id != id);
     machines.push(machine.clone());
@@ -1431,10 +1661,14 @@ pub fn remote_machine_update(
         remote_port,
     )?;
     write(&path, &machines)?;
-    if before != machine.ssh {
+    // Only the old tunnel leaves the registry under the store lock. Ending its
+    // ssh can wait seconds, so that happens after the lock is released.
+    let retired = (before != machine.ssh).then(|| {
         state.invalidate_ws(&machine_id);
-        state.tunnels.remove(&machine_id);
-    }
+        state.tunnels.detach(&machine_id)
+    });
+    drop(_guard);
+    drop(retired);
     Ok(machine.public())
 }
 
@@ -1514,6 +1748,180 @@ pub(crate) fn prune_stale_local_sync(
     Ok(())
 }
 
+/// The saved automatic link to this computer's Host, or `None` for any other
+/// machine (an SSH link, a remote address, a missing record).
+pub(crate) fn local_link(
+    app: &AppHandle,
+    state: &RemoteConnections,
+    machine_id: &str,
+) -> Option<Machine> {
+    let _guard = state.store.lock().ok()?;
+    let machines = read_shared(&store_path(app).ok()?).ok()?;
+    let local_name = crate::local_host::local_device_name();
+    machines
+        .iter()
+        .find(|m| m.id == machine_id && is_local_sync(m, &local_name))
+        .map(StoredMachine::public)
+}
+
+/// Cheap authenticated call with the saved local link's own token, for the
+/// once-per-launch revocation check. `Err` carries the RPC error text; refuses
+/// any machine that is not the automatic loopback link.
+pub(crate) fn probe_local_link_token(
+    app: &AppHandle,
+    state: &RemoteConnections,
+    machine_id: &str,
+) -> Result<(), String> {
+    let local_name = crate::local_host::local_device_name();
+    let (endpoint, token) = {
+        let _guard = state
+            .store
+            .lock()
+            .map_err(|_| "Connection store is locked")?;
+        let machines = read_shared(&store_path(app)?)?;
+        let machine = machines
+            .iter()
+            .find(|m| m.id == machine_id && is_local_sync(m, &local_name))
+            .ok_or("This connection is not the local host")?;
+        (machine.endpoint.clone(), machine.token.clone())
+    };
+    let descriptor = rpc(&endpoint, &token, None, "environment.describe", json!({}))?;
+    // A credential that is not this computer's own, or has no key, is replaced once per launch.
+    if proof_binding::needs_local_repair(&descriptor) {
+        return Err("[RPC_AUTHORIZATION] Local desktop pairing needs to be renewed".into());
+    }
+    let supports_management = descriptor["capabilities"]
+        .as_array()
+        .is_some_and(|items| items.iter().any(|item| item == "devices.setManagement"));
+    if supports_management {
+        let paired = rpc(&endpoint, &token, None, "devices.paired", json!({}))?;
+        let local = paired["devices"].as_array().is_some_and(|devices| {
+            devices
+                .iter()
+                .any(|device| device["isCurrent"] == true && device["isLocalDesktop"] == true)
+        });
+        if !local {
+            return Err("[RPC_AUTHORIZATION] Local desktop pairing needs to be renewed".into());
+        }
+    }
+    Ok(())
+}
+
+/// Swaps in a fresh token for the saved local link, in place: the machine id
+/// frontend state is keyed by survives. A pairing that reaches a different Host
+/// replaces the record the way `connect_host` would (that Host's own record when
+/// saved, else a new id). Only the automatic loopback link is ever touched.
+fn apply_local_repair(
+    machines: &mut Vec<StoredMachine>,
+    machine_id: &str,
+    environment_id: &str,
+    token: &str,
+    proof_seed: Option<String>,
+    local_name: &str,
+) -> Result<StoredMachine, String> {
+    let index = machines
+        .iter()
+        .position(|m| m.id == machine_id && is_local_sync(m, local_name))
+        .ok_or("This connection is not the local host")?;
+    if machines[index].environment_id == environment_id {
+        let machine = &mut machines[index];
+        machine.token = token.to_string();
+        machine.proof_seed = proof_seed;
+        machine.local_host = true;
+        return Ok(machine.clone());
+    }
+    let old = machines.remove(index);
+    let id = machines
+        .iter()
+        .find(|m| m.environment_id == environment_id)
+        .map(|m| m.id.clone())
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    machines.retain(|m| m.id != id);
+    let machine = StoredMachine {
+        id,
+        name: old.name,
+        endpoint: old.endpoint,
+        environment_id: environment_id.to_string(),
+        token: token.to_string(),
+        ssh: None,
+        local_host: true,
+        proof_seed,
+    };
+    machines.push(machine.clone());
+    Ok(machine)
+}
+
+/// Stores a token freshly issued by this computer's launcher on the saved
+/// local link, after the Host confirmed it.
+pub(crate) fn replace_local_pairing(
+    app: &AppHandle,
+    state: &RemoteConnections,
+    machine_id: &str,
+    token: &str,
+    key: PairingKey,
+) -> Result<Machine, String> {
+    let token = normalize_device_token(token)?;
+    let local_name = crate::local_host::local_device_name();
+    let endpoint = {
+        let _guard = state
+            .store
+            .lock()
+            .map_err(|_| "Connection store is locked")?;
+        read_shared(&store_path(app)?)?
+            .iter()
+            .find(|m| m.id == machine_id && is_local_sync(m, &local_name))
+            .ok_or("This connection is not the local host")?
+            .endpoint
+            .clone()
+    };
+    let _signing = key.sign_for(&token);
+    let (descriptor, environment_id) = describe_for_pairing(&endpoint, &token)?;
+    if key.environment_id != environment_id {
+        return Err("Host identity changed".into());
+    }
+    let _guard = state
+        .store
+        .lock()
+        .map_err(|_| "Connection store is locked")?;
+    let path = store_path(app)?;
+    let mut machines = read(&path)?;
+    let previous = machines
+        .iter()
+        .find(|machine| {
+            machine.id == machine_id
+                && machine.environment_id == environment_id
+                && is_local_sync(machine, &local_name)
+                && machine.token != token
+        })
+        .map(|machine| (machine.token.clone(), machine.seed()));
+    let machine = apply_local_repair(
+        &mut machines,
+        machine_id,
+        &environment_id,
+        &token,
+        Some(key.encoded_seed()),
+        &local_name,
+    )?;
+    write(&path, &machines)?;
+    state.invalidate_ws(machine_id);
+    state.invalidate_ws(&machine.id);
+    state.observe_ws_capability(&machine, &descriptor);
+    drop(_guard);
+    if let Some((previous_token, previous_seed)) = previous {
+        // The replaced credential may be bound too; its key left the store with it.
+        let _previous_signing = previous_seed
+            .map(|seed| device_proof::PendingProof::new(&previous_token, &environment_id, seed));
+        let _ = rpc(
+            &endpoint,
+            &previous_token,
+            Some(&environment_id),
+            "devices.revokeSelf",
+            json!({}),
+        );
+    }
+    Ok(machine.public())
+}
+
 #[tauri::command(async)]
 pub fn remote_disconnect(
     app: AppHandle,
@@ -1526,8 +1934,12 @@ pub fn remote_disconnect(
         .map_err(|_| "Connection store is locked")?;
     let path = store_path(&app)?;
     disconnect_saved_machine(&state, &path, &machine_id)?;
-    state.tunnels.remove(&machine_id);
+    // Only the old tunnel leaves the registry under the store lock. Ending its
+    // ssh can wait seconds, so that happens after the lock is released.
+    let retired = state.tunnels.detach(&machine_id);
     folder_access::stop_machine(&machine_id);
+    drop(_guard);
+    drop(retired);
     Ok(())
 }
 
@@ -1629,10 +2041,17 @@ fn assistant_route_request(
     Ok(params)
 }
 
-fn assistant_route_generation(state: &RemoteConnections) -> Result<String, String> {
+fn assistant_route_generation(
+    state: &RemoteConnections,
+    machine_id: &str,
+) -> Result<String, String> {
     static PROCESS: OnceLock<String> = OnceLock::new();
     let process = PROCESS.get_or_init(|| uuid::Uuid::new_v4().to_string());
-    Ok(format!("{}:{}", process, state.recovery_routes.capture()?))
+    Ok(format!(
+        "{}:{}",
+        process,
+        state.recovery_routes.capture(machine_id)?
+    ))
 }
 
 fn with_assistant_route_current<T>(
@@ -1650,7 +2069,7 @@ fn with_assistant_route_current<T>(
         .commit
         .lock()
         .map_err(|_| "Connection retirement is unavailable")?;
-    if assistant_route_generation(&state)? != route.generation
+    if assistant_route_generation(&state, &route.machine_id)? != route.generation
         || !read_uncached(&store_path(app)?)?.iter().any(|machine| {
             machine.id == route.machine_id
                 && machine.environment_id == route.environment_id
@@ -1766,7 +2185,8 @@ pub async fn assistant_native_send(
                         && machine.local_host
                 })
                 .ok_or("The original Host is unavailable")?;
-            (machine, assistant_route_generation(&state)?)
+            let generation = assistant_route_generation(&state, &machine.id)?;
+            (machine, generation)
         };
         let fingerprint = ws_fingerprint(&machine);
         let identity = remote_request_blocking(
@@ -2014,16 +2434,21 @@ fn remote_request_blocking(
     ) {
         return Err("Decision model keys are available only on this computer.".into());
     }
+    if !live_stream_method_allowed(&method, machine.local_host && is_local_sync(&machine, "")) {
+        return Err("This Live streaming action is only available on this computer.".into());
+    }
     if expected_fingerprint
         .as_deref()
         .is_some_and(|expected| ws_fingerprint(&machine) != expected)
     {
         return Err("The original Host connection changed. The outcome remains unknown.".into());
     }
-    if expected_generation
-        .as_deref()
-        .is_some_and(|expected| assistant_route_generation(state).ok().as_deref() != Some(expected))
-    {
+    if expected_generation.as_deref().is_some_and(|expected| {
+        assistant_route_generation(state, &machine.id)
+            .ok()
+            .as_deref()
+            != Some(expected)
+    }) {
         return Err("The original Host connection retired. The outcome remains unknown.".into());
     }
     if fresh == Some(true) && machine.ssh.is_some() {
@@ -2032,6 +2457,12 @@ fn remote_request_blocking(
     // Background polling must respect the owner's automatic reconnect setting.
     let allow = fresh == Some(true) || allow_connect != Some(false);
     let disclosure = Mutex::new(None);
+    let list_read = state
+        .window_lists
+        .begin(&state.ws, &machine.id, window.label(), &method);
+    let consumer = list_read
+        .as_ref()
+        .map_or(window.label(), |read| read.owner.as_str());
     let send = |params| {
         machine_rpc_for_consumer(
             state,
@@ -2039,7 +2470,7 @@ fn remote_request_blocking(
             &method,
             params,
             allow,
-            Some((app, window.label())),
+            Some((app, consumer)),
             Some(&disclosure),
         )
     };
@@ -2086,7 +2517,10 @@ fn remote_request_blocking(
             return Err("Connection changed while the request was running. Its outcome is unknown; refresh before retrying an action.".into());
         }
         if expected_generation.as_deref().is_some_and(|expected| {
-            assistant_route_generation(state).ok().as_deref() != Some(expected)
+            assistant_route_generation(state, &machine.id)
+                .ok()
+                .as_deref()
+                != Some(expected)
         }) {
             return Err(
                 "The original Host connection retired. The outcome remains unknown.".into(),
@@ -2119,6 +2553,9 @@ fn remote_request_blocking(
             != Some(machine.environment_id.as_str())
     {
         return Err("Host identity changed. Add this machine again before continuing.".into());
+    }
+    if method == "environment.describe" {
+        proof_binding::upgrade(app, state, &machine, &result);
     }
     Ok(result)
 }
@@ -2223,13 +2660,15 @@ pub async fn host_connection_attach(
             state.ws.attach(
                 &route,
                 &consumer,
-                Arc::new(move |event| {
+                // One ordered array per batch window and window label: a busy remote
+                // stream costs one webview eval per tick, not one per frame.
+                crate::host_ws::event_batch::batched_sink(Arc::new(move |events| {
                     let _ = event_app.emit_to(
                         &label,
                         HOST_CONNECTION_EVENT,
-                        json!({"machineId":machine_id,"event":event}),
+                        crate::host_ws::event_batch::envelope_batch(&machine_id, events),
                     );
-                }),
+                })),
             )
         })?;
         Ok(true)
@@ -2243,7 +2682,9 @@ pub fn host_connection_detach(
     state: State<'_, RemoteConnections>,
     machine_id: String,
 ) {
-    state.ws.detach_machine(&machine_id, window.label());
+    state
+        .window_lists
+        .detach_stream(&state.ws, &machine_id, window.label());
 }
 
 #[tauri::command]
@@ -2391,6 +2832,7 @@ fn shareable_remote_read(method: &str, params: &Value) -> bool {
         "sessions.sync"
             | "sessions.page"
             | "sessions.block"
+            | "sessions.inlineVisual"
             | "sessions.syncChunk"
             | "sessions.list"
             | "environment.describe"
@@ -2464,7 +2906,6 @@ pub(crate) fn local_editor_format_rpc(app: &AppHandle, params: Value) -> Result<
 /// Reconnects and retries are explicit; an uncertain mutation is not replayed here.
 pub(crate) struct NativeWorkspaceTransport {
     machine: StoredMachine,
-    recovery: Option<RecoveryRoute>,
     workspace: Option<Arc<native_workspace_transport::NativeWorkspaceChannel>>,
 }
 
@@ -2492,7 +2933,7 @@ fn validate_recovery_saved(
     routes: &RecoveryRoutes,
     path: &Path,
 ) -> Result<(), String> {
-    if !routes.current(pin.revision)
+    if !routes.current(&machine.id, pin.revision)
         || !read_uncached(path)?.iter().any(|current| {
             same_request_route(machine, current)
                 && machine.local_host == current.local_host
@@ -2502,7 +2943,7 @@ fn validate_recovery_saved(
                     &machine.environment_id,
                 )
         })
-        || !routes.current(pin.revision)
+        || !routes.current(&machine.id, pin.revision)
     {
         return Err("Native recovery connection changed or retired".into());
     }
@@ -2545,18 +2986,27 @@ fn machine_for_request(
     Ok(machine)
 }
 
+pub(crate) fn project_terminal_ssh_target(
+    app: &AppHandle,
+    machine_id: &str,
+    environment_id: &str,
+) -> Result<SshTarget, String> {
+    account_routes::require_environment_enabled(environment_id)?;
+    let state = app.state::<RemoteConnections>();
+    let machine = machine_for_request(&state, &store_path(app)?, machine_id, Some(environment_id))?;
+    let saved = machine
+        .ssh
+        .ok_or("This project's machine has no saved SSH connection")?;
+    // Reuse the current Host tunnel's route, including the known-host alias for its alternate.
+    Ok(state.tunnels.dialed(machine_id).unwrap_or(saved))
+}
+
 pub(crate) struct NativeRecoveryReply {
     value: Value,
     guard: Option<crate::host_ws::native_profile::NativeProfileGuard>,
     selection: NativeRecoverySelection,
 }
 impl NativeRecoveryReply {
-    pub(crate) fn project<T>(
-        self,
-        project: impl FnOnce(&Value) -> Result<T, String>,
-    ) -> Result<T, String> {
-        self.inspect(project)
-    }
     fn inspect<T>(&self, project: impl FnOnce(&Value) -> Result<T, String>) -> Result<T, String> {
         let check = || {
             if let Some(guard) = &self.guard {
@@ -2571,10 +3021,6 @@ impl NativeRecoveryReply {
             Ok(projected)
         })
     }
-    #[cfg(test)]
-    pub(crate) fn disclose(self) -> Result<Value, String> {
-        self.project(|value| Ok(value.clone()))
-    }
 }
 
 #[derive(Clone)]
@@ -2584,201 +3030,6 @@ struct RecoveryRoute {
 }
 
 impl NativeWorkspaceTransport {
-    /// Recovery pins the actual Native-selected bootstrap, not the selected project machine.
-    pub(crate) fn connect_recovery(
-        app: &AppHandle,
-        selected_endpoint: &str,
-        environment_id: &str,
-    ) -> Result<Self, String> {
-        let state = app
-            .try_state::<RemoteConnections>()
-            .ok_or("The Native local Host connection state is unavailable")?;
-        let (machine, recovery) = {
-            let _guard = state
-                .store
-                .lock()
-                .map_err(|_| "Connection store is locked")?;
-            let machine = read_uncached(&store_path(app)?)?
-                .into_iter()
-                .find(|machine| {
-                    recovery_machine_matches(machine, selected_endpoint, environment_id)
-                })
-                .ok_or("The Native-selected local Host is not paired for report recovery")?;
-            let revision = state.recovery_routes.capture()?;
-            (
-                machine,
-                RecoveryRoute {
-                    revision,
-                    selected_endpoint: selected_endpoint.into(),
-                },
-            )
-        };
-        let transport = Self {
-            machine,
-            recovery: Some(recovery),
-            workspace: None,
-        };
-        transport.assert_recovery_current(app)?;
-        let descriptor = rpc(
-            &transport.machine.endpoint,
-            &transport.machine.token,
-            Some(environment_id),
-            "environment.describe",
-            json!({}),
-        )?;
-        if descriptor["environmentId"] != environment_id
-            || descriptor["protocolVersion"] != 1
-            || !descriptor["capabilities"].as_array().is_some_and(|items| {
-                items
-                    .iter()
-                    .any(|item| item == "native.buffers.recovery.v1")
-            })
-        {
-            return Err("The Native-selected local Host cannot inspect retained reports".into());
-        }
-        transport.assert_recovery_current(app)?;
-        state.observe_ws_capability(&transport.machine, &descriptor);
-        Ok(transport)
-    }
-    pub(crate) fn assert_recovery_current(&self, app: &AppHandle) -> Result<(), String> {
-        let state = app
-            .try_state::<RemoteConnections>()
-            .ok_or("Native recovery connection unavailable")?;
-        self.assert_recovery_saved(&state, &store_path(app)?)
-    }
-    pub(crate) fn call_recovery(
-        &self,
-        app: &AppHandle,
-        method: &str,
-        params: Value,
-    ) -> Result<NativeRecoveryReply, String> {
-        let state = app
-            .try_state::<RemoteConnections>()
-            .ok_or("Native recovery connection unavailable")?;
-        self.call_recovery_guarded_saved(&state, &store_path(app)?, method, params)
-    }
-    #[cfg(test)]
-    fn call_recovery_saved(
-        &self,
-        state: &RemoteConnections,
-        path: &Path,
-        method: &str,
-        params: Value,
-    ) -> Result<Value, String> {
-        self.call_recovery_guarded_saved(state, path, method, params)?
-            .disclose()
-    }
-    fn call_recovery_guarded_saved(
-        &self,
-        state: &RemoteConnections,
-        path: &Path,
-        method: &str,
-        params: Value,
-    ) -> Result<NativeRecoveryReply, String> {
-        use crate::host_ws::native_profile::NativeProfileBroker;
-        if !matches!(
-            method,
-            "native.buffers.recovery.list"
-                | "native.buffers.recovery.read"
-                | "native.buffers.recovery.status"
-        ) {
-            return Err("Unsupported Native profile recovery operation".into());
-        }
-        let selection = self.with_recovery_saved(state, path, || {
-            Ok(NativeRecoverySelection {
-                store: state.store.clone(),
-                routes: state.recovery_routes.clone(),
-                path: path.to_owned(),
-                machine: self.machine.clone(),
-                pin: self
-                    .recovery
-                    .as_ref()
-                    .ok_or("Native recovery connection unavailable")?
-                    .clone(),
-            })
-        })?;
-        let pending = self.with_recovery_saved(state, path, || {
-            if !state.ws_enabled(&self.machine)
-                || !NativeProfileBroker::supports_params(method, &params)
-            {
-                return Ok(None);
-            }
-            let route = account_routes::native_route(
-                &self.machine.id,
-                &self.machine.environment_id,
-                &self.machine.endpoint,
-                &self.machine.token,
-                &ws_fingerprint(&self.machine),
-            )
-            .map_err(native_ws_failure)?;
-            let caller = state
-                .native_profile_ws
-                .capture(route)
-                .map_err(native_ws_failure)?;
-            caller
-                .begin(method, params.clone(), RequestOptions::default())
-                .map(Some)
-                .map_err(native_ws_failure)
-        })?;
-        let result = match pending {
-            Some(pending) => match pending.wait() {
-                Ok(reply) => {
-                    let (value, guard) = reply.into_guarded();
-                    NativeRecoveryReply {
-                        value,
-                        guard: Some(guard),
-                        selection,
-                    }
-                }
-                // Unsupported is reported only before domain dispatch. Old Host
-                // compatibility must never resend a dispatched/uncertain call.
-                Err(error) if error.unsupported => {
-                    self.assert_recovery_saved(state, path)?;
-                    NativeRecoveryReply {
-                        value: self.rpc_compat(method, params)?,
-                        guard: None,
-                        selection,
-                    }
-                }
-                Err(error) => return Err(native_ws_failure(error)),
-            },
-            None => {
-                self.assert_recovery_saved(state, path)?;
-                NativeRecoveryReply {
-                    value: self.rpc_compat(method, params)?,
-                    guard: None,
-                    selection,
-                }
-            }
-        };
-        self.with_recovery_saved(state, path, || {
-            if let Some(guard) = &result.guard {
-                guard.check().map_err(native_ws_failure)?;
-            }
-            Ok(())
-        })?;
-        Ok(result)
-    }
-    fn assert_recovery_saved(&self, state: &RemoteConnections, path: &Path) -> Result<(), String> {
-        self.with_recovery_saved(state, path, || Ok(()))
-    }
-    fn with_recovery_saved<T>(
-        &self,
-        state: &RemoteConnections,
-        path: &Path,
-        consume: impl FnOnce() -> Result<T, String>,
-    ) -> Result<T, String> {
-        let _guard = state
-            .store
-            .lock()
-            .map_err(|_| "Connection store is locked")?;
-        let pin = self
-            .recovery
-            .as_ref()
-            .ok_or("Native recovery connection unavailable")?;
-        validate_recovery_saved(&self.machine, pin, &state.recovery_routes, path)?;
-        consume()
-    }
     #[cfg(test)]
     pub(crate) fn for_test(endpoint: String) -> Self {
         Self {
@@ -2790,8 +3041,8 @@ impl NativeWorkspaceTransport {
                 token: "fixture-token".into(),
                 ssh: None,
                 local_host: true,
+                proof_seed: None,
             },
-            recovery: None,
             workspace: None,
         }
     }
@@ -2806,13 +3057,6 @@ impl NativeWorkspaceTransport {
                 | "native.turn.end"
                 | "native.activity.start"
                 | "native.activity.end"
-                | "native.buffers.update"
-                | "native.buffers.heartbeat"
-                | "native.buffers.retire"
-                | "native.buffers.reconcile"
-                | "native.buffers.recovery.list"
-                | "native.buffers.recovery.read"
-                | "native.buffers.recovery.status"
                 | "native.rewind.plan"
                 | "native.rewind.prepare"
                 | "native.rewind.apply"
@@ -2905,6 +3149,7 @@ pub(crate) fn conversation_machine_call_pinned(
             | "devices.control.renew"
             | "devices.inspect"
             | "devices.action"
+            | "devices.touch"
     ) {
         return Err("Unsupported paired device operation".into());
     }
@@ -3059,7 +3304,9 @@ pub async fn social_authority_connect(
 
 #[path = "remote/method_catalog.rs"]
 mod method_catalog;
-use method_catalog::{decision_model_key_allowed, supported_remote_method};
+use method_catalog::{
+    decision_model_key_allowed, live_stream_method_allowed, supported_remote_method,
+};
 #[path = "remote/social_endpoint.rs"]
 mod social_endpoint;
 use social_endpoint::social_peer_endpoint;
@@ -3078,6 +3325,10 @@ fn merge_known_machine(
     named: bool,
 ) {
     machine.id = old.id.clone();
+    // The same credential keeps the key it was bound to while the job ran.
+    if machine.token == old.token && machine.proof_seed.is_none() {
+        machine.proof_seed = old.proof_seed.clone();
+    }
     // Setup/reconnect may have started before a key was assigned. Keep the
     // latest saved binding instead of writing the job's older target over it.
     if let (Some(new), Some(previous)) = (machine.ssh.as_mut(), old.ssh.as_ref()) {
@@ -3136,6 +3387,7 @@ pub fn remote_ssh_begin(
     name: String,
     port: Option<u16>,
     alternate: Option<String>,
+    expected_environment_id: Option<String>,
 ) -> Result<String, String> {
     let target = remote_ssh::validate_target(&target, port)?;
     let alternate = remote_ssh::validate_alternate(alternate.as_deref(), port)?
@@ -3153,6 +3405,7 @@ pub fn remote_ssh_begin(
         name.trim().chars().take(100).collect(),
         None,
         false,
+        expected_environment_id.filter(|id| !id.is_empty()),
     )
 }
 
@@ -3168,9 +3421,10 @@ pub fn remote_ssh_reconnect(
             .store
             .lock()
             .map_err(|_| "Connection store is locked")?;
-        read(&store_path(&app)?)?
-            .into_iter()
+        read_shared(&store_path(&app)?)?
+            .iter()
             .find(|m| m.id == machine_id)
+            .cloned()
             .ok_or("Machine is no longer connected")?
     };
     let target = machine
@@ -3183,6 +3437,7 @@ pub fn remote_ssh_reconnect(
         machine.name.clone(),
         Some(machine),
         upgrade.unwrap_or(false),
+        None,
     )
 }
 
@@ -3212,10 +3467,6 @@ pub fn remote_ssh_cancel(
     state.job(&job_id)?.cancel();
     Ok(())
 }
-
-#[cfg(test)]
-#[path = "remote_recovery_ws_tests.rs"]
-mod recovery_ws_tests;
 
 #[cfg(test)]
 mod tests;

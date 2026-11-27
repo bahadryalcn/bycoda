@@ -3,7 +3,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 const { limits, filters, profiles } = vi.hoisted(() => ({
   profiles: { empty: false },
-  filters: { provider: [] as string[], account: [] as string[], project: [], model: [], group: [] },
+  filters: {
+    provider: [] as string[],
+    account: [] as string[],
+    project: [],
+    model: [],
+    group: [],
+    machine: [],
+  },
   limits: {
     status: "ready",
     error: null as string | null,
@@ -61,7 +68,9 @@ it("keeps known quota visible when refresh fails", () => {
   limits.error = "Could not refresh limits";
   const markup = renderToStaticMarkup(createElement(UsagePage));
   expect(markup).toContain("58%");
-  expect(markup).toContain("Could not refresh limits");
+  // The raw error sits behind the shared Details control; the row shows the translated title.
+  expect(markup).toContain("Account limits unavailable.");
+  expect(markup).toContain('aria-label="Details: Account limits unavailable."');
   expect(markup).toMatch(/role="alert"[^>]*class="[^"]*usage-account-error/);
   expect(markup).toContain("Retry: Default account");
   limits.error = null;
@@ -70,7 +79,7 @@ it("keeps known quota visible when refresh fails", () => {
 it("keeps every provider account in the comparison with its own quota", () => {
   const markup = renderToStaticMarkup(createElement(UsagePage, { limitsOnly: true }));
   expect(markup).toContain('aria-label="Codex · Default account"');
-  expect(markup).toContain('aria-label="Claude · Default account"');
+  expect(markup).toContain('aria-label="Claude Code · Default account"');
   expect(markup.match(/class="usage-account-identity"/g)).toHaveLength(2);
   expect(markup.match(/aria-valuenow="58"/g)).toHaveLength(2);
 });
@@ -78,7 +87,7 @@ it("keeps every provider account in the comparison with its own quota", () => {
 it("uses account colors for limits and exposes usage preferences", () => {
   const markup = renderToStaticMarkup(createElement(UsagePage));
   expect(markup).toContain("hsl(330 70% 62%)");
-  expect(markup).toContain("Account actions");
+  expect(markup).toContain("Account color");
   expect(markup).not.toContain("Display preferences");
   expect(markup).toContain("Show remaining usage");
   const revealed = renderToStaticMarkup(
@@ -115,15 +124,26 @@ it("shows Grok limits only within its provider and account filters", () => {
   }
 });
 
-it("shows a known reset day and time as visible semantic text", () => {
+it("shows a known reset as a visible countdown, with the exact time left to its tooltip", () => {
   const resetsAt = Date.UTC(2027, 2, 19, 14, 35, 0);
   limits.session.resetsAt = resetsAt;
   try {
     const markup = renderToStaticMarkup(createElement(UsagePage));
-    expect(markup).toContain(`dateTime="${new Date(resetsAt).toISOString()}"`);
-    expect(markup).toMatch(/<time[^>]*>[^<]*2027[^<]*<\/time>/);
+    expect(markup).toMatch(/Resets in \d+d/);
     expect(markup).not.toContain("Reset time unavailable");
-    expect(markup).toContain('aria-label="Default account · 5 hours · left"');
+    expect(markup).toContain('aria-label="Codex · Default account · 5-hour · left"');
+  } finally {
+    limits.session.resetsAt = null;
+  }
+});
+
+it("counts reset countdowns down from the shared minute clock", () => {
+  // Regression for #599: each account used to own a 30 s interval re-rendering its whole section.
+  // Server rendering reads the clock's empty snapshot, so the countdown falls back to Date.now().
+  limits.session.resetsAt = Date.now() + 2 * 3_600_000 + 33 * 60_000;
+  try {
+    const markup = renderToStaticMarkup(createElement(UsagePage));
+    expect(markup).toContain("Resets in 2h");
   } finally {
     limits.session.resetsAt = null;
   }

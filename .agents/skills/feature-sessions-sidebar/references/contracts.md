@@ -10,7 +10,7 @@ Read only the section needed for the change. Source owners remain in [the surfac
 
 - Keep pin/order/filter/search/paging persistence and sibling update behavior. A filtered subset is not the entire collection for bulk operations or counts.
 
-- Working summarizes the open project's running rows while keeping global header counts and other-project paging. Attention/finished rows stay available; Last Sessions retains the complete list. Compare canonical project keys, including remote machine identity, rather than display names or execution-folder prefixes.
+- Activity lists working, waiting, retrying, input, failed and unseen completed sessions across projects in turn-start order, with a badge per row and counts in the header. Last Sessions retains the complete list. Route rows by session and project identity, including the remote machine.
 
 - Preserve title drafts, focus, drag targets and native tree/menu semantics.
 

@@ -2,11 +2,12 @@ import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text, textAttributes } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Button } from "../../../shared/ui/Button";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
-import { useT } from "../../../shared/i18n";
+import { useFormat, useT } from "../../../shared/i18n";
 import { useId, useRef, useState } from "react";
 import { contextRatio, formatTokens, type ContextUsage } from "../model/contextUsage";
-import { formatApiTime, formatCost, type SessionUsage } from "../model/sessionUsage";
+import { formatApiTime, formatCostWith, type SessionUsage } from "../model/sessionUsage";
 import { Meter, meterTone } from "../../../shared/ui/Meter";
 import { Popover } from "../../../shared/ui/Popover";
 import { useHoverCard } from "../../../shared/ui/HoverCard";
@@ -22,19 +23,18 @@ const WARNING_PERCENT = 75;
 const DANGER_PERCENT = 90;
 
 /** Text tone matching the meter's own: neutral, amber, red. */
-function ringTone(ratio: number): "danger" | "warning" | "secondary" {
+function ringTone(ratio: number): "danger" | "warning" | "neutral" {
   const tone = meterTone(ratio * 100, { warning: WARNING_PERCENT, danger: DANGER_PERCENT });
   if (tone === "danger") return "danger";
   if (tone === "warning") return "warning";
-  return "secondary";
+  return "neutral";
 }
 
 /**
  * Context ring with a central speed bolt; completed response metrics live in its panel.
  *
- * Renders nothing until the harness reports both halves — Cursor's ACP stream
- * carries no usage at all. A completed speed or subagent reading can still be
- * inspected when the parent's capacity is unknown; no capacity is invented.
+ * Keep the ring available while usage or capacity is unknown. The panel shows
+ * whichever readings the harness has reported.
  */
 export function ContextMeter({
   usage,
@@ -55,6 +55,7 @@ export function ContextMeter({
   empty?: boolean;
 }) {
   const t = useT();
+  const format = useFormat();
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   // Hover and keyboard focus preview the panel; a click pins it (the Popover below).
@@ -62,8 +63,9 @@ export function ContextMeter({
     side: "top",
     align: "end",
     width: 280,
+    solid: true,
     disabled: open,
-    className: "context-meter-popover",
+    className: "tabular-nums",
     "aria-label": t("Context usage"),
   });
   function closeActions() {
@@ -73,9 +75,12 @@ export function ContextMeter({
   const ratio = contextRatio(usage);
   // Scans the whole transcript: only redo it when the blocks change, not per keystroke.
   const speed = completedResponseSpeed(contextBlocks);
+  const tps = speed
+    ? `${format.formatNumber(speed.tps, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} TPS`
+    : null;
   const agents = subagentReadings(contextBlocks);
-  if ((!usage || ratio === null) && agents.size === 0 && !speed) {
-    return empty && !usage && !sessionUsage ? (
+  if (empty && !usage && !sessionUsage && agents.size === 0 && !speed) {
+    return (
       <Tooltip label={`0% · ${t("No context used yet")}`} asChild>
         <Text
           tone="disabled"
@@ -86,7 +91,7 @@ export function ContextMeter({
           <ContextSignal ratio={0} label={`0% · ${t("No context used yet")}`} />
         </Text>
       </Tooltip>
-    ) : null;
+    );
   }
 
   const detail = usage
@@ -94,7 +99,7 @@ export function ContextMeter({
     : t("Unavailable");
   const label = [
     detail,
-    ...(sessionUsage ? [`${t("Cost")}: ${formatCost(sessionUsage.costUsd)}`] : []),
+    ...(sessionUsage ? [`${t("Cost")}: ${formatCostWith(sessionUsage.costUsd, format)}`] : []),
     ...(sessionUsage && sessionUsage.apiMs > 0
       ? [`${t("API time")}: ${formatApiTime(sessionUsage.apiMs)}`]
       : []),
@@ -105,24 +110,24 @@ export function ContextMeter({
   // Built only while a panel shows: the meter re-renders with the composer.
   const renderPanel = () => (
     <Text as="div" tone="neutral" leading="normal">
-      <Text
-        as="div"
-        size="inherit"
-        tone="inherit"
-        weight="medium"
-        className="context-meter-heading"
-      >
-        <span>{t("Context usage")}</span>
+      <div className="context-meter-overview">
+        <Text as="div" size="inherit" tone="inherit" weight="medium">
+          {t("Context usage")}
+        </Text>
         <Text
           as="strong"
-          size="secondary"
-          leading="inherit"
+          size={ratio === null ? "secondary" : "heading"}
+          leading="none"
           weight="medium"
-          tone={ringTone(ratio ?? 0)}
+          tone={ratio === null ? "secondary" : ringTone(ratio)}
+          className="context-meter-percent"
         >
           {percent}
         </Text>
-      </Text>
+        <Text as="div" size="caption" tone="secondary">
+          {detail}
+        </Text>
+      </div>
       {ratio !== null ? (
         <Meter
           label={t("Context usage")}
@@ -131,46 +136,37 @@ export function ContextMeter({
           danger={DANGER_PERCENT}
           valueText={detail}
           size="md"
-          className="my-3"
+          className="context-meter-capacity"
         />
       ) : null}
-      <Text as="div" size="inherit" tone="secondary" className="context-meter-tokens">
-        <span>
-          {usage
-            ? `${formatTokens(usage.used)}${ratio !== null ? ` / ${formatTokens(usage.window!)}` : ""}`
-            : t("Unavailable")}
-        </span>
-        {usage ? <span>{t("tokens")}</span> : null}
-      </Text>
-      <section className="context-meter-speed-details" aria-label={t("Response speed")}>
-        <Text
-          as="div"
-          size="inherit"
-          tone="inherit"
-          weight="medium"
-          className="context-meter-heading"
-        >
-          <span className="inline-flex items-center gap-1">{t("Response speed")}</span>
-          <Text as="strong" size="secondary" tone="inherit" weight="medium" leading="inherit">
-            {speed ? `${speed.tps.toFixed(1)} TPS` : t("Unavailable")}
-          </Text>
-        </Text>
-        <Text as="p" size="inherit" tone="secondary" className="context-meter-hint">
-          {t("Average over the full turn, including tools and waiting; not live generation speed.")}
-        </Text>
-      </section>
+      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "context-meter-stats")}>
+        <DescriptionList size="sm" className="context-meter-metrics">
+          <DescriptionItem term={t("Response speed")}>
+            {tps ?? t("Unavailable")}
+            {tps ? (
+              <InfoTooltip className="ms-1 align-middle">
+                {t("Average speed includes tools and waiting.")}
+              </InfoTooltip>
+            ) : null}
+          </DescriptionItem>
+          {sessionUsage ? (
+            <DescriptionItem term={t("Cost")}>
+              {formatCostWith(sessionUsage.costUsd, format)}
+            </DescriptionItem>
+          ) : null}
+          {sessionUsage && sessionUsage.apiMs > 0 ? (
+            <DescriptionItem term={t("API time")}>
+              {formatApiTime(sessionUsage.apiMs)}
+            </DescriptionItem>
+          ) : null}
+        </DescriptionList>
+      </div>
       {agents.size > 0 ? (
         <section
           {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "context-meter-agents")}
           aria-label={t("Subagents")}
         >
-          <Text
-            as="div"
-            size="inherit"
-            tone="inherit"
-            weight="medium"
-            className="context-meter-heading"
-          >
+          <Text as="div" size="inherit" tone="inherit" weight="medium">
             {t("Subagents")} · {agents.size}
           </Text>
           <ul className="context-meter-agent-list" tabIndex={0} aria-label={t("Subagents")}>
@@ -197,19 +193,6 @@ export function ContextMeter({
           </ul>
         </section>
       ) : null}
-      {sessionUsage ? (
-        <DescriptionList
-          size="sm"
-          {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "context-meter-stats")}
-        >
-          <DescriptionItem term={t("Cost")}>{formatCost(sessionUsage.costUsd)}</DescriptionItem>
-          {sessionUsage.apiMs > 0 ? (
-            <DescriptionItem term={t("API time")}>
-              {formatApiTime(sessionUsage.apiMs)}
-            </DescriptionItem>
-          ) : null}
-        </DescriptionList>
-      ) : null}
       {onCompact ? (
         <div
           {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "context-meter-actions")}
@@ -220,6 +203,7 @@ export function ContextMeter({
             variant="secondary"
             type="button"
             disabled={compactDisabled}
+            disabledReason={t("Wait for the current operation to finish")}
             onClick={() => {
               closeActions();
               onCompact();
@@ -227,11 +211,6 @@ export function ContextMeter({
           >
             {t("Compact now")}
           </Button>
-          {compactDisabled ? (
-            <Text as="p" size="inherit" tone="secondary" className="context-meter-hint">
-              {t("Wait for the current operation to finish")}
-            </Text>
-          ) : null}
         </div>
       ) : null}
     </Text>
@@ -249,13 +228,13 @@ export function ContextMeter({
         type="button"
         // The hover/focus card already previews the full panel; a hint would cover it twice.
         title=""
-        aria-label={`${t("Context usage")}: ${percent}. ${speed ? `${t("Response speed")}: ${speed.tps.toFixed(1)} TPS. ` : ""}${label}`}
+        aria-label={`${t("Context usage")}: ${percent}. ${tps ? `${t("Response speed")}: ${tps}. ` : ""}${label}`}
         aria-haspopup="dialog"
         aria-expanded={panelOpen}
         selected={open}
         onClick={() => (open ? closeActions() : setOpen(true))}
       >
-        <ContextSignal ratio={ratio ?? 0} working={working} tps={speed?.tps} />
+        <ContextSignal ratio={ratio} working={working} tps={speed?.tps} />
       </Button>
       {open ? (
         <Popover
@@ -263,15 +242,15 @@ export function ContextMeter({
           side="top"
           align="end"
           width={280}
-          role="dialog"
+          solid
+          kind="dialog"
           aria-label={t("Context usage")}
-          autoFocus
-          tabIndex={-1}
           onDismiss={(reason) => {
             closeActions();
             if (reason === "escape") root.current?.querySelector("button")?.focus();
           }}
-          className="context-meter-popover"
+          variant="panel"
+          className="tabular-nums"
         >
           {renderPanel()}
         </Popover>
@@ -288,7 +267,7 @@ function ContextSignal({
   working = false,
   tps,
 }: {
-  ratio: number;
+  ratio: number | null;
   label?: string;
   working?: boolean;
   tps?: number;
@@ -304,7 +283,7 @@ function ContextSignal({
         size="md"
         label={label}
         aria-hidden={label ? undefined : true}
-        value={ratio * 100}
+        value={ratio === null ? null : ratio * 100}
         warning={WARNING_PERCENT}
         danger={DANGER_PERCENT}
         className="context-signal"

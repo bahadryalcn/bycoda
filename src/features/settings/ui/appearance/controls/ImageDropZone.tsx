@@ -77,6 +77,7 @@ export function ImageDropZone({
       <Button
         variant="item"
         frame="dropzone"
+        layout="media"
         motion="none"
         fullWidth
         className={styles.drop}
@@ -86,9 +87,11 @@ export function ImageDropZone({
         onClick={() => onChoose()}
       >
         {children ?? (
-          <Text size="caption" tone="muted" leading="inherit" className={styles.dropEmpty}>
-            <ImagePlus className="icon-md" aria-hidden />
-            <span>{t("Choose background")}</span>
+          <Text as="div" size="caption" tone="muted" leading="inherit">
+            <div className={styles.dropEmpty}>
+              <ImagePlus className="icon-md" aria-hidden />
+              <span>{t("Choose background")}</span>
+            </div>
           </Text>
         )}
       </Button>

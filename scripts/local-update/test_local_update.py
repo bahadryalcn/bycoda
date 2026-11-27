@@ -1,6 +1,7 @@
 """No live build/install/SSH or app/provider stop. Windows job fixture owns its test children."""
 import io
 import os
+import contextlib
 from contextlib import closing
 import json
 import pathlib
@@ -18,14 +19,20 @@ from unittest.mock import patch
 
 from local_update import UPDATER_FEED, build_env, archive_package, dependency_action, dependency_key, fingerprint, sync_source, queue_install, validate_versions, validate_product_identity, finish_build, host_key, install_job_active, snapshot, bundled_host_key, worker
 from local_update_lib import backup, count, safe_child, write_json, read_json, alive, digest, windows_binary_digest, PRODUCT_IDENTITY, package_identity
+import local_install
 from local_install import wait_idle, stop_windows_host, host_install, verify_windows_host_process
 from local_install import app_install, windows_app_process_filter, desktop_db, mac_app_update_paths
 from local_install import windows_app_snapshot
 from local_install import verify_desktop_backup, wait_broker_launch
 from local_update import install_job_status, git_identity, stamp_build_identity, inputs, verify_interrupted_resume, status, write_package_manifest, archive_host_package, main, package_run
 from local_update_lib import package_components
-from local_install import installed_identity
+from local_install import installed_identity, main as install_main
 from local_update_lib import spawn_windows_updater, tree_hashes, UpdaterLaunchRefused, windows_installer_idle
+
+def temp_dir():
+    # Windows scanners keep a just-replaced JSON file delete-pending for a moment, so
+    # removing its folder can fail with ERROR_DIR_NOT_EMPTY. Cleanup is not under test.
+    return tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
 
 class BuildEnvTests(unittest.TestCase):
     def test_keeps_only_public_account_settings(self):
@@ -46,19 +53,19 @@ class LocalUpdateTests(unittest.TestCase):
     @unittest.skipUnless(os.name == 'nt', 'Windows-native pnpm manager cache')
     def test_exact_cached_pnpm_does_not_mutate_global_shim_or_accept_wrong_version(self):
         from local_update import cached_pnpm_environment
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
-            base = root / 'pnpm/package-manager-store/v11/links/@pnpm/exe.win32-x64/12.15.0/hash/node_modules/@pnpm/exe.win32-x64'
+            base = root / 'pnpm/package-manager-store/v11/links/@pnpm/exe.win32-x64/12.21.0/hash/node_modules/@pnpm/exe.win32-x64'
             base.mkdir(parents=True)
-            write_json(base / 'package.json', {'name': '@pnpm/exe.win32-x64', 'version': '12.15.0'})
+            write_json(base / 'package.json', {'name': '@pnpm/exe.win32-x64', 'version': '12.21.0'})
             (base / 'pnpm.exe').write_bytes(b'fixture exact manager')
             env = {'LOCALAPPDATA': folder, 'PATH': 'original-manager-bin'}
             with patch('local_update.os.name', 'nt'), patch('local_update.platform.machine', return_value='AMD64'):
-                selected = cached_pnpm_environment(env, '12.15.0')
+                selected = cached_pnpm_environment(env, '12.21.0')
                 self.assertTrue(selected['PATH'].startswith(str(base)))
                 self.assertEqual(env['PATH'], 'original-manager-bin')
                 write_json(base / 'package.json', {'name': '@pnpm/exe.win32-x64', 'version': '12.11.2'})
-                self.assertIsNone(cached_pnpm_environment(env, '12.15.0'))
+                self.assertIsNone(cached_pnpm_environment(env, '12.21.0'))
                 self.assertIsNone(cached_pnpm_environment(env, '12.99.0'))
                 with self.assertRaises(ValueError):
                     cached_pnpm_environment(env, '../../escape')
@@ -79,7 +86,7 @@ class LocalUpdateTests(unittest.TestCase):
         return git
 
     def test_worktree_git_metadata_and_local_sources_use_common_git_directory(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder) / 'repo'
             root.mkdir()
             git = self.git_fixture(root)
@@ -93,7 +100,7 @@ class LocalUpdateTests(unittest.TestCase):
             self.assertEqual(git_identity(worktree)['branch'], 'work')
 
     def test_frozen_identity_matches_real_dirty_bytes_and_reuses_immutable_stamp(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             git = self.git_fixture(root)
             git('mv', 'source.ts', 'renamed.ts')
@@ -125,7 +132,7 @@ class LocalUpdateTests(unittest.TestCase):
             self.assertNotEqual(identity['buildId'], changed['buildId'])
 
     def test_source_edit_during_capture_is_rejected_without_identity(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             self.git_fixture(root)
             real_inputs = inputs
@@ -144,7 +151,7 @@ class LocalUpdateTests(unittest.TestCase):
             self.assertEqual(identity, {})
 
     def test_installed_receipt_binds_manifest_to_observed_binary_without_auth(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             binary = pathlib.Path(folder) / 'bycoda-host.mjs'
             binary.write_bytes(b'fixture package')
             identity = {'buildId': 'fixture'}
@@ -154,7 +161,7 @@ class LocalUpdateTests(unittest.TestCase):
             self.assertNotIn('buildIdentity', installed_identity({}, binary, host=True))
 
     def test_archived_package_name_carries_build_identity(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             setup = root / 'setup.exe'
             setup.write_bytes(b'fixture')
@@ -185,7 +192,7 @@ class LocalUpdateTests(unittest.TestCase):
     @unittest.skipUnless(os.name == 'nt', 'Windows unknown launch recovery')
     def test_windows_launch_failure_preserves_child_state_and_blocks_unknown_retry(self):
         for outcome in ('child', 'unknown', 'refused'):
-            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as folder:
+            with self.subTest(outcome=outcome), temp_dir() as folder:
                 root = pathlib.Path(folder)
                 release = root / 'release'
                 release.mkdir()
@@ -213,7 +220,7 @@ class LocalUpdateTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == 'nt', 'Windows late publication reconciliation')
     def test_launch_exception_sidecar_cannot_overwrite_a_late_completed_helper_report(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             release = root / 'release'
             release.mkdir()
@@ -231,7 +238,7 @@ class LocalUpdateTests(unittest.TestCase):
             self.assertEqual(read_json(record), {'id': 'same', 'pid': 123, 'state': 'installed'})
 
     def test_status_uses_only_the_current_attempt_receipt_before_first_helper_report(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             receipt = root / 'launch-app.json'
             launch_key = 'a' * 32
@@ -250,8 +257,63 @@ class LocalUpdateTests(unittest.TestCase):
                 self.assertTrue(install_job_active(record))
             self.assertIsNone(record['pid'])
 
+    def test_write_json_retries_a_transient_windows_sharing_violation(self):
+        import local_update_lib
+        real_replace = os.replace
+        calls = []
+        def flaky(source, target):
+            calls.append(source)
+            if len(calls) < 3:
+                raise PermissionError(5, 'Access is denied')
+            real_replace(source, target)
+        with temp_dir() as folder:
+            path = pathlib.Path(folder) / 'launch-app.json'
+            write_json(path, {'old': True})
+            with patch.object(local_update_lib, 'WINDOWS', True), patch.object(local_update_lib.os, 'replace', flaky):
+                write_json(path, {'new': True})
+            self.assertEqual(read_json(path), {'new': True})
+            self.assertEqual(len(calls), 3)
+            self.assertEqual([item.name for item in pathlib.Path(folder).iterdir()], ['launch-app.json'])
+
+    def test_write_json_gives_up_on_a_persistent_denial_without_leaving_a_temp_file(self):
+        import local_update_lib
+        def denied(source, target):
+            raise PermissionError(5, 'Access is denied')
+        with temp_dir() as folder:
+            path = pathlib.Path(folder) / 'launch-app.json'
+            write_json(path, {'old': True})
+            with patch.object(local_update_lib, 'WINDOWS', True), patch.object(local_update_lib, 'REPLACE_RETRY_SECONDS', .05), \
+                 patch.object(local_update_lib.os, 'replace', denied):
+                with self.assertRaises(PermissionError):
+                    write_json(path, {'new': True})
+            self.assertEqual(read_json(path), {'old': True})
+            self.assertEqual([item.name for item in pathlib.Path(folder).iterdir()], ['launch-app.json'])
+
+    def test_write_json_does_not_retry_a_denial_outside_windows(self):
+        import local_update_lib
+        calls = []
+        def denied(source, target):
+            calls.append(source)
+            raise PermissionError(13, 'Permission denied')
+        with temp_dir() as folder:
+            with patch.object(local_update_lib, 'WINDOWS', False), patch.object(local_update_lib.os, 'replace', denied):
+                with self.assertRaises(PermissionError):
+                    write_json(pathlib.Path(folder) / 'x.json', {})
+            self.assertEqual(len(calls), 1)
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows sharing semantics')
+    def test_write_json_waits_for_a_reader_that_blocks_replacement(self):
+        import threading
+        with temp_dir() as folder:
+            path = pathlib.Path(folder) / 'launch-app.json'
+            write_json(path, {'old': True})
+            reader = path.open('rb')  # Python opens without FILE_SHARE_DELETE, like the helper's polling read.
+            threading.Timer(.15, reader.close).start()
+            write_json(path, {'new': True})
+            self.assertEqual(read_json(path), {'new': True})
+
     def test_helper_launch_handshake_requires_matching_pid_key_and_verification(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             receipt = pathlib.Path(folder) / 'launch-app.json'
             write_json(receipt, {'pid': os.getpid(), 'launchKey': 'a' * 32, 'verified': True})
             wait_broker_launch(receipt, 'a' * 32)
@@ -262,7 +324,7 @@ class LocalUpdateTests(unittest.TestCase):
                     wait_broker_launch(receipt, 'a' * 32, seconds=0)
 
     def test_headless_helper_owns_its_log_for_startup_validation_failure(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             manifest = root / 'manifest.json'
             write_json(manifest, {'id': 'invalid', 'version': '0.6.75', 'identity': dict(PRODUCT_IDENTITY)})
@@ -298,7 +360,7 @@ class LocalUpdateTests(unittest.TestCase):
         kernel.OpenProcess.restype = wintypes.HANDLE
         kernel.IsProcessInJob.argtypes = [wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL)]
         kernel.CloseHandle.argtypes = [wintypes.HANDLE]
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             library = str(pathlib.Path(__file__).resolve().parent)
             leaf_start = (
@@ -414,7 +476,7 @@ class LocalUpdateTests(unittest.TestCase):
                         kernel.CloseHandle(handle)
 
     def test_existing_database_backup_is_verified_without_replacing_corruption(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             path = pathlib.Path(folder) / 'desktop.db'
             for content in (b'', b'partial SQLite backup'):
                 path.write_bytes(content)
@@ -450,7 +512,7 @@ class LocalUpdateTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == 'nt', 'Windows broker contract')
     def test_windows_queue_retries_dead_same_package_via_hidden_broker(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             release = root / 'release'
             release.mkdir()
@@ -493,7 +555,7 @@ class LocalUpdateTests(unittest.TestCase):
                     spawn_windows_updater(['python.exe'], 'C:/fixture')
 
     def test_interrupted_windows_snapshot_is_reused_only_for_known_installation(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             app = root / 'app/bycoda.exe'
             app.parent.mkdir()
@@ -524,7 +586,7 @@ class LocalUpdateTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == 'nt', 'Windows worker package layout')
     def test_worker_repackages_changed_host_without_rebuilding_unchanged_web(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             workspace = root / 'source'
             workspace.mkdir()
@@ -643,7 +705,7 @@ class LocalUpdateTests(unittest.TestCase):
                                 packageComponents=['host'], components=['host', 'app']))
 
     def test_installer_cache_tracks_bundled_host_bytes_and_checksum(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             archive = pathlib.Path(folder) / 'bycoda-host-win32-x64.zip'
             checksum = pathlib.Path(f'{archive}.sha256')
             archive.write_bytes(b'old host package')
@@ -658,7 +720,7 @@ class LocalUpdateTests(unittest.TestCase):
 
     def test_completed_host_job_requires_running_runtime_health_before_reuse(self):
         for healthy in (True, False):
-            with self.subTest(healthy=healthy), tempfile.TemporaryDirectory() as folder:
+            with self.subTest(healthy=healthy), temp_dir() as folder:
                 root = pathlib.Path(folder)
                 release = root / 'release'
                 release.mkdir()
@@ -682,7 +744,7 @@ class LocalUpdateTests(unittest.TestCase):
     def test_mac_update_migrates_legacy_and_stable_services_and_restores_engine_on_failure(self):
         for stable_service in (False, True):
             for fail in (False, True):
-                with self.subTest(stable=stable_service, fail=fail), tempfile.TemporaryDirectory() as folder:
+                with self.subTest(stable=stable_service, fail=fail), temp_dir() as folder:
                     # tempfile may return an 8.3 alias on Windows; the installer
                     # resolves the runtime before persisting launch arguments.
                     home = pathlib.Path(folder).resolve()
@@ -739,7 +801,7 @@ class LocalUpdateTests(unittest.TestCase):
                         self.assertEqual((base / 'runtime-path').read_text().strip(), str(selected))
 
     def test_windows_host_verifies_stable_engine_and_selected_entry(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             base = pathlib.Path(folder)
             runtime = base / 'runtime/new-package'
             runtime.mkdir(parents=True)
@@ -771,7 +833,7 @@ class LocalUpdateTests(unittest.TestCase):
     def test_windows_failed_update_restores_complete_installation(self):
         for failure in ('installer', 'version', 'hash'):
             for running in (False, True):
-                with self.subTest(failure=failure, running=running), tempfile.TemporaryDirectory() as folder:
+                with self.subTest(failure=failure, running=running), temp_dir() as folder:
                     root = pathlib.Path(folder)
                     app = root / 'local/bycoda/bycoda.exe'
                     app.parent.mkdir(parents=True)
@@ -785,7 +847,7 @@ class LocalUpdateTests(unittest.TestCase):
                     built.write_bytes(b'new exe-__TAURI_BUNDLE_TYPE_VAR_UNK')
                     db = root / 'desktop.db'
                     with closing(sqlite3.connect(db)) as conn:
-                        conn.execute('CREATE TABLE in_flight_sessions (id TEXT)')
+                        conn.execute('CREATE TABLE in_flight_sessions (session_id TEXT)')
                     manifest = {'version': '0.6.25', 'appHashes': {}, 'binaryHash': digest(built)}
                     events = []
                     commands = []
@@ -804,7 +866,7 @@ class LocalUpdateTests(unittest.TestCase):
                         if failure == 'installer':
                             raise RuntimeError('setup failed after replacing files')
                     with patch.dict(os.environ, {'LOCALAPPDATA': str(root / 'local')}), \
-                         patch('local_install.desktop_db', return_value=db), \
+                         patch('local_install.BASE', root / 'host'), patch('local_install.desktop_db', return_value=db), \
                          patch('local_install.time.sleep'), \
                          patch('local_install.ps', side_effect=powershell), \
                          patch('local_install.run', side_effect=installer):
@@ -823,7 +885,7 @@ class LocalUpdateTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == 'nt', 'Windows installation recovery')
     def test_windows_update_keeps_successful_replacement_and_backup(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             app = root / 'local/bycoda/bycoda.exe'
             app.parent.mkdir(parents=True)
@@ -840,7 +902,7 @@ class LocalUpdateTests(unittest.TestCase):
             with patch.dict(os.environ, {'LOCALAPPDATA': str(root / 'local')}), \
                  patch('local_install.desktop_db', return_value=db), \
                  patch('local_install.time.sleep'), patch('local_install.wait_idle'), \
-                 patch('local_install.count', return_value=0), patch('local_install.backup'), \
+                 patch('local_install.app_active_count', return_value=0), patch('local_install.backup'), \
                  patch('local_install.ps', side_effect=powershell), \
                  patch('local_install.run', side_effect=lambda *args, **kwargs: shutil.copy2(expected, app)):
                 app_install(release, {'version': '0.6.25', 'appHashes': {}, 'binaryHash': digest(expected)},
@@ -851,7 +913,7 @@ class LocalUpdateTests(unittest.TestCase):
 
     def test_mac_update_keeps_one_visible_app_and_restores_failed_install(self):
         for fail_verification in (False, True):
-            with self.subTest(fail_verification=fail_verification), tempfile.TemporaryDirectory() as folder:
+            with self.subTest(fail_verification=fail_verification), temp_dir() as folder:
                 root = pathlib.Path(folder)
                 applications = root / 'Applications'
                 app = applications / 'bycoda.app'
@@ -881,7 +943,7 @@ class LocalUpdateTests(unittest.TestCase):
                      patch('local_install.desktop_db', return_value=db), \
                      patch('local_install.verify_tree'), patch('local_install.time.sleep'), \
                      patch('local_install.wait_idle'), patch('local_install.backup'), \
-                     patch('local_install.count', return_value=0), \
+                     patch('local_install.app_active_count', return_value=0), \
                      patch('local_install.run', side_effect=command):
                     if fail_verification:
                         with self.assertRaisesRegex(RuntimeError, 'signature failure'):
@@ -902,7 +964,7 @@ class LocalUpdateTests(unittest.TestCase):
     @unittest.skipUnless(os.name == 'nt', 'Windows service recovery')
     def test_windows_native_port_recovery_rejects_corrupt_or_foreign_state(self):
         from local_install import installed_windows_host_port
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             base = pathlib.Path(folder).resolve()
             # A stale legacy file must not hide corrupt native configuration.
             (base / 'service.ps1').write_text("serve --port '3774'")
@@ -928,7 +990,7 @@ class LocalUpdateTests(unittest.TestCase):
     def test_windows_native_service_config_recovers_port_and_restores_optional_configs(self):
         for native_previous in (False, True):
             for fail_health in (False, True):
-                with self.subTest(native=native_previous, rollback=fail_health), tempfile.TemporaryDirectory() as folder:
+                with self.subTest(native=native_previous, rollback=fail_health), temp_dir() as folder:
                     root = pathlib.Path(folder).resolve()
                     base = root / 'base'
                     (base / 'bin').mkdir(parents=True)
@@ -977,7 +1039,7 @@ class LocalUpdateTests(unittest.TestCase):
     def test_split_host_payload_survives_install_and_rollback(self):
         # Exercise real recursive copies and pointer restoration, never services.
         for fail_health in (False, True):
-            with self.subTest(rollback=fail_health), tempfile.TemporaryDirectory() as folder:
+            with self.subTest(rollback=fail_health), temp_dir() as folder:
                 root = pathlib.Path(folder).resolve()
                 base = root / 'base'
                 (base / 'bin').mkdir(parents=True)
@@ -1028,7 +1090,7 @@ class LocalUpdateTests(unittest.TestCase):
         self.assertEqual(desktop_db().parent.name, 'com.bycoda.desktop')
 
     def test_windows_install_closes_only_this_products_app(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             app = root / 'bycoda/bycoda.exe'
             previous = root / 'other/other.exe'
@@ -1040,8 +1102,38 @@ class LocalUpdateTests(unittest.TestCase):
             self.assertIn('-eq "bycoda"', command)
 
     @unittest.skipUnless(__import__('os').name == 'nt', 'Windows installer regression')
+    def test_windows_install_asks_the_app_to_quit_before_any_forced_stop(self):
+        with temp_dir() as folder:
+            root = pathlib.Path(folder)
+            app = root / 'bycoda/bycoda.exe'
+            written = {}
+            class Pipe(io.BytesIO):
+                def __exit__(self, *args):
+                    written['data'] = self.getvalue()
+                    return super().__exit__(*args)
+            def open_pipe(path, mode, buffering):
+                written['path'] = path
+                return Pipe()
+            with patch.dict('os.environ', {'APPDATA': str(root / 'roaming')}), \
+                 patch('local_install.open', side_effect=open_pipe, create=True), \
+                 patch('local_install.ps', return_value='0') as shell:
+                self.assertTrue(local_install.request_windows_app_quit(app, windows_app_process_filter(app)))
+                expected = local_install.windows_instance_pipe(app)
+                other = local_install.windows_instance_pipe(root / 'other.exe')
+            self.assertEqual(written['data'], b'\x03')
+            self.assertRegex(written['path'], r'^\\\\\.\\pipe\\bycoda-relaunch-[0-9a-f]{64}$')
+            self.assertEqual(written['path'], expected)
+            self.assertNotEqual(written['path'], other)
+            self.assertIn('Wait-Process', shell.call_args.args[0])
+            # No running app answers the pipe: the caller falls back to its forced stop.
+            with patch('local_install.open', side_effect=FileNotFoundError, create=True), \
+                 patch('local_install.ps') as shell:
+                self.assertFalse(local_install.request_windows_app_quit(app, windows_app_process_filter(app)))
+            shell.assert_not_called()
+
+    @unittest.skipUnless(__import__('os').name == 'nt', 'Windows installer regression')
     def test_windows_install_still_cancels_force_close_when_a_new_turn_starts(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             release = root / 'release'
             release.mkdir()
@@ -1055,7 +1147,7 @@ class LocalUpdateTests(unittest.TestCase):
                  patch('local_install.verify_tree'), patch('local_install.time.sleep'), \
                  patch('local_install.wait_idle'), patch('local_install.backup'), \
                  patch('local_install.ps', return_value='bycoda') as shell, \
-                 patch('local_install.count', return_value=1), patch('local_install.run') as installer:
+                 patch('local_install.app_active_count', return_value=1), patch('local_install.run') as installer:
                 with self.assertRaisesRegex(RuntimeError, 'new turn started'):
                     app_install(release, {'appHashes': {}}, lambda *a, **k: None)
             self.assertTrue(any('CloseMainWindow' in call.args[0]
@@ -1064,7 +1156,7 @@ class LocalUpdateTests(unittest.TestCase):
             installer.assert_not_called()
 
     def test_selected_overlay_preserves_unselected_verified_source(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             original = {'owned.ts': b'old', 'other.ts': b'verified'}
             with patch('local_update.inputs', return_value=original):
@@ -1080,7 +1172,7 @@ class LocalUpdateTests(unittest.TestCase):
 
     @unittest.skipUnless(__import__('os').name == 'nt', 'Windows installer regression')
     def test_first_install_with_imported_database_waits_and_backs_up(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             release = root / 'release'
             release.mkdir()
@@ -1091,11 +1183,11 @@ class LocalUpdateTests(unittest.TestCase):
                  patch('local_install.verify_tree'), patch('local_install.time.sleep'), \
                  patch('local_install.wait_idle') as idle, \
                  patch('local_install.backup') as snapshot, \
-                 patch('local_install.ps'), patch('local_install.count', return_value=0), \
+                 patch('local_install.ps'), patch('local_install.app_active_count', return_value=0), \
                  patch('local_install.run', side_effect=RuntimeError('installer reached')):
                 with self.assertRaisesRegex(RuntimeError, 'installer reached'):
                     app_install(release, {'appHashes': {}}, lambda *a, **k: None)
-            idle.assert_called_once()
+            self.assertEqual(idle.call_count, 2)
             snapshot.assert_called_once_with(db, release / 'rollback-app/desktop.db')
 
     def test_product_identity_is_independent_from_upstream(self):
@@ -1139,7 +1231,7 @@ class LocalUpdateTests(unittest.TestCase):
             validate_product_identity(files, True)
 
     def test_missing_existing_host_database_is_not_a_fresh_install(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             release = root/'release'
             (release/'host').mkdir(parents=True)
@@ -1187,7 +1279,7 @@ class LocalUpdateTests(unittest.TestCase):
             self.assertNotEqual(before, host_key(files, graph), name)
 
     def test_component_manifest_rejects_missing_app_before_any_job_is_written(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             release = root / 'release'
             write_json(release / 'manifest.json', {'id': 'host-only', 'identity': dict(PRODUCT_IDENTITY),
@@ -1201,7 +1293,7 @@ class LocalUpdateTests(unittest.TestCase):
             self.assertEqual(package_components({'hostHashes': {'host.mjs': 'legacy'}}, ['host']), ['host'])
 
     def test_component_manifest_and_host_archive_are_immutable(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             manifest = {'components': ['host'], 'source': 'one', 'timings': {'host': 1}}
             path = root / 'manifest.json'
@@ -1222,7 +1314,7 @@ class LocalUpdateTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == 'nt', 'Windows coordinator selection')
     def test_install_only_can_explicitly_select_old_component_manifest_without_building(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             state = root / 'state'
             write_json(root / 'scripts/local-update/local-update.config.json',
@@ -1244,14 +1336,14 @@ class LocalUpdateTests(unittest.TestCase):
             self.assertEqual(request['packageComponents'], ['host', 'app'])
 
     def test_interrupted_status_separates_old_count_from_fresh_independent_idle_gates(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             for component in ('host', 'app'):
                 write_json(root / '.bycoda-host/update-jobs' / (component + '.json'),
                            {'id': 'same', 'pid': 123, 'state': 'waiting', 'activeSessions': 1})
             with patch('local_update.pathlib.Path.home', return_value=root), \
                  patch('local_update.alive', return_value=False), \
-                 patch('local_update.count', side_effect=[0, sqlite3.OperationalError('unreadable')]):
+                 patch('local_install.active_session_ids', side_effect=[set(), sqlite3.OperationalError('unreadable')]):
                 result = status()
             self.assertEqual(result['host']['state'], 'interrupted')
             self.assertNotIn('activeSessions', result['host'])
@@ -1266,7 +1358,7 @@ class LocalUpdateTests(unittest.TestCase):
                 self.check_interrupted_job_resume(system)
 
     def check_interrupted_job_resume(self, system):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             release = root / 'release'
             write_json(release / 'manifest.json', {'id': 'same', 'identity': dict(PRODUCT_IDENTITY),
@@ -1304,7 +1396,7 @@ class LocalUpdateTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == 'nt', 'Windows interrupted app recovery')
     def test_interrupted_app_resume_verifies_rollback_and_current_tree_without_writes(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             app = root / 'Local/bycoda/bycoda.exe'
             app.parent.mkdir(parents=True)
@@ -1331,6 +1423,55 @@ class LocalUpdateTests(unittest.TestCase):
             self.assertEqual(stop_windows_host(), 3774)
         lifecycle.assert_not_called()
 
+    def test_app_owned_host_swaps_files_and_uses_the_available_verifier(self):
+        for app_open, fail in ((False, False), (True, False), (True, True)):
+            with self.subTest(app_open=app_open, fail=fail), temp_dir() as folder:
+                root = pathlib.Path(folder)
+                base = root / '.bycoda-host'
+                (base / 'bin').mkdir(parents=True)
+                (base / 'host.db').touch()
+                (base / 'runtime-path').write_text('previous-runtime')
+                write_json(base / 'lifecycle.json', {'version': 1, 'mode': 'app'})
+                launcher = base / 'bin' / ('bycoda-host.cmd' if os.name == 'nt' else 'bycoda-host')
+                launcher.write_text('previous-launcher')
+                release = root / 'release'
+                (release / 'host').mkdir(parents=True)
+                (release / 'host/bycoda-host.mjs').write_text('new host bundle')
+                manifest = {'version': '0.6.60', 'platform': 'fixture', 'id': 'new', 'hostHashes': {}}
+                reports = []
+                with patch('local_install.BASE', base), patch('local_install.verify_tree'), \
+                     patch('local_install.wait_idle'), patch('local_install.backup'), \
+                     patch('local_install.desktop_running', return_value=app_open), \
+                     patch('local_install.run') as command, patch('local_install.verify_offline_host') as offline, \
+                     patch('local_install.verify_host', side_effect=RuntimeError('health failed') if fail else None) as live:
+                    call = lambda: host_install(release, manifest, lambda state, **values: reports.append(state))
+                    if fail:
+                        with self.assertRaisesRegex(RuntimeError, 'health failed'):
+                            call()
+                    else:
+                        call()
+                offline.assert_called_once()
+                self.assertEqual(live.call_count, int(app_open))
+                self.assertEqual('verifying-app-host' in reports, app_open)
+                self.assertTrue(all('service' not in args.args[0] for args in command.call_args_list))
+                if fail:
+                    self.assertEqual((base / 'runtime-path').read_text(), 'previous-runtime')
+                    self.assertEqual(launcher.read_text(), 'previous-launcher')
+                else:
+                    self.assertEqual(reports[-1], 'installed')
+                    self.assertIn('fixture-new', (base / 'runtime-path').read_text())
+
+    def test_first_app_owned_host_install_allows_desktop_install_before_host_boot(self):
+        from local_install import app_active_count
+        with temp_dir() as folder:
+            base = pathlib.Path(folder)
+            (base / 'runtime-path').write_text('prepared runtime')
+            write_json(base / 'lifecycle.json', {'version': 1, 'mode': 'app'})
+            self.assertEqual(app_active_count(base, None), 0)
+            (base / 'owner.db').touch()
+            with self.assertRaises(sqlite3.OperationalError):
+                app_active_count(base, None)
+
     def test_live_windows_host_requires_shutdown_before_installation(self):
         with patch('local_install.read_json', return_value={'pid': 123, 'port': 3774}), \
              patch('local_install.alive', side_effect=[True, False, False]), \
@@ -1347,7 +1488,7 @@ class LocalUpdateTests(unittest.TestCase):
 
     @unittest.skipUnless(__import__('os').name == 'nt', 'Windows service recovery')
     def test_windows_install_recovers_a_missing_running_file_and_commits_pointer_after_health(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             base = root / '.bycoda-host'
             (base / 'bin').mkdir(parents=True)
@@ -1389,7 +1530,7 @@ class LocalUpdateTests(unittest.TestCase):
         install.assert_called_once_with(release, ('host', 'app'))
 
     def test_host_only_leaves_other_pending_app_package_untouched(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             release = root/'release'
             release.mkdir()
@@ -1405,7 +1546,7 @@ class LocalUpdateTests(unittest.TestCase):
             self.assertEqual(set(read_json(release/'install-jobs.json')), {'host'})
 
     def test_unsigned_nsis_bundle_marker_normalization_preserves_payload(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             built = pathlib.Path(folder) / 'built.exe'
             installed = pathlib.Path(folder) / 'installed.exe'
             built.write_bytes(b'MZ-prefix-__TAURI_BUNDLE_TYPE_VAR_UNK-suffix')
@@ -1447,7 +1588,7 @@ class LocalUpdateTests(unittest.TestCase):
                 put(1030, 2, 2)
                 data[1032:] = b'*' * 8
             return data
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             path = pathlib.Path(folder) / 'native.exe'
             path.write_bytes(image())
             expected = windows_binary_digest(path)
@@ -1482,7 +1623,7 @@ class LocalUpdateTests(unittest.TestCase):
                 windows_binary_digest(path)
 
     def test_packages_are_archived_by_version_and_date_without_overwrite(self):
-        with tempfile.TemporaryDirectory() as temp:
+        with temp_dir() as temp:
             state = pathlib.Path(temp)
             setup = state / 'setup.exe'
             setup.write_bytes(b'one')
@@ -1532,14 +1673,14 @@ class LocalUpdateTests(unittest.TestCase):
                 changed = dict(first, **{name: b'changed'})
                 self.assertNotEqual(dependency_key(first), dependency_key(added))
                 self.assertNotEqual(dependency_key(added), dependency_key(changed))
-                with tempfile.TemporaryDirectory() as folder:
+                with temp_dir() as folder:
                     workspace = pathlib.Path(folder)
                     (workspace / 'node_modules').mkdir()
                     self.assertEqual(dependency_action(workspace, changed, dependency_key(added)), 'clean-install')
 
     def test_dependency_install_policy_preserves_existing_modules(self):
         files = {'package.json': b'{"version":"0.8.70"}'}
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             workspace = pathlib.Path(folder)
             self.assertEqual(dependency_action(workspace, files), 'install')
             (workspace/'node_modules').mkdir()
@@ -1553,23 +1694,76 @@ class LocalUpdateTests(unittest.TestCase):
     def test_bad_database_read_never_means_idle(self):
         reports = []
         with patch('local_install.count', side_effect=[sqlite3.OperationalError('busy'), 2, 0]), patch('local_install.time.sleep') as sleep:
-            wait_idle('unused', 'unused', lambda state, **values: reports.append(values['activeSessions']))
+            wait_idle(lambda: local_install.count('unused', 'unused'),
+                      lambda state, **values: reports.append(values['activeSessions']))
         self.assertEqual(reports, [None, 2, 0])
         self.assertEqual(sleep.call_count, 2)
 
+    def test_app_gate_waits_for_host_child_after_parent_is_idle(self):
+        with temp_dir() as folder:
+            root = pathlib.Path(folder)
+            desktop = root / 'desktop.db'
+            with closing(sqlite3.connect(desktop)) as conn:
+                conn.execute('CREATE TABLE in_flight_sessions(session_id TEXT)')
+            host = root / 'host.db'
+            with closing(sqlite3.connect(host)) as conn:
+                conn.execute('CREATE TABLE sessions(id TEXT, status TEXT, shell_running INTEGER)')
+                conn.executemany('INSERT INTO sessions VALUES (?,?,0)', [('parent','idle'), ('child','running')])
+                conn.commit()
+            self.assertEqual(local_install.app_active_count(root, desktop), 1)
+            with closing(sqlite3.connect(desktop)) as conn:
+                conn.execute("INSERT INTO in_flight_sessions VALUES ('child')")
+                conn.commit()
+                self.assertEqual(local_install.app_active_count(root, desktop), 1)
+                conn.execute("DELETE FROM in_flight_sessions")
+                conn.commit()
+            with closing(sqlite3.connect(host)) as conn:
+                conn.execute("UPDATE sessions SET status='idle'")
+                conn.commit()
+            self.assertEqual(local_install.app_active_count(root, desktop), 0)
+            host.unlink()
+            (root / 'runtime-path').touch()
+            with self.assertRaises(sqlite3.OperationalError):
+                local_install.app_active_count(root, desktop)
+
+    def test_mac_rechecks_host_after_staging_and_before_quit(self):
+        with temp_dir() as folder:
+            root = pathlib.Path(folder)
+            (root / 'bycoda.app').mkdir()
+            desktop = root / 'desktop.db'
+            desktop.touch()
+            events = []
+            def command(args, **kwargs):
+                events.append(args[0])
+                if args[0] == 'osascript':
+                    raise RuntimeError('verified quit reached')
+            def report(state, **values):
+                if 'activeSessions' in values:
+                    events.append((state, values['activeSessions']))
+            with patch('local_install.BASE', root), patch('local_install.MAC_APPLICATIONS', root), \
+                 patch('local_install.os', SimpleNamespace(name='posix')), \
+                 patch('local_install.desktop_db', return_value=desktop), \
+                 patch('local_install.app_active_count', side_effect=[0, 1, 0]), \
+                 patch('local_install.verify_tree'), patch('local_install.time.sleep'), \
+                 patch('local_install.backup'), patch('local_install.run', side_effect=command):
+                with self.assertRaisesRegex(RuntimeError, 'verified quit reached'):
+                    app_install(root, {'id': 'fixture', 'appHashes': {}}, report)
+            self.assertEqual(events, [('waiting', 0), 'codesign', 'ditto',
+                                      ('installing', 1), ('installing', 0), 'osascript'])
+
     def test_missing_database_count_fails_closed(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             with self.assertRaises(sqlite3.OperationalError):
                 count(pathlib.Path(folder)/'missing.db', 'select 0')
 
     def test_paths_cannot_escape_managed_workspace(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             for name in ('../outside', '/outside', '.'):
                 with self.assertRaises(ValueError):
                     safe_child(folder, name)
 
     def test_archive_root_and_stale_files_without_removing_cache(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             workspace = root/'source'
             workspace.mkdir()
@@ -1589,7 +1783,7 @@ class LocalUpdateTests(unittest.TestCase):
             self.assertEqual((workspace/'node_modules/cache').read_text(), 'keep')
 
     def test_epoch_archive_invalidates_changed_sources_but_preserves_unchanged_cache(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             workspace = root/'source'
             workspace.mkdir()
@@ -1608,7 +1802,7 @@ class LocalUpdateTests(unittest.TestCase):
             self.assertEqual((workspace/'unchanged.rs').stat().st_mtime_ns, 1_000_000_000)
 
     def test_backup_is_complete_and_bounded_when_locked(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             db = root/'db'
             with closing(sqlite3.connect(db)) as con, con:
@@ -1623,8 +1817,49 @@ class LocalUpdateTests(unittest.TestCase):
                     backup(db, root/'locked-copy', seconds=0.05)
                 self.assertLess(time.monotonic()-started, 3)
 
+    def test_failed_install_command_is_written_to_the_stage_log_without_secrets(self):
+        # A failed Host update said only "see local stage logs"; the log never got the command.
+        with temp_dir() as folder:
+            root = pathlib.Path(folder)
+            manifest_path = root / 'release/manifest.json'
+            write_json(manifest_path, {'id': '0123456789abcdef-local', 'version': '0.6.13'})
+            failure = subprocess.CalledProcessError(
+                1, ['node.exe', 'host.mjs', 'service', 'uninstall', '--broker-key', 'a' * 32,
+                    '-EncodedCommand', 'c2VjcmV0'],
+                output='stdout line\n',
+                stderr='Error: The old host did not finish shutting down\nAuthorization: Bearer abc.def\n')
+            log = io.StringIO()
+            with patch('local_install.BASE', root / 'host'), \
+                 patch('local_install.package_identity'), patch('local_install.package_components'), \
+                 patch('local_install.host_install', side_effect=failure), \
+                 patch.object(sys, 'argv', ['local_install.py', str(manifest_path), 'host']), \
+                 contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):
+                with self.assertRaises(SystemExit):
+                    install_main()
+            text = log.getvalue()
+            self.assertIn('node.exe host.mjs service uninstall', text)
+            self.assertIn('returncode=1', text)
+            self.assertIn('The old host did not finish shutting down', text)
+            self.assertIn('stdout line', text)
+            for secret in ('a' * 32, 'c2VjcmV0', 'abc.def'):
+                self.assertNotIn(secret, text)
+            # The command lands in the log before the failed report.
+            self.assertLess(text.index('service uninstall'), text.index('"state": "failed"'))
+            record = read_json(root / 'host/update-jobs/host.json')
+            self.assertEqual(record['error'], 'Command failed; see local stage logs')
+
+    def test_stage_log_tail_redacts_before_cutting(self):
+        # Cutting first could drop "Bearer " and leave the token after it unmasked.
+        from local_install import log_command_failure
+        stderr = 'x' * 10 + 'Bearer zz-token-value\n'
+        failure = subprocess.CalledProcessError(1, ['node.exe'], stderr=stderr)
+        log = io.StringIO()
+        with contextlib.redirect_stderr(log):
+            log_command_failure(failure, tail=len(stderr) - 17)
+        self.assertNotIn('zz-token-value', log.getvalue())
+
     def test_same_pending_package_does_not_spawn_second_helper(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             release = root/'release'
             release.mkdir()
@@ -1637,7 +1872,7 @@ class LocalUpdateTests(unittest.TestCase):
             spawn.assert_not_called()
 
     def test_pending_different_package_refuses_double_installer(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with temp_dir() as folder:
             root = pathlib.Path(folder)
             release = root/'release'
             release.mkdir()

@@ -2,13 +2,96 @@
 @layer properties, theme, base, components, utilities;
 
 /* Root placement stays caller-adjustable (F3 style-ownership contract); the tab look
-   itself is the shared Button `tab`/`item` presentation, never restyled here. */
+   itself is the shared Button `tab`/`item` presentation, never restyled here beyond
+   the `track` frame. */
 @layer components {
   .list {
     display: flex;
     align-items: center;
     gap: 1px;
     min-inline-size: 0;
+  }
+  .list[data-inset="sm"] {
+    padding: var(--space-1);
+  }
+  /* `scroll="wrap"`: tabs flow onto further rows. */
+  .list[data-scroll="wrap"] {
+    flex-wrap: wrap;
+  }
+  /* `scroll="auto"`: tabs keep their width; the strip scrolls along its axis. */
+  .list[data-scroll="auto"] {
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scroll-padding-inline: var(--ui-space-1, 0.25rem);
+  }
+  :global([data-pane-header-tabs]) .list[data-scroll="wrap"]:not([aria-orientation="vertical"]) {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+    scroll-padding-inline: var(--ui-space-1, 0.25rem);
+  }
+  :global([data-pane-header-tabs])
+    .list[data-scroll="wrap"]:not([aria-orientation="vertical"], [data-fill])
+    > * {
+    flex: none;
+  }
+  .list[data-scroll="auto"][aria-orientation="vertical"] {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .list[data-scroll="auto"] > *,
+  .list[data-scroll="auto"] > :not([role="tab"]) > [role="tab"] {
+    flex: none;
+  }
+  .list[data-scroll="auto"]:not([aria-orientation="vertical"]) [role="tab"],
+  :global([data-pane-header-tabs]) .list[data-scroll="wrap"] [role="tab"] {
+    white-space: nowrap;
+  }
+  /* `appearance="track"`: page topics in one bordered track. One raised indicator sits under
+     the selected tab and slides to the next selection; the Button tab look stays shared and
+     only its selected fill turns transparent so the indicator shows through. */
+  .list[data-appearance="track"] {
+    --ui-surface-selected: transparent;
+    position: relative;
+    isolation: isolate;
+    inline-size: fit-content;
+    max-inline-size: 100%;
+    gap: var(--space-1);
+    padding: var(--space-1);
+    border: 1px solid var(--color-stroke);
+    border-radius: calc(var(--radius-control) + var(--space-1));
+    /* Recessed in both themes: a content tint, which darkens light grounds and lightens dark ones. */
+    background: color-mix(in oklab, var(--color-content) 6%, transparent);
+  }
+  .list[data-appearance="track"]::before {
+    content: "";
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    z-index: -1;
+    inline-size: var(--tab-indicator-inline-size, 0);
+    block-size: var(--tab-indicator-block-size, 0);
+    translate: var(--tab-indicator-x, 0) var(--tab-indicator-y, 0);
+    border-radius: var(--radius-control);
+    background: var(--ui-surface-raised);
+    box-shadow:
+      var(--shadow-resting),
+      0 0 0 1px var(--color-stroke);
+    pointer-events: none;
+  }
+  .list[data-appearance="track"][data-indicator-ready]::before {
+    transition:
+      translate var(--motion-duration-reveal) var(--motion-ease-standard),
+      inline-size var(--motion-duration-reveal) var(--motion-ease-standard);
+  }
+  .list[data-appearance="track"] [role="tab"] {
+    padding-inline: var(--space-3);
+    transition: color var(--motion-duration-standard) var(--motion-ease-standard);
+  }
+  /* The newly shown panel settles in under the moving indicator. */
+  .list[data-appearance="track"] ~ .panel:not([hidden]) {
+    animation: tabPanelEnter var(--motion-duration-reveal) var(--motion-ease-standard);
   }
   .list[aria-orientation="vertical"] {
     flex-direction: column;
@@ -87,4 +170,27 @@
 .panel:focus-visible {
   outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
   outline-offset: calc(var(--ui-focus-width) * -1);
+}
+
+@keyframes tabPanelEnter {
+  from {
+    opacity: 0;
+    translate: 0 var(--space-1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .list[data-appearance="track"][data-indicator-ready]::before {
+    transition: none;
+  }
+  .list[data-appearance="track"] ~ .panel:not([hidden]) {
+    animation: none;
+  }
+}
+@media (forced-colors: active) {
+  .list[data-appearance="track"] {
+    --ui-surface-selected: Highlight;
+  }
+  .list[data-appearance="track"]::before {
+    display: none;
+  }
 }

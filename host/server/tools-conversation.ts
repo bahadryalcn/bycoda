@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
+import { createWork } from "../tasks/work-request";
 import { agentToolAllowed } from "../delegation/tools";
+import { conversationLeaseOwner } from "../devices/lease-holder";
+import { assertAgentDevicesEnabled } from "../devices/device-agent-access";
 import { dirname } from "node:path";
 import { sessionConversationPage } from "../../src/features/agent-app/model/sessionConversation";
 import type { DeviceAction } from "../../src/features/devices/types";
@@ -35,9 +38,9 @@ import { isRuntimeReadConversationTool } from "../conversation/conversation-runt
 import { isStewardConversationTool } from "../conversation/conversation-steward-tools";
 import { isTaskQueueTool } from "../conversation/conversation-task-queue-tools";
 import {
-  CONVERSATION_TASK_EXECUTION_DEFAULTS,
   TASK_READ_TOOLS,
   callConversationTaskRead,
+  conversationWorkChoices,
   normalizeConversationTaskConfiguration,
 } from "../conversation/conversation-task-tools";
 import {
@@ -60,6 +63,11 @@ import {
 } from "../execution/runtime-log-conversation";
 import { scrubRuntimeLogText } from "../execution/runtime-logs";
 import { resolveHostWorktreeAsync } from "../git/git-worktrees";
+import {
+  callLiveStreamConversationTool,
+  isLiveStreamConversationTool,
+  requestLiveStreamStreamApproval,
+} from "../live-stream/tools";
 import { HubExternalMcpTools } from "../mcp/hub/external-tools";
 import { managedDiscoveryResult, managedMcpCatalog } from "../mcp/mcp-http";
 import { readHarnessSkill, searchHarnessSkills } from "../skills/harness-skills";
@@ -84,6 +92,7 @@ export async function dispatchConversationTools(
     | "conversationDesktopControl"
     | "conversationWorkspace"
     | "conversationRuntimeReads"
+    | "liveStream"
     | "featureMeta"
     | "inHost"
     | "conversationDesktop"
@@ -134,6 +143,7 @@ export async function dispatchConversationTools(
       const action = String(request.params.action ?? "");
       const originalArgs = request.params.input as Record<string, unknown>;
       validateSessionConversationTool(action, originalArgs);
+      if (action.startsWith("devices.")) await assertAgentDevicesEnabled(dependencies.engine.store);
       const crewAllows = await crewToolGate(dependencies, boundPrincipal, action);
       const args = conversationListArguments(action, originalArgs);
       const scopedDeviceAuthorized = async () => {
@@ -147,7 +157,23 @@ export async function dispatchConversationTools(
       const scopedDeviceEffect = { authorized: scopedDeviceAuthorized };
       const projectId = boundPrincipal.projectId;
       const project = await dependencies.engine.store.project(projectId);
-      if (isManagementAction(action)) {
+      if (isLiveStreamConversationTool(action)) {
+        request.result = await callLiveStreamConversationTool(
+          dependencies.liveStream,
+          action,
+          args,
+          scopedDeviceAuthorized,
+          (operation, authorized) =>
+            requestLiveStreamStreamApproval(
+              dependencies.conversationDesktop,
+              project.cwd,
+              boundPrincipal,
+              operation,
+              authorized,
+            ),
+          boundPrincipal,
+        );
+      } else if (isManagementAction(action)) {
         request.result = await dependencies.conversationManagement.call(
           action,
           args,
@@ -472,25 +498,25 @@ export async function dispatchConversationTools(
       else if (action === "devices.control.claim")
         request.result = await dependencies.deviceHost.control.claim(
           String(args.deviceId),
-          `conversation:${request.tokenHash}:${boundPrincipal.sessionId}`,
+          conversationLeaseOwner(request.tokenHash, boundPrincipal.sessionId),
           String(args.requestId),
           scopedDeviceAuthorized,
         );
       else if (action === "devices.control.release")
         request.result = await dependencies.deviceHost.control.release(
           String(args.deviceId),
-          `conversation:${request.tokenHash}:${boundPrincipal.sessionId}`,
+          conversationLeaseOwner(request.tokenHash, boundPrincipal.sessionId),
           String(args.leaseId),
         );
       else if (action === "devices.control.renew")
         request.result = await dependencies.deviceHost.control.renew(
           String(args.deviceId),
-          `conversation:${request.tokenHash}:${boundPrincipal.sessionId}`,
+          conversationLeaseOwner(request.tokenHash, boundPrincipal.sessionId),
           String(args.leaseId),
         );
       else if (action === "devices.inspect") {
         const id = String(args.deviceId),
-          owner = `conversation:${request.tokenHash}:${boundPrincipal.sessionId}`,
+          owner = conversationLeaseOwner(request.tokenHash, boundPrincipal.sessionId),
           lease = String(args.leaseId);
         await dependencies.deviceHost.control.assert(id, owner, lease);
         request.result = await dependencies.deviceHost.inspect(id, `${owner}:${lease}`, {
@@ -507,7 +533,7 @@ export async function dispatchConversationTools(
       } else if (action === "devices.action")
         request.result = await dependencies.deviceHost.control.execute(
           String(args.deviceId),
-          `conversation:${request.tokenHash}:${boundPrincipal.sessionId}`,
+          conversationLeaseOwner(request.tokenHash, boundPrincipal.sessionId),
           String(args.leaseId),
           String(args.requestId),
           args.action,
@@ -522,7 +548,7 @@ export async function dispatchConversationTools(
                   try {
                     await dependencies.deviceHost.control.assert(
                       String(args.deviceId),
-                      `conversation:${request.tokenHash}:${boundPrincipal.sessionId}`,
+                      conversationLeaseOwner(request.tokenHash, boundPrincipal.sessionId),
                       String(args.leaseId),
                     );
                     return true;
@@ -531,7 +557,7 @@ export async function dispatchConversationTools(
                   }
                 },
               },
-              `conversation:${request.tokenHash}:${boundPrincipal.sessionId}:${String(args.leaseId)}`,
+              `${conversationLeaseOwner(request.tokenHash, boundPrincipal.sessionId)}:${String(args.leaseId)}`,
             ),
         );
       else if (action === "browser.preview")
@@ -582,50 +608,39 @@ export async function dispatchConversationTools(
         );
         if (action === "tasks.create") {
           const own = (await dependencies.featureMeta(boundPrincipal.sessionId)).session;
-          const input = {
-            ...normalizeConversationTaskConfiguration(
-              args,
-              String(args.taskId),
-              projectId,
-              await dependencies.tasks.list(),
-            ),
-            id: String(args.taskId),
+          const configuration = normalizeConversationTaskConfiguration(
+            args,
+            String(args.taskId),
             projectId,
-            title: String(args.title),
-            prompt: String(args.prompt),
-            harness: own.harness,
-            providerAccountId: own.providerAccountId,
-            model: own.model,
-            modelSettings: own.modelSettings,
-            runtimeMode: own.runtimeMode,
-            maxRunMinutes: 0,
-            ...CONVERSATION_TASK_EXECUTION_DEFAULTS,
-            review: !args.crewDefinitionId,
-            autoMerge: false,
-            continueUntilDone: false,
-            ...(args.crewDefinitionId ? { crewDefinitionId: String(args.crewDefinitionId) } : {}),
-            status: args.status === "queued" ? "queued" : "todo",
-          };
-          const key = `task-create:${projectId}:${input.id}`;
-          const fingerprint = createHash("sha256")
-            .update(JSON.stringify([boundPrincipal.sessionId, input]))
-            .digest("hex");
-          request.result = await dependencies.engine.store.transaction(async () => {
-            const receipt = (await dependencies.engine.store.db
-              .prepare("SELECT value FROM metadata WHERE key=?")
-              .get(key)) as { value: string } | undefined;
-            const existing = await dependencies.tasks.get(input.id);
-            if (receipt || existing) {
-              if (receipt?.value !== fingerprint || !existing || existing.projectId !== projectId)
-                throw new Error("Task ID was reused or its task no longer exists.");
-              return existing;
-            }
-            const created = await dependencies.tasks.save(input);
-            await dependencies.engine.store.db
-              .prepare("INSERT INTO metadata(key,value) VALUES(?,?)")
-              .run(key, fingerprint);
-            return created;
-          });
+            await dependencies.tasks.list(),
+          );
+          const choices = conversationWorkChoices(args);
+          request.result = await createWork(
+            { store: dependencies.engine.store, tasks: dependencies.tasks },
+            {
+              id: String(args.taskId),
+              projectId,
+              request: String(args.prompt),
+              title: String(args.title),
+              source: { kind: "session", sessionId: boundPrincipal.sessionId },
+              executor: choices.executor,
+              helpers: choices.helpers,
+              execution: {
+                harness: own.harness,
+                providerAccountId: own.providerAccountId,
+                model: own.model,
+                modelSettings: own.modelSettings,
+                runtimeMode: own.runtimeMode,
+                // Use settings unless the owner asked for this session's own model.
+                modelChoice: { kind: choices.useSessionModel ? "fixed" : "default" },
+              },
+              options: {
+                ...configuration,
+                status: args.status === "queued" ? "queued" : "todo",
+              },
+            },
+            { requestId: String(args.taskId) },
+          );
         } else if (action === "tasks.list") request.result = list;
         else {
           const task = list.find((task) => task.id === args.taskId);
@@ -690,6 +705,10 @@ export async function dispatchConversationTools(
               boundPrincipal,
               async () =>
                 !!(await dependencies.conversationAccess.principalForToken(request.token)),
+              // No owner exclusion covers task writes, so the session mode alone decides.
+              async () =>
+                (await dependencies.featureMeta(boundPrincipal.sessionId)).session.runtimeMode ===
+                "full-access",
             )) as { approved?: boolean };
             if (
               !approved.approved ||

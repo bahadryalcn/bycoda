@@ -10,20 +10,47 @@ import {
   type ReactNode,
 } from "react";
 import { MediaVisibilityContext } from "../../files/public/mediaVisibility";
-import { prepareLocalFile, readBinaryFile } from "../../../platform/tauri/fs";
-import { isImagePath, sniffImageMime } from "../../files/public/filePreviewMetadata";
+import { prepareLocalFile } from "../../../platform/tauri/fs";
+import { isImagePath } from "../../files/public/filePreviewMetadata";
 import { mediaKind } from "../../files/public/mediaPreview";
+import { InlineAudio } from "./InlineAudio";
+import { InlineVideo } from "./InlineVideo";
 import { useNearViewport } from "./useNearViewport";
+import { localMediaFrameStyle } from "./localMediaFrame";
+import type { Attachment } from "../model/session";
 
 export function isLocalMediaPath(path: string): boolean {
   return (
     !/^[a-z][a-z0-9+.-]*:\/\//i.test(path) &&
     !/^[\\/]{2}/.test(path) &&
-    (isImagePath(path) || mediaKind(path) === "video")
+    (isImagePath(path) || mediaKind(path) !== null)
   );
 }
 
-/** Near-view reads only; local videos stream through an exact native file grant. */
+/**
+ * A sent video or audio attachment that plays inline from its file on this computer.
+ * shortcut: an attachment read through another host's reader (remote history, uploaded
+ * queue files) or held only as pasted bytes stays a chip that opens the media viewer;
+ * stream those through the remote media gateway if inline playback is wanted there.
+ */
+export function inlineMediaAttachmentPath(attachment: Attachment): string | undefined {
+  const { path, missing, kind, hostEnvironmentId, loadPreview } = attachment;
+  if (!path || missing || kind === "image" || hostEnvironmentId || loadPreview) return undefined;
+  return mediaKind(path) && isLocalMediaPath(path) ? path : undefined;
+}
+
+/** Same ceiling as `readProjectImage`; a larger local image shows the fallback card instead. */
+export const LOCAL_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
+/** Sources load this far from the transcript viewport and are released beyond the wider margin. */
+const LOAD_MARGIN = 400;
+const RELEASE_MARGIN = 2400;
+
+/**
+ * Near-view sources only. Images, videos and audio all get an exact native file grant
+ * after the existing file-access decision; images are size-gated natively and never
+ * enter the renderer as bytes, so there is no Blob or base64 copy to release. An
+ * image leaving the wide margin drops its source while the measured box keeps its size.
+ */
 export function LocalMedia({
   path,
   label,
@@ -37,12 +64,29 @@ export function LocalMedia({
   onContextMenu?: (event: MouseEvent) => void;
   fallback: ReactNode;
 }) {
-  const [box, near] = useNearViewport<HTMLSpanElement>();
-  const [url, setUrl] = useState<string>();
-  const [failed, setFailed] = useState(false);
-  const video = mediaKind(path) === "video";
-  const player = useRef<HTMLVideoElement>(null);
+  // Source and failure are keyed by the path they belong to, so a late reply or an old
+  // failure for a previous path is never shown for the current one.
+  const [source, setSource] = useState<{ path: string; url: string }>();
+  const [failedPath, setFailedPath] = useState<string>();
+  const url = source?.path === path ? source.url : undefined;
+  const failed = failedPath === path;
+  // The fallback card replaces the box, so the box is observed again after a failure ends.
+  const [box, near] = useNearViewport<HTMLSpanElement>(LOAD_MARGIN, RELEASE_MARGIN, failed);
+  // Intrinsic size reported on load; keyed by path so a new file starts at the placeholder.
+  const [measured, setMeasured] = useState<{ path: string; width: number; height: number }>();
+  const frame = measured?.path === path ? localMediaFrameStyle(measured) : undefined;
+  const kind = mediaKind(path);
+  const video = kind === "video";
+  const audio = kind === "audio";
+  const player = useRef<HTMLMediaElement | null>(null);
+  const attachPlayer = (element: HTMLMediaElement | null) => {
+    player.current = element;
+  };
   const visible = useContext(MediaVisibilityContext);
+  const pauseUnlessVisible = (element: HTMLMediaElement) => {
+    if (!visible || document.hidden) element.pause();
+  };
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- pauses the player when its pane or the window is hidden, and on unmount or source change
   useLayoutEffect(() => {
     const element = player.current;
     const pauseWhenHidden = () => {
@@ -56,43 +100,37 @@ export function LocalMedia({
     };
   }, [visible, url]);
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- prepares the local media source near view and aborts a stale run on path change or release
   useEffect(() => {
+    // Prepares the source for this exact path while it is near view. The cleanup aborts
+    // the run (path change, release, hidden Activity pane, unmount), so a late reply
+    // never publishes into a newer scope.
     if (!near || !isLocalMediaPath(path)) return;
     const controller = new AbortController();
-    let ownedUrl: string | undefined;
+    const maxBytes = kind ? undefined : LOCAL_IMAGE_MAX_BYTES;
     void (async () => {
       try {
-        let next: string;
-        if (video) {
-          const local = await prepareLocalFile(path, { signal: controller.signal });
-          if (controller.signal.aborted) return;
-          next = convertFileSrc(local);
-        } else {
-          const bytes = await readBinaryFile(path);
-          if (controller.signal.aborted) return;
-          const mime = sniffImageMime(bytes);
-          if (!mime) {
-            setFailed(true);
-            return;
-          }
-          ownedUrl = URL.createObjectURL(new Blob([bytes], { type: mime }));
-          next = ownedUrl;
-        }
-        setUrl(next);
+        // shortcut: the native size gate runs once at preparation; a file that grows
+        // afterwards is still streamed by the asset protocol, add a native read cap
+        // to the asset grant if that matters.
+        const local = await prepareLocalFile(path, {
+          signal: controller.signal,
+          maxBytes,
+        });
+        if (controller.signal.aborted) return;
+        setSource({ path, url: convertFileSrc(local) });
       } catch {
-        if (!controller.signal.aborted) setFailed(true);
+        if (!controller.signal.aborted) setFailedPath(path);
       }
     })();
     return () => {
       controller.abort();
-      if (ownedUrl) {
-        // A hidden (Activity) or unmounted pane releases the decoded blob; the
-        // fixed-size box keeps the layout while it reloads on reveal.
-        URL.revokeObjectURL(ownedUrl);
-        setUrl(undefined);
-      }
+      // A released or hidden image drops its source so the browser frees the decoded
+      // bitmap; the measured box keeps the layout until it loads again. A video or
+      // audio player keeps its element, which pauses on its own when hidden.
+      if (!kind) setSource(undefined);
     };
-  }, [near, path, video]);
+  }, [near, path, kind]);
 
   if (failed || !isLocalMediaPath(path)) return <>{fallback}</>;
   const image = url ? (
@@ -101,31 +139,57 @@ export function LocalMedia({
       alt={label}
       draggable={false}
       decoding="async"
-      onError={() => setFailed(true)}
+      onLoad={(event) =>
+        setMeasured({
+          path,
+          width: event.currentTarget.naturalWidth,
+          height: event.currentTarget.naturalHeight,
+        })
+      }
+      onError={() => setFailedPath(path)}
       className="block size-full object-contain"
     />
   ) : null;
 
+  if (audio)
+    return (
+      <>
+        <span
+          ref={box}
+          data-local-media={path}
+          className="[margin-block:0.5rem] block min-h-11 w-[26rem] max-w-full"
+        >
+          {url ? (
+            <InlineAudio
+              path={path}
+              url={url}
+              label={label}
+              playerRef={attachPlayer}
+              onFailed={() => setFailedPath(path)}
+              onPlay={pauseUnlessVisible}
+              onOpen={onOpen}
+            />
+          ) : null}
+        </span>
+        {fallback}
+      </>
+    );
   return (
     <>
       <span
         ref={box}
         data-local-media={path}
-        className="[margin-block:0.5rem] grid aspect-video w-80 max-w-full grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-clip rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
+        style={frame}
+        className={`[margin-block:0.5rem] grid max-w-full grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-clip rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)${frame ? "" : " aspect-video w-80"}`}
       >
         {url && video ? (
-          <video
-            ref={player}
-            src={url}
-            controls
-            playsInline
-            preload="metadata"
-            aria-label={label}
-            onError={() => setFailed(true)}
-            onPlay={(event) => {
-              if (!visible || document.hidden) event.currentTarget.pause();
-            }}
-            className="block size-full object-contain"
+          <InlineVideo
+            url={url}
+            label={label}
+            playerRef={attachPlayer}
+            onFailed={() => setFailedPath(path)}
+            onPlay={pauseUnlessVisible}
+            onMetadata={(size) => setMeasured({ path, ...size })}
           />
         ) : onOpen && image ? (
           <Button

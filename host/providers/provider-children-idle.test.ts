@@ -4,6 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostChildBackend } from "../child-backend";
 import {
+  DELEGATION_PARENT_KEY,
+  DELEGATION_PROVIDER_HISTORY_KEY,
+} from "../../src/shared/model/host-contracts/delegation";
+import {
   PROVIDER_CHILD_IDLE_MS,
   PROVIDER_CHILD_IDLE_SWEEP_MS,
   ProviderChildIdleReaper,
@@ -235,6 +239,46 @@ describe("createSessionIdleGate", () => {
     expect(await gateFor(new Error("Session not found on this machine")).canRetire("u")).toBe(
       false,
     );
+  });
+
+  it("retires an idle private delegate only for a valid parent and ephemeral history", async () => {
+    const parent = JSON.stringify({
+      parentSessionId: "p",
+      runId: "r",
+      kind: "subagent",
+      model: "claude:m",
+      startedAt: 1,
+    });
+    const delegate = (harness: string, settings: Record<string, string>, extra = {}) =>
+      idle({ harness, providerSessionId: undefined, modelSettings: settings, ...extra });
+    const marker = {
+      [DELEGATION_PARENT_KEY]: parent,
+      [DELEGATION_PROVIDER_HISTORY_KEY]: "ephemeral",
+    };
+    for (const harness of ["claude", "codex"])
+      expect(await gateFor(delegate(harness, marker)).canRetire("s")).toBe(true);
+    expect(
+      await gateFor(delegate("claude", { ...marker, [DELEGATION_PARENT_KEY]: "{bad" })).canRetire(
+        "s",
+      ),
+    ).toBe(false);
+    expect(
+      await gateFor(delegate("claude", { ...marker, [DELEGATION_PARENT_KEY]: "{}" })).canRetire(
+        "s",
+      ),
+    ).toBe(false);
+    expect(
+      await gateFor(delegate("claude", { [DELEGATION_PARENT_KEY]: parent })).canRetire("s"),
+    ).toBe(false);
+    expect(await gateFor(delegate("cursor", marker)).canRetire("s")).toBe(false);
+    expect(await gateFor(delegate("codex", marker, { queuedMessages: [{}] })).canRetire("s")).toBe(
+      false,
+    );
+    expect(
+      await gateFor(
+        delegate("codex", marker, { blocks: [{ followUpDelivery: "uncertain" }] }),
+      ).canRetire("s"),
+    ).toBe(false);
   });
 
   it("refuses sessions with a turn or anything pending", async () => {

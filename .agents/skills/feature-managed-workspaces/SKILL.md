@@ -30,7 +30,7 @@ Own execution workspace contracts, not general Git UI. Read the canonical worksp
 - A compatible Windows guardian may prove retirement with an exact-generation receipt checked under the SQLite witness. Remove only settled exact receipts; absent capability or unknown tree completion retains the existing held-state contract. Development builds must not require installing a guardian.
 - Removal fixes a canonical boundary and checks descendants without following links. Never remove a junction target or another workspace to satisfy a check.
 - Owner-reviewed delivery binds exact source/target identities and preserves unrelated target edits. Task completion or a tool response does not authorize merge/push/publication.
-- General managed capability does not establish native turn/buffer/rewind capability. Missing source/build/idle reads are unknown, not safe.
+- General managed capability does not establish native turn/rewind capability. Missing source/build/idle reads are unknown, not safe.
 
 ## Focused checks
 

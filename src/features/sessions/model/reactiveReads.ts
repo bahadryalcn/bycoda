@@ -1,5 +1,7 @@
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { useLocale } from "../../../shared/i18n";
+import { useHostSessionBindingReader } from "../../connections/public/useHostSessionBinding";
+import { useRemoteSessionBindings } from "../../connections/public/useRemoteSessionBinding";
 import {
   getPathEnvironmentRevision,
   resolveWorkspaceFileReference,
@@ -7,7 +9,7 @@ import {
 } from "../../../shared/lib/paths";
 import {
   deriveActivityDock,
-  dockCountLabel,
+  dockCountParts,
   dockStateLabel,
   type ActivityDock,
   type ActivityDockInput,
@@ -18,16 +20,23 @@ import {
   delegatedChildren,
   delegatedDockAgents,
   delegationParentOf,
-  isDelegatedChildOf,
   nestedDelegatedChildren,
+  nestedDelegationOwner,
 } from "./delegatedAgents";
 import { cardedChildren, createCardPlacer } from "./delegatedCards";
 import { executionUserIndex } from "./executionTurn";
+import { turnChangedFiles } from "./turnChangedFiles";
 import { queuedSteerRoute, queuedTargetSummary } from "./messageQueue";
 import { getModelSnapshot, resolveModel, subscribeModels } from "./models";
 import { modelDisplayName, modelHarness } from "./modelDisplayName";
+import { advisorModelName } from "./advisorModelName";
 import type { Block, HarnessId, Session, ToolPreview } from "./session";
-import { useSessionsSelector } from "./sessionsStore";
+import {
+  selectSessionById,
+  useSession,
+  useSessionsSelector,
+  useShellSessionsSelector,
+} from "./sessionsStore";
 import { resolveToolCallDisplay, subagentModelName } from "./transcriptActivity";
 
 /*
@@ -42,6 +51,18 @@ import { resolveToolCallDisplay, subagentModelName } from "./transcriptActivity"
 /** Changes when the live model catalog or the turned-off models change. */
 export function useModelCatalogRevision(): number {
   return useSyncExternalStore(subscribeModels, getModelSnapshot, getModelSnapshot);
+}
+
+/** Advisor identity follows the same live catalog as other model labels. */
+export function useAdvisorModelName(
+  settings: Record<string, string> | undefined,
+): string | undefined {
+  const catalog = useModelCatalogRevision();
+  return useMemo(
+    () => advisorModelName(settings),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- catalog invalidates the live lookup
+    [settings, catalog],
+  );
 }
 
 /** Readable identity follows catalog updates through a subscribed hook. */
@@ -104,6 +125,20 @@ export function useToolCallDisplay(
   );
 }
 
+/** The files a settled turn changed, re-resolved once the home directory or path variables arrive. */
+export function useTurnChangedFiles(
+  turn: readonly Block[],
+  cwd: string | undefined,
+  settled: boolean,
+) {
+  const paths = usePathEnvironmentRevision();
+  return useMemo(
+    () => (settled ? turnChangedFiles(turn, cwd) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `paths` invalidates the path resolution
+    [settled, turn, cwd, paths],
+  );
+}
+
 /** The dock and its wording; subagent rows name models from the catalog. */
 export function useActivityDock(input: ActivityDockInput): {
   dock: ActivityDock;
@@ -152,71 +187,139 @@ function sameSessionList(a: readonly Session[], b: readonly Session[]): boolean 
   return a.length === b.length && a.every((session, index) => session === b[index]);
 }
 
+const noSessions: Session[] = [];
+
+function familySelector<T>(
+  id: string | undefined,
+  read: (shell: Session[], id: string) => T,
+  empty: T,
+) {
+  let previous: Session[] | undefined;
+  let result = empty;
+  return (shell: Session[]) => {
+    if (id && previous !== shell) {
+      result = read(shell, id);
+      previous = shell;
+    }
+    return result;
+  };
+}
+
+/** Membership depends on the structural snapshot and on the owners stored outside sessions. */
+function useDelegationStructure<T>(
+  id: string | undefined,
+  read: (shell: Session[], id: string) => T,
+  empty: T,
+  equal: (a: T, b: T) => boolean = Object.is,
+): T {
+  const hostBindings = useHostSessionBindingReader();
+  const remoteBindings = useRemoteSessionBindings();
+  const select = useMemo(
+    () => familySelector(id, read, empty),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a stored owner change invalidates the family for the same shell
+    [id, read, empty, hostBindings, remoteBindings],
+  );
+  return useShellSessionsSelector(select, equal);
+}
+
+function useLiveFamily(members: Session[]): Session[] {
+  return useSessionsSelector(
+    (sessions) => members.flatMap((member) => selectSessionById(sessions, member.id) ?? []),
+    sameSessionList,
+  );
+}
+
+const noFamilies: Session[][] = [];
+
+function dockFamilies(shell: Session[], parentId: string): Session[][] {
+  return delegatedChildren(shell, parentId).map((child) => [
+    child,
+    ...nestedDelegatedChildren(shell, [child]),
+  ]);
+}
+
+function sameFamilies(a: Session[][], b: Session[][]): boolean {
+  return a.length === b.length && a.every((family, index) => sameSessionList(family, b[index]));
+}
+
 /** The transcript's blocks with each delegated run shown as a card. */
 export function useDelegatedCardBlocks(
   parentId: string,
   blocks: Block[],
   enabled: boolean,
 ): Block[] {
-  const children = useSessionsSelector(
-    (sessions) => (enabled ? delegatedChildren(sessions, parentId) : []),
+  // The family comes from the shell (found once per structural change), the children
+  // from the live store, so their streamed text still reaches the cards.
+  const members = useDelegationStructure(
+    enabled ? parentId : undefined,
+    delegatedChildren,
+    noSessions,
     sameSessionList,
   );
+  const children = useLiveFamily(members);
   const [place] = useState(createCardPlacer);
   return useMemo(() => place(blocks, children), [place, blocks, children]);
 }
 
-/** The run ids of a session's delegated children; their results show on their cards. */
+/**
+ * The run ids of a session's delegated children; their results show on their cards.
+ * Reads the shell: a run id never changes with streamed text.
+ */
 export function useDelegatedRunIds(parentId: string | undefined): string[] {
-  return useSessionsSelector(
-    (sessions) =>
-      parentId
-        ? delegatedChildren(sessions, parentId).flatMap(
-            (child) => delegationParentOf(child)?.runId ?? [],
-          )
-        : [],
+  return useDelegationStructure(
+    parentId,
+    delegatedRunIds,
+    noRunIds,
     (a, b) => a.length === b.length && a.every((id, index) => id === b[index]),
+  );
+}
+
+const noRunIds: string[] = [];
+function delegatedRunIds(shell: Session[], parentId: string): string[] {
+  return delegatedChildren(shell, parentId).flatMap(
+    (child) => delegationParentOf(child)?.runId ?? [],
   );
 }
 
 /** Cross-provider children of one session, as dock rows for its current turn. */
 export function useDelegatedDockAgents(parentId: string, blocks: Block[]): DockAgent[] {
   const catalog = useModelCatalogRevision();
-  const children = useSessionsSelector(
-    (sessions) => delegatedChildren(sessions, parentId),
-    sameSessionList,
-  );
-  // The children's own subagents: their requests surface on their parent's row.
-  const nested = useSessionsSelector(
-    (sessions) => nestedDelegatedChildren(sessions, delegatedChildren(sessions, parentId)),
-    sameSessionList,
-  );
+  const families = useDelegationStructure(parentId, dockFamilies, noFamilies, sameFamilies);
+  const members = useMemo(() => families.flat(), [families]);
+  const live = useLiveFamily(members);
   const turnStartedAt = blocks[executionUserIndex(blocks)]?.startedAt;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   return useMemo(() => {
+    const children: Session[] = [];
+    const nested = new Map<string, Session[]>();
+    for (const [member, ...descendants] of families) {
+      const child = selectSessionById(live, member.id);
+      if (!child) continue;
+      children.push(child);
+      if (descendants.length) {
+        nested.set(
+          child.id,
+          descendants.flatMap((item) => selectSessionById(live, item.id) ?? []),
+        );
+      }
+    }
     const carded = cardedChildren(blocks, children);
     return delegatedDockAgents(children, turnStartedAt, nested).map((agent) =>
       agent.sessionId && carded.has(agent.sessionId) ? { ...agent, inline: true } : agent,
     );
-  }, [blocks, children, nested, turnStartedAt, catalog]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dock rows resolve labels from the subscribed model catalog
+  }, [blocks, families, live, turnStartedAt, catalog]);
 }
 
 /** The subagent that started a delegated child, when that one is itself a subagent. */
 export function useNestedDelegationOwner(childId: string | undefined): Session | undefined {
-  return useSessionsSelector((sessions) => {
-    const child = childId ? sessions.find((session) => session.id === childId) : undefined;
-    return child
-      ? sessions.find(
-          (session) => !!delegationParentOf(session) && isDelegatedChildOf(child, session),
-        )
-      : undefined;
-  });
+  const owner = useDelegationStructure(childId, nestedDelegationOwner, undefined);
+  return useSession(owner?.id);
 }
 
-export function useDockCountLabel(dock: ActivityDock): string {
+export function useDockCountParts(dock: ActivityDock) {
   const locale = useLocale();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  return useMemo(() => dockCountLabel(dock), [dock, locale]);
+  return useMemo(() => dockCountParts(dock), [dock, locale]);
 }
 
 /** The stop-all control; its wording is read through getters, so it is rebuilt

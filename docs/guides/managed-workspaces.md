@@ -9,6 +9,31 @@ Clearing a conversation preserves that execution identity, including after resta
 Upgrading also retains current-checkout identity for legacy sessions cleared by
 an older app; it does not assign managed ownership to them.
 
+Under the composer, the workspace chip offers two options: **Current checkout**
+(work directly in the project on its branch) and **New worktree** (an isolated
+copy from the base branch shown as "From <branch>", created on first send). The
+branch chip lists **Existing worktrees** to continue in one that already exists.
+The project chip shows the project name with "+N" for extra folders; its
+**Project** section switches the project of a blank draft, and **Also work in**
+adds other projects or folders to this session only.
+
+With **New worktree**, each extra folder that is the root of a Git repository (and
+not inside the project) also gets its own worktree on first send. It uses the same
+branch name as the project's worktree and starts from that repository's current
+branch, and the agent works in these worktrees instead of the live checkouts. The
+chip still shows the original project names. Other folders are used as they are. If
+any extra worktree cannot be created, the send fails with an error you can retry;
+retrying reuses what was already created.
+
+In a session on another machine, the project chip lists that machine's projects, and
+**Add folder…** opens that machine's folder browser. Each send carries the chosen
+folders; the Host checks that each one is an existing folder on that machine (not a
+drive root or home) and refuses the send with an error otherwise. With **New worktree**,
+extra folders that are Git repository roots on that machine get their own worktrees on
+first send, exactly as above, and a failure is retryable. A folder deleted later is
+dropped from what the agent receives. A Host that predates this (capability
+`sessions.additionalDirs.v1`) hides the chip and keeps working without extra folders.
+
 This guide describes the integrated managed-workspace workflow. Managed operations
 require the connected Host's advertised capability; an older Host shows an update
 explanation for those operations. Current-checkout creation remains available.
@@ -29,6 +54,31 @@ or shared checkout, another writer's checkout, or unknown ownership, it stops wi
 that automation or configure the project policy; existing owner review and
 publication permissions still apply. The shared checkout's branch, index and
 dirty work remain intact.
+
+## Choosing where a new session works
+
+A new session's hero heading holds a project picker: choose a project, **Add project…**
+or **No project** before the first send. The same picker works for drafts on another
+machine. The composer's chips choose **Current checkout** or **Worktree**.
+
+- **Previous worktree** appears next to those choices when this project has a recent
+  session whose worktree still exists; selecting it reuses that directory.
+- **Start from remote** (in the base picker) fetches the base branch's upstream and
+  starts the worktree from it, labeled "From main (remote)". Without an upstream it
+  starts from the local branch. The choice is remembered per project.
+- **Repositories** lists the project's folders. In worktree mode each checked folder
+  gets its own worktree on the session's branch ("N repositories"); in current mode
+  the chip reads "Also work in". The choice is remembered per project.
+
+While the workspace is created, a progress card shows fetching, creating the worktree
+(with the repository count), submodules, setup and starting the agent. **Cancel**
+stops creation and removes what it made, including every repository's worktree and the
+branches it created. If the Host cannot tell whether Git finished (a timeout), nothing
+is removed and Retry recovers the same workspace. Creation needs a Host that supports
+it; otherwise you are asked to update. All of this works on remote machines too.
+
+Session branches start as `by/<id>` and are renamed from the first message when
+nothing blocks it (no upstream, no pending review); otherwise the first name stays.
 
 In a shared checkout, agents preserve other sessions' changes and keep their own
 work uncommitted unless you direct otherwise. An opted-in worktree starts from a
@@ -62,6 +112,36 @@ For remote projects, creating and deleting managed directories is unavailable;
 listing and reveal still work.
 
 The Worktrees view keeps the selected project and create/refresh actions together.
+For worktree rows on connected machines, **Delete worktree** opens a fresh review
+from the owning Host when it supports remote removal. The Host checks the same
+checkout again before deleting. Close active agents and terminals before retrying.
+If the Host cannot verify usage, it stops the removal. When no desktop has
+been connected to that Host for two minutes, a clean worktree (no changes, no
+untracked or ignored files) is removed without that check, and Git still
+refuses anything it would have to force. Older Hosts show the existing remote
+removal notice.
+
+On a dedicated Linux server, the system administrator can set
+`BYCODA_HEADLESS_WORKSPACE_ROOT=/var/lib/bycoda/workspaces` in the execution
+Host's systemd **system** service. Run the foreground Host directly under a
+dedicated non-root `User=` with a `nologin` or `false` login shell. Create the
+workspace root owned by that account with mode `0700`. Keep the main checkouts,
+linked worktrees and their Git common directories inside it. Use local storage
+exclusive to the service. A checkout mounted, exported or otherwise accessible
+to another desktop is outside this deployment contract.
+
+This setting declares that the account runs only the Host and its headless
+children. Keep native desktop applications and other services on separate accounts.
+The Host checks physical paths and Linux process ownership before a removal.
+Use the machine's normal PID namespace and full procfs view. Nested mounts,
+visible bind aliases, and shared network filesystems cannot establish private
+workspace storage.
+An unrelated process running as that user, a disconnected desktop previously
+observed by the Host, or an unreadable ownership check blocks headless removal.
+The existing review, dirty-file, terminal, agent and managed recovery checks
+still apply. Ordinary desktop and user-service installations retain native
+desktop confirmation.
+
 Managed rows show the conversation title when available, otherwise the branch name.
 Expand **Details** for the exact folder, branch, workspace ID and owner. Review and
 directory actions keep their existing ownership checks. **Workspace policy** holds
@@ -150,15 +230,10 @@ or branch. Unknown directories and main are never automatic cleanup targets.
 On Windows, dependency links must be detached without following their targets;
 unsafe links and blocked handles leave a recoverable blocked operation.
 
-Unsaved or unknown native editor reports also block removal and rewind. Fresh
-reports settle only that app profile, process instance and window; reconnecting
-one app cannot silently clear another app's buffers. Uncertain prior process
-leases require explicit reconciliation, even after their process appears old.
-Stale closed windows and earlier app instances can remain blocked until their
-state is explicitly reconciled. Clean app exit retires an authenticated empty
-buffer report. After restart, only empty predecessor reports from the same device
-and client can be reconciled when the Host proves their process has exited.
-Dirty or unknown reports continue to require explicit owner recovery.
+Unsaved files open in a connected desktop block removal: save or close them
+first. Uncertain prior process leases require explicit reconciliation, even after
+their process appears old. Unsaved editor text is kept as a local draft copy, so
+removing a worktree never discards it.
 
 Finished sessions expose Delete directory directly. The same guarded removal
 preview and activity checks apply; the conversation, unmerged branch and recovery
@@ -198,11 +273,11 @@ project from automatic cleanup, not only ones created after the change.
 
 Worktree sessions normally run directly in their own folder and branch, without
 per-turn Git snapshots, managed-turn admission locks or exact-capture provider retirement.
-**Settings → Workspace → Exact Git rewind (experimental)** is off by default.
+**Settings → Workspace → Exact Git rewind** is off by default.
 The setting applies to new turns on this computer's execution Host and is shared
 by desktop-native and Host-owned sessions. It is persisted on that Host in
 `managed-workspaces/exact-git-rewind.json`, outside project checkouts. Remote
-Hosts retain their own policy. Unavailable policy disables the experimental
+Hosts retain their own policy. Unavailable policy disables the full Git capture
 path so ordinary work can continue; Settings shows a retryable read error.
 With the setting off, old unfinished exact-rewind turns do not block new turns,
 and the Host does not advertise `sessions.git-rewind*` capabilities.
@@ -214,11 +289,11 @@ exit leaves the transfer blocked with a retryable reason. Older Hosts keep the
 previous immediate-release behavior.
 
 Every completed user message offers **Edit from here** in its message actions.
-Confirm **Revert and keep changes** to rewind chat to before that exact message
-and return its prompt and attachments to the composer without sending them.
-Files stay as they are.
+Confirm the dialog to rewind chat to before that exact message and return its
+prompt and attachments to the composer without sending them. Files stay as they
+are.
 
-Choose **Revert files too** to also restore this session's recorded edits from
+Turn on **Also revert file changes** to also restore this session's recorded edits from
 the selected message onward. Created files are removed. Files changed by another
 writer are skipped and listed in a notice. Earlier Git commits and the index are
 preserved; restored contents appear as working-copy changes. This bounded file
@@ -227,12 +302,12 @@ sessions. Older, pruned or incomplete provider history disables the file option 
 keeping conversation-only editing available. Remote file restoration requires
 an updated Host advertising `sessions.edit-from-here.v1`.
 
-The exact-rewind workflow below applies only when the experimental setting is on.
+The exact-rewind workflow below applies only when Exact Git rewind is on.
 
 Managed Git rewind restores the selected accepted user boundary's conversation,
 branch HEAD, index and working copy together. Preview shows affected commits and
 paths and capture blockers. Unsupported or incomplete capture cannot promise an
-exact rewind. Settle provider execution, shells and editor buffers first.
+exact rewind. Settle provider execution and shells first.
 
 Apply uses a short-lived reviewed plan, revalidates state, and preserves rescue
 HEAD/index/worktree and transcript state before restoring anything. Changed

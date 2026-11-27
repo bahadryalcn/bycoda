@@ -1,26 +1,42 @@
 import { installAssistantObservationProducers } from "../assistant/observations/assistant-observation-producers";
+import { failureFields } from "../diagnostics/failure-fields";
+import { createLogger } from "../diagnostics/logger";
 import { perfMetrics } from "../diagnostics/perf-metrics";
+import { startRuntimeSampler, stopRuntimeSampler } from "../diagnostics/request-trace";
 import type { ServerBindings } from "./bindings";
+import { bootPhase, readyWithin } from "./boot-phases";
 import {
   markSessionWorkCoverage,
   startSessionWork,
   stopSessionWork,
 } from "../work/session-adapter";
 import { guardUnhandledRejections } from "./support";
-/** Total time a stopping Host may spend draining before it force-exits. */
-export const HOST_SHUTDOWN_DEADLINE_MS = 45_000;
+import { HOST_SHUTDOWN_DEADLINE_MS } from "../lifecycle-state";
+import type { StoreDatabase, StoreRow } from "../store-db";
 
 /**
  * Exit status of a shutdown that ran to its end. Service supervisors restart a Host that
  * exits non-zero, so a stop requested through the lifecycle endpoint exits zero even when a
  * drain failed (the failure is logged): a restart would undo the request and race the
- * requester's next step. Other reasons keep the failure status.
+ * requester's next step. Other reasons keep the failure status. A dead database worker
+ * (`DATABASE_FAILED_STOP`) always exits non-zero: only a restart recovers the Host.
  */
+export const DATABASE_FAILED_STOP = "database-failed";
 export function shutdownExitCode(reason: string, failed: boolean): number {
-  return failed && reason !== "lifecycle" ? 1 : 0;
+  return reason === DATABASE_FAILED_STOP || (failed && reason !== "lifecycle") ? 1 : 0;
 }
 
 type ClosePromise = Promise<void> & { pendingDrains(): string[] };
+
+/**
+ * Recovery services whose entry points await `ready` themselves, so a slow or wedged one
+ * must not hold the Host's listen back: boot waits a bounded time and reports it degraded.
+ */
+const OPTIONAL_RECOVERY_SERVICES: ReadonlySet<string> = new Set([
+  "provider-inbox",
+  "social",
+  "social-peers",
+]);
 
 /**
  * Hard stop for a drain that never settles: a dead listener must not keep the
@@ -45,6 +61,47 @@ export function armShutdownDeadline(
   return () => clearTimeout(timer);
 }
 
+const lifecycleLog = createLogger("host.lifecycle");
+
+/**
+ * Running work for the private lifecycle endpoint (update, quit and idle-stop checks).
+ * Reads beside the writer queue: callers give up after a few seconds, and a busy queue
+ * made a healthy Host look unverifiable. Undefined means unknown, never idle.
+ */
+export async function readLifecycleActivity(
+  db: StoreDatabase,
+  withRunningSessions: boolean,
+): Promise<{ activity: StoreRow; runningSessions?: StoreRow[] } | undefined> {
+  try {
+    // The request `end` listener runs outside the HTTP dispatch's scope exit.
+    return await db.outsideScope(() =>
+      db.readScope(async () => {
+        const activity = await db
+          .prepare(
+            `SELECT
+              (SELECT count(*) FROM sessions WHERE status='running') AS sessions,
+              (SELECT count(*) FROM sessions WHERE shell_running=1) AS shells,
+              (SELECT count(*) FROM automation_runs WHERE json_extract(value, '$.status')='running') AS automations`,
+          )
+          .get();
+        if (!activity) throw new Error("Lifecycle activity returned no row.");
+        if (!withRunningSessions) return { activity };
+        const runningSessions = await db
+          .prepare(
+            `SELECT id, CASE WHEN json_valid(summary) THEN substr(json_extract(summary, '$.title'), 1, 160) END AS title
+              FROM sessions WHERE status='running' ORDER BY updated_at DESC LIMIT 25`,
+          )
+          .all()
+          .catch(() => undefined);
+        return { activity, runningSessions };
+      }),
+    );
+  } catch (error) {
+    lifecycleLog.warn("lifecycle activity read failed", failureFields(error));
+    return undefined;
+  }
+}
+
 export async function createLifecycleRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -61,9 +118,9 @@ export async function createLifecycleRuntime(
     | "attachmentOwnership"
     | "mobileLan"
     | "social"
+    | "liveStream"
     | "controls"
     | "websocket"
-    | "nativeBufferUploads"
     | "nativeServiceUploads"
     | "unsubscribeChanges"
     | "unsubscribeAuthorization"
@@ -89,6 +146,9 @@ export async function createLifecycleRuntime(
     | "subscriptionHub"
     | "bulkTransfers"
     | "localVoice"
+    | "voiceRelays"
+    | "decisionModels"
+    | "roomFiles"
     | "assistantKeepAwake"
     | "managedAssistantSessions"
     | "desktopControl"
@@ -147,6 +207,7 @@ export async function createLifecycleRuntime(
   let startup: Promise<void> = Promise.resolve();
   let resourceClose: ClosePromise | undefined;
   const pendingDrainLabels = new Set<string>();
+  const startupLog = createLogger("host.startup");
   dependencies.server.on("listening", () => {
     if (dependencies.closing) return;
     startup = dependencies.engine.store.db.outsideScope(async () => {
@@ -165,9 +226,10 @@ export async function createLifecycleRuntime(
           await action();
         } catch (error) {
           if (!dependencies.closing)
-            console.warn(
-              `Host background startup step "${name}" failed: ${error instanceof Error ? error.name : "Error"}.`,
-            );
+            startupLog.warn(`Host background startup step "${name}" failed.`, {
+              step: name,
+              ...failureFields(error),
+            });
         } finally {
           clearTimeout(timer);
         }
@@ -189,15 +251,19 @@ export async function createLifecycleRuntime(
         ),
         step("conversation-secrets", () => dependencies.conversationSecrets.start()),
         step("assistant", () => dependencies.assistant.start()),
-        step("perf-metrics", () => perfMetrics.start()),
+        step("perf-metrics", () => {
+          perfMetrics.start();
+          startRuntimeSampler();
+        }),
         step("attachment-ownership", () => dependencies.attachmentOwnership.start()),
         step("mobile-lan", () => dependencies.mobileLan.start()),
         step("automatic-tunnel", () => dependencies.tunnels.boot()),
         step("social", () => dependencies.social.start()),
       ]);
     });
-    void startup.catch(() => {
-      if (!dependencies.closing) console.warn("Host background startup failed.");
+    void startup.catch((error: unknown) => {
+      if (!dependencies.closing)
+        startupLog.warn("Host background startup failed.", failureFields(error));
     });
   });
   // Node does not await EventEmitter listeners. The CLI and fixtures await this
@@ -223,7 +289,6 @@ export async function createLifecycleRuntime(
         dependencies.controls?.nativeAuthorityBootstrap?.close(),
       );
       drain("websocket", async () => await dependencies.websocket.close());
-      drain("nativeBufferUploads", () => dependencies.nativeBufferUploads.close());
       drain("nativeServiceUploads", () => dependencies.nativeServiceUploads.close());
       drain("listeners", () => {
         dependencies.unsubscribeChanges();
@@ -247,12 +312,12 @@ export async function createLifecycleRuntime(
         dependencies.bulkTransfers.close();
       });
       drain("retention", () => dependencies.managed.retention.stop());
-      drain("nativeActivity", () =>
-        dependencies.managed.nativeActivity.closeBufferRecoveryCatalog(),
-      );
       drain("queueDrainer", async () => await dependencies.queueDrainer.close());
       drain("localVoice", () => dependencies.localVoice.close());
+      drain("voiceRelays", () => dependencies.voiceRelays.close());
+      drain("decisionModels", () => dependencies.decisionModels.close());
       drain("assistant", () => dependencies.assistant.close());
+      drain("assistantCommands", () => dependencies.roomFiles.folders.close());
       drain("assistantKeepAwake", () => dependencies.assistantKeepAwake.close());
       drain("managedAssistantSessions", () => dependencies.managedAssistantSessions.close());
       drain("desktopControl", () => dependencies.desktopControl.close());
@@ -270,7 +335,10 @@ export async function createLifecycleRuntime(
       drain("devServers", () => dependencies.devServers.close());
       drain("gitWatches", () => dependencies.gitWatches.close());
       drain("diagnostics", () => dependencies.diagnostics.close());
-      drain("perfMetrics", () => perfMetrics.close());
+      drain("perfMetrics", () => {
+        perfMetrics.close();
+        stopRuntimeSampler();
+      });
       drain("devicePreviews", async () => await dependencies.devicePreviews.dispose());
       drain("deviceHost", async () => await dependencies.deviceHost.dispose());
       drain("sharedBrowser", async () => await dependencies.sharedBrowser.close());
@@ -279,12 +347,14 @@ export async function createLifecycleRuntime(
       drain("tunnels", async () => await dependencies.tunnels.close());
       drain("desktop", async () => await dependencies.desktop.closeAsync());
       drain("desktopDelete", () => dependencies.desktopDelete.close());
+      drain("desktopGroupLock", () => dependencies.desktop.live.groupLock.close());
       drain("desktopWriterTransfers", () => dependencies.desktop.live.closeWriterTransfers());
       drain("mobilePairing", () => dependencies.mobilePairing.close());
       drain("mobileLan", async () => await dependencies.mobileLan.close());
       drain("conversationDesktop", () => dependencies.conversationDesktop.close());
       drain("hostNotes", async () => await dependencies.hostNotes.close());
       drain("social", async () => await dependencies.social.stop());
+      drain("live streaming", () => dependencies.liveStream.close());
       drain("xBrowser", async () => await dependencies.xBrowser.stop(dependencies.social));
       // Attach rejection handlers immediately while startup is still settling.
       const drained = Promise.allSettled(pending);
@@ -321,21 +391,41 @@ export async function createLifecycleRuntime(
     void closeResources().catch(() => console.warn("Host resources did not all close cleanly."));
   });
   try {
-    await dependencies.managed.recover((id) => dependencies.tasks.reconcileDelivery(id));
-    await Promise.all([
-      dependencies.attachmentOwnership.ready,
-      dependencies.providerInbox.ready,
-      dependencies.crews.ready,
-      dependencies.social.ready,
-      dependencies.socialPeers.ready,
-      dependencies.mcpHttp.tokens.ready,
-      dependencies.queueDrainer.ready,
-      dependencies.tasks.ready,
-      dependencies.goals.ready,
-    ]);
-    dependencies.observationCoverage = await installAssistantObservationProducers(
-      dependencies.engine.store,
-      dependencies.observationJournal,
+    // Each step logs its own time: this phase alone holds the Host's listen back.
+    await bootPhase("recovery-managed", () =>
+      dependencies.managed.recover(
+        (id) => dependencies.tasks.reconcileDelivery(id),
+        (name, work) => bootPhase(`recovery-managed-${name}`, work),
+      ),
+    );
+    await bootPhase("recovery-services", () =>
+      Promise.all(
+        (
+          [
+            ["attachment-ownership", dependencies.attachmentOwnership.ready],
+            ["provider-inbox", dependencies.providerInbox.ready],
+            ["crews", dependencies.crews.ready],
+            ["social", dependencies.social.ready],
+            ["social-peers", dependencies.socialPeers.ready],
+            ["mcp-tokens", dependencies.mcpHttp.tokens.ready],
+            ["queue-drainer", dependencies.queueDrainer.ready],
+            ["tasks", dependencies.tasks.ready],
+            ["goals", dependencies.goals.ready],
+          ] as const
+        ).map(([name, ready]) =>
+          bootPhase(`recovery-service-${name}`, () =>
+            OPTIONAL_RECOVERY_SERVICES.has(name)
+              ? readyWithin(`recovery-service-${name}`, ready)
+              : ready,
+          ),
+        ),
+      ),
+    );
+    dependencies.observationCoverage = await bootPhase("recovery-observations", () =>
+      installAssistantObservationProducers(
+        dependencies.engine.store,
+        dependencies.observationJournal,
+      ),
     );
   } catch (error) {
     await closeResources().catch(() => {});

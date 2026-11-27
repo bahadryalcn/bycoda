@@ -12,6 +12,8 @@ import type { DecisionSource } from "../model/decisionTypes";
 import { moveSource, sourceOptions } from "../model/routingEditor";
 import { SourceKindIcon } from "./SourceIcon";
 
+const SEARCH_FROM = 8;
+
 /** Membership and fallback order share one keyboard-accessible popover. */
 export function SourceOrderPicker({
   label,
@@ -28,7 +30,9 @@ export function SourceOrderPicker({
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [search, setSearch] = useState("");
-  const ordered = sourceOptions(value, sources, search);
+  // A handful of sources needs no search; the popover closes on outside click or Escape.
+  const searchable = sources.length > SEARCH_FROM;
+  const ordered = sourceOptions(value, sources, searchable ? search : "");
   return (
     <>
       <Button
@@ -41,6 +45,7 @@ export function SourceOrderPicker({
         aria-haspopup="dialog"
         expanded={anchor !== null}
         disabled={disabled}
+        disabledReason={disabled ? t("Wait for the current change to finish.") : undefined}
         onClick={(event) => setAnchor(event.currentTarget)}
       >
         <span className="flex min-w-0 items-center gap-1">
@@ -74,21 +79,21 @@ export function SourceOrderPicker({
           anchor={anchor}
           kind="dialog"
           aria-label={label}
+          variant="panel"
           width={400}
           flow="scroll"
           onDismiss={() => setAnchor(null)}
         >
-          <div className="flex flex-col gap-2 p-3">
-            <TextField
-              label={t("Search sources")}
-              hideLabel
-              placeholder={t("Search sources")}
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-            <Text size="caption" tone="secondary">
-              {t("Select sources, then use the arrows to set fallback order.")}
-            </Text>
+          <div className="flex flex-col gap-2">
+            {searchable ? (
+              <TextField
+                label={t("Search sources")}
+                hideLabel
+                placeholder={t("Search sources")}
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            ) : null}
             {ordered.map((id) => {
               const source = sources.find((item) => item.id === id);
               const index = value.indexOf(id);
@@ -96,6 +101,9 @@ export function SourceOrderPicker({
                 <div key={id} className="flex min-w-0 items-center justify-between gap-2">
                   <Checkbox
                     disabled={disabled}
+                    disabledReason={
+                      disabled ? t("Wait for the current change to finish.") : undefined
+                    }
                     checked={index >= 0}
                     onChange={() =>
                       onChange(index >= 0 ? value.filter((item) => item !== id) : [...value, id])
@@ -124,6 +132,11 @@ export function SourceOrderPicker({
                         iconOnly
                         label={t("Move up")}
                         disabled={disabled || index === 0}
+                        disabledReason={
+                          disabled
+                            ? t("Wait for the current change to finish.")
+                            : t("Already first.")
+                        }
                         onClick={() => onChange(moveSource(value, id, -1))}
                       >
                         <ArrowUp />
@@ -134,6 +147,11 @@ export function SourceOrderPicker({
                         iconOnly
                         label={t("Move down")}
                         disabled={disabled || index === value.length - 1}
+                        disabledReason={
+                          disabled
+                            ? t("Wait for the current change to finish.")
+                            : t("Already last.")
+                        }
                         onClick={() => onChange(moveSource(value, id, 1))}
                       >
                         <ArrowDown />
@@ -152,11 +170,6 @@ export function SourceOrderPicker({
                 resetLabel={t("Clear search")}
               />
             ) : null}
-            <div className="flex justify-end">
-              <Button variant="ghost" size="sm" onClick={() => setAnchor(null)}>
-                {t("Done")}
-              </Button>
-            </div>
           </div>
         </Popover>
       ) : null}

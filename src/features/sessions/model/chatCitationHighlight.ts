@@ -110,8 +110,9 @@ export function highlightChatCitation(
       observer.observe(session, { subtree: true, childList: true, characterData: true });
       timers.push(
         setTimeout(() => {
+          if (resolved) return;
           clear();
-          if (!resolved) options.onUnavailable?.();
+          options.onUnavailable?.();
         }, 2500),
       );
     }

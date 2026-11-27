@@ -36,6 +36,7 @@ type Fake = {
     issuer?: string;
     metaIssuer?: string;
     rotate: boolean;
+    profile?: "available" | "unmarked" | "destructive";
   };
   verifierOk: () => boolean | undefined;
   setChallenge: (value: string) => void;
@@ -63,6 +64,43 @@ async function fakeServer(options: Partial<Fake["options"]> = {}, redirect = fal
         .end(JSON.stringify(value));
     if (redirect && path === "/mcp")
       return void res.writeHead(302, { Location: "http://evil.example/x" }).end();
+    if (
+      opts.profile &&
+      path === "/mcp" &&
+      req.headers.authorization === `Bearer ${SECRET_ACCESS}`
+    ) {
+      const { id, method, params } = JSON.parse(body);
+      if (method === "notifications/initialized") return void res.writeHead(202).end();
+      const result =
+        method === "initialize"
+          ? { protocolVersion: "2025-06-18" }
+          : method === "tools/list"
+            ? params.cursor
+              ? {
+                  tools: [
+                    {
+                      name: "connection_identity",
+                      _meta: { "openai/profile": opts.profile !== "unmarked" },
+                      annotations: {
+                        readOnlyHint: true,
+                        destructiveHint: opts.profile === "destructive",
+                      },
+                    },
+                  ],
+                }
+              : {
+                  tools: [{ name: "whoami", annotations: { readOnlyHint: true } }],
+                  nextCursor: "profile",
+                }
+            : {
+                structuredContent: {
+                  id: "user:123",
+                  email: "work@example.test",
+                  secret: SECRET_ACCESS,
+                },
+              };
+      return json(200, { jsonrpc: "2.0", id, result });
+    }
     if (path === "/mcp")
       return json(
         401,
@@ -366,6 +404,198 @@ describe("owner RPC and publication", () => {
     };
     expect(started.authorizationUrl.startsWith(`${fake.origin}/authorize`)).toBe(true);
     expect(fake.requests.every((r) => !r.path.includes("evil"))).toBe(true);
+  });
+
+  it("reads only a declared account profile with the effective Host sign-in", async () => {
+    const fake = await fakeServer({ profile: "available" });
+    const s = setup(fake);
+    const hub = new McpHub({
+      dataDir: s.dir,
+      inventory: async () => [http("remote", fake.url)],
+      oauth: s.oauth,
+    });
+    const scope = { cwd: join(s.dir, "project"), profileFor: "remote" };
+    expect(await oauthRpc(hub, "mcp.oauth.status", scope)).toMatchObject({
+      servers: [{ state: "none" }],
+    });
+    expect(fake.requests).toHaveLength(0);
+    const { response } = await s.signIn();
+    expect(response.ok).toBe(true);
+    await response.text();
+    expect(await oauthRpc(hub, "mcp.oauth.status", {})).toEqual({
+      servers: [{ name: "remote", state: "signed-in" }],
+    });
+    expect(await oauthRpc(hub, "mcp.oauth.status", scope)).toEqual({
+      servers: [
+        { name: "remote", state: "signed-in", inherited: true, profile: "work@example.test" },
+      ],
+    });
+    const calls = fake.requests
+      .filter((request) => request.auth && request.path === "/mcp")
+      .map((request) => JSON.parse(request.body))
+      .filter((request) => request.method === "tools/call");
+    expect(calls.map((call) => call.params)).toEqual([
+      { name: "connection_identity", arguments: {} },
+    ]);
+    await oauthRpc(hub, "mcp.oauth.signOut", { cwd: scope.cwd, name: "remote" });
+    expect(await oauthRpc(hub, "mcp.oauth.status", scope)).toEqual({
+      servers: [{ name: "remote", state: "none" }],
+    });
+  });
+
+  it.each(["unmarked", "destructive"] as const)("skips a %s profile tool", async (profile) => {
+    const fake = await fakeServer({ profile });
+    const s = setup(fake);
+    const hub = new McpHub({
+      dataDir: s.dir,
+      inventory: async () => [http("remote", fake.url)],
+      oauth: s.oauth,
+    });
+    const { response } = await s.signIn();
+    await response.text();
+    expect(await oauthRpc(hub, "mcp.oauth.status", { profileFor: "remote" })).toEqual({
+      servers: [{ name: "remote", state: "signed-in" }],
+    });
+    expect(fake.requests.some((request) => request.body.includes('"method":"tools/call"'))).toBe(
+      false,
+    );
+  });
+
+  it("exchanges a relayed callback once, only for the exact state and project", async () => {
+    const fake = await fakeServer();
+    let now = Date.now();
+    const s = setup(fake, { now: () => now });
+    const def = http("remote", fake.url);
+    const cwd = join(s.dir, "owning-project");
+    const hub = new McpHub({ dataDir: s.dir, inventory: async () => [def], oauth: s.oauth });
+    const callbackPort = Number(new URL(fake.origin).port);
+    const start = (port = callbackPort) =>
+      oauthRpc(hub, "mcp.oauth.start", {
+        name: def.name,
+        cwd,
+        callbackPort: port,
+      }) as Promise<{ authorizationUrl: string; expiresAt: number }>;
+    await expect(start(80)).rejects.toThrow("Invalid MCP callback port.");
+    // The relay port is already occupied on the Host. Starting must not bind a Host listener.
+    const started = await start();
+    const authorization = new URL(started.authorizationUrl);
+    expect(authorization.searchParams.get("redirect_uri")).toBe(
+      `http://127.0.0.1:${callbackPort}/callback`,
+    );
+    fake.setChallenge(authorization.searchParams.get("code_challenge")!);
+    const input = {
+      name: def.name,
+      cwd,
+      state: authorization.searchParams.get("state"),
+      code: "code-1",
+    };
+    const finish = (args: Record<string, unknown>) => oauthRpc(hub, "mcp.oauth.complete", args);
+    const cancel = (args: Record<string, unknown>) => oauthRpc(hub, "mcp.oauth.cancel", args);
+    await expect(cancel({ ...input, cwd: join(s.dir, "other-project") })).resolves.toEqual({
+      cancelled: false,
+    });
+    await expect(finish({ ...input, state: "wrong-state-123456" })).rejects.toThrow(
+      /invalid or expired/,
+    );
+    await expect(finish({ ...input, cwd: join(s.dir, "other-project") })).rejects.toThrow(
+      /invalid or expired/,
+    );
+    expect(fake.tokenCalls()).toBe(0);
+    await expect(finish(input)).resolves.toEqual({ status: "success" });
+    await expect(finish(input)).rejects.toThrow(/invalid or expired/);
+    expect(fake.tokenCalls()).toBe(1);
+    expect(fake.verifierOk()).toBe(true);
+    expect(await s.oauth.httpAuth(hub.oauthServerRef(def, cwd))).toEqual({
+      Authorization: `Bearer ${SECRET_ACCESS}`,
+    });
+    expect(await s.oauth.httpAuth(hub.oauthServerRef(def))).toBeUndefined();
+
+    const cancelled = new URL((await start()).authorizationUrl).searchParams.get("state");
+    await expect(cancel(input)).resolves.toEqual({ cancelled: false });
+    await expect(cancel({ ...input, state: cancelled })).resolves.toEqual({ cancelled: true });
+    await expect(finish({ ...input, state: cancelled })).rejects.toThrow(/invalid or expired/);
+    expect(await s.oauth.httpAuth(hub.oauthServerRef(def, cwd))).toEqual({
+      Authorization: `Bearer ${SECRET_ACCESS}`,
+    });
+
+    const denial = new URL((await start()).authorizationUrl).searchParams.get("state");
+    await expect(
+      finish({ name: def.name, cwd, state: denial, error: "access_denied" }),
+    ).resolves.toEqual({ status: "cancelled" });
+    await expect(finish({ ...input, state: denial })).rejects.toThrow(/invalid or expired/);
+
+    const expiring = await start();
+    now = expiring.expiresAt;
+    await expect(
+      finish({ ...input, state: new URL(expiring.authorizationUrl).searchParams.get("state") }),
+    ).rejects.toThrow(/invalid or expired/);
+    expect(fake.tokenCalls()).toBe(1);
+  });
+
+  it("closes the Host callback listener when a local sign-in is cancelled", async () => {
+    const fake = await fakeServer();
+    const s = setup(fake);
+    const url = new URL((await s.oauth.start(s.server)).authorizationUrl);
+    const state = url.searchParams.get("state")!;
+    const callback = new URL(url.searchParams.get("redirect_uri")!);
+    callback.searchParams.set("code", "code-1");
+    callback.searchParams.set("state", state);
+    expect(s.oauth.cancelSignIn(s.server, state)).toBe(true);
+    await expect(fetch(callback)).rejects.toThrow();
+    expect(fake.tokenCalls()).toBe(0);
+  });
+
+  it("isolates project OAuth and suppresses inherited owner auth after explicit sign-out", async () => {
+    const fake = await fakeServer();
+    const s = setup(fake);
+    const def = http("remote", fake.url);
+    const projectA = join(s.dir, "a");
+    const projectB = join(s.dir, "b");
+    const hub = new McpHub({
+      dataDir: s.dir,
+      inventory: async () => [def],
+      oauth: s.oauth,
+      files: {
+        claudeConfig: join(s.dir, "no.json"),
+        pluginsDir: join(s.dir, "no-plugins"),
+        codexConfig: join(s.dir, "config.toml"),
+      },
+      accountDirs: async () => ({ claude: [], codex: [] }),
+      policy: async () => ({ version: 1, mode: "always", direct: [] }),
+    });
+    expect((await s.signIn()).response.status).toBe(200);
+    const ownerAuth = { Authorization: `Bearer ${SECRET_ACCESS}` };
+    expect(await hub.httpAuth(hub.oauthServerRef(def, projectA))).toEqual(ownerAuth);
+    const { authorizationUrl } = (await oauthRpc(hub, "mcp.oauth.start", {
+      cwd: projectA,
+      name: def.name,
+    })) as { authorizationUrl: string };
+    const url = new URL(authorizationUrl);
+    fake.setChallenge(url.searchParams.get("code_challenge")!);
+    const callback = new URL(url.searchParams.get("redirect_uri")!);
+    callback.searchParams.set("code", "code-1");
+    callback.searchParams.set("state", url.searchParams.get("state")!);
+    expect((await fetch(callback)).status).toBe(200);
+    expect(await hub.httpAuth(hub.oauthServerRef(def, projectA))).toEqual({
+      Authorization: "Bearer access-2",
+    });
+    expect(await oauthRpc(hub, "mcp.oauth.status", { cwd: projectA })).toEqual({
+      servers: [{ name: def.name, state: "signed-in" }],
+    });
+    expect(await oauthRpc(hub, "mcp.oauth.status", { cwd: projectB })).toEqual({
+      servers: [{ name: def.name, state: "signed-in", inherited: true }],
+    });
+    expect(s.vault.size).toBe(2);
+    expect((await hub.publication("http://127.0.0.1:4555", projectA)).servers).toEqual([]);
+    await oauthRpc(hub, "mcp.oauth.signOut", { cwd: projectA, name: def.name });
+    expect(await oauthRpc(hub, "mcp.oauth.status", { cwd: projectA })).toEqual({
+      servers: [{ name: def.name, state: "none" }],
+    });
+    expect(await hub.httpAuth(hub.oauthServerRef(def, projectA))).toBeUndefined();
+    expect(await hub.httpAuth(hub.oauthServerRef(def, projectB))).toEqual(ownerAuth);
+    expect(await hub.httpAuth(hub.oauthServerRef(def))).toEqual(ownerAuth);
+    expect((await hub.publication("http://127.0.0.1:4555", projectA)).servers).toEqual([]);
+    expect(s.vault.size).toBe(1);
   });
 
   it("treats a signed-in http server as hub-hosted: on demand unless direct", async () => {

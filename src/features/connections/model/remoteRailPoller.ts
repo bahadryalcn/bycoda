@@ -1,8 +1,63 @@
+import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
+import { withTimeout } from "../../../shared/lib/withTimeout";
+import {
+  foregroundPollingDelay,
+  foregroundPollsVisible,
+  subscribeForegroundPolling,
+} from "../../../shared/lib/foregroundPolling";
 import type { HostSessionSummary } from "./protocol";
 import { remoteBackoffDelay, withBackoffJitter } from "./remotePollingPolicy";
 
 /** At most this many session-list requests of one rail are in flight. */
 export const RAIL_POLL_CONCURRENCY = 4;
+
+/** A focus or visibility wake skips a target whose read settled this recently, the same
+ * window `remoteReconnect` uses, so switching windows cannot repeat forced reads (and the
+ * SSH dials they start). Only the network returning bypasses it. */
+export const RAIL_WAKE_RECHECK_MS = 15_000;
+
+/** A load that has not settled by then counts as a failure, so a stuck read cannot hold its slot. */
+export const RAIL_LOAD_TIMEOUT_MS = 30_000;
+
+export interface SlotLimiter {
+  acquire: () => Promise<void>;
+  release: () => void;
+  /** Starts `task` once a slot is free and frees the slot when it settles.
+   * Resolves undefined without starting it when `cancelled()` holds by then. */
+  run: <T>(task: () => Promise<T>, cancelled?: () => boolean) => Promise<T | undefined>;
+  /** Lets every queued waiter proceed, so a stopped owner leaves nothing pending. */
+  drain: () => void;
+}
+
+/** Waiters are served first come, first served, so callers queue in priority order. */
+export function createSlotLimiter(limit: number = RAIL_POLL_CONCURRENCY): SlotLimiter {
+  let inFlight = 0;
+  const waiting: (() => void)[] = [];
+  const acquire = (): Promise<void> =>
+    inFlight < limit
+      ? (inFlight++, Promise.resolve())
+      : new Promise((resolve) => waiting.push(resolve));
+  const release = () => {
+    const next = waiting.shift();
+    if (next) next();
+    else inFlight--;
+  };
+  return {
+    acquire,
+    release,
+    run: async (task, cancelled) => {
+      await acquire();
+      try {
+        return cancelled?.() ? undefined : await task();
+      } finally {
+        release();
+      }
+    },
+    drain: () => {
+      for (const next of waiting.splice(0)) next();
+    },
+  };
+}
 
 /** Polls each target on its own schedule: a result is handed over as soon as
  * it arrives, and a failing target backs off by its own failure count, so a
@@ -15,12 +70,13 @@ export function startRailPoller<T>(options: {
   onError?: (target: T, reason: unknown) => void;
   foregroundMs?: number;
   concurrency?: number;
+  loadTimeoutMs?: number;
   random?: () => number;
+  refreshEvent?: string;
 }): () => void {
   const limit = options.concurrency ?? RAIL_POLL_CONCURRENCY;
   let stopped = false;
-  let inFlight = 0;
-  const waiting: (() => void)[] = [];
+  const { acquire, release, drain } = createSlotLimiter(limit);
   const timers = new Set<ReturnType<typeof setTimeout>>();
   type TargetState = {
     target: T;
@@ -28,6 +84,8 @@ export function startRailPoller<T>(options: {
     running: boolean;
     wakePending: boolean;
     force: boolean;
+    /** When the last read settled, on the monotonic clock. */
+    settledAt?: number;
     list?: HostSessionSummary[];
     timer?: ReturnType<typeof setTimeout>;
   };
@@ -39,15 +97,16 @@ export function startRailPoller<T>(options: {
     force: false,
   }));
   const online = () => typeof navigator === "undefined" || navigator.onLine !== false;
-  const hidden = () => typeof document !== "undefined" && document.hidden;
+  const active = () => online() && foregroundPollsVisible();
   const delayFor = (state: TargetState) => {
-    const foreground =
-      options.foregroundMs ??
-      (state.list?.some((session) => session.status === "running") ? 4_000 : 5_000);
-    const normal = !online() ? 60_000 : hidden() ? 30_000 : foreground;
+    const running = state.list?.some((session) => session.status === "running");
+    const foreground = foregroundPollingDelay(
+      options.foregroundMs ?? (running ? 4_000 : 5_000),
+      running,
+    );
     return state.failures
-      ? Math.max(normal, withBackoffJitter(remoteBackoffDelay(state.failures), options.random))
-      : normal;
+      ? Math.max(foreground, withBackoffJitter(remoteBackoffDelay(state.failures), options.random))
+      : foreground;
   };
   const clear = (state: TargetState) => {
     if (state.timer !== undefined) {
@@ -59,6 +118,7 @@ export function startRailPoller<T>(options: {
   const schedule = (state: TargetState, delay: number) => {
     if (stopped) return;
     clear(state);
+    if (!active()) return;
     const timer = setTimeout(() => {
       timers.delete(timer);
       state.timer = undefined;
@@ -66,16 +126,6 @@ export function startRailPoller<T>(options: {
     }, delay);
     state.timer = timer;
     timers.add(timer);
-  };
-
-  const acquire = (): Promise<void> =>
-    inFlight < limit
-      ? (inFlight++, Promise.resolve())
-      : new Promise((resolve) => waiting.push(resolve));
-  const release = () => {
-    const next = waiting.shift();
-    if (next) next();
-    else inFlight--;
   };
 
   const poll = async (state: TargetState) => {
@@ -86,11 +136,16 @@ export function startRailPoller<T>(options: {
     let cause: unknown;
     let attempted = false;
     try {
-      if (!stopped && online()) {
+      if (!stopped && active()) {
         attempted = true;
         const force = state.force;
         state.force = false;
-        const next = await (force ? options.load(state.target, true) : options.load(state.target));
+        const pending = force ? options.load(state.target, true) : options.load(state.target);
+        const next = await withTimeout(
+          pending,
+          options.loadTimeoutMs ?? RAIL_LOAD_TIMEOUT_MS,
+          "Session list",
+        );
         list = Array.isArray(next) ? next : undefined;
       }
     } catch (error) {
@@ -102,6 +157,7 @@ export function startRailPoller<T>(options: {
     state.running = false;
     if (stopped) return;
     if (attempted) {
+      state.settledAt = monotonicNow();
       if (list) {
         state.list = list;
         state.failures = 0;
@@ -111,36 +167,61 @@ export function startRailPoller<T>(options: {
         options.onError?.(state.target, cause ?? new Error("Session list unavailable"));
       }
     }
-    const immediate = state.wakePending && online() && !hidden();
+    const immediate = state.wakePending && active();
     state.wakePending = false;
     schedule(state, immediate ? 0 : delayFor(state));
   };
 
-  const wake = () => {
-    const active = online() && !hidden();
+  const wake = (force: boolean) => {
     for (const state of states) {
+      if (active() && !force) {
+        // A focus or visibility change is not new evidence about a machine: a read in
+        // flight or settled just now already answers it, and a failing target keeps its
+        // backoff instead of redialing on every window switch.
+        if (state.running) continue;
+        const spent = state.settledAt === undefined ? undefined : elapsedSince(state.settledAt);
+        if (state.failures > 0 || (spent !== undefined && spent < RAIL_WAKE_RECHECK_MS)) {
+          continue;
+        }
+      }
       clear(state);
-      state.force = active;
-      if (state.running) state.wakePending = active;
-      else schedule(state, active ? 0 : delayFor(state));
+      state.force = active();
+      if (state.running) state.wakePending = state.force;
+      else if (state.force) schedule(state, 0);
     }
   };
+  let wasVisible = foregroundPollsVisible();
+  const stopWatching = subscribeForegroundPolling((resumed) => {
+    const visible = foregroundPollsVisible();
+    if (resumed) wake(!wasVisible);
+    else
+      for (const state of states) {
+        if (!active()) clear(state);
+        else if (!state.running) {
+          const spent = state.settledAt === undefined ? 0 : elapsedSince(state.settledAt);
+          schedule(state, Math.max(0, delayFor(state) - spent));
+        }
+      }
+    wasVisible = visible;
+  });
+  const onNetwork = (event: Event) => wake(event.type === "online");
+  const onRefresh = () => wake(true);
   if (typeof window !== "undefined") {
-    window.addEventListener("focus", wake);
-    window.addEventListener("online", wake);
-    window.addEventListener("offline", wake);
-    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("online", onNetwork);
+    window.addEventListener("offline", onNetwork);
+    if (options.refreshEvent) window.addEventListener(options.refreshEvent, onRefresh);
   }
-  for (const state of states) void poll(state);
+  if (active()) for (const state of states) void poll(state);
   return () => {
     stopped = true;
     if (typeof window !== "undefined") {
-      window.removeEventListener("focus", wake);
-      window.removeEventListener("online", wake);
-      window.removeEventListener("offline", wake);
-      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("online", onNetwork);
+      window.removeEventListener("offline", onNetwork);
+      if (options.refreshEvent) window.removeEventListener(options.refreshEvent, onRefresh);
     }
-    waiting.length = 0;
+    stopWatching();
+    // Let queued polls run to their `stopped` check instead of leaving them pending.
+    drain();
     timers.forEach(clearTimeout);
     timers.clear();
   };

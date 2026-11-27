@@ -5,6 +5,7 @@ import { copyText } from "../../../platform/tauri/clipboard";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { TextField } from "../../../shared/ui/TextField";
@@ -12,6 +13,7 @@ import { TextareaField } from "../../../shared/ui/TextareaField";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { isSingleLineCommand } from "../../terminal/model/terminalSuggestions";
 import {
+  DuplicateSshSnippetError,
   insertSshSnippet,
   loadSshSnippets,
   saveSshSnippet,
@@ -19,11 +21,17 @@ import {
   type SshSnippet,
 } from "../model/sshSnippets";
 
+/** Saved commands show a search field only past this many entries. */
+const SEARCH_FROM = 8;
+
 type ServerSnippetsProps = {
   serverId: string;
   serverName?: string;
+  /** Optional draft from an explicit terminal selection. It still requires review and save. */
+  initialCommand?: string;
   /** Supply only when a verified remote prompt/echo capability permits insertion. */
   onInsert?: (text: string) => Promise<void>;
+  onAlreadySaved?: () => void;
   embedded?: boolean;
 };
 
@@ -36,94 +44,112 @@ export function ServerSnippets(props: ServerSnippetsProps) {
 function ServerSnippetsForm({
   serverId,
   serverName,
+  initialCommand,
   onInsert,
+  onAlreadySaved,
   embedded = false,
 }: ServerSnippetsProps) {
   const [snippets, setSnippets] = useState<SshSnippet[]>([]);
   const [selected, setSelected] = useState<SshSnippet>();
   const [name, setName] = useState("");
-  const [command, setCommand] = useState("");
-  const [error, setError] = useState("");
+  const [command, setCommand] = useState(() =>
+    initialCommand && initialCommand.length <= 8192 && isSingleLineCommand(initialCommand)
+      ? initialCommand
+      : "",
+  );
+  const [problem, setProblem] = useState("");
   const [notice, setNotice] = useState<"" | "saved" | "copied" | "inserted">("");
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState("");
-  const matches = snippets.filter((snippet) =>
-    `${snippet.name} ${snippet.command}`
-      .toLocaleLowerCase()
-      .includes(search.trim().toLocaleLowerCase()),
-  );
+  const createOnly = initialCommand !== undefined;
+  const query = search.trim().toLocaleLowerCase();
+  const matches = query
+    ? snippets.filter((snippet) =>
+        `${snippet.name} ${snippet.command}`.toLocaleLowerCase().includes(query),
+      )
+    : snippets;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep the visible command list in sync with local and cross-window template edits.
   useEffect(() => {
+    if (createOnly) return;
     const load = () => {
       try {
         setSnippets(loadSshSnippets(serverId));
       } catch {
-        setError(t("Couldn’t load saved commands."));
+        setProblem(t("Couldn’t load saved commands."));
       }
     };
     load();
     return subscribeSshSnippets(load);
-  }, [serverId]);
+  }, [serverId, createOnly]);
   return (
     <section
       aria-label={t("Saved SSH commands")}
       className={`@container/snippets flex min-w-0 flex-col gap-3 ${embedded ? "" : "p-4"}`}
     >
-      <Heading size="section" level={3}>
-        {t("Saved commands")}
-      </Heading>
+      {!createOnly ? (
+        <Heading size="section" level={3}>
+          {t("Saved commands")}
+        </Heading>
+      ) : null}
       <Text as="p" tone="muted" className="break-words">
         {t("Target")}: {serverName ?? serverId}
       </Text>
-      <SearchInput
-        appearance="field"
-        aria-label={t("Search saved commands")}
-        placeholder={t("Search saved commands")}
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-      />
-      <div className="grid min-w-0 gap-4 @min-[48rem]/snippets:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-        <div className="min-w-0">
-          {matches.length === 0 ? (
-            <EmptyState
-              size="inline"
-              kind={snippets.length ? "filtered" : undefined}
-              description={t(snippets.length ? "No matching commands." : "No saved commands yet.")}
-              onReset={snippets.length ? () => setSearch("") : undefined}
-            />
-          ) : null}
-          <ul
-            aria-label={t("Saved commands")}
-            className="flex max-h-60 flex-col gap-1 overflow-y-auto"
-          >
-            {matches.map((snippet) => (
-              <li key={snippet.id}>
-                <Button
-                  variant="item"
-                  selected={selected?.id === snippet.id}
-                  aria-pressed={selected?.id === snippet.id}
-                  onClick={() => {
-                    setSelected(snippet);
-                    setName(snippet.name);
-                    setCommand(snippet.command);
-                    setError("");
-                    setNotice("");
-                  }}
-                >
-                  <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
-                    {snippet.name}
-                  </Text>
-                  <Text tone="muted">v{snippet.version}</Text>
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </div>
+      {!createOnly && snippets.length > SEARCH_FROM ? (
+        <SearchInput
+          appearance="field"
+          aria-label={t("Search saved commands")}
+          placeholder={t("Search saved commands")}
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+      ) : null}
+      <div
+        className={`grid min-w-0 gap-4 ${createOnly ? "" : "@min-[48rem]/snippets:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]"}`}
+      >
+        {!createOnly ? (
+          <div className="min-w-0">
+            {matches.length === 0 ? (
+              <EmptyState
+                size="inline"
+                kind={snippets.length ? "filtered" : undefined}
+                description={
+                  snippets.length ? t("No matching commands.") : t("No saved commands yet.")
+                }
+                onReset={snippets.length ? () => setSearch("") : undefined}
+              />
+            ) : null}
+            <ul
+              aria-label={t("Saved commands")}
+              className="flex max-h-60 flex-col gap-1 overflow-y-auto"
+            >
+              {matches.map((snippet) => (
+                <li key={snippet.id}>
+                  <Button
+                    variant="item"
+                    pressed={selected?.id === snippet.id}
+                    onClick={() => {
+                      setSelected(snippet);
+                      setName(snippet.name);
+                      setCommand(snippet.command);
+                      setProblem("");
+                      setNotice("");
+                    }}
+                  >
+                    <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+                      {snippet.name}
+                    </Text>
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <form
           className="flex flex-col gap-3"
           onSubmit={(event) => {
             event.preventDefault();
             if (busy) return;
-            setError("");
+            setProblem("");
             setNotice("");
             try {
               const saved = saveSshSnippet({
@@ -136,8 +162,13 @@ function ServerSnippetsForm({
               });
               setSelected(saved);
               setNotice("saved");
-            } catch {
-              setError(
+            } catch (reason) {
+              if (reason instanceof DuplicateSshSnippetError) {
+                if (createOnly && onAlreadySaved) onAlreadySaved();
+                else setProblem(t("Command already saved."));
+                return;
+              }
+              setProblem(
                 t(
                   "Couldn’t save this command. Reload a changed command and use one line without terminal controls.",
                 ),
@@ -146,9 +177,8 @@ function ServerSnippetsForm({
           }}
         >
           <TextField
-            label={t("Name")}
+            label={t("Name (optional)")}
             value={name}
-            required
             maxLength={200}
             disabled={busy}
             onChange={(event) => {
@@ -168,11 +198,11 @@ function ServerSnippetsForm({
               setNotice("");
             }}
           />
-          <Text as="p" tone="muted">
-            {t("Commands are saved locally. Do not include secrets.")}
-          </Text>
-          <div className="flex flex-wrap justify-end gap-2">
-            {selected ? (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <InfoPopover>
+              <p>{t("Commands are saved locally. Do not include secrets.")}</p>
+            </InfoPopover>
+            {!createOnly && selected ? (
               <Button
                 variant="ghost"
                 disabled={busy}
@@ -181,7 +211,7 @@ function ServerSnippetsForm({
                   setName("");
                   setCommand("");
                   setNotice("");
-                  setError("");
+                  setProblem("");
                 }}
               >
                 {t("New command")}
@@ -189,40 +219,49 @@ function ServerSnippetsForm({
             ) : null}
             <Button
               type="submit"
+              variant={createOnly ? "primary" : "secondary"}
               success={notice === "saved"}
               successLabel={t("Saved")}
-              disabled={busy || !name.trim() || !isSingleLineCommand(command)}
+              disabled={busy || !isSingleLineCommand(command)}
+              disabledReason={
+                !busy && !isSingleLineCommand(command)
+                  ? t("Enter a valid single-line command")
+                  : undefined
+              }
             >
               {t("Save")}
             </Button>
-            <Button
-              variant={onInsert ? "secondary" : "primary"}
-              loading={busy}
-              success={notice === "copied"}
-              successLabel={t("Copied")}
-              disabled={
-                !selected ||
-                selected.command !== command ||
-                !selected.reviewed ||
-                !isSingleLineCommand(command)
-              }
-              onClick={async () => {
-                if (!selected || busy) return;
-                setBusy(true);
-                setError("");
-                setNotice("");
-                try {
-                  await insertSshSnippet(selected, serverId, copyText);
-                  setNotice("copied");
-                } catch {
-                  setError(t("Couldn’t copy this command. Review and save it first."));
-                } finally {
-                  setBusy(false);
+            {!createOnly ? (
+              <Button
+                variant={onInsert ? "secondary" : "primary"}
+                loading={busy}
+                success={notice === "copied"}
+                successLabel={t("Copied")}
+                disabled={
+                  !selected ||
+                  selected.command !== command ||
+                  !selected.reviewed ||
+                  !isSingleLineCommand(command)
                 }
-              }}
-            >
-              {t("Copy command")}
-            </Button>
+                disabledReason={selected ? t("Save changes first") : t("Select a saved command")}
+                onClick={async () => {
+                  if (!selected || busy) return;
+                  setBusy(true);
+                  setProblem("");
+                  setNotice("");
+                  try {
+                    await insertSshSnippet(selected, serverId, copyText);
+                    setNotice("copied");
+                  } catch {
+                    setProblem(t("Couldn’t copy this command. Review and save it first."));
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                {t("Copy command")}
+              </Button>
+            ) : null}
             {onInsert ? (
               <Button
                 variant="primary"
@@ -233,16 +272,17 @@ function ServerSnippetsForm({
                   selected.command !== command ||
                   !isSingleLineCommand(command)
                 }
+                disabledReason={selected ? t("Save changes first") : t("Select a saved command")}
                 onClick={async () => {
                   if (!selected || busy) return;
                   setBusy(true);
-                  setError("");
+                  setProblem("");
                   setNotice("");
                   try {
                     await insertSshSnippet(selected, serverId, onInsert);
                     setNotice("inserted");
                   } catch {
-                    setError(
+                    setProblem(
                       t(
                         "Couldn’t insert this command. Review it and open the target terminal first.",
                       ),
@@ -263,7 +303,7 @@ function ServerSnippetsForm({
           {t("This shared template changed. Review and save it before inserting.")}
         </Text>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {problem ? <InlineError>{problem}</InlineError> : null}
       <LiveText
         text={notice === "inserted" ? t("Inserted. Press Enter in the terminal to run.") : ""}
         size="caption"

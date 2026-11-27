@@ -4,12 +4,13 @@ import {
 } from "../../../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { chatBackgroundKind } from "../../../../../shared/lib/chatBackgroundKind";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { Text } from "../../../../../shared/ui/Text";
 import { useConfirm } from "../../../../../shared/ui/ConfirmDialog";
-import { Pencil, RefreshCw, Trash2 } from "../../../../../shared/ui/icons";
+import { DropdownMenu } from "../../../../../shared/ui/DropdownMenu";
+import { MoreHorizontal, Pencil, RefreshCw, Trash2 } from "../../../../../shared/ui/icons";
 import { ACCENT_COLOR_DEFAULT, THEME_DARK_LIGHTNESS_DEFAULT } from "../../../model/appearance";
 import { libraryImageSrc, useBackgroundLibrary } from "../../../model/backgroundLibrary";
 import { useSavedThemes, type SavedTheme } from "../../../model/savedThemes";
@@ -24,13 +25,69 @@ import {
   renameTheme,
 } from "./savedThemeActions";
 import { ThemeNameDialog } from "./ThemeNameDialog";
+import { ErrorDetails } from "../../../../../shared/ui/ErrorDetails";
+import { errorText } from "../../../../../shared/lib/errors";
 import "./ThemeControls.css";
 import { writeGeneratorValue } from "./themeGeneratorSession";
 
+/** One "more" button per card; Rename, Overwrite and Delete live in its menu (touch has no hover). */
+function SavedThemeMenu({
+  onRename,
+  onOverwrite,
+  onDelete,
+}: {
+  onRename: () => void;
+  onOverwrite: () => void;
+  onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <Button
+        ref={trigger}
+        iconOnly
+        size="sm"
+        variant="ghost"
+        label={t("More actions")}
+        title=""
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <MoreHorizontal />
+      </Button>
+      {open ? (
+        <DropdownMenu
+          anchor={trigger}
+          returnFocusRef={trigger}
+          label={t("More actions")}
+          items={[
+            { kind: "item", id: "rename", label: t("Rename"), icon: <Pencil /> },
+            {
+              kind: "item",
+              id: "overwrite",
+              label: t("Overwrite with current look"),
+              icon: <RefreshCw />,
+            },
+            { kind: "item", id: "delete", label: t("Delete"), icon: <Trash2 />, danger: true },
+          ]}
+          onClose={() => setOpen(false)}
+          onPick={(id) => {
+            if (id === "rename") onRename();
+            else if (id === "overwrite") onOverwrite();
+            else onDelete();
+          }}
+        />
+      ) : null}
+    </>
+  );
+}
+
 /**
- * Saved looks as one horizontally scrolling strip of compact cards, starting with a dashed
- * save card: click applies the whole look including its background image. Each card can
- * be renamed, overwritten with the current look, or deleted (after a confirmation).
+ * Saved looks as a strip of compact cards, starting with a dashed save card: click applies the
+ * whole look including its background image. Each card has one menu to rename it, overwrite it
+ * with the current look, or delete it (both of those after a confirmation).
  */
 export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) {
   useLocale();
@@ -38,7 +95,7 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
   const { images } = useBackgroundLibrary();
   const { confirm, dialog } = useConfirm();
   const [renaming, setRenaming] = useState<SavedTheme | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ text: string; detail?: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const apply = async (theme: SavedTheme) => {
@@ -49,9 +106,9 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
       const outcome = await applySavedTheme(appearance, theme);
       writeGeneratorValue("selectedLookName", theme.name, "");
       if (outcome === "image-missing")
-        setNotice(t("Saved media is missing. Your current design is unchanged."));
+        setNotice({ text: t("Saved media is missing. Your current design is unchanged.") });
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : String(error));
+      setNotice({ text: t("Could not apply the theme."), detail: errorText(error) });
     } finally {
       setBusy(false);
     }
@@ -86,7 +143,7 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
           {...surfaceAttributes({ frame: "pane", borderStyle: "dashed" }, "theme-saved-card")}
           data-add
         >
-          <SaveLookButton appearance={appearance} card />
+          <SaveLookButton appearance={appearance} />
         </li>
         {themes.map((theme) => {
           const look = theme.look;
@@ -115,7 +172,7 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
                 variant="item"
                 className="theme-saved-apply"
                 disabled={busy || appearance.chatBackgroundBusy}
-                tooltip={t("Apply this look")}
+                disabledReason={t("Wait for the current operation to finish")}
                 onClick={() => {
                   apply(theme).catch((error: unknown) => console.error(error));
                 }}
@@ -156,41 +213,25 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
                   actionSurface.className,
                 )}
               >
-                <Button
-                  iconOnly
-                  size="sm"
-                  variant="ghost"
-                  label={t("Rename")}
-                  onClick={() => setRenaming(theme)}
-                >
-                  <Pencil />
-                </Button>
-                <Button
-                  iconOnly
-                  size="sm"
-                  variant="ghost"
-                  label={t("Overwrite with current look")}
-                  onClick={() => overwrite(theme)}
-                >
-                  <RefreshCw />
-                </Button>
-                <Button
-                  iconOnly
-                  size="sm"
-                  variant="ghost"
-                  label={t("Delete")}
-                  onClick={() => remove(theme)}
-                >
-                  <Trash2 />
-                </Button>
+                <SavedThemeMenu
+                  onRename={() => setRenaming(theme)}
+                  onOverwrite={() => overwrite(theme)}
+                  onDelete={() => remove(theme)}
+                />
               </span>
             </li>
           );
         })}
       </ul>
       {notice ? (
-        <SettingsFeedback state="warning" onDismiss={() => setNotice(null)}>
-          {notice}
+        <SettingsFeedback
+          state="warning"
+          onDismiss={() => setNotice(null)}
+          extra={
+            notice.detail ? <ErrorDetails title={notice.text} detail={notice.detail} /> : undefined
+          }
+        >
+          {notice.text}
         </SettingsFeedback>
       ) : null}
       {renaming ? (

@@ -1,5 +1,5 @@
 import { getLocale } from "../../../shared/i18n/core";
-import { voiceLanguageCode } from "./voiceLanguage";
+import { voiceLanguageCode } from "../../../shared/model/voice-realtime/voiceLanguage";
 import { loadVoiceSettings } from "./voiceSettings";
 
 /** Wake and sleep phrase defaults per language; `{name}` is the assistant's saved name. */

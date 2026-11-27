@@ -46,7 +46,7 @@ export function PaletteCards({ appearance }: { appearance: AppearanceSettings })
       options={THEME_PALETTE_PRESETS.map((palette) => ({
         value: palette.name,
         ariaLabel: palette.name,
-        tooltip: `${palette.name}: ${t(palette.note)}`,
+        tooltip: `${palette.name}: ${palette.note()}`,
         content: (
           <>
             <span className="theme-palette-swatches" aria-hidden="true">

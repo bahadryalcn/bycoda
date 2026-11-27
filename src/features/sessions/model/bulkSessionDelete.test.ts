@@ -1,11 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { setLanguagePreference } from "../../../shared/i18n";
 import {
-  bulkDeleteConfirmMessage,
-  bulkDeleteOutcome,
-  bulkDeleteSummary,
+  bulkDeleteNotice,
+  bulkDeleteNoticeText,
   deleteSessionsInBulk,
   splitRunningSessions,
 } from "./bulkSessionDelete";
+
+afterEach(async () => {
+  await setLanguagePreference("en");
+});
 
 describe("bulk session delete", () => {
   it("separates running conversations and drops duplicates", () => {
@@ -83,31 +87,58 @@ describe("bulk session delete", () => {
       [2, 3],
       [3, 3],
     ]);
-    expect(bulkDeleteOutcome(result)).toBe(
+    expect(bulkDeleteNoticeText(bulkDeleteNotice(result))).toBe(
       "1 conversation deleted. 1 running conversation was skipped. 1 conversation could not be deleted: disk full.",
     );
-    expect(bulkDeleteOutcome({ deleted: ["a", "b"], skipped: [], failed: [] })).toBe(
-      "2 conversations deleted.",
-    );
-  });
-
-  it("words the confirmation for the count and the skipped ones", () => {
-    expect(bulkDeleteConfirmMessage(1, 0)).toBe("Delete this conversation? This can’t be undone.");
-    expect(bulkDeleteConfirmMessage(3, 2)).toBe(
-      "Delete 3 conversations? This can’t be undone.\n\n2 running conversations will be skipped.",
-    );
-  });
-
-  it("summarizes only what was left behind", () => {
-    expect(bulkDeleteSummary({ skipped: [], failed: [] })).toBeNull();
-    expect(bulkDeleteSummary({ skipped: ["a", "b"], failed: [] })).toBe(
-      "2 running conversations were skipped.",
-    );
     expect(
-      bulkDeleteSummary({
-        skipped: ["a"],
-        failed: [{ sessionId: "b" }, { sessionId: "c", error: "disk full" }],
-      }),
+      bulkDeleteNoticeText(bulkDeleteNotice({ deleted: ["a", "b"], skipped: [], failed: [] })),
+    ).toBe("2 conversations deleted.");
+  });
+
+  it("keeps the counts and the first error of what was left behind", () => {
+    expect(
+      bulkDeleteNoticeText(bulkDeleteNotice({ deleted: [], skipped: [], failed: [] })),
+    ).toBeNull();
+    expect(
+      bulkDeleteNoticeText(bulkDeleteNotice({ deleted: [], skipped: ["a", "b"], failed: [] })),
+    ).toBe("2 running conversations were skipped.");
+    expect(
+      bulkDeleteNoticeText(
+        bulkDeleteNotice({
+          deleted: [],
+          skipped: ["a"],
+          failed: [{ sessionId: "b" }, { sessionId: "c", error: "disk full" }],
+        }),
+      ),
     ).toBe("1 running conversation was skipped. 2 conversations could not be deleted: disk full.");
+  });
+
+  it("uses the singular and the no-detail wording for a single failure", () => {
+    expect(
+      bulkDeleteNoticeText(
+        bulkDeleteNotice({ deleted: [], skipped: [], failed: [{ sessionId: "b" }] }),
+      ),
+    ).toBe("1 conversation could not be deleted.");
+    expect(
+      bulkDeleteNoticeText(
+        bulkDeleteNotice({
+          deleted: [],
+          skipped: [],
+          failed: [{ sessionId: "b" }, { sessionId: "c" }],
+        }),
+      ),
+    ).toBe("2 conversations could not be deleted.");
+  });
+
+  it("translates the result through the catalog and keeps the raw error verbatim", async () => {
+    await setLanguagePreference("tr");
+    const notice = bulkDeleteNotice({
+      deleted: ["a", "b"],
+      skipped: ["c"],
+      failed: [{ sessionId: "d", error: "disk full" }],
+    });
+    expect(bulkDeleteNoticeText(notice)).toBe(
+      "2 konuşma silindi. Çalışan 1 konuşma atlandı. 1 konuşma silinemedi: disk full.",
+    );
   });
 });

@@ -1,0 +1,26 @@
+/* The floating chip that follows a dragged explorer row. */
+.explorer-file-drag-preview {
+  position: fixed;
+  inset: 0 auto auto 0;
+  z-index: var(--layer-drag);
+  display: flex;
+  width: max-content;
+  max-width: min(280px, calc(100vw - 16px));
+  height: var(--ui-control-height-compact);
+  align-items: center;
+  gap: var(--ui-space-2, 0.5rem);
+  margin: 0;
+  padding-inline: var(--space-2);
+  overflow: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+  opacity: 1;
+  will-change: transform;
+  contain: paint;
+}
+
+.explorer-file-drag-preview > span {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}

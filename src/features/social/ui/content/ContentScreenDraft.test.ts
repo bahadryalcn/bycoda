@@ -25,7 +25,12 @@ vi.mock("../../../../shared/ui/ConfirmDialog", () => ({
 const refetch = vi.fn();
 const state: { data: Record<string, unknown> } = { data: {} };
 vi.mock("./useContentData", () => ({
-  useContentData: () => state.data,
+  useContentData: () => ({
+    scheduledJobs: [],
+    scheduledCampaigns: [],
+    scheduledLoading: false,
+    ...state.data,
+  }),
 }));
 
 let element: HTMLDivElement;
@@ -130,12 +135,14 @@ describe("opening the editor", () => {
     expect(editor.props!.projectId).toBe("p1");
   });
 
-  it("opens a calendar day as a later post at 09:00 on that day", () => {
+  it("opens the selected calendar day with a future time", () => {
     render();
-    const day = element.querySelector<HTMLButtonElement>('button[aria-label^="New post on"]')!;
+    const day = element.querySelector<HTMLButtonElement>(
+      'button[aria-label^="New post on"]:not([aria-disabled="true"]):not(:disabled)',
+    )!;
     act(() => day.click());
     expect(draft().when).toBe("later");
-    expect(draft().scheduledAt).toMatch(/^\d{4}-\d{2}-\d{2}T09:00$/);
+    expect(new Date(draft().scheduledAt).getTime()).toBeGreaterThan(Date.now());
   });
 
   it("loads a saved post with its id and revision", () => {
@@ -168,7 +175,11 @@ describe("unsaved drafts are not lost", () => {
     typeInEditor("Half-written idea");
     act(() => editor.props!.onClose());
     act(() =>
-      element.querySelector<HTMLButtonElement>('button[aria-label^="New post on"]')!.click(),
+      element
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label^="New post on"]:not([aria-disabled="true"]):not(:disabled)',
+        )!
+        .click(),
     );
     expect(draft().text).toBe("Half-written idea");
     expect(draft().when).toBe("now");
@@ -328,16 +339,16 @@ it("retains busy state and errors on their original project while its editor is 
   expect(editor.props!.operationPending).toBe(true);
   expect(draft().text).toBe("Project one");
   render(props({ client, projectId: "p2" }));
-  act(() => original.onOperationError?.("Original project failed"));
+  act(() => original.onOperationError?.([{ title: "Original project failed" }]));
   act(() => original.onBusyChange?.(false));
   expect(text()).not.toContain("Original project failed");
   expect(draft().text).toBe("Project two");
   render(props({ client }));
   expect(editor.props!.operationPending).toBe(false);
-  expect(text()).toContain("Original project failed");
+  expect(editor.props!.operationError).toEqual([{ title: "Original project failed" }]);
 });
 
-it("exposes bounded content continuation and warns that the calendar/list is partial", () => {
+it("exposes bounded content continuation in the list only", () => {
   const loadMore = vi.fn();
   state.data = {
     snapshot: snapshot(),
@@ -348,9 +359,9 @@ it("exposes bounded content continuation and warns that the calendar/list is par
     loadMore,
   };
   render();
-  expect(text()).toContain(
-    "More posts are available. Load more to include older posts in this view.",
-  );
+  // The calendar reads by schedule, so older pages are offered only in the list.
+  expect(text()).not.toContain("More posts are available");
+  act(() => buttonWith("List")!.click());
   act(() => buttonWith("Load more")!.click());
   expect(loadMore).toHaveBeenCalledOnce();
 });

@@ -1,8 +1,6 @@
-/* Placement only: a narrow chevron segment joined to the microphone. */
 .options {
-  inline-size: 16px;
-  min-inline-size: 16px;
-  padding-inline: 0;
+  inline-size: var(--ui-space-5, 1.25rem);
+  min-inline-size: var(--ui-space-5, 1.25rem);
 }
 
 /* Icon content only: the shared Button owns geometry, tones and interaction. */

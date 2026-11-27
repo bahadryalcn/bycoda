@@ -1,15 +1,15 @@
-import { Text } from "../../../../shared/ui/Text";
+import { Text, textAttributes } from "../../../../shared/ui/Text";
 import { useMemo, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import type { AssistantProfilePatch } from "../../../../shared/model/host-contracts/assistant";
 import { Button } from "../../../../shared/ui/Button";
 import { ArrowLeft, Check } from "../../../../shared/ui/icons";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
-import { InfoPopover } from "../../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../../shared/ui/InfoPopover";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { ModalActions, ModalFooter } from "../../../../shared/ui/Modal";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
-import { Surface, surfaceAttributes } from "../../../../shared/ui/Surface";
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { TextareaField } from "../../../../shared/ui/TextareaField";
 import { builderEntries, builderPatch, type BuilderFieldKey } from "../../model/assistantBuilder";
 import { AssistantAvatarMark } from "../AssistantAvatar";
@@ -53,7 +53,7 @@ export function BuilderPreview({
   const nothing = checked.size === 0 && !(avatar && useAvatar);
 
   return (
-    <Text as="div" size="inherit" tone="inherit" leading="normal" className={styles.stage}>
+    <div {...textAttributes({ size: "inherit", tone: "inherit", leading: "normal" }, styles.stage)}>
       {entries.length > 0 && (
         <Text as="p" size="body" tone="inherit" leading="normal" className={styles.summary}>
           {proposal.summary}
@@ -61,7 +61,7 @@ export function BuilderPreview({
       )}
       {entries.length > 0 && <SectionLabel as="h3">{t("What would change")}</SectionLabel>}
       {entries.length > 0 ? (
-        <Surface as="ul" variant="page" padding="none" className={styles.fields}>
+        <ul className={styles.fields}>
           {entries.map((entry) => (
             <li key={entry.key} {...surfaceAttributes({ separator: "block" }, styles.field)}>
               <Checkbox
@@ -74,7 +74,9 @@ export function BuilderPreview({
                       t("Now: {p0}", { p0: entry.before })
                     )
                   ) : (
-                    <Text size="inherit" tone="secondary" className={styles.change}>
+                    <span
+                      {...textAttributes({ size: "inherit", tone: "secondary" }, styles.change)}
+                    >
                       <span>{entry.before}</span>
                       <span aria-hidden="true">→</span>
                       <Text
@@ -86,7 +88,7 @@ export function BuilderPreview({
                       >
                         {entry.after}
                       </Text>
-                    </Text>
+                    </span>
                   )
                 }
               />
@@ -103,7 +105,7 @@ export function BuilderPreview({
               ) : null}
             </li>
           ))}
-        </Surface>
+        </ul>
       ) : (
         <Text as="p" size="caption" tone="secondary" leading="normal" className={styles.muted}>
           {t("Your assistant already matches this. Nothing to change.")}
@@ -136,12 +138,13 @@ export function BuilderPreview({
       </Disclosure>
       <ModalFooter>
         <ModalActions
+          reason={nothing ? t("Select a change to apply") : undefined}
           start={
-            <InfoPopover label={t("Permissions")}>
+            <InfoTooltip label={t("Permissions")}>
               {t(
                 "Permissions stay manual: jobs and autonomy, execution access, projects and computer use are not changed here.",
               )}
-            </InfoPopover>
+            </InfoTooltip>
           }
         >
           <Button
@@ -170,6 +173,6 @@ export function BuilderPreview({
           </Button>
         </ModalActions>
       </ModalFooter>
-    </Text>
+    </div>
   );
 }

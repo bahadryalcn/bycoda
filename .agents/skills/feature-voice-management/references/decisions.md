@@ -51,3 +51,74 @@ The global Room reads and changes files only inside owner-added folders (reads u
 > I do not want an allowed-apps list; it should follow the permission. Full access allows everything, Auto asks. For example it wants to use Chrome: show "do you allow this?" on screen. If allowed, add it to the list directly and continue. Or full manual, approving one by one. Nobody will use it this way, because everyone wants autonomy.
 
 Computer use needs no prepared app list. A tool call naming an app the owner has not approved asks once in the native dialog; approval adds the app to the owner's approved apps and the call continues. Ask mode still asks before every action; Auto launches and acts on approved apps without a dialog and still asks for the clipboard and physical input; Full access covers every app and asks nothing. Only the owner removes approved apps or changes the mode.
+
+2026-11-25, owner chat after a spoken "Ufak bi Pac-Man oyunu yaptır Arif." became a planned Goal that produced nothing:
+
+> Yeni bir iş verdiğimde, nasıl çalışması gerektiğine, en efektif ve optimum şekilde nasıl çalışacağına kendi karar verebilmesi gerekiyor. Benim yeni bir session açıp “yaptır” dememe gerek kalmaması lazım.
+
+> ben basit günlük [işler veriyorum]
+
+Voice chooses the route itself. A build, create, make or fix request is work and goes by default
+to a normal coding session in the matching project, created with the request and submitted; the
+project-choice path handles a genuinely unknown project. Assistant jobs, tasks, goals and crews
+are used only on an explicit request for tracked, followed-up, background or scheduled work, and
+their exact-intent admission is unchanged. A short answer to a pending question, or speech lost
+in a reconnect, continues the carried work request. This supersedes the earlier routing rule
+that opened a session only on an explicit request for one; native approvals for push, merge,
+deletion and commands keep their gates.
+
+2026-11-25, owner chat about approvals in Full access (translated from Turkish):
+
+> there should be no approval or anything like it in full access
+
+When the native standing consent is level "everything" with no critical exclusions
+(`assistant_consent_get`, read fresh; any missing, other-credential, loading or failed read counts
+as not Full access), voice asks for nothing it controls: a job, note or session delete that the
+owner's accepted words identify exactly runs without a confirm card or dialog. Any other level,
+or any exclusion, keeps today's cards and dialogs. Disambiguation (several jobs could be meant)
+and the explicit-speech requirement of stop-all are not approvals and stay. This supersedes, for
+the Full access state only, the earlier same-day line that deletion keeps its gates.
+
+2026-11-25, same owner chat, after being shown the four groups that still prompted under Full
+access and told that a push to main and a sent message cannot be undone (Turkish, then translated):
+
+> full access te onay filan olmaması gerekiyor
+>
+> benim kararlarım da hiç birinde sormasın.
+
+> there should be no approval or anything like it in full access
+>
+> my decision: it must not ask in any of them.
+
+Full access is one of two owner-set states. For the Room and voice: an active native standing
+consent on the current credential at level "everything". For a coding session: its Host runtime
+mode "full-access". Under it Git push and merge, direct social sends, saved SSH commands, Room
+Inbox comments, reviews and pull request changes, and Room Jira reads and board changes run
+without a dialog; so do a full-access coding session's Inbox writes and its task delete, transfer
+and note resolve (native asks the Host with `<action>.permission`). The owner's ticked exclusions
+keep their own dialog (pushMain for a push or merge to main
+and every Inbox pull request merge, sendMessages for social sends and Inbox comments and reviews);
+SSH commands, like `commands.run`, skip only with zero exclusions. Any other level, a missing or
+unreadable grant, or a supervised session keeps today's dialogs. Admission without a dialog is
+recorded (`approvedBy` on the management receipt and SSH status, a native log line for Room
+Inbox). This supersedes the 2026-11-10 line that Git push/merge and direct social sends always go
+through the native owner approval, and the Host rule that publication keeps its prompt in a Full
+access coding session. Credential entry, OS permissions, install/update, account and pairing
+changes and clarifying questions keep their own flows.
+
+2026-11-25, same owner chat, after being told what still asked under Full access (a session's
+Jira board change, the separate computer use permission mode, and credential, OS and install
+flows; translated from Turkish):
+
+> desktop.act can use the same setting; there is no need for two separate settings. In Jira, if
+> there is full access it does not need to ask, unless it is a delete. Credentials, OS and so on
+> stay as they are.
+
+Computer use has no permission control of its own. Its stored mode is ask or full (the "auto"
+mode is removed) and only the Assistant access settings write it: full when the standing
+permission is "everything" and `computerUse` is not an exception, ask otherwise. This supersedes
+the 2026-11-10 line that computer use gets its own owner-only mode with ask, auto and full. A
+full-access coding session's Jira board move or transition skips the desktop review through a
+one-use native permit bound to that exact change (`inbox.write.authorize`, issued only after the
+Host confirms the session mode); the board path has no delete, and anything that is not a move or
+a transition gets no permit. Credential entry, OS permissions and install/update are unchanged.

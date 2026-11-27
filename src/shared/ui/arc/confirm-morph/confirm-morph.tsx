@@ -577,7 +577,7 @@ export function ConfirmMorph({
     return () => document.removeEventListener("pointerdown", down);
   }, [cancel, cancelOnOutsidePress, state]);
 
-  // Focus moves with the morph: Confirm while asking, the root while counting or working, Undo or Retry on a result, the trigger at rest.
+  // Focus moves with the morph: Cancel while asking, the root while counting or working, Undo or Retry on a result, the trigger at rest.
   useLayoutEffect(() => {
     if (!pendingFocus.current) return;
     pendingFocus.current = false;
@@ -640,7 +640,6 @@ export function ConfirmMorph({
         selected={tone === "danger"}
         type="button"
         className={styles.confirm}
-        data-autofocus
         aria-describedby={holdHintId}
         onPointerDown={holdPointer}
         onPointerUp={releaseHold}
@@ -666,7 +665,6 @@ export function ConfirmMorph({
         selected={tone === "danger"}
         type="button"
         className={styles.confirm}
-        data-autofocus
         onClick={answer}
         onKeyDown={(event) => {
           if (event.repeat) event.preventDefault();
@@ -692,6 +690,7 @@ export function ConfirmMorph({
                 variant="ghost"
                 type="button"
                 className={styles.secondary}
+                data-autofocus
                 onClick={cancel}
               >
                 {cancelLabel}

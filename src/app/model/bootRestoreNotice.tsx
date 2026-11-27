@@ -1,7 +1,8 @@
 import { createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useT } from "../../shared/i18n";
-import { TransientNotice } from "../../shared/ui/TransientNotice";
+import { useConfirm } from "../../shared/ui/ConfirmDialog";
+import { Toast } from "../../shared/ui/ToastRegion";
 
 interface BootRestoreActions {
   /** One more read of the saved layout; true when it can be read now. */
@@ -16,6 +17,7 @@ function BootRestoreNotice({
   onClose,
 }: BootRestoreActions & { onClose: () => void }) {
   const t = useT();
+  const { confirm, dialog } = useConfirm();
   const [pending, setPending] = useState(false);
   const [stillFailing, setStillFailing] = useState(false);
   const retry = async () => {
@@ -30,31 +32,42 @@ function BootRestoreNotice({
     setStillFailing(true);
     setPending(false);
   };
-  return (
-    <TransientNotice
-      tone="warning"
-      title={t("Could not restore your tabs")}
-      message={
-        stillFailing
-          ? t("The saved layout is still unreadable. It was not changed. Try again in a moment.")
-          : t(
-              "Your saved layout was not changed. Retry to restore it, or start fresh in this window.",
-            )
-      }
-      durationMs={null}
-      action={{ label: t("Retry"), onClick: () => void retry(), pending }}
-      actions={[
+  // Starting fresh lets this window save over the layout it could not read, so it is confirmed.
+  const confirmStartFresh = async () => {
+    const accepted = await confirm({
+      title: t("Replace your saved layout?"),
+      message: null,
+      consequences: [
         {
-          label: t("Start fresh"),
-          disabled: pending,
-          onClick: () => {
-            startFresh();
-            onClose();
-          },
+          tone: "danger",
+          content: t("Your saved tabs and layout cannot be recovered once this window saves."),
         },
-      ]}
-      onDismiss={onClose}
-    />
+      ],
+      confirmLabel: t("Start fresh"),
+    });
+    if (!accepted) return;
+    startFresh();
+    onClose();
+  };
+  return (
+    <>
+      <Toast
+        tone="warning"
+        title={t("Could not restore your tabs")}
+        message={stillFailing ? t("The saved layout is still unreadable.") : undefined}
+        durationMs={null}
+        action={{ label: t("Retry"), onClick: () => void retry(), pending }}
+        actions={[
+          {
+            label: t("Start fresh"),
+            disabled: pending,
+            onClick: () => void confirmStartFresh(),
+          },
+        ]}
+        onDismiss={onClose}
+      />
+      {dialog}
+    </>
   );
 }
 

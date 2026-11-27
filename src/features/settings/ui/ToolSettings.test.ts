@@ -51,6 +51,31 @@ it.each([
   }
 });
 
+it("shows no boilerplate copy under topics or rows and one title per topic", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    for (const Page of [
+      BrowserSettingsPage,
+      DevicesSettingsPage,
+      LogsSettingsPage,
+      DevServersSettingsPage,
+    ]) {
+      await act(async () => root.render(createElement(Page)));
+      expect(container.textContent).not.toContain("Defaults apply when opening a new tool view");
+      expect(container.textContent).not.toContain("Applies when opening a new browser session.");
+      expect(container.textContent).not.toContain("Prefills a new browser view");
+    }
+    await act(async () => root.render(createElement(DevServersSettingsPage)));
+    expect(container.textContent).toContain("Development servers");
+    expect(container.textContent).not.toContain("Development Servers");
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+  }
+});
+
 it("persists changes, follows external writers and resets a changed row", async () => {
   const container = document.createElement("div");
   document.body.append(container);
@@ -260,5 +285,116 @@ it("preserves invalid drafts across tabs and external saves, then clears only th
   } finally {
     act(() => root.unmount());
     container.remove();
+  }
+});
+
+async function renderWithReset(Page: typeof LogsSettingsPage) {
+  const state: { registration: SettingsPageResetRegistration | null } = { registration: null };
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () =>
+    root.render(
+      createElement(
+        SettingsPageResetRegistry.Provider,
+        {
+          value: (next) => {
+            state.registration = typeof next === "function" ? next(state.registration) : next;
+          },
+        },
+        createElement(Page),
+      ),
+    ),
+  );
+  return {
+    state,
+    container,
+    dispose: () => {
+      act(() => root.unmount());
+      container.remove();
+    },
+  };
+}
+
+function blockWrites(blocked: (key: string, value: string) => boolean) {
+  const write = localStorage.setItem.bind(localStorage);
+  return vi.spyOn(localStorage, "setItem").mockImplementation((key, value) => {
+    if (blocked(key, value)) throw new Error("quota");
+    write(key, value);
+  });
+}
+
+it("reports a failed reset as unchanged and keeps every earlier value", async () => {
+  toolPreferences.logsFollow.save(false);
+  toolPreferences.logsGrouped.save(false);
+  const { state, container, dispose } = await renderWithReset(LogsSettingsPage);
+  const blocked = blockWrites(
+    (key, value) => key === toolPreferences.logsGrouped.key && value === "true",
+  );
+  try {
+    await act(async () => state.registration?.run());
+    expect(toolPreferences.logsFollow.load()).toBe(false);
+    expect(toolPreferences.logsGrouped.load()).toBe(false);
+    expect(container.textContent).toContain("Could not save tool preferences.");
+    expect(container.textContent).not.toContain("Some settings could not be reset");
+    blocked.mockRestore();
+    await act(async () => state.registration?.run());
+    expect(toolPreferences.logsFollow.load()).toBe(true);
+    expect(toolPreferences.logsGrouped.load()).toBe(true);
+    expect(container.textContent).not.toContain("Could not save tool preferences.");
+  } finally {
+    blocked.mockRestore();
+    dispose();
+  }
+});
+
+it("reports a partially restored reset and offers a retry", async () => {
+  toolPreferences.logsFollow.save(false);
+  toolPreferences.logsGrouped.save(false);
+  const { state, container, dispose } = await renderWithReset(LogsSettingsPage);
+  const blocked = blockWrites(
+    (key, value) =>
+      (key === toolPreferences.logsGrouped.key && value === "true") ||
+      (key === toolPreferences.logsFollow.key && value === "false"),
+  );
+  try {
+    await act(async () => state.registration?.run());
+    expect(container.textContent).toContain(
+      "Some settings could not be reset. Retry to finish restoring defaults.",
+    );
+    blocked.mockRestore();
+    await act(async () => state.registration?.run());
+    expect(toolPreferences.logsFollow.load()).toBe(true);
+    expect(toolPreferences.logsGrouped.load()).toBe(true);
+    expect(container.textContent).not.toContain("Some settings could not be reset");
+  } finally {
+    blocked.mockRestore();
+    dispose();
+  }
+});
+
+it("keeps an unsaved draft when the reset fails", async () => {
+  toolPreferences.browserLiveView.save(false);
+  const { state, container, dispose } = await renderWithReset(BrowserSettingsPage);
+  const input = () =>
+    container.querySelector<HTMLInputElement>('[data-setting-id="browser-home-url"] input')!;
+  const blocked = blockWrites(
+    (key, value) => key === toolPreferences.browserLiveView.key && value === "true",
+  );
+  try {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input(),
+        "http://draft.example",
+      );
+      input().dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => state.registration?.run());
+    expect(input().value).toBe("http://draft.example");
+    expect(toolPreferences.browserLiveView.load()).toBe(false);
+    expect(toolPreferences.browserHomeUrl.load()).toBe("http://localhost:3000");
+  } finally {
+    blocked.mockRestore();
+    dispose();
   }
 });

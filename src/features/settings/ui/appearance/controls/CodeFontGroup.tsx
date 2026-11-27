@@ -2,17 +2,10 @@ import { t, useLocale } from "../../../../../shared/i18n";
 import { NumberField } from "../../../../../shared/ui/NumberField";
 import { CODE_FONT_CATALOG } from "../../../model/fontCatalog";
 import { APPEARANCE_DEFAULTS } from "../../../model/appearancePreferences";
-import { RadioTiles } from "../../RadioTiles";
-import { Group, Row, Toggle } from "../../../../../shared/ui/settings";
+import { Group, Row, Segmented, Toggle } from "../../../../../shared/ui/settings";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import { FontPicker } from "./FontPicker";
 import { useNumberDraft } from "./useNumberDraft";
-import "./TypographySamples.css";
-
-const CODE_THEMES = [
-  { value: "github", label: "GitHub Dark default", swatch: "github" },
-  { value: "dracula", label: "Dracula", swatch: "dracula" },
-] as const;
 
 /** Code font picker, size, ligatures and code theme. The sample lives in the live preview. */
 export function CodeFontGroup({ appearance: a }: { appearance: AppearanceSettings }) {
@@ -28,7 +21,7 @@ export function CodeFontGroup({ appearance: a }: { appearance: AppearanceSetting
       onReset={() => a.onPreferences({ ...p, codeFont: d.codeFont, codeSize: d.codeSize })}
       resetLabel={t("Reset code font")}
     >
-      <Row label={t("Code font")}>
+      <Row label={t("Font")}>
         <FontPicker
           label={t("Code font")}
           catalog={CODE_FONT_CATALOG}
@@ -68,29 +61,17 @@ export function CodeFontGroup({ appearance: a }: { appearance: AppearanceSetting
       <Row
         id="code-theme"
         label={t("Code theme")}
-        stacked
         modified={p.codeTheme !== d.codeTheme}
         onReset={() => a.onPreferences({ ...p, codeTheme: d.codeTheme })}
       >
-        <RadioTiles
+        <Segmented<"github" | "dracula">
           label={t("Code theme")}
-          className="code-theme-chips"
-          tileClassName="code-theme-chip"
           value={p.codeTheme}
           onChange={(codeTheme) => a.onPreferences({ ...p, codeTheme })}
-          options={CODE_THEMES.map((theme) => ({
-            value: theme.value,
-            children: (
-              <>
-                <span className="code-theme-swatch" data-swatch={theme.swatch} aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
-                </span>
-                {theme.label}
-              </>
-            ),
-          }))}
+          options={[
+            { value: "github", label: t("GitHub") },
+            { value: "dracula", label: t("Dracula") },
+          ]}
         />
       </Row>
     </Group>

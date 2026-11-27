@@ -198,7 +198,9 @@ it("still logs when banners are off or the window is focused, without a banner",
   setWindowFocused(true);
   await expect(notifySocialWaiting([item({ id: "request:r2" })])).resolves.toBe(false);
   expect(banners()).toEqual([]);
-  expect(await logged(2)).toHaveLength(2);
+  // The same request announced twice is one row counted twice.
+  await vi.waitFor(() => expect(readNotificationHistory()[0]?.count).toBe(2));
+  expect(readNotificationHistory()).toHaveLength(1);
 });
 
 it("does nothing when the needs-your-input event is off", async () => {

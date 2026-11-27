@@ -1,3 +1,4 @@
+import { errorText } from "../../shared/lib/errors";
 import { Code } from "../../shared/ui/Code";
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { Surface } from "../../shared/ui/Surface";
@@ -5,13 +6,14 @@ import { Heading } from "../../shared/ui/Heading";
 import { SectionLabel } from "../../shared/ui/SectionLabel";
 import { Badge } from "../../shared/ui/Badge";
 import { BadgeList } from "../../shared/ui/BadgeList";
-import { InfoPopover } from "../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../shared/ui/InfoPopover";
 import { Alert } from "../../shared/ui/Alert";
 import { ErrorDetails } from "../../shared/ui/ErrorDetails";
 import { useConnectionErrorShownCentrally } from "../../shared/ui/connectionErrorGate";
 import { NumberField } from "../../shared/ui/NumberField";
 import { TextField } from "../../shared/ui/TextField";
 import { Text } from "../../shared/ui/Text";
+import { LiveText } from "../../shared/ui/LiveText";
 import { Checkbox } from "../../shared/ui/Checkbox";
 import { SearchInput } from "../../shared/ui/SearchInput";
 import { useRetainedState } from "../../shared/hooks/useRetainedState";
@@ -65,18 +67,13 @@ import { DescriptionItem, DescriptionList } from "../../shared/ui/DescriptionLis
 import "./dev-servers.css";
 import { toolPreferences } from "./model/toolPreferences";
 import { OutputBlock } from "../../shared/ui/OutputBlock";
+import { MAX_POLL_FAILURES, pollDelay } from "./model/pollBackoff";
 
 type Intent = "details" | "stop" | "kill" | "restart";
-type Launch = { input: DevServerStart; result?: DevServerStartResult; pending?: boolean };
-const MAX_FAILURES = 3;
-/** Each scan starts PowerShell on Windows, so a list that stopped changing is read less often. */
-const QUIET_SCANS = 3;
-const stateLabels = {
-  starting: "Starting",
-  running: "Running",
-  stopping: "Stopping",
-  stopped: "Stopped",
-  error: "Error",
+type Launch = {
+  input: DevServerStart;
+  result?: DevServerStartResult;
+  pending?: boolean;
 };
 const stateTones = {
   starting: "info",
@@ -85,10 +82,20 @@ const stateTones = {
   stopped: "neutral",
   error: "danger",
 } as const;
-function StateBadge({ state }: { state: keyof typeof stateLabels }) {
+function StateBadge({ state }: { state: keyof typeof stateTones }) {
+  const label =
+    state === "starting"
+      ? t("Starting")
+      : state === "running"
+        ? t("Running")
+        : state === "stopping"
+          ? t("Stopping")
+          : state === "stopped"
+            ? t("Stopped")
+            : t("Error");
   return (
     <Badge variant="dot" size="sm" tone={stateTones[state]}>
-      {t(stateLabels[state])}
+      {label}
     </Badge>
   );
 }
@@ -105,16 +112,6 @@ const canControl = (server: DevServer) => (server.process ? hasIdentity(server) 
 const endpointKey = (endpoint: DevServerEndpoint) => `${endpoint.address}:${endpoint.port}`;
 
 /** Mounted only for the visible tool; a changed host owns a fresh request scope. */
-function pollDelay(interval: number, failures: number, quietScans: number): number {
-  const base =
-    quietScans >= QUIET_SCANS * 2
-      ? interval * 4
-      : quietScans >= QUIET_SCANS
-        ? interval * 2
-        : interval;
-  return base * Math.min(4, 2 ** failures);
-}
-
 export function DevServersPanel({
   cwd,
   launch,
@@ -282,7 +279,8 @@ function ProjectDevServersPanel({
     hostFeatureRequest<T>(cwd, "dev.servers", `devServers.${method}`, params);
   const refresh = (force = false): Promise<boolean> => {
     if (scanFlight.current) return scanFlight.current;
-    setScanning(true);
+    const showScanning = force || quiet.current.key === "";
+    if (showScanning) setScanning(true);
     const flight: Promise<boolean> = Promise.resolve().then(async () => {
       try {
         const result = await request<DevServerScan>("list", { refresh: force });
@@ -290,20 +288,20 @@ function ProjectDevServersPanel({
         if (result.status === "error") throw new Error(result.error || t("Scan failed"));
         failures.current = 0;
         const key = JSON.stringify(result.servers);
-        quiet.current =
-          quiet.current.key === key ? { key, scans: quiet.current.scans + 1 } : { key, scans: 0 };
+        const unchanged = quiet.current.key === key;
+        quiet.current = unchanged ? { key, scans: quiet.current.scans + 1 } : { key, scans: 0 };
         setScanError("");
-        setScan(result);
+        if (!unchanged) setScan(result);
         return true;
       } catch (cause) {
         if (!alive.current) return false;
         failures.current++;
-        setScanError(cause instanceof Error ? cause.message : String(cause));
-        if (failures.current >= MAX_FAILURES) setAutoRefresh(false);
+        setScanError(errorText(cause));
+        if (failures.current >= MAX_POLL_FAILURES) setAutoRefresh(false);
         return false;
       } finally {
         if (scanFlight.current === flight) scanFlight.current = undefined;
-        if (alive.current) setScanning(false);
+        if (alive.current && showScanning) setScanning(false);
       }
     });
     scanFlight.current = flight;
@@ -324,7 +322,7 @@ function ProjectDevServersPanel({
       if (!alive.current) return;
       await work();
     } catch (cause) {
-      if (alive.current) setError(cause instanceof Error ? cause.message : String(cause));
+      if (alive.current) setError(errorText(cause));
     } finally {
       releaseTransfer?.();
       pending.current = false;
@@ -334,6 +332,12 @@ function ProjectDevServersPanel({
       }
     }
   };
+  const retryScan = () =>
+    void action("refresh", async () => {
+      // A paused poll resumes once a manual scan succeeds.
+      const recovering = failures.current >= MAX_POLL_FAILURES;
+      if ((await refresh(true)) && recovering) setAutoRefresh(true);
+    });
   useEffect(() => {
     if (!launch?.pending || !transferScope) return;
     return holdToolsDraftTransfer(transferScope);
@@ -358,7 +362,7 @@ function ProjectDevServersPanel({
       } finally {
         polling = false;
       }
-      if (!stopped && !isHidden() && failures.current < MAX_FAILURES)
+      if (!stopped && !isHidden() && failures.current < MAX_POLL_FAILURES)
         timer = setTimeout(
           () => void poll(),
           pollDelay(pollInterval, failures.current, quiet.current.scans),
@@ -456,6 +460,11 @@ function ProjectDevServersPanel({
     });
   const disabled = busy || !!launch?.pending;
   const unavailable = (name: string) => !!launch?.pending || (busy && operation !== name);
+  const waitReason = t("Another action is in progress");
+  const controlReason = (server: DevServer) =>
+    canControl(server)
+      ? waitReason
+      : t("Process identity unavailable; process control is disabled.");
   const query = search.trim().toLocaleLowerCase();
   const servers = scan?.servers ?? [];
   const visibleServers = servers.filter(
@@ -503,18 +512,24 @@ function ProjectDevServersPanel({
   const openLocal = (server: DevServer, address: DevServerEndpoint) =>
     void action(`${server.id}:open`, async () => {
       await openUrl(
-        await accessibleDevelopmentUrl(cwd, address.url, { server, endpoint: address }),
+        await accessibleDevelopmentUrl(cwd, address.url, {
+          server,
+          endpoint: address,
+        }),
       );
     });
   const copyUrl = (server: DevServer, address: DevServerEndpoint) =>
     void action(
       `${server.id}:copy`,
       async () => {
-        const url = await accessibleDevelopmentUrl(cwd, address.url, { server, endpoint: address });
+        const url = await accessibleDevelopmentUrl(cwd, address.url, {
+          server,
+          endpoint: address,
+        });
         if (!alive.current) return;
         const copied = await copyAsync(() =>
           navigator.clipboard.writeText(url).catch((cause) => {
-            if (alive.current) setError(cause instanceof Error ? cause.message : String(cause));
+            if (alive.current) setError(errorText(cause));
             throw cause;
           }),
         );
@@ -590,6 +605,7 @@ function ProjectDevServersPanel({
           iconOnly
           label={t("Close details")}
           disabled={disabled}
+          disabledReason={waitReason}
           onClick={() => setDetails(undefined)}
         >
           <X className="icon-sm" aria-hidden />
@@ -641,6 +657,11 @@ function ProjectDevServersPanel({
           </Text>
           <Checkbox
             disabled={disabled || intent === "restart"}
+            disabledReason={
+              intent === "restart"
+                ? t("Restarting always includes the whole process tree.")
+                : waitReason
+            }
             checked={tree}
             onChange={(event) => setTree(event.target.checked)}
             label={t("Include this process's children")}
@@ -668,19 +689,13 @@ function ProjectDevServersPanel({
         </Surface>
       ) : null}
       <div className="dev-server-confirm">
-        {intent !== "details" ? (
-          <Text as="p" size="caption" tone="secondary">
-            {t(
-              "Review the affected ports before confirming. The host verifies process identity before sending a signal.",
-            )}
-          </Text>
-        ) : null}
         <div className="dev-server-actions">
           {intent === "stop" && !requiresForce ? (
             <Button
               tone="danger"
               loading={operation === `${current.server.id}:stop`}
               disabled={unavailable(`${current.server.id}:stop`) || !canControl(current.server)}
+              disabledReason={controlReason(current.server)}
               onClick={() => void control("stop")}
             >
               {t("Confirm graceful stop")}
@@ -691,6 +706,11 @@ function ProjectDevServersPanel({
               tone="danger"
               loading={operation === `${current.server.id}:kill`}
               disabled={unavailable(`${current.server.id}:kill`) || !hasIdentity(current.server)}
+              disabledReason={
+                hasIdentity(current.server)
+                  ? waitReason
+                  : t("Process identity unavailable; process control is disabled.")
+              }
               onClick={() => void control("kill")}
             >
               {t("Confirm force terminate")}
@@ -705,6 +725,11 @@ function ProjectDevServersPanel({
                 !canControl(current.server) ||
                 (!current.server.managed && (!restartCommand.trim() || !restartCwd.trim()))
               }
+              disabledReason={
+                !canControl(current.server) || unavailable(`${current.server.id}:restart`)
+                  ? controlReason(current.server)
+                  : t("Enter a command and directory")
+              }
               onClick={() => void control("restart")}
             >
               {t("Confirm restart")}
@@ -712,13 +737,14 @@ function ProjectDevServersPanel({
           ) : null}
           <Button
             disabled={unavailable(`${current.server.id}:logs`)}
+            disabledReason={waitReason}
             loading={operation === `${current.server.id}:logs`}
             onClick={() =>
               void action(`${current.server.id}:logs`, async () => {
-                const result = await request<{ available: boolean; output: string }>(
-                  "logs",
-                  target(current.server),
-                );
+                const result = await request<{
+                  available: boolean;
+                  output: string;
+                }>("logs", target(current.server));
                 if (alive.current) setLogs(result);
               })
             }
@@ -734,11 +760,9 @@ function ProjectDevServersPanel({
           </OutputBlock>
         ) : (
           <Text as="p" size="caption" tone="secondary">
-            {t(
-              current.server.managed
-                ? "Logs are unavailable for this process."
-                : "Logs are unavailable for this external process.",
-            )}
+            {current.server.managed
+              ? t("Logs are unavailable for this process.")
+              : t("Logs are unavailable for this external process.")}
           </Text>
         )
       ) : null}
@@ -786,6 +810,7 @@ function ProjectDevServersPanel({
           variant="primary"
           startIcon={<Eye />}
           disabled={!endpoint}
+          disabledReason={t("No address detected")}
           onClick={() => endpoint && setPreview(endpoint.url)}
         >
           {t("Open in preview")}
@@ -795,6 +820,7 @@ function ProjectDevServersPanel({
           label={t("Open in this computer's browser")}
           loading={operation === `${server.id}:open`}
           disabled={unavailable(`${server.id}:open`) || !endpoint}
+          disabledReason={endpoint ? waitReason : t("No address detected")}
           onClick={() => endpoint && openLocal(server, endpoint)}
         >
           <ExternalLink className="icon-sm" aria-hidden />
@@ -804,6 +830,7 @@ function ProjectDevServersPanel({
           label={t("Copy URL")}
           loading={operation === `${server.id}:copy`}
           disabled={unavailable(`${server.id}:copy`) || !endpoint}
+          disabledReason={endpoint ? waitReason : t("No address detected")}
           onClick={() => endpoint && copyUrl(server, endpoint)}
         >
           <Copy className="icon-sm" aria-hidden />
@@ -814,6 +841,7 @@ function ProjectDevServersPanel({
           label={t("Restart")}
           loading={operation === `${server.id}:select:restart`}
           disabled={unavailable(`${server.id}:select:restart`) || !canControl(server)}
+          disabledReason={controlReason(server)}
           onClick={() => void select(server, "restart")}
         >
           <RotateCcw className="icon-sm" aria-hidden />
@@ -915,7 +943,14 @@ function ProjectDevServersPanel({
           ) : null}
         </div>
       ) : null}
-      {server.error ? <Alert tone="danger">{server.error}</Alert> : null}
+      {server.error ? (
+        <Alert
+          tone="danger"
+          extra={<ErrorDetails title={t("The server reported an error.")} detail={server.error} />}
+        >
+          {t("The server reported an error.")}
+        </Alert>
+      ) : null}
       {selectedDetails ? renderDetails(selectedDetails) : null}
     </aside>
   );
@@ -945,16 +980,17 @@ function ProjectDevServersPanel({
           leading="inherit"
           as="div"
           className="dev-servers-status"
-          role="status"
           data-paused={autoRefresh ? undefined : ""}
         >
           <span className="dev-servers-count">
             {scanning && !scan
               ? t("Scanning servers…")
-              : scanError
-                ? t("Scan failed")
-                : !scan
-                  ? t("Refresh to discover servers.")
+              : !scan
+                ? scanError
+                  ? ""
+                  : t("Refresh to discover servers.")
+                : visibleServers.length === 1
+                  ? t("{p0} server", { p0: visibleServers.length })
                   : t("{p0} servers", { p0: visibleServers.length })}
           </span>
           {autoRefresh ? null : (
@@ -964,37 +1000,20 @@ function ProjectDevServersPanel({
             </Text>
           )}
         </Text>
+        {/* Counts change on every poll, so only the scan's start and failure are announced. */}
+        <LiveText className="sr-only" text={scanning && !scan ? t("Scanning servers…") : ""} />
         <div className="dev-server-actions">
-          {scanError ? (
-            <Button
-              startIcon={<RefreshCw />}
-              loading={operation === "refresh"}
-              disabled={unavailable("refresh") || (scanning && operation !== "refresh")}
-              onClick={() =>
-                void action("refresh", async () => {
-                  const recovering = failures.current >= MAX_FAILURES;
-                  if ((await refresh(true)) && recovering) setAutoRefresh(true);
-                })
-              }
-            >
-              {t("Retry scan")}
-            </Button>
-          ) : (
-            <Button
-              variant="ghost"
-              iconOnly
-              label={t("Refresh")}
-              loading={operation === "refresh"}
-              disabled={unavailable("refresh") || (scanning && operation !== "refresh")}
-              onClick={() =>
-                void action("refresh", async () => {
-                  await refresh(true);
-                })
-              }
-            >
-              <RefreshCw />
-            </Button>
-          )}
+          <Button
+            variant="ghost"
+            iconOnly
+            label={t("Refresh")}
+            loading={operation === "refresh"}
+            disabled={unavailable("refresh") || (scanning && operation !== "refresh")}
+            disabledReason={waitReason}
+            onClick={retryScan}
+          >
+            <RefreshCw />
+          </Button>
           <Button
             variant="ghost"
             iconOnly
@@ -1012,6 +1031,7 @@ function ProjectDevServersPanel({
             iconOnly
             label={t("External tunnels")}
             disabled={disabled}
+            disabledReason={waitReason}
             onClick={() => setSharing("3000")}
           >
             <Share className="icon-sm" aria-hidden />
@@ -1020,6 +1040,7 @@ function ProjectDevServersPanel({
             <Button
               startIcon={<Plus />}
               disabled={disabled}
+              disabledReason={waitReason}
               aria-expanded={showStart}
               onClick={() => setShowStart((value) => !value)}
             >
@@ -1032,6 +1053,12 @@ function ProjectDevServersPanel({
         <Alert
           tone="danger"
           title={t("Could not refresh servers.")}
+          action={{
+            label: t("Try again"),
+            pending: operation === "refresh",
+            disabled: unavailable("refresh") || (scanning && operation !== "refresh"),
+            onClick: retryScan,
+          }}
           extra={<ErrorDetails title={t("Could not refresh servers.")} detail={scanError} />}
         >
           {scan
@@ -1040,9 +1067,14 @@ function ProjectDevServersPanel({
         </Alert>
       ) : null}
       {error ? (
-        <Alert tone="danger" ref={actionError} tabIndex={-1} className="host-tool-error-payload">
-          {error}
-        </Alert>
+        <Alert
+          tone="danger"
+          ref={actionError}
+          tabIndex={-1}
+          className="host-tool-error-payload"
+          title={t("The server action failed.")}
+          extra={<ErrorDetails title={t("The server action failed.")} detail={error} />}
+        />
       ) : null}
       {notice ? <Alert tone="info">{notice}</Alert> : null}
       {showStart ? (
@@ -1109,16 +1141,19 @@ function ProjectDevServersPanel({
               />
             </div>
             <div className="dev-server-form-footer">
-              <InfoPopover>
+              <InfoTooltip>
                 <Text as="p" size="caption" tone="secondary">
                   {t("Set the port in the command too; no flags are added.")}
                 </Text>
-              </InfoPopover>
+              </InfoTooltip>
               <Button
                 type="submit"
                 variant="primary"
                 loading={operation === "start" || !!launch?.pending}
                 disabled={unavailable("start") || !name.trim() || !command.trim()}
+                disabledReason={
+                  name.trim() && command.trim() ? waitReason : t("Enter a name and command")
+                }
               >
                 {t("Start command")}
               </Button>
@@ -1134,25 +1169,37 @@ function ProjectDevServersPanel({
           aria-label={t("Port conflict")}
         >
           <Alert tone="danger">
-            {t("Port {p0} is already in use.", { p0: startResult.conflict.port })}
+            {t("Port {p0} is already in use.", {
+              p0: startResult.conflict.port,
+            })}
           </Alert>
           <Text as="p" size="caption" tone="secondary">
             {t("Inspect and stop the existing process, or define a command using another port.")}
           </Text>
           <ul className="dev-server-list">{startResult.conflict.servers.map(renderServer)}</ul>
-          <Button disabled={disabled} onClick={() => setShowStart(true)}>
+          <Button
+            disabled={disabled}
+            disabledReason={waitReason}
+            onClick={() => setShowStart(true)}
+          >
             {t("Use another port")}
           </Button>
         </Surface>
       ) : null}
       {scan && scan.servers.length === 0 && !scanError ? (
         <EmptyState
+          context="panel"
           kind="empty"
           description={t("No servers found")}
-          action={{ label: t("Start server"), disabled, onClick: () => setShowStart(true) }}
+          action={{
+            label: t("Start server"),
+            disabled,
+            onClick: () => setShowStart(true),
+          }}
         />
       ) : scan && visibleServers.length === 0 && query ? (
         <EmptyState
+          context="panel"
           kind="filtered"
           description={t("No matching servers")}
           onReset={() => setSearch("")}

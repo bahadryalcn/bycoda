@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import {
   backgroundMachineFor,
   backgroundMachines,
@@ -135,7 +136,7 @@ export async function delegateCrewMentions(
     try {
       notes.push(delegationNote(target, await delegate(source, target, text.trim(), context)));
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
+      const reason = errorText(error);
       throw new Error(t("Could not delegate to @{p0}: {p1}", { p0: target.token, p1: reason }));
     }
   }

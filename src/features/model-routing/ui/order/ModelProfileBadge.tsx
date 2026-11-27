@@ -14,7 +14,12 @@ export function ModelProfileBadge({ harness, model }: { harness: string; model: 
   ];
   return (
     <Tooltip label={label} details={details}>
-      <Badge size="xs" tone={profile.estimated ? "neutral" : "info"} appearance="subtle">
+      <Badge
+        size="xs"
+        tone={profile.estimated ? "neutral" : "info"}
+        appearance="subtle"
+        className="whitespace-nowrap"
+      >
         <span aria-hidden>{`${profile.intelligence}/5 · ${"$".repeat(profile.cost)}`}</span>
         <span className="sr-only">{[label, ...details].join(", ")}</span>
       </Badge>

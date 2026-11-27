@@ -110,7 +110,7 @@ export function useVoiceReturnCall(input: Input) {
           }).catch(() => undefined);
         },
       },
-      () => voiceReturnCallWindowMs(latest.current.settings.returnCallSeconds),
+      () => voiceReturnCallWindowMs(),
     );
   // Clear the missed-call notice when a conversation starts, during render rather than in an effect.
   if (seenStatus !== input.status) {

@@ -15,6 +15,9 @@ import {
 } from "../terminal-process";
 import { RetiredRequestFence } from "../storage/request-fence";
 import { TerminalWorkspaceIndex } from "./workspace-index";
+import { inside } from "../workspaces/workspace-cleanup-paths";
+import { workspacePathKey } from "../workspaces/workspace-paths";
+import { PTY_DEFAULT_SIZE, PtyUnavailableError, startPtyProcess } from "./terminal-pty";
 
 export const TERMINAL_OUTPUT_LIMIT = 256 * 1024;
 const MAX_TERMINALS = 32;
@@ -45,6 +48,7 @@ type Creation = {
 export class HostTerminals {
   private entries = new Map<string, TerminalEntry>();
   private readonly workspaceIndex = new TerminalWorkspaceIndex();
+  private readonly removingWorktrees = new Set<string>();
   private creations = new Map<string, Creation>();
   private readonly retired = new RetiredRequestFence();
   private closed = false;
@@ -57,6 +61,7 @@ export class HostTerminals {
     private readonly profiles: () => ShellProfiles = listShellProfiles,
     private readonly locate = resolveHostWorktreeAsync,
     private readonly now: () => number = () => performance.now(),
+    private readonly launchPty = startPtyProcess,
   ) {}
 
   private prune(): void {
@@ -100,6 +105,17 @@ export class HostTerminals {
       const entry = this.entries.get(id);
       return entry?.value.state === "running" ? [{ ...entry.value }] : [];
     });
+  }
+
+  async withWorktreeRemoval<T>(root: string, remove: () => Promise<T>): Promise<T> {
+    const path = workspacePathKey(root);
+    if (this.removingWorktrees.has(path)) throw new Error("Worktree removal is already running.");
+    this.removingWorktrees.add(path);
+    try {
+      return await remove();
+    } finally {
+      this.removingWorktrees.delete(path);
+    }
   }
 
   create(
@@ -226,6 +242,10 @@ export class HostTerminals {
     const command = typeof params.command === "string" ? params.command : undefined;
     // Validate before retaining activity; unsupported shells never start an uncertain launch.
     if (command !== undefined) terminalCommandArgs(profile.kind, command);
+    const path = workspacePathKey(cwd);
+    for (const root of this.removingWorktrees) {
+      if (path === root || inside(root, path)) throw new Error("Worktree removal is running.");
+    }
     const entry: TerminalEntry = {
       owner,
       value: {
@@ -234,7 +254,7 @@ export class HostTerminals {
         name: typeof params.name === "string" ? params.name.trim() : profile.name,
         cwd,
         shell: profile.name,
-        transport: "pipe",
+        transport: command === undefined ? "pty" : "pipe",
         state: "running",
         createdAt: Date.now(),
         exitCode: null,
@@ -273,29 +293,52 @@ export class HostTerminals {
     }
     try {
       creation.launchAttempted = true;
-      entry.process = this.launch(
-        profile,
-        cwd,
-        (data) => {
-          entry.end += data.length;
-          entry.output.append(data);
-        },
-        (code) => {
-          entry.value.state = "exited";
-          this.workspaceIndex.delete(entry.value.id, cwd);
-          entry.value.exitCode = code;
-          entry.exitedAt = this.now();
-          void this.releaseActivity(entry)
-            .then(() => {
-              entry.settle();
-              this.prune();
-            })
-            .catch(() => {});
-        },
-        command,
-      );
-    } catch {
-      throw new Error("Could not start terminal shell");
+      const output = (data: string) => {
+        entry.end += data.length;
+        entry.output.append(data);
+      };
+      const exit = (code: number | null) => {
+        entry.value.state = "exited";
+        this.workspaceIndex.delete(entry.value.id, cwd);
+        entry.value.exitCode = code;
+        entry.exitedAt = this.now();
+        void this.releaseActivity(entry)
+          .then(() => {
+            entry.settle();
+            this.prune();
+          })
+          .catch(() => {});
+      };
+      // Interactive shells get a real PTY; a one-shot command keeps its exact pipe exit status.
+      entry.process =
+        command === undefined
+          ? this.launchPty(
+              profile,
+              cwd,
+              {
+                cols: typeof params.cols === "number" ? params.cols : PTY_DEFAULT_SIZE.cols,
+                rows: typeof params.rows === "number" ? params.rows : PTY_DEFAULT_SIZE.rows,
+              },
+              output,
+              exit,
+            )
+          : this.launch(profile, cwd, output, exit, command);
+    } catch (error) {
+      if (!(error instanceof PtyUnavailableError))
+        throw new Error("Could not start terminal shell");
+      // No PTY binding means nothing was spawned: release the row and its admission.
+      entry.value.state = "exited";
+      this.workspaceIndex.delete(entry.value.id, cwd);
+      entry.exitedAt = this.now();
+      try {
+        await this.releaseActivity(entry);
+      } catch (releaseError) {
+        creation.cleanupUncertain = true;
+        throw releaseError;
+      }
+      this.entries.delete(entry.value.id);
+      creation.launchAttempted = false;
+      throw error;
     }
     return entry.value;
   }
@@ -341,8 +384,34 @@ export class HostTerminals {
     return { accepted: true as const };
   }
 
+  async resize(projectId: string, params: Record<string, unknown>, owner?: string) {
+    const entry = this.owned(projectId, params.id, owner);
+    const { cols, rows } = params;
+    if (
+      typeof cols !== "number" ||
+      !Number.isInteger(cols) ||
+      cols < 2 ||
+      cols > 400 ||
+      typeof rows !== "number" ||
+      !Number.isInteger(rows) ||
+      rows < 2 ||
+      rows > 200
+    )
+      throw new Error("Invalid terminal size");
+    if (entry.value.state !== "running" || !entry.process) throw new Error("Terminal has exited");
+    if (!entry.process.resize) throw new Error("Only interactive terminals can be resized");
+    await entry.process.resize(cols, rows);
+    return { accepted: true as const };
+  }
+
   async interrupt(projectId: string, id: unknown, owner?: string) {
     const entry = this.owned(projectId, id, owner);
+    if (entry.process?.interrupt) {
+      if (entry.value.state !== "running") throw new Error("Terminal has exited");
+      // A PTY delivers Ctrl-C to the foreground program; the shell keeps running.
+      await entry.process.interrupt();
+      return { accepted: true as const };
+    }
     // Anonymous pipes cannot deliver console Ctrl+C reliably on Windows. Stop the owned tree.
     await entry.process?.stop();
     if (entry.exitedAt === undefined) throw new Error("Terminal stop was not confirmed");

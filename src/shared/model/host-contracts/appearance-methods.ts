@@ -9,6 +9,8 @@ import {
   AppearanceBackgroundImageResultSchema,
   AppearanceBackgroundSuggestionsParamsSchema,
   AppearanceBackgroundSuggestionsResultSchema,
+  AppearanceCancelGenerationParamsSchema,
+  AppearanceCancelGenerationResultSchema,
   AppearanceThemeSuggestionsParamsSchema,
   AppearanceThemeSuggestionsResultSchema,
 } from "./appearance";
@@ -28,6 +30,10 @@ export function appearanceMethods(
     "appearance.cancelDesign": control(
       AppearanceCancelDesignParamsSchema,
       AppearanceCancelDesignResultSchema,
+    ),
+    "appearance.cancelGeneration": control(
+      AppearanceCancelGenerationParamsSchema,
+      AppearanceCancelGenerationResultSchema,
     ),
     "appearance.themeSuggestions": {
       ...control(AppearanceThemeSuggestionsParamsSchema, AppearanceThemeSuggestionsResultSchema),

@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
-import { Alert } from "../../../../shared/ui/Alert";
+import { InlineError } from "../../../../shared/ui/InlineError";
 import { useConnectionErrorShownCentrally } from "../../../../shared/ui/connectionErrorGate";
+import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import type { ProjectCrews, useProjectCrews } from "../../model/crewClient";
 
@@ -11,12 +12,10 @@ function RetryAlert({ state }: { state: CrewState }) {
   const shownCentrally = useConnectionErrorShownCentrally(state.error);
   if (shownCentrally) return null;
   return (
-    <Alert
-      tone="warning"
-      action={{ label: t("Retry"), pending: state.isFetching, onClick: () => void state.refetch() }}
-    >
-      {state.error?.message}
-    </Alert>
+    <InlineError
+      details={state.visibleError}
+      retry={{ onRetry: () => void state.refetch(), pending: state.isFetching, label: t("Retry") }}
+    />
   );
 }
 
@@ -33,23 +32,30 @@ export function CrewsLoadState({
   const data = state.data;
   if (!data)
     return (
-      <div className="p-4">
-        {state.error ? (
+      <div className="flex flex-1 flex-col p-4" aria-busy={state.pendingFailure || undefined}>
+        {state.visibleError ? (
           <RetryAlert state={state} />
         ) : noProject ? (
           // The query is disabled without a real project folder: say so instead of loading forever.
-          <Alert tone="info">{t("Open a project to manage its crews.")}</Alert>
+          <EmptyState
+            context="page"
+            illustration="no-projects"
+            title={t("Open a project to manage its crews.")}
+            description={t("Crews belong to a project folder. Pick or add a project first.")}
+          />
         ) : (
-          <LoadingText>{t("Loading crews…")}</LoadingText>
+          <LoadingText layout="fill">{t("Loading crews…")}</LoadingText>
         )}
       </div>
     );
   return (
     <>
-      {state.error ? (
+      {state.visibleError ? (
         <div className="px-4 pt-4">
           <RetryAlert state={state} />
         </div>
+      ) : state.pendingFailure ? (
+        <LoadingText inset="panel">{t("Loading crews…")}</LoadingText>
       ) : null}
       {children(data)}
     </>

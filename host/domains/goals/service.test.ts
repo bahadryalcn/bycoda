@@ -106,7 +106,7 @@ describe("paired goal domain", () => {
     expect(dto.HostGoalSchema.safeParse(created).success).toBe(true);
     const listed = await f.service.list({}, f.context);
     expect(dto.GoalsListResultSchema.safeParse(listed).success).toBe(true);
-    expect(listed[0].budgetUsage).toMatchObject({ attempts: 0, historyComplete: true });
+    expect(listed[0].budgetUsage).toMatchObject({ attempts: 0 });
     expect(f.provider.send).not.toHaveBeenCalled();
   });
 
@@ -130,6 +130,48 @@ describe("paired goal domain", () => {
     expect(command).not.toHaveBeenCalled();
     expect(f.provider.send).not.toHaveBeenCalled();
     expect((await f.stored())?.budget).toEqual({ maxAttempts: 1, warningPercent: 80 });
+  });
+
+  it("returns stored simplified plans through the owner RPC contract", async () => {
+    const f = await fixture();
+    const plan = {
+      simple: true as const,
+      tasks: [
+        {
+          key: "first",
+          project: f.project.cwd,
+          projectId: f.project.id,
+          title: "First",
+          prompt: "Retain instructions",
+          dependsOn: [],
+        },
+      ],
+    };
+    await f.seed({ status: "done", plan });
+
+    const listed = await f.service.list({}, f.context);
+    expect(dto.GoalsListResultSchema.parse(listed)[0].plan).toEqual(plan);
+  });
+
+  it("returns stored full-scope plans, which the planner marks simple false", async () => {
+    const f = await fixture();
+    const plan = {
+      simple: false,
+      tasks: [
+        {
+          key: "first",
+          project: f.project.cwd,
+          projectId: f.project.id,
+          title: "First",
+          prompt: "Retain instructions",
+          dependsOn: [],
+        },
+      ],
+    };
+    await f.seed({ status: "done", plan });
+
+    const listed = await f.service.list({}, f.context);
+    expect(dto.GoalsListResultSchema.parse(listed)[0].plan).toEqual(plan);
   });
 
   it("preserves approval gates and child ownership with the real transaction", async () => {
@@ -302,14 +344,14 @@ describe("paired goal domain", () => {
     expect((await f.stored())?.status).toBe("cancelled");
   });
 
-  it("rechecks inside an already admitted list scope before progress writes", async () => {
+  it("rechecks the grant before returning a goal snapshot", async () => {
     const f = await fixture();
     await f.seed({ status: "running", taskIds: ["missing-child"] });
     const entered = Promise.withResolvers<void>(),
       release = Promise.withResolvers<void>();
-    const taskIndex = f.tasks.taskIndex.bind(f.tasks);
-    vi.spyOn(f.tasks, "taskIndex").mockImplementation(async (ids) => {
-      const result = await taskIndex(ids);
+    const readGoalUsage = f.tasks.budgets.readGoalUsage.bind(f.tasks.budgets);
+    vi.spyOn(f.tasks.budgets, "readGoalUsage").mockImplementation(async (ids) => {
+      const result = await readGoalUsage(ids);
       entered.resolve();
       await release.promise;
       return result;
@@ -324,7 +366,7 @@ describe("paired goal domain", () => {
     expect(f.provider.send).not.toHaveBeenCalled();
   });
 
-  it("reconciles list progress without launching a reviewer and enforces final-review CAS", async () => {
+  it("lists saved progress without scheduling a reviewer and enforces final-review CAS", async () => {
     const f = await fixture();
     const child = await f.tasks.save({
       id: "child",
@@ -347,11 +389,8 @@ describe("paired goal domain", () => {
       .run(JSON.stringify({ ...child, status: "done" }), child.id);
     const old = await f.seed({ status: "running", finalReview: true, taskIds: [child.id] });
     const listed = await f.service.list({}, f.context);
-    expect(listed[0].finalAcceptance).toMatchObject({
-      status: "pending",
-      requestId: expect.any(String),
-    });
-    expect((await f.stored())?.finalAcceptance).toEqual(listed[0].finalAcceptance);
+    expect(listed[0].finalAcceptance).toBeUndefined();
+    expect((await f.stored())?.finalAcceptance).toBeUndefined();
     await expect(
       f.service.recheckFinalReview(
         { goalId: "goal", expectedUpdatedAt: old.updatedAt - 1 },

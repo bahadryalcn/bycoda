@@ -1,17 +1,18 @@
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { DatePicker } from "../../../../shared/ui/DatePicker";
-import { InfoPopover } from "../../../../shared/ui/InfoPopover";
+import { toLocalDateTime } from "../../../../shared/ui/DateTimePicker";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
 import { Text } from "../../../../shared/ui/Text";
 import { TextField } from "../../../../shared/ui/TextField";
+import { usePollingRefresh } from "../../hooks/usePollingRefresh";
 import { SOCIAL_PLATFORM_NAMES, type SocialAccount, type SocialPlatform } from "../../model/social";
 import type { SocialBrowserWorkflow, SocialRegistrationField } from "../../model/socialBrowser";
 import type { SocialClient } from "../../model/socialClient";
-import { DisabledReason, gateProps, type ActionGate } from "../common/DisabledReason";
+import { gateReason, type ActionGate } from "../common/DisabledReason";
 import { hostConnection } from "./connectOptions";
 import {
   blockerLabel,
@@ -21,6 +22,7 @@ import {
   registrationFieldLabel,
   registrationFieldProblem,
   registrationProfile,
+  signupMessageText,
   signupProblem,
   signupStatus,
   signupStepLabel,
@@ -66,50 +68,44 @@ export function SignupAccountDialog({
   onCreated,
 }: SignupAccountDialogProps) {
   const formId = useId();
+  const reasonId = useId();
   const [name, setName] = useState(initialName);
   const [accountId, setAccountId] = useState<string | undefined>(existingAccountId);
   const [workflow, setWorkflow] = useState<SocialBrowserWorkflow | undefined>(initialWorkflow);
   const [draft, setDraft] = useState<Partial<Record<SocialRegistrationField, string>>>({});
-  const [pollError, setPollError] = useState("");
-  const { error, is, write } = useAccountWrite(t("The signup could not be started. Try again."));
+  const [pollNotice, setPollNotice] = useState("");
+  const { failureTitle, details, is, write } = useAccountWrite(
+    t("The signup could not be started. Try again."),
+  );
   const live = isSignupLive(workflow);
 
   // Keep the signup status current while the Host drives the window; the owner works there, not here.
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Poll the Host's signup status only while this dialog shows a live workflow.
-  useEffect(() => {
-    if (!accountId || !live) return;
-    let alive = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const tick = () => {
-      client
-        .browserWorkflowStatus(accountId)
-        .then(
-          (state) => {
-            if (!alive) return;
-            setPollError("");
-            const next = latestSignup(state, accountId);
-            if (next) setWorkflow(next);
-          },
-          () => {
-            if (alive) setPollError(t("The signup status could not be read. Retrying."));
-          },
-        )
-        .finally(() => {
-          if (alive) timer = setTimeout(tick, POLL_MS);
-        });
-    };
-    timer = setTimeout(tick, POLL_MS);
-    return () => {
-      alive = false;
-      clearTimeout(timer);
-    };
-  }, [client, accountId, live]);
+  usePollingRefresh({
+    active: Boolean(accountId && live),
+    scope: accountId,
+    intervalMs: POLL_MS,
+    load: async (isCurrent) => {
+      if (!accountId) return;
+      try {
+        const state = await client.browserWorkflowStatus(accountId);
+        if (!isCurrent()) return;
+        setPollNotice("");
+        const next = latestSignup(state, accountId);
+        if (next) setWorkflow(next);
+      } catch (error) {
+        if (isCurrent()) setPollNotice(t("The signup status could not be read. Retrying."));
+        throw error;
+      }
+    },
+  });
 
   const registration = workflow?.registration;
   const required = SIGNUP_FIELD_ORDER.filter((field) =>
     registration?.requiredFields.includes(field),
   );
   const missing = missingFields(required, draft);
+  // Snapchat web signup creates a member account. A Public Profile is a separate step.
+  const signupAccountType = platform === "snapchat" && !existingAccountId ? "member" : accountType;
   const update = (field: SocialRegistrationField, value: string) =>
     setDraft((current) => ({ ...current, [field]: value }));
 
@@ -121,7 +117,7 @@ export function SignupAccountDialog({
         const created = await client.request<SocialAccount>("accounts.create", {
           platform,
           name: name.trim(),
-          accountType,
+          accountType: signupAccountType,
           connection: hostConnection(platform, "browser"),
           projectIds,
         });
@@ -133,7 +129,7 @@ export function SignupAccountDialog({
           id,
           "signup",
           undefined,
-          registrationProfile(accountType, draft),
+          registrationProfile(signupAccountType, draft),
         ),
       );
     }).catch(() => undefined);
@@ -173,40 +169,55 @@ export function SignupAccountDialog({
         ? { disabled: true, disabledReason: t("Fill in the fields above.") }
         : { disabled: false };
   const problem = workflow ? signupProblem(workflow) : undefined;
-  const status = workflow ? signupStatus(workflow) : undefined;
+  const blocked =
+    live && (registration?.step === "rate_limit" || registration?.step === "network_blocked");
+  const footerReason =
+    live && !blocked ? gateReason(advanceGate) : canStart ? gateReason(startGate) : undefined;
+  const status = workflow && !blocked ? signupStatus(workflow) : undefined;
+  const ownerInstruction =
+    live &&
+    !blocked &&
+    registration?.status === "awaiting_owner" &&
+    !registration.canAdvance &&
+    registration.message;
 
   return (
     <Modal
-      title={t("Create a {p0} account", { p0: SOCIAL_PLATFORM_NAMES[platform] })}
+      title={t("Create a {p0} account", {
+        p0: SOCIAL_PLATFORM_NAMES[platform],
+      })}
       onClose={() => {
         if (!busy && !live) leave();
       }}
+      closeDisabled={busy || live}
       size="md"
       footer={
-        <ModalActions>
+        <ModalActions reason={footerReason} reasonId={reasonId}>
           <Button variant="ghost" disabled={busy} onClick={leave}>
-            {live ? t("Stop signup") : t("Close")}
+            {live ? t("Stop signup") : t("Cancel")}
           </Button>
           {canStart ? (
-            <DisabledReason
+            <Button
               type="submit"
               form={formId}
               variant="primary"
               loading={is("start")}
-              {...gateProps(startGate)}
+              disabled={startGate.disabled}
+              aria-describedby={footerReason ? reasonId : undefined}
             >
               {workflow ? t("Start again") : t("Open sign-up window")}
-            </DisabledReason>
+            </Button>
           ) : null}
-          {live ? (
-            <DisabledReason
+          {live && !blocked ? (
+            <Button
               variant="primary"
               loading={is("advance")}
               onClick={advance}
-              {...gateProps(advanceGate)}
+              disabled={advanceGate.disabled}
+              aria-describedby={footerReason ? reasonId : undefined}
             >
               {t("Continue")}
-            </DisabledReason>
+            </Button>
           ) : null}
           {workflow?.status === "window_closed" && accountId ? (
             <Button variant="primary" onClick={() => onCreated(accountId)}>
@@ -237,17 +248,21 @@ export function SignupAccountDialog({
         {status ? (
           <div className="social-tag-line">
             <Badge tone={status.tone}>{status.label}</Badge>
-            {registration && !registration.blockers.some((item) => item === registration.step) ? (
+            {registration &&
+            !ownerInstruction &&
+            !registration.blockers.some((item) => item === registration.step) ? (
               <Text as="span" tone="muted">
                 {signupStepLabel(registration.step)}
               </Text>
             ) : null}
-            {registration?.message ? (
-              <InfoPopover label={t("Details")}>
-                <Text as="p">{registration.message}</Text>
-              </InfoPopover>
-            ) : null}
           </div>
+        ) : null}
+        {ownerInstruction ? (
+          <Text as="p">{signupMessageText(ownerInstruction)}</Text>
+        ) : status && registration?.message ? (
+          <Text as="p" tone="muted" size="caption" wrap="anywhere">
+            {signupMessageText(registration.message)}
+          </Text>
         ) : null}
         {live && registration?.blockers.length ? (
           <div className="social-tag-line">
@@ -265,7 +280,7 @@ export function SignupAccountDialog({
                   key={field}
                   label={registrationFieldLabel(field)}
                   value={draft[field] ?? ""}
-                  max={new Date().toISOString().slice(0, 10)}
+                  max={toLocalDateTime(new Date()).slice(0, 10)}
                   disabled={busy}
                   onChange={(value) => update(field, value)}
                 />
@@ -274,6 +289,7 @@ export function SignupAccountDialog({
                   key={field}
                   label={registrationFieldLabel(field)}
                   value={draft[field] ?? ""}
+                  type={field === "phone" ? "tel" : "text"}
                   maxLength={field === "email" ? 254 : 100}
                   error={registrationFieldProblem(field, draft[field] ?? "")}
                   disabled={busy}
@@ -282,9 +298,26 @@ export function SignupAccountDialog({
               ),
             )
           : null}
+        {platform === "facebook" &&
+        accountType === "page" &&
+        (!live || (registration?.step === "profile" && required.length > 0)) ? (
+          <TextField
+            label={registrationFieldLabel("bio")}
+            value={draft.bio ?? ""}
+            maxLength={100}
+            disabled={busy}
+            onChange={(event) => update("bio", event.currentTarget.value)}
+          />
+        ) : null}
         {problem ? <InlineMessage tone="warning">{problem}</InlineMessage> : null}
-        {pollError ? <InlineMessage tone="info">{pollError}</InlineMessage> : null}
-        {error ? <InlineError>{error}</InlineError> : null}
+        {pollNotice ? <InlineMessage tone="warning">{pollNotice}</InlineMessage> : null}
+        {failureTitle ? (
+          <InlineError details={details}>
+            {live
+              ? t("The signup could not continue.")
+              : t("The signup could not be started. Try again.")}
+          </InlineError>
+        ) : null}
       </form>
     </Modal>
   );

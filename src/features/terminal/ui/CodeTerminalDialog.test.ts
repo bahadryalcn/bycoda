@@ -18,9 +18,10 @@ const exitedController = (): CodeTerminalController => {
   };
   return {
     snapshot: () => state,
+    canDismiss: () => true,
     subscribe: () => () => {},
     start: async () => {},
-    refresh: async () => {},
+    refresh: async () => "idle" as const,
     stop: async () => {},
   };
 };
@@ -95,5 +96,81 @@ it("retains the result when chat admission refuses it and allows an explicit ret
   } finally {
     await act(async () => root.unmount());
     container.remove();
+  }
+});
+
+it("holds a known undelivered command failure for grace without replay", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  const state: CodeTerminalState = {
+    ...exitedController().snapshot(),
+    phase: "not-started",
+    output: "",
+    actionError: new Error("[RPC_WS_OVERLOAD] Host busy"),
+  };
+  const start = vi.fn(async () => {});
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(CodeTerminalDialog, {
+          controller: { ...exitedController(), start, snapshot: () => state },
+          options,
+          onClose: () => {},
+        }),
+      ),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(2_999));
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not run the command.",
+    );
+    expect(document.body.textContent).not.toContain("Command status unknown");
+    expect(start).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("stops a running command before it closes, with no silently locked close", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const state: CodeTerminalState = {
+    ...exitedController().snapshot(),
+    phase: "running",
+    exitCode: null,
+    output: "",
+  } as CodeTerminalState;
+  const stop = vi.fn(async () => {});
+  const onClose = vi.fn();
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(CodeTerminalDialog, {
+          controller: { ...exitedController(), stop, snapshot: () => state },
+          options,
+          onClose,
+        }),
+      ),
+    );
+    const buttons = [...document.querySelectorAll("button")];
+    expect(buttons.some((button) => button.textContent === "Close" && button.disabled)).toBe(false);
+    const stopAndClose = buttons.find((button) => button.textContent === "Stop and close");
+    expect(stopAndClose).toBeTruthy();
+    await act(async () => stopAndClose!.click());
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
   }
 });

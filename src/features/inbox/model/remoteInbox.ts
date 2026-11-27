@@ -7,6 +7,10 @@ import {
   type RemoteJiraOperation,
 } from "./jiraBoardProtocol";
 export const REMOTE_INBOX_VERSION = 1;
+/** Projects one remote list read covers; projects past it are reported as omitted. */
+export const REMOTE_INBOX_PROJECT_LIMIT = 40;
+export const JIRA_COMMENT_IMAGE_COUNT = 4;
+export const JIRA_COMMENT_IMAGE_BYTES = 10 * 1024 * 1024;
 export const REMOTE_INBOX_PROVIDERS = [
   "github",
   "gitlab",
@@ -40,7 +44,14 @@ export type RemoteInboxItem = {
   identifier?: string;
   draft: boolean;
   labels: { name: string; color: string }[];
-  assignees: { login: string; avatarUrl?: string }[];
+  /** `accountId` is the stable Jira identity the desktop's Assignee filter uses. */
+  assignees: { login: string; accountId?: string; avatarUrl?: string }[];
+  /** Linear team or Jira project: the desktop's Teams / Projects filter dimension. */
+  teamId?: string;
+  teamName?: string;
+  /** Linear project; empty when the issue sits outside every project. */
+  projectId?: string;
+  projectName?: string;
 };
 export type RemoteInboxTarget = Pick<
   RemoteInboxItem,
@@ -84,6 +95,8 @@ export type RemoteInboxThread = {
 export type RemoteInboxList = {
   items: RemoteInboxItem[];
   errors: Partial<Record<RemoteInboxProvider, string>>;
+  /** Projects past REMOTE_INBOX_PROJECT_LIMIT. Their items are absent from `items`; scope to one with its id. */
+  omittedProjects?: { id: string; path: string }[];
 };
 export type RemoteInboxProviderState = {
   provider: RemoteInboxProvider;
@@ -97,6 +110,11 @@ export type RemoteInboxQuery = {
   githubKinds?: ("issue" | "pr")[];
   /** Limits discovery to these providers; omitted means every connected provider. */
   providers?: RemoteInboxProvider[];
+  /**
+   * An explicit refresh by the owner. Without it the desktop may answer from its recent list
+   * (the same cache its own Inbox uses) instead of asking every provider again.
+   */
+  refresh?: boolean;
 };
 export type RemoteInboxReviewComment = {
   path: string;
@@ -114,9 +132,23 @@ export type RemoteInboxReview = {
 export type RemoteInboxOperation =
   | RemoteJiraOperation
   | { action: "providers" }
-  | { action: "list"; projects: { path: string }[]; query: RemoteInboxQuery }
+  | {
+      action: "list";
+      projects: { path: string }[];
+      omittedProjects?: { id: string; path: string }[];
+      query: RemoteInboxQuery;
+    }
   | { action: "details" | "thread" | "checks"; item: RemoteInboxTarget; cwd: string }
   | { action: "comment"; item: RemoteInboxTarget; cwd: string; body: string; inReplyTo?: string }
+  | {
+      action: "jira-comment-images";
+      item: RemoteInboxTarget;
+      cwd: string;
+      imageRoot: string;
+      body: string;
+      images: { path: string; sha256: string }[];
+      permit?: string;
+    }
   | { action: "review-context"; item: RemoteInboxTarget; cwd: string }
   | {
       action: "reviewers";
@@ -193,6 +225,7 @@ const text = (value: unknown, label: string, maximum = 500, empty = false): stri
 export function inboxOperationWrites(operation: RemoteInboxOperation): boolean {
   return (
     operation.action === "comment" ||
+    operation.action === "jira-comment-images" ||
     operation.action === "pr-action" ||
     operation.action === "review" ||
     operation.action === "reaction" ||
@@ -226,6 +259,8 @@ export function parseRemoteInboxOperation(
       throw new Error("Invalid inbox state filter.");
     if (query.assignedToMe !== undefined && typeof query.assignedToMe !== "boolean")
       throw new Error("Invalid inbox assignee filter.");
+    if (query.refresh !== undefined && typeof query.refresh !== "boolean")
+      throw new Error("Invalid inbox refresh flag.");
     const kinds = query.githubKinds;
     if (
       kinds !== undefined &&
@@ -243,9 +278,15 @@ export function parseRemoteInboxOperation(
         providers.some((name) => !REMOTE_INBOX_PROVIDERS.includes(name as RemoteInboxProvider)))
     )
       throw new Error("Invalid inbox provider filter.");
+    const omitted = scoped.slice(REMOTE_INBOX_PROJECT_LIMIT);
     return {
       action,
-      projects: scoped.slice(0, 40).map((project) => ({ path: project.cwd })),
+      projects: scoped
+        .slice(0, REMOTE_INBOX_PROJECT_LIMIT)
+        .map((project) => ({ path: project.cwd })),
+      ...(omitted.length
+        ? { omittedProjects: omitted.map((project) => ({ id: project.id, path: project.cwd })) }
+        : {}),
       query: {
         assignedToMe: query.assignedToMe === true,
         state: query.state === "all" ? "all" : "open",
@@ -254,6 +295,7 @@ export function parseRemoteInboxOperation(
         ...(providers === undefined
           ? {}
           : { providers: [...new Set(providers as RemoteInboxProvider[])] }),
+        ...(query.refresh === true ? { refresh: true } : {}),
       },
     };
   }
@@ -440,6 +482,8 @@ export function parseRemoteInboxOperation(
   }
   if (action === "details" || action === "thread") return { action, item, cwd };
   if (action === "comment") {
+    if (input.imagePaths !== undefined)
+      throw new Error("Jira comment images require a focused conversation session.");
     const inReplyTo =
       input.inReplyTo === undefined ? undefined : text(input.inReplyTo, "reply ID", 200);
     if (inReplyTo && provider !== "github" && provider !== "linear")
@@ -481,6 +525,8 @@ export function nativeInboxCommand(
 ): { command: string; args: Record<string, unknown> } {
   if (isRemoteJiraOperation(operation))
     throw new Error("Jira board operations require the scoped desktop board owner");
+  if (operation.action === "jira-comment-images")
+    throw new Error("Jira comment images require desktop owner approval.");
   const { item } = operation;
   if (
     operation.action === "reviewers" ||

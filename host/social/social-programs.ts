@@ -354,14 +354,12 @@ export class SocialPrograms {
         .get(p.id, p.revision)
     )?.sequence;
     const usesMedia = programGeneratesImage(p, t.accountId) || !!t.variant?.media.length;
-    const steps = p.approval.steps.filter(
+    return p.approval.steps.filter(
       (s) =>
         (s !== "schedule" || p.approval.mode !== "semi") &&
         (s !== "image" || usesMedia) &&
         (p.approval.mode !== "semi" || o.sequence === first || s === "publish"),
     );
-    if (t.platform === "linkedin" && !steps.includes("publish")) steps.push("publish");
-    return steps;
   }
   private async missing(p: SocialProgram, o: SocialOccurrence, t: ProgramTarget) {
     return (await this.required(p, o, t)).filter(
@@ -419,9 +417,16 @@ export class SocialPrograms {
           t.url = job.url;
           t.error = job.error;
         }
+    const firstSample =
+      p.approval.mode === "semi" && all.length > page.length
+        ? await this.firstOccurrence(p)
+        : undefined;
     return {
       program: publicProgram(p),
       occurrences: page,
+      ...(firstSample && !page.some((occurrence) => occurrence.id === firstSample.id)
+        ? { firstSample }
+        : {}),
       ...(all.length > 50 ? { nextBefore: page[0].sequence } : {}),
     };
   }
@@ -489,7 +494,7 @@ export class SocialPrograms {
                   : a.platform === "linkedin" && a.accountType === "member"
                     ? ["text", "link"]
                     : ["text", "link", "image"],
-            requiresReview: a.platform === "linkedin",
+            requiresReview: false,
             allowsRepeat: a.platform !== "x",
             ...(a.platform === "instagram" || a.platform === "facebook"
               ? { reason: "Generated images require a public media delivery URL." }

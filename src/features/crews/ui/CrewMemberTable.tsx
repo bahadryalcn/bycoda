@@ -1,13 +1,16 @@
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
 import { useMemo, type ReactNode } from "react";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Heading } from "../../../shared/ui/Heading";
 import { t, useLocale } from "../../../shared/i18n";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { ChevronDown, GitBranch, Plus, Trash2 } from "../../../shared/ui/icons";
 import type { CrewAgent, CrewRole } from "../model/crew";
 import type { ProjectCrews } from "../model/crewClient";
@@ -30,16 +33,14 @@ function MemberLinkMark({ link }: { link?: "linked" | "customized" }) {
   useLocale();
   if (link !== "customized") return null;
   return (
-    <Tooltip label={t("Not following library profile")} asChild>
-      <Text
-        role="img"
-        aria-label={t("Not following library profile")}
-        size="inherit"
-        className="inline-flex shrink-0"
-      >
-        <GitBranch className="icon-xs" aria-hidden />
-      </Text>
-    </Tooltip>
+    <Text
+      role="img"
+      aria-label={t("Not following library profile")}
+      size="inherit"
+      className="inline-flex shrink-0"
+    >
+      <GitBranch className="icon-xs" aria-hidden />
+    </Text>
   );
 }
 
@@ -85,30 +86,19 @@ export function crewSections(agents: CrewAgent[], issues: CrewRosterIssues): Cre
   ];
 }
 
-/** The one thing to fix before the draft can be saved. */
-export function crewIssueSummary(
-  sections: CrewSection[],
-  issues: CrewRosterIssues,
-  policyValid: boolean,
-) {
-  return (
-    sections.find((s) => s.issue)?.issue ??
-    (issues.name
-      ? t("Name the crew.")
-      : Object.keys(issues.members).length
-        ? t("Every member needs a name and a model.")
-        : issues.size === "large"
-          ? t("A crew can have at most 20 members.")
-          : !policyValid
-            ? t("Check the working settings.")
-            : "")
-  );
+/**
+ * What blocks saving and has no line of its own: roster problems already show under their
+ * section or on their row, so only the name and the limits are named here.
+ */
+export function crewIssueSummary(issues: CrewRosterIssues, policyValid: boolean) {
+  return issues.name ? t("Name the crew.") : !policyValid ? t("Check the working settings.") : "";
 }
 
 /**
- * The roster: one calm row per member under its role. Selection and the pinned model (with
- * its effort) are edited in the row, removal appears on hover or focus; the row opens the
- * rest of the member, including its role, in place through `renderDetail`.
+ * The roster: one calm row per member under its role. The pinned model (with its effort) is
+ * edited in the row, removal appears on hover or focus; the row opens the rest of the member,
+ * including its role, in place through `renderDetail`. Row checkboxes, for the bulk model bar,
+ * and the search appear only once the roster is long (`rosterSearchable`).
  */
 export function CrewMemberTable({
   cwd,
@@ -140,7 +130,8 @@ export function CrewMemberTable({
   onRemove: (id: string) => void;
   expandedId: string | null;
   onExpandedChange: (id: string | null) => void;
-  onAdd: (role?: CrewRole) => void;
+  /** The empty roster's Add members button; the editor's header owns the other entry. */
+  onAdd: () => void;
   onStarter: () => void;
   renderDetail: (agent: CrewAgent) => ReactNode;
   query: string;
@@ -150,6 +141,7 @@ export function CrewMemberTable({
 }) {
   useLocale();
   const queryActive = query.trim().length > 0;
+  const long = rosterSearchable(agents.length, queryActive);
   const matches = (agent: CrewAgent) =>
     !queryActive ||
     matchesMemberQuery(
@@ -177,22 +169,25 @@ export function CrewMemberTable({
   if (agents.length === 0)
     return (
       <div className="flex flex-col items-start gap-3 py-2">
-        <Text as="p" size="body">
-          {t(
-            "A crew needs a coordinator, at least one specialist and a reviewer. Pick members from your library or start with one of each.",
-          )}
-        </Text>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" startIcon={<Plus />} onClick={() => onAdd()}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" startIcon={<Plus />} onClick={onAdd}>
             {t("Add members")}
           </Button>
           <Button
             variant="secondary"
             disabled={!catalogModels(data.catalog).length}
+            disabledReason={
+              !catalogModels(data.catalog).length ? t("No models configured") : undefined
+            }
             onClick={onStarter}
           >
             {t("Use starter roster")}
           </Button>
+          <InfoPopover>
+            {t(
+              "A crew needs a coordinator, at least one specialist and a reviewer. Pick members from your library or start with one of each.",
+            )}
+          </InfoPopover>
         </div>
         {unfinishedNote ? <Text as="p">{unfinishedNote}</Text> : null}
       </div>
@@ -200,25 +195,15 @@ export function CrewMemberTable({
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      {rosterSearchable(agents.length, queryActive) ? (
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <SearchInput
-            appearance="field"
-            containerClassName="min-w-48 max-w-80 flex-1"
-            aria-label={t("Search members by name, role, model or group")}
-            placeholder={t("Search members by name, role, model or group")}
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-          />
-          {queryActive ? (
-            <Text className="tabular-nums">
-              {t("{p0} of {p1} members shown", {
-                p0: matchCount,
-                p1: agents.length,
-              })}
-            </Text>
-          ) : null}
-        </div>
+      {long ? (
+        <SearchInput
+          appearance="field"
+          containerClassName="min-w-48 max-w-80"
+          aria-label={t("Search members by name, role, model or group")}
+          placeholder={t("Search members by name, role, model or group")}
+          value={query}
+          onChange={(event) => onQueryChange(event.target.value)}
+        />
       ) : null}
       {sections.map((section) => {
         const all = agents.filter((agent) => agent.role === section.role);
@@ -234,42 +219,39 @@ export function CrewMemberTable({
                 {section.title}
               </Heading>
               <Text className="min-w-0 flex-1 tabular-nums">
-                {queryActive ? `${shown.length}/${all.length}` : all.length}
+                {queryActive ? `${shown.length}/${all.length}` : all.length > 1 ? all.length : ""}
               </Text>
-              {all.length > 0 && (section.role === "specialist" || section.role === "advisor") ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  startIcon={<Plus />}
-                  onClick={() => onAdd(section.role)}
-                >
-                  {t("Add")}
-                </Button>
-              ) : null}
             </div>
-            {section.issue ? (
-              <Text role="status" as="p" tone="danger">
-                {section.issue}
-              </Text>
-            ) : null}
+            {section.issue ? <InlineError>{section.issue}</InlineError> : null}
             {shown.length ? (
               <ul className="flex min-w-0 flex-col gap-0">
                 {shown.map((agent) => {
                   const problem = issues.members[agent.id];
                   const open = expandedId === agent.id;
                   const name = agent.name || t("Unnamed member");
+                  const linkState = data.identitySupported
+                    ? memberLink(agent, data.agents)?.state
+                    : undefined;
+                  const groups = !problem && agent.groups?.length ? agent.groups.join(", ") : "";
+                  const hasMeta = linkState === "customized" || problem || groups;
                   return (
-                    <li key={agent.id} className="min-w-0">
+                    <li key={agent.id} className="@container/member-row min-w-0">
                       <ActionHost
                         hoverReveal
-                        className="grid! grid-cols-[auto_minmax(0,1fr)_minmax(8rem,14rem)_auto] items-center gap-x-2"
+                        className={`grid! items-center gap-x-2 gap-y-2 @min-[28rem]/member-row:gap-y-0 ${
+                          long
+                            ? "grid-cols-[auto_minmax(0,1fr)_auto] @min-[28rem]/member-row:grid-cols-[auto_minmax(0,1fr)_minmax(8rem,14rem)_auto]"
+                            : "grid-cols-[minmax(0,1fr)_auto] @min-[28rem]/member-row:grid-cols-[minmax(0,1fr)_minmax(8rem,14rem)_auto]"
+                        }`}
                         data-member-row={agent.id}
                       >
-                        <Checkbox
-                          aria-label={t("Select {p0}", { p0: name })}
-                          checked={selected.includes(agent.id)}
-                          onChange={(event) => toggle(agent.id, event.target.checked)}
-                        />
+                        {long ? (
+                          <Checkbox
+                            aria-label={t("Select {p0}", { p0: name })}
+                            checked={selected.includes(agent.id)}
+                            onChange={(event) => toggle(agent.id, event.target.checked)}
+                          />
+                        ) : null}
                         <Button
                           variant="item"
                           motion="none"
@@ -285,37 +267,39 @@ export function CrewMemberTable({
                               />
                             </span>
                           }
-                          tooltip={open ? t("Collapse") : t("Expand")}
                           onClick={() => onExpandedChange(open ? null : agent.id)}
                         >
                           <span className="flex min-w-0 flex-1 items-baseline gap-2 text-start">
-                            <Text
-                              size="body"
-                              tone="inherit"
-                              weight="medium"
-                              truncate
-                              className="min-w-0"
-                            >
-                              {name}
-                            </Text>
-                            {data.identitySupported ? (
-                              <MemberLinkMark link={memberLink(agent, data.agents)?.state} />
-                            ) : null}
-                            {agent.handle ? (
-                              <Text className="shrink-0">@{agent.handle}</Text>
-                            ) : null}
-                            {problem ? (
-                              <Text tone="danger" className="shrink-0">
-                                {problem === "model" ? t("Choose a model") : t("Add a name")}
+                            <OverflowTooltip label={name}>
+                              <Text
+                                size="body"
+                                tone="inherit"
+                                weight="medium"
+                                truncate
+                                className="min-w-0 flex-1"
+                              >
+                                {name}
                               </Text>
-                            ) : agent.groups?.length ? (
-                              <Text truncate className="min-w-0 flex-1 basis-0">
-                                {agent.groups.join(", ")}
-                              </Text>
+                            </OverflowTooltip>
+                            {hasMeta ? (
+                              <span className="flex max-w-[50%] shrink-0 items-baseline gap-2">
+                                <MemberLinkMark link={linkState} />
+                                {problem ? (
+                                  <Text tone="danger" truncate className="min-w-0">
+                                    {problem === "model" ? t("Choose a model") : t("Add a name")}
+                                  </Text>
+                                ) : groups ? (
+                                  <Text truncate className="min-w-0">
+                                    {groups}
+                                  </Text>
+                                ) : null}
+                              </span>
                             ) : null}
                           </span>
                         </Button>
-                        <div className="flex min-w-0 justify-end">
+                        <div
+                          className={`${long ? "col-start-2" : "col-start-1"} col-span-2 row-start-2 flex min-w-0 justify-start @min-[28rem]/member-row:col-auto @min-[28rem]/member-row:row-auto @min-[28rem]/member-row:justify-end`}
+                        >
                           {agent.selection === "fixed" ? (
                             <MemberModelPicker
                               cwd={cwd}
@@ -362,35 +346,21 @@ export function CrewMemberTable({
               </ul>
             ) : all.length ? (
               <EmptyState size="inline" kind="filtered" description={t("No matching members")} />
-            ) : (
-              <Button
-                variant="secondary"
-                className="self-start"
-                startIcon={<Plus />}
-                onClick={() => onAdd(section.role)}
-              >
-                {section.role === "coordinator"
-                  ? t("Add coordinator")
-                  : section.role === "reviewer"
-                    ? t("Add reviewer")
-                    : t("Add specialist")}
-              </Button>
-            )}
+            ) : null}
           </section>
         );
       })}
       {queryActive ? (
-        <p role="status" className="sr-only">
-          {t("{p0} of {p1} members shown", {
+        <LiveText
+          className="sr-only"
+          text={t("{p0} of {p1} members shown", {
             p0: matchCount,
             p1: agents.length,
           })}
-        </p>
+        />
       ) : null}
       {issues.size === "large" ? (
-        <Text role="status" as="p" tone="danger">
-          {t("A crew can have at most 20 members.")}
-        </Text>
+        <InlineError>{t("A crew can have at most 20 members.")}</InlineError>
       ) : null}
     </div>
   );

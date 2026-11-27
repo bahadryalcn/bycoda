@@ -1,8 +1,23 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+  mkdirSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { writeFileAtomic } from "../storage/atomic-write";
 import { DelegationStore, MAX_DELEGATION_RECORDS, type DelegationRecord } from "./store";
+
+vi.mock("../storage/atomic-write", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../storage/atomic-write")>();
+  return { ...actual, writeFileAtomic: vi.fn(actual.writeFileAtomic) };
+});
+const write = vi.mocked(writeFileAtomic);
 
 let directory: string;
 beforeEach(() => {
@@ -91,5 +106,51 @@ describe("DelegationStore", () => {
     mkdirSync(join(directory, "delegation"), { recursive: true });
     writeFileSync(join(directory, "delegation", "runs.json"), JSON.stringify({ runs: 1 }));
     expect(await new DelegationStore(directory).list()).toEqual([]);
+  });
+
+  it("skips the rewrite for a patch that repeats stored values or targets a missing run", async () => {
+    const store = new DelegationStore(directory);
+    await store.add(record(1));
+    write.mockClear();
+    await store.patch("run-1", { status: "succeeded", finishedAt: 2 });
+    await store.patch("run-missing", { status: "failed" });
+    expect(write).not.toHaveBeenCalled();
+    await store.patch("run-1", { status: "failed" });
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes queued changes once, and each change is durable when its promise settles", async () => {
+    const store = new DelegationStore(directory);
+    await store.add(record(1, false));
+    write.mockClear();
+    await Promise.all([
+      store.add(record(2, false)),
+      store.patch("run-1", { childRunId: "turn-2" }),
+      store.patch("run-2", { childRunId: "turn-3" }),
+    ]);
+    expect(write).toHaveBeenCalledTimes(1);
+    const onDisk = JSON.parse(readFileSync(join(directory, "delegation", "runs.json"), "utf8"));
+    expect(onDisk).toMatchObject([
+      { runId: "run-1", childRunId: "turn-2" },
+      { runId: "run-2", childRunId: "turn-3" },
+    ]);
+  });
+
+  it("rejects every change in a failed group and keeps it for the next successful write", async () => {
+    const store = new DelegationStore(directory);
+    await store.add(record(1, false));
+    write.mockClear();
+    write.mockRejectedValueOnce(new Error("disk full"));
+    const settled = await Promise.allSettled([
+      store.add(record(2, false)),
+      store.patch("run-1", { childRunId: "turn-2" }),
+    ]);
+    expect(settled.map((result) => result.status)).toEqual(["rejected", "rejected"]);
+    await store.patch("run-1", { ownerFollowUp: true });
+    const onDisk = JSON.parse(readFileSync(join(directory, "delegation", "runs.json"), "utf8"));
+    expect(onDisk).toMatchObject([
+      { runId: "run-1", childRunId: "turn-2", ownerFollowUp: true },
+      { runId: "run-2" },
+    ]);
   });
 });

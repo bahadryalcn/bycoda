@@ -34,6 +34,10 @@ pub struct SshTarget {
 /// ordered by the owner's route settings. The others check the host key filed
 /// for the saved address.
 pub(crate) fn candidates(target: &SshTarget) -> Vec<SshTarget> {
+    candidates_for(target, None)
+}
+
+fn candidates_for(target: &SshTarget, reconnect_deadline: Option<Instant>) -> Vec<SshTarget> {
     let primary = SshTarget {
         alternate: None,
         host_key_alias: target.host_key_alias.clone(),
@@ -71,7 +75,15 @@ pub(crate) fn candidates(target: &SshTarget) -> Vec<SshTarget> {
         });
     }
     if !others.is_empty() {
-        let alias = known_host_key_name(&primary);
+        let alias = primary
+            .host_key_alias
+            .clone()
+            .or_else(|| known_host_key_name(&primary, reconnect_deadline));
+        // A reconnect whose config lookup failed must not authenticate another
+        // address against a different machine's known host key.
+        if reconnect_deadline.is_some() && alias.is_none() {
+            others.clear();
+        }
         for other in &mut others {
             other.host_key_alias = alias.clone();
         }
@@ -84,19 +96,43 @@ pub(crate) fn candidates(target: &SshTarget) -> Vec<SshTarget> {
 /// are checked at once, so an unreachable address costs its timeout only once.
 /// A machine with one address and nothing learned has just that one.
 pub fn dial_order(target: &SshTarget) -> Vec<SshTarget> {
-    let candidates = candidates(target);
+    dial_order_for(target, None)
+}
+
+fn dial_order_for(target: &SshTarget, reconnect_deadline: Option<Instant>) -> Vec<SshTarget> {
+    let candidates = candidates_for(target, reconnect_deadline);
     if candidates.len() == 1 {
         return candidates;
     }
     let probes: Vec<_> = candidates
         .iter()
         .cloned()
-        .map(|candidate| std::thread::spawn(move || ssh_server_reachable(&candidate)))
+        .map(|candidate| {
+            let (send, receive) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = send.send(ssh_server_reachable_until(&candidate, reconnect_deadline));
+            });
+            receive
+        })
         .collect();
     let answers: Vec<Option<bool>> = probes
         .into_iter()
-        .map(|probe| probe.join().ok().flatten())
+        .map(|probe| match reconnect_deadline {
+            Some(deadline) => probe
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .ok()
+                .flatten(),
+            None => probe.recv().ok().flatten(),
+        })
         .collect();
+    rank_dials(candidates, answers, reconnect_deadline.is_some())
+}
+
+fn rank_dials(
+    candidates: Vec<SshTarget>,
+    answers: Vec<Option<bool>>,
+    skip_silent: bool,
+) -> Vec<SshTarget> {
     // The saved address keeps first place unless its port is known to be silent.
     let rank = |index: usize, answer: Option<bool>| match answer {
         Some(true) => 0,
@@ -106,13 +142,22 @@ pub fn dial_order(target: &SshTarget) -> Vec<SshTarget> {
     };
     let mut order: Vec<(usize, SshTarget)> = candidates.into_iter().enumerate().collect();
     order.sort_by_key(|(index, _)| rank(*index, answers[*index]));
+    if skip_silent {
+        // Keep the preferred route when all probes failed so SSH can still
+        // succeed after a transient outage or return its own diagnosis.
+        let usable = order
+            .iter()
+            .take_while(|(index, _)| answers[*index] != Some(false))
+            .count();
+        order.truncate(usable.max(1));
+    }
     order.into_iter().map(|(_, dial)| dial).collect()
 }
 
 /// The name ssh files the primary address's host key under: its
 /// HostKeyAlias when the config sets one, else the host name it dials.
-fn known_host_key_name(primary: &SshTarget) -> Option<String> {
-    let output = ssh_config_dump(primary)?;
+fn known_host_key_name(primary: &SshTarget, deadline: Option<Instant>) -> Option<String> {
+    let output = ssh_config_dump_until(primary, deadline)?;
     let mut hostname = None;
     for line in output.lines() {
         match line.split_once(' ') {
@@ -173,6 +218,7 @@ pub struct JobView {
     pub done: bool,
     pub error: Option<String>,
     pub machine: Option<crate::remote::Machine>,
+    pub enabled_background_service: bool,
 }
 struct JobData {
     view: JobView,
@@ -193,6 +239,7 @@ impl Job {
                     done: false,
                     error: None,
                     machine: None,
+                    enabled_background_service: false,
                 },
                 answer: None,
             }),
@@ -213,6 +260,13 @@ impl Job {
             .view
             .message = text.into();
     }
+    pub fn background_service_enabled(&self) {
+        self.inner
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .view
+            .enabled_background_service = true;
+    }
     pub fn complete(&self, action: impl FnOnce() -> Result<crate::remote::Machine, String>) {
         let mut inner = self.inner.lock().unwrap_or_else(|error| error.into_inner());
         let result = if self.cancelled.load(Ordering::Relaxed) {
@@ -225,7 +279,12 @@ impl Job {
         inner.answer = None;
         match result {
             Ok(machine) => {
-                inner.view.message = "Connected".into();
+                inner.view.message = if inner.view.enabled_background_service {
+                    "Connected. This computer now stays reachable when bycoda is closed."
+                } else {
+                    "Connected"
+                }
+                .into();
                 inner.view.machine = Some(machine);
             }
             Err(error) => inner.view.error = Some(error),
@@ -356,21 +415,86 @@ fn command_with_keepalive(target: &SshTarget, interactive: bool, keepalive: u32)
     command
 }
 
-fn capture(mut reader: impl Read + Send + 'static) -> std::sync::mpsc::Receiver<Vec<u8>> {
-    let (send, receive) = std::sync::mpsc::channel();
+/// The newest bytes kept from one ssh pipe.
+const CAPTURE_LIMIT: usize = 64 * 1024;
+/// How long a finished or stopped ssh may still hold its pipes open before the
+/// output read so far is used.
+const CAPTURE_GRACE: Duration = Duration::from_secs(2);
+
+/// One ssh pipe read in the background into a bounded shared buffer, so what has
+/// arrived is available even while the pipe stays open.
+struct Capture {
+    bytes: Arc<Mutex<Vec<u8>>>,
+    /// Signalled (or disconnected) once the pipe reached its end.
+    ended: std::sync::mpsc::Receiver<()>,
+}
+
+/// Appends `chunk`, keeping only the newest `CAPTURE_LIMIT` bytes: the caller
+/// parses the last line, and the last words of stderr name the failure.
+fn append_capped(output: &mut Vec<u8>, chunk: &[u8]) {
+    output.extend_from_slice(chunk);
+    if output.len() > CAPTURE_LIMIT {
+        let excess = output.len() - CAPTURE_LIMIT;
+        output.drain(..excess);
+    }
+}
+
+fn capture(mut reader: impl Read + Send + 'static) -> Capture {
+    let bytes = Arc::new(Mutex::new(Vec::new()));
+    let (ended_send, ended) = std::sync::mpsc::channel();
+    let shared = bytes.clone();
     std::thread::spawn(move || {
-        let mut output = Vec::new();
         let mut buffer = [0; 4096];
         while let Ok(count) = reader.read(&mut buffer) {
             if count == 0 {
                 break;
             }
-            let remaining = (64 * 1024usize).saturating_sub(output.len());
-            output.extend_from_slice(&buffer[..count.min(remaining)]);
+            let mut output = shared.lock().unwrap_or_else(PoisonError::into_inner);
+            append_capped(&mut output, &buffer[..count]);
         }
-        let _ = send.send(output);
+        let _ = ended_send.send(());
     });
-    receive
+    Capture { bytes, ended }
+}
+
+impl Capture {
+    /// Waits for the pipe to end until `until`, then returns what was read. A
+    /// grandchild can keep the pipe open after ssh is gone; the timeout then
+    /// yields the output read so far instead of nothing.
+    fn finish(&self, until: Instant) -> String {
+        let _ = self
+            .ended
+            .recv_timeout(until.saturating_duration_since(Instant::now()));
+        let bytes = self.bytes.lock().unwrap_or_else(PoisonError::into_inner);
+        String::from_utf8_lossy(&bytes).into_owned()
+    }
+}
+
+/// The reason shown when ssh exits unsuccessfully. Only the credential-free,
+/// bounded tail of stderr is used; stdout can hold the pairing token and is
+/// never part of an error.
+fn setup_failure(code: Option<i32>, errors: &str) -> String {
+    let tail = stderr_tail(errors);
+    if !tail.is_empty() {
+        return format!("SSH setup failed: {tail}");
+    }
+    match code {
+        Some(code) => format!(
+            "SSH setup failed: ssh exited with code {code} and printed no error text that is safe to show."
+        ),
+        None => "SSH setup failed: ssh was stopped before it printed any error text that is safe to show.".into(),
+    }
+}
+
+/// A timeout keeps what ssh had already said, filtered the same way, so the
+/// user sees where the setup stalled.
+fn timeout_failure(message: &str, errors: &str) -> String {
+    let tail = stderr_tail(errors);
+    if tail.is_empty() {
+        message.to_string()
+    } else {
+        format!("{message}\n{tail}")
+    }
 }
 
 /// Starts an ssh process the app owns. On Windows it joins the app's job, so it
@@ -566,7 +690,7 @@ fn run_remote_command(
             .to_string());
         }
         match child.try_wait() {
-            Ok(Some(status)) => break Ok(status.success()),
+            Ok(Some(status)) => break Ok(status),
             Ok(None) => std::thread::sleep(Duration::from_millis(50)),
             Err(error) => {
                 stop(&mut child);
@@ -574,22 +698,18 @@ fn run_remote_command(
             }
         }
     };
-    // A grandchild can keep the pipes open after ssh is gone; the output read so
-    // far is used instead of waiting for the pipe to close.
-    let give_up = Instant::now() + Duration::from_secs(2);
-    let collect = |pipe: std::sync::mpsc::Receiver<Vec<u8>>| {
-        let bytes = pipe
-            .recv_timeout(give_up.saturating_duration_since(Instant::now()))
-            .unwrap_or_default();
-        String::from_utf8_lossy(&bytes).to_string()
+    // One shared grace for both pipes: a grandchild can keep them open after ssh
+    // is gone, and the output read so far is used instead of waiting for EOF.
+    let give_up = Instant::now() + CAPTURE_GRACE;
+    let output = stdout.finish(give_up);
+    let errors = stderr.finish(give_up);
+    let status = match result {
+        Ok(status) => status,
+        Err(reason) if job.cancelled.load(Ordering::Relaxed) => return Err(reason),
+        Err(reason) => return Err(timeout_failure(&reason, &errors)),
     };
-    let output = collect(stdout);
-    let errors = collect(stderr);
-    if !result? {
-        return Err(format!(
-            "SSH setup failed: {}",
-            errors.trim().chars().take(4000).collect::<String>()
-        ));
+    if !status.success() {
+        return Err(setup_failure(status.code(), &errors));
     }
     Ok(output)
 }
@@ -647,10 +767,10 @@ pub fn connection_info_script(platform: HostPlatform) -> String {
     }
 }
 
-pub fn pairing_script(platform: HostPlatform, name: &str) -> String {
+pub fn pairing_script(platform: HostPlatform, name: &str, proof_key: &str) -> String {
     match platform {
-        HostPlatform::Unix => format!("set -eu\n\"$HOME/.bycoda-host/bin/bycoda-host\" pair --name {} --json\n", shell_quote(name)),
-        HostPlatform::Windows => format!("$ErrorActionPreference = 'Stop'\n$base = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.bycoda-host'\n$runtime = [IO.File]::ReadAllText((Join-Path $base 'runtime-path')).Trim()\n& (Join-Path $runtime 'node.exe') (Join-Path $runtime 'host.mjs') pair --name {} --json\nif ($LASTEXITCODE -ne 0) {{ throw 'Host pairing failed.' }}\n", powershell_quote(name)),
+        HostPlatform::Unix => format!("set -eu\n\"$HOME/.bycoda-host/bin/bycoda-host\" pair --name {} --proof-key {} --json\n", shell_quote(name), shell_quote(proof_key)),
+        HostPlatform::Windows => format!("$ErrorActionPreference = 'Stop'\n$base = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.bycoda-host'\n$runtime = [IO.File]::ReadAllText((Join-Path $base 'runtime-path')).Trim()\n& (Join-Path $runtime 'node.exe') (Join-Path $runtime 'host.mjs') pair --name {} --proof-key {} --json\nif ($LASTEXITCODE -ne 0) {{ throw 'Host pairing failed.' }}\n", powershell_quote(name), powershell_quote(proof_key)),
     }
 }
 
@@ -661,6 +781,19 @@ const TUNNEL_KEEPALIVE_SECS: u32 = 15;
 /// How often a tunnel's ssh process is checked for having exited. Keepalives
 /// take ~45 s to notice a dead link anyway; 1 s keeps idle tunnels cheap.
 const WATCH_INTERVAL: Duration = Duration::from_secs(1);
+const RECONNECT_BUDGET: Duration = Duration::from_secs(20);
+const RECONNECT_PROBE_BUDGET: Duration = Duration::from_secs(5);
+/// How long a machine's first failed dial is remembered. Each further failure
+/// of the same address doubles it, up to `FAILURE_COOLDOWN_MAX`.
+const FAILURE_COOLDOWN: Duration = Duration::from_secs(10);
+const FAILURE_COOLDOWN_MAX: Duration = Duration::from_secs(300);
+const SSH_TIMEOUT: &str = "SSH timed out connecting to the machine.";
+
+fn remaining(deadline: Option<Instant>, limit: Duration) -> Duration {
+    deadline.map_or(limit, |end| {
+        limit.min(end.saturating_duration_since(Instant::now()))
+    })
+}
 
 /// A tunnel whose ssh process ended without the app closing it.
 #[derive(Clone, Debug, Serialize)]
@@ -742,13 +875,26 @@ fn parse_ssh_config_dump(output: &str) -> Option<(String, u16)> {
 /// that does not depend on ssh's wording. `None` when the address is unknown.
 /// Reads the user's config through `ssh -G`, which never connects.
 pub(crate) fn ssh_server_reachable(target: &SshTarget) -> Option<bool> {
-    let (host, port) = parse_ssh_config_dump(&ssh_config_dump(target)?)?;
-    Some(tcp_reachable(&host, port, Duration::from_secs(3)))
+    ssh_server_reachable_until(target, None)
+}
+
+fn ssh_server_reachable_until(target: &SshTarget, deadline: Option<Instant>) -> Option<bool> {
+    let (host, port) = parse_ssh_config_dump(&ssh_config_dump_until(target, deadline)?)?;
+    tcp_reachable(&host, port, Duration::from_secs(3), deadline)
 }
 
 /// `ssh -G` for a target: the settings ssh would use, without connecting.
 /// Capped at 5 seconds and 64 KiB, since a `Match exec` line can hang.
 pub(crate) fn ssh_config_dump(target: &SshTarget) -> Option<String> {
+    ssh_config_dump_until(target, None)
+}
+
+fn ssh_config_dump_until(target: &SshTarget, deadline: Option<Instant>) -> Option<String> {
+    let config_budget = remaining(deadline, Duration::from_secs(5));
+    if config_budget.is_zero() {
+        return None;
+    }
+    let config_deadline = Instant::now() + config_budget;
     let mut command = Command::new("ssh");
     command.arg("-G");
     if let Some(port) = target.port {
@@ -772,11 +918,12 @@ pub(crate) fn ssh_config_dump(target: &SshTarget) -> Option<String> {
         let _ = (&mut stdout).take(64 * 1024).read_to_end(&mut output);
         let _ = send.send(output);
     });
-    let deadline = Instant::now() + Duration::from_secs(5);
     let succeeded = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status.success(),
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
+            Ok(None) if Instant::now() < config_deadline => {
+                std::thread::sleep(remaining(Some(config_deadline), Duration::from_millis(20)));
+            }
             _ => break false,
         }
     };
@@ -784,14 +931,25 @@ pub(crate) fn ssh_config_dump(target: &SshTarget) -> Option<String> {
         stop(&mut child);
         return None;
     }
-    let output = receive.recv_timeout(Duration::from_secs(1)).ok()?;
+    let output = receive
+        .recv_timeout(remaining(deadline, Duration::from_secs(1)))
+        .ok()?;
     Some(String::from_utf8_lossy(&output).into_owned())
 }
 
 /// Whether `host:port` accepts a TCP connection within `timeout` per address.
 /// Name lookup runs on a worker that is abandoned after 3 seconds, since a
 /// broken resolver can hang it.
-fn tcp_reachable(host: &str, port: u16, timeout: Duration) -> bool {
+fn tcp_reachable(
+    host: &str,
+    port: u16,
+    timeout: Duration,
+    deadline: Option<Instant>,
+) -> Option<bool> {
+    let resolver_budget = remaining(deadline, Duration::from_secs(3));
+    if resolver_budget.is_zero() {
+        return None;
+    }
     let (send, receive) = std::sync::mpsc::channel();
     let host = host.to_string();
     std::thread::spawn(move || {
@@ -801,12 +959,24 @@ fn tcp_reachable(host: &str, port: u16, timeout: Duration) -> bool {
             .map(|addresses| addresses.take(8).collect::<Vec<_>>());
         let _ = send.send(addresses);
     });
-    let Ok(Ok(addresses)) = receive.recv_timeout(Duration::from_secs(3)) else {
-        return false;
+    let addresses = match receive.recv_timeout(resolver_budget) {
+        Ok(Ok(addresses)) => addresses,
+        Err(_) if deadline.is_some() => return None,
+        _ => return Some(false),
     };
-    addresses
-        .iter()
-        .any(|addr| TcpStream::connect_timeout(addr, timeout).is_ok())
+    for addr in addresses {
+        let budget = remaining(deadline, timeout);
+        if budget.is_zero() {
+            return None;
+        }
+        if TcpStream::connect_timeout(&addr, budget).is_ok() {
+            return Some(true);
+        }
+    }
+    if deadline.is_some_and(|end| Instant::now() >= end) {
+        return None;
+    }
+    Some(false)
 }
 
 /// What the renderer reads to classify a failed start: ssh's exit status and
@@ -830,11 +1000,12 @@ fn failure_tag(exit: Option<i32>, reachable: Option<bool>) -> String {
 
 /// Gives ssh's last words time to arrive after it exits.
 fn wait_for_stderr(done: &AtomicBool) {
-    for _ in 0..25 {
-        if done.load(Ordering::SeqCst) {
-            return;
-        }
-        std::thread::sleep(Duration::from_millis(20));
+    wait_for_stderr_until(done, Instant::now() + Duration::from_millis(500));
+}
+
+fn wait_for_stderr_until(done: &AtomicBool, deadline: Instant) {
+    while !done.load(Ordering::SeqCst) && Instant::now() < deadline {
+        std::thread::sleep(remaining(Some(deadline), Duration::from_millis(20)));
     }
 }
 
@@ -972,14 +1143,44 @@ impl Tunnel {
         job: Option<&Arc<Job>>,
         askpass: Option<&Askpass>,
     ) -> Result<Self, String> {
-        let mut failures = Vec::new();
-        for dial in dial_order(target) {
-            match Self::start_with_command(
-                &dial,
+        Self::start_dials(target, job, dial_order(target), None, |dial| {
+            Self::start_with_command(
+                dial,
                 job,
                 askpass,
-                command_with_keepalive(&dial, askpass.is_some(), TUNNEL_KEEPALIVE_SECS),
-            ) {
+                command_with_keepalive(dial, askpass.is_some(), TUNNEL_KEEPALIVE_SECS),
+                None,
+            )
+        })
+    }
+
+    fn reconnect(target: &SshTarget, deadline: Instant) -> Result<Self, String> {
+        let probe_deadline = deadline.min(Instant::now() + RECONNECT_PROBE_BUDGET);
+        let dials = dial_order_for(target, Some(probe_deadline));
+        Self::start_dials(target, None, dials, Some(deadline), |dial| {
+            Self::start_with_command(
+                dial,
+                None,
+                None,
+                command_with_keepalive(dial, false, TUNNEL_KEEPALIVE_SECS),
+                Some(deadline),
+            )
+        })
+    }
+
+    fn start_dials(
+        target: &SshTarget,
+        job: Option<&Arc<Job>>,
+        dials: Vec<SshTarget>,
+        deadline: Option<Instant>,
+        mut start: impl FnMut(&SshTarget) -> Result<Self, String>,
+    ) -> Result<Self, String> {
+        let mut failures = Vec::new();
+        for dial in dials {
+            if deadline.is_some_and(|end| Instant::now() >= end) {
+                break;
+            }
+            match start(&dial) {
                 Ok(mut tunnel) => {
                     tunnel.target = Some(target.clone());
                     tunnel.dialed = Some(dial);
@@ -993,6 +1194,9 @@ impl Tunnel {
                 }
             }
         }
+        if failures.is_empty() {
+            return Err(SSH_TIMEOUT.into());
+        }
         Err(dial_failures(failures))
     }
 
@@ -1004,6 +1208,7 @@ impl Tunnel {
             None,
             None,
             command_with_keepalive(dial, false, TUNNEL_KEEPALIVE_SECS),
+            None,
         )?;
         tunnel.target = Some(saved.clone());
         tunnel.dialed = Some(dial.clone());
@@ -1015,7 +1220,11 @@ impl Tunnel {
         job: Option<&Arc<Job>>,
         askpass: Option<&Askpass>,
         mut command: Command,
+        reconnect_deadline: Option<Instant>,
     ) -> Result<Self, String> {
+        if reconnect_deadline.is_some_and(|end| Instant::now() >= end) {
+            return Err(SSH_TIMEOUT.into());
+        }
         let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
         let port = listener.local_addr().map_err(|e| e.to_string())?.port();
         if let Some(askpass) = askpass {
@@ -1032,12 +1241,18 @@ impl Tunnel {
         drop(listener);
         let child =
             spawn_owned(&mut command).map_err(|e| format!("Could not start OpenSSH: {e}"))?;
+        let pid = child.id();
         let mut tunnel = Self::adopt(child, port);
         tunnel.target = Some(target.clone());
-        let deadline = Instant::now() + Duration::from_secs(if job.is_some() { 150 } else { 20 });
+        let attempt_deadline =
+            Instant::now() + Duration::from_secs(if job.is_some() { 150 } else { 20 });
+        let deadline = reconnect_deadline.map_or(attempt_deadline, |end| end.min(attempt_deadline));
         loop {
             if job.is_some_and(|j| j.cancelled.load(Ordering::Relaxed)) {
                 return Err("Connection cancelled".into());
+            }
+            if Instant::now() >= deadline {
+                return Err(SSH_TIMEOUT.into());
             }
             if !tunnel.alive() {
                 let exit = tunnel
@@ -1049,37 +1264,46 @@ impl Tunnel {
                 // Exit 255 is ssh's own failure; whether the server answers on
                 // its port tells a dead network from a refused sign-in.
                 let reachable = if exit == Some(255) {
-                    ssh_server_reachable(target)
+                    ssh_server_reachable_until(target, reconnect_deadline)
                 } else {
                     None
                 };
-                wait_for_stderr(&tunnel.stderr_done);
+                let stderr_deadline =
+                    Instant::now() + remaining(reconnect_deadline, Duration::from_millis(500));
+                wait_for_stderr_until(&tunnel.stderr_done, stderr_deadline);
+                // Same credential filter and bounds as the exit report, so this
+                // text is safe for every transport that surfaces it.
+                let stderr =
+                    stderr_tail(&tunnel.stderr.lock().unwrap_or_else(PoisonError::into_inner));
                 return Err(format!(
                     "SSH connection failed{}: {}. Open Settings → Machines and reconnect to check access.",
                     failure_tag(exit, reachable),
-                    tunnel.stderr.lock().unwrap_or_else(PoisonError::into_inner).trim()
+                    stderr
                 ));
             }
-            if TcpStream::connect_timeout(
-                &([127, 0, 0, 1], port).into(),
-                Duration::from_millis(100),
-            )
-            .is_ok()
+            let poll = remaining(Some(deadline), Duration::from_millis(100));
+            if !poll.is_zero()
+                && TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), poll).is_ok()
             {
-                // The port may answer for another listener while ssh is exiting, so
-                // ssh must still run after a short re-check. This narrows that window;
-                // it does not close it.
-                std::thread::sleep(Duration::from_millis(150));
-                if tunnel.alive() {
+                // A connect shows that something answers the port, not that ssh does:
+                // another process may have bound it first. Only ssh's own listener
+                // opens the tunnel; any other owner fails closed.
+                let owned = match listener_owner::listener_owners(port)? {
+                    Some(owners) => listener_owner::ssh_owns_port(&owners, pid)?,
+                    // This platform cannot list listeners; ssh's own exit status decides.
+                    None => true,
+                };
+                if !owned {
+                    std::thread::sleep(remaining(Some(deadline), Duration::from_millis(100)));
+                    continue;
+                }
+                if Instant::now() < deadline && tunnel.alive() {
                     log::info!("ssh tunnel: opened on local port {port}");
                     return Ok(tunnel);
                 }
                 continue;
             }
-            if Instant::now() >= deadline {
-                return Err("SSH timed out connecting to the machine.".into());
-            }
-            std::thread::sleep(Duration::from_millis(100));
+            std::thread::sleep(remaining(Some(deadline), Duration::from_millis(100)));
         }
     }
 }
@@ -1087,9 +1311,42 @@ impl Tunnel {
 #[derive(Default)]
 struct Slot {
     tunnel: Option<Tunnel>,
+    connecting: bool,
     failure: Option<(Instant, String)>,
+    /// Failed dials in a row for `failed_target`; sets `failure_cooldown`.
+    failures: u32,
+    /// The jittered cooldown of the remembered failure, drawn once when it is
+    /// recorded so repeated checks agree on when the next dial is due.
+    cooldown: Duration,
+    /// The address the remembered failures dialed. Another address, such as an
+    /// edited host or identity file, is a new machine route and starts over.
+    failed_target: Option<SshTarget>,
     generation: u64,
     environment_id: String,
+}
+impl Slot {
+    /// Forgets the failure memo and its backoff: the next request dials at once.
+    fn clear_failure(&mut self) {
+        self.failure = None;
+        self.failures = 0;
+        self.failed_target = None;
+        self.cooldown = Duration::ZERO;
+    }
+}
+
+/// How long a failed dial is answered from memory: 10 s, doubling with every
+/// further failure, never more than five minutes. `jitter` (0 to 1) picks a
+/// point between half of that ceiling and all of it, so machines that failed
+/// together do not redial in the same second.
+fn failure_cooldown(failures: u32, jitter: f64) -> Duration {
+    let ceiling = FAILURE_COOLDOWN
+        .saturating_mul(1u32 << failures.saturating_sub(1).min(8))
+        .min(FAILURE_COOLDOWN_MAX);
+    ceiling / 2 + ceiling.mul_f64(jitter.clamp(0.0, 1.0) / 2.0)
+}
+
+fn jitter() -> f64 {
+    uuid::Uuid::new_v4().as_u128() as f64 / u128::MAX as f64
 }
 
 /// A running tunnel that dialed a later address than its machine prefers.
@@ -1108,8 +1365,69 @@ pub struct TunnelLease {
     generation: u64,
 }
 
-/// Each machine has its own lock: restarting one machine's tunnel (up to
-/// 20 seconds) must not block requests to other machines.
+/// A machine's old tunnel, taken out of the registry with its ssh still
+/// running. Stopping ssh can wait seconds (`taskkill /T /F`, then `wait`), so a
+/// caller holding the connection-store lock keeps this value, releases the lock
+/// and only then drops it: dropping ends the process on purpose, so nothing
+/// reports it as a dropped link.
+///
+/// The process is detached from the exact slot that owned it. A replacement
+/// registered under the same machine id lives in another slot and is never
+/// touched, and a lease still pinned to the old slot cannot keep ssh alive.
+pub struct RetiredTunnel {
+    /// The removed slot, kept only while its lock was busy at detach time.
+    slot: Option<Arc<Mutex<Slot>>>,
+    tunnel: Option<Tunnel>,
+}
+impl RetiredTunnel {
+    /// Takes the tunnel now if nobody holds its slot; never waits.
+    fn detach(slot: Option<Arc<Mutex<Slot>>>) -> Self {
+        let mut retired = Self { slot, tunnel: None };
+        retired.claim(false);
+        retired
+    }
+    /// Moves the tunnel out of the removed slot and moves the slot's generation
+    /// on, so no lease pinned to it is current. With `wait` off a busy slot is
+    /// left for the drop, which runs off the caller's locks.
+    fn claim(&mut self, wait: bool) {
+        let Some(slot) = self.slot.as_ref() else {
+            return;
+        };
+        let mut current = if wait {
+            slot.lock().unwrap_or_else(PoisonError::into_inner)
+        } else {
+            match slot.try_lock() {
+                Ok(guard) => guard,
+                Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+                Err(TryLockError::WouldBlock) => return,
+            }
+        };
+        current.generation = current.generation.wrapping_add(1);
+        current.clear_failure();
+        let tunnel = current.tunnel.take();
+        drop(current);
+        self.slot = None;
+        // A tunnel closed on purpose is never reported, even if ssh exits before
+        // the caller gets to drop this. One whose ssh already exited is left for
+        // the watcher, as `Tunnel::drop` does.
+        if let Some(tunnel) = &tunnel {
+            if tunnel.alive() {
+                tunnel.settled.store(true, Ordering::SeqCst);
+            }
+        }
+        self.tunnel = tunnel;
+    }
+}
+impl Drop for RetiredTunnel {
+    fn drop(&mut self) {
+        // May wait for a slot holder, so it runs only where nothing else waits.
+        self.claim(true);
+        // `self.tunnel` drops after this and stops ssh.
+    }
+}
+
+/// Each machine has its own reconnect attempt. Requests never queue behind its
+/// SSH process, and other machines can connect independently.
 #[derive(Default)]
 pub struct Tunnels {
     slots: Mutex<HashMap<String, Arc<Mutex<Slot>>>>,
@@ -1126,7 +1444,7 @@ impl Tunnels {
         if !Arc::ptr_eq(&slot, &lease.slot) {
             return false;
         }
-        // Busy means a tunnel start holds the slot: not current, without waiting.
+        // A caller holding the slot may be changing which lease is current.
         let Ok(current) = slot.try_lock() else {
             return false;
         };
@@ -1151,22 +1469,35 @@ impl Tunnels {
             tunnel.watch(environment_id.into(), sink);
         }
     }
-    pub fn insert(&self, id: String, environment_id: &str, tunnel: Tunnel) {
+    /// Registers `tunnel` as the machine's only one. The tunnel it replaces is
+    /// returned, still running: drop it after releasing the store lock.
+    pub fn insert(&self, id: String, environment_id: &str, tunnel: Tunnel) -> RetiredTunnel {
         self.watch(environment_id, &tunnel);
         // A fresh slot never waits for a reconnect in progress; that attempt's
         // tunnel is dropped with the replaced slot.
         let slot = Slot {
             tunnel: Some(tunnel),
+            connecting: false,
             failure: None,
+            failures: 0,
+            cooldown: Duration::ZERO,
+            failed_target: None,
             generation: 1,
             environment_id: environment_id.into(),
         };
         let old = self.slots().insert(id, Arc::new(Mutex::new(slot)));
-        drop(old);
+        RetiredTunnel::detach(old)
     }
-    pub fn remove(&self, id: &str) {
+    /// Takes the machine's tunnel out of the registry and returns it, still
+    /// running, for the caller to drop after it releases its locks. Nothing
+    /// here waits on ssh or on a slot holder.
+    pub fn detach(&self, id: &str) -> RetiredTunnel {
         let old = self.slots().remove(id);
-        drop(old);
+        RetiredTunnel::detach(old)
+    }
+    /// Closes the machine's tunnel now. Hold no lock another command needs.
+    pub fn remove(&self, id: &str) {
+        drop(self.detach(id));
     }
     /// The tunnel to a machine, started if it is down. With `allow_connect`
     /// off (a background poll while automatic reconnect is off) a missing
@@ -1178,25 +1509,33 @@ impl Tunnels {
         target: &SshTarget,
         allow_connect: bool,
     ) -> Result<TunnelLease, String> {
+        self.endpoint_with(id, environment_id, target, allow_connect, Tunnel::reconnect)
+    }
+
+    fn endpoint_with(
+        &self,
+        id: &str,
+        environment_id: &str,
+        target: &SshTarget,
+        allow_connect: bool,
+        start: impl FnOnce(&SshTarget, Instant) -> Result<Tunnel, String>,
+    ) -> Result<TunnelLease, String> {
         let slot = self.slots().entry(id.into()).or_default().clone();
-        // A call that may not connect (a cancel, a peek, a background poll) must not
-        // queue behind a tunnel start that holds the slot for many seconds: contention
-        // reads as unreachable, which those callers already handle.
+        let busy =
+            || "Machine is unreachable right now: a connection attempt is in progress.".to_string();
         let mut current = if allow_connect {
             slot.lock().unwrap_or_else(PoisonError::into_inner)
         } else {
             match slot.try_lock() {
                 Ok(guard) => guard,
                 Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
-                Err(TryLockError::WouldBlock) => {
-                    return Err(
-                        "Machine is unreachable right now: a connection attempt is in progress."
-                            .into(),
-                    );
-                }
+                Err(TryLockError::WouldBlock) => return Err(busy()),
             }
         };
-        current.environment_id = environment_id.into();
+        if current.connecting {
+            return Err(busy());
+        }
+        let same_environment = current.environment_id == environment_id;
         if let Some(tunnel) = current.tunnel.as_mut() {
             // A request that read the machine just before its address was edited
             // can start a tunnel to the old one; it is dropped here, not reused.
@@ -1204,7 +1543,7 @@ impl Tunnels {
                 .target
                 .as_ref()
                 .is_some_and(|started| !same_tunnel_route(started, target));
-            if tunnel.alive() && !stale {
+            if same_environment && tunnel.alive() && !stale {
                 return Ok(TunnelLease {
                     endpoint: format!("http://127.0.0.1:{}", tunnel.port),
                     slot: slot.clone(),
@@ -1212,22 +1551,57 @@ impl Tunnels {
                 });
             }
         }
-        current.tunnel = None;
+        let stale = current.tunnel.take();
+        // Stopping a stale ssh can wait seconds, so every path out of here
+        // releases the slot before `stale` drops.
         if !allow_connect {
+            drop(current);
+            drop(stale);
             return Err(
                 "Machine is unreachable. Automatic reconnect is off; reconnect it yourself.".into(),
             );
         }
-        if let Some((when, error)) = &current.failure {
-            if when.elapsed() < Duration::from_secs(10) {
-                return Err(error.clone());
-            }
+        // A failure belongs to the exact environment and address it dialed; an
+        // edited address or credential, or a new environment, dials at once.
+        let cached = if current.failed_target.as_ref() == Some(target) && same_environment {
+            current
+                .failure
+                .as_ref()
+                .filter(|(when, _)| when.elapsed() < current.cooldown)
+                .map(|(_, error)| error.clone())
+        } else {
+            current.clear_failure();
+            None
+        };
+        if let Some(error) = cached {
+            drop(current);
+            drop(stale);
+            return Err(error);
         }
-        match Tunnel::start(target, None, None) {
+        current.environment_id = environment_id.into();
+        current.connecting = true;
+        let deadline = Instant::now() + RECONNECT_BUDGET;
+        drop(current);
+        drop(stale);
+        let result = start(target, deadline);
+        let mut current = slot.lock().unwrap_or_else(PoisonError::into_inner);
+        current.connecting = false;
+        // Removal, clear or explicit reconnect can replace the slot while SSH
+        // runs. Publish only to the exact slot which admitted this attempt.
+        let slots = self.slots();
+        if !slots
+            .get(id)
+            .is_some_and(|active| Arc::ptr_eq(active, &slot))
+        {
+            return Err(
+                "Machine is unreachable: the SSH connection changed during reconnect.".into(),
+            );
+        }
+        match result {
             Ok(tunnel) => {
                 self.watch(environment_id, &tunnel);
                 let endpoint = format!("http://127.0.0.1:{}", tunnel.port);
-                current.failure = None;
+                current.clear_failure();
                 current.generation = current.generation.wrapping_add(1);
                 current.tunnel = Some(tunnel);
                 Ok(TunnelLease {
@@ -1237,6 +1611,9 @@ impl Tunnels {
                 })
             }
             Err(error) => {
+                current.failures = current.failures.saturating_add(1);
+                current.cooldown = failure_cooldown(current.failures, jitter());
+                current.failed_target = Some(target.clone());
                 current.failure = Some((Instant::now(), error.clone()));
                 Err(error)
             }
@@ -1249,7 +1626,7 @@ impl Tunnels {
         let Some(slot) = self.slots().get(id).cloned() else {
             return false;
         };
-        // Busy means a tunnel start holds the slot: no report can be read now.
+        // A caller changing the slot can leave this read to the next poll.
         let current = match slot.try_lock() {
             Ok(guard) => guard,
             Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
@@ -1271,7 +1648,9 @@ impl Tunnels {
         let Some(slot) = self.slots().get(id).cloned() else {
             return;
         };
-        slot.lock().unwrap_or_else(PoisonError::into_inner).failure = None;
+        slot.lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clear_failure();
     }
     /// Closes the leased tunnel after a request failed, unless the tunnel still
     /// carries traffic: its ssh must have exited, or a probe through the
@@ -1284,7 +1663,7 @@ impl Tunnels {
         if !Arc::ptr_eq(&slot, &lease.slot) {
             return false;
         }
-        // A tunnel start holds the slot for seconds; this lease is stale then.
+        // Only probe a tunnel still owned by this lease.
         let (alive, port, recent_wake) = match slot.try_lock() {
             Ok(current) if current.generation == lease.generation => {
                 match current.tunnel.as_ref() {
@@ -1318,10 +1697,14 @@ impl Tunnels {
             return;
         }
         let mut current = slot.lock().unwrap_or_else(PoisonError::into_inner);
-        if current.generation == lease.generation {
-            current.tunnel = None;
-            current.failure = None;
-        }
+        let closed = (current.generation == lease.generation).then(|| {
+            current.clear_failure();
+            current.tunnel.take()
+        });
+        // Stopping ssh can wait seconds; callers connecting to this machine
+        // must not park on the slot meanwhile.
+        drop(current);
+        drop(closed);
     }
     pub fn clear(&self) {
         let old = std::mem::take(&mut *self.slots());
@@ -1336,6 +1719,10 @@ impl Tunnels {
         tunnel.dialed.clone()
     }
 
+    /// Whether the machine still has a tunnel slot; a removed machine does not.
+    pub(crate) fn has_machine(&self, id: &str) -> bool {
+        self.slots().contains_key(id)
+    }
     /// Tunnels up for at least `settled` over a later address than their
     /// machine prefers. Never waits on a slot: a busy one is skipped until the
     /// next check.
@@ -1403,7 +1790,7 @@ impl Tunnels {
         let environment_id = current.environment_id.clone();
         self.watch(&environment_id, &tunnel);
         current.generation = current.generation.wrapping_add(1);
-        current.failure = None;
+        current.clear_failure();
         let old = current.tunnel.replace(tunnel);
         drop(current);
         drop(old);
@@ -1458,6 +1845,9 @@ pub fn device_name() -> String {
 
 #[path = "remote_ssh/tunnel_probe.rs"]
 mod tunnel_probe;
+
+#[path = "remote_ssh/listener_owner.rs"]
+mod listener_owner;
 
 #[cfg(test)]
 #[path = "remote_ssh_tests.rs"]

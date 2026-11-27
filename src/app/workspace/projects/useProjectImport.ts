@@ -1,9 +1,18 @@
+import { errorText } from "../../../shared/lib/errors";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import {
   withRoomPrivacyMutation,
   type PrivacyMutationToken,
 } from "../../../features/group-lock/model/roomPrivacyProjection";
 import { isProjectPasswordLocked } from "../../../features/group-lock/model/groupLock";
-import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import {
+  createElement,
+  useCallback,
+  useEffect,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import type { setSessions } from "../../../features/sessions/model/sessionsStore";
 import type { Session } from "../../../features/sessions/model/session";
 import {
@@ -121,7 +130,7 @@ export function useProjectImport({
       toast.show({
         tone: "danger",
         title,
-        message: error instanceof Error ? error.message : String(error),
+        extra: createElement(ErrorDetails, { detail: errorText(error) }),
       });
     }
   }, [openProjects]);
@@ -153,7 +162,7 @@ export function useProjectImport({
             tone: "danger",
             title: t("Resume a Claude Code conversation"),
             message: t("Could not read the conversation. Open Resume again to retry.\n\n{p0}", {
-              p0: error instanceof Error ? error.message : String(error),
+              p0: errorText(error),
             }),
           });
         return null;

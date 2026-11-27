@@ -6,7 +6,7 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
-import { t, useLocale } from "../../../shared/i18n";
+import { formatNumber, t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import { PrivacyStorageError } from "./PrivacyStorageError";
 import { useGroupLock } from "../hooks/useGroupLock";
@@ -28,8 +28,9 @@ export function HiddenGroupsSettings({
   useLocale();
   const privacy = useGroupLock();
   const [prompt, setPrompt] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [unconfirmedNotice, setUnconfirmedNotice] = useState<string | null>(null);
   const [pendingGroup, setPendingGroup] = useState<string | null>(null);
+  const [pendingKind, setPendingKind] = useState<"show" | "hide" | "visible" | null>(null);
   const [canCheckVisibility, setCanCheckVisibility] = useState(false);
   const [query, setQuery] = useState("");
   const recoveryInFlight = useRef(false);
@@ -46,13 +47,22 @@ export function HiddenGroupsSettings({
     ? groups.filter((group) => group.name.toLocaleLowerCase().includes(search))
     : groups;
   const searchable = groups.length >= 6;
-  const changeVisibility = (id: string, write: () => Promise<boolean>) => {
+  const busy = pendingGroup !== null || checking;
+  const busyReason = checking
+    ? t("Wait for the status check to finish.")
+    : t("Wait for the current visibility change to finish.");
+  const changeVisibility = (
+    id: string,
+    kind: "show" | "hide" | "visible",
+    write: () => Promise<boolean>,
+  ) => {
     if (pendingGroup || recoveryInFlight.current) return;
     setPendingGroup(id);
+    setPendingKind(kind);
     void write()
       .then(
         (saved) => {
-          setError(
+          setUnconfirmedNotice(
             saved
               ? null
               : t("Visibility could not be confirmed. Check the group before trying again."),
@@ -60,15 +70,20 @@ export function HiddenGroupsSettings({
           setCanCheckVisibility(!saved);
         },
         () => {
-          setError(t("Visibility could not be confirmed. Check the group before trying again."));
+          setUnconfirmedNotice(
+            t("Visibility could not be confirmed. Check the group before trying again."),
+          );
           setCanCheckVisibility(true);
         },
       )
-      .finally(() => setPendingGroup(null))
+      .finally(() => {
+        setPendingGroup(null);
+        setPendingKind(null);
+      })
       .catch((error: unknown) => console.error("Visibility feedback failed", error));
   };
   const restore = (id: string, temporary: boolean) =>
-    changeVisibility(id, () => restoreHiddenGroup(id, temporary));
+    changeVisibility(id, temporary ? "show" : "visible", () => restoreHiddenGroup(id, temporary));
   if (privacy.storageAvailable === false) return <PrivacyStorageError />;
   return (
     <Group
@@ -107,8 +122,8 @@ export function HiddenGroupsSettings({
               query={query}
               onQueryChange={setQuery}
               count={t("Showing {p0} of {p1} groups", {
-                p0: visibleGroups.length,
-                p1: groups.length,
+                p0: formatNumber(visibleGroups.length),
+                p1: formatNumber(groups.length),
               })}
             />
           ) : null}
@@ -153,18 +168,19 @@ export function HiddenGroupsSettings({
                     {group.name}
                   </Text>
                   <Text as="p" leading="normal" className="settings-collection-meta">
-                    {pendingGroup === group.id
-                      ? t("Updating...")
-                      : privacy.hiddenGroupIds.has(group.id)
-                        ? t("Hidden on this device")
-                        : t("Visible until restart or Lock all groups")}
+                    {privacy.hiddenGroupIds.has(group.id)
+                      ? t("Hidden on this device")
+                      : t("Visible until restart or Lock all groups")}
                   </Text>
                 </div>
                 <div className="settings-collection-actions">
                   {privacy.hiddenGroupIds.has(group.id) ? (
                     <Button
                       className="shrink-0"
-                      disabled={pendingGroup !== null || checking}
+                      aria-label={t("Show temporarily: {p0}", { p0: group.name })}
+                      loading={pendingGroup === group.id && pendingKind === "show"}
+                      disabled={busy}
+                      disabledReason={busyReason}
                       onClick={() => restore(group.id, true)}
                     >
                       {t("Show temporarily")}
@@ -172,15 +188,21 @@ export function HiddenGroupsSettings({
                   ) : (
                     <Button
                       className="shrink-0"
-                      disabled={pendingGroup !== null || checking}
-                      onClick={() => changeVisibility(group.id, () => hideGroup(group.id))}
+                      aria-label={t("Hide again: {p0}", { p0: group.name })}
+                      loading={pendingGroup === group.id && pendingKind === "hide"}
+                      disabled={busy}
+                      disabledReason={busyReason}
+                      onClick={() => changeVisibility(group.id, "hide", () => hideGroup(group.id))}
                     >
                       {t("Hide again")}
                     </Button>
                   )}
                   <Button
                     className="shrink-0"
-                    disabled={pendingGroup !== null || checking}
+                    aria-label={t("Make visible: {p0}", { p0: group.name })}
+                    loading={pendingGroup === group.id && pendingKind === "visible"}
+                    disabled={busy}
+                    disabledReason={busyReason}
                     onClick={() => restore(group.id, false)}
                   >
                     {t("Make visible")}
@@ -191,9 +213,9 @@ export function HiddenGroupsSettings({
           </ScrollArea>
         </div>
       )}
-      {error ? (
+      {unconfirmedNotice ? (
         <Alert tone="danger">
-          {error}
+          {unconfirmedNotice}
           {canCheckVisibility && (
             <Button
               size="sm"
@@ -207,11 +229,11 @@ export function HiddenGroupsSettings({
                 setChecking(true);
                 void recoverRoomPrivacyProjection()
                   .then(() => {
-                    setError(null);
+                    setUnconfirmedNotice(null);
                     setCanCheckVisibility(false);
                   })
                   .catch(() =>
-                    setError(
+                    setUnconfirmedNotice(
                       t("Visibility could not be confirmed. Check the group before trying again."),
                     ),
                   )

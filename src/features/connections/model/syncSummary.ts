@@ -1,7 +1,7 @@
 import { t } from "../../../shared/i18n";
 import { formatRelativeTime } from "../../../shared/i18n/format";
 import { sanitizeConnectionError } from "./remoteConnection";
-import { classifyRemoteError } from "./remoteFailure";
+import { classifyFailureLifetime } from "./transientFailure";
 
 /** The parts of the sync status this summary reads (structurally the sync feature's status). */
 export type SyncSummaryInput = {
@@ -12,6 +12,9 @@ export type SyncSummaryInput = {
 };
 
 export type SyncSummary = { tone: "muted" | "warning" | "danger"; text: string };
+
+/** Prefix of a sync error caused by held room privacy protection, not by the machine. */
+export const ROOM_PRIVACY_NOT_CONFIRMED = "Room privacy protection is not confirmed";
 
 function core(status: SyncSummaryInput, now: number): SyncSummary {
   switch (status.state) {
@@ -26,11 +29,17 @@ function core(status: SyncSummaryInput, now: number): SyncSummary {
       return { tone: "muted", text: t("Syncing…") };
     case "unsupported":
       return { tone: "warning", text: t("Sync is unavailable. Update the host on this machine.") };
-    case "unlinked":
-      return { tone: "warning", text: t("Sync is not linked yet.") };
+    // "unlinked" (capabilities not read yet: a cold start, a Host still starting) falls to the
+    // quiet default; the machine's own connection status explains a lasting outage.
     case "error": {
-      const kind = status.lastError ? classifyRemoteError(status.lastError).kind : "other";
-      if (kind === "unreachable" || kind === "temporary") {
+      if (status.lastError?.startsWith(ROOM_PRIVACY_NOT_CONFIRMED))
+        return {
+          tone: "warning",
+          text: t(
+            "Sync is paused until room privacy protection is confirmed. It retries automatically.",
+          ),
+        };
+      if (classifyFailureLifetime(status.lastError) === "transient") {
         return {
           tone: "warning",
           text: t("Sync is paused because this machine did not answer. It retries automatically."),
@@ -48,8 +57,8 @@ function core(status: SyncSummaryInput, now: number): SyncSummary {
 }
 
 /** One calm line for a machine's sync state; only a real failure is danger. */
-export function summarizeSync(status: SyncSummaryInput, now: number): SyncSummary {
-  const summary = core(status, now);
+export function summarizeSync(status: SyncSummaryInput, now: number, waiting = false): SyncSummary {
+  const summary = waiting ? core({ ...status, state: "syncing" }, now) : core(status, now);
   if (status.pendingOps <= 0) return summary;
   return {
     ...summary,

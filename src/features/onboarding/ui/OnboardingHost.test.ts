@@ -74,7 +74,7 @@ it("asks for file access only after Quick setup and the guide close", async () =
   // A consent dialog opened under setup stays hidden until its native deadline expires.
   await render();
   expect(configureFileAccess).not.toHaveBeenCalled();
-  await act(async () => container.querySelectorAll("button")[1].click());
+  await act(async () => window.dispatchEvent(new Event(OPEN_USAGE_GUIDE_EVENT)));
   expect(container.textContent).toContain("Close guide");
   expect(configureFileAccess).not.toHaveBeenCalled();
   await act(async () => container.querySelector("button")!.click());
@@ -106,22 +106,18 @@ it("opens the guide on demand for existing users and can reopen it after closing
     expect(container.textContent).toBe("");
   }
 });
-it("offers the guide after setup without overlapping the setup dialog", async () => {
-  await render();
-  await act(async () => container.querySelectorAll("button")[1].click());
-  expect(container.textContent).toBe("Close guideQuick tour");
-  expect(shouldShowOnboarding(fresh)).toBe(false);
-});
-
-it("broadcasts a guide request after setup so the shell can reveal its targets", async () => {
-  const revealWorkspace = vi.fn();
-  window.addEventListener(OPEN_USAGE_GUIDE_EVENT, revealWorkspace);
+it("does not open the guide over or after setup on its own", async () => {
+  // The setup dialog no longer carries a Guide hand-off; finishing it leaves the screen clear.
+  const guideRequested = vi.fn();
+  window.addEventListener(OPEN_USAGE_GUIDE_EVENT, guideRequested);
   try {
     await render();
-    await act(async () => container.querySelectorAll("button")[1].click());
-    expect(revealWorkspace).toHaveBeenCalledOnce();
+    await act(async () => container.querySelector("button")!.click());
+    expect(container.textContent).toBe("");
+    expect(shouldShowOnboarding(fresh)).toBe(false);
+    expect(guideRequested).not.toHaveBeenCalled();
   } finally {
-    window.removeEventListener(OPEN_USAGE_GUIDE_EVENT, revealWorkspace);
+    window.removeEventListener(OPEN_USAGE_GUIDE_EVENT, guideRequested);
   }
 });
 

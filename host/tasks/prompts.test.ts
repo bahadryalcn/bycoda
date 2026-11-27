@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { HostTask, TaskReviewNote } from "../../src/features/tasks/model/hostTasks";
 import { FEEDBACK_LIMIT, reviewPrompt, workerPrompt } from "./prompts";
+import { CREW_TOOL_INSTRUCTIONS } from "../crews/crew-member-ask";
+import { crewMemberScope, crewTaskPrompt } from "../crews/crew-task-prompt";
+import { workPrompt } from "./work-request";
 
 const brief = JSON.stringify({
   schema: "bycoda.task.v1",
@@ -127,5 +130,80 @@ describe("task prompts", () => {
     expect(occurrences(prompt, "reviewNotes")).toBe(1 + occurrences(prompt, "bycoda.acceptance"));
     for (const word of ["continuation", "nextAction", "runtime", "execution", "Suggestion 1"])
       expect(prompt).not.toContain(word);
+  });
+
+  it("pins the length of the five reference prompts at or below their earlier size", () => {
+    // Ceilings are the sizes measured before the shared rules and the shortened retry text.
+    const plain = { verifyCommand: undefined, worktreeCwd: undefined, branch: undefined };
+    const sizes = {
+      simple: [
+        workerPrompt(task({ ...plain, prompt: "Fix the login button label." }), "G:/p"),
+        764,
+      ],
+      context: [
+        workerPrompt(
+          task({
+            ...plain,
+            prompt: workPrompt(
+              "Fix the second bug we just discussed.",
+              "The login button label reads Sing in (src/Login.tsx).",
+            ),
+          }),
+          "G:/p",
+        ),
+        1302,
+      ],
+      crewMember: [
+        workerPrompt(
+          task({
+            ...plain,
+            isolate: false,
+            prompt: crewTaskPrompt({
+              request: "Review the login change.",
+              instructions: "Review code carefully and report findings.",
+              tools: CREW_TOOL_INSTRUCTIONS,
+              scope: crewMemberScope(["src/a.ts"]),
+            }),
+          }),
+          "G:/p",
+        ),
+        2103,
+      ],
+      repair: [workerPrompt(repair(), "G:/project"), 2828],
+      reviewer: [reviewPrompt(task()), 4039],
+    } as const;
+    for (const [name, [prompt, ceiling]] of Object.entries(sizes))
+      expect(prompt.length, name).toBeLessThanOrEqual(ceiling);
+  });
+
+  it("shares the checkout and no-commit rules once per crew prompt", () => {
+    const prompt = workerPrompt(
+      task({
+        isolate: false,
+        worktreeCwd: undefined,
+        prompt: crewTaskPrompt({
+          request: "Review.",
+          instructions: "Careful.",
+          tools: CREW_TOOL_INSTRUCTIONS,
+          scope: crewMemberScope(["src/a.ts"]),
+        }),
+      }),
+      "G:/p",
+    );
+    expect(occurrences(prompt, "do not stage, commit, merge or push")).toBe(1);
+    expect(prompt).not.toContain("Do not stage, commit, merge or push");
+  });
+
+  it("passes a long earlier check as a short summary with a reference", () => {
+    const prompt = workerPrompt(repair({ retryFeedback: "x".repeat(4_000) }), "G:/project");
+    expect(prompt).not.toContain("x".repeat(600));
+    expect(prompt).toContain("retryFeedback of task task-a");
+  });
+
+  it("gives a correction round's reviewer only the open findings", () => {
+    const resolved = note(9, { resolvedAt: 5 });
+    const prompt = reviewPrompt(repair({ reviewNotes: [note(1), resolved] }));
+    expect(prompt).toContain("note-1:");
+    expect(prompt).not.toContain("Finding number 9");
   });
 });

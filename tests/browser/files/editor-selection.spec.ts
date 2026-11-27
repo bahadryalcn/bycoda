@@ -388,7 +388,7 @@ for (const mode of ["file", "inline", "split"]) {
         const panel = editor.locator(".cm-find");
         const bounds = await panel.boundingBox();
         expect(bounds!.width).toBeLessThanOrEqual(520);
-        await expect(panel.getByRole("button", { name: "Toggle Replace" })).toBeInViewport();
+        await expect(panel.getByRole("button", { name: "Toggle replace" })).toBeInViewport();
         for (const control of await panel.locator("input, button, .cm-find-count").all()) {
           if (!(await control.isVisible())) continue;
           const box = (await control.boundingBox())!;
@@ -417,9 +417,9 @@ for (const mode of ["file", "inline", "split"]) {
     await page.screenshot({ path: info.outputPath(`find-${mode}.png`) });
     await find.press("Enter");
     await expect(editor.locator(".cm-find-count")).toContainText("2 of 300");
-    await editor.getByRole("button", { name: "Toggle Replace" }).click();
+    await editor.getByRole("button", { name: "Toggle replace" }).click();
     await expect(replace).toBeHidden();
-    await editor.getByRole("button", { name: "Toggle Replace" }).press("Enter");
+    await editor.getByRole("button", { name: "Toggle replace" }).press("Enter");
     await expect(editor.getByRole("textbox", { name: "Replace", exact: true })).toBeVisible();
     await find.press("Escape");
     await expect(find).toHaveCount(0);
@@ -528,7 +528,7 @@ test("split search keeps independent compact toolbars and keyboard focus", async
   await page.keyboard.press("Control+f");
   await expect(leftFind).toBeFocused();
   await leftFind.fill("value10");
-  await left.getByRole("button", { name: "Match Whole Word", exact: true }).click();
+  await left.getByRole("button", { name: "Match whole word", exact: true }).click();
   await expect(left.locator(".cm-find-count")).toContainText("1 of 1");
   await right.locator(".cm-content").click();
   await page.keyboard.press("Control+f");
@@ -536,12 +536,12 @@ test("split search keeps independent compact toolbars and keyboard focus", async
   await rightFind.fill("value2");
   await expect(right.locator(".cm-find-count")).toContainText("111");
   await expect(leftFind).toHaveValue("value10");
-  await expect(left.getByRole("button", { name: "Match Whole Word", exact: true })).toHaveAttribute(
+  await expect(left.getByRole("button", { name: "Match whole word", exact: true })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
   await expect(
-    right.getByRole("button", { name: "Match Whole Word", exact: true }),
+    right.getByRole("button", { name: "Match whole word", exact: true }),
   ).toHaveAttribute("aria-pressed", "false");
   await rightFind.press("Control+f");
   await expect(rightFind).toBeFocused();

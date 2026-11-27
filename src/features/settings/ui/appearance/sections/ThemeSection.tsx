@@ -15,8 +15,8 @@ import {
   CANVAS_BACKGROUND_DEFAULT,
 } from "../../../model/appearancePreferences";
 import { AccentRing } from "../controls/AccentRing";
-import { CanvasBackgroundRow } from "../controls/CanvasBackgroundRow";
 import { PaletteCards } from "../controls/PaletteCards";
+import { ThemePreview } from "../controls/ThemePreview";
 import { SavedThemes } from "../controls/SavedThemes";
 import { StateLadder } from "../controls/StateLadder";
 import { ToneSliders } from "../controls/ToneSliders";
@@ -25,8 +25,9 @@ import { generatorSession } from "../controls/themeGeneratorSession";
 import "./ThemeSection.css";
 
 /**
- * Theme tab order: colour choices (mode and palettes, tone with a live preview, accent,
- * interaction). Generation sits under the tabs because it changes every Appearance topic. Every control writes through the existing setters.
+ * Theme tab: one group with mode, palettes plus one live preview, accent and saved themes; tone and
+ * interaction tuning sit in its closing Advanced row. Generation sits under the tabs because it
+ * changes every Appearance topic. Every control writes through the existing setters.
  */
 export function ThemeSection({ appearance }: { appearance: AppearanceSettings }) {
   useLocale();
@@ -54,7 +55,7 @@ export function ThemeSection({ appearance }: { appearance: AppearanceSettings })
   return (
     <AppearanceSection id="colors" title={t("Theme and colors")}>
       <Group
-        title={t("Themes")}
+        title={t("Theme")}
         modified={colorsModified || appearance.themePreference !== THEME_PREFERENCE_DEFAULT}
         resetLabel={t("Reset colors")}
         onReset={() => {
@@ -76,9 +77,13 @@ export function ThemeSection({ appearance }: { appearance: AppearanceSettings })
         </Row>
         <Row id="theme-palettes" stacked label={t("Theme palettes")}>
           <PaletteCards appearance={appearance} />
+          <div className="theme-palettes-preview">
+            <ThemePreview appearance={appearance} />
+          </div>
         </Row>
         <Row
           id="accent-color"
+          controlWidth="fill"
           label={t("Accent color")}
           modified={!isDefaultAccent(appearance.accentColor)}
           onReset={() => {
@@ -91,31 +96,9 @@ export function ThemeSection({ appearance }: { appearance: AppearanceSettings })
         <Row id="saved-themes" stacked label={t("Saved themes")}>
           <SavedThemes appearance={appearance} />
         </Row>
-      </Group>
-      <Group
-        title={t("Tone")}
-        description={t("Pure is true black in dark mode and white in light mode.")}
-        action={<CanvasBackgroundRow appearance={appearance} />}
-        modified={
-          appearance.themeHue !== THEME_HUE_DEFAULT ||
-          appearance.themeSaturation !== THEME_SATURATION_DEFAULT ||
-          appearance.themeDarkLightness !== THEME_DARK_LIGHTNESS_DEFAULT ||
-          appearance.preferences.surfaceContrast !== APPEARANCE_DEFAULTS.surfaceContrast
-        }
-        resetLabel={t("Reset tone")}
-        onReset={() => {
-          generatorSession.invalidateImageIntent();
-          appearance.onTint(THEME_HUE_DEFAULT, THEME_SATURATION_DEFAULT);
-          appearance.onDarkLightness(THEME_DARK_LIGHTNESS_DEFAULT);
-          appearance.onPreferences({
-            ...appearance.preferences,
-            surfaceContrast: APPEARANCE_DEFAULTS.surfaceContrast,
-          });
-        }}
-      >
         <ToneSliders appearance={appearance} />
+        <StateLadder />
       </Group>
-      <StateLadder />
       <AppearanceSaveFeedback
         settingIds={[
           "theme",

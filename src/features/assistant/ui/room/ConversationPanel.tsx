@@ -1,9 +1,9 @@
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
+import { useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { t } from "../../../../shared/i18n";
-import { Button } from "../../../../shared/ui/Button";
 import { CollectionFooter } from "../../../../shared/ui/ContinuousList";
 import { ConfirmDialog } from "../../../../shared/ui/ConfirmDialog";
 import { Skeleton } from "../../../../shared/ui/Skeleton";
@@ -23,8 +23,11 @@ import { useConversationPanelState } from "./useConversationPanelState";
 import { useConversationPanelMessages } from "./useConversationPanelMessages";
 import { useConversationPanelSend } from "./useConversationPanelSend";
 import { useConversationPanelView } from "./useConversationPanelView";
+import { useAssistantRoom } from "./assistantRoomContext";
 
 export function ConversationPanel(props: ConversationPanelProps) {
+  const { setQuery } = useAssistantRoom();
+  const [showTranscript, setShowTranscript] = useState(false);
   const panelState = useConversationPanelState(props);
   const panelMessages = useConversationPanelMessages({
     ...props,
@@ -57,7 +60,7 @@ export function ConversationPanel(props: ConversationPanelProps) {
     draftSaveError,
     pending,
     clearing,
-    error,
+    notice,
     confirm,
     confirmScope,
     setConfirm,
@@ -74,6 +77,8 @@ export function ConversationPanel(props: ConversationPanelProps) {
     openDraftRecovery,
     checkConversation,
     searching,
+    searchError,
+    retrySearch,
     visible,
     supported,
     summaryRefreshing,
@@ -81,6 +86,7 @@ export function ConversationPanel(props: ConversationPanelProps) {
     history,
     onHistoryScroll,
     messageElements,
+    keepEnd,
     query,
     loadedThreads,
   } = c;
@@ -88,21 +94,30 @@ export function ConversationPanel(props: ConversationPanelProps) {
     threadId,
     query,
     searching,
+    searchFailed: searchError !== undefined,
     loaded: Boolean(loadedThreads[threadId]),
     visibleCount: visible.length,
   });
   const reportFailure = (cause: unknown) => setError(presentRemoteError(cause, { explicit: true }));
   return (
-    <div className={styles.layout}>
-      <ConversationThreadList c={c} onFailure={reportFailure} />
+    <div className={styles.layout} data-show-transcript={showTranscript || undefined}>
+      <ConversationThreadList
+        c={c}
+        onFailure={reportFailure}
+        onShowTranscript={() => setShowTranscript(true)}
+      />
       <div {...surfaceAttributes({ variant: "canvas-chat" }, styles.transcript)}>
-        <ConversationHeader c={c} onFailure={reportFailure} />
+        <ConversationHeader
+          c={c}
+          onFailure={reportFailure}
+          onBack={() => setShowTranscript(false)}
+        />
         <div
           className={styles.messages}
           ref={history}
           onScroll={(event) => onHistoryScroll(event.currentTarget)}
         >
-          {hasMore[threadId] && (
+          {!query.trim() && hasMore[threadId] && (
             <CollectionFooter
               standalone
               hasMore
@@ -113,6 +128,11 @@ export function ConversationPanel(props: ConversationPanelProps) {
               loadMoreLabel={t("Load earlier messages")}
               onLoadMore={() => void load(threadId, messages[threadId]?.[0]).catch(reportFailure)}
             />
+          )}
+          {transcript === "search-failed" && (
+            <InlineError details={searchError} retry={{ onRetry: retrySearch }}>
+              {t("Could not search conversations.")}
+            </InlineError>
           )}
           {transcript === "loading" && (
             <div className={styles.messageSkeleton}>
@@ -125,31 +145,37 @@ export function ConversationPanel(props: ConversationPanelProps) {
             <EmptyState
               size="inline"
               kind={transcript === "filtered" ? "filtered" : "empty"}
-              description={t(
+              onReset={transcript === "filtered" ? () => setQuery("") : undefined}
+              description={
                 transcript === "filtered"
-                  ? "No results"
+                  ? t("No results")
                   : transcript === "empty"
-                    ? "No messages yet"
-                    : "Open a conversation to begin",
-              )}
+                    ? t("No messages yet")
+                    : t("Open a conversation to begin")
+              }
             />
           )}
           {messageElements.length > 0 && (
-            <MessageTimeline label={t("Messages")} items={messageElements} />
+            <MessageTimeline
+              windowed
+              label={t("Messages")}
+              items={messageElements}
+              onSizeChange={keepEnd}
+            />
           )}
         </div>
-        <LiveText className="sr-only" mode="assertive" text={error} />
+        <LiveText className="sr-only" mode="assertive" text={notice} />
         <LiveText
           className="sr-only"
           text={
             searching
-              ? t("Loading...")
+              ? t("Loading…")
               : summaryRefreshing
                 ? t("Updating conversation summary")
                 : summaryLabel || ""
           }
         />
-        {error && (
+        {notice && (
           <div className={styles.feedback}>
             <InlineError
               live="off"
@@ -158,41 +184,36 @@ export function ConversationPanel(props: ConversationPanelProps) {
                 disabled: pending || clearing,
               }}
             >
-              {error}
+              {notice}
             </InlineError>
           </div>
         )}
         {draftSaveError && (
-          <InlineError className={styles.draftError}>
-            {t("Could not save this draft. It is kept in this window.")}{" "}
-            <Button
-              type="button"
-              onClick={() => {
-                if (isTauri() && nativeDraftReady !== nativeDraftKey)
-                  setNativeDraftReload((value) => value + 1);
-                else flushDrafts();
+          <div className={styles.draftError}>
+            <InlineError
+              retry={{
+                label: t("Retry saving"),
+                onRetry: () => {
+                  if (isTauri() && nativeDraftReady !== nativeDraftKey)
+                    setNativeDraftReload((value) => value + 1);
+                  else flushDrafts();
+                },
               }}
+              secondaryAction={
+                isTauri() ? { label: t("Recover draft"), onClick: openDraftRecovery } : undefined
+              }
             >
-              {t("Retry saving")}
-            </Button>
-            {isTauri() && (
-              <Button type="button" onClick={openDraftRecovery}>
-                {t("Recover draft")}
-              </Button>
-            )}
-          </InlineError>
+              {t("Could not save this draft. It is kept in this window.")}
+            </InlineError>
+          </div>
         )}
         <ConversationComposer c={c} onFailure={reportFailure} />
         {!supported && (
-          <Text
-            as="p"
-            size="caption"
-            tone="secondary"
-            leading="inherit"
-            className={styles.composerNote}
-          >
-            {t("Conversation replies are unavailable. Configure a model on this Host.")}
-          </Text>
+          <div className={styles.composerNote}>
+            <Text as="p" size="caption" tone="secondary" leading="inherit">
+              {t("Conversation replies are unavailable. Configure a model on this Host.")}
+            </Text>
+          </div>
         )}
         {draftRecovery &&
           selected.current === draftRecovery.threadId &&

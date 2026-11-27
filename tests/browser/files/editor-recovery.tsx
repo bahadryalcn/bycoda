@@ -37,111 +37,12 @@ async function sha(value: string) {
 }
 const currentOwner = await sha(`${storeInstance}:${currentWindow}`);
 const sourceOwner = await sha(`${storeInstance}:${previousWindow}`);
-const legacyRaw = JSON.stringify([{ path: filePath, dirty: true }]);
-const legacySource = {
-  sourceStoreId: "fixture-store",
-  sourceProfileId: "fixture-profile",
-  ownerId: "main",
-  reportVersion: 1,
-  snapshotDigest: await sha(legacyRaw),
-};
-const legacyReport = {
-  source: legacySource,
-  reportVersion: 1,
-  ownerId: "main",
-  kind: "legacy",
-  windowLabel: "Earlier desktop report",
-  updatedAt: 1,
-  legacyTimestamp: null,
-  retainedBytes: encoder.encode(legacyRaw).length,
-  current: false,
-  held: true,
-  confirmed: false,
-  contentAvailable: false,
-  inspectable: true,
-};
-const legacyCalls: string[] = [];
-const hostContext = {
-  hostEnvironmentId: "fixture-profile-host",
-  sourceStoreId: "fixture-store",
-  sourceProfileId: "fixture-profile",
-  nativeStoreInstance: storeInstance,
-  clientId: "c".repeat(64),
-};
-const hostProvenance = {
-  version: 2,
-  sourceStoreId: hostContext.sourceStoreId,
-  sourceProfileId: hostContext.sourceProfileId,
-  storeInstance,
-  windowIncarnation: previousWindow,
-  kind: "physical",
-  reportVersion: 1,
-  reportNonce: initialDocument,
-  snapshotDigest: "d".repeat(64),
-};
-const hostOwner = {
-  ownerId: "host-owner",
-  updatedAt: 11,
-  unknown: false,
-  buffers: [
-    {
-      path: query.has("host-scale")
-        ? "C:\\fixture\\" + "long-reported-file-".repeat(160) + ".md"
-        : filePath,
-      dirty: true,
-    },
-  ],
-  source: hostProvenance,
-};
-const hostInstance = "fixture-native-instance";
-const hostRaw = JSON.stringify({
-  clientId: hostContext.clientId,
-  instanceId: hostInstance,
-  device: "a".repeat(64),
-  processId: 1,
-  receivedAt: 11,
-  owners: [hostOwner],
-  recovery: { reportVersion: 3, ownerVersions: { "host-owner": 7 } },
-});
-const hostSource = {
-  reportId: await sha(JSON.stringify(["a".repeat(64), hostContext.clientId, hostInstance])),
-  reportVersion: 3,
-  ownerId: hostOwner.ownerId,
-  ownerVersion: 7,
-  snapshotDigest: await sha(hostRaw),
-};
-const hostReport = {
-  source: hostSource,
-  clientId: hostContext.clientId,
-  instanceId: hostInstance,
-  processId: 1,
-  updatedAt: 11,
-  byteLength: encoder.encode(hostRaw).length,
-  bufferCount: 1,
-  dirtyCount: 1,
-  unknown: false,
-  provenance: hostProvenance,
-  lineage: "physical",
-  ownerMissing: false,
-  compatibilityHoldId: "b".repeat(64),
-  verification: "raw-checked",
-  retention: "held",
-  inspectable: true,
-  qualified: false,
-  resolution: "unsupported",
-};
-const hostCursor = { version: 1, cursorId: initialDocument, page: 1 };
-const hostCalls: { command: string; args: Record<string, any> }[] = [];
-let failHostRead = query.has("host-error");
-let holdHostRead = query.has("hold-host");
-let releaseHostRead: (() => void) | undefined;
-let failLegacyRead = query.has("legacy-error");
-let holdLegacyRead = query.has("hold-legacy");
-let releaseLegacyRead: (() => void) | undefined;
-let updatePrivacy: ((allowed: boolean) => void) | undefined;
-let privacyRevision = 0;
 type Payload = NativeEditorDraftRecord["payload"];
-async function makeRecord(payload: Payload, previous = false): Promise<NativeEditorDraftRecord> {
+async function makeRecord(
+  payload: Payload,
+  previous = false,
+  label = previous ? "Earlier desktop window" : "editor-recovery-fixture",
+): Promise<NativeEditorDraftRecord> {
   // Explicit serde DraftPayload order; no caller property ordering assumption.
   const ordered = {
     documentId: payload.documentId,
@@ -152,7 +53,6 @@ async function makeRecord(payload: Payload, previous = false): Promise<NativeEdi
     revision: payload.revision,
   };
   const raw = JSON.stringify(ordered);
-  const label = previous ? "Earlier desktop window" : "editor-recovery-fixture";
   const serialized =
     ordered.eol === "lf"
       ? ordered.text
@@ -174,7 +74,7 @@ async function makeRecord(payload: Payload, previous = false): Promise<NativeEdi
       retainedBytes: encoder.encode(raw + ordered.documentId + ordered.path + label).length + 512,
       state: "retained",
       saveAckId: null,
-      updatedAt: 1,
+      updatedAt: query.has("catalog") ? Date.now() - 3_600_000 : 1,
     },
   };
 }
@@ -192,6 +92,16 @@ let source = await makeRecord(
 const originalSource = structuredClone(source);
 const key = (owner: string, document: string) => `${owner}:${document}`;
 const rows = new Map([[key(sourceOwner, source.payload.documentId), source]]);
+const hiddenDigests = new Map<string, string>();
+if (query.has("catalog")) {
+  for (const [documentId, path, text] of [
+    ["worktree-notes", "C:\\fixture\\worktrees\\docs-refresh\\README.md", sourceText],
+    ["disk-copy", "C:\\fixture\\project\\.gitignore", "Original disk text\nSecond line\n"],
+  ]) {
+    const copy = await makeRecord({ ...source.payload, documentId, path, text }, true, "main");
+    rows.set(key(sourceOwner, documentId), copy);
+  }
+}
 let disk: string | null =
   query.get("disk") === "missing"
     ? null
@@ -221,12 +131,6 @@ const controls = {
       recoveryReads,
       source,
       originalSource,
-      legacyReport,
-      legacyCalls,
-      hostCalls,
-      hostReport,
-      hostContext,
-      hostCursor,
       rows: [...rows.values()],
       tabs: currentTabs,
       dirty: currentDirty,
@@ -238,20 +142,6 @@ const controls = {
       currentOwner,
     }),
   setTheme: (light: boolean) => applyThemePreference(light ? "light" : "dark"),
-  setPrivacy(allowed: boolean) {
-    privacyRevision++;
-    updatePrivacy?.(allowed);
-  },
-  releaseLegacyRead() {
-    holdLegacyRead = false;
-    releaseLegacyRead?.();
-    releaseLegacyRead = undefined;
-  },
-  releaseHostRead() {
-    holdHostRead = false;
-    releaseHostRead?.();
-    releaseHostRead = undefined;
-  },
   releasePut() {
     holdTarget = false;
     releasePut?.();
@@ -280,116 +170,17 @@ Object.assign(window, {
     transformCallback: () => 1,
     unregisterCallback: () => {},
     invoke: async (command: string, args: Record<string, any> = {}) => {
-      if (command.startsWith("managed_workspace_host_buffer_recovery_")) {
-        hostCalls.push({ command, args: structuredClone(args) });
-        if (command === "managed_workspace_host_buffer_recovery_list") {
-          const empty = query.has("host-empty") && args.request.after === null;
-          if (
-            args.request.after !== null &&
-            (JSON.stringify(args.request.after) !== JSON.stringify(hostCursor) ||
-              JSON.stringify(args.expectedContext) !== JSON.stringify(hostContext))
-          )
-            throw new Error("Fixture opaque continuation changed");
-          return structuredClone({
-            version: 1,
-            qualified: false,
-            resolution: "unsupported",
-            context: hostContext,
-            records: empty
-              ? []
-              : Array.from({ length: query.has("host-scale") ? 25 : 1 }, () => hostReport),
-            next: empty ? hostCursor : null,
-            incomplete: false,
-            duplicatesPossible: true,
-            unavailable: !empty,
-          });
-        }
-        if (
-          JSON.stringify(args.source) !== JSON.stringify(hostSource) ||
-          JSON.stringify(args.expectedContext) !== JSON.stringify(hostContext)
-        )
-          throw new Error("Fixture Host source/context changed");
-        if (command === "managed_workspace_host_buffer_recovery_read") {
-          if (holdHostRead)
-            await new Promise<void>((resolve) => {
-              releaseHostRead = resolve;
-            });
-          if (failHostRead) {
-            failHostRead = false;
-            throw new Error("Fixture private diagnostic must not reach the UI");
-          }
-          return structuredClone({
-            version: 1,
-            qualified: false,
-            source: hostSource,
-            rawReport: hostRaw,
-            owner: hostOwner,
-            resolution: "unsupported",
-            context: hostContext,
-            buffers: hostOwner.buffers,
-            contentAvailable: false,
-          });
-        }
-        if (command === "managed_workspace_host_buffer_recovery_status")
-          return structuredClone({
-            version: 1,
-            qualified: false,
-            resolution: "unsupported",
-            context: hostContext,
-            source: hostSource,
-            found: true,
-            inspectable: true,
-            unavailable: false,
-          });
-        throw new Error("Unexpected Host recovery mutation");
-      }
-      if (command.startsWith("managed_workspace_buffer_recovery_")) {
-        legacyCalls.push(command);
-        if (command === "managed_workspace_buffer_recovery_list")
-          return structuredClone({
-            version: 1,
-            qualified: false,
-            records: [
-              legacyReport,
-              {
-                ...legacyReport,
-                source: null,
-                reportVersion: 2,
-                windowLabel: "Uninspectable retained report",
-                inspectable: false,
-              },
-            ],
-            next: null,
-          });
-        if (command === "managed_workspace_buffer_recovery_read") {
-          if (JSON.stringify(args.source) !== JSON.stringify(legacySource))
-            throw new Error("Fixture legacy source changed");
-          if (holdLegacyRead)
-            await new Promise<void>((resolve) => {
-              releaseLegacyRead = resolve;
-            });
-          if (failLegacyRead) {
-            failLegacyRead = false;
-            throw new Error("Fixture retained source temporarily unavailable");
-          }
-          return structuredClone({
-            version: 1,
-            qualified: false,
-            record: legacyReport,
-            rawSnapshot: legacyRaw,
-            buffers: [{ path: filePath, dirty: true }],
-          });
-        }
-        throw new Error(`Unexpected legacy mutation: ${command}`);
-      }
       if (command === "native_editor_draft_open")
         return { version: 1, qualified: false, ownerEpoch: currentOwner };
       if (command === "native_editor_draft_inventory") {
         const { after, limit } = args.request;
         if (!Number.isInteger(limit) || limit < 1 || limit > 100)
           throw new Error("NATIVE_EDITOR_DRAFT_INVALID_INVENTORY");
-        const all = (query.has("legacy-only") ? [] : [...rows.values()])
+        const all = [...rows.values()]
           .map((row) => row.metadata)
+          .filter(
+            (row) => hiddenDigests.get(key(row.ownerId, row.documentId)) !== row.payloadDigest,
+          )
           .sort((a, b) =>
             a.ownerId < b.ownerId
               ? -1
@@ -416,6 +207,19 @@ Object.assign(window, {
               ? { ownerId: last.ownerId, documentId: last.documentId }
               : null,
         });
+      }
+      if (command === "native_editor_draft_hide_recovery") {
+        const source = args.source;
+        const id = key(source.ownerId, source.documentId);
+        const record = rows.get(id);
+        if (
+          !record ||
+          record.metadata.revision !== source.revision ||
+          record.metadata.payloadDigest !== source.payloadDigest
+        )
+          return Promise.reject("NATIVE_EDITOR_DRAFT_REVISION_CONFLICT");
+        hiddenDigests.set(id, source.payloadDigest);
+        return { version: 1 };
       }
       if (command.startsWith("native_editor_draft_")) {
         const input = args.request ?? args.capture ?? args.document ?? args.saved;
@@ -538,15 +342,8 @@ function Fixture() {
   const [active, setActive] = useState(initialWorkspace.id);
   const [dirty, setDirty] = useState<Set<string>>(new Set());
   const [dialog, setDialog] = useState(false);
-  const [inspectAllowed, setInspectAllowed] = useState(true);
   const [, setTerminalFocused] = useState(false);
   const [, setComposerFocused] = useState(false);
-  useLayoutEffect(() => {
-    updatePrivacy = setInspectAllowed;
-    return () => {
-      updatePrivacy = undefined;
-    };
-  }, []);
   useLayoutEffect(() => {
     tabsRef.current = tabs;
     currentTabs = tabs;
@@ -658,8 +455,6 @@ function Fixture() {
           remoteSessions={[]}
           editorDraftRecovery={recovery}
           editorDraftRecords={recovery.records}
-          canInspectLegacyReports={() => inspectAllowed}
-          getLegacyReportPrivacySnapshot={() => privacyRevision}
           onClose={() => setDialog(false)}
           onOpen={async () => {
             throw new Error("No conversation fixture exists");

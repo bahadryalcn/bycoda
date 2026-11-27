@@ -1,0 +1,38 @@
+/* Two code columns with line numbers; add/remove tints come from the shared diff roles. */
+.split {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr);
+}
+.row,
+.cell {
+  display: grid;
+  grid-template-columns: subgrid;
+}
+.row {
+  grid-column: 1 / -1;
+}
+.cell {
+  grid-column: span 2;
+}
+.meta {
+  grid-column: 1 / -1;
+  padding: var(--ui-space-1) var(--ui-space-3);
+}
+.number {
+  min-width: 3em;
+  padding-inline: var(--ui-space-2);
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+.code {
+  min-width: 0;
+  padding-inline-end: var(--ui-space-3);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.nowrap .code {
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: clip;
+}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { isImportProvider } from "../../../platform/tauri/sessionImport";
 import {
   OPEN_SESSION_IMPORT_EVENT,
   SESSION_HISTORY_IMPORTED_EVENT,
@@ -24,11 +25,7 @@ export function SessionImportHost({ onImported }: { onImported: () => void }) {
   useEffect(() => {
     const show = (event: Event) => {
       const detail = (event as CustomEvent<SessionImportContext>).detail;
-      setContext(
-        detail?.cwd && (detail.provider === "claude" || detail.provider === "codex")
-          ? detail
-          : undefined,
-      );
+      setContext(detail?.cwd && isImportProvider(detail.provider) ? detail : undefined);
       setOpen(true);
     };
     window.addEventListener(OPEN_SESSION_IMPORT_EVENT, show);

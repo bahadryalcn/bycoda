@@ -3,12 +3,20 @@ import { act, createElement, StrictMode, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatSessionTitle } from "../../features/sessions/model/session";
+import { saveAutoTabGroupLabel } from "../../features/workspace/model/tabGroups";
 import { formatReminderTime } from "../../features/sessions/model/sessionReminders";
+import { HOVER_CARD_CLOSE_MS, TOOLTIP_DELAY_MS } from "../../shared/ui/Tooltip";
 import { Sidebar } from "./Sidebar";
+import * as orgStore from "../../features/sessions/model/sessionOrganizationStore";
+import * as pinSagas from "../../features/sessions/model/sessionPinSaga";
+import * as pinReceipts from "../../features/sessions/data/sessionPinReceipts";
 import { setSessionDeletionStatus } from "../../features/sessions/model/sessionDeletionStatus";
 import { OPEN_CREWS_PAGE_EVENT } from "../../features/crews/model/crewsPage";
 import { loadSessionFolders } from "../../features/sessions/model/sessionFolders";
-import { useProjectDiffStats } from "../../features/source-control/hooks/useProjectDiffStats";
+import {
+  useProjectDiffStats,
+  useProjectsDiffStats,
+} from "../../features/source-control/hooks/useProjectDiffStats";
 import { copyText } from "../../platform/tauri/clipboard";
 import { registerAppConfirmHost, type AppConfirmRequest } from "../../shared/model/appConfirm";
 import {
@@ -20,6 +28,18 @@ import {
 import { useLocalLifecycleMachine } from "../../features/sessions/hooks/useLocalLifecycleMachine";
 import * as lifecycleClient from "../../features/sessions/model/sessionLifecycleClient";
 import { setSessionLifecycleList } from "../../features/sessions/model/sessionLifecycleClient";
+import * as connections from "../../features/connections/model/connections";
+import { rememberRemoteProject } from "../../features/connections/model/remoteProjects";
+import type { HostProject } from "../../features/connections/model/protocol";
+import { describeActionFailure } from "../../features/connections/public/transientFailure";
+import { registerFailurePolicy } from "../../shared/ui/reportFailure";
+import { toast } from "../../shared/ui/ToastRegion";
+import { searchWorkItemMentions } from "../../features/inbox/model/workItemMentionSearch";
+
+vi.mock("../../features/inbox/model/workItemMentionSearch", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../features/inbox/model/workItemMentionSearch")>()),
+  searchWorkItemMentions: vi.fn(async () => []),
+}));
 vi.mock("../../features/sessions/hooks/useLocalLifecycleMachine", () => ({
   useLocalLifecycleMachine: vi.fn(() => undefined),
 }));
@@ -59,6 +79,99 @@ function card(): HTMLElement {
 function listRow(id: string) {
   return container.querySelector<HTMLElement>(`[data-session-card="${id}"]`)?.closest("li");
 }
+
+function useNativePinStore() {
+  vi.spyOn(orgStore, "NATIVE_SESSION_ORGANIZATION_ACTIVE", "get").mockReturnValue(true);
+  vi.spyOn(orgStore, "cachedSessionOrganization").mockReturnValue({ folders: {}, order: {} });
+  vi.spyOn(orgStore, "subscribeSessionOrganization").mockReturnValue(() => {});
+  vi.spyOn(orgStore, "unresolvedSessionOrganizationGestures").mockResolvedValue([]);
+  vi.spyOn(pinSagas, "listPinSagas").mockResolvedValue([]);
+  vi.spyOn(pinReceipts, "resolvePinTarget").mockImplementation(async (sessionId, cwd) => ({
+    kind: "native",
+    sessionId,
+    cwd,
+  }));
+}
+
+it("pins immediately with no saving notice and restores the row after a rejected write", async () => {
+  useNativePinStore();
+  let finishRead!: () => void;
+  vi.mocked(orgStore.unresolvedSessionOrganizationGestures).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishRead = () => resolve([]);
+      }),
+  );
+  let reject!: (error: Error) => void;
+  props.onPreparePin = () =>
+    new Promise((_, no) => {
+      reject = no;
+    });
+  props.onConfirmedPin = vi.fn();
+  props.onPinSession = vi.fn();
+  await act(async () => render());
+  const pin = () => card().querySelector<HTMLButtonElement>("[aria-pressed][data-action-inline]")!;
+  await act(async () => pin().click());
+  expect(document.body.textContent).not.toContain("Saving…");
+  expect(listRow("session-1")?.dataset.sessionSection).toBe("pinned");
+  expect(reject).toBeUndefined();
+  await act(async () => finishRead());
+  await act(async () => reject(new Error("Pin write rejected")));
+  expect(listRow("session-1")?.dataset.sessionSection).not.toBe("pinned");
+  expect(document.body.textContent).toContain("Pin write rejected");
+});
+
+it("shows a quick unpin while the first pin is being saved and commits both in order", async () => {
+  useNativePinStore();
+  let resume!: () => void;
+  props.onPreparePin = vi
+    .fn(async () => {})
+    .mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resume = resolve;
+        }),
+    );
+  props.onPinSession = vi.fn();
+  let saved = false;
+  const writes: boolean[] = [];
+  let prepared!: pinSagas.PinSaga;
+  vi.spyOn(pinReceipts, "pinState").mockImplementation(async () => ({
+    state: "current",
+    version: writes.length,
+    pinned: saved,
+  }));
+  vi.spyOn(pinSagas, "preparePinSaga").mockImplementation(async (saga) => {
+    prepared = saga;
+    return "applied";
+  });
+  vi.spyOn(pinSagas, "resumePinSaga").mockImplementation(async () => {
+    saved = prepared.steps[0].desiredPinned;
+    writes.push(saved);
+    return {
+      state: "applied",
+      saga: { ...prepared, steps: prepared.steps.map((step) => ({ ...step, state: "applied" })) },
+    };
+  });
+  props.onConfirmedPin = async (id, _cwd, pinned) => {
+    props.sessions = props.sessions.map((session) =>
+      session.id === id ? { ...session, pinned } : session,
+    );
+    render();
+  };
+  await act(async () => render());
+  const toggle = () =>
+    card().querySelector<HTMLButtonElement>("[aria-pressed][data-action-inline]")!.click();
+  await act(async () => toggle());
+  expect(listRow("session-1")?.dataset.sessionSection).toBe("pinned");
+  await act(async () => toggle());
+  expect(listRow("session-1")?.dataset.sessionSection).not.toBe("pinned");
+  expect(writes).toEqual([]);
+  await act(async () => resume());
+  expect(writes).toEqual([true, false]);
+  expect(listRow("session-1")?.dataset.sessionSection).not.toBe("pinned");
+  expect(document.body.textContent).not.toContain("Saving…");
+});
 
 /** A group header by its name; the name rides in the shared tooltip, not a native title. */
 function folderButton(name: string, scope: ParentNode = container): HTMLButtonElement {
@@ -116,7 +229,7 @@ function renameInput(): HTMLInputElement {
 }
 
 function projectSearchInput(): HTMLInputElement | null {
-  return document.querySelector('input[placeholder="Search projects..."]');
+  return document.querySelector('input[placeholder="Search projects…"]');
 }
 
 async function openProjectsFlyout() {
@@ -221,6 +334,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.mocked(copyText).mockReset().mockResolvedValue(undefined);
   vi.mocked(useProjectDiffStats).mockReturnValue(null);
+  vi.mocked(useProjectsDiffStats).mockReturnValue([]);
   const stored = new Map<string, string>();
   vi.stubGlobal("localStorage", {
     getItem: (key: string) => stored.get(key) ?? null,
@@ -600,7 +714,7 @@ describe("sidebar session bulk actions", () => {
       (entry) => entry.textContent?.includes("Open Side by Side"),
     )!;
     expect(item.disabled).toBe(true);
-    expect(item.textContent).toContain("Select at most 9 conversations");
+    expect(item.textContent).toContain("Select at most 9 sessions");
     act(() => item.click());
     expect(props.onOpenSessionsSideBySide).not.toHaveBeenCalled();
   });
@@ -631,7 +745,7 @@ describe("sidebar session bulk actions", () => {
   it("toggles rows with plain clicks in selection mode and leaves it on Escape", () => {
     act(() => render());
     expect(bar()).toBeNull();
-    act(() => container.querySelector<HTMLElement>('[aria-label="Select conversations"]')!.click());
+    act(() => container.querySelector<HTMLElement>('[aria-label="Select sessions"]')!.click());
     expect(container.querySelectorAll("[data-session-checkbox]")).toHaveLength(3);
     clickCard("session-2");
     clickCard("session-3");
@@ -688,7 +802,7 @@ describe("sidebar session bulk actions", () => {
     await act(async () => barButton("Delete selected").click());
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(confirm).toHaveBeenCalledWith(
-      "Delete 2 conversations? This can’t be undone.\n\n1 running conversation will be skipped.",
+      "Delete 2 conversations?\n\n2 conversations and their history will be permanently deleted. This can’t be undone. 1 running conversation will be skipped.",
     );
     expect(vi.mocked(props.onDeleteSessionNow).mock.calls).toEqual([["session-2"], ["session-3"]]);
     expect(props.onDeleteSession).not.toHaveBeenCalled();
@@ -747,7 +861,7 @@ describe("sidebar session bulk actions", () => {
     const notice = container.querySelector("[data-session-delete-status]");
     expect(notice?.textContent).toContain("Original conversation");
     expect(notice?.textContent).toContain("0/3");
-    expect(barButton("Deleting… selected").disabled).toBe(true);
+    expect(barButton("Deleting… selected").getAttribute("aria-disabled")).toBe("true");
     await act(async () => {
       pressKey(document.body, "Delete");
     });
@@ -760,7 +874,8 @@ describe("sidebar session bulk actions", () => {
     expect(document.querySelector("[data-session-delete-status]")?.textContent).toContain(
       "3 conversations deleted.",
     );
-    expect(container.textContent).toContain("Sessions you start will show up here");
+    // An emptied list is blank; the confirmation above is the only feedback.
+    expect(container.querySelectorAll("[data-session-card]")).toHaveLength(0);
     expect(selectedIds()).toEqual([]);
     act(() => vi.advanceTimersByTime(9_999));
     expect(document.querySelector("[data-session-delete-status]")).not.toBeNull();
@@ -818,13 +933,13 @@ describe("sidebar session bulk actions", () => {
     props = { ...props, sessions: [], pending: true };
     act(() => render());
     expect(container.textContent).toContain("Loading sessions…");
-    expect(container.textContent).not.toContain("Sessions you start will show up here");
+    expect(container.textContent).not.toContain("No sessions");
     props = { ...props, pending: false, status: "error" };
     act(() => render());
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "Couldn’t load sessions",
     );
-    expect(container.textContent).not.toContain("Sessions you start will show up here");
+    expect(container.textContent).not.toContain("No sessions");
   });
 
   it("asks before deleting the selection with the Delete key", async () => {
@@ -840,7 +955,9 @@ describe("sidebar session bulk actions", () => {
     await act(async () => {
       pressKey(document.body, "Delete");
     });
-    expect(confirm).toHaveBeenCalledWith("Delete 2 conversations? This can’t be undone.");
+    expect(confirm).toHaveBeenCalledWith(
+      "Delete 2 conversations?\n\n2 conversations and their history will be permanently deleted. This can’t be undone.",
+    );
     expect(props.onDeleteSessionNow).not.toHaveBeenCalled();
     expect(selectedIds()).toEqual(["session-2", "session-3"]);
   });
@@ -901,12 +1018,13 @@ describe("sidebar session IDs", () => {
       )!;
       await act(async () => item.click());
       const dialog = document.querySelector('[role="dialog"]')!;
-      expect(dialog.textContent).toContain("Could not copy the session ID");
+      // The dialog itself is the feedback for the first failure: no separate error line.
+      expect(dialog.textContent).not.toContain("Could not copy the session ID");
       const field = dialog.querySelector<HTMLInputElement>('input[aria-label="Session ID"]')!;
       expect(field.value).toBe(label === "Harness session ID" ? "provider-identity" : "session-1");
       expect(field.readOnly).toBe(true);
       const retry = [...dialog.querySelectorAll<HTMLButtonElement>("button")].find(
-        (button) => button.textContent === "Retry",
+        (button) => button.textContent === "Copy",
       )!;
       await act(async () => retry.click());
       expect(copyText).toHaveBeenLastCalledWith(field.value);
@@ -1009,7 +1127,15 @@ describe("sidebar session rename", () => {
     items = openMenu();
     expect(items.find((item) => item.textContent === "Regenerate title")?.disabled).toBe(true);
     await act(async () => reject(new Error("Provider unavailable")));
-    expect(card().querySelector('[role="alert"]')?.textContent).toContain("Provider unavailable");
+    expect(card().querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not regenerate title",
+    );
+    await act(async () =>
+      card()
+        .querySelector<HTMLButtonElement>('[aria-label="Details: Could not regenerate title"]')!
+        .click(),
+    );
+    expect(document.body.textContent).toContain("Provider unavailable");
     act(() =>
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
     );
@@ -1038,7 +1164,15 @@ describe("sidebar session rename", () => {
     expect(renameInput()).toBe(input);
     expect(input.value).toBe("Retry this name");
     expect(input.disabled).toBe(false);
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Disk unavailable");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not rename session",
+    );
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Details: Could not rename session"]')!
+        .click(),
+    );
+    expect(document.body.textContent).toContain("Disk unavailable");
     await act(async () => {
       pressKey(input, "Enter");
     });
@@ -1423,7 +1557,8 @@ describe("sidebar orchestration card", () => {
     // An outer shared tooltip names it; the Button adds no native title of its own.
     expect(orchestrationIcon?.hasAttribute("title")).toBe(false);
     expect(card().querySelector("[data-session-select] [data-orchestration-icon]")).toBeNull();
-    expect(card().textContent).toContain("3 agents");
+    // The "1/3 done" progress carries the agent count; no separate "3 agents" label repeats it.
+    expect(card().textContent).not.toContain("3 agents");
     expect(card().textContent).toContain("1/3 done");
     expect(card().textContent).toContain("Build settings");
     expect(card().textContent).toContain("Needs input");
@@ -1440,12 +1575,12 @@ describe("sidebar orchestration card", () => {
     act(() => archive.click());
     expect(props.onArchiveSession).toHaveBeenCalledExactlyOnceWith(lead.id, true);
     expect(props.onSelectSession).not.toHaveBeenCalled();
-    // A collapsed row stays one line; the model rides along in the tooltip.
-    expect(
-      await tooltipText(
-        card().querySelector<HTMLElement>('[data-orchestration-agent="worker-a"] button')!,
-      ),
-    ).toContain("Codex · Worker A");
+    // A collapsed row stays one line with no tooltip repeating its title; the model is in the
+    // expanded detail below.
+    const workerA = () =>
+      card().querySelector<HTMLElement>('[data-orchestration-agent="worker-a"]')!;
+    expect(await tooltipText(workerA().querySelector<HTMLElement>("button")!)).toBe("");
+    expect(workerA().textContent).not.toContain("Worker A");
     expect(card().querySelectorAll("[data-orchestration-agent]")).toHaveLength(3);
     const normal = container.querySelector<HTMLElement>('[data-session-card="unrelated"]')!;
     expect(normal.hasAttribute("data-orchestration-card")).toBe(false);
@@ -1475,6 +1610,7 @@ describe("sidebar orchestration card", () => {
         .querySelector('[data-orchestration-agent="worker-a"] button')
         ?.getAttribute("aria-expanded"),
     ).not.toBe(wasOpen);
+    expect(workerA().textContent).toContain("Worker A");
     // A blocked agent stays expanded while it needs the lead's attention.
     expect(
       card()
@@ -1528,7 +1664,7 @@ describe("sidebar orchestration card", () => {
     expect(card().querySelector('[data-orchestration-agent="worker"]')).not.toBeNull();
   });
 
-  it("opens the custom subagent tooltip immediately on hover", () => {
+  it("opens the subagent hover card after the shared hover delay and closes it on leave", async () => {
     props.busySessionIds = new Set();
     props.sessions[0].orchestration = {
       status: "active",
@@ -1553,9 +1689,13 @@ describe("sidebar orchestration card", () => {
     act(() => render());
     const trigger = card().querySelector<HTMLButtonElement>("[data-orchestration-icon]")!;
 
-    act(() => trigger.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
+    // The card is the shared HoverCard: it opens after its rest delay on pointer enter.
+    await act(async () => {
+      trigger.dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, TOOLTIP_DELAY_MS + 100));
+    });
 
-    const tooltip = document.querySelector<HTMLElement>('[role="tooltip"]')!;
+    const tooltip = document.querySelector<HTMLElement>("[data-hover-card]")!;
     expect(tooltip).not.toBeNull();
     expect(tooltip.classList.contains("popover-open")).toBe(true);
     expect(tooltip.textContent).toContain("1/2 done");
@@ -1564,8 +1704,11 @@ describe("sidebar orchestration card", () => {
     expect(tooltip.textContent).toContain("Check types");
     expect(tooltip.textContent).toContain("Done");
 
-    act(() => trigger.dispatchEvent(new MouseEvent("mouseout", { bubbles: true })));
-    expect(document.querySelector('[role="tooltip"]')).toBeNull();
+    await act(async () => {
+      trigger.dispatchEvent(new MouseEvent("pointerout", { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, HOVER_CARD_CLOSE_MS + 100));
+    });
+    expect(document.querySelector("[data-hover-card]")).toBeNull();
   });
 
   it("renders saved worker details without claiming the workers are running", () => {
@@ -1697,9 +1840,7 @@ describe("sidebar session GitHub links", () => {
     )!;
     expect(link).toBeDefined();
     act(() => link.click());
-    return document.querySelector<HTMLInputElement>(
-      'input[aria-label="GitHub issue or pull request URL"]',
-    )!;
+    return document.querySelector<HTMLInputElement>('[role="dialog"] input[role="combobox"]')!;
   }
 
   it("manually links a session from its context menu", () => {
@@ -1719,6 +1860,52 @@ describe("sidebar session GitHub links", () => {
       url: "https://github.com/acme/widgets/issues/27",
     });
     expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("searches the conversation project and links the selected GitHub pull request", async () => {
+    props.onSetSessionLinkedWorkItem = vi.fn();
+    vi.mocked(searchWorkItemMentions).mockResolvedValueOnce([
+      {
+        provider: "github",
+        kind: "pr",
+        repo: "acme/widgets",
+        number: 27,
+        title: "Build Docker images",
+        url: "https://github.com/acme/widgets/pull/27",
+        state: "open",
+        updatedAt: "",
+        projectPath: "/repo",
+        labels: [],
+        assignees: [],
+        draft: false,
+      },
+    ]);
+    act(() => render());
+    const input = openLinkDialog();
+    typeTitle(input, "#27");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 320));
+    });
+    expect(searchWorkItemMentions).toHaveBeenCalledWith(
+      props.sessions[0]!.cwd,
+      ["github"],
+      "#27",
+      expect.any(AbortSignal),
+    );
+    const option = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
+      (row) => row.textContent?.includes("Build Docker images"),
+    )!;
+    act(() => option.click());
+    const submit = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent === "Link",
+    )!;
+    act(() => submit.click());
+    expect(props.onSetSessionLinkedWorkItem).toHaveBeenCalledWith("session-1", {
+      kind: "pr",
+      repo: "acme/widgets",
+      number: 27,
+      url: "https://github.com/acme/widgets/pull/27",
+    });
   });
 
   it("keeps the dialog open when the URL is not a GitHub work item", () => {
@@ -1758,9 +1945,7 @@ describe("sidebar session GitHub links", () => {
     act(() => edit.click());
 
     expect(
-      document.querySelector<HTMLInputElement>(
-        'input[aria-label="GitHub issue or pull request URL"]',
-      )?.value,
+      document.querySelector<HTMLInputElement>('[role="dialog"] input[role="combobox"]')?.value,
     ).toBe("https://github.com/acme/widgets/pull/42");
     const remove = Array.from(document.querySelectorAll("button")).find(
       (button) => button.textContent === "Remove link",
@@ -1902,10 +2087,8 @@ describe("collapsed rail Inbox actions", () => {
     )!;
     act(() => searchAll.click());
     expect(props.onSearchConversations).toHaveBeenLastCalledWith("zzz-no-such-conversation");
-    // The top-left Search remains the one shared search entry; the header no longer repeats it.
-    expect(
-      container.querySelector('[data-compact-project-rail] button[aria-label="Search"]'),
-    ).not.toBeNull();
+    // The title bar holds the one shared Search; neither the header nor the rail repeats it.
+    expect(container.querySelector('button[aria-label="Search"]')).toBeNull();
   });
 
   it("opens project and group management without pinning the rail and closes with Escape", async () => {
@@ -1963,14 +2146,15 @@ describe("collapsed rail Inbox actions", () => {
 
     const sidebar = container.querySelector("aside")!;
     expect(container.querySelector("[data-compact-project-rail]")).toBeNull();
-    expect(sidebar.querySelector('button[aria-label^="Toggle Projects"]')).not.toBeNull();
-    expect(sidebar.querySelector('button[aria-label^="Search"]')).not.toBeNull();
+    // The sidebar takes over the rail's tools; the toggle and Search stay in the title bar.
+    expect(sidebar.querySelector('button[aria-label^="Toggle sidebar"]')).toBeNull();
+    expect(sidebar.querySelector('button[aria-label="Search"]')).toBeNull();
+    expect(sidebar.querySelector('button[aria-label^="Inbox"]')).not.toBeNull();
     expect(sidebar.querySelector('button[aria-label^="Settings"]')).not.toBeNull();
   });
 
-  it("yields its local header to the full-width title bar", async () => {
+  it("leaves the window chrome to the full-width title bar", async () => {
     props.projectRailOpen = false;
-    props.titleBarAbove = true;
     props.onSelectProject = vi.fn();
     props.onOpenProject = vi.fn();
     props.onGoBack = vi.fn();
@@ -1981,44 +2165,27 @@ describe("collapsed rail Inbox actions", () => {
     expect(rail.querySelector("[data-compact-rail-divider]")?.className).not.toContain("top-10");
     expect(container.textContent).not.toContain("Development");
     expect(container.querySelector('button[aria-label^="Back"]')).toBeNull();
+    expect(rail.querySelector("img")).toBeNull();
   });
 
-  it("keeps the location title before history, project expansion and session search", async () => {
+  it("keeps only the location, session tools and New session in the workspace header", async () => {
     props.projectRailOpen = false;
     props.lastSessionsOpen = true;
     props.onSelectProject = vi.fn();
     props.onOpenProject = vi.fn();
-    props.canGoBack = true;
-    props.canGoForward = true;
     props.onGoBack = vi.fn();
-    props.onGoForward = vi.fn();
     props.onToggleProjectRail = vi.fn();
     await act(async () => render());
     const header = container.querySelector("[data-workspace-header]")!;
     const title = header.querySelector("h2")!;
     expect(title.textContent).toBe("Last sessions");
     expect(title.closest("[data-pane-header-heading]")).not.toBeNull();
-    const labels = Array.from(header.querySelectorAll("button"), (button) =>
-      button.getAttribute("aria-label"),
-    );
-    expect(labels.indexOf("Back")).toBeLessThan(labels.indexOf("Forward"));
-    expect(labels.indexOf("Forward")).toBeLessThan(labels.indexOf("Expand projects"));
-    expect(labels.indexOf("Expand projects")).toBeLessThan(labels.indexOf("Search sessions"));
-    const back = header.querySelector<HTMLButtonElement>('button[aria-label="Back"]')!;
-    expect(title.compareDocumentPosition(back) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(back.closest("[data-pane-header-body]")).not.toBeNull();
-    expect(container.querySelectorAll('button[aria-label="Expand projects"]')).toHaveLength(1);
-    expect(
-      container.querySelector('[data-compact-project-rail] button[aria-label="Expand projects"]'),
-    ).toBeNull();
-    act(() => back.click());
-    act(() => header.querySelector<HTMLButtonElement>('button[aria-label="Forward"]')!.click());
-    act(() =>
-      header.querySelector<HTMLButtonElement>('button[aria-label="Expand projects"]')!.click(),
-    );
-    expect(props.onGoBack).toHaveBeenCalledOnce();
-    expect(props.onGoForward).toHaveBeenCalledOnce();
-    expect(props.onToggleProjectRail).toHaveBeenCalledOnce();
+    const search = header.querySelector<HTMLButtonElement>('button[aria-label="Search sessions"]')!;
+    expect(title.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // History and the sidebar toggle belong to the title bar in every rail state.
+    for (const label of ["Back", "Forward", "Toggle sidebar"]) {
+      expect(container.querySelector(`button[aria-label^="${label}"]`)).toBeNull();
+    }
   });
 
   it("keeps global actions in the rail and workspace tabs in their horizontal row", async () => {
@@ -2044,9 +2211,9 @@ describe("collapsed rail Inbox actions", () => {
         button.getAttribute("aria-label")?.replace(/ \(.+\)$/, ""),
       ),
     ).toEqual([
-      "Search",
       "Inbox",
       "Crews",
+      "Live streaming",
       "Notes",
       "Automations",
       "Social Media",
@@ -2077,7 +2244,15 @@ describe("collapsed rail Inbox actions", () => {
 
     expect(rail.querySelector('button[aria-label="Tools"]')).toBeNull();
     expect(rail.querySelector('button[aria-label="Notes"]')).not.toBeNull();
-    for (const label of ["Crews", "Notes", "Automations", "Social Media", "Tasks", "Assistant"]) {
+    for (const label of [
+      "Crews",
+      "Live streaming",
+      "Notes",
+      "Automations",
+      "Social Media",
+      "Tasks",
+      "Assistant",
+    ]) {
       expect(rail.querySelector(`button[aria-label="${label}"]`)?.textContent).toBe("");
     }
     // The Projects flyout searches its own list; it never opens a second project picker.
@@ -2088,14 +2263,9 @@ describe("collapsed rail Inbox actions", () => {
       rail.querySelector<HTMLElement>('button[aria-label="Projects and groups"]')!.textContent,
     ).toBe("");
     pressKey(document.body, "Escape");
-    act(() =>
-      container
-        .querySelector<HTMLButtonElement>(
-          '[data-workspace-header] button[aria-label="Expand projects"]',
-        )!
-        .click(),
-    );
-    expect(props.onToggleProjectRail).toHaveBeenCalledOnce();
+    expect(
+      container.querySelector('[data-workspace-header] button[aria-label="Toggle sidebar"]'),
+    ).toBeNull();
   });
 
   it("opens the temporary workspace panel while keeping tabs horizontal and preserving dismissal", async () => {
@@ -2142,7 +2312,9 @@ describe("collapsed rail Inbox actions", () => {
     expect(workspace()).not.toBeNull();
     act(() => workspace().click());
     expect(drawer()?.dataset.sidebarDrawer).toBe("open");
-    expect(drawer()?.className).not.toContain("absolute");
+    // Only narrow windows overlay the drawer (`max-[596px]:absolute`); it stays in flow otherwise.
+    expect(drawer()?.className).not.toMatch(/(^|\s)absolute(\s|$)/);
+    expect(drawer()?.className).toContain("max-[596px]:absolute");
     expect(drawer()?.querySelector("aside")?.className).toContain("body-glass");
     expect(container.querySelector('[data-compact-project-rail] [role="tablist"]')).toBeNull();
     expect(animations).toHaveLength(1);
@@ -2329,11 +2501,13 @@ describe("collapsed rail Inbox actions", () => {
   });
 
   it("keeps Changes labeled in the horizontal row with full working-tree totals", async () => {
-    vi.mocked(useProjectDiffStats).mockReturnValue({
-      files: 1,
-      additions: 3,
-      deletions: 0,
-    });
+    vi.mocked(useProjectsDiffStats).mockReturnValue([
+      {
+        files: 1,
+        additions: 3,
+        deletions: 0,
+      },
+    ]);
     props.projectRailOpen = false;
     props.onSelectProject = vi.fn();
     props.onOpenProject = vi.fn();
@@ -2419,7 +2593,8 @@ describe("collapsed rail Inbox actions", () => {
       expect(menu!.textContent).toContain("Mark all as read");
       expect(menu!.textContent).toContain("Mute all projects");
       expect(menu!.textContent).toContain("Resume muted projects");
-      expect(menu!.textContent).toContain("2 projects");
+      // The menu rows carry no project-count caption.
+      expect(menu!.textContent).not.toContain("2 projects");
       const settings = [...menu!.querySelectorAll("button")].find((button) =>
         button.textContent?.startsWith("Notification settings"),
       )!;
@@ -2433,6 +2608,39 @@ describe("collapsed rail Inbox actions", () => {
 });
 
 describe("sidebar working agents", () => {
+  it("shows finished Activity rows with input requests", () => {
+    props.projectRailOpen = false;
+    const running = {
+      id: "running-agent",
+      cwd: "/workspace/alpha",
+      title: "Build settings",
+      harness: "codex" as const,
+      activity: "Working",
+      needsApproval: false,
+      done: false,
+    };
+    const approval = { ...running, id: "approval-agent", needsApproval: true };
+    const failed = { ...running, id: "failed-agent", issue: "failed" as const, done: true };
+    props.liveAgents = [running, approval, failed];
+    act(render);
+
+    const preview = container.querySelector('[data-live-agents-preview="full"]')!;
+    act(() => preview.querySelector<HTMLButtonElement>("button[aria-expanded]")!.click());
+    const row = (id: string) => preview.querySelector(`[data-live-agent-card="${id}"]`);
+    expect(row(running.id)).not.toBeNull();
+    expect(row(approval.id)).not.toBeNull();
+    expect(row(failed.id)?.textContent).toContain("Failed");
+
+    props.liveAgents = [{ ...running, done: true, activity: "Done" }, approval];
+    act(render);
+    expect(row(running.id)?.textContent).toContain("Done");
+    expect(row(approval.id)).not.toBeNull();
+
+    props.liveAgents = [];
+    act(render);
+    expect(container.querySelector("[data-live-agents-preview]")).toBeNull();
+  });
+
   it("shows the original working widget when the project rail is collapsed", () => {
     props.projectRailOpen = false;
     props.onSelectAgent = vi.fn();
@@ -2461,6 +2669,7 @@ describe("sidebar working agents", () => {
     act(() => render());
 
     const preview = container.querySelector<HTMLElement>('[data-live-agents-preview="full"]')!;
+    act(() => preview.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!.click());
     expect(preview.querySelectorAll("[data-live-agent-card]")).toHaveLength(2);
     expect(preview.querySelector('[data-live-agent-card="agent-a"]')!.textContent).toContain(
       "alpha",
@@ -2498,6 +2707,7 @@ describe("sidebar working agents", () => {
     act(() => render());
 
     const preview = container.querySelector<HTMLElement>('[data-live-agents-preview="full"]')!;
+    act(() => preview.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!.click());
     expect(preview.querySelectorAll("[data-live-agent-card]")).toHaveLength(1);
     expect(preview.querySelector('[data-live-agent-card="agent-b"]')!.textContent).toContain(
       "beta",
@@ -2561,6 +2771,264 @@ it("lets compact row actions overlay the idle time instead of reserving a gutter
   } finally {
     saveSessionListDisplay(DEFAULT_SESSION_LIST_DISPLAY);
   }
+});
+
+it.each(["standard", "compact", "detailed"] as const)(
+  "shows the remote marker before the provider in %s rows",
+  (density) => {
+    saveSessionListDisplay({ ...DEFAULT_SESSION_LIST_DISPLAY, density });
+    act(render);
+    expect(card().querySelector('[aria-label="On another machine"]')).toBeNull();
+
+    const cwd = "remote://env-1/workspace/project";
+    saveAutoTabGroupLabel(cwd, "project (tailm)");
+    props.sessions = [{ ...props.sessions[0], cwd }];
+    act(render);
+    const provider = card().querySelector('[data-session-provider="codex"]')!;
+    const marker = provider.parentElement?.previousElementSibling;
+    expect(marker?.getAttribute("aria-label")).toBe("On another machine");
+    expect(marker?.querySelector("svg.lucide-server")).not.toBeNull();
+    if (density !== "compact") {
+      expect(card().querySelector("[data-session-row-project]")?.textContent).toContain("project");
+      expect(card().querySelector("[data-session-row-project]")?.textContent).not.toContain(
+        "tailm",
+      );
+    }
+  },
+);
+
+it.each([
+  ["archives a remote row through its own project", undefined, false],
+  [
+    "delays a transient archive failure without replaying it",
+    "RPC_WS_DETACHED: Member detached",
+    false,
+  ],
+  [
+    "reports an uncertain archive immediately without replaying it",
+    "RPC_WS_INTERRUPTED: Link interrupted",
+    true,
+  ],
+] as const)("%s even when the open project is local", async (_label, failure, uncertain) => {
+  vi.useFakeTimers();
+  registerFailurePolicy(describeActionFailure);
+  const show = vi.spyOn(toast, "show").mockReturnValue("sidebar-test-toast");
+  const local = props.sessions[0];
+  const remote = rememberRemoteProject("recent-remote", {
+    id: "host-project",
+    cwd: "/remote",
+  } as HostProject);
+  const remoteRow = { ...local, id: "remote-session", cwd: remote.key };
+  const update = vi.fn().mockResolvedValue(undefined);
+  if (failure) update.mockRejectedValue(new Error(failure));
+  vi.spyOn(connections, "knownRemoteMachine").mockReturnValue({
+    id: "remote-machine",
+    environmentId: remote.environmentId,
+    endpoint: "ssh://fixture",
+    name: "Fixture",
+  });
+  const client = connections.sessionAccessForMachine("remote-machine", false, true);
+  const access = vi.spyOn(connections, "sessionAccessForMachine").mockReturnValue({
+    ...client,
+    update,
+  });
+  props.lastSessionsOpen = true;
+  props.lastSessionsData = { rows: [remoteRow], loading: false, error: null, refresh: vi.fn() };
+  props.lastSessionsRemoteRows = [
+    {
+      project: remote.key,
+      fresh: true,
+      session: {
+        id: remoteRow.id,
+        projectId: remote.projectId,
+        status: "idle",
+        revision: 1,
+        title: remoteRow.title,
+        harness: remoteRow.harness,
+        updatedAt: remoteRow.updatedAt,
+        authorityGeneration: 3,
+      },
+    },
+  ];
+  props.onArchiveSession = vi.fn();
+  await act(async () => render());
+  const row = container.querySelector('[data-session-card="remote-session"]')!;
+  act(() => row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+  const archive = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+    (item) => item.textContent === "Archive",
+  );
+  await act(async () => archive!.click());
+  expect(access).toHaveBeenCalledWith("remote-machine", false, true);
+  expect(update).toHaveBeenCalledExactlyOnceWith("remote-session", {
+    projectId: "host-project",
+    authorityGeneration: 3,
+    archived: true,
+  });
+  expect(props.onArchiveSession).not.toHaveBeenCalled();
+  if (uncertain) {
+    expect(show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tone: "danger",
+        message: expect.stringContaining("outcome is unknown"),
+      }),
+    );
+  } else {
+    expect(show).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTimeAsync(2_999));
+    expect(show).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(show).toHaveBeenCalledTimes(failure ? 1 : 0);
+  }
+  expect(update).toHaveBeenCalledTimes(1);
+  if (!failure) {
+    act(() =>
+      row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+    );
+    const rename = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent === "RenameF2",
+    );
+    await act(async () => rename!.click());
+    const input = row.querySelector<HTMLInputElement>("input")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "Renamed on the owning Host",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () =>
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+    );
+    expect(update).toHaveBeenLastCalledWith("remote-session", {
+      projectId: "host-project",
+      authorityGeneration: 3,
+      title: "Renamed on the owning Host",
+    });
+    expect(props.onRenameSession).not.toHaveBeenCalled();
+  }
+});
+
+it("settles a Last sessions row on its remote Host and removes it from the active list", async () => {
+  const project = rememberRemoteProject("settle-office", {
+    id: "remote-project",
+    cwd: "/repo",
+  } as HostProject);
+  const row = { ...props.sessions[0], id: "remote-settle", cwd: project.key };
+  vi.spyOn(connections, "knownRemoteMachine").mockReturnValue({
+    id: "office-machine",
+    environmentId: project.environmentId,
+    endpoint: "ssh://office",
+    name: "Office",
+  });
+  const client = lifecycleClient.sessionLifecycleClient("office-machine");
+  vi.spyOn(client, "list").mockResolvedValue({ records: [], autoSettle: { afterDays: 3 } });
+  const settle = vi.spyOn(client, "settle").mockResolvedValue({
+    sessionId: row.id,
+    state: "settled",
+    settledAt: Date.now(),
+    participants: [],
+  });
+  const lifecycle = vi.spyOn(lifecycleClient, "sessionLifecycleClient").mockReturnValue(client);
+  props.lastSessionsOpen = true;
+  props.lastSessionsData = { rows: [row], loading: false, error: null, refresh: vi.fn() };
+  props.lastSessionsRemoteRows = [
+    {
+      project: project.key,
+      fresh: true,
+      session: {
+        id: row.id,
+        projectId: project.projectId,
+        status: "idle",
+        revision: 1,
+        title: row.title,
+        harness: row.harness,
+        updatedAt: row.updatedAt,
+      },
+    },
+  ];
+  await act(async () => render());
+  act(() =>
+    container
+      .querySelector('[data-session-card="remote-settle"]')!
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+  );
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+    (entry) => entry.textContent === "Settle",
+  );
+  expect(item).toBeDefined();
+  await act(async () => item!.click());
+  expect(lifecycle).toHaveBeenCalledWith("office-machine", false);
+  expect(settle).toHaveBeenCalledExactlyOnceWith(row.id);
+  expect(container.querySelector('[data-session-card="remote-settle"]')).toBeNull();
+});
+
+it("settles and un-settles a remote project row through its Host", async () => {
+  const project = rememberRemoteProject("project-settle-office", {
+    id: "remote-project",
+    cwd: "/repo",
+  } as HostProject);
+  const machine = {
+    id: "project-settle-machine",
+    environmentId: project.environmentId,
+    endpoint: "ssh://office",
+    name: "Office",
+  };
+  vi.spyOn(connections, "knownRemoteMachine").mockReturnValue(machine);
+  const session = {
+    id: "remote-project-session",
+    projectId: project.projectId,
+    status: "idle" as const,
+    revision: 1,
+    title: "Remote project session",
+    harness: "codex" as const,
+    updatedAt: Date.now(),
+  };
+  props.cwd = project.key;
+  vi.spyOn(connections, "useRemoteProjectSessions").mockReturnValue({
+    machine,
+    sessions: [session],
+    loaded: true,
+    machinesLoaded: true,
+    failed: false,
+    dataState: { phase: "ready" },
+    confirmPin: vi.fn(),
+    refresh: vi.fn(),
+  });
+  const client = lifecycleClient.sessionLifecycleClient(machine.id);
+  vi.spyOn(client, "list").mockResolvedValue({ records: [], autoSettle: { afterDays: 3 } });
+  const settle = vi.spyOn(client, "settle").mockResolvedValue({
+    sessionId: session.id,
+    state: "settled",
+    settledAt: Date.now(),
+    participants: [],
+  });
+  const unsettle = vi.spyOn(client, "unsettle").mockResolvedValue({
+    sessionId: session.id,
+    state: "active",
+    participants: [],
+  });
+  const lifecycle = vi.spyOn(lifecycleClient, "sessionLifecycleClient").mockReturnValue(client);
+
+  await act(async () => render());
+  const row = container.querySelector(`[data-session-card="${session.id}"] [data-session-select]`)!;
+  act(() => row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+    (entry) => entry.textContent === "Settle",
+  );
+  expect(item).toBeDefined();
+  await act(async () => item!.click());
+  expect(lifecycle).toHaveBeenCalledWith(machine.id, false);
+  expect(settle).toHaveBeenCalledExactlyOnceWith(session.id);
+  expect(container.querySelector(`[data-session-card="${session.id}"]`)).toBeNull();
+  const shelf = container.querySelector("[data-settled-sessions]")!;
+  await act(async () => shelf.querySelector("button")!.click());
+  const undo = container.querySelector<HTMLButtonElement>(
+    `[data-session-card="${session.id}"] [aria-label="Un-settle ${session.title}"]`,
+  )!;
+  await act(async () => undo.click());
+  expect(unsettle).toHaveBeenCalledExactlyOnceWith(session.id);
+  expect(container.querySelector("[data-settled-sessions]")).toBeNull();
+  expect(container.querySelector(`[data-session-card="${session.id}"]`)).not.toBeNull();
 });
 
 it("drops a repository prefix that repeats the project in detailed rows", () => {
@@ -2875,7 +3343,10 @@ describe("sessions hidden by a filter", () => {
 });
 
 describe("opening a session", () => {
-  it("shows the clicked card is opening until it is the open session", () => {
+  it("only shows opening for a slow selection and clears it when the selection settles", async () => {
+    vi.useFakeTimers();
+    let finish!: () => void;
+    props.onSelectSession = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
     props.sessions = [1, 2].map((n) => ({
       ...props.sessions[0],
       id: `session-${n}`,
@@ -2886,11 +3357,16 @@ describe("opening a session", () => {
     const second = () => container.querySelector<HTMLElement>('[data-session-card="session-2"]')!;
     act(() => second().click());
     expect(props.onSelectSession).toHaveBeenCalledWith("session-2", { keepOpen: false });
-    expect(second().textContent).toContain("Opening…");
-
-    props = { ...props, activeSessionId: "session-2" };
-    act(() => render());
     expect(second().textContent).not.toContain("Opening…");
+    await act(async () => finish());
+    act(() => vi.advanceTimersByTime(600));
+    expect(second().textContent).not.toContain("Opening…");
+    act(() => second().click());
+    act(() => vi.advanceTimersByTime(600));
+    expect(second().textContent).toContain("Opening…");
+    await act(async () => finish());
+    expect(second().textContent).not.toContain("Opening…");
+    vi.useRealTimers();
   });
 });
 
@@ -2916,6 +3392,53 @@ it("keeps full keyboard navigation order while mounting a bounded row window", (
   expect(container.querySelector('[data-session-card="paged-99"]')).not.toBeNull();
 });
 
+it.each(["arrow", "right-click", "projectless overflow"] as const)(
+  "opens the shared project selector from the workspace New session %s",
+  async (trigger) => {
+    props.onNew = vi.fn();
+    props.onNewListedSession = vi.fn();
+    props.onSelectProject = vi.fn();
+    props.onOpenProject = vi.fn();
+    props.compactProjectRail = trigger === "arrow";
+    if (trigger === "projectless overflow") props.cwd = "~";
+    props.recents = [{ path: "/workspace/other", openedAt: Date.now() }];
+    await act(async () => render());
+    const primary = container.querySelector<HTMLButtonElement>(
+      'button[data-usage-guide="new-session"]',
+    )!;
+    expect(primary.querySelector('svg[stroke="currentColor"]')).not.toBeNull();
+    const disclosure = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Session actions"]',
+    )!;
+    expect(disclosure?.getAttribute("aria-haspopup")).toBe("menu");
+    await act(async () => primary.click());
+    expect(props.onNew).toHaveBeenCalledOnce();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+
+    const rightClick = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    await act(async () => {
+      if (trigger === "right-click") primary.dispatchEvent(rightClick);
+      else disclosure.click();
+    });
+    if (trigger !== "right-click") {
+      await act(async () =>
+        [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+          .find((item) => item.textContent === "Choose project")!
+          .click(),
+      );
+    }
+    if (trigger === "right-click") expect(rightClick.defaultPrevented).toBe(true);
+    expect(props.onNew).toHaveBeenCalledOnce();
+    expect(props.onNewListedSession).not.toHaveBeenCalled();
+    const target = [
+      ...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] [role="option"]'),
+    ].find((option) => option.textContent?.endsWith("other"))!;
+    await act(async () => target.click());
+    expect(props.onNewListedSession).toHaveBeenCalledExactlyOnceWith("/workspace/other");
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  },
+);
+
 it("opens a project selector for an explicit global New request without creating a session", async () => {
   props.lastSessionsOpen = true;
   props.onNewListedSession = vi.fn();
@@ -2926,9 +3449,7 @@ it("opens a project selector for an explicit global New request without creating
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   props.newListedSessionRequest = 1;
   await act(async () => render());
-  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
-    "Choose a project for the new session",
-  );
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("New session in");
   expect(props.onNew).not.toHaveBeenCalled();
   expect(props.onNewListedSession).not.toHaveBeenCalled();
   await act(async () =>
@@ -2944,7 +3465,7 @@ it("opens a project selector for an explicit global New request without creating
 });
 
 it.each(["standard", "compact", "detailed"] as const)(
-  "keeps %s Last sessions rows navigation-only",
+  "opens the action menu on %s Last sessions rows and settles the target",
   async (density) => {
     saveSessionListDisplay({ ...DEFAULT_SESSION_LIST_DISPLAY, density });
     vi.mocked(useLocalLifecycleMachine).mockReturnValue("local");
@@ -2974,10 +3495,17 @@ it.each(["standard", "compact", "detailed"] as const)(
       const row = container.querySelector('[data-session-card="foreign-session"]')!;
       expect(row.querySelector('button[aria-label="Pin"]')).toBeNull();
       expect(row.querySelector('[data-session-project-slot][data-pinned="true"]')).toBeNull();
-      expect(row.querySelector('button[aria-label^="Settle"]')).toBeNull();
-      expect(row.querySelector('button[aria-label^="Archive"]')).toBeNull();
-      expect(row.querySelector('button[aria-label^="Delete"]')).toBeNull();
-      expect(settle).not.toHaveBeenCalled();
+      act(() =>
+        row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+      );
+      const menu = document.querySelector('[aria-label="Session actions"]');
+      const items = [...(menu?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
+      expect(items.map((item) => item.textContent)).toEqual(
+        expect.arrayContaining(["Settle", "Archive", "Delete"]),
+      );
+      await act(async () => items.find((item) => item.textContent === "Settle")!.click());
+      expect(settle).toHaveBeenCalledWith("foreign-session", false);
+      expect(container.querySelector('[data-session-card="foreign-session"]')).toBeNull();
       expect(props.onArchiveSession).not.toHaveBeenCalled();
       expect(props.onDeleteSession).not.toHaveBeenCalled();
       expect(props.lastSessionsData.refresh).not.toHaveBeenCalled();
@@ -2987,3 +3515,30 @@ it.each(["standard", "compact", "detailed"] as const)(
     }
   },
 );
+
+it("confirms deletion of the exact Last sessions row before invoking local removal", async () => {
+  const listed = { ...props.sessions[0], id: "foreign-delete", cwd: "/workspace/other" };
+  const confirm = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true);
+  vi.stubGlobal("confirm", confirm);
+  props.busySessionIds = new Set();
+  props.lastSessionsOpen = true;
+  props.lastSessionsData = { rows: [listed], loading: false, error: null, refresh: vi.fn() };
+  const remove = vi.fn(async () => true);
+  props.onDeleteSession = remove;
+  await act(async () => render());
+  const row = container.querySelector('[data-session-card="foreign-delete"]')!;
+  const clickDelete = async () => {
+    act(() =>
+      row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+    );
+    const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (entry) => entry.textContent === "Delete",
+    );
+    await act(async () => item!.click());
+  };
+  await clickDelete();
+  expect(remove).not.toHaveBeenCalled();
+  await clickDelete();
+  expect(remove).toHaveBeenCalledExactlyOnceWith("foreign-delete", listed);
+  expect(props.lastSessionsData.refresh).toHaveBeenCalledOnce();
+});

@@ -9,13 +9,16 @@ import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { formatDate, t } from "../../../shared/i18n";
 import { revokeSshHttpProxyApproval } from "../model/sshHttpProxyApproval";
+import { connectionProblem } from "../model/connectionReason";
+import { remoteBackoffDelay } from "../model/remotePollingPolicy";
 import { useSshHttpProxyApproval } from "./useSshHttpProxyApproval";
 import { StatusBadge, type BadgeStatus } from "../../../shared/ui/Badge";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { Button } from "../../../shared/ui/Button";
-import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -23,7 +26,9 @@ import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import type { ServerRecord } from "../model/serverInventory";
 import { sshEndpointPreview, validSshEndpointPreview } from "../model/sshEndpointReview";
-import { validSshRuntimeConfiguration } from "../model/sshGroupDefaults";
+import { sshInheritedFieldLabel, validSshRuntimeConfiguration } from "../model/sshGroupDefaults";
+import { sshProvenanceText } from "./sshProvenanceText";
+import { sshProxyEndpointText } from "./sshProxyEndpointText";
 import {
   abandonMissingSshRunbookStart,
   pendingSshRunbookIntents,
@@ -88,7 +93,7 @@ export function SshRunbooks({
   );
   const [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(true),
-    [error, setError] = useState("");
+    [problem, setProblem] = useState<{ title: string; details?: string }>();
   const mounted = useRef(false),
     locked = useRef(false);
   const [status, setStatus] = useState<SshRunStatus>();
@@ -132,11 +137,12 @@ export function SshRunbooks({
     if (locked.current) return;
     locked.current = true;
     setBusy(true);
-    setError("");
+    setProblem(undefined);
     try {
       await work();
     } catch (reason) {
-      if (mounted.current) setError(String(reason));
+      if (mounted.current)
+        setProblem(connectionProblem(t("Could not complete this action."), reason));
     } finally {
       locked.current = false;
       if (mounted.current) setBusy(false);
@@ -176,7 +182,8 @@ export function SshRunbooks({
         }
       })
       .catch((reason) => {
-        if (mounted.current && sequence === loadSequence.current) setError(String(reason));
+        if (mounted.current && sequence === loadSequence.current)
+          setProblem(connectionProblem(t("Could not load the SSH runbooks."), reason));
       })
       .finally(() => {
         if (mounted.current && sequence === loadSequence.current) setLoading(false);
@@ -208,7 +215,11 @@ export function SshRunbooks({
       })
       .catch((reason) => {
         // A status lookup that follows a failed operation must not replace that operation's error.
-        if (current) setError((previous) => previous || String(reason));
+        if (current)
+          setProblem(
+            (previous) =>
+              previous ?? connectionProblem(t("Could not read the run status."), reason),
+          );
       });
     return () => {
       current = false;
@@ -216,31 +227,44 @@ export function SshRunbooks({
   }, [runId, busy]);
   useEffect(() => {
     if (!runId || busy || !sshRunActive(currentStatus)) return;
+    // Chained timeouts: the next poll is scheduled only after this one settles. Failures back off
+    // (shared remoteBackoffDelay, capped at 30 s) and hidden windows poll every 5 s; monitoring of
+    // an active run continues, and a manual Refresh status stays available throughout.
     let current = true,
-      pending = false;
-    const timer = setInterval(() => {
-      if (pending) return;
-      pending = true;
+      failures = 0,
+      timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = () => {
       void statusSshRunbook(runId)
         .then((value) => {
-          if (current && value.runId === runId) setStatus(value);
+          if (!current) return;
+          failures = 0;
+          if (value.runId === runId) setStatus(value);
         })
         .catch((reason) => {
-          if (current) setError(String(reason));
+          if (!current) return;
+          failures++;
+          setProblem(connectionProblem(t("Could not read the run status."), reason));
         })
         .finally(() => {
-          pending = false;
+          if (!current) return;
+          timer = setTimeout(
+            poll,
+            failures ? remoteBackoffDelay(failures) : document.hidden ? 5_000 : 1_000,
+          );
         });
-    }, 1000);
+    };
+    timer = setTimeout(poll, 1_000);
     return () => {
       current = false;
-      clearInterval(timer);
+      clearTimeout(timer);
     };
   }, [runId, currentStatus, busy]);
+  // The execution review only shows whether approval is still valid, so it needs one expiry timer.
   useEffect(() => {
     if (!review) return;
-    const timer = setInterval(() => setClock(Date.now()), 500);
-    return () => clearInterval(timer);
+    const { expiresAt } = review;
+    const timer = setTimeout(() => setClock(expiresAt), Math.max(0, expiresAt - Date.now()));
+    return () => clearTimeout(timer);
   }, [review]);
   return (
     <>
@@ -271,6 +295,13 @@ export function SshRunbooks({
           >
             <Button
               disabled={busy || frozen || !profile}
+              disabledReason={
+                frozen
+                  ? t("Wait for the current run to finish.")
+                  : !profile
+                    ? t("Enter a name, script, valid targets and execution limits.")
+                    : undefined
+              }
               onClick={() =>
                 void operation(async () => {
                   if (!profile) return;
@@ -286,6 +317,13 @@ export function SshRunbooks({
             </Button>
             <Button
               disabled={busy || frozen || !clean}
+              disabledReason={
+                frozen
+                  ? t("Wait for the current run to finish.")
+                  : !clean
+                    ? t("Save the runbook before reviewing.")
+                    : undefined
+              }
               onClick={() =>
                 void operation(async () => {
                   if (!saved) return;
@@ -341,7 +379,7 @@ export function SshRunbooks({
           <Text as="p" tone="muted">
             {t("Target")}: {server.name}
           </Text>
-          {error ? <Alert tone="danger">{error}</Alert> : null}
+          {problem ? <InlineError details={problem.details}>{problem.title}</InlineError> : null}
           {intents.length ? (
             <Text
               as="section"
@@ -355,15 +393,22 @@ export function SshRunbooks({
                   <p className="min-w-0 flex-1 break-all">
                     {profiles.find((item) => item.id === intent.automationId)?.name ??
                       intent.automationId}{" "}
-                    · {t(intent.trigger === "startup" ? "After connection" : "Scheduled")} ·{" "}
+                    · {intent.trigger === "startup" ? t("After connection") : t("Scheduled")} ·{" "}
                     {t("Pending review")}
                   </p>
                   <Button
                     disabled={busy || frozen}
+                    disabledReason={
+                      busy
+                        ? t("Wait for the current action to finish.")
+                        : frozen
+                          ? t("Wait for the current run to finish.")
+                          : undefined
+                    }
                     onClick={() => {
                       const found = profiles.find((item) => item.id === intent.automationId);
                       if (!found || found.revision !== intent.revision) {
-                        setError(t("Runbook changed. Refresh and review again."));
+                        setProblem({ title: t("Runbook changed. Refresh and review again.") });
                         return;
                       }
                       setDraft(sshRunbookDraft(found));
@@ -405,9 +450,11 @@ export function SshRunbooks({
               )}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="min-w-0 break-all">
-                  {t("Run ID")}: <Code>{runId}</Code>
-                </p>
+                <Disclosure size="sm" summary={t("Details")}>
+                  <p className="min-w-0 break-all">
+                    {t("Run ID")}: <Code>{runId}</Code>
+                  </p>
+                </Disclosure>
                 <Button disabled={busy} onClick={() => void operation(() => refreshStatus(runId))}>
                   {t("Refresh status")}
                 </Button>
@@ -449,21 +496,19 @@ export function SshRunbooks({
                     {RUN_STATE_BADGE[target.state] ? (
                       <StatusBadge status={RUN_STATE_BADGE[target.state]!} />
                     ) : (
-                      t(
-                        {
-                          exited: "Exited",
-                          cancelled: "Cancelled",
-                          unknown: "Unknown",
-                        }[target.state as "exited" | "cancelled" | "unknown"],
-                      )
+                      {
+                        exited: t("Exited"),
+                        cancelled: t("Cancelled"),
+                        unknown: t("Unknown"),
+                      }[target.state as "exited" | "cancelled" | "unknown"]
                     )}
                     {target.exitCode != null ? ` · ${target.exitCode}` : ""}
                   </p>
                   {target.reason ? (
                     <Text as="div" size="inherit" tone="muted" className="w-full min-w-0">
-                      <p>{t(sshRunReasonMessage(target.reason))}</p>
+                      <p>{sshRunReasonMessage(target.reason)}</p>
                       <ErrorDetails
-                        title={t(sshRunReasonMessage(target.reason))}
+                        title={sshRunReasonMessage(target.reason)}
                         label={t("Technical details")}
                         detail={target.reason}
                       />
@@ -499,45 +544,25 @@ export function SshRunbooks({
               ) : null}
             </Text>
           ) : null}
-          <div className="flex min-w-0 flex-wrap items-end gap-2">
-            <div className="min-w-48 flex-1">
-              <SearchableSelect
-                label={t("Runbook")}
-                value={saved?.id ?? "new"}
-                disabled={busy || frozen || loading}
-                options={[
-                  { value: "new", label: t("New runbook") },
-                  ...profiles.map((item) => ({
-                    value: item.id,
-                    label: `${item.name} · r${item.revision}`,
-                  })),
-                ]}
-                onChange={(id) => {
-                  setDraft(
-                    sshRunbookDraft(
-                      profiles.find((item) => item.id === id),
-                      server.id,
-                    ),
-                  );
-                  setSelectedIntent(undefined);
-                  setReview(undefined);
-                }}
-              />
-            </div>
-            <Button
-              disabled={busy || frozen}
-              onClick={() => {
-                setDraft(sshRunbookDraft(undefined, server.id));
-                setSelectedIntent(undefined);
-                setReview(undefined);
-              }}
-            >
-              {t("New runbook")}
-            </Button>
-            <Button disabled={busy || loading} onClick={() => void operation(load)}>
-              {t("Refresh")}
-            </Button>
-          </div>
+          <SearchableSelect
+            label={t("Runbook")}
+            value={saved?.id ?? "new"}
+            disabled={busy || frozen || loading}
+            options={[
+              { value: "new", label: t("New runbook") },
+              ...profiles.map((item) => ({ value: item.id, label: item.name })),
+            ]}
+            onChange={(id) => {
+              setDraft(
+                sshRunbookDraft(
+                  profiles.find((item) => item.id === id),
+                  server.id,
+                ),
+              );
+              setSelectedIntent(undefined);
+              setReview(undefined);
+            }}
+          />
           <FieldGroup variant="bare" disabled={busy || frozen}>
             <div className="flex min-w-0 flex-col gap-3">
               <TextField
@@ -587,71 +612,75 @@ export function SshRunbooks({
                 spellCheck={false}
                 onChange={(event) => change({ script: event.target.value })}
               />
-              <div className="grid grid-cols-2 gap-2">
-                <TextField
-                  label={t("Concurrency")}
-                  inputMode="numeric"
-                  value={draft.concurrency}
-                  onChange={(event) => change({ concurrency: event.target.value })}
-                />
-                <TextField
-                  label={t("Timeout per target (seconds)")}
-                  inputMode="numeric"
-                  value={draft.timeoutSeconds}
-                  onChange={(event) => change({ timeoutSeconds: event.target.value })}
-                />
+              <div className="flex items-end gap-2">
+                <div className="grid min-w-0 flex-1 grid-cols-2 gap-2">
+                  <TextField
+                    label={t("Concurrency")}
+                    inputMode="numeric"
+                    value={draft.concurrency}
+                    onChange={(event) => change({ concurrency: event.target.value })}
+                  />
+                  <TextField
+                    label={t("Timeout per target (seconds)")}
+                    inputMode="numeric"
+                    value={draft.timeoutSeconds}
+                    onChange={(event) => change({ timeoutSeconds: event.target.value })}
+                  />
+                </div>
+                <InfoPopover className="shrink-0">
+                  <p>
+                    {t(
+                      "Choose up to 16 saved SSH targets, 1–4 concurrent processes and a 1–86400 second timeout. Scripts are saved definitions; keep secrets in the remote environment or a credential provider. Output is not captured. Saving never runs a script.",
+                    )}
+                  </p>
+                </InfoPopover>
               </div>
-              <Disclosure size="sm" textSize="caption" summary={t("Runbook triggers")}>
-                <Text as="div" size="caption" tone="inherit">
-                  <div className="flex min-w-0 flex-col gap-3">
-                    <TextField
-                      label={t("Schedule interval (minutes)")}
-                      inputMode="numeric"
-                      value={draft.intervalMinutes ?? ""}
-                      onChange={(event) => change({ intervalMinutes: event.target.value })}
-                    />
-                    <SearchableSelect
-                      multiple
-                      label={t("Review after connecting to")}
-                      value={draft.triggers?.startupServerIds ?? []}
-                      options={choices
-                        .filter((item) => draft.targetIds.includes(item.id))
-                        .map((item) => ({ value: item.id, label: item.name }))}
-                      onChange={(ids) =>
-                        change({ triggers: { ...draft.triggers, startupServerIds: ids } })
-                      }
-                    />
-                    <Text as="p" size="inherit" tone="muted">
+              <Disclosure
+                size="sm"
+                summary={t("Runbook triggers")}
+                summaryActions={
+                  <InfoPopover>
+                    <p>
                       {t(
                         "Triggers create pending reviews. Connecting, restoring or reaching a schedule never runs a script automatically.",
                       )}
-                    </Text>
-                    <Text as="p" size="inherit" tone="muted">
+                    </p>
+                    <p>
                       {t(
                         "Automatic startup reviews require trusted shell integration. Use Review startup scripts for other terminals.",
                       )}
-                    </Text>
-                    {saved?.triggers?.nextRunAt ? (
-                      <p>
-                        {t("Next review")}:{" "}
-                        {formatDate(new Date(saved.triggers.nextRunAt), DATE_TIME)}
-                      </p>
-                    ) : null}
-                  </div>
-                </Text>
+                    </p>
+                  </InfoPopover>
+                }
+              >
+                <div className="flex min-w-0 flex-col gap-3">
+                  <TextField
+                    label={t("Schedule interval (minutes)")}
+                    inputMode="numeric"
+                    value={draft.intervalMinutes ?? ""}
+                    onChange={(event) => change({ intervalMinutes: event.target.value })}
+                  />
+                  <SearchableSelect
+                    multiple
+                    label={t("Review after connecting to")}
+                    value={draft.triggers?.startupServerIds ?? []}
+                    options={choices
+                      .filter((item) => draft.targetIds.includes(item.id))
+                      .map((item) => ({ value: item.id, label: item.name }))}
+                    onChange={(ids) =>
+                      change({ triggers: { ...draft.triggers, startupServerIds: ids } })
+                    }
+                  />
+                  {saved?.triggers?.nextRunAt ? (
+                    <p>
+                      {t("Next review")}:{" "}
+                      {formatDate(new Date(saved.triggers.nextRunAt), DATE_TIME)}
+                    </p>
+                  ) : null}
+                </div>
               </Disclosure>
             </div>
           </FieldGroup>
-          <Text as="p" tone="muted">
-            {t(
-              "Choose up to 16 saved SSH targets, 1–4 concurrent processes and a 1–86400 second timeout. Scripts are saved definitions; keep secrets in the remote environment or a credential provider. Output is not captured. Saving never runs a script.",
-            )}
-          </Text>
-          {!profile ? (
-            <InlineError live="polite">
-              {t("Enter a name, script, valid targets and execution limits.")}
-            </InlineError>
-          ) : null}
           {activeReview ? (
             <Text
               as="section"
@@ -663,7 +692,7 @@ export function SshRunbooks({
                 "flex min-w-0 flex-col gap-2 pbs-3",
               )}
             >
-              <p>{t(selectedIntent ? "Pending review" : "Manual execution")}</p>
+              <p>{selectedIntent ? t("Pending review") : t("Manual execution")}</p>
               <Text as="p" size="inherit" tone="inherit" weight="medium">
                 {activeReview.value.profile.name} · r{activeReview.value.profile.revision}
               </Text>
@@ -682,12 +711,7 @@ export function SshRunbooks({
                     {sshEndpointPreview(target.endpoint)}
                   </p>
                   {target.endpoint.httpProxy ? (
-                    <p className="break-all">
-                      {target.endpoint.httpProxy.scheme === "https"
-                        ? "HTTPS CONNECT"
-                        : "HTTP CONNECT"}
-                      : {sshEndpointPreview(target.endpoint.httpProxy)}
-                    </p>
+                    <p className="break-all">{sshProxyEndpointText(target.endpoint.httpProxy)}</p>
                   ) : null}
                   <Disclosure size="sm" summary={t("Connection details")}>
                     <DescriptionList size="sm">
@@ -722,27 +746,8 @@ export function SshRunbooks({
                       ) : null}
                       {Object.entries(target.configuration?.provenance ?? {}).map(
                         ([field, source]) => (
-                          <DescriptionItem
-                            key={field}
-                            term={t(
-                              (
-                                {
-                                  user: "SSH user",
-                                  port: "SSH port",
-                                  identityFile: "Identity file",
-                                  certificateFile: "Public SSH certificate file",
-                                } as Record<string, string>
-                              )[field] ?? field,
-                            )}
-                          >
-                            {t(
-                              source.source === "group"
-                                ? "Group"
-                                : source.source === "connection"
-                                  ? "Connection"
-                                  : "Default",
-                            )}
-                            {source.groupId ? ` · ${source.groupId} · r${source.revision}` : ""}
+                          <DescriptionItem key={field} term={sshInheritedFieldLabel(field)}>
+                            {sshProvenanceText(source)}
                           </DescriptionItem>
                         ),
                       )}
@@ -769,6 +774,7 @@ export function SshRunbooks({
               <Button
                 variant="primary"
                 disabled={busy || frozen}
+                disabledReason={frozen ? t("Wait for the current run to finish.") : undefined}
                 onClick={() =>
                   void operation(async () => {
                     if (!activeReview || activeReview.expiresAt <= Date.now()) {

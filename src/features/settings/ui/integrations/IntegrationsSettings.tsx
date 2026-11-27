@@ -1,7 +1,6 @@
 import { useContext, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../../shared/i18n";
-import { Badge } from "../../../../shared/ui/Badge";
-import { Tab, TabList, TabPanel, Tabs } from "../../../../shared/ui/Tabs";
+import { SearchableSelect } from "../../../../shared/ui/SearchableSelect";
 import { isPausedMessagingProvider, MessagingProviderMark } from "../../../messaging";
 import { INBOX_PROVIDERS, inboxProviderMark } from "../InboxSettings";
 import { JiraSettings } from "../JiraSettings";
@@ -15,9 +14,9 @@ import "./IntegrationsSettings.css";
 type Integration = {
   /** Tab value and the `SETTINGS_INDEX` reveal id of the card. */
   id: string;
-  name: string;
+  name: () => string;
   capability: "inbox" | "messages";
-  description: string;
+  description: () => string;
   icon: ReactNode;
   render: (active: boolean) => ReactNode;
 };
@@ -37,33 +36,34 @@ const ALL_INTEGRATIONS: readonly Integration[] = [
   })),
   {
     id: "email",
-    name: "Email",
+    name: () => t("Email"),
     capability: "messages",
-    description: "Read and reply to mail from Gmail, Yahoo, iCloud or any IMAP/SMTP account.",
+    description: () =>
+      t("Read and reply to mail from Gmail, Yahoo, iCloud or any IMAP/SMTP account."),
     icon: <MessagingProviderMark provider="email" className="icon-md shrink-0" />,
     render: () => <EmailAccountsSettings />,
   },
   {
     id: "slack",
-    name: "Slack",
+    name: () => t("Slack"),
     capability: "messages",
-    description: "Read your Slack channels and direct messages, and reply from bycoda.",
+    description: () => t("Read your Slack channels and direct messages, and reply from bycoda."),
     icon: <MessagingProviderMark provider="slack" className="icon-md shrink-0" />,
     render: () => <SlackSettings />,
   },
   {
     id: "discord",
-    name: "Discord",
+    name: () => t("Discord"),
     capability: "messages",
-    description: "Read the Discord channels you list and reply as your bot.",
+    description: () => t("Read the Discord channels you list and reply as your bot."),
     icon: <MessagingProviderMark provider="discord" className="icon-md shrink-0" />,
     render: () => <DiscordSettings />,
   },
   {
     id: "teams",
-    name: "Microsoft Teams",
+    name: () => t("Microsoft Teams"),
     capability: "messages",
-    description: "Read your Teams chats and reply with your Microsoft account.",
+    description: () => t("Read your Teams chats and reply with your Microsoft account."),
     icon: <MessagingProviderMark provider="teams" className="icon-md shrink-0" />,
     render: () => <TeamsSettings />,
   },
@@ -99,41 +99,30 @@ export function IntegrationsPage() {
 
   return (
     <div className="inbox-settings integrations-settings">
-      <Tabs value={active} onValueChange={setActive} size="md">
-        <TabList label={t("Integrations")} className="inbox-provider-tabs">
-          {INTEGRATIONS.map((item) => (
-            <Tab key={item.id} value={item.id} stableWidth icon={item.icon}>
-              {t(item.name)}
-            </Tab>
-          ))}
-        </TabList>
+      <div className="settings-topics">
+        <SearchableSelect
+          label={t("Services")}
+          value={active}
+          onChange={setActive}
+          options={INTEGRATIONS.map((item) => ({
+            value: item.id,
+            label: item.name(),
+            icon: item.icon,
+            keywords: item.description(),
+          }))}
+        />
         {INTEGRATIONS.map((item) => (
-          <TabPanel key={item.id} value={item.id} keepMounted>
-            <div className="settings-topics grid min-w-0 gap-6">
-              <Group
-                layout="full"
-                scope={
-                  item.capability === "inbox"
-                    ? t("This computer · Inbox account")
-                    : t("This computer · Messaging accounts")
-                }
-                id={item.id}
-                title={t("Connection")}
-                info={t(item.description)}
-                action={
-                  <Badge size="sm" appearance="subtle">
-                    {item.capability === "inbox" ? t("Inbox") : t("Messages")}
-                  </Badge>
-                }
-              >
+          <div key={item.id} hidden={active !== item.id}>
+            <div className="settings-topics">
+              <Group layout="full" id={item.id} title={t("Connection")} info={item.description()}>
                 {active === item.id || visited.has(item.id)
                   ? item.render(active === item.id)
                   : null}
               </Group>
             </div>
-          </TabPanel>
+          </div>
         ))}
-      </Tabs>
+      </div>
     </div>
   );
 }

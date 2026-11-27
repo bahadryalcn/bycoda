@@ -35,7 +35,6 @@ export interface TaskContext {
   assertAssistantDeletionSourceStable: HostTasks["assertAssistantDeletionSourceStable"];
   restoreAssistantDeletedTask: HostTasks["restoreAssistantDeletedTask"];
   setGoalPaused: HostTasks["setGoalPaused"];
-  setGoalPauseReason: HostTasks["setGoalPauseReason"];
   publishGoalPause: HostTasks["publishGoalPause"];
   hasRunningGoalWork: HostTasks["hasRunningGoalWork"];
   timer: HostTasks["timer"];
@@ -50,6 +49,7 @@ export interface TaskContext {
   beforeStart: HostTasks["beforeStart"];
   crewCanStart: HostTasks["crewCanStart"];
   crewRunner: HostTasks["crewRunner"];
+  executorDecisions: HostTasks["executorDecisions"];
   limits: HostTasks["limits"];
   budgets: HostTasks["budgets"];
   externalRunSources: HostTasks["externalRunSources"];
@@ -73,7 +73,6 @@ export interface TaskContext {
   revisionCounter: HostTasks["revisionCounter"];
   onChange: HostTasks["onChange"];
   onDelete: HostTasks["onDelete"];
-  etagCache: HostTasks["etagCache"];
   listCache: HostTasks["listCache"];
   projectListCache: HostTasks["projectListCache"];
   assistantMetadataCache: HostTasks["assistantMetadataCache"];

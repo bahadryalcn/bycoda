@@ -26,6 +26,7 @@ import { MOD, ALT, SHIFT, IS_MAC } from "../../../platform/tauri/platform";
 import { keybindingPressed } from "../../settings/public/settings";
 import { handleFilePreviewFindKey, openFindInActiveFilePreview } from "../ui/FilePreviewSearch";
 import { t } from "../../../shared/i18n";
+import { findControlLabels } from "../../../shared/i18n/findLabels";
 import { nativeButtonPresentation } from "../../../shared/ui/Button";
 
 const MATCH_CAP = 999;
@@ -285,12 +286,13 @@ class FindPanel implements Panel {
       this.commit(false);
       this.searchField.focus();
     });
-    this.caseButton = toggleButton("Aa", "Match Case", `${ALT}C`);
-    this.wordButton = toggleButton("ab", "Match Whole Word", `${ALT}W`);
-    this.regexButton = toggleButton(".*", "Use Regular Expression", `${ALT}R`);
+    const labels = findControlLabels(t);
+    this.caseButton = toggleButton("Aa", labels.matchCase, `${ALT}C`);
+    this.wordButton = toggleButton("ab", labels.matchWholeWord, `${ALT}W`);
+    this.regexButton = toggleButton(".*", labels.useRegex, `${ALT}R`);
     this.expandButton = iconButton(
       "cm-find-expand",
-      "Toggle Replace",
+      labels.toggleReplace,
       IS_MAC ? `${MOD}${ALT}F` : "Ctrl+H",
       svgIcon("M6 4l4 4-4 4"),
     );
@@ -298,11 +300,16 @@ class FindPanel implements Panel {
 
     const prevButton = iconButton(
       "cm-find-step",
-      "Previous Match",
+      labels.previousMatch,
       `${MOD}${SHIFT}G`,
       svgIcon("M4 10l4-4 4 4"),
     );
-    const nextButton = iconButton("cm-find-step", "Next Match", `${MOD}G`, svgIcon("M4 6l4 4 4-4"));
+    const nextButton = iconButton(
+      "cm-find-step",
+      labels.nextMatch,
+      `${MOD}G`,
+      svgIcon("M4 6l4 4 4-4"),
+    );
     const closeButton = iconButton(
       "cm-find-close",
       "Close",

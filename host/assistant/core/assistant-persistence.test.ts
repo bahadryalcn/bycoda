@@ -53,7 +53,7 @@ it("keeps Host provenance through metadata edits, sparse saves, summaries and re
     },
     "owner",
   );
-  const job = (
+  const queued = (
     await core.request(
       {
         op: "jobs.create",
@@ -65,6 +65,9 @@ it("keeps Host provenance through metadata edits, sparse saves, summaries and re
       "owner",
     )
   ).job!;
+  // Dispatch runs on the request queue after the RPC; this request queues behind it.
+  await core.request({ op: "tick" }, "owner");
+  const job = (await core.request({ op: "jobs.get", id: queued.id }, "owner")).job!;
   const author = {
     kind: "assistant" as const,
     name: "Owner Name",

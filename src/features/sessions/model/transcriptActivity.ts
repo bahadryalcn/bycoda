@@ -13,11 +13,12 @@ import { displayPath, pathKey, resolveWorkspacePath } from "../../../shared/lib/
 import { delegatedChildIdOf } from "./delegatedBlockId";
 import { isTurnInterruptMessage } from "./inFlight";
 import { isSessionErrorBlock } from "./sessionIssue";
-import { COMPACTING_TEXT, isRunningCompaction } from "./compactionStatus";
+import { compactingText, isRunningCompaction } from "./compactionStatus";
 import { isStartupStatusBlock } from "./startupStatus";
 import type { AgentStep, Block, ToolPreview } from "./session";
 import { bycodaWorkSummary } from "./bycodaToolCall";
-import { streamingTextUpdate } from "./stableBlocks";
+import { streamingBlockUpdate } from "./stableBlocks";
+import { isWebSearchBlock } from "./searchSources";
 const groupedSources = new WeakMap<Block[][], { blocks: Block[]; managed: boolean }>();
 const groupedPositions = new WeakMap<Block[][], Map<string, number>>();
 function rememberGrouping(turns: Block[][], blocks: Block[], managed: boolean): void {
@@ -91,6 +92,24 @@ export function toolCallState(block: Block): ToolCallState {
  * frame, so the cwd-free label and the category are remembered per block. */
 const labels = new WeakMap<Block, string>();
 const categories = new WeakMap<Block, ActivityWorkKind>();
+
+/**
+ * Readable parts of an MCP tool call: the tool as plain words and the server as secondary context.
+ * Accepts the bare id (`mcp__server__tool_name`), the id with its recorded arguments
+ * (`mcp__server__tool_name: {...}`) and the `server:tool_name: {...}` form some harnesses record.
+ * The arguments stay in the call's details. Undefined for anything else.
+ */
+export function mcpToolDisplay(raw: string): { tool: string; server: string } | undefined {
+  const text = raw.trim();
+  const match =
+    /^mcp__(.+?)__([^\s:]+)(?::\s[\s\S]*)?$/.exec(text) ??
+    /^([\w.-]+):([\w.-]+):\s*[{[][\s\S]*$/.exec(text);
+  if (!match) return undefined;
+  const words = (value: string) => value.replace(/[_-]+/g, " ").trim();
+  const tool = words(match[2]);
+  const server = words(match[1]);
+  return tool ? { tool, server } : undefined;
+}
 
 export function toolCallLabel(block: Block, cwd?: string): string {
   if (cwd === undefined) {
@@ -176,7 +195,13 @@ export function isActivityBlock(block: Block): boolean {
   if (isThinkingBlock(block)) return true;
   if (block.role === "system") {
     // A command the user ran or a model switch is theirs, not the agent's work: it keeps its row.
-    return !block.interjection && !block.shell && !block.modelSwitch && !isNoticeBlock(block);
+    return (
+      !block.interjection &&
+      !block.shell &&
+      !block.modelSwitch &&
+      !block.branchOrigin &&
+      !isNoticeBlock(block)
+    );
   }
   if (block.role !== "tool" && block.role !== "approval") return false;
   if (
@@ -428,9 +453,8 @@ export function lastTurn(blocks: Block[], managed = false): Block[] {
 
 /**
  * `groupTurns`, reusing the previous result's turn arrays where a turn holds
- * the same block objects in the same order. While the agent streams only the
- * last block changes, so every earlier turn keeps its array identity and a
- * memoized turn can skip rendering on a plain reference check.
+ * the same block objects in the same order. Streamed content changes one
+ * block, so only its containing turn needs a new array.
  */
 export function groupTurnsStable(
   blocks: Block[],
@@ -439,7 +463,7 @@ export function groupTurnsStable(
 ): Block[][] {
   const source = groupedSources.get(previous);
   if (source?.blocks === blocks && source.managed === managed) return previous;
-  const updateIndex = source ? streamingTextUpdate(source.blocks, blocks) : undefined;
+  const updateIndex = source ? streamingBlockUpdate(source.blocks, blocks)?.index : undefined;
   if (source?.managed === managed && updateIndex !== undefined) {
     const oldBlock = source.blocks[updateIndex];
     const turnIndex = groupedPositions.get(previous)?.get(oldBlock.id);
@@ -879,6 +903,7 @@ type PhaseTally = {
   reads: Set<string>;
   edits: Set<string>;
   searches: number;
+  webSearches: number;
   runs: number;
   /** Commands the agent left running when it yielded, and how many still are. */
   background: number;
@@ -895,6 +920,7 @@ function tallySteps(steps: Block[]): PhaseTally {
     reads: new Set(),
     edits: new Set(),
     searches: 0,
+    webSearches: 0,
     runs: 0,
     background: 0,
     backgroundLive: 0,
@@ -932,7 +958,8 @@ function tallySteps(steps: Block[]): PhaseTally {
         } else tally.runs += 1;
         break;
       case "research":
-        if (/^Find\b/i.test(label) || isSearchTool(kind, title, preview)) {
+        if (isWebSearchBlock(block)) tally.webSearches += 1;
+        else if (/^Find\b/i.test(label) || isSearchTool(kind, title, preview)) {
           tally.searches += 1;
         } else tally.reads.add(target);
         break;
@@ -955,7 +982,11 @@ function workSummary(kind: ActivityWorkKind, tally: PhaseTally, live: boolean): 
     case "edit":
       return `${live ? "Editing" : "Edited"} ${fileLabel(tally.edits)}`;
     case "research":
-      if (tally.reads.size > 0 && tally.searches === 0) {
+      // Only web searches: the agent looked outside the project.
+      if (tally.webSearches > 0 && tally.searches === 0 && tally.reads.size === 0) {
+        return live ? "Searching the web" : "Searched the web";
+      }
+      if (tally.reads.size > 0 && tally.searches === 0 && tally.webSearches === 0) {
         return `${live ? "Reading" : "Read"} ${fileLabel(tally.reads)}`;
       }
       if (tally.reads.size === 0) {
@@ -1005,8 +1036,16 @@ function currentWorkKind(steps: Block[]): ActivityWorkKind | undefined {
 export function workSummaryLine(steps: Block[], live = false): string {
   // While context compacts, say so instead of a bare "Working"/"Thinking".
   if (live && steps.length > 0 && isRunningCompaction(steps[steps.length - 1])) {
-    return COMPACTING_TEXT;
+    return compactingText();
   }
+  return summarizeWork(steps, live);
+}
+
+export function settledWorkSummaryLine(steps: Block[]): string {
+  return summarizeWork(steps, false);
+}
+
+function summarizeWork(steps: Block[], live: boolean): string {
   const appSummary = bycodaWorkSummary(steps, live);
   if (appSummary) return appSummary;
   const tally = tallySteps(steps);

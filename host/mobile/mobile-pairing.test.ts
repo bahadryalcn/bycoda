@@ -1,21 +1,33 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { deviceProofKeyFromSeed } from "../../src/integrations/device-proof";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { hostProof } from "./host-proof";
-import { createServer, request as httpRequest, type Server } from "node:http";
+import {
+  createServer,
+  request as httpRequest,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from "node:http";
 import { once } from "node:events";
+import { Readable } from "node:stream";
 import { MOBILE_PAIRING_TTL_MS } from "../../src/integrations/mobile-pairing";
+import { createTunnelIngress } from "../security/ingress";
 import { MobilePairing, MobilePairingError, type MobilePairingCreated } from "./mobile-pairing";
 
 const managers: MobilePairing[] = [];
 const servers: Server[] = [];
 const secret = () => randomBytes(32).toString("base64url");
+const PROOF_KEY = deviceProofKeyFromSeed(new Uint8Array(32).fill(5));
+const PROOF_BINDING = { jkt: PROOF_KEY.jkt, x: PROOF_KEY.publicJwk.x };
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 
-function setup() {
+function setup(phonesOverPublic = false) {
   let time = 100_000;
   const owner = secret();
   const otherOwner = secret();
   const deviceHashes = new Set([digest(owner), digest(otherOwner)]);
+  const managersByHash = new Set(deviceHashes);
   const issueDevice = vi.fn((_name: string) => {
     const token = secret();
     deviceHashes.add(digest(token));
@@ -25,8 +37,10 @@ function setup() {
     {
       environmentId: "test-environment",
       hasDeviceHash: (hash) => deviceHashes.has(hash),
+      canIssuePairing: (hash) => deviceHashes.has(hash) && managersByHash.has(hash),
       deviceProofKeys: async () => [...deviceHashes],
       proofOrigins: async () => ["https://host.test"],
+      phonesOverPublic: () => phonesOverPublic,
       issueDevice,
     },
     () => time,
@@ -42,16 +56,21 @@ function setup() {
     ticket: ticket.ticket,
     claimId,
     deviceName,
+    proofKey: PROOF_KEY.publicJwk,
   });
   return {
     manager,
     owner,
     otherOwner,
     deviceHashes,
+    managersByHash,
     issueDevice,
     redeem,
     advance: (ms: number) => {
       time += ms;
+    },
+    allowPhonesOverPublic: (allowed: boolean) => {
+      phonesOverPublic = allowed;
     },
   };
 }
@@ -82,6 +101,20 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
+it.each(["desktop", "phone", "invalid", undefined])(
+  "carries pairing kind %s into issuance with phone fallback",
+  async (kind) => {
+    const { manager, owner, issueDevice, redeem } = setup();
+    const ticket = await manager.create(owner, { kind });
+    await manager.redeem(redeem(ticket));
+    expect(issueDevice).toHaveBeenCalledExactlyOnceWith(
+      "My test phone",
+      kind === "desktop" ? "desktop" : "phone",
+      PROOF_BINDING,
+    );
+  },
+);
+
 it("serializes asynchronous claims and never replays an issuance with an uncertain outcome", async () => {
   const owner = secret();
   const allowed = new Set([digest(owner)]);
@@ -98,6 +131,7 @@ it("serializes asynchronous claims and never replays an issuance with an uncerta
   const manager = new MobilePairing({
     environmentId: "test-environment",
     hasDeviceHash: async (hash) => allowed.has(hash),
+    canIssuePairing: async (hash) => allowed.has(hash),
     issueDevice,
   });
   managers.push(manager);
@@ -108,6 +142,7 @@ it("serializes asynchronous claims and never replays an issuance with an uncerta
     ticket: ticket.ticket,
     claimId: secret(),
     deviceName: "Phone",
+    proofKey: PROOF_KEY.publicJwk,
   };
   const first = manager.redeem(input);
   const second = manager.redeem(input);
@@ -123,6 +158,15 @@ it("serializes asynchronous claims and never replays an issuance with an uncerta
 });
 
 describe("short-lived mobile pairing", () => {
+  it("rejects new and outstanding tickets after device management is removed", async () => {
+    const { manager, owner, managersByHash, redeem, issueDevice } = setup();
+    const ticket = await manager.create(owner);
+    managersByHash.delete(digest(owner));
+    await expect(manager.create(owner)).rejects.toThrow("Device management permission required");
+    await expect(manager.redeem(redeem(ticket))).rejects.toThrow("invalid or expired");
+    expect(issueDevice).not.toHaveBeenCalled();
+  });
+
   it("proves ticket and saved-device possession without receiving either secret or hash", async () => {
     const { manager, owner, deviceHashes, issueDevice } = setup();
     const ticket = await manager.create(owner);
@@ -242,7 +286,7 @@ describe("short-lived mobile pairing", () => {
     const input = redeem(ticket);
     const result = await manager.redeem(input);
     expect(await manager.redeem(input)).toEqual(result);
-    expect(issueDevice).toHaveBeenCalledExactlyOnceWith("My test phone");
+    expect(issueDevice).toHaveBeenCalledExactlyOnceWith("My test phone", "phone", PROOF_BINDING);
     expect(await manager.status(owner, ticket.pairingId)).toEqual({
       state: "paired",
       deviceName: "My test phone",
@@ -342,6 +386,24 @@ describe("short-lived mobile pairing", () => {
     expect(issueDevice).toHaveBeenCalledTimes(2);
   });
 
+  it("recovers a redeem response lost near QR expiry with the same claim, then drops the credential", async () => {
+    const { manager, owner, redeem, advance, issueDevice } = setup();
+    const input = redeem(await manager.create(owner));
+    advance(MOBILE_PAIRING_TTL_MS - 1_000);
+    const result = await manager.redeem(input);
+    // The response is lost; the retry arrives after the QR itself has expired.
+    advance(2_000);
+    expect(await manager.redeem(input)).toEqual(result);
+    await expect(
+      (async () => await manager.redeem({ ...input, claimId: secret() }))(),
+    ).rejects.toThrow("invalid or expired");
+    expect(await manager.redeem(input)).toEqual(result);
+    expect(issueDevice).toHaveBeenCalledOnce();
+    advance(MOBILE_PAIRING_TTL_MS);
+    await expect((async () => await manager.redeem(input))()).rejects.toThrow("invalid or expired");
+    expect(issueDevice).toHaveBeenCalledOnce();
+  });
+
   it("rechecks revoked issuer authorization before first redemption and every retry", async () => {
     const { manager, owner, otherOwner, deviceHashes, redeem, issueDevice } = setup();
     const pending = redeem(await manager.create(owner));
@@ -369,16 +431,18 @@ describe("short-lived mobile pairing", () => {
   });
 
   it("bounds concurrent tickets without evicting another live retry credential", async () => {
-    const { manager, owner, deviceHashes, redeem, issueDevice } = setup();
+    const { manager, owner, deviceHashes, managersByHash, redeem, issueDevice } = setup();
     const firstInput = redeem(await manager.create(owner));
     const firstResult = await manager.redeem(firstInput);
     for (let index = 1; index < 32; index++) {
       const nextOwner = secret();
       deviceHashes.add(digest(nextOwner));
+      managersByHash.add(digest(nextOwner));
       await manager.create(nextOwner);
     }
     const overflowOwner = secret();
     deviceHashes.add(digest(overflowOwner));
+    managersByHash.add(digest(overflowOwner));
     await expect((async () => await manager.create(overflowOwner))()).rejects.toThrow(
       "Too many phone connections",
     );
@@ -497,4 +561,167 @@ describe("native pairing redemption HTTP boundary", () => {
     await manager.redeem(input);
     expect(issueDevice).toHaveBeenCalledTimes(1);
   });
+
+  it("pairs other computers through the public tunnel but never a phone", async () => {
+    const { manager, owner, redeem, issueDevice } = setup();
+    const base = await listen(manager);
+    const main = servers.at(-1)!;
+    const tunnel = createTunnelIngress(main, {}, async () => false);
+    await tunnel.listen();
+    try {
+      const viaTunnel = (input: unknown) =>
+        fetch(`http://127.0.0.1:${tunnel.port()}/mobile/pairing/redeem`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        });
+      const phone = redeem(await manager.create(owner, { kind: "phone" }));
+      const refused = await viaTunnel(phone);
+      expect(refused.status).toBe(403);
+      expect(await refused.text()).toContain("local network or Tailscale");
+      expect(issueDevice).not.toHaveBeenCalled();
+      // The code stays valid, so the phone can still pair over the local network.
+      const direct = await fetch(`${base}/mobile/pairing/redeem`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(phone),
+      });
+      expect(direct.status).toBe(200);
+      const computer = await viaTunnel(redeem(await manager.create(owner, { kind: "desktop" })));
+      expect(computer.status).toBe(200);
+      expect(issueDevice).toHaveBeenLastCalledWith("My test phone", "desktop", PROOF_BINDING);
+    } finally {
+      await tunnel.close();
+    }
+  });
+
+  it("pairs a phone through the public tunnel only while public phone access is allowed", async () => {
+    const { manager, owner, redeem, issueDevice, allowPhonesOverPublic } = setup();
+    await listen(manager);
+    const main = servers.at(-1)!;
+    const tunnel = createTunnelIngress(main, {}, async () => false);
+    await tunnel.listen();
+    try {
+      const viaTunnel = (input: unknown) =>
+        fetch(`http://127.0.0.1:${tunnel.port()}/mobile/pairing/redeem`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        });
+      const phone = redeem(await manager.create(owner, { kind: "phone" }));
+      expect((await viaTunnel(phone)).status).toBe(403);
+      allowPhonesOverPublic(true);
+      expect((await viaTunnel(phone)).status).toBe(200);
+      expect(issueDevice).toHaveBeenLastCalledWith("My test phone", "phone", PROOF_BINDING);
+      allowPhonesOverPublic(false);
+      expect((await viaTunnel(redeem(await manager.create(owner, { kind: "phone" })))).status).toBe(
+        403,
+      );
+    } finally {
+      await tunnel.close();
+    }
+  });
+});
+
+function fakeRequest(
+  source: string,
+  body: unknown,
+  options: { method?: string; contentType?: string } = {},
+) {
+  return Object.assign(Readable.from([Buffer.from(JSON.stringify(body))]), {
+    method: options.method ?? "POST",
+    url: "/mobile/pairing/redeem",
+    headers: { "content-type": options.contentType ?? "application/json" },
+    socket: { remoteAddress: source },
+  }) as unknown as IncomingMessage;
+}
+
+async function send(
+  manager: MobilePairing,
+  source: string,
+  body: unknown,
+  options?: { method?: string; contentType?: string },
+): Promise<{ status: number }> {
+  const reply = { status: 200 };
+  const response = {
+    setHeader: () => undefined,
+    writeHead: (status: number) => {
+      reply.status = status;
+      return { end: () => undefined };
+    },
+    end: () => undefined,
+    destroyed: false,
+  } as unknown as ServerResponse;
+  await manager.handle(fakeRequest(source, body, options), response);
+  return reply;
+}
+
+describe("pairing redemption HTTP rate accounting", () => {
+  it("does not count requests rejected before ticket validation", async () => {
+    const { manager, owner, redeem, issueDevice } = setup();
+    const input = redeem(await manager.create(owner));
+    for (let index = 0; index < 130; index++) {
+      expect((await send(manager, "192.0.2.10", input, { method: "GET" })).status).toBe(403);
+      expect((await send(manager, "192.0.2.10", input, { contentType: "text/plain" })).status).toBe(
+        415,
+      );
+    }
+    expect((await send(manager, "192.0.2.10", input)).status).toBe(200);
+    expect(issueDevice).toHaveBeenCalledTimes(1);
+  });
+
+  it("limits one source without locking out another source's valid redemption", async () => {
+    const { manager, owner, redeem, issueDevice } = setup();
+    const input = redeem(await manager.create(owner));
+    for (let index = 0; index < 120; index++) {
+      expect((await send(manager, "198.51.100.7", { ...input, ticket: secret() })).status).toBe(
+        400,
+      );
+    }
+    expect((await send(manager, "198.51.100.7", input)).status).toBe(429);
+    expect(issueDevice).not.toHaveBeenCalled();
+    expect((await send(manager, "203.0.113.4", input)).status).toBe(200);
+    expect(issueDevice).toHaveBeenCalledTimes(1);
+  });
+
+  it("enforces a Host-wide ceiling across sources", async () => {
+    const { manager, owner, redeem } = setup();
+    const bogus = { ...redeem(await manager.create(owner)), ticket: secret() };
+    for (let source = 0; source < 5; source++) {
+      for (let index = 0; index < 120; index++) {
+        await send(manager, `10.0.0.${source}`, bogus);
+      }
+    }
+    expect((await send(manager, "10.0.1.1", bogus)).status).toBe(429);
+  });
+
+  it("bounds the per-source table", async () => {
+    const { manager, owner, redeem } = setup();
+    const bogus = { ...redeem(await manager.create(owner)), ticket: secret() };
+    for (let source = 0; source < 100; source++) {
+      await send(manager, `10.1.0.${source}`, bogus);
+    }
+    const sources = (manager as unknown as { sourceRedemptionRates: Map<string, unknown> })
+      .sourceRedemptionRates;
+    expect(sources.size).toBeLessThanOrEqual(64);
+  });
+});
+
+it("requires a valid proof key to redeem and binds a retry to the same key", async () => {
+  const { manager, owner, issueDevice, redeem } = setup();
+  const ticket = await manager.create(owner);
+  const claim = redeem(ticket);
+  const { proofKey: _proofKey, ...withoutKey } = claim;
+  await expect(manager.redeem(withoutKey)).rejects.toThrow("proof key is required");
+  await expect(
+    manager.redeem({ ...claim, proofKey: { ...PROOF_KEY.publicJwk, x: "AAAA" } }),
+  ).rejects.toThrow("proof key is required");
+  expect(issueDevice).not.toHaveBeenCalled();
+  const first = await manager.redeem(claim);
+  expect(await manager.redeem(claim)).toEqual(first);
+  const other = deviceProofKeyFromSeed(new Uint8Array(32).fill(6));
+  await expect(manager.redeem({ ...claim, proofKey: other.publicJwk })).rejects.toThrow(
+    "invalid or expired",
+  );
+  expect(issueDevice).toHaveBeenCalledOnce();
 });

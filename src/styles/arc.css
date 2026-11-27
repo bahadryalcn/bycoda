@@ -3,7 +3,7 @@
    - Modality: html[data-input-modality] is "pointer" or "keyboard" (shared/ui/inputModality.ts).
      Before any input and under pointer every focus visual resolves to none (width 0, transparent
      colour, field focus border equal to the resting border: the caret is the only cue). Under
-     keyboard the cue is a 2px inset neutral outline (>= 3:1 on its host) and fields step their
+     keyboard the cue is a 1px inset neutral outline (>= 3:1 on its host) and fields step their
      border up. Forced-colors keeps a real system outline in every modality.
    - Outline focus (buttons, rows, tabs, sliders): --ui-focus-width solid
      --ui-focus-ring-color at --ui-focus-offset. A quiet neutral tone, never the accent ink.
@@ -19,10 +19,10 @@
      the caret and surface carry focus).
    - Selected state is never a focus colour: use --ui-selected-ring (index.css). */
 html:root {
-  --ui-field-height-sm: var(--ui-control-height-compact);
-  --ui-field-height-md: var(--ui-control-height);
+  --ui-field-height-sm: var(--ui-control-height-sm);
+  --ui-field-height-md: var(--ui-control-height-md);
   --ui-field-radius: var(--ui-radius-control);
-  /* Fields rest with a faint frame (about 1.5:1 against the field ground, T3 Code) and a muted
+  /* Fields rest with a faint frame (about 1.5:1 against the field ground) and a muted
      ground (--ui-field-surface) so they stay findable without a focus frame. Check boxes and other
      non-field controls keep the stronger --ui-control-border. */
   --ui-field-surface: var(--ui-surface-muted);
@@ -42,15 +42,16 @@ html.theme-light:root {
 }
 html[data-input-modality="keyboard"]:root {
   --ui-focus-ring-color: color-mix(in oklab, var(--color-content) 62%, transparent);
-  --ui-focus-width: 2px;
-  --ui-focus-offset: -2px;
+  --ui-focus-width: 1px;
+  --ui-focus-offset: -1px;
   --ui-field-border-focus: color-mix(in oklab, var(--color-content) 68%, var(--ui-field-surface));
   --ui-focus-ring: inset 0 0 0 1px var(--ui-field-border-focus);
-  --ui-focus-ring-invalid: 0 0 0 2px color-mix(in oklab, var(--ui-tone-danger-fg) 26%, transparent);
+  --ui-focus-ring-invalid: 0 0 0 var(--ui-focus-width)
+    color-mix(in oklab, var(--ui-tone-danger-fg) 26%, transparent);
 }
 
-/* Arc roles are scoped to control roots. The global Arc foundation reset owns
-   a separate theme/focus system and must not change the rest of the workbench. */
+/* Arc roles are scoped to control roots. The upstream arc/foundation.css is a token
+   reference that is not imported, so its theme and focus rules never apply here. */
 .bycoda-arc {
   --background: var(--color-background-base);
   --foreground: var(--color-content);
@@ -61,49 +62,27 @@ html[data-input-modality="keyboard"]:root {
   --surface-muted: var(--ui-surface-muted);
   --text-secondary: var(--ui-text-secondary);
   --text-muted: var(--ui-text-muted);
-  --border: var(--color-stroke);
-  --border-subtle: color-mix(in oklch, var(--color-content) 5%, transparent);
-  --border-strong: color-mix(in oklch, var(--color-content) 16%, transparent);
-  --accent: var(--user-accent-solid, var(--user-accent-color, var(--color-accent)));
+  --border: var(--ui-tone-neutral-border);
+  --border-subtle: var(--ui-fill-faint);
+  --border-strong: var(--ui-fill-strong);
+  --accent: var(--ui-tone-accent-solid);
   --accent-strong: var(--accent);
   --accent-subtle: var(--ui-surface-selected);
-  --accent-foreground: var(--user-accent-foreground, var(--ui-text-on-active));
+  --accent-foreground: var(--ui-tone-accent-on-solid);
   --danger: var(--ui-tone-danger-fg);
   --info: var(--ui-tone-info-fg);
   --warning: var(--ui-tone-warning-fg);
   --success: var(--ui-tone-success-fg);
-  /* Switch, checkbox, radio and slider on-state: the Appearance accent when one is set, else a
-     neutral mid ink step, so the default workbench keeps one restrained hue (no saturated blue). */
-  --control-on: var(
-    --user-accent-solid,
-    var(
-      --user-accent-color,
-      color-mix(in oklab, var(--color-content) 58%, var(--color-background-base))
-    )
-  );
+  --control-on: var(--ui-control-on);
   --control-fill: var(--control-on);
-  --control-glyph: var(--user-accent-foreground, var(--color-background-base));
+  --control-glyph: var(--ui-control-on-glyph);
   --control-track: color-mix(in oklch, var(--color-content) 20%, transparent);
   --control-track-hover: color-mix(in oklch, var(--color-content) 28%, transparent);
   --control-thumb: var(--ui-control-thumb);
   --control-thumb-on: var(--ui-control-thumb);
   --control-thumb-shadow: none;
   --shadow-resting: none;
-  --shadow-raised: none;
-  --radius-control: var(--ui-radius-control);
-  --radius-panel: var(--ui-radius-popup);
-  --radius-surface: var(--ui-radius-popup);
-  --radius-pill: 9999px;
-  --space-1: 0.25rem;
-  --space-2: 0.375rem;
-  --space-3: 0.625rem;
-  --space-4: 0.875rem;
-  --space-5: 1rem;
-  --space-6: 1.25rem;
-  --space-8: 1.5rem;
-  --space-10: 2rem;
-  --space-12: 2.5rem;
-  --space-16: 3rem;
+  --shadow-raised: var(--ui-floating-shadow);
   /* Type: 12 label (--text-xs/--text-sm), 13 entry (--text-base; fields and menus re-point
      --text-sm below), 14 reading, 16 title. */
   --text-xs: var(--ui-font-caption);
@@ -117,8 +96,8 @@ html[data-input-modality="keyboard"]:root {
   --tracking-body: normal;
   /* Arc heights follow the spec ladder: xs 24, sm 28, md 32, lg 40 (density-scaled). */
   --control-height-xs: var(--ui-control-height-xs);
-  --control-height-sm: var(--ui-control-height-compact);
-  --control-height-md: var(--ui-control-height);
+  --control-height-sm: var(--ui-control-height-sm);
+  --control-height-md: var(--ui-control-height-md);
   --control-height-lg: var(--ui-control-height-lg);
   /* Arc motion collapses onto the two durations and the one easing. */
   --duration-instant: var(--motion-duration-fast);
@@ -133,7 +112,7 @@ html[data-input-modality="keyboard"]:root {
   --ease-in-out: var(--motion-ease-standard);
   --ease-spring: var(--motion-ease-standard);
   --focus-ring: transparent;
-  --shadow-floating: none;
+  --shadow-floating: var(--ui-floating-shadow);
   font-family: var(--font-sans);
 }
 
@@ -202,7 +181,11 @@ html[data-input-modality="keyboard"] .bycoda-arc[data-ui-appearance="island"] .b
 
 .bycoda-arc-switch,
 .bycoda-arc-slider {
-  --control-height-md: var(--ui-control-height-compact);
+  --control-height-md: var(--ui-control-height-sm);
+}
+
+.bycoda-arc-switch {
+  --control-thumb-shadow: inset 0 0 0 1px var(--ui-control-thumb-border);
 }
 
 /* A solid fill and its contrast ink must switch together when the theme or
@@ -215,7 +198,7 @@ html[data-input-modality="keyboard"] .bycoda-arc[data-ui-appearance="island"] .b
 .bycoda-arc-segmented {
   /* Unselected options remain readable choices, rather than muted metadata. */
   --text-muted: var(--ui-text-secondary);
-  --control-height-sm: var(--ui-segment-height, 1.5rem);
+  --control-height-sm: var(--ui-segment-height, var(--ui-control-height-xs));
   --surface: var(--ui-surface-selected);
   --surface-muted: transparent;
 }
@@ -410,11 +393,11 @@ html[data-control-density="touch"] .bycoda-arc-switch {
 
 .bycoda-arc[data-select-variant="pill"],
 .bycoda-arc[data-select-variant="row"] {
-  --control-height-md: var(--ui-control-height-compact);
+  --control-height-md: var(--ui-control-height-sm);
 }
 
 .bycoda-arc[data-select-variant="panel"] {
-  --control-height-md: 3.5rem;
+  --control-height-md: var(--ui-control-height-panel);
 }
 
 .bycoda-arc[data-select-variant="transparent"] {
@@ -423,19 +406,20 @@ html[data-control-density="touch"] .bycoda-arc-switch {
 
 .bycoda-arc-menu {
   --text-sm: var(--ui-font-secondary);
-  --control-height-md: var(--ui-control-height);
-  --surface: var(--surface-raised);
+  --control-height-md: var(--ui-control-height-md);
+  --border: var(--ui-floating-edge);
+  --surface: var(--ui-surface-floating);
   --surface-muted: var(--ui-surface-hover);
 }
 
 .bycoda-arc-card {
   --text-lg: var(--ui-font-secondary);
-  --space-5: 0.75rem;
+  --space-5: var(--ui-space-3);
   --space-6: 0.875rem;
 }
 
 .bycoda-arc.bycoda-arc-morph {
-  --control-height-md: var(--ui-control-height-compact);
+  --control-height-md: var(--ui-control-height-sm);
   --duration-spring: var(--motion-reorder-duration);
   --ease-spring: var(--motion-ease-out);
   --ease-enter: var(--motion-ease-out);
@@ -443,7 +427,7 @@ html[data-control-density="touch"] .bycoda-arc-switch {
 }
 
 .bycoda-arc-field--search {
-  --control-height-md: var(--ui-control-height-compact);
+  --control-height-md: var(--ui-control-height-sm);
 }
 
 .bycoda-arc-field--search input {
@@ -513,20 +497,16 @@ html[data-control-density="touch"] .bycoda-arc-switch {
 .bycoda-arc-filters [role="group"] {
   min-inline-size: 0;
 }
+/* No inset: the table frame lines up with the siblings in its column. */
 .bycoda-arc-table {
-  padding: var(--space-2);
+  padding: 0;
 }
 .bycoda-arc-table table {
   font-variant-numeric: tabular-nums;
 }
 .bycoda-arc-shortcut {
-  --control-height-md: var(--ui-control-height-compact);
+  --control-height-md: var(--ui-control-height-sm);
   flex: 1;
-}
-.bycoda-note-inline-title {
-  padding: var(--space-2) var(--space-3);
-  border-block-end: 1px solid var(--border);
-  flex-shrink: 0;
 }
 .bycoda-image-comparison {
   inline-size: min(100%, 80rem);
@@ -602,6 +582,7 @@ html[data-control-density="touch"] .bycoda-arc-switch {
     var(--ui-surface)
   );
   --ui-chart-area-fill: var(--ui-surface-selected);
+  /* The heatmap's inverse label needs inverse secondary ink until its tooltip adopts raised paint. */
   --ui-chart-tooltip-secondary: color-mix(
     in oklab,
     var(--color-background-base) 68%,
@@ -633,12 +614,17 @@ select.bycoda-arc-select:focus-visible {
   box-shadow: var(--ui-focus-ring);
 }
 
-:root :is([role="option"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]) {
-  border: 0 !important;
-  outline: none !important;
-  box-shadow: none !important;
+/* Bare options and menu items start borderless and shadowless at zero specificity and without !important, so a
+   component's own selected border, drag or error ring and shadow win by declaring them. Outline is not reset here:
+   the Arc foundation reset already owns it for these roles. */
+:where(:root)
+  :where([role="option"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]) {
+  border: 0;
+  box-shadow: none;
 }
-/* Fallback only: shared row controls own their stronger keyboard-focus fill. */
+/* Fallback only: shared row controls (ListRow skin) own their fill-only keyboard focus and set box-shadow: none.
+   Any other option or menu item gets the hover fill plus the shared keyboard focus line, which stays visible when
+   the row is also selected. --ui-focus-ring is transparent under pointer input, so pointer focus draws nothing. */
 :where(:root)
   :where(
     [role="option"],
@@ -647,6 +633,7 @@ select.bycoda-arc-select:focus-visible {
     [role="menuitemcheckbox"]
   ):focus-visible:not(:disabled, [aria-disabled="true"]) {
   background: var(--ui-surface-hover);
+  box-shadow: var(--ui-focus-ring);
 }
 :root
   :is(

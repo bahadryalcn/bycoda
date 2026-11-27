@@ -52,3 +52,8 @@ export function useSessionProjectAppearance(cwd: string) {
     ),
   };
 }
+
+/** The rail's project icon for a path, for features that show a project beside other content. */
+export function SessionProjectIcon({ cwd }: { cwd: string }) {
+  return useSessionProjectAppearance(cwd).icon;
+}

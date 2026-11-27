@@ -1,14 +1,25 @@
+import { useContext } from "react";
 import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { t } from "../../../shared/i18n";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
-import { AdvancedSettings, Select, Toggle } from "../../../shared/ui/settings";
+import { Group, RevealedSetting, Select, Toggle } from "../../../shared/ui/settings";
 import { useModelCatalog } from "../../sessions/public/modelHooks";
-import type { VoiceSettings } from "../model/voiceSettings";
+import { loadVoiceSettings, type VoiceSettings } from "../model/voiceSettings";
+import { DictationSettingsSuggestion } from "./DictationSettingsSuggestion";
 
-/** Optional text cleanup has its own explicit cloud opt-in, independent of audio recognition. */
+/** Rows under the cleanup switch; Settings opens "More options" for any of them. */
+export const CLEANUP_ROW_IDS = [
+  "dictation-cleanup-model",
+  "dictation-cleanup-instructions",
+  "dictation-cleanup-suggest",
+  "dictation-correction-cue",
+  "dictation-translate",
+];
+
+/** The "Text cleanup" group: optional text cleanup has its own explicit cloud opt-in, independent of audio recognition. */
 export function DictationCleanupSettings({
   settings,
   change,
@@ -16,6 +27,9 @@ export function DictationCleanupSettings({
   settings: VoiceSettings;
   change: (patch: Partial<VoiceSettings>) => void;
 }) {
+  const revealed = useContext(RevealedSetting);
+  // A search result for a cleanup detail shows its row even while cleanup is off.
+  const cleanupRevealed = !!revealed && CLEANUP_ROW_IDS.includes(revealed);
   const catalog = useModelCatalog("codex");
   const cleanup = settings.dictationCleanup;
   const update = (patch: Partial<VoiceSettings["dictationCleanup"]>) =>
@@ -38,46 +52,39 @@ export function DictationCleanupSettings({
         ]
       : []),
   ];
+  const detailsShown = cleanup.enabled || cleanupRevealed;
   return (
-    <>
+    <Group title={t("Text cleanup")}>
       <Row
         id="dictation-cleanup"
-        label={t("Clean up dictated text")}
-        descriptionVisible
+        label={t("Clean up text with Codex")}
         description={t(
           "Sends dictated text and your instructions to Codex for cleanup. Surrounding drafts are not sent.",
         )}
+        modified={cleanup.enabled}
+        onReset={() => update({ enabled: false })}
       >
         <Toggle
-          label={t("Clean up dictated text")}
+          label={t("Clean up text with Codex")}
           on={cleanup.enabled}
           onChange={(enabled) => update({ enabled })}
         />
       </Row>
-      {cleanup.enabled ? (
-        <AdvancedSettings
-          title={t("Text cleanup options")}
-          settingIds={[
-            "dictation-cleanup-model",
-            "dictation-cleanup-instructions",
-            "dictation-correction-cue",
-            "dictation-translate",
-          ]}
-          keepMounted
-        >
-          <Row id="dictation-cleanup-model" label={t("Cleanup model")}>
+      {detailsShown ? (
+        <>
+          <Row id="dictation-cleanup-model" label={t("Model")}>
             <Select
               hideLabel
-              label={t("Cleanup model")}
+              label={t("Model")}
               value={cleanup.model}
               options={options}
               onChange={(model) => update({ model })}
             />
           </Row>
-          <Row id="dictation-cleanup-instructions" label={t("Cleanup instructions")} stacked>
+          <Row id="dictation-cleanup-instructions" label={t("Instructions")} stacked>
             <TextareaField
               hideLabel
-              label={t("Cleanup instructions")}
+              label={t("Instructions")}
               value={cleanup.instructions}
               maxLength={4000}
               minRows={3}
@@ -87,6 +94,22 @@ export function DictationCleanupSettings({
               onChange={(event) => update({ instructions: event.target.value })}
             />
           </Row>
+          <DictationSettingsSuggestion
+            settings={settings}
+            apply={(patch) => {
+              change({
+                dictationCleanup: {
+                  ...loadVoiceSettings().dictationCleanup,
+                  ...patch,
+                },
+              });
+              const saved = loadVoiceSettings().dictationCleanup;
+              return (
+                saved.instructions === patch.instructions &&
+                saved.correctionCue === patch.correctionCue
+              );
+            }}
+          />
           <Row
             id="dictation-correction-cue"
             label={t("Correction phrase")}
@@ -101,15 +124,20 @@ export function DictationCleanupSettings({
               onChange={(event) => update({ correctionCue: event.target.value })}
             />
           </Row>
-          <Row id="dictation-translate" label={t("Translate to English")}>
+          <Row
+            id="dictation-translate"
+            label={t("Translate to English")}
+            modified={cleanup.translateToEnglish}
+            onReset={() => update({ translateToEnglish: false })}
+          >
             <Toggle
               label={t("Translate to English")}
               on={cleanup.translateToEnglish}
               onChange={(translateToEnglish) => update({ translateToEnglish })}
             />
           </Row>
-        </AdvancedSettings>
+        </>
       ) : null}
-    </>
+    </Group>
   );
 }

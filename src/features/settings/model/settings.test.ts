@@ -3,6 +3,7 @@ import {
   AUTOSAVE_DEFAULT,
   COLLAPSED_PROJECT_RAIL_MODE_DEFAULT,
   searchSettings,
+  SETTINGS_SEARCH_LIMIT,
   SETTINGS_INDEX,
   SETTINGS_SECTIONS,
   settingsSectionsByGroup,
@@ -737,21 +738,23 @@ describe("settings navigation", () => {
     ).toBe(true);
   });
 
-  it("lists every section under exactly one rail group", () => {
+  it("lists each main destination under exactly one settings area", () => {
     const groups = settingsSectionsByGroup();
     expect(groups.map((group) => group.id)).toEqual([
-      "app",
-      "agents",
-      "tools",
-      "code",
-      "connections",
-      "about",
       "account",
+      "app",
+      "conversation",
+      "models",
+      "workspace",
+      "connections",
+      "privacy",
+      "tools",
+      "help",
     ]);
-    expect(groups.at(-1)?.sections.map((section) => section.id)).toEqual(["account"]);
+    expect(groups[0]?.sections.map((section) => section.id)).toEqual(["account"]);
     const ids = groups.flatMap((group) => group.sections.map((section) => section.id));
-    expect(ids).toHaveLength(22);
-    expect(new Set(ids).size).toBe(22);
+    expect(ids).toHaveLength(23);
+    expect(new Set(ids).size).toBe(23);
     expect([...ids].sort()).toEqual(SETTINGS_SECTIONS.map((section) => section.id).sort());
     for (const group of groups) {
       expect(group.sections.every((section) => section.group === group.id)).toBe(true);
@@ -773,6 +776,17 @@ describe("settings navigation", () => {
     expect(settingsSectionForAnchor("providers", "provider-accounts")).toBe("providers");
   });
 
+  it("finds a setting by the label of a control inside it", () => {
+    for (const [query, settingId] of [
+      ["Tinted", "canvas-background"],
+      ["Default generation model", "git-generation-default"],
+      ["Import sessions from other coding agents", "import-history"],
+      ["Neural tree", "live-background"],
+    ]) {
+      expect(searchSettings(query, 100).map((result) => result.settingId)).toContain(settingId);
+    }
+  });
+
   it("keeps the old Models destination as a Providers alias without a separate rail entry", () => {
     expect(settingsSectionForAnchor("models")).toBe("providers");
     expect(settingsSectionForAnchor("models", "models-chat")).toBe("providers");
@@ -782,39 +796,59 @@ describe("settings navigation", () => {
     ).toBe(true);
   });
 
-  it("maps the sections into IDE-style groups", () => {
+  it("groups the sections by outcome", () => {
     const byGroup = Object.fromEntries(
       settingsSectionsByGroup().map((group) => [group.id, group.sections.map((s) => s.id)]),
     );
-    expect(byGroup.app).toEqual([
-      "general",
-      "appearance",
-      "chat",
-      "voice",
-      "notifications",
-      "permissions",
-      "keybindings",
-      "groupLock",
-      "archive",
-    ]);
-    expect(byGroup.agents).toEqual(["providers", "usage"]);
-    expect(byGroup.tools).toEqual(["skills", "mcp", "secrets", "tools"]);
-    expect(byGroup.code).toEqual(["workspace", "terminal", "worktrees"]);
+    expect(byGroup.app).toEqual(["general", "appearance", "keybindings", "archive"]);
+    expect(byGroup.conversation).toEqual(["chat", "voice", "notifications"]);
+    expect(byGroup.models).toEqual(["providers", "decisionModels", "usage"]);
+    expect(byGroup.tools).toEqual(["skills", "mcp", "tools"]);
+    expect(byGroup.workspace).toEqual(["workspace", "terminal", "worktrees"]);
     expect(byGroup.connections).toEqual(["connections", "integrations"]);
-    expect(byGroup.about).toEqual(["policies"]);
+    expect(byGroup.privacy).toEqual(["groupLock", "permissions", "secrets"]);
+    expect(byGroup.help).toEqual(["policies"]);
   });
 
   it("points every indexed setting at a real section", () => {
-    const sections = new Set(
-      settingsSectionsByGroup().flatMap((group) => group.sections.map((section) => section.id)),
-    );
+    const sections = new Set(SETTINGS_SECTIONS.map((section) => section.id));
     for (const entry of SETTINGS_INDEX) {
       expect(sections.has(entry.section), entry.id).toBe(true);
     }
   });
+
+  it.each([
+    ["general", "remote-media", "connections"],
+    ["general", "performance-trace", "policies"],
+    ["general", "getting-started", "policies"],
+    ["general", "import-history", "chat"],
+    ["general", "session-folder", "workspace"],
+    ["workspace", "exact-git-rewind", "worktrees"],
+    ["account", "anonymous-statistics", "groupLock"],
+    ["mcp", "external-mcp-access", "groupLock"],
+    ["tools", "bykit-instructions", "providers"],
+    ["notifications", "project-notifications", "notifications"],
+  ] as const)("resolves %s/%s to %s", (oldSection, anchor, section) => {
+    expect(settingsSectionForAnchor(oldSection, anchor)).toBe(section);
+  });
 });
 
 describe("settings search", () => {
+  it.each([
+    "transcript-preset",
+    "transcript-surface",
+    "transcript-surface-opacity",
+    "transcript-surface-blur",
+    "chat-message-color",
+    "user-message-opacity",
+    "transcript-body-ink",
+    "transcript-chrome-ink",
+    "transcript-cards",
+    "transcript-actions",
+  ])("opens Appearance for the transcript setting %s", (id) => {
+    expect(settingsSectionForAnchor("chat", id)).toBe("appearance");
+  });
+
   it("routes tool search results to one page with stable row anchors", () => {
     for (const query of ["viewport", "device", "logs", "development servers", "search engine"]) {
       const matches = searchSettings(query, 100).filter((result) => result.section === "tools");
@@ -831,6 +865,15 @@ describe("settings search", () => {
     expect(searchSettings("   ")).toEqual([]);
   });
 
+  it.each(["wake up", "wake word", "uyandırma komutu"])(
+    "finds voice activation when searching for %s",
+    (query) => {
+      expect(searchSettings(query)).toContainEqual(
+        expect.objectContaining({ section: "voice", settingId: "voice-wake" }),
+      );
+    },
+  );
+
   it("ranks label matches over keyword matches, and pages last", () => {
     expect(searchSettings("glass").map((result) => result.label)).toEqual([
       "Main pane glass",
@@ -838,7 +881,9 @@ describe("settings search", () => {
       ...(IS_LINUX ? [] : ["Window glass"]),
       "Blur radius",
       "Main pane opacity",
+      "Reading look",
       "Sidebar opacity",
+      "Your message opacity",
       "Appearance",
     ]);
   });
@@ -870,5 +915,12 @@ describe("settings search", () => {
 
   it("caps the result list", () => {
     expect(searchSettings("e", 4)).toHaveLength(4);
+  });
+
+  it("returns every match beyond the first eight up to the search limit", () => {
+    const all = searchSettings("e");
+    expect(all.length).toBeGreaterThan(8);
+    expect(all.length).toBeLessThanOrEqual(SETTINGS_SEARCH_LIMIT);
+    expect(searchSettings("e", SETTINGS_SEARCH_LIMIT + 1000).length).toBeGreaterThan(all.length);
   });
 });

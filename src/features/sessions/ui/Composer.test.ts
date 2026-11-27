@@ -34,7 +34,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
           ? mcpInvoke(command, args)
           : command === "list_question_attachment_drafts"
             ? Promise.resolve([])
-            : original.invoke(command, args),
+            : original.invoke(command, args as Parameters<typeof original.invoke>[1]),
   };
 });
 
@@ -56,19 +56,35 @@ vi.mock("../../source-control/hooks/useProjectBranches", () => ({
 }));
 
 import { Composer } from "./Composer";
+import { setLanguagePreference } from "../../../shared/i18n";
 import { setRemoteCommandRunner } from "../../../platform/tauri/fs";
 import { invalidateSkills } from "../../skills/model/skills";
 import { invalidateProjectFiles } from "../../files/model/fileIndex";
 import { reportSessionCommands } from "../../../integrations/harness/core/reportedCommands";
 import { clearMcpSettingsCache, loadMcpSettings } from "../../settings/model/mcpSettingsCache";
 import type { ComposerTurnOptions, Attachment } from "../model/session";
-import { clearComposerDraft, getComposerDraft, setComposerDraft } from "../model/draftCache";
+import {
+  clearComposerDraft,
+  getComposerAttachments,
+  getComposerDraft,
+  setComposerAttachments,
+  setComposerDraft,
+} from "../model/draftCache";
 import type { NewSessionOptions } from "../model/newSessionCommand";
 import type { UserQuestionPrompt } from "../model/userQuestion";
 import { registerHarness } from "../../../integrations/harness/core/registry";
 import { codexAdapter } from "../../../integrations/harness/providers/codex/codexAdapter";
 import { antigravityAdapter } from "../../../integrations/harness/providers/antigravity/antigravityAdapter";
 import { saveLastModelChoice } from "../model/models";
+
+async function rawDetails(scope: ParentNode = document): Promise<string> {
+  const trigger = scope.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+  if (!trigger) return "";
+  await act(async () => trigger.click());
+  return (
+    document.querySelector<HTMLElement>('[role="dialog"][aria-label^="Details"]')?.textContent ?? ""
+  );
+}
 
 /** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
 async function tooltipText(element: HTMLElement): Promise<string> {
@@ -396,10 +412,13 @@ describe("Composer question focus", () => {
     const trigger = document.querySelector<HTMLButtonElement>(
       '[aria-label="Folders for this session"]',
     );
-    expect(trigger?.textContent).toBe("repo");
+    expect(trigger?.textContent).toBe("Also work in");
     await act(async () => trigger!.click());
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Working folder");
-    expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain("Change project…");
+    // The project is fixed here: the list offers only "Also work in", never a project switch.
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.textContent).not.toContain("Change project…");
+    expect(dialog?.textContent).not.toContain("Project");
   });
 
   it.each([
@@ -450,7 +469,7 @@ describe("Composer question focus", () => {
     expect(onNewSession).toHaveBeenCalledOnce();
     expect(onSubmit).not.toHaveBeenCalled();
     expect(textarea.value).toBe("");
-    expect(getComposerDraft("new-command")?.text ?? "").toBe("");
+    expect(getComposerDraft("new-command") ?? "").toBe("");
   });
 
   it("offers /new in the command picker for remote sessions", async () => {
@@ -508,7 +527,7 @@ describe("Composer question focus", () => {
       } else {
         expect(onSubmit).toHaveBeenCalledExactlyOnceWith("/clear", [], { intent: "default" });
         expect(textarea.value).toBe("");
-        expect(getComposerDraft("clear-command")?.text ?? "").toBe("");
+        expect(getComposerDraft("clear-command") ?? "").toBe("");
       }
     },
   );
@@ -751,7 +770,8 @@ describe("Composer question focus", () => {
 
     const list = document.querySelector<HTMLElement>('[data-mcp-picker] [role="listbox"]')!;
     expect(list.querySelectorAll('[role="option"]')).toHaveLength(6);
-    expect(list.parentElement?.classList.contains("max-h-[min(184px,45vh)]")).toBe(true);
+    // The shared picker list owns the four-row height through its `standard` list height.
+    expect(list.closest("[data-list-height]")?.getAttribute("data-list-height")).toBe("standard");
     expect(list.querySelector('[role="option"]')?.className).toMatch(/_row_/);
     const pickerDialog = document.querySelector("[data-mcp-picker]")?.closest('[role="dialog"]');
     expect(pickerDialog?.getAttribute("aria-label")).toBe("Choose an MCP server");
@@ -998,6 +1018,45 @@ describe("Composer question focus", () => {
     expect(onDraftChange).toHaveBeenLastCalledWith("");
   });
 
+  it("names the message textarea in the active language and lets a caller override the name", async () => {
+    const props = {
+      focused: true,
+      harness: "claude" as const,
+      model: "claude-sonnet",
+      runtimeMode: "supervised" as const,
+      executionCwd: "/repo",
+      hideProjectPicker: true,
+      hideBranchPicker: true,
+      initialDraft: "Keep this draft",
+      onFocus: vi.fn(),
+      onCwdChange: vi.fn(),
+      onModelChange: vi.fn(),
+      onRuntimeModeChange: vi.fn(),
+      onSubmit: vi.fn(),
+    };
+    const field = () => document.querySelector("textarea")!;
+    await setLanguagePreference("tr");
+    try {
+      await act(async () => root.render(createElement(Composer, props)));
+      expect(field().getAttribute("aria-label")).toBe("Mesaj");
+
+      // A state-dependent placeholder never becomes the accessible name.
+      await act(async () =>
+        root.render(createElement(Composer, { ...props, worktreeRemoved: true })),
+      );
+      expect(field().placeholder).toContain("bir dal veya çalışma ağacı seçin");
+      expect(field().getAttribute("aria-label")).toBe("Mesaj");
+
+      await act(async () =>
+        root.render(createElement(Composer, { ...props, inputAriaLabel: "Yan soru" })),
+      );
+      expect(field().getAttribute("aria-label")).toBe("Yan soru");
+      expect(field().value).toBe("Keep this draft");
+    } finally {
+      await setLanguagePreference("en");
+    }
+  });
+
   it("keeps drafts and blocks sending until a working copy is selected", async () => {
     const onSubmit = vi.fn();
     const props = {
@@ -1238,10 +1297,10 @@ describe("Composer question focus", () => {
     expect(skill).toBeDefined();
     await act(async () => skill!.click());
     expect(textarea.value).toBe("Review this $plugin:review ");
-    // The chip is the source text itself, so it keeps the textarea's size and spacing.
-    expect(document.querySelector("[data-composer-skill-token]")?.textContent).toBe(
-      "$plugin:review",
-    );
+    // The chip keeps the source text hidden (for the textarea's size and spacing) and draws the skill name as its face.
+    const chip = document.querySelector("[data-composer-skill-token]");
+    expect(chip?.textContent).toContain("$plugin:review");
+    expect(chip?.querySelector("[data-draft-token-label]")?.textContent).toBe("plugin:review");
   });
 
   it("hides /operator from suggestions but submits the typed command", async () => {
@@ -1629,12 +1688,23 @@ describe("Composer question focus", () => {
     expect(document.querySelector('[aria-label="Turn off Operator"]')).toBeNull();
   });
 
-  it("clears the parent draft before submit so a remounting composer stays empty", async () => {
+  it("clears the parent draft and image before submit so a remounting composer stays empty", async () => {
     let parentDraft = "Ship the empty-state fix";
+    const sessionId = "first-send-with-image";
+    const image: Attachment = {
+      id: "first-send-image",
+      name: "sketch.png",
+      mimeType: "image/png",
+      kind: "image",
+      size: 4,
+      data: "dGVzdA==",
+    };
+    setComposerAttachments(sessionId, [image]);
     const onDraftChange = vi.fn((text: string) => {
       parentDraft = text;
     });
     const baseProps = {
+      sessionId,
       focused: true,
       harness: "claude" as const,
       model: "claude-sonnet",
@@ -1668,27 +1738,40 @@ describe("Composer question focus", () => {
 
     const textarea = document.querySelector("textarea")!;
     expect(textarea.value).toBe("Ship the empty-state fix");
+    expect(container.querySelector('[data-attachment-name="sketch.png"]')).not.toBeNull();
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Send"]')!.click(),
     );
 
-    expect(onSubmit).toHaveBeenCalledWith("Ship the empty-state fix", [], {
+    expect(onSubmit).toHaveBeenCalledWith("Ship the empty-state fix", [image], {
       intent: "default",
       onSendRejected: expect.any(Function),
     });
     expect(onDraftChange).toHaveBeenCalledWith("");
     expect(parentDraft).toBe("");
-    expect(textarea.value).toBe("");
+    expect(container.querySelector("textarea")!.value).toBe("");
+    expect(container.querySelector('[data-attachment-name="sketch.png"]')).toBeNull();
   });
 
   it("restores the draft when submit is rejected", async () => {
     let parentDraft = "Blocked while orchestration is paused";
+    const sessionId = "rejected-send-with-image";
+    const image: Attachment = {
+      id: "rejected-send-image",
+      name: "sketch.png",
+      mimeType: "image/png",
+      kind: "image",
+      size: 4,
+      data: "dGVzdA==",
+    };
+    setComposerAttachments(sessionId, [image]);
     const onDraftChange = vi.fn((text: string) => {
       parentDraft = text;
     });
     await act(async () =>
       root.render(
         createElement(Composer, {
+          sessionId,
           focused: true,
           harness: "claude",
           model: "claude-sonnet",
@@ -1714,6 +1797,9 @@ describe("Composer question focus", () => {
 
     expect(textarea.value).toBe("Blocked while orchestration is paused");
     expect(parentDraft).toBe("Blocked while orchestration is paused");
+    expect(getComposerAttachments(sessionId)).toEqual([image]);
+    expect(container.querySelector('[data-attachment-name="sketch.png"]')).not.toBeNull();
+    clearComposerDraft(sessionId);
   });
 
   it("routes last-turn recall through common rewind and restores as a normal draft", async () => {
@@ -1721,7 +1807,9 @@ describe("Composer question focus", () => {
     const onRecallLastTurn = vi.fn();
     let restoreMessage: ((value: typeof recalled) => void) | undefined;
     let recallLastTurn: (() => void) | undefined;
-    const onSubmit = vi.fn(() => true);
+    const onSubmit = vi.fn(
+      (_text: string, _files: Attachment[], _options?: ComposerTurnOptions) => true,
+    );
 
     await act(async () =>
       root.render(
@@ -1986,12 +2074,18 @@ describe("Composer question focus", () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Send"]')!.click(),
     );
     await act(async () => rejectResend?.({ providerRewound: false }));
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="Remove owned.png"]')!.click(),
-    );
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="Remove borrowed.png"]')!.click(),
-    );
+    for (const name of ["owned.png", "borrowed.png"]) {
+      await act(async () => {
+        container
+          .querySelector(`[data-attachment-name="${name}"]`)!
+          .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+      });
+      const remove = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+        (item) => item.textContent === `Remove ${name}`,
+      );
+      expect(remove).toBeDefined();
+      await act(async () => remove!.click());
+    }
 
     expect(createObjectURL).toHaveBeenCalledOnce();
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:owned");
@@ -2114,7 +2208,7 @@ describe("Composer question focus", () => {
 
     const workspace = document.querySelector('[aria-label="Workspace Worktree"]');
     expect(workspace?.tagName).toBe("DIV");
-    expect(document.querySelector('[aria-label="Choose working copy"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Choose worktree"]')).toBeNull();
     expect(document.querySelector('[aria-label="Branch mc/greeting"]')).not.toBeNull();
   });
 
@@ -2145,12 +2239,13 @@ describe("Composer question focus", () => {
       root.render(createElement(Composer, { ...props, workspaceMode: "current" })),
     );
     const textarea = document.querySelector("textarea")!;
-    const workspace = document.querySelector<HTMLButtonElement>(
-      '[aria-label="Workspace Current checkout"]',
+    const workspace = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (entry) => entry.textContent === "Current checkout",
     )!;
     expect(document.querySelector('[aria-label="Branch main"]')).not.toBeNull();
     await act(async () => workspace.click());
-    expect(document.body.textContent).toContain("Existing worktree…");
+    expect(document.body.textContent).toContain("New worktree");
+    expect(document.body.textContent).not.toContain("Existing worktree…");
     expect(document.querySelector('[aria-label="Branch main"]')).not.toBeNull();
     await act(async () => workspace.click());
 
@@ -2247,10 +2342,15 @@ describe("Composer question focus", () => {
       onSubmit,
     };
     await act(async () => root.render(createElement(Composer, props)));
-    expect(container.textContent).toContain(
+    expect(container.textContent).toContain("Could not prepare the workspace.");
+    expect(await rawDetails(container)).toContain(
       "Update bycoda to create managed sessions on this remote Host.",
     );
-    expect(container.querySelector<HTMLButtonElement>('[aria-label^="Send"]')?.disabled).toBe(true);
+    expect(
+      container
+        .querySelector<HTMLButtonElement>('[aria-label^="Send"]')
+        ?.getAttribute("aria-disabled"),
+    ).toBe("true");
     const textarea = container.querySelector("textarea")!;
     await act(async () =>
       textarea.dispatchEvent(
@@ -2263,9 +2363,11 @@ describe("Composer question focus", () => {
       textarea.value = "/draft Keep this remote draft";
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    expect(container.querySelector<HTMLButtonElement>('[aria-label^="Save draft"]')?.disabled).toBe(
-      true,
-    );
+    expect(
+      container
+        .querySelector<HTMLButtonElement>('[aria-label^="Save draft"]')
+        ?.getAttribute("aria-disabled"),
+    ).toBe("true");
     await act(async () =>
       textarea.dispatchEvent(
         new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
@@ -2485,8 +2587,8 @@ describe("Composer question focus", () => {
       );
       expect(document.querySelector("[data-mcp-picker]")).not.toBeNull();
       expect(onSaveDraft).not.toHaveBeenCalled();
-      const manage = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-        button.textContent?.includes("Manage MCP Servers"),
+      const manage = document.querySelector<HTMLButtonElement>(
+        '[aria-label="Manage MCP Servers…"]',
       )!;
       await act(async () => manage.click());
       expect(onOpen).toHaveBeenCalledOnce();

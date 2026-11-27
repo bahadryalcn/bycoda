@@ -8,14 +8,13 @@ use std::sync::{
     Arc, Mutex,
 };
 use std::time::{Duration, Instant};
-use tauri::{
-    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindow,
-    WebviewWindowBuilder,
-};
+use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewWindow};
 
 pub const LABEL: &str = "desktop-control-indicator";
 const EVENT: &str = "desktop_control_indicator_state";
-const RECONNECT_DELAY: Duration = Duration::from_secs(5);
+/// First wait after a failed status read; doubles on each further failure in a row.
+const RECONNECT_BASE: Duration = Duration::from_secs(5);
+const RECONNECT_MAX: Duration = Duration::from_secs(60);
 const CHANGE_WAIT: Duration = Duration::from_secs(25);
 /// Enabled-but-idle control is not work: the indicator stays until activity settles this long.
 const LINGER: Duration = Duration::from_secs(20);
@@ -168,6 +167,16 @@ impl Core {
         self.view.revision += 1;
         Ok(())
     }
+    /// Confirmed inactive, settled and hidden: nothing remains to watch until something
+    /// (startup, a settings change or Stop) asks for the poller again. Unknown state,
+    /// a pending Stop and a lingering indicator are never idle.
+    fn idle(&self) -> bool {
+        !self.view.stopping
+            && !self.view.status_error
+            && !self.view.stop_error
+            && !self.view.visible
+            && self.view.status.as_ref().is_some_and(Status::inactive)
+    }
     #[cfg(test)]
     fn can_rebind(&self) -> bool {
         !self.view.stopping
@@ -180,7 +189,14 @@ impl Core {
 pub(crate) struct State {
     core: Mutex<Core>,
     source: Mutex<Option<Arc<NativeServiceChannel>>>,
+    /// A poller thread is alive and wanted. The window exists only while control is visible.
     running: AtomicBool,
+    /// Set once on exit so a late request cannot start a poller during teardown.
+    exiting: AtomicBool,
+    /// A start was requested while the poller was alive: it re-reads status before retiring.
+    wake: AtomicBool,
+    /// Serializes poller start against retirement so a request is never lost between them.
+    lifecycle: Mutex<()>,
 }
 
 pub fn is_indicator(label: &str) -> bool {
@@ -221,25 +237,21 @@ fn create(app: &AppHandle) -> Result<WebviewWindow, String> {
     if let Some(window) = app.get_webview_window(LABEL) {
         return Ok(window);
     }
-    let window = crate::webview_args::inherit_main_browser_args(
-        app,
-        WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("desktop-control.html".into())),
-    )
-    .title(&app.package_info().name)
-    .inner_size(640.0, 64.0)
-    .resizable(false)
-    .maximizable(false)
-    .minimizable(false)
-    .decorations(false)
-    .transparent(true)
-    .shadow(false)
-    .always_on_top(true)
-    .visible_on_all_workspaces(true)
-    .skip_taskbar(true)
-    .visible(false)
-    .focused(false)
-    .build()
-    .map_err(|error| error.to_string())?;
+    let window = crate::webview_args::new_app_window(app, LABEL, "desktop-control.html")
+        .title(&app.package_info().name)
+        .inner_size(640.0, 64.0)
+        .resizable(false)
+        .maximizable(false)
+        .minimizable(false)
+        .decorations(false)
+        .shadow(false)
+        .always_on_top(true)
+        .visible_on_all_workspaces(true)
+        .skip_taskbar(true)
+        .visible(false)
+        .focused(false)
+        .build()
+        .map_err(|error| error.to_string())?;
     // Closing a safety indicator cannot hide an active or uncertain operation.
     let owner = app.clone();
     window.on_window_event(move |event| {
@@ -310,7 +322,10 @@ fn publish(app: &AppHandle) {
             Some(window) => window,
             None if current.visible => match create(&app) {
                 Ok(window) => window,
-                Err(_) => return,
+                Err(error) => {
+                    log::warn!("[computer control] indicator window unavailable: {error}");
+                    return;
+                }
             },
             None => return,
         };
@@ -345,15 +360,77 @@ fn publish(app: &AppHandle) {
         }
     });
 }
-pub(crate) fn init(app: &AppHandle) -> Result<(), String> {
+/// Registers state only. The window and Host watcher start on demand through
+/// [`ensure_running`]; nothing here can fail startup.
+pub(crate) fn init(app: &AppHandle) {
     app.manage(State::default());
-    create(app)?;
-    app.state::<State>().running.store(true, Ordering::Release);
+    // One confirmation read: control left enabled by an earlier run can be used
+    // automatically (assistant, automation) with no window open to ask for it.
+    ensure_running(app);
+}
+/// Starts the status watcher if it is not already running. Safe from any thread and a
+/// no-op after exit. The watcher only reads bounded status and retires itself once control
+/// is confirmed inactive; it grants no control and the indicator window is created only
+/// when status says control is visible.
+pub(crate) fn ensure_running(app: &AppHandle) {
+    let Some(state) = app.try_state::<State>() else {
+        return;
+    };
+    if state.exiting.load(Ordering::Acquire) {
+        return;
+    }
+    // Before the lock: a live poller that is about to retire sees this and reads again.
+    state.wake.store(true, Ordering::Release);
+    let Ok(_guard) = state.lifecycle.lock() else {
+        return;
+    };
+    if state.running.load(Ordering::Acquire) {
+        return;
+    }
+    // A fresh poller reads status first, which already answers this request.
+    state.wake.store(false, Ordering::Release);
+    state.running.store(true, Ordering::Release);
+    if let Err(error) = spawn_poller(app) {
+        state.running.store(false, Ordering::Release);
+        log::warn!("[computer control] status watcher unavailable: {error}");
+    }
+}
+/// Retires the watcher when control is confirmed inactive and nobody asked again meanwhile.
+fn retire_if_idle(app: &AppHandle) -> bool {
+    let state = app.state::<State>();
+    if !state.core.lock().is_ok_and(|core| core.idle()) {
+        return false;
+    }
+    let Ok(_guard) = state.lifecycle.lock() else {
+        return false;
+    };
+    if state.wake.swap(false, Ordering::AcqRel) {
+        return false;
+    }
+    // Nothing is active, so the next start binds the current Host channel again.
+    if let Ok(mut captured) = state.source.lock() {
+        *captured = None;
+    }
+    state.running.store(false, Ordering::Release);
+    true
+}
+/// Wait before retry number `failures` in a row (1 is the first): exponential
+/// from `RECONNECT_BASE` to `RECONNECT_MAX`, jittered between half and all of
+/// it so windows behind one restarted network do not retry in step.
+fn reconnect_delay(failures: u32, jitter: f64) -> Duration {
+    let ceiling = RECONNECT_BASE
+        .saturating_mul(1u32 << failures.saturating_sub(1).min(8))
+        .min(RECONNECT_MAX);
+    ceiling / 2 + ceiling.mul_f64(jitter.clamp(0.0, 1.0) / 2.0)
+}
+
+fn spawn_poller(app: &AppHandle) -> Result<(), String> {
     let app = app.clone();
     std::thread::Builder::new()
         .name("desktop-control-indicator".into())
         .spawn(move || {
             let mut revision = String::new();
+            let mut failures = 0u32;
             while app.state::<State>().running.load(Ordering::Acquire) {
                 let generation = {
                     let state = app.state::<State>();
@@ -411,6 +488,11 @@ pub(crate) fn init(app: &AppHandle) -> Result<(), String> {
                         publish(&app);
                     }
                 }
+                // Never enabled, or confirmed inactive and settled: stop watching and hold
+                // no Host connection or poll thread until something asks again.
+                if retire_if_idle(&app) {
+                    break;
+                }
                 let source = app
                     .state::<State>()
                     .source
@@ -435,8 +517,12 @@ pub(crate) fn init(app: &AppHandle) -> Result<(), String> {
                         )
                     });
                 match change {
-                    Ok(next) => revision = next,
+                    Ok(next) => {
+                        revision = next;
+                        failures = 0;
+                    }
                     Err(error) => {
+                        failures = failures.saturating_add(1);
                         let state = app.state::<State>();
                         if let Ok(mut core) = state.core.lock() {
                             let generation = core.generation;
@@ -454,7 +540,8 @@ pub(crate) fn init(app: &AppHandle) -> Result<(), String> {
                             }
                         }
                         publish(&app);
-                        std::thread::sleep(RECONNECT_DELAY);
+                        let jitter = uuid::Uuid::new_v4().as_u128() as f64 / u128::MAX as f64;
+                        std::thread::sleep(reconnect_delay(failures, jitter));
                     }
                 }
             }
@@ -463,7 +550,21 @@ pub(crate) fn init(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 pub(crate) fn shutdown(app: &AppHandle) {
-    app.state::<State>().running.store(false, Ordering::Release);
+    let state = app.state::<State>();
+    state.exiting.store(true, Ordering::Release);
+    state.running.store(false, Ordering::Release);
+}
+
+/// A workspace asks the native side to watch Host status again after the owner changed
+/// computer control settings. Read-only: it starts status polling and nothing else.
+#[tauri::command]
+pub fn desktop_control_indicator_watch(
+    app: AppHandle,
+    window: WebviewWindow,
+) -> Result<(), String> {
+    viewer_only(&window)?;
+    ensure_running(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -504,6 +605,8 @@ pub(crate) async fn stop_captured(app: AppHandle) -> Result<(), String> {
         .map_err(|_| "Computer control state is unavailable")?
         .begin_stop()
         .ok_or("Computer control Stop is already pending")?;
+    // Stop feedback needs the watcher; an idle one restarts and retires after the linger.
+    ensure_running(&app);
     publish(&app);
     let owner = app.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
@@ -577,6 +680,15 @@ pub fn desktop_control_indicator_fit(window: WebviewWindow, height: f64) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn status_retry_backs_off_from_five_seconds_to_a_minute_with_jitter() {
+        assert_eq!(reconnect_delay(1, 1.0), Duration::from_secs(5));
+        assert_eq!(reconnect_delay(1, 0.0), Duration::from_millis(2500));
+        assert_eq!(reconnect_delay(2, 1.0), Duration::from_secs(10));
+        assert_eq!(reconnect_delay(5, 1.0), Duration::from_secs(60));
+        assert_eq!(reconnect_delay(u32::MAX, 1.0), Duration::from_secs(60));
+        assert_eq!(reconnect_delay(3, 0.5), Duration::from_secs(15));
+    }
     fn active() -> Status {
         Status {
             enabled: true,
@@ -649,6 +761,52 @@ mod tests {
         assert!(!core.view.visible);
         assert!(!core.poll(stop, Ok(active()), Instant::now()));
         assert!(!core.view.visible);
+    }
+    #[test]
+    fn watcher_retires_only_after_confirmed_inactive_and_settled_state() {
+        let mut core = Core::default();
+        // No status yet: unknown is never idle, so a booting Host keeps the retry loop alive.
+        assert!(!core.idle());
+        core.poll(0, Err("starting".into()), Instant::now());
+        assert!(!core.idle());
+        // Never enabled: idle on the first confirmed read, with no window ever shown.
+        let mut off = active();
+        off.enabled = false;
+        off.active = false;
+        off.current_action = None;
+        core.poll(0, Ok(off.clone()), Instant::now());
+        assert!(core.idle());
+        assert!(!core.view.visible);
+        // Enabled control keeps the watcher even while no action runs.
+        let mut enabled = off.clone();
+        enabled.enabled = true;
+        core.poll(0, Ok(enabled), Instant::now());
+        assert!(!core.idle());
+        // Activity and its linger keep it; it retires once the indicator has hidden.
+        let start = Instant::now();
+        core.poll(0, Ok(active()), start);
+        assert!(!core.idle());
+        core.poll(0, Ok(off.clone()), start + Duration::from_secs(5));
+        assert!(!core.idle());
+        core.poll(0, Ok(off), start + LINGER);
+        assert!(core.idle());
+    }
+    #[test]
+    fn pending_or_failed_stop_never_retires_the_watcher() {
+        let mut core = Core::default();
+        let mut off = active();
+        off.enabled = false;
+        off.active = false;
+        core.poll(0, Ok(off), Instant::now());
+        assert!(core.idle());
+        let stop = core.begin_stop().unwrap();
+        assert!(!core.idle());
+        core.finish_stop(stop, false);
+        assert!(!core.idle());
+        let retry = core.begin_stop().unwrap();
+        core.finish_stop(retry, true);
+        // Only a confirmed Stop on a hidden indicator lets the watcher retire.
+        assert!(core.idle());
     }
     #[test]
     fn edge_geometry_keeps_mixed_dpi_negative_monitors_and_small_screens_reachable() {

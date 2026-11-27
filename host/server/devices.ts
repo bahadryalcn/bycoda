@@ -1,4 +1,7 @@
 import { dirname } from "node:path";
+import { configureClaudeChromeAccess } from "../../src/integrations/harness/providers/claude/claude";
+import { BrowserProfiles } from "../browser/browser-profiles";
+import type { PlaywrightLauncher } from "../browser/browser-profile-import";
 import { BrowserRuntime } from "../browser/browser-runtime";
 import { BrowserRecordingService } from "../browser/browser-recording";
 import { findFfmpegOnPath } from "../browser/browser-recording-encode";
@@ -59,8 +62,14 @@ export function createDevicesRuntime(
           await dependencies.managedWorkspaces.touchActivity(workspace.id);
     });
   const logMonitors = new RuntimeLogMonitors(browserRuntime.load, runtimeLogs);
+  const profiles = new BrowserProfiles(featureDirectory, {
+    // The pinned runtime is the full Playwright module; the shared loader type only names `launch`.
+    load: browserRuntime.load as unknown as PlaywrightLauncher,
+  });
+  configureClaudeChromeAccess(() => profiles.chromeEnabled().catch(() => false));
   const browserRegistry = new SessionBrowserRegistry(browserRuntime.load, Date.now, {
     runtimeLogs,
+    profiles,
   });
   const sharedBrowser = Object.assign(browserRegistry, {
     recordings: new BrowserRecordingService({
@@ -68,6 +77,7 @@ export function createDevicesRuntime(
       dataDir: featureDirectory,
       findFfmpeg: async () => (await browserRuntime.ffmpegPath()) ?? findFfmpegOnPath(),
       ensureFfmpeg: () => browserRuntime.ensureFfmpeg(),
+      defaultFps: async () => (await profiles.list()).recordingFps,
     }),
   });
   // Best-effort startup prune of recordings older than 24 hours; a failure never blocks the Host.

@@ -6,8 +6,9 @@ import { Composer } from "./Composer";
 
 const NBSP = "\u00a0";
 /** The generated token form; the mocked files are 3 bytes. */
-const tok = (kind: "Image" | "File", n: number) => `[${kind}${NBSP}${n}${NBSP}·${NBSP}3${NBSP}B]`;
-const label = (kind: "Image" | "File", n: number) => tok(kind, n).slice(1, -1);
+const tok = (kind: "Image" | "File", n: number, name?: string) =>
+  `[${kind}${NBSP}${n}${NBSP}·${NBSP}${name ? `${name}${NBSP}·${NBSP}` : ""}3${NBSP}B]`;
+const img = (n: number, name = n === 1 ? "a.png" : "b.png") => tok("Image", n, name);
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 
@@ -89,12 +90,12 @@ async function pasteFiles(field: HTMLTextAreaElement, ...paths: string[]) {
 }
 
 function chipCount() {
-  return container.querySelectorAll('[aria-label^="Remove "]').length;
+  return container.querySelectorAll("[data-attachment-chip]").length;
 }
 
-function chipLabels() {
-  return [...container.querySelectorAll<HTMLButtonElement>('[aria-label^="Insert "]')].map(
-    (button) => button.getAttribute("aria-label")?.match(/\[([^\]]+)\]/)?.[1],
+function chipNames() {
+  return [...container.querySelectorAll<HTMLElement>("[data-attachment-name]")].map(
+    (chip) => chip.dataset.attachmentName,
   );
 }
 
@@ -120,10 +121,17 @@ function userType(field: HTMLTextAreaElement, value: string, inputType = "insert
   });
 }
 
-function click(selector: string) {
+function pickAttachmentAction(name: string, action: string) {
   act(() => {
-    container.querySelector<HTMLButtonElement>(selector)!.click();
+    container
+      .querySelector(`[data-attachment-name="${name}"]`)!
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
   });
+  const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+    (item) => item.textContent === action,
+  );
+  expect(item).toBeDefined();
+  act(() => item!.click());
 }
 
 beforeEach(() => {
@@ -160,9 +168,9 @@ it("inserts the token at the caret when the input has focus", async () => {
   field.setSelectionRange(18, 18);
   await pasteFiles(field, "/p/a.png");
 
-  expect(field.value).toBe(`The button in the ${tok("Image", 1)} I gave you`);
-  expect(field.selectionStart).toBe(field.value.indexOf(tok("Image", 1)) + tok("Image", 1).length);
-  expect(chipLabels()).toEqual([label("Image", 1)]);
+  expect(field.value).toBe(`The button in the ${img(1)} I gave you`);
+  expect(field.selectionStart).toBe(field.value.indexOf(img(1)) + img(1).length);
+  expect(chipNames()).toEqual(["a.png"]);
 });
 
 it("replaces the selection and numbers kinds separately", async () => {
@@ -171,8 +179,8 @@ it("replaces the selection and numbers kinds separately", async () => {
   field.setSelectionRange(4, 8);
   await pasteFiles(field, "/p/a.png", "/p/notes.md");
 
-  expect(field.value).toBe(`fix ${tok("Image", 1)} ${tok("File", 1)} now`);
-  expect(chipLabels()).toEqual([label("Image", 1), label("File", 1)]);
+  expect(field.value).toBe(`fix ${img(1)} ${tok("File", 1, "notes.md")} now`);
+  expect(chipNames()).toEqual(["a.png", "notes.md"]);
 });
 
 it("appends at the end when the input is not focused", async () => {
@@ -182,7 +190,7 @@ it("appends at the end when the input is not focused", async () => {
   field.blur();
   await pasteFiles(field, "/p/b.png");
 
-  expect(field.value).toBe(`look ${tok("Image", 1)} ${tok("Image", 2)}`);
+  expect(field.value).toBe(`look ${img(1)} ${img(2)}`);
 });
 
 it("keeps the chip when its token is deleted by hand", async () => {
@@ -191,19 +199,18 @@ it("keeps the chip when its token is deleted by hand", async () => {
   type(field, "no mention");
 
   expect(chipCount()).toBe(1);
-  expect(chipLabels()).toEqual([label("Image", 1)]);
+  expect(chipNames()).toEqual(["a.png"]);
 });
 
 it("removes the attachment when the user deletes its token and renumbers the rest", async () => {
   const field = render("");
   await pasteFiles(field, "/p/a.png", "/p/b.png");
-  expect(field.value).toBe(`${tok("Image", 1)} ${tok("Image", 2)}`);
+  expect(field.value).toBe(`${img(1)} ${img(2)}`);
 
-  userType(field, ` ${tok("Image", 2)}`, "deleteByCut");
+  userType(field, ` ${img(2)}`, "deleteByCut");
 
-  expect(field.value).toBe(` ${tok("Image", 1)}`);
-  expect(chipLabels()).toEqual([label("Image", 1)]);
-  expect(container.querySelector('[aria-label="Remove b.png"]')).not.toBeNull();
+  expect(field.value).toBe(` ${img(1, "b.png")}`);
+  expect(chipNames()).toEqual(["b.png"]);
 });
 
 it("removes every attachment on select-all delete", async () => {
@@ -221,12 +228,38 @@ it("Backspace after a token removes the whole token and its attachment", async (
   await pasteFiles(field, "/p/a.png");
   field.focus();
   field.setSelectionRange(field.value.length, field.value.length);
-  expect(field.value).toBe(`hi ${tok("Image", 1)}`);
+  expect(field.value).toBe(`hi ${img(1)}`);
 
-  userType(field, `hi ${tok("Image", 1).slice(0, -1)}`, "deleteContentBackward");
+  userType(field, `hi ${img(1).slice(0, -1)}`, "deleteContentBackward");
 
   expect(field.value).toBe("hi ");
   expect(chipCount()).toBe(0);
+});
+
+it("Backspace after the picker space removes only the last scoped mention", () => {
+  const field = render("@crews:release-team @crews:backend-engineer ");
+  field.setSelectionRange(field.value.length, field.value.length);
+  userType(field, field.value.slice(0, -1), "deleteContentBackward");
+  expect(field.value).toBe("@crews:release-team ");
+});
+
+it("Delete before a scoped mention preserves its neighbor", () => {
+  const field = render("Ask @crews:release-team @notes:plan");
+  field.setSelectionRange(4, 4);
+  userType(field, "Ask crews:release-team @notes:plan", "deleteContentForward");
+  expect(field.value).toBe("Ask @notes:plan");
+  expect(field.selectionStart).toBe(4);
+});
+
+it("does not take a scoped mention from code or an active search", () => {
+  const field = render("Use `@crews:release-team`");
+  field.setSelectionRange(field.value.length - 1, field.value.length - 1);
+  userType(field, "Use `@crews:release-tea`", "deleteContentBackward");
+  expect(field.value).toBe("Use `@crews:release-tea`");
+  type(field, "@crews:back");
+  field.setSelectionRange(field.value.length, field.value.length);
+  userType(field, "@crews:bac", "deleteContentBackward");
+  expect(field.value).toBe("@crews:bac");
 });
 
 it.each(["/break-ui", "$break-ui"])(
@@ -283,16 +316,16 @@ it("keeps the attachment when text changes elsewhere or programmatically", async
   expect(chipCount()).toBe(1);
 });
 
-it("inserts the token again when its label is clicked", async () => {
+it("inserts a token using the attachment menu", async () => {
   const field = render("see");
   await pasteFiles(field, "/p/a.png");
   type(field, "see [image1] and");
   field.focus();
   field.setSelectionRange(field.value.length, field.value.length);
-  click(`[aria-label="Insert ${tok("Image", 1)} into the message"]`);
+  pickAttachmentAction("a.png", `Insert ${img(1)} into the message`);
 
   // The typed legacy token stays; the inserted one is in the new form.
-  expect(field.value).toBe(`see [image1] and ${tok("Image", 1)}`);
+  expect(field.value).toBe(`see [image1] and ${img(1)}`);
 });
 
 it("removes the token and renumbers the rest when a chip is removed", async () => {
@@ -300,11 +333,10 @@ it("removes the token and renumbers the rest when a chip is removed", async () =
   await pasteFiles(field, "/p/a.png", "/p/b.png");
   type(field, "[image1] is broken, [image2] is fine, [image1] again");
 
-  click('[aria-label="Remove a.png"]');
+  pickAttachmentAction("a.png", "Remove a.png");
 
   expect(field.value).toBe(`is broken, ${tok("Image", 1)} is fine, again`);
-  expect(chipLabels()).toEqual([label("Image", 1)]);
-  expect(container.querySelector('[aria-label="Remove b.png"]')).not.toBeNull();
+  expect(chipNames()).toEqual(["b.png"]);
 });
 
 it("sends the tokens in the text with the attachments in the order added", async () => {

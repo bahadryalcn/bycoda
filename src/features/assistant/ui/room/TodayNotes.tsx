@@ -4,7 +4,7 @@ import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
-import { Tooltip } from "../../../../shared/ui/Tooltip";
+import { OverflowTooltip } from "../../../../shared/ui/Tooltip";
 import { todayNoteLines, type TodayNoteLine } from "./todayNotesLines";
 import styles from "./TodayTab.module.css";
 
@@ -55,12 +55,12 @@ export function TodayNotes({
             {group.rows.map((row) => (
               <li key={row.key} className={styles.note} data-timed={row.time ? "" : undefined}>
                 {row.time && (
-                  <Text size="caption" tone="muted" leading="inherit" className={styles.noteTime}>
+                  <Text size="caption" tone="muted" leading="inherit">
                     {row.time}
                   </Text>
                 )}
                 {row.text && (
-                  <Tooltip asChild label={row.text} when="overflow">
+                  <OverflowTooltip label={row.text}>
                     <Text
                       size="secondary"
                       tone="secondary"
@@ -70,7 +70,7 @@ export function TodayNotes({
                     >
                       {row.text}
                     </Text>
-                  </Tooltip>
+                  </OverflowTooltip>
                 )}
               </li>
             ))}

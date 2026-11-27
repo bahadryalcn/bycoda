@@ -1,7 +1,9 @@
+import { errorText } from "../../shared/lib/errors";
 import { Tooltip } from "../../shared/ui/Tooltip";
 import { Text } from "../../shared/ui/Text";
-import { LEVEL_LABELS, RuntimeLogRow } from "./ui/RuntimeLogRow";
+import { levelLabel, RuntimeLogRow } from "./ui/RuntimeLogRow";
 import { useRuntimeTerminalMonitor } from "./hooks/useRuntimeTerminalMonitor";
+import { MAX_POLL_FAILURES, pollDelay } from "./model/pollBackoff";
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { FailureState } from "../../shared/ui/FailureState";
 import { ScrollArea } from "../../shared/ui/ScrollArea";
@@ -9,6 +11,8 @@ import { Alert } from "../../shared/ui/Alert";
 import { Popover } from "../../shared/ui/Popover";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { Badge } from "../../shared/ui/Badge";
+import { InfoTooltip } from "../../shared/ui/InfoPopover";
+import { LiveText } from "../../shared/ui/LiveText";
 import { Switch } from "../../shared/ui/Switch";
 import { SegmentedControl } from "../../shared/ui/SegmentedControl";
 import { Select } from "../../shared/ui/Select";
@@ -33,7 +37,6 @@ import {
   Play,
   RefreshCw,
   Search,
-  Terminal,
   Square,
 } from "../../shared/ui/icons";
 import { hostFeatureRequest, hostToolRequest } from "../connections/model/hostFeatureClient";
@@ -44,13 +47,12 @@ import {
   clearRuntimeLogs,
   createRuntimeLogsBuffer,
   exportRuntimeLogs,
-  filterRuntimeLogs,
-  groupRuntimeLogs,
   MAX_RENDERED_RUNTIME_LOGS,
   mergeRuntimeLogs,
   runtimeLogsAgentPrompt,
   type RuntimeLogGroup,
 } from "./runtimeLogsModel";
+import { RuntimeLogsView } from "./model/runtimeLogsView";
 import type { RuntimeLogEntry, RuntimeLogSnapshot } from "./runtimeLogTypes";
 import {
   patchToolsDraftPart,
@@ -238,6 +240,8 @@ function ScopedRuntimeLogsPanel({
   const visible = useRef(active);
   visible.current = active;
   const pending = useRef(false);
+  /** Consecutive failed reads; a transient failure retries with backoff, a run of them pauses. */
+  const failures = useRef(0);
   const generation = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const timeline = useRef<HTMLDivElement>(null);
@@ -274,30 +278,42 @@ function ScopedRuntimeLogsPanel({
         if (!alive.current || !visible.current || revision !== generation.current) return;
         const next = mergeRuntimeLogs(bufferRef.current, snapshot);
         if (next !== bufferRef.current) {
+          const head = bufferRef.current.entries[0];
+          // Entries only leave the buffer from its front, so a plain append keeps every selection.
+          const leftFront = head !== undefined && next.entries[0] !== head;
           bufferRef.current = next;
           setBuffer(next);
-          const availableIds = new Set(next.entries.map((entry) => entry.id));
-          setSelected((previous) =>
-            [...previous].some((id) => !availableIds.has(id))
-              ? new Set([...previous].filter((id) => availableIds.has(id)))
-              : previous,
-          );
+          if (leftFront || !next.entries.length)
+            setSelected((previous) => {
+              if (!previous.size) return previous;
+              const availableIds = new Set(next.entries.map((entry) => entry.id));
+              return [...previous].some((id) => !availableIds.has(id))
+                ? new Set([...previous].filter((id) => availableIds.has(id)))
+                : previous;
+            });
         }
+        failures.current = 0;
         setLoaded(true);
         setError("");
         if (next.restarted) setNotice(t("The host restarted. A new log stream is now active."));
       } catch (cause) {
         if (alive.current && revision === generation.current) {
-          setError(cause instanceof Error ? cause.message : String(cause));
-          pausedRef.current = true;
-          setPaused(true);
+          setError(errorText(cause));
+          failures.current += 1;
+          if (failures.current >= MAX_POLL_FAILURES) {
+            pausedRef.current = true;
+            setPaused(true);
+          }
         }
       } finally {
         pending.current = false;
         if (alive.current) {
           if (showBusy) setBusy(false);
           if (visible.current && !pausedRef.current && !document.hidden)
-            timer.current = setTimeout(() => void read(false), pollInterval);
+            timer.current = setTimeout(
+              () => void read(false),
+              pollDelay(pollInterval, failures.current),
+            );
         }
       }
     },
@@ -334,39 +350,31 @@ function ScopedRuntimeLogsPanel({
     read,
   );
 
-  const filtered = useMemo(
+  // The view applies each poll's appended and trimmed entries; a filter change rebuilds it.
+  const [logsView] = useState(() => new RuntimeLogsView());
+  const view = useMemo(
     () =>
-      filterRuntimeLogs(buffer.entries, {
-        source: source === "all" ? undefined : source,
-        sourceIds,
-        levels: LEVEL_FILTERS[level],
-        search,
-      }),
-    [buffer.entries, source, sourceIds, level, search],
+      logsView.update(
+        buffer,
+        {
+          source: source === "all" ? undefined : source,
+          sourceIds,
+          levels: LEVEL_FILTERS[level],
+          search,
+        },
+        grouped,
+      ),
+    [logsView, buffer, source, sourceIds, level, search, grouped],
   );
-  const groups = useMemo(() => groupRuntimeLogs(filtered, grouped), [filtered, grouped]);
+  const groups = view.groups;
   const visibleGroups = groups.slice(-MAX_RENDERED_RUNTIME_LOGS);
   const visibleEntries = visibleGroups.flatMap((group) => group.entries);
   const chosen = useMemo(
     () => buffer.entries.filter((entry) => selected.has(entry.id)),
     [buffer.entries, selected],
   );
-  const sourceMap = useMemo(
-    () => new Map(buffer.sources.map((entry) => [entry.id, entry])),
-    [buffer.sources],
-  );
-  const errorCount = filtered.reduce(
-    (count, entry) => count + Number(runtimeLogDisplayLevel(entry) === "error"),
-    0,
-  );
-  const warningCount = filtered.reduce((count, entry) => count + Number(entry.level === "warn"), 0);
-  const typeCounts = useMemo(
-    () => ({
-      browser: buffer.entries.filter((entry) => entry.source === "browser").length,
-      server: buffer.entries.filter((entry) => entry.source === "server").length,
-    }),
-    [buffer.entries],
-  );
+  const { errorCount, warningCount, typeCounts } = view;
+  const filteredCount = view.count;
 
   useLayoutEffect(() => {
     const area = timeline.current;
@@ -384,12 +392,13 @@ function ScopedRuntimeLogsPanel({
     )
       return;
     area.scrollTop = area.scrollHeight;
-  }, [buffer.cursor, filtered.length, source, sourceIds, level, search, grouped, follow, paused]);
+  }, [buffer.cursor, filteredCount, source, sourceIds, level, search, grouped, follow, paused]);
 
   const togglePause = () => {
     setStarted(true);
     const next = !pausedRef.current;
     pausedRef.current = next;
+    failures.current = 0;
     generation.current += 1;
     setPaused(next);
     clearTimeout(timer.current);
@@ -424,6 +433,7 @@ function ScopedRuntimeLogsPanel({
         setMonitorUrl("");
         setStarted(true);
         pausedRef.current = false;
+        failures.current = 0;
         setPaused(false);
         // Capturing a website must not hide the project's server output.
         setSource("all");
@@ -431,7 +441,7 @@ function ScopedRuntimeLogsPanel({
       }
       await read();
     } catch (cause) {
-      if (alive.current) setActionError(cause instanceof Error ? cause.message : String(cause));
+      if (alive.current) setActionError(errorText(cause));
     } finally {
       monitorPending.current = false;
       if (alive.current) {
@@ -453,7 +463,7 @@ function ScopedRuntimeLogsPanel({
         if (active && revision === monitorRevision.current) setMonitors(items ?? []);
       })
       .catch((cause) => {
-        if (active) setActionError(cause instanceof Error ? cause.message : String(cause));
+        if (active) setActionError(errorText(cause));
       });
     return () => {
       active = false;
@@ -498,7 +508,7 @@ function ScopedRuntimeLogsPanel({
       if (alive.current)
         setNotice(t("Logs added to conversation draft. Review and send when ready."));
     } catch (cause) {
-      if (alive.current) setActionError(t(cause instanceof Error ? cause.message : String(cause)));
+      if (alive.current) setActionError(errorText(cause));
     } finally {
       inspectingRef.current = false;
       if (alive.current) setInspecting(false);
@@ -506,14 +516,17 @@ function ScopedRuntimeLogsPanel({
   };
   const exportLogs = async () => {
     if (exportingRef.current) return;
-    const entries = chosen.length ? chosen : filtered;
+    const entries = chosen.length ? chosen : view.entries();
     if (!entries.length) return;
     exportingRef.current = true;
     setExporting(true);
     setActionError("");
     const revision = generation.current;
     try {
-      const content = exportRuntimeLogs(entries, buffer.sources, { cwd, hostLabel });
+      const content = exportRuntimeLogs(entries, buffer.sources, {
+        cwd,
+        hostLabel,
+      });
       const stamp = new Date().toISOString().replace(/[:.]/g, "-");
       const path = await save({
         title: t("Export logs"),
@@ -524,8 +537,7 @@ function ScopedRuntimeLogsPanel({
       await writeTextFile(path, content);
       if (alive.current && revision === generation.current) setNotice(t("Logs exported."));
     } catch (cause) {
-      if (alive.current && revision === generation.current)
-        setActionError(cause instanceof Error ? cause.message : String(cause));
+      if (alive.current && revision === generation.current) setActionError(errorText(cause));
     } finally {
       exportingRef.current = false;
       if (alive.current) setExporting(false);
@@ -538,7 +550,7 @@ function ScopedRuntimeLogsPanel({
     : t("{p0} visible events", { p0: visibleEntries.length });
   const exportScope = chosen.length
     ? t("{p0} selected logs", { p0: chosen.length })
-    : t("{p0} visible events", { p0: filtered.length });
+    : t("{p0} visible events", { p0: filteredCount });
   const empty =
     !started && !busy
       ? t(
@@ -550,7 +562,7 @@ function ScopedRuntimeLogsPanel({
           ? t("Logs are unavailable. Check the selected computer's host connection and retry.")
           : paused && !buffer.entries.length
             ? t("The view is paused. Resume or refresh to read new events.")
-            : buffer.entries.length && !filtered.length
+            : buffer.entries.length && !filteredCount
               ? t("No logs match these filters. Adjust the source, level or search.")
               : t(
                   "Open a page in Browser or start a managed server in Servers to begin capturing.",
@@ -574,7 +586,7 @@ function ScopedRuntimeLogsPanel({
         ? undefined
         : paused && !buffer.entries.length
           ? { label: t("Resume"), onClick: togglePause }
-          : buffer.entries.length && !filtered.length
+          : buffer.entries.length && !filteredCount
             ? {
                 label: t("Reset filters"),
                 onClick: () => {
@@ -595,7 +607,18 @@ function ScopedRuntimeLogsPanel({
                 }
               : undefined;
   const emptyRetry =
-    started && !(buffer.entries.length && !filtered.length) ? () => void read() : undefined;
+    started && !(buffer.entries.length && !filteredCount) ? () => void read() : undefined;
+  const stateLabel = error
+    ? t("Disconnected")
+    : !started
+      ? t("Stopped")
+      : paused
+        ? t("Paused")
+        : loaded
+          ? buffer.entries.length
+            ? t("Live")
+            : `${t("Live")} · ${t("Waiting for logs")}`
+          : t("Connecting…");
 
   return (
     <section
@@ -639,12 +662,12 @@ function ScopedRuntimeLogsPanel({
         {filtersOpen ? (
           <Popover
             anchor={filterTrigger}
-            role="dialog"
+            kind="dialog"
             aria-label={t("Log filters")}
+            variant="panel"
             side="bottom"
             align="start"
             width={360}
-            autoFocus
             onDismiss={(reason) => {
               setFiltersOpen(false);
               if (reason === "escape") filterTrigger.current?.focus();
@@ -674,7 +697,7 @@ function ScopedRuntimeLogsPanel({
                   ["all", "error", "warn", "debug", "info", "success", "http"] as const
                 ).map((value) => ({
                   value,
-                  label: value === "all" ? t("All levels") : LEVEL_LABELS[value],
+                  label: value === "all" ? t("All levels") : levelLabel(value),
                 }))}
               />
               <Switch
@@ -721,6 +744,7 @@ function ScopedRuntimeLogsPanel({
             size="sm"
             type="button"
             disabled={!chosen.length && !visibleEntries.length}
+            disabledReason={t("No logs to add yet")}
             loading={inspecting}
             onClick={inspect}
           >
@@ -743,6 +767,7 @@ function ScopedRuntimeLogsPanel({
             iconOnly
             type="button"
             disabled={busy}
+            disabledReason={t("Logs are loading")}
             loading={busy}
             onClick={() => void read()}
             label={t("Refresh")}
@@ -754,8 +779,7 @@ function ScopedRuntimeLogsPanel({
             variant="ghost"
             iconOnly
             type="button"
-            aria-pressed={follow}
-            selected={follow}
+            pressed={follow}
             onClick={() => setFollow(!follow)}
             label={t("Follow latest")}
           >
@@ -807,10 +831,15 @@ function ScopedRuntimeLogsPanel({
                   id: "export",
                   label: t("Export logs"),
                   description: exportScope,
-                  disabled: exporting || (!chosen.length && !filtered.length),
+                  disabled: exporting || (!chosen.length && !filteredCount),
                 },
                 { kind: "sep" },
-                { kind: "item", id: "clear", label: t("Clear view"), danger: true },
+                {
+                  kind: "item",
+                  id: "clear",
+                  label: t("Clear view"),
+                  danger: true,
+                },
               ]}
               onClose={() => setMoreOpen(false)}
               returnFocusRef={moreTrigger}
@@ -827,14 +856,14 @@ function ScopedRuntimeLogsPanel({
       {target.kind === "project" && monitorsOpen ? (
         <Popover
           anchor={monitorTrigger}
-          role="dialog"
+          kind="dialog"
           aria-label={t("Website monitors")}
           side="bottom"
           align="end"
           width={380}
-          autoFocus
           solid
           onDismiss={() => setMonitorsOpen(false)}
+          variant="panel"
           className="runtime-logs-monitors-popover"
         >
           <section className="runtime-logs-monitor-setup" aria-label={t("Capture website logs")}>
@@ -870,12 +899,16 @@ function ScopedRuntimeLogsPanel({
                   size="sm"
                   type="submit"
                   disabled={monitorBusy || !monitorUrl.trim()}
+                  disabledReason={
+                    monitorBusy
+                      ? t("Wait for the current monitor action")
+                      : t("Enter a port or URL")
+                  }
+                  iconOnly
                   loading={monitorOperation?.method === "start"}
                   label={t("Open website and capture logs")}
-                  tooltip={t("Open website and capture logs")}
                 >
                   <Play className="icon-sm" />
-                  <span className="runtime-logs-sr">{t("Capture website logs")}</span>
                 </Button>
                 <Button
                   motion="none"
@@ -883,10 +916,11 @@ function ScopedRuntimeLogsPanel({
                   size="sm"
                   type="button"
                   disabled={monitorBusy}
+                  disabledReason={t("Wait for the current monitor action")}
+                  iconOnly
                   loading={monitorOperation?.method === "list"}
                   onClick={() => void monitorAction("list")}
                   label={t("Load monitors")}
-                  tooltip={t("Load monitors")}
                 >
                   <RefreshCw className="icon-sm" />
                 </Button>
@@ -906,6 +940,7 @@ function ScopedRuntimeLogsPanel({
                       tooltip={monitor.url}
                       tooltipWhen="overflow"
                       disabled={!monitor.sourceId}
+                      disabledReason={t("Not capturing yet")}
                       onClick={() => {
                         const id = monitor.sourceId;
                         if (!id) return;
@@ -925,6 +960,8 @@ function ScopedRuntimeLogsPanel({
                       size="sm"
                       type="button"
                       disabled={monitorBusy}
+                      disabledReason={t("Wait for the current monitor action")}
+                      iconOnly
                       loading={
                         monitorOperation?.method === "stop" && monitorOperation.id === monitor.id
                       }
@@ -937,9 +974,6 @@ function ScopedRuntimeLogsPanel({
                 ))}
               </ul>
             ) : null}
-            <Text as="p" size="caption" tone="secondary">
-              {t("Opens a separate browser. Capture continues until you stop the website monitor.")}
-            </Text>
           </section>
         </Popover>
       ) : null}
@@ -951,11 +985,9 @@ function ScopedRuntimeLogsPanel({
       {actionError ? (
         <Alert tone="danger" extra={<ErrorDetails detail={actionError} />}>
           <p>
-            {t(
-              actionError.includes("ERR_CONNECTION_REFUSED")
-                ? "Website is not running. Start it in Development servers, then try again."
-                : "The action failed. Check the details and retry.",
-            )}
+            {actionError.includes("ERR_CONNECTION_REFUSED")
+              ? t("Website is not running. Start it in Development servers, then try again.")
+              : t("The action failed. Check the details and retry.")}
           </p>
         </Alert>
       ) : null}
@@ -971,7 +1003,9 @@ function ScopedRuntimeLogsPanel({
         tabIndex={0}
         onScroll={(event) => {
           const area = event.currentTarget;
-          patchToolsDraftPart(transferScope, "logs", { scrollTop: area.scrollTop });
+          patchToolsDraftPart(transferScope, "logs", {
+            scrollTop: area.scrollTop,
+          });
           const atEnd = area.scrollHeight - area.scrollTop - area.clientHeight < 32;
           if (atEnd !== follow) setFollow(atEnd);
         }}
@@ -993,7 +1027,6 @@ function ScopedRuntimeLogsPanel({
                 <RuntimeLogRow
                   key={group.id}
                   group={group}
-                  sourceLabel={sourceMap.get(group.entry.sourceId)?.label ?? group.entry.sourceId}
                   selectedCount={group.entries.reduce(
                     (count, entry) => count + Number(selected.has(entry.id)),
                     0,
@@ -1006,12 +1039,7 @@ function ScopedRuntimeLogsPanel({
             </ol>
           ) : error && !loaded ? (
             <FailureState
-              icon={
-                <>
-                  <Globe className="icon-lg" />
-                  <Terminal className="icon-lg" />
-                </>
-              }
+              illustration="unreachable"
               title={t("Runtime logs")}
               description={empty}
               action={emptyAction}
@@ -1021,15 +1049,12 @@ function ScopedRuntimeLogsPanel({
             />
           ) : (
             <EmptyState
-              icon={
-                <>
-                  <Globe className="icon-lg" />
-                  <Terminal className="icon-lg" />
-                </>
+              illustration={
+                buffer.entries.length && !filteredCount ? "search-empty" : "inbox-empty"
               }
               title={loaded && !buffer.entries.length ? t("Waiting for logs") : t("Runtime logs")}
               description={empty}
-              kind={buffer.entries.length && !filtered.length ? "filtered" : "empty"}
+              kind={buffer.entries.length && !filteredCount ? "filtered" : "empty"}
               action={emptyAction}
               onRetry={emptyRetry}
               retryLabel={t("Refresh")}
@@ -1045,21 +1070,11 @@ function ScopedRuntimeLogsPanel({
             variant="dot"
             size="sm"
             tone={error ? "danger" : paused || !started ? "neutral" : loaded ? "success" : "info"}
-            role="status"
           >
-            {error
-              ? t("Disconnected")
-              : !started
-                ? t("Stopped")
-                : paused
-                  ? t("Paused")
-                  : loaded
-                    ? buffer.entries.length
-                      ? t("Live")
-                      : `${t("Live")} · ${t("Waiting for logs")}`
-                    : t("Connecting…")}
+            {stateLabel}
           </Badge>
         </Tooltip>
+        <LiveText className="sr-only" text={stateLabel} />
         <Text
           size="micro"
           tone="inherit"
@@ -1083,8 +1098,23 @@ function ScopedRuntimeLogsPanel({
               {t("Deselect all")}
             </Button>
           ) : null}
-          {groups.length > visibleGroups.length ? (
-            <span>{t("Showing the latest {p0} rows.", { p0: MAX_RENDERED_RUNTIME_LOGS })}</span>
+          {groups.length > visibleGroups.length || buffer.dropped || buffer.trimmed ? (
+            <InfoTooltip>
+              {[
+                groups.length > visibleGroups.length
+                  ? t("Showing the latest {p0} rows.", {
+                      p0: MAX_RENDERED_RUNTIME_LOGS,
+                    })
+                  : "",
+                buffer.dropped || buffer.trimmed
+                  ? t("{p0} older events were dropped from retained history.", {
+                      p0: buffer.dropped + buffer.trimmed,
+                    })
+                  : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            </InfoTooltip>
           ) : null}
         </Text>
         <Text size="micro" tone="inherit" leading="inherit" className="runtime-logs-totals">
@@ -1094,13 +1124,6 @@ function ScopedRuntimeLogsPanel({
           )}
         </Text>
       </footer>
-      {buffer.dropped || buffer.trimmed ? (
-        <Text size="micro" tone="inherit" leading="normal" as="p" className="runtime-logs-hint">
-          {t("{p0} older events were dropped from retained history.", {
-            p0: buffer.dropped + buffer.trimmed,
-          })}
-        </Text>
-      ) : null}
     </section>
   );
 }

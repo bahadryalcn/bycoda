@@ -3,6 +3,7 @@ import { projectName } from "../../../shared/lib/paths";
 import { t, useLocale } from "../../../shared/i18n";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { useHoverCard } from "../../../shared/ui/HoverCard";
 import { StatusDot } from "../../../shared/ui/StatusDot";
@@ -10,7 +11,6 @@ import { StatusText, type StatusTextTone } from "../../../shared/ui/StatusText";
 import { Text } from "../../../shared/ui/Text";
 import { MessageMultiple } from "../../../shared/ui/icons";
 import {
-  formatRelativeTime,
   gitlabAttentionLabel,
   inboxItemKey,
   inboxItemRef,
@@ -19,18 +19,21 @@ import {
 import { prefetchInboxItem } from "../model/inboxPrefetch";
 import { useInboxItemUnseen } from "../model/inboxSeen";
 import { InboxCardPreview } from "./InboxCardPreview";
-import { inboxStatusMark } from "./InboxPresentation";
+import { InboxRelativeTime, hasInboxRelativeTime } from "./InboxRelativeTime";
+import { inboxLabelItems, inboxStatusMark } from "./InboxPresentation";
 
 export const InboxCard = memo(function InboxCard({
   item,
   active,
   relatedSessionCount,
   onSelect,
+  comfortable = false,
 }: {
   item: InboxItem;
   active: boolean;
   relatedSessionCount: number;
   onSelect: (item: InboxItem) => void;
+  comfortable?: boolean;
 }) {
   useLocale();
   const visibilityRef = useRef<HTMLDivElement>(null);
@@ -62,8 +65,12 @@ export const InboxCard = memo(function InboxCard({
   }, []);
   const status = inboxStatusMark(item);
   const kindLabel =
-    item.kind === "pr" ? (item.provider === "gitlab" ? "Merge request" : "Pull request") : "Issue";
-  const time = formatRelativeTime(item.updatedAt);
+    item.kind === "pr"
+      ? item.provider === "gitlab"
+        ? t("Merge request")
+        : t("Pull request")
+      : t("Issue");
+  const hasTime = hasInboxRelativeTime(item.updatedAt);
   const tracker = item.provider === "linear" || item.provider === "jira";
   const jira = item.provider === "jira";
   const category = item.stateType?.trim().toLowerCase();
@@ -90,25 +97,32 @@ export const InboxCard = memo(function InboxCard({
 
   const sessionLabel =
     relatedSessionCount > 0
-      ? t(relatedSessionCount === 1 ? "{p0} related thread" : "{p0} related threads", {
-          p0: relatedSessionCount,
-        })
+      ? relatedSessionCount === 1
+        ? t("{p0} related thread", { p0: relatedSessionCount })
+        : t("{p0} related threads", { p0: relatedSessionCount })
       : "";
   const statusWord = jira
     ? statusLabel
-    : `${t(status.label)}${attentionLabel ? ` · ${t(attentionLabel)}` : ""}`;
+    : `${status.label}${attentionLabel ? ` · ${attentionLabel}` : ""}`;
   const reference = inboxItemRef(item);
   const secondary = [reference, source].filter(Boolean).join(" · ");
-  const statusMark = (rowMetadata?: boolean) => (
+  // The status word shows only where it carries more than the icon: a tracker's own workflow
+  // status or a code host's attention reason. Every other row shows the icon.
+  const showStatusWord = jira || !!attentionLabel;
+  const statusMark = (
     <StatusText
-      data-inbox-row-metadata={rowMetadata ? "" : undefined}
+      data-inbox-row-metadata=""
       tone={statusTextTone(rowStatus.tone)}
       icon={<rowStatus.Icon strokeWidth={1.75} />}
-      className={rowMetadata ? "min-w-0 max-w-[60%] shrink-0" : "min-w-0 max-w-full"}
+      className={showStatusWord ? "min-w-0 max-w-[60%] shrink-0" : "shrink-0"}
     >
-      <Text as="span" size="inherit" tone="inherit" truncate className="min-w-0">
-        {statusWord}
-      </Text>
+      {showStatusWord ? (
+        <Text as="span" size="inherit" tone="inherit" truncate className="min-w-0">
+          {statusWord}
+        </Text>
+      ) : (
+        <span className="sr-only">{statusWord}</span>
+      )}
     </StatusText>
   );
   // No title tooltip on the row: the hover card carries the full title and details.
@@ -117,7 +131,7 @@ export const InboxCard = memo(function InboxCard({
     align: "start",
     width: 300,
     "aria-label": item.title,
-    className: "grid gap-2 p-3",
+    className: "grid gap-2",
   });
 
   return (
@@ -125,7 +139,7 @@ export const InboxCard = memo(function InboxCard({
       <ActionHost
         selected={active}
         data-seen={unseen ? undefined : "true"}
-        className="w-full min-w-0"
+        className={comfortable ? "w-full min-w-0 flex-col items-stretch gap-0" : "w-full min-w-0"}
       >
         <Button
           variant="item"
@@ -136,9 +150,9 @@ export const InboxCard = memo(function InboxCard({
           aria-current={active ? "true" : undefined}
           selected={active}
           aria-label={[
-            `${t(status.label)} ${t(kindLabel).toLocaleLowerCase()} ${reference}: ${item.title}`,
+            `${status.label} ${kindLabel.toLocaleLowerCase()} ${reference}: ${item.title}`,
             source,
-            attentionLabel ? t(attentionLabel) : "",
+            attentionLabel,
             unseen ? t("Unread") : "",
             item.labels.map((label) => label.name).join(", "),
             sessionLabel,
@@ -163,14 +177,15 @@ export const InboxCard = memo(function InboxCard({
               tone="primary"
               leading="snug"
               weight={unseen ? "medium" : "regular"}
-              truncate
+              truncate={!comfortable}
+              lines={comfortable ? 2 : undefined}
               className="min-w-0 flex-1"
             >
               {item.title}
             </Text>
-            {time ? (
+            {hasTime ? (
               <Text as="span" size="micro" tone="secondary" className="shrink-0 tabular-nums">
-                {time}
+                <InboxRelativeTime at={item.updatedAt} />
               </Text>
             ) : null}
             {unseen ? <StatusDot data-inbox-unread tone="accent" label={t("Unread")} /> : null}
@@ -194,19 +209,17 @@ export const InboxCard = memo(function InboxCard({
                 {relatedSessionCount}
               </Badge>
             ) : null}
-            {statusMark(true)}
+            {statusMark}
           </Text>
         </Button>
+        {comfortable && item.labels.length > 0 ? (
+          <div className="min-w-0 px-2 pb-2">
+            {/* ui-drift-ignore: row-text-badge -- the provider's own issue labels are the row's content, not a status tag; they carry the provider color dot. */}
+            <BadgeList label={t("Labels")} size="xs" items={inboxLabelItems(item.labels)} />
+          </div>
+        ) : null}
         {hover.card(() => (
-          <InboxCardPreview
-            item={item}
-            reference={reference}
-            kindLabel={t(kindLabel)}
-            source={source}
-            status={statusMark()}
-            attention={attentionLabel ? t(attentionLabel) : ""}
-            sessionLabel={sessionLabel}
-          />
+          <InboxCardPreview item={item} />
         ))}
       </ActionHost>
     </div>

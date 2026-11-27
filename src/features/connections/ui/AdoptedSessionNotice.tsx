@@ -1,22 +1,26 @@
 import { Text } from "../../../shared/ui/Text";
 import { Alert, type AlertProps } from "../../../shared/ui/Alert";
-import { isUserConversation } from "../../../shared/model/host-contracts/delegation";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import type { Session } from "../../sessions";
 import { getSessions, setSessions } from "../../sessions/public/sessionsStore";
 import {
-  ADOPTED_CHOICE_CONSEQUENCES,
-  ADOPTED_CHOICE_MESSAGE,
-  ADOPTED_DISCARD_QUESTION,
-  ADOPTED_UNSYNCED_MESSAGE,
+  adoptedChoiceConsequences,
+  adoptedChoiceMessage,
+  adoptedDiscardQuestion,
+  adoptedUnsyncedMessage,
   keepAdoptedDivergence,
   type AdoptedResolution,
 } from "../model/adoptedSessions";
 import type { RefreshAdoptedSession } from "../model/useAdoptedSessions";
-import { useAdoptedSyncing } from "../model/adoptedSyncing";
+import { useAdoptedSyncFailure, useAdoptedSyncing } from "../model/adoptedSyncing";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { describeRemoteError, type RemoteErrorView } from "../model/remoteFailure";
+
+/** The strip's own gutter above the composer; both states share it. */
+const NOTICE_SLOT = "shrink-0 px-4 py-2";
 
 /** Keeps the composer mounted (and its draft/attachments intact) during refresh. */
 export function AdoptedSessionNotice({
@@ -28,6 +32,7 @@ export function AdoptedSessionNotice({
 }) {
   useLocale();
   const syncing = useAdoptedSyncing(session.id);
+  const automaticFailure = useAdoptedSyncFailure(session.id);
   const pending = useRef<{ sessionId: string } | undefined>(undefined);
   const [refreshingId, setRefreshingId] = useState<string>();
   const refreshing = refreshingId === session.id;
@@ -35,16 +40,17 @@ export function AdoptedSessionNotice({
   const [storedFeedback, setFeedback] = useState<{
     sessionId: string;
     conflicted: boolean;
-    error: boolean;
+    /** Why the sync did not finish, as the connection layer describes it. */
+    failure?: RemoteErrorView;
     text: string;
   }>();
   const feedback =
     storedFeedback?.sessionId === session.id &&
-    (!storedFeedback.error || !storedFeedback.conflicted || session.adoptedSyncConflict)
+    (!storedFeedback.failure || !storedFeedback.conflicted || session.adoptedSyncConflict)
       ? storedFeedback
       : undefined;
   useEffect(() => {
-    if (!storedFeedback || feedback?.error) return;
+    if (!storedFeedback || feedback?.failure) return;
     const timer = setTimeout(() => setFeedback(undefined), feedback ? 6_000 : 0);
     return () => clearTimeout(timer);
   }, [feedback, storedFeedback]);
@@ -65,21 +71,23 @@ export function AdoptedSessionNotice({
       setFeedback({
         sessionId: session.id,
         conflicted: !!session.adoptedSyncConflict,
-        error: false,
         text:
           resolution === "keep-both" && branched
-            ? "Both versions are kept. This computer's version is saved as a new conversation in project history."
+            ? t(
+                "Both versions are kept. This computer's version is saved as a new conversation in project history.",
+              )
             : resolution === "keep-other"
-              ? "Conversation synced. The other computer's version was kept."
-              : "Conversation synced.",
+              ? t("Conversation synced. The other computer's version was kept.")
+              : t("Conversation synced."),
       });
-    } catch {
+    } catch (reason) {
       if (pending.current !== attempt) return;
+      // The retained transcript, drafts and queue stay as they are; the user sees why.
       setFeedback({
         sessionId: session.id,
         conflicted: !!session.adoptedSyncConflict,
-        error: true,
-        text: "Could not sync the conversation. Your messages were kept. Check the connection and try again.",
+        failure: describeRemoteError(reason),
+        text: "",
       });
     } finally {
       if (pending.current === attempt) {
@@ -92,6 +100,11 @@ export function AdoptedSessionNotice({
   // answer. Nothing is replaced or copied until they do.
   const choosing =
     !!session.adoptedSyncConflict && !!session.adoptedDivergence && !session.adoptedDivergence.keep;
+  const problem =
+    feedback?.failure ??
+    (session.adoptedSyncConflict && !choosing && automaticFailure
+      ? describeRemoteError(automaticFailure)
+      : undefined);
   // Keeping this version drops what the other computer added, so it is asked
   // twice; Keep both is the way to keep it.
   const confirming = choosing && confirmingId === session.id;
@@ -101,29 +114,26 @@ export function AdoptedSessionNotice({
       list.map((item) => (item.id === session.id ? keepAdoptedDivergence(item) : item)),
     );
   };
-  // Host execution itself is shown by RemoteOriginMark in the composer
-  // workspace row; a row appears only when it holds back the user's queued messages.
-  const queueWaiting =
-    !!session.continuingElsewhere &&
-    !session.busy &&
-    isUserConversation(session) &&
-    !!session.queuedMessages?.length;
-  if (!session.adoptedSyncConflict && !feedback && !refreshing && !queueWaiting)
-    // The first comparison with the other computer's copy; a quick one shows nothing.
-    return syncing ? (
-      <div className="shrink-0 px-4 py-2">
-        <LoadingText>{t("Syncing with the other computer…")}</LoadingText>
+  if (!session.adoptedSyncConflict && !feedback && !refreshing)
+    // The mirror's last pass may predate the start of this local turn.
+    return syncing && !session.busy ? (
+      <div className={NOTICE_SLOT}>
+        <LoadingText>{t("Syncing with the local Host…")}</LoadingText>
       </div>
     ) : null;
   // Only two versions that both moved on need attention; an unfinished sync is information.
-  const attention = choosing || !!feedback?.error;
+  const attention = choosing || !!feedback?.failure;
   const showSync =
-    !!onRefresh && !choosing && (!!session.adoptedSyncConflict || !!feedback?.error || refreshing);
+    !!onRefresh &&
+    !choosing &&
+    (!!session.adoptedSyncConflict || !!feedback?.failure || refreshing);
   const syncBlocked = refreshing || session.busy;
-  const keepBothTooltip = t(
-    "Keep the other version here and save this computer's version as a new conversation.",
-  );
-  // Up to three follow-ups: the two structured slots plus one Button in `extra` (it keeps its tooltip).
+  const syncBlockedReason = refreshing
+    ? t("Wait for the current action to finish.")
+    : session.busy
+      ? t("Wait for the running response to finish.")
+      : undefined;
+  // Up to three follow-ups: the two structured slots plus one Button in `extra`.
   const noticeActions: Pick<AlertProps, "action" | "secondaryAction" | "extra"> = confirming
     ? {
         action: { label: t("Discard and keep this"), onClick: keep, disabled: refreshing },
@@ -139,8 +149,8 @@ export function AdoptedSessionNotice({
             size="sm"
             onClick={() => void refresh("keep-both")}
             disabled={syncBlocked}
+            disabledReason={syncBlockedReason}
             aria-busy={refreshing}
-            tooltip={keepBothTooltip}
           >
             {t("Keep both")}
           </Button>
@@ -173,9 +183,7 @@ export function AdoptedSessionNotice({
               size="sm"
               onClick={() => setConfirmingId(session.id)}
               disabled={refreshing}
-              tooltip={t(
-                "Keep this computer's version. The other computer catches up with it. Nothing is copied.",
-              )}
+              disabledReason={refreshing ? t("Wait for the current action to finish.") : undefined}
             >
               {t("Keep this")}
             </Button>
@@ -186,7 +194,7 @@ export function AdoptedSessionNotice({
             action: {
               label: refreshing
                 ? t("Refreshing…")
-                : feedback?.error
+                : feedback?.failure
                   ? t("Retry refresh")
                   : t("Sync conversation"),
               onClick: () => void refresh(),
@@ -195,22 +203,29 @@ export function AdoptedSessionNotice({
             },
           }
         : {};
+  const failureDetails =
+    problem?.details && problem.details !== problem.message ? (
+      <ErrorDetails title={problem.message} detail={problem.details} />
+    ) : undefined;
   return (
-    <div className="shrink-0 px-4 py-2">
-      <Alert tone={attention ? "warning" : "info"} {...noticeActions}>
+    <div className={NOTICE_SLOT}>
+      <Alert
+        tone={attention ? "warning" : "info"}
+        actionsAlign={choosing ? "center" : undefined}
+        {...noticeActions}
+        extra={noticeActions.extra ?? failureDetails}
+      >
         <div className="min-w-0 space-y-1">
-          {queueWaiting && !session.adoptedSyncConflict ? (
-            <div>{t("Queue is waiting for the current turn to finish.")}</div>
-          ) : null}
           {session.adoptedSyncConflict ? (
-            <div>{t(choosing ? ADOPTED_CHOICE_MESSAGE : ADOPTED_UNSYNCED_MESSAGE)}</div>
+            <div>{choosing ? adoptedChoiceMessage() : adoptedUnsyncedMessage()}</div>
           ) : null}
           {choosing ? (
             <Text as="div" size="inherit">
-              {t(confirming ? ADOPTED_DISCARD_QUESTION : ADOPTED_CHOICE_CONSEQUENCES)}
+              {confirming ? adoptedDiscardQuestion() : adoptedChoiceConsequences()}
             </Text>
           ) : null}
-          {feedback ? <div>{t(feedback.text)}</div> : null}
+          {problem ? <div>{problem.message}</div> : null}
+          {feedback && !feedback.failure ? <div>{feedback.text}</div> : null}
         </div>
       </Alert>
     </div>

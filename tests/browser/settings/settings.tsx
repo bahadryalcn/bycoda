@@ -6,11 +6,13 @@ import {
   applyChatBackground,
 } from "../../../src/features/settings/model/appearance";
 import { ImageDropZone } from "../../../src/features/settings/ui/appearance/controls/ImageDropZone";
-import { AdvancedSettings, Row } from "../../../src/shared/ui/settings";
 import { AntigravityAccountSettings } from "../../../src/features/settings/ui/AntigravityAccountSettings";
 import { seedProvidersFixture, providersFixtureCommand } from "./settings-providers-fixture";
+import { registerBuiltinHarnesses } from "../../../src/integrations/harness/core/register";
 import { agentDefaultsFixtureCommand } from "./agent-defaults-fixture";
+import { installSignedInAccountFixture, signedInAccountCommand } from "./settings-account-fixture";
 import { useState } from "react";
+import { rememberRemoteProject } from "../../../src/features/connections/public/remoteProjects";
 import { VoiceAssistantFixture } from "./voice-assistant-fixture";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { initAppearancePreferences } from "../../../src/features/settings/model/appearancePreferences";
@@ -59,6 +61,14 @@ type FixtureEntry = { key: string; version: number; value: unknown };
 const canonicalPage = crypto.randomUUID();
 const canonicalScopes = new Map<string, { revision: number; entries: Map<string, FixtureEntry> }>();
 const canonicalReceipts = new Map<string, { request: string; result: unknown }>();
+if (new URLSearchParams(location.search).get("connections") === "1") {
+  canonicalScopes.set("remote-outbox.v2", {
+    revision: 1,
+    entries: new Map([
+      ["migration:complete", { key: "migration:complete", version: 1, value: true }],
+    ]),
+  });
+}
 function canonicalFixture(command: string, args: Record<string, unknown>): unknown {
   if (command === "canonical_store_page_token") return canonicalPage;
   if (command === "canonical_store_session_guard_ready") return true;
@@ -75,6 +85,9 @@ function canonicalFixture(command: string, args: Record<string, unknown>): unkno
       revision: store.revision,
       entries: (args.keys as string[]).flatMap((key) => (entry(key) ? [entry(key)] : [])),
     });
+  if (scope === "remote-outbox.v2" && command === "canonical_store_list_bounded") {
+    return { revision: store.revision, entries: [], hasMore: false };
+  }
   if (command === "canonical_store_list") {
     if (args.expectedRevision != null && args.expectedRevision !== store.revision)
       throw new Error("Fixture canonical snapshot changed");
@@ -139,17 +152,81 @@ const mcpConnections = Array.from({ length: 25 }, (_, index) => ({
   configPath: `/fixture/${"long-project-directory/".repeat(8)}config-${index}.json`,
   enabled: index !== 1,
 }));
+const remoteMcpFixture = new URLSearchParams(location.search).has("mcpRemote");
+const managedMcpFixture = new URLSearchParams(location.search).has("managedMcp");
+const managedMcpServers = new Map<
+  string,
+  { name: string; revision: string; enabled: boolean; config: { url: string } }
+>();
+const remoteMcpMachine = {
+  id: "mcp-host",
+  environmentId: "mcp-office",
+  name: "Office PC",
+  endpoint: "http://mcp-fixture.example",
+};
+const localMcpMachine = {
+  id: "mcp-local",
+  environmentId: "mcp-desktop",
+  name: "This computer",
+  endpoint: "http://127.0.0.1:18076",
+  localHost: true,
+};
+const remoteMcpProject = remoteMcpFixture
+  ? rememberRemoteProject(remoteMcpMachine.environmentId, {
+      id: "mcp-site",
+      name: "storefront",
+      cwd: "/fixture/storefront",
+    })
+  : undefined;
+const remoteMcpConnection = {
+  name: "hostinger",
+  provider: "codex",
+  scope: "user",
+  transport: "http",
+  configPath: "/fixture/.codex/config.toml",
+  enabled: true,
+};
+let remoteMcpCredential = false;
 // Memory-only native consent mirror. No native owner grant or device authority.
 const consentFixture = new Map<
   string,
   {
     revision: number;
+    active: boolean;
     environmentId: string;
     permissionLevel: string;
     projectIds: string[];
     criticalExclusions: string[];
   }
 >();
+const imageReviewFixture = new URLSearchParams(location.search).has("appearanceImageReview");
+const generationFixture =
+  imageReviewFixture || new URLSearchParams(location.search).has("appearanceGeneration");
+let generatedImageNumber = 0;
+const pendingDrawings = new Map<
+  string,
+  { resolve: (path: { path: string }) => void; reject: (error: Error) => void }
+>();
+if (generationFixture) {
+  window.addEventListener("fixture-complete-appearance-drawings", () => {
+    for (const drawing of pendingDrawings.values())
+      drawing.resolve({ path: `/fixture/image-${++generatedImageNumber}.png` });
+    pendingDrawings.clear();
+  });
+}
+const signedInAccount = new URLSearchParams(location.search).get("account") === "signedIn";
+if (signedInAccount) installSignedInAccountFixture();
+const browserProfileFixture = new URLSearchParams(location.search).has("browserProfiles");
+let browserProfileState = {
+  agentAccess: true,
+  claudeChrome: false,
+  autoShow: true,
+  recordingFps: 4,
+  liveFps: 60,
+  defaultProfileId: null as string | null,
+  developmentProfileId: null as string | null,
+  profiles: [{ id: "work", name: "Work", agents: false }],
+};
 mockIPC(
   (command, args) => {
     if (new URLSearchParams(location.search).has("backgroundProbe")) {
@@ -221,6 +298,182 @@ mockIPC(
         return entry;
       }
     }
+    if (browserProfileFixture) {
+      const machine = {
+        id: "fixture-browser-local",
+        name: "This computer",
+        localHost: true,
+        endpoint: "http://127.0.0.1:9999",
+        environmentId: "fixture-browser-local",
+      };
+      if (command === "local_host_connect") return machine;
+      if (command === "remote_request" && args.machineId === machine.id) {
+        if (args.method === "environment.describe")
+          return { environmentId: machine.environmentId, capabilities: ["browser.profiles.v1"] };
+        if (args.method === "browser.profiles.list") return browserProfileState;
+        if (args.method === "browser.profiles.update") {
+          const input = args.params as { action: string; value: unknown };
+          if (input.action === "grant") {
+            const grant = input.value as { id: string; agents: boolean };
+            browserProfileState = {
+              ...browserProfileState,
+              profiles: browserProfileState.profiles.map((profile) =>
+                profile.id === grant.id ? { ...profile, agents: grant.agents } : profile,
+              ),
+            };
+          }
+          if (input.action === "default" || input.action === "development") {
+            const field = input.action === "default" ? "defaultProfileId" : "developmentProfileId";
+            browserProfileState = { ...browserProfileState, [field]: input.value as string | null };
+          }
+          return browserProfileState;
+        }
+      }
+    }
+    if (remoteMcpFixture) {
+      if (command === "remote_machines") return [localMcpMachine, remoteMcpMachine];
+      if (command === "remote_request" && args.machineId === localMcpMachine.id) {
+        if (args.method === "projects.list")
+          return [
+            { id: "mcp-local-project", name: "Local project", cwd: "/fixture/settings-project" },
+          ];
+        if (args.method === "mcp.tokens.list" || args.method === "mcp.oauth.status")
+          return { tokens: [], servers: [] };
+        if (args.method === "mcp.hub.loading.get")
+          return {
+            policy: { version: 1, mode: "onDemand", direct: [] },
+            corrupt: false,
+            servers: [],
+          };
+      }
+      if (command === "remote_request" && args.machineId === remoteMcpMachine.id) {
+        const input = args.params as {
+          command?: string;
+          projectId?: string;
+          cwd?: string;
+          action?: string;
+          name?: string;
+          revision?: string;
+          config?: { url: string };
+          enabled?: boolean;
+        };
+        if (args.method === "mcp.config.call") {
+          if (input.command === "mcp_discover")
+            return managedMcpFixture
+              ? { connections: [], warnings: [], nativeConfigAvailable: false }
+              : { connections: [remoteMcpConnection], warnings: [] };
+          if (input.command === "codex_mcp_list") return [];
+          if (input.command === "mcp_server_config_read")
+            return { config: '{"url":"https://mcp.example.com"}', revision: "v1" };
+        }
+        if (args.method === "mcp.hub.loading.get")
+          return {
+            policy: { version: 1, mode: "onDemand", direct: [] },
+            corrupt: false,
+            servers: [],
+            managedServers: managedMcpFixture,
+            inventory: managedMcpFixture
+              ? (input.projectId ? [...managedMcpServers.values()] : []).map(
+                  ({ config: _config, ...entry }) => ({
+                    name: `bycoda-${entry.name}`,
+                    kind: "http",
+                    sources: ["bycoda-project"],
+                    aliases: [],
+                    managed: { ...entry, scope: "project" },
+                  }),
+                )
+              : [
+                  {
+                    name: "hostinger",
+                    kind: "http",
+                    sources: ["codex"],
+                    aliases: [{ provider: "codex", name: "hostinger" }],
+                    projectCredentialsConfigured: !!input.projectId && remoteMcpCredential,
+                  },
+                ],
+          };
+        if (args.method === "mcp.hub.servers" && managedMcpFixture) {
+          if (!input.name || input.projectId !== remoteMcpProject?.projectId)
+            throw new Error("Wrong Hub project");
+          const current = managedMcpServers.get(input.name);
+          if (input.action === "get" && current) return current;
+          if (input.action !== "add" && current?.revision !== input.revision)
+            throw new Error("Stale fixture revision");
+          const next = {
+            name: input.name,
+            revision: crypto.randomUUID(),
+            enabled: input.enabled ?? current?.enabled ?? true,
+            config: input.config ?? current?.config ?? { url: "" },
+          };
+          managedMcpServers.set(input.name, next);
+          return next;
+        }
+        if (args.method === "mcp.oauth.status") return { servers: [] };
+        if (
+          args.method === "mcp.projectCredentials.set" &&
+          input.projectId === remoteMcpProject?.projectId
+        ) {
+          remoteMcpCredential = true;
+          return { configured: true, kind: "http" };
+        }
+      }
+    }
+    if (signedInAccount) {
+      const account = signedInAccountCommand(command);
+      if (account !== undefined) return account;
+    }
+    if (generationFixture && command === "add_background_library_image")
+      return {
+        id: String(args.sourcePath),
+        path: String(args.sourcePath),
+        createdMs: generatedImageNumber,
+        bytes: 100,
+        source: "generated",
+        prompt: args.prompt,
+      };
+    if (imageReviewFixture && command === "save_chat_background") return args.sourcePath;
+    if (generationFixture && command === "remote_machines")
+      return [
+        {
+          id: "fixture-appearance-host",
+          environmentId: "fixture-appearance-host",
+          name: "This computer (local sync)",
+          endpoint: "http://127.0.0.1:3777",
+          localHost: true,
+        },
+      ];
+    if (
+      generationFixture &&
+      command === "remote_request" &&
+      String(args.method).startsWith("appearance.")
+    ) {
+      const { generationId } = args.params as { generationId: string };
+      if (args.method === "appearance.themeSuggestions")
+        return {
+          suggestions: [
+            {
+              name: "Alpine",
+              hue: 210,
+              saturation: 24,
+              accent: "#528fea",
+              imagePrompt: "Mountain silhouettes",
+            },
+            { name: "Haze", hue: 270, saturation: 18, accent: "#aa80d9" },
+          ],
+        };
+      if (args.method === "appearance.backgroundImage" && imageReviewFixture)
+        return { path: `/fixture/image-${++generatedImageNumber}.png` };
+      if (args.method === "appearance.backgroundImage")
+        return new Promise<{ path: string }>((resolve, reject) =>
+          pendingDrawings.set(generationId, { resolve, reject }),
+        );
+      if (args.method === "appearance.cancelGeneration") {
+        const cancel = pendingDrawings.get(generationId);
+        pendingDrawings.delete(generationId);
+        cancel?.reject(new Error("Cancelled"));
+        return { cancelled: Boolean(cancel) };
+      }
+    }
     if (command === "assistant_consent_get")
       return structuredClone(consentFixture.get(String(args.environmentId)) ?? null);
     if (command === "assistant_consent_set") {
@@ -229,13 +482,14 @@ mockIPC(
       if (args.expectedRevision !== (previous?.revision ?? 0))
         throw new Error("Native consent revision changed");
       if (
-        !["watch", "projects", "everything"].includes(String(args.permissionLevel)) ||
+        !["ask", "watch", "projects", "everything"].includes(String(args.permissionLevel)) ||
         !Array.isArray(args.projectIds) ||
         !Array.isArray(args.criticalExclusions)
       )
         throw new Error("Invalid assistant consent");
       const consent = {
         revision: (previous?.revision ?? 0) + 1,
+        active: true,
         environmentId,
         permissionLevel: String(args.permissionLevel),
         projectIds: args.projectIds as string[],
@@ -367,6 +621,65 @@ mockIPC(
                 missing: ["faster-whisper", "Whisper model", "voxcpm", "VoxCPM2 model"],
                 python: "/fixture/python3",
               };
+        // Synthetic local transcription catalog: one selected, one installed, one downloading.
+        if (args.method === "voice.local.models")
+          return [
+            {
+              id: "small",
+              label: "Whisper Small",
+              path: "fixture/small",
+              installed: true,
+              sizeBytes: 464e6,
+              format: "faster-whisper",
+            },
+            {
+              id: "gguf-small",
+              label: "Whisper Small",
+              path: "fixture/gguf-small",
+              installed: true,
+              sizeBytes: 257e6,
+              format: "gguf",
+              languages: ["tr", "en"],
+            },
+            {
+              id: "gguf-nemotron",
+              label: "Nemotron Streaming 3.5",
+              path: "fixture/nemotron",
+              installed: false,
+              sizeBytes: 716e6,
+              format: "gguf",
+              languages: ["tr", "en"],
+              recommended: true,
+            },
+            {
+              id: "gguf-medium",
+              label: "Whisper Medium",
+              path: "fixture/medium",
+              installed: false,
+              sizeBytes: 793e6,
+              format: "gguf",
+              languages: ["tr", "en"],
+              recommended: true,
+            },
+            {
+              id: "large-v3-turbo",
+              label: "Whisper Large v3 Turbo",
+              path: "fixture/turbo",
+              installed: false,
+              sizeBytes: 1.5e9,
+              format: "faster-whisper",
+            },
+          ];
+        if (args.method === "voice.local.modelStatus")
+          return voiceFixture === "model-downloading"
+            ? {
+                state: "working",
+                action: "download",
+                id: "gguf-medium",
+                bytesDone: 300e6,
+                bytesTotal: 793e6,
+              }
+            : { state: "idle" };
         if (args.method === "voice.local.setup") {
           sessionStorage.setItem("fixture-voice-install-request", JSON.stringify(config));
           sessionStorage.setItem("fixture-voice-install-polls", "0");
@@ -569,51 +882,57 @@ mockIPC(
             endpoint: "https://cloud.example.com",
           },
         );
-        const routeSet: Record<string, unknown> = {
-          "fixture-remote": {
-            prefer: "saved",
-            active: "192.168.1.30",
-            routes: [
-              { address: "owner@studio.local", kind: "name", source: "saved", enabled: true },
-              { address: "100.97.82.4", kind: "tailscale", source: "other", enabled: true },
-              { address: "192.168.1.30", kind: "lan", source: "reported", enabled: true },
-            ],
-          },
-          "fixture-cloud": {
-            prefer: "saved",
-            active: "calm-river.trycloudflare.com",
-            routes: [
-              {
-                address: "calm-river.trycloudflare.com",
-                kind: "tunnel",
-                source: "account",
-                enabled: true,
-              },
-            ],
-          },
-        };
-        if (command === "remote_machine_routes") {
-          const id = args.machineId as string;
-          return (
-            routeSet[id] ?? {
-              prefer: "saved",
-              active: null,
-              routes: [
-                { address: "192.168.1.40", kind: "lan", source: "saved", enabled: true },
-                { address: "100.97.82.9", kind: "tailscale", source: "reported", enabled: true },
-              ],
-            }
-          );
-        }
-        if (command === "remote_machine_route_check") return [];
       }
+      const routeSet: Record<string, unknown> = {
+        "fixture-remote": {
+          prefer: "saved",
+          active: "192.168.1.30",
+          routes: [
+            { address: "owner@studio.local", kind: "name", source: "saved", enabled: true },
+            { address: "100.97.82.4", kind: "tailscale", source: "other", enabled: true },
+            { address: "192.168.1.30", kind: "lan", source: "reported", enabled: true },
+          ],
+        },
+        "fixture-cloud": {
+          prefer: "saved",
+          active: "calm-river.trycloudflare.com",
+          routes: [
+            {
+              address: "calm-river.trycloudflare.com",
+              kind: "tunnel",
+              source: "account",
+              enabled: true,
+            },
+          ],
+        },
+      };
+      if (command === "remote_machine_routes") {
+        const id = args.machineId as string;
+        return (
+          routeSet[id] ?? {
+            prefer: "saved",
+            active: null,
+            routes: [
+              { address: "192.168.1.40", kind: "lan", source: "saved", enabled: true },
+              { address: "100.97.82.9", kind: "tailscale", source: "reported", enabled: true },
+            ],
+          }
+        );
+      }
+      if (command === "remote_machine_route_check")
+        return statusFixture
+          ? []
+          : [
+              { address: "100.97.82.4", reachable: false },
+              { address: "192.168.1.30", reachable: true },
+            ];
       // Machines found on this computer that are not added yet, for the Add list.
       if (command === "discover_machine_candidates")
         return [
           ["HSM-DC-01", ["servers"]],
           ["github.com", ["known-hosts"]],
           ["LM-VM-2", ["servers"]],
-          ["monocode-mac", ["known-hosts", "ssh-config"]],
+          ["dev-mac", ["known-hosts", "ssh-config"]],
           ["petrol ofisi", ["servers"]],
           ["staging.brewline.localtest.me", ["known-hosts"]],
           ["UBUNTU-NTP-01", ["servers"]],
@@ -631,6 +950,18 @@ mockIPC(
         const machine = machines.find((entry) => entry.id === args.machineId)!;
         if (args.method === "mobile.access.status") {
           const mode = (args.params as { mode?: string })?.mode ?? "lan";
+          // `?phone=unavailable`: the LAN listener could not bind; several adapters exist.
+          if (mode === "lan" && new URLSearchParams(location.search).get("phone") === "unavailable")
+            return {
+              mode,
+              state: "unavailable",
+              addresses: ["192.168.2.108", "192.168.95.2"],
+              addressInterfaces: { "192.168.2.108": "Ethernet", "192.168.95.2": "Ethernet 5" },
+              reason:
+                "The mobile port is blocked by Windows or system policy. Choose another port or check network permissions.",
+              networkHint:
+                "Windows treats this network as Public, which can block your phone. Set it to Private in Windows network settings.",
+            };
           return mode === "lan"
             ? {
                 mode,
@@ -648,6 +979,68 @@ mockIPC(
             expiresAt: new Date(Date.now() + 120_000).toISOString(),
             environmentId: machine.environmentId,
           };
+        if (args.method === "devices.paired") {
+          const now = Date.now();
+          return {
+            devicesTruncated: false,
+            devices:
+              machine.id === "fixture-local"
+                ? [
+                    {
+                      id: "d-self",
+                      name: "Desktop",
+                      isCurrent: true,
+                      kind: "desktop",
+                      canManageDevices: true,
+                      isLocalDesktop: true,
+                    },
+                    {
+                      id: "d-pixel",
+                      name: "Bahadır'ın Pixel 9 Pro",
+                      isCurrent: false,
+                      kind: "phone",
+                      canManageDevices: true,
+                      pairedAt: now - 9 * 86_400_000,
+                      lastSeenAt: now - 4 * 60_000,
+                    },
+                    {
+                      id: "d-iphone",
+                      name: "iPhone 16",
+                      isCurrent: false,
+                      kind: "phone",
+                      canManageDevices: false,
+                      pairedAt: now - 30 * 86_400_000,
+                    },
+                  ]
+                : [
+                    {
+                      id: "r-self",
+                      name: "Desktop",
+                      isCurrent: true,
+                      kind: "desktop",
+                      canManageDevices: false,
+                    },
+                    {
+                      id: "r-local",
+                      name: "Studio Mac desktop",
+                      isCurrent: false,
+                      kind: "desktop",
+                      canManageDevices: true,
+                      isLocalDesktop: true,
+                    },
+                    {
+                      id: "r-pixel",
+                      name: "Bahadır'ın Pixel 9 Pro",
+                      isCurrent: false,
+                      kind: "phone",
+                      canManageDevices: false,
+                      lastSeenAt: now - 2 * 3_600_000,
+                    },
+                  ],
+          };
+        }
+        if (args.method === "devices.revokeOther") return { revoked: true };
+        if (args.method === "devices.setManagement") return { updated: true };
         if (args.method === "mobile.pairing.status") return { state: "pending" };
         if (args.method === "mobile.pairing.cancel") return {};
         if (args.method === "environment.describe") {
@@ -666,7 +1059,16 @@ mockIPC(
             capabilities:
               statusFixture && machine.id === "fixture-lab"
                 ? ["tunnels.manage"]
-                : ["workspace.run", "git.worktreeCreate", "tunnels.manage"],
+                : [
+                    "workspace.run",
+                    "workspaces.managed.v1",
+                    "workspaces.policy.v1",
+                    "git.worktreeCreate",
+                    "tunnels.manage",
+                    "devices.paired",
+                    "devices.revokeOther",
+                    "devices.setManagement",
+                  ],
             ...(statusFixture
               ? { buildIdentity: { buildId: machine.id === "fixture-lab" ? "0.7.8" : "0.7.9" } }
               : {}),
@@ -681,6 +1083,7 @@ mockIPC(
             providers: [
               { provider: "cloudflare", installed: true, credential: "not-required" },
               { provider: "ngrok", installed: true, credential: "missing" },
+              { provider: "tailscale", installed: true, credential: "not-required" },
             ],
             tunnels: fixtureAutomaticHostAccess
               ? [
@@ -695,7 +1098,30 @@ mockIPC(
                     publicUrl: "https://fixture.trycloudflare.com",
                   },
                 ]
-              : [],
+              : machine.id === "fixture-local" &&
+                  new URLSearchParams(location.search).has("sharing-history")
+                ? [
+                    {
+                      id: "00000000-0000-0000-0000-000000000001",
+                      provider: "cloudflare",
+                      target: "host",
+                      localUrl: "http://127.0.0.1:3776",
+                      state: "stopped",
+                      startedAt: 1,
+                      canStop: false,
+                    },
+                    {
+                      id: "00000000-0000-0000-0000-000000000002",
+                      provider: "ngrok",
+                      target: "dev-server",
+                      localUrl: "http://127.0.0.1:3000",
+                      state: "ready",
+                      startedAt: 2,
+                      canStop: true,
+                      publicUrl: "https://fixture.ngrok-free.app",
+                    },
+                  ]
+                : [],
           };
         if (args.method === "tunnels.start" && args.params.automatic === true) {
           fixtureAutomaticHostAccess = true;
@@ -783,7 +1209,27 @@ mockIPC(
       }
     }
     if (command.startsWith("plugin:event|")) return null;
+    if (command === "quick_composer_set_enabled") return null;
     if (command === "plugin:app|version") return "0.5.70-fixture";
+    if (new URLSearchParams(location.search).has("buildDetails")) {
+      if (command === "plugin:app|identifier") return "com.bycoda.desktop";
+      if (command === "build_identity")
+        return {
+          schemaVersion: 1,
+          buildId: "4b9e2169b0bd3864cebb-local",
+          version: "0.5.70-fixture",
+          channel: "local",
+          mode: "debug",
+          repositoryId: "fixture",
+          branch: "main",
+          head: "266df5262".padEnd(40, "0"),
+          sourceFingerprint: "fixture",
+          dirtyPaths: [],
+          capturedAt: 1,
+          components: { web: "fixture", native: "fixture", host: "fixture" },
+          includedSources: [],
+        };
+    }
     if (
       [
         "remote_machines",
@@ -824,8 +1270,30 @@ if (new URLSearchParams(location.search).has("libraryProbe")) {
   (window as any).__TAURI_INTERNALS__.convertFileSrc = () =>
     "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E";
 }
+if (generationFixture) {
+  (window as any).__TAURI_INTERNALS__.convertFileSrc = (path: string) => {
+    const second = path.includes("image-2");
+    const sky = second ? "#3a645f" : "#253856";
+    const mountains = second ? "#172c32" : "#101b36";
+    return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><path fill="${sky}" d="M0 0h1280v720H0z"/><circle fill="#e3c59e" cx="965" cy="225" r="82"/><path fill="${mountains}" d="M0 545 282 276l212 218 286-327 500 383v170H0z"/><path fill="#121f28" d="m0 624 331-129 145 87 304-109 500 177v70H0z"/></svg>`)}`;
+  };
+}
 
 seedProvidersFixture();
+if (generationFixture) {
+  registerBuiltinHarnesses();
+  writeGeneratorValue("choice", { harness: "codex", model: "codex:auto" }, undefined);
+  writeGeneratorValue("roleInitialized", true, false);
+  writeGeneratorValue(
+    "suggestions",
+    [
+      { name: "Meadow", hue: 140, saturation: 24, accent: "#69b68e" },
+      { name: "Bay", hue: 190, saturation: 32, accent: "#51b9dc" },
+    ],
+    [],
+  );
+  writeGeneratorValue("withImage", true, false);
+}
 if (new URLSearchParams(location.search).has("generatorSuggestions")) {
   writeGeneratorValue(
     "suggestions",
@@ -904,7 +1372,7 @@ function Fixture() {
       {open ? (
         <SettingsView
           section={section}
-          cwd="/fixture/settings-project"
+          cwd={remoteMcpProject?.key ?? "/fixture/settings-project"}
           sessions={[]}
           recents={[{ path: "/fixture/settings-project", openedAt: 1 }]}
           onSelectSection={setSection}
@@ -998,14 +1466,6 @@ void Promise.all([
             Existing image
           </ImageDropZone>
           <ImageDropZone hasImage={false} busy onChoose={() => {}} />
-        </main>
-      ) : params.has("standaloneAdvancedProbe") ? (
-        <main className="bycoda-settings-workbench p-4">
-          <AdvancedSettings title="Standalone advanced" defaultOpen keepMounted>
-            <Row label="Standalone row">
-              <input aria-label="Standalone draft" defaultValue="draft" />
-            </Row>
-          </AdvancedSettings>
         </main>
       ) : params.has("antigravityVisual") ? (
         <main className="settings-topics p-4">

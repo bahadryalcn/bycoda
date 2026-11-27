@@ -40,10 +40,21 @@ function fake(overrides: Partial<ProjectKindsIo> = {}) {
 }
 
 describe("syncProjectKindsWith", () => {
-  it("does nothing when the Host already holds the same map", async () => {
+  it("does nothing, and reports success, when the Host already holds the same map", async () => {
     const io = fake({ get: vi.fn(async () => state(3, { "g:/a": "work" })) });
-    await syncProjectKindsWith(io, { "g:/a": "work" });
+    await expect(syncProjectKindsWith(io, { "g:/a": "work" })).resolves.toBe(true);
     expect(io.save).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed send as false so the caller can retry", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const unsupported = fake({ supported: vi.fn(async () => false) });
+    await expect(syncProjectKindsWith(unsupported, { "g:/a": "work" })).resolves.toBe(false);
+    const offline = fake({ get: vi.fn(async () => Promise.reject(new Error("offline"))) });
+    await expect(syncProjectKindsWith(offline, { "g:/a": "work" })).resolves.toBe(false);
+    const conflicted = fake({ save: vi.fn(async () => Promise.reject(new Error("conflict"))) });
+    await expect(syncProjectKindsWith(conflicted, { "g:/a": "work" })).resolves.toBe(false);
+    await expect(syncProjectKindsWith(fake(), { "g:/a": "work" })).resolves.toBe(true);
   });
 
   it("saves only projectKinds against the read version", async () => {
@@ -77,7 +88,8 @@ describe("syncProjectKindsWith", () => {
         throw new Error("conflict");
       }),
     });
-    await expect(syncProjectKindsWith(io, { "g:/a": "work" })).resolves.toBeUndefined();
+    // The caller learns the Host does not hold the tags, so it can retry.
+    await expect(syncProjectKindsWith(io, { "g:/a": "work" })).resolves.toBe(false);
     expect(io.get).toHaveBeenCalledTimes(2);
     expect(io.save).toHaveBeenCalledTimes(2);
     expect(io.save.mock.calls[1][0]).toBe(2);
@@ -89,19 +101,19 @@ describe("syncProjectKindsWith", () => {
       .mockRejectedValueOnce(new Error("conflict"))
       .mockResolvedValueOnce(state(5));
     const io = fake({ save });
-    await syncProjectKindsWith(io, { "g:/a": "work" });
+    await expect(syncProjectKindsWith(io, { "g:/a": "work" })).resolves.toBe(true);
     expect(save).toHaveBeenCalledTimes(2);
   });
 
   it("skips an unsupported Host and swallows a failed read", async () => {
     vi.spyOn(console, "warn");
     const old = fake({ supported: vi.fn(async () => false) });
-    await syncProjectKindsWith(old, { "g:/a": "work" });
+    await expect(syncProjectKindsWith(old, { "g:/a": "work" })).resolves.toBe(false);
     expect(old.get).not.toHaveBeenCalled();
     const broken = fake({
       get: vi.fn(async () => Promise.reject(new Error("offline"))),
     });
-    await expect(syncProjectKindsWith(broken, { "g:/a": "work" })).resolves.toBeUndefined();
+    await expect(syncProjectKindsWith(broken, { "g:/a": "work" })).resolves.toBe(false);
     expect(broken.save).not.toHaveBeenCalled();
   });
 });

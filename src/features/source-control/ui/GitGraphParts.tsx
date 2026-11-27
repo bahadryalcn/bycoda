@@ -4,6 +4,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n/git";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 import { useMemo } from "react";
 import { GitBranch, Globe } from "../../../shared/ui/icons";
 import { historyItemGraph, type HistoryItemViewModel } from "../model/gitGraph";
@@ -17,14 +18,22 @@ import {
 /** Longest a single ref pill grows before it truncates. */
 export const PILL_MAX_PX = 104;
 
-const REF_KIND_LABEL: Record<string, string> = {
-  local: "Branch",
-  remote: "Remote branch",
-  tag: "Tag",
-};
+function refKindLabel(kind: string): string {
+  switch (kind) {
+    case "local":
+      return t("Branch");
+    case "remote":
+      return t("Remote branch");
+    case "tag":
+      return t("Tag");
+    default:
+      return t("Ref");
+  }
+}
 
 export function refTitle(ref: GraphRefChip): string {
-  return `${REF_KIND_LABEL[ref.kind] ?? "Ref"}: ${ref.name}${ref.current ? " (current)" : ""}`;
+  const title = `${refKindLabel(ref.kind)}: ${ref.name}`;
+  return ref.current ? `${title} ${t("(current)")}` : title;
 }
 
 /** The lane drawing of one row. Neighbouring rows rely on its overflow. */
@@ -235,7 +244,7 @@ export function GraphSearchInput({
       onKeyDown={
         onEscape
           ? (event) => {
-              if (event.key !== "Escape") return;
+              if (event.key !== "Escape" || isImeComposition(event.nativeEvent)) return;
               event.stopPropagation();
               onEscape();
             }

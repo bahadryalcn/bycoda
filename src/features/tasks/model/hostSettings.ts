@@ -6,23 +6,35 @@ export const HOST_BEHAVIOR_DEFAULTS = "host.settings.behavior.v1";
 /** Advertised only once the Host has authoritative client draft clearance; gates the archive fields. */
 export const HOST_AUTO_ARCHIVE = "host.settings.autoArchive.v1";
 
+/** `account`: another signed-in account of the same provider and model; `order`: the next
+ * eligible entry of the Host's model order. */
+export const USAGE_LIMIT_FAILOVERS = ["off", "account", "order"] as const;
+export type UsageLimitFailover = (typeof USAGE_LIMIT_FAILOVERS)[number];
+
 export type AgentDefaults = {
   keepAwakeWhileAgentsWork: boolean;
   keepAwakeHoldAfter: "0" | "15m" | "30m" | "1h" | "4h" | "forever";
   autoContinueInterrupted: boolean;
   resumeAtReset: boolean;
+  /** Where a chat continues when its provider stops it at a usage limit; `off` waits. */
+  usageLimitFailover: UsageLimitFailover;
   streamingTextMode: "paced" | "adaptive";
   archiveMergedSessions: boolean;
   archiveInactiveDays: number;
 };
-export type AgentDefaultsRecord = AgentDefaults & { schemaVersion: 1; version: number };
+export type AgentDefaultsRecord = AgentDefaults & {
+  schemaVersion: 1;
+  version: number;
+};
 export const DEFAULT_AGENT_DEFAULTS: AgentDefaultsRecord = {
   schemaVersion: 1,
   version: 0,
-  keepAwakeWhileAgentsWork: false,
+  // Agent runs survive idle sleep by default; closing the lid or choosing Sleep still works.
+  keepAwakeWhileAgentsWork: true,
   keepAwakeHoldAfter: "0",
   autoContinueInterrupted: true,
   resumeAtReset: true,
+  usageLimitFailover: "off",
   streamingTextMode: "paced",
   archiveMergedSessions: false,
   archiveInactiveDays: 0,
@@ -57,6 +69,11 @@ export function parseAgentDefaults(
       throw new Error("Invalid keep awake hold");
     next.keepAwakeHoldAfter = v.keepAwakeHoldAfter as AgentDefaults["keepAwakeHoldAfter"];
   }
+  if (v.usageLimitFailover !== undefined) {
+    if (!USAGE_LIMIT_FAILOVERS.includes(v.usageLimitFailover as UsageLimitFailover))
+      throw new Error("Invalid usage limit failover");
+    next.usageLimitFailover = v.usageLimitFailover as UsageLimitFailover;
+  }
   if (v.streamingTextMode !== undefined) {
     if (v.streamingTextMode !== "paced" && v.streamingTextMode !== "adaptive")
       throw new Error("Invalid streaming mode");
@@ -89,7 +106,6 @@ export const DEFAULT_HOST_SETTINGS: HostSettings = {
 /** The settings with how much of today's time is used. */
 export type HostSettingsState = HostSettings & {
   usedMinutes: number;
-  usageUncertain?: boolean;
   /** Today's time is used up, so no new work starts until tomorrow. */
   limitReached: boolean;
 };
@@ -143,7 +159,6 @@ export function parseHostSettingsState(value: unknown): HostSettingsState | null
     return {
       ...settings,
       usedMinutes: v.usedMinutes,
-      ...(v.usageUncertain === true ? { usageUncertain: true } : {}),
       limitReached: v.limitReached === true,
     };
   } catch {

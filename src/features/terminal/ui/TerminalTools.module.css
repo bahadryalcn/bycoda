@@ -2,14 +2,10 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
-  padding: 2px 4px;
+  gap: var(--ui-space-1);
+  padding: 2px var(--ui-space-1);
   min-block-size: 2rem;
   min-inline-size: 0;
-}
-/* Controls hosted in the "More actions" popover sit on the raised sheet. */
-.popoverBody .tools {
-  padding: 6px 8px;
 }
 .field {
   flex: 1 1 120px;
@@ -20,13 +16,7 @@
 }
 .command {
   min-inline-size: 0;
-  padding: 4px;
-}
-.row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  align-items: center;
+  padding: var(--ui-space-1);
 }
 .list {
   display: grid;
@@ -35,7 +25,7 @@
 }
 
 .hint {
-  padding: 4px;
+  padding: var(--ui-space-1);
 }
 
 .ghost {
@@ -53,10 +43,10 @@
    Keyboard focus inside the overlay and open search/menus always keep it shown. */
 .overlay {
   position: absolute;
-  inset-block-start: 4px;
-  inset-inline-end: 12px;
+  inset-block-start: var(--ui-space-1);
+  inset-inline-end: var(--ui-space-3);
   z-index: 3;
-  max-inline-size: calc(100% - 16px);
+  max-inline-size: calc(100% - var(--ui-space-4));
 }
 .menuTrigger {
   display: flex;
@@ -65,18 +55,27 @@
   gap: 2px;
   padding: 2px;
 }
-.menuBody {
-  padding: 4px;
+.suggestionSettings {
+  margin-block-start: var(--ui-space-1);
+  padding: var(--ui-space-1) var(--ui-space-2);
+}
+.settingRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-space-2);
+  padding-block: var(--ui-space-1);
+}
+.settingNote {
+  margin-block: var(--ui-space-1) 2px;
 }
 .fontRow {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 4px;
+  gap: var(--ui-space-1);
+  padding: 2px var(--ui-space-1);
 }
 .fontValue {
   min-inline-size: 4ch;
   text-align: center;
-
-  font-variant-numeric: tabular-nums;
 }

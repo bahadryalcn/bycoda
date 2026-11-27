@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { HARNESSES, type Block, type HarnessId, type Session } from "../../sessions/model/session";
 import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { isEqualOrInside, pathKey } from "../../../shared/lib/paths";
@@ -257,9 +258,7 @@ export function completeOrchestrationProposal(
       ...draft,
       status: "invalid",
       response: response.slice(-200_000),
-      error:
-        error ??
-        `Could not prepare the assignment card: ${reason instanceof Error ? reason.message : String(reason)}`,
+      error: error ?? `Could not prepare the assignment card: ${errorText(reason)}`,
     };
   }
 }

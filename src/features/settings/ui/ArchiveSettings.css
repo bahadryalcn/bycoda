@@ -3,14 +3,10 @@
 .archive-settings {
   display: flex;
   flex-direction: column;
-  gap: 32px;
   min-inline-size: 0;
 }
 .archive-settings-list {
   max-block-size: min(60dvh, 36rem);
-}
-.archive-settings-note {
-  margin: 0 0 8px;
 }
 .archive-settings-partial {
   padding: 0 12px 8px;

@@ -1,10 +1,11 @@
 // @vitest-environment happy-dom
 import { act, createElement, Profiler } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { chooseManualEndingFromMenu, floatVoiceFromMenu } from "./VoiceCompanion.testSupport";
 import { pickPillSpeakerFromMenu } from "./VoiceCompanion.testSupport";
 import type { Session } from "../../sessions/model/session";
+import { registerToolsUiControl } from "../../host-tools/toolsUiControl";
 import type { VoiceAssistantInput } from "../model/voiceAssistant";
 import * as historyTransport from "../model/voiceHistoryTransport";
 import * as groupLock from "../../group-lock/model/groupLock";
@@ -35,7 +36,7 @@ const assistantHost = vi.hoisted(() => ({
     memory: [],
     jobs: [],
   } as any,
-  request: vi.fn(async (input: any): Promise<any> => {
+  request: vi.fn(async (input: any, _environment?: string): Promise<any> => {
     if (input.op === "snapshot") return { snapshot: assistantHost.snapshot };
     if (input.op === "profile.get") return { profile: assistantHost.snapshot.profile };
     if (input.op === "voice.runtime.register") return { ok: true };
@@ -134,11 +135,16 @@ vi.mock("../../assistant/model/assistantClient", () => ({
 const presence = vi.hoisted(() => ({
   value: "active" as "active" | "idle" | "away" | "unknown",
   native: "unknown" as "active" | "idle" | "away" | "unknown",
+  revealWindow: vi.fn(async () => {}),
 }));
 vi.mock("../model/voicePresence", async (original) => ({
   ...(await original<typeof import("../model/voicePresence")>()),
   useVoicePresence: () => presence.value,
   readNativeVoicePresence: async () => presence.native,
+}));
+vi.mock("../../../platform/tauri/voiceTalkEvent", async (original) => ({
+  ...(await original<typeof import("../../../platform/tauri/voiceTalkEvent")>()),
+  revealVoiceTalkWindow: presence.revealWindow,
 }));
 const mock = vi.hoisted(() => ({
   callbacks: null as any,
@@ -154,7 +160,7 @@ const mock = vi.hoisted(() => ({
   warm: vi.fn(async () => {}),
   realtime: null as any,
   realtimeArgs: [] as unknown[],
-  realtimeConnect: vi.fn(async () => {}),
+  realtimeConnect: vi.fn(async (_provider: unknown, _voice: unknown, _options: unknown) => {}),
   realtimeSecret: vi.fn(async () => ({ value: "v", expires_at: 1, model: "m", url: "wss://x" })),
   localConstructed: vi.fn(),
   finishTurn: vi.fn(),
@@ -201,6 +207,15 @@ vi.mock("../model/realtimeVoice", () => ({
     finishTurn = mock.finishTurn;
   },
 }));
+// Each companion mount gets its own in-memory work ledger, so tests never share started work.
+vi.mock("../model/voiceWorkLedger", async (original) => {
+  const actual = await original<typeof import("../model/voiceWorkLedger")>();
+  return {
+    ...actual,
+    sharedVoiceWorkLedger: () =>
+      new actual.VoiceWorkLedger({ storage: { load: () => [], save: () => {} } }),
+  };
+});
 vi.mock("../model/voiceAssistant", () => ({ converseWithAssistant: mock.assistant }));
 vi.mock("../model/voicePreview", () => ({ previewVoice: mock.preview }));
 vi.mock("../model/voiceToolClient", () => ({
@@ -274,8 +289,10 @@ vi.mock("../../../shared/i18n", () => ({
   useT: () => (key: string) => key,
   useLocale: () => "tr",
   translateAt: (_locale: string, key: string) => key,
+  formatNumber: (value: number) => String(value),
 }));
-import { VoiceCompanion } from "./VoiceCompanion";
+import { VoiceCompanion, type VoiceWorkspaceOutlet } from "./VoiceCompanion";
+import { VOICE_WAKE_EVENT } from "./useVoiceTalkEvent";
 
 it.each(["pointerup", "pointercancel"] as const)(
   "moves presentation without rendering audio controls until %s",
@@ -420,7 +437,7 @@ afterEach(async () => {
 });
 const a = { id: "a", title: "Alpha", cwd: "/a", blocks: [], busy: true } as unknown as Session;
 const b = { id: "b", title: "Beta", cwd: "/b", blocks: [] } as unknown as Session;
-async function setup(initial = a, initialSessions = [a, b]) {
+async function setup(initial = a, initialSessions = [a, b], start = true) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   document.body.append(container);
@@ -429,13 +446,42 @@ async function setup(initial = a, initialSessions = [a, b]) {
     onStop = vi.fn();
   const render = async (activeId: string, sessions = [a, b]) =>
     act(async () =>
-      root.render(createElement(VoiceCompanion, { activeId, sessions, onSubmit, onStop })),
+      root.render(
+        createElement(VoiceCompanion, {
+          activeId,
+          sessions,
+          onSubmit,
+          onStop,
+        }),
+      ),
     );
   await render(initial.id, initialSessions);
-  await click("Voice companion");
-  await act(async () => container.querySelector<HTMLButtonElement>(START_CONTROL)!.click());
+  if (start) {
+    await click("Voice companion");
+    await act(async () => container.querySelector<HTMLButtonElement>(START_CONTROL)!.click());
+  }
   return { render, onSubmit, onStop };
 }
+
+it("opens the companion and starts Talk when the wake phrase is heard during keyboard idle", async () => {
+  presence.value = "idle";
+  presence.native = "idle";
+  await setup(a, [a, b], false);
+  await act(async () => window.dispatchEvent(new CustomEvent(VOICE_WAKE_EVENT)));
+  expect(container.querySelector('section[aria-label="Voice companion"]')).not.toBeNull();
+  expect(presence.revealWindow).toHaveBeenCalledOnce();
+  expect(mock.connect).toHaveBeenCalledOnce();
+  expect(mock.close).not.toHaveBeenCalled();
+});
+
+it("does not start Talk when the computer locks during wake handoff", async () => {
+  presence.native = "away";
+  await setup(a, [a, b], false);
+  await act(async () => window.dispatchEvent(new CustomEvent(VOICE_WAKE_EVENT)));
+  expect(mock.connect).not.toHaveBeenCalled();
+  expect(presence.revealWindow).not.toHaveBeenCalled();
+  expect(container.querySelector('section[aria-label="Voice companion"]')).toBeNull();
+});
 it("keeps remote Project voice available without claiming local persisted history", async () => {
   const remote = { ...a, id: "remote-a", cwd: "remote://paired/repo" };
   await setup(remote, [remote]);
@@ -583,7 +629,7 @@ it("clears conversational engagement when the microphone is paused", async () =>
   await speech("Orada mısın?");
   presence.value = "idle";
   await render("a");
-  await click("Pause mic");
+  await click("Mute microphone");
   expect(mock.close).toHaveBeenCalledOnce();
 });
 it("omits unheard local speech after a newer admitted request", async () => {
@@ -835,6 +881,7 @@ it("delivers the prepared local brief to the onset target while retaining origin
   await render("b");
   await speech("Bu sorunu düzelt, ayarları da koru", binding);
   expect(onSubmit).toHaveBeenCalledExactlyOnceWith("a", brief);
+  await click("Conversation");
   expect(container.textContent).toContain("Bu sorunu düzelt, ayarları da koru");
   await render("a");
   mock.converse.mockResolvedValueOnce({ action: "reply", reply: "Hangi kontrol?" });
@@ -998,6 +1045,13 @@ it("retains a newer correction when an earlier local submission resolves late", 
   expect(onSubmit).toHaveBeenCalledTimes(1);
 });
 
+async function acceptCloudSpeech(utterance: string) {
+  await act(() => {
+    mock.realtime.captureTurn()();
+    mock.realtime.transcript(utterance);
+  });
+}
+
 it.each(["local", "openai"] as const)(
   "%s blocks rephrased duplicate handoffs and validates text without truncation",
   async (mode) => {
@@ -1007,7 +1061,7 @@ it.each(["local", "openai"] as const)(
       await speech("Fix that and keep the settings");
       execute = mock.assistant.mock.lastCall![0].execute;
     } else {
-      mock.realtime.captureTurn()();
+      await acceptCloudSpeech("Fix that and keep the settings");
       execute = mock.realtime.tool;
     }
     expect(await execute("submit_work", { text: "x".repeat(16001) })).toMatchObject({
@@ -1032,12 +1086,13 @@ it.each(["local", "openai"] as const)(
 
 it("cancels deferred cloud handoff when a newer accepted turn replaces its target", async () => {
   const { render, onSubmit } = await setupGlobal();
-  mock.realtime.captureTurn()();
+  await acceptCloudSpeech("Fix Alpha");
   await render("b", [a, b], "/b");
   let obsolete!: Promise<any>;
   await act(async () => {
     obsolete = mock.realtime.tool("submit_work", { text: "Fix Alpha" });
     mock.realtime.captureTurn()();
+    mock.realtime.transcript("Fix Beta");
   });
   expect(await obsolete).toEqual({ accepted: false });
   expect(onSubmit).not.toHaveBeenCalled();
@@ -1054,7 +1109,7 @@ it("keeps the true cloud receipt when a newer turn arrives after dispatch began"
         delivered = resolve;
       }) as any,
   );
-  mock.realtime.captureTurn()();
+  await acceptCloudSpeech("Fix Alpha");
   const pending = mock.realtime.tool("submit_work", { text: "Fix Alpha" });
   await act(async () => {
     await Promise.resolve();
@@ -1144,12 +1199,12 @@ it("retires the expanded turn menu on collapse and keeps the real mode selected 
   expect(document.querySelector('[role="menu"]')).toBeNull();
   expect(container.querySelectorAll('[aria-label="More voice options"]')).toHaveLength(1);
   await click("More voice options");
-  let options = [...document.querySelectorAll('[role="menuitemradio"]')];
-  expect(options.map((option) => option.getAttribute("aria-checked"))).toEqual(["false", "true"]);
+  // The turn-ending choice lives on the expanded dock, not in the pill's menu.
+  expect(document.querySelector('[role="menuitemradio"]')).toBeNull();
   await click("Expand voice companion");
   expect(document.querySelector('[role="menu"]')).toBeNull();
   await click("Reply when I pause");
-  options = [...document.querySelectorAll('[role="menuitemradio"]')];
+  const options = [...document.querySelectorAll('[role="menuitemradio"]')];
   expect(options.map((option) => option.getAttribute("aria-checked"))).toEqual(["false", "true"]);
   expect(mock.finishTurn).not.toHaveBeenCalled();
   expect(mock.connect).toHaveBeenCalledOnce();
@@ -1161,6 +1216,9 @@ it("compact mode shows the latest spoken line beside a borderless orb", async ()
   await click("Compact voice companion");
   const handle = container.querySelector<HTMLElement>('button[aria-label^="Move voice window"]')!;
   expect(handle.dataset.buttonVariant).toBe("ghost");
+  // Regression #312: the name is short; the arrow-key instruction lives in the description.
+  expect(handle.getAttribute("aria-label")).toBe("Move voice window");
+  expect(handle.getAttribute("aria-description")).toMatch(/Use arrow keys to reposition\./);
   await speech("How are the tests?");
   const title = container.querySelector("h2")!.closest("[data-section-label]");
   expect(title?.nextElementSibling?.textContent).toBe("Tests are passing.");
@@ -1203,11 +1261,14 @@ it("keeps the panel in the app when the floating window cannot open", async () =
     await setup();
     await floatOut();
     expect(container.querySelector("section")).not.toBeNull();
-    // The error is a header mark that tints the card; its message is visible in the body.
-    expect(container.querySelector("[data-voice-error]")).not.toBeNull();
     const alert = "Voice needs attention: Window creation failed";
+    expect(container.querySelector("[data-voice-error]")).toBeNull();
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(alert);
-    expect(container.textContent).toContain("Window creation");
+    await click("Compact voice companion");
+    const mark = container.querySelector<HTMLButtonElement>("[data-voice-error]")!;
+    expect(mark.getAttribute("aria-label")).toBe("Voice needs attention");
+    await act(() => mark.click());
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(alert);
     const ok = [...container.querySelectorAll("button")].find((b) => b.textContent === "Dismiss")!;
     await act(() => ok.click());
     expect(container.querySelector("[data-voice-error]")).toBeNull();
@@ -1256,6 +1317,7 @@ it("uses the cloud companion for Grok Voice and routes its tools through the sam
     expect.objectContaining({ summary: "", disclosureCurrent: expect.any(Function) }),
   );
   expect(await mock.realtime.tool("session_context", {})).toMatchObject({ title: "Alpha" });
+  await acceptCloudSpeech("Fix login");
   expect(await mock.realtime.tool("submit_work", { text: " Fix login " })).toEqual({
     accepted: true,
   });
@@ -1282,11 +1344,40 @@ it("shows the Host's reason when the cloud companion cannot get a credential", a
   expect(container.textContent).toContain("Start voice");
 });
 
+// Regression: a Host step that never answered left the companion on "Connecting voice…"
+// forever, with no error and no way to tell which step stalled.
+it("times out a Host step that never answers and recovers instead of staying connecting", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    localStorage.setItem("bycoda.voice", JSON.stringify({ enabled: true, mode: "openai" }));
+    mock.realtimeSecret.mockImplementationOnce(() => new Promise<never>(() => {}));
+    await setup();
+    expect(mock.realtimeConnect).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(26_000);
+    });
+    // The stalled credential step expired, and the recovery attempt connected.
+    expect(mock.realtimeSecret).toHaveBeenCalledTimes(2);
+    expect(mock.realtimeConnect).toHaveBeenCalledOnce();
+    expect(container.textContent).not.toContain("Connecting voice");
+    expect(warn).toHaveBeenCalledWith(
+      "[voice.connection]",
+      "openai",
+      expect.objectContaining({ kind: "step-timeout", step: "secret" }),
+    );
+  } finally {
+    warn.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
 it("picks the voice session from the panel and keeps it while the active session changes", async () => {
   const { render, onSubmit } = await setup();
   // The session picker lists sessions with their project; choosing one pins it.
   const picker = container.querySelector<HTMLButtonElement>('button[aria-label^="Voice session"]');
-  expect(picker?.textContent).toBe("Alpha");
+  // Unpinned, the picker follows the active session.
+  expect(picker?.textContent).toBe("Follow active session");
   await act(async () => picker!.click());
   const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((item) =>
     item.textContent?.includes("Beta"),
@@ -1317,6 +1408,8 @@ async function setupGlobal(
   activeId: string | null = "a",
   mode: "local" | "openai" | "grok" = "openai",
   savedScope: "global" | "project" | null = "global",
+  onWorkspaceOutlet?: (value: VoiceWorkspaceOutlet | undefined) => void,
+  projects: { path: string; name?: string }[] = [{ path: "/a" }, { path: "/b" }],
 ) {
   if (savedScope) localStorage.setItem("bycoda.voice.scope", savedScope);
   else localStorage.removeItem("bycoda.voice.scope");
@@ -1353,7 +1446,8 @@ async function setupGlobal(
           onSubmit,
           onStop,
           workspace,
-          projects: [{ path: "/a" }, { path: "/b" }],
+          onWorkspaceOutlet,
+          projects,
           projectPath,
           ensureToolSession,
           assistantSession: { ...a, id: assistantId, busy: false },
@@ -1365,6 +1459,16 @@ async function setupGlobal(
   await act(async () => container.querySelector<HTMLButtonElement>(START_CONTROL)!.click());
   return { render, workspace, onSubmit, onStop, ensureToolSession };
 }
+
+it("explains how to invoke a catalog label without dispatching a tool", async () => {
+  await setupGlobal();
+  const result = await mock.realtime.tool("conversation_crews_schema", {});
+  expect(result).toMatchObject({
+    status: "failed",
+    error: expect.stringContaining("app_tool_call"),
+  });
+  expect(mock.toolCall).not.toHaveBeenCalled();
+});
 it.each(["local", "openai", "grok"] as const)(
   "restarts %s voice after a previous global participant becomes private",
   async (mode) => {
@@ -1407,7 +1511,7 @@ it("keeps saved Project local audio through project/config navigation and binds 
   const original = mock.assistant.mock.lastCall![0];
   await original.execute("submit_work", { text: "Alpha work" });
   expect(onSubmit).toHaveBeenLastCalledWith("a", "Alpha work");
-  await speech("Now read Beta");
+  await speech("Now fix Beta");
   await mock.assistant.mock.lastCall![0].execute("submit_work", { text: "Beta work" });
   expect(onSubmit).toHaveBeenLastCalledWith("b", "Beta work");
   const writes = assistantHost.request.mock.calls
@@ -1416,7 +1520,7 @@ it("keeps saved Project local audio through project/config navigation and binds 
   expect(writes).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ threadId: "pa", text: "Finish my Alpha request" }),
-      expect.objectContaining({ threadId: "pb", text: "Now read Beta" }),
+      expect.objectContaining({ threadId: "pb", text: "Now fix Beta" }),
     ]),
   );
   expect(mock.close).not.toHaveBeenCalled();
@@ -1484,6 +1588,732 @@ it("keeps cloud audio/transcript through project and scope changes without widen
   expect(mock.toolCall.mock.lastCall![0]).not.toHaveProperty("sessionId");
 });
 
+it("admits voice view changes only in an active spoken turn", async () => {
+  await setupGlobal();
+  const action = "workspace.voice.set_view";
+  const select = (input: Record<string, unknown>, requestId: string) =>
+    mock.realtime.tool("app_tool_call", { family: "workspace", action, input, requestId });
+  await act(async () => {
+    await expect(select({ mode: "fullscreen" }, "before-speech")).rejects.toThrow();
+  });
+  await act(() => {
+    mock.realtime.captureTurn()();
+    mock.realtime.transcript("Switch to full screen.");
+  });
+  await act(async () => {
+    await expect(select({ mode: "mini", restart: true }, "invalid-mode")).rejects.toThrow(
+      "Choose fullscreen, window or mini.",
+    );
+  });
+  expect(container.querySelector("[data-compact]")).toBeNull();
+  await act(async () => {
+    expect(await select({ mode: "fullscreen" }, "full")).toMatchObject({ status: "completed" });
+  });
+  expect(container.querySelector("[data-full-screen]")).not.toBeNull();
+  await act(async () => {
+    expect(await select({ mode: "window" }, "window")).toMatchObject({ status: "completed" });
+  });
+  expect(container.querySelector("[data-full-screen], [data-compact]")).toBeNull();
+  await act(async () => {
+    expect(await select({ mode: "mini" }, "mini")).toMatchObject({ status: "completed" });
+  });
+  expect(container.querySelector("[data-full-screen]")).toBeNull();
+  expect(container.querySelector("[data-compact]")).not.toBeNull();
+  expect(mock.realtimeConnect).toHaveBeenCalledOnce();
+  expect(mock.close).not.toHaveBeenCalled();
+});
+
+it("moves a detached call to full screen without restarting voice", async () => {
+  overlay.native = true;
+  try {
+    await setupGlobal();
+    await floatOut();
+    expect(overlay.host?.detached).toBe(true);
+    const closesBeforeSwitch = overlay.close.mock.calls.length;
+    await act(() => {
+      mock.realtime.captureTurn()();
+      mock.realtime.transcript("Go full screen.");
+    });
+    const activeConnection = mock.realtime;
+    const connectsBeforeSwitch = mock.realtimeConnect.mock.calls.length;
+    await act(async () => {
+      expect(
+        await mock.realtime.tool("app_tool_call", {
+          family: "workspace",
+          action: "workspace.voice.set_view",
+          input: { mode: "fullscreen" },
+          requestId: "detached-to-fullscreen",
+        }),
+      ).toMatchObject({ status: "completed", mode: "fullscreen" });
+    });
+    expect(container.querySelector("[data-full-screen][data-live-call]")).not.toBeNull();
+    expect(overlay.host?.detached).toBe(false);
+    expect(overlay.close).toHaveBeenCalledTimes(closesBeforeSwitch + 1);
+    expect(mock.realtime).toBe(activeConnection);
+    expect(mock.realtimeConnect).toHaveBeenCalledTimes(connectsBeforeSwitch);
+    expect(mock.close).not.toHaveBeenCalled();
+  } finally {
+    overlay.native = false;
+  }
+});
+
+it("routes the explicit project and session to the fullscreen drawer and confirms its mount", async () => {
+  const mounted = document.createElement("div");
+  mounted.dataset.workspaceSessionId = b.id;
+  mounted.dataset.sessionProject = b.cwd;
+  const pane = document.createElement("div");
+  pane.dataset.sessionDrop = b.id;
+  mounted.append(pane);
+  const outlet = vi.fn((destination: VoiceWorkspaceOutlet | undefined) => {
+    if (destination?.kind === "session" && destination.projectPath === b.cwd)
+      destination.element.append(mounted);
+    else mounted.remove();
+  });
+  const { workspace } = await setupGlobal(a.id, "openai", "global", outlet);
+  workspace.execute.mockImplementationOnce(async () => ({
+    status: "accepted",
+    action: "workspace.sessions.open",
+    sessionId: b.id,
+    projectPath: b.cwd,
+  }));
+  await act(() => {
+    mock.realtime.captureTurn()();
+    mock.realtime.transcript("Open Beta's session in fullscreen.");
+  });
+  await click("Full screen");
+  await act(async () => {
+    expect(
+      await mock.realtime.tool("app_tool_call", {
+        family: "workspace",
+        action: "workspace.sessions.open",
+        requestId: "open-beta",
+        input: { projectPath: b.cwd, sessionId: b.id },
+      }),
+    ).toMatchObject({ status: "completed", projectPath: b.cwd, sessionId: b.id });
+  });
+  expect(workspace.execute).toHaveBeenCalledWith(
+    "workspace.sessions.open",
+    expect.objectContaining({ projectPath: b.cwd, sessionId: b.id }),
+  );
+  expect(container.querySelector("[data-work-panel] [data-session-drop='b']")).toBe(pane);
+  expect(mock.realtimeConnect).toHaveBeenCalledOnce();
+});
+
+it("routes the exact session's Conversation Tools by mode and by explicit surface", async () => {
+  const pane = document.createElement("section");
+  pane.dataset.toolsPaneId = "beta-browser";
+  const tools = vi.fn(async () => {
+    container.append(pane);
+    return {
+      open: true,
+      visible: true,
+      placement: "right" as const,
+      openedPanelId: "beta-browser",
+      panels: [
+        { id: "beta-logs", tab: "logs" as const, machine: "project", mounted: true, visible: true },
+        {
+          id: "beta-browser",
+          tab: "browser" as const,
+          machine: "project",
+          mounted: true,
+          visible: true,
+        },
+      ],
+    };
+  });
+  const unregister = registerToolsUiControl(tools);
+  try {
+    const { workspace } = await setupGlobal(a.id, "openai", "global", (outlet) => {
+      (outlet?.kind === "tools" ? outlet.element : container).append(pane);
+    });
+    await act(() => {
+      mock.realtime.captureTurn()();
+      mock.realtime.transcript("Keep Mini and open Beta's in-app browser.");
+    });
+    const invoke = (action: string, input: Record<string, unknown>, requestId: string) =>
+      mock.realtime.tool("app_tool_call", { family: "workspace", action, input, requestId });
+    await act(async () => {
+      await invoke("workspace.voice.set_view", { mode: "mini" }, "keep-mini");
+      await expect(
+        invoke(
+          "workspace.conversation_tools.open",
+          { projectPath: b.cwd, tab: "browser" },
+          "ambiguous-beta",
+        ),
+      ).rejects.toThrow("Which session in that project");
+      expect(workspace.execute).not.toHaveBeenCalled();
+      expect(
+        await invoke(
+          "workspace.conversation_tools.open",
+          { projectPath: b.cwd, sessionId: b.id, tab: "browser" },
+          "beta-browser",
+        ),
+      ).toMatchObject({ status: "completed", projectPath: b.cwd, sessionId: b.id });
+    });
+    expect(tools).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: b.cwd, sessionId: b.id }),
+      "ui.tools.open",
+      { tab: "browser", placement: "right" },
+    );
+    expect(container.querySelector("[data-compact]")).not.toBeNull();
+    expect(container.querySelector("[data-work-panel]")).toBeNull();
+    expect(container.querySelector("[data-tools-pane-id='beta-browser']")).toBe(pane);
+    await act(async () => {
+      expect(
+        await invoke(
+          "workspace.conversation_tools.open",
+          { projectPath: b.cwd, sessionId: b.id, tab: "browser", surface: "voice" },
+          "beta-browser-voice",
+        ),
+      ).toMatchObject({ status: "completed" });
+    });
+    expect(container.querySelector("[data-work-panel] [data-tools-pane-id='beta-browser']")).toBe(
+      pane,
+    );
+    await act(async () => {
+      expect(
+        await invoke(
+          "workspace.conversation_tools.open",
+          { projectPath: b.cwd, sessionId: b.id, tab: "browser", surface: "project" },
+          "beta-browser-project",
+        ),
+      ).toMatchObject({ status: "completed" });
+    });
+    expect(container.querySelector("[data-full-screen]")).toBeNull();
+    expect(container.querySelector("[data-tools-pane-id='beta-browser']")).toBe(pane);
+    expect(mock.realtimeConnect).toHaveBeenCalledOnce();
+  } finally {
+    unregister();
+  }
+});
+
+it("reveals a requested result from Window and keeps it available when closing and reopening the drawer", async () => {
+  await setupGlobal("a", "openai", "global");
+  await act(() => {
+    mock.realtime.captureTurn()();
+    mock.realtime.transcript("Show the work beside this call.");
+  });
+  const action = "workspace.live_work.present";
+  const list = () => mock.realtime.tool("app_tools_list", { family: "workspace" });
+  const reveal = (requestId: string) =>
+    mock.realtime.tool("app_tool_call", {
+      family: "workspace",
+      action,
+      requestId,
+      input: { title: "Test results", summary: "Two packages finished." },
+    });
+  expect(container.querySelector("[data-work-panel]")).toBeNull();
+  expect(JSON.stringify(await list())).toContain(action);
+  await act(async () => {
+    expect(await reveal("reveal-voice-work")).toMatchObject({ action, status: "completed" });
+  });
+  expect(container.querySelector("[data-work-panel]")).not.toBeNull();
+  await click("Live results");
+  expect(container.querySelector("[data-work-panel]")).toBeNull();
+  await click("Live results");
+  expect(container.querySelector("[data-work-panel]")).not.toBeNull();
+  await click("Conversation");
+  await act(async () => {
+    expect(await reveal("fresh-voice-work")).toMatchObject({ action, status: "completed" });
+  });
+  expect(
+    container.querySelector(
+      "[data-work-panel] button[aria-expanded='true'][aria-label='Live results']",
+    ),
+  ).not.toBeNull();
+  await act(() => {
+    mock.realtime.captureTurn()();
+    mock.realtime.transcript("Thanks for checking.");
+  });
+  // An owner-requested view stays through follow-up turns until it is replaced or the call ends.
+  expect(
+    container.querySelector("[data-work-panel] [data-voice-presented-version]"),
+  ).not.toBeNull();
+  await click("Exit full screen");
+  expect(container.querySelector("[data-full-screen]")).toBeNull();
+  expect(mock.realtimeConnect).toHaveBeenCalledOnce();
+});
+
+describe("presented custom views", () => {
+  const writeText = vi.fn(async (_text: string) => {});
+  const action = "workspace.live_work.present";
+  const present = (input: Record<string, unknown>, requestId: string) =>
+    mock.realtime.tool("app_tool_call", { family: "workspace", action, requestId, input });
+  const panelButton = (name: string) =>
+    [...container.querySelectorAll<HTMLButtonElement>("[data-work-panel] button")].find(
+      (item) => item.getAttribute("aria-label") === name || item.textContent === name,
+    );
+  const note = (text: string) => ({
+    title: "Release note",
+    blocks: [
+      { kind: "text", text: "Here is your draft." },
+      { kind: "copy", label: "Draft", text },
+    ],
+  });
+  beforeEach(() => {
+    writeText.mockClear();
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+  });
+
+  it("returns the exact shared component catalog through voice tool discovery", async () => {
+    await setupGlobal();
+    await acceptCloudSpeech("Show me a form with a label and a button.");
+    const list = await mock.realtime.tool("app_tools_list", { family: "workspace" });
+    expect(list).toMatchObject({
+      tools: expect.arrayContaining([
+        {
+          family: "workspace",
+          action: "workspace.live_work.catalog",
+          name: "workspace_live_work_catalog",
+          description: expect.any(String),
+          inputSchema: expect.any(Object),
+        },
+      ]),
+    });
+    const result = await mock.realtime.tool("app_tool_call", {
+      family: "workspace",
+      action: "workspace.live_work.catalog",
+      requestId: "component-catalog",
+      input: { names: ["Button", "TextField"] },
+    });
+    expect(result).toMatchObject({
+      components: expect.arrayContaining([
+        expect.objectContaining({
+          name: "Button",
+          props: expect.any(Object),
+          example: expect.any(Object),
+        }),
+        expect.objectContaining({
+          name: "TextField",
+          props: expect.any(Object),
+          example: expect.any(Object),
+        }),
+      ]),
+    });
+    expect(container.querySelector("[data-full-screen]")).toBeNull();
+  });
+
+  it("shows copyable text with a working Copy and updates the same view on a follow-up", async () => {
+    await setupGlobal("a", "openai", "global");
+    await act(() => {
+      mock.realtime.captureTurn()();
+      mock.realtime.transcript("Write me a short release note I can copy.");
+    });
+    await act(async () => {
+      expect(await present(note("Ship it.\n  Indented line."), "note-1")).toMatchObject({
+        action,
+        status: "completed",
+        version: 1,
+      });
+    });
+    const view = container.querySelector("[data-work-panel] [data-voice-presented-version='1']");
+    expect(view?.textContent).toContain("Ship it.");
+    await act(async () => panelButton("Copy")!.click());
+    expect(writeText).toHaveBeenLastCalledWith("Ship it.\n  Indented line.");
+
+    await act(() => {
+      mock.realtime.captureTurn()();
+      mock.realtime.transcript("Make it shorter.");
+    });
+    expect(container.querySelector("[data-voice-presented-version='1']")).toBe(view);
+    await act(async () => {
+      expect(await present(note("Ship."), "note-2")).toMatchObject({
+        status: "completed",
+        version: 2,
+      });
+    });
+    expect(container.querySelector("[data-voice-presented-version='2']")).toBe(view);
+    expect(container.querySelectorAll("[data-voice-presented-version]")).toHaveLength(1);
+    await act(async () => panelButton("Copy")!.click());
+    expect(writeText).toHaveBeenLastCalledWith("Ship.");
+  });
+
+  it("does not report a view the owner cannot see as shown", async () => {
+    await setupGlobal("a", "openai", "global");
+    await act(() => {
+      mock.realtime.captureTurn()();
+      mock.realtime.transcript("Show the draft.");
+    });
+    await act(async () => {
+      await expect(
+        present(
+          { title: "x", blocks: [{ kind: "copy", label: "Key", text: "password: abcdefgh" }] },
+          "bad",
+        ),
+      ).rejects.toThrow();
+    });
+    expect(container.querySelector("[data-voice-presented-version]")).toBeNull();
+  });
+
+  it("runs a button through the workspace executor and leaves the call only when it opened", async () => {
+    const { workspace } = await setupGlobal("a", "openai", "global");
+    workspace.tools.push({
+      name: "workspace.usage.open",
+      description: "Open Usage",
+      parameters: { properties: {} },
+    } as never);
+    await act(() => {
+      mock.realtime.captureTurn()();
+      mock.realtime.transcript("Show a button for usage.");
+    });
+    await act(async () => {
+      await present(
+        {
+          title: "Usage",
+          blocks: [
+            {
+              kind: "actions",
+              items: [
+                {
+                  label: "Open Usage",
+                  action: "workspace.usage.open",
+                  input: { period: "month-to-date" },
+                },
+              ],
+            },
+          ],
+        },
+        "button-1",
+      );
+    });
+    workspace.execute.mockResolvedValueOnce({
+      status: "rejected",
+      error: "Usage is locked.",
+    } as never);
+    await act(async () => panelButton("Open Usage")!.click());
+    expect(workspace.execute).toHaveBeenLastCalledWith("workspace.usage.open", {
+      period: "month-to-date",
+    });
+    const panel = container.querySelector("[data-work-panel]")!;
+    expect(panel.textContent).toContain("Could not run this action.");
+    expect(panel.textContent).not.toContain("Usage is locked.");
+    await act(async () => panelButton("Details")!.click());
+    expect(document.body.textContent).toContain("Usage is locked.");
+    await act(async () => panelButton("Details")!.click());
+    expect(container.querySelector("[data-full-screen]")).not.toBeNull();
+
+    workspace.execute.mockResolvedValueOnce({ status: "completed" } as never);
+    await act(async () => panelButton("Open Usage")!.click());
+    expect(container.querySelector("[data-full-screen]")).toBeNull();
+  });
+
+  it("does not leave the call for a press whose view was replaced meanwhile", async () => {
+    const { workspace } = await setupGlobal("a", "openai", "global");
+    workspace.tools.push({
+      name: "workspace.usage.open",
+      description: "Open Usage",
+      parameters: { properties: {} },
+    } as never);
+    await act(() => {
+      mock.realtime.captureTurn()();
+      mock.realtime.transcript("Show a button for usage.");
+    });
+    const usageButton = {
+      kind: "actions",
+      items: [
+        { label: "Open Usage", action: "workspace.usage.open", input: { period: "month-to-date" } },
+      ],
+    };
+    await act(async () => {
+      await present({ title: "Usage", blocks: [usageButton] }, "stale-1");
+    });
+    let finish: (value: never) => void = () => {};
+    workspace.execute.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+    await act(async () => panelButton("Open Usage")!.click());
+    await act(async () => {
+      await present(note("Replacement."), "stale-2");
+    });
+    await act(async () => finish({ status: "completed" } as never));
+    expect(container.querySelector("[data-full-screen]")).not.toBeNull();
+    expect(container.querySelector("[data-voice-presented-version='2']")).not.toBeNull();
+  });
+
+  it("gives a session button a fresh request ID for each press", async () => {
+    const { workspace } = await setupGlobal("a", "openai", "global");
+    workspace.tools.push({
+      name: "workspace.sessions.open",
+      description: "Open session",
+      parameters: { properties: { requestId: {} } },
+    } as never);
+    await act(() => {
+      mock.realtime.captureTurn()();
+      mock.realtime.transcript("Show a button for Beta.");
+    });
+    await act(async () => {
+      await present(
+        {
+          title: "Beta",
+          blocks: [
+            {
+              kind: "actions",
+              items: [
+                {
+                  label: "Open Beta",
+                  action: "workspace.sessions.open",
+                  input: { sessionId: b.id, projectPath: b.cwd },
+                },
+              ],
+            },
+          ],
+        },
+        "button-2",
+      );
+    });
+    workspace.execute.mockResolvedValue({ status: "rejected", error: "Closed." } as never);
+    await act(async () => panelButton("Open Beta")!.click());
+    await act(async () => panelButton("Open Beta")!.click());
+    const calls = (
+      workspace.execute.mock.calls as unknown as [string, Record<string, unknown>][]
+    ).filter(([name]) => name === "workspace.sessions.open");
+    expect(calls).toHaveLength(2);
+    expect(calls[0]![1]).toMatchObject({ sessionId: b.id, projectPath: b.cwd, surface: "project" });
+    expect(calls[0]![1].requestId).not.toBe(calls[1]![1].requestId);
+  });
+
+  it("rediscovers a Host action, runs it through the captured voice source, and leaves the panel open", async () => {
+    await setupGlobal("a", "openai", "global");
+    await acceptCloudSpeech("Start the task in this project and show its action button.");
+    const operation = {
+      family: "conversation",
+      action: "tasks.start",
+      projectPath: a.cwd,
+      input: { taskId: "task-in-alpha" },
+    };
+    await act(async () => {
+      await present(
+        {
+          title: "Task",
+          blocks: [{ kind: "actions", items: [{ label: "Start task", ...operation }] }],
+        },
+        "host-action",
+      );
+    });
+    const descriptor = { ...operation, inputSchema: { properties: { requestId: {} } } };
+    const catalog = { tools: [descriptor], total: 1, nextOffset: null, categories: [] } as never;
+    mock.discover.mockResolvedValueOnce(catalog).mockResolvedValueOnce(catalog);
+    await act(async () => panelButton("Start task")!.click());
+    expect(mock.discover).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: a.cwd, threadId: "global" }),
+      expect.objectContaining({ query: "tasks.start" }),
+    );
+    expect(mock.toolCall).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ cwd: a.cwd, threadId: "global" }),
+      expect.objectContaining({
+        family: "conversation",
+        action: "tasks.start",
+        input: { taskId: "task-in-alpha", requestId: expect.any(String) },
+      }),
+    );
+    expect(container.querySelector("[data-full-screen]")).not.toBeNull();
+    await act(async () => panelButton("Start task")!.click());
+    expect(mock.toolCall).toHaveBeenCalledOnce();
+  });
+
+  it("rejects controls from a previous spoken turn before discovery or dispatch", async () => {
+    await setupGlobal("a", "openai", "global");
+    await acceptCloudSpeech("Show me a status button.");
+    await act(async () => {
+      await present(
+        {
+          title: "Task",
+          blocks: [
+            {
+              kind: "actions",
+              items: [
+                {
+                  label: "Status",
+                  family: "conversation",
+                  action: "tasks.get",
+                  projectPath: a.cwd,
+                  input: { taskId: "task-in-alpha" },
+                },
+              ],
+            },
+          ],
+        },
+        "host-status",
+      );
+    });
+    await acceptCloudSpeech("Now answer a different question.");
+    await act(async () => panelButton("Status")!.click());
+    expect(mock.discover).not.toHaveBeenCalled();
+    expect(mock.toolCall).not.toHaveBeenCalled();
+  });
+
+  it("keeps a queued draft receipt for the same input and dispatches edited values as a fresh operation", async () => {
+    const { workspace } = await setupGlobal("a", "openai", "global");
+    await acceptCloudSpeech("Open a session and write a draft with these details.");
+    const draft = (label: string, prompt: string) => ({
+      label,
+      family: "workspace",
+      action: "workspace.sessions.create",
+      input: { prompt, projectPath: a.cwd, submit: false },
+    });
+    await act(async () => {
+      await present(
+        {
+          title: "Draft",
+          blocks: [
+            {
+              kind: "actions",
+              items: [draft("First draft", "Draft one"), draft("Updated draft", "Draft two")],
+            },
+          ],
+        },
+        "edit-input",
+      );
+    });
+    for (const label of ["First draft", "First draft", "Updated draft"])
+      await act(async () => panelButton(label)!.click());
+    const calls = workspace.execute.mock.calls as unknown as [string, Record<string, unknown>][];
+    expect(calls).toEqual([
+      [
+        "workspace.sessions.create",
+        expect.objectContaining({ prompt: "Draft one", requestId: expect.any(String) }),
+      ],
+      [
+        "workspace.sessions.create",
+        expect.objectContaining({ prompt: "Draft two", requestId: expect.any(String) }),
+      ],
+    ]);
+    expect(calls[0][1].requestId).not.toBe(calls[1][1].requestId);
+    expect(container.querySelector("[data-full-screen]")).not.toBeNull();
+  });
+
+  it("shows a completed background read in its current panel without navigating", async () => {
+    await setupGlobal("a", "openai", "global");
+    await acceptCloudSpeech("Show me a button to read that task.");
+    const operation = {
+      family: "conversation",
+      action: "tasks.get",
+      projectPath: a.cwd,
+      input: { taskId: "task-a" },
+    };
+    await act(async () => {
+      await present(
+        {
+          title: "Task",
+          blocks: [{ kind: "actions", items: [{ ...operation, label: "Read task" }] }],
+        },
+        "background-read",
+      );
+    });
+    mock.discover.mockResolvedValueOnce({
+      tools: [{ ...operation, inputSchema: {}, annotations: { readOnlyHint: true } }],
+      total: 1,
+      nextOffset: null,
+      categories: [],
+    } as never);
+    mock.toolCall.mockResolvedValueOnce({
+      status: "completed",
+      title: "Returned task detail",
+    } as never);
+    await act(async () => panelButton("Read task")!.click());
+    expect(container.querySelector("[data-work-panel]")?.textContent).toContain(
+      "Returned task detail",
+    );
+    expect(container.querySelector("[data-full-screen]")).not.toBeNull();
+  });
+
+  it("keeps the view across a full-screen toggle", async () => {
+    await setupGlobal("a", "openai", "global");
+    await act(() => {
+      mock.realtime.captureTurn()();
+      mock.realtime.transcript("Show the draft.");
+    });
+    await act(async () => {
+      await present(note("Ship it."), "note-end");
+    });
+    expect(container.querySelector("[data-voice-presented-version]")).not.toBeNull();
+    await click("Exit full screen");
+    expect(container.querySelector("[data-voice-presented-version]")).toBeNull();
+    await click("Full screen");
+    expect(container.querySelector("[data-voice-presented-version]")).not.toBeNull();
+  });
+});
+
+it.each(["submit_work", "workspace.sessions.submit", "workspace.sessions.create"])(
+  "shows coding outcomes from %s and drops them on unrelated work",
+  async (submit) => {
+    const { render, workspace } = await setupGlobal();
+    const creating = submit === "workspace.sessions.create";
+    const workSession = creating ? { ...b, id: "new-session" } : a;
+    const command: Session["blocks"][number] = {
+      id: "finished-build",
+      role: "tool",
+      text: "",
+      tool: {
+        status: "completed",
+        preview: { kind: "shell", inspection: { kind: "command", text: "pnpm build" } },
+      },
+    };
+    const oldBlocks: Session["blocks"] = [
+      { id: "old-chat", role: "user", text: "Run the build" },
+      command,
+    ];
+    await render("a", [{ ...a, blocks: oldBlocks }, b]);
+    await click("Full screen");
+    await act(() => {
+      mock.realtime.captureTurn()();
+      mock.realtime.transcript("Run the build.");
+    });
+    await act(async () => {
+      if (submit === "submit_work") {
+        expect(await mock.realtime.tool(submit, { text: "Run the build" })).toEqual({
+          accepted: true,
+        });
+      } else {
+        const receipt = {
+          action: submit,
+          status: "accepted",
+          projectPath: workSession.cwd,
+          sessionId: workSession.id,
+          ...(creating ? { submitted: true } : { accepted: true }),
+        };
+        workspace.execute.mockImplementationOnce(async () => receipt);
+        expect(
+          await mock.realtime.tool("app_tool_call", {
+            family: "workspace",
+            action: submit,
+            requestId: "fixture-work",
+            input: {
+              projectPath: workSession.cwd,
+              ...(creating
+                ? { prompt: "Run the build", submit: true }
+                : { sessionId: a.id, text: "Run the build" }),
+            },
+          }),
+        ).toEqual(receipt);
+      }
+    });
+    expect(container.querySelector("[data-work-panel]")).toBeNull();
+    await render("a", [
+      {
+        ...workSession,
+        blocks: [
+          ...(creating ? [] : oldBlocks),
+          { id: "voice-build", role: "user", text: "Run the build" },
+          { ...command, id: "new-build" },
+        ],
+      },
+      b,
+    ]);
+    expect(container.querySelector("[data-work-panel]")).not.toBeNull();
+    await render("a", [
+      {
+        ...workSession,
+        blocks: [
+          ...oldBlocks,
+          { id: "typed-chat", role: "user", text: "Check project settings" },
+          command,
+        ],
+      },
+      b,
+    ]);
+    expect(container.querySelector("[data-work-panel]")).toBeNull();
+  },
+);
+
 it("waits for the original runtime registration before connecting the cloud provider", async () => {
   const original = assistantHost.request.getMockImplementation()!;
   const ack = Promise.withResolvers<{ ok: boolean }>();
@@ -1535,6 +2365,7 @@ it("starts global cloud voice without an active coding session and exposes works
   expect(await mock.realtime.tool("app_tools_list", { family: "workspace" })).toMatchObject({
     tools: [{ action: "workspace.sessions.create" }],
   });
+  await acceptCloudSpeech("Create a session for Beta");
   await mock.realtime.tool("app_tool_call", {
     family: "workspace",
     action: "workspace.sessions.create",
@@ -1569,7 +2400,7 @@ it("keeps the local onset session and project for application tools while ASR aw
   // Match LocalVoice's copy of the onset binding; symbols must survive it too.
   const binding = { ...mock.callbacks.start() };
   await render("b", [a, b], "/b");
-  await speech("Read my draft", binding);
+  await speech("Read my draft and fix Alpha", binding);
   const request = mock.assistant.mock.lastCall![0];
   expect(request.session.id).toBe("a");
   expect(request.context).toMatchObject({ threadId: "global", projectIds: ["pa", "pb"] });
@@ -1629,6 +2460,7 @@ it("binds cloud compatibility and application tools to onset across pending ASR 
   const accept = mock.realtime.captureTurn();
   await render("b", [a, b], "/b");
   accept();
+  await act(() => mock.realtime.transcript("Fix Alpha"));
   expect(await mock.realtime.tool("app_context", {})).toMatchObject({
     sessionId: "a",
     projectPath: "/a",
@@ -1648,6 +2480,7 @@ it("does not retarget a no-session cloud turn when a coding tab appears later", 
   const accept = mock.realtime.captureTurn();
   await render("b", [a, b], "/b");
   accept();
+  await act(() => mock.realtime.transcript("Fix the defect"));
   expect(await mock.realtime.tool("app_context", {})).toMatchObject({
     sessionId: undefined,
     projectPath: "/a",
@@ -1810,7 +2643,7 @@ it("reconnects a recoverable cloud drop with fresh credentials and text context 
   await act(async () => previous.transcript("Continue my work"));
   vi.useFakeTimers();
   await act(async () => previous.error("Connection closed", true, { recoverable: true }));
-  expect(container.textContent).toContain("Reconnecting...");
+  expect(container.textContent).toContain("Reconnecting…");
   await act(async () => vi.advanceTimersByTimeAsync(1000));
   expect(mock.realtimeSecret).toHaveBeenCalledTimes(2);
   expect(mock.realtimeConnect).toHaveBeenLastCalledWith(
@@ -2010,7 +2843,7 @@ it("recovers unconfirmed provider cleanup with fresh credentials while retaining
   const { onSubmit } = await setupGlobal("a", "openai", "project");
   const retired = mock.realtime;
   await act(() => mock.realtime.transcript("Keep my accepted request"));
-  await click("Pause mic");
+  await click("Mute microphone");
   vi.useFakeTimers();
   await act(() =>
     mock.realtime.error("Voice input cleanup was not confirmed. Start voice again.", true, {
@@ -2018,7 +2851,7 @@ it("recovers unconfirmed provider cleanup with fresh credentials while retaining
       code: "input_cleanup_unconfirmed",
     }),
   );
-  expect(container.textContent).toContain("Reconnecting...");
+  expect(container.textContent).toContain("Reconnecting…");
   await act(async () => vi.advanceTimersByTimeAsync(1000));
   expect(mock.realtimeSecret).toHaveBeenCalledTimes(2);
   expect(mock.realtimeConnect).toHaveBeenCalledTimes(2);
@@ -2027,9 +2860,9 @@ it("recovers unconfirmed provider cleanup with fresh credentials while retaining
     text: "Keep my accepted request",
   });
   expect(mock.mute).toHaveBeenLastCalledWith(true);
-  expect(container.querySelector('[aria-label="Resume"]')?.getAttribute("aria-pressed")).toBe(
-    "true",
-  );
+  expect(
+    container.querySelector('[aria-label="Mute microphone"]')?.getAttribute("aria-pressed"),
+  ).toBe("true");
   expect(mock.toolCall).not.toHaveBeenCalled();
   await act(() => retired.reply("Retired provider reply"));
   expect(container.textContent).not.toContain("Retired provider reply");
@@ -2037,6 +2870,61 @@ it("recovers unconfirmed provider cleanup with fresh credentials while retaining
     retired.tool("submit_work", { text: "Retired provider work" }),
   ).resolves.toMatchObject({ error: "The voice connection is no longer active." });
   expect(onSubmit).not.toHaveBeenCalled();
+});
+it("asks once for speech lost before a commit ACK and keeps the last accepted request", async () => {
+  const { onSubmit } = await setupGlobal("a", "openai", "project");
+  await act(() => mock.realtime.transcript("Open the game tab"));
+  mock.speak.mockClear();
+  vi.useFakeTimers();
+  await act(() =>
+    mock.realtime.error("Voice connection is too slow. Start voice again.", true, {
+      recoverable: true,
+      code: "audio-commit-unacknowledged",
+      speechLost: true,
+    }),
+  );
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(mock.speak).toHaveBeenCalledOnce();
+  const notice = String(mock.speak.mock.calls[0][0]);
+  expect(notice).toContain("never received");
+  expect(notice).toContain("Open the game tab");
+  expect(mock.toolCall).not.toHaveBeenCalled();
+  expect(onSubmit).not.toHaveBeenCalled();
+});
+it("repeats an unheard recovery notice after a second drop, then stops once it played", async () => {
+  await setupGlobal("a", "openai", "project");
+  await act(() => mock.realtime.transcript("Play some music"));
+  mock.speak.mockClear();
+  vi.useFakeTimers();
+  const drop = async (delay: number) => {
+    await act(() =>
+      mock.realtime.error("Voice connection closed.", true, { recoverable: true, code: "1006" }),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(delay));
+  };
+  await drop(1000);
+  expect(mock.speak).toHaveBeenCalledTimes(1);
+  await drop(2000);
+  expect(mock.speak).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    mock.realtime.reply("Bağlantı koptu, devam edeyim mi?", false, "r-notice");
+    mock.realtime.replyPlayed("r-notice");
+  });
+  await drop(5000);
+  expect(mock.speak).toHaveBeenCalledTimes(2);
+});
+it("resumes a long-quiet call without a first-contact session note", async () => {
+  await setupGlobal("a", "openai", "project");
+  await act(() => mock.realtime.transcript("Keep this conversation"));
+  vi.useFakeTimers();
+  vi.setSystemTime(Date.now() + 20 * 60_000);
+  await act(() =>
+    mock.realtime.error("Voice connection closed.", true, { recoverable: true, code: "1006" }),
+  );
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  const turns = mock.realtimeConnect.mock.lastCall?.[1] as { text: string }[];
+  expect(turns.some((turn) => turn.text.includes("Session note"))).toBe(false);
+  expect(turns.some((turn) => turn.text === "Keep this conversation")).toBe(true);
 });
 it.each(["cancel", "sleep", "privacy", "unmount"])(
   "cancels cleanup recovery after %s without reopening capture",
@@ -2154,8 +3042,8 @@ it("retries slowly after the fast attempts, retries on online, and Stop ends it"
     await act(async () => vi.advanceTimersByTimeAsync(delay));
   }
   await fail();
-  expect(page.textContent).toContain("Reconnecting...");
-  expect(page.textContent).not.toContain("Couldn't connect voice. Try again.");
+  expect(page.textContent).toContain("Reconnecting…");
+  expect(page.textContent).not.toContain("Couldn’t connect voice. Try again.");
   const attempts = mock.realtimeSecret.mock.calls.length;
   await act(async () => vi.advanceTimersByTimeAsync(60_000));
   expect(mock.realtimeSecret).toHaveBeenCalledTimes(attempts + 1);
@@ -2269,12 +3157,315 @@ it("dismisses an outstanding voice choice on disconnect without authorizing an a
   await expect(answer!).resolves.toEqual({ kind: "skipped" });
   expect(onSubmit).not.toHaveBeenCalled();
 });
+it("uses a normal coding session instead of substituting a Room job or the Usage screen", async () => {
+  const { workspace } = await setupGlobal();
+  await click("Full screen");
+  await acceptCloudSpeech("Session aç, orada buna bak yaz.");
+  const invoke = (family: string, action: string, input: Record<string, unknown>) =>
+    mock.realtime.tool("app_tool_call", { family, action, input, requestId: action });
+  await act(async () => {
+    await expect(mock.realtime.tool("give_jobs", { jobs: [] })).resolves.toMatchObject({
+      status: "refused",
+      intent: "normal_session",
+    });
+    await expect(mock.realtime.tool("submit_work", { text: "Buna bak" })).resolves.toMatchObject({
+      status: "refused",
+      intent: "normal_session",
+    });
+    await expect(invoke("conversation", "workspace.sessions.create", {})).resolves.toMatchObject({
+      status: "refused",
+      intent: "normal_session",
+    });
+    await expect(
+      invoke("workspace", "workspace.views.open", { view: "settings", section: "usage" }),
+    ).resolves.toMatchObject({ status: "refused" });
+    expect(workspace.execute).not.toHaveBeenCalled();
+    expect(mock.toolCall).not.toHaveBeenCalled();
+    await expect(
+      mock.realtime.tool("app_tool_call", {
+        family: "workspace",
+        action: "workspace.sessions.create",
+        input: { projectPath: "/a", prompt: "Buna bak", submit: true },
+        requestId: "unrequested-send",
+      }),
+    ).resolves.toMatchObject({ status: "refused" });
+
+    workspace.execute.mockResolvedValueOnce({
+      status: "accepted",
+      sessionId: "new-session",
+      projectPath: "/a",
+    } as never);
+    const created = (await invoke("workspace", "workspace.sessions.create", {
+      projectPath: "/a",
+      prompt: "Buna bak",
+      submit: false,
+    })) as { sessionId: string };
+    expect(workspace.execute).toHaveBeenLastCalledWith(
+      "workspace.sessions.create",
+      expect.objectContaining({ projectPath: "/a", prompt: "Buna bak", submit: false }),
+    );
+    workspace.execute.mockResolvedValueOnce({
+      status: "accepted",
+      sessionId: created.sessionId,
+      projectPath: "/a",
+    } as never);
+    await invoke("workspace", "workspace.sessions.open", {
+      projectPath: "/a",
+      sessionId: created.sessionId,
+      surface: "auto",
+    });
+  });
+  expect(workspace.execute).toHaveBeenLastCalledWith(
+    "workspace.sessions.open",
+    expect.objectContaining({ sessionId: "new-session", projectPath: "/a" }),
+  );
+  expect(container.querySelector("[data-full-screen]")).toBeNull();
+  expect(mock.realtimeConnect).toHaveBeenCalledOnce();
+});
+
+it.each([false, true, "changed", "cancelled", "reconnect", "scope"] as const)(
+  "resolves a normal-session project from the owner's next utterance (%s)",
+  async (mode) => {
+    const { workspace } = await setupGlobal("a", "openai", "global", undefined, [
+      { path: a.cwd },
+      { path: b.cwd, name: "Bycoda" },
+    ]);
+    const send = mode === true;
+    await acceptCloudSpeech(
+      send ? "Bir session’da bu konuyu araştırt." : "Session aç, orada bunu yaz.",
+    );
+    let result!: Promise<unknown>;
+    const workArgs = {
+      family: "workspace",
+      action: "workspace.sessions.create",
+      input: { prompt: "Bunu araştır", submit: send },
+      requestId: "project-choice-create",
+    };
+    await act(async () => {
+      result = mock.realtime.tool("app_tool_call", workArgs);
+    });
+    expect(workspace.execute).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Choose session project");
+    workArgs.input.prompt = "A different prompt";
+    if (mode === "cancelled") {
+      await click("Disconnect voice");
+    } else if (mode === "reconnect") {
+      await act(async () =>
+        mock.realtime.error("network", true, { recoverable: true, code: "socket-closed" }),
+      );
+    } else if (mode === "scope") {
+      const projectScope = [...container.querySelectorAll<HTMLElement>('[role="radio"]')].find(
+        (choice) => choice.textContent?.includes("Project"),
+      );
+      expect(projectScope).toBeDefined();
+      await act(() => projectScope!.click());
+    } else if (mode === "changed") {
+      await act(async () => {
+        expect(mock.realtime.interceptTranscript("Instead, open Settings.")).toBe(false);
+      });
+    } else {
+      workspace.execute.mockResolvedValueOnce({
+        status: "accepted",
+        sessionId: "created-session",
+        projectPath: b.cwd,
+      } as never);
+      await act(async () => {
+        expect(mock.realtime.interceptTranscript("Bycoda projesinde.")).toBe(true);
+      });
+    }
+    if (typeof mode === "string") {
+      await expect(result).resolves.toMatchObject({ status: "cancelled" });
+      expect(workspace.execute).not.toHaveBeenCalled();
+      return;
+    }
+    await expect(result).resolves.toMatchObject({ sessionId: "created-session" });
+    expect(
+      workspace.execute.mock.calls.filter(([action]) => action === "workspace.sessions.create"),
+    ).toEqual([
+      [
+        "workspace.sessions.create",
+        {
+          projectPath: b.cwd,
+          prompt: "Bunu araştır",
+          submit: send,
+          requestId: "project-choice-create",
+        },
+      ],
+    ]);
+  },
+);
+
+it("resumes an unchanged local voice request after a spoken project choice", async () => {
+  const { workspace } = await setupGlobal("a", "local", "global", undefined, [
+    { path: a.cwd },
+    { path: b.cwd, name: "Bycoda" },
+  ]);
+  await speech("Session aç, orada bunu yaz.");
+  const execute = mock.assistant.mock.lastCall![0].execute;
+  let result!: Promise<unknown>;
+  await act(async () => {
+    result = execute("app_tool_call", {
+      family: "workspace",
+      action: "workspace.sessions.create",
+      input: { prompt: "Bunu araştır", submit: false },
+      requestId: "local-project-choice",
+    });
+  });
+  expect(workspace.execute).not.toHaveBeenCalled();
+  workspace.execute.mockResolvedValueOnce({
+    status: "accepted",
+    sessionId: "local-created",
+    projectPath: b.cwd,
+  } as never);
+  await speech("Bycoda projesinde.");
+  await expect(result).resolves.toMatchObject({ sessionId: "local-created" });
+  expect(workspace.execute).toHaveBeenCalledExactlyOnceWith("workspace.sessions.create", {
+    projectPath: b.cwd,
+    prompt: "Bunu araştır",
+    submit: false,
+    requestId: "local-project-choice",
+  });
+});
+
+it("keeps the fullscreen call when reading workspace status or closing Settings", async () => {
+  const { workspace } = await setupGlobal();
+  await click("Full screen");
+  await acceptCloudSpeech("Check which screen is open and close Settings.");
+  for (const action of ["workspace.views.status", "workspace.views.close"]) {
+    await act(async () => {
+      await mock.realtime.tool("app_tool_call", {
+        family: "workspace",
+        action,
+        input: action.endsWith(".close") ? { view: "settings" } : {},
+        requestId: action,
+      });
+    });
+    expect(workspace.execute).toHaveBeenLastCalledWith(action, expect.any(Object));
+    expect(container.querySelector("[data-full-screen]")).not.toBeNull();
+  }
+  expect(mock.realtimeConnect).toHaveBeenCalledOnce();
+});
+
+it.each(["local", "openai"] as const)(
+  "keeps monthly usage presentation out of all %s work admission paths",
+  async (mode) => {
+    assistantHost.snapshot.profile.confirmJobs = false;
+    const { onSubmit, workspace } = await setupGlobal("a", mode);
+    const accept = async (utterance: string) => {
+      if (mode === "local") {
+        await speech(utterance);
+        return mock.assistant.mock.lastCall![0].execute;
+      }
+      await act(() => {
+        mock.realtime.captureTurn()();
+        mock.realtime.transcript(utterance);
+      });
+      return mock.realtime.tool;
+    };
+    for (const utterance of [
+      "Bycoda'da provider bazlı aylık token ve, model kullanımımı bir grafiğe döker misin?",
+      "Baykoda'da provider bazlı aylık token ve model kullanımını bir grafiğe döker misin?",
+      "Hayır, iş açma, sadece göster.",
+      "Bycoda uygulamasında aylık token kullanımımı göster.",
+      "Sağdaki panele grafiği ekle.",
+      "Çalışan sunucuları listele.",
+      "Ayarlar ekranını aç.",
+    ]) {
+      const execute = await accept(utterance);
+      const brief = "Implement a reusable provider usage dashboard";
+      await act(async () => {
+        await expect(execute("submit_work", { text: brief })).resolves.toMatchObject({
+          status: "refused",
+        });
+        await expect(
+          execute("give_jobs", { jobs: [{ title: brief, request: brief, projectPath: "/a" }] }),
+        ).resolves.toMatchObject({ status: "refused" });
+        for (const action of [
+          "goals.create",
+          "tasks.create",
+          "crews.start",
+          "automations.runNow",
+          "workspace.sessions.create",
+          "workspace.sessions.submit",
+          "sessions.message",
+          "files.write",
+          "commands.run",
+        ]) {
+          await expect(
+            execute("app_tool_call", {
+              family: action.startsWith("workspace.") ? "workspace" : "conversation",
+              action,
+              input: {},
+              requestId: action,
+            }),
+          ).resolves.toMatchObject({ status: "refused" });
+        }
+      });
+    }
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(workspace.execute).not.toHaveBeenCalled();
+    expect(mock.toolCall).not.toHaveBeenCalled();
+    expect(
+      assistantHost.request.mock.calls.filter(([input]) => input.op === "jobs.create"),
+    ).toHaveLength(0);
+
+    const execute = await accept(
+      "Aylık token ve model kullanım grafiği için kalıcı bir dashboard özelliği geliştir.",
+    );
+    await act(async () => {
+      await expect(
+        execute("give_jobs", {
+          jobs: [
+            {
+              title: "Implement dashboard feature",
+              request: "Add a reusable monthly usage chart",
+              projectPath: "/a",
+            },
+          ],
+        }),
+      ).resolves.toMatchObject({ status: "accepted" });
+    });
+    expect(
+      assistantHost.request.mock.calls.filter(([input]) => input.op === "jobs.create"),
+    ).toHaveLength(1);
+  },
+);
+
+it("refuses background jobs for an unclassified request and routes the model to a session", async () => {
+  assistantHost.snapshot.profile.confirmJobs = false;
+  const { onSubmit } = await setupGlobal();
+  await acceptCloudSpeech("¿Podrías encargarte de este cambio?");
+  await expect(mock.realtime.tool("submit_work", { text: "Build a chart" })).resolves.toMatchObject(
+    {
+      status: "refused",
+      intent: "ambiguous",
+    },
+  );
+  let pending!: Promise<unknown>;
+  await act(async () => {
+    pending = mock.realtime.tool("give_jobs", {
+      jobs: [{ title: "Build a chart", request: "Build a reusable chart", projectPath: "/a" }],
+    });
+  });
+  // No forced review form: the refusal itself tells the model to use a normal session.
+  await expect(pending).resolves.toMatchObject({
+    status: "refused",
+    intent: "ambiguous",
+    next: expect.stringContaining("workspace.sessions.create"),
+  });
+  expect(page.textContent).not.toContain("Review jobs before starting");
+  expect(onSubmit).not.toHaveBeenCalled();
+  expect(assistantHost.request.mock.calls.some(([input]) => input.op === "jobs.create")).toBe(
+    false,
+  );
+});
+
 it("starts proposed jobs directly and tells the model which wait and why", async () => {
   assistantHost.snapshot.profile.confirmJobs = false;
   Object.assign(assistantHost.snapshot, { jobHolds: new Proxy({}, { get: () => "report" }) });
   localStorage.setItem("bycoda.voice", JSON.stringify({ mode: "openai" }));
   await setup();
-  await act(async () => mock.realtime.captureTurn()());
+  await acceptCloudSpeech("Create a job for Alpha");
   const jobs = [{ title: "Direct title", request: "Owner request", projectPath: "/a" }];
   let receipt!: Promise<unknown>;
   await act(async () => void (receipt = mock.realtime.tool("give_jobs", { jobs })));
@@ -2286,7 +3477,7 @@ it("starts proposed jobs directly and tells the model which wait and why", async
 it("reviews and edits a job before an explicit Start creates it", async () => {
   localStorage.setItem("bycoda.voice", JSON.stringify({ mode: "openai" }));
   await setup();
-  await act(async () => mock.realtime.captureTurn()());
+  await acceptCloudSpeech("Create a job for Alpha");
   let receipt: Promise<unknown>;
   await act(async () => {
     receipt = mock.realtime.tool("give_jobs", {
@@ -2320,7 +3511,7 @@ it("reviews and edits a job before an explicit Start creates it", async () => {
 it("does not retarget a retained owner job review when the selected local Host changes before Start", async () => {
   localStorage.setItem("bycoda.voice", JSON.stringify({ mode: "openai" }));
   await setup();
-  await act(async () => mock.realtime.captureTurn()());
+  await acceptCloudSpeech("Create a job for Alpha");
   await act(async () => {
     void mock.realtime.tool("give_jobs", {
       jobs: [{ title: "Exact original request", request: "Owner request", projectPath: "/a" }],
@@ -2339,7 +3530,12 @@ it("does not retarget a retained owner job review when the selected local Host c
         .find((button) => button.textContent === "Start jobs")!
         .click();
     });
-    expect(page.textContent).toContain("original connection");
+    await act(async () => {
+      [...page.querySelectorAll("button")]
+        .find((button) => button.textContent === "Details")!
+        .click();
+    });
+    expect(document.body.textContent).toContain("original connection");
     expect(assistantHost.request.mock.calls.some(([input]) => input.op === "jobs.create")).toBe(
       false,
     );
@@ -2434,7 +3630,7 @@ it("masks retained proposal speech and mirrored drafts while a participant becom
   const { render } = await setup();
   await act(async () => {
     mock.realtime.captureTurn()();
-    mock.realtime.transcript("Secret project proposal");
+    mock.realtime.transcript("Create a job for the secret project proposal");
   });
   let receipt!: Promise<unknown>;
   await act(async () => {
@@ -2448,7 +3644,7 @@ it("masks retained proposal speech and mirrored drafts while a participant becom
     await render("a");
     expect(page.querySelector<HTMLInputElement>('input[value="Private proposal"]')).toBeNull();
     expect(page.textContent).not.toContain("Private proposal");
-    expect(page.textContent).not.toContain("Secret project proposal");
+    expect(page.textContent).not.toContain("secret project proposal");
     expect((overlay.host as any)?.state.jobReview).toBeNull();
     expect((overlay.host as any)?.state.transcript).toBe("");
   } finally {
@@ -2461,7 +3657,7 @@ it("masks retained proposal speech and mirrored drafts while a participant becom
 });
 it("reviews every captured global project and sends the explicit lead and saved project array", async () => {
   await setupGlobal();
-  await act(async () => mock.realtime.captureTurn()());
+  await acceptCloudSpeech("Create a job to review both projects");
   let receipt!: Promise<unknown>;
   await act(async () => {
     receipt = mock.realtime.tool("give_jobs", {
@@ -2492,7 +3688,7 @@ it("reviews every captured global project and sends the explicit lead and saved 
 it("rejects multi-project proposals outside the accepted project-only directory", async () => {
   localStorage.setItem("bycoda.voice", JSON.stringify({ mode: "openai" }));
   await setup();
-  await act(async () => mock.realtime.captureTurn()());
+  await acceptCloudSpeech("Create a job to review both projects");
   await expect(
     mock.realtime.tool("give_jobs", {
       jobs: [{ title: "Too broad", request: "Both", projectPaths: ["/a", "/b"] }],
@@ -2782,7 +3978,12 @@ it("links accepted jobs to the original owner turn and retries only metadata aft
         .find((button) => button.textContent === "Start jobs")!
         .click();
     });
-    expect(page.textContent).toContain("link acknowledgement lost");
+    await act(async () => {
+      [...page.querySelectorAll("button")]
+        .find((button) => button.textContent === "Details")!
+        .click();
+    });
+    expect(document.body.textContent).toContain("link acknowledgement lost");
     const first = assistantHost.request.mock.calls.find(
       ([input]) => input.op === "messages.linkJob",
     )![0];
@@ -2961,6 +4162,35 @@ it.each(["resolve", "reject"] as const)(
   },
 );
 
+it("keeps mic and speaker names stable while aria-pressed carries mute state", async () => {
+  await setup();
+  const control = (label: string) =>
+    container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+  expect(control("Mute microphone").getAttribute("aria-pressed")).toBe("false");
+  await click("Mute microphone");
+  expect(mock.mute).toHaveBeenLastCalledWith(true);
+  expect(control("Mute microphone").getAttribute("aria-pressed")).toBe("true");
+  expect(container.querySelector('[aria-label="Resume"]')).toBeNull();
+  expect(container.querySelector('[aria-label="Pause mic"]')).toBeNull();
+  await click("Mute microphone");
+  expect(mock.mute).toHaveBeenLastCalledWith(false);
+  expect(control("Mute microphone").getAttribute("aria-pressed")).toBe("false");
+  expect(control("Mute speaker").getAttribute("aria-pressed")).toBe("false");
+  await click("Mute speaker");
+  expect(control("Mute speaker").getAttribute("aria-pressed")).toBe("true");
+  expect(container.querySelector('[aria-label="Unmute speaker"]')).toBeNull();
+});
+
+it("gives Stop speaking a hand glyph, never the skip or pause glyph beside the mic toggle", async () => {
+  await setup();
+  const silence = container.querySelector<HTMLButtonElement>('button[aria-label="Stop speaking"]')!;
+  expect(silence.querySelector("svg")?.getAttribute("class")).toContain("lucide-hand");
+  expect(silence.querySelector("svg")?.getAttribute("class")).not.toContain("lucide-skip-forward");
+  mock.silence.mockClear();
+  await click("Stop speaking");
+  expect(mock.silence).toHaveBeenCalledOnce();
+});
+
 it("speaker mute survives compact changes and never mutes the microphone or stops work", async () => {
   const { onStop } = await setup();
   await click("Mute speaker");
@@ -2974,4 +4204,123 @@ it("speaker mute survives compact changes and never mutes the microphone or stop
   expect(mock.setOutputMuted).toHaveBeenLastCalledWith(false);
   expect(mock.connect).toHaveBeenCalledOnce();
   expect(onStop).not.toHaveBeenCalled();
+});
+
+const usageRow = (key: string, label: string, tokens: number) => ({
+  key,
+  label,
+  cost: tokens / 100,
+  tokens,
+  input: tokens,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  durationMs: 0,
+  unpricedTokens: 0,
+  share: null,
+});
+const usageResult = {
+  action: "workspace.usage.report",
+  status: "completed",
+  report: {
+    period: "month-to-date",
+    metric: "tokens",
+    costBasis: "api-equivalent-estimate",
+    timeZone: "UTC",
+    window: { startMs: 1, endMs: 2, start: "", end: "" },
+    filters: {},
+    totals: {
+      cost: 3,
+      tokens: 300,
+      input: 300,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      durationMs: 0,
+      unpricedTokens: 0,
+    },
+    providers: [usageRow("codex", "codex", 300)],
+    models: [usageRow("model-one", "Model One", 300)],
+    projects: [],
+    coverage: {
+      partial: false,
+      accounts: { read: 1, failed: 0 },
+      sessionTurns: "available",
+      notes: [],
+    },
+  },
+};
+
+it("draws this turn's Usage report as provider and model charts on the full-screen call", async () => {
+  const { render, workspace } = await setupGlobal();
+  await render("a");
+  await click("Full screen");
+  await act(() => {
+    mock.realtime.captureTurn()();
+    mock.realtime.transcript("Show my usage this month.");
+  });
+  workspace.execute.mockImplementationOnce(async () => usageResult as never);
+  await act(async () => {
+    expect(
+      await mock.realtime.tool("app_tool_call", {
+        family: "workspace",
+        action: "workspace.usage.report",
+        requestId: "usage-visual",
+        input: { period: "month-to-date" },
+      }),
+    ).toMatchObject({ shown: "mounted", report: { period: "month-to-date" } });
+  });
+  await act(async () => undefined);
+  const panel = container.querySelector("[data-work-panel]");
+  expect(panel).not.toBeNull();
+  // The report view loads lazily; its chart labels are the data of the report.
+  await vi.waitFor(
+    async () => {
+      await act(async () => undefined);
+      for (const label of ["codex", "Model One"]) expect(panel?.textContent).toContain(label);
+    },
+    { timeout: 8000 },
+  );
+  // The next accepted turn drops it.
+  await act(() => {
+    mock.realtime.captureTurn()();
+    mock.realtime.transcript("Thanks.");
+  });
+  expect(container.querySelector("[data-work-panel]")).toBeNull();
+});
+
+it("does not show a Usage report that finished after the turn moved on", async () => {
+  const { render, workspace } = await setupGlobal();
+  await render("a");
+  await click("Full screen");
+  await act(() => {
+    mock.realtime.captureTurn()();
+    mock.realtime.transcript("Show my usage this month.");
+  });
+  let finish!: () => void;
+  workspace.execute.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = () => resolve(usageResult as never);
+      }),
+  );
+  let pending!: Promise<unknown>;
+  await act(async () => {
+    pending = mock.realtime.tool("app_tool_call", {
+      family: "workspace",
+      action: "workspace.usage.report",
+      requestId: "usage-late",
+      input: { period: "month-to-date" },
+    });
+    await Promise.resolve();
+  });
+  await act(() => {
+    mock.realtime.captureTurn()();
+    mock.realtime.transcript("Never mind.");
+  });
+  await act(async () => {
+    finish();
+    expect(await pending).toMatchObject({ shown: "not-shown" });
+  });
+  expect(container.querySelector("[data-work-panel]")).toBeNull();
 });

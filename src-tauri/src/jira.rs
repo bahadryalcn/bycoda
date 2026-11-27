@@ -1,4 +1,5 @@
 use crate::integrations::http::string_field;
+pub(crate) mod agent_comment;
 mod attachments;
 pub(crate) use attachments::direct_download_url as attachment_download_url;
 pub mod board;
@@ -9,7 +10,7 @@ mod mention_search;
 pub(crate) mod room_inbox;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -91,6 +92,16 @@ pub struct JiraIssueDetails {
     pub body: String,
     pub author: String,
     pub author_avatar_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<JiraIssueStatus>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct JiraIssueStatus {
+    pub status_id: String,
+    pub state: String,
+    pub state_type: String,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
@@ -234,7 +245,7 @@ pub async fn jira_issue_details(app: AppHandle, key: String) -> Result<JiraIssue
         let data = jira_get(
             &config,
             &format!(
-                "/rest/api/3/issue/{key}?fields=description,reporter,creator,assignee,attachment"
+                "/rest/api/3/issue/{key}?fields=description,reporter,creator,assignee,attachment,status"
             ),
         )?;
         parse_jira_issue_details(&data)
@@ -280,19 +291,27 @@ pub async fn jira_issue_comment(
             }
             None => text_to_adf(body),
         };
-        let data = jira_post(
-            &config,
-            &format!("/rest/api/3/issue/{key}/comment"),
-            &json!({ "body": document }),
-        )?;
-        let id = string_field(&data, "id").unwrap_or_default();
-        if id.is_empty() {
-            return Err("Could not post Jira comment".into());
-        }
-        Ok(comment_url(&config.site, key, &id))
+        post_comment_document(&config, key, document)
     })
     .await
     .map_err(|error| error.to_string())?
+}
+
+fn post_comment_document(
+    config: &JiraConfig,
+    key: &str,
+    document: Value,
+) -> Result<String, String> {
+    let data = jira_post(
+        config,
+        &format!("/rest/api/3/issue/{key}/comment"),
+        &json!({ "body": document }),
+    )?;
+    let id = string_field(&data, "id").unwrap_or_default();
+    if id.is_empty() {
+        return Err("Could not post Jira comment".into());
+    }
+    Ok(comment_url(&config.site, key, &id))
 }
 
 fn status_for(config: Option<&JiraConfig>) -> JiraStatus {
@@ -333,17 +352,59 @@ fn jira_authorization(config: &JiraConfig) -> String {
     crate::integrations::http::basic_authorization(config.email.trim(), config.token.trim())
 }
 
+/// Shown when an overall read budget runs out, so a partial list is never mistaken for a full one.
+const READ_TIMEOUT_MESSAGE: &str = "Jira took too long to answer. Try again.";
+
 #[allow(clippy::result_large_err)] // ureq::Error is the library's own result type; boxing it here gains nothing.
 fn jira_get(config: &JiraConfig, path: &str) -> Result<Value, String> {
-    let agent = crate::integrations::http::agent(HTTP_TIMEOUT, None);
-    let result = retry_transport(true, || {
+    jira_get_with(&jira_agent(), config, path, None)
+}
+
+/// One agent per command: pages share its connection pool, and the credential still travels
+/// per request (`jira_get_with` sets the header), never in the agent.
+fn jira_agent() -> ureq::Agent {
+    crate::integrations::http::agent(HTTP_TIMEOUT, None)
+}
+
+/// `deadline` bounds the whole read: each attempt's timeout shrinks to what is left and no
+/// retry starts once its back-off would cross it.
+#[allow(clippy::result_large_err)] // ureq::Error is the library's own result type; boxing it here gains nothing.
+fn jira_get_with(
+    agent: &ureq::Agent,
+    config: &JiraConfig,
+    path: &str,
+    deadline: Option<Instant>,
+) -> Result<Value, String> {
+    let result = retry_transport(true, deadline, || {
         agent
             .get(&format!("{}{path}", config.site))
+            .timeout(attempt_timeout(deadline))
             .set("Authorization", &jira_authorization(config))
             .set("Accept", "application/json")
             .call()
     });
+    if matches!(result, Err(ureq::Error::Transport(_))) && deadline.is_some_and(expired) {
+        return Err(READ_TIMEOUT_MESSAGE.into());
+    }
     read_jira_response(result)
+}
+
+fn expired(deadline: Instant) -> bool {
+    Instant::now() >= deadline
+}
+
+fn attempt_timeout(deadline: Option<Instant>) -> Duration {
+    deadline.map_or(HTTP_TIMEOUT, |deadline| {
+        // Never zero: some timeout implementations read a zero duration as "no timeout".
+        HTTP_TIMEOUT
+            .min(deadline.saturating_duration_since(Instant::now()))
+            .max(Duration::from_millis(1))
+    })
+}
+
+/// A retry only starts when its back-off still ends before the overall deadline.
+fn retry_fits(deadline: Option<Instant>, delay: Duration) -> bool {
+    deadline.is_none_or(|deadline| Instant::now() + delay < deadline)
 }
 
 #[allow(clippy::result_large_err)] // ureq::Error is the library's own result type; boxing it here gains nothing.
@@ -351,7 +412,7 @@ fn jira_post(config: &JiraConfig, path: &str, body: &Value) -> Result<Value, Str
     let agent = crate::integrations::http::agent(HTTP_TIMEOUT, None);
     let payload = serde_json::to_string(body).map_err(|error| error.to_string())?;
     // The issue search is a read; every other POST (comments) may have been applied.
-    let result = retry_transport(path.ends_with("/search/jql"), || {
+    let result = retry_transport(path.ends_with("/search/jql"), None, || {
         agent
             .post(&format!("{}{path}", config.site))
             .set("Authorization", &jira_authorization(config))
@@ -377,13 +438,17 @@ fn transport_retryable(kind: ureq::ErrorKind, idempotent: bool) -> bool {
 #[allow(clippy::result_large_err)] // ureq::Error is the library's own result type; boxing it here gains nothing.
 fn retry_transport(
     idempotent: bool,
+    deadline: Option<Instant>,
     attempt: impl Fn() -> Result<ureq::Response, ureq::Error>,
 ) -> Result<ureq::Response, ureq::Error> {
     let mut result = attempt();
     for delay_ms in [400u64, 1200] {
+        let delay = Duration::from_millis(delay_ms);
         match &result {
-            Err(ureq::Error::Transport(error)) if transport_retryable(error.kind(), idempotent) => {
-                std::thread::sleep(Duration::from_millis(delay_ms));
+            Err(ureq::Error::Transport(error))
+                if transport_retryable(error.kind(), idempotent) && retry_fits(deadline, delay) =>
+            {
+                std::thread::sleep(delay);
                 result = attempt();
             }
             _ => break,
@@ -586,10 +651,22 @@ fn parse_jira_issue_details(data: &Value) -> Result<JiraIssueDetails, String> {
         .unwrap_or_else(|| person_fields(fields.get("assignee")));
     let mut body = rich_text(fields.get("description"));
     attachments::append_attachments(&mut body, fields);
+    let status = fields.get("status").and_then(|status| {
+        Some(JiraIssueStatus {
+            status_id: status.get("id")?.as_str()?.to_owned(),
+            state: status.get("name")?.as_str()?.to_owned(),
+            state_type: status
+                .pointer("/statusCategory/key")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+        })
+    });
     Ok(JiraIssueDetails {
         body,
         author: author.unwrap_or_default(),
         author_avatar_url,
+        status,
     })
 }
 
@@ -1283,13 +1360,22 @@ mod tests {
                 },
                 "reporter": { "displayName": "Ada", "avatarUrls": { "48x48": "https://avatar.example/ada.png" } },
                 "creator": { "displayName": "Lin" },
-                "assignee": null
+                "assignee": null,
+                "status": { "id": "3", "name": "In Progress", "statusCategory": { "key": "indeterminate" } }
             }
         });
         let details = parse_jira_issue_details(&data).unwrap();
         assert_eq!(details.body, "Steps");
         assert_eq!(details.author, "Ada");
         assert_eq!(details.author_avatar_url, "https://avatar.example/ada.png");
+        assert_eq!(
+            details.status,
+            Some(JiraIssueStatus {
+                status_id: "3".into(),
+                state: "In Progress".into(),
+                state_type: "indeterminate".into(),
+            })
+        );
     }
 
     #[test]

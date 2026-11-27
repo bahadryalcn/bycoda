@@ -3,10 +3,13 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { InlineVisual } from "./InlineVisual";
+import { InlineVisualHost } from "../hooks/useInlineVisualSource";
 import { SCHEME_CHANGE_EVENT } from "../../settings/model/appearance";
 
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+const remoteRequest = vi.hoisted(() => vi.fn());
+vi.mock("../../connections/public/connections", () => ({ remoteRequest }));
 
 vi.mock("../../files/ui/HtmlPreview", () => ({
   HtmlPreview: ({
@@ -50,6 +53,71 @@ vi.mock("../../../shared/ui/Modal", () => ({
       createElement("button", { onClick: onClose }, "Close"),
     ),
 }));
+
+it("reads stored previews from the selected Host even after the same id was read elsewhere", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const snapshot = { version: 2 as const, id: "c".repeat(64), title: "Chart", height: 240 };
+  const locator = {
+    machineId: "remote-machine",
+    environmentId: "remote-host",
+    sessionId: "session",
+  };
+  invoke.mockClear();
+  remoteRequest.mockResolvedValue({ title: "Chart", html: "<p>Remote chart</p>", height: 240 });
+  try {
+    const render = (route: typeof locator) =>
+      act(async () => {
+        root.render(
+          createElement(
+            InlineVisualHost.Provider,
+            { value: route },
+            createElement(InlineVisual, { snapshot }),
+          ),
+        );
+      });
+    await render(locator);
+    expect(remoteRequest).toHaveBeenCalledWith(
+      locator.machineId,
+      "sessions.inlineVisual",
+      { sessionId: locator.sessionId, id: snapshot.id },
+      false,
+      false,
+      locator.environmentId,
+    );
+    expect(
+      host.querySelector("[data-preview-source]")?.getAttribute("data-preview-source"),
+    ).toContain("Remote chart");
+    remoteRequest.mockRejectedValue(new Error("Unavailable"));
+    await render({ ...locator, sessionId: "another-session" });
+    expect(host.textContent).toContain("Preview unavailable");
+    expect(host.querySelector("[data-preview-source]")).toBeNull();
+    remoteRequest.mockResolvedValue({ title: "Chart", html: "<p>Recovered</p>", height: 240 });
+    const retry = Array.from(host.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Try again"),
+    );
+    expect(retry).toBeTruthy();
+    await act(async () => retry!.click());
+    expect(remoteRequest).toHaveBeenLastCalledWith(
+      locator.machineId,
+      "sessions.inlineVisual",
+      { sessionId: "another-session", id: snapshot.id },
+      true,
+      true,
+      locator.environmentId,
+    );
+    expect(
+      host.querySelector("[data-preview-source]")?.getAttribute("data-preview-source"),
+    ).toContain("Recovered");
+    expect(invoke).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});
 
 it("keeps one active preview, immutable source recovery, theme updates and bounded expansion", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -159,16 +227,17 @@ it("resolves a stored reference by id, keeps transcript title and height, and re
     expect(host.textContent).toContain("Preview unavailable");
     fail = false;
     const retry = Array.from(host.querySelectorAll("button")).find((button) =>
-      button.textContent?.includes("Retry"),
+      button.textContent?.includes("Try again"),
     );
     expect(retry).toBeTruthy();
     await act(async () => retry!.click());
     const preview = host.querySelector("[data-preview-source]")!;
     expect(preview.getAttribute("data-preview-source")).toContain("<p>Neo</p>");
     expect(host.querySelector('section[aria-label="Crew"]')).toBeTruthy();
-    expect(
-      (preview.parentElement as HTMLElement).style.getPropertyValue("--inline-visual-height"),
-    ).toBe("900px");
+    // The card slot carries the snapshot height in every view and holds the preview inline.
+    const slot = host.querySelector("section")!.firstElementChild as HTMLElement;
+    expect(slot.style.getPropertyValue("--inline-visual-height")).toBe("900px");
+    expect(slot.contains(preview)).toBe(true);
   } finally {
     await act(async () => root.unmount());
     host.remove();

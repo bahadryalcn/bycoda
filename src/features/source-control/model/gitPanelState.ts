@@ -1,8 +1,11 @@
 import { CheckoutCache } from "./checkoutCache";
 import { useCallback, useSyncExternalStore } from "react";
 import { pathKey } from "../../../shared/lib/paths";
+import { t } from "../../../shared/i18n/git";
 
 export type AmendTarget = { branch: string | null; head: string | null };
+
+export type CommitGenerationResult = { changesUpdated: boolean; suggestion?: string };
 
 type PanelState = {
   busy: string | null;
@@ -10,6 +13,7 @@ type PanelState = {
   status: string | null;
   message: string;
   generating: boolean;
+  generationResult: CommitGenerationResult | null;
   stashAction: "create" | `entry:${string}` | null;
   amendTarget: AmendTarget | null;
   feedback: GitOperationFeedback | null;
@@ -20,6 +24,8 @@ export type GitOperationFeedback = {
   title: string;
   detail?: string;
   retry?: () => Promise<void>;
+  /** A different, explicit way to finish the same action (for example publishing with raw commit text). */
+  alternate?: { label: string; run: () => Promise<void> };
   url?: string;
 };
 
@@ -31,6 +37,7 @@ function createEntry() {
       status: null,
       message: "",
       generating: false,
+      generationResult: null,
       stashAction: null,
       amendTarget: null,
       feedback: null,
@@ -60,6 +67,7 @@ const entries = new CheckoutCache<string, ReturnType<typeof createEntry>>(
     !!entry.state.status ||
     !!entry.state.message ||
     entry.state.generating ||
+    !!entry.state.generationResult ||
     !!entry.state.stashAction ||
     !!entry.state.amendTarget ||
     !!entry.state.feedback,
@@ -141,7 +149,7 @@ export async function withGitOperation<T>(
 ): Promise<T> {
   const entry = gitPanelRuntime(cwd);
   if (entry.state.busy)
-    throw new Error("Another Git operation is running. Wait for it to finish and retry.");
+    throw new Error(t("Another Git operation is running. Wait for it to finish and retry."));
   entry.state = { ...entry.state, busy: label, pending: label, feedback: null };
   entry.listeners.forEach((listener) => listener());
   try {

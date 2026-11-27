@@ -264,7 +264,7 @@ it("retries the selected path's failed inspection without opening another native
     return undefined;
   });
   await choose();
-  await vi.waitFor(() => expect(container.textContent).toContain("Inspection unavailable"));
+  await vi.waitFor(() => expect(container.textContent).toContain("Could not read attachments."));
   await expect(close().captureAndFlush()).rejects.toThrow("Inspection unavailable");
   await act(async () => closed!.retryFailed(key));
   const result = await closed!.captureAndFlush();
@@ -294,13 +294,33 @@ it("holds the original clipboard image through a failed spill and retries only t
     });
     container.querySelector("textarea")!.dispatchEvent(paste);
   });
-  await vi.waitFor(() => expect(container.textContent).toContain("Spill unavailable"));
+  await vi.waitFor(() => expect(container.textContent).toContain("Could not read attachments."));
   await expect(close().captureAndFlush()).rejects.toThrow("Spill unavailable");
   await act(async () => closed!.retryFailed(key));
   const result = await closed!.captureAndFlush();
   expect(calls("clipboard_image")).toHaveLength(1);
   expect(writes).toBe(2);
   expect(result.draft.attachments).toMatchObject([{ path: "/fixture/image.png" }]);
+});
+
+it("restores a Bycoda message with its image inside the pasted text", async () => {
+  await draw();
+  await type("Before after");
+  const field = container.querySelector("textarea")!;
+  field.setSelectionRange(7, 7);
+  const html =
+    '<div><pre data-bycoda-reference-text="See [Image: Attachment; ref=clipboard-0] here ">See here </pre>' +
+    '<img data-bycoda-file="shot.png" src="data:image/png;base64,YWJj"></div>';
+  await act(async () => {
+    const paste = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, "clipboardData", {
+      value: { getData: (type: string) => (type === "text/html" ? html : "See here ") },
+    });
+    field.dispatchEvent(paste);
+  });
+  const { draft } = await close().captureAndFlush();
+  expect(draft.prompt).toMatch(/^Before See \[Image[^\]]+\] here after$/);
+  expect(draft.attachments).toMatchObject([{ name: "shot.png" }]);
 });
 
 it("retains a successful screenshot selection across inspection failure without recapturing or deleting it", async () => {
@@ -378,7 +398,9 @@ it("a possibly accepted launch is never automatically replayed by closure retry"
     return quickNativeReply(command, args, "pending");
   });
   await act(async () => button("Start").click());
-  expect(container.textContent).toContain("Launch outcome unknown");
+  expect(container.textContent).toContain("Could not start the session.");
+  await act(async () => button("Details").click());
+  expect(document.body.textContent).toContain("Launch outcome unknown");
   await expect(close().captureAndFlush()).rejects.toThrow("Launch outcome unknown");
   await expect(closed!.retryFailed(key)).rejects.toThrow("unknown");
   expect(calls("quick_composer_submit_intent")).toHaveLength(1);
@@ -517,7 +539,9 @@ it("over-capacity clipboard selection is retained as failure without inspection 
     });
     container.querySelector("textarea")!.dispatchEvent(paste);
   });
-  await vi.waitFor(() => expect(container.textContent).toContain("retained attachment capacity"));
+  await vi.waitFor(() =>
+    expect(container.textContent).toContain("The selected file list is too large to attach."),
+  );
   await expect(close().captureAndFlush()).rejects.toThrow("retained attachment capacity");
   await expect(closed!.retryFailed(key)).rejects.toThrow("retained attachment capacity");
   expect(calls("clipboard_file_paths")).toHaveLength(1);

@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { Dices } from "../../../../../shared/ui/icons";
-import { preloadBundledFont } from "../../../model/fontFaceLoader";
+import { registerBundledFont } from "../../../model/fontFaceLoader";
 import {
   CODE_FONT_CATALOG,
   FONT_PAIRINGS,
@@ -23,10 +23,11 @@ const pairKey = (pair: { interfaceFont: string; codeFont: string }) =>
 export function TypographyPairings({ appearance: a }: { appearance: AppearanceSettings }) {
   useLocale();
   const p = a.preferences;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Register this section's specimen families in the document font set.
   useEffect(() => {
     for (const pair of FONT_PAIRINGS) {
-      preloadBundledFont(fontFamilyValue(INTERFACE_FONT_CATALOG, pair.interfaceFont));
-      preloadBundledFont(fontFamilyValue(CODE_FONT_CATALOG, pair.codeFont));
+      registerBundledFont(fontFamilyValue(INTERFACE_FONT_CATALOG, pair.interfaceFont));
+      registerBundledFont(fontFamilyValue(CODE_FONT_CATALOG, pair.codeFont));
     }
   }, []);
   const apply = (interfaceFont: string, codeFont: string) =>
@@ -34,7 +35,6 @@ export function TypographyPairings({ appearance: a }: { appearance: AppearanceSe
   return (
     <Group
       title={t("Pairings")}
-      description={t("Set an interface font and a code font together.")}
       action={
         <Button
           size="sm"

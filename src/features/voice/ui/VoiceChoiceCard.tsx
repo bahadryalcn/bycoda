@@ -15,6 +15,15 @@ import { t } from "../../../shared/i18n";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 
+/** The owner-question helper returns English keys for two known failures; present others as given. */
+function draftMessage(message: string) {
+  if (message === "Keep custom answers within 2,000 characters.")
+    return t("Keep custom answers within 2,000 characters.");
+  if (message === "The question data could not be verified. Refresh its original Host.")
+    return t("The question data could not be verified. Refresh its original Host.");
+  return message;
+}
+
 /** Choice keyboard handling is confined to this card, including Escape. */
 export function VoiceChoiceCard({
   choice,
@@ -50,7 +59,9 @@ export function VoiceChoiceCard({
     setDraftError("");
     if (!owner) return;
     if (!writeQuestionDraft(owner.scope, choice.prompt, owner.formDraft, true).ok) {
-      setDraftError("This question draft could not be restored. Keep the original card and retry.");
+      setDraftError(
+        t("This question draft could not be restored. Keep the original card and retry."),
+      );
       return;
     }
     return subscribeQuestionDraftCapacity(() => {
@@ -69,10 +80,9 @@ export function VoiceChoiceCard({
   if (restored.error || draftError)
     return (
       <div ref={root}>
-        <InlineError>{t(restored.error ?? draftError)}</InlineError>
-        <Button size="sm" onClick={() => setEpoch((value) => value + 1)}>
-          {t("Retry")}
-        </Button>
+        <InlineError retry={{ onRetry: () => setEpoch((value) => value + 1), label: t("Retry") }}>
+          {draftMessage(restored.error ?? draftError)}
+        </InlineError>
       </div>
     );
   return (

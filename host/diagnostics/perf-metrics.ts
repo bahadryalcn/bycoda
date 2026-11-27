@@ -1,11 +1,19 @@
 import { monitorEventLoopDelay, performance } from "node:perf_hooks";
+import { AsyncLocalStorage } from "node:async_hooks";
+
+export const syncDbTiming = new AsyncLocalStorage<{
+  dbWaitMs: number;
+  work?: Promise<unknown>;
+}>();
 
 const BUCKETS = 768;
 const RATIO = 1.05;
 const MIN_MS = 0.001;
 const LOG_RATIO = Math.log(RATIO);
+/** The window `recentLoopMaxMs` reports over before it starts a new one. */
+const LOOP_WINDOW_MS = 10_000;
 // Static RPC and MCP labels plus headroom; 768 buckets x 8 bytes each.
-export const MAX_METRICS = 512;
+export const MAX_METRICS = 640;
 type Distribution = { buckets: Float64Array; count: number; max: number };
 
 /** Fixed-size, cumulative histograms. Percentiles use upper bucket bounds
@@ -15,6 +23,8 @@ type Distribution = { buckets: Float64Array; count: number; max: number };
 export class PerfMetrics {
   private readonly series = new Map<string, Distribution>();
   private loop?: ReturnType<typeof monitorEventLoopDelay>;
+  private recentLoop?: ReturnType<typeof monitorEventLoopDelay>;
+  private loopWindowAt = 0;
   private users = 0;
 
   constructor(names: readonly string[] = []) {
@@ -64,11 +74,41 @@ export class PerfMetrics {
     return value;
   }
 
+  /**
+   * The worst event-loop delay of the current window (at least the last 10 s), so a slow
+   * request's log shows the lag around it rather than a stall from hours ago.
+   */
+  recentLoopMaxMs(): number {
+    const recent = this.recentLoop;
+    if (!recent?.count) return 0;
+    const value = recent.max / 1e6;
+    const now = performance.now();
+    if (now - this.loopWindowAt >= LOOP_WINDOW_MS) {
+      recent.reset();
+      this.loopWindowAt = now;
+    }
+    return value;
+  }
+
+  /**
+   * The same process-wide window without starting a new one, so a reader here never shortens
+   * what `recentLoopMaxMs` reports. Its age is unrelated to any single request.
+   */
+  recentLoopWindow(): { maxMs: number; ageMs: number } | undefined {
+    const recent = this.recentLoop;
+    if (!recent?.count) return undefined;
+    return { maxMs: recent.max / 1e6, ageMs: Math.max(0, performance.now() - this.loopWindowAt) };
+  }
+
   /** Shared process monitor, enabled only while a host server owns it. */
   start() {
     if (this.users++ === 0) {
       this.loop = monitorEventLoopDelay({ resolution: 20 });
       this.loop.enable();
+      // A separate windowed histogram: resetting it never touches the cumulative one.
+      this.recentLoop = monitorEventLoopDelay({ resolution: 20 });
+      this.recentLoop.enable();
+      this.loopWindowAt = performance.now();
     }
   }
 
@@ -76,6 +116,8 @@ export class PerfMetrics {
     if (this.users > 0 && --this.users === 0) {
       this.loop?.disable();
       this.loop = undefined;
+      this.recentLoop?.disable();
+      this.recentLoop = undefined;
     }
   }
 
@@ -161,11 +203,31 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "appearance.themeSuggestions",
   "appearance.backgroundSuggestions",
   "appearance.backgroundImage",
+  "appearance.cancelGeneration",
   "diagnostics.logs.read",
+  "ollama.status",
+  "ollama.start",
+  "ollama.pull.start",
+  "ollama.pull.cancel",
+  "ollama.port.set",
+  "ollama.opencode.save",
   "assistant.builder.interview",
   "assistant.builder.avatarGenerate",
   "assistant.builder.avatarRead",
   "decisionModels.sources.list",
+  "liveStream.status",
+  "liveStream.start",
+  "liveStream.stop",
+  "liveStream.demo",
+  "liveStream.report",
+  "liveStream.obsSetup",
+  "liveStream.obsStream",
+  "liveStream.obsCredentials",
+  "liveStream.eulerKey",
+  "liveStream.live.accounts",
+  "liveStream.live.status",
+  "liveStream.live.start",
+  "liveStream.live.stop",
   "decisionModels.sources.add",
   "decisionModels.sources.update",
   "decisionModels.sources.remove",
@@ -183,6 +245,9 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "decisionModels.local.recommend",
   "decisionModels.local.plan",
   "decisionModels.local.install",
+  "decisionModels.local.installStart",
+  "decisionModels.local.installProgress",
+  "decisionModels.local.cancelInstall",
   "decisionModels.local.start",
   "decisionModels.local.stop",
   "decisionModels.local.uninstall",
@@ -230,6 +295,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "attachments.release",
   "attachments.status",
   "attachments.upload",
+  "automations.decide",
   "automations.delete",
   "automations.list",
   "automations.preview",
@@ -267,6 +333,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "devices.preview.mobile.start",
   "devices.preview.mobile.status",
   "devices.revokeOther",
+  "devices.paired",
   "history.import.cancel",
   "history.import.commit",
   "history.import.preview",
@@ -309,6 +376,8 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "terminals.pty.desktop.status",
   "terminals.pty.desktop.write",
   "usage.cost.read",
+  "usage.planShare.read",
+  "usage.rows.read",
   "usage.limits.read",
   "usage.sessions.read",
   "worktrees.removal.approve",
@@ -317,6 +386,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "crews.accept",
   "crews.active.list",
   "crews.agent.delete",
+  "crews.agent.group.update",
   "crews.agent.save",
   "crews.answer",
   "crews.assign",
@@ -350,6 +420,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "devServers.start",
   "devServers.stop",
   "devices.action",
+  "devices.bindProofKey",
   "devices.boot",
   "devices.capture",
   "devices.list",
@@ -361,6 +432,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "devices.setup",
   "devices.start",
   "devices.status",
+  "devices.touch",
   "devices.stop",
   "environment.describe",
   "environment.persistence.recover",
@@ -419,6 +491,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "mobile.pairing.cancel",
   "mobile.pairing.create",
   "mobile.pairing.status",
+  "modelRouting.catalogFacts",
   "modelRouting.get",
   "modelRouting.resolve",
   "modelRouting.save",
@@ -448,7 +521,10 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "runtimeLogs.terminals.demand",
   "runtimeLogs.tools.call",
   "sessions.adopted",
+  "sessions.approvalGrants.list",
+  "sessions.approvalGrants.revoke",
   "sessions.block",
+  "sessions.inlineVisual",
   "sessions.workedTime",
   "sessions.delete",
   "sessions.desktopLive",
@@ -498,6 +574,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "tasks.events",
   "tasks.evaluation.save",
   "tasks.finishWithFindings",
+  "tasks.helpers",
   "tasks.list",
   "tasks.move",
   "tasks.notes.read",
@@ -514,8 +591,10 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "terminals.interrupt",
   "terminals.list",
   "terminals.read",
+  "terminals.resize",
   "terminals.write",
   "tunnels.credential",
+  "tunnels.phones",
   "tunnels.start",
   "tunnels.status",
   "tunnels.stop",
@@ -532,6 +611,9 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "voice.local.speechCancel",
   "voice.local.speechNext",
   "voice.local.start",
+  "voice.local.start.inspect",
+  "voice.local.start.worker",
+  "voice.local.start.speech",
   "voice.local.transcribe",
   "voice.realtime.secret",
   "voice.tools.call",
@@ -543,25 +625,15 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "native.buffers.heartbeat",
   "native.buffers.retire",
   "native.buffers.reconcile",
-  "native.buffers.recovery.list",
-  "native.buffers.recovery.read",
-  "native.buffers.recovery.status",
-  "native.buffers.delivery.apply",
   "native.delivery.epochs.open",
   "native.delivery.epochs.status",
   "native.delivery.epochs.compact",
   "native.delivery.epochs.close",
-  "native.buffers.delivery.status",
-  "native.buffers.delivery.ack",
+  "native.delivery.epochs.gap.resolve",
   "native.services.delivery.apply",
   "native.services.delivery.status",
   "native.services.delivery.ack",
   "native.services.delivery.result.read",
-  "native.buffers.upload.start",
-  "native.buffers.upload.write",
-  "native.buffers.upload.commit",
-  "native.buffers.upload.status",
-  "native.buffers.upload.abort",
   "native.services.upload.begin",
   "native.services.upload.append",
   "native.services.upload.commit",
@@ -627,6 +699,9 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "workspaces.list",
   "workspaces.pin",
   "workspaces.prepare",
+  "workspaces.prepare.cancel",
+  "workspaces.prepare.status",
+  "workspaces.renameBranch",
   "workspaces.resume",
   "workspaces.storage.status",
 ];
@@ -643,6 +718,8 @@ const DESKTOP_LIVE_PART_NAMES: readonly string[] = [
 export const perfMetrics = new PerfMetrics([
   ...RPC_METHOD_NAMES,
   ...DESKTOP_LIVE_PART_NAMES,
+  // How often a heartbeat part answered its "no news" fallback instead of the store's answer.
+  ...[...DESKTOP_LIVE_PART_NAMES, "desktopLive.hostPush"].map((name) => `${name}.fallback`),
   "mcp.all",
   "mcp.conversation",
   "mcp.runtime-logs",

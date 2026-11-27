@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
-import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
+import {
+  useForegroundQueryFamilyPolling,
+  useQueryVisible,
+} from "../../../shared/hooks/useQueryVisible";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import type { RemoteMachine } from "../../connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
@@ -33,12 +36,18 @@ import { HOST_TASKS, HOST_TASKS_TODO } from "./hostTasks";
 import { HOST_GOALS } from "./hostGoals";
 import { HOST_STEWARDS } from "./hostStewards";
 import { HOST_SETTINGS } from "./hostSettings";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { describeRemoteError } from "../../connections/public/remoteFailure";
+import {
+  classifyFailureLifetime,
+  useGracedFailure,
+} from "../../connections/public/transientFailure";
 
 const EMPTY_MACHINES: RemoteMachine[] = [];
+const TASK_BOARD_QUERY_KEY = ["task-board"] as const;
+const TASK_BOARD_POLL_MS = 15_000;
 const identity = (machine: RemoteMachine) =>
   [machine.id, machine.environmentId, machine.endpoint, isLocalSyncMachine(machine)] as const;
-type Description = { capabilities: string[]; error?: string };
+type Description = { capabilities: string[]; error?: unknown };
 // Combine tracks data rather than polling timestamps/fetchStatus. Unchanged host
 // answers keep the combined result reference through Query's structural sharing.
 function combine<T>(
@@ -78,7 +87,7 @@ function useMachineReads<T>(
             ? !description.error && description.capabilities.includes(capability)
             : !!description.error || description.capabilities.includes(capability)),
         staleTime: 15_000,
-        refetchInterval: 15_000,
+        refetchOnWindowFocus: false,
         retry: false,
       };
     }),
@@ -91,6 +100,7 @@ function useMachineReads<T>(
 export function useTaskBoardQueries(projectScope = "all", { planningCatalog = false } = {}) {
   const client = useQueryClient();
   const visible = useQueryVisible();
+  useForegroundQueryFamilyPolling(TASK_BOARD_QUERY_KEY, TASK_BOARD_POLL_MS);
   const forceCapabilities = useRef(new Set<string>());
   const forceTasks = useRef(new Set<string>());
   const inventory = useQuery({
@@ -102,7 +112,7 @@ export function useTaskBoardQueries(projectScope = "all", { planningCatalog = fa
     },
     enabled: visible,
     staleTime: 15_000,
-    refetchInterval: 15_000,
+    refetchOnWindowFocus: false,
     retry: false,
   });
   const machines = useMemo(() => {
@@ -140,13 +150,13 @@ export function useTaskBoardQueries(projectScope = "all", { planningCatalog = fa
             capabilities:
               client.getQueryData<Description>(["task-board", ...identity(machine), "capabilities"])
                 ?.capabilities ?? [],
-            error: presentRemoteError(reason),
+            error: reason,
           };
         }
       },
       enabled: visible,
       staleTime: 15_000,
-      refetchInterval: 15_000,
+      refetchOnWindowFocus: false,
       retry: false,
     })),
     combine: combine<Description>,
@@ -254,22 +264,33 @@ export function useTaskBoardQueries(projectScope = "all", { planningCatalog = fa
   const taskResults = useMemo(() => tasks.flatMap((result) => result.data ?? []), [tasks]);
   const goalResults = useMemo(() => goals.flatMap((result) => result.data ?? []), [goals]);
   const stewardResults = useMemo(() => stewards.flatMap((result) => result.data ?? []), [stewards]);
-  const taskData = useMemo(() => taskResults.flatMap((result) => result.data), [taskResults]);
-  const goalData = useMemo(() => goalResults.flatMap((result) => result.data), [goalResults]);
-  const stewardData = useMemo(
-    () => stewardResults.flatMap((result) => result.data),
-    [stewardResults],
+  const results = useMemo(
+    () => [...taskResults, ...goalResults, ...stewardResults],
+    [taskResults, goalResults, stewardResults],
   );
-  const limitData = useMemo(
-    () =>
-      limits.flatMap((result, index) =>
-        (result.data ?? []).map((entry) => ({
-          ...entry,
-          stale: !!result.error || !!descriptions[index]?.data?.error,
-        })),
-      ),
-    [limits, descriptions],
+  const resultFailure = useCallback(
+    (result: MachineResult<unknown>) =>
+      result.status === "error"
+        ? (descriptions[machines.findIndex((machine) => machine.id === result.machineId)]?.data
+            ?.error ??
+          result.failure ??
+          result.error ??
+          "Request failed")
+        : undefined,
+    [descriptions, machines],
   );
+  const firstTransient = [
+    inventory.error,
+    ...catalogDescriptions.map((result) => result.data?.error),
+    ...results.map(resultFailure),
+    ...limits.map((result) => result.error),
+    ...projects.map((result) => result.error),
+  ].find((error) => error != null && classifyFailureLifetime(error) === "transient");
+  const grace = useGracedFailure({
+    error: visible ? firstTransient : undefined,
+    retry: refresh,
+    scope: projectScope,
+  });
   // Capable machine lists change only with the inventory or capabilities, so a
   // confirmed mutation patching one collection does not re-key machine consumers.
   const capableMachines = useMemo(() => {
@@ -287,8 +308,26 @@ export function useTaskBoardQueries(projectScope = "all", { planningCatalog = fa
     };
   }, [machines, descriptions, catalogMachines, catalogDescriptions]);
   const board = useMemo(() => {
-    const results: MachineResult<unknown>[] = [...taskResults, ...goalResults, ...stewardResults];
+    const quiet = (error: unknown) =>
+      error != null && grace.pending && classifyFailureLifetime(error) === "transient";
+    const message = (error: unknown) =>
+      error != null && !quiet(error) ? describeRemoteError(error).message : undefined;
+    const rows = <T extends { stale?: boolean }>(records: MachineResult<T>[]) =>
+      records.flatMap((record) =>
+        record.stale && quiet(resultFailure(record))
+          ? record.data.map((item) => ({ ...item, pendingRefresh: true }))
+          : record.data,
+      );
+    const limitData = limits.flatMap((result, index) => {
+      const failure = result.error ?? descriptions[index]?.data?.error;
+      return (result.data ?? []).map((entry) => ({
+        ...entry,
+        stale: failure != null,
+        pendingRefresh: quiet(failure),
+      }));
+    });
     const pending =
+      grace.pending ||
       inventory.isPending ||
       inventory.isFetching ||
       descriptions.some((result) => result.isPending || result.isFetching) ||
@@ -315,7 +354,7 @@ export function useTaskBoardQueries(projectScope = "all", { planningCatalog = fa
         );
       });
     const unreachable = machines
-      .filter((_, index) => descriptions[index]?.data?.error)
+      .filter((_, index) => message(descriptions[index]?.data?.error))
       .map((machine) => (isLocalSyncMachine(machine) ? "this computer" : machine.name));
     const outdated = machines
       .filter(
@@ -325,44 +364,48 @@ export function useTaskBoardQueries(projectScope = "all", { planningCatalog = fa
           !descriptions[index].data!.capabilities.includes(HOST_TASKS),
       )
       .map((machine) => (isLocalSyncMachine(machine) ? "this computer" : machine.name));
-    const problems = results
-      .filter((result) => result.status === "error")
-      .map(
-        (result) =>
-          `${result.machineName}: ${descriptions[machines.findIndex((machine) => machine.id === result.machineId)]?.data?.error ?? result.error ?? "request failed"}`,
-      );
+    const failedResults = results.filter((result) => !!message(resultFailure(result)));
+    const problems = failedResults.map(
+      (result) => `${result.machineName}: ${message(resultFailure(result))}`,
+    );
+    descriptions.forEach((result, index) => {
+      const detail = message(result.data?.error);
+      if (detail) problems.push(`${machines[index].name}: ${detail}`);
+    });
     const limitErrors = limits.flatMap((result, index) => {
-      const error =
-        result.error?.message ??
-        (descriptions[index]?.data?.capabilities.includes(HOST_SETTINGS)
-          ? descriptions[index]?.data?.error
-          : undefined);
+      const error = message(
+        result.error ??
+          (descriptions[index]?.data?.capabilities.includes(HOST_SETTINGS)
+            ? descriptions[index]?.data?.error
+            : undefined),
+      );
       return error
         ? [{ machineId: machines[index].id, machineName: machines[index].name, error }]
         : [];
     });
     problems.push(...limitErrors.map((entry) => `${entry.machineName}: ${entry.error}`));
     projects.forEach((result, index) => {
-      if (result.error) problems.push(`${catalogMachines[index].name}: ${result.error.message}`);
+      const detail = message(result.error);
+      if (detail) problems.push(`${catalogMachines[index].name}: ${detail}`);
     });
     const taskError =
-      inventory.error?.message ||
-      taskResults.find((result) => result.status === "error")?.error ||
+      message(inventory.error) ||
+      taskResults.map((result) => message(resultFailure(result))).find(Boolean) ||
       (unreachable.length || outdated.length
         ? missingMachinesNotice({ unreachable, outdated })
         : undefined);
     for (const name of outdated)
       problems.push(`${name}: update ${PRODUCT_IDENTITY.displayName} Host to refresh its board`);
     const error =
-      inventory.error?.message ??
+      message(inventory.error) ??
       (problems.length
         ? `Some machine data could not be refreshed: ${[...new Set(problems)].join("; ")}`
         : undefined);
     return {
       ...capableMachines,
-      tasks: taskData,
-      goals: goalData,
-      stewards: stewardData,
+      tasks: rows(taskResults),
+      goals: rows(goalResults),
+      stewards: rows(stewardResults),
       limits: limitData,
       limitErrors,
       projects: projects.flatMap((result) => result.data ?? []),
@@ -371,8 +414,11 @@ export function useTaskBoardQueries(projectScope = "all", { planningCatalog = fa
       error,
       hasTaskAnswer: taskResults.some((result) => result.status === "ok" || result.data.length > 0),
       notice: missingMachinesNotice(
-        { outdated, unreachable: [...new Set([...unreachable, ...failedMachineNames(results)])] },
-        staleMachineNames(results),
+        {
+          outdated,
+          unreachable: [...new Set([...unreachable, ...failedMachineNames(failedResults)])],
+        },
+        staleMachineNames(failedResults),
       ),
     };
   }, [
@@ -391,10 +437,9 @@ export function useTaskBoardQueries(projectScope = "all", { planningCatalog = fa
     taskResults,
     goalResults,
     stewardResults,
-    taskData,
-    goalData,
-    stewardData,
-    limitData,
+    results,
+    resultFailure,
+    grace.pending,
   ]);
   // Change subscriptions start after the first read and then follow only the
   // machine set. Re-subscribing on every poll restarted each change channel,

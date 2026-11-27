@@ -1,5 +1,3 @@
-/* Hallmark · built: the project · redesign: polish · shape: app screen · theme: locked bycoda · scope: app */
-/* Hallmark · pre-emit critique: P4 H4 E4 S4 R5 V3 · weakest: V, retained familiar task lanes under the locked product system. */
 /* Board lanes and cards. Lanes are quiet fills on the canvas; cards are thin frames
    that step up only on hover, selection and drag. */
 .task-board-columns {
@@ -8,16 +6,13 @@
   block-size: 100%;
   min-block-size: 0;
 }
+/* Every lane runs the full board height, so its whole column is a drop target, and
+   all lanes share one width whether or not they hold cards (a drop never reflows them). */
 .task-board-columns > section.bycoda-task-column {
   flex: 1 1 0;
   min-inline-size: 12.5rem;
-  align-self: start;
+  align-self: stretch;
   max-block-size: 100%;
-}
-.task-board-columns > section.bycoda-task-column[data-empty] {
-  flex: 0 0 7.5rem;
-  min-inline-size: 0;
-  align-self: start;
 }
 .task-board-columns > section.bycoda-task-column > h2 {
   margin-block-end: 0;
@@ -33,21 +28,8 @@
   padding-inline: 0.5rem;
   padding-block-end: 0.5rem;
 }
-.task-board-columns[data-all-empty] {
-  block-size: auto;
-  align-items: start;
-}
-.task-board-columns[data-all-empty] > section > ul {
-  min-block-size: 0;
-  padding-block: 0;
-}
 .task-board-column-picker {
   display: none;
-}
-.task-column-empty {
-  padding: 0.25rem 0.25rem 0;
-  text-align: start;
-  align-items: flex-start;
 }
 
 /* Drop cues use theme tokens only: the lane that would accept the card, and a line
@@ -59,29 +41,33 @@
   }
   .task-board-columns {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     block-size: auto;
   }
-  .task-board-columns > section:not([data-empty]),
-  .task-board-columns[data-single-column] > section {
+  /* Every lane keeps the full board width, empty or not, so a drop never reflows the others. */
+  .task-board-columns > section {
     grid-column: 1 / -1;
   }
   .task-board-columns > section:not([data-compact-selected]) {
     display: none;
   }
-  .task-board-columns > section.bycoda-task-column[data-empty] {
-    inline-size: 100%;
-  }
   .task-board-columns > section > ul {
     overflow-y: visible;
   }
-  .task-board-columns:not([data-single-column]) > section[data-empty]:not([data-drop-active]) > ul {
+  /* Empty lanes show their note only while a card is dragged, so they stay a usable target. */
+  .task-board-columns:not([data-single-column]):not([data-dragging])
+    > section[data-empty]:not([data-drop-active])
+    > ul {
     display: none;
   }
-}
-@container task-area (max-width: 480px) {
-  .task-board-columns {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* While a card is dragged in single-status view, the other statuses appear as header
+     strips above the lane, so each stays a drop target and the lane keeps its place. */
+  .task-board-columns[data-dragging] > section:not([data-compact-selected]) {
+    display: flex;
+    order: -1;
+  }
+  .task-board-columns[data-dragging] > section:not([data-compact-selected]) > ul {
+    display: none;
   }
 }
 
@@ -97,29 +83,45 @@
 .task-board-card > * {
   min-inline-size: 0;
 }
-.task-card-goal {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  min-inline-size: 0;
-}
 .task-card-title {
   padding-inline-end: 1rem;
   overflow-wrap: anywhere;
 }
-.task-card-description {
-  white-space: pre-line;
-  overflow-wrap: anywhere;
-}
-.task-card-chips {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.25rem;
-  min-inline-size: 0;
-}
 .task-card-actions {
   margin-block-start: 0.25rem;
+}
+
+/* Task actions (card, row and detail header): the lead action shrinks to its label and the
+   overflow keeps its place on the same line. */
+.task-actions > button:not([aria-haspopup]) {
+  min-inline-size: 0;
+  max-inline-size: calc(100% - 2rem);
+}
+.task-actions > [aria-haspopup] {
+  flex-shrink: 0;
+}
+
+/* List rows: a title over one muted meta line, then the row's actions. */
+.task-row-text {
+  display: grid;
+  min-inline-size: 0;
+  flex: 1;
+}
+.task-row-actions {
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+/* A row's lead action keeps its whole label (a percentage cap would collapse the actions
+   block to its overflow width); the title and meta line truncate instead. */
+.task-row-actions > button:not([aria-haspopup]) {
+  max-inline-size: none;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.task-list-heading {
+  padding-inline: var(--ui-list-gutter);
+  padding-block-start: 0.75rem;
 }
 
 /* The drag handle shows on hover and focus, only for cards that can move. */
@@ -131,14 +133,6 @@
   position: absolute;
   inset-block-start: 0.75rem;
   inset-inline-end: 0.5rem;
-}
-/* Actions stay on one line: the primary button shrinks, the overflow action stays. */
-.task-card-actions > button:not([aria-haspopup]) {
-  min-inline-size: 0;
-  max-inline-size: 100%;
-}
-.task-card-actions > [aria-haspopup] {
-  flex-shrink: 0;
 }
 @container task-card (max-width: 13rem) {
   .task-card-footer {

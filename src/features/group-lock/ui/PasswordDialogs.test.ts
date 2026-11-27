@@ -4,10 +4,15 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SetLockPasswordDialog } from "./SetLockPasswordDialog";
 import { PasswordPromptDialog } from "./PasswordPromptDialog";
-import { changeLockPassword, setLockPassword, type VerifyResult } from "../model/groupLock";
+import {
+  changeLockPassword,
+  lockCooldownMs,
+  setLockPassword,
+  type VerifyResult,
+} from "../model/groupLock";
 
 vi.mock("../model/groupLock", () => ({
-  lockCooldownMs: () => 0,
+  lockCooldownMs: vi.fn(() => 0),
   changeLockPassword: vi.fn(),
   setLockPassword: vi.fn(),
 }));
@@ -156,6 +161,62 @@ it("keeps password setup open and retryable when storing the password fails", as
   expect(onClose).not.toHaveBeenCalled();
 });
 
+it("presents a lost Host result in words and keeps the typed password for a retry", async () => {
+  const verify = vi
+    .fn()
+    .mockRejectedValue(
+      new Error(
+        "RPC_WS_INTERRUPTED: Native Host connection did not return a result. The operation outcome is unknown; reconcile its command receipt before retrying.",
+      ),
+    );
+  const onDone = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(PasswordPromptDialog, {
+        title: "Unlock",
+        description: "",
+        submitLabel: "Unlock",
+        verify,
+        onDone,
+        onClose: vi.fn(),
+      }),
+    ),
+  );
+  const input = document.querySelector<HTMLInputElement>('input[type="password"]')!;
+  input.value = "right password";
+  await act(async () => {
+    submit();
+  });
+  const alert = document.querySelector('[role="alert"]')?.textContent ?? "";
+  expect(alert).not.toBe("");
+  expect(alert).not.toContain("RPC_WS_");
+  expect(input.value).toBe("right password");
+  expect(document.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false);
+  expect(onDone).not.toHaveBeenCalled();
+});
+
+it("keeps every typed field of a password change after a lost Host result", async () => {
+  vi.mocked(changeLockPassword).mockRejectedValue(
+    new Error("RPC_WS_INTERRUPTED: Native Host connection did not return a result."),
+  );
+  await act(async () =>
+    root.render(createElement(SetLockPasswordDialog, { mode: "change", onClose: vi.fn() })),
+  );
+  const inputs = document.querySelectorAll<HTMLInputElement>('input[type="password"]');
+  ["old-password", "new-password", "new-password"].forEach((value, i) => {
+    inputs[i].value = value;
+  });
+  await act(async () => {
+    submit();
+  });
+  expect(document.querySelector('[role="alert"]')?.textContent).not.toContain("RPC_WS_");
+  expect([...inputs].map((input) => input.value)).toEqual([
+    "old-password",
+    "new-password",
+    "new-password",
+  ]);
+});
+
 it("does not run the prompt completion callback after its dialog unmounts", async () => {
   let resolve!: (value: VerifyResult) => void;
   const result = new Promise<VerifyResult>((done) => {
@@ -184,6 +245,99 @@ it("does not run the prompt completion callback after its dialog unmounts", asyn
   });
   expect(onDone).not.toHaveBeenCalled();
 });
+
+it("drops the cool-down notice when it expires and keeps a plain wrong-password error", async () => {
+  vi.useFakeTimers();
+  try {
+    const verify = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, reason: "blocked", retryAfterMs: 2000 })
+      .mockResolvedValueOnce({ ok: false, reason: "wrong", retryAfterMs: 0 });
+    await act(async () =>
+      root.render(
+        createElement(PasswordPromptDialog, {
+          title: "Unlock",
+          description: "",
+          submitLabel: "Unlock",
+          verify,
+          onDone: vi.fn(),
+          onClose: vi.fn(),
+        }),
+      ),
+    );
+    const field = document.querySelector<HTMLInputElement>('input[type="password"]')!;
+    const submitButton = () => document.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    field.value = "password";
+    await act(async () => {
+      submit();
+    });
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "Too many wrong passwords",
+    );
+    expect(submitButton().getAttribute("aria-disabled") === "true").toBe(true);
+    await act(async () => {
+      vi.advanceTimersByTime(2600);
+    });
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    expect(submitButton().disabled).toBe(false);
+    field.value = "password";
+    await act(async () => {
+      submit();
+      await vi.advanceTimersByTimeAsync(900);
+    });
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe("Wrong password.");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it.each(["prompt", "change"] as const)(
+  "announces a running %s cool-down once and keeps the ticking time out of live regions",
+  async (dialog) => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    vi.mocked(lockCooldownMs).mockReturnValue(30_000);
+    try {
+      await act(async () =>
+        root.render(
+          dialog === "prompt"
+            ? createElement(PasswordPromptDialog, {
+                title: "Unlock",
+                description: "",
+                submitLabel: "Unlock",
+                verify: vi.fn(),
+                onDone: vi.fn(),
+                onClose: vi.fn(),
+              })
+            : createElement(SetLockPasswordDialog, { mode: "change", onClose: vi.fn() }),
+        ),
+      );
+      const live = () => document.querySelector('[role="alert"]')!.textContent;
+      const time = () =>
+        document.querySelector<HTMLElement>('[id$="lock-password-error"]')!.textContent;
+      expect(live()).toBe("Too many wrong passwords. Try again later.");
+      expect(time()).toBe("Too many wrong passwords. Try again in 30 seconds.");
+      expect(
+        document
+          .querySelector('[id$="lock-password-error"]')!
+          .closest('[role="alert"], [role="status"]'),
+      ).toBeNull();
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(time()).toBe("Too many wrong passwords. Try again in 25 seconds.");
+      expect(live()).toBe("Too many wrong passwords. Try again later.");
+      expect(document.querySelectorAll('[role="alert"], [role="status"]')).toHaveLength(1);
+      expect(
+        document
+          .querySelector<HTMLButtonElement>('button[type="submit"]')
+          ?.getAttribute("aria-disabled"),
+      ).toBe("true");
+    } finally {
+      vi.mocked(lockCooldownMs).mockReturnValue(0);
+      vi.useRealTimers();
+    }
+  },
+);
 
 it("renders verification exceptions and enables retry", async () => {
   await act(async () =>

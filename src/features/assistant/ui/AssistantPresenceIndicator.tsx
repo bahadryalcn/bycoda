@@ -1,7 +1,8 @@
 import { Text } from "../../../shared/ui/Text";
 import { StatusDot } from "../../../shared/ui/StatusDot";
-import { t, useLocale } from "../../../shared/i18n";
+import { useLocale } from "../../../shared/i18n";
 import {
+  assistantPresenceLabel,
   assistantPresencePresentation,
   type AssistantPresenceState,
 } from "../model/assistantPresencePresentation";
@@ -37,7 +38,7 @@ export function AssistantPresenceIndicator({
       />
       {!markOnly && (
         <Text size="inherit" tone="inherit" truncate className={styles.label}>
-          {label ?? t(presentation.label)}
+          {label ?? assistantPresenceLabel(presentation.state)}
         </Text>
       )}
     </span>

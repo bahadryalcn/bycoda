@@ -1,3 +1,11 @@
+import { elapsedSince } from "../../src/shared/lib/time/timestamps";
+import {
+  currentRequestTrace,
+  heldPollWaitMs,
+  slowRequestFields,
+  type RequestTrace,
+} from "../diagnostics/request-trace";
+import { WORKSPACE_COMMANDS } from "../workspaces/workspace-commands";
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
 import { handleApprovalsRpc } from "./rpc-approvals";
@@ -18,22 +26,26 @@ import { handleInboxRpc } from "./rpc-inbox";
 import { handleNativeRpc } from "./rpc-native";
 import { handleNotesRpc } from "./rpc-notes";
 import { handleProjectsRpc } from "./rpc-projects";
+import { handleGithubWorkItemsRpc } from "../work-items/github";
 import { handleProvidersRpc } from "./rpc-providers";
 import { handleResourcesRpc } from "./rpc-resources";
 import { handleRuntimeLogsRpc } from "./rpc-runtime-logs";
 import { handleSessionsRpc } from "./rpc-sessions";
 import { handleDraftPresenceRpc } from "../drafts/rpc";
+import { handleGroupLockRpc } from "../group-lock/rpc";
 import { handleTasksRpc } from "./rpc-tasks";
 import { handleTerminalsRpc } from "./rpc-terminals";
 import { handlePullRequestsRpc } from "./rpc-pull-requests";
 import { handleUsageRpc } from "./rpc-usage";
 import { handleActivityOwnerRpc, handleSessionLifecycleRpc } from "./rpc-account-platform";
 import { handleDecisionModelsRpc } from "./rpc-decision-models";
+import { handleLiveStreamRpc } from "./rpc-live-stream";
 import { handleSecretsOwnerRpc, handleSecretInputRpc } from "./rpc-secrets";
 import { handleVoiceRpc } from "./rpc-voice";
 import { handlePushRpc } from "./rpc-push";
 import { handleWorkspacesRpc } from "./rpc-workspaces";
 import { handleDiagnosticsLogsRpc } from "./rpc-diagnostics";
+import { handleOllamaRpc } from "./rpc-ollama";
 import { createHash } from "node:crypto";
 import type { DiagnosticLogFields } from "@bycoda/account-contracts";
 import { createLogger } from "../diagnostics/logger";
@@ -46,26 +58,143 @@ import { SessionReadError } from "../domains/sessions/read-errors";
 
 const rpcLog = createLogger("host.rpc");
 const SLOW_RPC_MS = 2_000;
-/** `RemoteChanges.read` and `RevisionWaits.wait` end a poll after this long, whatever wait was asked. */
-const HELD_POLL_CAP_MS = 10_000;
-const heldPollMs = (params: Record<string, unknown>): number => {
-  const wait = Number(params.waitMs);
-  return wait > 0 ? Math.min(HELD_POLL_CAP_MS, wait) : 0;
-};
 /**
- * Time a method may take on top of SLOW_RPC_MS before it counts as slow. A held poll is
- * entitled to the wait its caller asked for. A method that runs an owner command or an
- * assistant turn lasts as long as that work, which has its own deadline, so it is never
- * reported. Every other method, including the `sessions.desktopLive` heartbeat, gets none.
+ * Time a method may take before it counts as slow. A held poll is entitled to the wait the
+ * Host really holds it for. A method that runs an owner command or an assistant turn lasts
+ * as long as that work, which has its own deadline, so it is never reported. Every other
+ * method, including the `sessions.desktopLive` heartbeat, gets SLOW_RPC_MS alone.
  */
-const RPC_HOLD_MS: Record<string, (params: Record<string, unknown>) => number> = {
-  "machine.changes": heldPollMs,
-  "sessions.sync": heldPollMs,
-  "workspace.run": () => Infinity,
-  "assistant.request": () => Infinity,
-};
 export function slowRpcThresholdMs(method: string, params: Record<string, unknown>): number {
-  return SLOW_RPC_MS + (Object.hasOwn(RPC_HOLD_MS, method) ? RPC_HOLD_MS[method]!(params) : 0);
+  if (method === "workspace.run" || method === "assistant.request") return Infinity;
+  return SLOW_RPC_MS + heldPollWaitMs(method, params);
+}
+
+/** Stage fields once the whole request, queueing before the handler included, is slow. */
+function tracedSlowFields(
+  trace: RequestTrace | undefined,
+  method: string,
+  params: Record<string, unknown>,
+  at: number,
+) {
+  if (!trace) return undefined;
+  const thresholdMs = slowRpcThresholdMs(method, params);
+  if (elapsedSince(trace.receivedAt, at) < thresholdMs) return undefined;
+  return slowRequestFields(trace, {
+    thresholdMs,
+    heldWaitMs: heldPollWaitMs(method, params),
+    at,
+  });
+}
+
+/**
+ * Server-side backstop for an owner call that never settles. Each value outlasts the desktop
+ * client's own deadline for the method (`rpc_timeout` in `src-tauri/src/remote.rs`) by 30 s,
+ * so a healthy call is never cut before its caller gives up. Held polls end at their 10 s cap.
+ */
+const RPC_DEADLINE_MS = 120_000;
+const GIT_MUTATION_DEADLINE_MS = 480_000;
+const LONG_RPC_DEADLINE_MS: Record<string, number> = {
+  "git.action": 640_000,
+  "git.switch": GIT_MUTATION_DEADLINE_MS,
+  "git.createBranch": GIT_MUTATION_DEADLINE_MS,
+  "git.worktreeCreate": GIT_MUTATION_DEADLINE_MS,
+  "git.worktreeRemovalReview": GIT_MUTATION_DEADLINE_MS,
+  "git.worktreeRemove": GIT_MUTATION_DEADLINE_MS,
+  "workspaces.prepare": GIT_MUTATION_DEADLINE_MS,
+  "workspaces.renameBranch": GIT_MUTATION_DEADLINE_MS,
+  "workspaces.close": GIT_MUTATION_DEADLINE_MS,
+  "workspaces.finish": GIT_MUTATION_DEADLINE_MS,
+  "workspaces.cleanup.plan": GIT_MUTATION_DEADLINE_MS,
+  "workspaces.cleanup.status": GIT_MUTATION_DEADLINE_MS,
+  "workspaces.cleanup.apply": GIT_MUTATION_DEADLINE_MS,
+  "git.generateText": 160_000,
+  "sessions.sideQuestion": 190_000,
+  "voice.local.start": 210_000,
+  "devices.action": 210_000,
+  "devices.capture": 220_000,
+  "devices.boot": 270_000,
+  "appearance.backgroundImage": 280_000,
+  "appearance.backgroundSuggestions": 140_000,
+  "appearance.themeSuggestions": 140_000,
+  "decisionModels.local.start": 135_000,
+  "decisionModels.sources.test": 135_000,
+  "assistant.builder.avatarGenerate": 280_000,
+  "projects.clone": 660_000,
+  "browser.setup": 1_260_000,
+  "devices.setup": 1_260_000,
+};
+/** Owner commands and assistant turns carry their own deadline, so the dispatcher adds none. */
+export function ownerRpcDeadlineMs(method: string, params: Record<string, unknown>): number {
+  if (slowRpcThresholdMs(method, params) === Infinity) return Infinity;
+  return Object.hasOwn(LONG_RPC_DEADLINE_MS, method)
+    ? LONG_RPC_DEADLINE_MS[method]!
+    : RPC_DEADLINE_MS;
+}
+
+/** The dispatcher stopped waiting; the handler may still finish, so the outcome is unknown. */
+export class OwnerRpcDeadlineError extends HostDomainOutcomeError {
+  readonly code = "HOST_RPC_DEADLINE";
+  constructor(method: string, ms: number) {
+    super(`Host did not answer ${method} within ${Math.round(ms / 1000)} s.`, "unknown");
+    this.name = "OwnerRpcDeadlineError";
+  }
+}
+
+/**
+ * The Host began shutting down while the call was in flight. The HTTP layer aborts every
+ * live request signal with this reason; the dispatcher gives the handler
+ * `HOST_STOP_GRACE_MS` to settle and then answers 503 so the shutdown drain is not held.
+ */
+export class HostStoppingError extends HostDomainOutcomeError {
+  readonly code = "HOST_STOPPING";
+  constructor() {
+    super("Host is stopping.", "unknown");
+    this.name = "HostStoppingError";
+  }
+}
+export const HOST_STOP_GRACE_MS = 2_000;
+
+export class OwnerRpcCancelledError extends Error {
+  readonly code = "REQUEST_CANCELLED";
+
+  constructor() {
+    super("Request cancelled");
+    this.name = "OwnerRpcCancelledError";
+  }
+}
+
+/**
+ * Settles with the handler, or rejects when the request signal aborts: on the deadline with
+ * `OwnerRpcDeadlineError`, on a client disconnect with a cancellation, on Host shutdown with
+ * `HostStoppingError` once the stop grace has passed. Either way the HTTP request leaves the
+ * drain set instead of waiting on a handler that never settles.
+ */
+function untilAborted(
+  work: Promise<void>,
+  signal: AbortSignal,
+  method: string,
+  deadlineMs: number,
+): Promise<void> {
+  const reason = () =>
+    signal.reason instanceof HostStoppingError
+      ? signal.reason
+      : signal.reason instanceof DOMException && signal.reason.name === "TimeoutError"
+        ? new OwnerRpcDeadlineError(method, deadlineMs)
+        : new OwnerRpcCancelledError();
+  work.catch(() => undefined);
+  return new Promise<void>((resolve, reject) => {
+    let grace: ReturnType<typeof setTimeout> | undefined;
+    const abort = () => {
+      if (!(signal.reason instanceof HostStoppingError)) reject(reason());
+      else grace = setTimeout(() => reject(reason()), HOST_STOP_GRACE_MS);
+    };
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
+    work.then(resolve, reject).finally(() => {
+      clearTimeout(grace);
+      signal.removeEventListener("abort", abort);
+    });
+  });
 }
 
 /** Client-supplied identifiers reach the log only when they look like identifiers. */
@@ -93,6 +222,10 @@ export function rpcFailureFields(
   const safe = SAFE_MESSAGE_ERRORS.some((type) => error instanceof type);
   return {
     method: String(request.input.method),
+    workspaceCommand:
+      request.input.method === "workspace.run"
+        ? WORKSPACE_COMMANDS.find((command) => command === request.params.command)
+        : undefined,
     id: correlationId(request.input.id),
     commandId: correlationId(request.params.commandId),
     error: error instanceof Error ? error.name : "UnknownError",
@@ -107,10 +240,22 @@ export function rpcFailureFields(
         : createHash("sha256").update(text).digest("hex").slice(0, 12),
   };
 }
+
+/**
+ * A runtime or system fault (a programming error, or a failed fs/socket call that carries
+ * `syscall`) describes the Host, not the request. Its message can hold paths or SQL text, so the
+ * HTTP layer answers 500 with a generic message instead of 400 with the raw text.
+ */
+export function isInternalFailure(error: unknown): boolean {
+  if (error instanceof TypeError || error instanceof RangeError || error instanceof ReferenceError)
+    return true;
+  return error instanceof Error && typeof (error as { syscall?: unknown }).syscall === "string";
+}
 import { handleWorktreesRpc } from "./rpc-worktrees";
 type Dependencies = Pick<
   ServerBindings,
   | "engine"
+  | "featureDirectory"
   | "pullRequestWatch"
   | "managedWorkspaces"
   | "workspaceForOwnerRpc"
@@ -121,7 +266,6 @@ type Dependencies = Pick<
   | "featureClaims"
   | "nativeWorkspacesService"
   | "nativeDeliveryService"
-  | "nativeBufferUploads"
   | "nativeServiceUploads"
   | "nativeServicesService"
   | "inHost"
@@ -156,6 +300,7 @@ type Dependencies = Pick<
   | "projectsService"
   | "scopedDesktopCall"
   | "terminalService"
+  | "terminals"
   | "desktopSigningSecret"
   | "desktopControl"
   | "desktopHelper"
@@ -187,8 +332,9 @@ type Dependencies = Pick<
   | "nativeDevicesService"
   | "mobilePairing"
   | "mobileLan"
-  | "mobileAccess"
+  | "mobileTailnet"
   | "tunnels"
+  | "tunnelIngress"
   | "workspace"
   | "conversationPreviews"
   | "heldPolls"
@@ -213,6 +359,7 @@ type Dependencies = Pick<
   | "gitService"
   | "fileService"
   | "decisionModels"
+  | "liveStream"
   | "conversationSecrets"
   | "accountPlatform"
 >;
@@ -221,6 +368,9 @@ const handlers: Record<
   (dependencies: Dependencies, request: OwnerRpcRequest) => Promise<void>
 > = {
   "workspaces.prepare": handleWorkspacesRpc,
+  "workspaces.prepare.status": handleWorkspacesRpc,
+  "workspaces.prepare.cancel": handleWorkspacesRpc,
+  "workspaces.renameBranch": handleWorkspacesRpc,
   "workspaces.list": handleWorkspacesRpc,
   "workspaces.get": handleWorkspacesRpc,
   "workspaces.exactGitRewind.get": handleWorkspacesRpc,
@@ -250,9 +400,6 @@ const handlers: Record<
   "native.buffers.heartbeat": handleNativeRpc,
   "native.buffers.retire": handleNativeRpc,
   "native.buffers.reconcile": handleNativeRpc,
-  "native.buffers.recovery.list": handleNativeRpc,
-  "native.buffers.recovery.read": handleNativeRpc,
-  "native.buffers.recovery.status": handleNativeRpc,
   "native.rewind.plan": handleNativeRpc,
   "native.rewind.prepare": handleNativeRpc,
   "native.rewind.apply": handleNativeRpc,
@@ -263,22 +410,15 @@ const handlers: Record<
   "workspaces.cleanup.plan": handleNativeRpc,
   "workspaces.cleanup.apply": handleNativeRpc,
   "workspaces.cleanup.status": handleNativeRpc,
-  "native.buffers.delivery.apply": handleNativeRpc,
   "native.delivery.epochs.open": handleNativeRpc,
   "native.delivery.epochs.status": handleNativeRpc,
   "native.delivery.epochs.compact": handleNativeRpc,
   "native.delivery.epochs.close": handleNativeRpc,
-  "native.buffers.delivery.status": handleNativeRpc,
-  "native.buffers.delivery.ack": handleNativeRpc,
+  "native.delivery.epochs.gap.resolve": handleNativeRpc,
   "native.services.delivery.apply": handleNativeRpc,
   "native.services.delivery.status": handleNativeRpc,
   "native.services.delivery.ack": handleNativeRpc,
   "native.services.delivery.result.read": handleNativeRpc,
-  "native.buffers.upload.start": handleNativeRpc,
-  "native.buffers.upload.write": handleNativeRpc,
-  "native.buffers.upload.commit": handleNativeRpc,
-  "native.buffers.upload.status": handleNativeRpc,
-  "native.buffers.upload.abort": handleNativeRpc,
   "native.services.upload.begin": handleNativeRpc,
   "native.services.upload.append": handleNativeRpc,
   "native.services.upload.commit": handleNativeRpc,
@@ -353,15 +493,21 @@ const handlers: Record<
   "sessions.queue.lease": handleSessionsRpc,
   "sessions.syncChunk": handleSessionsRpc,
   "sessions.block": handleSessionsRpc,
+  "sessions.inlineVisual": handleSessionsRpc,
   "sessions.workedTime": handleSessionsRpc,
   "sessions.get": handleSessionsRpc,
+  "sessions.approvalGrants.list": handleSessionsRpc,
+  "sessions.approvalGrants.revoke": handleSessionsRpc,
   "sessions.contextual.preview": handleSessionsRpc,
   "commands.dispatch": handleSessionsRpc,
   "sync.pull": handleSessionsRpc,
   "sync.push": handleSessionsRpc,
   "usage.sessions.read": handleSessionsRpc,
   "usage.limits.read": handleUsageRpc,
+  "usage.quota.read": handleUsageRpc,
   "usage.cost.read": handleUsageRpc,
+  "usage.planShare.read": handleUsageRpc,
+  "usage.rows.read": handleUsageRpc,
   "pullRequests.link": handlePullRequestsRpc,
   "pullRequests.unlink": handlePullRequestsRpc,
   "pullRequests.linked": handlePullRequestsRpc,
@@ -374,6 +520,8 @@ const handlers: Record<
   "projects.workspacePolicy.get": handleProjectsRpc,
   "projects.workspacePolicy.update": handleProjectsRpc,
   "projects.list": handleProjectsRpc,
+  "workItems.search": handleGithubWorkItemsRpc,
+  "workItems.get": handleGithubWorkItemsRpc,
   "projects.directory": handleProjectsRpc,
   "projects.browse": handleProjectsRpc,
   "projects.createDirectory": handleProjectsRpc,
@@ -387,6 +535,7 @@ const handlers: Record<
   "terminals.create": handleTerminalsRpc,
   "terminals.read": handleTerminalsRpc,
   "terminals.write": handleTerminalsRpc,
+  "terminals.resize": handleTerminalsRpc,
   "terminals.interrupt": handleTerminalsRpc,
   "terminals.close": handleTerminalsRpc,
   "terminals.pty.desktop.list": handleTerminalsRpc,
@@ -433,6 +582,9 @@ const handlers: Record<
   "devServers.bridgeClose": handleDevelopmentRpc,
   "resources.read": handleResourcesRpc,
   "diagnostics.logs.read": handleDiagnosticsLogsRpc,
+  "browser.profiles.list": handleBrowserRpc,
+  "browser.profiles.sources": handleBrowserRpc,
+  "browser.profiles.update": handleBrowserRpc,
   "browser.setup": handleBrowserRpc,
   "browser.status": handleBrowserRpc,
   "browser.claim": handleBrowserRpc,
@@ -484,6 +636,10 @@ const handlers: Record<
   "secrets.input.list": handleSecretInputRpc,
   "secrets.input.answer": handleSecretInputRpc,
   "drafts.presence.report": handleDraftPresenceRpc,
+  "projects.groups.unlock": handleGroupLockRpc,
+  "projects.groups.authorizeHidden": handleGroupLockRpc,
+  "projects.groups.lock": handleGroupLockRpc,
+  "projects.groups.setHidden": handleGroupLockRpc,
   "secrets.owner.revoke": handleSecretsOwnerRpc,
   "activity.record": handleActivityOwnerRpc,
   "activity.days": handleActivityOwnerRpc,
@@ -498,6 +654,19 @@ const handlers: Record<
   "sessions.taskLink.unlink": handleSessionLifecycleRpc,
   "sessions.taskLink.listForTask": handleSessionLifecycleRpc,
   "decisionModels.sources.list": handleDecisionModelsRpc,
+  "liveStream.status": handleLiveStreamRpc,
+  "liveStream.start": handleLiveStreamRpc,
+  "liveStream.stop": handleLiveStreamRpc,
+  "liveStream.demo": handleLiveStreamRpc,
+  "liveStream.report": handleLiveStreamRpc,
+  "liveStream.obsSetup": handleLiveStreamRpc,
+  "liveStream.obsStream": handleLiveStreamRpc,
+  "liveStream.obsCredentials": handleLiveStreamRpc,
+  "liveStream.eulerKey": handleLiveStreamRpc,
+  "liveStream.live.accounts": handleLiveStreamRpc,
+  "liveStream.live.status": handleLiveStreamRpc,
+  "liveStream.live.start": handleLiveStreamRpc,
+  "liveStream.live.stop": handleLiveStreamRpc,
   "decisionModels.sources.add": handleDecisionModelsRpc,
   "decisionModels.sources.update": handleDecisionModelsRpc,
   "decisionModels.sources.remove": handleDecisionModelsRpc,
@@ -514,6 +683,9 @@ const handlers: Record<
   "decisionModels.local.recommend": handleDecisionModelsRpc,
   "decisionModels.local.plan": handleDecisionModelsRpc,
   "decisionModels.local.install": handleDecisionModelsRpc,
+  "decisionModels.local.installStart": handleDecisionModelsRpc,
+  "decisionModels.local.installProgress": handleDecisionModelsRpc,
+  "decisionModels.local.cancelInstall": handleDecisionModelsRpc,
   "decisionModels.local.start": handleDecisionModelsRpc,
   "decisionModels.local.stop": handleDecisionModelsRpc,
   "decisionModels.local.uninstall": handleDecisionModelsRpc,
@@ -526,16 +698,24 @@ const handlers: Record<
   "voice.local.release": handleVoiceRpc,
   "providers.center.read": handleProvidersRpc,
   "providers.acp.patchMetadata": handleProvidersRpc,
+  "ollama.status": handleOllamaRpc,
+  "ollama.start": handleOllamaRpc,
+  "ollama.pull.start": handleOllamaRpc,
+  "ollama.pull.cancel": handleOllamaRpc,
+  "ollama.port.set": handleOllamaRpc,
+  "ollama.opencode.save": handleOllamaRpc,
   "models.list": handleProvidersRpc,
   "modelRouting.get": handleModelRoutingRpc,
   "modelRouting.save": handleModelRoutingRpc,
   "modelRouting.status": handleModelRoutingRpc,
   "modelRouting.resolve": handleModelRoutingRpc,
+  "modelRouting.catalogFacts": handleModelRoutingRpc,
   "appearance.themeSuggestions": handleAppearanceRpc,
   "appearance.backgroundSuggestions": handleAppearanceRpc,
   "appearance.backgroundImage": handleAppearanceRpc,
   "appearance.createDesign": handleAppearanceRpc,
   "appearance.cancelDesign": handleAppearanceRpc,
+  "appearance.cancelGeneration": handleAppearanceRpc,
   "assistant.builder.interview": handleAssistantBuilderRpc,
   "assistant.builder.avatarGenerate": handleAssistantBuilderRpc,
   "assistant.builder.avatarRead": handleAssistantBuilderRpc,
@@ -565,6 +745,7 @@ const handlers: Record<
   "devices.boot": handleDevicesRpc,
   "devices.capture": handleDevicesRpc,
   "devices.stream": handleDevicesRpc,
+  "devices.touch": handleDevicesRpc,
   "devices.control.status": handleDevicesRpc,
   "devices.control.claim": handleDevicesRpc,
   "devices.control.release": handleDevicesRpc,
@@ -578,6 +759,9 @@ const handlers: Record<
   "mobile.pairing.cancel": handleDevicesRpc,
   "host.access.read": handleDevicesRpc,
   "devices.revokeOther": handleDevicesRpc,
+  "devices.setManagement": handleDevicesRpc,
+  "devices.applyRecovery": handleDevicesRpc,
+  "devices.paired": handleDevicesRpc,
   "mobile.access.status": handleDevicesRpc,
   "mobile.access.enable": handleDevicesRpc,
   "mobile.access.disable": handleDevicesRpc,
@@ -585,6 +769,8 @@ const handlers: Record<
   "tunnels.start": handleDevicesRpc,
   "tunnels.stop": handleDevicesRpc,
   "tunnels.credential": handleDevicesRpc,
+  "tunnels.phones": handleDevicesRpc,
+  "devices.bindProofKey": handleDevicesRpc,
   "devices.revokeSelf": handleDevicesRpc,
   "shell.profiles": handleProvidersRpc,
   "shell.setProfile": handleProvidersRpc,
@@ -623,6 +809,7 @@ const handlers: Record<
   "automations.delete": handleTasksRpc,
   "automations.runs": handleTasksRpc,
   "automations.runNow": handleTasksRpc,
+  "automations.decide": handleTasksRpc,
   "sprints.list": handleTasksRpc,
   "sprints.get": handleTasksRpc,
   "sprints.create": handleTasksRpc,
@@ -650,6 +837,7 @@ const handlers: Record<
   "goals.create": handleTasksRpc,
   "goals.final-review.recheck": handleTasksRpc,
   "tasks.preflight": handleTasksRpc,
+  "tasks.helpers": handleTasksRpc,
   "tasks.evaluation.save": handleTasksRpc,
   "goals.approve": handleTasksRpc,
   "goals.update": handleTasksRpc,
@@ -671,6 +859,7 @@ const handlers: Record<
   "crews.deleteRun": handleCrewsRpc,
   "crews.agent.save": handleCrewsRpc,
   "crews.agent.delete": handleCrewsRpc,
+  "crews.agent.group.update": handleCrewsRpc,
   "crews.start": handleCrewsRpc,
   "crews.get": handleCrewsRpc,
   "crews.assign": handleCrewsRpc,
@@ -689,6 +878,8 @@ const handlers: Record<
   "git.createBranch": handleGitRpc,
   "git.worktrees": handleGitRpc,
   "git.worktreeCreate": handleGitRpc,
+  "git.worktreeRemovalReview": handleGitRpc,
+  "git.worktreeRemove": handleGitRpc,
   "git.index": handleGitRpc,
   "git.generateText": handleGitRpc,
   "git.fileDiff": handleGitRpc,
@@ -713,19 +904,36 @@ export async function dispatchOwnerRpc(
   // Only the desktop app sends this heartbeat; it is how the Host recognizes the desktop principal.
   if (method === "sessions.desktopLive") dependencies.approvals.noteDesktop(request.tokenHash);
   const startedAt = performance.now();
+  const trace = currentRequestTrace();
+  if (trace) trace.handlerStartedAt = startedAt;
+  const signal = request.domainContext?.signal;
   try {
-    await handler(dependencies, request);
+    const work = handler(dependencies, request);
+    await (signal
+      ? untilAborted(
+          work,
+          signal,
+          String(method),
+          ownerRpcDeadlineMs(String(method), request.params),
+        )
+      : work);
   } catch (error) {
+    const failedAt = performance.now();
+    if (trace) trace.handlerEndedAt = failedAt;
     const fields = {
       ...rpcFailureFields(error, request),
-      ms: Math.round(performance.now() - startedAt),
+      ms: Math.round(failedAt - startedAt),
+      ...tracedSlowFields(trace, String(method), request.params, failedAt),
     };
     // A refusal made before execution is a normal answer to the caller, not a Host failure.
     if (error instanceof HostDomainRefusalError) rpcLog.debug("refused", fields);
     else rpcLog.warn("handler failed", fields);
     throw error;
   }
-  const ms = Math.round(performance.now() - startedAt);
-  if (ms >= slowRpcThresholdMs(String(method), request.params))
-    rpcLog.warn("slow call", { method: String(method), ms });
+  const finishedAt = performance.now();
+  if (trace) trace.handlerEndedAt = finishedAt;
+  const ms = Math.round(finishedAt - startedAt);
+  const traced = tracedSlowFields(trace, String(method), request.params, finishedAt);
+  if (traced || ms >= slowRpcThresholdMs(String(method), request.params))
+    rpcLog.warn("slow call", { method: String(method), ms, ...traced });
 }

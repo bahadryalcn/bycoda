@@ -11,7 +11,9 @@ vi.mock("./Composer", () => ({
     busy,
     allowBusySubmit,
     onStop,
+    inputAriaLabel,
   }: {
+    inputAriaLabel?: string;
     initialDraft?: string;
     onDraftChange?: (text: string) => void;
     onSubmit: (text: string) => boolean | void;
@@ -24,6 +26,7 @@ vi.mock("./Composer", () => ({
       null,
       createElement("textarea", {
         "data-btw-composer": "true",
+        "aria-label": inputAriaLabel,
         defaultValue: initialDraft ?? "",
         onInput: (event: FormEvent<HTMLTextAreaElement>) =>
           onDraftChange?.(event.currentTarget.value),
@@ -44,6 +47,7 @@ vi.mock("./Composer", () => ({
 }));
 
 import { BtwSheet, useBtwConversation, type BtwConversation } from "./BtwSheet";
+import { setLanguagePreference } from "../../../shared/i18n";
 import type { Block, BtwThread } from "../model/session";
 
 function thread(id: string, question: string, createdAt: number): BtwThread {
@@ -144,6 +148,18 @@ describe("BTW conversation", () => {
     const composer = container.querySelector<HTMLTextAreaElement>("[data-btw-composer]");
     expect(composer?.value).toBe("half a thought");
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("names the side composer in the active language", async () => {
+    await setLanguagePreference("tr");
+    try {
+      await render();
+      await act(async () => void btw.openWith("", { draft: true }));
+      const composer = container.querySelector<HTMLTextAreaElement>("[data-btw-composer]");
+      expect(composer?.getAttribute("aria-label")).toBe("Yan soru");
+    } finally {
+      await setLanguagePreference("en");
+    }
   });
 
   it("keeps an unsent question in its own tab while switching", async () => {

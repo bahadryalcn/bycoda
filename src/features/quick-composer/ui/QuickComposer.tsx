@@ -1,16 +1,24 @@
+import { copyMessage } from "../../../platform/tauri/clipboard";
+import { selectedComposerAttachments } from "../../sessions/public/composerMentions";
+import { errorText } from "../../../shared/lib/errors";
+import { usePickerList } from "../../../shared/ui/picker";
+import { Divider } from "../../../shared/ui/Divider";
+import { Surface } from "../../../shared/ui/Surface";
 import { PickerListRoot } from "../../../shared/ui/picker/PickerList";
+import { usePointerMovement } from "../../../shared/ui/picker/usePointerMovement";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
-import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { IS_MAC, MOD } from "../../../platform/tauri/platform";
 import { Button } from "../../../shared/ui/Button";
 import { ListRow } from "../../../shared/ui/ListRow";
 import { PromptField } from "../../../shared/ui/PromptField";
-import { SearchInput } from "../../../shared/ui/SearchInput";
+import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { projectDisplayName } from "../../projects/public/projectNames";
+import { looksLikeProject } from "../../projects/public/recents";
+import { isProjectlessCwd } from "../../sessions/public/projectless";
 import { t, useLocale } from "../../../shared/i18n";
 import { useComposerSpelling } from "../../settings/public/composerSpelling";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -36,7 +44,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { prettyParent } from "../../../shared/lib/paths";
 import { isImeComposition } from "../../../shared/lib/keyboard";
-import { Search, Plus, X, ImagePlus, Maximize2 } from "../../../shared/ui/icons";
+import { Plus, X, ImagePlus, Maximize2 } from "../../../shared/ui/icons";
 import { QuickProjectIcon, loadQuickProjectAppearance } from "./QuickProjectIcon";
 import {
   getModelSnapshot,
@@ -52,22 +60,27 @@ import {
   type RuntimeMode,
   harnessSupportsAttachments,
 } from "../../sessions/model/session";
-import { Popover } from "../../../shared/ui/Popover";
+import { Popover, popupListClassName } from "../../../shared/ui/Popover";
 import { AttachmentChip } from "../../sessions/ui/AttachmentChip";
 import { ComposerHighlight } from "../../sessions/ui/ComposerHighlight";
 import { useComposerSkills } from "../../sessions/ui/useComposerSkills";
 import { skillTextParts, skillInvocationTokens } from "../../skills/model/skills";
 import {
-  attachmentTokens,
+  attachmentDraftTokens,
+  compactAttachmentDraftTokens,
   deleteTokenAtCaret,
   attachmentsDroppedByEdit,
   insertAtSelection,
   removeAttachmentFromText,
   tokensForIncoming,
 } from "../../sessions/model/attachmentTokens";
+import {
+  applyMentionDeletion,
+  deleteScopedMentionAtCaret,
+} from "../../sessions/public/composerMentions";
 import { quickLaunchAttachments } from "../model/quickAttachments";
 import { useQuickAttachments } from "./useQuickAttachments";
-import { isScreenRecordingBlocked } from "../model/screenCaptureAccess";
+import type { QuickNotice } from "../model/screenCaptureAccess";
 import { PermissionRecoveryAction } from "../../permissions";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 import { QuickPermissionIcon, QuickPermissions } from "./QuickPermissions";
@@ -189,16 +202,18 @@ export function QuickComposer({
     },
     [owner, setField],
   );
-  const workspace = workspaceForProject(workspaceChoice, cwd);
+  const workspaceCwd = cwd && looksLikeProject(cwd) && !isProjectlessCwd(cwd) ? cwd : null;
+  const workspace = workspaceForProject(workspaceChoice, workspaceCwd);
   const workspaceCreation = useWorkspaceCreation(
-    cwd ?? "",
-    !!cwd && !workspace.tree,
+    workspaceCwd ?? "",
+    !!workspaceCwd && !workspace.tree,
     workspace.mode,
     workspace.base,
   );
   // Pending is bounded by the policy-read timeout; only an explicit worktree choice
   // makes a failed read a hard stop. Automatic falls back to the current checkout.
   const workspaceBlocked =
+    !!workspaceCwd &&
     !workspace.tree &&
     (workspaceCreation.pending || (!!workspaceCreation.error && workspace.mode === "worktree"));
   const [gitOpen, setGitOpen] = useState(false);
@@ -216,7 +231,7 @@ export function QuickComposer({
   const skillNames = new Set(
     skills.filter((skill) => skill.kind !== "template").map((skill) => skill.invocation),
   );
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<QuickNotice | null>(null);
   const [uiBusy, setBusy] = useState(false);
   const busy = uiBusy || owner.launching;
   const submitting = useRef(false);
@@ -294,6 +309,8 @@ export function QuickComposer({
     setCwd,
     setWorkspaceChoice,
   });
+  // Keyboard scrolling slides rows under a resting pointer; only a real pointer move may take the highlight.
+  const pointerMoved = usePointerMovement();
   const resetTransient = useCallback(() => {
     resetPickers();
     setError(null);
@@ -346,7 +363,7 @@ export function QuickComposer({
   const model = resolvedModel ?? {
     ...choice,
     id: choice.model,
-    name: "Loading model…",
+    name: t("Loading…"),
   };
   const settings = quickSessionModelSettings(model, cwd ?? undefined, modelSettings);
   const runtimeMode = quickSessionRuntimeMode(model.harness, cwd ?? undefined, pickedRuntimeMode);
@@ -379,7 +396,9 @@ export function QuickComposer({
   };
 
   const dismiss = () =>
-    void invoke("quick_composer_dismiss").catch((reason) => setError(String(reason)));
+    void invoke("quick_composer_dismiss").catch((reason) =>
+      setError({ title: t("Could not close the quick composer."), message: errorText(reason) }),
+    );
 
   const submit = async (reveal: boolean) => {
     if (!owner.canMutate() || owner.pending) return;
@@ -397,7 +416,7 @@ export function QuickComposer({
       current.pickedRuntimeMode,
     );
     const launchMode = quickPromptMode(submittedPrompt.trim());
-    const text = launchMode.prompt.trim();
+    const text = compactAttachmentDraftTokens(launchMode.prompt.trim(), current.attachments);
     if (
       (!recoveringLaunch && !text && !current.attachments.length) ||
       (!recoveringLaunch && !current.cwd) ||
@@ -418,7 +437,7 @@ export function QuickComposer({
         ? quickLaunchRefusal(selectedModel.harness, selectedRuntime, intent)
         : null;
     if (refusal) {
-      setError(refusal);
+      setError({ title: refusal });
       return;
     }
     submitting.current = true;
@@ -485,7 +504,7 @@ export function QuickComposer({
         });
       }, "launch");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError({ title: t("Could not start the session."), message: errorText(reason) });
     } finally {
       submitting.current = false;
       setBusy(false);
@@ -512,10 +531,20 @@ export function QuickComposer({
       !event.metaKey &&
       field.selectionStart === field.selectionEnd
     ) {
+      const direction = event.key === "Backspace" ? "back" : "forward";
+      const mentionEdit = deleteScopedMentionAtCaret(field.value, field.selectionStart, direction);
+      if (mentionEdit) {
+        event.preventDefault();
+        if (!applyMentionDeletion(field, mentionEdit)) {
+          setPrompt(mentionEdit.text);
+          syncPromptCommand(field);
+        }
+        return;
+      }
       const edit = deleteTokenAtCaret(
         field.value,
         field.selectionStart,
-        event.key === "Backspace" ? "back" : "forward",
+        direction,
         attachments.files,
         [],
         skillInvocationTokens(field.value).filter((token) => skillNames.has(token.name)),
@@ -575,25 +604,16 @@ export function QuickComposer({
     }
   };
 
-  const onQueryKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (isImeComposition(event.nativeEvent)) return;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      closePicker();
-      return;
-    }
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      if (optionCount === 0) return;
-      const step = event.key === "ArrowDown" ? 1 : -1;
-      setHighlight((index) => (index + step + optionCount) % optionCount);
-      return;
-    }
-    if (event.key === "Enter") {
-      event.preventDefault();
-      chooseAt(Math.min(highlight, optionCount - 1));
-    }
-  };
+  const projectList = usePickerList({
+    options: projectOptions.map((path) => ({ value: path, title: projectDisplayName(path) })),
+    value: null,
+    activeValue: projectOptions[Math.min(highlight, projectOptions.length - 1)] ?? null,
+    onActiveValueChange: (path) =>
+      setHighlight(projectOptions.findIndex((entry) => entry === path)),
+    onChange: (path) => chooseAt(projectOptions.indexOf(path)),
+    inputRef: queryRef,
+    loop: true,
+  });
 
   const canSubmit = Boolean(
     (nativeQuickLaunches.has(owner.rendererWindowId) ||
@@ -608,10 +628,29 @@ export function QuickComposer({
     !gitOpen,
   );
 
+  const submitDisabledReason =
+    canSubmit || busy || attachments.loading || workspaceBlocked
+      ? undefined
+      : gitOpen
+        ? t("Close the workspace options to continue.")
+        : owner.pending
+          ? t("Working…")
+          : !cwd
+            ? t("Choose a project first.")
+            : !resolvedModel
+              ? t("Choose a model first.")
+              : !attachmentsSupported && attachments.files.length
+                ? t("This conversation does not accept attachments.")
+                : undefined;
+
   return (
     // Selectors expand below the toolbar without moving the prompt.
-    <div
+    <Surface
       ref={frameRef}
+      variant="floating"
+      frame="pane"
+      radius="popup"
+      padding="none"
       data-ui-focus-group=""
       data-external-drop-owner="quick-attachments"
       onPaste={attachments.onPaste}
@@ -624,30 +663,25 @@ export function QuickComposer({
         if (picker) closePicker();
         else dismiss();
       }}
-      className="relative flex max-h-[520px] flex-col overflow-clip rounded-(--ui-radius-popup) border border-stroke bg-[color-mix(in_oklab,var(--color-background-base)_45%,transparent)] text-content"
+      className="relative flex max-h-[520px] flex-col overflow-clip"
     >
-      <Tooltip label={t("Drag to move")} asChild>
-        <div
-          className="group absolute inset-x-0 top-0 z-(--layer-pane-sheet) flex h-3 cursor-grab items-start justify-center pt-1 active:cursor-grabbing"
-          onMouseDown={(event) => {
-            if (event.button !== 0) return;
-            event.preventDefault();
-            void getCurrentWindow()
-              .startDragging()
-              .catch(() => undefined);
-          }}
-        >
-          <span className="pointer-events-none h-0.5 w-6 rounded-full bg-(--ui-text-muted) opacity-50 transition-opacity group-hover:opacity-100" />
-        </div>
-      </Tooltip>
+      <div
+        className="group absolute inset-x-0 top-0 z-(--layer-pane-sheet) flex h-3 cursor-grab items-start justify-center pt-1 active:cursor-grabbing"
+        onMouseDown={(event) => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          void getCurrentWindow()
+            .startDragging()
+            .catch(() => undefined);
+        }}
+      >
+        <span className="pointer-events-none h-0.5 w-6 rounded-full bg-(--ui-text-muted) opacity-50 transition-opacity group-hover:opacity-100" />
+      </div>
       <Button
         iconOnly
         label={t("Close composer")}
         variant="ghost"
         motion="none"
-        type="button"
-        aria-label={t("Close composer")}
-        tooltip={t("Close")}
         shortcut="Esc"
         onClick={dismiss}
         // Above the drag strip.
@@ -655,7 +689,7 @@ export function QuickComposer({
       >
         <X className="icon-xs" />
       </Button>
-      <div className="flex shrink-0 items-center gap-2 px-5 pt-3 pr-9">
+      <div className="flex shrink-0 items-center gap-2 ps-5 pe-9 pt-3">
         <QuickWorkspaceControls
           key={cwd}
           value={workspace}
@@ -665,33 +699,35 @@ export function QuickComposer({
           canOpen={owner.canMutate}
           prepare={(operation) => owner.prepare(() => operation())}
           onChange={setWorkspaceChoice}
-          onError={setError}
+          onError={(message) =>
+            setError({ title: t("Could not open the workspace options."), message })
+          }
           onOpenChange={onGitOpenChange}
           onClose={focusPrompt}
         />
         <Button
           selected={picker === "project"}
-          variant="ghost"
+          variant="chip"
           motion="none"
-          type="button"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => openPicker("project")}
           disabled={projects.length === 0}
-          tooltip={t("Project")}
+          disabledReason={projects.length === 0 ? t("Open a project first.") : undefined}
           shortcut="mod+p"
           expanded={picker === "project"}
-          className={`ml-auto flex min-w-0 max-w-[40%] items-center gap-1.5 `}
+          truncate
+          startIcon={
+            cwd ? (
+              <QuickProjectIcon
+                projectPath={cwd}
+                appearance={projectAppearance}
+                className="size-3 shrink-0"
+              />
+            ) : undefined
+          }
+          className="ms-auto min-w-0 max-w-[40%]"
         >
-          {cwd ? (
-            <QuickProjectIcon
-              projectPath={cwd}
-              appearance={projectAppearance}
-              className="size-3 shrink-0"
-            />
-          ) : null}
-          <Text size="inherit" tone="inherit" truncate>
-            {cwd ? projectDisplayName(cwd) : t("No project")}
-          </Text>
+          {cwd ? projectDisplayName(cwd) : t("No project")}
         </Button>
       </div>
       {attachments.files.length ? (
@@ -703,11 +739,11 @@ export function QuickComposer({
             <AttachmentChip
               key={file.id}
               attachment={file}
-              token={attachmentTokens(attachments.files)[index]}
+              token={attachmentDraftTokens(attachments.files)[index]}
               onInsertToken={
                 busy
                   ? undefined
-                  : () => insertPromptText(attachmentTokens(attachments.files)[index])
+                  : () => insertPromptText(attachmentDraftTokens(attachments.files)[index])
               }
               onRemove={busy ? undefined : () => removeAttachment(file.id)}
             />
@@ -738,6 +774,9 @@ export function QuickComposer({
             modeIconClassName="size-4"
             names={skillNames}
             skillParts={skillTextParts}
+            skillDetails={
+              new Map(skills.map((skill) => [skill.invocation, { description: skill.description }]))
+            }
             mentions={new Map()}
             mcpTags={[]}
             attachments={attachments.files}
@@ -750,6 +789,21 @@ export function QuickComposer({
         onChange={(event) => {
           setPrompt(event.target.value);
           syncPromptCommand(event.currentTarget);
+        }}
+        onCopy={(event) => {
+          const { value, selectionStart, selectionEnd } = event.currentTarget;
+          const selection = selectedComposerAttachments(
+            value,
+            selectionStart,
+            selectionEnd,
+            attachments.files,
+          );
+          if (!selection) return;
+          event.preventDefault();
+          void copyMessage(selection.text, selection.selected).catch((error: unknown) => {
+            if (owner.canMutate())
+              setError({ title: t("Could not copy the selection."), message: errorText(error) });
+          });
         }}
         onClick={(event) => syncPromptCommand(event.currentTarget)}
         onKeyDown={onPromptKeyDown}
@@ -785,7 +839,8 @@ export function QuickComposer({
           {t("Choose a provider that supports attachments, or remove the attached files.")}
         </Alert>
       ) : null}
-      {!workspace.tree &&
+      {workspaceCwd &&
+      !workspace.tree &&
       (workspaceCreation.pending ||
         workspaceCreation.error ||
         workspaceCreation.mode === "worktree") ? (
@@ -804,99 +859,86 @@ export function QuickComposer({
       {error ? (
         <Alert
           tone="danger"
+          title={error.title}
           className="mx-3 mb-2 min-w-0 break-words"
           extra={
-            isScreenRecordingBlocked(error) ? (
-              <PermissionRecoveryAction id="screen-recording" />
-            ) : undefined
+            <>
+              {error.message ? <ErrorDetails title={error.title} detail={error.message} /> : null}
+              {error.recovery === "screen-recording" ? (
+                <PermissionRecoveryAction id="screen-recording" />
+              ) : null}
+            </>
           }
-        >
-          {error}
-        </Alert>
+        />
       ) : null}
-      <div className="flex shrink-0 items-center gap-1.5 border-t border-stroke px-3 py-2">
+      <Divider decorative />
+      <div className="flex shrink-0 items-center gap-1.5 px-3 py-2">
         <Button
           iconOnly
           label={t("Add attachment")}
           selected={picker === "attachments"}
           variant="ghost"
           motion="none"
-          type="button"
           ref={plusRef}
-          aria-label={t("Add attachment")}
           aria-expanded={picker === "attachments"}
-          tooltip={
-            attachmentsSupported
-              ? t("Attach files or take a screenshot")
-              : t("This provider does not support attachments")
-          }
           disabled={!attachmentsSupported || attachments.loading || busy}
+          disabledReason={
+            !attachmentsSupported
+              ? t("This provider does not support attachments")
+              : attachments.loading
+                ? t("Adding attachment…")
+                : busy
+                  ? t("Working…")
+                  : undefined
+          }
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => openPicker("attachments")}
-          className={`grid shrink-0 place-items-center `}
+          className="shrink-0"
         >
           <Plus className="icon-sm" />
         </Button>
         <Button
           selected={picker === "model"}
-          variant="ghost"
+          variant="chip"
           motion="none"
-          type="button"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => openPicker("model")}
-          tooltip={t("Model")}
           shortcut="mod+."
           expanded={picker === "model"}
-          className={`flex min-w-0 max-w-[40%] items-center gap-1.5 `}
+          truncate
+          startIcon={<HarnessIcon harness={model.harness} className="icon-sm shrink-0" />}
+          className="min-w-0 max-w-[40%]"
         >
-          <HarnessIcon harness={model.harness} className="size-3.5 shrink-0" />
-          <Text size="inherit" tone="inherit" truncate>
-            {model.name}
-          </Text>
+          {model.name}
         </Button>
         {model.harness !== "fx" ? (
           <Button
             selected={picker === "permissions"}
-            variant="ghost"
+            variant="chip"
             motion="none"
-            type="button"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => openPicker("permissions")}
-            tooltip={t("Permissions")}
             aria-label={t("Permissions")}
             expanded={picker === "permissions"}
-            className={`flex min-w-0 items-center gap-1.5 `}
+            truncate
+            startIcon={<QuickPermissionIcon mode={runtimeMode} className="icon-sm shrink-0" />}
+            className="min-w-0"
           >
-            <QuickPermissionIcon mode={runtimeMode} className="size-3.5 shrink-0" />
-            <Text size="inherit" tone="inherit" truncate className="max-[450px]:hidden">
-              {RUNTIME_MODE_LABEL[runtimeMode]}
-            </Text>
+            <span className="max-[450px]:hidden">{RUNTIME_MODE_LABEL[runtimeMode]}</span>
           </Button>
         ) : null}
-        <Text size="micro" tone="secondary" className="ml-auto flex shrink-0 items-center gap-3">
-          {attachments.loading ? (
-            <LoadingText>{t("Adding attachment…")}</LoadingText>
-          ) : (
-            <>
-              <span className="max-[600px]:hidden">
-                <Kbd>↵</Kbd>
-                {t(" start")}
-              </span>
-              <span className="max-[600px]:hidden">
-                <Kbd>{`${MOD}↵`}</Kbd>
-                {t(" start and open")}
-              </span>
-            </>
-          )}
+        <Text size="micro" tone="secondary" className="ms-auto flex shrink-0 items-center gap-3">
+          {attachments.loading ? <LoadingText>{t("Adding attachment…")}</LoadingText> : null}
           <Button
             variant="primary"
             tone="accent"
             motion="none"
-            type="button"
+            shortcut="Enter"
+            tooltip={t("{p0}↵ start and open", { p0: MOD })}
             onClick={() => void submit(false)}
             disabled={!canSubmit}
+            disabledReason={submitDisabledReason}
             loading={busy}
-            className=""
           >
             {leadingMode?.name === DRAFT_COMMAND.name ? t("Save draft") : t("Start")}
           </Button>
@@ -913,56 +955,68 @@ export function QuickComposer({
           autoFocus
           tabIndex={-1}
           onDismiss={closePicker}
-          className="p-1"
+          className={popupListClassName}
         >
           <Button
             variant="ghost"
             motion="none"
-            type="button"
             disabled={attachments.loading || !attachmentsSupported}
+            disabledReason={
+              !attachmentsSupported
+                ? t("This provider does not support attachments")
+                : attachments.loading
+                  ? t("Adding attachment…")
+                  : undefined
+            }
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
               hidePicker();
               void attachments.chooseFiles().then(focusPrompt);
             }}
-            className="flex w-full items-center gap-2"
+            fullWidth
+            startIcon={<ImagePlus className="icon-sm" />}
           >
-            <ImagePlus className="icon-sm" />
             {t("Choose files…")}
           </Button>
           <Button
             variant="ghost"
             motion="none"
-            type="button"
             disabled={attachments.loading || !attachmentsSupported}
+            disabledReason={
+              !attachmentsSupported
+                ? t("This provider does not support attachments")
+                : attachments.loading
+                  ? t("Adding attachment…")
+                  : undefined
+            }
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
               hidePicker();
               void attachments.takeScreenshot().then(focusPrompt);
             }}
-            className="flex w-full items-center gap-2"
+            fullWidth
+            startIcon={<Maximize2 className="icon-sm" />}
           >
-            <Maximize2 className="icon-sm" />
             {t("Take screenshot…")}
           </Button>
         </Popover>
       ) : null}
       {picker && picker !== "attachments" ? (
         <div ref={pickerRef} key={picker} className="flex min-h-0 flex-col">
+          {picker === "commands" || picker === "project" ? <Divider decorative /> : null}
           {picker === "commands" ? (
             <PickerListRoot
               ref={listRef}
               id="quick-composer-commands"
-
               label={t("Commands")}
-              className="shrink-0 border-t border-stroke p-2"
+              className="shrink-0 p-2"
             >
               {commandOptions.length === 0 ? (
                 <EmptyState
                   size="inline"
                   kind="filtered"
-                  className="px-2 py-2"
-                  description={t("No matching commands")}
+                  inset="row"
+                  description={t("No matches")}
                 />
               ) : (
                 commandOptions.map((command, index) => (
@@ -973,7 +1027,9 @@ export function QuickComposer({
                     aria-selected={index === highlight}
                     active={index === highlight}
                     tabIndex={-1}
-                    onMouseEnter={() => setHighlight(index)}
+                    onPointerMove={(event) => {
+                      if (pointerMoved(event)) setHighlight(index);
+                    }}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => chooseAt(index)}
                   >
@@ -1009,37 +1065,30 @@ export function QuickComposer({
             />
           ) : null}
           {picker === "project" ? (
-            <div className="flex min-h-0 flex-col border-t border-stroke">
-              <Text
-                as="div"
-                size="inherit"
-                tone="secondary"
-                className="flex shrink-0 items-center gap-2 px-4 py-2"
-              >
-                <Search className="icon-sm shrink-0" />
-                <SearchInput
-                  ref={queryRef}
-                  value={query}
-                  onChange={(event) => {
-                    setQuery(event.target.value);
-                    setHighlight(0);
-                  }}
-                  onKeyDown={onQueryKeyDown}
-                  onBlur={(event) => {
-                    if (!frameRef.current?.contains(event.relatedTarget as Node | null)) {
-                      closePicker();
-                    }
-                  }}
-                  placeholder={t("Find a project")}
-                  aria-label={t("Find a project")}
-                  spellCheck={false}
-                  autoComplete="off"
-                  className="min-w-0 flex-1"
-                />
-              </Text>
+            <div className="flex min-h-0 flex-col">
+              <PopoverSearchHeader
+                {...projectList.searchProps}
+                value={query}
+                label={t("Search projects")}
+                placeholder={t("Search projects…")}
+                onValueChange={(value) => {
+                  setQuery(value);
+                  setHighlight(0);
+                }}
+                onEscape={closePicker}
+                onBlur={(event) => {
+                  if (!frameRef.current?.contains(event.relatedTarget as Node | null))
+                    closePicker();
+                }}
+                autoFocus={false}
+                divider={false}
+                spellCheck={false}
+                autoComplete="off"
+              />
               <PickerListRoot
                 ref={listRef}
 
+                id={projectList.listId}
                 label={t("Projects")}
                 className="min-h-0 max-h-64 overflow-y-auto overscroll-none px-2 pb-2"
               >
@@ -1047,18 +1096,21 @@ export function QuickComposer({
                   <EmptyState
                     size="inline"
                     kind="filtered"
-                    className="px-2 py-2"
+                    inset="row"
                     description={t("No matches")}
                   />
                 ) : (
                   projectOptions.map((path, index) => (
                     <ListRow
                       key={path}
+                      id={projectList.optionId(index)}
                       role="option"
-                      aria-selected={index === highlight}
-                      active={index === highlight}
+                      aria-selected={index === projectList.activeIndex}
+                      active={index === projectList.activeIndex}
                       tabIndex={-1}
-                      onMouseEnter={() => setHighlight(index)}
+                      onPointerMove={(event) => {
+                        if (pointerMoved(event)) setHighlight(index);
+                      }}
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => chooseAt(index)}
                     >
@@ -1070,7 +1122,7 @@ export function QuickComposer({
                       <Text size="inherit" tone="inherit" truncate>
                         {projectDisplayName(path)}
                       </Text>
-                      <Text truncate size="micro" tone="secondary" className="ml-auto pl-3">
+                      <Text truncate size="micro" tone="secondary" className="ms-auto ps-3">
                         {prettyParent(path)}
                       </Text>
                     </ListRow>
@@ -1081,22 +1133,17 @@ export function QuickComposer({
           ) : null}
         </div>
       ) : null}
-    </div>
+    </Surface>
   );
 }
 
 function CommandLabel({ name }: { name: string }) {
-  useLocale();
+  const locale = useLocale();
   const style = MODE_COMMAND_STYLES[name];
   return (
     <span className="flex items-center gap-1.5">
       {style ? <style.Icon className="size-3.5 shrink-0" tone={style.menu?.tone} /> : null}
-      {name.charAt(0).toUpperCase() + name.slice(1)}
+      {name.charAt(0).toLocaleUpperCase(locale) + name.slice(1)}
     </span>
   );
-}
-
-function Kbd({ children }: { children: string }) {
-  useLocale();
-  return <ShortcutKbd size="xs">{children}</ShortcutKbd>;
 }

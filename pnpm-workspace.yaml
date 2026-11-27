@@ -8,23 +8,15 @@ packages:
 allowBuilds:
   esbuild: true
   core-js: false
-  tsc-rs: true
   "@ast-grep/cli": false
+  "@openuidev/lang-core": false
 minimumReleaseAgeExclude:
-  - "@tsc-rs/darwin-arm64@0.8.0"
-  - "@tsc-rs/darwin-x64@0.8.0"
-  - "@tsc-rs/linux-arm64@0.8.0"
-  - "@tsc-rs/linux-x64@0.8.0"
-  - "@tsc-rs/win32-arm64@0.8.0"
-  - "@tsc-rs/win32-x64@0.8.0"
-  - tsc-rs@0.8.0
-  - "@voidzero-dev/vite-plus-core@1.6.0"
-  - "@voidzero-dev/vite-plus-darwin-arm64@1.6.0"
-  - "@voidzero-dev/vite-plus-darwin-x64@1.6.0"
-  - "@voidzero-dev/vite-plus-linux-arm64-gnu@1.6.0"
-  - "@voidzero-dev/vite-plus-linux-arm64-musl@1.6.0"
-  - "@voidzero-dev/vite-plus-linux-x64-gnu@1.6.0"
-  - "@voidzero-dev/vite-plus-linux-x64-musl@1.6.0"
-  - "@voidzero-dev/vite-plus-win32-arm64-msvc@1.6.0"
-  - "@voidzero-dev/vite-plus-win32-x64-msvc@1.6.0"
-  - vite-plus@1.6.0
+  - "@tsrs/darwin-arm64@7.1.0-beta.tsrs4"
+  - "@tsrs/darwin-x64@7.1.0-beta.tsrs4"
+  - "@tsrs/linux-arm64-gnu@7.1.0-beta.tsrs4"
+  - "@tsrs/linux-arm64-musl@7.1.0-beta.tsrs4"
+  - "@tsrs/linux-x64-gnu@7.1.0-beta.tsrs4"
+  - "@tsrs/linux-x64-musl@7.1.0-beta.tsrs4"
+  - "@tsrs/win32-arm64@7.1.0-beta.tsrs4"
+  - "@tsrs/win32-x64@7.1.0-beta.tsrs4"
+  - tsrs@7.1.0-beta.tsrs4

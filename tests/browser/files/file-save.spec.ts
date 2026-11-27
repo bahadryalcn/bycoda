@@ -35,7 +35,13 @@ test("Ctrl+S distinguishes a saved source from a failed format without claiming 
   await page.keyboard.press("Control+s");
   await expect(page.getByLabel("Disk writes")).toContainText("1: ");
   const warning = page.getByRole("alert");
-  await expect(warning).toContainText("Saved, but formatting failed: NATIVE_DELIVERY_CAPACITY");
+  // The plain message stays in the row; the raw cause sits behind Details.
+  await expect(warning).toContainText("Saved, but formatting failed.");
+  await warning.getByRole("button", { name: /^Details/ }).click();
+  await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText(
+    "NATIVE_DELIVERY_CAPACITY",
+  );
+  await page.keyboard.press("Escape");
   for (const width of [1280, 800]) {
     await page.setViewportSize({ width, height: 800 });
     for (const light of [false, true]) {
@@ -61,7 +67,12 @@ test("Ctrl+S distinguishes a saved source from a failed format without claiming 
   await page.keyboard.press("Control+s");
   await expect(page.getByText("Saved, but formatting failed: ", { exact: false })).toHaveCount(0);
   await expect(page.getByLabel("Disk writes")).toContainText("1: ");
-  await expect(page.getByText("Disk full while saving", { exact: false })).toBeVisible();
+  // The row says the save failed; the disk-full cause sits behind Details.
+  await expect(page.getByText("Save failed", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /^Details: Save failed/ }).click();
+  await expect(page.getByRole("dialog", { name: /^Details: Save failed/ })).toContainText(
+    "Disk full while saving",
+  );
 });
 
 test("native draft save reporting never marks edits made during an older disk write as saved", async ({
@@ -248,7 +259,7 @@ test("same-name file tabs keep independent drafts and expose their full path fro
   await page.keyboard.type("Second unsaved draft");
   await second.focus();
   await page.keyboard.press("Shift+F10");
-  await page.getByRole("menuitem", { name: "Copy Path", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Copy path", exact: true }).click();
   expect(
     await page.evaluate(
       () =>
@@ -289,7 +300,7 @@ for (const light of [false, true]) {
     const message = await page.evaluate(
       () => (window as unknown as { fileSaveFixture: { error: string } }).fileSaveFixture.error,
     );
-    await expect(failure).toHaveText(`Save failed: ${message}`);
+    await expect(failure).toHaveText("Save failed");
     await expect(failure).toBeInViewport();
     expect(
       await failure.evaluate(
@@ -307,6 +318,10 @@ for (const light of [false, true]) {
     await page.screenshot({
       path: info.outputPath(`save-error-${light ? "light" : "dark"}-320.png`),
     });
+    // The full cause opens from Details and stays readable at this width.
+    await page.getByRole("button", { name: /^Details/ }).click();
+    await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText(message);
+    await page.keyboard.press("Escape");
     await page.evaluate(() => {
       (
         window as unknown as { fileSaveFixture: { failWrites: boolean } }

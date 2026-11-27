@@ -3,56 +3,80 @@ import { useT } from "../../../shared/i18n";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { StatusBadge, type BadgeStatus } from "../../../shared/ui/Badge";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { lazySurface } from "../../../shared/ui/lazySurface";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Surface } from "../../../shared/ui/Surface";
+import { reportFailure } from "../../../shared/ui/reportFailure";
+import { useGracedFailure } from "../../connections/public/transientFailure";
 import { stripAnsi } from "../../../shared/lib/ansi";
-import { terminalResultMessage } from "../model/codeTerminal";
+import {
+  CODE_POLL_BASE_MS,
+  codeTerminalPollDelay,
+  terminalResultMessage,
+} from "../model/codeTerminal";
 import { loadCodeRunReport } from "../model/codeRunReport";
-import type {
-  CodeTerminalController,
-  CodeTerminalOptions,
-} from "../runtime/codeTerminalController";
+import type { RemoteCodeRun } from "../runtime/codeTerminalController";
 
 const TerminalView = lazySurface(async () => ({
   default: (await import("./TerminalView")).TerminalView,
 }));
 
-export function CodeTerminalDialog({
+export function RemoteCodeTerminalPane(
+  props: RemoteCodeRun & { dockToolbarTarget?: HTMLDivElement | null },
+) {
+  return <CodeTerminalPresentation {...props} />;
+}
+
+export function CodeTerminalDialog(props: RemoteCodeRun & { onClose(): void }) {
+  return <CodeTerminalPresentation {...props} />;
+}
+
+function CodeTerminalPresentation({
   controller,
   options,
   onClose,
   onReport,
-}: {
-  controller: CodeTerminalController;
-  options: CodeTerminalOptions;
-  onClose(): void;
-  onReport?: (text: string) => boolean | void;
+  dockToolbarTarget,
+}: RemoteCodeRun & {
+  onClose?: () => void;
+  dockToolbarTarget?: HTMLDivElement | null;
 }) {
   const t = useT();
   const state = useSyncExternalStore(controller.subscribe, controller.snapshot);
+  const readFailure = useGracedFailure({
+    error: state.readError,
+    scope: state.id,
+  });
+  const actionFailure = useGracedFailure({
+    error: state.actionError,
+    scope: state.id,
+  });
   const [autoReport, setAutoReport] = useState(loadCodeRunReport);
   const [reported, setReported] = useState(false);
   const [reportError, setReportError] = useState<string>();
   const [reporting, setReporting] = useState(false);
   const reportSent = useRef(false);
   const [stopping, setStopping] = useState(false);
-  const working = state.phase === "starting" || state.phase === "running";
+  const working =
+    !readFailure.visibleError && (state.phase === "starting" || state.phase === "running");
+  const exited = state.phase === "exited";
   const report = useStableCallback(() => {
-    if (!onReport || reportSent.current || state.phase !== "exited") return;
+    const finished = controller.snapshot();
+    if (!onReport || reportSent.current || finished.phase !== "exited") return;
     reportSent.current = true;
     setReporting(true);
     setReportError(undefined);
     const message = terminalResultMessage(
       options.command,
       options.cwd,
-      state.shell,
-      state.output,
-      state.exitCode,
-      state.truncated,
+      finished.shell,
+      finished.output,
+      finished.exitCode,
+      finished.truncated,
     );
     void Promise.resolve()
       .then(() => onReport(message))
@@ -62,110 +86,263 @@ export function CodeTerminalDialog({
       })
       .catch((error: unknown) => {
         reportSent.current = false;
-        setReportError(error instanceof Error ? error.message : String(error));
+        return reportFailure(error, {
+          toast: { show: ({ message }) => setReportError(message) },
+        });
       })
       .finally(() => setReporting(false))
       .catch(() => {});
   });
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Poll the owned Host process while this terminal dialog is mounted; never replay launch.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Poll the owned Host process while its terminal view is mounted.
   useEffect(() => {
-    if (options.native || state.phase === "exited") return;
-    const timer = setInterval(() => {
-      void controller.refresh().catch(() => {});
-    }, 300);
-    return () => clearInterval(timer);
-  }, [controller, options.native, state.phase]);
+    if (options.native || exited) return;
+    let stopped = false;
+    let idleReads = 0;
+    let failures = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = () => {
+      timer = undefined;
+      // A hidden window reads nothing; visibilitychange resumes the loop.
+      if (stopped || document.visibilityState === "hidden") return;
+      void controller
+        .refresh()
+        .then((outcome) => {
+          idleReads = outcome === "idle" ? idleReads + 1 : 0;
+          failures = outcome === "failed" ? failures + 1 : 0;
+        })
+        .catch(() => {
+          failures += 1;
+        })
+        .finally(() => {
+          if (stopped || timer !== undefined || document.visibilityState === "hidden") return;
+          timer = setTimeout(poll, codeTerminalPollDelay(idleReads, failures));
+        })
+        .catch(() => {});
+    };
+    const visibilityChanged = () => {
+      if (document.visibilityState === "hidden") {
+        clearTimeout(timer);
+        timer = undefined;
+        return;
+      }
+      if (timer !== undefined) return;
+      idleReads = 0;
+      poll();
+    };
+    timer = setTimeout(poll, CODE_POLL_BASE_MS);
+    document.addEventListener("visibilitychange", visibilityChanged);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", visibilityChanged);
+    };
+  }, [controller, options.native, exited]);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Observe process settlement and attach its final drained output once when the owner selected reporting.
   useEffect(() => {
-    if (autoReport && state.phase === "exited") report();
-  }, [autoReport, state.phase, report]);
-  const status = working
-    ? t("Running command")
-    : state.phase === "unknown"
-      ? t("Command status unknown")
-      : state.exitCode === 0
-        ? t("Command completed")
-        : state.exitCode === null
-          ? t("Command status unknown")
-          : t("Command exited with code {p0}", { p0: state.exitCode });
+    if (!autoReport) return;
+    const unsubscribe = controller.subscribe(report);
+    report();
+    return unsubscribe;
+  }, [autoReport, controller, report]);
+  const notStarted = state.phase === "not-started";
+  const unknownStatus =
+    state.phase === "unknown" || readFailure.visibleError || state.exitCode === null;
+  // Success, failure and "can't tell" must look different at a glance, not only read differently.
+  const statusKind: BadgeStatus =
+    actionFailure.pending || working
+      ? "running"
+      : notStarted
+        ? "failed"
+        : unknownStatus
+          ? "warning"
+          : state.exitCode === 0
+            ? "done"
+            : "failed";
+  const status = actionFailure.pending
+    ? t("Loading…")
+    : notStarted
+      ? t("Could not run the command.")
+      : state.phase === "starting"
+        ? t("Loading…")
+        : working
+          ? t("Running command")
+          : state.phase === "unknown" || readFailure.visibleError
+            ? t("Command status unknown")
+            : state.exitCode === 0
+              ? t("Command completed")
+              : state.exitCode === null
+                ? t("Command status unknown")
+                : t("Command exited with code {p0}", { p0: state.exitCode });
+  const starting = state.phase === "starting";
+  const stopCommand = () => {
+    setStopping(true);
+    return controller
+      .stop()
+      .then(() => {
+        const result = controller.snapshot();
+        return (
+          !result.actionError && (!result.error || (options.native && result.phase === "unknown"))
+        );
+      })
+      .finally(() => setStopping(false));
+  };
+  const closeDialog = () => {
+    if (!onClose || starting || stopping) return;
+    if (!working) {
+      onClose();
+      return;
+    }
+    void stopCommand()
+      .then((accepted) => {
+        if (accepted) onClose();
+      })
+      .catch(() => {});
+  };
+  const stop =
+    (working || state.phase === "unknown" || readFailure.visibleError) &&
+    (onClose ? !working : !controller.canDismiss()) ? (
+      <Button
+        variant="ghost"
+        tone="danger"
+        loading={stopping}
+        loadingLabel={t("Stopping…")}
+        disabled={stopping || starting}
+        disabledReason={starting ? t("Starting…") : undefined}
+        onClick={() => void stopCommand().catch(() => {})}
+      >
+        {t("Stop")}
+      </Button>
+    ) : null;
+  const addResult =
+    onReport && !reported && exited ? (
+      <Button loading={reporting} onClick={report}>
+        {t("Add result to chat")}
+      </Button>
+    ) : null;
+  const content = (
+    <div
+      className={
+        onClose
+          ? "flex min-w-0 flex-col gap-3"
+          : "flex h-full min-w-0 flex-col gap-2 overflow-auto p-3"
+      }
+    >
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <StatusBadge status={statusKind}>
+          <LiveText text={status} />
+        </StatusBadge>
+        {onReport && !exited ? (
+          <Checkbox
+            label={t("Add result to chat when finished")}
+            checked={autoReport}
+            disabled={reported}
+            disabledReason={
+              reported ? t("Result added to chat. Review and send when ready.") : undefined
+            }
+            onChange={(event) => setAutoReport(event.target.checked)}
+          />
+        ) : null}
+        {onClose ? null : (
+          <div className="flex items-center gap-2">
+            {addResult}
+            {stop}
+          </div>
+        )}
+      </div>
+      <OutputBlock frame="filled" scroll className="max-h-32">
+        {options.command}
+      </OutputBlock>
+      <Surface
+        variant="card"
+        padding="none"
+        className={
+          onClose ? "h-80 min-w-0 overflow-hidden" : "min-h-12 min-w-0 flex-1 overflow-hidden"
+        }
+      >
+        {options.native && state.profile ? (
+          <TerminalView
+            id={state.id}
+            cwd={options.cwd}
+            profile={state.profile}
+            active
+            canStart={options.isCurrent}
+            dockToolbarTarget={dockToolbarTarget}
+          />
+        ) : (
+          <OutputBlock
+            scroll
+            className="h-full p-3"
+            aria-busy={readFailure.pending || actionFailure.pending || undefined}
+          >
+            {stripAnsi(state.output)}
+          </OutputBlock>
+        )}
+      </Surface>
+      {state.error ? (
+        <InlineError details={state.error}>
+          {notStarted ? t("Could not run the command.") : t("Could not confirm command status.")}
+        </InlineError>
+      ) : actionFailure.visibleError || readFailure.visibleError ? (
+        <InlineError details={actionFailure.visibleError ?? readFailure.visibleError}>
+          {actionFailure.visibleError
+            ? t("Could not run the command.")
+            : t("Could not confirm command status.")}
+        </InlineError>
+      ) : null}
+      {reportError ? (
+        <InlineError details={reportError}>
+          {t("Could not add result to chat. Try again.")}
+        </InlineError>
+      ) : null}
+      {state.truncated ? (
+        <InlineMessage tone="warning">
+          {t("Only the latest terminal output is included.")}
+        </InlineMessage>
+      ) : null}
+      {reported ? (
+        <InlineMessage tone="success">
+          {t("Result added to chat. Review and send when ready.")}
+        </InlineMessage>
+      ) : null}
+    </div>
+  );
+  if (!onClose) return content;
   return (
     <Modal
       title={t("Run in terminal")}
       context={options.cwd}
       size="xl"
-      closeDisabled={working}
-      onClose={onClose}
+      closeDisabled={starting || stopping}
+      onClose={closeDialog}
       footer={
-        <ModalActions
-          start={
-            working || state.phase === "unknown" ? (
-              <Button
-                variant="ghost"
-                tone="danger"
-                disabled={stopping || state.phase === "starting"}
-                onClick={() => {
-                  setStopping(true);
-                  void controller
-                    .stop()
-                    .finally(() => setStopping(false))
-                    .catch(() => {});
-                }}
-              >
-                {stopping ? t("Stopping…") : t("Stop")}
-              </Button>
-            ) : undefined
-          }
-        >
-          {onReport && !reported && state.phase === "exited" ? (
-            <Button disabled={reporting} onClick={report}>
-              {t("Add result to chat")}
+        <ModalActions start={stop}>
+          {addResult}
+          {working ? (
+            <Button
+              variant="primary"
+              tone="danger"
+              loading={stopping}
+              loadingLabel={t("Stopping…")}
+              disabled={starting || stopping}
+              disabledReason={starting ? t("Starting…") : undefined}
+              onClick={closeDialog}
+            >
+              {t("Stop and close")}
             </Button>
-          ) : null}
-          <Button variant="ghost" disabled={working} onClick={onClose}>
-            {t("Close")}
-          </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              disabled={stopping}
+              disabledReason={stopping ? t("Stopping…") : undefined}
+              onClick={closeDialog}
+            >
+              {t("Close")}
+            </Button>
+          )}
         </ModalActions>
       }
     >
-      <div className="flex min-w-0 flex-col gap-3">
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <LiveText text={status} />
-          {onReport ? (
-            <Checkbox
-              label={t("Add result to chat when finished")}
-              checked={autoReport}
-              disabled={reported}
-              onChange={(event) => setAutoReport(event.target.checked)}
-            />
-          ) : null}
-        </div>
-        <OutputBlock frame="filled" scroll className="max-h-32">
-          {options.command}
-        </OutputBlock>
-        <Surface variant="card" padding="none" className="h-80 min-w-0 overflow-hidden">
-          {options.native && state.profile ? (
-            <TerminalView
-              id={state.id}
-              cwd={options.cwd}
-              profile={state.profile}
-              active
-              canStart={options.isCurrent}
-            />
-          ) : (
-            <OutputBlock scroll className="h-full p-3">
-              {stripAnsi(state.output) || status}
-            </OutputBlock>
-          )}
-        </Surface>
-        {state.error ? <Alert tone="danger">{state.error}</Alert> : null}
-        {reportError ? <Alert tone="danger">{reportError}</Alert> : null}
-        {state.truncated ? (
-          <Alert tone="warning">{t("Only the latest terminal output is included.")}</Alert>
-        ) : null}
-        {reported ? (
-          <LiveText text={t("Result added to chat. Review and send when ready.")} />
-        ) : null}
-      </div>
+      {content}
     </Modal>
   );
 }

@@ -1,4 +1,4 @@
-import { execFileAsync as exec } from "../../src/shared/lib/processExecution.node";
+import { hostGitExec } from "./git-exec-pool";
 import { existsSync } from "node:fs";
 import { lstat } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -68,7 +68,7 @@ async function run<T extends string | Buffer>(
   encoding: "utf8" | "buffer",
   maxBuffer = 4 * 1024 * 1024,
 ): Promise<T> {
-  const { stdout } = await exec(
+  const { stdout } = await hostGitExec.exec(
     "git",
     [...(args.includes("--") ? ["--literal-pathspecs"] : []), "--no-pager", ...args],
     {

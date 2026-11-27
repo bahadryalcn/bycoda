@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const statFiles = vi.hoisted(() => vi.fn());
 
-vi.mock("../../../platform/tauri/fs", () => ({ statFiles }));
+vi.mock("../../../platform/tauri/fs", () => ({ statFiles, statFilesSettled: statFiles }));
 
 import { invalidateWatchedFiles, nudgeWatchedFiles, watchFile } from "./fileWatch";
 
@@ -46,6 +46,39 @@ describe("file watch", () => {
     nudgeWatchedFiles(["/repo/README.md"]);
 
     await vi.waitFor(() => expect(changed).toHaveBeenCalledTimes(2));
+  });
+
+  it("keeps local results and does not read an unreachable machine as a deletion", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const remote = "remote://box/repo/a.ts";
+    let localMtime = 2;
+    let online = false;
+    statFiles.mockImplementation(async (paths: string[]) =>
+      paths.map((path) =>
+        path !== remote
+          ? { path, mtimeMs: localMtime }
+          : online
+            ? { path, mtimeMs: 7 }
+            : { path, unavailable: new Error("offline") },
+      ),
+    );
+    const localChanged = vi.fn();
+    const remoteChanged = vi.fn();
+    stops.push(watchFile("/repo/a.ts", localChanged));
+    stops.push(watchFile(remote, remoteChanged));
+    await vi.waitFor(() => expect(localChanged).toHaveBeenCalledOnce());
+    expect(remoteChanged).not.toHaveBeenCalled();
+
+    localMtime = 3;
+    nudgeWatchedFiles();
+    await vi.waitFor(() => expect(localChanged).toHaveBeenCalledTimes(2));
+    expect(remoteChanged).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledOnce();
+
+    online = true;
+    nudgeWatchedFiles();
+    await vi.waitFor(() => expect(remoteChanged).toHaveBeenCalledOnce());
+    warn.mockRestore();
   });
 
   it("does not duplicate an invalidation while resetting its baseline", async () => {

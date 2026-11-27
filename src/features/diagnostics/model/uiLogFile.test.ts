@@ -28,6 +28,37 @@ it("writes redacted lines in one batch and skips a repeat inside the window", as
   expect(batches).toHaveLength(2);
 });
 
+it("writes a repeat again when its batch failed to persist", async () => {
+  let fail = true;
+  const write = vi.fn(async (_lines: UiLogFileLine[]) => {
+    if (fail) throw new Error("native unavailable");
+  });
+  const sink = createUiLogFile(write, () => 1_000_000);
+  sink("error", "ui.error", "boom");
+  await vi.advanceTimersByTimeAsync(2000);
+  fail = false;
+  sink("error", "ui.error", "boom");
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(write).toHaveBeenCalledTimes(2);
+  expect(write.mock.calls[1]![0]).toEqual([{ level: "error", message: "[ui.error] boom" }]);
+});
+
+it("does not remember a line dropped by the per-minute limit", async () => {
+  const write = vi.fn(async (_lines: UiLogFileLine[]) => {});
+  let at = 1_000_000;
+  const sink = createUiLogFile(write, () => at);
+  for (let index = 0; index < 60; index += 1) {
+    sink("warn", "ui.console", `line ${index}`);
+    if (index % 40 === 39) await vi.advanceTimersByTimeAsync(2000);
+  }
+  sink("error", "ui.error", "late");
+  await vi.advanceTimersByTimeAsync(2000);
+  at += 60_000;
+  sink("error", "ui.error", "late");
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(write.mock.calls.at(-1)![0]).toEqual([{ level: "error", message: "[ui.error] late" }]);
+});
+
 it("stops at the per-minute limit and survives a failed write", async () => {
   const write = vi.fn(async (_lines: UiLogFileLine[]) => {
     throw new Error("native unavailable");

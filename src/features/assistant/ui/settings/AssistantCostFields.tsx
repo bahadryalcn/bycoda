@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import type { AssistantProfilePatch } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
@@ -6,14 +6,15 @@ import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { assistantPolicy } from "../../../../shared/model/assistantPolicy";
 import {
+  DEFAULT_WORKER_CONTEXT_SETTINGS,
   workerContextSettings,
   validWorkerContextSettings,
 } from "../../../../shared/model/assistantContext";
-import { AdvancedSettings } from "../../../../shared/ui/settings";
+import { Row } from "../../../../shared/ui/settings";
+import { Button } from "../../../../shared/ui/Button";
 import { ProfileNumber } from "./ProfileControls";
 import { useProfileRows } from "./SettingsProfileRow";
 import styles from "./costUsage.module.css";
-import viewStyles from "../AssistantView.module.css";
 import { Text } from "../../../../shared/ui/Text";
 import roleStyles from "../AssistantProfileFields.module.css";
 
@@ -21,35 +22,15 @@ import roleStyles from "../AssistantProfileFields.module.css";
 export function AssistantCostInfo() {
   return (
     <InfoPopover label={t("About cost and context")}>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
+      <Text as="p" size="secondary">
         {t("Local scheduling limits, not a provider billing cap.")}
       </Text>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
+      <Text as="p" size="secondary">
         {t(
           "Zero disables follow-ups and automatic recovery. Manual conversations always wait for you after their limit.",
         )}
       </Text>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
-        {t(
-          "Reservations guide local scheduling. Provider charges are not capped when usage or output limits are unavailable.",
-        )}
-      </Text>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
-        {t(
-          "Claude utility requests include an output token allowance. Codex uses a local text limit because its integration cannot set an output token limit. These are not total billing caps.",
-        )}
-      </Text>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
-        {t(
-          "These limits estimate retained text. Summaries, daily renewal, review reservations and a 1 MB safety limit can shorten it earlier. They do not guarantee the provider's context window or charges.",
-        )}
-      </Text>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
-        {t(
-          "Messages to workers also use the worker's context. Unknown usage is not counted as zero.",
-        )}
-      </Text>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
+      <Text as="p" size="secondary">
         {t(
           "Worker limits use the first threshold reached: token count or percentage of the provider context window.",
         )}
@@ -68,7 +49,26 @@ export function AssistantCostFields({
 }) {
   const rows = useProfileRows();
   const [advancedWorkerContext, setAdvancedWorkerContext] = useState(false);
+  const [workerReset, setWorkerReset] = useState(0);
   const workerContext = workerContextSettings(value);
+  const automatic = Object.entries(DEFAULT_WORKER_CONTEXT_SETTINGS).every(
+    ([key, limit]) => workerContext[key as keyof typeof workerContext] === limit,
+  );
+  const restoreDefaults = () => {
+    onChange({ ...DEFAULT_WORKER_CONTEXT_SETTINGS });
+    // Number fields keep raw draft text across disclosure toggles.
+    setWorkerReset((current) => current + 1);
+  };
+  const contextMode = (
+    <Row
+      label={t("Worker context limits")}
+      modified={!automatic}
+      onReset={restoreDefaults}
+      resetLabel={t("Restore defaults")}
+    >
+      <Text size="secondary">{automatic ? t("Automatic") : t("Custom")}</Text>
+    </Row>
+  );
   const policy = assistantPolicy(value);
   const number = (
     key: keyof AssistantProfilePatch,
@@ -89,49 +89,63 @@ export function AssistantCostFields({
   );
   const limits = (
     <>
-      {number("chiefWakeLimit", "Supervisor reviews", 1, 120, policy.chiefWakeLimit, "/hour")}
-      {number("nudgeLimit", "Follow-ups", 0, 2, policy.nudgeLimit, "before recovery")}
-      {number("summaryRefreshMessages", "Summary every", 10, 200, 20, "messages")}
-      {number("perWakeTokenCap", "Review reservation", 1000, 1_000_000, undefined, "tokens")}
-      {number("chiefSoftContext", "Compact at", 10_000, 1_000_000, undefined, "tokens")}
-      {number("chiefHardContext", "Renew at", 20_000, 2_000_000, undefined, "tokens")}
+      {number("chiefWakeLimit", t("Supervisor reviews"), 1, 120, policy.chiefWakeLimit, t("/hour"))}
+      {number("nudgeLimit", t("Follow-ups"), 0, 2, policy.nudgeLimit, t("before recovery"))}
+      {number("summaryRefreshMessages", t("Summary every"), 10, 200, 20, t("messages"))}
+      {number("perWakeTokenCap", t("Reserve per review"), 1000, 1_000_000, undefined, t("tokens"))}
+      {number(
+        "chiefSoftContext",
+        t("Compact supervisor context"),
+        10_000,
+        1_000_000,
+        undefined,
+        t("tokens"),
+      )}
+      {number(
+        "chiefHardContext",
+        t("Restart supervisor context"),
+        20_000,
+        2_000_000,
+        undefined,
+        t("tokens"),
+      )}
     </>
   );
   const workerLimits = (
-    <>
+    <Fragment key={workerReset}>
       {number(
         "workerSoftContext",
-        "Worker compact at",
+        t("Compact by token count"),
         10000,
         999999,
         workerContext.workerSoftContext,
-        "tokens",
+        t("tokens"),
       )}
       {number(
         "workerHardContext",
-        "Worker fresh session at",
+        t("Start fresh by token count"),
         10001,
         1000000,
         workerContext.workerHardContext,
-        "tokens",
+        t("tokens"),
       )}
       {number(
         "workerCompactPercent",
-        "Worker compact at",
+        t("Compact by context usage"),
         1,
         98,
         workerContext.workerCompactPercent,
-        "%",
+        t("%"),
       )}
       {number(
         "workerHandoffPercent",
-        "Worker fresh session at",
+        t("Start fresh by context usage"),
         2,
         99,
         workerContext.workerHandoffPercent,
-        "%",
+        t("%"),
       )}
-    </>
+    </Fragment>
   );
   const contextError = !validWorkerContextSettings(value) && (
     <InlineError>{t("Worker context limits must increase from compact to handoff.")}</InlineError>
@@ -139,16 +153,9 @@ export function AssistantCostFields({
   if (rows)
     return (
       <>
-        <AdvancedSettings title={t("Supervisor limits")} keepMounted>
-          {limits}
-        </AdvancedSettings>
-        <AdvancedSettings
-          title={t("Worker context limits")}
-          defaultOpen={!validWorkerContextSettings(value)}
-          keepMounted
-        >
-          {workerLimits}
-        </AdvancedSettings>
+        {contextMode}
+        {limits}
+        {workerLimits}
         {contextError}
       </>
     );
@@ -162,6 +169,11 @@ export function AssistantCostFields({
         onOpenChange={setAdvancedWorkerContext}
       >
         <div className={styles.fieldGrid}>{workerLimits}</div>
+        {!automatic && (
+          <Button type="button" onClick={restoreDefaults}>
+            {t("Restore defaults")}
+          </Button>
+        )}
       </Disclosure>
       {contextError}
     </div>

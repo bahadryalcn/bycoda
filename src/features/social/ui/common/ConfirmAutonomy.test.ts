@@ -48,18 +48,16 @@ it("says nothing is sent at the suggest level", () => {
   expect(render("suggest")).toContain("Nothing is sent without you.");
 });
 
-it("states what still applies and the daily limit when one is set", () => {
+it("states the daily limit in the same sentence block when one is set", () => {
   const text = render("autonomous", 20);
-  expect(text).toContain(
-    "Platform limits, opt-outs, working hours and the global AI stop still apply.",
-  );
   expect(text).toContain("Up to 20 per day.");
+  expect(text).not.toContain("Platform limits");
 });
 
-it("omits the daily limit line when no limit is set and has no button of its own", () => {
+it("omits the daily limit when none is set and has no button of its own", () => {
   render("autonomous");
   expect(element.textContent).not.toContain("per day");
-  expect(element.querySelectorAll("li")).toHaveLength(1);
+  expect(element.querySelectorAll("li")).toHaveLength(0);
   // The dialog that hosts this body owns Confirm and Cancel; the body alone never confirms.
   expect(element.querySelector("button")).toBeNull();
 });

@@ -51,9 +51,9 @@ it("checks only the selected project's original notification status and never re
     [...container.querySelectorAll<HTMLButtonElement>("button")].find((item) =>
       item.textContent?.includes(name),
     )!;
-  // One project picker and one check button, never one button per project.
+  // One project picker; choosing the project reads its notifications without a second button.
   expect(button("Project")).toBeUndefined();
-  expect(button("Check notifications").disabled).toBe(true);
+  expect(button("Check notifications")).toBeUndefined();
   await act(async () =>
     container.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click(),
   );
@@ -61,12 +61,10 @@ it("checks only the selected project's original notification status and never re
     item.textContent?.includes("Project"),
   )!;
   await act(async () => option.click());
-  expect(button("Check notifications").disabled).toBe(false);
-  await act(async () => button("Check notifications").click());
   expect(container.textContent).toContain("notice-1");
   expect(container.textContent).toContain("Outcome unknown");
   await act(async () => button("Check original status").click());
-  expect(container.textContent).toContain("Native queue accepted; display not confirmed");
+  expect(container.textContent).toContain("Native queue accepted; display could not be confirmed");
   expect(request.mock.calls.map(([input]) => input.op)).toEqual([
     "threads.open",
     "observation.delivery.list",

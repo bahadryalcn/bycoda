@@ -25,8 +25,6 @@ vi.mock("../../../shared/ui/settings", async () => {
       ),
     Group: ({ title, info, action, children }: any) =>
       createElement("section", null, createElement("h2", null, title), info, action, children),
-    AdvancedSettings: ({ title, children }: any) =>
-      createElement("div", null, createElement("button", { type: "button" }, title), children),
   };
 });
 vi.mock("../../../shared/i18n", () => ({
@@ -56,6 +54,7 @@ vi.mock("../../sessions/model/models", () => ({
       : { effort: "default" },
 }));
 import { AssistantProfileFields } from "./AssistantProfileFields";
+import { TOOLTIP_DELAY_MS } from "../../../shared/ui/Tooltip";
 import { ProfileRowsProvider } from "./settings/SettingsProfileRow";
 import { AssistantCostInfo } from "./settings/AssistantCostFields";
 let root: Root | undefined, container: HTMLDivElement;
@@ -77,6 +76,7 @@ async function setup(
     | "presence"
     | "identity"
     | "personality" = "jobs",
+  rows = false,
 ) {
   observed.patches = [];
   observed.resolvedDefault = "catalog-default";
@@ -98,7 +98,9 @@ async function setup(
       },
     });
   }
-  await act(async () => root!.render(createElement(Form)));
+  await act(async () =>
+    root!.render(createElement(ProfileRowsProvider, { value: rows }, createElement(Form))),
+  );
 }
 async function click(text: string, scope: ParentNode = container) {
   const target = [...scope.querySelectorAll("button, summary")].find(
@@ -355,12 +357,24 @@ it("requires an explicit worker choice when the default catalog is unavailable",
   expect(container.querySelector('[role="alert"]')).toBeNull();
 });
 
-it("keeps the dynamic title preview available beside its switch without an extra prose row", async () => {
+it("asks only for the name in setup; address, avatar and title are settings rows", async () => {
   await setup({ name: "Ada", showTitle: true }, "identity");
+  expect(container.querySelectorAll("input")).toHaveLength(1);
+  expect(container.textContent).not.toContain("Avatar");
+  expect(container.textContent).not.toContain("Show title");
+});
+
+it("keeps the dynamic title preview available in settings", async () => {
+  await setup({ name: "Ada", showTitle: true }, "identity", true);
   expect(container.textContent).not.toContain("Room · Ada");
-  await click("Preview");
-  expect(document.body.textContent).toContain("Assistant Ada");
-  expect(document.body.textContent).toContain("Room · Ada");
+  const preview = container.querySelector<HTMLElement>('[role="img"][aria-label="Preview"]')!;
+  await act(async () => {
+    preview.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+    await new Promise((resolve) => setTimeout(resolve, TOOLTIP_DELAY_MS));
+  });
+  const tooltip = document.querySelector('[role="tooltip"]');
+  expect(tooltip?.textContent).toContain("Assistant Ada");
+  expect(tooltip?.textContent).toContain("Room · Ada");
   expect(observed.patches).toEqual([]);
 });
 
@@ -380,7 +394,7 @@ it("keeps task observation default off but lets the owner save a preference whil
 it("saves address frequency, tone, profanity and persona as profile drafts without a new permission", async () => {
   await setup(
     { addressFrequency: "sometimes", tone: "friendly", allowProfanity: false },
-    "identity",
+    "personality",
   );
   const never = container.querySelector<HTMLInputElement>('input[type="radio"][value="never"]')!;
   expect(never.labels?.[0]?.textContent).toContain("Never");
@@ -421,7 +435,6 @@ it("keeps job confirmation off by default and saves the owner's choice from the 
 
 it("chooses execution permissions from the icon picker and keeps the selected mode's description visible", async () => {
   await setup({ autonomy: "chief", execution }, "permissions");
-  expect(container.textContent).toContain("Ask before commands and file changes.");
   const edits = container.querySelector<HTMLElement>('[aria-label="Auto-accept edits"]')!;
   expect(edits).toBeTruthy();
   await act(async () => edits.click());

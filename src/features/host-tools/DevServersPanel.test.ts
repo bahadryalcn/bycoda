@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement, StrictMode } from "react";
+import { act, createElement, Profiler, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { resetRetainedState } from "../../shared/hooks/useRetainedState";
@@ -107,6 +107,9 @@ const server: DevServer = {
   logsAvailable: false,
 };
 let details: DevServerDetails;
+// A disabled control with a reason stays focusable and is marked aria-disabled.
+const isDisabled = (node: HTMLButtonElement) =>
+  node.disabled || node.getAttribute("aria-disabled") === "true";
 const button = (text: string) =>
   [...document.querySelectorAll<HTMLButtonElement>("button")].find(
     (value) => value.textContent === text || value.getAttribute("aria-label") === text,
@@ -181,6 +184,26 @@ it("uses saved refresh defaults while keeping manual discovery available", async
   expect(button("Resume automatic refresh")).toBeDefined();
 });
 
+it("does not repaint the panel when a background poll returns the same servers", async () => {
+  toolPreferences.serversRefreshInterval.save(15_000);
+  let commits = 0;
+  await act(async () =>
+    root.render(
+      createElement(
+        Profiler,
+        { id: "dev-servers", onRender: () => void (commits += 1) },
+        createElement(DevServersPanel, { cwd: "/repo" }),
+      ),
+    ),
+  );
+  expect(hostFeatureRequest).toHaveBeenCalledTimes(1);
+  const committed = commits;
+  await act(async () => vi.advanceTimersByTimeAsync(15_000));
+  expect(hostFeatureRequest).toHaveBeenCalledTimes(2);
+  expect(commits).toBe(committed);
+  expect(container.querySelectorAll(".dev-server-row")).toHaveLength(1);
+});
+
 it("uses the saved discovery interval for a new server view", async () => {
   toolPreferences.serversRefreshInterval.save(30_000);
   await mount();
@@ -225,7 +248,7 @@ it("reveals a failed process request and restores the row after a failed stop", 
   await mount();
   vi.mocked(hostFeatureRequest).mockRejectedValueOnce(new Error("Process identity changed"));
   await act(async () => (await menuItem("Process details")).click());
-  expect(document.activeElement?.textContent).toBe("Process identity changed");
+  expect(document.activeElement?.textContent).toContain("The server action failed.");
   expect(document.activeElement?.tagName).toBe("DIV");
   expect(document.activeElement?.getAttribute("role")).toBe("alert");
   expect(document.activeElement?.classList.contains("bycoda-arc")).toBe(true);
@@ -233,9 +256,9 @@ it("reveals a failed process request and restores the row after a failed stop", 
   await act(async () => (await menuItem("Stop")).click());
   vi.mocked(hostFeatureRequest).mockRejectedValueOnce(new Error("Host disconnected"));
   await act(async () => button("Confirm graceful stop").click());
-  expect(document.activeElement?.textContent).toBe("Host disconnected");
+  expect(document.activeElement?.textContent).toContain("The server action failed.");
   expect(container.querySelector(".dev-server-row")?.textContent).toContain("Running");
-  expect(button("Confirm graceful stop").disabled).toBe(false);
+  expect(isDisabled(button("Confirm graceful stop"))).toBe(false);
 });
 
 it("shares the chosen server address including its IPv6 loopback", async () => {
@@ -263,10 +286,28 @@ it("distinguishes an empty successful scan from a failed scan", async () => {
     error: "Permission denied",
   });
   await act(async () => button("Refresh").click());
-  expect(container.textContent).toContain("Scan failed");
+  expect(container.textContent).toContain("Could not refresh servers.");
   expect(container.textContent).not.toContain("No servers found");
   await openDetails();
   expect(document.body.textContent).toContain("Permission denied");
+});
+
+it("keeps the polled server count out of the live region and leaves scan failures to the alert", async () => {
+  await mount();
+  const announced = () =>
+    container.querySelector<HTMLElement>("[role='status'].sr-only")?.textContent;
+  expect(container.querySelector(".dev-servers-status")?.hasAttribute("role")).toBe(false);
+  expect(announced()).toBe("");
+  vi.mocked(hostFeatureRequest).mockResolvedValueOnce({
+    status: "error",
+    servers: [],
+    scannedAt: 2,
+    error: "Permission denied",
+  });
+  await act(async () => button("Refresh").click());
+  expect(container.querySelector("[role='alert']")?.textContent).toContain(
+    "Could not refresh servers.",
+  );
 });
 
 it("shows affected ports before graceful stop and requires a separate explicit force choice", async () => {
@@ -321,12 +362,12 @@ it("requires exact restart information for external processes and sends user-ent
   };
   await mount();
   await act(async () => button("Restart").click());
-  expect(button("Confirm restart").disabled).toBe(true);
+  expect(isDisabled(button("Confirm restart"))).toBe(true);
   await act(async () => {
     setInput("Restart command", "node ./dev.js --port 4300");
     setInput("Restart working directory", "/repo/custom");
   });
-  expect(button("Confirm restart").disabled).toBe(false);
+  expect(isDisabled(button("Confirm restart"))).toBe(false);
   await act(async () => button("Confirm restart").click());
   expect(hostFeatureRequest).toHaveBeenCalledWith("/repo", "dev.servers", "devServers.restart", {
     id: server.id,
@@ -358,9 +399,9 @@ it("keeps observed external argv read-only until the user defines an exact resta
   expect(container.querySelector(".dev-server-details dl")!.textContent).toContain(observedCommand);
   expect(field("Restart command").value).toBe("");
   expect(field("Restart working directory").value).toBe("/repo with spaces");
-  expect(button("Confirm restart").disabled).toBe(true);
+  expect(isDisabled(button("Confirm restart"))).toBe(true);
   await act(async () => setInput("Restart command", 'node "./dev.js" --title "hello world"'));
-  expect(button("Confirm restart").disabled).toBe(false);
+  expect(isDisabled(button("Confirm restart"))).toBe(false);
   await act(async () => button("Confirm restart").click());
   expect(hostFeatureRequest).toHaveBeenCalledWith("/repo", "dev.servers", "devServers.restart", {
     id: server.id,
@@ -442,7 +483,7 @@ it("shares the initial scan across Strict Mode effect replay", async () => {
   );
   expect(hostFeatureRequest).toHaveBeenCalledTimes(1);
   expect(container.querySelectorAll(".dev-server-row")).toHaveLength(1);
-  expect(button("Refresh").disabled).toBe(false);
+  expect(isDisabled(button("Refresh"))).toBe(false);
 });
 
 it("preserves the last successful rows and scroll position when a background scan fails", async () => {
@@ -456,8 +497,8 @@ it("preserves the last successful rows and scroll position when a background sca
   expect(container.textContent).toContain("Showing the last successful scan. Retry to update.");
   await openDetails();
   expect(document.body.textContent).toContain("Host disconnected");
-  expect(button("Open in preview").disabled).toBe(false);
-  await act(async () => button("Retry scan").click());
+  expect(isDisabled(button("Open in preview"))).toBe(false);
+  await act(async () => button("Try again").click());
   expect(container.textContent).not.toContain("Host disconnected");
   expect(container.querySelector(".dev-server-row")).toBe(row);
 });
@@ -501,8 +542,9 @@ it("keeps local controls usable during discovery and prevents overlapping scans"
     }),
   );
   await act(async () => vi.advanceTimersByTimeAsync(15_000));
-  expect(button("Refresh").disabled).toBe(true);
-  expect(button("Open in preview").disabled).toBe(false);
+  // #1172 keeps background scans quiet after the initial result.
+  expect(isDisabled(button("Refresh"))).toBe(false);
+  expect(isDisabled(button("Open in preview"))).toBe(false);
   expect(container.querySelector(".dev-servers-panel")!.getAttribute("aria-busy")).toBe("false");
   await act(async () => {
     setInput("Find server", "4100");
@@ -511,10 +553,17 @@ it("keeps local controls usable during discovery and prevents overlapping scans"
   });
   await act(async () => vi.advanceTimersByTimeAsync(60_000));
   expect(hostFeatureRequest).toHaveBeenCalledTimes(2);
+  await act(async () => button("Refresh").click());
+  expect(hostFeatureRequest).toHaveBeenCalledTimes(2);
   await act(async () => finish({ status: "ok", servers: [server], scannedAt: 2 }));
   expect(container.querySelector<HTMLInputElement>('[type="search"]')!.value).toBe("4100");
-  await act(async () => vi.advanceTimersByTimeAsync(15_000));
   expect(hostFeatureRequest).toHaveBeenCalledTimes(3);
+  expect(vi.mocked(hostFeatureRequest).mock.calls[2]).toEqual([
+    "/repo",
+    "dev.servers",
+    "devServers.list",
+    { refresh: true },
+  ]);
 });
 
 it("backs off after failures and pauses after three failed scans until explicit recovery", async () => {
@@ -534,7 +583,7 @@ it("backs off after failures and pauses after three failed scans until explicit 
   expect(container.textContent).toContain("Paused");
   await act(async () => vi.advanceTimersByTimeAsync(600_000));
   expect(hostFeatureRequest).toHaveBeenCalledTimes(4);
-  await act(async () => button("Retry scan").click());
+  await act(async () => button("Try again").click());
   expect(hostFeatureRequest).toHaveBeenCalledTimes(5);
   expect(button("Pause automatic refresh")).toBeDefined();
   await act(async () => vi.advanceTimersByTimeAsync(15_000));
@@ -610,7 +659,7 @@ it("disables process control when a birth identity is unavailable", async () => 
   await mount();
   expect((await menuItem("Stop")).disabled).toBe(true);
   expect((await menuItem("Force terminate")).disabled).toBe(true);
-  expect(button("Restart").disabled).toBe(true);
+  expect(isDisabled(button("Restart"))).toBe(true);
 });
 
 it("restarts managed servers without asking for launch information and includes owned children", async () => {
@@ -629,7 +678,7 @@ it("restarts managed servers without asking for launch information and includes 
   });
   await mount();
   await act(async () => button("Restart").click());
-  expect(button("Confirm restart").disabled).toBe(false);
+  expect(isDisabled(button("Confirm restart"))).toBe(false);
   expect(container.querySelector<HTMLInputElement>('[type="checkbox"]')!.checked).toBe(true);
   expect(container.textContent).toContain("4100, 4101, 4200");
   await act(async () => button("Confirm restart").click());

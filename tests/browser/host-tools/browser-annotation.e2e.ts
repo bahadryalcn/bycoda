@@ -1,11 +1,148 @@
 import { test, expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import { once } from "node:events";
+import { WebSocket } from "ws";
+import { attachBrowserMedia } from "../../../host/browser/browser-media";
 import { SharedBrowser, type BrowserLoader } from "../../../host/browser/shared-browser";
 import type { BrowserAnnotationCapture } from "../../../src/shared/lib/browserAnnotation";
 
 const site =
   "http://127.0.0.1:1444/tests/browser/host-tools/browser-element-target.html?token=fixture-url-token#private-fragment";
-async function fixture(page: Page, browser: Browser, language = "en", delayMs = 0) {
+
+test("a live Chromium page reaches the viewer over the production binary transport", async ({
+  page,
+  browser,
+}, info) => {
+  let latest: Buffer | undefined;
+  let sequence = 0;
+  await page.route("**/browser-fixture/media?*", async (route) => {
+    const after = Number(new URL(route.request().url()).searchParams.get("after"));
+    if (after === sequence || !latest) await new Promise((resolve) => setTimeout(resolve, 24));
+    await route.fulfill({
+      body: after === sequence ? Buffer.alloc(0) : latest,
+      contentType: "application/octet-stream",
+    });
+  });
+  await page.addInitScript(() => {
+    Object.assign(globalThis, { isTauri: true, fixtureBrowserFrames: true });
+  });
+  const f = await fixture(page, browser);
+  const server = createServer();
+  const token = "b".repeat(43);
+  const close = attachBrowserMedia({
+    server,
+    environmentId: "fixture",
+    allowedHosts: () => [],
+    authorized: async (credential) => credential === token,
+    open: async () => f.source.openFrameStream(),
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    await f.target.setContent(
+      "<style>main{width:300px;height:500px;background:repeating-linear-gradient(45deg,#41a 0 12px,#9ce 12px 24px);animation:move 1s linear infinite alternate}@keyframes move{to{transform:translateX(800px)}}</style><main></main>",
+    );
+    await f.target.evaluate(() => {
+      document.addEventListener("click", () => {
+        document.body.dataset.previewClick = "received";
+      });
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Fixture listener unavailable");
+    const socket = new WebSocket(
+      `ws://127.0.0.1:${address.port}/ws-browser-frames`,
+      "bycoda.browser-frames.v1",
+      {
+        headers: { Authorization: `Bearer ${token}`, "x-bycoda-environment": "fixture" },
+      },
+    );
+    const times: number[] = [];
+    let firstIdentity: Record<string, unknown> | undefined;
+    socket.on("message", (packet) => {
+      if (!Buffer.isBuffer(packet)) return;
+      socket.send(Buffer.from([0]));
+      const prefix = Buffer.alloc(4);
+      prefix.writeUInt32BE(++sequence);
+      latest = Buffer.concat([prefix, packet]);
+      if (!firstIdentity) {
+        const end = 2 + packet.readUInt16BE(0);
+        firstIdentity = JSON.parse(packet.subarray(2, end).toString());
+      }
+      times.push(performance.now());
+    });
+    await once(socket, "open");
+    await expect.poll(() => times.length).toBeGreaterThan(4);
+    const canvas = page.locator("canvas.host-browser-live-canvas");
+    await expect(canvas).toBeVisible();
+    const preview = page.locator("img.host-browser-frame");
+    await expect(preview).toHaveAttribute("tabindex", "0");
+    await preview.click({ position: { x: 32, y: 32 } });
+    await expect(f.target.locator("body")).toHaveAttribute("data-preview-click", "received");
+    const canvasPaints = await canvas.evaluate(async (node) => {
+      const context = (node as HTMLCanvasElement).getContext("2d")!;
+      const draw = context.drawImage;
+      let paints = 0;
+      context.drawImage = (...args: unknown[]) => {
+        paints++;
+        Reflect.apply(draw, context, args);
+      };
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        return paints;
+      } finally {
+        context.drawImage = draw;
+      }
+    });
+    expect(canvasPaints).toBeGreaterThan(5);
+    await page.getByRole("button", { name: "Live view", exact: true }).click();
+    times.length = 0;
+    await expect.poll(() => times.length).toBeGreaterThan(15);
+    await page.waitForTimeout(5000);
+    const fps = ((times.length - 1) * 1000) / (times.at(-1)! - times[0]);
+    const evidence = {
+      frames: times.length,
+      fps: Number(fps.toFixed(1)),
+      canvasFixtureFps: Number((canvasPaints / 3).toFixed(1)),
+      viewport: firstIdentity,
+    };
+    mkdirSync("temp/verification/browser-push", { recursive: true });
+    writeFileSync("temp/verification/browser-push/wire-fps.json", JSON.stringify(evidence));
+    await info.attach("browser-binary-fps", {
+      body: JSON.stringify(evidence),
+      contentType: "application/json",
+    });
+    console.log(`BROWSER_BINARY_FPS ${JSON.stringify(evidence)}`);
+    expect(firstIdentity).toMatchObject({ width: 1280, height: 720 });
+    await page.getByRole("button", { name: "Live view", exact: true }).click();
+    for (const theme of ["dark", "light"]) {
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      for (const width of [1280, 800]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect(page.locator("canvas.host-browser-live-canvas")).toBeVisible();
+        await page.screenshot({
+          path: `temp/verification/browser-push/${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      }
+    }
+    socket.close();
+  } finally {
+    close();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await f.close();
+  }
+});
+async function fixture(
+  page: Page,
+  browser: Browser,
+  language = "en",
+  delayMs = 0,
+  releaseControl = false,
+) {
   if (!Number.isInteger(delayMs) || delayMs < 0 || delayMs > 150)
     throw new Error("Invalid fixture delay");
   let context: BrowserContext | undefined,
@@ -44,6 +181,8 @@ async function fixture(page: Page, browser: Browser, language = "en", delayMs = 
   );
   const claim = await source.dispatch("browser.claim", {}, "fixture-device");
   await source.dispatch("browser.open", { leaseId: claim.leaseId, url: site }, "fixture-device");
+  if (releaseControl)
+    await source.dispatch("browser.release", { leaseId: claim.leaseId }, "fixture-device");
   await page.addInitScript(() => {
     Object.assign(window, {
       __TAURI_INTERNALS__: {
@@ -104,7 +243,7 @@ async function fixture(page: Page, browser: Browser, language = "en", delayMs = 
   const toolName = language === "tr" ? "Tarayıcı" : "Host browser";
   const toolTab = page.getByRole("tab", { name: toolName, exact: true });
   const toolMenu = page.getByRole("button", {
-    name: language === "tr" ? "Oturum aracı seçimi" : "Conversation tool selection",
+    name: language === "tr" ? "Konuşma aracı seçimi" : "Conversation tool selection",
     exact: true,
   });
   await expect(toolTab.or(toolMenu)).toBeVisible();
@@ -209,7 +348,7 @@ test("real DOM hit-test blocks button/link actions and binds a reviewable draft 
     await composer.getByText("Inspect browser element", { exact: true }).click();
     await expect(composer.getByText("Please reduce the padding.")).toBeVisible();
     await expect(composer.locator("textarea")).toHaveValue(
-      /^Please adjust this \[Image\s1\s·\s[\d.]+\sKB\]$/,
+      /^Please adjust this \[Image\s1\s·\sbrowser-element\.jpg\s·\s[\d.]+\sKB\]$/,
     );
     expect(
       await page.evaluate(
@@ -370,9 +509,10 @@ test("cancel, navigation, DOM replacement, project/session switch and lease expi
     expect(f.capture()?.projectId).toBe("project-b");
     f.expire();
     await expect(page.locator(".host-browser-selection")).toHaveCount(0);
+    await expect.poll(() => f.calls.some((call) => call.method === "browser.claim")).toBe(true);
     await expect(
       page.getByRole("button", { name: "Select element and add to composer", exact: true }),
-    ).toBeDisabled();
+    ).toBeEnabled();
   } finally {
     await f.close();
   }
@@ -1071,6 +1211,67 @@ test("preview keyboard Ctrl+A and committed text replace target input", async ({
       modifiers: ["Control"],
     });
     expect(keys.find((call) => call.params.kind === "text")?.params.text).toBe("Yeni");
+  } finally {
+    await f.close();
+  }
+});
+
+test("an available preview accepts double-click, paste, right-click and scroll directly", async ({
+  page,
+  browser,
+}) => {
+  const f = await fixture(page, browser, "en", 0, true);
+  try {
+    const image = page.locator("img.host-browser-frame");
+    await expect(image).toHaveAttribute("tabindex", "0");
+    expect(f.calls.some((call) => call.method === "browser.claim" && !call.params.takeover)).toBe(
+      true,
+    );
+    await f.target.evaluate(() => {
+      document.addEventListener("dblclick", () => {
+        document.body.dataset.doubleClicked = "true";
+      });
+      document.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        document.body.dataset.contextMenu = String(event.ctrlKey);
+      });
+    });
+
+    const field = f.target.locator("textarea");
+    const fieldBox = (await field.boundingBox())!;
+    const previewBox = (await image.boundingBox())!;
+    const position = {
+      x: ((fieldBox.x + 24) * previewBox.width) / 1280,
+      y: ((fieldBox.y + 14) * previewBox.height) / 720,
+    };
+    await image.dblclick({ position });
+    await expect(f.target.locator("body")).toHaveAttribute("data-double-clicked", "true");
+    const receiver = page.getByLabel("Direct browser input");
+    await expect(receiver).toBeFocused();
+    await receiver.press("Control+a");
+    await receiver.evaluate((element) => {
+      const clipboardData = new DataTransfer();
+      clipboardData.setData("text/plain", "İstanbul\nikinci satır");
+      element.dispatchEvent(
+        new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData }),
+      );
+    });
+    await expect(field).toHaveValue("İstanbul\nikinci satır");
+    await image.click({ position, button: "right", modifiers: ["Control"] });
+    await expect(f.target.locator("body")).toHaveAttribute("data-context-menu", "true");
+    await page.getByRole("textbox", { name: "Website address", exact: true }).focus();
+    await image.hover({ position });
+    await page.mouse.wheel(20, 120);
+    await expect
+      .poll(() =>
+        f.calls.some(
+          (call) =>
+            call.method === "browser.input" &&
+            call.params.kind === "scroll" &&
+            call.params.y === 120,
+        ),
+      )
+      .toBe(true);
   } finally {
     await f.close();
   }

@@ -9,6 +9,7 @@ import {
   GitlabSettings,
   LinearSettings,
 } from "./InboxSettings";
+import { GITHUB_CLI_INSTALL_WATCH_MS, GITHUB_CLI_POLL_MS } from "./useGithubCliStatus";
 import { INTEGRATIONS, IntegrationsPage } from "./integrations/IntegrationsSettings";
 import { RevealedSetting } from "../../../shared/ui/settings";
 
@@ -70,7 +71,7 @@ it.each([
     await fill(urlLabel, "https://target.example.com");
     await fill(tokenLabel, "keep-token");
     await click("Save and test connection");
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Invalid token");
+    expect(await detailsText()).toContain("Invalid token");
     expect(
       container.querySelector<HTMLInputElement>(`input[aria-label="${tokenLabel}"]`)?.value,
     ).toBe("keep-token");
@@ -88,11 +89,14 @@ it.each([
   },
 );
 
-it("does not overwrite an unsaved GitLab target when checking saved configuration", async () => {
-  vi.mocked(invoke).mockResolvedValue({ connected: false, url: "https://saved.example.com" });
+it("does not overwrite an unsaved GitLab target when retrying the saved configuration read", async () => {
+  // The status row appears only after a failed read; its Retry rereads the saved configuration.
+  vi.mocked(invoke)
+    .mockRejectedValueOnce(new Error("Host unavailable"))
+    .mockResolvedValue({ connected: false, url: "https://saved.example.com" });
   await act(async () => root.render(createElement(GitlabSettings)));
   await fill("GitLab URL", "https://draft.example.com");
-  await click("Check saved configuration");
+  await click("Retry");
   expect(container.querySelector<HTMLInputElement>('input[type="url"]')?.value).toBe(
     "https://draft.example.com",
   );
@@ -103,7 +107,111 @@ it("does not label a failed GitHub status read as a missing CLI", async () => {
   await act(async () => root.render(createElement(GithubSettings)));
   expect(container.textContent).toContain("Check failed");
   expect(container.textContent).not.toContain("Not installed");
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Host unavailable");
+  expect(await detailsText()).toContain("Host unavailable");
+});
+
+const installingStatus = {
+  connected: false,
+  installed: false,
+  authenticated: false,
+  installing: true,
+};
+const badgeText = () =>
+  container.querySelector('[data-size="sm"][data-variant="label"]')?.textContent;
+// Raw error text sits behind the Details popover; open it and read the dialog it shows.
+async function detailsText() {
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+  if (!trigger) return "";
+  await act(async () => trigger.click());
+  // The Details popover opens last, above any enclosing dialog.
+  return [...document.querySelectorAll('[role="dialog"]')].at(-1)?.textContent ?? "";
+}
+
+it("keeps the GitHub CLI Installing state steady while it silently polls", async () => {
+  vi.useFakeTimers();
+  try {
+    let reads = 0;
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command !== "git_github_status") throw new Error(`Unexpected command: ${command}`);
+      reads += 1;
+      // A fresh object per read, as `invoke` returns: an identical one would not re-render.
+      return reads < 4
+        ? { ...installingStatus }
+        : { connected: true, installed: true, authenticated: true, installing: false };
+    });
+    await act(async () => root.render(createElement(GithubSettings)));
+    expect(badgeText()).toBe("Installing");
+    for (let poll = 1; poll <= 2; poll += 1) {
+      await act(async () => vi.advanceTimersByTimeAsync(2000));
+      // The row never falls back to Checking between background reads.
+      expect(reads).toBe(poll + 1);
+      expect(badgeText()).toBe("Installing");
+      expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+    }
+    await act(async () => vi.advanceTimersByTimeAsync(2000));
+    expect(badgeText()).toBe("Connected");
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    expect(reads).toBe(4);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("stops watching a stuck GitHub CLI install and resumes only on an explicit check", async () => {
+  // The watch deadline reads the monotonic clock; drive it from the fake clock.
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  const monotonic = vi.spyOn(performance, "now").mockImplementation(() => Date.now());
+  try {
+    let reads = 0;
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command !== "git_github_status") throw new Error(`Unexpected command: ${command}`);
+      reads += 1;
+      return { ...installingStatus };
+    });
+    await act(async () => root.render(createElement(GithubSettings)));
+    // One act per poll: React flushes the state change that schedules the next read on exit.
+    for (
+      let elapsed = 0;
+      elapsed < GITHUB_CLI_INSTALL_WATCH_MS + 4000;
+      elapsed += GITHUB_CLI_POLL_MS
+    )
+      await act(async () => vi.advanceTimersByTimeAsync(GITHUB_CLI_POLL_MS));
+    expect(badgeText()).toBe("Taking longer");
+    const stopped = reads;
+    expect(stopped).toBeLessThanOrEqual(GITHUB_CLI_INSTALL_WATCH_MS / GITHUB_CLI_POLL_MS + 2);
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(reads).toBe(stopped);
+    await click("Check again");
+    expect(reads).toBe(stopped + 1);
+    expect(badgeText()).toBe("Installing");
+    await act(async () => vi.advanceTimersByTimeAsync(GITHUB_CLI_POLL_MS));
+    expect(reads).toBe(stopped + 2);
+  } finally {
+    monotonic.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
+it("stops polling a GitHub CLI install when a background read fails and keeps retry", async () => {
+  vi.useFakeTimers();
+  try {
+    let reads = 0;
+    vi.mocked(invoke).mockImplementation(async () => {
+      reads += 1;
+      if (reads === 2) throw new Error("Desktop unavailable");
+      return installingStatus;
+    });
+    await act(async () => root.render(createElement(GithubSettings)));
+    await act(async () => vi.advanceTimersByTimeAsync(2000));
+    expect(badgeText()).toBe("Check failed");
+    expect(await detailsText()).toContain("Desktop unavailable");
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+    expect(reads).toBe(2);
+    await click("Check again");
+    expect(badgeText()).toBe("Installing");
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("uses Linear save status and keeps a rejected credential for correction", async () => {
@@ -114,9 +222,7 @@ it("uses Linear save status and keeps a rejected credential for correction", asy
   expect(container.querySelector<HTMLInputElement>('input[type="password"]')?.value).toBe(
     "keep-key",
   );
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-    "Connection test failed",
-  );
+  expect(await detailsText()).toContain("Connection test failed");
   expect(container.textContent).not.toContain("Configured");
 });
 
@@ -131,10 +237,10 @@ it("separates a Linear team read failure from saved credentials and offers retry
     throw new Error(`Unexpected command: ${command}`);
   });
   await act(async () => root.render(createElement(LinearSettings)));
-  expect(container.textContent).toContain("Configured");
+  expect(container.textContent).toContain("API key saved on this computer");
   // Reading saved credentials never claims the provider accepted them.
   expect(container.querySelector('[data-state="verified"]')).toBeNull();
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Teams unavailable");
+  expect(await detailsText()).toContain("Teams unavailable");
   fail = false;
   await click("Retry");
   expect(container.textContent).toContain("Engineering");
@@ -184,7 +290,7 @@ it.each([false, true])(
   },
 );
 
-it("preserves drafts across provider tabs, supports keyboard navigation, and reveals searched providers", async () => {
+it("preserves drafts across services, offers every provider in the picker, and reveals searched providers", async () => {
   vi.mocked(invoke).mockResolvedValue({
     connected: false,
     installed: true,
@@ -192,26 +298,41 @@ it("preserves drafts across provider tabs, supports keyboard navigation, and rev
   });
   const render = (revealed: string | null) =>
     createElement(RevealedSetting.Provider, { value: revealed }, createElement(IntegrationsPage));
+  const trigger = () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label^="Services:"]')!;
+  const options = () => [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+  const open = () => act(async () => trigger().click());
+  const choose = (id: string) =>
+    act(async () =>
+      options()
+        .find((option) => option.dataset.value === id)!
+        .click(),
+    );
+  const pick = async (id: string) => {
+    await open();
+    await choose(id);
+  };
+  const gitlabToken = () =>
+    container.querySelector<HTMLInputElement>('input[aria-label="GitLab access token"]');
   await act(async () => root.render(render(null)));
-  const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
-  // One tab per offered integration; paused messaging providers have none.
-  expect(tabs).toHaveLength(INTEGRATIONS.length);
-  const last = tabs[tabs.length - 1]!;
-  await act(async () => tabs[1].click());
-  await fill("GitLab access token", "unsaved-draft");
-  await act(async () => tabs[3].click());
-  expect(container.querySelectorAll('[role="tabpanel"]:not([hidden])')).toHaveLength(1);
-  await act(async () => tabs[1].click());
-  expect(
-    container.querySelector<HTMLInputElement>('input[aria-label="GitLab access token"]')?.value,
-  ).toBe("unsaved-draft");
-  await act(async () =>
-    tabs[1].dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })),
+  // One choice per offered integration; paused messaging providers have none.
+  await open();
+  expect(options().map((option) => option.dataset.value)).toEqual(
+    INTEGRATIONS.map((item) => item.id),
   );
-  expect(last.getAttribute("aria-selected")).toBe("true");
-  expect(document.activeElement).toBe(last);
+  await choose("gitlab");
+  await fill("GitLab access token", "unsaved-draft");
+  await pick("jira");
+  // The previous provider keeps its draft but is hidden, so only one service shows.
+  expect(gitlabToken()?.closest("[hidden]")).not.toBeNull();
+  await pick("gitlab");
+  expect(gitlabToken()?.closest("[hidden]")).toBeNull();
+  expect(gitlabToken()?.value).toBe("unsaved-draft");
+  const lastId = INTEGRATIONS[INTEGRATIONS.length - 1]!;
+  await pick(lastId.id);
+  expect(trigger().getAttribute("aria-label")).toContain(lastId.name());
   await act(async () => root.render(render("jira")));
-  expect(tabs[3].getAttribute("aria-selected")).toBe("true");
+  expect(trigger().getAttribute("aria-label")).toContain("Jira");
 });
 
 it.each([

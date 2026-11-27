@@ -10,6 +10,7 @@ import {
   type SocialAdapter,
   type SocialSendResult,
 } from "./adapter";
+import { planTikTokUpload, transferTikTokVideo } from "./tiktok-upload";
 
 const origin = "https://open.tiktokapis.com/v2/";
 export const TIKTOK_PRIVACY = [
@@ -20,6 +21,7 @@ export const TIKTOK_PRIVACY = [
 ] as const;
 /** `direct` posts publicly under the visibility rules; `inbox` uploads a draft to the creator's TikTok inbox. */
 export const TIKTOK_MODES = ["direct", "inbox"] as const;
+export const TIKTOK_STORIES_UNSUPPORTED = "tiktok.stories_mobile_only";
 /**
  * A publication still processing after this long is uncertain. The host reconciles it once and sends the job
  * to review when TikTok still reports processing. shortcut: no documented TikTok limit; upgrade from measured processing times.
@@ -39,6 +41,10 @@ export function parseTikTokOptions(raw: unknown): TikTokVideoOptions {
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
     throw new Error("Invalid TikTok video options.");
   const value = raw as Record<string, unknown>;
+  if (value.mediaType === "story")
+    throw new SocialPlatformError("unsupported", undefined, {
+      reasonCode: TIKTOK_STORIES_UNSUPPORTED,
+    });
   const photo = value.mediaType === "photo";
   const durationSeconds = photo && value.durationSeconds === undefined ? 0 : value.durationSeconds;
   if (
@@ -115,9 +121,10 @@ export function tiktokContentIssue(job: Pick<SocialJob, "kind" | "payload">): st
     )
       return "TikTok photo publishing requires one to four images, a selected cover and no Duet or Stitch.";
   } else if (media.length !== 1 || media[0].kind !== "video")
-    return "TikTok video publishing requires one HTTPS video URL.";
+    return "TikTok video publishing requires one video.";
   if (
     media.some((item) => {
+      if (!photo && item.uploadId && !item.url) return false;
       if (!item.url || item.uploadId) return true;
       try {
         const url = new URL(item.url);
@@ -127,7 +134,9 @@ export function tiktokContentIssue(job: Pick<SocialJob, "kind" | "payload">): st
       }
     })
   )
-    return "TikTok requires HTTPS media URLs on a TikTok-verified domain or URL prefix.";
+    return photo
+      ? "TikTok photos need HTTPS URLs on a verified domain or URL prefix."
+      : "TikTok videos need a Host upload or an HTTPS URL on a verified domain or URL prefix.";
   // Inbox drafts are reviewed and published inside TikTok, so visibility, consent and duration are set there.
   if (
     !inbox &&
@@ -189,7 +198,6 @@ export function createTikTokAdapter(http: SocialHttp, now = Date.now): SocialAda
       publish_id: publishId,
     });
     if (value.data?.status === "FAILED") throw new SocialPlatformError("rejected");
-    // unverified: the inbox completion status name ("SEND_TO_USER_INBOX") is not confirmed against TikTok docs.
     const inbox = tiktokMode(job.payload.tiktok) === "inbox";
     const complete = inbox ? ["PUBLISH_COMPLETE", "SEND_TO_USER_INBOX"] : ["PUBLISH_COMPLETE"];
     if (!complete.includes(value.data?.status)) return undefined;
@@ -208,7 +216,7 @@ export function createTikTokAdapter(http: SocialHttp, now = Date.now): SocialAda
   }
   return {
     creatorInfo,
-    async send(account, job, token, _media, checkpoint, beforeSubmit) {
+    async send(account, job, token, media, checkpoint, beforeSubmit) {
       if (tiktokContentIssue(job)) throw new SocialPlatformError("unsupported");
       if (!job.preparation?.tiktokPublishId) {
         const options = parseTikTokOptions(job.payload.tiktok);
@@ -235,23 +243,28 @@ export function createTikTokAdapter(http: SocialHttp, now = Date.now): SocialAda
           brand_content_toggle: options.brandContent,
           brand_organic_toggle: options.brandOrganic,
         };
-        const photoSource = {
-          source: "PULL_FROM_URL",
-          photo_images: job.payload.media.map((item) => new URL(item.url!).toString()),
-          photo_cover_index: options.photoCoverIndex,
-        };
-        const videoSource = {
-          source: "PULL_FROM_URL",
-          video_url: new URL(job.payload.media[0].url!).toString(),
-        };
+        const uploadId = !photo ? job.payload.media[0].uploadId : undefined;
+        const video = uploadId ? await media(uploadId) : undefined;
+        const plan = video ? planTikTokUpload(video) : undefined;
+        const sourceInfo = photo
+          ? {
+              source: "PULL_FROM_URL",
+              photo_images: job.payload.media.map((item) => new URL(item.url!).toString()),
+              photo_cover_index: options.photoCoverIndex,
+            }
+          : (plan?.sourceInfo ?? {
+              source: "PULL_FROM_URL",
+              video_url: new URL(job.payload.media[0].url!).toString(),
+            });
         const body = inbox
           ? photo
             ? {
                 media_type: "PHOTO",
                 post_mode: "MEDIA_UPLOAD",
-                source_info: photoSource,
+                post_info: { title: options.photoTitle ?? "", description },
+                source_info: sourceInfo,
               }
-            : { post_mode: "MEDIA_UPLOAD", source_info: videoSource }
+            : { source_info: sourceInfo }
           : photo
             ? {
                 post_info: {
@@ -260,7 +273,7 @@ export function createTikTokAdapter(http: SocialHttp, now = Date.now): SocialAda
                   description,
                   auto_add_music: options.autoAddMusic,
                 },
-                source_info: photoSource,
+                source_info: sourceInfo,
                 media_type: "PHOTO",
                 post_mode: "DIRECT_POST",
                 is_aigc: options.isAigc,
@@ -273,11 +286,11 @@ export function createTikTokAdapter(http: SocialHttp, now = Date.now): SocialAda
                   disable_stitch: !options.allowStitch,
                   is_aigc: options.isAigc,
                 },
-                source_info: videoSource,
+                source_info: sourceInfo,
               };
         await beforeSubmit?.();
         const { value } = await http.json(
-          `${origin}post/publish/${photo ? "content" : "video"}/init/`,
+          `${origin}post/publish/${photo ? "content" : inbox ? "inbox/video" : "video"}/init/`,
           token,
           body,
         );
@@ -286,6 +299,8 @@ export function createTikTokAdapter(http: SocialHttp, now = Date.now): SocialAda
           throw new SocialPlatformError("unknown");
         job.preparation = { ...job.preparation, tiktokPublishId: publishId };
         await checkpoint?.(job.preparation);
+        if (video && plan)
+          await transferTikTokVideo(http, value.data?.upload_url, video, plan, beforeSubmit);
       }
       const result = await status(job, token);
       if (result) return result;

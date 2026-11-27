@@ -3,19 +3,11 @@
   min-inline-size: 0;
 }
 
-.inbox-provider-tabs {
-  display: flex;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  gap: 4px;
-  margin-block-end: 20px;
-}
-
 .inbox-account-fields {
   display: flex;
   flex-wrap: wrap;
   align-items: end;
-  gap: 12px;
+  gap: var(--space-3);
   inline-size: 100%;
   min-inline-size: 0;
 }
@@ -29,7 +21,7 @@
   inline-size: 100%;
   min-inline-size: 0;
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 /* Compact scope rows retain the full searchable title and key. */
@@ -39,30 +31,17 @@
 .inbox-scope-row .settings-collection-main {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--space-2);
   min-inline-size: 0;
 }
 .inbox-scope-row .settings-collection-meta {
   flex: none;
 }
-.inbox-settings .settings-collection-list {
-  max-block-size: 18rem;
-  overflow-y: auto;
-}
-.inbox-settings .settings-collection-row {
-  padding-block: 6px;
-}
-.inbox-settings .settings-collection-toolbar {
-  gap: 6px;
-}
-.inbox-provider-tabs > * {
-  flex-shrink: 0;
-}
 .inbox-account-summary {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .inbox-account-summary > :first-child {
   flex: 1 1 12rem;

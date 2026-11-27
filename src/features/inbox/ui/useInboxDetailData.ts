@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
@@ -130,8 +131,7 @@ function detailReaders(item: InboxItem): DetailReaders {
   };
 }
 
-const errorMessage = (reason: unknown) =>
-  reason instanceof Error ? reason.message : String(reason);
+const errorMessage = (reason: unknown) => errorText(reason);
 
 /**
  * Every read is a query keyed by the item identity, its list revision and the
@@ -256,6 +256,8 @@ export function useInboxDetailData(
     details: detailsQuery.data ?? null,
     loading: detailsQuery.isPending,
     error: detailsQuery.error ? errorMessage(detailsQuery.error) : null,
+    retrying: detailsQuery.isFetching,
+    retry: () => detailsQuery.refetch(),
     prDiff: isPr ? (diffQuery.data ?? null) : null,
     diffLoading: isPr && diffQuery.isPending,
     diffError: isPr && diffQuery.error ? errorMessage(diffQuery.error) : null,

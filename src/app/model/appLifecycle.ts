@@ -17,7 +17,6 @@ import {
   inFlightRefs,
   isInFlightSession,
   markTurnInterrupted,
-  quitWhileBusyMessage,
   wasTurnInterrupted,
   workspaceFromResumed,
   type ResumedWorkspace,
@@ -25,9 +24,10 @@ import {
 import { closeLeaf, leafIds, type WorkspaceTab } from "../../features/workspace/model/layout";
 import {
   abortRestoredSession,
-  claimRestoredSession,
+  claimRestoredSessions,
   remoteSessionOwnershipKey,
 } from "./sessionWindowOwnership";
+import { remoteSessionProjectKey } from "../../features/connections/model/sessionMachineTarget";
 import { parseRemotePath } from "../../features/connections/model/remoteProjects";
 import { remoteSessionFor } from "../../features/connections/model/connections";
 import { killPty } from "../../platform/tauri/pty";
@@ -74,6 +74,7 @@ import {
 } from "../../features/projects/model/recents";
 import { workspaceTabCwd } from "../../features/workspace/model/workspaceTabGroups";
 import { showBootRestoreNotice } from "./bootRestoreNotice";
+import { quitConfirmMessage, type QuitConfirmPayload } from "./quitConfirmMessage";
 import type { ProjectReturnMemory } from "../../features/projects/model/projectReturn";
 import { appName } from "../../shared/lib/appName";
 import { platformConfirm } from "../../shared/model/appConfirm";
@@ -160,17 +161,16 @@ const HISTORY_LOAD_ERROR = "Earlier messages could not be loaded. Reopen this ch
 
 function publishBootSession(original: Session, hydrated: Session): void {
   if (quitting) return;
-  const owns = (session: Session) =>
-    session.id === original.id &&
-    !session.busy &&
-    session.blocks === original.blocks &&
-    session.queuedMessages === original.queuedMessages;
-  if (bootingResumed)
-    bootingResumed.sessions = bootingResumed.sessions.map((session) =>
-      owns(session) ? hydrated : session,
-    );
-  if (liveWorkspace)
-    setSessions((sessions) => sessions.map((session) => (owns(session) ? hydrated : session)));
+  const apply = (session: Session): Session => {
+    if (session.id !== original.id || session.busy || session.blocks !== original.blocks)
+      return session;
+    if (session.queuedMessages === original.queuedMessages) return hydrated;
+    // A restored/edited queue invalidates the snapshot, but the same history
+    // placeholder still needs a retry state. Keep the newer queue intact.
+    return session.historyLoading ? { ...session, historyLoadError: HISTORY_LOAD_ERROR } : session;
+  };
+  if (bootingResumed) bootingResumed.sessions = bootingResumed.sessions.map(apply);
+  if (liveWorkspace) setSessions((sessions) => sessions.map(apply));
 }
 
 function startDeferredBootReads(): void {
@@ -355,14 +355,18 @@ export async function reportQuitPoll(id: number): Promise<void> {
 }
 
 /** The one quit dialog, shown by whichever window the coordinator picked. */
-export async function askQuitConfirmation(id: number, inFlight: number): Promise<void> {
+export async function askQuitConfirmation(
+  id: number,
+  inFlight: number,
+  host: Pick<QuitConfirmPayload, "desktopInFlight" | "hostActivity"> = {},
+): Promise<void> {
   let confirmed = false;
   if (!quitDialogOpen) {
     quitDialogOpen = true;
     try {
       confirmed = await platformConfirm({
         title: appName(),
-        message: quitWhileBusyMessage(inFlight),
+        message: quitConfirmMessage({ id, inFlight, ...host }),
         confirmLabel: t("Quit"),
         tone: "danger",
       });
@@ -468,17 +472,14 @@ export function loadBootWorkspace(): Promise<BootWorkspace> {
         return { windowTransfer: null, resumed: null, history: [], historyCwd: null };
       }
       const hintedCwd = lastProjectPath();
-      const historyHint: { value: Awaited<ReturnType<typeof listProjectHistory>> } = {
-        value: null,
-      };
-      void listProjectHistory(hintedCwd).then((value) => {
-        historyHint.value = value;
-      });
-      const resumed = await loadResumedWorkspace();
+      // Awaited together with the restore so the sidebar history is ready at
+      // first paint instead of depending on which query finishes first.
+      const [hinted, resumed] = await Promise.all([
+        listProjectHistory(hintedCwd),
+        loadResumedWorkspace(),
+      ]);
       const listed =
-        hintedCwd && sameProjectPath(resumed?.projectCwd ?? hintedCwd, hintedCwd)
-          ? historyHint.value
-          : null;
+        hintedCwd && resumed && sameProjectPath(resumed.projectCwd, hintedCwd) ? hinted : null;
       return {
         windowTransfer: null,
         resumed,
@@ -567,8 +568,9 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
   const remoteKeys = new Map<string, string>();
   for (const stub of snapshot?.sessions ?? []) {
     const remoteId = stub.remoteSessionId ?? remoteSessionFor(stub.id);
-    if (remoteId && parseRemotePath(stub.cwd))
-      remoteKeys.set(stub.id, remoteSessionOwnershipKey(stub.cwd, remoteId));
+    const project = remoteSessionProjectKey(stub);
+    if (remoteId && parseRemotePath(project))
+      remoteKeys.set(stub.id, remoteSessionOwnershipKey(project, remoteId));
   }
   for (const tab of snapshot?.tabs ?? [])
     for (const id of leafIds(tab.layout)) if (!paneIds.has(id)) claimIds.add(id);
@@ -594,22 +596,25 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
   const foreign = new Set<string>();
   const claimed = new Set<string>();
   try {
+    // Local ids first, then the remote Host key of each one this window won, so
+    // a remote key is never claimed for a conversation another window owns.
+    for (const id of await claimRestoredSessions(claimIds)) foreign.add(id);
+    const keyOwners = new Map<string, string[]>();
     for (const id of claimIds) {
-      const local = await claimRestoredSession(id);
-      if (!local) {
-        foreign.add(id);
-        continue;
-      }
+      if (foreign.has(id)) continue;
       claimed.add(id);
       const remoteKey = remoteKeys.get(id);
-      if (remoteKey) {
-        if (await claimRestoredSession(remoteKey)) claimed.add(remoteKey);
-        else {
+      if (remoteKey) keyOwners.set(remoteKey, [...(keyOwners.get(remoteKey) ?? []), id]);
+    }
+    const foreignKeys = await claimRestoredSessions([...keyOwners.keys()]);
+    for (const [key, owners] of keyOwners) {
+      if (foreignKeys.has(key)) {
+        for (const id of owners) {
           foreign.add(id);
-          await abortRestoredSession(id);
           claimed.delete(id);
+          await abortRestoredSession(id);
         }
-      }
+      } else claimed.add(key);
     }
   } catch (error) {
     // Unknown ownership cannot safely paint or rewrite the saved workspace.
@@ -681,6 +686,7 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
         interrupted.has(id)
           ? undefined
           : {
+              deferHistory: true,
               onHydrated: (original, hydrated) => {
                 if (loaded.get(id)?.blocks === original.blocks) loaded.set(id, hydrated);
                 publishBootSession(original, hydrated);
@@ -741,19 +747,19 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
             value.blocks === placeholder.blocks &&
             value.queuedMessages === placeholder.queuedMessages,
         );
+      const failed = () =>
+        publishBootSession(placeholder, { ...placeholder, historyLoadError: HISTORY_LOAD_ERROR });
       if (interrupted.has(session.id)) {
-        const failed = () =>
-          publishBootSession(placeholder, { ...placeholder, historyLoadError: HISTORY_LOAD_ERROR });
         deferredBootReads.push({
           timedOut: failed,
           run: async () => {
             try {
-              if (!owns()) return;
+              if (!owns()) return failed();
               const record = await getSession(session.id);
               if (!record) throw new Error("Stored session is unavailable.");
-              if (!owns()) return;
+              if (!owns()) return failed();
               const recovered = await recoverInterruptedTurn(markTurnInterrupted(record));
-              if (!owns()) return;
+              if (!owns()) return failed();
               if (shouldPersistSession(recovered)) await upsertSessionPreservingActivity(recovered);
               publishBootSession(placeholder, recovered);
             } catch {
@@ -764,15 +770,16 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
         return placeholder;
       }
       deferredBootReads.push({
-        timedOut: () =>
-          publishBootSession(placeholder, { ...placeholder, historyLoadError: HISTORY_LOAD_ERROR }),
+        timedOut: failed,
         run: () =>
           new Promise<void>((resolve) => {
             if (!owns()) {
+              failed();
               resolve();
               return;
             }
             void getSession(session.id, {
+              deferHistory: true,
               onHydrated: (original, hydrated) => {
                 publishBootSession(original, hydrated);
                 if (!hydrated.historyLoading) resolve();
@@ -791,14 +798,10 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
                   placeholder,
                   record ?? { ...placeholder, historyLoading: false },
                 );
-                if (!record?.historyLoading) resolve();
+                if (!record?.historyLoading || record.storedHistory) resolve();
               })
               .catch(() => {
-                publishBootSession(placeholder, {
-                  ...placeholder,
-                  historyLoadError:
-                    "Earlier messages could not be loaded. Reopen this chat to retry.",
-                });
+                failed();
                 resolve();
               });
           }),
@@ -1106,7 +1109,7 @@ async function prepareWindowToClose(
     ...tabs.flatMap((tab) =>
       [...tab.editorPanes, ...(tab.terminalPanes ?? [])].flatMap((pane) => pane.files),
     ),
-    ...docks.flatMap((dock) => dock.pane.files),
+    ...docks.flatMap((dock) => dock.pane.files.filter((file) => !dock.remoteRuns?.[file.id])),
   ];
   const unique = [
     ...new Map(files.filter((file) => file.terminal).map((file) => [file.id, file])).values(),

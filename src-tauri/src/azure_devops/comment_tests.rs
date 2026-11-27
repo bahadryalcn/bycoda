@@ -24,6 +24,8 @@ fn work_item_comment_explicitly_posts_markdown_without_rewriting_the_draft() {
                 Err(error) => panic!("fixture accept failed: {error}"),
             }
         };
+        // BSD/macOS accepted sockets inherit the listener's non-blocking mode.
+        stream.set_nonblocking(false).unwrap();
         stream
             .set_read_timeout(Some(Duration::from_secs(5)))
             .unwrap();

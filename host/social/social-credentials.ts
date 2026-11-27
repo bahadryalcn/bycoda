@@ -15,6 +15,8 @@ export interface SocialCredentialStore {
   delete(id: string): Promise<void>;
 }
 
+const KEY_RETRY_COOLDOWN_MS = 30_000;
+
 /** Sensitive input uses stdin, never argv/stderr. Every helper is hidden on Windows. */
 function secretCommand(command: string, args: string[], input: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -50,15 +52,23 @@ function secretCommand(command: string, args: string[], input: string): Promise<
 export class OsSocialCredentials implements SocialCredentialStore {
   private queue: Promise<unknown> = Promise.resolve();
   private keyPromise?: Promise<Buffer>;
+  private keyFailure?: { error: Error; retryAt: number };
+  private sharedRead?: Promise<Record<string, SocialCredential>>;
   constructor(
     private readonly directory: string,
     private readonly environmentId: string,
   ) {}
   private async key(): Promise<Buffer> {
     if (!this.keyPromise) {
-      this.keyPromise = this.loadKey();
-      this.keyPromise.catch(() => {
+      if (this.keyFailure && Date.now() < this.keyFailure.retryAt) throw this.keyFailure.error;
+      const attempt = this.loadKey();
+      this.keyPromise = attempt;
+      attempt.catch((error: unknown) => {
         this.keyPromise = undefined;
+        this.keyFailure = {
+          error: error instanceof Error ? error : new Error("Social vault key unavailable."),
+          retryAt: Date.now() + KEY_RETRY_COOLDOWN_MS,
+        };
       });
     }
     return this.keyPromise;
@@ -194,9 +204,19 @@ export class OsSocialCredentials implements SocialCredentialStore {
       throw new Error("Social vault could not be decrypted.");
     }
   }
+  private readShared(): Promise<Record<string, SocialCredential>> {
+    if (!this.sharedRead) {
+      const attempt: Promise<Record<string, SocialCredential>> = this.read().finally(() => {
+        if (this.sharedRead === attempt) this.sharedRead = undefined;
+      });
+      this.sharedRead = attempt;
+    }
+    return this.sharedRead;
+  }
   async get(id: string): Promise<SocialCredential | undefined> {
     await this.queue.catch(() => undefined);
-    return (await this.read())[id];
+    const credential = (await this.readShared())[id];
+    return credential && { ...credential };
   }
   private mutate(action: (values: Record<string, SocialCredential>) => void): Promise<void> {
     const run = this.queue
@@ -213,6 +233,7 @@ export class OsSocialCredentials implements SocialCredentialStore {
           Buffer.concat([iv, cipher.getAuthTag(), encrypted]),
           { mode: 0o600 },
         );
+        this.sharedRead = undefined;
       });
     this.queue = run;
     return run;

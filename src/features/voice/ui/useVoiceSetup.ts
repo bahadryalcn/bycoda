@@ -4,6 +4,7 @@ import { t } from "../../../shared/i18n";
 import { checkFailure, setupConfigKey, stageLabel, type Failure } from "./voiceSetupPresentation";
 import {
   localVoiceBackend,
+  type VoiceRuntimeConfig,
   type VoiceRuntimeStatus,
   type VoiceSetupStatus,
 } from "../model/localVoiceClient";
@@ -61,8 +62,8 @@ export function useVoiceSetup(
   }, []);
   const checkNow = useCallback(async () => {
     const id = ++request.current;
-    setCheckedKey(configKey);
     setBusy(true);
+    setCheckedKey(configKey);
     setError(undefined);
     setResult(undefined);
     // Native host discovery can stall before an RPC timeout exists. Keep a
@@ -74,8 +75,10 @@ export function useVoiceSetup(
       setBusy(false);
     }, 20_000);
     try {
-      const found = await localVoiceBackend.inspect(JSON.parse(configKey));
-      if (mounted.current && id === request.current) setResult(found);
+      const config: VoiceRuntimeConfig = JSON.parse(configKey);
+      const found = await localVoiceBackend.inspect(config);
+      if (!mounted.current || id !== request.current || currentKey.current !== configKey) return;
+      setResult(found);
     } catch (cause) {
       if (mounted.current && id === request.current) setError(checkFailure(cause));
     } finally {
@@ -186,7 +189,7 @@ export function useVoiceSetup(
       const path = await open({
         directory: key !== "python",
         multiple: false,
-        title: t(key === "python" ? "Choose Python executable" : "Choose model folder"),
+        title: key === "python" ? t("Choose Python executable") : t("Choose model folder"),
       });
       if (
         mounted.current &&
@@ -213,6 +216,11 @@ export function useVoiceSetup(
   const resetJob = () => setJob({ state: "idle" });
   const checked = checkedKey === configKey;
   const ready = Boolean(checked && result?.ready && !installing && !error);
+  const gpuUnavailable =
+    checked &&
+    !busy &&
+    settings.device === "gpu" &&
+    Boolean(result?.missing.includes("NVIDIA GPU"));
   const visibleError = installing || checked ? error : undefined;
   const setupFailed = job.state === "error";
   const pythonMissing = setupFailed && job.error === "python_missing";
@@ -270,6 +278,7 @@ export function useVoiceSetup(
     pythonMissing,
     message,
     gpuUpgrade,
+    gpuUnavailable,
     detail,
     setupError: Boolean(visibleError) || setupFailed,
     working: installing || busy || !checked,

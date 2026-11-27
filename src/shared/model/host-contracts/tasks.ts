@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { ModelRoutingItemChoiceSchema, ModelRoutingTargetSchema } from "./model-routing";
 import { SafeCounterSchema } from "./schemas";
+import { WorkExecutorSchema, WorkHelpersSchema, WorkResolvedSchema } from "./work-executor";
+import { TaskStopSchema, TaskWaitSchema } from "./task-stop";
 import { SessionProviderSchema, SessionRuntimeModeSchema } from "./session-commands";
 import {
   GoalBudgetSchema,
@@ -68,7 +70,8 @@ const inputFields = {
   preflightRequirements: z.array(TaskPreflightRequirementSchema).optional(),
   workflowId: z.string().optional(),
   workflowVersion: z.number().optional(),
-  crewDefinitionId: z.string().optional(),
+  executor: WorkExecutorSchema.optional(),
+  helpers: WorkHelpersSchema.optional(),
   crewRunId: z.string().optional(),
   crewScopes: z.array(z.string()).optional(),
   crewReviewFingerprint: z.string().optional(),
@@ -82,6 +85,25 @@ const inputFields = {
   continueUntilDone: z.boolean().optional(),
   goalId: z.string().optional(),
   source: z.enum(["manual", "goal", "steward", "automation"]).optional(),
+  request: z.string().optional(),
+  origin: z
+    .strictObject({
+      kind: z.enum([
+        "board",
+        "session",
+        "crew",
+        "room",
+        "voice",
+        "automation",
+        "steward",
+        "goal",
+        "mobile",
+      ]),
+      sessionId: z.string().optional(),
+      messageId: z.string().optional(),
+      automationRunId: z.string().optional(),
+    })
+    .optional(),
   stewardId: z.string().optional(),
   automationId: z.string().optional(),
   automationRunId: z.string().optional(),
@@ -129,11 +151,11 @@ export const TaskVerificationSchema = z.strictObject({
   acceptance: TaskAcceptanceReportSchema.optional(),
 });
 const metadataFields = {
-  modelRoutingWait: z
-    .strictObject({ reason: z.string(), retryAt: SafeCounterSchema.optional() })
-    .optional(),
+  stop: TaskStopSchema.optional(),
+  wait: TaskWaitSchema.optional(),
   reviewerTarget: ModelRoutingTargetSchema.optional(),
-  crewWorkWait: z.strictObject({ reason: z.string(), unstarted: z.boolean() }).optional(),
+  /** Host-owned: how the executor, model and helpers were chosen when the work started. */
+  resolved: WorkResolvedSchema.optional(),
   conflictRecovery: z
     .strictObject({
       childId: z.string(),
@@ -185,7 +207,6 @@ const metadataFields = {
     .optional(),
   evaluation: TaskEvaluationSchema.optional(),
   budgetUsage: TaskBudgetUsageSchema.optional(),
-  budgetStop: z.string().optional(),
   preflight: TaskPreflightResultSchema.optional(),
   crewExecutionId: z.string().optional(),
   status: TaskStatusSchema.optional(),
@@ -211,21 +232,26 @@ const metadataFields = {
       error: z.string(),
       fingerprint: z.string(),
       takeover: z.boolean().optional(),
+      // Built by the same owner-notice helper as `ownerNotices`, so it carries their `kind`; older
+      // records predate it. Rejecting the field failed every `tasks.list` read for that task.
       runtimeRetryNotice: z
-        .strictObject({ id: z.string(), message: z.string(), at: z.number() })
+        .strictObject({
+          id: z.string(),
+          kind: z
+            .enum(["remaining_finding", "external_check", "auto_continued", "info"])
+            .optional(),
+          message: z.string(),
+          at: z.number(),
+        })
         .optional(),
     })
     .optional(),
   reviewFailureCount: z.number().optional(),
-  awaitingOwnerRestart: z.boolean().optional(),
   blockedTakeover: z
     .strictObject({ at: z.number(), previousSessionId: z.string().optional(), blocker: z.string() })
     .optional(),
   repairNote: z.string().optional(),
   checkFailureFingerprint: z.string().optional(),
-  repairStop: z
-    .strictObject({ reason: z.enum(["external", "no_progress", "limit"]), message: z.string() })
-    .optional(),
   ownerNotices: z
     .array(
       z.strictObject({
@@ -309,7 +335,6 @@ const metadataFields = {
   cleanupError: z.string().optional(),
   cleanupRetryAfter: z.number().optional(),
   cleanupArchives: z.array(z.string()).optional(),
-  needsInput: z.boolean().optional(),
   createdAt: z.number().optional(),
   updatedAt: z.number().optional(),
   startedAt: z.number().optional(),
@@ -348,11 +373,36 @@ export const TasksEventsParamsSchema = z.strictObject({
 });
 export const TasksSaveParamsSchema = z.strictObject({ task: TaskPayloadSchema });
 export const TasksIdParamsSchema = z.strictObject({ taskId: z.string() });
+/** One task's helper subagents or advisors, or (no `taskId`) every helper that failed. */
+export const TasksHelpersParamsSchema = z.strictObject({
+  taskId: z.string().optional(),
+  failedOnly: z.boolean().optional(),
+});
+/** A delegation record as the task shows it: what the Host stored, no result text or cost. */
+export const TaskHelperSchema = z.strictObject({
+  runId: z.string(),
+  taskId: z.string(),
+  kind: z.enum(["subagent", "advisor"]),
+  title: z.string(),
+  harness: z.string(),
+  model: z.string(),
+  childSessionId: z.string().optional(),
+  status: z.enum(["running", "succeeded", "failed", "cancelled"]),
+  startedAt: z.number(),
+  finishedAt: z.number().optional(),
+  error: z.string().optional(),
+});
+export type TaskHelper = z.infer<typeof TaskHelperSchema>;
+export const TasksHelpersResultSchema = z.array(TaskHelperSchema);
 export const TasksFinishWithFindingsParamsSchema = TasksIdParamsSchema.extend({
   expectedUpdatedAt: z.number().finite(),
 });
 export const TasksMoveParamsSchema = TasksIdParamsSchema.extend({ to: TaskStatusSchema });
-export const TasksReorderParamsSchema = z.strictObject({ taskIds: z.array(z.string()) });
+export const TasksReorderParamsSchema = z.strictObject({
+  taskIds: z.array(z.string()),
+  /** The `updatedAt` the caller saw for every id in `taskIds`; any other value rejects the move. */
+  expectedUpdatedAt: z.record(z.string(), z.number().finite()).optional(),
+});
 export const TasksRetargetParamsSchema = TasksIdParamsSchema.extend({
   workspace: TaskWorkspaceSchema.optional(),
   autoMerge: z.boolean().optional(),

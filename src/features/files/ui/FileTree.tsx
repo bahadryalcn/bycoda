@@ -1,8 +1,10 @@
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { useGracedFailure } from "../../connections/public/transientFailure";
+import { reportFailure } from "../../../shared/ui/reportFailure";
 import type { CSSProperties } from "react";
 /** Different job: Explorer hierarchy owns rename, drag/drop and range selection; TreeRow owns each interactive row. */
 import { Tooltip } from "../../../shared/ui/Tooltip";
-import { Text } from "../../../shared/ui/Text";
+import { Text, textAttributes } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { MoveRecoveryNotice, type CopyNotice } from "./MoveRecoveryNotice";
 import { TextField } from "../../../shared/ui/TextField";
 import {
@@ -18,6 +20,7 @@ import { Spinner } from "../../../shared/ui/Spinner";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import {
@@ -47,6 +50,7 @@ import {
 } from "react";
 import { leafName, validateFileName, type NameIssue } from "../model/fileName";
 import { hasMember, membersChanged } from "../model/treeMembership";
+import "./explorerDragPreview.css";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { isImeComposition } from "../../../shared/lib/keyboard";
@@ -76,6 +80,7 @@ import {
 import { GIT_ACTIONS, useRemoteSupports } from "../../connections/public/remoteCapabilities";
 import { useRemoteLoadFailure } from "../../connections/public/remoteHealth";
 import { RemoteLoadError } from "../../connections/public/RemoteLoadError";
+import { MachineGate } from "../../connections/public/MachineUnavailable";
 import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import type { RemoteDataState } from "../../connections";
 import { basename, clipboardFilePaths, type FsEntry } from "../../../platform/tauri/fs";
@@ -107,6 +112,7 @@ import { ExplorerSyncStatus } from "./ExplorerSyncStatus";
 import { useRemoteFolderBrowser } from "./useRemoteFolderBrowser";
 import {
   isDirAt,
+  treeTabStop,
   useTreeSelection,
   type Clip,
   type Creating,
@@ -114,7 +120,8 @@ import {
   type RefreshFailure,
 } from "./fileTreeSupport";
 import { useFileTreeExternalDrop } from "./useFileTreeExternalDrop";
-import { rowPath, useFileTreeKeyboard } from "./useFileTreeKeyboard";
+import { FileTreeSiblings, mountedTreeRow, rowPath, visibleTreePaths } from "./FileTreeSiblings";
+import { useFileTreeKeyboard } from "./useFileTreeKeyboard";
 import { transferVerdict, useFileTreeOperations } from "./useFileTreeOperations";
 import { useFileTreePolling } from "./useFileTreePolling";
 import { copyAsyncWithFeedback, copyText } from "./clipboard";
@@ -124,11 +131,11 @@ import {
   type TreeSelectionModifiers,
 } from "../model/treeSelection";
 // Status is never colour-only: each state also carries a letter marker.
-const GIT_STATUS_MARK: Record<string, { mark: string; label: string }> = {
-  modified: { mark: "M", label: "Modified" },
-  added: { mark: "A", label: "Added" },
-  untracked: { mark: "U", label: "Untracked" },
-  deleted: { mark: "D", label: "Deleted" },
+const GIT_STATUS_MARK: Record<string, { mark: string }> = {
+  modified: { mark: "M" },
+  added: { mark: "A" },
+  untracked: { mark: "U" },
+  deleted: { mark: "D" },
 };
 const GIT_STATUS_TONE: Record<string, "warning" | "added" | "removed"> = {
   modified: "warning",
@@ -162,6 +169,8 @@ const NARROW_HEADER_WIDTH = 200;
 type TreeStateValue = {
   expanded: Set<string>;
   selectedPaths: Set<string>;
+  /** Roving tabindex: the one row that is a Tab stop (see `treeTabStop`); null leaves it to the first root row. */
+  tabStop: string | null;
   creating: Creating | null;
   renaming: string | null;
   cutPaths: Set<string>;
@@ -182,6 +191,8 @@ type TreeActions = {
   onRenameCommit: (path: string, raw: string) => Promise<void>;
   onRenameCancel: () => void;
   onItemContextMenu: (entry: { path: string; isDir: boolean }, e: ReactMouseEvent) => void;
+  /** A row took focus (Tab entry included): the roving Tab stop and key target follow it. */
+  onRowFocus: (path: string) => void;
 };
 
 type TreeStore = ReturnType<typeof createTreeStore>;
@@ -225,6 +236,12 @@ function createDirectorySnapshot(store: TreeStore, parent: string, entries: FsEn
         (hasMember(members, next.renaming) || hasMember(members, previous.renaming))) ||
       (next.dragOverPath !== previous.dragOverPath &&
         (hasMember(members, next.dragOverPath) || hasMember(members, previous.dragOverPath))) ||
+      // A null stop hands the Tab stop to the first root row, so every directory re-reads on that edge.
+      (next.tabStop !== previous.tabStop &&
+        (next.tabStop === null ||
+          previous.tabStop === null ||
+          hasMember(members, next.tabStop) ||
+          hasMember(members, previous.tabStop))) ||
       membersChanged(previous.expanded, next.expanded, members) ||
       membersChanged(previous.selectedPaths, next.selectedPaths, members) ||
       membersChanged(previous.cutPaths, next.cutPaths, members) ||
@@ -301,7 +318,7 @@ function FileTreeInner({
   const [selectedPaths, setSelectedPaths, selectionAnchor, setSelectionAnchor] =
     useTreeSelection(selectedPath);
   const [children, setChildren] = useState<FsEntry[] | null>(() => peekDir(cwd));
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [rootRefreshing, setRootRefreshing] = useState(false);
   const [rootUpdatedAt, setRootUpdatedAt] = useState<number | undefined>(() =>
     peekDir(cwd) ? verifiedDirAt(cwd) : undefined,
@@ -318,7 +335,7 @@ function FileTreeInner({
   const [clip, setClip] = useState<Clip | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
-  const [opError, setOpError] = useState<string | null>(null);
+  const [opNotice, setOpNotice] = useState<string | null>(null);
   const [operationPending, setOperationPending] = useState(false);
   // An inline create/rename that has been submitted and is waiting on the filesystem.
   const [editPending, setEditPending] = useState(false);
@@ -362,19 +379,17 @@ function FileTreeInner({
   // File History and Blame need this computer or a host with `git.actions`.
   const canInspectGit = useRemoteSupports(cwd, GIT_ACTIONS) === true;
   const connectionFailure = useRemoteLoadFailure(cwd, "files");
-  const refreshFailureShownCentrally = useConnectionErrorShownCentrally(refreshFailure?.message);
-  // Why creating cannot start at all: no folder to create in, or a remote machine that cannot be
-  // asked. These are the capability signals the tree already has; there is no per-folder permission.
+  // Why creating cannot start at all: no folder to create in, or a Host too old to do it. A
+  // machine that cannot be asked at all never shows the tree (see `FileTree`); there is no per-folder
+  // permission. An offline machine keeps its listing but cannot be changed.
   const createUnavailableReason =
     !cwd || cwd === "~"
       ? t("Open a project folder first")
       : connectionFailure?.kind === "unreachable"
         ? t("This machine is unreachable")
-        : connectionFailure?.kind === "identity"
-          ? t("Pair this machine again to change files")
-          : connectionFailure?.kind === "outdated"
-            ? t("Update the host to change files")
-            : undefined;
+        : connectionFailure?.kind === "outdated"
+          ? t("Update the host to change files")
+          : undefined;
 
   const toggle = (path: string) => {
     const next = new Set(expandedRef.current);
@@ -385,9 +400,7 @@ function FileTreeInner({
 
   const onSelect = (path: string, modifiers: TreeSelectionModifiers = {}) => {
     const visible = modifiers.shiftKey
-      ? visibleRows()
-          .map((row) => rowPath(row))
-          .filter((value) => value !== cwd)
+      ? visibleTreePaths(rootRef.current).filter((value) => value !== cwd)
       : [];
     const anchor = selectionAnchor.current;
     setSelectedPaths((current) =>
@@ -395,6 +408,11 @@ function FileTreeInner({
     );
     if (!modifiers.shiftKey) setSelectionAnchor(path);
     commitSelectedPath(path);
+  };
+
+  // Focus-only: moves the roving Tab stop and the key target without touching the (multi)selection.
+  const onRowFocus = (path: string) => {
+    if (selectedPathRef.current !== path) commitSelectedPath(path);
   };
 
   const actionPaths = (path: string) =>
@@ -422,7 +440,7 @@ function FileTreeInner({
   const copyPathText = async (value: string) => {
     setCopyNotice(null);
     setCopyFailedText(null);
-    setOpError(null);
+    setOpNotice(null);
     try {
       const { copied, error } = await copyAsyncWithFeedback(copyFeedback.copyAsync, () =>
         copyText(value),
@@ -432,7 +450,13 @@ function FileTreeInner({
     } catch (error) {
       if (activeRoot.current === cwd) {
         setCopyFailedText(value);
-        setOpError(error instanceof Error ? error.message : String(error));
+        void reportFailure(error, {
+          toast: {
+            show: ({ message }) => {
+              if (activeRoot.current === cwd) setOpNotice(message);
+            },
+          },
+        });
       }
     }
   };
@@ -502,7 +526,19 @@ function FileTreeInner({
     const createPreview = () => {
       preview = document.createElement("div");
       preview.setAttribute("aria-hidden", "true");
-      preview.classList.add("explorer-file-drag-preview");
+      const surface = surfaceAttributes({
+        variant: "floating",
+        frame: "pane",
+        radius: "popup",
+        elevation: "floating",
+      });
+      const typography = textAttributes({ size: "caption", tone: "primary", leading: "none" });
+      const { className: surfaceClass, ...surfaceAttrs } = surface;
+      const { className: textClass, ...textAttrs } = typography;
+      preview.className = `explorer-file-drag-preview ${surfaceClass} ${textClass}`;
+      for (const [name, value] of Object.entries({ ...surfaceAttrs, ...textAttrs })) {
+        if (value !== undefined) preview.setAttribute(name, String(value));
+      }
 
       // Keep the useful identity of the row without dragging its full-width
       // layout, indentation spacer, selection state, or button behavior.
@@ -540,7 +576,7 @@ function FileTreeInner({
       const blocked = verdict !== "ok";
       setDropFeedback(blocked ? "blocked" : "move", { clientX: lastX, clientY: lastY }, label);
       setDropIndicator(
-        visibleRows().find((row) => rowPath(row) === target) ?? null,
+        mountedTreeRow(rootRef.current, target) ?? null,
         blocked ? "blocked" : "inside",
       );
       showingTarget = true;
@@ -738,7 +774,7 @@ function FileTreeInner({
     setMenu,
     setOperationPending,
     setEditPending,
-    setOpError,
+    setOpError: setOpNotice,
     setCopyNotice,
     setCopyFailedText,
   });
@@ -754,12 +790,6 @@ function FileTreeInner({
     e.preventDefault();
     openMenu({ path: cwd, isDir: true, isRoot: true }, e.clientX, e.clientY);
   };
-
-  const visibleRows = () =>
-    Array.from(
-      rootRef.current?.querySelectorAll<HTMLElement>("[data-explorer-root], [role='treeitem']") ??
-        [],
-    );
 
   // Toolbar and header menu share one create owner (startCreate) with the context menu and keyboard.
   const runHeaderAction = (id: string) => {
@@ -793,8 +823,6 @@ function FileTreeInner({
     (operationPending || editPending
       ? t("Wait for the current file operation to finish")
       : undefined);
-  const createLabel = (label: string) =>
-    createBlockedReason ? `${label} (${createBlockedReason})` : label;
   // Visible name of a folder in this tree: the root keeps its display identity (worktree/branch label).
   const parentLabel = (path: string) => (path === cwd ? name : basename(path));
   const headerRef = useRef<HTMLDivElement>(null);
@@ -823,7 +851,6 @@ function FileTreeInner({
     onSelect,
     commitSelectedPath,
     actionPaths,
-    visibleRows,
     openMenu,
     copyPathText,
     setClipboard,
@@ -868,12 +895,13 @@ function FileTreeInner({
       .then((entries) => {
         if (!cancelled && request === rootRefreshRequest.current) {
           setChildren(entries);
+          setError(null);
           setRootUpdatedAt(Date.now());
         }
       })
       .catch((err: unknown) => {
         if (!cancelled && request === rootRefreshRequest.current) {
-          setError(presentRemoteError(err, { explicit: true }));
+          setError(err);
         }
       });
     return () => {
@@ -886,13 +914,12 @@ function FileTreeInner({
     const request = ++rootRefreshRequest.current;
     const previous = children ?? peekDir(cwd);
     setRootRefreshing(true);
-    setError(null);
     const root = refreshDir(cwd);
     // Expanded folders refresh with the root; their failures keep the last listing.
     const nested = refreshCachedDirs([...expandedRef.current].filter((path) => path !== cwd)).catch(
       () => [],
     );
-    void Promise.all([root, nested])
+    return Promise.all([root, nested])
       .then(([entries]) => {
         if (request !== rootRefreshRequest.current) return;
         setChildren(entries);
@@ -903,7 +930,7 @@ function FileTreeInner({
       .catch((err: unknown) => {
         if (request !== rootRefreshRequest.current) return;
         setChildren(previous);
-        setError(presentRemoteError(err, { explicit: true }));
+        setError(err);
       })
       .finally(() => {
         if (request === rootRefreshRequest.current) {
@@ -912,20 +939,33 @@ function FileTreeInner({
       });
   };
 
-  const rootError = error ?? connectionFailure?.message;
-  // A first load that failed because the connection was down reloads once it is back.
+  const { visibleError: rootError, pending: rootPending } = useGracedFailure({
+    error: error ?? connectionFailure?.message,
+    retry: refreshRoot,
+    loading: rootRefreshing,
+  });
+  const visibleConnectionFailure = rootError ? connectionFailure : undefined;
+  const activeRefreshFailure = refreshFailure?.cwd === cwd ? refreshFailure : null;
+  const { visibleError: refreshError, pending: refreshPending } = useGracedFailure({
+    error: activeRefreshFailure?.error,
+    retry: activeRefreshFailure
+      ? () => refreshAfterMutation(activeRefreshFailure.touched, activeRefreshFailure.forget)
+      : undefined,
+  });
+  const refreshFailureShownCentrally = useConnectionErrorShownCentrally(refreshError);
+  // Recheck listings on an observed reconnect without waiting for the next timed read.
   useReloadOnReconnect(cwd, refreshRoot, {
-    active: children === null && (error !== null || connectionFailure?.kind === "unreachable"),
+    active: error !== null || connectionFailure?.kind === "unreachable",
   });
   const rootDataState: RemoteDataState = {
-    phase: rootRefreshing
+    phase: rootError
       ? children === null
-        ? "loading"
-        : "refreshing"
-      : rootError
+        ? "error"
+        : "stale"
+      : rootRefreshing || rootPending || refreshPending
         ? children === null
-          ? "error"
-          : "stale"
+          ? "loading"
+          : "refreshing"
         : children === null
           ? "loading"
           : rootUpdatedAt === undefined
@@ -951,6 +991,7 @@ function FileTreeInner({
       onRenameCommit,
       onRenameCancel,
       onItemContextMenu,
+      onRowFocus,
     };
   });
   const actions = useMemo<TreeActions>(
@@ -965,6 +1006,7 @@ function FileTreeInner({
       onRenameCommit: (path, raw) => latestActions.current.onRenameCommit(path, raw),
       onRenameCancel: () => latestActions.current.onRenameCancel(),
       onItemContextMenu: (entry, e) => latestActions.current.onItemContextMenu(entry, e),
+      onRowFocus: (path) => latestActions.current.onRowFocus(path),
     }),
     [],
   );
@@ -972,10 +1014,12 @@ function FileTreeInner({
     () => new Set(clip?.mode === "cut" ? clip.entries.map((entry) => entry.path) : []),
     [clip],
   );
+  const tabStop = treeTabStop(cwd, selectedPath, expanded);
   const treeState = useMemo<TreeStateValue>(
     () => ({
       expanded,
       selectedPaths,
+      tabStop,
       creating,
       renaming,
       cutPaths,
@@ -986,6 +1030,7 @@ function FileTreeInner({
     [
       expanded,
       selectedPaths,
+      tabStop,
       creating,
       renaming,
       cutPaths,
@@ -1018,8 +1063,6 @@ function FileTreeInner({
               variant="ghost"
               align="start"
               selected={dragOverPath === cwd}
-              motion="none"
-              type="button"
               data-explorer-root
               data-path={cwd}
               expanded={rootOpen}
@@ -1043,8 +1086,9 @@ function FileTreeInner({
             {/* Creation, then tree management, then view/search; narrow headers fold the last two into the menu. */}
             <InlineAction
               reveal="always"
-              label={createLabel(t("New File"))}
+              label={t("New file")}
               disabled={Boolean(createBlockedReason)}
+              disabledReason={createBlockedReason}
               data-explorer-action="new-file"
               onClick={() => runHeaderAction("new-file")}
             >
@@ -1052,8 +1096,9 @@ function FileTreeInner({
             </InlineAction>
             <InlineAction
               reveal="always"
-              label={createLabel(t("New Folder"))}
+              label={t("New folder")}
               disabled={Boolean(createBlockedReason)}
+              disabledReason={createBlockedReason}
               data-explorer-action="new-folder"
               onClick={() => runHeaderAction("new-folder")}
             >
@@ -1062,7 +1107,7 @@ function FileTreeInner({
             {narrowHeader ? null : (
               <InlineAction
                 reveal="always"
-                label={t("Collapse All")}
+                label={t("Collapse all")}
                 data-explorer-action="collapse"
                 onClick={() => runHeaderAction("collapse")}
               >
@@ -1138,39 +1183,27 @@ function FileTreeInner({
               }}
             />
           ) : null}
-          {selectedPaths.size > 1 || hiddenSelectedPaths.length ? (
+          {hiddenSelectedPaths.length ? (
+            // Only the hidden part of a selection needs a notice: a destructive action would reach it.
             <Text
-              role="status"
               data-explorer-selection-scope
               as="div"
               size="caption"
               tone="secondary"
-              className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-2 py-1"
+              className="px-2 py-1"
             >
-              <span>
-                {t("Selected")}: {selectedPaths.size}
-              </span>
-              {hiddenSelectedPaths.length ? (
-                <span>
-                  {t("Selection includes hidden items")}: {hiddenSelectedPaths.length}
-                </span>
-              ) : null}
+              <LiveText
+                text={`${t("Selection includes hidden items")}: ${hiddenSelectedPaths.length}`}
+              />
             </Text>
           ) : null}
           {copyNotice ? <MoveRecoveryNotice notice={copyNotice} /> : null}
           {operationPending ? (
-            <Text
-              role="status"
-              as="div"
-              size="caption"
-              tone="secondary"
-              className="flex items-center gap-2 px-3 py-1"
-            >
-              <Spinner size="sm" />
-              {t("Working…")}
-            </Text>
+            <div className="px-3 py-1">
+              <LoadingText>{t("Working…")}</LoadingText>
+            </div>
           ) : null}
-          {opError ? (
+          {opNotice ? (
             <InlineError
               className="mx-2 my-1"
               action={
@@ -1179,35 +1212,32 @@ function FileTreeInner({
                   : undefined
               }
             >
-              {opError}
+              {opNotice}
             </InlineError>
           ) : null}
-          {refreshFailure?.cwd === cwd && refreshFailureShownCentrally ? (
-            <InlineMessage className="mx-2 my-1" tone="info">
-              {t("File change saved.")}
-            </InlineMessage>
-          ) : refreshFailure?.cwd === cwd ? (
+          {activeRefreshFailure && refreshError && !refreshFailureShownCentrally ? (
             <InlineError
               className="mx-2 my-1"
+              details={refreshError}
               action={{
                 label: t("Retry"),
                 pending: operationPending,
                 onClick: () => {
-                  const failure = refreshFailure;
+                  const failure = activeRefreshFailure;
                   void run(() => refreshAfterMutation(failure.touched, failure.forget));
                 },
               }}
             >
-              {t("File change saved. Refresh failed.")} {refreshFailure.message}
+              {t("File change saved. Refresh failed.")}
             </InlineError>
           ) : null}
           {search ?? (
             <div className="flex min-h-0 flex-1 flex-col">
               <div ref={lockOverscroll} className="min-h-0 flex-1 overflow-y-auto overscroll-none">
-                {connectionFailure ? (
+                {visibleConnectionFailure ? (
                   <RemoteLoadError
                     cwd={cwd}
-                    failure={connectionFailure}
+                    failure={visibleConnectionFailure}
                     stale={children !== null}
                     onRetry={refreshRoot}
                   />
@@ -1216,8 +1246,9 @@ function FileTreeInner({
                   <div
                     role="tree"
                     aria-multiselectable="true"
-                    aria-label={t("{p0} files", { p0: name })}
-                    className={connectionFailure ? "opacity-60" : undefined}
+                    aria-label={t("Files in {p0}", { p0: name })}
+                    aria-busy={rootPending || rootRefreshing}
+                    className={visibleConnectionFailure ? "opacity-60" : undefined}
                   >
                     <TreeChildren
                       parent={cwd}
@@ -1225,7 +1256,7 @@ function FileTreeInner({
                       depth={0}
                       entries={children}
                       loading={children === null && !rootError}
-                      error={connectionFailure ? null : error}
+                      error={visibleConnectionFailure ? null : (rootError ?? null)}
                       onRetry={refreshRoot}
                     />
                   </div>
@@ -1269,8 +1300,14 @@ function FileTreeInner({
 // intact unless file-tree props, local state, or subscriptions actually change.
 // Keyed by root: switching folders remounts the inner tree, so every piece of
 // per-root state (selection, expansion, menus, refs, timers) starts fresh.
+// A remote project whose machine cannot be asked shows the shared notice and reads no folder,
+// except an offline machine whose listing is already loaded: that stays, dimmed, with its notice.
 export const FileTree = memo(function FileTree(props: Props) {
-  return <FileTreeInner key={props.cwd} {...props} />;
+  return (
+    <MachineGate cwd={props.cwd} hasData={() => peekDir(props.cwd) !== null}>
+      <FileTreeInner key={props.cwd} {...props} />
+    </MachineGate>
+  );
 });
 
 function TreeChildren({
@@ -1320,21 +1357,27 @@ function TreeChildren({
   // rename and drag targets stay mounted even past the cut.
   const { shown, hidden } = windowEntries(visible, limit, [
     ...ctx.selectedPaths,
+    ctx.tabStop,
     ctx.renaming,
     ctx.dragOverPath,
   ]);
   const folders = shown.filter((e) => e.isDir);
   const files = shown.filter((e) => !e.isDir);
+  // Without an active row the first root row is the tree's Tab stop.
+  const firstRootPath = depth === 0 ? (folders[0] ?? files[0])?.path : undefined;
   const pad = { paddingLeft: 28 + depth * 12 };
-  const renderNode = (child: FsEntry) => {
+  const renderNode = (child: FsEntry, index: number) => {
     const open = ctx.expanded.has(child.path);
     return (
       <TreeNode
         key={child.path}
         entry={child}
         depth={depth}
+        position={index + 1}
+        setSize={shown.length}
         open={open}
         selected={ctx.selectedPaths.has(child.path)}
+        tabStop={ctx.tabStop === null ? child.path === firstRootPath : ctx.tabStop === child.path}
         editing={ctx.renaming === child.path}
         cut={ctx.cutPaths.has(child.path)}
         dragOver={ctx.dragOverPath === child.path}
@@ -1346,28 +1389,55 @@ function TreeChildren({
     );
   };
 
+  // Small directories and the initial page stay directly mounted. Continued siblings can
+  // scroll out together unless one owns focus, an edit, a drop highlight or an expanded folder.
+  const renderSiblings = (siblings: FsEntry[], offset: number) => {
+    const eager =
+      visible.length <= TREE_WINDOW_CHUNK * 2
+        ? siblings.length
+        : Math.max(0, TREE_WINDOW_CHUNK - offset);
+    return (
+      <FileTreeSiblings
+        entries={siblings}
+        eager={eager}
+        offset={offset}
+        renderRow={renderNode}
+        isPinned={(path) =>
+          ctx.expanded.has(path) ||
+          ctx.tabStop === path ||
+          ctx.renaming === path ||
+          ctx.dragOverPath === path
+        }
+      />
+    );
+  };
   return (
     <>
       {error ? (
-        <InlineError className="py-1 pr-2 break-words" style={pad} retry={{ onRetry }}>
-          {error}
-        </InlineError>
+        <div style={pad} className="min-w-0 break-words">
+          <InlineError inset="row" details={error} retry={{ onRetry }}>
+            {t("Couldn’t open this folder")}
+          </InlineError>
+        </div>
       ) : loading && entries === null ? (
-        <LoadingText className="py-1 pr-2" style={pad}>
-          {t("Loading…")}
-        </LoadingText>
+        <div style={pad}>
+          <LoadingText inset="row">{t("Loading…")}</LoadingText>
+        </div>
       ) : null}
       {!error && !loading && entries !== null && visible.length === 0 && !show ? (
         <Text
-          role="status"
           data-explorer-empty
           as="p"
           size="caption"
           tone="muted"
-          className="py-1 pr-2"
+          className="py-1 pe-2"
           style={pad}
         >
-          {entries.length ? t("Only excluded files in this folder") : t("This folder is empty")}
+          <LiveText
+            text={
+              entries.length ? t("Only excluded files in this folder") : t("This folder is empty")
+            }
+          />
           {entries.length ? (
             <Button variant="link" size="sm" onClick={() => saveShowExcludedFiles(true)}>
               {t("Show excluded files")}
@@ -1376,28 +1446,16 @@ function TreeChildren({
         </Text>
       ) : null}
       {show && ctx.creating?.isDir ? row : null}
-      {folders.map(renderNode)}
+      {renderSiblings(folders, 0)}
       {show && ctx.creating && !ctx.creating.isDir ? row : null}
-      {files.map(renderNode)}
+      {renderSiblings(files, folders.length)}
       {hidden > 0 ? (
-        <Text as="p" size="caption" tone="secondary" className="flex gap-3 pr-2" style={pad}>
-          <Button
-            size="sm"
-            variant="ghost"
-            motion="none"
-            type="button"
-            onClick={() => setLimit((n) => n + TREE_WINDOW_CHUNK)}
-          >
+        <Text as="p" size="caption" tone="secondary" className="flex gap-3 pe-2" style={pad}>
+          <Button size="sm" variant="ghost" onClick={() => setLimit((n) => n + TREE_WINDOW_CHUNK)}>
             {t("Show {p0} more…", { p0: Math.min(TREE_WINDOW_CHUNK, hidden) })}
           </Button>
           {hidden > TREE_WINDOW_CHUNK ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              motion="none"
-              type="button"
-              onClick={() => setLimit(Number.POSITIVE_INFINITY)}
-            >
+            <Button size="sm" variant="ghost" onClick={() => setLimit(Number.POSITIVE_INFINITY)}>
               {t("Show all {p0}", { p0: hidden })}
             </Button>
           ) : null}
@@ -1410,8 +1468,11 @@ function TreeChildren({
 const TreeNode = memo(function TreeNode({
   entry,
   depth,
+  position,
+  setSize,
   open,
   selected,
+  tabStop,
   editing,
   cut,
   dragOver,
@@ -1419,8 +1480,11 @@ const TreeNode = memo(function TreeNode({
 }: {
   entry: FsEntry;
   depth: number;
+  position: number;
+  setSize: number;
   open: boolean;
   selected: boolean;
+  tabStop: boolean;
   editing: boolean;
   cut: boolean;
   dragOver: boolean;
@@ -1436,12 +1500,13 @@ const TreeNode = memo(function TreeNode({
     onRenameCommit,
     onRenameCancel,
     onItemContextMenu,
+    onRowFocus,
   } = useTreeActions();
   const [loaded, setLoaded] = useState<FsEntry[] | null>(() =>
     entry.isDir ? peekDir(entry.path) : null,
   );
   // How the current read of this folder ended; null while it is still in flight (or not started).
-  const [settled, setSettled] = useState<{ error: string | null } | null>(null);
+  const [settled, setSettled] = useState<{ error: unknown } | null>(null);
   const [retry, setRetry] = useState(0);
   // Only an open folder watches the cache, and only for its own listing: a
   // change elsewhere leaves this snapshot's identity (and this node) alone.
@@ -1452,10 +1517,23 @@ const TreeNode = memo(function TreeNode({
     () => (watching ? peekDir(entry.path) : null),
   );
   const children = cached ?? loaded;
-  const loading = entry.isDir && open && !cached && settled === null;
-  const loadError = settled?.error ?? null;
+  const loading = watching && !cached && settled === null;
+  const retryRead = () => setRetry((n) => n + 1);
+  const { visibleError: loadError, pending } = useGracedFailure({
+    error: watching && !cached ? settled?.error : null,
+    loading,
+    retry: retryRead,
+  });
   const gitTone = gitStatus ? GIT_STATUS_TONE[gitStatus] : undefined;
   const gitMark = gitStatus ? GIT_STATUS_MARK[gitStatus] : undefined;
+  const gitLabel =
+    gitStatus === "modified"
+      ? t("Modified")
+      : gitStatus === "added"
+        ? t("Added")
+        : gitStatus === "untracked"
+          ? t("Untracked")
+          : t("Deleted");
 
   useEffect(() => {
     if (!entry.isDir || !open || cached) return;
@@ -1469,7 +1547,7 @@ const TreeNode = memo(function TreeNode({
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setSettled({ error: presentRemoteError(err, { explicit: true }) });
+          setSettled({ error: err });
         }
       });
     return () => {
@@ -1481,12 +1559,12 @@ const TreeNode = memo(function TreeNode({
 
   // A failed read leaves nothing cached for the refresh pass to revisit, so
   // the next tree refresh retries this folder.
-  const failed = watching && loadError !== null;
+  const failed = watching && !cached && settled?.error != null;
   useEffect(() => {
     if (!failed) return;
     return subscribeDirListings(() => setRetry((n) => n + 1));
   }, [failed]);
-  useReloadOnReconnect(entry.path, () => setRetry((n) => n + 1), { active: failed });
+  useReloadOnReconnect(entry.path, retryRead, { active: failed });
 
   const onClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
     if (consumeFileClick()) return;
@@ -1521,7 +1599,11 @@ const TreeNode = memo(function TreeNode({
           title={entry.path}
           aria-selected={selected}
           aria-level={depth + 1}
+          aria-posinset={position}
+          aria-setsize={setSize}
           aria-expanded={entry.isDir ? open : undefined}
+          tabStop={tabStop}
+          onFocus={() => onRowFocus(entry.path)}
           onClick={onClick}
           onDoubleClick={(event) => {
             if (!entry.isDir && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
@@ -1549,7 +1631,7 @@ const TreeNode = memo(function TreeNode({
           </TreeRowLabel>
           {gitMark ? (
             <TreeRowTrailing>
-              <Tooltip label={entry.isDir ? t("Contains changes") : t(gitMark.label)} asChild>
+              <Tooltip label={entry.isDir ? t("Contains changes") : gitLabel} asChild>
                 <Text size="inherit" tone={gitTone ?? "inherit"} weight="medium">
                   {entry.isDir ? "•" : gitMark.mark}
                 </Text>
@@ -1564,8 +1646,8 @@ const TreeNode = memo(function TreeNode({
           parentLabel={entry.name}
           depth={depth + 1}
           entries={children}
-          loading={loading}
-          error={loadError}
+          loading={loading || pending}
+          error={loadError ?? null}
           onRetry={() => setRetry((n) => n + 1)}
         />
       ) : null}
@@ -1599,6 +1681,7 @@ export function NameRow({
   const finished = useRef(false);
   const contextId = useId();
   const issueId = useId();
+  const hintId = useId();
   const [value, setValue] = useState(initial);
   const [attempted, setAttempted] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -1644,10 +1727,12 @@ export function NameRow({
       finished.current = true;
       setBusy(true);
       setSubmitError(null);
-      void onCommit(value).catch((err: unknown) => {
+      void onCommit(value).catch(async (err: unknown) => {
+        await reportFailure(err, {
+          toast: { show: ({ message }) => setSubmitError(message) },
+        });
         finished.current = false;
         setBusy(false);
-        setSubmitError(presentRemoteError(err, { explicit: true }));
       });
       return;
     }
@@ -1684,15 +1769,16 @@ export function NameRow({
           aria-busy={busy || undefined}
           aria-invalid={invalid || undefined}
           aria-describedby={
-            [context ? contextId : null, showIssue ? issueId : null].filter(Boolean).join(" ") ||
-            undefined
+            [hintId, context ? contextId : null, showIssue ? issueId : null]
+              .filter(Boolean)
+              .join(" ") || undefined
           }
           placeholder={isDir ? t("Folder name") : t("File name")}
           spellCheck={false}
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
-          aria-label={t("Type file name. Press Enter to confirm or Escape to cancel.")}
+          aria-label={isDir ? t("Folder name") : t("File name")}
           onChange={(e) => {
             setValue(e.target.value);
             setSubmitError(null);
@@ -1725,6 +1811,9 @@ export function NameRow({
           leading="none"
         />
         {busy ? <Spinner size="sm" className="shrink-0" /> : null}
+        <span id={hintId} className="sr-only">
+          {t("Press Enter to confirm or Escape to cancel.")}
+        </span>
         {context ? (
           <span id={contextId} className="sr-only">
             {context}
@@ -1801,7 +1890,8 @@ function NameIssueView({
     <InlineMessage
       id={id}
       tone={error ? "danger" : "warning"}
-      className="min-w-0 break-words pe-2 pb-1 [padding-inline-start:var(--layout-padding-inline-start)]"
+      inset="row"
+      className="min-w-0 break-words ms-(--layout-padding-inline-start)"
       style={{ "--layout-padding-inline-start": nameFieldInset(depth) } as CSSProperties}
     >
       {body}

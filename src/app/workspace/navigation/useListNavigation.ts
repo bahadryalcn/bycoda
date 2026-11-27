@@ -17,6 +17,10 @@ import {
   projectRailItems,
   sameProjectPath,
 } from "../../../features/projects/model/recents";
+import {
+  foldLinkedProjects,
+  savedProjectLinks,
+} from "../../../features/projects/model/projectRepositories";
 import { getGroupLockView } from "../../../features/group-lock/model/groupLock";
 import { visibleProjects } from "../../../features/group-lock/model/lockState";
 import {
@@ -168,9 +172,14 @@ export function useListNavigation({
 
   const onNavigateProjectList = useCallback(
     (delta: number) => {
-      const current = normalizeProjectPath(projectCwdRef.current);
+      // Steps over rail rows: another machine's copy of a project is part of its row.
+      const links = savedProjectLinks(loadRecents());
+      const current = links.rowOf(normalizeProjectPath(projectCwdRef.current));
       const ids = projectRailItems(
-        visibleProjects(getGroupLockView().lock, loadRecents(), (project) => project.path),
+        foldLinkedProjects(
+          visibleProjects(getGroupLockView().lock, loadRecents(), (project) => project.path),
+          links,
+        ),
         current,
       ).map((project) => project.path);
       const next = adjacentItemId(ids, current, delta);

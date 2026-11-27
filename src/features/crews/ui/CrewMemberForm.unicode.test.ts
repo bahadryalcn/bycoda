@@ -4,7 +4,6 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { CrewMemberForm } from "./CrewMemberForm";
 import type { CrewAgent } from "../model/crew";
-import type { HostModelCatalog } from "../../connections/model/protocol";
 
 vi.mock("./MemberModelSection", () => ({ MemberModelSection: () => null }));
 vi.mock("./MemberToolsPicker", () => ({ MemberToolsPicker: () => null }));
@@ -20,7 +19,6 @@ it("keeps the Host group-name UTF16 budget without splitting an emoji", async ()
       root.render(
         createElement(CrewMemberForm, {
           cwd: "/project",
-          catalog: {} as HostModelCatalog,
           agent: {
             id: "member",
             name: "Name",
@@ -30,7 +28,6 @@ it("keeps the Host group-name UTF16 budget without splitting an emoji", async ()
           } as unknown as CrewAgent,
           onChange: change,
           groups: true,
-          compact: true,
         }),
       ),
     );

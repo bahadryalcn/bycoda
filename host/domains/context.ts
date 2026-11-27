@@ -15,12 +15,15 @@ export class HostDomainAuthorizationError extends Error {
 
 /** Safe domain outcome only; diagnostic storage/provider causes remain local. */
 export class HostDomainOutcomeError extends Error {
+  declare readonly delivery: "not-sent" | "accepted" | "unknown";
+
   constructor(
     message: string,
-    readonly delivery: "not-sent" | "accepted" | "unknown",
+    delivery: HostDomainOutcomeError["delivery"],
     options?: ErrorOptions,
   ) {
     super(message, options);
+    this.delivery = delivery;
     this.name = "HostDomainOutcomeError";
   }
 }
@@ -33,14 +36,21 @@ export class HostDomainOutcomeError extends Error {
  */
 export class HostDomainRefusalError extends Error {
   readonly delivery = "not-sent" as const;
+  declare readonly code: HostRefusalErrorCode;
+  declare readonly category: "conflict" | "validation";
+  declare readonly retryable: boolean;
+
   constructor(
-    readonly code: HostRefusalErrorCode,
-    readonly category: "conflict" | "validation",
-    readonly retryable: boolean,
+    code: HostRefusalErrorCode,
+    category: HostDomainRefusalError["category"],
+    retryable: boolean,
     message: string,
     options?: ErrorOptions,
   ) {
     super(message, options);
+    this.code = code;
+    this.category = category;
+    this.retryable = retryable;
     this.name = "HostDomainRefusalError";
   }
 }
@@ -73,6 +83,8 @@ export interface HostDomainContext {
   /** Name of the requesting paired device, when known; never the credential. */
   requesterName?(): Promise<string | undefined>;
   readonly signal?: AbortSignal;
+  /** `monotonicNow()` instant the transport received this request. Deadlines count from it. */
+  readonly ingressAt?: number;
   closing?(): boolean;
   /** Request-scoped grant; credentials remain in transport composition. */
   exposeQueueAttachments?(ids: string[], params: Record<string, unknown>): Promise<void>;

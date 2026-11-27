@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { WorkspaceRpcRequest } from "../workspaces/workspace-rpc-contracts";
+import { workspaceCreationProgress } from "../managed/workspace-creation-progress";
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
 import { recordRemoteActivity } from "./remote-activity-record";
@@ -25,9 +26,42 @@ export async function handleWorkspacesRpc(
       await dependencies.engine.store.project(String(request.params.projectId ?? ""));
       if (request.params.environmentId !== dependencies.engine.store.environmentId)
         throw new Error("Workspace belongs to another execution host");
+      const progressId = request.params.progressId;
+      if (typeof progressId === "string" && progressId.trim())
+        workspaceCreationProgress.bindOwner(
+          progressId.trim(),
+          await dependencies.workspaceOwnerDeviceId(request.token),
+        );
       request.result = await dependencies.managedWorkspaces.prepare(
         request.params as unknown as WorkspaceRpcRequest<"workspaces.prepare">,
       );
+      break;
+    }
+
+    case "workspaces.prepare.status":
+      request.result = workspaceCreationProgress.get(
+        String(request.params.progressId ?? ""),
+        await dependencies.workspaceOwnerDeviceId(request.token),
+      );
+      break;
+
+    case "workspaces.prepare.cancel":
+      request.result = workspaceCreationProgress.cancel(
+        String(request.params.progressId ?? ""),
+        await dependencies.workspaceOwnerDeviceId(request.token),
+      );
+      break;
+
+    case "workspaces.renameBranch": {
+      const renamed = await dependencies.workspaceForOwnerRpc(request.params.workspaceId);
+      if (!renamed) throw new Error("Managed workspace not found");
+      await dependencies.managed.assertWritable(renamed.id);
+      request.result = await dependencies.managedWorkspaces.renameBranch(
+        request.params as unknown as WorkspaceRpcRequest<"workspaces.renameBranch">,
+      );
+      await recordRemoteActivity(dependencies, request, "worktreeChanged", {
+        projectId: renamed.projectId,
+      });
       break;
     }
 

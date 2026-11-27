@@ -138,6 +138,41 @@ it("preserves an existing remote target by default and can explicitly mount its 
   }
 });
 
+it("moves an existing dock into the voice outlet and restores the same tool node", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const outlet = document.createElement("div");
+  document.body.append(container, outlet);
+  const root = createRoot(container);
+  const source = { cwd: "/voice", sessionId: "voice", title: "Voice" };
+  const render = (target?: HTMLElement) =>
+    act(async () =>
+      root.render(
+        createElement(ToolsWorkspace, {
+          activeConversation: source,
+          outlet: target,
+          children: "Workspace",
+        }),
+      ),
+    );
+  try {
+    await render();
+    await act(async () => dockHostTools({ ...source, initialTab: "browser" }));
+    const pane = container.querySelector(".tools-workspace-pane");
+    expect(pane).not.toBeNull();
+    await render(outlet);
+    expect(outlet.querySelector(".tools-workspace-pane")).toBe(pane);
+    expect(container.querySelector(".tools-workspace-pane")).toBeNull();
+    await render();
+    expect(container.querySelector(".tools-workspace-pane")).toBe(pane);
+    expect(outlet.childElementCount).toBe(0);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    outlet.remove();
+  }
+});
+
 it("detaches the current dock tab and machine rather than its original context", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
@@ -205,7 +240,7 @@ it("retains multiple project panes while moving the reserved workspace region", 
     });
     await act(async () => {
       [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')]
-        .find((option) => option.textContent === "Dock Bottom")!
+        .find((option) => option.textContent === "Dock bottom")!
         .click();
     });
     expect(container.querySelector(".tools-workspace")?.getAttribute("data-placement")).toBe(
@@ -445,6 +480,27 @@ it("creates native hub through configured Rust command before sending its acknow
       pane: expect.objectContaining({ sessionId: "native-create" }),
     }),
   );
+});
+
+it("sends an explicit Browser URL to the project Host as one immutable navigation request", async () => {
+  nativeProtocol.native = true;
+  const request = {
+    cwd: "remote://mac/repo",
+    sessionId: "remote-session",
+    title: "localhost:3000",
+    initialTab: "browser" as const,
+    initialUrl: "http://localhost:3000/a?b=1#c",
+  };
+  await openHostToolsWindow(request);
+  await openHostToolsWindow(request);
+  const requests = nativeProtocol.send.mock.calls.map(
+    (call) => (call as unknown as [string, { pane: { viewRequest: unknown } }])[1].pane.viewRequest,
+  );
+  expect(requests).toEqual([
+    { id: expect.any(String), tab: "browser", machine: "project", url: request.initialUrl },
+    { id: expect.any(String), tab: "browser", machine: "project", url: request.initialUrl },
+  ]);
+  expect((requests[0] as { id: string }).id).not.toBe((requests[1] as { id: string }).id);
 });
 
 it("transfers to native hub reused during creation race without waiting for another boot", async () => {

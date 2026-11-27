@@ -4,26 +4,26 @@ import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Switch } from "../../../shared/ui/Switch";
 import { Tooltip, OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Laptop, MoreHorizontal, Server } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
-import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { buildIdentity } from "../../../shared/model/build-info";
 import {
   loadRemoteAutoReconnect,
   subscribeRemoteAutoReconnect,
 } from "../../settings/public/settings";
 import { ConnectionSyncLine } from "./ConnectionSyncLine";
+import { LocalHostModeSwitch } from "./LocalHostModeSwitch";
 import { MachineRoutesLine } from "./MachineRoutesLine";
 import type { MachineProbe } from "./useMachineProbes";
 import { useMachineRouteSummary } from "./useMachineRouteSummary";
 import { isLocalSyncMachine } from "../model/localSync";
 import {
   isMachineEnabled,
+  isMachineTurningOff,
   setMachineEnabled,
-  subscribeDisabledMachines,
+  subscribeMachineSwitch,
 } from "../model/machineEnabled";
 import {
   MACHINE_STATUS_TONE,
@@ -49,9 +49,14 @@ function useMachineConnection(machine: RemoteMachine, probed?: MachineProbe) {
     () => readRemoteConnection(environmentId),
   );
   const enabled = useSyncExternalStore(
-    subscribeDisabledMachines,
+    subscribeMachineSwitch,
     () => isMachineEnabled(environmentId),
     () => true,
+  );
+  const turningOff = useSyncExternalStore(
+    subscribeMachineSwitch,
+    () => isMachineTurningOff(environmentId),
+    () => false,
   );
   const reconnecting = useSyncExternalStore(
     subscribeReconnecting,
@@ -81,12 +86,11 @@ function useMachineConnection(machine: RemoteMachine, probed?: MachineProbe) {
     probed,
     now,
   });
-  return { status, enabled, error: shared.error };
+  return { status, enabled, turningOff, error: shared.error };
 }
 
-/** Why a status deserves a word more than its label gives; shown behind an info icon. */
+/** Additional context for the current machine status. */
 function statusReason(status: MachineStatus, probed?: MachineProbe, error?: string) {
-  if (status === "update") return t("The host needs an update for Explorer and Changes.");
   if (status === "connected" && probed === "provider")
     return t("Install a supported provider on the host.");
   if ((status === "offline" || status === "reconnecting") && error) return error;
@@ -116,7 +120,7 @@ export function MachineRow({
   /** The build the machine reported on its latest check. */
   version?: string;
   needsUpdate: boolean;
-  /** The routes panel is open: asked for by the routes button or the row menu, offline, or an update is needed. */
+  /** The routes panel is open: asked for by the routes button or the row menu. */
   showDetails: boolean;
   editing: boolean;
   busy: boolean;
@@ -167,30 +171,23 @@ export function MachineRow({
         <Text
           as="div"
           tone="muted"
-          className="flex min-w-0 flex-wrap items-center gap-x-1.5"
+          className="flex min-w-0 flex-wrap items-center gap-x-3"
           data-machine-summary
           aria-label={machineSummaryText(summary)}
         >
-          {summary.parts.map((part, index) => (
-            <span key={part.id} className="inline-flex items-center gap-x-1.5">
-              {index > 0 ? <span aria-hidden>·</span> : null}
-              {part.id === "status" ? (
+          {summary.parts.map((part) =>
+            part.id === "status" ? (
+              <span key={part.id} className="inline-flex items-center gap-x-1">
                 <Badge variant="dot" size="sm" tone={MACHINE_STATUS_TONE[connection.status]}>
                   {part.text}
                 </Badge>
-              ) : (
-                part.text
-              )}
-            </span>
-          ))}
-          {reason ? (
-            <InfoPopover label={t("About this status")} className="shrink-0">
-              <Text as="p">{reason}</Text>
-            </InfoPopover>
-          ) : null}
+              </span>
+            ) : (
+              <span key={part.id}>{part.text}</span>
+            ),
+          )}
           {summary.routes && !local ? (
-            <span className="inline-flex items-center gap-x-1.5 whitespace-nowrap">
-              <span aria-hidden>·</span>
+            <span className="inline-flex items-center whitespace-nowrap">
               <Button
                 variant="link"
                 size="sm"
@@ -204,7 +201,13 @@ export function MachineRow({
             </span>
           ) : null}
         </Text>
+        {reason ? (
+          <Text as="p" tone="muted" size="caption" wrap="anywhere">
+            {reason}
+          </Text>
+        ) : null}
         <ConnectionSyncLine machineId={machine.id} onSyncNow={onSyncNow} />
+        {local ? <LocalHostModeSwitch /> : null}
         {showDetails ? (
           <Text
             as="div"
@@ -214,29 +217,9 @@ export function MachineRow({
             className="connection-details"
           >
             <MachineRoutesLine machine={machine} />
-            <Text as="div" tone="muted" wrap="anywhere" className="mt-1">
-              {local
-                ? t("Syncs projects and groups with the {p0} on this computer", {
-                    p0: PRODUCT_IDENTITY.displayName,
-                  })
-                : machine.ssh
-                  ? t("SSH · {p0}{p1}", { p0: machine.ssh.target, p1: "" })
-                  : machine.endpoint}
-            </Text>
-            {machine.ssh ? (
-              <Text
-                as="div"
-                size="micro"
-                tone="muted"
-                className="mt-1 flex flex-wrap gap-x-3 gap-y-1"
-              >
-                <span>
-                  {t("SSH port")}{" "}
-                  <Code tone="primary">{machine.ssh.port ?? t("From SSH config")}</Code>
-                </span>
-                <span>
-                  {t("Host port")} <Code tone="primary">{machine.ssh.remotePort}</Code>
-                </span>
+            {machine.ssh?.port ? (
+              <Text as="div" size="micro" tone="muted" className="mt-1">
+                {t("SSH port")} <Code tone="primary">{machine.ssh.port}</Code>
               </Text>
             ) : null}
           </Text>
@@ -247,9 +230,6 @@ export function MachineRow({
           <Button
             stableWidth
             disabled={busy}
-            tooltip={t(
-              "Downloads the matching host package and restarts the host; active agent turns will be interrupted",
-            )}
             onClick={onUpdateHost}
             variant="secondary"
             className="shrink-0"
@@ -270,12 +250,19 @@ export function MachineRow({
           </Button>
         ) : null}
         {!local ? (
-          <Switch
-            aria-label={t("Use {p0}", { p0: machineLabel(machines, machine) })}
-            checked={connection.enabled}
-            disabled={busy || revoking}
-            onCheckedChange={(on) => setMachineEnabled(machine.environmentId, on)}
-          />
+          <>
+            {connection.turningOff ? (
+              <Text tone="muted" size="secondary" as="span">
+                {t("Turning off…")}
+              </Text>
+            ) : null}
+            <Switch
+              aria-label={t("Use {p0}", { p0: machineLabel(machines, machine) })}
+              checked={connection.enabled}
+              disabled={busy || revoking}
+              onCheckedChange={(on) => setMachineEnabled(machine.environmentId, on)}
+            />
+          </>
         ) : null}
         <Button
           stableWidth
@@ -285,6 +272,9 @@ export function MachineRow({
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           disabled={busy || revoking}
+          disabledReason={
+            busy || revoking ? t("Wait for the current action to finish.") : undefined
+          }
           onClick={(event) => onToggleMenu(event.currentTarget)}
           type="button"
         >

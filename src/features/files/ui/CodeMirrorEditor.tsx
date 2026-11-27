@@ -1,3 +1,5 @@
+import { errorText } from "../../../shared/lib/errors";
+import { Text as UiText } from "../../../shared/ui/Text";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { EditorBlameResize } from "./EditorBlameResize";
 import { Button } from "../../../shared/ui/Button";
@@ -456,6 +458,7 @@ function StandardCodeMirrorEditor({
 
     const language = new Compartment();
     let disposed = false;
+    let chunkNavFrame = 0;
     let selectionMeasureVersion = 0;
     let saveGeneration = 0;
     let formatGeneration = 0;
@@ -506,7 +509,7 @@ function StandardCodeMirrorEditor({
       } catch (error) {
         if (!disposed && generation === formatGeneration && view.state.doc === before)
           setFormatError({
-            message: error instanceof Error ? error.message : String(error),
+            message: errorText(error),
             generation,
             saved: false,
           });
@@ -831,11 +834,19 @@ function StandardCodeMirrorEditor({
         },
       }),
       EditorView.updateListener.of((update) => {
-        if (!showDiffRef.current) return;
+        if (!showDiffRef.current || disposed || chunkNavFrame) return;
         const relevant = splitDiff ? splitNavUpdateRelevant(update) : diffNavUpdateRelevant(update);
         if (!relevant) return;
         chunkNavPinnedRef.current = null;
-        syncChunkNav(update.view);
+        // The geometry read can flush a pending CodeMirror measurement.
+        // MergeView also dispatches spacer updates during that measurement.
+        chunkNavFrame = window.requestAnimationFrame(() => {
+          try {
+            if (showDiffRef.current) syncChunkNav(update.view);
+          } finally {
+            chunkNavFrame = 0;
+          }
+        });
       }),
     ];
     // Path and layout changes rebuild extensions, while the document identity stays intact.
@@ -952,13 +963,14 @@ function StandardCodeMirrorEditor({
         if (!disposed)
           setLanguageFailure({
             path,
-            message: cause instanceof Error ? cause.message : String(cause),
+            message: errorText(cause),
           });
       });
 
     const unsubscribeAutosave = subscribeAutosave(scheduleAutosave);
     return () => {
       disposed = true;
+      window.cancelAnimationFrame(chunkNavFrame);
       setContextTarget(null);
       captureObserverRef.current?.attach(null);
       inputGate.release();
@@ -1090,7 +1102,7 @@ function StandardCodeMirrorEditor({
     setMarking({ busy: true, error: null });
     try {
       const saved = (await saveNowRef.current?.()) ?? false;
-      if (!saved || dirtyRef.current) throw new Error(t("Couldn't save the file"));
+      if (!saved || dirtyRef.current) throw new Error(t("Couldn’t save the file"));
       await gitStageFile(cwd, gitRelative);
       notifyGitChanged(cwd, "index");
       setHadConflicts(false);
@@ -1263,24 +1275,34 @@ function StandardCodeMirrorEditor({
           onMarkResolved={() => void markResolved()}
         />
         {formatError ? (
-          <InlineError className="shrink-0 px-3 py-1">
-            {t(formatError.saved ? "Saved, but formatting failed: " : "Formatting failed: ")}
-            {formatError.message}
+          <InlineError inset="row" className="shrink-0" details={formatError.message}>
+            {formatError.saved ? t("Saved, but formatting failed.") : t("Formatting failed.")}
           </InlineError>
         ) : null}
         {contextError ? (
-          <InlineError className="shrink-0 px-3 py-1">{contextError}</InlineError>
+          <InlineError inset="row" className="shrink-0" details={contextError}>
+            {t("Couldn’t complete that editor action.")}
+          </InlineError>
         ) : null}
         {languageFailure?.path === path ? (
-          <InlineError text={{ wrap: "anywhere" }} className="shrink-0 px-3 py-1">
-            {t("Syntax highlighting unavailable. Editing is still available.")}{" "}
-            {languageFailure.message}
+          <InlineError
+            text={{ wrap: "anywhere" }}
+            inset="row"
+            className="shrink-0"
+            details={languageFailure.message}
+          >
+            {t("Syntax highlighting unavailable. Editing is still available.")}
           </InlineError>
         ) : null}
         {blameOn && blameError ? (
-          <InlineError text={{ wrap: "anywhere" }} live="polite" className="shrink-0 px-3 py-1">
-            {t("Blame unavailable: ")}
-            {blameError}
+          <InlineError
+            text={{ wrap: "anywhere" }}
+            live="polite"
+            inset="row"
+            className="shrink-0"
+            details={blameError}
+          >
+            {t("Blame unavailable.")}
           </InlineError>
         ) : null}
         <ConflictLayoutFrame path={path} sources={conflictSources}>
@@ -1391,25 +1413,29 @@ function DiffChunkNav({
           size="sm"
           iconOnly
           label={t("Previous change")}
-          motion="none"
-          type="button"
           disabled={total === 0 || index <= 0}
+          disabledReason={t("No earlier change.")}
           onMouseDown={(event) => event.preventDefault()}
           onClick={onPrev}
         >
           <ChevronUp className="icon-sm" strokeWidth={1.75} />
         </Button>
-        <span className="min-w-10 text-center text-ui-micro font-medium tabular-nums text-(--ui-text-secondary) select-none">
+        <UiText
+          as="span"
+          size="micro"
+          tone="secondary"
+          weight="medium"
+          className="min-w-10 text-center tabular-nums select-none"
+        >
           {total === 0 ? "0/0" : `${index + 1}/${total}`}
-        </span>
+        </UiText>
         <Button
           variant="ghost"
           size="sm"
           iconOnly
           label={t("Next change")}
-          motion="none"
-          type="button"
           disabled={total === 0 || index >= total - 1}
+          disabledReason={t("No later change.")}
           onMouseDown={(event) => event.preventDefault()}
           onClick={onNext}
         >

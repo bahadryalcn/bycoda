@@ -16,6 +16,6 @@ it("returns the Host's rows in the order received", async () => {
 it("treats a response without the activity list as unconfirmed, not empty", async () => {
   const request = vi.fn(async () => ({}));
   await expect(loadJobActivity(request, "job-one")).rejects.toThrow(
-    "Job activity could not be confirmed. Retry.",
+    "Job activity could not be confirmed.",
   );
 });

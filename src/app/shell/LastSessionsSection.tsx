@@ -11,7 +11,7 @@ import { ActionHost } from "../../shared/ui/ActionHost";
 import { useMinuteNow } from "../../shared/hooks/useMinuteNow";
 import { useLocale, useT } from "../../shared/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CircleAlert, Clock, FolderOpen, Internet, PenLine } from "../../shared/ui/icons";
+import { CircleAlert, FolderOpen, PenLine, Server } from "../../shared/ui/icons";
 import { basename } from "../../platform/tauri/fs";
 import { projectKey, projectName } from "../../shared/lib/paths";
 import { useRemoteProject } from "../../features/connections/public/useRemoteProject";
@@ -92,14 +92,14 @@ export function useLastSessionsRows({
   return { prefs, update: handleUpdate, rows, hasRows: rows.length > 0, refresh };
 }
 
-const STATUS_LABEL: Record<RecentSessionStatus, string> = {
-  retrying: "Retrying",
-  failed: "Failed",
-  interrupted: "Interrupted",
-  working: "Working",
-  input: "Needs input",
-  done: "Done",
-};
+const statusLabels = (t: ReturnType<typeof useT>): Record<RecentSessionStatus, string> => ({
+  retrying: t("Retrying"),
+  failed: t("Failed"),
+  interrupted: t("Interrupted"),
+  working: t("Working"),
+  input: t("Needs input"),
+  done: t("Done"),
+});
 
 const STATUS_DOT: Record<RecentSessionStatus, StatusDotProps["tone"]> = {
   retrying: "warning",
@@ -148,10 +148,12 @@ export function LastSessionsSection({
     projectKeys,
     enabled,
   });
+  // Keep sortable section membership in sync with the resolved recent sessions.
   useEffect(() => {
-    onShownChange?.(true);
+    onShownChange?.(hasRows);
     return () => onShownChange?.(false);
-  }, [onShownChange]);
+  }, [hasRows, onShownChange]);
+  if (!hasRows) return null;
   return (
     <div
       ref={drag?.setRef}
@@ -162,12 +164,11 @@ export function LastSessionsSection({
         label={t("Last sessions")}
         selected={lastSessionsOpen}
         drag={drag}
-        icon={<Clock className="icon-sm" />}
         collapsed={prefs.collapsed}
         onToggleCollapsed={() => update({ ...prefs, collapsed: !prefs.collapsed })}
         onLabelClick={onOpenLastSessions}
         actions={
-          !prefs.collapsed && hasRows ? (
+          !prefs.collapsed ? (
             <CountPicker count={prefs.count} onChange={(count) => update({ ...prefs, count })} />
           ) : undefined
         }
@@ -219,11 +220,12 @@ export function LastSessionsRows({
         className={`flex min-h-0 flex-1 flex-col gap-0 ${className ?? ""}`}
       >
         <ContinuousList
-          className="flex-1 min-h-0 px-2"
+          className="flex-1 min-h-0"
           items={rows}
           itemKey={(row) => JSON.stringify([row.cwd, row.id])}
           stateKey={listScopeKey ?? "last-sessions:rail"}
           estimateSize={56}
+          emptyMessage={t("No matching sessions")}
           renderItem={(row) => (
             <SessionRow
               row={row}
@@ -273,7 +275,7 @@ function CountPicker({
           anchor={anchor}
           label={t("Sessions shown")}
           returnFocusRef={anchor}
-          width={180}
+          size="sm"
           align="end"
           onClose={() => setOpen(false)}
           onPick={(id) => onChange(Number(id) as RecentSessionsPrefs["count"])}
@@ -324,6 +326,7 @@ function SessionRow({
     : "";
   const time = formatRelative(row.updatedAt, now);
   const status = row.status;
+  const statusLabel = status ? statusLabels(t)[status] : "";
   // Text left unsent in another session's composer; the open session shows its own.
   const draft = useUnsentComposerDraft(row.id, !selected);
   const remoteProject = useRemoteProject(row.remote ? row.cwd : "");
@@ -335,7 +338,7 @@ function SessionRow({
     model ? `${agent} · ${model}` : agent,
     draft ? t("Draft") : "",
     status
-      ? t(STATUS_LABEL[status])
+      ? statusLabel
       : time && `Last activity ${new Date(row.updatedAt).toLocaleString(locale)}`,
   ]
     .filter(Boolean)
@@ -361,7 +364,7 @@ function SessionRow({
           project,
           agent,
           draft ? t("Draft") : "",
-          status ? t(STATUS_LABEL[status]) : time,
+          status ? statusLabel : time,
         ]
           .filter(Boolean)
           .join(", ")}
@@ -401,7 +404,7 @@ function SessionRow({
           />
         ) : null}
         {row.remote ? (
-          <Internet
+          <Server
             aria-label={t("On another machine")}
             className="icon-xs shrink-0"
             tone="secondary"
@@ -418,13 +421,13 @@ function SessionRow({
             strokeWidth={1.75}
           />
         ) : status ? (
-          <Tooltip label={t(STATUS_LABEL[status])}>
+          <Tooltip label={statusLabel}>
             {status === "working" ? (
-              <span role="img" aria-label={t(STATUS_LABEL[status])}>
+              <span role="img" aria-label={statusLabel}>
                 <WorkingIndicator variant="dot" />
               </span>
             ) : (
-              <StatusDot label={t(STATUS_LABEL[status])} tone={STATUS_DOT[status]} />
+              <StatusDot label={statusLabel} tone={STATUS_DOT[status]} />
             )}
           </Tooltip>
         ) : null}

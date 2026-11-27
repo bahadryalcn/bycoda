@@ -6,9 +6,11 @@ import { PrivacyStartupSettings } from "./PrivacyStartupSettings";
 import { retryGroupLockStorage, setRelockOnLaunch } from "../../group-lock/model/groupLock";
 import { saveMaskEmails } from "../model/displayPrefs";
 vi.mock("../../account", () => ({
-  isAnonymousStatsEnabled: () => false,
-  setAnonymousStatsEnabled: vi.fn(),
-  subscribeAnonymousStats: () => () => {},
+  AnonymousUsageSetting: () => null,
+  getStatisticsMode: () => "off",
+  setStatisticsMode: vi.fn(),
+  statsDisclosure: () => "Statistics disclosure",
+  subscribeStatisticsMode: () => () => {},
 }));
 vi.mock("../../diagnostics", () => ({ DiagnosticsSharingSetting: () => null }));
 vi.mock("./FileAccessSettings", () => ({ FileAccessSettings: () => null }));

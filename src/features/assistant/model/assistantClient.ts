@@ -2,8 +2,10 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { hostToolRequest } from "../../connections/model/hostFeatureClient";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { t, useLocale } from "../../../shared/i18n";
+import { shareStructure } from "../../../shared/lib/shareStructure";
 import { AssistantResponseValidationSchema } from "../../../shared/model/host-contracts/assistant";
 import type {
+  AssistantNote,
   AssistantRequest,
   AssistantResponse,
   AssistantSnapshot,
@@ -19,7 +21,10 @@ type State = {
 let state: State = { snapshot: null, environmentId: null, loading: false, error: "" };
 const listeners = new Set<() => void>();
 let pending: Promise<void> | null = null;
+/** Bumped when a mutation completes; a read that started under an older value predates it. */
+let mutationGeneration = 0;
 let consumers = 0;
+let backgroundConsumers = 0;
 let poller: ReturnType<typeof setInterval> | undefined;
 /** Notifies only when a field actually changes, so repeated identical refreshes are silent. */
 const emit = (patch: Partial<State>) => {
@@ -33,13 +38,11 @@ const subscribe = (listener: () => void) => {
     listeners.delete(listener);
   };
 };
-/** Serialized last successful snapshot; parsed objects are always new, so compare content. */
-let snapshotJson = "";
-
 /** Explicit refreshes show `loading`; background polls stay silent unless the data changes. */
 function runRefresh(showLoading: boolean): Promise<void> {
   if (pending) return pending;
   if (showLoading) emit({ loading: true });
+  const startedGeneration = mutationGeneration;
   pending = (async () => {
     let patch: Partial<State> = { loading: false };
     try {
@@ -58,18 +61,20 @@ function runRefresh(showLoading: boolean): Promise<void> {
         ),
       );
       if (!result.snapshot) throw new Error("The Host returned no assistant state.");
-      const json = JSON.stringify(result.snapshot);
-      const unchanged = json === snapshotJson && owner.environmentId === state.environmentId;
-      snapshotJson = json;
+      // A mutation finished while this read was in flight: its data may be pre-mutation, so the
+      // mutation's own follow-up read replaces it instead of the UI showing and then undoing it.
+      if (startedGeneration !== mutationGeneration) return;
+      // Unchanged slices keep their previous references; an identical poll returns the same snapshot.
+      const previous = owner.environmentId === state.environmentId ? state.snapshot : null;
       patch = {
         ...patch,
-        snapshot: unchanged ? state.snapshot : result.snapshot,
+        snapshot: shareStructure(previous, result.snapshot),
         environmentId: owner.environmentId,
         error: "",
       };
     } catch (cause) {
       const message = presentRemoteError(cause);
-      if (message) patch = { ...patch, error: message };
+      if (message && startedGeneration === mutationGeneration) patch = { ...patch, error: message };
     } finally {
       pending = null;
       emit(patch);
@@ -82,19 +87,63 @@ export function refreshAssistant(): Promise<void> {
   return runRefresh(true);
 }
 
-function pollAssistant(): Promise<void> {
-  return runRefresh(false);
-}
-
 /** Background refresh: awaits fresh data without flipping `loading`, so unchanged data wakes nobody. */
 export function refreshAssistantQuietly(): Promise<void> {
   return runRefresh(false);
+}
+
+function retainSnapshotPolling(background = false) {
+  if (background) backgroundConsumers++;
+  consumers++;
+  if (consumers === 1) {
+    void refreshAssistant();
+    poller = setInterval(() => {
+      if (backgroundConsumers > 0 || document.visibilityState !== "hidden") {
+        void refreshAssistantQuietly();
+      }
+    }, 15_000);
+  }
+  return () => {
+    if (background) backgroundConsumers--;
+    consumers--;
+    if (consumers === 0) {
+      clearInterval(poller);
+      poller = undefined;
+    }
+  };
+}
+
+/**
+ * Refresh after a mutation without flipping `loading`. A read already in flight may predate
+ * the mutation: it is invalidated (its result is dropped), awaited so reads stay single-flight,
+ * and then read again.
+ */
+async function refreshAfterMutation(): Promise<void> {
+  mutationGeneration++;
+  if (pending) await pending;
+  await runRefresh(false);
+  window.dispatchEvent(new Event("bycoda:assistant-changed"));
+}
+
+/** Apply acknowledged deletions to the captured Room, then reconcile once in the background. */
+export function finishAssistantNoteDeletion(
+  environmentId: string | undefined,
+  confirmed: readonly Pick<AssistantNote, "id" | "updatedAt">[],
+) {
+  const snapshot = state.snapshot;
+  if (snapshot && state.environmentId === environmentId && confirmed.length) {
+    const deletedVersions = new Map(confirmed.map((note) => [note.id, note.updatedAt]));
+    const notes = snapshot.notes.filter((note) => deletedVersions.get(note.id) !== note.updatedAt);
+    if (notes.length !== snapshot.notes.length) emit({ snapshot: { ...snapshot, notes } });
+  }
+  void refreshAfterMutation().catch(() => {});
 }
 
 /** Mutation retries remain explicit. Callers retain their idempotency key and draft. */
 export async function assistantRequest(
   request: AssistantRequest,
   expectedEnvironmentId?: string,
+  options?: { deferNoteRefresh?: true },
 ): Promise<AssistantResponse> {
   const result = AssistantResponseValidationSchema.parse(
     await hostToolRequest<AssistantResponse>(
@@ -106,6 +155,8 @@ export async function assistantRequest(
       expectedEnvironmentId,
     ),
   );
+  // The Room's delete batch applies the receipts and reconciles after the last attempt.
+  if (request.op === "notes.delete" && options?.deferNoteRefresh) return result;
   if (
     ![
       "snapshot",
@@ -125,22 +176,31 @@ export async function assistantRequest(
       "alwaysOn.get",
     ].includes(request.op)
   ) {
-    await refreshAssistant();
-    window.dispatchEvent(new Event("bycoda:assistant-changed"));
+    await refreshAfterMutation();
   }
   return result;
 }
 
 export type AssistantClientState = Readonly<State>;
 
-/** Calls `listener` on every snapshot change without rendering; returns the unsubscribe. */
+/** The latest polled snapshot, read without a Host request. Callers see at most one poll of lag. */
+export function latestAssistantSnapshot() {
+  return state.snapshot;
+}
+
+/** Follows snapshot changes without rendering and keeps polling for background delivery. */
 export function watchAssistantSnapshot(listener: (state: AssistantClientState) => void) {
   let seen = state.snapshot;
-  return subscribe(() => {
+  const unsubscribe = subscribe(() => {
     if (state.snapshot === seen) return;
     seen = state.snapshot;
     listener(state);
   });
+  const stopPolling = retainSnapshotPolling(true);
+  return () => {
+    unsubscribe();
+    stopPolling();
+  };
 }
 
 /**
@@ -167,22 +227,8 @@ export function useAssistantSnapshot<T>(
     cache.current = { state, select, value: kept };
     return kept;
   });
-  useEffect(() => {
-    consumers++;
-    if (consumers === 1) {
-      void refreshAssistant();
-      poller = setInterval(() => {
-        if (document.visibilityState !== "hidden") void pollAssistant();
-      }, 15000);
-    }
-    return () => {
-      consumers--;
-      if (consumers === 0) {
-        clearInterval(poller);
-        poller = undefined;
-      }
-    };
-  }, []);
+  // Effect reason: keep the shared snapshot poller alive while this view is mounted.
+  useEffect(() => retainSnapshotPolling(), []);
   if (select) return value;
   return { ...(value as State), refresh: refreshAssistant };
 }

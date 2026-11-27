@@ -3,6 +3,7 @@ import type { AuxiliaryToolId, WorkspaceToolId } from "../../model/toolWindows";
 /** The tool the workspace is showing, or null on the conversation view. Crews wins: it closes the rest. */
 export function workspaceActiveTool(view: {
   crewsOpen: boolean;
+  liveStreamOpen?: boolean;
   auxiliaryTool?: AuxiliaryToolId | null;
   automationsViewOpen: boolean;
   serversViewOpen: boolean;
@@ -12,6 +13,7 @@ export function workspaceActiveTool(view: {
   taskBoardShown: boolean;
 }): WorkspaceToolId | null {
   if (view.crewsOpen) return "crews";
+  if (view.liveStreamOpen) return "live-stream";
   if (view.automationsViewOpen && view.auxiliaryTool) return view.auxiliaryTool;
   if (view.serversViewOpen) return "servers";
   if (view.inboxViewOpen) return "inbox";

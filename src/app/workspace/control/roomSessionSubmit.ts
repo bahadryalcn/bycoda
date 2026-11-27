@@ -1,6 +1,6 @@
 import { sameProjectPath } from "../../../features/projects/model/recents";
 import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
-import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
+import { remoteSessionProject } from "../../../features/connections/model/sessionMachineTarget";
 import { sessionDraftBlock } from "../../../features/sessions/model/session";
 import { orchestrator } from "../../../features/orchestration/model/orchestration";
 import { getSession } from "../../../features/sessions/data/sessionStore";
@@ -39,7 +39,7 @@ export async function submitRoomSession(
     orchestrator.run(sessionId) ||
     !sameProjectPath(session.cwd, target.projectCwd) ||
     hostSessionBinding(session) ||
-    remoteProjectFor(session.cwd)
+    remoteSessionProject(session)
   )
     throw new Error("Session is unavailable as a local desktop target.");
   const previous = session.blocks.find((block) => block.appRequestId === requestId);

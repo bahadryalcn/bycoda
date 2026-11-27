@@ -1,11 +1,12 @@
-import { Text } from "../../../shared/ui/Text";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState } from "react";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { RotateCcw } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { loadSessionFolder, saveSessionFolder, type SessionFolder } from "../model/sessionFolder";
 import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
+import { errorText } from "../../../shared/lib/errors";
 
 /** Page-level "Restore defaults": sessions without a project go back to the home folder. */
 const changes = new EventTarget();
@@ -14,9 +15,7 @@ export const restoreSessionFolderDefault = async () => {
   changes.dispatchEvent(new Event("change"));
 };
 
-const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
-
-/** The folder sessions started with "No project" run in; empty means the home folder. */
+/** Older projectless sessions use the selected folder, or home when unset. */
 export function SessionFolderGroup() {
   useLocale();
   const [folder, setFolder] = useState<SessionFolder | null>(null);
@@ -24,7 +23,7 @@ export function SessionFolderGroup() {
   const busy = operation !== null;
   const inFlight = useRef(false);
   const generation = useRef(0);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ title: string; detail: string } | null>(null);
 
   const reload = async () => {
     const current = ++generation.current;
@@ -34,7 +33,8 @@ export function SessionFolderGroup() {
       const value = await loadSessionFolder();
       if (generation.current === current) setFolder(value);
     } catch (cause) {
-      if (generation.current === current) setError(message(cause));
+      if (generation.current === current)
+        setError({ title: t("Could not read the session folder."), detail: errorText(cause) });
     } finally {
       if (generation.current === current) setOperation(null);
     }
@@ -54,7 +54,8 @@ export function SessionFolderGroup() {
   }, []);
 
   // choose() and save() report their own failures; this only satisfies the rejection contract.
-  const setErrorFrom = (cause: unknown) => setError(message(cause));
+  const setErrorFrom = (cause: unknown) =>
+    setError({ title: t("Could not choose the session folder."), detail: errorText(cause) });
 
   const save = async (next: string | null) => {
     setError(null);
@@ -64,7 +65,8 @@ export function SessionFolderGroup() {
       const value = await loadSessionFolder();
       if (generation.current === current) setFolder(value);
     } catch (cause) {
-      if (generation.current === current) setError(message(cause));
+      if (generation.current === current)
+        setError({ title: t("Could not save the session folder."), detail: errorText(cause) });
     } finally {
       if (generation.current === current) setOperation(null);
     }
@@ -83,7 +85,7 @@ export function SessionFolderGroup() {
       });
       if (typeof path === "string") await save(path);
     } catch (cause) {
-      setError(message(cause));
+      setErrorFrom(cause);
     } finally {
       inFlight.current = false;
       setOperation(null);
@@ -91,43 +93,39 @@ export function SessionFolderGroup() {
   };
 
   return (
-    <Group title={t("Sessions without a project")}>
+    <Group title={null}>
       <Row
         id="session-folder"
         label={t("Folder for sessions without a project")}
         description={t(
-          "Sessions started with No project run here. The folder is created if it is missing.",
+          "Older projectless sessions use this folder. New sessions get their own folder.",
         )}
         feedback={
           error ? (
             <SettingsFeedback
               state="error"
+              extra={<ErrorDetails detail={error.detail} />}
               action={{ label: t("Retry"), onClick: () => void reload() }}
             >
-              {error}
+              {error.title}
             </SettingsFeedback>
-          ) : operation === "read" ? (
-            <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
           ) : undefined
         }
       >
-        <OverflowTooltip label={folder?.chosen ?? folder?.home ?? ""}>
-          <Text size="caption" tone="secondary" truncate tabIndex={0}>
-            {folder?.chosen ?? folder?.home ?? ""}
-          </Text>
-        </OverflowTooltip>
         <Button
-          className="shrink-0"
+          variant="link"
           onClick={() => choose().catch(setErrorFrom)}
           disabled={busy}
           loading={operation === "choose"}
           loadingLabel={t("Choosing folder…")}
         >
-          {t("Choose folder…")}
+          {folder?.chosen ?? folder?.home ?? t("Choose folder…")}
         </Button>
         {folder?.chosen ? (
           <Button
-            className="shrink-0"
+            variant="ghost"
+            iconOnly
+            label={t("Use home folder")}
             onClick={() => {
               if (inFlight.current) return;
               inFlight.current = true;
@@ -142,7 +140,7 @@ export function SessionFolderGroup() {
             loading={operation === "reset"}
             loadingLabel={t("Saving…")}
           >
-            {t("Use home folder")}
+            <RotateCcw aria-hidden />
           </Button>
         ) : null}
       </Row>

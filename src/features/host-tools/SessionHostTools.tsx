@@ -1,5 +1,7 @@
+import { errorText } from "../../shared/lib/errors";
 import { Tooltip } from "../../shared/ui/Tooltip";
 import { Alert } from "../../shared/ui/Alert";
+import { ErrorDetails } from "../../shared/ui/ErrorDetails";
 import { useConnectionErrorShownCentrally } from "../../shared/ui/connectionErrorGate";
 import { Text } from "../../shared/ui/Text";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
@@ -9,6 +11,8 @@ import {
   hostFeatureRequest,
   hostToolRequest,
   listHostToolMachines,
+  subscribeDeviceVideo,
+  deviceTouchAvailable,
 } from "../connections/model/hostFeatureClient";
 import {
   hostToolTargetKey,
@@ -19,7 +23,9 @@ import { isLocalSyncMachine } from "../connections/model/localSync";
 import { parseRemotePath } from "../connections/model/remoteProjects";
 import type { RemoteMachine } from "../connections/model/protocol";
 import { lazySurface } from "../../shared/ui/lazySurface";
-import type { DevicePanelApi } from "../devices/types";
+import { useStoredPreferenceState } from "../../shared/hooks/useStoredPreferenceState";
+import { toolPreferences } from "./model/toolPreferences";
+import type { DeviceHostStatus, DevicePanelApi } from "../devices/types";
 import { attachDeviceToComposer } from "../devices/deviceComposer";
 import { attachDeviceImageAcrossWindows } from "../devices/deviceImageComposer";
 import {
@@ -96,7 +102,8 @@ export type ConversationTools = {
   hideHeading?: boolean;
   initialMachine?: string;
   initialTab?: ToolsTab;
-  viewRequest?: { id: string; tab?: ToolsTab; machine?: string };
+  /** Immutable presentation request; `url` navigates the project Host Browser once. */
+  viewRequest?: { id: string; tab?: ToolsTab; machine?: string; url?: string };
   onViewChange?: (view: { tab: ToolsTab; machine: string }) => void;
   initialUrl?: string;
   onPresented?: () => void;
@@ -132,8 +139,18 @@ function ConversationHostTools({
 }: ConversationTools) {
   useLocale();
   const panelId = useId();
-  const [tab, setTab] = useState<Tab>(onlyTab ?? initialTab ?? "devices");
-  const [visited, setVisited] = useState<Tab[]>([onlyTab ?? initialTab ?? "devices"]);
+  const [devicesEnabled] = useStoredPreferenceState(
+    toolPreferences.devicesEnabled.load,
+    toolPreferences.devicesEnabled.subscribe,
+  );
+  const [hiddenDeviceMachines] = useStoredPreferenceState(
+    toolPreferences.deviceHiddenMachines.load,
+    toolPreferences.deviceHiddenMachines.subscribe,
+  );
+  const [requestedTab, setTab] = useState<Tab>(onlyTab ?? initialTab ?? "devices");
+  // Settings > Devices > Use devices removes the tab; a request for it opens the browser.
+  const tab: Tab = requestedTab === "devices" && !devicesEnabled ? "browser" : requestedTab;
+  const [visited, setVisited] = useState<Tab[]>([tab]);
   if (!visited.includes(tab)) setVisited([...visited, tab]);
   const [presentationError, setPresentationError] = useState("");
   const [placementOpen, setPlacementOpen] = useState(false);
@@ -141,11 +158,11 @@ function ConversationHostTools({
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
   const toolMenuTrigger = useRef<HTMLButtonElement>(null);
   const toolLabels = {
-    devices: "Devices",
-    browser: "Host browser",
-    servers: "Development servers",
-    logs: "Logs",
-    resources: "Resource usage",
+    devices: t("Devices"),
+    browser: t("Host browser"),
+    servers: t("Development servers"),
+    logs: t("Logs"),
+    resources: t("Resource usage"),
   } as const;
   const toolIcons = {
     devices: AppWindow,
@@ -154,7 +171,9 @@ function ConversationHostTools({
     logs: Terminal,
     resources: Gauge,
   } as const;
-  const toolOrder = ["devices", "browser", "servers", "logs", "resources"] as const;
+  const toolOrder = (["devices", "browser", "servers", "logs", "resources"] as const).filter(
+    (id) => id !== "devices" || devicesEnabled,
+  );
   const hostScoped =
     tab === "devices" || tab === "browser" || tab === "logs" || tab === "resources";
   const conversationKey = JSON.stringify([cwd, sessionId]);
@@ -170,10 +189,12 @@ function ConversationHostTools({
     onViewChange?.({ tab, machine: next });
   };
   const [appliedRequest, setAppliedRequest] = useState<string>();
+  const [navigation, setNavigation] = useState<{ id: string; url: string }>();
   if (viewRequest && viewRequest.id !== appliedRequest) {
     setAppliedRequest(viewRequest.id);
     if (viewRequest.tab !== undefined) setTab(onlyTab ?? viewRequest.tab);
     if (viewRequest.machine !== undefined) setTargetValue(viewRequest.machine);
+    if (viewRequest.url !== undefined) setNavigation({ id: viewRequest.id, url: viewRequest.url });
   }
   useEffect(() => {
     onViewChange?.({ tab, machine: targetValue });
@@ -232,7 +253,7 @@ function ConversationHostTools({
           if (alive) setMachines(values);
         },
         (cause) => {
-          if (alive) setMachinesError(cause instanceof Error ? cause.message : String(cause));
+          if (alive) setMachinesError(errorText(cause));
         },
       )
       .finally(() => {
@@ -246,7 +267,10 @@ function ConversationHostTools({
   const projectMachine = machines.find((machine) =>
     remote ? machine.environmentId === remote.environmentId : isLocalSyncMachine(machine),
   );
-  const ownerLabel = !remote ? t("This computer") : (projectMachine?.name ?? remote.environmentId);
+  const projectIsLocal = !remote || (!!projectMachine && isLocalSyncMachine(projectMachine));
+  const ownerLabel = projectIsLocal
+    ? t("This computer")
+    : (projectMachine?.name ?? remote.environmentId);
   const selectedMachine =
     target.kind === "machine"
       ? machines.find((machine) => machine.id === target.machineId)
@@ -266,24 +290,121 @@ function ConversationHostTools({
     return {
       environmentId:
         target.kind === "machine" ? target.machineId : parseRemotePath(cwd)?.environmentId,
-      status: () => request("status"),
-      setup: (agentAccess) => request("setup", { agentAccess }),
-      start: () => request("start"),
-      stop: () => request("stop"),
+      status: () => request<DeviceHostStatus>("status"),
+      setup: (agentAccess) => request<DeviceHostStatus>("setup", { agentAccess }),
+      start: () => request<DeviceHostStatus>("start"),
+      stop: () => request<DeviceHostStatus>("stop"),
       list: () => request("list"),
       boot: (deviceId) => request("boot", { deviceId }),
       capture: (deviceId) => request("capture", { deviceId }),
       stream: (deviceId, cursor) =>
         request("stream", cursor === undefined ? { deviceId } : { deviceId, cursor }),
+      touchAvailable: () => deviceTouchAvailable(cwd, target),
+      subscribeStream: (deviceId, onChunk, onError) =>
+        subscribeDeviceVideo(cwd, target, deviceId, onChunk, onError),
+      touch: async (deviceId, touch, leaseId) => {
+        await request("touch", { deviceId, touch, leaseId });
+      },
       controlStatus: (deviceId) => request("control.status", { deviceId }),
       claimControl: (deviceId, requestId) => request("control.claim", { deviceId, requestId }),
       releaseControl: (deviceId, leaseId) => request("control.release", { deviceId, leaseId }),
       renewControl: (deviceId, leaseId) => request("control.renew", { deviceId, leaseId }),
       inspect: (deviceId, leaseId) => request("inspect", { deviceId, leaseId }),
       action: (deviceId, action, leaseId) =>
-        request("action", { deviceId, action, leaseId, requestId: crypto.randomUUID() }),
+        request("action", {
+          deviceId,
+          action,
+          leaseId,
+          requestId: crypto.randomUUID(),
+        }),
     };
   }, [cwd, target]);
+  // Keep explicitly opened views on their original route when the picker merges their rows.
+  const localRoute =
+    target.kind === "local" || (!!selectedMachine && isLocalSyncMachine(selectedMachine));
+  const explicitLocalProjectView = projectIsLocal && localRoute;
+  const explicitProjectMachine = projectMachine && selectedMachine === projectMachine;
+  const projectOptionValue =
+    explicitLocalProjectView || explicitProjectMachine ? targetValue : "project";
+  const renderMachinePicker = (inSetup = false) => (
+    <SearchableSelect
+      hideLabel
+      label={t("Tool machine")}
+      tooltip={{ label: hostLabel, details: [title, cwd], wide: true }}
+      value={targetValue}
+      onChange={selectTarget}
+      searchable={machines.length > 5}
+      align="end"
+      renderTrigger={({ props, open, selectedLabel }) => (
+        <Button
+          {...props}
+          variant={inSetup ? "secondary" : "ghost"}
+          size="sm"
+          className={inSetup ? undefined : "host-tools-machine-trigger"}
+          expanded={open}
+          startIcon={
+            localRoute || (target.kind === "project" && projectIsLocal) ? (
+              <Laptop className="icon-sm" aria-hidden />
+            ) : (
+              <Server className="icon-sm" aria-hidden />
+            )
+          }
+        >
+          <Text size="inherit" tone="inherit" leading="inherit" truncate>
+            {selectedLabel ?? hostLabel}
+          </Text>
+        </Button>
+      )}
+      footer={
+        <Button
+          variant="ghost"
+          size="sm"
+          startIcon={<RefreshCw className="icon-sm" aria-hidden />}
+          loading={machinesLoading}
+          onClick={() => setMachinesRefresh((value) => value + 1)}
+        >
+          {machinesError && !machinesShownCentrally ? t("Retry") : t("Refresh machines")}
+        </Button>
+      }
+      options={[
+        {
+          value: projectOptionValue,
+          label: ownerLabel,
+          description: explicitLocalProjectView ? undefined : t("Project host"),
+        },
+        ...(!projectIsLocal
+          ? [
+              {
+                value: localRoute ? targetValue : "local",
+                label: t("This computer"),
+              },
+            ]
+          : []),
+        ...machines
+          .filter(
+            (machine) =>
+              machine !== projectMachine &&
+              !isLocalSyncMachine(machine) &&
+              // Removed Device sources stay out of the Devices picker unless already selected.
+              (tab !== "devices" ||
+                !hiddenDeviceMachines.includes(machine.id) ||
+                targetValue === `machine:${machine.id}`),
+          )
+          .map((machine) => ({
+            value: `machine:${machine.id}`,
+            label: machine.name,
+          })),
+        ...(target.kind === "machine" && !selectedMachine
+          ? [
+              {
+                value: targetValue,
+                label: `${t("Selected machine unavailable")} · ${target.machineId}`,
+              },
+            ]
+          : []),
+      ]}
+    />
+  );
   return (
     <div className="host-tools host-tools-docked font-sans" data-active-tool={tab}>
       <section aria-label={t("Conversation tools")} className="host-tools-section">
@@ -302,13 +423,13 @@ function ConversationHostTools({
                     <Tab
                       key={id}
                       value={id}
-                      aria-label={t(toolLabels[id])}
-                      tooltip={t(toolLabels[id])}
+                      aria-label={toolLabels[id]}
+                      tooltip={toolLabels[id]}
                       tooltipWhen="overflow"
                       icon={<Icon className="icon-sm" aria-hidden />}
                       className="host-tools-nav-tab"
                     >
-                      {t(toolLabels[id])}
+                      {toolLabels[id]}
                     </Tab>
                   );
                 })}
@@ -352,7 +473,7 @@ function ConversationHostTools({
                   truncate
                   className="host-tools-nav-label"
                 >
-                  {t(toolLabels[tab])}
+                  {toolLabels[tab]}
                 </Text>
               </Button>
               {toolMenuOpen ? (
@@ -361,7 +482,7 @@ function ConversationHostTools({
                   label={t("Conversation tool selection")}
                   returnFocusRef={toolMenuTrigger}
                   align="start"
-                  width={240}
+                  size="sm"
                   onClose={() => setToolMenuOpen(false)}
                   onPick={(id) => {
                     selectTab(id as Tab);
@@ -372,7 +493,7 @@ function ConversationHostTools({
                     return {
                       kind: "item" as const,
                       id,
-                      label: t(toolLabels[id]),
+                      label: toolLabels[id],
                       icon: <Icon className="icon-sm" aria-hidden />,
                       checked: id === tab,
                       selectionRole: "radio" as const,
@@ -396,71 +517,7 @@ function ConversationHostTools({
               <div className="host-tools-machine" aria-busy={machinesLoading}>
                 {/* A ghost trigger like the tool tabs beside it; refreshing the machine list
                     lives in the menu instead of a second loose icon in the row. */}
-                <SearchableSelect
-                  hideLabel
-                  label={t("Tool machine")}
-                  tooltip={{ label: hostLabel, details: [title, cwd], wide: true }}
-                  value={targetValue}
-                  onChange={selectTarget}
-                  searchable={machines.length > 5}
-                  align="end"
-                  renderTrigger={({ props, open, selectedLabel }) => (
-                    <Button
-                      {...props}
-                      variant="ghost"
-                      size="sm"
-                      className="host-tools-machine-trigger"
-                      expanded={open}
-                      startIcon={
-                        target.kind === "local" || (target.kind === "project" && !remote) ? (
-                          <Laptop className="icon-sm" aria-hidden />
-                        ) : (
-                          <Server className="icon-sm" aria-hidden />
-                        )
-                      }
-                    >
-                      <Text size="inherit" tone="inherit" leading="inherit" truncate>
-                        {selectedLabel ?? hostLabel}
-                      </Text>
-                    </Button>
-                  )}
-                  footer={
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      startIcon={<RefreshCw className="icon-sm" aria-hidden />}
-                      loading={machinesLoading}
-                      disabled={machinesLoading}
-                      onClick={() => setMachinesRefresh((value) => value + 1)}
-                    >
-                      {machinesError && !machinesShownCentrally
-                        ? t("Retry")
-                        : t("Refresh machines")}
-                    </Button>
-                  }
-                  options={[
-                    { value: "project", label: ownerLabel, description: t("Project host") },
-                    {
-                      value: "local",
-                      label: t("This computer"),
-                      description: remote ? undefined : t("Local app"),
-                    },
-                    ...machines
-                      .filter((machine) => !isLocalSyncMachine(machine))
-                      .map((machine) => ({
-                        value: `machine:${machine.id}`,
-                        label: machine.name,
-                      })),
-                    ...(target.kind === "machine" && !selectedMachine
-                      ? [
-                          {
-                            value: targetValue,
-                            label: `${t("Selected machine unavailable")} · ${target.machineId}`,
-                          },
-                        ]
-                      : []),
-                  ]}
-                />
+                {renderMachinePicker()}
               </div>
             ) : (
               <Tooltip label={`${ownerLabel}\n${cwd}`} asChild>
@@ -468,9 +525,6 @@ function ConversationHostTools({
                   <Server className="icon-sm" aria-hidden />
                   <Text size="inherit" tone="primary" truncate className="host-tools-host-name">
                     {ownerLabel}
-                  </Text>
-                  <Text size="inherit" className="host-tools-host-role">
-                    {t("Project host")}
                   </Text>
                 </span>
               </Tooltip>
@@ -507,7 +561,7 @@ function ConversationHostTools({
               label={t("Panel placement")}
               returnFocusRef={placementTrigger}
               align="end"
-              width={250}
+              size="sm"
               onClose={() => setPlacementOpen(false)}
               onPick={(id) => {
                 if (id === "expand") onExpand?.();
@@ -518,36 +572,68 @@ function ConversationHostTools({
               }}
               items={[
                 ...(onExpand
-                  ? [{ kind: "item" as const, id: "expand", label: t("Expand / restore") }]
+                  ? [
+                      {
+                        kind: "item" as const,
+                        id: "expand",
+                        label: t("Expand / restore"),
+                      },
+                    ]
                   : []),
-                { kind: "item", id: "layout", label: t("Place in layout") },
+                { kind: "item", id: "layout", label: t("Move to layout") },
                 ...(tab === "logs" && !onlyTab
-                  ? [{ kind: "item" as const, id: "layout-logs", label: t("Separate Logs panel") }]
+                  ? [
+                      {
+                        kind: "item" as const,
+                        id: "layout-logs",
+                        label: t("Move Logs to layout"),
+                      },
+                    ]
                   : []),
                 { kind: "item", id: "window", label: t("Open in new window") },
                 ...(tab === "logs" && !onlyTab
-                  ? [{ kind: "item" as const, id: "window-logs", label: t("Logs in new window") }]
+                  ? [
+                      {
+                        kind: "item" as const,
+                        id: "window-logs",
+                        label: t("Open Logs in new window"),
+                      },
+                    ]
                   : []),
               ]}
             />
           ) : null}
         </div>
-        {presentationError ? <Alert tone="danger">{presentationError}</Alert> : null}
+        {presentationError ? (
+          <Alert
+            tone="danger"
+            title={t("Could not open the tools.")}
+            extra={
+              <ErrorDetails title={t("Could not open the tools.")} detail={presentationError} />
+            }
+          />
+        ) : null}
         {hostScoped && machinesError && !machinesShownCentrally ? (
-          <Alert tone="danger">{machinesError}</Alert>
+          <Alert
+            tone="danger"
+            title={t("Could not load machines.")}
+            extra={<ErrorDetails title={t("Could not load machines.")} detail={machinesError} />}
+          />
         ) : null}
         {hostScoped && target.kind === "machine" && !selectedMachine && !machinesLoading ? (
-          <Alert tone="danger">{t("Selected machine unavailable")}</Alert>
+          <Alert tone="danger" title={t("Selected machine unavailable")}>
+            {t("Choose another machine.")}
+          </Alert>
         ) : null}
         <div
           id={`${panelId}-panel`}
           role="tabpanel"
           aria-labelledby={onlyTab ? undefined : `${panelId}-tab-${tab}`}
-          aria-label={onlyTab ? t(toolLabels[tab]) : undefined}
+          aria-label={onlyTab ? toolLabels[tab] : undefined}
           className={`host-tools-content host-tools-content-${tab}`}
           tabIndex={0}
         >
-          {visited.includes("devices") ? (
+          {devicesEnabled && visited.includes("devices") ? (
             <div className={tab === "devices" ? "contents" : "hidden"}>
               <DevicePanel
                 transferScope={transferScope}
@@ -557,6 +643,7 @@ function ConversationHostTools({
                 key={JSON.stringify([cwd, sessionId, targetKey])}
                 api={api}
                 hostLabel={hostLabel}
+                machinePicker={renderMachinePicker(true)}
                 onAddDevice={(device) =>
                   attachDeviceToComposer(
                     cwd,
@@ -570,7 +657,12 @@ function ConversationHostTools({
                   attachDeviceImageAcrossWindows(
                     cwd,
                     composerSessionId ?? sessionId,
-                    { device, computer: { label: hostLabel, target }, frame, comment },
+                    {
+                      device,
+                      computer: { label: hostLabel, target },
+                      frame,
+                      comment,
+                    },
                     composerWindow,
                     operation,
                   )
@@ -585,10 +677,19 @@ function ConversationHostTools({
                 active={active && tab === "browser"}
                 cwd={cwd}
                 initialUrl={target.kind === "project" ? initialUrl : undefined}
+                navigation={target.kind === "project" ? navigation : undefined}
                 sessionId={sessionId}
                 composerSessionId={composerSessionId ?? sessionId}
                 composerWindow={composerWindow}
                 hostTarget={target}
+                localBrowserTarget={
+                  target.kind === "local" ||
+                  (target.kind === "project" && !!cwd.trim() && !cwd.startsWith("remote://")) ||
+                  (target.kind === "machine" &&
+                    machines.some(
+                      (machine) => machine.id === target.machineId && isLocalSyncMachine(machine),
+                    ))
+                }
                 annotationsAllowed={annotationsAllowed && !!sessionId}
                 hostLabel={hostLabel}
               />

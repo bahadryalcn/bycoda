@@ -5,7 +5,7 @@ import {
   FloatingButtonGroup,
   type FloatingButtonGroupAction,
 } from "../../../shared/ui/FloatingButtonGroup";
-import { Check, Copy, FilePlusCorner, RotateCcw } from "../../../shared/ui/icons";
+import { ChatCopied, ChatCopy, ChatRetry, Check, FilePlusCorner } from "../../../shared/ui/icons";
 import { copyMessage } from "../../../platform/tauri/clipboard";
 import { playCue } from "../../settings/public/sounds";
 
@@ -49,7 +49,7 @@ export function TurnOutputActions({
           {
             id: "copy",
             label: copy.copied ? t("Copied") : copy.failed ? t("Retry copy") : t("Copy response"),
-            icon: copy.copied ? <Check /> : copy.failed ? <RotateCcw /> : <Copy />,
+            icon: copy.copied ? <ChatCopied /> : copy.failed ? <ChatRetry /> : <ChatCopy />,
             tone: copy.copied ? "success" : copy.failed ? "danger" : undefined,
             loading: copy.pending,
             onSelect: () => run(copy, (text) => copyMessage(text)),
@@ -65,7 +65,7 @@ export function TurnOutputActions({
               : save.failed
                 ? t("Retry save")
                 : t("Save as note"),
-            icon: save.copied ? <Check /> : save.failed ? <RotateCcw /> : <FilePlusCorner />,
+            icon: save.copied ? <Check /> : save.failed ? <ChatRetry /> : <FilePlusCorner />,
             tone: save.copied ? "success" : save.failed ? "danger" : undefined,
             loading: save.pending,
             onSelect: () => run(save, onSave),
@@ -77,8 +77,8 @@ export function TurnOutputActions({
   if (items.length === 0) return null;
 
   const failures = [
-    copy.failed ? t("Copy failed. ") + (copy.error ?? "") : null,
-    save.failed ? t("Could not save note. ") + (save.error ?? "") : null,
+    copy.failed ? t("Copy failed. {p0}", { p0: copy.error ?? "" }) : null,
+    save.failed ? t("Could not save note. {p0}", { p0: save.error ?? "" }) : null,
   ].filter((message): message is string => message !== null);
 
   return (
@@ -93,9 +93,10 @@ export function TurnOutputActions({
         items={items}
       />
       {/* Result words are no longer drawn on the icon, so the spoken confirmation lives here. */}
-      <span role="status" className="sr-only">
-        {copy.copied ? t("Copied") : save.copied ? t("Saved to Notes") : ""}
-      </span>
+      <LiveText
+        className="sr-only"
+        text={copy.copied ? t("Copied") : save.copied ? t("Saved to Notes") : ""}
+      />
       {failures.map((message) => (
         <LiveText
           key={message}

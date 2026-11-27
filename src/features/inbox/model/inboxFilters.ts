@@ -348,11 +348,11 @@ export function filterInboxByStatus(
   });
 }
 
-export function filterInboxByTime(
-  items: readonly InboxItem[],
+export function filterInboxByTime<T extends Pick<InboxItem, "updatedAt">>(
+  items: readonly T[],
   time: InboxTimeFilter,
   now: number,
-): InboxItem[] {
+): T[] {
   if (time === "all") return [...items];
   const start = timeFilterStart(time, now);
   return items.filter((item) => {

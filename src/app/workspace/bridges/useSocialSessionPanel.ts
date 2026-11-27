@@ -21,8 +21,10 @@ const socialContext = (target: PanelSessionScope) =>
   `This conversation manages Social Media. Use the existing bycoda-social tools for social operations and their account-bound live view. Account grants, sending approvals, autonomy, limits and global stops remain authoritative. This context grants no additional access. Selected workspace: ${JSON.stringify({ scope: target.key, cwd: target.cwd })}`;
 
 /** App adapter for real Social conversations. Existing session dispatch and tool grants stay authoritative. */
-export function useSocialSessionPanel() {
-  const [portal, setPortal] = useState<PanelSessionPortal | null>(null);
+export function useScopedSessionPanel<Portal extends PanelSessionPortal = PanelSessionPortal>(
+  contextFor: (target: PanelSessionScope) => string,
+) {
+  const [portal, setPortal] = useState<Portal | null>(null);
   const [sessionIds, setSessionIds] = useState<string[]>([]);
   const [workspaceTargets, setWorkspaceTargets] = useState<Record<string, SessionPanelTarget>>({});
   const registerTarget = useStableCallback((target: SessionPanelTarget) => {
@@ -35,7 +37,7 @@ export function useSocialSessionPanel() {
         return next;
       });
   });
-  const open = useStableCallback(async (scope: PanelSessionScope) => {
+  const open = useStableCallback(async (scope: PanelSessionScope, context?: string) => {
     const id = await openPanelSession(scope, {
       read: (key) => {
         if (remembered.has(key)) return remembered.get(key)!;
@@ -77,7 +79,7 @@ export function useSocialSessionPanel() {
           const next =
             active.blocks.length || active.pendingContextReplay
               ? active
-              : { ...active, pendingContextReplay: socialContext(scope) };
+              : { ...active, pendingContextReplay: context ?? contextFor(scope) };
           return existing
             ? next === existing
               ? current
@@ -89,4 +91,8 @@ export function useSocialSessionPanel() {
     return id;
   });
   return { portal, setPortal, sessionIds, open, workspaceTargets, registerTarget };
+}
+
+export function useSocialSessionPanel() {
+  return useScopedSessionPanel(socialContext);
 }

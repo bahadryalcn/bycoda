@@ -1,5 +1,6 @@
 import { presentRemoteError } from "../../connections/public/remoteFailure";
-import { PickerList, usePickerList } from "../../../shared/ui/picker";
+import { isListedWorktree, worktreeRows, type WorktreeRow } from "../model/worktreeRows";
+import { ALL_WORKTREES_ACTIVE, WorktreeList, useWorktreeList } from "./WorktreeList";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -9,12 +10,15 @@ import { Tooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useProjectWorktrees } from "../hooks/useProjectWorktrees";
+import { useChangeTotals } from "../hooks/useChangeTotals";
+import { changeSectionRoots } from "../model/worktreeScope";
 import { useWorktreeFocus, type WorktreeFocus } from "../model/worktreeFocus";
-import { createWorktree } from "../model/worktrees";
+import { createProjectWorktree } from "../model/remoteWorktrees";
 import { pathKey, prettyCwd, projectName } from "../../../shared/lib/paths";
 import { Popover } from "../../../shared/ui/Popover";
+import { shortSha } from "../../../shared/lib/shortSha";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
-import { FolderTree, GitBranch, Plus } from "../../../shared/ui/icons";
+import { ChevronDown, ChevronRight, GitBranch, Plus } from "../../../shared/ui/icons";
 
 /** The sidebar title. Picking a worktree narrows the sidebar, and the
  * sessions opened from it, to that working copy and names it here. */
@@ -22,6 +26,7 @@ export function SidebarWorktreeSwitcher({
   cwd,
   projectLabel,
   projectIcon,
+  showProjectIdentity = true,
   tabStats,
   onSelect,
   pending = false,
@@ -32,6 +37,8 @@ export function SidebarWorktreeSwitcher({
   projectLabel?: string;
   /** The project's saved identity (logo or mascot), shown before its name. */
   projectIcon?: ReactNode;
+  /** The project picker already supplies the icon and name in a shared header. */
+  showProjectIdentity?: boolean;
   onSelect?: (focus?: WorktreeFocus) => void;
   pending?: boolean;
   switchError?: string;
@@ -43,6 +50,7 @@ export function SidebarWorktreeSwitcher({
   const [query, setQuery] = useState("");
   const [activePath, setActivePath] = useState<string | null>(null);
   const [reportedSwitchError, setReportedSwitchError] = useState<string | undefined>(undefined);
+  const [agentsExpanded, setAgentsExpanded] = useState(false);
   const [creating, setCreating] = useState(false);
   const [creationError, setCreationError] = useState<string>();
   const creatingRef = useRef(false);
@@ -59,35 +67,24 @@ export function SidebarWorktreeSwitcher({
   const search = useRef<HTMLInputElement>(null);
   const focus = useWorktreeFocus(cwd);
   const { data, error, loading, refresh } = useProjectWorktrees(cwd);
-  // The project folder is the default, unfocused entry; missing worktrees
-  // cannot be opened, so they are left out.
+  // No focus means "All worktrees"; the project folder is a worktree like the
+  // others. The shared row builder hides worktrees that cannot be opened.
   const main = data?.worktrees.find((tree) => tree.isMain);
-  const worktrees = data?.worktrees.filter((tree) => !tree.isMain && !tree.missing) ?? [];
   const createName = query.trim();
-  const normalizedQuery = createName.toLocaleLowerCase();
-  const rows = [
-    {
-      path: main?.path ?? cwd,
-      branch: main?.branch ?? null,
-      isMain: true,
-      label: main?.branch ?? "Project folder",
-      detail: "Project folder · all sessions",
-    },
-    ...worktrees.map((tree) => ({
-      path: tree.path,
-      branch: tree.branch,
-      isMain: false,
-      label: tree.branch ?? `Detached ${tree.head.slice(0, 7)}`,
-      detail: prettyCwd(tree.path),
-    })),
-  ].filter((tree) =>
-    `${tree.label}\n${tree.detail}\n${tree.path}`.toLocaleLowerCase().includes(normalizedQuery),
-  );
+  const rows = worktreeRows(data?.worktrees, cwd, query);
+  // One worktree has nothing to be "all" of; the row appears from two on.
+  const hasAll = worktreeRows(data?.worktrees, cwd).length > 1;
+  const showAll = hasAll && !query.trim();
+  const allSelected = hasAll && !focus;
 
+  // Counts of the worktrees that have uncommitted changes: the same sections the Changes panel
+  // and its tab badge add up, so the chips and "All worktrees" agree with them.
+  const totals = useChangeTotals(changeSectionRoots(data?.worktrees, cwd), open);
   const canCreate = !!data && !error && !!createName && rows.length === 0;
 
   const closePicker = () => {
     setOpen(false);
+    setAgentsExpanded(false);
     setQuery("");
     setActivePath(null);
     setCreationError(undefined);
@@ -108,9 +105,9 @@ export function SidebarWorktreeSwitcher({
     return () => cancelAnimationFrame(frame);
   }, [open, creating]);
 
-  const pick = (tree: (typeof rows)[number]) => {
+  const pick = (row: WorktreeRow) => {
     if (creating) return;
-    onSelect?.(tree.isMain ? undefined : { path: tree.path, branch: tree.branch });
+    onSelect?.({ path: row.path, branch: row.tree.branch });
     closePicker();
   };
 
@@ -120,7 +117,7 @@ export function SidebarWorktreeSwitcher({
     setCreating(true);
     setCreationError(undefined);
     try {
-      const tree = await createWorktree(focus?.path ?? cwd, createName, "HEAD", false);
+      const tree = await createProjectWorktree(focus?.path ?? cwd, createName, "HEAD", false);
       await refresh();
       // Finishing a creation for a previous project must not navigate this one.
       if (!mounted.current || currentCwd.current !== cwd) return;
@@ -143,7 +140,7 @@ export function SidebarWorktreeSwitcher({
       !switchError &&
       data &&
       !data.worktrees.some(
-        (tree) => !tree.isMain && !tree.missing && pathKey(tree.path) === pathKey(focus.path),
+        (tree) => isListedWorktree(tree) && pathKey(tree.path) === pathKey(focus.path),
       )
     )
       onSelect?.(undefined);
@@ -156,29 +153,40 @@ export function SidebarWorktreeSwitcher({
     if (switchError) setOpen(true);
   }
 
-  const list = usePickerList({
-    options: rows.map((tree) => ({
-      value: tree.path,
-      title: tree.label,
-      description: tree.detail,
-      icon: tree.isMain ? <GitBranch className="icon-sm" /> : <FolderTree className="icon-sm" />,
-      trailing: <OpenTabs stats={tabStats?.get(pathKey(tree.path))} />,
-      disabled: creating,
-    })),
+  const list = useWorktreeList({
+    rows,
     value: focus?.path ?? main?.path ?? cwd,
-    activeValue: activePath ?? rows[0]?.path ?? null,
-    onActiveValueChange: setActivePath,
+    activePath:
+      activePath ?? (showAll && allSelected ? ALL_WORKTREES_ACTIVE : null) ?? rows[0]?.path ?? null,
+    counts: totals.byRoot,
+    agentsExpanded: agentsExpanded || !!query.trim(),
+    onExpandAgents: () => setAgentsExpanded(true),
+    all: showAll
+      ? {
+          selected: allSelected,
+          changes: totals.ready ? totals.total : undefined,
+          onPick: () => {
+            if (creating) return;
+            onSelect?.(undefined);
+            closePicker();
+          },
+        }
+      : undefined,
+    onActivePathChange: (path) => setActivePath(path ?? null),
     inputRef: search,
-    onChange: (value) => {
-      const tree = rows.find((tree) => tree.path === value);
-      if (tree) pick(tree);
-    },
+    disabled: creating,
+    trailing: (row) => <OpenTabs stats={tabStats?.get(pathKey(row.path))} />,
+    onPick: pick,
   });
-  const focused = focus && worktrees.find((tree) => pathKey(tree.path) === pathKey(focus.path));
-  // The working copy shown after the project name: the focused worktree, or the project folder's branch when known.
+  const focused =
+    focus && data?.worktrees.find((tree) => pathKey(tree.path) === pathKey(focus.path));
+  // Shown after the project name: the focused worktree's branch, "All worktrees"
+  // when several exist, or the lone project folder's branch.
   const copyName = focus
-    ? (focused?.branch ?? focus.branch ?? "Detached worktree")
-    : (main?.branch ?? undefined);
+    ? (focused?.branch ?? focus.branch ?? detachedLabel(focused?.head))
+    : hasAll
+      ? t("All worktrees")
+      : (main?.branch ?? undefined);
   const project = projectLabel ?? projectName(cwd);
   const fullTitle = copyName ? `${project} · ${copyName}` : project;
   return (
@@ -186,25 +194,29 @@ export function SidebarWorktreeSwitcher({
       <Button
         variant="item"
         motion="none"
+        padding={{ inline: "xs" }}
         ref={anchor}
         type="button"
         data-tauri-drag-region="false"
-        aria-label={t("Switch working copy")}
+        aria-label={t("Switch worktree")}
         aria-haspopup="dialog"
         expanded={open}
         aria-busy={pending || creating}
         disabled={creating}
+        disabledReason={creating ? t("Creating worktree") : undefined}
         endIcon={
           pending || creating ? (
             <Spinner
-              label={creating ? t("Creating worktree") : t("Switching working copy")}
+              label={creating ? t("Creating worktree") : t("Switching worktree")}
               className="shrink-0"
               tone="muted"
             />
-          ) : undefined
+          ) : (
+            <ChevronDown aria-hidden className="icon-xs shrink-0" tone="secondary" />
+          )
         }
-        tooltip={fullTitle}
-        tooltipDetails={focus ? [prettyCwd(focus.path)] : undefined}
+        // The trigger shows project and branch; the hint adds the folder, or the clipped text.
+        tooltip={focus ? prettyCwd(focus.path) : fullTitle}
         tooltipWhen={focus ? "always" : "overflow"}
         onClick={() => {
           if (open) closePicker();
@@ -215,18 +227,38 @@ export function SidebarWorktreeSwitcher({
           event.preventDefault();
           openPicker();
         }}
-        className="flex w-fit min-w-0 max-w-full items-center gap-2"
+        className="flex w-fit min-w-0 max-w-full items-center gap-2 @max-[280px]/workspace-pane:gap-1"
       >
-        {projectIcon ? (
+        {showProjectIdentity && projectIcon ? (
           <span className="grid size-4 shrink-0 place-items-center">{projectIcon}</span>
         ) : null}
-        <MiddleTruncate mode="text" className="min-w-0">
-          {project}
-        </MiddleTruncate>
-        {copyName ? (
-          <MiddleTruncate mode="text" tone="muted" className="min-w-0">
-            {copyName}
+        {showProjectIdentity ? (
+          <MiddleTruncate mode="text" className="min-w-0">
+            {project}
           </MiddleTruncate>
+        ) : null}
+        {copyName ? (
+          <>
+            {showProjectIdentity ? (
+              <ChevronRight
+                aria-hidden
+                data-workspace-copy-decoration
+                className="icon-xs shrink-0"
+                tone="secondary"
+              />
+            ) : null}
+            {focus || !hasAll ? (
+              <GitBranch
+                aria-hidden
+                data-workspace-copy-decoration
+                className="icon-xs -ms-1 shrink-0"
+                tone="secondary"
+              />
+            ) : null}
+            <MiddleTruncate mode="text" tone="muted" className="min-w-0" data-workspace-copy-name>
+              {copyName}
+            </MiddleTruncate>
+          </>
         ) : null}
       </Button>
       {open ? (
@@ -239,15 +271,15 @@ export function SidebarWorktreeSwitcher({
           onDismiss={() => {
             if (!creating) closePicker();
           }}
-          role="dialog"
-          aria-label={t("Working copies")}
+          kind="dialog"
+          aria-label={t("Worktrees")}
           className="flex flex-col overflow-hidden"
         >
           <PopoverSearchHeader
             {...list.searchProps}
             size="md"
-            label={t("Search working copies")}
-            placeholder={t("Search or create a worktree...")}
+            label={t("Search worktrees")}
+            placeholder={t("Search or create a worktree…")}
             value={query}
             disabled={creating}
             onValueChange={(value) => {
@@ -260,17 +292,12 @@ export function SidebarWorktreeSwitcher({
               else if (canCreate) void create();
             }}
           />
-          <PickerList
-            label={t("Working copies")}
-            controller={list}
-            loading={!data && !error}
-            loadingLabel={t("Loading working copies…")}
-            emptyLabel={t("No matching working copies")}
-            className="min-h-0 overflow-y-auto"
-          />
+          <WorktreeList controller={list} loading={!data && !error} />
           {creationError || switchError || error ? (
             <InlineError
-              className="shrink-0 px-2 py-2"
+              inset="row"
+              className="shrink-0"
+              details={creationError || switchError || error}
               retry={
                 error
                   ? {
@@ -281,7 +308,11 @@ export function SidebarWorktreeSwitcher({
                   : undefined
               }
             >
-              {creationError || switchError || error}
+              {creationError
+                ? t("Couldn’t create worktree")
+                : switchError
+                  ? t("Couldn’t switch worktree")
+                  : t("Couldn’t load worktrees")}
             </InlineError>
           ) : null}
           {canCreate ? (
@@ -294,14 +325,12 @@ export function SidebarWorktreeSwitcher({
                 align="start"
                 loading={creating}
                 startIcon={<Plus className="icon-md" strokeWidth={1.75} />}
-                disabled={creating}
                 onClick={() => void create()}
                 tooltip={t("Create worktree {p0}", { p0: createName })}
                 tooltipWhen="overflow"
               >
                 <Text size="inherit" tone="inherit" truncate className="min-w-0">
-                  {t("Create worktree ")}
-                  {createName}
+                  {t("Create worktree {p0}", { p0: createName })}
                 </Text>
               </Button>
             </div>
@@ -312,21 +341,32 @@ export function SidebarWorktreeSwitcher({
   );
 }
 
+/** Detached HEAD wording shared by picker rows and the sidebar title. */
+function detachedLabel(head?: string) {
+  return head ? t("Detached {p0}", { p0: shortSha(head) }) : t("Detached HEAD");
+}
+
 /** Tabs a worktree keeps open while another one is shown. */
 function OpenTabs({ stats }: { stats?: { tabs: number; busy: boolean } }) {
   useLocale();
   if (!stats?.tabs) return null;
-  const label = `${stats.tabs} open tab${stats.tabs === 1 ? "" : "s"}${stats.busy ? ", working" : ""}`;
+  const label = stats.busy
+    ? stats.tabs === 1
+      ? t("{p0} open tab, working", { p0: stats.tabs })
+      : t("{p0} open tabs, working", { p0: stats.tabs })
+    : stats.tabs === 1
+      ? t("{p0} open tab", { p0: stats.tabs })
+      : t("{p0} open tabs", { p0: stats.tabs });
   return (
     <Tooltip label={label}>
       <Text
-        aria-label={label}
         size="caption"
         tone="secondary"
         className="flex shrink-0 items-center gap-1 tabular-nums"
       >
+        <span className="sr-only">{label}</span>
         {stats.busy ? <Spinner size="xs" /> : null}
-        {stats.tabs}
+        <span aria-hidden>{stats.tabs}</span>
       </Text>
     </Tooltip>
   );

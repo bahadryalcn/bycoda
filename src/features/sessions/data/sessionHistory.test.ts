@@ -27,6 +27,19 @@ function summary(id: string, cwd: string, updatedAt = 1): SessionSummary {
 }
 
 describe("historyWithLiveSessions", () => {
+  it("lists a blank open conversation only while its composer holds unsent text", () => {
+    const session: Session = { ...newSession("codex", "/tmp/draft"), id: "typed" };
+    expect(historyWithLiveSessions([], [session], session.cwd)).toEqual([]);
+    const rows = historyWithLiveSessions(
+      [],
+      [session],
+      session.cwd,
+      undefined,
+      [],
+      new Set(["typed"]),
+    );
+    expect(rows.map((row) => row.id)).toEqual(["typed"]);
+  });
   it("removes a legacy interruption warning once the loaded transcript proves owner Stop", () => {
     const session: Session = {
       ...newSession("codex", "/tmp/stopped"),
@@ -481,5 +494,38 @@ describe("pinned sessions", () => {
     ];
     const rows = historyWithLiveSessions(history, [], "/tmp/project-a");
     expect(rows.map((row) => row.id)).toEqual(["pin", "new"]);
+  });
+
+  it("updates each stored row after an unsaved session is merged in ahead of it", () => {
+    const cwd = "/tmp/index-project";
+    const stored = (id: string) => ({
+      ...summary(id, cwd),
+      providerHistory: { providers: ["claude" as const], activeHarness: "claude" as const },
+    });
+    const second: Session = {
+      ...newSession("codex", cwd),
+      id: "second",
+      blocks: [
+        {
+          id: "u1",
+          role: "user",
+          text: "Hi",
+          turnModel: { harness: "codex", id: "gpt", name: "GPT" },
+        },
+      ],
+    };
+    const unsaved: Session = { ...newSession("claude", cwd), id: "unsaved", busy: true };
+    const rows = historyWithLiveSessions(
+      [stored("first"), stored("second")],
+      [unsaved, second],
+      cwd,
+    );
+    expect(rows.find((row) => row.id === "first")?.providerHistory?.activeHarness).toBe("claude");
+    expect(rows.find((row) => row.id === "second")?.providerHistory).toEqual({
+      providers: ["codex"],
+      activeHarness: "codex",
+      activeModel: "GPT",
+    });
+    expect(rows.find((row) => row.id === "unsaved")).toBeDefined();
   });
 });

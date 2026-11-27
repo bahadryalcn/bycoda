@@ -4,6 +4,15 @@ import { loadPromptTemplates, savePromptTemplates } from "../../sessions/model/p
 import { insertSshSnippet, loadSshSnippets, saveSshSnippet } from "./sshSnippets";
 beforeEach(() => localStorage.clear());
 const save = () => saveSshSnippet({ serverId: "server-a", name: "Status", command: "git status" });
+it("uses the command as its name and rejects duplicates within one server", () => {
+  const first = saveSshSnippet({ serverId: "server-a", command: "git status" });
+  expect(first.name).toBe("git status");
+  expect(() => saveSshSnippet({ serverId: "server-a", command: " git status " })).toThrow(
+    "Command already saved.",
+  );
+  expect(loadSshSnippets("server-a")).toEqual([first]);
+  expect(saveSshSnippet({ serverId: "server-b", command: "git status" }).id).not.toBe(first.id);
+});
 it("reuses the existing template body store and scopes references by canonical server", () => {
   const snippet = save();
   expect(loadPromptTemplates()).toEqual([{ id: snippet.id, name: "Status", body: "git status" }]);

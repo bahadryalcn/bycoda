@@ -27,12 +27,16 @@ pub(super) fn native_route(
     require_environment_enabled(environment_id)
         .map_err(|_| WsFailure::local("RPC_WS_DISABLED", "Machine connection is disabled"))?;
     if crate::remote_routes::account_tunnel(endpoint).is_some() {
-        crate::remote_routes::verify_account_endpoint(endpoint, environment_id, token).map_err(
-            |_| {
-                crate::remote_routes::retire_account_endpoint(environment_id, endpoint);
-                WsFailure::local("RPC_WS_IDENTITY", "Host possession proof failed")
-            },
-        )?;
+        crate::remote_routes::verify_account_endpoint(
+            endpoint,
+            environment_id,
+            token,
+            crate::remote_routes::IDENTITY_BUDGET,
+        )
+        .map_err(|_| {
+            crate::remote_routes::retire_account_endpoint(environment_id, endpoint);
+            WsFailure::local("RPC_WS_IDENTITY", "Host possession proof failed")
+        })?;
     }
     require_environment_enabled(environment_id)
         .map_err(|_| WsFailure::local("RPC_WS_DISABLED", "Machine connection is disabled"))?;
@@ -214,6 +218,33 @@ mod tests {
     }
 
     #[test]
+    fn native_tunnel_failure_keeps_its_cause_under_the_stable_code() {
+        let mut machine: StoredMachine = serde_json::from_value(json!({
+            "id":"native-ssh-cause", "name":"test", "endpoint":"https://saved.example",
+            "environmentId":"native-ssh-cause-env", "token":"unused"
+        }))
+        .unwrap();
+        machine.ssh = Some(
+            serde_json::from_value(json!({"target":"user@127.0.0.1", "remotePort":3774})).unwrap(),
+        );
+        let state = RemoteConnections::default();
+        // Without allow_connect no ssh is spawned: the tunnel error is immediate.
+        let failure = native_ws_route(&state, &machine, false)
+            .err()
+            .expect("no tunnel exists");
+        assert_eq!(failure.code, "RPC_WS_SSH");
+        assert!(
+            failure.message.contains("Automatic reconnect is off"),
+            "{failure}"
+        );
+        assert!(!failure.message.contains("Verified native"), "{failure}");
+        // The HTTP-path failover check keys on this prefix, so it must stay.
+        assert!(failure
+            .to_string()
+            .starts_with("RPC_WS_SSH: Machine is unreachable"));
+    }
+
+    #[test]
     fn disabled_machine_admits_no_transport() {
         assert!(require_transport_allowed(false).is_err());
         assert!(require_transport_allowed(true).is_ok());
@@ -288,6 +319,7 @@ pub async fn remote_learn_account_routes(
                 &route,
                 &environment_id,
                 &original.token,
+                crate::remote_routes::IDENTITY_BUDGET,
             )
             .is_err()
             {
@@ -334,7 +366,8 @@ pub(super) fn native_ws_route(
                 .endpoint(&machine.id, &machine.environment_id, target, allow_connect)
         })
         .transpose()
-        .map_err(|_| WsFailure::local("RPC_WS_SSH", "Verified native SSH tunnel is unavailable"))?;
+        // The tunnel error is the same text the HTTP path returns; it is already redacted.
+        .map_err(|error| WsFailure::local("RPC_WS_SSH", &error))?;
     let endpoint = lease
         .as_ref()
         .map(|lease| lease.endpoint.as_str())

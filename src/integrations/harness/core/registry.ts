@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import type {
   Block,
   HarnessId,
@@ -17,6 +18,7 @@ import { providerInput, providerInputCopy, providerTurnInput } from "./providerI
 import {
   conversationDelegationReady,
   delegationFallback,
+  delegationNeedsRespawn,
   needsHostDelegation,
   delegationNotice,
 } from "./delegationReadiness";
@@ -118,6 +120,9 @@ export type TextPromptInput = import("./providerRetirement").ProviderRetirementO
   /** Local bound on received assistant/reasoning text, not provider tokens or charges. */
   maxOutputChars?: number;
   timeoutMs?: number;
+  /** Opt-in read-only page fetch limited to these exact domains. Only adapters that can
+   * pre-allow a domain-scoped fetch (Claude) honor it; others keep their no-web isolation. */
+  webLookup?: { domains: readonly string[] };
   signal?: AbortSignal;
   onEvent?: (event: HarnessEvent) => void;
 };
@@ -141,6 +146,8 @@ export type HarnessAdapter = {
   /** Rewind provider state so the last user turn can be replaced. */
   rewindLastTurn?(input: RewindLastTurnInput): Promise<RewindLastTurnResult>;
   steerTurn(input: SteerTurnInput): Promise<void>;
+  /** False while the running turn cannot take a follow-up yet (the provider is still starting). Default: ready. */
+  steerReady?(sessionId: string): boolean;
   cancelTurn(sessionId: string, context?: HarnessOperationContext): Promise<void>;
   /**
    * Stop one running subagent or background command (`callId` is its tool
@@ -189,6 +196,7 @@ export type HarnessAdapter = {
   generatePrContent?(
     cwd: string,
     context?: HarnessOperationContext,
+    signal?: AbortSignal,
   ): Promise<(PrContent & { base: string; head: string }) | null>;
   /** Optional LLM branch name from a user message. */
   generateBranchName?(
@@ -328,7 +336,7 @@ function captureNativeSessionClaim(
   return claim;
 }
 function isClaimHeld(error: unknown): boolean {
-  return (error instanceof Error ? error.message : String(error)) === "CANONICAL_CLAIM_HELD";
+  return errorText(error) === "CANONICAL_CLAIM_HELD";
 }
 /** Another window asked for this window's writer; only an idle one is handed over. */
 async function releaseWriterForHandoff(sessionId: string): Promise<boolean> {
@@ -624,11 +632,20 @@ function scheduleIdlePark(harness: HarnessId, sessionId: string): void {
     sessionId,
     setTimeout(() => {
       idleParkTimers.delete(sessionId);
-      void queueSessionOperation(sessionId, () => stopHarnessSession(harness, sessionId)).catch(
+      void queueSessionOperation(sessionId, () => parkIdleSession(harness, sessionId)).catch(
         (error: unknown) => warnCleanup("idle park", error),
       );
     }, HARNESS_IDLE_PARK_MS),
   );
+}
+
+async function parkIdleSession(harness: HarnessId, sessionId: string): Promise<void> {
+  await stopHarnessSession(harness, sessionId);
+  if (harness !== "opencode") return;
+  // A parked conversation resumes by its provider session id, so it must not keep
+  // the shared service alive. The next turn acquires a new reference.
+  const capability = await nativeSessionClaims.get(sessionId);
+  if (capability) await releaseOwnedOpenCodeForCapability(capability);
 }
 
 async function releaseIdleHarness(
@@ -729,6 +746,13 @@ export function sendHarnessTurn(
       const adapter = requireHarness(input.harness);
       if (!adapter.live) throw new Error(`${input.harness} is not connected yet`);
       assertAdapterOperationReady(input.sessionId);
+      // Before this turn claims a writer: the stop below releases the old one.
+      if (
+        needsHostDelegation(input.harness, input.modelSettings) &&
+        (await delegationNeedsRespawn(input.sessionId))
+      )
+        // A failed stop leaves the turn on the running process, without Host tools.
+        await stopHarnessSession(input.harness, input.sessionId).catch(() => undefined);
       if (lightweightWorktree || input.harness === "codex")
         retainedWriters.set(input.sessionId, input.harness);
       cancelIdlePark(input.sessionId);
@@ -768,7 +792,7 @@ export function sendHarnessTurn(
             input.onEvent({
               type: "status",
               key: "delegation-unavailable",
-              text: t(delegationNotice(fallback)),
+              text: delegationNotice(fallback),
             });
           }
           if (deliversHint) markRuntimeHintDelivered(input.sessionId, thread, hint);
@@ -915,6 +939,11 @@ export function canSteerHarness(id: HarnessId): boolean {
   const adapter = adapters.get(id);
   if (!adapter?.live) return false;
   return adapter.canSteer !== false;
+}
+
+/** False while the session's running turn cannot take a follow-up yet; the composer queues it instead. */
+export function isHarnessSteerReady(id: HarnessId, sessionId: string): boolean {
+  return adapters.get(id)?.steerReady?.(sessionId) ?? true;
 }
 
 /** True when steering applies the follow-up's model settings, so an effort change need not restart the turn. */
@@ -1398,8 +1427,27 @@ export async function refreshHarnessCatalogs(
   ids: Iterable<HarnessId>,
   options?: { force?: boolean },
 ): Promise<void> {
+  // Routine callers fire and forget; failures are visible through the refresh
+  // receipt (`refreshHarnessCatalogsStrict`), so only log them here.
+  await refreshHarnessCatalogsStrict(ids, options).catch((error: unknown) => {
+    console.debug("[bycoda] catalog refresh", error);
+  });
+}
+
+/**
+ * Like `refreshHarnessCatalogs`, but rejects when a probe failed or listed no models
+ * (the previous list is kept either way). Resolves with the harnesses that were
+ * actually probed, so a caller can tell a skipped live catalog from a verified one.
+ * Several failures reject with an `AggregateError`.
+ */
+export async function refreshHarnessCatalogsStrict(
+  ids: Iterable<HarnessId>,
+  options?: { force?: boolean },
+): Promise<Set<HarnessId>> {
   const wanted = new Set(ids);
-  if (wanted.size === 0) return;
+  const probed = new Set<HarnessId>();
+  if (wanted.size === 0) return probed;
+  const failures: unknown[] = [];
   await Promise.all(
     [...adapters.values()]
       .filter((adapter) => wanted.has(adapter.id))
@@ -1408,11 +1456,19 @@ export async function refreshHarnessCatalogs(
         // `force` marks an explicit user action (opening the model dropdown);
         // routine refreshes keep skipping adapters with a live catalog.
         if (!options?.force && hasLiveCatalog(adapter.id)) return;
-        await adapter.refreshCatalog().catch((error: unknown) => {
-          console.debug(`[bycoda] ${adapter.id} catalog`, error);
-        });
+        try {
+          await adapter.refreshCatalog();
+          probed.add(adapter.id);
+        } catch (error: unknown) {
+          failures.push(error);
+        }
       }),
   );
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) {
+    throw new AggregateError(failures, "Several model catalogs could not be refreshed.");
+  }
+  return probed;
 }
 
 export async function generateHarnessTitle(
@@ -1444,9 +1500,12 @@ export async function generateHarnessPrContent(
   harness: HarnessId,
   cwd: string,
   context?: HarnessOperationContext,
+  signal?: AbortSignal,
 ): Promise<(PrContent & { base: string; head: string }) | null> {
   const adapter = getHarness(harness);
   if (!adapter?.generatePrContent) return null;
+  signal?.throwIfAborted();
+  if (signal) return adapter.generatePrContent(cwd, context, signal);
   return context ? adapter.generatePrContent(cwd, context) : adapter.generatePrContent(cwd);
 }
 
@@ -1523,6 +1582,10 @@ export async function runHarnessTextPrompt(
     // Pure local preflight only. No adapter allocation or provider request has begun.
     input = providerInput({ ...request });
     assertHarnessModel(input.harness, input);
+    // ACP text helpers take the provider's own model ID, not the catalog ID.
+    const model = input.model?.trim();
+    if (model && (input.harness === "cursor" || input.harness === "antigravity"))
+      input = { ...input, model: nativeModelId(model) || undefined };
     adapter = requireHarness(input.harness);
     if (!adapter.live) throw new Error(`${input.harness} is not connected yet`);
     if (!adapter.runTextPrompt)

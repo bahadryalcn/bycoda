@@ -30,6 +30,16 @@ for (const theme of ["light", "dark"])
       await dock.getByRole("button", { name: /^Open Physics table 2,/ }).click();
       const panel = page.getByRole("dialog");
       await expect(panel).toContainText("Low initial entropy");
+      const { actual, canvas } = await panel.evaluate((element) => {
+        const probe = document.createElement("span");
+        probe.style.backgroundColor = "var(--ui-chat-pane-canvas)";
+        element.appendChild(probe);
+        const canvas = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return { actual: getComputedStyle(element).backgroundColor, canvas };
+      });
+      expect(actual).toBe(canvas);
+      await expect(panel.locator(".popover-backdrop")).toHaveCount(0);
       // Finish while reading a child, then observe longer than one discovery interval.
       await page.evaluate(() => {
         const finish = Array.from(document.querySelectorAll("button")).find(
@@ -54,6 +64,23 @@ for (const theme of ["light", "dark"])
       await page.screenshot({
         path: `temp/verification/subagent-retention/history-${theme}-${width}.png`,
       });
+      const menu = page.getByRole("menu", { name: "Session subagents" });
+      await expect(menu.locator("..").locator(":scope > .popover-backdrop")).toHaveCount(1);
+      const firstRow = menu.getByRole("menuitem").first();
+      const spacing = await firstRow.evaluate((row) => {
+        const style = getComputedStyle(row);
+        return {
+          inset: parseFloat(style.paddingBlockStart),
+          gap:
+            row.nextElementSibling!.getBoundingClientRect().top -
+            row.getBoundingClientRect().bottom,
+        };
+      });
+      expect(spacing.inset).toBeGreaterThanOrEqual(6);
+      expect(spacing.gap).toBeGreaterThanOrEqual(4);
+      await expect(firstRow).toBeFocused();
+      await page.keyboard.press("ArrowDown");
+      await expect(menu.getByRole("menuitem").nth(1)).toBeFocused();
       await page.getByRole("menuitem", { name: /^Physics table 2,/ }).click();
       await expect(panel).toContainText("Low initial entropy");
     });
@@ -71,7 +98,7 @@ for (const theme of ["light", "dark"])
       await expect(output).toContainText("command output fixture");
       const fill = await command.evaluate((node) => {
         const probe = document.createElement("span");
-        probe.style.background = "var(--ui-surface-muted)";
+        probe.style.background = "var(--ui-card-surface)";
         node.appendChild(probe);
         const expected = getComputedStyle(probe).backgroundColor;
         probe.remove();
@@ -84,7 +111,7 @@ for (const theme of ["light", "dark"])
         const outline = await node.evaluate((element) => {
           const s = getComputedStyle(element);
           const probe = document.createElement("span");
-          probe.style.outline = "2px solid var(--ui-focus-ring-color)";
+          probe.style.outline = "1px solid var(--ui-focus-ring-color)";
           element.appendChild(probe);
           const expected = getComputedStyle(probe).outlineColor;
           probe.remove();
@@ -96,8 +123,8 @@ for (const theme of ["light", "dark"])
           };
         });
         expect(outline).toEqual({
-          width: "2px",
-          offset: "-2px",
+          width: "1px",
+          offset: "-1px",
           color: outline.expected,
           expected: outline.expected,
         });
@@ -109,7 +136,7 @@ for (const theme of ["light", "dark"])
     });
 
 for (const theme of ["light", "dark"])
-  for (const width of [800, 1280])
+  for (const width of [390, 800, 1280])
     test(`subagent caller visual ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
@@ -118,10 +145,48 @@ for (const theme of ["light", "dark"])
         name: "Turn activity",
         exact: true,
       });
-      await dock.locator("button[data-dock-toggle]").click();
+      const toggle = dock.locator("button[data-dock-toggle]");
+      // The visible summary is provider marks and counts; the title lives in the accessible name.
+      await expect(toggle).not.toContainText("Background work");
+      await expect(toggle).toHaveAccessibleName(/(^|\. )Background work, /);
+      await expect(toggle.locator("[data-dock-providers] > *").first()).toBeVisible();
+      for (const label of ["1 running", "1 done", "1 failed", "1 stopped", "1 interrupted"]) {
+        await expect(toggle.locator("[data-tone]", { hasText: label })).toBeVisible();
+      }
+      expect(
+        await toggle.evaluate((button) => {
+          const trigger = button.getBoundingClientRect();
+          return [...button.querySelectorAll("[data-tone]")].every((badge) => {
+            const box = badge.getBoundingClientRect();
+            return (
+              box.left >= trigger.left &&
+              box.right <= trigger.right &&
+              box.top >= trigger.top &&
+              box.bottom <= trigger.bottom
+            );
+          });
+        }),
+      ).toBe(true);
+      await expect(dock.locator("[data-dock-stop-all]")).toBeVisible();
+      await dock.screenshot({
+        animations: "disabled",
+        path: `temp/verification/activity-dock/summary-${theme}-${width}.png`,
+      });
+      await toggle.click();
       await expect(dock.locator("[data-dock-agent]")).toHaveCount(5);
-      await page.screenshot({
-        path: `temp/verification/sessions-callers/activity-dock-${theme}-${width}.png`,
+      await expect(dock.getByRole("button", { name: "Stop all", exact: true })).toBeVisible();
+      await page.mouse.move(0, 0);
+      await dock.screenshot({
+        animations: "disabled",
+        path: `temp/verification/activity-dock/details-${theme}-${width}.png`,
+      });
+      const stopAll = dock.locator("[data-dock-stop-all]");
+      await stopAll.click();
+      await expect(stopAll).toContainText("Confirm stop");
+      await page.mouse.move(0, 0);
+      await dock.screenshot({
+        animations: "disabled",
+        path: `temp/verification/activity-dock/armed-${theme}-${width}.png`,
       });
       await page.goto(`/tests/browser/chat/subagent-relay.html?layout&theme=${theme}`);
       await page.getByRole("button", { name: "Open reviewer", exact: true }).click();
@@ -155,37 +220,52 @@ for (const theme of ["dark", "light"]) {
           ),
         );
         await expect(row).toHaveAttribute("data-dock-agent-state", state);
-        await expect(row.locator(":scope > span").first()).toBeVisible();
+        // The provider mark leads, centred on the two-line identity beside it.
+        const lead = row.locator("[data-subagent-provider]");
+        await expect(lead).toBeVisible();
+        const geometry = await lead.evaluate((node) => {
+          const icon = node.firstElementChild!.getBoundingClientRect();
+          const identity = node
+            .parentElement!.querySelector("[data-subagent-identity]")!
+            .getBoundingClientRect();
+          return {
+            size: icon.width,
+            beforeTitle: icon.right <= identity.left,
+            centered:
+              Math.abs(icon.top + icon.height / 2 - (identity.top + identity.height / 2)) <= 2,
+          };
+        });
+        expect(geometry).toEqual({ size: 24, beforeTitle: true, centered: true });
+        // The state word appears once, from the status mark or from a detail that names it.
+        const metrics = (await row.locator("[data-subagent-state]").innerText()).toLowerCase();
+        expect(metrics.split(state).length - 1).toBe(1);
       }
       const running = dock.locator('[data-dock-agent="status-running"]');
       const geometry = await running.evaluate((node) => {
         // The title leads; the model line (marks, model, account) sits beneath it.
-        const model = node.querySelector(".activity-dock-agent-identity > span:last-child")!;
-        const metrics = node.querySelector(".activity-dock-agent-metrics")!;
-        const title = node.querySelector(".whitespace-pre-wrap")!;
+        const model = node.querySelector("[data-subagent-identity] > span:last-child")!;
+        const metrics = node.querySelector("[data-subagent-state]")!.getBoundingClientRect();
+        const title = node.querySelector("[data-subagent-title]")!.getBoundingClientRect();
         const arrow = node.lastElementChild!;
         return {
-          modelBelowTitle:
-            model.getBoundingClientRect().top >= title.getBoundingClientRect().bottom - 1,
-          metricsAfterTitle:
-            metrics.getBoundingClientRect().left >= title.getBoundingClientRect().right,
-          metricsBeforeArrow:
-            metrics.getBoundingClientRect().right <= arrow.getBoundingClientRect().left,
+          modelBelowTitle: model.getBoundingClientRect().top >= title.bottom - 1,
+          // Beside the title, or on its own line in a narrow dock.
+          metricsClearOfTitle: metrics.left >= title.right || metrics.top >= title.bottom,
+          metricsBeforeArrow: metrics.right <= arrow.getBoundingClientRect().left,
           fits: node.scrollWidth <= node.clientWidth,
         };
       });
       expect(geometry).toEqual({
         modelBelowTitle: true,
-        metricsAfterTitle: true,
+        metricsClearOfTitle: true,
         metricsBeforeArrow: true,
         fits: true,
       });
-      await expect(running.locator(".activity-dock-agent-identity > span").last()).toContainText(
+      await expect(running.locator("[data-subagent-identity] > span").last()).toContainText(
         /gpt-6.1-sol/i,
       );
-      await expect(running.locator(".activity-dock-agent-metrics")).toContainText(
-        "3 steps, 1 failed",
-      );
+      await expect(running.locator("[data-subagent-state]")).toContainText("×1");
+      await expect(running).toHaveAttribute("aria-label", /3 steps, 1 failed/);
       await running.focus();
       await expect(running).toBeFocused();
       await page.keyboard.press("Enter");
@@ -242,6 +322,40 @@ for (const theme of ["dark", "light"]) {
 }
 
 for (const theme of ["dark", "light"]) {
+  for (const width of [800, 1280]) {
+    test(`expand and resize a child conversation at ${width}px in ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 850 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/chat/subagent-relay.html?theme=${theme}`);
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page.getByRole("button", { name: "Open reviewer", exact: true }).click();
+      const panel = page.getByRole("dialog");
+      const input = panel.getByRole("textbox");
+      await input.fill("Draft stays with this child.");
+      const size = () => panel.evaluate((element) => element.getBoundingClientRect().width);
+      const compact = await size();
+      const sash = panel.getByRole("separator", { name: "Resize panel" });
+      await sash.focus();
+      await sash.press("ArrowLeft");
+      await expect.poll(size).toBeGreaterThan(compact);
+      const resized = await size();
+      await panel.getByRole("button", { name: "Expand", exact: true }).click();
+      await expect.poll(size).toBeGreaterThan(resized);
+      await expect(input).toHaveValue("Draft stays with this child.");
+      await page.screenshot({
+        path: `temp/verification/subagent-message-flow/expanded-${theme}-${width}.png`,
+      });
+      await panel.getByRole("button", { name: "Restore", exact: true }).click();
+      await expect.poll(size).toBe(resized);
+      await expect(input).toHaveValue("Draft stays with this child.");
+      await page.screenshot({
+        path: `temp/verification/subagent-message-flow/compact-${theme}-${width}.png`,
+      });
+    });
+  }
   for (const width of [390, 768, 1024, 1440]) {
     test(`relay at ${width}px in ${theme} theme`, async ({ page }, testInfo) => {
       await page.setViewportSize({ width, height: 850 });
@@ -304,14 +418,13 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/chat/subagent-relay.html?inline-status&theme=${theme}`);
-      const label = page
-        .locator('[data-action-content="always"][data-interaction-tone="neutral"]')
-        .first();
+      // The row is one step trigger: chrome ink at rest, body ink on hover (shared Disclosure step).
+      const label = page.locator('summary[aria-label$="\'s work"]').first();
       const before = await label.evaluate((node) => getComputedStyle(node).color);
       await label.hover();
       const actual = await label.evaluate((node) => {
         const p = document.createElement("span");
-        p.style.color = "var(--ui-tone-neutral-fg)";
+        p.style.color = "var(--transcript-ink-chrome-active, var(--foreground))";
         node.appendChild(p);
         const expected = getComputedStyle(p).color;
         p.remove();
@@ -335,14 +448,31 @@ for (const theme of ["light", "dark"])
       // shows those runs, so the queue lists nothing while it drains normally.
       await expect(page.getByText(/subagent results? waiting/)).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Remove queued message" })).toHaveCount(0);
-      // Claude Code's built-in advisor: its own row with the model, the advice behind it.
+      // Claude Code's built-in advisor: details start closed and toggle on click.
       const advisor = page.locator("[data-advisor-row]");
       await expect(advisor).toContainText("Advisor · Fable 5.2");
-      await expect(advisor).toContainText("Done");
+      // A completed advisor row carries no status chip; only a failure or pending state does.
+      await expect(advisor).not.toContainText("Failed");
+      await expect(advisor).not.toContainText("Thinking");
+      await expect(advisor.locator("summary img")).toBeVisible();
+      await expect(advisor.locator("details")).not.toHaveAttribute("open");
+      await advisor.screenshot({
+        path: `temp/verification/advisor/completed-collapsed-${theme}-${width}.png`,
+      });
+      await expect(
+        advisor.getByText("Re-run the failed migration check", { exact: false }),
+      ).toBeHidden();
       await advisor.locator("summary").click();
-      await expect(advisor).toContainText("Re-run the failed migration check");
+      await expect(
+        advisor.getByText("Re-run the failed migration check", { exact: false }),
+      ).toBeVisible();
+      await advisor.locator("summary").click();
+      await expect(
+        advisor.getByText("Re-run the failed migration check", { exact: false }),
+      ).toBeHidden();
+      await advisor.locator("summary").click();
       // Transcript: a completion folds into its card; a notice without a card stays a disclosure.
-      const benchmark = page.getByRole("button", { name: /^(Show|Hide) Benchmark review's work$/ });
+      const benchmark = page.locator('summary[aria-label$="Benchmark review\'s work"]');
       await expect(async () => {
         if ((await benchmark.getAttribute("aria-expanded")) !== "true") await benchmark.click();
         await expect(page.getByText("Result received by the main agent")).toHaveCount(1, {
@@ -372,6 +502,35 @@ for (const theme of ["light", "dark"])
       await page.screenshot({
         path: `temp/verification/subagent-audit/audit-${theme}-${width}.png`,
       });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`advisor working with visible advice ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/chat/subagent-relay.html?audit&advisor-pending&theme=${theme}`,
+      );
+      const advisor = page.locator("[data-advisor-row]");
+      await expect(advisor.locator("summary img")).toBeVisible();
+      await expect(advisor.locator("summary")).toContainText("Thinking…");
+      await expect(advisor.locator('[class*="sweepClip"]')).toHaveCount(1);
+      await expect(advisor.locator("details")).not.toHaveAttribute("open");
+      await advisor.screenshot({
+        path: `temp/verification/advisor/working-collapsed-${theme}-${width}.png`,
+      });
+      await expect(
+        advisor.getByText("Re-run the failed migration check", { exact: false }),
+      ).toBeHidden();
+      await advisor.locator("summary").click();
+      await expect(
+        advisor.getByText("Re-run the failed migration check", { exact: false }),
+      ).toBeVisible();
+      await advisor.screenshot({ path: `temp/verification/advisor/working-${theme}-${width}.png` });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await expect(
+        advisor.getByText("Re-run the failed migration check", { exact: false }),
+      ).toBeVisible();
     });
 
 for (const theme of ["light", "dark"])
@@ -411,4 +570,111 @@ for (const theme of ["light", "dark"])
       await panel.getByRole("button", { name: "Back", exact: true }).click();
       await expect(panel).toContainText("Release audit: working through it.");
       await expect(panel.locator("[data-nested-subagent]")).toHaveCount(2);
+      await list.getByRole("button", { name: /^Open Changelog check,/ }).click();
+      await expect(panel).toHaveAccessibleName("Subagent: Changelog check");
+      await expect(panel.getByText("37", { exact: true })).toBeVisible();
+      await expect(
+        panel.getByRole("textbox", { name: "Message for Changelog check" }),
+      ).toBeVisible();
+      await panel.getByRole("button", { name: "Expand", exact: true }).click();
+      await page.screenshot({
+        path: `temp/verification/subagent-message-flow/nested-expanded-${theme}-${width}.png`,
+      });
+      await panel.getByRole("button", { name: "Back", exact: true }).click();
+      await expect(panel).toHaveAccessibleName("Subagent: Release audit");
+    });
+for (const theme of ["light", "dark"] as const) {
+  for (const width of [800, 1280]) {
+    test(`Workflow subagent phases and transcripts ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 850 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/chat/subagent-relay.html?workflow&theme=${theme}`);
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page.getByRole("button", { name: /Background work.*Show list/ }).click();
+      await expect(page.getByText("Workflow · Research", { exact: true })).toBeVisible();
+      await expect(page.getByText("Workflow · Review", { exact: true })).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/subagent-visibility/workflow-running-${theme}-${width}.png`,
+      });
+      await page.getByRole("button", { name: "Finish fixture workflow" }).click();
+      await page.getByRole("button", { name: "Session subagents: 2", exact: true }).click();
+      await expect(page.getByText("Workflow · Research", { exact: true })).toBeVisible();
+      await expect(page.getByText("Workflow · Review", { exact: true })).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/subagent-visibility/workflow-history-${theme}-${width}.png`,
+      });
+      await page.getByRole("menuitem", { name: /Research agent.*Done/ }).click();
+      const panel = page.getByRole("dialog");
+      await expect(panel.getByText("Research transcript fixture")).toBeVisible();
+      await expect(panel.getByRole("button", { name: /Stop|Relay/ })).toHaveCount(0);
+      await page.screenshot({
+        path: `temp/verification/subagent-visibility/workflow-transcript-${theme}-${width}.png`,
+      });
+    });
+  }
+}
+
+for (const theme of ["light", "dark"])
+  for (const width of [320, 800, 1280])
+    test(`delegated conversation timeline ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/chat/subagent-relay.html?timeline&theme=${theme}`);
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const panel = page.getByRole("dialog");
+      // Latest round open with the reply. Pending and failed inputs have no receiving round.
+      const latest = panel.locator("[data-timeline-input='t-m3']");
+      await expect(latest).toContainText("Message");
+      await expect(latest).toContainText("Queue");
+      await expect(latest).toContainText("Submitted");
+      const failed = panel.locator("[data-timeline-input='t-failed']");
+      await expect(failed).toContainText("Failed");
+      await expect(failed).toContainText("Host restarted before dispatch");
+      const queued = panel.locator("[data-timeline-input^='t-q']");
+      await expect(queued).toHaveCount(3);
+      for (const [index, name] of ["Queue A", "Queue B", "Queue C"].entries()) {
+        await expect(queued.nth(index)).toContainText(name);
+        await expect(queued.nth(index)).toContainText("Queued");
+        await expect(
+          queued.nth(index).locator("xpath=ancestor::*[@data-timeline-round]"),
+        ).toHaveCount(0);
+      }
+      await expect(panel).toContainText("sıradaki deneme mesajını aldım.");
+      // Earlier rounds on demand, in order, with the sent text verbatim.
+      const second = panel.locator("details[data-timeline-round='2']");
+      await expect(second).toHaveCount(1);
+      await second.locator("summary").click();
+      const sent = panel.locator("[data-timeline-input='t-m2']");
+      await expect(sent).toContainText("You");
+      await expect(sent).toContainText("Auto · Queue");
+      await expect(sent).toContainText("Accepted");
+      await expect(sent).toContainText("**not bold**");
+      await expect(sent.locator("strong")).toHaveCount(0);
+      await expect(panel).toContainText("Answer to the");
+      // Long unbroken text wraps inside the panel; nothing scrolls sideways.
+      const geometry = await panel.evaluate((el) => ({
+        width: el.clientWidth,
+        scroll: el.scrollWidth,
+        trail: (() => {
+          const trail = el.querySelector<HTMLElement>("[data-subagent-trail]");
+          return trail ? trail.scrollWidth - trail.clientWidth : 0;
+        })(),
+      }));
+      expect(geometry.scroll).toBeLessThanOrEqual(geometry.width);
+      expect(geometry.trail).toBeLessThanOrEqual(1);
+      // Opened state survives a re-render of the same run.
+      await expect(second).toHaveAttribute("open", "");
+      await page.screenshot({
+        path: `temp/verification/subagent-message-flow/timeline-${theme}-${width}.png`,
+      });
+      await queued.last().scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: `temp/verification/subagent-message-flow/queue-${theme}-${width}.png`,
+      });
     });

@@ -1,5 +1,7 @@
+import { errorText } from "../../../shared/lib/errors";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
@@ -24,8 +26,7 @@ import {
   type NotePrivateRecovery,
 } from "../notesInputOwners";
 import { requestOpenNoteLibrary } from "../noteNavigation";
-import { copyText } from "../../../platform/tauri/clipboard";
-import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 
 const retryingDrafts = new Set<string>();
 
@@ -69,7 +70,7 @@ async function retryDraft(id: string, draft: Draft) {
           window.dispatchEvent(new Event(NOTES_CHANGED_EVENT));
           return saved;
         } catch (error: unknown) {
-          draft.error = error instanceof Error ? error.message : String(error);
+          draft.error = errorText(error);
           notifyDrafts();
         }
       },
@@ -118,6 +119,11 @@ export function NoteDraftRecoveryNotice() {
           key={id}
           tone="danger"
           title={t("Could not save note")}
+          extra={
+            draft.error ? (
+              <ErrorDetails title={t("Could not save note")} detail={draft.error} />
+            ) : undefined
+          }
           action={{
             label: t("Retry save"),
             pending: retryingDrafts.has(id),
@@ -129,14 +135,6 @@ export function NoteDraftRecoveryNotice() {
             {(draft.edits.current.title ?? draft.saved?.title ?? draft.base.title).trim() ||
               t("Untitled")}
           </Text>
-          {draft.error ? (
-            <Text as="p" size="caption" tone="inherit" className="wrap-anywhere">
-              {draft.error}
-            </Text>
-          ) : null}
-          <Text as="p" size="caption" tone="inherit">
-            {t("Your draft is retained for this app session.")}
-          </Text>
         </Toast>
       ))}
     </>
@@ -144,13 +142,12 @@ export function NoteDraftRecoveryNotice() {
 }
 
 function PrivateInputRecovery({ input }: { input: NotePrivateRecovery }) {
-  const copied = useCopyFeedback({ resetKeys: [input.id, input.text] });
   return (
     <ToastSlot>
       <div data-note-private-recovery={input.id}>
         <ToastCard
           tone="info"
-          title={t("Retained note input")}
+          title={t("Review changes")}
           durationMs={null}
           onDismiss={() => discardNotePrivateRecovery(input.id)}
         >
@@ -158,16 +155,7 @@ function PrivateInputRecovery({ input }: { input: NotePrivateRecovery }) {
             {input.title || t("Untitled")}
           </Text>
           <Text as="p" size="caption" tone="inherit">
-            {t(
-              input.field === "tags"
-                ? "Tags input"
-                : input.field === "title"
-                  ? "Title input"
-                  : "Document input",
-            )}
-          </Text>
-          <Text as="p" size="caption" tone="inherit">
-            {t("Check the note before reusing this input.")}
+            {t("Your draft is retained for this app session.")}
           </Text>
           {input.text === null ? (
             <p>{t("The original input could not be read.")}</p>
@@ -177,25 +165,18 @@ function PrivateInputRecovery({ input }: { input: NotePrivateRecovery }) {
               <TextareaField label={t("Retained input")} value={input.text} readOnly rows={2} />
             </Disclosure>
           )}
-          {copied.copied || copied.failed ? (
-            <Text as="p" size="caption" tone="inherit" role="status">
-              {copied.failed ? copied.error : t("Exact text copied")}
-            </Text>
-          ) : null}
           <div className="mt-2 flex items-center justify-end gap-1">
-            <Button
+            <CopyButton
               variant="ghost"
               size="sm"
-              loading={copied.pending}
+              label={t("Copy exact text")}
+              copiedLabel={t("Exact text copied")}
+              resetKeys={[input.id, input.text]}
               disabled={input.text === null}
-              onClick={() => {
-                if (input.text !== null) copied.copy(() => copyText(input.text!));
-              }}
-            >
-              {t("Copy exact text")}
-            </Button>
+              text={() => input.text ?? ""}
+            />
             <Button
-              variant="ghost"
+              variant="secondary"
               size="sm"
               onClick={() => {
                 requestOpenNoteLibrary({ id: input.noteId });

@@ -1,3 +1,5 @@
+import { errorText } from "../../../shared/lib/errors";
+
 /**
  * The run lease: which side may start a turn of one conversation right now.
  *
@@ -29,11 +31,13 @@ export type RunLease = { holder: string; epoch: number; expiresAt: number };
 /** Another side is running a turn of this conversation. Nothing was sent. */
 export class LeaseHeldError extends Error {
   readonly code = RUN_LEASE_HELD;
+  declare readonly holder: string;
   constructor(
-    readonly holder: string,
+    holder: string,
     detail = "This session is running in bycoda on that computer. Wait for it to finish.",
   ) {
     super(`${RUN_LEASE_HELD}: ${detail}`);
+    this.holder = holder;
     this.name = "LeaseHeldError";
   }
 }
@@ -64,7 +68,7 @@ export function isLeaseHeld(failure: unknown): boolean {
 
 /** The refusal without its machine-readable prefix, for people. */
 export function leaseHeldText(failure: unknown): string {
-  const text = failure instanceof Error ? failure.message : String(failure ?? "");
+  const text = errorText(failure ?? "");
   return text
     .replace(/^Error:\s*/, "")
     .replace(/^Host rejected request:\s*/i, "")

@@ -44,6 +44,20 @@ describe("publish gate", () => {
     });
     expect(publishGate({ ...base, problems: [] })).toEqual({ disabled: false });
   });
+
+  it("links a publish permission problem to the account settings", () => {
+    const text = "QA: Grant publishing permission for this project in Accounts first.";
+    expect(
+      publishGate({ ...base, problems: [{ text, accountId: "qa", fix: "accounts" }] }),
+    ).toEqual({
+      disabled: true,
+      disabledReason: text,
+      fix: "accounts",
+    });
+    expect(draftGate({ ...base, hasAccounts: true, hasContent: true })).toEqual({
+      disabled: false,
+    });
+  });
 });
 
 describe("draft gate", () => {
@@ -84,4 +98,13 @@ describe("post lock by job state", () => {
     expect(postHasLockingJob("c1", [job("c2", "queued")])).toBe(false);
     expect(postHasLockingJob("c1", [])).toBe(false);
   });
+});
+
+it("blocks a draft save until every missing selected target is explicitly removed", () => {
+  const input = { ...base, hasAccounts: true, hasContent: true };
+  expect(draftGate({ ...input, hasMissingAccounts: true })).toMatchObject({
+    disabled: true,
+    disabledReason: "This account is no longer available. Uncheck it to continue.",
+  });
+  expect(draftGate({ ...input, hasMissingAccounts: false })).toEqual({ disabled: false });
 });

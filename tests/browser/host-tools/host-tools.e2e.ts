@@ -74,7 +74,7 @@ async function selectTool(page: Page, name: string, scope: Page | Locator = page
     return;
   }
   const menu = scope.getByRole("button", {
-    name: /^(Conversation tool selection|Oturum aracı seçimi)$/,
+    name: /^(Conversation tool selection|Konuşma aracı seçimi)$/,
   });
   if (await menu.isVisible()) {
     await menu.click();
@@ -92,7 +92,7 @@ for (const theme of ["light", "dark"])
       await page.goto(`/tests/browser/host-tools/host-tools.html?theme=${theme}`);
       await selectTool(page, "Logs");
       await page.getByRole("button", { name: "Panel placement", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Separate Logs panel", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Move Logs to layout", exact: true }).click();
       const toolbar = page.locator(
         ".tools-workspace-pane:has(.host-tools) > .tools-workspace-toolbar",
       );
@@ -202,6 +202,30 @@ for (const theme of ["light", "dark"])
         path: `temp/verification/feature-controls/host-browser-chrome-${theme}-${width}.png`,
       });
     });
+for (const theme of ["dark", "light"])
+  for (const width of [1280, 800]) {
+    test(`host browser viewport menu presets ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 850 });
+      await page.goto(`${fixture}?theme=${theme}`);
+      await selectTool(page, "Host browser");
+      await page.getByRole("button", { name: "Open website", exact: true }).click();
+      await expect(
+        page.getByRole("img", { name: "Shared host browser", exact: true }),
+      ).toBeVisible();
+      const trigger = page.getByRole("button", { name: "Browser viewport", exact: true });
+      await trigger.click();
+      await page.getByRole("button", { name: /^Preset:/ }).click();
+      const fourK = page.getByRole("option", { name: "4K (3840 × 2160)", exact: true });
+      await expect(fourK).toBeVisible();
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/browser-profiles/viewport-menu-${theme}-${width}.png`,
+      });
+      await fourK.click();
+      await expect(trigger).toContainText("3840 × 2160");
+    });
+  }
+
 test("tools share a compact responsive top bar", async ({ page }) => {
   for (const width of [390, 768, 1440, 1920]) {
     await page.setViewportSize({ width, height: 900 });
@@ -265,7 +289,7 @@ test("device preview uses the dock height with compact controls", async ({ page 
     await page.getByRole("button", { name: "Kurulum ve erişim", exact: true }).click();
     await expect(page.locator(".device-panel-setup-summary")).toBeInViewport();
     await page.keyboard.press("Escape");
-    await expect(page.getByRole("switch", { name: "Cihaz kontrolüne izin ver" })).not.toBeChecked();
+    await expect(page.getByRole("switch", { name: "Cihaz kontrolüne izin ver" })).toHaveCount(0);
     expect(
       await page.getByRole("tabpanel").evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
     ).toBe(true);
@@ -374,9 +398,12 @@ for (const theme of ["dark", "light"]) {
       await expect(timeline.locator('[data-level="success"]')).toHaveCount(1);
       for (const kind of ["server", "browser"]) {
         const row = timeline.locator(`.runtime-log-row[data-source="${kind}"]`).first();
-        await expect(row.locator(".runtime-log-meta > :first-child")).toHaveText(
-          `[${kind.toUpperCase()}]`,
-        );
+        await expect(
+          row.locator(".runtime-log-meta").getByRole("img", {
+            name: kind === "server" ? "Server" : "Browser",
+            exact: true,
+          }),
+        ).toBeVisible();
       }
       const colors = await timeline.evaluate((area) =>
         ["error", "warn", "info", "debug", "http", "success"].map(
@@ -428,7 +455,9 @@ test("resource charts show empty and sampled states without overflow", async ({ 
   await page.goto(fixture);
   await selectTool(page, "Resource usage");
   const panel = page.getByRole("region", { name: "Host resource diagnostics", exact: true });
-  await expect(panel.getByText("No samples yet", { exact: true })).toBeVisible();
+  await expect(
+    panel.getByText("Take a sample to start the charts.", { exact: true }),
+  ).toBeVisible();
   await page.screenshot({ path: "temp/verification/2026-10-13-resource-usage/empty.png" });
   await panel.getByRole("button", { name: "Sample now", exact: true }).click();
   await expect(panel.locator(".resource-value").first()).toHaveText("2.4%");
@@ -478,7 +507,7 @@ test("starts live logs and moves a separate panel without covering the workspace
   await page.keyboard.press("Escape");
   await expect(placement).toBeFocused();
   await placement.click();
-  await page.getByRole("menuitem", { name: "Separate Logs panel", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Move Logs to layout", exact: true }).click();
   const dock = page.getByRole("complementary", { name: "Tool panels" });
   await expect(dock).toBeVisible();
   await expect(dock.locator(".tools-workspace-toolbar")).toHaveCount(1);
@@ -492,7 +521,7 @@ test("starts live logs and moves a separate panel without covering the workspace
     await trigger.click();
     await page
       .getByRole("menuitemradio", {
-        name: `Dock ${placement[0].toUpperCase()}${placement.slice(1)}`,
+        name: `Dock ${placement}`,
         exact: true,
       })
       .click();
@@ -541,10 +570,10 @@ test("inspects unified logs, prepares an agent draft and clears a scoped view", 
   await panel.getByRole("button", { name: "Filters", exact: true }).click();
   const filters = page.getByRole("dialog", { name: "Log filters", exact: true });
   await filters.getByRole("button", { name: "Log level: All levels", exact: true }).click();
-  await page.getByRole("option", { name: "ERROR", exact: true }).click();
+  await page.getByRole("option", { name: "Error", exact: true }).click();
   await page.keyboard.press("Escape");
   await expect(timeline.getByText("Workspace loaded", { exact: true })).toHaveCount(0);
-  await timeline.locator("details").first().getByText("Details", { exact: true }).click();
+  await timeline.locator("details").first().locator("summary").click();
   await expect(timeline.getByText("Stack trace", { exact: true })).toBeVisible();
   await timeline.getByRole("checkbox").first().check();
   await panel.getByRole("button", { name: "Add to conversation", exact: true }).click();
@@ -610,18 +639,67 @@ test("keeps the log workspace within narrow and wide layouts", async ({ page }) 
   }
 });
 
-test("selects local and remote tool machines while clearing the previous browser controls", async ({
-  page,
-}) => {
+for (const theme of ["light", "dark"]) {
+  test(`lists the local tool machine once in ${theme} mode`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`${fixture}?theme=${theme}`);
+    await selectTool(page, "Host browser");
+    await page.getByRole("button", { name: /^Tool machine:/ }).click();
+    const picker = page.getByRole("listbox", { name: "Tool machine" });
+    const local = picker.getByRole("option", { name: /This computer/ });
+    await expect(local).toHaveCount(1);
+    await expect(local).toHaveAttribute("aria-selected", "true");
+    await expect(picker.getByRole("option", { name: "Fixture MacBook" })).toBeVisible();
+    await page.screenshot({ path: `temp/verification/local-machine-picker/${theme}.png` });
+  });
+
+  for (const width of [1280, 800]) {
+    test(`lists the remote project Host once in Devices at ${width}px in ${theme} mode`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`${fixture}?remote-machine-picker&theme=${theme}`);
+      await selectTool(page, "Devices");
+      const machine = page.getByRole("button", { name: /^Tool machine:/ });
+      await expect(machine).toHaveAccessibleName("Tool machine: Fixture MacBook");
+      await machine.click();
+      const picker = page.getByRole("listbox", { name: "Tool machine" });
+      const owner = picker.getByRole("option", { name: /Fixture MacBook/ });
+      const local = picker.getByRole("option", { name: "This computer" });
+      await expect(owner).toHaveCount(1);
+      await expect(owner).toContainText("Project host");
+      await expect(owner).toHaveAttribute("aria-selected", "true");
+      await local.click();
+      await machine.click();
+      await expect(local).toHaveAttribute("aria-selected", "true");
+      await page.screenshot({
+        path: `temp/verification/project-host-picker/${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: "Setup and access", exact: true }).click();
+      const setup = page.getByRole("dialog", { name: "Setup and access" });
+      await setup.getByRole("button", { name: /^Tool machine:/ }).click();
+      await expect(owner).toHaveCount(1);
+      await expect(owner).toContainText("Project host");
+      await expect(local).toHaveAttribute("aria-selected", "true");
+      await page.screenshot({
+        path: `temp/verification/project-host-picker/setup-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+}
+
+test("switching from the project host clears the previous browser controls", async ({ page }) => {
   await page.goto(fixture);
   await selectTool(page, "Host browser");
   const machine = page.getByRole("button", { name: /^Tool machine:/ });
   await expect(machine).toHaveAccessibleName("Tool machine: This computer");
-  await selectOption(page, page, "Tool machine", "This computer Local app");
   await page.getByRole("button", { name: "Open website", exact: true }).click();
   await expect(
     page.getByRole("img", {
-      name: "Shared host browser screenshot; click to interact when controlling",
+      name: "Shared host browser",
     }),
   ).toBeVisible();
   const liveView = page.getByRole("button", { name: "Live view", exact: true });
@@ -630,7 +708,7 @@ test("selects local and remote tool machines while clearing the previous browser
   await expect(page.getByRole("button", { name: "Open website", exact: true })).toBeEnabled();
   await expect(
     page.getByRole("img", {
-      name: "Shared host browser screenshot; click to interact when controlling",
+      name: "Shared host browser",
     }),
   ).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Live view", exact: true })).toHaveAttribute(
@@ -651,22 +729,18 @@ test("selects local and remote tool machines while clearing the previous browser
           params: Record<string, unknown>;
         }[];
       }
-    ).hostToolCalls
-      .filter((call) => call.target)
-      .map(({ method, target, params }) => ({ method, target, params })),
+    ).hostToolCalls.map(({ method, target, params }) => ({ method, target, params })),
   );
-  expect(
-    routing.some((call) => call.method === "browser.open" && call.target?.kind === "local"),
-  ).toBe(true);
+  expect(routing.some((call) => call.method === "browser.open" && !call.target)).toBe(true);
   expect(
     routing.some(
       (call) => call.method === "resources.read" && call.target?.machineId === "fixture-mac",
     ),
   ).toBe(true);
-  expect(routing.every((call) => !("projectId" in call.params))).toBe(true);
+  expect(routing.every(({ target, params }) => !target || !("projectId" in params))).toBe(true);
   expect(
     routing
-      .filter((call) => call.method.startsWith("browser."))
+      .filter((call) => call.target && call.method.startsWith("browser."))
       .every(
         (call) =>
           call.params.sessionId === "fixture-session" &&
@@ -760,43 +834,47 @@ test("development server tools fit wide and narrow terminal docks", async ({ pag
     });
   }
 });
-test("opens the browser and sends input using its control lease", async ({ page }) => {
+test("opens the browser and sends input directly from the preview", async ({ page }) => {
   await page.goto(fixture);
   await selectTool(page, "Host browser");
   await page.getByRole("button", { name: "Open website", exact: true }).click();
   await expect(
     page.getByRole("img", {
-      name: "Shared host browser screenshot; click to interact when controlling",
+      name: "Shared host browser",
     }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Browser controls and setup", exact: true }).click();
-  await page.getByLabel("Text to type into host browser").fill("Example text");
-  await page.getByRole("button", { name: "Type text" }).click();
-  await expect(page.getByLabel("Text to type into host browser")).toHaveValue("");
-  const inputs = await page.evaluate(() =>
-    (
-      window as unknown as { hostToolCalls: { method: string; params: Record<string, unknown> }[] }
-    ).hostToolCalls.filter((call) => call.method === "browser.input"),
-  );
-  expect(inputs).toEqual([
-    {
-      cwd: "G:/demo/example",
-      method: "browser.input",
-      params: expect.objectContaining({
-        kind: "text",
-        text: "Example text",
-        leaseId: "fixture-lease",
-        sessionId: "fixture-session",
+  await page.getByRole("img", { name: "Shared host browser", exact: true }).click();
+  await expect(page.getByLabel("Direct browser input")).toBeFocused();
+  await page.keyboard.insertText("Example text");
+  await page.keyboard.press("Enter");
+  const inputs = () =>
+    page.evaluate(() =>
+      (
+        window as unknown as {
+          hostToolCalls: { method: string; params: Record<string, unknown> }[];
+        }
+      ).hostToolCalls.filter((call) => call.method === "browser.input"),
+    );
+  await expect.poll(inputs).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        params: expect.objectContaining({
+          kind: "text",
+          text: "Example text",
+          leaseId: "fixture-lease",
+          sessionId: "fixture-session",
+        }),
       }),
-    },
-  ]);
-  await page.keyboard.press("Escape");
-  // The labelled control toggle releases the lease in one click.
-  await page.getByRole("button", { name: "Control active", exact: true }).click();
-  await expect(page.getByRole("button", { name: "View only", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Browser controls and setup", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Type text" })).toBeDisabled();
+      expect.objectContaining({ params: expect.objectContaining({ kind: "key", key: "Enter" }) }),
+    ]),
+  );
+  await expect(
+    page.getByRole("button", { name: "Browser controls and setup", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Control active", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Refresh frame" })).toBeEnabled();
+  await page.keyboard.press("F6");
+  await expect(page.getByRole("textbox", { name: "Website address", exact: true })).toBeFocused();
 });
 test("starts, boots and captures a device and stops live viewing on tab change", async ({
   page,
@@ -828,9 +906,9 @@ test("starts, boots and captures a device and stops live viewing on tab change",
         ).length,
     ),
   ).toBe(1);
-  await expect(
-    page.getByRole("switch", { name: "Allow device control", exact: true }),
-  ).not.toBeChecked();
+  await expect(page.getByRole("switch", { name: "Allow device control", exact: true })).toHaveCount(
+    0,
+  );
   await page.getByRole("button", { name: "Device options", exact: true }).click();
   await page.getByRole("button", { name: "Add device to conversation", exact: true }).click();
   await expect(page.getByText("Device added to draft.", { exact: true })).toBeVisible();
@@ -845,18 +923,14 @@ test("starts, boots and captures a device and stops live viewing on tab change",
     "aria-pressed",
     "true",
   );
-  // Control turns on only after the Host grants a lease, so wait for the claim.
-  await page.getByRole("switch", { name: "Allow device control", exact: true }).click();
-  await expect(
-    page.getByRole("switch", { name: "Allow device control", exact: true }),
-  ).toBeChecked();
+  await expect(page.getByRole("button", { name: "Home", exact: true })).toBeEnabled();
   await expect(page.getByText("App name or bundle ID", { exact: true })).not.toBeVisible();
   await page.getByRole("button", { name: "Choose app to open", exact: true }).click();
   await expect(page.getByText("App name or bundle ID", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await selectTool(page, "Resource usage");
   await page.getByRole("button", { name: "Sample now" }).click();
-  await expect(page.getByText("140.0 MiB", { exact: true })).toBeVisible();
+  await expect(page.getByText("140 MB", { exact: true })).toBeVisible();
   const count = await page.evaluate(
     () =>
       (window as unknown as { hostToolCalls: { method: string }[] }).hostToolCalls.filter(
@@ -886,7 +960,7 @@ for (const locale of ["en", "tr"]) {
           ? ["Devices", "Host browser", "Development servers", "Logs", "Resource usage"]
           : ["Cihazlar", "Tarayıcı", "Geliştirme sunucuları", "Loglar", "Kaynak kullanımı"];
       const toolTabs = page.getByRole("tablist", {
-        name: locale === "en" ? "Conversation tool selection" : "Oturum aracı seçimi",
+        name: locale === "en" ? "Conversation tool selection" : "Konuşma aracı seçimi",
         exact: true,
       });
       const wideTools = width >= NARROW_TOOLS_WIDTH;
@@ -898,7 +972,7 @@ for (const locale of ["en", "tr"]) {
         await expect(toolTabs.getByRole("tab")).toHaveCount(0);
         await expect(
           page.getByRole("button", {
-            name: locale === "en" ? "Conversation tool selection" : "Oturum aracı seçimi",
+            name: locale === "en" ? "Conversation tool selection" : "Konuşma aracı seçimi",
             exact: true,
           }),
         ).toBeVisible();
@@ -948,7 +1022,9 @@ for (const locale of ["en", "tr"]) {
               exact: true,
             })
             .click();
-          await expect(page.getByText("2.4%", { exact: true })).toBeVisible();
+          await expect(
+            page.getByText(locale === "en" ? "2.4%" : "%2,4", { exact: true }),
+          ).toBeVisible();
         }
         expect(
           await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
@@ -1027,7 +1103,7 @@ test("keeps preview separate from explicit website log monitoring", async ({ pag
   await page.getByRole("button", { name: "Open website", exact: true }).click();
   await expect(
     page.getByRole("img", {
-      name: "Shared host browser screenshot; click to interact when controlling",
+      name: "Shared host browser",
     }),
   ).toBeVisible();
   const monitorStarts = () =>
@@ -1114,7 +1190,7 @@ test("finds servers by port and name and retains list scroll across updates and 
     fixture.updateServer();
   });
   await page
-    .getByRole("button", { name: "Retry scan", exact: true })
+    .getByRole("button", { name: "Try again", exact: true })
     .evaluate((button: HTMLButtonElement) => button.click());
   await expect(
     list.getByRole("listitem", { name: "Updated preview server", exact: true }),
@@ -1142,7 +1218,7 @@ test("compact browser keeps preview and keyboard controls usable at all panel wi
       await expect(panel.getByRole("button", { name: "Open website", exact: true })).toBeEnabled();
       await expect(
         panel.getByRole("button", { name: "Browser controls and setup", exact: true }),
-      ).toBeVisible();
+      ).toHaveCount(0);
       await expect(page.getByRole("dialog", { name: "Browser controls and setup" })).toHaveCount(0);
       const address = panel.getByRole("textbox", { name: "Website address" });
       await address.focus();
@@ -1182,34 +1258,7 @@ test("compact browser keeps preview and keyboard controls usable at all panel wi
       await panel.getByRole("button", { name: "Browser viewport", exact: true }).click();
       await page.getByRole("radio", { name: "Fit preview", exact: true }).click();
       await page.keyboard.press("Escape");
-      await panel.getByRole("button", { name: "Browser controls and setup", exact: true }).click();
-      const controls = page.getByRole("dialog", {
-        name: "Browser controls and setup",
-        exact: true,
-      });
-      await expect(controls).toBeVisible();
-      const controlsBox = await controls.boundingBox();
-      expect(controlsBox!.x).toBeGreaterThanOrEqual(0);
-      expect(controlsBox!.x + controlsBox!.width).toBeLessThanOrEqual(width);
-      await controls
-        .getByRole("textbox", { name: "Text to type into host browser" })
-        .fill("Kept draft");
-      await expect(
-        controls.getByRole("textbox", { name: "Text to type into host browser" }),
-      ).toHaveValue("Kept draft");
-      expect(await panel.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
-      await page.keyboard.press("Escape");
-      await expect(controls).toHaveCount(0);
-      await expect(
-        panel.getByRole("button", { name: "Browser controls and setup", exact: true }),
-      ).toBeFocused();
-      await panel.getByRole("button", { name: "Browser controls and setup", exact: true }).click();
-      await expect(
-        controls.getByRole("textbox", { name: "Text to type into host browser" }),
-      ).toHaveValue("Kept draft");
-      await expect(
-        controls.getByRole("button", { name: "Close browser", exact: true }),
-      ).toBeEnabled();
+      await expect(panel.locator(".host-browser-frame")).toHaveAttribute("tabindex", "0");
     }
   }
   await page.setViewportSize({ width: 1920, height: 640 });
@@ -1300,7 +1349,7 @@ test("shared host danger feedback preserves server selection and recovery in bot
         window as unknown as { hostToolFixture: { scanFailure: boolean } }
       ).hostToolFixture.scanFailure = false;
     });
-    await page.getByRole("button", { name: "Retry scan", exact: true }).click();
+    await page.getByRole("button", { name: "Try again", exact: true }).click();
     await expect(error).toHaveCount(0);
     await expect(selected).toHaveAttribute("aria-pressed", "true");
   }
@@ -1316,21 +1365,25 @@ for (const theme of ["light", "dark"])
       await page.getByRole("button", { name: "Open website", exact: true }).click();
       await expect(
         page.getByRole("img", {
-          name: "Shared host browser screenshot; click to interact when controlling",
+          name: "Shared host browser",
         }),
       ).toBeVisible();
       await page.screenshot({
-        path: `temp/verification/goal-final-callers/browser-${theme}-${width}.png`,
+        path: `temp/verification/browser-direct-controls/browser-${theme}-${width}.png`,
         animations: "disabled",
       });
-      await page.getByRole("button", { name: "Browser controls and setup", exact: true }).click();
-      await expect(page.getByLabel("Text to type into host browser")).toBeVisible();
+      await page.getByRole("button", { name: "Browser viewport", exact: true }).click();
+      await expect(
+        page.getByRole("dialog", { name: "Browser viewport", exact: true }),
+      ).toBeVisible();
       await page.screenshot({
-        path: `temp/verification/goal-final-callers/browser-controls-${theme}-${width}.png`,
+        path: `temp/verification/browser-direct-controls/viewport-${theme}-${width}.png`,
         animations: "disabled",
       });
       await page.keyboard.press("Escape");
-      await expect(page.getByLabel("Text to type into host browser")).toHaveCount(0);
+      await expect(page.getByRole("dialog", { name: "Browser viewport", exact: true })).toHaveCount(
+        0,
+      );
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );

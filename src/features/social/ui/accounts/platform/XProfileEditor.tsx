@@ -1,23 +1,23 @@
-import { InlineError } from "../../../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../../../shared/ui/InlineError";
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { useState } from "react";
 import { t } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { Heading } from "../../../../../shared/ui/Heading";
+import { SectionLabel } from "../../../../../shared/ui/SectionLabel";
 
 import { TextareaField } from "../../../../../shared/ui/TextareaField";
-import { Text } from "../../../../../shared/ui/Text";
 import { TextField } from "../../../../../shared/ui/TextField";
 import { DisabledReason, gateProps, type ActionGate } from "../../common/DisabledReason";
 import type { XProfilePatch, XProfileState } from "../../../model/socialBrowser";
 import type { SocialClient } from "../../../model/socialClient";
 import { useAccountWrite } from "../useAccountWrite";
 import "../accounts.css";
+import "./x.css";
 
 export type XProfileEditorProps = {
   client: SocialClient;
   accountId: string;
-  accountName: string;
 };
 
 type TextFieldName = "name" | "bio" | "location" | "website";
@@ -25,12 +25,15 @@ type TextFieldName = "name" | "bio" | "location" | "website";
 const HANDLE = /^[A-Za-z0-9_]{1,15}$/;
 
 /** The public X profile fields and the follow action. Reads happen on request, never on open. */
-export function XProfileEditor({ client, accountId, accountName }: XProfileEditorProps) {
+export function XProfileEditor({ client, accountId }: XProfileEditorProps) {
   const [saved, setSaved] = useState<XProfileState>();
   const [values, setValues] = useState<XProfileState>();
   const [handle, setHandle] = useState("");
-  const [followed, setFollowed] = useState<{ handle: string; following: boolean }>();
-  const { error, is, write } = useAccountWrite(
+  const [followed, setFollowed] = useState<{
+    handle: string;
+    following: boolean;
+  }>();
+  const { failureTitle, details, is, write } = useAccountWrite(
     t("The profile could not be verified. Read the profile again before saving."),
   );
 
@@ -39,13 +42,8 @@ export function XProfileEditor({ client, accountId, accountName }: XProfileEdito
     for (const field of ["name", "bio", "location", "website"] as TextFieldName[])
       if (saved[field] !== values[field]) patch[field] = values[field];
   const changed = Object.keys(patch).length > 0;
-  const saveGate: ActionGate = !values
-    ? { disabled: true, disabledReason: t("Read the profile first.") }
-    : !values.name.trim()
-      ? { disabled: true, disabledReason: t("Enter a profile name.") }
-      : !changed
-        ? { disabled: true, disabledReason: t("No changes to save.") }
-        : { disabled: false };
+  // An unchanged form needs no reason; only the missing name is explained.
+  const saveReason = values && !values.name.trim() ? t("Enter a profile name.") : undefined;
   const followGate: ActionGate = HANDLE.test(handle)
     ? { disabled: false }
     : {
@@ -94,25 +92,21 @@ export function XProfileEditor({ client, accountId, accountName }: XProfileEdito
       aria-label={t("X profile")}
     >
       <Heading size="item">{t("X profile and following")}</Heading>
-      <Text as="p" tone="muted" leading="snug" className="social-muted">
-        {t("Public profile fields of {p1}.", { p1: accountName })}
-      </Text>
       <Button
         variant="secondary"
         size="sm"
         className="self-start"
         loading={is("read")}
-        disabled={is("read")}
         onClick={read}
       >
         {t("Read profile")}
       </Button>
       {values ? (
         <form
-          {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
+          className="social-x-group"
           onSubmit={(event) => {
             event.preventDefault();
-            if (!saveGate.disabled) save();
+            if (changed && !saveReason) save();
           }}
         >
           {field("name", t("Profile name"), 50)}
@@ -126,19 +120,25 @@ export function XProfileEditor({ client, accountId, accountName }: XProfileEdito
               setValues((current) => current && { ...current, bio: next });
             }}
           />
-          {field("location", t("Location"), 30)}
-          {field("website", t("Website"), 100)}
-          <DisabledReason
+          <div className="social-x-grid">
+            {field("location", t("Location"), 30)}
+            {field("website", t("Website"), 100)}
+          </div>
+          <Button
             type="submit"
             variant="primary"
             size="sm"
             loading={is("save")}
-            {...gateProps(saveGate)}
+            disabled={!changed || !!saveReason}
+            disabledReason={saveReason}
           >
             {t("Save profile")}
-          </DisabledReason>
+          </Button>
         </form>
       ) : null}
+      <SectionLabel variant="inline" size="secondary" as="h4">
+        {t("Follow an account")}
+      </SectionLabel>
       <div className="social-field-row">
         <TextField
           label={t("X username to follow")}
@@ -159,14 +159,16 @@ export function XProfileEditor({ client, accountId, accountName }: XProfileEdito
         </DisabledReason>
       </div>
       {followed ? (
-        <Text as="p" tone="muted" leading="snug" className="social-muted">
+        <InlineMessage tone="info" live="off">
           {followed.following
-            ? t("Following @{p1}", { p1: followed.handle })
-            : t("Not following @{p1}", { p1: followed.handle })}
-        </Text>
+            ? t("Following @{p0}", { p0: followed.handle })
+            : t("Not following @{p0}", { p0: followed.handle })}
+        </InlineMessage>
       ) : null}
-      {error ? (
-        <InlineError retry={{ onRetry: read, label: t("Read profile") }}>{error}</InlineError>
+      {failureTitle ? (
+        <InlineError details={details} retry={{ onRetry: read, label: t("Read profile") }}>
+          {t("The profile could not be verified. Read the profile again before saving.")}
+        </InlineError>
       ) : null}
     </section>
   );

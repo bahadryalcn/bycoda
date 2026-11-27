@@ -4,6 +4,9 @@ import type { HarnessEvent } from "../../core/types";
 import { MINIMUM_OPENCODE_V2_VERSION } from "./opencodeProtocol";
 
 let onStdout: ((line: string) => void) | undefined;
+let onChildExit: ((code: number | null) => void) | undefined;
+let watchedChild: object | undefined;
+let spawnPrintsUrl = true;
 let onSseEvent: ((event: Record<string, unknown>) => void) | undefined;
 let finishPrompt: ((value: { status: number; body: string }) => void) | undefined;
 let promptStarted = false;
@@ -42,7 +45,6 @@ vi.mock("../../core/child", () => ({
   createChildProcessHandle: processIo.create,
   closeHarnessSse: async () => undefined,
   execChild: async () => processIo.version,
-  freeHarnessPort: async () => 4096,
   harnessHttp,
   captureHostHarnessHttp: (run: HostRunHandle, demand: { providerSessionId?: string }) => {
     scopedBindings.push({ run, providerSessionId: demand.providerSessionId });
@@ -65,11 +67,13 @@ vi.mock("../../core/child", () => ({
   capturedChildRoute: (handle: { sessionId: string }) => handle.sessionId,
   spawnChild: async (...args: unknown[]) => {
     processIo.spawn(...args);
-    onStdout?.("opencode server listening on http://127.0.0.1:4096");
+    if (spawnPrintsUrl) onStdout?.("opencode server listening on http://127.0.0.1:4096");
   },
   unwatchChild: () => undefined,
-  watchChild: (_id: object, stdout: (line: string) => void) => {
+  watchChild: (id: object, stdout: (line: string) => void, exit: (code: number | null) => void) => {
+    watchedChild = id;
     onStdout = stdout;
+    onChildExit = exit;
   },
   watchSse: (_id: string, event: (data: string) => void) => {
     onSseEvent = (value) => event(JSON.stringify(value));
@@ -128,6 +132,9 @@ function delta(messageID: string, text: string) {
 
 beforeEach(() => {
   onStdout = undefined;
+  onChildExit = undefined;
+  watchedChild = undefined;
+  spawnPrintsUrl = true;
   onSseEvent = undefined;
   finishPrompt = undefined;
   promptStarted = false;
@@ -181,6 +188,45 @@ it("forwards only incremental OpenCode assistant text", async () => {
   const original = processIo.create.mock.results[0].value;
   expect(processIo.spawn.mock.calls[0][0]).toBe(original);
   expect(processIo.kill).toHaveBeenCalledWith(original);
+});
+
+it("fails a v1 text server as soon as its own child exits before printing a URL", async () => {
+  spawnPrintsUrl = false;
+  const started = Date.now();
+  const result = runOpenCodeTextPrompt({
+    cwd: "/repo",
+    model: "openrouter/anthropic/claude-haiku",
+    prompt: "question",
+  });
+
+  await waitFor(() => processIo.spawn.mock.calls.length > 0, "spawn");
+  const original = processIo.create.mock.results[0].value;
+  expect(watchedChild).toBe(original);
+  onChildExit?.(1);
+
+  await expect(result).rejects.toThrow(
+    "OpenCode text server exited before startup completed (code: 1)",
+  );
+  // Fails well before the 30 s SERVER_TIMEOUT_MS fallback would expire.
+  expect(Date.now() - started).toBeLessThan(5_000);
+});
+
+it("starts a v1 text server with an OS-assigned port, not a pre-probed one", async () => {
+  const result = runOpenCodeTextPrompt({
+    cwd: "/repo",
+    model: "openrouter/anthropic/claude-haiku",
+    prompt: "question",
+  });
+
+  await waitFor(() => promptStarted, "prompt");
+  expect(processIo.spawn.mock.calls[0][2]).toEqual(["serve", "--hostname=127.0.0.1", "--port=0"]);
+  message("assistant_message", "assistant");
+  part("assistant_message", "ok");
+  finishPrompt?.({
+    status: 200,
+    body: JSON.stringify({ info: {}, parts: [{ type: "text", text: "ok" }] }),
+  });
+  await expect(result).resolves.toBe("ok");
 });
 
 it("does not invent or terminate a child for an external OpenCode v2 service", async () => {

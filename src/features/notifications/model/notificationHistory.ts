@@ -19,8 +19,13 @@ export const NOTIFICATION_HISTORY_KINDS = [
   "background",
   "account",
   "owner",
+  /** A warning or an action-bearing toast that belongs to no conversation. */
+  "notice",
 ] as const;
 export type NotificationHistoryKind = (typeof NOTIFICATION_HISTORY_KINDS)[number];
+export type NotificationHistoryTone = "warning" | "danger";
+/** Earlier arrival times kept on a folded row; older ones only count. */
+export const MAX_EARLIER_ARRIVALS = 20;
 
 /** Window event after this window recorded an entry; other windows get `storage`. */
 export const NOTIFICATION_HISTORY_EVENT = "bycoda:notification-history-change";
@@ -38,7 +43,18 @@ export type NotificationHistoryEntry = {
   harness?: HarnessId;
   label: string;
   kind: NotificationHistoryKind;
+  /** When the event happened (a turn's end), not when it was written to history. */
   occurredAt: number;
+  /** When this computer announced it, only when that was later than `occurredAt`. */
+  announcedAt?: number;
+  /** Severity of a `notice` or toast failure; conversation kinds derive theirs. */
+  tone?: NotificationHistoryTone;
+  /** How many identical arrivals this row stands for; absent means one. */
+  count?: number;
+  /** Times of the earlier arrivals folded into this row, newest first. */
+  earlier?: number[];
+  /** The owner marked this row read; a folded arrival clears it. */
+  read?: boolean;
 };
 export const notificationKey = (notice: PendingApprovalNotice) =>
   `${notice.sessionId}:${notice.kind}:${notice.requestId}`;
@@ -67,6 +83,12 @@ export function readNotificationHistoryStatus(): NotificationHistoryRead {
           ) &&
           NOTIFICATION_HISTORY_KINDS.includes(item.kind) &&
           (item.target === undefined || typeof item.target === "string") &&
+          (item.announcedAt === undefined || Number.isFinite(item.announcedAt)) &&
+          (item.tone === undefined || item.tone === "warning" || item.tone === "danger") &&
+          (item.count === undefined || (Number.isInteger(item.count) && item.count >= 1)) &&
+          (item.earlier === undefined ||
+            (Array.isArray(item.earlier) && item.earlier.every(Number.isFinite))) &&
+          (item.read === undefined || typeof item.read === "boolean") &&
           Number.isFinite(item.occurredAt) &&
           item.occurredAt >= 0 &&
           item.occurredAt <= 8_640_000_000_000_000,
@@ -167,10 +189,41 @@ export function removeNotificationHistoryEntry(
   });
 }
 
+/** Two arrivals are the same event when everything the owner reads on the row is equal. */
+const sameContent = (a: NotificationHistoryEntry, b: NotificationHistoryEntry) =>
+  a.kind === b.kind &&
+  a.tone === b.tone &&
+  (a.target ?? "") === (b.target ?? "") &&
+  a.sessionId === b.sessionId &&
+  a.cwd === b.cwd &&
+  a.title === b.title &&
+  a.label === b.label;
+
+/** The stored row takes the newer arrival's identity, counts it, and is unread again. */
+function foldArrival(
+  existing: NotificationHistoryEntry,
+  arrival: NotificationHistoryEntry,
+): NotificationHistoryEntry {
+  const newest = arrival.occurredAt >= existing.occurredAt ? arrival : existing;
+  const times = [existing.occurredAt, ...(existing.earlier ?? []), arrival.occurredAt].sort(
+    (a, b) => b - a,
+  );
+  const { read: _read, ...base } = newest;
+  return {
+    ...base,
+    key: newest.key,
+    count: (existing.count ?? 1) + 1,
+    occurredAt: times[0],
+    earlier: times.slice(1, 1 + MAX_EARLIER_ARRIVALS),
+  };
+}
+
 /**
  * Records one announced event under the same lock as every other write. An
  * entry with the same key and time is already there (another window or a
- * repeated delivery) and is not added twice. Resolves with whether the list
+ * repeated delivery) and is not added twice; one with the same content as a
+ * stored row folds into it (count, latest time, unread) instead of adding a
+ * row, and the cap applies after that. Resolves with whether the list
  * changed; recording is best effort and never throws.
  */
 export async function recordNotificationHistory(entry: NotificationHistoryEntry): Promise<boolean> {
@@ -180,7 +233,16 @@ export async function recordNotificationHistory(entry: NotificationHistoryEntry)
       if (read.state !== "ready" || read.entries.some((item) => sameOccurrence(item, entry))) {
         return false;
       }
-      return writeNotificationHistory(mergeNotificationHistory([entry], read.entries));
+      const index = read.entries.findIndex((item) => sameContent(item, entry));
+      if (index < 0)
+        return writeNotificationHistory(mergeNotificationHistory([entry], read.entries));
+      const folded = foldArrival(read.entries[index], entry);
+      return writeNotificationHistory(
+        mergeNotificationHistory(
+          [folded],
+          read.entries.filter((_, at) => at !== index),
+        ),
+      );
     });
     if (recorded && typeof window !== "undefined") {
       window.dispatchEvent(new Event(NOTIFICATION_HISTORY_EVENT));
@@ -189,6 +251,20 @@ export async function recordNotificationHistory(entry: NotificationHistoryEntry)
   } catch {
     return false;
   }
+}
+
+/** Marks one stored row read and returns the stored list, or `null` when it could not be written. */
+export function markNotificationHistoryRead(
+  target: NotificationHistoryEntry,
+): NotificationHistoryEntry[] | null | Promise<NotificationHistoryEntry[] | null> {
+  return withHistoryLock(() => {
+    const read = readNotificationHistoryStatus();
+    if (read.state !== "ready") return null;
+    const next = read.entries.map((entry) =>
+      sameOccurrence(entry, target) ? { ...entry, read: true } : entry,
+    );
+    return writeNotificationHistory(next) ? next : null;
+  });
 }
 
 export function clearNotificationHistory(): boolean | Promise<boolean> {

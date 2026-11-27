@@ -22,8 +22,9 @@ import uuid
 
 from local_update_lib import (digest, lock, read_json, run, safe_child,
                               tree_hashes, verify_tree, write_json, alive, windows_binary_digest, PRODUCT_IDENTITY, package_identity,
-                              spawn_windows_updater, UpdaterLaunchRefused, assert_windows_installer_idle, package_components, count)
-from local_install import verify_host, desktop_db, verify_desktop_backup
+                              spawn_windows_updater, UpdaterLaunchRefused, assert_windows_installer_idle, package_components)
+from local_install import (verify_host, desktop_db, verify_desktop_backup, app_active_count,
+                           active_session_ids, host_active_ids, host_installation_exists)
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 TOOLS = ('local_update.py', 'local_update_lib.py', 'local_install.py')
@@ -371,11 +372,8 @@ def status():
         # A saved waiting count belongs to its report, not to the current machine.
         if 'activeSessions' in current:
             current['reportedActiveSessions'] = current.pop('activeSessions')
-        database = base.parent / 'host.db' if component == 'host' else desktop_db()
-        sql = ("select count(*) from sessions where status='running' or shell_running=1" if component == 'host'
-               else 'select count(*) from in_flight_sessions')
         try:
-            active = count(database, sql)
+            active = len(host_active_ids(base.parent)) if component == 'host' else app_active_count(base.parent, desktop_db())
             gate = {'state': 'idle' if active == 0 else 'busy', 'activeSessions': active}
         except (OSError, RuntimeError, sqlite3.Error):
             gate = {'state': 'unknown', 'activeSessions': None}
@@ -386,7 +384,8 @@ def status():
 def status_script():
     """Run the same read-only projection remotely without installing updater tools."""
     imports = 'import contextlib,ctypes,json,os,pathlib,re,sqlite3,time'
-    functions = (read_json, alive, count, desktop_db, install_job_status, status)
+    functions = (read_json, alive, desktop_db, active_session_ids, host_active_ids, host_installation_exists,
+                 app_active_count, install_job_status, status)
     return '\n\n'.join([imports, 'PRODUCT_IDENTITY = ' + repr(PRODUCT_IDENTITY),
                           *(inspect.getsource(function) for function in functions),
                           'print(json.dumps(status(), indent=2))'])
@@ -714,7 +713,7 @@ def worker(request):
         package_inputs = {n: b for n, b in files.items()
                           if n in ('LICENSE', 'host/package.mjs', 'host/package-archive.mjs',
                                    'scripts/build/build-info.mjs', 'Cargo.toml', 'Cargo.lock',
-                                   'scripts/build/host-service-launcher.mjs',
+                                   'scripts/build/host-service-launcher.mjs', 'scripts/build/host-pty.mjs',
                                    'scripts/release/sign-desktop-helper.ps1')
                           or n.startswith('packages/host-service-launcher/')}
         keys['host'] = keys['hostCompile'] + ':package-v2:' + fingerprint(package_inputs) + target

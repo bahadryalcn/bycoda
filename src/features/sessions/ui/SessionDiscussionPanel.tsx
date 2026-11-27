@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
@@ -59,7 +60,11 @@ export function SessionDiscussionPanel({
 }: SessionDiscussionPanelProps) {
   const t = useT();
   const host = useRef<HTMLDivElement>(null);
-  const [error, setError] = useState("");
+  // `summary` is a finished sentence; `detail` is the raw provider text kept behind Details.
+  const [problem, setProblem] = useState<{
+    summary?: string;
+    detail?: string;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [revision, setRevision] = useState(0);
   const request = useRef(0);
@@ -100,7 +105,7 @@ export function SessionDiscussionPanel({
   useEffect(() => {
     const generation = ++request.current;
     let active = true;
-    setError("");
+    setProblem(null);
     setLoading(true);
     void open()
       .then((sessionId) => {
@@ -108,8 +113,7 @@ export function SessionDiscussionPanel({
           mount({ sessionId, host: host.current });
       })
       .catch((cause: unknown) => {
-        if (active && generation === request.current)
-          setError(cause instanceof Error ? cause.message : String(cause));
+        if (active && generation === request.current) setProblem({ detail: errorText(cause) });
       })
       .finally(() => {
         if (active && generation === request.current) setLoading(false);
@@ -126,43 +130,53 @@ export function SessionDiscussionPanel({
     if (!onRestart) return;
     const generation = ++request.current;
     setLoading(true);
-    setError("");
+    setProblem(null);
     void onRestart()
       .then((sessionId) => {
         if (generation === request.current && host.current)
           mount({ sessionId, host: host.current });
       })
       .catch((cause: unknown) => {
-        if (generation === request.current) setError(presentRemoteError(cause, { explicit: true }));
+        if (generation === request.current)
+          setProblem({
+            summary: presentRemoteError(cause, { explicit: true }),
+          });
       })
       .finally(() => {
         if (generation === request.current) setLoading(false);
       });
   };
+  const restartAction = onRestart ? (
+    <Button
+      variant="ghost"
+      iconOnly
+      label={t("Restart conversation")}
+      disabled={loading}
+      onClick={restart}
+    >
+      <RotateCcw className="icon-sm" aria-hidden />
+    </Button>
+  ) : null;
   const content = (
     <>
-      {narrow && actions ? (
-        <div className="flex items-center gap-2 px-3 py-2">{actions}</div>
+      {narrow && (actions || restartAction) ? (
+        <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+          {actions}
+          {restartAction}
+        </div>
       ) : null}
-      {narrow && onRestart ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          startIcon={<RotateCcw className="icon-sm" aria-hidden />}
-          disabled={loading}
-          onClick={restart}
-        >
-          {t("Restart conversation")}
-        </Button>
-      ) : null}
-      {error ? (
+      {problem ? (
         <InlineError
-          retry={{ label: t("Try again"), onRetry: () => setRevision((value) => value + 1) }}
+          details={problem.detail}
+          retry={{
+            label: t("Try again"),
+            onRetry: () => setRevision((value) => value + 1),
+          }}
         >
-          {error}
+          {problem.summary ?? t("Could not open this conversation.")}
         </InlineError>
       ) : null}
-      {loading ? <LoadingText className="p-3" /> : null}
+      {loading ? <LoadingText inset="row" /> : null}
       <div ref={host} className="flex min-h-0 min-w-0 flex-1 flex-col" />
     </>
   );
@@ -189,7 +203,7 @@ export function SessionDiscussionPanel({
         {...sashProps}
         appearance="hidden"
         label={t("Resize discussion")}
-        className="absolute inset-y-0 -start-px"
+        className="absolute inset-y-0 start-0"
       />
       <PaneHeader
         titleAs="div"
@@ -197,17 +211,7 @@ export function SessionDiscussionPanel({
         actions={
           <>
             {actions}
-            {onRestart ? (
-              <Button
-                variant="ghost"
-                iconOnly
-                label={t("Restart conversation")}
-                disabled={loading}
-                onClick={restart}
-              >
-                <RotateCcw className="icon-sm" />
-              </Button>
-            ) : null}
+            {restartAction}
             <Button variant="ghost" iconOnly label={t("Close panel")} onClick={onClose}>
               <X className="icon-sm" />
             </Button>

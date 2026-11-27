@@ -38,12 +38,7 @@ export function InboxDiscussionPanel({
           rememberedWidth = width;
         },
       }}
-      title={
-        <>
-          {t("Ask · ")}
-          {inboxItemRef(item)}
-        </>
-      }
+      title={t("Ask about {p0}", { p0: inboxItemRef(item) })}
       label={t("Ask about {p0}", { p0: inboxItemRef(item) })}
       onOpen={() => onOpen(item)}
       onRestart={() => onRestart(item)}

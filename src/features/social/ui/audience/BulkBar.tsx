@@ -36,7 +36,13 @@ export function BulkBar({ count, items, onClear, onPick, disabled }: BulkBarProp
       >
         {t("{p0} selected", { p0: formatNumber(count) })}
       </Text>
-      <Button variant="ghost" size="sm" disabled={disabled} onClick={onClear}>
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled={disabled}
+        disabledReason={disabled ? t("Wait for the current action to finish.") : undefined}
+        onClick={onClear}
+      >
         {t("Clear selection")}
       </Button>
       <Button
@@ -44,6 +50,7 @@ export function BulkBar({ count, items, onClear, onPick, disabled }: BulkBarProp
         variant="secondary"
         size="sm"
         disabled={disabled}
+        disabledReason={disabled ? t("Wait for the current action to finish.") : undefined}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}

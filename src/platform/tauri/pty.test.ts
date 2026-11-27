@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { decodeBase64, decodeBase64Loop, decodePtyChunk, trimReplay } from "./pty";
+import { describe, expect, it } from "vitest";
+import { decodePtyChunk, trimReplay } from "./pty";
 
 const KB = 1024;
 
@@ -47,29 +47,5 @@ describe("trimReplay", () => {
   it("never drops the only chunk", () => {
     const sizes = [512 * KB];
     expect(trimReplay(sizes, 512 * KB)).toEqual({ drop: 0, bytes: 512 * KB });
-  });
-});
-
-describe("decodeBase64", () => {
-  it("matches the loop fallback on random bytes", () => {
-    for (let length = 0; length < 300; length += 7) {
-      const bytes = new Uint8Array(length);
-      for (let i = 0; i < length; i++) bytes[i] = Math.floor(Math.random() * 256);
-      const encoded = btoa(String.fromCharCode(...bytes));
-      expect(Array.from(decodeBase64(encoded))).toEqual(Array.from(bytes));
-      expect(Array.from(decodeBase64Loop(encoded))).toEqual(Array.from(bytes));
-    }
-  });
-
-  it("uses the native decoder when the engine provides one", () => {
-    const original = (Uint8Array as unknown as { fromBase64?: unknown }).fromBase64;
-    const native = vi.fn(() => new Uint8Array([1, 2, 3]));
-    (Uint8Array as unknown as { fromBase64?: unknown }).fromBase64 = native;
-    try {
-      expect(Array.from(decodeBase64("AQID"))).toEqual([1, 2, 3]);
-      expect(native).toHaveBeenCalledOnce();
-    } finally {
-      (Uint8Array as unknown as { fromBase64?: unknown }).fromBase64 = original;
-    }
   });
 });

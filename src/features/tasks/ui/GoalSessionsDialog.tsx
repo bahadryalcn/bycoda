@@ -3,11 +3,13 @@ import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Modal } from "../../../shared/ui/Modal";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { taskSessionIds } from "../model/backgroundSession";
 import type { BoardTask } from "../model/taskClient";
-import { STATUS_LABELS } from "./TaskDetail";
+import { taskStatusLabel } from "../model/statusLabels";
 import type { TaskGoalsController } from "./TaskGoalsController";
 import "./task-goals.css";
 
@@ -35,6 +37,9 @@ export function GoalSessionsDialog({
     >
       <Text as="div" size="secondary" tone="inherit" className="grid">
         <SectionLabel count={goalTasks.length}>{t("Tasks")}</SectionLabel>
+        {goalTasks.length === 0 ? (
+          <EmptyState size="inline" description={t("No tasks yet")} />
+        ) : null}
         {goalTasks.map((task, index) => {
           const sessions = taskSessionIds(task);
           return (
@@ -50,18 +55,25 @@ export function GoalSessionsDialog({
                   {task.title}
                 </Text>
                 <Badge size="sm" appearance="subtle">
-                  {t(STATUS_LABELS[task.status])}
+                  {taskStatusLabel(task.status)}
                 </Badge>
               </div>
-              <Text size="micro" tone="secondary" className="break-all">
-                {task.branch} {task.worktreeCwd ?? task.workspace?.checkoutCwd ?? task.cwd}
-              </Text>
+              {task.branch ? (
+                <OverflowTooltip
+                  label={`${task.branch} ${task.worktreeCwd ?? task.workspace?.checkoutCwd ?? task.cwd}`}
+                >
+                  <Text size="micro" tone="secondary" truncate>
+                    {task.branch}
+                  </Text>
+                </OverflowTooltip>
+              ) : null}
               <div className="flex flex-wrap items-center gap-2">
                 {sessions.worker ? (
                   <Button
                     variant="secondary"
                     size="sm"
                     type="button"
+                    aria-label={t("Open worker session: {p0}", { p0: task.title })}
                     onClick={() => {
                       goals.setSessionsFor(null);
                       onOpenSession(task, sessions.worker!);
@@ -79,6 +91,7 @@ export function GoalSessionsDialog({
                     variant="secondary"
                     size="sm"
                     type="button"
+                    aria-label={t("Open review session: {p0}", { p0: task.title })}
                     onClick={() => {
                       goals.setSessionsFor(null);
                       onOpenSession(task, sessions.review!);

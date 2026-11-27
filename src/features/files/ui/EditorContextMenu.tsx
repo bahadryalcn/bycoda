@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { selectAll } from "@codemirror/commands";
 import { openSearchPanel } from "@codemirror/search";
 import { EditorView } from "@codemirror/view";
@@ -54,7 +55,7 @@ export function EditorContextMenu({
     item("cut", t("Cut"), !writable() || !hasSelection, "Mod+X"),
     item("copy", t("Copy"), !hasSelection, "Mod+C"),
     item("paste", t("Paste"), !writable(), "Mod+V"),
-    item("select", t("Select All"), false, "Mod+A"),
+    item("select", t("Select all"), false, "Mod+A"),
     { kind: "sep" },
     item("find", t("Find"), false, findShortcut ?? undefined),
     ...(target.format ? [item("format", t("Format document"), !writable(), "Alt+Shift+F")] : []),
@@ -101,7 +102,7 @@ export function EditorContextMenu({
             });
         }
       } catch (error) {
-        if (target.isCurrent()) onError(error instanceof Error ? error.message : String(error));
+        if (target.isCurrent()) onError(errorText(error));
       }
     }
   };

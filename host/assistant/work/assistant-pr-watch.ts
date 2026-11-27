@@ -81,7 +81,7 @@ export class AssistantPrWatch {
   private async rows(): Promise<Row[]> {
     const rows = await this.store.db
       .prepare(
-        "SELECT value FROM assistant_runtime WHERE id LIKE 'prwatch:%' AND deleted_at IS NULL ORDER BY id LIMIT ?",
+        "SELECT value FROM assistant_runtime WHERE id>='prwatch:' AND id<'prwatch;' AND deleted_at IS NULL ORDER BY id LIMIT ?",
       )
       .all(MAX_PR_WATCHES * 2);
     return rows.map((raw) => JSON.parse(String(raw.value)) as Row);

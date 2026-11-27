@@ -228,22 +228,22 @@ describe("title tab context menu", () => {
     it("offers Move Left / Move Right, disabled at the ends of the strip", () => {
       const onReorder = renderThree();
       const first = openMenu("a");
-      expect(menuItem(first, "Move Left").disabled).toBe(true);
-      expect(menuItem(first, "Move Right").disabled).toBe(false);
+      expect(menuItem(first, "Move left").disabled).toBe(true);
+      expect(menuItem(first, "Move right").disabled).toBe(false);
       act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
       const last = openMenu("c");
-      expect(menuItem(last, "Move Left").disabled).toBe(false);
-      expect(menuItem(last, "Move Right").disabled).toBe(true);
+      expect(menuItem(last, "Move left").disabled).toBe(false);
+      expect(menuItem(last, "Move right").disabled).toBe(true);
       expect(onReorder).not.toHaveBeenCalled();
     });
 
     it("moves the tab and announces it from the menu", () => {
       const onReorder = renderThree();
-      pick(openMenu("b"), "Move Right");
+      pick(openMenu("b"), "Move right");
       expect(onReorder).toHaveBeenCalledExactlyOnceWith(["a", "c", "b"], "b");
       expect(document.querySelector("[data-drag-announcer]")?.textContent).toContain("b");
       expect(document.querySelector("[data-drag-announcer]")?.textContent).toContain("3 of 3");
-      pick(openMenu("b"), "Move Left");
+      pick(openMenu("b"), "Move left");
       expect(onReorder).toHaveBeenLastCalledWith(["b", "a", "c"], "b");
     });
 

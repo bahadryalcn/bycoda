@@ -83,7 +83,7 @@ export function deriveAlwaysOnItems(input: AlwaysOnInput): AlwaysOnItem[] {
     id: "model",
     label: t("A worker model is chosen"),
     state: hasModel === null ? "unknown" : hasModel ? "done" : "todo",
-    detail: t("Jobs follow the assistant worker role in Settings > Models."),
+    detail: t("Jobs follow the assistant worker role in Settings → Models."),
     target: "work",
   });
   add({

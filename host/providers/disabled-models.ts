@@ -22,11 +22,15 @@ export async function readDisabledModels(
       "CREATE TABLE IF NOT EXISTS host_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
     );
     const row = await store.db.prepare("SELECT value FROM host_settings WHERE key=?").get(KEY);
+    if (!row) return undefined;
+    let value: unknown;
     try {
-      return row ? parseDisabledModels(JSON.parse(String(row.value))) : undefined;
+      value = JSON.parse(String(row.value));
     } catch {
-      return undefined;
+      throw new Error("Saved disabled-model settings are invalid.");
     }
+    if (!Array.isArray(value)) throw new Error("Saved disabled-model settings are invalid.");
+    return parseDisabledModels(value);
   });
 }
 

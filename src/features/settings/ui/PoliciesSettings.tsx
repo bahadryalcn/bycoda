@@ -1,9 +1,8 @@
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { ScrollArea, scrollAreaAttributes } from "../../../shared/ui/ScrollArea";
+import { Disclosure } from "../../../shared/ui/Disclosure";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { SettingsFeedback } from "../../../shared/ui/settings";
-import { useContext, useEffect, useId, useRef, useState } from "react";
-import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
+import { useContext, useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { t, useLocale } from "../../../shared/i18n";
 import { AgentMarkdown } from "../../sessions/public/AgentMarkdown";
@@ -28,7 +27,6 @@ export function PoliciesSettings() {
     });
   const activePolicy = selection.policy;
   const setActivePolicy = (policy: (typeof POLICIES)[number]) => setSelection({ policy, revealed });
-  const readerId = useId();
   const language = languageOverride ?? (locale === "tr" ? "tr" : "en");
   const turkish = language === "tr";
   const body = turkish ? activePolicy.tr : activePolicy.en;
@@ -49,6 +47,7 @@ export function PoliciesSettings() {
   return (
     <div
       className="policies-settings"
+      ref={reader}
       onClickCapture={(event) => {
         // The shared conversation renderer only opens HTTP links. Handle our
         // published contact address here without changing conversation behavior.
@@ -65,119 +64,104 @@ export function PoliciesSettings() {
         });
       }}
     >
-      <Tabs
-        value={activePolicy.id}
-        orientation="vertical"
-        panels="shared"
-        id={readerId}
-        onValueChange={(id) => {
-          setContactErrorContext(null);
-          setActivePolicy(POLICIES.find((policy) => policy.id === id) ?? activePolicy);
-        }}
-      >
-        <ScrollArea as="aside" gutter="stable" className="policy-sidebar">
-          <Text
-            as="div"
-            size="secondary"
-            tone="muted"
-            leading="inherit"
-            className="policy-toolbar"
-            data-setting-id="policy-language"
-            id={settingDomId("policy-language")}
-          >
-            <span>{t("Policy language")}</span>
-            <Select
-              hideLabel
-              value={language}
-              label={t("Policy language")}
-              options={[
-                { value: "tr", label: "Türkçe" },
-                { value: "en", label: "English" },
-              ]}
-              onChange={setLanguageOverride}
-            />
-          </Text>
-          <Text as="p" size="caption" tone="muted" leading="relaxed" className="policy-context">
-            {t("Document language only; your app language and permissions stay unchanged.")}
-          </Text>
-          <TabList className="policy-navigation" label={t("Policy documents")}>
-            {POLICIES.map((policy) => (
-              <Tab
-                key={policy.id}
-                value={policy.id}
-                id={settingDomId(policy.id)}
-                data-setting-id={policy.id}
-              >
-                <span className="policy-link-title">{turkish ? policy.trTitle : policy.title}</span>
-              </Tab>
-            ))}
-          </TabList>
-        </ScrollArea>
-        <TabPanel
-          ref={reader}
-          {...scrollAreaAttributes({ gutter: "stable" }, "policy-reader")}
-          {...surfaceAttributes(
-            { frame: "pane", edge: "responsive-start" },
-            scrollAreaAttributes({ gutter: "stable" }, "policy-reader").className,
-          )}
-          labelledBy={settingDomId(activePolicy.id)}
-          key={activePolicy.id}
-        >
-          <Text
-            as="div"
-            size="caption"
-            tone="muted"
-            leading="relaxed"
-            className="policy-reader-context"
-          >
-            <p>
-              {t(
-                "Documents are bundled for offline reading. Other interface languages use the English text.",
-              )}
-            </p>
-            {turkish && activePolicy.id === "software-license" ? (
-              <p>{t("This license is shown in its original English text.")}</p>
-            ) : null}
-            {headings.length > 1 ? (
-              <Select
-                hideLabel
-                label={t("Document sections")}
-                value=""
-                options={[
-                  { value: "", label: t("Jump to section") },
-                  ...headings.map((label, index) => ({ value: String(index), label })),
-                ]}
-                onChange={(value) => {
-                  const heading =
-                    reader.current?.querySelectorAll<HTMLElement>(".policy-document h2")[
-                      Number(value)
-                    ];
-                  if (!heading || value === "") return;
-                  heading.tabIndex = -1;
-                  heading.scrollIntoView({ block: "start" });
-                  heading.focus({ preventScroll: true });
-                }}
-              />
-            ) : null}
-          </Text>
-          {contactError ? (
-            <SettingsFeedback state="error">
-              {t("Could not open your email app. Copy info@bycoda.codes into your email app.")}
-            </SettingsFeedback>
+      <div className="policy-toolbar">
+        <Select
+          value={activePolicy.id}
+          label={t("Policy documents")}
+          options={POLICIES.map((policy) => ({
+            value: policy.id,
+            label: turkish ? policy.trTitle : policy.title,
+          }))}
+          onChange={(id) => {
+            setContactErrorContext(null);
+            setActivePolicy(POLICIES.find((policy) => policy.id === id) ?? activePolicy);
+          }}
+        />
+        <div id={settingDomId("policy-language")} data-setting-id="policy-language">
+          <Select
+            value={language}
+            label={t("Policy language")}
+            options={[
+              { value: "tr", label: "Türkçe" },
+              { value: "en", label: "English" },
+            ]}
+            onChange={setLanguageOverride}
+          />
+        </div>
+        <InfoPopover>
+          <p>
+            {t(
+              "Documents are bundled for offline reading. Other interface languages use the English text.",
+            )}
+          </p>
+          {turkish && activePolicy.id === "software-license" ? (
+            <p>{t("This license is shown in its original English text.")}</p>
           ) : null}
-          <Text
-            as="article"
-            size="body"
-            tone="inherit"
-            leading="relaxed"
-            className="policy-document"
-            lang={turkish && activePolicy.id !== "software-license" ? "tr" : "en"}
-            aria-label={turkish ? activePolicy.trTitle : activePolicy.title}
-          >
-            <AgentMarkdown text={body} />
-          </Text>
-        </TabPanel>
-      </Tabs>
+        </InfoPopover>
+      </div>
+      {headings.length > 1 ? (
+        <Select
+          hideLabel
+          label={t("Document sections")}
+          value=""
+          options={[
+            { value: "", label: t("Jump to section") },
+            ...headings.map((label, index) => ({ value: String(index), label })),
+          ]}
+          onChange={(value) => {
+            if (value === "") return;
+            const heading =
+              reader.current?.querySelectorAll<HTMLElement>(".policy-document h2")[Number(value)];
+            if (!heading) return;
+            heading.tabIndex = -1;
+            heading.scrollIntoView({ block: "start" });
+            heading.focus({ preventScroll: true });
+          }}
+        />
+      ) : null}
+      {contactError ? (
+        <SettingsFeedback state="error">
+          {t("Could not open your email app. Copy info@bycoda.codes into your email app.")}
+        </SettingsFeedback>
+      ) : null}
+      <Text
+        as="article"
+        size="body"
+        tone="inherit"
+        leading="relaxed"
+        className="policy-document"
+        id={settingDomId(activePolicy.id)}
+        data-setting-id={activePolicy.id}
+        lang={turkish && activePolicy.id !== "software-license" ? "tr" : "en"}
+        aria-label={turkish ? activePolicy.trTitle : activePolicy.title}
+      >
+        <AgentMarkdown text={body} />
+      </Text>
     </div>
+  );
+}
+
+/** The legal documents behind one disclosure; a Settings search hit on a document opens it. */
+export function LegalDocuments() {
+  const revealed = useContext(RevealedSetting);
+  const [state, setState] = useState(() => ({
+    open: POLICIES.some((policy) => policy.id === revealed),
+    revealed,
+  }));
+  // Derived during render so the document is visible before the reveal scrolls and focuses it.
+  if (state.revealed !== revealed)
+    setState({
+      open: state.open || POLICIES.some((policy) => policy.id === revealed),
+      revealed,
+    });
+  return (
+    <Disclosure
+      summary={t("Legal")}
+      variant="row"
+      open={state.open}
+      onOpenChange={(open) => setState((current) => ({ ...current, open }))}
+    >
+      <PoliciesSettings />
+    </Disclosure>
   );
 }

@@ -3,6 +3,7 @@ import { sessionWorkCwd } from "../../src/features/sessions/model/session";
 import { truncateGraphemes } from "../../src/shared/lib/text/truncate";
 import type { SessionWakeSource } from "../../src/features/sessions/model/sessionWaitRules";
 import type { HostEngine } from "../engine";
+import { monotonicNow } from "../../src/shared/lib/time/timestamps";
 import { readStateFile, writeFileAtomic } from "../storage/atomic-write";
 import type { HostStore } from "../store";
 import {
@@ -20,6 +21,8 @@ import {
 
 export const MAX_PULL_REQUEST_WATCHES_PER_SESSION = 10;
 export const PULL_REQUEST_POLL_MS = 60_000;
+/** Upper bound for a failing watch's retry delay, so a recovered `gh` is still noticed. */
+export const PULL_REQUEST_MAX_BACKOFF_MS = 60 * 60_000;
 
 type PendingWake = { reasons: WakeReason[]; snapshot: PullRequestSnapshot; digest: string };
 
@@ -108,6 +111,11 @@ export class PullRequestWatches {
   private timer?: ReturnType<typeof setInterval>;
   private polling?: Promise<void>;
   private closing = false;
+  /**
+   * In-memory retry state for watches whose `gh` read failed. Not persisted: a restart
+   * polls every watch once again, and the saved watch state is never rewritten for it.
+   */
+  private readonly retries = new Map<string, { failures: number; retryAt: number }>();
   readonly ready: Promise<void>;
   /** Called when a watch starts or ends, so session lists re-read their wake sources. */
   onChange?: () => void;
@@ -182,14 +190,30 @@ export class PullRequestWatches {
     }
   }
 
+  /** Delay before the next `gh` read of a watch after its `failures`-th consecutive failure. */
+  private backoffMs(failures: number): number {
+    const base = this.options.intervalMs ?? PULL_REQUEST_POLL_MS;
+    return Math.min(base * 2 ** Math.min(failures - 1, 10), PULL_REQUEST_MAX_BACKOFF_MS);
+  }
+
   private async pollWatch(id: string): Promise<void> {
     const watch = this.watches.find((entry) => entry.id === id);
-    if (!watch) return;
+    if (!watch) {
+      this.retries.delete(id);
+      return;
+    }
     if (!(await this.options.store.sessionStateMetadata(watch.sessionId))) {
+      this.retries.delete(id);
       await this.mutate(() => {
         this.watches = this.watches.filter((entry) => entry.id !== id);
         return { value: undefined, changed: true };
       });
+      return;
+    }
+    const retry = this.retries.get(id);
+    if (retry && monotonicNow() < retry.retryAt) {
+      // Still backing off after a failed read; a wake already held may still go out.
+      await this.deliver(id);
       return;
     }
     let observed: PullRequestSnapshot;
@@ -204,14 +228,20 @@ export class PullRequestWatches {
         ]),
       ).snapshot;
     } catch (error) {
+      const message = describeError(error);
+      const failures = (retry?.failures ?? 0) + 1;
+      this.retries.set(id, { failures, retryAt: monotonicNow() + this.backoffMs(failures) });
       await this.mutate(() => {
         const current = this.watches.find((entry) => entry.id === id);
         if (!current) return { value: undefined, changed: false };
-        current.lastError = describeError(error);
+        // Repeats of the same error are not new state; only a changed message is saved.
+        if (current.lastError === message) return { value: undefined, changed: false };
+        current.lastError = message;
         return { value: undefined, changed: true };
       });
       return;
     }
+    this.retries.delete(id);
     await this.mutate(() => {
       const current = this.watches.find((entry) => entry.id === id);
       if (!current) return { value: undefined, changed: false };
@@ -274,10 +304,11 @@ export class PullRequestWatches {
           }),
       );
     } catch (error) {
+      const message = describeError(error);
       await this.mutate(() => {
         const current = this.watches.find((entry) => entry.id === id);
-        if (!current) return { value: undefined, changed: false };
-        current.lastError = describeError(error);
+        if (!current || current.lastError === message) return { value: undefined, changed: false };
+        current.lastError = message;
         return { value: undefined, changed: true };
       });
       return;

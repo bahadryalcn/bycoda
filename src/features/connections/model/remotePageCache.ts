@@ -675,8 +675,11 @@ async function persistRemotePage(entry: QueuedPageWrite): Promise<void> {
   }
 }
 
+/** Discard speculative page reads as soon as a deletion or history reset begins. */
+export let remotePageDeletionRevision = 0;
 export async function deleteRemotePageCache(key: RemotePageCacheKey): Promise<void> {
   if (!validKey(key)) return;
+  remotePageDeletionRevision++;
   const id = storageKey(key);
   const queued = pending.get(id);
   if (queued) {

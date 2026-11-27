@@ -21,10 +21,14 @@ it("distinguishes failed discovery from empty history and retries without closin
         createElement(ClaudeSessionPicker, { cwd: "/project", onPick: vi.fn(), onClose: close }),
       ),
     );
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain("History unavailable");
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not read Claude Code conversations.",
+    );
     expect(document.body.textContent).not.toContain("has not recorded");
     await act(async () =>
-      document.querySelector<HTMLButtonElement>('[role="alert"] button')!.click(),
+      [...document.querySelectorAll<HTMLButtonElement>('[role="alert"] button')]
+        .find((button) => button.textContent === "Try again")!
+        .click(),
     );
     expect(document.querySelector('[role="alert"]')).toBeNull();
     expect(document.body.textContent).toContain("has not recorded");

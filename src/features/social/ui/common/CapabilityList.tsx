@@ -43,7 +43,7 @@ export function CapabilityList({ capabilities, onConnect, grouped = false }: Cap
       { id: "unavailable", label: t("Unavailable") },
     ];
     return (
-      <div className="flex min-w-0 flex-col gap-2">
+      <div className="social-capability-groups">
         {groups.map((group) => {
           const items = capabilities.filter((row) => groupFor(row) === group.id);
           const reason =

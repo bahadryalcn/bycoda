@@ -42,12 +42,10 @@ export function AccountColorPopover({
       anchor={anchor}
       side="bottom"
       align="start"
-      autoFocus
       onDismiss={onDismiss}
-      role="dialog"
+      kind="dialog"
       aria-label={t("Color for {p0}", { p0: account.label })}
-      tabIndex={-1}
-      className="p-2"
+      variant="compact"
     >
       <ColorSwatchRow
         colors={PROVIDER_ACCOUNT_COLORS.map((color) => color.value)}
@@ -94,14 +92,14 @@ export function AccountColorPicker({
         ref={trigger}
         type="button"
         disabled={disabled}
+        disabledReason={t("Wait for the current action to finish.")}
         aria-label={t("Color for {p0}: {p1}", { p0: account.label, p1: current.label })}
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={() => setOpen((value) => !value)}
-        className="inline-flex shrink-0 items-center gap-1.5"
+        startIcon={<AccountColorDot account={account} className="size-2.5" />}
       >
-        <AccountColorDot account={account} className="size-2.5" />
-        <span>{t("Color")}</span>
+        {t("Color")}
       </Button>
       {open ? (
         <AccountColorPopover

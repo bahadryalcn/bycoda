@@ -1,5 +1,5 @@
-import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { t } from "../../../../shared/i18n";
+import { Text } from "../../../../shared/ui/Text";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
@@ -38,9 +38,6 @@ export function EditorAdvanced({
           label={t("Campaign name")}
           disabled={disabled}
           value={draft.name}
-          description={t(
-            "Shown in the calendar and lists. Defaults to the first line of the post.",
-          )}
           onChange={(event) => onDraft({ ...draft, name: event.target.value })}
         />
         <FieldGroup
@@ -80,14 +77,14 @@ export function EditorAdvanced({
             </>
           ) : null}
         </FieldGroup>
-        <FieldGroup
-          legend={t("Brand facts")}
-          gap="sm"
-          className="content-advanced-group"
-          disabled={disabled}
-        >
-          {facts.length ? (
-            facts.map((fact) => (
+        {facts.length ? (
+          <FieldGroup
+            legend={t("Brand facts")}
+            gap="sm"
+            className="content-advanced-group"
+            disabled={disabled}
+          >
+            {facts.map((fact) => (
               <Checkbox
                 checked={draft.factIds.includes(fact.id)}
                 onChange={(event) =>
@@ -99,27 +96,21 @@ export function EditorAdvanced({
                   })
                 }
                 label={
-                  <>
-                    <span>
-                      <strong>{fact.topic}</strong> {fact.text}
-                    </span>
-                  </>
+                  <span>
+                    <Text as="span" weight="medium">
+                      {fact.topic}
+                    </Text>{" "}
+                    {fact.text}
+                  </span>
                 }
                 key={fact.id}
                 size="body"
                 leading="inherit"
                 className="content-check"
               />
-            ))
-          ) : (
-            <EmptyState
-              size="inline"
-              kind="empty"
-              className="content-platform-note"
-              description={t("No brand facts for this project yet.")}
-            />
-          )}
-        </FieldGroup>
+            ))}
+          </FieldGroup>
+        ) : null}
         <FieldGroup
           legend={t("Link tags (UTM)")}
           gap="sm"
@@ -129,7 +120,6 @@ export function EditorAdvanced({
           <TextField
             label={t("Source")}
             value={utm.source}
-            description={t("Added to the link when it is valid.")}
             onChange={(event) => setUtm({ source: event.target.value })}
           />
           <TextField

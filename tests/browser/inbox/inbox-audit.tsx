@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { InboxDetail } from "../../../src/features/inbox/ui/InboxDetail";
+import { InboxView } from "../../../src/features/inbox/ui/InboxView";
 import type { InboxItem, InboxProvider } from "../../../src/features/inbox/model/githubTasks";
 import { inboxItemKey } from "../../../src/features/inbox/model/githubTasks";
 import { useRetainedState } from "../../../src/shared/hooks/useRetainedState";
@@ -13,6 +14,7 @@ import "../../../src/features/settings/ui/InboxSettings.css";
 
 const params = new URLSearchParams(location.search);
 export const inboxAudit = params.has("auditProvider");
+const githubCollection = params.get("auditScreen") === "githubCollection";
 const providers: InboxProvider[] = ["github", "jira", "gitlab", "azuredevops", "linear"];
 const requestedProvider = params.get("auditProvider");
 const provider = providers.find((value) => value === requestedProvider) ?? "github";
@@ -93,6 +95,11 @@ const item: InboxItem = {
   projectName: "Payment service",
 };
 
+if (githubCollection) {
+  localStorage.setItem("bycoda.inboxSource", "github");
+  localStorage.setItem("bycoda.inboxConnections", JSON.stringify({ github: true }));
+}
+
 Object.assign(window, {
   inboxAuditRecover: () => {
     readError = false;
@@ -105,6 +112,25 @@ export async function inboxAuditResponse(
   args: Record<string, unknown>,
 ): Promise<unknown> {
   if (!inboxAudit) return undefined;
+  if (githubCollection) {
+    if (command.endsWith("_status")) return { connected: command === "git_github_status" };
+    if (command === "git_github_repositories") return [item.repo];
+    if (command === "git_github_work_items") {
+      const isPr = args.kind === "pr";
+      return Array.from({ length: 14 }, (_, index) => {
+        const number = (isPr ? 58 : 42) - index;
+        const title = isPr ? "Preserve payment drafts after validation errors" : item.title;
+        return {
+          ...item,
+          kind: isPr ? "pr" : "issue",
+          number,
+          title: index === 0 ? title : `Check payment validation in scenario ${index}`,
+          url: `https://github.com/${item.repo}/${isPr ? "pull" : "issues"}/${number}`,
+          updatedAt: new Date(Date.parse(item.updatedAt) - index * 86_400_000).toISOString(),
+        };
+      });
+    }
+  }
   if (command === "fetch_inbox_media") {
     const url = String(args.url);
     const reads = (mediaReads.get(url) ?? 0) + 1;
@@ -178,6 +204,22 @@ export function InboxAuditFixture() {
     params.has("auditDraft") ? "**Ready for review**\n\nPreserve the entered amount." : "",
   );
   if (params.get("auditScreen") === "scope") return <ScopeAuditFixture />;
+  if (githubCollection)
+    return (
+      <QueryClientProvider client={client}>
+        <main className="flex h-dvh min-w-0 flex-col">
+          <InboxView
+            cwd={item.projectPath}
+            recents={[]}
+            onAsk={async () => ""}
+            onAskRestart={async () => ""}
+            onAskMount={() => {}}
+            onOpenIntegrations={() => {}}
+            onStart={() => {}}
+          />
+        </main>
+      </QueryClientProvider>
+    );
   if (params.get("auditScreen") === "media")
     return (
       <main className="mx-auto flex max-w-4xl flex-col gap-4 p-6">

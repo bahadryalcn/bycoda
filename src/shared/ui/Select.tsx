@@ -1,6 +1,6 @@
 import { popupListClassName } from "./Popover";
 import { optionalTextAttributes } from "./Text";
-import { OverflowTooltip } from "./Tooltip";
+import { Tooltip } from "./Tooltip";
 import {
   useEffect,
   useId,
@@ -25,6 +25,7 @@ import { SelectTrigger, SelectOption, SelectValue } from "./arc/select/select";
 export { SelectTrigger };
 import { ComboboxStatus } from "./arc/combobox/combobox";
 import { PickerChoice } from "./picker/PickerChoice";
+import { canInspectPickerOption } from "./picker/usePickerList";
 import { useT } from "../i18n";
 import { Field, fieldDescribedBy, type FieldVariant } from "./Field";
 import { useKeyedActiveIndex } from "../hooks/useKeyedActiveIndex";
@@ -33,8 +34,10 @@ export type SelectChoice = {
   value: string;
   label: string;
   icon?: ReactNode;
-  /** Shown but not choosable and skipped by keyboard navigation; a committed disabled value stays visible. */
+  /** Shown but not choosable; a committed disabled value stays visible. */
   disabled?: boolean;
+  /** Why this option cannot be selected. Makes it reachable for keyboard inspection. */
+  disabledReason?: string;
 };
 
 /** Next choosable index from `from` in `step` direction; wraps only when asked, otherwise stays put at an end. */
@@ -44,21 +47,21 @@ function nextEnabled(options: readonly SelectChoice[], from: number, step: 1 | -
     const raw = from + step * offset;
     const index = loop ? ((raw % count) + count) % count : raw;
     if (index < 0 || index >= count) return from;
-    if (!options[index]?.disabled) return index;
+    if (canInspectPickerOption(options[index])) return index;
   }
   return from;
 }
 const firstEnabled = (options: readonly SelectChoice[]) =>
-  options.findIndex((option) => !option.disabled);
+  options.findIndex(canInspectPickerOption);
 const lastEnabled = (options: readonly SelectChoice[]) => {
   for (let index = options.length - 1; index >= 0; index--)
-    if (!options[index]!.disabled) return index;
+    if (canInspectPickerOption(options[index])) return index;
   return -1;
 };
 /** The committed option when choosable, otherwise the first choosable one (-1 when none). */
 const initialActive = (options: readonly SelectChoice[], value: string) => {
   const index = options.findIndex((option) => option.value === value);
-  return index >= 0 && !options[index]!.disabled ? index : firstEnabled(options);
+  return index >= 0 && canInspectPickerOption(options[index]) ? index : firstEnabled(options);
 };
 
 /**
@@ -105,9 +108,13 @@ export type SelectProps = Omit<
   hideLabel?: boolean;
   description?: string;
   error?: string;
+  /** Why the selector is unavailable while `disabled`: shown as its tooltip and exposed to assistive tech. */
+  disabledReason?: string;
   /** Only used with the field composition above. */
   fieldVariant?: FieldVariant;
   fieldSize?: "sm" | "md";
+  /** Compact value width for a short selector in a settings row or toolbar. */
+  controlWidth?: "compact";
   ref?: Ref<HTMLButtonElement>;
 };
 
@@ -125,6 +132,7 @@ export function Select({
   options,
   onValueChange,
   disabled = false,
+  disabledReason,
   onOpen,
   loopNavigation = false,
   hideLabel = false,
@@ -132,6 +140,7 @@ export function Select({
   error,
   fieldVariant = "form",
   fieldSize,
+  controlWidth,
   className,
   ref,
   onKeyDown,
@@ -145,6 +154,7 @@ export function Select({
   // A disabled select cannot stay open: close during render so re-enabling does not reopen it.
   if (disabled && open) setOpen(false);
   const expanded = open && !disabled;
+  const reason = disabled ? disabledReason?.trim() || undefined : undefined;
   // Keyboard cursor restarts on open / committed-value change, not on a new `options` array.
   const [active, setActive] = useKeyedActiveIndex(`${open}:${value}`, options.length, () =>
     initialActive(options, value),
@@ -235,9 +245,14 @@ export function Select({
 
   const select = (
     <div ref={root} className={composed ? "relative" : "relative max-w-52"}>
-      <OverflowTooltip label={expanded ? undefined : (selected?.label ?? value)}>
+      <Tooltip
+        label={reason ?? (expanded ? undefined : (selected?.label ?? value))}
+        when={reason ? "always" : "overflow"}
+        asChild
+      >
         <SelectTrigger
           {...triggerProps}
+          controlWidth={controlWidth}
           id={composed ? triggerId : triggerProps.id}
           aria-invalid={error ? true : triggerProps["aria-invalid"]}
           aria-describedby={fieldDescribedBy(
@@ -256,6 +271,7 @@ export function Select({
           data-disabled={disabled || undefined}
           disabled={disabled}
           aria-label={triggerProps["aria-label"] ?? `${label}: ${selected?.label ?? value}`}
+          aria-description={reason}
           aria-expanded={expanded}
           aria-haspopup="listbox"
           aria-controls={expanded ? listId : undefined}
@@ -292,7 +308,7 @@ export function Select({
             strokeWidth={1.75}
           />
         </SelectTrigger>
-      </OverflowTooltip>
+      </Tooltip>
       {expanded ? (
         <Popover
           id={listId}
@@ -314,11 +330,14 @@ export function Select({
           className={`${popupListClassName} bycoda-arc bycoda-arc-menu overflow-y-auto overscroll-contain`}
         >
           {options.length === 0 ? (
-            <ComboboxStatus empty>{t("No matching options")}</ComboboxStatus>
+            <ComboboxStatus empty>{t("No options available")}</ComboboxStatus>
           ) : null}
           {options.map((option, index) => {
             const isSelected = option.value === value;
             const highlighted = index === active;
+            const reason =
+              highlighted && option.disabled ? option.disabledReason?.trim() : undefined;
+            const descriptionId = reason ? `${listId}-opt-${index}-reason` : undefined;
             return (
               <SelectOption
                 key={option.value}
@@ -329,11 +348,12 @@ export function Select({
                 tabIndex={-1}
                 aria-selected={isSelected}
                 aria-disabled={option.disabled || undefined}
-                disabled={option.disabled}
+                aria-describedby={descriptionId}
+                disabled={!canInspectPickerOption(option)}
                 data-highlighted={highlighted || undefined}
                 onMouseDown={(e) => e.preventDefault()}
                 onMouseEnter={() => {
-                  if (!option.disabled) setActive(index);
+                  if (canInspectPickerOption(option)) setActive(index);
                 }}
                 onClick={() => pick(option.value)}
               >
@@ -342,6 +362,8 @@ export function Select({
                   icon={option.icon}
                   label={option.label}
                   title={option.label}
+                  description={reason}
+                  descriptionId={descriptionId}
                 />
               </SelectOption>
             );

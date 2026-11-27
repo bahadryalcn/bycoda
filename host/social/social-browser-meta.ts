@@ -23,6 +23,7 @@ import {
   validateFiles,
   type Value,
 } from "./social-browser-meta-shared";
+import { FACEBOOK_MESSAGE_SEND_LABELS, FACEBOOK_POST_LABELS } from "./browser/ui-labels";
 import {
   instagramComment,
   instagramMessage,
@@ -39,7 +40,7 @@ export {
   parseInstagramBrowserPublished,
 };
 
-function facebookPost(raw: unknown): { id: string; url: string } {
+export function facebookPost(raw: unknown): { id: string; url: string } {
   if (typeof raw !== "string") throw new SocialPlatformError("unsupported");
   try {
     const url = new URL(raw);
@@ -292,12 +293,11 @@ async function facebookPublish(context: BrowserRecipeContext, job: SocialJob) {
       context.files.map((entry) => entry.path),
     );
   }
-  const submit = await mark(context, '[role="dialog"] [role="button"],[role="dialog"] button', [
-    "Post",
-    "Paylaş",
-    "Gönderi paylaş",
-    "Gönder",
-  ]);
+  const submit = await mark(
+    context,
+    '[role="dialog"] [role="button"],[role="dialog"] button',
+    FACEBOOK_POST_LABELS,
+  );
   return capture(
     context,
     /\/api\/graphql\/(?:\?|$)/,
@@ -316,35 +316,72 @@ async function facebookPublish(context: BrowserRecipeContext, job: SocialJob) {
   );
 }
 
+function withFacebookRoute(context: BrowserRecipeContext, matches: string): BrowserRecipeContext {
+  return {
+    ...context,
+    verifyIdentity: async () => {
+      await context.verifyIdentity();
+      if (!(await context.page.evaluate<boolean>(matches)))
+        throw new SocialPlatformError("unsupported");
+    },
+  };
+}
+
 async function facebookComment(context: BrowserRecipeContext, job: SocialJob) {
   const text = validateText(job),
     post = facebookPost(job.payload.postId);
   const parent = job.kind === "reply" ? job.payload.threadId : undefined;
-  if (job.payload.media.length || (parent && !numeric(parent)))
+  if (job.payload.media.length || (job.kind === "reply" && !numeric(parent)))
     throw new SocialPlatformError("unsupported");
+  const destination = new URL(post.url);
+  const publisher = destination.searchParams.get("id") ?? destination.pathname.split("/")[1];
+  const matchesPost = String.raw`(url) => {
+    if (url.origin !== 'https://www.facebook.com') return false;
+    if (url.pathname === '/permalink.php')
+      return ${numeric(publisher)} &&
+        url.searchParams.getAll('story_fbid').length === 1 &&
+        url.searchParams.getAll('id').length === 1 &&
+        url.searchParams.get('story_fbid') === ${JSON.stringify(post.id)} &&
+        url.searchParams.get('id') === ${JSON.stringify(publisher)};
+    const parts = url.pathname.replace(/\/$/, '').split('/');
+    return parts.length === 4 && parts[1].toLowerCase() === ${JSON.stringify(publisher.toLowerCase())} &&
+      parts[2] === 'posts' && parts[3] === ${JSON.stringify(post.id)};
+  }`;
+  const checked = withFacebookRoute(context, `(${matchesPost})(new URL(location.href))`);
   await context.page.goto(post.url);
-  await context.verifyIdentity();
+  await checked.verifyIdentity();
   if (parent) {
     const ready = await context.waitFor<boolean>(
       `(() => {
-      const anchors = [...document.querySelectorAll('a[href]')].filter(el => {
-        try { return new URL(el.href).searchParams.get('comment_id') === ${JSON.stringify(parent)}; } catch { return false; }
+      const samePost = ${matchesPost};
+      const anchors = [...document.querySelectorAll('[role="main"] a[href]')].filter(el => {
+        try {
+          const url = new URL(el.href);
+          return el.getClientRects().length && samePost(url) &&
+            url.searchParams.getAll('comment_id').length === 1 &&
+            url.searchParams.get('comment_id') === ${JSON.stringify(parent)};
+        } catch { return false; }
       });
       const rows = [...new Set(anchors.map(el => el.closest('[role="article"]')).filter(Boolean))];
       if (rows.length !== 1) return false;
-      const controls = [...rows[0].querySelectorAll('[role="button"],button')].filter(el => el.getClientRects().length && ['Reply','Yanıtla'].includes(el.textContent.trim()));
+      const controls = [...rows[0].querySelectorAll('[role="button"],button')].filter(el =>
+        el.getClientRects().length && !el.disabled && el.getAttribute('aria-disabled') !== 'true' &&
+        ['Reply','Yanıtla'].includes(el.textContent.trim()));
       if (controls.length !== 1) return false;
+      document.querySelectorAll('[data-bycoda-meta-reply]').forEach(el => el.removeAttribute('data-bycoda-meta-reply'));
       controls[0].setAttribute('data-bycoda-meta-reply','true'); return true;
     })()`,
       20_000,
     );
     if (!ready) throw new SocialPlatformError("unsupported");
+    await checked.verifyIdentity();
     await context.page.click('[data-bycoda-meta-reply="true"]');
   }
   const editor = await mark(
     context,
     '[role="main"] [role="textbox"][contenteditable="true"][aria-label^="Write a comment"],[role="main"] [role="textbox"][contenteditable="true"][aria-label^="Write a reply"],[role="main"] [role="textbox"][contenteditable="true"][aria-label^="Yorum yaz"],[role="main"] [role="textbox"][contenteditable="true"][aria-label^="Yanıt yaz"]',
   );
+  await checked.verifyIdentity();
   await context.page.fill(editor, text);
   const submit = await mark(context, '[role="main"] [role="button"],[role="main"] button', [
     "Comment",
@@ -353,7 +390,7 @@ async function facebookComment(context: BrowserRecipeContext, job: SocialJob) {
     "Yanıtla",
   ]);
   return capture(
-    context,
+    checked,
     /\/api\/graphql\/(?:\?|$)/,
     () => context.page.click(submit),
     (raw) => parseFacebookBrowserCommented(raw, context.account.platformId, text, post.url, parent),
@@ -373,8 +410,14 @@ async function facebookMessage(context: BrowserRecipeContext, job: SocialJob) {
     job.payload.media.length
   )
     throw new SocialPlatformError("unsupported");
-  const raw = await readResponse(
+  const paths = [`/messages/t/${recipient}`, `/messages/t/${bound[1]}`];
+  const checked = withFacebookRoute(
     context,
+    String.raw`location.origin === 'https://www.facebook.com' &&
+      ${JSON.stringify(paths)}.includes(location.pathname.replace(/\/$/, ''))`,
+  );
+  const raw = await readResponse(
+    checked,
     `https://www.facebook.com/messages/t/${recipient}/`,
     /\/ajax\/mercury\/thread_info\.php(?:\?|$)/,
   );
@@ -395,15 +438,15 @@ async function facebookMessage(context: BrowserRecipeContext, job: SocialJob) {
     context,
     '[role="main"] [role="textbox"][contenteditable="true"][aria-label="Message"],[role="main"] [role="textbox"][contenteditable="true"][aria-label="Mesaj"],[role="main"] [role="textbox"][contenteditable="true"][aria-label="Aa"]',
   );
+  await checked.verifyIdentity();
   await context.page.fill(editor, text);
-  const submit = await mark(context, '[role="main"] [role="button"],[role="main"] button', [
-    "Send",
-    "Gönder",
-    "Press Enter to send",
-    "Göndermek için Enter tuşuna bas",
-  ]);
-  return capture(
+  const submit = await mark(
     context,
+    '[role="main"] [role="button"],[role="main"] button',
+    FACEBOOK_MESSAGE_SEND_LABELS,
+  );
+  return capture(
+    checked,
     /\/ajax\/mercury\/send_messages\.php(?:\?|$)/,
     () => context.page.click(submit),
     (body) =>
@@ -492,6 +535,10 @@ const facebookOperations: SocialOperation[] = [
   "inbox.read",
   "message.reply",
   "poll",
+  // Facebook profile operations dispatch through the owner browser controller.
+  "profile.read",
+  "profile.update",
+  "delete",
 ];
 
 export const metaBrowserRecipes: BrowserRecipe[] = [

@@ -2,7 +2,7 @@
 
 Paths are repository-relative. Read the affected subsection only; reports and rule gates are not interchangeable.
 
-`src/features/providers/model/rateLimitHistory.ts` shares one storage listener and caches bounded per-account observations. Preserve 90-day/16,000-sample retention, explicit cross-window clears, and in-memory samples after failed storage writes.
+`src/features/providers/model/rateLimitHistory.ts` shares one storage listener and caches bounded per-account observations. Preserve 90-day/16,000-sample retention, explicit cross-window clears, and in-memory samples after failed storage writes. A reading appends to this window's small `bycoda.quotaHistory.v1.segment.<id>` key; the legacy `bycoda.quotaHistory.v1` array is rewritten only when a segment folds in. Another window's segment event merges without reparsing the base.
 
 ## Analytics and visualization
 
@@ -11,6 +11,12 @@ Paths are repository-relative. Read the affected subsection only; reports and ru
 - Native report owners: `src-tauri/src/provider_usage.rs`, `src-tauri/src/session_store/usage.rs`, registration in `src-tauri/src/lib.rs`; commands `provider_usage_report`, `session_usage_report`, relevant `session_get` reads.
 - Reports retain source/truncation/estimate provenance. Keep exact intervals, zero-hour rows, local sort/search/page semantics, dynamic chart accessible names and session coverage.
 - CSV exports the actual selected export scope, not every displayed drilldown by implication; preserve formula-safe cells and privacy before options/aggregation/export.
+
+## Read-only report and dashboard intent
+
+- `model/usageReport.ts` builds the bounded report with the dashboard's own sample, filter, lock and duration functions; `data/usageSources.ts` is the one loader both the dashboard and the report use; `model/usageWindows.ts` owns the preset, month-to-date and calendar-month windows.
+- `model/usageViewIntent.ts` carries window, filters, metric and granularity to the dashboard, which applies it on mount or while open. `ui/UsageReportView.tsx` draws a report as OpenUI charts (months, providers, models, bounded tail) with a reopen button.
+- Voice tools `workspace.usage.report` and `workspace.usage.open` live in `src/features/voice/model/voiceWorkspaceUsage.ts`; their ports are in `src/app/workspace/bridges/voiceInspectPorts.ts`. Tests: `usageReport.test.ts`, `usageViewIntent.test.ts`, `UsageReportView.test.ts`, `voiceUsage.test.ts`.
 
 ## Quotas and local rules
 

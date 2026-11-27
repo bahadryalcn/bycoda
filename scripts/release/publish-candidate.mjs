@@ -75,7 +75,30 @@ export function validatePackageSet(candidate, packages) {
   }
   return packages;
 }
-export function updaterMetadata(candidate, packages) {
+/**
+ * Update-dialog notes from CHANGELOG.md: the section of the version's core (a preview
+ * 0.7.6-preview.N ships 0.7.6 notes), else `[Unreleased]`; empty hides the notes.
+ */
+export function changelogNotes(version, changelog) {
+  const core = /^\d+\.\d+\.\d+/.exec(version)?.[0];
+  const section = (name) => {
+    const lines = changelog.split(/\r?\n/);
+    const start = lines.findIndex((line) => line.startsWith(`## [${name}]`));
+    if (start < 0) return "";
+    const end = lines.findIndex((line, index) => index > start && line.startsWith("## "));
+    return lines
+      .slice(start + 1, end < 0 ? undefined : end)
+      .join("\n")
+      .trim();
+  };
+  return (core && section(core)) || section("Unreleased");
+}
+
+export function updaterMetadata(
+  candidate,
+  packages,
+  changelog = readFileSync("CHANGELOG.md", "utf8"),
+) {
   assert(isSignedChannel(candidate.channel), "Only signed packages may produce an updater feed");
   const platforms = {};
   for (const { manifest, root } of packages) {
@@ -93,7 +116,7 @@ export function updaterMetadata(candidate, packages) {
   }
   return {
     version: candidate.version,
-    notes: `Candidate ${candidate.sha}`,
+    notes: changelogNotes(candidate.version, changelog),
     pub_date: new Date(
       Math.max(...packages.map(({ manifest }) => Date.parse(manifest.smoke.completedAt))),
     ).toISOString(),

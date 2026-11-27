@@ -52,6 +52,7 @@ afterEach(() => {
   host.remove();
   forgetDir(cwd);
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 const refresh = () =>
   act(async () => {
@@ -79,4 +80,45 @@ it("keeps the displayed refresh response and cached root on the same read", asyn
   expect(peekDir(cwd)).toBe(fresh);
   expect(host.querySelector(`[title="${cwd}/fresh.ts"]`)).not.toBeNull();
   expect(host.querySelector(`[title="${cwd}/old.ts"]`)).toBeNull();
+});
+
+it("keeps the tree readable through an announced five-second Host restart", async () => {
+  vi.useFakeTimers();
+  const restartAt = Date.now();
+  reads.mockImplementation(async (path) => {
+    if (path === cwd && Date.now() - restartAt < 5_000) {
+      throw Object.assign(new Error("Host is stopping."), { code: "HOST_STOPPING" });
+    }
+    return directories.get(path) ?? [];
+  });
+  directories.set(cwd, [entry("fresh.ts")]);
+  await refresh();
+  expect(
+    host.querySelector('[data-remote-data-state="refreshing"][aria-busy="true"]'),
+  ).not.toBeNull();
+  for (const elapsed of [2_000, 3_000, 1_000]) {
+    await act(async () => vi.advanceTimersByTimeAsync(elapsed));
+    expect(host.textContent).not.toContain("Host is stopping.");
+    expect(host.querySelector('[role="alert"],[data-remote-data-state="stale"]')).toBeNull();
+  }
+  expect(host.querySelector(`[title="${cwd}/fresh.ts"]`)).not.toBeNull();
+});
+
+it("shows a sustained transport error after the grace period, then recovers", async () => {
+  vi.useFakeTimers();
+  const startedAt = Date.now();
+  reads.mockImplementation(async (path) => {
+    if (path === cwd && Date.now() - startedAt < 11_000) {
+      throw new Error("[RPC_HOST_UNAVAILABLE] Host is not running on the machine");
+    }
+    return directories.get(path) ?? [];
+  });
+  await refresh();
+  expect(host.querySelector('[data-remote-data-state="stale"]')).toBeNull();
+  await act(async () => vi.advanceTimersByTimeAsync(2_000));
+  await act(async () => vi.advanceTimersByTimeAsync(1_000));
+  expect(host.querySelector('[data-remote-data-state="stale"]')).not.toBeNull();
+  await act(async () => vi.advanceTimersByTimeAsync(3_000));
+  await act(async () => vi.advanceTimersByTimeAsync(8_000));
+  expect(host.querySelector('[data-remote-data-state="ready"]')).not.toBeNull();
 });

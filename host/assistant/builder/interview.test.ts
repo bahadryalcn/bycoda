@@ -34,6 +34,7 @@ describe("assistant builder interview", () => {
     expect(prompt).toContain('locale: "en-US"');
     expect(prompt).toContain("Preserve current.language unless an owner answer explicitly asks");
     expect(prompt).toContain(JSON.stringify(JSON.stringify({ language: "tr-TR" })));
+    expect(prompt).toContain("persona and addressAs of a proposal in current.language");
   });
   it("rejects blank questions and summaries rather than displaying an empty successful turn", () => {
     expect(

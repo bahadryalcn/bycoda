@@ -1,4 +1,3 @@
-import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { linkContentAttributes } from "../../../shared/ui/Link";
@@ -8,8 +7,8 @@ import { useLocale, useT } from "../../../shared/i18n";
 import { Fragment, useState } from "react";
 import { splitAttachmentTokens } from "../model/attachmentTokens";
 import { splitCitationTokens } from "../model/citationTokens";
-import type { ChatCitation } from "../model/chatCitation";
-import { CitationTokenPill, WorkItemMentionText } from "./ChatCitationText";
+import type { ComposerCitation } from "../model/chatCitation";
+import { CitationTokenPill, ScopedMentionText } from "./ChatCitationText";
 import type { Attachment } from "../model/session";
 import { ImageLightbox } from "../../../shared/ui/ImageLightbox";
 import { useAttachmentPreview } from "./useAttachmentPreview";
@@ -77,14 +76,12 @@ function TokenPill({ token, label, attachment }: PillProps) {
         variant="link"
         layout="text"
         type="button"
-        tooltip={t("Open {p0} full screen", { p0: attachment.name })}
         aria-label={t("Open {p0} ({p1}) full screen", {
           p0: token,
           p1: attachment.name,
         })}
         aria-haspopup="dialog"
-        aria-busy={loading}
-        disabled={loading}
+        loading={loading}
         onClick={(event) => {
           event.stopPropagation();
           if (canOpenFile) {
@@ -95,12 +92,7 @@ function TokenPill({ token, label, attachment }: PillProps) {
       >
         {body}
       </Button>
-      {loading ? (
-        <LoadingText as="span" delay={false}>
-          {t("Loading…")}
-        </LoadingText>
-      ) : null}
-      {error ? (
+      {error && !previewOpen ? (
         // Phrasing-only: this renders inside <pre>/<p> prose, where the block InlineMessage (a div) is invalid.
         <>
           {" "}
@@ -137,14 +129,14 @@ function CitationTokenText({
   citations = [],
 }: {
   text: string;
-  citations?: readonly ChatCitation[];
+  citations?: readonly ComposerCitation[];
 }) {
-  if (!citations.length) return <WorkItemMentionText text={text} />;
+  if (!citations.length) return <ScopedMentionText text={text} />;
   return splitCitationTokens(text, citations.length).map((part, index) =>
     "token" in part ? (
       <CitationTokenPill key={index} token={part.token} citation={citations[part.index]} />
     ) : (
-      <WorkItemMentionText key={index} text={part.text} />
+      <ScopedMentionText key={index} text={part.text} />
     ),
   );
 }
@@ -157,7 +149,7 @@ export function AttachmentTokenText({
 }: {
   text: string;
   attachments: Attachment[] | undefined;
-  citations?: readonly ChatCitation[];
+  citations?: readonly ComposerCitation[];
 }) {
   useLocale();
   if (!attachments?.length) return <CitationTokenText text={text} citations={citations} />;

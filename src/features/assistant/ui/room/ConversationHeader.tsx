@@ -7,7 +7,7 @@ import { t } from "../../../../shared/i18n";
 import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { DropdownMenu } from "../../../../shared/ui/DropdownMenu";
-import { MoreHorizontal, RefreshCw } from "../../../../shared/ui/icons";
+import { ArrowLeft, MoreHorizontal } from "../../../../shared/ui/icons";
 import { hasAssistantSummaryRefresh } from "../../model/assistantSummaryRefresh";
 import { AssistantRemoteAccess } from "../AssistantRemoteAccess";
 import styles from "./Conversation.module.css";
@@ -16,9 +16,11 @@ import type { ConversationContext } from "./ConversationTypes";
 export function ConversationHeader({
   c,
   onFailure,
+  onBack,
 }: {
   c: ConversationContext;
   onFailure: (cause: unknown) => void;
+  onBack: () => void;
 }) {
   const {
     snapshot,
@@ -46,12 +48,19 @@ export function ConversationHeader({
   return (
     <div {...surfaceAttributes({ frame: "pane", edge: "block-end" }, styles.header)}>
       <div className={styles.identity}>
+        <div className={styles.narrowAction}>
+          <Button iconOnly variant="ghost" label={t("Back to conversations")} onClick={onBack}>
+            <ArrowLeft className="icon-sm" />
+          </Button>
+        </div>
         <Text as="strong" size="title" tone="inherit" weight="medium" leading="inherit" truncate>
           {snapshot.profile.name}
         </Text>
-        <Badge key={threadId} size="xs" className={styles.threadChip}>
-          {threadLabel}
-        </Badge>
+        {threadLabel && (
+          <Badge key={threadId} size="xs" truncate className={styles.threadChip}>
+            {threadLabel}
+          </Badge>
+        )}
         <div className={styles.summaryStatus}>
           {(summaryRefreshing || summaryLabel || summaryFailed) && (
             <>
@@ -73,15 +82,6 @@ export function ConversationHeader({
                   </Badge>
                 </Tooltip>
               )}
-              <Button
-                iconOnly
-                label={t("Refresh conversation summary")}
-                disabled={!summaryRefreshable}
-                loading={summaryRefreshing}
-                onClick={() => void refreshSummary().catch(onFailure)}
-              >
-                <RefreshCw className="icon-xs" />
-              </Button>
             </>
           )}
         </div>
@@ -94,6 +94,7 @@ export function ConversationHeader({
             aria-haspopup="menu"
             aria-expanded={Boolean(threadMenu)}
             disabled={pending || clearing || summaryRefreshing}
+            disabledReason={pending ? t("Wait for the current action to finish.") : undefined}
             loading={clearing || summaryRefreshing}
             onClick={(event) => setThreadMenu(event.currentTarget)}
           >
@@ -137,11 +138,9 @@ export function ConversationHeader({
             {
               kind: "item",
               id: "summary",
-              label: t(
-                hasAssistantSummaryRefresh(localStorage, environmentId, threadId)
-                  ? "Retry summary refresh"
-                  : "Refresh conversation summary",
-              ),
+              label: hasAssistantSummaryRefresh(localStorage, environmentId, threadId)
+                ? t("Retry summary refresh")
+                : t("Refresh conversation summary"),
               disabled: !summaryRefreshable,
             },
             {
@@ -153,7 +152,7 @@ export function ConversationHeader({
             {
               kind: "item",
               id: "clear",
-              label: t("Clear conversation..."),
+              label: t("Clear conversation…"),
               danger: true,
               disabled: pending || clearing || summaryRefreshing,
             },

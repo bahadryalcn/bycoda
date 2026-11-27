@@ -4,6 +4,7 @@ import type { TaskContext } from "./context";
 import {
   conflictChildAdmitted,
   conflictStopGeneration,
+  conflictStopHeld,
   fenceConflictChildren,
   releaseConflictStop,
   recoverCommittedConflict,
@@ -70,6 +71,19 @@ describe("committed conflict child admission", () => {
     expect(await conflictChildAdmitted(context, child)).toBe(false);
     releaseConflictStop("parent", conflictStopGeneration("parent"));
     expect(await conflictChildAdmitted(context, child)).toBe(true);
+  });
+  it("never reuses a captured stop generation after its hold is released", () => {
+    // Reclaiming the generation entry would reset it to 0 and let an old captured fence match a
+    // later Stop again (ABA), so the counter must stay monotonic for the process lifetime.
+    const parent = "parent-generation-monotonic";
+    const captured = conflictStopGeneration(parent);
+    fenceConflictChildren(parent);
+    releaseConflictStop(parent, conflictStopGeneration(parent));
+    expect(conflictStopHeld(parent)).toBe(false);
+    expect(conflictStopGeneration(parent)).toBeGreaterThan(captured);
+    fenceConflictChildren(parent);
+    expect(conflictStopGeneration(parent)).not.toBe(captured);
+    expect(conflictStopGeneration(parent)).toBeGreaterThan(captured + 1);
   });
   it("refuses dispatch when either checkout advances or the parent stops", async () => {
     const { parent, context } = fixture();

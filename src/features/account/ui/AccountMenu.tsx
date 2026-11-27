@@ -117,8 +117,6 @@ export function AccountMenu({
             ? `${t("Account")}: ${name}. ${presence.summary}`
             : `${t("Account")}: ${name}`
         }
-        tooltip={name}
-        tooltipSide="top"
         aria-haspopup="menu"
         aria-expanded={open}
         data-account-menu-trigger
@@ -138,7 +136,7 @@ export function AccountMenu({
           items={items}
           side="top"
           align="start"
-          width={248}
+          size="sm"
           onClose={close}
           onPick={(id) => {
             if (presence?.pick(id)) return;

@@ -1,3 +1,5 @@
+import { workspaceFailureDetail } from "../../model/workspaceActionError";
+import { t } from "../../../shared/i18n";
 import {
   reserveSessionWindow,
   remoteSessionOwnershipKey,
@@ -25,6 +27,10 @@ import {
 } from "../../../features/connections/model/connections";
 import { resolveRemoteSessionTarget } from "../../../features/connections/model/remoteSessionNavigation";
 import { remoteCreateShellFor } from "../../../features/connections/model/remoteCreateIntent";
+import {
+  projectlessMachineSession,
+  remoteSessionProjectKey,
+} from "../../../features/connections/model/sessionMachineTarget";
 import {
   worktreeFocus,
   type WorktreeFocus,
@@ -56,7 +62,8 @@ export function listedRemoteSessionId(
   listedId: string,
 ): string {
   const shell = sessions.find(
-    (session) => session.id === listedId && sameProjectPath(session.cwd, project),
+    (session) =>
+      session.id === listedId && sameProjectPath(remoteSessionProjectKey(session), project),
   );
   return (shell && remoteSessionFor(shell.id)) || listedId;
 }
@@ -96,7 +103,7 @@ export interface NewSessionActions {
     project: string,
     remoteSessionId: string,
     options?: { preview?: boolean },
-  ) => void;
+  ) => Promise<boolean>;
   onStartInboxItem: (item: InboxItem, body?: string) => Promise<void>;
   onAddNoteToChat: (card: NoteChatRequest) => void;
 }
@@ -240,7 +247,10 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
           const remoteId = remoteSessionFor(id);
           if (!candidate || !remoteId) return false;
           try {
-            return remoteSessionOwnershipKey(candidate.cwd, remoteId) === requestedKey;
+            return (
+              remoteSessionOwnershipKey(remoteSessionProjectKey(candidate), remoteId) ===
+              requestedKey
+            );
           } catch {
             return false;
           }
@@ -251,7 +261,7 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
             tabs.map((tab) => (tab.id === ownedTab.tab.id ? keepSessionTab(tab) : tab)),
           );
         activateTab(ownedTab.tab.id, ownedTab.id);
-        return;
+        return true;
       }
       // A session still being created by an open tab is that tab's, not a new one.
       const existing = resolveRemoteSessionTarget(
@@ -268,20 +278,24 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
             tabs.map((tab) => (tab.id === existing.tab.id ? keepSessionTab(tab) : tab)),
           );
         activateTab(existing.tab.id, existing.shellId);
-        return;
+        return true;
       }
       const current = workspaceNavigation.captureRequest?.() ?? (() => true);
       let release: Awaited<ReturnType<typeof reserveSessionWindow>>;
       try {
         release = await reserveSessionWindow([requestedKey]);
       } catch (error) {
-        toast.show({ tone: "warning", message: String(error) });
-        return;
+        toast.show({
+          tone: "warning",
+          title: t("Could not open this conversation"),
+          message: workspaceFailureDetail(error),
+        });
+        return false;
       }
-      if (!release) return;
+      if (!release) return false;
       let retained = false;
       try {
-        if (!current()) return;
+        if (!current()) return false;
         // Recheck after async ownership admission; another local open may have won.
         const already = resolveRemoteSessionTarget(
           tabsRef.current,
@@ -294,10 +308,14 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
         if (already) {
           activateTab(already.tab.id, already.shellId);
           retained = true;
-          return;
+          return true;
         }
         // Never reuse a blank remote composer: it may hold a create/upload in flight.
-        const session = newDefaultSession(project, sessionDefaults?.runtimeMode);
+        const scope = projectlessMachineSession(project);
+        const session = {
+          ...newDefaultSession(scope?.cwd ?? project, sessionDefaults?.runtimeMode),
+          ...scope,
+        };
         const replacement = options?.preview
           ? openSessionPreview(tabsRef.current, session, sessionsRef.current)
           : undefined;
@@ -310,10 +328,11 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
         if (replacement) {
           tabsRef.current = replacement.tabs;
           setTabs(replacement.tabs);
-        } else appendTab(tab, project);
+        } else appendTab(tab, session.cwd);
         setActiveTabId(tab.id);
-        followProject(project);
+        if (!scope) followProject(project);
         retained = true;
+        return true;
       } finally {
         await release(retained).catch((error) =>
           console.error("Conversation ownership release failed", error),

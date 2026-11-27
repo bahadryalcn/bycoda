@@ -131,3 +131,30 @@ it("bounds optional push ownership lookup while answering the desktop heartbeat"
   await done;
   expect(result).toMatchObject({ commands: [] });
 });
+
+it("rejects a sync push over the op limit before opening a store transaction", async () => {
+  const transaction = vi.fn(async () => {
+    throw new Error("transaction reached");
+  });
+  const dependencies = { engine: { store: { transaction } } };
+  const op = { table: "projects", id: "p1", baseRev: 0, value: null };
+  const oversized = {
+    input: { method: "sync.push" },
+    params: { ops: Array.from({ length: 101 }, () => op) },
+    domainContext: {},
+    result: undefined as unknown,
+  };
+  await expect(handleSessionsRpc(dependencies as never, oversized as never)).rejects.toThrow(
+    "Too many sync ops",
+  );
+  expect(transaction).not.toHaveBeenCalled();
+
+  const atLimit = {
+    ...oversized,
+    params: { ops: Array.from({ length: 100 }, () => op) },
+  };
+  await expect(handleSessionsRpc(dependencies as never, atLimit as never)).rejects.toThrow(
+    "transaction reached",
+  );
+  expect(transaction).toHaveBeenCalledTimes(1);
+});

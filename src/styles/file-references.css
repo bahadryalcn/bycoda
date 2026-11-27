@@ -1,0 +1,141 @@
+/* File references in replies: a workspace file or folder named in prose, as a link or as inline
+   code. One chip, tinted by the kind of file. Each kind reads a hue from --file-ref-hue-<kind>;
+   the defaults below are the theme tones, and Settings > Chat > File references overrides them
+   on the root (applyAppearancePreferences) or on the preview stage, always as a fixed tone list,
+   never a free colour. The tinted ground comes from the hue and the ink is the hue pulled toward
+   the content colour, so both follow the light and dark themes. "Plain" drops the hue. */
+:root {
+  --file-ref-hue-code: var(--color-info);
+  --file-ref-hue-markup: var(--color-warning);
+  --file-ref-hue-docs: var(--color-feature);
+  --file-ref-hue-data: var(--color-success);
+  --file-ref-hue-media: var(--color-orchestration);
+  --file-ref-hue-archive: var(--color-content);
+  --file-ref-hue-folder: var(--color-accent);
+  --file-ref-hue-other: var(--color-content);
+  --file-ref-ground-strength: calc(var(--ui-tone-subtle-strength) + 4%);
+  --file-ref-ink-share: 78%;
+}
+@media (prefers-contrast: more) {
+  :root {
+    --file-ref-ground-strength: calc(var(--ui-tone-subtle-strength) + 10%);
+    --file-ref-ink-share: 55%;
+  }
+}
+
+:is(a, code, span).file-ref {
+  --file-ref-hue: var(--color-content);
+  --file-ref-ink: color-mix(
+    in oklab,
+    var(--file-ref-hue) var(--file-ref-ink-share),
+    var(--color-content)
+  );
+  --file-ref-ground: color-mix(
+    in oklab,
+    var(--file-ref-hue) var(--file-ref-ground-strength),
+    transparent
+  );
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-inline-size: 100%;
+  vertical-align: baseline;
+  padding-block: 0.0625rem;
+  padding-inline: var(--space-1);
+  border-radius: var(--ui-radius-control);
+  background: var(--file-ref-ground);
+  color: var(--file-ref-ink);
+  text-decoration: none;
+  box-decoration-break: clone;
+  transition:
+    background-color var(--ui-motion-fast, 120ms) ease,
+    color var(--ui-motion-fast, 120ms) ease;
+}
+:is(a, code, span).file-ref[data-file-kind="code"] {
+  --file-ref-hue: var(--file-ref-hue-code);
+}
+:is(a, code, span).file-ref[data-file-kind="markup"] {
+  --file-ref-hue: var(--file-ref-hue-markup);
+}
+:is(a, code, span).file-ref[data-file-kind="docs"] {
+  --file-ref-hue: var(--file-ref-hue-docs);
+}
+:is(a, code, span).file-ref[data-file-kind="data"] {
+  --file-ref-hue: var(--file-ref-hue-data);
+}
+:is(a, code, span).file-ref[data-file-kind="media"] {
+  --file-ref-hue: var(--file-ref-hue-media);
+}
+:is(a, code, span).file-ref[data-file-kind="archive"] {
+  --file-ref-hue: var(--file-ref-hue-archive);
+}
+:is(a, code, span).file-ref[data-file-kind="folder"] {
+  --file-ref-hue: var(--file-ref-hue-folder);
+}
+:is(a, code, span).file-ref[data-file-kind="other"] {
+  --file-ref-hue: var(--file-ref-hue-other);
+}
+/* Plain: every kind keeps its icon but shares the neutral ground and ink. */
+:is(html, [data-transcript-preview])[data-file-refs="plain"] :is(a, code, span).file-ref {
+  --file-ref-hue: var(--color-content);
+}
+
+:is(a, code, span).file-ref:is(a, [role="link"]) {
+  cursor: pointer;
+}
+:is(a, code, span).file-ref:is(a, [role="link"]):hover {
+  --file-ref-ground: color-mix(
+    in oklab,
+    var(--file-ref-hue) calc(var(--file-ref-ground-strength) + 8%),
+    transparent
+  );
+  --file-ref-ink: color-mix(in oklab, var(--file-ref-hue) 45%, var(--color-content));
+}
+:is(a, code, span).file-ref:is(a, [role="link"]):focus-visible {
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: var(--ui-focus-offset);
+}
+:is(a, code, span).file-ref:is(a, [role="link"]):active {
+  --file-ref-ground: color-mix(
+    in oklab,
+    var(--file-ref-hue) calc(var(--file-ref-ground-strength) + 14%),
+    transparent
+  );
+}
+@media (forced-colors: active) {
+  :is(a, code, span).file-ref {
+    background: transparent;
+    color: LinkText;
+    border: 1px solid;
+  }
+}
+
+.file-ref-icon {
+  display: inline-flex;
+  flex: none;
+}
+.file-ref-label {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+/* The line location is a quieter tail: " · L13". */
+.file-ref-location {
+  flex: none;
+  color: var(--ui-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The colour dot beside a tone in the File references settings. */
+.file-ref-swatch {
+  inline-size: 0.75rem;
+  block-size: 0.75rem;
+  border-radius: 50%;
+  background: var(--file-ref-swatch);
+}
+/* A link written around inline code (`[`name.pdf`](path)`) is one reference: the code inside drops
+   its own neutral chip so the reference's tinted ground and ink show through. */
+a.file-ref code[data-variant] {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}

@@ -8,6 +8,8 @@ export type SurfaceVariant =
   | "card"
   | "inset"
   | "canvas"
+  /** Full-window overlays that need a solid palette ground even over native glass. */
+  | "opaque-canvas"
   | "workspace-panel"
   | "canvas-chat"
   | "reading-base"
@@ -49,6 +51,7 @@ export type SurfaceRole = "page" | "card" | "inset" | "floating";
 const VARIANT_ROLE: Partial<Record<SurfaceVariant, SurfaceRole>> = {
   page: "page",
   canvas: "page",
+  "opaque-canvas": "page",
   "canvas-chat": "page",
   "reading-base": "page",
   "workspace-panel": "page",
@@ -71,13 +74,8 @@ export type SurfaceAppearance = {
   selectionRing?: "document";
   /** Visible inset outline for keyboard-focusable scroll regions. */
   focusRing?: "inset" | "preview-inset" | "outer";
-  /** Mixed settings rows and disclosures use their existing group hairlines and corners. */
-  layout?:
-    | "settings-group"
-    | "settings-group-flat"
-    | "settings-advanced"
-    | "settings-rows"
-    | "settings-account-list";
+  /** Settings rows use their group hairlines and corners. */
+  layout?: "settings-group" | "settings-group-flat" | "settings-rows" | "settings-account-list";
   /** One hairline after each direct child except the last; no outer frame or layout.
    * `pane` uses the pane border, `card` the card border.
    * Replaces vertical divide-y lists. Horizontal splits keep Divider. */
@@ -88,7 +86,7 @@ export type SurfaceAppearance = {
   variant?: SurfaceVariant;
   /** Opt-in frame: none removes border space; other roles retain a 1px boundary.
    * Hairlines are two roles: `pane` for edges between panes, rows and lists, `card` around a whole card.
-   * `transparent` reserves border space without painting a boundary; `danger` frames an error summary.
+   * `transparent` reserves border space without painting a boundary; `danger` frames an error summary, `warning` a caution or limit summary (pair with `tone="warning"` for the fill, which tone alone does not frame).
    * `focus` marks a detaching surface; `muted` frames a hollow progress marker. */
   frame?:
     | "none"
@@ -99,10 +97,12 @@ export type SurfaceAppearance = {
     | "neutral-marker"
     | "transparent"
     | "danger"
+    | "warning"
     | "accent"
     | "focus"
     | "muted";
   /** Framed edge(s), default all. Logical edges follow writing direction; top/bottom/left/right preserve physical edges.
+   * For `start`, set `--surface-frame-inline-start-visible: 0` to keep only the block-start edge.
    * `responsive-start` keeps a 1px inline-start frame; the owning layout sets
    * `--surface-frame-stacked: 1` at its existing container breakpoint to move it to block-start (0 restores inline-start).
    * Set `--surface-frame-visible: 0` when the layout hides that boundary (default 1).

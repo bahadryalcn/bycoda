@@ -36,10 +36,15 @@
   another project is no longer accessible through the old project's grant.
   Note resolution changes one note's acknowledgement, not review/check results.
 
-## Goals
+## Goals (bycoda Epics)
 
-- A goal is a planned outcome that is split into tasks. `goals.create` makes a plan;
-  the owner approves it and starts its tasks. Read with `goals.list` / `goals.get`.
+- `goals.*` manage bycoda Epics: a planned parent split into board tasks. `goals.create`
+  makes a plan; the owner approves it and starts its tasks. Read with `goals.list` /
+  `goals.get`. Call `goals.create` only when the owner explicitly asks for an Epic,
+  planned board tasks or `/epic`. The word "goal" or `/goal` means the provider-native
+  goal, never `goals.create`. If `/goal` appears anywhere except the start of the
+  message, create no task, Epic or plan: do the work in this session and tell the owner
+  native `/goal` only takes effect as the first word of a message.
 - Pull requests: `pullRequests.watch` (by `number`, `url`, or the session branch's PR)
   wakes this session with a message when checks finish, a review or comment arrives,
   a new commit's checks finish, or the PR is merged or closed. End your turn after

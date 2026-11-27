@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import fs from "node:fs";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -122,12 +123,18 @@ it("places before first paint, coalesces scroll/resize bursts and cancels queued
   expect(measure).toHaveBeenCalledTimes(1);
 });
 
-it("keeps the frame but paints no backdrop glass when solid", async () => {
+it("keeps the shared opaque frame when solid is requested", async () => {
   await act(async () =>
     root.render(createElement(Popover, { anchor, solid: true }, createElement("p", null, "x"))),
   );
   expect(document.body.querySelector(".popover-solid")).not.toBeNull();
   expect(document.body.querySelector(".popover-backdrop, .backdrop-blur-xl")).toBeNull();
+  const css = fs.readFileSync("src/styles/index.css", "utf8");
+  expect(css).toMatch(
+    /\.popover-solid,\s*\.popover-backdrop,\s*\.popover-frosted\s*\{\s*background: var\(--ui-surface-floating\);\s*\}/,
+  );
+  // Only the glass backdrops blur; the solid ground never samples the pane.
+  expect(css).not.toMatch(/\.popover-solid[^{}]*\{[^}]*backdrop-filter/);
 });
 
 it.each([
@@ -365,4 +372,24 @@ it("hides while its anchor is not rendered and returns once the anchor shows aga
   await frame();
   expect(surface.style.visibility).not.toBe("hidden");
   expect(Number.parseFloat(surface.style.left)).toBe(40);
+});
+
+it("uses the same glass floating backdrop for frosted requests", async () => {
+  await act(async () =>
+    root.render(createElement(Popover, { anchor }, createElement("p", null, "x"))),
+  );
+  const backdrop = document.body.querySelector(".popover-backdrop");
+  expect(backdrop).not.toBeNull();
+  const defaultBackdropClass = backdrop!.className;
+  await act(async () =>
+    root.render(createElement(Popover, { anchor, frosted: true }, createElement("p", null, "x"))),
+  );
+  expect(document.body.querySelector(".popover-backdrop")?.className).toBe(defaultBackdropClass);
+  expect(defaultBackdropClass).not.toContain("backdrop-blur");
+  expect(document.body.querySelector(".popover-frosted")).toBeNull();
+
+  const css = fs.readFileSync("src/styles/index.css", "utf8");
+  expect(css).toMatch(
+    /:is\(\.popover-backdrop, \.popover-frosted\) \{[^}]*backdrop-filter: var\(--ui-floating-glass-filter\)/,
+  );
 });

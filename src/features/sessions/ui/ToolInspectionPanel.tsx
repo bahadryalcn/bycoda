@@ -1,17 +1,24 @@
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Text } from "../../../shared/ui/Text";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
-import { useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useT } from "../../../shared/i18n";
 import { storedFlag } from "../../../shared/lib/storedSetting";
 import { FloatingButtonGroup } from "../../../shared/ui/FloatingButtonGroup";
 import { Check, Copy, RotateCcw, WrapText } from "../../../shared/ui/icons";
 import { copyMessage } from "../../../platform/tauri/clipboard";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
+import { catalogText } from "../model/catalogText";
 import type { Block } from "../model/session";
 import { toolResultTexts } from "../model/commandInspection";
 import { boundedToolPreview } from "../model/toolInspection";
+import { ToolInspectionDiff } from "./ToolInspectionDiff";
+import { ToolInspectionSplitDiff } from "./ToolInspectionSplitDiff";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { observeResize } from "../../../shared/lib/observeResize";
+import { diffLineCount, resolveDiffLayout, type DiffLayoutChoice } from "../model/toolDiffSplit";
 import { JsonViewer } from "../../../shared/ui/JsonViewer";
 import { AnsiText } from "../../../shared/ui/AnsiText";
 import { stripAnsi } from "../../../shared/lib/ansi";
@@ -33,6 +40,34 @@ export function inspectionJson(text: string): { data: unknown } | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * A non-shell tool call recorded as `name: {json}` (MCP and other tools) shows its arguments
+ * as a JSON tree instead of one long line. Shell commands keep their literal text.
+ */
+export function toolCallArguments(text: string): { data: unknown } | null {
+  const match = /^[\w.:@/-]+:\s*([{[][\s\S]*)$/.exec(text.trim());
+  const parsed = match ? inspectionJson(match[1]) : null;
+  return parsed && typeof parsed.data === "object" && parsed.data !== null ? parsed : null;
+}
+
+/** Payloads with at most this many nodes (keys and values, root included) read at a glance, so they get no search or expand controls. */
+const JSON_TOOLBAR_MIN_NODES = 12;
+
+/** Counts nodes, stopping once the count passes `limit`. */
+export function jsonNodeCount(data: unknown, limit: number): number {
+  let count = 0;
+  const visit = (value: unknown) => {
+    count += 1;
+    if (count > limit || typeof value !== "object" || value === null) return;
+    for (const child of Object.values(value)) {
+      visit(child);
+      if (count > limit) return;
+    }
+  };
+  visit(data);
+  return count;
 }
 
 export function hasToolInspection(block: Block): boolean {
@@ -117,8 +152,21 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
   const bodyText = sections.map((section) => stripAnsi(section.text)).join("\n\n");
   const copyText = bodyText ? [bodyText, ...copyNotices].join("\n\n") : "";
   // Streaming output changes the copied text, so any outcome or copy in flight belongs to the old text.
-  const feedback = useCopyFeedback({ resetKeys: [block.id, copyText], successMs: 2000 });
+  const feedback = useCopyFeedback({
+    resetKeys: [block.id, copyText],
+    successMs: 2000,
+  });
   const wrap = useToolOutputWrap();
+  // The conversation always shows unified; the reader's split choice lasts only while this inspector is open.
+  const [diffChoice, setDiffChoice] = useState<DiffLayoutChoice>("unified");
+  const surface = useRef<HTMLElement>(null);
+  const [width, setWidth] = useState(0);
+  // Split needs room: follow the inspector's own width so the choice survives a resize.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- observes the inspector element's size (ResizeObserver) while mounted
+  useEffect(() => {
+    const node = surface.current;
+    return node ? observeResize(node, (entry) => setWidth(entry.contentRect.width)) : undefined;
+  }, []);
   const copy = () => {
     feedback.copy(() => copyMessage(copyText));
   };
@@ -127,22 +175,37 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
       sections.map((section) => ({
         section,
         json:
-          !section.diff &&
-          !section.error &&
-          !section.truncated &&
-          section.title !== "Command" &&
-          section.title !== "Written content"
-            ? inspectionJson(section.text)
-            : null,
+          section.diff || section.error || section.truncated || section.title === "Written content"
+            ? null
+            : section.title === "Command"
+              ? block.tool?.preview?.kind === "shell"
+                ? null
+                : toolCallArguments(section.text)
+              : inspectionJson(section.text),
       })),
-    [sections],
+    [block, sections],
   );
   // JsonViewer owns its own layout, so the wrap choice only matters when some section is plain text.
   const hasWrappable = presentation.some(({ json }) => json === null);
+  const layoutOf = (section: { diff?: boolean; text: string }) =>
+    section.diff
+      ? resolveDiffLayout(diffChoice, {
+          width,
+          lines: diffLineCount(section.text),
+        })
+      : null;
+  // The card's copy is the one copy-everything action; say so when the whole body is JSON.
+  const allJson = presentation.length > 0 && presentation.every(({ json }) => json !== null);
   const actions = [
     {
       id: "copy",
-      label: feedback.copied ? t("Copied") : feedback.failed ? t("Retry copy") : t("Copy"),
+      label: feedback.copied
+        ? t("Copied")
+        : feedback.failed
+          ? t("Retry copy")
+          : allJson
+            ? t("Copy JSON")
+            : t("Copy"),
       icon: feedback.copied ? <Check /> : feedback.failed ? <RotateCcw /> : <Copy />,
       tone: feedback.copied
         ? ("success" as const)
@@ -171,40 +234,80 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
   // single icon group (Copy, Wrap) lives on the first heading instead of a bar of its own.
   return (
     <Surface
+      ref={surface}
       variant="card"
       padding="none"
       data-tool-inspection
       className="flex min-w-0 flex-col gap-2 overflow-clip pb-2"
     >
       {presentation.map(({ section, json }, index) => {
+        const layout = layoutOf(section);
         return (
           <section key={index} className="min-w-0">
-            <div className="flex min-h-7 items-center justify-between gap-2 pr-1 pl-3">
-              <SectionLabel as="h4">{t(section.title)}</SectionLabel>
+            <div className="flex min-h-7 items-center justify-between gap-2 pe-1 ps-3">
+              <div className="flex min-w-0 items-center gap-2">
+                {/* A lone section is named by its own disclosure, so only several need headings. */}
+                {presentation.length > 1 ? (
+                  <SectionLabel as="h4">{catalogText(t, section.title)}</SectionLabel>
+                ) : (
+                  <span />
+                )}
+                {layout ? (
+                  <SegmentedControl
+                    size="sm"
+                    label={t("Diff view")}
+                    value={layout.layout}
+                    onValueChange={(value) => setDiffChoice(value as DiffLayoutChoice)}
+                    options={[
+                      { value: "unified", label: t("Unified") },
+                      {
+                        value: "split",
+                        label: t("Split"),
+                        disabled: !layout.splitAvailable,
+                      },
+                    ]}
+                  />
+                ) : null}
+              </div>
               {index === 0 ? (
                 <div className="flex items-center gap-2">
-                  {feedback.failed ? (
-                    <Text role="status" size="caption" tone="danger">
-                      {t("Copy failed")}
-                    </Text>
-                  ) : null}
                   <FloatingButtonGroup
                     label={t("Output actions")}
                     // Same bare icon row as the message actions: no tray padding.
                     variant="muted"
                     padding="none"
-                    size="sm"
+                    size="xs"
                     iconOnly
                     items={actions}
                   />
-                  <span role="status" className="sr-only">
-                    {feedback.copied ? t("Copied") : ""}
-                  </span>
+                  <LiveText
+                    className="sr-only"
+                    text={feedback.copied ? t("Copied") : feedback.failed ? t("Copy failed") : ""}
+                  />
                 </div>
               ) : null}
             </div>
-            {json ? (
-              <JsonViewer data={json.data} label={t(section.title)} maxHeight={320} pageSize={50} />
+            {layout?.layout === "split" ? (
+              <div
+                // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- the capped split diff must stay keyboard-scrollable
+                tabIndex={0}
+                {...surfaceAttributes(
+                  { focusRing: "inset" },
+                  "max-h-80 overflow-auto overscroll-contain py-1",
+                )}
+              >
+                <ToolInspectionSplitDiff text={section.text} wrap={wrap} />
+              </div>
+            ) : json ? (
+              <JsonViewer
+                data={json.data}
+                label={catalogText(t, section.title)}
+                maxHeight={320}
+                pageSize={50}
+                // The card's Copy action already copies the whole document.
+                copyRoot={false}
+                toolbar={jsonNodeCount(json.data, JSON_TOOLBAR_MIN_NODES) > JSON_TOOLBAR_MIN_NODES}
+              />
             ) : (
               <OutputBlock
                 tabIndex={0}
@@ -218,36 +321,21 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
                 )}
               >
                 {section.diff ? (
-                  section.text.split("\n").map((line, lineIndex) => (
-                    <Text
-                      key={lineIndex}
-                      size="inherit"
-                      tone={
-                        line.startsWith("+")
-                          ? "added"
-                          : line.startsWith("-")
-                            ? "removed"
-                            : "inherit"
-                      }
-                    >
-                      {line}
-                      {"\n"}
-                    </Text>
-                  ))
+                  <ToolInspectionDiff text={section.text} />
                 ) : section.text ? (
                   <AnsiText text={section.text} />
+                ) : section.truncated ? (
+                  t("Output left out to keep this run small.")
                 ) : (
-                  t(section.truncated ? "Output left out to keep this run small." : "Empty file")
+                  t("Empty file")
                 )}
               </OutputBlock>
             )}
-            {section.truncated || section.legacy ? (
+            {(section.truncated && section.text) || section.legacy ? (
               <Text as="p" size="caption" tone="secondary" className="px-3 pt-1">
-                {t(
-                  section.legacy
-                    ? "Only a shortened preview was saved for this older tool call."
-                    : "Content shortened to keep this conversation responsive.",
-                )}
+                {section.legacy
+                  ? t("Only a shortened preview was saved for this older tool call.")
+                  : t("Content shortened to keep this conversation responsive.")}
               </Text>
             ) : null}
           </section>

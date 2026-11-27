@@ -30,6 +30,8 @@ import {
 } from "./sessions/live-batch-recovery";
 import { createHash, randomUUID } from "node:crypto";
 import { isApprovalOccurrenceId } from "../src/shared/model/approvalOccurrence";
+import { CLAUDE_WORKSPACE_GLOB } from "../src/shared/model/sessionApprovalGrant";
+import { SessionApprovalGrants, sessionApprovalOwner } from "./approvals/session-approval-grants";
 import { parseProviderAccountId } from "../src/features/providers/model/providerAccountId";
 import { assertHostProviderAccount } from "./providers/provider-accounts";
 import { readFile, realpath, stat } from "node:fs/promises";
@@ -51,6 +53,12 @@ import { homedir } from "node:os";
 import { HandoffHistoryStore } from "./tasks/handoff-history";
 import { buildBudgetedHandoff, handoffHistory } from "../src/features/sessions/model/handoffBudget";
 import { renameHostWorktreeBranch, resolveHostWorktreeAsync } from "./git/git-worktrees";
+import { PROJECTLESS_PROJECT_ID } from "../src/shared/model/host-contracts/projectless-sessions";
+import {
+  assertProjectlessCreate,
+  isProjectlessScope,
+  projectlessSessionCwd,
+} from "./sessions/projectless-scope";
 import {
   applyHarnessEvent,
   promoteLastAssistantToPlan,
@@ -88,7 +96,9 @@ import {
   sameByRevisions,
 } from "./sessions/desktop-digest-cache";
 import { LeaseHeldError } from "../src/features/sync/model/runLease";
-import { refuseHost } from "./domains/context";
+import { HostDomainRefusalError, refuseHost } from "./domains/context";
+import { createLogger } from "./diagnostics/logger";
+import { CodexWriterRetirementRefusal } from "../src/integrations/harness/providers/codex/codex";
 import {
   atHead,
   chooseBase,
@@ -102,6 +112,7 @@ import type {
   HarnessOperationContext,
   SendTurnInput,
 } from "../src/integrations/harness/core/types";
+import { TurnNotReadyError } from "../src/integrations/harness/core/types";
 import {
   HARNESS_LABEL,
   RUNTIME_MODES,
@@ -120,6 +131,16 @@ import {
   type ContextualSessionInput,
 } from "../src/features/connections/model/protocol";
 import type { HostProvider } from "./providers/providers";
+import { withTimeout } from "../src/shared/lib/withTimeout";
+import type {
+  WorkspaceRpcRequest,
+  WorkspaceRpcResponse,
+} from "./workspaces/workspace-rpc-contracts";
+import {
+  installHostAdditionalDirsResolver,
+  setSessionAdditionalDirs,
+  validateAdditionalDirs,
+} from "./sessions/session-additional-dirs";
 import {
   ProviderActivityRetirements,
   stopCapturedProvider,
@@ -134,6 +155,11 @@ import { assertShellOwnershipAvailable, reserveShellOwnership } from "./executio
 import { isTaskWorktreeRemoving } from "./tasks/task-worktree-cleanup";
 import { prepareHostSkillPrompt } from "./skills/prompt-skills";
 import { DELEGATION_PARENT_KEY } from "../src/shared/model/host-contracts/delegation";
+import {
+  delegatedChatOnlyHistory,
+  privateDelegateDirectory,
+  privateDelegateReplay,
+} from "./delegation/child-native";
 import { projectChatCitationsForProvider } from "../src/features/sessions/model/chatCitation";
 import { bykitHint } from "./bykit/bykit-hint";
 import {
@@ -242,9 +268,10 @@ function parseCommandBody(input: unknown): HostCommand {
       v.autoWorktreeBranch !== undefined &&
       (v.worktreeCwd === undefined ||
         typeof v.autoWorktreeBranch !== "string" ||
-        !/^mc\/[a-z0-9]{8}$/.test(v.autoWorktreeBranch))
+        !/^by\/[a-z0-9]{8}$/.test(v.autoWorktreeBranch))
     )
       throw new Error("Invalid automatically created worktree branch");
+    if (v.projectId === PROJECTLESS_PROJECT_ID) assertProjectlessCreate(v);
     return {
       type: "create",
       commandId,
@@ -432,6 +459,15 @@ function parseCommandBody(input: unknown): HostCommand {
         ? { secondOpinion: secondOpinionMeta(v.secondOpinion) }
         : {}),
       ...(v.type === "send" && noteCard ? { noteCard } : {}),
+      ...(v.type === "send" && v.additionalDirs !== undefined
+        ? {
+            additionalDirs: Array.isArray(v.additionalDirs)
+              ? (v.additionalDirs as string[])
+              : (() => {
+                  throw new Error("Invalid additional folders");
+                })(),
+          }
+        : {}),
     };
   }
   if (v.type === "removeDraft")
@@ -477,6 +513,8 @@ function parseCommandBody(input: unknown): HostCommand {
     throw new Error("Invalid request ID");
   const requestId = Number(v.requestId);
   if (v.type === "approve" && (v.decision === "allow" || v.decision === "deny")) {
+    if (v.allowForSession !== undefined && (v.allowForSession !== true || v.decision !== "allow"))
+      throw new Error("Invalid session approval decision");
     if (!isApprovalOccurrenceId(v.approvalOccurrenceId))
       throw new Error(
         "Approval request identity is missing or invalid. Refresh this request before responding.",
@@ -489,6 +527,7 @@ function parseCommandBody(input: unknown): HostCommand {
       requestId,
       approvalOccurrenceId: v.approvalOccurrenceId,
       decision: v.decision,
+      ...(v.allowForSession === true ? { allowForSession: true } : {}),
     };
   }
   if (v.type === "answer") {
@@ -498,6 +537,9 @@ function parseCommandBody(input: unknown): HostCommand {
   throw new Error("Unsupported command");
 }
 
+/** Upper bound for generating a branch name before the temporary one is kept. */
+const BRANCH_NAME_DEADLINE_MS = 20_000;
+
 /** S1 supplies registry identity; S2 supplies capture and the durable recovery fence.
  * The resolver must reject unknown/broken managed ownership rather than return legacy.
  */
@@ -506,6 +548,10 @@ export interface ManagedTurnHistoryAdapter {
   exactGitRewindEnabled?(): boolean | Promise<boolean>;
   history: TurnGitHistory;
   workspaceForSession(value: HostSession): Promise<{ workspaceId: string; path?: string } | null>;
+  /** Renames the workspace's temporary `by/<8hex>` branch; the Host registry owns the rename. */
+  renameBranch?(
+    request: WorkspaceRpcRequest<"workspaces.renameBranch">,
+  ): Promise<WorkspaceRpcResponse<"workspaces.renameBranch">>;
   assertWritable(workspaceId: string): Promise<void>;
   prepareWorkspaceForCreate?(request: {
     projectId: string;
@@ -554,6 +600,8 @@ type ActiveHostTurn = {
   ending: boolean;
   persistenceFailed: boolean;
   authorityGeneration?: number;
+  approvalCwd?: string;
+  grantableApprovals?: Set<string>;
   resumeAtReset?: boolean;
   managedTurns: ManagedTurnBoundary[];
   filesTurn: boolean;
@@ -582,7 +630,49 @@ function retainWarmActivity(activity: ProviderActivityRetirement | undefined): v
 type RetainedWriterTurn = Pick<
   ActiveHostTurn,
   "provider" | "activity" | "operationContext" | "authorityGeneration" | "cleanup"
->;
+> & { reportedRetirementReason?: WriterRetirementReason; recoveryScheduled?: boolean };
+
+type WriterRetirementReason =
+  | CodexWriterRetirementRefusal["reason"]
+  | "owner_receipt_missing"
+  | "cleanup_failed"
+  | "waiting_for_original";
+
+const writerRetirementLog = createLogger("host.writer-retirement");
+
+function writerRetirementRefusal(
+  original: RetainedWriterTurn,
+  reason: WriterRetirementReason,
+  deleting: boolean,
+  cause?: unknown,
+): HostDomainRefusalError {
+  const pending = reason === "waiting_for_original";
+  const code = pending ? "HOST_WRITER_RETIREMENT_PENDING" : "HOST_WRITER_RETIREMENT_FAILED";
+  if (original.reportedRetirementReason !== reason) {
+    original.reportedRetirementReason = reason;
+    const fields = { code, reason, operation: deleting ? "delete" : "transfer" };
+    if (pending) writerRetirementLog.info("Waiting for original provider retirement", fields);
+    else writerRetirementLog.warn("Original provider retirement could not be confirmed", fields);
+  }
+  const text = pending
+    ? deleting
+      ? "The original Host writer is still stopping; the session was not deleted."
+      : "The previous Host provider writer is still stopping. Your message was not sent."
+    : deleting
+      ? "The original Host writer could not be retired; the session was not deleted."
+      : "The previous Host writer could not be retired. Your message was not sent.";
+  return new HostDomainRefusalError(code, "conflict", pending, `${code}: ${text}`, { cause });
+}
+
+function writerRetirementFailureReason(error: unknown): WriterRetirementReason {
+  const outcomes = error instanceof AggregateError ? error.errors : [error];
+  return (
+    outcomes.find(
+      (entry): entry is CodexWriterRetirementRefusal =>
+        entry instanceof CodexWriterRetirementRefusal,
+    )?.reason ?? "cleanup_failed"
+  );
+}
 
 export type EngineCommandAdmission = {
   check: (stage: {
@@ -636,6 +726,7 @@ export class HostEngine {
   private readonly operations = new EngineOperations();
   /** Provider events not yet applied; one queued drain applies them as a batch. */
   private readonly pendingEvents = new PendingEvents();
+  private readonly sessionApprovalGrants = new SessionApprovalGrants();
   private switchingProjects = new Set<string>();
   private readonly deferredManagedBindings = new Map<
     string,
@@ -690,69 +781,112 @@ export class HostEngine {
         throw refuseHost(new LeaseHeldError("host"), "LEASE_HELD", "conflict", true);
       const original = this.retainedWriterTurns.get(id);
       if (original) {
+        const deleting = options?.rebind === false;
         if (!original.cleanup) {
-          const retire = original.provider.retireOriginal;
+          // Providers without an exact hook retire through the same owner-bound stop a
+          // failed or cancelled turn uses; the persisted resume identity is rebound below.
+          const retire = original.provider.retireOriginal ?? original.provider.stop;
           const context = original.operationContext;
-          if (!retire || !context || !original.activity)
-            throw new Error(
-              options?.rebind === false
-                ? "HOST_WRITER_RETIREMENT_FAILED: The original Host writer cannot be safely retired; the session was not deleted."
-                : "HOST_WRITER_RETIREMENT_FAILED: This provider cannot safely retire its previous Host writer. Continue through the task repair workflow; your message was not sent.",
-            );
+          if (!context || !original.activity)
+            throw writerRetirementRefusal(original, "owner_receipt_missing", deleting);
           original.cleanup = this.store.db.outsideScope(() =>
-            original.activity!.retire(async () => {
-              await this.store.assertAuthority(id, original.authorityGeneration);
-              await retire.call(original.provider, id, context);
-            }),
+            original.activity!.retire(
+              async () => {
+                await this.store.assertAuthority(id, original.authorityGeneration);
+                await retire.call(original.provider, id, context);
+              },
+              { waitForOriginal: true },
+            ),
           );
           void original.cleanup.catch(() => {});
         }
+        const released = original.cleanup.then(() => original.activity?.release());
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
           await Promise.race([
-            original.cleanup.then(() => original.activity?.release()),
+            released,
             new Promise<never>((_, reject) => {
               timer = setTimeout(
-                () =>
-                  reject(
-                    new Error(
-                      options?.rebind === false
-                        ? "HOST_WRITER_RETIREMENT_PENDING: The original Host writer is still stopping; the session was not deleted. Retry after retirement completes."
-                        : "HOST_WRITER_RETIREMENT_PENDING: The previous Host provider writer is still stopping. Your message was not sent; retry after retirement completes.",
-                    ),
-                  ),
+                () => reject(writerRetirementRefusal(original, "waiting_for_original", deleting)),
                 20_000,
               );
             }),
           ]);
         } catch (error) {
-          if (error instanceof Error && error.message.startsWith("HOST_WRITER_RETIREMENT_PENDING:"))
+          if (
+            error instanceof HostDomainRefusalError &&
+            error.code === "HOST_WRITER_RETIREMENT_PENDING"
+          ) {
+            if (!deleting) this.recoverRetiredWriter(id, original, released);
             throw error;
-          throw new Error(
-            options?.rebind === false
-              ? "HOST_WRITER_RETIREMENT_FAILED: The original Host writer could not be retired; the session was not deleted."
-              : "HOST_WRITER_RETIREMENT_FAILED: The previous Host writer could not be retired. Your message was not sent. Inspect the connection or continue through the task repair workflow.",
-            { cause: error },
+          }
+          throw writerRetirementRefusal(
+            original,
+            writerRetirementFailureReason(error),
+            deleting,
+            error,
           );
         } finally {
           clearTimeout(timer);
         }
-        this.retainedWriterTurns.delete(id);
-        this.forgetRetiredProvider(id, original.provider);
-        // Keep only the persisted resume identity; never create a new history.
-        const current =
-          options?.rebind === false ? undefined : (await this.store.session(id)).session;
-        if (current?.providerSessionId)
-          original.provider.bind(
-            id,
-            current.providerSessionId,
-            current.cwd,
-            current.providerAccountId,
-          );
+        if (!(await this.finishRetiredWriter(id, original, deleting)))
+          throw new LeaseHeldError("host");
       }
       if (this.closing) throw new LeaseHeldError("host");
       await admitted?.();
       return grant();
+    });
+  }
+
+  private recoverRetiredWriter(
+    id: string,
+    original: RetainedWriterTurn,
+    released: Promise<void | undefined>,
+  ): void {
+    if (original.recoveryScheduled) return;
+    original.recoveryScheduled = true;
+    this.store.db.outsideScope(() => {
+      void released
+        .then(async () => {
+          const recovered = await this.operations.enqueue(id, () =>
+            this.finishRetiredWriter(id, original, false),
+          );
+          if (recovered && !this.closing) this.onUnblocked?.();
+        })
+        .catch((error: unknown) => {
+          if (this.retainedWriterTurns.get(id) === original)
+            writerRetirementRefusal(original, writerRetirementFailureReason(error), false, error);
+        });
+    });
+  }
+
+  private async finishRetiredWriter(
+    id: string,
+    original: RetainedWriterTurn,
+    deleting: boolean,
+  ): Promise<boolean> {
+    const ownsRetirement = () => !this.closing && this.retainedWriterTurns.get(id) === original;
+    return await this.store.db.scope(async () => {
+      if (!ownsRetirement()) return false;
+      if (!deleting) {
+        await this.store.assertAuthority(id, original.authorityGeneration);
+        const { session } = await this.store.session(id);
+        if (!ownsRetirement()) return false;
+        // Keep the persisted resume identity only for this original provider.
+        if (
+          session.providerSessionId &&
+          this.providers[session.harness as RemoteProvider] === original.provider
+        )
+          original.provider.bind(
+            id,
+            session.providerSessionId,
+            session.cwd,
+            session.providerAccountId,
+          );
+      }
+      this.retainedWriterTurns.delete(id);
+      this.forgetRetiredProvider(id, original.provider);
+      return true;
     });
   }
   /** Deletion may not discard another retained provider cohort or rebind a retired writer. */
@@ -765,7 +899,11 @@ export class HostEngine {
     try {
       return await this.withRetiredProviderWriter(
         id,
-        remove,
+        async () => {
+          const result = await remove();
+          this.sessionApprovalGrants.end(id);
+          return result;
+        },
         async () => {
           if (!held) {
             this.deletingSessions.add(id);
@@ -820,13 +958,15 @@ export class HostEngine {
   /** A rewind, clear or branch switch ended: conversations waiting on it may go on. */
   onUnblocked?: () => void;
   /** Why a turn cannot start in this conversation right now, apart from one running in it. */
-  async busyReason(sessionId: string): Promise<string | undefined> {
+  async busyReason(sessionId: string, allowDesktopOnly = false): Promise<string | undefined> {
     await this.ready;
     if (this.closing) return "Host is stopping";
     if (this.retainedWriterTurns.get(sessionId)?.cleanup)
       return "The previous Host writer retirement is pending or failed. Complete the ownership transfer before continuing.";
     if (this.rewinding.has(sessionId)) return "A conversation change is in progress";
     try {
+      // Queue admission separately verifies that a desktop-only session exists.
+      if (allowDesktopOnly && !(await this.store.sessionAuthority(sessionId))) return undefined;
       const value = await this.store.session(sessionId);
       await this.managedWorkspace(value);
       if (this.switchingProjects.has(value.projectId)) return "A branch switch is in progress";
@@ -845,6 +985,9 @@ export class HostEngine {
     private managedTurns?: ManagedTurnHistoryAdapter,
     private readonly runWriters = new HostRunWriters(),
   ) {
+    installHostAdditionalDirsResolver(
+      join(dirname(store.attachmentDir), "session-additional-dirs.json"),
+    );
     const checkpointRoot = join(dirname(store.attachmentDir), "checkpoints");
     this.checkpoints = new HostCheckpoints(
       checkpointRoot,
@@ -852,6 +995,9 @@ export class HostEngine {
       async (sessionId, generation) => {
         await store.assertAuthority(sessionId, generation);
       },
+      // A workspace can contain the Host's own storage; turn history never captures it
+      // (the checkpoint root itself is always excluded).
+      store.ownedPaths,
     );
     this.ready = this.initialize();
   }
@@ -1427,18 +1573,47 @@ export class HostEngine {
 
   async withIdleProject<T>(projectId: string, action: () => Promise<T>): Promise<T> {
     await this.ready;
+    // Both refusals happen before the action, so clients must not report an unknown outcome.
     if (this.switchingProjects.has(projectId))
-      throw new Error("A branch switch is already in progress");
+      throw new HostDomainRefusalError(
+        "COMMAND_BUSY",
+        "conflict",
+        false,
+        "A branch switch is already in progress",
+      );
     this.switchingProjects.add(projectId);
     try {
       if (await this.store.hasRunning(projectId))
-        throw new Error("Wait for running host sessions before switching branches");
+        throw new HostDomainRefusalError(
+          "COMMAND_BUSY",
+          "conflict",
+          false,
+          "Wait for running sessions in this project to finish, then try again.",
+        );
       await this.store.db.checkAuthorization();
       return await action();
     } finally {
       this.switchingProjects.delete(projectId);
       this.onUnblocked?.();
     }
+  }
+
+  /** Git work that leaves working files alone may overlap agents, but never a branch switch. */
+  async withStableCheckout<T>(projectId: string, action: () => Promise<T>): Promise<T> {
+    await this.ready;
+    if (this.switchingProjects.has(projectId))
+      throw new HostDomainRefusalError(
+        "COMMAND_BUSY",
+        "conflict",
+        false,
+        "A branch switch is already in progress",
+      );
+    await this.store.db.checkAuthorization();
+    return await action();
+  }
+
+  supportsSteer(id: RemoteProvider): boolean {
+    return !!this.providers[id]?.steer;
   }
 
   private provider(id: string): HostProvider {
@@ -1996,9 +2171,29 @@ export class HostEngine {
         await this.managedWorkspace(await this.store.session(id));
         await this.flush(id);
         const summary = await this.store.updateSession(id, patch, authorityGeneration);
+        if (patch.archived === true) this.sessionApprovalGrants.end(id);
         const live = this.live.get(id);
         if (live) live.value = await this.store.session(id);
         return summary;
+      }),
+    );
+  }
+
+  async sessionApprovalGrantList(
+    input: { sessionId: string; authorityGeneration?: number; grantId?: string },
+    authorize: () => Promise<void>,
+  ) {
+    await this.ready;
+    const id = input.sessionId;
+    return this.store.db.scope(() =>
+      this.operations.run(id, async () => {
+        await authorize();
+        await this.store.assertAuthority(id, input.authorityGeneration);
+        const value = await this.store.session(id);
+        await authorize();
+        const owner = sessionApprovalOwner(value, value.session.worktreeCwd ?? value.session.cwd);
+        if (input.grantId) this.sessionApprovalGrants.revoke(id, owner, input.grantId);
+        return this.sessionApprovalGrants.list(id, owner);
       }),
     );
   }
@@ -2332,6 +2527,7 @@ export class HostEngine {
   }
 
   private async prepareCreation(command: Extract<HostCommand, { type: "create" }>) {
+    if (isProjectlessScope(command.projectId)) return undefined;
     if (command.workspaceId) return { workspaceId: command.workspaceId };
     // Adapter-less engines are legacy embeddings. Production attaches the managed
     // runtime before accepting transports; configured managed engines fail closed.
@@ -2499,6 +2695,16 @@ export class HostEngine {
                 (defaults) => defaults.version > 0 && defaults.resumeAtReset,
               )))
             : undefined;
+        // Trust boundary: the client names folders on this Host; reject before any state changes.
+        const additionalDirs =
+          command.type === "send" && command.additionalDirs !== undefined
+            ? await validateAdditionalDirs(
+                command.additionalDirs,
+                await this.store
+                  .session(command.sessionId)
+                  .then(({ session: s }) => s.worktreeCwd ?? s.cwd),
+              )
+            : undefined;
         if (command.type === "contextual") return await this.contextualCommand(command, signature);
         if (command.type === "regenerateTitle")
           return this.regenerateTitleCommand(command, signature);
@@ -2515,7 +2721,10 @@ export class HostEngine {
           let value: HostSession;
           if (command.type === "create") {
             assertModelProvider(command.harness, command.model);
-            const project = await this.store.project(command.projectId);
+            const projectless = isProjectlessScope(command.projectId);
+            const project = projectless
+              ? await this.store.ensureProjectlessScope()
+              : await this.store.project(command.projectId);
             if (this.switchingProjects.has(project.id))
               throw new Error("Wait for the branch switch to finish");
             this.provider(command.harness);
@@ -2535,8 +2744,10 @@ export class HostEngine {
               await this.managedTurns!.assertWritable(managed.workspaceId);
             if (command.sessionId && managed?.sessionId && command.sessionId !== managed.sessionId)
               throw new Error("Requested session identity does not own this workspace");
-            const cwd =
-              managed?.path ?? (await resolveHostWorktreeAsync(project.cwd, command.worktreeCwd));
+            const cwd = projectless
+              ? await projectlessSessionCwd(command.commandId)
+              : (managed?.path ??
+                (await resolveHostWorktreeAsync(project.cwd, command.worktreeCwd)));
             const sessionId = managed?.sessionId ?? command.sessionId ?? randomUUID();
             await this.store.assertAuthority(sessionId, command.authorityGeneration);
             if (await this.store.sessionAuthority(sessionId))
@@ -2571,7 +2782,8 @@ export class HostEngine {
                 model: command.model,
                 runtimeMode: command.runtimeMode,
                 modelSettings: command.modelSettings ?? {},
-                title: "New remote session",
+                // Clients supply the localized title until the session is named.
+                title: "",
                 ...(!managed && command.autoWorktreeBranch
                   ? { branch: command.autoWorktreeBranch, worktreeCwd: cwd }
                   : {}),
@@ -2690,14 +2902,15 @@ export class HostEngine {
             } else if (command.type === "draft") {
               if (value.status === "running" || value.session.blocks.some((block) => block.draft))
                 throw new Error("This session cannot save another draft right now");
-              const attachments = resolveAttachments(this.store, command.attachments ?? []);
+              const attachments = await resolveAttachments(this.store, command.attachments ?? []);
               value = {
                 ...value,
                 session: {
                   ...value.session,
-                  title: value.session.blocks.length
-                    ? value.session.title
-                    : titleFromPrompt(command.text, value.session.harness, attachments),
+                  title:
+                    !value.session.title && !value.session.blocks.length
+                      ? titleFromPrompt(command.text, value.session.harness, attachments)
+                      : value.session.title,
                   blocks: [
                     ...value.session.blocks,
                     {
@@ -2822,7 +3035,7 @@ export class HostEngine {
               const attachments =
                 command.type === "send"
                   ? (draft?.attachments ??
-                    resolveAttachments(this.store, command.attachments ?? []))
+                    (await resolveAttachments(this.store, command.attachments ?? [])))
                   : [];
               if (
                 attachments.some(
@@ -2891,9 +3104,9 @@ export class HostEngine {
                 handoffText = handoff?.text;
                 handoffFrom = handoff?.from as RemoteProvider | undefined;
                 if (handoffText) {
-                  const archive = new HandoffHistoryStore(
+                  const archive = await new HandoffHistoryStore(
                     dirname(this.store.attachmentDir),
-                  ).saveSync(handoffHistory(value.session));
+                  ).save(handoffHistory(value.session));
                   // Budget the actual outgoing request once. Skill bodies and runtime
                   // hints are model input too, but must not be added to the request twice.
                   const request = codexGoal ? command.text : withShellContext(shellRuns, turnText);
@@ -2979,7 +3192,7 @@ export class HostEngine {
               const firstTurn =
                 command.type === "send" && !value.session.blocks.some((block) => !block.draft);
               const placeholderTitle =
-                value.session.title === "New remote session" ||
+                !value.session.title ||
                 canReplaceSessionTitle(
                   value.session.title,
                   value.session.harness,
@@ -3076,6 +3289,8 @@ export class HostEngine {
                     // Install synchronously while the owners are held, but let the
                     // provider's async lifetime start outside this short SQL scope.
                     this.store.db.outsideScope(() => {
+                      if (additionalDirs)
+                        setSessionAdditionalDirs(command.sessionId, additionalDirs);
                       // Codex parses /goal only as the first token; context travels separately.
                       this.run(
                         current,
@@ -3108,8 +3323,16 @@ export class HostEngine {
                   }),
                 );
             } else {
-              if (value.runId !== command.runId || value.status !== "running")
+              if (value.runId !== command.runId || value.status !== "running") {
+                if (command.type === "steer")
+                  throw new HostDomainRefusalError(
+                    "CONTEXT_CHANGED",
+                    "conflict",
+                    true,
+                    "This request belongs to a finished or replaced turn",
+                  );
                 throw new Error("This request belongs to a finished or replaced turn");
+              }
               if (command.type === "cancel") {
                 const original = this.running.get(command.sessionId);
                 const cancel = provider.cancel;
@@ -3219,10 +3442,28 @@ export class HostEngine {
               } else if (command.type === "steer") {
                 assertModelProvider(value.session.harness, value.session.model);
                 const active = this.running.get(command.sessionId);
-                if (!provider.steer) throw new Error("This provider cannot steer an active turn");
+                if (!provider.steer)
+                  throw new HostDomainRefusalError(
+                    "COMMAND_INVALID",
+                    "validation",
+                    false,
+                    "This provider cannot steer an active turn",
+                  );
                 if (!active || active.cancelled || active.ending)
-                  throw new Error("This turn was stopped");
-                const attachments = resolveAttachments(this.store, command.attachments ?? []);
+                  throw new HostDomainRefusalError(
+                    "CONTEXT_CHANGED",
+                    "conflict",
+                    true,
+                    "This turn was stopped",
+                  );
+                if (provider.steerReady && !provider.steerReady(command.sessionId))
+                  throw new HostDomainRefusalError(
+                    "COMMAND_BUSY",
+                    "conflict",
+                    true,
+                    "The active turn is not ready for steering.",
+                  );
+                const attachments = await resolveAttachments(this.store, command.attachments ?? []);
                 const owner = value.session.blocks[executionUserIndex(value.session.blocks)];
                 value = {
                   ...value,
@@ -3298,7 +3539,6 @@ export class HostEngine {
                         this.running.get(command.sessionId) !== active
                       )
                         return;
-                      attempted = true;
                       await this.followUpDelivery(
                         command.sessionId,
                         command.runId,
@@ -3316,6 +3556,7 @@ export class HostEngine {
                           runId: command.runId,
                         });
                       await this.checkProviderSchedule(command.sessionId, command.runId);
+                      attempted = true;
                       await provider.steer!(preparedSteer);
                       // Cancellation can resolve a provider's steer without submitting it.
                       // A retired owner therefore cannot establish successful delivery.
@@ -3332,15 +3573,18 @@ export class HostEngine {
                     })
                     .catch(async (reason) => {
                       if (this.running.get(command.sessionId) === active) {
+                        const uncertain = attempted && !(reason instanceof TurnNotReadyError);
                         await this.followUpDelivery(
                           command.sessionId,
                           command.runId,
                           command.commandId,
-                          attempted ? "uncertain" : "undelivered",
+                          uncertain ? "uncertain" : "undelivered",
                         );
                         this.event(command.sessionId, command.runId, {
                           type: "status",
-                          text: `Could not confirm delivery of the follow-up. It is saved as a draft; inspect the provider's work before retrying: ${String(reason)}`,
+                          text: uncertain
+                            ? `Could not confirm delivery of the follow-up. It is saved as a draft; inspect the provider's work before retrying: ${String(reason)}`
+                            : `The follow-up was not sent. It is saved as a draft. ${String(reason)}`,
                         });
                       }
                     });
@@ -3352,7 +3596,11 @@ export class HostEngine {
                 );
                 if (pending.length !== 1)
                   throw new Error("Approval is already resolved or ambiguous");
-                if (pending[0].approval?.occurrenceId !== command.approvalOccurrenceId)
+                const occurrenceId = command.approvalOccurrenceId;
+                if (
+                  !isApprovalOccurrenceId(occurrenceId) ||
+                  pending[0].approval?.occurrenceId !== occurrenceId
+                )
                   throw new Error("This approval request changed. Refresh it before responding.");
                 const active = this.running.get(command.sessionId);
                 const liveOwner = this.live.get(command.sessionId);
@@ -3364,6 +3612,13 @@ export class HostEngine {
                   !liveOwner
                 )
                   throw new Error("This request belongs to a finished or replaced turn");
+                const grantOwner =
+                  active.approvalCwd && sessionApprovalOwner(value, active.approvalCwd);
+                if (
+                  command.allowForSession &&
+                  (!grantOwner || !active.grantableApprovals?.has(occurrenceId))
+                )
+                  throw new Error("This request cannot be allowed for the session");
                 const blockId = pending[0].id;
                 const authorityGeneration = value.authorityGeneration;
                 value = {
@@ -3371,7 +3626,7 @@ export class HostEngine {
                   session: applyHarnessEvent(value.session, {
                     type: "approval.resolved",
                     requestId: command.requestId,
-                    occurrenceId: command.approvalOccurrenceId,
+                    occurrenceId,
                     decision: command.decision,
                   }),
                 };
@@ -3391,7 +3646,7 @@ export class HostEngine {
                     current.value.authorityGeneration !== authorityGeneration ||
                     this.provider(current.value.session.harness) !== provider ||
                     requests?.length !== 1 ||
-                    requests[0].approval?.occurrenceId !== command.approvalOccurrenceId ||
+                    requests[0].approval?.occurrenceId !== occurrenceId ||
                     requests[0].approval?.decided !== command.decision ||
                     current.value.session.blocks.some(
                       (block) =>
@@ -3401,13 +3656,31 @@ export class HostEngine {
                     throw new Error(
                       "The original approval source changed before provider dispatch",
                     );
+                  if (
+                    command.allowForSession &&
+                    (!active.approvalCwd ||
+                      grantOwner !== sessionApprovalOwner(current.value, active.approvalCwd) ||
+                      !active.grantableApprovals?.has(occurrenceId))
+                  )
+                    throw new Error(
+                      "The original session grant scope changed before provider dispatch",
+                    );
                   // No await between the final original-source guard and the callback.
-                  provider.approve(
+                  const answered = provider.approve(
                     command.sessionId,
                     command.requestId,
                     command.decision,
-                    command.approvalOccurrenceId,
+                    occurrenceId,
+                    ...(command.allowForSession ? ([CLAUDE_WORKSPACE_GLOB] as const) : []),
                   );
+                  active.grantableApprovals?.delete(occurrenceId);
+                  if (command.allowForSession && grantOwner && answered === true)
+                    this.sessionApprovalGrants.allow(
+                      command.sessionId,
+                      grantOwner,
+                      CLAUDE_WORKSPACE_GLOB,
+                      occurrenceId,
+                    );
                 };
               } else {
                 if (value.session.pendingQuestion?.requestId !== command.requestId)
@@ -3517,7 +3790,15 @@ export class HostEngine {
               : {}),
           };
           if (admission?.onAccepted) await admission.onAccepted(result);
-          await this.store.recordReceipt(signature, result);
+          await this.store.recordReceipt(
+            signature,
+            command.type === "steer"
+              ? {
+                  ...result,
+                  steer: { runId: command.runId },
+                }
+              : result,
+          );
           return { receipt: result, saved };
         }, "critical");
         if (command.type === "cancel") {
@@ -3526,6 +3807,7 @@ export class HostEngine {
         }
         const live = this.live.get(saved.session.id);
         if (live) live.value = saved;
+        if (command.type === "configure") this.sessionApprovalGrants.end(saved.session.id);
         // A receipt means durable host acceptance, not provider completion.
         if (effect) {
           const dispatch = async () => {
@@ -3656,6 +3938,7 @@ export class HostEngine {
           { ...latest, session: clearConversation(latest.session), status: "idle" },
           { type: "conversation.cleared", commandId: command.commandId },
         );
+        this.sessionApprovalGrants.end(command.sessionId);
         const live = this.live.get(command.sessionId);
         if (live) live.value = saved;
         const receipt = {
@@ -3729,6 +4012,10 @@ export class HostEngine {
           cwd: initial.session.cwd ?? "",
           model: initial.session.model,
           modelSettings: initial.session.modelSettings,
+          delegateHistoryDirectory: await privateDelegateDirectory(
+            initial.session,
+            dirname(this.store.attachmentDir),
+          ),
           providerAccountId: initial.session.providerAccountId,
           runtimeMode: initial.session.runtimeMode,
           providerTurnId: strategy.providerTurnId,
@@ -4183,6 +4470,69 @@ export class HostEngine {
         },
       );
     }
+    const managedId = value.session.workspaceId;
+    const renameManaged = this.managedTurns?.renameBranch?.bind(this.managedTurns);
+    if (managedId && renameManaged && provider.generateBranchName) {
+      const generate = provider.generateBranchName;
+      this.backgroundProviderWork(
+        value,
+        provider,
+        async (operationContext) => {
+          const workspace = await this.store.managedWorkspace(managedId);
+          // Only a temporary `by/<8hex>` branch is renamed; task and already-named branches stay.
+          if (!workspace || !/^refs\/heads\/by\/[0-9a-f]{8}$/.test(workspace.branchRef))
+            return null;
+          await this.store.assertAuthority(id, value.authorityGeneration);
+          await this.runWriters.setExecutionCwd(operationContext.hostRun!, workspace.path);
+          if (this.closing) return null;
+          // A slow provider keeps the temporary name; the name is cosmetic.
+          return await withTimeout(
+            generate.call(provider, workspace.path, message, operationContext),
+            BRANCH_NAME_DEADLINE_MS,
+            "Branch name generation",
+          );
+        },
+        async (fragment) => {
+          if (this.closing || !fragment) return;
+          await this.store.assertAuthority(id, value.authorityGeneration);
+          const workspace = await this.store.managedWorkspace(managedId);
+          if (!workspace) return;
+          const result = await renameManaged({
+            workspaceId: managedId,
+            expectedRevision: workspace.revision,
+            fragment,
+            idempotencyKey: `branch-name:${managedId}`,
+          }).catch((error: unknown) => {
+            // Active, upstream or delivery-pending workspaces keep the temporary name.
+            console.debug("[bycoda] managed branch rename skipped", error);
+            return null;
+          });
+          if (!result?.renamed || this.closing) return;
+          const branchName = result.branchRef.replace(/^refs\/heads\//, "");
+          await this.store.db.scope(() =>
+            this.operations.run(id, async () => {
+              if (this.closing) return;
+              await this.store.assertAuthority(id, value.authorityGeneration);
+              await this.flush(id);
+              const current = await this.store.session(id);
+              const saved = await this.save(
+                {
+                  ...current,
+                  session: {
+                    ...current.session,
+                    branch: branchName,
+                    workspaceRevision: result.revision,
+                  },
+                },
+                { type: "session.generatedBranch", branch: branchName },
+              );
+              const live = this.live.get(id);
+              if (live) live.value = saved;
+            }),
+          );
+        },
+      );
+    }
     const temporary = value.autoWorktreeBranch;
     if (temporary && !value.session.workspaceId && provider.generateBranchName) {
       const generate = provider.generateBranchName;
@@ -4202,8 +4552,6 @@ export class HostEngine {
           // A title/branch request may finish after the conversation was deleted.
           const currentBeforeRename = await this.store.session(id);
           if (this.closing || currentBeforeRename.autoWorktreeBranch !== temporary) return;
-          // Managed branch identity is fixed by the registry, never renamed by a title hint.
-          if (await this.managedWorkspace(currentBeforeRename)) return;
           const project = await this.store.project(value.projectId);
           if (this.closing) return;
           await renameHostWorktreeBranch(
@@ -4365,6 +4713,7 @@ export class HostEngine {
             if (workspace?.path)
               session = { ...session, cwd: workspace.path, worktreeCwd: workspace.path };
             await this.runWriters.setExecutionCwd(active.hostRun!, session.cwd);
+            active.approvalCwd = session.cwd;
             if (this.closing || active.cancelled) throw new Error("Turn cancelled");
             const managedBoundary = active.managed
               ? await this.beginManagedTurn(value, userBlockId!)
@@ -4410,6 +4759,10 @@ export class HostEngine {
               cwd: session.cwd,
               model: session.model,
               modelSettings: session.modelSettings,
+              delegateHistoryDirectory: await privateDelegateDirectory(
+                session,
+                dirname(this.store.attachmentDir),
+              ),
               providerAccountId: session.providerAccountId,
               runtimeMode: session.runtimeMode,
               intent,
@@ -4434,7 +4787,11 @@ export class HostEngine {
               contextEvents.complete();
               forgetRuntimeHint(session.id);
             } else {
+              const chatOnlyHistory = delegatedChatOnlyHistory(session, userBlockId);
+              if (chatOnlyHistory !== undefined && attachments?.length)
+                throw new Error("This chat-only provider accepts text without attachments.");
               const preparedPrompt =
+                chatOnlyHistory === undefined &&
                 !promptPrepared &&
                 (prompt.includes("bycoda-citation:") ||
                   /(^|\s)[/$][A-Za-z0-9][A-Za-z0-9_.:-]*(?=\s|$)/.test(prompt)) &&
@@ -4452,7 +4809,10 @@ export class HostEngine {
                 harness: session.harness,
                 providerAccountId: session.providerAccountId,
               };
-              const hint = pendingRuntimeHint(session.id, thread, await this.turnHint(session));
+              const hint =
+                chatOnlyHistory === undefined
+                  ? pendingRuntimeHint(session.id, thread, await this.turnHint(session))
+                  : "";
               const codex = session.harness === "codex";
               // Codex parses /goal only as the first token; carry replayed
               // context as runtime instructions instead of prefixing it.
@@ -4474,6 +4834,10 @@ export class HostEngine {
               };
               const providerInput: SendTurnInput = {
                 ...input,
+                ...(chatOnlyHistory === undefined ? {} : { chatOnlyHistory }),
+                ...(!rewindReplay
+                  ? { privateDelegateReplay: privateDelegateReplay(session, userBlockId) }
+                  : {}),
                 onAccepted: () => {
                   markHint();
                   this.queueEvent(session.id, acceptReplay, active);
@@ -4836,6 +5200,21 @@ export class HostEngine {
             .catch((error) => console.warn("Checkpoint tool attribution failed", error));
       }
     }
+    const automaticApproval =
+      event.type === "approval.requested"
+        ? await this.sessionToolApproval(live.value, event)
+        : undefined;
+    if (event.type === "approval.requested" && event.sessionApprovalScope && !automaticApproval) {
+      if (
+        !event.occurrenceId ||
+        !this.running.get(id)?.grantableApprovals?.has(event.occurrenceId)
+      ) {
+        const { sessionApprovalScope: _scope, ...request } = event;
+        event = request;
+      }
+    }
+    if (event.type === "approval.resolved" && event.occurrenceId)
+      this.running.get(id)?.grantableApprovals?.delete(event.occurrenceId);
     // The host cannot read the desktop's settings; the turn carried them.
     if (event.type === "question.asked") {
       event = { ...event, occurrenceId: randomUUID() };
@@ -4856,6 +5235,7 @@ export class HostEngine {
     let session = applyHarnessEvent(live.value.session, event, {
       resumeAtReset: this.running.get(id)?.resumeAtReset ?? false,
     });
+    if (automaticApproval) session = applyHarnessEvent(session, automaticApproval);
     if (acceptedAuthor && session.blocks.length > live.value.session.blocks.length) {
       const blocks = [...session.blocks],
         last = blocks.length - 1;
@@ -4889,8 +5269,62 @@ export class HostEngine {
         : {}),
     };
     live.events.push(event);
+    if (automaticApproval) live.events.push(automaticApproval);
     if (!BATCHED.has(event.type)) await this.flush(id);
     else this.scheduleFlush(id, runId);
+  }
+
+  private async sessionToolApproval(
+    value: HostSession,
+    event: Extract<HarnessEvent, { type: "approval.requested" }>,
+  ): Promise<Extract<HarnessEvent, { type: "approval.resolved" }> | undefined> {
+    const id = value.session.id;
+    const active = this.running.get(id);
+    const occurrence = event.occurrenceId;
+    if (
+      event.sessionApprovalScope !== CLAUDE_WORKSPACE_GLOB ||
+      !isApprovalOccurrenceId(occurrence) ||
+      !active?.approvalCwd ||
+      active.cancelled ||
+      active.ending ||
+      this.closing ||
+      value.session.blocks.some(
+        ({ approval }) =>
+          approval?.occurrenceId === occurrence ||
+          (approval?.requestId === event.requestId && !approval.decided),
+      )
+    )
+      return undefined;
+    const owner = sessionApprovalOwner(value, active.approvalCwd);
+    if (!owner) return undefined;
+    if (!this.sessionApprovalGrants.allows(id, owner, CLAUDE_WORKSPACE_GLOB)) {
+      (active.grantableApprovals ??= new Set()).add(occurrence);
+      return undefined;
+    }
+    // Use the same scheduling, authority and original-provider checks as an explicit approval.
+    try {
+      await this.checkProviderSchedule(id, active.runId);
+      await this.store.assertAuthority(id, active.authorityGeneration);
+    } catch {
+      return undefined;
+    }
+    if (
+      this.closing ||
+      this.running.get(id) !== active ||
+      this.live.get(id)?.value !== value ||
+      active.cancelled ||
+      active.ending ||
+      !this.sessionApprovalGrants.allows(id, owner, CLAUDE_WORKSPACE_GLOB) ||
+      active.provider.approve(id, event.requestId, "allow", occurrence, CLAUDE_WORKSPACE_GLOB) !==
+        true
+    )
+      return undefined;
+    return {
+      type: "approval.resolved",
+      requestId: event.requestId,
+      occurrenceId: occurrence,
+      decision: "allow",
+    };
   }
 
   private settled(
@@ -4900,7 +5334,12 @@ export class HostEngine {
     endedAt = Date.now(),
     notice: "error" | "interrupt" = "interrupt",
   ): HostSession {
-    const stopped = stopStreaming(value.session, endedAt, notice === "error" && !!message);
+    const stopped = stopStreaming(
+      value.session,
+      endedAt,
+      notice === "error" && !!message,
+      notice === "error" ? "failed" : "stopped",
+    );
     const session = {
       ...stopped,
       blocks: stopped.blocks.map((block) =>
@@ -5021,6 +5460,7 @@ export class HostEngine {
 
   private async closeOwned(): Promise<void> {
     this.closing = true;
+    this.sessionApprovalGrants.clear();
     // Revoke every original scope immediately; process shutdown can stay held.
     this.runWriters.seal();
     await this.ready;

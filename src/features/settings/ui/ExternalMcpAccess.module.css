@@ -1,19 +1,10 @@
-.section {
-  display: grid;
-  gap: 12px;
-  min-inline-size: 0;
-}
-.header,
 .actions,
-.row,
 .scope {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
 }
-.header,
-.row,
 .scope {
   justify-content: space-between;
 }
@@ -40,7 +31,6 @@
   gap: 4px;
 }
 .count {
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .stack,
@@ -49,17 +39,11 @@
   gap: 12px;
   min-inline-size: 0;
 }
-/* Token grants share the connection list language: one bounded, unfilled frame. */
-.list {
-  display: grid;
-  max-block-size: 320px;
-  overflow-y: auto;
-}
+/* A token row wraps its actions below the details when the pane is narrow, so the in-place
+   revoke question always has room for Cancel. */
 .row {
-  padding: 10px 16px;
-}
-.list:empty {
-  display: none;
+  flex-wrap: wrap;
+  justify-content: space-between;
 }
 .identity {
   display: grid;
@@ -67,11 +51,6 @@
   min-inline-size: 0;
   flex: 1 1 180px;
   overflow-wrap: anywhere;
-}
-.metadata {
-}
-.help {
-  padding: 12px;
 }
 .scope > span {
   flex: 1 1 120px;

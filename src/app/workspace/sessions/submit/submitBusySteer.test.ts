@@ -20,13 +20,19 @@ import {
   DeliveryUnknownError,
   type DeliverySettlement,
 } from "../../../../shared/lib/deliveryUnknown";
-const transport = vi.hoisted(() => ({ steer: vi.fn(), adopted: vi.fn(), pending: vi.fn() }));
+const transport = vi.hoisted(() => ({
+  steer: vi.fn(),
+  adopted: vi.fn(),
+  pending: vi.fn(),
+  ready: vi.fn(),
+}));
 vi.mock("../../../../features/connections/model/adoptedSessionCommands", () => ({
   sendAdoptedFollowUp: transport.adopted,
   adoptedFollowUpPending: transport.pending,
 }));
 vi.mock("../../../../integrations/harness", () => ({
   canSteerHarness: () => true,
+  isHarnessSteerReady: transport.ready,
   isLiveHarness: () => true,
   appendSteerUser: (session: { blocks: unknown[] }, text: string) => ({
     ...session,
@@ -37,7 +43,8 @@ vi.mock("../../../../integrations/harness", () => ({
     return transport.steer();
   },
 }));
-vi.mock("../../../../features/sessions/model/attachments", () => ({
+vi.mock("../../../../features/sessions/model/attachments", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../../features/sessions/model/attachments")>()),
   displayAttachments: () => [],
   prepareAttachments: async () => [],
 }));
@@ -48,6 +55,7 @@ beforeEach(() => {
   transport.steer.mockReset();
   transport.adopted.mockReset().mockResolvedValue(true);
   transport.pending.mockReset().mockReturnValue(false);
+  transport.ready.mockReset().mockReturnValue(true);
   resetSessionsStore([]);
   for (
     let progress = readDeliveryProgress("steer-test");
@@ -94,7 +102,7 @@ it.each(["active", "paused", "restored"] as const)(
         followUpBehavior: "steer",
         sharedQueueClaimed: true,
       },
-    } as SubmitInput;
+    } as unknown as SubmitInput;
     const pre = {
       storedCurrent: session,
       current: session,
@@ -140,7 +148,7 @@ it("keeps a refused explicitly steered row behind older queued rows", async () =
     text: selected.text,
     attachments: [],
     options: { queuedMessageId: selected.id, followUpBehavior: "steer", sharedQueueClaimed: true },
-  } as SubmitInput;
+  } as unknown as SubmitInput;
   const pre = {
     storedCurrent: session,
     current: session,
@@ -182,7 +190,7 @@ it("keeps Stop authoritative when a queued steer loses its turn during delivery"
     text: selected.text,
     attachments: selected.attachments,
     options: { queuedMessageId: selected.id, followUpBehavior: "steer", sharedQueueClaimed: true },
-  } as SubmitInput;
+  } as unknown as SubmitInput;
   const pre = {
     storedCurrent: session,
     current: session,
@@ -228,7 +236,7 @@ it("keeps a steered row in place and the queue active when a provider switch rep
     text: selected.text,
     attachments: selected.attachments,
     options: { queuedMessageId: selected.id, followUpBehavior: "steer", sharedQueueClaimed: true },
-  } as SubmitInput;
+  } as unknown as SubmitInput;
   const pre = {
     storedCurrent: session,
     current: session,
@@ -264,7 +272,7 @@ it.each(["unreviewed", "kept", "kept-with-new-send", "edited"])(
       sessionId: session.id,
       text: "synthetic follow-up",
       attachments: [],
-    } as SubmitInput;
+    } as unknown as SubmitInput;
     const pre = {
       storedCurrent: session,
       current: session,
@@ -335,7 +343,7 @@ it("steers a message through the host running the adopted conversation", async (
     sessionId: session.id,
     text: "from this desk",
     attachments: [],
-  } as SubmitInput;
+  } as unknown as SubmitInput;
   const pre = {
     storedCurrent: session,
     current: session,
@@ -376,7 +384,7 @@ it("retains an explicit queue while Claude waits for background commands without
     text: "after the tests, update the rules",
     attachments: [],
     options: { followUpBehavior: "queue" },
-  } as SubmitInput;
+  } as unknown as SubmitInput;
   const pre = {
     storedCurrent: session,
     current: session,
@@ -411,7 +419,11 @@ it("queues a message typed while two versions of the conversation await the user
     flushHarnessEvents: vi.fn(),
     refs: { turnGen: { current: new Map([[session.id, 1]]) } },
   } as unknown as SubmitDeps;
-  const input = { sessionId: session.id, text: "while choosing", attachments: [] } as SubmitInput;
+  const input = {
+    sessionId: session.id,
+    text: "while choosing",
+    attachments: [],
+  } as unknown as SubmitInput;
   const pre = {
     storedCurrent: session,
     current: session,
@@ -441,7 +453,7 @@ it("retains an unconfirmed adopted steer once, with a visible held delivery stat
     sessionId: session.id,
     text: "retained follow-up",
     attachments: [],
-  } as SubmitInput;
+  } as unknown as SubmitInput;
   const pre = {
     storedCurrent: session,
     current: session,
@@ -511,7 +523,7 @@ it("removes an adopted queued steer only after the host confirms its atomic cons
     text: row.text,
     attachments: [],
     options: { queuedMessageId: row.id, followUpBehavior: "steer" },
-  } as SubmitInput;
+  } as unknown as SubmitInput;
   const pre = {
     storedCurrent: session,
     current: session,
@@ -573,7 +585,7 @@ it.each(["rejected", "stopped"])(
       sessionId: session.id,
       text: "keep this message",
       attachments: [],
-    } as SubmitInput;
+    } as unknown as SubmitInput;
     const pre = {
       storedCurrent: session,
       current: session,
@@ -605,7 +617,7 @@ it("queues a repeated adopted Send so the first is not duplicated and the second
         refs: { turnGen: { current: new Map() } },
         dismissNoticesForContinuedSession: vi.fn(),
       } as unknown as SubmitDeps,
-      { sessionId: session.id, text: "second draft", attachments: [] } as SubmitInput,
+      { sessionId: session.id, text: "second draft", attachments: [] } as unknown as SubmitInput,
       pre,
     ),
   ).toBe(true);
@@ -613,4 +625,41 @@ it("queues a repeated adopted Send so the first is not duplicated and the second
   expect(getSessions()[0].queuedMessages).toEqual([
     expect.objectContaining({ text: "second draft" }),
   ]);
+});
+
+it("queues a follow-up sent while the provider is still starting without showing it as sent", () => {
+  const earlier = { id: "earlier", text: "first", attachments: [] };
+  const session = {
+    ...newSession("claude", "/fake"),
+    id: "steer-test",
+    busy: true,
+    queuedMessages: [earlier],
+  };
+  resetSessionsStore([session]);
+  transport.ready.mockReturnValue(false);
+  const ctx = {
+    dismissNoticesForContinuedSession: vi.fn(),
+    enqueueHarnessEvent: vi.fn(),
+    flushHarnessEvents: vi.fn(),
+    refs: { turnGen: { current: new Map([[session.id, 1]]) } },
+  } as unknown as SubmitDeps;
+  const input = { sessionId: session.id, text: "second", attachments: [] } as SubmitInput;
+  const pre = {
+    storedCurrent: session,
+    current: session,
+    intent: "default",
+    submittedText: input.text,
+    harnessText: input.text,
+    operatorCommand: { matched: false },
+    initialWorkCwd: session.cwd,
+  } as unknown as SubmitPreflight;
+
+  expect(steerBusySubmit(ctx, input, pre)).toBe(true);
+
+  const queued = getSessions()[0];
+  expect(queued.queuedMessages?.map((row) => row.text)).toEqual(["first", "second"]);
+  expect(queued.blocks.some((block) => block.role === "user")).toBe(false);
+  expect(readDeliveryProgress(session.id)).toBeUndefined();
+  expect(transport.steer).not.toHaveBeenCalled();
+  expect(transport.ready).toHaveBeenCalledWith("claude", session.id);
 });

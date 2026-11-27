@@ -167,6 +167,8 @@ export class EnvironmentRuntime {
   private stateValue: ConnectionState;
   private startPromise?: Promise<void>;
   private stopListening?: () => void;
+  private rejectedRefresh?: Promise<void>;
+  private rejectedRefreshes = { generation: -1, count: 0 };
   private disposed = false;
   private scopeVersion = 0;
   private readonly readyWaiters = new Set<(ready: boolean) => void>();
@@ -246,7 +248,10 @@ export class EnvironmentRuntime {
   start(): Promise<void> {
     if (this.disposed) return Promise.reject(new Error("Host runtime is closed"));
     return (this.startPromise ??= (async () => {
-      const stop = await this.port.listen((event) => this.receive(event));
+      const stop = await this.port.listen(
+        (event) => this.receive(event),
+        () => this.recoverRejectedEvent(),
+      );
       if (this.disposed) {
         stop();
         return;
@@ -550,6 +555,40 @@ export class EnvironmentRuntime {
       if (entry!.generation === this.stateValue.generation && this.stateValue.transport === "ready")
         void this.request("subscriptions.close", { subscriptionId: entry!.id }).catch(() => {});
     };
+  }
+
+  /**
+   * A native event for this machine failed strict validation, so it may have been a
+   * newer state transition. Re-attaching makes native replay its last authoritative
+   * state to this window. Bounded: one attach in flight, three per generation, then
+   * a visible schema block instead of a silent stale state.
+   */
+  private recoverRejectedEvent(): void {
+    const { generation } = this.stateValue;
+    if (this.disposed || this.rejectedRefresh) return;
+    if (this.stateValue.transport === "closed" || this.stateValue.transport === "blocked") return;
+    if (this.rejectedRefreshes.generation !== generation)
+      this.rejectedRefreshes = { generation, count: 0 };
+    if (this.rejectedRefreshes.count >= 3) {
+      this.receive({
+        kind: "state",
+        environmentId: this.scope.environmentId,
+        generation,
+        phase: "blocked",
+        category: "schema",
+      });
+      return;
+    }
+    this.rejectedRefreshes.count++;
+    this.rejectedRefresh = this.port
+      .attach()
+      .then(() => undefined)
+      .catch(() => {
+        /* the next rejected event or the failure path reports it; bounded by the count */
+      })
+      .finally(() => {
+        this.rejectedRefresh = undefined;
+      });
   }
 
   private receive(event: ManagedHostEvent): void {

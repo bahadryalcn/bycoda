@@ -1,20 +1,24 @@
 import { t } from "../../../shared/i18n/core";
 import type { SettingsSectionId } from "./settings";
 
-/**
- * Rail buckets. `account` is not a list group: the rail shows it as the avatar row at the
- * bottom of the list and of the in-dialog navigation.
- */
 export type SettingsGroupId =
+  | "account"
   | "app"
-  | "agents"
-  | "tools"
-  | "code"
+  | "conversation"
+  | "models"
+  | "workspace"
   | "connections"
-  | "about"
-  | "account";
+  | "privacy"
+  | "tools"
+  | "help";
 
 export const SETTINGS_GROUPS: { id: SettingsGroupId; label: string }[] = [
+  {
+    id: "account",
+    get label() {
+      return t("Account");
+    },
+  },
   {
     id: "app",
     get label() {
@@ -22,21 +26,21 @@ export const SETTINGS_GROUPS: { id: SettingsGroupId; label: string }[] = [
     },
   },
   {
-    id: "agents",
+    id: "conversation",
     get label() {
-      return t("Agents");
+      return t("Conversation");
     },
   },
   {
-    id: "tools",
+    id: "models",
     get label() {
-      return t("Tools");
+      return t("Models");
     },
   },
   {
-    id: "code",
+    id: "workspace",
     get label() {
-      return t("Code");
+      return t("Workspace");
     },
   },
   {
@@ -46,42 +50,48 @@ export const SETTINGS_GROUPS: { id: SettingsGroupId; label: string }[] = [
     },
   },
   {
-    id: "about",
+    id: "privacy",
     get label() {
-      return t("About");
+      return t("Privacy");
     },
   },
   {
-    id: "account",
+    id: "tools",
     get label() {
-      return t("Account");
+      return t("Tools");
+    },
+  },
+  {
+    id: "help",
+    get label() {
+      return t("Help");
     },
   },
 ];
 
-/** Order of sections inside their group (the group itself is each section's `group`). */
+/** Order of pages within each area, shared by the dialog and rail. */
 export const SETTINGS_SECTION_ORDER: readonly SettingsSectionId[] = [
+  "account",
   "general",
   "appearance",
+  "keybindings",
   "chat",
   "voice",
   "notifications",
-  "permissions",
-  "keybindings",
-  "groupLock",
-  "archive",
   "providers",
+  "decisionModels",
   "usage",
-  "work",
-  "skills",
-  "mcp",
-  "secrets",
-  "tools",
   "workspace",
   "terminal",
   "worktrees",
   "connections",
   "integrations",
+  "groupLock",
+  "permissions",
+  "secrets",
+  "skills",
+  "mcp",
+  "tools",
   "policies",
-  "account",
+  "archive",
 ];

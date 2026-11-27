@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { showErrorDetails } from "./errorDetails.test-support";
 import { EditorView } from "@codemirror/view";
 import type * as TauriCore from "@tauri-apps/api/core";
 import { Storage } from "happy-dom";
@@ -392,13 +393,16 @@ describe("merge conflicts and blame in the file editor", () => {
     // so sleep past the fetch debounce instead of polling.
     await act(async () => new Promise((resolve) => setTimeout(resolve, 400)));
     expect(calls.some((call) => call.command === "git_blame")).toBe(true);
-    expect(container.textContent).toContain("Blame unavailable: Could not blame this file");
+    expect(container.textContent).toContain("Blame unavailable.");
+    await showErrorDetails(container);
+    expect(document.body.textContent).toContain("Could not blame this file");
   });
 
   it("disables blame for a remote project until its host is known to support it", async () => {
     disk = "one\n";
     await render("remote://env/repo", false);
-    expect(blameToggle().disabled).toBe(true);
+    // Disabled with a reason stays focusable: aria-disabled, not the native attribute.
+    expect(blameToggle().getAttribute("aria-disabled")).toBe("true");
     expect(blameToggle().title).toBe("");
     expect(await tooltipText(blameToggle())).toMatch(/machine/);
   });

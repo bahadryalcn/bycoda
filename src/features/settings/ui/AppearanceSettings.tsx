@@ -9,13 +9,18 @@ import { BackgroundSection } from "./appearance/sections/BackgroundSection";
 import { InterfaceSection } from "./appearance/sections/InterfaceSection";
 import { TypographySection } from "./appearance/sections/TypographySection";
 import { MotionSection } from "./appearance/sections/MotionSection";
-import { ThemeGenerator } from "./appearance/controls/ThemeGenerator";
+import { ChatSection } from "./appearance/sections/ChatSection";
+import {
+  AppearanceGenerationDialog,
+  AppearanceGenerationLauncher,
+  useAppearanceGenerationPanel,
+} from "./appearance/controls/AppearanceGenerationPanel";
+import { observeResize } from "../../../shared/lib/observeResize";
 import "./AppearanceSettings.css";
 
-export { AccentColorPicker, ACCENT_COLOR_PRESETS } from "./appearance/controls/AccentColorPicker";
 export { ChatBackgroundCard } from "./appearance/sections/BackgroundSection";
 
-type Section = "theme" | "background" | "interface" | "typography" | "motion";
+type Section = "theme" | "background" | "interface" | "chat" | "typography" | "motion";
 let selectedSection: Section = "theme";
 
 /** The appearance tab whose panel holds the revealed setting, once that row is in the DOM. */
@@ -39,16 +44,15 @@ export function AppearancePage({
   const revealed = useContext(RevealedSetting);
   const root = useRef<HTMLDivElement>(null);
   const generator = useRef<HTMLDivElement>(null);
-  // Sticky children below the pinned generator offset by its live height, which changes as it wraps.
+  const generationPanel = useAppearanceGenerationPanel();
+  // Keep sticky typography samples below the measured Appearance toolbar.
   useLayoutEffect(() => {
     const element = generator.current;
     const host = root.current;
-    if (!element || !host || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() =>
+    if (!element || !host) return;
+    return observeResize(element, () =>
       host.style.setProperty("--appearance-generator-height", `${element.offsetHeight}px`),
     );
-    observer.observe(element);
-    return () => observer.disconnect();
   }, []);
   // A hairline marks the generator only while it is pinned: a sentinel above it scrolls out of view
   // beneath the sticky offset exactly then.
@@ -110,6 +114,7 @@ export function AppearancePage({
       label: t("Interface"),
       content: <InterfaceSection appearance={appearance} />,
     },
+    { id: "chat", label: t("Chat"), content: <ChatSection appearance={appearance} /> },
     {
       id: "typography",
       label: t("Typography"),
@@ -128,8 +133,7 @@ export function AppearancePage({
             "Appearance preferences are unavailable. Retry reading before replacing saved choices.",
           )}
         </SettingsFeedback>
-      ) : null}
-      {appearance.preferencesDirty ? (
+      ) : appearance.preferencesDirty ? (
         <SettingsFeedback
           state="error"
           action={{
@@ -140,7 +144,7 @@ export function AppearancePage({
           {t("Could not save changes. Your previous appearance remains active.")}
         </SettingsFeedback>
       ) : null}
-      {/* The tabs lead the page; generation edits every topic, so its toolbar stays pinned with them. */}
+      {/* The tabs and generator entry share a compact sticky toolbar. */}
       <div ref={sentinel} aria-hidden="true" className="appearance-generator-sentinel" />
       <Tabs value={section} onValueChange={select}>
         <div
@@ -156,14 +160,14 @@ export function AppearancePage({
             "appearance-generator",
           )}
         >
-          <TabList label={t("Appearance")} scrollbar="hidden">
+          <TabList label={t("Appearance")} className="appearance-tabs">
             {sections.map(({ id, label }) => (
               <Tab key={id} value={id}>
                 {label}
               </Tab>
             ))}
           </TabList>
-          <ThemeGenerator appearance={appearance} />
+          <AppearanceGenerationLauncher panel={generationPanel} />
         </div>
         {sections.map(({ id, content }) => (
           <TabPanel key={id} value={id} keepMounted data-appearance-section={id}>
@@ -173,6 +177,7 @@ export function AppearancePage({
           </TabPanel>
         ))}
       </Tabs>
+      <AppearanceGenerationDialog panel={generationPanel} appearance={appearance} />
     </div>
   );
 }

@@ -19,6 +19,8 @@ const parseRecords = (text: string): Record<string, unknown> => {
 export class SessionLifecycleStore implements LifecycleStorePort {
   private records?: Map<string, SessionLifecycleRecord>;
   private chain: Promise<unknown> = Promise.resolve();
+  /** Settings live in their own file, so their writes never queue behind session rows. */
+  private settingsChain: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly directory: string,
@@ -47,37 +49,68 @@ export class SessionLifecycleStore implements LifecycleStorePort {
 
   /** The stored record, or a default active one (not persisted until changed). */
   async get(sessionId: string): Promise<SessionLifecycleRecord> {
-    const records = await this.chain.then(() => this.load());
+    const records = await this.snapshot();
     return structuredClone(
       records.get(sessionId) ?? normalizeLifecycleRecord(sessionId, undefined, this.owner()),
     );
   }
 
   async list(): Promise<SessionLifecycleRecord[]> {
-    const records = await this.chain.then(() => this.load());
-    return structuredClone([...records.values()]);
+    return structuredClone([...(await this.snapshot()).values()]);
+  }
+
+  /** The last saved rows; once loaded, reads never wait behind a write (`records` swaps after it lands). */
+  private snapshot(): Promise<Map<string, SessionLifecycleRecord>> {
+    return this.records ? Promise.resolve(this.records) : this.chain.then(() => this.load());
   }
 
   /** Serialized read-modify-write; the change returns the next record or undefined to drop it. */
-  update<T>(
+  async update<T>(
     sessionId: string,
     change: (current: SessionLifecycleRecord) => {
       next?: SessionLifecycleRecord;
       result: T;
     },
   ): Promise<T> {
+    const [result] = await this.updateMany([sessionId], change);
+    return result as T;
+  }
+
+  /**
+   * Applies the change to each session on one draft and writes the file once, so a throw or a
+   * failed write leaves the saved rows untouched. Reads stay on the last saved snapshot meanwhile.
+   */
+  updateMany<T>(
+    sessionIds: readonly string[],
+    change: (current: SessionLifecycleRecord) => {
+      next?: SessionLifecycleRecord;
+      result: T;
+    },
+  ): Promise<T[]> {
     const run = this.chain.then(async () => {
       const records = await this.load();
-      const current =
-        records.get(sessionId) ?? normalizeLifecycleRecord(sessionId, undefined, this.owner());
-      const { next, result } = change(structuredClone(current));
       const draft = new Map(records);
-      // Active records carry no information; keep the file small.
-      if (next && !isDefaultLifecycleRecord(next)) draft.set(sessionId, next);
-      else draft.delete(sessionId);
-      await writeFileAtomic(this.file, JSON.stringify(Object.fromEntries(draft)), { mode: 0o600 });
-      this.records = draft;
-      return result;
+      const results: T[] = [];
+      let changed = false;
+      for (const sessionId of sessionIds) {
+        const current =
+          draft.get(sessionId) ?? normalizeLifecycleRecord(sessionId, undefined, this.owner());
+        const given = structuredClone(current);
+        const { next, result } = change(given);
+        results.push(result);
+        if (next === given) continue;
+        // Active records carry no information; keep the file small.
+        if (next && !isDefaultLifecycleRecord(next)) draft.set(sessionId, next);
+        else draft.delete(sessionId);
+        changed = true;
+      }
+      if (changed) {
+        await writeFileAtomic(this.file, JSON.stringify(Object.fromEntries(draft)), {
+          mode: 0o600,
+        });
+        this.records = draft;
+      }
+      return results;
     });
     this.chain = run.catch(() => undefined);
     return run;
@@ -88,18 +121,24 @@ export class SessionLifecycleStore implements LifecycleStorePort {
   }
 
   async autoSettleSettings(): Promise<AutoSettleSettings> {
-    await this.chain;
+    await this.settingsChain;
     const result = await readStateFile(this.settingsFile, (text) => JSON.parse(text) as unknown);
     return normalizeAutoSettleSettings(result.status === "ok" ? result.value : undefined);
   }
 
-  saveAutoSettleSettings(settings: AutoSettleSettings): Promise<AutoSettleSettings> {
-    const next = normalizeAutoSettleSettings(settings);
-    const run = this.chain.then(async () => {
+  updateAutoSettleSettings(
+    change: (current: AutoSettleSettings) => AutoSettleSettings,
+  ): Promise<AutoSettleSettings> {
+    const run = this.settingsChain.then(async () => {
+      const result = await readStateFile(this.settingsFile, (text) => JSON.parse(text) as unknown);
+      const current = normalizeAutoSettleSettings(
+        result.status === "ok" ? result.value : undefined,
+      );
+      const next = normalizeAutoSettleSettings(change(current));
       await writeFileAtomic(this.settingsFile, JSON.stringify(next), { mode: 0o600 });
       return next;
     });
-    this.chain = run.catch(() => undefined);
+    this.settingsChain = run.catch(() => undefined);
     return run;
   }
 

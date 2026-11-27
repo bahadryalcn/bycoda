@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { setLanguagePreference } from "../../shared/i18n";
 import {
+  deleteNote,
   appendNoteReference,
   composeNoteMessage,
   injectNotePrompt,
@@ -96,6 +98,13 @@ describe("note mentions", () => {
       "auth",
       "plan-2",
     ]);
+  });
+
+  it("resolves scoped notes and deduplicates legacy references to the same note", () => {
+    expect(
+      noteSlugsInText("> @notes:hidden\nRead @notes:auth and @note/auth, then @notes:plan-2."),
+    ).toEqual(["auth", "plan-2"]);
+    expect(noteSlugsInText("@notes: @crews:auth")).toEqual([]);
   });
 
   it("injects referenced bodies after the prompt", () => {
@@ -234,5 +243,16 @@ describe("withoutAssistantNotes", () => {
       "project",
       "session",
     ]);
+  });
+});
+
+describe("note operation feedback", () => {
+  it("localizes the stale-delete refusal before persistence", async () => {
+    await setLanguagePreference("tr");
+    try {
+      await expect(deleteNote("note-1")).rejects.toThrow("Silmeden önce bu notu yenileyin.");
+    } finally {
+      await setLanguagePreference("en");
+    }
   });
 });

@@ -63,7 +63,7 @@ test("conversation HTML links retain the chat and draft beside a reusable previe
       await draft.fill("Keep this unsent conversation draft");
       const link = page.getByRole("link", { name: "Open updated HTML", exact: true });
       await link.click();
-      await expect(page.getByRole("separator", { name: "Resize columns" })).toHaveCount(1);
+      await expect(page.getByRole("separator", { name: /^Resize between column / })).toHaveCount(1);
       await expect(page.getByTestId("html-workspace-count")).toHaveText("1");
       await expect(page.getByTestId("html-editor-count")).toHaveText("1");
       await expect(draft).toBeVisible();
@@ -124,7 +124,7 @@ test("pane maximization preserves ratios and mounted drafts, and restores the sp
 });
 
 test("sashes resize with keyboard and pointer, and Escape cancels a drag", async ({ page }) => {
-  const separator = page.getByRole("separator", { name: "Resize columns" }).first();
+  const separator = page.getByRole("separator", { name: /^Resize between column / }).first();
   const layout = page.getByTestId("layout");
   const original = await layout.textContent();
   await separator.focus();
@@ -175,8 +175,7 @@ test("a short narrow chat keeps a long draft and its controls scrollable", async
   const field = page.getByRole("textbox").first();
   await field.fill(Array.from({ length: 25 }, (_, i) => `Draft line ${i}`).join("\n"));
   expect(await field.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
-  // A disabled Send names its reason ("Send. <reason>"), so match the prefix.
-  const send = page.getByRole("button", { name: /^Send(\.|$)/ });
+  const send = page.getByRole("button", { name: "Send", exact: true });
   await send.scrollIntoViewIfNeeded();
   await expect(send).toBeInViewport();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -235,8 +234,10 @@ for (const theme of ["light", "dark"]) {
       await page.goto(`/tests/browser/workspace/workspace-layout.html?theme=${theme}`);
       await page.getByRole("button", { name: "Group Gamma with Alpha" }).click();
       const tabs = page.getByRole("tablist", { name: "Pane sessions" });
-      await expect(tabs).toHaveCSS("border-bottom-width", "1px");
-      const paint = await tabs.evaluate((node) => ({
+      // The shared pane frame around the tab list draws the divider under it.
+      const strip = tabs.locator("xpath=ancestor::*[@data-surface-frame='pane'][1]");
+      await expect(strip).toHaveCSS("border-bottom-width", "1px");
+      const paint = await strip.evaluate((node) => ({
         background: getComputedStyle(node).backgroundColor,
         border: getComputedStyle(node).borderBottomColor,
       }));

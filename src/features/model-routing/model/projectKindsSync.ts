@@ -31,18 +31,18 @@ function sameKinds(a: Kinds | undefined, b: Kinds): boolean {
 /**
  * Writes the effective project scopes into the routing document, replacing only `projectKinds`.
  * Never throws: an unsupported Host, a failed read, a non-owner save or a second conflict is
- * logged and dropped; the next tag change or startup sends it again.
+ * logged and reported as false so the caller can retry. True means the Host holds `kinds`.
  */
 export async function syncProjectKindsWith(
   io: ProjectKindsIo,
   kinds: Kinds,
   onSaved?: (state: ModelRoutingState) => void,
-): Promise<void> {
+): Promise<boolean> {
   try {
-    if (!(await io.supported())) return;
+    if (!(await io.supported())) return false;
     for (let attempt = 0; ; attempt++) {
       const { version, updatedAt: _updatedAt, ...draft } = await io.get();
-      if (sameKinds(draft.projectKinds, kinds)) return;
+      if (sameKinds(draft.projectKinds, kinds)) return true;
       const { projectKinds: _old, ...rest } = draft;
       try {
         const saved = await io.save(
@@ -50,7 +50,7 @@ export async function syncProjectKindsWith(
           Object.keys(kinds).length ? { ...rest, projectKinds: kinds } : rest,
         );
         onSaved?.(saved);
-        return;
+        return true;
       } catch (error) {
         // A stale version is the usual cause: re-read once and send again.
         if (attempt > 0) throw error;
@@ -58,6 +58,7 @@ export async function syncProjectKindsWith(
     }
   } catch (error) {
     console.warn("Project tags were not saved to the model routing", error);
+    return false;
   }
 }
 
@@ -74,7 +75,7 @@ export function syncProjectKinds(
   machineId: string | undefined,
   kinds: Kinds,
   client?: QueryClient,
-): Promise<void> {
+): Promise<boolean> {
   let machine: RemoteMachine | undefined;
   const resolve = async () => (machine ??= await localMachine(machineId));
   const request = async (method: string, params: object) => {

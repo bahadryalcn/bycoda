@@ -1,9 +1,12 @@
+import { errorText } from "../../../shared/lib/errors";
+import { shortSha } from "../../../shared/lib/shortSha";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { InboxLoadError } from "./InboxLoadError";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
@@ -12,6 +15,8 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Heading } from "../../../shared/ui/Heading";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import { SkeletonBar } from "../../../shared/ui/Skeleton";
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Tab } from "../../../shared/ui/Tabs";
@@ -49,6 +54,7 @@ import {
   checkStateLabel,
   countChecks,
   describeCheckCounts,
+  describeCheckSummary,
   isHttpUrl,
   sortChecks,
   type GithubPrCheck,
@@ -112,7 +118,7 @@ export function PrChecksTab({ overall }: { overall: GithubPrChecksOverall }) {
   const mark = overallMark(overall);
   const label = t("Checks: {p0}", { p0: overall.description });
   return (
-    <Tab value="checks" aria-label={label} tooltip={label}>
+    <Tab value="checks" aria-label={label}>
       <Text size="inherit" tone="inherit" leading="none">
         {t("Checks")}
       </Text>
@@ -136,9 +142,9 @@ function PrCheckRow({
   refreshToken,
   onFix,
   fixDisabled,
+  fixDisabledReason,
   fixAnchor,
   repairItem,
-  wideStatus,
   revealToken,
 }: {
   check: GithubPrCheck;
@@ -150,9 +156,9 @@ function PrCheckRow({
   refreshToken: unknown;
   onFix?: (anchor: HTMLButtonElement) => void;
   fixDisabled?: boolean;
+  fixDisabledReason?: string;
   fixAnchor?: HTMLButtonElement;
   repairItem?: RepairGroup["items"][number];
-  wideStatus: boolean;
   revealToken?: number;
 }) {
   const t = useT();
@@ -220,7 +226,7 @@ function PrCheckRow({
         },
         (reason: unknown) => {
           if (!active) return;
-          const message = reason instanceof Error ? reason.message : String(reason);
+          const message = errorText(reason);
           setLoaded((previous) => ({
             key: detailsKey,
             details: previous?.key === detailsKey ? previous.details : null,
@@ -253,17 +259,9 @@ function PrCheckRow({
   const subtitle =
     failureMessage || (failedStep ? t("Failed at {p0}", { p0: failedStep }) : status);
   const title = `${check.name} · ${status}${duration ? `, ${t("took {p0}", { p0: duration })}` : ""}${workflow ? `, ${workflow}` : ""}`;
+  // Only a clipped name needs a hint; status, duration and the failed step are already on the row.
   const rowHint = useTooltip({
-    label: [
-      check.name,
-      workflow,
-      failureMessage || failedStep ? subtitle : undefined,
-      status,
-      duration,
-      failureMessage && failedStep ? t("Failed at {p0}", { p0: failedStep }) : undefined,
-    ]
-      .filter(Boolean)
-      .join("\n"),
+    label: [check.name, workflow].filter(Boolean).join("\n"),
     when: "overflow",
   });
   const url = check.url;
@@ -273,7 +271,7 @@ function PrCheckRow({
       <span className="grid h-7 w-5 shrink-0 place-items-center">
         <MarkGlyph mark={mark} size="md" />
       </span>
-      <span className="flex min-w-0 flex-1 flex-col">
+      <span className="flex min-w-0 max-w-md flex-1 flex-col">
         <span className="flex min-w-0 items-baseline gap-2.5">
           <Text
             data-check-name
@@ -314,13 +312,13 @@ function PrCheckRow({
     </>
   );
   const className =
-    "flex w-full min-w-0 flex-1 items-center gap-2.5 rounded-(--ui-control-radius) text-left";
+    "flex w-full min-w-0 max-w-lg flex-1 items-center gap-2.5 rounded-(--ui-control-radius) text-start";
   const statusCell = (
-    <span className={`shrink-0 text-left ${wideStatus ? "w-24" : "w-14"}`}>
+    <span className="min-w-14 shrink-0 text-start whitespace-nowrap">
       {repairItem ? (
         <CheckRepairStatus item={repairItem} />
       ) : (
-        <Badge tone={mark.tone} size="xs" appearance="subtle">
+        <Badge tone={mark.tone} size="xs" appearance="subtle" className="whitespace-nowrap">
           {status}
         </Badge>
       )}
@@ -330,7 +328,7 @@ function PrCheckRow({
     <Text
       size="caption"
       tone="secondary"
-      className="mr-1 w-11 shrink-0 whitespace-nowrap text-right tabular-nums @max-[480px]/checks:hidden"
+      className="me-1 w-11 shrink-0 whitespace-nowrap text-end tabular-nums @max-[480px]/checks:hidden"
     >
       {duration}
     </Text>
@@ -344,9 +342,9 @@ function PrCheckRow({
       ref={fixRef}
       onClick={(event) => onFix(event.currentTarget)}
       disabled={fixDisabled}
+      disabledReason={fixDisabledReason}
       aria-haspopup="dialog"
       aria-expanded={fixOpen}
-      aria-label={t("Fix {p0} with AI", { p0: check.name })}
       tooltip={t("Fix with AI")}
       data-no-drag=""
       className="shrink-0"
@@ -363,7 +361,6 @@ function PrCheckRow({
       variant="ghost"
       type="button"
       tooltip={t("View full log")}
-      aria-label={t("Open {p0} check", { p0: check.name })}
       data-no-drag=""
       onClick={() => openUrlSafely(url)}
     >
@@ -378,28 +375,22 @@ function PrCheckRow({
       size="caption"
       tone="inherit"
       id={detailsId}
-      className="min-w-0 space-y-3 py-3 pl-10 pr-3 @max-[420px]/checks:pl-3"
+      className="min-w-0 space-y-3 py-3 ps-10 pe-3 @max-[420px]/checks:ps-3"
     >
       {loading && !details && !error ? (
-        <LoadingText className="px-2 py-1">{t("Loading steps…")}</LoadingText>
+        <LoadingText inset="row">{t("Loading steps…")}</LoadingText>
       ) : null}
       {error ? (
-        <Alert tone="danger">
-          <Text as="p" size="caption" tone="inherit">
-            {t("Could not load job details.")}
-          </Text>
-          <Text as="p" size="micro" tone="inherit" className="break-words">
-            {error}
-          </Text>
-          <Button
-            variant="ghost"
-            type="button"
-            loading={loading}
-            onClick={() => setRetry((value) => value + 1)}
-          >
-            {t("Retry details")}
-          </Button>
-        </Alert>
+        <Alert
+          tone="danger"
+          title={t("Could not load job details.")}
+          extra={<ErrorDetails title={t("Could not load job details.")} detail={error} />}
+          action={{
+            label: t("Retry details"),
+            onClick: () => setRetry((value) => value + 1),
+            pending: loading,
+          }}
+        />
       ) : null}
       {details ? (
         <>
@@ -537,7 +528,7 @@ function PrCheckRow({
               variant="item"
               fullWidth
               motion="none"
-              className="w-full min-w-0 flex-1 text-left"
+              className="w-full min-w-0 max-w-lg flex-1 text-start"
               type="button"
               aria-label={title}
               onClick={() => openUrlSafely(url)}
@@ -549,8 +540,11 @@ function PrCheckRow({
           )}
           {statusCell}
           {durationCell}
-          {fixButton}
-          <span className="size-7 shrink-0" aria-hidden="true" />
+          {/* The name column is capped so status and time stay beside it; the actions take the rest. */}
+          <span className="ms-auto flex shrink-0 items-center gap-2">
+            {fixButton}
+            <span className="size-7 shrink-0" aria-hidden="true" />
+          </span>
           {linkButton}
         </ActionHost>
       )}
@@ -604,12 +598,22 @@ export function InboxPrChecks({
   );
   if (selection && !selectionValid) setSelection(null);
   if (loading && !checks && !error) {
-    return <LoadingText className="py-5">{t("Loading checks…")}</LoadingText>;
+    return (
+      <SurfaceLoading title={t("Loading checks…")}>
+        {[0, 1, 2].map((index) => (
+          <div key={index} className="flex items-center gap-2.5 px-2 py-1.5">
+            <SkeletonBar shape="square" width="1rem" height="1rem" />
+            <SkeletonBar width="40%" />
+            <SkeletonBar shape="pill" width="3.5rem" height="1rem" />
+          </div>
+        ))}
+      </SurfaceLoading>
+    );
   }
   if (!checks && error) {
     return (
       <div className="flex flex-col items-start gap-2" data-inbox-pr-checks>
-        <Alert tone="danger">{error}</Alert>
+        <InboxLoadError title={t("Could not load the checks.")} error={error} />
         <Button
           variant="ghost"
           type="button"
@@ -660,7 +664,6 @@ export function InboxPrChecks({
                   ).length,
               ])}
               check={check}
-              wideStatus={repairGroups.length > 0}
               revealToken={
                 revealed?.scope === revealScope &&
                 revealed.name === check.name &&
@@ -680,6 +683,7 @@ export function InboxPrChecks({
                   : undefined
               }
               fixDisabled={refreshing || stale || Boolean(error)}
+              fixDisabledReason={fixBlockedReason}
               fixAnchor={selection?.anchor}
               provider={view.provider}
               cwd={cwd}
@@ -696,56 +700,52 @@ export function InboxPrChecks({
     ) : null;
   const requiredFailures = rows.filter((row) => row.state === "fail" && !row.allowFailure).length;
   const headline = requiredFailures
-    ? t(requiredFailures === 1 ? "{p0} check needs a fix" : "{p0} checks need a fix", {
-        p0: formatNumber(requiredFailures),
-      })
+    ? requiredFailures === 1
+      ? t("{p0} check needs a fix", { p0: formatNumber(requiredFailures) })
+      : t("{p0} checks need a fix", { p0: formatNumber(requiredFailures) })
     : counts.fail
       ? t("Optional checks failed")
       : counts.pending
-        ? t(counts.pending === 1 ? "{p0} check is running" : "{p0} checks are running", {
-            p0: formatNumber(counts.pending),
-          })
+        ? counts.pending === 1
+          ? t("{p0} check is running", { p0: formatNumber(counts.pending) })
+          : t("{p0} checks are running", { p0: formatNumber(counts.pending) })
         : attention
-          ? t(attention === 1 ? "{p0} check needs attention" : "{p0} checks need attention", {
-              p0: formatNumber(attention),
-            })
+          ? attention === 1
+            ? t("{p0} check needs attention", { p0: formatNumber(attention) })
+            : t("{p0} checks need attention", { p0: formatNumber(attention) })
           : counts.pass
             ? t("Checks passed")
             : t("No checks ran");
-  const summary = describeCheckCounts({ ...counts, fail: 0 }, t, formatNumber);
+  const summary = describeCheckSummary({ ...counts, fail: 0 }, t, formatNumber);
+  const fixBlockedReason = error
+    ? t("Reload the checks first.")
+    : t("Wait for the latest check results.");
   return (
     <section
       data-inbox-pr-checks
       aria-label={t("Pull request checks")}
       className="@container/checks flex min-w-0 flex-col gap-2"
     >
-      {checks?.pipelineOid && checks.pipelineOid !== checks.headOid ? (
-        <Text as="p" size="caption" tone="secondary" className="px-2">
-          {t("Pipeline commit")}: {checks.pipelineOid.slice(0, 12)} · {t("Source commit")}:{" "}
-          {checks.headOid.slice(0, 12)}
-        </Text>
-      ) : null}
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2 px-2">
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
             <Heading size="section">{headline}</Heading>
-            {stale ? (
-              <Badge tone="warning" size="xs">
-                {t("Saved results")}
-              </Badge>
-            ) : null}
           </div>
           {checks?.headOid ? (
-            <Text as="p" size="caption" tone="secondary" className="mt-1 break-all">
-              {t("Checked commit")}:{" "}
-              <Tooltip label={checks.headOid} asChild>
-                <Code>{checks.headOid.slice(0, 12)}</Code>
-              </Tooltip>
-            </Text>
+            <Tooltip label={checks.headOid} asChild>
+              <Text as="p" size="caption" tone="secondary" className="mt-1 break-all">
+                {checks.pipelineOid && checks.pipelineOid !== checks.headOid
+                  ? t("Pipeline commit {p0}, source commit {p1}", {
+                      p0: shortSha(checks.pipelineOid),
+                      p1: shortSha(checks.headOid),
+                    })
+                  : t("Checked commit {p0}", { p0: shortSha(checks.headOid) })}
+              </Text>
+            </Tooltip>
           ) : null}
           {summary ? (
             <Text as="p" size="caption" tone="secondary" className="mt-1">
-              {summary.charAt(0).toUpperCase() + summary.slice(1)}.
+              {summary}
             </Text>
           ) : null}
           <span className="sr-only">{describeCheckCounts(counts, t, formatNumber)}</span>
@@ -757,6 +757,7 @@ export function InboxPrChecks({
               ref={allFixRef}
               type="button"
               disabled={refreshing || stale || Boolean(error)}
+              disabledReason={fixBlockedReason}
               onClick={(event) =>
                 setSelection({
                   checks: rows.filter((row) => row.state === "fail"),
@@ -791,20 +792,18 @@ export function InboxPrChecks({
       {stale ? (
         <Alert tone={error ? "danger" : "warning"}>
           <Text as="p" size="caption" tone="inherit" weight="medium">
-            {t(error ? "Checks refresh failed" : "Checking the latest revision…")}
+            {error ? t("Checks refresh failed") : t("Checking the latest revision…")}
           </Text>
           {error ? (
-            <Text as="p" size="caption" tone="inherit" className="break-words">
-              {error}
-            </Text>
-          ) : null}
-          <Text as="p" size="caption" tone="inherit" className="break-words">
-            {t("Saved results may be out of date.")}
-          </Text>
-          {error ? (
-            <Button variant="ghost" loading={refreshing} onClick={onRefresh}>
-              {t("Retry loading checks")}
-            </Button>
+            <>
+              <Text as="p" size="caption" tone="inherit" className="break-words">
+                {t("Saved results may be out of date.")}{" "}
+                <ErrorDetails title={t("Checks refresh failed")} detail={error} />
+              </Text>
+              <Button variant="ghost" loading={refreshing} onClick={onRefresh}>
+                {t("Retry loading checks")}
+              </Button>
+            </>
           ) : null}
         </Alert>
       ) : null}
@@ -840,7 +839,7 @@ export function InboxPrChecks({
         />
       ) : null}
       {rows.length > 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 py-1">
+        <div className="flex flex-wrap items-center gap-2 py-1">
           <SegmentedControl
             label={t("Filter checks")}
             selectionRole="pressed"
@@ -865,9 +864,6 @@ export function InboxPrChecks({
               },
             ]}
           />
-          <Text size="caption" tone="secondary" className="@max-[420px]/checks:hidden">
-            {counts.fail ? t("Failures first") : ""}
-          </Text>
         </div>
       ) : null}
       {rows.length === 0 ? (

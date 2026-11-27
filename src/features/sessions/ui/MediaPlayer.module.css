@@ -1,0 +1,229 @@
+/* Quiet inline players: a compact audio card with a waveform, and video chrome that fades
+   while playing. The played waveform is a clipped copy, so progress never repaints bars. */
+@layer components {
+  /* Audio: one pill, a round play button, thin waveform bars that are also the seek control,
+     then the time, which steps through the playback speeds when pressed. */
+  .audio {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    max-inline-size: 26rem;
+    padding-block: var(--space-1);
+    padding-inline: var(--space-1) var(--space-2);
+    /* ui-drift-ignore: surface-style -- Inline player pill: the quiet fill of a voice note, no frame. */
+    border-radius: var(--radius-pill);
+    /* ui-drift-ignore: surface-style -- Inline player pill ground. */
+    background-color: var(--ui-fill-subtle);
+  }
+  .play {
+    flex: none;
+  }
+  .time {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .actions {
+    display: flex;
+    flex: none;
+  }
+
+  .scrub {
+    position: relative;
+    cursor: pointer;
+    touch-action: none;
+    /* ui-drift-ignore: surface-style -- Drawn waveform, seek track and video chrome encode playback progress, not an application surface. */
+    border-radius: var(--ui-radius-sm);
+  }
+  .scrub:focus-visible {
+    outline: 2px solid var(--ui-focus-ring, currentColor);
+    /* ui-drift-ignore: interaction-state -- Drawn media chrome: scrub focus ring, play-state fade and knob reveal. */
+    outline-offset: 2px;
+  }
+  .wave {
+    flex: 1;
+    min-inline-size: 0;
+    block-size: 1.5rem;
+  }
+  .bars {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 2px;
+  }
+  .bars i {
+    flex: 1;
+    min-inline-size: 1px;
+    max-inline-size: 3px;
+    block-size: max(3px, calc(var(--h) * 100%));
+    /* ui-drift-ignore: surface-style -- Drawn waveform, seek track and video chrome encode playback progress, not an application surface. */
+    border-radius: var(--radius-pill);
+    /* ui-drift-ignore: surface-style -- Drawn waveform, seek track and video chrome encode playback progress, not an application surface. */
+    background: color-mix(in srgb, var(--transcript-ink-body) 28%, transparent);
+  }
+  .neutral i {
+    --h: 0.3;
+  }
+  .played {
+    clip-path: inset(0 calc((1 - var(--p, 0)) * 100%) 0 0);
+  }
+  .played i {
+    /* ui-drift-ignore: surface-style -- Drawn waveform, seek track and video chrome encode playback progress, not an application surface. */
+    background: var(--transcript-ink-body);
+  }
+
+  /* Video */
+  .video {
+    container-type: inline-size;
+    position: relative;
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+    /* ui-drift-ignore: surface-style -- Drawn waveform, seek track and video chrome encode playback progress, not an application surface. */
+    background: var(--palette-scrim);
+    --media-ink: var(--palette-solidInk);
+  }
+  .video video {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: contain;
+    cursor: pointer;
+  }
+  .big {
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-start: 50%;
+    translate: -50% -50%;
+    /* ui-drift-ignore: shared-internal-selector -- Video chrome fades with playback and its shared Buttons take the picture ink, which Button has no prop for. */
+    transition:
+      opacity var(--motion-duration-standard) var(--motion-ease-standard),
+      scale var(--motion-duration-standard) var(--motion-ease-standard);
+  }
+  .video[data-playing] .big {
+    /* ui-drift-ignore: shared-internal-selector -- Video chrome fades with playback and its shared Buttons take the picture ink, which Button has no prop for. */
+    opacity: 0;
+    scale: 0.9;
+    pointer-events: none;
+  }
+  .bar {
+    position: absolute;
+    inset-inline: 0;
+    inset-block-end: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: var(--ui-space-6) var(--ui-space-2) var(--ui-space-1);
+    /* ui-drift-ignore: surface-style -- Drawn waveform, seek track and video chrome encode playback progress, not an application surface. */
+    background: linear-gradient(
+      transparent,
+      color-mix(in srgb, var(--palette-scrim) 62%, transparent)
+    );
+    /* ui-drift-ignore: feature-typography -- Ink of the always-dark picture chrome; Text tones follow the page theme. */
+    color: var(--media-ink);
+    /* ui-drift-ignore: feature-motion -- Drawn seek bar chrome fades and scales with playback state. */
+    transition: opacity var(--motion-duration-standard) var(--motion-ease-standard);
+  }
+  .video[data-playing]:not(:hover):not(:focus-within) .bar {
+    /* ui-drift-ignore: interaction-state -- Drawn media chrome: scrub focus ring, play-state fade and knob reveal. */
+    opacity: 0;
+  }
+  .seek {
+    flex: 1;
+    block-size: 1.125rem;
+    margin-inline: 0.375rem;
+  }
+  .seek::before,
+  .fill {
+    content: "";
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-start: 0;
+    block-size: 3px;
+    /* ui-drift-ignore: spacing-step -- Centers a 3px track and the 11px knob on the seek line. */
+    margin-block-start: -1.5px;
+    /* ui-drift-ignore: surface-style -- Drawn waveform, seek track and video chrome encode playback progress, not an application surface. */
+    border-radius: var(--ui-radius-xs);
+  }
+  .seek::before {
+    inset-inline-end: 0;
+    /* ui-drift-ignore: surface-style -- Drawn waveform, seek track and video chrome encode playback progress, not an application surface. */
+    background: color-mix(in srgb, var(--media-ink) 28%, transparent);
+  }
+  .fill {
+    inline-size: 100%;
+    /* ui-drift-ignore: surface-style -- Drawn waveform, seek track and video chrome encode playback progress, not an application surface. */
+    background: var(--media-ink);
+    transform: scaleX(var(--p, 0));
+    transform-origin: left center;
+  }
+  .knob {
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-start: calc(var(--p, 0) * 100%);
+    inline-size: 0.6875rem;
+    block-size: 0.6875rem;
+    /* ui-drift-ignore: spacing-step -- Centers a 3px track and the 11px knob on the seek line. */
+    margin: -0.34375rem 0 0 -0.34375rem;
+    /* ui-drift-ignore: surface-style -- Drawn waveform, seek track and video chrome encode playback progress, not an application surface. */
+    border-radius: 50%;
+    /* ui-drift-ignore: surface-style -- Drawn waveform, seek track and video chrome encode playback progress, not an application surface. */
+    background: var(--media-ink);
+    transform: scale(0);
+    /* ui-drift-ignore: feature-motion -- Drawn seek bar chrome fades and scales with playback state. */
+    transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
+  }
+  .seek:hover .knob,
+  .seek:focus-visible .knob,
+  .seek[data-drag] .knob {
+    /* ui-drift-ignore: interaction-state -- Drawn media chrome: scrub focus ring, play-state fade and knob reveal. */
+    transform: scale(1);
+  }
+  .vtime {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .volume {
+    position: relative;
+    inline-size: 3.5rem;
+    block-size: 1.125rem;
+  }
+  .volume::before {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    inset-block-start: 50%;
+    block-size: 3px;
+    /* ui-drift-ignore: spacing-step -- Centers a 3px track and the 11px knob on the seek line. */
+    margin-block-start: -1.5px;
+    /* ui-drift-ignore: surface-style -- Drawn waveform, seek track and video chrome encode playback progress, not an application surface. */
+    border-radius: var(--ui-radius-xs);
+    /* ui-drift-ignore: surface-style -- Drawn waveform, seek track and video chrome encode playback progress, not an application surface. */
+    background: color-mix(in srgb, var(--media-ink) 28%, transparent);
+  }
+  @container (max-width: 17rem) {
+    .volume {
+      display: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .big,
+    .bar,
+    .knob {
+      /* ui-drift-ignore: shared-internal-selector -- Video chrome fades with playback and its shared Buttons take the picture ink, which Button has no prop for. */
+      transition: none;
+    }
+  }
+}
+
+/* Unlayered like the shared Button color rules it overrides. The picture is dark in both
+   themes, so its buttons take the media ink, not the page ink. */
+/* ui-drift-ignore: shared-internal-selector -- Video chrome fades with playback and its shared Buttons take the picture ink, which Button has no prop for. */
+.video .bar button[data-button-tone][data-button-hierarchy] {
+  color: var(--media-ink);
+}
+/* ui-drift-ignore: shared-internal-selector -- Video chrome fades with playback and its shared Buttons take the picture ink, which Button has no prop for. */
+.video .bar button[data-button-tone][data-button-hierarchy]:hover {
+  background: color-mix(in srgb, var(--media-ink) 16%, transparent);
+}

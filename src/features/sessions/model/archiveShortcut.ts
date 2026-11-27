@@ -1,3 +1,5 @@
+import { COMPOSER_PICKER_SELECTOR } from "./composerPickerSelector";
+
 type ArchiveContext = {
   activeTabId: string;
   tabs: readonly { id: string; focusedId: string; diffFocused?: boolean }[];
@@ -31,7 +33,7 @@ export function archiveFocusedSession(
   // excluding overlays in hidden or inactive surfaces.
   const overlayOpen = Array.from(
     document.querySelectorAll(
-      '[data-popover-side], [role="dialog"], [role="alertdialog"], [role="menu"], [data-skill-picker], [data-mention-picker]',
+      `[data-popover-side], [role="dialog"], [role="alertdialog"], [role="menu"], ${COMPOSER_PICKER_SELECTOR}`,
     ),
   ).some(
     (element) =>

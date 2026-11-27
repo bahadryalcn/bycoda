@@ -202,6 +202,47 @@ fn known_hosts(text: &str) -> Vec<String> {
         })
         .collect()
 }
+
+/// Match saved SSH peers that changed addresses using exact public keys already on disk.
+/// This is a discovery hint only and never authorizes a connection to another address.
+fn known_ssh_addresses(text: &str, saved: &HashSet<String>) -> HashSet<String> {
+    let records: Vec<_> = text
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let hosts = fields.next()?;
+            let kind = fields.next()?;
+            let key = fields.next()?;
+            if hosts.starts_with(['@', '#', '|'])
+                || !["ssh-", "ecdsa-", "sk-"]
+                    .iter()
+                    .any(|prefix| kind.starts_with(*prefix))
+            {
+                return None;
+            }
+            let addresses: Vec<_> = hosts
+                .split(',')
+                .filter(|host| {
+                    !host.starts_with('|')
+                        && !host.contains(['*', '?', '!'])
+                        && (!host.starts_with('[') || host.ends_with("]:22"))
+                })
+                .map(normalized)
+                .collect();
+            Some(((kind, key), addresses))
+        })
+        .collect();
+    let saved_keys: HashSet<_> = records
+        .iter()
+        .filter(|(_, hosts)| hosts.iter().any(|host| saved.contains(host)))
+        .map(|(key, _)| *key)
+        .collect();
+    records
+        .into_iter()
+        .filter(|(key, _)| saved_keys.contains(key))
+        .flat_map(|(_, hosts)| hosts)
+        .collect()
+}
 fn executable() -> Option<PathBuf> {
     let name = if cfg!(windows) {
         "tailscale.exe"
@@ -332,18 +373,14 @@ fn ssh_sources() -> Vec<MachineCandidate> {
 
     out
 }
-fn known_hosts_source() -> Vec<MachineCandidate> {
+fn known_hosts_source() -> Source {
     let Some(home) = crate::dirs_home() else {
-        return vec![];
+        return Source::KnownHosts(String::new());
     };
-    fs::read_to_string(PathBuf::from(home).join(".ssh").join("known_hosts"))
-        .map(|text| {
-            known_hosts(&text)
-                .iter()
-                .map(|host| candidate(host, "known-hosts"))
-                .collect()
-        })
-        .unwrap_or_default()
+    Source::KnownHosts(
+        fs::read_to_string(PathBuf::from(home).join(".ssh").join("known_hosts"))
+            .unwrap_or_default(),
+    )
 }
 
 fn merge(mut all: Vec<MachineCandidate>) -> Vec<MachineCandidate> {
@@ -400,20 +437,21 @@ fn combine(a: &mut MachineCandidate, b: MachineCandidate) {
 #[derive(Debug)]
 enum Source {
     Candidates(Vec<MachineCandidate>),
+    KnownHosts(String),
     Inventory(Vec<MachineCandidate>, HashSet<String>, HashSet<String>),
 }
 fn discover(app: AppHandle) -> Vec<MachineCandidate> {
     let (tx, rx) = mpsc::channel();
-    for source in [
-        tailscale as fn() -> Vec<MachineCandidate>,
-        ssh_sources,
-        known_hosts_source,
-    ] {
+    for source in [tailscale as fn() -> Vec<MachineCandidate>, ssh_sources] {
         let tx = tx.clone();
         std::thread::spawn(move || {
             let _ = tx.send(Source::Candidates(source()));
         });
     }
+    let known_hosts_tx = tx.clone();
+    std::thread::spawn(move || {
+        let _ = known_hosts_tx.send(known_hosts_source());
+    });
     let tx2 = tx.clone();
     std::thread::spawn(move || {
         let state = app.state::<crate::remote::RemoteConnections>();
@@ -455,9 +493,18 @@ fn collect_sources(rx: mpsc::Receiver<Source>, timeout: Duration) -> Vec<Machine
     let mut all = Vec::new();
     let mut added = HashSet::new();
     let mut environments = HashSet::new();
+    let mut known = String::new();
     while let Ok(source) = rx.recv_timeout(end.saturating_duration_since(Instant::now())) {
         match source {
             Source::Candidates(c) => all.extend(c),
+            Source::KnownHosts(text) => {
+                all.extend(
+                    known_hosts(&text)
+                        .iter()
+                        .map(|host| candidate(host, "known-hosts")),
+                );
+                known = text;
+            }
             Source::Inventory(c, a, e) => {
                 all.extend(c);
                 added = a;
@@ -465,6 +512,7 @@ fn collect_sources(rx: mpsc::Receiver<Source>, timeout: Duration) -> Vec<Machine
             }
         }
     }
+    added.extend(known_ssh_addresses(&known, &added));
     let mut result = merge(all);
     for c in &mut result {
         c.already_added = c
@@ -478,10 +526,11 @@ fn collect_sources(rx: mpsc::Receiver<Source>, timeout: Duration) -> Vec<Machine
     result
 }
 #[tauri::command]
-pub async fn discover_machine_candidates(app: AppHandle) -> Vec<MachineCandidate> {
+pub async fn discover_machine_candidates(app: AppHandle) -> Result<Vec<MachineCandidate>, String> {
+    // A failed blocking task is an error, not "no machines": the UI keeps its last list.
     tauri::async_runtime::spawn_blocking(move || discover(app))
         .await
-        .unwrap_or_default()
+        .map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
@@ -514,6 +563,41 @@ mod tests {
         assert!(collect_sources(rx, Duration::from_millis(50))[0].already_added);
         assert_eq!(normalized("[2001:db8::1]:2222"), "2001:db8::1");
         assert_eq!(normalized("Example.org:2222"), "example.org");
+    }
+    #[test]
+    fn saved_ssh_key_marks_a_tailscale_peer_after_its_address_changes() {
+        let (tx, rx) = mpsc::channel();
+        tx.send(Source::Candidates(vec![candidate(
+            "100.64.0.20",
+            "tailscale",
+        )]))
+        .unwrap();
+        tx.send(Source::KnownHosts(
+            "100.64.0.10 ssh-ed25519 a2V5\n100.64.0.20 ssh-ed25519 a2V5\n100.64.0.30 ssh-ed25519 b3RoZXI\n@revoked 100.64.0.30 ssh-ed25519 a2V5\n".into(),
+        ))
+        .unwrap();
+        tx.send(Source::Inventory(
+            vec![],
+            HashSet::from(["100.64.0.10".into()]),
+            HashSet::new(),
+        ))
+        .unwrap();
+        drop(tx);
+        let results = collect_sources(rx, Duration::from_millis(50));
+        assert!(
+            results
+                .iter()
+                .find(|row| row.key == "100.64.0.20")
+                .unwrap()
+                .already_added
+        );
+        assert!(
+            !results
+                .iter()
+                .find(|row| row.key == "100.64.0.30")
+                .unwrap()
+                .already_added
+        );
     }
     #[test]
     fn tailscale_peers_and_groups() {

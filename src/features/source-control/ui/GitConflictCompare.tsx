@@ -3,7 +3,7 @@ import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconn
 import { FailureState } from "../../../shared/ui/FailureState";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Text } from "../../../shared/ui/Text";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useMemo, useState } from "react";
@@ -85,7 +85,7 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
         emptyMessage: selected.unavailable
           ? selected.unavailable
           : unified && unified.additions === 0 && unified.deletions === 0
-            ? "These two versions are identical"
+            ? t("These two versions are identical")
             : undefined,
         additions: unified?.additions ?? 0,
         deletions: unified?.deletions ?? 0,
@@ -95,7 +95,7 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
   }, [load, relative, selected]);
 
   const notes = load.status === "ready" ? missingSideNotes(load.stages) : [];
-  const title = `Compare ${relative}${
+  const title = `${t("Compare {p0}", { p0: relative })}${
     load.status === "ready" ? ` · ${conflictKindInfo(load.stages.kind).label}` : ""
   }`;
 
@@ -124,11 +124,11 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
         </div>
       ) : load.status === "error" ? (
         shownCentrally ? null : (
-          <div className="grid flex-1 place-items-center p-6">
+          <div className="flex min-h-0 flex-1 flex-col">
             <FailureState
               context="panel"
               title={t("Couldn’t load the versions")}
-              description={load.message}
+              error={load.message}
               onRetry={() => setRetry((value) => value + 1)}
             />
           </div>
@@ -136,15 +136,14 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
       ) : (
         <>
           {notes.length > 0 ? (
-            <Text
-              role="status"
-              as="p"
-              size="caption"
-              tone="secondary"
+            <InlineMessage
+              tone="info"
+              live="polite"
+              text={{ size: "caption" }}
               {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "shrink-0 px-4 py-1.5")}
             >
               {notes.join(" ")}
-            </Text>
+            </InlineMessage>
           ) : null}
           <div className="flex min-h-0 flex-1 flex-col">
             {load.stages.images && selected && !selected.unavailable ? (

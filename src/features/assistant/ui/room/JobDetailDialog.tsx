@@ -27,7 +27,8 @@ import { useAssistantRoom } from "./assistantRoomContext";
 import { JobDetailActivity } from "./JobDetailActivity";
 import { JobDetailNotes } from "./JobDetailNotes";
 
-const PRIORITY_LABEL = { low: "Low", normal: "Normal", high: "High" } as const;
+const priorityLabel = (priority: "low" | "normal" | "high") =>
+  priority === "low" ? t("Low") : priority === "high" ? t("High") : t("Normal");
 
 /** Job details as a compact end sheet: header, request, meta, then Activity and Notes. */
 export function JobDetailDialog() {
@@ -40,7 +41,7 @@ export function JobDetailDialog() {
       context={t("Job details")}
       onClose={() => setDetail(null)}
       side="end"
-      size="min(440px, 100vw)"
+      size="sm"
       headerBelow={
         <div className={styles.sheetStatus}>
           <Badge tone={jobStatusTone(openJob)} size="sm">
@@ -70,6 +71,11 @@ function JobSheetActions({ job }: { job: AssistantJob }) {
     <>
       <Button
         disabled={!!pending || !environmentId}
+        disabledReason={
+          pending
+            ? t("Wait for the current action to finish.")
+            : t("The assistant's computer is not connected.")
+        }
         onClick={() =>
           environmentId &&
           setJobEdit({
@@ -80,11 +86,16 @@ function JobSheetActions({ job }: { job: AssistantJob }) {
           })
         }
       >
-        {t("Priority")}: {t(PRIORITY_LABEL[priority])}
+        {t("Priority")}: {priorityLabel(priority)}
       </Button>
       {editable && job.goalId && !job.awaitingOwnerRestart && (
         <Button
           disabled={!!pending || !environmentId}
+          disabledReason={
+            pending
+              ? t("Wait for the current action to finish.")
+              : t("The assistant's computer is not connected.")
+          }
           onClick={() =>
             environmentId &&
             setJobEdit({
@@ -125,7 +136,7 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
   } = room;
   const [tab, setTab] = useState("activity");
   return (
-    <div className={styles.sheet}>
+    <div className={styles.detailContent}>
       <div className={styles.request}>
         <ClampText key={job.id} lines={4}>
           <p>{job.request}</p>
@@ -159,7 +170,7 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
               loading={pending?.key === `note:${job.id}`}
               disabled={!!pending}
               onClick={() =>
-                run(`note:${job.id}`, t("Loading..."), async () => {
+                run(`note:${job.id}`, t("Loading…"), async () => {
                   const id = job.quickResult?.noteId;
                   if (!id) throw new Error(t("The saved note is no longer available."));
                   const result = await assistantRequest({
@@ -194,7 +205,7 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
           {!job.quickResult?.automationId && job.quickIntent?.automationId && (
             <Text as="p" leading="inherit" className={styles.muted}>
               {t(
-                "Automation creation is unconfirmed. Inspect its original target before retrying.",
+                "Automation creation could not be confirmed. Inspect its original target before retrying.",
               )}{" "}
               <Code>{job.quickIntent.automationId}</Code>
             </Text>
@@ -205,12 +216,12 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
                 loading={pending?.key === `automation:${job.id}`}
                 disabled={!!pending}
                 onClick={() =>
-                  run(`automation:${job.id}`, t("Loading..."), async () => {
+                  run(`automation:${job.id}`, t("Loading…"), async () => {
                     const navigationEpoch = scopeEpoch.current.value;
                     const id = job.quickResult?.automationId ?? job.quickIntent?.automationId;
                     if (!id || !environmentId || job.quickAction.kind !== "automation")
                       throw new Error(
-                        "The linked automation is unavailable on its original computer.",
+                        t("The linked automation is unavailable on its original computer."),
                       );
                     const owner = await captureAssistantHostRead(environmentId);
                     const rows = await owner.automations();
@@ -218,7 +229,7 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
                     const actual = rows.find((row) => row.id === id && row.projectId === projectId);
                     if (!actual || !assistantJobVisible(job, canSeeProject))
                       throw new Error(
-                        "The linked automation is unavailable on its original computer.",
+                        t("The linked automation is unavailable on its original computer."),
                       );
                     await props.onOpenAutomation!({
                       id: actual.id,
@@ -269,39 +280,57 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
       )}
       <Disclosure size="sm" summary={t("Related work")}>
         <div className={styles.related}>
+          {(!props.onReviewJobTasks || !onOpenSession) &&
+            (job.goalId || job.sessionIds.length > 0) && (
+              <Text as="p" leading="inherit" className={styles.muted}>
+                {t("Open this job on its own computer")}
+              </Text>
+            )}
           {job.goalId && (
-            <p>
-              {t("Epic")}:{" "}
+            <div>
               <Button
                 variant="link"
                 disabled={!props.onReviewJobTasks || !!pending}
+                disabledReason={
+                  !props.onReviewJobTasks
+                    ? t("Open this job on its own computer")
+                    : t("Wait for the current action to finish.")
+                }
                 loading={pending?.key === `tasks:${job.id}`}
                 onClick={() => reviewJobTasks(job)}
               >
-                {job.goalId}
+                {t("Epic: {p0}", { p0: job.title })}
               </Button>
-            </p>
+            </div>
           )}
-          {job.sessionIds.map((id) => (
-            <Button
-              key={id}
-              variant="link"
-              disabled={!onOpenSession}
-              onClick={() => onOpenSession?.(id)}
-            >
-              {id}
-            </Button>
+          {job.sessionIds.map((id, index) => (
+            <div key={id}>
+              <Button
+                variant="link"
+                disabled={!onOpenSession}
+                disabledReason={t("Open this job on its own computer")}
+                onClick={() => onOpenSession?.(id)}
+              >
+                {t("Worker session {p0}", { p0: index + 1 })}
+              </Button>
+            </div>
           ))}
-          {job.taskIds.map((id) => (
+          {job.taskIds.length > 0 && (
             <Button
-              key={id}
               variant="link"
               disabled={!props.onReviewJobTasks || !!pending || job.kind === "quick" || !job.goalId}
+              disabledReason={
+                !props.onReviewJobTasks
+                  ? t("Open this job on its own computer")
+                  : pending
+                    ? t("Wait for the current action to finish.")
+                    : t("Tasks are not available for this job.")
+              }
               onClick={() => reviewJobTasks(job)}
             >
-              {id}
+              {t("Review tasks")}
             </Button>
-          ))}
+          )}
         </div>
       </Disclosure>
       <Tabs value={tab} onValueChange={setTab} id="job-detail">

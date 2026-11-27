@@ -149,6 +149,9 @@ function button(label: string) {
   expect(found, label).toBeTruthy();
   return found!;
 }
+async function openDeleteMenu() {
+  await click("Delete note");
+}
 async function click(label: string) {
   await act(async () => button(label).click());
 }
@@ -187,11 +190,26 @@ function body() {
   };
 }
 
+it("autosaves after the delay and keeps routine status quiet", async () => {
+  await render();
+  expect(container.querySelector(".note-save-status")).toBeNull();
+  vi.useFakeTimers();
+  await input(body(), "Save this note now");
+  expect(container.querySelector(".note-save-status")).toBeNull();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(500);
+  });
+  expect(stored.find((note) => note.sourceSessionId === sessionId)?.body).toBe(
+    "Save this note now",
+  );
+  expect(container.querySelector(".note-save-status")).toBeNull();
+});
+
 it("keeps autosaving the draft after deletion fails", async () => {
   await render();
   vi.useFakeTimers();
   await input(body(), "Keep this draft");
-  await click("Delete note");
+  await openDeleteMenu();
   await act(async () => {
     await vi.advanceTimersByTimeAsync(300);
   });
@@ -200,7 +218,7 @@ it("keeps autosaving the draft after deletion fails", async () => {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(600);
   });
-  expect(container.textContent).toContain("Delete unavailable");
+  expect(container.textContent).toContain("Could not load or update notes.");
   await input(body(), "Keep this draft and the next edit");
   await act(async () => {
     await vi.advanceTimersByTimeAsync(500);
@@ -288,18 +306,24 @@ it("confirms copying the current draft only after clipboard success and permits 
     .spyOn(navigator.clipboard, "writeText")
     .mockRejectedValueOnce(new Error("Clipboard unavailable"))
     .mockImplementationOnce(() => pending);
-  const copyButton = () => container.querySelector<HTMLButtonElement>('[data-id="copy"]')!;
+  const copyButton = () =>
+    container.querySelector<HTMLButtonElement>(
+      'button[data-copy-state], button[aria-label="Copy note"]',
+    )!;
   try {
     await click("Copy note");
-    expect(copyButton().dataset.state).toBe("idle");
-    await click("Copy note");
-    await click("Copy note");
+    expect(copyButton().getAttribute("data-copy-state")).toBe("failed");
+    expect(copyButton().getAttribute("aria-label")).toBe("Copy failed. Try again.");
+    await act(async () => {
+      copyButton().click();
+      copyButton().click();
+    });
     expect(write).toHaveBeenCalledTimes(2);
     expect(write).toHaveBeenLastCalledWith("Current clipboard draft");
     expect(copyButton().getAttribute("aria-busy")).toBe("true");
-    expect(copyButton().dataset.state).toBe("idle");
+    expect(container.querySelector('button[aria-label="Copied"]')).toBeNull();
     await act(async () => finish());
-    expect(copyButton().dataset.state).toBe("done");
+    expect(container.querySelector('button[aria-label="Copied"]')).not.toBeNull();
   } finally {
     write.mockRestore();
   }
@@ -368,7 +392,12 @@ it("bounds dropdown rendering and finds notes beyond the initial window", async 
 it("shows a load error without creating an empty document on failed reads", async () => {
   invoke.mockRejectedValueOnce(new Error("Disk unavailable"));
   await render();
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Disk unavailable");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not load or update notes.",
+  );
+  expect(container.querySelector('[role="alert"]')?.textContent).not.toContain("Disk unavailable");
+  await click("Details");
+  expect(document.body.textContent).toContain("Disk unavailable");
   expect(invoke.mock.calls.some(([command]) => command === "notes_upsert")).toBe(false);
   await click("Retry");
   await click("New note");
@@ -385,7 +414,7 @@ it("preserves an unsaved body across close and reopen after persistent write fai
     body().focus();
     body().blur();
   });
-  expect(container.textContent).toContain("Disk full");
+  expect(container.textContent).toContain("Could not save note");
   await act(async () => root.render(null));
   invoke.mockImplementation(original);
   await render();
@@ -424,7 +453,7 @@ it("continues editing and deleting the recovered copy while the original still e
   expect(stored.find((note) => note.id === recovered.id)?.body).toBe("Editing the recovered copy");
   expect(stored.find((note) => note.id === own.id)?.body).toBe(own.body);
   vi.useFakeTimers();
-  await click("Delete note");
+  await openDeleteMenu();
   await act(async () => vi.advanceTimersByTimeAsync(300));
   await click("Confirm delete");
   expect(stored.some((note) => note.id === recovered.id)).toBe(false);
@@ -469,7 +498,7 @@ it.each([false, true])(
         body().focus();
         body().blur();
       });
-      expect(container.textContent).toContain("Newer write failed");
+      expect(container.textContent).toContain("Could not save note");
     }
     if (remount) await act(async () => root.render(null));
     await act(async () => release());
@@ -478,7 +507,7 @@ it.each([false, true])(
       true,
     );
     expect(body().value).toBe("Newer unsaved draft");
-    if (!remount) expect(container.textContent).toContain("Newer write failed");
+    if (!remount) expect(container.textContent).toContain("Could not save note");
     await act(async () => root.render(null));
     await render();
     expect(body().value).toBe("Newer unsaved draft");
@@ -542,11 +571,13 @@ it.each(["copy", "create"])(
     });
     expect(stored.some((note) => note.id === own.id)).toBe(false);
     expect(body().value).toBe(draft);
-    expect(container.textContent).toContain("Your draft is preserved");
+    expect(container.textContent).toContain("Could not save note");
+    // The raw text sits behind Details; open it first so the failure shows as it arrives.
+    await click("Details: Could not save note");
     await click("Save as new note");
     expect(body().value).toBe(draft);
     expect(stored.some((note) => note.sourceSessionId === sessionId)).toBe(false);
-    expect(container.textContent).toContain(
+    expect(document.body.textContent).toContain(
       failure === "copy" ? "Image copy failed" : "Recovery creation failed",
     );
     failRecovery = false;

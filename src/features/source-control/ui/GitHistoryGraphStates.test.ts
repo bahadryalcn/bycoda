@@ -6,7 +6,7 @@ import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { GitHistoryGraph } from "./GitHistoryGraph";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { GitStashSection } from "./GitStashSection";
-import { gitHistory, gitStashList } from "../../../platform/tauri/fs";
+import { gitHistory, gitStashList, subscribeGitChanged } from "../../../platform/tauri/fs";
 import { resetGitResourceCache } from "../hooks/useGitResource";
 import { resetGitPanelState, withGitOperation } from "../model/gitPanelState";
 
@@ -187,10 +187,10 @@ it("retains commits while refreshing and after a failed refresh, then retries", 
   await graph();
   const request = deferred<Awaited<ReturnType<typeof gitHistory>>>();
   vi.mocked(gitHistory).mockReturnValueOnce(request.promise);
-  await click("Refresh commit graph");
+  // There is no refresh button: a Git change re-reads the graph.
+  const changed = vi.mocked(subscribeGitChanged).mock.calls.at(-1)![0];
+  await act(async () => changed(null));
   expect(container.textContent).not.toContain("Refreshing commit graph…");
-  expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
-  expect(container.querySelector('button[aria-busy="true"]')).not.toBeNull();
   expect(container.textContent).toContain("Existing commit");
   await act(async () => request.reject(new Error("Permission denied")));
   expect(container.textContent).toContain("Couldn’t load commit graph");
@@ -202,6 +202,21 @@ it("retains commits while refreshing and after a failed refresh, then retries", 
   });
   await click("Retry");
   expect(container.textContent).not.toContain("Couldn’t load commit graph");
+});
+
+it("reloads shown commits on a Git change without spinning the refresh control", async () => {
+  vi.mocked(gitHistory).mockResolvedValueOnce({ head: commit.sha, commits: [commit] });
+  await graph();
+  const request = deferred<Awaited<ReturnType<typeof gitHistory>>>();
+  vi.mocked(gitHistory).mockReturnValueOnce(request.promise);
+  const changed = vi.mocked(subscribeGitChanged).mock.calls.at(-1)![0];
+  await act(async () => changed(null));
+  expect(gitHistory).toHaveBeenCalledTimes(2);
+  expect(container.querySelector('button[aria-busy="true"]')).toBeNull();
+  await act(async () =>
+    request.resolve({ head: commit.sha, commits: [{ ...commit, subject: "Newer commit" }] }),
+  );
+  expect(container.textContent).toContain("Newer commit");
 });
 
 it("does not turn an initial failure into an empty history", async () => {
@@ -235,15 +250,77 @@ it("shows progress while loading another page and retains existing commits", asy
   const request = deferred<Awaited<ReturnType<typeof gitHistory>>>();
   vi.mocked(gitHistory).mockReturnValueOnce(request.promise);
   await click("Load more");
-  expect(gitHistory).toHaveBeenLastCalledWith("/repo", 400, false);
+  // Only the next page is read, continuing after the 200 commits already loaded.
+  expect(gitHistory).toHaveBeenLastCalledWith("/repo", 200, false, 200);
   expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
   expect(container.textContent).toContain("Commit 199");
   expect(
     [...container.querySelectorAll("button")].some((button) => button.textContent === "Load more"),
   ).toBe(false);
-  await act(async () => request.resolve({ head: commit.sha, commits: page }));
+  await act(async () =>
+    request.resolve({
+      head: commit.sha,
+      commits: [{ ...commit, sha: "f".repeat(40), subject: "Older" }],
+    }),
+  );
   expect(container.querySelector('[aria-busy="true"]')).toBeNull();
   expect(container.querySelector(".animate-spin")).toBeNull();
+  expect(container.textContent).toContain("Commit 199");
+  expect(container.textContent).toContain("Older");
+});
+
+function historyPage(from: number, count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    ...commit,
+    sha: (from + index).toString(16).padStart(40, "0"),
+    subject: `Commit ${from + index}`,
+  }));
+}
+
+it("appends pages under one cache entry and stops offering more at the end of history", async () => {
+  vi.mocked(gitHistory).mockResolvedValueOnce({ head: commit.sha, commits: historyPage(0, 200) });
+  await graph();
+  vi.mocked(gitHistory).mockResolvedValueOnce({ head: commit.sha, commits: historyPage(200, 5) });
+  await click("Load more");
+  expect(gitHistory).toHaveBeenCalledTimes(2);
+  expect(container.textContent).toContain("Commit 204");
+  expect(container.textContent).not.toContain("Load more");
+  // Neither read repeated the 200 commits already loaded.
+  expect(vi.mocked(gitHistory).mock.calls).toEqual([
+    ["/repo", 200, false],
+    ["/repo", 200, false, 200],
+  ]);
+});
+
+it("re-reads the loaded depth in one request on a Git change and drops stale appended pages", async () => {
+  vi.mocked(gitHistory).mockResolvedValueOnce({ head: commit.sha, commits: historyPage(0, 200) });
+  await graph();
+  vi.mocked(gitHistory).mockResolvedValueOnce({ head: commit.sha, commits: historyPage(200, 200) });
+  await click("Load more");
+  expect(container.textContent).toContain("Commit 399");
+  // A ref change rewrote history: the next read starts over and covers all 400 loaded commits.
+  const rewritten = historyPage(1000, 400);
+  vi.mocked(gitHistory).mockResolvedValueOnce({ head: commit.sha, commits: rewritten });
+  const changed = vi.mocked(subscribeGitChanged).mock.calls.at(-1)![0];
+  await act(async () => changed(null));
+  expect(gitHistory).toHaveBeenLastCalledWith("/repo", 400, false);
+  expect(container.textContent).toContain("Commit 1399");
+  expect(container.textContent).not.toContain("Commit 399 ");
+  expect(container.textContent).not.toContain("Commit 199 ");
+});
+
+it("ignores a page that was requested before a refresh replaced the history", async () => {
+  vi.mocked(gitHistory).mockResolvedValueOnce({ head: commit.sha, commits: historyPage(0, 200) });
+  await graph();
+  const page = deferred<Awaited<ReturnType<typeof gitHistory>>>();
+  vi.mocked(gitHistory).mockReturnValueOnce(page.promise);
+  await click("Load more");
+  vi.mocked(gitHistory).mockResolvedValueOnce({ head: commit.sha, commits: historyPage(500, 200) });
+  const changed = vi.mocked(subscribeGitChanged).mock.calls.at(-1)![0];
+  await act(async () => changed(null));
+  await act(async () => page.resolve({ head: commit.sha, commits: historyPage(200, 200) }));
+  expect(container.textContent).toContain("Commit 699");
+  expect(container.textContent).not.toContain("Commit 399");
 });
 
 it("loads the full branch history when the full graph opens", async () => {
@@ -280,8 +357,10 @@ it("keeps the stash section visible on load failure and disables it during anoth
     operation = withGitOperation("/repo", "Staging…", () => request.promise);
   });
   expect(
-    container.querySelector<HTMLButtonElement>('[aria-label="Stash all changes"]')?.disabled,
-  ).toBe(true);
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Stash all changes"]')
+      ?.getAttribute("aria-disabled"),
+  ).toBe("true");
   await act(async () => request.resolve());
   await operation;
   expect(

@@ -5,7 +5,16 @@ import { RailBackgroundControls } from "../../../src/features/projects/ui/RailBa
 import { saveProjectChatBackgroundSettings } from "../../../src/features/projects/model/projectChatBackground";
 import { UsageProviderChip } from "../../../src/app/shell/UsageProviderChip";
 import { ResumeTurnRow } from "../../../src/features/sessions/ui/ResumeTurnRow";
-import { ProviderSignInPanel } from "../../../src/features/sessions/ui/ProviderSignInPanel";
+import {
+  ProviderSignInPanel,
+  type ProviderSignInState,
+} from "../../../src/features/sessions/ui/ProviderSignInPanel";
+import { RemoveProjectDialog } from "../../../src/features/projects/ui/RemoveProjectDialog";
+import { DeleteSessionDialog } from "../../../src/features/sessions/ui/DeleteSessionDialog";
+import {
+  offerSignInInstructionLine,
+  signInInstructionsKey,
+} from "../../../src/integrations/harness/core/authInstructions";
 import { SessionImportDialog } from "../../../src/features/sessions/ui/SessionImportDialog";
 import { AdditionalDirsDialog } from "../../../src/features/projects/ui/AdditionalDirsDialog";
 import { saveAdditionalDirs } from "../../../src/features/projects/model/additionalDirs";
@@ -38,8 +47,63 @@ import {
 } from "../../../src/features/sessions/model/sessionsStore";
 import { languageReady } from "../../../src/shared/i18n";
 import { applyThemePreference } from "../../../src/features/settings/model/appearance";
+import { recordRemoteConnection } from "../../../src/features/connections/model/remoteHealth";
 import "../../../src/styles/index.css";
 
+const machineFixture = new URLSearchParams(location.search).get("machineFixture");
+if (machineFixture) {
+  mockIPC(
+    (command) =>
+      command === "remote_machines"
+        ? [
+            {
+              id: "office",
+              environmentId: "office",
+              name: "Office Mac",
+              endpoint: "http://127.0.0.1:1",
+            },
+            {
+              id: "build",
+              environmentId: "build",
+              name: "Build PC",
+              endpoint: "http://127.0.0.1:2",
+            },
+          ]
+        : null,
+    { shouldMockEvents: true },
+  );
+  recordRemoteConnection("office");
+  recordRemoteConnection("build", new Error("Machine is unreachable"));
+}
+
+const removeProjectParam = new URLSearchParams(location.search).get("removeProject");
+if (removeProjectParam) {
+  // `?removeProject=ok` counts 12 saved sessions; `?removeProject=error` rejects the way a Native
+  // storage failure does (a plain string from the command), so the dialog shows its real error path.
+  mockIPC(
+    (command) => {
+      if (command === "session_ids_by_project") {
+        if (removeProjectParam === "error") throw "database is locked (code 5)";
+        return Array.from({ length: 12 }, (_, index) => `fixture-session-${index}`);
+      }
+      return null;
+    },
+    { shouldMockEvents: true },
+  );
+}
+const providerSignInParam = new URLSearchParams(location.search).get("providerSignIn");
+const providerSignInState: ProviderSignInState =
+  providerSignInParam === "running" ||
+  providerSignInParam === "error" ||
+  providerSignInParam === "complete"
+    ? providerSignInParam
+    : "idle";
+if (providerSignInState === "running") {
+  // The browser-fallback link and device code a login CLI prints on a Host without a browser.
+  const key = signInInstructionsKey("claude");
+  offerSignInInstructionLine(key, "Open https://claude.ai/device to sign in");
+  offerSignInInstructionLine(key, "Enter the code: QZ7K-4MDP");
+}
 if (new URLSearchParams(location.search).has("projectVisual")) {
   mockIPC(() => null, { shouldMockEvents: true });
   (window as any).__TAURI_INTERNALS__.convertFileSrc = () => "/crew/star-wars/yoda.svg";
@@ -109,23 +173,33 @@ if (new URLSearchParams(location.search).has("controlDialogs")) {
   );
 }
 
-if (new URLSearchParams(location.search).has("reviewFixture")) {
+const reviewFixture = new URLSearchParams(location.search).get("reviewFixture");
+let checkpointReads = 0;
+const checkpointDirectories: string[] = [];
+if (reviewFixture !== null) {
   mockIPC(
-    (command) => {
-      if (command === "session_checkpoint_status")
+    (command, args) => {
+      if (command === "session_checkpoint_status") {
+        checkpointReads++;
+        const cwd = (args as { cwd: string }).cwd;
+        checkpointDirectories.push(cwd);
+        if (reviewFixture === "scratch-missing") throw new Error("ENOENT: scratch is missing");
+        if (reviewFixture === "worktree-busy" && checkpointReads === 1)
+          throw new Error("Workspace checkpoint is still recording this turn");
         return {
           files: [
             {
-              path: "/fixture/src/example.ts",
+              path: `${cwd}/src/example.ts`,
               relative: "src/example.ts",
               status: "modified",
               additions: 7,
               deletions: 2,
               exact: true,
-              undoable: true,
+              undoable: false,
             },
           ],
         };
+      }
       if (command.startsWith("plugin:event|")) return null;
       throw new Error(`Unavailable in review fixture: ${command}`);
     },
@@ -174,6 +248,13 @@ const modelSource = {
     : {}),
 };
 const sessionId = "integrated-session-usability";
+const historyFixture = new URLSearchParams(location.search).has("historyFixture");
+const historyBlocks: Block[] = Array.from({ length: 32 }, (_, index) => ({
+  id: `history-${index}`,
+  role: index % 2 === 0 ? "user" : "assistant",
+  text: `${index % 2 === 0 ? "Request" : "Response"} ${Math.floor(index / 2) + 1}`,
+}));
+let finishHistoryPage: (() => void) | undefined;
 const baseBlocks: Block[] = [
   {
     id: "user",
@@ -196,14 +277,26 @@ const baseBlocks: Block[] = [
   {
     id: "reply",
     role: "assistant",
-    text: "The report is ready for review. Your draft and selected model remain available below.",
+    text: "The report is ready for review. See `src/example.ts`. Your draft and selected model remain available below.",
   },
 ];
 const initial: Session = {
-  ...newSession("claude", "/fixture", modelId),
+  ...newSession(
+    "claude",
+    machineFixture === "projectless" || reviewFixture?.startsWith("scratch-") ? "~" : "/fixture",
+    modelId,
+  ),
   id: sessionId,
   title: "Integrated usability conversation with a long project title",
-  blocks: new URLSearchParams(location.search).has("socialDiscussion") ? [] : baseBlocks,
+  ...(reviewFixture === "worktree-busy" ? { worktreeCwd: "/fixture-worktree" } : {}),
+  blocks: machineFixture
+    ? []
+    : historyFixture
+      ? historyBlocks.slice(12)
+      : new URLSearchParams(location.search).has("socialDiscussion")
+        ? []
+        : baseBlocks,
+  ...(historyFixture ? { historyLoading: true, storedHistory: { before: 12, revision: 1 } } : {}),
   rewindHistory: new URLSearchParams(location.search).has("rewindFixture")
     ? [
         {
@@ -227,7 +320,18 @@ setComposerAttachments(sessionId, [
     data: btoa("context"),
   },
 ]);
-const events = { sends: 0, stops: 0, approvals: 0, queueAttempts: 0 };
+const events = {
+  sends: 0,
+  stops: 0,
+  approvals: 0,
+  queueAttempts: 0,
+  historyPages: 0,
+  machine: "",
+  get checkpointReads() {
+    return checkpointReads;
+  },
+  checkpointDirectories,
+};
 // The real pane resolves approval identity from the canonical session store.
 setSessions([initial]);
 type Mode = "idle" | "working" | "approval" | "unknown" | "tools" | "long";
@@ -235,6 +339,7 @@ type FixtureControl = {
   mode: (mode: Mode) => void;
   remount: () => void;
   events: typeof events;
+  finishHistoryPage: () => void;
 };
 declare global {
   interface Window {
@@ -256,6 +361,7 @@ function Fixture() {
   useEffect(() => {
     window.sessionUsability = {
       events,
+      finishHistoryPage: () => finishHistoryPage?.(),
       remount: () => setRevision((value) => value + 1),
       mode: (mode) => {
         if (mode === "unknown") {
@@ -345,6 +451,11 @@ function Fixture() {
     onFocus: noop,
     onClose: noop,
     onCwdChange: noop,
+    onSessionMachineChange: machineFixture
+      ? (_, environmentId) => {
+          events.machine = environmentId ?? "";
+        }
+      : undefined,
     onBranchChange: noop,
     onWorkspaceModeChange: noop,
     onWorktreeBaseChange: noop,
@@ -357,6 +468,20 @@ function Fixture() {
       return false;
     },
     onSaveDraft: () => false,
+    onLoadSessionHistory: historyFixture
+      ? async () => {
+          events.historyPages++;
+          await new Promise<void>((resolve) => {
+            finishHistoryPage = resolve;
+          });
+          setSession((value) => ({
+            ...value,
+            blocks: historyBlocks,
+            storedHistory: { revision: 1 },
+          }));
+          return 12;
+        }
+      : undefined,
     onRemoveDraft: () => false,
     onStop: () => {
       events.stops++;
@@ -445,10 +570,10 @@ void Promise.all([languageReady, flushHostSessionBindings()]).then(() =>
           group
           onChange={() => {}}
         />
-      ) : new URLSearchParams(location.search).get("projectVisual") === "mascot" ? (
+      ) : new URLSearchParams(location.search).get("projectVisual") === "usage" ? (
         <UsageProviderChip
-          project="/fixture/project"
           now={1790000000000}
+          onRefresh={async () => {}}
           limits={{
             provider: "codex",
             session: { usedPercent: 42, windowMinutes: 300, resetsAt: 1790010000000 },
@@ -478,8 +603,32 @@ void Promise.all([languageReady, flushHostSessionBindings()]).then(() =>
           block={{ id: "fixture-resume", role: "user", text: "Continue the retained draft." }}
           kind="resume"
         />
+      ) : removeProjectParam ? (
+        <RemoveProjectDialog
+          name="bycoda"
+          path="/work/bycoda"
+          onCancel={() => {}}
+          onConfirm={() => {}}
+        />
+      ) : new URLSearchParams(location.search).has("deleteSession") ? (
+        // The real caller always passes the unused-worktree path, so the checkbox is part of the prompt.
+        <DeleteSessionDialog
+          title="Investigate why the nightly sync job fails only on the staging runner after the proxy change"
+          unusedWorktree="C:/Users/demo/.bycoda/worktrees/bycoda/nightly-sync-3f9a"
+          onClose={() => {}}
+        />
       ) : new URLSearchParams(location.search).has("providerSignIn") ? (
-        <ProviderSignInPanel harness="claude" state="idle" onSignIn={() => {}} />
+        // `?providerSignIn=running|error|complete`; bare `?providerSignIn` stays idle.
+        <ProviderSignInPanel
+          harness="claude"
+          state={providerSignInState}
+          error={
+            providerSignInState === "error"
+              ? "The sign-in window was closed before it finished. Try again."
+              : null
+          }
+          onSignIn={() => {}}
+        />
       ) : new URLSearchParams(location.search).has("controlDialogs") ? (
         new URLSearchParams(location.search).get("controlDialogs") === "folders" ? (
           <AdditionalDirsDialog project="/fixture/project" name="Fixture" onClose={() => {}} />

@@ -15,9 +15,14 @@ const account = vi.hoisted(() => ({
 }));
 vi.mock("../../account", () => ({
   getStatsChoice: () => account.stats,
-  setStatsChoice: account.setStats,
+  statsDisclosure: () => "Shared statistics disclosure",
+  setStatisticsMode: account.setStats,
   subscribeAnonymousStats: () => () => undefined,
   useAccountState: () => account.state,
+  signInFailure: (message: string | null) => ({
+    title: "Sign-in did not finish. Try again.",
+    detail: message ?? undefined,
+  }),
   useAccount: () => ({
     state: account.state,
     signIn: account.signIn,
@@ -120,11 +125,10 @@ describe("onboarding account step", () => {
     await render();
     await click("Continue");
     expect(text()).toContain("Statistics");
-    expect(text()).toContain("Never sent: your sessions, prompts, code");
     await click("Don't share");
     expect(account.setStats).toHaveBeenCalledWith("off");
     await click("Share anonymous statistics");
-    expect(account.setStats).toHaveBeenCalledWith("on");
+    expect(account.setStats).toHaveBeenCalledWith("auto");
     await click("Continue");
     expect(text()).toContain("Workspace body");
   });
@@ -156,11 +160,14 @@ describe("onboarding account step", () => {
   it("returns to the step with the error and keeps Continue on failure", async () => {
     account.state = { phase: "signed-out", notice: "sign-in-failed", message: "Network down" };
     await render();
-    expect(text()).toContain("Network down");
+    // The translated title is visible; the raw host message stays behind Details.
+    expect(text()).toContain("Sign-in did not finish. Try again.");
+    expect(text()).not.toContain("Network down");
     expect(text()).toContain("Continue");
     account.state = { phase: "signed-out", notice: "declined", message: null };
     await render();
-    expect(text()).toContain("Sign-in was cancelled.");
+    // The user stopped it themselves, so no notice repeats that.
+    expect(text()).not.toContain("Sign-in was cancelled.");
     expect(text()).toContain("Sign in with browser");
   });
 

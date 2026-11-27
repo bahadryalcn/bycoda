@@ -10,11 +10,13 @@ import {
 import { orderByIds } from "../../../shared/lib/reorder";
 import { planWorkspaceTabClose } from "../../../features/workspace/model/workspaceTabGroups";
 import { remoteSessionFor } from "../../../features/connections/model/connections";
+import { remoteSessionProjectKey } from "../../../features/connections/model/sessionMachineTarget";
 import { shouldToggleNotesPanel, toggleNotesPanel } from "../../../features/notes/notesPanel";
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
 import type { SettingsSectionId } from "../../../features/settings/model/settings";
-import { isRemoteProjectPath } from "../../../features/projects/model/recents";
+import { isRemoteProjectPath, sameProjectPath } from "../../../features/projects/model/recents";
 import { requestSessionImport } from "../../../features/sessions/import/importModel";
+import { isImportProvider } from "../../../platform/tauri/sessionImport";
 import { sessionWorkCwd } from "../../../features/sessions/model/session";
 import type { ClaudeImportTarget } from "../../../features/sessions/model/claudeSessionImport";
 import type { useMoveTabsToNewWindow } from "../windows/useMoveTabsToNewWindow";
@@ -27,14 +29,23 @@ export function useRemoteSessionDeleted(deps: {
   tabWorktreeOf: Parameters<typeof planWorkspaceTabClose>[0]["worktreeOf"];
   onClearTabSession: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
-}): { onRemoteSessionDeleted: (remoteSessionId: string) => void } {
+}): { onRemoteSessionDeleted: (remoteSessionId: string, project?: string) => void } {
   const { tabsRef, sessionsRef, tabCloseScope, tabWorktreeOf, onClearTabSession, onCloseTab } =
     deps;
 
   const onRemoteSessionDeleted = useCallback(
-    (remoteSessionId: string) => {
+    (remoteSessionId: string, project?: string) => {
       const tab = tabsRef.current.find((entry) =>
-        leafIds(entry.layout).some((shellId) => remoteSessionFor(shellId) === remoteSessionId),
+        leafIds(entry.layout).some(
+          (shellId) =>
+            remoteSessionFor(shellId) === remoteSessionId &&
+            (!project ||
+              sessionsRef.current.some(
+                (session) =>
+                  session.id === shellId &&
+                  sameProjectPath(remoteSessionProjectKey(session), project),
+              )),
+        ),
       );
       if (!tab) return;
       const closePlan = planWorkspaceTabClose({
@@ -205,7 +216,7 @@ export function useNotesPanelToggle(deps: {
   return { onToggleNotesPanel };
 }
 
-/** Resumes a session in its provider: codex imports, claude opens the resume picker. */
+/** Resumes a session in its provider: claude opens the resume picker, other providers import. */
 export function useResumeProviderSession(deps: {
   sessionsRef: MutableRefObject<Session[]>;
   turnGen: MutableRefObject<Map<string, number>>;
@@ -218,11 +229,12 @@ export function useResumeProviderSession(deps: {
       const source = sessionsRef.current.find((session) => session.id === sessionId);
       if (!source) return;
       if (isRemoteProjectPath(source.cwd)) return;
-      if (source.harness === "codex") {
-        requestSessionImport({ cwd: sessionWorkCwd(source), provider: "codex" });
+      if (source.harness !== "claude") {
+        if (isImportProvider(source.harness)) {
+          requestSessionImport({ cwd: sessionWorkCwd(source), provider: source.harness });
+        }
         return;
       }
-      if (source.harness !== "claude") return;
       setResumePickerFor({
         sessionId,
         // Claude files conversations under the directory it ran in, which for a

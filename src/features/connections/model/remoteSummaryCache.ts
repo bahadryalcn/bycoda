@@ -39,29 +39,100 @@ function flushOne(): void {
   if (pending.size) flushTimer = setTimeout(flushOne, 0);
 }
 
-export function writeRemoteSummaryCache(key: string, value: string): void {
-  if (!key.startsWith(PREFIX)) throw new Error("Invalid summary cache key");
-  if (value.length * 2 > REMOTE_SUMMARY_CACHE_BYTES) {
-    localStorage.removeItem(key);
+/** In-memory index of cached keys to byte size, oldest write first (Map insertion
+ * order). Writes consult it instead of scanning and re-reading localStorage. Values
+ * are read from storage only for keys the index has not seen (first build, or keys
+ * another writer added). Other windows are folded in through `storage` events;
+ * `knownLength` detects any other change (clear, same-window foreign writes) and
+ * triggers a key-only rescan. */
+let sizes: Map<string, number> | undefined;
+let totalBytes = 0;
+let knownLength = -1;
+let listening = false;
+
+function track(key: string, bytes?: number): void {
+  const old = sizes!.get(key);
+  if (old !== undefined) {
+    totalBytes -= old;
+    sizes!.delete(key);
+  }
+  if (bytes !== undefined) {
+    sizes!.set(key, bytes);
+    totalBytes += bytes;
+  }
+}
+
+function onStorage(event: StorageEvent): void {
+  if (event.storageArea && event.storageArea !== localStorage) return;
+  if (!sizes) return;
+  if (event.key === null) {
+    sizes = undefined; // clear(): rebuild lazily on the next write
     return;
   }
-  const entries: string[] = [];
-  let bytes = value.length * 2;
-  for (let index = 0; index < localStorage.length; index++) {
-    const entry = localStorage.key(index);
-    if (entry?.startsWith(PREFIX) && entry !== key) {
-      entries.push(entry);
-      bytes += (localStorage.getItem(entry)?.length ?? 0) * 2;
+  if (event.key.startsWith(PREFIX)) {
+    track(event.key, event.newValue === null ? undefined : event.newValue.length * 2);
+  }
+  knownLength = localStorage.length;
+}
+
+function syncIndex(): Map<string, number> {
+  if (sizes && knownLength === localStorage.length) return sizes;
+  const present = new Set<string>();
+  const added: string[] = [];
+  for (let position = 0; position < localStorage.length; position++) {
+    const entry = localStorage.key(position);
+    if (!entry?.startsWith(PREFIX)) continue;
+    present.add(entry);
+    if (!sizes?.has(entry)) added.push(entry);
+  }
+  const next = new Map<string, number>();
+  let bytes = 0;
+  for (const [entry, size] of sizes ?? []) {
+    if (!present.has(entry)) continue;
+    next.set(entry, size);
+    bytes += size;
+  }
+  for (const entry of added) {
+    const size = (localStorage.getItem(entry)?.length ?? 0) * 2;
+    next.set(entry, size);
+    bytes += size;
+  }
+  sizes = next;
+  totalBytes = bytes;
+  knownLength = localStorage.length;
+  if (!listening && typeof window !== "undefined") {
+    listening = true;
+    // Keeps the index correct for writes made by other windows; lives for the page.
+    window.addEventListener("storage", onStorage);
+  }
+  return next;
+}
+
+export function writeRemoteSummaryCache(key: string, value: string): void {
+  if (!key.startsWith(PREFIX)) throw new Error("Invalid summary cache key");
+  const size = value.length * 2;
+  const entries = syncIndex();
+  try {
+    if (size > REMOTE_SUMMARY_CACHE_BYTES) {
+      localStorage.removeItem(key);
+      track(key);
+      return;
     }
+    track(key);
+    for (const entry of entries.keys()) {
+      if (
+        totalBytes + size <= REMOTE_SUMMARY_CACHE_BYTES &&
+        entries.size + 1 <= REMOTE_SUMMARY_CACHE_ENTRIES
+      )
+        break;
+      localStorage.removeItem(entry);
+      track(entry);
+    }
+    // Remove first so a larger replacement fits; the index then lists the key as newest.
+    localStorage.removeItem(key);
+    localStorage.setItem(key, value);
+    track(key, size);
+  } finally {
+    knownLength = localStorage.length;
   }
-  let count = entries.length + 1;
-  for (const entry of entries) {
-    if (bytes <= REMOTE_SUMMARY_CACHE_BYTES && count <= REMOTE_SUMMARY_CACHE_ENTRIES) break;
-    bytes -= (localStorage.getItem(entry)?.length ?? 0) * 2;
-    localStorage.removeItem(entry);
-    count--;
-  }
-  // Reinsert makes the storage ordering an approximate recent-write order.
-  localStorage.removeItem(key);
-  localStorage.setItem(key, value);
 }

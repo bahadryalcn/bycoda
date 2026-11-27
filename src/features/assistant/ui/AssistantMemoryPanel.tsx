@@ -1,5 +1,5 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Text } from "../../../shared/ui/Text";
+import { Text, textAttributes } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import type { AssistantMemory } from "../../../shared/model/host-contracts/assistant";
 import { t } from "../../../shared/i18n";
@@ -7,6 +7,7 @@ import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Heading } from "../../../shared/ui/Heading";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { SearchInput } from "../../../shared/ui/SearchInput";
@@ -22,7 +23,7 @@ type Props = {
   query: string;
   searching: boolean;
   pending: boolean;
-  searchError: ReactNode;
+  searchError?: string;
   errorFor: (id: string) => ReactNode;
   onQuery: (value: string) => void;
   onAdd: () => void;
@@ -31,11 +32,22 @@ type Props = {
   onDelete: (entry: AssistantMemory) => void;
 };
 
-const GROUPS = [
-  ["rule", "Rules"],
-  ["profile", "About me"],
-  ["fact", "Learned"],
-] as const;
+const GROUPS = ["rule", "profile", "fact"] as const;
+
+/** The translated group title; call it while rendering. */
+function groupLabel(kind: (typeof GROUPS)[number]): string {
+  switch (kind) {
+    case "rule":
+      return t("Rules");
+    case "profile":
+      return t("About me");
+    case "fact":
+      return t("Learned");
+  }
+}
+
+/** The Host keeps up to 40 active rules; the count only matters near that limit. */
+const RULE_LIMIT_NOTICE = 30;
 
 /** Memory owns its readable collection; mutations retain the Room's Host and receipts. */
 export function AssistantMemoryPanel(props: Props) {
@@ -44,9 +56,11 @@ export function AssistantMemoryPanel(props: Props) {
       <header className={styles.header}>
         <div className={styles.title}>
           <Heading size="page">{t("Memory")}</Heading>
-          <Badge size="xs" tone="neutral">
-            {t("Rules {p0}/40", { p0: props.ruleCount })}
-          </Badge>
+          {props.ruleCount >= RULE_LIMIT_NOTICE && (
+            <Badge size="xs" tone="warning">
+              {t("Rules {p0}/40", { p0: props.ruleCount })}
+            </Badge>
+          )}
         </div>
         <SearchInput
           type="search"
@@ -65,22 +79,29 @@ export function AssistantMemoryPanel(props: Props) {
           {t("Add memory")}
         </Button>
       </header>
-      <LiveText className="sr-only" text={props.searching ? t("Loading...") : ""} />
-      {props.searchError}
+      <LiveText className="sr-only" text={props.searching ? t("Loading…") : ""} />
+      {props.searchError && (
+        <InlineError details={props.searchError}>{t("Could not search memory.")}</InlineError>
+      )}
       {!props.searching && !props.searchError && !props.entries.length && (
         <EmptyState
-          size="inline"
+          context="panel"
           kind={props.query.trim() ? "filtered" : "empty"}
-          description={t(props.query.trim() ? "No results" : "Nothing saved here yet")}
+          title={props.query.trim() ? t("No results") : t("Nothing saved here yet")}
+          description={
+            props.query.trim()
+              ? t("Try a different search.")
+              : t("Add a memory and the assistant will use it in its work.")
+          }
         />
       )}
-      {GROUPS.map(([kind, label]) => {
+      {GROUPS.map((kind) => {
         const entries = props.entries.filter((entry) => entry.kind === kind);
         if (!entries.length) return null;
         return (
-          <section key={kind} className={styles.group} aria-label={t(label)}>
+          <section key={kind} className={styles.group} aria-label={groupLabel(kind)}>
             <SectionLabel as="h3" count={entries.length}>
-              {t(label)}
+              {groupLabel(kind)}
             </SectionLabel>
             <div className={styles.list}>
               {entries.map((entry) => (
@@ -102,39 +123,34 @@ export function AssistantMemoryPanel(props: Props) {
                     >
                       {entry.text}
                     </Text>
-                    <Text
-                      as="div"
-                      size="caption"
-                      tone="secondary"
-                      leading="inherit"
-                      className={styles.meta}
+                    <div
+                      {...textAttributes(
+                        { size: "caption", tone: "secondary", leading: "inherit" },
+                        styles.meta,
+                      )}
                     >
-                      <span>
-                        {t(
-                          entry.scope === "all"
-                            ? "Everywhere"
-                            : entry.scope === "voice"
-                              ? "Voice only"
-                              : "Coding sessions only",
-                        )}
-                      </span>
-                      <span aria-hidden>·</span>
-                      <span>
-                        {t(
-                          entry.source === "typed"
-                            ? "You wrote"
-                            : entry.source === "spoken"
-                              ? "You said"
-                              : "Learned",
-                        )}
-                      </span>
-                      <span aria-hidden>·</span>
+                      {/* Everywhere is the default; only a narrower scope is worth saying. */}
+                      {entry.scope !== "all" && (
+                        <>
+                          <span>
+                            {entry.scope === "voice" ? t("Voice only") : t("Coding sessions only")}
+                          </span>
+                          <span aria-hidden>·</span>
+                        </>
+                      )}
+                      {/* The group title already says "Learned". */}
+                      {(entry.source === "typed" || entry.source === "spoken") && (
+                        <>
+                          <span>{entry.source === "typed" ? t("You wrote") : t("You said")}</span>
+                          <span aria-hidden>·</span>
+                        </>
+                      )}
                       <Timestamp className={styles.time} value={entry.createdAt} />
-                    </Text>
+                    </div>
                     {entry.quote && entry.quote !== entry.text && (
-                      <Text as="blockquote" leading="normal" className={styles.quote}>
+                      <blockquote {...textAttributes({ leading: "normal" }, styles.quote)}>
                         {entry.quote}
-                      </Text>
+                      </blockquote>
                     )}
                   </div>
                   <div className={styles.actions}>

@@ -1,36 +1,54 @@
 import { ActionHost } from "../../../shared/ui/ActionHost";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
-import { SettingsFeedback } from "../../../shared/ui/settings";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { Group, Select, SettingsFeedback } from "../../../shared/ui/settings";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import { t, useLocale } from "../../../shared/i18n";
+import { t, useFormat, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
-import { BadgeList } from "../../../shared/ui/BadgeList";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
-import { Heading } from "../../../shared/ui/Heading";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { TextField } from "../../../shared/ui/TextField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Popover } from "../../../shared/ui/Popover";
-import { CircleHelp, RefreshCw, ListFilter, RotateCcw } from "../../../shared/ui/icons";
+import {
+  CircleHelp,
+  Eye,
+  MessageSquare,
+  Pencil,
+  RefreshCw,
+  Shield,
+  Terminal,
+  UsersRound,
+} from "../../../shared/ui/icons";
 import { remoteRequest } from "../../connections/public/connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import type { HostProject, RemoteMachine } from "../../connections";
-import { Select } from "../../../shared/ui/settings";
-import { CopyButton } from "./CopyButton";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import styles from "./ExternalMcpAccess.module.css";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 
 const groups = ["conversation", "runtime-logs", "social"] as const;
-type Group = (typeof groups)[number];
-type Scopes = Partial<Record<Group, ("read" | "write")[]>>;
+type GroupId = (typeof groups)[number];
+type Scopes = Partial<Record<GroupId, ("read" | "write")[]>>;
+
+// Wire ids stay in `groups` and the RPC payload; only display text is translated. An id this
+// build does not know (a future or removed group) is shown as stored.
+function groupLabel(group: string) {
+  if (group === "conversation") return t("Conversation");
+  if (group === "runtime-logs") return t("Runtime logs");
+  if (group === "social") return t("Social media");
+  return group;
+}
 type Grant = {
   id: string;
   name: string;
@@ -84,14 +102,14 @@ function CreateToken({
     projects.find((p) => p.cwd === cwd)?.id ?? projects[0]?.id ?? "",
   );
   const [days, setDays] = useState("30");
-  const [modes, setModes] = useState<Record<Group, string>>({
+  const [modes, setModes] = useState<Record<GroupId, string>>({
     conversation: "read",
     "runtime-logs": "",
     social: "",
   });
   const [secret, setSecret] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [errorTitle, setErrorTitle] = useState("");
   const [uncertain, setUncertain] = useState(false);
   const formId = useId();
   const pending = useRef(false);
@@ -119,12 +137,12 @@ function CreateToken({
       duration > 366 ||
       !groups.some((g) => modes[g])
     ) {
-      setError(t("Choose a project, at least one scope, and a duration from 1 to 366 days."));
+      setErrorTitle(t("Choose a project, at least one scope, and a duration from 1 to 366 days."));
       return;
     }
     pending.current = true;
     setBusy(true);
-    setError("");
+    setErrorTitle("");
     const scopes: Scopes = {};
     for (const group of groups)
       if (modes[group]) scopes[group] = modes[group].split(",") as ("read" | "write")[];
@@ -146,7 +164,7 @@ function CreateToken({
       // Never render an RPC error payload: it could contain credential material.
       if (alive.current) {
         setUncertain(true);
-        setError(t("Token creation failed. Refresh the list before trying again."));
+        setErrorTitle(t("Token creation failed. Refresh the list before trying again."));
         onCreated();
       }
     } finally {
@@ -166,7 +184,7 @@ function CreateToken({
       size="sm"
       footer={
         secret ? (
-          <ModalActions start={<CopyButton value={secret} label={t("Copy token")} />}>
+          <ModalActions start={<CopyButton text={secret} label={t("Copy token")} />}>
             <Button
               onClick={() => {
                 setSecret(null);
@@ -187,6 +205,7 @@ function CreateToken({
               form={formId}
               loading={busy}
               disabled={uncertain}
+              disabledReason={t("Refresh the token list before trying again.")}
             >
               {t("Create token")}
             </Button>
@@ -195,16 +214,18 @@ function CreateToken({
       }
     >
       {secret ? (
-        <Text as="div" size="secondary" tone="inherit" leading="inherit" className={styles.stack}>
-          <p>{t("Copy this token now. It will not be shown again.")}</p>
-          <TextField
-            ref={tokenField}
-            label={t("Token")}
-            value={secret}
-            readOnly
-            autoComplete="off"
-            spellCheck={false}
-          />
+        <Text as="div" size="secondary" tone="inherit" leading="inherit">
+          <div className={styles.stack}>
+            <p>{t("Copy this token now. It will not be shown again.")}</p>
+            <TextField
+              ref={tokenField}
+              label={t("Token")}
+              value={secret}
+              readOnly
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
         </Text>
       ) : (
         <Text
@@ -214,73 +235,69 @@ function CreateToken({
           leading="inherit"
           id={formId}
           onSubmit={(event) => void submit(event)}
-          className={styles.stack}
           aria-busy={busy}
         >
-          <TextField
-            ref={nameField}
-            label={t("Token name")}
-            autoFocus
-            required
-            maxLength={200}
-            value={name}
-            disabled={busy}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <SearchableSelect
-            label={t("Project")}
-            value={projectId}
-            options={projects.map((p) => ({ value: p.id, label: p.name, keywords: p.cwd }))}
-            onChange={setProjectId}
-            disabled={busy}
-          />
-          <FieldGroup legend={t("Tool groups and scopes")} disabled={busy}>
-            {groups.map((group) => (
-              <div key={group} className={styles.scope}>
-                <span>{group}</span>
-                <Select
-                  hideLabel
-                  label={group}
-                  value={modes[group]}
-                  disabled={busy}
-                  options={[
-                    { value: "", label: t("No access") },
-                    { value: "read", label: t("Read") },
-                    ...(group === "runtime-logs"
-                      ? []
-                      : [
-                          { value: "write", label: t("Write") },
-                          { value: "read,write", label: t("Read and write") },
-                        ]),
-                  ]}
-                  onChange={(value) => setModes((current) => ({ ...current, [group]: value }))}
-                />
-                {group === "runtime-logs" ? (
-                  <Text
-                    as="p"
-                    size="caption"
-                    tone="secondary"
-                    leading="inherit"
-                    className={styles.metadata}
-                  >
-                    {t("Runtime logs are read-only.")}
-                  </Text>
-                ) : null}
-              </div>
-            ))}
-          </FieldGroup>
-          <NumberField
-            label={t("Duration (days)")}
-
-            min={1}
-            max={366}
-            step={1}
-            required
-            value={days}
-            disabled={busy}
-            onChange={(e) => setDays(e.target.value)}
-          />
-          {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
+          <div className={styles.stack}>
+            <TextField
+              ref={nameField}
+              label={t("Token name")}
+              autoFocus
+              required
+              maxLength={200}
+              value={name}
+              disabled={busy}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <SearchableSelect
+              label={t("Project")}
+              value={projectId}
+              options={projects.map((p) => ({ value: p.id, label: p.name, keywords: p.cwd }))}
+              onChange={setProjectId}
+              disabled={busy}
+            />
+            <FieldGroup legend={t("Tool groups and scopes")} disabled={busy}>
+              {groups.map((group) => (
+                <div key={group} className={styles.scope}>
+                  <span>{groupLabel(group)}</span>
+                  <Select
+                    hideLabel
+                    label={groupLabel(group)}
+                    value={modes[group]}
+                    disabled={busy}
+                    options={[
+                      { value: "", label: t("No access") },
+                      { value: "read", label: t("Read") },
+                      ...(group === "runtime-logs"
+                        ? []
+                        : [
+                            { value: "write", label: t("Write") },
+                            { value: "read,write", label: t("Read and write") },
+                          ]),
+                    ]}
+                    onChange={(value) => setModes((current) => ({ ...current, [group]: value }))}
+                  />
+                  {group === "runtime-logs" ? (
+                    <Text as="p" size="caption" tone="secondary" leading="inherit">
+                      {t("Runtime logs are read-only.")}
+                    </Text>
+                  ) : null}
+                </div>
+              ))}
+            </FieldGroup>
+            <Disclosure summary={t("Advanced")} variant="row">
+              <NumberField
+                label={t("Duration (days)")}
+                min={1}
+                max={366}
+                step={1}
+                required
+                value={days}
+                disabled={busy}
+                onChange={(e) => setDays(e.target.value)}
+              />
+            </Disclosure>
+            {errorTitle && <SettingsFeedback state="error">{errorTitle}</SettingsFeedback>}
+          </div>
         </Text>
       )}
     </Modal>
@@ -289,20 +306,19 @@ function CreateToken({
 
 export function ExternalMcpAccess({ cwd }: { cwd: string }) {
   useLocale();
+  const format = useFormat();
   const [data, setData] = useState<{
     machine: RemoteMachine;
     projects: HostProject[];
     tokens: Grant[];
   }>();
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [errorTitle, setErrorTitle] = useState("");
   const [creating, setCreating] = useState(false);
   const [revoking, setRevoking] = useState<string | null>(null);
   const [help, setHelp] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const filterAnchor = useRef<HTMLButtonElement>(null);
   const [now, setNow] = useState(Date.now);
   const info = useRef<HTMLButtonElement>(null);
   const pending = useRef(false);
@@ -326,7 +342,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
   async function refresh() {
     const version = ++epoch.current;
     setLoading(true);
-    setError("");
+    setErrorTitle("");
     try {
       const machines = await invoke<RemoteMachine[]>("remote_machines");
       const machine = machines?.find(isLocalSyncMachine);
@@ -341,7 +357,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
       }
     } catch {
       if (version === epoch.current)
-        setError(
+        setErrorTitle(
           t(
             "External MCP access unavailable. Check the local host connection and version, then refresh.",
           ),
@@ -361,7 +377,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
       throw new Error("Token revocation is unavailable while another request is pending.");
     pending.current = true;
     setRevoking(grant.id);
-    setError("");
+    setErrorTitle("");
     try {
       const result = await remoteRequest<{ revoked: boolean }>(
         data.machine.id,
@@ -379,7 +395,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
           },
       );
     } catch (cause) {
-      setError(t("Token revocation failed. Refresh and try again."));
+      setErrorTitle(t("Token revocation failed. Refresh and try again."));
       throw cause;
     } finally {
       pending.current = false;
@@ -398,21 +414,10 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
         .includes(query.trim().toLocaleLowerCase()),
   );
   return (
-    <Text
-      as="section"
-      size="secondary"
-      tone="inherit"
-      leading="inherit"
-      id="setting-external-mcp-access"
-      className={styles.section}
-      aria-labelledby="external-mcp-heading"
-      data-setting-id="external-mcp-access"
-      tabIndex={-1}
-    >
-      <div className={styles.header}>
-        <Heading size="item" level={2} id="external-mcp-heading">
-          {t("External MCP access")}
-        </Heading>
+    <Group
+      id="external-mcp-access"
+      title={t("External MCP access")}
+      action={
         <div className={styles.actions}>
           <Button
             ref={info}
@@ -431,24 +436,33 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
             label={t("Refresh tokens")}
             loading={loading}
             disabled={revoking !== null}
+            disabledReason={t("Wait for the current operation to finish")}
             onClick={() => void refresh()}
           >
             <RefreshCw className="icon-sm" strokeWidth={1.75} />
           </Button>
           <Button
             variant="primary"
-            disabled={!data?.projects.length || loading || !!error || revoking !== null}
+            disabled={!data?.projects.length || loading || !!errorTitle || revoking !== null}
+            disabledReason={
+              !data?.projects.length && !loading && !errorTitle
+                ? t("Open a project to create a token.")
+                : errorTitle && !loading
+                  ? t("Refresh the token list before trying again.")
+                  : t("Wait for the current operation to finish")
+            }
             onClick={() => setCreating(true)}
           >
             {t("Create token")}
           </Button>
         </div>
-      </div>
-      {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
+      }
+    >
+      {errorTitle && <SettingsFeedback state="error">{errorTitle}</SettingsFeedback>}
       {loading && !data && (
         <SettingsFeedback state="loading">{t("Loading tokens…")}</SettingsFeedback>
       )}
-      {data?.tokens.length || query || filter !== "all" ? (
+      {(data?.tokens.length ?? 0) > 5 || query || filter !== "all" ? (
         <div className={styles.toolbar}>
           <div className={styles.search}>
             <SearchInput
@@ -460,54 +474,6 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
             />
           </div>
           <div className={styles.toolbarSlot}>
-            <Button
-              ref={filterAnchor}
-              variant="ghost"
-              iconOnly
-              label={t("Filters")}
-              selected={filter !== "all"}
-              aria-expanded={filtersOpen}
-              aria-haspopup="dialog"
-              onClick={() => setFiltersOpen(!filtersOpen)}
-            >
-              <ListFilter />
-            </Button>
-            {filter !== "all" || query ? (
-              <Button
-                variant="ghost"
-                iconOnly
-                label={t("Reset filters")}
-                onClick={() => {
-                  setFilter("all");
-                  setQuery("");
-                }}
-              >
-                <RotateCcw className="icon-sm" strokeWidth={1.75} />
-              </Button>
-            ) : null}
-            {data ? (
-              <Text
-                size="caption"
-                tone="secondary"
-                leading="inherit"
-                className={`${styles.metadata} ${styles.count}`}
-                role="status"
-              >
-                {t("{p0} of {p1} tokens", { p0: shownTokens.length, p1: data.tokens.length })}
-              </Text>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-      {filtersOpen ? (
-        <Popover
-          anchor={filterAnchor}
-          role="dialog"
-          aria-label={t("Filter tokens")}
-          onDismiss={() => setFiltersOpen(false)}
-          width={260}
-        >
-          <Text as="div" tone="primary" leading="inherit" className={styles.help}>
             <Select
               hideLabel
               label={t("Status")}
@@ -520,44 +486,42 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
                 { value: "revoked", label: t("Revoked") },
               ]}
             />
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setFilter("all");
-                setQuery("");
-              }}
-            >
-              {t("Reset filters")}
-            </Button>
-          </Text>
-        </Popover>
+            {data ? (
+              <InlineMessage
+                tone="neutral"
+                icon={null}
+                live="polite"
+                className={`${styles.count} tabular-nums`}
+              >
+                {t("{p0} of {p1} tokens", { p0: shownTokens.length, p1: data.tokens.length })}
+              </InlineMessage>
+            ) : null}
+          </div>
+        </div>
       ) : null}
-      {!loading && !error && data && !data.projects.length && (
-        <SettingsFeedback state="empty">
-          {t("Register a project on the local host before creating a token.")}
-        </SettingsFeedback>
+      {!loading && !errorTitle && data && !data.projects.length && (
+        <EmptyState
+          size="inline"
+          inset="row"
+          description={t("Register a project on the local host before creating a token.")}
+        />
       )}
-      {!loading && !error && data && data.projects.length > 0 && !data.tokens.length && (
-        <SettingsFeedback state="empty">
-          {t("No external tokens. Create a token to connect a client.")}
-        </SettingsFeedback>
+      {!loading && !errorTitle && data && data.projects.length > 0 && !data.tokens.length && (
+        <EmptyState
+          size="inline"
+          inset="row"
+          description={t("No external tokens. Create a token to connect a client.")}
+        />
       )}
-      {!loading && data?.tokens.length && shownTokens.length === 0 ? (
-        <SettingsFeedback state="empty">{t("No tokens match your filters.")}</SettingsFeedback>
+      {!loading && !!data?.tokens.length && shownTokens.length === 0 ? (
+        <EmptyState size="inline" inset="row" description={t("No tokens match your filters.")} />
       ) : null}
-      <ScrollArea
-        axis="both"
-        gutter="stable"
-        {...surfaceAttributes(
-          { variant: "card", frame: "card", edge: "all", radius: "card" },
-          styles.list,
-        )}
-      >
+      <ScrollArea axis="both" gutter="stable" className="grid max-h-80 empty:hidden">
         {shownTokens.map((grant) => (
           <ActionHost key={grant.id} variant="settings" separator className={styles.row}>
             <div className={styles.identity}>
               <span>{grant.name}</span>
-              <Text size="caption" tone="secondary" leading="inherit" className={styles.metadata}>
+              <Text size="caption" tone="secondary" leading="inherit">
                 {data?.projects.find((p) => p.id === grant.projectId)?.name ?? grant.projectId}{" "}
                 <Badge
                   tone={
@@ -573,28 +537,43 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
                   }
                 </Badge>
               </Text>
-              <Text size="caption" tone="secondary" leading="inherit" className={styles.metadata}>
-                {t("Expires")}: {new Date(grant.expiresAt).toLocaleString()}
+              <Text size="caption" tone="secondary" leading="inherit">
+                {t("Expires")}:{" "}
+                {format.formatDate(grant.expiresAt, { dateStyle: "medium", timeStyle: "short" })}
               </Text>
               <section>
                 <SectionLabel as="h3">{t("Scopes")}</SectionLabel>
-                {/* The grant list is a grid of auto tracks; a zero base width keeps the list's own
-                    full-row measuring copy from widening the track. */}
-                <Text
-                  as="div"
-                  size="caption"
-                  tone="secondary"
-                  leading="inherit"
-                  className={`${styles.metadata} w-0 min-w-full`}
-                >
-                  <BadgeList
-                    label={t("Scopes")}
-                    items={Object.entries(grant.scopes).map(([group, modes]) => ({
-                      id: group,
-                      label: `${group}: ${modes.map((mode) => (mode === "read" ? t("Read") : t("Write"))).join(", ")}`,
-                    }))}
-                  />
-                </Text>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(grant.scopes).map(([group, modes]) => {
+                    const permissions = modes
+                      .map((mode) => (mode === "read" ? t("Read") : t("Write")))
+                      .join(", ");
+                    const scope = `${groupLabel(group)}: ${permissions}`;
+                    const ScopeIcon =
+                      group === "conversation"
+                        ? MessageSquare
+                        : group === "runtime-logs"
+                          ? Terminal
+                          : group === "social"
+                            ? UsersRound
+                            : Shield;
+                    return (
+                      <InfoTooltip
+                        key={group}
+                        label={t("Scope: {p0}", { p0: scope })}
+                        icon={
+                          <span className="inline-flex gap-1" aria-hidden>
+                            <ScopeIcon className="icon-sm" />
+                            {modes.includes("read") && <Eye className="icon-sm" />}
+                            {modes.includes("write") && <Pencil className="icon-sm" />}
+                          </span>
+                        }
+                      >
+                        {scope}
+                      </InfoTooltip>
+                    );
+                  })}
+                </div>
               </section>
             </div>
             {grant.revokedAt === undefined && (
@@ -618,33 +597,35 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
       {help && (
         <Popover
           anchor={info}
+          variant="panel"
           width={420}
-          autoFocus
           onDismiss={() => setHelp(false)}
-          role="dialog"
+          kind="dialog"
           aria-label={t("MCP connection examples")}
         >
-          <Text as="div" tone="primary" leading="inherit" className={styles.help}>
-            <p>
-              {t(
-                "Set BYCODA_MCP_TOKEN in the client environment, then restart the client. Keep it out of URLs and configuration files.",
-              )}
-            </p>
-            <p>{t("This address connects to bycoda on this computer.")}</p>
-            <Text as="strong" size="inherit" tone="inherit" weight="medium">
-              Claude Code · .mcp.json
-            </Text>
-            <OutputBlock frame="filled" scroll>
-              {examples.claude}
-            </OutputBlock>
-            <CopyButton value={examples.claude} label={t("Copy Claude Code example")} />
-            <Text as="strong" size="inherit" tone="inherit" weight="medium">
-              Codex · config.toml
-            </Text>
-            <OutputBlock frame="filled" scroll>
-              {examples.codex}
-            </OutputBlock>
-            <CopyButton value={examples.codex} label={t("Copy Codex example")} />
+          <Text as="div" tone="primary" leading="inherit">
+            <div className={styles.help}>
+              <p>
+                {t(
+                  "Set BYCODA_MCP_TOKEN in the client environment, then restart the client. Keep it out of URLs and configuration files.",
+                )}
+              </p>
+              <p>{t("This address connects to bycoda on this computer.")}</p>
+              <Text as="strong" size="inherit" tone="inherit" weight="medium">
+                Claude Code · .mcp.json
+              </Text>
+              <OutputBlock frame="filled" scroll>
+                {examples.claude}
+              </OutputBlock>
+              <CopyButton text={examples.claude} label={t("Copy Claude Code example")} />
+              <Text as="strong" size="inherit" tone="inherit" weight="medium">
+                Codex · config.toml
+              </Text>
+              <OutputBlock frame="filled" scroll>
+                {examples.codex}
+              </OutputBlock>
+              <CopyButton text={examples.codex} label={t("Copy Codex example")} />
+            </div>
           </Text>
         </Popover>
       )}
@@ -657,6 +638,6 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
           onCreated={() => void refresh()}
         />
       )}
-    </Text>
+    </Group>
   );
 }

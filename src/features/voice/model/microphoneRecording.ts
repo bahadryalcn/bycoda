@@ -1,4 +1,6 @@
-import { openMicrophone } from "./microphoneAccess";
+import { t } from "../../../shared/i18n";
+import { errorText } from "../../../shared/lib/errors";
+import { openMicrophone, stopMicrophone } from "./microphoneAccess";
 
 export type MicrophoneRecordingState = "idle" | "requesting" | "recording" | "ready" | "playing";
 
@@ -6,6 +8,7 @@ export type MicrophoneRecordingState = "idle" | "requesting" | "recording" | "re
 export class MicrophoneRecording {
   private generation = 0;
   private stream?: MediaStream;
+  private opening?: AbortController;
   private recorder?: MediaRecorder;
   private timer?: ReturnType<typeof setTimeout>;
   private url?: string;
@@ -22,12 +25,16 @@ export class MicrophoneRecording {
     try {
       if (typeof MediaRecorder === "undefined")
         throw new Error("Audio recording is unavailable in this browser.");
-      const stream = await openMicrophone({
-        audio: microphoneId ? { deviceId: { exact: microphoneId } } : true,
-        video: false,
-      });
+      this.opening = new AbortController();
+      const stream = await openMicrophone(
+        {
+          audio: microphoneId ? { deviceId: { exact: microphoneId } } : true,
+          video: false,
+        },
+        { signal: this.opening.signal },
+      );
       if (generation !== this.generation || this.disposed) {
-        stream.getTracks().forEach((track) => track.stop());
+        stopMicrophone(stream);
         return;
       }
       this.stream = stream;
@@ -48,13 +55,13 @@ export class MicrophoneRecording {
       recorder.onerror = () => {
         if (generation !== this.generation) return;
         this.reset();
-        this.changed("idle", "Microphone recording failed. Try again.");
+        this.changed("idle", t("Microphone recording failed. Try again."));
       };
       recorder.onstop = () => {
         if (generation !== this.generation) return;
         this.releaseCapture();
         if (!chunks.length) {
-          this.changed("idle", "No microphone audio was recorded. Try again.");
+          this.changed("idle", t("No microphone audio was recorded. Try again."));
           return;
         }
         this.url = URL.createObjectURL(
@@ -68,7 +75,7 @@ export class MicrophoneRecording {
     } catch (cause) {
       if (generation !== this.generation || this.disposed) return;
       this.reset();
-      this.changed("idle", cause instanceof Error ? cause.message : String(cause));
+      this.changed("idle", errorText(cause));
     }
   }
 
@@ -88,7 +95,7 @@ export class MicrophoneRecording {
     };
     player.onerror = () => {
       if (generation === this.generation)
-        this.changed("ready", "Audio playback failed. Record another test.");
+        this.changed("ready", t("Audio playback failed. Record another test."));
     };
     try {
       await player.play();
@@ -96,8 +103,16 @@ export class MicrophoneRecording {
       else player.pause();
     } catch {
       if (generation === this.generation)
-        this.changed("ready", "Audio playback failed. Record another test.");
+        this.changed("ready", t("Audio playback failed. Record another test."));
     }
+  }
+
+  /** Stops playback and keeps the recording so it can be played again or deleted. */
+  stopPlayback() {
+    if (!this.player || this.disposed) return;
+    this.player.pause();
+    this.player = undefined;
+    this.changed("ready");
   }
 
   cancel() {
@@ -110,9 +125,11 @@ export class MicrophoneRecording {
   }
 
   private releaseCapture() {
+    this.opening?.abort();
+    this.opening = undefined;
     clearTimeout(this.timer);
     this.timer = undefined;
-    this.stream?.getTracks().forEach((track) => track.stop());
+    stopMicrophone(this.stream);
     this.stream = undefined;
   }
 

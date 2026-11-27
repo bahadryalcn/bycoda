@@ -1,3 +1,5 @@
+import { withoutBackgroundOwner } from "../../src/shared/model/host-contracts/delegation";
+import { taskNeedsInput } from "../../src/shared/model/host-contracts/task-stop";
 import type { CommandReceipt } from "../../src/features/connections/model/protocol";
 import { hostQuestionToken } from "../sessions/question-source";
 import { createHash } from "node:crypto";
@@ -14,6 +16,7 @@ import {
   enrollAssistantSteerUsage,
   runAssistantSessionWork,
 } from "../work/assistant-session-work";
+import { workCrewId } from "../../src/shared/model/host-contracts/work-executor";
 export async function managedSessionCommand(
   context: TaskContext,
   input: {
@@ -89,9 +92,9 @@ export async function managedSessionCommand(
       task.status !== "running" ||
       context.pausedGoals.has(task.goalId!) ||
       task.crewRunId ||
-      task.crewDefinitionId ||
+      workCrewId(task) ||
       task.error ||
-      (!answering && task.needsInput) ||
+      (!answering && taskNeedsInput(task)) ||
       JSON.stringify(await context.unchangedTask(task.id, expected)) !== JSON.stringify(task)
     )
       throw new Error("The managed worker was stopped, paused or changed before dispatch.");
@@ -123,7 +126,8 @@ export async function managedSessionCommand(
       session.model !== task.model ||
       session.runtimeMode !== task.runtimeMode ||
       (session.providerAccountId ?? "default") !== (task.providerAccountId ?? "default") ||
-      JSON.stringify(session.modelSettings) !== JSON.stringify(task.modelSettings) ||
+      JSON.stringify(withoutBackgroundOwner(session.modelSettings)) !==
+        JSON.stringify(task.modelSettings) ||
       (answering
         ? hostQuestionToken(current) !== input.questionToken
         : !!session.pendingQuestion) ||
@@ -229,9 +233,9 @@ export async function continueManagedSession(
         task.status !== "running" ||
         context.pausedGoals.has(task.goalId!) ||
         task.crewRunId ||
-        task.crewDefinitionId ||
+        workCrewId(task) ||
         task.error ||
-        task.needsInput ||
+        taskNeedsInput(task) ||
         JSON.stringify(await context.unchangedTask(task.id, expected)) !== original
       )
         throw new Error("The managed worker was stopped, paused or changed before continuation.");
@@ -260,7 +264,8 @@ export async function continueManagedSession(
         session.model !== task.model ||
         (session.providerAccountId ?? "default") !== (task.providerAccountId ?? "default") ||
         session.runtimeMode !== task.runtimeMode ||
-        JSON.stringify(session.modelSettings) !== JSON.stringify(task.modelSettings)
+        JSON.stringify(withoutBackgroundOwner(session.modelSettings)) !==
+          JSON.stringify(task.modelSettings)
       )
         throw new Error("The managed worker's original model or execution folder changed.");
     };
@@ -289,7 +294,7 @@ export async function continueManagedSession(
             ...task,
             runId: receipt.runId,
             updatedAt: context.now(),
-            needsInput: undefined,
+            stop: undefined,
           });
           expected = await context.taskValue(task.id);
           original = JSON.stringify(task);

@@ -19,7 +19,10 @@ import {
   type DelegationInput,
 } from "../model/crossDelegation";
 import type { AgentModel, ModelSetting } from "../model/models";
-import { DelegationSubagentsControl } from "./DelegationSettings";
+import { HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
+import { delegationPickerOptions } from "./DelegationSettings";
+import { DelegationSelectionControl } from "./DelegationSelectionControl";
+import { AdvisorControl } from "./AdvisorControl";
 
 // A plain surface that keeps the menu's role, ref and key handling, and dismisses on Escape like the real popover.
 vi.mock("../../../shared/ui/Popover", async () => ({
@@ -117,11 +120,10 @@ afterEach(() => {
 function renderControl(values: Record<string, string>, onChange = vi.fn()) {
   act(() =>
     root.render(
-      createElement(DelegationSubagentsControl, {
-        label: "Subagents (any provider)",
+      createElement(DelegationSelectionControl, {
+        label: "Subagents",
         setting: setting(CROSS_SUBAGENTS_KEY, values),
-        values,
-        disabled: false,
+        value: values[CROSS_SUBAGENTS_KEY],
         onChange,
       }),
     ),
@@ -129,65 +131,21 @@ function renderControl(values: Record<string, string>, onChange = vi.fn()) {
   return onChange;
 }
 
-function openMenu() {
-  act(() => container.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!.click());
-  return document.querySelector<HTMLElement>('[role="menu"]')!;
-}
-
-function rowFor(menu: HTMLElement, label: string) {
-  return [...menu.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]')].find(
-    (row) => row.getAttribute("aria-label") === label,
+const mode = (label: string) =>
+  [...container.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
+    (node) => node.textContent === label,
   )!;
-}
+const button = (label: string) =>
+  [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (node) => node.getAttribute("aria-label") === label || node.textContent === label,
+  )!;
 
 it("summarises the saved subagents: Off, the one model, then the first plus a count", () => {
   const one = { [CROSS_SUBAGENTS_KEY]: encodeSubagents([ref(codex)])! };
   const two = { [CROSS_SUBAGENTS_KEY]: encodeSubagents([ref(codex), ref(cursor)])! };
   expect(crossDelegationSummary(setting(CROSS_SUBAGENTS_KEY), {})).toBe("Off");
-  expect(crossDelegationSummary(setting(CROSS_SUBAGENTS_KEY, one), one)).toBe(
-    "Codex · GPT 6.1 Sol",
-  );
-  expect(crossDelegationSummary(setting(CROSS_SUBAGENTS_KEY, two), two)).toBe(
-    "Codex · GPT 6.1 Sol +1",
-  );
-});
-
-it("toggles several subagents in place and writes the encoded list", () => {
-  const onChange = renderControl({});
-  const menu = openMenu();
-  act(() => rowFor(menu, "Codex · GPT 6.1 Sol").click());
-  expect(onChange).toHaveBeenLastCalledWith(encodeSubagents([ref(codex)]));
-
-  const first = encodeSubagents([ref(codex)])!;
-  renderControl({ [CROSS_SUBAGENTS_KEY]: first }, onChange);
-  const stillOpen = document.querySelector<HTMLElement>('[role="menu"]')!;
-  act(() => rowFor(stillOpen, "Cursor · Composer 2").click());
-  const written = onChange.mock.lastCall?.[0] as string;
-  expect(decodeSubagents(written)).toEqual([ref(codex), ref(cursor)]);
-  expect(JSON.parse(written)).toEqual([ref(codex), ref(cursor)]);
-});
-
-it("removes a picked subagent when it is picked again", () => {
-  const both = encodeSubagents([ref(codex), ref(cursor)])!;
-  const onChange = renderControl({ [CROSS_SUBAGENTS_KEY]: both });
-  const menu = openMenu();
-  act(() => rowFor(menu, "Codex · GPT 6.1 Sol").click());
-  expect(decodeSubagents(onChange.mock.lastCall?.[0])).toEqual([ref(cursor)]);
-});
-
-it("clears every subagent with Off", () => {
-  const onChange = renderControl({ [CROSS_SUBAGENTS_KEY]: encodeSubagents([ref(codex)])! });
-  const menu = openMenu();
-  act(() => rowFor(menu, "Off").click());
-  expect(onChange).toHaveBeenLastCalledWith("[]");
-});
-
-it("marks the checked rows as checkboxes", () => {
-  renderControl({ [CROSS_SUBAGENTS_KEY]: encodeSubagents([ref(cursor)])! });
-  const menu = openMenu();
-  expect(rowFor(menu, "Cursor · Composer 2").getAttribute("aria-checked")).toBe("true");
-  expect(rowFor(menu, "Codex · GPT 6.1 Sol").getAttribute("aria-checked")).toBe("false");
-  expect(rowFor(menu, "Off").getAttribute("aria-checked")).toBe("false");
+  expect(crossDelegationSummary(setting(CROSS_SUBAGENTS_KEY, one), one)).toBe("GPT 6.1 Sol");
+  expect(crossDelegationSummary(setting(CROSS_SUBAGENTS_KEY, two), two)).toBe("GPT 6.1 Sol +1");
 });
 
 it("keeps the subagent list at the limit and ignores the next pick", () => {
@@ -213,34 +171,6 @@ it("keeps the subagent list at the limit and ignores the next pick", () => {
   const next = delegationNextValue(manySetting, { [CROSS_SUBAGENTS_KEY]: full }, extra.value);
   expect(decodeSubagents(next)).toHaveLength(DELEGATION_LIMITS.subagentModels);
   expect(next).toBe(full);
-});
-
-it("moves focus with the arrow keys and picks the focused row", () => {
-  const onChange = renderControl({});
-  const menu = openMenu();
-  const off = rowFor(menu, "Off");
-  expect(document.activeElement).toBe(off);
-  act(() => {
-    menu.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
-  });
-  act(() => {
-    menu.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
-  });
-  // The first model row after Automatic is the current model: subagents may include it.
-  const claudeRow = rowFor(menu, "Claude Code · Sonnet 5");
-  expect(document.activeElement).toBe(claudeRow);
-  act(() => (document.activeElement as HTMLElement).click());
-  expect(decodeSubagents(onChange.mock.lastCall?.[0])).toEqual([ref(claude)]);
-});
-
-it("closes on Escape without changing the value", () => {
-  const onChange = renderControl({});
-  const menu = openMenu();
-  act(() => {
-    menu.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-  });
-  expect(onChange).not.toHaveBeenCalled();
-  expect(document.querySelector('[role="menu"]')).toBeNull();
 });
 
 it("advisor: Off is the empty value and is selected when no advisor is saved", () => {
@@ -274,35 +204,6 @@ it("advisor: the current model is offered, and an unavailable saved advisor stay
   );
 });
 
-it("shows the automatic wand in an image-model field and its menu", () => {
-  const imageSetting: ModelSetting = {
-    id: "imageModels",
-    label: "Image models",
-    kind: "select",
-    value: "",
-    options: [{ value: "", label: "Automatic" }],
-  };
-  act(() =>
-    root.render(
-      createElement(DelegationSubagentsControl, {
-        label: "Image models",
-        setting: imageSetting,
-        values: {},
-        disabled: false,
-        appearance: "field",
-        onChange: vi.fn(),
-      }),
-    ),
-  );
-  expect(container.querySelector("button .lucide-wand-sparkles")).not.toBeNull();
-  expect(openMenu().querySelector(".lucide-wand-sparkles")).not.toBeNull();
-});
-
-it("keeps explicit Off distinct from Automatic", () => {
-  renderControl({});
-  expect(rowFor(openMenu(), "Off").querySelector(".lucide-wand-sparkles")).toBeNull();
-});
-
 it("distinguishes Automatic, Off and explicit lists and switches modes without storing a snapshot", () => {
   const automatic = { crossSubagents: "auto" };
   const row = setting(CROSS_SUBAGENTS_KEY, automatic);
@@ -315,8 +216,132 @@ it("distinguishes Automatic, Off and explicit lists and switches modes without s
   expect(delegationNextValue(row, automatic, "")).toBe("[]");
   expect(crossDelegationSummary(row, { crossSubagents: "[]" })).toBe("Off");
   renderControl(automatic);
-  expect(container.textContent).toContain("Automatic");
-  expect(container.querySelector('[data-tone="accent"]')).not.toBeNull();
-  // The resolved models are not listed: the badge alone says Automatic.
-  expect(container.textContent).not.toContain("Strong");
+  expect(mode("Automatic").getAttribute("aria-checked")).toBe("true");
+  // The resolved models are not listed while Automatic.
+  expect(container.querySelector("[data-delegation-model]")).toBeNull();
+});
+
+it("names the account on an advisor model that more than one account offers", () => {
+  const option = (account: string, model = "Haiku 5.5") => ({
+    value: encodeAdvisor({
+      harness: "claude",
+      model: `claude:${model.toLowerCase()}`,
+      providerAccountId: account,
+    })!,
+    label: `Claude · ${model} · ${account}`,
+    modelLabel: model,
+  });
+  const setting = {
+    id: CROSS_ADVISOR_KEY,
+    label: "Advisor (any provider)",
+    value: "",
+    options: [option("work"), option("home"), option("work", "Fable 5.2")],
+  } as unknown as ModelSetting;
+  const t = (text: string) => text;
+  expect(delegationPickerOptions(setting, t).map((option) => option.label)).toEqual([
+    "Haiku 5.5 · work",
+    "Haiku 5.5 · home",
+    "Fable 5.2",
+  ]);
+});
+
+it("lists every custom subagent inline, each with its own remove action", () => {
+  const both = encodeSubagents([ref(codex), ref(cursor)])!;
+  const onChange = renderControl({ [CROSS_SUBAGENTS_KEY]: both });
+  expect(mode("Custom").getAttribute("aria-checked")).toBe("true");
+  const rows = [...container.querySelectorAll("[data-delegation-model]")];
+  // Each row names its provider, so the same model from two providers is told apart.
+  expect(rows.map((row) => row.textContent)).toEqual([
+    `GPT 6.1 Sol${HARNESS_TITLE.codex}`,
+    `Composer 2${HARNESS_TITLE.cursor}`,
+  ]);
+  act(() => button("Remove GPT 6.1 Sol").click());
+  expect(decodeSubagents(onChange.mock.lastCall?.[0])).toEqual([ref(cursor)]);
+});
+
+it("adds subagents from a picker grouped by provider", () => {
+  const one = encodeSubagents([ref(codex)])!;
+  const onChange = renderControl({ [CROSS_SUBAGENTS_KEY]: one });
+  act(() => button("Add model").click());
+  const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+  expect(options.map((option) => option.textContent)).toEqual(
+    expect.arrayContaining([
+      expect.stringContaining("Sonnet 5"),
+      expect.stringContaining("GPT 6.1 Sol"),
+      expect.stringContaining("Composer 2"),
+    ]),
+  );
+  expect(document.body.textContent).toContain("Cursor");
+  act(() => options.find((option) => option.textContent?.includes("Composer 2"))!.click());
+  expect(decodeSubagents(onChange.mock.lastCall?.[0])).toEqual([ref(codex), ref(cursor)]);
+});
+
+it("turns subagents Off when the last custom model is removed", () => {
+  const onChange = renderControl({ [CROSS_SUBAGENTS_KEY]: encodeSubagents([ref(codex)])! });
+  act(() => button("Remove GPT 6.1 Sol").click());
+  expect(onChange).toHaveBeenLastCalledWith("[]");
+});
+
+it("stores nothing for Custom until a model is picked, and writes Automatic and Off", () => {
+  const onChange = renderControl({ [CROSS_SUBAGENTS_KEY]: "auto" });
+  act(() => mode("Custom").click());
+  expect(onChange).not.toHaveBeenCalled();
+  expect(mode("Custom").getAttribute("aria-checked")).toBe("true");
+  expect(button("Add model")).toBeDefined();
+  act(() => mode("Off").click());
+  expect(onChange).toHaveBeenLastCalledWith("[]");
+  act(() => mode("Automatic").click());
+  expect(onChange).toHaveBeenLastCalledWith("auto");
+});
+
+it("image models: a checklist under Custom, Off stores an empty list, Automatic clears it", () => {
+  const images: ModelSetting = {
+    id: "imageModels",
+    label: "Image models",
+    kind: "select",
+    value: "",
+    options: [
+      { value: "", label: "Automatic" },
+      { value: "codex", label: "Codex ImageGen" },
+      { value: "antigravity", label: "Nano Banana (Antigravity)" },
+    ],
+  };
+  const onChange = vi.fn();
+  const render = (value: string | undefined) =>
+    act(() =>
+      root.render(createElement(DelegationSelectionControl, { setting: images, value, onChange })),
+    );
+  render(undefined);
+  expect(mode("Automatic").getAttribute("aria-checked")).toBe("true");
+  act(() => mode("Off").click());
+  expect(onChange).toHaveBeenLastCalledWith("[]");
+  render('["codex"]');
+  const boxes = [...container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
+  expect(boxes.map((box) => box.checked)).toEqual([true, false]);
+  act(() => boxes[1]!.click());
+  expect(onChange).toHaveBeenLastCalledWith('["codex","antigravity"]');
+  act(() => boxes[0]!.click());
+  expect(onChange).toHaveBeenLastCalledWith("[]");
+  render("[]");
+  expect(mode("Off").getAttribute("aria-checked")).toBe("true");
+  act(() => mode("Automatic").click());
+  expect(onChange).toHaveBeenLastCalledWith("");
+});
+
+it("advisor: a switch that starts on the first model and turns off with an empty value", () => {
+  const advisor = setting(CROSS_ADVISOR_KEY);
+  const onChange = vi.fn();
+  const render = (value: string) =>
+    act(() => root.render(createElement(AdvisorControl, { setting: advisor, value, onChange })));
+  render("");
+  const toggle = () => container.querySelector<HTMLButtonElement>('[role="switch"]')!;
+  expect(toggle().getAttribute("aria-checked")).toBe("false");
+  expect(container.querySelector('[aria-haspopup="dialog"]')).toBeNull();
+  act(() => toggle().click());
+  expect(onChange).toHaveBeenLastCalledWith(advisor.options[1]!.value);
+  render(encodeAdvisor(ref(codex))!);
+  expect(toggle().getAttribute("aria-checked")).toBe("true");
+  expect(container.querySelector('[aria-haspopup="dialog"]')?.textContent).toContain("GPT 6.1 Sol");
+  act(() => toggle().click());
+  expect(onChange).toHaveBeenLastCalledWith("");
 });

@@ -33,13 +33,14 @@ afterEach(() => {
   rmSync(directory, { recursive: true, force: true });
 });
 
-type Caller = { address: string; origin?: string };
+/** `thisComputer` is what the HTTP gate derives: the local desktop credential, sent directly. */
+type Caller = { thisComputer: boolean; origin?: string };
 
 /** Only the fields the handler reads; the cast keeps the fixture free of transport details. */
 function rpc(
   method: string,
   params: Record<string, unknown>,
-  caller: Caller = { address: "127.0.0.1" },
+  caller: Caller = { thisComputer: true },
 ): OwnerRpcRequest {
   return {
     input: { method },
@@ -47,8 +48,10 @@ function rpc(
     result: undefined,
     request: {
       headers: caller.origin ? { origin: caller.origin } : {},
-      socket: { remoteAddress: caller.address },
+      // Every forwarder reaches the Host from loopback; the address must grant nothing.
+      socket: { remoteAddress: "127.0.0.1" },
     },
+    thisComputer: caller.thisComputer && !caller.origin,
   } as unknown as OwnerRpcRequest;
 }
 
@@ -66,8 +69,9 @@ describe("decision model owner RPC", () => {
     expect(request.result).toEqual({ cancelled: false });
   });
   it("accepts an API key only from this computer", async () => {
-    const remote: Caller = { address: "192.168.1.20" };
-    const browser: Caller = { address: "127.0.0.1", origin: "https://example.test" };
+    // A paired phone or a tunnelled request arrives from loopback too.
+    const remote: Caller = { thisComputer: false };
+    const browser: Caller = { thisComputer: true, origin: "https://example.test" };
 
     await expect(
       handleDecisionModelsRpc(
@@ -87,7 +91,7 @@ describe("decision model owner RPC", () => {
   });
 
   it("adds a source without a key from any caller and returns it", async () => {
-    const request = rpc("decisionModels.sources.add", { source }, { address: "192.168.1.20" });
+    const request = rpc("decisionModels.sources.add", { source }, { thisComputer: false });
 
     await handleDecisionModelsRpc(dependencies, request);
 
@@ -157,6 +161,41 @@ describe("decision model owner RPC", () => {
         }),
       ),
     ).rejects.toThrow("unverified model");
+  });
+
+  it("starts an install only with the exact confirmation and the catalog gate", async () => {
+    await expect(
+      handleDecisionModelsRpc(
+        dependencies,
+        rpc("decisionModels.local.installStart", { modelId: "clef-flash-9b", confirm: true }),
+      ),
+    ).rejects.toThrow();
+    await expect(
+      handleDecisionModelsRpc(
+        dependencies,
+        rpc("decisionModels.local.installStart", {
+          modelId: "clef-flash-9b",
+          confirm: "INSTALL_DECISION_MODEL",
+        }),
+      ),
+    ).rejects.toThrow("unverified model");
+  });
+
+  it("reports an idle install and cancels nothing when no install runs", async () => {
+    const progress = rpc("decisionModels.local.installProgress", { modelId: "clef-flash-9b" });
+    const cancel = rpc("decisionModels.local.cancelInstall", { modelId: "clef-flash-9b" });
+
+    await handleDecisionModelsRpc(dependencies, progress);
+    await handleDecisionModelsRpc(dependencies, cancel);
+
+    expect(progress.result).toEqual({ state: "idle" });
+    expect(cancel.result).toEqual({ cancelled: false });
+    await expect(
+      handleDecisionModelsRpc(
+        dependencies,
+        rpc("decisionModels.local.cancelInstall", { modelId: "clef", extra: 1 }),
+      ),
+    ).rejects.toThrow();
   });
 
   it("plans a local install without downloading anything", async () => {

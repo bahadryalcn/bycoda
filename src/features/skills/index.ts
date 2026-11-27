@@ -18,6 +18,7 @@ export type { SkillGroup, SkillGroupInput } from "./model/skillGroups";
 export { autoGroupSkills, parseSkillGroupProposal } from "./model/autoGroupSkills";
 export type { GroupingSkill, AutoGroupSkillsOptions } from "./model/autoGroupSkills";
 export type { SkillGroupingModel } from "./model/skillGroupingModel";
+export { skillInvocationTokens } from "./model/skillTokens";
 export {
   isSkillGroupPickerItem,
   skillGroupMembers,
@@ -28,4 +29,6 @@ export {
 export type { SkillGroupPickerItem } from "./model/skillGroupPicker";
 
 export type * as skillGroupsApi from "./public/skillGroups";
+export type * as skillPromptFieldApi from "./public/SkillPromptField";
+export type * as skillPickerApi from "./public/skillPicker";
 export type { BuiltinSkill } from "./model/skills";

@@ -92,8 +92,16 @@ afterEach(async () => {
 const installButton = () =>
   container.querySelector<HTMLButtonElement>('button[aria-label="Install impeccable"]')!;
 async function select(label: string, value: string) {
+  // The popover renders in a portal, so the selects live in the document, not the container.
+  if (!document.querySelector(`select[aria-label="${label}"]`)) {
+    await act(async () =>
+      Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+        .find((item) => item.textContent === "Install to…")!
+        .click(),
+    );
+  }
   await act(async () => {
-    const input = container.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!;
+    const input = document.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!;
     input.value = value;
     input.dispatchEvent(new Event("change", { bubbles: true }));
   });
@@ -120,7 +128,11 @@ it("installs only after explicit click with selected project and provider", asyn
     undefined,
   );
   expect(onInstalled).toHaveBeenCalledOnce();
-  expect(installButton().disabled).toBe(true);
+  expect(installButton().getAttribute("aria-disabled")).toBe("true");
+  // One state per row: the button says Installed and no second "Installed" notice repeats it.
+  const row = installButton().closest("li")!;
+  expect(row.textContent!.match(/Installed/g)).toHaveLength(1);
+  expect(row.textContent).toContain("D:/repo/.codex/skills/impeccable/SKILL.md");
 });
 
 it("reconciles uncertain installation using original request identity", async () => {
@@ -194,7 +206,8 @@ it("hides skills already installed on the selected computer and names other mach
   });
   expect(names()).toEqual(["frontend-design"]);
   expect(
-    container.querySelector<HTMLButtonElement>('button[aria-label="Install frontend-design"]')
-      ?.disabled,
-  ).toBe(true);
+    container
+      .querySelector<HTMLButtonElement>('button[aria-label="Install frontend-design"]')
+      ?.getAttribute("aria-disabled"),
+  ).toBe("true");
 });

@@ -3,8 +3,7 @@ import { useEffect } from "react";
 import { loadRateLimits, useCachedRateLimits } from "../model/rateLimitsCache";
 import { accountStatus, providerAccountSignedOut } from "../model/accountUsage";
 import {
-  exhaustedWindowResetAt,
-  formatResetDuration,
+  rateLimitWindowNameWith,
   type ProviderRateLimits,
   type RateLimitWindow,
 } from "../model/rateLimits";
@@ -13,8 +12,10 @@ export type ProviderAuthTone = "ready" | "low" | "exhausted" | "signedOut" | "ch
 
 export type ProviderAuthState = {
   tone: ProviderAuthTone;
-  /** Short word for a badge or list line: Signed in, Running low, Exhausted, Signed out. */
+  /** Short word for a badge or list line: Signed in, 15% left, Exhausted, Signed out. */
   label: string;
+  /** A low account at or below the critical headroom: red instead of yellow. */
+  critical?: boolean;
 };
 
 /** Only an authenticated billing result proves Grok sign-in; transport failures do not. */
@@ -61,13 +62,14 @@ export function providerAuthState(
   if (providerAccountSignedOut(limits)) return { tone: "signedOut", label: t("Signed out") };
   const status = accountStatus(limits, now);
   if (status.tone === "exhausted") return { tone: "exhausted", label: t("Exhausted") };
-  if (status.tone === "low") return { tone: "low", label: t("Running low") };
+  if (status.tone === "low")
+    return { tone: "low", label: status.detail ?? t("Running low"), critical: status.critical };
   if (status.tone === "ready") return { tone: "ready", label: t("Signed in") };
   return null;
 }
 
 /**
- * Says which limit is used up and when it frees, for an account whose headroom is gone.
+ * Names the used-up windows. The account status displays the reset time.
  * Null when no window is full.
  */
 export function exhaustedExplanation(
@@ -76,17 +78,10 @@ export function exhaustedExplanation(
 ): string | null {
   if (!limits) return null;
   const names = [
-    windowIsFull(limits.session, now) ? t("5-hour") : null,
-    windowIsFull(limits.weekly, now) ? t("weekly") : null,
-    windowIsFull(limits.monthly, now) ? t("monthly") : null,
+    windowIsFull(limits.session, now) ? rateLimitWindowNameWith("session", t) : null,
+    windowIsFull(limits.weekly, now) ? rateLimitWindowNameWith("weekly", t) : null,
+    windowIsFull(limits.monthly, now) ? rateLimitWindowNameWith("monthly", t) : null,
   ].filter((name): name is string => name != null);
   if (names.length === 0) return null;
-  const resetAt = exhaustedWindowResetAt(limits);
-  const limit = names.join(" + ");
-  return resetAt != null && resetAt > now
-    ? t("The {p0} limit is used up. Back in {p1}.", {
-        p0: limit,
-        p1: formatResetDuration(resetAt - now),
-      })
-    : t("The {p0} limit is used up.", { p0: limit });
+  return t("The {p0} limit is used up.", { p0: names.join(" + ") });
 }

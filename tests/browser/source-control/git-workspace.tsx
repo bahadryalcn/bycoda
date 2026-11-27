@@ -1,10 +1,16 @@
 import { GitConflictImages } from "../../../src/features/source-control/ui/GitConflictImages";
 import { createRoot } from "react-dom/client";
+import { BranchPicker } from "../../../src/features/source-control/ui/BranchPicker";
+import { GitCommitBlameView } from "../../../src/features/source-control/ui/GitCommitBlameView";
 import { GitHistoryGraph } from "../../../src/features/source-control/ui/GitHistoryGraph";
 import { GitGraphWorkspace } from "../../../src/features/source-control/ui/GitGraphWorkspace";
 import { WorkspaceSourceControl } from "../../../src/features/source-control/ui/WorkspaceSourceControl";
 import { SourceControl } from "../../../src/features/source-control/ui/SourceControl";
-import { checkoutOptionLabel } from "../../../src/features/source-control/model/checkoutSelection";
+import { SidebarWorktreeSwitcher } from "../../../src/features/source-control/ui/SidebarWorktreeSwitcher";
+import {
+  setWorktreeFocus,
+  useWorktreeFocus,
+} from "../../../src/features/source-control/model/worktreeFocus";
 import { GitChangesPanel } from "../../../src/features/source-control/ui/GitChangesPanel";
 import { GitConflictCompare } from "../../../src/features/source-control/ui/GitConflictCompare";
 import { AppConfirmHost } from "../../../src/app/shell/AppConfirmHost";
@@ -18,10 +24,33 @@ void GitGraphWorkspace;
 // No user repository or remote is changed by these scenarios.
 const sha = (n: number) => n.toString(16).padStart(40, "0");
 const large = new URLSearchParams(location.search).has("large");
+const plainFolder = new URLSearchParams(location.search).has("plain-folder");
+let folderInitialized = false;
 const checkouts = new URLSearchParams(location.search).has("checkouts");
 const allRepositories = checkouts && new URLSearchParams(location.search).has("all-repositories");
 const diffUsability = new URLSearchParams(location.search).has("diff-usability");
 const actionFeedback = new URLSearchParams(location.search).has("action-feedback");
+const commitTransition = new URLSearchParams(location.search).has("commit-transition");
+const dirtySwitch = new URLSearchParams(location.search).has("dirty-switch");
+const blameLong = new URLSearchParams(location.search).has("blame-long");
+const blameAuthors = [
+  "Bahar Kaya-Yıldırım (contractor, platform infrastructure)",
+  "Deniz Yılmaz",
+  "Maximilian von Hohenzollern-Sigmaringen",
+];
+const blameSummaries = [
+  "Rework the workspace navigation controller so keyboard focus survives remounts of the sidebar",
+  "Fix typo",
+  "Revert “Improve workspace navigation” because it broke split panes on narrow windows",
+];
+const blameLongLines = [
+  "export function navigateWorkspace(target: WorkspaceTarget, options: NavigationOptions = {}) {",
+  '  const current = readCurrentWorkspaceSelection(options.scope ?? "project", options.fallback);',
+  '  if (!current) return openFirstAvailableWorkspace(target, { reason: "no-selection", preserveFocus: true });',
+  '  return focusWorkspaceRegion(current, target, { restore: options.restoreFocus ?? true, source: "keyboard" });',
+  "}",
+  "",
+];
 const pendingActions = new Map<string, () => void>();
 const diffRepository = "/fixture/engineering/long-repository-name-for-working-tree-review";
 const diffRelative =
@@ -57,6 +86,18 @@ let branches = [
   { name: "develop", current: false, remote: null },
   { name: "main", current: false, remote: "origin" },
   { name: "feature/team", current: false, remote: "origin" },
+  // Held by another worktree in the checkouts scenarios: listed under "Existing worktrees".
+  ...(new URLSearchParams(location.search).has("checkouts")
+    ? [
+        {
+          name: new URLSearchParams(location.search).has("all-repositories")
+            ? "bycoda/s/cross-provider-settings-parity"
+            : "audit/2026-10-14-long-branch-name-for-responsive-review",
+          current: false,
+          remote: null,
+        },
+      ]
+    : []),
 ];
 const file = (relative: string, staged = false) => ({
   relative,
@@ -68,6 +109,14 @@ const file = (relative: string, staged = false) => ({
   unstaged: !staged,
 });
 let files = [file("src/workspace.tsx"), file("src/theme.css"), file("README.md", true)];
+if (commitTransition) files = [file("README.md", true)];
+if (new URLSearchParams(location.search).has("file-typography"))
+  files = [
+    file("audio-service/src/routes/clientTp.ts"),
+    file("audio-service/src/utils/clientTp.ts"),
+    file("audio-service/src/routes/getAudioByCaptchaId.ts"),
+    file("docker-compose.yaml"),
+  ];
 if (diffUsability) files = [{ ...file(diffRelative), path: `${diffRepository}/${diffRelative}` }];
 if (large)
   files.push(...Array.from({ length: 597 }, (_, n) => file(`src/features/feature-${n}/index.ts`)));
@@ -108,6 +157,7 @@ let operation: string | null = conflicts.length ? "merge" : null;
 let disk =
   "<<<<<<< HEAD\nconst theme = 'dark';\n=======\nconst theme = 'light';\n>>>>>>> feature/theme\n";
 const calls: { command: string; args: Record<string, unknown> }[] = [];
+let committed = false;
 Object.assign(window, {
   gitFixtureCalls: calls,
   gitFixtureFinishAction: (command: string) => {
@@ -122,6 +172,11 @@ Object.assign(window, {
     transformCallback: () => 1,
     invoke: async (command: string, args: Record<string, unknown> = {}) => {
       calls.push({ command, args });
+      if (commitTransition && command === "git_commit") {
+        committed = true;
+        files = [];
+        return;
+      }
       if (actionFeedback && ["git_sync", "git_stash", "git_stash_action"].includes(command))
         await new Promise<void>((resolve) => pendingActions.set(command, resolve));
       if (diffUsability && command === "git_stage_contents") {
@@ -139,7 +194,10 @@ Object.assign(window, {
         return submodules && args.cwd === "/fixture" ? ["core-pack", "core-pack/nested"] : [];
       }
       if (command === "git_worktrees")
-        return { worktrees: [checkoutTrees["/fixture"]], defaultRoot: "/trees" };
+        return {
+          worktrees: checkouts ? Object.values(checkoutTrees) : [checkoutTrees["/fixture"]],
+          defaultRoot: "/trees",
+        };
       if (
         (submodules || checkouts) &&
         [
@@ -167,15 +225,28 @@ Object.assign(window, {
         );
         return;
       }
-      if (command === "git_history")
+      if (command === "git_init" && plainFolder && args.cwd === "/fixture") {
+        folderInitialized = true;
+        return;
+      }
+      if (command === "git_history") {
+        if (plainFolder && args.cwd === "/fixture") {
+          if (!folderInitialized) throw new Error("fatal: not a git repository");
+          return { head: null, commits: [] };
+        }
         return { head: commits[0].sha, commits: commits.slice(0, Number(args.limit ?? 200)) };
+      }
       if (command === "git_branches")
         return {
           current: branches.find((b) => b.current)?.name,
           detached: false,
           branches,
         };
-      if (command === "git_diff_index" || command === "git_diff_files")
+      if (command === "git_diff_index" || command === "git_diff_files") {
+        if (plainFolder && args.cwd === "/fixture")
+          return { repository: folderInitialized, files: [], additions: 0, deletions: 0 };
+        if (commitTransition && committed)
+          await new Promise<void>((resolve) => pendingActions.set(command, resolve));
         return {
           repository: true,
           branch: checkouts
@@ -196,13 +267,26 @@ Object.assign(window, {
           remote: "origin",
           upstream: "origin/main",
           defaultBranch: "main",
-          ahead: 2,
-          behind: submodules ? 0 : 1,
+          ahead: commitTransition ? Number(committed) : 2,
+          behind: submodules || commitTransition ? 0 : 1,
           headPushed: false,
           aheadOfDefault: 2,
         };
+      }
       if (command === "git_commit_files") return [file("src/workspace.tsx"), file("src/theme.css")];
       if (command === "git_commit_message") return "Workspace change 39\n\nFull commit body.\n";
+      if (command === "git_blame" && blameLong)
+        return blameLongLines.map((text, index) => {
+          const group = Math.floor(index / 2);
+          return {
+            line: index + 1,
+            sha: sha(900 + group),
+            shortSha: sha(900 + group).slice(-7),
+            author: blameAuthors[group],
+            timestamp: 1791567000 - group * 86400,
+            summary: blameSummaries[group],
+          };
+        });
       if (command === "git_blame")
         return [
           {
@@ -241,6 +325,11 @@ Object.assign(window, {
             timestamp: 1791566500,
           },
         ];
+      // ?dirty-switch: git refuses the checkout because local changes would be overwritten.
+      if (command === "git_checkout" && dirtySwitch)
+        throw new Error(
+          "error: Your local changes to the following files would be overwritten by checkout:\n\tsrc/workspace.tsx\nPlease commit your changes or stash them before you switch branches.",
+        );
       if (command === "git_checkout") {
         branches = branches.map((b) => ({
           ...b,
@@ -324,7 +413,13 @@ document.body.style.cssText =
 const checkoutTrees: Record<string, Worktree> = Object.fromEntries(
   (allRepositories
     ? ["/fixture", "/trees/cross-provider"]
-    : ["/fixture", "/trees/audit/very-long-worktree-folder-name", "/trees/detached"]
+    : [
+        "/fixture",
+        "/trees/audit/very-long-worktree-folder-name",
+        "/trees/detached",
+        // `?idle` adds a worktree with no work: only the header picker lists it.
+        ...(new URLSearchParams(location.search).has("idle") ? ["/trees/clean-one"] : []),
+      ]
   ).map((path, index) => [
     path,
     {
@@ -336,18 +431,46 @@ const checkoutTrees: Record<string, Worktree> = Object.fromEntries(
             ? allRepositories
               ? "bycoda/s/cross-provider-settings-parity"
               : "audit/2026-10-14-long-branch-name-for-responsive-review"
-            : null,
+            : path === "/trees/clean-one"
+              ? "chore/clean-one"
+              : null,
       head: "fd3caac123456",
       isMain: index === 0,
       locked: false,
       prunable: false,
       missing: false,
-      dirty: true,
-      unpushed: 1,
+      dirty: path !== "/trees/clean-one",
+      unpushed: path === "/trees/clean-one" ? 0 : 1,
       sessionIds: [],
     },
   ]),
 );
+// The production composition: the sidebar header is the only worktree selector, and the Changes
+// panel follows its focus (none means the All-worktrees overview).
+function CheckoutsFixture() {
+  const focus = useWorktreeFocus("/fixture");
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 px-2 py-1">
+        <SidebarWorktreeSwitcher
+          cwd="/fixture"
+          onSelect={(next) => setWorktreeFocus("/fixture", next)}
+        />
+      </div>
+      <SourceControl
+        cwd="/fixture"
+        enabled
+        onOpenRepository={() => {}}
+        onOpenFile={() => {}}
+        onOpenAllChanges={() => {}}
+        onOpenCommit={() => {}}
+      />
+      <output aria-label="Header focus" className="sr-only">
+        {focus?.path ?? "all"}
+      </output>
+    </div>
+  );
+}
 const root = createRoot(document.getElementById("root")!);
 const renderFixture = () =>
   root.render(
@@ -363,7 +486,20 @@ const renderFixture = () =>
             : "w-80 border-r border-stroke"
         }
       >
-        {new URLSearchParams(location.search).has("image-conflict") ? (
+        {dirtySwitch ? (
+          <div style={{ padding: 12 }}>
+            <BranchPicker cwd="/fixture" branch="main" initialOpen enabled />
+          </div>
+        ) : blameLong ? (
+          <div style={{ display: "flex", height: "100%", width: "100vw" }}>
+            <GitCommitBlameView
+              cwd="/fixture"
+              sha={sha(40)}
+              relative="src/workspace.tsx"
+              text={blameLongLines.join("\n")}
+            />
+          </div>
+        ) : new URLSearchParams(location.search).has("image-conflict") ? (
           <div style={{ display: "flex", height: "100%" }}>
             <GitConflictImages
               sides={["ours", "theirs"]}
@@ -386,7 +522,7 @@ const renderFixture = () =>
           </div>
         ) : new URLSearchParams(location.search).has("visual-conflict") ? (
           <GitConflictCompare cwd="/fixture" relative="src/conflict.ts" onClose={() => {}} />
-        ) : actionFeedback ? (
+        ) : actionFeedback || commitTransition ? (
           <GitChangesPanel
             cwd="/fixture"
             enabled
@@ -412,23 +548,13 @@ const renderFixture = () =>
             onOpenAllChanges={() => {}}
             onOpenCommit={() => {}}
           />
-        ) : new URLSearchParams(location.search).has("checkouts") ||
-          new URLSearchParams(location.search).has("repositories") ? (
+        ) : checkouts ? (
+          <CheckoutsFixture />
+        ) : new URLSearchParams(location.search).has("repositories") ? (
           <WorkspaceSourceControl
             cwd="/fixture"
             paths={Object.keys(checkoutTrees)}
             worktrees={checkoutTrees}
-            labels={
-              allRepositories
-                ? { "/fixture": "fixture", "/trees/cross-provider": "cross-provider" }
-                : Object.fromEntries(
-                    Object.values(checkoutTrees).map((tree) => [
-                      tree.path,
-                      checkoutOptionLabel(tree, tree.path === "/fixture"),
-                    ]),
-                  )
-            }
-            checkouts={new URLSearchParams(location.search).has("checkouts")}
             enabled
             onOpen={() => {}}
           />

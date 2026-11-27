@@ -6,7 +6,7 @@ import type { RemoteConnectionStatus } from "../model/remoteConnection";
 import type { RemoteFailure } from "../model/remoteFailure";
 import {
   RemoteConnectionFeedbackProvider,
-  RemoteConnectionNotices,
+  RemoteConnectionNotice,
   useRemoteConnectionFeedback,
 } from "./RemoteConnectionFeedback";
 
@@ -67,9 +67,13 @@ function Pane({ cwd, failure }: Consumer) {
   const shared = useRemoteConnectionFeedback(cwd, failure);
   return createElement("div", { "data-pane": cwd }, shared ? "shared" : "local");
 }
+/** Each consumer's machine has its session open, with that session's notice outlet. */
 async function render(consumers: Consumer[], wrap = true, outlet = true) {
+  const machines = new Set(consumers.map(({ cwd }) => cwd.replace(/^remote:\/\/([^/]+).*$/, "$1")));
   const children: ReactNode[] = outlet
-    ? [createElement(RemoteConnectionNotices, { key: "notices" })]
+    ? [...machines].map((machine) =>
+        createElement(RemoteConnectionNotice, { key: machine, cwdOrEnvironmentId: machine }),
+      )
     : [];
   children.push(
     ...consumers.map((consumer) => createElement(Pane, { key: consumer.id, ...consumer })),
@@ -223,12 +227,17 @@ it("hands feedback back to panes when the actual common outlet is absent", async
   expect(container.querySelector("[data-pane]")?.textContent).toBe("local");
 });
 
-it("keeps a single notice if shell outlets overlap and hands over on unmount", async () => {
+it("keeps a single notice if two sessions of one machine are open and hands over on unmount", async () => {
   state.machines.set("env", { status: "identity-mismatch" });
   const outlets = async (first: boolean) => {
     const children = [
-      ...(first ? [createElement(RemoteConnectionNotices, { key: "first" })] : []),
-      createElement(RemoteConnectionNotices, { key: "second" }),
+      ...(first
+        ? [createElement(RemoteConnectionNotice, { key: "first", cwdOrEnvironmentId: "env" })]
+        : []),
+      createElement(RemoteConnectionNotice, {
+        key: "second",
+        cwdOrEnvironmentId: "remote://env/other",
+      }),
       createElement(Pane, { id: "pane", key: "pane", cwd: "env" }),
     ];
     await act(async () =>
@@ -314,9 +323,8 @@ it("dismisses only one outage episode and never hides a later hard refusal", asy
   expect(notices()).toHaveLength(2);
 });
 
-it("shows one global notice per machine in an outage after the grace, with no pane mounted, and clears on recovery", async () => {
-  const { recordRemoteConnection, notifyRemoteRecovered, resetRemoteHealth } =
-    await import("../model/remoteHealth");
+it("raises no notice for a machine in an outage whose session is not open", async () => {
+  const { recordRemoteConnection, resetRemoteHealth } = await import("../model/remoteHealth");
   resetRemoteHealth();
   state.machines.set("a", { status: "unreachable" });
   state.machines.set("b", { status: "unreachable" });
@@ -325,30 +333,39 @@ it("shows one global notice per machine in an outage after the grace, with no pa
     recordRemoteConnection("a", new Error("Machine is unreachable"));
     recordRemoteConnection("b", new Error("Machine is unreachable"));
   });
+  await advance(60_000);
   expect(notices()).toHaveLength(0);
-  await advance(1_999);
-  expect(notices()).toHaveLength(0);
-  await advance(1);
-  expect(notices()).toHaveLength(2);
-  // A mounted pane for the same machine does not add a second notice.
+  // Opening one machine's session shows that machine's notice there, and only that one.
   await render([{ id: "pane", cwd: "remote://a/repo", failure: outage }]);
-  expect(notices()).toHaveLength(2);
-  state.machines.set("a", { status: "connected" });
-  await act(async () => notifyRemoteRecovered("a"));
-  await render([]);
-  expect(notices().map((n) => n.getAttribute("data-remote-connection-notice"))).toEqual(["b"]);
+  expect(notices().map((n) => n.getAttribute("data-remote-connection-notice"))).toEqual(["a"]);
   resetRemoteHealth();
 });
 
-it("hides shared connection errors only while a machine notice is actually visible", async () => {
+it("hands a pane's failure back when only another machine's session is open", async () => {
+  state.machines.set("a", { status: "unreachable" });
+  await act(async () =>
+    root.render(
+      createElement(RemoteConnectionFeedbackProvider, {
+        children: [
+          createElement(RemoteConnectionNotice, { key: "b", cwdOrEnvironmentId: "b" }),
+          createElement(Pane, { key: "pane", id: "pane", cwd: "remote://a/repo", failure: outage }),
+        ],
+      }),
+    ),
+  );
+  expect(container.querySelector("[data-pane]")?.textContent).toBe("local");
+});
+
+it("hides shared connection errors while a machine notice is visible or about to be", async () => {
   const { isConnectionErrorShownCentrally } =
     await import("../../../shared/ui/connectionErrorGate");
   const remote = "RPC_HOST_UNAVAILABLE: Machine is unreachable";
   state.machines.set("env", { status: "unreachable", error: outage.message });
   await render([{ id: "files", cwd: "remote://env/repo", failure: outage }]);
-  // The quiet window shows no notice, so panes must keep explaining the failure.
+  // The quiet window shows no notice, and panes stay quiet too: a blip while
+  // loading or reconnecting must not flash a pane error the notice would replace.
   expect(notices()).toHaveLength(0);
-  expect(isConnectionErrorShownCentrally(remote)).toBe(false);
+  expect(isConnectionErrorShownCentrally(remote)).toBe(true);
   await advance(2_500);
   expect(notices()).toHaveLength(1);
   expect(isConnectionErrorShownCentrally(remote)).toBe(true);

@@ -1,7 +1,9 @@
 import { getSessionWork, assertTaskWorkRetired } from "../work/session-adapter";
 import type { HostStore } from "../store";
+import { createWork } from "../tasks/work-request";
 import type { HostTasks } from "../tasks/service";
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
+import { automationRunStatusOf, projectTask } from "../../src/shared/model/workProjection";
 import { STOPPED_BY_USER } from "../sessions/sessionRuns";
 import type {
   HostAutomation,
@@ -29,25 +31,36 @@ export async function createAutomationTask(
     if (mapping) throw new Error("Automation Task link exists without its occurrence receipt.");
     const taskId = `automation-${run.id}`;
     if (await tasks.get(taskId)) throw new Error("Automation Task identity is already occupied.");
-    await tasks.save({
-      id: taskId,
-      source: "automation",
-      automationId: automation.id,
-      automationRunId: run.id,
-      expectedAbsent: true,
-      projectId: automation.projectId,
-      title: automation.name,
-      prompt: automation.prompt,
-      harness: automation.harness,
-      providerAccountId: automation.providerAccountId,
-      model: automation.model,
-      modelSettings: automation.modelSettings,
-      runtimeMode: automation.runtimeMode,
-      maxRunMinutes: run.maxRunMinutes ?? automation.maxRunMinutes,
-      isolate: automation.isolate,
-      review: false,
-      autoMerge: false,
-    });
+    await createWork(
+      { store, tasks },
+      {
+        id: taskId,
+        projectId: automation.projectId,
+        request: automation.prompt,
+        title: automation.name,
+        source: { kind: "automation", automationRunId: run.id },
+        executor: automation.executor,
+        helpers: automation.helpers,
+        execution: {
+          // Use settings re-resolves on every occurrence; a fixed choice keeps its own model.
+          modelChoice: automation.modelChoice ?? { kind: "default" },
+          harness: automation.harness,
+          providerAccountId: automation.providerAccountId,
+          model: automation.model,
+          modelSettings: automation.modelSettings,
+          runtimeMode: automation.runtimeMode,
+        },
+        options: {
+          source: "automation",
+          automationId: automation.id,
+          maxRunMinutes: run.maxRunMinutes ?? automation.maxRunMinutes,
+          isolate: automation.isolate,
+          review: false,
+          status: "queued",
+        },
+      },
+      { requestId: run.id },
+    );
     await store.db
       .prepare("INSERT INTO automation_tasks(run_id,automation_id,task_id) VALUES(?,?,?)")
       .run(run.id, automation.id, taskId);
@@ -65,24 +78,18 @@ export function automationTaskProjection(
   task: HostTask,
   waitingForInput = false,
 ): Partial<HostAutomationRun> & Pick<HostAutomationRun, "status"> {
-  const status =
-    task.status === "done"
-      ? "succeeded"
-      : task.status === "blocked"
-        ? run.cancellationRequested
-          ? "cancelled"
-          : "failed"
-        : task.status === "queued" || task.status === "todo"
-          ? "pending"
-          : "running";
+  const { phase } = projectTask(task);
   return {
-    status,
+    status: automationRunStatusOf(phase, run.cancellationRequested),
     sessionId: task.sessionId,
     runId: task.runId,
     startedAt: task.startedAt ?? run.startedAt,
     error: task.error,
     needsInput:
-      task.status === "review" || (task.status === "running" && waitingForInput) || undefined,
+      phase === "review" ||
+      phase === "input" ||
+      (phase === "running" && waitingForInput) ||
+      undefined,
   };
 }
 

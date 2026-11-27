@@ -1,9 +1,10 @@
-import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
-import { useT } from "../../../shared/i18n";
+import { useFormat, useT } from "../../../shared/i18n";
+import { useRetryCountdown } from "./useRetryCountdown";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { InlineMessage } from "../../../shared/ui/InlineError";
 import { sessionRetryNotice } from "../model/sessionIssue";
+import { NoticeActionButton, TranscriptNotice } from "./TranscriptNotice";
 
 async function runRefresh(
   onRefresh: () => Promise<unknown>,
@@ -28,16 +29,33 @@ async function runRefresh(
 export function ProviderRetryNotice({
   provider,
   message,
+  retryAt,
   onStop,
   onRefresh,
 }: {
   provider: string;
   message: string;
+  /** Epoch ms of the next attempt when the provider reported it; absent keeps the static text. */
+  retryAt?: number;
   onStop: () => void;
   onRefresh?: () => Promise<unknown>;
 }) {
   const t = useT();
+  const { formatDuration } = useFormat();
   const notice = sessionRetryNotice(message);
+  const remaining = useRetryCountdown(retryAt);
+  const countdown =
+    remaining === undefined
+      ? undefined
+      : t("Retrying in {p0}", {
+          p0: formatDuration(Math.ceil(remaining / 1000) * 1000),
+        });
+  // The counter ("2/5") is the notice's own detail; any other text is the provider's raw message.
+  const counter = notice.detail && /^\d+\/\d+$/.test(notice.detail) ? notice.detail : undefined;
+  const rawMessage = counter ? undefined : notice.detail;
+  const title = notice.reconnecting
+    ? t("Reconnecting to {p0}", { p0: provider })
+    : t("{p0} is retrying", { p0: provider });
   const pending = useRef(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
@@ -46,41 +64,44 @@ export function ProviderRetryNotice({
     return runRefresh(onRefresh, pending, setRefreshing, setRefreshFailed);
   };
   return (
-    <div className="flex flex-col gap-1">
-      <InlineMessage
-        tone="warning"
-        action={
-          onRefresh
-            ? {
-                label: refreshing ? t("Refreshing…") : t("Refresh status"),
-                pending: refreshing,
-                onClick: () => void refresh(),
-              }
-            : { label: t("Stop"), onClick: onStop }
-        }
-        secondaryAction={
-          onRefresh ? { label: t("Stop"), disabled: refreshing, onClick: onStop } : undefined
-        }
-      >
-        <span className="min-w-0 break-words">
-          <Text size="inherit" tone="neutral" weight="medium">
-            {t(notice.reconnecting ? "Reconnecting to {p0}" : "{p0} is retrying", { p0: provider })}
-          </Text>
-          {notice.detail ? <> · {notice.detail}</> : null}
-          <span className="block">
-            {t(
-              "Retrying automatically. If this stays here, stop the turn and review its latest output before continuing.",
-            )}
-          </span>
-        </span>
-      </InlineMessage>
+    <TranscriptNotice
+      kind="retry"
+      title={title}
+      detail={countdown ? (counter ? `${countdown} · ${counter}` : countdown) : counter}
+      extra={rawMessage ? <ErrorDetails title={title} detail={rawMessage} /> : undefined}
+      actions={
+        <>
+          <NoticeActionButton
+            action={
+              onRefresh
+                ? {
+                    label: refreshing ? t("Refreshing…") : t("Refresh status"),
+                    pending: refreshing,
+                    onClick: () => void refresh(),
+                  }
+                : { label: t("Stop"), onClick: onStop }
+            }
+          />
+          {onRefresh ? (
+            <NoticeActionButton
+              quiet
+              action={{
+                label: t("Stop"),
+                disabled: refreshing,
+                onClick: onStop,
+              }}
+            />
+          ) : null}
+        </>
+      }
+    >
       {refreshFailed ? (
-        <InlineError>
+        <InlineError className="mt-1">
           {t(
             "Could not refresh the conversation. Check the host connection and try Refresh status again.",
           )}
         </InlineError>
       ) : null}
-    </div>
+    </TranscriptNotice>
   );
 }

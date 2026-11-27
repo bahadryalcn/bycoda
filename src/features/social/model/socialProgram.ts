@@ -121,6 +121,7 @@ export type SocialOccurrence = {
 export type ProgramDetail = {
   program: SocialProgram;
   occurrences: SocialOccurrence[];
+  firstSample?: SocialOccurrence;
   nextBefore?: number;
 };
 export type ImageCapability = {

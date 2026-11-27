@@ -1,4 +1,6 @@
 import { Text } from "../../../../shared/ui/Text";
+import { LoadingText } from "../../../../shared/ui/LoadingText";
+import { AudienceReportList } from "./AudienceReportList";
 import { useMemo, useState } from "react";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -6,13 +8,13 @@ import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { FileField } from "../../../../shared/ui/FileField";
 import { Heading } from "../../../../shared/ui/Heading";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
+import { useFormFooter } from "../../../../shared/ui/FormFooter";
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
 import { SOCIAL_PLATFORM_NAMES, type SocialAccount } from "../../model/social";
 import type { SocialList } from "../../model/audience";
 import type { ImportResult } from "../../model/socialActions";
 import type { SocialClient } from "../../model/socialClient";
-import { DisabledReason } from "../common/DisabledReason";
-import { LabeledSelect } from "./LabeledSelect";
+import { Select } from "../../../../shared/ui/Select";
 import { PlatformIcon } from "../common/PlatformIcon";
 import { errorMessage } from "./audienceModel";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
@@ -50,7 +52,6 @@ function fieldLabel(field: ImportField): string {
   }
 }
 const REQUIRED: readonly ImportField[] = ["platformId", "name"];
-const REPORT_LIMIT = 20;
 
 export type ImportDialogProps = {
   client: SocialClient;
@@ -109,7 +110,6 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
         : ready === 0
           ? t("No row can be imported. Fix the rows listed below.")
           : undefined;
-  const importState = reason ? { disabled: true as const, reason } : { disabled: false as const };
 
   async function chooseFile(file: File | undefined) {
     if (!file) return;
@@ -167,6 +167,15 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
     }
   }
 
+  const formFooter = useFormFooter({
+    saving: importing,
+    error,
+    blockedReason: reason,
+    saveLabel: ready ? t("Import {p0} people", { p0: formatNumber(ready) }) : t("Import people"),
+    onSave: () => void runImport().catch(() => undefined),
+    onCancel: onClose,
+  });
+
   return (
     <Modal
       title={t("Import people")}
@@ -177,23 +186,16 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
         if (!importing) onClose();
       }}
       size="lg"
-      footerStart={error ? <InlineError>{error}</InlineError> : undefined}
       footer={
-        <ModalActions>
-          <Button variant="ghost" disabled={importing} onClick={onClose}>
-            {result ? t("Done") : t("Cancel")}
-          </Button>
-          {!result ? (
-            <DisabledReason
-              variant="primary"
-              loading={importing}
-              {...importState}
-              onClick={() => void runImport().catch(() => undefined)}
-            >
-              {ready ? t("Import {p0} people", { p0: formatNumber(ready) }) : t("Import people")}
-            </DisabledReason>
-          ) : null}
-        </ModalActions>
+        result ? (
+          <ModalActions>
+            <Button variant="ghost" onClick={onClose}>
+              {t("Done")}
+            </Button>
+          </ModalActions>
+        ) : (
+          formFooter.footer
+        )
       }
     >
       <div className="audience-stack">
@@ -205,12 +207,10 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
             void chooseFile(files[0]).catch((err: unknown) => setFileError(errorMessage(err)))
           }
         />
-        {reading ? (
-          <Text as="p" size="caption" tone="muted" leading="inherit" className="audience-muted">
-            {t("Reading the file…")}
-          </Text>
+        {reading ? <LoadingText>{t("Reading the file…")}</LoadingText> : null}
+        {fileError ? (
+          <InlineError details={fileError}>{t("Could not read the file.")}</InlineError>
         ) : null}
-        {fileError ? <InlineError>{fileError}</InlineError> : null}
 
         {table ? (
           <>
@@ -229,7 +229,7 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
                 })}
               </InlineMessage>
             ) : null}
-            <LabeledSelect
+            <Select
               label={t("Account")}
               value={accountId}
               disabled={importing}
@@ -241,9 +241,9 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
                   label: `${SOCIAL_PLATFORM_NAMES[account.platform]} · ${account.name}`,
                 })),
               ]}
-              onChange={setAccountId}
+              onValueChange={setAccountId}
             />
-            <LabeledSelect
+            <Select
               label={t("Add them to")}
               value={listId}
               disabled={importing}
@@ -253,11 +253,11 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
                   .filter((list) => list.kind === "static")
                   .map((list) => ({ value: list.id, label: list.name })),
               ]}
-              onChange={setListId}
+              onValueChange={setListId}
             />
             <FieldGroup legend={t("Columns")} gap="sm">
               {IMPORT_FIELDS.map((field) => (
-                <LabeledSelect
+                <Select
                   key={field}
                   label={
                     REQUIRED.includes(field)
@@ -273,7 +273,7 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
                       label: header,
                     })),
                   ]}
-                  onChange={(column) =>
+                  onValueChange={(column) =>
                     setMapping((current) => ({
                       ...current,
                       [field]: column || undefined,
@@ -288,29 +288,18 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
                 <Heading size="item" id="import-issues-heading" className="audience-heading">
                   {t("Rows that need attention")}
                 </Heading>
-                <ul className="audience-list">
-                  {attention.slice(0, REPORT_LIMIT).map((check) => (
+                <AudienceReportList
+                  items={attention}
+                  renderRow={(check) => (
                     <li key={check.row}>
                       {t("Row {p0}: {p1}", {
                         p0: check.row,
                         p1: check.issues.join(" "),
                       })}
                     </li>
-                  ))}
-                </ul>
-                {attention.length > REPORT_LIMIT ? (
-                  <Text
-                    as="p"
-                    size="caption"
-                    tone="muted"
-                    leading="inherit"
-                    className="audience-muted"
-                  >
-                    {t("And {p0} more rows.", {
-                      p0: attention.length - REPORT_LIMIT,
-                    })}
-                  </Text>
-                ) : null}
+                  )}
+                  overflowLabel={(p0) => t("And {p0} more rows.", { p0 })}
+                />
               </section>
             ) : null}
           </>
@@ -325,15 +314,15 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
                 })}
               </span>
             </InlineMessage>
-            {result.rejected.length ? (
-              <ul className="audience-list">
-                {result.rejected.slice(0, REPORT_LIMIT).map((item) => (
-                  <li key={`${item.row}:${item.reason}`}>
-                    {t("Row {p0}: {p1}", { p0: item.row, p1: item.reason })}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
+            <AudienceReportList
+              items={result.rejected}
+              renderRow={(item) => (
+                <li key={item.row}>
+                  {t("Row {p0}: {p1}", { p0: item.row, p1: item.issues.join(" ") })}
+                </li>
+              )}
+              overflowLabel={(p0) => t("And {p0} more rows.", { p0 })}
+            />
           </section>
         ) : null}
       </div>

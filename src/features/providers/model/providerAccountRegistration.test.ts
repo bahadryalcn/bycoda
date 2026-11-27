@@ -13,6 +13,7 @@ vi.mock("./rateLimitsCache", () => ({ clearCachedRateLimits: vi.fn() }));
 import { loginHarness } from "../../../integrations/harness/core/auth";
 import { readProviderAccountIdentity } from "./providerAccountIdentity";
 import { removeProviderAccountCredentials } from "./providerAccountCredentials";
+import { ProviderAccountError } from "./providerAccountError";
 import { providerAccounts } from "./providerAccounts";
 import { registerProviderAccount, sameSignedInIdentity } from "./providerAccountRegistration";
 
@@ -38,12 +39,40 @@ it("rejects the same signed-in identity even with a different label and casing",
   expect(providerAccounts("codex")).toHaveLength(1);
 });
 
-it("persists a verified different identity", async () => {
+it("fails with stable codes that carry no identity, and keeps the cleanup cause", async () => {
+  vi.mocked(readProviderAccountIdentity).mockResolvedValue({
+    email: "work@example.com",
+    organization: "Company",
+  });
+  const duplicate = await registerProviderAccount(account).catch((error: unknown) => error);
+  expect(duplicate).toBeInstanceOf(ProviderAccountError);
+  expect(duplicate).toMatchObject({ code: "duplicate", label: expect.any(String) });
+  expect(JSON.stringify(duplicate)).not.toContain("work@example.com");
+  expect((duplicate as Error).message).not.toContain("work@example.com");
+
+  vi.mocked(readProviderAccountIdentity).mockResolvedValue(null);
+  await expect(registerProviderAccount(account)).rejects.toMatchObject({
+    code: "identityUnverified",
+  });
+
+  vi.mocked(loginHarness).mockRejectedValueOnce(new Error("Login cancelled"));
+  vi.mocked(removeProviderAccountCredentials).mockRejectedValueOnce(new Error("Disk locked"));
+  const cleanup = await registerProviderAccount(account).catch((error: unknown) => error);
+  expect(cleanup).toMatchObject({ code: "cleanupFailed" });
+  expect((cleanup as ProviderAccountError).cause).toMatchObject({ message: "Login cancelled" });
+});
+
+it("persists the selected kind and color with a verified different identity", async () => {
   vi.mocked(readProviderAccountIdentity).mockImplementation(async (_, id) => ({
     email: id === "default" ? "personal@example.com" : "work@example.com",
   }));
-  await registerProviderAccount(account);
+  await registerProviderAccount({ ...account, kind: "work", color: "blue" });
   expect(providerAccounts("codex").map((entry) => entry.id)).toEqual(["default", "account-new"]);
+  expect(providerAccounts("codex")[1]).toMatchObject({
+    label: "Work",
+    kind: "work",
+    color: "blue",
+  });
   expect(removeProviderAccountCredentials).not.toHaveBeenCalled();
 });
 

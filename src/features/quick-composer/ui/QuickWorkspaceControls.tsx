@@ -1,4 +1,3 @@
-import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -16,6 +15,9 @@ import {
 } from "../model/quickGitPopup";
 import type { WorkspaceMode } from "../../sessions/model/session";
 import type { QuickWorkspace } from "../model/quickWorkspace";
+import { describeLocalError } from "../../connections/public/remoteFailure";
+
+const workspaceErrorDetails = (error: unknown) => describeLocalError(error, "").trim();
 
 export function QuickWorkspaceControls({
   value,
@@ -52,7 +54,7 @@ export function QuickWorkspaceControls({
     props.current = { value, onChange, onOpenChange, onClose, onError, canOpen };
   });
   const cwd = value.tree?.path ?? value.cwd ?? "";
-  const { branches, settled } = useProjectBranchesState(cwd, enabled && !!cwd);
+  const { branches, settled, unreachable } = useProjectBranchesState(cwd, enabled && !!cwd);
   const base = value.base || resolvedBase || branches?.current || "HEAD";
 
   const cancel = () => {
@@ -96,7 +98,7 @@ export function QuickWorkspaceControls({
           setReady(true);
         }
       })
-      .catch((error) => props.current.onError?.(String(error)));
+      .catch((error) => props.current.onError?.(workspaceErrorDetails(error)));
     return () => {
       disposed = true;
       stop?.();
@@ -160,19 +162,31 @@ export function QuickWorkspaceControls({
       activeKind.current = null;
       setOpen(null);
       props.current.onOpenChange(false);
-      props.current.onError?.(String(error));
+      props.current.onError?.(workspaceErrorDetails(error));
     }
   };
   const disabled = !enabled || !ready || !branches?.current;
+  const disabledReason = !enabled
+    ? t("Close the current picker or wait for the session to start.")
+    : !ready
+      ? t("Workspace options are unavailable.")
+      : unreachable
+        ? t("This machine is unreachable")
+        : settled && !branches?.current
+          ? t("No repo")
+          : undefined;
   const Icon = resolvedMode === "worktree" ? FolderTree : Folder;
   const label = resolvedMode === "worktree" ? t("New worktree") : t("Current checkout");
   return (
-    <div className="flex min-w-0 items-center gap-2 pl-1.5">
+    <div className="flex min-w-0 items-center gap-2">
       <Button
-        variant="ghost"
+        variant="chip"
         motion="none"
-        type="button"
+        truncate
+        startIcon={<Icon className="icon-sm shrink-0" />}
         disabled={disabled}
+        disabledReason={disabledReason}
+        loading={!settled && !!cwd && enabled}
         aria-label={t("Workspace {p0}", { p0: label })}
         aria-haspopup="dialog"
         aria-expanded={open === "workspace"}
@@ -181,19 +195,18 @@ export function QuickWorkspaceControls({
           beginClick("workspace");
         }}
         onClick={(event) => void show("workspace", event.currentTarget)}
-        className="-ml-1.5 flex min-w-0 max-w-48 items-center gap-1.5"
+        className="min-w-0 max-w-48"
       >
-        <Icon className="size-3.5 shrink-0" />
-        <Text size="inherit" tone="inherit" truncate>
-          {label}
-        </Text>
+        {label}
       </Button>
       <GitPickerTrigger
         label={
           resolvedMode === "worktree"
             ? t("From {p0}", { p0: base })
-            : branches?.current || (settled ? t("No repo") : t("Loading…"))
+            : branches?.current ||
+              (unreachable ? t("Unavailable") : settled ? t("No repo") : t("Loading…"))
         }
+        title={unreachable ? t("This machine is unreachable") : undefined}
         aria-label={
           resolvedMode === "worktree"
             ? t("Create worktree from {p0}", { p0: base })
@@ -203,6 +216,7 @@ export function QuickWorkspaceControls({
         aria-expanded={open === "branch" || open === "base"}
         loading={!settled}
         disabled={disabled}
+        disabledReason={disabledReason}
         worktree={!!value.tree && !value.tree.isMain}
         onMouseDown={(event) => {
           event.preventDefault();

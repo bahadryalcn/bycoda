@@ -52,8 +52,7 @@ it("retains draft and pending state across remount and ignores completion after 
       resolve = done;
     }),
   );
-  expect(host.textContent).toContain("model-a");
-  expect(host.textContent).toContain("account-a");
+  expect(host.textContent).not.toContain("model-a");
   click();
   expect(mocks.request).toHaveBeenCalledWith(
     expect.objectContaining({ harness: "codex", model: "model-a", providerAccountId: "account-a" }),
@@ -72,6 +71,10 @@ it("retains actionable failure and draft across remount", async () => {
   act(() => root.unmount());
   mount();
   expect(host.querySelector("input")?.value).toBe("ocean");
-  expect(host.textContent).toContain("Local host unavailable");
   expect(host.textContent).toContain("Try again");
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label^="Details"]')!;
+  act(() => trigger.click());
+  expect([...document.querySelectorAll('[role="dialog"]')].at(-1)?.textContent).toContain(
+    "Local host unavailable",
+  );
 });

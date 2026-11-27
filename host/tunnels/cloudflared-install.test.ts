@@ -27,6 +27,28 @@ describe("pinned cloudflared installation", () => {
       "checksum verification failed",
     );
   });
+  it("stops downloading when the preparation is cancelled", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "bycoda-cloudflared-"));
+    const cancel = new AbortController();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, init: { signal: AbortSignal }) =>
+          new Promise((_resolve, reject) =>
+            init.signal.addEventListener("abort", () => reject(init.signal.reason)),
+          ),
+      ),
+    );
+    try {
+      const download = installCloudflared(directory, cancel.signal);
+      await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+      cancel.abort(new Error("cancelled"));
+      await expect(download).rejects.toThrow("cancelled");
+      expect(await readdir(join(directory, CLOUDFLARED_VERSION))).toEqual([]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
   it("never installs or executes bytes after checksum failure", async () => {
     const directory = await mkdtemp(join(tmpdir(), "bycoda-cloudflared-"));
     vi.stubGlobal(

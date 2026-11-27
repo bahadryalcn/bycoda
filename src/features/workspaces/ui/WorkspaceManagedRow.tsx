@@ -7,13 +7,22 @@ import { useState } from "react";
 import { projectName } from "../../../shared/lib/paths";
 import { t } from "../../../shared/i18n";
 import { formatRelativeTime } from "../../../shared/i18n/format";
-import { Badge } from "../../../shared/ui/Badge";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Tooltip } from "../../../shared/ui/Tooltip";
-import { FolderOpen, Pin, Trash2 } from "../../../shared/ui/icons";
+import {
+  CheckCircle,
+  CircleAlert,
+  CircleX,
+  FolderOpen,
+  GitMerge,
+  Clock,
+  Pin,
+  Trash2,
+} from "../../../shared/ui/icons";
 import type { ManagedWorkspace } from "../model/contracts";
 import { lifecycleLabel } from "../model/workspacePresentation";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
@@ -24,7 +33,7 @@ export function WorkspaceManagedRow({
   title,
   missing = false,
   cleanupDueAt,
-  reviewDisabled,
+  reviewDisabledReason,
   pinning,
   pinError,
   removing = false,
@@ -39,7 +48,7 @@ export function WorkspaceManagedRow({
   missing?: boolean;
   /** Epoch ms when automatic cleanup becomes due. */
   cleanupDueAt?: number;
-  reviewDisabled: boolean;
+  reviewDisabledReason?: string;
   pinning: boolean;
   pinError?: string;
   /** Removal of this workspace runs in the background. */
@@ -54,8 +63,20 @@ export function WorkspaceManagedRow({
   const [open, setOpen] = useState(false);
   const branch = workspace.branchRef.replace(/^refs\/heads\//, "");
   const blocked = workspace.directoryState === "blocked";
-  const dotTone =
-    missing || blocked ? "warning" : workspace.state === "active" ? "info" : "secondary";
+  const dotTone = workspace.state === "active" ? "info" : "secondary";
+  const LifecycleIcon = {
+    active: undefined,
+    idle: undefined,
+    finished: CheckCircle,
+    merged: GitMerge,
+    abandoned: CircleX,
+  }[workspace.state];
+  const ownerLabel = {
+    session: t("Session"),
+    task: t("Task"),
+    automationRun: t("Automation"),
+    stewardRun: t("Steward"),
+  }[workspace.owner.kind];
   const cleanup =
     cleanupDueAt === undefined
       ? undefined
@@ -81,7 +102,19 @@ export function WorkspaceManagedRow({
         chevron="end"
         summary={
           <span className={styles.main}>
-            <StatusDot tone={dotTone} size="compact" className={styles.dot} />
+            <InfoTooltip
+              label={t("Workspace status")}
+              className={styles.dot}
+              icon={
+                LifecycleIcon ? (
+                  <LifecycleIcon aria-hidden className="icon-xs" />
+                ) : (
+                  <StatusDot tone={dotTone} size="compact" />
+                )
+              }
+            >
+              {lifecycleLabel(workspace.state)}
+            </InfoTooltip>
             <span className={`settings-collection-main ${styles.identity}`}>
               <span className={styles.line}>
                 <Tooltip label={title} when="overflow">
@@ -97,23 +130,35 @@ export function WorkspaceManagedRow({
                     {title}
                   </Text>
                 </Tooltip>
-                <Badge size="sm">{lifecycleLabel(workspace.state)}</Badge>
                 {missing && (
-                  <Badge size="sm" tone="warning">
+                  <InfoTooltip
+                    label={t("Folder")}
+                    icon={<CircleAlert aria-hidden className="icon-xs" />}
+                  >
                     {t("Missing folder")}
-                  </Badge>
+                  </InfoTooltip>
                 )}
                 {blocked && (
-                  <Badge size="sm" tone="warning">
+                  <InfoTooltip
+                    label={t("Cleanup")}
+                    icon={<CircleAlert aria-hidden className="icon-xs" />}
+                  >
                     {t("Cleanup blocked")}
-                  </Badge>
+                  </InfoTooltip>
                 )}
                 {(removing ||
                   workspace.directoryState === "pendingRemoval" ||
                   workspace.directoryState === "removing") && (
-                  <Badge size="sm">{t("Removing directory…")}</Badge>
+                  <InfoTooltip
+                    label={t("Directory removal")}
+                    icon={<Clock aria-hidden className="icon-xs" />}
+                  >
+                    {t("Removing directory…")}
+                  </InfoTooltip>
                 )}
-                {workspace.pinned && <Badge size="sm">{t("Pinned")}</Badge>}
+                {workspace.pinned && (
+                  <Pin role="img" aria-label={t("Pinned")} className="icon-xs" />
+                )}
               </span>
               <Tooltip label={caption} when="overflow">
                 <Text
@@ -126,7 +171,11 @@ export function WorkspaceManagedRow({
                   {caption}
                 </Text>
               </Tooltip>
-              {pinError && <InlineError className="break-words">{pinError}</InlineError>}
+              {pinError && (
+                <InlineError className="break-words" details={pinError}>
+                  {t("Could not change the pin")}
+                </InlineError>
+              )}
             </span>
           </span>
         }
@@ -137,7 +186,14 @@ export function WorkspaceManagedRow({
               `settings-collection-actions ${styles.actions}`,
             )}
           >
-            <Button size="sm" disabled={reviewDisabled || removing} onClick={onReview}>
+            <Button
+              size="sm"
+              disabled={!!reviewDisabledReason || removing}
+              disabledReason={
+                removing ? t("Deletion is running in the background.") : reviewDisabledReason
+              }
+              onClick={onReview}
+            >
               {t("Review changes")}
             </Button>
             <Button
@@ -199,7 +255,7 @@ export function WorkspaceManagedRow({
               {workspace.id}
             </DescriptionItem>
             <DescriptionItem term={t("Owner")} monospace>
-              {workspace.owner.kind} · {workspace.owner.id}
+              {ownerLabel} · {workspace.owner.id}
             </DescriptionItem>
           </DescriptionList>
         </div>

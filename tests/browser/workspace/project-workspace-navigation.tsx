@@ -3,11 +3,20 @@ import { SessionPreviewFixture } from "../support/session-preview";
 import { createRoot } from "react-dom/client";
 import { ProjectRail } from "../../../src/app/shell/ProjectRail";
 import { SourceControl } from "../../../src/features/source-control/ui/SourceControl";
+import { SidebarWorktreeSwitcher } from "../../../src/features/source-control/ui/SidebarWorktreeSwitcher";
+import { setWorktreeFocus } from "../../../src/features/source-control/model/worktreeFocus";
 import { UsageFooter } from "../../../src/app/shell/UsageFooter";
 import { SessionRecoveryControl } from "../../../src/app/shell/SessionRecoveryControl";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ProviderRateLimits } from "../../../src/features/providers/model/rateLimits";
+import type {
+  ProviderRateLimits,
+  RateLimitProvider,
+} from "../../../src/features/providers/model/rateLimits";
 import { setCachedRateLimits } from "../../../src/features/providers/model/rateLimitsCache";
+import {
+  editProviderAccount,
+  saveProviderAccount,
+} from "../../../src/features/providers/model/providerAccounts";
 import { InboxView } from "../../../src/features/inbox/ui/InboxView";
 import {
   saveInboxConnections,
@@ -21,6 +30,12 @@ import { savePinnedProjects } from "../../../src/features/projects/model/recents
 import { languageReady } from "../../../src/shared/i18n";
 import { Button } from "../../../src/shared/ui/Button";
 import { installInputModality } from "../../../src/shared/ui/inputModality";
+import { applyRemoteGroupRecords } from "../../../src/features/sync/model/syncGroups";
+import {
+  captureLocalProjectChanges,
+  projectIdForPath,
+} from "../../../src/features/sync/model/syncProjects";
+import { rememberProject } from "../../../src/features/projects/model/recents";
 import "../support/w7-shell.css";
 
 // Exercise the production rail without changing a real repository or session.
@@ -40,17 +55,75 @@ saveProjectGroupAssignments({
   "g:/team/service": "team",
 });
 savePinnedProjects(["G:/wallet"]);
+const syncedWorkspace = new URLSearchParams(location.search).has("synced-workspace");
+const syncedRoot = "remote://windows/G:/wallet";
+const syncedChild = `${syncedRoot}/mobile`;
+if (syncedWorkspace) {
+  saveProjectGroups([]);
+  rememberProject(syncedRoot);
+  rememberProject(syncedChild);
+  captureLocalProjectChanges("fixture-host");
+  const rootId = projectIdForPath(syncedRoot)!;
+  const childId = projectIdForPath(syncedChild)!;
+  applyRemoteGroupRecords("fixture-host", [
+    { table: "group", id: "team", rev: 1, value: { id: "team", name: "Firisbe" } },
+    { table: "group", id: "wallet", rev: 2, value: { id: "wallet", name: "Wallet" } },
+    {
+      table: "workspaceLayout",
+      id: "wallet",
+      rev: 3,
+      value: { rootProjectId: rootId, includesRoot: false },
+    },
+    { table: "assignment", id: rootId, rev: 4, value: { projectId: rootId, groupId: "team" } },
+    { table: "assignment", id: childId, rev: 5, value: { projectId: childId, groupId: "wallet" } },
+  ]);
+}
 const layoutClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 const layoutNow = Date.now();
-for (const provider of ["claude", "codex"] as const) {
+const layoutQuery = new URLSearchParams(location.search);
+const usageResets = layoutQuery.has("usage-resets");
+const piUsage = layoutQuery.has("pi-usage");
+const usageProviders: RateLimitProvider[] = usageResets
+  ? ["claude", "codex", "opencode", "grok"]
+  : ["claude", "codex"];
+if (usageResets) {
+  editProviderAccount("claude", "default", { label: "Personal", color: "green" });
+  saveProviderAccount({ id: "work", provider: "claude", label: "Work", color: "teal" });
+  saveProviderAccount({ id: "bycoda", provider: "claude", label: "Bycoda", color: "orange" });
+}
+const creditKinds = ["weekly", "fable", "fable", "fable"] as const;
+for (const provider of usageProviders) {
+  const stale = usageResets && provider === "claude";
   const limits: ProviderRateLimits = {
     provider,
-    session: { usedPercent: 24, windowMinutes: 300, resetsAt: layoutNow + 3_600_000 },
+    session:
+      stale || provider === "grok"
+        ? null
+        : { usedPercent: 24, windowMinutes: 300, resetsAt: layoutNow + 3_600_000 },
     weekly: { usedPercent: 39, windowMinutes: 10080, resetsAt: layoutNow + 86_400_000 },
-    monthly: null,
-    updatedAt: layoutNow,
-    error: null,
-    status: "ok",
+    monthly:
+      provider === "opencode"
+        ? { usedPercent: 51, windowMinutes: 43200, resetsAt: layoutNow + 604_800_000 }
+        : null,
+    resetCredits:
+      usageResets && (provider === "claude" || provider === "codex")
+        ? {
+            availableCount: stale ? 4 : 2,
+            credits: creditKinds.slice(0, stale ? 4 : 2).map((kind, index) => ({
+              id: `fixture-reset-${index}`,
+              kind: stale ? kind : undefined,
+              resetType: stale ? "unknown" : "codexRateLimits",
+              status: "available",
+              grantedAt: null,
+              expiresAt: layoutNow + (index === 0 ? 16 : 105) * 86_400_000,
+              title: index === 0 ? "Referral reward" : "Backup reset",
+              description: null,
+            })),
+          }
+        : null,
+    updatedAt: layoutNow - (stale ? 47 * 60_000 : 0),
+    error: stale ? "Fixture refresh failed" : null,
+    status: stale ? "error" : "ok",
   };
   layoutClient.setQueryData(["rate-limits", provider, "default"], limits);
   setCachedRateLimits(provider, "default", limits);
@@ -64,12 +137,17 @@ function ShellLayoutFixture() {
         <div className="flex min-h-0 flex-1">
           <ProjectRail
             visible
-            cwd="G:/wallet/api"
-            recents={Array.from({ length: 18 }, (_, index) => ({
-              path: `G:/project-${index}`,
-              openedAt: 1,
-            }))}
+            cwd={syncedWorkspace ? selected : selected === "~" ? "~" : "G:/wallet/api"}
+            recents={
+              syncedWorkspace
+                ? [syncedRoot, syncedChild].map((path) => ({ path, openedAt: 1 }))
+                : Array.from({ length: 18 }, (_, index) => ({
+                    path: `G:/project-${index}`,
+                    openedAt: 1,
+                  }))
+            }
             onSelectProject={setSelected}
+            onOpenNoProject={() => setSelected("~")}
             onOpenProject={() => {}}
             onSelectAgent={setSelected}
             notesEnabled
@@ -91,8 +169,7 @@ function ShellLayoutFixture() {
             }
             liveAgents={Array.from({ length: 8 }, (_, index) => ({
               id: `live-${index}`,
-              // This fixture stresses eight visible cross-project rows. Current-project
-              // workers are summarized separately, covered by working-project-summary.
+              // Eight cross-project rows exercise Activity's bounded scroll area.
               cwd: `G:/project-${index}`,
               title: `Improve the shared interface and preserve long session titles ${index + 1}`,
               harness: index % 2 === 0 ? "codex" : "claude",
@@ -112,7 +189,8 @@ function ShellLayoutFixture() {
           </main>
         </div>
         <UsageFooter
-          providers={["claude", "codex"]}
+          providers={usageProviders}
+          session={piUsage ? { harness: "pi", model: "pi:openai-codex/gpt-5.4" } : undefined}
           onNewTerminal={() => setSelected("terminal")}
         />
       </div>
@@ -176,6 +254,12 @@ function Fixture() {
         <output aria-label="Selected project" className="p-3">
           {cwd}
         </output>
+        {worktreesDemo ? (
+          // The sidebar header is the only worktree selector; the panel follows its focus.
+          <div className="shrink-0 px-2 py-1">
+            <SidebarWorktreeSwitcher cwd={cwd} onSelect={(next) => setWorktreeFocus(cwd, next)} />
+          </div>
+        ) : null}
         <SourceControl
           cwd={cwd}
           enabled

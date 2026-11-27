@@ -54,7 +54,6 @@ export function GradientBackgroundCard() {
     <Group
       id="workspace-background"
       title={t("Workspace background")}
-      description={t("Add a color background behind your workspace and chat images.")}
       modified={JSON.stringify(value) !== JSON.stringify(WORKSPACE_BACKGROUND_DEFAULT)}
       resetLabel={t("Reset workspace background")}
       onReset={() => saveWorkspaceBackground(WORKSPACE_BACKGROUND_DEFAULT, { replace: true })}

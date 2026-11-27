@@ -5,9 +5,8 @@ type TaskFindingsCandidate = {
   status: string;
   sessionId?: string;
   mergeRepair?: unknown;
-  awaitingOwnerRestart?: boolean;
+  stop?: { code: string; phase?: string; nextAction: string };
   merged?: boolean;
-  error?: string;
   verification?: {
     review?: { verdict: string; note: string };
     command?: { timedOut: boolean; exitCode: number | null };
@@ -20,21 +19,22 @@ export function canFinishTaskWithFindings(task: TaskFindingsCandidate): boolean 
     task.status !== "blocked" ||
     !task.sessionId ||
     task.mergeRepair ||
-    task.awaitingOwnerRestart ||
+    task.stop?.code !== "run_failed" ||
+    task.stop.nextAction === "restart" ||
     task.merged
   )
     return false;
   const { review, command } = task.verification ?? {};
   return Boolean(
-    (review?.verdict === "fail" &&
+    (task.stop.phase === "review" &&
+      review?.verdict === "fail" &&
       review.note !== NO_VERDICT &&
-      review.note.trim() !== "" &&
-      task.error === `Review failed: ${review.note}`) ||
-    (command &&
+      review.note.trim() !== "") ||
+    (task.stop.phase === "check" &&
+      command &&
       command.timedOut === false &&
       command.exitCode !== null &&
       Number.isInteger(command.exitCode) &&
-      command.exitCode !== 0 &&
-      task.error === `The check command failed (exit code ${command.exitCode}).`),
+      command.exitCode !== 0),
   );
 }

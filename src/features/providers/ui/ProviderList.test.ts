@@ -49,7 +49,6 @@ it("keeps CLI versions out of Accounts metadata and marks default and auth seman
       onSetup: vi.fn(),
     }),
   );
-  expect(html).toContain(">Default<");
   expect(html).toContain('aria-label="Codex, Signed in, Default provider"');
   expect(html).toContain('aria-current="true"');
   expect(html).toContain("Show Codex in the model picker");
@@ -59,8 +58,7 @@ it("shows standalone sign-in once in the header without inferring readiness from
   const unknown = renderToStaticMarkup(
     createElement(ProviderDetailHeader, { harness: "cursor", available: true }),
   );
-  expect(unknown).toContain("Sign-in");
-  expect(unknown).toContain("Not checked");
+  expect(unknown).not.toContain("Sign-in");
   expect(unknown).not.toContain("CLI detected");
   expect(unknown).not.toContain("Verified ready");
   const completed = renderToStaticMarkup(
@@ -90,7 +88,12 @@ it.each([
 ] satisfies [RateLimitStatus, string][])(
   "shows Grok %s cache state in header and rail",
   (status, label) => {
-    setCachedRateLimits("grok", "default", { ...idleRateLimits("grok"), status });
+    // Only the fetch layer's structured reason proves a sign-out; an unavailable status alone does not.
+    setCachedRateLimits("grok", "default", {
+      ...idleRateLimits("grok"),
+      status,
+      ...(status === "unavailable" ? { reason: "signedOut" as const } : {}),
+    });
     try {
       const header = renderToStaticMarkup(
         createElement(ProviderDetailHeader, {
@@ -146,4 +149,14 @@ it.each(["low", "exhausted"] as const)("keeps %s visible with several accounts",
   expect(
     providerMetaLine({ ...entry, accountSummary: "2 accounts", auth: { tone, label } }, true),
   ).toBe(`2 accounts, ${label}`);
+});
+
+it("says a low-limit state once when one account's summary is its own label", () => {
+  const low = { tone: "low", label: "Running low" } as const;
+  expect(providerMetaLine({ ...entry, auth: low, accountSummary: "Running low" }, true)).toBe(
+    "Running low",
+  );
+  expect(providerMetaLine({ ...entry, auth: low, accountSummary: "2 accounts" }, true)).toBe(
+    "2 accounts, Running low",
+  );
 });

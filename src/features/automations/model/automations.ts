@@ -2,11 +2,14 @@ import type {
   ModelRoutingItemChoice,
   ModelRoutingTarget,
 } from "../../../shared/model/host-contracts/model-routing";
+import type { WorkExecutor, WorkHelpers } from "../../../shared/model/host-contracts/work-executor";
+import type { Recipe, RecipeInstance } from "./automationRecipe";
 import { dateTimeFormat } from "../../../shared/lib/intl";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { HarnessId, RuntimeMode } from "../../sessions/model/session";
 import type { SshRunStatus } from "../../connections/model/sshRunbooks";
+import type { HostAutomation } from "./hostAutomations";
 import {
   isScheduleKind,
   latestOverdueOccurrence,
@@ -79,6 +82,12 @@ export type Automation = {
   harness: HarnessId;
   providerAccountId?: string;
   modelChoice?: ModelRoutingItemChoice;
+  /** Who runs each background occurrence; absent is one agent. */
+  workExecutor?: WorkExecutor;
+  /** Subagents and advisor; absent follows Settings > Models. */
+  workHelpers?: WorkHelpers;
+  /** Ordered steps each background occurrence runs instead of one prompt. */
+  workRecipe?: Recipe;
   model: string;
   modelSettings?: Record<string, string>;
   cwd: string;
@@ -120,6 +129,9 @@ export type AutomationHost = {
   projectId: string;
   /** A run is going and its session is waiting on an approval or a question. */
   needsInput?: boolean;
+  /** The Host's own record as listed, kept exactly so a write that rebuilds the
+   * automation can name what it was based on. Absent on legacy cache rows. */
+  configuration?: HostAutomation;
   /** The machine did not answer; this is what it last reported. */
   stale?: boolean;
 };
@@ -139,6 +151,8 @@ export type AutomationRunTrigger = "scheduled" | "manual" | "event";
 
 export type AutomationRun = {
   taskId?: string;
+  /** A recipe occurrence: its version, step results and why it stopped. */
+  recipe?: RecipeInstance;
   execution?: ModelRoutingTarget;
   maxRunMinutes?: number;
   workspaceId?: string;
@@ -197,12 +211,17 @@ export type AutomationDraft = {
   hostTrigger?: import("./hostAutomations").HostAutomationInput["trigger"];
   hostTemplate?: import("./hostAutomations").HostAutomationInput["template"];
   hostMachineId?: string;
+  /** Identity minted when a new background draft starts; a retried create reuses it. */
+  hostCreateId?: string;
   id?: string;
   name: string;
   prompt: string;
   harness: HarnessId;
   providerAccountId?: string;
   modelChoice?: ModelRoutingItemChoice;
+  workExecutor?: WorkExecutor;
+  workHelpers?: WorkHelpers;
+  workRecipe?: Recipe;
   model: string;
   modelSettings: Record<string, string>;
   cwd: string;
@@ -223,6 +242,8 @@ export type AutomationDraft = {
   maxRunsPerDay: number;
   /** Stored and run by the project machine's host, with no desktop open. */
   runInBackground: boolean;
+  /** The owner's own background switch on a new draft; it outlasts a trigger that forces it. */
+  backgroundChosen?: boolean;
   enabled: boolean;
 };
 
@@ -443,6 +464,9 @@ export function draftFromAutomation(automation: Automation): AutomationDraft {
     harness: automation.harness,
     providerAccountId: automation.providerAccountId,
     modelChoice: automation.modelChoice,
+    workExecutor: automation.workExecutor,
+    workHelpers: automation.workHelpers,
+    workRecipe: automation.workRecipe,
     model: automation.model,
     modelSettings: automation.modelSettings ?? {},
     cwd: automation.cwd,
@@ -483,7 +507,11 @@ export async function listAutomations(): Promise<Automation[]> {
 }
 
 export async function saveAutomation(draft: AutomationDraft): Promise<Automation> {
-  const { runInBackground: _local, ...synced } = applyTriggers(draft, draft.triggers);
+  const {
+    runInBackground: _local,
+    backgroundChosen: _chosen,
+    ...synced
+  } = applyTriggers(draft, draft.triggers);
   const automation: AutomationUpsert = {
     ...synced,
     id: synced.id ?? crypto.randomUUID(),

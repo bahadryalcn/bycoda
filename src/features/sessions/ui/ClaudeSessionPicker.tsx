@@ -1,10 +1,11 @@
+import { errorText } from "../../../shared/lib/errors";
 import { Text } from "../../../shared/ui/Text";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { getLocale, useT } from "../../../shared/i18n";
+import { formatDate, useT } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import { ModalPanel } from "../../../shared/ui/Modal";
 import { claudeSessions, type ClaudeSessionSummary } from "../../../platform/tauri/fs";
@@ -33,7 +34,7 @@ export function ClaudeSessionPicker({ cwd, providerAccountId, onPick, onClose }:
         if (!cancelled) setSessions(list);
       })
       .catch((reason: unknown) => {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
+        if (!cancelled) setError(errorText(reason));
       });
     return () => {
       cancelled = true;
@@ -49,13 +50,14 @@ export function ClaudeSessionPicker({ cwd, providerAccountId, onPick, onClose }:
     >
       {error ? (
         <InlineError
-          className="px-1 py-3"
+          inset="row"
+          details={error}
           retry={{ onRetry: () => setRetry((value) => value + 1) }}
         >
-          {error}
+          {t("Could not read Claude Code conversations.")}
         </InlineError>
       ) : sessions === null ? (
-        <LoadingText className="px-1 py-6">{t("Reading…")}</LoadingText>
+        <LoadingText inset="panel">{t("Reading…")}</LoadingText>
       ) : sessions.length === 0 ? (
         <EmptyState
           size="inline"
@@ -70,14 +72,14 @@ export function ClaudeSessionPicker({ cwd, providerAccountId, onPick, onClose }:
                 layout="stacked"
                 variant="item"
                 type="button"
-                className="w-full flex-col text-left"
+                className="w-full flex-col text-start"
                 onClick={() => onPick(session)}
               >
                 <ClampText as="span" lines={2} expandable={false} size="body">
                   {session.title}
                 </ClampText>
                 <Text size="caption" tone="inherit" className="opacity-60">
-                  {formatWhen(session.updatedAt)} ·{" "}
+                  {formatWhen(session.updatedAt, t("Unknown date"))} ·{" "}
                   {session.messageCount === 1
                     ? t("1 message")
                     : t("{p0} messages", { p0: session.messageCount })}
@@ -91,14 +93,14 @@ export function ClaudeSessionPicker({ cwd, providerAccountId, onPick, onClose }:
   );
 }
 
-function formatWhen(at: number): string {
-  if (!at) return "unknown date";
+function formatWhen(at: number, unknown: string): string {
+  if (!at) return unknown;
   const date = new Date(at);
   const today = new Date();
   const sameDay = date.toDateString() === today.toDateString();
   return sameDay
-    ? date.toLocaleTimeString(getLocale(), { hour: "2-digit", minute: "2-digit" })
-    : date.toLocaleDateString(getLocale(), {
+    ? formatDate(date, { hour: "2-digit", minute: "2-digit" })
+    : formatDate(date, {
         year: "numeric",
         month: "short",
         day: "numeric",

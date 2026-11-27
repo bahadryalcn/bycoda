@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, createElement, useEffect } from "react";
+import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -11,7 +11,6 @@ import {
   Toggle,
   SettingsFeedback,
   PageAutomaticSaveHint,
-  AdvancedSettings,
   RevealedSetting,
   setToggleCue,
 } from "./index";
@@ -53,94 +52,6 @@ async function key(target: Element, key: string) {
     target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
   });
 }
-
-describe("retained advanced settings", () => {
-  it("keeps hidden controls inert and retains their DOM identity and draft across disclosure changes", async () => {
-    const mounted = vi.fn(),
-      unmounted = vi.fn();
-    function Draft() {
-      useEffect(() => {
-        mounted();
-        return () => {
-          unmounted();
-        };
-      }, []);
-      return createElement("input", {
-        "aria-label": "Retained draft",
-        defaultValue: "original",
-      });
-    }
-    await act(() =>
-      root.render(
-        createElement(AdvancedSettings, {
-          defaultOpen: false,
-          keepMounted: true,
-          children: createElement(Draft),
-        }),
-      ),
-    );
-    const trigger = container.querySelector<HTMLButtonElement>("button")!;
-    const input = container.querySelector<HTMLInputElement>("input")!;
-    const body = input.parentElement!;
-    expect(body.hidden).toBe(true);
-    expect(body.hasAttribute("inert")).toBe(true);
-    expect(body.getAttribute("aria-hidden")).toBe("true");
-    expect(trigger.getAttribute("aria-controls")).toBe(body.id);
-    expect(mounted).toHaveBeenCalledTimes(1);
-    await act(() => trigger.click());
-    input.value = "unsaved draft";
-    await act(() => trigger.click());
-    expect(body.hidden).toBe(true);
-    expect(input.isConnected).toBe(true);
-    expect(unmounted).not.toHaveBeenCalled();
-    await act(() => trigger.click());
-    expect(container.querySelector("input")).toBe(input);
-    expect(input.value).toBe("unsaved draft");
-    expect(body.hidden).toBe(false);
-    expect(body.hasAttribute("inert")).toBe(false);
-    expect(body.getAttribute("aria-hidden")).toBeNull();
-  });
-
-  it("preserves existing unmount behavior unless opted in", async () => {
-    await act(() =>
-      root.render(
-        createElement(AdvancedSettings, {
-          defaultOpen: false,
-          children: createElement("input"),
-        }),
-      ),
-    );
-    const trigger = container.querySelector<HTMLButtonElement>("button")!;
-    expect(container.querySelector("input")).toBeNull();
-    await act(() => trigger.click());
-    expect(container.querySelector("input")).not.toBeNull();
-    await act(() => trigger.click());
-    expect(container.querySelector("input")).toBeNull();
-  });
-
-  it("opens a retained body when settings search reveals one of its controls", async () => {
-    const render = (target: string | null) =>
-      root.render(
-        createElement(
-          RevealedSetting.Provider,
-          { value: target },
-          createElement(AdvancedSettings, {
-            defaultOpen: false,
-            keepMounted: true,
-            settingIds: ["voice-device"],
-            children: createElement("input"),
-          }),
-        ),
-      );
-    await act(() => render(null));
-    const input = container.querySelector("input")!;
-    expect(input.parentElement!.hidden).toBe(true);
-    await act(() => render("voice-device"));
-    expect(container.querySelector("input")).toBe(input);
-    expect(input.parentElement!.hidden).toBe(false);
-    expect(container.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
-  });
-});
 
 describe("settings keyboard controls", () => {
   it.each(["disabled", "dependency"])(
@@ -451,6 +362,7 @@ it("keeps recovery actions independent of feedback dismissal", async () => {
         SettingsFeedback,
         {
           state: "error",
+          children: null,
           onDismiss: dismiss,
           action: { label: "Retry", onClick: retry },
         },
@@ -528,4 +440,46 @@ it("preserves dependent state and search reveal on settings rows", async () => {
   expect(controls.getAttribute("aria-disabled")).toBe("true");
   expect(controls.hasAttribute("inert")).toBe(true);
   expect(row.textContent).toContain("Enable parent");
+});
+
+it("exposes row layout props as data attributes and omits the defaults", async () => {
+  await act(async () =>
+    root.render(
+      createElement(
+        Group,
+        { title: "Group", children: null },
+        createElement(Row, { label: "Plain" }),
+        createElement(Row, {
+          label: "Tuned",
+          controlWidth: "fill",
+          density: "compact",
+          feedbackPosition: "start",
+        }),
+      ),
+    ),
+  );
+  const [plain, tuned] = [...container.querySelectorAll<HTMLElement>(".settings-row")];
+  expect(plain.dataset.controlWidth).toBeUndefined();
+  expect(plain.dataset.density).toBeUndefined();
+  expect(plain.dataset.feedbackPosition).toBeUndefined();
+  expect(tuned.dataset.controlWidth).toBe("fill");
+  expect(tuned.dataset.density).toBe("compact");
+  expect(tuned.dataset.feedbackPosition).toBe("start");
+});
+
+it("places a start preview before the controls in DOM order", async () => {
+  await act(async () =>
+    root.render(
+      createElement(Row, {
+        label: "Appearance",
+        feedbackPosition: "start",
+        feedback: createElement("button", null, "Preview"),
+        children: createElement("button", null, "Setting"),
+      }),
+    ),
+  );
+  expect(Array.from(container.querySelectorAll("button"), (button) => button.textContent)).toEqual([
+    "Preview",
+    "Setting",
+  ]);
 });

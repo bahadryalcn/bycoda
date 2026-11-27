@@ -88,9 +88,85 @@ pub(crate) fn remote_command(
     Ok(Some(command))
 }
 
+/// Start a fresh interactive shell at a literal path on the paired SSH machine.
+pub(crate) fn project_command(cwd: &str) -> Result<String, String> {
+    if cwd.is_empty() || cwd.len() > 4096 || cwd.chars().any(char::is_control) {
+        return Err("Invalid remote terminal directory".into());
+    }
+    let drive = cwd.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
+        && matches!(
+            cwd.as_bytes().get(1..),
+            Some([b':']) | Some([b':', b'/' | b'\\', ..])
+        );
+    if drive || cwd.starts_with("//") {
+        let mut path = cwd.replace('/', "\\");
+        // The remote project key drops a drive root's trailing slash.
+        if path.len() == 2 {
+            path.push('\\');
+        }
+        let literal = STANDARD.encode(path.as_bytes());
+        let script = format!(
+            "try {{ Set-Location -ErrorAction Stop -LiteralPath ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{literal}'))) }} catch {{ Write-Error -ErrorAction Continue $_; exit 1 }}"
+        );
+        // EncodedCommand is UTF-16LE. Its fixed syntax works through either CMD or PowerShell.
+        let encoded = STANDARD.encode(
+            script
+                .encode_utf16()
+                .flat_map(u16::to_le_bytes)
+                .collect::<Vec<_>>(),
+        );
+        let command = format!("powershell.exe -NoLogo -NoExit -EncodedCommand {encoded}");
+        if command.len() >= 8000 {
+            return Err("Remote terminal directory exceeds the Windows command budget".into());
+        }
+        return Ok(command);
+    }
+    if !cwd.starts_with('/') {
+        return Err("Expected an absolute remote terminal directory".into());
+    }
+    Ok(format!(
+        "sh -c {}",
+        crate::remote_ssh::shell_quote(&format!(
+            "CDPATH= cd -- {} && exec \"${{SHELL:-/bin/sh}}\" -l",
+            crate::remote_ssh::shell_quote(cwd)
+        ))
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn project_shell_uses_a_literal_absolute_path_and_a_bounded_windows_command() {
+        let windows = project_command("G:/A & B/ç's [1]").unwrap();
+        let payload = windows.split_whitespace().last().unwrap();
+        let bytes = STANDARD.decode(payload).unwrap();
+        let script = String::from_utf16(
+            &bytes
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|b| u16::from_le_bytes(*b))
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        let folder = STANDARD.encode("G:\\A & B\\ç's [1]".as_bytes());
+        assert!(script.contains(&format!("FromBase64String('{folder}')")));
+        assert!(script.contains("-LiteralPath"));
+        assert!(project_command("//server/share")
+            .unwrap()
+            .starts_with("powershell.exe "));
+        assert!(project_command("G:")
+            .unwrap()
+            .starts_with("powershell.exe "));
+        assert!(project_command("/tmp/a ' $()")
+            .unwrap()
+            .starts_with("sh -c '"));
+        assert!(project_command("relative").is_err());
+        assert!(project_command("/tmp/\n").is_err());
+        assert!(project_command(&format!("G:/{}", "a".repeat(5000))).is_err());
+    }
     fn endpoint(shell: RemoteShellKind, value: &str) -> SshEndpoint {
         SshEndpoint {
             host: "remote.example".into(),

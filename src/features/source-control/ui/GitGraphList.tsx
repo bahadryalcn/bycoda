@@ -20,6 +20,7 @@ import {
 import type { GitHistoryCommit } from "../../../platform/tauri/fs";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
+import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
 import { GRAPH_ROW_PX, SWIMLANE_WIDTH, type HistoryItemViewModel } from "../model/gitGraph";
 import {
   formatAbsoluteTime,
@@ -65,7 +66,6 @@ type Props = {
 const OVERSCAN = 10;
 /** Used until the scroller has been measured (and where nothing measures). */
 const FALLBACK_VIEWPORT_PX = 600;
-const NOW_REFRESH_MS = 60_000;
 
 const WIDE_HEADER_PX = 32;
 const WIDE_REFS_PX = 190;
@@ -75,15 +75,6 @@ const WIDE_SHA_PX = 72;
 const WIDE_GRAPH_MAX_PX = 260;
 
 const LOAD_MORE_CLASS = "w-full text-left";
-
-function useNow(): number {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), NOW_REFRESH_MS);
-    return () => clearInterval(timer);
-  }, []);
-  return now;
-}
 
 /** Widest lane drawing among the rows, so the wide view's Graph column fits all. */
 function graphColumnWidth(items: readonly GraphListItem[]): number {
@@ -124,7 +115,7 @@ export function GitGraphList({
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const [firstRow, setFirstRow] = useState(0);
   const [viewport, setViewport] = useState(0);
-  const now = useNow();
+  const now = useMinuteNow();
   const openRow = useStableCallback((sha: string, pin?: boolean) => {
     const commit = items.find((item) => item.commit.sha === sha)?.commit;
     if (commit) onOpen(commit, pin);
@@ -228,7 +219,7 @@ export function GitGraphList({
               }
             >
               {!workspace ? (
-                <Text size="inherit" tone="inherit" truncate className="pl-3">
+                <Text size="inherit" tone="inherit" truncate className="ps-3">
                   {t("Branch / Tag")}
                 </Text>
               ) : null}
@@ -378,7 +369,7 @@ function useRowHoverCard({ side, suspendHover }: RowProps) {
     width: 320,
     disabled: suspendHover,
     "aria-label": t("Commit details"),
-    className: "space-y-2 p-3",
+    className: "space-y-2",
   });
 }
 
@@ -455,16 +446,16 @@ const CompactRow = memo(function CompactRow(props: RowProps) {
         className={`${button.className} flex items-stretch`}
       >
         {plain ? null : <GraphLane row={row} />}
-        <span className="ml-1 flex min-w-0 flex-1 items-center">
+        <span className="ms-1 flex min-w-0 flex-1 items-center">
           <Subject item={item} />
         </span>
         <RefPills
           refs={refs}
           budgetPx={110}
           maxWidth="40cqw"
-          className="ml-1 shrink-0 self-center"
+          className="ms-1 shrink-0 self-center"
         />
-        <GraphAvatar name={commit.author} className="git-graph-author ml-1.5 self-center" />
+        <GraphAvatar name={commit.author} className="git-graph-author ms-1.5 self-center" />
         <Tooltip label={formatAbsoluteTime(commit.timestamp)} asChild>
           <Text
             as="span"
@@ -472,7 +463,7 @@ const CompactRow = memo(function CompactRow(props: RowProps) {
             tone="secondary"
             leading="relaxed"
 
-            className="git-graph-date ml-1.5 w-7 shrink-0 text-right"
+            className="git-graph-date ms-1.5 w-7 shrink-0 text-end"
           >
             {formatRelativeTime(commit.timestamp, now)}
           </Text>
@@ -490,7 +481,7 @@ const WideRow = memo(function WideRow(props: RowProps & { columns: string; works
   const refs = useMemo(() => orderGraphRefs(row.refs, commit.head), [row.refs, commit.head]);
   const hover = useRowHoverCard(props);
   const button = rowButtonProps(props, hover);
-  const dim = isMergeCommit(commit) && row.kind !== "HEAD" ? "text-[var(--ui-text-secondary)]" : "";
+  const dim = isMergeCommit(commit) && row.kind !== "HEAD" ? "text-(--ui-text-secondary)" : "";
   return (
     <li
       className="min-w-0 overflow-visible [height:var(--layout-height)]"
@@ -509,7 +500,7 @@ const WideRow = memo(function WideRow(props: RowProps & { columns: string; works
         style={workspace ? undefined : { gridTemplateColumns: columns }}
       >
         {!workspace ? (
-          <span className="flex min-w-0 items-center pr-1 pl-3">
+          <span className="flex min-w-0 items-center pe-1 ps-3">
             <RefPills refs={refs} budgetPx={workspace ? 104 : WIDE_REFS_PX - 16} maxWidth="100%" />
           </span>
         ) : null}
@@ -522,7 +513,7 @@ const WideRow = memo(function WideRow(props: RowProps & { columns: string; works
             <Subject item={item} />
           </span>
         ) : (
-          <Subject item={item} className="pl-1" />
+          <Subject item={item} className="ps-1" />
         )}
         {workspace ? (
           <OverflowTooltip label={commit.author}>
@@ -532,7 +523,7 @@ const WideRow = memo(function WideRow(props: RowProps & { columns: string; works
           </OverflowTooltip>
         ) : null}
         {!workspace ? (
-          <span className={`flex min-w-0 items-center gap-1.5 pr-2 ${dim}`}>
+          <span className={`flex min-w-0 items-center gap-1.5 pe-2 ${dim}`}>
             <GraphAvatar name={commit.author} />
             <Text size="caption" tone="secondary" truncate className="min-w-0">
               {commit.author}

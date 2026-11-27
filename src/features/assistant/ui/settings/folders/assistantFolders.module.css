@@ -1,20 +1,17 @@
 /* Assistant folders list. Spans the settings row; one path per line. */
 .list {
   display: grid;
-  gap: 6px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 .item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px;
-  padding-block: 6px;
+  gap: var(--ui-space-2);
+  padding-block: var(--ui-space-2);
   min-inline-size: 0;
 }
 .path {
   min-inline-size: 0;
-}
-.empty {
-  margin: 0;
 }

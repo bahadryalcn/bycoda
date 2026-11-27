@@ -7,8 +7,12 @@ import { t, useLocale } from "../../../shared/i18n/git";
 import { useState } from "react";
 import { MessageSquarePlus, X } from "../../../shared/ui/icons";
 import { Popover, type PopoverAnchor } from "../../../shared/ui/Popover";
-import { diffCommentLocation, formatDiffComment } from "../model/diffComment";
-import { MOD } from "../../../platform/tauri/platform";
+import {
+  diffCommentLocation,
+  formatDiffComment,
+  readDiffCommentDraft,
+  writeDiffCommentDraft,
+} from "../model/diffComment";
 import { requestAddToChat } from "../../sessions/public/quoteDraft";
 import type { UnifiedLine } from "../model/unifiedDiff";
 
@@ -17,23 +21,41 @@ export type DiffCommentComposerTarget = {
   anchor: PopoverAnchor;
 };
 
-export function DiffCommentComposer({
-  path,
-  target,
-  onDismiss,
-}: {
+type DiffCommentComposerProps = {
   path: string;
   target: DiffCommentComposerTarget;
   onDismiss: () => void;
-}) {
+};
+
+export function DiffCommentComposer(props: DiffCommentComposerProps) {
+  // Keyed by line so a draft never follows the composer onto another line.
+  const { path, target } = props;
+  return (
+    <DiffCommentComposerBody
+      key={`${target.line.kind}\0${diffCommentLocation({ path, line: target.line })}`}
+      {...props}
+    />
+  );
+}
+
+function DiffCommentComposerBody({ path, target, onDismiss }: DiffCommentComposerProps) {
   useLocale();
-  const [comment, setComment] = useState("");
-  const location = diffCommentLocation({ path, line: target.line });
+  const draftTarget = { path, line: target.line };
+  const [comment, setComment] = useState(() => readDiffCommentDraft(draftTarget));
+  const location = diffCommentLocation(draftTarget);
+  const updateComment = (next: string) => {
+    setComment(next);
+    writeDiffCommentDraft(draftTarget, next);
+  };
+  const discard = () => {
+    writeDiffCommentDraft(draftTarget, "");
+    onDismiss();
+  };
   const addToChat = () => {
-    const text = formatDiffComment({ path, line: target.line }, comment);
+    const text = formatDiffComment(draftTarget, comment);
     if (!text) return;
     requestAddToChat(text, "plain");
-    onDismiss();
+    discard();
   };
 
   return (
@@ -43,10 +65,14 @@ export function DiffCommentComposer({
       align="start"
       gap={6}
       width={320}
-      onDismiss={onDismiss}
-      role="dialog"
+      // An outside press keeps unsent text; Escape and Cancel discard it.
+      onDismiss={(reason) => {
+        if (reason === "outside" && comment.trim()) return;
+        discard();
+      }}
+      kind="dialog"
       aria-label={t("Comment on {p0}", { p0: location })}
-      className="p-2"
+      variant="compact"
     >
       <form
         onSubmit={(event) => {
@@ -67,20 +93,20 @@ export function DiffCommentComposer({
             variant="ghost"
             motion="none"
             type="button"
-            onClick={onDismiss}
+            onClick={discard}
           >
             <X className="icon-xs" strokeWidth={1.75} />
           </Button>
         </div>
         <TextareaField
           hideLabel
-          label=""
+          label={t("Comment")}
           autoFocus
           minRows={3}
           maxRows={8}
           autosize
           value={comment}
-          onChange={(event) => setComment(event.target.value)}
+          onChange={(event) => updateComment(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && comment.trim()) {
               event.preventDefault();
@@ -90,20 +116,16 @@ export function DiffCommentComposer({
           placeholder={t("Leave a comment…")}
           className="w-full"
         />
-        <div className="mt-2 flex items-center justify-between gap-3">
-          <Text size="caption" tone="secondary">
-            {MOD}
-            {t("↩ to add")}
-          </Text>
+        <div className="mt-2 flex justify-end">
           <Button
             size="sm"
             variant="primary"
             motion="none"
             type="submit"
+            shortcut="Mod+Enter"
             disabled={!comment.trim()}
-            className="inline-flex items-center gap-1.5 disabled:cursor-default"
+            startIcon={<MessageSquarePlus className="icon-sm" strokeWidth={1.75} />}
           >
-            <MessageSquarePlus className="icon-sm" strokeWidth={1.75} />
             {t("Add to chat")}
           </Button>
         </div>

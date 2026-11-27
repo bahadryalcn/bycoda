@@ -1,6 +1,7 @@
 import { useDecisionTarget } from "./DecisionTarget";
 import { useState } from "react";
 import { t } from "../../../shared/i18n";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -66,6 +67,9 @@ export function ManualPathDialog({
   const [browseFailure, setBrowseFailure] = useState<unknown>(null);
   const flow = useAddAndTest({ onAdd: (input) => onAdd(input), onTest });
   const locked = flow.busy || flow.done;
+  const lockedReason = flow.done
+    ? t("This model is already added.")
+    : t("Wait for the current step to finish.");
   const close = useDecisionDialogClose(
     !flow.done &&
       (name !== (prefill?.name ?? "") ||
@@ -149,15 +153,17 @@ export function ManualPathDialog({
   return (
     <Modal
       title={t("Add from a file or address")}
-      description={
-        target
-          ? t(
-              "Use a model file on Host {p1}, or the address of a service that is already running.",
-              { p1: target },
-            )
-          : t(
-              "Use a model file on this computer, or the address of a service that is already running.",
-            )
+      toolbar={
+        <InfoPopover>
+          {target
+            ? t(
+                "Use a model file on Host {p1}, or the address of a service that is already running.",
+                { p1: target },
+              )
+            : t(
+                "Use a model file on this computer, or the address of a service that is already running.",
+              )}
+        </InfoPopover>
       }
       size="md"
       onClose={close.requestClose}
@@ -167,7 +173,13 @@ export function ManualPathDialog({
             {flow.done ? t("Close") : t("Cancel")}
           </Button>
           {flow.done ? null : (
-            <Button variant="primary" loading={flow.busy} disabled={flow.busy} onClick={submit}>
+            <Button
+              variant="primary"
+              loading={flow.busy}
+              loadingLabel={flow.phase === "testing" ? t("Testing…") : t("Saving…")}
+              disabled={flow.busy}
+              onClick={submit}
+            >
               {t("Add and test")}
             </Button>
           )}
@@ -195,7 +207,7 @@ export function ManualPathDialog({
         {mode === "endpoint" ? (
           <TextField
             label={t("Address")}
-            description={t("For example http://127.0.0.1:8080/v1/systemone")}
+            placeholder="http://127.0.0.1:8080/v1/systemone"
             value={endpoint}
             monospace
             disabled={locked}
@@ -212,20 +224,32 @@ export function ManualPathDialog({
               error={errors.path}
               onChange={(event) => setModelPath(event.target.value)}
               endAdornment={
-                <Button variant="ghost" size="sm" disabled={locked} onClick={browseModel}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={locked}
+                  disabledReason={lockedReason}
+                  onClick={browseModel}
+                >
                   {t("Choose…")}
                 </Button>
               }
             />
             <TextField
               label={t("Runtime program (optional)")}
-              description={t("Leave empty to use the runtime that came with the model.")}
+              placeholder={t("Bundled with the model")}
               value={runtimePath}
               monospace
               disabled={locked}
               onChange={(event) => setRuntimePath(event.target.value)}
               endAdornment={
-                <Button variant="ghost" size="sm" disabled={locked} onClick={browseRuntime}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={locked}
+                  disabledReason={lockedReason}
+                  onClick={browseRuntime}
+                >
                   {t("Choose…")}
                 </Button>
               }
@@ -244,15 +268,11 @@ export function ManualPathDialog({
         )}
         <Select
           label={t("Contract")}
-          description={t("The request format the service uses. The test checks it.")}
           value={adapter}
           disabled={locked}
           options={CONTRACT_ADAPTERS.map((value) => ({ value, label: contractLabel(value) }))}
           onValueChange={(value) => setAdapter(value as ContractAdapter)}
         />
-        {flow.phase === "testing" ? (
-          <InlineMessage tone="info">{t("Testing the connection…")}</InlineMessage>
-        ) : null}
         {flow.failure !== null ? <ErrorNotice error={flow.failure} /> : null}
         {browseFailure !== null ? <ErrorNotice error={browseFailure} /> : null}
         {flow.outcome ? (

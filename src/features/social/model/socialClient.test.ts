@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getLanguagePreference, setLanguagePreference } from "../../../shared/i18n";
 import { SOCIAL_READ_ACTIONS } from "./socialActions";
 
 const { remoteRequest } = vi.hoisted(() => ({ remoteRequest: vi.fn() }));
@@ -16,6 +17,30 @@ function lastSocialPayload(): Record<string, unknown> {
 beforeEach(() => {
   remoteRequest.mockReset();
   remoteRequest.mockResolvedValue(undefined);
+});
+
+it.each([
+  [
+    "Large videos require a YouTube API connection.",
+    "Los vídeos de gran tamaño requieren una conexión con la API de YouTube.",
+  ],
+  [
+    "MP4 or WebM videos for YouTube can be at most 256 GiB.",
+    "Los vídeos MP4 o WebM para YouTube pueden ocupar hasta 256 GiB.",
+  ],
+])("localizes the YouTube staging rejection %s", async (message, translation) => {
+  const previousLanguage = getLanguagePreference();
+  try {
+    await setLanguagePreference("es");
+    remoteRequest.mockRejectedValueOnce(new Error(`Host rejected request: ${message}`));
+    const file = new File([new Uint8Array(12)], "fixture.mp4", { type: "video/mp4" });
+    await expect(socialClient("machine").uploadVideo(file, undefined, "youtube")).rejects.toThrow(
+      translation,
+    );
+    expect(remoteRequest).toHaveBeenCalledTimes(1);
+  } finally {
+    await setLanguagePreference(previousLanguage);
+  }
 });
 
 describe("socialClient request ids", () => {
@@ -97,5 +122,127 @@ describe("socialClient request ids", () => {
       accountId: "a1",
       event: { type: "scroll", deltaY: 120 },
     });
+  });
+});
+
+it("preserves binary bytes in image and document upload payloads (#1069)", async () => {
+  const client = socialClient("m1");
+  const bytes = new Uint8Array([0, 128, 255, 1]);
+  await client.upload(new File([bytes], "image.png", { type: "image/png" }));
+  await client.uploadDocument(new File([bytes], "file.pdf", { type: "application/pdf" }));
+  expect(remoteRequest.mock.calls).toEqual([
+    ["m1", "social.media.upload", { base64: "AID/AQ==" }],
+    ["m1", "social.media.upload", { kind: "document", base64: "AID/AQ==" }],
+  ]);
+});
+
+describe("socialClient video upload resume", () => {
+  const MIB = 1024 * 1024;
+  const video = (size = 16) => new File([new Uint8Array(size)], "a.mp4", { type: "video/mp4" });
+  const dropped = () => new Error("[RPC_TIMEOUT] Host did not answer");
+  type Step = { mode: string; offset?: number };
+  const modes = () => remoteRequest.mock.calls.map((call) => (call[2] as Step).mode);
+
+  /** Host reply per call; `fail` throws once for the matching mode on its n-th occurrence. */
+  function host(script: (params: Step, count: number) => Promise<unknown> | unknown) {
+    const seen: Record<string, number> = {};
+    remoteRequest.mockImplementation(async (_machine, _method, params: Step) => {
+      seen[params.mode] = (seen[params.mode] ?? 0) + 1;
+      return script(params, seen[params.mode]!);
+    });
+  }
+  const upload = async (file: File, progress?: (percent: number) => void) => {
+    vi.useFakeTimers();
+    try {
+      const result = socialClient("m1").uploadVideo(file, progress);
+      const settled = result.then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      );
+      await vi.runAllTimersAsync();
+      const outcome = await settled;
+      if ("error" in outcome) throw outcome.error;
+      return outcome.value;
+    } finally {
+      vi.useRealTimers();
+    }
+  };
+
+  it("re-sends a chunk at the same offset after a transient failure instead of cancelling", async () => {
+    host((params, count) => {
+      if (params.mode === "begin") return { uploadId: "u1", offset: 0 };
+      if (params.mode === "chunk" && count === 1) throw dropped();
+      if (params.mode === "status") return { uploadId: "u1", offset: 0 };
+      if (params.mode === "chunk") return { uploadId: "u1", offset: 16 };
+      return { uploadId: "u1" };
+    });
+    await upload(video());
+    expect(modes()).toEqual(["begin", "chunk", "status", "chunk", "finish"]);
+    const chunks = remoteRequest.mock.calls
+      .map((call) => call[2] as Step)
+      .filter((p) => p.mode === "chunk");
+    expect(chunks.map((chunk) => chunk.offset)).toEqual([0, 0]);
+  });
+
+  it("accepts a chunk the Host committed whose acknowledgement was lost, without re-sending it", async () => {
+    host((params, count) => {
+      if (params.mode === "begin") return { uploadId: "u1", offset: 0 };
+      if (params.mode === "chunk" && count === 1) throw dropped();
+      if (params.mode === "status") return { uploadId: "u1", offset: 16 };
+      return { uploadId: "u1", offset: 16 };
+    });
+    await upload(video());
+    expect(modes()).toEqual(["begin", "chunk", "status", "finish"]);
+  });
+
+  it("cancels when the Host's committed offset matches neither side of the chunk", async () => {
+    host((params) => {
+      if (params.mode === "begin") return { uploadId: "u1", offset: 0 };
+      if (params.mode === "chunk") throw dropped();
+      if (params.mode === "status") return { uploadId: "u1", offset: 7 };
+      return { uploadId: "u1" };
+    });
+    await expect(upload(video())).rejects.toThrow("order could not be verified");
+    expect(modes().at(-1)).toBe("cancel");
+    expect(modes()).not.toContain("finish");
+  });
+
+  it("does not retry a Host rejection and cancels the upload", async () => {
+    host((params) => {
+      if (params.mode === "begin") return { uploadId: "u1", offset: 0 };
+      if (params.mode === "chunk")
+        throw new Error("Host rejected request: Video upload is invalid, expired or busy.");
+      return { uploadId: "u1" };
+    });
+    await expect(upload(video())).rejects.toThrow("invalid, expired or busy");
+    expect(modes()).toEqual(["begin", "chunk", "cancel"]);
+  });
+
+  it("gives up after the bounded retries, cancels and reports the last failure", async () => {
+    host((params) => {
+      if (params.mode === "begin") return { uploadId: "u1", offset: 0 };
+      if (params.mode === "status") return { uploadId: "u1", offset: 0 };
+      throw dropped();
+    });
+    await expect(upload(video())).rejects.toThrow("RPC_TIMEOUT");
+    // One first attempt plus one per entry of the retry schedule.
+    expect(modes().filter((mode) => mode === "chunk")).toHaveLength(6);
+    expect(modes().at(-1)).toBe("cancel");
+  });
+
+  it("keeps earlier chunks and resumes only the failed one, reporting progress in order", async () => {
+    const progress: number[] = [];
+    host((params, count) => {
+      if (params.mode === "begin") return { uploadId: "u1", offset: 0 };
+      if (params.mode === "chunk" && params.offset === MIB && count === 2) throw dropped();
+      if (params.mode === "status") return { uploadId: "u1", offset: MIB };
+      return { uploadId: "u1", offset: Math.min((params.offset ?? 0) + MIB, MIB + 1) };
+    });
+    await upload(video(MIB + 1), (percent) => progress.push(percent));
+    const chunks = remoteRequest.mock.calls
+      .map((call) => call[2] as Step)
+      .filter((p) => p.mode === "chunk");
+    expect(chunks.map((chunk) => chunk.offset)).toEqual([0, MIB, MIB]);
+    expect(progress).toEqual([100, 100]);
   });
 });

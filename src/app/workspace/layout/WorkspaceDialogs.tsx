@@ -26,6 +26,8 @@ import { GitFileInspector } from "../../../features/source-control/ui/GitFileIns
 import { SessionImportHost } from "../../../features/sessions/ui/SessionImportHost";
 import { OnboardingHost } from "../../../features/onboarding/ui/OnboardingHost";
 import { AddRemoteProjectDialog } from "../../../features/connections/ui/AddRemoteProjectDialog";
+import { AddProjectToMachineHost } from "../../../features/connections/ui/AddProjectToMachineHost";
+import { MachineFolderPickerHost } from "../../../features/connections/ui/MachineFolderPickerHost";
 import { ProjectNameConflictDialog } from "../../../features/projects/ui/ProjectNameConflictDialog";
 import {
   projectNameError,
@@ -64,8 +66,6 @@ export interface WorkspaceRecoveryDialogsProps {
   removeRecoveredSessions: RecoveryPanelProps["onRemove"];
   editorDraftRecovery?: EditorDraftRecoverySectionProps["recovery"];
   editorDraftRecords?: EditorDraftRecoverySectionProps["records"];
-  canInspectLegacyReports?: () => boolean;
-  getLegacyReportPrivacySnapshot?: () => unknown;
   sessionDeleteDialog: SessionDeleteDialogState | undefined;
   setSessionDeleteDialog: Dispatch<SetStateAction<SessionDeleteDialogState | undefined>>;
 }
@@ -80,8 +80,6 @@ function WorkspaceRecoveryDialogsComponent({
   removeRecoveredSessions,
   editorDraftRecovery,
   editorDraftRecords,
-  canInspectLegacyReports,
-  getLegacyReportPrivacySnapshot,
   sessionDeleteDialog,
   setSessionDeleteDialog,
 }: WorkspaceRecoveryDialogsProps) {
@@ -99,8 +97,6 @@ function WorkspaceRecoveryDialogsComponent({
           recovery={sessionRecovery}
           editorDraftRecovery={editorDraftRecovery}
           editorDraftRecords={editorDraftRecords}
-          canInspectLegacyReports={canInspectLegacyReports}
-          getLegacyReportPrivacySnapshot={getLegacyReportPrivacySnapshot}
           sessions={sessions}
           remoteSessions={remoteSessions}
           onClose={closeRecovery}
@@ -219,6 +215,8 @@ function WorkspacePickerDialogsComponent({
           }}
         />
       ) : null}
+      <MachineFolderPickerHost />
+      <AddProjectToMachineHost />
       {nameConflicts[0] ? (
         <ProjectNameConflictDialog
           key={nameConflicts[0].path}

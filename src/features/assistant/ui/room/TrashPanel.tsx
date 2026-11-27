@@ -1,21 +1,38 @@
-import { presentRemoteError } from "../../../connections/public/remoteFailure";
+import { describeRemoteError } from "../../../connections/public/remoteFailure";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
-import { Text } from "../../../../shared/ui/Text";
+import { Text, textAttributes } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import type { AssistantTrash } from "../../../../shared/model/host-contracts/assistant";
 import { formatDate, t } from "../../../../shared/i18n";
 import { InlineAction, ActionHost } from "../../../../shared/ui/ActionHost";
-import { Badge } from "../../../../shared/ui/Badge";
+import { Brain, Briefcase, Clock, File, MessageSquare, Trash2 } from "../../../../shared/ui/icons";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
+import { Tooltip } from "../../../../shared/ui/Tooltip";
 import { Button } from "../../../../shared/ui/Button";
 import { Modal } from "../../../../shared/ui/Modal";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { ConfirmDialog, type ConfirmRequest } from "../../../../shared/ui/ConfirmDialog";
-import { Trash2 } from "../../../../shared/ui/icons";
 import styles from "./TrashPanel.module.css";
 import type { OwnerRequest } from "./assistantRoomHelpers";
 
 const when = (at: number) => formatDate(at, { dateStyle: "medium", timeStyle: "short" });
+
+/** The icon and translated name of a deleted record's type; call it while rendering. */
+function trashKind(kind: AssistantTrash["kind"]): { Icon: typeof File; label: string } {
+  switch (kind) {
+    case "jobs":
+      return { Icon: Briefcase, label: t("Jobs") };
+    case "memory":
+      return { Icon: Brain, label: t("Memory") };
+    case "activity":
+      return { Icon: Clock, label: t("History") };
+    case "messages":
+      return { Icon: MessageSquare, label: t("Messages") };
+    case "notetrash":
+      return { Icon: File, label: t("Notes") };
+  }
+}
 
 export function TrashPanel({
   request,
@@ -30,12 +47,12 @@ export function TrashPanel({
 }) {
   const [assistantRequest] = useState(() => request);
   const [pending, setPending] = useState<string | null>(null);
-  const [error, setError] = useState("");
+  const [problem, setProblem] = useState<{ message: string; details?: string } | null>(null);
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   async function restore(id: string) {
     if (pending) return;
     setPending(id);
-    setError("");
+    setProblem(null);
     try {
       const result = await assistantRequest({ op: "trash.restore", id });
       if (result.ok !== true)
@@ -44,93 +61,108 @@ export function TrashPanel({
         );
       onRestored(id);
     } catch (cause) {
-      setError(presentRemoteError(cause, { explicit: true }));
+      setProblem(describeRemoteError(cause));
     } finally {
       setPending(null);
     }
   }
   return (
-    <Modal title={t("Recently deleted")} onClose={onClose} size="md" fitViewport>
+    <Modal
+      title={t("Recently deleted")}
+      onClose={onClose}
+      size="md"
+      fitViewport
+      footerStart={
+        <InfoPopover label={t("About recently deleted")}>
+          <Text as="p" tone="muted" leading="inherit">
+            {t("Deleted records are kept for seven days. Restoring a job does not restart it.")}
+          </Text>
+        </InfoPopover>
+      }
+    >
       <div className={styles.stack}>
-        <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.hint}>
-          {t("Deleted records are kept for seven days. Restoring a job does not restart it.")}
-        </Text>
         {!entries.length && (
           <EmptyState
             size="inline"
             kind="empty"
-            className={styles.empty}
+            inset="panel"
             description={t("Nothing deleted recently")}
           />
         )}
         {entries.length > 0 && (
           <ul className={styles.list}>
-            {entries.map((entry) => (
-              <ActionHost
-                as="li"
-                {...surfaceAttributes({ radius: "none", separator: "pane-block" }, styles.row)}
-                key={entry.id}
-              >
-                <div className={styles.text}>
-                  <Text as="strong" size="body" tone="inherit" weight="medium" leading="inherit">
-                    {entry.title}
-                  </Text>
-                  <Text size="caption" tone="muted" leading="inherit" className={styles.meta}>
-                    <Badge size="xs">
-                      {t(
-                        entry.kind === "jobs"
-                          ? "Jobs"
-                          : entry.kind === "memory"
-                            ? "Memory"
-                            : entry.kind === "activity"
-                              ? "History"
-                              : entry.kind === "messages"
-                                ? "Messages"
-                                : "Notes",
-                      )}
-                    </Badge>
-                    <span>{when(entry.deletedAt)}</span>
-                    <span>{t("Kept until {p0}", { p0: when(entry.expiresAt) })}</span>
-                  </Text>
-                  {entry.kind === "jobs" && entry.deletedTaskCount !== undefined && (
-                    <Text size="caption" tone="muted" leading="inherit" className={styles.meta}>
-                      {t("Includes {p0} deleted tasks. Restoring keeps them stopped.", {
-                        p0: entry.deletedTaskCount,
-                      })}
+            {entries.map((entry) => {
+              const { Icon, label } = trashKind(entry.kind);
+              return (
+                <ActionHost
+                  as="li"
+                  {...surfaceAttributes({ radius: "none", separator: "pane-block" }, styles.row)}
+                  key={entry.id}
+                >
+                  <div className={styles.text}>
+                    <Text as="strong" size="body" tone="inherit" weight="medium" leading="inherit">
+                      {entry.title}
                     </Text>
-                  )}
-                </div>
-                <Button
-                  size="sm"
-                  loading={pending === entry.id}
-                  disabled={Boolean(pending)}
-                  onClick={() => void restore(entry.id)}
-                >
-                  {t("Restore")}
-                </Button>
-                <InlineAction
-                  reveal="always"
-                  label={t("Delete permanently")}
-                  disabled={Boolean(pending)}
-                  onClick={() =>
-                    setConfirm({
-                      title: t("Delete permanently?"),
-                      message: entry.title,
-                      confirmLabel: t("Delete permanently"),
-                      consequences: [t("This record cannot be restored.")],
-                      onConfirm: async () => {
-                        await assistantRequest({ op: "trash.purge", id: entry.id });
-                      },
-                    })
-                  }
-                >
-                  <Trash2 className="icon-sm" />
-                </InlineAction>
-              </ActionHost>
-            ))}
+                    <span
+                      {...textAttributes(
+                        { size: "caption", tone: "muted", leading: "inherit" },
+                        styles.meta,
+                      )}
+                    >
+                      <Tooltip asChild label={label}>
+                        <span role="img" aria-label={t("Record type: {p0}", { p0: label })}>
+                          <Icon className="icon-sm" />
+                        </span>
+                      </Tooltip>
+                      <span>{when(entry.deletedAt)}</span>
+                      <span>{t("Kept until {p0}", { p0: when(entry.expiresAt) })}</span>
+                    </span>
+                    {entry.kind === "jobs" && entry.deletedTaskCount !== undefined && (
+                      <Text size="caption" tone="muted" leading="inherit">
+                        {t("Includes {p0} deleted tasks. Restoring keeps them stopped.", {
+                          p0: entry.deletedTaskCount,
+                        })}
+                      </Text>
+                    )}
+                  </div>
+                  <Button
+                    size="sm"
+                    loading={pending === entry.id}
+                    disabled={Boolean(pending)}
+                    disabledReason={t("Wait for the current action to finish.")}
+                    onClick={() => void restore(entry.id)}
+                  >
+                    {t("Restore")}
+                  </Button>
+                  <InlineAction
+                    reveal="always"
+                    label={t("Delete permanently")}
+                    disabled={Boolean(pending)}
+                    disabledReason={t("Wait for the current action to finish.")}
+                    onClick={() =>
+                      setConfirm({
+                        title: t("Delete permanently?"),
+                        message: entry.title,
+                        confirmLabel: t("Delete permanently"),
+                        consequences: [t("This record cannot be restored.")],
+                        onConfirm: async () => {
+                          await assistantRequest({ op: "trash.purge", id: entry.id });
+                        },
+                      })
+                    }
+                  >
+                    <Trash2 className="icon-sm" />
+                  </InlineAction>
+                </ActionHost>
+              );
+            })}
           </ul>
         )}
-        {error && <InlineError className={styles.error}>{error}</InlineError>}
+        {problem && (
+          <InlineError className={styles.error} details={problem.details}>
+            {problem.message}
+          </InlineError>
+        )}
         {confirm && <ConfirmDialog request={confirm} onSettle={() => setConfirm(null)} />}
       </div>
     </Modal>

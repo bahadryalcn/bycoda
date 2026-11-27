@@ -171,7 +171,7 @@ export function localPlan({
     steps.push(
       node(
         "Evaluation harness types (CI scripts)",
-        tool("tsc-rs", ["--noEmit", "-p", "evals/tsconfig.json"]),
+        tool("tsrs", ["--noEmit", "-p", "evals/tsconfig.json"]),
       ),
     );
   if (files.some((file) => file.startsWith("tests/browser/"))) {
@@ -184,7 +184,7 @@ export function localPlan({
     steps.push(
       node(
         "Browser fixture types (CI browser)",
-        tool("tsc-rs", ["--noEmit", "-p", "tests/browser/tsconfig.json"]),
+        tool("tsrs", ["--noEmit", "-p", "tests/browser/tsconfig.json"]),
       ),
     );
   }

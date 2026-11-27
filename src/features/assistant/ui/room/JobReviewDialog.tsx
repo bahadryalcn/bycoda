@@ -39,6 +39,25 @@ export function JobReviewDialog() {
     reviewHasAutomation,
   } = room;
   if (!jobReview || !jobDraftVisible) return null;
+  const needsProject = jobReview.some(
+    (item) => item.kind !== "quick" && !(item.projectIds ?? []).length,
+  );
+  const blocked =
+    !jobReview.length ||
+    jobReview.some(
+      (item) =>
+        !assistantJobDraftReady(reviewedDraft(item)) ||
+        !visibleDraft(item) ||
+        (item.kind === "quick" &&
+          (item.quickAction?.kind === "automation"
+            ? snapshot?.capabilities.quickAutomations !== true
+            : snapshot?.capabilities.quickNotes !== true)),
+    );
+  const blockedReason = !blocked
+    ? undefined
+    : needsProject
+      ? t("Choose a project to start")
+      : t("Describe each job to continue");
   return (
     <Modal
       title={t("Review jobs")}
@@ -61,42 +80,29 @@ export function JobReviewDialog() {
         ) : undefined
       }
       footer={
-        <ModalActions>
+        <ModalActions reason={blockedReason}>
           <Button variant="ghost" disabled={Boolean(pending)} onClick={() => setJobReview(null)}>
             {t("Cancel")}
           </Button>
           <Button
             variant="primary"
             loading={pending?.key === "jobs.create"}
-            disabled={
-              !jobReview.length ||
-              jobReview.some(
-                (item) =>
-                  !assistantJobDraftReady(reviewedDraft(item)) ||
-                  !visibleDraft(item) ||
-                  (item.kind === "quick" &&
-                    (item.quickAction?.kind === "automation"
-                      ? snapshot?.capabilities.quickAutomations !== true
-                      : snapshot?.capabilities.quickNotes !== true)),
-              )
-            }
+            disabled={blocked}
             onClick={() =>
               submitJobs().catch((error: unknown) =>
                 room.setError({ key: "jobs.create", text: errorText(error) }),
               )
             }
           >
-            {t(
-              jobReviewFrozen
-                ? "Check and retry"
-                : jobReview.every((row) => row.kind === "quick" && row.quickAction?.kind === "note")
-                  ? "Save notes"
-                  : jobReview.every(
-                        (row) => row.kind === "quick" && row.quickAction?.kind === "automation",
-                      )
-                    ? "Create automations"
-                    : "Start",
-            )}
+            {jobReviewFrozen
+              ? t("Check and retry")
+              : jobReview.every((row) => row.kind === "quick" && row.quickAction?.kind === "note")
+                ? t("Save notes")
+                : jobReview.every(
+                      (row) => row.kind === "quick" && row.quickAction?.kind === "automation",
+                    )
+                  ? t("Create automations")
+                  : t("Start")}
           </Button>
         </ModalActions>
       }
@@ -105,7 +111,7 @@ export function JobReviewDialog() {
         {jobReview.map((draft, index) => (
           <div {...surfaceAttributes({ separator: "pane-block" }, styles.reviewJob)} key={draft.id}>
             <div className={styles.reviewHead}>
-              <SectionLabel as="h3">{t("Request {p0}", { p0: index + 1 })}</SectionLabel>
+              <SectionLabel as="h3">{t("Job {p0}", { p0: index + 1 })}</SectionLabel>
               <div className={styles.reviewTools}>
                 <Select
                   hideLabel
@@ -150,8 +156,12 @@ export function JobReviewDialog() {
                     size="sm"
                     variant="ghost"
                     label={t("Remove request")}
-                    tooltip={t("Remove request")}
                     disabled={jobReviewFrozen || Boolean(pending)}
+                    disabledReason={
+                      jobReviewFrozen
+                        ? t("This request is being checked. Use Check and retry first.")
+                        : t("Wait for the current action to finish.")
+                    }
                     onClick={() =>
                       setJobReview((current) => current!.filter((item) => item.id !== draft.id))
                     }
@@ -162,7 +172,7 @@ export function JobReviewDialog() {
               </div>
             </div>
             <TextareaField
-              label={t("Request {p0}", { p0: index + 1 })}
+              label={t("Job {p0}", { p0: index + 1 })}
               hideLabel
               value={draft.request}
               minRows={3}

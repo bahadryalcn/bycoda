@@ -28,6 +28,7 @@ export const CatalogModelSchema = z.strictObject({
     )
     .optional(),
   contextWindow: z.number().optional(),
+  free: z.boolean().optional(),
 });
 const account = z.strictObject({
   isDefault: z.boolean().optional(),

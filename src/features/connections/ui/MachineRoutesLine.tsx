@@ -3,7 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { Surface } from "../../../shared/ui/Surface";
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { Badge } from "../../../shared/ui/Badge";
+import { errorText } from "../../../shared/lib/errors";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { LoadingText } from "../../../shared/ui/LoadingText";
@@ -17,10 +18,17 @@ import {
   type RoutePreference,
 } from "../model/machineRoutes";
 import type { RemoteMachine } from "../model/protocol";
+import { classifyRemoteError } from "../model/remoteFailure";
 
 export type { RoutePreference };
 
 type RouteCheck = { address: string; reachable: boolean | null };
+
+/** Tauri's rejection for a command this desktop build does not register: an older desktop
+ * without the route store. Only the saved other address is known then, which is expected. */
+const MISSING_ROUTE_COMMAND = /^(?:Error: )?Command remote_machine_routes not found$/;
+const olderDesktop = (reason: unknown) =>
+  classifyRemoteError(reason).kind === "outdated" || MISSING_ROUTE_COMMAND.test(errorText(reason));
 
 const kindLabel = (kind: Route["kind"]) =>
   kind === "tailscale"
@@ -79,10 +87,7 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
     })
       .then((value) => current && setRoutes(value))
       .catch((reason: unknown) => {
-        if (current)
-          setReadError(
-            !/unknown command|command.*not found|not supported|no desktop/i.test(String(reason)),
-          );
+        if (current) setReadError(!olderDesktop(reason));
       })
       .finally(() => {
         if (current) setLoading(false);
@@ -115,17 +120,19 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
         {loading ? (
           <LoadingText />
         ) : readError ? (
-          <InlineError>{t("Addresses could not be loaded.")}</InlineError>
-        ) : null}
-        {readError ? (
-          <Button loading={loading} onClick={() => setRetry((value) => value + 1)}>
-            {t("Retry")}
-          </Button>
+          <InlineError
+            retry={{
+              onRetry: () => setRetry((value) => value + 1),
+              label: t("Retry"),
+              pending: loading,
+            }}
+          >
+            {t("Addresses could not be loaded.")}
+          </InlineError>
         ) : null}
         {ssh?.alternate ? (
-          <Text wrap="anywhere" as="div" tone="muted" className="mt-1">
-            {t("Other address · ")}
-            {ssh?.alternate}
+          <Text wrap="anywhere" as="div" tone="muted">
+            {t("Other address: {p0}", { p0: ssh.alternate })}
           </Text>
         ) : null}
       </div>
@@ -141,7 +148,7 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
       prefer,
     })
       .then(setRoutes)
-      .catch((reason: unknown) => setError(String(reason)))
+      .catch((reason: unknown) => setError(errorText(reason)))
       .finally(() => setSaving(false));
   };
   const shown = mergeRoutes(machine, routes);
@@ -169,26 +176,36 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
             </InfoPopover>
           </div>
         </div>
-        {ssh && routes.routes.length > 1 ? (
-          <div className="w-48">
-            <Select
-              label={t("Try first")}
-              fieldSize="sm"
-              value={routes.prefer}
-              disabled={saving}
-              onValueChange={(value) => {
-                if (!saving) save(disabled, value as RoutePreference);
-              }}
-              options={[
-                { value: "saved", label: t("SSH address") },
-                { value: "lan", label: t("Home network") },
-                { value: "tailscale", label: t("Tailscale") },
-              ]}
-            />
-          </div>
-        ) : null}
+        <div className="flex flex-wrap items-end gap-2">
+          {ssh && routes.routes.length > 1 ? (
+            <div className="w-48">
+              <Select
+                label={t("Try first")}
+                fieldSize="sm"
+                value={routes.prefer}
+                disabled={saving}
+                onValueChange={(value) => {
+                  if (!saving) save(disabled, value as RoutePreference);
+                }}
+                options={[
+                  { value: "saved", label: t("SSH address") },
+                  { value: "lan", label: t("Home network") },
+                  { value: "tailscale", label: t("Tailscale") },
+                ]}
+              />
+            </div>
+          ) : null}
+          <Button
+            size="sm"
+            disabled={saving}
+            loading={loading}
+            onClick={() => setRetry((value) => value + 1)}
+          >
+            {readError || probeError ? t("Retry") : t("Check again")}
+          </Button>
+        </div>
       </div>
-      <Surface as="ul" variant="card" padding="none" dividers="card" className="flex flex-col">
+      <Surface as="ul" padding="none" dividers="pane" className="flex flex-col">
         {shown.routes.map((route) => {
           const inUse = route.address === routes.active;
           const reachable = checks?.[route.address];
@@ -196,10 +213,10 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
             <li
               key={route.address}
               data-route={route.address}
-              className="flex min-w-0 items-center gap-3 px-3 py-2"
+              className="flex min-w-0 flex-wrap items-center gap-2 py-2"
             >
               <div className={`min-w-0 flex-1 ${route.enabled ? "" : "opacity-60"}`}>
-                <Text as="div" size="secondary" tone="inherit" truncate className="font-mono">
+                <Text as="div" size="secondary" tone="inherit" family="mono" truncate>
                   {route.address}
                 </Text>
                 <Text as="div" tone="muted">
@@ -207,23 +224,9 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
                 </Text>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                {inUse ? (
-                  <Badge size="xs" tone="accent">
-                    {t("In use")}
-                  </Badge>
-                ) : null}
-                {!route.enabled ? (
-                  <Badge size="xs">{t("Off")}</Badge>
-                ) : checks === undefined ? (
-                  <Badge size="xs">{t("Checking…")}</Badge>
-                ) : reachable === true ? (
-                  <Badge size="xs" tone="success">
-                    {t("Responds")}
-                  </Badge>
-                ) : reachable === false ? (
-                  <Badge size="xs" tone="warning">
-                    {t("No response")}
-                  </Badge>
+                {inUse ? <StatusDot tone="accent" label={t("In use")} /> : null}
+                {route.enabled && reachable === false ? (
+                  <StatusDot tone="warning" label={t("No response")} />
                 ) : null}
                 {route.source === "reported" ? (
                   <Switch
@@ -238,12 +241,14 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
           );
         })}
       </Surface>
-      {error ? <InlineError>{error}</InlineError> : null}
-      {readError ? <InlineError>{t("Addresses could not be loaded.")}</InlineError> : null}
-      {probeError ? <InlineError>{t("Address check unavailable.")}</InlineError> : null}
-      <Button disabled={saving} loading={loading} onClick={() => setRetry((value) => value + 1)}>
-        {readError || probeError ? t("Retry") : t("Check again")}
-      </Button>
+      {/* One message at a time; the Check again / Retry button above is the recovery. */}
+      {error ? (
+        <InlineError details={error}>{t("Could not change this address.")}</InlineError>
+      ) : readError ? (
+        <InlineError>{t("Addresses could not be loaded.")}</InlineError>
+      ) : probeError ? (
+        <InlineError>{t("Address check unavailable.")}</InlineError>
+      ) : null}
     </section>
   );
 }

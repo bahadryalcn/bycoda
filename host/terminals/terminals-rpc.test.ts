@@ -20,7 +20,12 @@ async function setup() {
   const store = new HostStore(join(root, "host.db"));
   const engine = new HostEngine(store, {});
   let exit = (_code: number | null) => {};
-  const child = { write: vi.fn(async () => {}), stop: vi.fn(async () => exit(0)) };
+  const child = {
+    write: vi.fn(async () => {}),
+    stop: vi.fn(async () => exit(0)),
+    interrupt: vi.fn(async () => {}),
+    resize: vi.fn(async () => {}),
+  };
   const launch = vi.fn(
     (
       _profile: unknown,
@@ -32,11 +37,26 @@ async function setup() {
       return child;
     },
   );
-  const terminals = new HostTerminals(launch, () => ({
-    profiles: [{ id: "test", name: "Test shell", path: "/test", kind: "sh" }],
-    chosenId: null,
-    defaultId: "test",
-  }));
+  const launchPty = vi.fn(
+    (
+      profile: unknown,
+      cwd: string,
+      _size: { cols: number; rows: number },
+      output: (data: string) => void,
+      onExit: (code: number | null) => void,
+    ) => launch(profile, cwd, output, onExit),
+  );
+  const terminals = new HostTerminals(
+    launch,
+    () => ({
+      profiles: [{ id: "test", name: "Test shell", path: "/test", kind: "sh" }],
+      chosenId: null,
+      defaultId: "test",
+    }),
+    undefined,
+    undefined,
+    launchPty,
+  );
   const server = await createHostServer(
     engine,
     [],
@@ -87,7 +107,7 @@ async function setup() {
     await store.close();
     await rm(root, { recursive: true, force: true });
   });
-  return { root, project, other, store, server, device, terminals, child, launch, call };
+  return { root, project, other, store, server, device, terminals, child, launch, launchPty, call };
 }
 
 it("requires paired owner authentication and host identity before any terminal dispatch", async () => {
@@ -97,6 +117,7 @@ it("requires paired owner authentication and host identity before any terminal d
     "terminals.create",
     "terminals.read",
     "terminals.write",
+    "terminals.resize",
     "terminals.interrupt",
     "terminals.close",
   ]) {
@@ -118,31 +139,39 @@ it("requires paired owner authentication and host identity before any terminal d
   expect(s.launch).not.toHaveBeenCalled();
 });
 
-it("advertises pipes, deduplicates creation, rejects escaping roots and protects cross-project terminals", async () => {
+it("advertises PTYs, deduplicates creation, rejects escaping roots and protects cross-project terminals", async () => {
   const s = await setup();
   expect((await s.call("environment.describe")).body.result.capabilities).toContain("terminals.v1");
   expect((await s.call("environment.describe")).body.result.capabilities).toContain(
     "transport.ws.terminals.command.v1",
   );
-  const params = { projectId: s.project.id, requestId: "request-03" };
+  const params = { projectId: s.project.id, requestId: "request-03", cols: 100, rows: 30 };
   const created = await s.call("terminals.create", params);
   expect(created.status).toBe(200);
   expect(created.body.result).toMatchObject({
     projectId: s.project.id,
-    transport: "pipe",
+    transport: "pty",
     state: "running",
   });
+  expect(s.launchPty.mock.calls[0][2]).toEqual({ cols: 100, rows: 30 });
   expect((await s.call("terminals.create", params)).body.result.id).toBe(created.body.result.id);
   expect(s.launch).toHaveBeenCalledTimes(1);
   for (const method of [
     "terminals.read",
     "terminals.write",
+    "terminals.resize",
     "terminals.interrupt",
     "terminals.close",
   ])
     expect(
-      (await s.call(method, { projectId: s.other.id, id: created.body.result.id, data: "never\n" }))
-        .body.error,
+      (
+        await s.call(method, {
+          projectId: s.other.id,
+          id: created.body.result.id,
+          ...(method === "terminals.write" ? { data: "never\n" } : {}),
+          ...(method === "terminals.resize" ? { cols: 80, rows: 24 } : {}),
+        })
+      ).body.error,
     ).toContain("unavailable");
   expect(
     (await s.call("terminals.create", { ...params, requestId: "request-04", cwd: s.root })).body
@@ -164,6 +193,21 @@ it("advertises pipes, deduplicates creation, rejects escaping roots and protects
     ).body.result,
   ).toEqual({ accepted: true });
   expect(s.child.write).toHaveBeenCalledExactlyOnceWith("exact\n");
+  const id = created.body.result.id;
+  expect(
+    (await s.call("terminals.resize", { projectId: s.project.id, id, cols: 120, rows: 40 })).body
+      .result,
+  ).toEqual({ accepted: true });
+  expect(s.child.resize).toHaveBeenCalledExactlyOnceWith(120, 40);
+  expect(
+    (await s.call("terminals.resize", { projectId: s.project.id, id, cols: 0, rows: 40 })).body
+      .error,
+  ).toBeTruthy();
+  expect(
+    (await s.call("terminals.interrupt", { projectId: s.project.id, id })).body.result,
+  ).toEqual({ accepted: true });
+  expect(s.child.interrupt).toHaveBeenCalledOnce();
+  expect(s.child.stop).not.toHaveBeenCalled();
   expect(
     (await s.call("terminals.close", { projectId: s.project.id, id: created.body.result.id })).body
       .result,
@@ -197,6 +241,7 @@ it("does not allow read-only scoped log credentials to create or write terminals
     "terminals.create",
     "terminals.read",
     "terminals.write",
+    "terminals.resize",
     "terminals.interrupt",
     "terminals.close",
   ]) {

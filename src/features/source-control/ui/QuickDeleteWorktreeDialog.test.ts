@@ -6,7 +6,10 @@ import { QuickDeleteWorktreeDialog } from "./QuickDeleteWorktreeDialog";
 import { listWorktrees, type Worktree } from "../model/worktrees";
 import { gitDiffIndex, type GitDiffIndex } from "../../../platform/tauri/fs";
 
-vi.mock("../model/worktrees", () => ({ listWorktrees: vi.fn() }));
+vi.mock("../model/worktrees", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../model/worktrees")>()),
+  listWorktrees: vi.fn(),
+}));
 vi.mock("../../../platform/tauri/fs", () => ({ gitDiffIndex: vi.fn() }));
 vi.mock("../../../platform/tauri/clipboard", () => ({ copyText: vi.fn() }));
 const tree: Worktree = {
@@ -47,11 +50,11 @@ afterEach(async () => {
   vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
-const render = () =>
+const render = (request = { cwd: "remote://host/repo", deletePath: tree.path }) =>
   act(async () =>
     root.render(
       createElement(QuickDeleteWorktreeDialog, {
-        request: { cwd: "remote://host/repo", deletePath: tree.path },
+        request,
         onRemove,
         onClose,
       }),
@@ -76,10 +79,40 @@ it("shows separate changes, staged and unpushed counts and preserves sessions wh
   expect(onClose).toHaveBeenCalledOnce();
 });
 
+it("requires fresh branch-delete consent for each worktree selection", async () => {
+  const first = { ...tree, unpushed: 0 };
+  const second = { ...first, path: "remote://host/trees/other", branch: "other" };
+  vi.mocked(listWorktrees).mockResolvedValue({
+    worktrees: [first, second],
+    defaultRoot: "/trees",
+  });
+  await render({ cwd: first.path, deletePath: "" });
+  const checkbox = () => document.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+  const select = async (label: string) => {
+    const trigger = document.querySelector<HTMLButtonElement>('[aria-haspopup="dialog"]')!;
+    await act(async () => trigger.click());
+    await act(async () =>
+      [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+        .find((option) => option.textContent?.trim() === label)!
+        .click(),
+    );
+  };
+
+  await act(async () => checkbox().click());
+  expect(checkbox().checked).toBe(true);
+  await select("other");
+  expect(checkbox().checked).toBe(false);
+  await select("feature");
+  expect(checkbox().checked).toBe(false);
+  await select("other");
+  await act(async () => remove().click());
+  expect(onRemove).toHaveBeenCalledWith(first.path, second.path, true, true);
+});
+
 it("does not treat a status failure as zero changes or allow deletion", async () => {
   vi.mocked(gitDiffIndex).mockRejectedValue(new Error("Status unavailable"));
   await render();
-  expect(remove().disabled).toBe(true);
+  expect(remove().getAttribute("aria-disabled") === "true").toBe(true);
   expect(document.querySelector("dl")).toBeNull();
   await act(async () =>
     [...document.querySelectorAll("button")]
@@ -90,6 +123,25 @@ it("does not treat a status failure as zero changes or allow deletion", async ()
   expect(onRemove).not.toHaveBeenCalled();
 });
 
+it("requires renewed consent when the branch at the selected path changes", async () => {
+  const first = { ...tree, unpushed: 0 };
+  vi.mocked(listWorktrees).mockResolvedValue({ worktrees: [first], defaultRoot: "/trees" });
+  await render();
+  const checkbox = () => document.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+  await act(async () => checkbox().click());
+  expect(checkbox().checked).toBe(true);
+
+  vi.mocked(listWorktrees).mockResolvedValue({
+    worktrees: [{ ...first, branch: "renamed" }],
+    defaultRoot: "/trees",
+  });
+  await render();
+  expect(document.body.textContent).toContain("Also delete branch renamed");
+  expect(checkbox().checked).toBe(false);
+  await act(async () => remove().click());
+  expect(onRemove).toHaveBeenCalledWith("remote://host/repo", tree.path, true, true);
+});
+
 it.each([{ locked: true }, { isMain: true }, { branch: null }])(
   "keeps deletion safeguards for %s",
   async (blocked) => {
@@ -98,7 +150,7 @@ it.each([{ locked: true }, { isMain: true }, { branch: null }])(
       defaultRoot: "/trees",
     });
     await render();
-    expect(remove().disabled).toBe(true);
+    expect(remove().getAttribute("aria-disabled") === "true").toBe(true);
     expect(onRemove).not.toHaveBeenCalled();
   },
 );

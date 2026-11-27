@@ -16,7 +16,7 @@
 .workspace:not(:has(.work)) {
   grid-template-columns: minmax(0, 1fr);
 }
-@media (max-width: 900px) {
+@container assistant-room (max-width: 900px) {
   .workspace {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-6);
@@ -24,13 +24,13 @@
 }
 .notes {
   display: grid;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 
 .noteGroup {
   display: grid;
-  gap: 4px;
+  gap: var(--ui-space-1);
   min-inline-size: 0;
 }
 
@@ -40,7 +40,7 @@
 
 .noteList {
   display: grid;
-  gap: 4px;
+  gap: var(--ui-space-1);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -51,17 +51,13 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-items: baseline;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 
 .note[data-timed] {
   grid-template-columns: 3rem minmax(0, 1fr);
 }
-.noteTime {
-  font-variant-numeric: tabular-nums;
-}
-
 .noteText {
   min-inline-size: 0;
   overflow: hidden;
@@ -70,20 +66,20 @@
 
 .glance {
   display: grid;
-  gap: 12px;
+  gap: var(--ui-space-3);
   min-inline-size: 0;
 }
 
 .charts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
-  gap: 16px;
+  gap: var(--ui-space-4);
   min-inline-size: 0;
 }
 
 .chart {
   display: grid;
-  gap: 4px;
+  gap: var(--ui-space-1);
   align-content: start;
   min-inline-size: 0;
 }

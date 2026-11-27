@@ -6,14 +6,17 @@ import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { sshEndpointPreview } from "../model/sshEndpointReview";
+import { sshProxyEndpointText } from "./sshProxyEndpointText";
 import {
   approveSshHttpProxy,
   revokeSshHttpProxyApproval,
   validHttpProxyCredentials,
   type SshHttpProxyRequest,
 } from "../model/sshHttpProxyApproval";
+import { errorText } from "../../../shared/lib/errors";
+import { sanitizeConnectionError } from "../model/remoteConnection";
 
 function ProxyApprovalDialog({
   request,
@@ -73,10 +76,16 @@ function ProxyApprovalDialog({
           </Button>
           <Button
             variant="primary"
-            label={
-              mode === "basic" ? t("Approve this operation") : t("Continue without authentication")
-            }
             disabled={busy || (mode === "basic" && (!consent || !valid))}
+            disabledReason={
+              busy
+                ? t("Wait for the current action to finish.")
+                : mode === "basic" && !valid
+                  ? t("Enter a proxy username and password first.")
+                  : mode === "basic" && !consent
+                    ? t("Approve sending these credentials first.")
+                    : undefined
+            }
             onClick={() => {
               if (locked.current) return;
               if (mode === "anonymous") {
@@ -98,7 +107,7 @@ function ProxyApprovalDialog({
                   else void revokeSshHttpProxyApproval(approval.ticketId).catch(() => {});
                 })
                 .catch((reason) => {
-                  if (mounted.current) setError(String(reason));
+                  if (mounted.current) setError(sanitizeConnectionError(errorText(reason)));
                 })
                 .finally(() => {
                   locked.current = false;
@@ -117,25 +126,22 @@ function ProxyApprovalDialog({
       <div className="flex min-w-0 flex-col gap-3">
         <Text as="div" tone="inherit">
           <Text wrap="anywhere" as="p" size="inherit" tone="inherit" weight="medium">
-            {secure ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
-            {sshEndpointPreview(request.endpoint.httpProxy!)}
+            {sshProxyEndpointText(request.endpoint.httpProxy!)}
           </Text>
           <Text wrap="anywhere" as="p" size="inherit" tone="muted" className="mbs-1">
-            {t("SSH target")}: {sshEndpointPreview(request.endpoint)}
-          </Text>
-          <Text as="p" size="inherit" tone="muted" className="mbs-1">
-            {t(
+            {t("SSH target")}: {sshEndpointPreview(request.endpoint)} ·{" "}
+            {
               {
-                terminal: "Terminal",
-                runbook: "SSH runbooks",
-                forward: "Port forwarding",
-                sftpList: "List directory",
-                sftpDownload: "Download",
-                sftpUpload: "Upload",
-                sftpResume: "Resume",
-                sftpDiscard: "Discard partial",
-              }[request.operation.kind],
-            )}
+                terminal: t("Terminal"),
+                runbook: t("SSH runbooks"),
+                forward: t("Port forwarding"),
+                sftpList: t("List directory"),
+                sftpDownload: t("Download"),
+                sftpUpload: t("Upload"),
+                sftpResume: t("Resume"),
+                sftpDiscard: t("Discard partial"),
+              }[request.operation.kind]
+            }
           </Text>
           {request.operation.kind === "runbook" ? (
             <p className="mbs-1 break-all">
@@ -176,7 +182,9 @@ function ProxyApprovalDialog({
             { value: "basic", label: "Basic" },
           ]}
         />
-        {error ? <Alert tone="danger">{error}</Alert> : null}
+        {error ? (
+          <InlineError details={error}>{t("Could not approve this proxy operation.")}</InlineError>
+        ) : null}
         {mode === "basic" ? (
           <>
             <TextField
@@ -200,27 +208,18 @@ function ProxyApprovalDialog({
               checked={consent}
               disabled={busy}
               onChange={(event) => setConsent(event.target.checked)}
-              label={t(
+              label={
                 secure
-                  ? "I approve these Basic credentials for this TLS-verified HTTPS proxy and this operation."
-                  : "I allow sending these Basic credentials to this HTTP proxy without TLS for this operation.",
-              )}
-              size="caption"
-              className="flex items-start gap-2"
+                  ? t(
+                      "I approve these Basic credentials for this TLS-verified HTTPS proxy and this operation only. They are never saved.",
+                    )
+                  : t(
+                      "I allow sending these Basic credentials to this HTTP proxy without TLS for this operation only. They are never saved.",
+                    )
+              }
             />
-            <Text as="p" tone="muted">
-              {t(
-                "SSH traffic remains encrypted after CONNECT. Proxy credentials are temporary and never saved; another operation needs a new approval.",
-              )}
-            </Text>
           </>
-        ) : (
-          <Text as="p" tone="muted">
-            {t(
-              "Continue without credentials. A proxy authentication error will not retry automatically.",
-            )}
-          </Text>
-        )}
+        ) : null}
       </div>
     </Modal>
   );

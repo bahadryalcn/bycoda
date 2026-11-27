@@ -1,0 +1,81 @@
+/* TikTok tools: a section strip over panels that read first, then act. Semantic tokens only. */
+.tiktok-tools {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-inline-size: 0;
+}
+
+.tiktok-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+.tiktok-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+
+.tiktok-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+.tiktok-grid > [data-wide] {
+  grid-column: 1 / -1;
+}
+
+.tiktok-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tiktok-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-inline-size: 0;
+  padding-block: var(--space-3);
+}
+
+.tiktok-row:first-child {
+  padding-block-start: 0;
+}
+
+.tiktok-row:last-child > [data-orientation] {
+  display: none;
+}
+
+.tiktok-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+
+.tiktok-row-text {
+  overflow-wrap: anywhere;
+}
+
+.tiktok-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.tiktok-section {
+  padding-block-start: var(--space-3);
+}

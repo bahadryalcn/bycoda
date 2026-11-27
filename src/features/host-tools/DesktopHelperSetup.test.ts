@@ -57,6 +57,32 @@ it("keeps verified helper selection explicit and never enables control", async (
   expect(use).toHaveBeenCalledExactlyOnceWith(helper);
   expect(mock.request).toHaveBeenCalledExactlyOnceWith({ op: "status" });
 });
+it("pauses status reads while hidden, catches up when visible and backs off after failures", async () => {
+  vi.useFakeTimers();
+  let hidden = false;
+  Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+  mock.request.mockRejectedValue(new Error("helper offline"));
+  await render();
+  expect(mock.request).toHaveBeenCalledTimes(1);
+  // First failure waits 4 s, then 8 s: never the fixed 2 s cadence.
+  await act(async () => vi.advanceTimersByTime(3999));
+  expect(mock.request).toHaveBeenCalledTimes(1);
+  await act(async () => vi.advanceTimersByTime(1));
+  expect(mock.request).toHaveBeenCalledTimes(2);
+  await act(async () => vi.advanceTimersByTime(8000));
+  expect(mock.request).toHaveBeenCalledTimes(3);
+  hidden = true;
+  await act(async () => vi.advanceTimersByTime(120000));
+  expect(mock.request).toHaveBeenCalledTimes(3);
+  hidden = false;
+  mock.request.mockResolvedValue({ phase: "ready", helper });
+  await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+  expect(mock.request).toHaveBeenCalledTimes(4);
+  expect(container.textContent).toContain("Ready");
+  delete (document as { hidden?: boolean }).hidden;
+  vi.useRealTimers();
+});
+
 it("prepares a missing helper once while computer use is on and never enables control", async () => {
   const use = await render({ autoPrepare: true });
   expect(prepares()).toBe(1);
@@ -104,10 +130,18 @@ it("shows an error with Retry after a failed automatic preparation instead of lo
   });
   await render({ autoPrepare: true });
   expect(prepares()).toBe(1);
-  expect(container.textContent).toContain("Helper checksum did not match.");
+  expect(container.textContent).toContain("Could not prepare the helper.");
   expect(container.textContent).toContain("Error");
   await act(async () =>
-    container.querySelector<HTMLButtonElement>('button:not([aria-label="Help"])')!.click(),
+    [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.getAttribute("aria-label")?.startsWith("Details"))!
+      .click(),
+  );
+  expect(document.body.textContent).toContain("Helper checksum did not match.");
+  await act(async () =>
+    [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "Retry")!
+      .click(),
   );
   expect(prepares()).toBe(2);
 });

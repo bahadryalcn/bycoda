@@ -7,6 +7,7 @@ import type { HostCrews } from "./crews";
 import type { HostTasks } from "../tasks/tasks";
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
 import { composeCommandAdmission } from "../execution/command-admission";
+import { workCrewId } from "../../src/shared/model/host-contracts/work-executor";
 
 /** Keep focused fake engines inside real Work admission and durable receipt recovery. */
 export function wireCrewWorkEngine(store: HostStore, engine: Pick<HostEngine, "command">): void {
@@ -64,12 +65,14 @@ export function wireCrewWorkEngine(store: HostStore, engine: Pick<HostEngine, "c
 export function wireCrewSourceTasks(crews: HostCrews, tasks: HostTasks, store: HostStore) {
   const sources: HostTask[] = [];
   const list = tasks.list.bind(tasks);
+  const get = tasks.get?.bind(tasks);
   const save = tasks.save?.bind(tasks);
   const tick = tasks.tick.bind(tasks);
   tasks.list = vi.fn(async (projectId?: string) => [
     ...(await list(projectId)),
     ...sources.filter((task) => !projectId || task.projectId === projectId),
   ]);
+  tasks.get = vi.fn(async (id) => sources.find((task) => task.id === id) ?? (await get?.(id)));
   tasks.save = vi.fn(async (raw: unknown) => {
     const task = raw as HostTask;
     if (!task.id.startsWith("crew-")) {
@@ -87,7 +90,7 @@ export function wireCrewSourceTasks(crews: HostCrews, tasks: HostTasks, store: H
     for (const task of sources.filter((entry) => entry.status === "queued")) {
       const run = await crews.startRun(
         task.projectId,
-        task.crewDefinitionId!,
+        workCrewId(task)!,
         task.prompt,
         task.crewExecutionId!,
         task.runtimeMode,

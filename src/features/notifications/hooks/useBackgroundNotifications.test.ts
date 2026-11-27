@@ -52,10 +52,61 @@ it("keeps one poll in flight while workspace leadership enumeration is pending",
   mocks.tasks.mockResolvedValue([]);
   root = createRoot(document.createElement("div"));
   await act(async () => root!.render(createElement(Watcher)));
-  await act(async () => vi.advanceTimersByTimeAsync(120_000));
+  // Inside the poll deadline the pending census holds the gate shut.
+  await act(async () => vi.advanceTimersByTimeAsync(40_000));
   expect(mocks.windows).toHaveBeenCalledOnce();
   await act(async () => resolveWindows([{ label: "main" }]));
   expect(mocks.tasks).toHaveBeenCalledOnce();
+});
+
+it("abandons a poll that never answers so the next tick still polls", async () => {
+  vi.useFakeTimers();
+  mocks.windows
+    .mockImplementationOnce(() => new Promise(() => {}))
+    .mockResolvedValue([{ label: "main" }]);
+  mocks.current.mockReturnValue({ label: "main" });
+  mocks.tasks.mockResolvedValue([]);
+  root = createRoot(document.createElement("div"));
+  await act(async () => root!.render(createElement(Watcher)));
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  expect(mocks.windows).toHaveBeenCalledTimes(2);
+  expect(mocks.tasks).toHaveBeenCalledOnce();
+});
+
+it("discards the late answer of an abandoned poll and keeps the newer baseline", async () => {
+  vi.useFakeTimers();
+  mocks.windows.mockResolvedValue([{ label: "main" }]);
+  mocks.current.mockReturnValue({ label: "main" });
+  const task = {
+    id: "task",
+    machineId: "host",
+    machineName: "Host",
+    title: "Work",
+    status: "running",
+  };
+  let resolveLate!: (tasks: unknown[]) => void;
+  mocks.tasks
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveLate = resolve;
+        }),
+    )
+    .mockResolvedValue([task]);
+  root = createRoot(document.createElement("div"));
+  await act(async () => root!.render(createElement(Watcher)));
+  // The first poll passes its deadline; the 60 s tick records the baseline.
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  expect(mocks.tasks).toHaveBeenCalledTimes(2);
+  // Its late answer neither notifies nor replaces the baseline.
+  await act(async () => resolveLate([{ ...task, status: "review" }]));
+  expect(mocks.notify).not.toHaveBeenCalled();
+  mocks.tasks.mockResolvedValue([{ ...task, status: "review" }]);
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  expect(mocks.notify).toHaveBeenCalledOnce();
+  expect(mocks.notify).toHaveBeenCalledWith(
+    expect.objectContaining({ target: "tasks", kind: "finished" }),
+  );
 });
 
 it("does not start background reads when leadership resolves after unmount", async () => {

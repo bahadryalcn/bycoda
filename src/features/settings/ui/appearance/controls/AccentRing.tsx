@@ -22,9 +22,11 @@ export function AccentRing({ appearance }: { appearance: AppearanceSettings }) {
           appearance.onPreferences({ ...appearance.preferences, accentReadability })
         }
       />
-      <Badge size="sm" tone={passes ? "success" : "warning"} className="theme-contrast-readout">
-        {`${passes ? "AA" : t("Below AA")} ${ratio.toFixed(1)}:1`}
-      </Badge>
+      {passes ? null : (
+        <Badge size="sm" tone="warning" className="theme-contrast-readout">
+          {`${t("Below AA")} ${ratio.toFixed(1)}:1`}
+        </Badge>
+      )}
     </div>
   );
 }

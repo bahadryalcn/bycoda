@@ -1,4 +1,5 @@
 import { hostQuestionToken } from "../../sessions/question-source";
+import { workCrewId } from "../../../src/shared/model/host-contracts/work-executor";
 import type { HostStore } from "../../store";
 import type { HostSession } from "../../../src/features/connections/model/protocol";
 import type {
@@ -132,7 +133,7 @@ export async function readAssistantQuestionStatus(
             tasks[0].runId !== record.runId ||
             tasks[0].projectId !== record.projectId ||
             tasks[0].crewRunId ||
-            tasks[0].crewDefinitionId ||
+            workCrewId(tasks[0]) ||
             tasks[0].error
           )
             reason =

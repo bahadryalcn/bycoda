@@ -1,18 +1,19 @@
+import { errorText } from "../../../shared/lib/errors";
 import { createStore } from "../../../shared/lib/store";
-import { refreshHarnessCatalogs } from "../../../integrations/harness/core/registry";
+import { refreshHarnessCatalogsStrict } from "../../../integrations/harness/core/registry";
 import { catalogModelsFor, hasLiveCatalog } from "../../sessions/model/models";
 import type { HarnessId } from "../../sessions/model/session";
 
 /**
- * What the model list a provider shows actually is. Adapters retain older data
- * when a refresh finds nothing, so a finished refresh is not proof of a fresh
- * catalog: only a list that replaced the previous one counts as `fresh`.
+ * What the model list a provider shows actually is. A failed probe or an empty answer
+ * rejects the refresh and keeps the earlier list (`error`); only a probe that listed
+ * models counts as `fresh`, and a skipped probe is `retained`.
  */
 export type CatalogReceipt =
   | { status: "refreshing"; previous?: CatalogReceipt }
-  /** A refresh replaced the list with what the CLI reported. */
+  /** A probe just listed these models, whether or not they differ from before. */
   | { status: "fresh"; at: number; count: number }
-  /** The refresh finished without a new list; the earlier CLI list is kept. */
+  /** No probe ran (a live list was already loaded); the earlier CLI list is kept. */
   | { status: "retained"; at: number; count: number }
   /** No live list exists; the built-in list shipped with the app is shown. */
   | { status: "bundled"; at: number; count: number }
@@ -62,14 +63,17 @@ export function refreshProviderCatalog(
   const running = inflight.get(harness);
   if (running) return running;
   const previous = receipts.get(harness);
-  const before = catalogModelsFor(harness);
   const hadLive = hasLiveCatalog(harness);
   publish(harness, { status: "refreshing", previous });
-  const attempt = refreshHarnessCatalogs([harness], options)
-    .then((): Settled => {
+  const attempt = refreshHarnessCatalogsStrict([harness], options)
+    .then((probed): Settled => {
       const after = catalogModelsFor(harness);
       const at = Date.now();
-      if (after !== before) return { status: "fresh", at, count: after.length };
+      // A probe that answered with the same list still verified it, so it is fresh;
+      // a skipped probe (live list, no force) verified nothing.
+      if (probed.has(harness) && hasLiveCatalog(harness)) {
+        return { status: "fresh", at, count: after.length };
+      }
       return hasLiveCatalog(harness)
         ? { status: "retained", at, count: after.length }
         : { status: "bundled", at, count: after.length };
@@ -78,7 +82,7 @@ export function refreshProviderCatalog(
       status: "error",
       at: Date.now(),
       count: catalogModelsFor(harness).length,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorText(error),
       retained: hadLive,
     }))
     .then((settled) => {

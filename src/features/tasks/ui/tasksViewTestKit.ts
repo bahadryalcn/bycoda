@@ -14,10 +14,15 @@ export const button = (scope: ParentNode, label: string) =>
   Array.from(scope.querySelectorAll("button")).find(
     (entry) => buttonName(entry) === label || buttonText(entry) === label,
   );
-/** Opens the shared "Agent settings" Disclosure (native details) of a task form. */
+
+export async function openTaskProblem(scope: ParentNode, label = "Connection issue") {
+  await act(async () => button(scope, label)!.click());
+  return document.querySelector<HTMLElement>(`[role="dialog"][aria-label="${label}"]`)!;
+}
+/** Opens the task form's More options disclosure. */
 export async function openAgentSettings(form: ParentNode) {
   const summary = Array.from(form.querySelectorAll("summary")).find((entry) =>
-    entry.textContent?.trim().startsWith("Agent settings"),
+    entry.textContent?.trim().startsWith("More options"),
   )!;
   const details = summary.parentElement as HTMLDetailsElement;
   await act(async () => {

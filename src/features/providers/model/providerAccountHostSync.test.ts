@@ -5,6 +5,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("../../connections/public/connections", () => ({ remoteRequest: mocks.request }));
 import { startProviderAccountHostSync } from "./providerAccountHostSync";
 import { saveProviderAccount, providerAccounts, editProviderAccount } from "./providerAccounts";
+import { announceRemoteRecovery } from "../../connections/model/remoteHealth";
 let stop: (() => void) | undefined;
 async function flush() {
   for (let i = 0; i < 30; i++) await Promise.resolve();
@@ -30,20 +31,60 @@ afterEach(() => {
   stop?.();
   vi.useRealTimers();
 });
-it("pushes kind and explicitly clears it with Automatic", async () => {
+it("publishes account styles on recovery when the Host was unavailable at mount", async () => {
+  let connected = false;
+  mocks.invoke.mockImplementation(async (method: string) =>
+    method === "local_host_connect" && connected ? { id: "local" } : null,
+  );
+  stop = startProviderAccountHostSync();
+  await flush();
+  expect(mocks.request).not.toHaveBeenCalled();
+
+  connected = true;
+  announceRemoteRecovery("local-env");
+  await flush();
+  expect(mocks.request).toHaveBeenCalledWith(
+    "local",
+    "host.settings.save",
+    {
+      providerAccountStyles: expect.objectContaining({
+        codex: expect.objectContaining({ "account-a": expect.objectContaining({ label: "A" }) }),
+      }),
+    },
+    false,
+    true,
+  );
+});
+it("pushes the saved kind and preserves it on a metadata edit without a kind", async () => {
   stop = startProviderAccountHostSync();
   await flush();
   expect(mocks.request.mock.calls[0]?.[2].providerAccountStyles.codex["account-a"]).toMatchObject({
     kind: "work",
-    derivedKind: "personal",
   });
   editProviderAccount("codex", "account-a", { label: "A", color: "coral" });
   await flush();
   const style = mocks.request.mock.calls.at(-1)?.[2].providerAccountStyles.codex["account-a"];
-  expect(style).not.toHaveProperty("kind");
-  expect(style.derivedKind).toBe("personal");
+  expect(style.kind).toBe("work");
 });
-it("applies inbound kind and clearing without echoing or changing defaults", async () => {
+it("publishes a detected Team account as Work on startup", async () => {
+  saveProviderAccount({ id: "account-team", provider: "claude", label: "Studio" });
+  mocks.invoke.mockImplementation(async (method: string, args?: { accountId: string }) =>
+    method === "local_host_connect"
+      ? { id: "local" }
+      : args?.accountId === "account-team"
+        ? { plan: "Team" }
+        : null,
+  );
+  stop = startProviderAccountHostSync();
+  await flush();
+  expect(providerAccounts("claude").find((a) => a.id === "account-team")?.kind).toBe("work");
+  expect(
+    mocks.request.mock.calls[0]?.[2].providerAccountStyles.claude["account-team"],
+  ).toMatchObject({
+    kind: "work",
+  });
+});
+it("applies inbound kind and preserves it if a legacy Host omits it", async () => {
   stop = startProviderAccountHostSync();
   await flush();
   const original = providerAccounts("codex").map((a) => [a.id, a.isDefault]);
@@ -64,7 +105,7 @@ it("applies inbound kind and clearing without echoing or changing defaults", asy
   });
   await vi.advanceTimersByTimeAsync(5000);
   await flush();
-  expect(providerAccounts("codex").find((a) => a.id === "account-a")?.kind).toBeUndefined();
+  expect(providerAccounts("codex").find((a) => a.id === "account-a")?.kind).toBe("personal");
   expect(providerAccounts("codex").map((a) => [a.id, a.isDefault])).toEqual(original);
   expect(mocks.request.mock.calls.filter((call) => call[1] === "host.settings.save")).toHaveLength(
     1,
@@ -107,4 +148,59 @@ it("publishes the selected provider default for Automatic delegation", async () 
   expect(mocks.request.mock.calls[0]?.[2].providerAccountStyles.codex["account-a"].isDefault).toBe(
     true,
   );
+});
+
+function hostReads() {
+  return mocks.request.mock.calls.filter((call) => call[1] === "host.settings.get").length;
+}
+function setHidden(hidden: boolean) {
+  Object.defineProperty(document, "hidden", { configurable: true, value: hidden });
+}
+afterEach(() => setHidden(false));
+
+it("backs off while reads find nothing and resets after an applied change", async () => {
+  stop = startProviderAccountHostSync();
+  await flush();
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(hostReads()).toBe(1);
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(hostReads()).toBe(1);
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(hostReads()).toBe(2);
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(hostReads()).toBeLessThanOrEqual(4);
+  mocks.request.mockResolvedValue({
+    providerAccountStyles: { codex: { "account-a": { label: "Remote", kind: "work" } } },
+  });
+  await vi.advanceTimersByTimeAsync(60_000);
+  const applied = hostReads();
+  await vi.advanceTimersByTimeAsync(5000);
+  await flush();
+  expect(hostReads()).toBe(applied + 1);
+});
+
+it("reads nothing while hidden and catches up on visibility and focus", async () => {
+  stop = startProviderAccountHostSync();
+  await flush();
+  setHidden(true);
+  await vi.advanceTimersByTimeAsync(300_000);
+  expect(hostReads()).toBe(0);
+  setHidden(false);
+  document.dispatchEvent(new Event("visibilitychange"));
+  await flush();
+  expect(hostReads()).toBe(1);
+  window.dispatchEvent(new Event("focus"));
+  await flush();
+  expect(hostReads()).toBe(2);
+});
+
+it("stops reading after the sync is stopped", async () => {
+  stop = startProviderAccountHostSync();
+  await flush();
+  stop();
+  stop = undefined;
+  await vi.advanceTimersByTimeAsync(300_000);
+  window.dispatchEvent(new Event("focus"));
+  await flush();
+  expect(hostReads()).toBe(0);
 });

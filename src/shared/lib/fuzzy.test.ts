@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { fuzzyMatch, prepareFuzzyQuery, scorePath } from "./fuzzy";
+import { fuzzyIncludes, fuzzyMatch, prepareFuzzyQuery, scorePath } from "./fuzzy";
+
+it("accepts the same texts for filtering as for ranked fuzzy matching", () => {
+  const texts = ["", "a_x_ab", "İ😀𐐀File", "İΟΣ", "Fix sidebar search"];
+  for (const query of ["", " ", "aa ab", "ab ab", "file İ", "😀𐐨", "ος", "srh fix", "absent"]) {
+    const needle = prepareFuzzyQuery(query);
+    for (const text of texts) {
+      expect(fuzzyIncludes(needle, text)).toBe(fuzzyMatch(needle, text) !== null);
+    }
+  }
+});
 
 describe("fuzzy highlight offsets", () => {
   it("maps lowercase expansions back to original UTF-16 positions", () => {
@@ -38,5 +48,32 @@ describe("fuzzy highlight offsets", () => {
 
   it("uses original boundaries for scoring after an expansion", () => {
     expect(fuzzyMatch("file", "İ/File")).toEqual({ score: 55, positions: [2, 3, 4, 5] });
+  });
+});
+
+describe("fuzzy best alignment", () => {
+  it("scores and highlights the consecutive word-start run, not the leftmost scatter", () => {
+    expect(fuzzyMatch("ab", "a_x_ab")).toEqual({ score: 24, positions: [4, 5] });
+    expect(fuzzyMatch("ab", "xaxbab")).toEqual({ score: 10, positions: [4, 5] });
+  });
+
+  it("ranks a contiguous match above a scattered one", () => {
+    const contiguous = fuzzyMatch("ab", "a_x_ab");
+    // Give both alignments the same word-boundary bonus and text length.
+    const scattered = fuzzyMatch("ab", "a_xxxb");
+    expect(contiguous && scattered && contiguous.score > scattered.score).toBe(true);
+  });
+
+  it("breaks equal scores toward the earliest alignment", () => {
+    expect(fuzzyMatch("a", "a a")).toEqual({ score: 17, positions: [0] });
+  });
+
+  it("lists a character shared by several tokens once", () => {
+    expect(fuzzyMatch("ab a", "ab")).toEqual({ score: 46, positions: [0, 1] });
+  });
+
+  it("keeps the leftmost alignment for inputs beyond the search bound", () => {
+    const text = `${"x".repeat(10_000)}a_x_ab`;
+    expect(fuzzyMatch("ab", text)?.positions).toEqual([10_000, 10_005]);
   });
 });

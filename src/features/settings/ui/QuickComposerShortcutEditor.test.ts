@@ -5,6 +5,16 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { QuickComposerShortcutEditor, KeybindingsPage, ShortcutEditor } from "./ShortcutSettings";
 import { saveKeybindingOverride, loadKeybindingOverrides } from "../model/settings";
+import * as bindingLabel from "../model/keybindingLabel";
+
+// Raw error text sits behind the Details popover; open it and read the dialog it shows.
+async function detailsText() {
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+  if (!trigger) return "";
+  await act(async () => trigger.click());
+  // The Details popover opens last, above any enclosing dialog.
+  return [...document.querySelectorAll('[role="dialog"]')].at(-1)?.textContent ?? "";
+}
 
 vi.mock("../../../platform/tauri/platform", () => ({
   IS_MAC: true,
@@ -60,15 +70,40 @@ async function render() {
   await act(async () => root.render(createElement(QuickComposerShortcutEditor)));
 }
 
+it("reuses the shortcut rows that still match when the filter changes", async () => {
+  const label = vi.spyOn(bindingLabel, "keybindingActionLabel");
+  try {
+    await act(async () => root.render(createElement(KeybindingsPage)));
+    const input = container.querySelector<HTMLInputElement>('[aria-label="Filter keybindings"]')!;
+    const recorder = '[aria-label="Change Settings: General shortcut"]';
+    const original = container.querySelector(recorder);
+    expect(original).not.toBeNull();
+    expect(label).toHaveBeenCalledWith("Settings: General");
+    label.mockClear();
+    const filter = async (value: string) =>
+      act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+          input,
+          value,
+        );
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    await filter("settings");
+    expect(container.querySelector(recorder)).toBe(original);
+    expect(label).not.toHaveBeenCalledWith("Settings: General");
+    await filter("");
+  } finally {
+    label.mockRestore();
+  }
+});
+
 it.each([
   { key: "Delete", code: "Delete", keyCode: 229 },
   { key: "Backspace", code: "Backspace", keyCode: 229 },
   { key: "Escape", code: "Escape", keyCode: 229 },
   { key: "k", code: "KeyK", metaKey: true, keyCode: 229 },
   { key: "Delete", code: "Delete", isComposing: true },
-  { key: "Delete", code: "Delete", repeat: true },
-  { key: "k", code: "KeyK", metaKey: true, repeat: true },
-])("keeps capture unchanged for IME and repeat events: %j", async (init) => {
+])("keeps capture unchanged for IME events: %j", async (init) => {
   const onApply = vi.fn();
   const onDisable = vi.fn();
   await act(async () =>
@@ -93,6 +128,36 @@ it.each([
   expect(onDisable).not.toHaveBeenCalled();
   expect(recorder.getAttribute("aria-pressed")).toBe("true");
   expect(event.defaultPrevented).toBe(false);
+});
+
+it.each([
+  { key: "Delete", code: "Delete", repeat: true },
+  { key: "k", code: "KeyK", metaKey: true, repeat: true },
+])("swallows the repeats of a held key without recording them: %j", async (init) => {
+  const onApply = vi.fn();
+  const onDisable = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(ShortcutEditor, {
+        name: "Test",
+        display: "Ctrl+K",
+        resetVisible: false,
+        onApply,
+        onDisable,
+        onReset: vi.fn(),
+      }),
+    ),
+  );
+  const recorder = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Change Test shortcut"]',
+  )!;
+  await act(async () => recorder.click());
+  const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+  await act(async () => recorder.dispatchEvent(event));
+  expect(onApply).not.toHaveBeenCalled();
+  expect(onDisable).not.toHaveBeenCalled();
+  expect(recorder.getAttribute("aria-pressed")).toBe("true");
+  expect(event.defaultPrevented).toBe(true);
 });
 
 it.each([false, true])(
@@ -225,7 +290,7 @@ it("keeps the previous emergency global shortcut when the OS rejects its replace
     shortcut: "Control+Option+Escape",
   });
   expect(loadKeybindingOverrides()["App: Stop computer use"]).toBeUndefined();
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("OS shortcut conflict");
+  expect(await detailsText()).toContain("OS shortcut conflict");
 });
 
 it("keeps a sibling-disabled global shortcut disabled while recording a new chord", async () => {
@@ -287,12 +352,10 @@ it("preserves an app binding when the native menu rejects a recorded shortcut", 
   });
   expect(loadKeybindingOverrides()["Settings: General"]).toBeUndefined();
   expect(input.textContent).toContain("Unassigned");
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-    "Native shortcut rejected",
-  );
+  expect(await detailsText()).toContain("Native shortcut rejected");
   expect(container.querySelector('.settings-row-control [role="alert"]')).toBeNull();
   expect(container.querySelector('.settings-row-feedback [role="alert"]')?.textContent).toContain(
-    "Native shortcut rejected",
+    "Could not save shortcut.",
   );
 });
 
@@ -361,7 +424,8 @@ it("keeps the previous shortcut when native registration fails", async () => {
   );
   expect(input.querySelector("[data-shortcut-display]")!.textContent).toBe("⌘⇧Space");
   expect(data.has("bycoda.quickComposerShortcut")).toBe(false);
-  expect(container.textContent).toContain("Shortcut is in use");
+  expect(container.textContent).toContain("Could not save shortcut.");
+  expect(await detailsText()).toContain("Shortcut is in use");
 });
 
 it("accepts Control plus one key", async () => {
@@ -417,7 +481,8 @@ it("refuses a chord another command already owns", async () => {
       }),
     ),
   );
-  expect(container.textContent).toContain("Already used by App: Search");
+  expect(container.textContent).toContain("Could not save shortcut.");
+  expect(await detailsText()).toContain("Already used by App: Search");
   expect(data.has("bycoda.quickComposerShortcut")).toBe(false);
   // A rejected chord must never reach native registration, or the OS would
   // hold a live global hotkey that is not in settings.
@@ -504,7 +569,8 @@ it("refuses an Alt-only global shortcut without registering it", async () => {
       }),
     ),
   );
-  expect(container.textContent).toContain("Quick Composer needs");
+  expect(container.textContent).toContain("Could not save shortcut.");
+  expect(await detailsText()).toContain("Quick Composer needs");
   expect(invoke).not.toHaveBeenCalled();
   expect(data.has("bycoda.quickComposerShortcut")).toBe(false);
 });
@@ -516,7 +582,8 @@ it("shows pressed keys without an error and Escape cancels recording", async () 
   )!;
   await act(async () => input.click());
   expect(input.querySelector("[data-shortcut-display]")!.textContent).toBe("Record shortcut");
-  const hint = input.closest("[data-tooltip-owner]")!;
+  // The Cancel button is the one owner of the "Del disables · Esc cancels" hint while recording.
+  const hint = container.querySelector('[aria-label="Cancel"]')!.closest("[data-tooltip-owner]")!;
   await act(async () => {
     hint.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -592,7 +659,7 @@ it("does not report a global chord saved when persistence rejects it and restore
     ),
   );
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-    "Could not save changes",
+    "Could not save shortcut.",
   );
   expect(container.textContent).not.toContain("Saved");
   expect(input.querySelector("[data-shortcut-display]")?.textContent).toBe("⌘⇧Space");

@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { request, requestReconnect, registry } = vi.hoisted(() => ({
+const { request, requestReconnect, recordRemoteCapabilities, registry } = vi.hoisted(() => ({
   request: vi.fn(),
   requestReconnect: vi.fn(),
+  recordRemoteCapabilities: vi.fn(),
   registry: { missing: false },
 }));
 const machine = {
@@ -15,7 +16,7 @@ const machine = {
 };
 vi.mock("./connections", () => ({
   knownRemoteMachine: () => machine,
-  recordRemoteCapabilities: vi.fn(),
+  recordRemoteCapabilities,
   remoteMachineFor: async () => (registry.missing ? undefined : machine),
   remoteRequest: request,
   requestMachineReconnect: requestReconnect,
@@ -28,8 +29,11 @@ import {
   isReconnecting,
   isReconnectRequested,
   cancelRemoteReconnect,
+  PAUSE_RESUME_MS,
+  RECONNECT_DESCRIBE_TIMEOUT_MS,
 } from "./remoteReconnect";
 import { invalidateConnection, readRemoteLifecycle } from "./remoteLifecycle";
+import { focusMachine } from "./machineFocus";
 import {
   applyRemoteConnection,
   forgetRemoteConnection,
@@ -42,6 +46,7 @@ import {
 const down = "Machine is unreachable. Check the host and SSH tunnel, then reconnect.";
 const denied = "SSH connection failed: Permission denied (publickey).";
 let stop: () => void;
+let releaseFocus: () => void;
 let online = true;
 
 beforeEach(() => {
@@ -56,10 +61,13 @@ beforeEach(() => {
   registry.missing = false;
   request.mockReset();
   requestReconnect.mockReset();
+  // The user works in this machine's project; unfocused machines have their own tests.
+  releaseFocus = focusMachine("env");
   stop = startRemoteAutoRecovery();
 });
 afterEach(() => {
   stop();
+  releaseFocus();
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -100,6 +108,43 @@ describe("automatic recovery", () => {
     await vi.advanceTimersByTimeAsync(120_000);
     expect(request).toHaveBeenCalledTimes(3);
     unsubscribe();
+  });
+
+  it("ends a reconnect whose describe never answers, retries later, and ignores its late answer", async () => {
+    let answerStuck: (value: { capabilities?: unknown }) => void = () => {};
+    request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answerStuck = resolve;
+        }),
+    );
+    request.mockResolvedValue({ capabilities: [] });
+    recordRemoteConnection("env", down);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(isReconnecting("env")).toBe(true);
+    await vi.advanceTimersByTimeAsync(RECONNECT_DESCRIBE_TIMEOUT_MS - 1);
+    expect(isReconnecting("env")).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(isReconnecting("env")).toBe(false);
+    answerStuck({ capabilities: ["late"] });
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(readRemoteConnection("env").status).toBe("connected");
+    expect(recordRemoteCapabilities).not.toHaveBeenCalledWith("env", ["late"]);
+  });
+
+  it("shows the countdown for the same jittered delay the retry timer uses", async () => {
+    // The first draw (the delay) is the shortest jitter; any later draw is the longest.
+    // Two separate draws would make the label and the timer disagree.
+    vi.mocked(Math.random).mockReturnValueOnce(0);
+    request.mockRejectedValue(down);
+    recordRemoteConnection("env", down);
+    expect(readRemoteLifecycle("env").nextRetryAt).toBe(1_000);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(request).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
   it("gives a blocked machine three quiet fresh attempts, then waits for Reconnect", async () => {
@@ -153,6 +198,18 @@ describe("automatic recovery", () => {
     await vi.advanceTimersByTimeAsync(120_000);
     expect(request).toHaveBeenCalledTimes(1);
     expect(readRemoteConnection("env")).toEqual({ status: "connecting" });
+  });
+
+  it("leaves a down machine nobody works in alone, and dials it once its project opens", async () => {
+    releaseFocus();
+    request.mockRejectedValue(down);
+    recordRemoteConnection("env", down);
+    window.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(request).not.toHaveBeenCalled();
+    releaseFocus = focusMachine("env");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
   it("does not retry, or prompt, when SSH needs a password", async () => {
@@ -383,6 +440,31 @@ describe("reconnectRemoteMachine", () => {
     expect(readRemoteConnection("env").status).toBe("unreachable");
     request.mockResolvedValue({});
     expect(await reconnectRemoteMachine("env")).toEqual({ ok: true });
+  });
+  it("resumes automatic recovery by itself once a stopped reconnect has waited out its pause", async () => {
+    let finish!: (value: unknown) => void;
+    request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    recordRemoteConnection("env", down);
+    const pending = reconnectRemoteMachine("env");
+    await vi.advanceTimersByTimeAsync(0);
+    cancelRemoteReconnect("env");
+    finish({});
+    await pending;
+    expect(readRemoteLifecycle("env").paused).toBe(true);
+    request.mockResolvedValue({ capabilities: [] });
+    await vi.advanceTimersByTimeAsync(PAUSE_RESUME_MS - 1);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(readRemoteLifecycle("env").paused).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(readRemoteLifecycle("env").paused).toBe(false);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(readRemoteConnection("env").status).toBe("connected");
   });
   it("asks for a fresh tunnel and reports success", async () => {
     recordRemoteConnection("env", down);

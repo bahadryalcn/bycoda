@@ -1,13 +1,19 @@
 import { boundedSet, createStore } from "../../../shared/lib/store";
 import { logOwnerRequest } from "./notificationLog";
 import { isRemoteApproval } from "./ownerApprovalRemote";
+import { ownerRequestSource, type OwnerRequestSource } from "./ownerRequestSource";
 import { parseInboxApprovalDetails, type InboxApprovalDetails } from "./inboxApprovalDetails";
+import {
+  parseManagementApprovalDetails,
+  type ManagementApprovalDetails,
+} from "./managementApprovalDetails";
 
-export type OwnerApproval = {
+export type OwnerApproval = OwnerRequestSource & {
   id: string;
   sessionId?: string;
   /** Native action name; absent for approvals created outside the native relay. */
   action?: string;
+  operationId?: string;
   title: string;
   message: string;
   confirmLabel: string;
@@ -15,6 +21,10 @@ export type OwnerApproval = {
   deadline: number;
   /** Structured preview of the same operation `message` states; absent for other approvals. */
   inbox?: InboxApprovalDetails;
+  /** Readable view of the application operation `message` states; absent for other approvals. */
+  management?: ManagementApprovalDetails;
+  /** `text`: the application's own consent question, read as prose rather than an exact operation. */
+  presentation?: "text";
   /** A paired phone may also answer this approval; false for secrets and desktop input. */
   remote: boolean;
 };
@@ -36,6 +46,40 @@ const pending = new Map<
 >();
 const settled = new Map<string, { signature: string; answer?: boolean }>();
 const surfaces = new Map<string, number>();
+/** Staged batch choices; they survive chat/dialog remounts and end with their request. */
+const drafts = new Map<string, boolean>();
+export const ownerApprovalDraft = (id: string) => drafts.get(id);
+export function stageOwnerApproval(id: string, approved: boolean): void {
+  if (pending.has(id)) drafts.set(id, approved);
+}
+/** Requests the owner put off: the off-page dialog skips them, their chat and the sheet still list them. */
+const deferred = new Set<string>();
+export const isOwnerApprovalDeferred = (id: string) => deferred.has(id);
+/** Requests the owner asked to answer in the shared dialog, even while their chat shows the card. */
+const presented = new Set<string>();
+export const isOwnerApprovalPresented = (id: string) => presented.has(id);
+export function deferOwnerApprovals(ids: readonly string[]): void {
+  for (const id of ids) {
+    presented.delete(id);
+    if (pending.has(id)) deferred.add(id);
+  }
+  // A new snapshot lets the dialog routing drop the deferred requests.
+  requests = [...requests];
+  store.notify();
+}
+export function reopenOwnerApproval(id: string): void {
+  if (!deferred.delete(id)) return;
+  requests = [...requests];
+  store.notify();
+}
+/** Opens the shared dialog on this request now, wherever the owner is. */
+export function presentOwnerApproval(id: string): void {
+  if (!pending.has(id)) return;
+  deferred.delete(id);
+  presented.add(id);
+  requests = [...requests];
+  store.notify();
+}
 const outcomes = new Set<(outcome: OwnerApprovalOutcome) => void>();
 /** Every pending approval ends once, answered (`answer` set) or not (timeout, revocation, closed window). */
 export function onOwnerApprovalOutcome(listener: (outcome: OwnerApprovalOutcome) => void) {
@@ -73,6 +117,9 @@ function finishOwnerApproval(id: string, approved?: boolean): void {
   clearTimeout(entry.timer);
   entry.release();
   pending.delete(id);
+  drafts.delete(id);
+  deferred.delete(id);
+  presented.delete(id);
   let answer: boolean | undefined;
   try {
     answer = Date.now() < request.deadline && entry.allowed() ? approved : undefined;
@@ -102,6 +149,8 @@ export function requestOwnerApproval(
   payload: {
     id: string;
     sessionId?: unknown;
+    threadId?: unknown;
+    cwd?: unknown;
     action?: unknown;
     input: Record<string, unknown>;
   },
@@ -139,17 +188,26 @@ export function requestOwnerApproval(
     throw new Error("Invalid application approval.");
   }
   const inbox = parseInboxApprovalDetails(input.details);
+  const management = parseManagementApprovalDetails(input.details);
   const action = typeof payload.action === "string" ? payload.action : undefined;
   const request: OwnerApproval = {
     id: payload.id,
     sessionId: payload.sessionId as string | undefined,
+    ...ownerRequestSource(payload),
     ...(action ? { action } : {}),
+    ...(typeof input.operationId === "string" && input.operationId.length <= 300
+      ? { operationId: input.operationId }
+      : {}),
     title: input.title,
     message: input.message,
     confirmLabel: input.confirmLabel,
     cancelLabel: input.cancelLabel,
     deadline: input.deadline,
     inbox,
+    ...(management ? { management } : {}),
+    ...((input.details as { presentation?: unknown } | null | undefined)?.presentation === "text"
+      ? { presentation: "text" }
+      : {}),
     remote: isRemoteApproval({
       action,
       title: input.title as string,

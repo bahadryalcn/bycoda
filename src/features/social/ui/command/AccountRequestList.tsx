@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
+import { usePollingRefresh } from "../../hooks/usePollingRefresh";
 import type { AccountRequestMode, SocialAccountRequest } from "../../model/accountRequests";
 import type { SocialBrowserWorkflow } from "../../model/socialBrowser";
 import { SOCIAL_PLATFORM_NAMES } from "../../model/social";
@@ -44,7 +45,9 @@ export function AccountRequestList({
     workflow?: SocialBrowserWorkflow;
   }>();
   const [signinFailed, setSigninFailed] = useState<string>();
-  const { error, is, write } = useAccountWrite(t("The request could not be updated. Try again."));
+  const { failureTitle, details, is, write } = useAccountWrite(
+    t("The request could not be updated. Try again."),
+  );
 
   const count = items.length;
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Reports the waiting count to the screen header after each read.
@@ -52,36 +55,36 @@ export function AccountRequestList({
     onCountChange?.(count);
   }, [count, onCountChange]);
 
-  const refresh = useCallback(async () => {
-    try {
-      const result = await client.accountRequests.list();
-      setItems(result.items.filter((item) => item.status === "pending"));
-      setLoadFailed(false);
-    } catch {
-      setLoadFailed(true);
-    }
-  }, [client]);
-
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Polls the Host's pending account requests only while the screen is active.
-  useEffect(() => {
-    if (!active) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const tick = async () => {
-      await refresh();
-      if (!cancelled) timer = setTimeout(tick, POLL_MS);
-    };
-    void tick().catch(() => setLoadFailed(true));
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [active, refresh]);
+  const refresh = usePollingRefresh({
+    active,
+    scope: client,
+    intervalMs: POLL_MS,
+    load: async (isCurrent) => {
+      try {
+        const result = await client.accountRequests.list();
+        if (!isCurrent()) return;
+        setItems(result.items.filter((item) => item.status === "pending"));
+        setLoadFailed(false);
+      } catch (error) {
+        if (isCurrent()) setLoadFailed(true);
+        throw error;
+      }
+    },
+  });
 
   const approve = (request: SocialAccountRequest, mode: AccountRequestMode) =>
     write(`${mode}:${request.id}`, async () => {
       const result = await client.accountRequests.approve({ id: request.id, mode });
       await refresh();
+      // LinkedIn Pages require a Page target. Reconnect keeps the account's configured driver.
+      if (
+        request.platform === "linkedin" &&
+        mode === "signin" &&
+        (request.requestedAccountId || request.accountType === "organization")
+      ) {
+        onNavigate("accounts", { accountId: result.accountId });
+        return;
+      }
       if (mode === "create") {
         // The owner already chose to create the account, so its window opens now; if that fails the
         // dialog still offers to open it.
@@ -121,12 +124,14 @@ export function AccountRequestList({
 
   return (
     <>
+      {/* One slot for read and write failures: a failed read offers Retry, otherwise the write error. */}
       {loadFailed ? (
         <InlineError retry={{ onRetry: () => void refresh(), label: t("Try again") }}>
           {t("Account requests could not be loaded.")}
         </InlineError>
+      ) : failureTitle ? (
+        <InlineError details={details}>{failureTitle}</InlineError>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
       {signinFailed ? (
         <InlineError
           retry={{
@@ -162,35 +167,45 @@ export function AccountRequestList({
                     </Text>
                   ) : null}
                 </div>
-                <InfoPopover label={t("Why it is needed")}>
-                  <Text as="p">{item.reason}</Text>
-                  {item.suggestedName || item.suggestedUsername ? (
-                    <Text as="p" tone="muted">
+                {item.suggestedName || item.suggestedUsername ? (
+                  <InfoPopover label={t("Suggested name")}>
+                    <Text as="p">
                       {[item.suggestedName, item.suggestedUsername && `@${item.suggestedUsername}`]
                         .filter(Boolean)
                         .join(" · ")}
                     </Text>
-                  ) : null}
-                </InfoPopover>
+                  </InfoPopover>
+                ) : null}
               </div>
+              <Text
+                as="p"
+                size="caption"
+                tone="secondary"
+                leading="snug"
+                className="account-request-reason"
+              >
+                {item.reason}
+              </Text>
               <div className="account-request-actions">
+                {item.requestedAccountId ? null : (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    loading={is(`create:${item.id}`)}
+                    disabled={busy}
+                    onClick={() => void approve(item, "create")}
+                  >
+                    {t("Create account")}
+                  </Button>
+                )}
                 <Button
                   size="sm"
-                  variant="primary"
-                  loading={is(`create:${item.id}`)}
-                  disabled={busy}
-                  onClick={() => void approve(item, "create")}
-                >
-                  {t("Create account")}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
+                  variant={item.requestedAccountId ? "primary" : "secondary"}
                   loading={is(`signin:${item.id}`)}
                   disabled={busy}
                   onClick={() => void approve(item, "signin")}
                 >
-                  {t("I already have one")}
+                  {item.requestedAccountId ? t("Reconnect") : t("I already have one")}
                 </Button>
                 <Button
                   size="sm"

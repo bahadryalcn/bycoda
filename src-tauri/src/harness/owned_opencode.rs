@@ -5,9 +5,12 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read};
 use std::process::{Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use zeroize::Zeroizing;
 
+use super::owned_opencode_diagnostics::{
+    await_start, describe_exit, spawn_failure_detail, StartEvent, StderrTail,
+};
 use super::process_lifecycle::{OwnedChild, ProcessOwner, ProcessPin};
 use crate::session_store::canonical_store::{
     admit_session_effect, NativeSessionCapability, PageAdmission,
@@ -52,6 +55,90 @@ pub(crate) struct OwnedService {
     catalog_acquisitions: HashMap<String, String>,
     utility_references: HashMap<String, UtilityReference>,
     utility_acquisitions: HashMap<String, String>,
+    // Last acquire, capture or release; the idle sweep never retires before it ages out.
+    last_used: Instant,
+}
+
+/// An unused service is retired after this long without any acquire or capture.
+const IDLE_RETIRE_AFTER: Duration = Duration::from_secs(600);
+const IDLE_SWEEP_EVERY: Duration = Duration::from_secs(60);
+/// Bound for a retiring process to finish exiting before the next one may start.
+const RETIREMENT_WAIT: Duration = Duration::from_secs(5);
+
+/// Facts that decide idle retirement; anything not provably idle keeps it running.
+struct IdleFacts {
+    open_references: usize,
+    unsettled_utilities: bool,
+    pins: usize,
+    idle: Duration,
+}
+fn idle_retirable(facts: &IdleFacts, threshold: Duration) -> bool {
+    facts.open_references == 0
+        && !facts.unsettled_utilities
+        && facts.pins == 0
+        && facts.idle >= threshold
+}
+fn utility_settled(reference: &UtilityReference) -> bool {
+    !reference.creating
+        && reference.configuring == 0
+        && !reference.sending
+        && !reference.unknown
+        && (reference.session_id.is_none() || reference.deleted)
+}
+impl OwnedService {
+    fn retirable(&self, now: Instant, threshold: Duration) -> bool {
+        idle_retirable(
+            &IdleFacts {
+                open_references: self.references.len(),
+                unsettled_utilities: !self.utility_references.values().all(utility_settled),
+                pins: self.process.pin_count(),
+                idle: now.saturating_duration_since(self.last_used),
+            },
+            threshold,
+        )
+    }
+}
+/// Retire an idle service under the slot lock so no acquire or pin can race it.
+/// Catalog references alone never keep it alive; the next acquire starts anew.
+fn retire_if_idle(current: &mut Option<OwnedService>, now: Instant, threshold: Duration) -> bool {
+    if !current
+        .as_ref()
+        .is_some_and(|service| service.retirable(now, threshold))
+    {
+        return false;
+    }
+    let Some(service) = current.take() else {
+        return false;
+    };
+    log::info!("Retiring idle OpenCode background service");
+    if let Err(error) = hold_retiring(service.process.clone()) {
+        log::warn!("Idle OpenCode service retirement: {error}");
+    }
+    true
+}
+fn ensure_idle_sweep() {
+    static STARTED: OnceLock<()> = OnceLock::new();
+    STARTED.get_or_init(|| {
+        let spawned = std::thread::Builder::new()
+            .name("opencode-idle-sweep".into())
+            .spawn(|| loop {
+                std::thread::sleep(IDLE_SWEEP_EVERY);
+                if let Ok(mut current) = slot().lock() {
+                    retire_if_idle(&mut current, Instant::now(), IDLE_RETIRE_AFTER);
+                }
+            });
+        if let Err(error) = spawned {
+            log::warn!("OpenCode idle sweep unavailable: {error}");
+        }
+    });
+}
+/// Give a retiring process a bounded time to finish exiting, then require proof.
+fn confirm_retirement(original: &Arc<ProcessOwner>) -> Result<(), String> {
+    let _ = original.wait_timeout(RETIREMENT_WAIT);
+    original
+        .retirement()
+        .require_verified()
+        .map_err(|_| "OWNED_OPENCODE_RETIREMENT_UNCONFIRMED".into())
 }
 fn slot() -> &'static Mutex<Option<OwnedService>> {
     static SERVICE: OnceLock<Mutex<Option<OwnedService>>> = OnceLock::new();
@@ -197,8 +284,8 @@ pub(crate) fn capture_service(
 ) -> Result<ServiceAccess, String> {
     let admission = admit_session_effect(app, window, capability.shell_id(), capability)?;
     let page = super::page_incarnation(window)?;
-    let current = slot().lock().map_err(|_| "OWNED_OPENCODE_UNAVAILABLE")?;
-    let service = current.as_ref().ok_or("OWNED_OPENCODE_UNAVAILABLE")?;
+    let mut current = slot().lock().map_err(|_| "OWNED_OPENCODE_UNAVAILABLE")?;
+    let service = current.as_mut().ok_or("OWNED_OPENCODE_UNAVAILABLE")?;
     let reference = service
         .references
         .get(reference_id)
@@ -210,6 +297,7 @@ pub(crate) fn capture_service(
         .process
         .pin()
         .map_err(|_| "OWNED_OPENCODE_PROCESS_CLOSED")?;
+    service.last_used = Instant::now();
     Ok(ServiceAccess {
         endpoint: service.endpoint.clone(),
         password: service.password.clone(),
@@ -260,8 +348,8 @@ pub(crate) fn capture_catalog_endpoint(
     {
         return Err("OWNED_OPENCODE_CATALOG_SCOPE_DENIED".into());
     }
-    let current = slot().lock().map_err(|_| "OWNED_OPENCODE_UNAVAILABLE")?;
-    let service = current.as_ref().ok_or("OWNED_OPENCODE_UNAVAILABLE")?;
+    let mut current = slot().lock().map_err(|_| "OWNED_OPENCODE_UNAVAILABLE")?;
+    let service = current.as_mut().ok_or("OWNED_OPENCODE_UNAVAILABLE")?;
     let reference = service
         .catalog_references
         .get(&handle.reference_id)
@@ -276,6 +364,7 @@ pub(crate) fn capture_catalog_endpoint(
         .process
         .pin()
         .map_err(|_| "OWNED_OPENCODE_PROCESS_CLOSED")?;
+    service.last_used = Instant::now();
     Ok(ServiceAccess {
         endpoint: service.endpoint.clone(),
         password: service.password.clone(),
@@ -309,6 +398,7 @@ pub(crate) fn capture_utility_endpoint(
         .process
         .pin()
         .map_err(|_| "OWNED_OPENCODE_PROCESS_CLOSED")?;
+    service.last_used = Instant::now();
     let reference = service
         .utility_references
         .get_mut(&handle.reference_id)
@@ -483,7 +573,7 @@ impl ServiceAccess {
 
 // Read fixed chunks and bound each line. Stdout can include the generated
 // password, so neither lines nor raw errors are emitted or retained.
-fn observe_stdout<R: Read>(reader: R, ready: mpsc::SyncSender<String>) {
+fn observe_stdout<R: Read>(reader: R, ready: mpsc::SyncSender<StartEvent>) {
     let mut input = BufReader::new(reader);
     let mut line = Vec::with_capacity(1024);
     let mut sent = false;
@@ -518,7 +608,9 @@ fn observe_stdout<R: Read>(reader: R, ready: mpsc::SyncSender<String>) {
                         && url.fragment().is_none()
                         && url.path() == "/"
                     {
-                        sent = ready.send(url.origin().ascii_serialization()).is_ok();
+                        sent = ready
+                            .send(StartEvent::Endpoint(url.origin().ascii_serialization()))
+                            .is_ok();
                     }
                 }
             }
@@ -551,8 +643,15 @@ fn start_service(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     super::prepare_child(&mut command_line, command);
-    let mut child =
-        OwnedChild::spawn(&mut command_line).map_err(|_| "OWNED_OPENCODE_SPAWN_FAILED")?;
+    let mut child = OwnedChild::spawn(&mut command_line).map_err(|error| {
+        // Kind and OS/job code only: spawn errors must not carry paths or secrets.
+        let message = format!(
+            "OWNED_OPENCODE_SPAWN_FAILED: {}",
+            spawn_failure_detail(&error)
+        );
+        log::warn!("{message}");
+        message
+    })?;
     let stdout = match child.stdout.take() {
         Some(stdout) => stdout,
         None => {
@@ -568,21 +667,37 @@ fn start_service(
         }
     };
     let process = Arc::new(ProcessOwner::new(child));
-    let (send, receive) = mpsc::sync_channel(1);
+    // Capacity covers the one endpoint and the one exit event, so neither sender
+    // ever blocks, even after this function has stopped listening.
+    let (send, receive) = mpsc::sync_channel(2);
+    let exited = send.clone();
     std::thread::spawn(move || observe_stdout(stdout, send));
-    std::thread::spawn(move || {
-        let _ = std::io::copy(&mut BufReader::new(stderr), &mut std::io::sink());
-    });
+    let stderr_tail = Arc::new(StderrTail::default());
+    let stderr_reader = stderr_tail.clone();
+    std::thread::spawn(move || stderr_reader.collect(stderr));
     process.activate();
     let waiter = process.clone();
     std::thread::spawn(move || {
-        let _ = waiter.wait();
+        // Wakes the start wait when the child dies early instead of leaving the
+        // caller to run out the full deadline.
+        let status = waiter.wait();
+        let _ = exited.send(StartEvent::Exited(describe_exit(&status)));
     });
-    let endpoint = match receive.recv_timeout(Duration::from_secs(30)) {
+    let endpoint = match await_start(
+        &receive,
+        Duration::from_secs(30),
+        &stderr_tail,
+        &[password.as_str()],
+    ) {
         Ok(endpoint) => endpoint,
-        Err(_) => {
-            hold_retiring(process)?;
-            return Err("OWNED_OPENCODE_START_UNCONFIRMED".into());
+        Err(message) => {
+            // The detail is already bounded and redacted; a failed retirement is
+            // reported first because it blocks the next start.
+            log::warn!("{message}");
+            return Err(match hold_retiring(process) {
+                Ok(()) => message,
+                Err(retirement) => format!("{retirement}; {message}"),
+            });
         }
     };
     let _pin = match process.pin() {
@@ -596,6 +711,7 @@ fn start_service(
         hold_retiring(process)?;
         return Err("OWNED_OPENCODE_PAGE_STALE".into());
     }
+    ensure_idle_sweep();
     Ok(OwnedService {
         id: uuid::Uuid::new_v4().to_string(),
         endpoint,
@@ -609,6 +725,7 @@ fn start_service(
         catalog_acquisitions: HashMap::new(),
         utility_references: HashMap::new(),
         utility_acquisitions: HashMap::new(),
+        last_used: Instant::now(),
     })
 }
 
@@ -635,7 +752,7 @@ pub(crate) async fn owned_opencode_catalog_acquire(
             return Err("OWNED_OPENCODE_PAGE_STALE".into());
         }
         let mut current = slot().lock().map_err(|_| "OWNED_OPENCODE_UNAVAILABLE")?;
-        if let Some(service) = current.as_ref() {
+        if let Some(service) = current.as_mut() {
             if let Some(reference_id) = service.catalog_acquisitions.get(&operation_id) {
                 let reference = service
                     .catalog_references
@@ -653,6 +770,7 @@ pub(crate) async fn owned_opencode_catalog_acquire(
                     .process
                     .pin()
                     .map_err(|_| "OWNED_OPENCODE_PROCESS_CLOSED")?;
+                service.last_used = Instant::now();
                 return Ok(ServiceReference {
                     service_id: service.id.clone(),
                     reference_id: reference_id.clone(),
@@ -679,9 +797,7 @@ pub(crate) async fn owned_opencode_catalog_acquire(
                 .lock()
                 .map_err(|_| "OWNED_OPENCODE_RETIREMENT_UNAVAILABLE")?;
             if let Some(original) = pending.as_ref() {
-                if original.retirement().require_verified().is_err() {
-                    return Err("OWNED_OPENCODE_RETIREMENT_UNCONFIRMED".into());
-                }
+                confirm_retirement(original)?;
                 *pending = None;
             }
         }
@@ -696,6 +812,7 @@ pub(crate) async fn owned_opencode_catalog_acquire(
             .process
             .pin()
             .map_err(|_| "OWNED_OPENCODE_PROCESS_CLOSED")?;
+        service.last_used = Instant::now();
         if super::page_incarnation(&window)? != captured {
             return Err("OWNED_OPENCODE_PAGE_STALE".into());
         }
@@ -758,6 +875,7 @@ pub(crate) async fn owned_opencode_utility_acquire(
         if source.page != captured {
             return Err("OWNED_OPENCODE_REFERENCE_STALE".into());
         }
+        service.last_used = Instant::now();
         if let Some(id) = service.utility_acquisitions.get(&operation_id) {
             let prior = service
                 .utility_references
@@ -858,9 +976,7 @@ pub(crate) async fn owned_opencode_acquire(
                 .lock()
                 .map_err(|_| "OWNED_OPENCODE_RETIREMENT_UNAVAILABLE")?;
             if let Some(original) = pending.as_ref() {
-                if original.retirement().require_verified().is_err() {
-                    return Err("OWNED_OPENCODE_RETIREMENT_UNCONFIRMED".into());
-                }
+                confirm_retirement(original)?;
                 *pending = None;
             }
         }
@@ -872,6 +988,7 @@ pub(crate) async fn owned_opencode_acquire(
                 .process
                 .pin()
                 .map_err(|_| "OWNED_OPENCODE_PROCESS_CLOSED")?;
+            service.last_used = Instant::now();
             if let Some(reference_id) = service.acquisitions.get(&operation_id) {
                 let reference = service
                     .references
@@ -974,6 +1091,7 @@ pub(crate) async fn owned_opencode_release(
         if service.id != service_id {
             return Ok(false);
         }
+        service.last_used = Instant::now();
         if service
             .released
             .get(&reference_id)
@@ -1000,4 +1118,101 @@ pub(crate) async fn owned_opencode_release(
         Ok(matches)
     })
     .await
+}
+
+#[cfg(test)]
+mod idle_tests {
+    use super::*;
+
+    const LIMIT: Duration = Duration::from_secs(600);
+    fn facts() -> IdleFacts {
+        IdleFacts {
+            open_references: 0,
+            unsettled_utilities: false,
+            pins: 0,
+            idle: LIMIT,
+        }
+    }
+    fn utility() -> UtilityReference {
+        UtilityReference {
+            page: String::new(),
+            cwd: String::new(),
+            catalog_reference: String::new(),
+            acquisition_id: String::new(),
+            session_id: None,
+            creating: false,
+            configuring: 0,
+            sending: false,
+            unknown: false,
+            deleted: false,
+        }
+    }
+
+    #[test]
+    fn retires_only_when_everything_is_provably_idle() {
+        assert!(idle_retirable(&facts(), LIMIT));
+        assert!(!idle_retirable(
+            &IdleFacts {
+                idle: LIMIT - Duration::from_secs(1),
+                ..facts()
+            },
+            LIMIT
+        ));
+        assert!(!idle_retirable(
+            &IdleFacts {
+                open_references: 1,
+                ..facts()
+            },
+            LIMIT
+        ));
+        assert!(!idle_retirable(&IdleFacts { pins: 1, ..facts() }, LIMIT));
+        assert!(!idle_retirable(
+            &IdleFacts {
+                unsettled_utilities: true,
+                ..facts()
+            },
+            LIMIT
+        ));
+    }
+
+    #[test]
+    fn utility_is_settled_only_without_work_or_live_session() {
+        assert!(utility_settled(&utility()));
+        let with_session = UtilityReference {
+            session_id: Some("ses_1".into()),
+            ..utility()
+        };
+        assert!(!utility_settled(&with_session));
+        assert!(utility_settled(&UtilityReference {
+            deleted: true,
+            ..with_session
+        }));
+        for busy in [
+            UtilityReference {
+                creating: true,
+                ..utility()
+            },
+            UtilityReference {
+                configuring: 1,
+                ..utility()
+            },
+            UtilityReference {
+                sending: true,
+                ..utility()
+            },
+            UtilityReference {
+                unknown: true,
+                deleted: true,
+                ..utility()
+            },
+        ] {
+            assert!(!utility_settled(&busy));
+        }
+    }
+
+    #[test]
+    fn empty_slot_is_never_retired() {
+        let mut empty = None;
+        assert!(!retire_if_idle(&mut empty, Instant::now(), Duration::ZERO));
+    }
 }

@@ -18,7 +18,9 @@ export interface WorkspaceTitleBarDeps {
   sidebarCwd: string;
   projectRailOpen: boolean;
   sessionSidebarOpen: boolean;
-  compactTitleBar: boolean;
+  spansWindow: boolean;
+  searchActive: boolean;
+  onSearch: TitleBarProps["onSearch"];
   tabVisitNav: ReturnType<typeof useTabVisitState>["tabVisitNav"];
   surfaceForward: ReturnType<typeof useRailNavigation>["surfaceForward"];
   onRailBack: TitleBarProps["onGoBack"];
@@ -35,7 +37,7 @@ export interface WorkspaceTitleBarDeps {
   onCloseTitleTab: TitleBarProps["onClose"];
   onCloseTabs: TitleBarProps["onCloseMany"];
   onCloseIdleTabs: TitleBarProps["onCloseIdleTabs"];
-  idleTabCount: TitleBarProps["idleTabCount"];
+  countIdleTabs: TitleBarProps["countIdleTabs"];
   onArchiveTitleTab: TitleBarProps["onArchiveTab"];
   onDeleteTitleTab: TitleBarProps["onDeleteTab"];
   onReorderTabs: TitleBarProps["onReorder"];
@@ -60,7 +62,9 @@ export function useWorkspaceTitleBar({
   sidebarCwd,
   projectRailOpen,
   sessionSidebarOpen,
-  compactTitleBar,
+  spansWindow,
+  searchActive,
+  onSearch,
   tabVisitNav,
   surfaceForward,
   onRailBack,
@@ -77,7 +81,7 @@ export function useWorkspaceTitleBar({
   onCloseTitleTab,
   onCloseTabs,
   onCloseIdleTabs,
-  idleTabCount,
+  countIdleTabs,
   onArchiveTitleTab,
   onDeleteTitleTab,
   onReorderTabs,
@@ -113,7 +117,9 @@ export function useWorkspaceTitleBar({
       cwd={sidebarCwd}
       projectRailOpen={!detachedSessionWindow && projectRailOpen}
       sessionSidebarOpen={!detachedSessionWindow && sessionSidebarOpen}
-      compactRail={compactTitleBar}
+      spansWindow={spansWindow}
+      searchActive={searchActive}
+      onSearch={onSearch}
       canGoBack={tabVisitNav.canBack}
       canGoForward={surfaceForward.canForward || tabVisitNav.canForward}
       onGoBack={onRailBack}
@@ -129,7 +135,7 @@ export function useWorkspaceTitleBar({
       onClose={onCloseTitleTab}
       onCloseMany={onCloseTabs}
       onCloseIdleTabs={onCloseIdleTabs}
-      idleTabCount={idleTabCount}
+      countIdleTabs={countIdleTabs}
       onArchiveTab={onArchiveTitleTab}
       onDeleteTab={onDeleteTitleTab}
       onReorder={(ids) => {

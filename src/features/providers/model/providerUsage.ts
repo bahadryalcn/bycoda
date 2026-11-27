@@ -73,7 +73,11 @@ function rowCacheSavings(row: UsageRow, pricing: UsagePricing): number {
 export type AccountUsage = {
   account: ProviderAccount;
   rows: UsageRow[];
+  /** The machine whose provider logs these rows come from; unset means this computer. */
+  machine?: UsageMachine;
 };
+/** A computer whose usage is shown: `id` is "local" for this one, else the saved machine id. */
+export type UsageMachine = { id: string; label: string };
 
 export type UsageDay = {
   /** Local midnight. */

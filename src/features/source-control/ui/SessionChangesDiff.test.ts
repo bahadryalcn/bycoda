@@ -10,6 +10,7 @@ const api = vi.hoisted(() => ({
   diff: vi.fn(),
   worker: vi.fn(),
   changed: (_id?: string) => {},
+  sectionNeeded: (_id: string, _needed: boolean) => {},
   models: [] as UnifiedDiffFileModel[],
 }));
 vi.mock("../../sessions/public/checkpoint", () => ({
@@ -27,15 +28,24 @@ vi.mock("../model/diffWorker", () => ({
   },
 }));
 vi.mock("./UnifiedDiffView", () => ({
-  UnifiedDiffView: ({ files }: { files: UnifiedDiffFileModel[] }) => {
+  UnifiedDiffView: ({
+    files,
+    onSectionNeeded,
+  }: {
+    files: UnifiedDiffFileModel[];
+    onSectionNeeded: typeof api.sectionNeeded;
+  }) => {
     api.models = files;
+    api.sectionNeeded = onSectionNeeded;
     return null;
   },
 }));
 
-it("reuses parsed models per content while fetching every file on each review event", async () => {
+it("reuses parsed models per content while refreshing files in the eager window", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.useFakeTimers();
+  vi.useFakeTimers({
+    toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame"],
+  });
   let files = ["a", "b"].map((relative) => ({
     relative,
     path: relative,
@@ -52,18 +62,22 @@ it("reuses parsed models per content while fetching every file on each review ev
     binary: relative === "a" && binary,
     tooLarge: relative === "a" && tooLarge,
   }));
-  const root = createRoot(document.createElement("div"));
+  const host = document.createElement("div");
+  const root = createRoot(host);
   const refresh = async () => {
     await act(async () => {
       api.changed("s");
       await vi.advanceTimersByTimeAsync(500);
+      await vi.advanceTimersToNextFrame();
     });
   };
   try {
     await act(async () =>
       root.render(createElement(SessionChangesDiff, { cwd: "/repo", sessionId: "s" })),
     );
+    await act(async () => vi.advanceTimersToNextFrame());
     const first = api.models;
+    expect(first.map((file) => file.emptyMessage)).toEqual([undefined, undefined]);
     expect(api.worker).toHaveBeenCalledTimes(2);
     await refresh();
     expect(api.diff).toHaveBeenCalledTimes(4);
@@ -108,6 +122,38 @@ it("reuses parsed models per content while fetching every file on each review ev
     expect(api.models[0].additions).toBe(9);
     expect(api.models[0].path).toBe("renamed/a");
     expect(api.models[1]).toBe(first[1]);
+    // A failed status read keeps the last good review and shows a notice with Retry.
+    const kept = api.models;
+    api.status.mockRejectedValueOnce(new Error("status unavailable"));
+    await refresh();
+    expect(api.models).toBe(kept);
+    expect(host.textContent).toContain("Couldn’t refresh. Showing the last available snapshot.");
+    expect(host.textContent).not.toContain("Couldn’t load session changes");
+    const retry = [...host.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Retry refresh"),
+    );
+    await act(async () => {
+      retry!.click();
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersToNextFrame();
+    });
+    expect(host.textContent).not.toContain("Couldn’t refresh");
+    expect(api.models.map((file) => file.id)).toEqual(kept.map((file) => file.id));
+
+    files = Array.from({ length: 11 }, (_, index) => ({
+      relative: `file-${index}`,
+      path: `file-${index}`,
+      additions: 1,
+      deletions: 1,
+    }));
+    api.diff.mockClear();
+    await refresh();
+    expect(api.diff).toHaveBeenCalledTimes(10);
+    expect(api.diff).not.toHaveBeenCalledWith("s", "/repo", "file-10");
+    await act(async () => api.sectionNeeded("file-10", true));
+    await act(async () => vi.advanceTimersToNextFrame());
+    expect(api.diff).toHaveBeenLastCalledWith("s", "/repo", "file-10");
+    expect(api.models[10].emptyMessage).toBeUndefined();
   } finally {
     await act(async () => root.unmount());
     vi.useRealTimers();

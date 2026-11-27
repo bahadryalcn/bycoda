@@ -47,9 +47,11 @@ export function mergeWindowLiveAgents(
         if (!byId.has(key ?? agent.id)) {
           byId.set(
             key ?? agent.id,
-            snapshot.ownerWindowLabel === currentWindowLabel
-              ? agent
-              : { ...agent, ownerWindowLabel: snapshot.ownerWindowLabel },
+            snapshot.ownerWindowLabel !== currentWindowLabel &&
+              (owned || !snapshot.ownedSessionKeys) &&
+              !agent.listedRemote
+              ? { ...agent, ownerWindowLabel: snapshot.ownerWindowLabel }
+              : agent,
           );
         }
       }

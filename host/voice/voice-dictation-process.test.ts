@@ -38,6 +38,41 @@ describe("dictation cleanup", () => {
       processVoiceTranscript({ text: "hello", translateToEnglish: "yes" }, run),
     ).rejects.toThrow("Invalid dictation cleanup input.");
   });
+  it("generates bounded settings in the chosen language without sending speech or current fields", async () => {
+    const draft = {
+      instructions: "Anlamı ve teknik terimleri koru.",
+      correctionCue: "Düzeltiyorum",
+    };
+    const run = vi.fn(async (_input: TextPromptInput) => JSON.stringify(draft));
+    const result = await processVoiceTranscript(
+      {
+        text: "",
+        settingsLanguage: "tr",
+        model: "gpt-6",
+        instructions: "private existing rule",
+      },
+      run,
+    );
+    expect(JSON.parse(result.text)).toEqual(draft);
+    expect(run.mock.calls[0][0].prompt).toContain("Türkçe (tr)");
+    expect(run.mock.calls[0][0].prompt).not.toContain("private existing rule");
+    await expect(
+      processVoiceTranscript({ text: "private speech", settingsLanguage: "tr" }, run),
+    ).rejects.toThrow("Invalid dictation cleanup input.");
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+  it("rejects malformed settings, blank fields and multiline spoken phrases", async () => {
+    for (const text of [
+      "unstructured",
+      '{"instructions":"Fix punctuation.","correctionCue":""}',
+      '{"instructions":"Fix punctuation.","correctionCue":"one\\ntwo"}',
+    ]) {
+      const run = vi.fn(async () => text);
+      await expect(
+        processVoiceTranscript({ text: "", settingsLanguage: "en" }, run),
+      ).rejects.toThrow();
+    }
+  });
 });
 it("forwards cancellation to the actual text runner", async () => {
   const controller = new AbortController();

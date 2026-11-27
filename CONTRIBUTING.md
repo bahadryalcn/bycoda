@@ -7,7 +7,7 @@ to start a discussion. This guide applies to the
 
 ## Development environment
 
-Install Node.js 22.12 or newer (`.nvmrc` selects 22), the pnpm version pinned in [package.json](package.json), Rust,
+Use the Node.js 26 LTS version in [`.nvmrc`](.nvmrc), the pnpm version pinned in [package.json](package.json), Rust,
 and Tauri's platform build prerequisites. To run agent sessions, install and
 authenticate a supported provider CLI.
 
@@ -164,7 +164,7 @@ The [platform foundation reference](docs/reference/platform-foundation.md)
 records the staged module, release, account and organization architecture. Its
 proposed directories and services are not implemented product capabilities.
 
-Offline model-behavior checks use `pnpm eval:check` (normal tsc-rs) and
+Offline model-behavior checks use `pnpm eval:check` (normal tsrs) and
 `pnpm eval:offline`; reports use
 `pnpm eval:report`. These use sanitized fixtures and production prompt/schema
 definitions. They do not call a paid provider or prove live model quality.

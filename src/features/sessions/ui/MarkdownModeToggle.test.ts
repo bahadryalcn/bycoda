@@ -119,8 +119,16 @@ it("zooms the preview by Ctrl+wheel and toolbar while retaining mounted document
         source: createElement("textarea", { defaultValue: "Original source" }),
       }),
     );
-  const button = (label: string) =>
-    container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+  const zoomButton = () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label^="Zoom "]')!;
+  const zoomAction = (label: string) =>
+    [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+      (item) => item.textContent?.trim() === label,
+    )!;
+  const pickZoom = async (label: string) => {
+    await act(async () => zoomButton().click());
+    await act(async () => zoomAction(label).click());
+  };
   const wheel = async (target: HTMLElement, deltaY: number, ctrlKey = true) => {
     const event = new WheelEvent("wheel", { deltaY, bubbles: true, cancelable: true });
     Object.defineProperty(event, "ctrlKey", { value: ctrlKey });
@@ -134,32 +142,41 @@ it("zooms the preview by Ctrl+wheel and toolbar while retaining mounted document
     source.value = "Retained draft";
     source.setSelectionRange(2, 7);
     preview.scrollTop = 120;
-    expect(button("Reset zoom").textContent).toBe("100%");
+    expect(zoomButton().textContent).toBe("100%");
     expect((await wheel(preview, -100, false)).defaultPrevented).toBe(false);
     expect((await wheel(preview, 0)).defaultPrevented).toBe(false);
-    expect(button("Reset zoom").textContent).toBe("100%");
+    expect(zoomButton().textContent).toBe("100%");
     expect((await wheel(preview, -100)).defaultPrevented).toBe(true);
-    expect(button("Reset zoom").textContent).toBe("110%");
-    await act(async () => button("Zoom in").click());
-    expect(button("Reset zoom").textContent).toBe("120%");
-    await act(async () => button("Zoom out").click());
-    expect(button("Reset zoom").textContent).toBe("110%");
+    expect(zoomButton().textContent).toBe("110%");
+    await pickZoom("Zoom in");
+    expect(zoomButton().textContent).toBe("120%");
+    await pickZoom("Zoom out");
+    expect(zoomButton().textContent).toBe("110%");
     for (let step = 0; step < 15; step++) {
       expect((await wheel(preview, -100)).defaultPrevented).toBe(true);
     }
-    expect(button("Reset zoom").textContent).toBe("200%");
-    expect(button("Zoom in").disabled).toBe(true);
+    expect(zoomButton().textContent).toBe("200%");
+    await act(async () => zoomButton().click());
+    expect(
+      zoomAction("Zoom in").disabled ||
+        zoomAction("Zoom in").getAttribute("aria-disabled") === "true",
+    ).toBe(true);
+    await act(async () => zoomButton().click());
     for (let step = 0; step < 20; step++) {
       expect((await wheel(preview, 100)).defaultPrevented).toBe(true);
     }
-    expect(button("Reset zoom").textContent).toBe("50%");
-    expect(button("Zoom out").disabled).toBe(true);
-    await act(async () => button("Reset zoom").click());
-    expect(button("Reset zoom").textContent).toBe("100%");
+    expect(zoomButton().textContent).toBe("50%");
+    await act(async () => zoomButton().click());
+    expect(
+      zoomAction("Zoom out").disabled ||
+        zoomAction("Zoom out").getAttribute("aria-disabled") === "true",
+    ).toBe(true);
+    await act(async () => zoomAction("Reset zoom").click());
+    expect(zoomButton().textContent).toBe("100%");
 
     await wheel(preview, -100);
     await act(async () => render("source"));
-    expect(button("Reset zoom")).toBeNull();
+    expect(zoomButton()).toBeNull();
     expect((await wheel(source, -100)).defaultPrevented).toBe(false);
     expect(container.querySelector("textarea")).toBe(source);
     expect(source.value).toBe("Retained draft");
@@ -168,12 +185,10 @@ it("zooms the preview by Ctrl+wheel and toolbar while retaining mounted document
     await act(async () => render("preview"));
     expect(container.querySelector(".markdown-preview")).toBe(preview);
     expect(preview.scrollTop).toBe(120);
-    expect(button("Reset zoom").textContent).toBe("110%");
+    expect(zoomButton().textContent).toBe("110%");
 
     await act(async () => render("preview", false));
-    expect(button("Reset zoom")).toBeNull();
-    expect(button("Zoom in")).toBeNull();
-    expect(button("Zoom out")).toBeNull();
+    expect(zoomButton()).toBeNull();
     expect((await wheel(preview, -100)).defaultPrevented).toBe(false);
   } finally {
     await act(async () => root.unmount());

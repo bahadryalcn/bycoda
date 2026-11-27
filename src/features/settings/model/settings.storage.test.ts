@@ -31,13 +31,15 @@ it("reopens saved Models settings in Providers Defaults", () => {
 it.each(Object.entries(TOOL_SETTINGS_TAB_ANCHORS) as [ToolSettingsTab, string][])(
   "migrates the %s section to its canonical page and destination",
   (alias, anchor) => {
+    // bykit moved into Models → Background work; the other tool tabs stay on Tools.
+    const page = alias === "bykit" ? "providers" : "tools";
     localStorage.setItem("bycoda.settingsSection", alias);
-    expect(loadSettingsSection()).toBe("tools");
+    expect(loadSettingsSection()).toBe(page);
     expect(loadSettingsAliasAnchor()).toBe(anchor);
-    expect(settingsSectionForAnchor(alias)).toBe("tools");
-    expect(settingsSectionForAnchor("general", anchor)).toBe("tools");
+    expect(settingsSectionForAnchor(alias)).toBe(page);
+    expect(settingsSectionForAnchor("general", anchor)).toBe(page);
     saveSettingsSection(alias);
-    expect(localStorage.getItem("bycoda.settingsSection")).toBe("tools");
+    expect(localStorage.getItem("bycoda.settingsSection")).toBe(page);
   },
 );
 it("keep-awake listeners hear Host snapshots, never localStorage events", () => {
@@ -47,15 +49,19 @@ it("keep-awake listeners hear Host snapshots, never localStorage events", () => 
   const unsubscribe = subscribeKeepAwakeEnabled(callback);
   try {
     // A save is forwarded to the Host and is not reported durable until it is acknowledged.
-    expect(saveKeepAwakeEnabled(true)).toBe(false);
-    expect(save).toHaveBeenCalledWith("keepAwakeWhileAgentsWork", true);
-    expect(loadKeepAwakeEnabled()).toBe(false);
+    expect(saveKeepAwakeEnabled(false)).toBe(false);
+    expect(save).toHaveBeenCalledWith("keepAwakeWhileAgentsWork", false);
+    expect(loadKeepAwakeEnabled()).toBe(true);
     expect(callback).not.toHaveBeenCalled();
     // Another window's change reaches this one through the Host record.
     acceptAgentDefaults({
-      agentDefaults: { ...DEFAULT_AGENT_DEFAULTS, version: 1, keepAwakeWhileAgentsWork: true },
+      agentDefaults: {
+        ...DEFAULT_AGENT_DEFAULTS,
+        version: 1,
+        keepAwakeWhileAgentsWork: false,
+      },
     });
-    expect(loadKeepAwakeEnabled()).toBe(true);
+    expect(loadKeepAwakeEnabled()).toBe(false);
     expect(callback).toHaveBeenCalledTimes(1);
     window.dispatchEvent(
       new StorageEvent("storage", {
@@ -71,7 +77,7 @@ it("keep-awake listeners hear Host snapshots, never localStorage events", () => 
   acceptAgentDefaults({ agentDefaults: { ...DEFAULT_AGENT_DEFAULTS, version: 2 } });
   expect(callback).toHaveBeenCalledTimes(1);
 });
-it("keeps enum normalization and the event detail/load split after a failed save", () => {
+it("does not publish an enum change after a failed save (#900)", () => {
   saveDiffLayout("split");
   const callback = vi.fn();
   const unsubscribe = subscribeDiffLayout(callback);
@@ -83,8 +89,8 @@ it("keeps enum normalization and the event detail/load split after a failed save
       throw new Error("quota");
     });
     saveDiffLayout("invalid" as "inline");
-    expect(details).toEqual(["auto"]);
-    expect(callback).toHaveBeenCalledTimes(1);
+    expect(details).toEqual([]);
+    expect(callback).not.toHaveBeenCalled();
     expect(loadDiffLayout()).toBe("split");
   } finally {
     unsubscribe();

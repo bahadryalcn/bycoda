@@ -12,6 +12,7 @@ import {
 import { hasReadableText } from "../../../features/sessions/model/transcriptActivity";
 import { executionUserIndex } from "../../../features/sessions/model/executionTurn";
 import { boundedToolPreview } from "../../../features/sessions/model/toolInspection";
+import { sameSearchSources } from "../../../shared/model/searchSources";
 import { knownToolKindTitle } from "../../../shared/lib/toolKindTitles";
 import { looksLikeCallId as isCallId } from "../../../shared/lib/records";
 import type {
@@ -21,7 +22,9 @@ import type {
   Block,
   Session,
   TaskListItem,
+  ToolFileChange,
   ToolPreview,
+  WorkflowAgentParent,
 } from "../../../features/sessions/model/session";
 import {
   dropContextWindow,
@@ -39,6 +42,7 @@ import {
   isWeakToolTitle,
   mergeToolPreview,
   stubFilePreview,
+  summarizeFileChanges,
 } from "./preview";
 import {
   AGENT_PROMPT_CHARS,
@@ -47,7 +51,11 @@ import {
   capStepOutput,
 } from "../../../features/sessions/model/agentOutput";
 import { MAX_TOOL_DETAIL_CHARS } from "./toolDetailLimits";
-import { registerStreamingTextUpdate } from "../../../features/sessions/model/stableBlocks";
+import {
+  onlyRunningToolOutputChanged,
+  registerStreamingBlockUpdate,
+  registerStreamingTextUpdate,
+} from "../../../features/sessions/model/stableBlocks";
 import { registerBlockChanges } from "../../../features/sessions/model/blockChanges";
 import { taskListText } from "../../../features/sessions/model/taskList";
 import { isReviewablePlan } from "../../../features/sessions/model/plan";
@@ -56,11 +64,11 @@ import {
   queuedModelTarget,
   sameQueuedModelTarget,
 } from "../../../features/sessions/model/messageQueue";
-import { loadResumeAtReset } from "../../../features/settings/model/settings";
+import { loadAgentDefault } from "../../../features/settings/model/agentDefaultsStore";
 import { selectedAnswerLabels } from "../../../features/sessions/model/userQuestion";
 import type { HarnessEvent } from "./types";
 import {
-  COMPACTING_TEXT,
+  compactingText,
   COMPACTION_STATUS_KEY,
   isRunningCompaction,
 } from "../../../features/sessions/model/compactionStatus";
@@ -130,6 +138,8 @@ function isSupersededToolUpdate(event: ToolUpdatedEvent, following: HarnessEvent
     following.preview === event.preview &&
     following.agentModel === event.agentModel &&
     following.agentPrompt === event.agentPrompt &&
+    following.workflow?.callId === event.workflow?.callId &&
+    following.workflow?.phase === event.workflow?.phase &&
     !event.fileChanges &&
     !following.fileChanges &&
     !event.paths &&
@@ -163,6 +173,7 @@ export function applyHarnessEvent(
       "turn.started",
       "question.asked",
       "approval.requested",
+      "image.generationStarted",
       "image.generated",
     ].includes(event.type)
   ) {
@@ -176,6 +187,7 @@ export function applyHarnessEvent(
       "tool.started",
       "approval.requested",
       "question.asked",
+      "image.generationStarted",
       "image.generated",
     ].includes(event.type)
   )
@@ -185,9 +197,12 @@ export function applyHarnessEvent(
       return patchStreaming(session, "assistant", event.text, true);
     case "message.completed":
       return finishRole(session, "assistant");
+    case "image.generationStarted":
+    case "image.generationEnded":
+      return applyImageEvent(session, event);
     case "image.generated":
       if (!("path" in event)) return session;
-      return appendImage(session, event);
+      return applyImageEvent(session, event);
     case "reasoning.delta":
       return patchStreaming(session, "reasoning", event.text, true);
     case "reasoning.completed":
@@ -202,6 +217,7 @@ export function applyHarnessEvent(
         streaming: true,
         agentModel: event.agentModel,
         agentPrompt: event.agentPrompt,
+        workflow: event.workflow,
         ...(event.background ? { background: true } : {}),
       });
     case "tool.updated":
@@ -212,11 +228,16 @@ export function applyHarnessEvent(
         status: event.status,
         detail: event.detail,
         ...(event.detailTruncated ? { detailTruncated: true } : {}),
+        ...((event.status === "completed" || event.status === "success") &&
+        (event.fileChanges || event.paths)
+          ? { fileChanges: summarizeFileChanges(event.fileChanges ?? [], event.paths) }
+          : {}),
         preview: event.preview,
         streaming:
           event.status !== "completed" && event.status !== "failed" && event.status !== "stopped",
         agentModel: event.agentModel,
         agentPrompt: event.agentPrompt,
+        workflow: event.workflow,
       });
     case "agent.step":
       return recordAgentStep(session, event);
@@ -474,11 +495,11 @@ export function applyHarnessEvent(
     case "status":
       if (event.key === COMPACTION_STATUS_KEY) return applyCompactionStatus(session, event);
       if (event.key === "provider-retry")
-        return session.retryMessage === event.text
+        return session.retryMessage === event.text && session.retryAt === event.retryAt
           ? session
-          : { ...session, retryMessage: event.text };
+          : { ...session, retryMessage: event.text, retryAt: event.retryAt };
       if (/^(?:Retrying\b|Reconnecting\b)/i.test(event.text.trim())) {
-        session = { ...session, retryMessage: event.text };
+        session = { ...session, retryMessage: event.text, retryAt: event.retryAt };
       }
       return event.key
         ? upsertKeyedStatus(session, event.key, event.text)
@@ -491,7 +512,9 @@ export function applyHarnessEvent(
           // Armed even before the reset time is known; a later lookup fills it in.
           // A repeated limit event keeps the choice already made for this one.
           resumeAtReset:
-            session.usageLimit?.resumeAtReset ?? options.resumeAtReset ?? loadResumeAtReset(),
+            session.usageLimit?.resumeAtReset ??
+            options.resumeAtReset ??
+            loadAgentDefault("resumeAtReset"),
         },
       };
     case "interjection":
@@ -796,6 +819,7 @@ export function stopStreaming(
   session: Session,
   endedAt = Date.now(),
   retainQuestionDelivery = false,
+  imageStatus: "failed" | "stopped" = "stopped",
 ): Session {
   const settled = withoutBackgroundWait(settlePendingApprovals(session));
   const submitted = retainQuestionDelivery
@@ -818,7 +842,7 @@ export function stopStreaming(
         // A compaction row still running when the turn stops was cut short.
         .filter((block) => !isBareProseStream(block) && !isRunningCompaction(block))
         .map((block) =>
-          stopBlockProgress(block.streaming ? endOpenAgentRun(block, endedAt) : block),
+          stopBlockProgress(block.streaming ? endOpenAgentRun(block, endedAt) : block, imageStatus),
         ),
       endedAt,
     ),
@@ -877,7 +901,7 @@ function failStreaming(session: Session): Session {
     }),
   );
   // The provider failed, so an unconfirmed question card can never resolve.
-  const stopped = stopStreaming(session, Date.now(), false);
+  const stopped = stopStreaming(session, Date.now(), false, "failed");
   return {
     ...stopped,
     blocks: stopped.blocks.map((block) => {
@@ -936,8 +960,11 @@ export function promoteLastAssistantToPlan(session: Session, key?: string): Sess
   return { ...session, blocks };
 }
 
-function stopBlockProgress(block: Block): Block {
+function stopBlockProgress(block: Block, imageStatus: "failed" | "stopped"): Block {
   let stopped = block.streaming ? { ...block, streaming: false } : block;
+  if (stopped.imageGeneration?.status === "running") {
+    stopped = { ...stopped, imageGeneration: { ...stopped.imageGeneration, status: imageStatus } };
+  }
   if (stopped.orchestration?.status === "planning") {
     stopped = {
       ...stopped,
@@ -1016,7 +1043,7 @@ function applyCompactionStatus(
     return appendBlock(session, {
       id: crypto.randomUUID(),
       role: "system",
-      text: text || COMPACTING_TEXT,
+      text: text || compactingText(),
       statusKey: COMPACTION_STATUS_KEY,
       statusRunningSince: Date.now(),
     });
@@ -1055,22 +1082,62 @@ function upsertKeyedStatus(session: Session, key: string, text: string): Session
   return { ...session, blocks };
 }
 
-function appendImage(
+function applyImageEvent(
   session: Session,
-  event: Extract<HarnessEvent, { type: "image.generated"; path: string }>,
+  event: Extract<
+    HarnessEvent,
+    | { type: "image.generationStarted" | "image.generationEnded" }
+    | { path: string; type: "image.generated" }
+  >,
 ): Session {
-  return appendBlock(session, {
-    id: crypto.randomUUID(),
-    role: "image",
-    text: "",
-    image: {
-      path: event.path,
-      name: event.name,
-      mimeType: event.mimeType,
-      size: event.size,
-      ...(event.alt ? { alt: event.alt } : {}),
+  const turnStart = executionUserIndex(session.blocks);
+  const index = lastMatchingBlock(
+    session.blocks,
+    (block, at) => at > turnStart && block.imageGeneration?.itemId === event.itemId,
+  );
+  const previous = session.blocks[index];
+  if (event.type === "image.generationStarted") {
+    if (previous) return session;
+    return appendBlock(session, {
+      id: crypto.randomUUID(),
+      role: "image",
+      text: "",
+      imageGeneration: {
+        itemId: event.itemId,
+        status: "running",
+        ...(event.aspectRatio === undefined ? {} : { aspectRatio: event.aspectRatio }),
+      },
+    });
+  }
+  const generation = previous?.imageGeneration;
+  if (generation && generation.status !== "running") return session;
+  const image =
+    event.type === "image.generated"
+      ? {
+          path: event.path,
+          name: event.name,
+          mimeType: event.mimeType,
+          size: event.size,
+          ...(event.alt ? { alt: event.alt } : {}),
+        }
+      : undefined;
+  if (!generation) {
+    return image
+      ? appendBlock(session, { id: crypto.randomUUID(), role: "image", text: "", image })
+      : session;
+  }
+  const block: Block = {
+    ...previous,
+    image,
+    imageGeneration: {
+      ...generation,
+      status: event.type === "image.generated" ? "completed" : event.status,
     },
-  });
+  };
+  const blocks = session.blocks.slice();
+  blocks[index] = block;
+  registerBlockChanges(session.blocks, blocks, [block]);
+  return { ...session, blocks };
 }
 
 function appendBlock(session: Session, block: Block): Session {
@@ -1096,12 +1163,13 @@ function patchStreaming(
   if (role === "reasoning" && (typeof input === "string" ? !input : input.every((text) => !text)))
     return session;
   let index = session.blocks.length - 1;
-  while (
-    index >= 0 &&
-    session.blocks[index].role === "system" &&
-    !session.blocks[index].interjection
-  )
-    index--;
+  // A steer is part of the same turn and can land between deltas of one provider message.
+  for (; index >= 0; index--) {
+    const block = session.blocks[index];
+    if (block.role === "system" && !block.interjection) continue;
+    if (block.role === "user" && block.continuationOf) continue;
+    break;
+  }
   const last = session.blocks[index];
   // A completion closes one provider message. The next delta is a new message
   // even when no tool or status row landed between them; joining the two can
@@ -1134,6 +1202,11 @@ function attachApproval(
   event: Extract<HarnessEvent, { type: "approval.requested" }>,
 ): Session {
   const occurrenceId = approvalOccurrenceForEvent(event);
+  const approval = {
+    requestId: event.requestId,
+    occurrenceId,
+    ...(event.sessionApprovalScope ? { sessionApprovalScope: event.sessionApprovalScope } : {}),
+  };
   // An actual source event/replay never creates two owners or resurrects a
   // decided occurrence. Equal content on another event is not this identity.
   if (session.blocks.some((block) => block.approval?.occurrenceId === occurrenceId)) return session;
@@ -1167,7 +1240,7 @@ function attachApproval(
               ...(preview ? { preview } : {}),
             }
           : prev.tool,
-      approval: { requestId: event.requestId, occurrenceId },
+      approval,
     };
     registerBlockChanges(session.blocks, blocks, [blocks[index]]);
     return { ...session, blocks };
@@ -1185,7 +1258,7 @@ function attachApproval(
       kind: event.kind,
       ...(preview ? { preview } : {}),
     },
-    approval: { requestId: event.requestId, occurrenceId },
+    approval,
   });
 }
 
@@ -1230,10 +1303,12 @@ function upsertTool(
     detail?: string;
     /** The provider already dropped part of `detail` before sending it. */
     detailTruncated?: boolean;
+    fileChanges?: ToolFileChange[];
     preview?: ToolPreview;
     streaming: boolean;
     agentModel?: string;
     agentPrompt?: string;
+    workflow?: WorkflowAgentParent;
     background?: boolean;
   },
 ): Session {
@@ -1254,20 +1329,23 @@ function upsertTool(
     const truncated = !!detail && (capped.truncated || patch.detailTruncated === true);
     const preview = fillPreview(patch.preview, detail, patch.kind, patch.title);
     const label = finalToolLabel(session, patch.kind, displayLabel(patch), preview);
-    return appendBlock(session, {
+    const startedAt = Date.now();
+    const block: Block = {
       id: crypto.randomUUID(),
       role: "tool",
       ...(inlineVisual ? { inlineVisual } : {}),
       text: label,
       streaming: patch.streaming,
-      ...(patch.agentModel || isAgentTool(patch.kind, label)
+      ...(patch.agentModel || patch.workflow || isAgentTool(patch.kind, label)
         ? {
             agentRun: {
               name: label,
               ...(patch.agentModel ? { model: patch.agentModel } : {}),
               ...(prompt ? { prompt } : {}),
+              ...(patch.workflow ? { workflow: patch.workflow } : {}),
               steps: [],
-              startedAt: Date.now(),
+              startedAt,
+              ...(patch.workflow && !patch.streaming ? { endedAt: startedAt } : {}),
             },
           }
         : {}),
@@ -1278,10 +1356,22 @@ function upsertTool(
         status: patch.status,
         ...(detail ? { detail } : {}),
         ...(truncated ? { outputTruncated: true } : {}),
+        ...(patch.fileChanges ? { fileChanges: patch.fileChanges } : {}),
         ...(preview ? { preview } : {}),
         ...(patch.background ? { background: true } : {}),
       },
-    });
+    };
+    if (!patch.workflow) return appendBlock(session, block);
+    // Artifact reads can finish after the next prompt or during a prose stream.
+    // Keep children next to their owning call without sealing current prose.
+    const parent = findToolIndex(session, { callId: patch.workflow.callId });
+    if (parent < 0) return session;
+    let after = parent + 1;
+    while (session.blocks[after]?.agentRun?.workflow?.callId === patch.workflow.callId) after++;
+    const blocks = session.blocks.slice();
+    blocks.splice(after, 0, block);
+    registerBlockChanges(session.blocks, blocks, [block]);
+    return { ...session, blocks };
   }
   const prev = session.blocks[index];
   const capped = capToolDetailMeta(patch.detail);
@@ -1291,12 +1381,15 @@ function upsertTool(
   const truncated = capped.detail
     ? capped.truncated || patch.detailTruncated === true
     : prev.tool?.outputTruncated === true;
-  const preview = fillPreview(
+  const mergedPreview = fillPreview(
     mergeToolPreview(patch.preview, prev.tool?.preview),
     detail,
     patch.kind ?? prev.tool?.kind,
     patch.title,
   );
+  const preview = samePreview(prev.tool?.preview, mergedPreview)
+    ? prev.tool?.preview
+    : mergedPreview;
   const label = finalToolLabel(
     session,
     patch.kind ?? prev.tool?.kind,
@@ -1305,6 +1398,7 @@ function upsertTool(
   );
   const kind = patch.kind ?? prev.tool?.kind;
   const status = patch.status ?? prev.tool?.status;
+  const fileChanges = patch.fileChanges ?? prev.tool?.fileChanges;
   const agentName = prev.agentRun?.steps.length ? prev.agentRun.name : label;
   if (
     prev.text === label &&
@@ -1313,13 +1407,17 @@ function upsertTool(
     prev.tool?.kind === kind &&
     prev.tool?.status === status &&
     prev.tool?.detail === detail &&
+    prev.tool?.fileChanges === fileChanges &&
     (!inlineVisual || JSON.stringify(prev.inlineVisual) === JSON.stringify(inlineVisual)) &&
     (prev.tool?.outputTruncated === true) === truncated &&
     (!patch.agentModel || prev.agentRun?.model === patch.agentModel) &&
     (!prompt || prev.agentRun?.prompt === prompt) &&
+    (!patch.workflow ||
+      (prev.agentRun?.workflow?.callId === patch.workflow.callId &&
+        prev.agentRun?.workflow?.phase === patch.workflow.phase)) &&
     (!prev.agentRun || prev.agentRun.name === agentName) &&
     !endsAgentRun(prev.agentRun, patch.streaming) &&
-    samePreview(prev.tool?.preview, preview)
+    prev.tool?.preview === preview
   ) {
     return session;
   }
@@ -1329,7 +1427,7 @@ function upsertTool(
     ...(inlineVisual ? { inlineVisual } : {}),
     text: label,
     streaming: patch.streaming,
-    ...(patch.agentModel || prev.agentRun
+    ...(patch.agentModel || patch.workflow || prev.agentRun
       ? {
           agentRun: {
             steps: prev.agentRun?.steps ?? [],
@@ -1337,6 +1435,7 @@ function upsertTool(
             name: agentName,
             ...(patch.agentModel ? { model: patch.agentModel } : {}),
             ...(prompt ? { prompt } : {}),
+            ...(patch.workflow ? { workflow: patch.workflow } : {}),
             ...(endsAgentRun(prev.agentRun, patch.streaming) ? { endedAt: Date.now() } : {}),
           },
         }
@@ -1348,12 +1447,17 @@ function upsertTool(
       status,
       ...(detail ? { detail } : {}),
       ...(detail && truncated ? { outputTruncated: true } : {}),
+      ...(fileChanges ? { fileChanges } : {}),
       ...(preview ? { preview } : {}),
       ...(prev.tool?.background ? { background: true } : {}),
       ...(prev.tool?.agentContext ? { agentContext: prev.tool.agentContext } : {}),
     },
   };
-  registerBlockChanges(session.blocks, blocks, [blocks[index]]);
+  if (onlyRunningToolOutputChanged(prev, blocks[index])) {
+    registerStreamingBlockUpdate(session.blocks, blocks, index, "tool-output");
+  } else {
+    registerBlockChanges(session.blocks, blocks, [blocks[index]]);
+  }
   return { ...session, blocks };
 }
 
@@ -1413,17 +1517,23 @@ function samePreview(a?: ToolPreview, b?: ToolPreview): boolean {
   if (!a || !b) return false;
   return (
     a.kind === b.kind &&
+    a.title === b.title &&
     a.path === b.path &&
     a.query === b.query &&
+    sameSearchSources(a.sources, b.sources) &&
     a.fileName === b.fileName &&
     a.additions === b.additions &&
     a.deletions === b.deletions &&
     a.contentOnly === b.contentOnly &&
     a.startLine === b.startLine &&
     a.output === b.output &&
-    a.inspection?.kind === b.inspection?.kind &&
-    a.inspection?.text === b.inspection?.text &&
-    a.inspection?.truncated === b.inspection?.truncated &&
+    (a.inspection === b.inspection ||
+      (!!a.inspection &&
+        !!b.inspection &&
+        a.inspection.kind === b.inspection.kind &&
+        a.inspection.text === b.inspection.text &&
+        a.inspection.truncated === b.inspection.truncated &&
+        Object.keys(a.inspection).length === Object.keys(b.inspection).length)) &&
     a.lines === b.lines
   );
 }
@@ -1525,6 +1635,7 @@ function recordAgentStep(
       ? { agentType: event.agentType ?? run?.agentType }
       : {}),
     ...(run?.prompt ? { prompt: run.prompt } : {}),
+    ...(run?.workflow ? { workflow: run.workflow } : {}),
     steps,
     ...(run?.startedAt !== undefined ? { startedAt: run.startedAt } : {}),
     ...(run?.endedAt !== undefined ? { endedAt: run.endedAt } : {}),

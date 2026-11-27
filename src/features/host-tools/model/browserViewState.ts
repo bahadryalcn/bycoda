@@ -9,7 +9,13 @@ export type BrowserViewState = {
   url: string | null;
   controlling: boolean;
   leaseId?: string;
+  heldBy?: { kind: "controller" } | { kind: "session"; sessionId: string };
+  /** Host clock: when the lease ends there. Compare only with the Host's own clock, never this client's. */
   leaseExpiresAt?: number;
+  /** Host-reported remaining lifetime of the lease, measured when the Host answered. */
+  leaseTtlMs?: number;
+  /** Local `monotonicNow()` deadline derived from `leaseTtlMs`; set when the response arrives. */
+  leaseDeadline?: number;
   data?: string;
   mimeType?: string;
   width?: number;

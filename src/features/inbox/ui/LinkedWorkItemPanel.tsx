@@ -4,8 +4,8 @@ import { t, useLocale } from "../../../shared/i18n";
 import { useDragResize } from "../../../shared/hooks/useDragResize";
 import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Button } from "../../../shared/ui/Button";
-import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Sash } from "../../../shared/ui/Sash";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -52,7 +52,7 @@ export function LinkedWorkItemPanel({
   const { item, error, loading, setItem } = useGithubWorkItem(target, cwd);
   const [errorForUrl, setErrorForUrl] = useState<string | null>(null);
   if (errorForUrl && errorForUrl !== target.url) setErrorForUrl(null);
-  const openError = errorForUrl === target.url ? t("Could not open the link. Try again.") : "";
+  const openProblem = errorForUrl === target.url ? t("Could not open the link. Try again.") : "";
   const targetUrlRef = useRef(target.url);
   targetUrlRef.current = target.url;
   const resize = useDragResize({
@@ -107,24 +107,19 @@ export function LinkedWorkItemPanel({
         {...resize.sashProps}
         appearance="hidden"
         label={t("Resize linked {p0} panel", { p0: kindLabel })}
-        className="absolute inset-y-0 -left-px"
+        className="absolute inset-y-0 start-0"
       />
-      <PaneHeader
-        as="header"
-        titleAs="div"
-        title={t("Linked {p0} #{p1}", { p0: kindLabel, p1: target.number })}
-        actions={
-          <Button
-            variant="ghost"
-            size="sm"
-            iconOnly
-            label={t("Close {p0} panel", { p0: kindLabel })}
-            onClick={onClose}
-          >
-            <X className="icon-sm" strokeWidth={1.75} />
-          </Button>
-        }
-      />
+      {/* The detail's own identity row (kind, reference, status) is the one header; the close button sits at its end. */}
+      <Button
+        variant="ghost"
+        size="sm"
+        iconOnly
+        label={t("Close {p0} panel", { p0: kindLabel })}
+        onClick={onClose}
+        className="absolute end-2 top-1 z-1"
+      >
+        <X className="icon-sm" strokeWidth={1.75} />
+      </Button>
       <div className="min-h-0 min-w-0 flex-1">
         {item ? (
           <InboxDetail
@@ -144,10 +139,13 @@ export function LinkedWorkItemPanel({
         ) : error ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-(--space-10) text-center">
             <CircleX tone="danger" className="icon-lg" strokeWidth={1.75} />
-            <Alert tone="danger" className="max-w-sm">
-              {error}
-            </Alert>
-            {openError ? <InlineError>{openError}</InlineError> : null}
+            <Alert
+              tone="danger"
+              className="max-w-sm"
+              title={t("Could not load this item.")}
+              extra={<ErrorDetails title={t("Could not load this item.")} detail={error} />}
+            />
+            {openProblem ? <InlineError>{openProblem}</InlineError> : null}
             <Button
               variant="secondary"
               type="button"

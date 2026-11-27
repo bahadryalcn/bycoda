@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 pub(crate) struct OwnedChild {
     child: Child,
+    workspace: Option<crate::worktree_lifecycle::Reservation<'static>>,
     #[cfg(windows)]
     job: Option<Arc<crate::owned_process_job::OwnedProcessJob>>,
 }
@@ -14,6 +15,7 @@ impl From<Child> for OwnedChild {
     fn from(child: Child) -> Self {
         Self {
             child,
+            workspace: None,
             #[cfg(windows)]
             job: None,
         }
@@ -32,27 +34,36 @@ impl DerefMut for OwnedChild {
 }
 impl OwnedChild {
     pub(crate) fn spawn(command: &mut Command) -> io::Result<Self> {
+        let workspace = command
+            .get_current_dir()
+            .map(crate::worktree_lifecycle::reserve_spawn)
+            .transpose()
+            .map_err(io::Error::other)?;
         #[cfg(windows)]
         {
             let job = Arc::new(
                 crate::owned_process_job::OwnedProcessJob::new()
-                    .map_err(|_| io::Error::other("Owned process job unavailable"))?,
+                    .map_err(|error| io::Error::other(error.to_string()))?,
             );
+            // The job error holds only the failed step and Win32 code (for
+            // example CreateProcess os error 2), which diagnoses a missing or
+            // blocked binary without exposing a path.
             let child = job
                 .spawn(command)
-                .map_err(|_| io::Error::other("Owned process job spawn failed"))?;
+                .map_err(|error| io::Error::other(error.to_string()))?;
             Ok(Self {
                 child,
+                workspace,
                 job: Some(job),
             })
         }
         #[cfg(unix)]
         {
-            super::spawn_retrying_text_file_busy(command).map(Into::into)
+            super::spawn_retrying_text_file_busy(command).map(|child| Self { child, workspace })
         }
         #[cfg(not(any(unix, windows)))]
         {
-            command.spawn().map(Into::into)
+            command.spawn().map(|child| Self { child, workspace })
         }
     }
 }
@@ -87,6 +98,9 @@ fn record_completion(
     result: io::Result<ExitStatus>,
     retirement: Result<(), Failure>,
 ) {
+    if result.is_ok() && retirement.is_ok() {
+        state.child.workspace.take();
+    }
     state.result = Some(result.map_err(Failure::from));
     state.retirement = Some(retirement);
     state.finalizing = false;
@@ -195,6 +209,10 @@ impl ProcessOwner {
             }),
             changed: Condvar::new(),
         }
+    }
+    /// Live pins; an unreadable owner reports the maximum so callers keep it running.
+    pub(crate) fn pin_count(&self) -> usize {
+        self.state.lock().map_or(usize::MAX, |state| state.pins)
     }
     pub(crate) fn pin(self: &Arc<Self>) -> io::Result<ProcessPin> {
         let mut state = self

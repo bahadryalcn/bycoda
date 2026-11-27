@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { TranscriptVirtualization } from "./transcriptVirtualization";
 
 const ROW = 20;
@@ -62,6 +62,7 @@ function layout(specs: Spec[], options: { agent?: boolean; scrollTop: number }) 
   const owner = new TranscriptVirtualization();
   const scroll = document.createElement("div");
   if (options.agent) scroll.className = "agent-transcript";
+  else scroll.style.overflowY = "auto";
   const other = document.createElement("div");
   Object.defineProperty(scroll, "clientHeight", { value: VIEWPORT });
   const rect = (top: number, height: number) =>
@@ -87,6 +88,131 @@ function layout(specs: Spec[], options: { agent?: boolean; scrollTop: number }) 
 const flat = (count: number, height: number): Spec[] =>
   Array.from({ length: count }, (_, i) => ({ id: `r${i}`, top: i * height, height }));
 const idOf = (node: HTMLElement | null) => node?.dataset.transcriptVirtualBlockId ?? null;
+
+it("does not undo a scroll that the browser has not delivered an event for yet", () => {
+  const position = { scrollTop: 130 };
+  const { owner, scroll } = layout(flat(10, 60), position);
+  Object.defineProperty(scroll, "scrollTop", {
+    get: () => position.scrollTop,
+    set: (value: number) => {
+      position.scrollTop = value;
+    },
+  });
+  vi.useFakeTimers();
+  const anchor = owner.acquire(scroll, null);
+  try {
+    anchor.changed();
+    position.scrollTop = 128;
+    vi.advanceTimersToNextFrame();
+    expect(scroll.scrollTop).toBe(128);
+  } finally {
+    anchor.release();
+    scroll.remove();
+    vi.useRealTimers();
+  }
+});
+
+it("applies a layout shift once even when the browser rounds the scroll offset", () => {
+  const position = { scrollTop: 130 };
+  const rows = flat(10, 60);
+  const { owner, scroll } = layout(rows, position);
+  Object.defineProperty(scroll, "scrollTop", {
+    get: () => position.scrollTop,
+    set: (value: number) => {
+      position.scrollTop = Math.floor(value);
+    },
+  });
+  const adjusted = vi.fn();
+  owner.setAdjusted(adjusted);
+  vi.useFakeTimers();
+  const anchor = owner.acquire(scroll, null);
+  try {
+    rows[2].top += 1.75;
+    anchor.changed();
+    vi.advanceTimersToNextFrame();
+    expect(scroll.scrollTop).toBe(131);
+    expect(adjusted).toHaveBeenCalledOnce();
+
+    anchor.changed();
+    vi.advanceTimersToNextFrame();
+    expect(scroll.scrollTop).toBe(131);
+    expect(adjusted).toHaveBeenCalledOnce();
+  } finally {
+    anchor.release();
+    scroll.remove();
+    vi.useRealTimers();
+  }
+});
+
+it("leaves the scroller to bottom-follow and resumes anchoring after the reader leaves", () => {
+  const position = { scrollTop: 130 };
+  const rows = flat(10, 60);
+  const { owner, scroll } = layout(rows, position);
+  Object.defineProperty(scroll, "scrollTop", {
+    get: () => position.scrollTop,
+    set: (value: number) => {
+      position.scrollTop = value;
+    },
+  });
+  let following = true;
+  const adjusted = vi.fn();
+  owner.setAdjusted(adjusted, () => !following);
+  vi.useFakeTimers();
+  const anchor = owner.acquire(scroll, null);
+  try {
+    rows[2].top -= 1;
+    anchor.changed();
+    vi.advanceTimersToNextFrame();
+    expect(scroll.scrollTop).toBe(130);
+    expect(adjusted).not.toHaveBeenCalled();
+
+    following = false;
+    rows[2].top += 5;
+    anchor.changed();
+    vi.advanceTimersToNextFrame();
+    expect(scroll.scrollTop).toBe(135);
+    expect(adjusted).toHaveBeenCalledWith(scroll);
+  } finally {
+    anchor.release();
+    scroll.remove();
+    vi.useRealTimers();
+  }
+});
+
+it("does not move the transcript when a phase gains its own scroller", () => {
+  const position = { scrollTop: 130, agent: true };
+  const rows = flat(10, 60);
+  const { owner, scroll } = layout(rows, position);
+  Object.defineProperty(scroll, "scrollTop", {
+    get: () => position.scrollTop,
+    set: (value: number) => {
+      position.scrollTop = value;
+    },
+  });
+  const row = scroll.querySelector('[data-transcript-virtual-block-id="r2"]')!;
+  const phase = document.createElement("div");
+  row.before(phase);
+  phase.append(row);
+  const adjusted = vi.fn();
+  owner.setAdjusted(adjusted);
+  vi.useFakeTimers();
+  const anchor = owner.acquire(scroll, null);
+  try {
+    // The list remains mounted with its old owner as the live phase starts scrolling.
+    phase.style.overflowY = "auto";
+    for (let frame = 0; frame < 3; frame++) {
+      rows[2].top -= 4;
+      anchor.changed();
+      vi.advanceTimersToNextFrame();
+    }
+    expect(scroll.scrollTop).toBe(130);
+    expect(adjusted).not.toHaveBeenCalled();
+  } finally {
+    anchor.release();
+    scroll.remove();
+    vi.useRealTimers();
+  }
+});
 
 it("picks the same anchor for rows above, inside and below the viewport", () => {
   const rows = flat(10, 60); // row i spans [60i, 60i+60)
@@ -160,4 +286,46 @@ it("settles only the reveal it was given, so a newer target survives", () => {
   owner.reveal("next");
   owner.settleReveal("restored");
   expect(owner.snapshot()).toBe("next");
+});
+
+it("drops fold state of rows a list no longer has, and leaves other lists alone", () => {
+  const owner = new TranscriptVirtualization();
+  const folds = owner.codeFoldsFor("turn:1:items");
+  folds.set("kept", { a: true });
+  folds.set("removed", { b: false });
+  owner.codeFoldsFor("turn:2:items").set("removed", { c: true });
+
+  owner.retainRows("turn:1:items", new Set(["kept"]));
+
+  expect([...folds.keys()]).toEqual(["kept"]);
+  expect(owner.codeFoldsFor("turn:2:items").get("removed")).toEqual({ c: true });
+});
+
+it("drops a list's sizes and folds when it unmounts, and restores them on a replayed mount", () => {
+  const owner = new TranscriptVirtualization();
+  const sizes = new Map([["row", { width: 1, height: 2 }]]);
+  const folds = new Map([["row", { a: true }]]);
+
+  const release = owner.holdList("list", sizes, folds);
+  expect(owner.measurementsFor("list")).toBe(sizes);
+  release();
+  expect(owner.measurements.has("list")).toBe(false);
+  expect(owner.codeFolds.has("list")).toBe(false);
+
+  // A strict-mode replay holds the same maps again, so the owner sees them as before.
+  const replay = owner.holdList("list", sizes, folds);
+  expect(owner.codeFoldsFor("list")).toBe(folds);
+  replay();
+});
+
+it("lets a newer hold of a list survive the release of an older one", () => {
+  const owner = new TranscriptVirtualization();
+  const older = owner.holdList("list", new Map(), new Map());
+  const newerFolds = new Map<string, Record<string, boolean>>();
+  const newer = owner.holdList("list", new Map(), newerFolds);
+
+  older();
+  expect(owner.codeFolds.get("list")).toBe(newerFolds);
+  newer();
+  expect(owner.codeFolds.has("list")).toBe(false);
 });

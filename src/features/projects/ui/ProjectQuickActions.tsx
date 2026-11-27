@@ -1,12 +1,11 @@
 import { Button } from "../../../shared/ui/Button";
-import { Alert } from "../../../shared/ui/Alert";
 import {
   type ExpandingButtonGroupItem,
   type ExpandingButtonGroupTriggerProps,
 } from "../../../shared/ui/ButtonGroup";
 import { useT } from "../../../shared/i18n";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   listExternalEditors,
@@ -24,6 +23,8 @@ import { ProjectActionDialog } from "./ProjectActionDialog";
 import { lazySurface } from "../../../shared/ui/lazySurface";
 import type { DevServerStart, DevServerStartResult } from "../../host-tools/devServerTypes";
 import { hostFeatureRequest } from "../../connections/public/hostFeatureClient";
+import { RemoteActionError } from "../../connections/public/RemoteActionError";
+import { describeRemoteError, type RemoteErrorView } from "../../connections/public/remoteFailure";
 import { parseRemotePath } from "../../connections/public/remoteProjects";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
 import { shortcutMatches } from "../../settings/public/settings";
@@ -33,6 +34,8 @@ import {
   FolderOpen,
   Globe,
   CheckList,
+  MoreHorizontal,
+  Pencil,
   Play,
   Plus,
   Terminal,
@@ -70,7 +73,10 @@ type ProjectQuickActionsProps = {
   actionsCwd?: string;
   onRun?: (action: ProjectAction) => void;
   shortcutsEnabled?: boolean;
+  /** Frequent actions shown as header buttons, after the run action. */
   additionalItems?: readonly ExpandingButtonGroupItem[];
+  /** Occasional actions listed in the "More actions" menu, above the project menus. Each needs `onSelect`. */
+  overflowItems?: readonly ExpandingButtonGroupItem[];
   /** Structural control kept outside the action group, after a gap. */
   trailing?: ReactNode;
 };
@@ -87,18 +93,20 @@ function ProjectQuickActionsFor({
   onRun,
   shortcutsEnabled = true,
   additionalItems = [],
+  overflowItems = [],
   trailing,
 }: ProjectQuickActionsProps) {
   const t = useT();
   const [menu, setMenu] = useState<{
-    kind: "open" | "actions";
+    kind: "open" | "actions" | "more";
     anchor: HTMLElement;
   } | null>(null);
   const [editors, setEditors] = useState<ExternalEditor[]>([]);
   const [loading, setLoading] = useState(false);
   const [actions, setActions] = useState(() => loadProjectActions(actionsCwd));
   const [draft, setDraft] = useState<ProjectAction | null>(null);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<RemoteErrorView | null>(null);
+  const fail = (reason: unknown) => setError(describeRemoteError(reason));
   const [editing, setEditing] = useState(false);
   const [launch, setLaunch] = useState<{
     input: DevServerStart;
@@ -108,8 +116,7 @@ function ProjectQuickActionsFor({
   const pendingLaunch = useRef(false);
   const launchGeneration = useRef(0);
   const local = isLocalProject(cwd);
-  const actionsTrigger = useRef<HTMLButtonElement>(null);
-  const openTrigger = useRef<HTMLButtonElement>(null);
+  const moreTrigger = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const reload = () => setActions(loadProjectActions(actionsCwd));
@@ -134,7 +141,7 @@ function ProjectQuickActionsFor({
       .catch((reason: unknown) => {
         if (active) {
           setEditors([]);
-          setError(String(reason));
+          setError(describeRemoteError(reason));
         }
       })
       .finally(() => {
@@ -150,44 +157,41 @@ function ProjectQuickActionsFor({
   // listener below from being rebuilt for it.
   const onRunLatest = useStableCallback(onRun);
   const canRun = !!onRun;
-  const run = useCallback(
-    (action: ProjectAction) => {
-      setMenu(null);
-      setError("");
-      if (action.devServer && action.command.trim()) {
-        if (pendingLaunch.current) return;
-        pendingLaunch.current = true;
-        const revision = launchGeneration.current;
-        const expectedPort = actionExpectedPort(action.url);
-        const input = {
-          name: action.name,
-          command: action.command.trim(),
-          cwd: parseRemotePath(cwd)?.hostPath ?? cwd,
-          expectedPort,
-        };
-        setLaunch({ input, pending: true });
-        void hostFeatureRequest<DevServerStartResult>(cwd, "dev.servers", "devServers.start", input)
-          .then((result) => {
-            if (revision === launchGeneration.current)
-              setLaunch((current) => (current ? { input, result } : current));
-          })
-          .catch((reason: unknown) => {
-            if (revision === launchGeneration.current) {
-              setLaunch((current) => (current ? { input } : current));
-              setError(String(reason));
-            }
-          })
-          .finally(() => {
-            if (revision === launchGeneration.current) pendingLaunch.current = false;
-          });
-        return;
-      }
-      if (action.command.trim()) onRunLatest?.(action);
-      if (action.url.trim() && action.openUrlOnRun !== false)
-        void openUrl(action.url.trim()).catch((reason: unknown) => setError(String(reason)));
-    },
-    [cwd, onRunLatest],
-  );
+  const run = useStableCallback((action: ProjectAction) => {
+    setMenu(null);
+    setError(null);
+    if (action.devServer && action.command.trim()) {
+      if (pendingLaunch.current) return;
+      pendingLaunch.current = true;
+      const revision = launchGeneration.current;
+      const expectedPort = actionExpectedPort(action.url);
+      const input = {
+        name: action.name,
+        command: action.command.trim(),
+        cwd: parseRemotePath(cwd)?.hostPath ?? cwd,
+        expectedPort,
+      };
+      setLaunch({ input, pending: true });
+      void hostFeatureRequest<DevServerStartResult>(cwd, "dev.servers", "devServers.start", input)
+        .then((result) => {
+          if (revision === launchGeneration.current)
+            setLaunch((current) => (current ? { input, result } : current));
+        })
+        .catch((reason: unknown) => {
+          if (revision === launchGeneration.current) {
+            setLaunch((current) => (current ? { input } : current));
+            setError(describeRemoteError(reason));
+          }
+        })
+        .finally(() => {
+          if (revision === launchGeneration.current) pendingLaunch.current = false;
+        });
+      return;
+    }
+    if (action.command.trim()) onRunLatest?.(action);
+    if (action.url.trim() && action.openUrlOnRun !== false)
+      void openUrl(action.url.trim()).catch(fail);
+  });
 
   useEffect(() => {
     if (!shortcutsEnabled) return;
@@ -212,12 +216,16 @@ function ProjectQuickActionsFor({
     try {
       saveProjectActions(actionsCwd, values);
     } catch (reason) {
-      setError(t("Could not save actions: {p0}", { p0: String(reason) }));
+      // A browser storage failure, not a remote one: no Host text to disclose.
+      setError({
+        message: t("Could not save actions: {p0}", { p0: String(reason) }),
+        details: "",
+      });
       return false;
     }
     setActions(values);
     if (!keepAdding) setDraft(null);
-    setError("");
+    setError(null);
     return true;
   };
   const openItems: ExplorerMenuItem[] = [
@@ -241,33 +249,22 @@ function ProjectQuickActionsFor({
     {
       kind: "item",
       id: "folder",
-      label: IS_MAC ? "Finder" : "File Explorer",
-      icon: <FolderOpen tone="warning" className="icon-md" />,
+      label: IS_MAC ? t("Finder") : t("File Explorer"),
+      icon: <FolderOpen tone="warning" className="icon-sm" />,
     },
   ];
   const actionItems: ExplorerMenuItem[] = [
+    // One click runs an action; editing is a separate submenu below.
     ...actions.map((action) => {
       const Icon = ICONS[action.icon];
       return {
         kind: "item" as const,
-        id: action.id,
+        id: `run:${action.id}`,
         label: action.name,
         description: action.command || action.url,
         shortcut: action.shortcut ? quickComposerShortcutLabel(action.shortcut) : undefined,
-        icon: <Icon className="size-4" />,
-        submenu: [
-          {
-            kind: "item" as const,
-            id: `run:${action.id}`,
-            label: t("Run action"),
-            disabled: Boolean(action.command.trim() && !action.devServer && !onRun),
-          },
-          {
-            kind: "item" as const,
-            id: `edit:${action.id}`,
-            label: t("Edit action"),
-          },
-        ],
+        icon: <Icon className="icon-sm" />,
+        disabled: Boolean(action.command.trim() && !action.devServer && !onRun),
       };
     }),
     ...(actions.length ? [{ kind: "sep" as const }] : []),
@@ -275,8 +272,23 @@ function ProjectQuickActionsFor({
       kind: "item",
       id: "add",
       label: t("Add action…"),
-      icon: <Plus className="icon-md" />,
+      icon: <Plus className="icon-sm" />,
     },
+    ...(actions.length
+      ? [
+          {
+            kind: "item" as const,
+            id: "edit-menu",
+            label: t("Edit action"),
+            icon: <Pencil className="icon-sm" />,
+            submenu: actions.map((action) => ({
+              kind: "item" as const,
+              id: `edit:${action.id}`,
+              label: action.name,
+            })),
+          },
+        ]
+      : []),
   ];
   const selected = actions[0];
   const SelectedIcon = selected ? ICONS[selected.icon] : Play;
@@ -288,8 +300,9 @@ function ProjectQuickActionsFor({
             label: selected.name,
             shortcut: selected.shortcut ? quickComposerShortcutLabel(selected.shortcut) : undefined,
             ariaLabel: t("Run {p0}", { p0: selected.name }),
-            tooltip: `${selected.name}\n${selected.command || selected.url}\n${cwd}`,
-            icon: <SelectedIcon className="size-3.5" />,
+            // The name is the visible label; the tooltip adds only what it runs.
+            tooltip: selected.command || selected.url,
+            icon: <SelectedIcon className="icon-sm" />,
             disabled:
               Boolean(selected.command.trim() && !selected.devServer && !onRun) ||
               !!launch?.pending,
@@ -297,54 +310,65 @@ function ProjectQuickActionsFor({
           },
         ]
       : []),
+    ...additionalItems,
     {
-      id: "project-actions",
-      label: t("Project actions"),
-      tooltip: `${t("Project actions")}\n${cwd}`,
-      icon: <CheckList className="icon-sm" />,
+      id: "more-actions",
+      label: t("More actions"),
+      icon: <MoreHorizontal className="icon-sm" strokeWidth={1.75} />,
       render: (renderTrigger) =>
         renderTrigger({
-          ref: actionsTrigger,
+          ref: moreTrigger,
           "aria-haspopup": "menu",
-          "aria-expanded": menu?.kind === "actions",
+          "aria-expanded": menu != null,
           onSelect: () => {
-            setError("");
-            if (actionsTrigger.current)
-              setMenu(
-                menu?.kind === "actions"
-                  ? null
-                  : { kind: "actions", anchor: actionsTrigger.current },
-              );
+            setError(null);
+            if (moreTrigger.current)
+              setMenu(menu ? null : { kind: "more", anchor: moreTrigger.current });
           },
         }),
+    },
+  ];
+  // The project menus open in place of this one, at the same trigger.
+  const moreItems: ExplorerMenuItem[] = [
+    ...overflowItems.map((item) => ({
+      kind: "item" as const,
+      id: `item:${item.id}`,
+      label: item.label,
+      icon: item.icon,
+      shortcut: item.shortcut ?? undefined,
+      disabled: item.disabled,
+      checked: item.active || undefined,
+    })),
+    ...(overflowItems.length ? [{ kind: "sep" as const }] : []),
+    {
+      kind: "item",
+      id: "menu:actions",
+      label: t("Project actions"),
+      icon: <CheckList className="icon-sm" />,
     },
     ...(local
       ? [
           {
-            id: "open-project",
+            kind: "item" as const,
+            id: "menu:open",
             label: t("Open project in"),
-            tooltip: `${t("Open project in")}\n${cwd}`,
             icon: <FolderOpen className="icon-sm" />,
-            render: (
-              renderTrigger: Parameters<NonNullable<ExpandingButtonGroupItem["render"]>>[0],
-            ) =>
-              renderTrigger({
-                ref: openTrigger,
-                "aria-haspopup": "menu",
-                "aria-expanded": menu?.kind === "open",
-                onSelect: () => {
-                  setError("");
-                  if (openTrigger.current)
-                    setMenu(
-                      menu?.kind === "open" ? null : { kind: "open", anchor: openTrigger.current },
-                    );
-                },
-              }),
           },
         ]
       : []),
-    ...additionalItems,
   ];
+  const pickMore = (id: string) => {
+    const anchor = menu?.anchor;
+    if (id === "menu:actions" || id === "menu:open") {
+      if (anchor) setMenu({ kind: id === "menu:open" ? "open" : "actions", anchor });
+      return;
+    }
+    setMenu(null);
+    const item = overflowItems.find((value) => `item:${value.id}` === id);
+    void Promise.resolve()
+      .then(() => item?.onSelect?.())
+      .catch(fail);
+  };
   return (
     <div
       className="flex shrink-0 items-center gap-1"
@@ -353,20 +377,27 @@ function ProjectQuickActionsFor({
       // Portal menus still bubble through this React owner into the draggable header.
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <ProjectQuickActionButtons items={items} onError={setError} />
+      <ProjectQuickActionButtons items={items} onError={fail} />
       {trailing ? <div className="ms-1 flex items-center">{trailing}</div> : null}
       {menu ? (
         <ExplorerMenu
+          key={menu.kind}
           anchor={menu.anchor}
-          ariaLabel={menu.kind === "open" ? t("Open project in") : t("Project actions")}
-          items={menu.kind === "open" ? openItems : actionItems}
+          ariaLabel={
+            menu.kind === "open"
+              ? t("Open project in")
+              : menu.kind === "more"
+                ? t("More actions")
+                : t("Project actions")
+          }
+          items={menu.kind === "open" ? openItems : menu.kind === "more" ? moreItems : actionItems}
           onClose={() => setMenu(null)}
           onPick={(id) => {
-            if (menu.kind === "open") {
+            if (menu.kind === "more") {
+              pickMore(id);
+            } else if (menu.kind === "open") {
               setMenu(null);
-              void (id === "folder" ? revealPath(cwd) : openInExternalEditor(id, cwd)).catch(
-                (reason: unknown) => setError(String(reason)),
-              );
+              void (id === "folder" ? revealPath(cwd) : openInExternalEditor(id, cwd)).catch(fail);
             } else if (id === "add") {
               setMenu(null);
               setEditing(false);
@@ -375,6 +406,7 @@ function ProjectQuickActionsFor({
               const action = actions.find((value) => value.id === id.replace(/^(run|edit):/, ""));
               if (!action) return;
               if (id.startsWith("edit:")) {
+                // `edit-menu` is only the submenu parent and never reaches here.
                 setMenu(null);
                 setEditing(true);
                 setDraft({ ...action });
@@ -384,8 +416,8 @@ function ProjectQuickActionsFor({
         />
       ) : null}
       {error && !draft && !launch ? (
-        <Modal title={t("Project action failed")} onClose={() => setError("")} size="sm">
-          <Alert tone="danger">{error}</Alert>
+        <Modal title={t("Project action failed")} onClose={() => setError(null)} size="sm">
+          <RemoteActionError error={error} />
         </Modal>
       ) : null}
       {launch ? (
@@ -395,11 +427,11 @@ function ProjectQuickActionsFor({
           size="lg"
           onClose={() => {
             setLaunch(undefined);
-            setError("");
+            setError(null);
           }}
         >
           <div className="host-tools host-tools-content">
-            {error ? <Alert tone="danger">{error}</Alert> : null}
+            {error ? <RemoteActionError error={error} /> : null}
             <DevServersPanel cwd={cwd} launch={launch} />
           </div>
         </Modal>
@@ -414,7 +446,7 @@ function ProjectQuickActionsFor({
           error={error}
           onClose={() => {
             setDraft(null);
-            setError("");
+            setError(null);
           }}
           onDelete={() => persist(actions.filter((action) => action.id !== draft.id))}
           onSave={(saved) =>
@@ -436,7 +468,7 @@ function ProjectQuickActionButtons({
   onError,
 }: {
   items: readonly ExpandingButtonGroupItem[];
-  onError: (message: string) => void;
+  onError: (reason: unknown) => void;
 }) {
   return items.map((item) => {
     const renderTrigger = (trigger: ExpandingButtonGroupTriggerProps = {}) => (
@@ -456,8 +488,9 @@ function ProjectQuickActionTrigger({
   ...props
 }: ExpandingButtonGroupTriggerProps & {
   item: ExpandingButtonGroupItem;
-  onError: (message: string) => void;
+  onError: (reason: unknown) => void;
 }) {
+  const t = useT();
   return (
     <Button
       ref={ref}
@@ -471,6 +504,7 @@ function ProjectQuickActionTrigger({
       selected={item.active}
       tone={item.tone}
       disabled={disabled ?? item.disabled}
+      disabledReason={(disabled ?? item.disabled) ? t("Not available right now.") : undefined}
       aria-haspopup={props["aria-haspopup"]}
       aria-expanded={props["aria-expanded"]}
       data-tauri-drag-region="false"
@@ -480,7 +514,7 @@ function ProjectQuickActionTrigger({
         try {
           await select();
         } catch (reason) {
-          onError(String(reason));
+          onError(reason);
         }
       }}
       onContextMenu={

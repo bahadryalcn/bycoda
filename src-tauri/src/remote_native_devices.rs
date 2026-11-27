@@ -52,6 +52,7 @@ fn wire_method(method: &str) -> Option<String> {
             | "devices.boot"
             | "devices.capture"
             | "devices.stream"
+            | "devices.touch"
             | "devices.control.status"
             | "devices.control.claim"
             | "devices.control.release"
@@ -156,9 +157,10 @@ impl NativeDeviceChannel {
             )
         })?;
         issuer.admit_device(&channel, |_| Ok(()))?;
-        if descriptor["environmentId"] != channel.selection.machine.environment_id
-            || descriptor["protocolVersion"] != 1
-        {
+        if let Some(message) = crate::remote::protocol::protocol_mismatch(&descriptor) {
+            return Err(message.into());
+        }
+        if descriptor["environmentId"] != channel.selection.machine.environment_id {
             return Err(
                 "The selected device Host identity changed; reconnect it explicitly".into(),
             );

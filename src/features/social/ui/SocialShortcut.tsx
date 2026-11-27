@@ -31,13 +31,15 @@ export function SocialShortcut({
   return (
     <Button
       disabled={socialLocked}
+      disabledReason={t("Wait for the current Social Media action to finish.")}
       variant={responsiveRail ? "item" : "ghost"}
       motion="none"
       {...(compact || rail ? { iconOnly: true, label: t("Social Media") } : { iconOnly: false })}
-      tooltip={t("Social Media")}
+      // The label is visible or the accessible name already; a hint only helps where the rail hides the text.
+      tooltip={responsiveRail ? t("Social Media") : undefined}
       tooltipWhen="overflow"
       aria-pressed={active}
-      aria-label={t("Social Media")}
+      aria-label={responsiveRail ? t("Social Media") : undefined}
       onClick={() => window.dispatchEvent(new CustomEvent(SOCIAL_PANEL_EVENT, { detail: { cwd } }))}
     >
       <span

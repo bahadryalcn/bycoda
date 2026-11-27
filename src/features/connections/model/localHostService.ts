@@ -1,10 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
+import { startForegroundPolling } from "../../../shared/lib/foregroundPolling";
 import type { RemoteMachine } from "./protocol";
 import { notifyRemoteRecovered } from "./remoteHealth";
 
 /** `stopped` requires evidence the host is down; failed health checks are `unknown`. */
-export type LocalHostState = "absent" | "running" | "stopped" | "updating" | "unknown";
+export type LocalHostState = "absent" | "running" | "starting" | "stopped" | "updating" | "unknown";
 
 const POLL_MS = 15_000;
 
@@ -12,7 +13,19 @@ const POLL_MS = 15_000;
  * Rejects with the host's reason when it could not be started. */
 export async function startLocalHost(): Promise<void> {
   const machine = await invoke<RemoteMachine | null>("local_host_start");
+  publishLocalHostStarted();
   notifyRemoteRecovered(machine?.environmentId);
+}
+
+/** The owner's "Reconnect" after this computer's Host revoked its link: pairs again through the
+ * local launcher, then lets every view reload. Never called on its own; rejects with the reason
+ * when this is not the local link or the Host did not issue a pairing. */
+export async function reconnectLocalHost(machine: RemoteMachine): Promise<RemoteMachine> {
+  const repaired = await invoke<RemoteMachine>("local_host_reconnect", { machineId: machine.id });
+  // The environment can change when the new pairing reaches another Host.
+  for (const environmentId of new Set([machine.environmentId, repaired.environmentId]))
+    notifyRemoteRecovered(environmentId);
+  return repaired;
 }
 
 type LocalHostListener = (state: LocalHostState | undefined) => void;
@@ -22,10 +35,11 @@ type LocalHostListener = (state: LocalHostState | undefined) => void;
 const localHostListeners = new Set<LocalHostListener>();
 let localHostCurrent: LocalHostState | undefined;
 let localHostPrevious: LocalHostState | undefined;
-let localHostTimer: number | undefined;
+let stopLocalHostPolling: (() => void) | undefined;
 let localHostSession = 0;
 
 function publishLocalHost(next: LocalHostState | undefined) {
+  if (localHostCurrent === next) return;
   localHostCurrent = next;
   for (const listener of localHostListeners) listener(next);
 }
@@ -52,30 +66,26 @@ function loadLocalHost(): Promise<void> {
   );
 }
 
-function syncLocalHostPolling() {
+/** A successful start is the freshest evidence: every consumer leaves `stopped` at once instead of
+ * at the next tick, then the real status is read. A host that dies again afterwards is reported
+ * like any outage (`previous` is `running`, so two agreeing polls show it again). */
+function publishLocalHostStarted() {
   if (!localHostListeners.size) return;
-  if (document.hidden) {
-    window.clearInterval(localHostTimer);
-    localHostTimer = undefined;
-    return;
-  }
-  if (localHostTimer !== undefined) return;
-  const load = () =>
-    void loadLocalHost().catch((error: unknown) => console.warn("Local host poll failed", error));
-  load();
-  localHostTimer = window.setInterval(load, POLL_MS);
+  // A poll already in flight predates the start and must not republish `stopped`.
+  localHostSession++;
+  localHostPrevious = "running";
+  publishLocalHost("running");
+  void loadLocalHost().catch((error: unknown) => console.warn("Local host refresh failed", error));
 }
 
 function subscribeLocalHost(listener: LocalHostListener): () => void {
-  if (!localHostListeners.size) document.addEventListener("visibilitychange", syncLocalHostPolling);
   localHostListeners.add(listener);
   if (localHostCurrent !== undefined) listener(localHostCurrent);
-  syncLocalHostPolling();
+  stopLocalHostPolling ??= startForegroundPolling(loadLocalHost, POLL_MS, { urgent: true }).stop;
   return () => {
     if (!localHostListeners.delete(listener) || localHostListeners.size) return;
-    document.removeEventListener("visibilitychange", syncLocalHostPolling);
-    window.clearInterval(localHostTimer);
-    localHostTimer = undefined;
+    stopLocalHostPolling?.();
+    stopLocalHostPolling = undefined;
     // Results still in flight belong to the ended session and are ignored.
     localHostSession++;
     localHostCurrent = undefined;

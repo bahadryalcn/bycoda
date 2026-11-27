@@ -104,7 +104,7 @@ export function useConversationPanelMessages(
         selected.current === id &&
         threadVisible(id)
       )
-        setError(t(message));
+        setError(message);
       if (sequence === messageLoadSequence.current)
         setLoadedThreads((current) => (current[id] ? current : { ...current, [id]: true }));
     } finally {
@@ -146,14 +146,14 @@ export function useConversationPanelMessages(
       if (current())
         setSummaryError({
           threadId: target.threadId,
-          text: t("Summary refresh was not confirmed."),
+          text: t("Summary refresh could not be confirmed."),
         });
     } finally {
       summaryPending.current = false;
       if (alive.current) setSummaryRefreshing(false);
     }
   }
-  async function open() {
+  async function open(onOpened: () => void) {
     if (pending || clearingRef.current) return;
     if (scope !== "global" && !canSeeProject(project)) return;
     setPending(true);
@@ -163,9 +163,12 @@ export function useConversationPanelMessages(
         op: "threads.open",
         ...(scope !== "global" && project ? { projectId: project } : {}),
       });
-      if (result.thread) setThreadId(result.thread.id);
+      if (result.thread) {
+        setThreadId(result.thread.id);
+        onOpened();
+      }
     } catch (cause) {
-      setError(t(actionError(cause)));
+      setError(actionError(cause));
     } finally {
       setPending(false);
     }
@@ -195,7 +198,7 @@ export function useConversationPanelMessages(
           revision: page.revision,
           next: page.next,
           loading: false,
-          error: undefined,
+          problem: undefined,
         };
       });
     } catch (cause) {
@@ -204,7 +207,7 @@ export function useConversationPanelMessages(
           ? {
               ...current,
               loading: false,
-              error: t(actionError(cause)),
+              problem: actionError(cause),
             }
           : current,
       );
@@ -220,7 +223,7 @@ export function useConversationPanelMessages(
       loading: true,
     });
     void loadDraftBackups(threadId, environmentId).catch((cause: unknown) =>
-      setError(t(actionError(cause))),
+      setError(actionError(cause)),
     );
   }
   async function selectDraftBackup(hash: string) {
@@ -232,7 +235,7 @@ export function useConversationPanelMessages(
       selectedText: undefined,
       selectedSavedAt: undefined,
       loading: true,
-      error: undefined,
+      problem: undefined,
     });
     try {
       const backup = await readAssistantDraftBackup(
@@ -262,7 +265,7 @@ export function useConversationPanelMessages(
           ? {
               ...current,
               loading: false,
-              error: t(actionError(cause)),
+              problem: actionError(cause),
             }
           : current,
       );
@@ -281,7 +284,7 @@ export function useConversationPanelMessages(
     )
       return;
     const release = beginAssistantDraftOperation();
-    setDraftRecovery({ ...recovery, loading: true, error: undefined });
+    setDraftRecovery({ ...recovery, loading: true, problem: undefined });
     try {
       const old = nativeDrafts.current.get(recovery.threadId);
       if (old?.pending) await old.pending;
@@ -336,7 +339,7 @@ export function useConversationPanelMessages(
           ? {
               ...current,
               loading: false,
-              error: t(actionError(cause)),
+              problem: actionError(cause),
             }
           : current,
       );

@@ -1,4 +1,5 @@
 import type { RoutedRun } from "../tasks/model-routing";
+import { readOnlyRule } from "../tasks/prompt-rules";
 import { createHash } from "node:crypto";
 import {
   GOAL_FINAL_ACCEPTANCE_CRITERIA,
@@ -101,7 +102,7 @@ export function plannerPrompt(
 ): string {
   const lead = projects.find((project) => project.lead)!;
   return [
-    "You are planning a job that other agents will carry out across one or more projects. Only read: do not edit, create or delete files, do not commit, and do not start the work yourself.",
+    `You are planning a job that other agents will carry out across one or more projects. ${readOnlyRule("read")} Do not start the work yourself.`,
     "",
     `Job: ${goal.title}`,
     "",

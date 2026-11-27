@@ -14,11 +14,24 @@ Skills show only the saved owner preference: the switch on a skill's page, and *
 in the list. Bycoda does not observe skill readiness or activity, so the Skills
 screen does not display them.
 
+## Browser and desktop tools
+
+Ask for a bycoda browser preview to use the Browser panel and its profile settings.
+Ask for your real browser or a desktop app to use Computer Use. The agent checks
+the desktop helper and its effective permissions before acting. Both tools can
+be used in the same conversation.
+
+When you name a provider's browser or desktop plugin, the agent checks that
+connection and reports any failure. The agent can use bycoda's tools when they
+match the target you asked for. For example, opening an existing Chrome window
+uses Computer Use and its app permissions.
+
 ## bykit
 
-When the `bykit` command-line tool is installed and on the Host's PATH, every agent
-session is told not to write throwaway scripts and to use `bykit` for large files,
-diffs, long command output, broad searches and bulk edits. Without it nothing changes.
+Agents use `bykit` when it is available and suits the operation. They can use
+other tools when needed, including Python, Node and shell commands to inspect
+files. For authorized edits, patches and scripts that preserve encoding and
+line endings are also supported.
 Installing it takes effect within about a minute for sessions started afterward.
 **Settings > Tools > bykit** turns the instructions off or on for this computer's
 Host; the change applies from the next agent turn.
@@ -34,12 +47,27 @@ Browser's initial address prefills a new view without navigating; open it when
 ready. Address-bar search is disabled by default. When enabled, search terms use
 the selected engine. A custom HTTP or HTTPS search URL uses one `{query}`
 placeholder for encoded search terms and cannot contain credentials. Browser
-viewport offers presets or custom integer dimensions: width 240–2560 and height
+viewport offers presets or custom integer dimensions: width 240–3840 and height
 240–2160 pixels. The viewport applies on the first explicit open of a fresh
 Browser session; an active session keeps its viewport.
 
 Live view does not claim device control or start the Host. Log and server
 refreshes pause while hidden and retain their existing backoff behavior.
+
+The Devices tab has two switches. **Use devices** shows or removes the Devices
+tool in conversation tool views; turning it off stops nothing that is already
+running on a Host. **Agents can use devices** is stored on this computer's Host:
+while it is off, the Host refuses every agent and assistant `devices.*` tool call,
+including calls an agent routes to another computer. Agent sessions running on
+another computer's Host follow that Host's own switch, which stays on. Both rows
+show the pinned hub and agent-device versions.
+
+**Device sources** lists this computer and each saved computer running bycoda Host,
+with iOS and Android availability read from that Host. **Test connection** reads the
+status again. **Edit** and **Add source** open Connections, where computers are
+added and changed. **Remove from Devices** only hides a saved computer from the
+Devices machine picker; the computer, its connection and its other tools are kept,
+and **Show in Devices** brings it back.
 
 ## Delegation readiness
 
@@ -56,35 +84,43 @@ endpoint. Checks of an existing process never issue replacement grants.
 An installed Device Host starts only after **Connect devices**. Opening the panel
 reads its status. Failed status or discovery refreshes invalidate the previous
 readiness and activity observation; retained device drafts and frames stay intact.
+Background status, discovery and live screen failures are logged and retried.
+The panel shows a warning after three seconds of ordinary interruption.
+Errors from actions you trigger are shown right away.
 
 The device header holds the device picker, refresh and control state. Each device carries its platform
 icon (Android or iOS), green while the device is running; its version, kind and state
 are in the picker list and tooltip. The screen fills the panel with its controls on a
 vertical rail beside it; **Device options** at the end of the rail holds the
 accessibility snapshot, coordinate controls, setup and zoom. **Setup and access**
-shows the device host state, what each platform's SDK check found, and the setup and
-start or stop actions. Without a selected device, the panel lists devices to open.
+lets you choose the machine that runs Devices. For iOS simulators, select the paired
+Mac even when the conversation belongs to a Windows project. The runtime status,
+platform checks, and setup and start or stop actions follow that selection. Without a
+selected device, the panel lists devices to open.
 
-Live view follows an Android device as video when the Host is on Windows or macOS,
-so the screen moves as it does on the phone and input shows its result at once.
-iOS simulators, older Hosts and any stream failure use still captures instead,
-about one per second. Pausing keeps the picture that was on screen.
+Live view streams Android devices on Windows or macOS Hosts and single-display iOS
+simulators on a Mac. Select the device's machine once. The panel uses that Host
+connection whether you are at that computer or connected remotely. It can display the first decoded picture
+while the still capture is pending. On a Host that supports live touch, Android
+tracks your pointer while you drag. Other Hosts send a swipe when you release.
+Older Hosts can use the previous video transport. Foldable iOS simulators and devices without
+working video request up to three stills per second, one capture at a time. During a transient
+video interruption, the panel shows the last available picture as **Last frame · Not live** until
+a fresh picture arrives. Pausing keeps the current picture.
 
 On a Mac with Xcode 27.1 or later, an available iPhone Duo simulator also exposes
 **Fold device**, **Half-open device** and **Unfold device** in **Device options**.
-Enable device control first. Agents use `devices.action` with
+The panel obtains control automatically. Agents use `devices.action` with
 `action: { type: "fold", posture: "closed" | "half-open" | "open" }` under the same
 device lease. Folding clears inspection targets and refreshes the still frame;
 capture each pose to check layouts. Physical phones and ordinary simulators do not
 offer these controls. The selected Xcode must include the Duo simulator runtime.
 
-Devices opens in view-only mode. The header has an **Allow device control** switch
-and a visible state: **View only**, **Control active**, or **Control in use**.
-A competing controller disables the switch and exposes its ownership reason.
-Claim control explicitly before sending input;
-release it when finished. Another controller's claim, an expired lease or an older
-Host without control ownership support prevents input. Switching conversations or
-computers does not transfer control. App and text drafts remain with their device.
+Devices obtains control automatically for the selected running device while the panel
+is open. If another controller holds the device, the panel waits until it becomes
+available. Input requires a valid Host lease.
+Closing the panel or switching targets releases its lease after pending input finishes.
+App and text drafts remain with their device.
 
 Text, app and accessibility search panels focus their input when opened. Close or
 Escape returns focus to the action that opened the panel. Hidden tool panels keep
@@ -112,7 +148,10 @@ available while the original result is checked.
 
 ## Conversation tools
 
-Before a turn disables native subagents, bycoda checks whether Conversation Tools can initialize for that session. If this bounded check fails, Automatic without an effort ceiling uses the provider's built-in subagents for that turn. Explicit model selections and effort ceilings remain enforced; bycoda tells the model and shows a non-blocking conversation status when delegation is unavailable. Off stays Off. A successful check cannot guarantee that a provider's later MCP connection will succeed.
+The tool machine picker lists each computer once. For remote projects, the
+**Project host** label identifies the computer that holds the project.
+
+Before a turn disables native subagents, bycoda checks whether Conversation Tools can initialize for that session. If this bounded check fails, Automatic without an effort ceiling uses the provider's built-in subagents for that turn. Explicit model selections and effort ceilings remain enforced; bycoda tells the model and shows a non-blocking conversation status when delegation is unavailable. Off stays Off. A successful check cannot guarantee that a provider's later MCP connection will succeed. A provider reads its tools only when it starts, so one that started while the Host did not answer, or that outlived a Host restart, starts again before the next message once the Host answers; the conversation and its context continue. If that start does not restore the tools, bycoda waits ten minutes before trying again.
 
 For Codex, bycoda sets `agents.enabled=false` in thread start/resume config to
 disable native agent tools (Codex 0.167.2). Legacy `features.multi_agent` and
@@ -137,10 +176,50 @@ When you ask for a web application to be checked in the browser, the assistant
 uses the integrated preview first when available. The preview opens in the
 originating conversation's Browser panel by default. A responsive check can resize
 the browser viewport; this does not simulate a physical phone. The dimensions control
-in the Browser toolbar opens presets for desktop, tablet and phone, custom dimensions,
-and rotation. Browser controls and setup remain in their separate menu. Width must be
-240–2560 pixels and height 240–2160 pixels. Resizing requires browser control and
+in the Browser toolbar opens desktop, 1K, Full HD, 2K, 4K, tablet and phone presets, custom dimensions,
+and rotation. Width must be
+240–3840 pixels and height 240–2160 pixels. Resizing requires browser control and
 invalidates the previous element selection and frame geometry.
+
+On desktop, click a remote conversation's HTTP development link to open it in
+your system browser. For a matching project server, bycoda creates a private
+address on this computer and forwards requests to the remote Host. HTTPS links,
+unmatched servers and unavailable forwarding use the project's Host Browser.
+
+**Settings / Conversation tools / Browser** controls agent browser access on the
+local Host, browser profiles, automatic preview presentation, recording frame rate,
+and the default viewport. A preview can
+request its own visibility, and a recording can request its own supported frame
+rate.
+
+Use **Import browser profile** to choose an installed browser profile (Chrome, Edge,
+Brave, Vivaldi, Opera, Chromium or Firefox on Windows). The row shows your default
+browser, and its profile is preselected. Bycoda copies the profile's cookie files to a
+temporary folder, lets the browser itself decrypt them in a hidden run, and stores
+the cookies on the computer; the temporary copy is deleted. Close the source browser
+first, because an open browser locks its cookie file. Chrome 127+ and Edge protect
+cookies with app-bound encryption that a copy cannot decrypt; Bycoda reports this
+instead of importing nothing. Firefox cookies import directly. **From file…** in the
+same dialog imports a Playwright storage-state JSON file up to 256 KB, named after
+the file. Imports keep at most 500 unexpired cookies, signed-in (secure or HTTP-only)
+cookies first. Bycoda opens a fresh isolated context from that
+snapshot when a conversation starts using the profile. New website sign-ins and
+other changes stay in that active context. Turning off a profile grant blocks
+subsequent agent reads and input for that profile.
+
+To choose a profile from a conversation, say “Open this site with the Work
+browser profile.” `browser.status` lists profiles the owner has granted to agents.
+`browser.open` and `browser.preview` accept the exact profile name or ID. Use `isolated`
+to open a clean context. The default profile is for regular URLs. The development
+profile applies to `localhost`, `127.0.0.1` and `[::1]` on the browser's Host.
+Both selectors offer Isolated and every imported profile. Agents open an isolated
+context if the selected profile has no agent grant. An explicit profile choice
+continues within that conversation until it changes between regular and loopback
+addresses or the browser closes.
+
+**Claude in Chrome** lets local Claude sessions start with the official Chrome
+extension. Claude controls which browser connects and requests site approval.
+The setting takes effect on the next Claude turn.
 
 Before a page is open, the Browser panel lists recently opened addresses on this
 computer; choose one to open it, or remove it from the list. Addresses with a user
@@ -155,6 +234,27 @@ not acquire or renew control. A frame remains readable after the 30-second contr
 lease expires or another controller takes control of the same conversation's page.
 Input, navigation, viewport changes and closing still require an active lease;
 the assistant checks status and explicitly claims control again when needed.
+
+The visible desktop Browser panel acquires available control automatically. Click
+the preview to type, paste, use shortcuts or drag. Scroll directly over the fitted
+preview. The panel resumes input when another controller releases the page. If
+Chromium needs installation, the Browser panel shows the setup action.
+
+Pausing live view in the visible Browser panel keeps the page active through
+periodic status reads. If the Host loses the page, the panel clears the old
+image and keeps the address available so you can reopen it.
+
+The desktop panel uses a binary frame stream when supported by the selected
+Host. It displays the most recent frame available and falls back to the
+regular frame request when the stream is unavailable.
+
+On Windows and macOS, entering a loopback address for this computer opens a
+direct local preview. Its keyboard, pointer, and scrolling go straight to the
+embedded browser. Use **Shared host browser** to open the current address in
+the Host when you need named viewports, element selection, recording, or a
+page the assistant can interact with. The shared browser opens its own page,
+with its own sign-in and form state. For a selected remote computer,
+`localhost` always refers to that computer.
 
 The assistant can record the conversation's browser as a short WebM video. Starting a
 recording needs the active control lease. After that, recording continues while the
@@ -171,10 +271,10 @@ conversation's tools. A conversation without open tools does not inherit another
 browser. Returning restores the selected tool, computer and drafts. Hidden panels
 pause preview polling without stopping the underlying server or device.
 
-The separate Conversation tools window follows the active conversation by default,
-including selection from the main session list. Its project and conversation
-selector opens other tool conversations; hover or keyboard focus shows details.
-Use the link/pin control to follow the main window or keep one conversation visible.
+The separate Conversation tools window follows the focused conversation. With one
+view, the header shows its project and conversation. With several, select another
+open tool view to inspect it. The next conversation selection or focus in the
+main window updates the tools window. Hover or focus the title for details.
 Return to conversation moves the view back after its destination is ready. Closing
 the tools window does not close the browser or discard the original conversation.
 
@@ -239,12 +339,38 @@ recheck reviewed status inside the checkout lock. Publishing, credentials, pairi
 destructive recovery and operations absent from the catalog retain their owner
 workflows. See [Voice companion](voice.md#global-voice-management) for controls.
 
+For chat message appearance, `preferences.read` returns `application.chatMessages`.
+Use `preferences.patch` with `kind: "chatMessages"`, the read revision, and at
+least one field in `value`. `userMessageOpacity` and `assistantMessageOpacity`
+are integer percentages from 0 to 100. `messageColor` accepts `theme` or `neutral`.
+The change goes through the existing desktop owner review.
+
+The assistant reading surface and text ink are in `application.transcript`
+(`surface`, `surfaceOpacity`, `surfaceBlur`, `bodyInk`, `chromeInk`, `cards`,
+`actions`). Patch them with `kind: "transcript"`; `surface` accepts `reply`,
+`column` or `off`, `cards` accepts `inset`, `outline` or `solid`, and `actions`
+accepts `always` or `hover`. `assistantMessageOpacity` is an alias of
+`surfaceOpacity`, so older clients keep working.
+
+File references in replies (a workspace file or folder written as a link or as
+inline code) show the file-type icon on a tinted chip. In Settings > Chat >
+Fine-tune reading, **File references** switches them between colored and plain
+and picks a color for each kind: code, markup and web, documents, data and
+config, media, archives, folders and other files. The same values are in
+`application.transcript`: `fileRefs` (`colored` or `plain`) and `fileToneCode`,
+`fileToneMarkup`, `fileToneDocs`, `fileToneData`, `fileToneMedia`,
+`fileToneArchive`, `fileToneFolder`, `fileToneOther`. Each tone is one of `info`,
+`success`, `warning`, `danger`, `feature`, `orchestration`, `accent` or
+`neutral`; free color values are not accepted. Inline code that is not a file,
+such as `tabIndex` or `images.generate`, keeps a plain code chip with no icon.
+
 Saved Servers can be edited through `servers.*`. To run a command, ask the
 assistant to use `servers.ssh.execute` with the saved server's ID. The connected
 desktop asks you to approve the exact target and command inside bycoda before starting it,
 unless the original coding session has **Full access** verified by the Host.
-Other modes and Assistant Room still ask; reducing access before execution stops
-a command that skipped approval.
+An Assistant Room skips the prompt only when this computer's standing permission
+is **Full access** with no exceptions ticked. Other modes still ask; reducing
+access before execution stops a command that skipped approval.
 Execution uses the saved SSH settings, separate from any terminal you opened
 yourself. Existing SSH tabs stay private.
 
@@ -262,8 +388,9 @@ configured). Timeout defaults to 60 seconds and can be set up to 300 seconds.
 
 Any conversation, task worker or crew member can create image assets. Choose which
 image models a conversation may use in the model picker under **Agents and images**
-→ **Image models**. With nothing picked the row reads **Automatic** and every
-available model may be used; picking models restricts the conversation to them.
+→ **Image models**: **Automatic** lets every available model be used, **Custom**
+shows a checklist that restricts the conversation to the checked models, and **Off**
+offers no image model and refuses generation.
 Codex ImageGen appears when Codex is connected and Nano Banana when Antigravity is
 connected. The choice is saved with the conversation's model settings, carries into
 tasks created from it, can be set as a provider default in Settings, and is never
@@ -292,10 +419,16 @@ member when a Host provider works, and for Antigravity members through Nano Bana
 
 When Work concurrency is one, an active Work turn cannot start a delegated child while it holds the only slot. The child returns a failed result immediately; the caller can do the work itself or the owner can increase Work concurrency. An advisor requested after the parent turn has retired can still run.
 
-**Settings > Models > Subagents** sets advisor and subagent defaults for new
-conversations. **Chats** holds provider, model, effort, permissions and
-Fast / Service Tier choices. Main-model effort uses a stepped scale; Subagent max
-effort uses a select.
+**Settings > Accounts and defaults > Defaults** holds provider, model, effort,
+permissions, auto-compact and Fast or Service tier choices for new conversations. Service
+tier lists every tier any of the provider's models offers, such as Codex Standard, Fast
+and Ultrafast. Claude auto-compact is **Automatic**, **On** or **Off**, with its window
+beside it while it is not off. **Helpers and delegation** on the same page sets the
+advisor, image models, subagents and subagent max effort, in that order. Effort and
+Subagent max effort use the same stepped scale with an **Automatic** switch; choosing a
+level turns Automatic off. The advisor is a switch with its model beside it while it is
+on; a project follows the level above until it saves its own value, and the row's reset
+returns it.
 The apply bar separates provider scope from save destinations. **Apply to** chooses
 the current provider or **All providers**. All providers copies only supported,
 portable changes; model and account choices are never copied between providers.
@@ -325,8 +458,10 @@ When no choice has been saved, every account starts with product defaults:
 
 Automatic resolves enabled models from connected providers at use time, up to 24
 references, ranked as Best, Strong, Medium, Light and Unranked for the agent; the
-settings use an Automatic / Custom / Off segmented control. Custom opens the
-model list picker; unset defaults follow inherited choices, then Automatic.
+settings use an Automatic / Custom / Off segmented control. Custom lists every chosen
+model with its provider icon, name, account and a remove button, and **Add model** opens
+a searchable picker grouped by provider. Removing the last model turns subagents Off.
+Unset defaults follow inherited choices, then Automatic.
 Subagent max effort sets a
 separate ceiling without changing the main effort. Unknown families remain available. Claude Fable/Mythos, Opus, Sonnet and Haiku are
 ordered in those four tiers. Other known families use the shared family anchors;
@@ -347,7 +482,7 @@ their values. Advisors keep their independent selection and may use the main mod
 **Subagent max effort** is independent of main-model effort. Automatic means no
 ceiling. A selected level caps both requested effort and an omitted model default,
 including later replies to that child. For example the main model may use Low while
-subagents may use Max. The control appears beside Subagents in the Subagents tab; defaults remain drafts until saved, inherit through the existing
+subagents may use Max. The control appears beside Subagents in the Defaults tab; defaults remain drafts until saved, inherit through the existing
 scopes, and the ceiling is portable across providers.
 
 A provider with several accounts shows an **Account** picker above its defaults.
@@ -360,8 +495,13 @@ not sent anything yet to another account applies that account's defaults.
 The model panel opens from the model button (click, Enter or Space), **Switch Model**
 in the app menu, or **Ctrl+Shift+.** on Windows / **Command+Shift+.** on macOS.
 Change or disable this binding in Settings > Keybindings. The shortcut toggles the
-panel; right-click the model button for recent models. Search receives focus on
-open: type to filter, use Up/Down and Enter to select. Escape closes and returns
+panel; right-click the model button, or focus it and press **Alt+Down**
+(**Option+Down** on macOS), the context-menu key or **Shift+F10**, for recent
+models; the button's tooltip says so. Search receives focus on
+open: type to filter, use Up/Down and Enter to select. Pointing at a provider on
+the rail previews it only while the search is empty; once you type, click the
+provider (or use the arrow keys on the rail) to switch, so a drifting pointer
+never clears your search. Escape closes and returns
 focus to the composer or model button. Tab / Shift+Tab move through the provider
 rail, search, model actions and settings; arrow keys move within provider tabs,
 Settings/Agents tabs, effort bars and Automatic/Custom/Off. Custom opens a searchable
@@ -401,20 +541,51 @@ In a Claude conversation, a Claude advisor (for example Fable with an Opus main 
 Claude Code's own advisor tool: it answers inside the main agent's turn, sees the native
 conversation context and starts no separate session. It runs on the conversation's account
 whichever account label you picked, so the Advisor menu lists each Claude model once. Its
-advice shows in the transcript as an Advisor row with the model and its state; open the row
-to read it. Codex and the other providers have no built-in advisor, so their advisor is a
+advice shows in the transcript as an Advisor row with the provider icon, model and state.
+While it works, the Thinking label uses the shared working shimmer and respects motion
+preferences. Returned advice is collapsed by default; click the row to expand or collapse
+its Markdown content, without a line limit. Codex and the other providers have no built-in advisor, so their advisor is a
 Host advisor: read-only, in plan mode, seeing only the question and context the main model
 sends it, writing only to the main agent. Its answer arrives as an Advisor completion. When
-the Host connection is not ready for a turn, the conversation says the advisor is
-unavailable instead of failing silently.
+the Host does not respond for a turn, the conversation says the advisor is off for
+that message instead of failing silently.
 
 A delegated child starts only bycoda's own tools (Claude with strict MCP config, Codex with
 the owner's other MCP servers disabled for that thread; no config file is changed) and gets
-a short bycoda hint without the owner's persona. The main model may pass `files: false` for
-discussion, research or writing: the child (Claude or Codex) then runs in an empty scratch
-folder under the Host's state directory, read-only and supervised, without project
-instructions, skills listing, provider memory or git context. The folder is removed with the
-run's record.
+a short bycoda hint without the owner's persona. Normal subagents use the parent project's
+folder or worktree and its runtime permissions. Omit `files` or set `files: true` for a
+normal session. When tools are unnecessary or unavailable, give the child enough context
+to answer from the brief.
+
+New Codex and Claude Code delegates keep their saved conversation in Bycoda. If their
+provider process restarts, Bycoda restores a bounded excerpt of saved conversation context,
+including available tool results. Provider-native state and previous attachment contents are
+not restored from this excerpt. New Pi and OMP delegates use a private native session directory
+and can resume from that directory. OpenCode keeps new tool-enabled delegates archived in its
+own history and can resume them by ID. Existing delegates keep their original storage.
+
+Use `files: false` only when the owner asks for scratch mode and the selected
+model's `filesFalse.available` in `agents.options` is true. Claude and Codex run read-only in
+an empty scratch folder under
+the Host's state directory, with reduced context. Stock Pi uses a tool-free scratch session
+when its installed CLI supports the required isolation flags; older versions are rejected.
+OpenCode 2 uses tool-free generation with the selected OpenCode model and prior messages
+from the Host conversation. A reply keeps the conversation history. Active generation can
+be stopped, and another message can be sent after it ends.
+
+Grok and Gemini use tool-free requests to their respective APIs. Enable them in the Host
+environment with `BYCODA_GROK_CHAT_ONLY_API=1` and `XAI_API_KEY` or
+`BYCODA_GEMINI_CHAT_ONLY_API=1` and `GEMINI_API_KEY`. Select the default account and a
+supported model in the provider catalog. Gemini 3.8 Flash selections in the Antigravity
+catalog keep their Low, Medium or High thinking level. Named accounts are unavailable on
+these API paths. Requests use
+the supplied API key's quota, and replies keep the Host conversation history.
+File attachments are unavailable on these three generation paths.
+
+These modes do not provide OS file-read isolation. Claude and Codex tools may still read
+paths outside scratch. `repositoryReadIsolation` reports that limit.
+The folder is removed with the run's record. Unsupported models are rejected; they never
+fall back to a normal project run.
 
 Each run uses the quota of its own provider account. A subagent on a Codex model
 consumes Codex usage, not the main model's allowance.
@@ -424,7 +595,9 @@ Default account. The picker recognizes these selections without changing their
 stored account or switching them to the conversation's current account.
 
 Host advisors and subagents appear in their parent's activity dock, including finished
-runs. They do not appear in conversation lists, search results or workspace tabs.
+runs. Each dock row places a larger status mark beside its title: working bars,
+a success check, a failure cross, a stop square or an interruption alert.
+They do not appear in conversation lists, search results or workspace tabs.
 Existing desktop conversations can delegate without moving the parent conversation
 to Host execution. Child runs keep their own Host history; the parent's drafts and
 execution owner stay with the desktop.
@@ -466,6 +639,16 @@ Subagents can discover their parent and siblings with `agents.list` and contact
 them directly with `agents.send`. Messages keep the same child conversation and
 context. `auto` steers a running Host turn when the provider supports it; otherwise
 it waits for an idle turn. `queue` waits; `steer` requires an active Host turn.
+Open the subagent from its conversation card or Background work to see messages,
+delivery status and replies across rounds. Queued messages stay visible while they
+wait for the active turn. Provider acceptance confirms delivery to the provider;
+the conversation shows any answer the subagent produces.
+Drag the panel edge to resize it, or use Expand and Restore in its header. Open a
+nested subagent from the list at the top and use Back to return to its parent.
+The conversation composer sends to the open subagent. While an active turn supports
+Steer, choose Steer to reach that turn or Queue to wait. Use the attachment and
+skill controls supported by the conversation's owner. Provider-native agents that
+use the main agent as a relay show that path in the composer.
 Parent messages can use the existing shared queue, including for desktop Native
 conversations. Existing owner pauses, approvals, drafts and queue leases remain in
 force. Queued or steered means accepted, not that the model has read the message.
@@ -489,6 +672,12 @@ all `agents.*` tools. Execution also rejects Host delegation. A child may use it
 provider's built-in subagents. Its panel lists running and past native runs with
 their names, models and status; expand a run to read its steps during execution or
 after it finishes. These runs stay under the child, outside the parent's composer menu.
+
+Claude Workflow subagents appear under their Workflow phase in the activity dock
+and session subagent menu. On mobile, phases appear in the Agents sheet. Open an
+agent to read the captured transcript steps. The Workflow owns its child tasks,
+so stop the Workflow to interrupt them together. Workflow is available when the
+session permits Claude's automatic native model selection and has write access.
 
 ## Terminal log capture
 
@@ -611,4 +800,4 @@ returns the earlier result without asking again.
 
 Required approvals appear inside the source conversation when it is visible, or in an application confirmation when it is not. SSH, MCP tool calls, desktop actions, management, Inbox, Room delegation, file access, privacy recovery and quit confirmations use this flow. The exact target and operation remain visible. Expired requests, closed source windows and changed privacy scope cannot authorize work. Application-owned approvals never fall back to an operating-system or browser confirmation dialog; system permission prompts and file pickers remain platform-owned.
 
-Full access reuses execution permission for saved SSH commands and non-read-only MCP tool calls in the original coding session. It does not grant publication, credentials, clipboard or physical input, persistent file access, privacy changes or delegation. Those decisions keep their existing approval boundaries.
+Full access reuses execution permission for saved SSH commands, non-read-only MCP tool calls and application operations such as commit, stage, file writes, push, merge, social sends, Inbox comments, reviews and pull request actions, Jira board moves and transitions, and task delete, transfer or note resolve in the original coding session. A push or merge to main, a pull request merge, a social send or an Inbox comment or review still asks while the matching exception (**Push to main**, **Send messages**) is ticked under Settings, Assistant, Access. An operation that skipped the prompt is marked in its receipt as approved by Full access. It does not grant credentials, clipboard or physical input, persistent file access, privacy changes or delegation. Those decisions keep their existing approval boundaries.

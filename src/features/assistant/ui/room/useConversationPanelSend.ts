@@ -35,7 +35,7 @@ export function useConversationPanelSend(
     setPending,
     pending,
     clearingRef,
-    error,
+    notice,
     setError,
     selected,
     requestKey,
@@ -78,10 +78,10 @@ export function useConversationPanelSend(
         }
       }
       await load(target);
-      if (isTauri() && selected.current === target && error)
+      if (isTauri() && selected.current === target && notice)
         setError(
           t(
-            "The original reply remains unconfirmed. Check the original Host before sending again.",
+            "The original reply could not be confirmed. Check the original Host before sending again.",
           ),
         );
     } catch (cause) {
@@ -107,7 +107,7 @@ export function useConversationPanelSend(
       if (!environmentId) {
         setError(
           t(
-            "The original Host could not be verified. Keep this draft and reconnect its original computer.",
+            "The original computer could not be verified. Keep this draft and reconnect that computer.",
           ),
         );
         return;
@@ -248,7 +248,7 @@ export function useConversationPanelSend(
     if (!sourceEnvironment) {
       setError(
         t(
-          "The original Host could not be verified. Keep this draft and reconnect its original computer.",
+          "The original computer could not be verified. Keep this draft and reconnect that computer.",
         ),
       );
       return;

@@ -38,9 +38,7 @@ export function CrewManagedBar({
         <Text size="secondary" tone="inherit" weight="medium" truncate>
           {managed.crewName}
         </Text>
-        <Text truncate>
-          {role} · {t("Managed from Crews")}
-        </Text>
+        <Text truncate>{role}</Text>
       </span>
       <Button
         variant="primary"

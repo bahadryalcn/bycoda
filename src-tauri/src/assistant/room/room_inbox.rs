@@ -355,12 +355,23 @@ pub(super) fn execute(
             None => vec![],
         };
         let (site, email) = account.display();
-        let approved = crate::control::owner_approval::ask_window_checked(app, &window, crate::control::owner_approval::Prompt { title: "bycoda — Jira read approval", message: &(format!("Allow this Room to read Jira issues available to {email} on {site} within the current Inbox project visibility?\n\nRoom: {thread}\nHost: {environment}\nProject: {cwd}\nFilter: {state}{}", if assigned { ", assigned to me" } else { "" })), confirm: "Allow this read", cancel: "Cancel" }, || { check()?; account.current(app)?; check() });
+        let standing = room_full_access(app, channel, thread, relay, "inbox.jira.read");
+        let approved = standing || crate::control::owner_approval::ask_room_checked(app, &window, thread, cwd, crate::control::owner_approval::Prompt { title: "bycoda — Jira read approval", message: &(format!("Allow this Room to read Jira issues available to {email} on {site} within the current Inbox project visibility?\n\nRoom: {thread}\nHost: {environment}\nProject: {cwd}\nFilter: {state}{}", if assigned { ", assigned to me" } else { "" })), confirm: "Allow this read", cancel: "Cancel" }, || { check()?; account.current(app)?; check() });
         check()?;
         account.current(app)?;
         check()?;
         if !approved {
             return Err("Owner declined Jira read".into());
+        }
+        if standing
+            && !crate::assistant_standing_consent::room_gate_approved(
+                app,
+                channel,
+                thread,
+                "inbox.jira.read",
+            )
+        {
+            return Err("Native assistant consent changed".into());
         }
         let guard = || {
             check()?;
@@ -460,6 +471,14 @@ pub(super) fn execute(
             deadline,
             &check,
             &capture_scope,
+            &|| {
+                crate::assistant_standing_consent::room_gate_approved(
+                    app,
+                    channel,
+                    thread,
+                    "inbox.jira.board",
+                )
+            },
             || {
                 crate::control::workspace_effect_receipts::begin(
                     app,
@@ -558,10 +577,17 @@ pub(super) fn execute(
         static GATE: Mutex<()> = Mutex::new(());
         let _dialog = GATE.lock().map_err(|_| "Room Inbox approval unavailable")?;
         account_check()?;
-        let approved = crate::control::owner_approval::ask_window_checked(app, &window, crate::control::owner_approval::Prompt { title: "bycoda — Inbox operation approval", message: &(format!("{message}\n\nAccount: {account}\nRoom: {thread}\nHost: {environment}\nRequest: {request_id}")), confirm: "Approve this operation", cancel: "Cancel" }, || { account_check() });
+        let gate = room_write_gate(&operation);
+        let standing = room_full_access(app, channel, thread, relay, gate);
+        let approved = standing || crate::control::owner_approval::ask_room_checked(app, &window, thread, cwd, crate::control::owner_approval::Prompt { title: "bycoda — Inbox operation approval", message: &(format!("{message}\n\nAccount: {account}\nRoom: {thread}\nHost: {environment}\nRequest: {request_id}")), confirm: "Approve this operation", cancel: "Cancel" }, || { account_check() });
         account_check()?;
         if !approved {
             return Err("Owner declined Room Inbox operation".into());
+        }
+        if standing
+            && !crate::assistant_standing_consent::room_gate_approved(app, channel, thread, gate)
+        {
+            return Err("Native assistant consent changed".into());
         }
         crate::control::workspace_effect_receipts::begin(
             app,
@@ -661,6 +687,40 @@ pub(super) fn execute(
     Ok(result)
 }
 
+/// Standing consent gate names for Room Inbox writes, by what each one sends outward.
+fn room_write_gate(operation: &Value) -> &'static str {
+    match operation["action"].as_str() {
+        Some("comment") => "inbox.comment",
+        Some("review") => "inbox.review",
+        _ if matches!(
+            operation["prAction"].as_str(),
+            Some("merge" | "squash" | "rebase")
+        ) =>
+        {
+            "inbox.pullRequest.merge"
+        }
+        // Unknown PR changes are rejected before any effect; this only names the gate.
+        _ => "inbox.pullRequest.state",
+    }
+}
+
+/// Native Full access skips a Room Inbox prompt and leaves a log line in its place;
+/// the operation keeps the same receipt a prompted approval leaves.
+fn room_full_access(
+    app: &AppHandle,
+    channel: &Arc<NativeServiceChannel>,
+    thread: &str,
+    relay: &str,
+    gate: &str,
+) -> bool {
+    let approved =
+        crate::assistant_standing_consent::room_gate_approved(app, channel, thread, gate);
+    if approved {
+        log::info!("Room Inbox {gate} admitted by native standing consent; relay {relay}");
+    }
+    approved
+}
+
 /// Room filters come from the window's saved Inbox visibility, never the model.
 fn room_jira_filters(scope: &Value) -> Result<mobile_board::Filters, String> {
     serde_json::from_value(json!({
@@ -698,6 +758,7 @@ fn room_jira_board(
     deadline: u64,
     check: &dyn Fn() -> Result<(), String>,
     capture_scope: &dyn Fn() -> Result<Value, String>,
+    full_access: &dyn Fn() -> bool,
     begin_receipt: impl FnOnce() -> Result<(), String>,
     relay: &str,
 ) -> Result<Value, String> {
@@ -750,7 +811,8 @@ fn room_jira_board(
                 .as_millis() as u64;
             // The native board review accepts at most a two-minute approval window.
             let review_deadline = deadline.min(at + 110_000);
-            let prepared = block_on(mobile_board::jira_mobile_board_prepare(
+            let standing = full_access();
+            let prepared = block_on(mobile_board::jira_board_prepare_reviewed(
                 app.clone(),
                 window.clone(),
                 cwd.into(),
@@ -758,6 +820,7 @@ fn room_jira_board(
                 snapshot()?,
                 room_jira_mutation(operation)?,
                 review_deadline,
+                !standing,
             ))?;
             let Some(approval) = prepared["approvalId"].as_str().map(str::to_owned) else {
                 // Declined or refused before submission: nothing was sent to Jira.
@@ -765,12 +828,18 @@ fn room_jira_board(
                 return Ok(prepared);
             };
             let fresh = capture_scope().and_then(|scope| room_jira_filters(&scope));
-            if check().is_err() || fresh.as_ref().ok() != Some(&filters) {
+            if check().is_err()
+                || fresh.as_ref().ok() != Some(&filters)
+                || (standing && !full_access())
+            {
                 mobile_board::jira_mobile_board_discard_approval(window.clone(), approval)?;
                 return Ok(json!({
                     "outcome": "not-submitted",
                     "reason": "Room authority or Jira visibility changed after approval. Read the board again.",
                 }));
+            }
+            if standing {
+                log::info!("Room Inbox inbox.jira.board admitted by native standing consent; relay {relay}");
             }
             begin_receipt()?;
             let committed = block_on(mobile_board::jira_mobile_board_commit(
@@ -797,6 +866,35 @@ fn room_jira_board(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn writes_name_the_consent_gate_by_what_they_send() {
+        for (operation, gate) in [
+            (json!({"action":"comment"}), "inbox.comment"),
+            (json!({"action":"review"}), "inbox.review"),
+            (
+                json!({"action":"pr-action","prAction":"merge"}),
+                "inbox.pullRequest.merge",
+            ),
+            (
+                json!({"action":"pr-action","prAction":"squash"}),
+                "inbox.pullRequest.merge",
+            ),
+            (
+                json!({"action":"pr-action","prAction":"rebase"}),
+                "inbox.pullRequest.merge",
+            ),
+            (
+                json!({"action":"pr-action","prAction":"close"}),
+                "inbox.pullRequest.state",
+            ),
+            (
+                json!({"action":"pr-action","prAction":"ready"}),
+                "inbox.pullRequest.state",
+            ),
+        ] {
+            assert_eq!(room_write_gate(&operation), gate);
+        }
+    }
     #[test]
     fn finite_target_and_original_project_are_required() {
         let input = json!({"requestId":"r","provider":"jira","operation":{"action":"details","cwd":"/p","item":{"provider":"jira","projectPath":"/p","identifier":"ABC-1"}}});

@@ -6,7 +6,10 @@ import {
   resolveModel,
   mergeModelSettings,
 } from "../../../features/sessions/model/models";
-import { defaultProviderAccountId } from "../../../features/providers/model/providerAccounts";
+import {
+  defaultProviderAccountId,
+  supportsProviderAccounts,
+} from "../../../features/providers/model/providerAccounts";
 import { gitStagedContext, gitRangeContext } from "../../../platform/tauri/fs";
 import {
   buildCommitMessagePrompt,
@@ -42,10 +45,9 @@ async function selectedGitPrompt(
     harness: choice.harness,
     model: nativeModelId(model),
     modelSettings: mergeModelSettings(model, choice.modelSettings),
-    providerAccountId:
-      choice.harness === "claude" || choice.harness === "codex"
-        ? (choice.providerAccountId ?? defaultProviderAccountId(choice.harness))
-        : undefined,
+    providerAccountId: supportsProviderAccounts(choice.harness)
+      ? (choice.providerAccountId ?? defaultProviderAccountId(choice.harness))
+      : undefined,
     intent: "plan",
     prompt,
     timeoutMs: 90_000,
@@ -105,10 +107,12 @@ export async function generatePrContent(
   preferred?: HarnessId,
   choice?: GitGenerationChoice,
   operationContext?: HarnessOperationContext,
+  signal?: AbortSignal,
 ): Promise<(PrContent & { base: string; head: string }) | null> {
   const captured = captureTextInput({ operationContext }).operationContext;
   const selected = choice;
-  if (selected) return generateSelectedPr(cwd, selected, captured);
+  if (selected) return generateSelectedPr(cwd, selected, captured, signal);
+  if (signal) return generateHarnessPrContent(pickTextHarness(preferred), cwd, captured, signal);
   return captured
     ? generateHarnessPrContent(pickTextHarness(preferred), cwd, captured)
     : generateHarnessPrContent(pickTextHarness(preferred), cwd);
@@ -118,8 +122,11 @@ async function generateSelectedPr(
   cwd: string,
   choice: GitGenerationChoice,
   operationContext?: HarnessOperationContext,
+  signal?: AbortSignal,
 ) {
+  signal?.throwIfAborted();
   const range = await gitRangeContext(cwd);
+  signal?.throwIfAborted();
   const output = await selectedGitPrompt(
     cwd,
     choice,
@@ -130,7 +137,7 @@ async function generateSelectedPr(
       diffSummary: range.diffSummary,
       diffPatch: range.diffPatch,
     }),
-    undefined,
+    signal,
     operationContext,
   );
   const parsed = parsePrContent(output);

@@ -102,7 +102,7 @@
   inline-size: 100%;
   block-size: 100%;
   min-inline-size: 0;
-  padding-inline: var(--control-height-sm);
+  padding-inline: min(var(--control-height-sm), 50%);
   border: 0;
   border-radius: inherit;
   background: transparent;

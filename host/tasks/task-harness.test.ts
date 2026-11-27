@@ -7,7 +7,7 @@ import type { HostProvider } from "../providers/providers";
 import { HostEngine } from "../engine";
 import { HostStore } from "../store";
 import { HostTasks } from "./service";
-import { finishedRunProgress } from "../execution/run-duration";
+import { finishedRunElapsed } from "../execution/run-duration";
 import { taskPreflightResourceKey } from "../../src/features/tasks/model/taskPreflight";
 import * as time from "../../src/shared/lib/time/timestamps";
 if (process.platform === "win32") vi.setConfig({ testTimeout: 60000 });
@@ -91,7 +91,7 @@ async function setup() {
       },
     );
     await vi.waitFor(async () => {
-      expect(await finishedRunProgress(store, turn.input.sessionId, runId)).not.toBeNull();
+      expect(await finishedRunElapsed(store, turn.input.sessionId, runId)).not.toBeNull();
     });
     clock.now += 1;
     await tick();
@@ -240,7 +240,7 @@ describe("task harness preparation and aggregate budgets", () => {
     await s.start({ review: true, budget: { maxAttempts: 1 } });
     await s.finish();
     expect((await s.task()).status).toBe("blocked");
-    expect((await s.task()).budgetStop).toBeTruthy();
+    expect((await s.task()).stop?.code).toBe("budget_exhausted");
     expect(s.turns).toHaveLength(1);
     expect((await s.tasks.budgets.read({ taskId: (await s.task()).id })).attempts).toBe(1);
   });
@@ -254,7 +254,7 @@ describe("task harness preparation and aggregate budgets", () => {
     s.clock.now += 30_001;
     await s.tick();
     expect((await s.task()).status).toBe("blocked");
-    expect((await s.task()).budgetStop).toBeTruthy();
+    expect((await s.task()).stop?.code).toBe("budget_exhausted");
     expect(s.provider.cancel).toHaveBeenCalledTimes(1);
     expect(readFileSync(join(s.directory, "retained-result.md"), "utf8")).toBe("Keep this work");
     expect((await s.task()).sessionId).toBeTruthy();
@@ -330,7 +330,7 @@ describe("task harness preparation and aggregate budgets", () => {
     expect(await s.task()).toMatchObject({
       status: "blocked",
       reviewer: { sessionId: reviewerId },
-      awaitingOwnerRestart: true,
+      stop: { code: "budget_exhausted" },
     });
     expect(s.provider.cancel).toHaveBeenCalledWith(reviewerId, expect.anything());
     expect((await s.store.session(reviewerId)).session.id).toBe(reviewerId);
@@ -350,7 +350,7 @@ describe("task harness preparation and aggregate budgets", () => {
     );
     const upgraded = new HostTasks(s.store, s.engine, () => s.clock.now);
     await upgraded.ready;
-    expect((await upgraded.budgets.read({ taskId: old.id })).historyComplete).toBe(false);
+    expect((await upgraded.budgets.read({ taskId: old.id })).tokensComplete).toBe(false);
     expect(
       (await upgraded.budgets.evaluate({ taskId: old.id }, { maxAttempts: 20 }, { starting: true }))
         .blocked,

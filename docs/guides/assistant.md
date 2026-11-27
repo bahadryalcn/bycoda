@@ -1,10 +1,31 @@
 # Personal assistant
 
-In Automations, instructions and scheduling settings share a bounded editor.
-Session options and Advanced limits use stacked fields so descriptions remain
-readable in narrow windows. Scheduled times use the shared time picker. The AI
-assistant keeps scope above its project and model controls; the automation review
-shows instructions before the schedule and execution details.
+## Automations
+
+Automations lists your automations; the filter appears once there are eight or more.
+**New automation** (or the first-use button) opens one editor page: an optional
+name, **Instructions**, chips for project (and machine when several are connected),
+model, **Access** and, for app runs in a project, the working copy, then
+**Trigger** and one **More options** group. A saved automation also shows **Recent
+runs**. The footer has **Template** (new automations), **Delete**, **Cancel** or
+**Reset**, **Run now** and **Create** or **Save**; a visible line says what is
+missing. Leave the name empty to use the first line of the instructions. Pause or
+enable an automation with the switch on its card.
+
+Add a trigger from the one searchable **Add trigger** list: schedules, task and
+social events, provider events when connected, and on a Host **Continuous** and
+Host events (**Task finished**, **Task blocked**, **Session waiting**,
+**Automation failed**). The app chooses where it runs. A project on this computer
+runs while the app is open; a project on another machine, no project (**General**),
+a Host event or the Project scan template run in the background on that machine. For
+a new automation with a Host available, **More options** can also run it in the
+background on this computer. A background automation holds exactly one time trigger
+or Host event. **More options** also holds session and session folder (app runs),
+**Missed-run grace**, **Run time limit** and **Runs per day**, and its closed
+summary lists the values that differ from the defaults. The **AI assistant** button
+prepares an automation from a request.
+
+## The Room
 
 The Room opens on **Today**, with owner questions and current work before activity
 charts. **Work** contains Jobs and Sessions. **Conversations** keeps the typed
@@ -18,8 +39,9 @@ note to read it, then choose **Edit** to use the same document and Markdown edit
 as Notes. Right-click a note, or press **Shift+F10** on its row, to open its actions.
 Select several notes for bulk deletion. **Select all** applies to the current
 search results; notes selected before changing the search remain selected. The
-confirmation shows the total selected count. If deletion stops after a failure,
-confirmed deletions leave the selection and the remaining notes stay selected.
+confirmation shows the total selected count. The Room refreshes in the background
+after the batch. If deletion stops after a failure, confirmed deletions leave
+the selection and the remaining notes stay selected.
 Restore confirmed deletions with **Undo** or **Recently deleted**.
 
 The Room's **Conversations** starts in **Global** scope. Its management history
@@ -119,8 +141,8 @@ result clears them without changing your draft.
 Open **Set up** in the tool navigation to choose the assistant's name, language,
 execution provider, working permissions and daily token budget. The chosen name
 also appears in its Room and on messages it writes. Voice setup checks the
-provider, microphone and selected voice separately. Talking always requires an
-explicit microphone action.
+provider connection. Speaker preview and local microphone recording are optional.
+Talking always requires an explicit microphone action.
 
 Setup offers a daily token budget of one million for an unconfigured assistant.
 Choose a preset or enter an exact custom limit; existing chosen values are kept.
@@ -147,11 +169,13 @@ project supervision and computer use are never proposed and stay manual. The
 avatar picker also has **Generate with AI** for a portrait from your own
 description; generated avatars are stored on the Host.
 
-Quick setup has three steps: your name and how the assistant addresses you, a
-**Work mode**, and a review. Voice setup has five steps: Identity (including language and conversation behavior),
-Voice (provider, playback and microphone checks), Work mode, Presence and hours
-(including first rules), and Review. Existing drafts resume in the matching grouped step. The work mode answers one question, how freely the
-assistant may work, and sets the job controls together:
+Quick setup has three steps. Choose your name and how the assistant addresses you,
+choose a work mode, then review. Voice setup starts with identity for new profiles
+and continues through provider, speaker, microphone, and review. Applying an AI
+profile advances to provider selection. New assistants use report-only defaults
+unless you choose **Work mode** in the review. Voice setup preserves an existing
+assistant's profile and rules. The work mode determines how freely the assistant
+may work and sets the job controls together:
 
 - **Only watch** reports what happens and starts no work.
 - **Work and ask** runs jobs you assign and asks before commands, file changes
@@ -159,7 +183,7 @@ assistant may work, and sets the job controls together:
 - **Work freely** runs jobs without asking; commands and file changes run without
   confirmation.
 
-Nothing is selected until you choose one. Models are not asked for: the available
+In the detailed work-mode step, choose a mode explicitly. The available
 default model becomes the worker, and you manage the model list later in
 **Settings > Models > Background work**. If no default model is available, choose a work mode
 that starts no work, or add a model in Settings first. Rules you want the assistant
@@ -176,8 +200,10 @@ Global voice can discover displayed project names and historical session
 metadata, then use exact project/session identities for navigation and lifecycle
 actions. Partial or duplicate project names need clarification. Desktop operations
 can use a real assistant conversation without opening a coding session, while
-retaining the owner's per-app approval and computer use permission mode
-(Ask every time, Auto or Full access, managed in **Settings > Access**). A tool's
+retaining the owner's per-app approval and the computer use permission. That
+permission has no setting of its own: it is Full access when the assistant's
+permission in **Settings > Access** covers everything and **Computer use** is not
+one of its exceptions, and Ask every time otherwise. A tool's
 authentic response can be usable even when its contents cannot be attributed to a
 project; that content does not become a saved personal rule or trusted memory.
 
@@ -185,11 +211,20 @@ project; that content does not become a saved personal rule or trusted memory.
 
 Room **Settings** has four sections. **Personal** holds identity and language;
 personality and conversation are under **Personality and conversation**. **Work**
-holds the daily token budget, a link to Models, presence and hours,
+holds the daily token budget and **Manage models** under **Work limits**, plus presence, hours,
 and notifications. **Access** holds everything the assistant may touch: job
 execution permissions, folders and commands, computer use, manual session
 supervision and the 24/7 readiness list. **Advanced** holds cost and context
 limits and conversation retention.
+
+Worker context is automatic by default. Arif compacts at 50% of the model's
+context window or 150,000 tokens and starts a fresh session at 80% or 300,000
+tokens, whichever threshold comes first for each action. Existing custom
+limits stay editable under **Advanced worker context limits**. Use **Restore
+defaults** on the worker context row and save to return to automatic settings.
+**Today's usage** shows usage against the saved daily budget. Open **Usage details** for the
+supervisor, worker and cache figures. Cache reads already count at one tenth
+in that budget total.
 
 The readiness list shows unresolved checks and their explanations immediately,
 including phone notifications and Host availability after sign-out. **All checks**
@@ -199,11 +234,20 @@ not grant permissions or make a check ready.
 Manual supervision shows the selected project names. Saving this project scope
 does not enroll conversations; choose each conversation in **Sessions**.
 
-**Access > Permission** applies one choice to jobs, commands and computer use.
-**Full access** also permits changes without another confirmation in the configured
-Assistant folders. **Custom** opens individual controls without changing grants;
-mixed existing grants show **Custom**, not Full access. Selecting a preset changes
-drafts; **Save** applies them through their existing versioned owners. Existing
+**Access > Permission** applies one choice to jobs, commands, computer use and the
+standing permission this computer keeps for the selected Host. **Full access** also
+permits changes without another confirmation in the configured Assistant folders and
+grants **Everything** with no critical exclusions; exclusions you tick afterwards are
+kept and the choice then shows **Custom**. **Work and ask** removes any broad
+standing permission and asks before every operation. **Computer access** states what
+this computer enforces: the saved level, no saved permission, a permission that
+belongs to other Host credentials (every operation asks until you renew it on
+**Save**), or that it could not be read. Presets stay unavailable until it is read.
+**Custom** opens individual controls without changing grants;
+mixed existing grants, or a Host profile that claims more than this computer grants,
+show **Custom**, not Full access. Selecting a preset changes
+drafts; **Save** applies them through their existing versioned owners. Opening
+settings or saving unrelated changes never grants or renews a permission. Existing
 command-only grants do not gain permission to write files automatically. Folder
 scope, operating-system permissions, account authorization and project privacy
 remain effective. Stop and revocation remain available.
@@ -279,7 +323,9 @@ the original request and note identity for inspection rather than creating a
 second note.
 
 Choose **Scheduled automation** for recurring work. Review the project, schedule,
-model choice and run limits before saving. **Default** follows the automation
+model choice and run limits before saving. A background automation also sets **Run with**
+(Agent, Crew or Auto) and **Helpers**; each occurrence resolves them again when it starts, while
+a fixed model is never replaced by another. **Use settings** follows the automation
 role, **Any model** uses the shared order or a group, and **Fixed** uses the chosen model.
 **Manage in Models** opens shared priority and limits. The model resolves when
 each run starts; running sessions keep their model. Creation saves the schedule without
@@ -292,6 +338,17 @@ missed occurrence. It runs only within its configured grace period; the schedule
 then advances to a future occurrence instead of replaying every missed run.
 One-time runs keep their exact scheduled time. Repeated **Run** clicks for the same
 automation share one pending launch; other automations remain independent.
+
+A background automation can run **Steps** instead of one prompt: a recipe. Choose **Repeat this**
+on a finished task to start one from its request, project, who ran it, model and helpers, then
+add task steps and **decisions**. Steps run in order; each task step is an ordinary task that
+follows the recipe's **Run with**, model and helpers unless the step sets its own. A decision
+step pauses the run until you **Approve** or **Decline**; declining stops that run with its
+reason. Editing a recipe starts a new version, and a run in progress finishes on the version it
+started with. Each step's result is saved, so a step that finished is never repeated after a Host
+restart, and a step whose outcome cannot be read is not repeated either: the run stops and names
+the step. A recipe runs by hand or on a schedule; open a run in Automations to see its steps and
+open their tasks.
 
 Plan approval can be required always, only for big jobs, or never. Big jobs have
 four or more planned tasks or span multiple projects. The selected policy is
@@ -369,6 +426,8 @@ Work you start by voice or in the Room (goals, standalone tasks and crew runs) i
 tracked once it is created. The assistant only watches it: you still get a notice
 when it is done, fails, needs you or stalls, and no new authority over it is
 granted. Up to 200 items are tracked; finished ones are forgotten after seven days.
+A status question, by voice or in writing, reads the same phase and reason the task
+card shows, so the answer matches what you see.
 
 Use a job's pause, resume or stop action to control that job. **Stop everything**
 interrupts the supervisor and requests that its linked jobs stop. Errors remain
@@ -433,7 +492,8 @@ sessions or both. Learned facts have separate provenance and cannot promote
 themselves into owner rules. Forbidden terms can be excluded from assistant
 text outputs. Review remembered facts and remove outdated information in
 **Memory**. Its search and **Add memory** action sit above grouped Rules, About me
-and Learned entries. Each entry keeps its scope, source and date beside the text;
+and Learned entries. Matching entries stay visible as you type while the Host searches
+the full memory collection. Each entry keeps its scope, source and date beside the text;
 enable, edit and delete controls stay with that entry. In the editor, write the
 memory first, then select its kind and scope and optional forbidden words. Deleting
 requires confirmation; **Undo** restores the deleted entry.
@@ -557,7 +617,10 @@ request system wakefulness while children are actually running; it does not keep
 the display lit or change the power plan. Unsupported or failed requests are
 shown explicitly.
 
-The token budget controls local scheduling. At 80% the supervisor switches to
+The assistant's daily token budget controls its own scheduling. The limits in
+**Settings > Models > Background work** apply to model routing across background
+work. Both apply when the assistant starts work. At 80% of the assistant's daily
+budget, the supervisor switches to
 reporting and no new job starts, while children already dispatched keep working;
 exhaustion holds new child work. A repeated request for work that is already
 active in the same project returns that job instead of starting it twice.

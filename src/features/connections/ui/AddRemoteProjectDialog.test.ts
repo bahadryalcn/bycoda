@@ -78,7 +78,10 @@ it.each(["online", "recovered"])(
       return original(command, input);
     });
     await render();
-    expect(document.body.textContent).toContain("Data has not been verified");
+    expect(document.body.textContent).not.toContain("Data has not been verified");
+    expect(
+      document.querySelector('[data-remote-data-state="error"][aria-busy="true"]'),
+    ).not.toBeNull();
     const input = document.body.querySelector<HTMLInputElement>(
       'input[aria-label="Folder path on the machine"]',
     )!;
@@ -95,6 +98,7 @@ it.each(["online", "recovered"])(
       else notifyRemoteRecovered("env");
     });
     expect(document.body.textContent).not.toContain("Data has not been verified");
+    expect(document.querySelector('[data-remote-data-state="error"]')).toBeNull();
     expect(input.value).toBe("/my/unsaved/path");
     expect(opened).toEqual([]);
     expect(
@@ -166,6 +170,7 @@ const button = (text: string) =>
 
 it("browses a machine's folders and adds the chosen one as a project", async () => {
   await render();
+  expect(document.querySelector('button[aria-label="Refresh folders"]')).toBeNull();
   await act(async () => button("code").click());
   await act(async () => button("app").click());
   const path = document.body.querySelector<HTMLInputElement>(
@@ -218,7 +223,7 @@ it("creates a new folder on the remote machine and updates the path to open", as
 it("points to Settings when no machine is connected", async () => {
   machines = [];
   await render();
-  expect(document.body.textContent).toContain("No machines are connected yet");
+  expect(document.body.textContent).toContain("No computers are connected yet");
   expect(button("Add a machine")).toBeTruthy();
 });
 
@@ -243,11 +248,10 @@ it("retains the old folder during failed navigation and retries the requested fo
   await render();
   await act(async () => button("code").click());
   expect(document.body.textContent).toContain("Refreshing folders");
-  expect((button("Open") as HTMLButtonElement).disabled).toBe(true);
+  expect(button("Open").getAttribute("aria-disabled")).toBe("true");
   await act(async () => fail(new Error("Permission denied")));
   expect(document.body.textContent).toContain("Permission denied");
-  expect(document.body.textContent).toContain("Showing last loaded folder: /home/me");
-  expect((button("Open") as HTMLButtonElement).disabled).toBe(true);
+  expect(button("Open").getAttribute("aria-disabled")).toBe("true");
   await act(async () =>
     (document.querySelector('button[aria-label^="Retry loading"]') as HTMLButtonElement).click(),
   );
@@ -268,7 +272,7 @@ it("does not present an unreadable machine registry as a successful empty result
   );
   await render();
   expect(document.body.textContent).toContain("Registry unavailable");
-  expect(document.body.textContent).not.toContain("No machines are connected yet");
+  expect(document.body.textContent).not.toContain("No computers are connected yet");
   vi.mocked(invoke).mockImplementation(original);
   await act(async () =>
     (document.querySelector('button[aria-label^="Retry loading"]') as HTMLButtonElement).click(),
@@ -293,7 +297,7 @@ it("ignores an older machine-list failure after a newer read succeeds", async ()
   expect(reads).toHaveLength(2);
   await act(async () => reads[1].resolve([]));
   await act(async () => reads[0].reject(new Error("Old read failed")));
-  expect(document.body.textContent).toContain("No machines are connected yet");
+  expect(document.body.textContent).toContain("No computers are connected yet");
   expect(document.body.textContent).not.toContain("Old read failed");
 });
 
@@ -347,4 +351,51 @@ it("keeps a pending remote Open bound to its original machine and prevents dupli
   await act(async () => finish({ id: "opened", cwd: "/home/me", name: "me" }));
   expect(opened).toHaveLength(1);
   expect(picker.disabled).toBe(false);
+});
+
+async function renderFor(machineId: string, onCancel = vi.fn()) {
+  await act(async () =>
+    root.render(
+      createElement(AddRemoteProjectDialog, {
+        machineId,
+        onCancel,
+        onOpen: (key: string) => opened.push(key),
+      }),
+    ),
+  );
+  for (let i = 0; i < 4; i++)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+}
+
+const secondMachine = {
+  id: "second",
+  name: "Second server",
+  endpoint: "ssh://second",
+  environmentId: "second-env",
+};
+
+it("browses only the requested machine and offers no machine switch", async () => {
+  machines.push(secondMachine);
+  await renderFor("second");
+  expect(document.body.querySelector('button[aria-haspopup="dialog"]')).toBeNull();
+  const browsed = vi
+    .mocked(invoke)
+    .mock.calls.filter((call) => (call[1] as { method?: string })?.method === "projects.browse");
+  expect(browsed.length).toBeGreaterThan(0);
+  for (const call of browsed) expect((call[1] as { machineId?: string }).machineId).toBe("second");
+  await act(async () => button("Open").click());
+  expect(opened).toEqual(["remote://second-env/home/me"]);
+});
+
+it("does not fall back to another machine when the requested one is not connected", async () => {
+  await renderFor("gone");
+  expect(document.body.textContent).toContain("That machine is not available");
+  expect(
+    vi
+      .mocked(invoke)
+      .mock.calls.filter((call) => (call[1] as { method?: string })?.method === "projects.browse"),
+  ).toHaveLength(0);
+  expect(opened).toEqual([]);
 });

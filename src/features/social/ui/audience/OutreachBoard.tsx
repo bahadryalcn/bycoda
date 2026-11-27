@@ -135,7 +135,7 @@ export function OutreachBoard({ client, lists, onChanged }: OutreachBoardProps) 
         </InlineMessage>
       ) : null}
 
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={error}>{t("Could not read sequences.")}</InlineError> : null}
       {sequences === undefined && !error ? (
         <LoadingText delay={false} className="audience-muted">
           {t("Loading sequences…")}
@@ -143,9 +143,7 @@ export function OutreachBoard({ client, lists, onChanged }: OutreachBoardProps) 
       ) : null}
       {sequences && !sequences.length ? (
         <EmptyHint
-          message={t(
-            "No sequences yet. A sequence sends a few messages over days and stops when someone replies.",
-          )}
+          message={t("No sequences yet.")}
           action={{
             label: t("New sequence"),
             onClick: () => setEditing("new"),

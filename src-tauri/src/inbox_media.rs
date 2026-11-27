@@ -1,5 +1,9 @@
+use std::collections::HashMap;
 use std::io::Read;
+use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore};
 pub(crate) mod attachments;
+mod fresh_token;
+pub(crate) use fresh_token::github_auth_token_fresh;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
@@ -10,34 +14,133 @@ use crate::dirs_home;
 use crate::fs::MAX_PREVIEW_BYTES;
 
 const MAX_MEDIA_REQUESTS: usize = 8;
+/// Requests beyond the running limit wait in order; past this many waiters the
+/// overflow is refused so a runaway page cannot grow the queue without bound.
+const MAX_QUEUED_MEDIA: usize = 256;
+/// A queued request that never reaches a slot fails instead of waiting forever.
+const MEDIA_QUEUE_TIMEOUT: Duration = Duration::from_secs(60);
+const MAX_REQUEST_ID_BYTES: usize = 64;
 const TOKEN_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_TOKEN_BYTES: u64 = 8192;
-static MEDIA_REQUESTS: AtomicUsize = AtomicUsize::new(0);
 
-struct MediaPermit;
-impl MediaPermit {
-    fn acquire() -> Result<Self, String> {
-        let mut count = MEDIA_REQUESTS.load(Ordering::Acquire);
+/// Bounded FIFO admission: `slots` requests run at once, up to `max_queued`
+/// more wait (each for at most `wait`), and a waiter can be cancelled.
+struct MediaGate {
+    slots: Arc<Semaphore>,
+    queued: AtomicUsize,
+    max_queued: usize,
+    wait: Duration,
+}
+
+struct QueuedSlot<'a>(&'a AtomicUsize);
+impl Drop for QueuedSlot<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+impl MediaGate {
+    fn new(slots: usize, max_queued: usize, wait: Duration) -> Self {
+        Self {
+            slots: Arc::new(Semaphore::new(slots)),
+            queued: AtomicUsize::new(0),
+            max_queued,
+            wait,
+        }
+    }
+
+    async fn admit(&self, cancel: &Notify) -> Result<OwnedSemaphorePermit, String> {
+        if let Ok(permit) = self.slots.clone().try_acquire_owned() {
+            return Ok(permit);
+        }
+        let mut queued = self.queued.load(Ordering::Acquire);
         loop {
-            if count >= MAX_MEDIA_REQUESTS {
-                return Err("Too many media requests; try again".into());
+            if queued >= self.max_queued {
+                return Err("Media queue is full; try again".into());
             }
-            match MEDIA_REQUESTS.compare_exchange_weak(
-                count,
-                count + 1,
+            match self.queued.compare_exchange_weak(
+                queued,
+                queued + 1,
                 Ordering::AcqRel,
                 Ordering::Acquire,
             ) {
                 Ok(_) => break,
-                Err(actual) => count = actual,
+                Err(actual) => queued = actual,
             }
         }
-        Ok(Self)
+        let _queued = QueuedSlot(&self.queued);
+        tokio::select! {
+            permit = self.slots.clone().acquire_owned() => {
+                permit.map_err(|_| "Media queue unavailable".to_string())
+            }
+            _ = cancel.notified() => Err(MEDIA_CANCELLED.into()),
+            _ = tokio::time::sleep(self.wait) => Err("Media queue timed out; try again".into()),
+        }
     }
 }
-impl Drop for MediaPermit {
+
+const MEDIA_CANCELLED: &str = "Media request cancelled";
+
+fn media_gate() -> &'static MediaGate {
+    static GATE: OnceLock<MediaGate> = OnceLock::new();
+    GATE.get_or_init(|| MediaGate::new(MAX_MEDIA_REQUESTS, MAX_QUEUED_MEDIA, MEDIA_QUEUE_TIMEOUT))
+}
+
+/// Cancel handles for requests that supplied an id; bounded by the gate
+/// (running plus queued) because an entry lives only while its command runs.
+type CancelRegistry = Mutex<HashMap<String, Arc<Notify>>>;
+
+fn cancel_registry() -> &'static CancelRegistry {
+    static REGISTRY: OnceLock<CancelRegistry> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+struct CancelHandle {
+    registry: &'static CancelRegistry,
+    id: String,
+    notify: Arc<Notify>,
+}
+
+impl CancelHandle {
+    fn register(registry: &'static CancelRegistry, id: String) -> Result<Self, String> {
+        if id.is_empty() || id.len() > MAX_REQUEST_ID_BYTES {
+            return Err("Media request id is invalid".into());
+        }
+        let notify = Arc::new(Notify::new());
+        let mut entries = registry.lock().unwrap_or_else(|e| e.into_inner());
+        if entries.contains_key(&id) {
+            return Err("Media request id is already in use".into());
+        }
+        entries.insert(id.clone(), notify.clone());
+        drop(entries);
+        Ok(Self {
+            registry,
+            id,
+            notify,
+        })
+    }
+}
+
+impl Drop for CancelHandle {
     fn drop(&mut self) {
-        MEDIA_REQUESTS.fetch_sub(1, Ordering::AcqRel);
+        let mut entries = self.registry.lock().unwrap_or_else(|e| e.into_inner());
+        if entries
+            .get(&self.id)
+            .is_some_and(|entry| Arc::ptr_eq(entry, &self.notify))
+        {
+            entries.remove(&self.id);
+        }
+    }
+}
+
+fn cancel_media_request(registry: &CancelRegistry, id: &str) {
+    let notify = registry
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(id)
+        .cloned();
+    if let Some(notify) = notify {
+        notify.notify_one();
     }
 }
 
@@ -55,12 +158,25 @@ struct MediaUrl {
 
 /// Fetch an issue/PR image or video through the host, as a blob the webview
 /// can render without opening `img-src` / `media-src` to GitHub's CDNs.
+///
+/// Requests over the running limit queue (bounded, with a deadline) instead of
+/// failing. A caller that no longer needs the bytes passes `request_id` and
+/// calls `cancel_inbox_media` to leave the queue; a running request finishes.
 #[tauri::command]
 pub async fn fetch_inbox_media(
     app: tauri::AppHandle,
     url: String,
+    request_id: Option<String>,
 ) -> Result<tauri::ipc::Response, String> {
-    let permit = MediaPermit::acquire()?;
+    // Reject unsafe URLs before they take a queue slot.
+    parse_https_url(&url)?;
+    let handle = request_id
+        .map(|id| CancelHandle::register(cancel_registry(), id))
+        .transpose()?;
+    let idle = Notify::new();
+    let cancel = handle.as_ref().map_or(&idle, |handle| &*handle.notify);
+    let permit = media_gate().admit(cancel).await?;
+    drop(handle);
     let bytes = tauri::async_runtime::spawn_blocking(move || {
         let _permit = permit;
         fetch_inbox_media_sync(&app, &url)
@@ -68,6 +184,12 @@ pub async fn fetch_inbox_media(
     .await
     .map_err(|error| error.to_string())??;
     Ok(tauri::ipc::Response::new(bytes))
+}
+
+/// Leave the media queue. A request that is already running is not interrupted.
+#[tauri::command]
+pub fn cancel_inbox_media(request_id: String) {
+    cancel_media_request(cancel_registry(), &request_id);
 }
 
 fn fetch_inbox_media_sync(app: &tauri::AppHandle, url: &str) -> Result<Vec<u8>, String> {
@@ -361,38 +483,6 @@ pub(crate) fn github_auth_token() -> TokenResult {
     wait_for_token(&flight, deadline)
 }
 
-/// Room source rechecks must start after the check begins, not join a token
-/// lookup which may have started before an account switch.
-pub(crate) fn github_auth_token_fresh() -> TokenResult {
-    static ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    use std::sync::atomic::Ordering;
-    if ACTIVE
-        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-        .is_err()
-    {
-        return Err("GitHub account verification is already running".into());
-    }
-    let registry: TokenRegistry = Arc::new(Mutex::new(None));
-    let flight = Arc::new(TokenFlight {
-        result: Mutex::new(None),
-        ready: Condvar::new(),
-    });
-    *registry.lock().unwrap_or_else(|e| e.into_inner()) = Some(flight.clone());
-    let worker = flight.clone();
-    if thread::Builder::new()
-        .name("room-inbox-auth".into())
-        .spawn(move || {
-            token_worker(registry, worker);
-            ACTIVE.store(false, Ordering::Release);
-        })
-        .is_err()
-    {
-        ACTIVE.store(false, Ordering::Release);
-        return Err("GitHub authentication unavailable".into());
-    }
-    wait_for_token(&flight, Instant::now() + TOKEN_TIMEOUT)
-}
-
 fn acquire_token_flight(
     registry: &Mutex<Option<Arc<TokenFlight>>>,
     start: impl FnOnce(Arc<TokenFlight>) -> std::io::Result<()>,
@@ -456,7 +546,8 @@ fn token_worker(registry: TokenRegistry, flight: Arc<TokenFlight>) {
     };
     let mut cmd = Command::new(program);
     cmd.current_dir(&home)
-        .args(["auth", "token"])
+        // Both callers send this credential to github.com, never to another instance.
+        .args(["auth", "token", "--hostname", "github.com"])
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GH_PAGER", "cat")
         .stdin(Stdio::null())
@@ -597,14 +688,113 @@ fn finish_token_flight(registry: &TokenRegistry, flight: &Arc<TokenFlight>, resu
 mod tests {
     use super::*;
 
-    #[test]
-    fn media_admission_is_bounded_and_released() {
-        let permits: Vec<_> = (0..MAX_MEDIA_REQUESTS)
-            .map(|_| MediaPermit::acquire().unwrap())
-            .collect();
-        assert!(MediaPermit::acquire().is_err());
-        drop(permits);
-        assert!(MediaPermit::acquire().is_ok());
+    async fn wait_for_queued(gate: &MediaGate, count: usize) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while gate.queued.load(Ordering::Acquire) != count {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("queue did not reach the expected length");
+    }
+
+    fn queued_admit(
+        gate: &Arc<MediaGate>,
+        cancel: &Arc<Notify>,
+    ) -> tokio::task::JoinHandle<Result<OwnedSemaphorePermit, String>> {
+        let (gate, cancel) = (gate.clone(), cancel.clone());
+        tokio::spawn(async move { gate.admit(&cancel).await })
+    }
+
+    #[tokio::test]
+    async fn media_admission_queues_past_the_limit_and_releases_in_order() {
+        let gate = Arc::new(MediaGate::new(2, 4, Duration::from_secs(5)));
+        let idle = Arc::new(Notify::new());
+        let mut running = vec![
+            gate.admit(&idle).await.unwrap(),
+            gate.admit(&idle).await.unwrap(),
+        ];
+        let first = queued_admit(&gate, &idle);
+        wait_for_queued(&gate, 1).await;
+        let second = queued_admit(&gate, &idle);
+        wait_for_queued(&gate, 2).await;
+        assert!(!first.is_finished() && !second.is_finished());
+        running.pop();
+        let first = first.await.unwrap().unwrap();
+        assert!(!second.is_finished());
+        drop(first);
+        let second = second.await.unwrap().unwrap();
+        assert_eq!(gate.queued.load(Ordering::Acquire), 0);
+        drop((running, second));
+        assert_eq!(gate.slots.available_permits(), 2);
+    }
+
+    #[tokio::test]
+    async fn media_queue_is_bounded() {
+        let gate = Arc::new(MediaGate::new(1, 1, Duration::from_secs(5)));
+        let waiter_cancel = Arc::new(Notify::new());
+        let idle = Notify::new();
+        let _running = gate.admit(&idle).await.unwrap();
+        let waiter = queued_admit(&gate, &waiter_cancel);
+        wait_for_queued(&gate, 1).await;
+        assert_eq!(
+            gate.admit(&idle).await.unwrap_err(),
+            "Media queue is full; try again"
+        );
+        assert_eq!(gate.queued.load(Ordering::Acquire), 1);
+        waiter_cancel.notify_one();
+        assert!(waiter.await.unwrap().is_err());
+    }
+
+    #[tokio::test]
+    async fn cancelled_waiter_leaves_the_queue_without_taking_a_slot() {
+        let gate = Arc::new(MediaGate::new(1, 2, Duration::from_secs(5)));
+        let cancel = Arc::new(Notify::new());
+        let idle = Notify::new();
+        let running = gate.admit(&idle).await.unwrap();
+        let waiter = queued_admit(&gate, &cancel);
+        wait_for_queued(&gate, 1).await;
+        cancel.notify_one();
+        assert_eq!(waiter.await.unwrap().unwrap_err(), MEDIA_CANCELLED);
+        assert_eq!(gate.queued.load(Ordering::Acquire), 0);
+        // A cancel which arrives before the request starts waiting still counts.
+        let early = Notify::new();
+        early.notify_one();
+        assert_eq!(gate.admit(&early).await.unwrap_err(), MEDIA_CANCELLED);
+        drop(running);
+        assert_eq!(gate.slots.available_permits(), 1);
+        assert!(gate.admit(&idle).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn queued_media_request_times_out_and_frees_its_place() {
+        let gate = MediaGate::new(1, 2, Duration::from_millis(30));
+        let idle = Notify::new();
+        let _running = gate.admit(&idle).await.unwrap();
+        let start = Instant::now();
+        assert_eq!(
+            gate.admit(&idle).await.unwrap_err(),
+            "Media queue timed out; try again"
+        );
+        assert!(start.elapsed() < Duration::from_secs(2));
+        assert_eq!(gate.queued.load(Ordering::Acquire), 0);
+    }
+
+    #[tokio::test]
+    async fn cancel_handles_are_unique_bounded_and_released() {
+        let registry: &'static CancelRegistry = Box::leak(Box::new(Mutex::new(HashMap::new())));
+        assert!(CancelHandle::register(registry, String::new()).is_err());
+        assert!(CancelHandle::register(registry, "x".repeat(MAX_REQUEST_ID_BYTES + 1)).is_err());
+        let handle = CancelHandle::register(registry, "one".into()).unwrap();
+        assert!(CancelHandle::register(registry, "one".into()).is_err());
+        cancel_media_request(registry, "unknown");
+        cancel_media_request(registry, "one");
+        tokio::time::timeout(Duration::from_secs(1), handle.notify.notified())
+            .await
+            .expect("cancel must wake the registered request");
+        drop(handle);
+        assert!(registry.lock().unwrap().is_empty());
+        assert!(CancelHandle::register(registry, "one".into()).is_ok());
     }
 
     #[test]
@@ -793,11 +983,13 @@ mod tests {
                 .stdout(Stdio::piped())
                 .stderr(Stdio::null());
             crate::hide_window_console(&mut cmd);
+            // Output bounds are under test, not the deadline: a loaded runner can take seconds
+            // to start PowerShell.
             run_token_command(
                 registry.clone(),
                 flight.clone(),
                 cmd,
-                Duration::from_secs(5),
+                Duration::from_secs(60),
             );
             let result = flight.result.lock().unwrap();
             if expected {

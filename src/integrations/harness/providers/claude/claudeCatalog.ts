@@ -4,12 +4,12 @@ import {
   createProviderRetirementLedger,
   withProviderRetirement,
 } from "../../core/providerRetirement";
+import { applyProbedCatalog } from "../../core/catalogProbe";
 import { homeDir } from "../../../../platform/tauri/fs";
 import { defaultHarnessAccount } from "../../core/auth";
 import { withClaudeAdvisor } from "../../../../features/sessions/model/claudeAdvisor";
 import {
   hasLiveCatalog,
-  setHarnessModels,
   type AgentModel,
   type ModelSetting,
 } from "../../../../features/sessions/model/models";
@@ -249,13 +249,12 @@ export function refreshClaudeCatalog(): Promise<void> {
   if (inflight) return inflight;
   inflight = discoverClaudeCatalog()
     .then(({ models, live }) => {
-      // A timed-out probe must not replace a live list with the static fallback.
-      if (models.length === 0 || (!live && hasLiveCatalog("claude"))) return;
-      setHarnessModels("claude", models, live);
-    })
-    .catch((error: unknown) => {
-      assertOptionalProviderProbeError(error);
-      console.debug("[bycoda] claude catalog", error);
+      // A timed-out probe must not replace a live list with the static fallback, and
+      // it is not a refresh: reject so the earlier list is reported as retained.
+      if (!live && hasLiveCatalog("claude")) {
+        throw new Error("Claude live model discovery did not answer in time.");
+      }
+      applyProbedCatalog("claude", models, live);
     })
     .finally(() => {
       inflight = null;

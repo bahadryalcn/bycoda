@@ -16,27 +16,31 @@
   padding: 0;
   border: 0;
 }
-/* Same role as the Field label, so a group title and a field label always match. */
+/* Group title role: one weight step above the Field label (a label names one control, a legend a set). */
 .legend {
   float: none;
   display: flex;
   align-items: center;
   gap: var(--space-1);
   padding: 0;
-  margin-block-end: var(--space-2);
+  margin-block-end: var(--ui-space-2, 0.5rem);
   color: var(--foreground);
-  font-size: var(--ui-font-caption);
+  font-size: var(--ui-font-secondary);
   font-weight: 500;
-  line-height: var(--leading-body);
+  line-height: var(--ui-leading-secondary);
   overflow-wrap: anywhere;
 }
 .body {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--ui-space-3, 0.75rem);
   min-inline-size: 0;
 }
+.group[data-gap="sm"] .legend {
+  font-size: var(--ui-font-caption);
+  line-height: var(--ui-leading-caption);
+}
 .group[data-gap="sm"] .body {
-  gap: var(--space-2);
+  gap: var(--ui-space-2, 0.5rem);
 }
 .group[data-layout="row"] .body {
   display: flex;
@@ -51,10 +55,10 @@
 }
 .description {
   display: block;
-  padding-block-start: var(--space-2);
+  padding-block-start: var(--ui-space-2, 0.5rem);
   color: var(--text-muted);
   font-size: var(--ui-font-caption);
-  line-height: var(--leading-body);
+  line-height: var(--ui-leading-caption);
   overflow-wrap: anywhere;
 }
 .group:disabled .legend,

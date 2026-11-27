@@ -2,6 +2,7 @@ import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPrefere
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import {
+  DIFF_VIEWER_DEFAULT,
   loadDiffViewer,
   saveDiffViewer,
   subscribeDiffViewer,
@@ -10,6 +11,7 @@ import {
 import { Group, Row, Segmented, SettingsFeedback } from "../../../shared/ui/settings";
 import { Button } from "../../../shared/ui/Button";
 import { openModelsSettings } from "../public/modelsSettingsLink";
+import { ExactGitRewindSetting } from "./WorkspaceSettings";
 
 export function SourceControlSettings() {
   useLocale();
@@ -22,16 +24,9 @@ export function SourceControlSettings() {
     setDiffError(saved !== next);
   };
   return (
-    <div className="source-control-settings settings-topics flex min-w-0 flex-col gap-8">
-      <Group
-        title={t("Generation")}
-        scope={t("Used across projects unless a project has its own generation selection.")}
-      >
-        <Row
-          id="git-generation-default"
-          label={t("Model")}
-          description={t("Model set in Settings > Models > Background work.")}
-        >
+    <div className="source-control-settings settings-topics">
+      <Group title={t("Source Control")}>
+        <Row id="git-generation-default" label={t("Model")}>
           <Button variant="link" onClick={() => openModelsSettings("roles")}>
             {t("Manage models")}
           </Button>
@@ -40,7 +35,8 @@ export function SourceControlSettings() {
         <Row
           id="diff-view"
           label={t("Diff view")}
-          description={t("Review changes in the editor or together in one unified view.")}
+          modified={diffViewer !== DIFF_VIEWER_DEFAULT}
+          onReset={() => onDiffViewer(DIFF_VIEWER_DEFAULT)}
           feedback={
             diffError ? (
               <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>
@@ -57,6 +53,7 @@ export function SourceControlSettings() {
             onChange={onDiffViewer}
           />
         </Row>
+        <ExactGitRewindSetting />
       </Group>
     </div>
   );

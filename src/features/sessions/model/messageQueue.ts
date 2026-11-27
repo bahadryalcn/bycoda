@@ -5,7 +5,15 @@ import { moveItem, orderByIds } from "../../../shared/lib/reorder";
 import { mergeModelSettings, modelEffortLabel, resolveModel } from "./models";
 import { hasMissingAttachment } from "./queuePersistence";
 import { isBackgroundOnly } from "./activityDock";
-import type { ModelTarget, QueuedMessage, Session, TurnIntent } from "./session";
+import {
+  HARNESS_LABEL,
+  canReplaceSessionTitle,
+  titleFromPrompt,
+  type ModelTarget,
+  type QueuedMessage,
+  type Session,
+  type TurnIntent,
+} from "./session";
 
 export function queuedModelTarget(
   session: Pick<Session, "harness" | "model" | "modelSettings"> &
@@ -127,8 +135,16 @@ export function holdUndeliveredFollowUp(
   message: QueuedMessage,
   userBlockId?: string,
 ): Session {
+  // A blank conversation is named by the message it holds, as a sent one would be.
+  const untitled =
+    !session.blocks.some((block) => block.role === "user") &&
+    !session.queuedMessages?.length &&
+    canReplaceSessionTitle(session.title, session.harness, HARNESS_LABEL[session.harness]);
   return {
     ...session,
+    ...(untitled
+      ? { title: titleFromPrompt(message.text, session.harness, message.attachments) }
+      : {}),
     blocks: userBlockId
       ? session.blocks.filter((block) => block.id !== userBlockId)
       : session.blocks,

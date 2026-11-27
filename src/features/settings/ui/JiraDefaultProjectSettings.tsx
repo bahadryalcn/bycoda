@@ -1,6 +1,8 @@
 import { useState, useSyncExternalStore } from "react";
 import { useT } from "../../../shared/i18n";
+import { errorText } from "../../../shared/lib/errors";
 import { projectName } from "../../../shared/lib/paths";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { useRecents } from "../../projects/public/recents";
 import {
@@ -104,13 +106,25 @@ export function JiraDefaultProjectSettings({
                   saveJiraDefaultProject(field.scope, field.id, path);
                   setError(null);
                 } catch (cause) {
-                  setError(String(cause instanceof Error ? cause.message : cause));
+                  setError(errorText(cause));
                 }
               }}
             />
           );
         })}
-        {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
+        {error ? (
+          <SettingsFeedback
+            state="error"
+            extra={
+              <ErrorDetails
+                title={t("The Jira working folder could not be saved.")}
+                detail={error}
+              />
+            }
+          >
+            {t("The Jira working folder could not be saved.")}
+          </SettingsFeedback>
+        ) : null}
       </div>
     </Row>
   );

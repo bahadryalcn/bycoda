@@ -46,7 +46,7 @@ export function SkillList({
   return (
     <div className={styles.listPane}>
       <ScrollArea
-        className={styles.list}
+        className={`${styles.list} min-h-0`}
         gutter="stable"
         aria-label={t("Skills")}
         aria-busy={loading}
@@ -59,12 +59,16 @@ export function SkillList({
           scroll.current.top = event.currentTarget.scrollTop;
         }}
       >
-        {children}
-        {machineNames.length && groups.length ? <SkillMachineColumns names={machineNames} /> : null}
-        {groupedContent ??
-          groups.map((group) => (
-            <SkillListGroup key={group.scope} group={group} renderRow={renderRow} />
-          ))}
+        <div className={styles.listContent}>
+          {children}
+          {machineNames.length && groups.length ? (
+            <SkillMachineColumns names={machineNames} />
+          ) : null}
+          {groupedContent ??
+            groups.map((group) => (
+              <SkillListGroup key={group.scope} group={group} renderRow={renderRow} />
+            ))}
+        </div>
       </ScrollArea>
     </div>
   );
@@ -83,7 +87,7 @@ function SkillListGroup({
     group.scope === "project"
       ? t("Project")
       : group.scope === "user"
-        ? t("Personal")
+        ? t("All projects")
         : t("Managed");
   return (
     <section>
@@ -104,10 +108,12 @@ function SkillListGroup({
           {label}
         </SectionLabel>
       </Surface>
+      {/* Collapsed groups keep the region for aria-controls but mount no rows; the
+          parent owns selection, preview and actions state, so they survive a collapse. */}
       <div id={id} hidden={!expanded}>
-        {group.entries.map((entry) => (
-          <div key={entry.key}>{renderRow(entry)}</div>
-        ))}
+        {expanded
+          ? group.entries.map((entry) => <div key={entry.key}>{renderRow(entry)}</div>)
+          : null}
       </div>
     </section>
   );

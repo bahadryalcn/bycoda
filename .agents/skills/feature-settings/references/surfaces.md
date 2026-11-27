@@ -43,9 +43,9 @@ Model order, groups, roles and delegation use [model routing](../../feature-mode
 
 ## Connections
 
-- `src/features/connections/ui/ConnectionsSettings.tsx` (composes `MachineRow.tsx`, `MachineForm.tsx`, `RemoveMachineDialog.tsx`), `PhoneConnectionPanel.tsx`, `PhonePairingFlow.tsx` (inline and in `PhonePairingDialog.tsx`), `ExternalTunnelsPanel.tsx`; follow their model/remote-command imports.
+- `src/features/connections/ui/ConnectionsSettings.tsx` (composes `MachineRow.tsx`, `MachineForm.tsx`, `RemoveMachineDialog.tsx`, `AddComputerDialog.tsx`), `PairedDevicesPanel.tsx` (paired devices and revoke, `LocalNetworkAccessRow.tsx`), `PhonePairingFlow.tsx` (in `PhonePairingDialog.tsx`), `ExternalTunnelsPanel.tsx`; follow their model/remote-command imports.
 - Machine discovery: `ui/DiscoveredMachines.tsx` (Machines found, one-click Add), `ui/AccountPairDialog.tsx` (Allow and six-digit code), `ui/DiscoveredMachines.tsx` candidates from `model/machineCandidates.ts`; manual entry is `MachineForm.tsx` under a collapsed "Advanced: add manually". Native `discover_machine_candidates` (`src-tauri/src/remote/discovery/`) and `remote_pair_account` (`src-tauri/src/remote/account_pairing.rs`); account computers from `src/features/account/model/accountComputers.ts`. The Quick Tunnel switch is in `ExternalTunnelsPanel.tsx`; its route publishing is `src/features/account/model/phoneConnectPublisher.ts`.
-- Host entry points: `host/mobile/mobile-access.ts`, `mobile-pairing.ts`, `mobile-access-config.ts`; native bridge `src-tauri/src/remote.rs`.
+- Host entry points: `host/mobile/mobile-lan.ts` (local network and Tailscale listeners), `mobile-pairing.ts`; native bridge `src-tauri/src/remote.rs`.
 - Search registered `mobile.access.*` and `mobile.pairing.*` operations. Retain owner-device identity, explicit pairing/enable/disable intent, expiry, cancellation and uncertain-result recovery; never infer a paired-phone roster without a data source.
 - Mobile authority and phone permission/settings use the separate mobile repository/routes; read [mobile](../../feature-mobile/SKILL.md) when those contracts change.
 

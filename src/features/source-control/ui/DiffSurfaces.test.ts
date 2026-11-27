@@ -160,7 +160,9 @@ it("shows a failed mutation and allows another attempt", async () => {
   await act(async () => {
     await props().onStageFile!(props().files[0].id);
   });
-  expect(container.querySelector('[role="alert"]')?.textContent).toBe("index.lock exists");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Couldn’t update changes",
+  );
   expect(api.notify).not.toHaveBeenCalled();
   expect(container.textContent).toContain("a.txt");
   await act(async () => {
@@ -245,7 +247,9 @@ it("runs confirmed discard and reports a failed hunk without hiding the diff", a
   await act(async () => {
     await props().onStageHunk!(props().files[1].id, 0);
   });
-  expect(container.querySelector('[role="alert"]')?.textContent).toBe("hunk failed");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Couldn’t update changes",
+  );
   expect(container.textContent).toContain("b.txt");
   expect(api.notify).toHaveBeenCalledTimes(1);
 });
@@ -256,13 +260,14 @@ it.each(["working", "session"])("clears the %s load error and retries", async (k
     kind === "working"
       ? createElement(WorkingTreeDiff, { cwd })
       : createElement(SessionChangesDiff, { cwd, sessionId: "s1" });
+  const title = kind === "working" ? "Couldn’t load changes" : "Couldn’t load session changes";
   load.mockRejectedValueOnce(new Error("old failure"));
   await act(async () => root.render(render("/repo")));
-  expect(container.textContent).toContain("old failure");
+  expect(container.textContent).toContain(title);
   const pending = deferred<{ files: typeof files }>();
   load.mockReturnValueOnce(pending.promise);
   await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
-  expect(container.textContent).not.toContain("old failure");
+  expect(container.textContent).not.toContain(title);
   await act(async () => {
     pending.resolve({ files });
     await pending.promise;
@@ -270,20 +275,20 @@ it.each(["working", "session"])("clears the %s load error and retries", async (k
   expect(container.textContent).toContain("a.txt");
   load.mockRejectedValueOnce(new Error("second failure"));
   await act(async () => root.render(render("/other")));
-  expect(container.textContent).toContain("second failure");
+  expect(container.textContent).toContain(title);
   await act(async () => root.render(render("~")));
-  expect(container.textContent).toBe("No project folder");
+  expect(container.textContent).toContain("No project folder");
 });
 
 it("clears a previous commit's error while a new commit loads and provides retry", async () => {
   api.commitFiles.mockRejectedValueOnce(new Error("old failure"));
   await act(async () => root.render(createElement(CommitDiff, { cwd: "/repo", sha: "aaaa" })));
-  expect(container.textContent).toContain("old failure");
-  expect(container.querySelector("button")?.textContent).toBe("Retry");
+  expect(container.textContent).toContain("Couldn’t load commit");
+  expect(container.querySelector("button")?.textContent).toBe("Try again");
   const next = deferred<typeof files>();
   api.commitFiles.mockReturnValueOnce(next.promise);
   await act(async () => root.render(createElement(CommitDiff, { cwd: "/repo", sha: "bbbb" })));
-  expect(container.textContent).not.toContain("old failure");
+  expect(container.textContent).not.toContain("Couldn’t load commit");
   await act(async () => {
     next.resolve(files);
     await next.promise;

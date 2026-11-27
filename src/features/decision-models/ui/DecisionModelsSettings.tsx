@@ -1,12 +1,12 @@
 import "./decisionModels.css";
 import { DecisionTarget } from "./DecisionTarget";
 import { matchingTest, testedSources, type SourceTestSnapshot } from "../model/routingEditor";
-import { connectedCandidate } from "../model/presentation";
 import { Text } from "../../../shared/ui/Text";
 import { useId, useRef, useState } from "react";
 import { formatNumber, t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Disclosure } from "../../../shared/ui/Disclosure";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { forEachConcurrent } from "../../../shared/lib/concurrent";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { RefreshCw, Lock } from "../../../shared/ui/icons";
 import { Switch } from "../../../shared/ui/Switch";
@@ -14,7 +14,7 @@ import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
 import { useDecisionModels } from "../hooks/useDecisionModels";
 import type { DecisionModelsClient } from "../model/decisionModelsClient";
 import type { DecisionSource, DiscoveryCandidate } from "../model/decisionTypes";
-import { candidateSourceInput } from "../model/decisionView";
+import { candidateSourceInput, errorDetail } from "../model/decisionView";
 import { AddMenu, type AddPath } from "./AddMenu";
 import { ApiProviderDialog } from "./ApiProviderDialog";
 import { CustomEndpointDialog, type CustomPrefill } from "./CustomEndpointDialog";
@@ -27,17 +27,21 @@ import { ManualPathDialog, type ManualPrefill } from "./ManualPathDialog";
 import { RoutingTable } from "./RoutingTable";
 import { ScanSettings } from "./ScanSettings";
 import { SourcesList } from "./SourcesList";
+const TEST_ALL_CONCURRENCY = 2;
+
+type BatchTestFailure = { name: string; detail?: string };
+
 type Dialog =
   | { kind: "folder"; modelPath?: string }
-  | { kind: "manual"; prefill?: ManualPrefill; initialMode?: "endpoint" }
+  | { kind: "manual"; prefill?: ManualPrefill }
   | { kind: "custom"; prefill?: CustomPrefill }
   | { kind: "api"; preselectId?: string }
   | { kind: "local" }
   | { kind: "edit"; source: DecisionSource }
   | null;
 /**
- * The "Decision models" section under Providers. Sources, what the scan found, task routing and the
- * personal-data switch. Each add path opens its own dialog; nothing is connected without an explicit action.
+ * The "Decision models" settings page: connected sources, what the scan found, and task routing
+ * with its personal-data switch. Each add path opens its own dialog; nothing is connected without an explicit action.
  */
 export function DecisionModelsSettings({
   client,
@@ -54,6 +58,10 @@ export function DecisionModelsSettings({
   const privacyControlId = useId();
   const [testResults, setTestResults] = useState<Record<string, SourceTestSnapshot>>({});
   const [testingAll, setTestingAll] = useState(false);
+  const [batchTest, setBatchTest] = useState<{
+    total: number;
+    failed: BatchTestFailure[];
+  } | null>(null);
   const [removing, setRemoving] = useState<Record<string, "source" | "local">>({});
   const testGeneration = useRef<Record<string, number>>({});
   const clearTest = (id: string) => {
@@ -98,7 +106,6 @@ export function DecisionModelsSettings({
   const pick = (path: AddPath) => {
     setTopError(null);
     if (path === "folder") setDialog({ kind: "folder" });
-    else if (path === "service") setDialog({ kind: "manual", initialMode: "endpoint" });
     else if (path === "manual") setDialog({ kind: "manual" });
     else if (path === "local") setDialog({ kind: "local" });
     else if (path === "api") setDialog({ kind: "api" });
@@ -154,11 +161,33 @@ export function DecisionModelsSettings({
       });
     }
   };
+  const runTestAll = async () => {
+    const list = sources ?? [];
+    const failed: BatchTestFailure[] = [];
+    setTestingAll(true);
+    setBatchTest(null);
+    try {
+      await forEachConcurrent(list, TEST_ALL_CONCURRENCY, async (source) => {
+        try {
+          const result = await actions.testSource(source.id);
+          if (!result.ok) failed.push({ name: source.name, detail: result.error });
+        } catch (error: unknown) {
+          failed.push({ name: source.name, detail: errorDetail(error) });
+        }
+      });
+      if (failed.length > 0) setBatchTest({ total: list.length, failed });
+    } finally {
+      setTestingAll(false);
+    }
+  };
   const changePersonalData = (value: boolean) => {
     setTopError(null);
     actions.changeLocalOnly(value).catch((error: unknown) => setTopError(error));
   };
   const closeDialog = () => setDialog(null);
+  const privacyLabel = remote
+    ? t("Send personal data only to models on Host {p1}", { p1: hostName ?? "" })
+    : t("Send personal data only to models on this computer");
   const scanAction = model.scanning ? (
     <Button
       variant="ghost"
@@ -181,45 +210,19 @@ export function DecisionModelsSettings({
   return (
     <DecisionTarget.Provider value={remote ? hostName : undefined}>
       <div className="decision-models-page">
-        <Group title={null}>
-          <Row
-            label={
-              <span className="flex min-w-0 items-center gap-2">
-                <Lock className="icon-sm shrink-0" aria-hidden="true" />
-                {remote
-                  ? t("Personal data stays on Host {p1}", { p1: hostName ?? "" })
-                  : t("Personal data stays on this computer")}
-              </span>
-            }
-            controlId={model.routingLoaded ? privacyControlId : undefined}
-            info={t(
-              "Messages, profiles and contacts are sent only to local sources when this is on.",
-            )}
-          >
-            {model.routingLoaded ? (
-              <Switch
-                id={privacyControlId}
-                aria-label={
-                  remote
-                    ? t("Personal data stays on Host {p1}", { p1: hostName ?? "" })
-                    : t("Personal data stays on this computer")
-                }
-                checked={model.localOnly}
-                disabled={
-                  !model.routingLoaded ||
-                  model.isPending("routing-read") ||
-                  model.isPending("routing-local-only")
-                }
-                onCheckedChange={changePersonalData}
-              />
-            ) : model.routingError !== null ? (
-              <Text>{t("Unavailable")}</Text>
-            ) : (
-              <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
-            )}
-          </Row>
-        </Group>
         {topError !== null ? <ErrorNotice error={topError} /> : null}
+        {batchTest !== null ? (
+          <InlineError
+            details={batchTest.failed
+              .map((item) => (item.detail ? `${item.name}: ${item.detail}` : item.name))
+              .join("\n")}
+          >
+            {t("{p0} of {p1} connection tests failed", {
+              p0: formatNumber(batchTest.failed.length),
+              p1: formatNumber(batchTest.total),
+            })}
+          </InlineError>
+        ) : null}
         <Group
           title={t("Connected models")}
           action={
@@ -232,21 +235,8 @@ export function DecisionModelsSettings({
                   disabled={
                     testingAll || sources?.some((source) => model.isPending(`test:${source.id}`))
                   }
-                  onClick={() => {
-                    setTestingAll(true);
-                    void Promise.allSettled(
-                      (sources ?? []).map((source) => actions.testSource(source.id)),
-                    )
-                      .then((results) => {
-                        setTestingAll(false);
-                        const failed = results.find((result) => result.status === "rejected");
-                        if (failed?.status === "rejected") setTopError(failed.reason);
-                      })
-                      .catch((error: unknown) => {
-                        setTestingAll(false);
-                        setTopError(error);
-                      });
-                  }}
+                  disabledReason={t("Wait for the current test to finish.")}
+                  onClick={() => void runTestAll().catch((error: unknown) => setTopError(error))}
                 >
                   {t("Test all")}
                 </Button>
@@ -263,66 +253,71 @@ export function DecisionModelsSettings({
             onRetry={() => void actions.reloadSources().catch(() => undefined)}
             actions={actions}
             isPending={model.isPending}
-            emptyAction={
-              <Button variant="secondary" size="sm" onClick={() => pick("folder")}>
-                {t("Add from folder")}
-              </Button>
-            }
             onEdit={(source) => setDialog({ kind: "edit", source })}
             onRemove={(source, mode) =>
               void remove(source, mode).catch((error: unknown) => setTopError(error))
             }
           />
         </Group>
-        <Disclosure
-          summary={
-            model.found === null
-              ? remote
-                ? t("Found on the Host")
-                : t("Found on this computer")
-              : remote
-                ? t("Found on the Host: {p1} not added", {
-                    p1: formatNumber(
-                      model.found.filter(
-                        (candidate) => !connectedCandidate(candidate, sources ?? []),
-                      ).length,
-                    ),
-                  })
-                : t("Found on this computer: {p1} not added", {
-                    p1: formatNumber(
-                      model.found.filter(
-                        (candidate) => !connectedCandidate(candidate, sources ?? []),
-                      ).length,
-                    ),
-                  })
-          }
-          summaryActions={scanAction}
-          variant="row"
-        >
-          <div className="decision-discovery-body">
-            <Group title={null}>
-              <FoundList
-                found={model.found}
-                sources={sources ?? []}
+        <Group
+          title={remote ? t("Found on the Host") : t("Found on this computer")}
+          description={t("Local services and model folders. Nothing connects until you add it.")}
+          descriptionVisible
+          action={
+            <div className="flex shrink-0 items-center justify-end gap-2">
+              <ScanSettings
+                hostId={hostId}
+                client={client}
+                onScan={actions.scan}
                 scanning={model.scanning}
-                scanError={model.scanError}
-                incomplete={model.scanIncomplete}
-                busy={busy}
-                onScan={() => void actions.scan().catch(() => undefined)}
-                onAdd={addCandidate}
               />
-            </Group>
-          </div>
-        </Disclosure>
-        <Disclosure summary={t("Scan settings")} variant="row">
-          <ScanSettings
-            hostId={hostId}
-            client={client}
-            onScan={actions.scan}
+              {scanAction}
+            </div>
+          }
+        >
+          <FoundList
+            found={model.found}
+            sources={sources ?? []}
             scanning={model.scanning}
+            scanError={model.scanError}
+            incomplete={model.scanIncomplete}
+            busy={busy}
+            onScan={() => void actions.scan().catch(() => undefined)}
+            onAdd={addCandidate}
           />
-        </Disclosure>
+        </Group>
         <Group title={t("Task routing")}>
+          <Row
+            label={
+              <span className="flex min-w-0 items-center gap-2">
+                <Lock className="icon-sm shrink-0" aria-hidden="true" />
+                {privacyLabel}
+              </span>
+            }
+            controlId={model.routingLoaded ? privacyControlId : undefined}
+            description={t(
+              "Applies to contact interest scores, message sentiment and choosing who runs a board task. When on and no local model is connected, these decisions are skipped.",
+            )}
+            descriptionVisible
+          >
+            {model.routingLoaded ? (
+              <Switch
+                id={privacyControlId}
+                aria-label={privacyLabel}
+                checked={model.localOnly}
+                disabled={
+                  !model.routingLoaded ||
+                  model.isPending("routing-read") ||
+                  model.isPending("routing-local-only")
+                }
+                onCheckedChange={changePersonalData}
+              />
+            ) : model.routingError !== null ? (
+              <Text>{t("Unavailable")}</Text>
+            ) : (
+              <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
+            )}
+          </Row>
           {!model.routingLoaded && model.routingError === null ? (
             <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
           ) : null}
@@ -347,6 +342,7 @@ export function DecisionModelsSettings({
             <div className="px-4 py-2.5">
               <ErrorNotice
                 error={model.routingError}
+                title={t("Could not load the routing.")}
                 onRetry={() => void actions.reloadRouting()}
                 retrying={model.isPending("routing-read")}
               />
@@ -365,7 +361,6 @@ export function DecisionModelsSettings({
         {dialog?.kind === "manual" ? (
           <ManualPathDialog
             prefill={dialog.prefill}
-            initialMode={dialog.initialMode}
             onAdd={(input) => actions.addSource(input)}
             onTest={(id) => actions.testSource(id)}
             onClose={closeDialog}

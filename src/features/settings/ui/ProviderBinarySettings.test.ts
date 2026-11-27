@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { expectErrorDetails } from "./errorDetails.test-support";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -62,9 +63,10 @@ async function click(label: string) {
 it("validates the chosen executable before adding it and keeps picker cancellation harmless", async () => {
   await render();
   expect(
-    [...document.querySelectorAll("button")].find((node) => node.textContent === "Add provider")!
-      .disabled,
-  ).toBe(true);
+    [...document.querySelectorAll("button")]
+      .find((node) => node.textContent === "Add provider")!
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
   mock.pick.mockResolvedValueOnce(null).mockResolvedValueOnce("D:/custom/codex.exe");
   await click("Choose executable");
   expect(saved).not.toHaveBeenCalled();
@@ -81,7 +83,11 @@ it("retains the path and inline error when validation fails", async () => {
   await fill("D:/wrong.exe");
   mock.inspect.mockResolvedValue({ path: "D:/wrong.exe", error: "Choose a Codex executable" });
   await click("Add provider");
-  expect(document.querySelector('[role="alert"]')?.textContent).toBe("Choose a Codex executable");
+  await expectErrorDetails(
+    document,
+    "Could not inspect the CLI executable.",
+    "Choose a Codex executable",
+  );
   expect(loadProviderBinaryPath("codex")).toBeNull();
   expect(saved).not.toHaveBeenCalled();
 });

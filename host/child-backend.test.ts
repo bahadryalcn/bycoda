@@ -6,6 +6,8 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { HostChildBackend } from "./child-backend";
+import { GitExecPool } from "./git/git-exec-pool";
+import { registerHostProcessExecution } from "./git/host-process-execution";
 import { ProviderConstructions } from "./providers/provider-constructions";
 import { ProviderProcessLifecycle } from "./provider-process-lifecycle";
 import { HostRunWriters } from "./execution/run-writers";
@@ -1493,6 +1495,25 @@ it("resolves every provider and runs only allowed catalog commands", async () =>
       cwd: directory,
     });
     expect(JSON.parse(output)).toEqual(["models", "--json"]);
+    const piHelp = ["--no-extensions", "--no-mcp", "--no-approve", "--help"];
+    expect(
+      JSON.parse(
+        await backend.invoke<string>("harness_exec", {
+          command: file,
+          args: piHelp,
+          binaryProvider: "pi",
+          cwd: directory,
+        }),
+      ),
+    ).toEqual(piHelp);
+    await expect(
+      backend.invoke("harness_exec", {
+        command: file,
+        args: piHelp,
+        binaryProvider: "omp",
+        cwd: directory,
+      }),
+    ).rejects.toThrow("Unsupported headless catalog command");
     const cleanupArgs = [
       "--no-auto-update",
       "sessions",
@@ -1644,6 +1665,11 @@ setInterval(() => {}, 1000);
 `,
     );
     const backend = new HostChildBackend();
+    const pool = new GitExecPool(1);
+    const unregister = registerHostProcessExecution(pool);
+    const blocker = new AbortController();
+    let occupied: Promise<unknown> | undefined;
+    let defaultSettled = false;
     let descendant: number | undefined;
     const stopListening = await backend.listen<{ line: string }>(
       "harness-stdout",
@@ -1659,13 +1685,29 @@ setInterval(() => {}, 1000);
         cwd: directory,
       });
       await vi.waitFor(() => expect(descendant).toBeTruthy(), { timeout: 5000 });
+      if (process.platform === "win32") {
+        occupied = pool
+          .exec(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+            timeout: 5_000,
+            signal: blocker.signal,
+          })
+          .catch(() => undefined)
+          .finally(() => {
+            defaultSettled = true;
+          });
+      }
       await backend.kill("tree");
+      expect(defaultSettled).toBe(false);
       await vi.waitFor(() => expect(() => process.kill(descendant!, 0)).toThrow(), {
         timeout: 5000,
       });
     } finally {
       stopListening();
+      blocker.abort();
+      await occupied;
       await backend.close();
+      unregister();
+      await pool.close();
       if (descendant) {
         try {
           process.kill(descendant, "SIGKILL");

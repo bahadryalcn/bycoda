@@ -4,15 +4,11 @@ import { LiveText } from "../../../shared/ui/LiveText";
 import { Badge } from "../../../shared/ui/Badge";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Button } from "../../../shared/ui/Button";
-import { useT } from "../../../shared/i18n";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { useFormat, useT } from "../../../shared/i18n";
 import { useId, useState } from "react";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
-import {
-  formatLiveElapsed,
-  formatLiveMinutes,
-  shouldShowLiveAgents,
-  type LiveAgent,
-} from "../model/liveAgents";
+import { formatLiveMinutes, type LiveAgent } from "../model/liveAgents";
 import { projectKey, projectName } from "../../../shared/lib/paths";
 import {
   loadTabGroupColors,
@@ -23,21 +19,25 @@ import {
   resolveTabGroupLabel,
   resolveTabGroupMascot,
 } from "../../workspace/model/tabGroups";
-import { Check, CircleAlert, Clock, Internet } from "../../../shared/ui/icons";
+import {
+  Check,
+  CircleAlert,
+  CircleX,
+  Clock,
+  Internet,
+  MessageSquare,
+  RotateCcw,
+} from "../../../shared/ui/icons";
 import { RailSectionHeader } from "../../../app/shell/useRailSections";
 import { isRemoteProjectPath } from "../../projects/public/recents";
 import { HarnessIcon } from "./HarnessIcon";
 import { ProjectMascot } from "../../projects/public/ProjectMascot";
 import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
-import { SessionWorkingStatus } from "./SessionWorkingStatus";
+import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { sessionWaitReasonWith } from "../model/sessionWait";
-
-const LIVE_AGENT_CAP = 4;
 
 type Props = {
   agents: LiveAgent[];
-  /** Project whose working conversations already appear in the workspace list. */
-  currentProject?: string;
   activeSessionId?: string;
   onSelect?: (sessionId: string) => void;
   bottomSpacing?: boolean;
@@ -50,7 +50,6 @@ type Props = {
 
 export function LiveAgentsPreview({
   agents,
-  currentProject,
   activeSessionId,
   onSelect,
   bottomSpacing = false,
@@ -70,74 +69,35 @@ export function LiveAgentsPreview({
   const groupCustomColors = groupCustomColorsProp ?? loadedGroupCustomColors;
   const groupMascots = groupMascotsProp ?? loadedGroupMascots;
   const [expanded, setExpanded] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
-  const [expandedProject, setExpandedProject] = useState<string | null>(null);
+  const collapsed = collapsible && !expanded;
   const listId = useId();
   const lockList = useLockOverscroll<HTMLDivElement>();
-  const summary = summarizeLiveAgents(agents);
-  const currentProjectKey =
-    currentProject && currentProject !== "~" ? projectKey(currentProject) : null;
-  const projectAgents = currentProjectKey
-    ? agents.filter(
-        (agent) =>
-          projectKey(agent.cwd) === currentProjectKey &&
-          !agent.done &&
-          !agent.issue &&
-          !agent.needsApproval &&
-          !agent.waiting,
-      )
-    : [];
-  const projectWorkingCount = projectAgents.length;
-  const projectExpanded = currentProjectKey != null && expandedProject === currentProjectKey;
-  const attentionAgents = agents.filter((agent) => agent.issue || agent.needsApproval);
-  const listedAgents = agents.filter(
-    (agent) => !agent.issue && !agent.needsApproval && !projectAgents.includes(agent),
-  );
-  const visibleOnRail = projectWorkingCount > 0 || shouldShowLiveAgents(agents, activeSessionId);
-  const ticking =
-    visibleOnRail && !collapsed && agents.some((agent) => !agent.done && agent.startedAt != null);
-
-  // Minute precision keeps the preview from re-rendering every second. The tick only
-  // triggers the render; labels read the exact time.
+  const rows = orderLiveActivity(agents);
+  const format = useFormat();
+  const ticking = !collapsed && rows.some((agent) => !agent.done && agent.startedAt != null);
   const now = useMinuteNow(ticking) ? wallClockNow() : 0;
 
-  if (!visibleOnRail) return null;
+  if (rows.length === 0) return null;
 
-  const cap = collapsible ? 2 : LIVE_AGENT_CAP;
-  const extra = listedAgents.length - cap;
-  const visible = expanded || extra <= 0 ? listedAgents : listedAgents.slice(0, cap);
   const title = t("Activity");
-  const attentionTone =
-    attentionAgents.length === 1 && attentionAgents[0].issue === "failed" ? "danger" : "warning";
+  const counts = liveActivityCounts(rows, t, format.formatNumber);
   const statusMark = <Clock aria-hidden className="icon-sm shrink-0" strokeWidth={1.75} />;
   const countText = (
-    <span className="inline-flex items-center gap-1">
-      <Badge variant="count" size="xs" tone="neutral">
-        {agents.length}
-      </Badge>
-      {collapsed && summary.attention > 0 ? (
+    <span className="inline-flex min-w-0 flex-wrap items-center justify-end gap-x-1 gap-y-0.5">
+      {counts.map(({ state, count, label }) => (
         <Badge
+          key={state}
           variant="count"
           size="xs"
-          tone={attentionTone}
-          aria-label={t(summary.attention === 1 ? "{p0} needs attention" : "{p0} need attention", {
-            p0: summary.attention,
-          })}
-          icon={<CircleAlert aria-hidden className="icon-xs" />}
+          tone={activityStates[state].tone}
+          aria-label={label}
+          icon={<ActivityMark state={state} />}
         >
-          {summary.attention}
+          {count}
         </Badge>
-      ) : null}
+      ))}
     </span>
   );
-  // One list, most urgent first; each row's own status mark says which state it is in.
-  const leadingRows = attentionAgents;
-  const trailingRows = [
-    ...(projectExpanded ? projectAgents : []),
-    ...visible.filter((agent) => !agent.done && !agent.waiting),
-    ...visible.filter((agent) => !agent.done && agent.waiting),
-    ...visible.filter((agent) => agent.done),
-  ];
   const renderCard = (agent: LiveAgent) => (
     <LiveAgentCard
       key={agent.id}
@@ -152,37 +112,13 @@ export function LiveAgentsPreview({
     />
   );
   // Announced when a count changes, never per second: elapsed times stay out of this text.
-  const announcement = [
-    summary.working > 0
-      ? t(summary.working === 1 ? "{p0} working agent" : "{p0} working agents", {
-          p0: summary.working,
-        })
-      : null,
-    summary.waiting > 0
-      ? t(summary.waiting === 1 ? "{p0} waiting agent" : "{p0} waiting agents", {
-          p0: summary.waiting,
-        })
-      : null,
-    summary.attention > 0
-      ? t(summary.attention === 1 ? "{p0} needs attention" : "{p0} need attention", {
-          p0: summary.attention,
-        })
-      : null,
-    summary.finished > 0
-      ? t(summary.finished === 1 ? "{p0} finished agent" : "{p0} finished agents", {
-          p0: summary.finished,
-        })
-      : null,
-  ]
-    .filter(Boolean)
-    .join(", ");
+  const announcement = counts.map(({ label }) => label).join(", ");
 
   return (
     <section
       aria-label={t("Activity")}
-      className={`min-w-0 shrink-0 ${collapsible ? "mb-2" : "px-2"} ${bottomSpacing ? "pb-2" : ""}`}
+      className={`min-w-0 shrink-0 ${bottomSpacing ? "pb-2" : ""}`}
       data-live-agents-preview="full"
-      data-live-agents-headline={summary.headline}
       data-collapsed={collapsible && collapsed ? "" : undefined}
     >
       <LiveText className="sr-only" text={announcement} />
@@ -192,102 +128,97 @@ export function LiveAgentsPreview({
           icon={statusMark}
           count={countText}
           collapsed={collapsed}
-          onToggleCollapsed={() => setCollapsed((value) => !value)}
+          onToggleCollapsed={() => setExpanded((value) => !value)}
           controlsId={listId}
         />
       ) : (
-        <SectionLabel icon={statusMark} count={agents.length}>
+        <SectionLabel icon={statusMark} actions={countText}>
           {title}
         </SectionLabel>
       )}
       <div id={listId} hidden={collapsed} className="px-2 pb-1">
         <div
           ref={lockList}
-          className="flex max-h-[min(24rem,40vh)] min-w-0 flex-col overflow-y-auto overscroll-none"
+          className="flex max-h-[min(14rem,30vh)] min-w-0 flex-col overflow-y-auto overscroll-none"
           data-live-agents-list
         >
-          {leadingRows.map(renderCard)}
-          {projectWorkingCount > 0 ? (
-            <Button
-              variant="item"
-              fullWidth
-              motion="none"
-              expanded={projectExpanded}
-              aria-controls={`${listId}-project`}
-              onClick={() => setExpandedProject(projectExpanded ? null : currentProjectKey)}
-              aria-label={t("{p0} working in this project", { p0: projectWorkingCount })}
-              data-live-agents-project-summary
-              className="min-w-0 shrink-0 gap-1.5"
-            >
-              <Text size="caption" tone="secondary" truncate className="min-w-0 flex-1 text-start">
-                {t("This project")}
-              </Text>
-              <Badge variant="count" size="xs" tone="neutral">
-                {projectWorkingCount}
-              </Badge>
-            </Button>
-          ) : null}
-          <div id={`${listId}-project`} className="contents">
-            {trailingRows.map(renderCard)}
-          </div>
+          {/* Collapsed: cards are not built; counts and the live announcement above come from `rows`. */}
+          {collapsed ? null : rows.map(renderCard)}
         </div>
-        {extra > 0 ? (
-          <Button
-            fullWidth
-            variant="item"
-            motion="none"
-            type="button"
-            expanded={expanded}
-            chevron="start"
-            aria-controls={listId}
-            onClick={() => setExpanded((open) => !open)}
-          >
-            {expanded ? t("Show less") : t("{p0} more", { p0: extra })}
-          </Button>
-        ) : null}
       </div>
     </section>
   );
 }
 
-/**
- * Real counts behind the header. Failed or retrying agents and agents waiting for input need
- * attention; a finished agent is `done` without an issue; the rest are running. The headline is
- * the most urgent non-empty group, so a mixed list is never labelled by one row.
- */
-export function summarizeLiveAgents(agents: readonly LiveAgent[]) {
-  let attention = 0;
-  let finished = 0;
-  let working = 0;
-  let waiting = 0;
-  for (const agent of agents) {
-    if (agent.issue || agent.needsApproval) attention += 1;
-    else if (agent.done) finished += 1;
-    else if (agent.waiting) waiting += 1;
-    else working += 1;
-  }
-  const headline: "working" | "attention" | "waiting" | "finished" =
-    working > 0 ? "working" : attention > 0 ? "attention" : waiting > 0 ? "waiting" : "finished";
-  return { attention, finished, working, waiting, headline };
+const activityStates = {
+  working: { label: "Working", tone: "accent", icon: WorkingIndicator },
+  failed: { label: "Failed", tone: "danger", icon: CircleX },
+  question: { label: "Question", tone: "warning", icon: MessageSquare },
+  done: { label: "Done", tone: "success", icon: Check },
+  approval: { label: "Need approval", tone: "warning", icon: CircleAlert },
+  input: { label: "Needs input", tone: "warning", icon: CircleAlert },
+  retrying: { label: "Retrying", tone: "warning", icon: RotateCcw },
+  waiting: { label: "Waiting", tone: "neutral", icon: Clock },
+} as const;
+
+type ActivityState = keyof typeof activityStates;
+
+function liveActivityState(agent: LiveAgent): ActivityState {
+  if (agent.needsApproval) return agent.inputKind ?? "input";
+  if (agent.issue) return agent.issue;
+  if (agent.done) return "done";
+  return agent.waiting ? "waiting" : "working";
 }
 
-/** Title and count for the summary's headline group; shared by the full and compact rails. */
-export function liveHeadline(
-  summary: ReturnType<typeof summarizeLiveAgents>,
-  t: (key: string) => string,
+export function liveActivityStatus(agent: LiveAgent, t: ReturnType<typeof useT>) {
+  const state = liveActivityState(agent);
+  const { tone, label } = activityStates[state];
+  return { state, tone, label: t(label) };
+}
+
+function ActivityMark({ state }: { state: ActivityState }) {
+  if (state === "working") return <WorkingIndicator />;
+  const Icon = activityStates[state].icon;
+  return <Icon aria-hidden className="icon-xs shrink-0" />;
+}
+
+export function orderLiveActivity(agents: readonly LiveAgent[]) {
+  return [...agents].sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
+}
+
+export function liveActivityCounts(
+  agents: readonly LiveAgent[],
+  t: ReturnType<typeof useT>,
+  formatCount: (count: number) => string,
 ) {
-  const { headline } = summary;
-  return {
-    title:
-      headline === "working"
-        ? t("Working")
-        : headline === "attention"
-          ? t("Needs attention")
-          : headline === "waiting"
-            ? t("Waiting")
-            : t("Finished"),
-    count: summary[headline],
-  };
+  const counts = new Map<ActivityState, number>();
+  for (const agent of agents) {
+    const state = liveActivityState(agent);
+    counts.set(state, (counts.get(state) ?? 0) + 1);
+  }
+  return (Object.keys(activityStates) as ActivityState[]).flatMap((state) => {
+    const count = counts.get(state);
+    if (!count) return [];
+    const label =
+      state === "working"
+        ? t(count === 1 ? "{p0} working agent" : "{p0} working agents", { p0: count })
+        : state === "waiting"
+          ? t(count === 1 ? "{p0} waiting agent" : "{p0} waiting agents", { p0: count })
+          : `${t(activityStates[state].label)}: ${formatCount(count)}`;
+    return [{ state, count, label }];
+  });
+}
+
+export function liveAgentHint({
+  waitReason,
+  remote,
+  remoteLabel,
+}: {
+  waitReason: string;
+  remote: boolean;
+  remoteLabel: string;
+}) {
+  return [waitReason, remote ? remoteLabel : ""].filter(Boolean).join("\n");
 }
 
 function LiveAgentCard({
@@ -314,105 +245,49 @@ function LiveAgentCard({
   const key = projectKey(agent.cwd);
   const project = resolveTabGroupLabel(key, groupLabels, seed);
   const color = resolveTabGroupColor(key, groupColors, groupCustomColors, seed);
-  const elapsed = agent.done
-    ? agent.durationMs != null
-      ? formatLiveElapsed(0, agent.durationMs)
-      : ""
-    : agent.startedAt != null
-      ? formatLiveMinutes(agent.startedAt, now)
-      : "";
-  const activity = agent.issue
-    ? t(agent.issue === "retrying" ? "Retrying" : "Failed")
-    : agent.needsApproval
-      ? t(agent.inputKind === "question" ? "Question" : "Need approval")
-      : agent.done
-        ? t("Done")
-        : agent.waiting
-          ? t("Waiting")
-          : agent.activity;
-  const live = !agent.issue && !agent.needsApproval && !agent.done && !agent.waiting;
+  const { state, tone, label } = liveActivityStatus(agent, t);
+  const elapsed =
+    !agent.done && agent.startedAt != null ? formatLiveMinutes(agent.startedAt, now) : "";
   const remote = isRemoteProjectPath(agent.cwd);
-  const waitReason = agent.waiting && !agent.done ? sessionWaitReasonWith(t, agent.waiting) : "";
-  const title = [
-    agent.title,
-    remote ? `${project} (remote)` : project,
-    waitReason || activity,
-    elapsed,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const waitReason =
+    state === "waiting" && agent.waiting ? sessionWaitReasonWith(t, agent.waiting) : "";
+  const hint = liveAgentHint({ waitReason, remote, remoteLabel: t("On another machine") });
 
-  const flagged = agent.issue || agent.needsApproval || agent.done || agent.waiting;
-  const tone = agent.issue
-    ? agent.issue === "failed"
-      ? "danger"
-      : "warning"
-    : agent.needsApproval
-      ? "warning"
-      : agent.done
-        ? "success"
-        : agent.waiting
-          ? "neutral"
-          : "accent";
   return (
     <Button
       // shrink-0: the explicit min height lets flex squeeze a row below its two lines; the list scrolls instead.
       controlMinHeight="compact"
-      padding={{ block: "xs" }}
+      padding={{ block: "xxs" }}
       className="min-w-0 shrink-0 flex-col items-stretch gap-0.5 text-start"
       fullWidth
       motion="none"
       selected={selected}
       variant="item"
       type="button"
-      tooltip={title}
-      tooltipWhen={remote || !flagged ? "always" : "overflow"}
-      aria-label={[agent.title, project, waitReason || activity, elapsed]
+      tooltip={hint || undefined}
+      aria-label={[
+        agent.title,
+        project,
+        label,
+        waitReason,
+        remote ? t("On another machine") : "",
+        elapsed,
+      ]
         .filter(Boolean)
         .join(", ")}
       aria-current={selected ? "true" : undefined}
       data-live-agent-card={agent.id}
-      data-live-agent-state={
-        agent.issue
-          ? agent.issue
-          : agent.needsApproval
-            ? "input"
-            : agent.done
-              ? "done"
-              : agent.waiting
-                ? "waiting"
-                : "working"
-      }
+      data-live-agent-state={state}
       onClick={() => onSelect?.(agent.id)}
     >
       <span className="flex min-w-0 flex-1 items-center gap-1.5" data-live-agent-title>
         <HarnessIcon harness={agent.harness} className="icon-sm shrink-0" />
-        <Text size="secondary" tone="inherit" leading="snug" truncate className="min-w-0 flex-1">
-          {agent.title}
-        </Text>
-        <Text
-          size="caption"
-          tone={tone}
-          className="inline-flex min-w-0 max-w-[50%] items-center gap-1"
-          data-live-agent-status
-        >
-          {agent.issue || agent.needsApproval ? (
-            <CircleAlert aria-hidden className="icon-xs shrink-0" />
-          ) : agent.done ? (
-            <Check aria-hidden className="icon-xs shrink-0" />
-          ) : agent.waiting ? (
-            <Clock aria-hidden className="icon-xs shrink-0" />
-          ) : (
-            <SessionWorkingStatus startedAt={agent.startedAt} showElapsed={false} />
-          )}
-          {flagged ? (
-            <Text size="inherit" tone="inherit" truncate>
-              {activity}
-            </Text>
-          ) : null}
-        </Text>
+        <OverflowTooltip label={agent.title}>
+          <Text size="secondary" tone="inherit" leading="snug" truncate className="min-w-0 flex-1">
+            {agent.title}
+          </Text>
+        </OverflowTooltip>
       </span>
-      {/* Secondary line: where the work lives on the left, its real state on the right. */}
       <Text
         size="caption"
         tone="secondary"
@@ -425,34 +300,36 @@ function LiveAgentCard({
           color={color}
           name={resolveTabGroupMascot(key, groupMascots)}
           className="icon-xs shrink-0"
-          active={live}
+          active={state === "working"}
         />
-        {remote ? (
-          <Internet
-            aria-label={t("On another machine")}
-            className="icon-xs shrink-0"
-            strokeWidth={1.75}
-          />
-        ) : null}
+        {remote ? <Internet aria-hidden className="icon-xs shrink-0" strokeWidth={1.75} /> : null}
         <Text
           size="inherit"
           tone="inherit"
           truncate
-          className="min-w-0 flex-1 @max-[220px]/rail:sr-only"
+          className="min-w-0 @max-[220px]/rail:sr-only"
           data-live-agent-project
         >
           {project}
         </Text>
-        {elapsed ? (
-          <Text
-            data-live-agent-elapsed
-            size="inherit"
-            tone="inherit"
-            className="shrink-0 tabular-nums @max-[200px]/rail:hidden"
-          >
-            {elapsed}
-          </Text>
-        ) : null}
+        <Badge
+          appearance="subtle"
+          size="xs"
+          tone={tone}
+          className="ms-auto shrink-0"
+          data-live-agent-status
+          icon={<ActivityMark state={state} />}
+        >
+          {label}
+          {elapsed ? (
+            <span
+              data-live-agent-elapsed
+              className="ms-1 shrink-0 tabular-nums @max-[200px]/rail:hidden"
+            >
+              {elapsed}
+            </span>
+          ) : null}
+        </Badge>
       </Text>
     </Button>
   );

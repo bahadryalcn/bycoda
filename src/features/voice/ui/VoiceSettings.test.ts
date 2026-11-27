@@ -24,9 +24,6 @@ import { clearRetainedVoiceDrafts } from "../model/voiceSettingsDrafts";
 import { voiceSaveFailures } from "../model/voiceSettingsSave";
 import { VoiceSettings } from "./VoiceSettings";
 import { loadVoiceSettings, saveVoiceSettings } from "../model/voiceSettings";
-import * as conversationPreset from "../model/voiceConversationPreset";
-import { claimVoiceConversationActivity } from "../model/voiceActivity";
-import { reportDictation } from "../model/dictationActivity";
 import * as turnPolicy from "../model/voiceTurnPolicy";
 import { VOICE_TURN_CHOICE_FAILED } from "../model/voiceTurnPolicy";
 let root: Root | undefined;
@@ -63,6 +60,31 @@ async function setup(enabled = true) {
   root = createRoot(container);
   await act(async () => root!.render(createElement(VoiceSettings)));
 }
+
+it("shows the wake rows only once voice is on, without changing any opt-in", async () => {
+  await setup(false);
+  const row = (id: string) => container.querySelector(`[data-setting-id="${id}"]`);
+  // Wake lives with the voice assistant; there is no dimmed stub while voice is off.
+  expect(row("voice-wake")).toBeNull();
+  expect(row("voice-wake-phrase")).toBeNull();
+
+  await act(async () =>
+    row("voice-companion")!.querySelector<HTMLButtonElement>('[role="switch"]')!.click(),
+  );
+  expect(loadVoiceSettings().enabled).toBe(true);
+  expect(loadVoiceSettings().wakeEnabled).not.toBe(true);
+  expect(row("voice-wake")!.closest("[hidden]")).toBeNull();
+  expect(row("voice-wake-phrase")).toBeNull();
+  expect(loadVoiceSettings().wakeEnabled).not.toBe(true);
+
+  await act(async () =>
+    row("voice-wake")!.querySelector<HTMLButtonElement>('[role="switch"]')!.click(),
+  );
+  expect(row("voice-wake-phrase")!.querySelector("input")).not.toBeNull();
+  expect(row("voice-sleep-phrase")!.querySelector("input")).not.toBeNull();
+  expect(loadVoiceSettings().wakeEnabled).toBe(true);
+  expect(backend.setup).not.toHaveBeenCalled();
+});
 it("enables dictation independently without microphone capture or companion settings", async () => {
   await setup(false);
   const capture = vi.fn();
@@ -71,7 +93,7 @@ it("enables dictation independently without microphone capture or companion sett
     value: { getUserMedia: capture },
   });
   const toggle = container.querySelector<HTMLButtonElement>(
-    '[role="switch"][aria-label="Enable dictation"]',
+    '[role="switch"][aria-label="Dictation"]',
   )!;
   await act(async () => toggle.click());
   await advance();
@@ -81,9 +103,9 @@ it("enables dictation independently without microphone capture or companion sett
     natural: true,
   });
   expect(backend.inspect).toHaveBeenLastCalledWith({ natural: false });
-  expect(container.textContent).toContain("Dictation setup");
+  expect(container.textContent).toContain("Setup");
   expect(container.querySelector('[data-setting-id="voice-mode"]')).toBeNull();
-  expect(container.querySelector('[data-setting-id="speech-microphone"]')).not.toBeNull();
+  expect(container.querySelector('[data-setting-id="voice-microphone-input"]')).not.toBeNull();
   expect(capture).not.toHaveBeenCalled();
 });
 
@@ -137,7 +159,7 @@ it("does not apply an old default-engine setup after the owner selects another e
     whisperPath: "",
   });
 });
-it("retains the saved automatic pause while disabling its control in manual mode", async () => {
+it("retains the saved automatic pause while ending turns manually, then returns to it", async () => {
   saveVoiceSettings({
     ...loadVoiceSettings(),
     manualTurnEnd: false,
@@ -145,74 +167,38 @@ it("retains the saved automatic pause while disabling its control in manual mode
     turnEndSilence: 4,
   });
   await setup();
-  const manual = container.querySelector<HTMLButtonElement>(
-    '[role="switch"][aria-label="I decide when my turn ends"]',
-  )!;
-  expect(manual).not.toBeNull();
-  await act(async () => manual.click());
+  await chooseTurnEnd("I end my turn");
   expect(loadVoiceSettings()).toMatchObject({
     manualTurnEnd: true,
     manualTurnEndRevision: 10,
     turnEndSilence: 4,
   });
-  expect(
-    container.querySelector('[data-setting-id="voice-turn-silence"] [disabled]'),
-  ).not.toBeNull();
-  await act(async () => manual.click());
+  await chooseTurnEnd("Extra time");
   expect(loadVoiceSettings()).toMatchObject({
     manualTurnEnd: false,
     manualTurnEndRevision: 11,
     turnEndSilence: 4,
   });
-});
-it("applies the conversation preset in one update while preserving other preferences", async () => {
-  saveVoiceSettings({
-    ...loadVoiceSettings(),
-    mode: "openai",
-    device: "cpu",
-    microphoneId: "mic",
-    manualTurnEnd: true,
-    manualTurnEndRevision: 8,
-    turnEndSilence: 4,
-    allowBargeIn: false,
-    holdAnnouncements: false,
-  });
-  await setup();
-  const before = loadVoiceSettings();
-  const listener = vi.fn();
-  window.addEventListener("bycoda:voice-settings", listener);
-  await click("Apply professional preset");
-  window.removeEventListener("bycoda:voice-settings", listener);
-  expect(listener).toHaveBeenCalledTimes(1);
-  expect(loadVoiceSettings()).toEqual({
-    ...before,
-    manualTurnEnd: false,
-    manualTurnEndRevision: 9,
-    turnEndSilence: 2.5,
-    allowBargeIn: true,
-    holdAnnouncements: true,
-  });
   await act(async () =>
     container
-      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="I may interrupt speech"]')!
+      .querySelector<HTMLButtonElement>(
+        '[role="switch"][aria-label="Interrupt replies by speaking"]',
+      )!
       .click(),
   );
   expect(loadVoiceSettings().allowBargeIn).toBe(false);
 });
-
-it("shows a recoverable preset save error", async () => {
-  await setup();
-  const save = vi
-    .spyOn(conversationPreset, "saveProfessionalConversationPreset")
-    .mockImplementationOnce(() => {
-      throw new Error("storage unavailable");
-    });
-  await click("Apply professional preset");
-  expect(container.textContent).toContain("Conversation preset could not be saved. Try again.");
-  save.mockRestore();
-  await click("Apply professional preset");
-  expect(container.textContent).not.toContain("Conversation preset could not be saved. Try again.");
-});
+async function chooseTurnEnd(option: string) {
+  const trigger = container.querySelector<HTMLButtonElement>(
+    '[data-setting-id="voice-turn-silence"] button[aria-label^="Wait before replying:"]',
+  )!;
+  await act(async () => trigger.click());
+  const item = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (node) => node.textContent === option,
+  )!;
+  expect(item, option).toBeDefined();
+  await act(async () => item.click());
+}
 async function advance(ms = 501) {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(ms);
@@ -226,12 +212,7 @@ async function click(text: string) {
   await act(async () => button!.click());
 }
 async function openLocate() {
-  const more = document.querySelector<HTMLButtonElement>(
-    'button[aria-label="More voice setup actions"]',
-  );
-  expect(more).not.toBeNull();
-  await act(async () => more!.click());
-  await click("Locate existing");
+  await click("Locate files");
 }
 it("does not check or install until enabled; shows only the next actions for missing setup", async () => {
   await setup(false);
@@ -240,8 +221,13 @@ it("does not check or install until enabled; shows only the next actions for mis
   expect(backend.setupStatus).not.toHaveBeenCalled();
   await act(async () => saveVoiceSettings({ ...loadVoiceSettings(), enabled: true }));
   await advance();
-  expect(container.textContent).toContain("Voice setup is needed");
-  expect(document.querySelector('button[aria-label="More voice setup actions"]')).not.toBeNull();
+  expect(container.textContent).toContain("Setup needed");
+  expect(
+    [...document.querySelectorAll("button")].some(
+      (el) => el.textContent?.trim() === "Locate files",
+    ),
+  ).toBe(true);
+  expect(document.querySelector('[aria-haspopup="menu"]')).toBeNull();
   expect(container.textContent).not.toMatch(
     /faster-whisper|VoxCPM2|pip install|Python executable|Missing:/,
   );
@@ -262,7 +248,7 @@ it("keeps locations behind a dialog, saves a picked folder and discards stale de
   expect(buttons).toHaveLength(3);
   await act(async () => buttons[2].click());
   expect(loadVoiceSettings().ttsPath).toBe("G:\\Models\\VoxCPM2");
-  expect(container.textContent).toContain("Checking voice setup…");
+  expect(container.textContent).toContain("Checking…");
   await advance();
   expect(backend.inspect).toHaveBeenLastCalledWith({
     natural: true,
@@ -270,6 +256,33 @@ it("keeps locations behind a dialog, saves a picked folder and discards stale de
     ttsPath: "G:\\Models\\VoxCPM2",
   });
   expect(backend.setup).not.toHaveBeenCalled();
+});
+
+it("keeps the locate dialog to its fields and close, without a second detection action", async () => {
+  saveVoiceSettings({ ...loadVoiceSettings(), python: "old-python", whisperPath: "old-model" });
+  await setup();
+  await advance();
+  await openLocate();
+  const dialog = document.querySelector('[role="dialog"]')!;
+  const labels = [...dialog.querySelectorAll("button")].map((el) => el.textContent?.trim());
+  expect(labels).not.toContain("Automatic detection");
+  expect(labels).not.toContain("Done");
+  expect(
+    [...dialog.querySelectorAll<HTMLInputElement>("input")].map((input) => input.value),
+  ).toEqual(["old-python", "old-model"]);
+  expect(loadVoiceSettings()).toMatchObject({ python: "old-python", whisperPath: "old-model" });
+  expect(backend.setup).not.toHaveBeenCalled();
+});
+
+it("offers automatic processing when the selected GPU is unavailable", async () => {
+  saveVoiceSettings({ ...loadVoiceSettings(), device: "gpu" });
+  backend.inspect.mockResolvedValueOnce({ ready: false, missing: ["NVIDIA GPU"] });
+  await setup();
+  await advance();
+  await click("Use automatic selection");
+  expect(loadVoiceSettings().device).toBe("auto");
+  await advance();
+  expect(backend.inspect).toHaveBeenLastCalledWith({ natural: true });
 });
 
 it("keeps installation reachable while detection is stalled and ignores the stale check", async () => {
@@ -282,13 +295,13 @@ it("keeps installation reachable while detection is stalled and ignores the stal
   );
   await setup();
   await advance();
-  expect(container.textContent).toContain("Checking voice setup…");
+  expect(container.textContent).toContain("Checking…");
   backend.setup.mockResolvedValue({ state: "installing", stage: "packages" });
   await click("Install");
   expect(backend.setup).toHaveBeenCalledExactlyOnceWith({ natural: true });
   await act(async () => finish({ ready: true, missing: [] }));
   expect(container.textContent).toContain("Installing voice support…");
-  expect(container.textContent).not.toContain("Voice is ready");
+  expect(container.textContent).not.toContain("Ready");
 });
 
 it("ends a stalled check with retry and discards a late answer", async () => {
@@ -305,9 +318,9 @@ it("ends a stalled check with retry and discards a late answer", async () => {
   expect(container.textContent).toContain("This computer is unavailable. Try again.");
   backend.inspect.mockResolvedValue({ ready: true, missing: [] });
   await click("Try again");
-  expect(container.textContent).toContain("Voice is ready");
+  expect(container.textContent).toContain("Ready");
   await act(async () => finish({ ready: false, missing: ["Python"] }));
-  expect(container.textContent).toContain("Voice is ready");
+  expect(container.textContent).toContain("Ready");
 });
 
 it("ignores a late initial job status after starting a new install", async () => {
@@ -323,7 +336,7 @@ it("ignores a late initial job status after starting a new install", async () =>
   await click("Install");
   await act(async () => finish({ state: "ready" }));
   expect(container.textContent).toContain("Installing voice support…");
-  expect(container.textContent).not.toContain("Locate existing");
+  expect(container.textContent).not.toContain("Locate files");
 });
 
 it("keeps folder selection progress on one Browse action and suppresses duplicate dialogs", async () => {
@@ -362,7 +375,7 @@ it("installs once, polls progress, saves managed locations and verifies readines
   await click("Install");
   expect(backend.setup).toHaveBeenCalledExactlyOnceWith({ natural: true });
   expect(container.textContent).toContain("Installing voice support…");
-  expect(container.textContent).not.toContain("Locate existing");
+  expect(container.textContent).not.toContain("Locate files");
   backend.setupStatus.mockResolvedValue({
     state: "ready",
     requestedConfig: { natural: true },
@@ -377,7 +390,7 @@ it("installs once, polls progress, saves managed locations and verifies readines
   await advance(1001);
   await advance();
   expect(loadVoiceSettings().python).toBe("G:/voice/python.exe");
-  expect(container.textContent).toContain("Voice is ready");
+  expect(container.textContent).toContain("Ready");
   expect(backend.setup).toHaveBeenCalledTimes(1);
 });
 it("offers a simple retry for connection failures with details behind help", async () => {
@@ -389,7 +402,7 @@ it("offers a simple retry for connection failures with details behind help", asy
   expect(container.textContent).not.toContain("Install");
   backend.inspect.mockResolvedValue({ ready: true, missing: [] });
   await click("Try again");
-  expect(container.textContent).toContain("Voice is ready");
+  expect(container.textContent).toContain("Ready");
 });
 it("does not call a detected interpreter ready when the backend rejects its version", async () => {
   await setup();
@@ -414,7 +427,6 @@ it("does not apply a completed background job over newer voice preferences", asy
 it("chooses visual previews with radio arrows and keeps runtime setup unchanged", async () => {
   await setup();
   await advance();
-  await click("Appearance and voice style");
   const group = container.querySelector('[role="radiogroup"][aria-label="Visual style"]')!;
   const radios = [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
   expect(radios.map((radio) => radio.textContent?.trim())).toEqual([
@@ -448,7 +460,7 @@ it("offers GPU support for a ready CPU-only High quality voice and installs with
   saveVoiceSettings({ ...loadVoiceSettings(), engine: "voxcpm2" });
   await setup();
   await advance();
-  expect(container.textContent).toContain("Voice is ready");
+  expect(container.textContent).toContain("Ready");
   expect(container.textContent).toContain("NVIDIA GeForce RTX 4070");
   backend.setup.mockResolvedValue({ state: "installing", stage: "gpu" });
   await click("Install GPU support");
@@ -493,20 +505,19 @@ it("shows conversation and companion preferences without changing saved values o
   await advance();
   const saved = localStorage.getItem("bycoda.voice"),
     calls = backend.inspect.mock.calls.length;
-  for (const id of [
-    "voice-manual-turn-end",
-    "voice-turn-silence",
-    "voice-idle-sleep",
-    "voice-visual-style",
-    "voice-device",
-  ])
+  for (const id of ["voice-turn-silence", "voice-idle-sleep", "voice-visual-style", "voice-device"])
     expect(container.querySelector(`[data-setting-id="${id}"]`), id).not.toBeNull();
-  for (const id of ["voice-device", "voice-idle-sleep", "voice-visual-style"]) {
-    expect(
-      container.querySelector(`[data-setting-id="${id}"]`)?.closest("[hidden]"),
-      id,
-    ).not.toBeNull();
-  }
+  expect(
+    container.querySelector('[data-setting-id="voice-turn-silence"]')?.closest("[hidden]"),
+  ).toBeNull();
+  expect(
+    container
+      .querySelector('[data-setting-id="voice-turn-silence"] button:not(.settings-reset)')
+      ?.getAttribute("aria-label"),
+  ).toBe("Wait before replying: I end my turn");
+  // Each changed preference offers its Restore default action; showing it saves nothing.
+  for (const id of ["voice-turn-silence", "voice-idle-sleep", "voice-visual-style", "voice-device"])
+    expect(container.querySelector(`[data-setting-id="${id}"] .settings-reset`), id).not.toBeNull();
   expect(localStorage.getItem("bycoda.voice")).toBe(saved);
   expect(backend.inspect).toHaveBeenCalledTimes(calls);
   expect(backend.setup).not.toHaveBeenCalled();
@@ -520,12 +531,9 @@ it("keeps a failed manual-turn save visible on its row", async () => {
     throw new Error("preference save refused");
   });
   try {
-    const manual = container.querySelector<HTMLButtonElement>(
-      '[data-setting-id="voice-manual-turn-end"] button[role="switch"]',
-    )!;
-    await act(() => manual.click());
+    await chooseTurnEnd("I end my turn");
     expect(
-      container.querySelector('[data-setting-id="voice-manual-turn-end"]')!.textContent,
+      container.querySelector('[data-setting-id="voice-turn-silence"]')!.textContent,
     ).toContain(VOICE_TURN_CHOICE_FAILED);
     expect(localStorage.getItem("bycoda.voice")).toBe(saved);
     expect(backend.setup).not.toHaveBeenCalled();
@@ -561,7 +569,7 @@ it("never offers GPU support for the default Natural voice, which runs on the CP
   });
   await setup();
   await advance();
-  expect(container.textContent).toContain("Voice is ready");
+  expect(container.textContent).toContain("Ready");
   expect(container.textContent).not.toContain("Install GPU support");
 });
 
@@ -580,7 +588,7 @@ it("keeps the ElevenLabs key on the Host and rechecks the setup after saving it"
   });
   await click("Save");
   expect(backend.setCloudKey).toHaveBeenCalledExactlyOnceWith("elevenlabs", "sk_test");
-  expect(container.textContent).toContain("Key saved");
+  expect(container.textContent).toContain("Saved");
   expect(field.value).toBe("");
   await advance();
   expect(backend.inspect).toHaveBeenCalledTimes(2);
@@ -596,31 +604,21 @@ it("shows the speaker choice for Supertonic and cloud conversations, not for Vox
   expect(document.querySelector('[data-setting-id="voice-speaker"]')).not.toBeNull();
 });
 
-it("shows what uses the microphone only while it is in use, without starting capture", async () => {
+it("keeps one microphone row with a test, no activity or permission rows, and no capture", async () => {
   await setup(false);
   await advance();
-  const row = () => document.querySelector('[data-setting-id="voice-activity"]');
-  expect(row()).toBeNull();
+  const capture = vi.fn();
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: { getUserMedia: capture, enumerateDevices: vi.fn(async () => []) },
+  });
+  const row = document.querySelector('[data-setting-id="voice-microphone-input"]');
+  expect(row?.textContent).toContain("Record test");
+  expect(document.querySelector('[data-setting-id="voice-activity"]')).toBeNull();
+  expect(document.querySelector('[data-setting-id="speech-microphone"]')).toBeNull();
+  expect(document.querySelector('[data-setting-id="voice-microphone-recording"]')).toBeNull();
   expect(backend.inspect).not.toHaveBeenCalled();
-  let release!: () => void;
-  await act(async () => {
-    release = claimVoiceConversationActivity();
-  });
-  expect(row()?.textContent).toContain("Voice companion is connected");
-  const stop = vi.fn();
-  const owner = Symbol();
-  await act(async () => reportDictation(owner, { state: "listening", visible: true, stop }));
-  expect(row()?.textContent).toContain("Dictation is listening");
-  await act(async () =>
-    [...row()!.querySelectorAll("button")].find((b) => b.textContent === "Stop dictation")!.click(),
-  );
-  expect(stop).toHaveBeenCalledOnce();
-  await act(async () => {
-    reportDictation(owner, undefined);
-    release();
-  });
-  expect(row()).toBeNull();
-  expect(backend.setup).not.toHaveBeenCalled();
+  expect(capture).not.toHaveBeenCalled();
 });
 
 it("chooses the default cloud dictation model per provider", async () => {
@@ -649,24 +647,20 @@ it("chooses the default cloud dictation model per provider", async () => {
   expect(document.querySelector('[data-setting-id="voice-openrouter-key"]')).not.toBeNull();
 });
 
-it("keeps core voice choices visible and retains optional dictation and processing controls behind disclosures", async () => {
+it("shows core voice choices and every dictation detail without disclosures", async () => {
   saveVoiceSettings({ ...loadVoiceSettings(), dictationEnabled: true, dictationEngine: "openai" });
   await setup();
   const row = (id: string) => container.querySelector<HTMLElement>(`[data-setting-id="${id}"]`)!;
-  expect(row("voice-mode").closest("[hidden]")).toBeNull();
-  expect(row("voice-speaker").closest("[hidden]")).toBeNull();
-  expect(row("dictation-language").closest("[hidden]")).toBeNull();
-  expect(row("dictation-engine").closest("[hidden]")).toBeNull();
-  expect(row("dictation-model").closest("[hidden]")).toBeNull();
-  expect(row("dictation-shortcut-mode").closest("[hidden]")).toBeNull();
-  expect(row("voice-device").closest("[hidden]")).not.toBeNull();
-  const dictionary = row("dictation-dictionary");
-  expect(dictionary.closest("[hidden]")).not.toBeNull();
-  await act(async () =>
-    dictionary.closest('[data-settings-part="advanced"]')!.querySelector("button")!.click(),
-  );
-  expect(row("dictation-dictionary")).toBe(dictionary);
-  expect(dictionary.closest("[hidden]")).toBeNull();
+  for (const id of [
+    "voice-mode",
+    "dictation-engine",
+    "dictation-model",
+    "dictation-language",
+    "dictation-shortcut-mode",
+    "dictation-dictionary",
+  ])
+    expect(row(id).closest("[hidden]"), id).toBeNull();
+  expect(container.querySelector('[data-settings-part="advanced"]')).toBeNull();
   expect(backend.setup).not.toHaveBeenCalled();
 });
 
@@ -692,7 +686,7 @@ it.each([
   "dictation-local-models",
   "dictation-cleanup",
   "dictation-shortcut-mode",
-])("reveals disabled %s prerequisite without enabling or capture", async (target) => {
+])("reveals %s directly while dictation is off, without enabling or capture", async (target) => {
   await setup(false);
   const before = loadVoiceSettings();
   await act(async () =>
@@ -701,21 +695,13 @@ it.each([
     ),
   );
   const row = container.querySelector(`[data-setting-id="${target}"]`)!;
-  expect(row.textContent).toContain("Enable dictation to use this setting");
-  await act(async () =>
-    row.querySelector<HTMLButtonElement>(`button:not([aria-label="Help"])`)!.click(),
-  );
-  expect(document.activeElement?.getAttribute("aria-label")).toBe("Enable dictation");
+  expect(row.closest("[hidden]")).toBeNull();
+  expect(row.textContent).not.toContain("Enable dictation to use this setting");
   expect(loadVoiceSettings()).toEqual(before);
   expect(backend.setup).not.toHaveBeenCalled();
-  await act(async () => (document.activeElement as HTMLButtonElement).click());
-  expect(loadVoiceSettings().dictationEnabled).toBe(true);
-  expect(container.querySelector(`[data-setting-id="${target}"]`)?.textContent).not.toContain(
-    "Enable dictation to use this setting",
-  );
 });
 
-it("reveals local-model engine prerequisite under cloud recognition without changing provider", async () => {
+it("reveals the local models row under cloud recognition without changing provider", async () => {
   saveVoiceSettings({ ...loadVoiceSettings(), dictationEnabled: true, dictationEngine: "openai" });
   await setup(false);
   await act(async () =>
@@ -728,11 +714,7 @@ it("reveals local-model engine prerequisite under cloud recognition without chan
     ),
   );
   const row = container.querySelector('[data-setting-id="dictation-local-models"]')!;
-  expect(row.textContent).toContain("Choose This computer");
-  await act(async () =>
-    row.querySelector<HTMLButtonElement>(`button:not([aria-label="Help"])`)!.click(),
-  );
-  expect(document.activeElement?.getAttribute("aria-label")).toContain("Dictation recognition");
+  expect(row.closest("[hidden]")).toBeNull();
   expect(loadVoiceSettings().dictationEngine).toBe("openai");
   expect(backend.setup).not.toHaveBeenCalled();
 });

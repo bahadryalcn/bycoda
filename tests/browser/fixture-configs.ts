@@ -5,6 +5,7 @@ import sessionRowLayout from "./sessions/session-row-layout.playwright.config.ts
 import folderPicker from "./projects/folder-picker.playwright.config.ts";
 import c1 from "./chat/composer-host-compatibility.playwright.config.ts";
 import c2 from "./chat/edit-from-here.playwright.config.ts";
+import transcriptSurface from "./chat/playwright.transcript-surface.config.ts";
 import c3 from "./shared-ui/playwright.arc-controls.config.ts";
 import c4 from "./automations/playwright.automations.config.ts";
 import c5 from "./host-tools/playwright.browser-annotation.config.ts";
@@ -89,6 +90,7 @@ export const fixtureConfigs = {
   "tests/browser/app-shell/compact-navigation.playwright.config.ts": c0,
   "tests/browser/chat/composer-host-compatibility.playwright.config.ts": c1,
   "tests/browser/chat/edit-from-here.playwright.config.ts": c2,
+  "tests/browser/chat/playwright.transcript-surface.config.ts": transcriptSurface,
   "tests/browser/shared-ui/playwright.arc-controls.config.ts": c3,
   "tests/browser/automations/playwright.automations.config.ts": c4,
   "tests/browser/host-tools/playwright.browser-annotation.config.ts": c5,

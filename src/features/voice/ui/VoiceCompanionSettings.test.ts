@@ -1,13 +1,13 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { act, createElement, Fragment } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import { VoiceCompanionSettings } from "./VoiceCompanionSettings";
+import { VoiceMemoryRow, VoiceVisualStyleRow } from "./VoiceCompanionSettings";
 import { loadVoiceSettings } from "../model/voiceSettings";
 import { loadVoiceMemory, saveVoiceMemory } from "../model/voiceMemory";
 vi.mock("./VoiceVisualizer", () => ({ VoiceVisualizer: () => null }));
 
-it("links shared Assistant settings without duplicating identity editing and preserves local memory and visual preferences", async () => {
+it("links to the Room's memory notes, toggles local memory and chooses the visual style", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
   const memory = { enabled: true, notes: [{ id: "one", text: "Owner preference", at: 1 }] };
@@ -21,12 +21,12 @@ it("links shared Assistant settings without duplicating identity editing and pre
   try {
     await act(async () =>
       root.render(
-        createElement(VoiceCompanionSettings, {
-          settings: loadVoiceSettings(),
-          change,
-          assistantName: "Arif",
-          assistantMemoryCount: 7,
-        }),
+        createElement(
+          Fragment,
+          null,
+          createElement(VoiceMemoryRow, { assistantMemoryCount: 7 }),
+          createElement(VoiceVisualStyleRow, { settings: loadVoiceSettings(), change }),
+        ),
       ),
     );
     const button = (label: string) =>
@@ -34,19 +34,14 @@ it("links shared Assistant settings without duplicating identity editing and pre
         (node) => node.textContent?.trim() === label,
       )!;
     expect(change).not.toHaveBeenCalled();
-    expect(host.querySelectorAll('[data-setting-id="voice-persona"] input')).toHaveLength(0);
-    await act(async () => button("Assistant settings").click());
-    expect((open.mock.calls[0]![0] as CustomEvent).detail).toEqual({ tab: "settings" });
-    await act(async () => button("Manage (7)").click());
-    expect((open.mock.calls[1]![0] as CustomEvent).detail).toEqual({ tab: "memory" });
+    // The row is a switch and a link; the description that restated the label is gone.
+    expect(host.textContent).not.toContain("Keeps short notes about you");
+    await act(async () => button("7 notes").click());
+    expect((open.mock.calls[0]![0] as CustomEvent).detail).toEqual({ tab: "memory" });
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Memory"]')!.click(),
     );
     expect(loadVoiceMemory()).toEqual({ ...memory, enabled: false });
-    const appearance = button("Appearance and voice style");
-    expect(appearance.getAttribute("aria-expanded")).toBe("false");
-    await act(async () => appearance.click());
-    expect(change).not.toHaveBeenCalled();
     await act(async () => button("Orb").click());
     expect(change).toHaveBeenCalledExactlyOnceWith({ visual: "orb" });
   } finally {

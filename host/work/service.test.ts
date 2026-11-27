@@ -2,10 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type {
-  WorkRecord,
-  WorkSubmission,
-  WorkTarget,
+import {
+  WorkRecordSchema,
+  type WorkRecord,
+  type WorkSubmission,
+  type WorkTarget,
 } from "../../src/shared/model/host-contracts/work";
 import { HostStore } from "../store";
 import { HostLimits } from "../limits";
@@ -15,6 +16,7 @@ import { HostWork } from "./service";
 const stores: HostStore[] = [];
 const directories: string[] = [];
 afterEach(async () => {
+  vi.restoreAllMocks();
   for (const store of stores.splice(0)) await store.close();
   for (const directory of directories.splice(0))
     rmSync(directory, { recursive: true, force: true });
@@ -35,7 +37,7 @@ const receipt = (work: WorkRecord) => ({
   sessionId: `session:${work.id}`,
   runId: `run:${work.id}`,
 });
-async function setup() {
+async function setup(now = Date.now) {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-work-"));
   directories.push(directory);
   const store = new HostStore(join(directory, "host.db"));
@@ -53,12 +55,68 @@ async function setup() {
     stop: vi.fn(async () => undefined),
     externalRunning: vi.fn(async () => []),
   };
-  const work = new HostWork(store, callbacks, limits);
+  const work = new HostWork(store, callbacks, limits, now);
   await work.ready;
   return { store, limits, callbacks, work };
 }
 
 describe("durable shared Work admission", () => {
+  it("skips completed records during reconciliation, scheduling and admission", async () => {
+    const { work, callbacks } = await setup();
+    const completed = await work.submit(submission("completed"));
+    await work.stop(completed.id);
+    const queued = await work.submit(submission("queued"));
+    const parse = vi.spyOn(WorkRecordSchema, "parse");
+
+    await work.reconcile();
+    await work.tick();
+    await work.reconcile();
+
+    expect(parse.mock.calls.map(([record]) => record)).not.toContainEqual(
+      expect.objectContaining({ id: completed.id }),
+    );
+    expect(callbacks.launch).toHaveBeenCalledWith(
+      expect.objectContaining({ id: queued.id }),
+      expect.any(Function),
+    );
+    expect(callbacks.observe).toHaveBeenCalledWith(expect.objectContaining({ id: queued.id }));
+  });
+
+  it("prunes aged completions from the queue and preserves durable replay and ordering", async () => {
+    const day = 24 * 60 * 60 * 1000;
+    let now = day;
+    const { store, work, callbacks, limits } = await setup(() => now);
+    const running = await work.submit(submission("running"));
+    const old = await work.submit(submission("old"));
+    await work.start(old.id);
+    const completed = await work.complete(old.id, receipt(old), { status: "succeeded" });
+    await work.start(running.id);
+
+    now += 29 * day;
+    await work.tick();
+    const queue = () => store.db.prepare("SELECT id FROM work_queue ORDER BY sequence").all();
+    expect(await queue()).toEqual([{ id: running.id }, { id: old.id }]);
+
+    now += 2 * day;
+    await work.tick();
+    expect(await queue()).toEqual([{ id: running.id }]);
+
+    const restarted = new HostWork(store, callbacks, limits, () => now);
+    const recent = await restarted.submit(submission("recent"));
+    await restarted.stop(recent.id);
+    expect(await restarted.get(old.id)).toEqual(completed);
+    expect(await restarted.submit(submission("old"))).toEqual(completed);
+    await expect(
+      restarted.submit({ ...submission("old"), payload: { prompt: "Changed" } }),
+    ).rejects.toThrow("different input");
+    expect((await restarted.list()).map((item) => item.id)).toEqual([
+      running.id,
+      old.id,
+      recent.id,
+    ]);
+    expect(await queue()).toEqual([{ id: running.id }, { id: recent.id }]);
+  });
+
   it("keeps a live parent reservation while its delegated advisor waits for capacity", async () => {
     const { work, callbacks } = await setup();
     const parent = await work.submit(submission("parent"));
@@ -286,9 +344,17 @@ describe("durable shared Work admission", () => {
     });
   });
 
-  it("persists queued identity when SQL owner closes and reopens", async () => {
+  it("preserves queued identity when reopening a legacy queue", async () => {
     const { work, store, callbacks } = await setup();
     const item = await work.submit(submission());
+    await store.db.exec(`
+      ALTER TABLE work_queue RENAME TO work_queue_current;
+      CREATE TABLE work_queue (id TEXT PRIMARY KEY, source_key TEXT NOT NULL UNIQUE, value TEXT NOT NULL);
+      INSERT INTO work_queue(rowid,id,source_key,value)
+        SELECT sequence,id,source_key,value FROM work_queue_current;
+      DROP TABLE work_queue_current;
+      DROP TABLE work_history;
+    `);
     await store.close();
     stores.splice(stores.indexOf(store), 1);
     const reopened = new HostStore(join(directories[directories.length - 1]!, "host.db"));

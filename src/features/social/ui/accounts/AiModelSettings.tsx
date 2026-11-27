@@ -35,7 +35,9 @@ export type AiModelSettingsProps = {
  */
 export function AiModelSettings({ client, policies, onChanged }: AiModelSettingsProps) {
   const [scope, setScope] = useState<PolicyScope>("global");
-  const { error, is, write } = useAccountWrite(t("The AI model could not be saved. Try again."));
+  const { failureTitle, details, is, write } = useAccountWrite(
+    t("The AI model could not be saved. Try again."),
+  );
   const own = readScope(policies, scope).agent;
   const effective = effectiveForScope(policies, scope).agent;
   const save = (agent: SocialAgent | undefined) =>
@@ -65,21 +67,14 @@ export function AiModelSettings({ client, policies, onChanged }: AiModelSettings
         />
       }
       feedback={
-        error ? (
-          <InlineError>{error}</InlineError>
+        failureTitle ? (
+          <InlineError details={details}>{failureTitle}</InlineError>
         ) : is("ai.model") ? (
-          <LoadingText delay={false}>{t("Saving…")}</LoadingText>
+          <LoadingText>{t("Saving…")}</LoadingText>
         ) : null
       }
     >
-      <Row
-        label={t("Model")}
-        description={
-          effective
-            ? t("AI uses this model to write replies, plans and reports.")
-            : t("Choose a model first. AI cannot write replies or plans until you do.")
-        }
-      >
+      <Row label={t("Model")}>
         <SocialModelSource model={effective?.model ?? ""} values={effective?.modelSettings ?? {}}>
           <ModelPicker
             harness={

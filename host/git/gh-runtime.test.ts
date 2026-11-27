@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
-import { checksumFor, GH_CLI_VERSION, GhRuntime, ghAsset } from "./gh-runtime";
+import { checksumFor, GH_CLI_VERSION, GhRuntime, ghAsset, type GhExec } from "./gh-runtime";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -42,7 +42,7 @@ function releaseFetch(file: string, archive: Buffer, listed = sha(archive)) {
 
 /** Fake gh: extraction writes the member; `--version` reports the pinned release. */
 function fakeGh(options: { signedIn?: string[]; tokens?: Record<string, string> } = {}) {
-  return vi.fn(async (file: string, args: string[], _options: unknown) => {
+  return vi.fn<GhExec>(async (file, args) => {
     if (args[0] === "-xf" || args[0] === "-xzf") {
       const stage = args[args.indexOf("-C") + 1]!;
       const member = args[args.length - 1]!;
@@ -107,6 +107,33 @@ describe("GitHub CLI asset mapping", () => {
 });
 
 describe("GitHub CLI resolution", () => {
+  it.each([true, false])(
+    "gives Windows gh a Git path (Git already on PATH: %s)",
+    async (onPath) => {
+      const base = await tempDirectory("gh-windows-git");
+      const pathBin = join(base, "path-bin");
+      const programFiles = join(base, "Program Files");
+      const gh = await binaryIn(join(programFiles, "GitHub CLI"), "gh.exe");
+      const gitBin = join(programFiles, "Git", "cmd");
+      await binaryIn(gitBin, "git.exe");
+      if (onPath) await binaryIn(pathBin, "git.exe");
+      const exec = fakeGh({ signedIn: [gh] });
+      const runtime = new GhRuntime(join(base, "data"), {
+        platform: "win32",
+        env: { Path: pathBin, ProgramFiles: programFiles },
+        exec,
+      });
+
+      await runtime.run(base, ["pr", "list"]);
+
+      const childEnv = exec.mock.lastCall?.[2].env;
+      expect(childEnv?.PATH ?? childEnv?.Path).toBe(onPath ? pathBin : `${pathBin};${gitBin}`);
+      expect(
+        Object.keys(childEnv ?? {}).filter((key) => key.toUpperCase() === "PATH"),
+      ).toHaveLength(1);
+    },
+  );
+
   it("prefers gh on PATH over the managed copy", async () => {
     const base = await tempDirectory("gh-path");
     const onPath = await binaryIn(join(base, "path-bin"));

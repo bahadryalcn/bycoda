@@ -8,54 +8,40 @@
   inset-block-start: 0;
   inset-inline-end: 0;
   min-inline-size: 14px;
-  padding-inline: 4px;
+  padding-inline: var(--ui-space-1, 0.25rem);
   color: var(--ui-surface-floating);
   font-variant-numeric: tabular-nums;
   text-align: center;
   pointer-events: none;
 }
-.popover {
-  padding: 12px;
-  min-inline-size: 0;
-}
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding-block-end: 10px;
-}
 .list {
   list-style: none;
   margin: 0;
-  padding: 12px 0 0;
+  padding: 0;
   display: grid;
-  gap: 14px;
+  gap: var(--ui-space-3, 0.75rem);
   min-inline-size: 0;
 }
 .row {
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr) auto;
   align-items: start;
-  column-gap: 8px;
+  column-gap: var(--ui-space-2, 0.5rem);
   min-inline-size: 0;
 }
 .marker {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding-block-start: 4px;
+  padding-block-start: var(--ui-space-1, 0.25rem);
 }
 .details {
   display: grid;
   gap: 2px;
   min-inline-size: 0;
 }
-.time {
-  font-variant-numeric: tabular-nums;
-}
 .stop {
   grid-column: 2 / -1;
   justify-self: start;
-  margin-block-start: 4px;
+  margin-block-start: var(--ui-space-1, 0.25rem);
 }

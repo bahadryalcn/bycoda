@@ -1,13 +1,16 @@
+import { errorText } from "../../../shared/lib/errors";
 import { withRoomPrivacyMutation } from "../../group-lock/model/roomPrivacyProjection";
 import { forgetHarnessSession } from "../../../integrations/harness/core/registry";
 import {
   importPlaceholderDir,
   readClaudeTranscript,
   readCodexTranscript,
+  readImportEntries,
   type ClaudeTranscript,
   type CodexTranscript,
   type ImportCandidate,
 } from "../../../platform/tauri/sessionImport";
+import { t } from "../../../shared/i18n";
 import { pathKey } from "../../../shared/lib/paths";
 import { proposeProjectGroups } from "../../projects/public/importGrouping";
 import {
@@ -29,10 +32,16 @@ import {
   isPersistableId,
   type SessionSummary,
 } from "../data/sessionStore";
-import { buildImportedSession } from "../model/claudeSessionImport";
+import { buildImportedSession, hydrateImportedClaudeWorkflows } from "../model/claudeSessionImport";
 import { newSession, titleFromPrompt, type Block, type Session } from "../model/session";
 import { buildCodexSession } from "./codexTranscript";
-import { candidateKey, importedSessionId, isAlreadyImported } from "./importModel";
+import {
+  IMPORT_PROVIDER_LABEL,
+  candidateKey,
+  importHarness,
+  importedSessionId,
+  isAlreadyImported,
+} from "./importModel";
 
 /**
  * Per conversation, how much of a transcript crosses into the webview. Rust
@@ -45,7 +54,24 @@ export const MAX_BLOCKS_BYTES = 6 * 1024 * 1024;
 
 export const MISSING_FOLDERS_GROUP = "Missing folders";
 
-export type ImportFailure = { candidate: ImportCandidate; error: string };
+/** Failures the app itself raises; the dialog shows their translated text. */
+export type ImportFailureReason = "noMessages" | "unsupportedId";
+
+export class ImportFailureError extends Error {
+  readonly reason: ImportFailureReason;
+
+  constructor(reason: ImportFailureReason) {
+    super(reason);
+    this.reason = reason;
+  }
+}
+
+export type ImportFailure = {
+  candidate: ImportCandidate;
+  /** Raw message, shown only when `reason` is absent (provider or IO errors). */
+  error: string;
+  reason?: ImportFailureReason;
+};
 
 export type ImportProgress = {
   total: number;
@@ -73,6 +99,8 @@ export type ImportSummary = {
 export type ImportDeps = {
   readClaude: (path: string, maxBytes: number) => Promise<ClaudeTranscript>;
   readCodex: (path: string, maxBytes: number) => Promise<CodexTranscript>;
+  /** Every other provider: entries read from its own store. */
+  readEntries: (candidate: ImportCandidate, maxBytes: number) => Promise<CodexTranscript>;
   placeholderDir: (original: string) => Promise<string>;
   persist: (
     session: Session,
@@ -81,6 +109,7 @@ export type ImportDeps = {
   storedKeys: () => Promise<string[]>;
   /** Replay records a resume binding for the id it ran under; drop it. */
   forgetReplay: (sessionId: string) => void;
+  hydrateClaudeWorkflows?: typeof hydrateImportedClaudeWorkflows;
   /** Give the webview a turn between conversations. */
   yieldToUi: () => Promise<void>;
 };
@@ -88,12 +117,14 @@ export type ImportDeps = {
 const defaultDeps: ImportDeps = {
   readClaude: readClaudeTranscript,
   readCodex: readCodexTranscript,
+  readEntries: readImportEntries,
   placeholderDir: importPlaceholderDir,
   persist: importSessionRecord,
   storedKeys: importedSessionKeys,
   forgetReplay: (sessionId) => {
     void forgetHarnessSession("claude", sessionId).catch(() => undefined);
   },
+  hydrateClaudeWorkflows: hydrateImportedClaudeWorkflows,
   yieldToUi: () => new Promise((resolve) => setTimeout(resolve, 0)),
 };
 
@@ -153,28 +184,49 @@ export function importNote(
   target: FolderTarget,
   options: { resumable: boolean; truncated: boolean },
 ): string {
-  const source = candidate.provider === "claude" ? "Claude Code" : "Codex";
-  const parts = [`Imported from ${source}.`];
+  const source = IMPORT_PROVIDER_LABEL[candidate.provider];
+  const parts = [t("Imported from {p0}.", { p0: source })];
   if (!target.real) {
     parts.push(
-      `The original folder (${target.original}) ${
-        candidate.cwdExists ? "is not a project folder" : "no longer exists"
-      }, so this is read-only history; sending a message starts a new conversation.`,
+      candidate.cwdExists
+        ? t(
+            "The original folder ({p0}) is not a project folder, so this is read-only history; sending a message starts a new conversation.",
+            { p0: target.original },
+          )
+        : t(
+            "The original folder ({p0}) no longer exists, so this is read-only history; sending a message starts a new conversation.",
+            { p0: target.original },
+          ),
+    );
+  } else if (
+    !options.resumable &&
+    candidate.provider !== "claude" &&
+    candidate.provider !== "codex"
+  ) {
+    parts.push(
+      t(
+        "{p0} conversations cannot be continued here, so this is read-only history; sending a message starts a new conversation.",
+        { p0: source },
+      ),
     );
   } else if (!options.resumable) {
     parts.push(
-      "Its transcript could not be matched to this folder, so this is read-only history; sending a message starts a new conversation.",
+      t(
+        "Its transcript could not be matched to this folder, so this is read-only history; sending a message starts a new conversation.",
+      ),
     );
   } else {
     parts.push(
-      `Sending a message continues the same ${source === "Codex" ? "Codex thread" : "conversation"}.`,
+      candidate.provider === "codex"
+        ? t("Sending a message continues the same Codex thread.")
+        : t("Sending a message continues the same conversation."),
     );
   }
-  if (candidate.provider === "codex") {
-    parts.push("Tool calls are shown as simple rows and reasoning is not included.");
+  if (candidate.provider !== "claude") {
+    parts.push(t("Tool calls are shown as simple rows and reasoning is not included."));
   }
   if (options.truncated) {
-    parts.push("Only the most recent part was imported because of its size.");
+    parts.push(t("Only the most recent part was imported because of its size."));
   }
   return parts.join(" ");
 }
@@ -186,7 +238,7 @@ async function buildSession(
   target: FolderTarget,
   deps: ImportDeps,
 ): Promise<Built> {
-  const harness = candidate.provider;
+  const harness = importHarness(candidate.provider);
   const base: Session = {
     ...newSession(harness, target.cwd, candidate.model ?? undefined, "supervised"),
     id: crypto.randomUUID(),
@@ -203,9 +255,19 @@ async function buildSession(
       providerSessionId: candidate.providerSessionId,
     });
     deps.forgetReplay(base.id);
+    built =
+      (await deps.hydrateClaudeWorkflows?.({
+        session: built,
+        transcript: transcript.text,
+        cwd: target.original,
+        providerSessionId: candidate.providerSessionId,
+      })) ?? built;
     truncated = transcript.truncated || transcript.oversizeSkipped > 0;
   } else {
-    const transcript = await deps.readCodex(candidate.path, MAX_TRANSCRIPT_BYTES);
+    const transcript =
+      harness === "codex"
+        ? await deps.readCodex(candidate.path, MAX_TRANSCRIPT_BYTES)
+        : await deps.readEntries(candidate, MAX_TRANSCRIPT_BYTES);
     built = buildCodexSession({ base, entries: transcript.entries });
     truncated = transcript.truncated || transcript.oversizeSkipped > 0;
   }
@@ -214,7 +276,7 @@ async function buildSession(
       !truncated ||
       !built.blocks.some((block) => block.role === "assistant" || block.role === "tool")
     ) {
-      throw new Error("The conversation has no messages to import");
+      throw new ImportFailureError("noMessages");
     }
   }
 
@@ -225,7 +287,9 @@ async function buildSession(
       {
         id: crypto.randomUUID(),
         role: "system",
-        text: "The retained history starts inside a turn; its user prompt is outside the imported portion.",
+        text: t(
+          "The retained history starts inside a turn; its user prompt is outside the imported portion.",
+        ),
       },
       ...fitted.blocks,
     ];
@@ -348,7 +412,7 @@ export async function runSessionImport(input: {
     }
     try {
       if (!isPersistableId(importedSessionId(candidate))) {
-        throw new Error("Unsupported conversation id");
+        throw new ImportFailureError("unsupportedId");
       }
       if (isAlreadyImported(candidate, stored)) {
         progress.skipped += 1;
@@ -380,7 +444,8 @@ export async function runSessionImport(input: {
     } catch (error) {
       progress.failed.push({
         candidate,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorText(error),
+        reason: error instanceof ImportFailureError ? error.reason : undefined,
       });
     }
     progress.done += 1;

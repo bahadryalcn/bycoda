@@ -1,7 +1,7 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Text } from "../../../shared/ui/Text";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
-import { Heading } from "../../../shared/ui/Heading";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Activity, useLayoutEffect, useRef, useState } from "react";
 import { registerSshWorkspaceCatalog } from "../model/sshMobileWorkspaceControl";
@@ -11,10 +11,11 @@ import { WindowControls } from "../../../app/shell/WindowControls";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
-import { copyWithFeedback, errorText, machineAddress } from "./serverActionFeedback";
+import { errorText } from "../../../shared/lib/errors";
+import { copyWithFeedback, machineAddress } from "./serverActionFeedback";
 import { t, useLocale } from "../../../shared/i18n";
-import { Alert } from "../../../shared/ui/Alert";
-import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
+import { RemoteActionError } from "./RemoteActionError";
+import { describeRemoteError } from "../model/remoteFailure";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -22,16 +23,17 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
+import { Divider } from "../../../shared/ui/Divider";
 import { Sheet } from "../../../shared/ui/Sheet";
 import "./ServersView.css";
-import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { FailureState } from "../../../shared/ui/FailureState";
 import { ContextMenu, type ContextMenuItem } from "../../../shared/ui/ContextMenu";
 import { Popover } from "../../../shared/ui/Popover";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Switch } from "../../../shared/ui/Switch";
-import { Tooltip, OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { QuickConnect } from "./QuickConnect";
 import {
   useOpenQuickServerTerminal,
@@ -54,11 +56,9 @@ import {
   LayoutGrid,
   ListBullet,
   Plus,
-  RefreshCw,
   Server,
   ListFilter,
   X,
-  Lock,
   Pencil,
   MoreHorizontal,
   Trash2,
@@ -141,7 +141,13 @@ export function ServersView({
     clearTimeout(detailOpenTimer.current);
     setDetailReady(true);
     setSelectedId(server.id);
-    void openTerminal?.(server).catch((reason) => setActionError(errorText(reason)));
+    void openTerminal?.(server).catch((reason) =>
+      setFailure({
+        title: t("Couldn’t open a terminal on {p0}", { p0: server.name }),
+        error: errorText(reason),
+        retry: () => connect(server),
+      }),
+    );
   };
   const [quickConnect, setQuickConnect] = useState(false);
   const [sshSettings, setSshSettings] = useState(false);
@@ -156,12 +162,10 @@ export function ServersView({
     serverId: string;
     at: ServerMenuAt;
   }>();
-  const [deleteTarget, setDeleteTarget] = useState<{
-    server: ServerRecord;
-    at: ServerMenuAt;
-  }>();
+  const [deleteTarget, setDeleteTarget] = useState<{ server: ServerRecord }>();
   const [deleting, setDeleting] = useState<string>();
-  const [actionError, setActionError] = useState("");
+  // One failure: the title names what could not be done, and the retry belongs to this failure only.
+  const [failure, setFailure] = useState<{ title: string; error: string; retry?: () => void }>();
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [bulkTargets, setBulkTargets] = useState<ServerRecord[]>();
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -230,9 +234,6 @@ export function ServersView({
     setFavoritesOnly(false);
     setRecentFirst(false);
   };
-  const filterSummary = [group, tag, favoritesOnly ? t("Favorites only") : ""]
-    .filter(Boolean)
-    .join(" · ");
   // Membership is separate from the inspected row. Hidden selections remain explicit.
   const checkedServers = servers.filter((server) => checkedIds.has(server.id));
   const visibleChecked = filtered.filter((server) => checkedIds.has(server.id)).length;
@@ -247,7 +248,7 @@ export function ServersView({
     if (bulkLock.current) return;
     bulkLock.current = true;
     setBulkBusy(true);
-    setActionError("");
+    setFailure(undefined);
     const failed: ServerRecord[] = [];
     const failures: string[] = [];
     try {
@@ -265,7 +266,13 @@ export function ServersView({
         }
       }
       if (remove) setBulkTargets(failed.length ? failed : undefined);
-      setActionError(failures.join("\n"));
+      if (failures.length)
+        setFailure({
+          title: remove
+            ? t("Couldn’t delete {p0} servers", { p0: failures.length })
+            : t("Couldn’t favorite {p0} servers", { p0: failures.length }),
+          error: failures.join("\n"),
+        });
       return failures.join("\n");
     } finally {
       bulkLock.current = false;
@@ -273,12 +280,16 @@ export function ServersView({
     }
   };
 
-  const runAction = async (work: () => Promise<unknown>) => {
-    setActionError("");
+  const runAction = async (work: () => Promise<unknown>, title: string) => {
+    setFailure(undefined);
     try {
       await work();
     } catch (reason) {
-      setActionError(errorText(reason));
+      setFailure({
+        title,
+        error: errorText(reason),
+        retry: () => void runAction(work, title),
+      });
     }
   };
   const menuItems = (server: ServerRecord): ContextMenuItem[] => [
@@ -342,12 +353,6 @@ export function ServersView({
       icon: <Trash2 aria-hidden className="icon-sm" />,
       danger: true,
       disabled: bulkBusy,
-      title:
-        server.kind === "ssh"
-          ? undefined
-          : t(
-              "Removes this machine from this desktop only. The host and its sessions keep running.",
-            ),
     },
   ];
   const pickMenuItem = (server: ServerRecord, id: string, at: ServerMenuAt) => {
@@ -361,19 +366,22 @@ export function ServersView({
       if (server.kind === "ssh") setEditor(server);
       else requestMachineEdit(server.id);
     } else if (id === "favorite")
-      void runAction(() =>
-        updateServerMetadata(server.id, { favorite: !server.metadata.favorite }),
+      void runAction(
+        () => updateServerMetadata(server.id, { favorite: !server.metadata.favorite }),
+        t("Couldn’t update {p0}", { p0: server.name }),
       );
     else if (id === "color") setColorTarget({ serverId: server.id, at });
     else if (id === "copy")
-      void runAction(() =>
-        copyWithFeedback(copyFeedback.copyAsync, () =>
-          navigator.clipboard.writeText(address(server)),
-        ),
+      void runAction(
+        () =>
+          copyWithFeedback(copyFeedback.copyAsync, () =>
+            navigator.clipboard.writeText(address(server)),
+          ),
+        t("Couldn’t copy the address of {p0}", { p0: server.name }),
       );
     else if (id === "delete") {
-      setActionError("");
-      setDeleteTarget({ server, at });
+      setFailure(undefined);
+      setDeleteTarget({ server });
     }
   };
   const openServerMenu = (serverId: string, at: ServerMenuAt) => setMenu({ serverId, at });
@@ -381,20 +389,18 @@ export function ServersView({
   const deleteServer = async (server: ServerRecord) => {
     if (deleting || bulkLock.current) return;
     setDeleting(server.id);
-    setActionError("");
+    setFailure(undefined);
     try {
       if (server.kind === "ssh") await removeSshConnection(server.id);
       else await disconnectMachine(server.id);
       setSelectedId((current) => (current === server.id ? undefined : current));
-    } catch (reason) {
-      setActionError(errorText(reason));
-      throw reason;
     } finally {
+      // A failure is thrown to the confirmation, which shows it and offers another try.
       setDeleting(undefined);
     }
   };
   const saveColor = (serverId: string, patch: ServerMetadataPatch) =>
-    void runAction(() => updateServerMetadata(serverId, patch));
+    void runAction(() => updateServerMetadata(serverId, patch), t("Couldn’t update the server"));
   return (
     <Text
       as="section"
@@ -465,11 +471,12 @@ export function ServersView({
                   anchor={filtersAnchor}
                   align="end"
                   width={280}
-                  role="dialog"
+                  kind="dialog"
                   aria-label={t("Server filters")}
+                  variant="panel"
                   onDismiss={() => setFiltersOpen(false)}
                 >
-                  <div className="flex flex-col gap-3 p-3">
+                  <div className="flex flex-col gap-3">
                     <SearchableSelect
                       hideLabel
                       label={t("Tags")}
@@ -495,6 +502,9 @@ export function ServersView({
                     <Button
                       variant="ghost"
                       disabled={!filterCount && !recentFirst}
+                      disabledReason={
+                        !filterCount && !recentFirst ? t("No filters are applied.") : undefined
+                      }
                       onClick={() => {
                         setGroup("");
                         setTag("");
@@ -510,37 +520,11 @@ export function ServersView({
               <ViewToggle layout={layout} onChange={setLayout} />
             </>
           ) : null}
-          <Button
-            variant="ghost"
-            iconOnly
-            label={t("Refresh servers")}
-            loading={loading && !error}
-            disabled={loading && !!error}
-            onClick={refresh}
-          >
-            <RefreshCw aria-hidden className="icon-sm" />
-          </Button>
-          <Button
-            variant="ghost"
-            iconOnly
-            label={t("SSH settings")}
-            onClick={() => setSshSettings(true)}
-          >
-            <Lock aria-hidden className="icon-sm" />
-          </Button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {openQuick ? (
-            <Button
-              variant={loaded && servers.length === 0 ? "secondary" : "primary"}
-              onClick={() => setQuickConnect(true)}
-            >
-              {t("Quick connect")}
-            </Button>
-          ) : null}
           <Button
             ref={actionsAnchor}
-            variant={openQuick || (loaded && servers.length === 0) ? "secondary" : "primary"}
+            variant="primary"
             aria-expanded={actionsOpen}
             aria-haspopup="menu"
             startIcon={<Plus aria-hidden className="icon-sm" />}
@@ -562,57 +546,57 @@ export function ServersView({
                 {
                   kind: "item",
                   id: "add-machine",
-                  label: t("Add machine"),
-                  description: t("Connect a machine running bycoda Host"),
+                  label: t("Add a computer"),
+                  description: t("Connect a computer running bycoda Host"),
                 },
+                ...(openQuick
+                  ? [{ kind: "item" as const, id: "quick-connect", label: t("Quick connect") }]
+                  : []),
                 { kind: "sep" },
                 { kind: "item", id: "import-termius", label: t("Import from Termius") },
+                { kind: "item", id: "ssh-settings", label: t("SSH settings") },
               ]}
               onClose={() => setActionsOpen(false)}
               onPick={(id) => {
                 setActionsOpen(false);
                 if (id === "add-ssh") setEditor("new");
                 else if (id === "add-machine") requestMachineAdd();
+                else if (id === "quick-connect") setQuickConnect(true);
+                else if (id === "ssh-settings") setSshSettings(true);
                 else setTermiusImport(true);
               }}
             />
           ) : null}
         </div>
       </div>
-      {error ? (
+      {error && loaded ? (
         <div className="px-3 py-2">
-          <Alert tone="warning" action={{ label: t("Retry"), pending: loading, onClick: refresh }}>
-            {loaded
-              ? t("Couldn’t refresh servers. Showing last loaded data.")
-              : t("Couldn’t load servers.")}
-          </Alert>
+          <RemoteActionError
+            title={
+              loaded
+                ? t("Couldn’t refresh servers. Showing last loaded data.")
+                : t("Couldn’t load servers.")
+            }
+            error={describeRemoteError(error)}
+            action={{ label: t("Retry"), pending: loading, onClick: refresh }}
+          />
         </div>
       ) : null}
-      {actionError ? (
+      {failure ? (
         <div className="px-3 pt-2">
-          {fitsOneLine(actionError) ? (
-            <Alert tone="danger">{actionError}</Alert>
-          ) : (
-            <Alert tone="danger" extra={<ErrorDetails detail={actionError} />}>
-              {t("The action failed. Check the details and retry.")}
-            </Alert>
-          )}
+          <RemoteActionError
+            title={failure.title}
+            error={describeRemoteError(failure.error)}
+            action={failure.retry ? { label: t("Retry"), onClick: failure.retry } : undefined}
+          />
         </div>
-      ) : null}
-      {loading && !loaded ? (
-        <LoadingText className="px-3 py-2">{t("Loading servers…")}</LoadingText>
       ) : null}
       {groups.length > 0 ? (
         <div
           aria-label={t("Group")}
           className="flex shrink-0 flex-wrap items-center gap-1 px-3 py-2"
         >
-          <Button
-            variant="ghost"
-            selected={!group}
-            aria-pressed={!group}
-            onClick={() => setGroup("")}
-          >
+          <Button variant="ghost" pressed={!group} onClick={() => setGroup("")}>
             {t("All")}{" "}
             <Badge size="xs" variant="count">
               {servers.length}
@@ -622,8 +606,7 @@ export function ServersView({
             <Button
               key={name}
               variant="ghost"
-              selected={group === name}
-              aria-pressed={group === name}
+              pressed={group === name}
               onClick={() => setGroup(group === name ? "" : name)}
             >
               {name}
@@ -638,13 +621,34 @@ export function ServersView({
         <div
           ref={list}
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-          className="servers-catalog min-h-0 min-w-0 flex-1 overflow-y-auto p-2 @min-[44rem]/servers:p-3"
+          className={[
+            "servers-catalog min-h-0 min-w-0 flex-1 overflow-y-auto p-2 @min-[44rem]/servers:p-3",
+            // An empty or fully filtered catalog centers its state in the free space.
+            !loaded || servers.length === 0 || filtered.length === 0 ? "flex flex-col" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
         >
+          {!loaded && error ? (
+            <FailureState
+              context="panel"
+              illustration="unreachable"
+              title={t("Couldn’t load servers.")}
+              description={describeRemoteError(error).message}
+              error={describeRemoteError(error).details}
+              onRetry={() => void refresh()}
+              retrying={loading}
+            />
+          ) : null}
+          {!loaded && !error ? (
+            <LoadingText layout="fill">{t("Loading servers…")}</LoadingText>
+          ) : null}
           {loaded && servers.length === 0 ? (
             <EmptyState
               kind="empty"
-              icon={<Server aria-hidden className="icon-lg" />}
-              title={t("No machines connected.")}
+              illustration="connect-computer"
+              title={t("No servers yet.")}
+              description={t("Add an SSH server to open terminals, files and tunnels on it.")}
               action={{ label: t("Add SSH server"), onClick: () => setEditor("new") }}
             />
           ) : null}
@@ -652,13 +656,13 @@ export function ServersView({
             <EmptyState
               context="panel"
               kind="filtered"
-              icon={null}
-              description={t("No matching servers")}
+              title={t("No matching servers")}
+              description={t("Try a different search or reset the filters.")}
               onReset={resetNarrowing}
               resetLabel={t("Reset filters")}
             />
           ) : null}
-          {servers.length > 0 || !loaded ? (
+          {checkedServers.length > 0 ? (
             <Text
               as="div"
               size="caption"
@@ -669,84 +673,73 @@ export function ServersView({
                 "servers-selection-bar sticky top-0 z-1",
               )}
             >
-              {checkedServers.length > 0 ? (
-                <Checkbox
-                  aria-label={t("Select visible servers")}
-                  disabled={!filtered.length || bulkBusy}
-                  checked={filtered.length > 0 && visibleChecked === filtered.length}
-                  indeterminate={visibleChecked > 0 && visibleChecked < filtered.length}
-                  onChange={(event) => {
-                    const checked = event.target.checked;
-                    setCheckedIds((previous) => {
-                      const next = new Set(previous);
-                      for (const server of filtered) {
-                        if (checked) next.add(server.id);
-                        else next.delete(server.id);
-                      }
-                      return next;
-                    });
+              <Checkbox
+                aria-label={t("Select visible servers")}
+                disabled={!filtered.length || bulkBusy}
+                disabledReason={
+                  bulkBusy
+                    ? t("Wait for the current action to finish.")
+                    : !filtered.length
+                      ? t("No servers to select.")
+                      : undefined
+                }
+                checked={filtered.length > 0 && visibleChecked === filtered.length}
+                indeterminate={visibleChecked > 0 && visibleChecked < filtered.length}
+                onChange={(event) => {
+                  const checked = event.target.checked;
+                  setCheckedIds((previous) => {
+                    const next = new Set(previous);
+                    for (const server of filtered) {
+                      if (checked) next.add(server.id);
+                      else next.delete(server.id);
+                    }
+                    return next;
+                  });
+                }}
+              />
+              <LiveText
+                size="inherit"
+                text={`${t("{p0} selected", { p0: checkedServers.length })}${
+                  checkedServers.length > visibleChecked
+                    ? ` · ${t("{p0} hidden", { p0: checkedServers.length - visibleChecked })}`
+                    : ""
+                }`}
+              />
+              <Button
+                variant="ghost"
+                disabled={bulkBusy}
+                disabledReason={bulkBusy ? t("Wait for the current action to finish.") : undefined}
+                onClick={() => setCheckedIds(new Set())}
+              >
+                {t("Clear selection")}
+              </Button>
+              <div className="ms-auto flex gap-1">
+                <Button
+                  variant="ghost"
+                  disabled={bulkBusy}
+                  disabledReason={
+                    bulkBusy ? t("Wait for the current action to finish.") : undefined
+                  }
+                  onClick={() => void runBulk(checkedServers, false)}
+                  startIcon={<Star className="icon-sm" />}
+                >
+                  {t("Favorite")}
+                </Button>
+                <Button
+                  tone="danger"
+                  disabled={bulkBusy}
+                  disabledReason={
+                    bulkBusy ? t("Wait for the current action to finish.") : undefined
+                  }
+                  onClick={() => {
+                    setFailure(undefined);
+                    setBulkTargets([...checkedServers]);
                   }}
-                />
-              ) : null}
-              <Heading size="section" level={2} className="min-w-0">
-                {t("Servers")}{" "}
-                <Text size="inherit" tone="muted" className="tabular-nums">
-                  {loaded
-                    ? filtered.length === servers.length
-                      ? servers.length
-                      : `${filtered.length} / ${servers.length}`
-                    : null}
-                </Text>
-              </Heading>
-              {checkedServers.length ? (
-                <>
-                  <Text role="status" size="inherit">
-                    {t("{p0} selected", { p0: checkedServers.length })}
-                    {checkedServers.length > visibleChecked
-                      ? ` · ${t("{p0} hidden", { p0: checkedServers.length - visibleChecked })}`
-                      : ""}
-                  </Text>
-                  <Button
-                    variant="ghost"
-                    disabled={bulkBusy}
-                    onClick={() => setCheckedIds(new Set())}
-                  >
-                    {t("Clear selection")}
-                  </Button>
-                  <div className="ms-auto flex gap-1">
-                    <Button
-                      variant="ghost"
-                      disabled={bulkBusy}
-                      onClick={() => void runBulk(checkedServers, false)}
-                      startIcon={<Star className="icon-sm" />}
-                    >
-                      {t("Favorite")}
-                    </Button>
-                    <Button
-                      tone="danger"
-                      disabled={bulkBusy}
-                      onClick={() => {
-                        setActionError("");
-                        setBulkTargets([...checkedServers]);
-                      }}
-                      startIcon={<Trash2 className="icon-sm" />}
-                    >
-                      {t("Delete selected")}
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <Text size="inherit" tone="muted" className="ms-auto min-w-0 text-right">
-                  {filterSummary ? (
-                    <Tooltip label={filterSummary} when="overflow">
-                      <Text size="inherit" tone="inherit" truncate className="block">
-                        {filterSummary}
-                      </Text>
-                    </Tooltip>
-                  ) : null}
-                  {recentFirst ? <span className="block">{t("Recently used first")}</span> : null}
-                </Text>
-              )}
+                  startIcon={<Trash2 className="icon-sm" />}
+                >
+                  {t("Delete selected")}
+                </Button>
+              </div>
             </Text>
           ) : null}
           <ul
@@ -792,68 +785,64 @@ export function ServersView({
         </div>
         {selected && detailReady ? (
           <Activity mode={inventoryVisible ? "visible" : "hidden"}>
+            <Divider decorative className="@min-[44rem]/servers:hidden" />
+            <Divider
+              decorative
+              orientation="vertical"
+              className="hidden @min-[44rem]/servers:block"
+            />
             <div className="servers-detail-pane relative min-h-0 min-w-0">
               <Sheet
                 modal={false}
                 role="region"
                 anchor="container"
+                surface="canvas"
+                expanded
                 escapeScope="[data-app-servers]"
                 title={t("Server details")}
-                size="100%"
                 motion="none"
                 initialFocus={false}
                 dismissOnOutside={false}
                 padding="none"
                 onClose={closeDetails}
                 header={
-                  <div
-                    {...surfaceAttributes(
-                      { frame: "pane", edge: "bottom" },
-                      "flex min-w-0 shrink-0 items-center gap-2 px-4 py-3",
-                    )}
-                  >
-                    <ServerIdentity accent={serverAccentColor(selected)} />
-                    <OverflowTooltip label={selected.name}>
-                      <Heading size="section" truncate className="min-w-0 flex-1">
-                        {selected.name}
-                      </Heading>
-                    </OverflowTooltip>
-                    {selected.kind === "ssh" ? <Badge size="sm">SSH</Badge> : null}
-                    <Button
-                      variant="ghost"
-                      iconOnly
-                      label={t("Server color")}
-                      aria-haspopup="dialog"
-                      onClick={(event) =>
-                        setColorTarget({ serverId: selected.id, at: event.currentTarget })
-                      }
-                    >
-                      <Palette aria-hidden className="icon-sm" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      iconOnly
-                      label={t("Server actions")}
-                      aria-haspopup="menu"
-                      aria-expanded={menu?.serverId === selected.id}
-                      onClick={(event) => openServerMenu(selected.id, event.currentTarget)}
-                    >
-                      <MoreHorizontal aria-hidden className="icon-sm" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      iconOnly
-                      label={t("Close server details")}
-                      onClick={closeDetails}
-                    >
-                      <X aria-hidden className="icon-sm" />
-                    </Button>
-                  </div>
+                  <PaneHeader
+                    leading={<ServerIdentity accent={serverAccentColor(selected)} />}
+                    title={
+                      <OverflowTooltip label={selected.name}>
+                        <Text as="span" size="inherit" tone="inherit" truncate className="block">
+                          {selected.name}
+                        </Text>
+                      </OverflowTooltip>
+                    }
+                    actions={
+                      <>
+                        <Button
+                          variant="ghost"
+                          iconOnly
+                          label={t("Server actions")}
+                          aria-haspopup="menu"
+                          aria-expanded={menu?.serverId === selected.id}
+                          onClick={(event) => openServerMenu(selected.id, event.currentTarget)}
+                        >
+                          <MoreHorizontal aria-hidden className="icon-sm" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          iconOnly
+                          label={t("Close server details")}
+                          onClick={closeDetails}
+                        >
+                          <X aria-hidden className="icon-sm" />
+                        </Button>
+                      </>
+                    }
+                  />
                 }
               >
-                <div className="min-w-0 p-4">
+                <div className="min-w-0 px-4 pbs-3 pbe-2">
                   {selected.machine ? (
-                    <div className="mbe-3 flex items-start justify-between gap-2">
+                    <div className="mbe-3 flex flex-wrap items-start justify-between gap-2">
                       <MachineStatus
                         key={selected.id}
                         machine={selected.machine}
@@ -865,8 +854,10 @@ export function ServersView({
                       </div>
                     </div>
                   ) : null}
-                  <DescriptionList size="sm" className="mbe-4">
-                    <DescriptionItem term={t("Address")}>{address(selected)}</DescriptionItem>
+                  <DescriptionList>
+                    <DescriptionItem term={t("Address")} monospace>
+                      {address(selected)}
+                    </DescriptionItem>
                     {selected.machine?.ssh || selected.sshEndpoint ? (
                       <>
                         <DescriptionItem term={t("SSH port")}>
@@ -883,22 +874,22 @@ export function ServersView({
                       </>
                     ) : null}
                   </DescriptionList>
-                  <ServersConnectionTools
-                    key={selected.id}
-                    server={selected}
-                    servers={servers}
-                    onUseServer={setSelectedId}
-                    onEditServer={(existing) => {
-                      setSelectedId(existing.id);
-                      setEditor(existing);
-                    }}
-                  />
-                  {selected.machine ? (
-                    <Disclosure className="mbs-2" size="sm" summary={t("Diagnostics")}>
-                      <RemoteConnectionDetails environmentId={selected.machine.environmentId} />
-                    </Disclosure>
-                  ) : null}
                 </div>
+                <ServersConnectionTools
+                  key={selected.id}
+                  server={selected}
+                  servers={servers}
+                  onUseServer={setSelectedId}
+                  onEditServer={(existing) => {
+                    setSelectedId(existing.id);
+                    setEditor(existing);
+                  }}
+                />
+                {selected.machine ? (
+                  <Disclosure className="mx-4 mbe-4" size="sm" summary={t("Diagnostics")}>
+                    <RemoteConnectionDetails environmentId={selected.machine.environmentId} />
+                  </Disclosure>
+                ) : null}
               </Sheet>
             </div>
           </Activity>
@@ -920,8 +911,9 @@ export function ServersView({
           anchor={colorTarget.at}
           align="start"
           width={248}
-          role="dialog"
+          kind="dialog"
           aria-label={t("Server color")}
+          variant="panel"
           onDismiss={() => setColorTarget(undefined)}
         >
           <ServerColorPopover
@@ -965,41 +957,18 @@ export function ServersView({
         />
       ) : null}
       {deleteTarget ? (
-        <Popover
-          anchor={deleteTarget.at}
-          align="start"
-          width={280}
-          role="dialog"
-          aria-label={t("Delete {p0}?", { p0: deleteTarget.server.name })}
-          onDismiss={() => {
-            if (!deleting) setDeleteTarget(undefined);
+        <ConfirmDialog
+          request={{
+            title: t("Delete {p0}?", { p0: deleteTarget.server.name }),
+            message: t(
+              "Removes saved connections from bycoda. Machines and their running sessions are not deleted.",
+            ),
+            details: <Text wrap="anywhere">{address(deleteTarget.server)}</Text>,
+            confirmLabel: t("Delete"),
+            onConfirm: () => deleteServer(deleteTarget.server),
           }}
-        >
-          <Text as="div" size="body" tone="inherit" className="flex flex-col gap-3 p-3">
-            <Text as="p" size="inherit" tone="inherit" weight="medium">
-              {t("Delete {p0}?", { p0: deleteTarget.server.name })}
-            </Text>
-            <Text as="p" tone="muted">
-              {deleteTarget.server.kind === "ssh"
-                ? t("Removes this SSH server from bycoda. The machine is not changed.")
-                : t(
-                    "Removes this machine from this desktop only. The host and its sessions keep running.",
-                  )}
-            </Text>
-            <ConfirmMorph
-              label={t("Delete")}
-              icon={<Trash2 aria-hidden className="icon-sm" />}
-              tone="danger"
-              confirmMode="press"
-              disabled={deleting != null}
-              onConfirm={() => deleteServer(deleteTarget.server)}
-              onStateChange={(state) => {
-                if (state === "done") setDeleteTarget(undefined);
-              }}
-              onCancel={() => setDeleteTarget(undefined)}
-            />
-          </Text>
-        </Popover>
+          onSettle={() => setDeleteTarget(undefined)}
+        />
       ) : null}
       {quickConnect ? <QuickConnect onClose={() => setQuickConnect(false)} /> : null}
       {termiusImport ? (

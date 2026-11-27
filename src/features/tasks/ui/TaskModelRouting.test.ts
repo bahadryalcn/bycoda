@@ -51,7 +51,11 @@ vi.mock("./TaskWorkspacePicker", () => ({
   INITIAL_WORKSPACE_CHECKS: {},
   useWorkspaceChecks: () => [{}, vi.fn()],
   isWorkspaceValid: () => true,
+  taskWorkspaceScope: () => "host:/project",
   TaskWorkspacePicker: () => null,
+}));
+vi.mock("../../crews/model/crewClient", () => ({
+  useProjectCrews: () => ({ isFetching: false, error: null }),
 }));
 vi.mock("./useTaskTargetMachine", () => ({
   useTaskTargetMachine: () => ({
@@ -213,8 +217,6 @@ it.each(["task", "goal", "steward"])(
         render(
           createElement(TaskFormAgent, {
             draft: { ...newTaskDraft("/project", "claude", "old"), modelSettings: settings },
-            open: true,
-            onOpenChange: () => {},
             update: () => {},
             onChange: changed,
             target: machine,
@@ -285,7 +287,7 @@ it("submits a derived task choice without mutating the input draft or rendering 
   const submit = vi.fn();
   const draft = Object.freeze({
     ...newTaskDraft("/project", "claude", "old"),
-    title: "Task",
+    title: "",
     prompt: "Work",
   });
   await act(async () =>
@@ -310,8 +312,12 @@ it("submits a derived task choice without mutating the input draft or rendering 
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
   expect(submit).toHaveBeenCalledWith(
-    "todo",
-    expect.objectContaining({ modelChoice: { kind: "default" } }),
+    "queued",
+    expect.objectContaining({
+      title: "",
+      modelChoice: { kind: "default" },
+      creation: draft.creation,
+    }),
   );
   expect(draft.modelChoice).toBeUndefined();
 });

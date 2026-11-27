@@ -81,8 +81,8 @@ const { GroupLockSettings } = await import("../../../src/features/group-lock/ui/
 const controls = await import("../../../src/shared/ui/settings");
 const { PermissionsSettings } =
   await import("../../../src/features/permissions/ui/PermissionsSettings");
-const { PermissionSetupSheet } =
-  await import("../../../src/features/permissions/ui/PermissionSetupSheet");
+const { PermissionSetupDialog } =
+  await import("../../../src/features/permissions/ui/PermissionSetupDialog");
 const { PermissionHelper } = await import("../../../src/features/permissions/ui/PermissionHelper");
 const { SetLockPasswordDialog } =
   await import("../../../src/features/group-lock/ui/SetLockPasswordDialog");
@@ -104,7 +104,7 @@ if (surface === "failed-save") {
 }
 function Fixture() {
   if (surface === "guide")
-    return createElement(PermissionSetupSheet, { id: "microphone", onClose() {} });
+    return createElement(PermissionSetupDialog, { id: "microphone", onClose() {} });
   if (surface === "helper") return createElement(PermissionHelper);
   if (surface === "password")
     return createElement(SetLockPasswordDialog, { mode: "change", onClose() {} });

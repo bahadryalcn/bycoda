@@ -5,7 +5,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { ActionHost, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
-import { Check, CloudUpload } from "../../../shared/ui/icons";
+import { Check, CloudUpload, EyeOff, Pencil } from "../../../shared/ui/icons";
 import type { SkillEntry, SkillMachine, SkillPresence } from "../model/skillLibrary";
 import styles from "./SkillsPage.module.css";
 
@@ -83,6 +83,10 @@ export function SkillRow({
 }): ReactNode {
   useLocale();
   const { skill } = entry.primary;
+  // The draft and off marks are visual only; fold them into the name so assistive technology announces them.
+  const accessibleName = [entry.name, modified ? t("Draft") : null, off ? t("Off") : null]
+    .filter(Boolean)
+    .join(", ");
   return (
     <ActionHost
       className={styles.row}
@@ -107,12 +111,13 @@ export function SkillRow({
           variant="item"
           selected={selected}
           className={styles.name}
-          aria-label={entry.name}
+          aria-label={accessibleName}
           ref={nameRef}
           aria-controls={previewOpen ? previewId : undefined}
           aria-expanded={selected}
           tooltip=""
           disabled={disabled}
+          disabledReason={t("Wait until the skill is saved.")}
           onKeyDown={(event) => {
             if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
               event.preventDefault();
@@ -130,17 +135,22 @@ export function SkillRow({
           >
             {entry.name}
           </Text>
-          {modified ? (
-            <Tooltip label={t("Draft")} asChild>
-              <span>·</span>
-            </Tooltip>
-          ) : null}
         </Button>
       </Tooltip>
+      {/* Marks are icons with a reason, not text tags; the name button's label announces both. */}
+      {modified ? (
+        <Tooltip label={t("Draft")} asChild>
+          <Text as="span" size="inherit" tone="secondary" className="flex-none" aria-hidden="true">
+            <Pencil className="icon-xs" />
+          </Text>
+        </Tooltip>
+      ) : null}
       {off ? (
-        <Text size="caption" tone="secondary" leading="inherit" className={styles.offLabel}>
-          {t("Off")}
-        </Text>
+        <Tooltip label={t("Off")} asChild>
+          <Text as="span" size="inherit" tone="secondary" className="flex-none" aria-hidden="true">
+            <EyeOff className="icon-xs" />
+          </Text>
+        </Tooltip>
       ) : null}
       {cells?.map((cell) => {
         const key = cell.machine?.environmentId ?? "local";
@@ -169,8 +179,14 @@ export function SkillRow({
             : cell.state === "missing"
               ? t("Missing on {p0}", { p0: cell.name })
               : t("Checking {p0}", { p0: cell.name });
+        const stateLabel =
+          cell.state === "present"
+            ? t("Installed")
+            : cell.state === "missing"
+              ? t("Missing")
+              : t("Checking");
         return (
-          <Tooltip key={key} label={label} asChild>
+          <Tooltip key={key} label={cell.name} details={[stateLabel]} asChild>
             <Text
               as="span"
               size="inherit"

@@ -8,7 +8,10 @@ import {
 } from "react";
 import type { OrchestrationRun } from "../../features/orchestration/model/orchestration";
 import { rememberLoadedSession } from "../../features/sessions/data/sessionCache";
-import { shouldPersistSession } from "../../features/sessions/data/sessionStore";
+import {
+  canRetainStoredPreview,
+  shouldPersistSession,
+} from "../../features/sessions/data/sessionStore";
 import { sessionWithClosedDraft } from "../../features/sessions/model/closedChatDraft";
 import { clearComposerDraft, composerDraftOf } from "../../features/sessions/model/draftCache";
 import { sessionChildHarnesses } from "../../features/sessions/model/handoff";
@@ -122,7 +125,7 @@ export function useIdleSessionDetach({
     for (const detached of idleDetached) {
       if (skipForgetSessionIds.current.has(detached.id)) continue;
       const session = retainClosedChatDraft(detached);
-      if (shouldPersistSession(session)) {
+      if (shouldPersistSession(session) || canRetainStoredPreview(session)) {
         rememberLoadedSession(loadedSessionCache.current, session);
       }
       persistSession(session);

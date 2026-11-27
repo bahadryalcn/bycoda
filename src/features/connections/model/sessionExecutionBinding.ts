@@ -44,17 +44,18 @@ function bindingsChanged(): void {
   bindingRevision += 1;
   for (const listener of bindingListeners) listener();
 }
+function onBindingStorage(event: StorageEvent): void {
+  if (event.key === null || event.key.startsWith(PREFIX)) bindingsChanged();
+}
 /** Subscribe to stored-owner changes (also other windows), for the binding hooks. */
 export function subscribeHostSessionBindings(listener: () => void): () => void {
+  if (!bindingListeners.size && typeof window !== "undefined")
+    window.addEventListener("storage", onBindingStorage);
   bindingListeners.add(listener);
-  // Another window's legacy write changes what `read` returns in this one.
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === null || event.key.startsWith(PREFIX)) listener();
-  };
-  if (typeof window !== "undefined") window.addEventListener("storage", onStorage);
   return () => {
     bindingListeners.delete(listener);
-    if (typeof window !== "undefined") window.removeEventListener("storage", onStorage);
+    if (!bindingListeners.size && typeof window !== "undefined")
+      window.removeEventListener("storage", onBindingStorage);
   };
 }
 const MIGRATION_SCOPE = "host-session-bindings-migration.v1";
@@ -192,18 +193,30 @@ export function hydrateHostSessionBindings(): Promise<void> {
 
 /** Await durable owner publication before command admission or Native fallback. */
 export async function flushHostSessionBindings(shellId?: string): Promise<void> {
+  // A hydration this call started read every durable owner after the call began,
+  // so the re-read below would repeat that serial page scan. A call joining an
+  // earlier hydration or running on a hydrated window still re-reads: another
+  // window may have written since that read.
+  let justHydrated = !hydrated && !hydrating;
   await hydrateHostSessionBindings();
   let failure: { error: unknown } | undefined;
   do {
+    const projectionCurrent = justHydrated && writes.length === 0;
+    justHydrated = false;
     try {
       await drain();
     } catch (error) {
       // Re-read below so this window projects the stored owner, not the failed one.
       failure ??= { error };
     }
+    // Nothing was queued and nothing failed: the hydrated projection is the stored owners.
+    if (projectionCurrent && !failure) continue;
     if (shellId !== undefined) {
       const latest = await readBindingEvidence(shellId);
       if (writes.length) continue;
+      // Revalidate the owner on every open. Only a changed canonical record invalidates
+      // the bindings read by all mounted panes. Legacy readers also depend on localStorage.
+      if (canonicalEpoch && sameBindingEvidence(canonical.get(shellId), latest)) continue;
       if (latest) canonical.set(shellId, latest);
       else canonical.delete(shellId);
       bindingsChanged();
@@ -270,13 +283,7 @@ async function rebaseOnSameOwner(
     } catch {
       return false;
     }
-    if (
-      !stored ||
-      (stored.raw === expected?.raw &&
-        stored.legacyRaw === expected?.legacyRaw &&
-        stored.version === expected?.version) ||
-      !sameOwner(stored.raw, next.raw)
-    )
+    if (!stored || sameBindingEvidence(stored, expected) || !sameOwner(stored.raw, next.raw))
       return false;
     if (canonicalEpoch) next.legacyRaw = stored.legacyRaw;
     try {
@@ -287,6 +294,13 @@ async function rebaseOnSameOwner(
     }
   }
   return false;
+}
+
+function sameBindingEvidence(
+  a: StoredBindingEvidence | undefined,
+  b: StoredBindingEvidence | undefined,
+) {
+  return a?.version === b?.version && a?.raw === b?.raw && a?.legacyRaw === b?.legacyRaw;
 }
 
 function sameOwner(storedRaw: string, nextRaw: string): boolean {

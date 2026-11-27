@@ -17,8 +17,8 @@
 .workspaceRow {
   display: grid;
   grid-template-columns: var(--git-graph-width) minmax(180px, 1fr) 64px 68px;
-  column-gap: 8px;
-  padding-inline: 12px;
+  column-gap: var(--ui-space-2);
+  padding-inline: var(--ui-space-3);
 }
 
 .workspaceHeader {
@@ -35,7 +35,7 @@
 .subject {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 

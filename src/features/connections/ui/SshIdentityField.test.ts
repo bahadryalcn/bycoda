@@ -31,8 +31,17 @@ afterEach(() => {
   container.remove();
   vi.unstubAllGlobals();
 });
-const browse = () =>
-  container.querySelector<HTMLButtonElement>('button[aria-label^="Choose key file…:"]')!;
+const openMenu = () =>
+  act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label^="Choose SSH key:"]')!.click(),
+  );
+const browseButton = () =>
+  document.querySelector<HTMLButtonElement>('button[aria-label^="Choose key file…:"]')!;
+const browse = async () => {
+  await openMenu();
+  await act(async () => browseButton().click());
+};
+const pathInput = () => container.querySelector<HTMLInputElement>('input[maxlength="4096"]');
 
 it("selects an unrestricted single private-key path without reading, saving or connecting", async () => {
   const changed = vi.fn();
@@ -40,7 +49,7 @@ it("selects an unrestricted single private-key path without reading, saving or c
   await act(async () =>
     root.render(createElement(SshIdentityField, { value: "C:/keys/previous", onChange: changed })),
   );
-  await act(async () => browse().click());
+  await browse();
   expect(native.open).toHaveBeenCalledExactlyOnceWith({
     title: "Choose SSH key",
     multiple: false,
@@ -56,41 +65,37 @@ it("keeps the existing selection when the native picker is cancelled", async () 
   await act(async () =>
     root.render(createElement(SshIdentityField, { value: "~/.ssh/work", onChange: changed })),
   );
-  await act(async () => browse().click());
+  await browse();
   expect(changed).not.toHaveBeenCalled();
   expect(native.open).toHaveBeenCalledExactlyOnceWith({
     title: "Choose SSH key",
     multiple: false,
     directory: false,
   });
-  expect(
-    container.querySelector<HTMLInputElement>('input[aria-label="Identity file"]')?.value,
-  ).toBe("~/.ssh/work");
+  expect(pathInput()?.value).toBe("~/.ssh/work");
 });
 
-it("offers file selection when key discovery fails and exposes a recoverable picker error", async () => {
+it("offers file selection when key discovery fails and exposes one recoverable picker error", async () => {
   native.invoke.mockRejectedValue(new Error("inventory unavailable"));
   native.open.mockRejectedValue(new Error("picker unavailable"));
   const changed = vi.fn();
   await act(async () =>
     root.render(createElement(SshIdentityField, { value: "", onChange: changed })),
   );
-  expect(browse().disabled).toBe(false);
-  await act(async () => browse().click());
-  expect(container.textContent).toContain(
-    "Could not open the file picker. Enter a key path or try again.",
-  );
-  expect(
-    container.querySelector<HTMLInputElement>('input[aria-label="Identity file"]')?.disabled,
-  ).toBe(false);
+  await openMenu();
+  expect(browseButton().disabled).toBe(false);
+  await act(async () => browseButton().click());
+  // Key discovery failed, so its single error (with Retry) is the one shown.
+  expect(container.textContent).toContain("Could not load SSH keys");
+  expect(pathInput()?.disabled).toBe(false);
   expect(changed).not.toHaveBeenCalled();
   native.open.mockResolvedValue("/Users/test/.ssh/id_ed25519");
-  await act(async () => browse().click());
+  await browse();
   expect(changed).toHaveBeenCalledExactlyOnceWith("/Users/test/.ssh/id_ed25519");
   expect(container.textContent).not.toContain("Could not open the file picker.");
 });
 
-it("blocks duplicate pickers and ignores a selection after the owning field closes", async () => {
+it("ignores a selection after the owning field closes", async () => {
   let finish!: (path: string) => void;
   native.open.mockReturnValue(
     new Promise<string>((resolve) => {
@@ -101,17 +106,14 @@ it("blocks duplicate pickers and ignores a selection after the owning field clos
   await act(async () =>
     root.render(createElement(SshIdentityField, { value: "", onChange: changed })),
   );
-  await act(async () => {
-    browse().click();
-    browse().click();
-  });
+  await browse();
   expect(native.open).toHaveBeenCalledTimes(1);
   await act(async () => root.render(null));
   await act(async () => finish("/Users/test/.ssh/work"));
   expect(changed).not.toHaveBeenCalled();
 });
 
-it("distinguishes same-name keys by path and clears only the draft when returning to SSH defaults", async () => {
+it("distinguishes same-name keys by path and returns to SSH defaults from the first option", async () => {
   const changed = vi.fn();
   const keys = ["C:/team/id_ed25519", "C:/archive/id_ed25519"].map((identityFile) => ({
     identityFile,
@@ -122,9 +124,7 @@ it("distinguishes same-name keys by path and clears only the draft when returnin
   await act(async () =>
     root.render(createElement(SshIdentityField, { value: "", onChange: changed })),
   );
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('button[aria-label^="Choose SSH key:"]')!.click(),
-  );
+  await openMenu();
   const search = document.querySelector<HTMLInputElement>('input[placeholder="Search SSH keys…"]')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
@@ -136,6 +136,7 @@ it("distinguishes same-name keys by path and clears only the draft when returnin
   const options = document.querySelectorAll<HTMLButtonElement>('[role="option"]');
   expect(options).toHaveLength(1);
   expect(options[0].textContent).toContain("C:/archive/id_ed25519");
+  expect(options[0].textContent).toContain("SHA256:public");
   await act(async () => options[0].click());
   expect(changed).toHaveBeenCalledExactlyOnceWith("C:/archive/id_ed25519");
   await act(async () =>
@@ -146,58 +147,34 @@ it("distinguishes same-name keys by path and clears only the draft when returnin
   expect(
     container.querySelector('button[aria-label^="Choose SSH key:"]')?.getAttribute("aria-label"),
   ).toBe("Choose SSH key: id_ed25519");
-  expect(container.textContent).toContain("C:/archive/id_ed25519");
-  expect(container.textContent).toContain("SHA256:public");
+  await openMenu();
   await act(async () =>
-    [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Use SSH defaults")!
-      .click(),
+    document.querySelector<HTMLButtonElement>('[role="option"][data-value=""]')!.click(),
   );
   expect(changed).toHaveBeenLastCalledWith("");
   expect(native.open).not.toHaveBeenCalled();
   expect(native.invoke.mock.calls.map(([command]) => command)).toEqual(["ssh_public_keys_list"]);
 });
 
-it("refreshes discovered keys without changing the selected draft", async () => {
+it("retries failed key discovery from the error without changing the selected draft", async () => {
   const changed = vi.fn();
+  native.invoke.mockRejectedValue(new Error("inventory unavailable"));
   await act(async () =>
     root.render(createElement(SshIdentityField, { value: "C:/custom/work", onChange: changed })),
   );
+  expect(container.textContent).toContain("Could not load SSH keys");
   native.invoke.mockResolvedValue([
     { identityFile: "C:/new/deployment", keyType: "ssh-ed25519", fingerprint: "SHA256:new" },
   ]);
   await act(async () =>
-    container.querySelector<HTMLButtonElement>('button[aria-label^="Refresh SSH keys:"]')!.click(),
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Retry")!
+      .click(),
   );
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('button[aria-label^="Choose SSH key:"]')!.click(),
-  );
+  expect(container.textContent).not.toContain("Could not load SSH keys");
+  await openMenu();
   expect(document.querySelector('[role="option"][data-value="C:/new/deployment"]')).toBeTruthy();
   expect(document.querySelector('[role="option"][data-value="C:/custom/work"]')).toBeTruthy();
   expect(changed).not.toHaveBeenCalled();
   expect(native.invoke).toHaveBeenCalledTimes(2);
-});
-
-it("discards stale key metadata after refresh fails while preserving the selected path", async () => {
-  const changed = vi.fn();
-  native.invoke.mockResolvedValue([
-    { identityFile: "C:/keys/work", keyType: "ssh-ed25519", fingerprint: "SHA256:stale" },
-    { identityFile: "C:/keys/removed", keyType: "ssh-ed25519", fingerprint: "SHA256:removed" },
-  ]);
-  await act(async () =>
-    root.render(createElement(SshIdentityField, { value: "C:/keys/work", onChange: changed })),
-  );
-  expect(container.textContent).toContain("SHA256:stale");
-  native.invoke.mockRejectedValue(new Error("inventory unavailable"));
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('button[aria-label^="Refresh SSH keys:"]')!.click(),
-  );
-  expect(container.textContent).toContain("Could not load SSH keys");
-  expect(container.textContent).not.toContain("SHA256:stale");
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('button[aria-label^="Choose SSH key:"]')!.click(),
-  );
-  expect(document.querySelector('[role="option"][data-value="C:/keys/removed"]')).toBeNull();
-  expect(document.querySelector('[role="option"][data-value="C:/keys/work"]')).toBeTruthy();
-  expect(changed).not.toHaveBeenCalled();
 });

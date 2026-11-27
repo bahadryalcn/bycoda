@@ -5,6 +5,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Button } from "../../../shared/ui/Button";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale, getLocale } from "../../../shared/i18n/git";
 import { useEffect, useState } from "react";
 import { GitFeedback } from "./GitFeedback";
@@ -97,7 +98,7 @@ type DialogProps = {
 
 function Loading() {
   useLocale();
-  return <LoadingText className="px-3 py-2">{t("Loading…")}</LoadingText>;
+  return <LoadingText inset="row">{t("Loading…")}</LoadingText>;
 }
 
 function FileHistoryDialog({ request, onClose, onOpenCommit }: DialogProps) {
@@ -142,7 +143,7 @@ function FileHistoryDialog({ request, onClose, onOpenCommit }: DialogProps) {
       ) : !commits ? (
         <Loading />
       ) : commits.length === 0 ? (
-        <EmptyState size="inline" className="px-4" description={t("No commits touch this file")} />
+        <EmptyState size="inline" inset="panel" description={t("No commits touch this file")} />
       ) : (
         <ul className="min-h-0 overflow-y-auto p-1.5">
           {commits.map((commit) => (
@@ -151,8 +152,9 @@ function FileHistoryDialog({ request, onClose, onOpenCommit }: DialogProps) {
                 variant="item"
                 motion="none"
                 type="button"
+                fullWidth
+                align="start"
                 onClick={() => onOpenCommit(commit)}
-                className="flex w-full items-center gap-2 text-left"
               >
                 <Text size="micro" tone="muted" className="shrink-0 font-mono">
                   {commit.shortSha}
@@ -160,9 +162,11 @@ function FileHistoryDialog({ request, onClose, onOpenCommit }: DialogProps) {
                 <Text as="span" size="inherit" tone="primary" truncate className="min-w-0 flex-1">
                   {commit.subject}
                 </Text>
-                <Text size="inherit" tone="muted" truncate className="shrink-0">
-                  {commit.author}
-                </Text>
+                <OverflowTooltip label={commit.author}>
+                  <Text size="inherit" tone="muted" truncate className="min-w-0 max-w-32">
+                    {commit.author}
+                  </Text>
+                </OverflowTooltip>
                 <Text size="inherit" tone="muted" className="shrink-0 tabular-nums">
                   {shortDate(commit.timestamp)}
                 </Text>
@@ -249,9 +253,10 @@ function BlameDialog({ request, onClose, onOpenCommit }: DialogProps) {
                   motion="none"
                   type="button"
                   disabled={uncommitted}
-                  tooltip={
-                    uncommitted ? t("Not committed yet") : `${entry.shortSha} ${entry.summary}`
-                  }
+                  disabledReason={uncommitted ? t("This change is not committed yet.") : undefined}
+                  align="start"
+                  tooltip={uncommitted ? undefined : entry.summary}
+                  tooltipDetails={uncommitted ? undefined : [entry.author]}
                   onClick={() =>
                     onOpenCommit({
                       sha: entry.sha,
@@ -264,20 +269,20 @@ function BlameDialog({ request, onClose, onOpenCommit }: DialogProps) {
                       head: false,
                     })
                   }
-                  className="w-48 shrink-0 text-left"
+                  className="w-40 shrink-0"
                 >
                   <Text as="span" size="inherit" tone="inherit" truncate className="block">
                     {first
                       ? uncommitted
                         ? t("Not committed yet")
-                        : `${entry.author} · ${shortDate(entry.timestamp)} · ${entry.summary}`
+                        : `${entry.shortSha} · ${shortDate(entry.timestamp)}`
                       : ""}
                   </Text>
                 </Button>
                 <Text
                   size="inherit"
                   tone="muted"
-                  className="w-10 shrink-0 pr-3 text-right select-none"
+                  className="w-10 shrink-0 pe-3 text-end select-none"
                 >
                   {entry.line}
                 </Text>

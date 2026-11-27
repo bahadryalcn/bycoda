@@ -1,6 +1,8 @@
 import { useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import {
+  AUTOSAVE_DEFAULT,
+  FORMAT_ON_SAVE_DEFAULT,
   loadAutosave,
   saveAutosave,
   subscribeAutosave,
@@ -30,9 +32,9 @@ export function WorkspaceEditorSettings() {
       <Row
         id="auto-save"
         label={t("Autosave")}
-        dependency={t(
-          "Autosave can save existing unsaved changes. Format on save applies to manual and automatic saves.",
-        )}
+        description={t("Turning on autosave can save existing unsaved changes.")}
+        modified={autosave !== AUTOSAVE_DEFAULT}
+        onReset={() => setAutosaveError(saveAutosave(AUTOSAVE_DEFAULT) !== AUTOSAVE_DEFAULT)}
         feedback={
           autosaveError ? (
             <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>
@@ -48,14 +50,15 @@ export function WorkspaceEditorSettings() {
       <Row
         id="format-on-save"
         label={t("Format on save")}
-        dependency={t("Formatting requires a formatter installed in the project.")}
+        modified={formatOnSave !== FORMAT_ON_SAVE_DEFAULT}
+        onReset={() => onFormatOnSave(FORMAT_ON_SAVE_DEFAULT)}
         feedback={
           formatError ? (
             <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>
           ) : undefined
         }
-        description={t(
-          "Run the project's formatter on supported files before writing. Off keeps the text you typed, including quote style.",
+        info={t(
+          "Uses the project's installed formatter for supported files on manual and automatic saves.",
         )}
       >
         <Toggle label={t("Format on save")} on={formatOnSave} onChange={onFormatOnSave} />

@@ -38,6 +38,7 @@ export function QuestionFields({
   onCustom,
   onRejectedInput,
   locked = false,
+  lockedReason,
 }: {
   question: UserQuestion;
   selected: string[];
@@ -48,6 +49,8 @@ export function QuestionFields({
   onCustom: (value: string) => boolean;
   onRejectedInput: () => void;
   locked?: boolean;
+  /** Why the fields are locked, shown on the disabled controls. */
+  lockedReason?: string;
 }) {
   const t = useT();
   const options = displayOptions(question, t("Other"));
@@ -136,11 +139,6 @@ export function QuestionFields({
         if (index >= 0) onOptionKeyDown(event, index);
       }}
     >
-      {question.multiSelect ? (
-        <Text as="p" size="caption" tone="secondary" className="[margin-block-start:0.5rem]">
-          {t("Select all that apply")}
-        </Text>
-      ) : null}
       {options.length === 0 && question.allowCustom ? (
         <TextareaField
           hideLabel
@@ -162,9 +160,13 @@ export function QuestionFields({
         <div className={styles.options}>
           {!question.multiSelect ? (
             <RadioGroup
-              variant="list"
               className={styles.radio}
-              legendText={{ size: "body", tone: "neutral", weight: "medium", leading: "normal" }}
+              legendText={{
+                size: "body",
+                tone: "neutral",
+                weight: "medium",
+                leading: "normal",
+              }}
               label={question.prompt}
               name={question.id}
               value={selected[0] ?? ""}
@@ -182,6 +184,7 @@ export function QuestionFields({
                 key={option.id}
                 className={styles.option}
                 disabled={locked}
+                disabledReason={locked ? lockedReason : undefined}
                 checked={selected.includes(option.id)}
                 aria-keyshortcuts={optionIndex < 9 ? String(optionIndex + 1) : undefined}
                 tabIndex={highlighted === optionIndex ? 0 : -1}
@@ -216,7 +219,6 @@ export function QuestionFields({
               onRejectedInput();
             }
           }}
-          aria-label={t("Type your answer")}
           placeholder={t("Type your answer")}
           fieldClassName={styles.answer}
         />
@@ -248,6 +250,7 @@ export function QuestionFields({
             className={styles.addNote}
             startIcon={<Plus />}
             disabled={locked}
+            disabledReason={locked ? lockedReason : undefined}
             onClick={() => {
               focusNote.current = true;
               setNoteOpen(true);

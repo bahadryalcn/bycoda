@@ -1,6 +1,6 @@
 import { GoalCard } from "../../../src/features/tasks/ui/GoalCard";
 import type { BoardGoal } from "../../../src/features/tasks/model/goalClient";
-import { SettingFrame, SettingRow } from "../../../src/features/tasks/ui/TaskLimitsRow";
+import { Group, Row } from "../../../src/shared/ui/settings";
 import { MachineRow } from "../../../src/features/connections/ui/MachineRow";
 import { Button } from "../../../src/shared/ui/Button";
 import { SegmentedControl } from "../../../src/shared/ui/SegmentedControl";
@@ -51,17 +51,17 @@ export function UiCoherenceFixture() {
     <div className="coherence-fixture">
       <div className="coherence-fixture-content" dir={query.has("rtl") ? "rtl" : "ltr"}>
         <Text as="p">Isolated fixture. No live account or task operations.</Text>
-        <SettingFrame>
-          <SettingRow
-            title={
+        <Group title="Limits">
+          <Row
+            label={
               worst
                 ? "Araştırma ortamındaki ajanların günlük çalışma süresi üst sınırı"
                 : "Daily agent time"
             }
           >
             <Button variant="secondary">Configure</Button>
-          </SettingRow>
-        </SettingFrame>
+          </Row>
+        </Group>
         <GoalCard
           goal={goal}
           tasks={[]}
@@ -88,6 +88,7 @@ export function UiCoherenceFixture() {
           onUpdateHost={ignore}
           onReconnect={ignore}
           onToggleMenu={ignore}
+          onToggleDetails={ignore}
           onSyncNow={ignore}
         />
       </div>

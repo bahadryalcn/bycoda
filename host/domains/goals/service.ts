@@ -16,8 +16,7 @@ export interface HostGoalsServicePorts<Goal extends dto.HostGoal> {
   };
 }
 type Options = { legacy?: boolean };
-/** All eight operations are stateful, wait-only and never automatically replayed.
- * Even list reconciles task/review progress and persists pending-review identity. */
+/** Requests are wait-only. The scheduler owns task and review reconciliation. */
 export function createHostGoalsService<Goal extends dto.HostGoal>(
   ports: HostGoalsServicePorts<Goal>,
 ) {

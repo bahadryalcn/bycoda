@@ -12,6 +12,8 @@ export type MachineResult<T> = {
   /** `data` is a last-known answer, not a current one. */
   stale: boolean;
   error?: string;
+  /** Original transport reason, retained so readers can classify before displaying it. */
+  failure?: unknown;
 };
 
 /** The last successful list of each machine, by machine ID. */
@@ -22,6 +24,12 @@ export type LastGoodLists<T> = Map<string, T[]>;
 const listIdentities = new WeakMap<object, Map<string, string>>();
 const machineIdentity = (machine: RemoteMachine) =>
   JSON.stringify([machine.environmentId, machine.endpoint, isLocalSyncMachine(machine)]);
+
+// Requests for one machine are numbered in the order they start. `landed` is the
+// newest request whose list was stored, so an older reply that resolves later
+// cannot replace a newer list (overlapping polls, manual refreshes, mutations).
+type LoadSequence = { issued: number; landed: number };
+const loadSequences = new WeakMap<object, Map<string, LoadSequence>>();
 
 export function machineDisplayName(machine: RemoteMachine): string {
   return isLocalSyncMachine(machine) ? "this computer" : machine.name;
@@ -43,13 +51,26 @@ export async function collectMachineResults<T>(
     identities = new Map();
     listIdentities.set(lastGood, identities);
   }
+  let sequences = loadSequences.get(lastGood);
+  if (!sequences) {
+    sequences = new Map();
+    loadSequences.set(lastGood, sequences);
+  }
+  const sequenceOf = (machineId: string): LoadSequence => {
+    let sequence = sequences.get(machineId);
+    if (!sequence) {
+      sequence = { issued: 0, landed: 0 };
+      sequences.set(machineId, sequence);
+    }
+    return sequence;
+  };
   for (const machine of [...machines, ...down]) {
     const identity = machineIdentity(machine);
     const previous = identities.get(machine.id);
     if (previous !== undefined && previous !== identity) lastGood.delete(machine.id);
     identities.set(machine.id, identity);
   }
-  const failed = (machine: RemoteMachine, error: string): MachineResult<T> => {
+  const failed = (machine: RemoteMachine, error: string, failure?: unknown): MachineResult<T> => {
     const previous =
       identities.get(machine.id) === machineIdentity(machine)
         ? lastGood.get(machine.id)
@@ -61,15 +82,28 @@ export async function collectMachineResults<T>(
       data: previous ? previous.map(markStale) : [],
       stale: previous !== undefined && previous.length > 0,
       error,
+      failure,
     };
   };
   const asked = await Promise.all(
     machines.map(async (machine): Promise<MachineResult<T>> => {
+      const sequence = sequenceOf(machine.id);
+      const issued = ++sequence.issued;
       try {
         const data = await load(machine);
         // A late reply from the old endpoint must not repopulate its replacement's cache.
         if (identities.get(machine.id) !== machineIdentity(machine))
           return failed(machine, "The machine connection changed while loading.");
+        // A newer list already landed: keep it, and report it instead of this older reply.
+        if (issued < sequence.landed)
+          return {
+            machineId: machine.id,
+            machineName: machineDisplayName(machine),
+            status: "ok",
+            data: lastGood.get(machine.id) ?? [],
+            stale: false,
+          };
+        sequence.landed = issued;
         lastGood.set(machine.id, data);
         return {
           machineId: machine.id,
@@ -80,7 +114,11 @@ export async function collectMachineResults<T>(
         };
       } catch (reason: unknown) {
         // A passing outage keeps the last known entries (see `failed`) and shows no raw error.
-        return failed(machine, presentRemoteError(reason) ?? "The machine is not reachable.");
+        return failed(
+          machine,
+          presentRemoteError(reason) ?? "The machine is not reachable.",
+          reason,
+        );
       }
     }),
   );

@@ -1,3 +1,9 @@
+import {
+  YOUTUBE_READ_TOOLS,
+  YOUTUBE_REQUEST_TOOLS,
+  YOUTUBE_WRITE_TOOLS,
+} from "./youtubeManagement";
+
 /**
  * MCP identifiers use underscores; host RPC/CLI keeps the dot contract.
  * Every entry is an AI-callable operation. Owner-only actions never appear here; the Host
@@ -75,6 +81,58 @@ export const SOCIAL_TOOLS = [
   // Browser layers (4H)
   "browser.needsHuman.list",
   "browser.recipeSuggestions.list",
+  // Instagram
+  "instagram.insights",
+  "instagram.mentions",
+  // X.
+  "x.handoff",
+  "x.insights",
+  "x.spaces",
+  "x.lists",
+  // YouTube management.
+  ...YOUTUBE_READ_TOOLS,
+  ...YOUTUBE_WRITE_TOOLS,
+  ...YOUTUBE_REQUEST_TOOLS,
+  // TikTok account operations.
+  "tiktok.profile.read",
+  "tiktok.analytics.read",
+  "tiktok.earnings.read",
+  "tiktok.audience.list",
+  "tiktok.mentions.list",
+  "tiktok.changes.request",
+  // Snapchat
+  "snapchat.profile.read",
+  "snapchat.friends.list",
+  "snapchat.content.list",
+  "snapchat.analytics.get",
+  "snapchat.earnings.get",
+  "snapchat.monetization.get",
+  "snapchat.signup.request",
+  "snapchat.chat.draft",
+  "snapchat.profile.create.request",
+  "snapchat.profile.update.request",
+  "snapchat.content.delete.request",
+  // LinkedIn
+  "linkedin.analytics",
+  "linkedin.accounts.setupStatus",
+  "linkedin.management.prepare",
+  "linkedin.live.status",
+  "linkedin.creator.handoff",
+  // Facebook Page tools
+  "facebook.page.read",
+  "facebook.mentions.list",
+  "facebook.insights.read",
+  "facebook.earnings.read",
+  "facebook.posts.list",
+  "facebook.privateReplyDraft",
+  "facebook.live.list",
+  "facebook.live.comments",
+  "facebook.live.replyDraft",
+  "facebook.management.request",
+  "instagram.comments.request",
+  "instagram.management.request",
+  "instagram.earnings.read",
+  "facebook.management.execute",
 ] as const;
 export type SocialTool = (typeof SOCIAL_TOOLS)[number];
 export function socialToolName(tool: SocialTool): string {

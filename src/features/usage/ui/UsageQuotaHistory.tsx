@@ -3,26 +3,36 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { useMemo, useState, type CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import { formatDate, formatNumber, t, useLocale } from "../../../shared/i18n";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Heading } from "../../../shared/ui/Heading";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Select } from "../../../shared/ui/Select";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { SortableDataTable } from "../../../shared/ui/SortableDataTable";
 import {
+  accountDisplayLabel,
   providerAccountColorValue,
   type ProviderAccount,
-} from "../../providers/model/providerAccounts";
-import { useRateLimitHistory } from "../../providers/model/rateLimitHistory";
+} from "../../providers/public/providerAccounts";
+import { useRateLimitHistory } from "../../providers/public/rateLimitHistory";
+import {
+  formatQuotaPercent,
+  formatResetDuration,
+  rateLimitWindowNameWith,
+  type RateLimitWindowKind,
+} from "../../providers/public/rateLimitsCache";
+import { useShowRemainingUsage } from "../../settings/model/displayPrefs";
 import type { UsageFilters, UsageWindow } from "../model/usageAnalytics";
-import { usageLabel } from "./UsageVisualizations";
+import { quotaLineSegments, quotaPlotDomain, quotaPlotPoints } from "../model/quotaPlotPoints";
+import { useUsageChartKind } from "../model/usageChartKinds";
 import { UsageProviderIdentity, usageProviderLabel } from "./UsageProviderIdentity";
 import { HarnessIcon } from "../../../shared/ui/identity/HarnessIcon";
 
 const accountKey = (account: ProviderAccount) => `${account.provider}:${account.id}`;
-const accountLabel = (account: ProviderAccount) =>
-  `${usageProviderLabel(account.provider)} · ${usageLabel(account.label)}`;
+const KINDS: readonly RateLimitWindowKind[] = ["session", "weekly", "monthly"];
+const THREE_DAYS = 3 * 86_400_000;
 const observationTime = (value: number) =>
   formatDate(value, {
     year: "numeric",
@@ -30,9 +40,14 @@ const observationTime = (value: number) =>
     day: "numeric",
     hour: "numeric",
     minute: "numeric",
-    second: "numeric",
   });
-const percent = (value: number) =>
+/** Axis ticks: the date, plus the time while the span is short. */
+const axisTime = (value: number, span: number) =>
+  span < THREE_DAYS
+    ? formatDate(value, { month: "short", day: "numeric", hour: "numeric", minute: "numeric" })
+    : formatDate(value, { dateStyle: "medium" });
+/** Exact reading for tooltips and the table; rows and the legend use `formatQuotaPercent`. */
+const exactPercent = (value: number) =>
   `${formatNumber(value, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
 export function QuotaHistory({
@@ -46,17 +61,22 @@ export function QuotaHistory({
 }) {
   useLocale();
   const history = useRateLimitHistory();
+  const showRemaining = useShowRemainingUsage();
   const [selectedKind, setKind] = useState<string | null>(null);
   const [account, setAccount] = useState("");
-  const knownAccounts = useMemo(
-    () =>
-      accounts.filter(
-        (a) =>
-          (!filters.provider.length || filters.provider.includes(a.provider)) &&
-          (!filters.account.length || filters.account.includes(`${a.provider}:${a.id}`)),
-      ),
-    [accounts, filters],
+  const [chartKind, setChartKind] = useUsageChartKind("quotaHistory");
+  // The shared Disclosure keeps closed bodies mounted, so the table is only built while open.
+  const [tableOpen, setTableOpen] = useState(false);
+  const knownAccounts = accounts.filter(
+    (a) =>
+      (!filters.provider.length || filters.provider.includes(a.provider)) &&
+      (!filters.account.length || filters.account.includes(`${a.provider}:${a.id}`)),
   );
+  const accountLabel = (account: ProviderAccount) =>
+    `${usageProviderLabel(account.provider)} · ${accountDisplayLabel(account, accounts)}`;
+  // Samples are used-based; the remaining toggle only changes what is shown.
+  const shownValue = (used: number) => (showRemaining ? 100 - used : used);
+  const unitLabel = showRemaining ? t("Remaining (%)") : t("Used (%)");
   const key = knownAccounts.some((a) => accountKey(a) === account) ? account : "";
   const visibleAccounts = knownAccounts.filter((a) => !key || accountKey(a) === key);
   const accountMap = new Map(visibleAccounts.map((a) => [accountKey(a), a]));
@@ -64,13 +84,34 @@ export function QuotaHistory({
     (sample) =>
       accountMap.has(sample.account) && sample.at >= window.start && sample.at < window.end,
   );
-  const kind = selectedKind ?? samples[0]?.kind ?? "session";
+  const counts = new Map<string, number>();
+  for (const sample of samples) counts.set(sample.kind, (counts.get(sample.kind) ?? 0) + 1);
+  // Default to the weekly window, else the one with most readings; a pick without readings yields to it.
+  const defaultKind = counts.has("weekly")
+    ? "weekly"
+    : ([...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "session");
+  const kind = selectedKind && counts.has(selectedKind) ? selectedKind : defaultKind;
+  const kindOptions = KINDS.filter((k) => counts.has(k) || k === kind);
   const rows = samples.filter((s) => s.kind === kind);
   const latest = new Map<string, (typeof rows)[number]>();
   for (const row of rows) {
     if (row.at >= (latest.get(row.account)?.at ?? -Infinity)) latest.set(row.account, row);
   }
-  const width = window.end - window.start;
+  // The axis starts at the first reading: history only exists since collection began.
+  const domain = quotaPlotDomain(rows, window);
+  const span = domain.end - domain.start;
+  const axisTicks = [domain.start, domain.start + span / 2, domain.end];
+  // The plot is bounded to one reading per account and column; the table and legend keep every sample.
+  const plotted = quotaPlotPoints(rows, domain);
+  // Lines join only real consecutive readings; resets and long gaps break them.
+  const segments = chartKind === "line" ? quotaLineSegments(plotted) : [];
+  const timePercent = (at: number) => (span > 0 ? ((at - domain.start) / span) * 100 : 0);
+  const latestSummary = visibleAccounts
+    .flatMap((a) => {
+      const sample = latest.get(accountKey(a));
+      return sample ? [`${accountLabel(a)} ${formatQuotaPercent(shownValue(sample.used))}`] : [];
+    })
+    .join(", ");
   return (
     <section
       {...surfaceAttributes(
@@ -80,7 +121,7 @@ export function QuotaHistory({
     >
       <div className="usage-section-heading">
         <div className="flex items-center gap-2">
-          <Heading size="item" level={3}>
+          <Heading size="item" level={2}>
             {t("Limit history")}
           </Heading>
           <InfoPopover label={t("About limit history")}>
@@ -90,6 +131,16 @@ export function QuotaHistory({
           </InfoPopover>
         </div>
         <div className="usage-controls">
+          <SegmentedControl
+            size="sm"
+            label={t("Chart type")}
+            value={chartKind}
+            onValueChange={(next) => setChartKind(next === "line" ? "line" : "points")}
+            options={[
+              { value: "points", label: t("Points") },
+              { value: "line", label: t("Line") },
+            ]}
+          />
           <SearchableSelect
             hideLabel
             label={t("Account")}
@@ -109,11 +160,10 @@ export function QuotaHistory({
             label={t("Limit window")}
             value={kind}
             onValueChange={setKind}
-            options={[
-              { value: "session", label: t("Session") },
-              { value: "weekly", label: t("Weekly") },
-              { value: "monthly", label: t("Monthly") },
-            ]}
+            options={kindOptions.map((k) => ({
+              value: k,
+              label: rateLimitWindowNameWith(k, t),
+            }))}
           />
         </div>
       </div>
@@ -135,11 +185,12 @@ export function QuotaHistory({
                 style={{ "--surface-user-color": providerAccountColorValue(a) } as CSSProperties}
               />
               <UsageProviderIdentity provider={a.provider} label={accountLabel(a)} />
-              <Tooltip label={sample ? observationTime(sample.at) : undefined} asChild>
-                <Text size="inherit" tone="secondary" className="usage-quota-legend-value">
-                  {sample ? percent(sample.used) : t("No records")}
-                </Text>
-              </Tooltip>
+              <Text size="inherit" tone="secondary" className="usage-quota-legend-value">
+                {sample ? formatQuotaPercent(shownValue(sample.used)) : t("No records")}
+              </Text>
+              <Text size="inherit" tone="muted" className="usage-quota-legend-time">
+                {sample ? observationTime(sample.at) : null}
+              </Text>
             </div>
           );
         })}
@@ -149,7 +200,7 @@ export function QuotaHistory({
           <div
             {...surfaceAttributes({ frame: "pane", edge: "block" }, "usage-quota-plot")}
             role="img"
-            aria-label={`${t("Limit history")}: ${rows.length} ${t("recorded samples")}`}
+            aria-label={`${t("Limit history")} (${unitLabel}): ${rows.length} ${t("recorded samples")}${latestSummary ? `. ${latestSummary}` : ""}`}
           >
             <Text size="caption" tone="secondary" leading="inherit" className="usage-quota-max">
               100%
@@ -157,99 +208,130 @@ export function QuotaHistory({
             <Text size="caption" tone="secondary" leading="inherit" className="usage-quota-zero">
               0%
             </Text>
-            {rows.map((row) => (
-              <Tooltip
-                key={`${row.account}:${row.kind}:${row.at}`}
-                label={`${accountLabel(accountMap.get(row.account)!)} · ${observationTime(row.at)}: ${percent(row.used)}`}
-                asChild
+            {segments.length ? (
+              <svg
+                aria-hidden
+                className="usage-quota-lines"
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
               >
-                <span
-                  {...surfaceAttributes({ variant: "user-color" }, "usage-quota-point")}
+                {segments.map((segment) => {
+                  const segmentAccount = accountMap.get(segment[0]!.account)!;
+                  return (
+                    <polyline
+                      key={`${segment[0]!.account}:${segment[0]!.at}`}
+                      className="usage-quota-line"
+                      style={
+                        {
+                          "--usage-line-color": providerAccountColorValue(segmentAccount),
+                        } as CSSProperties
+                      }
+                      points={segment
+                        .map((r) => `${timePercent(r.at)},${100 - shownValue(r.used)}`)
+                        .join(" ")}
+                    />
+                  );
+                })}
+              </svg>
+            ) : null}
+            {plotted.map((row) => {
+              const rowAccount = accountMap.get(row.account)!;
+              return (
+                <Tooltip
                   key={`${row.account}:${row.kind}:${row.at}`}
-
-                  style={
-                    {
-                      "--surface-user-color": providerAccountColorValue(
-                        accountMap.get(row.account)!,
-                      ),
-                      "--usage-point-time": `${((row.at - window.start) / width) * 100}%`,
-                      "--usage-point-value": `${row.used}%`,
-                    } as CSSProperties
-                  }
-                />
-              </Tooltip>
-            ))}
+                  label={`${accountLabel(rowAccount)} · ${observationTime(row.at)}: ${exactPercent(shownValue(row.used))}`}
+                  asChild
+                >
+                  <span
+                    {...surfaceAttributes({ variant: "user-color" }, "usage-quota-point")}
+                    style={
+                      {
+                        "--surface-user-color": providerAccountColorValue(rowAccount),
+                        "--usage-point-time": `${timePercent(row.at)}%`,
+                        "--usage-point-value": `${shownValue(row.used)}%`,
+                      } as CSSProperties
+                    }
+                  />
+                </Tooltip>
+              );
+            })}
           </div>
           <Text as="p" leading="inherit" className="usage-quota-axis usage-muted">
-            <span>{observationTime(window.start)}</span>
-            <span>
-              {t("Used (%)")} · {observationTime(window.end)}
-            </span>
+            {axisTicks.map((tick, index) => (
+              <span key={index}>{axisTime(tick, span)}</span>
+            ))}
           </Text>
-          <Disclosure size="sm" summary={t("Show as table")}>
-            <Text as="div" leading="inherit">
-              <div
-                className="usage-history-table"
-                role="region"
-                aria-label={t("Limit history")}
-                tabIndex={0}
-              >
-                <SortableDataTable
-                  caption={t("Limit history")}
-                  rowKey="key"
-                  rows={rows
-                    .slice(-100)
-                    .reverse()
-                    .map((s) => ({
-                      key: `${s.account}:${s.kind}:${s.at}`,
-                      account: accountLabel(accountMap.get(s.account)!),
-                      at: s.at,
-                      time: s.at,
-                      used: s.used,
-                      minutes: s.minutes,
-                      reset: s.resetsAt ?? null,
-                    }))}
-                  columns={[
-                    { key: "account", label: t("Account") },
-                    {
-                      key: "time",
-                      label: t("Time"),
-                      render: (v) => observationTime(Number(v)),
-                    },
-                    {
-                      key: "used",
-                      label: t("Used (%)"),
-                      numeric: true,
-                      render: (v) => percent(Number(v)),
-                    },
-                    {
-                      key: "minutes",
-                      label: t("Window (minutes)"),
-                      numeric: true,
-                      render: (value) =>
-                        `${Number(value) % 60 === 0 ? `${Number(value) / 60}h` : `${Number(value)}m`} (${value})`,
-                    },
-                    {
-                      key: "reset",
-                      label: t("Reset"),
-                      render: (v) =>
-                        v == null ? t("Reset time unavailable") : observationTime(Number(v)),
-                    },
-                  ]}
-                />
-              </div>
-            </Text>
-            <Text as="p" leading="inherit" className="usage-muted">
-              {t("Latest 100 samples in the selected interval.")}
-            </Text>
+          <Text as="p" size="caption" tone="muted" leading="inherit" className="usage-quota-unit">
+            {unitLabel}
+          </Text>
+          <Disclosure
+            size="sm"
+            summary={t("Show as table")}
+            open={tableOpen}
+            onOpenChange={setTableOpen}
+          >
+            {tableOpen ? (
+              <Text as="div" leading="inherit">
+                <div
+                  className="usage-history-table"
+                  role="region"
+                  aria-label={t("Limit history")}
+                  tabIndex={0}
+                >
+                  <SortableDataTable
+                    caption={t("Limit history")}
+                    rowKey="key"
+                    rows={rows
+                      .slice(-100)
+                      .reverse()
+                      .map((s) => ({
+                        key: `${s.account}:${s.kind}:${s.at}`,
+                        account: accountLabel(accountMap.get(s.account)!),
+                        at: s.at,
+                        time: s.at,
+                        used: shownValue(s.used),
+                        minutes: s.minutes,
+                        reset: s.resetsAt ?? null,
+                      }))}
+                    columns={[
+                      { key: "account", label: t("Account") },
+                      {
+                        key: "time",
+                        label: t("Time"),
+                        render: (v) => observationTime(Number(v)),
+                      },
+                      {
+                        key: "used",
+                        label: unitLabel,
+                        numeric: true,
+                        render: (v) => exactPercent(Number(v)),
+                      },
+                      {
+                        key: "minutes",
+                        label: t("Window"),
+                        numeric: true,
+                        render: (value) => formatResetDuration(Number(value) * 60_000),
+                      },
+                      {
+                        key: "reset",
+                        label: t("Reset"),
+                        render: (v) =>
+                          v == null ? t("Reset time unavailable") : observationTime(Number(v)),
+                      },
+                    ]}
+                  />
+                </div>
+                {rows.length > 100 ? (
+                  <Text as="p" size="caption" tone="muted" leading="inherit">
+                    {t("Showing the latest {p0} of {p1} readings.", { p0: 100, p1: rows.length })}
+                  </Text>
+                ) : null}
+              </Text>
+            ) : null}
           </Disclosure>
         </>
       ) : (
-        <EmptyState
-          size="inline"
-          title={t("No recorded limit history for this account and interval yet.")}
-          description=""
-        />
+        <EmptyState size="inline" description={t("No limit history yet")} />
       )}
     </section>
   );

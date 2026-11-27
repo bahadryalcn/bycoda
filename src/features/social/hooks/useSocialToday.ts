@@ -1,41 +1,20 @@
+import { errorText } from "../../../shared/lib/errors";
 import { useEffect, useRef } from "react";
 import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
-import { t } from "../../../shared/i18n";
 import type { SocialClient } from "../model/socialClient";
 import { socialQueryScope } from "../model/socialQuery";
-import type { SocialSnapshot, SocialWorkspaceQuery } from "../model/social";
+import { readTodaySection } from "../model/socialTodayRead";
+import type { SocialWorkspaceQuery } from "../model/social";
 import type { SocialProgram } from "../model/socialProgram";
 import type { AttentionSources, AttentionSourceState } from "../model/socialAttention";
-
-const UNSUPPORTED_WORKSPACE_READ = "Unsupported social operation";
-
-async function readSection(
-  client: SocialClient,
-  section: NonNullable<SocialWorkspaceQuery["section"]>,
-  projectId: string,
-): Promise<SocialSnapshot> {
-  try {
-    const response = await client.sectionSnapshot({
-      section,
-      limit: 50,
-      ...(projectId ? { projectId } : {}),
-    });
-    if (!response.snapshot) throw new Error(t("The Social Media refresh response is incomplete."));
-    return response.snapshot;
-  } catch (cause) {
-    // A Host without section-scoped reads serves one full snapshot.
-    if (String(cause).includes(UNSUPPORTED_WORKSPACE_READ)) return client.snapshot();
-    throw cause;
-  }
-}
 
 function state<T>(query: UseQueryResult<T>): AttentionSourceState<T> {
   if (query.data !== undefined) return { status: "ready", data: query.data };
   if (query.isError)
     return {
       status: "error",
-      message: query.error instanceof Error ? query.error.message : String(query.error),
+      message: errorText(query.error),
     };
   return { status: "loading" };
 }
@@ -48,7 +27,7 @@ function useSection(
 ) {
   return useQuery({
     queryKey: [...socialQueryScope(client), "today", name, projectId],
-    queryFn: () => readSection(client, name, projectId),
+    queryFn: () => readTodaySection(client, name, projectId),
     enabled: live,
     staleTime: 10_000,
     refetchInterval: live ? 15_000 : false,

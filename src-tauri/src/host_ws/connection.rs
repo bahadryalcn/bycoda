@@ -18,9 +18,10 @@ use std::{
 };
 use tokio::{net::TcpStream, sync::mpsc as channel, time};
 use tokio_tungstenite::{
-    connect_async_with_config,
+    client_async_tls_with_config,
     tungstenite::{
         client::IntoClientRequest,
+        error::UrlError,
         http::{header, HeaderValue},
         protocol::WebSocketConfig,
         Error, Message,
@@ -28,6 +29,77 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
 };
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
+
+/// Budgets of one connection attempt, one per phase. A slow link spends its time in
+/// round trips, so a single budget over the whole attempt fails a connection that is
+/// progressing; each phase instead gets its own bound and the attempt as a whole is
+/// bounded by their sum. A phase that exhausts its budget fails as `unavailable`
+/// (temporary) and falls to the normal retry schedule.
+struct HandshakePhases {
+    /// TCP connect, including name resolution.
+    transport: Duration,
+    /// TLS (certificate verification) and the HTTP upgrade. The Host spends up to one
+    /// handshake budget on authenticating the upgrade, so this gets two.
+    upgrade: Duration,
+    /// Authenticated `connection.hello` exchange; the Host allows one budget after open.
+    hello: Duration,
+}
+impl HandshakePhases {
+    fn new(contracts: &Contracts) -> Self {
+        let base = contracts.duration("handshakeTimeoutMs");
+        Self {
+            transport: base,
+            upgrade: base * 2,
+            hello: base,
+        }
+    }
+}
+
+/// Runs one handshake phase under its own budget. Only a timeout is reported here;
+/// the phase's own failure keeps its authentication/identity/schema classification.
+async fn within<T>(
+    shared: &Shared,
+    generation: u64,
+    phase: &'static str,
+    budget: Duration,
+    work: impl std::future::Future<Output = Result<T, (&'static str, bool)>>,
+) -> Result<T, (&'static str, bool)> {
+    let started = Instant::now();
+    match time::timeout(budget, work).await {
+        Ok(result) => result,
+        Err(_) => {
+            shared.timed_out(generation, phase, started.elapsed());
+            Err(("unavailable", false))
+        }
+    }
+}
+
+/// Same address derivation as `connect_async`, so the TLS connector, the default
+/// verification and the Nagle setting do not change; only the phases are separated.
+async fn open_transport(
+    request: &tokio_tungstenite::tungstenite::http::Request<()>,
+) -> Result<TcpStream, (&'static str, bool)> {
+    let uri = request.uri();
+    let host = uri
+        .host()
+        .map(|host| host.trim_start_matches('[').trim_end_matches(']'))
+        .ok_or(("identity", true))?;
+    let port = uri
+        .port_u16()
+        .or_else(|| match uri.scheme_str() {
+            Some("wss") => Some(443),
+            Some("ws") => Some(80),
+            _ => None,
+        })
+        .ok_or_else(|| upgrade_error(&Error::Url(UrlError::UnsupportedUrlScheme)))?;
+    let socket = TcpStream::connect((host, port))
+        .await
+        .map_err(|error| upgrade_error(&Error::Io(error)))?;
+    socket
+        .set_nodelay(true)
+        .map_err(|error| upgrade_error(&Error::Io(error)))?;
+    Ok(socket)
+}
 
 struct Connected {
     socket: Socket,
@@ -100,6 +172,17 @@ async fn connect(
     request
         .headers_mut()
         .insert(header::AUTHORIZATION, authorization);
+    // The proof of a bound credential is checked once, on the upgrade.
+    let path = request.uri().path().to_owned();
+    if let Some(proof) =
+        crate::remote::device_proof::header_for(shared.route.token.as_str(), "GET", &path)
+    {
+        let mut proof = HeaderValue::from_str(&proof).map_err(|_| ("authentication", true))?;
+        proof.set_sensitive(true);
+        request
+            .headers_mut()
+            .insert(crate::remote::device_proof::HEADER, proof);
+    }
     request.headers_mut().insert(
         header::SEC_WEBSOCKET_PROTOCOL,
         HeaderValue::from_str(contracts.protocol()).map_err(|_| ("schema", true))?,
@@ -108,19 +191,56 @@ async fn connect(
         .max_message_size(Some(contracts.limit("maxMessageBytes")))
         .max_frame_size(Some(contracts.limit("maxMessageBytes")))
         .max_write_buffer_size(contracts.limit("maxSocketQueuedBytes"));
-    let (mut socket, response) = connect_async_with_config(request, Some(config), true)
-        .await
-        .map_err(|error| upgrade_error(&error))?;
-    if response
-        .headers()
-        .get(header::SEC_WEBSOCKET_PROTOCOL)
-        .and_then(|v| v.to_str().ok())
-        != Some(contracts.protocol())
-    {
-        let _ = socket.close(None).await;
-        // A Host that speaks another subprotocol still serves HTTP.
-        return Err(("unsupported", true));
-    }
+    let phases = HandshakePhases::new(contracts);
+    let stream = within(
+        shared,
+        generation,
+        "handshake transport",
+        phases.transport,
+        open_transport(&request),
+    )
+    .await?;
+    let socket = within(
+        shared,
+        generation,
+        "handshake upgrade",
+        phases.upgrade,
+        async {
+            let (mut socket, response) =
+                client_async_tls_with_config(request, stream, Some(config), None)
+                    .await
+                    .map_err(|error| upgrade_error(&error))?;
+            if response
+                .headers()
+                .get(header::SEC_WEBSOCKET_PROTOCOL)
+                .and_then(|v| v.to_str().ok())
+                != Some(contracts.protocol())
+            {
+                let _ = socket.close(None).await;
+                // A Host that speaks another subprotocol still serves HTTP.
+                return Err(("unsupported", true));
+            }
+            Ok(socket)
+        },
+    )
+    .await?;
+    within(
+        shared,
+        generation,
+        "handshake hello",
+        phases.hello,
+        negotiate(shared, contracts, generation, socket),
+    )
+    .await
+}
+
+/// The authenticated hello: the Host identity, wire/schema versions and method set.
+async fn negotiate(
+    shared: &Shared,
+    contracts: &Contracts,
+    generation: u64,
+    mut socket: Socket,
+) -> Result<Connected, (&'static str, bool)> {
     let id = format!("hello.{generation}.{}", uuid::Uuid::new_v4());
     let hello = json!({"jsonrpc":"2.0","id":id,"method":"connection.hello","params":{
         "environmentId":shared.route.environment_id,"clientId":format!("desktop.{}", uuid::Uuid::new_v4()),
@@ -301,11 +421,8 @@ pub(super) async fn worker(
             None => break,
         };
         shared.state(generation, "connecting", None);
-        let connecting = Instant::now();
-        let handshake = time::timeout(
-            contracts.duration("handshakeTimeoutMs"),
-            connect(&shared, &contracts, generation),
-        );
+        // Bounded by its phase budgets inside `connect`, not by one deadline over all of it.
+        let handshake = connect(&shared, &contracts, generation);
         tokio::pin!(handshake);
         let result = loop {
             prune_reconnect_queue(&shared, &mut queued, generation, Instant::now());
@@ -314,10 +431,7 @@ pub(super) async fn worker(
                 _ = shared.changed.notified() => { if shared.stopped() { break 'worker; } },
                 _ = time::sleep(wait) => {},
                 request = rx.recv() => match request { Some(request) => queued.push_back(request), None => break 'worker },
-                result = &mut handshake => break result.unwrap_or_else(|_| {
-                    shared.timed_out(generation, "handshake", connecting.elapsed());
-                    Err(("unavailable", false))
-                }),
+                result = &mut handshake => break result,
             }
         };
         let (category, permanent) = match result {
@@ -1126,10 +1240,14 @@ async fn serve(
     let bulk_slots = Arc::new(tokio::sync::Semaphore::new(2));
     let mut heartbeat = Instant::now() + contracts.duration("heartbeatIntervalMs");
     let mut ping: Option<(Vec<u8>, Instant)> = None;
+    // Why the socket stopped serving, for the `host connection ended` log line.
+    let ready_at = Instant::now();
+    let mut cause = String::new();
     let failure = 'serve: loop {
         // Run maintenance before waiting: subscription handling can continue the
         // loop after queuing an open, close or acknowledgement.
         if shared.stopped() {
+            cause = "stopped".into();
             break ("unavailable", false);
         }
         let expired: Vec<_> = pending
@@ -1222,6 +1340,7 @@ async fn serve(
             .await
             .unwrap_or(false)
             {
+                cause = format!("control send failed {}", request.method);
                 settle(
                     request,
                     generation,
@@ -1254,6 +1373,7 @@ async fn serve(
                 "heartbeat",
                 contracts.duration("heartbeatResponseTimeoutMs") + deadline.elapsed(),
             );
+            cause = "pong timeout".into();
             break ("unavailable", false);
         }
         if Instant::now() >= heartbeat && ping.is_none() {
@@ -1268,6 +1388,7 @@ async fn serve(
                 .await,
                 Ok(Ok(()))
             ) {
+                cause = "ping send failed".into();
                 break ("unavailable", false);
             }
             ping = Some((
@@ -1325,8 +1446,9 @@ async fn serve(
                 }
             },
             request = async { match queued.pop_front() { Some(request) => Some(request), None => rx.recv().await } } => {
-                let Some(mut request) = request else { break ("unavailable", false); };
+                let Some(mut request) = request else { cause = "request channel closed".into(); break ("unavailable", false); };
                 if shared.stopped() {
+                    cause = "stopped".into();
                     settle(request, generation, false, "RPC_WS_DETACHED", "Native connection detached before dispatch");
                     break ("unavailable", false);
                 }
@@ -1359,6 +1481,7 @@ async fn serve(
                     settle(request, generation, false, "RPC_WS_DEADLINE", "Native operation deadline elapsed before socket send"); continue;
                 };
                 if !time::timeout(send_budget, send(&mut connection.socket, contracts, value)).await.unwrap_or(false) {
+                    cause = format!("send failed {}", request.method);
                     settle(request, generation, true, "RPC_WS_INTERRUPTED", "Host connection was interrupted while sending a request");
                     break ("unavailable", false);
                 }
@@ -1367,13 +1490,13 @@ async fn serve(
             message = connection.socket.next() => {
                 match message {
                     Some(Ok(Message::Text(text))) => {
-                        let Ok(value) = serde_json::from_str::<Value>(&text) else { break ("schema", true); };
+                        let Ok(value) = serde_json::from_str::<Value>(&text) else { cause = format!("invalid json bytes={}", text.len()); break ("schema", true); };
                         if value.get("method").is_some() {
                             if !contracts.event.is_valid(&value) { break ("schema", true); }
                             if let Err(failure) = subscriptions.event(shared, contracts, generation, &value) { break failure; }
                             continue;
                         }
-                        if !contracts.response.is_valid(&value) { break ("schema", true); }
+                        if !contracts.response.is_valid(&value) { cause = format!("invalid response bytes={}", text.len()); break ("schema", true); }
                         let Some(id) = value["id"].as_str() else { break ("schema", true); };
                         match subscriptions.response(shared, contracts, generation, id, &value) {
                             Ok(true) => continue, Ok(false) => {}, Err(failure) => break failure,
@@ -1395,6 +1518,7 @@ async fn serve(
                                 .chars().filter(|character| !character.is_control()).take(1000).collect();
                             let message = message.replace(shared.route.token.as_str(), "[redacted]");
                             let mut error = WsFailure::local(if category == "overload" { "RPC_WS_OVERLOAD" } else { "RPC_WS_REMOTE" }, &message).for_request(&request, generation, true);
+                            error.retryable = value["error"]["data"]["retryable"].as_bool() == Some(true);
                             error.uncertain = request.mutating && !matches!(category, "validation" | "authentication" | "identity" | "schema" | "overload");
                             let delivery = value["error"]["data"]["delivery"].as_str();
                             if matches!(delivery, Some("unknown" | "accepted")) { error.uncertain = true; }
@@ -1450,11 +1574,19 @@ async fn serve(
                         }
                     },
                     Some(Ok(Message::Ping(data))) => {
-                        if !matches!(time::timeout(contracts.duration("heartbeatResponseTimeoutMs"), connection.socket.send(Message::Pong(data))).await, Ok(Ok(()))) { break ("unavailable", false); }
+                        if !matches!(time::timeout(contracts.duration("heartbeatResponseTimeoutMs"), connection.socket.send(Message::Pong(data))).await, Ok(Ok(()))) { cause = "pong send failed".into(); break ("unavailable", false); }
                     },
                     Some(Ok(Message::Pong(data))) => { if ping.as_ref().is_some_and(|(expected, _)| expected.as_slice() == data.as_ref()) { ping = None; } },
-                    Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break ("unavailable", false),
-                    _ => break ("schema", true),
+                    Some(Ok(Message::Close(frame))) => {
+                        cause = match frame {
+                            Some(frame) => format!("host closed code={} reason={}", u16::from(frame.code), frame.reason),
+                            None => "host closed".into(),
+                        };
+                        break ("unavailable", false);
+                    },
+                    None => { cause = "stream ended".into(); break ("unavailable", false); },
+                    Some(Err(error)) => { cause = format!("socket error {error}"); break ("unavailable", false); },
+                    _ => { cause = "unexpected frame".into(); break ("schema", true); },
                 }
             },
         }
@@ -1462,15 +1594,41 @@ async fn serve(
     // Physical retirement invalidates every bulk grant. An inline reply already
     // delivered before the disconnect remains a completed RPC; explicit route,
     // owner and validated resource revocation still fence its retained scope.
+    let now = Instant::now();
+    let abandoned: Vec<_> = pending
+        .values()
+        .map(|request| {
+            let left = request.deadline.saturating_duration_since(now);
+            (request.method.clone(), request.timeout.saturating_sub(left))
+        })
+        .collect();
+    let line = super::diagnostics::serve_ended(
+        &shared.route,
+        generation,
+        if cause.is_empty() { failure.0 } else { &cause },
+        failure.0,
+        ready_at.elapsed(),
+        &abandoned,
+    );
+    if cause == "stopped" && abandoned.is_empty() {
+        log::info!("{line}");
+    } else {
+        log::warn!("{line}");
+    }
     shared.capture_resume_cuts(generation, subscriptions.union.retirement_cut());
     shared.permits.phase(generation, false);
+    let interrupted_message = if cause == "host closed code=1001 reason=Host is stopping." {
+        "Host is stopping."
+    } else {
+        "Host connection ended before the result was known"
+    };
     for (_, request) in pending {
         settle(
             request,
             generation,
             true,
             "RPC_WS_INTERRUPTED",
-            "Host connection ended before the result was known",
+            interrupted_message,
         );
     }
     for (_, request) in subscriptions.waiters {
@@ -1503,3 +1661,6 @@ mod result_contract_tests;
 
 #[cfg(test)]
 mod host_overload_tests;
+
+#[cfg(test)]
+mod handshake_budget_tests;

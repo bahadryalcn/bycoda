@@ -34,7 +34,8 @@ export function LanguageSettings() {
       <Row
         id="interface-language"
         label={t("Application language")}
-        description={t("Changes apply immediately. Your conversations and drafts are preserved.")}
+        modified={!pending && getLanguagePreference() !== "system"}
+        onReset={() => void change("system")}
         feedback={
           pending || error ? (
             <SettingsFeedback state={error ? "error" : "loading"} immediate>
@@ -82,6 +83,8 @@ function DomainLanguageRow({ domain }: { domain: LanguageDomain }) {
     <Row
       id={`${domain}-language`}
       label={label}
+      modified={!pending && getDomainLanguagePreference(domain) !== "en"}
+      onReset={() => void change("en")}
       feedback={
         pending || error ? (
           <SettingsFeedback state={error ? "error" : "loading"} immediate>

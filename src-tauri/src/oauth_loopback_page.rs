@@ -35,6 +35,7 @@ impl Lang {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Kind {
     Success,
+    Received,
     Failure,
     Cancelled,
     /// Any request that is not the expected callback (wrong path or `state`).
@@ -77,7 +78,7 @@ p{margin:0;color:var(--muted)}\
 
 fn icon(kind: Kind) -> &'static str {
     match kind {
-        Kind::Success => {
+        Kind::Success | Kind::Received => {
             "<svg class=\"icon ok\" viewBox=\"0 0 48 48\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"24\" cy=\"24\" r=\"20\"/><path d=\"M15 25l6 6 12-13\"/></svg>"
         }
         Kind::Failure | Kind::Invalid => {
@@ -98,6 +99,14 @@ fn texts(kind: Kind, lang: Lang) -> (&'static str, &'static str) {
         (Kind::Success, Lang::Tr) => (
             "Oturum açıldı",
             "Bu sekmeyi kapatıp bycoda'ya dönebilirsin.",
+        ),
+        (Kind::Received, Lang::En) => (
+            "Authorization received",
+            "Return to bycoda to see whether sign-in completed.",
+        ),
+        (Kind::Received, Lang::Tr) => (
+            "Yetkilendirme alındı",
+            "Oturum açma sonucunu görmek için bycoda'ya dön.",
         ),
         (Kind::Failure, Lang::En) => ("Sign-in didn't complete", "Go back to bycoda to try again."),
         (Kind::Failure, Lang::Tr) => (
@@ -146,7 +155,7 @@ pub(crate) fn respond_page(stream: &mut TcpStream, kind: Kind, reason: &str, lan
         "200 OK"
     };
     let reply = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n{page}",
+        "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\n\r\n{page}",
         page.len()
     );
     let _ = stream.write_all(reply.as_bytes()); // -- the browser tab may already be closed.

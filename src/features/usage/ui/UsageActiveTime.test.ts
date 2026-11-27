@@ -17,12 +17,12 @@ vi.mock("../../activity", async (importOriginal) => ({
 }));
 import { UsageActiveTime } from "./UsageActiveTime";
 
-it("keeps active time in a compact strip with source details behind an info button", () => {
+it("keeps active time in a compact strip without a second machine note", () => {
   const markup = renderToStaticMarkup(createElement(UsageActiveTime));
   expect(markup).toContain("Active time");
-  expect(markup).toContain("This machine only");
+  expect(markup).not.toContain("This machine only");
   expect(markup).toContain("This year");
   expect(markup).toContain('data-columns="auto"');
-  expect(markup).toContain('aria-label="Active time source"');
+  expect(markup).not.toContain('aria-label="Active time source"');
   expect(markup).not.toContain('data-columns="2"');
 });

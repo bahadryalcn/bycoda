@@ -1,5 +1,7 @@
-import { Text } from "../../../shared/ui/Text";
-import { useEffect, useRef, useState } from "react";
+import { errorText } from "../../../shared/lib/errors";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { getPerformanceTrace, clearPerformanceTrace } from "../../../shared/lib/performanceTrace";
 import {
@@ -8,10 +10,69 @@ import {
   loadPerformanceTraceEnabled,
   savePerformanceTraceEnabled,
 } from "../../../shared/lib/performanceTraceSettings";
-import { copyText } from "../../../platform/tauri/clipboard";
 import { Button } from "../../../shared/ui/Button";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { Trash2 } from "../../../shared/ui/icons";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import { Group, Row, Toggle, SettingsFeedback } from "../../../shared/ui/settings";
+import { loadHostStallProfiles, saveHostStallProfiles } from "../model/hostStallProfiles";
+
+/** This computer's Host switch for saving CPU profiles when its event loop stalls. */
+function HostStallProfilesRow() {
+  const [enabled, setEnabled] = useState<boolean>();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string>();
+  const [readAttempt, setReadAttempt] = useState(0);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Sync the mounted switch with the local Host setting and discard late replies when it closes.
+  useEffect(() => {
+    let active = true;
+    setError(undefined);
+    loadHostStallProfiles().then(
+      (value) => {
+        if (active) setEnabled(value);
+      },
+      (reason: unknown) => {
+        if (active) setError(errorText(reason));
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [readAttempt]);
+  const onChange = (next: boolean) => {
+    setSaving(true);
+    setError(undefined);
+    saveHostStallProfiles(next)
+      .then(setEnabled, (reason: unknown) => setError(errorText(reason)))
+      .finally(() => setSaving(false));
+  };
+  return (
+    <Row
+      id="host-stall-profiles"
+      label={t("Host CPU profiles")}
+      description={t(
+        "Save a 30-second CPU profile to the Host log folder when the event loop stalls repeatedly. Starting a profile briefly freezes the Host.",
+      )}
+      feedback={
+        error ? (
+          <SettingsFeedback
+            state="error"
+            action={{ label: t("Retry"), onClick: () => setReadAttempt((attempt) => attempt + 1) }}
+            extra={<ErrorDetails title={t("Could not confirm the Host setting.")} detail={error} />}
+          >
+            {t("Could not confirm the Host setting.")}
+          </SettingsFeedback>
+        ) : undefined
+      }
+    >
+      <Toggle
+        label={t("Host CPU profiles")}
+        on={enabled === true}
+        disabled={enabled === undefined || saving}
+        onChange={onChange}
+      />
+    </Row>
+  );
+}
 
 /**
  * Page-level "Restore defaults": the trace goes back to off. The mounted group follows through
@@ -33,10 +94,7 @@ export function DiagnosticsGroup() {
   /** Set when the last toggle took effect in this window but could not be stored. */
   const [unsaved, setUnsaved] = useState(false);
   // One operation result at a time: Copy and Clear replace each other's message.
-  const [result, setResult] = useState<"copied" | "cleared" | null>(null);
-  const [copying, setCopying] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const copyPending = useRef(false);
+  const [result, setResult] = useState<"cleared" | null>(null);
 
   // The stored preference is shared with sibling windows: follow it, and apply it here.
   useEffect(() => {
@@ -66,45 +124,26 @@ export function DiagnosticsGroup() {
     setUnsaved(loadPerformanceTraceEnabled() !== next);
   };
 
-  const onCopy = async () => {
-    if (copyPending.current) return;
-    copyPending.current = true;
-    setCopying(true);
-    setResult(null);
-    setError(null);
-    try {
-      const payload = {
-        version: 1,
-        exportedAt: new Date().toISOString(),
-        records: getPerformanceTrace(),
-      };
-      await copyText(JSON.stringify(payload, null, 2));
-      setResult("copied");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      copyPending.current = false;
-      setCopying(false);
-    }
-  };
+  const traceJson = () =>
+    JSON.stringify(
+      { version: 1, exportedAt: new Date().toISOString(), records: getPerformanceTrace() },
+      null,
+      2,
+    );
 
   const onClear = () => {
     clearPerformanceTrace();
-    setError(null);
     setResult("cleared");
   };
 
   return (
-    <Group title={null}>
+    <Group title={t("Diagnostics")}>
       <Row
         id="performance-trace"
         label={t("Performance trace")}
-        description={t("Record startup timing, rendering stalls and long main-thread tasks.")}
-        info={
-          <InfoPopover className="shrink-0">
-            <p>{t("Only durations are kept, never message text, paths or script names.")}</p>
-          </InfoPopover>
-        }
+        description={t(
+          "Record startup and rendering timings. Only durations are kept, never message text, paths or script names.",
+        )}
         feedback={
           unsaved ? (
             <SettingsFeedback
@@ -124,24 +163,27 @@ export function DiagnosticsGroup() {
       >
         <Toggle label={t("Performance trace")} on={enabled} onChange={onEnabled} />
       </Row>
-      <Row
-        id="performance-trace-data"
-        label={t("Trace data")}
-        description={t("Copy the recorded timings as JSON, or clear them.")}
-        dependsOn={enabled}
-        disabledReason={t("Turn on Performance trace first")}
-        feedback={error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : undefined}
-      >
-        <Text role="status" size="caption" tone="secondary" className="empty:hidden">
-          {result === "copied" ? t("Copied") : result === "cleared" ? t("Cleared") : ""}
-        </Text>
-        <Button className="shrink-0" onClick={onCopy} loading={copying}>
-          {t("Copy trace")}
-        </Button>
-        <Button className="shrink-0" onClick={onClear} disabled={copying}>
+      <Row id="performance-trace-data" label={t("Trace data")} dependsOn={enabled}>
+        {result === "cleared" ? (
+          <InlineMessage tone="neutral" icon={null} live="polite">
+            {t("Cleared")}
+          </InlineMessage>
+        ) : null}
+        <CopyButton
+          className="shrink-0"
+          label={t("Copy trace")}
+          text={traceJson}
+          onClick={() => setResult(null)}
+        />
+        <Button
+          className="shrink-0"
+          startIcon={<Trash2 strokeWidth={1.75} aria-hidden />}
+          onClick={onClear}
+        >
           {t("Clear")}
         </Button>
       </Row>
+      <HostStallProfilesRow />
     </Group>
   );
 }

@@ -171,7 +171,10 @@ export function createNativeServicesService() {
     } else if (method === "native.services.runtimeLogs.terminals.append")
       result = await owner.appendTerminal(params);
     else if (method === "native.services.conversation.desktop.take")
-      result = await owner.desktop.take();
+      result = await owner.desktop.take({
+        waitMs: typeof params.waitMs === "number" ? params.waitMs : undefined,
+        signal: context.signal,
+      });
     else if (method === "native.services.conversation.desktop.finish")
       result = await owner.desktop.finish(
         String(params.id ?? ""),

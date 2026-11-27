@@ -28,8 +28,19 @@ const button = (label: string) =>
   [...host.querySelectorAll<HTMLButtonElement>("button")].find(
     (node) => node.textContent?.trim() === label,
   )!;
+async function choose(option: string) {
+  const trigger = host.querySelector<HTMLButtonElement>(
+    '[data-setting-id="voice-turn-silence"] button[aria-label^="Wait before replying:"]',
+  )!;
+  await act(async () => trigger.click());
+  const item = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (node) => node.textContent === option,
+  )!;
+  expect(item, option).toBeDefined();
+  await act(async () => item.click());
+}
 
-it("opening sleep and wake keeps opt-ins untouched and preserves an uncommitted phrase draft", async () => {
+it("shows the microphone preferences without changing the saved ones", async () => {
   saveVoiceSettings({
     ...loadVoiceSettings(),
     wakeEnabled: true,
@@ -38,25 +49,33 @@ it("opening sleep and wake keeps opt-ins untouched and preserves an uncommitted 
   });
   const saved = localStorage.getItem("bycoda.voice");
   await act(async () => root.render(createElement(Fixture)));
-  const disclosure = button("Sleep and wake");
-  expect(disclosure.getAttribute("aria-expanded")).toBe("false");
-  await act(async () => disclosure.click());
-  const input = host.querySelector<HTMLInputElement>(
-    '[data-setting-id="voice-wake-phrase"] input',
-  )!;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "x");
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  await act(async () => disclosure.click());
-  await act(async () => disclosure.click());
-  expect(host.querySelector('[data-setting-id="voice-wake-phrase"] input')).toBe(input);
-  expect(input.value).toBe("x");
+  expect(
+    host.querySelector('[data-setting-id="voice-idle-sleep"]')?.closest("[hidden]"),
+  ).toBeNull();
+  expect(host.querySelector('[data-setting-id="voice-wake-phrase"]')).toBeNull();
   expect(localStorage.getItem("bycoda.voice")).toBe(saved);
   expect(change).not.toHaveBeenCalled();
 });
 
-it("keeps manual turn acknowledgement and its dependent controls intact", async () => {
+it("shows the pause choice, the memory switch and every other conversation row", async () => {
+  await act(async () => root.render(createElement(Fixture)));
+  for (const id of [
+    "voice-turn-silence",
+    "voice-memory",
+    "voice-barge-in",
+    "voice-remove-fillers",
+    "voice-hold-announcements",
+    "voice-idle-sleep",
+    "voice-return-call",
+  ])
+    expect(host.querySelector(`[data-setting-id="${id}"]`), id).not.toBeNull();
+  // The old separate switch, the listening window and the preset are gone.
+  expect(host.querySelector('[data-setting-id="voice-manual-turn-end"]')).toBeNull();
+  expect(host.querySelector('[data-setting-id="voice-return-call-seconds"]')).toBeNull();
+  expect(host.textContent).not.toContain("Apply professional preset");
+});
+
+it("ends the turn manually through the same acknowledged save and keeps the saved pause", async () => {
   saveVoiceSettings({
     ...loadVoiceSettings(),
     mode: "openai",
@@ -66,18 +85,44 @@ it("keeps manual turn acknowledgement and its dependent controls intact", async 
     turnEndSilence: 4,
   });
   await act(async () => root.render(createElement(Fixture)));
-  expect(button("Advanced turn detection").getAttribute("aria-expanded")).toBe("true");
-  const manual = host.querySelector<HTMLButtonElement>(
-    '[role="switch"][aria-label="I decide when my turn ends"]',
-  )!;
-  await act(async () => manual.click());
+  await choose("I end my turn");
   expect(loadVoiceSettings()).toMatchObject({
     manualTurnEnd: true,
     manualTurnEndRevision: 5,
     turnEndSilence: 4,
     experimentalSemanticVad: true,
   });
-  expect(host.querySelector('[data-setting-id="voice-turn-silence"] [disabled]')).not.toBeNull();
   expect(host.querySelector('[data-setting-id="voice-semantic-vad"] [disabled]')).not.toBeNull();
+  expect(host.textContent).toContain("Choose Finish turn to send your speech");
   expect(change).not.toHaveBeenCalled();
+});
+
+it("returns to automatic replies with the chosen pause and a fresh revision", async () => {
+  saveVoiceSettings({
+    ...loadVoiceSettings(),
+    manualTurnEnd: true,
+    manualTurnEndRevision: 9,
+    turnEndSilence: 1.2,
+  });
+  await act(async () => root.render(createElement(Fixture)));
+  await choose("Longer pause");
+  expect(loadVoiceSettings()).toMatchObject({ manualTurnEnd: false, manualTurnEndRevision: 10 });
+  expect(change).toHaveBeenCalledExactlyOnceWith({ turnEndSilence: 2.5 });
+});
+
+it("reaches Assistant settings with one link", async () => {
+  const open = vi.fn();
+  window.addEventListener("bycoda:open-assistant", open);
+  try {
+    await act(async () => root.render(createElement(Fixture)));
+    await act(async () => button("Assistant settings").click());
+    expect((open.mock.calls[0]![0] as CustomEvent).detail).toEqual({ tab: "settings" });
+    expect(
+      [...host.querySelectorAll("button")].filter(
+        (node) => node.textContent?.trim() === "Assistant settings",
+      ),
+    ).toHaveLength(1);
+  } finally {
+    window.removeEventListener("bycoda:open-assistant", open);
+  }
 });

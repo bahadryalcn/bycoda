@@ -1,6 +1,8 @@
+import { workspaceFailureDetail } from "../../model/workspaceActionError";
 import { remoteSessionOwnershipKey } from "../../model/sessionWindowOwnership";
 import { remoteSessionFor } from "../../../features/connections/model/connections";
 import { parseRemotePath } from "../../../features/connections/model/remoteProjects";
+import { remoteSessionProjectKey } from "../../../features/connections/model/sessionMachineTarget";
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -151,7 +153,7 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
           toast.show({
             tone: "danger",
             title: t("Could not move this window. Your workspace is still here."),
-            message: String(error),
+            message: workspaceFailureDetail(error),
           });
           return "failed" as const;
         } finally {
@@ -251,8 +253,9 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
               ...payload,
               ownershipIds: payload.sessions.flatMap((session) => {
                 const remoteId = remoteSessionFor(session.id);
-                return remoteId && parseRemotePath(session.cwd)
-                  ? [remoteSessionOwnershipKey(session.cwd, remoteId)]
+                const project = remoteSessionProjectKey(session);
+                return remoteId && parseRemotePath(project)
+                  ? [remoteSessionOwnershipKey(project, remoteId)]
                   : [];
               }),
             }),
@@ -275,7 +278,7 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
           toast.show({
             tone: "danger",
             title: t("Could not move the conversation to a new window. Your tab is still here."),
-            message: error instanceof Error ? error.message : String(error),
+            message: workspaceFailureDetail(error),
           });
           return "failed" as const;
         }

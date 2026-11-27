@@ -10,6 +10,7 @@ import {
   STATIC_LIST,
   asClient,
   bodyText,
+  openErrorDetails,
   buttonByText,
   clickButton,
   clientMock,
@@ -121,7 +122,7 @@ describe("ImportDialog account and list", () => {
       accounts: [ACCOUNT, second],
     });
 
-    expect(buttonByText("Import 1 people")?.disabled).toBe(true);
+    expect(buttonByText("Import 1 people")?.getAttribute("aria-disabled")).toBe("true");
     expect(bodyText()).toContain("Choose the account the people belong to.");
     pickOption("Account", "X · Studio");
     expect(buttonByText("Import 1 people")?.disabled).toBe(false);
@@ -163,7 +164,7 @@ describe("ImportDialog column mapping", () => {
     const mock = clientMock();
     await chosen(mock, textFile("people.csv", "handle,label,labels\nu1,Ada,vip;lead"));
 
-    expect(buttonByText("Import people")?.disabled).toBe(true);
+    expect(buttonByText("Import people")?.getAttribute("aria-disabled")).toBe("true");
     expect(bodyText()).toContain("Match the Platform ID and Name columns.");
 
     pickOption("Platform ID · Required", "handle");
@@ -178,7 +179,7 @@ describe("ImportDialog column mapping", () => {
   it("cannot import when every row has a problem and lists the problems", async () => {
     const mock = clientMock();
     await chosen(mock, textFile("people.csv", "platformId,name,email\n1,,\n2,Grace,not-an-email"));
-    expect(buttonByText("Import people")?.disabled).toBe(true);
+    expect(buttonByText("Import people")?.getAttribute("aria-disabled")).toBe("true");
     expect(bodyText()).toContain("No row can be imported. Fix the rows listed below.");
     expect(bodyText()).toContain("Row 1: No name in this row.");
     expect(bodyText()).toContain("Row 2: The email address is not valid.");
@@ -199,21 +200,21 @@ describe("ImportDialog files", () => {
   it("refuses a file over 1 MiB without reading it", async () => {
     const text = vi.fn(async () => "platformId,name\n1,Ada");
     await chosen(clientMock(), { name: "big.csv", size: 1024 * 1024 + 1, text });
-    expect(bodyText()).toContain("The import can be at most 1 MiB.");
+    expect(openErrorDetails()).toContain("The import can be at most 1 MiB.");
     expect(text).not.toHaveBeenCalled();
-    expect(buttonByText("Import people")?.disabled).toBe(true);
+    expect(buttonByText("Import people")?.getAttribute("aria-disabled")).toBe("true");
     expect(bodyText()).toContain("Choose a file first.");
   });
 
   it("explains a JSON file that is broken or is not a list", async () => {
     await chosen(clientMock(), textFile("people.json", "{not json"));
-    expect(bodyText()).toContain("The file is not valid JSON.");
+    expect(openErrorDetails()).toContain("The file is not valid JSON.");
 
     pick(textFile("people.json", '{"name":"Ada"}'));
     await flush();
     await flush();
-    expect(bodyText()).toContain("The file must contain a JSON list of people.");
-    expect(buttonByText("Import people")?.disabled).toBe(true);
+    expect(openErrorDetails()).toContain("The file must contain a JSON list of people.");
+    expect(buttonByText("Import people")?.getAttribute("aria-disabled")).toBe("true");
   });
 
   it("imports only the first 500 rows of a longer file and says so", async () => {
@@ -264,6 +265,25 @@ describe("ImportDialog files", () => {
 });
 
 describe("ImportDialog result", () => {
+  it("counts rejected rows past the report limit", async () => {
+    const rejected = Array.from({ length: 22 }, (_, index) => ({
+      row: index + 1,
+      issues: ["Row rejected."],
+    }));
+    const mock = clientMock({
+      audience: {
+        ...clientMock().audience,
+        import: vi.fn(async () => ({ imported: 1, rejected })),
+      },
+    });
+    await chosen(mock, textFile("people.csv", "platformId,name\n1,Ada"));
+    clickButton("Import 1 people");
+    await flush();
+    expect(bodyText()).toContain("Row 20: Row rejected.");
+    expect(bodyText()).not.toContain("Row 21: Row rejected.");
+    expect(bodyText()).toContain("And 2 more rows.");
+  });
+
   it("shows the Host reason, keeps the file and offers a retry when the import fails", async () => {
     const mock = clientMock({
       audience: {

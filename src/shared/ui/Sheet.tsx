@@ -1,15 +1,17 @@
 import { optionalTextAttributes, type TextRoles } from "./Text";
 import {
+  useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
   type ReactNode,
   type Ref,
+  type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
-import { GlassBackdrop } from "../../app/shell/GlassBackdrop";
 import { useT, type LanguageDomain } from "../i18n";
 import { useT as useGitT } from "../i18n/git";
 import { useT as useTechnicalT } from "../i18n/technical";
@@ -22,12 +24,27 @@ import {
   DIALOG_BODY_PADDING_CLASS_NAME,
   DIALOG_FOOTER_CLASS_NAME,
 } from "./Modal";
-import { OverlayParent, overlayContainsTarget, useOverlay } from "./overlay";
+import { floatingFrameClassName, PopupBackdrop } from "./NativePopupHost";
+import {
+  OverlayMenuLayer,
+  OverlayParent,
+  hasActiveOverlay,
+  overlayContainsTarget,
+  useOverlay,
+} from "./overlay";
+import { Button } from "./Button";
+import { X } from "./icons";
+import { PaneHeader } from "./PaneHeader";
 import { PanelHeader } from "./PanelHeader";
 import { Sash } from "./Sash";
 import styles from "./Sheet.module.css";
 
 export type SheetSide = "end" | "bottom";
+
+/** Named widths of an end sheet: a narrow detail, a form, a wide form, a workbench list. */
+export type SheetSize = "sm" | "md" | "lg" | "xl";
+
+const SIZE: Record<SheetSize, string> = { sm: "380px", md: "40rem", lg: "48rem", xl: "56rem" };
 
 export type SheetResize = {
   /** Smallest and largest width in px. */
@@ -56,6 +73,8 @@ export type SheetProps = {
    * nearest positioned ancestor (a pane); Escape closes it only when focus is in that pane.
    */
   anchor?: "viewport" | "container";
+  /** Non-modal container sheets can inherit the workspace or chat pane ground. */
+  surface?: "floating" | "canvas" | "chat";
   /** Non-modal only: `false` keeps the sheet mounted but inert and hidden from Escape. */
   open?: boolean;
   onClose: () => void;
@@ -65,18 +84,31 @@ export type SheetProps = {
   context?: ReactNode;
   /** Header actions before the close button (28px ghost icon Buttons). */
   headerActions?: ReactNode;
-  /** Non-modal only: replaces the PanelHeader (a tab strip). `title` still names the sheet. */
+  /**
+   * Non-modal only: replaces the default header (a pane's own PaneHeader with identity and
+   * actions). `false` shows no header. `title` still names the sheet. A tab strip is `tabs`.
+   */
   header?: ReactNode;
+  /**
+   * Non-modal only: a tab strip (`Tabs` with a `TabList`) in the one header row, before
+   * `headerActions` and the close action. Replaces the title, which stays the accessible name.
+   */
+  tabs?: ReactNode;
   /** Content under the header that does not scroll (a state line, filters). */
   headerBelow?: ReactNode;
   closeLabel?: string;
   /** Actions kept visible below the content. */
   footer?: ReactNode;
   children: ReactNode;
-  /** Width of an end sheet or height of a bottom sheet (px or a CSS length). */
-  size?: number | string;
+  /**
+   * Width of an end sheet: `sm` (380px), `md` (40rem), `lg` (48rem), `xl` (56rem). A bottom sheet
+   * takes its height as px or a CSS length. A `resizable` sheet starts at its `defaultSize`.
+   */
+  size?: SheetSize | number | string;
   /** Non-modal end sheets: a drag/arrow-key resize edge (shared Sash) on the inner border. */
   resizable?: SheetResize;
+  /** A non-modal container end sheet can fill its pane and restore its previous width. */
+  expanded?: boolean;
   /** Non-modal: a pointer press outside closes the sheet. Default true. */
   dismissOnOutside?: boolean;
   /** Non-modal viewport: presses inside this element or selector are not outside (the trigger). */
@@ -88,7 +120,7 @@ export type SheetProps = {
    * Non-modal: defaults to the sheet itself. `false` (non-modal) leaves focus where it is.
    */
   initialFocus?: string | false;
-  /** Non-modal viewport layer. Defaults to `LAYER.dialog`. */
+  /** Non-modal viewport layer. Defaults to `LAYER.dialog`; menus and tooltips inside stack just above it. */
   layer?: number;
   /** Non-modal viewport: distance from the top and bottom window edges (title and status bars). */
   inset?: { top?: number | string; bottom?: number | string };
@@ -103,7 +135,7 @@ export type SheetProps = {
   languageDomain?: LanguageDomain;
   /** Classes on the sheet surface (`section`). */
   className?: string;
-  /** Extra classes on the floating glass layer (the shared `popover-backdrop` stays). */
+  /** Extra classes on the floating backdrop. The shared ground stays opaque. */
   glassClassName?: string;
   /** Classes on the content column inside the glass. */
   bodyClassName?: string;
@@ -120,12 +152,46 @@ function assign<T>(ref: Ref<T> | undefined, value: T | null) {
   else if (ref) (ref as { current: T | null }).current = value;
 }
 
-const cssSize = (value: number | string) => (typeof value === "number" ? `${value}px` : value);
+const cssSize = (value: number | string) =>
+  typeof value === "number" ? `${value}px` : value in SIZE ? SIZE[value as SheetSize] : value;
+
+/**
+ * Container sheets stay off the overlay stack, so they return focus themselves: the control that
+ * had focus when the sheet opened gets it back once the sheet closes or unmounts. Focus that is
+ * lost (body) or still inside the closed sheet is restored; focus the user or another overlay
+ * already moved elsewhere is left alone.
+ */
+function useContainerFocusReturn(sheet: RefObject<HTMLElement | null>, active: boolean) {
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Capture the DOM focus owner before paint and restore it when the sheet closes.
+  useLayoutEffect(() => {
+    const node = sheet.current;
+    if (!active || !node) return;
+    const opener =
+      document.activeElement instanceof HTMLElement &&
+      document.activeElement !== document.body &&
+      !node.contains(document.activeElement)
+        ? document.activeElement
+        : null;
+    if (!opener) return;
+    return () => {
+      // After the commit, so the sheet cannot reclaim focus first and a stacked overlay opened by
+      // the same interaction has already taken it.
+      queueMicrotask(() => {
+        const current = document.activeElement;
+        const lost = !current || current === document.body || current === document.documentElement;
+        if (!lost && !node.contains(current)) return;
+        if (hasActiveOverlay() || !opener.isConnected || opener.closest("[inert], [hidden]"))
+          return;
+        opener.focus({ preventScroll: true });
+      });
+    };
+  }, [sheet, active]);
+}
 
 /**
  * A side or bottom sheet. Modal sheets reuse Modal; both share the body `padding` rule. Non-modal sheets are
  * side panels that keep the page usable (session sub-panels, the notification list). Header is the
- * shared PanelHeader; the surface is the shared floating glass (`popover-backdrop`).
+ * shared PanelHeader. Detached sheets use the floating frame. Docked sheets use the host canvas.
  * Hand-written side and bottom overlay panels; header, close, padding and footer reuse Modal chrome.
  * @group overlay
  * @use A detail or secondary panel beside or below the work (task detail, notifications).
@@ -194,6 +260,7 @@ function NonModalSheet({
   role = "dialog",
   side = "end",
   anchor = "viewport",
+  surface: fill = "floating",
   open = true,
   onClose,
   title,
@@ -201,12 +268,14 @@ function NonModalSheet({
   context,
   headerActions,
   header,
+  tabs,
   headerBelow,
   closeLabel,
   footer,
   children,
   size,
   resizable,
+  expanded,
   dismissOnOutside = true,
   ignore,
   escapeScope,
@@ -247,6 +316,8 @@ function NonModalSheet({
   // inside are its children and focus returns to the opener. Container panels stay out of it,
   // so a sheet in one pane never takes Escape from another.
   const overlayId = useOverlay(sheet, false, onClose, viewport && open);
+  const inheritedMenuLayer = useContext(OverlayMenuLayer);
+  useContainerFocusReturn(sheet, !viewport && open);
 
   // Container: Escape from anywhere in this pane (or the body) closes the sheet.
   useEffect(() => {
@@ -290,15 +361,37 @@ function NonModalSheet({
   }, [open, initialFocus]);
 
   const end = side === "end";
+  // Without a tab strip or a caller header, the title row names the sheet.
+  const titled = header === undefined && tabs == null;
+  const closeText = closeLabel ?? t("Close");
+  const closeAction = (
+    <Button
+      type="button"
+      iconOnly
+      size="sm"
+      label={closeText}
+      shortcut="Esc"
+      variant="ghost"
+      onClick={onClose}
+    >
+      <X className="size-3.5" strokeWidth={1.75} />
+    </Button>
+  );
+  const fillsPane = end && !viewport && expanded;
+  const docked = !viewport && fill !== "floating";
   const sized = width !== undefined ? width : size;
-  const sizeStyle: CSSProperties =
-    sized === undefined
+  const endCap = "min(100%, max(20rem, 94%))";
+  const sizeStyle: CSSProperties = fillsPane
+    ? { inlineSize: "100%" }
+    : sized === undefined
       ? end
-        ? { inlineSize: "min(34rem, 94%)" }
+        ? { inlineSize: `min(34rem, ${endCap})` }
         : {}
       : end
-        ? { inlineSize: `min(${cssSize(sized)}, 94%)` }
+        ? { inlineSize: `min(${cssSize(sized)}, ${endCap})` }
         : { blockSize: cssSize(sized) };
+  const blockInset = (value: number | string | undefined) =>
+    typeof value === "string" ? value : `${value ?? 0}px`;
   const position: CSSProperties = viewport
     ? end
       ? {
@@ -312,6 +405,7 @@ function NonModalSheet({
           position: "fixed",
           insetInline: 0,
           insetBlockEnd: inset?.bottom ?? 0,
+          maxBlockSize: `max(0px, calc(100dvh - ${blockInset(inset?.top)} - ${blockInset(inset?.bottom)}))`,
           marginInline: "auto",
           zIndex: layer,
         }
@@ -321,11 +415,18 @@ function NonModalSheet({
           position: "absolute",
           insetInline: 0,
           insetBlockEnd: 0,
+          maxBlockSize: "100%",
           marginInline: "auto",
         };
-  const frame = end
-    ? `border-s border-(--ui-pane-border) ${viewport ? "" : "rounded-s-(--ui-radius-popup)"}`
-    : "w-full max-w-4xl rounded-t-(--ui-radius-popup) border border-b-0 border-(--ui-pane-border)";
+  const frame = docked
+    ? end
+      ? "border-s border-(--ui-pane-border)"
+      : "border-t border-(--ui-pane-border)"
+    : end
+      ? viewport
+        ? "rounded-none border-s"
+        : "rounded-e-none border-s"
+      : "w-full max-w-4xl rounded-b-none border border-b-0";
 
   const surface = (
     <section
@@ -334,29 +435,34 @@ function NonModalSheet({
         assign(ref, node);
       }}
       role={role}
-      aria-labelledby={header ? undefined : titleId}
-      aria-label={header ? title : undefined}
+      aria-labelledby={titled ? titleId : undefined}
+      aria-label={titled ? undefined : title}
       tabIndex={-1}
       data-sheet-side={side}
       data-sheet-motion={motion}
+      data-sheet-surface={fill}
+      data-sheet-docked={docked || undefined}
       data-state={open ? "open" : "closed"}
       // A closed sheet a caller keeps mounted (to keep its content) must not stay painted.
       hidden={!open}
       style={{ ...position, ...sizeStyle }}
       className={[
         styles.sheet,
-        "isolate flex flex-col shadow-(--ui-elevation-floating) outline-none",
+        "isolate flex min-h-0 flex-col outline-none",
+        !docked && floatingFrameClassName,
         frame,
         className,
       ]
         .filter(Boolean)
         .join(" ")}
     >
-      <GlassBackdrop
-        ref={glassRef}
-        className={["popover-backdrop", glassClassName].filter(Boolean).join(" ")}
-      />
-      {resizable && end ? (
+      {!docked ? (
+        <PopupBackdrop
+          ref={fill === "floating" ? glassRef : undefined}
+          className={fill === "floating" ? glassClassName : undefined}
+        />
+      ) : null}
+      {resizable && end && !fillsPane ? (
         <Sash
           orientation="vertical"
           appearance="hidden"
@@ -401,22 +507,49 @@ function NonModalSheet({
         ref={bodyRef}
         {...optionalTextAttributes(bodyText ?? {})}
         className={[
-          "relative z-[1] flex h-full min-h-0 flex-col text-(--ui-tone-neutral-fg)",
+          "relative z-[1] flex min-h-0 flex-1 flex-col text-(--ui-tone-neutral-fg)",
           optionalTextAttributes(bodyText ?? {}, bodyClassName).className,
         ]
           .filter(Boolean)
           .join(" ")}
       >
-        {header ?? (
+        {header !== undefined ? (
+          header
+        ) : tabs != null ? (
+          <PaneHeader
+            actions={
+              <>
+                {headerActions}
+                {closeAction}
+              </>
+            }
+          >
+            {tabs}
+          </PaneHeader>
+        ) : fill === "canvas" ? (
+          <PaneHeader
+            title={title}
+            titleId={titleId}
+            actions={
+              <>
+                {headerActions}
+                {closeAction}
+              </>
+            }
+          />
+        ) : (
           <PanelHeader
             className={DIALOG_HEADER_CLASS_NAME}
             title={title}
             titleId={titleId}
             context={context}
             description={description}
-            actions={headerActions}
-            onClose={onClose}
-            closeLabel={closeLabel ?? t("Close")}
+            actions={
+              <>
+                {headerActions}
+                {closeAction}
+              </>
+            }
           />
         )}
         {headerBelow ? <div className="shrink-0 px-4 pb-2">{headerBelow}</div> : null}
@@ -433,7 +566,7 @@ function NonModalSheet({
             (padding ?? (scroll === "none" ? "none" : "md")) === "md"
               ? DIALOG_BODY_PADDING_CLASS_NAME
               : "",
-            `border-t ${scrolled ? "border-(--ui-tone-neutral-border)" : "border-transparent"}`,
+            `border-t ${scrolled ? "border-(--ui-pane-border)" : "border-transparent"}`,
           ]
             .filter(Boolean)
             .join(" ")}
@@ -447,13 +580,19 @@ function NonModalSheet({
     </section>
   );
 
+  // A sheet above the popover layer lifts its own menus and tooltips just above it; one at or
+  // below keeps the inherited floor.
+  const menuLayer =
+    layer > LAYER.popover ? Math.max(inheritedMenuLayer, layer + 1) : inheritedMenuLayer;
   if (viewport)
     return createPortal(
-      <OverlayParent.Provider value={overlayId}>
-        <div inert={!open} data-state={open ? "open" : "closed"} className="contents">
-          {surface}
-        </div>
-      </OverlayParent.Provider>,
+      <OverlayMenuLayer.Provider value={menuLayer}>
+        <OverlayParent.Provider value={overlayId}>
+          <div inert={!open} data-state={open ? "open" : "closed"} className="contents">
+            {surface}
+          </div>
+        </OverlayParent.Provider>
+      </OverlayMenuLayer.Provider>,
       document.body,
     );
   return (

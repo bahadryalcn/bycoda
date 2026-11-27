@@ -10,6 +10,7 @@ import {
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Modal } from "../../../shared/ui/Modal";
 import { Surface } from "../../../shared/ui/Surface";
 import "./connections-settings.css";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -17,23 +18,28 @@ import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { SshSetupPromptForm } from "./SshSetupPromptForm";
 import { useConnectionRequestInbox } from "./useConnectionRequestInbox";
 import { useSshSetupJob } from "./useSshSetupJob";
+import { sshSetupSuccessNotice } from "../model/hostLifecycleMode";
 import { useMachineProbes } from "./useMachineProbes";
 import { RemoteOutboxNotice } from "./RemoteOutboxNotice";
 import { LocalHostUpdateNotice } from "./LocalHostUpdateNotice";
-import { PhoneConnectionPanel } from "./PhoneConnectionPanel";
+import { PairedDevicesPanel } from "./PairedDevicesPanel";
 import { ExternalTunnelsPanel } from "./ExternalTunnelsPanel";
 import { RemoteDataStatus } from "./RemoteDataStatus";
 import { EMPTY_SSH_DRAFT, MachineForm, type MachineMethod, type SshDraft } from "./MachineForm";
 import { MachineRow } from "./MachineRow";
-import { DiscoveredMachines } from "./DiscoveredMachines";
+import { MACHINE_SEARCH_FROM } from "./machineListSearch";
+import { AddComputerDialog } from "./AddComputerDialog";
 import type { SshAddPlan } from "../model/machineCandidates";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { UpdateImpact } from "./UpdateImpact";
 import { confirmInApp } from "../../../shared/model/appConfirm";
 import { RemoveMachineDialog } from "./RemoveMachineDialog";
+import { errorText } from "../../../shared/lib/errors";
+import { sanitizeConnectionError } from "../model/remoteConnection";
 import { useContext, useRef, useState } from "react";
-import { Plus, RefreshCw } from "../../../shared/ui/icons";
+import { Plus } from "../../../shared/ui/icons";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import {
   connectMachine,
   disconnectMachine,
@@ -125,9 +131,9 @@ export function ConnectionsSettings() {
       if (next.error)
         setError(
           afterEdit.current
-            ? `${next.error}
+            ? `${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}
 
-${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
+${next.error}`
             : next.error,
         );
       else if (next.machine) {
@@ -137,18 +143,19 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
         if (submitted)
           setAddDraft((current) => (current === submitted ? EMPTY_SSH_DRAFT : current));
         setNotice(
-          afterEdit.current
-            ? t("{p0} is connected through its new address.", {
-                p0: next.machine.name,
-              })
-            : updatingMachine
-              ? t("{p0} was updated and reconnected.", {
+          sshSetupSuccessNotice(
+            afterEdit.current
+              ? t("{p0} is connected through its new address.", {
                   p0: next.machine.name,
                 })
-              : t(
-                  "{p0} is connected. To work on it, click + next to Projects in the project rail and choose Open folder on a machine.",
-                  { p0: next.machine.name },
-                ),
+              : updatingMachine
+                ? t("{p0} was updated and reconnected.", {
+                    p0: next.machine.name,
+                  })
+                : t("{p0} is connected.", { p0: next.machine.name }),
+            next,
+            next.machine.name,
+          ),
         );
         setUpdatingMachine(undefined);
         setStatus((current) => ({
@@ -163,7 +170,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
       submittedAddDraft.current = undefined;
     },
     onFailed: (reason) => {
-      setError(String(reason));
+      setError(sanitizeConnectionError(errorText(reason)));
       submitting.current = false;
       setBusy(false);
       submittedAddDraft.current = undefined;
@@ -211,7 +218,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
         }
       : sshFields(false);
     const parsed = machine ? undefined : parseMachineDraft(fields);
-    if (parsed && !parsed.ok) return setError(t(parsed.error));
+    if (parsed && !parsed.ok) return setError(parsed.error);
     submitting.current = true;
     submittedAddDraft.current = machine || plan ? undefined : addDraft;
     afterEdit.current = edited;
@@ -221,10 +228,10 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
     clearSnapshot();
     setConnectionName(machine?.name ?? (fields.name.trim() || fields.target.trim()));
     setRemoving(undefined);
-    if (machine || plan) {
-      setAdding(false);
-      setEditing(undefined);
-    }
+    // The connection shows its progress and prompts on the page, so the add dialog closes;
+    // a typed address keeps its draft until the connection succeeds.
+    setAdding(false);
+    setEditing(undefined);
     setRetryMachine(machine);
     setUpdatingMachine(upgrade ? machine?.id : undefined);
     try {
@@ -238,6 +245,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             name: fields.name.trim(),
             port: fields.port ? Number(fields.port) : null,
             alternate: parsed?.ok ? parsed.value.alternate : null,
+            ...(plan?.environmentId ? { expectedEnvironmentId: plan.environmentId } : {}),
           });
       if (!alive.current) {
         await cancel(id);
@@ -248,7 +256,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
       submitting.current = false;
       afterEdit.current = false;
       if (alive.current) {
-        setError(String(reason));
+        setError(sanitizeConnectionError(errorText(reason)));
         setBusy(false);
       }
     }
@@ -265,7 +273,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
         setAdding(false);
         setNotice(t("{p0} is connected.", { p0: machine.name }));
       })
-      .catch((reason) => setError(String(reason)))
+      .catch((reason) => setError(sanitizeConnectionError(errorText(reason))))
       .finally(() => setBusy(false));
   };
   const startEdit = (machine: RemoteMachine) => {
@@ -298,20 +306,13 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
     setNotice("");
     setRemoving(undefined);
   };
-  // Other views send "add a machine" here; the found machines are the way in.
-  const candidatesRef = useRef<HTMLDivElement>(null);
-  const showCandidates = () => {
-    closeForm();
-    setView("machines");
-    candidatesRef.current?.scrollIntoView?.({ block: "nearest" });
-  };
   // Saving is the user's own action, so it connects even when automatic
   // reconnecting is off. The connection runs as a setup job, the same one
   // Reconnect uses, which is where a new host key or password is answered.
   const save = async () => {
     if (!editing || busy) return;
     const parsed = parseMachineDraft(sshFields(true));
-    if (!parsed.ok) return setError(t(parsed.error));
+    if (!parsed.ok) return setError(parsed.error);
     const impact = editImpact(editing, parsed.value);
     if (!impact.changed) return closeForm();
     setBusy(true);
@@ -324,13 +325,14 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
       else setNotice(t("{p0} was renamed.", { p0: saved.name }));
     } catch (reason) {
       setBusy(false);
-      setError(String(reason));
+      setError(sanitizeConnectionError(errorText(reason)));
     }
   };
   useConnectionRequestInbox({
     machines,
     busy,
-    onAdd: showCandidates,
+    // Other views send "add a machine" here; the add dialog opens on the found computers.
+    onAdd: startAdd,
     onEdit: startEdit,
     onReconnect: (machine) => void begin(machine),
   });
@@ -343,8 +345,12 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
         try {
           await remoteRequest(machine.id, "devices.revokeSelf");
         } catch (reason) {
+          // The sentence is the reason; the raw cause follows a blank line and waits behind Details.
           throw new Error(
-            `Could not revoke access, so ${machine.name} was not removed: ${String(reason)}. Reconnect and try again, or remove it from this desktop only and revoke it on the host with bycoda-host devices and bycoda-host revoke <device-id>.`,
+            `${t(
+              "{p0} was not removed because access could not be revoked. Reconnect and try again, or remove it from this desktop only and revoke it on the host with bycoda-host devices and bycoda-host revoke <device-id>.",
+              { p0: machine.name },
+            )}\n\n${sanitizeConnectionError(errorText(reason))}`,
           );
         }
       }
@@ -362,11 +368,14 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             ),
       );
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(sanitizeConnectionError(errorText(reason)));
     } finally {
       if (alive.current) setRevoking(false);
     }
   };
+  // A failure is "reason" + blank line + "cause": the reason is the body, the cause waits behind Details.
+  const [errorReason = "", ...errorRest] = error.split("\n\n");
+  const errorParts = { reason: errorReason, cause: errorRest.join("\n\n").trim() };
   const removingMachine = removing
     ? machines.find((machine) => machine.id === removing)
     : undefined;
@@ -415,15 +424,30 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
       >
         <TabList label={t("Connections")}>
           <Tab value="machines">{t("Computers")}</Tab>
-          <Tab value="phone">{t("Phone")}</Tab>
+          <Tab value="phone">{t("Devices")}</Tab>
           <Tab value="tunnels">{t("Sharing")}</Tab>
         </TabList>
-        {busy || revoking ? (
-          <InlineMessage tone="neutral" icon={null} live="off">
-            {t("Finish or cancel the current connection before adding another machine.")}
-          </InlineMessage>
-        ) : null}
         <TabPanel value="machines" keepMounted tabIndex={-1} className="connections-view">
+          <SectionLabel
+            as="h2"
+            count={shownMachines.length || undefined}
+            actions={
+              <Button
+                variant="primary"
+                disabled={busy || revoking}
+                disabledReason={
+                  busy || revoking ? t("Wait for the current action to finish.") : undefined
+                }
+                aria-haspopup="dialog"
+                onClick={startAdd}
+              >
+                <Plus aria-hidden className="icon-sm" />
+                {t("Add a computer")}
+              </Button>
+            }
+          >
+            {t("Your computers")}
+          </SectionLabel>
           {loadError ? (
             <RemoteDataStatus
               label={t("machines")}
@@ -431,46 +455,20 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
               onRefresh={refresh}
             />
           ) : null}
-          <div className="flex items-center gap-2">
+          {/* Search earns its row only once the list is long enough to scan. */}
+          {machines.length > MACHINE_SEARCH_FROM || query ? (
             <SearchInput
               standalone
               appearance="field"
-              containerClassName="min-w-0 flex-1"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               textSize="secondary"
-              placeholder={t("Search connections")}
-              aria-label={t("Search connections")}
+              placeholder={t("Search computers")}
+              aria-label={t("Search computers")}
             />
-            <Button
-              stableWidth
-              iconOnly
-              label={t("Refresh")}
-              variant="ghost"
-              disabled={busy || loading}
-              onClick={() => void refresh()}
-            >
-              <RefreshCw aria-hidden className="icon-md" />
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={busy && !(adding && !editing)}
-              aria-expanded={adding && !editing}
-              onClick={() => (adding && !editing ? closeForm() : startAdd())}
-            >
-              <Plus aria-hidden className="icon-sm" />
-              {t("Add manually")}
-            </Button>
-          </div>
-          {editing ? null : machineForm}
+          ) : null}
           {busy && jobId && (
-            <Surface
-              variant="card"
-              padding="lg"
-              className="flex flex-col gap-3"
-              role="status"
-              ref={progress}
-            >
+            <Surface variant="card" padding="lg" className="flex flex-col gap-3" ref={progress}>
               <Text wrap="anywhere" as="div" size="secondary" tone="primary" weight="medium">
                 {connectionName}
               </Text>
@@ -483,7 +481,10 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                 type="button"
                 className="self-start"
                 onClick={() => {
-                  if (jobId) void cancel(jobId).catch((reason) => setError(String(reason)));
+                  if (jobId)
+                    void cancel(jobId).catch((reason) =>
+                      setError(sanitizeConnectionError(errorText(reason))),
+                    );
                 }}
                 variant="ghost"
               >
@@ -491,87 +492,111 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
               </Button>
             </Surface>
           )}
-          {error && !adding && !removing && <Alert tone="danger">{error}</Alert>}
-          {error && !adding && !busy && retryMachine ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <Text tone="muted">{t("Remote target: {p0}", { p0: retryMachine.name })}</Text>
-              <Button
-                stableWidth
-                variant="secondary"
-                className="shrink-0"
-                onClick={() => startEdit(retryMachine)}
-              >
-                {t("Edit name and address…")}
-              </Button>
-              <Button
-                stableWidth
-                variant="secondary"
-                className="shrink-0"
-                onClick={() => void begin(retryMachine)}
-              >
-                {t("Retry connection")}
-              </Button>
-            </div>
+          {error && !adding && !removing ? (
+            <Alert
+              tone="danger"
+              title={!busy && retryMachine ? retryMachine.name : undefined}
+              action={
+                !busy && retryMachine
+                  ? { label: t("Retry connection"), onClick: () => void begin(retryMachine) }
+                  : undefined
+              }
+              secondaryAction={
+                !busy && retryMachine
+                  ? { label: t("Edit name and address…"), onClick: () => startEdit(retryMachine) }
+                  : undefined
+              }
+              extra={
+                errorParts.cause ? (
+                  <ErrorDetails title={errorParts.reason} detail={errorParts.cause} />
+                ) : undefined
+              }
+            >
+              {errorParts.reason}
+            </Alert>
           ) : null}
           {notice && <InlineMessage tone="success">{notice}</InlineMessage>}
-          <section aria-label={t("Your connections")} className="flex flex-col gap-2">
-            <SectionLabel count={shownMachines.length || undefined}>
-              {t("Your connections")}
-            </SectionLabel>
-            {shownMachines.length > 0 ? (
-              <Surface variant="card" padding="none" dividers="card" className="overflow-hidden">
-                {shownMachines.map((machine) => (
-                  <MachineRow
-                    key={machine.id}
-                    machine={machine}
-                    machines={machines}
-                    probed={status[machine.id]}
-                    version={versions[machine.id]}
-                    needsUpdate={Boolean(needsUpdate[machine.id])}
-                    showDetails={
-                      detailMachine === machine.id ||
-                      status[machine.id] === "offline" ||
-                      Boolean(needsUpdate[machine.id])
-                    }
-                    editing={editing?.id === machine.id}
-                    busy={busy}
-                    revoking={revoking}
-                    menuOpen={rowMenu?.machine.id === machine.id}
-                    onUpdateHost={() => void begin(machine, true)}
-                    onReconnect={() => void begin(machine)}
-                    onSyncNow={() => void syncNow(machine.id)}
-                    onToggleDetails={() =>
-                      setDetailMachine((current) =>
-                        current === machine.id ? undefined : machine.id,
-                      )
-                    }
-                    onToggleMenu={(anchor) =>
-                      setRowMenu(
-                        rowMenu?.machine.id === machine.id ? undefined : { machine, anchor },
-                      )
-                    }
+          <section aria-label={t("Your computers")}>
+            <div className="connections-management-grid">
+              {shownMachines.length > 0 ? (
+                <Surface variant="card" padding="none" dividers="card" className="min-w-0">
+                  {shownMachines.map((machine) => (
+                    <MachineRow
+                      key={machine.id}
+                      machine={machine}
+                      machines={machines}
+                      probed={status[machine.id]}
+                      version={versions[machine.id]}
+                      needsUpdate={Boolean(needsUpdate[machine.id])}
+                      showDetails={detailMachine === machine.id}
+                      editing={editing?.id === machine.id}
+                      busy={busy}
+                      revoking={revoking}
+                      menuOpen={rowMenu?.machine.id === machine.id}
+                      onUpdateHost={() => void begin(machine, true)}
+                      onReconnect={() => void begin(machine)}
+                      onSyncNow={() => void syncNow(machine.id)}
+                      onToggleDetails={() =>
+                        setDetailMachine((current) =>
+                          current === machine.id ? undefined : machine.id,
+                        )
+                      }
+                      onToggleMenu={(anchor) =>
+                        setRowMenu(
+                          rowMenu?.machine.id === machine.id ? undefined : { machine, anchor },
+                        )
+                      }
+                    />
+                  ))}
+                </Surface>
+              ) : loaded && !loading && !loadError ? (
+                needle ? (
+                  <EmptyState
+                    size="inline"
+                    kind="filtered"
+                    description={t("No matches")}
+                    onReset={() => setQuery("")}
                   />
-                ))}
-              </Surface>
-            ) : loaded && !loading && !loadError ? (
-              <EmptyState
-                size="inline"
-                kind="empty"
-                description={needle ? t("No matches") : t("No connections yet")}
-              />
-            ) : null}
-            {editing ? machineForm : null}
+                ) : (
+                  <EmptyState
+                    kind="empty"
+                    illustration={false}
+                    title={t("No computers yet")}
+                    description={t("Add a computer to open its projects and sessions from here.")}
+                  />
+                )
+              ) : (
+                <div>{loading ? <LoadingText /> : null}</div>
+              )}
+              <div>
+                <RemoteReconnectGroup />
+              </div>
+            </div>
           </section>
-          <div ref={candidatesRef}>
-            <DiscoveredMachines
+          {editing && view === "machines" ? (
+            <Modal
+              title={t("Edit {p0}", { p0: editing.name })}
+              size="md"
+              closeDisabled={busy}
+              onClose={closeForm}
+            >
+              {machineForm}
+            </Modal>
+          ) : null}
+          {adding && !editing && view === "machines" ? (
+            <AddComputerDialog
               saved={machines}
-              active={view === "machines"}
               busy={busy || revoking}
-              query={query}
+              form={machineForm}
+              initialView={addDraft.target.trim() || method === "url" ? "manual" : "found"}
               onAdd={(plan) => void begin(undefined, false, false, plan)}
-              onPaired={() => void refresh()}
+              onPaired={() => {
+                closeForm();
+                void refresh();
+              }}
+              onClose={closeForm}
             />
-          </div>
+          ) : null}
           {rowMenu ? (
             <DropdownMenu
               anchor={rowMenu.anchor}
@@ -634,7 +659,6 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
               onConfirm={(revoke) => void remove(removingMachine, revoke)}
             />
           ) : null}
-          <RemoteReconnectGroup />
         </TabPanel>
         {visited.includes("phone") ? (
           <TabPanel
@@ -645,7 +669,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             tabIndex={-1}
             className="connections-view"
           >
-            <PhoneConnectionPanel
+            <PairedDevicesPanel
               active={view === "phone"}
               machines={machines}
               loaded={loaded}
@@ -663,7 +687,12 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             tabIndex={-1}
             className="connections-view"
           >
-            <ExternalTunnelsPanel machines={machines} loaded={loaded} loading={loading} />
+            <ExternalTunnelsPanel
+              machines={machines}
+              loaded={loaded}
+              loading={loading}
+              active={view === "tunnels"}
+            />
           </TabPanel>
         ) : null}
       </Tabs>

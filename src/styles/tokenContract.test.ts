@@ -1,12 +1,13 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { mixInOklab } from "../features/settings/model/accentContrast";
 import { hslToRgb } from "../shared/lib/colorUtils";
 
 /**
  * Token contract: reads the real declarations from index.css, arc.css and the shared module CSS,
  * then measures contrast with the values it finds, so a value change fails here instead of
- * drifting from a hand-typed mirror. Ink steps mix in sRGB (the declared `in srgb` mixes are exact;
- * the neutral ground/ink pairs here are near-grey, so the oklab ones differ by less than the margins).
+ * drifting from a hand-typed mirror. The floating and on-state recipes use Oklab; the
+ * near-neutral state and focus steps use an sRGB approximation.
  */
 const index = readFileSync("src/styles/index.css", "utf8");
 const arc = readFileSync("src/styles/arc.css", "utf8");
@@ -22,6 +23,12 @@ const fromHsl = (h: number, s: number, l: number): Rgb => {
 };
 const mix = (host: Rgb, ink: Rgb, percent: number): Rgb =>
   host.map((c, i) => c + (ink[i]! - c) * (percent / 100)) as Rgb;
+const toHex = (rgb: Rgb) =>
+  `#${rgb.map((value) => Math.round(value).toString(16).padStart(2, "0")).join("")}`;
+const mixOklab = (host: Rgb, ink: Rgb, percent: number): Rgb => {
+  const hex = mixInOklab(toHex(host), toHex(ink), percent / 100);
+  return [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16)) as Rgb;
+};
 const lum = (rgb: Rgb) => {
   const [r, g, b] = rgb.map((c) => {
     const v = c / 255;
@@ -49,6 +56,8 @@ const [chipDark, chipLight] = all(/--ui-tone-subtle-strength: (\d+)%;/g);
 const floatingPure = num(
   /html\[data-canvas-background="pure"\] \{[\s\S]*?--ui-surface-floating: color-mix\(\s*in srgb,\s*var\(--color-content\) calc\((\d+)%/,
 );
+const hue = num(/--theme-hue: (\d+);/);
+const saturation = num(/--theme-saturation: (\d+)%;/);
 const composerPure = num(
   /html\[data-canvas-background="pure"\] \{[\s\S]*?--ui-composer-surface: color-mix\(in srgb, var\(--color-content\) (\d+)%/,
 );
@@ -60,14 +69,13 @@ const focusInk = num(
   arc,
 );
 const controlOnInk = num(
-  /--control-on: var\(\s*--user-accent-solid,\s*var\(\s*--user-accent-color,\s*color-mix\(in oklab, var\(--color-content\) (\d+)%/,
-  arc,
+  /--ui-control-on: var\(\s*--user-accent-solid,\s*var\(\s*--user-accent-color,\s*color-mix\(in oklab, var\(--color-content\) (\d+)%/,
 );
 
 const themes = {
   dark: {
     ground: [0, 0, 0] as Rgb,
-    ink: fromHsl(216, 24, 92),
+    ink: fromHsl(hue, saturation, 92),
     hover: hoverDark!,
     selected: selectedDark!,
     pressed: pressedDark!,
@@ -76,7 +84,7 @@ const themes = {
   },
   light: {
     ground: [255, 255, 255] as Rgb,
-    ink: fromHsl(216, 24 * 0.35, 13),
+    ink: fromHsl(hue, saturation * 0.35, 13),
     hover: hoverLight!,
     selected: selectedLight!,
     pressed: pressedLight!,
@@ -120,21 +128,20 @@ describe.each(Object.entries(themes))("%s pure canvas token contract", (_name, t
   });
 
   it("draws the neutral on-state and its glyph at 3:1 (SU-18)", () => {
-    const on = mix(t.ground, t.ink, controlOnInk);
+    const on = mixOklab(t.ground, t.ink, controlOnInk);
     expect(ratio(on, t.ground)).toBeGreaterThanOrEqual(3);
     expect(ratio(on, t.ground)).toBeLessThan(ratio(t.ink, t.ground));
   });
 });
 
 describe("pure dark floating role (SU-07)", () => {
-  const ink = themes.dark.ink;
-  const ground = themes.dark.ground;
+  const { ink, ground, selected } = themes.dark;
   const floating = mix(ground, ink, floatingPure);
 
   it("sits at or above the composer and card steps it floats over", () => {
     expect(floatingPure).toBeGreaterThanOrEqual(composerPure);
     expect(floatingPure).toBeGreaterThan(cardPure);
-    expect(floatingPure).toBeGreaterThan(themes.dark.selected);
+    expect(floatingPure).toBeGreaterThan(selected);
     expect(ratio(floating, ground)).toBeGreaterThanOrEqual(1.1);
   });
 });
@@ -156,6 +163,45 @@ describe("shared declarations", () => {
   it("checked menu items show the glyph, not the selected fill (SU-20)", () => {
     const rows = readFileSync("src/shared/ui/ListRow.module.css", "utf8");
     expect(rows).toContain('[aria-checked="true"]:not([role^="menuitem"])');
+  });
+
+  it("sets no custom property only under the light theme, apart from the light-only knobs", () => {
+    // Walks index.css blocks: a variable declared solely inside html.theme-light has no dark value.
+    const source = index.replace(/\/\*[\s\S]*?\*\//g, "");
+    const stack: string[] = [];
+    const seen = new Map<string, { light: boolean; other: boolean }>();
+    let chunk = "";
+    for (const ch of source) {
+      if (ch === "{") {
+        stack.push(chunk.trim());
+        chunk = "";
+      } else if (ch === "}") {
+        stack.pop();
+        chunk = "";
+      } else if (ch === ";") {
+        const name = /^\s*(--[\w-]+)\s*:/.exec(chunk)?.[1];
+        if (name && stack.length > 0) {
+          const light = /theme-light/.test(stack.join(" "));
+          const entry = seen.get(name) ?? { light: false, other: false };
+          if (light) entry.light = true;
+          else entry.other = true;
+          seen.set(name, entry);
+        }
+        chunk = "";
+      } else {
+        chunk += ch;
+      }
+    }
+    const lightOnly = [...seen]
+      .filter(([, entry]) => entry.light && !entry.other)
+      .map(([name]) => name)
+      .sort();
+    // --ui-diff-fg-ink is only read by light diff palettes; the --theme-light-* knobs name the theme.
+    expect(lightOnly).toEqual([
+      "--theme-light-lightness",
+      "--theme-light-saturation",
+      "--ui-diff-fg-ink",
+    ]);
   });
 
   it("skeleton bars use the translucent fill role, not a state role (SU-06)", () => {

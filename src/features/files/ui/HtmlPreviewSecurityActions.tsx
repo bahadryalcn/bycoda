@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
 import { t } from "../../../shared/i18n/technical";
+import { errorText } from "../../../shared/lib/errors";
 import { Button } from "../../../shared/ui/Button";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { ExternalLink } from "../../../shared/ui/icons";
 
@@ -20,7 +21,7 @@ export function HtmlPreviewSecurityActions({ path }: { path: string }) {
       const { openPathWithDefaultApp } = await import("../../../platform/tauri/fs");
       await openPathWithDefaultApp(path);
     } catch (cause) {
-      setError(String(cause));
+      setError(errorText(cause));
     } finally {
       pending.current = false;
       setOpening(false);
@@ -28,13 +29,11 @@ export function HtmlPreviewSecurityActions({ path }: { path: string }) {
   };
   return (
     <div className="flex min-w-0 items-center gap-1">
-      <InfoPopover label={t("Preview restrictions")}>
-        <p>
-          {t(
-            "This sandbox restricts external data requests and hidden files. Open a saved HTML file in its default app when it needs those resources.",
-          )}
-        </p>
-      </InfoPopover>
+      <InfoTooltip label={t("Preview restrictions")}>
+        {t(
+          "This sandbox restricts external data requests and hidden files. Open a saved HTML file in its default app when it needs those resources.",
+        )}
+      </InfoTooltip>
       {savedPath ? (
         <Button
           variant="ghost"
@@ -42,14 +41,14 @@ export function HtmlPreviewSecurityActions({ path }: { path: string }) {
           iconOnly
           label={t("Open saved file in default app")}
           loading={opening}
-          onClick={() => {
-            void openSavedFile().catch((cause: unknown) => setError(String(cause)));
-          }}
+          onClick={() => void openSavedFile()}
         >
           <ExternalLink className="icon-sm" aria-hidden />
         </Button>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? (
+        <InlineError details={error}>{t("Couldn’t open the saved file")}</InlineError>
+      ) : null}
     </div>
   );
 }

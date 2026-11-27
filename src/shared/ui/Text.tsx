@@ -21,6 +21,7 @@ export type TextTone =
   | "neutral"
   | "accent"
   | "feature"
+  | "orchestration"
   | "info"
   | "success"
   | "warning"
@@ -68,11 +69,13 @@ export type TextTracking = "normal" | "tight" | "wide" | "wider";
 export type TextRoles = {
   size?: TextSize;
   tone?: TextTone;
+  /** Fixed-width text for technical identifiers and addresses. */
+  family?: "mono";
   weight?: "regular" | "medium";
   leading?: TextLeading;
   truncate?: boolean;
-  /** Keep words intact; `anywhere` also breaks long identifiers when needed. */
-  wrap?: "normal" | "anywhere";
+  /** Keep words intact, break long identifiers, or preserve input line breaks. */
+  wrap?: "normal" | "anywhere" | "preserve-lines";
   tracking?: TextTracking;
   /** Underline only when pointer hovers this text. */
   hoverUnderline?: boolean;
@@ -119,6 +122,8 @@ export type TextProps = Omit<ComponentPropsWithRef<"span">, "ref"> & {
    * diff inks (a change letter, a changed line), `inherit` for the surrounding colour.
    */
   tone?: TextTone;
+  /** Fixed-width text for technical identifiers and addresses. */
+  family?: TextRoles["family"];
   /** Weight; unset keeps the surrounding weight. */
   weight?: "regular" | "medium";
   /**
@@ -131,8 +136,8 @@ export type TextProps = Omit<ComponentPropsWithRef<"span">, "ref"> & {
    * inside a flex or grid row. Needs a block box: a flex or grid item, or `as="div"` / `as="p"`.
    */
   truncate?: boolean;
-  /** Wrap prose at words, with `anywhere` as an emergency break for long identifiers. */
-  wrap?: "normal" | "anywhere";
+  /** Preserve input line breaks or wrap at words; truncation takes precedence over wrapping. */
+  wrap?: TextRoles["wrap"];
   /**
    * Letter spacing; `normal` resets inherited tracking. Unset keeps the surrounding spacing. `tight` -0.025em, `wide` 0.025em,
    * `wider` 0.08em.
@@ -167,6 +172,7 @@ export function Text({
   style,
   size = "caption",
   tone = "secondary",
+  family,
   weight,
   leading,
   truncate = false,
@@ -182,11 +188,11 @@ export function Text({
   return (
     <Tag
       {...props}
-      data-lines={lines || undefined}
-      style={lines ? ({ ...style, "--clamp-lines": lines } as CSSProperties) : style}
+      data-lines={(!truncate && lines) || undefined}
+      style={!truncate && lines ? ({ ...style, "--clamp-lines": lines } as CSSProperties) : style}
       ref={ref as Ref<HTMLSpanElement>}
       {...textAttributes(
-        { size, tone, weight, leading, truncate, wrap, tracking, hoverUnderline },
+        { size, tone, family, weight, leading, truncate, wrap, tracking, hoverUnderline },
         className,
       )}
     />
@@ -200,6 +206,7 @@ export function Text({
 export function optionalTextAttributes(roles: TextRoles, className?: string) {
   return roles.size ||
     roles.tone ||
+    roles.family ||
     roles.weight ||
     roles.leading ||
     roles.truncate ||
@@ -220,6 +227,7 @@ export function textAttributes(
   {
     size = "inherit",
     tone = "inherit",
+    family,
     weight,
     leading = size === "inherit" ? "inherit" : undefined,
     truncate,
@@ -234,10 +242,11 @@ export function textAttributes(
     "data-hover-underline": hoverUnderline || undefined,
     "data-size": size,
     "data-tone": tone,
+    "data-family": family,
     "data-weight": weight,
     "data-leading": leading,
     "data-truncate": truncate || undefined,
-    "data-wrap": wrap,
+    "data-wrap": truncate ? undefined : wrap,
     className: [styles.text, className].filter(Boolean).join(" "),
   };
 }

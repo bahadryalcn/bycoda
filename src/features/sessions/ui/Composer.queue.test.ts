@@ -30,6 +30,11 @@ import { Composer, ComposerAction } from "./Composer";
 import { setHarnessModeLimits, type ComposerTurnOptions } from "../model/session";
 import { submitAfterProjectSync } from "../../../app/model/submissionAcceptance";
 import { savePromptTemplates, type PromptTemplate } from "../model/promptTemplates";
+import {
+  beginDeliveryProgress,
+  clearDeliveryProgress,
+  updateDeliveryProgress,
+} from "../model/deliveryProgress";
 
 /** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
 async function tooltipText(element: HTMLElement): Promise<string> {
@@ -92,6 +97,31 @@ async function renderComposer(
 }
 
 describe("retained queue-row actions", () => {
+  it("shows one polite ownership status alongside the retained row", async () => {
+    const row = { id: "writer-wait", text: "Review this", attachments: [] };
+    const waiting = "Waiting for the previous run to finish.";
+    const blocked = "Check the conversation on its Host before resuming.";
+    const progress = beginDeliveryProgress("s1", row.id, "preparing");
+    updateDeliveryProgress("s1", progress, "waiting", waiting, false, true);
+    try {
+      await renderComposer({ queuedMessages: [row], queueStatus: "active" }, vi.fn());
+      const queue = container.querySelector("[data-message-queue-card]")!;
+      const countStatus = (text: string) =>
+        [...queue.querySelectorAll('[role="status"]')].filter((item) => item.textContent === text)
+          .length;
+      expect(countStatus(waiting)).toBe(1);
+      await act(async () =>
+        updateDeliveryProgress("s1", progress, "rejected", blocked, false, true),
+      );
+      await renderComposer({ queuedMessages: [row], queueStatus: "paused" }, vi.fn());
+      expect(countStatus(waiting)).toBe(0);
+      expect(countStatus(blocked)).toBe(1);
+      expect(queue.querySelector('[role="alert"]')).toBeNull();
+      expect(queue.textContent).toContain(row.text);
+    } finally {
+      await act(async () => clearDeliveryProgress("s1", progress));
+    }
+  });
   it.each([
     { harness: "antigravity" as const, intent: "default" as const },
     { harness: "claude" as const, intent: "plan" as const },
@@ -110,7 +140,8 @@ describe("retained queue-row actions", () => {
         vi.fn(),
       );
       const steer = container.querySelector<HTMLButtonElement>('button[aria-label="Steer"]')!;
-      expect(steer.disabled).toBe(true);
+      // A disabled control that explains itself stays focusable (aria-disabled, presses swallowed).
+      expect(steer.getAttribute("aria-disabled")).toBe("true");
       await act(async () => {
         steer.click();
         steer.click();
@@ -180,12 +211,12 @@ describe("local asynchronous submission recovery", () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Send"]')!.click();
     });
     expect(textarea.value).toBe("");
-    expect(container.querySelector('[aria-label="Remove review.png"]')).toBeNull();
+    expect(container.querySelector('[data-attachment-name="review.png"]')).toBeNull();
     await act(async () => {
       failSync(new Error("project unavailable"));
     });
     expect(textarea.value).toContain("inspect this image");
-    expect(container.querySelector('[aria-label="Remove review.png"]')).not.toBeNull();
+    expect(container.querySelector('[data-attachment-name="review.png"]')).not.toBeNull();
     expect(container.querySelector('[aria-label="Turn off Plan mode"]')).not.toBeNull();
   });
 
@@ -232,6 +263,54 @@ function press(textarea: HTMLTextAreaElement, init: KeyboardEventInit) {
   return event;
 }
 
+describe("an attached card while its send is still starting", () => {
+  const inboxCard = {
+    provider: "jira",
+    kind: "issue",
+    identifier: "ENG-1",
+    title: "Filters",
+    url: "https://example.test/ENG-1",
+    source: "ENG",
+    labels: [],
+    prompt: "Work on this Jira issue: ENG-1",
+  } as NonNullable<ComponentProps<typeof Composer>["inboxCard"]>;
+  const pressEnter = (textarea: HTMLTextAreaElement) =>
+    act(async () => {
+      textarea.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      );
+    });
+
+  it("does not send the card again on a second Enter", async () => {
+    const onSubmit = vi.fn(() => true);
+    const textarea = await renderComposer({ inboxCard: { ...inboxCard } }, onSubmit);
+    await pressEnter(textarea);
+    await pressEnter(textarea);
+    expect(onSubmit).toHaveBeenCalledOnce();
+  });
+
+  it("sends a typed follow-up without repeating the card", async () => {
+    const onSubmit = vi.fn((_text: string) => true);
+    const textarea = await renderComposer({ inboxCard: { ...inboxCard } }, onSubmit as never);
+    await pressEnter(textarea);
+    await type(textarea, "also check sorting");
+    await pressEnter(textarea);
+    expect(onSubmit).toHaveBeenCalledTimes(2);
+    expect(onSubmit.mock.calls[1][0]).toBe("also check sorting");
+  });
+
+  it("can send the card again after the first send is rejected", async () => {
+    const onSubmit = vi.fn(() => false);
+    const textarea = await renderComposer({ inboxCard: { ...inboxCard } }, onSubmit);
+    await pressEnter(textarea);
+    await act(async () => {
+      textarea.value = "";
+    });
+    await pressEnter(textarea);
+    expect(onSubmit).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("Shift+Tab queues while a turn runs", () => {
   const shiftTab = { key: "Tab", code: "Tab", shiftKey: true };
 
@@ -271,15 +350,39 @@ describe("Shift+Tab queues while a turn runs", () => {
     );
   });
 
-  it("keeps Shift+Tab in the composer without sending when idle or empty", async () => {
+  it.each(["shortcut", "button"])(
+    "queues behind running subagents after the turn through the %s",
+    async (action) => {
+      const onSubmit = vi.fn(() => true);
+      const textarea = await renderComposer({ busy: false, subagentsRunning: true }, onSubmit);
+      await type(textarea, "extend the todo list");
+      const button = container.querySelector<HTMLButtonElement>(
+        '[data-usage-guide="queue-button"]',
+      );
+      expect(button).not.toBeNull();
+      expect(container.querySelector('[aria-label="Stop"]')).toBeNull();
+      await act(async () => {
+        if (action === "shortcut") press(textarea, shiftTab);
+        else button!.click();
+      });
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+      expect(onSubmit).toHaveBeenCalledWith(
+        "extend the todo list",
+        [],
+        expect.objectContaining({ followUpBehavior: "queue" }),
+      );
+    },
+  );
+
+  it("lets Shift+Tab leave the composer without sending when idle or empty (#1244)", async () => {
     const onSubmit = vi.fn(() => true);
     const idle = await renderComposer({ busy: false }, onSubmit);
     await type(idle, "hello");
-    expect(press(idle, shiftTab).defaultPrevented).toBe(true);
+    expect(press(idle, shiftTab).defaultPrevented).toBe(false);
 
     const empty = await renderComposer({ busy: true }, onSubmit);
     await type(empty, "");
-    expect(press(empty, shiftTab).defaultPrevented).toBe(true);
+    expect(press(empty, shiftTab).defaultPrevented).toBe(false);
 
     expect(onSubmit).not.toHaveBeenCalled();
   });
@@ -294,6 +397,7 @@ describe("Shift+Tab queues while a turn runs", () => {
           busy: true,
           remoteSession,
           remoteFeatures: { attachments: true, plan: true, draft: true, steer: true },
+          adoptedSteerSupported: true,
         },
         onSubmit,
       );
@@ -312,7 +416,10 @@ describe("Shift+Tab queues while a turn runs", () => {
     localStorage.setItem("bycoda.followUpBehavior", "queue");
     const onSubmit = vi.fn(() => true);
     const onStop = vi.fn();
-    const textarea = await renderComposer({ busy: true, onStop }, onSubmit);
+    const textarea = await renderComposer(
+      { busy: true, onStop, adoptedSteerSupported: true },
+      onSubmit,
+    );
     await type(textarea, "send now");
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Send"]')!.click(),
@@ -578,8 +685,12 @@ describe("a queue restored after a restart", () => {
     ]);
     const card = container.querySelector("[data-message-queue-card]")!;
     expect(card.textContent).toContain("Attachment missing");
+    // The recovery step is visible text, not a hover-only tooltip.
+    expect(card.querySelector("[data-queue-attachment-missing]")?.textContent).toContain(
+      "Edit to drop it, or remove the message.",
+    );
     const send = [...card.querySelectorAll("button")].find((b) => b.textContent === "Send next")!;
-    expect(send.disabled).toBe(true);
+    expect(send.getAttribute("aria-disabled")).toBe("true");
     act(() => send.click());
     expect(onSteer).not.toHaveBeenCalled();
   });
@@ -597,29 +708,32 @@ describe("a queue restored after a restart", () => {
   });
 });
 
-it("shows the queued model, saved account and effort in order", async () => {
-  saveProviderAccount({ id: "personal", provider: "claude", label: "Personal" });
-  await renderComposer(
-    {
-      queuedMessages: [
-        {
-          id: "q1",
-          text: "queued",
-          attachments: [],
-          modelTarget: {
-            harness: "claude",
-            model: "claude:test",
-            providerAccountId: "personal",
-            modelSettings: {},
-          },
-        },
-      ],
+it("shows the queued model, the account it will run on and effort in order", async () => {
+  saveProviderAccount({ id: "personal", provider: "codex", label: "Personal" });
+  saveProviderAccount({ id: "work", provider: "claude", label: "Work" });
+  const row = (id: string, harness: "claude" | "codex") => ({
+    id,
+    text: id,
+    attachments: [],
+    modelTarget: {
+      harness,
+      model: `${harness}:test`,
+      providerAccountId: "personal",
+      modelSettings: {},
     },
+  });
+  await renderComposer(
+    // The owner switched this Claude conversation to "work" after queueing.
+    { providerAccountId: "work", queuedMessages: [row("q1", "claude"), row("q2", "codex")] },
     vi.fn(),
   );
-  const label = container.querySelector("[data-queue-target]")!.textContent!;
-  expect(label).toContain(" · Personal");
-  expect(label).not.toContain("Claude Code");
+  const [same, other] = [...container.querySelectorAll("[data-queue-target]")].map(
+    (node) => node.textContent!,
+  );
+  expect(same).toContain(" · Work");
+  expect(same).not.toContain("Claude Code");
+  // A row for another provider starts on the account it was queued with.
+  expect(other).toContain(" · Personal");
   const remove = container.querySelector<HTMLButtonElement>(
     'button[aria-label="Remove queued message"]',
   )!;

@@ -10,7 +10,7 @@ import {
   type RulerSpan,
 } from "./overviewRuler";
 
-export type RulerHost = {
+type RulerHost = {
   /** Marks in scroll-content pixels. Called only after `invalidate()`. */
   marks(): RulerMark[];
   geometry(): {
@@ -24,7 +24,7 @@ export type RulerHost = {
   reveal(pos: number): void;
 };
 
-export type RulerOptions = {
+type RulerOptions = {
   /** Takes presses and the wheel; off when something else owns the strip. */
   interactive: boolean;
   /** Draw the current viewport as a faint band. */
@@ -36,7 +36,7 @@ export type RulerOptions = {
   beforeDraw?: () => void;
 };
 
-export const RULER_COLORS = {
+const RULER_COLORS = {
   add: "--ui-diff-ruler-add",
   del: "--ui-diff-ruler-del",
   mod: "--ui-diff-ruler-mod",

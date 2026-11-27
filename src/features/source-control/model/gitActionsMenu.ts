@@ -1,5 +1,6 @@
 import type { GitOperation } from "../../../platform/tauri/fs";
 import type { ExplorerMenuItem } from "../../files";
+import { t } from "../../../shared/i18n/git";
 import { operationLabel } from "./commitActions";
 
 /** What the Changes header menu needs to know to enable and label its items. */
@@ -34,6 +35,8 @@ export type GitMenuState = {
   tagCount: number;
   remoteCount: number;
   autoFetch: boolean;
+  /** A repository section of several: offers narrowing the list to it, or showing all again. */
+  repositoryScope?: { only: boolean };
 };
 
 export type CommitMenuOptions = {
@@ -126,7 +129,9 @@ export function gitActionsMenuItems(state: GitMenuState): ExplorerMenuItem[] {
       entry("undo-commit", "Undo Last Commit", state.hasCommits),
       entry(
         "abort-operation",
-        state.operation ? `Abort ${operationLabel(state.operation)}` : "Abort Operation",
+        state.operation
+          ? t("Abort {p0}", { p0: operationLabel(state.operation) })
+          : "Abort Operation",
         state.operation !== null,
       ),
       SEP,
@@ -139,7 +144,7 @@ export function gitActionsMenuItems(state: GitMenuState): ExplorerMenuItem[] {
       entry("signoff-all", "Commit All (Signed Off)", hasChanges),
     ]),
     group("changes-menu", "Changes", [
-      entry("stage-all", "Stage All Changes", state.unstagedCount > 0),
+      entry("stage-all", "Stage all changes", state.unstagedCount > 0),
       entry("unstage-all", "Unstage All Changes", hasStaged),
       entry("discard-all", "Discard All Changes", state.unstagedCount > 0, {
         danger: true,
@@ -158,10 +163,10 @@ export function gitActionsMenuItems(state: GitMenuState): ExplorerMenuItem[] {
       entry("branch-merge", "Merge Branch…", hasBranch && state.otherBranchCount > 0),
       entry("branch-rebase", "Rebase Branch…", hasBranch && state.otherBranchCount > 0),
       SEP,
-      entry("branch-create", "Create Branch…", true),
-      entry("branch-create-from", "Create Branch From…", state.hasCommits),
+      entry("branch-create", "Create branch…", true),
+      entry("branch-create-from", "Create branch from…", state.hasCommits),
       SEP,
-      entry("branch-rename", "Rename Branch…", hasBranch),
+      entry("branch-rename", "Rename branch…", hasBranch),
       entry("branch-delete", "Delete Branch…", state.otherLocalBranchCount > 0),
       SEP,
       entry("branch-publish", "Publish Branch", state.hasRemote && hasBranch && !state.hasUpstream),
@@ -192,6 +197,16 @@ export function gitActionsMenuItems(state: GitMenuState): ExplorerMenuItem[] {
     ]),
     SEP,
     entry("auto-fetch", "Auto Fetch", canFetch, { checked: state.autoFetch }),
+    ...(state.repositoryScope
+      ? [
+          SEP,
+          entry(
+            "repository-scope",
+            state.repositoryScope.only ? "Show all repositories" : "Show only this repository",
+            true,
+          ),
+        ]
+      : []),
   ];
   const eligible = state.generating
     ? items.map((item) => {

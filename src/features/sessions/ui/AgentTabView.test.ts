@@ -8,6 +8,15 @@ import { newSession } from "../model/session";
 import { AgentTabView } from "./AgentTabView";
 import { AgentTranscript } from "./AgentTranscript";
 
+async function rawDetails(scope: ParentNode = document): Promise<string> {
+  const trigger = scope.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+  if (!trigger) return "";
+  await act(async () => trigger.click());
+  return (
+    document.querySelector<HTMLElement>('[role="dialog"][aria-label^="Details"]')?.textContent ?? ""
+  );
+}
+
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => false,
   invoke: vi.fn(async (_command, args) => args?.note),
@@ -49,7 +58,9 @@ it("waits for note storage, reports failure, and lets the user retry", async () 
       vi.mocked(invoke).mock.calls.filter(([command]) => command === "notes_upsert"),
     ).toHaveLength(1);
     await act(async () => rejectSave(new Error("Storage unavailable")));
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Storage unavailable");
+    const alert = container.querySelector<HTMLElement>('[role="alert"]');
+    expect(alert?.textContent).toContain("Could not save note");
+    expect(await rawDetails(alert!)).toContain("Storage unavailable");
     expect(button.disabled).toBe(false);
     vi.mocked(invoke).mockImplementation(async (_command, args) => args?.note);
     await act(async () => button.click());
@@ -90,7 +101,7 @@ it.each(["worker", "main"])("offers the correct selection actions in %s chat", a
             }),
       ),
     );
-    const text = container.querySelector("pre")!.firstChild!;
+    const text = container.querySelector("[data-selectable-agent-response] p")!.firstChild!;
     const range = document.createRange();
     range.selectNodeContents(text);
     vi.spyOn(range, "getClientRects").mockReturnValue({

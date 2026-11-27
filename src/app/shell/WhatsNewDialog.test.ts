@@ -16,7 +16,10 @@ vi.mock("../../shared/lib/appName", () => ({
   useAppName: () => "Test Product Native",
 }));
 vi.mock("../../shared/ui/Modal", () => ({
-  Modal: ({ description }: { description: string }) => createElement("section", null, description),
+  Modal: ({ description, footer }: { description: string; footer?: React.ReactNode }) =>
+    createElement("section", null, description, footer),
+  ModalActions: ({ children }: { children: React.ReactNode }) =>
+    createElement("footer", null, children),
 }));
 
 import { WhatsNewBody, WhatsNewDialog } from "./WhatsNewDialog";
@@ -35,14 +38,15 @@ describe("WhatsNewBody", () => {
 
   it("renders the configured GitHub release link", () => {
     identity.releaseNotesUrl = "https://github.com/example/bycoda/releases/tag/v0.5.56";
-    const markup = renderToStaticMarkup(createElement(WhatsNewBody, { version: "0.5.56" }));
-    expect(markup).toContain(`href="${identity.releaseNotesUrl}"`);
+    const markup = renderToStaticMarkup(
+      createElement(WhatsNewDialog, { version: "0.5.56", onClose: vi.fn() }),
+    );
     expect(markup).toContain("View release on GitHub");
   });
 
-  it("explains missing notes inside the release view", () => {
+  it("omits the release body when notes are unavailable", () => {
     const markup = renderToStaticMarkup(createElement(WhatsNewBody, { version: "99.0.0" }));
-    expect(markup).toContain("Release notes for this version have not been added yet.");
+    expect(markup).toBe("");
   });
 
   it("renders the version notes without the changelog heading", () => {

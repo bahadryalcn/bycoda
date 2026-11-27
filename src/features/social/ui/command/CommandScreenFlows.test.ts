@@ -179,7 +179,9 @@ it("runs a plan with no approved steps when the owner approves nothing", async (
     planId: "plan-1",
     approvedStepIds: [],
   });
-  const labels = [...element.querySelectorAll(".command-step-status")].map((n) => n.textContent);
+  const labels = [...element.querySelectorAll(".command-step-head")].map(
+    (n) => n.children[1]?.textContent,
+  );
   expect(labels).toEqual(["Needs your approval", "Done"]);
   expect(client.ai.actions.mock.calls.length).toBeGreaterThanOrEqual(2);
 });
@@ -193,7 +195,12 @@ it("keeps the typed request and lets the owner try again after the AI fails", as
   await mount(client);
   await typeCommand("Weekly posts");
   await click(buttonWithText("Plan"));
-  expect(element.textContent).toContain("Provider unavailable");
+  expect(element.textContent).toContain("The request could not be completed. Try again.");
+  await click(buttonWithText("Details"));
+  expect(document.body.querySelector('[aria-label="Error details"]')?.textContent).toBe(
+    "Provider unavailable",
+  );
+
   expect(area().value).toBe("Weekly posts");
   expect(buttonWithText("Plan")?.disabled).toBe(false);
   expect(client.ai.runPlan).not.toHaveBeenCalled();
@@ -245,7 +252,12 @@ it("names an undo that the Host refused and keeps the row", async () => {
   });
   await mount(client);
   await click(buttonWithText("Undo"));
-  expect(element.textContent).toContain("The list no longer exists.");
+  expect(element.textContent).toContain("The request could not be completed. Try again.");
+  await click(buttonWithText("Details"));
+  expect(document.body.querySelector('[aria-label="Error details"]')?.textContent).toBe(
+    "The list no longer exists.",
+  );
+
   expect(buttonWithText("Undo")).toBeDefined();
 });
 

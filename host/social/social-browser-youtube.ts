@@ -99,11 +99,14 @@ async function youtubeIdentity(page: BrowserPage): Promise<BrowserIdentity | und
     `location.origin==='https://www.youtube.com' && !!document.querySelector('ytd-masthead #guide-button button')`,
   );
   if (!canOpen) return;
+  const challenge = await detectChallenge(page);
+  if (challenge) throw needsHumanError(challenge);
   await page.click("ytd-masthead #guide-button button");
   try {
     return await page.evaluate<BrowserIdentity | undefined>(publicIdentity);
   } finally {
-    await page.click("ytd-masthead #guide-button button").catch(() => undefined);
+    if (!(await detectChallenge(page).catch(() => true)))
+      await page.click("ytd-masthead #guide-button button").catch(() => undefined);
   }
 }
 

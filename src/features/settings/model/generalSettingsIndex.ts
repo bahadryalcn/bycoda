@@ -5,7 +5,7 @@ import type { SettingsEntry } from "./settings";
 export const GENERAL_SETTINGS_INDEX: SettingsEntry[] = [
   {
     id: "performance-trace",
-    section: "general",
+    section: "policies",
     get label() {
       return t("Performance trace");
     },
@@ -13,8 +13,17 @@ export const GENERAL_SETTINGS_INDEX: SettingsEntry[] = [
       "diagnostics performance trace freeze lag slow startup long task debug performans tanılama izleme donma",
   },
   {
+    id: "host-stall-profiles",
+    section: "policies",
+    get label() {
+      return t("Host CPU profiles");
+    },
+    keywords:
+      "stall profile cpu diagnostics host event loop freeze developer performance profil donma tanılama",
+  },
+  {
     id: "performance-trace-data",
-    section: "general",
+    section: "policies",
     get label() {
       return t("Trace data");
     },
@@ -22,7 +31,7 @@ export const GENERAL_SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "session-folder",
-    section: "general",
+    section: "workspace",
     get label() {
       return t("Folder for sessions without a project");
     },
@@ -31,7 +40,7 @@ export const GENERAL_SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "new-project-folder",
-    section: "general",
+    section: "workspace",
     get label() {
       return t("Folder for new projects");
     },

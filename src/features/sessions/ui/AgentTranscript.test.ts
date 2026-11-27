@@ -94,7 +94,8 @@ describe("AgentTranscript collapsed work", () => {
     expect(markup.match(/aria-label="Edit from here"/g)).toHaveLength(2);
     // The reason rides in the shared tooltip (hover/focus), not a native title in the markup.
     expect(markup).not.toContain('title="This conversation can no longer be rewound."');
-    expect(markup.match(/disabled=""/g)).toHaveLength(1);
+    expect(markup.match(/aria-disabled="true"/g)).toHaveLength(1);
+    expect(markup).toContain('aria-description="This conversation can no longer be rewound."');
   });
 
   it("keeps the action visible but disabled while the session is busy", () => {
@@ -105,7 +106,7 @@ describe("AgentTranscript collapsed work", () => {
       { canRewindMessage: () => false, onRewindMessage: () => {} },
     );
     expect(markup).toContain('aria-label="Edit from here"');
-    expect(markup).toContain('disabled=""');
+    expect(markup).toContain('aria-disabled="true"');
   });
 
   it("shows a stopped turn as stopped by the user", () => {
@@ -377,7 +378,8 @@ describe("AgentTranscript collapsed work", () => {
 
     expect(markup).toContain("data-user-link-preview");
     expect(markup).toContain("example.com/docs");
-    expect(markup).toContain("Open example.com");
+    expect(markup).toContain('href="https://');
+    expect(markup).not.toContain("Open example.com");
     expect(markup).toContain("user-link-preview-title");
     expect(markup).toContain("user-message-with-link");
     expect(markup).toContain("user-message-bubble");
@@ -433,7 +435,8 @@ describe("AgentTranscript collapsed work", () => {
 
     expect(markup).toContain("data-user-link-preview");
     expect(markup).toContain("Please check");
-    expect(markup).toContain("Open example.com");
+    expect(markup).toContain('href="https://');
+    expect(markup).not.toContain("Open example.com");
     expect(markup).not.toContain("Please check https://example.com/docs");
   });
 
@@ -728,8 +731,8 @@ describe("AgentTranscript collapsed work", () => {
     // it — not one flat dump of every step it took.
     expect(markup).toContain("Reading the diff first.");
     expect(markup).toContain("Show the steps for Reading the diff first.");
-    // An open row holds its wash, so the panel reads as hanging off it.
-    expect(markup).toContain('data-button-selected="true"');
+    // The row itself carries the open state; it keeps no wash once open.
+    expect(markup).toContain('aria-expanded="true"');
     // The panel opens straight onto its phases. A scroll window of its own
     // here would nest one 17.5rem scroller inside the window each phase
     // already keeps, and the inner one could never reach its last row.
@@ -764,7 +767,8 @@ describe("AgentTranscript collapsed work", () => {
       },
     ]);
 
-    expect(markup).toContain("Show error details for npm test");
+    // A failed command opens its output by itself; the reader's later toggle still wins.
+    expect(markup).toContain("Hide error details for npm test");
   });
 
   it("counts a failed step on a folded subagent row, so it is not hidden", () => {
@@ -793,7 +797,9 @@ describe("AgentTranscript collapsed work", () => {
       },
     ]);
 
-    expect(markup.replace(/<[^>]*>/g, "")).toContain("3 steps, 1 failed");
+    // The visible row shows the count and mark; its accessible description spells them out.
+    expect(markup).toContain("3 steps, 1 failed");
+    expect(markup.replace(/<[^>]*>/g, "")).toContain("×1");
   });
 
   it("opens a lone subagent straight into its own transcript", () => {
@@ -827,7 +833,7 @@ describe("AgentTranscript collapsed work", () => {
     expect(markup).not.toContain("Show every subagent");
     expect(markup).toContain("Correctness review");
     expect(markup).toContain("1 step");
-    expect(markup).not.toContain("done");
+    expect(markup.replace(/<[^>]*>/g, "")).not.toContain("done");
     expect(markup).toContain("Show Correctness review&#x27;s work");
   });
 

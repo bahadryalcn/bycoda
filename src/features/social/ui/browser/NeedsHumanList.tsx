@@ -2,10 +2,11 @@ import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { FailureState } from "../../../../shared/ui/FailureState";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { Text } from "../../../../shared/ui/Text";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
-import { InlineError } from "../../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
+import { usePollingRefresh } from "../../hooks/usePollingRefresh";
 import { SOCIAL_PLATFORM_NAMES } from "../../model/social";
 import type { NeedsHumanItem } from "../../model/socialActions";
 import { EmptyHint } from "../common/EmptyHint";
@@ -48,63 +49,59 @@ export function NeedsHumanList({
 }: NeedsHumanListProps) {
   const [items, setItems] = useState<NeedsHumanItem[] | null>(null);
   const [failed, setFailed] = useState(false);
-  const [openAccount, setOpenAccount] = useState<string | null>(null);
+  const [openAccount, setOpenAccount] = useState<string | null>(null); // the open row's item id, so two rows of one account never both look open
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [doneFailed, setDoneFailed] = useState(false);
+  const [doneFailed, setDoneFailed] = useState<string | null>(null);
 
   const count = items?.length;
   useEffect(() => {
     if (count !== undefined) onCountChange?.(count);
   }, [count, onCountChange]);
 
-  const refresh = useCallback(async () => {
-    try {
-      const result = await client.browser.needsHuman.list();
-      setItems(result.items);
-      setFailed(false);
-    } catch {
-      setFailed(true);
-    }
-  }, [client]);
-
-  useEffect(() => {
-    if (!active) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const tick = async () => {
-      await refresh();
-      if (!cancelled) timer = setTimeout(tick, POLL_MS);
-    };
-    void tick().catch(() => setFailed(true));
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [active, refresh]);
+  const refresh = usePollingRefresh({
+    active,
+    scope: client,
+    intervalMs: POLL_MS,
+    load: async (isCurrent) => {
+      try {
+        const result = await client.browser.needsHuman.list();
+        if (!isCurrent()) return;
+        setItems(result.items);
+        setFailed(false);
+      } catch (error) {
+        if (isCurrent()) setFailed(true);
+        throw error;
+      }
+    },
+  });
 
   const done = async (id: string) => {
     setBusyId(id);
-    setDoneFailed(false);
+    setDoneFailed(null);
     try {
       await client.browser.needsHuman.resolve(id);
       await refresh();
     } catch {
-      setDoneFailed(true);
+      setDoneFailed(id);
     } finally {
       setBusyId(null);
     }
   };
 
-  if (items === null)
-    return failed ? (
+  if (failed && !items?.length)
+    return (
       <FailureState
         context="list"
-        description={t("Waiting items could not be loaded.")}
+        description={
+          items === null
+            ? t("Waiting items could not be loaded.")
+            : t("Waiting items could not be refreshed.")
+        }
         onRetry={refresh}
       />
-    ) : (
-      <LoadingText delay={false}>{t("Loading…")}</LoadingText>
     );
+
+  if (items === null) return <LoadingText delay={false}>{t("Loading…")}</LoadingText>;
 
   if (items.length === 0)
     return quietWhenEmpty ? null : <EmptyHint message={t("Nothing is waiting for you.")} />;
@@ -112,11 +109,10 @@ export function NeedsHumanList({
   return (
     <div className="needs-human">
       {failed ? (
-        <Text as="p" size="caption" tone="muted" leading="inherit" className="needs-human-note">
+        <InlineMessage tone="warning" live="off">
           {t("Waiting items could not be refreshed.")}
-        </Text>
+        </InlineMessage>
       ) : null}
-      {doneFailed ? <InlineError>{t("Could not mark this as done.")}</InlineError> : null}
       <ul className="needs-human-list">
         {items.map((item, index) => (
           <li
@@ -128,13 +124,7 @@ export function NeedsHumanList({
           >
             <PlatformMark platform={item.platform} size="md" />
             <div className="needs-human-text">
-              <Text
-                size="body"
-                tone="primary"
-                leading="inherit"
-                weight="medium"
-                className="needs-human-reason"
-              >
+              <Text size="body" tone="primary" leading="inherit" weight="medium">
                 {reasonLabel(item.reason)}
               </Text>
               <Text size="caption" tone="muted" leading="inherit" className="needs-human-platform">
@@ -142,28 +132,40 @@ export function NeedsHumanList({
               </Text>
             </div>
             <div className="needs-human-actions">
-              <Button size="sm" variant="secondary" onClick={() => setOpenAccount(item.accountId)}>
-                {t("Open live view")}
+              <Button
+                size="sm"
+                variant="primary"
+                pressed={openAccount === item.id}
+                onClick={() => setOpenAccount(openAccount === item.id ? null : item.id)}
+              >
+                {openAccount === item.id ? t("Close live view") : t("Open live view")}
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
-                disabled={busyId === item.id}
-                onClick={() => void done(item.id).catch(() => setDoneFailed(true))}
+                loading={busyId === item.id}
+                onClick={() => void done(item.id)}
               >
                 {t("I'm done")}
               </Button>
             </div>
+            {doneFailed === item.id ? (
+              <InlineError className="needs-human-error">
+                {t("Could not mark this as done.")}
+              </InlineError>
+            ) : null}
+            {openAccount === item.id ? (
+              <div className="needs-human-live">
+                <LiveBrowserPanel
+                  client={client}
+                  accountId={item.accountId}
+                  onClose={() => setOpenAccount(null)}
+                />
+              </div>
+            ) : null}
           </li>
         ))}
       </ul>
-      {openAccount ? (
-        <LiveBrowserPanel
-          client={client}
-          accountId={openAccount}
-          onClose={() => setOpenAccount(null)}
-        />
-      ) : null}
     </div>
   );
 }

@@ -1,18 +1,23 @@
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { errorText } from "../../../shared/lib/errors";
+import { isUnsupportedRemoteRoute } from "../../connections/public/remoteFailure";
+import { useGracedFailure } from "../../connections/public/transientFailure";
 import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import { Text as UiText } from "../../../shared/ui/Text";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { Folder, Save } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
 import { LiveText } from "../../../shared/ui/LiveText";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { reportFailure } from "../../../shared/ui/reportFailure";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
 import { isImeComposition } from "../../../shared/lib/keyboard";
-import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
+import { IS_MAC } from "../../../platform/tauri/platform";
+import { revealLabel } from "./explorerMenuItems";
 import { isRemoteProjectPath } from "../../projects/public/recents";
 
 import {
@@ -42,10 +47,12 @@ import {
   gitStageContents,
   notifyGitChanged,
   openHtmlInChrome,
-  readTextFile,
-  revealPath,
+  isConnectedMachinePath,
+  isFileChangedError,
+  readTextFileVersioned,
+  writtenTextVersion,
   subscribeGitChanged,
-  writeTextFile,
+  writeTextFileChecked,
   type GitFileDiffKind,
 } from "../../../platform/tauri/fs";
 import { syncWatchedMtime, watchFile } from "../model/fileWatch";
@@ -62,7 +69,11 @@ import {
 } from "../editor/editorDoc";
 
 import { FilePreviewSearch } from "./FilePreviewSearch";
+import { JsonFileView } from "./JsonFileView";
+import { LogFileView } from "./LogFileView";
+import { fileViewKind } from "./fileViews";
 import { InlineBlameToggle, useInlineBlameUnavailableReason } from "./InlineBlameToggle";
+import { useRemoteFolderBrowser } from "./useRemoteFolderBrowser";
 
 import { CodeMirrorEditor, type EditorCarry } from "./CodeMirrorEditor";
 import {
@@ -85,11 +96,8 @@ type EditorNavigationRequest = EditorNavigation & { token: number };
 
 export { FILE_EDITOR_AUTOSAVE_DELAY_MS } from "../editor/editorTiming";
 
-const REVEAL_LABEL = IS_MAC
-  ? "Reveal in Finder"
-  : IS_WIN
-    ? "Reveal in File Explorer"
-    : "Open Containing Folder";
+/** A baseVersion no file stamp equals, so a save before a pending re-read is refused. */
+const UNVERIFIED_DISK_VERSION = "unverified";
 
 type Props = {
   path: string;
@@ -113,9 +121,20 @@ type Props = {
 type LoadState =
   | { status: "loading" }
   | { status: "ready"; content: string }
-  | { status: "error"; message: string };
+  | { status: "error"; error: unknown };
 
 type SaveState = { status: "idle" | "saving" | "saved" } | { status: "error"; message: string };
+
+/** Disk changed under a draft: block saving, bump the change stamp and show the conflict bar. */
+function raiseDiskConflict(
+  pending: { current: boolean },
+  version: { current: number },
+  show: (value: boolean) => void,
+) {
+  pending.current = true;
+  version.current += 1;
+  show(true);
+}
 
 export function FileEditor({
   path,
@@ -132,6 +151,7 @@ export function FileEditor({
   onOpenFile,
 }: Props) {
   useLocale();
+  const { revealInFileManager, folderBrowser } = useRemoteFolderBrowser(onOpenFile);
   const fallbackDocument = useRef({ path, id: crypto.randomUUID() });
   if (!suppliedDocumentId && fallbackDocument.current.path !== path)
     fallbackDocument.current = { path, id: crypto.randomUUID() };
@@ -153,7 +173,7 @@ export function FileEditor({
   const [draft, setDraft] = useState("");
   const [dirty, setDirty] = useState(false);
   const [diskConflict, setDiskConflict] = useState(false);
-  const [diskVerificationError, setDiskVerificationError] = useState<string | null>(null);
+  const [diskVerificationError, setDiskVerificationError] = useState<unknown>(null);
   const [editorRevision, setEditorRevision] = useState(0);
   const retainedEditor = useMemo(
     () => ({ current: null as EditorCarry | null }),
@@ -166,20 +186,25 @@ export function FileEditor({
   const [draftAction, setDraftAction] = useState<"restore" | "replace" | null>(null);
   const draftActionRef = useRef(false);
   const draftViewGeneration = useRef(0);
-  const [draftActionError, setDraftActionError] = useState<string | null>(null);
+  const [draftActionNotice, setDraftActionNotice] = useState<string | null>(null);
   const editorRootRef = useRef<HTMLDivElement>(null);
   const manualSaveRef = useRef(false);
-  const [gitBase, setGitBase] = useState<{
-    path: string;
-    original: string;
-    originalRaw: string;
-    kind: GitFileDiffKind;
-    lineEnding: LineEnding;
-    eolOnly: boolean;
-  } | null>(null);
+  const [gitBase, setGitBase] = useState<
+    | { path: string; kind: "disk" }
+    | {
+        path: string;
+        original: string;
+        originalRaw: string;
+        kind: GitFileDiffKind;
+        lineEnding: LineEnding;
+        eolOnly: boolean;
+      }
+    | null
+  >(null);
   const markdown = isMarkdownPath(path);
   const svg = isSvgPath(path);
   const html = /\.html?$/i.test(basename(path));
+  const viewKind = fileViewKind(path);
   const saveRequestRef = useRef<((parent?: EditorWorkTicket) => Promise<boolean>) | null>(null);
   const editorAdmissionRef = useRef<MountedEditorObserver | null>(null);
   const requestSave = useCallback(async () => {
@@ -222,12 +247,14 @@ export function FileEditor({
   const openingRef = useRef(false);
   const [openingChrome, setOpeningChrome] = useState(false);
   // The message belongs to the path it was raised for, so another file shows none.
-  const [chromeFailure, setChromeFailure] = useState<{ path: string; message: string } | null>(
-    null,
-  );
-  const chromeError = chromeFailure?.path === path ? chromeFailure.message : null;
-  const setChromeError = (message: string | null) =>
-    setChromeFailure(message === null ? null : { path, message });
+  const [chromeFailure, setChromeFailure] = useState<{
+    path: string;
+    title: string;
+    details?: string;
+  } | null>(null);
+  const chromeError = chromeFailure?.path === path ? chromeFailure : null;
+  const setChromeError = (failure: { title: string; details?: string } | null) =>
+    setChromeFailure(failure === null ? null : { path, ...failure });
   const goLive = async () => {
     if (openingRef.current) return;
     openingRef.current = true;
@@ -243,7 +270,12 @@ export function FileEditor({
       await saveQueue.current;
       await openHtmlInChrome(path);
     } catch (error) {
-      setChromeError(error instanceof Error ? error.message : String(error));
+      await reportFailure(error, {
+        toast: {
+          show: ({ message }) =>
+            setChromeError({ title: t("Couldn’t open Chrome"), details: message }),
+        },
+      });
     } finally {
       openingRef.current = false;
       setOpeningChrome(false);
@@ -258,18 +290,21 @@ export function FileEditor({
   useLayoutEffect(() => {
     setLoadedMode.current = setMode;
   }, [setMode]);
+  const keepMarkdownView = markdown && navigation?.keepMarkdownView;
   const sourceNavigationToken = useRef<number | undefined>(undefined);
+  // Source navigation switches panes unless a chat link keeps the Markdown view.
   useEffect(() => {
     if (
       !navigation ||
-      (!markdown && !svg && !html) ||
+      keepMarkdownView ||
+      (!markdown && !svg && !html && !viewKind) ||
       sourceNavigationToken.current === navigation.token
     )
       return;
     sourceNavigationToken.current = navigation.token;
     setMode("source");
-  }, [markdown, svg, html, navigation, setMode]);
-  const saveQueue = useRef<Promise<void>>(Promise.resolve());
+  }, [keepMarkdownView, markdown, svg, html, viewKind, navigation, setMode]);
+  const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
   const saveGeneration = useRef(0);
   const loadGeneration = useRef(0);
   const dirtyRef = useRef(false);
@@ -281,6 +316,8 @@ export function FileEditor({
   currentIdentity.current = { path, documentId };
   /** The file's text as last read or written; tells real disk changes from no-op events. */
   const diskTextRef = useRef<string | null>(null);
+  /** The Host's stamp of that text (connected machines only); a save sends it as `baseVersion`. */
+  const diskVersionRef = useRef<string | undefined>(undefined);
   const draftBaselineRef = useRef<string | null>(null);
   const latestDocumentRef = useRef<string | Text | null>(null);
   const eolRef = useRef<LineEnding>("\n");
@@ -425,7 +462,7 @@ export function FileEditor({
     draftViewGeneration.current += 1;
     setDraftAction(null);
     draftActionRef.current = false;
-    setDraftActionError(null);
+    setDraftActionNotice(null);
     const handle = bindEditorDraftDocument({
       documentId,
       path,
@@ -511,9 +548,7 @@ export function FileEditor({
         editorClosure.external(() => {
           deferred.current.disk = true;
           if (dirtyRef.current) {
-            pendingDiskRef.current = true;
-            diskChangeVersion.current += 1;
-            setDiskConflict(true);
+            raiseDiskConflict(pendingDiskRef, diskChangeVersion, setDiskConflict);
           }
         });
         return;
@@ -521,7 +556,7 @@ export function FileEditor({
       const generation = ++loadGeneration.current;
       const edits = editVersion.current;
       try {
-        const content = await readTextFile(path);
+        const { text: content, version } = await readTextFileVersioned(path);
         settled.apply(() => {
           if (
             generation !== loadGeneration.current ||
@@ -531,14 +566,18 @@ export function FileEditor({
             return;
           // A reload choice applies only to the draft the owner saw when choosing it.
           if (force && edits !== editVersion.current) return;
+          setDiskVerificationError(null);
           if (dirtyRef.current && !force) {
             // Keep unsaved edits; only a real change on disk blocks saving over it.
             pendingDiskRef.current =
               content !==
               (recoveryReviewRef.current ? draftBaselineRef.current : diskTextRef.current);
+            // Same text under a new stamp (a touch): the draft still rests on this text.
+            if (!pendingDiskRef.current) diskVersionRef.current = version;
             setDiskConflict(pendingDiskRef.current);
             return;
           }
+          diskVersionRef.current = version;
           pendingDiskRef.current = false;
           setDiskConflict(false);
           if (force && dirtyRef.current) {
@@ -559,22 +598,20 @@ export function FileEditor({
           currentIdentity.current.documentId !== documentId
         )
           return;
-        if (dirtyRef.current && !force) {
-          pendingDiskRef.current = true;
-          setDiskConflict(true);
-          return;
-        }
         if (force && dirtyRef.current) {
-          setSaveState({
-            status: "error",
-            message: error instanceof Error ? error.message : String(error),
+          await reportFailure(error, {
+            toast: {
+              show: ({ message }) => {
+                if (generation === loadGeneration.current)
+                  setSaveState({ status: "error", message });
+              },
+            },
           });
           return;
         }
-        setLoadState({
-          status: "error",
-          message: error instanceof Error ? error.message : String(error),
-        });
+        pendingDiskRef.current = true;
+        diskChangeVersion.current += 1;
+        setDiskVerificationError(error);
       } finally {
         settled();
       }
@@ -597,7 +634,9 @@ export function FileEditor({
     setDirty(false);
     pendingDiskRef.current = false;
     setDiskConflict(false);
+    setDiskVerificationError(null);
     overwriteVersion.current = null;
+    diskVersionRef.current = undefined;
     let cancelled = false;
     setLoadState({ status: "loading" });
     setSaveState({ status: "idle" });
@@ -633,11 +672,13 @@ export function FileEditor({
         };
         verifyLane();
         let actual: string | null = null;
-        let diskError: string | null = null;
+        let diskError: unknown = null;
         try {
-          actual = await readTextFile(path);
+          const disk = await readTextFileVersioned(path);
+          actual = disk.text;
+          diskVersionRef.current = disk.version;
         } catch (error) {
-          diskError = presentRemoteError(error, { explicit: true });
+          diskError = error;
         }
         if (cancelled || generation !== loadGeneration.current) return;
         verifyLane();
@@ -657,7 +698,7 @@ export function FileEditor({
           payload.serializedText ?? restoreLineEnding(payload.text, eolRef.current);
         pendingDiskRef.current = actual === null || actual !== payload.diskBaseline;
         if (pendingDiskRef.current) diskChangeVersion.current += 1;
-        setDiskConflict(pendingDiskRef.current);
+        setDiskConflict(actual !== null && pendingDiskRef.current);
         setDiskVerificationError(diskError);
         recoveryReviewRef.current = true;
         setRecoveredText(payload.text);
@@ -666,15 +707,16 @@ export function FileEditor({
         loadedDocumentRef.current = { id: documentId, reloadKey };
         setLoadState({ status: "ready", content: normalizeLineBreaks(payload.diskBaseline) });
       } else {
-        const content = await readTextFile(path);
+        const { text: content, version } = await readTextFileVersioned(path);
         if (cancelled || generation !== loadGeneration.current) return;
+        diskVersionRef.current = version;
         loadedDocumentRef.current = { id: documentId, reloadKey };
         settled.apply(() => applyDiskContent(content));
       }
     })()
       .catch((error: unknown) => {
         if (cancelled || generation !== loadGeneration.current) return;
-        setLoadState({ status: "error", message: presentRemoteError(error, { explicit: true }) });
+        setLoadState({ status: "error", error });
       })
       .finally(settled);
     return () => {
@@ -689,10 +731,30 @@ export function FileEditor({
     editorClosure,
     admissionRetry,
   ]);
-  // A failed load or disk verification reruns once the machine's link is back.
-  useReloadOnReconnect(path, () => setReloadKey((value) => value + 1), {
-    active: loadState.status === "error" || diskVerificationError !== null,
+  const retryDocumentLoad = () => setReloadKey((value) => value + 1);
+  const failureScope = `${documentId}:${path}`;
+  const { visibleError: loadError } = useGracedFailure({
+    error: loadState.status === "error" ? loadState.error : null,
+    loading: loadState.status === "loading",
+    retry: shown ? retryDocumentLoad : undefined,
+    scope: failureScope,
   });
+  const { visibleError: diskError, pending: diskPending } = useGracedFailure({
+    error: diskVerificationError,
+    retry: shown ? reloadFromDisk : undefined,
+    scope: failureScope,
+  });
+  // Recheck the current disk baseline without remounting the editor or discarding drafts.
+  useReloadOnReconnect(
+    path,
+    () => {
+      if (loadState.status === "error") retryDocumentLoad();
+      else return reloadFromDisk();
+    },
+    {
+      active: shown && (loadState.status === "error" || diskVerificationError !== null),
+    },
+  );
 
   useEffect(() => {
     if (!showDiff) {
@@ -709,8 +771,13 @@ export function FileEditor({
     setGitBase(null);
 
     const listed = async () => {
-      const { files } = await gitDiffFiles(cwd);
-      return files.find((entry) => entry.relative === relative);
+      const index = await gitDiffFiles(cwd);
+      return {
+        file: index.files.find((entry) => entry.relative === relative),
+        comparable:
+          index.repository !== false &&
+          !index.conflicts?.some((entry) => entry.relative === relative),
+      };
     };
 
     // Until a diff has arrived, a load takes the side the Changes panel named
@@ -723,7 +790,17 @@ export function FileEditor({
       const first = !shown;
       return (async () => {
         const opened = changeKindRef.current;
-        let file = first && opened ? undefined : await listed();
+        const listing = first && opened ? undefined : await listed();
+        if (cancelled || request !== generation) return;
+        let file = listing?.file;
+        if (listing && !file && (!listing.comparable || !dirtyRef.current)) {
+          shown = true;
+          // A successful listing already settled the clean view. Fetch the Git
+          // baseline if the user edits, before enabling selective staging.
+          setGitBase(listing.comparable ? { path, kind: "disk" } : null);
+          setGitSettledPath(path);
+          return;
+        }
         const kind: GitFileDiffKind =
           first && opened
             ? opened
@@ -737,7 +814,7 @@ export function FileEditor({
         const diff = await gitFileDiff(cwd, relative, kind);
         if (cancelled || request !== generation) return;
         shown = true;
-        if (diff.binary || diff.tooLarge) {
+        if (diff.binary || diff.tooLarge || diff.status === "unlisted") {
           setGitBase(null);
           setGitSettledPath(path);
           return;
@@ -748,7 +825,7 @@ export function FileEditor({
         const eolDiffers =
           diff.original !== diff.current && original === normalizeLineBreaks(diff.current);
         if (eolDiffers && first && opened) {
-          file = await listed();
+          file = (await listed()).file;
           if (cancelled || request !== generation) return;
         }
         setGitBase({
@@ -784,9 +861,7 @@ export function FileEditor({
           deferred.current.git = true;
           deferred.current.disk = true;
           if (dirtyRef.current) {
-            pendingDiskRef.current = true;
-            diskChangeVersion.current += 1;
-            setDiskConflict(true);
+            raiseDiskConflict(pendingDiskRef, diskChangeVersion, setDiskConflict);
           }
         });
         return;
@@ -833,8 +908,12 @@ export function FileEditor({
     reloadGitRef.current?.();
   }, [changeKind]);
 
-  const gitDiff = gitBase?.path === path ? gitBase : null;
-  const gitOriginal = gitDiff?.original ?? null;
+  const currentBase = gitBase?.path === path ? gitBase : null;
+  const gitDiff = currentBase?.kind === "disk" ? null : currentBase;
+  const gitOriginal =
+    currentBase?.kind === "disk" && loadState.status === "ready"
+      ? loadState.content
+      : (gitDiff?.original ?? null);
 
   useEffect(() => {
     if (loadState.status !== "ready") return;
@@ -846,9 +925,7 @@ export function FileEditor({
         editorClosure.external(() => {
           deferred.current.disk = true;
           if (dirtyRef.current) {
-            pendingDiskRef.current = true;
-            diskChangeVersion.current += 1;
-            setDiskConflict(true);
+            raiseDiskConflict(pendingDiskRef, diskChangeVersion, setDiskConflict);
           }
         });
         return;
@@ -919,12 +996,18 @@ export function FileEditor({
             setDiskConflict(true);
             throw new Error(t("The file changed on disk. Reload or overwrite before saving."));
           }
-          return writeTextFile(path, serializedContent);
+          // An owner-chosen overwrite is unconditional; any other save refuses a changed file.
+          const overwriting = pendingDiskRef.current;
+          return writeTextFileChecked(
+            path,
+            serializedContent,
+            overwriting ? undefined : diskVersionRef.current,
+          );
         });
         saveQueue.current = operation.catch((error) => {
           console.warn("FileEditor operation failed", error);
         });
-        await operation;
+        const written = await operation;
         if (capture && draftHandle) {
           // Native reporting is independent of the completed filesystem write.
           // A retry here must never repeat writeTextFile.
@@ -938,6 +1021,7 @@ export function FileEditor({
         settled.apply(() => {
           recoveryReviewRef.current = false;
           diskTextRef.current = serializedContent;
+          diskVersionRef.current = written.version;
           setDiskVerificationError(null);
           draftBaselineRef.current = serializedContent;
           lineEndingSourceRef.current = serializedContent;
@@ -955,9 +1039,27 @@ export function FileEditor({
           setSaveState({ status: "saved" });
         }
       } catch (error) {
-        const message = presentRemoteError(error, { explicit: true });
+        const changed = isFileChangedError(error);
+        if (changed) {
+          // The draft stays; the disk-conflict bar offers Reload or Overwrite.
+          raiseDiskConflict(pendingDiskRef, diskChangeVersion, setDiskConflict);
+        }
         if (generation === saveGeneration.current) {
-          setSaveState({ status: "error", message });
+          if (changed) {
+            setSaveState({
+              status: "error",
+              message: t("The file changed on disk. Reload or overwrite before saving."),
+            });
+          } else {
+            await reportFailure(error, {
+              toast: {
+                show: ({ message }) => {
+                  if (generation === saveGeneration.current)
+                    setSaveState({ status: "error", message });
+                },
+              },
+            });
+          }
         }
         throw error;
       } finally {
@@ -983,13 +1085,34 @@ export function FileEditor({
       } catch (error) {
         setSaveState({
           status: "error",
-          message: error instanceof Error ? error.message : String(error),
+          message: errorText(error),
         });
         return;
       }
       loadGeneration.current += 1;
       recoveryReviewRef.current = false;
       diskTextRef.current = serializedContent;
+      // Adopt the stamp the peer's write returned; without it a save here would skip the check.
+      const peerVersion = writtenTextVersion(path, serializedContent);
+      const verifyGeneration = loadGeneration.current;
+      if (peerVersion || !isConnectedMachinePath(path)) diskVersionRef.current = peerVersion;
+      else {
+        // No stamp known: a stamp no file carries makes a save before the re-read refuse.
+        diskVersionRef.current = UNVERIFIED_DISK_VERSION;
+        void readTextFileVersioned(path)
+          .then((disk) => {
+            if (loadGeneration.current !== verifyGeneration) return;
+            if (disk.version && disk.text === serializedContent) {
+              diskVersionRef.current = disk.version;
+              return;
+            }
+            // Someone else changed the file after the peer's save.
+            raiseDiskConflict(pendingDiskRef, diskChangeVersion, setDiskConflict);
+          })
+          .catch((error) => {
+            console.warn("FileEditor peer-save verification failed", error);
+          });
+      }
       setDiskVerificationError(null);
       draftBaselineRef.current = serializedContent;
       lineEndingSourceRef.current = serializedContent;
@@ -1005,14 +1128,14 @@ export function FileEditor({
       if (latest !== null && latest.toString() !== content) captureDraft(latest);
       setSaveState({ status: "saved" });
     },
-    [captureDraft],
+    [captureDraft, path],
   );
 
   const stageGit = useCallback(
     async (contents: string) => {
       const relative = displayPath(path, cwd);
       if (!cwd || cwd === "~" || !relative || relative === path) {
-        throw new Error(t("Can't stage this file"));
+        throw new Error(t("Can’t stage this file"));
       }
       if (!gitDiff || gitDiff.kind !== "unstaged") {
         throw new Error(t("Only unstaged changes can be staged"));
@@ -1027,8 +1150,13 @@ export function FileEditor({
         );
         notifyGitChanged(cwd, "index");
       } catch (error) {
-        const message = presentRemoteError(error, { explicit: true });
-        setSaveState({ status: "error", message });
+        await reportFailure(error, {
+          toast: {
+            show: ({ message }) => {
+              if (currentIdentity.current.path === path) setSaveState({ status: "error", message });
+            },
+          },
+        });
         throw error;
       }
     },
@@ -1037,7 +1165,9 @@ export function FileEditor({
 
   const dirtyChange = useCallback(
     (dirty: boolean) => {
+      const needsGitBase = dirty && !dirtyRef.current && currentBase?.kind === "disk";
       dirtyRef.current = dirty;
+      if (needsGitBase) reloadGitRef.current?.();
       setDirty(dirty);
       onDirtyChange(path, dirty);
       if (dirty) {
@@ -1049,7 +1179,7 @@ export function FileEditor({
         void reloadFromDisk();
       }
     },
-    [onDirtyChange, path, reloadFromDisk],
+    [currentBase, onDirtyChange, path, reloadFromDisk],
   );
 
   const errorCountChange = useCallback(
@@ -1072,12 +1202,12 @@ export function FileEditor({
     const generation = draftViewGeneration.current;
     const settled = editorClosure.operation("draft-decision");
     if (!settled) {
-      setDraftActionError(t("The editor is busy closing or moving. Try again in a moment."));
+      setDraftActionNotice(t("The editor is busy closing or moving. Try again in a moment."));
       return;
     }
     draftActionRef.current = true;
     setDraftAction(decision);
-    setDraftActionError(null);
+    setDraftActionNotice(null);
     try {
       if (decision === "restore" && dirtyRef.current) {
         throw new Error(t("Keep or save your current edits before restoring this draft."));
@@ -1112,7 +1242,13 @@ export function FileEditor({
       await handle.flush();
     } catch (error) {
       if (generation === draftViewGeneration.current)
-        setDraftActionError(presentRemoteError(error, { explicit: true }));
+        await reportFailure(error, {
+          toast: {
+            show: ({ message }) => {
+              if (generation === draftViewGeneration.current) setDraftActionNotice(message);
+            },
+          },
+        });
     } finally {
       settled();
       if (generation === draftViewGeneration.current) {
@@ -1127,17 +1263,23 @@ export function FileEditor({
     const generation = draftViewGeneration.current;
     const settled = editorClosure.operation("draft-retry");
     if (!settled) {
-      setDraftActionError(t("The editor is busy closing or moving. Try again in a moment."));
+      setDraftActionNotice(t("The editor is busy closing or moving. Try again in a moment."));
       return;
     }
     draftActionRef.current = true;
     setDraftAction("replace");
-    setDraftActionError(null);
+    setDraftActionNotice(null);
     try {
       await draftHandleRef.current?.retry();
     } catch (error) {
       if (generation === draftViewGeneration.current)
-        setDraftActionError(presentRemoteError(error, { explicit: true }));
+        await reportFailure(error, {
+          toast: {
+            show: ({ message }) => {
+              if (generation === draftViewGeneration.current) setDraftActionNotice(message);
+            },
+          },
+        });
     } finally {
       settled();
       if (generation === draftViewGeneration.current) {
@@ -1159,30 +1301,22 @@ export function FileEditor({
     gitSettledPath !== path &&
     renderedDocumentRef.current !== documentId;
 
-  if (loadState.status === "loading" || diffPending) {
-    return (
-      <UiText
-        role="status"
-        as="div"
-        size="caption"
-        tone="muted"
-        className="grid h-full min-w-0 place-items-center p-3"
-      >
-        <span className="max-w-full break-words text-center">
-          {t("Opening ")}
-          {basename(path)}…
-        </span>
-      </UiText>
-    );
-  }
-
-  if (loadState.status === "error") {
+  if (loadError) {
     return (
       <FileLoadError
         path={path}
-        message={loadState.message}
-        onRetry={() => setReloadKey((value) => value + 1)}
+        message={loadError}
+        retryable={loadState.status !== "error" || !isUnsupportedRemoteRoute(loadState.error)}
+        onRetry={retryDocumentLoad}
       />
+    );
+  }
+
+  if (loadState.status !== "ready" || diffPending) {
+    return (
+      <LoadingText layout="fill" delay={false} className="min-w-0 break-words text-center">
+        {t("Opening {p0}…", { p0: basename(path) })}
+      </LoadingText>
     );
   }
 
@@ -1194,12 +1328,13 @@ export function FileEditor({
       aria-label={t("Save")}
       shortcut="Mod+S"
       disabled={editorClosure.closed() || (!dirty && saveState.status !== "error")}
+      disabledReason={editorClosure.closed() ? t("Preparing checkpoint…") : t("No unsaved changes")}
       loading={saveState.status === "saving"}
       loadingLabel={t("Saving…")}
+      startIcon={<Save className="icon-sm" />}
       onClick={() => void requestSave()}
       className="shrink-0"
     >
-      <Save className="icon-sm" />
       {t("Save")}
     </Button>
   );
@@ -1210,7 +1345,7 @@ export function FileEditor({
       : saveState.status === "saved" && !dirty
         ? t("Saved")
         : saveState.status === "error"
-          ? `${t("Save failed: ")}${saveState.message}`
+          ? t("Save failed")
           : dirty
             ? t("Unsaved changes")
             : "";
@@ -1220,20 +1355,25 @@ export function FileEditor({
     (saveState.status === "saved" && !dirty) ||
     saveState.status === "error";
   const saveStatus = (
-    <LiveText
-      text={saveStatusText}
-      tone={saveStatusVisible && saveState.status === "error" ? "danger" : "inherit"}
-      truncate={saveStatusVisible && saveState.status !== "error"}
-      className={
-        !saveStatusVisible
-          ? "sr-only"
-          : saveState.status === "error"
-            ? "min-w-0 basis-full break-words py-1"
-            : "min-w-0 max-w-64"
-      }
-    />
+    <>
+      <LiveText
+        text={saveStatusText}
+        tone={saveStatusVisible && saveState.status === "error" ? "danger" : "inherit"}
+        truncate={saveStatusVisible && saveState.status !== "error"}
+        className={
+          !saveStatusVisible
+            ? "sr-only"
+            : saveState.status === "error"
+              ? "min-w-0 break-words py-1"
+              : "min-w-0 max-w-64"
+        }
+      />
+      {saveState.status === "error" ? (
+        <ErrorDetails title={t("Save failed")} detail={saveState.message} className="shrink-0" />
+      ) : null}
+    </>
   );
-  const hasMarkdownShell = Boolean(markdown || svg || html);
+  const hasMarkdownShell = Boolean(markdown || svg || html || viewKind);
   // One document/save/recovery/capture binding list for the plain file and the
   // Markdown/SVG/HTML Source pane; they differ only in the view arguments below.
   const sourceEditorKey = fileSourceEditorKey(documentId, reloadKey, editorRevision);
@@ -1248,7 +1388,7 @@ export function FileEditor({
     retainedState: retainedEditor,
     showDiff,
     gitOriginal,
-    navigation,
+    navigation: keepMarkdownView && mode === "preview" ? null : navigation,
     onDirtyChange: dirtyChange,
     onErrorCountChange: errorCountChange,
     onSave: save,
@@ -1262,10 +1402,13 @@ export function FileEditor({
   };
 
   return (
-    <div ref={editorRootRef} className="flex h-full min-h-0 min-w-0 flex-col">
+    <div
+      ref={editorRootRef}
+      aria-busy={diskPending}
+      className="flex h-full min-h-0 min-w-0 flex-col"
+    >
       {draftPersistence?.initializationDecisionRequired ? (
         <UiText
-          role="status"
           as="div"
           size="caption"
           tone="primary"
@@ -1274,20 +1417,17 @@ export function FileEditor({
             "flex shrink-0 flex-wrap items-center gap-2 px-2.5 py-1",
           )}
         >
-          <span className="flex min-w-0 flex-1 items-center gap-1">
-            {t("Unsaved draft found")}
-            <InfoPopover>
-              <UiText as="p" size="caption" tone="secondary">
-                {t(
-                  "A saved draft is available. Restoring keeps its original disk baseline; review it before saving.",
-                )}
-              </UiText>
-            </InfoPopover>
-          </span>
+          <LiveText
+            className="min-w-0 flex-1"
+            text={t(
+              "A saved draft is available. Restoring keeps its original disk baseline; review it before saving.",
+            )}
+          />
           <Button
             size="sm"
             variant="secondary"
             disabled={dirty}
+            disabledReason={t("Save or discard your edits first.")}
             loading={draftAction === "restore"}
             onClick={() => void resolveDraft("restore")}
           >
@@ -1298,13 +1438,15 @@ export function FileEditor({
             variant="ghost"
             loading={draftAction === "replace"}
             disabled={draftAction === "restore"}
+            disabledReason={t("Wait for the current operation to finish")}
             onClick={() => void resolveDraft("replace")}
           >
             {t("Use current document")}
           </Button>
         </UiText>
       ) : null}
-      {draftActionError || (draftPersistence?.error && draftPersistence.phase !== "unsupported") ? (
+      {draftActionNotice ||
+      (draftPersistence?.error && draftPersistence.phase !== "unsupported") ? (
         <InlineError
           className="shrink-0"
           action={
@@ -1318,11 +1460,11 @@ export function FileEditor({
               : undefined
           }
         >
-          {draftActionError ??
+          {draftActionNotice ??
             t("Draft recovery copy could not be confirmed. Keep this editor open.")}
         </InlineError>
       ) : null}
-      {diskConflict && (
+      {(diskConflict || (diskError && dirty)) && (
         <Alert
           tone="warning"
           className="shrink-0"
@@ -1342,7 +1484,7 @@ export function FileEditor({
             },
           }}
         >
-          {diskVerificationError
+          {diskError
             ? t(
                 "The disk version could not be verified. Reload reads it again; overwrite writes the recovered draft.",
               )
@@ -1351,22 +1493,41 @@ export function FileEditor({
               )}
         </Alert>
       )}
+      {diskError && !diskConflict && !dirty ? (
+        <InlineError
+          className="shrink-0"
+          details={diskError}
+          retry={{ onRetry: () => reloadFromDisk() }}
+        >
+          {t("Couldn’t check the file on disk.")}
+        </InlineError>
+      ) : null}
       {showDiff && gitDiff?.eolOnly && (
         <UiText
-          role="status"
           as="p"
           size="secondary"
           tone="secondary"
           {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "shrink-0 px-3 py-1")}
         >
-          {t("{p0} line-ending changes. Line breaks are normalized in this view.", {
-            p0: gitDiff.kind === "staged" ? t("Staged") : t("Unstaged"),
-          })}
+          <LiveText
+            text={t("{p0} line-ending changes. Line breaks are normalized in this view.", {
+              p0: gitDiff.kind === "staged" ? t("Staged") : t("Unstaged"),
+            })}
+          />
         </UiText>
       )}
       {hasMarkdownShell ? (
         <MarkdownViewShell
           zoomable={markdown}
+          labels={
+            viewKind
+              ? {
+                  group: t("File view"),
+                  preview: viewKind === "json" ? t("Tree") : t("Log"),
+                  source: t("Raw"),
+                }
+              : undefined
+          }
           mode={mode}
           onModeChange={setMode}
           leading={
@@ -1392,6 +1553,14 @@ export function FileEditor({
                   />
                 </FilePreviewSearch>
               </PreviewSelection>
+            ) : viewKind === "json" ? (
+              <JsonFileView
+                text={draft}
+                visible={shown && mode === "preview"}
+                onShowRaw={() => setMode("source")}
+              />
+            ) : viewKind === "log" ? (
+              <LogFileView text={draft} visible={shown && mode === "preview"} />
             ) : html ? (
               <HtmlPreview path={path} source={draft} active={active && mode === "preview"} />
             ) : (
@@ -1422,8 +1591,11 @@ export function FileEditor({
         />
       )}
       {chromeError ? (
-        <InlineError {...surfaceAttributes({ frame: "pane", edge: "top" }, "shrink-0 px-2.5 py-1")}>
-          {chromeError}
+        <InlineError
+          {...surfaceAttributes({ frame: "pane", edge: "top" }, "shrink-0 px-2.5 py-1")}
+          details={chromeError.details}
+        >
+          {chromeError.title}
         </InlineError>
       ) : null}
       <UiText
@@ -1444,15 +1616,16 @@ export function FileEditor({
           <Button
             size="sm"
             iconOnly
-            label={t(REVEAL_LABEL)}
+            label={revealLabel()}
             variant="ghost"
-            motion="none"
-            type="button"
-            disabled={isRemoteProjectPath(path)}
             onClick={() =>
-              void revealPath(path).catch((error: unknown) => setChromeError(String(error)))
+              void revealInFileManager(path).catch((error: unknown) =>
+                setChromeError({
+                  title: t("Couldn’t open the file location"),
+                  details: String(error),
+                }),
+              )
             }
-            aria-label={t(REVEAL_LABEL)}
           >
             <Folder className="icon-sm" />
           </Button>
@@ -1461,17 +1634,14 @@ export function FileEditor({
           <Button
             size="sm"
             variant="ghost"
-            motion="none"
-            type="button"
             disabled={openingChrome || isRemoteProjectPath(path)}
-            loading={openingChrome}
-            onClick={() => void goLive()}
-            tooltip={
+            disabledReason={
               isRemoteProjectPath(path)
                 ? t("Open in Chrome is available for local HTML files.")
-                : t("Save and open this HTML file in Google Chrome")
+                : undefined
             }
-            className="shrink-0"
+            loading={openingChrome}
+            onClick={() => void goLive()}
           >
             {t("Open in Chrome")}
           </Button>
@@ -1480,6 +1650,7 @@ export function FileEditor({
         {hasMarkdownShell ? null : saveAction}
         {hasMarkdownShell ? null : saveStatus}
       </UiText>
+      {folderBrowser}
     </div>
   );
 }
@@ -1506,7 +1677,7 @@ function SvgPreview({ source, name }: { source: string; name: string }) {
   if (failed)
     return (
       <DocumentMessage title={t("Couldn’t read this document")} error>
-        {name}
+        {t("The file could not be read; it may be corrupt.")}
       </DocumentMessage>
     );
   if (!url) return null;

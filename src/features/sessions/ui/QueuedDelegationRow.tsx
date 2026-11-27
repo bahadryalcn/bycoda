@@ -15,11 +15,14 @@ export function QueuedDelegationRow({
   message,
   itemRef,
   disabled,
+  disabledReason,
   onRemove,
 }: {
   message: QueuedMessage;
   itemRef: Ref<HTMLDivElement>;
   disabled: boolean;
+  /** Shown while `disabled`, naming why the notice cannot be removed. */
+  disabledReason?: string;
   onRemove: () => void;
 }) {
   const t = useT();
@@ -29,10 +32,12 @@ export function QueuedDelegationRow({
   const count = sections.length;
   const completions = sections.every((section) => section.reason === "completion");
   const label = completions
-    ? t(count === 1 ? "1 subagent result waiting" : "{p0} subagent results waiting", { p0: count })
-    : t(count === 1 ? "1 subagent message waiting" : "{p0} subagent messages waiting", {
-        p0: count,
-      });
+    ? count === 1
+      ? t("1 subagent result waiting")
+      : t("{p0} subagent results waiting", { p0: count })
+    : count === 1
+      ? t("1 subagent message waiting")
+      : t("{p0} subagent messages waiting", { p0: count });
   return (
     <Text
       ref={itemRef}
@@ -59,6 +64,7 @@ export function QueuedDelegationRow({
         iconOnly
         label={t("Remove queued message")}
         disabled={disabled}
+        disabledReason={disabledReason}
         onClick={onRemove}
       >
         <Trash2 className="icon-sm" />

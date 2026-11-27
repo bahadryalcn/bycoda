@@ -45,6 +45,9 @@ const render = (value = server) =>
   );
 const button = (text: string) =>
   [...document.querySelectorAll("button")].find((b) => b.textContent === text)!;
+// A disabled control that explains why stays focusable: it is aria-disabled, not `disabled`.
+const blocked = (element: HTMLButtonElement) =>
+  element.disabled || element.getAttribute("aria-disabled") === "true";
 it("reviews the explicit current target and approves exactly once without saving permissions", async () => {
   await render();
   expect(native.invoke).toHaveBeenCalledExactlyOnceWith("ssh_agent_forwarding_review", {
@@ -52,9 +55,11 @@ it("reviews the explicit current target and approves exactly once without saving
   });
   expect(approve).not.toHaveBeenCalled();
   expect(document.body.textContent).toContain("alice@server.invalid:22");
-  expect(document.body.textContent).toContain("remote target can use your SSH agent identities");
+  expect(document.body.textContent).toContain(
+    "remote target can use identities from your SSH agent",
+  );
   const action = button("Approve and connect");
-  expect(action.disabled).toBe(false);
+  expect(blocked(action)).toBe(false);
   await act(async () => {
     action.click();
     action.click();
@@ -63,63 +68,72 @@ it("reviews the explicit current target and approves exactly once without saving
   expect(close).toHaveBeenCalledOnce();
   expect(native.invoke).toHaveBeenCalledTimes(1);
 });
-it("expires without renewing or reconnecting and only an explicit retry gets a fresh review", async () => {
+/** The raw text behind the alert's Details link: opens it, reads the page, closes it again. */
+const detailsText = async () => {
+  const trigger = [...document.querySelectorAll("button")].find(
+    (entry) => entry.textContent === "Details",
+  )!;
+  await act(async () => trigger.click());
+  const text = document.body.textContent ?? "";
+  await act(async () => trigger.click());
+  return text;
+};
+it("replaces an expired review with a fresh one, never approving on its own", async () => {
   vi.useFakeTimers();
   await render();
+  // Built at call time: the replacement expires 30 s after the moment it is read.
+  native.invoke.mockImplementation(async () => ({ ...review(), reviewId: "new-review" }));
   await act(async () => vi.advanceTimersByTimeAsync(30_000));
-  expect(button("Approve and connect").disabled).toBe(true);
-  expect(native.invoke).toHaveBeenCalledTimes(1);
-  await act(async () => button("Approve and connect").click());
-  expect(approve).not.toHaveBeenCalled();
-  native.invoke.mockResolvedValue({ ...review(), reviewId: "new-review" });
-  await act(async () => button("Request new review").click());
   expect(native.invoke).toHaveBeenCalledTimes(2);
-  expect(button("Approve and connect").disabled).toBe(false);
+  expect(approve).not.toHaveBeenCalled();
+  expect(blocked(button("Approve and connect"))).toBe(false);
+  await act(async () => button("Approve and connect").click());
+  expect(approve).toHaveBeenCalledExactlyOnceWith(server, "new-review");
+  expect(vi.getTimerCount()).toBe(0);
 });
-it("invalidates a changed endpoint before approval and does not auto-review the replacement", async () => {
+it("reviews a changed endpoint again and approves only what the native side returned for it", async () => {
   await render();
   const changed = { ...server, sshEndpoint: { ...server.sshEndpoint!, host: "other.invalid" } };
+  // The first answer still names the old host, so the changed target is rejected with one error.
   await render(changed);
-  expect(document.body.textContent).toContain(
-    "Agent forwarding target changed. Request a new review.",
+  expect(native.invoke).toHaveBeenCalledTimes(2);
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not review the SSH agent target.",
   );
-  expect(button("Approve and connect").disabled).toBe(true);
-  expect(native.invoke).toHaveBeenCalledTimes(1);
-  await render(server);
-  expect(button("Approve and connect").disabled).toBe(true);
-  await render(changed);
+  expect(await detailsText()).toContain("Agent forwarding target changed.");
+  expect(blocked(button("Approve and connect"))).toBe(true);
   await act(async () => button("Approve and connect").click());
   expect(approve).not.toHaveBeenCalled();
   native.invoke.mockResolvedValue({
     ...review(),
     summary: { ...review().summary, host: "other.invalid" },
   });
-  await act(async () => button("Request new review").click());
+  await act(async () => button("Retry").click());
   await act(async () => button("Approve and connect").click());
   expect(approve).toHaveBeenCalledWith(changed, "one-use-review");
 });
-it("rejects unavailable, malformed or mismatched native targets with explicit retry", async () => {
+it("rejects unavailable, malformed or mismatched native targets with one error and Retry", async () => {
   native.invoke.mockResolvedValue({
     ...review(),
     summary: { ...review().summary, host: "wrong.invalid" },
   });
   await render();
-  expect(button("Approve and connect").disabled).toBe(true);
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain("target changed");
+  expect(blocked(button("Approve and connect"))).toBe(true);
+  expect(await detailsText()).toContain("target changed");
   native.invoke.mockResolvedValue({ ...review(), agentAvailable: false });
-  await act(async () => button("Request new review").click());
-  expect(button("Approve and connect").disabled).toBe(true);
+  await act(async () => button("Retry").click());
+  expect(blocked(button("Approve and connect"))).toBe(true);
   expect(approve).not.toHaveBeenCalled();
   native.invoke.mockRejectedValue(new Error("Agent forwarding through jumps is unavailable"));
-  await act(async () => button("Request new review").click());
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain("through jumps");
+  await act(async () => button("Retry").click());
+  expect(await detailsText()).toContain("through jumps");
   expect(approve).not.toHaveBeenCalled();
   native.invoke.mockResolvedValue({ reviewId: "malformed" });
-  await act(async () => button("Request new review").click());
-  expect(button("Approve and connect").disabled).toBe(true);
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain("review is unavailable");
+  await act(async () => button("Retry").click());
+  expect(blocked(button("Approve and connect"))).toBe(true);
+  expect(await detailsText()).toContain("review is unavailable");
 });
-it("ignores late answers after target changes or unmount and prevents concurrent duplicate review requests", async () => {
+it("ignores late answers after target changes or unmount", async () => {
   let finish!: (value: unknown) => void;
   native.invoke.mockImplementation(
     () =>
@@ -128,38 +142,32 @@ it("ignores late answers after target changes or unmount and prevents concurrent
       }),
   );
   await render();
-  expect(button("Request new review").disabled).toBe(true);
-  await act(async () => {
-    button("Request new review").click();
-    button("Request new review").click();
-  });
+  expect(blocked(button("Approve and connect"))).toBe(true);
   expect(native.invoke).toHaveBeenCalledTimes(1);
   await render({ ...server, id: "replacement" });
-  await act(async () => finish(review()));
-  expect(button("Approve and connect").disabled).toBe(true);
-  expect(approve).not.toHaveBeenCalled();
-  await act(async () => button("Request new review").click());
   expect(native.invoke).toHaveBeenCalledTimes(2);
+  await act(async () => finish(review()));
+  expect(blocked(button("Approve and connect"))).toBe(false);
   await act(async () => root.unmount());
   await act(async () => finish(review()));
   expect(approve).not.toHaveBeenCalled();
   root = createRoot(host);
 });
 
-it("shows the current HTTP upstream in the review and invalidates approval if its profile changes", async () => {
+it("shows the current HTTP upstream in the review and reviews again if its profile changes", async () => {
   const proxy = {
     ...server,
     sshEndpoint: { ...server.sshEndpoint!, httpProxy: { host: "proxy.invalid", port: 3128 } },
   };
   await render(proxy);
   expect(document.body.textContent).toContain("HTTP CONNECT: proxy.invalid:3128");
-  expect(button("Approve and connect").disabled).toBe(false);
+  expect(blocked(button("Approve and connect"))).toBe(false);
   await render({
     ...proxy,
     sshEndpoint: { ...proxy.sshEndpoint, httpProxy: { host: "other-proxy.invalid", port: 3128 } },
   });
-  expect(button("Approve and connect").disabled).toBe(true);
-  expect(native.invoke).toHaveBeenCalledTimes(1);
+  expect(native.invoke).toHaveBeenCalledTimes(2);
+  expect(document.body.textContent).toContain("HTTP CONNECT: other-proxy.invalid:3128");
 });
 
 it("reviews an inherited native target only with validated configuration and an explicit inheritance binding", async () => {
@@ -185,7 +193,7 @@ it("reviews an inherited native target only with validated configuration and an 
     summary: { ...review().summary, user: "group-user", port: 2222, configuration },
   });
   await render(inherited);
-  expect(button("Approve and connect").disabled).toBe(false);
+  expect(blocked(button("Approve and connect"))).toBe(false);
   expect(document.body.textContent).toContain("group-user@server.invalid:2222");
   expect(document.body.textContent).toContain("APP_STAGE=prod");
   await render({
@@ -195,12 +203,11 @@ it("reviews an inherited native target only with validated configuration and an 
       sshInheritance: { ...inherited.metadata.sshInheritance, environment: false },
     },
   });
-  expect(button("Approve and connect").disabled).toBe(true);
-  await act(async () => button("Request new review").click());
-  expect(button("Approve and connect").disabled).toBe(false);
+  expect(native.invoke).toHaveBeenCalledTimes(2);
+  expect(blocked(button("Approve and connect"))).toBe(false);
   await render(server);
-  await act(async () => button("Request new review").click());
-  expect(button("Approve and connect").disabled).toBe(true);
+  expect(native.invoke).toHaveBeenCalledTimes(3);
+  expect(blocked(button("Approve and connect"))).toBe(true);
 });
 it("does not use malformed runtime metadata to accept a changed review target", async () => {
   native.invoke.mockResolvedValue({
@@ -218,6 +225,6 @@ it("does not use malformed runtime metadata to accept a changed review target", 
       sshInheritance: { groupId: "group-1", fields: ["user"], environment: false },
     },
   });
-  expect(button("Approve and connect").disabled).toBe(true);
+  expect(blocked(button("Approve and connect"))).toBe(true);
   expect(approve).not.toHaveBeenCalled();
 });

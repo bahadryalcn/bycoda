@@ -3,6 +3,17 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SubagentMessageForm, type SubagentRelay } from "./SubagentMessageForm";
+import { SubagentChatComposer } from "./SubagentMessageForm";
+import { newSession, type Attachment } from "../model/session";
+import { openErrorDetails } from "./errorDetails.fixture";
+
+const ownerComposer = vi.hoisted(() => ({ props: undefined as unknown }));
+vi.mock("./Composer", () => ({
+  Composer: (props: unknown) => {
+    ownerComposer.props = props;
+    return null;
+  },
+}));
 
 let container: HTMLDivElement;
 let root: Root;
@@ -89,7 +100,8 @@ it("keeps the draft and says so when a send was rejected", () => {
 
 it("shows the open error and keeps the form usable", () => {
   render(relay({ mode: "direct", onOpenConversation: vi.fn(), openError: "Session is gone" }));
-  expect(container.textContent).toContain("Session is gone");
+  expect(container.textContent).toContain("Could not open this session.");
+  expect(openErrorDetails(container)).toContain("Session is gone");
   expect(buttonLabels()).toContain("Send");
 });
 
@@ -97,10 +109,112 @@ it("disables Send for an empty draft or a blocked child", () => {
   render(relay({ mode: "direct", draft: "   " }));
   expect(buttonLabels()).toContain("Send");
   const send = [...container.querySelectorAll("button")].find((b) => b.textContent === "Send");
-  expect(send?.disabled).toBe(true);
+  expect(send?.getAttribute("aria-disabled")).toBe("true");
 
   render(relay({ mode: "direct", blockedReason: "The child session is not ready." }));
   expect(container.textContent).toContain("The child session is not ready.");
   const blocked = [...container.querySelectorAll("button")].find((b) => b.textContent === "Send");
-  expect(blocked?.disabled).toBe(true);
+  expect(blocked?.getAttribute("aria-disabled")).toBe("true");
+});
+
+it("announces the Ctrl/Cmd+Enter send shortcut on the message box", () => {
+  render(relay({ mode: "direct" }));
+  const message = container.querySelector("textarea")!;
+  expect(message.getAttribute("aria-keyshortcuts")).toBe("Control+Enter Meta+Enter");
+});
+
+it("shows the shared Mod+Enter hint on the send button in both routes", () => {
+  render(relay({ mode: "direct" }));
+  const send = [...container.querySelectorAll("button")].find((b) => b.textContent === "Send")!;
+  expect(send.hasAttribute("data-tooltip-owner")).toBe(true);
+
+  render(relay());
+  const relayButton = [...container.querySelectorAll("button")].find(
+    (b) => b.textContent === "Relay via main agent",
+  )!;
+  expect(relayButton.hasAttribute("data-tooltip-owner")).toBe(true);
+});
+
+it("leaves Enter to insert a newline; Ctrl/Cmd+Enter sends only outside IME composition", () => {
+  const send = vi.fn();
+  const setDraft = vi.fn();
+  render(relay({ mode: "direct", send, setDraft }));
+  const message = container.querySelector("textarea")!;
+
+  act(() => {
+    message.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+  });
+  expect(send).not.toHaveBeenCalled();
+
+  act(() => {
+    message.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+  expect(send).toHaveBeenCalledOnce();
+
+  act(() => {
+    message.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        ctrlKey: true,
+        isComposing: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+  expect(send).toHaveBeenCalledOnce();
+  expect(setDraft).not.toHaveBeenCalled();
+});
+
+it("uses the normal composer and keeps direct Steer, Queue and attachments on the child", () => {
+  const session = { ...newSession("codex", "/project"), id: "child", busy: true };
+  const onSubmit = vi.fn(() => true);
+  act(() =>
+    root.render(
+      createElement(SubagentChatComposer, {
+        name: "Reviewer",
+        session,
+        visible: true,
+        remoteSession: true,
+        remoteFeatures: { attachments: true, plan: false, draft: false, steer: true },
+        onSubmit,
+      }),
+    ),
+  );
+  const props = ownerComposer.props as import("react").ComponentProps<
+    typeof import("./Composer").Composer
+  >;
+  expect(props).toMatchObject({
+    sessionId: "child",
+    enabled: true,
+    busy: true,
+    hideIdentityControls: true,
+    remoteFeatures: { attachments: true, steer: true },
+  });
+  expect(props.compact).not.toBe(true);
+  const attachments: Attachment[] = [
+    {
+      id: "image",
+      name: "proof.png",
+      kind: "image",
+      mimeType: "image/png",
+      size: 16,
+      path: "/project/proof.png",
+    },
+  ];
+  props.onSubmit("$review", attachments, { followUpBehavior: "steer" });
+  props.onSubmit("When done", attachments, { followUpBehavior: "queue" });
+  expect(onSubmit.mock.calls).toEqual([
+    ["$review", attachments, { followUpBehavior: "steer" }],
+    ["When done", attachments, { followUpBehavior: "queue" }],
+  ]);
 });

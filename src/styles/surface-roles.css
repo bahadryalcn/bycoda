@@ -1,4 +1,4 @@
-/* Semantic recipes shared by error-bearing panels and native popup grounds.
+/* Semantic recipes shared by error-bearing panels and floating surfaces.
    Refer to existing surface roles so themes and workspace preferences remain authoritative. */
 html {
   --ui-effort-fill: linear-gradient(to top, var(--ui-tone-info-solid), var(--ui-tone-accent-solid));
@@ -15,10 +15,6 @@ html {
     var(--ui-tone-danger-fg) calc(var(--ui-tone-subtle-strength) * 0.45),
     var(--ui-surface)
   );
-  --ui-surface-danger-floating: color-mix(
-    in srgb,
-    var(--ui-tone-danger-fg) calc(var(--ui-tone-subtle-strength) * 0.45),
-    var(--ui-surface-floating)
-  );
+  --ui-surface-danger-floating: var(--ui-surface-floating);
   --ui-surface-translucent: color-mix(in oklab, var(--color-background-base) 45%, transparent);
 }

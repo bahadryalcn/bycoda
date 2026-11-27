@@ -8,6 +8,12 @@
  * which resumes the provider conversation from the stored provider session id.
  */
 
+import {
+  DELEGATION_PARENT_KEY,
+  DELEGATION_PROVIDER_HISTORY_KEY,
+  decodeDelegationParent,
+} from "../../src/shared/model/host-contracts/delegation";
+
 export const PROVIDER_CHILD_IDLE_MS = 10 * 60_000;
 export const PROVIDER_CHILD_IDLE_SWEEP_MS = 60_000;
 
@@ -43,6 +49,7 @@ type StoredSession = {
   session: {
     harness: string;
     providerSessionId?: string;
+    modelSettings?: Readonly<Record<string, string>>;
     busy?: boolean;
     pendingQuestion?: unknown;
     pendingSwitch?: unknown;
@@ -63,6 +70,20 @@ export function logicalSessionId(childId: string): string {
   return childId.replace(/#\d+$/, "");
 }
 
+/**
+ * A private delegate (`ephemeral` provider history, claude and codex) never binds a provider
+ * session: every relaunch starts a fresh provider thread and the engine replays the stored
+ * Bycoda transcript (`privateDelegateReplay`), so it resumes without a provider session id.
+ * Only a validly decoded delegation parent qualifies; a malformed marker keeps the refusal.
+ */
+function isPrivateDelegate(session: StoredSession["session"]): boolean {
+  return (
+    (session.harness === "claude" || session.harness === "codex") &&
+    session.modelSettings?.[DELEGATION_PROVIDER_HISTORY_KEY] === "ephemeral" &&
+    !!decodeDelegationParent(session.modelSettings[DELEGATION_PARENT_KEY])
+  );
+}
+
 export function createSessionIdleGate(
   engine: { hasActiveRun(sessionId: string): boolean },
   store: { session(sessionId: string): Promise<StoredSession> },
@@ -76,7 +97,11 @@ export function createSessionIdleGate(
       const { session } = value;
       if (value.status !== "idle" || session.busy) return false;
       // Without a stored provider conversation the next turn could not resume.
-      if (!session.providerSessionId || !RESUMABLE_HARNESSES.has(session.harness)) return false;
+      if (
+        !isPrivateDelegate(session) &&
+        (!session.providerSessionId || !RESUMABLE_HARNESSES.has(session.harness))
+      )
+        return false;
       if (
         session.pendingQuestion ||
         session.pendingSwitch ||

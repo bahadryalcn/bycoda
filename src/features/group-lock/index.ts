@@ -4,3 +4,4 @@ export type * as hooksUseGroupLockApi from "./public/useGroupLock";
 export type * as modelRoomPrivacyApi from "./public/roomPrivacy";
 export type * as modelProjectLockApi from "./public/projectLock";
 export type * as privacySettingsApi from "./public/privacySettings";
+export type * as remoteGroupLockApi from "./public/remoteGroupLock";

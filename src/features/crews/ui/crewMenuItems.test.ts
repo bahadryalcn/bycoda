@@ -6,12 +6,8 @@ const crew = (projectId?: string) => ({ id: "c1", name: "Core", projectId }) as 
 
 describe("crew menu", () => {
   it("maps picks to the dialog they open", () => {
-    expect(crewMenuDialog("work", crew())).toEqual({ kind: "work", crewId: "c1" });
-    expect(crewMenuDialog("members", crew())).toEqual({
-      kind: "edit",
-      crewId: "c1",
-      initialPage: "add",
-    });
+    expect(crewMenuDialog("edit", crew())).toEqual({ kind: "edit", crewId: "c1" });
+    expect(crewMenuDialog("delete", crew())).toEqual({ kind: "delete", crewId: "c1" });
     expect(crewMenuDialog("duplicate", crew("p1"))).toEqual({
       kind: "edit",
       copyOf: { crewId: "c1", scope: "project" },
@@ -25,6 +21,16 @@ describe("crew menu", () => {
       copyOf: { crewId: "c1", scope: "project" },
     });
     expect(crewMenuDialog("open", crew())).toBeNull();
+    // Work and new work are not menu items: the Work tab and the card own them.
+    expect(crewMenuDialog("work", crew())).toBeNull();
+    expect(crewMenuDialog("start", crew())).toBeNull();
+  });
+
+  it("lists only the crew's own operations", () => {
+    const ids = crewMenuItems(crew(), { canOpenCoordinator: false, deleteSupported: true }).flatMap(
+      (item) => (item.kind === "item" ? [item.id] : []),
+    );
+    expect(ids).toEqual(["edit", "duplicate", "scope", "delete"]);
   });
 
   it("offers delete only when the host supports it", () => {

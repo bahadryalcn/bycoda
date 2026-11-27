@@ -1,17 +1,10 @@
 import { Text } from "../../../shared/ui/Text";
-import {
-  ActivitySources,
-  activitySourceNote,
-  formatActiveMinutes,
-  useActivityOverview,
-} from "../../activity";
+import { formatActiveMinutes, useActivityOverview } from "../../activity";
 import { t, useLocale } from "../../../shared/i18n";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { Surface } from "../../../shared/ui/Surface";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 
-/** Active time (today, week, month, year) with its source scope: this machine, connected machines or all devices. */
+/** Active time (today, week, month, year) over this computer and its connected machines (all devices when signed in). */
 export function UsageActiveTime() {
   useLocale();
   const overview = useActivityOverview();
@@ -19,16 +12,8 @@ export function UsageActiveTime() {
   const value = (minutes: number | undefined) =>
     minutes == null ? "—" : formatActiveMinutes(minutes);
   return (
-    <Surface variant="card" padding="sm" className="usage-active-time">
-      <div className="usage-active-heading">
-        <SectionLabel>{t("Active time")}</SectionLabel>
-        <Text size="caption" tone="muted" leading="inherit" className="usage-active-source">
-          {activitySourceNote(overview)}
-        </Text>
-        <InfoPopover label={t("Active time source")}>
-          <ActivitySources overview={overview} />
-        </InfoPopover>
-      </div>
+    <section className="usage-active-time" aria-label={t("Active time")}>
+      <SectionLabel>{t("Active time")}</SectionLabel>
       <DescriptionList columns="auto" size="sm" className="usage-active-metrics">
         <DescriptionItem term={t("Today")}>{value(summary?.today)}</DescriptionItem>
         <DescriptionItem term={t("This week")}>{value(summary?.week)}</DescriptionItem>
@@ -40,6 +25,6 @@ export function UsageActiveTime() {
           {t("Active time is unavailable right now.")}
         </Text>
       ) : null}
-    </Surface>
+    </section>
   );
 }

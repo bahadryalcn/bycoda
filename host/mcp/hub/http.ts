@@ -23,6 +23,7 @@ export type ExternalMcpAuth = {
 export class ExternalMcpRoute {
   private active = 0;
   private readonly tokens = new Map<string, { start: number; count: number; active: number }>();
+  private lastTokenSweep = Number.NEGATIVE_INFINITY;
 
   constructor(
     private readonly hub: McpHub,
@@ -101,8 +102,14 @@ export class ExternalMcpRoute {
           error: { code: -32600, message: "Invalid JSON-RPC request." },
         });
       let reply: Record<string, unknown> | undefined;
+      // A client that disconnects while its call waits for a process slot stops waiting.
+      const gone = new AbortController();
+      const onClose = () => {
+        if (!response.writableFinished) gone.abort();
+      };
+      response.once("close", onClose);
       try {
-        reply = await this.hub.serve(name, principal.sessionId, message, cwd);
+        reply = await this.hub.serve(name, principal.sessionId, message, cwd, gone.signal);
       } catch (error) {
         if (message.id === undefined) {
           response.writeHead(202).end();
@@ -118,6 +125,7 @@ export class ExternalMcpRoute {
         response.writeHead(202).end();
         return true;
       }
+      response.off("close", onClose);
       return this.send(response, reply);
     } finally {
       limit.release();
@@ -133,6 +141,14 @@ export class ExternalMcpRoute {
   /** Same per-credential and global caps as the group routes, counted per credential digest. */
   private admit(token: string): { release(): void } | undefined {
     const now = this.now();
+    // Idle credentials (no in-flight request, expired window) are dropped so the map cannot grow
+    // with every session token over the Host's lifetime. Entries with active requests are kept so
+    // release() still settles the counts it owns.
+    if (now - this.lastTokenSweep >= WINDOW_MS || now < this.lastTokenSweep) {
+      this.lastTokenSweep = now;
+      for (const [key, entry] of this.tokens)
+        if (entry.active === 0 && now - entry.start >= WINDOW_MS) this.tokens.delete(key);
+    }
     const key = createHash("sha256").update(token).digest("hex");
     let entry = this.tokens.get(key);
     if (!entry) this.tokens.set(key, (entry = { start: now, count: 0, active: 0 }));

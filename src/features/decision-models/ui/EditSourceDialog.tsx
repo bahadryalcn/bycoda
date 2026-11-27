@@ -51,13 +51,13 @@ export function EditSourceDialog({
     if (hasEndpoint) patch.endpoint = endpoint.trim();
     if (model.trim()) patch.model = model.trim();
     const key = apiKey.trim();
-    // The typed key leaves component state before the request.
-    setApiKey("");
+    // The typed key stays in state until the save succeeds, so a failed save keeps it for a retry.
     setSaving(true);
     setFailure(null);
     onSave(patch, key || undefined).then(
       () => {
         setSaving(false);
+        setApiKey("");
         onClose();
       },
       (error: unknown) => {

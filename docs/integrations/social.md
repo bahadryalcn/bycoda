@@ -25,12 +25,20 @@ connection/project filters visible on each of them.
 | Inbox    | Unified conversations and comments across accounts, with status, timeline, reply options and auto-refresh.                                                               |
 | Accounts | Connections, account type and driver, per-account permissions, the autonomy policy, the browser section (visibility, live view, NEEDS_HUMAN), and the AI model settings. |
 
+When the browser queue cannot refresh, Command shows the failure with a retry if the last list was empty.
+
 Screen state is retained across navigation. Drafts, forms and per-conversation reply
 text are independent. Switching hosts clears that host's private data. A failed refresh
 keeps the last data and shows a retry action.
 
 AI activity uses **Completed** when an action finishes, including draft creation.
 **Sent** remains the delivery status for successfully sent jobs.
+
+The Accounts activity list merges sent jobs and AI actions newest first. It reads jobs 20 at a
+time (`workspace.snapshot` section `history`, `offsets.jobs`) and AI actions by `ai.actions.list`
+cursor, both with the selected project and the principal's readable accounts. **Load more**
+reads the next page of each source that still has rows; entries older than what an unfinished
+source has loaded wait, so a later page never lands out of order.
 
 ### Social conversation panel
 
@@ -110,18 +118,22 @@ continue to apply.
 
 ### Support matrix
 
-| Platform  | Official API (free where listed)                                                                                                                                                                                                                            | Browser connection                                                                                                                                                                                           | Deferred or not implemented                                                                                                                                                               |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| X         | OAuth posts, text plus up to four JPEG/PNG images or one MP4, replies, delete, mentions and comments on own posts, profile read, metrics, rate-limit pause. DM read and reply with DM scopes. Likes/reposts are adapter functions without an operation row. | Posts, images or one video, mentions and saved-post comments, legacy web DM text, owner profile and follow controls.                                                                                         | Threads (not implemented), quote posts and polls (no model field, not reachable), encrypted Chat, DM attachments, search-based discovery on the API (product tier dependent).             |
-| Instagram | Professional account: HTTPS image, feed Reel, mixed carousel up to four assets, owned-media comments and replies, text inbox replies in the supported window.                                                                                               | Image, carousel or one video publishing, saved-post comments and replies, recognized existing-thread text replies.                                                                                           | Stories, cold or new DMs, DM attachments, hashtag discovery (author field unverified), post delete (no path found).                                                                       |
-| Facebook  | Managed Page text/link, up to four HTTPS photos, Reels from an uploaded MP4 with durable verification, comments, Messenger text replies in the response window.                                                                                             | Personal or Page actor, text and media publishing, saved-post comments, recognized existing-thread Messenger replies.                                                                                        | Ordinary Page video publishing, Stories, Page post edit, comment hide/delete through the host (helper only).                                                                              |
-| LinkedIn  | Member text, Page text, Page images (one to four, alt text, readiness verification), Page PDF documents, comments on known posts, token refresh hook. Single-image Page uploads verify byte content.                                                        | Verified member or organization text, images or video, one titled PDF, comments and replies, existing personal chats, first-degree connection requests and acceptance (exports exist; no operation row yet). | Organization inbox, InMail, video through the API (multipart ETag handling is blocked), carousel, polls, analytics, groups and newsletters.                                               |
-| YouTube   | Verified channel upload with resumable upload and processing checks, comments and replies, analytics, profile and health checks, owner-video and keyword commenter collection (search costs quota).                                                         | Studio upload with metadata and declarations, saved-video comments and replies.                                                                                                                              | Community posts, Shorts settings, live chat, captions, thumbnail/playlist/moderation (adapter functions without operation rows).                                                          |
-| TikTok    | Direct Post of one video or up to four photo URLs on a verified domain, inbox (draft) upload, creator settings, status polling to completion, video list, metrics, health check.                                                                            | Studio upload of one local video, saved-video comments and replies, commenter collection on own videos.                                                                                                      | Comment management through Business API, browser comment delete, hashtag and keyword search (research API), browser inbox, scheduling, DM, Live.                                          |
-| Snapchat  | Public Profile API: encrypted Spotlight MP4 upload with exact Spotlight ID tracking until LIVE, health check.                                                                                                                                               | Member chat text replies in existing chats; Public Profile uploader for Spotlight or 24-hour Story video. Current Story acceptance lacks a durable Snap ID and is held for review.                           | Public Story through the API, Marketing API, Creative Kit, metrics, Story interactions, API audience collection.                                                                          |
-| WhatsApp  | Business Cloud API: signed incoming text, text or one image/video reply within the 24-hour window, delivery receipts. Business-initiated free text is refused before I/O.                                                                                   | Personal Web session: bounded visible direct chats, text and one image or video per send. Audience collection from chat senders is not offered (no sender reader is wired).                                  | Templates and interactive messages (exported, not reachable from jobs), catalog, Status and Channels, group messages, bulk messaging for personal accounts, auto-reply, quality webhooks. |
-| Telegram  | Bot token: bounded text polling, text and one image or video send, webhook parser, bot-sender collection. Channel: administrator bot publishing with receipts.                                                                                              | Personal Web session: direct chats only, stable cursor, text and one image or video per send.                                                                                                                | Polls, inline buttons, edit and pin (functions only, no host path), webhook route, moderation, MTProto, stories, channel settings.                                                        |
-| Reddit    | Script or web app OAuth, text and link posts to one subreddit per item, subreddit rules and required flair, comments and replies, inbox polling, private message start and reply, keyword search, own-post commenters, delete.                              | Member web session: text and link posts to one subreddit (flair when required), comments, replies, inbox poll of comment replies and username mentions. Chat and private messages are not offered.           | Image, video and gallery posts; edit; account commenters; moderation and chat; upvote and save.                                                                                           |
+| Platform  | Official API (free where listed)                                                                                                                                                                                                                                                                                                                  | Browser connection                                                                                                                                                                                                                                                                                                                                                                                                                                      | Deferred or not implemented                                                                                                                                                                                                                                                 |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| X         | OAuth posts, text plus up to four JPEG/PNG images or one MP4, replies, delete, mentions and comments on own posts, profile read, metrics, rate-limit pause. DM read and reply with DM scopes. Likes/reposts are adapter functions without an operation row.                                                                                       | Posts, images or one video, mentions and saved-post comments, legacy web DM text, owner profile and follow controls.                                                                                                                                                                                                                                                                                                                                    | Threads (not implemented), quote posts and polls (no model field, not reachable), encrypted Chat, DM attachments, search-based discovery on the API (product tier dependent).                                                                                               |
+| Instagram | Professional account: HTTPS image, feed Reel, Story (eligible Business account), mixed carousel up to four assets, owned-media comments and replies, comment moderation requests, insights and mentions, text inbox replies in the supported window.                                                                                              | Image, carousel or one video publishing, saved-post comments and replies, recognized existing-thread text replies, profile, post edit and delete, Highlights, new-DM composer, earnings panel, Live Producer.                                                                                                                                                                                                                                           | Cold or new DMs (platform forbidden), DM attachments on the browser path, hashtag discovery. AI queues post, profile, Highlight and DM draft changes with `instagram.management.request` and reads earnings with `instagram.earnings.read`. The owner approves each change. |
+| Facebook  | Managed Page text/link, up to four HTTPS photos, video, Reels from an uploaded MP4 with durable verification, Stories, native scheduling, comments (hide, delete, like), Messenger text replies in the response window, insights, earnings estimates, Live. AI queues Page, post, moderation and Live changes with `facebook.management.request`. | Personal or Page actor, text and media publishing, saved-post comments, recognized existing-thread Messenger replies. A browser-connected Page cannot choose Story in Content: a button opens the Facebook Story composer and the owner switches to the Page there.                                                                                                                                                                                     | Page post edit through the host, Groups, cold Messenger conversations.                                                                                                                                                                                                      |
+| LinkedIn  | Member and Page posts with text, images, PDF, MP4, polls and article links. Known-post management, comment actions and scoped analytics.                                                                                                                                                                                                          | Verified member or Page publishing and comments, personal chats, mentions and account setup.                                                                                                                                                                                                                                                                                                                                                            | Native newsletters, Page messaging, InMail and stream start require provider-side workflows.                                                                                                                                                                                |
+| YouTube   | Resumable video and Shorts upload, video metadata, thumbnails, playlists, comments and moderation, subscriptions, channel branding, Analytics and eligible earnings, Live and Super Chats. AI queues channel update and video, playlist, comment and Community deletes with `youtube.changes.request`; the owner approves in Review.              | Studio upload, first-page video and Short lookup, owner-confirmed video deletion with a receipt and fresh read, comments and replies, likes and hearts, Community text/image/poll posts, channel profile fields and Earn status.                                                                                                                                                                                                                        | Platform verification and eligibility (Google verifies sensitive Analytics scopes). General DMs unavailable. See the YouTube section for scope, quota and file limits.                                                                                                      |
+| TikTok    | Direct Post and inbox upload, Display profile and metrics, and approved Business comments, mentions and reporting.                                                                                                                                                                                                                                | Studio publishing and post management, comments, visible DM previews and sending, profile and privacy, audience, insights, earnings and LIVE setup/replies. AI queues follow, comment like, hide, pin and reply, LIVE reply, profile update, privacy update and post delete with `tiktok.changes.request`; the owner approves in TikTok changes. A comment reply on a non-Business browser account opens the TikTok Studio comments page for the owner. | Stories, public keyword/hashtag search, native scheduling (the Host scheduler publishes), comment delete and mobile-only controls. Browser and Business availability depend on account eligibility.                                                                         |
+| Snapchat  | Public Profile API: encrypted Spotlight MP4 upload with exact Spotlight ID tracking until LIVE, health check.                                                                                                                                                                                                                                     | Member chat text replies in existing chats; Public Profile uploader for Spotlight or 24-hour Story video. Current Story acceptance lacks a durable Snap ID and is held for review.                                                                                                                                                                                                                                                                      | Public Story through the API, Marketing API, Creative Kit, metrics, Story interactions, API audience collection.                                                                                                                                                            |
+| WhatsApp  | Business Cloud API: signed incoming text, text or one image/video reply within the 24-hour window, delivery receipts. Business-initiated free text is refused before I/O.                                                                                                                                                                         | Personal Web session: bounded visible direct chats, text and one image or video per send. Audience collection from chat senders is not offered (no sender reader is wired).                                                                                                                                                                                                                                                                             | Templates and interactive messages (exported, not reachable from jobs), catalog, Status and Channels, group messages, bulk messaging for personal accounts, auto-reply, quality webhooks.                                                                                   |
+| Telegram  | Bot token: bounded text polling, text and one image or video send, webhook parser, bot-sender collection. Channel: administrator bot publishing with receipts.                                                                                                                                                                                    | Personal Web session: direct chats only, stable cursor, text and one image or video per send.                                                                                                                                                                                                                                                                                                                                                           | Polls, inline buttons, edit and pin (functions only, no host path), webhook route, moderation, MTProto, stories, channel settings.                                                                                                                                          |
+| Reddit    | Script or web app OAuth, text and link posts to one subreddit per item, subreddit rules and required flair, comments and replies, inbox polling, private message start and reply, keyword search, own-post commenters, delete.                                                                                                                    | Member web session: text and link posts to one subreddit (flair when required), comments, replies, inbox poll of comment replies and username mentions. Chat and private messages are not offered.                                                                                                                                                                                                                                                      | Image, video and gallery posts; edit; account commenters; moderation and chat; upvote and save.                                                                                                                                                                             |
+
+See [current Snapchat coverage](#snapchat) for the updated Snapchat operation list.
+
+Live streaming can go live on YouTube, Facebook, Instagram, TikTok, LinkedIn and X (Snapchat has no ingest). The AI `liveStream.goLive` tool needs exact owner approval. X and LinkedIn website actions (profile, earnings, newsletters) are owner handoffs.
 
 Which operations are free depends on each platform's current pricing, which this document
 does not verify. The rule is fixed in the Host: the free official API is the default driver,
@@ -157,9 +169,43 @@ questions). Expired, revoked or scope-changed connections require reconnection.
 
 #### X
 
+New X accounts default to Browser. The owner selects Pay per use or Enterprise
+in **X API billing** before the Host makes X API requests, including on existing
+OAuth accounts. Published prices include $0.015 per standard post and $0.20 per
+post with a URL. Reads can charge per returned item. [X pricing](https://docs.x.com/x-api/getting-started/pricing)
+
+API campaigns support polls, Community posts and text threads. Quote posting
+requires Enterprise. Thread dispatch records confirmed post IDs and holds
+partial or uncertain outcomes for review. The owner can open X for new formats
+when using Browser. [X post API](https://docs.x.com/x-api/posts/create-post)
+
+The X actions panel supports individually confirmed API engagement,
+relationships, lists and post deletion. Profile edits, encrypted Chat,
+creator earnings and Live Studio have owner browser handoffs.
+Hosting Spaces works only in the X app on phones. [X Spaces](https://help.x.com/en/using-x/spaces)
+
+X prohibits scripting its website. Save the exact ingest server URL and stream
+key from the same Live Studio source on the executor Host. Older key-only entries
+need the server URL before they can be used in **Live streaming**. Both values stay in
+the Host credential store. Finish starting or ending the public broadcast in X.
+[X Producer setup](https://help.x.com/en/using-x/how-to-use-live-producer)
+[X automation rules](https://help.x.com/en/rules-and-policies/x-automation)
+
+Chat tools `x.handoff`, `x.insights`, `x.spaces` and `x.lists` return a browser
+destination or a permitted readout. Enterprise API insights sample up to 100
+owned posts over seven days and report coverage. Legacy X DMs support one-to-one starts
+and replies with one supported attachment. Encrypted Chat requires a separate
+API and provider enrollment. Creator Studio shows Subscriptions and Original
+Content Rewards, the successor to Creator Revenue Sharing. X excludes posts
+created or published through automated means from Original Content Rewards.
+[X Creator Rewards](https://help.x.com/en/using-x/original-content-rewards)
+
 - Browser mode uses the owner's own X web session and automates x.com. It is unofficial,
   can break when the site changes, and X may restrict accounts it considers automated.
   The owner accepts that risk per connection.
+- Browser post deletion is a single reviewed owner action. The Host checks the bound
+  identity and the exact post author before using X's delete controls, then requires an
+  acknowledgement and reloads the same post to confirm the unavailable state.
 - The host launches system Microsoft Edge or Google Chrome (`BYCODA_SOCIAL_BROWSER`
   selects another Chromium executable) with a dedicated profile under
   `social/x-browser/<accountId>`. **Sign in to X in the browser** opens a plain window on
@@ -173,17 +219,100 @@ questions). Expired, revoked or scope-changed connections require reconnection.
   response confirms the outcome after the click, the job goes to review. Operations on
   one profile are serialized and sends are spaced at least 30 seconds apart.
   `BYCODA_SOCIAL_BROWSER_HEADED=1` shows the window for debugging.
+- Browser replies check the exact X post URL before editing and before clicking Reply.
+  The response must name the intended parent and a new reply ID. A missing or
+  mismatched parent after the click sends the job to review.
+- X's shared sign-in and signup route is recognized before browser posts, replies
+  and messages. Verification on that route takes precedence over reconnect.
 - Legacy browser DM sends require an exact numeric recipient, an observed conversation
   with that recipient and a matching delivery acknowledgement. Missing evidence goes to
-  review. Encrypted X Chat and browser DM attachments are unavailable: X now redirects
+  review. Automated encrypted X Chat sends and browser DM attachments are unavailable. X redirects
   `/messages` and `/messages/compose` to `/i/chat`, where a key-recovery passcode prompt is
   reported as `chat_setup_required` (otherwise `encrypted_chat_unsupported`) and a DM send
   fails fast as unsupported before any submit marker or pacing slot.
+- The **Direct messages** shortcut for a connected X browser account first verifies
+  the saved profile's authenticated account ID. It opens `/i/chat` in that dedicated
+  profile for owner interaction. The workflow outcome remains unverified. Chat PINs
+  and composition stay in X.
 - A missing mentions response counts as empty only when the authenticated page shows the
   mentions tab and its empty-state container (any UI language). Redirects into `/i/chat` report unsupported
   encrypted Chat, not an empty inbox.
 
 #### Instagram, Facebook and Meta
+
+**Instagram Login and browser coverage.** Use the Instagram API first for
+connected professional accounts. Select the permissions for each operation
+when connecting or reconnecting. App Review, account eligibility and actual
+permission grants still determine availability.
+
+- Content supports HTTPS images, feed Reels, carousels of up to 20 items and
+  single-item Stories for eligible Business accounts. The Host schedules each
+  publication and persists container and submission state. Available metadata
+  depends on format and includes image alt text, tagging, collaborators, location
+  and AI disclosure. [Meta publishing reference](https://developers.facebook.com/documentation/instagram-platform/content-publishing/)
+- Inbox supports replies on owned media, owner-reviewed hide, unhide and delete,
+  and private replies on eligible comments. Existing API DMs support text or a
+  separate HTTPS image or video attachment. Instagram enforces messaging
+  windows and private reply eligibility. [Meta moderation reference](https://developers.facebook.com/documentation/instagram-platform/comment-moderation)
+- Signed webhook mention history records IDs received by this Host. Browser
+  mentions sample the visible notifications. Signed Live comments show in Inbox.
+  Available insights cover the account, owned media and eligible audience
+  breakdowns. A refused metric is reported separately from numeric values.
+  [Meta webhooks](https://developers.facebook.com/docs/graph-api/webhooks/getting-started/webhooks-for-instagram/) · [Meta insights](https://developers.facebook.com/documentation/instagram-platform/insights)
+- The verified browser connection supports owner-confirmed caption edits and
+  deletion, comment likes, follow and unfollow, a partial follower sample and
+  profile editing where the controls are present. The Host checks the exact post and parent before
+  submitting a public reply. It confirms post deletion after a fresh receipt and
+  an unavailable screen on the same permalink. New browser text DMs verify
+  the recipient and use the existing approved sending queue. Native API deletion
+  requires Facebook Login, which differs from this Instagram Login connection.
+  [Meta media reference](https://developers.facebook.com/docs/instagram-platform/reference/instagram-media/v21.0/)
+- Professional conversion, additional profile settings, Highlights,
+  monetization and Live Producer open an owner workflow. Availability depends on
+  the Instagram account and desktop page. See the owner tools below for
+  eligible dashboard rows and private Live Producer credential capture.
+- Chat can request an account, prepare and schedule eligible publications, read
+  granted insights and mentions, and draft and queue public replies, private
+  replies and supported DMs. Account administration and browser-only
+  management stay owner-only. Captchas, passwords and verification remain
+  human steps.
+
+**Instagram owner reviews and Live Producer**
+
+- `instagram.earnings.read` reads the professional-dashboard earnings of a connected
+  Instagram browser account (read only). `instagram.management.request` files an
+  exact post edit or delete, profile edit, Highlight change or new direct-message
+  draft. The owner sees these in the account's Instagram Requests tab, makes the
+  change in the matching tab and dismisses the request. The tool never runs a
+  browser write.
+- TikTok `tiktok.changes.request` also accepts `post.delete`, `profile.update` and
+  `privacy.update` from a session. They stay pending until the owner applies them
+  in the TikTok Changes tab and never run on autonomy.
+
+- Chat can file `instagram.comments.request` with an inbound comment ID
+  from its project. The owner reviews the exact comment and action in Inbox.
+  Approval checks the current account, project grant and comment again. A
+  dispatched request with an uncertain outcome stays in Inbox for inspection.
+- Existing Instagram Login DM replies support HTTPS image, video, audio and PDF
+  attachments. The owner can upload the same types from desktop when the Host has
+  a public HTTPS media origin. After the send checks, Meta receives a short-lived
+  URL for that attachment. The Host keeps local files and private vault values
+  out of chat tools.
+  [Meta Instagram Login messaging](https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/messaging-api)
+- An eligible verified browser account can read the explicitly labelled
+  currency-bearing earnings rows visible in its dashboard. Highlights can be
+  listed, created from visible archived Stories, edited and deleted when the
+  corresponding controls are available. Outcomes depend on the desktop
+  dashboard and account eligibility.
+- Open the dedicated private Live Producer window from Accounts, select **Live
+  video**, and capture the URL and key when Instagram displays the two fields.
+  The Host saves both in its OS-backed vault. The private window is excluded
+  from browser tracking and live view. The owner can start or end the broadcast
+  on a recognized Producer screen. Select the account in **Live streaming** to send
+  the feed from OBS. Inbox receives signed Live comments, and eligible comment replies
+  follow the existing review queue. Meta permits private replies to Live
+  comments during the broadcast.
+  [Meta Live comments and replies](https://developers.facebook.com/docs/graph-api/changelog/ooc-changes/nov-9-2021)
 
 - Professional Instagram accounts use Instagram Login. The short-lived token is exchanged
   for a long-lived token before identity selection. Facebook requires an eligible managed
@@ -209,21 +338,116 @@ questions). Expired, revoked or scope-changed connections require reconnection.
   a numeric organization ID and verified administrative access. Browser organization setup
   requires the owner to supply the Company Page ID or URL name. The host verifies the
   selected actor and never derives it from the display label.
-- Publishing limits are checked before submission: Page commentary (3000 units in source,
-  not compared with current docs), images with byte checks, PDF documents through the
-  Documents API (title 200, 100 MB API limit in source), and browser PDFs up to 5 MiB.
+- Publishing checks apply to both member and Page commentary (3,000 UTF-16 code units).
+  Bycoda accepts four images per variant, one titled PDF up to 5 MiB, or one uploaded MP4
+  up to 64 MiB. A document post can serve as a slide carousel. Sponsored Carousel
+  API posts are separate. A poll accepts two to four distinct options. An article link
+  requires a title and accepts one optional image thumbnail.
+- The Videos API uploads the exact byte ranges returned by LinkedIn and uses each response
+  ETag in order to finalize the video. The Host checks media and authorization before
+  publishing. An unknown outcome requires inspection.
+- `linkedin.analytics` reads posts, Page or follower metrics. An individual post is tied
+  to a bycoda publication job. Account permissions and provider scopes are checked separately.
+  Member profile analytics is an owner-only browser read.
+- `linkedin.management.prepare` creates an exact review for a known bycoda post or comment.
+  Only the owner can submit the review. The Host records the attempt before calling LinkedIn.
+  The owner can load the review ID in Accounts to approve the change or check its outcome.
+- `accounts.request` accepts an optional LinkedIn reconnect account ID. The existing
+  owner workflow handles registration, Company Page approval and reconnect.
+  `linkedin.accounts.setupStatus` reports project-scoped progress.
+- LinkedIn Live credentials come from the owner's scheduled event in Live Studio.
+  The Host stores the destination in credential storage. `linkedin.live.status` returns
+  the event ID and custody state to authorized callers. Select the account in
+  **Live streaming** to send the feed from OBS, then use Live Studio to put the event
+  on air or end it.
+- With an approved OAuth Page connection, the owner can load Live event comments by event
+  ID. Enable **LinkedIn Live comments** in the OAuth permissions to request `r_events`
+  and `r_organization_social_feed`. The Host checks the organizer and Live event type
+  before reading comments on the event post. This read returns data only to the owner's
+  panel and stays outside auto-reply rules, chat, and the inbox. A token with
+  `w_organization_social_feed` also supports manual replies. The Host rechecks the event,
+  comment and recipient against the exact owner review, checks the shared suppression and
+  sending gates, and records the attempt before dispatch.
 - Browser connection requests, acceptance and personal chat use the same verification and
   challenge handling as other browser recipes.
+- The Accounts browser panel reads the visible connections, invitations and groups page.
+  Invitation, follow and group writes are owner-reviewed, paced and checked for suppression
+  before dispatch. The provider may require manual completion of a restricted or unrecognized
+  screen. Group membership and moderation can remain pending.
+- The browser member editor checks the original headline or About value before saving and
+  reads back the requested value after the save. Profile media, experience, links, Page details,
+  Services and Page Inbox use account-specific owner handoffs. LinkedIn limits Page Inbox
+  replies to inbound conversations. Premium InMail uses the provider's credit and recipient rules.
+- A verified browser member can prepare a native article draft. `linkedin.creator.handoff`
+  points chat to the account's article or newsletter workflow. The owner completes final
+  publishing and newsletter management in LinkedIn.
 - Browser member posts and PDF documents open the composer through `/feed/?shareActive=true`
-  and find controls by role and EN/TR label inside `dialog[open]`; `data-view-name` is only an
-  optional first choice, because LinkedIn serves variants without it.
+  and find controls by role and exact label inside `dialog[open]`; `data-view-name` is only an
+  optional first choice, because LinkedIn serves variants without it. Send, Post, Share and Next
+  labels for every app locale live in `host/social/browser/ui-labels.ts`; matching stays exact and
+  a recipe refuses unless exactly one control matches.
 - A post with no comments reports `comments` as read only on a positive signal: the comment box
   is loaded, the comment list holds no content, and the social counts have no comments item.
   Anything else stays unavailable.
-- **AI exclusion:** the current rule code still blocks LinkedIn inbound third-party
-  content from automatic reply rules. See Autonomy policy and Open questions.
+- LinkedIn uses the shared inbound reply and program autonomy policy. App approval
+  and LinkedIn developer permissions are separate requirements.
 
 #### YouTube
+
+##### YouTube management
+
+The YouTube registry exposes channel, video, playlist, comment, subscription,
+Analytics, earnings, Live and Community operations through Social. Chat tools
+receive a project-scoped account ID. Account creation and connection use the
+existing owner-assisted request and setup flow. Profile changes, deletion of
+videos, playlists and comments, and approval of queued operations are owner-only.
+A session can still prepare those writes with `youtube.changes.request` (channel update,
+video, comment, playlist or Community post deletion). It stores the exact input as an
+`awaiting_approval` operation and never runs it; the owner approves it with
+`youtube.operation.approve`.
+
+API mode uses the bound channel OAuth identity and requests selected scopes.
+Analytics requires the YouTube Analytics API and its activity scope. Estimated
+earnings require the monetary scope and an eligible channel. See the
+[channel report definitions](https://developers.google.com/youtube/analytics/channel_reports).
+
+For standard channels, YouTube's browser creator controls cover publishing and
+scheduling Community text, image and poll posts. List published and scheduled
+posts on the verified channel, edit their text while preserving attachments, and
+delete them with owner confirmation. The Host confirms browser deletion after a
+new YouTube acknowledgement and an HTTP 404 on the same permalink that returned
+HTTP 200 before deletion. An unavailable permalink, including for a scheduled
+post, leaves the result for review. Browser recipes also handle comment likes
+and hearts, profile identity fields and the Studio Earn status. The Posts API
+is in limited preview for eligible partners and currently publishes immediately.
+[Google Posts API](https://developers.google.com/youtube/data/reference/rest/v3/posts).
+
+The quota status reports the Host adapter's observed shared units, search calls
+and upload calls. Google applies separate daily
+search and upload allocations. Other calls consume units such as 50 for a
+typical write, 5 for a chat page, 20 for a chat message write and 200 for a chat
+ban. Browser operations use the existing browser pacing, and subscriptions
+have a Host limit of ten changes per channel account per Pacific day.
+[Official quota costs](https://developers.google.com/youtube/v3/determine_quota_cost).
+
+Live creates a broadcast, creates an RTMP stream and binds them. If a later step
+fails after the broadcast was created, the result keeps known resource IDs for
+reconciliation. The credential store holds the ingestion key and endpoint under
+the channel account and stream identity. RPC and tools return the endpoint and
+an opaque reference. Encoder handoff consumes the reference inside the Host.
+
+The **Live streaming** start operation can reuse a matching public broadcast with
+stored encoder credentials. To create a new public broadcast, it uses the
+channel owner's explicit made-for-kids setting. Set that preference on YouTube
+or prepare the broadcast in Social if the channel has no setting. OBS supplies
+the feed first. The Host waits for YouTube to detect it before requesting the
+public transition. An uncertain creation or transition needs outcome review in
+the provider. [YouTube broadcast lifecycle](https://developers.google.com/youtube/data/live/life-of-a-broadcast)
+
+YouTube management writes use exact-input operation records. Outbound actions
+recheck account and project authority, the Social stop, AI autonomy when
+applicable, and the shared suppression gate at submission. Browser challenges
+require the owner. Unknown submissions are held for outcome review.
 
 For API mode, enable YouTube Data API v3 in the Google Cloud project, configure a Web
 application OAuth client with the exact `/social/oauth/youtube/callback` redirect, and set
@@ -234,16 +458,18 @@ Comments and replies use `youtube.force-ssl`. Existing upload-only connections n
 reconnection for the read permission. Google account and Brand-channel choice happens in
 Google's flow; ambiguous channel enumeration is rejected.
 
-Upload: the host receives the file in 1 MiB chunks, verifies the current channel, starts
-a resumable upload and sends one final PUT. As soon as YouTube returns a video ID, the
-host checkpoints that ID. Later attempts never upload the file again. They read
-`videos.list` (`processingDetails,status,snippet`) for the same ID and verify the owning
-channel. Success requires completed processing and the current visibility. Failed,
-rejected or deleted states fail without discarding the ID. Missing or mismatched
-evidence goes to review. The result reports the actual returned privacy. The local
-64 MiB limit is an adapter bound, not YouTube's maximum. Quota errors back off for six
-hours or the supplied Retry-After. The upload-session URI is not persisted, so an
-interruption before a video ID exists is an uncertain outcome for review.
+YouTube API uploads accept one MP4 or WebM file up to 256 GiB. The desktop sends the
+selected file to the Host in 1 MiB chunks. The Host verifies the channel, then reads
+from disk and transfers at most 8 MiB per Google request. Browser video uploads still
+use the 64 MiB staged upload path.
+
+The Host writes the Google session URL to its encrypted credential store before sending
+video bytes. The session is bound to the approved job, channel, executor and exact file.
+After interruption or Host restart, the same job probes the session and resumes from
+Google's acknowledged byte offset. An expired or unidentifiable session goes to review.
+After Google returns a video ID, the Host checkpoints that ID and uses `videos.list`
+to verify ownership, processing and visibility. The job reports the returned visibility.
+Quota errors use the existing backoff.
 
 Polling reads at most four comment or reply pages per account sync with a durable cursor.
 A thread with `canReply=false` cannot receive a reply. Video-change push notifications do
@@ -265,15 +491,70 @@ Contracts: [OAuth](https://developers.google.com/youtube/v3/guides/auth/server-s
   Callback: `/social/oauth/tiktok/callback`. Existing profile-only accounts must reconnect.
   The campaign editor loads current creator settings and offers only the returned privacy
   choices, with no default. Explicit music and content consent is required; editing clears
-  it. Media is one HTTPS video or one to four HTTPS photos on a verified domain
-  (`PULL_FROM_URL`). Local API uploads are not implemented.
+  it. Use one local video (`FILE_UPLOAD`) or verified HTTPS URLs for one video or
+  up to four photos (`PULL_FROM_URL`). Inbox mode also needs the `video.upload` grant.
+  For app-approved optional scopes, set `BYCODA_SOCIAL_TIKTOK_PROFILE_APPROVED=true`,
+  `BYCODA_SOCIAL_TIKTOK_STATS_APPROVED=true` or `BYCODA_SOCIAL_TIKTOK_UPLOAD_APPROVED=true`
+  and reconnect. Approval flags request scopes. TikTok grants them.
 - Processing keeps the publish ID and reports success only at `PUBLISH_COMPLETE`. An
   accepted post cannot be recalled through the queue. Unaudited clients are limited to
   TikTok's private-viewing rules. This document does not establish that bycoda has an app
   audit.
-- Comment management requires TikTok Business or Organic products. These are not installed.
+- Approved Business Accounts and Mentions APIs use a separate creator token.
+  Set `BYCODA_SOCIAL_TIKTOK_BUSINESS_APPROVED=true` on the Host only after TikTok
+  approves the app. Link the Business open ID and creator token to the same
+  verified TikTok handle. The Host verifies the match and stores the token in
+  the credential vault. Business comments, replies, like, hide, delete, mentions
+  and reporting use the API when linked. Automatic comment refresh reads the
+  newest two available posts and reports partial coverage when more data exists.
+  Use the exact-post reader for older posts. An API failure stops that operation.
+- Browser recipes require the exact signed-in identity and exposed controls.
+  Owner-reviewed changes go through the existing sending stop and recipient
+  suppression gate. AI follow, comment and LIVE reply requests obey the account's
+  autonomy, hours and limits. A browser post deletion requires a new TikTok
+  receipt and an unavailable screen on the same video or photo link. An
+  uncertain change stays in review.
+- Studio earnings show observed values. LIVE setup saves the displayed RTMP
+  credentials to the vault and reports eligibility without returning the key.
+  LIVE reply uses an already-open eligible stream. Event intake belongs to Live.
+- Scheduling uses the Bycoda queue. TikTok Stories and public keyword or
+  hashtag search are unsupported. Research Tools access is for eligible research.
+
+[Content Posting API](https://developers.tiktok.com/docs/en/content-posting-api-get-started),
+[Display profile fields](https://developers.tiktok.com/doc/tiktok-api-v2-get-user-info),
+[Business access](https://business-api.tiktok.com/portal/docs/accounts-api-overview/v1.3),
+[Research Tools eligibility](https://developers.tiktok.com/docs/en/research-api-faq).
 
 #### Snapchat
+
+**Current Snapchat coverage.** The Public Profile API handles Spotlight, Public
+Stories, Saved Stories, publication listings, Spotlight and Saved Story deletion,
+profile metadata, insights, subscriber totals and creator earnings. The Host queue
+schedules publications. Public Story submissions stay in review until the Host
+can verify an exact posted Snap ID. Receipt recovery does not upload or submit
+the Story again. Snap controls partner access to Story links and captions. Creator
+earnings require a creator token with profile Manager or organization Admin access.
+Earnings represent amounts recorded by Snap. Subscriber metrics are aggregate.
+
+Browser member sessions support existing friends and text chats. Public Profile
+browser sessions support profile management and can report visible monetization
+status. Unrecognized layouts and mismatched identities stop the operation.
+Signup leaves credentials, verification, and terms to the owner. AI tools can
+request signup, profile changes and content deletion for owner review. Publishing
+and messages use the existing campaign and draft queues. Organic content comments
+and LIVE have no documented Public Profile API. Marketing API advertising and
+mobile Creative Kit are outside this integration.
+
+For Public Profile OAuth, configure `BYCODA_SOCIAL_SNAPCHAT_CLIENT_ID`,
+`_CLIENT_SECRET`, `_REDIRECT_URI` and `_APPROVED=1` on the executor. The
+callback is `/social/oauth/snapchat/callback`. The Host uses the
+`snapchat-profile-api` scope and verifies the Public Profile UUID through
+`my_profile`. Browser member sessions use `web.snapchat.com`. Browser profile
+management uses `my.snapchat.com`. Friends are read from the verified visible
+list. Partial friend results indicate that more entries may exist.
+
+<details>
+<summary>Previous Snapchat adapter coverage</summary>
 
 - API: Public Profile OAuth (`snapchat-profile-api`) with `BYCODA_SOCIAL_SNAPCHAT_CLIENT_ID`,
   `_CLIENT_SECRET`, `_REDIRECT_URI` and `_APPROVED=1`. Callback:
@@ -287,6 +568,8 @@ Contracts: [OAuth](https://developers.google.com/youtube/v3/guides/auth/server-s
   automatically selected Saved Story target is cleared. Current `PostProfileMedia`
   acceptance has no durable Snap ID and is held for review.
 
+</details>
+
 #### Telegram
 
 - Bot API: set `BYCODA_SOCIAL_TELEGRAM_TOKEN` and `BYCODA_SOCIAL_TELEGRAM_APPROVED=1` on
@@ -296,12 +579,26 @@ Contracts: [OAuth](https://developers.google.com/youtube/v3/guides/auth/server-s
   cannot start a conversation with an arbitrary user. The chat must already be accessible.
 - Bot attachments use `sendPhoto` or `sendVideo` with one owner-uploaded PNG/JPEG up to
   **10 MiB** or one MP4 up to **50 MiB** (`adapters/messaging-shared.ts`). Captions fit
-  1024 UTF-16 units. Returned chat, message and media IDs must match the request.
+  1024 UTF-16 units. The returned Message must identify the target chat and contain
+  a message ID, the sent text or caption, and the expected media type.
+- Channel comments use a connected Bot account that receives Telegram's automatic
+  forwards in the linked discussion supergroup. Polling or a signed webhook saves
+  each observed forward as an Inbox thread. After an operator approves a reply,
+  the Host rechecks the bot identity and the group's channel link, then sends to
+  the exact discussion message. The dispatch succeeds only when Telegram's receipt
+  identifies that same message and channel post. Automatic forwards do not trigger
+  Inbox rules or opt-outs.
 - Channel: choose the channel account type and inspect the numeric ID or public username.
   `getMe`, `getChat` and `getChatMember` confirm the bot, the channel type and the
   administrator `can_post_messages` permission. Those checks run again before publication.
   Text fits 4096 UTF-16 units; one PNG/JPEG up to 10 MiB or MP4 up to 50 MiB accepts a
   caption of 1024 units. Channel assets never consume the bot's `getUpdates` stream.
+- The owner can delete an exact, previously confirmed Bycoda publication from
+  the connected channel's Posts panel. The Host binds the saved message ID to
+  that channel, verifies the bot and channel again, and checks the current
+  administrator's `can_delete_messages` permission. Telegram enforces the
+  48-hour limit. The Host requires `deleteMessage` to return `true`. A
+  missing or ambiguous response stays in review across restarts.
 - Personal Web sessions use the member type. They read direct chats only, with a stable
   cursor. Groups are skipped and are not sent to.
 - Bot token storage: the token module is vault-first, but the dispatcher has not been
@@ -338,18 +635,30 @@ Contracts: [OAuth](https://developers.google.com/youtube/v3/guides/auth/server-s
   adapter does not reconcile an uncertain start.
 - Browser recipe (member web session, API first; used where no API connection exists): identity from
   `/api/me.json` with the page session, stored as `web:reddit:t2_<id>` so it never equals an API id.
-  Text and link posts go to one subreddit; a required flair the job does not name is refused before
-  submit. Comments and replies target a known `t3_`/`t1_` thing. Every send keeps the identity
-  check before and after, `markSubmitted` before the click, and reports delivery only from a
-  recognized create response plus a persisted readback (author, title, text); otherwise it is
-  uncertain and goes to review, never resent. Poll reads `/message/inbox.json` (comment replies and
+  Text and link posts go to one subreddit. For an own-profile destination of the form
+  `u_<username>`, the Host checks the authenticated username before accepting Reddit's
+  redirect to the profile composer. The Host verifies the composer before submitting
+  and the destination, author and content on the saved post. Comments and replies target a known
+  `t3_`/`t1_` thing, and the saved comment must belong to the same post and parent.
+  Required flair must be specified. Every send checks the identity before and after,
+  records submission before the click, and uses the create response and persisted readback
+  to confirm delivery. Uncertain results go to review. Poll reads `/message/inbox.json` (comment replies and
   username mentions, up to 300 items) with a millisecond cursor; an unfinished window keeps the
-  old cursor and reports partial coverage. Private messages and chat are not implemented. A login,
-  captcha or checkpoint page raises NEEDS_HUMAN. Live Reddit blocks headless automation, so the
-  selectors and request shapes were written from known page structure and are unverified until
-  the owner's first Reddit session.
+  old cursor and reports partial coverage. Browser Chat and private messaging require
+  owner interaction. The owner inbox workflow checks the saved Reddit browser identity
+  before opening the fixed Reddit Chat route in the same profile. The workflow records
+  window state. Message selection and sending take place in Reddit Chat. A login,
+  captcha or checkpoint page raises NEEDS_HUMAN. The current
+  profile post flow uses `createProfilePost` and the top-level comment flow returns a
+  fragment at the exact post's `create-comment` path. These responses supply candidate IDs
+  for readback. Installed Bycoda acceptance remains open.
 - Keyword capture uses search with a `r/<subreddit>` prefix. Subreddit capture as a
   separate source is not implemented.
+- An owner can delete a Reddit post from Bycoda's saved publication history. The
+  Host checks the exact post and its author. OAuth confirms the result through
+  `/api/info` after `/api/del`. The browser opens the matching post menu and
+  requires an author-deletion tombstone on the same permalink. A submission with
+  an unconfirmed outcome remains in review across Host restarts.
 
 ## Audience, lists and capture rules
 
@@ -367,7 +676,12 @@ names never merge people.
   keyword search or a post's commenters, into lists. Rules can be enabled or disabled.
   Browser capture covers public data only, as the owner decided.
 - **Import** (`audience.import`) is owner-only. Imported labels never grant consent and never
-  alter opt-outs.
+  alter opt-outs. A file is at most 5 MiB decoded and 5000 contacts. A spreadsheet reads only its
+  first sheet, in a worker thread, within 20,000 rows by 200 columns and a bounded expanded
+  size. Rows outside the chosen account or its granted projects, and suppressed people, are
+  listed as rejected. Valid rows are written in batches of at most 500, each in one transaction;
+  a failed batch leaves nothing of itself, the error says how many earlier contacts were saved,
+  and importing the file again updates those people instead of duplicating them.
 - **People score** (`people.score`) is a ranking aid for the owner. It is not a send decision.
 
 ## Outreach, sequences and email
@@ -412,13 +726,20 @@ The Inbox screen shows conversations and comments from every connected account a
 platform in one list. Each thread has a status, a timeline of inbound and outbound items,
 and reply options that respect the account's permission and the platform window.
 
-- `inbox.unified` lists threads across accounts. `inbox.timeline` reads one thread. `inbox.setStatus` changes the status. `inbox.replyOptions` lists allowed reply
+As you type, search shows matching loaded conversations in the current account and status
+filter while the Host checks the complete inbox. Saving a tag updates loaded rows from the
+Host's receipt. Text searches refresh to include conversations that gained or lost a match.
+
+- `inbox.unified` lists threads across accounts. `inbox.timeline` reads one person's events across channels a page at a time: the newest 200, then older pages by the returned `next` cursor (`<at>|<eventId>`, the same format as `inbox.unified`), until `next` is absent at the start of the conversation. `inbox.setStatus` changes the status and tags. Each field is optional and an unsent one keeps the stored value: the screen sends only the status, or `addTags`/`removeTags` for one tag, never the list snapshot, and the Host merges in one store transaction after the conversation-visibility check. `tags` still replaces the whole list and cannot be combined with the tag deltas. `inbox.replyOptions` lists allowed reply
   types for the thread.
 - **Auto-refresh is on by default.** Only an explicitly stored "false" turns it off. The
   account-level polling interval is stored with the inbox settings. Without an override an
   account polls every 60 seconds, a browser-session account every 5 minutes and an account
   with a live webhook every 15 minutes; overrides never go below 60 seconds. Every
-  platform's cursor is durable, so a restart resumes from the last read item.
+  platform's cursor is durable, so a restart resumes from the last read item. The Inbox and
+  Content screens refresh by re-reading only their newest page and merging it into the pages
+  already loaded; rows deleted far down a long list disappear on the next full reload
+  (for example, Check now).
 - Polling is bounded. Each platform reads a fixed page per cycle, and backlog continues
   on the next cycle. Coverage is reported per channel. A partial or blocked channel never
   reports an empty inbox.
@@ -493,6 +814,11 @@ cannot start in hidden mode, the operation fails without opening a visible windo
 A live view streams frames while the
 owner has it open. It is capped in frame rate and size and stops after idle. Pointer and key input from
 the live view goes to the account's page.
+The panel reads frames one at a time, about every 0.7 seconds. It sends the sequence of the
+picture it holds and the Host answers "unchanged" instead of resending it. It does not read while the
+window is hidden and reads at once when shown again, a failed read doubles the wait (up to
+15 seconds) while the last picture stays, and the error line carries a Retry action. A read that
+finishes after the account changed or the view was hidden is dropped.
 The compact live-view panel separates its status, text input and keyboard actions;
 closing the view hides the panel without stopping the account's browser.
 
@@ -539,24 +865,25 @@ a conversation or a session tool.
   Agreement, the email verification code, the password and the reCAPTCHA ("Prove your
   humanity") in the platform window; those screens are reported, never typed or clicked.
   Automated profiles are often challenged before the form appears, and the step layout is
-  a documented fixture, not an observed account creation. Reddit has only a signup route
-  until its browser recipe has operations; login, inbox and publish stay unavailable.
-- X signup opens `https://x.com/i/flow/signup` and fills only the owner-supplied display name,
-  email and birthdate (name/email inputs and the three birthdate selects) on the profile
-  step, never overwriting an owner choice. The initial Create account choice, the
-  phone/email toggle, Next, terms, the Arkose "Authenticate" challenge, the verification
-  code, the password and suspicious-login screens stay with the owner and are only reported.
-  x.com returns HTTP 403 to headless automation, so the form layout is a documented fixture
-  and unverified live.
+  a documented fixture, not an observed account creation. Connect the signed-in member
+  through the Reddit browser recipe after signup. Its supported operations are listed above.
+- X signup opens `https://x.com/i/flow/signup`. When X redirects to its shared onboarding
+  page in signup mode, Bycoda asks the owner to choose a signup method in the X window.
+  On the older profile form, Bycoda fills the owner-supplied display name, email and
+  birthdate without overwriting an existing choice. Next, terms, passwords, verification
+  codes and login challenges remain in the X window.
 - YouTube signup opens `https://www.youtube.com/channel_switcher`. Signed out, Google's
   sign-in page appears: the owner signs in there with an existing account, or enters the name
   for a new Google account in Bycoda and presses Continue, which opens Google's account
   creation (`service=youtube`, returning to the channel switcher). Bycoda fills only the
-  owner's first and last name, birth date (day, year and the month list) and existing email
+  owner's first name, optional last name, birth date (day, year and the month list) and existing email
   address. Every Next, the gender choice, the Gmail address choice, the password, phone and
   verification code steps stay with the owner. Google keeps a hidden reCAPTCHA frame on each
   step; only a visible one is reported as a challenge. Observed live 2026-11-15 (tr-TR)
   without submitting; afterwards Bycoda opens the observed "Create a channel" link and leaves the final channel confirmation to the owner.
+- Instagram signup opens its Meta Account form. Bycoda recognizes the English and Turkish
+  layouts and can fill the supplied email, full name and username. Existing field values
+  are preserved. Birthday selection, passwords, verification and submission stay in Instagram.
 - Generic signup is not brand provisioning. A Facebook signup does not create a Page; a
   Google account alone does not create a YouTube channel; an Instagram API connection needs a
   professional account.
@@ -589,7 +916,7 @@ dispatched content is not edited in place.
 - Under the Publish autonomy level, a program's occurrences can dispatch without per-item
   approval. The dispatch check skips the approval-content check when the caller marks the
   dispatch as autonomous. Source supports this path. End-to-end use is not verified.
-- LinkedIn program content still requires final publication review in the current code. This differs from the owner decision that LinkedIn follows the same autonomy policy. See Open questions.
+- LinkedIn program publication uses the shared Publish autonomy level and program review setting.
 
 ## Project account requests
 
@@ -713,10 +1040,6 @@ exact-ID reads. `jobs.archive-status` reports the counts. Archival is not deleti
 These points are known to differ between owner decisions, source and platform reality.
 They are not verified as fixed.
 
-- **LinkedIn AI exclusion.** The owner decided LinkedIn follows the same
-  autonomy policy. Source still excludes LinkedIn inbound third-party content from automatic
-  reply rules, and LinkedIn program content still requires review. This document describes
-  the current source. It does not describe that decision as implemented.
 - **Owner-run autonomous plan steps.** The owner principal never takes the autonomy path. A
   plan step that is autonomous and run by the owner is refused. The owner must choose how
   such steps are authorized.
@@ -738,3 +1061,77 @@ live captcha page was checked. Installed host builds need the shared
 [local update workflow](../local-update.md). Real acceptance for each platform, each driver
 and each delivery path stays separate from source checks. Scheduling a job, activating a
 plan or connecting an account is not evidence that it was sent.
+
+## Facebook Page API additions
+
+The managed Page adapter also accepts ordinary MP4 video and photo or video Stories.
+Feed and video variants can carry `scheduledPublishAt` as epoch milliseconds. The Host
+accepts times 10 minutes to 75 days after dispatch, inside Meta's documented Feed
+window. The campaign approval covers the destination, media and native schedule.
+Reconciliation checks the exact provider ID after an accepted upload. An unknown
+submission goes to review and never falls back to browser publishing.
+
+Page details read `followers_count` and `fan_count` separately. Meta may return the
+follower count as `fan_count` for a New Page Experience Page. Mentions use the
+Page's `tagged` edge. Page insights read `page_media_view` and
+`page_total_media_view_unique`. Post views use `post_media_view` after removal of
+`post_impressions_unique`. A missing metric is unavailable, while a returned zero
+is a measured value. Earnings are provider estimates and the earnings breakdown
+excludes bonuses.
+
+The session catalog exposes Page reads, posts, mentions, insights, Graph earnings estimates and Live reads. Private
+Messenger replies and Live comment replies prepare drafts which use the normal
+`replies.send` path. Private replies address one verified comment, match its author,
+expire after seven days and run through message suppression before submission.
+
+The owner confirms Page updates, post edit/delete, comment moderation and Live management.
+Sessions can file these exact changes with `facebook.management.request`. A request has no
+platform effect until the owner reviews it in the Page account. Approval rechecks the original
+project grant and Page identity and calls the existing owner operation.
+The saved browser Page actor handles name and username when the corresponding official Page
+update is unavailable. Browser registration can prefill supported Page fields and
+hands verification and agreements to the owner. The Facebook reconnect flow uses
+the Page OAuth selection and checks the Page identity before retaining a token.
+
+Facebook browser replies require the exact post and parent comment. Messenger
+uses an existing conversation with the verified participants and thread ID.
+The Host checks the destination again immediately before submitting either send.
+
+A browser-connected Page owner can delete an exact post from **Accounts and Settings**
+by providing its direct Facebook permalink. The Host checks the current Page actor,
+the post's author, and the owner's action approval before the final click. The
+operation needs a deletion acknowledgement and an unavailable view on the same
+permalink. An uncertain result stays held across Host restarts. The browser action
+is for the verified Page and does not run as a personal profile or as an API fallback.
+
+### Facebook profile files and chat execution
+
+Recognized personal profile editors run in the selected owner's browser. Name requests
+use Accounts Center. The profile flow handles the intro, website links, work and
+education, places lived, profile pictures and cover photos. It checks the selected
+actor before changing fields and stops for Facebook authentication or verification.
+Owner-confirmed local files on OAuth Pages go through the unpublished Page Photos edge
+and the Page profile-picture or cover operation. The Page token needs content creation
+access along with profile editing permissions. Browser accounts apply local photos
+through the verified profile controls.
+
+For Page post edits and reversible comment moderation, `facebook.management.execute`
+can apply the exact `facebook.management.request` ID. The originating project needs
+the corresponding grant. The account must permit autonomous execution, or the owner
+must choose **Approve for chat** with the action set to **Approve**. The Host checks
+the policy version, work hours, limits, stops and applicable suppression before the
+write. The owner applies Page administration, deletion and Live controls. Requests
+held for review retain their receipt after a restart.
+
+The Live Video API also requires Meta approval and Page eligibility. Bycoda retains the
+current broadcast receipt and places encoder credentials in the Host vault. The owner
+encoder endpoint bypasses Social tool results, audit payloads and request receipts.
+Business Suite monetization is read-only for the verified browser Page and excludes tax
+and payout settings.
+
+Unsolicited messages are unavailable. Meta removed the general Facebook Groups API
+and its publishing and member-info scopes on April 22, 2024.
+[Page Insights](https://developers.facebook.com/docs/graph-api/reference/insights/)
+[Messenger private replies](https://developers.facebook.com/docs/messenger-platform/discovery/private-replies/)
+[Live Video](https://developers.facebook.com/docs/graph-api/reference/page/live_videos/)
+[Graph API 19 changelog](https://developers.facebook.com/docs/graph-api/changelog/version19.0/)

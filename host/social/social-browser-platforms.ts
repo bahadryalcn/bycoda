@@ -14,7 +14,15 @@ import {
   browserOperations,
 } from "../../src/integrations/social/browserCapabilities";
 import { xMediaFormat } from "../../src/integrations/social/xMedia";
-import { challengeError, detectChallenge } from "./browser/challenge";
+import {
+  assertRedditBrowserAccess,
+  challengeError,
+  detectChallenge,
+  needsHumanError,
+  RedditBrowserNetworkBlock,
+} from "./browser/challenge";
+import { deleteFacebookPagePost, facebookPageDeleteTarget } from "./browser/facebook-post-delete";
+import { deleteRedditBrowserPost } from "./browser/reddit-post-delete";
 import { BrowserSendLimiter } from "./browser/limiter";
 import { UnexpectedScreen } from "./browser-layers/types";
 import { runLayered, visibilityOf, type BrowserWiring } from "./browser-layers/wiring";
@@ -25,7 +33,28 @@ import type {
   PlainBrowserLauncher,
 } from "./social-browser";
 import type { BrowserRecipe, BrowserRecipeContext } from "./social-browser-recipe";
+import { readLinkedInBrowserProfileAnalytics } from "./social-browser-linkedin-analytics";
 import type { SocialPrincipal, SocialService } from "./social";
+import type { YouTubeBrowserRecipeContext } from "./browser/youtube-recipe-guards";
+
+export type YouTubeBrowserOperationOptions = {
+  uploads?: readonly string[];
+  media?: (id: string) => Promise<Uint8Array>;
+  beforeSubmit?: () => Promise<void>;
+  outbound?: boolean;
+};
+
+function youtubeBrowserImageFormat(bytes: Uint8Array) {
+  if (bytes.length > 16 * 1024 * 1024) throw new SocialPlatformError("rejected");
+  const magic = (offset: number, text: string) =>
+    [...text].every((character, index) => bytes[offset + index] === character.charCodeAt(0));
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "jpg";
+  if ([137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => bytes[index] === byte)) return "png";
+  if (magic(0, "GIF87a") || magic(0, "GIF89a")) return "gif";
+  if (magic(0, "RIFF") && magic(8, "WEBP")) return "webp";
+  if (magic(0, "BM") && bytes.length >= 14) return "bmp";
+  throw new SocialPlatformError("rejected");
+}
 
 type Login = {
   status: "waiting" | "checking" | "connected" | "failed";
@@ -90,6 +119,9 @@ export class PlatformBrowserSessions {
     if (!recipe || recipe.operations.length === 0) throw new SocialPlatformError("unsupported");
     return recipe;
   }
+  private sessionUrl(recipe: BrowserRecipe, account: SocialAccount): string {
+    return recipe.sessionUrl ?? recipe.connectionUrl?.(account) ?? recipe.loginUrl;
+  }
   waiting(id: string): boolean {
     return ["waiting", "checking"].includes(this.logins.get(id)?.status ?? "");
   }
@@ -116,7 +148,8 @@ export class PlatformBrowserSessions {
         const recipe = this.recipe(current);
         const session = await this.open(current, true);
         try {
-          await session.page.goto(recipe.connectionUrl?.(current) ?? recipe.loginUrl);
+          await session.page.goto(this.sessionUrl(recipe, current));
+          if (current.platform === "reddit") await assertRedditBrowserAccess(session.page);
           const challenge = await challengeError(session.page, this.directory);
           if (challenge) throw challenge;
           if (await detectChallenge(session.page)) throw new SocialPlatformError("expired");
@@ -181,7 +214,8 @@ export class PlatformBrowserSessions {
       flow.status = "checking";
       const session = await this.open(account, true);
       try {
-        await session.page.goto(connectionUrl);
+        await session.page.goto(recipe.sessionUrl ?? connectionUrl);
+        if (account.platform === "reddit") await assertRedditBrowserAccess(session.page);
         let identity: Awaited<ReturnType<BrowserRecipe["identity"]>>;
         for (let attempt = 0; attempt < 60 && !identity; attempt++) {
           if (flow.cancelled) return;
@@ -229,9 +263,11 @@ export class PlatformBrowserSessions {
     }).catch((error: unknown) => {
       flow.status = "failed";
       flow.error =
-        error instanceof SocialPlatformError && error.code === "needs_human"
-          ? "The platform asked for a verification step. Complete it in the dedicated window, then try again."
-          : "Browser identity verification failed. Complete login and any challenge in the dedicated window, then try again.";
+        error instanceof RedditBrowserNetworkBlock
+          ? error.message
+          : error instanceof SocialPlatformError && error.code === "needs_human"
+            ? "The platform asked for a verification step. Complete it in the dedicated window, then try again."
+            : "Browser identity verification failed. Complete login and any challenge in the dedicated window, then try again.";
     });
     return { status: flow.status, expiresAt: flow.expiresAt };
   }
@@ -261,6 +297,7 @@ export class PlatformBrowserSessions {
       account,
       files,
       now: this.now,
+      beforeSubmit,
       markSubmitted,
       waitFor: async <T>(expression: string, timeoutMs = 30_000) => {
         const deadline = this.now() + Math.min(120_000, Math.max(0, timeoutMs));
@@ -294,15 +331,221 @@ export class PlatformBrowserSessions {
       },
     };
   }
+  /** YouTube mutations use deterministic recipes inside the account's locked browser session. */
+  async youtubeOperation<T>(
+    account: SocialAccount,
+    run: (context: YouTubeBrowserRecipeContext) => Promise<T>,
+    options: YouTubeBrowserOperationOptions = {},
+  ): Promise<T> {
+    const uploads = options.uploads ?? [];
+    if (
+      account.platform !== "youtube" ||
+      account.connection !== "browser" ||
+      !account.connected ||
+      !/^web:youtube:UC[\w-]{22}$/.test(account.platformId)
+    )
+      throw new SocialPlatformError("unsupported");
+    if (!this.launcher || this.stopped || (options.outbound && !options.beforeSubmit))
+      throw new SocialPlatformError("denied");
+    if (
+      uploads.length > 10 ||
+      new Set(uploads).size !== uploads.length ||
+      uploads.some((id) => !/^[a-f0-9-]{36}$/i.test(id)) ||
+      (uploads.length && !options.media)
+    )
+      throw new SocialPlatformError("rejected");
+    return this.exclusive(account.id, async () => {
+      if (options.outbound) await this.limiter.reserve(account.id);
+      const staging = join(this.directory, "browser-uploads", randomUUID());
+      try {
+        const files: BrowserRecipeContext["files"] = [];
+        for (const [index, upload] of uploads.entries()) {
+          const bytes = await options.media!(upload);
+          const format = youtubeBrowserImageFormat(bytes);
+          await mkdir(staging, { recursive: true, mode: 0o700 });
+          const path = join(staging, `${index}.${format}`);
+          await writeFile(path, bytes, { mode: 0o600, flag: "wx" });
+          files.push({ path, kind: "image" });
+        }
+        const session = await this.open(account);
+        try {
+          let submitted = false;
+          const base = this.context(session.page, account, files, undefined, () => {
+            submitted = true;
+          });
+          const context: YouTubeBrowserRecipeContext = {
+            ...base,
+            verifyIdentity: async () => {
+              const hit = await detectChallenge(session.page);
+              if (hit)
+                throw (await challengeError(session.page, this.directory)) ?? needsHumanError(hit);
+              await base.verifyIdentity();
+            },
+            beforeYouTubeSubmission: async () => {
+              if (options.outbound) await this.limiter.record(account.id);
+              await options.beforeSubmit?.();
+            },
+          };
+          try {
+            return await run(context);
+          } catch (error) {
+            if (submitted) throw new SocialPlatformError("unknown");
+            if (isNeedsHuman(error))
+              throw (await challengeError(session.page, this.directory)) ?? error;
+            throw error;
+          }
+        } finally {
+          await session.close().catch(() => undefined);
+        }
+      } finally {
+        await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
+  }
+
+  // TikTok account operations. Secret capture uses an isolated, untracked session.
+  async runTikTok<T>(
+    account: SocialAccount,
+    operation: (context: BrowserRecipeContext) => Promise<T>,
+    options: {
+      check: () => Promise<void>;
+      beforeSubmit?: () => Promise<void>;
+      secret?: boolean;
+      avatar?: Uint8Array;
+    },
+  ): Promise<T> {
+    return await this.exclusive(account.id, async () => {
+      if (
+        this.stopped ||
+        this.waiting(account.id) ||
+        !this.launcher ||
+        account.platform !== "tiktok" ||
+        account.connection !== "browser"
+      )
+        throw new SocialPlatformError("unsupported");
+      await options.check();
+      const recipe = this.recipe(account);
+      const staging = join(this.directory, "browser-uploads", randomUUID());
+      const files: BrowserRecipeContext["files"] = [];
+      let session: BrowserSession | undefined;
+      let submitted = false;
+      try {
+        if (options.avatar) {
+          const format = xMediaFormat(options.avatar);
+          if (format === "mp4") throw new SocialPlatformError("rejected");
+          await mkdir(staging, { recursive: true, mode: 0o700 });
+          const path = join(staging, `avatar.${format}`);
+          await writeFile(path, options.avatar, { mode: 0o600, flag: "wx" });
+          files.push({ path, kind: "image" });
+        }
+        session = options.secret
+          ? await this.launcher(this.profile(account.id), true, "hidden")
+          : await this.open(account);
+        const page = session.page;
+        await page.goto(this.sessionUrl(recipe, account));
+        const verifyIdentity = async () => {
+          await options.check();
+          for (let attempt = 0; attempt < 30; attempt++) {
+            const hit = await detectChallenge(page);
+            if (hit) throw needsHumanError(hit);
+            const identity = await recipe.identity(page, account);
+            if (identity) {
+              if (
+                identity.platformId !== account.platformId ||
+                (identity.accountType && identity.accountType !== account.accountType)
+              )
+                throw new SocialPlatformError("denied");
+              return;
+            }
+            await this.wait(250);
+          }
+          throw new SocialPlatformError("expired");
+        };
+        const beforeSubmit =
+          options.beforeSubmit &&
+          (async () => {
+            if (!submitted) await this.limiter.reserve(account.id);
+            await options.beforeSubmit!();
+            if (!submitted) await this.limiter.record(account.id);
+          });
+        const context = {
+          ...this.context(page, account, files),
+          verifyIdentity,
+          beforeSubmit,
+          markSubmitted: () => {
+            submitted = true;
+          },
+        };
+        await verifyIdentity();
+        const result = await operation(context);
+        await options.check();
+        return result;
+      } catch (error) {
+        if (submitted) throw new SocialPlatformError("unknown");
+        if (options.secret && !(error instanceof SocialPlatformError))
+          throw new SocialPlatformError("unknown");
+        throw error;
+      } finally {
+        await session?.close().catch(() => undefined);
+        await session?.profileReleased?.().catch(() => undefined);
+        if (options.avatar)
+          await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
+  }
+
+  readLinkedInProfileAnalytics(account: SocialAccount, verifyAccount: () => Promise<void>) {
+    return this.withLinkedInBrowser(account, verifyAccount, readLinkedInBrowserProfileAnalytics);
+  }
+
+  /** Serializes owner-reviewed LinkedIn work with the existing login, poll and send sessions. */
+  withLinkedInBrowser<T>(
+    account: SocialAccount,
+    verifyAccount: () => Promise<void>,
+    use: (context: BrowserRecipeContext, limiter: BrowserSendLimiter) => Promise<T>,
+  ): Promise<T> {
+    return this.exclusive(account.id, async () => {
+      await verifyAccount();
+      if (!this.launcher || this.stopped) throw new SocialPlatformError("unsupported");
+      const session = await this.open(account);
+      try {
+        const context = this.context(session.page, account, [], verifyAccount);
+        return await use(context, this.limiter);
+      } finally {
+        await session.close().catch(() => undefined);
+      }
+    });
+  }
+
   adapter(): SocialAdapter {
     return {
+      deletePost: (account, _token, postId, beforeSubmit) =>
+        this.exclusive(account.id, async () => {
+          const reddit = account.platform === "reddit";
+          const target = reddit ? postId : facebookPageDeleteTarget(account, postId).url;
+          if (!this.launcher || !beforeSubmit || this.stopped || this.waiting(account.id))
+            throw new SocialPlatformError("denied");
+          if (!reddit) await beforeSubmit();
+          const session = await this.open(account);
+          try {
+            const context = this.context(session.page, account, []);
+            const remove = reddit ? deleteRedditBrowserPost : deleteFacebookPagePost;
+            await remove(context, target, async () => {
+              if (this.stopped || this.waiting(account.id)) throw new SocialPlatformError("denied");
+              await beforeSubmit();
+              if (this.stopped || this.waiting(account.id)) throw new SocialPlatformError("denied");
+            });
+          } finally {
+            await session.close().catch(() => undefined);
+          }
+        }),
       creatorInfo: (account) =>
         this.exclusive(account.id, async () => {
           const recipe = this.recipe(account);
           if (!this.launcher || !recipe.creatorInfo) throw new SocialPlatformError("unsupported");
           const session = await this.open(account);
           try {
-            await session.page.goto(recipe.connectionUrl?.(account) ?? recipe.loginUrl);
+            await session.page.goto(this.sessionUrl(recipe, account));
             const context = this.context(session.page, account, []);
             await context.verifyIdentity();
             const result = await runLayered(this.wiring, account.id, {
@@ -327,6 +570,7 @@ export class PlatformBrowserSessions {
           try {
             const files: BrowserRecipeContext["files"] = [];
             for (const [index, attachment] of job.payload.media.entries()) {
+              if (attachment.kind === "audio") throw new SocialPlatformError("unsupported");
               const bytes = await media(attachment.uploadId!);
               const webm =
                 account.platform === "youtube" &&
@@ -346,7 +590,7 @@ export class PlatformBrowserSessions {
             }
             const session = await this.open(account);
             try {
-              await session.page.goto(recipe.connectionUrl?.(account) ?? recipe.loginUrl);
+              await session.page.goto(this.sessionUrl(recipe, account));
               let submitted = false;
               const context = this.context(session.page, account, files, beforeSubmit, () => {
                 submitted = true;
@@ -393,7 +637,7 @@ export class PlatformBrowserSessions {
             throw new SocialPlatformError("unsupported");
           const session = await this.open(account);
           try {
-            await session.page.goto(recipe.connectionUrl?.(account) ?? recipe.loginUrl);
+            await session.page.goto(this.sessionUrl(recipe, account));
             const context = this.context(session.page, account, []);
             await context.verifyIdentity();
             const result = await runLayered(this.wiring, account.id, {
@@ -424,7 +668,7 @@ export class PlatformBrowserSessions {
           if (!this.launcher || !collect) throw new SocialPlatformError("unsupported");
           const session = await this.open(account);
           try {
-            await session.page.goto(recipe.connectionUrl?.(account) ?? recipe.loginUrl);
+            await session.page.goto(this.sessionUrl(recipe, account));
             const context = this.context(session.page, account, []);
             await context.verifyIdentity();
             const collected = await runLayered(this.wiring, account.id, {

@@ -1,15 +1,8 @@
 .stack {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--ui-space-3);
   min-inline-size: 0;
-}
-.hint,
-.empty {
-  margin: 0;
-}
-.empty {
-  padding-block: 16px;
 }
 .list {
   margin: 0;
@@ -17,14 +10,14 @@
   list-style: none;
 }
 .row {
-  gap: 8px;
-  padding: 8px 12px;
+  gap: var(--ui-space-2);
+  padding: var(--ui-space-2) var(--ui-space-3);
 }
 .text {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--ui-space-1);
   min-inline-size: 0;
 }
 .text > strong {
@@ -34,7 +27,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 8px;
+  gap: var(--ui-space-1) var(--ui-space-2);
   font-variant-numeric: tabular-nums;
 }
 .error {

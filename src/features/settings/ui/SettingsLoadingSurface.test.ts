@@ -20,32 +20,37 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
-it("keeps the known section title visible and announces one loading status", async () => {
+it("announces one loading status for the destination after the delay", async () => {
   await act(async () =>
     root.render(createElement(SettingsLoadingSurface, { section: "appearance" })),
   );
-  expect(node.querySelector("h2")?.textContent).toBe("Appearance");
+  // The dialog header owns the visible page identity; the placeholder shows shapes only.
+  expect(node.querySelector("h2")).toBeNull();
+  expect(node.textContent).not.toContain("Appearance");
+  expect(node.querySelector('[role="status"]')).toBeNull();
   await act(async () => vi.advanceTimersByTime(500));
   const statuses = node.querySelectorAll('[role="status"]');
   expect(statuses).toHaveLength(1);
-  expect(statuses[0]!.textContent).toBe("Loading Settings…");
+  expect(statuses[0]!.getAttribute("aria-label")).toBe("Appearance");
 });
 
-it("shows settings rows inside the one centred card and no invented values", async () => {
+it("mirrors the workbench with a category rail and framed topic rows, no invented values", async () => {
   await act(async () => root.render(createElement(SettingsLoadingSurface, { section: "general" })));
-  const card = node.querySelector("[data-loading-card]")!;
-  expect(card.querySelectorAll(".settings-skeleton-row")).toHaveLength(4);
+  const card = node.querySelector("[data-settings-loading]")!;
+  const rail = card.querySelector(".settings-skeleton-rail")!;
+  expect(rail.getAttribute("aria-hidden")).toBe("true");
+  expect(rail.querySelectorAll('[data-shape="square"]').length).toBeGreaterThan(8);
+  expect(
+    card.querySelectorAll('.settings-skeleton-content [data-surface-separator="block"]'),
+  ).toHaveLength(7);
   expect(node.querySelector('[role="progressbar"]')).toBeNull();
   expect(node.textContent).not.toMatch(/\d+\s?%/);
 });
 
-it("explains a slow load inside the card and stops its timers when the dialog closes", async () => {
+it("keeps a single loading state during a slow load and clears timers on unmount", async () => {
   await act(async () => root.render(createElement(SettingsLoadingSurface, { section: "general" })));
-  expect(node.textContent).not.toContain("taking longer");
   await act(async () => vi.advanceTimersByTime(3_000));
-  expect(node.querySelector("[data-loading-card]")?.textContent).toContain(
-    "Settings is taking longer to load. You can return to the workspace.",
-  );
+  expect(node.querySelectorAll('[role="status"]')).toHaveLength(1);
   await act(async () => root.render(createElement("div")));
   expect(vi.getTimerCount()).toBe(0);
 });

@@ -42,14 +42,6 @@ vi.mock("../../tasks/model/taskClient", () => ({
 }));
 
 vi.mock("./CrewEditor", () => ({ CrewEditDialog: () => null }));
-vi.mock("./CrewMachineScope", () => ({
-  useCrewMachineScope: (cwd: string, state: unknown) => ({
-    cwd,
-    state,
-    picker: () => null,
-    projectPicker: () => null,
-  }),
-}));
 vi.mock("../../sessions/public/AccessPicker", () => ({
   AccessPicker: ({ value, onChange }: { value: string; onChange: (mode: string) => void }) =>
     createElement("button", { "data-access": value, onClick: () => onChange("full-access") }),
@@ -88,7 +80,7 @@ async function open(call: ReturnType<typeof vi.fn>, accessSupported = true, proj
       accessSupported,
     },
     call,
-    refetch: vi.fn(),
+    refetch: vi.fn().mockResolvedValue(undefined),
   } as unknown as Props["state"];
   await act(async () =>
     root.render(createElement(StartCrewDialog, { cwd: "/p", state, onClose: vi.fn() })),
@@ -102,7 +94,7 @@ it("preselects the exact crew and machine in the canonical task form", async () 
   expect(form.draft).toMatchObject({
     cwd: "/p",
     machineId: "m",
-    crewDefinitionId: "crew-1",
+    executor: { kind: "crew", crewDefinitionId: "crew-1" },
     runtimeMode: "supervised",
   });
   await act(async () => form.onSubmit("todo", form.draft));

@@ -11,6 +11,7 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Text } from "../../../shared/ui/Text";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { deleteTask, moveTask, startTask, type BoardTask } from "../model/taskClient";
+import { taskStateText } from "../model/taskTextLabels";
 import {
   bulkTaskKey,
   groupTaskBulkResults,
@@ -66,9 +67,11 @@ export function TaskBulkToolbar({
   const resultGroups = groupTaskBulkResults(results);
   const eligibility = (action: TaskBulkAction) =>
     chosen.filter((task) => !taskBulkUnavailable(task, action));
+  const blockedReason =
+    busy || disabled ? t("Wait for the current operation to finish") : undefined;
   const unavailableReason = (action: TaskBulkAction) =>
     chosen.length && !eligibility(action).length
-      ? t(taskBulkUnavailable(chosen[0], action) ?? "Unavailable")
+      ? taskStateText(taskBulkUnavailable(chosen[0], action) ?? "Unavailable")
       : undefined;
 
   const run = async (action: TaskBulkAction, retry = false) => {
@@ -86,14 +89,15 @@ export function TaskBulkToolbar({
     try {
       const eligible = batch.filter((task) => !taskBulkUnavailable(task, action)).length;
       if (
-        (action === "delete" || action === "stop") &&
+        // Stopping is reversible (Start or Retry again); only deletion asks first.
+        action === "delete" &&
         !(await confirm({
-          title: action === "delete" ? t("Delete selected tasks") : t("Stop selected tasks"),
+          title: t("Delete selected tasks"),
           message: t(
             "Apply to {p0} selected tasks in the current results? {p1} are eligible. Other tasks and unmerged work are preserved.",
             { p0: batch.length, p1: eligible },
           ),
-          confirmLabel: action === "delete" ? t("Delete") : t("Stop"),
+          confirmLabel: t("Delete"),
         }))
       )
         return;
@@ -157,6 +161,7 @@ export function TaskBulkToolbar({
           checked={tasks.length > 0 && chosen.length === tasks.length}
           indeterminate={chosen.length > 0 && chosen.length < tasks.length}
           disabled={busy || disabled || !tasks.length}
+          disabledReason={tasks.length ? blockedReason : undefined}
           onChange={(event) =>
             changeSelection(new Set(event.currentTarget.checked ? tasks.map(bulkTaskKey) : []))
           }
@@ -178,15 +183,14 @@ export function TaskBulkToolbar({
           >
             <Button
               key={action}
-              aria-label={t({ start: "Start", stop: "Stop", retry: "Retry" }[action])}
               variant="secondary"
               loading={activeAction === action}
               disabled={busy || disabled || !eligibility(action).length}
               disabledReason={unavailableReason(action)}
               onClick={() => run(action).catch(report)}
             >
-              {t({ start: "Start", stop: "Stop", retry: "Retry" }[action])}
-              <Badge size="xs" variant="count" aria-hidden>
+              {action === "start" ? t("Start") : action === "stop" ? t("Stop") : t("Retry")}
+              <Badge size="xs" variant="count">
                 {eligibility(action).length}
               </Badge>
             </Button>
@@ -206,17 +210,17 @@ export function TaskBulkToolbar({
                 })
               : undefined
           }
-          aria-label={t("Delete")}
           onClick={() => run("delete").catch(report)}
         >
           {t("Delete")}
-          <Badge size="xs" aria-hidden>
+          <Badge size="xs" variant="count">
             {eligibility("delete").length}
           </Badge>
         </Button>
         <Button
           variant="ghost"
           disabled={busy || disabled || !chosen.length}
+          disabledReason={chosen.length ? blockedReason : undefined}
           onClick={() => changeSelection(new Set())}
         >
           {t("Clear selection")}
@@ -255,9 +259,9 @@ export function TaskBulkToolbar({
           {resultGroups.map((group, index) => (
             <div key={index} className="task-bulk-result-group">
               <Text as="p" size="caption" tone={group.status === "failed" ? "danger" : "secondary"}>
-                {t(group.status === "failed" ? "Failed" : "Skipped")}
+                {group.status === "failed" ? t("Failed") : t("Skipped")}
                 {": "}
-                {group.reason ? t(group.reason) : null}
+                {group.reason ? taskStateText(group.reason) : null}
               </Text>
               <BadgeList
                 label={t("Tasks")}
@@ -273,13 +277,20 @@ export function TaskBulkToolbar({
         </Disclosure>
       ) : null}
       {failures.length || activeAction === "retry-failed" ? (
+        // Scope is the last run's failed tasks, not the selection; the count names them.
         <Button
           variant="secondary"
           loading={activeAction === "retry-failed"}
           disabled={busy || disabled}
+          disabledReason={blockedReason}
           onClick={() => run(lastAction, true).catch(report)}
         >
-          {t("Retry failed tasks")}
+          {t("Repeat on failed tasks")}
+          {failures.length ? (
+            <Badge size="xs" variant="count">
+              {failures.length}
+            </Badge>
+          ) : null}
         </Button>
       ) : null}
       {dialog}

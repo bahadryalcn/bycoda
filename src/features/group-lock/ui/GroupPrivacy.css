@@ -6,68 +6,34 @@
   min-inline-size: 0;
   container-type: inline-size;
 }
-.group-privacy-controls {
-  display: contents;
-}
-/* Group list: identity, current lock state and the protection preference are three
-   readable columns with a quiet header. */
-.privacy-group-summary {
-  margin: 0;
-  padding: 8px 12px;
-  font-variant-numeric: tabular-nums;
-}
-.privacy-group-columns,
+/* Group list: the name (with a lock mark while locked) and the protection toggle. */
 .privacy-group-list .privacy-group-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 7rem 8rem;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  column-gap: 12px;
+  column-gap: var(--ui-space-3);
 }
-.privacy-group-columns {
-  padding: 4px 12px;
-}
-.privacy-group-columns > :last-child,
 .privacy-group-toggle {
   justify-self: end;
 }
 .privacy-group-name {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 .privacy-group-title {
   overflow-wrap: anywhere;
 }
-.privacy-group-state {
-  justify-self: start;
-}
-/* "Unlocked" and the not-protected dash are quiet text; only a lock that is on right now is a badge. */
 .privacy-empty {
   display: grid;
-  gap: 2px;
-  padding: 12px 16px;
+  gap: var(--ui-space-1);
+  padding: var(--ui-space-3) var(--ui-space-4);
 }
 .privacy-hidden-footer {
   display: flex;
   justify-content: flex-start;
-  margin-block-start: 8px;
-}
-@container (max-width: 32rem) {
-  .privacy-group-columns {
-    display: none;
-  }
-  .privacy-group-list .privacy-group-row {
-    grid-template-columns: minmax(0, 1fr) auto;
-    row-gap: 4px;
-  }
-  .privacy-group-name {
-    grid-column: 1;
-  }
-  .privacy-group-toggle {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-  }
-  .privacy-group-state {
-    grid-column: 1;
-  }
+  margin-block-start: var(--ui-space-2);
 }
 
 /* A save that did not reach storage sits under its row, not in a toast. */
@@ -75,8 +41,8 @@
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding-block-start: 4px;
+  gap: var(--ui-space-2);
+  padding-block-start: var(--ui-space-1);
 }
 .privacy-save-feedback > :first-child {
   flex: 1;

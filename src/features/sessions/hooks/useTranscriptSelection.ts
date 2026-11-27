@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   SELECTABLE_AGENT_RESPONSE_ATTR,
+  selectedOccurrence,
   validateTranscriptSelection,
   type TranscriptSelection,
+  type TranscriptSelectionSource,
 } from "../model/transcriptSelection";
+import { firstRangeRect, isRectVisible, type SelectionGeometry } from "../model/selectionGeometry";
 
 function responseIdForNode(node: Node | null, root: HTMLElement): string | null {
   const element = node instanceof Element ? node : node?.parentElement;
@@ -29,14 +32,44 @@ function clampToResponse(range: Range, root: HTMLElement): Range {
   return clamped;
 }
 
-function firstRangeRect(range: Range): DOMRect | null {
-  const rects = range.getClientRects();
-  for (let index = 0; index < rects.length; index += 1) {
-    const rect = rects.item(index);
-    if (rect && (rect.width > 0 || rect.height > 0)) return rect;
-  }
-  const rect = range.getBoundingClientRect();
-  return rect.width > 0 || rect.height > 0 ? rect : null;
+/** The cloned range tracks DOM mutations itself, so it keeps pointing at the selected text while the page scrolls or streams. */
+function liveMeasure(range: Range): () => SelectionGeometry | null {
+  const live = range.cloneRange();
+  // Range text, not Selection text: the two differ in block separators, so compare like with like.
+  const captured = live.toString();
+  return () => {
+    const container =
+      live.commonAncestorContainer instanceof Element
+        ? live.commonAncestorContainer
+        : live.commonAncestorContainer.parentElement;
+    if (!container?.isConnected || live.collapsed || live.toString() !== captured) return null;
+    const rect = firstRangeRect(live);
+    return rect ? { rect, visible: isRectVisible(rect, container) } : null;
+  };
+}
+
+/**
+ * Occurrence and response text are read only when an action asks, from the same live range as
+ * `liveMeasure`. A selectionchange therefore never rescans the response or copies its text.
+ */
+function liveSource(range: Range, text: string): () => TranscriptSelectionSource | null {
+  const live = range.cloneRange();
+  const captured = live.toString();
+  return () => {
+    const node =
+      live.startContainer instanceof Element
+        ? live.startContainer
+        : live.startContainer.parentElement;
+    const response = node?.closest<HTMLElement>(`[${SELECTABLE_AGENT_RESPONSE_ATTR}]`);
+    if (!response?.isConnected || live.collapsed || live.toString() !== captured) return null;
+    const prefix = live.cloneRange();
+    prefix.selectNodeContents(response);
+    prefix.setEnd(live.startContainer, live.startOffset);
+    return {
+      occurrence: selectedOccurrence(prefix.toString(), text),
+      responseText: response.textContent ?? "",
+    };
+  };
 }
 
 export function useTranscriptSelection(
@@ -77,44 +110,20 @@ export function useTranscriptSelection(
         focusResponseId: responseIdForNode(range.endContainer, root),
       });
       const rect = text ? firstRangeRect(range) : null;
-      let occurrence = 0;
-      let responseText: string | undefined;
-      if (text && rect) {
-        const node =
-          range.startContainer instanceof Element
-            ? range.startContainer
-            : range.startContainer.parentElement;
-        const response = node?.closest(`[${SELECTABLE_AGENT_RESPONSE_ATTR}]`);
-        if (response) {
-          responseText = response.textContent ?? undefined;
-          const prefix = range.cloneRange();
-          prefix.selectNodeContents(response);
-          prefix.setEnd(range.startContainer, range.startOffset);
-          const before = prefix.toString();
-          for (
-            let index = before.indexOf(text);
-            index >= 0;
-            index = before.indexOf(text, index + text.length)
-          )
-            occurrence += 1;
-        }
-      }
       const next =
         text && rect
           ? {
               text,
               rect,
               responseId: responseIdForNode(range.startContainer, root) ?? undefined,
-              occurrence,
-              responseText,
+              measure: liveMeasure(range),
+              resolveSource: liveSource(range, text),
             }
           : null;
       setSelection((previous) => {
         if (!previous || !next) return previous === next ? previous : next;
         return previous.text === next.text &&
           previous.responseId === next.responseId &&
-          previous.occurrence === next.occurrence &&
-          previous.responseText === next.responseText &&
           previous.rect.x === next.rect.x &&
           previous.rect.y === next.rect.y &&
           previous.rect.width === next.rect.width &&

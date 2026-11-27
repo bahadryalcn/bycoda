@@ -1,24 +1,26 @@
 .phone-pairing-content {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--ui-space-4);
 }
 
+/* The inline flow reads as one compact column instead of stretching across the page. */
 .phone-pairing-inline {
-  gap: 0.75rem;
+  gap: var(--ui-space-3);
+  max-inline-size: 34rem;
 }
 
 .phone-pairing-code {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--ui-space-3);
 }
 
 .phone-pairing-instructions {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--ui-space-2);
   text-align: center;
 }
 
@@ -27,10 +29,5 @@
   flex-wrap: wrap;
   justify-content: center;
   align-items: start;
-  gap: 0.5rem;
-}
-
-/* The inline flow reads as one compact column instead of stretching across the page. */
-.phone-pairing-inline {
-  max-inline-size: 34rem;
+  gap: var(--ui-space-2);
 }

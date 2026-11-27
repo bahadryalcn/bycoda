@@ -22,7 +22,8 @@ Rule names and text are generated in [rules.md](../../../../docs/reference/rules
 
 - Layout is free: `display`, `grid`, `flex`, `gap`, `margin`, `width`, `overflow` and alignment
   belong to the feature.
-- Spacing: `var(--space-*)` is always allowed and is the preferred form. Only a literal off the
+- Spacing: the semantic `var(--ui-space-*)` steps and `var(--ui-list-gutter)` are the preferred form;
+  `var(--space-*)` is always allowed. Only a literal off the
   scale is reported: a bare px/rem value other than 0, 2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 32, 40 or 48
   px, or a Tailwind step other than 0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 8, 10, 12.
 - Classes are read from `className`-like attributes, properties and variables and from the
@@ -130,7 +131,11 @@ with a one-line reason; the rest of the file still counts. The classes:
 
 Same job means the same shared component and appearance. A distinct component needs a distinct job.
 Import wrappers from `src/shared/ui/*`; Arc primitives and native-popup internals belong behind those
-wrappers. Only canonical shared overlay owners listed in `floatingSurfaceOwners` position floating
+wrappers, and product code never imports `src/shared/ui/arc/*` (`registry-import`). Overlay frames
+(ground, edge, shadow, radius) are the shared floating tokens: features pass no frame paint, frost
+or palette through `className`, `panelStyle` or glass hooks. A missing look is a variant of the
+shared component (`Button` chip, `SectionLabel` rail, `RadioGroup` `tileLayout`, `PaneHeader`
+`primaryAction`/`overflow`), never feature styling. Only canonical shared overlay owners listed in `floatingSurfaceOwners` position floating
 surfaces: `Popover`, `Modal`, `Sheet`, `ImageLightbox`, `ToastRegion` and the explicit OS-window
 owners. Dialog, sheet and media owners use the shared overlay stack; toast owners use its menu
 layer. This does not permit feature portals or legacy self-positioned notices. Features use
@@ -147,3 +152,14 @@ The existing loading, native-control, surface and interaction rules also reject 
 Catalog metadata and orphan debt share `ui-drift-baseline.json`; both catalog and drift checks reject
 new debt. Baselines only fall; a new or widened rule needs a reasoned baseline approval when it records
 existing debt. Regenerate the catalog after changing component JSDoc.
+
+## Container states
+
+- List/picker: `EmptyState size="inline" context="list"`, no decorative icon; inline `LoadingText` or `Skeleton`; `FailureState size="inline"` with retry.
+- Panel/group: `EmptyState context="panel"`, title + one action; `LoadingText layout="fill"` or skeleton; `FailureState context="panel"` with promise-returning `onRetry`.
+- Page: `context="page"`; fill `LoadingText` or lazy `SurfaceLoading`. Replace content, keep header.
+- States are exclusive; Retry follows failure. Keep refresh data; errors use `InlineError`. Filtered empty: `kind="filtered"` + `onReset`. No duplicate header actions; explanations use info.
+
+## UI rounds
+
+Start from DESIGN.md "Review checklist" and `decisions.md`; route each finding to a token, shared component default, shared composition, drift rule or a local fix, in that order. End the round by promoting each recurring finding one level up (or recording why not) and writing any reversed rule into DESIGN.md and `decisions.md` in the same change; round folders under `temp/local/` hold evidence only.

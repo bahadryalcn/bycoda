@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { formatDate } from "../../../shared/i18n";
@@ -11,6 +11,9 @@ import {
 import type { SprintBoardController } from "../model/sprintClient";
 import type { SprintProjectRef } from "../model/hostSprints";
 import { SprintList } from "./SprintList";
+
+// The catalog reads every server through react-query; the page tests only need its slot.
+vi.mock("./SprintCatalog", () => ({ SprintCatalog: () => null }));
 
 it("round-trips calendar dates without shifting at positive or negative UTC offsets", () => {
   const date = "2026-10-26";
@@ -177,4 +180,60 @@ it("lists sprints with a status badge and offers the status filter only when sta
   expect(mixed).toContain('data-sprint-state="completed"');
   expect(mixed).toContain("Sprint status");
   expect(render(["planned", "planned"])).not.toContain("Sprint status");
+});
+
+const pageBoard = (state: string) =>
+  ({
+    sprints: [
+      {
+        id: "s",
+        name: "Sprint 12",
+        state,
+        revision: 1,
+        projects: [
+          { environmentId: "local", projectId: "project", cwd: "/project", name: "alpha" },
+        ],
+      },
+    ],
+    sources: [],
+    planning: new Map(),
+    machines: [],
+    supported: false,
+    loading: false,
+    syncErrors: [],
+    lifecycleIssue: () => undefined,
+  }) as unknown as SprintBoardController;
+const pageProject = {
+  environmentId: "local",
+  projectId: "project",
+  cwd: "/project",
+  name: "alpha",
+} as SprintProjectRef;
+const renderPage = (state: string, selectedId = "s") =>
+  renderToStaticMarkup(
+    createElement(SprintManagement, {
+      board: pageBoard(state),
+      projects: [pageProject],
+      selectedId,
+      onSelect: () => {},
+    }),
+  );
+
+it("keeps one primary action on a sprint page and the rest in the overflow menu", () => {
+  const planned = renderPage("planned");
+  expect(planned).toContain("Start sprint");
+  expect(planned).not.toContain("Complete sprint");
+  expect(planned).toContain("More actions");
+  // Archive and Edit live in the menu, not as page buttons.
+  expect(planned).not.toContain("Archive sprint");
+  expect(renderPage("active")).toContain("Complete sprint");
+  const completed = renderPage("completed");
+  expect(completed).not.toContain("Start sprint");
+  expect(completed).not.toContain("Complete sprint");
+});
+
+it("shows the sprint list with a New sprint button and no server bar", () => {
+  const html = renderPage("planned", "");
+  expect(html).toContain("New sprint");
+  expect(html).not.toContain("Sprint server");
 });

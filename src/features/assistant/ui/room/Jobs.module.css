@@ -7,6 +7,9 @@
   flex-direction: column;
   gap: var(--space-4);
   min-inline-size: 0;
+  /* Jobs view: an empty list centers in the pane height left under the composer. */
+  flex: 1 1 auto;
+  min-block-size: 0;
 }
 .composer {
   min-inline-size: 0;
@@ -22,8 +25,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  max-block-size: 24rem;
   min-inline-size: 0;
+  overflow-y: auto;
 }
 .discussionActions {
   display: flex;
@@ -38,7 +41,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
   flex-wrap: wrap;
 }
@@ -51,7 +54,7 @@
 .bulk {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2);
   margin-inline-start: auto;
   flex-wrap: wrap;
 }
@@ -67,7 +70,7 @@
   display: grid;
   grid-template-columns: auto 1rem minmax(0, 1fr) auto;
   align-items: start;
-  column-gap: 8px;
+  column-gap: var(--ui-space-2);
 
   min-inline-size: 0;
 }
@@ -83,13 +86,13 @@
 .main {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--ui-space-1);
   min-inline-size: 0;
 }
 .titleLine {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
   flex-wrap: wrap;
 }
@@ -98,49 +101,27 @@
   min-inline-size: 0;
   text-align: start;
 }
-.project {
-  flex: 0 1 auto;
-  min-inline-size: 0;
-  max-inline-size: 40%;
-}
 .progressLine {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
   font-variant-numeric: tabular-nums;
 }
-.progressLine > [role="progressbar"] {
+.progressMeter {
   flex: none;
   inline-size: 6rem;
-}
-.caption {
-  margin: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  min-inline-size: 0;
 }
 .actions {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--ui-space-1);
   flex-wrap: wrap;
   justify-content: flex-end;
 }
-.empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 32px 16px;
-  text-align: center;
-}
-.empty p {
-  margin: 0;
-}
 
 /* Detail sheet */
-.sheet {
+.detailContent {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -150,14 +131,14 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 .request {
   display: flex;
   flex-direction: column;
   align-items: start;
-  gap: 4px;
+  gap: var(--ui-space-1);
   min-inline-size: 0;
 }
 .request p {
@@ -168,7 +149,7 @@
 .block {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 .block p {
@@ -181,15 +162,15 @@
   display: flex;
   flex-direction: column;
   align-items: start;
-  gap: 4px;
+  gap: var(--ui-space-1);
   min-inline-size: 0;
 }
 .noteHit {
   display: flex;
   flex-direction: column;
   align-items: start;
-  gap: 4px;
-  padding-block-end: 8px;
+  gap: var(--ui-space-1);
+  padding-block-end: var(--ui-space-2);
   min-inline-size: 0;
 }
 
@@ -213,7 +194,7 @@
 .reviewJob {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--ui-space-3);
   min-inline-size: 0;
 }
 .reviewJob + .reviewJob {
@@ -223,14 +204,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
   flex-wrap: wrap;
 }
 .reviewTools {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
   flex-wrap: wrap;
 }
@@ -248,19 +229,19 @@
 }
 .footerNote {
   display: grid;
-  gap: 2px;
+  gap: var(--ui-space-1);
   min-inline-size: 0;
 }
 .deleteTasks {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--ui-space-1);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 .deleteTasks li {
   display: flex;
-  gap: 6px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }

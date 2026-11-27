@@ -20,10 +20,14 @@ windows, including the quick composer. Language changes preserve mounted
 sessions, terminal processes and composer drafts. A new language is activated
 only after its bundled catalog loads; a failed load leaves the current language
 available for retry. Application-owned Windows tray and macOS menu labels are
-updated through `native_language_set`. macOS keybinding menu rebuilds reapply
+updated through `native_language_set`, which receives only the messages listed in
+`src/shared/i18n/nativeLabelKeys.ts` (a test fails when `menu.rs`, `tray.rs` or
+`desktop_shortcut.rs` use one that is missing). macOS keybinding menu rebuilds reapply
 the selected translations.
 
 ## Writing UI copy
+
+Name the chat entity **session** in UI copy: sidebar, menus, tabs and recovery. Keep **conversation** for transcript content only. Identifiers, protocol IDs and code names keep their existing wording.
 
 Use `t("English source message")` for application-owned copy and `useLocale()`
 in components that display it. Keep full sentences together. Interpolate
@@ -69,6 +73,9 @@ content. Operating-system dialogs use the OS language.
   selection, window synchronization, interpolation, formatting and input state.
 - `pnpm exec playwright test tests/browser/settings/localization.spec.ts --project=chromium`
   checks the actual selector in all languages, Turkish search and narrow CJK UI.
+
+Use “computer” for the computer that runs the app or stores its data and “bycoda
+Host” for the service. Use “device” when the wording also covers phones or tablets.
 
 Add explicit translations when authoring components and review catalog changes
 before committing.

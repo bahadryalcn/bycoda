@@ -13,7 +13,7 @@ use std::{
     io::{Read, Write},
     process::{Command, Stdio},
     sync::{Arc, Mutex, OnceLock},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Manager};
 
@@ -64,6 +64,9 @@ enum SshSource {
 }
 struct Job {
     issuer: Arc<NativeServiceChannel>,
+    activity_owner: Option<Arc<crate::control::receipts::WindowIssuer>>,
+    created_at: Instant,
+    created_at_epoch_ms: u128,
     server: String,
     signature: String,
     endpoint_digest: String,
@@ -79,8 +82,42 @@ struct Job {
     output_full: bool,
     total: u64,
     settled_at: Option<Instant>,
+    /// Who admitted the command: `owner`, `sessionFullAccess` or `standingConsent`.
+    approved_by: Option<&'static str>,
 }
 impl Job {
+    fn activity(&self, request: &str) -> Option<Value> {
+        // The exact command is already retained in the replay signature. Never include endpoint data.
+        let (_, command, _): (String, String, u64) = serde_json::from_str(&self.signature).ok()?;
+        let mut start = self.output.len().saturating_sub(24 * 1024);
+        while self
+            .output
+            .get(start)
+            .is_some_and(|byte| byte & 0xc0 == 0x80)
+        {
+            start += 1;
+        }
+        Some(json!({
+            "requestId": request, "command": command, "state": self.state,
+            "startedAt": self.created_at_epoch_ms,
+            "output": String::from_utf8_lossy(&self.output[start..]),
+            "exitCode": self.exit_code, "remoteOutcomeUnknown": self.remote_unknown,
+            "truncated": start > 0 || self.output_full,
+        }))
+    }
+    fn activity_owned_by(
+        &self,
+        server: &str,
+        owner: &Arc<crate::control::receipts::WindowIssuer>,
+    ) -> bool {
+        self.server == server
+            && self.issuer.is_current()
+            && owner.is_live()
+            && self
+                .activity_owner
+                .as_ref()
+                .is_some_and(|bound| Arc::ptr_eq(bound, owner))
+    }
     fn authorize_issuer(&self, issuer: &Arc<NativeServiceChannel>) -> Result<(), String> {
         if !Arc::ptr_eq(&self.issuer, issuer) || !self.issuer.is_current() {
             return Err("SSH execution belongs to a retired or different native issuer".into());
@@ -178,12 +215,19 @@ impl Job {
             .map(|i| self.output[i])
             .collect();
         json!({"requestId":request,"serverId":self.server,"state":self.state,"exitCode":self.exit_code,
-            "reason":self.reason,"remoteOutcomeUnknown":self.remote_unknown,"cancelRequested":self.cancel,
+            "reason":self.reason,"approvedBy":self.approved_by,"remoteOutcomeUnknown":self.remote_unknown,"cancelRequested":self.cancel,
             "output":String::from_utf8_lossy(&self.output[start..end]),"cursor":end,"nextOffset":end,
             "stdout":String::from_utf8_lossy(&stdout),"stderr":String::from_utf8_lossy(&stderr),
             "hasMore":end<self.output.len(),"truncated":self.total>self.output.len() as u64,
             "totalBytes":self.total,"retainedBytes":self.output.len()})
     }
+}
+
+fn epoch_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
 }
 fn complete_utf8_prefix(mut bytes: &[u8]) -> bool {
     while !bytes.is_empty() {
@@ -283,6 +327,9 @@ fn cancel_or_reserve(
     // Keep this tombstone for the exact issuer lifetime; no process was entered.
     let job = Arc::new(Mutex::new(Job {
         issuer: issuer.clone(),
+        activity_owner: None,
+        created_at: Instant::now(),
+        created_at_epoch_ms: epoch_ms(),
         server: String::new(),
         signature: String::new(),
         endpoint_digest: String::new(),
@@ -298,6 +345,7 @@ fn cancel_or_reserve(
         output_full: false,
         total: 0,
         settled_at: None,
+        approved_by: None,
     }));
     jobs.insert(key.clone(), job.clone());
     Ok(job)
@@ -526,8 +574,55 @@ fn nonblocking<T>(_pipe: &T) -> bool {
     true
 }
 
+/// Waits for a pipe to become ready, bounded so stop and deadline checks still run.
+/// Unix polls the fd, so data or EOF wakes the thread at once. Elsewhere pipes block in
+/// the kernel and this only paces a retry.
+trait PipeReady {
+    fn wait_ready(&self, writable: bool);
+}
+#[cfg(unix)]
+impl<T: std::os::fd::AsRawFd> PipeReady for T {
+    fn wait_ready(&self, writable: bool) {
+        const WAIT_MS: libc::c_int = 100;
+        let mut fd = libc::pollfd {
+            fd: std::os::fd::AsRawFd::as_raw_fd(self),
+            events: if writable {
+                libc::POLLOUT
+            } else {
+                libc::POLLIN
+            },
+            revents: 0,
+        };
+        // SAFETY: one live pollfd is passed for this call only; poll does not retain it.
+        unsafe { libc::poll(&mut fd, 1, WAIT_MS) };
+    }
+}
+#[cfg(not(unix))]
+impl<T> PipeReady for T {
+    fn wait_ready(&self, _writable: bool) {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// Waits on the IO completion channel until every thread reports or the budget ends.
+/// Returns how many threads are still open; zero also when every sender is gone.
+fn wait_for_io(done: &std::sync::mpsc::Receiver<()>, mut open: usize, budget: Duration) -> usize {
+    let until = Instant::now() + budget;
+    while open > 0 {
+        let Some(left) = until.checked_duration_since(Instant::now()) else {
+            break;
+        };
+        match done.recv_timeout(left) {
+            Ok(()) => open -= 1,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => break,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return 0,
+        }
+    }
+    open
+}
+
 fn drain(
-    mut source: impl Read,
+    mut source: impl Read + PipeReady,
     job: Arc<Mutex<Job>>,
     stderr: bool,
     stop: Arc<std::sync::atomic::AtomicBool>,
@@ -543,7 +638,7 @@ fn drain(
                 if stop.load(std::sync::atomic::Ordering::Acquire) {
                     return false;
                 }
-                std::thread::sleep(Duration::from_millis(20));
+                source.wait_ready(false);
             }
             Err(_) => return false,
             Ok(n) => {
@@ -584,19 +679,27 @@ fn supervise_owned(
         return;
     }
     let stop_io = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    // Each IO thread reports on this channel just before it returns; settlement waits on it.
+    let (done_tx, done) = std::sync::mpsc::channel::<()>();
     let out_job = job.clone();
     let out_stop = stop_io.clone();
+    let out_done = done_tx.clone();
     let out = std::thread::spawn(move || {
-        output.is_some_and(|source| drain(source, out_job, false, out_stop))
+        let result = output.is_some_and(|source| drain(source, out_job, false, out_stop));
+        let _ = out_done.send(());
+        result
     });
     let err_job = job.clone();
     let err_stop = stop_io.clone();
+    let err_done = done_tx.clone();
     let err = std::thread::spawn(move || {
-        error.is_some_and(|source| drain(source, err_job, true, err_stop))
+        let result = error.is_some_and(|source| drain(source, err_job, true, err_stop));
+        let _ = err_done.send(());
+        result
     });
     let write_stop = stop_io.clone();
     let write = std::thread::spawn(move || {
-        input.is_some_and(|mut input| {
+        let result = input.is_some_and(|mut input| {
             let mut bytes = stdin.as_slice();
             while !bytes.is_empty() {
                 if write_stop.load(std::sync::atomic::Ordering::Acquire) {
@@ -609,13 +712,15 @@ fn supervise_owned(
                         if write_stop.load(std::sync::atomic::Ordering::Acquire) {
                             return false;
                         }
-                        std::thread::sleep(Duration::from_millis(20));
+                        input.wait_ready(true);
                     }
                     Err(_) => return false,
                 }
             }
             true
-        })
+        });
+        let _ = done_tx.send(());
+        result
     });
     let started = Instant::now();
     let (mut state, code, mut reason, mut unknown) = loop {
@@ -666,13 +771,8 @@ fn supervise_owned(
         }
     };
     // A proxy child may retain inherited pipes. Never block settlement indefinitely.
-    let until = Instant::now() + Duration::from_secs(3);
-    while Instant::now() < until
-        && (!out.is_finished() || !err.is_finished() || !write.is_finished())
-    {
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    if !out.is_finished() || !err.is_finished() || !write.is_finished() {
+    let mut open = wait_for_io(&done, 3, Duration::from_secs(3));
+    if open > 0 {
         stop_io.store(true, std::sync::atomic::Ordering::Release);
         #[cfg(windows)]
         {
@@ -684,15 +784,9 @@ fn supervise_owned(
                 }
             }
         }
-        let cancel_until = Instant::now() + Duration::from_secs(1);
-        while Instant::now() < cancel_until
-            && (!out.is_finished() || !err.is_finished() || !write.is_finished())
-        {
-            std::thread::sleep(Duration::from_millis(20));
-        }
+        open = wait_for_io(&done, open, Duration::from_secs(1));
     }
-    let all_finished = out.is_finished() && err.is_finished() && write.is_finished();
-    let io_ok = if all_finished {
+    let io_ok = if open == 0 {
         let out_ok = out.join().unwrap_or(false);
         let err_ok = err.join().unwrap_or(false);
         let write_ok = write.join().unwrap_or(false);
@@ -768,9 +862,26 @@ pub(super) fn call(
         Ok(())
     };
     let bypassed_approval = std::cell::Cell::new(false);
+    // A Room command skips its prompt only under the registered Room's live Full access grant
+    // with no exclusions (arbitrary remote commands may conceal any of them).
+    let room_full_access = || match &key.source {
+        SshSource::AssistantThread { thread } => {
+            crate::assistant_standing_consent::room_gate_approved(
+                app,
+                issuer,
+                thread,
+                "servers.ssh.execute",
+            )
+        }
+        SshSource::Session { .. } => false,
+    };
+    let standing_consent = std::cell::Cell::new(false);
     let authorize_current = || -> Result<bool, String> {
         check_room()?;
         let full_access = authorize(request, issuer, taken, bypassed_approval.get())?;
+        if standing_consent.get() && !room_full_access() {
+            return Err("Native assistant consent changed before execution".into());
+        }
         check_room()?;
         Ok(full_access)
     };
@@ -824,6 +935,13 @@ pub(super) fn call(
     let timeout = number(input, "timeoutSeconds", 60, 1, 300)?;
     let signature = serde_json::to_string(&json!([server, script, timeout]))
         .map_err(|_| "Invalid SSH command")?;
+    let activity_owner = match (&key.source, request["cwd"].as_str()) {
+        (SshSource::Session { session, .. }, Some(cwd)) => {
+            crate::control::conversation_ssh_activity_owner(app, session, cwd, &key.environment)
+                .ok()
+        }
+        _ => None,
+    };
     let endpoint = crate::ssh_security::prepare_endpoint(
         crate::server_inventory::resolve_ssh_endpoint(app, &server)?,
     )?;
@@ -852,6 +970,9 @@ pub(super) fn call(
         }
         let job = Arc::new(Mutex::new(Job {
             issuer: issuer.clone(),
+            activity_owner,
+            created_at: Instant::now(),
+            created_at_epoch_ms: epoch_ms(),
             server: server.clone(),
             signature,
             endpoint_digest: reviewed_digest.clone(),
@@ -867,6 +988,7 @@ pub(super) fn call(
             output_full: false,
             total: 0,
             settled_at: None,
+            approved_by: None,
         }));
         jobs.insert(key.clone(), job.clone());
         job
@@ -875,6 +997,14 @@ pub(super) fn call(
     let start = (|| -> Result<(), String> {
         let full_access = authorize_current()?;
         bypassed_approval.set(full_access);
+        standing_consent.set(!full_access && room_full_access());
+        let approved_by = if full_access {
+            "sessionFullAccess"
+        } else if standing_consent.get() {
+            "standingConsent"
+        } else {
+            "owner"
+        };
         check(request, issuer, taken)?;
         check_room()?;
         let shell = endpoint
@@ -892,7 +1022,7 @@ pub(super) fn call(
         };
         let message=format!("Run this exact command on saved SSH server?\n\nServer ID: {}\nTarget: {}@{}:{}\n{}\nShell: {:?}\nTimeout: {} seconds\n\nCommand (escaped literal):\n{}\n\nThis can change remote files and services. Command output will be disclosed to the calling AI conversation. Cancellation stops local SSH; remote work may continue.",literal(&server),literal(endpoint.user.as_deref().unwrap_or("(default)")),literal(&endpoint.host),endpoint.port,source,shell,timeout,literal(&script));
         // At most one open approval dialog per conversation; others queue here.
-        let approved = if full_access {
+        let approved = if full_access || standing_consent.get() {
             true
         } else {
             let slot = loop {
@@ -941,6 +1071,15 @@ pub(super) fn call(
             });
             j.settled_at = Some(Instant::now());
             return Ok(());
+        }
+        job.lock()
+            .map_err(|_| "SSH execution unavailable")?
+            .approved_by = Some(approved_by);
+        if approved_by != "owner" {
+            log::info!(
+                "SSH command admitted without a prompt ({approved_by}); request {}",
+                literal(&key.request)
+            );
         }
         authorize_current()?;
         if endpoint_digest(&crate::server_inventory::resolve_ssh_endpoint(
@@ -1018,9 +1157,75 @@ pub(super) fn call(
     Ok(result)
 }
 
+/// Read only the AI command receipts originally admitted for this desktop page and session.
+#[tauri::command]
+pub(crate) fn server_ssh_session_activity(
+    window: tauri::WebviewWindow,
+    session_id: String,
+    server_id: String,
+) -> Result<Vec<Value>, String> {
+    let mut registry = jobs().lock().map_err(|_| "SSH executions unavailable")?;
+    evict_expired(&mut registry, Instant::now());
+    let candidates: Vec<_> = registry
+        .iter()
+        .filter(|(key, _)| {
+            matches!(&key.source, SshSource::Session { session, .. } if session == &session_id)
+        })
+        .map(|(key, job)| (key.request.clone(), job.clone()))
+        .collect();
+    drop(registry);
+    if candidates.is_empty() {
+        return Ok(vec![]);
+    }
+    let owner = crate::control::receipts::existing(&window)?;
+    let mut snapshots: Vec<_> = candidates
+        .into_iter()
+        .filter_map(|(request, job)| {
+            let state = job.lock().ok()?;
+            if !state.activity_owned_by(&server_id, &owner) {
+                return None;
+            }
+            let order = std::cmp::Reverse((state.active(), state.created_at));
+            drop(state);
+            Some((order, request, job))
+        })
+        .collect();
+    snapshots.sort_unstable_by_key(|(order, _, _)| *order);
+    Ok(snapshots
+        .into_iter()
+        .take(4)
+        .filter_map(|(_, request, job)| {
+            let state = job.lock().ok()?;
+            if !state.activity_owned_by(&server_id, &owner) {
+                return None;
+            }
+            state.activity(&request)
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn desktop_activity_keeps_the_exact_window_and_saved_target_and_bounds_output() {
+        let owner = Arc::new(crate::control::receipts::WindowIssuer::default());
+        let sibling = Arc::new(crate::control::receipts::WindowIssuer::default());
+        let mut job = fixture_job();
+        job.activity_owner = Some(owner.clone());
+        job.created_at_epoch_ms = 1_700_000_000_000;
+        job.signature = json!([job.server, "printf 'test'", 60]).to_string();
+        job.append("☕".repeat(10_000).as_bytes(), false);
+        assert!(job.activity_owned_by(&job.server, &owner));
+        assert!(!job.activity_owned_by(&job.server, &sibling));
+        assert!(!job.activity_owned_by("different-target", &owner));
+        let view = job.activity("request").unwrap();
+        assert_eq!(view["startedAt"], 1_700_000_000_000_u64);
+        assert_eq!(view["command"], "printf 'test'");
+        let output = view["output"].as_str().unwrap();
+        assert!(output.len() <= 24 * 1024 && !output.contains('\u{fffd}'));
+        assert_eq!(view["truncated"], true);
+    }
     #[test]
     fn only_trusted_full_access_skips_approval_and_downgrades_stop_execution() {
         assert_eq!(
@@ -1058,6 +1263,9 @@ mod tests {
     fn fixture_job() -> Job {
         Job {
             issuer: NativeServiceChannel::for_test(),
+            activity_owner: None,
+            created_at: Instant::now(),
+            created_at_epoch_ms: epoch_ms(),
             server: "s".into(),
             signature: "command".into(),
             endpoint_digest: "digest".into(),
@@ -1073,6 +1281,16 @@ mod tests {
             output_full: false,
             total: 0,
             settled_at: None,
+            approved_by: None,
+        }
+    }
+    #[test]
+    fn status_receipt_names_who_admitted_the_command() {
+        let mut job = fixture_job();
+        assert_eq!(job.result("r", 0, 16)["approvedBy"], Value::Null);
+        for by in ["owner", "sessionFullAccess", "standingConsent"] {
+            job.approved_by = Some(by);
+            assert_eq!(job.result("r", 0, 16)["approvedBy"], by);
         }
     }
     #[test]
@@ -1286,6 +1504,20 @@ mod tests {
             assert!(j.reason.is_some());
         }
     }
+    /// #500: IO threads report completion on a channel instead of being polled.
+    #[test]
+    fn io_completion_wait_counts_reports_and_gives_up_at_its_budget() {
+        let (done, reports) = std::sync::mpsc::channel();
+        done.send(()).unwrap();
+        done.send(()).unwrap();
+        assert_eq!(wait_for_io(&reports, 2, Duration::from_secs(1)), 0);
+        done.send(()).unwrap();
+        // One report of three arrives; the budget ends with two still open.
+        assert_eq!(wait_for_io(&reports, 3, Duration::from_millis(30)), 2);
+        // Every sender gone means no thread can still report.
+        drop(done);
+        assert_eq!(wait_for_io(&reports, 3, Duration::from_secs(1)), 0);
+    }
     #[test]
     fn strict_request_and_bounds() {
         assert!(request_id(&json!({"requestId":"safe_123-X"})).is_ok());
@@ -1307,6 +1539,9 @@ mod tests {
     fn output_is_bounded_and_cursor_is_bytes() {
         let mut job = Job {
             issuer: NativeServiceChannel::for_test(),
+            activity_owner: None,
+            created_at: Instant::now(),
+            created_at_epoch_ms: epoch_ms(),
             server: "s".into(),
             signature: "s".into(),
             endpoint_digest: "d".into(),
@@ -1322,6 +1557,7 @@ mod tests {
             output_full: false,
             total: 0,
             settled_at: None,
+            approved_by: None,
         };
         job.append(&vec![b'x'; OUTPUT_LIMIT + 99], false);
         let page = job.result("r", 100, 12);

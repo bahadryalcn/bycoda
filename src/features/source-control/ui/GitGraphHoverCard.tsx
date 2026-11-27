@@ -1,16 +1,13 @@
 import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
-import { Button } from "../../../shared/ui/Button";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useMemo } from "react";
 import type { GitHistoryCommit } from "../../../platform/tauri/fs";
-import { Check, Copy } from "../../../shared/ui/icons";
-import { InlineError } from "../../../shared/ui/InlineError";
 import { formatAbsoluteTime, formatRelativeTime, orderGraphRefs } from "../model/gitGraphDisplay";
 import type { HistoryItemViewModel } from "../model/gitGraph";
+import { shortSha } from "../../../shared/lib/shortSha";
 import { GraphAvatar, RefPill } from "./GitGraphParts";
-import { copyText } from "../../../platform/tauri/clipboard";
-import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 
 /**
  * Details of the hovered commit, the content of the row's shared `HoverCard` (see GitGraphList):
@@ -24,20 +21,7 @@ export function GitGraphHoverCard({
   row: HistoryItemViewModel;
 }) {
   useLocale();
-  // The card can be reused for another commit; its outcome and any copy in flight belong to one SHA.
-  const {
-    copy: runCopy,
-    copied,
-    error: copyError,
-  } = useCopyFeedback({
-    resetKeys: [commit.sha],
-    successMs: 1200,
-  });
   const refs = useMemo(() => orderGraphRefs(row.refs, commit.head), [row.refs, commit.head]);
-
-  const copy = () => {
-    runCopy(() => copyText(commit.sha));
-  };
 
   return (
     <Text as="div" size="caption" tone="primary" className="space-y-2">
@@ -64,21 +48,15 @@ export function GitGraphHoverCard({
         <Code size="micro" tone="secondary">
           {commit.shortSha}
         </Code>
-        <Button
-          variant="ghost"
+        <CopyButton
           motion="none"
           type="button"
           size="sm"
           iconOnly
           label={t("Copy commit ID")}
-          onClick={copy}
-        >
-          {copied ? (
-            <Check className="icon-xs" strokeWidth={2} />
-          ) : (
-            <Copy className="icon-xs" strokeWidth={1.75} />
-          )}
-        </Button>
+          text={commit.sha}
+          resetKeys={[commit.sha]}
+        />
       </div>
       {refs.length > 0 ? (
         <div className="flex flex-wrap gap-1">
@@ -87,11 +65,10 @@ export function GitGraphHoverCard({
           ))}
         </div>
       ) : null}
-      {copyError ? <InlineError>{copyError}</InlineError> : null}
       {commit.parents.length > 0 ? (
         <Text as="p" size="inherit" tone="secondary">
           {commit.parents.length > 1 ? t("Parents") : t("Parent")}{" "}
-          <Code size="micro">{commit.parents.map((parent) => parent.slice(0, 7)).join(", ")}</Code>
+          <Code size="micro">{commit.parents.map((parent) => shortSha(parent)).join(", ")}</Code>
         </Text>
       ) : null}
     </Text>

@@ -11,10 +11,12 @@ import {
   ATTACHMENT_MISSING_MESSAGE,
   MAX_REMOTE_ATTACHMENT_BYTES,
   collectAttachmentGarbage,
+  resolveAttachments,
 } from "./attachments";
 import { HostDomainRefusalError } from "../domains/context";
 import { attachmentMissingOnHost } from "../../src/features/connections/model/remoteAttachmentPreviews";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { runWithRequestTrace, startRequestTrace } from "../diagnostics/request-trace";
 const cleanups: Array<() => void | Promise<void>> = [];
 it.skipIf(process.platform !== "win32")(
   "serializes UUID case aliases before accepting a conflicting retry",
@@ -127,6 +129,55 @@ it("reads non-image files only after session acceptance and ignores client-suppl
     readAttachmentChunk(store, { sessionId: "owner", id: "../secret", offset: 0 }),
   ).rejects.toThrow("not found");
 });
+it("loads the session once per download and again when a download restarts", async () => {
+  const { store, id } = fixture();
+  const bytes = Buffer.alloc(1_200_000, 7);
+  await writeAttachmentChunk(store, {
+    id,
+    size: bytes.length,
+    offset: 0,
+    data: bytes.subarray(0, 300_000).toString("base64"),
+  });
+  for (let offset = 300_000; offset < bytes.length; offset += 300_000)
+    await writeAttachmentChunk(store, {
+      id,
+      size: bytes.length,
+      offset,
+      data: bytes.subarray(offset, offset + 300_000).toString("base64"),
+    });
+  const sessionFor = vi.fn(
+    async () =>
+      ({
+        session: {
+          blocks: [
+            {
+              attachments: [
+                { id, name: "a.bin", kind: "file", mimeType: "x/y", size: bytes.length },
+              ],
+            },
+          ],
+        },
+      }) as unknown as Awaited<ReturnType<HostStore["session"]>>,
+  );
+  let offset = 0;
+  while (offset < bytes.length) {
+    const chunk = await readAttachmentChunk(store, { sessionId: "s", id, offset }, sessionFor);
+    offset = chunk.offset;
+  }
+  expect(sessionFor).toHaveBeenCalledTimes(1);
+  await readAttachmentChunk(store, { sessionId: "s", id, offset: 0 }, sessionFor);
+  expect(sessionFor).toHaveBeenCalledTimes(2);
+  await expect(
+    readAttachmentChunk(
+      store,
+      { sessionId: "other", id, offset: 3 },
+      async () =>
+        ({
+          session: { blocks: [] },
+        }) as unknown as Awaited<ReturnType<HostStore["session"]>>,
+    ),
+  ).rejects.toThrow("not found");
+});
 it("preserves generated-image ownership and metadata size bounds", async () => {
   const { store, id } = fixture();
   const image = {
@@ -178,6 +229,39 @@ it("refuses to read a session attachment whose file is absent instead of surfaci
   const incomplete = await read();
   expect(incomplete).not.toBeInstanceOf(HostDomainRefusalError);
   expect(attachmentMissingOnHost(incomplete)).toBe(false);
+});
+
+it("correlates and deduplicates a missing attachment observed after upload without logging its identity", async () => {
+  const { store } = fixture();
+  const id = randomUUID();
+  const file = { id, name: "private-shot.png", kind: "image", mimeType: "image/png", size: 4 };
+  vi.spyOn(store, "session").mockReturnValue({
+    session: { blocks: [{ attachments: [file] }] },
+  } as unknown as ReturnType<HostStore["session"]>);
+  await writeAttachmentChunk(store, { id, size: 4, offset: 0, data: "YWJjZA==" });
+  rmSync(attachmentPath(store, id));
+  const write = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+  const trace = startRequestTrace("ws");
+  try {
+    for (const offset of [0, 1]) {
+      await expect(
+        runWithRequestTrace(trace, () =>
+          readAttachmentChunk(store, { sessionId: "private-session", id, offset }),
+        ),
+      ).rejects.toThrow(ATTACHMENT_MISSING_MESSAGE);
+    }
+    const lines = write.mock.calls
+      .map(([value]) => String(value))
+      .filter((value) => value.includes("attachment bytes missing"));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/ref=[0-9a-f]{16} .*chunk=first lastObserved=upload-complete/);
+    expect(lines[0]).toContain(`traceId=${trace.id}`);
+    expect(lines[0]).not.toContain("private-session");
+    expect(lines[0]).not.toContain(file.name);
+    expect(lines[0]).not.toContain(id);
+  } finally {
+    write.mockRestore();
+  }
 });
 it("accepts ordered chunks and an identical retry while rejecting changes", async () => {
   const directory = mkdtempSync(join(tmpdir(), "remote-upload-test-"));
@@ -379,4 +463,64 @@ it("collects old orphans only with complete references and preserves queue, othe
   await collectAttachmentGarbage(store, () => new Set(ids), Date.now());
   await upload;
   expect(readFileSync(attachmentPath(store, current), "utf8")).toBe("abc");
+});
+it("resolves send references asynchronously and keeps the size and ID authority", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "remote-resolve-test-"));
+  const store = new HostStore(join(directory, "host.db"));
+  cleanups.push(async () => {
+    await store.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  await writeAttachmentChunk(store, {
+    id,
+    offset: 0,
+    size: 3,
+    data: Buffer.from("abc").toString("base64"),
+  });
+  const ref = { id, name: "note.txt", mimeType: "text/plain", kind: "file" as const, size: 3 };
+  const pending = resolveAttachments(store, [ref]);
+  expect(pending).toBeInstanceOf(Promise);
+  await expect(pending).resolves.toEqual([{ ...ref, path: attachmentPath(store, id) }]);
+  await expect(resolveAttachments(store, [{ ...ref, size: 4 }])).rejects.toThrow(
+    "Attachment note.txt is incomplete",
+  );
+  await expect(resolveAttachments(store, [{ ...ref, id: "not-a-uuid" }])).rejects.toThrow(
+    "Invalid attachment ID",
+  );
+});
+
+it("ends a reference pass without reading tables once every candidate is in use", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "attachment-gc-used-"));
+  const store = new HostStore(join(directory, "host.db"));
+  cleanups.push(async () => {
+    await store.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const ids = ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"];
+  for (const id of ids)
+    await writeAttachmentChunk(store, {
+      id,
+      offset: 0,
+      size: 6,
+      data: Buffer.from("abc").toString("base64"),
+    });
+  const prepare = vi.spyOn(store.db, "prepare");
+  const future = Date.now() + 8 * 24 * 60 * 60 * 1000;
+  const resume = {};
+  expect(
+    await collectAttachmentGarbage(
+      store,
+      () => new Set(ids),
+      future,
+      undefined,
+      new Set(ids),
+      undefined,
+      undefined,
+      resume,
+    ),
+  ).toEqual([]);
+  expect(prepare.mock.calls.some(([sql]) => /SELECT .*\* FROM "/.test(String(sql)))).toBe(false);
+  expect(resume).toEqual({ pending: false, scan: undefined });
+  for (const id of ids) expect(readFileSync(attachmentPath(store, id), "utf8")).toBe("abc");
 });

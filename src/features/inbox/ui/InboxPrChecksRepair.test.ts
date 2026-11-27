@@ -501,6 +501,60 @@ it("shows live repair progress and opens the linked conversation", async () => {
   expect(visibleText(host)).not.toContain("Repair in progress");
 });
 
+it("announces repair progress once for the panel and keeps the badges static", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  roots.push(root);
+  const checks = ["tests", "lint"].map((name) => ({
+    name,
+    workflow: "CI",
+    state: "fail" as const,
+    url: null,
+    startedAt: null,
+    completedAt: null,
+  }));
+  await act(async () =>
+    root.render(
+      createElement(InboxPrChecks, {
+        cwd: "/static-badges",
+        repo: "acme/web",
+        onRefresh() {},
+        view: {
+          checks: { headOid: "abc", checks },
+          loading: false,
+          refreshing: false,
+          stale: false,
+          error: null,
+          refresh() {},
+        },
+        repair: {
+          number: 42,
+          sessions: [{ id: "repair-chat", title: "Fix checks" }],
+          onStart() {},
+        },
+      }),
+    ),
+  );
+  act(() =>
+    trackCiRepair(
+      "/static-badges",
+      buildCiRepairRequest({
+        repo: "acme/web",
+        number: 42,
+        headOid: "abc",
+        evidence: checks,
+      }),
+      "repair-chat",
+      () => true,
+    ),
+  );
+  const liveTexts = [...host.querySelectorAll('[role="status"]')].map((node) => node.textContent);
+  expect(liveTexts.filter((text) => text === "2 repairing")).toHaveLength(1);
+  expect(host.querySelectorAll('[data-repair-status][role="status"]')).toHaveLength(0);
+});
+
 it("reports fresh checks for a later PR commit without confirming old or stale results", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const host = document.createElement("div");
@@ -565,11 +619,12 @@ it("reports fresh checks for a later PR commit without confirming old or stale r
   expect(visibleText(host)).toContain("Awaiting new CI checks");
   await render("new-commit");
   expect(visibleText(host)).toContain("CI passed");
+  // The commit sentence is gone; expanding lists only the included checks.
   expect(visibleText(host)).not.toContain("new-com");
   act(() =>
     host.querySelector<HTMLElement>('[aria-label="Repair progress"] details > summary')!.click(),
   );
-  expect(visibleText(host)).toContain("new-com");
+  expect(host.querySelector('[aria-label="Included checks"]')?.textContent).toContain("tests");
   await render("new-commit", [passed], { stale: true });
   expect(visibleText(host)).not.toContain("CI passed");
   expect(visibleText(host)).toContain("CI results are out of date");
@@ -634,7 +689,7 @@ it("starts a repair with all failed checks and the selected project chat", async
     )!;
   expect(button("Fix all failed")).toBeDefined();
   await act(async () => button("Fix all failed").click());
-  const search = document.querySelector<HTMLInputElement>('input[placeholder="Search chats..."]');
+  const search = document.querySelector<HTMLInputElement>('input[placeholder="Search chats…"]');
   expect(search).not.toBeNull();
   expect(document.activeElement).toBe(search);
   await act(async () => {

@@ -6,6 +6,13 @@
   min-width: 0;
 }
 
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
 .header {
   display: flex;
   flex-wrap: wrap;
@@ -21,6 +28,10 @@
   gap: var(--space-1);
 }
 
+.updated {
+  margin-inline-end: var(--space-1);
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
@@ -30,12 +41,8 @@
 .stat {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--ui-space-1);
   min-width: 0;
-}
-
-.statValue {
-  font-variant-numeric: tabular-nums;
 }
 
 .charts {

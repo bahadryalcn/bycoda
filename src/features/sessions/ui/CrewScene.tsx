@@ -1,5 +1,6 @@
 import { classicAccent } from "./crewCodeColor";
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { reachWhenClipped } from "./crewLabelFocus";
 import {
   canvasWorkerEnabled,
   subscribeCanvasWorkerEnabled,
@@ -17,7 +18,6 @@ import {
   type CSSProperties,
   useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -25,7 +25,7 @@ import {
 import { shouldRunLoop } from "../../../shared/lib/animationGate";
 import {
   useDecorativeMotionEnabled,
-  useWindowHasFocus,
+  useMotionWindowVisible,
 } from "../../settings/public/decorativeMotion";
 import {
   createCodeArtPainter,
@@ -45,12 +45,19 @@ import {
   subscribeCrewTheme,
 } from "../../settings/public/settings";
 import { crewCharge } from "./starWarsCrew";
+import { useTypingHold } from "./crewTypingHold";
 import { riggedCrewTheme } from "./crewThemes";
 import "./CrewScene.css";
 import "./crewClassicColor.css";
-import { useShellSessions } from "../model/sessionsStore";
+import { useShellSessionsSelector } from "../model/sessionsStore";
 import type { Session } from "../model/session";
-import { crewAge, crewSeats, previewCrewSeats, type CrewSeat } from "../model/crewActivity";
+import {
+  crewAge,
+  createCrewSeatsSelector,
+  previewCrewSeats,
+  sameCrewSeats,
+  type CrewSeat,
+} from "../model/crewActivity";
 import {
   type CrewAgeState,
   type CrewRole,
@@ -98,6 +105,12 @@ type SceneProps = {
   /** Previews and tests: an explicit crew. */
   crew?: readonly CrewSeat[];
 };
+/**
+ * Narrowest label box in scene units. Dense crews leave less neighbour spacing than this, so the
+ * name wraps inside a readable column instead of collapsing to an ellipsis or a negative width.
+ */
+const MIN_LABEL_WIDTH = 40;
+
 type SeatLabel = {
   id: number;
   role: CrewRole;
@@ -155,19 +168,20 @@ function CrewStage({
     crewWorkerSnapshot,
     crewWorkerSnapshot,
   );
-  const sessions = useShellSessions();
-  // The shell list changes with every non-text update of any session; the seats only
-  // need recomputing when one of these inputs does.
-  const crew = useMemo(
-    () =>
+  // The shell list changes with every non-text update of any session. The selector reads only
+  // this crew's sessions, and an equal seat tuple keeps its identity, so the scene re-renders
+  // when a seat changes rather than on every update of any session.
+  const [seatsOf] = useState(createCrewSeatsSelector);
+  const crew = useShellSessionsSelector(
+    (sessions) =>
       previewCrew ??
       (previewCount !== undefined
         ? previewCrewSeats(previewCount)
-        : crewSeats(
+        : seatsOf(
             sessionId,
             session ? [session, ...sessions.filter((item) => item.id !== session.id)] : sessions,
           )),
-    [previewCrew, previewCount, sessionId, session, sessions],
+    sameCrewSeats,
   );
   // Off: everyone is an uncle, whatever their context.
   const storedGrowthEnabled = useSyncExternalStore(
@@ -220,10 +234,16 @@ function CrewStage({
   const [labels, setLabels] = useState<SeatLabel[]>([]);
   const container = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
-  const painter = useRef<{ draw: CodeArtPainter; painted: boolean } | null>(null);
+  const still = useRef<HTMLCanvasElement>(null);
+  /** `paintedFor` is the motion/seat state of the last paint, so a paused scene still draws a changed state once. */
+  const painter = useRef<{ draw: CodeArtPainter; paintedFor: string | null } | null>(null);
   const startedAt = useRef<number | null>(null);
   const enabled = useDecorativeMotionEnabled();
-  const focused = useWindowHasFocus();
+  const windowVisible = useMotionWindowVisible();
+  // Typing holds the last frame like a streaming reply does: the scene keeps its pose, only the
+  // motion timer and repaints stop, and it resumes a moment after the last key.
+  const typing = useTypingHold();
+  const held = typing || paused;
   const [running, setRunning] = useState(false);
   const frame = rigged
     ? variant === "background"
@@ -248,7 +268,7 @@ function CrewStage({
       setRunning(
         shouldRunLoop({
           enabled,
-          focused,
+          windowVisible,
           documentHidden: document.hidden,
           visible: intersects,
           sized: element.clientWidth > 0 && element.clientHeight > 0,
@@ -274,8 +294,8 @@ function CrewStage({
       document.removeEventListener("visibilitychange", update);
       window.removeEventListener("resize", update);
     };
-  }, [enabled, focused]);
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- owns painter resources across streaming pause changes; retains other existing reset boundaries
+  }, [enabled, windowVisible]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- owns painter/worker resources; only the art, renderer, theme, growth and variant rebuild them, never window and element visibility, pause or seat percent
   useEffect(() => {
     const surface = canvas.current;
     if (!surface) return;
@@ -284,16 +304,19 @@ function CrewStage({
       : workerEnabled && CLASSIC_CREW_WORKER_QUALIFIED
         ? createCrewCanvasHost(surface)
         : createCodeArtPainter(surface);
-    painter.current = { draw, painted: false };
+    painter.current = { draw, paintedFor: null };
     return () => {
       draw.dispose?.();
       painter.current = null;
     };
-  }, [running, crewKey, frame, artStatus, rigged, growthEnabled, variant, workerEnabled]);
+  }, [artStatus, rigged, growthEnabled, variant, workerEnabled]);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- schedules the retained painter from the existing motion gates and wall clock
   useEffect(() => {
     const instance = painter.current;
-    if (!instance || (paused && instance.painted)) return;
+    // The retained painter is not rebuilt for motion or seat changes: a paused scene skips
+    // only when this exact state was already drawn.
+    const stateKey = `${running}/${crewKey}`;
+    if (!instance || (held && instance.paintedFor === stateKey)) return;
     const { draw } = instance;
     let previous: number | undefined;
     let previousLabels: number | undefined;
@@ -414,7 +437,11 @@ function CrewStage({
             working: !!state.working,
             x: Math.round(place.x),
             y: Math.round(place.y - height * place.scale),
-            width: Math.min(spacing - 8, 2 * place.x, 2 * (CODE_WIDTH - place.x)),
+            width: Math.min(
+              Math.max(spacing - 8, MIN_LABEL_WIDTH),
+              2 * place.x,
+              2 * (CODE_WIDTH - place.x),
+            ),
           };
         });
       const labelSignature = valueHash(shown);
@@ -427,7 +454,7 @@ function CrewStage({
       if (signature === previous) return settled;
       previous = signature;
       draw(actions, activity, viewportWidth.current, steamTime);
-      instance.painted = true;
+      instance.paintedFor = stateKey;
       return settled;
     };
     if (!running) {
@@ -445,7 +472,7 @@ function CrewStage({
       timer = undefined;
       const settled = paint(performance.now() - start);
       // While a reply streams the pane repaints constantly: draw one pose, then hold it.
-      if (paused) return;
+      if (held) return;
       if (idle && settled && !draw.busy?.()) paint(0, false);
       // Expressions are quantized to `frame`; behind a conversation one tick per frame is enough.
       else timer = setTimeout(tick, variant === "background" ? frame : frame / 2);
@@ -454,7 +481,28 @@ function CrewStage({
     return () => {
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [running, crewKey, frame, artStatus, rigged, growthEnabled, variant, paused, workerEnabled]);
+  }, [running, crewKey, frame, artStatus, rigged, growthEnabled, variant, held, workerEnabled]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- swaps the filtered live canvas for an equal still while typing: software compositing re-runs the CSS drop-shadow rim on every page frame, and a plain canvas costs nothing
+  useEffect(() => {
+    const root = container.current;
+    const frozen = still.current;
+    // The worker host hides the original canvas and shows a clone: draw whichever is visible.
+    const live = [...(root?.querySelectorAll<HTMLCanvasElement>("canvas") ?? [])].find(
+      (surface) => surface !== frozen && surface.style.display !== "none",
+    );
+    const context = frozen?.getContext("2d");
+    if (!typing || !root || !live || !frozen || !context) return;
+    // shortcut: the rim is baked in canvas pixels, so its blur is not scaled with the scene's
+    // CSS width (up to about 1.2x thinner than the live filter), and only while typing.
+    context.clearRect(0, 0, frozen.width, frozen.height);
+    context.filter = getComputedStyle(live).filter || "none";
+    context.drawImage(live, 0, 0, frozen.width, frozen.height);
+    context.filter = "none";
+    root.dataset.still = "true";
+    return () => {
+      delete root.dataset.still;
+    };
+  }, [typing, artStatus, rigged, growthEnabled, variant, workerEnabled]);
   return (
     <div
       ref={container}
@@ -464,7 +512,7 @@ function CrewStage({
       data-art-status={artStatus}
       data-motion={running ? "running" : "still"}
       data-working-count={workingCount}
-      role={variant === "hero" ? (artStatus === "error" ? "group" : "img") : undefined}
+      role={variant === "hero" ? "group" : undefined}
       aria-label={
         variant === "hero"
           ? theme === "star-wars"
@@ -524,15 +572,76 @@ function CrewStage({
           height={CODE_HEIGHT}
           aria-hidden="true"
         />
-        <div className="crew-scene__labels" aria-hidden="true">
+        <canvas
+          ref={still}
+          className="crew-scene__still"
+          width={CODE_WIDTH}
+          height={CODE_HEIGHT}
+          aria-hidden="true"
+        />
+        <div
+          className="crew-scene__labels"
+          aria-hidden={variant === "background" ? true : undefined}
+        >
           {labels.map((label) => {
             const character = rigged?.character(label.id, label.role);
             const charge = crewCharge(crew[label.id]?.context, rigged ? growthEnabled : true);
             const percent = charge === undefined ? undefined : Math.round(charge * 100);
             const displayName =
               crew[label.id]?.name || (character ? character.name : roleText(label.role, t));
+            const text = (
+              <span
+                key={label.id}
+                ref={variant === "hero" ? reachWhenClipped : undefined}
+                className="crew-scene__label"
+                data-role={label.role}
+                data-working={label.working ? "true" : "false"}
+                data-age={ageOf(crew[label.id]).stage}
+                data-character={character?.id}
+                data-charge={showCharge ? (percent ?? "unknown") : undefined}
+                style={{
+                  insetInlineStart: `${(label.x / CODE_WIDTH) * 100}%`,
+                  insetBlockStart: `${((label.y + CREW_TOP) / CODE_HEIGHT) * 100}%`,
+                  // Only the classic crew hangs the bycoda sign above the labels.
+                  transform: `translate(-50%, ${labelLift(label.y + CREW_TOP, !character)})`,
+                  inlineSize: `${(label.width / CODE_WIDTH) * 100}%`,
+                }}
+              >
+                {character || showCharge ? (
+                  <>
+                    <span className="crew-scene__name">{displayName}</span>
+                    {!character && showCharge && (
+                      <span className="crew-scene__charge">
+                        {percent === undefined ? "—" : `${percent}%`}
+                      </span>
+                    )}
+                    {character && (
+                      <span className="crew-scene__detail">
+                        {roleText(label.role, t)}
+                        {showCharge ? ` · ${percent === undefined ? "—" : `${percent}%`}` : ""}
+                      </span>
+                    )}
+                    {showCharge && (
+                      <Meter
+                        className="crew-scene__meter"
+                        value={percent ?? null}
+                        aria-hidden
+                        style={
+                          {
+                            "--meter-fill": character?.accent ?? classicAccent(label.id),
+                          } as CSSProperties
+                        }
+                      />
+                    )}
+                  </>
+                ) : (
+                  displayName
+                )}
+              </span>
+            );
+            if (variant !== "hero") return text;
             return (
-              <Tooltip
+              <OverflowTooltip
                 key={label.id}
                 label={
                   character
@@ -541,57 +650,9 @@ function CrewStage({
                       ? `${displayName} · ${percent === undefined ? t("Context unknown") : t("Context: {p0}%", { p0: percent })}`
                       : displayName
                 }
-                asChild
               >
-                <span
-                  key={label.id}
-                  className="crew-scene__label"
-                  data-role={label.role}
-                  data-working={label.working ? "true" : "false"}
-                  data-age={ageOf(crew[label.id]).stage}
-                  data-character={character?.id}
-                  data-charge={showCharge ? (percent ?? "unknown") : undefined}
-
-                  style={{
-                    insetInlineStart: `${(label.x / CODE_WIDTH) * 100}%`,
-                    insetBlockStart: `${((label.y + CREW_TOP) / CODE_HEIGHT) * 100}%`,
-                    // Only the classic crew hangs the bycoda sign above the labels.
-                    transform: `translate(-50%, ${labelLift(label.y + CREW_TOP, !character)})`,
-                    inlineSize: `${(label.width / CODE_WIDTH) * 100}%`,
-                  }}
-                >
-                  {character || showCharge ? (
-                    <>
-                      <span className="crew-scene__name">{displayName}</span>
-                      {!character && showCharge && (
-                        <span className="crew-scene__charge">
-                          {percent === undefined ? "—" : `${percent}%`}
-                        </span>
-                      )}
-                      {character && (
-                        <span className="crew-scene__detail">
-                          {roleText(label.role, t)}
-                          {showCharge ? ` · ${percent === undefined ? "—" : `${percent}%`}` : ""}
-                        </span>
-                      )}
-                      {showCharge && (
-                        <Meter
-                          className="crew-scene__meter"
-                          value={percent ?? null}
-                          aria-hidden
-                          style={
-                            {
-                              "--meter-fill": character?.accent ?? classicAccent(label.id),
-                            } as CSSProperties
-                          }
-                        />
-                      )}
-                    </>
-                  ) : (
-                    displayName
-                  )}
-                </span>
-              </Tooltip>
+                {text}
+              </OverflowTooltip>
             );
           })}
         </div>

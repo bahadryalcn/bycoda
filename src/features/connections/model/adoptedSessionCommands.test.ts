@@ -1,6 +1,11 @@
 // @vitest-environment happy-dom
 import { beforeEach, expect, it, vi } from "vitest";
-import { sendAdoptedFollowUp, cancelAdoptedTurn } from "./adoptedSessionCommands";
+import {
+  sendAdoptedFollowUp,
+  cancelAdoptedTurn,
+  isAdoptedTurnStopping,
+  observeAdoptedStop,
+} from "./adoptedSessionCommands";
 import { DeliveryUnknownError } from "../../../shared/lib/deliveryUnknown";
 import { QueueDeferredError } from "./sharedQueue";
 
@@ -20,6 +25,8 @@ vi.mock("./remoteAttachments", () => ({ uploadRemoteAttachments: io.upload }));
 vi.mock("./sharedQueueClient", () => ({ desktopQueueClientId: "desktop:this-window" }));
 vi.mock("./hostWake", () => ({ noteAdoptedBeat: io.wake }));
 const running = {
+  revision: 5,
+  session: { harness: "claude" },
   status: "running",
   runId: "host-run",
   desktop: { updatedAt: 0 },
@@ -37,6 +44,7 @@ beforeEach(() => {
   io.upload.mockResolvedValue([]);
   io.capabilities.mockResolvedValue([
     "sessions.steer",
+    "sessions.steer.claude",
     "commands.status",
     "sessions.queue.claimDispatch",
   ]);
@@ -48,6 +56,12 @@ beforeEach(() => {
   });
 });
 const input = () => ({ sessionId: "s", text: "follow-up", attachments: [], isCurrent: () => true });
+
+it("keeps a Claude follow-up queued on Hosts that only advertise the generic command", async () => {
+  io.capabilities.mockResolvedValue(["sessions.steer"]);
+  await expect(sendAdoptedFollowUp(input())).rejects.toBeInstanceOf(QueueDeferredError);
+  expect(io.request.mock.calls.some(([, method]) => method === "commands.dispatch")).toBe(false);
+});
 
 it("retains a claimed row on an older Host without attempting an incompatible command", async () => {
   io.capabilities.mockResolvedValue(["sessions.steer", "commands.status"]);
@@ -71,6 +85,18 @@ it("keeps a definitive validation refusal distinct from a coordination wait", as
     throw refusal;
   });
   await expect(sendAdoptedFollowUp(input())).rejects.toBe(refusal);
+});
+
+it("keeps a proven pre-write steer readiness refusal queued without checking for delivery", async () => {
+  io.request.mockImplementation(async (_machine, method) => {
+    if (method === "sessions.get") return snapshot;
+    throw Object.assign(new Error("RPC_WS_REMOTE: The active turn is not ready for steering."), {
+      code: "RPC_WS_REMOTE",
+      uncertain: false,
+    });
+  });
+  await expect(sendAdoptedFollowUp(input())).rejects.toBeInstanceOf(QueueDeferredError);
+  expect(io.request.mock.calls.some(([, method]) => method === "commands.status")).toBe(false);
 });
 
 it("passes the existing desktop claim and drain epoch to the Host", async () => {
@@ -124,12 +150,18 @@ it("never blesses an old queued intent or Stop from a newly read authority floor
   const dispatched = io.request.mock.calls.find(([, method]) => method === "commands.dispatch")![2];
   expect(dispatched).not.toHaveProperty("authorityGeneration");
   io.request.mockClear();
-  await cancelAdoptedTurn("s", "host-run", 2);
+  const stop = cancelAdoptedTurn("s", "host-run", 2);
+  await vi.waitFor(() => expect(io.wake).toHaveBeenCalledTimes(2));
   expect(io.request).toHaveBeenCalledWith(
     "local",
     "commands.dispatch",
     expect.objectContaining({ authorityGeneration: 2 }),
+    false,
+    true,
+    "home",
   );
+  observeAdoptedStop("s", { status: "idle", revision: running.revision + 1 });
+  await stop;
 });
 it("steers the home host despite its desktop sharing marker, without a local provider run", async () => {
   expect(await sendAdoptedFollowUp(input())).toBe(true);
@@ -201,6 +233,19 @@ it("defers a command proven not sent without marking its delivery unknown", asyn
   await expect(sendAdoptedFollowUp(input())).rejects.toBeInstanceOf(QueueDeferredError);
   expect(io.request.mock.calls.some(([, method]) => method === "commands.status")).toBe(false);
 });
+it("recovers a proven pre-write steer race after the dispatch reply was lost", async () => {
+  io.request.mockImplementation(async (_machine, method) => {
+    if (method === "sessions.get") return snapshot;
+    if (method === "commands.dispatch") throw new Error("connection closed");
+    if (method === "commands.status")
+      throw new Error("Host rejected request: The active turn is not ready for steering.");
+    return null;
+  });
+  await expect(sendAdoptedFollowUp(input())).rejects.toBeInstanceOf(QueueDeferredError);
+  expect(io.request.mock.calls.filter(([, method]) => method === "commands.dispatch")).toHaveLength(
+    1,
+  );
+});
 
 it("defers a host run race without pausing the follow-up queue", async () => {
   io.request.mockImplementation(async (_machine, method) => {
@@ -214,16 +259,75 @@ it("defers a host run race without pausing the follow-up queue", async () => {
   await expect(sendAdoptedFollowUp(input())).rejects.toBeInstanceOf(QueueDeferredError);
 });
 it("fences Stop to the host run rather than stopping a local provider", async () => {
-  await cancelAdoptedTurn("s");
+  const stop = cancelAdoptedTurn("s", "host-run");
+  await vi.waitFor(() => expect(io.wake).toHaveBeenCalledOnce());
   expect(io.request).toHaveBeenCalledWith(
     "local",
     "commands.dispatch",
     expect.objectContaining({ type: "cancel", runId: "host-run" }),
+    false,
+    true,
+    "home",
   );
+  observeAdoptedStop("s", { status: "idle", revision: running.revision + 1 });
+  await stop;
 });
 it("does not stop a successor that replaced the mirrored host run", async () => {
   await cancelAdoptedTurn("s", "previous-run");
   expect(io.request.mock.calls.some(([, method]) => method === "commands.dispatch")).toBe(false);
+});
+
+it("treats a rejected Stop as complete when the Host confirms the original run ended", async () => {
+  io.request.mockImplementation(async (_machine, method) => {
+    if (method === "sessions.get") return snapshot;
+    snapshot = { status: "idle" };
+    throw new Error("This request belongs to a finished or replaced turn");
+  });
+  await expect(cancelAdoptedTurn("s", "host-run")).resolves.toBeUndefined();
+  expect(io.wake).toHaveBeenCalledOnce();
+});
+
+it("keeps Stop pending after acceptance and ignores a second click until a newer mirror settles it", async () => {
+  const attempt = cancelAdoptedTurn("s", "host-run");
+  await vi.waitFor(() => expect(io.wake).toHaveBeenCalledOnce());
+  observeAdoptedStop("s", { status: "idle", revision: running.revision });
+  expect(isAdoptedTurnStopping("s")).toBe(true);
+  await cancelAdoptedTurn("s", "host-run");
+  expect(io.request.mock.calls.filter(([, method]) => method === "commands.dispatch")).toHaveLength(
+    1,
+  );
+  observeAdoptedStop("s", {
+    status: "running",
+    runId: "successor",
+    revision: running.revision + 1,
+  });
+  await attempt;
+  expect(isAdoptedTurnStopping("s")).toBe(false);
+});
+
+it("reports a failed Stop when the original run is still active", async () => {
+  const failure = new Error("RPC outcome unknown");
+  io.request.mockImplementation(async (_machine, method) => {
+    if (method === "sessions.get") return running;
+    throw failure;
+  });
+  await expect(cancelAdoptedTurn("s", "host-run")).rejects.toBe(failure);
+  expect(isAdoptedTurnStopping("s")).toBe(false);
+});
+
+it("rechecks after an unconfirmed Stop and lets the user retry if the run is still active", async () => {
+  vi.useFakeTimers();
+  try {
+    const result = expect(cancelAdoptedTurn("s", "host-run")).rejects.toThrow(
+      "The Host has not confirmed that the turn stopped",
+    );
+    await vi.advanceTimersByTimeAsync(15_000);
+    await result;
+    expect(io.request.mock.calls.filter(([, method]) => method === "sessions.get")).toHaveLength(2);
+    expect(isAdoptedTurnStopping("s")).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 it("guards duplicate submissions for the entire upload and acknowledgement", async () => {
   let finish!: () => void;

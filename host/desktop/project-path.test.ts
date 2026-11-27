@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, unlinkSync } from "node:fs
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { normalizeProjectPath, sameProjectPath } from "./project-path";
+import { normalizeProjectPath, resetProjectPathCache, sameProjectPath } from "./project-path";
 
 const folders: string[] = [];
 afterEach(() => {
@@ -37,6 +37,30 @@ describe("normalizeProjectPath", () => {
     // value is returned and one asynchronous refresh is started instead.
     expect(normalizeProjectPath(alias)).toBe(normalizeProjectPath(a));
     await vi.waitFor(() => expect(normalizeProjectPath(alias)).toBe(normalizeProjectPath(b)));
+  });
+
+  it("keeps a working set larger than the old 512-entry cache so a list pass never re-resolves", () => {
+    const { a, b, alias, link } = retargetable();
+    vi.spyOn(Date, "now").mockReturnValue(Date.now());
+    const first = normalizeProjectPath(alias);
+    expect(first).toBe(normalizeProjectPath(a));
+    for (let i = 0; i < 1_200; i++)
+      normalizeProjectPath(join(tmpdir(), `bycoda-project-path-working-set-${i}`));
+    unlinkSync(alias);
+    link(b);
+    // Still inside the TTL: an evicted entry would be resolved again, now to b.
+    expect(normalizeProjectPath(alias)).toBe(first);
+  });
+
+  it("resolves a retargeted junction afresh after the cache is reset", () => {
+    const { a, b, alias, link } = retargetable();
+    vi.spyOn(Date, "now").mockReturnValue(Date.now());
+    expect(normalizeProjectPath(alias)).toBe(normalizeProjectPath(a));
+    unlinkSync(alias);
+    link(b);
+    expect(normalizeProjectPath(alias)).toBe(normalizeProjectPath(a));
+    resetProjectPathCache();
+    expect(normalizeProjectPath(alias)).toBe(normalizeProjectPath(b));
   });
 
   it("compares a missing folder as written", () => {

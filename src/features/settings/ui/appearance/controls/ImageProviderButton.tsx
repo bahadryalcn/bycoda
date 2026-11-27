@@ -28,7 +28,7 @@ export function ImageProviderButton({
     <>
       <Button
         ref={anchor}
-        label={`${t("Background image")}: ${selected.label}`}
+        aria-label={`${t("Background image")}: ${selected.label}`}
         size="sm"
         variant="ghost"
         startIcon={selected.icon}

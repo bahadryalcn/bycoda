@@ -42,11 +42,32 @@ function jpeg(width = 20, height = 10) {
     0xd9,
   ]);
 }
+/** In-memory stand-in for the durable HostStore budget; sharing one Map across calls models a restart. */
+function budgetStore(budget = new Map<string, number>()) {
+  return {
+    reserveConversationImage: async (sessionId: string, limit: number) => {
+      const used = budget.get(sessionId) ?? 0;
+      if (used >= limit) return undefined;
+      budget.set(sessionId, used + 1);
+      return used + 1;
+    },
+    conversationImagesUsed: async (sessionId: string) => budget.get(sessionId) ?? 0,
+  };
+}
+
 function setup(
   bytes: Buffer = png(),
   available = true,
-  options: { selected?: string[]; antigravity?: string } = {},
+  options: {
+    selected?: string[];
+    antigravity?: string;
+    budget?: Map<string, number>;
+    /** Reuse one conversation id, as a restarted Host sees the same persisted session. */
+    sessionId?: string;
+  } = {},
 ) {
+  // One store per setup: the budget must persist across calls of the same conversation.
+  const store = budgetStore(options.budget);
   const root = mkdtempSync(join(tmpdir(), "image-tools-"));
   roots.push(root);
   const generate = vi.fn(async () => ({ bytes, model: "native-default" }));
@@ -67,7 +88,7 @@ function setup(
     return { bytes: png(64, 64), model: input.model, sessionId: "child" };
   });
   const session = {
-    id: randomUUID(),
+    id: options.sessionId ?? randomUUID(),
     modelSettings: options.selected
       ? { [IMAGE_MODELS_KEY]: encodeImageModels(options.selected)! }
       : {},
@@ -77,13 +98,15 @@ function setup(
     callImageConversationTool(root, action, input, {
       session,
       projectId: "project",
-      engine: { store: { attachmentDir: join(root, "attachments") } } as never,
+      engine: {
+        store: { attachmentDir: join(root, "attachments"), ...store },
+      } as never,
       adapters,
       antigravity: async () => options.antigravity,
       runAntigravity: runAntigravity as never,
       authorized: async () => true,
     });
-  return { root, call, generate, runAntigravity };
+  return { root, session, call, generate, runAntigravity };
 }
 
 it("lists image models with access, formats and limits plus the remaining budget", async () => {
@@ -170,6 +193,63 @@ it("stops generating after the per-conversation budget", async () => {
   expect(generate).toHaveBeenCalledTimes(MAX_IMAGES_PER_SESSION);
 });
 
+it("keeps the spent budget across a Host restart", async () => {
+  const budget = new Map<string, number>();
+  const sessionId = randomUUID();
+  const first = setup(png(), true, { budget, sessionId });
+  for (let index = 0; index < MAX_IMAGES_PER_SESSION; index++)
+    await first.call("images.generate", { prompt: "x", path: `a/${index}.png` });
+  // A restarted Host has no in-process state; only the durable budget carries over.
+  const restarted = setup(png(), true, { budget, sessionId });
+  const status = (await restarted.call("images.status")) as { remaining: number };
+  expect(status.remaining).toBe(0);
+  await expect(
+    restarted.call("images.generate", { prompt: "x", path: "a/after-restart.png" }),
+  ).rejects.toThrow("Image limit reached");
+  expect(restarted.generate).not.toHaveBeenCalled();
+});
+
+it("does not reserve budget for refused requests", async () => {
+  const budget = new Map<string, number>();
+  const { call, session } = setup(png(), true, { budget, selected: ["codex"] });
+  await expect(call("images.generate", { prompt: "x", path: "art/icon.svg" })).rejects.toThrow(
+    ".png",
+  );
+  await expect(
+    call("images.generate", { prompt: "x", path: "a.png", provider: "gemini" }),
+  ).rejects.toThrow("not selected");
+  expect(budget.get(session.id) ?? 0).toBe(0);
+});
+
+it("keeps a failed generation counted against the budget", async () => {
+  const budget = new Map<string, number>();
+  const root = mkdtempSync(join(tmpdir(), "image-tools-"));
+  roots.push(root);
+  const session = { id: randomUUID(), modelSettings: {}, runtimeMode: "supervised" as const };
+  const adapters: SocialImageAdapters = {
+    codex: {
+      capability: async () => ({ provider: "codex", available: true, reason: "", models: [] }),
+      generate: async () => {
+        throw new Error("provider timed out");
+      },
+    },
+  };
+  const options = {
+    session,
+    projectId: "project",
+    engine: {
+      store: { attachmentDir: join(root, "attachments"), ...budgetStore(budget) },
+    } as never,
+    adapters,
+    antigravity: async () => undefined,
+    authorized: async () => true,
+  };
+  await expect(
+    callImageConversationTool(root, "images.generate", { prompt: "x", path: "f.png" }, options),
+  ).rejects.toThrow();
+  expect(budget.get(session.id)).toBe(1);
+});
+
 it("does not write after authority is revoked", async () => {
   const { root } = setup();
   let allowed = true;
@@ -190,7 +270,9 @@ it("does not write after authority is revoked", async () => {
       {
         session: { id: randomUUID(), modelSettings: {}, runtimeMode: "supervised" },
         projectId: "project",
-        engine: { store: { attachmentDir: join(root, "attachments") } } as never,
+        engine: {
+          store: { attachmentDir: join(root, "attachments"), ...budgetStore() },
+        } as never,
         adapters,
         antigravity: async () => undefined,
         authorized: async () => allowed,
@@ -214,6 +296,19 @@ it("marks the session's selected models and refuses unselected providers", async
     call("images.generate", { prompt: "x", path: "a.png", provider: "codex" }),
   ).rejects.toThrow("not selected");
   expect(generate).not.toHaveBeenCalled();
+});
+
+it("offers no image model and refuses generation while images are off", async () => {
+  const { call, generate, runAntigravity } = setup(png(), true, {
+    selected: [],
+    antigravity: "agy-model",
+  });
+  expect(await call("images.status")).toEqual({ models: [], off: true, remaining: 0 });
+  await expect(call("images.generate", { prompt: "x", path: "a.png" })).rejects.toThrow(
+    "Image generation is off",
+  );
+  expect(generate).not.toHaveBeenCalled();
+  expect(runAntigravity).not.toHaveBeenCalled();
 });
 
 it("runs Nano Banana in Antigravity when it is the selected model", async () => {

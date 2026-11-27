@@ -3,7 +3,6 @@ import type { HostTask } from "../../src/features/tasks/model/hostTasks";
 import {
   callConversationTaskRead,
   normalizeConversationTaskConfiguration,
-  CONVERSATION_TASK_EXECUTION_DEFAULTS,
 } from "./conversation-task-tools";
 import { HostStore } from "../store";
 import { HostTasks } from "../tasks/tasks";
@@ -51,11 +50,6 @@ describe("conversation task configuration", () => {
   });
 
   it("inherits workspace policy and refuses delivery or publication requests", () => {
-    expect(CONVERSATION_TASK_EXECUTION_DEFAULTS).toEqual({
-      autoMerge: false,
-      continueUntilDone: false,
-    });
-    expect(Object.isFrozen(CONVERSATION_TASK_EXECUTION_DEFAULTS)).toBe(true);
     expect(
       normalizeConversationTaskConfiguration({ isolate: false }, "task", "project", []),
     ).toEqual({ isolate: false });
@@ -78,7 +72,7 @@ describe("conversation task configuration", () => {
   });
 
   it("reports completed but undelivered branches as blocking dependencies", () => {
-    const dependency = task("first", { status: "done", branch: "bycoda/t/first", merged: false });
+    const dependency = task("first", { status: "done", branch: "by/first", merged: false });
     expect(
       callConversationTaskRead(
         "tasks.dependencies.list",

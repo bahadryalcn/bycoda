@@ -3,7 +3,6 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentMarkdown } from "./AgentMarkdown";
-import * as filesystem from "../../../platform/tauri/fs";
 
 const copy = vi.hoisted(() => vi.fn(async (_text: string) => {}));
 vi.mock("../../../platform/tauri/clipboard", () => ({ copyText: copy }));
@@ -108,29 +107,7 @@ describe("markdown file navigation", () => {
     },
   );
 
-  it("hides a prior folder action while the replacement path is unverified", async () => {
-    await render("[Existing](<G:/My Projects/ayşe/özet.md>)");
-    expect(container.querySelector('[aria-label="Open containing folder"]')).not.toBeNull();
-    let resolveMetadata!: (
-      value: { path: string; mtimeMs: number | null; isDir: boolean }[],
-    ) => void;
-    vi.spyOn(filesystem, "statFiles").mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          resolveMetadata = resolve;
-        }),
-    );
-    await render("[Checking](/repo/pending-verification-file.ts)");
-    expect(container.querySelector('[aria-label="Open containing folder"]')).toBeNull();
-    await act(async () =>
-      resolveMetadata([
-        { path: "/repo/pending-verification-file.ts", mtimeMs: null, isDir: false },
-      ]),
-    );
-    expect(container.querySelector('[aria-label="Open containing folder"]')).toBeNull();
-  });
-
-  it("copies table email addresses without file icons or folder actions", async () => {
+  it("renders table email addresses as plain code without file icons or row actions", async () => {
     const emails = [
       "admin-e2e@itms.local",
       "pm-e2e@itms.local",
@@ -144,25 +121,8 @@ describe("markdown file navigation", () => {
     expect(container.querySelector('code[role="link"]')).toBeNull();
     expect(container.querySelector('[aria-label="Open containing folder"]')).toBeNull();
     expect(container.querySelectorAll("code svg")).toHaveLength(0);
-    const buttons = container.querySelectorAll<HTMLButtonElement>('[aria-label="Copy"]');
-    expect(buttons).toHaveLength(4);
-    for (const [index, button] of Array.from(buttons).entries()) {
-      await act(async () => button.click());
-      expect(copy).toHaveBeenLastCalledWith(emails[index]);
-      expect(button.getAttribute("aria-label")).toBe("Copied");
-    }
+    expect(container.querySelector('[aria-label="Copy"]')).toBeNull();
     expect(onOpenFile).not.toHaveBeenCalled();
-  });
-
-  it("reports email copy failures and allows retry", async () => {
-    copy.mockRejectedValueOnce(new Error("clipboard unavailable"));
-    await render("`user+tag@example.com`");
-    const button = container.querySelector<HTMLButtonElement>('[aria-label="Copy"]')!;
-    await act(async () => button.click());
-    expect(button.getAttribute("aria-label")).toBe("Copy failed. Try again.");
-    await act(async () => button.click());
-    expect(copy).toHaveBeenLastCalledWith("user+tag@example.com");
-    expect(button.getAttribute("aria-label")).toBe("Copied");
   });
 
   it("keeps an explicit file path containing an email clickable", async () => {
@@ -180,25 +140,25 @@ describe("markdown file navigation", () => {
     ["/repo/My Project/özet.md", "/repo/My Project/özet.md"],
     ["./src", "/repo/src"],
     ["src/", "/repo/src"],
-  ])("makes the file or folder %s clickable with a folder action", async (reference, path) => {
+  ])("makes the file or folder %s clickable", async (reference, path) => {
     await render(`\`${reference}\``);
     const link = container.querySelector<HTMLElement>('code[role="link"]');
     expect(link).not.toBeNull();
-    expect(container.querySelector('[aria-label="Open containing folder"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Open containing folder"]')).toBeNull();
     await act(async () => link!.click());
     expect(onOpenFile).toHaveBeenCalledWith(path, undefined);
   });
 
-  it("adds file actions to a standalone plain-text path", async () => {
+  it("links a standalone plain-text path", async () => {
     await render("G:/My Projects/ayşe/özet.md");
     const link = container.querySelector<HTMLAnchorElement>("a");
     expect(link).not.toBeNull();
-    expect(container.querySelector('[aria-label="Open containing folder"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Open containing folder"]')).toBeNull();
     await act(async () => link!.click());
     expect(onOpenFile).toHaveBeenCalledWith("G:/My Projects/ayşe/özet.md", undefined);
   });
 
-  it("renders output citations as named file links with folder actions", async () => {
+  it("renders output citations as named file links", async () => {
     const directory = "/Users/me/projects/shop/.artifacts/reports/assessment-pdf";
     await render(
       `:codex-file-citation{path="${directory}/prs-tr.pdf" purpose="output"}\n\n` +
@@ -207,7 +167,7 @@ describe("markdown file navigation", () => {
     const links = Array.from(container.querySelectorAll<HTMLAnchorElement>("a"));
     expect(links.map((link) => link.textContent)).toEqual(["prs-tr.pdf", "ancestry-tr.pdf"]);
     expect(container.textContent).not.toContain("codex-file-citation");
-    expect(container.querySelectorAll('[aria-label="Open containing folder"]')).toHaveLength(2);
+    expect(container.querySelectorAll('[aria-label="Open containing folder"]')).toHaveLength(0);
     for (const [index, name] of ["prs-tr.pdf", "ancestry-tr.pdf"].entries()) {
       await act(async () => links[index].click());
       expect(onOpenFile).toHaveBeenLastCalledWith(`${directory}/${name}`, undefined);
@@ -217,10 +177,10 @@ describe("markdown file navigation", () => {
   it.each([
     ["G:/Projects/app/output/previews/pacing-character.html", "G:/Projects/app"],
     ["/Users/me/My Project/özet.htm", "remote://mac/Users/me/My Project"],
-  ])("renders visualize HTML %s as a file link with folder access", async (path, cwd) => {
+  ])("renders visualize HTML %s as a file link", async (path, cwd) => {
     await render(`Önizleme: \uE200visualize\uE202${JSON.stringify({ path })}\uE201 hazır.`, cwd);
     expect(container.textContent).not.toContain("visualize");
-    expect(container.querySelector('[aria-label="Open containing folder"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Open containing folder"]')).toBeNull();
     await act(async () => container.querySelector<HTMLAnchorElement>("a")!.click());
     expect(onOpenFile).toHaveBeenCalledWith(
       cwd.startsWith("remote://") ? `remote://mac${path}` : path,
@@ -420,7 +380,7 @@ describe("markdown file navigation", () => {
     await render(text);
     const link = container.querySelector<HTMLButtonElement>(".markdown-code-path-link")!;
     expect(link.textContent).toBe("G:/My Project/Türkçe/özet.md");
-    expect(container.querySelector('[aria-label="Open containing folder"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Open containing folder"]')).toBeNull();
     await act(async () => link.click());
     expect(onOpenFile).toHaveBeenCalledWith("G:/My Project/Türkçe/özet.md", {
       line: 12,

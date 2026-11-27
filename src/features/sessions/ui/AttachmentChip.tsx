@@ -4,19 +4,24 @@ import {
 } from "../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { InlineMessage } from "../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { motionAttributes } from "../../../shared/ui/Motion";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { useT } from "../../../shared/i18n";
-import { Link, X } from "../../../shared/ui/icons";
+import { Download, Link, X } from "../../../shared/ui/icons";
 import { tokenLabel } from "../model/attachmentTokens";
-import { attachmentPresentation, formatAttachmentSize } from "../model/attachmentPresentation";
+import {
+  attachmentPresentation,
+  formatAttachmentSize,
+  isPastedTextAttachment,
+} from "../model/attachmentPresentation";
 import { AttachmentIdentity } from "./AttachmentIdentity";
 import styles from "./AttachmentChip.module.css";
 import type { Attachment } from "../model/session";
 import { ImageLightbox } from "../../../shared/ui/ImageLightbox";
+import { usePointContextMenu, type ContextMenuActions } from "../../../shared/ui/ContextMenu";
 import { BrowserAnnotationDetails } from "../../host-tools/BrowserAnnotationDetails";
 import { useAttachmentPreview } from "./useAttachmentPreview";
 import { useNearViewport } from "./useNearViewport";
@@ -26,24 +31,91 @@ import {
   canOpenFileAttachment,
   sameFilePreviewSource,
 } from "./AttachmentFilePreview";
+import { useAttachmentMenu } from "./useAttachmentMenu";
 
 type Props = {
   attachment: Attachment;
   onRemove?: () => void;
+  draft?: { projectRoot: string };
   /** The token that refers to this attachment in the message text. */
   token?: string;
   /** Puts the token into the message text again. */
   onInsertToken?: () => void;
 };
 
-export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: Props) {
+/** The translated type name of an attachment kind, through literal keys. */
+function attachmentTypeLabel(
+  translate: ReturnType<typeof useT>,
+  kind: ReturnType<typeof attachmentPresentation>["kind"],
+): string {
+  switch (kind) {
+    case "image":
+      return translate("Image");
+    case "audio":
+      return translate("Audio");
+    case "video":
+      return translate("Video");
+    case "pdf":
+      return translate("PDF");
+    case "markdown":
+      return translate("Markdown");
+    case "text":
+      return translate("Text");
+    case "spreadsheet":
+      return translate("Spreadsheet");
+    case "code":
+      return translate("Code");
+    case "archive":
+      return translate("Compressed archive");
+    case "folder":
+      return translate("Folder");
+    case "file":
+      return translate("File");
+  }
+}
+
+export function AttachmentChip({ attachment, onRemove, draft, token, onInsertToken }: Props) {
   const t = useT();
   const presentation = attachmentPresentation(attachment);
+  const pastedText = isPastedTextAttachment(attachment);
+  const displayName = pastedText ? t("Pasted text") : attachment.name;
   const [failedThumbnail, setFailedThumbnail] = useState<string>();
   const size = formatAttachmentSize(attachment.size);
   const [openedFile, setOpenedFile] = useState<Attachment | null>(null);
   const fileOpen = sameFilePreviewSource(openedFile, attachment);
   const canOpenFile = canOpenFileAttachment(attachment);
+  const { actions, saveCopy } = useAttachmentMenu(attachment, draft?.projectRoot);
+  const draftActions: ContextMenuActions | undefined = draft && {
+    items: [
+      ...actions.items,
+      ...(token && onInsertToken
+        ? [
+            {
+              kind: "item" as const,
+              id: "insert",
+              label: t("Insert {p0} into the message", { p0: token }),
+            },
+          ]
+        : []),
+      ...(onRemove
+        ? [
+            { kind: "sep" as const },
+            {
+              kind: "item" as const,
+              id: "remove",
+              label: t("Remove {p0}", { p0: attachment.name }),
+              danger: true,
+            },
+          ]
+        : []),
+    ],
+    onPick: (id) => {
+      if (id === "remove") onRemove?.();
+      else if (id === "insert") onInsertToken?.();
+      else actions.onPick(id);
+    },
+  };
+  const contextMenu = usePointContextMenu(draftActions);
   const [thumbnailBox, nearViewport] = useNearViewport<HTMLDivElement>();
   const {
     src: preview,
@@ -56,15 +128,31 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
     recover,
     close,
   } = useAttachmentPreview(attachment, nearViewport);
+  const canPreview = canOpen || canOpenFile;
   // A gone image has no picture worth showing; it reads as a marked file chip.
   const image = attachment.kind === "image" && canOpen;
+  const imageSize = draft && size;
+  const imageContent =
+    preview && failedThumbnail !== preview ? (
+      <img
+        src={preview}
+        alt=""
+        draggable={false}
+        onError={() => {
+          setFailedThumbnail(preview);
+          recover(preview, true);
+        }}
+        className="size-full object-cover"
+      />
+    ) : (
+      <AttachmentIdentity attachment={attachment} />
+    );
   const label = token ? tokenLabel(token) : null;
-  // An image card is only its thumbnail; its token label already carries the size.
   const imageDetails = (label ? [label, attachment.name] : [attachment.name, size])
     .filter(Boolean)
     .join(" · ");
 
-  const typeText = presentation.typeExtension ?? t(presentation.label);
+  const typeText = presentation.typeExtension ?? attachmentTypeLabel(t, presentation.kind);
   // The app tooltip carries what a native `title` would: the full path (or name), type and size.
   const fileTooltip = {
     label: attachment.path ?? attachment.name,
@@ -72,17 +160,29 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
   };
   const fileBody = (
     <span className={styles.fileBody}>
-      <span className={styles.fileIcon}>
-        <AttachmentIdentity attachment={attachment} />
+      <span
+        {...(pastedText
+          ? surfaceAttributes({ variant: "inset", radius: "control" }, styles.fileIcon)
+          : { className: styles.fileIcon })}
+      >
+        <AttachmentIdentity attachment={attachment} size={pastedText ? 16 : undefined} />
       </span>
       <Text as="span" tone="inherit" weight="medium" truncate className={styles.name}>
-        {loading ? t("Loading…") : attachment.name}
+        {loading ? t("Loading…") : displayName}
       </Text>
-      <Text size="caption" tone="secondary" truncate className={styles.metadata}>
+      <Text
+        as="span"
+        size="caption"
+        tone="secondary"
+        weight={draft ? "regular" : undefined}
+        className={styles.metadata}
+      >
         {attachment.missing ? (
           <Text size="inherit" tone="warning">
             {t("missing")}
           </Text>
+        ) : pastedText ? (
+          size
         ) : (
           <>
             {typeText}
@@ -99,9 +199,12 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
         ref={thumbnailBox}
         data-attachment-chip={image ? "image" : "file"}
         data-attachment-kind={presentation.kind}
+        data-attachment-name={attachment.name}
+        data-pasted-text-attachment={pastedText ? "" : undefined}
+        {...contextMenu.trigger}
         {...actionContentScopeAttributes()}
         {...surfaceAttributes(
-          { radius: "card", variant: "attachment" },
+          { radius: pastedText ? "popup" : "card", variant: "attachment" },
           `group ${styles.card} ${image ? styles.image : styles.file}`,
         )}
       >
@@ -111,10 +214,10 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
               motion="none"
               layout="media"
               iconOnly
+              stretch
               label={t("Open {p0} full screen", { p0: attachment.name })}
               variant="ghost"
               type="button"
-              aria-label={t("Open {p0} full screen", { p0: attachment.name })}
               tooltip={imageDetails}
               disabled={loading}
               loading={loading}
@@ -126,50 +229,30 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
               }}
               className={styles.thumbnail}
             >
-              {preview && failedThumbnail !== preview ? (
-                <img
-                  src={preview}
-                  alt=""
-                  draggable={false}
-                  onError={() => {
-                    setFailedThumbnail(preview);
-                    recover(preview, true);
-                  }}
-                  className="size-full object-cover"
-                />
+              {imageSize ? (
+                <span className="flex size-full min-h-0 flex-col">
+                  <span className="grid min-h-0 flex-1 place-items-center overflow-clip">
+                    {imageContent}
+                  </span>
+                  <Text
+                    as="span"
+                    size="caption"
+                    tone="secondary"
+                    weight="regular"
+                    truncate
+                    className="shrink-0 px-1 pb-0.5"
+                  >
+                    {imageSize}
+                  </Text>
+                </span>
               ) : (
-                <AttachmentIdentity attachment={attachment} />
+                imageContent
               )}
             </Button>
-            {token && onInsertToken ? (
-              <Button
-                motion="none"
-                {...motionAttributes({ transition: "opacity" })}
-                {...actionContentAttributes(
-                  { phase: "interaction", hide: "opacity", focus: "within" },
-                  "absolute bottom-1 left-1",
-                )}
-                size="sm"
-                iconOnly
-                label={t("Insert {p0} into the message", { p0: token })}
-                variant="secondary"
-                shape="pill"
-                type="button"
-                aria-label={t("Insert {p0} into the message", { p0: token })}
-                // Keeps focus, and so the caret, in the message box.
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onInsertToken();
-                }}
-              >
-                <Link className="icon-xs" />
-              </Button>
-            ) : null}
           </span>
         ) : (
           <>
-            {canOpen || canOpenFile ? (
+            {canPreview || draft ? (
               <Button
                 motion="none"
                 layout="media"
@@ -179,10 +262,14 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
                 disabled={loading}
                 loading={loading}
                 aria-busy={loading}
-                aria-haspopup="dialog"
-                aria-label={t("Open {p0} full screen", {
-                  p0: attachment.name,
-                })}
+                aria-haspopup={canPreview ? "dialog" : "menu"}
+                aria-label={
+                  canPreview
+                    ? pastedText
+                      ? t("Open {p0}", { p0: displayName })
+                      : t("Open {p0} full screen", { p0: displayName })
+                    : undefined
+                }
                 tooltip={fileTooltip.label}
                 tooltipDetails={fileTooltip.details}
                 tooltipWide
@@ -191,7 +278,8 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
                   if (canOpenFile) {
                     event.currentTarget.focus({ preventScroll: true });
                     setOpenedFile(attachment);
-                  } else void show();
+                  } else if (canOpen) void show();
+                  else contextMenu.openAt(event.currentTarget);
                 }}
               >
                 {fileBody}
@@ -201,21 +289,26 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
                 <span className={styles.thumbnail}>{fileBody}</span>
               </Tooltip>
             )}
-            {token && onInsertToken ? (
+          </>
+        )}
+        {(!draft && ((token && onInsertToken) || saveCopy.canSave)) || onRemove ? (
+          <div
+            {...motionAttributes({ transition: "opacity" })}
+            {...actionContentAttributes(
+              { phase: pastedText ? "always" : "interaction", hide: "opacity", focus: "within" },
+              pastedText ? `flex ${styles.pastedAction}` : "absolute end-0 top-1 flex",
+            )}
+          >
+            {!draft && token && onInsertToken ? (
               <Button
                 motion="none"
-                {...motionAttributes({ transition: "opacity" })}
-                {...actionContentAttributes(
-                  { phase: "interaction", hide: "opacity", focus: "within" },
-                  "absolute bottom-1 left-1",
-                )}
                 size="sm"
                 iconOnly
                 label={t("Insert {p0} into the message", { p0: token })}
-                variant="secondary"
+                variant={pastedText ? "ghost" : "secondary"}
                 shape="pill"
                 type="button"
-                aria-label={t("Insert {p0} into the message", { p0: token })}
+                // Keep the composer caret where the token will be inserted.
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={(event) => {
                   event.stopPropagation();
@@ -225,37 +318,55 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
                 <Link className="icon-xs" />
               </Button>
             ) : null}
-          </>
-        )}
-        {onRemove ? (
-          <Button
-            motion="none"
-            {...motionAttributes({ transition: "opacity" })}
-            {...actionContentAttributes(
-              { phase: "interaction", hide: "opacity", focus: "within" },
-              "absolute right-1 top-1",
-            )}
-            size="sm"
-            iconOnly
-            label={t("Remove {p0}", { p0: attachment.name })}
-            variant="secondary"
-            shape="pill"
-            type="button"
-            tooltip={t("Remove")}
-            aria-label={t("Remove {p0}", { p0: attachment.name })}
-            onClick={(event) => {
-              event.stopPropagation();
-              onRemove();
-            }}
-          >
-            <X className="icon-xs" strokeWidth={2} />
-          </Button>
+            {!draft && saveCopy.canSave ? (
+              <Button
+                motion="none"
+                size="sm"
+                iconOnly
+                label={t("Save {p0}", { p0: displayName })}
+                variant={pastedText ? "ghost" : "secondary"}
+                shape="pill"
+                type="button"
+                disabled={saveCopy.saving}
+                loading={saveCopy.saving}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  saveCopy.save();
+                }}
+              >
+                <Download className="icon-xs" strokeWidth={2} />
+              </Button>
+            ) : null}
+            {onRemove ? (
+              <Button
+                motion="none"
+                size={draft ? "xs" : "sm"}
+                iconOnly
+                label={t("Remove {p0}", { p0: displayName })}
+                variant={pastedText ? "ghost" : "secondary"}
+                shape="pill"
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRemove();
+                }}
+              >
+                <X className="icon-xs" strokeWidth={2} />
+              </Button>
+            ) : null}
+          </div>
         ) : null}
       </div>
-      {previewError ? (
+      {contextMenu.menu}
+      {previewError && !previewOpen ? (
         <InlineMessage tone="warning" live="assertive">
           {t("Preview unavailable. Try again.")}
         </InlineMessage>
+      ) : null}
+      {saveCopy.error ? (
+        <InlineError details={saveCopy.error}>
+          {t("Could not save attachment {p0}.", { p0: displayName })}
+        </InlineError>
       ) : null}
       {attachment.browserAnnotation ? (
         <Disclosure
@@ -277,10 +388,17 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
           error={previewError ? t("Preview unavailable. Try again.") : undefined}
           onRetry={retry}
           onImageError={recover}
+          contextActions={draft ? actions : undefined}
+          notice={draft ? saveCopy.error : undefined}
         />
       ) : null}
       {fileOpen ? (
-        <AttachmentFilePreview attachment={attachment} onClose={() => setOpenedFile(null)} />
+        <AttachmentFilePreview
+          attachment={attachment}
+          onClose={() => setOpenedFile(null)}
+          contextActions={draft ? actions : undefined}
+          notice={draft ? saveCopy.error : undefined}
+        />
       ) : null}
     </>
   );

@@ -49,6 +49,19 @@ let current: Session;
 let entries: AdoptedEntry[];
 let refresh: RefreshAdoptedSession;
 let reachable: { current: boolean };
+let loaded: Session[];
+let setLoaded: (update: (list: Session[]) => Session[]) => void;
+/** Stands in for the workspace store's `subscribeShell`. */
+const shellListeners = new Set<() => void>();
+const subscribeShell = (listener: () => void) => {
+  shellListeners.add(listener);
+  return () => {
+    shellListeners.delete(listener);
+  };
+};
+const notifyShell = () => {
+  for (const listener of shellListeners) listener();
+};
 
 function Probe({
   initial,
@@ -62,9 +75,11 @@ function Probe({
   ref.current = sessions;
   const loadRunning = useRef(onLoadRunning);
   const refreshRef = useRef<RefreshAdoptedSession>(undefined);
-  reachable = useAdoptedSessions(ref, setSessions, loadRunning, refreshRef);
+  reachable = useAdoptedSessions(ref, setSessions, loadRunning, refreshRef, subscribeShell);
   refresh = (id, target, resolution) => refreshRef.current!(id, target, resolution);
   current = sessions[0];
+  loaded = sessions;
+  setLoaded = setSessions;
   return createElement("span", null, current.continuingElsewhere ? "working" : "idle");
 }
 
@@ -94,6 +109,7 @@ beforeEach(() => {
 
 afterEach(() => {
   act(() => root.unmount());
+  shellListeners.clear();
   container.remove();
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -442,7 +458,10 @@ it("queues an explicit refresh behind automatic polling and deduplicates repeate
   });
   expect(loadRemoteSession).toHaveBeenCalledTimes(2);
   // A host without `sessions.digests` is not asked for them.
-  expect(loadRemoteSession).toHaveBeenLastCalledWith("local", "s1", undefined, { digests: false });
+  expect(loadRemoteSession).toHaveBeenLastCalledWith("local", "s1", undefined, {
+    digests: false,
+    deferPreviews: true,
+  });
 });
 
 it("asks a host that advertises digests for them, for a refresh and for a new session", async () => {
@@ -461,7 +480,7 @@ it("asks a host that advertises digests for them, for a refresh and for a new se
   });
   expect(loadRemoteSession).toHaveBeenCalled();
   for (const call of vi.mocked(loadRemoteSession).mock.calls)
-    expect(call[3]).toEqual({ digests: true });
+    expect(call[3]).toEqual({ digests: true, deferPreviews: true });
 });
 
 it("reports an unavailable host without replacing the local conversation", async () => {
@@ -555,6 +574,97 @@ function idleHost(initial: Session, revision = 5, blocks = initial.blocks) {
   } as HostSession);
 }
 
+it.each([
+  ["focus", () => window.dispatchEvent(new Event("focus"))],
+  ["Host recovery", () => notifyRemoteRecovered("env")],
+  [
+    "workspace reopening",
+    (initial: Session) => root.render(createElement(Probe, { initial, key: "reopened" })),
+  ],
+] as const)("resumes a failed transcript read immediately on %s", async (_name, wake) => {
+  const queued = [{ id: "q1", text: "Queued follow-up", attachments: [] }];
+  const initial = {
+    ...newSession("claude", "/repo"),
+    id: "s1",
+    blocks: [{ id: "u", role: "user" as const, text: "Original" }],
+    queuedMessages: queued,
+  };
+  const blocks = [...initial.blocks, { id: "a", role: "assistant" as const, text: "Finished" }];
+  setComposerDraft("s1", "Unsent draft");
+  idleHost({ ...initial, queuedMessages: undefined }, 5, blocks);
+  vi.mocked(loadRemoteSession).mockRejectedValueOnce(new Error("RPC_TIMEOUT"));
+
+  await act(async () => root.render(createElement(Probe, { initial })));
+  expect(loadRemoteSession).toHaveBeenCalledTimes(1);
+  expect(current.blocks).toEqual(initial.blocks);
+
+  await act(async () => {
+    wake(current);
+  });
+  expect(loadRemoteSession).toHaveBeenCalledTimes(2);
+  expect(current.blocks).toEqual(blocks);
+  expect(current.queuedMessages).toEqual(queued);
+  expect(upsertSession).not.toHaveBeenCalled();
+  expect(getComposerDraft("s1")).toBe("Unsent draft");
+});
+
+/** A tab opened on a conversation the host lists, while the workspace stays mounted. */
+async function openTab(session: Session) {
+  await act(async () => setLoaded((list) => [...list, session]));
+  await act(async () => notifyShell());
+}
+const opened = () => loaded.find((session) => session.id === "s1");
+
+it("catches up a conversation when a tab opens on it, without waiting for the timer", async () => {
+  const other = { ...newSession("claude", "/repo"), id: "other" };
+  const initial = {
+    ...newSession("claude", "/repo"),
+    id: "s1",
+    blocks: [{ id: "u", role: "user" as const, text: "Original" }],
+  };
+  const blocks = [...initial.blocks, { id: "a", role: "assistant" as const, text: "Finished" }];
+  idleHost(initial, 5, blocks);
+  await act(async () => root.render(createElement(Probe, { initial: other })));
+  expect(loadRemoteSession).not.toHaveBeenCalled();
+
+  await openTab(initial);
+  expect(loadRemoteSession).toHaveBeenCalledTimes(1);
+  expect(opened()?.blocks).toEqual(blocks);
+  expect(upsertSession).not.toHaveBeenCalled();
+});
+
+it("reads a failing conversation once per opening, not on every shell update", async () => {
+  const other = { ...newSession("claude", "/repo"), id: "other" };
+  const initial = {
+    ...newSession("claude", "/repo"),
+    id: "s1",
+    blocks: [{ id: "u", role: "user" as const, text: "Original" }],
+  };
+  idleHost(initial);
+  vi.mocked(loadRemoteSession).mockRejectedValue(new Error("RPC_TIMEOUT"));
+  await act(async () => root.render(createElement(Probe, { initial: other })));
+
+  await openTab(initial);
+  expect(loadRemoteSession).toHaveBeenCalledTimes(1);
+  // Unrelated workspace changes keep notifying while the read keeps failing.
+  for (let i = 0; i < 5; i++) {
+    await act(async () =>
+      setLoaded((list) =>
+        list.map((session) => (session.id === "other" ? { ...session, title: `T${i}` } : session)),
+      ),
+    );
+    await act(async () => notifyShell());
+  }
+  expect(loadRemoteSession).toHaveBeenCalledTimes(1);
+  expect(opened()?.blocks).toEqual(initial.blocks);
+
+  // Closing and reopening the tab is a new look, and tries again past the backoff.
+  await act(async () => setLoaded((list) => list.filter((session) => session.id !== "s1")));
+  await act(async () => notifyShell());
+  await openTab(initial);
+  expect(loadRemoteSession).toHaveBeenCalledTimes(2);
+});
+
 it("polls only once a minute while the host heartbeat reports changes", async () => {
   const initial = { ...newSession("claude", "/repo"), id: "s1" };
   idleHost(initial);
@@ -613,9 +723,41 @@ it("falls back to its own cadence, with no tight loop, when the heartbeat stops 
   await act(async () => adoptedBeatFailed());
   expect(listCalls()).toBe(before + 1);
   await act(async () => vi.advanceTimersByTimeAsync(60_000));
-  // One look every 5 s while unreachable, as before: never a retry loop.
-  expect(listCalls() - before).toBeLessThanOrEqual(13);
-  expect(listCalls() - before).toBeGreaterThanOrEqual(10);
+  // Backs off while unreachable (5 s, 6 s, 12 s, 24 s...): a few looks a minute, not twelve.
+  expect(listCalls() - before).toBeLessThanOrEqual(5);
+  expect(listCalls() - before).toBeGreaterThanOrEqual(3);
+});
+
+it("does not list the host's machines again on every failing pass while the host is down", async () => {
+  const initial = { ...newSession("claude", "/repo"), id: "s1" };
+  idleHost(initial);
+  await act(async () => root.render(createElement(Probe, { initial })));
+  await act(async () => noteAdoptedBeat({ ids: [], reset: true }));
+  vi.mocked(remoteRequest).mockRejectedValue(new Error("offline"));
+  const machineLists = () =>
+    vi.mocked(invoke).mock.calls.filter(([command]) => command === "remote_machines").length;
+  const before = listCalls();
+  const machinesBefore = machineLists();
+  await act(async () => adoptedBeatFailed());
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  // The known machine is kept between failing passes and re-listed only on its recheck interval.
+  expect(listCalls() - before).toBeLessThanOrEqual(5);
+  expect(machineLists() - machinesBefore).toBeLessThanOrEqual(2);
+});
+
+it("runs a pass at once when the host recovers, even under another environment id", async () => {
+  const initial = { ...newSession("claude", "/repo"), id: "s1" };
+  idleHost(initial);
+  await act(async () => root.render(createElement(Probe, { initial })));
+  await act(async () => noteAdoptedBeat({ ids: [], reset: true }));
+  vi.mocked(remoteRequest).mockRejectedValueOnce(new Error("offline"));
+  await act(async () => adoptedBeatFailed());
+  vi.mocked(remoteRequest).mockRejectedValue(new Error("offline"));
+  await act(async () => vi.advanceTimersByTimeAsync(1_000));
+  const before = listCalls();
+  // The host came back under a different environment id: the mirror must not wait out its back-off.
+  await act(async () => notifyRemoteRecovered("another-env"));
+  expect(listCalls() - before).toBe(1);
 });
 
 it("retries a conversation it could not mirror with growing delays, not every few seconds", async () => {

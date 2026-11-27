@@ -18,7 +18,7 @@ Repository-relative owners; follow entry points and adjacent tests, not a file i
 - Native adapters: `src-tauri/src/` owns presence, privacy_settings, voice_overlay,
   voice_generation_retirement and remote dispatch. Overlay bootstrap belongs to
   `apps/desktop/src/`; native window adapters retain lifecycle authority.
-- Tests: adjacent suites in those UI/model/Host folders; voice style, persona, overlay
+- Tests: adjacent suites in those UI/model/Host folders; voice style, overlay
   and dictation-permission fixtures in `tests/browser/`. Inspect `mobile/` independently.
   Fixtures cannot establish OS, acoustic, physical-device, live-provider or installed acceptance.
 - Labels/recovery copy: `src/shared/i18n/locales/` and active override catalogs.

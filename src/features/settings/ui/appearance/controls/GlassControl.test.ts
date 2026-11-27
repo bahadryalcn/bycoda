@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
+import { SIDEBAR_BLUR_MAX, SIDEBAR_OPACITY_MIN } from "../../../model/appearance";
 import { GlassControl } from "./GlassControl";
 
 const saved = vi.hoisted(() => ({ live: [] as string[] }));
@@ -41,6 +42,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  document.documentElement.style.removeProperty("--sidebar-opacity");
   vi.unstubAllGlobals();
 });
 
@@ -77,6 +79,29 @@ it("shows the light-mode reason instead of an empty panel", () => {
   render({ light: true, covered: false });
   expect(container.textContent).toContain("Window glass is unavailable in light mode.");
   expect(sliders().length).toBeGreaterThan(0);
+});
+
+it("commits a keyboard change once per key and never persists a drag preview", () => {
+  vi.mocked(appearance.onOpacity).mockClear();
+  vi.mocked(appearance.onBlur).mockClear();
+  render({ light: false, covered: false });
+  const opacity = container.querySelector<HTMLElement>('#setting-sidebar-opacity [role="slider"]')!;
+  const blur = container.querySelector<HTMLElement>('#setting-blur [role="slider"]')!;
+  // Home jumps to the minimum: arc reports the preview and the commit together for a key.
+  act(() => {
+    opacity.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
+  });
+  expect(appearance.onOpacity).toHaveBeenCalledTimes(1);
+  expect(appearance.onOpacity).toHaveBeenCalledWith(Math.round(SIDEBAR_OPACITY_MIN * 100));
+  expect(document.documentElement.style.getPropertyValue("--sidebar-opacity")).toBe(
+    String(SIDEBAR_OPACITY_MIN),
+  );
+  act(() => {
+    blur.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
+  });
+  // Blur reaches the native window only through its single commit.
+  expect(appearance.onBlur).toHaveBeenCalledTimes(1);
+  expect(appearance.onBlur).toHaveBeenCalledWith(SIDEBAR_BLUR_MAX);
 });
 
 it("names the platform limit under Blur radius off macOS instead of a bare disabled row", async () => {

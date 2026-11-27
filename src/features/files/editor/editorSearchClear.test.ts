@@ -40,7 +40,7 @@ it("routes Ctrl+H from the application handler to replacement, while respecting 
   expect(host.querySelector(".cm-find")!.classList.contains("is-replace")).toBe(true);
   expect(document.activeElement).toBe(host.querySelector('input[name="replace"]'));
   saveKeybindingOverride("Editor: Replace", { disabled: true });
-  host.querySelector<HTMLButtonElement>('button[aria-label="Toggle Replace"]')!.click();
+  host.querySelector<HTMLButtonElement>('button[aria-label="Toggle replace"]')!.click();
   expect(handleEditorFindKey(press())).toBe(true);
   expect(host.querySelector(".cm-find")!.classList.contains("is-replace")).toBe(false);
 });

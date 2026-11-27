@@ -11,6 +11,8 @@ export class MarkdownParseQueue {
   private flight: { stream: string; text: string; sequence: number } | null = null;
   private sequence = 0;
   private failed = false;
+  /** Replies whose parse exceeded the deadline; they keep the bounded fallback without poisoning siblings. */
+  private timedOut = new Set<string>();
   private deadline?: ReturnType<typeof setTimeout>;
   constructor(
     private readonly create: () => Port,
@@ -24,6 +26,7 @@ export class MarkdownParseQueue {
       this.listeners.delete(stream);
       this.latest.delete(stream);
       this.queued.delete(stream);
+      this.timedOut.delete(stream);
       if (!this.listeners.size) {
         this.failed = false;
         this.worker?.terminate();
@@ -37,7 +40,7 @@ export class MarkdownParseQueue {
 
   request(stream: string, text: string) {
     if (!this.listeners.has(stream)) return;
-    if (this.failed) {
+    if (this.failed || this.timedOut.has(stream)) {
       this.listeners.get(stream)?.error();
       return;
     }
@@ -70,7 +73,9 @@ export class MarkdownParseQueue {
             listener?.result(completed.text, event.data.blocks);
           this.pump();
         };
-        worker.onerror = () => this.fail();
+        worker.onerror = () => {
+          if (this.worker === worker) this.fail();
+        };
       } catch {
         this.fail();
         return;
@@ -79,12 +84,30 @@ export class MarkdownParseQueue {
     const [stream, text] = this.queued.entries().next().value!;
     this.queued.delete(stream);
     this.flight = { stream, text, sequence: ++this.sequence };
-    this.deadline = setTimeout(() => this.fail(), this.timeoutMs);
+    this.deadline = setTimeout(() => this.expire(), this.timeoutMs);
     try {
       this.worker!.postMessage(this.flight);
     } catch {
       this.fail();
     }
+  }
+
+  /** A slow parse blocks the single worker: replace it, fail only that reply, keep the rest in order. */
+  private expire() {
+    const slow = this.flight?.stream;
+    this.deadline = undefined;
+    this.worker?.terminate();
+    this.worker = null;
+    this.flight = null;
+    if (slow === undefined) return;
+    this.latest.delete(slow);
+    this.queued.delete(slow);
+    const listener = this.listeners.get(slow);
+    if (listener) {
+      this.timedOut.add(slow);
+      listener.error();
+    }
+    this.pump();
   }
 
   private fail() {

@@ -2,13 +2,14 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
-import { InlineError } from "../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import "./task-detail.css";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { NumberField } from "../../../shared/ui/NumberField";
 import type { HostTask } from "../model/hostTasks";
 import {
@@ -33,37 +34,23 @@ function Stat({ label, value }: { label: string; value: string }) {
 export function TaskRunInsights({ task, onSaveEvaluation }: Props) {
   useLocale();
   const usage = task.budgetUsage;
-  const completeHistory = usage?.historyComplete !== false;
   return (
     <>
-      {!completeHistory ? (
-        <Text as="p" size="micro" tone="warning">
-          {t(
-            "Earlier runs are missing from the usage history. Recorded readings are lower bounds.",
-          )}
-        </Text>
-      ) : null}
       <Disclosure className="min-w-0" variant="row" size="sm" summary={t("Run quality and usage")}>
         <DescriptionList columns="auto" size="sm">
-          <Stat
-            label={t("Total agent minutes")}
-            value={number(completeHistory ? (usage?.agentMinutes ?? null) : null)}
-          />
-          <Stat
-            label={t("Agent runs")}
-            value={number(completeHistory ? (usage?.attempts ?? null) : null, 0)}
-          />
+          <Stat label={t("Total agent minutes")} value={number(usage?.agentMinutes ?? null)} />
+          <Stat label={t("Agent runs")} value={number(usage?.attempts ?? null, 0)} />
           <Stat label={t("Reported tokens")} value={number(usage?.tokens ?? null, 0)} />
           <Stat
             label={t("Reported cost (USD)")}
             value={number(usage?.reportedCostUsd ?? null, 4)}
           />
         </DescriptionList>
-        <Text as="p" size="micro" tone="secondary">
+        <InfoPopover>
           {t(
             "Includes recorded workers, reviewers and retries. Missing provider readings remain unknown; no billing estimate is inferred.",
           )}
-        </Text>
+        </InfoPopover>
         {task.status === "done" || task.status === "review" ? (
           <EvaluationEditor
             key={`${task.id}:${task.runId ?? task.sessionId ?? "manual"}:${task.completedAt ?? task.startedAt ?? "unfinished"}`}
@@ -157,20 +144,18 @@ function EvaluationEditor({ task, onSaveEvaluation }: Props) {
           />
         </div>
       </div>
-      <Text as="p" size="micro" tone="secondary">
-        {t(
-          "Saving an evaluation does not complete, approve or publish the task. Comparisons include only completed results you accepted.",
-        )}
-      </Text>
-      {error ? <InlineError>{error}</InlineError> : null}
-      {message ? (
-        <Text as="p" size="caption" tone="inherit" role="status">
-          {message}
-        </Text>
-      ) : null}
-      <Button type="submit" loading={busy}>
-        {t("Save evaluation")}
-      </Button>
+      {error ? <InlineError details={error} /> : null}
+      {message ? <InlineMessage tone="success">{message}</InlineMessage> : null}
+      <div className="flex items-center gap-1">
+        <Button type="submit" loading={busy}>
+          {t("Save evaluation")}
+        </Button>
+        <InfoPopover>
+          {t(
+            "Saving an evaluation does not complete, approve or publish the task. Comparisons include only completed results you accepted.",
+          )}
+        </InfoPopover>
+      </div>
     </form>
   );
 }
@@ -180,11 +165,13 @@ export function TaskMetricsComparison({ tasks }: { tasks: HostTask[] }) {
   const groups = taskMetricsComparisons(tasks);
   return (
     <section className="min-w-0 space-y-3" aria-label={t("Accepted work comparisons")}>
-      <Text as="p" size="caption" tone="secondary">
-        {t(
-          "Compare similar objectives and acceptance criteria. These are recorded outcomes, not a controlled model benchmark.",
-        )}
-      </Text>
+      <div className="flex items-center justify-end">
+        <InfoPopover>
+          {t(
+            "Compare similar objectives and acceptance criteria. These are recorded outcomes, not a controlled model benchmark.",
+          )}
+        </InfoPopover>
+      </div>
       {!groups.length ? (
         <Text as="p" size="caption" tone="inherit">
           {t("Accept a completed result and record your review to compare runs.")}
@@ -194,10 +181,7 @@ export function TaskMetricsComparison({ tasks }: { tasks: HostTask[] }) {
           {groups.map((group) => (
             <li
               key={group.key}
-              {...surfaceAttributes(
-                { frame: "pane", edge: "bottom" },
-                "min-w-0 space-y-2 border-(--ui-tone-neutral-border) pb-3",
-              )}
+              {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "min-w-0 space-y-2 pb-3")}
             >
               <Text as="p" size="caption" tone="inherit" weight="medium" className="break-words">
                 <ModelLabel model={group.model} harness={group.harness} />

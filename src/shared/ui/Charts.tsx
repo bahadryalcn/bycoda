@@ -90,8 +90,9 @@ export function ActivityHeatmap(props: ActivityHeatmapProps) {
     <ArcActivityHeatmap
       locale={locale}
       weekStartsOn={1}
-      lessLabel={t("Less")}
-      moreLabel={t("More")}
+      lessLabel={t("Least")}
+      moreLabel={t("Most")}
+      legendLabel={t("Highlight days by level")}
       {...props}
       className={["bycoda-arc bycoda-arc-chart", styles.series, props.className]
         .filter(Boolean)
@@ -109,8 +110,8 @@ export function HeatScale({ className }: { className?: string }) {
   const t = useT();
   return (
     <ArcHeatScale
-      lessLabel={t("Less")}
-      moreLabel={t("More")}
+      lessLabel={t("Least")}
+      moreLabel={t("Most")}
       className={["bycoda-arc bycoda-arc-chart", styles.series, className]
         .filter(Boolean)
         .join(" ")}

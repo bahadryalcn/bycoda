@@ -1,11 +1,10 @@
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { ActionHost, InlineMoreAction } from "../../../../shared/ui/ActionHost";
-import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuItem } from "../../../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
-import { ListBullet, ListFilter, Plus, UserRound } from "../../../../shared/ui/icons";
+import { ListBullet, ListFilter, Plus, UserRound, Zap } from "../../../../shared/ui/icons";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { Text } from "../../../../shared/ui/Text";
 import type { SocialList } from "../../model/audience";
@@ -75,21 +74,19 @@ function CollectionRow({
         startIcon={
           kind === "segment" ? (
             <ListFilter className="icon-sm" aria-hidden="true" />
+          ) : kind === "commenters" ? (
+            <Zap className="icon-sm" aria-hidden="true" />
           ) : (
             <ListBullet className="icon-sm" aria-hidden="true" />
           )
         }
+        tooltip={kind === "commenters" ? t("Automatic") : undefined}
         aria-current={selected ? "true" : undefined}
         onClick={() => onSelect(list.id)}
       >
         <Text size="inherit" tone="inherit" leading="inherit" truncate>
           {name}
         </Text>
-        {kind === "commenters" ? (
-          <Badge size="xs" tone="neutral" className="shrink-0">
-            {t("Automatic")}
-          </Badge>
-        ) : null}
       </Button>
       <InlineMoreAction
         label={t("Actions for {p0}", { p0: name })}
@@ -208,7 +205,7 @@ export function ListsSidebar({
         <DropdownMenu
           anchor={menu.anchor}
           label={t("Actions for {p0}", { p0: listDisplayName(menuList) })}
-          width={248}
+          size="sm"
           items={menuItems(menuList)}
           onPick={pick}
           onClose={() => setMenu(null)}

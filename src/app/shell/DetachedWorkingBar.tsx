@@ -1,3 +1,5 @@
+import { errorText } from "../../shared/lib/errors";
+import { truncateGraphemes } from "../../shared/lib/text/truncate";
 import { StatusDot } from "../../shared/ui/StatusDot";
 import { surfaceAttributes } from "../../shared/ui/Surface";
 import { Text } from "../../shared/ui/Text";
@@ -9,7 +11,9 @@ import type { LiveAgent } from "../../features/sessions/model/liveAgents";
 import { DropdownMenu, type DropdownMenuItem } from "../../shared/ui/DropdownMenu";
 import { IS_MAC } from "../../platform/tauri/platform";
 import { WindowControls, toggleWindowMaximize } from "./WindowControls";
-import { TransientNotice } from "../../shared/ui/TransientNotice";
+import { Toast } from "../../shared/ui/ToastRegion";
+import { ErrorDetails } from "../../shared/ui/ErrorDetails";
+import { Copy } from "../../shared/ui/icons";
 
 type Props = { agents: LiveAgent[]; onSelectAgent: (id: string) => void };
 
@@ -20,14 +24,57 @@ export function detachedAgentStatus(agent: LiveAgent, t: (text: string) => strin
   return agent.waiting ? t("Waiting") : t("Working");
 }
 
+export type DetachedBarStatus = "needsInput" | "working" | "failed" | "waiting" | "done";
+
+/** One aggregate state for the bar caption and dot. Attention and live work rank first;
+ * a finished set (or none) reads as done. */
+export function detachedBarStatus(agents: readonly LiveAgent[]): DetachedBarStatus {
+  if (agents.some((agent) => agent.needsApproval)) return "needsInput";
+  if (agents.some((agent) => !agent.done && !agent.waiting)) return "working";
+  if (agents.some((agent) => agent.issue === "failed")) return "failed";
+  if (agents.some((agent) => agent.waiting)) return "waiting";
+  return "done";
+}
+
+function detachedBarStatusLabel(status: DetachedBarStatus, t: (text: string) => string): string {
+  switch (status) {
+    case "needsInput":
+      return t("Needs input");
+    case "working":
+      return t("Working");
+    case "failed":
+      return t("Failed");
+    case "waiting":
+      return t("Waiting");
+    case "done":
+      return t("Done");
+  }
+}
+
 /** The working picker is navigation, not a terminal preview. Never put tool
  * command text in its rows or tooltips. */
 export function detachedAgentTitle(title: string, fallback: string): string {
   const normalized = title.replace(/\s+/g, " ").trim() || fallback;
-  return normalized.length > 72 ? `${normalized.slice(0, 71)}…` : normalized;
+  return truncateGraphemes(normalized, 72);
 }
 
 const interactive = "button, a, input, select, textarea, [role=menu], [data-no-window-drag]";
+
+const barTone = {
+  needsInput: "warning",
+  working: "accent",
+  failed: "danger",
+  waiting: "secondary",
+  done: "muted",
+} as const satisfies Record<DetachedBarStatus, string>;
+
+function agentTone(agent: LiveAgent) {
+  if (agent.issue === "retrying") return "warning";
+  if (agent.issue === "failed") return barTone.failed;
+  if (agent.done) return barTone.done;
+  if (agent.needsApproval) return barTone.needsInput;
+  return agent.waiting ? barTone.waiting : barTone.working;
+}
 
 export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
   const t = useT();
@@ -38,6 +85,7 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
   const trigger = useRef<HTMLButtonElement>(null);
   const dragCleanup = useRef<(() => void) | undefined>(undefined);
   const count = agents.length;
+  const status = detachedBarStatus(agents);
   const summary =
     count === 1
       ? t("{p0} session", { p0: formatNumber(count) })
@@ -88,31 +136,20 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
     window.addEventListener("pointercancel", end);
     window.addEventListener("blur", cleanup);
   };
-  const menuItems: DropdownMenuItem[] = agents.map((agent) => ({
-    kind: "item",
-    id: agent.id,
-    label: detachedAgentTitle(agent.title, t("Untitled session")),
-    description: `${detachedAgentStatus(agent, t)}${
-      agent.ownerWindowLabel ? t(" · Other window") : t(" · This window")
-    }`,
-    icon: (
-      <StatusDot
-        tone={
-          agent.issue === "failed"
-            ? "danger"
-            : agent.issue === "retrying"
-              ? "warning"
-              : agent.done
-                ? "muted"
-                : agent.needsApproval
-                  ? "warning"
-                  : agent.waiting
-                    ? "secondary"
-                    : "accent"
-        }
-      />
-    ),
-  }));
+  const menuItems: DropdownMenuItem[] = agents.map((agent) => {
+    const title = detachedAgentTitle(agent.title, t("Untitled session"));
+    const state = detachedAgentStatus(agent, t);
+    return {
+      kind: "item",
+      id: agent.id,
+      label: [title, state, agent.ownerWindowLabel && t("Other window")]
+        .filter(Boolean)
+        .join(" · "),
+      content: title,
+      trailing: agent.ownerWindowLabel ? <Copy className="icon-sm" aria-hidden /> : undefined,
+      icon: <StatusDot tone={agentTone(agent)} />,
+    };
+  });
 
   return (
     <div
@@ -123,57 +160,45 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
         if (event.target instanceof Element && event.target.closest(interactive)) return;
         dragCleanup.current?.();
         setWindowError(null);
-        void toggleWindowMaximize().catch((error) =>
-          setWindowError(error instanceof Error ? error.message : String(error)),
-        );
+        void toggleWindowMaximize().catch((error) => setWindowError(errorText(error)));
       }}
       {...surfaceAttributes(
         { frame: "pane", edge: "bottom" },
-        `flex h-8 min-w-0 shrink-0 select-none items-center gap-2 [padding-inline-start:0.75rem] ${dragging ? "cursor-grabbing" : "cursor-grab"}`,
+        `flex h-8 min-w-0 shrink-0 select-none items-center gap-2 ps-3 ${dragging ? "cursor-grabbing" : "cursor-grab"}`,
       )}
     >
-      <Text size="micro" tone="secondary">
-        {t("Working")}
-      </Text>
-      <Button
-        variant="ghost"
-        motion="none"
-        ref={trigger}
-        type="button"
-        data-tauri-drag-region="false"
-        aria-label={t("Working sessions: {p0}", { p0: summary })}
-        aria-haspopup="menu"
-        expanded={open}
-        disabled={!count}
-        onClick={() => setOpen((value) => !value)}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-            event.preventDefault();
-            setOpen(true);
-          }
-        }}
-        className="flex max-w-56 items-center gap-2"
-      >
-        <StatusDot
-          tone={
-            agents.some((agent) => agent.needsApproval)
-              ? "warning"
-              : agents.some((agent) => !agent.done)
-                ? "accent"
-                : "muted"
-          }
-        />
-        <Text size="inherit" tone="inherit" truncate>
-          {summary}
-        </Text>
-      </Button>
+      {count > 0 ? (
+        <Button
+          variant="ghost"
+          motion="none"
+          ref={trigger}
+          type="button"
+          data-tauri-drag-region="false"
+          aria-label={`${summary} · ${detachedBarStatusLabel(status, t)}`}
+          aria-haspopup="menu"
+          expanded={open}
+          onClick={() => setOpen((value) => !value)}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              event.preventDefault();
+              setOpen(true);
+            }
+          }}
+        >
+          <StatusDot tone={barTone[status]} />
+          <Text size="inherit" tone="inherit" truncate>
+            {formatNumber(count)}
+          </Text>
+        </Button>
+      ) : null}
       <div className="min-w-4 flex-1 self-stretch" aria-hidden="true" />
       {!IS_MAC ? <WindowControls /> : null}
       {windowError ? (
-        <TransientNotice
+        <Toast
           tone="danger"
           durationMs={null}
-          message={windowError}
+          message={t("Could not complete this action.")}
+          extra={<ErrorDetails title={t("Could not complete this action.")} detail={windowError} />}
           onDismiss={() => setWindowError(null)}
         />
       ) : null}
@@ -181,7 +206,7 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
         <DropdownMenu
           anchor={trigger}
           align="start"
-          width={320}
+          size="lg"
           label={t("Working sessions")}
           items={menuItems}
           onPick={onSelectAgent}

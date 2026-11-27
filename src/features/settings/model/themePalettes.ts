@@ -1,9 +1,11 @@
+import { t } from "../../../shared/i18n";
 import { themePalette } from "../../../shared/theme/palette";
 
 /** A theme palette: the surface tint (hue, saturation, dark lightness) and its accent. */
 export type ThemePalettePreset = {
   name: string;
-  note: string;
+  /** The one-line description, translated when read. */
+  note: () => string;
   hue: number;
   saturation: number;
   lightness: number;
@@ -13,7 +15,7 @@ export type ThemePalettePreset = {
 export const THEME_PALETTE_PRESETS: readonly ThemePalettePreset[] = [
   {
     name: "bycoda",
-    note: "Cool silver, quiet surfaces",
+    note: () => t("Cool silver, quiet surfaces"),
     hue: 216,
     saturation: 24,
     lightness: 4,
@@ -21,7 +23,7 @@ export const THEME_PALETTE_PRESETS: readonly ThemePalettePreset[] = [
   },
   {
     name: "Olive",
-    note: "A softer green workspace",
+    note: () => t("A softer green workspace"),
     hue: 150,
     saturation: 22,
     lightness: 7,
@@ -29,7 +31,7 @@ export const THEME_PALETTE_PRESETS: readonly ThemePalettePreset[] = [
   },
   {
     name: "Tide",
-    note: "Clear blue, a little air",
+    note: () => t("Clear blue, a little air"),
     hue: 205,
     saturation: 30,
     lightness: 7,
@@ -37,7 +39,7 @@ export const THEME_PALETTE_PRESETS: readonly ThemePalettePreset[] = [
   },
   {
     name: "Kiln",
-    note: "Warm clay, mellow light",
+    note: () => t("Warm clay, mellow light"),
     hue: 25,
     saturation: 24,
     lightness: 7,
@@ -45,7 +47,7 @@ export const THEME_PALETTE_PRESETS: readonly ThemePalettePreset[] = [
   },
   {
     name: "Dusk",
-    note: "Muted violet, evening calm",
+    note: () => t("Muted violet, evening calm"),
     hue: 275,
     saturation: 24,
     lightness: 7,
@@ -53,7 +55,7 @@ export const THEME_PALETTE_PRESETS: readonly ThemePalettePreset[] = [
   },
   {
     name: "Ink",
-    note: "A study in neutral tones",
+    note: () => t("A study in neutral tones"),
     hue: 216,
     saturation: 0,
     lightness: 5,

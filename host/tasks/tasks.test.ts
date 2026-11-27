@@ -1,8 +1,9 @@
 import { mapAsync } from "../async-collections";
+import { buildTaskStop } from "../../src/shared/model/host-contracts/task-stop";
 import { AssistantTurnPolicyDeferredError } from "../assistant/core/assistant-turn-policy";
 import * as assistantTurnPolicy from "../assistant/core/assistant-turn-policy";
 import * as assistantTaskMetadata from "../assistant/work/assistant-task-metadata";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
@@ -58,6 +59,7 @@ it("refreshes read-only assistant follow-up metadata and board ETags without rew
     .value;
   const etag = await f.tasks.changeEtag(),
     revision = await f.tasks.revision();
+  await f.tasks.list();
   const projection = vi.spyOn(assistantTaskMetadata, "withAssistantTaskMetadata");
   await f.tasks.list();
   await f.tasks.list();
@@ -78,9 +80,10 @@ it("refreshes read-only assistant follow-up metadata and board ETags without rew
   await f.tasks.assistantFollowupsChanged();
   expect(changed).toHaveBeenCalledOnce();
   expect(await f.tasks.revision()).toBeGreaterThan(revision);
-  expect(await f.tasks.changeEtag()).not.toBe(etag);
-  expect((await f.tasks.list())[0].assistantFollowups).toEqual({ delivered: 1, unconfirmed: 0 });
   const deliveredEtag = await f.tasks.changeEtag();
+  expect(deliveredEtag).not.toBe(etag);
+  expect(projection).not.toHaveBeenCalled();
+  expect((await f.tasks.list())[0].assistantFollowups).toEqual({ delivered: 1, unconfirmed: 0 });
   expect(projection).toHaveBeenCalledOnce();
   projection.mockRestore();
   // Canonical source membership can change without touching a task or receipt.
@@ -89,13 +92,15 @@ it("refreshes read-only assistant follow-up metadata and board ETags without rew
       "UPDATE goals SET value=json_set(value,'$.taskIds',json('[]')) WHERE id='assistant-job'",
     )
     .run();
-  expect((await f.tasks.list())[0].assistantFollowups).toBeUndefined();
   expect(await f.tasks.changeEtag()).not.toBe(deliveredEtag);
+  expect((await f.tasks.list())[0].assistantFollowups).toBeUndefined();
   await f.store.db
     .prepare("UPDATE goals SET value=json_set(value,'$.taskIds',json(?)) WHERE id='assistant-job'")
     .run(JSON.stringify([task.id]));
   expect((await f.tasks.list())[0].assistantFollowups?.delivered).toBe(1);
+  expect(await f.tasks.changeEtag()).toBe(deliveredEtag);
   await f.store.db.prepare("UPDATE assistant_jobs SET deleted_at=1 WHERE id='job'").run();
+  expect(await f.tasks.changeEtag()).not.toBe(deliveredEtag);
   expect((await f.tasks.list())[0].assistantFollowups).toBeUndefined();
   expect((await f.store.db.prepare("SELECT value FROM tasks WHERE id=?").get(task.id))!.value).toBe(
     original,
@@ -181,7 +186,10 @@ it("does not label unknown timestamps or owner-input waits as stalled", async ()
     { type: "question" },
   );
   await f.tasks.tick();
-  expect(await f.task()).toMatchObject({ status: "running", needsInput: true });
+  expect(await f.task()).toMatchObject({
+    status: "running",
+    stop: { code: "input_required" },
+  });
   expect((await f.task()).runStall).toBeUndefined();
 });
 it("cannot overwrite an owner change made while a stalled diagnostic reads the session", async () => {
@@ -257,12 +265,19 @@ it("releases assistant hours and budget holds independently while preserving an 
   await f.store.db
     .prepare("UPDATE tasks SET value=json_set(value,'$.goalId','assistant-goal') WHERE id='main'")
     .run();
-  await f.tasks.setGoalPauseReason("assistant-goal", "assistant-budget", true);
-  await f.tasks.setGoalPauseReason("assistant-goal", "assistant-hours", true);
+  await f.tasks.syncGoalPauseReason("assistant-budget", ["assistant-goal"]);
+  await f.tasks.syncGoalPauseReason("assistant-hours", ["assistant-goal", "historical-goal"]);
+  const transaction = vi.spyOn(f.store, "transaction");
+  await f.tasks.syncGoalPauseReason("assistant-hours", ["assistant-goal", "historical-goal"]);
+  expect(transaction).not.toHaveBeenCalled();
   await f.tasks.setGoalPaused("assistant-goal", true);
-  await f.tasks.setGoalPauseReason("assistant-goal", "assistant-budget", false);
+  await f.tasks.syncGoalPauseReason("assistant-budget", []);
   await expect(f.tasks.startTask("main")).rejects.toThrow("goal is paused");
-  await f.tasks.setGoalPauseReason("assistant-goal", "assistant-hours", false);
+  transaction.mockClear();
+  await f.tasks.syncGoalPauseReason("assistant-hours", []);
+  expect(transaction).toHaveBeenCalledTimes(1);
+  expect(await f.tasks.goalExecutionAllowed("historical-goal")).toBe(true);
+  transaction.mockRestore();
   await expect(f.tasks.startTask("main")).rejects.toThrow("goal is paused");
   expect(
     await f.store.db
@@ -828,11 +843,25 @@ async function setup(verifyTimeoutMs?: number) {
       .prepare("UPDATE tasks SET value=json_set(value, '$.reviewOnly', json('true')) WHERE id=?")
       .run(id);
     await finish((await task(id)).reviewer!.sessionId!, reply);
+    const failed = await task(id);
     await store.db
       .prepare(
-        "UPDATE tasks SET value=json_remove(value, '$.reviewOnly', '$.repairStop', '$.needsInput') WHERE id=?",
+        "UPDATE tasks SET value=json_set(json_remove(value, '$.reviewOnly'), '$.stop', json(?)) WHERE id=?",
       )
-      .run(id);
+      .run(
+        JSON.stringify(
+          buildTaskStop(
+            {
+              code: "run_failed",
+              phase: "review",
+              message: failed.error ?? "Review failed.",
+              nextAction: "takeover",
+            },
+            1,
+          ),
+        ),
+        id,
+      );
     return await task(id);
   };
   /** Orchestrator fixture: the separately tested delivery service owns Git. */
@@ -897,7 +926,7 @@ async function setup(verifyTimeoutMs?: number) {
 }
 describe("explicit task workspaces and owner controls", () => {
   it("onTick stops verification recovery before checks, providers or commits begin", async () => {
-    for (const branch of [undefined, "mc/stopped-recovery"]) {
+    for (const branch of [undefined, "by/stopped-recovery"]) {
       const s = await setup();
       const sentinel = join(s.directory, "first", "stopped-check.txt");
       await s.tasks.save(
@@ -1056,7 +1085,7 @@ describe("explicit task workspaces and owner controls", () => {
     );
     await s.store.db
       .prepare(
-        "UPDATE tasks SET value=json_set(value, '$.status', 'verifying', '$.branch', 'mc/recovered', '$.baseBranch', 'main') WHERE id='main'",
+        "UPDATE tasks SET value=json_set(value, '$.status', 'verifying', '$.branch', 'by/recovered', '$.baseBranch', 'main') WHERE id='main'",
       )
       .run();
     const task = (await s.tasks.get("main"))!;
@@ -1789,6 +1818,50 @@ describe("explicit task workspaces and owner controls", () => {
     expect((await tasks.get("two"))?.position).toBe(0);
     expect((await tasks.get("one"))?.position).toBe(1);
   });
+  it("keeps unlisted tasks in place when a client reorders only the tasks it can see", async () => {
+    const { tasks, input, clock } = await setup();
+    for (const id of ["a", "hidden", "c"]) await tasks.save(input({ id }));
+    await tasks.reorder(["a", "hidden", "c"]);
+    const before = await tasks.get("hidden");
+    clock.now += 1000;
+    await tasks.reorder(["c", "a"]);
+    expect(await tasks.get("c")).toMatchObject({ position: 0 });
+    expect(await tasks.get("hidden")).toEqual(before);
+    expect(await tasks.get("a")).toMatchObject({ position: 2 });
+    // A task another client added after this client read the board stays last.
+    await tasks.save(input({ id: "late" }));
+    await tasks.reorder(["a", "c"]);
+    expect((await tasks.get("a"))?.position).toBe(0);
+    expect((await tasks.get("hidden"))?.position).toBe(1);
+    expect((await tasks.get("c"))?.position).toBe(2);
+    expect((await tasks.get("late"))?.position ?? Infinity).toBeGreaterThan(2);
+  });
+  it("rejects a reorder built from a stale revision and leaves the queue untouched", async () => {
+    const { tasks, input, clock } = await setup();
+    for (const id of ["one", "two"]) await tasks.save(input({ id }));
+    await tasks.reorder(["one", "two"]);
+    const one = (await tasks.get("one"))!;
+    const two = (await tasks.get("two"))!;
+    const seen = { one: one.updatedAt, two: two.updatedAt };
+    // Another client reorders first; its write changes both revisions.
+    clock.now += 1000;
+    await tasks.reorder(["two", "one"]);
+    clock.now += 1000;
+    await expect((async () => await tasks.reorder(["one", "two"], seen))()).rejects.toThrow(
+      "changed",
+    );
+    expect((await tasks.get("two"))?.position).toBe(0);
+    expect((await tasks.get("one"))?.position).toBe(1);
+    await expect(
+      (async () => await tasks.reorder(["one", "two"], { one: seen.one }))(),
+    ).rejects.toThrow("Invalid task order");
+    const fresh = {
+      one: (await tasks.get("one"))!.updatedAt,
+      two: (await tasks.get("two"))!.updatedAt,
+    };
+    await tasks.reorder(["one", "two"], fresh);
+    expect((await tasks.get("one"))?.position).toBe(0);
+  });
 });
 describe("host tasks", () => {
   it("transfers only fresh independent unstarted tasks while retaining their id", async () => {
@@ -1832,23 +1905,45 @@ describe("host tasks", () => {
       "Project is not registered on this machine",
     );
   });
-  it("recomputes the change etag only after a task is written or removed", async () => {
-    const { tasks, input, clock, store } = await setup();
+  it("reads task change etags without listing tasks, even after a write", async () => {
+    const { tasks, input, store } = await setup();
+    const task = await tasks.save(input());
+    const list = vi.spyOn(tasks, "list");
+    const projection = vi.spyOn(assistantTaskMetadata, "withAssistantTaskMetadata");
+    const initial = await tasks.changeEtag();
+    expect(await tasks.changeEtag()).toBe(initial);
+
+    await store.db
+      .prepare("UPDATE tasks SET value=json_set(value, '$.budgetUsage.measuredAt', ?) WHERE id=?")
+      .run(task.budgetUsage!.measuredAt + 1, task.id);
+    expect(await tasks.changeEtag()).toBe(initial);
+
+    await store.db
+      .prepare("UPDATE tasks SET value=json_set(value, '$.budgetUsage.agentMinutes', 1) WHERE id=?")
+      .run(task.id);
+    const budget = await tasks.changeEtag();
+    expect(budget).not.toBe(initial);
+
+    await store.db
+      .prepare("UPDATE tasks SET value=json_set(value, '$.status', 'blocked') WHERE id=?")
+      .run(task.id);
+    const blocked = await tasks.changeEtag();
+    expect(blocked).not.toBe(budget);
+
+    await store.db.prepare("DELETE FROM tasks WHERE id=?").run(task.id);
+    expect(await tasks.changeEtag()).not.toBe(blocked);
+    expect(list).not.toHaveBeenCalled();
+    expect(projection).not.toHaveBeenCalled();
+    list.mockRestore();
+    projection.mockRestore();
+  });
+  it("changes the task etag after inserting another task", async () => {
+    const { tasks, input } = await setup();
     const empty = await tasks.changeEtag();
-    const revision = tasks.revision;
     expect(await tasks.changeEtag()).toBe(empty);
-    expect(tasks.revision).toBe(revision);
     await tasks.save(input());
     const one = await tasks.changeEtag();
     expect(one).not.toBe(empty);
-    // Unchanged rows are not parsed again while polling.
-    const prepare = vi.spyOn(store.db, "prepare");
-    expect(await tasks.changeEtag()).toBe(one);
-    expect(prepare.mock.calls.map(([sql]) => sql)).toEqual([
-      "SELECT version FROM task_cache_revision WHERE id=1",
-    ]);
-    prepare.mockRestore();
-    clock.now += 1;
     await tasks.save(input({ id: "second" }));
     expect(await tasks.changeEtag()).not.toBe(one);
   });
@@ -1937,7 +2032,11 @@ describe("host tasks", () => {
     await settled(started.sessionId!);
     clock.now += MINUTE;
     await tasks.tick();
-    expect(await task()).toMatchObject({ status: "blocked", error: "Not signed in" });
+    expect(await task()).toMatchObject({
+      status: "blocked",
+      error: "Not signed in",
+      stop: { code: "permission_required", nextAction: "retry" },
+    });
     expect((await task()).ownerNotices).toBeUndefined();
   });
   it("retries a transient runtime failure once in a fresh session, then blocks", async () => {
@@ -1990,7 +2089,7 @@ describe("host tasks", () => {
       expect(provider.answer).toHaveBeenCalledWith(started.sessionId, 7, { kind: "skipped" }),
     );
     expect((await task()).status).toBe("running");
-    expect((await task()).needsInput).toBeUndefined();
+    expect((await task()).stop).toBeUndefined();
     expect((await task()).ownerNotices).toEqual([
       expect.objectContaining({
         kind: "info",
@@ -2024,7 +2123,7 @@ describe("host tasks", () => {
         status: "blocked",
         error:
           "Run budget: Task Ship the report: The cumulative task runtime allowance is exhausted. Completed work and partial findings are retained; owner action is required.",
-        awaitingOwnerRestart: true,
+        stop: { code: "budget_exhausted", nextAction: "raise_budget" },
       });
       expect((await task()).repairAttempts).toBeUndefined();
       const turnCount = turns.length;
@@ -2047,6 +2146,35 @@ describe("host tasks", () => {
       clock.now += 30_000;
       await tasks.tick();
       expect(provider.cancel).toHaveBeenCalledTimes(1);
+    } finally {
+      monotonic.mockRestore();
+    }
+  });
+  it("counts only the working time around a sleep gap and keeps the task startable", async () => {
+    const { tasks, run, task, settled, clock } = await setup();
+    const monotonic = vi.spyOn(performance, "now").mockImplementation(() => clock.now);
+    try {
+      const started = await run({ maxRunMinutes: 600 });
+      for (let i = 0; i < 20; i++) {
+        clock.now += MINUTE / 2;
+        await tasks.tick();
+      }
+      // The machine sleeps for an hour: it adds nothing and is not an error.
+      clock.now += 60 * MINUTE;
+      for (let i = 0; i < 10; i++) {
+        clock.now += MINUTE / 2;
+        await tasks.tick();
+      }
+      await tasks.move(started.id, "blocked");
+      await settled(started.sessionId!);
+      await tasks.tick();
+      const usage = await tasks.budgets.read({ taskId: started.id });
+      expect(usage.agentMinutes).toBeGreaterThanOrEqual(14.5);
+      expect(usage.agentMinutes).toBeLessThanOrEqual(15.5);
+      await tasks.startTask(started.id);
+      await tasks.tick();
+      expect(await task()).toMatchObject({ status: "running" });
+      expect((await task()).error).toBeUndefined();
     } finally {
       monotonic.mockRestore();
     }
@@ -2093,6 +2221,10 @@ describe("host tasks", () => {
         ...(await task()),
         status: "blocked",
         error: "The host stopped during this run.",
+        stop: buildTaskStop(
+          { code: "host_interrupted", message: "The host stopped during this run." },
+          clock.now,
+        ),
         completedAt: clock.now,
       }),
       started.id,
@@ -2110,14 +2242,69 @@ describe("host tasks", () => {
     await tasks.tick();
     expect((await task()).status).toBe("blocked");
   });
+  it("keeps a task stopped by the owner stopped, with that reason, across ticks", async () => {
+    const { tasks, run, task, turns, clock } = await setup();
+    const started = await run();
+    await tasks.move(started.id, "blocked");
+    expect(await task()).toMatchObject({
+      status: "blocked",
+      stop: { code: "owner_stopped", actor: "owner", nextAction: "retry" },
+    });
+    const count = turns.length;
+    clock.now += MINUTE;
+    await tasks.tick();
+    await tasks.tick();
+    expect(await task()).toMatchObject({ status: "blocked", stop: { code: "owner_stopped" } });
+    expect(turns).toHaveLength(count);
+  });
+  it("shows why a task waits for a dependency and stops it when the owner stopped that dependency", async () => {
+    const { tasks, input, store, task, turns } = await setup();
+    await tasks.save(input({ id: "parent", status: "todo" }));
+    await tasks.save(input({ id: "child", dependsOn: ["parent"] }));
+    await tasks.tick();
+    expect(await task("child")).toMatchObject({
+      status: "queued",
+      wait: { code: "dependency", waitsOn: { taskId: "parent" } },
+    });
+    const block = async (stop: ReturnType<typeof buildTaskStop>) =>
+      await store.db
+        .prepare("UPDATE tasks SET value=? WHERE id=?")
+        .run(JSON.stringify({ ...(await task("parent")), status: "blocked", stop }), "parent");
+    // A dependency blocked for another reason is named on the waiting card.
+    await block(buildTaskStop({ code: "run_failed", phase: "worker", message: "Broke." }, 1));
+    await tasks.tick();
+    expect(await task("child")).toMatchObject({
+      status: "queued",
+      wait: { code: "dependency", waitsOn: { taskId: "parent", code: "run_failed" } },
+    });
+    // One the owner stopped ends the wait: the dependent stops with a way to fix it.
+    await block(buildTaskStop({ code: "owner_stopped", message: "Stopped by you." }, 2));
+    await tasks.tick();
+    expect(await task("child")).toMatchObject({
+      status: "blocked",
+      stop: { code: "dependency_stopped", nextAction: "fix_dependency" },
+    });
+    await tasks.tick();
+    expect((await task("child")).status).toBe("blocked");
+    expect(turns).toHaveLength(0);
+  });
   it("keeps recovered work queued when the daily agent limit is reached", async () => {
     const { tasks, run, task, clock, interrupt, turns } = await setup();
+    const monotonic = vi.spyOn(performance, "now").mockImplementation(() => clock.now);
+    onTestFinished(() => monotonic.mockRestore());
     await tasks.limits.save({ dailyAgentMinutes: 1 });
     const started = await run();
+    // Two minutes of observed work use up the one minute allowance.
+    for (let i = 0; i < 4; i++) {
+      clock.now += MINUTE / 2;
+      await tasks.limits.usedMinutes();
+    }
     await interrupt(started.sessionId!);
     clock.now += 2 * MINUTE;
     await tasks.tick();
     expect((await task()).status).toBe("queued");
+    // The silent wait gets a reason, and loses it once the limit is lifted.
+    expect((await task()).wait).toMatchObject({ code: "daily_limit" });
     expect(turns).toHaveLength(1);
     await tasks.limits.save({ dailyAgentMinutes: 0 });
     await tasks.tick();
@@ -2138,8 +2325,15 @@ describe("host tasks", () => {
   });
   it("holds a retained interrupted reviewer for daily limits and never resumes a later owner stop", async () => {
     const { tasks, reviewing, task, interrupt, turns, clock, engine, settled } = await setup();
+    const monotonic = vi.spyOn(performance, "now").mockImplementation(() => clock.now);
+    onTestFinished(() => monotonic.mockRestore());
     const started = await reviewing({ continueUntilDone: true });
     await tasks.limits.save({ dailyAgentMinutes: 1 });
+    // Two minutes of observed reviewer work use up the one minute allowance.
+    for (let i = 0; i < 4; i++) {
+      clock.now += MINUTE / 2;
+      await tasks.limits.usedMinutes();
+    }
     await interrupt(started.reviewer!.sessionId!);
     clock.now += 2 * MINUTE;
     await tasks.tick();
@@ -2196,7 +2390,7 @@ describe("host tasks", () => {
   it.each(["a", "b"])(
     "runs at most two tasks at once, oldest first (%s reaches provider first)",
     async (firstProviderTask) => {
-      const { tasks, input, task, turns, settled, clock, addProject, advance, engine, store } =
+      const { tasks, input, task, turns, settled, clock, addProject, engine, store } =
         await setup();
       expect(MAX_RUNNING_TASKS).toBe(2);
       for (const id of ["a", "b", "c"]) {
@@ -2226,9 +2420,15 @@ describe("host tasks", () => {
       expect(oldestTurn).toBeDefined();
       oldestTurn!.finish();
       await settled(oldest.sessionId!, oldest.runId);
-      // A task being verified still counts.
-      await advance();
-      expect((await task("c")).status).toBe("queued");
+      // A task being verified still counts. Its background verification may already have
+      // finished when the tick admits work, and then starting the next task is correct.
+      clock.now += MINUTE;
+      await tasks.tick();
+      const states = await mapAsync(["a", "b", "c"], async (id) => (await task(id)).status);
+      const active = states.filter((status) => status === "running" || status === "verifying");
+      expect(active.length).toBeLessThanOrEqual(MAX_RUNNING_TASKS);
+      if (states[0] === "verifying") expect(states[2]).toBe("queued");
+      await tasks.idle();
       await tasks.tick();
       expect(await mapAsync(["a", "b", "c"], async (id) => (await task(id)).status)).toEqual([
         "done",
@@ -2240,7 +2440,7 @@ describe("host tasks", () => {
   it("mirrors whether the running session is waiting on the user", async () => {
     const { tasks, run, task, store, clock } = await setup();
     const started = await run();
-    expect((await task()).needsInput).toBeUndefined();
+    expect((await task()).stop).toBeUndefined();
     const ask = async (pendingQuestion?: { requestId: number; questions: [] }) => {
       const session = await store.session(started.sessionId!);
       await store.save(
@@ -2255,10 +2455,10 @@ describe("host tasks", () => {
       await tasks.tick();
     };
     await ask({ requestId: 1, questions: [] });
-    expect(await task()).toMatchObject({ status: "running", needsInput: true });
+    expect(await task()).toMatchObject({ status: "running", stop: { code: "input_required" } });
     await ask(undefined);
     expect((await task()).status).toBe("running");
-    expect((await task()).needsInput).toBeUndefined();
+    expect((await task()).stop).toBeUndefined();
   });
   it("approves a reviewed task, and runs a reviewed or done one again", async () => {
     const { tasks, review, task, turns, store, addRepo, approve } = await setup();
@@ -2793,7 +2993,7 @@ describe("a task on its own branch", () => {
     expect((await task()).status).toBe("review");
     expect((await task()).diffStat).toContain("report.md");
     expect((await task()).diffStat).toContain("notes.md");
-    expect(git(repo.cwd, "branch", "--list", "bycoda/t/*").split("\n")).toHaveLength(1);
+    expect(git(repo.cwd, "branch", "--list", "by/*").split("\n")).toHaveLength(1);
   });
 });
 describe("task verification", () => {
@@ -3202,8 +3402,8 @@ describe("task verification", () => {
       verification: { review: { verdict: "fail", note: "Friday is still missing." } },
     });
     expect((await task()).error).toBeUndefined();
-    expect((await task()).repairStop).toBeUndefined();
-    expect((await task()).needsInput).toBeUndefined();
+    expect((await task()).stop).toBeUndefined();
+    expect((await task()).stop).toBeUndefined();
     const notices = (await task()).ownerNotices!;
     expect(
       notices.filter((notice) => notice.kind === "remaining_finding").map((n) => n.message),
@@ -3259,7 +3459,7 @@ describe("task verification", () => {
         continueUntilDone: true,
         repairAttempts: attempt,
       });
-      expect((await task()).repairStop).toBeUndefined();
+      expect((await task()).stop).toBeUndefined();
       expect(
         (await new HostTasks(store, engine, () => clock.now).get("main"))!.continueUntilDone,
       ).toBe(true);
@@ -3291,8 +3491,15 @@ describe("task verification", () => {
       JSON.stringify({
         ...(await task()),
         status: "blocked",
-        repairStop: { reason: "limit", message: "Old correction limit" },
-        needsInput: true,
+        stop: buildTaskStop(
+          {
+            code: "repair_exhausted",
+            repair: "limit",
+            message: "Old correction limit",
+            nextAction: "provide_input",
+          },
+          1,
+        ),
       }),
       "main",
     );
@@ -3300,21 +3507,27 @@ describe("task verification", () => {
     expect(await task()).toMatchObject({
       status: "blocked",
       continueUntilDone: true,
-      awaitingOwnerRestart: true,
+      stop: { nextAction: "restart" },
     });
-    expect((await task()).repairStop).toBeUndefined();
-    expect((await task()).needsInput).toBeUndefined();
+    expect((await task()).stop?.repair).toBeUndefined();
     await store.db.prepare("UPDATE tasks SET value=? WHERE id=?").run(
       JSON.stringify({
         ...(await task()),
         continueUntilDone: undefined,
-        repairStop: { reason: "external", message: "Provide the required resource" },
-        needsInput: true,
+        stop: buildTaskStop(
+          {
+            code: "repair_exhausted",
+            repair: "external",
+            message: "Provide the required resource",
+            nextAction: "provide_input",
+          },
+          1,
+        ),
       }),
       "main",
     );
     await tasks.save(input({ continueUntilDone: true }));
-    expect((await task()).repairStop?.reason).toBe("external");
+    expect((await task()).stop?.repair).toBe("external");
   });
   it("stops after one repair even when contents progress", async () => {
     const { reviewing, task, finish, tasks, turns } = await setup();
@@ -3336,7 +3549,7 @@ describe("task verification", () => {
       "VERDICT: FAIL - The report remains incomplete.",
     );
     expect(await task()).toMatchObject({ status: "done", completedWithFindings: true });
-    expect((await task()).repairStop).toBeUndefined();
+    expect((await task()).stop).toBeUndefined();
     expect((await task()).ownerNotices!.at(-1)).toMatchObject({ kind: "auto_continued" });
     expect((await task()).ownerNotices!.at(-1)!.message).toContain("reached its limit");
     const count = turns.length;
@@ -3441,7 +3654,10 @@ describe("task verification", () => {
       "main",
     );
     await tasks.tick();
-    expect(await task()).toMatchObject({ status: "blocked", needsInput: true });
+    expect(await task()).toMatchObject({
+      status: "blocked",
+      stop: { code: "input_required", nextAction: "provide_input" },
+    });
     expect(turns).toHaveLength(0);
     await expect(tasks.move("main", "queued")).rejects.toThrow("Update the task description");
     await tasks.save({
@@ -3570,7 +3786,7 @@ describe("task verification", () => {
       completedWithFindings: true,
       repairAttempts: 1,
     });
-    expect((await task()).repairStop).toBeUndefined();
+    expect((await task()).stop).toBeUndefined();
     expect((await task()).ownerNotices).toEqual([
       expect.objectContaining({ kind: "remaining_finding", message: "Friday is missing." }),
       expect.objectContaining({ kind: "auto_continued" }),
@@ -3620,7 +3836,7 @@ describe("task verification", () => {
       '```json\n{"reviewNotes":[{"finding":"Reset is broken."},{"finding":"TalkBack acceptance missing.","category":"external","suggestion":"Test on Android."}]}\n```\nVERDICT: FAIL - Reset is broken.',
     );
     expect(await task()).toMatchObject({ status: "running", repairAttempts: 1 });
-    expect((await task()).repairStop).toBeUndefined();
+    expect((await task()).stop).toBeUndefined();
     const fixedId = (await task()).reviewNotes!.find(
       (note) => note.finding === "Reset is broken.",
     )!.id;
@@ -3668,7 +3884,7 @@ describe("task verification", () => {
     await finish((await task()).reviewer!.sessionId!, "VERDICT: FAIL - Friday is missing.");
     expect((await task()).status).toBe("blocked");
     expect(turns).toHaveLength(before + 1);
-    expect((await task()).needsInput).toBe(true);
+    expect((await task()).stop?.nextAction).toBe("provide_input");
     await expect((async () => await tasks.recheckReview("main"))()).rejects.toThrow(
       "Update the task description before retrying",
     );
@@ -3732,9 +3948,14 @@ describe("task verification", () => {
       repairAttempts: 1,
     });
     expect((await tasks.recoverGoalReview("main", "goal"))!.repairAttempts).toBe(1);
-    await store.db
-      .prepare("UPDATE tasks SET value=? WHERE id=?")
-      .run(JSON.stringify({ ...legacy, error: "Stopped by you." }), "main");
+    await store.db.prepare("UPDATE tasks SET value=? WHERE id=?").run(
+      JSON.stringify({
+        ...legacy,
+        error: "Stopped by you.",
+        stop: buildTaskStop({ code: "owner_stopped", message: "Stopped by you." }, 1),
+      }),
+      "main",
+    );
     expect((await tasks.recoverGoalReview("main", "goal"))!.status).toBe("blocked");
   });
   it("persists review notes across corrections, read updates and successful verification", async () => {
@@ -3972,7 +4193,7 @@ describe("task verification", () => {
         status: "blocked",
         error:
           "Run budget: Task Ship the report: The cumulative task runtime allowance is exhausted. Completed work and partial findings are retained; owner action is required.",
-        awaitingOwnerRestart: true,
+        stop: { code: "budget_exhausted" },
       });
     } finally {
       monotonic.mockRestore();
@@ -4179,35 +4400,19 @@ describe("host work limits", () => {
     expect(statuses.filter((status) => status === "running")).toHaveLength(9);
     expect(statuses.filter((status) => status === "queued")).toHaveLength(1);
   });
-  it("holds new work when elapsed time is uncertain, lets running work finish, and resumes tomorrow", async () => {
-    const { tasks, input, run, task, turns, settled, clock, advance, addProject } = await setup();
+  it("counts only accrued time toward the daily limit, so a sleep gap never holds new work", async () => {
+    const { tasks, input, run, task, turns, clock, addProject } = await setup();
     await tasks.limits.save({ dailyAgentMinutes: 5 });
-    const first = await run({ id: "a", projectId: (await addProject("a")).id });
+    await run({ id: "a", projectId: (await addProject("a")).id });
     await tasks.save(input({ id: "b", projectId: (await addProject("b")).id }));
     clock.now += 1;
-    // A wall-clock jump without matching monotonic observations is uncertain.
+    // A wall-clock jump without matching monotonic observations is a gap: it adds nothing.
     clock.now += 5 * MINUTE;
     await tasks.tick();
-    expect(await tasks.limits.state()).toMatchObject({ limitReached: true, usageUncertain: true });
-    expect((await task("a")).status).toBe("running");
-    expect((await task("b")).status).toBe("queued");
-    expect(turns).toHaveLength(1);
-    // Finishing is allowed; the next task still waits.
-    turns[0].finish();
-    await settled(first.sessionId!);
-    await advance();
-    expect((await task("a")).status).toBe("done");
-    expect((await task("b")).status).toBe("queued");
-    expect(await tasks.limits.state()).toMatchObject({ limitReached: true, usageUncertain: true });
-    expect(turns).toHaveLength(1);
-    // A new local day starts a fresh total.
-    clock.now += 24 * 60 * MINUTE;
-    expect(await tasks.limits.state()).toMatchObject({
-      limitReached: false,
-      usedMinutes: 0,
-    });
-    await tasks.tick();
+    expect((await tasks.limits.state()).limitReached).toBe(false);
+    expect((await tasks.limits.state()).usedMinutes).toBeLessThan(1);
     await vi.waitFor(() => expect(turns).toHaveLength(2));
+    expect((await task("a")).status).toBe("running");
     expect((await task("b")).status).toBe("running");
   });
   it("resumes queued work today when the daily limit is raised", async () => {
@@ -4239,7 +4444,6 @@ describe("host work limits", () => {
     await settled(started.sessionId!);
     await advance();
     const used = await tasks.limits.usedMinutes();
-    expect((await tasks.limits.state()).usageUncertain).toBe(true);
     const restarted = new HostTasks(store, engine, () => clock.now);
     expect(await restarted.limits.settings()).toMatchObject({
       maxRunningTasks: 3,
@@ -4247,12 +4451,12 @@ describe("host work limits", () => {
     });
     expect(await restarted.limits.usedMinutes()).toBeCloseTo(used, 5);
   });
-  it("tracks reviewer runs and marks unobserved reviewer time uncertain", async () => {
+  it("tracks reviewer runs without charging an unobserved jump", async () => {
     const { tasks, reviewing, finish, clock } = await setup();
     const verifying = await reviewing();
     clock.now += 4 * MINUTE;
     await finish(verifying.reviewer!.sessionId!, "VERDICT: PASS");
-    expect((await tasks.limits.state()).usageUncertain).toBe(true);
+    expect((await tasks.limits.state()).usedMinutes).toBeLessThan(1);
   });
 });
 it("caches unchanged lists and filters projects before JSON parsing", async () => {
@@ -4275,6 +4479,23 @@ it("caches unchanged lists and filters projects before JSON parsing", async () =
   parse.mockRestore();
   await tasks.save(input({ title: "Changed" }));
   expect((await tasks.list(first[0].projectId))[0].title).toBe("Changed");
+});
+it("evicts one project list cache entry at the cap instead of clearing every project", async () => {
+  const { store, tasks, input } = await setup();
+  const projectIds: string[] = [];
+  for (let index = 0; index < 33; index++) {
+    const project = await store.addProject(join(tmpdir(), `bounded-list-${index}`), `P${index}`);
+    projectIds.push(project.id);
+    await tasks.save(input({ id: `task-${index}`, projectId: project.id }));
+  }
+  for (const projectId of projectIds) await tasks.list(projectId);
+  const parse = vi.spyOn(JSON, "parse");
+  try {
+    await tasks.list(projectIds[1]);
+    expect(parse).not.toHaveBeenCalled();
+  } finally {
+    parse.mockRestore();
+  }
 });
 it(
   "stops a real verification tree and holds retry/delete until it exits",

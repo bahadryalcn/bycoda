@@ -8,6 +8,7 @@ import { PersonPanel } from "./PersonPanel";
 import {
   asClient,
   bodyText,
+  openErrorDetails,
   buttonByText,
   clickButton,
   clientMock,
@@ -192,7 +193,7 @@ describe("PersonPanel edits", () => {
     const props = await open(mock);
     pickOption("Change stage", "Interested");
     await flush();
-    expect(bodyText()).toContain("Person is locked.");
+    expect(openErrorDetails()).toContain("Person is locked.");
     expect(props.onChanged).not.toHaveBeenCalled();
   });
 
@@ -206,7 +207,7 @@ describe("PersonPanel edits", () => {
       },
     });
     await open(mock);
-    expect(bodyText()).toContain("Person not found.");
+    expect(openErrorDetails()).toContain("Person not found.");
   });
 });
 
@@ -341,7 +342,7 @@ describe("PersonPanel their data", () => {
     const props = await open(mock);
     clickButton("Delete person data");
     await flush();
-    expect(bodyText()).toContain("Deletion needs the owner.");
+    expect(openErrorDetails()).toContain("Deletion needs the owner.");
     expect(props.onDeleted).not.toHaveBeenCalled();
   });
 });

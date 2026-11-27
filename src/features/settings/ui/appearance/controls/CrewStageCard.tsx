@@ -35,24 +35,6 @@ import { Group, Row, Toggle } from "../../../../../shared/ui/settings";
 import { resetCrew, resetMotion } from "../appearanceResets";
 import "./CrewStageCard.css";
 
-/** Who plays whom in the selected theme; shown as the caption under the stage. */
-function crewThemeHint(theme: CrewTheme): string {
-  switch (theme) {
-    case "star-wars":
-      return t(
-        "Obi-Wan leads, Yoda advises; Darth Vader, Luke, Leia and Chewbacca join as subagents. R2-D2 joins when the crew grows beyond six.",
-      );
-    case "lotr":
-      return t(
-        "Gandalf leads, Sauron advises; a Nazgûl, an Elf, a Dwarf and a Hobbit join as subagents. Orcs arrive when more than six subagents work.",
-      );
-    case "matrix":
-      return t("Neo leads, Morpheus advises, and every subagent is another Agent Smith.");
-    default:
-      return t("The original tea crew, drawn in binary code art.");
-  }
-}
-
 /** Real ambient scene with its preference controls and independent reset scopes. */
 export function CrewStageCard() {
   useLocale();
@@ -85,13 +67,7 @@ export function CrewStageCard() {
         resetLabel={t("Reset crew")}
         onReset={resetCrew}
       >
-        <Row
-          id="crew-scene"
-          label={t("Show agent crew")}
-          description={t(
-            "Show the main agent, the advisor and subagents as a crew. Decorative animations control their activity.",
-          )}
-        >
+        <Row id="crew-scene" label={t("Show agent crew")}>
           <Toggle
             label={t("Agent crew")}
             on={visible}
@@ -101,12 +77,13 @@ export function CrewStageCard() {
             }}
           />
         </Row>
-        {/* The stage renders in the theme row's feedback slot while the crew is on; CrewStageCard.css
+        {/* The stage renders in the theme row's feedback slot while the crew is on; the Row (feedbackPosition="start")
             places it above the picker so the group opens with the hero. Off, it is not rendered. */}
         <Row
           id="crew-theme"
+          controlWidth="fill"
+          feedbackPosition="start"
           label={t("Crew theme")}
-          info={crewThemeHint(theme)}
           dependsOn={visible}
           feedback={
             visible ? (
@@ -132,27 +109,14 @@ export function CrewStageCard() {
             value={theme}
             options={[
               { value: "classic", label: t("Classic crew"), disabled: !visible },
-              { value: "star-wars", label: "Star Wars", disabled: !visible },
+              { value: "star-wars", label: t("Star Wars"), disabled: !visible },
               { value: "lotr", label: t("The Lord of the Rings"), disabled: !visible },
               { value: "matrix", label: t("The Matrix"), disabled: !visible },
             ]}
             onValueChange={(value) => saveCrewTheme(value as CrewTheme)}
           />
         </Row>
-        <Row
-          id="crew-growth"
-          label={growthLabel}
-          dependsOn={visible}
-          description={
-            theme === "classic"
-              ? t(
-                  "When on, each crew member ages with its own context window and stays monochrome: baby, child, adult, then uncle. When off, everyone is an uncle and fills with color from the feet up as context fills. Compaction lowers the level. Unknown context stays neutral.",
-                )
-              : t(
-                  "Each character fills with color from the feet up as its context fills. Compaction lowers the level. Unknown context stays neutral. When off, all characters stay in full color.",
-                )
-          }
-        >
+        <Row id="crew-growth" label={growthLabel} dependsOn={visible}>
           <Toggle
             label={growthLabel}
             on={growth}
@@ -176,9 +140,7 @@ export function CrewStageCard() {
         <Row
           id="follow-system-motion"
           label={t("Follow system setting")}
-          description={t(
-            "When your system asks for reduced motion, decorative and tab animations turn off.",
-          )}
+          description={t("Reduced motion in your system turns decorative and tab animations off.")}
         >
           <Toggle
             label={t("Follow system setting")}

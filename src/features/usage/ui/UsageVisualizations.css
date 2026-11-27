@@ -1,24 +1,59 @@
 .usage-provider-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-1);
+  gap: var(--ui-space-1);
 }
 .usage-provider-legend [aria-pressed="false"] {
   text-decoration: line-through;
 }
 .usage-provider-shares {
   display: grid;
-  gap: var(--space-1);
+  gap: var(--ui-space-1);
 }
-.usage-provider-shares > button {
+.usage-share-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: var(--space-3);
+  gap: var(--ui-space-1);
+}
+.usage-share-row > button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 3.5rem;
+  inline-size: 100%;
+  justify-content: stretch;
+  gap: var(--ui-space-3);
   text-align: start;
   font-variant-numeric: tabular-nums;
 }
+.usage-share-row > button > :last-child {
+  text-align: end;
+}
+.usage-series-swatch {
+  flex: none;
+}
+/* An expanded ranked list scrolls inside the card instead of pushing the page down. */
+.usage-contributions-scroll {
+  max-block-size: 20rem;
+  overflow-y: auto;
+  margin-block-start: var(--ui-space-3);
+}
+.usage-hour-details {
+  display: grid;
+  gap: var(--ui-space-1);
+}
+
 .usage-hour-detail {
   display: grid;
-  gap: var(--space-1);
-  padding-block: var(--space-1);
+  gap: var(--ui-space-1);
+  padding-block: var(--ui-space-1);
+}
+/* The ranked-bar share list stands where the donut stood, so switching chart type keeps the panel height. */
+.usage-provider-shares[data-kind="bar"] {
+  min-block-size: 200px;
+  align-content: start;
+  gap: var(--ui-space-2);
+}
+.usage-bar-swatch-mark {
+  fill: var(--ui-surface);
+  stroke: var(--ui-surface);
+  stroke-opacity: 0.7;
+  stroke-width: 1;
 }

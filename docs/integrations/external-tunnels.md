@@ -22,7 +22,9 @@ The selected host uses an existing native `ngrok` or `cloudflared` executable on
 PATH (standard Homebrew/local binary locations are also checked). If cloudflared
 is absent, bycoda downloads release **2026.1.2**, verifies the official SHA-256
 against constants in source, and installs it privately under the Host's data
-directory. A checksum mismatch prevents installation and execution. No global
+directory. The download does not block tunnel status or Stop: the tunnel stays
+Starting meanwhile, and Stop cancels it before anything launches. A checksum
+mismatch prevents installation and execution. No global
 provider service is modified. ngrok requires an authtoken
 saved through this panel. It uses the existing host credential vault implementation:
 Windows DPAPI CurrentUser, macOS Keychain, or Linux Secret Service, with no
@@ -49,11 +51,12 @@ reuse a stored PID. A failed stop retains ownership so it can be retried.
 The host stores a bounded, credential-free manifest under its existing data
 directory's `tunnels/` folder. On restart, active records become interrupted and
 their URLs and stop authority are cleared. Manual tunnels are not restarted or
-adopted. **Access from outside the network (Cloudflare Quick Tunnel)** is off by
-default. Turning it on persists Host access intent: startup creates a fresh tunnel,
-and verified unexpected retirement creates a replacement. Unknown retirement
-blocks replacement. Stopping the Host tunnel or turning the switch off disables
-automatic restart. Foreign/corrupt state is preserved and reported as unavailable.
+adopted. **Restart tunnel automatically** is off by default. Starting a Cloudflare
+Host tunnel with this option selected persists Host access intent: startup creates
+a fresh tunnel, and verified unexpected retirement creates a replacement. Unknown
+retirement blocks replacement. Stopping the Host tunnel or selecting **Stop
+automatic Host access** disables automatic restart. Foreign/corrupt state is
+preserved and reported as unavailable.
 
 While **Let my signed-in phones find this computer** is on and the desktop is signed in, the
 publisher checks Host routes every five seconds. Routes are ordered LAN, Tailscale,

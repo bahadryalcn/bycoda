@@ -1,7 +1,4 @@
-import { OverflowTooltip } from "../../shared/ui/Tooltip";
 import { withRoomPrivacyMutation } from "../../features/group-lock/model/roomPrivacyProjection";
-import { Alert } from "../../shared/ui/Alert";
-import { Text } from "../../shared/ui/Text";
 import {
   NEW_LOCAL_HOST_SESSION,
   newLocalHostSession,
@@ -23,7 +20,6 @@ import {
   ArrowDownCircle,
   ArrowUp,
   BellOff,
-  ArrowDown,
   CheckList,
   ChevronDown,
   ExternalLink,
@@ -34,7 +30,9 @@ import {
   ImagePlus,
   Lock,
   LockOpen,
+  Link2,
   RefreshCw,
+  SplitSquare,
   Ungroup,
   Trash2,
 } from "../../shared/ui/icons";
@@ -81,6 +79,7 @@ import {
   projectGroupColor,
   projectGroupIdForPath,
   projectGroupParentId,
+  isWorkspaceProjectGroup,
   projectGroupWorkspaceRoot,
   saveProjectGroups,
   setProjectGroupAssignment,
@@ -96,6 +95,14 @@ import { RemoveProjectDialog } from "../../features/projects/ui/RemoveProjectDia
 import { AdditionalDirsDialog } from "../../features/projects/ui/AdditionalDirsDialog";
 import { RenameProjectFolderDialog } from "../../features/projects/ui/RenameProjectFolderDialog";
 import { isLocalProject, isRemoteProjectPath } from "../../features/projects/model/recents";
+import {
+  hasLinkableCopy,
+  loadProjectRepositories,
+  loadSeparatedProjects,
+  projectLinks,
+  setProjectShownSeparately,
+} from "../../features/projects/model/projectRepositories";
+import { pathKey } from "../../shared/lib/paths";
 import { projectNameError } from "../../features/projects/model/projectNames";
 import { TabGroupMenu, type TabGroupMenuExtraItem } from "../../features/workspace/ui/TabGroupMenu";
 import { groupKindItem, pickKindAction, projectKindItem } from "./projectKindMenu";
@@ -116,7 +123,7 @@ import { useRemoteConnection } from "../../features/connections/model/useRemoteC
 import { machineLabel } from "../../features/connections/model/machineIdentity";
 import { ProjectGitChangeRow } from "../../features/projects/ui/ProjectGitChangeRow";
 import { reconnectRemoteMachine } from "../../features/connections/model/remoteReconnect";
-import { useRemoteProject } from "./useRemoteProject";
+import { useRemoteProject } from "../../features/connections/public/useRemoteProject";
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
 import {
   knownRemoteMachine,
@@ -173,6 +180,13 @@ export function useProjectMenu({
   isProjectBusy,
 }: Options) {
   const t = useT();
+  const projectMenuErrors = {
+    selectionChanged: t(
+      "Selection changed or a project is working. Close this dialog and review your selection.",
+    ),
+    save: t("Could not save project changes. Try again."),
+    privacy: t("Could not save group privacy. Please try again."),
+  };
   useProjectKindsSync();
   const format = useFormat();
   const [projectMenu, setProjectMenu] = useState<
@@ -291,7 +305,7 @@ export function useProjectMenu({
     ? notificationMuteStatus(notificationPreferences[readyNotificationProject.id])
     : null;
 
-  const { menuError, setMenuError, failMenuError, clearMenuError } = useMenuError(
+  const { menuFooter, setMenuError, failMenuError, clearMenuError } = useMenuError(
     menuPath,
     projectMenu != null || groupMenu != null,
   );
@@ -365,7 +379,7 @@ export function useProjectMenu({
         if (!projectPath) captureTrigger();
         setGroupMenu({ x, y, id: group.id });
       })
-      .catch(() => setMenuError(t("Could not save project changes. Try again.")));
+      .catch(() => setMenuError(projectMenuErrors.save));
   };
 
   const close = () => {
@@ -401,10 +415,10 @@ export function useProjectMenu({
     }
     void makeGroupLockable(groupId)
       .then(async (saved) => {
-        if (!saved) throw new Error("Could not save group privacy.");
+        if (!saved) throw new Error(projectMenuErrors.privacy);
         if (lockNow) await lockGroup(groupId);
       })
-      .catch(() => setMenuError(t("Could not save group privacy. Please try again.")));
+      .catch(() => setMenuError(projectMenuErrors.privacy));
   };
 
   /** The padlock on a group header: lock an open group, ask to open a locked one. */
@@ -430,7 +444,7 @@ export function useProjectMenu({
           window.dispatchEvent(new CustomEvent(NEW_LOCAL_HOST_SESSION, { detail: session }));
           setProjectMenu(null);
         })
-        .catch((error) => setMenuError(String(error)))
+        .catch(failMenuError)
         .finally(() => {
           localHostCreationPending.current = false;
           setLocalHostCreating(false);
@@ -451,7 +465,7 @@ export function useProjectMenu({
       createGroup(projectMenu.x, projectMenu.y, path);
     } else if (action === "project-group:none") {
       void withRoomPrivacyMutation(() => setProjectGroupAssignment(path, null)).catch(() =>
-        setMenuError(t("Could not save project changes. Try again.")),
+        setMenuError(projectMenuErrors.save),
       );
     } else if (action.startsWith("project-group:")) {
       const groupId = action.slice("project-group:".length);
@@ -463,7 +477,7 @@ export function useProjectMenu({
           throw new Error("Project group is unavailable.");
         const currentId = projectGroupIdForPath(path, loadProjectGroupAssignments());
         return setProjectGroupAssignment(path, currentId === groupId ? null : groupId);
-      }).catch(() => setMenuError(t("Could not save project changes. Try again.")));
+      }).catch(() => setMenuError(projectMenuErrors.save));
     } else if (pickKindAction(action, { path })) {
       // Saved by the tag store; the menu closes like any other pick.
     } else if (action === "mute:custom") {
@@ -504,6 +518,10 @@ export function useProjectMenu({
       const remote = remoteProjectFor(path);
       const machine = remote ? knownRemoteMachine(remote.environmentId) : undefined;
       if (machine?.ssh) requestMachineEdit(machine.id);
+    } else if (action === "toggle-machines-separate") {
+      const { siblings, copies, separated } = machineLinkState(path);
+      if (separated) for (const sibling of siblings) setProjectShownSeparately(sibling, false);
+      else for (const copy of copies) setProjectShownSeparately(copy, true);
     } else if (action === "pin" || action === "unpin") {
       toggleProjectPin(path);
     } else if (action === "background") {
@@ -534,12 +552,28 @@ export function useProjectMenu({
     }
   };
 
+  /** `path`'s copies on other machines, read from storage like the menu's other items. */
+  const machineLinkState = (path: string) => {
+    const all = loadRecents().map((item) => item.path);
+    const repositories = loadProjectRepositories();
+    const separatedKeys = loadSeparatedProjects();
+    const id = repositories[pathKey(path)];
+    const siblings = id ? all.filter((other) => repositories[pathKey(other)] === id) : [];
+    return {
+      linkable: hasLinkableCopy(path, all, repositories),
+      siblings,
+      copies: projectLinks(all, repositories, separatedKeys).copiesOf(path),
+      separated: siblings.some((other) => separatedKeys.has(pathKey(other))),
+    };
+  };
+
   const renderProjectMenu = () => {
     if (!projectMenu) return null;
     const key = projectMenu.projectKey;
     const colors = loadTabGroupColors();
     const customColors = loadTabGroupCustomColors();
     const label = resolveTabGroupLabel(key, groupLabels, basename(projectMenu.path));
+    const machineLinks = machineLinkState(projectMenu.path);
     return (
       <TabGroupMenu
         x={projectMenu.x}
@@ -578,6 +612,7 @@ export function useProjectMenu({
         }}
         showActions={false}
         ariaLabel={t("Project actions")}
+        nameLabel={t("Project name")}
         compactAppearance
         appearanceItems={[{ id: "background", label: t("Background image"), icon: ImagePlus }]}
         leadingAction={
@@ -587,7 +622,6 @@ export function useProjectMenu({
                 get label() {
                   return t("Resume notifications");
                 },
-                description: menuMuteStatus,
                 icon: BellOff,
               }
             : undefined
@@ -599,7 +633,7 @@ export function useProjectMenu({
                   id: "new-local-host-session",
                   label: localHostCreating
                     ? t("Connecting…")
-                    : t("New conversation on this computer's Host"),
+                    : t("New session on this computer's Host"),
                   icon: AppWindow,
                   disabled: localHostCreating,
                 },
@@ -611,16 +645,23 @@ export function useProjectMenu({
           ...(projectMenu.move
             ? [
                 {
-                  id: "move-project-up",
-                  label: t("Move up"),
+                  id: "reorder-project",
+                  label: t("Reorder"),
                   icon: ArrowUp,
-                  disabled: !projectMenu.move.up,
-                },
-                {
-                  id: "move-project-down",
-                  label: t("Move down"),
-                  icon: ArrowDown,
-                  disabled: !projectMenu.move.down,
+                  submenu: [
+                    {
+                      kind: "item" as const,
+                      id: "move-project-up",
+                      label: t("Move up"),
+                      disabled: !projectMenu.move.up,
+                    },
+                    {
+                      kind: "item" as const,
+                      id: "move-project-down",
+                      label: t("Move down"),
+                      disabled: !projectMenu.move.down,
+                    },
+                  ],
                 },
               ]
             : []),
@@ -645,13 +686,23 @@ export function useProjectMenu({
             projectGroupIdForPath(projectMenu.path, loadProjectGroupAssignments()),
             Boolean(onRenameProjectFolder && isLocalProject(projectMenu.path)),
           ),
+          ...(machineLinks.linkable
+            ? [
+                {
+                  id: "toggle-machines-separate",
+                  label: machineLinks.separated
+                    ? t("Combine with other machines")
+                    : t("Show machines separately"),
+                  icon: machineLinks.separated ? Link2 : SplitSquare,
+                },
+              ]
+            : []),
           projectKindItem(projectMenu.path),
         ]}
-        nameLabel={t("Project name")}
         info={
           menuChange ? <ProjectGitChangeRow data-project-menu-git="" change={menuChange} /> : null
         }
-        footer={menuError ? <Alert tone="danger">{menuError}</Alert> : null}
+        footer={menuFooter}
         onExtraPick={onPick}
       />
     );
@@ -669,7 +720,8 @@ export function useProjectMenu({
       loadProjectGroupAssignments(),
     );
     const workspaceDestinations = loadProjectGroups().filter(
-      (item) => !item.workspaceFile && !getGroupLockView().lock.lockedGroupIds.has(item.id),
+      (item) =>
+        !isWorkspaceProjectGroup(item) && !getGroupLockView().lock.lockedGroupIds.has(item.id),
     );
     const lockItems: TabGroupMenuExtraItem[] = locked
       ? [
@@ -717,9 +769,6 @@ export function useProjectMenu({
               id: "make-lockable",
               get label() {
                 return t("Make lockable");
-              },
-              get description() {
-                return t("Ask for the password once it is locked");
               },
               icon: Lock,
             },
@@ -795,9 +844,6 @@ export function useProjectMenu({
                   get label() {
                     return t("Unlink from workspace file");
                   },
-                  get description() {
-                    return t("Projects stay in the group");
-                  },
                   icon: Ungroup,
                 },
               ]
@@ -806,9 +852,6 @@ export function useProjectMenu({
             id: "fetch-all",
             get label() {
               return t("Fetch all");
-            },
-            get description() {
-              return t("Run git fetch in each project");
             },
             icon: ArrowDownCircle,
             sepBefore: true,
@@ -847,7 +890,6 @@ export function useProjectMenu({
       {
         id: "hide-group",
         label: t("Hide group"),
-        description: t("Restore from Settings → Group privacy → Hidden groups"),
         icon: EyeOff,
       },
       ...lockItems.filter((item) => item.id !== "lock-group" && item.id !== "unlock-group"),
@@ -857,7 +899,7 @@ export function useProjectMenu({
       deleteItems.push({
         id: "delete-group-with-projects",
         label: t("Delete group with projects"),
-        description: t("Projects and saved conversations will be removed. Folders stay on disk."),
+        description: t("Projects and saved sessions will be removed. Folders stay on disk."),
         icon: Trash2,
         danger: true,
         disabled: !onRemoveProject || pathsForGroup(group.id).some((path) => isProjectBusy?.(path)),
@@ -916,7 +958,7 @@ export function useProjectMenu({
             <ProjectGitChangeRow data-group-menu-git="" change={groupMenuChange} />
           ) : null
         }
-        footer={menuError ? <Alert tone="danger">{menuError}</Alert> : undefined}
+        footer={menuFooter ?? undefined}
         compactAppearance
         extraItems={[
           ...(workspaceRoot && !locked
@@ -987,7 +1029,7 @@ export function useProjectMenu({
               !loadProjectGroups().some(
                 (item) =>
                   item.id === targetId &&
-                  !item.workspaceFile &&
+                  !isWorkspaceProjectGroup(item) &&
                   !currentLock.lockedGroupIds.has(item.id),
               )
             )
@@ -997,7 +1039,7 @@ export function useProjectMenu({
                 getGroupLockView().lock.lockedGroupIds.has(group.id) ||
                 (targetId !== "none" &&
                   (!loadProjectGroups().some(
-                    (item) => item.id === targetId && !item.workspaceFile,
+                    (item) => item.id === targetId && !isWorkspaceProjectGroup(item),
                   ) ||
                     getGroupLockView().lock.lockedGroupIds.has(targetId)))
               )
@@ -1011,7 +1053,7 @@ export function useProjectMenu({
               setProjectGroupAssignment(workspaceRoot, destination);
               if (destination)
                 updateProjectGroup(targetId, (current) => ({ ...current, collapsed: false }));
-            }).catch(() => setMenuError(t("Could not save project changes. Try again.")));
+            }).catch(() => setMenuError(projectMenuErrors.save));
             return;
           }
           if (action === "hide-group") {
@@ -1084,10 +1126,10 @@ export function useProjectMenu({
             void withRoomPrivacyMutation(() => {
               if (getGroupLockView().lock.lockedGroupIds.has(group.id))
                 throw new Error("Project group is locked.");
-              if (!deleteProjectGroup(group.id)) throw new Error("Could not save project changes.");
+              if (!deleteProjectGroup(group.id)) throw new Error(projectMenuErrors.save);
             })
               .then(() => setGroupMenu(null))
-              .catch(() => setMenuError(t("Could not save project changes. Try again.")));
+              .catch(() => setMenuError(projectMenuErrors.save));
             return false;
           }
           if (action === "add-project-to-group") {
@@ -1120,7 +1162,7 @@ export function useProjectMenu({
                 throw new Error("Project group is locked.");
               unlinkProjectGroup(group.id);
               setLinkedGroupStatus(group.id, null);
-            }).catch(() => setMenuError(t("Could not save project changes. Try again.")));
+            }).catch(() => setMenuError(projectMenuErrors.save));
           }
         }}
       />
@@ -1159,17 +1201,13 @@ export function useProjectMenu({
           key={notificationMenu.path}
           anchor={{ x: notificationMenu.x, y: notificationMenu.y }}
           gap={0}
-          width={280}
-          role="dialog"
+          size="md"
+          kind="dialog"
           aria-label={t("Mute project notifications")}
           onDismiss={closeNotificationMenu}
-          className="space-y-1 overflow-y-auto p-3"
+          variant="panel"
+          className="space-y-1"
         >
-          <OverflowTooltip label={notificationMenu.project.name}>
-            <Text as="p" truncate size="caption" tone="primary" weight="medium" className="px-1">
-              {notificationMenu.project.name}
-            </Text>
-          </OverflowTooltip>
           <NotificationMuteDatePicker
             projectIds={[notificationMenu.project.id]}
             onCancel={closeNotificationMenu}
@@ -1189,11 +1227,7 @@ export function useProjectMenu({
           }}
           onConfirm={async () => {
             if (!groupRemovalValid(removingGroup))
-              throw new Error(
-                t(
-                  "Selection changed or a project is working. Close this dialog and review your selection.",
-                ),
-              );
+              throw new Error(projectMenuErrors.selectionChanged);
             const ordered = [...removingGroup.paths].sort(
               (a, b) =>
                 Number(sameProjectPath(a, activeProject ?? "")) -
@@ -1208,11 +1242,7 @@ export function useProjectMenu({
                   getGroupLockView().lock.lockedGroupIds.has(removingGroup.id) ||
                   projectGroupIdForPath(path, loadProjectGroupAssignments()) !== removingGroup.id
                 ) {
-                  throw new Error(
-                    t(
-                      "Selection changed or a project is working. Close this dialog and review your selection.",
-                    ),
-                  );
+                  throw new Error(projectMenuErrors.selectionChanged);
                 }
                 await context.onRemoveProject(path, { purgeData: true });
                 await withRoomPrivacyMutation(() => {
@@ -1225,17 +1255,13 @@ export function useProjectMenu({
               // New members must never be removed by an older confirmation.
               const assignments = loadProjectGroupAssignments();
               if (Object.values(assignments).includes(removingGroup.id))
-                throw new Error(
-                  t(
-                    "Selection changed or a project is working. Close this dialog and review your selection.",
-                  ),
-                );
+                throw new Error(projectMenuErrors.selectionChanged);
               await withRoomPrivacyMutation(() => {
                 if (
                   Object.values(loadProjectGroupAssignments()).includes(removingGroup.id) ||
                   !deleteProjectGroup(removingGroup.id)
                 )
-                  throw new Error(t("Could not save project changes. Try again."));
+                  throw new Error(projectMenuErrors.save);
               });
               setRemovingGroup(null);
               restoreFocus();
@@ -1305,10 +1331,10 @@ export function useProjectMenu({
           onDone={() => {
             void makeGroupLockable(lockDialog.groupId)
               .then(async (saved) => {
-                if (!saved) throw new Error("Could not save group privacy.");
+                if (!saved) throw new Error(projectMenuErrors.privacy);
                 if (lockDialog.lockNow) await lockGroup(lockDialog.groupId);
               })
-              .catch(() => setMenuError(t("Could not save group privacy. Please try again.")));
+              .catch(() => setMenuError(projectMenuErrors.privacy));
           }}
           onClose={() => {
             setLockDialog(null);

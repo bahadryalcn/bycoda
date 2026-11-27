@@ -57,22 +57,24 @@ export function reconnectingEndsIn(connection: RemoteConnectionState, now: numbe
   return left > 0 ? left : undefined;
 }
 
-export const MACHINE_STATUS_LABEL: Record<MachineStatus, string> = {
-  connected: "Connected",
-  connecting: "Connecting",
-  reconnecting: "Reconnecting",
-  offline: "Offline",
-  update: "Update required",
-  disabled: "Disabled",
-};
+const machineStatusLabel = (status: MachineStatus) =>
+  ({
+    connected: t("Connected"),
+    connecting: t("Connecting"),
+    reconnecting: t("Reconnecting"),
+    offline: t("Offline"),
+    update: t("Update required"),
+    disabled: t("Disabled"),
+  })[status];
 
-export const ROUTE_KIND_LABEL: Record<MachineRouteKind, string> = {
-  lan: "LAN",
-  tailscale: "Tailscale",
-  tunnel: "Tunnel",
-  ssh: "SSH",
-  url: "Host URL",
-};
+const routeKindLabel = (kind: MachineRouteKind) =>
+  ({
+    lan: t("LAN"),
+    tailscale: t("Tailscale"),
+    tunnel: t("Tunnel"),
+    ssh: t("SSH"),
+    url: t("Host URL"),
+  })[kind];
 
 /** Which way in an address is, from the address alone. */
 export function routeKindOfAddress(address: string): MachineRouteKind {
@@ -110,8 +112,8 @@ export function machineSummary(input: {
   routeCount?: number;
 }): { parts: MachineSummaryPart[]; routes?: string } {
   const parts: MachineSummaryPart[] = [];
-  if (input.routeKind) parts.push({ id: "kind", text: t(ROUTE_KIND_LABEL[input.routeKind]) });
-  parts.push({ id: "status", text: t(MACHINE_STATUS_LABEL[input.status]) });
+  if (input.routeKind) parts.push({ id: "kind", text: routeKindLabel(input.routeKind) });
+  parts.push({ id: "status", text: machineStatusLabel(input.status) });
   if (input.version && input.desktopVersion && input.version !== input.desktopVersion)
     parts.push({ id: "version", text: input.version });
   const count = input.routeCount ?? 0;

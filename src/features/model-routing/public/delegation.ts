@@ -1,3 +1,4 @@
+export { DelegationLayerRows } from "../ui/delegation/DelegationLayerRows";
 export { delegationSaveInput } from "../model/delegationProfile";
 export { refreshRendererDelegation } from "../model/delegationProfileStorage";
 export { startDelegationProfileSync, syncDelegationProfile } from "../model/delegationProfileSync";

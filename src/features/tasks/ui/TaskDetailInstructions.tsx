@@ -40,7 +40,7 @@ export function TaskDetailInstructions({ prompt }: { prompt: string }) {
       <section className="task-detail-section">
         <SectionLabel as="h3">{t("Description")}</SectionLabel>
         {text ? (
-          <AgentMarkdown text={text} allowRemoteMedia={false} />
+          <AgentMarkdown text={text} allowRemoteMedia={false} hardBreaks />
         ) : (
           <EmptyState size="inline" description={t("No description.")} />
         )}

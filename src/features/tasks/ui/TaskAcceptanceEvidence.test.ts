@@ -53,6 +53,23 @@ it("keeps criteria unverified when a legacy review passed without per-criterion 
   expect(container.textContent).toContain("Verify the sources");
 });
 
+it("keeps closed evidence searchable and mounts verdict badges on first expansion", async () => {
+  await render({ prompt: brief() });
+  const details = container.querySelector("details")!;
+  const rows = [...details.querySelectorAll("[data-acceptance-verdict]")];
+  expect(rows).toHaveLength(2);
+  expect(rows[0]?.textContent).toContain("Not verified");
+  expect(rows[0]?.textContent).toContain("Save the report");
+  expect(details.querySelectorAll('[data-variant="label"]')).toHaveLength(0);
+
+  await act(async () => {
+    details.open = true;
+    details.dispatchEvent(new Event("toggle"));
+  });
+  expect(details.querySelectorAll('[data-variant="label"]')).toHaveLength(2);
+  expect(details.querySelector("[data-acceptance-verdict]")).toBe(rows[0]);
+});
+
 it("shows recorded verdicts and inert evidence, with provenance opening only the recorded review", async () => {
   const onOpenReview = vi.fn();
   await render(
@@ -87,9 +104,16 @@ it("shows recorded verdicts and inert evidence, with provenance opening only the
   expect(container.querySelector("a, img, script")).toBeNull();
   expect(container.textContent).toContain("<img src=x onerror=alert(1)>");
   expect(container.textContent).toContain("Replace the unsupported claim.");
-  expect(container.textContent).toContain("Files may have changed since this review.");
   expect(container.querySelector("time")?.dateTime).toBe("2023-11-14T22:13:20.000Z");
-  await act(async () => container.querySelector("button")?.click());
+  // The caveat sits behind the Help popover, not in the row.
+  expect(container.textContent).not.toContain("Files may have changed since this review.");
+  await act(async () => container.querySelector<HTMLElement>('button[aria-label="Help"]')?.click());
+  expect(document.body.textContent).toContain("Files may have changed since this review.");
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Open review session")
+      ?.click(),
+  );
   expect(onOpenReview).toHaveBeenCalledExactlyOnceWith("review-session");
 });
 

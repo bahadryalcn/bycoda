@@ -13,7 +13,7 @@ export interface HostTasksServicePorts<Task extends dto.TaskIdentity> {
     move(id: string, to: unknown): Promise<Task>;
     startTask(id: string): Promise<Task>;
     finishWithFindings(id: string, expectedUpdatedAt: number): Promise<Task>;
-    reorder(ids: unknown): Promise<Task[]>;
+    reorder(ids: unknown, expectedUpdatedAt?: Readonly<Record<string, number>>): Promise<Task[]>;
     recheckReview(id: string): Promise<Task>;
     readNotes(id: string, ids: unknown): Promise<Task>;
     resolveNote(id: string, noteId: unknown, resolved: unknown): Promise<Task>;
@@ -21,6 +21,8 @@ export interface HostTasksServicePorts<Task extends dto.TaskIdentity> {
     preflight(raw: unknown): Promise<dto.TaskPreflightResult>;
     recordEvaluation(id: string, raw: unknown, expectedUpdatedAt: unknown): Promise<Task>;
   };
+  /** Delegation records of a task (or every failed helper); a record has no result or cost. */
+  helpers(taskId: string | undefined, failedOnly: boolean): Promise<dto.TaskHelper[]>;
   /** Composition supplies existing authenticated workspace-owner authorization. */
   retarget(
     id: string,
@@ -89,7 +91,7 @@ export function createHostTasksService<Task extends dto.TaskIdentity>(
       ),
     reorder: (p: unknown, c: HostDomainContext, o: Options = {}) =>
       execute(dto.TasksReorderParamsSchema, p, c, o, (params) =>
-        ports.tasks.reorder(params.taskIds),
+        ports.tasks.reorder(params.taskIds, params.expectedUpdatedAt),
       ),
     retarget: (p: unknown, c: HostDomainContext, o: Options = {}) =>
       execute(dto.TasksRetargetParamsSchema, p, c, o, (params) =>
@@ -114,6 +116,11 @@ export function createHostTasksService<Task extends dto.TaskIdentity>(
       }),
     preflight: (p: unknown, c: HostDomainContext, o: Options = {}) =>
       execute(dto.TasksSaveParamsSchema, p, c, o, (params) => ports.tasks.preflight(params.task)),
+    helpers: (p: unknown, c: HostDomainContext, o: Options = {}) =>
+      execute(dto.TasksHelpersParamsSchema, p, c, o, (params) =>
+        // Legacy validation turns an absent `taskId` into "".
+        ports.helpers(params.taskId || undefined, params.failedOnly === true),
+      ),
     recordEvaluation: (p: unknown, c: HostDomainContext, o: Options = {}) =>
       execute(dto.TasksEvaluationSaveParamsSchema, p, c, o, (params) =>
         ports.tasks.recordEvaluation(params.taskId, params.evaluation, params.expectedUpdatedAt),

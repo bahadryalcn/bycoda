@@ -8,7 +8,12 @@ it("tells every advertising Host only while the owner uses this window", async (
   const send = vi.fn((id: string) =>
     id === "b" ? Promise.reject(new Error("down")) : Promise.resolve(),
   );
-  const deps = { active: () => active, machines: () => [{ id: "a" }, { id: "b" }], send };
+  const deps = {
+    active: () => active,
+    machines: () => [{ id: "a" }, { id: "b" }],
+    reachable: () => true,
+    send,
+  };
   reportOwnerActivity(deps);
   expect(send).not.toHaveBeenCalled();
   active = true;
@@ -16,12 +21,44 @@ it("tells every advertising Host only while the owner uses this window", async (
   expect(send.mock.calls.map(([id]) => id)).toEqual(["a", "b"]);
 });
 
-it("reports on an interval until stopped", () => {
+it("never dials a machine that is down or turned off here", () => {
+  const send = vi.fn((_id: string) => Promise.resolve());
+  const reachable = vi.fn((machine: { id: string }) => machine.id === "up");
+  reportOwnerActivity({
+    active: () => true,
+    machines: () => [{ id: "down" }, { id: "up" }, { id: "off" }],
+    reachable,
+    send,
+  });
+  expect(reachable).toHaveBeenCalledTimes(3);
+  expect(send.mock.calls.map(([id]) => id)).toEqual(["up"]);
+});
+
+it("reports a machine again on the next tick after it reconnects", () => {
   vi.useFakeTimers();
-  const send = vi.fn(() => Promise.resolve());
+  let connected = false;
+  const send = vi.fn((_id: string) => Promise.resolve());
   const stop = startOwnerActivityReports({
     active: () => true,
     machines: () => [{ id: "a" }],
+    reachable: () => connected,
+    send,
+  });
+  vi.advanceTimersByTime(OWNER_ACTIVE_MS);
+  expect(send).not.toHaveBeenCalled();
+  connected = true;
+  vi.advanceTimersByTime(OWNER_ACTIVE_MS);
+  expect(send).toHaveBeenCalledTimes(1);
+  stop();
+});
+
+it("reports on an interval until stopped", () => {
+  vi.useFakeTimers();
+  const send = vi.fn((_id: string) => Promise.resolve());
+  const stop = startOwnerActivityReports({
+    active: () => true,
+    machines: () => [{ id: "a" }],
+    reachable: () => true,
     send,
   });
   vi.advanceTimersByTime(OWNER_ACTIVE_MS * 2);

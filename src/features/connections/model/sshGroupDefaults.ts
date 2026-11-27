@@ -1,7 +1,23 @@
+import { t } from "../../../shared/i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { validSshJumpFileReference } from "./sshJumpPolicies";
 import { validSshEndpointPreview } from "./sshEndpointReview";
 import { refreshServerInventory, type SshEndpoint } from "./serverInventory";
+/** The inherited field's label; a provenance key this build does not know is shown as sent. */
+export function sshInheritedFieldLabel(field: string): string {
+  switch (field) {
+    case "user":
+      return t("SSH user");
+    case "port":
+      return t("SSH port");
+    case "identityFile":
+      return t("Identity file");
+    case "certificateFile":
+      return t("Public SSH certificate file");
+    default:
+      return field;
+  }
+}
 export const SSH_INHERITED_FIELDS = ["user", "port", "identityFile", "certificateFile"] as const;
 export type SshInheritedField = (typeof SSH_INHERITED_FIELDS)[number];
 export type SshInheritance = { groupId: string; fields: SshInheritedField[]; environment: boolean };

@@ -1,3 +1,5 @@
+import { monotonicNow } from "../../src/shared/lib/time/timestamps";
+
 type ScreencastSession = {
   send(method: string, params?: Record<string, unknown>): Promise<unknown>;
   on?(event: string, listener: (payload: any) => void): unknown;
@@ -19,6 +21,9 @@ export type ScreencastFrame = {
 
 const MAX_WAIT_MS = 2000;
 const IDLE_STOP_MS = 5000;
+// Chromium sends the next picture only after the current one is acked, so pacing acks caps
+// the capture rate at roughly the readers' poll rate instead of the display rate.
+const ACK_INTERVAL_MS = 100;
 
 /** Frame cursor of a live read; bounded before it reaches the wait. */
 export function browserFrameCursor(after: unknown, waitMs: unknown) {
@@ -44,6 +49,12 @@ export class BrowserScreencast {
   private sequence = Date.now();
   private readonly waiters = new Set<() => void>();
   private idle?: ReturnType<typeof setTimeout>;
+  private ackTimer?: ReturnType<typeof setTimeout>;
+  private pendingAck?: { session: ScreencastSession; sessionId: unknown };
+  private fastReaders = 0;
+  private fastUntil = 0;
+  private liveIntervalMs = 0;
+  private lastAck = Number.NEGATIVE_INFINITY;
 
   constructor(
     private readonly describe: () => { stamp: string; width: number; height: number },
@@ -52,6 +63,32 @@ export class BrowserScreencast {
 
   available(page: ScreencastPage | undefined) {
     return typeof page?.context === "function";
+  }
+
+  /** Paces the live stream readers to `fps`; 60 or more acks every picture. */
+  setLiveFps(fps: number) {
+    this.liveIntervalMs = fps >= 60 ? 0 : 1000 / fps;
+  }
+
+  retainFastReader() {
+    this.fastReaders++;
+    if (this.ackTimer) clearTimeout(this.ackTimer);
+    this.ackTimer = undefined;
+    this.acknowledge();
+    return () => {
+      this.fastReaders--;
+    };
+  }
+
+  /**
+   * Acks every picture for the next `ms` (renewed by each call), so a recorder reading with
+   * long polls sees the display rate instead of the viewer pace. Lapses by itself.
+   */
+  boostAck(ms: number) {
+    this.fastUntil = monotonicNow() + ms;
+    if (this.ackTimer) clearTimeout(this.ackTimer);
+    this.ackTimer = undefined;
+    this.acknowledge();
   }
 
   /** The newest picture after `after` for the current document, waiting up to `waitMs`. */
@@ -98,9 +135,9 @@ export class BrowserScreencast {
       return void session.detach().catch(() => {});
     this.session = session;
     session.on?.("Page.screencastFrame", (frame: { data?: unknown; sessionId?: unknown }) => {
-      // Chromium holds the next picture until this one is acknowledged.
-      session.send("Page.screencastFrameAck", { sessionId: frame.sessionId }).catch(() => {});
-      if (this.session !== session || typeof frame.data !== "string") return;
+      if (this.session !== session) return;
+      this.scheduleAck(session, frame.sessionId);
+      if (typeof frame.data !== "string") return;
       if (frame.data.length * 0.75 > this.maxBytes) return;
       this.latest = { sequence: ++this.sequence, data: frame.data, ...this.describe() };
       for (const wake of this.waiters) wake();
@@ -108,10 +145,48 @@ export class BrowserScreencast {
     await session.send("Page.startScreencast", { format: "jpeg", quality: 65, everyNthFrame: 1 });
   }
 
+  /** Acks the newest picture once per interval; later frames inside the interval only replace it. */
+  private scheduleAck(session: ScreencastSession, sessionId: unknown) {
+    this.pendingAck = { session, sessionId };
+    const interval =
+      monotonicNow() < this.fastUntil
+        ? 0
+        : this.fastReaders
+          ? this.liveIntervalMs
+          : ACK_INTERVAL_MS;
+    const wait = this.fastReaders ? interval - (monotonicNow() - this.lastAck) : interval;
+    if (wait <= 0) {
+      if (this.ackTimer) clearTimeout(this.ackTimer);
+      this.ackTimer = undefined;
+      this.acknowledge();
+      return;
+    }
+    if (this.ackTimer) return;
+    this.ackTimer = setTimeout(() => {
+      this.ackTimer = undefined;
+      this.acknowledge();
+    }, wait);
+    this.ackTimer.unref?.();
+  }
+
+  private acknowledge() {
+    const pending = this.pendingAck;
+    this.pendingAck = undefined;
+    if (pending) this.lastAck = monotonicNow();
+    if (pending)
+      void pending.session
+        .send("Page.screencastFrameAck", { sessionId: pending.sessionId })
+        .catch(() => {});
+  }
+
   async stop() {
     this.generation++;
     if (this.idle) clearTimeout(this.idle);
     this.idle = undefined;
+    if (this.ackTimer) clearTimeout(this.ackTimer);
+    this.ackTimer = undefined;
+    this.pendingAck = undefined;
+    this.fastUntil = 0;
     const session = this.session;
     this.session = undefined;
     this.page = undefined;

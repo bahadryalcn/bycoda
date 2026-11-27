@@ -52,7 +52,7 @@ function Fixture() {
     >
       <style>{`.policy-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.policy-card{min-width:0;padding:16px;border:1px solid var(--ui-border);border-radius:8px}.policy-card h2{margin-bottom:12px;font-weight:600}.policy-stack{display:flex;flex-direction:column;align-items:flex-start;gap:12px}.responsive-label{display:inline}@media(max-width:900px){.responsive-label{display:none}}`}</style>
       <h1 style={{ fontSize: 22, marginBottom: 20 }}>Tooltip policy · real shared controls</h1>
-      <div className="policy-grid">
+      <div className="policy-grid" data-pane="policy">
         <section className="policy-card" aria-label="Basic hints">
           <h2>Visible text and useful hints</h2>
           <div className="policy-stack">
@@ -72,7 +72,10 @@ function Fixture() {
                 {long}
               </span>
             </OverflowTooltip>
-            <Button data-testid="icon" iconOnly label="Search workspace">
+            <Button data-testid="icon" iconOnly label="Search workspace" shortcut="Ctrl+F">
+              <Search />
+            </Button>
+            <Button data-testid="icon-plain" iconOnly label="Plain icon">
               <Search />
             </Button>
             <Button data-testid="responsive" tooltip="Responsive Explorer" tooltipWhen="overflow">
@@ -180,7 +183,15 @@ function Fixture() {
             />
             <FloatingButtonGroup
               label="Floating icon actions"
-              items={[{ id: "search", label: "Find fixture", icon: <Search />, iconOnly: true }]}
+              items={[
+                {
+                  id: "search",
+                  label: "Find fixture",
+                  icon: <Search />,
+                  iconOnly: true,
+                  shortcut: "Ctrl+F",
+                },
+              ]}
             />
             <ButtonGroup
               variant="expanding"

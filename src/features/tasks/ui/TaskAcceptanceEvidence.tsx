@@ -1,7 +1,10 @@
+import { useState } from "react";
 import { Text } from "../../../shared/ui/Text";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { Button } from "../../../shared/ui/Button";
 import type { HostTask } from "../model/hostTasks";
@@ -17,6 +20,7 @@ type Props = {
 /** Reviewer evidence is a recorded result, never a live check of the working copy. */
 export function TaskAcceptanceEvidence({ task, onOpenReview, isOpeningSession }: Props) {
   useLocale();
+  const [showBadges, setShowBadges] = useState(false);
   const expected = readTaskInstructions(task.prompt)?.acceptance ?? [];
   if (!expected.length) return null;
   const report = readTaskAcceptanceReport(task.verification?.acceptance);
@@ -32,7 +36,15 @@ export function TaskAcceptanceEvidence({ task, onOpenReview, isOpeningSession }:
       record?.verdict === "verified" && !record.evidence.some((item) => item.trim())
         ? "unresolved"
         : (record?.verdict ?? "unresolved");
-    return { criterion, record, verdict };
+    const label =
+      verdict === "verified"
+        ? t("Verified")
+        : verdict === "failed"
+          ? t("Failed")
+          : record
+            ? t("Unresolved")
+            : t("Not verified");
+    return { criterion, record, verdict, label };
   });
   const verified = rows.filter((row) => row.verdict === "verified").length;
   const failed = rows.filter((row) => row.verdict === "failed").length;
@@ -42,6 +54,11 @@ export function TaskAcceptanceEvidence({ task, onOpenReview, isOpeningSession }:
       <Disclosure
         className="min-w-0"
         variant="row"
+        onClickCapture={(event) => {
+          // A summary click (including keyboard activation) prepares the badges before paint.
+          if (!event.currentTarget.open) setShowBadges(true);
+        }}
+        onOpenChange={setShowBadges}
         summary={
           <>
             <Text weight="medium" size="inherit" tone="inherit">
@@ -51,12 +68,12 @@ export function TaskAcceptanceEvidence({ task, onOpenReview, isOpeningSession }:
               })}
             </Text>
             {failed ? (
-              <Text tone="danger" size="inherit" className="ml-2">
+              <Text tone="danger" size="inherit" className="ms-2">
                 {t("{p0} failed", { p0: failed })}
               </Text>
             ) : null}
             {unresolved ? (
-              <Text tone="warning" size="inherit" className="ml-2">
+              <Text tone="warning" size="inherit" className="ms-2">
                 {t("{p0} unresolved", { p0: unresolved })}
               </Text>
             ) : null}
@@ -70,12 +87,17 @@ export function TaskAcceptanceEvidence({ task, onOpenReview, isOpeningSession }:
             tone="secondary"
             className="flex flex-wrap items-center justify-between gap-1"
           >
-            <Timestamp
-              value={report.checkedAt}
-              format="datetime-seconds"
-              prefix={t("Reviewed")}
-              tooltip={false}
-            />
+            <span className="inline-flex items-center gap-1">
+              <Timestamp
+                value={report.checkedAt}
+                format="datetime-seconds"
+                prefix={t("Reviewed")}
+                tooltip={false}
+              />
+              <InfoPopover>
+                {t("Recorded reviewer evidence. Files may have changed since this review.")}
+              </InfoPopover>
+            </span>
             {report.sessionId ? (
               <Button
                 variant="ghost"
@@ -87,34 +109,36 @@ export function TaskAcceptanceEvidence({ task, onOpenReview, isOpeningSession }:
             ) : null}
           </Text>
         ) : null}
-        <Text as="p" size="micro" tone="secondary">
-          {report && !matches
-            ? t(
-                "The recorded evidence does not match the current acceptance criteria. Recheck the task.",
-              )
-            : report
-              ? t("Recorded reviewer evidence. Files may have changed since this review.")
+        {report && matches ? null : (
+          <Text as="p" size="micro" tone="secondary">
+            {report
+              ? t(
+                  "The recorded evidence does not match the current acceptance criteria. Recheck the task.",
+                )
               : t(
                   "No criterion evidence recorded. A passing review alone does not verify these criteria.",
                 )}
-        </Text>
+          </Text>
+        )}
         <Text as="ol" size="caption" tone="inherit" className="space-y-3">
-          {rows.map(({ criterion, record, verdict }, index) => (
+          {rows.map(({ criterion, record, verdict, label }, index) => (
             <li key={index} className="min-w-0 space-y-1" data-acceptance-verdict={verdict}>
               <div className="flex min-w-0 flex-wrap items-start gap-2">
-                <Badge
-                  tone={
-                    verdict === "verified" ? "success" : verdict === "failed" ? "danger" : "warning"
-                  }
-                >
-                  {verdict === "verified"
-                    ? t("Verified")
-                    : verdict === "failed"
-                      ? t("Failed")
-                      : record
-                        ? t("Unresolved")
-                        : t("Not verified")}
-                </Badge>
+                {showBadges ? (
+                  <Badge
+                    tone={
+                      verdict === "verified"
+                        ? "success"
+                        : verdict === "failed"
+                          ? "danger"
+                          : "warning"
+                    }
+                  >
+                    {label}
+                  </Badge>
+                ) : (
+                  label
+                )}
                 <Text
                   tone="neutral"
                   size="inherit"
@@ -147,11 +171,11 @@ export function TaskAcceptanceEvidence({ task, onOpenReview, isOpeningSession }:
         </Text>
       </Disclosure>
       {report && matches && !report.workspaceFingerprint ? (
-        <Text as="p" size="micro" tone="warning" role="status">
+        <InlineMessage tone="warning">
           {t(
             "File freshness could not be checked. Recheck changed outputs before relying on this evidence.",
           )}
-        </Text>
+        </InlineMessage>
       ) : null}
     </div>
   );

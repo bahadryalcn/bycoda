@@ -1,28 +1,14 @@
 import { t, useLocale } from "../../../../../shared/i18n";
-import { NumberField } from "../../../../../shared/ui/NumberField";
 import { INTERFACE_FONT_CATALOG } from "../../../model/fontCatalog";
 import { APPEARANCE_DEFAULTS } from "../../../model/appearancePreferences";
 import { Group, Row } from "../../../../../shared/ui/settings";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import { FontPicker } from "./FontPicker";
-import { useNumberDraft } from "./useNumberDraft";
 
-export const SAMPLE_SIZE_MIN = 10;
-export const SAMPLE_SIZE_MAX = 20;
-
-/** Interface font picker. The size stepper only resizes the live preview's text sample. */
-export function InterfaceFontGroup({
-  appearance: a,
-  sampleSize,
-  onSampleSize,
-}: {
-  appearance: AppearanceSettings;
-  sampleSize: number;
-  onSampleSize: (size: number) => void;
-}) {
+/** Interface font picker; the specimen in the live preview shows the result. */
+export function InterfaceFontGroup({ appearance: a }: { appearance: AppearanceSettings }) {
   useLocale();
   const p = a.preferences;
-  const sample = useNumberDraft(sampleSize, onSampleSize);
   return (
     <Group
       id="interface-font"
@@ -36,27 +22,12 @@ export function InterfaceFontGroup({
       }
       resetLabel={t("Reset interface font")}
     >
-      <Row label={t("Interface font")}>
+      <Row label={t("Font")}>
         <FontPicker
           label={t("Interface font")}
           catalog={INTERFACE_FONT_CATALOG}
           value={p.interfaceFont}
           onChange={(interfaceFont) => a.onPreferences({ ...p, interfaceFont })}
-        />
-      </Row>
-      <Row
-        label={t("Sample size")}
-        info={t(
-          "Resizes only the preview. The app's text size is Interface scale in the Interface tab.",
-        )}
-      >
-        <NumberField
-          label={t("Sample size")}
-          hideLabel
-          min={SAMPLE_SIZE_MIN}
-          max={SAMPLE_SIZE_MAX}
-          step={1}
-          {...sample}
         />
       </Row>
     </Group>

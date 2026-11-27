@@ -5,8 +5,44 @@ import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import { runPowerShell, windowsTaskScript, windowsUninstallScript } from "./windows";
 import { preparePosixNode } from "./node-engine";
+import { verifyHostStopped } from "./lifecycle-state";
+import { probeHostOwner } from "./owner";
+import windowsRegistration from "./service/registration.ps1?raw";
 
 const LABEL = "com.bycoda.host";
+
+export async function serviceRegistered(): Promise<boolean> {
+  if (process.platform === "win32") {
+    const result = await runPowerShell(windowsRegistration);
+    if (result.trim() === "registered") return true;
+    if (result.trim() === "absent") return false;
+    throw new Error("Unknown Windows Host service registration");
+  }
+  if (process.platform === "darwin") {
+    const domain = `gui/${process.getuid!()}`;
+    try {
+      await exec("launchctl", ["print", `${domain}/${LABEL}`], { timeout: 15_000 });
+      return true;
+    } catch (error) {
+      if (!missingLaunchAgent(error)) throw error;
+    }
+    return readFile(join(homedir(), "Library/LaunchAgents", `${LABEL}.plist`)).then(
+      () => true,
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      },
+    );
+  }
+  const { stdout } = await exec(
+    "systemctl",
+    ["--user", "show", "bycoda-host.service", "--property=LoadState", "--value"],
+    { env: systemdEnvironment(userInfo().uid), timeout: 15_000 },
+  );
+  if (stdout.trim() === "loaded") return true;
+  if (stdout.trim() === "not-found") return false;
+  throw new Error("Unknown systemd Host service registration");
+}
 type ServiceOptions = {
   directory: string;
   port: number;
@@ -356,16 +392,11 @@ export async function installService(
   } catch {
     /* install/start */
   }
-  const path = [
-    ...new Set([
-      process.env.PATH ?? "",
-      join(homedir(), ".local/bin"),
-      "/opt/homebrew/bin",
-      "/usr/local/bin",
-      "/usr/bin",
-      "/bin",
-    ]),
-  ].join(":");
+  // A booting Host owns the lease before it can answer connection-info.
+  if ((await probeHostOwner(options.directory)) === "active")
+    return waitForServiceConnection(options);
+  await verifyHostStopped(options.directory);
+  const path = posixHostPath();
   const run = async (command: string, args: string[], env = process.env) =>
     exec(command, args, { env, timeout: 15_000, maxBuffer: 128 * 1024 });
   if (process.platform === "darwin") {
@@ -435,6 +466,23 @@ export async function installService(
   } else {
     throw new Error("bycoda Host supports Windows, Linux and macOS");
   }
+  return waitForServiceConnection(options);
+}
+
+export function posixHostPath(): string {
+  return [
+    ...new Set([
+      process.env.PATH ?? "",
+      join(homedir(), ".local/bin"),
+      "/opt/homebrew/bin",
+      "/usr/local/bin",
+      "/usr/bin",
+      "/bin",
+    ]),
+  ].join(":");
+}
+
+async function waitForServiceConnection(options: ServiceOptions) {
   // A large Host database and the native buffer git store make a cold start slow: the
   // owner's host took about 90 s to listen (2026-11-09), and a 45 s wait made the local
   // installer roll back a host that was about to listen, leaving its launcher half switched.

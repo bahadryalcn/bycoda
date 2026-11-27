@@ -1,9 +1,13 @@
 import { ControlLayoutFixture } from "./control-layout";
-import { useState, type ComponentProps } from "react";
+import { useState, type ComponentProps, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Sidebar } from "../../../src/app/shell/Sidebar";
+import { TitleBar } from "../../../src/app/shell/TitleBar";
+import { BelowWindowChrome } from "../../../src/app/shell/WindowControls";
+import { APP_MENU_TOGGLE_EVENT, MenuBar } from "../../../src/app/shell/MenuBar";
 import { SessionRecoveryControl } from "../../../src/app/shell/SessionRecoveryControl";
+import { ApprovalToasts } from "../../../src/features/sessions/ui/ApprovalToasts";
 import { Badge } from "../../../src/shared/ui/Badge";
 import { SearchView } from "../../../src/features/search/ui/SearchView";
 import type { SearchRequest } from "../../../src/features/search/model/appSearch";
@@ -100,6 +104,16 @@ const railAgents: LiveAgent[] = railPolish
       ...(attentionCase === "multiple"
         ? [
             {
+              id: "retrying",
+              cwd: projects[0],
+              title: "Retry interrupted connection",
+              harness: "codex" as const,
+              activity: "Retrying",
+              needsApproval: false,
+              issue: "retrying" as const,
+              done: false,
+            },
+            {
               id: "approval",
               cwd: projects[0],
               title: "Approve next step",
@@ -115,37 +129,118 @@ const railAgents: LiveAgent[] = railPolish
 const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 const badgeCount = Number(new URLSearchParams(location.search).get("badgeCount"));
 const expandedRail = new URLSearchParams(location.search).has("expandedRail");
-const headerNavigation = new URLSearchParams(location.search).has("headerNavigation");
+const notificationFixture = new URLSearchParams(location.search).has("notificationBell");
+const lastSessionsHeader = new URLSearchParams(location.search).has("lastSessionsHeader");
 const projectHeader = new URLSearchParams(location.search).has("projectHeader");
+const titleBar = new URLSearchParams(location.search).has("titleBar");
+
+const WINDOW_FRAME = "flex h-dvh min-w-0 overflow-hidden bg-background-base text-content";
+
+/** With `?titleBar` the fixture is a whole main window: the title bar above the rail and panes. */
+function WindowFrame({
+  cwd,
+  onPick,
+  onSearch,
+  children,
+}: {
+  cwd: string;
+  onPick: (action: string) => void;
+  onSearch: () => void;
+  children: ReactNode;
+}) {
+  if (!titleBar) return <div className={WINDOW_FRAME}>{children}</div>;
+  return (
+    <div className={`${WINDOW_FRAME} flex-col`}>
+      <TitleBar
+        spansWindow
+        tabs={[
+          {
+            id: "open",
+            project: "clinic",
+            title: "Fix Clinic pre-commit failure",
+            more: [],
+            sessionCount: 1,
+            harnesses: ["claude"],
+            busyHarnesses: [],
+            files: [],
+          },
+        ]}
+        activeId="open"
+        cwd={cwd}
+        projectRailOpen={expandedRail}
+        canGoBack
+        onGoBack={() => onPick("Back")}
+        onGoForward={() => onPick("Forward")}
+        onToggleSidebar={() => onPick("Toggle sidebar")}
+        onSearch={onSearch}
+        onSelect={onPick}
+        onNew={() => onPick("New session")}
+        onClose={onPick}
+        onCloseMany={() => onPick("Close tabs")}
+        onReorder={() => onPick("Reorder tabs")}
+      />
+      <BelowWindowChrome titleBarAbove>
+        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">{children}</div>
+      </BelowWindowChrome>
+    </div>
+  );
+}
+
+function ApplicationMenuFixture() {
+  const [selected, setSelected] = useState("");
+  return (
+    <>
+      <Button
+        onClick={({ currentTarget }) => {
+          const { left, bottom } = currentTarget.getBoundingClientRect();
+          window.dispatchEvent(
+            new CustomEvent(APP_MENU_TOGGLE_EVENT, { detail: { x: left, y: bottom } }),
+          );
+        }}
+      >
+        Application menu
+      </Button>
+      <MenuBar
+        onNew={() => setSelected("New session")}
+        onOpenInbox={() => setSelected("Inbox")}
+        onOpenNotes={() => setSelected("Notes")}
+        onToggleSidebar={() => setSelected("Toggle Sidebar")}
+        onToggleSessionSidebar={() => setSelected("Toggle Session Sidebar")}
+        onNewTerminal={() => setSelected("New Terminal")}
+        onCloseIdleTabs={() => setSelected("Close Idle Tabs")}
+        layout={{ current: null, canArrange: true, onArrange: setSelected, onSplit: setSelected }}
+      />
+      <output aria-label="Selected action">{selected}</output>
+    </>
+  );
+}
 
 function Fixture() {
   const [cwd, setCwd] = useState(projects[0]);
   const [tab, setTab] = useState<ComponentProps<typeof Sidebar>["tab"]>("sessions");
   const [selected, setSelected] = useState("");
-  const [projectToggleCount, setProjectToggleCount] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const [request, setRequest] = useState<SearchRequest>();
   const [sidebarOpen, setSidebarOpen] = useState(
     !new URLSearchParams(location.search).has("closed"),
   );
   const [view, setView] = useState("workspace");
+  const [notificationTarget, setNotificationTarget] = useState<HTMLSpanElement | null>(null);
+  const [extraNotification, setExtraNotification] = useState(false);
   const openSearch = () => {
     setRequest(undefined);
     setSearchOpen(true);
   };
   return (
     <QueryClientProvider client={client}>
-      <div className="flex h-dvh min-w-0 overflow-hidden bg-background-base text-content">
+      <WindowFrame cwd={cwd} onPick={setSelected} onSearch={openSearch}>
         <Sidebar
           cwd={cwd}
           open={sidebarOpen}
           projectRailOpen={expandedRail}
+          notificationTriggerRef={notificationFixture ? setNotificationTarget : undefined}
           compactProjectRail
-          titleBarAbove={!headerNavigation}
-          lastSessionsOpen={headerNavigation && !projectHeader}
-          canGoBack={headerNavigation}
-          canGoForward={headerNavigation}
-          onGoForward={() => setSelected("Forward")}
+          lastSessionsOpen={lastSessionsHeader && !projectHeader}
           sessions={history}
           liveAgents={railAgents}
           recentSessions={
@@ -174,6 +269,11 @@ function Fixture() {
           status="idle"
           pending={false}
           onSelectSession={setSelected}
+          onSetSessionLinkedWorkItem={
+            new URLSearchParams(location.search).has("linkGithub")
+              ? (_id, item) => setSelected(item?.url ?? "")
+              : undefined
+          }
           onOpenFile={async () => {}}
           tab={tab}
           onTabChange={setTab}
@@ -182,10 +282,7 @@ function Fixture() {
           recents={projects.map((path) => ({ path, openedAt: 1 }))}
           onSelectProject={setCwd}
           onOpenProject={() => setSelected("Add project")}
-          onToggleProjectRail={() => {
-            setSelected("Expand projects");
-            setProjectToggleCount((count) => count + 1);
-          }}
+          onToggleProjectRail={() => setSelected("Expand projects")}
           onOpenLastSessions={() => setSelected("Last sessions")}
           onShowWorkspace={() => setView("workspace")}
           onOpenCrewSession={() => setSelected("Crew")}
@@ -199,10 +296,7 @@ function Fixture() {
             setView("inbox");
           }}
           inboxActive={view === "inbox"}
-          onGoBack={() => {
-            if (headerNavigation) setSelected("Back");
-            else setView("workspace");
-          }}
+          onGoBack={() => setView("workspace")}
           onOpenNotes={() => setSelected("Notes")}
           onOpenServers={() => setSelected("Servers")}
           onOpenTasks={() => setSelected("Tasks")}
@@ -213,7 +307,28 @@ function Fixture() {
           onNew={() => setSelected("New session")}
         />
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-(--ui-surface)">
+          {notificationFixture ? (
+            <ApprovalToasts
+              triggerTarget={notificationTarget}
+              notices={(extraNotification
+                ? [...history, { ...history[0], id: "extra-notification" }]
+                : history
+              ).map((session) => ({
+                sessionId: session.id,
+                requestId: 1,
+                label: "Fixture question",
+                kind: "question",
+                session: { ...session, modelSettings: {}, blocks: [] },
+              }))}
+              popupNotices={[]}
+              onFocusSession={setSelected}
+              onApproval={() => false}
+            />
+          ) : null}
           <div className="flex h-10 shrink-0 items-center gap-2 border-b border-stroke px-4">
+            {notificationFixture ? (
+              <Button onClick={() => setExtraNotification(true)}>Add fixture notification</Button>
+            ) : null}
             <span className="min-w-0 flex-1 truncate text-ui-body">
               Review workspace navigation
             </span>
@@ -257,9 +372,6 @@ function Fixture() {
           <output aria-label="Selected action" className="sr-only">
             {selected}
           </output>
-          <output aria-label="Project panel toggle count" className="sr-only">
-            {projectToggleCount}
-          </output>
         </main>
         {searchOpen && (
           <SearchView
@@ -276,13 +388,15 @@ function Fixture() {
             onOpenProject={setCwd}
           />
         )}
-      </div>
+      </WindowFrame>
     </QueryClientProvider>
   );
 }
 await languageReady;
 createRoot(document.getElementById("root")!).render(
-  new URLSearchParams(location.search).has("controlLayout") ? (
+  new URLSearchParams(location.search).has("applicationMenu") ? (
+    <ApplicationMenuFixture />
+  ) : new URLSearchParams(location.search).has("controlLayout") ? (
     <ControlLayoutFixture />
   ) : (
     <Fixture />

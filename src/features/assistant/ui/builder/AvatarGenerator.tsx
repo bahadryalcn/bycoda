@@ -2,8 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { t } from "../../../../shared/i18n";
 import { isImeComposition } from "../../../../shared/lib/keyboard";
 import { Button } from "../../../../shared/ui/Button";
-import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
-import { RadioGroup } from "../../../../shared/ui/RadioGroup";
+import { InlineError } from "../../../../shared/ui/InlineError";
 import { TextField } from "../../../../shared/ui/TextField";
 import { Sparkles } from "../../../../shared/ui/icons";
 import {
@@ -14,8 +13,9 @@ import {
 import styles from "./AssistantBuilder.module.css";
 
 /**
- * Prompt, Codex or Gemini choice and Generate for one assistant portrait. The result is only
- * reported as the drafted `image:<id>` value; saving stays with the surrounding form.
+ * Prompt and Generate for one assistant portrait, drawn by Codex; a failure offers Gemini as the
+ * retry. The result is only reported as the drafted `image:<id>` value; saving stays with the
+ * surrounding form.
  */
 export function AvatarGenerator({
   initialPrompt = "",
@@ -38,13 +38,14 @@ export function AvatarGenerator({
   );
   const trimmed = prompt.trim();
 
-  async function generate() {
+  async function generate(use: AssistantAvatarProvider = provider) {
     if (!trimmed || busy) return;
     const mine = ++epoch.current;
     setBusy(true);
     setFailure(null);
+    setProvider(use);
     try {
-      const avatar = await requestAssistantAvatar({ prompt: trimmed, provider });
+      const avatar = await requestAssistantAvatar({ prompt: trimmed, provider: use });
       if (mine === epoch.current) onGenerated(avatar);
     } catch (error) {
       if (mine === epoch.current) setFailure(assistantBuilderFailureDetail(error));
@@ -52,10 +53,11 @@ export function AvatarGenerator({
       if (mine === epoch.current) setBusy(false);
     }
   }
-  const start = () => {
+  const start = (use?: AssistantAvatarProvider) => {
     // generate() reports its own failures; this only keeps an unexpected one from going unhandled.
-    generate().catch((error: unknown) => setFailure(assistantBuilderFailureDetail(error)));
+    generate(use).catch((error: unknown) => setFailure(assistantBuilderFailureDetail(error)));
   };
+  const other: AssistantAvatarProvider = provider === "codex" ? "gemini" : "codex";
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter" && !isImeComposition(event.nativeEvent)) {
       event.preventDefault();
@@ -74,16 +76,6 @@ export function AvatarGenerator({
         onKeyDown={onKeyDown}
       />
       <div className={styles.generatorRow}>
-        <RadioGroup
-          variant="inline"
-          label={t("Image provider")}
-          value={provider}
-          options={[
-            { value: "codex", label: "Codex" },
-            { value: "gemini", label: "Gemini" },
-          ]}
-          onValueChange={(next) => setProvider(next === "gemini" ? "gemini" : "codex")}
-        />
         <Button
           type="button"
           variant="primary"
@@ -93,18 +85,20 @@ export function AvatarGenerator({
           loading={busy}
           loadingLabel={t("Drawing…")}
           disabled={!trimmed}
-          onClick={start}
+          disabledReason={trimmed ? undefined : t("Describe the avatar first.")}
+          onClick={() => start()}
         >
           {t("Generate avatar")}
         </Button>
       </div>
-      {busy ? (
-        <InlineMessage tone="neutral" live="polite">
-          {t("Drawing the avatar. This can take a minute.")}
-        </InlineMessage>
-      ) : null}
       {failure !== null ? (
-        <InlineError retry={{ onRetry: start }}>
+        <InlineError
+          retry={{ onRetry: () => start() }}
+          secondaryAction={{
+            label: other === "gemini" ? t("Try Gemini") : t("Try Codex"),
+            onClick: () => start(other),
+          }}
+        >
           {[t("Could not draw the avatar."), failure].filter(Boolean).join(" ")}
         </InlineError>
       ) : null}

@@ -1,15 +1,15 @@
 import { open } from "node:fs/promises";
 import { homedir } from "node:os";
 import { listHostSkillCandidatesAsync } from "./skills";
-import { readSkillPolicy } from "./skill-policy";
+import { readSkillPolicyAsync } from "./skill-policy";
 import { skillDisabled } from "../../src/integrations/harness/core/skillPolicy";
 import {
   getReportedCommands,
   reportedSkillRestrictions,
 } from "../../src/integrations/harness/core/reportedCommands";
 
-function effectivePolicy(home: string, sessionId?: string) {
-  const policy = readSkillPolicy(home);
+async function effectivePolicy(home: string, sessionId?: string) {
+  const policy = await readSkillPolicyAsync(home);
   const native = reportedSkillRestrictions(getReportedCommands(sessionId));
   return {
     ...policy,
@@ -41,7 +41,7 @@ export async function searchHarnessSkills(
   const query = (input.query ?? "").trim().toLowerCase();
   const terms = [...new Set(words(query))];
   const { skills: candidates, truncated } = await listHostSkillCandidatesAsync(cwd, home, provider);
-  const policy = effectivePolicy(home, sessionId);
+  const policy = await effectivePolicy(home, sessionId);
   const matches = candidates
     .filter(
       (skill) =>
@@ -122,7 +122,7 @@ export async function readHarnessSkill(
       (!input.source || entry.source === input.source) &&
       (!input.scope || entry.scope === input.scope),
   );
-  const policy = effectivePolicy(home, sessionId);
+  const policy = await effectivePolicy(home, sessionId);
   const allowed = matches.filter(
     (entry) =>
       !skillDisabled(policy, entry) &&
@@ -141,7 +141,7 @@ export async function readHarnessSkill(
   try {
     const size = (await file.stat()).size;
     if (size > 2 * 1024 * 1024) throw new Error("Skill exceeds 2 MiB.");
-    if (skillDisabled(effectivePolicy(home, sessionId), skill))
+    if (skillDisabled(await effectivePolicy(home, sessionId), skill))
       throw new Error(`Skill "${input.name}" is disabled for this conversation.`);
     const buffer = Buffer.alloc(size + 1);
     const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
@@ -150,7 +150,7 @@ export async function readHarnessSkill(
   } finally {
     await file.close();
   }
-  if (skillDisabled(effectivePolicy(home, sessionId), skill))
+  if (skillDisabled(await effectivePolicy(home, sessionId), skill))
     throw new Error(`Skill "${input.name}" is disabled for this conversation.`);
   const offset = Math.max(0, Math.trunc(input.offset ?? 0));
   const maxChars = Math.min(16000, Math.max(200, Math.trunc(input.maxChars ?? 6000)));

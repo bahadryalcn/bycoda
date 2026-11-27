@@ -17,11 +17,6 @@
   flex: 1 1 4rem;
 }
 
-.session-pane-header > [data-working-machine] {
-  flex: 0 1 auto;
-  max-inline-size: 40%;
-}
-
 .session-pane-header-actions {
   display: flex;
   flex: 0 0 auto;

@@ -1,4 +1,14 @@
 // Synthetic transport for the voice fixture. No device, Host, provider or audio access.
+import {
+  AssistantOwnerQuestionAnswerSchema,
+  AssistantOwnerQuestionPresentSchema,
+  AssistantOwnerQuestionSchema,
+  type AssistantOwnerQuestion,
+  type AssistantOwnerQuestionReceipt,
+} from "../../../src/shared/model/assistantOwnerQuestions";
+
+const ownerQuestions = new Map<string, AssistantOwnerQuestion>();
+
 export const fixtureVoice = {
   callbacks: null as any,
   connects: 0,
@@ -82,8 +92,16 @@ export const sessionsRef = { current: [] };
 export const getSessions = () => sessionsRef.current;
 export const useSessionsSelector = <T>(select: (sessions: typeof sessionsRef.current) => T): T =>
   select(sessionsRef.current);
+export const getShellSessions = () => sessionsRef.current;
+export const useShellSessionsSelector = <T>(
+  select: (sessions: typeof sessionsRef.current) => T,
+): T => select(sessionsRef.current);
+export const selectSessionById = (sessions: readonly { id: string }[], id: string | undefined) =>
+  id === undefined ? undefined : sessions.find((session) => session.id === id);
 export const subscribeSessionCommits = () => () => {};
 export const useSession = () => undefined;
+export * from "../../../src/features/sessions/model/sessionsStore.ts";
+export * from "../../../src/features/assistant/model/assistantClient.ts";
 export const converseWithSession = () =>
   new URLSearchParams(location.search).has("remote")
     ? Promise.resolve({ action: "reply", reply: "Here is the remote status." })
@@ -97,7 +115,9 @@ export function captureLocalVoiceHistory() {
   return {
     key: "fixture-local",
     remote: false,
-    environmentId: async () => "fixture-host",
+    environmentId: new URLSearchParams(location.search).has("local-choice")
+      ? undefined
+      : async () => "fixture-host",
     request: assistantRequest,
   };
 }
@@ -127,18 +147,34 @@ export function captureRemoteVoiceHistory(path: string) {
         fixtureVoice.remoteAckLost = false;
         throw new Error("Synthetic remote acknowledgement lost");
       }
-      return { message: { id: input.idempotencyKey, threadId: input.threadId } };
+      return { message: fixtureTranscriptReceipt(input) };
     }
     throw new Error("Unexpected remote fixture history operation");
   };
   return { key: `remote-fixture:${path}`, remote: true, request };
 }
+function fixtureTranscriptReceipt(input: {
+  idempotencyKey: string;
+  threadId: string;
+  role: string;
+  via: string;
+  text: string;
+}) {
+  return {
+    id: input.idempotencyKey,
+    threadId: input.threadId,
+    role: input.role,
+    via: input.via,
+    text: input.text,
+  };
+}
+
 /** Only the focused global-voice fixture aliases this assistant transport. */
 export async function converseWithAssistant(input: {
   transcript: string;
   execute: (name: string, args: Record<string, unknown>) => Promise<any>;
 }) {
-  if (input.transcript === "give jobs") {
+  if (input.transcript === "start a job to review recovery and improve the help page") {
     const result = await input.execute("give_jobs", {
       jobs: [
         {
@@ -164,6 +200,328 @@ export async function converseWithAssistant(input: {
     });
     fixtureVoice.observations.push(result);
     return { action: "reply", reply: "The selected assistant job was deleted." };
+  }
+  if (
+    input.transcript === "Show this month's usage." ||
+    input.transcript === "Show the last 30 days of usage."
+  ) {
+    const result = await input.execute("app_tool_call", {
+      family: "workspace",
+      action: "workspace.usage.report",
+      input: {
+        period: input.transcript.startsWith("Show this") ? "month-to-date" : "last-30-days",
+        metric: "cost",
+      },
+      requestId: input.transcript.startsWith("Show this")
+        ? "fixture-usage-month"
+        : "fixture-usage-empty",
+    });
+    fixtureVoice.observations.push(result);
+    return { action: "reply", reply: "The usage report is ready." };
+  }
+  if (
+    input.transcript === "Open the second project's session beside Arif." ||
+    input.transcript === "Open the second project's session in the project workspace."
+  ) {
+    const surface = input.transcript.endsWith("beside Arif.") ? "voice" : "project";
+    const result = await input.execute("app_tool_call", {
+      family: "workspace",
+      action: "workspace.sessions.open",
+      input: { projectPath: "/fixture-next", sessionId: "fixture-next", surface },
+      requestId: `fixture-explicit-project-session-${surface}`,
+    });
+    fixtureVoice.observations.push(result);
+    return { action: "reply", reply: "The second project's session is open." };
+  }
+  const presentInFullScreen = input.transcript === "show live results full screen";
+  const view = presentInFullScreen
+    ? "fullscreen"
+    : /^switch voice view to (fullscreen|window|mini)$/.exec(input.transcript)?.[1];
+  if (view) {
+    const result = await input.execute("app_tool_call", {
+      family: "workspace",
+      action: "workspace.voice.set_view",
+      input: { mode: view },
+      requestId: `fixture-view-${view}`,
+    });
+    fixtureVoice.observations.push(result);
+    if (!presentInFullScreen) return { action: "reply", reply: "The view has changed." };
+  }
+  if (presentInFullScreen || input.transcript === "show live results") {
+    const result = await input.execute("app_tool_call", {
+      family: "workspace",
+      action: "workspace.live_work.present",
+      input: {
+        title: "Test results",
+        summary: "Two packages finished.",
+        content: {
+          kind: "chart",
+          items: [
+            { label: "Web", value: 5 },
+            { label: "Host", value: 3 },
+          ],
+        },
+      },
+      requestId: "fixture-live-results",
+    });
+    fixtureVoice.observations.push(result);
+    return { action: "reply", reply: "Two packages finished." };
+  }
+  if (input.transcript === "show usage form") {
+    // Composed from shared controls; the button reads the owner's choices through `$bind`.
+    const result = await input.execute("app_tool_call", {
+      family: "workspace",
+      action: "workspace.live_work.present",
+      input: {
+        title: "Usage report",
+        summary: "Pick what to read, then press the button.",
+        blocks: [
+          {
+            type: "Card",
+            title: "Report",
+            children: [
+              {
+                type: "Stack",
+                direction: "row",
+                children: [
+                  {
+                    type: "Select",
+                    id: "period",
+                    label: "Period",
+                    options: [
+                      { value: "month-to-date", label: "This month" },
+                      { value: "last-30-days", label: "Last 30 days" },
+                    ],
+                  },
+                  {
+                    type: "SegmentedControl",
+                    id: "metric",
+                    label: "Metric",
+                    options: [
+                      { value: "cost", label: "Cost" },
+                      { value: "tokens", label: "Tokens" },
+                    ],
+                  },
+                ],
+              },
+              { type: "TextField", id: "note", label: "Note", placeholder: "Optional" },
+              {
+                type: "Button",
+                label: "Read usage",
+                variant: "primary",
+                requires: ["period"],
+                action: {
+                  action: "workspace.usage.report",
+                  input: { period: { $bind: "period" }, metric: { $bind: "metric" } },
+                },
+              },
+            ],
+          },
+          { type: "DescriptionList", items: [{ label: "Source", value: "Usage dashboard" }] },
+        ],
+      },
+      requestId: "fixture-usage-form",
+    });
+    fixtureVoice.observations.push(result);
+    return { action: "reply", reply: "The form is on screen." };
+  }
+  if (input.transcript === "prepare project session") {
+    await input.execute("app_tool_call", {
+      family: "workspace",
+      action: "workspace.live_work.present",
+      requestId: "fixture-session-form",
+      input: {
+        title: "Session draft",
+        summary: "Choose project and draft.",
+        blocks: [
+          {
+            type: "Select",
+            id: "project",
+            label: "Destination",
+            options: [
+              { label: "Current", value: "/fixture" },
+              { label: "Bycoda", value: "/fixture-next" },
+            ],
+          },
+          { type: "TextareaField", id: "draft", label: "Draft text" },
+          {
+            type: "Button",
+            label: "Create session",
+            requires: ["project", "draft"],
+            action: {
+              action: "workspace.sessions.create",
+              input: {
+                projectPath: { $bind: "project" },
+                prompt: { $bind: "draft" },
+                submit: false,
+                harness: "codex",
+              },
+            },
+          },
+        ],
+      },
+    });
+    return { action: "reply", reply: "Choose the destination." };
+  }
+  if (input.transcript === "show composed report") {
+    const result = await input.execute("app_tool_call", {
+      family: "workspace",
+      action: "workspace.live_work.present",
+      input: {
+        title: "Release report",
+        summary: "Everything composed from the shared catalog.",
+        blocks: [
+          { type: "Alert", tone: "warning", title: "One check failed", text: "Lint needs a look." },
+          {
+            type: "Grid",
+            columns: 2,
+            children: [
+              {
+                type: "Card",
+                title: "Totals",
+                children: [
+                  {
+                    type: "StatRow",
+                    label: "Tests",
+                    items: [
+                      { label: "Passed", value: "41" },
+                      { label: "Failed", value: "1" },
+                    ],
+                  },
+                  { type: "Progress", value: 41, max: 42, label: "Passing" },
+                  { type: "StatusText", tone: "failed", text: "Lint failed" },
+                ],
+              },
+              {
+                type: "Card",
+                title: "Share",
+                children: [
+                  {
+                    type: "DonutChart",
+                    label: "Tests by package",
+                    items: [
+                      { label: "Web", value: 30 },
+                      { label: "Host", value: 12 },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            type: "Tabs",
+            children: [
+              {
+                type: "Tab",
+                label: "Trend",
+                children: [
+                  {
+                    type: "LineChart",
+                    label: "Failures",
+                    series: [{ key: "failed", label: "Failed" }],
+                    points: [
+                      { label: "Mon", values: { failed: 3 } },
+                      { label: "Tue", values: { failed: 1 } },
+                      { label: "Wed", values: { failed: 2 } },
+                    ],
+                  },
+                ],
+              },
+              {
+                type: "Tab",
+                label: "Packages",
+                children: [
+                  {
+                    type: "Table",
+                    caption: "Packages",
+                    columns: ["Name", "Status"],
+                    rows: [
+                      ["web", "passed"],
+                      ["host", "failed"],
+                    ],
+                  },
+                ],
+              },
+              {
+                type: "Tab",
+                label: "Options",
+                children: [
+                  { type: "Switch", id: "notify", label: "Notify me", value: true },
+                  { type: "Checkbox", id: "draft", label: "Create draft" },
+                  {
+                    type: "Slider",
+                    id: "retries",
+                    label: "Retries",
+                    min: 0,
+                    max: 5,
+                    step: 1,
+                    value: 2,
+                  },
+                  { type: "TagInput", id: "labels", label: "Labels", value: ["release"] },
+                  {
+                    type: "RadioGroup",
+                    id: "channel",
+                    label: "Channel",
+                    options: [
+                      { value: "stable", label: "Stable", description: "Everyone" },
+                      { value: "beta", label: "Beta" },
+                    ],
+                  },
+                  { type: "DatePicker", id: "day", label: "Ship on", value: "2026-11-30" },
+                ],
+              },
+            ],
+          },
+          { type: "TestResult" },
+          {
+            type: "Disclosure",
+            summary: "Details",
+            children: [{ type: "Code", text: "pnpm check:web", block: true }],
+          },
+        ],
+      },
+      requestId: "fixture-composed-report",
+    });
+    fixtureVoice.observations.push(result);
+    return { action: "reply", reply: "The report is on screen." };
+  }
+  const copyDraft = /^(show|shorten) copyable draft$/.exec(input.transcript)?.[1];
+  if (copyDraft) {
+    const result = await input.execute("app_tool_call", {
+      family: "workspace",
+      action: "workspace.live_work.present",
+      input: {
+        title: "Release note",
+        blocks: [
+          { kind: "text", text: "Here is the draft you asked for." },
+          {
+            kind: "copy",
+            label: "Draft",
+            text:
+              copyDraft === "show"
+                ? "Voice results can now show text you copy.\n  Press Copy to take it with you."
+                : "Voice results now show copyable text.",
+          },
+          {
+            kind: "actions",
+            items: [
+              {
+                label: "Open next session",
+                action: "workspace.sessions.open",
+                input: {
+                  projectPath: "/fixture-next",
+                  sessionId: "fixture-next",
+                  surface: "project",
+                },
+              },
+            ],
+          },
+        ],
+      },
+      requestId: `fixture-${copyDraft}-copyable-draft`,
+    });
+    fixtureVoice.observations.push(result);
+    return { action: "reply", reply: "The draft is on screen." };
   }
   if (input.transcript === "show choices") {
     const selected = await input.execute("present_choices", {
@@ -208,14 +566,18 @@ export async function discoverVoiceTools() {
 export async function callVoiceTool() {
   throw new Error("This fixture does not execute Host tools.");
 }
+const wakeScenario = new URLSearchParams(location.search).get("wake-quick-settings");
 export const localVoiceBackend = {
-  inspect: async () => ({
-    ready: true,
-    missing: [],
-    python: "/fixture/python",
-    whisperPath: "/fixture/whisper",
-    ttsPath: "/fixture/tts",
-  }),
+  inspect: async () => {
+    if (wakeScenario === "error") throw new Error("Fixture wake listener failure");
+    return {
+      ready: wakeScenario !== "pack",
+      missing: wakeScenario === "pack" ? ["faster-whisper"] : [],
+      python: "/fixture/python",
+      whisperPath: "/fixture/whisper",
+      ttsPath: "/fixture/tts",
+    };
+  },
   setupStatus: async () => ({ state: "idle" }),
   cloudStatus: async () => ({ elevenlabs: false }),
 };
@@ -234,6 +596,7 @@ export const fixtureAssistant = {
   },
   memory: fixtureVoice.memories,
   notes: [],
+  jobs: fixtureVoice.jobs,
   presence: { state: "present" },
   briefing: null,
 };
@@ -244,6 +607,7 @@ if (new URLSearchParams(location.search).has("confirm-jobs"))
   Object.assign(fixtureAssistant.profile, { confirmJobs: true });
 export const useAssistantSnapshot = () => ({
   snapshot: fixtureAssistant,
+  environmentId: "fixture-host",
   error: "",
   loading: false,
   refresh: async () => {},
@@ -254,6 +618,7 @@ export const assistantIdentity = () => ({
   setupComplete: true,
   voiceSetupComplete: true,
 });
+export const useAssistantIdentity = assistantIdentity;
 export async function captureAssistantHostRead(expectedEnvironmentId?: string) {
   const environmentId = "fixture-host";
   if (expectedEnvironmentId && expectedEnvironmentId !== environmentId)
@@ -271,12 +636,12 @@ export async function captureAssistantHostRead(expectedEnvironmentId?: string) {
       (await assistantRequest({ op: "snapshot", limit: 100 }, environmentId)).snapshot,
   });
 }
-// Finite synthetic storage for the navigation fixture. The production transcript
+// Finite synthetic storage for local voice fixtures. The production transcript
 // and causal-context validators consume these exact receipts without bypasses.
 const navigationThreads = new Map<string, any>(),
   navigationMessages = new Map<string, { input: string; message: any }>(),
   navigationContexts = new Map<string, any>();
-function navigationHistoryRequest(input: any): any | undefined {
+function fixtureHistoryRequest(input: any): any | undefined {
   const now = Date.now();
   const knownProjects = ["fixture-project", "fixture-next-project"];
   if (input.op === "threads.open") {
@@ -397,9 +762,77 @@ export async function assistantRequest(input: any, expectedEnvironmentId?: strin
   if (expectedEnvironmentId && expectedEnvironmentId !== "fixture-host")
     throw new Error("Synthetic captured Host changed");
   fixtureVoice.ownerRequests.push({ input: structuredClone(input), expectedEnvironmentId });
-  if (new URLSearchParams(location.search).has("navigation")) {
-    const result = navigationHistoryRequest(input);
-    if (result !== undefined) return result;
+  if (input.op === "profile.update" && new URLSearchParams(location.search).has("setup-wizard")) {
+    return { profile: { ...fixtureAssistant.profile, ...input.patch } };
+  }
+  const history = fixtureHistoryRequest(input);
+  if (history !== undefined) return history;
+  if (input.op === "questions.present") {
+    const proposal = AssistantOwnerQuestionPresentSchema.parse(input);
+    const id = `fixture-question-${proposal.requestId}`;
+    const existing = ownerQuestions.get(id);
+    if (existing) return { ownerQuestion: structuredClone(existing) };
+    const now = Date.now();
+    const ownerQuestion = AssistantOwnerQuestionSchema.parse({
+      id,
+      version: 1,
+      jobId: null,
+      threadId: proposal.threadId,
+      ownerMessageId: proposal.ownerMessageId,
+      projectIds: proposal.contextProjectIds,
+      origin: "voice-proposal",
+      sourceToken: "d".repeat(64),
+      sourceCurrent: true,
+      status: "open",
+      createdAt: now,
+      updatedAt: now,
+      prompt: {
+        requestId: ownerQuestions.size + 1,
+        occurrenceId: id,
+        behavior: "nonBlocking",
+        questions: proposal.questions.map((question, index) => ({
+          ...question,
+          id: `question-${index}`,
+          options: question.options.map((option, index) => ({ ...option, id: `option-${index}` })),
+        })),
+      },
+    });
+    ownerQuestions.set(id, ownerQuestion);
+    if (new URLSearchParams(location.search).has("choice-ack-lost"))
+      throw new Error("Synthetic lost question acknowledgement");
+    return { ownerQuestion: structuredClone(ownerQuestion) };
+  }
+  if (input.op === "questions.get")
+    return { ownerQuestion: structuredClone(ownerQuestions.get(input.id) ?? null) };
+  if (input.op === "questions.answer") {
+    const answer = AssistantOwnerQuestionAnswerSchema.parse(input);
+    const question = ownerQuestions.get(answer.id);
+    if (!question || question.status !== "open" || question.version !== answer.expectedVersion)
+      throw new Error("Synthetic changed question");
+    const receipt: AssistantOwnerQuestionReceipt = {
+      requestId: answer.requestId,
+      kind: "answer",
+      version: question.version + 1,
+      at: Date.now(),
+      input: answer,
+    };
+    const ownerQuestion: AssistantOwnerQuestion = {
+      ...question,
+      status: "answered",
+      version: receipt.version,
+      updatedAt: receipt.at,
+      lastOwnerAction: receipt,
+      answer: {
+        requestId: answer.requestId,
+        answers: answer.answers,
+        custom: answer.custom,
+        notes: answer.notes,
+        answeredAt: receipt.at,
+        version: receipt.version,
+      },
+    };
+    ownerQuestions.set(ownerQuestion.id, ownerQuestion);
+    return { ownerQuestion: structuredClone(ownerQuestion), ownerQuestionReceipt: receipt };
   }
   if (input.op === "snapshot")
     return { snapshot: { ...fixtureAssistant, jobs: fixtureVoice.jobs } };
@@ -412,16 +845,23 @@ export async function assistantRequest(input: any, expectedEnvironmentId?: strin
           : []),
       ],
     };
-  if (input.op === "threads.open") return { thread: { id: "fixture-thread", summary: "" } };
-  if (input.op === "threads.messages") return { messages: [] };
-  if (input.op === "threads.append") {
-    fixtureVoice.transcripts.push(input);
-    return { message: { id: input.idempotencyKey } };
-  }
   if (input.op === "jobs.create") {
     const job = { ...input, id: input.idempotencyKey, status: "queued", version: 1 };
     fixtureVoice.jobs.push(job);
     return { job };
+  }
+  if (input.op === "messages.linkJob") {
+    const record = navigationMessages.get(input.id);
+    const job = fixtureVoice.jobs.find(
+      (job) => job.id === input.jobId && job.idempotencyKey === input.jobKey,
+    );
+    if (!record || !job) throw new Error("Synthetic job or conversation message is missing");
+    if (!record.message.jobIds.includes(job.id)) {
+      record.message.jobIds.push(job.id);
+      record.message.version++;
+      record.message.updatedAt = Date.now();
+    }
+    return { message: structuredClone(record.message) };
   }
   if (input.op === "jobs.control") {
     const job = fixtureVoice.jobs.find((job) => job.id === input.id);

@@ -19,6 +19,7 @@ const account = (platform: SocialAccount["platform"]): SocialAccount => ({
             ? "channel"
             : "member",
   scopes: [],
+  ...(platform === "x" ? { xApiProduct: "pay-per-use" as const } : {}),
   accessApproved: true,
   connected: true,
   paused: false,
@@ -82,6 +83,7 @@ describe("Official social API adapter contracts", () => {
       code: "unsupported",
     });
     expect(fetcher.mock.calls).toHaveLength(previous);
+    expect(telegram.deletePost).toBeTypeOf("function");
     expect(contentSupport(channel, job("message"))).toContain("publishing only");
     expect(contentSupport({ ...channel, accountType: "bot" }, publish)).toContain(
       "existing Telegram bot chats",
@@ -189,7 +191,7 @@ describe("Official social API adapter contracts", () => {
         const url = String(raw);
         if (url === "https://api.x.com/2/media/upload")
           return Response.json({ data: { id: "500" } });
-        if (url.endsWith("/tweets")) return Response.json({ data: { id: "posted" } });
+        if (url.endsWith("/tweets")) return Response.json({ data: { id: "600" } });
         if (url.includes("graph.instagram.com")) {
           const path = new URL(url).pathname;
           if (path.endsWith("/media")) return Response.json({ id: "container" });
@@ -744,21 +746,19 @@ describe("Official social API adapter contracts", () => {
     const fetcher = vi.fn(async () => Response.json({ data: { dm_event_id: "456" } }));
     const adapters = createSocialAdapters(new SocialHttp(fetcher));
     const message = job("message");
-    message.payload.recipientId = "person";
+    message.payload.recipientId = "789";
     await adapters.x.send(account("x"), message, "synthetic-token", async () => new Uint8Array());
-    expect(fetcher.mock.calls[0][0]).toBe(
-      "https://api.x.com/2/dm_conversations/with/person/messages",
-    );
-    message.payload.threadId = "conversation";
+    expect(fetcher.mock.calls[0][0]).toBe("https://api.x.com/2/dm_conversations/with/789/messages");
+    message.payload.threadId = "123-789";
     await adapters.x.send(account("x"), message, "synthetic-token", async () => new Uint8Array());
-    expect(fetcher.mock.calls[1][0]).toContain("dm_conversations/conversation/messages");
+    expect(fetcher.mock.calls[1][0]).toContain("dm_conversations/123-789/messages");
   });
   it("X image MIME is sent correctly and a successful upload checkpoint is not uploaded again on the next attempt", async () => {
     const fetcher = vi.fn(async (raw: string | URL | Request) =>
       Response.json(
         String(raw).includes("media/upload")
           ? { data: { id: "12345" } }
-          : { data: { id: "post123" } },
+          : { data: { id: "98765" } },
       ),
     );
     const adapters = createSocialAdapters(new SocialHttp(fetcher));
@@ -903,7 +903,7 @@ describe("Official social API adapter contracts", () => {
     publish.payload.media = [{ kind: "video", uploadId: "local" }];
     expect(contentSupport(account("x"), publish)).toBeUndefined();
     publish.payload.media = [];
-    expect(contentSupport(account("instagram"), publish)).toContain("one to four");
+    expect(contentSupport(account("instagram"), publish)).toContain("one to 20");
   });
   it("rejects forbidden YouTube description characters in both text and appended links", () => {
     const publish = job();
@@ -923,4 +923,46 @@ describe("Official social API adapter contracts", () => {
     publish.payload.link = "https://example.com/?value=%3Ctag%3E";
     expect(contentSupport(account("youtube"), publish)).toBeUndefined();
   });
+});
+
+describe("Published-ID list in adapter polls", () => {
+  const ignoring = ["reddit", "telegram", "x", "youtube"] as const;
+  it("marks only adapters that never read the list, never one that pages it", () => {
+    const adapters = createSocialAdapters(new SocialHttp(vi.fn()));
+    expect(
+      Object.entries(adapters)
+        .filter(([, adapter]) => adapter.ignoresPublishedPosts)
+        .map(([platform]) => platform)
+        .sort(),
+    ).toEqual([...ignoring]);
+    for (const adapter of Object.values(adapters))
+      expect(adapter.ignoresPublishedPosts && adapter.ownedPostPages).toBeFalsy();
+    // Adapters that consume the list keep receiving it.
+    for (const platform of ["facebook", "instagram", "linkedin"] as const)
+      expect(adapters[platform].ownedPostPages).toBe(true);
+  });
+  it.each(ignoring)(
+    "%s polls identically whether or not published IDs are passed",
+    async (platform) => {
+      const run = async (posts: string[]) => {
+        const fetcher = vi.fn(async () => Response.json({ ok: true, result: [], data: [] }));
+        const acct = {
+          ...account(platform),
+          scopes: ["tweet.read", "users.read", "dm.read", "mentions", "messages", "comments"],
+        };
+        const adapter = createSocialAdapters(new SocialHttp(fetcher))[platform];
+        const outcome = await adapter.poll(acct, "123:synthetic", posts, "7").then(
+          (value) => ({ value }),
+          (error: unknown) => ({
+            error: error instanceof SocialPlatformError ? error.code : "other",
+          }),
+        );
+        return {
+          outcome,
+          requests: fetcher.mock.calls.map((call) => String((call as unknown[])[0])),
+        };
+      };
+      expect(await run(["post-1", "post-2"])).toEqual(await run([]));
+    },
+  );
 });

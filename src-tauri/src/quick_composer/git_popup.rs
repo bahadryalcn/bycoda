@@ -7,10 +7,7 @@ use objc2_app_kit::{NSApplication, NSEvent, NSEventType};
 #[cfg(target_os = "macos")]
 use objc2_foundation::{NSPoint, NSRect, NSSize};
 use serde::{Deserialize, Serialize};
-use tauri::{
-    AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
-    WindowEvent,
-};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow, WindowEvent};
 
 use crate::quick_native::{PopupWork, QuickWindowOwner};
 use crate::window::{QUICK_COMPOSER_GIT_LABEL, QUICK_COMPOSER_LABEL};
@@ -451,13 +448,10 @@ pub(super) fn prepare(app: &AppHandle, parent: &WebviewWindow) -> tauri::Result<
     }
     let creation = crate::native_window_lifecycle::admit_window(app, QUICK_COMPOSER_GIT_LABEL)
         .map_err(std::io::Error::other)?;
-    let builder = crate::webview_args::inherit_main_browser_args(
+    let builder = crate::webview_args::new_app_window(
         app,
-        WebviewWindowBuilder::new(
-            app,
-            QUICK_COMPOSER_GIT_LABEL,
-            WebviewUrl::App("quick-composer.html?popup=git".into()),
-        ),
+        QUICK_COMPOSER_GIT_LABEL,
+        "quick-composer.html?popup=git",
     )
     .title("Choose workspace")
     .inner_size(WIDTH, 1.0)
@@ -465,7 +459,6 @@ pub(super) fn prepare(app: &AppHandle, parent: &WebviewWindow) -> tauri::Result<
     .resizable(false)
     .maximizable(false)
     .minimizable(false)
-    .transparent(true)
     .shadow(true)
     .always_on_top(true)
     .skip_taskbar(true)

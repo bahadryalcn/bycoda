@@ -128,7 +128,7 @@ declare global {
       appearance: (theme: "light" | "dark", language: "en" | "tr", rtl: boolean) => Promise<void>;
       draftAuthority: () => Promise<{
         draft: unknown;
-        committedDraft: unknown;
+        committedDraftPresent: unknown;
         composerText: unknown;
         cachedDraft: string | undefined;
         current: boolean;
@@ -239,7 +239,7 @@ function Fixture() {
           )?.snapshot;
           return {
             draft: parent?.draft,
-            committedDraft: parent?.committedDraft,
+            committedDraftPresent: parent?.committedDraftPresent,
             composerText: composer?.text,
             cachedDraft: getComposerDraft(sessionId),
             current: capture.current(),
@@ -317,7 +317,6 @@ function Fixture() {
           open
           projectRailOpen={false}
           compactProjectRail
-          titleBarAbove
           sessions={history}
           liveAgents={[]}
           busySessionIds={new Set(busy ? [sessionId] : [])}

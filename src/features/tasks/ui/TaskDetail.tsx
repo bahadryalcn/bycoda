@@ -1,5 +1,4 @@
 import { TaskModelChoiceLabel } from "./TaskModelChoiceLabel";
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Code } from "../../../shared/ui/Code";
@@ -8,7 +7,6 @@ import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Badge } from "../../../shared/ui/Badge";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { BadgeList } from "../../../shared/ui/BadgeList";
-import { Alert } from "../../../shared/ui/Alert";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { OverlayParent, useOverlay } from "../../../shared/ui/overlay";
 import { Button } from "../../../shared/ui/Button";
@@ -18,15 +16,26 @@ import { TextField } from "../../../shared/ui/TextField";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { type BoardTask, taskTimeLabel } from "../model/taskClient";
 import { canEditTask, type TaskStatus } from "../model/hostTasks";
-import { taskStatusLine } from "../model/taskStatusLine";
-import { TaskOutcomeSummary, TaskOwnerNotices } from "./TaskStatusLine";
+import {
+  MetaLine,
+  TaskOutcomeSummary,
+  TaskOwnerNotices,
+  taskDisplayStatus,
+} from "./TaskStatusLine";
 import { TaskStatusReason } from "./TaskStatusReason";
+import { taskResolvedLine } from "../model/taskResolvedLine";
+import { RelatedTaskList } from "./RelatedTaskList";
+import { TaskHelperList } from "./TaskHelperList";
+import { useTaskHelpers } from "../model/taskHelpers";
+import { Tooltip } from "../../../shared/ui/Tooltip";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { taskStateText } from "../model/taskTextLabels";
+import { runtimeModeLabel } from "../model/runtimeModeLabel";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
-import { type FormEvent, type ReactNode, useRef, useState } from "react";
+import { Fragment, type FormEvent, type ReactNode, useRef, useState } from "react";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
-import { Pencil, Sparkles, X } from "../../../shared/ui/icons";
+import { Bot, Clock, Pencil, Sparkles, X } from "../../../shared/ui/icons";
 import { Spinner } from "../../../shared/ui/Spinner";
-import { RUNTIME_MODE_LABEL } from "../../sessions/public/session";
 import { TaskReviewNotes } from "./TaskReviewNotes";
 import { TaskAcceptanceEvidence } from "./TaskAcceptanceEvidence";
 import { TaskBudgetUsage } from "./TaskBudgetControls";
@@ -36,7 +45,8 @@ import { resolveModel } from "../../sessions/public/models";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { TaskDetailInstructions } from "./TaskDetailInstructions";
 import "./task-detail.css";
-import { type TaskActionHandlers, TaskActions, VerificationSummary } from "./TaskBoardCard";
+import { TaskActions, type TaskActionHandlers } from "./TaskCardActions";
+import { VerificationSummary } from "./TaskCardVerification";
 import { RUN_TIME_LIMIT_OPTIONS } from "./TaskFormFields";
 
 export const STATUS_LABELS: Record<TaskStatus, string> = {
@@ -58,9 +68,9 @@ function DetailRow({ label, children }: { label: string; children: ReactNode }) 
   return <DescriptionItem term={label}>{children}</DescriptionItem>;
 }
 
-/** A task in full, beside the board: its description, where and how it runs,
- * and everything the host recorded about it. The title and description can be
- * edited in place while the task may be edited at all. */
+/** A task in full, beside the board: its state and next action, the instructions, what came out
+ * of the runs, the attempts, and the technical facts behind one "Details" disclosure. The title
+ * and description can be edited in place while the task may be edited at all. */
 export function TaskDetail({
   task,
   now,
@@ -70,6 +80,10 @@ export function TaskDetail({
   onClose,
   onSaveDetails,
   planning,
+  assignments = [],
+  onOpenTask,
+  onOpenAutomation,
+  onOpenCrewRun,
   ...actions
 }: {
   task: BoardTask;
@@ -81,14 +95,23 @@ export function TaskDetail({
   /** Resolves true once the new title and description are saved. */
   onSaveDetails: (title: string, prompt: string) => Promise<boolean>;
   planning?: ReactNode;
+  /** The assignments of this task's crew run; each opens its own detail. */
+  assignments?: readonly BoardTask[];
+  onOpenTask?: (task: BoardTask) => void;
+  /** Opens the automation that started this task; absent when it has none or cannot be opened. */
+  onOpenAutomation?: () => void;
+  /** Opens the crew run this task belongs to; absent when it has none. */
+  onOpenCrewRun?: () => void;
 } & TaskActionHandlers) {
   useLocale();
+  const helpers = useTaskHelpers(task);
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [prompt, setPrompt] = useState(task.prompt);
   const [saving, setSaving] = useState(false);
   const model = resolveModel(task.harness, task.model);
-  const status = taskStatusLine(task);
+  const status = taskDisplayStatus(task);
+  const resolvedLine = taskResolvedLine(task.resolved);
   const editable = canEditTask(task.status);
   const canSave =
     title.trim().length > 0 && (task.status === "todo" || prompt.trim().length > 0) && !saving;
@@ -121,6 +144,21 @@ export function TaskDetail({
       setSaving(false);
     }
   };
+  const workspace = taskWorkspaceState(task);
+  const elapsed = taskTimeLabel(task, now);
+  // Who runs it and where, on one line; the dated and technical facts are under Details.
+  const meta = [
+    project,
+    task.machineName,
+    task.modelChoice && task.modelChoice.kind !== "fixed" ? (
+      <Fragment key="model">
+        <TaskModelChoiceLabel choice={task.modelChoice} machineId={task.machineId} /> · {model.name}
+      </Fragment>
+    ) : (
+      model.name
+    ),
+    elapsed,
+  ].filter(Boolean);
 
   return (
     <OverlayParent.Provider value={overlayId}>
@@ -136,44 +174,39 @@ export function TaskDetail({
         <div
           {...surfaceAttributes(
             { frame: "pane", edge: "bottom" },
-            "flex h-9 shrink-0 items-center gap-2 px-3",
+            "flex min-h-9 shrink-0 items-center gap-2 px-3 py-1",
           )}
         >
-          {actions.pending ? <Spinner size="xs" label={t("Loading…")} /> : null}
-          <Tooltip
-            label={
-              status.label === t(STATUS_LABELS[task.status])
-                ? undefined
-                : t(STATUS_LABELS[task.status])
+          {actions.pending ? <Spinner size="xs" delay label={t("Loading…")} /> : null}
+          <Badge
+            data-task-status={status.kind}
+            tone={status.tone}
+            icon={
+              status.tone === "accent" ? (
+                <StatusDot tone="accent" label={status.label} />
+              ) : undefined
             }
-            asChild
           >
-            <Badge
-              data-task-status={status.kind}
-              tone={status.tone}
-              icon={
-                status.tone === "accent" ? (
-                  <StatusDot tone="accent" label={status.label} />
-                ) : undefined
-              }
-            >
-              {status.label}
-            </Badge>
-          </Tooltip>
+            {status.label}
+          </Badge>
           {task.source === "steward" ? (
-            <Badge data-task-suggested tone="info" className="">
+            <Badge data-task-suggested tone="info">
               {t("Suggested")}
             </Badge>
           ) : null}
+          <TaskActions
+            task={task}
+            standalone
+            className="task-detail-actions ms-auto justify-end"
+            {...actions}
+          />
           <Button
             iconOnly
             label={t("Close details")}
             disabled={saving}
             variant="ghost"
             type="button"
-            aria-label={t("Close details")}
             onClick={onClose}
-            className="ml-auto"
           >
             <X className="icon-sm" />
           </Button>
@@ -206,7 +239,19 @@ export function TaskDetail({
                 className="resize-y"
               />
               <div className="flex items-center gap-2">
-                <Button variant="primary" type="submit" loading={saving} disabled={!canSave}>
+                <Button
+                  variant="primary"
+                  type="submit"
+                  loading={saving}
+                  disabled={!canSave}
+                  disabledReason={
+                    saving || canSave
+                      ? undefined
+                      : title.trim()
+                        ? t("Add a description first.")
+                        : t("Enter a title first.")
+                  }
+                >
                   {t("Save")}
                 </Button>
                 <Button
@@ -220,81 +265,66 @@ export function TaskDetail({
               </div>
             </form>
           ) : (
-            <>
+            <div className="task-detail-head">
               <div className="flex items-start gap-2">
                 <Heading size="section" className="min-w-0 flex-1 break-words">
                   {task.title}
                 </Heading>
                 {editable ? (
                   <Button
+                    iconOnly
                     variant="ghost"
                     type="button"
                     onClick={beginEdit}
-
-                    aria-label={t("Edit title and description")}
+                    label={t("Edit title and description")}
                   >
                     <Pencil className="icon-xs" />
-                    {t("Edit")}
                   </Button>
                 ) : null}
               </div>
-              <DescriptionList
-                size="sm"
-                {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "task-detail-facts")}
+              <Text
+                as="p"
+                size="caption"
+                tone="muted"
+                className="flex min-w-0 flex-wrap items-center gap-x-1"
               >
-                <DescriptionItem term={t("Project")} truncate>
-                  {project}
-                </DescriptionItem>
-                <DescriptionItem term={t("Machine")} truncate>
-                  {task.machineName}
-                </DescriptionItem>
-                <DescriptionItem term={t("Agent")} truncate>
-                  <HarnessIcon harness={task.harness} className="icon-sm mr-1 inline shrink-0" />
-                  <TaskModelChoiceLabel
-                    choice={task.modelChoice}
-                    machineId={task.machineId}
-                  /> ·{" "}
-                  {model.name}
-                </DescriptionItem>
-                <DescriptionItem term={t("Created")} truncate>
-                  {formatTime(task.createdAt)}
-                </DescriptionItem>
-              </DescriptionList>
-            </>
+                <HarnessIcon harness={task.harness} className="icon-sm shrink-0" />
+                <MetaLine parts={meta} />
+              </Text>
+              {goal ? (
+                <Text
+                  as="p"
+                  size="caption"
+                  tone="secondary"
+                  className="flex min-w-0 items-center gap-1"
+                >
+                  <Sparkles className="icon-xs shrink-0" />
+                  <Text truncate size="inherit" tone="inherit" className="min-w-0">
+                    {t("Part of the epic “")}
+                    {goal}”
+                  </Text>
+                </Text>
+              ) : null}
+            </div>
           )}
           <TaskStatusReason task={task} status={status} />
           <TaskOwnerNotices task={task} />
-          <TaskOutcomeSummary task={task} />
           {task.deliveryNote ? (
-            <Text as="p" size="caption" tone="warning" role="status" className="break-words">
-              {task.deliveryNote}
-            </Text>
-          ) : null}
-          {taskWorkspaceState(task).needsRenewedApproval ? (
-            <Alert tone="warning">
-              {t("Automatic merge is suspended. Review changes to renew approval.")}
-            </Alert>
+            <InlineMessage tone="warning">{task.deliveryNote}</InlineMessage>
           ) : null}
           {isEditing ? null : <TaskDetailInstructions prompt={task.prompt} />}
-          {task.verification ? <VerificationSummary verification={task.verification} /> : null}
           {planning ? (
             <section className="task-detail-section">
               <SectionLabel as="h3">{t("Planning")}</SectionLabel>
               {planning}
             </section>
           ) : null}
+          {/* Results: what the runs produced and how it was checked. */}
+          <TaskOutcomeSummary task={task} />
+          {task.verification ? <VerificationSummary verification={task.verification} /> : null}
           <TaskAcceptanceEvidence
             task={task}
             onOpenReview={actions.onOpenReview}
-            isOpeningSession={actions.isOpeningSession}
-          />
-          <TaskBudgetUsage usage={task.budgetUsage} stop={task.budgetStop} budget={task.budget} />
-          {actions.onSaveEvaluation ? (
-            <TaskRunInsights task={task} onSaveEvaluation={actions.onSaveEvaluation} />
-          ) : null}
-          <TaskAttemptHistory
-            task={task}
-            onOpenSession={actions.onOpenReview}
             isOpeningSession={actions.isOpeningSession}
           />
           {task.reviewNotes ? (
@@ -308,30 +338,70 @@ export function TaskDetail({
               isOpeningSession={actions.isOpeningSession}
             />
           ) : null}
-          {goal ? (
-            <Text
-              as="p"
-              size="caption"
-              tone="secondary"
-              className="flex min-w-0 items-center gap-1"
-            >
-              <Sparkles className="icon-xs shrink-0" />
-              <Text truncate size="inherit" tone="inherit" className="min-w-0">
-                {t("Part of the epic “")}
-                {goal}”
-              </Text>
-            </Text>
+          {assignments.length > 0 && onOpenTask ? (
+            <section className="task-detail-section">
+              <SectionLabel as="h3">{t("Assignments")}</SectionLabel>
+              <RelatedTaskList label={t("Assignments")} tasks={assignments} onOpen={onOpenTask} />
+            </section>
           ) : null}
+          {helpers.length > 0 ? (
+            <section className="task-detail-section">
+              <SectionLabel as="h3">{t("Helpers")}</SectionLabel>
+              <TaskHelperList helpers={helpers} />
+            </section>
+          ) : null}
+          {onOpenAutomation || onOpenCrewRun ? (
+            <div className="flex flex-wrap items-center gap-1">
+              {onOpenAutomation ? (
+                <Button variant="ghost" size="xs" type="button" onClick={onOpenAutomation}>
+                  <Clock className="icon-xs" />
+                  {t("Open automation")}
+                </Button>
+              ) : null}
+              {onOpenCrewRun ? (
+                <Button variant="ghost" size="xs" type="button" onClick={onOpenCrewRun}>
+                  <Bot className="icon-xs" />
+                  {t("Open crew run")}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+          <TaskBudgetUsage
+            usage={task.budgetUsage}
+            stop={task.stop?.code === "budget_exhausted" ? task.stop.message : undefined}
+            budget={task.budget}
+          />
+          {actions.onSaveEvaluation ? (
+            <TaskRunInsights task={task} onSaveEvaluation={actions.onSaveEvaluation} />
+          ) : null}
+          {/* History: every attempt and its review. */}
+          <TaskAttemptHistory
+            task={task}
+            onOpenSession={actions.onOpenReview}
+            isOpeningSession={actions.isOpeningSession}
+          />
           <Disclosure summary={t("Details")}>
             <DescriptionList size="sm">
-              <DetailRow label={t("Completion")}>
-                {t(taskWorkspaceState(task).completion)}
-              </DetailRow>
-              <DetailRow label={t("Delivery")}>{t(taskWorkspaceState(task).delivery)}</DetailRow>
-              <DetailRow label={t("Execution")}>
-                {task.continueUntilDone ? t("Continue until complete") : t("Standard")}
-              </DetailRow>
-              <DetailRow label={t("Access")}>{t(RUNTIME_MODE_LABEL[task.runtimeMode])}</DetailRow>
+              <DetailRow label={t("Created")}>{formatTime(task.createdAt)}</DetailRow>
+              {task.startedAt ? (
+                <DetailRow label={t("Started")}>{formatTime(task.startedAt)}</DetailRow>
+              ) : null}
+              {task.completedAt ? (
+                <DetailRow label={t("Completed")}>{formatTime(task.completedAt)}</DetailRow>
+              ) : null}
+              <DetailRow label={t("Completion")}>{taskStateText(workspace.completion)}</DetailRow>
+              <DetailRow label={t("Delivery")}>{taskStateText(workspace.delivery)}</DetailRow>
+              {task.continueUntilDone ? (
+                <DetailRow label={t("Execution")}>{t("Keep fixing until done")}</DetailRow>
+              ) : null}
+              {resolvedLine ? (
+                <DetailRow label={t("Run with")}>
+                  <Tooltip label={resolvedLine.why}>
+                    <span>{resolvedLine.text}</span>
+                  </Tooltip>
+                </DetailRow>
+              ) : null}
+              <DetailRow label={t("Access")}>{runtimeModeLabel(task.runtimeMode)}</DetailRow>
               <DetailRow label={t("Time limit")}>
                 {task.inheritMaxRunMinutes && task.runtimeLimitResolvedAt === undefined
                   ? t("Default")
@@ -373,36 +443,26 @@ export function TaskDetail({
                   />
                 </DetailRow>
               ) : null}
-              {task.startedAt ? (
-                <DetailRow label={t("Started")}>{formatTime(task.startedAt)}</DetailRow>
-              ) : null}
-              {task.completedAt ? (
-                <DetailRow label={t("Completed")}>{formatTime(task.completedAt)}</DetailRow>
-              ) : null}
-              <DetailRow label={t("Duration")}>{taskTimeLabel(task, now)}</DetailRow>
               {task.verifyCommand ? (
                 <DetailRow label={t("Check command")}>
                   <Code size="micro">{task.verifyCommand}</Code>
                 </DetailRow>
               ) : null}
             </DescriptionList>
+            {task.diffStat ? (
+              <OutputBlock
+                aria-label={t("Diff stat")}
+                size="micro"
+                tone="secondary"
+                frame="none"
+                scroll
+                wrap={false}
+                {...surfaceAttributes({ radius: "sm", variant: "card" }, "max-h-48 px-2 py-1.5")}
+              >
+                {task.diffStat}
+              </OutputBlock>
+            ) : null}
           </Disclosure>
-          {task.diffStat ? (
-            <OutputBlock
-              aria-label={t("Diff stat")}
-              size="micro"
-              tone="secondary"
-              frame="none"
-              scroll
-              wrap={false}
-              {...surfaceAttributes({ radius: "sm", variant: "card" }, "max-h-48 px-2 py-1.5")}
-            >
-              {task.diffStat}
-            </OutputBlock>
-          ) : null}
-        </div>
-        <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "task-detail-footer")}>
-          <TaskActions task={task} {...actions} />
         </div>
       </aside>
     </OverlayParent.Provider>

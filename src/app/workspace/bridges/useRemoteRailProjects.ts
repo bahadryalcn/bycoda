@@ -14,16 +14,19 @@ import {
   subscribeRemoteCreateIntents,
 } from "../../../features/connections/model/remoteCreateIntent";
 import { unopenedRemoteSessions } from "../../../features/connections/model/remoteRailSessions";
+import { remoteSessionProjectKey } from "../../../features/connections/model/sessionMachineTarget";
 
 export interface RemoteRailProjectsDeps {
   visibleRecents: ReadonlyArray<{ path: string }>;
   sessionRecovery: SessionRecovery | null;
   lockSnapshot: ReturnType<typeof useLockSnapshot>;
   sessions: Session[];
+  includeProjectless?: boolean;
 }
 
 export interface RemoteRailProjects {
-  listedRemoteSessions: ReturnType<typeof useRemoteRailSessions>;
+  listedRemoteSessions: ReturnType<typeof useRemoteRailSessions>["sessions"];
+  freshRemoteProjects: readonly string[];
   loadedRemoteHostIds: Set<string>;
   unopenedRemote: ReturnType<typeof unopenedRemoteSessions>;
   unopenedRemoteRef: MutableRefObject<ReturnType<typeof unopenedRemoteSessions>>;
@@ -36,6 +39,7 @@ export function useRemoteRailProjects({
   sessionRecovery,
   lockSnapshot,
   sessions,
+  includeProjectless = false,
 }: RemoteRailProjectsDeps): RemoteRailProjects {
   const remoteRailProjects = useMemo(
     () => [
@@ -50,7 +54,8 @@ export function useRemoteRailProjects({
     ],
     [visibleRecents, sessionRecovery, lockSnapshot],
   );
-  const listedRemoteSessions = useRemoteRailSessions(remoteRailProjects);
+  const { sessions: listedRemoteSessions, freshProjects: freshRemoteProjects } =
+    useRemoteRailSessions(remoteRailProjects, includeProjectless);
   // Bindings and create intents live outside React state: re-derive when they change.
   const [bindingRevision, setBindingRevision] = useState(0);
   const [createIntentRevision, setCreateIntentRevision] = useState(0);
@@ -66,7 +71,7 @@ export function useRemoteRailProjects({
   const remoteShellIds = useMemo(
     () =>
       sessions
-        .filter((session) => isRemoteProjectPath(session.cwd))
+        .filter((session) => isRemoteProjectPath(remoteSessionProjectKey(session)))
         .map((session) => session.id)
         .join("\n"),
     [sessions],
@@ -91,6 +96,7 @@ export function useRemoteRailProjects({
 
   return {
     listedRemoteSessions,
+    freshRemoteProjects,
     loadedRemoteHostIds,
     unopenedRemote,
     unopenedRemoteRef,

@@ -30,7 +30,18 @@ const clean = (value: unknown, field: string, max = 4096) => {
 };
 
 /** Reuses owner actions; this bridge grants no new provider or project authority. */
-export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDeps) {
+/**
+ * Full access only: `onDeleteNow` is the confirmed variant of `onDelete`, `fullAccess` reports the
+ * native standing grant (everything, no exclusions). Without both, deletion opens the owner flow.
+ */
+export type VoiceSessionDeleteDeps = {
+  onDeleteNow?: (sessionId: string) => boolean | Promise<boolean>;
+  fullAccess?: () => Promise<boolean>;
+};
+
+export function createVoiceWorkspaceActions(
+  read: () => VoiceWorkspaceActionsDeps & VoiceSessionDeleteDeps,
+) {
   const receipts = new Map<string, { signature: string; result: Promise<VoiceWorkspaceResult> }>();
   const project = (path: string) => {
     const found = read()
@@ -237,6 +248,21 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
         };
       }
       case "workspace.sessions.delete": {
+        let skip = false;
+        try {
+          skip = !!deps.onDeleteNow && (await deps.fullAccess?.()) === true;
+        } catch {
+          skip = false; // fail closed: keep the owner flow
+        }
+        if (skip) {
+          const done = await deps.onDeleteNow!(id);
+          return {
+            ...base,
+            status: done === false ? "cancelled" : "completed",
+            confirmation: "not_required_full_access",
+            verification: "Read session state to confirm the session is gone.",
+          };
+        }
         const result = await (deps.onDelete ?? unsupported)(id);
         return {
           ...base,
@@ -245,7 +271,11 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
         };
       }
       case "workspace.sessions.submit": {
-        if (target.historyLoading || target.historyLoadError || target.worktreeRemoved)
+        if (
+          (target.historyLoading && !target.storedHistory) ||
+          target.historyLoadError ||
+          target.worktreeRemoved
+        )
           throw new Error("The session is not ready for work.");
         const accepted = await (deps.onSubmit ?? unsupported)(id, clean(args.text, "text", 16000));
         return { ...base, status: accepted ? "accepted" : "rejected", accepted };
@@ -318,7 +348,7 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
   return { tools: allTools, execute };
 }
 
-export function useVoiceWorkspaceActions(deps: VoiceWorkspaceActionsDeps) {
+export function useVoiceWorkspaceActions(deps: VoiceWorkspaceActionsDeps & VoiceSessionDeleteDeps) {
   const latest = useRef(deps);
   latest.current = deps;
   const actions = useRef<ReturnType<typeof createVoiceWorkspaceActions> | null>(null);

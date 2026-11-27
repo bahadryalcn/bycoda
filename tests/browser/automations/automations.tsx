@@ -46,7 +46,11 @@ if (new URLSearchParams(location.search).has("multiTriggers")) {
 const runsMode = new URLSearchParams(location.search).get("runs");
 // ?host=offline starts with an empty local collection and one unavailable Host.
 const offlineHostMode = new URLSearchParams(location.search).get("host") === "offline";
-let hasLocalAutomation = !offlineHostMode;
+// ?empty is first use: nothing saved and nothing unreachable. ?many fills the list past the
+// filter threshold.
+const emptyMode = new URLSearchParams(location.search).has("empty");
+const manyMode = new URLSearchParams(location.search).has("many");
+let hasLocalAutomation = !offlineHostMode && !emptyMode;
 const remoteMachine = {
   id: "fixture-tailm",
   name: "tailm",
@@ -62,7 +66,11 @@ const fixtureHost = {
   environmentId: "fixture-work",
   endpoint: "http://127.0.0.1:1",
 };
-const hostProject = { id: "fixture-project", cwd: "C:/fixture/project", name: "Fixture project" };
+const hostProject = {
+  id: "fixture-project",
+  cwd: "C:/fixture/project",
+  name: "Fixture project",
+};
 let hostAutomation: HostAutomation = {
   id: "fixture-host-review",
   name: roomWork ? "Room review" : "Project review",
@@ -172,15 +180,29 @@ Object.assign(window, {
   automationFixtureCalls: calls,
   automationFixtureControl: control,
   __TAURI_INTERNALS__: {
-    metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
+    metadata: {
+      currentWindow: { label: "main" },
+      currentWebview: { label: "main" },
+    },
     transformCallback: () => 1,
     unregisterCallback: () => {},
     invoke: async (command: string, args: Record<string, unknown> = {}) => {
       calls.push({ command, args: structuredClone(args) });
       if (command === "default_cwd") return "C:/fixture/home";
       if (command === "plugin:event|listen") return 1;
-      if (command === "automations_list")
-        return !hostWork && hasLocalAutomation ? [structuredClone(automation)] : [];
+      if (command === "automations_list") {
+        if (hostWork || !hasLocalAutomation) return [];
+        return manyMode
+          ? [
+              structuredClone(automation),
+              ...Array.from({ length: 8 }, (_, index) => ({
+                ...structuredClone(automation),
+                id: `fixture-extra-${index}`,
+                name: `Extra review ${index + 1}`,
+              })),
+            ]
+          : [structuredClone(automation)];
+      }
       if (command === "automations_upsert") {
         if (control.holdSave) {
           await new Promise<void>((resolve, reject) => {
@@ -191,7 +213,11 @@ Object.assign(window, {
             };
           });
         }
-        automation = { ...(args.automation as Automation), createdAt: 1, updatedAt: 2 };
+        automation = {
+          ...(args.automation as Automation),
+          createdAt: 1,
+          updatedAt: 2,
+        };
         hasLocalAutomation = true;
         return structuredClone(automation);
       }
@@ -262,7 +288,12 @@ Object.assign(window, {
               projectId: hostProject.id,
               name: "Project review",
               instruction: "Review fixture activity and report findings",
-              schedule: { scheduleKind: "daily", minute: 0, time: "09:00", dayOfWeek: 1 },
+              schedule: {
+                scheduleKind: "daily",
+                minute: 0,
+                time: "09:00",
+                dayOfWeek: 1,
+              },
               timeZone: "Europe/Istanbul",
               outputTarget: "projectTask",
               confirmationRequired: true,

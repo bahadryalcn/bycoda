@@ -6,17 +6,19 @@ import { invoke } from "@tauri-apps/api/core";
 import { emitTo } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Button } from "../../../shared/ui/Button";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Heading } from "../../../shared/ui/Heading";
+import { isMicrophoneBlocked, microphoneBlockedMessage } from "../model/microphoneAccess";
 import {
-  Maximize2,
   Minimize2,
   Mic,
   MicOff,
-  Square,
+  Hand,
+  PhoneOff,
+  AppWindow,
   TriangleAlert,
   VolumeX,
   Volume2,
-  Pause,
   X,
 } from "../../../shared/ui/icons";
 import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
@@ -42,6 +44,7 @@ import {
   type VoiceOverlaySide,
 } from "../model/voiceSidePanel";
 import { VoiceTurnControl } from "./VoiceTurnControl";
+import { VoiceOverlayMoreMenu } from "./VoiceOverlayMoreMenu";
 import { VoiceVisualizer } from "./VoiceVisualizer";
 import { VoiceCore } from "./companion/VoiceCore";
 import { VoiceChatTranscript } from "./companion/VoiceChatTranscript";
@@ -63,6 +66,9 @@ const MOVES: Record<string, [number, number]> = {
   ArrowDown: [0, 16],
 };
 
+const OWNER_UNREACHABLE = () =>
+  t("The app window did not receive that. Return to the app and try again.");
+
 /**
  * Always-on-top mirror of one workspace window's voice companion. It owns no
  * audio: every action is a command the workspace window carries out. Native
@@ -73,13 +79,13 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
   useLocale();
   const settings = useVoiceSettings();
   const [state, setState] = useState<VoiceOverlayState | null>(null);
-  const [menuError, setMenuError] = useState("");
-  const compact = settings.compact && !state?.choice && !state?.jobReview && !menuError;
+  const [menuNotice, setMenuNotice] = useState("");
+  const compact = settings.compact && !state?.choice && !state?.jobReview && !menuNotice;
   function menuFailed() {
-    setMenuError(t("The turn mode menu could not be opened. Try again."));
+    setMenuNotice(t("The menu could not be opened. Try again."));
   }
   function changeTurnMode(manual: boolean) {
-    setMenuError("");
+    setMenuNotice("");
     send(manual ? "manualTurnEnd" : "automaticTurnEnd");
   }
   const level = useRef(0);
@@ -146,7 +152,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
       })
       .catch(() => {
         if (!disposed)
-          setMenuError(t("Voice window could not connect. Return to the app and retry."));
+          setMenuNotice(t("Voice window could not connect. Return to the app and retry."));
       });
     return () => {
       disposed = true;
@@ -187,8 +193,29 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
     return () => observer.disconnect();
   }, [compact, beside]);
 
+  /** Every overlay action is an event to the owner window; a closed or reloaded owner rejects it. */
+  function emitOwner(event: string, payload: unknown, onFailure?: () => void) {
+    void emitTo(owner, event, payload).catch(() => {
+      onFailure?.();
+      setMenuNotice(OWNER_UNREACHABLE());
+    });
+  }
   function send(command: VoiceOverlayCommand) {
-    void emitTo(owner, VOICE_OVERLAY_COMMAND_EVENT, command).catch(() => undefined);
+    emitOwner(VOICE_OVERLAY_COMMAND_EVENT, command);
+  }
+  /** Marks the open question as not sent, so the card keeps the typed answer and allows sending again. */
+  function choiceNotSent(id: string) {
+    setState((current) =>
+      current?.choice?.id === id
+        ? {
+            ...current,
+            choice: {
+              ...current.choice,
+              prompt: { ...current.choice.prompt, delivery: "failed" },
+            },
+          }
+        : current,
+    );
   }
   function showApp() {
     void invoke("voice_overlay_show_owner").catch(() => undefined);
@@ -219,22 +246,28 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
   const speakerButton = (
     <Button
       iconOnly
-      label={t(speakerMuted ? "Unmute speaker" : "Mute speaker")}
-      selected={speakerMuted}
-      aria-pressed={speakerMuted}
+      label={t("Mute speaker")}
+      pressed={speakerMuted}
       disabled={!state}
+      disabledReason={t("Connecting voice…")}
       onClick={() => send("toggleSpeaker")}
     >
       {speakerMuted ? <VolumeX className="icon-sm" /> : <Volume2 className="icon-sm" />}
     </Button>
   );
-  const statusText = state?.statusText ?? t("Connecting voice...");
+  const statusText = state?.statusText ?? t("Connecting voice…");
   const summary = state ? voiceSummaryLine(state) : statusText;
-  const moveLabel = t("Move voice window. Use arrow keys to reposition.");
+  const moveName = t("Move voice window");
+  const moveHint = t("Use arrow keys to reposition.");
   const canTalk = status === "idle" || status === "sleeping" || status === "ready";
-  const micLabel = t(
-    canTalk ? (status === "idle" ? "Start voice" : "Talk") : muted ? "Resume" : "Pause mic",
-  );
+  const startDisabledReason = state
+    ? t("Select a workspace or session to start voice.")
+    : t("Connecting voice…");
+  const micLabel = canTalk
+    ? status === "idle"
+      ? t("Start voice")
+      : t("Talk")
+    : t("Mute microphone");
   // One close: the floating window returns to the app and voice keeps running,
   // matching the native close. Disconnect stays an explicit body action.
   const backLabel = t("Return voice companion to the app");
@@ -242,7 +275,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
     send("dock");
     showApp();
   }
-  const sizeLabel = t(compact ? "Expand voice companion" : "Compact voice companion");
+  const sizeLabel = t("Compact voice companion");
 
   // Questions and job review open in a panel beside the companion when the screen has room.
   const questions = (
@@ -251,16 +284,11 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
         <VoiceChoiceCard
           choice={state.choice}
           onRetry={() => {
-            void emitTo(owner, VOICE_OVERLAY_CHOICE_EVENT, {
-              id: state.choice!.id,
-              action: "retry",
-            }).catch(() => undefined);
+            emitOwner(VOICE_OVERLAY_CHOICE_EVENT, { id: state.choice!.id, action: "retry" });
           }}
           onReply={(reply) => {
-            void emitTo(owner, VOICE_OVERLAY_CHOICE_EVENT, {
-              id: state.choice!.id,
-              reply,
-            }).catch(() => undefined);
+            const id = state.choice!.id;
+            emitOwner(VOICE_OVERLAY_CHOICE_EVENT, { id, reply }, () => choiceNotSent(id));
           }}
         />
       ) : null}
@@ -269,24 +297,13 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
           key={state.jobReview.id}
           review={state.jobReview}
           onChange={(rows) => {
-            void emitTo(owner, VOICE_OVERLAY_JOB_EVENT, {
-              id: state.jobReview!.id,
-              action: "change",
-              rows,
-            }).catch(() => undefined);
+            emitOwner(VOICE_OVERLAY_JOB_EVENT, { id: state.jobReview!.id, action: "change", rows });
           }}
           onStart={(rows) => {
-            void emitTo(owner, VOICE_OVERLAY_JOB_EVENT, {
-              id: state.jobReview!.id,
-              action: "start",
-              rows,
-            }).catch(() => undefined);
+            emitOwner(VOICE_OVERLAY_JOB_EVENT, { id: state.jobReview!.id, action: "start", rows });
           }}
           onCancel={() => {
-            void emitTo(owner, VOICE_OVERLAY_JOB_EVENT, {
-              id: state.jobReview!.id,
-              action: "cancel",
-            }).catch(() => undefined);
+            emitOwner(VOICE_OVERLAY_JOB_EVENT, { id: state.jobReview!.id, action: "cancel" });
           }}
         />
       ) : null}
@@ -297,7 +314,8 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
     <Button
       iconOnly
       variant="ghost"
-      label={moveLabel}
+      label={moveName}
+      aria-description={moveHint}
       className={styles.handle}
       onPointerDown={(event) => {
         if (event.button !== 0 || event.detail > 1) return;
@@ -305,7 +323,6 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
           .startDragging()
           .catch(() => undefined);
       }}
-      onDoubleClick={() => setCompact(!compact)}
       onKeyDown={onHandleKey}
     >
       <VoiceVisualizer
@@ -327,7 +344,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
         leading="inherit"
         {...surfaceAttributes(
           {
-            variant: state?.error ? "danger" : "card",
+            variant: state?.error ? "danger" : "floating",
             frame: state?.error ? "danger" : "pane",
             radius: compact ? "pill" : "panel",
           },
@@ -348,24 +365,17 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
         <header
           className={styles.header}
           tabIndex={compact ? undefined : 0}
-          aria-label={compact ? undefined : moveLabel}
+          aria-label={compact ? undefined : moveName}
+          aria-description={compact ? undefined : moveHint}
           onKeyDown={(event) => {
             if (!compact && event.target === event.currentTarget) onHandleKey(event);
           }}
           onPointerDown={(event) => {
-            if (
-              compact ||
-              event.button !== 0 ||
-              event.detail > 1 ||
-              (event.target as Element).closest("button")
-            )
+            if (compact || event.button !== 0 || (event.target as Element).closest("button"))
               return;
             void getCurrentWebviewWindow()
               .startDragging()
               .catch(() => undefined);
-          }}
-          onDoubleClick={(event) => {
-            if (!compact && !(event.target as Element).closest("button")) setCompact(true);
           }}
         >
           {compact && handle}
@@ -396,23 +406,6 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
               </OverflowTooltip>
             )}
           </Text>
-          {compact && status === "live" && (
-            <VoiceTurnControl
-              compact
-              menuSurface="native"
-              onMenuError={menuFailed}
-              manual={state?.manualTurnEnd === true}
-              muted={muted}
-              onManualChange={changeTurnMode}
-              onFinish={() => send("finishTurn")}
-            />
-          )}
-          {compact && status !== "idle" && (
-            <Button iconOnly label={t("Disconnect voice")} onClick={() => send("disconnect")}>
-              <Square className="icon-sm" />
-            </Button>
-          )}
-          {compact && speakerButton}
           {compact && (
             <Button
               iconOnly
@@ -421,8 +414,9 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
               label={micLabel}
               loading={status === "connecting" || status === "reconnecting"}
               disabled={!state || (canTalk ? !state.canStart : status !== "live")}
+              disabledReason={canTalk && !state?.canStart ? startDisabledReason : undefined}
               selected={status === "live" && muted}
-              aria-pressed={canTalk ? undefined : muted}
+              pressed={canTalk ? undefined : muted}
               onClick={() => send(canTalk ? "start" : "toggleMute")}
             >
               {muted || status === "ready" || status === "sleeping" ? (
@@ -436,23 +430,47 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
             <VoiceToolActivityPanel
               entries={state?.activity ?? []}
               onStopWaiting={(id) => {
-                void emitTo(owner, VOICE_OVERLAY_ACTIVITY_EVENT, id).catch(() =>
-                  setMenuError(t("Voice window could not connect. Return to the app and retry.")),
-                );
+                emitOwner(VOICE_OVERLAY_ACTIVITY_EVENT, id);
               }}
             />
           )}
-          <Button
-            iconOnly
-            label={sizeLabel}
-            aria-expanded={!compact}
-            onClick={() => setCompact(!compact)}
-          >
-            {compact ? <Maximize2 className="icon-sm" /> : <Minimize2 className="icon-sm" />}
-          </Button>
-          <Button iconOnly label={backLabel} onClick={returnToApp}>
-            <X className="icon-sm" />
-          </Button>
+          {compact && status !== "idle" && speakerButton}
+          {compact && status !== "idle" && (
+            <Button
+              iconOnly
+              tone="danger"
+              label={t("Disconnect voice")}
+              onClick={() => send("disconnect")}
+            >
+              <PhoneOff className="icon-sm" />
+            </Button>
+          )}
+          {compact ? (
+            <VoiceOverlayMoreMenu
+              live={status === "live"}
+              manual={state?.manualTurnEnd === true}
+              muted={muted}
+              disabled={!state}
+              onFinish={() => send("finishTurn")}
+              onExpand={() => setCompact(false)}
+              onReturn={returnToApp}
+              onError={menuFailed}
+            />
+          ) : (
+            <>
+              <Button
+                iconOnly
+                label={sizeLabel}
+                aria-expanded={!compact}
+                onClick={() => setCompact(!compact)}
+              >
+                <Minimize2 className="icon-sm" />
+              </Button>
+              <Button iconOnly label={backLabel} onClick={returnToApp}>
+                <AppWindow className="icon-sm" />
+              </Button>
+            </>
+          )}
         </header>
         <LiveText
           {...surfaceAttributes({ frame: "none" }, "sr-only")}
@@ -482,13 +500,13 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                   )}
                 </div>
               </div>
-              {menuError && (
+              {menuNotice && (
                 <InlineError
                   className={styles.feedback}
                   text={{ size: "caption", tone: "secondary", leading: "inherit" }}
-                  action={{ label: t("Dismiss"), onClick: () => setMenuError("") }}
+                  action={{ label: t("Dismiss"), onClick: () => setMenuNotice("") }}
                 >
-                  {menuError}
+                  {menuNotice}
                 </InlineError>
               )}
               {side === "inline" ? questions : null}
@@ -520,9 +538,13 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                   </InlineError>
                   {!isActionableVoiceError(state.error) && (
                     <div className={styles.feedback}>
-                      <Text as="p" size="inherit" tone="secondary" leading="normal">
-                        {state.error}
-                      </Text>
+                      {isMicrophoneBlocked(state.error) ? (
+                        <Text as="p" size="inherit" tone="secondary" leading="normal">
+                          {microphoneBlockedMessage()}
+                        </Text>
+                      ) : (
+                        <ErrorDetails title={voiceErrorTitle(state.error)} detail={state.error} />
+                      )}
                     </div>
                   )}
                 </>
@@ -551,10 +573,11 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                   <Button
                     variant="primary"
                     disabled={!state?.canStart}
+                    disabledReason={!state?.canStart ? startDisabledReason : undefined}
                     onClick={() => send("start")}
                     startIcon={<Mic className="icon-sm" />}
                   >
-                    {t(status === "idle" ? "Start voice" : "Talk")}
+                    {status === "idle" ? t("Start voice") : t("Talk")}
                   </Button>
                   {status !== "idle" && (
                     <Button
@@ -562,7 +585,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                       label={t("Disconnect voice")}
                       onClick={() => send("disconnect")}
                     >
-                      <Square className="icon-sm" />
+                      <PhoneOff className="icon-sm" />
                     </Button>
                   )}
                 </>
@@ -578,21 +601,35 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                 <>
                   <Button
                     iconOnly
-                    label={t(muted ? "Resume" : "Pause mic")}
+                    shape="pill"
+                    size="lg"
+                    label={t("Mute microphone")}
                     variant={muted ? "secondary" : "primary"}
                     tone={muted ? "danger" : undefined}
-                    selected={muted}
-                    aria-pressed={muted}
+                    pressed={muted}
                     onClick={() => send("toggleMute")}
                   >
                     {muted ? <MicOff className="icon-sm" /> : <Mic className="icon-sm" />}
                   </Button>
-                  <Button iconOnly label={t("Silence")} onClick={() => send("silence")}>
-                    <Pause className="icon-sm" />
+                  <Button
+                    iconOnly
+                    shape="pill"
+                    size="lg"
+                    label={t("Stop speaking")}
+                    onClick={() => send("silence")}
+                  >
+                    <Hand className="icon-sm" />
                   </Button>
                   {speakerButton}
-                  <Button iconOnly label={t("Disconnect voice")} onClick={() => send("disconnect")}>
-                    <Square className="icon-sm" />
+                  <Button
+                    iconOnly
+                    shape="pill"
+                    size="lg"
+                    tone="danger"
+                    label={t("Disconnect voice")}
+                    onClick={() => send("disconnect")}
+                  >
+                    <PhoneOff className="icon-sm" />
                   </Button>
                 </>
               )}
@@ -606,9 +643,9 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
           size="inherit"
           tone="neutral"
           ref={sideScroller}
-          aria-label={t("Question")}
+          aria-label={state?.choice ? t("Question") : t("Review jobs before starting")}
           {...surfaceAttributes(
-            { frame: "card", edge: "all", radius: "panel", variant: "card" },
+            { frame: "card", edge: "all", radius: "panel", variant: "floating" },
             styles.side,
           )}
         >

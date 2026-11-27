@@ -1,7 +1,9 @@
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { memo } from "react";
 import { useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { BrandMark } from "../../../shared/ui/BrandMark";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import type { ResumePromptKind } from "../model/resumePrompt";
 import type { Block } from "../model/session";
@@ -30,7 +32,7 @@ export const ResumeTurnRow = memo(function ResumeTurnRow({
     <div
       data-prompt-anchor={block.id}
       data-resume-turn
-      className={`${embedded ? "" : "px-4"} pbs-1.5 pbe-3 font-sans`}
+      className={`${embedded ? "" : "px-4"} pbs-1 pbe-2 font-sans`}
     >
       <Disclosure
         variant="step"
@@ -38,7 +40,7 @@ export const ResumeTurnRow = memo(function ResumeTurnRow({
         tone="secondary"
         summary={
           <>
-            <img src={PRODUCT_IDENTITY.smallLogoSrc} alt="" className="icon-sm shrink-0" />
+            <BrandMark variant="smallMark" className="icon-sm shrink-0" />
             {summary}
           </>
         }
@@ -48,7 +50,10 @@ export const ResumeTurnRow = memo(function ResumeTurnRow({
           as="p"
           size="caption"
           tone="secondary"
-          className="mt-1 ps-[calc(1.5rem+0.25rem)] whitespace-pre-wrap break-words"
+          {...surfaceAttributes(
+            { frame: "pane", edge: "left" },
+            "ms-1.5 mt-1 ps-4 whitespace-pre-wrap break-words",
+          )}
         >
           {block.text}
         </Text>

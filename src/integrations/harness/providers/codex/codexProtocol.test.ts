@@ -191,6 +191,15 @@ describe("buildThreadStartParams / buildTurnStartParams", () => {
     expect(thread.serviceTier).toBeUndefined();
   });
 
+  it("sets Ultrafast and explicitly clears the thread tier when switching to Standard", () => {
+    const turn = { threadId: "thr_1", runtimeMode: "supervised" as const };
+    expect(buildTurnStartParams({ ...turn, serviceTier: "ultrafast" }).serviceTier).toBe(
+      "ultrafast",
+    );
+    expect(buildTurnStartParams({ ...turn, serviceTier: "default" }).serviceTier).toBeNull();
+    expect(buildTurnStartParams(turn)).not.toHaveProperty("serviceTier");
+  });
+
   it("builds turn input with text and image attachments", () => {
     const turn = buildTurnStartParams({
       threadId: "thr_1",
@@ -356,7 +365,9 @@ describe("mapCodexNotification", () => {
       savedPath: "/tmp/image_1.png",
     };
 
-    expect(mapCodexNotification("item/started", { item }).events).toEqual([]);
+    expect(mapCodexNotification("item/started", { item }).events).toEqual([
+      { type: "image.generationStarted", itemId: "image_1" },
+    ]);
     expect(mapCodexNotification("item/completed", { item }).events).toEqual([
       {
         type: "image.generated",
@@ -368,16 +379,38 @@ describe("mapCodexNotification", () => {
     ]);
   });
 
-  it("does not map an empty image generation result", () => {
+  it.each([
+    [{ aspectRatio: "4:5", size: "1536x1024" }, 0.8],
+    [{ size: "1536x1024" }, 1.5],
+    [{ aspectRatio: "1:0", size: "auto" }, undefined],
+  ])("takes the requested image aspect from %j", (dimensions, aspectRatio) => {
+    expect(
+      mapCodexNotification("item/started", {
+        item: { id: "image_2", type: "imageGeneration", ...dimensions },
+      }).events,
+    ).toEqual([
+      {
+        type: "image.generationStarted",
+        itemId: "image_2",
+        ...(aspectRatio === undefined ? {} : { aspectRatio }),
+      },
+    ]);
+  });
+
+  it.each([
+    [{ result: "" }, "failed"],
+    [{ result: "error", status: "failed" }, "failed"],
+    [{ status: "cancelled" }, "stopped"],
+  ])("settles an unsuccessful image item %j", (result, status) => {
     expect(
       mapCodexNotification("item/completed", {
         item: {
           id: "image_2",
           type: "imageGeneration",
-          result: "",
+          ...result,
         },
       }).events,
-    ).toEqual([]);
+    ).toEqual([{ type: "image.generationEnded", itemId: "image_2", status }]);
   });
 
   it("maps reasoning summary deltas", () => {
@@ -1195,6 +1228,35 @@ describe("parseCodexModelList", () => {
     expect(luna?.settings?.some((s) => s.id === "reasoningEffort")).toBe(true);
     expect(luna?.settings?.some((s) => s.id === "serviceTier")).toBe(true);
     expect(luna?.settings?.find((s) => s.id === "reasoningEffort")?.value).toBe("medium");
+  });
+
+  it("offers every service tier the catalog lists with sentence-case labels", () => {
+    const [sol] = parseCodexModelList([
+      {
+        model: "gpt-6.2-sol",
+        displayName: "gpt-6.2-sol",
+        supportedReasoningEfforts: [],
+        serviceTiers: [{ id: "priority", name: "Fast" }, { id: "ultrafast" }],
+      },
+    ]);
+    const tier = sol?.settings?.find((s) => s.id === "serviceTier");
+    expect(tier?.label).toBe("Service tier");
+    expect(tier?.options).toEqual([
+      { value: "default", label: "Standard" },
+      { value: "priority", label: "Fast" },
+      { value: "ultrafast", label: "Ultrafast" },
+    ]);
+    const [flex] = parseCodexModelList([
+      {
+        model: "m",
+        displayName: "m",
+        supportedReasoningEfforts: [],
+        additionalSpeedTiers: ["flex", "fast"],
+      },
+    ]);
+    expect(
+      flex?.settings?.find((s) => s.id === "serviceTier")?.options.map((o) => o.label),
+    ).toEqual(["Standard", "Flex", "Fast"]);
   });
 });
 

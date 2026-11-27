@@ -10,6 +10,9 @@ pub struct Board {
     id: u64,
     name: String,
     kind: String,
+    /// Owning project, so desktop settings can scope one cached catalog without refetching.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    project_id: Option<String>,
 }
 
 #[derive(Serialize, Debug)]
@@ -57,6 +60,8 @@ pub struct Transition {
     id: String,
     name: String,
     status_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status_name: Option<String>,
     requires_fields: bool,
 }
 
@@ -68,17 +73,35 @@ fn positive(id: u64) -> Result<(), String> {
     }
 }
 
-// Boards/sprints use offset pagination; issue search uses cursor pagination.
-fn fetch_values(mut fetch: impl FnMut(u64) -> Result<Value, String>) -> Result<Vec<Value>, String> {
+/// Overall time one board/sprint listing command may spend across all pages and retries.
+const LIST_BUDGET: Duration = Duration::from_secs(45);
+/// Most boards or sprints one command collects; beyond it the read fails instead of truncating.
+const LIST_VALUE_LIMIT: usize = 5000;
+
+// Boards/sprints use offset pagination; issue search uses cursor pagination. The read stops
+// with an error (never a silently short list) at the deadline or past `limit` values.
+fn fetch_values(
+    deadline: Instant,
+    limit: usize,
+    mut fetch: impl FnMut(u64) -> Result<Value, String>,
+) -> Result<Vec<Value>, String> {
     let mut start = 0;
     let mut values = Vec::new();
     for _ in 0..1000 {
+        if expired(deadline) {
+            return Err(READ_TIMEOUT_MESSAGE.into());
+        }
         let data = fetch(start)?;
         let page = data["values"]
             .as_array()
             .ok_or("Jira did not return board values")?;
         let next = data["startAt"].as_u64().unwrap_or(start) + page.len() as u64;
         values.extend(page.iter().cloned());
+        if values.len() > limit {
+            return Err(format!(
+                "This Jira site has more than {LIST_VALUE_LIMIT} boards or sprints. Narrow the selected projects."
+            ));
+        }
         if data["isLast"].as_bool() == Some(true)
             || data["total"].as_u64().is_some_and(|total| next >= total)
         {
@@ -93,8 +116,10 @@ fn fetch_values(mut fetch: impl FnMut(u64) -> Result<Value, String>) -> Result<V
 }
 
 fn fetch_sprints(config: &JiraConfig, board_id: u64) -> Result<Vec<Sprint>, String> {
-    let values = fetch_values(|start| {
-        jira_get(config, &format!("/rest/agile/1.0/board/{board_id}/sprint?state=active,future&maxResults=50&startAt={start}"))
+    let agent = jira_agent();
+    let deadline = Instant::now() + LIST_BUDGET;
+    let values = fetch_values(deadline, LIST_VALUE_LIMIT, |start| {
+        jira_get_with(&agent, config, &format!("/rest/agile/1.0/board/{board_id}/sprint?state=active,future&maxResults=50&startAt={start}"), Some(deadline))
     })?;
     Ok(values
         .iter()
@@ -152,15 +177,26 @@ pub async fn jira_list_boards(
                 .collect::<Result<Vec<_>, _>>()?,
             None => vec![None],
         };
+        // One agent and one deadline for the whole command: every project's pages reuse the
+        // connection pool and draw from the same budget and value cap.
+        let agent = jira_agent();
+        let deadline = Instant::now() + LIST_BUDGET;
         let mut values = Vec::new();
+        let mut visited = HashSet::new();
         for project in scopes {
-            values.extend(fetch_values(|start| {
+            if !visited.insert(project) {
+                continue;
+            }
+            let remaining = LIST_VALUE_LIMIT.saturating_sub(values.len());
+            values.extend(fetch_values(deadline, remaining, |start| {
                 let project = project
                     .map(|id| format!("&projectKeyOrId={id}"))
                     .unwrap_or_default();
-                jira_get(
+                jira_get_with(
+                    &agent,
                     &config,
                     &format!("/rest/agile/1.0/board?maxResults=50&startAt={start}{project}"),
+                    Some(deadline),
                 )
             })?);
         }
@@ -177,6 +213,7 @@ pub async fn jira_list_boards(
                     id,
                     name: string_field(b, "name")?,
                     kind,
+                    project_id: b["location"]["projectId"].as_u64().map(|id| id.to_string()),
                 })
             })
             .collect())
@@ -272,6 +309,61 @@ fn parse_page(data: &Value, site: &str) -> Result<IssuePage, String> {
     })
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardIssueFilters {
+    assigned_to_me: bool,
+    open: bool,
+    closed: bool,
+    #[serde(flatten)]
+    issue: super::filters::JiraIssueFilters,
+}
+
+fn board_issue_query(
+    path: String,
+    project_ids: Option<&[String]>,
+    filters: Option<&BoardIssueFilters>,
+) -> Result<String, String> {
+    let mut clauses = Vec::new();
+    if let Some(ids) = project_ids {
+        let ids = ids
+            .iter()
+            .map(|id| {
+                id.parse::<u64>()
+                    .ok()
+                    .filter(|id| *id > 0)
+                    .map(|id| id.to_string())
+                    .ok_or("Invalid Jira project identifier")
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        clauses.push(format!("project in ({})", ids.join(",")));
+    }
+    if let Some(filters) = filters {
+        clauses.extend(
+            filters
+                .issue
+                .assignment_and_workflow(filters.assigned_to_me)?,
+        );
+        match (filters.open, filters.closed) {
+            (true, false) => clauses.push("statusCategory != Done".into()),
+            (false, true) => clauses.push("statusCategory = Done".into()),
+            _ => {}
+        }
+    }
+    if clauses.is_empty() {
+        return Ok(path);
+    }
+    let mut url =
+        url::Url::parse(&format!("https://jira.invalid{path}")).map_err(|e| e.to_string())?;
+    url.query_pairs_mut()
+        .append_pair("jql", &clauses.join(" AND "));
+    Ok(format!(
+        "{}?{}",
+        url.path(),
+        url.query().unwrap_or_default()
+    ))
+}
+
 #[tauri::command]
 pub async fn jira_board_issues(
     app: AppHandle,
@@ -280,6 +372,7 @@ pub async fn jira_board_issues(
     sprint_id: Option<u64>,
     next_page_token: Option<String>,
     project_ids: Option<Vec<String>>,
+    filters: Option<BoardIssueFilters>,
 ) -> Result<IssuePage, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let config = require_config(&app)?;
@@ -289,24 +382,11 @@ pub async fn jira_board_issues(
                 next_page_token: None,
             });
         }
-        let mut path = issue_path(board_id, &scope, sprint_id, next_page_token.as_deref())?;
-        if let Some(ids) = project_ids {
-            let ids = ids
-                .iter()
-                .map(|id| {
-                    id.parse::<u64>()
-                        .ok()
-                        .filter(|id| *id > 0)
-                        .ok_or_else(|| "Invalid Jira project identifier".to_string())
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let mut url = url::Url::parse(&format!("https://jira.invalid{path}"))
-                .map_err(|e| e.to_string())?;
-            let ids = ids.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
-            url.query_pairs_mut()
-                .append_pair("jql", &format!("project in ({ids})"));
-            path = format!("{}?{}", url.path(), url.query().unwrap_or_default());
-        }
+        let path = board_issue_query(
+            issue_path(board_id, &scope, sprint_id, next_page_token.as_deref())?,
+            project_ids.as_deref(),
+            filters.as_ref(),
+        )?;
         parse_page(&jira_get(&config, &path)?, &config.site)
     })
     .await
@@ -324,6 +404,10 @@ fn parse_transitions(data: &Value) -> Result<Vec<Transition>, String> {
                 id: string_field(v, "id")?,
                 name: string_field(v, "name")?,
                 status_id: v.pointer("/to/id")?.as_str()?.to_string(),
+                status_name: v
+                    .pointer("/to/name")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
                 requires_fields: v["fields"].as_object().is_some_and(|fields| {
                     fields.values().any(|f| {
                         f["required"].as_bool() == Some(true)
@@ -522,14 +606,19 @@ mod tests {
     }
     #[test]
     fn refuses_incomplete_pagination() {
-        assert!(fetch_values(|_| Ok(json!({"values":[],"isLast":false}))).is_err());
+        assert!(
+            fetch_values(Instant::now() + Duration::from_secs(60), 10, |_| Ok(
+                json!({"values":[],"isLast":false})
+            ))
+            .is_err()
+        );
         assert!(parse_page(
             &json!({"issues":[],"isLast":false}),
             "https://team.atlassian.net"
         )
         .is_err());
         let mut starts = vec![];
-        let v = fetch_values(|start| {
+        let v = fetch_values(Instant::now() + Duration::from_secs(60), 10, |start| {
             starts.push(start);
             Ok(if start == 0 {
                 json!({"values":[1],"isLast":false})
@@ -542,6 +631,50 @@ mod tests {
         assert_eq!(v, vec![json!(1), json!(2)]);
     }
     #[test]
+    fn stops_at_the_deadline_without_returning_a_short_list() {
+        let mut calls = 0;
+        let expired_at = Instant::now() - Duration::from_secs(1);
+        let result = fetch_values(expired_at, 10, |_| {
+            calls += 1;
+            Ok(json!({"values":[1],"isLast":true}))
+        });
+        assert_eq!(result.unwrap_err(), READ_TIMEOUT_MESSAGE);
+        assert_eq!(calls, 0);
+        // A deadline that passes between pages fails the whole read, not just the tail.
+        let deadline = Instant::now() + Duration::from_millis(50);
+        let result = fetch_values(deadline, 10, |start| {
+            std::thread::sleep(Duration::from_millis(80));
+            Ok(json!({"values":[start],"isLast":false}))
+        });
+        assert_eq!(result.unwrap_err(), READ_TIMEOUT_MESSAGE);
+    }
+    #[test]
+    fn fails_instead_of_truncating_past_the_value_limit() {
+        let mut pages = 0;
+        let result = fetch_values(Instant::now() + Duration::from_secs(60), 3, |_| {
+            pages += 1;
+            Ok(json!({"values":[1,2],"isLast":false}))
+        });
+        assert!(result.unwrap_err().contains("more than"));
+        assert_eq!(pages, 2);
+    }
+    #[test]
+    fn retries_and_timeouts_respect_the_overall_deadline() {
+        let soon = Some(Instant::now() + Duration::from_millis(300));
+        assert!(!retry_fits(soon, Duration::from_millis(400)));
+        assert!(retry_fits(
+            Some(Instant::now() + Duration::from_secs(30)),
+            Duration::from_millis(1200)
+        ));
+        assert!(retry_fits(None, Duration::from_millis(1200)));
+        assert!(attempt_timeout(soon) <= Duration::from_millis(300));
+        assert_eq!(attempt_timeout(None), HTTP_TIMEOUT);
+        assert_eq!(
+            attempt_timeout(Some(Instant::now() - Duration::from_secs(1))),
+            Duration::from_millis(1)
+        );
+    }
+    #[test]
     fn scopes_and_encodes_issue_pages() {
         let p = issue_path(7, "sprint", Some(12), Some("a&b")).unwrap();
         assert!(p.starts_with("/rest/software/1.0/board/7/sprint/12/issue?"));
@@ -551,8 +684,39 @@ mod tests {
         assert!(issue_path(7, "shell", None, None).is_err());
     }
     #[test]
+    fn filters_board_backlog_and_sprint_pages_without_changing_rank_order() {
+        let filters: BoardIssueFilters = serde_json::from_value(json!({
+            "assignedToMe": true,
+            "assigneeIds": ["account-1"],
+            "unassigned": true,
+            "statuses": ["Ready for test"],
+            "open": false,
+            "closed": true
+        }))
+        .unwrap();
+        for (scope, sprint_id) in [("board", None), ("backlog", None), ("sprint", Some(12))] {
+            let path = board_issue_query(
+                issue_path(7, scope, sprint_id, Some("a&b")).unwrap(),
+                Some(&["10000".into()]),
+                Some(&filters),
+            )
+            .unwrap();
+            let url = url::Url::parse(&format!("https://jira.invalid{path}")).unwrap();
+            let pairs: std::collections::HashMap<_, _> = url.query_pairs().collect();
+            assert_eq!(pairs["nextPageToken"], "a&b");
+            assert_eq!(
+                pairs["jql"],
+                "project in (10000) AND (assignee = currentUser() OR assignee is EMPTY OR assignee in (\"account-1\")) AND status in (\"Ready for test\") AND statusCategory = Done"
+            );
+        }
+        let path = issue_path(7, "board", None, None).unwrap();
+        assert!(board_issue_query(path, Some(&["0".into()]), None).is_err());
+    }
+
+    #[test]
     fn rejects_required_fields_and_stale_transitions() {
-        let t = parse_transitions(&json!({"transitions":[{"id":"5","name":"Finish","to":{"id":"9"},"fields":{"resolution":{"required":true,"hasDefaultValue":false}}}]})).unwrap();
+        let t = parse_transitions(&json!({"transitions":[{"id":"5","name":"Finish","to":{"id":"9","name":"Done"},"fields":{"resolution":{"required":true,"hasDefaultValue":false}}}]})).unwrap();
+        assert_eq!(t[0].status_name.as_deref(), Some("Done"));
         assert!(require_transition(&t, "5").is_err());
         assert!(require_transition(&t, "missing").is_err());
     }

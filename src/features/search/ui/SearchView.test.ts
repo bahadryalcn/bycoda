@@ -15,6 +15,7 @@ const index = vi.hoisted(() => ({
   load: vi.fn<(cwd: string) => Promise<ProjectFile[]>>(),
   search: vi.fn(),
   conversationPending: 0,
+  conversationTruncated: false,
 }));
 
 vi.mock("../../../app/shell/TitleBar", () => ({ OverlayNav: () => null }));
@@ -36,7 +37,7 @@ vi.mock("../model/useConversationSearch", () => ({
     result: {
       sessions: [],
       pending: index.conversationPending,
-      truncated: false,
+      truncated: index.conversationTruncated,
     },
     loading: false,
     error: null,
@@ -68,6 +69,7 @@ beforeEach(() => {
   index.load.mockReset().mockImplementation(async (cwd) => index.files.get(cwd) ?? []);
   index.search.mockClear();
   index.conversationPending = 0;
+  index.conversationTruncated = false;
   localStorage.clear();
   resetRetainedState();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -106,6 +108,14 @@ const file = (name: string, cwd = "/repo"): ProjectFile => ({
   name,
   path: `${cwd}/${name}`,
   relative: name,
+});
+
+it("shows a truncated result notice only for a search query", async () => {
+  index.conversationTruncated = true;
+  await render();
+  expect(host.textContent).not.toContain("Results limited to the first matches");
+  await typeQuery("needle");
+  expect(host.textContent).toContain("Results limited to the first matches");
 });
 
 it("keeps archived history titles and loaded messages out of All results", async () => {
@@ -181,7 +191,6 @@ it("names incomplete application indexing instead of claiming a confirmed empty 
   await render();
   await typeQuery("missing");
   expect(host.textContent).toContain("No indexed matches yet");
-  expect(host.textContent).toContain("Application-wide indexing");
   expect(host.textContent).not.toContain("No results");
 });
 
@@ -232,6 +241,15 @@ async function typeQuery(query: string) {
     input.focus();
   });
 }
+/** The failure alert names the failure; the raw error sits behind its Details link. */
+async function openFailureDetails() {
+  await act(async () =>
+    [...host.querySelectorAll<HTMLButtonElement>('[role="alert"] button')]
+      .find((button) => button.textContent === "Details")!
+      .click(),
+  );
+  return document.body.textContent ?? "";
+}
 
 it("searches remote filenames and enables the owning-host content route in Files", async () => {
   const cwd = "remote://environment/repo";
@@ -253,10 +271,13 @@ it("shows remote filename-read failure and retries its listing", async () => {
     .mockResolvedValueOnce([file("needle.ts", cwd)]);
   await render(cwd);
   await typeQuery("needle");
-  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
-    "Owning computer disconnected",
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Search failed");
+  expect(await openFailureDetails()).toContain("Owning computer disconnected");
+  await act(async () =>
+    [...host.querySelectorAll<HTMLButtonElement>('[role="alert"] button')]
+      .find((button) => button.textContent === "Retry")!
+      .click(),
   );
-  await act(async () => host.querySelector<HTMLButtonElement>('[role="alert"] button')!.click());
   expect(host.querySelector('[role="alert"]')).toBeNull();
   expect(host.textContent).toContain("needle.ts");
 });
@@ -403,15 +424,16 @@ it("keeps file index failures scoped to All and Files", async () => {
   index.load.mockRejectedValue(new Error("File index offline"));
   await render();
   await typeQuery("needle");
-  expect(host.textContent).toContain("File index offline");
+  expect(host.textContent).toContain("Search failed");
   for (const scope of ["Projects", "Sessions", "Files", "All"]) {
     await act(async () =>
       [...host.querySelectorAll("button")].find((node) => node.textContent === scope)!.click(),
     );
     if (scope === "Projects" || scope === "Sessions")
-      expect(host.textContent).not.toContain("File index offline");
-    else expect(host.textContent).toContain("File index offline");
+      expect(host.textContent).not.toContain("Search failed");
+    else expect(host.textContent).toContain("Search failed");
   }
+  expect(await openFailureDetails()).toContain("File index offline");
 });
 
 it("opens contextual conversation search then broadens in the same surface without losing text", async () => {

@@ -7,6 +7,7 @@ import { Surface } from "../../../shared/ui/Surface";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useFollowBottom } from "../hooks/useFollowBottom";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useLocale, useT } from "../../../shared/i18n";
 import {
   useCallback,
@@ -20,17 +21,16 @@ import {
 import {
   ArrowDown,
   ArrowLeft,
-  Check,
-  Copy,
   CornerDownRight,
+  Maximize2,
+  Minimize2,
   Square,
 } from "../../../shared/ui/icons";
-import { copyText } from "../../../platform/tauri/clipboard";
-import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { AnsiText } from "../../../shared/ui/AnsiText";
-import { agentRunMarkdown, isReportStep } from "../model/agentRunMarkdown";
 import { blockLifecycle } from "../model/activityDock";
+import { delegatedBriefText } from "../model/delegatedAgents";
 import { commandCopyText, emptyOutputReason, inspectCommand } from "../model/commandInspection";
 import type { AgentStep, Block } from "../model/session";
 import type { DelegationKind } from "../../../shared/model/host-contracts/delegation";
@@ -49,8 +49,19 @@ import { Sheet } from "../../../shared/ui/Sheet";
 import styles from "./SubagentSheet.module.css";
 import { useSubagentModelName } from "../model/reactiveReads";
 import { SubagentMessageForm, type SubagentRelay } from "./SubagentMessageForm";
+import {
+  TimelineInput,
+  groupRounds,
+  hasRoundHistory,
+  isTimelineReport,
+  roundSummary,
+  stepRounds,
+  timelineMarkdown,
+} from "./SubagentSheetTimeline";
 
 export type { SubagentRelay } from "./SubagentMessageForm";
+
+const AGENT_PANEL_RESIZE = { min: 360, max: 1200, defaultSize: 544 };
 
 /**
  * Which delegated run's panel is open in a session pane. The pane that owns the
@@ -63,31 +74,9 @@ export function useSubagentSheet(blocks: Block[], visible: boolean) {
   useLayoutEffect(() => {
     blocksRef.current = blocks;
   }, [blocks]);
-  // Where focus was when the panel opened, so closing puts it back.
-  const returnFocus = useRef<HTMLElement | null>(null);
-
-  const open = useCallback((blockId: string) => {
-    setOpenId((current) => {
-      if (current === null) {
-        returnFocus.current =
-          document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      }
-      return blockId;
-    });
-  }, []);
-
-  const close = () => {
-    setOpenId((current) => {
-      if (current === null) return null;
-      const target = returnFocus.current;
-      returnFocus.current = null;
-      // After the panel has gone, so it cannot reclaim focus first.
-      queueMicrotask(() => {
-        if (target?.isConnected) target.focus({ preventScroll: true });
-      });
-      return null;
-    });
-  };
+  // Focus returns to the opener in the shared `Sheet` when this panel closes.
+  const open = useCallback((blockId: string) => setOpenId(blockId), []);
+  const close = () => setOpenId(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -104,13 +93,6 @@ export function useSubagentSheet(blocks: Block[], visible: boolean) {
   const block = openId ? blocks.find((entry) => entry.id === openId) : undefined;
   // The run vanished (a rewind, a deleted turn): nothing left to show.
   if (openId !== null && !block) setOpenId(null);
-  // The panel is gone without `close`; hand focus back once it has unmounted.
-  useEffect(() => {
-    if (openId !== null) return;
-    const target = returnFocus.current;
-    returnFocus.current = null;
-    if (target?.isConnected) target.focus({ preventScroll: true });
-  }, [openId]);
 
   return { block, open, close };
 }
@@ -142,10 +124,12 @@ export function SubagentSheet({
   onOpenFile,
   onOpenDiff,
   relay,
+  composer,
   requests,
   agentRole,
   nested,
   back,
+  needsInput,
 }: {
   block: Block;
   busy: boolean;
@@ -161,12 +145,15 @@ export function SubagentSheet({
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (path: string) => void;
   relay?: SubagentRelay;
+  composer?: ReactNode;
   requests?: ReactNode;
   agentRole?: DelegationKind;
   /** The subagents this run started itself, above its trail. */
   nested?: ReactNode;
   /** This run was started by another subagent: return to that one's sheet. */
   back?: { name: string; open: () => void };
+  /** The child waits on the user while running, as the dock shows it. */
+  needsInput?: boolean;
 }) {
   const t = useT();
   const command = !isSubagentBlock(block);
@@ -178,6 +165,7 @@ export function SubagentSheet({
   // Showing in the transcript can fail (the block is not rendered there); the
   // sheet stays open with the reason instead of silently losing its context.
   const [showFailedFor, setShowFailedFor] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const showFailed = showFailedFor === block.id;
   const steps = run?.steps ?? [];
   const stops = useStopRequests();
@@ -190,6 +178,9 @@ export function SubagentSheet({
       modal={false}
       anchor="container"
       side="end"
+      surface={command ? "floating" : "chat"}
+      resizable={command ? undefined : AGENT_PANEL_RESIZE}
+      expanded={!command && expanded}
       open={visible}
       title={
         command
@@ -198,7 +189,7 @@ export function SubagentSheet({
             ? `${t("Advisor")}: ${name}`
             : t("Subagent: {p0}", { p0: name })
       }
-      closeLabel={t(command ? "Close command panel" : "Close agent panel")}
+      closeLabel={command ? t("Close command panel") : t("Close agent panel")}
       escapeScope="[data-session-drop]"
       scroll="none"
       bodyClassName={`${styles.layout} font-sans`}
@@ -206,6 +197,21 @@ export function SubagentSheet({
       onClose={onClose}
       headerActions={
         <>
+          {!command ? (
+            <Button
+              iconOnly
+              size="sm"
+              variant="ghost"
+              label={expanded ? t("Restore") : t("Expand")}
+              onClick={() => setExpanded((value) => !value)}
+            >
+              {expanded ? (
+                <Minimize2 className="icon-sm" aria-hidden />
+              ) : (
+                <Maximize2 className="icon-sm" aria-hidden />
+              )}
+            </Button>
+          ) : null}
           {back ? (
             <Button
               iconOnly
@@ -226,26 +232,21 @@ export function SubagentSheet({
               className="shrink-0"
               variant="ghost"
               type="button"
-              disabled={stopping}
+              loading={stopping}
+              loadingLabel={t("Stopping…")}
+              startIcon={<Square className="icon-sm" aria-hidden />}
               tooltip={
                 stops.failed.has(stopKey)
                   ? t("Could not stop it. Try again.")
-                  : t(
-                      command
-                        ? "Stop this command"
-                        : agentRole === "advisor"
-                          ? "Stop"
-                          : "Stop this subagent",
-                    )
+                  : command
+                    ? t("Stop this command")
+                    : agentRole === "advisor"
+                      ? t("Stop")
+                      : t("Stop this subagent")
               }
               onClick={() => stops.request(stopKey, onStop)}
             >
-              <Square className="icon-sm" aria-hidden />
-              {stopping
-                ? t("Stopping…")
-                : stops.failed.has(stopKey)
-                  ? t("Could not stop. Retry")
-                  : t("Stop")}
+              {stops.failed.has(stopKey) ? t("Could not stop. Retry") : t("Stop")}
             </Button>
           ) : null}
           {onShowInTranscript ? (
@@ -257,9 +258,7 @@ export function SubagentSheet({
               onClick={() => {
                 setShowFailedFor(onShowInTranscript(block.id) === false ? block.id : null);
               }}
-              tooltip={
-                command ? t("Show in transcript") : t("Scroll to this agent in the transcript")
-              }
+              tooltip={command ? undefined : t("Scroll to this agent in the transcript")}
               className="shrink-0"
             >
               <CornerDownRight className="icon-sm" aria-hidden />
@@ -267,7 +266,15 @@ export function SubagentSheet({
           ) : null}
         </>
       }
-      headerBelow={<SubagentStateLine block={block} busy={busy} steps={steps} model={model} />}
+      headerBelow={
+        <SubagentStateLine
+          block={block}
+          busy={busy}
+          steps={steps}
+          model={model}
+          needsInput={needsInput}
+        />
+      }
     >
       {showFailed ? (
         <div className="shrink-0 px-4 pt-2">
@@ -276,7 +283,11 @@ export function SubagentSheet({
           </InlineMessage>
         </div>
       ) : null}
-      {!command ? nested : null}
+      {!command && nested ? (
+        <div data-chat-column className="mx-auto w-full shrink-0">
+          {nested}
+        </div>
+      ) : null}
       {command ? (
         <CommandDetails
           key={block.id}
@@ -296,11 +307,15 @@ export function SubagentSheet({
           onOpenDiff={onOpenDiff}
         />
       )}
-      {!command && requests ? (
-        <ScrollArea gutter="stable" className={styles.requests}>
-          {requests}
-          {relay ? <SubagentMessageForm name={name} relay={relay} /> : null}
-        </ScrollArea>
+      {!command && (requests || composer) ? (
+        <div className={styles.requests}>
+          <ScrollArea gutter="stable" className="min-h-0 flex-1">
+            <div data-chat-column className="mx-auto w-full min-w-0">
+              {requests}
+              {composer ?? (relay ? <SubagentMessageForm name={name} relay={relay} /> : null)}
+            </div>
+          </ScrollArea>
+        </div>
       ) : !command && relay ? (
         <SubagentMessageForm name={name} relay={relay} />
       ) : !command ? (
@@ -503,10 +518,7 @@ function CommandDetails({
           </Text>
         ) : null}
       </section>
-      <section
-        aria-label={t("Output")}
-        className="relative flex min-h-[8rem] flex-1 flex-col gap-1"
-      >
+      <section aria-label={t("Output")} className="relative flex min-h-32 flex-1 flex-col gap-1">
         <SectionLabel>{t("Output")}</SectionLabel>
         <div className="relative flex min-h-0 flex-1 flex-col">
           {/* The one scroll owner of the sheet: error and output read in one quiet
@@ -540,7 +552,7 @@ function CommandDetails({
           </ScrollArea>
           {behind && output ? (
             <Button
-              className="absolute right-3 bottom-3 shadow-(--ui-elevation-floating)"
+              className="absolute right-3 bottom-3"
               variant="secondary"
               type="button"
               onClick={jumpToLatest}
@@ -572,7 +584,9 @@ function CommandDetails({
               >
                 {loadState === "failed"
                   ? t("Retry")
-                  : `${t("Load full output (")}${Math.max(1, Math.ceil(remote.bytes / 1024))}${t(" KB)")}`}
+                  : t("Load full output ({p0} KB)", {
+                      p0: Math.max(1, Math.ceil(remote.bytes / 1024)),
+                    })}
               </Button>
             ) : null}
             {loadState === "loading" ? (
@@ -604,66 +618,61 @@ function CopyTranscriptButton({
   status: string;
 }) {
   const t = useT();
-  // A different run invalidates any copy in flight and any shown outcome; streaming
-  // content of the same run does not, because the text is read when the click happens.
-  const feedback = useCopyFeedback({ resetKeys: [block.id], successMs: 2000 });
   const command = !isSubagentBlock(block);
-  const copy = () => {
+  const label = command ? t("Copy details") : t("Copy transcript");
+  // A different run invalidates any copy in flight and any shown outcome (resetKeys); streaming
+  // content of the same run does not, because the text is read when the click happens.
+  const copyText = useStableCallback(() => {
     const text = command
       ? commandDetailsCopyText(block, busy, status, t)
-      : agentRunMarkdown(block, status);
-    if (!text) return;
-    feedback.copy(() => copyText(text));
-  };
-  const label = feedback.copied
-    ? t("Copied")
-    : feedback.failed
-      ? t("Copy failed. Try again.")
-      : command
-        ? t("Copy details")
-        : t("Copy transcript");
+      : timelineMarkdown(block, status);
+    // Nothing to copy: show the failed state instead of a false "Copied".
+    if (!text) throw new Error("Nothing to copy");
+    return text;
+  });
   return (
-    <Button
+    <CopyButton
+      iconOnly
       className="shrink-0"
-      variant="ghost"
       type="button"
-      loading={feedback.pending}
-      onClick={copy}
+      label={label}
       tooltip={command ? label : t("{p0} (Markdown)", { p0: label })}
-      aria-label={label}
-    >
-      {feedback.copied ? (
-        <Check className="icon-md" strokeWidth={1.75} />
-      ) : (
-        <Copy className="icon-md" strokeWidth={1.75} />
-      )}
-    </Button>
+      resetKeys={[block.id]}
+      text={copyText}
+    />
   );
 }
 
 /** What the subagent was asked, clamped until the reader opens it. */
 function PromptCard({ prompt }: { prompt: string }) {
   const t = useT();
+  const assignment = delegatedBriefText(prompt);
   return (
-    <Surface
-      as="section"
-      variant="card"
-      padding="none"
-      aria-label={t("Prompt")}
-      className="mb-2 px-3 py-2"
-    >
+    <Surface as="section" variant="card" padding="sm" aria-label={t("Prompt")} className="mb-2">
       <Text as="div" size="secondary" tone="inherit" leading="normal">
         <SectionLabel>{t("Prompt")}</SectionLabel>
-        <ClampText lines={6} moreLabel={t("Show full prompt")}>
+        <ClampText lines={6} moreLabel={assignment ? t("Show more") : t("Show full prompt")}>
           <Text
             as="p"
             size="inherit"
             tone="secondary"
             className="min-w-0 whitespace-pre-wrap break-words"
           >
-            {prompt}
+            {assignment ?? prompt}
           </Text>
         </ClampText>
+        {assignment ? (
+          <Disclosure variant="row" summary={t("Show full prompt")}>
+            <Text
+              as="p"
+              size="secondary"
+              tone="secondary"
+              className="min-w-0 whitespace-pre-wrap break-words"
+            >
+              {prompt}
+            </Text>
+          </Disclosure>
+        ) : null}
       </Text>
     </Surface>
   );
@@ -718,9 +727,10 @@ const SheetStep = memo(function SheetStep({
       </Disclosure>
     );
   }
+  if (step.input) return <TimelineInput step={step} input={step.input} />;
   if (step.kind === "message") {
     return (
-      <div className="min-w-0 py-1">
+      <div data-timeline-message={step.id} className="min-w-0 py-1">
         <AgentMarkdown text={step.text} cwd={cwd} onOpenFile={onOpenFile} />
       </div>
     );
@@ -766,9 +776,28 @@ function SubagentTrail({
   const activeSubagents = subagents.filter(
     (step) => blockLifecycle(blockForStep(step), running) === "running",
   ).length;
-  const trail = steps.filter((step) => !step.agentRun && (!report || !isReportStep(step, report)));
-  const visible = trail.length > shown ? trail.slice(trail.length - shown) : trail;
-  const hidden = trail.length - visible.length;
+  // The closing report is the latest round's; an earlier round that ended on the same
+  // words keeps its own row.
+  const transcriptSteps = steps.filter((step) => !step.input || step.round !== undefined);
+  const unlinkedInputs = steps.flatMap((step) =>
+    step.input && step.round === undefined ? [{ step, input: step.input }] : [],
+  );
+  const stepRound = stepRounds(transcriptSteps);
+  const latestRound = stepRound[stepRound.length - 1];
+  const trail = transcriptSteps.filter(
+    (step, index) =>
+      !step.agentRun &&
+      (!report || stepRound[index] !== latestRound || !isTimelineReport(step, report)),
+  );
+  // Rounds of a delegated conversation: earlier ones open on demand, the latest in
+  // full. A run of one round keeps the plain trail. Open state lives here, so live
+  // updates (new ids, new steps) never close what the reader opened.
+  const [openRounds, setOpenRounds] = useState<readonly number[]>([]);
+  const rounds = hasRoundHistory(trail) ? groupRounds(trail) : undefined;
+  const earlier = rounds ? rounds.slice(0, -1) : [];
+  const current = rounds ? rounds[rounds.length - 1].steps : trail;
+  const visible = current.length > shown ? current.slice(current.length - shown) : current;
+  const hidden = current.length - visible.length;
 
   const following = useFollowBottom(scroller, true, steps, 32, false, report);
 
@@ -779,7 +808,7 @@ function SubagentTrail({
       data-subagent-trail
       className="min-h-0 flex-1 overflow-y-auto overscroll-none"
     >
-      <div className="flex min-w-0 flex-col gap-1 px-4 py-3">
+      <div data-chat-column className="mx-auto flex w-full min-w-0 flex-col gap-1 px-4 py-3">
         {prompt ? <PromptCard prompt={prompt} /> : null}
         {subagents.length > 0 ? (
           <section aria-label={t("Subagents")}>
@@ -801,10 +830,53 @@ function SubagentTrail({
             ))}
           </section>
         ) : null}
-        {visible.length === 0 && !report && subagents.length === 0 ? (
+        {visible.length === 0 && !report && subagents.length === 0 && !unlinkedInputs.length ? (
           <Text as="p" size="caption" tone="secondary" className="pt-1">
             {running ? t("Waiting for the first step.") : t("This agent did not report any steps.")}
           </Text>
+        ) : null}
+        {earlier.map((group) => (
+          <Disclosure
+            key={group.round}
+            data-timeline-round={group.round}
+            variant="row"
+            open={openRounds.includes(group.round)}
+            onOpenChange={(open) =>
+              setOpenRounds((rounds) =>
+                open
+                  ? rounds.includes(group.round)
+                    ? rounds
+                    : [...rounds, group.round]
+                  : rounds.filter((entry) => entry !== group.round),
+              )
+            }
+            summary={
+              <span className="flex min-w-0 flex-col">
+                <Text weight="medium">{t("Round {p0}", { p0: group.round })}</Text>
+                <Text size="caption" tone="secondary" truncate>
+                  {roundSummary(group.steps)}
+                </Text>
+              </span>
+            }
+          >
+            {openRounds.includes(group.round)
+              ? group.steps.map((step) => (
+                  <SheetStep
+                    key={step.id}
+                    step={step}
+                    live={false}
+                    cwd={cwd}
+                    onOpenFile={onOpenFile}
+                    onOpenDiff={onOpenDiff}
+                  />
+                ))
+              : null}
+          </Disclosure>
+        ))}
+        {rounds ? (
+          <div data-timeline-round={rounds[rounds.length - 1].round}>
+            <SectionLabel>{t("Round {p0}", { p0: rounds[rounds.length - 1].round })}</SectionLabel>
+          </div>
         ) : null}
         {hidden > 0 ? (
           <Button
@@ -816,8 +888,7 @@ function SubagentTrail({
             }}
             className="self-start"
           >
-            {t("Show earlier steps (")}
-            {hidden})
+            {t("Show earlier steps ({p0})", { p0: hidden })}
           </Button>
         ) : null}
         {visible.map((step) => (
@@ -831,6 +902,9 @@ function SubagentTrail({
           />
         ))}
         <SubagentReport block={block} cwd={cwd} onOpenFile={onOpenFile} className="mt-3" />
+        {unlinkedInputs.map(({ step, input }) => (
+          <TimelineInput key={step.id} step={step} input={input} />
+        ))}
       </div>
     </ScrollArea>
   );

@@ -1,230 +1,197 @@
-import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Divider } from "../../../shared/ui/Divider";
 import { Text } from "../../../shared/ui/Text";
-import { Timestamp } from "../../../shared/ui/Timestamp";
-import { useState } from "react";
-import { Disclosure } from "../../../shared/ui/Disclosure";
+import { Tooltip } from "../../../shared/ui/Tooltip";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { useT } from "../../../shared/i18n";
-import { ArrowLeftRight } from "../../../shared/ui/icons";
+import { ArrowLeftRight, Clock } from "../../../shared/ui/icons";
+import { supportsProviderAccounts } from "../../providers/public/providerAccounts";
+import { useProviderAccounts } from "../../providers/public/useProviderAccounts";
+import { modelAccountIdentities } from "../model/accountModelChoices";
 import { HARNESS_TITLE } from "../model/session";
-import type {
-  ModelSwitchMeta,
-  ModelSwitchState,
-  ModelSwitchStep,
+import {
+  sameSwitchState,
+  type ModelSwitchMeta,
+  type ModelSwitchState,
+  type ModelSwitchStep,
 } from "../model/modelSwitchHistory";
 import { HarnessIcon } from "./HarnessIcon";
+import { ModelAccountNumber } from "./ModelAccountIdentity";
+import { ModelTriggerBadges } from "./ModelTriggerBadges";
 
 type Props = { meta: ModelSwitchMeta; embedded?: boolean };
 
+/** Earlier hops shown before the arrow; older ones fold into a count. */
+const MAX_EARLIER = 3;
+
 /**
  * Provider, account and model switches with no message between them, as one
- * row: the state before the latest switch, the state now, and how many
- * switches the row holds. More than one switch opens a timed history.
+ * divider row: the earlier states, an arrow, and the state now. The row reads
+ * as one sentence to assistive tech.
  */
 export function ModelSwitchRow({ meta, embedded = false }: Props) {
   const t = useT();
-  const [open, setOpen] = useState(false);
   const steps = meta.steps;
   const to = steps[steps.length - 1];
-  const from = steps[steps.length - 2];
-  if (!to || !from) return null;
-  const switches = steps.length - 1;
-  const title = t("Switched from {p0} to {p1}", { p0: describe(from), p1: describe(to) });
-  const line = (
-    <>
-      <ArrowLeftRight className="icon-sm shrink-0" tone="muted" aria-hidden="true" />
-      <SwitchState state={from} previous />
-      <Text aria-hidden="true" size="inherit" tone="muted" className="shrink-0">
-        →
-      </Text>
-      <SwitchState state={to} />
-      <StepNote step={to} />
-      {switches > 1 ? (
-        <Text
-          as="span"
-          size="caption"
-          tone="muted"
-          {...surfaceAttributes(
-            { radius: "pill", frame: "pane", edge: "all" },
-            "shrink-0   border-(--ui-pane-border) px-1.5",
-          )}
-        >
-          {switches}
-        </Text>
-      ) : null}
-    </>
-  );
+  if (!to || steps.length < 2) return null;
+  const earlier = earlierStates(steps);
+  const previous = earlier[earlier.length - 1];
+  const shown = earlier.slice(-MAX_EARLIER);
+  const folded = earlier.length - shown.length;
+  const effort = changedEffort(previous, to);
+  const note = stepNoteLabel(to, t);
+  const title = t("Switched from {p0} to {p1}", {
+    p0: earlier.map((state) => describe(state)).join(", "),
+    p1: describe(to, effort ? t("Effort: {p0}", { p0: effort }) : undefined),
+  });
 
   return (
     <div
-      className={`@container/switch min-w-0 py-1 font-sans ${embedded ? "" : "px-4"}`}
+      className={`@container/switch min-w-0 py-3 font-sans ${embedded ? "" : "px-4"}`}
       data-model-switch
     >
-      {switches > 1 ? (
-        <Disclosure
-          variant="step"
-          chevron="end"
-          tone="secondary"
-          textSize="body"
-          open={open}
-          onOpenChange={setOpen}
-          summaryLabel={t("{p0}, {p1} switches", { p0: title, p1: String(switches) })}
-          summary={line}
-          className="w-full min-w-0"
-        >
-          {open ? <SwitchHistory steps={steps} /> : null}
-        </Disclosure>
-      ) : (
+      <div className="flex items-center gap-3">
+        <Divider decorative className="min-w-4 flex-1 self-center" />
         <Text
-          role="note"
-          aria-label={title}
           as="div"
-          size="body"
-          tone="secondary"
-          className="flex min-w-0 items-center gap-1.5 py-1"
+          role="note"
+          aria-label={note ? `${title}. ${note}` : title}
+          size="caption"
+          tone="muted"
+          className="flex min-w-0 max-w-full items-center gap-1.5 px-1.5"
         >
-          {line}
+          <ArrowLeftRight className="icon-sm shrink-0" aria-hidden="true" />
+          {folded > 0 ? (
+            <Text
+              aria-hidden="true"
+              size="inherit"
+              tone="inherit"
+              className="shrink-0 tabular-nums"
+            >
+              +{folded}
+            </Text>
+          ) : null}
+          {shown.map((state, index) => (
+            <SwitchState
+              key={`${index}:${stateKey(state)}`}
+              state={state}
+              separator={index < shown.length - 1}
+            />
+          ))}
+          <Text aria-hidden="true" size="inherit" tone="inherit" className="shrink-0">
+            →
+          </Text>
+          <SwitchState state={to} current effort={effort} />
+          <StepNote step={to} note={note} />
         </Text>
-      )}
+        <Divider decorative className="min-w-4 flex-1 self-center" />
+      </div>
     </div>
   );
 }
 
-function SwitchState({ state, previous = false }: { state: ModelSwitchState; previous?: boolean }) {
+/** Earlier hops, in order, without a hop that repeats the one before it. */
+export function earlierStates(steps: ModelSwitchStep[]): ModelSwitchState[] {
+  const out: ModelSwitchState[] = [];
+  for (const step of steps.slice(0, -1)) {
+    const last = out[out.length - 1];
+    if (!last || !sameSwitchState(last, step)) out.push(step);
+  }
+  return out;
+}
+
+/** The effort to show on the new state: only when it differs from the state before. */
+export function changedEffort(before: ModelSwitchState | undefined, to: ModelSwitchState) {
+  return to.effort && before?.effort !== to.effort ? to.effort : undefined;
+}
+
+function stateKey(state: ModelSwitchState) {
+  return `${state.harness}:${state.accountId ?? state.account ?? ""}:${state.model}`;
+}
+
+function SwitchState({
+  state,
+  current = false,
+  effort,
+  separator = false,
+}: {
+  state: ModelSwitchState;
+  current?: boolean;
+  effort?: string;
+  separator?: boolean;
+}) {
+  const accounts = useProviderAccounts(
+    supportsProviderAccounts(state.harness) ? state.harness : null,
+  );
+  const identity =
+    state.accountId && supportsProviderAccounts(state.harness)
+      ? modelAccountIdentities(state.harness, accounts).find((item) => item.id === state.accountId)
+      : undefined;
+  // Rows recorded before account ids existed, or whose account was removed, keep the label text.
+  const labelText = identity ? undefined : state.account;
   return (
-    <span
-      className={`flex min-w-0 items-center gap-1.5 ${previous ? "max-w-[45%] shrink-[3] opacity-70" : "shrink"}`}
-    >
-      <HarnessIcon harness={state.harness} className="size-3.5 shrink-0" />
-      {state.account ? (
+    <>
+      <span
+        className={`flex min-w-0 items-center gap-1.5 ${current ? "shrink-0" : "shrink opacity-70"}`}
+      >
+        <HarnessIcon harness={state.harness} className="icon-sm shrink-0" />
         <Text
           size="inherit"
-          tone={previous ? "inherit" : "neutral"}
-          weight={previous ? undefined : "medium"}
+          tone="inherit"
+          weight={current ? "medium" : undefined}
           truncate
-          className={`min-w-0  `}
+          className="min-w-0"
         >
-          {state.account}
+          {state.model}
+        </Text>
+        {labelText ? (
+          <Text
+            size="inherit"
+            tone="inherit"
+            truncate
+            className="min-w-0 @max-[420px]/switch:hidden"
+          >
+            · {labelText}
+          </Text>
+        ) : null}
+        {identity?.accountNumber !== undefined ? (
+          <Tooltip label={identity.accountLabel} asChild>
+            <span className="inline-flex shrink-0">
+              <ModelAccountNumber account={identity} />
+            </span>
+          </Tooltip>
+        ) : null}
+        {effort ? <ModelTriggerBadges effort={effort} /> : null}
+      </span>
+      {separator ? (
+        <Text aria-hidden="true" size="inherit" tone="inherit" className="-ms-1.5 shrink-0">
+          ,
         </Text>
       ) : null}
-      <Text
-        aria-hidden="true"
-        size="inherit"
-        tone="muted"
-        className={`shrink-0  ${previous ? "@max-[420px]/switch:hidden" : ""} ${state.account ? "" : "hidden"}`}
-      >
-        ·
-      </Text>
-      <Text
-        size="inherit"
-        tone={state.account || previous ? "inherit" : "neutral"}
-        weight={state.account || previous ? undefined : "medium"}
-        truncate
-        className={`min-w-0  ${previous && state.account ? "@max-[420px]/switch:hidden" : ""} `}
-      >
-        {state.model}
-      </Text>
-    </span>
+    </>
   );
 }
 
-function StepNote({ step }: { step: ModelSwitchStep }) {
-  const t = useT();
-  if (step.note === "summary") {
-    return (
-      <Text size="caption" tone="warning" truncate className="shrink-0">
-        {t("Summary goes with next message")}
-      </Text>
-    );
-  }
-  if (step.note === "deferred") {
-    return (
-      <Text size="caption" tone="muted" className="shrink-0 italic">
-        {t("Next message")}
-      </Text>
-    );
-  }
-  return null;
+function stepNoteLabel(step: ModelSwitchStep, t: ReturnType<typeof useT>) {
+  if (step.note === "summary") return t("Summary goes with next message");
+  if (step.note === "deferred") return t("Next message");
+  return undefined;
 }
 
-function SwitchHistory({ steps }: { steps: ModelSwitchStep[] }) {
-  const t = useT();
+function StepNote({ step, note }: { step: ModelSwitchStep; note?: string }) {
+  if (!note) return null;
   return (
-    <ol
-      {...surfaceAttributes(
-        { frame: "pane", edge: "left" },
-        "ml-1.5 flex min-w-0 flex-col  border-(--ui-pane-border) pl-3",
-      )}
+    <InfoTooltip
+      label={note}
+      icon={<Clock className="icon-sm" tone={step.note === "summary" ? "warning" : "muted"} />}
+      className="shrink-0"
     >
-      {steps.map((step, index) => {
-        const before = steps[index - 1];
-        const current = index === steps.length - 1;
-        const changed = before ? changedParts(before, step) : [];
-        const tags = [
-          ...changed.map((part) =>
-            part === "provider" ? t("Provider") : part === "account" ? t("Account") : t("Model"),
-          ),
-          ...(index === 0 ? [t("Before")] : []),
-          ...(current ? [t("Now")] : []),
-        ];
-        return (
-          <Text
-            key={`${index}:${step.at}`}
-            as="li"
-            size="body"
-            tone="secondary"
-            className="flex min-w-0 items-center gap-1.5 py-0.5"
-          >
-            <Text size="caption" tone="muted" className="w-11 shrink-0 font-mono">
-              {index === 0 ? "" : <Timestamp value={step.at} format="time" tooltip={false} />}
-            </Text>
-            <HarnessIcon harness={step.harness} className="size-3.5 shrink-0" />
-            {step.account ? (
-              <Text
-                size="inherit"
-                tone={current || changed.includes("account") ? "neutral" : "inherit"}
-                weight={current || changed.includes("account") ? "medium" : undefined}
-                truncate
-                className={`min-w-0  `}
-              >
-                {step.account}
-              </Text>
-            ) : null}
-            {step.account ? (
-              <Text aria-hidden="true" size="inherit" tone="muted" className="shrink-0">
-                ·
-              </Text>
-            ) : null}
-            <Text
-              size="inherit"
-              tone={changed.includes("model") ? "neutral" : "inherit"}
-              truncate
-              className={`min-w-0  `}
-            >
-              {step.model}
-            </Text>
-            {tags.length ? (
-              <Text size="caption" tone="muted" className="shrink-0">
-                {tags.join(" · ")}
-              </Text>
-            ) : null}
-            <StepNote step={step} />
-          </Text>
-        );
-      })}
-    </ol>
+      {note}
+    </InfoTooltip>
   );
 }
 
-type Part = "provider" | "account" | "model";
-
-function changedParts(before: ModelSwitchState, after: ModelSwitchState): Part[] {
-  if (before.harness !== after.harness) return ["provider"];
-  return [
-    ...(before.account !== after.account ? (["account"] as const) : []),
-    ...(before.model !== after.model ? (["model"] as const) : []),
-  ];
-}
-
-function describe(state: ModelSwitchState): string {
-  return [HARNESS_TITLE[state.harness], state.account, state.model].filter(Boolean).join(" · ");
+function describe(state: ModelSwitchState, extra?: string): string {
+  return [HARNESS_TITLE[state.harness], state.account, state.model, extra]
+    .filter(Boolean)
+    .join(" · ");
 }

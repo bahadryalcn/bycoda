@@ -4,6 +4,8 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   columnTransitions,
   jiraBoardIssues,
+  jiraBoardIssueFilters,
+  jiraBoardsInVisibleProjects,
   jiraMoveIssue,
   jiraTransitionIssue,
   rankAnchor,
@@ -11,6 +13,7 @@ import {
   type JiraBoardIssue,
 } from "./jiraBoard";
 import { saveAllowedJiraBoardIds, saveHiddenJiraProjectIds } from "./jira";
+import { DEFAULT_INBOX_FILTERS } from "./inboxFilters";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 beforeEach(() => {
   localStorage.clear();
@@ -42,6 +45,24 @@ it("scopes the board roster and its cards to selected projects and boards", asyn
     "jira_board_issues",
     expect.objectContaining({ projectIds: ["1"] }),
   );
+});
+it("narrows one board catalog to visible projects like the native per-project fetch", () => {
+  const projects = [
+    { id: "1", key: "ENG", name: "Engineering" },
+    { id: "2", key: "OPS", name: "Operations" },
+  ];
+  const boards = [
+    { id: 7, name: "Eng", kind: "scrum" as const, projectId: "1" },
+    { id: 8, name: "Ops", kind: "kanban" as const, projectId: "2" },
+    { id: 9, name: "Detached", kind: "kanban" as const },
+  ];
+  expect(jiraBoardsInVisibleProjects(boards, projects, [])).toEqual(boards);
+  expect(jiraBoardsInVisibleProjects(boards, projects, ["unknown"])).toEqual(boards);
+  expect(jiraBoardsInVisibleProjects(boards, projects, ["2"]).map((board) => board.id)).toEqual([
+    7,
+  ]);
+  expect(jiraBoardsInVisibleProjects(boards, projects, ["1", "2"])).toEqual([]);
+  expect(jiraBoardsInVisibleProjects(boards, [], ["1"])).toEqual([]);
 });
 it("keeps board, sprint, cursor and mutation identities in the native contract", async () => {
   vi.mocked(invoke).mockResolvedValue({ issues: [], nextPageToken: null });
@@ -76,6 +97,31 @@ it("matches column status IDs rather than duplicate status names", () => {
       statusIds: ["7"],
     }),
   ).toEqual([transition]);
+});
+
+it("passes the same Jira filters with a continuation cursor", async () => {
+  vi.mocked(invoke).mockResolvedValue({ issues: [], nextPageToken: null });
+  const filters = jiraBoardIssueFilters({
+    ...DEFAULT_INBOX_FILTERS,
+    jiraUnassigned: true,
+    jiraStatuses: ["Ready"],
+  });
+  await jiraBoardIssues(7, { scope: "backlog" }, "second", filters);
+  expect(invoke).toHaveBeenCalledWith("jira_board_issues", {
+    boardId: 7,
+    scope: "backlog",
+    sprintId: null,
+    nextPageToken: "second",
+    projectIds: null,
+    filters: {
+      assignedToMe: false,
+      assigneeIds: [],
+      unassigned: true,
+      statuses: ["Ready"],
+      open: false,
+      closed: false,
+    },
+  });
 });
 it("uses the destination's last issue or an explicit before anchor without self ranking", () => {
   const issues = ["ENG-1", "ENG-2"].map((identifier) => ({ identifier }) as JiraBoardIssue);

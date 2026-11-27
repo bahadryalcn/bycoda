@@ -3,32 +3,40 @@ import { mkdir } from "node:fs/promises";
 
 for (const dark of [false, true]) {
   for (const width of [1280, 800]) {
-    test(`native goal row wraps with owner actions, ${width}, ${dark ? "dark" : "light"}`, async ({
+    test(`goal popover is inset and preserves the draft, ${width}, ${dark ? "dark" : "light"}`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height: 800 });
       await page.emulateMedia({ reducedMotion: "reduce" });
-      await page.goto(`/tests/browser/chat/chat-chrome.html?goal=blocked&tr${dark ? "&dark" : ""}`);
+      await page.goto(`/tests/browser/chat/chat-chrome.html?goal=active&tr${dark ? "&dark" : ""}`);
       const row = page.locator("[data-provider-goal]");
-      await expect(row).toContainText("Hedef engellendi");
-      await expect(row).toContainText("12.400 / 50.000 token");
-      await expect(row).toContainText("Codex bu hedefin engellenme nedenini bildirmedi.");
-      await expect(
-        page.getByRole("button", { name: "Hedefe devam et", exact: true }),
-      ).toBeVisible();
+      await row.click();
+      const panel = page.getByRole("dialog", { name: "Hedef", exact: true });
+      await expect(panel).toContainText("12.400 / 50.000 token");
+      const padding = await panel.evaluate((el) => {
+        const style = getComputedStyle(el);
+        return Math.min(
+          ...[style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft].map(
+            parseFloat,
+          ),
+        );
+      });
+      expect(padding).toBeGreaterThanOrEqual(8);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
-      await mkdir("temp/verification/codex-goal-row", { recursive: true });
+      await mkdir("temp/verification/codex-goal-popover", { recursive: true });
       await page.screenshot({
-        path: `temp/verification/codex-goal-row/${dark ? "dark" : "light"}-${width}.png`,
+        path: `temp/verification/codex-goal-popover/${dark ? "dark" : "light"}-${width}.png`,
       });
-      await page.getByRole("button", { name: "Hedefe devam et", exact: true }).click();
-      await expect(row).toContainText("Hedef üzerinde çalışılıyor");
+      await panel.getByRole("button", { name: "Duraklat", exact: true }).click();
+      await expect(row).toHaveAttribute("data-provider-goal", "paused");
+      await panel.getByRole("button", { name: "Hedefe devam et", exact: true }).click();
+      await expect(row).toHaveAttribute("data-provider-goal", "active");
       await expect(page.getByRole("textbox", { name: "Message" })).toHaveValue(
         "Taslağım burada kalmalı.",
       );
-      await page.getByRole("button", { name: "Hedefi temizle", exact: true }).click();
+      await panel.getByRole("button", { name: "Hedefi temizle", exact: true }).click();
       await expect(row).toHaveCount(0);
       await expect(page.getByRole("textbox", { name: "Message" })).toHaveValue(
         "Taslağım burada kalmalı.",
@@ -42,12 +50,51 @@ test("goal commands stay locked during work and long objectives remain readable"
 }) => {
   await page.goto("/tests/browser/chat/chat-chrome.html?goal=blocked&busy&long");
   const row = page.locator("[data-provider-goal]");
-  await expect(row).toContainText("Goal blocked");
-  await expect(page.getByRole("button", { name: "Resume goal", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Clear goal", exact: true })).toBeDisabled();
-  await page.getByRole("button", { name: "Show more", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Show less", exact: true })).toBeVisible();
+  await row.click();
+  const panel = page.getByRole("dialog", { name: "Goal", exact: true });
+  await expect(panel).toContainText("Goal blocked");
+  await expect(panel.getByRole("button", { name: "Resume goal", exact: true })).toBeDisabled();
+  const clear = panel.getByRole("button", { name: "Clear goal", exact: true });
+  await expect(clear).toBeDisabled();
+  await clear.scrollIntoViewIfNeeded();
+  await expect(clear).toBeInViewport();
+  await expect(panel).toContainText("Hesapları ve seçili modeli doğrula");
+  await page.keyboard.press("Escape");
+  await expect(panel).toBeHidden();
+  await expect(row).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("every prompt bar lands on its own turn in the real transcript", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/chat/chat-chrome.html?transcript");
+  const rail = page.getByRole("toolbar", { name: "Prompts", exact: true });
+  await expect(rail.locator("[data-prompt-bar]")).toHaveCount(90);
+  // Newest first: the last bar is a subagent result, as in a delegating session.
+  for (const index of [89, 88, 0, 2, 45, 44, 71, 89, 1]) {
+    const id = `prompt-${index}`;
+    await rail.locator(`[data-prompt-bar="${id}"]`).click();
+    await expect
+      .poll(
+        () =>
+          page.evaluate((turnId) => {
+            const scroller = document.querySelector<HTMLElement>(".agent-transcript")!;
+            const turn = scroller.querySelector(`[data-transcript-turn="${turnId}"]`);
+            if (!turn) return `${turnId} not mounted`;
+            const view = scroller.getBoundingClientRect();
+            const box = turn.getBoundingClientRect();
+            const atEnd = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 2;
+            const aligned = Math.abs(box.top - view.top - 8) <= 3;
+            const clamped = atEnd || scroller.scrollTop === 0;
+            return aligned || (clamped && box.top >= view.top && box.top < view.bottom)
+              ? "on target"
+              : `${turnId} is ${Math.round(box.top - view.top)}px from the top`;
+          }, id),
+        { message: `bar ${id}` },
+      )
+      .toBe("on target");
+  }
 });
 
 for (const dark of [false, true]) {
@@ -141,8 +188,9 @@ test("project, find, notes and close share one working group", async ({ page }) 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/chat/chat-chrome.html?count=10");
   const toolbar = page.locator("header");
-  await expect(toolbar.getByRole("button")).toHaveCount(5);
-  await toolbar.getByRole("button", { name: "Project actions", exact: true }).click();
+  await expect(toolbar.getByRole("button")).toHaveCount(4);
+  await toolbar.getByRole("button", { name: "More actions", exact: true }).click();
+  await page.getByRole("menuitem").filter({ hasText: "Project actions" }).click();
   await expect(page.getByRole("menuitem").filter({ hasText: "Add action" })).toBeVisible();
   await page.keyboard.press("Escape");
   const find = toolbar.getByRole("button", { name: "Find in conversation", exact: true });
@@ -194,10 +242,13 @@ for (const dark of [false, true]) {
         const before = await button.boundingBox();
         await button.hover();
         const tooltip = page.getByRole("tooltip");
-        await expect(tooltip).toBeVisible();
-        await expect(tooltip).toContainText(
-          /dev|Project actions|Open project in|Find in conversation|Notes|Close pane|Minimize|Maximize|Close/,
-        );
+        // An icon-only action named by its label shows no tooltip that would repeat the name;
+        // only actions with a shortcut or detail do.
+        if (await tooltip.isVisible({ timeout: 1000 }).catch(() => false)) {
+          await expect(tooltip).toContainText(
+            /dev|More actions|Project actions|Open project in|Find in conversation|Notes|Close pane|Minimize|Maximize|Close/,
+          );
+        }
         const after = await button.boundingBox();
         expect(after?.width).toBe(before?.width);
         await page.mouse.move(0, 100);

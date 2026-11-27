@@ -60,6 +60,44 @@ fn commit_epoch(
     })
 }
 
+fn recover_epoch_gap(
+    channel: &Arc<NativeServiceChannel>,
+    original: &Original,
+    deadline: Instant,
+) -> Result<bool, String> {
+    if Instant::now() >= deadline {
+        return Err("cleanup deadline elapsed before Host lookup".into());
+    }
+    let route =
+        route(channel).map_err(|error| epoch_wire::gap_error("route unavailable", &error))?;
+    if original.route_fingerprint() != route {
+        return Err("route changed before Host lookup".into());
+    }
+    let params = epoch_wire::gap_params(original)
+        .map_err(|error| epoch_wire::gap_error("invalid local gap identity", &error))?;
+    let reply = epoch_call(channel, epoch_wire::GAP_RESOLVE, params.clone(), deadline)
+        .map_err(|error| epoch_wire::gap_error("Host lookup failed", &error))?;
+    if !epoch_wire::gap_outcome(&params, &reply.value)
+        .map_err(|error| epoch_wire::gap_error("invalid Host gap reply", &error))?
+    {
+        return Ok(false);
+    }
+    access(channel)
+        .and_then(|access| {
+            access.with(|store| {
+                let admission = journal::completion_admission(store)?;
+                let result = channel.with_current(&reply.guards(), || {
+                    authority::with_full_projection_transaction(store, |tx| {
+                        journal::epochs::record_gap_tx(tx.connection(), original)
+                    })
+                });
+                admission.finish(result)
+            })
+        })
+        .map_err(|error| epoch_wire::gap_error("Host fence could not be saved", &error))?;
+    Ok(true)
+}
+
 fn ensure_epoch(
     channel: &Arc<NativeServiceChannel>,
     deadline: Instant,
@@ -71,9 +109,21 @@ fn ensure_epoch(
     let request = access(channel)?.with(|store| epoch_wire::open_params(store, &fingerprint))?;
     let response = epoch_call(channel, epoch_wire::OPEN, request, deadline)?;
     let epoch = commit_epoch(channel, &response)?;
-    let maintenance = access(channel)?.with(|store| epoch_wire::compact_params(store, &epoch))?;
+    let cleanup_deadline = deadline.min(Instant::now() + CLEANUP_BUDGET);
+    let maintenance = access(channel)?.with(|store| {
+        epoch_wire::maintenance_params(
+            store,
+            &epoch,
+            channel.delivery_epoch_gaps_supported,
+            |original| {
+                // Not capped by the caller's deadline: a format request arrives with little of
+                // its 2 s left, so the Host retired the slot while the desktop had already given up.
+                let gap_deadline = Instant::now() + epoch_wire::GAP_BUDGET;
+                recover_epoch_gap(channel, original, gap_deadline)
+            },
+        )
+    })?;
     if let Some(params) = maintenance {
-        let cleanup_deadline = deadline.min(Instant::now() + CLEANUP_BUDGET);
         if let Ok(response) = epoch_call(channel, epoch_wire::COMPACT, params, cleanup_deadline) {
             let _ = commit_epoch(channel, &response);
         }
@@ -100,7 +150,18 @@ fn compact_epoch(
         Some(params) => (epoch_wire::COMPACT, params),
         None => (epoch_wire::STATUS, epoch_wire::reference(&epoch)),
     };
-    let response = epoch_call(channel, method, params, deadline)?;
+    let response = match epoch_call(channel, method, params, deadline) {
+        Ok(response) => response,
+        Err(error) if method == epoch_wire::COMPACT && epoch_wire::stale_floor(&error) => {
+            epoch_call(
+                channel,
+                epoch_wire::STATUS,
+                epoch_wire::reference(&epoch),
+                deadline,
+            )?
+        }
+        Err(error) => return Err(error),
+    };
     commit_epoch(channel, &response)?;
     Ok(())
 }
@@ -141,6 +202,16 @@ pub(super) fn supports_ack_host(descriptor: &Value) -> bool {
             methods
                 .iter()
                 .any(|method| method.as_str() == Some("native.services.delivery.ack"))
+        })
+}
+
+/// The Host answers an `acknowledge: "admission"` apply as soon as the original is durably
+/// admitted, and serves the typed outcome by the same original id.
+pub(super) fn supports_admission_host(descriptor: &Value) -> bool {
+    supports_ack_host(descriptor)
+        && descriptor["capabilities"].as_array().is_some_and(|caps| {
+            caps.iter()
+                .any(|cap| cap.as_str() == Some("native.services.delivery.admission.v1"))
         })
 }
 
@@ -659,19 +730,55 @@ fn status(
     if !channel.delivery_supported || route(channel)? != original.route_fingerprint() {
         return Err(held(original));
     }
-    let params = status_params(original);
-    let reply = if channel.websocket {
+    let reply = status_reply(channel, original, status_params(original), deadline)?;
+    persist_reply(reply, original, true, deadline)
+}
+
+fn status_reply(
+    channel: &Arc<NativeServiceChannel>,
+    original: &Original,
+    params: Value,
+    deadline: Instant,
+) -> Result<NativeServiceReply, String> {
+    if channel.websocket {
         match channel.wire("native.services.delivery.status", params.clone(), deadline) {
-            Ok(reply) => reply,
+            Ok(reply) => Ok(reply),
             Err(error) if error.unsupported && !error.uncertain => {
-                http(channel, "native.services.delivery.status", params, deadline)?
+                http(channel, "native.services.delivery.status", params, deadline)
             }
-            Err(_) => return Err(held(original)),
+            Err(_) => Err(held(original)),
         }
     } else {
-        http(channel, "native.services.delivery.status", params, deadline)?
-    };
-    persist_reply(reply, original, true, deadline)
+        http(channel, "native.services.delivery.status", params, deadline)
+    }
+}
+
+/// The Host acknowledged durable admission and is still running the effect. Read the outcome
+/// by the same original id until it is typed or the caller's deadline passes. This never
+/// applies again: running out of time, or any answer that is not exactly this original,
+/// leaves it unconfirmed and held for reconciliation, like a lost apply reply.
+fn settle_accepted(
+    channel: &Arc<NativeServiceChannel>,
+    original: &Original,
+    mut reply: NativeServiceReply,
+    deadline: Instant,
+) -> Result<NativeServiceReply, String> {
+    let mut wait = std::time::Duration::from_millis(25);
+    while reply.value["state"] == "accepted" {
+        if !exact_binding(&reply.value, original) {
+            return Err(held(original));
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            return Err(held(original));
+        }
+        std::thread::sleep(wait.min(deadline - now));
+        wait = (wait * 2).min(std::time::Duration::from_millis(250));
+        let mut params = status_params(original);
+        params["acknowledge"] = json!("admission");
+        reply = status_reply(channel, original, params, deadline)?;
+    }
+    Ok(reply)
 }
 
 fn apply(
@@ -686,6 +793,11 @@ fn apply(
     }
     let mut wrapper = status_params(original);
     wrapper["paramsJson"] = json!(params_json);
+    // Only a Host that advertises it: older Hosts keep the synchronous reply.
+    let admission = channel.delivery_supported && channel.delivery_admission_supported;
+    if admission {
+        wrapper["acknowledge"] = json!("admission");
+    }
     if channel.delivery_supported {
         if !crate::host_ws::native_profile::NativeProfileBroker::supports_service_params(
             "native.services.delivery.apply",
@@ -717,6 +829,11 @@ fn apply(
         } else {
             http(channel, "native.services.delivery.apply", wrapper, deadline)
                 .map_err(|_| held(&possible))?
+        };
+        let reply = if admission {
+            settle_accepted(channel, &possible, reply, deadline)?
+        } else {
+            reply
         };
         return persist_reply(reply, &possible, true, deadline);
     }
@@ -971,11 +1088,11 @@ fn acknowledge_remote(
     compact_epoch(channel, original, deadline)
 }
 
-/// Retry only already consumed local receipts, never effects or old consumers.
-/// A separate cursor keeps buffer and service outboxes independently fair.
-pub(super) fn reconcile_remote_acks(
+/// Retry consumed local service receipts and keep the first refused ACK for diagnostics.
+fn reconcile_remote_acks_noting(
     channel: &Arc<NativeServiceChannel>,
     deadline: Instant,
+    failure: &mut Option<String>,
 ) -> Result<usize, String> {
     if !channel.delivery_ack_supported {
         return Ok(0);
@@ -986,8 +1103,9 @@ pub(super) fn reconcile_remote_acks(
         .lock()
         .map_err(|_| "Native helper retirement cursor is unavailable")?
         .clone();
-    let page = access(channel)?
-        .with(|store| journal::pending_remote_acks(store, &fingerprint, after.as_deref(), 4))?;
+    let page = access(channel)?.with(|store| {
+        journal::pending_remote_acks(store, &fingerprint, after.as_deref(), journal::MAX_PAGE)
+    })?;
     let mut acknowledged = 0;
     let mut cursor = after;
     let mut complete_page = true;
@@ -1003,8 +1121,12 @@ pub(super) fn reconcile_remote_acks(
             complete_page = false;
             break;
         }
-        if acknowledge_remote(channel, &original, &[], deadline).is_ok() {
-            acknowledged += 1;
+        match acknowledge_remote(channel, &original, &[], deadline) {
+            Ok(()) => acknowledged += 1,
+            Err(error) => {
+                let sequence = original.id().rsplit(':').next().unwrap_or_default();
+                failure.get_or_insert_with(|| format!("ACK {sequence}: {error}"));
+            }
         }
         cursor = Some(original.ack_cursor());
     }
@@ -1023,13 +1145,24 @@ pub(super) fn reconcile_pending(
     channel: &Arc<NativeServiceChannel>,
     deadline: Instant,
 ) -> Result<usize, String> {
+    reconcile_pending_noting(channel, deadline, &mut None)
+}
+
+/// `reconcile_pending` that keeps the first swallowed failure, for maintenance diagnostics.
+fn reconcile_pending_noting(
+    channel: &Arc<NativeServiceChannel>,
+    deadline: Instant,
+    failure: &mut Option<String>,
+) -> Result<usize, String> {
     if !channel.delivery_supported {
         return Ok(0);
     }
     if channel.delivery_ack_supported {
         let now = Instant::now();
         let ack_deadline = now + deadline.saturating_duration_since(now) / 2;
-        let _ = reconcile_remote_acks(channel, ack_deadline);
+        if let Err(error) = reconcile_remote_acks_noting(channel, ack_deadline, failure) {
+            failure.get_or_insert(format!("ACK retry: {error}"));
+        }
     }
     let fingerprint = route(channel)?;
     let after = channel
@@ -1038,7 +1171,7 @@ pub(super) fn reconcile_pending(
         .map_err(|_| "Native helper recovery cursor is unavailable")?
         .clone();
     let page = access(channel)?
-        .with(|store| journal::pending(store, &fingerprint, after.as_deref(), 4))?;
+        .with(|store| journal::pending(store, &fingerprint, after.as_deref(), journal::MAX_PAGE))?;
     let mut recorded = 0;
     let mut cursor = after;
     let mut complete_page = true;
@@ -1053,15 +1186,27 @@ pub(super) fn reconcile_pending(
             continue;
         }
         if Instant::now() >= deadline {
+            failure.get_or_insert_with(|| "budget spent before a held original".to_owned());
             complete_page = false;
             break;
         }
-        if let Ok(reply) = status(channel, &original, deadline) {
-            if original.method() == "native.services.workspace.format" {
-                // No new owner can be constructed for this original: format
-                // invocations allocate fresh identities, and the live owner
-                // stays registered through its reply's final drop.
-                let _ = project_with_deadline(&reply, |_| Ok(()), Some(deadline));
+        let reply = status(channel, &original, deadline);
+        if let Err(error) = &reply {
+            failure.get_or_insert(format!("status: {error}"));
+        }
+        if let Ok(reply) = reply {
+            // No new owner can be constructed for these originals: format
+            // invocations allocate fresh identities and the live owner stays
+            // registered through its reply's final drop; a finish from an earlier
+            // runtime has no relay caller left, and its consumer is a no-op
+            // (conversation_tools_bridge/relay.rs `deliver_finish`). Left recorded,
+            // either holds the epoch prefix forever.
+            if original.method() == "native.services.workspace.format"
+                || original.is_from_earlier_runtime()
+            {
+                if let Err(error) = project_with_deadline(&reply, |_| Ok(()), Some(deadline)) {
+                    failure.get_or_insert(format!("orphan consume: {error}"));
+                }
             }
             drop(reply);
             recorded += 1;
@@ -1074,6 +1219,63 @@ pub(super) fn reconcile_pending(
         .map_err(|_| "Native helper recovery cursor is unavailable")? =
         if complete_page { page.next } else { cursor };
     Ok(recorded)
+}
+
+/// One bounded idle pass. Without it a lost reply or ACK waits for new traffic that may
+/// never come, and its slot holds the epoch prefix: retry consumed ACKs, settle orphaned
+/// results, then take one gap/compaction step while the prefix trails its high water.
+/// `Ok(true)` when the prefix moved, so the caller can run the next pass without idling.
+pub(super) fn maintain(
+    channel: &Arc<NativeServiceChannel>,
+    deadline: Instant,
+) -> Result<bool, String> {
+    if !channel.delivery_supported || !epochs_supported(channel) {
+        return Ok(false);
+    }
+    let mut failure = None;
+    let fingerprint = route(channel)?;
+    let backlog = || access(channel)?.with(|store| journal::epochs::backlog(store, &fingerprint));
+    // Before the head ACK below, which compacts on its own when it lands.
+    let initial = backlog().map_err(|e| format!("backlog: {e}"))?;
+    // The prefix head first, with a fresh budget; the pager below may not reach it this lap.
+    if channel.delivery_ack_supported {
+        let head = access(channel)?
+            .with(|store| journal::unacked_prefix_blocker(store, &fingerprint))
+            .map_err(|e| format!("prefix head: {e}"))?;
+        if let Some(original) = head.filter(|original| {
+            matches!(
+                original.method(),
+                "native.services.conversation.desktop.finish" | "native.services.workspace.format"
+            )
+        }) {
+            if let Err(error) = acknowledge_remote(channel, &original, &[], deadline) {
+                failure.get_or_insert(format!("prefix ACK: {error}"));
+            }
+        }
+    }
+    reconcile_pending_noting(channel, deadline, &mut failure)
+        .map_err(|e| format!("pending: {e}"))?;
+    // Each step retires at most 32 slots; repeat while it makes progress so a large
+    // backlog drains in hours, not one step per pass.
+    let start = backlog().map_err(|e| format!("backlog: {e}"))?;
+    let mut through = start;
+    while through.is_some() && Instant::now() < deadline {
+        ensure_epoch(channel, deadline).map_err(|e| format!("epoch step: {e}"))?;
+        let next = backlog()?;
+        if next == through {
+            break;
+        }
+        through = next;
+    }
+    if through.is_some() && through == initial {
+        if let Some(error) = failure {
+            return Err(format!(
+                "prefix held at {}: {error}",
+                initial.unwrap_or_default()
+            ));
+        }
+    }
+    Ok(through != initial)
 }
 
 #[cfg(test)]

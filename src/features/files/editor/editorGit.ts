@@ -28,7 +28,7 @@ export const DIFF_CONFIG = { scanLimit: 5_000, timeout: 100 };
 
 const setOriginalEffect = StateEffect.define<string | null>();
 
-export type GitTextRange = { from: number; to: number };
+type GitTextRange = { from: number; to: number };
 
 type ChunkRange = {
   fromA: number;
@@ -38,7 +38,7 @@ type ChunkRange = {
 };
 
 export type GitStageHandler = (contents: string) => Promise<void> | void;
-export type GitCommentTarget = { line: UnifiedLine; anchor: DOMRect };
+type GitCommentTarget = { line: UnifiedLine; anchor: DOMRect };
 type GitCommentHandler = (target: GitCommentTarget) => void;
 
 const gitStageFacet = Facet.define<GitStageHandler, GitStageHandler | null>({
@@ -569,7 +569,7 @@ export function deletedLineTexts(original: Text, chunk: Chunk): string[] {
   return original.sliceString(chunk.fromA, Math.max(chunk.fromA, chunk.toA - 1)).split("\n");
 }
 
-export type OverviewTick = {
+type OverviewTick = {
   kind: "add" | "del" | "mod";
   top: number;
   size: number;

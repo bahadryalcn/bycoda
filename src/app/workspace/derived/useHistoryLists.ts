@@ -1,4 +1,8 @@
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useSyncExternalStore } from "react";
+import {
+  hasUnsentComposerDraft,
+  subscribeComposerDraftPresence,
+} from "../../../features/sessions/model/draftCache";
 import { type Session } from "../../../features/sessions/model/session";
 import { type SessionSummary } from "../../../features/sessions/data/sessionStore";
 import {
@@ -43,6 +47,21 @@ export function useHistoryLists(deps: HistoryListsDeps): HistoryLists {
     [history, sidebarCwd],
   );
 
+  // Open conversations whose composer holds unsent text; re-renders only when the set changes.
+  const composerDraftKey = useSyncExternalStore(
+    subscribeComposerDraftPresence,
+    () =>
+      sessions
+        .filter((session) => hasUnsentComposerDraft(session.id))
+        .map((session) => session.id)
+        .join("\0"),
+    () => "",
+  );
+  const composerDraftIds = useMemo(
+    () => new Set(composerDraftKey ? composerDraftKey.split("\0") : []),
+    [composerDraftKey],
+  );
+
   const nextSidebarHistory = useMemo(
     () =>
       historyWithLiveSessions(
@@ -54,8 +73,9 @@ export function useHistoryLists(deps: HistoryListsDeps): HistoryLists {
           ...(sidebarCwd && sidebarCwd !== "~" ? { repo: projectName(sidebarCwd) } : {}),
         },
         orchestrationRuns,
+        composerDraftIds,
       ),
-    [history, projectBranches, sessions, sidebarCwd, orchestrationRuns],
+    [history, projectBranches, sessions, sidebarCwd, orchestrationRuns, composerDraftIds],
   );
   const sidebarHistoryRef = useRef(nextSidebarHistory);
   if (!sessionSummariesEqual(sidebarHistoryRef.current, nextSidebarHistory)) {

@@ -11,12 +11,10 @@ export function InterfaceSection({ appearance }: { appearance: AppearanceSetting
   useLocale();
   return (
     <AppearanceSection id="reading" title={t("Interface")}>
-      <div className="interface-grid">
-        <InterfaceSizeGroup appearance={appearance} />
-        <InterfaceReadabilityGroup appearance={appearance} />
-        <InterfaceBehaviorGroup appearance={appearance} />
-        <ScrollbarGroup />
-      </div>
+      <InterfaceSizeGroup appearance={appearance} />
+      <InterfaceReadabilityGroup appearance={appearance} />
+      <InterfaceBehaviorGroup appearance={appearance} />
+      <ScrollbarGroup />
       <AppearanceSaveFeedback settingIds={["ui-scale", "diff-palette", "scrollbar-style"]} />
     </AppearanceSection>
   );

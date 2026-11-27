@@ -28,7 +28,8 @@ describe("theme generation failure detail", () => {
   });
 });
 
-it("labels tone sliders and disables depth in light mode", async () => {
+it("labels tone sliders and shows depth in dark mode", async () => {
+  localStorage.setItem("bycoda.colorScheme", "dark");
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
@@ -52,6 +53,7 @@ it("labels tone sliders and disables depth in light mode", async () => {
   } finally {
     await act(async () => root.unmount());
     host.remove();
+    localStorage.clear();
   }
 });
 

@@ -1,5 +1,7 @@
+import { errorText } from "../../../shared/lib/errors";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { SplitButton } from "../../../shared/ui/SplitButton";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
@@ -70,8 +72,12 @@ export function githubPrActionCopy(
           p0: source,
           p1: destination,
         }),
-        confirm: "Merge pull request",
-        progress: "Merging…",
+        get confirm() {
+          return t("Merge pull request");
+        },
+        get progress() {
+          return t("Merging…");
+        },
       };
     case "squash":
       return {
@@ -82,8 +88,12 @@ export function githubPrActionCopy(
           p0: source,
           p1: destination,
         }),
-        confirm: "Squash and merge",
-        progress: "Merging…",
+        get confirm() {
+          return t("Squash and merge");
+        },
+        get progress() {
+          return t("Merging…");
+        },
       };
     case "rebase":
       return {
@@ -94,8 +104,12 @@ export function githubPrActionCopy(
           p0: source,
           p1: destination,
         }),
-        confirm: "Rebase and merge",
-        progress: "Merging…",
+        get confirm() {
+          return t("Rebase and merge");
+        },
+        get progress() {
+          return t("Merging…");
+        },
       };
     case "draft":
       return {
@@ -103,8 +117,12 @@ export function githubPrActionCopy(
           return t("Convert to draft?");
         },
         detail: t("Reviewers will see that this pull request is not ready to merge."),
-        confirm: "Convert to draft",
-        progress: "Converting…",
+        get confirm() {
+          return t("Convert to draft");
+        },
+        get progress() {
+          return t("Converting…");
+        },
       };
     case "ready":
       return {
@@ -112,8 +130,12 @@ export function githubPrActionCopy(
           return t("Mark as ready for review?");
         },
         detail: t("Reviewers will see that this pull request is ready for feedback."),
-        confirm: "Ready for review",
-        progress: "Updating…",
+        get confirm() {
+          return t("Ready for review");
+        },
+        get progress() {
+          return t("Updating…");
+        },
       };
     case "close":
       return {
@@ -121,8 +143,12 @@ export function githubPrActionCopy(
           return t("Close this pull request?");
         },
         detail: t("The pull request will close without merging. You can reopen it later."),
-        confirm: "Close pull request",
-        progress: "Closing…",
+        get confirm() {
+          return t("Close pull request");
+        },
+        get progress() {
+          return t("Closing…");
+        },
       };
     case "reopen":
       return {
@@ -130,8 +156,12 @@ export function githubPrActionCopy(
           return t("Reopen this pull request?");
         },
         detail: t("The pull request will return to the open state."),
-        confirm: "Reopen pull request",
-        progress: "Reopening…",
+        get confirm() {
+          return t("Reopen pull request");
+        },
+        get progress() {
+          return t("Reopening…");
+        },
       };
   }
 }
@@ -141,6 +171,8 @@ type GithubPrActionsProps = {
   baseRef: string;
   headRef: string;
   reviewedHeadOid?: string;
+  /** Set while something still stands between this pull request and a clean merge; the merge button then stops being primary. The reasons live in the Summary and Checks tabs. */
+  mergeBlocker?: string;
   onChange?: (item: InboxItem) => void;
 };
 
@@ -154,11 +186,34 @@ export function GithubPrActions(props: GithubPrActionsProps) {
   );
 }
 
+type ActionFailureState = { title: string; detail?: string };
+
+/** A translated title; the raw Host text, when there is one, sits behind the shared Details control. */
+function ActionFailure({
+  failure,
+  className,
+}: {
+  failure: ActionFailureState;
+  className?: string;
+}) {
+  return (
+    <Alert
+      tone="danger"
+      className={className}
+      title={failure.title}
+      extra={
+        failure.detail ? <ErrorDetails title={failure.title} detail={failure.detail} /> : undefined
+      }
+    />
+  );
+}
+
 function GithubPrActionsForItem({
   item,
   baseRef,
   headRef,
   reviewedHeadOid,
+  mergeBlocker,
   onChange,
 }: GithubPrActionsProps) {
   useLocale();
@@ -181,8 +236,8 @@ function GithubPrActionsForItem({
     anchor: HTMLElement;
   } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<ActionFailureState | null>(null);
+  const [queued, setQueued] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const state = item.state.trim().toLowerCase();
   const selectedMerge =
@@ -192,13 +247,19 @@ function GithubPrActionsForItem({
   const askToRun = (action: GithubPrAction, anchor: HTMLElement) => {
     setMergeMenuOpen(false);
     setActionError(null);
-    setNotice(null);
+    setQueued(false);
     setRefreshError(null);
     if (
       ["merge", "squash", "rebase"].includes(action) &&
       !/^[a-f0-9]{40}$/i.test(reviewedHeadOid ?? "")
     ) {
-      setActionError(t("Refresh and review the pull request before merging."));
+      setActionError({ title: t("Refresh and review the pull request before merging.") });
+      return;
+    }
+    // Draft, ready and reopen are reversible with one click, so they run at once. Merge cannot be
+    // undone and close notifies others, so those two confirm.
+    if (action === "draft" || action === "ready" || action === "reopen") {
+      void runAction(action, reviewedHeadOid);
       return;
     }
     setConfirmation({ action, anchor, expectedHeadOid: reviewedHeadOid });
@@ -210,9 +271,8 @@ function GithubPrActionsForItem({
     setActionError(null);
   };
 
-  const runAction = async () => {
-    if (!confirmation || busy) return;
-    const action = confirmation.action;
+  const runAction = async (action: GithubPrAction, expectedHeadOid?: string) => {
+    if (busy) return;
     setBusy(true);
     setActionError(null);
     try {
@@ -221,15 +281,13 @@ function GithubPrActionsForItem({
         item.repo,
         item.number,
         action,
-        confirmation.expectedHeadOid,
+        expectedHeadOid,
       );
       if (!active.current) return;
       setConfirmation(null);
-      setNotice(
+      setQueued(
         (action === "merge" || action === "squash" || action === "rebase") &&
-          next.state.trim().toLowerCase() !== "merged"
-          ? "Merge queued or auto-merge enabled."
-          : null,
+          next.state.trim().toLowerCase() !== "merged",
       );
       setRefreshError(next.refreshError ?? null);
       // A failed refresh returns only the new state; the row keeps its known fields.
@@ -253,7 +311,7 @@ function GithubPrActionsForItem({
     } catch (error: unknown) {
       if (!active.current) return;
       setConfirmation(null);
-      setActionError(error instanceof Error ? error.message : String(error));
+      setActionError({ title: t("Could not complete this action."), detail: errorText(error) });
     } finally {
       if (active.current) setBusy(false);
     }
@@ -266,30 +324,32 @@ function GithubPrActionsForItem({
   return (
     <>
       {state === "open" && !item.draft ? (
-        <SplitButton
-          groupRef={mergeGroup}
-          variant="primary"
-          type="button"
-          label={
-            selectedMerge?.action === "merge"
-              ? t("Merge pull request")
-              : (selectedMerge?.label ?? t("Merge pull request"))
-          }
-          menuLabel={t("Merge options")}
-          disabled={busy}
-          menuOpen={mergeMenuOpen}
-          onMenuOpenChange={setMergeMenuOpen}
-          startIcon={<GitMerge className="icon-sm" strokeWidth={1.75} />}
-          onClick={(event) => askToRun(mergeAction, event.currentTarget)}
-          actions={GITHUB_PR_MERGE_OPTIONS.map((option) => ({
-            id: option.action,
-            label: option.label,
-            description: option.description,
-            checked: option.action === mergeAction,
-            selectionRole: "radio",
-            onSelect: () => setMergeAction(option.action),
-          }))}
-        />
+        <>
+          <SplitButton
+            groupRef={mergeGroup}
+            variant={mergeBlocker ? "secondary" : "primary"}
+            type="button"
+            label={
+              selectedMerge?.action === "merge"
+                ? t("Merge pull request")
+                : (selectedMerge?.label ?? t("Merge pull request"))
+            }
+            menuLabel={t("Merge options")}
+            disabled={busy}
+            menuOpen={mergeMenuOpen}
+            onMenuOpenChange={setMergeMenuOpen}
+            startIcon={<GitMerge className="icon-sm" strokeWidth={1.75} />}
+            onClick={(event) => askToRun(mergeAction, event.currentTarget)}
+            actions={GITHUB_PR_MERGE_OPTIONS.map((option) => ({
+              id: option.action,
+              label: option.label,
+              description: option.description,
+              checked: option.action === mergeAction,
+              selectionRole: "radio",
+              onSelect: () => setMergeAction(option.action),
+            }))}
+          />
+        </>
       ) : null}
       {state === "open" && item.draft ? (
         <Button
@@ -310,7 +370,6 @@ function GithubPrActionsForItem({
             variant="ghost"
             iconOnly
             label={t("More pull request actions")}
-            tooltip={t("More pull request actions")}
             aria-haspopup="menu"
             aria-expanded={moreOpen}
             disabled={busy}
@@ -364,24 +423,22 @@ function GithubPrActionsForItem({
           {t("Reopen pull request")}
         </Button>
       ) : null}
-      {notice ? (
+      {queued ? (
         <InlineMessage tone="info" className="w-full">
-          {t(notice)}
+          {t("Merge queued or auto-merge enabled.")}
         </InlineMessage>
       ) : null}
-      {refreshError ? <InlineError>{refreshError}</InlineError> : null}
-      {!confirmation && actionError ? <Alert tone="danger">{actionError}</Alert> : null}
+      {refreshError ? <InlineError details={refreshError} /> : null}
+      {!confirmation && actionError ? <ActionFailure failure={actionError} /> : null}
       {confirmation && confirmCopy ? (
         <Popover
           anchor={confirmation.anchor}
           gap={5}
           width={320}
-          autoFocus
           onDismiss={busy ? undefined : dismissConfirmation}
-          role="dialog"
-          tabIndex={-1}
+          kind="dialog"
           aria-label={confirmCopy.title}
-          className="p-3"
+          variant="panel"
         >
           <div className="flex flex-col gap-1">
             <Heading size="item" level={2}>
@@ -390,15 +447,11 @@ function GithubPrActionsForItem({
             <Text as="p" size="caption" tone="secondary">
               {confirmCopy.detail}
               {confirmation.expectedHeadOid
-                ? ` ${t("Reviewed head: {p0}", { p0: confirmation.expectedHeadOid })}`
+                ? ` ${t("Reviewed head: {p0}", { p0: confirmation.expectedHeadOid.slice(0, 7) })}`
                 : ""}
             </Text>
           </div>
-          {actionError ? (
-            <Alert tone="danger" className="mt-2">
-              {actionError}
-            </Alert>
-          ) : null}
+          {actionError ? <ActionFailure failure={actionError} className="mt-2" /> : null}
           <div className="mt-3 flex justify-end gap-2">
             <Button variant="ghost" type="button" disabled={busy} onClick={dismissConfirmation}>
               {t("Cancel")}
@@ -408,10 +461,10 @@ function GithubPrActionsForItem({
               tone={confirmation.action === "close" ? "danger" : undefined}
               type="button"
               loading={busy}
-              loadingLabel={t(confirmCopy.progress)}
-              onClick={() => void runAction()}
+              loadingLabel={confirmCopy.progress}
+              onClick={() => void runAction(confirmation.action, confirmation.expectedHeadOid)}
             >
-              {t(confirmCopy.confirm)}
+              {confirmCopy.confirm}
             </Button>
           </div>
         </Popover>

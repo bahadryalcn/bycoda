@@ -34,7 +34,7 @@ export function NotificationMuteDatePicker({ projectIds, onChanged, onCancel }: 
       typeof until === "number" && until > Date.now() ? until : Date.now() + 3_600_000;
     return toLocalDateTime(new Date(Math.ceil(initial / 60_000) * 60_000));
   });
-  const [error, setError] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
   return (
     <form
       noValidate
@@ -44,21 +44,21 @@ export function NotificationMuteDatePicker({ projectIds, onChanged, onCancel }: 
         if (!projectIds.length || unavailable) return;
         const date = parseLocalDateTime(value);
         if (!date) {
-          setError(t("Choose a valid date and time."));
+          setProblem(t("Choose a valid date and time."));
           return;
         }
         if (date.getTime() <= Date.now()) {
-          setError(t("Choose a date and time in the future."));
+          setProblem(t("Choose a date and time in the future."));
           return;
         }
         try {
           updateNotificationPreferences(projectIds, {
             mutedUntil: date.getTime(),
           });
-          setError(null);
+          setProblem(null);
           onChanged?.();
         } catch {
-          setError(t("Could not save notification preferences. Please try again."));
+          setProblem(t("Could not save notification preferences. Please try again."));
         }
       }}
     >
@@ -69,14 +69,14 @@ export function NotificationMuteDatePicker({ projectIds, onChanged, onCancel }: 
         value={value}
         onChange={(next) => {
           setValue(next);
-          setError(null);
+          setProblem(null);
         }}
         minDate={toLocalDateTime(new Date(Date.now())).slice(0, 10)}
         autoFocus
       />
-      {error ? (
+      {problem ? (
         <Alert tone="danger" className="mt-3">
-          {error}
+          {problem}
         </Alert>
       ) : null}
       <div
@@ -85,13 +85,17 @@ export function NotificationMuteDatePicker({ projectIds, onChanged, onCancel }: 
           "mt-3 flex items-center justify-between gap-2 pt-2.5",
         )}
       >
-        <Button type="button" onClick={onCancel} aria-label={t("Cancel")} variant="ghost">
+        <Button type="button" onClick={onCancel} variant="ghost">
           {t("Cancel")}
         </Button>
         <Button
           type="submit"
-          aria-label={t("Mute until then")}
           disabled={!projectIds.length || unavailable}
+          disabledReason={
+            projectIds.length
+              ? t("Saved project notification choices could not be read.")
+              : t("Choose a project first.")
+          }
           variant="primary"
         >
           {t("Mute until then")}

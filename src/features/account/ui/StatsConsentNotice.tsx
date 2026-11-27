@@ -5,19 +5,20 @@ import { Toast } from "../../../shared/ui/ToastRegion";
 import {
   getStatsChoice,
   recordStatsPromptShown,
-  setStatsChoice,
   shouldPromptForStats,
   subscribeAnonymousStats,
 } from "../model/accountPrivacy";
 import { useAccountState } from "../hooks/useAccount";
+import { setStatisticsMode } from "../model/anonymousStats";
+import { statsDisclosure } from "../model/statsDisclosure";
 
 const FIRST_DELAY_MS = 6000;
 const RETRY_MS = 3000;
 
 /**
  * One-time, non-blocking question for people who were never asked. It waits for dialogs
- * (first-run setup included) to close; every showing counts, so leaving it unanswered asks again
- * next launch, three times at most, and statistics stay off. Hidden in builds without accounts, which send nothing.
+ * (first-run setup included) to close; the showing counts, so it is asked once and statistics
+ * stay off unless the owner opts in. Hidden in builds without accounts, which send nothing.
  */
 export function StatsConsentNotice() {
   useLocale();
@@ -38,21 +39,19 @@ export function StatsConsentNotice() {
   }, [available]);
   if (!shown || choice !== null) return null;
   const answer = (value: "on" | "off") => {
-    setStatsChoice(value);
+    setStatisticsMode(value === "on" ? "auto" : "off");
     setShown(false);
   };
   return (
     <Toast
       tone="info"
-      title={t("Share anonymous statistics?")}
-      message={t(
-        "Once a day: a random install id, app version, operating system, release channel and date. Never your sessions, prompts, code or files. Change it any time in Settings → Privacy.",
-      )}
+      title={t("Anonymous statistics")}
+      message={statsDisclosure()}
       durationMs={null}
       width="lg"
       actionsPlacement="footer"
       actions={[
-        { label: t("Share anonymous statistics"), onClick: () => answer("on") },
+        { label: t("Share"), onClick: () => answer("on") },
         { label: t("Don't share"), onClick: () => answer("off") },
       ]}
       onDismiss={() => setShown(false)}

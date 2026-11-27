@@ -1,11 +1,10 @@
-import type { SocialOperation } from "../adapter";
-import { NOT_YET, r, type CapabilityRequirement, type PlatformCapabilities } from "./shared";
+import { NOT_YET, r, type OperationRequirements, type PlatformCapabilities } from "./shared";
 
 export function youtubeCapabilities(): PlatformCapabilities {
   const read = "https://www.googleapis.com/auth/youtube.readonly";
   const upload = "https://www.googleapis.com/auth/youtube.upload";
   const write = "https://www.googleapis.com/auth/youtube.force-ssl";
-  const api: Record<SocialOperation, CapabilityRequirement> = {
+  const api: OperationRequirements = {
     ...NOT_YET,
     publish: r(
       [upload, read],
@@ -13,7 +12,7 @@ export function youtubeCapabilities(): PlatformCapabilities {
     ),
     media: r(
       [upload, read],
-      "This adapter accepts one host-uploaded MP4/WebM video up to 64 MiB. Platform processing is separate from upload acceptance.",
+      "This adapter streams one host-uploaded MP4 or WebM video up to 256 GiB. Platform processing is separate from upload acceptance.",
     ),
     "comments.read": r(
       [read],
@@ -53,19 +52,50 @@ export function youtubeCapabilities(): PlatformCapabilities {
     api: {
       ...api,
       ...NOT_YET,
+      // YouTube management operations.
+      delete: r([write], "Delete an owned video. Requires owner confirmation."),
+      "video.update": r([read, write], "Edit owned video metadata and visibility."),
+      "thumbnail.set": r([read, write], "Set the thumbnail of an owned video."),
+      "playlists.manage": r([read, write], "Create playlists and manage their videos."),
+      "comment.moderate": r([read, write], "Review, approve, reject or delete eligible comments."),
+      subscribe: r([read, write], "List and manage the channel's subscriptions."),
+      "channel.profile.update": r(
+        [read, write, upload],
+        "Edit channel branding and upload a banner.",
+      ),
+      "analytics.report": r(
+        [read, "https://www.googleapis.com/auth/yt-analytics.readonly"],
+        "YouTube Analytics channel activity and traffic reports.",
+      ),
+      "monetization.read": r(
+        [read, "https://www.googleapis.com/auth/yt-analytics-monetary.readonly"],
+        "YouTube Analytics estimated earnings where available.",
+      ),
+      "live.manage": r([read, write], "Manage live broadcasts and their encoder streams."),
+      "live.chat": r(
+        [read, write],
+        "Read and moderate live chat, reply, and read Super Chat events.",
+      ),
       analytics: r(
         [read],
         "View, like and comment counts of the channel's videos from the Data API statistics. The YouTube Analytics reports API is not used.",
       ),
       "audience.collect": r(
         [read],
-        "Commenters of the channel's videos, or of public videos matching a keyword (one search call costs about 100 quota units per page). Live chat is not collected.",
+        "Commenters of the channel's videos, or of public videos matching a keyword (one call from the dedicated search quota per page). Live chat is available separately.",
       ),
       "profile.read": r(
         [read],
         "Channel name, handle and subscriber count when YouTube reports them.",
       ),
     },
-    browser: {},
+    browser: {
+      delete: "List Studio videos and permanently delete an owned video after owner confirmation.",
+      "channel.profile.update":
+        "Edit the verified channel's Studio profile, including its name and handle.",
+      "comment.react": "Like or heart an exact comment in Studio.",
+      "community.publish": "Publish a Community post on an eligible channel.",
+      "monetization.status": "Read the channel's monetization status in Studio.",
+    },
   };
 }

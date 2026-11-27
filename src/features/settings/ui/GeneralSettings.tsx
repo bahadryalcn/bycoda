@@ -3,7 +3,8 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { openFeedbackDialog } from "../../account";
 import { Button } from "../../../shared/ui/Button";
 import { Text } from "../../../shared/ui/Text";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { SettingsFeedback } from "../../../shared/ui/settings";
 import {
   installPendingUpdate,
@@ -25,24 +26,31 @@ import {
 } from "../../../shared/i18n";
 import { Select } from "../../../shared/ui/Select";
 import { Progress } from "../../../shared/ui/Progress";
-import { ArrowDownCircle, MessageSquare, RefreshCw } from "../../../shared/ui/icons";
+import {
+  ArrowDownCircle,
+  BookOpen,
+  MessageSquare,
+  Play,
+  RefreshCw,
+  Settings,
+  Sparkles,
+} from "../../../shared/ui/icons";
 import { OPEN_ONBOARDING_EVENT } from "../../onboarding/model/onboarding";
 import { openUsageGuide } from "../../onboarding/model/usageGuide";
 import { getTourSnapshot, startTour, subscribeTour } from "../../onboarding/model/tourState";
-import { OPEN_SESSION_IMPORT_EVENT } from "../../sessions/public/importModel";
 import {
-  CLOSE_TO_TRAY_DEFAULT,
+  MINIMIZE_TO_TRAY_DEFAULT,
   KEEP_AWAKE_DEFAULT,
   KEEP_AWAKE_SCREEN_DEFAULT,
   KEEP_AWAKE_HOLD_AFTER,
   KEEP_AWAKE_HOLD_AFTER_DEFAULT,
   isKeepAwakeHoldAfter,
-  loadCloseToTray,
-  subscribeCloseToTray,
+  loadMinimizeToTray,
+  subscribeMinimizeToTray,
   loadKeepAwakeEnabled,
   loadKeepAwakeHoldAfter,
   loadKeepAwakeScreen,
-  saveCloseToTray,
+  saveMinimizeToTray,
   saveKeepAwakeScreen,
   subscribeKeepAwakeEnabled,
   subscribeKeepAwakeHoldAfter,
@@ -52,29 +60,31 @@ import { saveAgentDefaultConfirmed } from "../model/agentDefaults";
 import { LanguageSettings } from "./LanguageSettings";
 import { BuildIdentityDetails } from "./BuildIdentityDetails";
 import { UpdateChannelRow } from "./UpdateChannelRow";
-import { SessionFolderGroup, restoreSessionFolderDefault } from "./SessionFolderSettings";
-import { NewProjectFolderGroup, restoreNewProjectFolderDefault } from "./NewProjectFolderSettings";
-import { DiagnosticsGroup, restorePerformanceTraceDefault } from "./DiagnosticsSettings";
-import { Group, Row, Toggle, useSettingsPageReset } from "../../../shared/ui/settings";
+import { DiagnosticsGroup } from "./DiagnosticsSettings";
+import {
+  Group,
+  Row,
+  Toggle,
+  useConfirmedPreferences,
+  useSettingsPageReset,
+} from "../../../shared/ui/settings";
 import { ProductDetails } from "./GeneralProductDetails";
 import "./GeneralSettings.css";
 
 export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string) => void }) {
   useLocale();
-  // A tour left part-way is resumed from where it stopped.
-  const tourState = useSyncExternalStore(subscribeTour, getTourSnapshot, () => "");
-  const [closeToTray, setCloseToTray] = useStoredPreferenceState(
-    loadCloseToTray,
-    subscribeCloseToTray,
+  const [minimizeToTray, setMinimizeToTray] = useStoredPreferenceState(
+    loadMinimizeToTray,
+    subscribeMinimizeToTray,
   );
-  const onCloseToTray = (next: boolean) => {
-    saveCloseToTray(next);
-    setCloseToTray(next);
+  const onMinimizeToTray = (next: boolean) => {
+    saveMinimizeToTray(next);
+    setMinimizeToTray(next);
   };
   const keepAwake = useSyncExternalStore(
     subscribeKeepAwakeEnabled,
     loadKeepAwakeEnabled,
-    () => false,
+    () => KEEP_AWAKE_DEFAULT,
   );
   const keepAwakeHoldAfter = useSyncExternalStore(
     subscribeKeepAwakeHoldAfter,
@@ -86,48 +96,21 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
     loadKeepAwakeScreen,
     () => false,
   );
-  const [powerPending, setPowerPending] = useState<Record<string, boolean>>({});
-  const [powerFailures, setPowerFailures] = useState<Record<string, () => void>>({});
-  const savePower = async (id: string, write: () => Promise<boolean>) => {
-    setPowerPending((current) => ({ ...current, [id]: true }));
-    try {
-      if (!(await write())) throw new Error("Preference not persisted");
-      setPowerFailures((current) => {
-        const next = { ...current };
-        delete next[id];
-        return next;
-      });
-    } catch {
-      setPowerFailures((current) => ({
-        ...current,
-        [id]: () => {
-          void savePower(id, write).catch(console.error);
-        },
-      }));
-    } finally {
-      setPowerPending((current) => ({ ...current, [id]: false }));
-    }
-  };
-  const powerFeedback = (id: string) =>
-    powerPending[id] ? (
-      <SettingsFeedback state="loading" immediate>
-        {t("Saving…")}
-      </SettingsFeedback>
-    ) : powerFailures[id] ? (
-      <SettingsFeedback state="error" action={{ label: t("Retry"), onClick: powerFailures[id] }}>
-        {t("Could not save changes")}
-      </SettingsFeedback>
-    ) : undefined;
+  const {
+    commit: commitPower,
+    pending: powerPending,
+    feedback: powerFeedback,
+  } = useConfirmedPreferences();
   const onKeepAwake = (next: boolean) => {
-    void savePower("keep-awake", () =>
-      saveAgentDefaultConfirmed("keepAwakeWhileAgentsWork", next),
-    ).catch(console.error);
+    commitPower("keep-awake", {
+      write: () => saveAgentDefaultConfirmed("keepAwakeWhileAgentsWork", next),
+    });
   };
   const onKeepAwakeHoldAfter = (next: string) => {
     if (isKeepAwakeHoldAfter(next))
-      void savePower("keep-awake-duration", () =>
-        saveAgentDefaultConfirmed("keepAwakeHoldAfter", next),
-      ).catch(console.error);
+      commitPower("keep-awake-duration", {
+        write: () => saveAgentDefaultConfirmed("keepAwakeHoldAfter", next),
+      });
   };
   const onKeepAwakeScreen = (next: boolean) => {
     saveKeepAwakeScreen(next);
@@ -138,8 +121,8 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
       [
         () => {
           if (IS_WIN) {
-            onCloseToTray(CLOSE_TO_TRAY_DEFAULT);
-            return loadCloseToTray() === CLOSE_TO_TRAY_DEFAULT;
+            onMinimizeToTray(MINIMIZE_TO_TRAY_DEFAULT);
+            return loadMinimizeToTray() === MINIMIZE_TO_TRAY_DEFAULT;
           }
         },
         async () => {
@@ -158,9 +141,6 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
           saveKeepAwakeScreen(KEEP_AWAKE_SCREEN_DEFAULT);
           return loadKeepAwakeScreen() === KEEP_AWAKE_SCREEN_DEFAULT;
         },
-        restorePerformanceTraceDefault,
-        restoreNewProjectFolderDefault,
-        restoreSessionFolderDefault,
         async () => {
           await setLanguagePreference("system");
           const saved = localStorage.getItem(LANGUAGE_STORAGE_KEY);
@@ -195,53 +175,46 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
       {IS_WIN && (
         <Group title={t("Application behavior")}>
           <Row
-            id="close-to-tray"
-            label={t("Close to tray")}
-            info={
-              <InfoPopover className="shrink-0" label={t("Close to tray")}>
-                <p>
-                  {t(
-                    "Keep agents running when you close the window. Reopen or quit the app from the tray icon.",
-                  )}
-                </p>
-              </InfoPopover>
-            }
+            id="minimize-to-tray"
+            label={t("Minimize to tray")}
+            modified={minimizeToTray !== MINIMIZE_TO_TRAY_DEFAULT}
+            onReset={() => onMinimizeToTray(MINIMIZE_TO_TRAY_DEFAULT)}
           >
-            <Toggle label={t("Close to tray")} on={closeToTray} onChange={onCloseToTray} />
+            <Toggle label={t("Minimize to tray")} on={minimizeToTray} onChange={onMinimizeToTray} />
           </Row>
         </Group>
       )}
-      <Group
-        title={t("Sleep")}
-        description={t("Applies to this computer, not remote computers running agents.")}
-      >
+      <Group title={t("Sleep")}>
         <Row
           id="keep-awake"
           feedback={powerFeedback("keep-awake")}
           label={t("Prevent sleep while agents work")}
+          modified={keepAwake !== KEEP_AWAKE_DEFAULT && !powerPending("keep-awake")}
+          onReset={() => onKeepAwake(KEEP_AWAKE_DEFAULT)}
           info={
-            <InfoPopover className="shrink-0" label={t("Sleep behavior")}>
-              <p>{t("Keep this computer awake while an agent is working.")}</p>
-              <p>{sleepBehavior}</p>
-            </InfoPopover>
+            <InfoTooltip className="shrink-0" label={t("Sleep behavior")}>
+              {sleepBehavior}
+            </InfoTooltip>
           }
         >
           <Toggle
             label={t("Prevent sleep while agents work")}
             on={keepAwake}
             onChange={onKeepAwake}
-            disabled={powerPending["keep-awake"]}
+            disabled={powerPending("keep-awake")}
           />
         </Row>
         <Row
           id="keep-awake-duration"
           feedback={powerFeedback("keep-awake-duration")}
           label={t("After agents finish")}
-          description={t(
-            "Choose when this computer can sleep again after the last agent finishes.",
-          )}
           dependsOn={keepAwake}
-          disabledReason={t("Turn on Prevent sleep while agents work first")}
+          modified={
+            keepAwake &&
+            keepAwakeHoldAfter !== KEEP_AWAKE_HOLD_AFTER_DEFAULT &&
+            !powerPending("keep-awake-duration")
+          }
+          onReset={() => onKeepAwakeHoldAfter(KEEP_AWAKE_HOLD_AFTER_DEFAULT)}
         >
           <Select
             hideLabel
@@ -249,15 +222,15 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
             value={keepAwakeHoldAfter}
             options={[...KEEP_AWAKE_HOLD_AFTER]}
             onValueChange={onKeepAwakeHoldAfter}
-            disabled={!keepAwake || powerPending["keep-awake-duration"]}
+            disabled={!keepAwake || powerPending("keep-awake-duration")}
           />
         </Row>
         <Row
           id="keep-awake-screen"
           label={t("Keep the screen on")}
-          description={t("Keep the display awake while sleep prevention is active.")}
           dependsOn={keepAwake}
-          disabledReason={t("Turn on Prevent sleep while agents work first")}
+          modified={keepAwake && keepAwakeScreen !== KEEP_AWAKE_SCREEN_DEFAULT}
+          onReset={() => onKeepAwakeScreen(KEEP_AWAKE_SCREEN_DEFAULT)}
         >
           <Toggle
             label={t("Keep the screen on")}
@@ -272,63 +245,51 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
       <Group title={t("Updates")}>
         <UpdateRow onOpenWhatsNew={onOpenWhatsNew} />
       </Group>
+    </div>
+  );
+}
 
-      {/* Secondary: setup help, diagnostics and product details. */}
+export function HelpSettings() {
+  useLocale();
+  const tourState = useSyncExternalStore(subscribeTour, getTourSnapshot, () => "");
+  return (
+    <>
       <Group title={t("Setup and help")}>
-        <Row
-          id="import-history"
-          label={t("Import history")}
-          description={t(
-            "Choose Claude Code and Codex conversations to import. Originals stay unchanged.",
-          )}
-        >
-          <Button
-            className="general-action shrink-0"
-            onClick={() => window.dispatchEvent(new Event(OPEN_SESSION_IMPORT_EVENT))}
-          >
-            {t("Import…")}
-          </Button>
-        </Row>
-        <Row
-          id="getting-started"
-          label={t("Getting started")}
-          description={t(
-            "Take a one-minute tour, or connect computers, set up agents and choose your projects.",
-          )}
-        >
-          <div className="flex shrink-0 items-center gap-2">
+        <Row id="getting-started" label={null}>
+          <div className="flex flex-wrap items-center gap-2">
             {/* The tour request closes Settings and points at the workspace controls. */}
-            <Button className="general-action shrink-0" onClick={() => startTour("first-run")}>
+            <Button
+              variant="ghost"
+              startIcon={<Play aria-hidden />}
+              onClick={() => startTour("first-run")}
+            >
               {tourState.startsWith("paused:") ? t("Resume tour") : t("Take the tour")}
             </Button>
             <Button
-              className="general-action shrink-0"
+              variant="ghost"
+              startIcon={<Settings aria-hidden />}
               onClick={() => window.dispatchEvent(new Event(OPEN_ONBOARDING_EVENT))}
             >
               {t("Open setup…")}
             </Button>
           </div>
         </Row>
-        <Row
-          id="usage-guide"
-          label={t("Usage guide")}
-          description={t("Learn chat, queue, stop and essential shortcuts.")}
-        >
+        <Row id="usage-guide" label={null}>
           {/* The guide request closes Settings and walks through the workspace. */}
-          <Button className="general-action shrink-0" onClick={openUsageGuide}>
+          <Button variant="ghost" startIcon={<BookOpen aria-hidden />} onClick={openUsageGuide}>
             {t("Open guide…")}
           </Button>
         </Row>
         <Row
           id="send-feedback"
-          label={t("Send feedback")}
-          description={t(
-            "Report a problem or suggest an improvement. Nothing is attached unless you add it.",
+          label={null}
+          info={t(
+            "Nothing from your sessions, code, logs or file paths is attached automatically. Do not paste passwords, tokens or other secrets.",
           )}
         >
           <Button
-            className="general-action shrink-0"
-            startIcon={<MessageSquare strokeWidth={1.75} aria-hidden />}
+            variant="ghost"
+            startIcon={<MessageSquare aria-hidden />}
             onClick={openFeedbackDialog}
           >
             {t("Send feedback")}
@@ -336,16 +297,13 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
         </Row>
       </Group>
 
-      <SessionFolderGroup />
-
-      <NewProjectFolderGroup />
-
       <DiagnosticsGroup />
 
       <Group title={t("About")}>
+        <BuildIdentityDetails />
         <ProductDetails />
       </Group>
-    </div>
+    </>
   );
 }
 
@@ -425,18 +383,17 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
                 p0: snapshot.progress,
               })
             : t("Downloading… The app restarts after installation.")
-          : snapshot.phase === "checking"
-            ? t("Checking for updates…")
-            : snapshot.phase === "current"
-              ? t("You're on the latest version.")
-              : snapshot.phase === "error"
-                ? (snapshot.error ?? t("Update check failed."))
-                : t("Check for a newer version.");
+          : snapshot.phase === "current"
+            ? t("You're on the latest version.")
+            : snapshot.phase === "error"
+              ? t("Update check failed.")
+              : null;
 
   return (
     <>
       <Row
         id="update"
+        controlWidth="wide"
         label={
           <span className="flex min-w-0 flex-wrap items-baseline gap-2">
             {t("Version")}
@@ -451,9 +408,8 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
             </Text>
           </span>
         }
-        description={snapshot.phase === "idle" && updatesEnabled !== false ? status : undefined}
         feedback={
-          <>
+          <div className="grid min-w-0 gap-2">
             {metadataError ? (
               <SettingsFeedback
                 state="error"
@@ -462,10 +418,11 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
                   onClick: () => setMetadataAttempt((attempt) => attempt + 1),
                 }}
               >
-                {t("Could not read update information. Retry to check this build.")}
+                {t("Could not read update information.")}
               </SettingsFeedback>
             ) : null}
-            {snapshot.phase !== "idle" || updatesEnabled === false ? (
+            {(snapshot.phase !== "idle" && snapshot.phase !== "checking") ||
+            updatesEnabled === false ? (
               <SettingsFeedback
                 state={
                   snapshot.phase === "error"
@@ -476,52 +433,63 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
                         ? "success"
                         : "loading"
                 }
+                extra={
+                  snapshot.phase === "error" && updatesEnabled !== false && snapshot.error ? (
+                    <ErrorDetails title={t("Update check failed.")} detail={snapshot.error} />
+                  ) : undefined
+                }
               >
                 {status}
               </SettingsFeedback>
             ) : null}
-            <BuildIdentityDetails />
-          </>
+            {snapshot.phase === "downloading" ? (
+              <Progress
+                compact
+                label={t("Downloading…")}
+                value={snapshot.progress ?? undefined}
+                max={100}
+              />
+            ) : null}
+          </div>
         }
       >
-        <div className="general-update-actions">
+        <Button
+          className="shrink-0"
+          startIcon={<Sparkles strokeWidth={1.75} aria-hidden />}
+          onClick={() => onOpenWhatsNew(snapshot.currentVersion)}
+          disabled={snapshot.currentVersion === "…"}
+          disabledReason={t("Wait for the version to load.")}
+        >
+          {t("What's new")}
+        </Button>
+        {updatesEnabled === false ? null : (
           <Button
             className="shrink-0"
-            onClick={() => onOpenWhatsNew(snapshot.currentVersion)}
-            disabled={snapshot.currentVersion === "…"}
+            stableWidth
+            onClick={() => void onClick()}
+            disabled={
+              busy || metadataError || snapshot.currentVersion === "…" || updatesEnabled !== true
+            }
+            disabledReason={
+              busy
+                ? t("Wait for the current operation to finish")
+                : metadataError
+                  ? t("Could not read update information.")
+                  : t("Wait for the version to load.")
+            }
+            loading={busy}
+            loadingLabel={snapshot.phase === "checking" ? t("Checking for updates…") : undefined}
+            startIcon={
+              hasUpdate ? (
+                <ArrowDownCircle strokeWidth={1.75} aria-hidden />
+              ) : (
+                <RefreshCw strokeWidth={1.75} aria-hidden />
+              )
+            }
           >
-            {t("What's new")}
+            {hasUpdate ? t("Install and restart") : t("Check for updates")}
           </Button>
-          {updatesEnabled === false ? null : (
-            <Button
-              className="shrink-0"
-              stableWidth
-              onClick={() => void onClick()}
-              disabled={
-                busy || metadataError || snapshot.currentVersion === "…" || updatesEnabled !== true
-              }
-              loading={busy}
-              startIcon={
-                hasUpdate ? (
-                  <ArrowDownCircle strokeWidth={1.75} aria-hidden />
-                ) : (
-                  <RefreshCw strokeWidth={1.75} aria-hidden />
-                )
-              }
-            >
-              {hasUpdate ? t("Install and restart") : t("Check for updates")}
-            </Button>
-          )}
-          {snapshot.phase === "downloading" ? (
-            <Progress
-              compact
-              label={t("Downloading…")}
-              value={snapshot.progress ?? undefined}
-              max={100}
-              className="w-32"
-            />
-          ) : null}
-        </div>
+        )}
       </Row>
       {updatesEnabled ? <UpdateChannelRow /> : null}
     </>

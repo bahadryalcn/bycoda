@@ -9,6 +9,7 @@ vi.mock("./conversationToolsBridge", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./conversationToolsBridge")>()),
   conversationToolsBridge: mocks.conversationBridge,
 }));
+vi.mock("../../../platform/tauri/fs", () => ({ homeDir: async () => "/home/test" }));
 vi.mock("./jsonRpc", () => ({
   JsonRpcClient: class {
     request = mocks.request;
@@ -128,6 +129,25 @@ describe("Shared social access for all ACP providers", () => {
     await client.request("session/new", params);
     expect(mocks.request).toHaveBeenLastCalledWith("session/new", params, 0);
   });
+});
+
+it("replaces a home-relative session cwd with the absolute home folder before session/new", async () => {
+  mocks.bridge.mockResolvedValue(null);
+  const client = new AcpClient(createChildProcessHandle("session-home"), {});
+  await client.request("session/new", { cwd: "~", mcpServers: [] });
+  await client.request("session/load", { cwd: "~/notes", mcpServers: [] });
+  expect(mocks.request).toHaveBeenNthCalledWith(
+    1,
+    "session/new",
+    { cwd: "/home/test", mcpServers: [] },
+    0,
+  );
+  expect(mocks.request).toHaveBeenNthCalledWith(
+    2,
+    "session/load",
+    { cwd: "/home/test/notes", mcpServers: [] },
+    0,
+  );
 });
 
 it("passes the exact tracked response consumer through MCP preparation without an extra request", async () => {

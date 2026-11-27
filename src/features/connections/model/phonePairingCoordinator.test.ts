@@ -82,6 +82,27 @@ describe("desktop phone pairing ownership", () => {
     expect(api.access).toHaveBeenLastCalledWith(local, "tailscale");
     expect(flow.getSnapshot()).toMatchObject({ stage: "access", mode: "tailscale" });
   });
+  it("pairs through the public Host tunnel without a LAN key and never manages a listener for it", async () => {
+    const { flow, api } = fixture();
+    api.access.mockResolvedValue({
+      state: "ready",
+      endpoint: "https://quiet-river.trycloudflare.com",
+    });
+    await flow.open(local, "public");
+    expect(api.access).toHaveBeenLastCalledWith(local, "public");
+    await flow.create();
+    const state = flow.getSnapshot();
+    expect(state).toMatchObject({ stage: "qr", mode: "public" });
+    if (state.stage === "qr") {
+      expect(state.session.code.endpoint).toBe("https://quiet-river.trycloudflare.com");
+      expect(state.session.code.lanKey).toBeUndefined();
+    }
+    await flow.disable();
+    api.access.mockResolvedValue({ state: "unavailable" });
+    await flow.open(local, "public");
+    await flow.enable("10.0.0.2");
+    expect(api.enable).not.toHaveBeenCalled();
+  });
   it("does not enable networking on open and single-flights the explicit enable action", async () => {
     const { flow, api } = fixture();
     api.access.mockResolvedValue({ state: "setup-required" });
@@ -120,7 +141,7 @@ describe("desktop phone pairing ownership", () => {
     api.access.mockReturnValueOnce(lookup.promise);
     const old = flow.open(local);
     await flow.open(remote);
-    lookup.resolve({ state: "install-required" });
+    lookup.resolve({ state: "unavailable" });
     await old;
     expect(flow.getSnapshot()).toEqual({
       stage: "access",
@@ -195,16 +216,14 @@ describe("desktop phone pairing ownership", () => {
     expect(api.cancel).not.toHaveBeenCalled();
   });
 
-  it("cannot issue tickets while the selected host still requires setup or permission", async () => {
-    const { flow, api } = fixture();
-    api.access.mockResolvedValue({
-      state: "approval-required",
-      approvalUrl: "https://login.tailscale.com/a/approve",
-    });
-    await flow.open(remote);
-    await flow.create();
-    await flow.enable();
-    expect(api.enable).not.toHaveBeenCalled();
-    expect(api.create).not.toHaveBeenCalled();
-  });
+  it.each(["setup-required", "unavailable"] as const)(
+    "cannot issue tickets while the selected host is %s",
+    async (state) => {
+      const { flow, api } = fixture();
+      api.access.mockResolvedValue({ state });
+      await flow.open(remote);
+      await flow.create();
+      expect(api.create).not.toHaveBeenCalled();
+    },
+  );
 });

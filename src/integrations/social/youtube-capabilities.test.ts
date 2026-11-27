@@ -39,16 +39,54 @@ describe("YouTube capability map", () => {
   });
 
   it("keeps operations without an implementation unsupported with a stable reason", () => {
-    expect(row(apiAccount, "delete")).toMatchObject({
-      status: "unsupported",
-      reasonCode: "unsupported.not_yet",
-    });
     expect(row(apiAccount, "message.reply")).toMatchObject({
       status: "unsupported",
       reasonCode: "unsupported.platform",
     });
     expect(row(apiAccount, "search").status).toBe("unsupported");
     expect(row(apiAccount, "webhook").status).toBe("unsupported");
+  });
+
+  it("declares scoped YouTube management and Studio operations", () => {
+    for (const operation of [
+      "delete",
+      "video.update",
+      "thumbnail.set",
+      "playlists.manage",
+      "comment.moderate",
+      "subscribe",
+      "channel.profile.update",
+      "live.manage",
+      "live.chat",
+    ])
+      expect(row(apiAccount, operation)).toMatchObject({
+        status: "available",
+        reasonCode: "api.ready",
+      });
+    expect(row(apiAccount, "analytics.report")).toMatchObject({
+      status: "pending",
+      scopes: expect.arrayContaining(["https://www.googleapis.com/auth/yt-analytics.readonly"]),
+    });
+    expect(row(apiAccount, "monetization.read")).toMatchObject({
+      status: "pending",
+      scopes: expect.arrayContaining([
+        "https://www.googleapis.com/auth/yt-analytics-monetary.readonly",
+      ]),
+    });
+    for (const operation of [
+      "channel.profile.update",
+      "community.publish",
+      "comment.react",
+      "monetization.status",
+    ])
+      expect(row(browserAccount, operation)).toMatchObject({
+        status: "available",
+        reasonCode: "browser.ready",
+      });
+    expect(row(apiAccount, "community.publish")).toMatchObject({
+      status: "unsupported",
+      reasonCode: "youtube.browser_required",
+    });
   });
 
   it("offers browser publishing, replies and polling only from the Studio recipe", () => {

@@ -9,7 +9,7 @@ import type {
 } from "./localVoiceClient";
 import { DEFAULT_SPEAKERS, SPEAKER_IDS, type SpeakerEngine } from "./voiceSpeakers";
 import { CLOUD_DICTATION_PROVIDERS, DICTATION_MODELS } from "./dictationModels";
-import { SPOKEN_LANGUAGES } from "./voiceSpokenLanguage";
+import { SPOKEN_LANGUAGES } from "../../../shared/model/voice-realtime/voiceSpokenLanguage";
 import { WAKE_PHRASE_LIMITS } from "./voiceWakePhrase";
 
 export type VoiceVisual = "mark" | "wave" | "dots" | "orb";
@@ -25,7 +25,11 @@ export const DICTATION_ENGINES: readonly DictationEngine[] = [
   "openrouter",
 ];
 
-export type DictationDictionaryEntry = { term: string; aliases: string[]; projectId?: string };
+export type DictationDictionaryEntry = {
+  term: string;
+  aliases: string[];
+  projectId?: string;
+};
 export type DictationCleanup = {
   enabled: boolean;
   model: string;
@@ -40,13 +44,15 @@ export type VoiceSettings = {
   manualTurnEnd?: boolean;
   manualTurnEndRevision?: number;
   microphoneId?: string;
+  /** Audio output device for spoken replies; missing means the system default. */
+  speakerOutputId?: string;
   turnEndSilence?: number;
   holdAnnouncements?: boolean;
   allowBargeIn?: boolean;
+  /** Opt-in: drop hesitations ("eee", "um") from the owner's recognized speech. */
+  removeFillers?: boolean;
   /** Opt-in: speak when the owner returns, then listen for a bounded window. Off by default. */
   returnCall?: boolean;
-  /** Seconds the microphone stays open after the return greeting; 5 to 120, default 20. */
-  returnCallSeconds?: number;
   /** Opt-in: a local listener opens Talk after the wake phrase; the sleep phrase closes it. */
   wakeEnabled?: boolean;
   /** Owner-typed phrases only (2 to 40 characters); missing means the language default. */
@@ -57,7 +63,6 @@ export type VoiceSettings = {
   enabled: boolean;
   dictationEnabled: boolean;
   dictationShortcutMode: "auto" | "hold" | "toggle";
-  dictationIdleUnloadMinutes: number;
   dictationLocalModelPath: string;
   dictationDictionary: DictationDictionaryEntry[];
   dictationRemoveFillers: boolean;
@@ -91,7 +96,6 @@ const defaults: VoiceSettings = {
   enabled: false,
   dictationEnabled: false,
   dictationShortcutMode: "auto",
-  dictationIdleUnloadMinutes: 5,
   dictationLocalModelPath: "",
   dictationDictionary: [],
   dictationRemoveFillers: false,
@@ -117,6 +121,8 @@ const defaults: VoiceSettings = {
   whisperPath: "",
   ttsPath: "",
 };
+/** Values a voice setting returns to with its Restore default action. */
+export const VOICE_SETTINGS_DEFAULTS: Readonly<VoiceSettings> = defaults;
 function wakePhraseField(key: "wakePhrase" | "sleepPhrase", raw: unknown) {
   const text = typeof raw === "string" ? raw.trim() : "";
   return text.length >= WAKE_PHRASE_LIMITS.min && text.length <= WAKE_PHRASE_LIMITS.max
@@ -159,12 +165,6 @@ export function normalizeVoiceSettings(value: VoiceSettings): VoiceSettings {
       value?.dictationShortcutMode === "hold" || value?.dictationShortcutMode === "toggle"
         ? value.dictationShortcutMode
         : "auto",
-    dictationIdleUnloadMinutes:
-      Number.isInteger(value?.dictationIdleUnloadMinutes) &&
-      value.dictationIdleUnloadMinutes >= 0 &&
-      value.dictationIdleUnloadMinutes <= 120
-        ? value.dictationIdleUnloadMinutes
-        : 5,
     dictationLocalModelPath:
       typeof value?.dictationLocalModelPath === "string" ? value.dictationLocalModelPath : "",
     dictationDictionary: parseDictationDictionary(value?.dictationDictionary),
@@ -206,6 +206,9 @@ export function normalizeVoiceSettings(value: VoiceSettings): VoiceSettings {
     ...(typeof value?.microphoneId === "string" && value.microphoneId.length <= 300
       ? { microphoneId: value.microphoneId }
       : {}),
+    ...(typeof value?.speakerOutputId === "string" && value.speakerOutputId.length <= 300
+      ? { speakerOutputId: value.speakerOutputId }
+      : {}),
     ...(typeof value?.turnEndSilence === "number" &&
     Number.isFinite(value.turnEndSilence) &&
     value.turnEndSilence >= 0.5 &&
@@ -216,16 +219,11 @@ export function normalizeVoiceSettings(value: VoiceSettings): VoiceSettings {
       ? { holdAnnouncements: value.holdAnnouncements }
       : {}),
     ...(typeof value?.allowBargeIn === "boolean" ? { allowBargeIn: value.allowBargeIn } : {}),
+    ...(value?.removeFillers === true ? { removeFillers: true } : {}),
     ...(value?.returnCall === true ? { returnCall: true } : {}),
     ...(value?.wakeEnabled === true ? { wakeEnabled: true } : {}),
     ...wakePhraseField("wakePhrase", value?.wakePhrase),
     ...wakePhraseField("sleepPhrase", value?.sleepPhrase),
-    ...(typeof value?.returnCallSeconds === "number" &&
-    Number.isInteger(value.returnCallSeconds) &&
-    value.returnCallSeconds >= 5 &&
-    value.returnCallSeconds <= 120
-      ? { returnCallSeconds: value.returnCallSeconds }
-      : {}),
     idleSleepMinutes:
       Number.isInteger(value?.idleSleepMinutes) &&
       value.idleSleepMinutes >= 0 &&

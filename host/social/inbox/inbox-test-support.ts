@@ -92,9 +92,22 @@ export function inboxContext(input: FixtureInput = {}) {
     },
   } as unknown as SocialServiceApi;
 
+  const reads = { fullScans: 0 };
   const store = {
-    legacyRecords: async (kind: string) =>
-      kind === "thread" ? threads : kind === "contact" ? contacts : [],
+    transaction: async <T>(fn: () => Promise<T>) => fn(),
+    legacyRecords: async (kind: string) => {
+      reads.fullScans += 1;
+      return kind === "thread" ? threads : kind === "contact" ? contacts : [];
+    },
+    getThread: async (id: string) => threads.find((item) => item.id === id),
+    getContact: async (id: string) => contacts.find((item) => item.id === id),
+    threadsForHandles: async (accountId: string, platformIds: string[]) =>
+      threads.flatMap((item) => {
+        const owner = contacts.find((entry) => entry.id === item.contactId);
+        return item.accountId === accountId && owner && platformIds.includes(owner.platformId)
+          ? [{ thread: item, contact: owner }]
+          : [];
+      }),
     getRecord: async (_kind: string, id: string) => statuses.get(id),
     putRecord: async (_kind: string, id: string, value: InboxStatusRecord) => {
       statuses.set(id, value);
@@ -124,5 +137,5 @@ export function inboxContext(input: FixtureInput = {}) {
     principal,
     operationId: "operation-test",
   };
-  return { ctx, statuses, settings, writes };
+  return { ctx, statuses, settings, writes, reads };
 }

@@ -1,10 +1,15 @@
-export const IS_MAC =
-  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+// React Native defines `navigator` without `platform`; the mobile app reaches this through shared path helpers.
+const platformName =
+  typeof navigator !== "undefined" && typeof navigator.platform === "string"
+    ? navigator.platform
+    : "";
+
+export const IS_MAC = /Mac|iPhone|iPad/.test(platformName);
 
 // Case-sensitive: "Darwin" must not read as Windows ("Win32", "Win64").
-export const IS_WIN = typeof navigator !== "undefined" && navigator.platform.startsWith("Win");
+export const IS_WIN = platformName.startsWith("Win");
 
-export const IS_LINUX = typeof navigator !== "undefined" && /Linux/i.test(navigator.platform);
+export const IS_LINUX = /Linux/i.test(platformName);
 
 /** Native desktop blur on macOS/Windows; transparency-only glass on Linux. */
 export const HAS_NATIVE_GLASS = IS_MAC || IS_WIN || IS_LINUX;

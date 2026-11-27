@@ -6,6 +6,7 @@ import { listAiActions } from "../autonomy/ai-actions-log";
 import { askSuggestionModel } from "../social-suggestions";
 import { callAction } from "./ai-host";
 import { textModel } from "./ai-command";
+import { sanitizeSocialError } from "../core/social-helpers";
 
 const DAY_MS = 86_400_000;
 const SEND_ACTION = /\.(send|schedule)$/;
@@ -22,11 +23,12 @@ export async function recentAiActions(
   const rows: AiAction[] = [];
   let cursor: string | undefined;
   while (rows.length < MAX_SCAN_ROWS) {
-    const page = await listAiActions(store, { cursor, limit: 200 });
-    for (const row of page.items) {
-      if (row.at < since) return rows;
-      rows.push(row);
-    }
+    const page = await listAiActions(store, {
+      cursor,
+      since,
+      limit: Math.min(200, MAX_SCAN_ROWS - rows.length),
+    });
+    rows.push(...page.items);
     if (!page.next) break;
     cursor = page.next;
   }
@@ -43,33 +45,28 @@ function startOfDay(now: number): number {
 async function replyRate(store: SocialAudienceStore, now: number): Promise<number> {
   const since = now - 30 * DAY_MS;
   const people = await store.listPeople({ limit: REPLY_SAMPLE });
-  let contacted = 0;
-  let replied = 0;
-  for (const person of people.items) {
-    const interactions = await store.listInteractions(person.id);
-    const outbound = interactions
-      .filter((item) => item.direction === "outbound" && item.at >= since)
-      .map((item) => item.at);
-    if (!outbound.length) continue;
-    contacted++;
-    const first = Math.min(...outbound);
-    if (interactions.some((item) => item.direction === "inbound" && item.at > first)) replied++;
-  }
+  const { contacted, replied } = await store.replyStats(
+    people.items.map((person) => person.id),
+    since,
+  );
   return contacted ? replied / contacted : 0;
 }
 
 /**
- * Needs-human items from the browser layer (4H). Until that layer is built its action rejects,
- * and the count stays 0 rather than failing the summary.
+ * Needs-human items from the browser layer (4H). A failed read keeps the count at 0 so the summary
+ * still loads, and sets `unavailable` and logs the sanitized error so the owner can tell it apart.
  */
-async function needsHumanCount(ctx: SocialActionContext): Promise<number> {
+async function needsHumanCount(
+  ctx: SocialActionContext,
+): Promise<{ count: number; unavailable: boolean }> {
   try {
     const result = (await callAction(ctx, ctx.principal, "browser.needsHuman.list", {})) as {
       items?: unknown[];
     };
-    return Array.isArray(result?.items) ? result.items.length : 0;
-  } catch {
-    return 0;
+    return { count: Array.isArray(result?.items) ? result.items.length : 0, unavailable: false };
+  } catch (error) {
+    console.error("Social AI summary needs-human count failed:", sanitizeSocialError(error));
+    return { count: 0, unavailable: true };
   }
 }
 
@@ -79,6 +76,7 @@ export async function summarize(ctx: SocialActionContext): Promise<AiSummary> {
   const rows = await recentAiActions(ctx.store, now - 7 * DAY_MS);
   const people = await ctx.store.listPeople({ limit: 200 });
   const queued = rows.filter((row) => row.status === "queued");
+  const needsHuman = await needsHumanCount(ctx);
   return {
     sentToday: rows.filter(
       (row) => row.at >= start && row.status === "done" && SEND_ACTION.test(row.action),
@@ -87,8 +85,8 @@ export async function summarize(ctx: SocialActionContext): Promise<AiSummary> {
     newPeople: people.items.filter((person) => person.createdAt >= start).length,
     replyRate: await replyRate(ctx.store, now),
     waitingForYou:
-      queued.filter((row) => row.reason === AWAITING_APPROVAL).length +
-      (await needsHumanCount(ctx)),
+      queued.filter((row) => row.reason === AWAITING_APPROVAL).length + needsHuman.count,
+    needsHumanUnavailable: needsHuman.unavailable,
   };
 }
 
@@ -118,6 +116,7 @@ export async function report(ctx: SocialActionContext, period: "day" | "week"): 
     .map((row) => `${row.action}: ${row.reason ?? row.status}`);
   const model = await textModel(ctx);
   let suggestions: string[] = [];
+  let suggestionsError: string | undefined;
   if (model && rows.length) {
     try {
       const answer = await askSuggestionModel(
@@ -134,9 +133,11 @@ export async function report(ctx: SocialActionContext, period: "day" | "week"): 
         .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
         .map((item) => item.trim().slice(0, SUGGESTION_MAX))
         .slice(0, MAX_SUGGESTIONS);
-    } catch {
+    } catch (error) {
       suggestions = [];
+      suggestionsError = sanitizeSocialError(error);
+      console.error("Social AI report suggestions failed:", suggestionsError);
     }
   }
-  return { done, results, suggestions };
+  return { done, results, suggestions, ...(suggestionsError ? { suggestionsError } : {}) };
 }

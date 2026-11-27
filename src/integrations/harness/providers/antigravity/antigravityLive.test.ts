@@ -528,7 +528,7 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
     expect(mock.kill).toHaveBeenCalledWith(probeId);
     expect(mock.listeners.has(probeId!)).toBe(false);
     mock.fail.add("session/new");
-    await provider.refresh();
+    await expect(provider.refresh()).rejects.toThrow("Authentication required");
     expect(modelsFor(provider.id).map((model) => model.nativeId)).toEqual(["m1", "m2"]);
     expect(mock.sent.some((m) => m.method === "authenticate")).toBe(false);
   });
@@ -637,6 +637,26 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
     }
   });
 
+  it("keeps a quiet prompt pending past the former 30 minute wall-clock cap", async () => {
+    vi.useFakeTimers();
+    try {
+      const turn = provider.send(input);
+      const outcome = turn.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      await flush();
+      expect(mock.sent.some((m) => m.method === "session/prompt")).toBe(true);
+      await vi.advanceTimersByTimeAsync(31 * 60_000);
+      finishPrompt();
+      expect(await outcome).toBeUndefined();
+      expect(events.some((e) => e.type === "session.error")).toBe(false);
+      expect(events).toContainEqual({ type: "message.completed" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("settles a pending approval and the turn when the process exits", async () => {
     const turn = provider.send(input);
     await waitPrompt();
@@ -715,26 +735,6 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
     } finally {
       vi.useRealTimers();
     }
-  });
-
-  it("recycles a prompt that outlives the hard timeout and resumes once", async () => {
-    vi.useFakeTimers();
-    try {
-      const turn = provider.send(input);
-      await flush();
-      const outcome = turn.then(() => "resolved").catch((e: Error) => e.message);
-      await vi.advanceTimersByTimeAsync(31 * 60_000);
-      await expect(outcome).resolves.toMatch(/timed out/);
-    } finally {
-      vi.useRealTimers();
-    }
-    mock.autoPrompt = true;
-    mock.sent.length = 0;
-    await provider.send({ ...input, text: "retry" });
-    expect(mock.spawn).toHaveBeenCalledTimes(2);
-    const methods = mock.sent.map((m) => m.method);
-    expect(methods.filter((m) => m === "session/resume")).toHaveLength(1);
-    expect(methods).not.toContain("session/new");
   });
 
   it("ignores a retired process emitting after the transport was recycled", async () => {

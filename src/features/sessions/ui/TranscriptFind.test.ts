@@ -8,6 +8,133 @@ import type { Block } from "../model/session";
 import { requestTranscriptJump } from "../model/transcriptJump";
 import { TranscriptFind } from "./TranscriptFind";
 
+function typeFind(container: HTMLElement, query: string) {
+  const field = container.querySelector("input")!;
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, query);
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+it("reads missing history only for an active query, retries failures and waits for the whole result", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("requestAnimationFrame", () => 1);
+  vi.stubGlobal("cancelAnimationFrame", vi.fn());
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  let finish!: (value: number) => void;
+  const load = vi.fn(
+    () =>
+      new Promise<number>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const blocks: Block[] = [{ id: "new", role: "user", text: "recent" }];
+  const render = (page?: string) =>
+    act(async () =>
+      root.render(
+        createElement(TranscriptFind, {
+          blocks: [...blocks],
+          visible: true,
+          focused: true,
+          sessionId: "history",
+          onNavigate: () => true,
+          historyPage: page,
+          loadHistory: load,
+        }),
+      ),
+    );
+  const status = () => container.querySelector('[role="status"]')?.textContent;
+  try {
+    await render("20");
+    await act(async () => container.querySelector("button")!.click());
+    expect(load).not.toHaveBeenCalled();
+    await act(async () => typeFind(container, "needle"));
+    expect(status()).toBe("Searching…");
+    expect(load).toHaveBeenCalledTimes(1);
+    await act(async () => finish(0));
+    expect(status()).toBe("Search failed");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Retry"]')!.click(),
+    );
+    expect(load).toHaveBeenCalledTimes(2);
+    blocks.unshift({ id: "old", role: "assistant", text: "needle in old page" });
+    await act(async () => finish(1));
+    await render(undefined);
+    expect(status()).toBe("1 of 1");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps one read across keystrokes and stops fetching when the conversation is hidden or Find closes", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("requestAnimationFrame", () => 1);
+  vi.stubGlobal("cancelAnimationFrame", vi.fn());
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const readBlock = vi.fn(() => Promise.resolve());
+  const preview: Block = {
+    id: "large",
+    role: "assistant",
+    text: "preview",
+    remoteContent: { revision: 3, bytes: 100000 },
+  };
+  let release!: (added: number) => void;
+  const load = vi.fn(
+    () =>
+      new Promise<number>((resolve) => {
+        release = resolve;
+      }),
+  );
+  const render = (visible: boolean, page?: string, full = false) =>
+    act(async () =>
+      root.render(
+        createElement(TranscriptFind, {
+          blocks: [
+            full ? { ...preview, text: "secret only in full", remoteContent: undefined } : preview,
+          ],
+          visible,
+          focused: visible,
+          onNavigate: () => true,
+          sessionId: "remote",
+          historyPage: page,
+          loadHistory: load,
+          loadBlock: readBlock,
+        }),
+      ),
+    );
+  try {
+    await render(true, "p1");
+    await act(async () => container.querySelector("button")!.click());
+    await act(async () => typeFind(container, "s"));
+    await act(async () => typeFind(container, "secret"));
+    expect(load).toHaveBeenCalledTimes(1);
+    await render(false, "p1");
+    await act(async () => release(20));
+    await render(false, "p2");
+    expect(load).toHaveBeenCalledTimes(1);
+    await render(true, "p2");
+    expect(load).toHaveBeenCalledTimes(2);
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Close find"]')!.click(),
+    );
+    await act(async () => release(20));
+    await render(true);
+    expect(readBlock).not.toHaveBeenCalled();
+    await act(async () => container.querySelector("button")!.click());
+    expect(readBlock).toHaveBeenCalledExactlyOnceWith("large", 3);
+    await render(true, undefined, true);
+    expect(container.querySelector("[role=status]")?.textContent).toBe("1 of 1");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 /** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
 async function tooltipText(element: HTMLElement): Promise<string> {
   await act(async () => {
@@ -106,14 +233,18 @@ it.each([false, true])(
       await act(async () => {
         saveKeybindingOverride("Editor: Find", { disabled: true });
       });
-      expect(await tooltipText(launcher())).toBe("Find in conversation");
+      // With no shortcut the name would only repeat the label, so no tooltip opens.
+      expect(launcher().getAttribute("aria-label")).toBe("Find in conversation");
+      expect(await tooltipText(launcher())).toBe("");
       await act(async () => launcher().click());
       if (inHeader) expect(launcher().getAttribute("aria-expanded")).toBe("true");
       expect(container.querySelector('[role="search"]')).not.toBeNull();
       expect(container.querySelector('[aria-label="Next match"]')).not.toBeNull();
       const close = container.querySelector<HTMLButtonElement>('[aria-label="Close find"]')!;
       await act(async () => close.click());
-      expect(await tooltipText(launcher())).toBe("Find in conversation");
+      // With no shortcut the name would only repeat the label, so no tooltip opens.
+      expect(launcher().getAttribute("aria-label")).toBe("Find in conversation");
+      expect(await tooltipText(launcher())).toBe("");
     } finally {
       await act(async () => root.unmount());
       container.remove();

@@ -1,8 +1,9 @@
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { errorText } from "../../../shared/lib/errors";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { isImeComposition } from "../../../shared/lib/keyboard";
-import { Divider } from "../../../shared/ui/Divider";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { StatusDot } from "../../../shared/ui/StatusDot";
@@ -17,7 +18,7 @@ import {
   X,
   type IconComponent,
 } from "../../../shared/ui/icons";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { normalizeHex } from "../../../shared/lib/colorUtils";
 import { projectKey } from "../../../shared/lib/paths";
 import { clearProjectLogo, pickAndSetProjectLogo } from "../../projects/model/projectLogos";
@@ -29,7 +30,6 @@ import {
   type DropdownMenuItem,
 } from "../../../shared/ui/DropdownMenu";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { MenuRow as SharedMenuRow } from "../../../shared/ui/MenuRow";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectIconPicker } from "../../projects/ui/ProjectIconPicker";
 import { RailBackgroundControls } from "../../projects/ui/RailBackgroundControls";
@@ -102,7 +102,6 @@ type Props = {
   appearanceItems?: Pick<TabGroupMenuExtraItem, "id" | "label" | "icon" | "disabled" | "danger">[];
 };
 
-const MENU_WIDTH = 260;
 const APPEARANCE_WIDTH = 296;
 
 type MenuItem = {
@@ -193,29 +192,18 @@ export function TabGroupMenu({
     if (onExtraPick?.(id) !== false) onClose();
   };
   const nameCaption = nameLabel ?? t("Group name");
-  const input = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(label);
   const [customPickerOpen, setCustomPickerOpen] = useState(false);
   const [logoError, setLogoError] = useState<string | null>(null);
   const [logoBusy, setLogoBusy] = useState(false);
   const logoOperation = useRef(false);
 
-  useEffect(() => {
-    const focusName = () => {
-      input.current?.focus();
-      input.current?.select();
-    };
-    focusName();
-    // The menu moves focus to its first row once placed; the name field takes it back after that.
-    const frame = requestAnimationFrame(focusName);
-    return () => cancelAnimationFrame(frame);
-  }, []);
-
   const trimmedName = name.trim();
-  const nameError = validateName && trimmedName !== label.trim() ? validateName(trimmedName) : null;
+  const nameProblem =
+    validateName && trimmedName !== label.trim() ? validateName(trimmedName) : null;
 
   const commitName = () => {
-    if (nameError) return false;
+    if (nameProblem) return false;
     onRename(groupId, trimmedName);
     return true;
   };
@@ -230,11 +218,10 @@ export function TabGroupMenu({
             variant="ghost"
             motion="none"
             type="button"
-            aria-label={logoPath ? t("Change project logo") : t("Add project logo")}
             loading={logoBusy}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
-              if (logoOperation.current || !commitName()) return;
+              if (logoOperation.current) return;
               logoOperation.current = true;
               setLogoBusy(true);
               setLogoError(null);
@@ -246,7 +233,7 @@ export function TabGroupMenu({
                     onClose();
                   }
                 } catch (error) {
-                  setLogoError(error instanceof Error ? error.message : String(error));
+                  setLogoError(errorText(error));
                 } finally {
                   logoOperation.current = false;
                   setLogoBusy(false);
@@ -267,11 +254,11 @@ export function TabGroupMenu({
             <Text as="p" size="caption" tone="muted">
               {t("Logo")}
             </Text>
-            <InfoPopover>
+            <InfoTooltip>
               {logoPath
                 ? t("Shown in tabs and composer")
                 : t("Optional. Replaces the folder icon.")}
-            </InfoPopover>
+            </InfoTooltip>
           </div>
           {logoPath ? (
             <Button
@@ -280,8 +267,7 @@ export function TabGroupMenu({
               variant="ghost"
               motion="none"
               type="button"
-              aria-label={t("Remove project logo")}
-              disabled={logoBusy}
+              loading={logoBusy}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 if (logoOperation.current) return;
@@ -290,7 +276,7 @@ export function TabGroupMenu({
                 setLogoError(null);
                 void clearProjectLogo(projectKey(logoProject))
                   .then(onLogoChange, (error) => {
-                    setLogoError(error instanceof Error ? error.message : String(error));
+                    setLogoError(errorText(error));
                   })
                   .finally(() => {
                     logoOperation.current = false;
@@ -304,7 +290,15 @@ export function TabGroupMenu({
           ) : null}
         </div>
       ) : null}
-      {logoError ? <Alert tone="danger">{logoError}</Alert> : null}
+      {logoError ? (
+        <Alert
+          tone="danger"
+          title={t("Could not update the project logo.")}
+          extra={
+            <ErrorDetails title={t("Could not update the project logo.")} detail={logoError} />
+          }
+        />
+      ) : null}
 
       <SectionLabel as="div" className="mb-1.5">
         {t("Color")}
@@ -348,14 +342,6 @@ export function TabGroupMenu({
           onChange={onRailBackgroundChange}
         />
       ) : null}
-      {appearanceItems?.length ? (
-        <>
-          <Divider className="my-1" />
-          {appearanceItems.map((item) => (
-            <MenuRow key={item.id} item={item} onPick={() => pickExtra(item.id)} />
-          ))}
-        </>
-      ) : null}
     </>
   );
 
@@ -390,6 +376,14 @@ export function TabGroupMenu({
     };
   };
   const SEP: DropdownMenuItem = { kind: "sep" };
+  const appearanceForm: DropdownMenuItem = {
+    kind: "content",
+    id: "appearance-form",
+    node: appearance,
+  };
+  const appearanceActions = appearanceItems?.length
+    ? [SEP, ...appearanceItems.map((item) => action(item))]
+    : [];
   const items: DropdownMenuItem[] = [
     ...(leadingAction ? [action(leadingAction), SEP] : []),
     {
@@ -401,10 +395,10 @@ export function TabGroupMenu({
             fieldClassName="mb-2 min-w-0 flex-1"
             label={nameCaption}
             startAdornment={<Pencil className="icon-sm" strokeWidth={1.75} />}
-            ref={input}
             value={name}
             disabled={logoBusy}
             onChange={(e) => setName(e.target.value)}
+            // A typed name is saved when the field loses focus, so clicking away never loses it.
             onBlur={() => void commitName()}
             onKeyDown={(e) => {
               if (e.key !== "Enter" || isImeComposition(e.nativeEvent)) return;
@@ -412,19 +406,23 @@ export function TabGroupMenu({
               if (commitName()) onClose();
             }}
             aria-label={nameCaption}
-            aria-invalid={nameError ? true : undefined}
+            aria-invalid={nameProblem ? true : undefined}
           />
-          {nameError ? <Alert tone="danger">{nameError}</Alert> : null}
+          {nameProblem ? <Alert tone="danger">{nameProblem}</Alert> : null}
         </>
       ),
     },
     ...(info ? [{ kind: "content", id: "info", node: info } as const] : []),
-    compactAppearance
-      ? action(
-          { id: "appearance", label: t("Appearance"), icon: ImagePlus },
-          { panel: appearance, submenuWidth: APPEARANCE_WIDTH },
-        )
-      : { kind: "content", id: "appearance-form", node: appearance },
+    ...(compactAppearance
+      ? [
+          action(
+            { id: "appearance", label: t("Appearance"), icon: ImagePlus },
+            appearanceActions.length
+              ? { submenu: [appearanceForm, ...appearanceActions], submenuWidth: APPEARANCE_WIDTH }
+              : { panel: appearance, submenuWidth: APPEARANCE_WIDTH },
+          ),
+        ]
+      : [appearanceForm, ...appearanceActions]),
     ...(showActions
       ? [
           SEP,
@@ -453,7 +451,7 @@ export function TabGroupMenu({
       side="right"
       align="start"
       gap={0}
-      width={MENU_WIDTH}
+      size="md"
       label={ariaLabel}
       items={items}
       // Standard actions are closed by the caller; extras close unless onExtraPick vetoes.
@@ -466,38 +464,5 @@ export function TabGroupMenu({
       }}
       onClose={logoBusy ? () => {} : onClose}
     />
-  );
-}
-
-function MenuRow({
-  item,
-  onPick,
-}: {
-  item: Pick<TabGroupMenuExtraItem, "id" | "label" | "icon" | "disabled" | "danger">;
-  onPick: () => void;
-}) {
-  useLocale();
-  const Icon = item.icon;
-  return (
-    <SharedMenuRow
-      destructive={item.danger}
-      type="button"
-      role="menuitem"
-      disabled={item.disabled}
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={onPick}
-    >
-      <Icon className="icon-sm shrink-0" strokeWidth={1.75} />
-      <Text
-        as="span"
-        size="inherit"
-        tone="inherit"
-        leading="snug"
-        truncate
-        className="min-w-0 flex-1"
-      >
-        {item.label}
-      </Text>
-    </SharedMenuRow>
   );
 }

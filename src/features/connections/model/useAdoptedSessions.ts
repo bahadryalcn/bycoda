@@ -19,14 +19,21 @@ import {
   adoptedSessionTimes,
   desktopCopyOf,
   mirrorAdoptedSessions,
+  planAdoptedFetches,
   refreshAdoptedSession,
   supportsAdoptedSessions,
   type AdoptedEntry,
   type AdoptedMirrorDeps,
   type AdoptedResolution,
 } from "./adoptedSessions";
+import { observeAdoptedStop } from "./adoptedSessionCommands";
 import { createHostMetadataMirror } from "./adoptedSessionMetadata";
 import { adoptedSyncingIds, setAdoptedSyncing } from "./adoptedSyncing";
+import {
+  adoptedSyncFailing,
+  adoptedSyncFailureReason,
+  releaseSyncBackoff,
+} from "./adoptedSyncFailures";
 import { loadRemoteCapabilities, loadRemoteSession, remoteRequest } from "./connections";
 import { isLocalSyncMachine } from "./localSync";
 import type { HostProject, RemoteMachine } from "./protocol";
@@ -35,6 +42,7 @@ import { loadRecents, sameProjectPath } from "../../projects/public/recents";
 import { subscribeRemoteRecovered } from "./remoteHealth";
 import { DIGESTS_CAPABILITY } from "../../sync/model/conversationHead";
 import { adoptedBeatFresh, notifyLocalHostReachable, setAdoptedWaker } from "./hostWake";
+import { remoteBackoffDelay } from "./remotePollingPolicy";
 
 const MACHINE_RECHECK_MS = 15_000;
 /** While the host's heartbeat reports what moved, this is the only timer: a
@@ -69,6 +77,10 @@ export function useAdoptedSessions(
   setSessions: (update: (current: Session[]) => Session[]) => void,
   loadRunning?: MutableRefObject<((ids: string[]) => void) | undefined>,
   refreshRef?: MutableRefObject<RefreshAdoptedSession | undefined>,
+  /** The workspace store's change notifications (`subscribeShell`): a tab opened on a
+   * listed conversation is compared at once instead of on the next timer. */
+  subscribeSessions?: (listener: () => void) => () => void,
+  hydrate?: MutableRefObject<((id: string) => Promise<boolean>) | undefined>,
 ): MutableRefObject<boolean> {
   const hostReachable = useRef(false);
   useEffect(() => {
@@ -84,6 +96,9 @@ export function useAdoptedSessions(
     let running: Promise<boolean | undefined> | undefined;
     let wakeRequested = false;
     let wakeMachineChanged = false;
+    /** An explicit wake asked for failed sessions to be read again on the next mirror pass,
+     * instead of waiting out their backoff at an unchanged host revision. */
+    let retryFailed = false;
     /** The host listed a session whose revision this window has not mirrored
      * (busy locally, unreadable, a project not opened here): look again later. */
     let outstanding = false;
@@ -109,11 +124,30 @@ export function useAdoptedSessions(
     const declined = new Map<string, number>();
     let known: RemoteMachine | undefined;
     let knownAt = 0;
+    /** Consecutive scheduled passes that found the host unreachable; sets the idle wait. */
+    let failures = 0;
     /** Open conversations still waiting for their first comparison with the host copy. */
-    const showSyncing = () =>
+    /** Listed conversations a loaded, idle tab holds at another revision, as last seen. One
+     * that joins (a tab opened on it, its history finished loading, its local turn ended)
+     * wakes the mirror once; one that stays, failing or not, does not wake it again. */
+    let due = new Set<string>();
+    const dueNow = () =>
+      new Set(
+        planAdoptedFetches(listed, sessionsRef.current.filter(desktopOwned), mirrored).map(
+          (entry) => entry.id,
+        ),
+      );
+    const showSyncing = () => {
+      const reasons = new Map<string, string>();
+      for (const entry of listed) {
+        const reason = adoptedSyncFailureReason(mirrored, entry);
+        if (reason) reasons.set(entry.id, reason);
+      }
       setAdoptedSyncing(
         adoptedSyncingIds(listed, sessionsRef.current.filter(desktopOwned), mirrored),
+        reasons,
       );
+    };
 
     const perform = async (
       sessionId?: string,
@@ -129,6 +163,7 @@ export function useAdoptedSessions(
         const machine = known;
         if (!machine || stopped) {
           setReachable(false);
+          if (!sessionId) failures += 1;
           if (sessionId) throw new Error("Host unavailable. Check the connection and try again.");
           return;
         }
@@ -137,6 +172,7 @@ export function useAdoptedSessions(
         const capabilities = await loadRemoteCapabilities(machine.environmentId);
         setReachable(supportsAdoptedSessions(capabilities));
         if (!hostReachable.current || stopped) {
+          if (!sessionId) failures += 1;
           if (sessionId)
             throw new Error(
               "The host cannot refresh this conversation. Check the connection and host version.",
@@ -163,16 +199,26 @@ export function useAdoptedSessions(
               )
             )
               throw new Error("This conversation belongs to another project.");
+            if (!stopped) {
+              for (const entry of entries) {
+                if (entry.status !== "running") observeAdoptedStop(entry.id, entry);
+              }
+            }
             return entries;
           },
           load: async (sessionId, known) => {
-            const host = await loadRemoteSession(machine.id, sessionId, known, { digests });
+            const host = await loadRemoteSession(machine.id, sessionId, known, {
+              digests,
+              deferPreviews: true,
+            });
             if (host.session.id !== sessionId || (target && host.projectId !== target.projectId))
               throw new Error("This conversation belongs to another project.");
+            if (!stopped) observeAdoptedStop(sessionId, host);
             await metadata.observe(host).catch(() => undefined);
             return host;
           },
           local: () => (stopped ? [] : sessionsRef.current.filter(desktopOwned)),
+          hydrate: (id) => hydrate?.current?.(id) ?? Promise.resolve(false),
           mirrored,
           // Only an explicit refresh saves a separate copy, before it replaces
           // the local conversation. A failed backup leaves the original untouched.
@@ -252,7 +298,10 @@ export function useAdoptedSessions(
             )
               return false;
             if (declined.get(entry.id) === entry.revision) return false;
-            const host = await loadRemoteSession(machine.id, entry.id, undefined, { digests });
+            const host = await loadRemoteSession(machine.id, entry.id, undefined, {
+              digests,
+              deferPreviews: true,
+            });
             const copy = desktopCopyOf(host, project.cwd, sameProjectPath);
             if (stopped) return false;
             if (!(await upsertSession(copy, adoptedSessionTimes(host)))) {
@@ -293,19 +342,31 @@ export function useAdoptedSessions(
           },
         };
         if (sessionId) return await refreshAdoptedSession(deps, sessionId, resolution);
+        if (retryFailed) {
+          retryFailed = false;
+          releaseSyncBackoff(mirrored);
+        }
         await mirrorAdoptedSessions(deps);
         if (!stopped) showSyncing();
+        due = dueNow();
         lastFailure = undefined;
+        failures = 0;
+        // A session that keeps failing at its revision is retried on the safety pass, not on
+        // the short cadence reserved for copies that are still arriving.
         outstanding = listed.some(
           (entry) =>
-            mirrored.get(entry.id) !== entry.revision && declined.get(entry.id) !== entry.revision,
+            mirrored.get(entry.id) !== entry.revision &&
+            declined.get(entry.id) !== entry.revision &&
+            !adoptedSyncFailing(mirrored, entry),
         );
       } catch (error) {
         setReachable(false);
         // An unreachable host is the connection notice's to explain, not a sync in progress.
         if (!sessionId) setAdoptedSyncing(new Set());
         outstanding = true;
-        known = undefined;
+        // The machine stays known, so a failing pass does not list machines again. A Host
+        // that changed is found by the machine-changed wake or by the recheck interval.
+        if (!sessionId) failures += 1;
         if (sessionId) throw error;
         // Host unreachable or too old; the next pass tries again. Queue delivery and the
         // live beat wait on this flag, so the reason is named once.
@@ -357,7 +418,10 @@ export function useAdoptedSessions(
     const nextDelay = () => {
       const legacy =
         document.visibilityState === "hidden" ? ADOPTED_POLL_HIDDEN_MS : ADOPTED_POLL_VISIBLE_MS;
-      if (!hostReachable.current || !adoptedBeatFresh()) return legacy;
+      // An unreachable host waits longer each failed pass (5 s, 6 s, 12 s ... 30 s, or the
+      // hidden cadence if that is longer); the wake triggers still run a pass at once.
+      if (!hostReachable.current) return Math.max(legacy, remoteBackoffDelay(failures));
+      if (!adoptedBeatFresh()) return legacy;
       if (!outstanding) {
         retries = 0;
         return ADOPTED_SAFETY_MS;
@@ -387,14 +451,39 @@ export function useAdoptedSessions(
       }
       void pass().finally(schedule);
     };
-    const onWake = () => wake(true);
+    /** Focus, a recovered Host or a changed machine list: also retry sessions whose read
+     * failed at the current revision. The heartbeat does not, since it can fire every second
+     * and a moved revision already bypasses the backoff. */
+    const onWake = () => {
+      retryFailed = true;
+      wake(true);
+    };
     /** The heartbeat says an adopted session moved on the host. */
     const onBeat = () => wake(false);
     const onVisible = () => {
       if (document.visibilityState !== "hidden") onWake();
     };
     const stopRecovered = subscribeRemoteRecovered((environmentId) => {
-      if (!environmentId || !known || known.environmentId === environmentId) onWake();
+      // While the mirror is down, any recovered Host wakes it: the kept machine's identity
+      // is not a filter for a Host that may have come back under another environment.
+      if (
+        !environmentId ||
+        !known ||
+        !hostReachable.current ||
+        known.environmentId === environmentId
+      )
+        onWake();
+    });
+    const unsubscribeSessions = subscribeSessions?.(() => {
+      if (stopped || listed.length === 0) return;
+      const next = dueNow();
+      const opened = [...next].some((id) => !due.has(id));
+      due = next;
+      if (!opened) return;
+      // The owner looks at this conversation now: a read that failed earlier, also while it
+      // was closed, is tried again instead of waiting out its backoff.
+      retryFailed = true;
+      wake(false);
     });
     setAdoptedWaker(onBeat);
     window.addEventListener("focus", onWake);
@@ -409,11 +498,12 @@ export function useAdoptedSessions(
       if (timer !== undefined) clearTimeout(timer);
       setAdoptedWaker(undefined);
       stopRecovered();
+      unsubscribeSessions?.();
       window.removeEventListener("focus", onWake);
       window.removeEventListener("online", onWake);
       window.removeEventListener("bycoda:remote-machines", onWake);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [sessionsRef, setSessions, loadRunning, refreshRef]);
+  }, [sessionsRef, setSessions, loadRunning, refreshRef, subscribeSessions, hydrate]);
   return hostReachable;
 }

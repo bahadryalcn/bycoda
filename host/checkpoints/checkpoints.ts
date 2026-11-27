@@ -9,12 +9,14 @@ import {
   realpath,
   rename,
   rm,
+  rmdir,
   stat,
   utimes,
   writeFile,
 } from "node:fs/promises";
 import { dirname, join, resolve, relative } from "node:path";
-import { execFileAsync as exec } from "../../src/shared/lib/processExecution.node";
+import { forEachConcurrent } from "../../src/shared/lib/concurrent";
+import { hostGitExec } from "../git/git-exec-pool";
 import type {
   CheckpointFileDiff,
   CheckpointStatus,
@@ -36,6 +38,8 @@ type Pair = {
   rawBefore?: string;
   rawAfter?: string;
   modeBefore?: number;
+  /** Why exact bytes were not recorded; such a file is listed but never undoable. */
+  uncaptured?: string;
 };
 type Record = {
   cwd: string;
@@ -46,6 +50,8 @@ type Record = {
     dirty: { [path: string]: string };
     modes?: { [path: string]: number };
     claimed?: string[];
+    /** Set when the baseline stored exact bytes for only some already-dirty files. */
+    partial?: { reason: string; base: string | null };
   };
   /** Exact completed lease eligible for cleanup after a crash before release. */
   settledTurnId?: string;
@@ -56,6 +62,18 @@ type Record = {
 };
 const MAX_FILES = 2000;
 const MAX_BYTES = 8 * 1024 * 1024;
+/** Total exact bytes the baseline keeps for files that were already dirty. */
+const MAX_BASELINE_BYTES = 64 * 1024 * 1024;
+const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+const TOO_LARGE = "Checkpoint file is too large";
+/** A file over the per-file bound; callers turn it into an uncaptured entry, not a failed checkpoint. */
+class CheckpointTooLarge extends Error {
+  constructor() {
+    super(TOO_LARGE);
+  }
+}
+const mib = (bytes: number) => `${bytes / (1024 * 1024)} MB`;
+const UNCAPTURED_LARGE = `its contents exceed the ${mib(MAX_BYTES)} checkpoint limit`;
 type FileImage = { raw: string; mode: number } | null;
 const imageBlob = (value: FileImage): Blob => {
   if (!value) return null;
@@ -99,28 +117,66 @@ const overlap = (a: string, b: string) => {
   b = normalize(b);
   return a === b || a.startsWith(b + "/") || b.startsWith(a + "/");
 };
-async function git(cwd: string, args: string[], index?: string): Promise<Buffer> {
-  const result = await exec("git", ["--no-pager", ...args], {
+/** `magic`: pathspecs carry explicit magic (each one `literal`), so the global literal mode is off. */
+async function git(
+  cwd: string,
+  args: string[],
+  index?: string,
+  input?: string,
+  magic = false,
+): Promise<Buffer> {
+  const { stdout } = await hostGitExec.exec("git", ["--no-pager", ...args], {
     cwd,
+    input,
     encoding: "buffer",
     windowsHide: true,
     timeout: 60_000,
     maxBuffer: 20 * 1024 * 1024,
     env: {
       ...process.env,
-      GIT_LITERAL_PATHSPECS: "1",
+      GIT_LITERAL_PATHSPECS: magic ? "0" : "1",
       GIT_OPTIONAL_LOCKS: "0",
       GIT_TERMINAL_PROMPT: "0",
       ...(index ? { GIT_INDEX_FILE: index } : {}),
     },
   });
-  return result.stdout as Buffer;
+  return stdout;
 }
+const repositoryPrefix = (cwd: string) =>
+  git(cwd, ["rev-parse", "--show-prefix"]).then((value) => value.toString().trimEnd());
+/** Files whose stats are computed at once; each one runs several git processes. */
+const STATUS_CONCURRENCY = 4;
 const head = (cwd: string) =>
   git(cwd, ["rev-parse", "--verify", "HEAD"]).then(
     (v) => v.toString().trim(),
     () => null,
   );
+/**
+ * Paths (of `paths`) whose entry in `tree` differs from `base`: those were
+ * already modified or untracked when the turn began. Literal pathspecs come
+ * from the environment; batches keep the command line short on Windows.
+ */
+async function dirtyAtBegin(cwd: string, base: string | null, tree: string, paths: string[]) {
+  const dirty = new Set<string>();
+  for (let offset = 0; offset < paths.length; offset += 100) {
+    const out = await git(cwd, [
+      "diff",
+      "--relative",
+      "--name-only",
+      "--no-renames",
+      "--no-ext-diff",
+      "--no-textconv",
+      "-z",
+      base ?? EMPTY_TREE,
+      tree,
+      "--",
+      ...paths.slice(offset, offset + 100),
+    ]);
+    for (const path of out.toString().split("\0")) if (path) dirty.add(path);
+  }
+  return dirty;
+}
+
 /**
  * Starts the private snapshot index from a copy of the real one, so `add -A`
  * trusts its stat cache and hashes only changed files instead of the whole
@@ -162,7 +218,41 @@ async function dropCheckpointRefs(cwd: string, session: string, keep?: string) {
     .toString()
     .split("\n")
     .filter((name) => name && !(keep && name.startsWith(`${prefix}${keep}/`)));
-  for (const name of names) await git(cwd, ["update-ref", "-d", name]).catch(() => undefined);
+  // One transaction instead of one process per ref. Names come from for-each-ref, so
+  // they hold no whitespace or control characters and the line format is unambiguous.
+  if (names.length)
+    await git(
+      cwd,
+      ["update-ref", "--stdin"],
+      undefined,
+      names.map((n) => `delete ${n}\n`).join(""),
+    );
+}
+
+/**
+ * Committed tree entries of `paths` at `commit`, in one process per batch of paths
+ * (a file missing there maps to null). Literal pathspecs come from the environment;
+ * batches keep the command line short on Windows.
+ */
+async function committedEntries(cwd: string, commit: string, paths: string[]) {
+  const entries = new Map<string, Blob>(paths.map((path) => [path, null]));
+  for (let offset = 0; offset < paths.length; offset += 100) {
+    const out = await git(cwd, [
+      "ls-tree",
+      "-z",
+      commit,
+      "--",
+      ...paths.slice(offset, offset + 100),
+    ]);
+    for (const line of out.toString().split("\0")) {
+      const tab = line.indexOf("\t");
+      if (tab < 0) continue;
+      const [mode, , oid] = line.slice(0, tab).split(" ");
+      const path = line.slice(tab + 1);
+      if (entries.has(path)) entries.set(path, { mode, oid });
+    }
+  }
+  return entries;
 }
 
 async function hasGit(cwd: string) {
@@ -192,9 +282,10 @@ export class HostCheckpoints {
     private root: string,
     leaseRoot = join(root, ".active-leases"),
     private readonly authority?: FileRevertAuthority,
+    hostOwned: readonly string[] = [],
   ) {
     this.leases = new CheckpointLeases(leaseRoot);
-    this.fileHistory = new SessionFileRevert(root, undefined, authority);
+    this.fileHistory = new SessionFileRevert(root, undefined, authority, hostOwned);
   }
   /** Run after the session's provider and desktop writers are retired. */
   retireDeletedSessionHistory(session: string, cwd: string) {
@@ -209,8 +300,46 @@ export class HostCheckpoints {
         if (error.code === "ENOENT") return undefined;
         throw error;
       });
-      return this.fileHistory.retireDeletedSession(session, checkout ?? resolve(cwd), !checkout);
+      const retired = await this.fileHistory.retireDeletedSession(
+        session,
+        checkout ?? resolve(cwd),
+        !checkout,
+      );
+      // Only after the undo history was retired: any earlier refusal keeps the refs too.
+      if (record) await this.forgetRecord(session, record);
+      return retired;
     });
+  }
+  /**
+   * Deletes a deleted session's private refs and checkpoint manifest. Caller holds the
+   * session queue and has proven no lease, active turn or unresolved error remains. The
+   * session directory stays when file-history evidence is still in it. A failing ref
+   * delete throws before the manifest goes, so the refs stay discoverable.
+   */
+  private async forgetRecord(session: string, record: Record) {
+    const present = await stat(record.cwd).then(
+      () => true,
+      (error: NodeJS.ErrnoException) => {
+        // A removed checkout took its repository, and the refs inside it, along.
+        if (error.code === "ENOENT") return false;
+        throw error;
+      },
+    );
+    if (present && (await hasGit(record.cwd))) await dropCheckpointRefs(record.cwd, session);
+    const dir = this.dir(session);
+    const leftovers = await readdir(dir).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return [];
+      throw error;
+    });
+    for (const name of leftovers)
+      if (name === "manifest.json" || name === "manifest.json.tmp" || name.startsWith("index-"))
+        await rm(join(dir, name), { force: true });
+    await rmdir(dir).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOTEMPTY" && error.code !== "ENOENT" && error.code !== "EEXIST")
+        throw error;
+    });
+    this.legacyActive.delete(session);
+    this.knownSessions.delete(session);
   }
   /** Lightweight default turn hooks: no private Git index, tree or refs. Call
    * with the actual user block ID, which differs from the provider run ID. */
@@ -534,7 +663,24 @@ export class HostCheckpoints {
         await rm(index, { force: true });
         await git(cwd, ["read-tree", hasHead ? "HEAD" : "--empty"], index);
       }
-      await git(cwd, ["add", "-A", "--", "."], index);
+      // Host storage inside the checkout (database, sidecars, attachments, checkpoint data)
+      // stays out of the private tree; a checkout inside Host storage adds nothing.
+      if (!(await this.fileHistory.isHostOwned(cwd, "")))
+        await git(
+          cwd,
+          [
+            "add",
+            "-A",
+            "--",
+            ":(literal).",
+            ...(await this.fileHistory.hostOwnedWithin(cwd)).map(
+              (path) => `:(exclude,literal)${path}`,
+            ),
+          ],
+          index,
+          undefined,
+          true,
+        );
       const tree = (await git(cwd, ["write-tree"], index)).toString().trim();
       await git(cwd, ["update-ref", `refs/bycoda/checkpoints/${session}/${turn}/${phase}`, tree]);
       return tree;
@@ -546,13 +692,18 @@ export class HostCheckpoints {
   /** Lenient reads skip symlinks, submodules and nested repositories; Git trees still capture them. */
   private async raw(cwd: string, path: string, lenient = false): Promise<string | undefined> {
     const abs = await safeGitPath(cwd, path);
+    // Opening and closing Host database files here would drop SQLite's locks on them.
+    if (await this.fileHistory.isHostOwned(cwd, path)) {
+      if (lenient) return;
+      throw new Error("Host storage is never captured or restored");
+    }
     try {
       const meta = await lstat(abs);
       if (!meta.isFile() || meta.isSymbolicLink()) {
         if (lenient) return;
         throw new Error("Unsupported checkpoint file");
       }
-      if (meta.size > MAX_BYTES) throw new Error("Checkpoint file is too large");
+      if (meta.size > MAX_BYTES) throw new CheckpointTooLarge();
       return (await readFile(abs)).toString("base64");
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === "ENOENT") return;
@@ -590,6 +741,13 @@ export class HostCheckpoints {
           files: owned ? previous.files : Object.create(null),
           active: { id: turn, tree: "", dirty: Object.create(null), modes: Object.create(null) },
         };
+        // A turn whose capture failed left changes unrecorded. The error clears with this
+        // record, so the files carried forward must not read as a complete checkpoint.
+        if (owned && previous.error)
+          for (const pair of Object.values(record.files) as Pair[]) {
+            pair.exact = false;
+            pair.uncaptured ??= `an earlier turn's checkpoint failed (${previous.error})`;
+          }
         await this.save(session, record);
         if (!isGit) return;
         try {
@@ -618,18 +776,37 @@ export class HostCheckpoints {
             .split("\0")
             .filter(Boolean);
           const paths = [...new Set([...dirty, ...untracked, ...staged])];
-          if (paths.length > MAX_FILES) throw new Error("Too many dirty files for checkpoint");
+          // The private tree below captures every dirty file. Exact bytes are an extra kept
+          // within the existing bounds; past them the baseline degrades instead of failing:
+          // later edits to a file without recorded bytes are listed but never undoable.
           let bytes = 0;
+          let stored = 0;
+          let reason: string | undefined;
           for (const path of paths) {
-            const raw = await this.raw(cwd, path, true);
-            if (raw !== undefined) {
-              bytes += raw.length;
-              if (bytes > 64 * 1024 * 1024) throw new Error("Checkpoint baseline is too large");
-              record.active!.dirty[path] = raw;
-              record.active!.modes![path] =
-                (await lstat(await safeGitPath(cwd, path))).mode & 0o777;
+            if (stored >= MAX_FILES) {
+              reason ??= `more than ${MAX_FILES} files were already modified or untracked when the turn started`;
+              break;
             }
+            if (await this.fileHistory.isHostOwned(cwd, path)) continue;
+            let raw: string | undefined;
+            try {
+              raw = await this.raw(cwd, path, true);
+            } catch (e) {
+              if (!(e instanceof CheckpointTooLarge)) throw e;
+              reason ??= `a file that was already modified exceeds the ${mib(MAX_BYTES)} checkpoint limit`;
+              continue;
+            }
+            if (raw === undefined) continue;
+            if (bytes + raw.length > MAX_BASELINE_BYTES) {
+              reason ??= `already-modified files exceed the ${mib(MAX_BASELINE_BYTES)} baseline limit`;
+              continue;
+            }
+            bytes += raw.length;
+            stored++;
+            record.active!.dirty[path] = raw;
+            record.active!.modes![path] = (await lstat(await safeGitPath(cwd, path))).mode & 0o777;
           }
+          if (reason) record.active!.partial = { reason, base: await head(cwd) };
           record.active!.tree = await this.snapshot(cwd, session, turn, "before");
         } catch (e) {
           record.error = errorText(e);
@@ -697,35 +874,92 @@ export class HostCheckpoints {
       )
         .toString()
         .split("\0");
-      if (raw.length > MAX_FILES * 2 + 1) throw new Error("Too many changed files for checkpoint");
+      const changed = Math.floor(raw.length / 2);
+      if (changed > MAX_FILES)
+        throw new Error(
+          `Too many changed files for checkpoint: ${changed} files changed in one turn, the limit is ${MAX_FILES}. ` +
+            "Ignore generated directories or split the work into smaller turns.",
+        );
+      const entries: { path: string; fields: string[] }[] = [];
       for (let i = 0; i + 1 < raw.length; i += 2) {
-        const fields = raw[i].replace(/^:/, "").split(" ");
         const path = raw[i + 1];
         if ((ambiguous || record.active.claimed?.length) && !record.active.claimed?.includes(path))
           continue;
+        entries.push({ path, fields: raw[i].replace(/^:/, "").split(" ") });
+      }
+      const blob = (mode: string, oid: string): Blob => (mode === "000000" ? null : { mode, oid });
+      // Without exact baseline bytes, a file that was already dirty cannot be restored exactly.
+      const partial = record.active.partial;
+      const unrecorded =
+        partial && entries.length
+          ? await dirtyAtBegin(
+              record.cwd,
+              partial.base,
+              record.active.tree,
+              entries
+                .filter(
+                  ({ path, fields }) =>
+                    !record.files[path] &&
+                    record.active!.dirty[path] === undefined &&
+                    fields[0] !== "000000",
+                )
+                .map(({ path }) => path),
+            )
+          : new Set<string>();
+      let prefixLookup: Promise<string> | undefined;
+      const prefix = () => (prefixLookup ??= repositoryPrefix(record.cwd));
+      // Stage into a copy: a failure must not leave a partial delta that the next
+      // turn would carry forward as if it were the whole checkpoint.
+      const files: Record["files"] = Object.assign(Object.create(null), record.files);
+      for (const { path, fields } of entries) {
         await safeGitPath(record.cwd, path);
-        const blob = (mode: string, oid: string): Blob =>
-          mode === "000000" ? null : { mode, oid };
+        // Host storage in the checkout is never read in this process or restored.
+        if (await this.fileHistory.isHostOwned(record.cwd, path)) continue;
         const before = blob(fields[0], fields[2]),
           next = blob(fields[1], fields[3]);
-        const old = record.files[path];
-        record.files[path] = {
+        const old = files[path];
+        let uncaptured = old?.uncaptured;
+        let rawBefore = old?.rawBefore;
+        if (!old) {
+          rawBefore = record.active.dirty[path];
+          if (rawBefore === undefined) {
+            if (unrecorded.has(path))
+              uncaptured = `its original bytes were not recorded because ${partial!.reason}`;
+            else
+              rawBefore = await this.contents(record.cwd, path, before, undefined, prefix).then(
+                (bytes) => bytes.toString("base64"),
+                (e: unknown) => {
+                  if (!(e instanceof CheckpointTooLarge)) throw e;
+                  uncaptured = UNCAPTURED_LARGE;
+                  return undefined;
+                },
+              );
+          }
+        }
+        const rawAfter = await this.raw(record.cwd, path, true).catch((e: unknown) => {
+          if (!(e instanceof CheckpointTooLarge)) throw e;
+          uncaptured ??= UNCAPTURED_LARGE;
+          return undefined;
+        });
+        files[path] = {
           before: old ? old.before : before,
           after: next,
           modeBefore: old
             ? old.modeBefore
             : (record.active.modes?.[path] ?? (before?.mode === "100755" ? 0o755 : 0o644)),
-          rawBefore: old
-            ? old.rawBefore
-            : (record.active.dirty[path] ??
-              (await this.contents(record.cwd, path, before)).toString("base64")),
-          rawAfter: await this.raw(record.cwd, path, true),
-          exact: !old || (old.exact && same(old.after, before)),
+          rawBefore,
+          rawAfter,
+          exact: !uncaptured && (!old || (old.exact && same(old.after, before))),
+          ...(uncaptured ? { uncaptured } : {}),
         };
-        if (same(record.files[path].before, next)) delete record.files[path];
+        if (same(files[path].before, next)) delete files[path];
       }
-      if (Object.keys(record.files).length > MAX_FILES)
-        throw new Error("Too many session-owned files for checkpoint");
+      if (Object.keys(files).length > MAX_FILES)
+        throw new Error(
+          `Too many session-owned files for checkpoint: ${Object.keys(files).length} files, the limit is ${MAX_FILES}. ` +
+            "Keep or undo the earlier changes, then retry.",
+        );
+      record.files = files;
       delete record.error;
     } catch (e) {
       record.error = errorText(e);
@@ -750,8 +984,11 @@ export class HostCheckpoints {
   private async matching(session: string, cwd: string) {
     const record = await this.load(session);
     if (!record || record.cwd !== (await realpath(cwd))) return;
-    if (record.error) throw new Error(`Workspace checkpoint failed: ${record.error}`);
-    if (record.active) throw new Error("Workspace checkpoint is still recording this turn");
+    // The bracketed codes are typed markers the review card reads; keep the legacy text before them.
+    if (record.error)
+      throw new Error(`Workspace checkpoint failed: ${record.error} [CHECKPOINT_FAILED]`);
+    if (record.active)
+      throw new Error("Workspace checkpoint is still recording this turn [CHECKPOINT_RECORDING]");
     await this.retireResolved(session, record);
     return record;
   }
@@ -788,11 +1025,15 @@ export class HostCheckpoints {
       .filter(Boolean))
       pending.add(path);
     const resolved: string[] = [];
-    for (const [path, pair] of Object.entries(record.files)) {
-      await safeGitPath(record.cwd, path);
-      const entry = (await git(record.cwd, ["ls-tree", "-z", currentHead, "--", path])).toString();
-      const fields = entry.split("\t", 1)[0].split(" ");
-      const committed: Blob = entry ? { mode: fields[0], oid: fields[2] } : null;
+    const recorded = Object.entries(record.files);
+    for (const [path] of recorded) await safeGitPath(record.cwd, path);
+    const entries = await committedEntries(
+      record.cwd,
+      currentHead,
+      recorded.map(([path]) => path),
+    );
+    for (const [path, pair] of recorded) {
+      const committed = entries.get(path) ?? null;
       if (same(pair.after, committed) || (!pending.has(path) && (pair.before || committed)))
         resolved.push(path);
     }
@@ -841,36 +1082,60 @@ export class HostCheckpoints {
         record.head === (await head(record.cwd)) &&
         !(await this.active(session, record.cwd)).length &&
         !(await this.leases.active(record.cwd));
-      const files = await Promise.all(
-        Object.entries(record.files).map(async ([path, pair]) => {
-          const diff = await this.diff(record.cwd, path, pair);
-          return {
-            path: resolve(record.cwd, path),
-            relative: path,
-            status: !pair.before ? "untracked" : !pair.after ? "deleted" : "modified",
-            exact: pair.exact,
-            undoable: safe && (await this.restorable(record, path, pair)),
-            ...diff.stats,
-          };
-        }),
-      );
+      // Each file spawns several git processes; a bounded pool keeps a large turn from
+      // starting them all at once, and one prefix lookup serves every file.
+      let prefixLookup: Promise<string> | undefined;
+      const prefix = () => (prefixLookup ??= repositoryPrefix(record.cwd));
+      const entries = Object.entries(record.files);
+      // Filled by index so the result keeps the record's file order under concurrency.
+      const files: CheckpointStatus["files"] = [];
+      await forEachConcurrent(entries, STATUS_CONCURRENCY, async ([path, pair], index) => {
+        const diff = await this.diff(record.cwd, path, pair, prefix);
+        files[index] = {
+          path: resolve(record.cwd, path),
+          relative: path,
+          status: !pair.before ? "untracked" : !pair.after ? "deleted" : "modified",
+          exact: pair.exact,
+          undoable: safe && (await this.restorable(record, path, pair)),
+          ...diff.stats,
+        };
+      });
       return { files, expectedCheckpoint: checkpointToken(record, generation) };
     });
   }
-  private async contents(cwd: string, path: string, blob: Blob, raw?: string) {
+  private async contents(
+    cwd: string,
+    path: string,
+    blob: Blob,
+    raw?: string,
+    prefix?: () => Promise<string>,
+  ) {
     if (raw !== undefined) return Buffer.from(raw, "base64");
     if (!blob) return Buffer.alloc(0);
     const size = Number((await git(cwd, ["cat-file", "-s", blob.oid])).toString());
-    if (size > MAX_BYTES) throw new Error("Checkpoint file is too large");
+    if (size > MAX_BYTES) throw new CheckpointTooLarge();
     // cat-file's filter path is repository-relative, unlike our checkpoint paths.
-    const prefix = (await git(cwd, ["rev-parse", "--show-prefix"])).toString().trimEnd();
-    return git(cwd, ["cat-file", "--filters", `--path=${prefix}${path}`, blob.oid]);
+    const repositoryPath = await (prefix?.() ?? repositoryPrefix(cwd));
+    return git(cwd, ["cat-file", "--filters", `--path=${repositoryPath}${path}`, blob.oid]);
   }
-  private async diff(cwd: string, path: string, pair: Pair) {
-    const [original, current] = await Promise.all([
-      this.contents(cwd, path, pair.before, pair.rawBefore),
-      this.contents(cwd, path, pair.after, pair.rawAfter),
-    ]);
+  private async diff(cwd: string, path: string, pair: Pair, prefix?: () => Promise<string>) {
+    const sides = await Promise.all([
+      this.contents(cwd, path, pair.before, pair.rawBefore, prefix),
+      this.contents(cwd, path, pair.after, pair.rawAfter, prefix),
+    ]).catch((e: unknown) => {
+      if (e instanceof CheckpointTooLarge) return undefined;
+      throw e;
+    });
+    // An over-bound file stays listed without counts or contents; undo refuses it.
+    if (!sides)
+      return {
+        original: Buffer.alloc(0),
+        current: Buffer.alloc(0),
+        binary: false,
+        tooLarge: true,
+        stats: { additions: 0, deletions: 0 },
+      };
+    const [original, current] = sides;
     const binary = original.includes(0) || current.includes(0);
     // Git computes the actual counts on two private files; no real index is used.
     const scratch = join(this.root, `diff-${randomUUID()}`);
@@ -882,23 +1147,25 @@ export class HostCheckpoints {
         writeFile(join(scratch, "before"), original),
         writeFile(join(scratch, "after"), current),
       ]);
-      const result = await exec(
-        "git",
-        [
-          "diff",
-          "--no-index",
-          "--numstat",
-          "--no-ext-diff",
-          "--no-textconv",
-          "--",
-          join(scratch, "before"),
-          join(scratch, "after"),
-        ],
-        { encoding: "utf8", windowsHide: true },
-      ).catch((e: { code?: number; stdout?: string }) => {
-        if (e.code === 1) return { stdout: e.stdout ?? "" };
-        throw e;
-      });
+      const result = await hostGitExec
+        .exec(
+          "git",
+          [
+            "diff",
+            "--no-index",
+            "--numstat",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--",
+            join(scratch, "before"),
+            join(scratch, "after"),
+          ],
+          { encoding: "utf8", windowsHide: true, timeout: 60_000, maxBuffer: 1024 * 1024 },
+        )
+        .catch((e: { code?: number; stdout?: string }) => {
+          if (e.code === 1) return { stdout: e.stdout ?? "" };
+          throw e;
+        });
       const fields = String(result.stdout).split("\t");
       additions = Number(fields[0]) || 0;
       deletions = Number(fields[1]) || 0;
@@ -909,6 +1176,7 @@ export class HostCheckpoints {
       original,
       current,
       binary,
+      tooLarge: false,
       stats: {
         additions: pair.exact && !binary ? additions : 0,
         deletions: pair.exact && !binary ? deletions : 0,
@@ -928,6 +1196,7 @@ export class HostCheckpoints {
       const record = await this.matching(session, cwd);
       const pair = record?.files[path];
       if (!record || !pair) throw new Error("File has no session checkpoint");
+      if (pair.uncaptured) throw new Error(`Exact lines are unavailable: ${pair.uncaptured}`);
       if (!pair.exact)
         throw new Error(
           "Exact lines are unavailable because the file changed between this session's edits",
@@ -942,7 +1211,7 @@ export class HostCheckpoints {
         original: diff.binary ? "" : diff.original.toString(),
         current: diff.binary ? "" : diff.current.toString(),
         binary: diff.binary,
-        tooLarge: false,
+        tooLarge: diff.tooLarge,
       };
     });
   }
@@ -985,9 +1254,11 @@ export class HostCheckpoints {
       // Validate the whole selection before writing the first file.
       for (const path of paths) {
         const pair = record.files[path];
-        if (!pair) continue;
+        // A record kept from before Host storage was excluded is never applied to it.
+        if (!pair || (await this.fileHistory.isHostOwned(record.cwd, path))) continue;
         const abs = await safeGitPath(record.cwd, path);
         if (undo) {
+          if (pair.uncaptured) throw new Error(`Cannot safely undo ${path}: ${pair.uncaptured}`);
           if (!(await this.restorable(record, path, pair)))
             throw new Error(`Cannot safely undo ${path}: it changed outside this session`);
           writes.push({

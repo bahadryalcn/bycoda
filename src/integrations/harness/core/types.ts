@@ -7,6 +7,7 @@ import type {
   ToolPreview,
   TurnIntent,
   TurnMetrics,
+  WorkflowAgentParent,
 } from "../../../features/sessions/model/session";
 import type { TurnUsage } from "../../../features/sessions/model/sessionUsage";
 import type { SessionGoal } from "../../../shared/model/providerGoal";
@@ -44,7 +45,7 @@ export type HarnessEvent =
    * later event with the same `key` and `running: false` settles that same
    * row; an empty `text` then closes it without leaving a row behind.
    */
-  | { type: "status"; text: string; key?: string; running?: boolean }
+  | { type: "status"; text: string; key?: string; running?: boolean; retryAt?: number }
   /** The provider refused the turn until its usage window resets (epoch ms). */
   | { type: "usage.limited"; resetsAt?: number }
   /**
@@ -59,6 +60,8 @@ export type HarnessEvent =
   /** Exact text increments; providers must normalize snapshots before emission. */
   | { type: "message.delta"; text: string }
   | { type: "message.completed" }
+  | { type: "image.generationStarted"; itemId: string; aspectRatio?: number }
+  | { type: "image.generationEnded"; itemId: string; status: "failed" | "stopped" }
   | {
       type: "image.generated";
       itemId: string;
@@ -83,6 +86,7 @@ export type HarnessEvent =
       agentModel?: string;
       /** The brief a subagent was given, on the Agent call that spawns it. */
       agentPrompt?: string;
+      workflow?: WorkflowAgentParent;
       callId: string;
       title: string;
       kind?: string;
@@ -99,6 +103,7 @@ export type HarnessEvent =
       type: "tool.updated";
       agentModel?: string;
       agentPrompt?: string;
+      workflow?: WorkflowAgentParent;
       callId: string;
       title?: string;
       kind?: string;
@@ -148,6 +153,7 @@ export type HarnessEvent =
       type: "approval.requested";
       requestId: number;
       occurrenceId?: string;
+      sessionApprovalScope?: import("../../../shared/model/sessionApprovalGrant").SessionApprovalScope;
       title: string;
       kind?: string;
       callId?: string;
@@ -255,6 +261,12 @@ export type HarnessSessionInput = {
   model: string;
   modelSettings?: Record<string, string>;
   providerAccountId?: string;
+  /** Host delegates whose durable transcript belongs to Bycoda. */
+  privateDelegateHistory?: boolean;
+  /** Private native session storage for providers that support a separate directory. */
+  delegateHistoryDirectory?: string;
+  /** Keep the provider session in its archive without losing native continuation. */
+  archiveDelegateHistory?: boolean;
   runtimeMode: RuntimeMode;
   intent?: TurnIntent;
   /**
@@ -270,6 +282,10 @@ export type HarnessSessionInput = {
 
 export type SendTurnInput = HarnessSessionInput & {
   text: string;
+  /** Bounded prior replies captured by the Host for a tool-free delegated turn. */
+  chatOnlyHistory?: string;
+  /** Saved Bycoda context for a private provider process that cannot resume on disk. */
+  privateDelegateReplay?: string;
   /** Trusted runtime guidance kept separate from native command text until a model turn starts. */
   runtimeInstructions?: string;
   attachments?: Attachment[];

@@ -25,6 +25,10 @@ export type DesktopIndicatorPort = {
   stop: () => Promise<void>;
   subscribe: (receive: (state: DesktopIndicatorView) => void) => Promise<() => void>;
 };
+/** Asks the native side to watch Host status again. Read-only; a no-op outside the desktop app. */
+export function watchNativeDesktopControl(): Promise<void> {
+  return invoke<void>("desktop_control_indicator_watch").catch(() => undefined);
+}
 export const nativeDesktopIndicatorPort: DesktopIndicatorPort = {
   read: async () =>
     DesktopIndicatorViewSchema.parse(await invoke("desktop_control_indicator_state")),

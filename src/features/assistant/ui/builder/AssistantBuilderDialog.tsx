@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
+import { LANGUAGES as APP_LANGUAGES } from "../../../../shared/i18n/languages";
 import type { AssistantProfilePatch } from "../../../../shared/model/host-contracts/assistant";
 import { Button } from "../../../../shared/ui/Button";
-import { Check, Square, X } from "../../../../shared/ui/icons";
+import { Square } from "../../../../shared/ui/icons";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
 import { Select } from "../../../../shared/ui/Select";
@@ -23,17 +24,20 @@ import { useAssistantInterview } from "./useAssistantInterview";
  */
 export function AssistantBuilderDialog({
   current,
+  initialAnswer = "",
   onApply,
   onClose,
 }: {
   /** The caller's draft provides context and the preview compares against it. */
   current: AssistantProfilePatch;
+  /** Text the answer box starts with; the owner still sends it. */
+  initialAnswer?: string;
   onApply: (patch: AssistantProfilePatch) => void;
   onClose: () => void;
 }) {
   const [choice, setChoice] = useState<TranslationChoice>(defaultTextActionChoice);
   /** The typed, unsent answer; kept across Back so it is never lost. */
-  const [answer, setAnswer] = useState("");
+  const [answer, setAnswer] = useState(initialAnswer);
   const interview = useAssistantInterview(choice, current);
   const available = canRunHarnessTextPrompt(choice.harness);
   const { proposal } = interview;
@@ -62,12 +66,7 @@ export function AssistantBuilderDialog({
       footer={
         proposal ? undefined : (
           <ModalActions>
-            <Button
-              variant="ghost"
-              type="button"
-              startIcon={<X className="icon-sm" />}
-              onClick={close}
-            >
+            <Button variant="ghost" type="button" onClick={close}>
               {t("Cancel")}
             </Button>
             {interview.busy ? (
@@ -82,8 +81,16 @@ export function AssistantBuilderDialog({
               <Button
                 variant="primary"
                 type="button"
-                startIcon={<Check className="icon-sm" />}
                 disabled={!canFinish || !available || interview.failure !== null}
+                disabledReason={
+                  !canFinish
+                    ? t("Answer a question first.")
+                    : !available
+                      ? t("This model cannot write text. Pick another one to continue.")
+                      : interview.failure !== null
+                        ? t("Retry the failed message first.")
+                        : undefined
+                }
                 onClick={finish}
               >
                 {t("Preview assistant")}
@@ -120,16 +127,7 @@ export function AssistantBuilderDialog({
                   value={interview.language}
                   disabled={interview.busy}
                   onValueChange={interview.setLanguage}
-                  options={[
-                    { value: "tr-TR", label: "Türkçe" },
-                    { value: "en-US", label: "English" },
-                    { value: "de-DE", label: "Deutsch" },
-                    { value: "fr-FR", label: "Français" },
-                    { value: "es-ES", label: "Español" },
-                    { value: "pt-PT", label: "Português" },
-                    { value: "zh-CN", label: "简体中文" },
-                    { value: "ja-JP", label: "日本語" },
-                  ]}
+                  options={APP_LANGUAGES.map(({ tag, label }) => ({ value: tag, label }))}
                 />
                 <BuilderModelStep
                   choice={choice}
@@ -149,6 +147,7 @@ export function AssistantBuilderDialog({
             onAnswer={interview.answer}
             onRetry={interview.retry}
             disabled={!available}
+            disabledReason={t("This model cannot write text. Pick another one to continue.")}
           />
         </>
       )}

@@ -6,6 +6,7 @@ import { Button } from "../../../../shared/ui/Button";
 import { Text } from "../../../../shared/ui/Text";
 import { Divider } from "../../../../shared/ui/Divider";
 import type { Sequence } from "../../model/outreach";
+import { contentStateTone } from "../content/ContentStatus";
 import { ChannelIcon } from "./ChannelIcon";
 import { channelLabel } from "./audienceModel";
 import "./audience.css";
@@ -28,11 +29,11 @@ export function sequenceStatusTone(status: Sequence["status"]): BadgeTone {
     case "active":
       return "accent";
     case "paused":
-      return "warning";
+    case "draft":
+      // Shared with posts so "Paused" and "Draft" read the same on every Social screen.
+      return contentStateTone(status);
     case "done":
       return "success";
-    case "draft":
-      return "neutral";
   }
 }
 

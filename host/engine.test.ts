@@ -1,8 +1,11 @@
 import { runTextOperation } from "../src/integrations/harness/core/textSource";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { additionalDirsFor } from "../src/integrations/harness/core/additionalDirs";
 import { join } from "node:path";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
+import { TurnNotReadyError } from "../src/integrations/harness/core/types";
 import { withMachineSkillPolicy, type HostProvider } from "./providers/providers";
 import { HostEngine, parseCommand } from "./engine";
 import { HostStore } from "./store";
@@ -685,6 +688,36 @@ it("steers the active host turn without replacing it, and deduplicates retries",
     (await store.session(id)).session.blocks.filter((block) => block.id === "redirect"),
   ).toHaveLength(1);
   await expect(engine.command({ ...command, commandId: "stale", runId: "old" })).rejects.toThrow();
+});
+
+it("records a pre-write steer refusal as undelivered", async () => {
+  const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
+  provider.steer = vi.fn(async () => {
+    throw new TurnNotReadyError("Turn ended before writing");
+  });
+  await engine.command({ type: "send", commandId: "start", sessionId: id, text: "first" });
+  await waitForTurnStart();
+  turns[0].input.onAccepted?.();
+  const runId = (await store.session(id)).runId!;
+  provider.steerReady = () => false;
+  await expect(
+    engine.command({ type: "steer", commandId: "early", sessionId: id, runId, text: "second" }),
+  ).rejects.toMatchObject({ delivery: "not-sent", code: "COMMAND_BUSY" });
+  expect(provider.steer).not.toHaveBeenCalled();
+  provider.steerReady = () => true;
+  await engine.command({
+    type: "steer",
+    commandId: "redirect",
+    sessionId: id,
+    runId,
+    text: "second",
+  });
+  await vi.waitFor(async () =>
+    expect(
+      (await store.session(id)).session.blocks.find((block) => block.id === "redirect")
+        ?.followUpDelivery,
+    ).toBe("undelivered"),
+  );
 });
 
 it.each(["reasoning", "subagent", "background command"] as const)(
@@ -1879,12 +1912,14 @@ describe("Host writer transfer after settled task review", () => {
     await engine.waitForRun(id, receipt.runId);
     vi.mocked(provider.stop).mockRejectedValueOnce(new Error("original writer retirement failed"));
     const grant = vi.fn(async () => "unsafe");
-    await expect(engine.withRetiredProviderWriter(id, grant)).rejects.toThrow(
-      "HOST_WRITER_RETIREMENT_FAILED",
-    );
-    await expect(engine.withRetiredProviderWriter(id, grant)).rejects.toThrow(
-      "HOST_WRITER_RETIREMENT_FAILED",
-    );
+    const refusal = {
+      message: expect.stringMatching(/^HOST_WRITER_RETIREMENT_FAILED:/),
+      code: "HOST_WRITER_RETIREMENT_FAILED",
+      retryable: false,
+      delivery: "not-sent",
+    };
+    await expect(engine.withRetiredProviderWriter(id, grant)).rejects.toMatchObject(refusal);
+    await expect(engine.withRetiredProviderWriter(id, grant)).rejects.toMatchObject(refusal);
     expect(provider.stop).toHaveBeenCalledOnce();
     expect(engine.hasRetainedProviderWriter(id)).toBe(true);
     expect(grant).not.toHaveBeenCalled();
@@ -1926,52 +1961,78 @@ describe("Host writer transfer after settled task review", () => {
     expect(await store.session(id)).toEqual(before);
   });
 
-  it("keeps a timed-out retirement guarded and joins its original completion on owner retry", async () => {
-    const { engine, id, provider, turns, waitForTurnStart } = await setup();
-    const receipt = await engine.command({
-      type: "send",
-      commandId: "pending-review",
-      sessionId: id,
-      text: "Review",
-    });
-    await waitForTurnStart();
-    turns[0].finish();
-    await engine.waitForRun(id, receipt.runId);
-    const entered = Promise.withResolvers<void>();
-    const released = Promise.withResolvers<void>();
-    vi.mocked(provider.stop).mockImplementationOnce(async () => {
-      entered.resolve();
-      await released.promise;
-    });
-    const grant = vi.fn(async () => "lease");
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    try {
-      const transfer = engine.withRetiredProviderWriter(id, grant).catch((error: unknown) => error);
-      await entered.promise;
-      await vi.advanceTimersByTimeAsync(20_000);
-      expect(await transfer).toMatchObject({
-        message: expect.stringContaining("HOST_WRITER_RETIREMENT_PENDING"),
+  it.each([false, true])(
+    "keeps a timed-out retirement guarded until its original completion (detached: %s)",
+    async (detached) => {
+      const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
+      const receipt = await engine.command({
+        type: "send",
+        commandId: "pending-review",
+        sessionId: id,
+        text: "Review",
       });
-      expect(grant).not.toHaveBeenCalled();
-      expect(engine.hasRetainedProviderWriter(id)).toBe(true);
-      await expect(
-        engine.command({
-          type: "send",
-          commandId: "unsafe-replacement",
-          sessionId: id,
-          text: "Must wait",
-        }),
-      ).rejects.toThrow("HOST_WRITER_RETIREMENT_PENDING");
-      expect(provider.send).toHaveBeenCalledOnce();
-      released.resolve();
-      expect(await engine.withRetiredProviderWriter(id, grant)).toBe("lease");
-      expect(provider.stop).toHaveBeenCalledOnce();
-      expect(engine.hasRetainedProviderWriter(id)).toBe(false);
-    } finally {
-      released.resolve();
-      vi.useRealTimers();
-    }
-  });
+      await waitForTurnStart();
+      turns[0].input.onEvent({
+        type: "session.providerBound",
+        providerSessionId: "pending-thread",
+      });
+      turns[0].finish();
+      await engine.waitForRun(id, receipt.runId);
+      const entered = Promise.withResolvers<void>();
+      const released = Promise.withResolvers<void>();
+      vi.mocked(provider.stop).mockImplementationOnce(async () => {
+        entered.resolve();
+        await released.promise;
+      });
+      const grant = vi.fn(async () => "lease");
+      const wake = vi.fn();
+      engine.onUnblocked = wake;
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        const transfer = engine
+          .withRetiredProviderWriter(id, grant)
+          .catch((error: unknown) => error);
+        await entered.promise;
+        await vi.advanceTimersByTimeAsync(20_000);
+        expect(await transfer).toMatchObject({
+          message: expect.stringContaining("HOST_WRITER_RETIREMENT_PENDING"),
+          code: "HOST_WRITER_RETIREMENT_PENDING",
+          retryable: true,
+          delivery: "not-sent",
+        });
+        expect(grant).not.toHaveBeenCalled();
+        expect(engine.hasRetainedProviderWriter(id)).toBe(true);
+        await expect(
+          engine.command({
+            type: "send",
+            commandId: "unsafe-replacement",
+            sessionId: id,
+            text: "Must wait",
+          }),
+        ).rejects.toThrow("HOST_WRITER_RETIREMENT_PENDING");
+        expect(provider.send).toHaveBeenCalledOnce();
+        released.resolve();
+        if (detached) {
+          await vi.waitFor(() => expect(wake).toHaveBeenCalledOnce());
+          expect(grant).not.toHaveBeenCalled();
+          expect(await engine.busyReason(id)).toBeUndefined();
+          expect(provider.bind).toHaveBeenLastCalledWith(
+            id,
+            "pending-thread",
+            (await store.session(id)).session.cwd,
+            undefined,
+          );
+        } else {
+          expect(await engine.withRetiredProviderWriter(id, grant)).toBe("lease");
+        }
+        expect(provider.stop).toHaveBeenCalledOnce();
+        expect(engine.hasRetainedProviderWriter(id)).toBe(false);
+      } finally {
+        released.resolve();
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it("does not delete while title generation is pending", async () => {
     const { engine, store, id, provider } = await setup();
@@ -2286,7 +2347,7 @@ describe("Host writer transfer after settled task review", () => {
     expect(engine.hasRetainedProviderWriter(id)).toBe(true);
   });
 
-  it("uses the latest settled Host turn receipt and refuses unsupported transfer", async () => {
+  it("uses the latest settled Host turn receipt and retires a provider without the exact hook by its stop", async () => {
     const { engine, id, provider, turns, waitForTurnStart } = await setup();
     for (let index = 0; index < 2; index++) {
       const receipt = await engine.command({
@@ -2318,17 +2379,11 @@ describe("Host writer transfer after settled task review", () => {
     const operationContext = retained!.operationContext as { hostRun: object };
     expect(writers.runs.get(operationContext.hostRun)?.source).toBeUndefined();
     expect((retained!.activity as { bookkeepingWork?: unknown }).bookkeepingWork).toBeUndefined();
-    const hook = provider.retireOriginal;
     delete provider.retireOriginal;
     const grant = vi.fn(async () => "lease");
-    await expect(engine.withRetiredProviderWriter(id, grant)).rejects.toThrow(
-      "HOST_WRITER_RETIREMENT_FAILED",
-    );
-    expect(provider.stop).not.toHaveBeenCalled();
-    expect(grant).not.toHaveBeenCalled();
-    provider.retireOriginal = hook;
-    await engine.withRetiredProviderWriter(id, grant);
+    expect(await engine.withRetiredProviderWriter(id, grant)).toBe("lease");
     expect(provider.stop).toHaveBeenCalledExactlyOnceWith(id, turns[1].input.operationContext);
+    expect(grant).toHaveBeenCalledOnce();
     expect(internals.retainedWriterTurns.has(id)).toBe(false);
     expect(internals.retainedProviders.has(id)).toBe(false);
   });
@@ -2821,7 +2876,7 @@ describe("managed turn boundaries", () => {
           ...original.session,
           workspaceId: "source-workspace",
           worktreeCwd: directory,
-          branch: "bycoda/s/source",
+          branch: "by/source",
           blocks: [
             { id: "source-user", role: "user", text: "Implement search" },
             { id: "source-reply", role: "assistant", text: "Search is implemented." },
@@ -2842,7 +2897,7 @@ describe("managed turn boundaries", () => {
       workspaceId: "destination-workspace",
       sessionId: destinationId,
       path: join(directory, "destination"),
-      branchRef: "refs/heads/bycoda/s/destination",
+      branchRef: "refs/heads/by/destination",
       revision: 1,
     });
     engine.setManagedTurnHistoryAdapter(adapter);
@@ -2870,7 +2925,7 @@ describe("managed turn boundaries", () => {
       workspaceId: "destination-workspace",
       cwd: join(directory, "destination"),
       worktreeCwd: join(directory, "destination"),
-      branch: "bycoda/s/destination",
+      branch: "by/destination",
     });
     expect(await store.session(id)).toEqual(source);
   });
@@ -2886,7 +2941,7 @@ describe("managed turn boundaries", () => {
       workspaceId: "managed",
       sessionId: "prepared-session",
       path: join(directory, "owned"),
-      branchRef: "refs/heads/bycoda/s/owned",
+      branchRef: "refs/heads/by/owned",
       revision: 7,
     }));
     adapter.startActivity = vi.fn(async () => release);
@@ -2910,7 +2965,7 @@ describe("managed turn boundaries", () => {
       workspaceRevision: 7,
       cwd: join(directory, "owned"),
       worktreeCwd: join(directory, "owned"),
-      branch: "bycoda/s/owned",
+      branch: "by/owned",
     });
     await waitForTurnStart();
     expect(turns).toHaveLength(1);
@@ -3252,7 +3307,7 @@ describe("managed turn boundaries", () => {
       expect((await store.session(id)).session.blocks.at(-1)?.id).toBe(request.userBlockId);
       return {
         ...request,
-        branchRef: "refs/heads/bycoda/s/test",
+        branchRef: "refs/heads/by/test",
         before: {
           status: "complete",
           snapshot: {
@@ -3269,7 +3324,7 @@ describe("managed turn boundaries", () => {
     vi.mocked(adapter.history.end).mockImplementationOnce(async (request) => ({
       ...request,
       conversationRevision: 1,
-      branchRef: "refs/heads/bycoda/s/test",
+      branchRef: "refs/heads/by/test",
       before: { status: "blocked", reason: "fixture" },
       after: {
         status: "complete",
@@ -3306,7 +3361,7 @@ describe("managed turn boundaries", () => {
     const { adapter } = managedHistory();
     vi.mocked(adapter.history.begin).mockImplementation(async (request) => ({
       ...request,
-      branchRef: "refs/heads/bycoda/s/test",
+      branchRef: "refs/heads/by/test",
       before: { status: "blocked", reason: "Resolve the unmerged index" },
     }));
     const { engine, store, id, provider } = await setup("codex", {}, adapter);
@@ -5069,6 +5124,36 @@ describe("headless session ownership", () => {
     expect((await store.session(id)).session.title).toBe("codex · My own title");
   });
 
+  it("exposes an empty placeholder for fresh sessions without changing the read contract", async () => {
+    const { store, project, id } = await setup();
+    expect((await store.session(id)).session.title).toBe("");
+    expect((await store.summaries(project.id)).find((session) => session.id === id)?.title).toBe(
+      "",
+    );
+  });
+
+  it.each(["draft", "send"] as const)(
+    "keeps a manually chosen legacy placeholder string on the first %s",
+    async (type) => {
+      const { engine, store, provider, turns, id, waitForTurnStart } = await setup();
+      provider.generateTitle = vi.fn(async () => ({ title: "Generated title", workItem: null }));
+      await engine.updateSession(id, { title: "New remote session" });
+      const receipt = await engine.command({
+        type,
+        commandId: `preserve-title-${type}`,
+        sessionId: id,
+        text: "Keep the title I chose",
+      });
+      if (type === "send") {
+        await waitForTurnStart();
+        turns[0].finish();
+        await engine.waitForRun(id, receipt.runId);
+      }
+      expect((await store.session(id)).session.title).toBe("New remote session");
+      expect(provider.generateTitle).not.toHaveBeenCalled();
+    },
+  );
+
   it("uses one creation timestamp and advances only updatedAt on later commands", async () => {
     let now = 1_700_000_000_000;
     const clock = vi.spyOn(Date, "now").mockImplementation(() => now++);
@@ -5282,6 +5367,52 @@ describe("headless session ownership", () => {
     await waitForTurnStart();
     expect(turns).toHaveLength(1);
     turns[0].finish();
+  });
+  it("refuses idle-only work with a known outcome while a session runs", async () => {
+    const { engine, project, id, turns, waitForTurnStart } = await setup();
+    await engine.command({ type: "send", commandId: "busy-turn", sessionId: id, text: "Work" });
+    await waitForTurnStart();
+    const action = vi.fn(async () => {});
+    await expect(engine.withIdleProject(project.id, action)).rejects.toMatchObject({
+      name: "HostDomainRefusalError",
+      code: "COMMAND_BUSY",
+      category: "conflict",
+      retryable: false,
+      delivery: "not-sent",
+      message: "Wait for running sessions in this project to finish, then try again.",
+    });
+    expect(action).not.toHaveBeenCalled();
+    await expect(engine.withStableCheckout(project.id, async () => "committed")).resolves.toBe(
+      "committed",
+    );
+    turns[0].finish();
+  });
+
+  it("refuses checkout-bound Git work during a branch switch", async () => {
+    const { engine, project } = await setup();
+    let release = () => {};
+    let entered = () => {};
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const switching = engine.withIdleProject(
+      project.id,
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+          entered();
+        }),
+    );
+    await started;
+    const action = vi.fn(async () => {});
+    await expect(engine.withStableCheckout(project.id, action)).rejects.toMatchObject({
+      code: "COMMAND_BUSY",
+      delivery: "not-sent",
+      message: "A branch switch is already in progress",
+    });
+    expect(action).not.toHaveBeenCalled();
+    release();
+    await switching;
   });
 
   it("runs provider context compaction once and persists its transcript marker", async () => {
@@ -6101,6 +6232,36 @@ describe("headless session ownership", () => {
       resetsAt: 5_000,
       resumeAtReset: false,
     });
+  });
+
+  it("gives a turn the validated extra folders and refuses bad ones before any turn starts", async () => {
+    const { engine, turns, id, waitForTurnStart } = await setup();
+    const extra = mkdtempSync(join(tmpdir(), "bycoda-engine-extra-"));
+    try {
+      await expect(
+        engine.command({
+          type: "send",
+          commandId: "bad-dirs",
+          sessionId: id,
+          text: "Work",
+          additionalDirs: [join(extra, "missing")],
+        }),
+      ).rejects.toThrow(/does not exist/);
+      expect(turns).toHaveLength(0);
+      const receipt = await engine.command({
+        type: "send",
+        commandId: "good-dirs",
+        sessionId: id,
+        text: "Work",
+        additionalDirs: [extra],
+      });
+      await waitForTurnStart();
+      expect(additionalDirsFor(id)).toHaveLength(1);
+      turns.pop()!.finish();
+      await engine.waitForRun(id, receipt.runId);
+    } finally {
+      rmSync(extra, { recursive: true, force: true });
+    }
   });
 
   it("cancels, re-arms, and dismisses a remote usage limit", async () => {

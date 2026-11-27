@@ -3,6 +3,7 @@ import {
   appendNotificationHistory,
   clearNotificationHistory,
   historyEntry,
+  markNotificationHistoryRead,
   mergeNotificationHistory,
   notificationKey,
   NOTIFICATION_HISTORY_EVENT,
@@ -74,6 +75,7 @@ export function useNotificationHistory(notices: readonly Notice[]) {
 
   // An unreadable store must not look like an empty history, and must not
   // erase what this window still holds.
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- with a plain reload the compiler skips this hook (storage read guard), so the stable callback stays
   const reload = useCallback(() => {
     const read = readNotificationHistoryStatus();
     setUnavailable(read.state === "unavailable");
@@ -130,5 +132,23 @@ export function useNotificationHistory(notices: readonly Notice[]) {
     return true;
   };
 
-  return { history, unavailable, clearError, clearing, reload, clear, remove };
+  // Marking read is cosmetic: a failed write leaves the row unread, and the list reloads.
+  const markRead = async (entry: NotificationHistoryEntry): Promise<boolean> => {
+    mutation.current += 1;
+    let stored: NotificationHistoryEntry[] | null = null;
+    try {
+      stored = await markNotificationHistoryRead(entry);
+    } catch {
+      stored = null;
+    }
+    if (!stored) {
+      reload();
+      return false;
+    }
+    local.current = stored;
+    setHistory(stored);
+    return true;
+  };
+
+  return { history, unavailable, clearError, clearing, reload, clear, remove, markRead };
 }

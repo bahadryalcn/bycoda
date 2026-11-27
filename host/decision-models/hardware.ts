@@ -1,4 +1,4 @@
-import { existsSync, statfsSync } from "node:fs";
+import { access, statfs } from "node:fs/promises";
 import { cpus, freemem, homedir, totalmem } from "node:os";
 import { dirname } from "node:path";
 import type { HardwareInfo, LocalTier } from "./decision-types";
@@ -17,7 +17,7 @@ export async function readHardware(
     freeRamBytes: freemem(),
     cpus: cpus().length,
     gpus: await readNvidiaGpus(options.signal),
-    freeDiskBytes: freeDiskBytes(options.diskPath ?? homedir()),
+    freeDiskBytes: await readFreeDiskBytes(options.diskPath ?? homedir()),
   };
 }
 
@@ -60,13 +60,19 @@ export function hardwareTier(hardware: HardwareInfo): LocalTier {
   return "insufficient";
 }
 
-function freeDiskBytes(path: string): number {
+export async function readFreeDiskBytes(path: string): Promise<number> {
   let current = path;
-  while (!existsSync(current) && dirname(current) !== current) current = dirname(current);
+  while (dirname(current) !== current && !(await pathExists(current))) current = dirname(current);
   try {
-    const stats = statfsSync(current);
+    const stats = await statfs(current);
     return stats.bavail * stats.bsize;
   } catch {
     return 0;
   }
 }
+
+const pathExists = (path: string) =>
+  access(path).then(
+    () => true,
+    () => false,
+  );

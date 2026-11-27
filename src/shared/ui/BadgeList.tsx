@@ -10,7 +10,6 @@ import { useT } from "../i18n";
 import { Badge, type BadgeAppearance, type BadgeTone } from "./Badge";
 import styles from "./BadgeList.module.css";
 import { Button } from "./Button";
-import { useHoverCard } from "./HoverCard";
 import { Popover } from "./Popover";
 import { OverflowTooltip } from "./Tooltip";
 
@@ -112,13 +111,6 @@ export function BadgeList({
   const moreButton = useRef<HTMLButtonElement>(null);
   const [fit, setFit] = useState<Fit | null>(null);
   const [pinned, setPinned] = useState(false);
-  const hover = useHoverCard({
-    side: "bottom",
-    align: "start",
-    disabled: pinned,
-    className: "max-w-80 p-0",
-    "aria-label": label,
-  });
 
   const auto = max === "fit";
   const signature = items.map((item) => `${item.id}\u0000${item.label}`).join("\u0001");
@@ -227,17 +219,11 @@ export function BadgeList({
               aria-label={moreLabel(hidden.length)}
               aria-labelledby={`${listId} ${moreId}`}
               aria-haspopup="dialog"
-              aria-expanded={pinned || hover.open}
-              title=""
-              {...hover.trigger}
-              onClick={() => {
-                hover.close();
-                setPinned((current) => !current);
-              }}
+              aria-expanded={pinned}
+              onClick={() => setPinned((current) => !current)}
             >
               {`+${hidden.length}`}
             </Button>
-            {hover.card(card)}
             {pinned ? (
               <Popover
                 anchor={moreButton}
@@ -274,7 +260,6 @@ export function BadgeList({
                 inset="text"
                 className={moreClass}
                 tabIndex={-1}
-                title=""
                 aria-label={moreLabel(items.length)}
               >
                 {`+${items.length}`}

@@ -13,7 +13,7 @@ import { remoteRequest } from "../../../connections/public/connections";
 import {
   listMachineLimits,
   saveMachineLimits,
-  settingsMachines,
+  settingsMachine,
   type MachineLimits,
 } from "../../../tasks/public/hostSettings";
 import { useOrderDraft, useOrderSettings } from "./useOrderDraft";
@@ -21,7 +21,7 @@ import { useOrderDraft, useOrderSettings } from "./useOrderDraft";
 vi.mock("../../../connections/public/connections", () => ({ remoteRequest: vi.fn() }));
 vi.mock("../../../tasks/public/hostSettings", async (original) => ({
   ...(await original<typeof import("../../../tasks/public/hostSettings")>()),
-  settingsMachines: vi.fn(),
+  settingsMachine: vi.fn(),
   listMachineLimits: vi.fn(),
   saveMachineLimits: vi.fn(),
 }));
@@ -37,13 +37,13 @@ let editor: ReturnType<typeof useOrderDraft>;
 
 function Harness() {
   const settings = useOrderSettings(machine.id);
-  if (!settings.routing.state || !settings.limits.data) return null;
+  if (!settings.routing.state || settings.limits.isPending) return null;
   return createElement(DraftHarness, { settings });
 }
 function DraftHarness({ settings }: { settings: ReturnType<typeof useOrderSettings> }) {
   editor = useOrderDraft(
     settings,
-    { routing: settings.routing.state!, limits: settings.limits.data!.state },
+    { routing: settings.routing.state!, limits: settings.limits.data?.state },
     machine.id,
   );
   return null;
@@ -72,7 +72,7 @@ beforeEach(() => {
     usedMinutes: 0,
     limitReached: false,
   };
-  vi.mocked(settingsMachines).mockResolvedValue([machine]);
+  vi.mocked(settingsMachine).mockResolvedValue(machine);
   vi.mocked(listMachineLimits).mockImplementation(async () => [hostLimits]);
   vi.mocked(saveMachineLimits).mockImplementation(async (_machine, limits) => {
     hostLimits = { ...hostLimits, ...limits };
@@ -101,6 +101,64 @@ afterEach(async () => {
   await act(() => root.unmount());
   container.remove();
   client.clear();
+});
+
+it("lets routing save while the work limits read is unavailable", async () => {
+  vi.mocked(listMachineLimits).mockRejectedValue(new Error("Limits unavailable"));
+  await mount();
+  await act(() => editor.change({ ...editor.draft, maxRunMinutes: "45" }));
+  await act(async () => {
+    expect(await editor.save()).toBe(true);
+  });
+  expect(hostState.defaultMaxRunMinutes).toBe(45);
+  expect(saveMachineLimits).not.toHaveBeenCalled();
+});
+
+it("saves edits with a persisted unavailable model and rejects a newly selected one", async () => {
+  const unavailable = {
+    id: "saved-opus",
+    harness: "antigravity" as const,
+    model: "antigravity:claude-opus-4-6-thinking",
+    modelSettings: {},
+    unknownLimit: "use" as const,
+  };
+  hostState.entries = [unavailable];
+  client.setQueryData(["model-routing-setup-catalog", machine.id], {
+    models: { antigravity: [{ id: "antigravity:gemini", name: "Gemini" }] },
+  });
+  await mount();
+  await act(() => editor.change({ ...editor.draft, maxRunMinutes: "45" }));
+  await act(async () => expect(await editor.save()).toBe(true));
+  expect(hostState.entries).toEqual([unavailable]);
+  expect(hostState.defaultMaxRunMinutes).toBe(45);
+
+  await act(() =>
+    editor.change({
+      ...editor.draft,
+      routing: {
+        ...editor.draft.routing,
+        entries: [{ ...unavailable, model: "antigravity:missing" }],
+      },
+    }),
+  );
+  await act(async () => expect(await editor.save()).toBe(false));
+  expect(editor.invalidEntryId).toBe(unavailable.id);
+  expect(hostState.entries).toEqual([unavailable]);
+});
+
+it("merges the first successful work limits read into an existing routing draft", async () => {
+  vi.mocked(listMachineLimits).mockRejectedValue(new Error("Limits unavailable"));
+  await mount();
+  await act(() => editor.change({ ...editor.draft, maxRunMinutes: "45" }));
+  await act(async () => {
+    client.setQueryData(["model-routing-limits", machine.id], {
+      machine,
+      state: { ...hostLimits, dailyAgentMinutes: 75 },
+    });
+  });
+  await vi.waitFor(() => expect(editor.draft.limits.dailyAgentMinutes).toBe("75"));
+  expect(editor.draft.maxRunMinutes).toBe("45");
+  expect(editor.conflict).toBe(false);
 });
 
 it("saves routing with captured version and work limits through their client", async () => {
@@ -143,6 +201,68 @@ it("keeps unsaved edits on optimistic conflict and reloads latest only explicitl
   expect(editor.draft.maxRunMinutes).toBe("90");
   expect(editor.conflict).toBe(false);
   expect(editor.dirty).toBe(false);
+});
+
+it("treats the Host's machine-coded stale save as a conflict and hides the code", async () => {
+  await mount();
+  await act(() => editor.change({ ...editor.draft, maxRunMinutes: "30" }));
+  vi.mocked(remoteRequest).mockImplementation(async (_machine, method) => {
+    if (method === "modelRouting.save")
+      throw new Error("MODEL_ROUTING_CONFLICT: Model routing changed; reload before saving.");
+    return { state: hostState };
+  });
+  await act(() => editor.save());
+  expect(editor.conflict).toBe(true);
+  expect(editor.error).toBe("Model routing changed; reload before saving.");
+  expect(editor.draft.maxRunMinutes).toBe("30");
+});
+
+it("keeps Save for a routing failure that only mentions version or changed", async () => {
+  await mount();
+  await act(() => editor.change({ ...editor.draft, maxRunMinutes: "30" }));
+  vi.mocked(remoteRequest).mockImplementation(async (_machine, method) => {
+    if (method === "modelRouting.save") throw new Error("Host version changed its schema.");
+    return { state: hostState };
+  });
+  await act(() => editor.save());
+  expect(editor.conflict).toBe(false);
+  expect(editor.error).toBe("Host version changed its schema.");
+  expect(editor.draft.maxRunMinutes).toBe("30");
+  expect(editor.dirty).toBe(true);
+});
+
+it("never reports a failed work-limits save after routing was saved as a conflict", async () => {
+  await mount();
+  await act(() =>
+    editor.change({
+      ...editor.draft,
+      maxRunMinutes: "30",
+      limits: { maxRunningTasks: "3", dailyAgentMinutes: "120" },
+    }),
+  );
+  vi.mocked(saveMachineLimits).mockRejectedValue(
+    new Error("Unsupported Host version: the settings changed."),
+  );
+  await act(() => editor.save());
+  expect(editor.conflict).toBe(false);
+  expect(editor.error).toBe(
+    "Models saved; work limits were not saved. Unsupported Host version: the settings changed.",
+  );
+  expect(editor.draft.limits.maxRunningTasks).toBe("3");
+  expect(editor.dirty).toBe(true);
+});
+
+it("never reports a limits-only failure carrying the legacy conflict text as a conflict", async () => {
+  await mount();
+  await act(() =>
+    editor.change({ ...editor.draft, limits: { maxRunningTasks: "3", dailyAgentMinutes: "120" } }),
+  );
+  vi.mocked(saveMachineLimits).mockRejectedValue(
+    new Error("Model routing changed; reload before saving."),
+  );
+  await act(() => editor.save());
+  expect(editor.conflict).toBe(false);
+  expect(editor.dirty).toBe(true);
 });
 
 it("retains draft if conflict reload fails", async () => {
@@ -197,7 +317,8 @@ it("carries a dirty draft onto a save that changed only job choices", async () =
     "modelRouting.save",
     expect.objectContaining({
       expectedVersion: 5,
-      draft: expect.objectContaining({ defaultMaxRunMinutes: 30, roles }),
+      // Saving drops non-helper "any model, in order" bindings; they are the default.
+      draft: expect.objectContaining({ defaultMaxRunMinutes: 30, roles: {} }),
     }),
     false,
     true,
@@ -274,7 +395,7 @@ it("keeps the submitted limit draft locked until Host acknowledgement", async ()
         release = resolve;
       }),
   );
-  let saving!: Promise<void>;
+  let saving!: Promise<unknown>;
   await act(async () => {
     saving = editor.save();
   });

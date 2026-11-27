@@ -1,0 +1,7 @@
+.mark {
+  display: inline-block;
+  /* ui-drift-ignore: surface-style -- Current color fills the icon mask. */
+  background-color: currentColor;
+  mask: url("../../../../public/managed-session.svg") center / contain no-repeat;
+  forced-color-adjust: none;
+}

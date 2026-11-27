@@ -1,6 +1,7 @@
 import { useState, type SetStateAction } from "react";
 import { socialQueryScope } from "../../model/socialQuery";
 import type { SocialClient } from "../../model/socialClient";
+import type { EditorFailure } from "./ContentEditor";
 import { emptyDraft, type ContentDraft } from "./contentDraft";
 
 type WorkspaceDraft = {
@@ -9,6 +10,7 @@ type WorkspaceDraft = {
   open: boolean;
   busy?: boolean;
   uploading?: boolean;
+  operationError?: EditorFailure[];
   notice?: { tone: "success" | "warning"; text: string };
 };
 
@@ -31,10 +33,12 @@ export function useContentDraft(client: SocialClient, projectId?: string) {
     }));
   const setOpen = (open: boolean) => update((value) => ({ ...value, open }));
   const setNotice = (notice: WorkspaceDraft["notice"]) => update((value) => ({ ...value, notice }));
+  const setOperationError = (operationError: WorkspaceDraft["operationError"]) =>
+    update((value) => ({ ...value, operationError }));
   const setBusy = (busy: boolean) => update((value) => ({ ...value, busy }));
   const setUploading = (uploading: boolean) => update((value) => ({ ...value, uploading }));
   const loadDraft = (draft: ContentDraft) =>
-    update((value) => ({ ...value, draft, baseline: draft }));
+    update((value) => ({ ...value, draft, baseline: draft, operationError: undefined }));
   const reset = () => update(() => fresh());
   return {
     key,
@@ -43,6 +47,7 @@ export function useContentDraft(client: SocialClient, projectId?: string) {
     setDraft,
     setOpen,
     setNotice,
+    setOperationError,
     setBusy,
     setUploading,
     loadDraft,

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { setLanguagePreference } from "../../../shared/i18n";
 import { CodeMirrorEditor } from "./CodeMirrorEditor";
 import { EditorConflictBar } from "./EditorConflictBar";
+import { showErrorDetails } from "./errorDetails.test-support";
 
 const language = vi.hoisted(() => ({ load: vi.fn() }));
 const counts = vi.hoisted(() => ({ enabled: false }));
@@ -42,7 +43,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("keeps long staging failures and next-file notes in wrapped visible status text", async () => {
+it("keeps long staging failures behind Details and next-file notes in wrapped status text", async () => {
   const error = `Staging failed: C:/work/${"account-and-project-".repeat(30)}retry-required`;
   const note = "Sonraki dosya kullanılamıyor مرحبا 📄";
   await act(async () =>
@@ -60,12 +61,15 @@ it("keeps long staging failures and next-file notes in wrapped visible status te
     ),
   );
   const statuses = [...host.querySelectorAll('[role="status"]')];
-  for (const value of [error, note]) {
-    const status = statuses.find((element) => element.textContent === value)!;
-    expect(status).toBeDefined();
-    expect(status.getAttribute("data-wrap")).toBe("anywhere");
-    expect(status.hasAttribute("data-truncate")).toBe(false);
-  }
+  const status = statuses.find((element) => element.textContent === note)!;
+  expect(status).toBeDefined();
+  expect(status.className).toContain("wrap-anywhere");
+  expect(status.hasAttribute("data-truncate")).toBe(false);
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    "Couldn’t mark the file as resolved",
+  );
+  await showErrorDetails(host);
+  expect(document.body.textContent).toContain(error);
 });
 
 it("reports a rejected language chunk without losing edits or save behavior", async () => {
@@ -91,7 +95,11 @@ it("reports a rejected language chunk without losing edits or save behavior", as
       }),
     ),
   );
-  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Syntax chunk unavailable");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    "Syntax highlighting unavailable. Editing is still available.",
+  );
+  await showErrorDetails(host);
+  expect(document.body.textContent).toContain("Syntax chunk unavailable");
   const view = EditorView.findFromDOM(host.querySelector(".cm-editor")!)!;
   await act(async () =>
     view.dispatch({ changes: { from: view.state.doc.length, insert: " // retained" } }),

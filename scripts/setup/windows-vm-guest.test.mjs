@@ -77,8 +77,15 @@ if ($errors.Count) { throw ($errors | Out-String) }
   assert.equal(plan.runnerRegistration, false);
   assert.equal(plan.automaticRestart, false);
   assert.equal(plan.toolManifest.length, 8);
-  assert.equal(plan.toolManifest.find((tool) => tool.id === "node").version, "24.22.1");
-  assert.equal(plan.toolManifest.find((tool) => tool.id === "pnpm").version, "12.15.0");
+  const nodeVersion = readFileSync(new URL("../../.nvmrc", import.meta.url), "utf8").trim();
+  const { packageManager } = JSON.parse(
+    readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
+  );
+  assert.equal(plan.toolManifest.find((tool) => tool.id === "node").version, nodeVersion);
+  assert.equal(
+    `pnpm@${plan.toolManifest.find((tool) => tool.id === "pnpm").version}`,
+    packageManager,
+  );
   assert(plan.toolManifest.every((tool) => /^[a-f0-9]{64}$/.test(tool.sha256)));
 });
 
@@ -122,7 +129,7 @@ foreach ($mutation in @('hash','http','foreign','filename','version','size','dup
   switch ($mutation) {
     'hash' {$items[0].sha256='not-a-hash'}
     'http' {$items[0].url=$items[0].url.Replace('https:','http:')}
-    'foreign' {$items[0].url='https://example.invalid/node-v24.22.1-x64.msi'}
+    'foreign' {$items[0].url='https://example.invalid/node-v24.22.3-x64.msi'}
     'filename' {$items[0].filename='other.msi'}
     'version' {$items[0].version='latest'}
     'size' {$items[0].maxBytes=2147483647}
@@ -182,7 +189,7 @@ test(
       powershell(String.raw`
 $ErrorActionPreference='Stop'
 . $env:BYCODA_TEST_GUEST_HELPER
-$package='C:\ProgramData\BycodaCI-GuestBootstrap\newroot\runs\fixture\node-v24.22.1-x64.msi'
+$package='C:\ProgramData\BycodaCI-GuestBootstrap\newroot\runs\fixture\node-v24.22.3-x64.msi'
 $log='C:\ProgramData\BycodaCI-GuestBootstrap\newroot\runs\fixture\node-msi.log'
 $node=@('/i',$package,'/qn','/norestart','INSTALLDIR=C:\Program Files\nodejs','/L*v',$log)
 $ps=@('/i','C:\owned fixture\PowerShell-7.6.9-win-x64.msi','/qn','/norestart','ADD_PATH=1','ENABLE_PSREMOTING=0','USE_MU=0','ENABLE_MU=0','/L*v','C:\owned fixture\powershell-msi.log')
@@ -205,7 +212,7 @@ foreach ($invalid in @(
     );
     assert.equal(
       actual.node,
-      '/i "C:\\ProgramData\\BycodaCI-GuestBootstrap\\newroot\\runs\\fixture\\node-v24.22.1-x64.msi" /qn /norestart INSTALLDIR="C:\\Program Files\\nodejs" /L*v "C:\\ProgramData\\BycodaCI-GuestBootstrap\\newroot\\runs\\fixture\\node-msi.log"',
+      '/i "C:\\ProgramData\\BycodaCI-GuestBootstrap\\newroot\\runs\\fixture\\node-v24.22.3-x64.msi" /qn /norestart INSTALLDIR="C:\\Program Files\\nodejs" /L*v "C:\\ProgramData\\BycodaCI-GuestBootstrap\\newroot\\runs\\fixture\\node-msi.log"',
     );
     assert.equal(
       actual.powershell,

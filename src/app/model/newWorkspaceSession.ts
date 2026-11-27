@@ -25,6 +25,7 @@ export function clearedWorkspaceSession(source: Session): Session {
     branch: source.branch,
     workspaceMode: source.workspaceMode,
     worktreeBase: source.worktreeBase,
+    worktreeBaseRemote: source.worktreeBaseRemote,
   };
   const owner = hostSessionBinding(source);
   return owner

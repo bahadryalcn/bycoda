@@ -11,9 +11,9 @@ export async function chooseManualEndingFromMenu(click: (label: string) => Promi
   await act(async () => option!.click());
 }
 
-/** Float the companion through the rendered voice options menu. */
+/** Float the companion through the rendered More menu. */
 export async function floatVoiceFromMenu(click: (label: string) => Promise<void>) {
-  await click("Voice options");
+  await click("More voice options");
   const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((element) =>
     element.textContent?.includes("Float outside the app"),
   );

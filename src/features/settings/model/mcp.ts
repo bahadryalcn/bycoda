@@ -1,3 +1,5 @@
+import { t } from "../../../shared/i18n";
+
 export type McpServer = { name: string; status: string };
 
 export type McpConnection = {
@@ -16,6 +18,17 @@ export const MCP_PROVIDER_LABELS: Record<McpConnection["provider"], string> = {
   cursor: "Cursor",
   opencode: "OpenCode",
 };
+
+export function scopeLabel(scope: McpConnection["scope"]): string {
+  return scopeLabelWith(scope, t);
+}
+
+export function scopeLabelWith(
+  scope: McpConnection["scope"],
+  t: (message: string) => string,
+): string {
+  return scope === "user" ? t("Global") : scope === "project" ? t("Project") : t("Local project");
+}
 
 /** Configuration does not prove authentication; these CLIs own remote OAuth. */
 export function canSignInMcp(connection: McpConnection): boolean {
@@ -66,7 +79,28 @@ export type McpLoadingState = {
   servers: string[];
   /** Secret-free hub inventory; absent on older Hosts. */
   inventory?: McpHubServer[];
+  managedServers?: boolean;
 };
+
+export type ManagedMcpIdentity = {
+  name: string;
+  scope: "user" | "project";
+  revision: string;
+  enabled: boolean;
+};
+export type ManagedMcpConfig =
+  | { url: string; type?: "http" }
+  | {
+      command: string;
+      args?: string[];
+      type?: "stdio";
+    };
+export type ManagedMcpRequest =
+  | { action: "get"; name: string }
+  | { action: "add"; name: string; config: unknown }
+  | { action: "update"; name: string; revision: string; config: unknown }
+  | { action: "setEnabled"; name: string; revision: string; enabled: boolean }
+  | { action: "remove"; name: string; revision: string };
 
 export type McpHubServer = {
   name: string;
@@ -75,6 +109,9 @@ export type McpHubServer = {
   sources: string[];
   aliases: { provider: "claude" | "codex" | "opencode"; name: string }[];
   signedIn: boolean;
+  projectCredentialsConfigured?: boolean;
+  credentialsConfigured?: boolean;
+  managed?: ManagedMcpIdentity;
 };
 
 /** Adds or removes one name; the result is sorted and unique so repeated toggles stay stable. */
@@ -89,4 +126,10 @@ export function withDirectServer(
 
 /** Per HTTP server sign-in state from `mcp.oauth.status`; never carries a credential. */
 export type McpOAuthState = "none" | "signed-in" | "expired" | "error";
-export type McpOAuthServer = { name: string; state: McpOAuthState; error?: string };
+export type McpOAuthServer = {
+  name: string;
+  state: McpOAuthState;
+  error?: string;
+  inherited?: boolean;
+  profile?: string;
+};

@@ -1,4 +1,5 @@
 import type { TaskFinalizationPreview } from "./task-workspace-runtime";
+import type { BlockReason } from "./stop-reasons";
 import type { TaskPreflightItem } from "../../src/features/tasks/model/taskPreflight";
 import type { CommandReceipt } from "../../src/features/connections/model/protocol";
 import { type AssistantRecoverySource } from "../assistant/work/assistant-worker-recovery";
@@ -6,6 +7,7 @@ import {
   type HostTask,
   type HostTaskInput,
   type TaskDeliveryReview,
+  workCrewId,
 } from "../../src/features/tasks/model/hostTasks";
 import type { HostEngine } from "../engine";
 import type { HostGoal } from "../../src/features/tasks/model/hostGoals";
@@ -37,13 +39,13 @@ import * as storage from "./storage";
 import * as delivery from "./delivery";
 import * as recovery from "./recovery";
 import * as launch from "./launch";
+import type { CrewChoice, ExecutorChoiceDeps } from "./executor-choice";
 import * as review from "./review";
 import { initialize, createTaskEngine } from "./initialize";
 import type { TaskContext } from "./context";
 import type { ConversationDelegation } from "../delegation/service";
 import type {
   TaskAssistantMetadataCache,
-  TaskEtagCache,
   TaskListCache,
   TaskPointIndex,
   TaskProjectListCache,
@@ -188,12 +190,11 @@ export class HostTasks {
   }
 
   /** Automatic admission holds remain independent of the owner's manual pause. */
-  setGoalPauseReason(
-    goalId: string,
+  syncGoalPauseReason(
     reason: "assistant-budget" | "assistant-hours",
-    paused: boolean,
+    goalIds: readonly string[],
   ): Promise<void> {
-    return goalBudget.setGoalPauseReason(this.context, goalId, reason, paused);
+    return goalBudget.syncGoalPauseReason(this.context, reason, goalIds);
   }
 
   protected publishGoalPause(goalId: string): Promise<void> {
@@ -236,8 +237,13 @@ export class HostTasks {
   repairDelegation?: Pick<ConversationDelegation, "call"> &
     Partial<Pick<ConversationDelegation, "consultTaskRepair">>;
 
+  /** Decision gate for choosing an executor when a task asks for `auto`; bound by the Host composition. */
+  executorDecisions?: ExecutorChoiceDeps["decisions"];
+
   crewRunner?: {
     validate: (task: HostTaskInput) => void | Promise<void>;
+    /** The crews this project may run work with, for the `auto` executor. */
+    choices: (projectId: string) => Promise<CrewChoice[]>;
     start: (task: HostTask) => Promise<{
       sessionId: string;
       harness: HostTask["harness"];
@@ -264,7 +270,10 @@ export class HostTasks {
 
   protected readonly externalRunSources: Array<() => number | Promise<number>> = [];
 
-  protected readonly registeredBudgetRuns = new Set<string>();
+  /** Task id -> key of the run this process has already handed to the budget ledger. Only the
+   * current run is cached: a task that leaves its run or is deleted drops its entry. The ledger
+   * stays authoritative, so a dropped entry costs one lookup and never a second registration. */
+  protected readonly registeredBudgetRuns = new Map<string, string>();
 
   trackExternalRuns(source: () => number | Promise<number>): void {
     return taskActions.trackExternalRuns(this.context, source);
@@ -363,8 +372,6 @@ export class HostTasks {
   /** Published only for an actual committed removal, never a failed/absent delete. */
   onDelete?: (task: { id: string; projectId: string }) => void;
 
-  protected etagCache?: TaskEtagCache;
-
   protected listCache?: TaskListCache;
 
   protected projectListCache = new Map<string, TaskProjectListCache>();
@@ -419,6 +426,11 @@ export class HostTasks {
     return storage.list(this.context, projectId, includeAssistantMetadata);
   }
 
+  /** Tasks of one crew run in creation order, read by the run index instead of the whole project. */
+  listCrewRun(runId: string, projectId: string): Promise<HostTask[]> {
+    return storage.listCrewRun(this.context, runId, projectId);
+  }
+
   /** Shared read-only index; task writes invalidate the revision cache. */
   taskIndex(ids?: readonly string[]): Promise<ReadonlyMap<string, HostTask>> {
     return storage.taskIndex(this.context, ids);
@@ -444,7 +456,7 @@ export class HostTasks {
   async reserveCrewExecution(id: string, runId: string): Promise<void> {
     await this.context.transaction(async () => {
       const task = await this.context.find(id);
-      if (!task?.crewDefinitionId || task.status !== "queued")
+      if (!task || !workCrewId(task) || task.status !== "queued")
         throw new Error("Crew work must be reserved before starting.");
       if (task.crewExecutionId && task.crewExecutionId !== runId)
         throw new Error("Crew task already owns another run.");
@@ -481,8 +493,8 @@ export class HostTasks {
     return ownerCompletion.finishWithFindings(this.context, id, expectedUpdatedAt);
   }
 
-  reorder(ids: unknown): Promise<HostTask[]> {
-    return taskActions.reorder(this.context, ids);
+  reorder(ids: unknown, expectedUpdatedAt?: Readonly<Record<string, number>>): Promise<HostTask[]> {
+    return taskActions.reorder(this.context, ids, expectedUpdatedAt);
   }
 
   /** Retarget a reviewed result without launching another worker. */
@@ -627,11 +639,11 @@ export class HostTasks {
 
   protected block(
     task: HostTask,
-    error: string,
+    reason: BlockReason,
     now: number,
     retainReviewer = false,
   ): Promise<HostTask> {
-    return recovery.block(this.context, task, error, now, retainReviewer);
+    return recovery.block(this.context, task, reason, now, retainReviewer);
   }
 
   /** Correct failed deliverables in unattended work without releasing dependencies.
@@ -661,6 +673,7 @@ export class HostTasks {
     sessionId?: string;
     runId?: string;
     error?: string;
+    stop?: { code: string };
   }): Promise<boolean> {
     return recovery.canResumeAfterHostStop(this.context, run);
   }

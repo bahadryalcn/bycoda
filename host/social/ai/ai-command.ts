@@ -6,7 +6,7 @@ import { str } from "../core/social-helpers";
 import { askSuggestionModel } from "../social-suggestions";
 import { aiCommandPrompt, parseAiPlan } from "./ai-plan";
 import { aiHost, assertAiNotStopped } from "./ai-host";
-import { savePlan, type StoredPlan } from "./ai-plan-store";
+import { prunePlans, savePlan, type StoredPlan } from "./ai-plan-store";
 import { stepGate } from "./ai-plan-run";
 
 /**
@@ -61,6 +61,10 @@ export async function planCommand(
       ...(gate.reason ? { reason: gate.reason } : {}),
     });
   }
+  // Retention runs when a plan is made, so finished plans cannot pile up without a sweep of their own.
+  await prunePlans(ctx, ctx.now()).catch((error) =>
+    console.error("AI plan retention failed; retrying on the next plan:", error),
+  );
   const plan: StoredPlan = {
     id: randomUUID(),
     actor: ctx.principal.actorId,

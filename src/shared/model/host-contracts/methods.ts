@@ -1,5 +1,18 @@
 import { nativeRuntimeLogMethods } from "./native-runtime-log-methods";
+import {
+  GITHUB_WORK_ITEMS,
+  workItemGetParams,
+  workItemResult,
+  workItemSearchParams,
+} from "./work-items";
 import { SIDE_CHAT_RPC } from "./side-chat";
+import { SESSION_APPROVAL_GRANTS_CAPABILITY } from "../sessionApprovalGrant";
+import {
+  RevokeSessionApprovalGrantParamsSchema,
+  SessionApprovalGrantsParamsSchema,
+  SessionApprovalGrantsResultSchema,
+} from "./session-approval-grants";
+import { VOICE_CAPABILITY, VOICE_RPC_SCHEMAS, type VoiceMethod } from "./voice";
 import {
   SecretInputListParamsSchema,
   SecretInputListResultSchema,
@@ -18,6 +31,10 @@ import {
   type NativeDeviceMethod,
 } from "./native-devices";
 import { NATIVE_DELIVERY_RPC_SCHEMAS, type NativeDeliveryMethod } from "./native-delivery";
+import {
+  NATIVE_DELIVERY_EPOCH_GAP_CAPABILITY,
+  NATIVE_DELIVERY_EPOCH_GAP_METHOD,
+} from "./native-delivery-epochs";
 import { z } from "zod";
 import { AssistantRequestSchema, AssistantResponseSchema } from "./assistant";
 import { DesktopControlRequestSchema, DesktopControlResponseSchema } from "./desktop-control";
@@ -38,21 +55,11 @@ import {
   type NativeServiceUploadMethod,
 } from "./native-service-upload";
 import { NATIVE_WORKSPACE_RPC_SCHEMAS, type NativeWorkspaceMethod } from "./native-workspaces";
-import {
-  NATIVE_BUFFER_UPLOAD_RPC_SCHEMAS,
-  type NativeBufferUploadMethod,
-} from "./native-buffer-upload";
-import {
-  NativeBufferRecoveryListParamsSchema,
-  NativeBufferRecoverySourceSchema,
-  NativeBufferRecoveryPageSchema,
-  NativeBufferRecoveryReadSchema,
-  NativeBufferRecoveryStatusSchema,
-} from "./native-buffer-recovery";
 import { WS_LIMITS } from "./policy";
 import * as gitDto from "./git";
 import * as notesDto from "./notes";
 import * as projectsDto from "./projects";
+import * as groupLockDto from "./group-lock";
 import * as tasksDto from "./tasks";
 import * as goalsDto from "./goals";
 import * as devDto from "./dev-servers";
@@ -69,6 +76,7 @@ import {
   TerminalsCreateParamsSchema,
   TerminalsReadParamsSchema,
   TerminalsWriteParamsSchema,
+  TerminalsResizeParamsSchema,
   TerminalsControlParamsSchema,
 } from "./terminals";
 import {
@@ -168,6 +176,8 @@ const queueOperation = (paramsSchema: z.ZodType): HostRpcMethodDefinition => ({
 });
 /** Healthy slow Host reads (git, files, session sync, project browse) must outlive the 12 s default. */
 const SLOW_READ_RESPONSE_TIMEOUT_MS = 30_000;
+/** Outlasts the phone's 120 s wait for an assistant reply, so the client, not the socket, decides. */
+export const ASSISTANT_REQUEST_RESPONSE_TIMEOUT_MS = 150_000;
 const GIT_ACTION_RESPONSE_TIMEOUT_MS = 600_000;
 const sessionRead = (
   params: z.ZodType,
@@ -289,23 +299,6 @@ const nativeWorkspaceOperation = (method: NativeWorkspaceMethod): HostRpcMethodD
   };
 };
 
-const nativeBufferUploadOperation = (
-  method: NativeBufferUploadMethod,
-): HostRpcMethodDefinition => ({
-  ...(method === "native.buffers.upload.status"
-    ? read(
-        NATIVE_BUFFER_UPLOAD_RPC_SCHEMAS[method].params,
-        NATIVE_BUFFER_UPLOAD_RPC_SCHEMAS[method].result,
-      )
-    : control(
-        NATIVE_BUFFER_UPLOAD_RPC_SCHEMAS[method].params,
-        NATIVE_BUFFER_UPLOAD_RPC_SCHEMAS[method].result,
-      )),
-  cost: "read",
-  requiredCapability: "native.buffers.upload.v1",
-  responseTimeoutMs: 30_000,
-});
-
 const nativeServiceOperation = (method: NativeServiceMethod): HostRpcMethodDefinition => ({
   ...(nativeServiceReadOnly(method)
     ? read(NATIVE_SERVICES_RPC_SCHEMAS[method].params, NATIVE_SERVICES_RPC_SCHEMAS[method].result)
@@ -383,23 +376,47 @@ const nativeDeliveryOperation = (method: NativeDeliveryMethod): HostRpcMethodDef
         NATIVE_DELIVERY_RPC_SCHEMAS[method].result,
       )),
   cost: "read",
-  requiredCapability: method.startsWith("native.delivery.epochs.")
-    ? "native.delivery.epochs.v2"
-    : method.endsWith(".ack")
-      ? method.startsWith("native.buffers.")
-        ? "native.buffers.delivery.ack.v1"
-        : "native.services.delivery.ack.v1"
-      : method.startsWith("native.buffers.")
-        ? "native.buffers.delivery.v1"
-        : "native.services.delivery.v1",
+  requiredCapability:
+    method === NATIVE_DELIVERY_EPOCH_GAP_METHOD
+      ? NATIVE_DELIVERY_EPOCH_GAP_CAPABILITY
+      : method.startsWith("native.delivery.epochs.")
+        ? "native.delivery.epochs.v2"
+        : method.endsWith(".ack")
+          ? "native.services.delivery.ack.v1"
+          : "native.services.delivery.v1",
   responseTimeoutMs: 30_000,
 });
+/** A voice call owns its own socket; recognizer start and transcription may load a model first. */
+const voiceOperation = (method: VoiceMethod): HostRpcMethodDefinition => ({
+  ...control(VOICE_RPC_SCHEMAS[method].params, VOICE_RPC_SCHEMAS[method].result),
+  cost: "read",
+  requiredCapability: VOICE_CAPABILITY,
+  responseTimeoutMs:
+    method === "voice.local.start" ? 90_000 : method.endsWith(".transcribe") ? 60_000 : 30_000,
+});
 export const HOST_RPC_METHODS = Object.freeze({
-  "assistant.request": workflowOperation(
-    "assistant.v1",
-    AssistantRequestSchema,
-    AssistantResponseSchema,
-  ),
+  "voice.local.start": voiceOperation("voice.local.start"),
+  "voice.local.transcribe": voiceOperation("voice.local.transcribe"),
+  "voice.cloud.transcribe": voiceOperation("voice.cloud.transcribe"),
+  "voice.local.speak": voiceOperation("voice.local.speak"),
+  "voice.local.speechNext": voiceOperation("voice.local.speechNext"),
+  "voice.local.keepAlive": voiceOperation("voice.local.keepAlive"),
+  "voice.local.release": voiceOperation("voice.local.release"),
+  "voice.realtime.start": voiceOperation("voice.realtime.start"),
+  "voice.realtime.audio": voiceOperation("voice.realtime.audio"),
+  "voice.realtime.next": voiceOperation("voice.realtime.next"),
+  "voice.realtime.interrupt": voiceOperation("voice.realtime.interrupt"),
+  "voice.realtime.text": voiceOperation("voice.realtime.text"),
+  "voice.realtime.end": voiceOperation("voice.realtime.end"),
+  "voice.call.settings.get": voiceOperation("voice.call.settings.get"),
+  "voice.call.settings.set": voiceOperation("voice.call.settings.set"),
+  "assistant.request": {
+    ...workflowOperation("assistant.v1", AssistantRequestSchema, AssistantResponseSchema),
+    // A Room send waits for the assistant's reply, which routinely takes longer than the 12 s
+    // default: the socket cut every longer reply and the phone's voice call read it as "connection
+    // interrupted". Owner HTTP adds no deadline here; this outlasts the phone's own 120 s wait.
+    responseTimeoutMs: ASSISTANT_REQUEST_RESPONSE_TIMEOUT_MS,
+  },
   "desktop.request": workflowOperation(
     "desktop.control.v1",
     DesktopControlRequestSchema,
@@ -415,10 +432,8 @@ export const HOST_RPC_METHODS = Object.freeze({
   "native.delivery.epochs.status": nativeDeliveryOperation("native.delivery.epochs.status"),
   "native.delivery.epochs.compact": nativeDeliveryOperation("native.delivery.epochs.compact"),
   "native.delivery.epochs.close": nativeDeliveryOperation("native.delivery.epochs.close"),
-  "native.buffers.delivery.ack": nativeDeliveryOperation("native.buffers.delivery.ack"),
+  [NATIVE_DELIVERY_EPOCH_GAP_METHOD]: nativeDeliveryOperation(NATIVE_DELIVERY_EPOCH_GAP_METHOD),
   "native.services.delivery.ack": nativeDeliveryOperation("native.services.delivery.ack"),
-  "native.buffers.delivery.apply": nativeDeliveryOperation("native.buffers.delivery.apply"),
-  "native.buffers.delivery.status": nativeDeliveryOperation("native.buffers.delivery.status"),
   "native.services.delivery.apply": nativeDeliveryOperation("native.services.delivery.apply"),
   "native.services.delivery.status": nativeDeliveryOperation("native.services.delivery.status"),
   "native.services.delivery.result.read": nativeDeliveryOperation(
@@ -439,6 +454,11 @@ export const HOST_RPC_METHODS = Object.freeze({
   "devices.boot": nativeDeviceOperation("devices.boot"),
   "devices.capture": nativeDeviceOperation("devices.capture"),
   "devices.stream": nativeDeviceOperation("devices.stream"),
+  "devices.touch": {
+    ...nativeDeviceOperation("devices.touch"),
+    requiredCapability: "devices.touch.v1",
+    responseTimeoutMs: 30_000,
+  },
   "devices.control.status": nativeDeviceOperation("devices.control.status"),
   "devices.control.claim": nativeDeviceOperation("devices.control.claim"),
   "devices.control.release": nativeDeviceOperation("devices.control.release"),
@@ -534,11 +554,6 @@ export const HOST_RPC_METHODS = Object.freeze({
     requiredCapability: "transport.ws.models.v1",
     responseTimeoutMs: 60_000,
   },
-  "native.buffers.upload.start": nativeBufferUploadOperation("native.buffers.upload.start"),
-  "native.buffers.upload.write": nativeBufferUploadOperation("native.buffers.upload.write"),
-  "native.buffers.upload.commit": nativeBufferUploadOperation("native.buffers.upload.commit"),
-  "native.buffers.upload.status": nativeBufferUploadOperation("native.buffers.upload.status"),
-  "native.buffers.upload.abort": nativeBufferUploadOperation("native.buffers.upload.abort"),
   "native.turn.begin": nativeWorkspaceOperation("native.turn.begin"),
   "native.turn.end": nativeWorkspaceOperation("native.turn.end"),
   "native.activity.start": nativeWorkspaceOperation("native.activity.start"),
@@ -557,18 +572,6 @@ export const HOST_RPC_METHODS = Object.freeze({
   "workspaces.cleanup.plan": nativeWorkspaceOperation("workspaces.cleanup.plan"),
   "workspaces.cleanup.apply": nativeWorkspaceOperation("workspaces.cleanup.apply"),
   "workspaces.cleanup.status": nativeWorkspaceOperation("workspaces.cleanup.status"),
-  "native.buffers.recovery.list": {
-    ...read(NativeBufferRecoveryListParamsSchema, NativeBufferRecoveryPageSchema),
-    requiredCapability: "native.buffers.recovery.v1",
-  },
-  "native.buffers.recovery.read": {
-    ...read(NativeBufferRecoverySourceSchema, NativeBufferRecoveryReadSchema),
-    requiredCapability: "native.buffers.recovery.v1",
-  },
-  "native.buffers.recovery.status": {
-    ...read(NativeBufferRecoverySourceSchema, NativeBufferRecoveryStatusSchema),
-    requiredCapability: "native.buffers.recovery.v1",
-  },
   "crews.active.list": crewOperation("crews.active.list"),
   "crews.member.ask": crewOperation("crews.member.ask"),
   "crews.list": crewOperation("crews.list"),
@@ -579,6 +582,7 @@ export const HOST_RPC_METHODS = Object.freeze({
   "crews.deleteRun": crewOperation("crews.deleteRun"),
   "crews.agent.save": crewOperation("crews.agent.save"),
   "crews.agent.delete": crewOperation("crews.agent.delete"),
+  "crews.agent.group.update": crewOperation("crews.agent.group.update"),
   "modelRouting.get": {
     ...read(
       modelRoutingDto.ModelRoutingGetParamsSchema,
@@ -604,6 +608,13 @@ export const HOST_RPC_METHODS = Object.freeze({
     ...read(
       modelRoutingDto.ModelRoutingResolveParamsSchema,
       modelRoutingDto.ModelRoutingResolveResultSchema,
+    ),
+    requiredCapability: modelRoutingDto.HOST_MODEL_ROUTING,
+  },
+  "modelRouting.catalogFacts": {
+    ...read(
+      modelRoutingDto.ModelRoutingCatalogFactsParamsSchema,
+      modelRoutingDto.ModelRoutingCatalogFactsResultSchema,
     ),
     requiredCapability: modelRoutingDto.HOST_MODEL_ROUTING,
   },
@@ -637,6 +648,14 @@ export const HOST_RPC_METHODS = Object.freeze({
   "environment.describe": read(
     z.strictObject({ supportedProviders: z.array(IdentifierSchema).max(32).optional() }),
   ),
+  "workItems.search": {
+    ...projectOperation(workItemSearchParams, workItemResult),
+    requiredCapability: GITHUB_WORK_ITEMS,
+  },
+  "workItems.get": {
+    ...projectOperation(workItemGetParams, workItemResult),
+    requiredCapability: GITHUB_WORK_ITEMS,
+  },
   "projects.list": projectOperation(
     projectsDto.ProjectsEmptyParamsSchema,
     z.array(projectsDto.HostProjectSchema),
@@ -785,6 +804,11 @@ export const HOST_RPC_METHODS = Object.freeze({
     automationsDto.AutomationsIdParamsSchema,
     automationsDto.HostAutomationRunSchema,
   ),
+  "automations.decide": workflowOperation(
+    "transport.ws.automations.v2",
+    automationsDto.AutomationsDecideParamsSchema,
+    automationsDto.HostAutomationRunSchema,
+  ),
   "devServers.list": devServerOperation(
     devDto.DevServersListParamsSchema,
     devDto.DevServersListResultSchema,
@@ -842,7 +866,7 @@ export const HOST_RPC_METHODS = Object.freeze({
     devDto.DevServersBridgeStreamParamsSchema,
     devDto.DevServersBridgeCloseResultSchema,
   ),
-  // list reconciles progress/reviews and can write; it is not a retryable read.
+  // Keep the Goals RPC family's wait-only transport policy for snapshot reads.
   "goals.list": goalOperation(goalsDto.GoalsEmptyParamsSchema, goalsDto.GoalsListResultSchema),
   "goals.create": goalOperation(goalsDto.GoalsCreateParamsSchema, goalsDto.HostGoalSchema),
   "goals.finalReview.recheck": goalOperation(
@@ -914,6 +938,11 @@ export const HOST_RPC_METHODS = Object.freeze({
     tasksDto.TasksNotesResolveParamsSchema,
     tasksDto.HostTaskSchema,
   ),
+  "tasks.helpers": taskOperation(
+    tasksDto.TasksHelpersParamsSchema,
+    tasksDto.TasksHelpersResultSchema,
+    true,
+  ),
   "tasks.delete": taskOperation(tasksDto.TasksDeleteParamsSchema, tasksDto.TasksDeleteResultSchema),
   "tasks.preflight": taskOperation(
     tasksDto.TasksSaveParamsSchema,
@@ -970,6 +999,29 @@ export const HOST_RPC_METHODS = Object.freeze({
     ),
     requiredCapability: "host.settings.autoArchive.v1",
   },
+  // A phone unlocks locked groups through the desktop, which alone verifies the password.
+  "projects.groups.unlock": {
+    ...control(groupLockDto.GroupUnlockParamsSchema, groupLockDto.GroupPasswordResultSchema),
+    responseTimeoutMs: 30_000,
+    requiredCapability: groupLockDto.GROUP_LOCK_REMOTE_CAPABILITY,
+  },
+  "projects.groups.authorizeHidden": {
+    ...control(
+      groupLockDto.GroupAuthorizeHiddenParamsSchema,
+      groupLockDto.GroupPasswordResultSchema,
+    ),
+    responseTimeoutMs: 30_000,
+    requiredCapability: groupLockDto.GROUP_LOCK_REMOTE_CAPABILITY,
+  },
+  "projects.groups.lock": {
+    ...control(groupLockDto.GroupLockParamsSchema, groupLockDto.GroupLockResultSchema),
+    requiredCapability: groupLockDto.GROUP_LOCK_REMOTE_CAPABILITY,
+  },
+  "projects.groups.setHidden": {
+    ...control(groupLockDto.GroupSetHiddenParamsSchema, groupLockDto.GroupSetHiddenResultSchema),
+    responseTimeoutMs: 30_000,
+    requiredCapability: groupLockDto.GROUP_LOCK_REMOTE_CAPABILITY,
+  },
   "git.fileDiff": gitOperation(gitDto.GitFileDiffParamsSchema, gitDto.GitFileDiffSchema),
   "git.switch": gitOperation(gitDto.GitSwitchParamsSchema, gitDto.GitBranchesSchema, true),
   "git.createBranch": gitOperation(
@@ -990,6 +1042,7 @@ export const HOST_RPC_METHODS = Object.freeze({
   "terminals.create": terminalOperation(TerminalsCreateParamsSchema, HostTerminalSchema),
   "terminals.read": terminalOperation(TerminalsReadParamsSchema, HostTerminalReadSchema, true),
   "terminals.write": terminalOperation(TerminalsWriteParamsSchema, ControlAcceptedSchema),
+  "terminals.resize": terminalOperation(TerminalsResizeParamsSchema, ControlAcceptedSchema),
   "terminals.interrupt": terminalOperation(
     TerminalsControlParamsSchema,
     ControlAcceptedSchema,
@@ -1003,6 +1056,14 @@ export const HOST_RPC_METHODS = Object.freeze({
     true,
   ),
   ...sessionReadMethods(sessionRead),
+  "sessions.approvalGrants.list": {
+    ...read(SessionApprovalGrantsParamsSchema, SessionApprovalGrantsResultSchema),
+    requiredCapability: SESSION_APPROVAL_GRANTS_CAPABILITY,
+  },
+  "sessions.approvalGrants.revoke": {
+    ...control(RevokeSessionApprovalGrantParamsSchema, SessionApprovalGrantsResultSchema),
+    requiredCapability: SESSION_APPROVAL_GRANTS_CAPABILITY,
+  },
   "commands.status": {
     ...sessionRead(CommandsStatusParamsSchema, CommandsStatusResultSchema),
     cost: "control",

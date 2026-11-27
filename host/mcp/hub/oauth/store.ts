@@ -21,7 +21,7 @@ export type OAuthIndexEntry = {
   name: string;
   url: string;
   account: string;
-  state: "signed-in" | "expired" | "error";
+  state: "signed-in" | "expired" | "error" | "none";
   expiresAt?: number;
   refreshable?: boolean;
   /** Fixed code, never upstream text. */
@@ -49,7 +49,7 @@ function parseIndex(text: string): OAuthIndexEntry[] {
       typeof entry.id === "string" &&
       typeof entry.name === "string" &&
       typeof entry.url === "string" &&
-      ["signed-in", "expired", "error"].includes(entry.state),
+      ["signed-in", "expired", "error", "none"].includes(entry.state),
   );
 }
 
@@ -139,6 +139,17 @@ export class OAuthStore {
     await this.locked(async () => {
       await this.values.delete(vaultRef(id));
       await this.save((await this.load()).filter((item) => item.id !== id));
+    });
+  }
+
+  async signOutProject(entry: OAuthIndexEntry): Promise<void> {
+    await this.locked(async () => {
+      const entries = await this.load();
+      const others = entries.filter((item) => item.id !== entry.id);
+      if (others.length >= MAX_ENTRIES) throw new Error("Too many MCP sign-ins.");
+      if (entries.some((item) => item.id === entry.id && item.state !== "none"))
+        await this.values.delete(vaultRef(entry.id));
+      await this.save([...others, entry]);
     });
   }
 }

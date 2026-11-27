@@ -6,6 +6,9 @@ import { createSnapchatAdapter, snapchatContentIssue } from "./snapchat";
 const actorId = "11111111-1111-1111-1111-111111111111";
 const mediaId = "22222222-2222-2222-2222-222222222222";
 const spotlightId = "W7_example-posted-spotlight-id";
+const storyId = "33333333-3333-3333-3333-333333333333";
+const snapId = "W7_example-posted-story-snap-id";
+const savedStoryId = "44444444-4444-4444-4444-444444444444";
 const account: SocialAccount = {
   id: "a",
   platform: "snapchat",
@@ -46,6 +49,8 @@ const mp4 = (size = 24) => {
   return bytes;
 };
 function fixture() {
+  let storyReceipt: Record<string, unknown> = {},
+    storySnap: Record<string, unknown> = {};
   let status = "SUBMITTED",
     returnedActor = actorId,
     returnedSpotlight: string | undefined = spotlightId;
@@ -76,6 +81,24 @@ function fixture() {
       parts.push(options!.body as FormData);
       return ok({});
     }
+    if (path === `/v1/public_profiles/${actorId}/stories`)
+      return options?.method === "POST"
+        ? ok(storyReceipt)
+        : ok({
+            stories: [
+              { sub_request_status: "SUCCESS", story: { id: storyId, profile_id: actorId } },
+            ],
+          });
+    if (path === `/v1/public_profiles/${actorId}/stories/${storyId}/snaps`)
+      return ok({
+        snaps: [
+          { sub_request_status: "SUCCESS", snap: { id: snapId, story_id: storyId, ...storySnap } },
+        ],
+      });
+    if (path === `/v1/public_profiles/${actorId}/saved_stories` && options?.method === "POST")
+      return ok({
+        saved_stories: [{ sub_request_status: "SUCCESS", saved_story: { id: savedStoryId } }],
+      });
     if (path === `/v1/public_profiles/${actorId}/spotlights`) {
       if (postStatus)
         return new Response("{}", { status: postStatus, headers: { "retry-after": "60" } });
@@ -94,6 +117,12 @@ function fixture() {
   });
   const adapter = createSnapchatAdapter(new SocialHttp(fetcher), () => at);
   return {
+    storyReceipt: (value: Record<string, unknown>) => {
+      storyReceipt = value;
+    },
+    storySnap: (value: Record<string, unknown>) => {
+      storySnap = value;
+    },
     adapter,
     fetcher,
     checkpoint,
@@ -133,6 +162,162 @@ function fixture() {
 }
 const count = (f: ReturnType<typeof fixture>, suffix: string) =>
   f.fetcher.mock.calls.filter(([raw]) => new URL(String(raw)).pathname.endsWith(suffix)).length;
+
+describe("Snapchat Public Stories and Saved Stories", () => {
+  it("only completes a Public Story after read-back confirms the exact posted Snap", async () => {
+    const f = fixture();
+    const current = job();
+    current.payload.snapchat!.target = "story";
+    current.payload.snapchat!.storyTtl = "TWO_DAYS";
+    current.payload.link = "https://example.com/story";
+    current.payload.snapchat!.width = 540;
+    current.payload.snapchat!.height = 960;
+    f.storyReceipt({ story_id: storyId, snap_id: snapId });
+
+    await expect(
+      f.adapter.send(account, current, "token", async () => mp4(), f.checkpoint),
+    ).resolves.toEqual({ platformId: snapId });
+    const post = f.fetcher.mock.calls.find(
+      ([raw, options]) =>
+        new URL(String(raw)).pathname.endsWith("/stories") && options?.method === "POST",
+    );
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+      media_id: mediaId,
+      customized_ttl: { ttl: "TWO_DAYS" },
+      link: "https://example.com/story",
+      captions: [{ text: "Hello #Bycoda" }],
+    });
+    expect(current.preparation?.snapchatMedia).toMatchObject({ storyId, storySnapId: snapId });
+  });
+
+  it("leaves documented Story acknowledgements without exact correlation unknown and never reposts", async () => {
+    const f = fixture();
+    const current = job();
+    current.payload.snapchat!.target = "story";
+    const send = () => f.adapter.send(account, current, "token", async () => mp4(), f.checkpoint);
+
+    await expect(send()).rejects.toMatchObject({ code: "unknown" });
+    await expect(send()).rejects.toMatchObject({ code: "unknown" });
+    expect(
+      f.fetcher.mock.calls.filter(
+        ([raw, options]) =>
+          new URL(String(raw)).pathname.endsWith("/stories") && options?.method === "POST",
+      ),
+    ).toHaveLength(1);
+    expect(current.preparation?.snapchatMedia?.submittedAt).toBe(1000);
+  });
+
+  it.each([
+    ["MEDIA_POSTING_ALREADY_IN_PROGRESS", "unknown"],
+    ["VALIDATION_ERROR_CAPTIONS_NOT_ALLOWED", "denied"],
+  ])("classifies %s without reposting or exposing debug text", async (errorCode, code) => {
+    const f = fixture();
+    const current = job();
+    current.payload.snapchat!.target = "story";
+    f.storyReceipt({
+      request_status: "ERROR",
+      error_code: errorCode,
+      debug_message: "provider response may contain credential details",
+    });
+    const send = () => f.adapter.send(account, current, "token", async () => mp4(), f.checkpoint);
+
+    await expect(send()).rejects.toMatchObject({ code });
+    await expect(send()).rejects.toMatchObject({ code: "unknown" });
+    expect(
+      f.fetcher.mock.calls.filter(
+        ([raw, options]) =>
+          new URL(String(raw)).pathname.endsWith("/stories") && options?.method === "POST",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("uploads a Story photo as IMAGE and refuses mismatched bytes", async () => {
+    const f = fixture();
+    const current = job();
+    current.payload.snapchat!.target = "story";
+    current.payload.media[0].kind = "image";
+    f.storyReceipt({ story_id: storyId, snap_id: snapId });
+
+    await expect(
+      f.adapter.send(account, current, "token", async () => mp4(), f.checkpoint),
+    ).rejects.toMatchObject({ code: "unsupported" });
+    expect(count(f, "/media")).toBe(0);
+    await expect(
+      f.adapter.send(
+        account,
+        current,
+        "token",
+        async () => new Uint8Array([255, 216, 255]),
+        f.checkpoint,
+      ),
+    ).resolves.toEqual({ platformId: snapId });
+    const create = f.fetcher.mock.calls.find(([raw]) =>
+      new URL(String(raw)).pathname.endsWith("/media"),
+    );
+    expect(JSON.parse(String(create?.[1]?.body))).toMatchObject({ type: "IMAGE" });
+  });
+
+  it("reconciles a Story in place if Snap exposes an exact upload correlation later", async () => {
+    const f = fixture();
+    const current = job();
+    current.payload.snapchat!.target = "story";
+    await expect(
+      f.adapter.send(account, current, "token", async () => mp4(), f.checkpoint),
+    ).rejects.toMatchObject({ code: "unknown" });
+    f.storySnap({ media_id: mediaId });
+    await expect(f.adapter.reconcile!(account, current, "token")).resolves.toEqual({
+      platformId: snapId,
+    });
+  });
+
+  it("creates a Saved Story from a prior Snap and Spotlight with no new media upload", async () => {
+    const f = fixture();
+    const current = job();
+    current.payload.text = "Trip recap";
+    current.payload.media = [];
+    current.payload.snapchat!.target = "saved_story";
+    current.payload.snapchat!.savedStorySources = [
+      { kind: "snap", id: snapId },
+      { kind: "spotlight", id: spotlightId },
+    ];
+    const read = vi.fn(async () => mp4());
+
+    await expect(f.adapter.send(account, current, "token", read, f.checkpoint)).resolves.toEqual({
+      platformId: savedStoryId,
+    });
+    const post = f.fetcher.mock.calls.find(([raw]) =>
+      new URL(String(raw)).pathname.endsWith("/saved_stories"),
+    );
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+      saved_stories: [
+        { title: "Trip recap", snap_sources: [{ snap_id: snapId }, { spotlight_id: spotlightId }] },
+      ],
+    });
+    expect(read).not.toHaveBeenCalled();
+    expect(current.preparation?.snapchatMedia?.savedStoryId).toBe(savedStoryId);
+  });
+
+  it("reuses finalized Saved Story media after a pre-submit policy refusal", async () => {
+    const f = fixture();
+    const current = job();
+    current.payload.text = "Saved upload";
+    current.payload.snapchat!.target = "saved_story";
+    const read = vi.fn(async () => mp4());
+    const beforeSubmit = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Policy changed"))
+      .mockResolvedValueOnce(undefined);
+    const send = () => f.adapter.send(account, current, "token", read, f.checkpoint, beforeSubmit);
+
+    await expect(send()).rejects.toThrow("Policy changed");
+    expect(current.preparation?.snapchatMedia).toMatchObject({ mediaIds: [mediaId] });
+    expect(count(f, "/saved_stories")).toBe(0);
+    await expect(send()).resolves.toEqual({ platformId: savedStoryId });
+    await expect(send()).resolves.toEqual({ platformId: savedStoryId });
+    expect(read).toHaveBeenCalledOnce();
+    expect(count(f, "/saved_stories")).toBe(1);
+  });
+});
 
 describe("Snapchat Public Profile API Spotlight", () => {
   it("encrypts only the supplied view when media shares a larger buffer", async () => {
@@ -406,26 +591,31 @@ describe("Snapchat Public Profile API Spotlight", () => {
     expect(await f.adapter.reconcile!(account, current, "token")).toBeUndefined();
     expect(f.fetcher).toHaveBeenCalledTimes(calls + 1);
   });
-  it.each(["story", "missing-locale", "short-video", "remote-media", "wrong-profile-id"])(
-    "blocks %s before network or upload",
-    async (variant) => {
-      const f = fixture(),
-        current = job(),
-        actor = { ...account };
-      if (variant === "story") current.payload.snapchat!.target = "story";
-      if (variant === "missing-locale") delete current.payload.snapchat!.locale;
-      if (variant === "short-video") current.payload.snapchat!.durationSeconds = 5;
-      if (variant === "remote-media")
-        current.payload.media = [{ kind: "video", url: "https://example.com/video.mp4" }];
-      if (variant === "wrong-profile-id")
-        actor.platformId = `web:snapchat:public_profile:${actorId}`;
-      expect(snapchatContentIssue(actor, current)).toBeTruthy();
-      await expect(
-        f.adapter.send(actor, current, "token", async () => mp4(), f.checkpoint),
-      ).rejects.toMatchObject({ code: "unsupported" });
-      expect(f.fetcher).not.toHaveBeenCalled();
-    },
-  );
+  it.each([
+    "invalid-story-video",
+    "missing-locale",
+    "short-video",
+    "remote-media",
+    "wrong-profile-id",
+  ])("blocks %s before network or upload", async (variant) => {
+    const f = fixture(),
+      current = job(),
+      actor = { ...account };
+    if (variant === "invalid-story-video") {
+      current.payload.snapchat!.target = "story";
+      current.payload.snapchat!.durationSeconds = 4;
+    }
+    if (variant === "missing-locale") delete current.payload.snapchat!.locale;
+    if (variant === "short-video") current.payload.snapchat!.durationSeconds = 5;
+    if (variant === "remote-media")
+      current.payload.media = [{ kind: "video", url: "https://example.com/video.mp4" }];
+    if (variant === "wrong-profile-id") actor.platformId = `web:snapchat:public_profile:${actorId}`;
+    expect(snapchatContentIssue(actor, current)).toBeTruthy();
+    await expect(
+      f.adapter.send(actor, current, "token", async () => mp4(), f.checkpoint),
+    ).rejects.toMatchObject({ code: "unsupported" });
+    expect(f.fetcher).not.toHaveBeenCalled();
+  });
   it("never reposts after an uncertain POST outcome and keeps the job for review", async () => {
     const f = fixture(),
       current = job();

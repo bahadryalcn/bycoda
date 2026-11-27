@@ -9,7 +9,7 @@ import { CrewTaskPicker } from "./CrewTaskPicker";
 
 afterEach(() => vi.unstubAllGlobals());
 
-async function render(props: { value?: string }) {
+async function render(props: { value?: string }, onValidityChange = vi.fn()) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);
@@ -20,7 +20,7 @@ async function render(props: { value?: string }) {
         cwd: "C:/project",
         machineId: "host",
         onChange: () => {},
-        onValidityChange: () => {},
+        onValidityChange,
         ...props,
       }),
     ),
@@ -39,34 +39,23 @@ const crews = (taskExecutionSupported: boolean) => ({
   refetch: vi.fn(),
 });
 
-it("collapses to one quiet line with an info control when the host has no Crews support", async () => {
-  state.current = crews(false);
-  const view = await render({});
-  expect(view.container.querySelector("[data-crew-task-unsupported]")).not.toBeNull();
-  expect(view.container.textContent).toContain("Runs as a single agent");
-  expect(view.container.querySelector("button[aria-label='Crews unavailable']")).not.toBeNull();
-  expect(view.container.querySelector("[role='alert']")).toBeNull();
-  expect(
-    view.container.querySelector("button[aria-haspopup='dialog'][aria-label^='Worker:']"),
-  ).toBeNull();
-  await view.unmount();
-});
-
-it("keeps the crew picker when the host supports Crews", async () => {
+it("shows the saved crew by name and reports it valid", async () => {
   state.current = crews(true);
-  const view = await render({});
-  expect(view.container.querySelector("[data-crew-task-unsupported]")).toBeNull();
+  const valid = vi.fn();
+  const view = await render({ value: "crew-1" }, valid);
   expect(
-    view.container.querySelector("button[aria-haspopup='dialog'][aria-label^='Worker:']"),
-  ).not.toBeNull();
-  expect(view.container.textContent).toContain("Agent");
+    view.container.querySelector("button[aria-haspopup='dialog'][aria-label^='Crew:']")
+      ?.textContent,
+  ).toContain("Review crew");
+  expect(valid).toHaveBeenLastCalledWith(true);
   await view.unmount();
 });
 
-it("keeps the picker and the alert for a saved crew the host cannot run", async () => {
+it("says so and reports invalid for a saved crew the host cannot run", async () => {
   state.current = crews(false);
-  const view = await render({ value: "crew-1" });
-  expect(view.container.querySelector("[data-crew-task-unsupported]")).toBeNull();
+  const valid = vi.fn();
+  const view = await render({ value: "crew-1" }, valid);
   expect(view.container.textContent).toContain("Connect an updated host");
+  expect(valid).toHaveBeenLastCalledWith(false);
   await view.unmount();
 });

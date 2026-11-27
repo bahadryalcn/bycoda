@@ -15,7 +15,11 @@ describe("device control leases", () => {
       "DEVICE_CONTROL_BUSY",
     );
     expect(await leases.claim("a", "one", "claim1", async () => true)).toEqual(claim);
-    expect(await leases.status("a")).toEqual({ deviceId: "a", busy: true });
+    expect(await leases.status("a")).toEqual({
+      deviceId: "a",
+      busy: true,
+      heldBy: { kind: "controller" },
+    });
     await expect(leases.assert("b", "one", claim.leaseId!)).rejects.toThrow(
       "DEVICE_CONTROL_LEASE_INVALID",
     );

@@ -1,19 +1,10 @@
 import { expect, it } from "vitest";
 import { NATIVE_DELIVERY_RPC_SCHEMAS } from "./native-delivery";
-import { NativeBufferUploadStartParamsSchema } from "./native-buffer-upload";
 import { NativeServiceUploadBeginParamsSchema } from "./native-service-upload";
 import { getHostRpcMethod } from "./methods";
 
 const identity = { originalId: "original", sha256: "a".repeat(64), byteLength: 16 * 1024 * 1024 };
 it("keeps original16MiB staging capacity without staging double-encoded wrapper bytes", () => {
-  expect(
-    NativeBufferUploadStartParamsSchema.parse({
-      uploadId: "upload",
-      byteLength: identity.byteLength,
-      sha256: identity.sha256,
-      delivery: identity,
-    }).delivery,
-  ).toEqual(identity);
   expect(
     NativeServiceUploadBeginParamsSchema.parse({
       uploadId: "upload",
@@ -24,8 +15,9 @@ it("keeps original16MiB staging capacity without staging double-encoded wrapper 
     }).delivery,
   ).toEqual(identity);
   expect(
-    NativeBufferUploadStartParamsSchema.safeParse({
+    NativeServiceUploadBeginParamsSchema.safeParse({
       uploadId: "upload",
+      target: "native.services.workspace.format",
       byteLength: identity.byteLength + 1,
       sha256: identity.sha256,
       delivery: identity,
@@ -36,14 +28,12 @@ it("routes finite private owner delivery and epoch operations with separate capa
   for (const method of Object.keys(NATIVE_DELIVERY_RPC_SCHEMAS)) {
     const descriptor = getHostRpcMethod(method)!;
     expect(descriptor.requiredCapability).toBe(
-      method.startsWith("native.delivery.epochs.")
-        ? "native.delivery.epochs.v2"
-        : method.endsWith(".ack")
-          ? method.startsWith("native.buffers.")
-            ? "native.buffers.delivery.ack.v1"
-            : "native.services.delivery.ack.v1"
-          : method.startsWith("native.buffers.")
-            ? "native.buffers.delivery.v1"
+      method === "native.delivery.epochs.gap.resolve"
+        ? "native.delivery.epochs.gaps.v1"
+        : method.startsWith("native.delivery.epochs.")
+          ? "native.delivery.epochs.v2"
+          : method.endsWith(".ack")
+            ? "native.services.delivery.ack.v1"
             : "native.services.delivery.v1",
     );
     expect(descriptor.kind).toBe(
@@ -58,8 +48,9 @@ it("routes finite private owner delivery and epoch operations with separate capa
     }).success,
   ).toBe(false);
   expect(
-    NATIVE_DELIVERY_RPC_SCHEMAS["native.buffers.delivery.status"].params.safeParse({
+    NATIVE_DELIVERY_RPC_SCHEMAS["native.services.delivery.status"].params.safeParse({
       ...identity,
+      target: "native.services.workspace.format",
       owner: "forged",
     }).success,
   ).toBe(false);
@@ -98,8 +89,12 @@ it("does not make absence a recorded result or grant a finished-handler receipt 
   expect(read.params.safeParse({ ...params, limit: 65_537 }).success).toBe(false);
 });
 it("accepts exact retired tombstones without a retained result or proof", () => {
-  const params = { ...identity, consumedResult: { sha256: "c".repeat(64), byteLength: 21 } };
-  const ack = NATIVE_DELIVERY_RPC_SCHEMAS["native.buffers.delivery.ack"];
+  const params = {
+    ...identity,
+    target: "native.services.workspace.format",
+    consumedResult: { sha256: "c".repeat(64), byteLength: 21 },
+  };
+  const ack = NATIVE_DELIVERY_RPC_SCHEMAS["native.services.delivery.ack"];
   expect(ack.params.parse(params)).toEqual(params);
   expect(ack.result.parse({ ...params, state: "retired" })).toEqual({
     ...params,
@@ -109,7 +104,6 @@ it("accepts exact retired tombstones without a retained result or proof", () => 
     ack.result.safeParse({ ...params, state: "retired", result: { acknowledged: true } }).success,
   ).toBe(false);
   expect(ack.params.safeParse({ ...params, principalId: "forged" }).success).toBe(false);
-  expect(
-    NATIVE_DELIVERY_RPC_SCHEMAS["native.services.delivery.ack"].params.safeParse(params).success,
-  ).toBe(false);
+  const { target: _target, ...untargeted } = params;
+  expect(ack.params.safeParse(untargeted).success).toBe(false);
 });
